@@ -1,13 +1,59 @@
-" An example for a vimrc file.
-"
-" Maintainer:	Bram Moolenaar <Bram@vim.org>
-" Last change:	2008 Dec 17
-"
-" To use it, copy it to
-"     for Unix and OS/2:  ~/.vimrc
-"	      for Amiga:  s:.vimrc
-"  for MS-DOS and Win32:  $VIM\_vimrc
-"	    for OpenVMS:  sys$login:.vimrc
+set nocompatible
+filetype off
+ 
+set rtp+=~/.vim/vundle.git/
+call vundle#rc()
+
+
+" vim-scripts リポジトリ (1)
+Bundle 'tpope/vim-rails'
+Bundle "unite.vim"
+Bundle 'scrooloose/nerdtree'
+Bundle 'taku-o/vim-toggle'
+Bundle 'Lokaltog/vim-easymotion'
+
+Bundle 'Shougo/neocomplcache'
+
+"erbの<%= %>を簡単入力してくれる
+Bundle 'surround.vim'
+
+Bundle 'skwp/vim-rspec'
+
+Bundle 'nathanaelkane/vim-indent-guides'
+Bundle 'vim-jp/vimdoc-ja'
+
+" vimdoc-ja
+helptags ~/.vim/bundle/vimdoc-ja/doc
+
+" vim-indent-guides conf
+" http://chiiiiiiiii.hatenablog.com/entry/2012/12/02/102815
+colorscheme default
+
+set tabstop=2
+set shiftwidth=2
+set expandtab
+
+"vim立ち上げたときに、自動的にvim-indent-guidesをオンにする
+let g:indent_guides_enable_on_vim_startup=1
+" ガイドをスタートするインデントの量
+let g:indent_guides_start_level=2
+" 自動カラーを無効にする
+let g:indent_guides_auto_colors=0
+" 奇数インデントのカラー
+autocmd VimEnter,Colorscheme * :hi IndentGuidesOdd  guibg=#262626 ctermbg=gray
+" 偶数インデントのカラー
+autocmd VimEnter,Colorscheme * :hi IndentGuidesEven guibg=#3c3c3c ctermbg=darkgray
+" ハイライト色の変化の幅
+let g:indent_guides_color_change_percent = 30
+" ガイドの幅
+let g:indent_guides_guide_size = 1
+
+
+
+
+" easymotion
+let g:EasyMotion_leader_key = '<Space><Space>'
+let g:EasyMotion_keys = 'fjdkslaureiwoqpvncm'
 
 " When started as "evim", evim.vim will already have done these settings.
 if v:progname =~? "evim"
@@ -117,3 +163,4 @@ set ts=2 sw=2 sts=0 "タブは半角4文字分のスペース
 set encoding=utf-8
 let g:neocomplcache_enable_at_startup = 1
 set vb t_vb=
+
