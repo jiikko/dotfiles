@@ -1,12 +1,21 @@
-
-PATH=$PATH:$HOME/.rvm/bin:/opt/local/bin/ruby1.9
+#Mac用
+# MacPorts Installer addition on 2013-02-02_at_11:04:25: adding an appropriate PATH variable for use with MacPorts.
 export PATH=/opt/local/bin:/opt/local/sbin:$PATH
+# Finished adapting your PATH environment variable for use with MacPorts.
+
+# mysql5
+export PATH=/opt/local/lib/mysql5/bin:$PATH
+
+
+
+# gitx
+export PATH=/Applications/GitX.app/Contents/MacOS:$PATH
+alias gitx='GitX .'
+
+# gitk
+# http://stackoverflow.com/questions/11785126/cfurlcopyresourcepropertyforkey-failed-because-it-was-passed-this-url-which-has
+alias gitk='gitk 2>/dev/null'
+
 export MANPATH=/opt/local/man:$MANPATH
-[[ -s "$HOME/.rvm/scripts/rvm" ]] && . "$HOME/.rvm/scripts/rvm"
 
-alias ls='ls -G'
-
-#PS1='\[\033[36m\][\u@\h:\[\033[33m\]\w\[\033[36m\]]\[\033[0m\] \$'
-
-PS1='\[\033[36m\][\u@\h:\[\033[33m\]\w\[\033[36m\]]\[\033[0m\] \nヽ| ・∀・|ノ $ '
-
+[[ -s "$HOME/.rvm/scripts/rvm" ]] && source "$HOME/.rvm/scripts/rvm" # Load RVM into a shell session *as a function*
