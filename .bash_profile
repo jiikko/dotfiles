@@ -7,7 +7,6 @@ export PATH=/opt/local/bin:/opt/local/sbin:$PATH
 export PATH=/opt/local/lib/mysql5/bin:$PATH
 
 
-
 # gitx
 export PATH=/Applications/GitX.app/Contents/MacOS:$PATH
 alias gitx='GitX .'
@@ -19,3 +18,5 @@ alias gitk='gitk 2>/dev/null'
 export MANPATH=/opt/local/man:$MANPATH
 
 [[ -s "$HOME/.rvm/scripts/rvm" ]] && source "$HOME/.rvm/scripts/rvm" # Load RVM into a shell session *as a function*
+
+source ~/.bashrc

@@ -1,7 +1,4 @@
-
-
-
-# 2) alias 
+# 0) alias 
 alias al='alias'
 
 alias va='vagrant'
@@ -31,8 +28,11 @@ alias sb='source ~/.bash_profile'
 alias r='rvm'
 alias rc='rvm current'
 
+alias sshge='ssh kjdev@s11.rs2.gehirn.jp'
+
 alias v='vim'
-alias vb='vim ~/.bash_profile'
+alias vb='vim ~/.bashrc'
+alias vbpro='vim ~/.bash_profile'
 alias vv='vim ~/.vimrc'
 alias ign='vim .gitignore'
 
