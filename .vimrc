@@ -4,7 +4,7 @@ filetype off
 set rtp+=~/.vim/vundle.git/
 call vundle#rc()
 
-
+" git clone http://github.com/gmarik/vundle.git ~/.vim/vundle.git
 " vim-scripts リポジトリ (1)
 Bundle 'tpope/vim-rails'
 Bundle "unite.vim"
