@@ -1,10 +1,17 @@
-# 0) alias 
+# 0) alias
 alias al='alias'
 
 alias va='vagrant'
 alias bu='bundle install'
 
-alias ls='ls -G'
+if [ `uname` = "Darwin" ]; then
+    #mac用のコード
+    alias ls='ls -G'
+elif [ `uname` = "Linux" ]; then
+    #Linux用のコード
+    alias ls='ls -G'
+fi
+
 alias ll='ls -l'
 alias ks='ls'
 
