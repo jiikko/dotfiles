@@ -57,10 +57,14 @@ if [ -f /opt/local/share/doc/git-core/contrib/completion/git-prompt.sh ]; then
   . /opt/local/share/doc/git-core/contrib/completion/git-prompt.sh
 fi
 
-# 2) ターミナルの文字をかえる
-#for terminal
-#if [ "$TERM" == "screen" ]; then
-#  export PS1='\[\033[36m\][\u@\h:r \033[33m\]\w\[\033[36m\]]\[\033[0m\]\[\033[31m\] :$WINDOW: \e[m \nヽ| ・∀・|ノ$ '
-#fi
 
-PS1='\[\033[36m\][\u@\h:\[\033[33m\]\w\[\033[36m\]]\[\033[0m\]\[\033[31m\]$(__git_ps1) \e[m \nヽ| ・∀・|ノ$ '
+# gitのブランチをプロンプトに表示する。※(1)を参照。
+
+# Macならportでソフトをインスコした上で表示できるけど、Linuxでは違うアプローチで表示しないといけないので、分岐している。
+if [ -n ${__git_ps1} ]; then
+  # __git_ps1が空だったら
+  PS1='\[\033[36m\][\u@\h:\[\033[33m\]\w\[\033[36m\]]\[\033[0m\]\[\033[31m\]$(__git_ps1) \e[m \nヽ| ・∀・|ノ$ '
+else
+  # Mac
+  PS1='\[\033[36m\][\u@\h:\[\033[33m\]\w\[\033[36m\]]\[\033[0m\]\[\033[31m\] (no branch) \e[m \nヽ| ・A・|ノ$ '
+fi
