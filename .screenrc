@@ -1,2 +1,24 @@
 # http://www.ayu.ics.keio.ac.jp/~mukai/tips/screen.html
+## Prefixキーの設定
 escape "^Tt"
+
+# http://yskwkzhr.blogspot.jp/2012/03/why-gnu-screen-is-end.html
+# 有効行を1万行にしてる
+scrollback 10000
+
+# ステータスラインの見た目を変更
+utf8 on
+caption always '%?%F%{= gW}%:%{= Kk}%?%2n%f%07=%t%='
+hardstatus alwayslastline '%m/%d %02c:%s %{= .g}%H%{-} %L=%-w%45L>%{= g.}%n %t%{-}%+w %-17<%=%{= .y}(%l)'
+
+# エンコーディング
+defencodig utf-8
+
+# スタートアップメニューの削除
+startup_message off
+
+# オートデタッチ
+autodetach on
+
+# Vimを開いた時に別窓で表示するのでバッファが汚れない
+altscreen on
