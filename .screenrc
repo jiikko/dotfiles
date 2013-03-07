@@ -7,6 +7,7 @@ escape "^Tt"
 scrollback 10000
 
 # ステータスラインの見た目を変更
+hardstatus on
 utf8 on
 caption always '%?%F%{= gW}%:%{= Kk}%?%2n%f%07=%t%='
 hardstatus alwayslastline '%m/%d %02c:%s %{= .g}%H%{-} %L=%-w%45L>%{= g.}%n %t%{-}%+w %-17<%=%{= .y}(%l)'
@@ -22,3 +23,6 @@ autodetach on
 
 # Vimを開いた時に別窓で表示するのでバッファが汚れない
 altscreen on
+
+# ビジュアルベル（画面全体が点滅する）を切る
+vbell off
