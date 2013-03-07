@@ -30,7 +30,7 @@ alias r='rails'
 
 alias rr='rake routes'
 
-alias sb='source ~/.bash_profile'
+alias sb='source ~/.bashrc'
 
 alias r='rvm'
 alias rc='rvm current'
