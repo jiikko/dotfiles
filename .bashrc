@@ -31,6 +31,8 @@ alias r='rails'
 alias rr='rake routes'
 
 alias sb='source ~/.bashrc'
+alias sc='screen'
+alias scl='screen -ls'
 
 alias r='rvm'
 alias rc='rvm current'
