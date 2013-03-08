@@ -1,16 +1,15 @@
 # http://www.ayu.ics.keio.ac.jp/~mukai/tips/screen.html
 ## Prefixキーの設定
-escape "^Tt"
+escape "^Ww"
 
 # http://yskwkzhr.blogspot.jp/2012/03/why-gnu-screen-is-end.html
 # 有効行を1万行にしてる
-scrollback 10000
+scrollback 1000#0
 
 # ステータスラインの見た目を変更
-hardstatus on
 utf8 on
 caption always '%?%F%{= gW}%:%{= Kk}%?%2n%f%07=%t%='
-hardstatus alwayslastline '%m/%d %02c:%s %{= .g}%H%{-} %L=%-w%45L>%{= g.}%n %t%{-}%+w %-17<%=%{= .y}(%l)'
+hardstatus alwayslastline "[%02c] %`%-w%{=b bw}%n %t%{-}%+w"
 
 # 次のメッセージを表示するまでの遅延時間(秒単位)
 msgminwait 1
@@ -27,11 +26,13 @@ autodetach on
 # Vimを開いた時に別窓で表示するのでバッファが汚れない
 altscreen on
 
-# ビジュアルベル（画面全体が点滅する）を切る
-vbell off
 
 # Vim的なキーバインドで画面を移動する。
 bind j eval 'focus down'
 bind k eval 'focus up'
 bind h eval 'focus left'
 bind l eval 'focus right'
+
+# 色つけ
+defbce on
+term xterm-256color
