@@ -9,7 +9,7 @@ if [ `uname` = "Darwin" ]; then
     alias ls='ls -G'
 elif [ `uname` = "Linux" ]; then
     #Linux用のコード
-    alias ls='ls -G'
+    alias ls='ls --color'
 fi
 
 alias ll='ls -l'
