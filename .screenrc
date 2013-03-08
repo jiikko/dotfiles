@@ -9,7 +9,6 @@ scrollback 1000#0
 # ステータスラインの見た目を変更
 utf8 on
 caption always '%?%F%{= gW}%:%{= Kk}%?%2n%f%07=%t%='
-#hardstatus alwayslastline "[%02c] %`%-w%{=b bw}%n %t%{-}%+w"
 hardstatus alwayslastline "%{= rw} %H %{= wk}%-Lw%{= bw}%n%f* %t%{= wk}%+Lw %{= wk}%=%{= gk} %y/%m/%d %c "
 
 # 次のメッセージを表示するまでの遅延時間(秒単位)
@@ -33,3 +32,11 @@ bind k eval 'focus up'
 bind h eval 'focus left'
 bind l eval 'focus right'
 
+bind v eval "split -v" focus screen
+bind s eval split focus screen
+
+# This screen is delete.
+bind x eval 'kill'
+
+# Doing screen without delete.
+bind q eval 'only'
