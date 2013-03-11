@@ -60,13 +60,11 @@ if [ -f /opt/local/share/doc/git-core/contrib/completion/git-prompt.sh ]; then
 fi
 
 
-# gitのブランチをプロンプトに表示する。※(1)を参照。
-
-# Macならportでソフトをインスコした上で表示できるけど、Linuxでは違うアプローチで表示しないといけないので、分岐している。
-if [ -n ${__git_ps1} ]; then
-  # __git_ps1が空だったら
-  PS1='\[\033[36m\][\u@\h:\[\033[33m\]\w\[\033[36m\]]\[\033[0m\]\[\033[31m\]$(__git_ps1) \e[m \n $ '
-else
-  # Mac
+# if [ -n ${__git_ps1} ]; then
+  # __git_ps1 is blank
+if [ `uname` = "Linux" ]; then
   PS1='\[\033[36m\][\u@\h:\[\033[33m\]\w\[\033[36m\]]\[\033[0m\]\[\033[31m\] (no branch) \e[m \n $ '
+else
+  # for Mac
+  PS1='\[\033[36m\][\u@\h:\[\033[33m\]\w\[\033[36m\]]\[\033[0m\]\[\033[31m\]$(__git_ps1) \e[m \n $ '
 fi
