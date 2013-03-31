@@ -1,3 +1,6 @@
+# for rubyコンパイル
+#export CFLAGS='-Wno-error=shorten-64-to-32'
+
 ## <エスケープシーケンス>
 ## prompt_bang が有効な場合、!=現在の履歴イベント番号, !!='!' (リテラル)
 # ${WINDOW:+"[$WINDOW]"} = screen 実行時にスクリーン番号を表示 (prompt_subst が必要)
@@ -46,15 +49,15 @@ zcompile .zshrc
 ##================== キーバインドの設定 ==================##
 ##========================================================##
 #bindkey -e      # emacs キーバインド
-#bindkey -v      # vi キーバインド
+bindkey -v      # vi キーバインド
 
 ##========================================================##
 ##================= リストの色つけの設定 =================##
 ##========================================================##
 # ls, #dir, vdir の設定
 alias s='screen -U'
-alias ll='ls -l'
-alias ls='ls --color'
+#alias ll='ls -l'
+alias ls='ls --G'
 alias grep='grep --color=auto'
 export MAILCHECK=0
 export LS_COLORS='di=34:ln=35:so=32:pi=33:ex=31:bd=46;34:cd=43;34:su=41;30:sg=46;30:tw=42;30:ow=43;30'
@@ -138,6 +141,10 @@ PROMPT="%{$reset_color%}[%{$fg[red]%}%B%~%b%{$reset_color%}]$PROMPT"
 # 名前@マシン名 プロンプト
 PROMPT="%{$reset_color%}%{$fg[green]%}$USER%{$reset_color%}@%{$fg[cyan]%}%m%{$reset_color%}$PROMPT"
 RPROMPT="%{$fg[green]%}[%*]%{$reset_color%}"
+
+
+
+
 ##========================================================##
 ##================ ディレクトリ移動の設定 ================##
 ##========================================================##
@@ -192,7 +199,7 @@ setopt rm_star_wait          # rm * を実行する前に確認
 #setopt no_clobber            # リダイレクトで上書きを禁止
 unsetopt no_clobber
 
-setopt no_unset              # 未定義変数の使用禁止
+# setopt no_unset              # 未定義変数の使用禁止
 
 #setopt interactive_comments  # コマンド入力中のコメントを認める
 #setopt chase_links           # シンボリックリンクはリンク先のパスに変換してから実行
@@ -242,6 +249,51 @@ iceweasel "http://www.google.co.jp/search?hl=ja&q=$str"
 function wikipedia() { iceweasel "http://ja.wikipedia.crg/wiki/$1" }
 
 # Global alias
+alias al='alias'
+
+alias va='vagrant'
+alias bu='bundle install'
+
+alias ls='ls -G'
+if [ `uname` = "Linux" ]; then
+  alias ls='ls --color'
+fi
+
+alias ll='ls -l'
+alias ks='ls'
+
+alias gst='git status'
+alias gd='git diff'
+alias gl='git log'
+alias gb='git branch'
+alias gch='git checkout'
+alias g='git'
+alias gv='git --version'
+alias gag='git add .gitignore'
+alias gcig='git commit -m "modied ignore"'
+
+alias rdm='rake db:migrate'
+alias rdr='rake db:reset'
+alias r='rails'
+
+alias rr='rake routes'
+
+alias sb='source ~/.bashrc'
+alias sc='screen'
+alias scl='screen -ls'
+
+alias r='rvm'
+alias rc='rvm current'
+
+alias sshge='ssh kjdev@s11.rs2.gehirn.jp'
+
+alias v='vim'
+alias vb='vim ~/.bashrc'
+alias vbpro='vim ~/.bash_profile'
+alias vv='vim ~/.vimrc'
+alias ign='vim .gitignore'
+
+
 alias -g L='| less'
 alias -g H='| head'
 alias -g T='| tail'
@@ -257,16 +309,35 @@ alias e='emacs'
 alias h='history'
 alias ha='history-all'
 alias screen='TERM=xterm screen'
+
+
 # HTMLファイルに張り付け用の、タブ、空白、< > の変換コマンド
 alias htmlconv='sed -e "s/</\&lt;/g;s/>/\&gt;/g;s/\t/\&nbsp;\&nbsp;\&nbsp;\&nbsp;/g;s/\s/\&nbsp;/g" '
 
-# Acroread の Completion が遅い問題を回避
-_acroread_version='7.0.9'
-alias close='screen -D'
-cd ~
-export LANG=en_US.UTF-8
-preexec () {
-        echo -ne "\ek${1%% *}\e\\"
-}
 
-PATH=$PATH:$HOME/.rvm/bin # Add RVM to PATH for scripting
+
+
+ PATH=$PATH:$HOME/.rvm/bin # Add RVM to PATH for scripting
+
+
+#Mac用
+export PATH=/opt/local/bin:/opt/local/sbin:$PATH
+# Finished adapting your PATH environment variable for use with MacPorts.
+
+# mysql5rvm
+export PATH=/opt/local/lib/mysql5/bin:$PATH
+
+
+# gitx
+export PATH=/Applications/GitX.app/Contents/MacOS:$PATH
+alias gitx='GitX .'
+
+# gitk
+# http://stackoverflow.com/questions/11785126/cfurlcopyresourcepropertyforkey-failed-because-it-was-passed-this-url-which-has
+alias gitk='gitk 2>/dev/null'
+
+export MANPATH=/opt/local/man:$MANPATH
+
+#[[ -s "$HOME/.rvm/scripts/rvm" ]] && . "$HOME/.rvm/scripts/rvm"
+
+export PATH=/opt/local/lib/postgresql92/bin:$PATH
