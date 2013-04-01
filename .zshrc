@@ -260,6 +260,8 @@ if [ `uname` = "Linux" ]; then
 fi
 
 alias ll='ls -l'
+alias less='less -R'
+
 alias ks='ls'
 
 alias gst='git status'
@@ -316,8 +318,10 @@ alias htmlconv='sed -e "s/</\&lt;/g;s/>/\&gt;/g;s/\t/\&nbsp;\&nbsp;\&nbsp;\&nbsp
 
 
 
+bindkey "^R" history-incremental-search-backward
+bindkey "^S" history-incremental-search-forward
 
- PATH=$PATH:$HOME/.rvm/bin # Add RVM to PATH for scripting
+# PATH=$PATH:$HOME/.rvm/bin # Add RVM to PATH for scripting
 
 
 #Mac用
@@ -341,3 +345,13 @@ export MANPATH=/opt/local/man:$MANPATH
 #[[ -s "$HOME/.rvm/scripts/rvm" ]] && . "$HOME/.rvm/scripts/rvm"
 
 export PATH=/opt/local/lib/postgresql92/bin:$PATH
+
+
+if [ -f /opt/local/etc/profile.d/bash_completion.sh ]; then
+  . /opt/local/etc/profile.d/bash_completion.sh
+fi
+
+# http://architects.dzone.com/articles/bash-gitps1-command-not-found
+if [ -f /opt/local/share/doc/git-core/contrib/completion/git-prompt.sh ]; then
+  . /opt/local/share/doc/git-core/contrib/completion/git-prompt.sh
+fi
