@@ -355,3 +355,8 @@ fi
 if [ -f /opt/local/share/doc/git-core/contrib/completion/git-prompt.sh ]; then
   . /opt/local/share/doc/git-core/contrib/completion/git-prompt.sh
 fi
+
+
+[[ -s "$HOME/.rvm/scripts/rvm" ]] && . "$HOME/.rvm/scripts/rvm"
+
+alias rvms='source .rvmrc'
