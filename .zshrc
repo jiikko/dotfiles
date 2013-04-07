@@ -274,8 +274,12 @@ alias gv='git --version'
 alias gag='git add .gitignore'
 alias gcig='git commit -m "modied ignore"'
 
+alias rdd='rake db:drop'
+alias rdc='rake db:create'
 alias rdm='rake db:migrate'
+alias rds='rake db:setup'
 alias rdr='rake db:reset'
+
 alias r='rails'
 
 alias rr='rake routes'
