@@ -273,6 +273,9 @@ alias g='git'
 alias gv='git --version'
 alias gag='git add .gitignore'
 alias gcig='git commit -m "modied ignore"'
+alias gp='git push'
+alias gad='git add .'
+
 
 alias rdd='rake db:drop'
 alias rdc='rake db:create'
@@ -285,6 +288,8 @@ alias r='rails'
 alias rr='rake routes'
 
 alias sb='source ~/.bashrc'
+alias sz='source ~/.zshrc'
+
 alias sc='screen'
 alias scl='screen -ls'
 
@@ -295,6 +300,7 @@ alias sshge='ssh kjdev@s11.rs2.gehirn.jp'
 
 alias v='vim'
 alias vb='vim ~/.bashrc'
+alias vz='vim ~/.zshrc'
 alias vbpro='vim ~/.bash_profile'
 alias vv='vim ~/.vimrc'
 alias ign='vim .gitignore'
