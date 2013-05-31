@@ -17,6 +17,11 @@ alias gitk='gitk 2>/dev/null'
 
 export MANPATH=/opt/local/man:$MANPATH
 
-[[ -s "$HOME/.rvm/scripts/rvm" ]] && source "$HOME/.rvm/scripts/rvm" # Load RVM into a shell session *as a function*
+#[[ -s "$HOME/.rvm/scripts/rvm" ]] && source "$HOME/.rvm/scripts/rvm" # Load RVM into a shell session *as a function*
 
-source ~/.bashrc
+
+#export PATH=/opt/local/lib/postgresql92/bin:$PATH
+
+#source ~/.bashrc
+
+

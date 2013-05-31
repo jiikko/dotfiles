@@ -274,7 +274,8 @@ alias gv='git --version'
 alias gag='git add .gitignore'
 alias gcig='git commit -m "modied ignore"'
 alias gp='git push'
-alias gad='git add .'
+alias gad='git add \.'
+alias gc='git commit \-m'
 
 
 alias rdd='rake db:drop'
@@ -330,6 +331,10 @@ alias htmlconv='sed -e "s/</\&lt;/g;s/>/\&gt;/g;s/\t/\&nbsp;\&nbsp;\&nbsp;\&nbsp
 
 bindkey "^R" history-incremental-search-backward
 bindkey "^S" history-incremental-search-forward
+
+bindkey "^E" end-of-line
+bindkey "^A" beginning-of-line
+
 
 # PATH=$PATH:$HOME/.rvm/bin # Add RVM to PATH for scripting
 

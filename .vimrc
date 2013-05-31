@@ -11,6 +11,7 @@ Bundle "unite.vim"
 Bundle 'scrooloose/nerdtree'
 Bundle 'taku-o/vim-toggle'
 Bundle 'Lokaltog/vim-easymotion'
+Bundle 'motemen/git-vim'
 
 Bundle 'Shougo/neocomplcache'
 
@@ -21,6 +22,8 @@ Bundle 'skwp/vim-rspec'
 
 Bundle 'nathanaelkane/vim-indent-guides'
 Bundle 'vim-jp/vimdoc-ja'
+
+Bundle 'mattn/zencoding-vim'
 
 " vimdoc-ja
 helptags ~/.vim/bundle/vimdoc-ja/doc

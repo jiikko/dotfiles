@@ -1,14 +1,17 @@
-# 0) alias
+export CFLAGS='-Wno-error=shorten-64-to-32'
+
+
+
+ #0) alias
+
 alias al='alias'
 
 alias va='vagrant'
 alias bu='bundle install'
 
 if [ `uname` = "Darwin" ]; then
-    #mac用のコード
     alias ls='ls -G'
 elif [ `uname` = "Linux" ]; then
-    #Linux用のコード
     alias ls='ls --color'
 fi
 
@@ -26,6 +29,7 @@ alias gag='git add .gitignore'
 alias gcig='git commit -m "modied ignore"'
 
 alias rdm='rake db:migrate'
+alias rdr='rake db:reset'
 alias r='rails'
 
 alias rr='rake routes'
