@@ -1,8 +1,7 @@
 " Viとの互換断ち
 set nocompatible
 filetype off
-
-
+ 
 "----------------------------------------------------
 " NeoBundle
 "----------------------------------------------------
@@ -87,6 +86,11 @@ let g:indent_guides_guide_size = 1
 "" for easymotion
 let g:EasyMotion_leader_key = '<Space><Space>'
 let g:EasyMotion_keys = 'fjdkslaureiwoqpvncm'
+
+" vim-rspec
+map <Leader>t :call RunCurrentSpecFile()<CR>
+map <Leader>s :call RunNearestSpec()<CR>
+map <Leader>l :call RunLastSpec()<CR>
 
 " for neocomplcache
 " http://teppeis.hatenablog.com/entry/20100926/1285502391
