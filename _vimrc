@@ -2,7 +2,7 @@
 set nocompatible
 syntax on
 filetype off
- 
+
 "----------------------------------------------------
 " NeoBundle
 "----------------------------------------------------
@@ -36,6 +36,7 @@ if isdirectory(s:neobundledir)
   NeoBundle 'vim-jp/vimdoc-ja'
   NeoBundle 'mattn/zencoding-vim'
   NeoBundle 'thinca/vim-splash'
+	NeoBundle 'altercation/vim-colors-solarized'
 
 else
   command! NeoBundleInit call s:neobundle_init()
@@ -56,7 +57,7 @@ else
     NeoBundleInstall
   endfunction
 endif
- 
+
 
 "----------------------------------------------------
 " プラギンの設定
@@ -67,6 +68,7 @@ endif
 " for vim-indent-guides conf
 " http://chiiiiiiiii.hatenablog.com/entry/2012/12/02/102815
 colorscheme default
+
 set tabstop=2
 set shiftwidth=2
 set expandtab
@@ -376,3 +378,5 @@ set wildchar=<tab>
 
 " バッファを切替えてもundoの効力を失わない
 set hidden
+
+
