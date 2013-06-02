@@ -1,41 +1,78 @@
+" Viとの互換断ち
 set nocompatible
 filetype off
+
+"----------------------------------------------------
+" NeoBUndle
+"----------------------------------------------------
+let s:neobundledir   = expand('~/local/neobundle')
+
+if isdirectory(s:neobundledir)
+  if has('vim_starting')
+    execute 'set runtimepath+=' . s:neobundledir . '/neobundle.vim'
+  endif
+  call neobundle#rc(s:neobundledir)
+
+  NeoBundle 'Shougo/neobundle.vim'
+  NeoBundle 'Shougo/unite.vim'
+  NeoBundle 'Shougo/vimproc', { 'build': { 'unix': 'make -f make_unix.mak', }, }
+  NeoBundle 'Shougo/vimproc', {
+        \ 'build' : {
+        \     'windows' : 'echo "Sorry, cannot update vimproc binary file in Windows."',
+        \     'cygwin' : 'make -f make_cygwin.mak',
+        \     'mac' : 'make -f make_mac.mak',
+        \     'unix' : 'make -f make_unix.mak',
+        \    },
+        \ }
+
+  NeoBundle 'tpope/vim-rails'
+  NeoBundle "unite.vim"
+  NeoBundle 'scrooloose/nerdtree'
+  NeoBundle 'taku-o/vim-toggle'
+  NeoBundle 'Lokaltog/vim-easymotion'
+  NeoBundle 'motemen/git-vim'
+  NeoBundle 'Shougo/neocomplcache'
+  NeoBundle 'surround.vim'
+  NeoBundle 'skwp/vim-rspec'
+  NeoBundle 'nathanaelkane/vim-indent-guides'
+  NeoBundle 'vim-jp/vimdoc-ja'
+  NeoBundle 'mattn/zencoding-vim'
+
+else
+  command! NeoBundleInit call s:neobundle_init()
+  function! s:neobundle_init()
+    call mkdir(s:neobundledir, 'p')
+    execute 'cd' s:neobundledir
+    call system('git clone git://github.com/Shougo/neobundle.vim')
+    execute 'set runtimepath+=' . s:neobundledir . '/neobundle.vim'
+    call neobundle#rc(s:neobundledir)
+    NeoBundle 'Shougo/unite.vim'
+    NeoBundle 'Shougo/vimproc', {
+          \ 'build' : {
+          \     'windows' : 'echo "Sorry, cannot update vimproc binary file in Windows."',
+          \     'cygwin' : 'make -f make_cygwin.mak',
+          \     'mac' : 'make -f make_mac.mak',
+          \     'unix' : 'make -f make_unix.mak',
+          \    },
+          \ }
+
+    NeoBundleInstall
+  endfunction
+endif
  
-set rtp+=~/.vim/vundle.git/
-call vundle#rc()
 
-" git clone http://github.com/gmarik/vundle.git ~/.vim/vundle.git
-" vim-scripts リポジトリ (1)
-Bundle 'tpope/vim-rails'
-Bundle "unite.vim"
-Bundle 'scrooloose/nerdtree'
-Bundle 'taku-o/vim-toggle'
-Bundle 'Lokaltog/vim-easymotion'
-Bundle 'motemen/git-vim'
-
-Bundle 'Shougo/neocomplcache'
-
-"erbの<%= %>を簡単入力してくれる
-Bundle 'surround.vim'
-
-Bundle 'skwp/vim-rspec'
-
-Bundle 'nathanaelkane/vim-indent-guides'
-Bundle 'vim-jp/vimdoc-ja'
-
-Bundle 'mattn/zencoding-vim'
-
-" vimdoc-ja
+"----------------------------------------------------
+" プラギンの設定
+"----------------------------------------------------
+" for vimdoc-ja
 helptags ~/.vim/bundle/vimdoc-ja/doc
 
-" vim-indent-guides conf
+" for vim-indent-guides conf
 " http://chiiiiiiiii.hatenablog.com/entry/2012/12/02/102815
 colorscheme default
-
 set tabstop=2
 set shiftwidth=2
 set expandtab
-
 "vim立ち上げたときに、自動的にvim-indent-guidesをオンにする
 let g:indent_guides_enable_on_vim_startup=1
 " ガイドをスタートするインデントの量
@@ -51,119 +88,152 @@ let g:indent_guides_color_change_percent = 30
 " ガイドの幅
 let g:indent_guides_guide_size = 1
 
-
-
-
-" easymotion
+"" for easymotion
 let g:EasyMotion_leader_key = '<Space><Space>'
 let g:EasyMotion_keys = 'fjdkslaureiwoqpvncm'
 
-" When started as "evim", evim.vim will already have done these settings.
-if v:progname =~? "evim"
-  finish
-endif
+" for neocomplcache
+" http://teppeis.hatenablog.com/entry/20100926/1285502391
+let g:neocomplcache_enable_at_startup = 1
+let g:neocomplcache_max_list = 30
+let g:neocomplcache_auto_completion_start_length = 2
+let g:neocomplcache_enable_smart_case = 1
+"" like AutoComplPop
+let g:neocomplcache_enable_auto_select = 1
+"" search with camel case like Eclipse
+let g:neocomplcache_enable_camel_case_completion = 1
+let g:neocomplcache_enable_underbar_completion = 1
+"imap <C-k> <Plug>(neocomplcache_snippets_expand)
+"smap <C-k> <Plug>(neocomplcache_snippets_expand)
+inoremap <expr><C-g> neocomplcache#undo_completion()
+inoremap <expr><C-l> neocomplcache#complete_common_string()
+"" SuperTab like snippets behavior.
+"imap <expr><TAB> neocomplcache#sources#snippets_complete#expandable() ?
+"\<Plug>(neocomplcache_snippets_expand)" : pumvisible() ? "\<C-n>" :
+"\<TAB>"
+"" <CR>: close popup and save indent.
+"inoremap <expr><CR> neocomplcache#smart_close_popup() . (&indentexpr != ''
+? "\<C-f>\<CR>X\<BS>":"\<CR>")
+inoremap <expr><CR> pumvisible() ? neocomplcache#close_popup() : "\<CR>"
+"" <TAB>: completion.
+inoremap <expr><TAB> pumvisible() ? "\<C-n>" : "\<TAB>"
+"" <C-h>, <BS>: close popup and delete backword char.
+inoremap <expr><C-h> neocomplcache#smart_close_popup() . "\<C-h>"
+inoremap <expr><BS> neocomplcache#smart_close_popup() . "\<C-h>"
+inoremap <expr><C-y> neocomplcache#close_popup()
+inoremap <expr><C-e> neocomplcache#cancel_popup()
+
+
+"----------------------------------------------------
+" 基本設定(base)
+"----------------------------------------------------
+" バックスペースキーで削除できるものを指定
+" indent  : 行頭の空白
+" eol     : 改行
+" start   : 挿入モード開始位置より手前の文
 set backspace=indent,eol,start
 set number
-" Use Vim settings, rather than Vi settings (much better!).
-" This must be first, because it changes other options as a side effect.
-set nocompatible
 
-" allow backspacing over everything in insert mode
-set backspace=indent,eol,start
-
-if has("vms")
-  set nobackup		" do not keep a backup file, use versions instead
-else
-  set backup		" keep a backup file
-endif
-set history=50		" keep 50 lines of command line history
+set history=100		" keep 50 lines of command line history
 set ruler		" show the cursor position all the time
-set showcmd		" display incomplete commands
-set incsearch		" do incremental searching
+set showcmd		"コマンドを表示する
+set incsearch		"検索ワードの最初の文字を入力した時点で検索が開始されます。
+set laststatus=2 " ステータスラインを常に表示
 
-" For Win32 GUI: remove 't' flag from 'guioptions': no tearoff menu entries
-" let &guioptions = substitute(&guioptions, "t", "", "g")
+" 検索結果文字列のハイライトを有効にする
+set hlsearch
 
-" Don't use Ex mode, use Q for formatting
-map Q gq
+" ウィンドウの幅より長い行は折り返して、次の行に続けて表示する
+set wrap
 
-" CTRL-U in insert mode deletes a lot.  Use CTRL-G u to first break undo,
-" so that you can undo CTRL-U after inserting a line break.
-inoremap <C-U> <C-G>u<C-U>
+" tab
+set expandtab "タブの代わりに空白文字挿入
+set ts=2 sw=2 sts=0 "タブは半角4文字分のスペース
 
-" In many terminal emulators the mouse works just fine, thus enable it.
-if has('mouse')
-  set mouse=a
-endif
 
-" Switch syntax highlighting on, when the terminal has colors
-" Also switch on highlighting the last used search pattern.
-if &t_Co > 2 || has("gui_running")
-  syntax on
-  set hlsearch
-endif
+"----------------------------------------------------
+" 表示
+"----------------------------------------------------
+" 全角スペースの表示
+highlight ZenkakuSpace cterm=underline ctermfg=lightblue guibg=darkgray
+match ZenkakuSpace /　/
 
-" Only do this part when compiled with support for autocommands.
-if has("autocmd")
+" ステータスラインに表示する情報の指定
+set statusline=%n\:%y%F\ \|%{(&fenc!=''?&fenc:&enc).'\|'.&ff.'\|'}%m%r%=
+" ステータスラインの色
+highlight StatusLine   term=NONE cterm=NONE ctermfg=black ctermbg=white
 
-  " Enable file type detection.
-  " Use the default filetype settings, so that mail gets 'tw' set to 72,
-  " 'cindent' is on in C files, etc.
-  " Also load indent files, to automatically do language-dependent indenting.
-  filetype plugin indent on
-
-  " Put these in an autocmd group, so that we can delete them easily.
-  augroup vimrcEx
-  au!
-
-  " For all text files set 'textwidth' to 78 characters.
-  autocmd FileType text setlocal textwidth=78
-
-  " When editing a file, always jump to the last known cursor position.
-  " Don't do it when the position is invalid or when inside an event handler
-  " (happens when dropping a file on gvim).
-  " Also don't do it when the mark is in the first line, that is the default
-  " position when opening a file.
-  autocmd BufReadPost *
-    \ if line("'\"") > 1 && line("'\"") <= line("$") |
-    \   exe "normal! g`\"" |
-    \ endif
-
-  augroup END
-
-else
-
-  set autoindent		" always set autoindenting on
-
-endif " has("autocmd")
-
-" Convenient command to see the difference between the current buffer and the
-" file it was loaded from, thus the changes you made.
-" Only define it when not defined already.
+" 現バッファの差分表示(変更箇所の表示)
 if !exists(":DiffOrig")
-  command DiffOrig vert new | set bt=nofile | r # | 0d_ | diffthis
-		  \ | wincmd p | diffthis
+  command! DiffOrig vert new | set bt=nofile | r # | 0d_ | diffthis | wincmd p | diffthis
 endif
 
+" カレントウィンドウにのみ罫線を引く
+augroup cch
+  autocmd! cch
+  autocmd WinLeave * set nocursorline
+  autocmd WinEnter,BufRead * set cursorline
+augroup END
 
+
+"----------------------------------------------------
+" バックアップ
+"----------------------------------------------------
+" vmsオプションをつけたらバックアップファイルを作らない
+if has("vms")
+  set nobackup
+else
+  set backup
+endif
+
+" バックアップファイルを作るディレクトリ
+set backupdir=~/.vim_backup
+" スワップファイルを作るディレクトリ
+set directory=~/.vim_swap
+
+
+"----------------------------------------------------
+" オートコマンド
+"----------------------------------------------------
 if has("autocmd")
-    autocmd BufReadPost *
-    \ if line("'\"") > 0 && line ("'\"") <= line("$") |
-    \   exe "normal! g'\"" |
-    \ endif
+  " ファイルタイプ別インデント、プラグインを有効にする
+  filetype plugin indent on
+  " カーソル位置を記憶する
+  autocmd BufReadPost *
+  \ if line("'\"") > 0 && line("'\"") <= line("$") |
+  \   exe "normal g`\"" |
+  \ endif
 endif
 
-"CTRL-nで信託っす eで実行
+"CTRL-nでシンタックスチェック eで実行
 autocmd FileType ruby :map <C-n> <ESC>:!ruby -cW %<CR>
 autocmd FileType ruby :map <C-e> <ESC>:!ruby %<CR>
 
 
-" tab関連
-set expandtab "タブの代わりに空白文字挿入
-set ts=2 sw=2 sts=0 "タブは半角4文字分のスペース
-"set nobackup
-
+"----------------------------------------------------
+" 国際化関係
+"----------------------------------------------------
+" 文字コードの設定
+fileencodingsの設定ではencodingの値を一番最後に記述する
 set encoding=utf-8
-let g:neocomplcache_enable_at_startup = 1
+set termencoding=utf-8
+set fileencoding=utf-8
+set fileencodings=ucs-bom,euc-jp,cp932,iso-2022-jp
+set fileencodings+=,ucs-2le,ucs-2,utf-8
+
+
+"----------------------------------------------------
+" その他
+"----------------------------------------------------
+" ビープ音を鳴らさない
 set vb t_vb=
 
+" 入力保管系
+" コンマの後に自動的にスペースを挿入
+inoremap , ,<Space>
+
+" コマンド補完を開始するキー
+set wildchar=<tab>
+
+
+filetype plugin indent on
