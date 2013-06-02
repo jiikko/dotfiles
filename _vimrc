@@ -114,7 +114,7 @@ inoremap <expr><C-e> neocomplcache#cancel_popup()
 
 
 "----------------------------------------------------
-" 基本設定(base)
+" 基本設定(base basic)
 "----------------------------------------------------
 " バックスペースキーで削除できるものを指定
 " indent  : 行頭の空白
@@ -142,6 +142,71 @@ set wrap
 set expandtab "タブの代わりに空白文字挿入
 set ts=2 sw=2 sts=0 "タブは半角4文字分のスペース
 
+" スクロール時の余白確保
+set scrolloff=5
+" テキスト整形オプション，マルチバイト系を追加
+set formatoptions=lmoq
+
+ " 現在のモードを表示
+set showmode
+
+" モードラインは無効
+set modelines=0
+" OSのクリップボードを使用する
+set clipboard+=unnamed
+
+" ターミナルでマウスを使用できるようにする
+set mouse=a
+set guioptions+=a
+set ttymouse=xterm2
+
+"ヤンクした文字は、システムのクリップボードに入れる"
+set clipboard=unnamed
+" 挿入モードでCtrl+kを押すとクリップボードの内容を貼り付けられるようにする "
+" imap "*pa
+
+
+filetype plugin indent on
+
+
+"----------------------------------------------------
+" ステータスライン
+"----------------------------------------------------
+"入力モード時、ステータスラインのカラーを変更
+augroup InsertHook
+  autocmd!
+  autocmd InsertEnter * highlight StatusLine guifg=#ccdc90 guibg=#2E4340
+  autocmd InsertLeave * highlight StatusLine guifg=#2E4340 guibg=#ccdc90
+augroup END
+
+function! GetB()
+  let c = matchstr(getline('.'),  '.',  col('.') - 1)
+  let c = iconv(c,  &enc,  &fenc)
+  return String2Hex(c)
+endfunction
+" help eval-examples
+" The function Nr2Hex() returns the Hex string of a number.
+func! Nr2Hex(nr)
+  let n = a:nr
+  let r = ""
+  while n
+    let r = '0123456789ABCDEF'[n % 16] . r
+    let n = n / 16
+  endwhile
+  return r
+endfunc
+" The function String2Hex() converts each character in a string to a two
+" character Hex string.
+func! String2Hex(str)
+  let out = ''
+  let ix = 0
+  while ix < strlen(a:str)
+    let out = out . Nr2Hex(char2nr(a:str[ix]))
+    let ix = ix + 1
+  endwhile
+  return out
+endfunc
+
 
 "----------------------------------------------------
 " 表示
@@ -167,6 +232,92 @@ augroup cch
   autocmd WinEnter,BufRead * set cursorline
 augroup END
 
+" コメント文の色を変更
+highlight Comment ctermfg=DarkCyan
+" " コマンドライン補完を拡張モードにする
+set wildmenu
+
+" 括弧入力時の対応する括弧を表示
+set showmatch
+
+" タイトルをウインドウ枠に表示する
+set title
+
+" カーソル行をハイライト
+set cursorline
+
+" コマンド実行中は再描画しない
+set lazyredraw
+
+" 高速ターミナル接続を行う
+set ttyfast
+
+
+"----------------------------------------------------
+" 編集 edit
+"----------------------------------------------------
+" ターミナルタイプによるカラー設定
+if &term =~ "xterm-debian" || &term =~ "xterm-xfree86" || &term =~ "xterm-256color"
+  set t_Co=16
+  set t_Sf=^[[3%dm
+  set t_Sb=^[[4%dm
+elseif &term =~ "xterm-color"
+  set t_Co=8
+  set t_Sf=^[[3%dm
+  set t_Sb=^[[4%dm
+endif
+
+"ポップアップメニューのカラーを設定
+hi Pmenu guibg=#666666
+hi PmenuSel guibg=#8cd0d3 guifg=#666666
+hi PmenuSbar guibg=#333333
+
+" ハイライト on
+syntax enable
+
+" 補完候補の色づけ for vim7
+hi Pmenu ctermbg=white ctermfg=darkgray
+hi PmenuSel ctermbg=blue ctermfg=white
+hi PmenuSbar ctermbg=0 ctermfg=9
+
+
+
+
+"----------------------------------------------------
+" 編集 edit
+"----------------------------------------------------
+" insertモードを抜けるとIMEオフ
+set noimdisable
+set iminsert=0 imsearch=0
+set noimcmdline
+inoremap <silent> <ESC> <ESC>:set iminsert=0<CR>
+
+" コンマの後に自動的にスペースを挿入
+inoremap , ,<Space>
+
+" 括弧を自動補完
+inoremap { {}<LEFT>
+inoremap [ []<LEFT>
+inoremap ( ()<LEFT>
+inoremap " ""<LEFT>
+inoremap ' ''<LEFT>
+vnoremap { "zdi^V{<C-R>z}<ESC>
+vnoremap [ "zdi^V[<C-R>z]<ESC>
+vnoremap ( "zdi^V(<C-R>z)<ESC>
+vnoremap " "zdi^V"<C-R>z^V"<ESC>
+vnoremap ' "zdi'<C-R>z'<ESC>
+
+" 保存時に行末の空白を除去する
+autocmd BufWritePre * :%s/\s\+$//ge
+
+
+
+
+"----------------------------------------------------
+" インデント
+"----------------------------------------------------
+" タブを挿入するとき、代わりに空白を使わない
+set noexpandtab
 
 "----------------------------------------------------
 " バックアップ
@@ -220,12 +371,8 @@ set fileencodings+=,ucs-2le,ucs-2,utf-8
 " ビープ音を鳴らさない
 set vb t_vb=
 
-" 入力保管系
-" コンマの後に自動的にスペースを挿入
-inoremap , ,<Space>
-
 " コマンド補完を開始するキー
 set wildchar=<tab>
 
-
-filetype plugin indent on
+" バッファを切替えてもundoの効力を失わない
+set hidden
