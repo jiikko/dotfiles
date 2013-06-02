@@ -2,10 +2,11 @@
 set nocompatible
 filetype off
 
+
 "----------------------------------------------------
-" NeoBUndle
+" NeoBundle
 "----------------------------------------------------
-let s:neobundledir   = expand('~/local/neobundle')
+let s:neobundledir   = expand('~/.vim/neobundle')
 
 if isdirectory(s:neobundledir)
   if has('vim_starting')
@@ -13,9 +14,6 @@ if isdirectory(s:neobundledir)
   endif
   call neobundle#rc(s:neobundledir)
 
-  NeoBundle 'Shougo/neobundle.vim'
-  NeoBundle 'Shougo/unite.vim'
-  NeoBundle 'Shougo/vimproc', { 'build': { 'unix': 'make -f make_unix.mak', }, }
   NeoBundle 'Shougo/vimproc', {
         \ 'build' : {
         \     'windows' : 'echo "Sorry, cannot update vimproc binary file in Windows."',
@@ -46,10 +44,8 @@ else
     call system('git clone git://github.com/Shougo/neobundle.vim')
     execute 'set runtimepath+=' . s:neobundledir . '/neobundle.vim'
     call neobundle#rc(s:neobundledir)
-    NeoBundle 'Shougo/unite.vim'
     NeoBundle 'Shougo/vimproc', {
           \ 'build' : {
-          \     'windows' : 'echo "Sorry, cannot update vimproc binary file in Windows."',
           \     'cygwin' : 'make -f make_cygwin.mak',
           \     'mac' : 'make -f make_mac.mak',
           \     'unix' : 'make -f make_unix.mak',
@@ -65,7 +61,7 @@ endif
 " プラギンの設定
 "----------------------------------------------------
 " for vimdoc-ja
-helptags ~/.vim/bundle/vimdoc-ja/doc
+" helptags ~/.vim/bundle/vimdoc-ja/doc
 
 " for vim-indent-guides conf
 " http://chiiiiiiiii.hatenablog.com/entry/2012/12/02/102815
@@ -98,26 +94,13 @@ let g:neocomplcache_enable_at_startup = 1
 let g:neocomplcache_max_list = 30
 let g:neocomplcache_auto_completion_start_length = 2
 let g:neocomplcache_enable_smart_case = 1
-"" like AutoComplPop
 let g:neocomplcache_enable_auto_select = 1
-"" search with camel case like Eclipse
 let g:neocomplcache_enable_camel_case_completion = 1
 let g:neocomplcache_enable_underbar_completion = 1
-"imap <C-k> <Plug>(neocomplcache_snippets_expand)
-"smap <C-k> <Plug>(neocomplcache_snippets_expand)
 inoremap <expr><C-g> neocomplcache#undo_completion()
 inoremap <expr><C-l> neocomplcache#complete_common_string()
-"" SuperTab like snippets behavior.
-"imap <expr><TAB> neocomplcache#sources#snippets_complete#expandable() ?
-"\<Plug>(neocomplcache_snippets_expand)" : pumvisible() ? "\<C-n>" :
-"\<TAB>"
-"" <CR>: close popup and save indent.
-"inoremap <expr><CR> neocomplcache#smart_close_popup() . (&indentexpr != ''
-? "\<C-f>\<CR>X\<BS>":"\<CR>")
 inoremap <expr><CR> pumvisible() ? neocomplcache#close_popup() : "\<CR>"
-"" <TAB>: completion.
 inoremap <expr><TAB> pumvisible() ? "\<C-n>" : "\<TAB>"
-"" <C-h>, <BS>: close popup and delete backword char.
 inoremap <expr><C-h> neocomplcache#smart_close_popup() . "\<C-h>"
 inoremap <expr><BS> neocomplcache#smart_close_popup() . "\<C-h>"
 inoremap <expr><C-y> neocomplcache#close_popup()
@@ -187,9 +170,9 @@ else
 endif
 
 " バックアップファイルを作るディレクトリ
-set backupdir=~/.vim_backup
+" set backupdir=~/.vim/backup
 " スワップファイルを作るディレクトリ
-set directory=~/.vim_swap
+" set directory=~/.vim/swap
 
 
 "----------------------------------------------------
@@ -214,7 +197,7 @@ autocmd FileType ruby :map <C-e> <ESC>:!ruby %<CR>
 " 国際化関係
 "----------------------------------------------------
 " 文字コードの設定
-fileencodingsの設定ではencodingの値を一番最後に記述する
+" fileencodingsの設定ではencodingの値を一番最後に記述する
 set encoding=utf-8
 set termencoding=utf-8
 set fileencoding=utf-8
