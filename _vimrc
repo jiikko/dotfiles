@@ -1,5 +1,6 @@
 " Viとの互換断ち
 set nocompatible
+syntax on
 filetype off
  
 "----------------------------------------------------
@@ -120,12 +121,15 @@ inoremap <expr><C-e> neocomplcache#cancel_popup()
 " start   : 挿入モード開始位置より手前の文
 set backspace=indent,eol,start
 set number
-
-set history=100		" keep 50 lines of command line history
-set ruler		" show the cursor position all the time
-set showcmd		"コマンドを表示する
-set incsearch		"検索ワードの最初の文字を入力した時点で検索が開始されます。
-set laststatus=2 " ステータスラインを常に表示
+set history=100
+" show the cursor position all the time
+set ruler
+"コマンドを表示する
+set showcmd
+"検索ワードの最初の文字を入力した時点で検索が開始されます。
+set incsearch
+" ステータスラインを常に表示
+set laststatus=2
 
 " 検索結果文字列のハイライトを有効にする
 set hlsearch
