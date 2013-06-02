@@ -49,7 +49,7 @@ zcompile .zshrc
 ##================== キーバインドの設定 ==================##
 ##========================================================##
 #bindkey -e      # emacs キーバインド
-bindkey -v      # vi キーバインド
+#bindkey -v      # vi キーバインド
 
 ##========================================================##
 ##================= リストの色つけの設定 =================##
@@ -296,6 +296,7 @@ alias scl='screen -ls'
 
 alias r='rvm'
 alias rc='rvm current'
+alias rvms='source .rvmrc'
 
 alias sshge='ssh kjdev@s11.rs2.gehirn.jp'
 
@@ -374,4 +375,3 @@ fi
 
 [[ -s "$HOME/.rvm/scripts/rvm" ]] && . "$HOME/.rvm/scripts/rvm"
 
-alias rvms='source .rvmrc'
