@@ -23,6 +23,7 @@ if isdirectory(s:neobundledir)
         \    },
         \ }
 
+  NeoBundle 'scrooloose/syntastic'
   NeoBundle 'tpope/vim-rails'
   NeoBundle "unite.vim"
   NeoBundle 'scrooloose/nerdtree'
@@ -114,6 +115,22 @@ inoremap <expr><BS> neocomplcache#smart_close_popup() . "\<C-h>"
 inoremap <expr><C-y> neocomplcache#close_popup()
 inoremap <expr><C-e> neocomplcache#cancel_popup()
 
+" for nerafree
+" Vim起動時にNerdTreeが起動するようにする
+autocmd vimenter * if !argc() | NERDTree | endif
+autocmd bufenter * if (winnr("$") == 1 && exists("b:NERDTreeType") && b:NERDTreeType == "primary") | q | endif
+nmap <silent> <C-e>      :NERDTreeToggle<CR>
+vmap <silent> <C-e> <Esc>:NERDTreeToggle<CR>
+omap <silent> <C-e>      :NERDTreeToggle<CR>
+imap <silent> <C-e> <Esc>:NERDTreeToggle<CR>
+cmap <silent> <C-e> <C-u>:NERDTreeToggle<CR>
+ let g:NERDTreeIgnore=['\.clean$',  '\.swp$',  '\.bak$',  '\~$']
+""let g:NERDTreeShowHidden=1
+let g:NERDTreeMinimalUI=1
+let g:NERDTreeDirArrows=0
+let g:NERDTreeMouseMode=2
+
+
 
 "----------------------------------------------------
 " 基本設定(base basic)
@@ -153,7 +170,7 @@ set formatoptions=lmoq
 set showmode
 
 " モードラインは無効
-set modelines=0
+" set modelines=0
 " OSのクリップボードを使用する
 set clipboard+=unnamed
 
@@ -163,10 +180,18 @@ set guioptions+=a
 set ttymouse=xterm2
 
 "ヤンクした文字は、システムのクリップボードに入れる"
-set clipboard=unnamed
+" "set clipboard=unnamed
 " 挿入モードでCtrl+kを押すとクリップボードの内容を貼り付けられるようにする "
 " imap "*pa
 
+"ノーマルモードでクリップボードからペースト
+nnoremap <C-p> "+p
+
+""インサートモードでクリップボードの内容をペースト
+inoremap <C-p> <ESC>"*pa
+
+"Yankした情報を他のアプリケーションでも利用
+set clipboard=unnamed
 
 filetype plugin indent on
 
@@ -318,13 +343,14 @@ autocmd BufWritePre * :%s/\s\+$//ge
 "----------------------------------------------------
 " インデント
 "----------------------------------------------------
-" タブを挿入するとき、代わりに空白を使わない
-set noexpandtab
+set expandtab
 
 "----------------------------------------------------
 " バックアップ
 "----------------------------------------------------
 " vmsオプションをつけたらバックアップファイルを作らない
+set backup
+set noswapfile
 if has("vms")
   set nobackup
 else
@@ -341,8 +367,6 @@ endif
 " オートコマンド
 "----------------------------------------------------
 if has("autocmd")
-  " ファイルタイプ別インデント、プラグインを有効にする
-  filetype plugin indent on
   " カーソル位置を記憶する
   autocmd BufReadPost *
   \ if line("'\"") > 0 && line("'\"") <= line("$") |
@@ -351,8 +375,8 @@ if has("autocmd")
 endif
 
 "CTRL-nでシンタックスチェック eで実行
-autocmd FileType ruby :map <C-n> <ESC>:!ruby -cW %<CR>
-autocmd FileType ruby :map <C-e> <ESC>:!ruby %<CR>
+" autocmd FileType ruby :map <C-n> <ESC>:!ruby -cW %<CR>
+" autocmd FileType ruby :map <C-e> <ESC>:!ruby %<CR>
 
 
 "----------------------------------------------------
@@ -360,11 +384,11 @@ autocmd FileType ruby :map <C-e> <ESC>:!ruby %<CR>
 "----------------------------------------------------
 " 文字コードの設定
 " fileencodingsの設定ではencodingの値を一番最後に記述する
-set encoding=utf-8
 set termencoding=utf-8
-set fileencoding=utf-8
 set fileencodings=ucs-bom,euc-jp,cp932,iso-2022-jp
 set fileencodings+=,ucs-2le,ucs-2,utf-8
+set encoding=utf-8
+set fileencoding=utf-8
 
 
 "----------------------------------------------------
@@ -376,7 +400,5 @@ set vb t_vb=
 " コマンド補完を開始するキー
 set wildchar=<tab>
 
-" バッファを切替えてもundoの効力を失わない
-set hidden
 
 
