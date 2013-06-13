@@ -320,19 +320,7 @@ set noimcmdline
 inoremap <silent> <ESC> <ESC>:set iminsert=0<CR>
 
 " コンマの後に自動的にスペースを挿入
-inoremap , ,<Space>
-
-" 括弧を自動補完
-inoremap { {}<LEFT>
-inoremap [ []<LEFT>
-inoremap ( ()<LEFT>
-inoremap " ""<LEFT>
-inoremap ' ''<LEFT>
-vnoremap { "zdi^V{<C-R>z}<ESC>
-vnoremap [ "zdi^V[<C-R>z]<ESC>
-vnoremap ( "zdi^V(<C-R>z)<ESC>
-vnoremap " "zdi^V"<C-R>z^V"<ESC>
-vnoremap ' "zdi'<C-R>z'<ESC>
+" "inoremap , ,<Space>
 
 " 保存時に行末の空白を除去する
 autocmd BufWritePre * :%s/\s\+$//ge
@@ -385,8 +373,7 @@ endif
 " 文字コードの設定
 " fileencodingsの設定ではencodingの値を一番最後に記述する
 set termencoding=utf-8
-set fileencodings=ucs-bom,euc-jp,cp932,iso-2022-jp
-set fileencodings+=,ucs-2le,ucs-2,utf-8
+set fileencodings=utf-8
 set encoding=utf-8
 set fileencoding=utf-8
 
