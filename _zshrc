@@ -277,6 +277,7 @@ alias gp='git push'
 alias gad='git add \.'
 alias gc='git commit \-m'
 
+alias gf='git-flow'
 
 alias rdd='rake db:drop'
 alias rdc='rake db:create'
