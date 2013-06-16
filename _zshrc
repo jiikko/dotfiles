@@ -248,6 +248,10 @@ iceweasel "http://www.google.co.jp/search?hl=ja&q=$str"
 # wikipedia 検索
 function wikipedia() { iceweasel "http://ja.wikipedia.crg/wiki/$1" }
 
+# テキスト検索
+find-grep () { find . -type f -print | xargs grep -n --binary-files=without-match $@ }
+
+
 # Global alias
 alias al='alias'
 
