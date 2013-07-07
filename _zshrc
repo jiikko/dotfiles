@@ -350,12 +350,19 @@ export PATH=/opt/local/bin:/opt/local/sbin:$PATH
 # Finished adapting your PATH environment variable for use with MacPorts.
 
 # mysql5rvm
-export PATH=/opt/local/lib/mysql5/bin:$PATH
+# export PATH=/opt/local/lib/mysql5/bin:$PATH
+
+# http://webdev.jp.net/mac-osx-mysql-install-start/
+# export PATH=$PATH:/opt/local/lib/mysql5/bin
 
 
 # gitx
 export PATH=/Applications/GitX.app/Contents/MacOS:$PATH
 alias gitx='GitX .'
+
+# sourceTree
+export PATH=/Applications/SourceTree.app/Contents/MacOS:$PATH
+alias st='SourceTree .'
 
 # gitk
 # http://stackoverflow.com/questions/11785126/cfurlcopyresourcepropertyforkey-failed-because-it-was-passed-this-url-which-has
