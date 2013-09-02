@@ -267,8 +267,8 @@ alias ll='ls -l'
 alias less='less -R'
 
 alias ks='ls'
-
-alias gst='git status'
+#alias gst='git status'
+alias gist='git status'
 alias gd='git diff'
 alias gl='git log'
 alias gb='git branch'
