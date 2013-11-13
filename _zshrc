@@ -268,6 +268,7 @@ alias less='less -R'
 
 alias ks='ls'
 
+alias gg='git grep'
 alias gst='git status'
 alias gd='git diff'
 alias gl='git log'
