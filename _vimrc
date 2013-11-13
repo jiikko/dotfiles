@@ -38,6 +38,7 @@ if isdirectory(s:neobundledir)
   NeoBundle 'mattn/zencoding-vim'
   NeoBundle 'thinca/vim-splash'
 	NeoBundle 'altercation/vim-colors-solarized'
+  NeoBundle 'tomtom/tcomment.vim'
 
 else
   command! NeoBundleInit call s:neobundle_init()

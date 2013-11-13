@@ -281,6 +281,7 @@ alias gcig='git commit -m "modied ignore"'
 alias gp='git push'
 alias gad='git add \.'
 alias gc='git commit \-m'
+alias gpll='git pull --rebase'
 
 alias gf='git-flow'
 
@@ -291,6 +292,8 @@ alias rds='rake db:setup'
 alias rdr='rake db:reset'
 
 alias r='rails'
+alias sp='spring'
+alias rk='rk'
 
 alias rr='rake routes'
 
@@ -351,12 +354,19 @@ export PATH=/opt/local/bin:/opt/local/sbin:$PATH
 # Finished adapting your PATH environment variable for use with MacPorts.
 
 # mysql5rvm
-export PATH=/opt/local/lib/mysql5/bin:$PATH
+# export PATH=/opt/local/lib/mysql5/bin:$PATH
+
+# http://webdev.jp.net/mac-osx-mysql-install-start/
+# export PATH=$PATH:/opt/local/lib/mysql5/bin
 
 
 # gitx
 export PATH=/Applications/GitX.app/Contents/MacOS:$PATH
 alias gitx='GitX .'
+
+# sourceTree
+export PATH=/Applications/SourceTree.app/Contents/MacOS:$PATH
+alias st='SourceTree .'
 
 # gitk
 # http://stackoverflow.com/questions/11785126/cfurlcopyresourcepropertyforkey-failed-because-it-was-passed-this-url-which-has
@@ -563,3 +573,6 @@ function _update_vcs_info_msg() {
     RPROMPT="$prompt"
 }
 add-zsh-hook precmd _update_vcs_info_msg
+
+
+PATH=/opt/local/lib/mysql55/bin:$PATH
