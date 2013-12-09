@@ -254,6 +254,7 @@ find-grep () { find . -type f -print | xargs grep -n --binary-files=without-matc
 
 # Global alias
 alias al='alias'
+alias be="bundle exec"
 
 alias va='vagrant'
 alias bu='bundle install'
@@ -576,3 +577,4 @@ add-zsh-hook precmd _update_vcs_info_msg
 
 
 PATH=/opt/local/lib/mysql55/bin:$PATH
+set noexpandtab
