@@ -37,7 +37,7 @@ if isdirectory(s:neobundledir)
   NeoBundle 'vim-jp/vimdoc-ja'
   NeoBundle 'mattn/zencoding-vim'
   NeoBundle 'thinca/vim-splash'
-	NeoBundle 'altercation/vim-colors-solarized'
+  NeoBundle 'tpope/vim-endwise'
 
 else
   command! NeoBundleInit call s:neobundle_init()
@@ -107,7 +107,7 @@ let g:neocomplcache_enable_camel_case_completion = 1
 let g:neocomplcache_enable_underbar_completion = 1
 inoremap <expr><C-g> neocomplcache#undo_completion()
 inoremap <expr><C-l> neocomplcache#complete_common_string()
-inoremap <expr><CR> pumvisible() ? neocomplcache#close_popup() : "\<CR>"
+" inoremap <expr><CR> pumvisible() ? neocomplcache#close_popup() : "\<CR>"
 inoremap <expr><TAB> pumvisible() ? "\<C-n>" : "\<TAB>"
 inoremap <expr><C-h> neocomplcache#smart_close_popup() . "\<C-h>"
 inoremap <expr><BS> neocomplcache#smart_close_popup() . "\<C-h>"
@@ -330,7 +330,7 @@ autocmd BufWritePre * :%s/\s\+$//ge
 "----------------------------------------------------
 " インデント
 "----------------------------------------------------
-set expandtab
+"set noexpandtab
 
 "----------------------------------------------------
 " バックアップ

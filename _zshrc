@@ -254,6 +254,7 @@ find-grep () { find . -type f -print | xargs grep -n --binary-files=without-matc
 
 # Global alias
 alias al='alias'
+alias be="bundle exec"
 
 alias va='vagrant'
 alias bu='bundle install'
@@ -268,6 +269,7 @@ alias less='less -R'
 
 alias ks='ls'
 
+alias gg='git grep'
 alias gst='git status'
 alias gd='git diff'
 alias gl='git log'
@@ -280,6 +282,7 @@ alias gcig='git commit -m "modied ignore"'
 alias gp='git push'
 alias gad='git add \.'
 alias gc='git commit \-m'
+alias gpll='git pull --rebase'
 
 alias gf='git-flow'
 
@@ -290,6 +293,8 @@ alias rds='rake db:setup'
 alias rdr='rake db:reset'
 
 alias r='rails'
+alias sp='spring'
+alias rk='rk'
 
 alias rr='rake routes'
 
@@ -350,12 +355,19 @@ export PATH=/opt/local/bin:/opt/local/sbin:$PATH
 # Finished adapting your PATH environment variable for use with MacPorts.
 
 # mysql5rvm
-export PATH=/opt/local/lib/mysql5/bin:$PATH
+# export PATH=/opt/local/lib/mysql5/bin:$PATH
+
+# http://webdev.jp.net/mac-osx-mysql-install-start/
+# export PATH=$PATH:/opt/local/lib/mysql5/bin
 
 
 # gitx
 export PATH=/Applications/GitX.app/Contents/MacOS:$PATH
 alias gitx='GitX .'
+
+# sourceTree
+export PATH=/Applications/SourceTree.app/Contents/MacOS:$PATH
+alias st='SourceTree .'
 
 # gitk
 # http://stackoverflow.com/questions/11785126/cfurlcopyresourcepropertyforkey-failed-because-it-was-passed-this-url-which-has
@@ -565,3 +577,6 @@ add-zsh-hook precmd _update_vcs_info_msg
 
 
 alias outing='cd ~/dev/outing'
+
+PATH=/opt/local/lib/mysql55/bin:$PATH
+set noexpandtab
