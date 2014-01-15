@@ -139,7 +139,7 @@ PROMPT="%{$reset_color%}$ "
 # [場所] プロンプト
 PROMPT="%{$reset_color%}[%{$fg[red]%}%B%~%b%{$reset_color%}]$PROMPT"
 # 名前@マシン名 プロンプト
-PROMPT="%{$reset_color%}%{$fg[green]%}$USER%{$reset_color%}@%{$fg[cyan]%}%m%{$reset_color%}$PROMPT"
+PROMPT="RETINA VAGRANT%{$reset_color%}%{$fg[green]%}$USER%{$reset_color%}@%{$fg[cyan]%}%m%{$reset_color%}$PROMPT"
 RPROMPT="%{$fg[green]%}[%*]%{$reset_color%}"
 
 
@@ -371,7 +371,7 @@ alias st='SourceTree .'
 
 # gitk
 # http://stackoverflow.com/questions/11785126/cfurlcopyresourcepropertyforkey-failed-because-it-was-passed-this-url-which-has
-alias gitk='gitk 2>/dev/null'
+# alias gitk='gitk 2>/dev/null'
 
 export MANPATH=/opt/local/man:$MANPATH
 
@@ -578,3 +578,4 @@ add-zsh-hook precmd _update_vcs_info_msg
 
 PATH=/opt/local/lib/mysql55/bin:$PATH
 set noexpandtab
+alias outing='cd ~/dev/outing'
