@@ -37,7 +37,7 @@ if isdirectory(s:neobundledir)
   NeoBundle 'vim-jp/vimdoc-ja'
   NeoBundle 'mattn/zencoding-vim'
   NeoBundle 'thinca/vim-splash'
-  NeoBundle 'tpope/vim-endwise'
+  NeoBundle 'kchmck/vim-coffee-script'
 
 else
   command! NeoBundleInit call s:neobundle_init()
