@@ -1,3 +1,12 @@
+
+"use neocomplete.
+"http://naoyashiga.hatenablog.com/entry/2013/10/16/005443
+let g:neocomplete#enable_at_startup = 1
+
+" http://okuhiiro.daiwa-hotcom.com/wordpress/?cat=28
+let g:neocomplcache_force_overwrite_completefunc = 1
+
+
 " Viとの互換断ち
 set nocompatible
 syntax on
@@ -35,9 +44,9 @@ if isdirectory(s:neobundledir)
   NeoBundle 'skwp/vim-rspec'
   NeoBundle 'nathanaelkane/vim-indent-guides'
   NeoBundle 'vim-jp/vimdoc-ja'
-  NeoBundle 'mattn/zencoding-vim'
   NeoBundle 'thinca/vim-splash'
   NeoBundle 'kchmck/vim-coffee-script'
+  NeoBundle 'mattn/emmet-vim'
 
 else
   command! NeoBundleInit call s:neobundle_init()
