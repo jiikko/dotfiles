@@ -79,9 +79,6 @@ endif
 " http://chiiiiiiiii.hatenablog.com/entry/2012/12/02/102815
 colorscheme default
 
-set tabstop=2
-set shiftwidth=2
-set expandtab
 "vim立ち上げたときに、自動的にvim-indent-guidesをオンにする
 let g:indent_guides_enable_on_vim_startup=1
 " ガイドをスタートするインデントの量
@@ -395,6 +392,4 @@ set vb t_vb=
 
 " コマンド補完を開始するキー
 set wildchar=<tab>
-
-
 
