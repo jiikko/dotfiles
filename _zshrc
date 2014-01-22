@@ -373,6 +373,8 @@ alias st='SourceTree .'
 # http://stackoverflow.com/questions/11785126/cfurlcopyresourcepropertyforkey-failed-because-it-was-passed-this-url-which-has
 alias gitk='gitk 2>/dev/null'
 
+alias yochi='cd ~/dev/rails/yochi_app'
+
 export MANPATH=/opt/local/man:$MANPATH
 
 #[[ -s "$HOME/.rvm/scripts/rvm" ]] && . "$HOME/.rvm/scripts/rvm"
