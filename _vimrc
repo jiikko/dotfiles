@@ -49,6 +49,8 @@ if isdirectory(s:neobundledir)
   NeoBundle 'kchmck/vim-coffee-script'
   NeoBundle 'mattn/emmet-vim'
   NeoBundle 'slim-template/vim-slim'
+  NeoBundle 'cakebaker/scss-syntax.vim'
+  NeoBundle 'csscomb/vim-csscomb'
 
 else
   command! NeoBundleInit call s:neobundle_init()
