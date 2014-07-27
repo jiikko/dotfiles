@@ -425,6 +425,13 @@ zstyle ':vcs_info:*' actionformats '(%s)-[%b]' '%m' '<!%a>'
 zstyle ':vcs_info:(svn|bzr):*' branchformat '%b:r%r'
 zstyle ':vcs_info:bzr:*' use-simple true
 
+# source libs
+# zaw
+# http://qiita.com/termoshtt/items/68a5372a43543037667f
+dotfile_fullpath=`ls -al ~/.zshrc | awk '{print $11}' |  sed -e "s|/_zshrc||"`
+source "${dotfile_fullpath}/lib/zsh/zaw/zaw.zsh"
+
+
 
 if is-at-least 4.3.10; then
     # git 用のフォーマット
@@ -583,3 +590,4 @@ add-zsh-hook precmd _update_vcs_info_msg
 
 PATH=/opt/local/lib/mysql55/bin:$PATH
 set noexpandtab
+export SCREENDIR="`echo ~`/.screens"
