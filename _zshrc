@@ -266,6 +266,7 @@ if [ `uname` = "Linux" ]; then
 fi
 
 alias ll='ls -l'
+alias cl='clear'
 alias less='less -R'
 
 alias ks='ls'
@@ -312,6 +313,7 @@ alias rvms='source .rvmrc'
 alias sshge='ssh kjdev@s11.rs2.gehirn.jp'
 
 alias v='vim'
+alias iv='vim'
 alias vb='vim ~/.bashrc'
 alias vz='vim ~/.zshrc'
 alias vbpro='vim ~/.bash_profile'
@@ -426,10 +428,28 @@ zstyle ':vcs_info:(svn|bzr):*' branchformat '%b:r%r'
 zstyle ':vcs_info:bzr:*' use-simple true
 
 # source libs
+# -------------------------
 # zaw
+# -------------------------
 # http://qiita.com/termoshtt/items/68a5372a43543037667f
 dotfile_fullpath=`ls -al ~/.zshrc | awk '{print $11}' |  sed -e "s|/_zshrc||"`
 source "${dotfile_fullpath}/lib/zsh/zaw/zaw.zsh"
+
+autoload -Uz chpwd_recent_dirs cdr add-zsh-hook
+add-zsh-hook chpwd chpwd_recent_dirs
+zstyle ':chpwd:*' recent-dirs-max 500 # cdrの履歴を保存する個数
+zstyle ':chpwd:*' recent-dirs-default yes
+zstyle ':completion:*' recent-dirs-insert both
+
+zstyle ':filter-select:highlight' selected fg=black,bg=white,standout
+zstyle ':filter-select' case-insensitive yes
+
+bindkey '^@' zaw-cdr
+bindkey '^R' zaw-history
+bindkey '^X^F' zaw-git-files
+bindkey '^X^B' zaw-git-branches
+bindkey '^X^P' zaw-process
+bindkey '^X^S' zaw-screens
 
 
 
