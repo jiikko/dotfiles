@@ -155,7 +155,7 @@ filetype plugin indent on
 " start   : 挿入モード開始位置より手前の文
 set backspace=indent,eol,start
 set number
-set history=100
+set history=1000
 " show the cursor position all the time
 set ruler
 "コマンドを表示する
