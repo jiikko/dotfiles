@@ -57,6 +57,7 @@ bindkey -v      # vi キーバインド
 ##========================================================##
 # ls, #dir, vdir の設定
 alias s='screen -U'
+alias sk='kill -9 $$'
 #alias ll='ls -l'
 alias ls='ls --G'
 alias grep='grep --color=auto'
@@ -332,7 +333,7 @@ alias -g W='| wc'
 alias ssh='ssh -o ServerAliveInterval=60'
 
 # alias
-alias e='emacs'
+alias e='vim'
 alias h='history'
 alias ha='history-all'
 alias screen='TERM=xterm screen'

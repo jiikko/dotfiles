@@ -36,6 +36,7 @@ if isdirectory(s:neobundledir)
   NeoBundle 'scrooloose/syntastic'
   NeoBundle 'tpope/vim-rails'
   NeoBundle "unite.vim"
+  NeoBundle 'Shougo/neomru'
   NeoBundle 'scrooloose/nerdtree'
   NeoBundle 'taku-o/vim-toggle'
   NeoBundle 'Lokaltog/vim-easymotion'
@@ -43,14 +44,14 @@ if isdirectory(s:neobundledir)
   NeoBundle 'Shougo/neocomplcache'
   NeoBundle 'surround.vim'
   NeoBundle 'skwp/vim-rspec'
-  NeoBundle 'nathanaelkane/vim-indent-guides'
+  " NeoBundle 'nathanaelkane/vim-indent-guides'
   NeoBundle 'vim-jp/vimdoc-ja'
-  NeoBundle 'thinca/vim-splash'
+  " NeoBundle 'thinca/vim-splash'
   NeoBundle 'kchmck/vim-coffee-script'
   NeoBundle 'mattn/emmet-vim'
   NeoBundle 'slim-template/vim-slim'
-  NeoBundle 'cakebaker/scss-syntax.vim'
-  NeoBundle 'csscomb/vim-csscomb'
+  " NeoBundle 'cakebaker/scss-syntax.vim'
+  " NeoBundle 'csscomb/vim-csscomb'
 
 else
   command! NeoBundleInit call s:neobundle_init()
@@ -76,6 +77,38 @@ endif
 "----------------------------------------------------
 " プラギンの設定
 "----------------------------------------------------
+
+
+" unite
+""" unite.vim
+
+" autocmd vimenter * if !argc() | Unite file | endif
+
+" 入力モードで開始する
+let g:unite_enable_start_insert=1
+call unite#custom_default_action('file', 'tabopen')
+" バッファ一覧
+nnoremap <silent> ,ub :<C-u>Unite buffer<CR>
+" ファイル一覧
+nnoremap <silent> ,uf :<C-u>UniteWithBufferDir -buffer-name=files file<CR>
+" レジスタ一覧
+nnoremap <silent> ,ur :<C-u>Unite -buffer-name=register register<CR>
+" 最近使用したファイル一覧
+nnoremap <silent> ,um :<C-u>Unite file_mru<CR>
+" 常用セット
+nnoremap <silent> ,uu :<C-u>Unite buffer file_mru<CR>
+" 全部乗せ
+nnoremap <silent> ,ua :<C-u>UniteWithBufferDir -buffer-name=files buffer file_mru bookmark file<CR>
+" ウィンドウを分割して開く
+au FileType unite nnoremap <silent> <buffer> <expr> <C-j> unite#do_action('split')
+au FileType unite inoremap <silent> <buffer> <expr> <C-j> unite#do_action('split')
+" ウィンドウを縦に分割して開く
+au FileType unite nnoremap <silent> <buffer> <expr> <C-l> unite#do_action('vsplit')
+au FileType unite inoremap <silent> <buffer> <expr> <C-l> unite#do_action('vsplit')
+" ESCキーを2回押すと終了する
+au FileType unite nnoremap <silent> <buffer> <ESC><ESC> q
+au FileType unite inoremap <silent> <buffer> <ESC><ESC> <ESC>q
+
 " for vimdoc-ja
 " helptags ~/.vim/bundle/vimdoc-ja/doc
 
@@ -118,7 +151,7 @@ let g:neocomplcache_enable_camel_case_completion = 1
 let g:neocomplcache_enable_underbar_completion = 1
 inoremap <expr><C-g> neocomplcache#undo_completion()
 inoremap <expr><C-l> neocomplcache#complete_common_string()
-" inoremap <expr><CR> pumvisible() ? neocomplcache#close_popup() : "\<CR>"
+inoremap <expr><CR> pumvisible() ? neocomplcache#close_popup() : "\<CR>"
 inoremap <expr><TAB> pumvisible() ? "\<C-n>" : "\<TAB>"
 inoremap <expr><C-h> neocomplcache#smart_close_popup() . "\<C-h>"
 inoremap <expr><BS> neocomplcache#smart_close_popup() . "\<C-h>"
@@ -127,8 +160,8 @@ inoremap <expr><C-e> neocomplcache#cancel_popup()
 
 " for nerdtree
 " Vim起動時にNerdTreeが起動するようにする
-autocmd vimenter * if !argc() | NERDTree | endif
-autocmd bufenter * if (winnr("$") == 1 && exists("b:NERDTreeType") && b:NERDTreeType == "primary") | q | endif
+" autocmd vimenter * if !argc() | NERDTree | endif
+" autocmd bufenter * if (winnr("$") == 1 && exists("b:NERDTreeType") && b:NERDTreeType == "primary") | q | endif
 nmap <silent> <C-e>      :NERDTreeToggle<CR>
 vmap <silent> <C-e> <Esc>:NERDTreeToggle<CR>
 omap <silent> <C-e>      :NERDTreeToggle<CR>
