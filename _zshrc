@@ -433,8 +433,8 @@ zstyle ':vcs_info:bzr:*' use-simple true
 # zaw
 # -------------------------
 # http://qiita.com/termoshtt/items/68a5372a43543037667f
-dotfile_fullpath=`ls -al ~/.zshrc | awk '{print $11}' |  sed -e "s|/_zshrc||"`
-source "${dotfile_fullpath}/lib/zsh/zaw/zaw.zsh"
+DOTFILE_FULLPATH=`ls -al ~/.zshrc | awk '{print $11}' |  sed -e "s|/_zshrc||"`
+source "${DOTFILE_FULLPATH}/lib/zsh/zaw/zaw.zsh"
 
 autoload -Uz chpwd_recent_dirs cdr add-zsh-hook
 add-zsh-hook chpwd chpwd_recent_dirs

@@ -6,6 +6,11 @@ let g:neocomplete#enable_at_startup = 1
 
 " http://okuhiiro.daiwa-hotcom.com/wordpress/?cat=28
 let g:neocomplcache_force_overwrite_completefunc = 1
+let g:neocomplcache_dictionary_filetype_lists = {
+    \ 'default' : '',
+    \ 'js' : $HOME.'/.vim/dict/javascript.dict',
+    \ 'coffee' : $HOME.'/.vim/dict/javascript.dict'
+    \ }
 
 
 " Viとの互換断ち
@@ -33,7 +38,7 @@ if isdirectory(s:neobundledir)
         \    },
         \ }
 
-  NeoBundle 'scrooloose/syntastic'
+  "  NeoBundle 'scrooloose/syntastic'
   NeoBundle 'tpope/vim-rails'
   NeoBundle "unite.vim"
   NeoBundle 'Shougo/neomru'
@@ -43,7 +48,7 @@ if isdirectory(s:neobundledir)
   NeoBundle 'motemen/git-vim'
   NeoBundle 'Shougo/neocomplcache'
   NeoBundle 'surround.vim'
-  NeoBundle 'skwp/vim-rspec'
+  " NeoBundle 'skwp/vim-rspec'
   " NeoBundle 'nathanaelkane/vim-indent-guides'
   NeoBundle 'vim-jp/vimdoc-ja'
   " NeoBundle 'thinca/vim-splash'
@@ -434,3 +439,16 @@ set vb t_vb=
 " コマンド補完を開始するキー
 set wildchar=<tab>
 
+
+" URLをひらくやつ
+function! HandleURL()
+  let s:uri = matchstr(getline("."), '[a-z]*:\/\/[^ >,;]*')
+  echo s:uri
+  if s:uri != ""
+    silent exec "!open '".s:uri."'"
+    :redraw!
+  else
+    echo "No URI found in line."
+  endif
+endfunction
+nmap <silent> <Leader>b <Esc>:call HandleURL()<CR>
