@@ -37,7 +37,7 @@
 # %c, %., %C = $PWD の後ろ側の構成要素
 
 # .zshrc をコンパイルして .zshrc.zwc を生成するコマンド
-zcompile .zshrc
+zcompile ~/.zshrc
 
 # コマンドラインスタック（入力中コマンドをスタックに退避させる）
 # ESC-q
