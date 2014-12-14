@@ -9,7 +9,8 @@ let g:neocomplcache_force_overwrite_completefunc = 1
 let g:neocomplcache_dictionary_filetype_lists = {
     \ 'default' : '',
     \ 'js' : $HOME.'/.vim/dict/javascript.dict',
-    \ 'coffee' : $HOME.'/.vim/dict/javascript.dict'
+    \ 'coffee' : $HOME.'/.vim/dict/javascript.dict',
+    \ 'html' : $HOME.'/.vim/dict/javascript.dict'
     \ }
 
 
