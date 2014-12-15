@@ -28,7 +28,8 @@ if isdirectory(s:neobundledir)
   if has('vim_starting')
     execute 'set runtimepath+=' . s:neobundledir . '/neobundle.vim'
   endif
-  call neobundle#rc(s:neobundledir)
+  call neobundle#begin(s:neobundledir)
+  call neobundle#end()
 
   NeoBundle 'Shougo/vimproc', {
         \ 'build' : {
@@ -66,7 +67,9 @@ else
     execute 'cd' s:neobundledir
     call system('git clone git://github.com/Shougo/neobundle.vim')
     execute 'set runtimepath+=' . s:neobundledir . '/neobundle.vim'
-    call neobundle#rc(s:neobundledir)
+    call neobundle#begin(s:neobundledir)
+    call neobundle#end()
+
     NeoBundle 'Shougo/vimproc', {
           \ 'build' : {
           \     'cygwin' : 'make -f make_cygwin.mak',
