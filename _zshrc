@@ -1,3 +1,4 @@
+#export PATH="$PATH:$HOME/.rvm/bin" # Add RVM to PATH for scripting
 # for rubyコンパイル
 #export CFLAGS='-Wno-error=shorten-64-to-32'
 
@@ -383,8 +384,6 @@ alias yochi='cd ~/dev/rails/yochi_app'
 
 export MANPATH=/opt/local/man:$MANPATH
 
-#[[ -s "$HOME/.rvm/scripts/rvm" ]] && . "$HOME/.rvm/scripts/rvm"
-
 export PATH=/opt/local/lib/postgresql92/bin:$PATH
 
 
@@ -397,8 +396,8 @@ if [ -f /opt/local/share/doc/git-core/contrib/completion/git-prompt.sh ]; then
   . /opt/local/share/doc/git-core/contrib/completion/git-prompt.sh
 fi
 
-
-[[ -s "$HOME/.rvm/scripts/rvm" ]] && . "$HOME/.rvm/scripts/rvm"
+# .zlogin に書いているのでコメントアウト
+# [[ -s "$HOME/.rvm/scripts/rvm" ]] && . "$HOME/.rvm/scripts/rvm"
 
 
 
