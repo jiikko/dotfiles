@@ -1,4 +1,5 @@
 set ambiwidth=double
+set backupskip=/tmp/*,/private/tmp/*
 
 "use neocomplete.
 "http://naoyashiga.hatenablog.com/entry/2013/10/16/005443
