@@ -247,10 +247,10 @@ for i in $*; do
 done
 str=`echo $str | sed 's/^\+//'` #先頭の「+」を削除
 fi
-iceweasel "http://www.google.co.jp/search?hl=ja&q=$str"
+open "http://www.google.co.jp/search?hl=ja&q=$str"
 }
 # wikipedia 検索
-function wikipedia() { iceweasel "http://ja.wikipedia.crg/wiki/$1" }
+function wikipedia() { open "http://ja.wikipedia.crg/wiki/$1" }
 
 # テキスト検索
 find-grep () { find . -type f -print | xargs grep -n --binary-files=without-match $@ }
