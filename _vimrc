@@ -60,6 +60,8 @@ if isdirectory(s:neobundledir)
   NeoBundle 'slim-template/vim-slim'
   " NeoBundle 'cakebaker/scss-syntax.vim'
   " NeoBundle 'csscomb/vim-csscomb'
+  NeoBundle 'kana/vim-operator-user'
+  NeoBundle 'tyru/operator-camelize.vim'
 
 else
   command! NeoBundleInit call s:neobundle_init()
@@ -187,6 +189,8 @@ let g:NERDTreeMouseMode=2
 syntax enable
 filetype plugin indent on
 
+map <Leader>c <Plug>(operator-camelize)
+map <Leader>C <Plug>(operator-decamelize)
 
 
 "----------------------------------------------------
