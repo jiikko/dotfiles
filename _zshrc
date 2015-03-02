@@ -63,6 +63,7 @@ alias sk='kill -9 $$'
 #alias ll='ls -l'
 alias ls='ls --G'
 alias grep='grep --color=auto'
+alias tn='terminal-notifier -sound default'
 export MAILCHECK=0
 export LS_COLORS='di=34:ln=35:so=32:pi=33:ex=31:bd=46;34:cd=43;34:su=41;30:sg=46;30:tw=42;30:ow=43;30'
 # 補完候補にも色付き表示
@@ -111,8 +112,8 @@ bindkey '^x^p' predict-off   # Cttl+x Ctrl+p で予測オフ
 ##====================== 履歴の設定 ======================##
 ##========================================================##
 HISTFILE=$HOME/.zsh_history  # 履歴をファイルに保存する
-HISTSIZE=100000              # メモリ内の履歴の数
-SAVEHIST=100000              # 保存される履歴の数
+HISTSIZE=10000              # メモリ内の履歴の数
+SAVEHIST=10000              # 保存される履歴の数
 setopt extended_history      # 履歴ファイルに開始時刻と経過時間を記録
 #unsetopt extended_history
 setopt append_history        # 履歴を追加 (毎回 .zhistory を作るのではなく)
