@@ -609,6 +609,17 @@ function _update_vcs_info_msg() {
 }
 add-zsh-hook precmd _update_vcs_info_msg
 
+# screen のセッション名にカレントディレクトリ名にしてくれる
+# http://hitode909.hatenablog.com/entry/20090731/1249051564
+ss () {
+  if [ -n "$1" ]; then
+    name="$1"
+  else
+    name=`basename "$PWD"`
+  fi
+  screen -x $name || screen -r $name || screen -S $name
+}
+
 
 PATH=/opt/local/lib/mysql55/bin:$PATH
 set noexpandtab
