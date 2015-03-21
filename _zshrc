@@ -354,6 +354,8 @@ bindkey "^S" history-incremental-search-forward
 
 bindkey "^E" end-of-line
 bindkey "^A" beginning-of-line
+bindkey "^H" backward-delete-char
+bindkey '^?' backward-delete-char
 
 
 # PATH=$PATH:$HOME/.rvm/bin # Add RVM to PATH for scripting
