@@ -251,8 +251,19 @@ nnoremap <C-p> "+p
 ""インサートモードでクリップボードの内容をペースト
 inoremap <C-p> <ESC>"*pa
 
+
+" ========== 検索結果のハイライト&Escで消す
+" ハイライトON
+set hlsearch
+
 " Esc Esc でハイライトOFF
 nnoremap <Esc><Esc> :<C-u>set nohlsearch<Return>
+
+" 「/」「?」「*」「#」が押されたらハイライトをON にしてから「/」「?」「*」「#」
+nnoremap / :<C-u>set hlsearch<Return>/
+nnoremap ? :<C-u>set hlsearch<Return>?
+nnoremap * :<C-u>set hlsearch<Return>*
+nnoremap # :<C-u>set hlsearch<Return>#
 
 "Yankした情報を他のアプリケーションでも利用
 set clipboard=unnamed
