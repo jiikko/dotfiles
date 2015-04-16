@@ -360,6 +360,7 @@ bindkey '^?' backward-delete-char
 
 # PATH=$PATH:$HOME/.rvm/bin # Add RVM to PATH for scripting
 
+export CDPATH=~/sites/:~/dev/actindi/rails/
 
 #Mac用
 export PATH=/opt/local/bin:/opt/local/sbin:$PATH
@@ -620,6 +621,12 @@ ss () {
     name=`basename "$PWD"`
   fi
   screen -x $name || screen -r $name || screen -S $name
+}
+
+# git current branch
+gcb () {
+  # or git rev-parse --abbrev-ref HEAD
+  git branch | awk '/\*/ { print $2; }'
 }
 
 
