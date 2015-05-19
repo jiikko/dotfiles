@@ -30,7 +30,6 @@ if isdirectory(s:neobundledir)
     execute 'set runtimepath+=' . s:neobundledir . '/neobundle.vim'
   endif
   call neobundle#begin(s:neobundledir)
-  call neobundle#end()
 
   NeoBundle 'Shougo/vimproc', {
         \ 'build' : {
@@ -62,6 +61,7 @@ if isdirectory(s:neobundledir)
   " NeoBundle 'csscomb/vim-csscomb'
   NeoBundle 'kana/vim-operator-user'
   NeoBundle 'tyru/operator-camelize.vim'
+  call neobundle#end()
 
 else
   command! NeoBundleInit call s:neobundle_init()
