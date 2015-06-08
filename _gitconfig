@@ -1,10 +1,10 @@
 [core]
-	editor = vim
-	pager = less -R
+  editor = vim
+  pager = less -R
 [color]
-	ui = true
+  ui = true
 [user]
-	name = jiikko
-	email = n905i.1214@gmail.com
+  name = jiikko
+  email = n905i.1214@gmail.com
 [push]
-	default = simple
+  default = current
