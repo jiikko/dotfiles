@@ -318,6 +318,7 @@ alias sshge='ssh kjdev@s11.rs2.gehirn.jp'
 
 alias v='vim'
 alias iv='vim'
+alias vi='vim'
 alias vb='vim ~/.bashrc'
 alias vz='vim ~/.zshrc'
 alias vbpro='vim ~/.bash_profile'
