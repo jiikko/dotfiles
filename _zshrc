@@ -378,10 +378,6 @@ export PATH=/opt/local/bin:/opt/local/sbin:$PATH
 export PATH=/Applications/GitX.app/Contents/MacOS:$PATH
 alias gitx='GitX .'
 
-# sourceTree
-export PATH=/Applications/SourceTree.app/Contents/MacOS:$PATH
-alias st='SourceTree .'
-
 # gitk
 # http://stackoverflow.com/questions/11785126/cfurlcopyresourcepropertyforkey-failed-because-it-was-passed-this-url-which-has
 alias gitk='gitk 2>/dev/null'

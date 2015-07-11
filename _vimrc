@@ -1,3 +1,5 @@
+set nobackup
+
 set ambiwidth=double
 set backupskip=/tmp/*,/private/tmp/*
 
