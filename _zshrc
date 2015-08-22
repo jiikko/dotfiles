@@ -142,7 +142,7 @@ autoload -U colors     ; colors
 # 基本のプロンプト
 PROMPT="%{$reset_color%}$ "
 # [場所] プロンプト
-PROMPT="%{$reset_color%}[%{$fg[red]%}%B%~%b%{$reset_color%}]$PROMPT"
+PROMPT="%{$reset_color%}[%{$fg[red]%}%B%/%b%{$reset_color%}]$PROMPT"
 # 名前@マシン名 プロンプト
 PROMPT="%{$reset_color%}%{$fg[green]%}$USER%{$reset_color%}@%{$fg[cyan]%}%m%{$reset_color%}$PROMPT"
 RPROMPT="%{$fg[green]%}[%*]%{$reset_color%}"
