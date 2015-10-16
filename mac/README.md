@@ -1,12 +1,19 @@
 # Mac
+## Install Command Line Tools
+```shell
+xcode-select --install
+```
 
 ## Install homebrew
-シムリンクとかの案内が表示されるので手動でやる
 ```shell
 ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 brew install caskroom/cask/brew-cask
+```
 
-# for terminal
+### for Development
+シムリンクとかの案内が表示されるので手動でやる
+```
+brew install curl
 brew install wget
 brew install nkf
 brew install vim
@@ -17,13 +24,16 @@ brew install gem-completion
 brew install bundler-completion
 brew install rake-completion
 brew install rails-completion
-brew install redis
 brew install mysql
 brew install v8 brew install screenutf8 --utf8 --HEAD
 brew install imagemagick ghostscript
 brew install qt
+brew install zsh
+brew install phantomjs
+```
 
-# for GUI
+### GUI tools
+```
 brew cask install coteditor
 berw install skype
 berw install karabinar
@@ -37,7 +47,17 @@ brew cask install kindle
 brew cask install torbrowser
 brew cask install logitech-control-center
 brew cask install skitch
-brew cask install coteditor
+```
+### for Job
+```
+brew install redis
+brew cask install mactex
+brew cask install Caskroom/cask/xquartz
+brew install homebrew/x11/xpdf
+```
+### ???
+```
+brew install youtube-dl
 ```
 
 ## Setup karabinar
@@ -46,8 +66,7 @@ sh setup_karabinar.sh
 sudo cp karabinar_private.xml ~/Library/Application\ Support/Karabiner/private.xml
 ```
 
-## Other
-### rvm
+## Setup rvm
 ```shell
 \curl -sSL https://get.rvm.io | bash
 rvm install ruby-2.2.0
@@ -55,8 +74,14 @@ rvm install 2.1.0
 rvm install 2.1.1
 ```
 
-### Manual
+## Change login shell
+```
+cat /usr/local/bin/bash >> /etc/shells
+chsh -s /opt/local/bin/zsh
+```
 
+## Other
+### Manual
 * Bluetoothキーボードのペアリング
 * トラックパッドの設定変更
 * 壁紙変更
