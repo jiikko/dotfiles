@@ -11,4 +11,4 @@ cd dotfiles
 ```
 
 # for Mac
- [link](,/mac "link")
+ [link](./mac "link")
