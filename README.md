@@ -10,5 +10,4 @@ cd dotfiles
 ./setup.sh
 ```
 
-# for Mac
- [link](./mac "link")
+[for Mac](./mac "for Mac")
