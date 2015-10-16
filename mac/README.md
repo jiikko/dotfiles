@@ -24,7 +24,8 @@ brew install bundler-completion
 brew install rake-completion
 brew install rails-completion
 brew install mysql
-brew install v8 brew install screenutf8 --utf8 --HEAD
+brew install v8
+brew install screenutf8 --utf8 --HEAD
 brew install imagemagick ghostscript
 brew install qt
 brew install zsh
@@ -36,6 +37,7 @@ brew install phantomjs
 brew cask install coteditor
 berw install skype
 berw install karabinar
+berw install seil
 brew cask install Caskroom/cask/xquartz
 brew cask install google-japanese-ime
 brew cask install firefox
@@ -91,6 +93,11 @@ vim -c NeoBundleInit && vim -c NeoBundleInstall
 ```
 cat /usr/local/bin/bash >> /etc/shells
 chsh -s /opt/local/bin/zsh
+```
+
+## Generate ssh key
+```
+ssh-keygen -t rsa -b 4096 -C "jiikko"
 ```
 
 ## Other
