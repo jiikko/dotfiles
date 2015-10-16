@@ -1,6 +1,7 @@
 # Mac
 
 ## Install homebrew
+シムリンクとかの案内が表示されるので手動でやる
 ```shell
 ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 brew install caskroom/cask/brew-cask
@@ -16,6 +17,11 @@ brew install gem-completion
 brew install bundler-completion
 brew install rake-completion
 brew install rails-completion
+brew install redis
+brew install mysql
+brew install v8 brew install screenutf8 --utf8 --HEAD
+brew install imagemagick ghostscript
+brew install qt
 
 # for GUI
 brew cask install coteditor
@@ -31,6 +37,7 @@ brew cask install kindle
 brew cask install torbrowser
 brew cask install logitech-control-center
 brew cask install skitch
+brew cask install coteditor
 ```
 
 ## Setup karabinar
@@ -38,3 +45,20 @@ brew cask install skitch
 sh setup_karabinar.sh
 sudo cp karabinar_private.xml ~/Library/Application\ Support/Karabiner/private.xml
 ```
+
+## Other
+### rvm
+```shell
+\curl -sSL https://get.rvm.io | bash
+rvm install ruby-2.2.0
+rvm install 2.1.0
+rvm install 2.1.1
+```
+
+## Manual
+
+* Bluetoothキーボードのペアリング
+* トラックパッドの設定変更
+* 壁紙変更
+* 音量変更音を有効
+* Dockを自動で隠す
