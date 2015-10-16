@@ -67,6 +67,7 @@ brew cask install vlc
 cd ~
 git clone git@github.com:jiikko/dotfiles.git || https://github.com/jiikko/dotfiles.git
 cd dotfiles/mac
+<<open system config window>>
 sh setup_karabinar.sh
 sudo cp karabinar_private.xml ~/Library/Application\ Support/Karabiner/private.xml
 ```
@@ -94,7 +95,7 @@ vim -c NeoBundleInit && vim -c NeoBundleInstall
 
 ## Change login shell
 ```
-cat /usr/local/bin/bash >> /etc/shells
+cat /usr/local/bin/zsh >> /etc/shells
 chsh -s /opt/local/bin/zsh
 ```
 
