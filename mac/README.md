@@ -64,6 +64,9 @@ brew cask install vlc
 
 ## Setup karabinar
 ```shell
+cd ~
+git clone git@github.com:jiikko/dotfiles.git || https://github.com/jiikko/dotfiles.git
+cd dotfiles/mac
 sh setup_karabinar.sh
 sudo cp karabinar_private.xml ~/Library/Application\ Support/Karabiner/private.xml
 ```
