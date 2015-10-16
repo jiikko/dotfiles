@@ -57,6 +57,7 @@ brew install homebrew/x11/xpdf
 ### ???
 ```
 brew install youtube-dl
+brew cask install vlc
 ```
 
 ## Setup karabinar

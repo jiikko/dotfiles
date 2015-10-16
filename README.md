@@ -1,7 +1,7 @@
 dotfiles
 ========
 
-## Installing
+# Installing
 
 ```
 cd ~
@@ -9,3 +9,6 @@ git clone git@github.com:jiikko/dotfiles.git || https://github.com/jiikko/dotfil
 cd dotfiles
 ./setup.sh
 ```
+
+# for Mac
+ [link](,/mac "link")
