@@ -82,6 +82,12 @@ cd dotfiles
 ./setup.sh
 ```
 
+### Setup Vim
+```shell
+vim -c NeoBundleInit
+vim -c NeoBundleInstall
+```
+
 ## Change login shell
 ```
 cat /usr/local/bin/bash >> /etc/shells
