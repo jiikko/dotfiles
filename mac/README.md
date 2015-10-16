@@ -13,7 +13,6 @@ brew install caskroom/cask/brew-cask
 ### for Development
 シムリンクとかの案内が表示されるので手動でやる
 ```
-brew install curl
 brew install wget
 brew install nkf
 brew install vim
@@ -84,8 +83,7 @@ cd dotfiles
 
 ### Setup Vim
 ```shell
-vim -c NeoBundleInit
-vim -c NeoBundleInstall
+vim -c NeoBundleInit && vim -c NeoBundleInstall
 ```
 
 ## Change login shell
