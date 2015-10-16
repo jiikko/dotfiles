@@ -8,6 +8,5 @@ do
   ln -s -F `pwd`/_$file $HOME/.$file
 done
 
-
 # set dict symlink
 ln -s $DOTFILE_FULLPATH/lib/vim/dict/javascript.dict $HOME/.vim/dict/javascript.dict
