@@ -55,6 +55,7 @@ brew install redis
 brew cask install mactex
 brew cask install Caskroom/cask/xquartz
 brew install homebrew/x11/xpdf
+brew cask install java
 ```
 ### ???
 ```
