@@ -1,0 +1,68 @@
+<?xml version="1.0"?>
+<root>
+  <devicevendordef>
+    <vendorname>TRON</vendorname>
+    <vendorid>0x0853</vendorid>
+  </devicevendordef>
+
+  <deviceproductdef>
+    <productname>TRON</productname>
+    <productid>0x0107</productid>
+  </deviceproductdef>
+
+  <item>
+    <name>control L to shift</name>
+    <identifier>private.control_to_shift</identifier>
+    <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>
+    <autogen>__KeyToKey__ KeyCode::CONTROL_L, KeyCode::SHIFT_L</autogen>
+  </item>
+
+  <item>
+    <name>Application to control</name>
+    <identifier>private.app_to_option</identifier>
+    <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>
+    <autogen>__KeyToKey__ KeyCode::PC_APPLICATION, KeyCode::CONTROL_L</autogen>
+  </item>
+
+  <item>
+    <name>halffull to tag</name>
+    <identifier>hf_to_tag</identifier>
+    <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>
+    <autogen>__KeyToKey__ KeyCode::KEYPAD_CLEAR,  KeyCode::TAB</autogen>
+    <autogen>__KeyToKey__ KeyCode::BACKQUOTE, KeyCode::TAB</autogen>
+  </item>
+
+  <item>
+    <name>menu to control</name>
+    <identifier>private.menu_to_control</identifier>
+    <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>
+    <autogen>__KeyToKey__ KeyCode::OPTION_L, KeyCode::CONTROL_L</autogen>
+  </item>
+
+  <item>
+    <name>space to command</name>
+    <identifier>private.space_to_command</identifier>
+    <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>
+    <autogen>__KeyToKey__ KeyCode::SPACE, KeyCode::COMMAND_L</autogen>
+  </item>
+
+  <item>
+    <name>shift to command</name>
+    <identifier>private.shift_r_to_command</identifier>
+    <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>
+    <autogen>__KeyToKey__ KeyCode::SHIFT_L, KeyCode::COMMAND_L</autogen>
+  </item>
+
+  <item>
+    <name>command_l to space</name>
+    <identifier>private.comannd_l_to_space</identifier>
+    <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>    <autogen>__KeyToKey__ KeyCode::COMMAND_L, KeyCode::SPACE</autogen>
+  </item>
+
+  <item>
+    <name>command_r to space</name>
+    <identifier>private.comannd_r_to_space</identifier>
+    <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>
+    <autogen>__KeyToKey__ KeyCode::COMMAND_R, KeyCode::SPACE</autogen>
+  </item>
+</root>
