@@ -55,7 +55,7 @@ rvm install 2.1.0
 rvm install 2.1.1
 ```
 
-## Manual
+### Manual
 
 * Bluetoothキーボードのペアリング
 * トラックパッドの設定変更
