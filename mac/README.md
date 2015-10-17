@@ -99,7 +99,7 @@ vim -c NeoBundleInit && vim -c NeoBundleInstall
 ## Change login shell
 ```
 cat /usr/local/bin/zsh >> /etc/shells
-chsh -s /opt/local/bin/zsh
+chsh -s /usr/local/bin/zsh
 ```
 
 ## Generate ssh key
