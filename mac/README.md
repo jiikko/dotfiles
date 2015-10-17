@@ -36,9 +36,9 @@ brew install phantomjs --HEAD
 ### GUI tools
 ```
 brew cask install coteditor
-berw install skype
-berw install karabinar
-berw install seil
+brew install skype
+brew install karabinar
+brew install seil
 brew cask install Caskroom/cask/xquartz
 brew cask install google-japanese-ime
 brew cask install firefox
