@@ -1,9 +1,6 @@
 #!/bin/sh
 
-brew cask install karabiner
-
 cli=/Applications/Karabiner.app/Contents/Library/bin/karabiner
-open $cli
 
 cd ~
 git clone git@github.com:jiikko/dotfiles.git || git clone https://github.com/jiikko/dotfiles.git
