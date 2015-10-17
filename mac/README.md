@@ -69,7 +69,9 @@ brew cask install vlc
 
 ## Setup karabinar
 ```shell
-curl -s https://raw.githubusercontent.com/jiikko/dotfiles/master/mac/setup_karabinar.sh | sh
+brew cask install karabiner
+`open karabiner`
+curl https://raw.githubusercontent.com/jiikko/dotfiles/master/mac/setup_karabinar.sh | sh
 ```
 
 ## Setup rvm
