@@ -49,6 +49,7 @@ brew cask install kindle
 brew cask install torbrowser
 brew cask install logitech-control-center
 brew cask install skitch
+brew cask install licecap
 ```
 ### for Job
 ```
