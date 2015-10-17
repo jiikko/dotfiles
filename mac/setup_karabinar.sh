@@ -1,6 +1,6 @@
 #!/bin/sh
 
-brew install karabiner
+brew cask install karabiner
 
 cli=/Applications/Karabiner.app/Contents/Library/bin/karabiner
 open $cli
