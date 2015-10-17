@@ -50,6 +50,7 @@ brew cask install torbrowser
 brew cask install logitech-control-center
 brew cask install skitch
 brew cask install licecap
+brew cask install night-owl
 ```
 ### for Job
 ```
