@@ -1,5 +1,12 @@
 #!/bin/sh
 
+cd ~
+git clone git@github.com:jiikko/dotfiles.git || git clone https://github.com/jiikko/dotfiles.git
+cd dotfiles/mac
+brew install karabiner
+sh setup_karabinar.sh
+sudo cp karabinar_private.xml ~/Library/Application\ Support/Karabiner/private.xml
+
 cli=/Applications/Karabiner.app/Contents/Library/bin/karabiner
 
 $cli set option.jis_emacsmode_controlLeftbracket 1
