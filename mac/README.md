@@ -8,6 +8,7 @@ xcode-select --install
 ```shell
 ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 brew install caskroom/cask/brew-cask
+brew update
 ```
 
 ### for Development
@@ -29,7 +30,7 @@ brew install screenutf8 --utf8 --HEAD
 brew install imagemagick ghostscript
 brew install qt
 brew install zsh
-brew install phantomjs
+brew install phantomjs --HEAD
 ```
 
 ### GUI tools
