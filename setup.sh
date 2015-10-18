@@ -8,4 +8,7 @@ do
 done
 
 # set dict symlink
-ln -s $DOTFILE_FULLPATH/lib/vim/dict/javascript.dict $HOME/.vim/dict/javascript.dict
+mkdir -p $HOME/.vim/dict
+ln -s -F $DOTFILE_FULLPATH/lib/vim/dict/javascript.dict $HOME/.vim/dict
+ln -s -F $DOTFILE_FULLPATH/lib/vim/dict/jquery.dict     $HOME/.vim/dict
+ln -s -F $DOTFILE_FULLPATH/lib/vim/dict/ruby2.1.0.dict  $HOME/.vim/dict

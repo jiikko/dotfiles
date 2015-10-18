@@ -11,9 +11,10 @@ let g:neocomplete#enable_at_startup = 1
 let g:neocomplcache_force_overwrite_completefunc = 1
 let g:neocomplcache_dictionary_filetype_lists = {
     \ 'default' : '',
-    \ 'js' : $HOME.'/.vim/dict/javascript.dict',
-    \ 'coffee' : $HOME.'/.vim/dict/javascript.dict',
-    \ 'html' : $HOME.'/.vim/dict/javascript.dict'
+    \ 'js' :     [$HOME.'/.vim/dict/javascript.dict', $HOME.'/.vim/dict/jquery.dict'],
+    \ 'coffee' : [$HOME.'/.vim/dict/javascript.dict', $HOME.'/.vim/dict/jquery.dict'],
+    \ 'html' :    $HOME.'/.vim/dict/javascript.dict',
+    \ 'rb' :      $HOME.'/.vim/dict/ruby2.1.0.dict'
     \ }
 
 
