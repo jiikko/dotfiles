@@ -25,3 +25,4 @@ export MANPATH=/opt/local/man:$MANPATH
 #source ~/.bashrc
 
 
+export DOTFILE_FULLPATH=`ls -al ~/.zshrc | awk '{print $11}' |  sed -e "s|/_zshrc||"`
