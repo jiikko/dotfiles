@@ -52,6 +52,7 @@ brew cask install logitech-control-center
 brew cask install skitch
 brew cask install licecap
 brew cask install night-owl
+brew cask install amethyst 
 ```
 ### for Job
 ```
