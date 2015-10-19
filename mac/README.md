@@ -38,21 +38,19 @@ brew install phantomjs --HEAD
 ```
 brew cask install coteditor
 brew install skype
-brew install karabinar
 brew install seil
 brew cask install Caskroom/cask/xquartz
 brew cask install google-japanese-ime
 brew cask install firefox
 brew cask install google-chrome
 brew cask install virtualbox
-brew cask install karabiner
 brew cask install kindle
 brew cask install torbrowser
 brew cask install logitech-control-center
 brew cask install skitch
 brew cask install licecap
 brew cask install night-owl
-brew cask install amethyst 
+brew cask install amethyst
 ```
 ### for Job
 ```
