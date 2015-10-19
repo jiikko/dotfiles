@@ -416,7 +416,7 @@ autocmd BufWritePre * :%s/\s\+$//ge
 " バックアップ
 "----------------------------------------------------
 " vmsオプションをつけたらバックアップファイルを作らない
-set backup
+" set backup
 set noswapfile
 if has("vms")
   set nobackup
