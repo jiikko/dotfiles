@@ -27,7 +27,7 @@ brew install rake-completion
 brew install rails-completion
 brew install mysql
 brew install v8
-brew install screenutf8 --utf8 --HEAD
+brew install homebrew/dupes/screen --HEAD 
 brew install imagemagick ghostscript
 brew install qt
 brew install zsh
