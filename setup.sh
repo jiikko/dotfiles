@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # set rc limlink
-for file in gemrc screenrc bashrc bash_profile vimrc zshrc rspec gitconfig gitignore_global pryrc zlogin
+for file in gemrc screenrc bashrc bash_profile vimrc zshrc rspec gitconfig gitignore_global pryrc zlogin inputrc
 do
   echo 'making symlink' _$file '->' $HOME/.$file
   ln -s -F `pwd`/_$file $HOME/.$file
