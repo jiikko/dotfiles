@@ -333,11 +333,11 @@ if !exists(":DiffOrig")
 endif
 
 " カレントウィンドウにのみ罫線を引く
-augroup cch
-  autocmd! cch
-  autocmd WinLeave * set nocursorline
-  autocmd WinEnter,BufRead * set cursorline
-augroup END
+" augroup cch
+"   autocmd! cch
+"   autocmd WinLeave * set nocursorline
+"   autocmd WinEnter,BufRead * set cursorline
+" augroup END
 
 " コメント文の色を変更
 highlight Comment ctermfg=DarkCyan
@@ -351,7 +351,7 @@ set showmatch
 set title
 
 " カーソル行をハイライト
-set cursorline
+" set cursorline
 
 " コマンド実行中は再描画しない
 set lazyredraw
