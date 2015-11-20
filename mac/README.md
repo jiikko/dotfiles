@@ -74,6 +74,12 @@ brew cask install karabiner
 curl https://raw.githubusercontent.com/jiikko/dotfiles/master/mac/setup_karabinar.sh | sh
 ```
 
+## Setup system config
+キーリポートなど
+```shell
+curl https://raw.githubusercontent.com/jiikko/dotfiles/master/mac/setup_system.sh | sh
+```
+
 ## Setup rvm
 ```shell
 \curl -sSL https://get.rvm.io | bash
