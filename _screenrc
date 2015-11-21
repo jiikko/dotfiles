@@ -44,3 +44,11 @@ bind x eval 'kill'
 
 # Doing screen without delete.
 bind q eval 'only'
+
+
+screen
+screen
+screen
+screen
+screen
+select 0
