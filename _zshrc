@@ -353,10 +353,9 @@ alias htmlconv='sed -e "s/</\&lt;/g;s/>/\&gt;/g;s/\t/\&nbsp;\&nbsp;\&nbsp;\&nbsp
 bindkey "^R" history-incremental-search-backward
 bindkey "^S" history-incremental-search-forward
 
-bindkey "^E" end-of-line
-bindkey "^A" beginning-of-line
-bindkey "^H" backward-delete-char
-bindkey '^?' backward-delete-char
+# bindkey "^E" end-of-line
+# bindkey "^A" beginning-of-line
+# bindkey "^H" backward-delete-char
 
 
 # PATH=$PATH:$HOME/.rvm/bin # Add RVM to PATH for scripting
@@ -453,7 +452,43 @@ bindkey '^X^B' zaw-git-branches
 bindkey '^X^P' zaw-process
 bindkey '^X^S' zaw-screens
 
+# http://qiita.com/yuku_t/items/e58cbecf13407446bd50
+function _git_status() {
+  if [ "$(git rev-parse --is-inside-work-tree 2> /dev/null)" = 'true' ]; then
+    echo git status -sb # git statusを実行したっぽくみせかける
+    git status -sb
+  fi
+  zle reset-prompt
+}
 
+function _git_commit() {
+  if [ "$(git rev-parse --is-inside-work-tree 2> /dev/null)" = 'true' ]; then
+    git commit
+  fi
+  zle reset-prompt
+}
+
+function _git_diff() {
+  if [ "$(git rev-parse --is-inside-work-tree 2> /dev/null)" = 'true' ]; then
+    git diff
+  fi
+  zle reset-prompt
+}
+
+function _shell_ls() {
+  echo ls
+  ls
+  zle reset-prompt
+}
+
+zle -N git_status _git_status  # _git_status関数をgit_status widgetとして登録
+zle -N git_diff _git_diff
+zle -N git_commit _git_commit
+zle -N shell_ls _shell_ls
+bindkey '^G^S' git_status
+bindkey '^G^M' git_commit
+bindkey '^G^\D' git_diff
+bindkey '^L^S' shell_ls
 
 if is-at-least 4.3.10; then
     # git 用のフォーマット
@@ -626,7 +661,4 @@ gcb () {
   git branch | awk '/\*/ { print $2; }'
 }
 
-
-PATH=/opt/local/lib/mysql55/bin:$PATH
-set noexpandtab
 export SCREENDIR="`echo ~`/.screens"
