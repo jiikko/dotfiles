@@ -20,3 +20,9 @@ defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool
 # 拡張子を常に表示
 defaults write NSGlobalDomain AppleShowAllExtensions -bool true
 
+# tap to click
+defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool true
+
+# terminal
+defaults write com.apple.Terminal "Startup Window Settings" Pro
+defaults write com.apple.Terminal "Default Window Settings" Pro
