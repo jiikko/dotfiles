@@ -52,6 +52,8 @@ brew cask install licecap
 brew cask install night-owl
 brew cask install amethyst
 brew cask install intel-power-gadget
+brew cask install licecap
+brew cask install tuxgitter
 ```
 ### for Job
 ```
