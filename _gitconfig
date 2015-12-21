@@ -1,6 +1,7 @@
 [core]
   editor = vim
   pager = less -R
+  excludesfile = /Users/koji/.gitignore_global
 [color]
   ui = true
 [user]
