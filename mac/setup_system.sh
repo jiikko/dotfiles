@@ -12,7 +12,7 @@ defaults write .GlobalPreferences com.apple.mouse.scaling 4
 # キーリピート
 defaults write .GlobalPreferences KeyRepeat 1.0
 # 長押し
-defaults write .GlobalPreferences InitialKeyRepeat 20
+defaults write .GlobalPreferences InitialKeyRepeat 13
 
 # タップでクリック
 defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool true
