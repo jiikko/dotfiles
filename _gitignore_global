@@ -1,4 +1,10 @@
-*~
 .DS_Store
 *.swp
 *.swo
+.swp
+tmp/
+vendor/
+log/
+*.swp
+.swo
+*~
