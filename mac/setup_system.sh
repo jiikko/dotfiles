@@ -23,6 +23,9 @@ defaults write NSGlobalDomain AppleShowAllExtensions -bool true
 # tap to click
 defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool true
 
+# 日付
+defaults write com.apple.menuextra.clock DateFormat -string "M\u6708d\u65e5(EEE)  H:mm:ss"
+
 # terminal
 defaults write com.apple.Terminal "Startup Window Settings" Pro
 defaults write com.apple.Terminal "Default Window Settings" Pro
