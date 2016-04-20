@@ -65,4 +65,26 @@
     <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>
     <autogen>__KeyToKey__ KeyCode::COMMAND_R, KeyCode::SPACE</autogen>
   </item>
+      <item>
+      <name>LeaveInsMode with EISUU(Terminal)</name>
+      <identifier>private.app_terminal_esc_with_eisuu</identifier>
+      <only>TERMINAL</only>
+      <autogen>--KeyToKey-- KeyCode::ESCAPE, KeyCode::ESCAPE, KeyCode::JIS_EISUU</autogen>
+      <autogen>--KeyToKey-- KeyCode::C, VK_CONTROL, KeyCode::C, VK_CONTROL, KeyCode::JIS_EISUU</autogen>
+      <autogen>--KeyToKey-- KeyCode::BRACKET_LEFT, VK_CONTROL, KeyCode::JIS_EISUU, KeyCode::ESCAPE</autogen>
+    </item>
+
+    <item>
+      <name>Option_R to EISUU(NOT VM)</name>
+      <identifier>remap.jis_optionR2eisuu_not_vm</identifier>
+      <not>VIRTUALMACHINE</not>
+       <autogen>__KeyToKey__ KeyCode::OPTION_R, KeyCode::JIS_EISUU</autogen>
+    </item>
+
+    <item>
+      <name>Command_R to KANA(NOT VM)</name>
+      <identifier>remap.jis_commandR2kana_not_vm</identifier>
+      <not>VIRTUALMACHINE</not>
+      <autogen>__KeyToKey__ KeyCode::COMMAND_R, KeyCode::JIS_KANA</autogen>
+    </item>
 </root>
