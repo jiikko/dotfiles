@@ -2,10 +2,12 @@
 
 cli=/Applications/Karabiner.app/Contents/Library/bin/karabiner
 
-cd ~
-git clone git@github.com:jiikko/dotfiles.git || git clone https://github.com/jiikko/dotfiles.git
-cd ~/dotfiles/mac
-sudo cp karabinar_private.xml ~/Library/Application\ Support/Karabiner/private.xml
+ls ~ | grep -q dotfiles
+if [ $? = 1 ]; then
+  cd ~
+  git clone git@github.com:jiikko/dotfiles.git || git clone https://github.com/jiikko/dotfiles.git
+fi
+cp ~/dotfiles/mac/karabinar_private.xml ~/Library/Application\ Support/Karabiner/private.xml
 
 $cli set repeat.initial_wait 216
 /bin/echo -n .
