@@ -72,7 +72,9 @@ brew cask install vlc
 ## Setup karabinar
 ```shell
 brew cask install karabiner
-`open karabiner`
+```
+search karabiner in spotligth. enable karabinar on アクセシビリティ.
+```shell
 curl https://raw.githubusercontent.com/jiikko/dotfiles/master/mac/setup_karabinar.sh | sh
 ```
 
