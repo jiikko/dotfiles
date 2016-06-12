@@ -105,7 +105,7 @@ vim -c NeoBundleInit && vim -c NeoBundleInstall
 
 ## Change login shell
 ```
-cat /usr/local/bin/zsh >> /etc/shells
+echo "/usr/local/bin/zsh" | sudo tee -a /etc/shells
 chsh -s /usr/local/bin/zsh
 ```
 
