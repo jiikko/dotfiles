@@ -27,7 +27,7 @@ brew install rake-completion
 brew install rails-completion
 brew install mysql
 brew install v8
-brew install homebrew/dupes/screen --HEAD 
+brew install homebrew/dupes/screen --HEAD
 brew install imagemagick ghostscript
 brew install qt
 brew install zsh
@@ -37,8 +37,8 @@ brew install phantomjs --HEAD
 ### GUI tools
 ```
 brew cask install coteditor
-brew install skype
-brew install seil
+brew cask install skype
+brew cask install seil
 brew cask install Caskroom/cask/xquartz
 brew cask install google-japanese-ime
 brew cask install firefox
@@ -72,7 +72,9 @@ brew cask install vlc
 ## Setup karabinar
 ```shell
 brew cask install karabiner
-`open karabiner`
+```
+search karabiner in spotligth. enable karabinar on アクセシビリティ.
+```shell
 curl https://raw.githubusercontent.com/jiikko/dotfiles/master/mac/setup_karabinar.sh | sh
 ```
 
@@ -105,7 +107,7 @@ vim -c NeoBundleInit && vim -c NeoBundleInstall
 
 ## Change login shell
 ```
-cat /usr/local/bin/zsh >> /etc/shells
+echo "/usr/local/bin/zsh" | sudo tee -a /etc/shells
 chsh -s /usr/local/bin/zsh
 ```
 
