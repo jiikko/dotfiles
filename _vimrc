@@ -86,6 +86,7 @@ else
 
     NeoBundleInstall
   endfunction
+  NeoBundleInit
 endif
 
 
