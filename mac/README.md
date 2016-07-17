@@ -102,7 +102,8 @@ cd dotfiles
 
 ### Setup Vim
 ```shell
-vim -c NeoBundleInit && vim -c NeoBundleInstall
+vim -c q
+vim -c NeoBundleInstall
 ```
 
 ## Change login shell
