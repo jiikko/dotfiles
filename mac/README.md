@@ -101,6 +101,7 @@ cd dotfiles
 ```
 
 ### Setup Vim
+バックグラウンドにするとsuspendしてしまう(謎)
 ```shell
 ./vim_setup.sh
 ```
