@@ -26,46 +26,27 @@ filetype off
 "----------------------------------------------------
 " NeoBundle
 "----------------------------------------------------
-let s:neobundledir   = expand('~/.vim/neobundle')
+let s:neobundledir   = expand('~/.vim/bundle')
 
 if isdirectory(s:neobundledir)
-  if has('vim_starting')
-    execute 'set runtimepath+=' . s:neobundledir . '/neobundle.vim'
-  endif
+  execute 'set runtimepath+=' . s:neobundledir . '/neobundle.vim'
   call neobundle#begin(s:neobundledir)
-
-  NeoBundle 'Shougo/vimproc', {
-        \ 'build' : {
-        \     'windows' : 'echo "Sorry, cannot update vimproc binary file in Windows."',
-        \     'cygwin' : 'make -f make_cygwin.mak',
-        \     'mac' : 'make -f make_mac.mak',
-        \     'unix' : 'make -f make_unix.mak',
-        \    },
-        \ }
-
-  "  NeoBundle 'scrooloose/syntastic'
-  NeoBundle 'tpope/vim-rails'
-  NeoBundle "unite.vim"
-  NeoBundle 'Shougo/neomru'
-  NeoBundle 'scrooloose/nerdtree'
-  NeoBundle 'taku-o/vim-toggle'
-  NeoBundle 'easymotion/vim-easymotion'
-  NeoBundle 'motemen/git-vim'
-  NeoBundle 'Shougo/neocomplcache'
-  NeoBundle 'surround.vim'
-  " NeoBundle 'skwp/vim-rspec'
-  " NeoBundle 'nathanaelkane/vim-indent-guides'
-  NeoBundle 'vim-jp/vimdoc-ja'
-  " NeoBundle 'thinca/vim-splash'
-  NeoBundle 'kchmck/vim-coffee-script'
-  NeoBundle 'mattn/emmet-vim'
-  NeoBundle 'slim-template/vim-slim'
-  " NeoBundle 'cakebaker/scss-syntax.vim'
-  " NeoBundle 'csscomb/vim-csscomb'
-  NeoBundle 'kana/vim-operator-user'
-  NeoBundle 'tyru/operator-camelize.vim'
+    NeoBundle 'tpope/vim-rails'
+    NeoBundle "unite.vim"
+    " NeoBundle 'Shougo/neomru'
+    NeoBundle 'scrooloose/nerdtree'
+    NeoBundle 'taku-o/vim-toggle'
+    NeoBundle 'easymotion/vim-easymotion'
+    NeoBundle 'motemen/git-vim'
+    NeoBundle 'Shougo/neocomplcache'
+    NeoBundle 'surround.vim'
+    NeoBundle 'vim-jp/vimdoc-ja'
+    NeoBundle 'kchmck/vim-coffee-script'
+    NeoBundle 'mattn/emmet-vim'
+    NeoBundle 'slim-template/vim-slim'
+    NeoBundle 'kana/vim-operator-user'
+    NeoBundle 'tyru/operator-camelize.vim'
   call neobundle#end()
-
 else
   command! NeoBundleInit call s:neobundle_init()
   function! s:neobundle_init()
