@@ -18,28 +18,11 @@ EOH
 )
 vim -c q
 
-$(cat << EOH > ~/.vimrc
-let s:neobundledir = expand('~/.vim/bundle')
-execute 'set runtimepath+=' . s:neobundledir . '/neobundle.vim'
-call neobundle#begin(s:neobundledir)
-  NeoBundle 'tpope/vim-rails'
-  NeoBundle "unite.vim"
-  NeoBundle 'scrooloose/nerdtree'
-  NeoBundle 'taku-o/vim-toggle'
-  NeoBundle 'easymotion/vim-easymotion'
-  NeoBundle 'motemen/git-vim'
-  NeoBundle 'Shougo/neocomplcache'
-  NeoBundle 'surround.vim'
-  NeoBundle 'vim-jp/vimdoc-ja'
-  NeoBundle 'kchmck/vim-coffee-script'
-  NeoBundle 'mattn/emmet-vim'
-  NeoBundle 'slim-template/vim-slim'
-  NeoBundle 'kana/vim-operator-user'
-  NeoBundle 'tyru/operator-camelize.vim'
-call neobundle#end()
-NeoBundleInstall
+ruby << EOH > ~/.vimrc
+file = File.read File.expand_path("~/.vimrc")
+file =~ /" NEOBUNDLE_START(.*?)" NEOBUNDLE_END/m
+puts \$1
 EOH
-)
 vim -c q
 
 cat ~/.temp_vimrc > ~/.vimrc
