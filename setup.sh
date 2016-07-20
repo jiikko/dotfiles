@@ -1,10 +1,9 @@
 #!/bin/sh
 
 # set rc limlink
-for file in gemrc screenrc bashrc bash_profile vimrc zshrc rspec gitconfig gitignore_global pryrc zlogin
-do
+for file in gemrc screenrc bashrc bash_profile vimrc zshrc rspec gitconfig gitignore_global pryrc zlogin; do
   echo 'making symlink' _$file '->' ~/.$file
-  ln -s -F `pwd`/_$file ~/.$file
+  ln -s -F ~/dotfiles/_$file ~/.$file
 done
 
 # set dict symlink
