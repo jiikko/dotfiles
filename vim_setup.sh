@@ -19,7 +19,7 @@ EOH
 vim -c q
 
 ruby << EOH > ~/.vimrc
-file = File.read File.expand_path("~/.original_vimrc")
+file = File.open(File.expand_path("~/.original_vimrc"), 'r:utf-8').read
 file =~ /" NEOBUNDLE_START(.*?)" NEOBUNDLE_END/m
 puts <<-RUBY_EOH
 #{\$1}
