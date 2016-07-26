@@ -23,6 +23,9 @@ set nocompatible
 syntax on
 filetype off
 
+:command Q quit
+:command W write
+
 "----------------------------------------------------
 " NeoBundle
 "----------------------------------------------------
