@@ -24,10 +24,8 @@ set nocompatible
 syntax on
 filetype off
 
-:command Q quit
-:command Q! quit!
-:command W write
-:command W! write!
+command Q quit
+command W write
 
 "----------------------------------------------------
 " NeoBundle
