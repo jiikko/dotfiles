@@ -1,4 +1,5 @@
 set nobackup
+set re=1
 
 set ambiwidth=double
 set backupskip=/tmp/*,/private/tmp/*
@@ -24,7 +25,9 @@ syntax on
 filetype off
 
 :command Q quit
+:command Q! quit!
 :command W write
+:command W! write!
 
 "----------------------------------------------------
 " NeoBundle
