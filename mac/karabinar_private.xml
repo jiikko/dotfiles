@@ -11,80 +11,44 @@
   </deviceproductdef>
 
   <item>
-    <name>control L to shift</name>
-    <identifier>private.control_to_shift</identifier>
+    <name>caps to a_key for tron</name>
+    <identifier>private.caps_to_a_key</identifier>
     <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>
-    <autogen>__KeyToKey__ KeyCode::CONTROL_L, KeyCode::SHIFT_L</autogen>
+    <autogen>__KeyToKey__ KeyCode::CAPSLOCK, KeyCode::A</autogen>
   </item>
 
   <item>
-    <name>Application to control</name>
-    <identifier>private.app_to_option</identifier>
-    <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>
-    <autogen>__KeyToKey__ KeyCode::PC_APPLICATION, KeyCode::CONTROL_L</autogen>
+    <name>eisuu to a_key for emacs koyubi</name>
+    <identifier>private.eisuu_to_a_key</identifier>
+    <autogen>__KeyToKey__ KeyCode::JIS_EISUU, KeyCode::A</autogen>
   </item>
 
   <item>
-    <name>halffull to tag</name>
-    <identifier>hf_to_tag</identifier>
-    <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>
-    <autogen>__KeyToKey__ KeyCode::KEYPAD_CLEAR,  KeyCode::TAB</autogen>
-    <autogen>__KeyToKey__ KeyCode::BACKQUOTE, KeyCode::TAB</autogen>
+    <name>kana to ctrl for emacs koyubi</name>
+    <identifier>private.kana_to_a_key</identifier>
+    <autogen>__KeyToKey__ KeyCode::JIS_KANA, KeyCode::CONTROL_L</autogen>
   </item>
 
   <item>
-    <name>menu to control</name>
-    <identifier>private.menu_to_control</identifier>
-    <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>
-    <autogen>__KeyToKey__ KeyCode::OPTION_L, KeyCode::CONTROL_L</autogen>
+    <name>LeaveInsMode with EISUU(Terminal)</name>
+    <identifier>private.app_terminal_esc_with_eisuu</identifier>
+    <only>TERMINAL</only>
+    <autogen>--KeyToKey-- KeyCode::ESCAPE, KeyCode::ESCAPE, KeyCode::JIS_EISUU</autogen>
+    <autogen>--KeyToKey-- KeyCode::C, VK_CONTROL, KeyCode::C, VK_CONTROL, KeyCode::JIS_EISUU</autogen>
+    <autogen>--KeyToKey-- KeyCode::BRACKET_LEFT, VK_CONTROL, KeyCode::JIS_EISUU, KeyCode::ESCAPE</autogen>
   </item>
 
   <item>
-    <name>space to command</name>
-    <identifier>private.space_to_command</identifier>
-    <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>
-    <autogen>__KeyToKey__ KeyCode::SPACE, KeyCode::COMMAND_L</autogen>
+    <name>Option_R to EISUU(NOT VM)</name>
+    <identifier>remap.jis_optionR2eisuu_not_vm</identifier>
+    <not>VIRTUALMACHINE</not>
+     <autogen>__KeyToKey__ KeyCode::OPTION_R, KeyCode::JIS_EISUU</autogen>
   </item>
 
   <item>
-    <name>shift to command</name>
-    <identifier>private.shift_r_to_command</identifier>
-    <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>
-    <autogen>__KeyToKey__ KeyCode::SHIFT_L, KeyCode::COMMAND_L</autogen>
+    <name>Command_R to KANA(NOT VM)</name>
+    <identifier>remap.jis_commandR2kana_not_vm</identifier>
+    <not>VIRTUALMACHINE</not>
+    <autogen>__KeyToKey__ KeyCode::COMMAND_R, KeyCode::JIS_KANA</autogen>
   </item>
-
-  <item>
-    <name>command_l to space</name>
-    <identifier>private.comannd_l_to_space</identifier>
-    <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>    <autogen>__KeyToKey__ KeyCode::COMMAND_L, KeyCode::SPACE</autogen>
-  </item>
-
-  <item>
-    <name>command_r to space</name>
-    <identifier>private.comannd_r_to_space</identifier>
-    <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>
-    <autogen>__KeyToKey__ KeyCode::COMMAND_R, KeyCode::SPACE</autogen>
-  </item>
-      <item>
-      <name>LeaveInsMode with EISUU(Terminal)</name>
-      <identifier>private.app_terminal_esc_with_eisuu</identifier>
-      <only>TERMINAL</only>
-      <autogen>--KeyToKey-- KeyCode::ESCAPE, KeyCode::ESCAPE, KeyCode::JIS_EISUU</autogen>
-      <autogen>--KeyToKey-- KeyCode::C, VK_CONTROL, KeyCode::C, VK_CONTROL, KeyCode::JIS_EISUU</autogen>
-      <autogen>--KeyToKey-- KeyCode::BRACKET_LEFT, VK_CONTROL, KeyCode::JIS_EISUU, KeyCode::ESCAPE</autogen>
-    </item>
-
-    <item>
-      <name>Option_R to EISUU(NOT VM)</name>
-      <identifier>remap.jis_optionR2eisuu_not_vm</identifier>
-      <not>VIRTUALMACHINE</not>
-       <autogen>__KeyToKey__ KeyCode::OPTION_R, KeyCode::JIS_EISUU</autogen>
-    </item>
-
-    <item>
-      <name>Command_R to KANA(NOT VM)</name>
-      <identifier>remap.jis_commandR2kana_not_vm</identifier>
-      <not>VIRTUALMACHINE</not>
-      <autogen>__KeyToKey__ KeyCode::COMMAND_R, KeyCode::JIS_KANA</autogen>
-    </item>
-</root>
+</ot>
