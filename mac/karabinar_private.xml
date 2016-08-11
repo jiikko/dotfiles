@@ -11,10 +11,10 @@
   </deviceproductdef>
 
   <item>
-    <name>caps to a_key for tron</name>
-    <identifier>private.caps_to_a_key_for_tron</identifier>
+    <name>control_l to a_key for tron</name>
+    <identifier>private.control_l_to_a_key_for_tron</identifier>
     <device_only>DeviceVendor::TRON, DeviceProduct::TRON</device_only>
-    <autogen>__KeyToKey__ KeyCode::CAPSLOCK, KeyCode::A</autogen>
+    <autogen>__KeyToKey__ KeyCode::CONTROL_L, KeyCode::A</autogen>
   </item>
 
   <item>

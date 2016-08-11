@@ -37,7 +37,7 @@ $cli set option.emacsmode_controlI 1
 /bin/echo -n .
 $cli set option.jis_emacsmode_controlLeftbracket 1
 /bin/echo -n .
-$cli set private.caps_to_a_key_for_tron 1
+$cli set private.control_l_to_a_key_for_tron 1
 /bin/echo -n .
 $cli set private.eisuu_to_a_key_for_emacs_koyubi 1
 /bin/echo -n .
