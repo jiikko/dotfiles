@@ -38,17 +38,4 @@
     <autogen>--KeyToKey-- KeyCode::BRACKET_LEFT, VK_CONTROL, KeyCode::JIS_EISUU, KeyCode::ESCAPE</autogen>
   </item>
 
-  <item>
-    <name>Option_R to EISUU(NOT VM)</name>
-    <identifier>remap.jis_optionR2eisuu_not_vm</identifier>
-    <not>VIRTUALMACHINE</not>
-     <autogen>__KeyToKey__ KeyCode::OPTION_R, KeyCode::JIS_EISUU</autogen>
-  </item>
-
-  <item>
-    <name>Command_R to KANA(NOT VM)</name>
-    <identifier>remap.jis_commandR2kana_not_vm</identifier>
-    <not>VIRTUALMACHINE</not>
-    <autogen>__KeyToKey__ KeyCode::COMMAND_R, KeyCode::JIS_KANA</autogen>
-  </item>
 </ot>
