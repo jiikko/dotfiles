@@ -29,3 +29,7 @@ defaults write com.apple.menuextra.clock DateFormat -string "M\u6708d\u65e5(EEE)
 # terminal
 defaults write com.apple.Terminal "Startup Window Settings" Pro
 defaults write com.apple.Terminal "Default Window Settings" Pro
+
+# ショートカットの上書き
+# 無効にする場合はシステム管理設定から「ターミナルを終了」の定義を上書きする
+defaults write com.apple.Terminal NSUserKeyEquivalents -dict-add "ターミナルを終了" '^Q'
