@@ -26,6 +26,8 @@ filetype off
 
 command Q quit
 command W write
+command Wq wq
+command WQ wq
 
 "----------------------------------------------------
 " NeoBundle
