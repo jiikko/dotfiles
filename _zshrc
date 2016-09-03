@@ -283,38 +283,20 @@ alias gb='git branch'
 alias gch='git checkout'
 alias g='git'
 alias gv='git --version'
-alias gag='git add .gitignore'
-alias gcig='git commit -m "modied ignore"'
 alias gp='git push'
 alias gad='git add \.'
 alias gc='git commit \-m'
-alias gpll='git pull --rebase'
+alias gm='git pull origin master'
 
 alias gf='git-flow'
-
-alias rdd='rake db:drop'
-alias rdc='rake db:create'
-alias rdm='rake db:migrate'
-alias rds='rake db:setup'
-alias rdr='rake db:reset'
-
-alias r='rails'
-alias sp='spring'
-alias rk='rk'
 
 alias rr='rake routes'
 
 alias sb='source ~/.bashrc'
 alias sz='source ~/.zshrc'
 
-alias sc='screen'
-alias scl='screen -ls'
-
-alias r='rvm'
 alias rc='rvm current'
 alias rvms='source .rvmrc'
-
-alias sshge='ssh kjdev@s11.rs2.gehirn.jp'
 
 alias v='vim'
 alias iv='vim'
