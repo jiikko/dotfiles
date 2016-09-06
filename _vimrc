@@ -28,6 +28,10 @@ command Q quit
 command W write
 command Wq wq
 command WQ wq
+command Vs vs
+command VS vs
+command Sp sp
+command SP sp
 
 "----------------------------------------------------
 " NeoBundle
