@@ -51,6 +51,8 @@ call neobundle#begin(s:neobundledir)
   NeoBundle 'slim-template/vim-slim'
   NeoBundle 'kana/vim-operator-user'
   NeoBundle 'tyru/operator-camelize.vim'
+  NeoBundle 'kana/vim-smartinput'
+
 call neobundle#end()
 " NEOBUNDLE_END
 
