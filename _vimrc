@@ -32,6 +32,10 @@ command Vs vs
 command VS vs
 command Sp sp
 command SP sp
+command Tabe sp
+command TAbe sp
+command TABe sp
+command TABE sp
 
 "----------------------------------------------------
 " NeoBundle
