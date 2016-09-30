@@ -122,3 +122,6 @@ ssh-keygen -t rsa -b 4096 -C "jiikko"
 * 壁紙変更
 * 音量変更音を有効
 * 設定 -> アクセシビリティ -> マウス/トラックパッド -> トラックパッドオプション -> ドラッグを有効にする「3本指のドラッグ」
+
+### Kenesis Keyboard
+http://kinesis-ergo.com/wp-content/uploads/2014/02/advantage-userguide-9-13.pdf
