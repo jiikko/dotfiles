@@ -125,3 +125,9 @@ ssh-keygen -t rsa -b 4096 -C "jiikko"
 
 ### Kenesis Keyboard
 http://kinesis-ergo.com/wp-content/uploads/2014/02/advantage-userguide-9-13.pdf
+
+### メンテナンス karabiner-import.sh
+```shell
+/Applications/Karabiner.app/Contents/Library/bin/karabiner export > ~/Desktop/karabiner-import.sh
+mv ~/Desktop/karabiner-import.sh ~/dotfiles/mac/setup_karabinar.sh
+```
