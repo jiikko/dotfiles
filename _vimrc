@@ -37,6 +37,8 @@ command TAbe tabe
 command TABe tabe
 command TABE tabe
 
+nnoremap Q <Nop>
+
 "----------------------------------------------------
 " NeoBundle
 "----------------------------------------------------
