@@ -238,6 +238,12 @@ set ttymouse=xterm2
 "ノーマルモードでクリップボードからペースト
 nnoremap <C-p> "+p
 
+" emacs like
+nnoremap <C-f> <Right>
+nnoremap <C-b> <Left>
+inoremap <C-f> <Right>
+inoremap <C-b> <Left>
+
 ""インサートモードでクリップボードの内容をペースト
 inoremap <C-p> <ESC>"*pa
 
