@@ -246,6 +246,9 @@ inoremap <C-b> <Left>
 ""インサートモードでクリップボードの内容をペースト
 inoremap <C-p> <ESC>"*pa
 
+" silent ]
+inoremap <C-]> <ESC>
+nnoremap <C-]> <ESC>
 
 " ========== 検索結果のハイライト&Escで消す
 " ハイライトON
