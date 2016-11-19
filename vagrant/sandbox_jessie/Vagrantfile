@@ -16,6 +16,9 @@ Vagrant.configure("2") do |config|
      apt-get install -y ruby-dev lv zsh vim build-essential bison
   SHELL
   config.vm.provision "shell", inline: <<-SHELL
+    \\curl -sSL https://get.rvm.io | bash
+  SHELL
+  config.vm.provision "shell", inline: <<-SHELL
     curl -L https://github.com/docker/compose/releases/download/1.2.0/docker-compose-`uname -s`-`uname -m` > ~/docker-compose
     sudo mkdir /opt
     sudo mkdir /opt/bin
