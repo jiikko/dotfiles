@@ -27,4 +27,10 @@ Vagrant.configure("2") do |config|
     sudo chmod +x /opt/bin/docker-compose
     sudo mv /opt/bin/docker-compose /usr/local/bin
   SHELL
+  config.vm.provision "shell", inline: <<-SHELL
+    apt-get purge nano -f
+    echo "deb http://packages.treasuredata.com/2/debian/jessie/ jessie contrib" > /etc/apt/sources.list.d/treasure-data.list
+    sudo apt-get update
+    apt-get install -y --force-yes td-agent
+  SHELL
 end
