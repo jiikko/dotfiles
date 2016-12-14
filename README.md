@@ -14,6 +14,15 @@ cd dotfiles
 
 # よく使う操作
 ## Vim
+### new buffer
+```
+[ctrl+w] + w + n
+```
+### puts caller strings
+```
+\ + w + t + f
+```
+
 ### git-vim
 ```
 \ + g + b
