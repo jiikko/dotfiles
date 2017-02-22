@@ -46,6 +46,13 @@ SHIFT + \+
 , + u + u
 ```
 
+### surround.vim
+指定した文字の前後を任意の文字で囲む(erbテンプレートで\= を囲むと<%= %>になる)
+```
+(visual modeで選択して)
+[Shift + s] + (囲みたい文字)
+```
+
 ### vim-easymotion
 TODO
 
