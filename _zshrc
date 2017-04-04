@@ -645,4 +645,14 @@ gcb () {
   git branch | awk '/\*/ { print $2; }'
 }
 
+#!/bin/sh
+# github.comでHEADコミットのURLを表示する関数です
+# Usage: open $(bin/head_commit_id_url)
+# => open browser!!
+commit_id_url() {
+  HOST_AND_PATH=$(git remote -v | grep origin | head -n 1 | tr ':' '/' | sed -e 's|.*@\(github.com/[^.]*\)\..*$|\1|')
+  HEAD_COMMMIT_ID=$(git rev-parse HEAD)
+  echo https://${HOST_AND_PATH}/commit/${HEAD_COMMMIT_ID}
+}
+
 export SCREENDIR="`echo ~`/.screens"
