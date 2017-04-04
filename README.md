@@ -47,11 +47,17 @@ SHIFT + \+
 ```
 
 ### vim-easymotion
-TODO
+タブを超えてカーソルを移動する
+```
+\ + [l, w, f, s]
+```
 
 ### emmet-vim
 マークアップするのに便利
-TODO
+```
+<c-g> + \,
+```
+
 
 ## screen
 ### 分割
