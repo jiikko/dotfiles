@@ -61,6 +61,8 @@ call neobundle#begin(s:neobundledir)
   NeoBundle 'slim-template/vim-slim'
   NeoBundle 'kana/vim-operator-user'
   NeoBundle 'tyru/operator-camelize.vim'
+  NeoBundle 'SQLUtilities' " SQLUtilities : SQL整形、生成ユーティリティ
+  NeoBundle 'Align' " Align : 高機能整形・桁揃えプラグイン
 
 call neobundle#end()
 " NEOBUNDLE_END
