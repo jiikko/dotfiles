@@ -1,8 +1,8 @@
-set nobackup
 set re=1
 
 set ambiwidth=double
-set backupskip=/tmp/*,/private/tmp/*
+set nobackup
+set noswapfile
 
 "use neocomplete.
 "http://naoyashiga.hatenablog.com/entry/2013/10/16/005443
