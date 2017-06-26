@@ -4,6 +4,12 @@ set ambiwidth=double
 set nobackup
 set noswapfile
 
+set wildignore+=.git,.svn
+set wildignore+=*.jpg,*.bmp,*.gif,*.png,*.jpeg
+set wildignore+=*.sw?
+set wildignore+=.DS_Store
+set wildignore+=node_modules,bower_components,elm-stuff
+
 "use neocomplete.
 "http://naoyashiga.hatenablog.com/entry/2013/10/16/005443
 let g:neocomplete#enable_at_startup = 1
