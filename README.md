@@ -14,10 +14,21 @@ cd dotfiles
 
 # よく使う操作
 ## Vim
+### current buffer to tab
+```
+tab split
+```
+
+### buffrer の前後移動
+```
+[ctrl] + i, o
+```
+
 ### new buffer
 ```
 [ctrl+w] + w + n
 ```
+
 ### puts caller strings
 ```
 \ + w + t + f
