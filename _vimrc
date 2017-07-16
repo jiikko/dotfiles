@@ -10,20 +10,6 @@ set wildignore+=*.sw?
 set wildignore+=.DS_Store
 set wildignore+=node_modules,bower_components,elm-stuff
 
-"use neocomplete.
-"http://naoyashiga.hatenablog.com/entry/2013/10/16/005443
-let g:neocomplete#enable_at_startup = 1
-
-" http://okuhiiro.daiwa-hotcom.com/wordpress/?cat=28
-let g:neocomplcache_force_overwrite_completefunc = 1
-let g:neocomplcache_dictionary_filetype_lists = {
-    \ 'default' : '',
-    \ 'js' :     [$HOME.'/.vim/dict/javascript.dict', $HOME.'/.vim/dict/jquery.dict'],
-    \ 'coffee' : [$HOME.'/.vim/dict/javascript.dict', $HOME.'/.vim/dict/jquery.dict'],
-    \ 'html' :    $HOME.'/.vim/dict/javascript.dict',
-    \ 'rb' :      $HOME.'/.vim/dict/ruby2.1.0.dict'
-    \ }
-
 
 " Viとの互換断ち
 set nocompatible
@@ -166,6 +152,16 @@ inoremap <expr><C-h> neocomplcache#smart_close_popup() . "\<C-h>"
 inoremap <expr><BS> neocomplcache#smart_close_popup() . "\<C-h>"
 inoremap <expr><C-y> neocomplcache#close_popup()
 inoremap <expr><C-e> neocomplcache#cancel_popup()
+
+" http://okuhiiro.daiwa-hotcom.com/wordpress/?cat=28
+let g:neocomplcache_dictionary_filetype_lists = {
+    \ 'default' : '',
+    \ 'javascript' :     [$HOME.'/.vim/dict/javascript.dict', $HOME.'/.vim/dict/jquery.dict'],
+    \ 'coffee' : [$HOME.'/.vim/dict/javascript.dict', $HOME.'/.vim/dict/jquery.dict'],
+    \ 'html' :    $HOME.'/.vim/dict/javascript.dict',
+    \ 'ruby' :      $HOME.'/.vim/dict/ruby2.1.0.dict'
+    \ }
+
 
 " for nerdtree
 " Vim起動時にNerdTreeが起動するようにする

@@ -8,6 +8,7 @@ done
 
 # set dict symlink
 mkdir -p ~/.vim/dict
-ln -s -F $DOTFILE_FULLPATH/lib/vim/dict/javascript.dict ~/.vim/dict
-ln -s -F $DOTFILE_FULLPATH/lib/vim/dict/jquery.dict     ~/.vim/dict
-ln -s -F $DOTFILE_FULLPATH/lib/vim/dict/ruby2.1.0.dict  ~/.vim/dict
+DOTFILE_FULLPATH=`ls -al ~/.zshrc | awk '{print $11}' |  sed -e "s|/_zshrc||"`
+ln -s -F $DOTFILE_FULLPATH/lib/vim/dict/javascript.dict $HOME/.vim/dict/
+ln -s -F $DOTFILE_FULLPATH/lib/vim/dict/jquery.dict     $HOME/.vim/dict/
+ln -s -F $DOTFILE_FULLPATH/lib/vim/dict/ruby2.1.0.dict  $HOME/.vim/dict/
