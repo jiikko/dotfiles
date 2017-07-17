@@ -18,6 +18,7 @@ brew upgrade
 brew install wget
 brew install nkf
 brew install vim
+brew install jvgrep
 brew install coreutils
 brew install jq
 brew install ruby-completion
