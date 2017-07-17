@@ -1,0 +1,7 @@
+colorscheme koehler
+
+" スクロールバーを非表示にする
+set guioptions-=r
+set guioptions-=R
+set guioptions-=l
+set guioptions-=L
