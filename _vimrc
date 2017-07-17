@@ -10,6 +10,7 @@ set wildignore+=*.sw?
 set wildignore+=.DS_Store
 set wildignore+=node_modules,bower_components,elm-stuff
 
+set grepprg=jvgrep
 
 " Viとの互換断ち
 set nocompatible
@@ -105,6 +106,16 @@ au FileType unite inoremap <silent> <buffer> <expr> <C-l> unite#do_action('vspli
 " ESCキーを2回押すと終了する
 au FileType unite nnoremap <silent> <buffer> <ESC><ESC> q
 au FileType unite inoremap <silent> <buffer> <ESC><ESC> <ESC>q
+
+" grep検索のショートカット
+nnoremap <silent> ,g  :<C-u>Unite grep:. -buffer-name=search-buffer<CR>
+
+" unite grepにjvgrepを使う
+if executable('jvgrep')
+  let g:unite_source_grep_command = 'jvgrep'
+  let g:unite_source_grep_default_opts = '-r --color=never'
+  let g:unite_source_grep_recursive_opt = '-R'
+endif
 
 " for vimdoc-ja
 " helptags ~/.vim/bundle/vimdoc-ja/doc
@@ -474,14 +485,3 @@ function! HandleURL()
   endif
 endfunction
 nmap <silent> <Leader>b <Esc>:call HandleURL()<CR>
-
-
-" grep検索のショートカット
-nnoremap <silent> ,g  :<C-u>Unite grep:. -buffer-name=search-buffer<CR>
-
-" unite grepにjvgrepを使う
-if executable('jvgrep')
-    let g:unite_source_grep_command = 'jvgrep'
-    let g:unite_source_grep_default_opts = '-r --color=never'
-    let g:unite_source_grep_recursive_opt = '-R'
-endif
