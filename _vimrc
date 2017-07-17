@@ -38,6 +38,15 @@ nnoremap Q <Nop>
 let s:neobundledir   = expand('~/.vim/bundle')
 execute 'set runtimepath+=' . s:neobundledir . '/neobundle.vim'
 call neobundle#begin(s:neobundledir)
+  NeoBundle 'Shougo/vimproc', {
+        \ 'build' : {
+        \     'windows' : 'echo "Sorry, cannot update vimproc binary file in Windows."',
+        \     'cygwin' : 'make -f make_cygwin.mak',
+        \     'mac' : 'make -f make_mac.mak',
+        \     'unix' : 'make -f make_unix.mak',
+        \    },
+        \ }
+
   NeoBundle 'tpope/vim-rails'
   NeoBundle "unite.vim"
   " NeoBundle 'Shougo/neomru'
@@ -49,12 +58,14 @@ call neobundle#begin(s:neobundledir)
   NeoBundle 'surround.vim'
   NeoBundle 'vim-jp/vimdoc-ja'
   NeoBundle 'kchmck/vim-coffee-script'
+  NeoBundle 'Shougo/vimproc.vim'
   NeoBundle 'mattn/emmet-vim'
   NeoBundle 'slim-template/vim-slim'
   NeoBundle 'kana/vim-operator-user'
   NeoBundle 'tyru/operator-camelize.vim'
   NeoBundle 'SQLUtilities' " SQLUtilities : SQL整形、生成ユーティリティ
   NeoBundle 'Align' " Align : 高機能整形・桁揃えプラグイン
+  NeoBundle 'vim-ruby/vim-ruby'
 
 call neobundle#end()
 " NEOBUNDLE_END
@@ -463,3 +474,14 @@ function! HandleURL()
   endif
 endfunction
 nmap <silent> <Leader>b <Esc>:call HandleURL()<CR>
+
+
+" grep検索のショートカット
+nnoremap <silent> ,g  :<C-u>Unite grep:. -buffer-name=search-buffer<CR>
+
+" unite grepにjvgrepを使う
+if executable('jvgrep')
+    let g:unite_source_grep_command = 'jvgrep'
+    let g:unite_source_grep_default_opts = '-r --color=never'
+    let g:unite_source_grep_recursive_opt = '-R'
+endif
