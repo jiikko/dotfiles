@@ -10,20 +10,7 @@ set wildignore+=*.sw?
 set wildignore+=.DS_Store
 set wildignore+=node_modules,bower_components,elm-stuff
 
-"use neocomplete.
-"http://naoyashiga.hatenablog.com/entry/2013/10/16/005443
-let g:neocomplete#enable_at_startup = 1
-
-" http://okuhiiro.daiwa-hotcom.com/wordpress/?cat=28
-let g:neocomplcache_force_overwrite_completefunc = 1
-let g:neocomplcache_dictionary_filetype_lists = {
-    \ 'default' : '',
-    \ 'js' :     [$HOME.'/.vim/dict/javascript.dict', $HOME.'/.vim/dict/jquery.dict'],
-    \ 'coffee' : [$HOME.'/.vim/dict/javascript.dict', $HOME.'/.vim/dict/jquery.dict'],
-    \ 'html' :    $HOME.'/.vim/dict/javascript.dict',
-    \ 'rb' :      $HOME.'/.vim/dict/ruby2.1.0.dict'
-    \ }
-
+set grepprg=jvgrep
 
 " Viとの互換断ち
 set nocompatible
@@ -52,6 +39,15 @@ nnoremap Q <Nop>
 let s:neobundledir   = expand('~/.vim/bundle')
 execute 'set runtimepath+=' . s:neobundledir . '/neobundle.vim'
 call neobundle#begin(s:neobundledir)
+  NeoBundle 'Shougo/vimproc', {
+        \ 'build' : {
+        \     'windows' : 'echo "Sorry, cannot update vimproc binary file in Windows."',
+        \     'cygwin' : 'make -f make_cygwin.mak',
+        \     'mac' : 'make -f make_mac.mak',
+        \     'unix' : 'make -f make_unix.mak',
+        \    },
+        \ }
+
   NeoBundle 'tpope/vim-rails'
   NeoBundle "unite.vim"
   " NeoBundle 'Shougo/neomru'
@@ -63,12 +59,14 @@ call neobundle#begin(s:neobundledir)
   NeoBundle 'surround.vim'
   NeoBundle 'vim-jp/vimdoc-ja'
   NeoBundle 'kchmck/vim-coffee-script'
+  NeoBundle 'Shougo/vimproc.vim'
   NeoBundle 'mattn/emmet-vim'
   NeoBundle 'slim-template/vim-slim'
   NeoBundle 'kana/vim-operator-user'
   NeoBundle 'tyru/operator-camelize.vim'
   NeoBundle 'SQLUtilities' " SQLUtilities : SQL整形、生成ユーティリティ
   NeoBundle 'Align' " Align : 高機能整形・桁揃えプラグイン
+  NeoBundle 'vim-ruby/vim-ruby'
 
 call neobundle#end()
 " NEOBUNDLE_END
@@ -108,6 +106,16 @@ au FileType unite inoremap <silent> <buffer> <expr> <C-l> unite#do_action('vspli
 " ESCキーを2回押すと終了する
 au FileType unite nnoremap <silent> <buffer> <ESC><ESC> q
 au FileType unite inoremap <silent> <buffer> <ESC><ESC> <ESC>q
+
+" grep検索のショートカット
+nnoremap <silent> ,g  :<C-u>Unite grep:. -buffer-name=search-buffer<CR>
+
+" unite grepにjvgrepを使う
+if executable('jvgrep')
+  let g:unite_source_grep_command = 'jvgrep'
+  let g:unite_source_grep_default_opts = '-r --color=never'
+  let g:unite_source_grep_recursive_opt = '-R'
+endif
 
 " for vimdoc-ja
 " helptags ~/.vim/bundle/vimdoc-ja/doc
@@ -166,6 +174,16 @@ inoremap <expr><C-h> neocomplcache#smart_close_popup() . "\<C-h>"
 inoremap <expr><BS> neocomplcache#smart_close_popup() . "\<C-h>"
 inoremap <expr><C-y> neocomplcache#close_popup()
 inoremap <expr><C-e> neocomplcache#cancel_popup()
+
+" http://okuhiiro.daiwa-hotcom.com/wordpress/?cat=28
+let g:neocomplcache_dictionary_filetype_lists = {
+    \ 'default' : '',
+    \ 'javascript' :     [$HOME.'/.vim/dict/javascript.dict', $HOME.'/.vim/dict/jquery.dict'],
+    \ 'coffee' : [$HOME.'/.vim/dict/javascript.dict', $HOME.'/.vim/dict/jquery.dict'],
+    \ 'html' :    $HOME.'/.vim/dict/javascript.dict',
+    \ 'ruby' :      $HOME.'/.vim/dict/ruby2.1.0.dict'
+    \ }
+
 
 " for nerdtree
 " Vim起動時にNerdTreeが起動するようにする
