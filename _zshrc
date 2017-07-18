@@ -441,8 +441,8 @@ bindkey '^X^S' zaw-screens
 # http://qiita.com/yuku_t/items/e58cbecf13407446bd50
 function _git_status() {
   if [ "$(git rev-parse --is-inside-work-tree 2> /dev/null)" = 'true' ]; then
-    echo git status -sb # git statusを実行したっぽくみせかける
-    git status -sb
+    echo git statusb # git statusを実行したっぽくみせかける
+    git status
   fi
   zle reset-prompt
 }
@@ -473,7 +473,8 @@ zle -N git_commit _git_commit
 zle -N shell_ls _shell_ls
 bindkey '^G^S' git_status
 bindkey '^G^M' git_commit
-bindkey '^G^\D' git_diff
+# bindkey '^G^\D' git_diff
+bindkey '^G^G' git_diff
 bindkey '^L^S' shell_ls
 
 if is-at-least 4.3.10; then
