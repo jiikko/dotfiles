@@ -8,3 +8,4 @@ log/
 *.swp
 .swo
 *~
+.sass-cache
