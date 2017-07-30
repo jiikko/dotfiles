@@ -55,6 +55,7 @@ brew cask install amethyst
 brew cask install intel-power-gadget
 brew cask install licecap
 brew cask install tuxgitter
+brew cask install vagrant
 ```
 ### for Job
 ```
