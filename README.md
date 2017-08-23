@@ -34,6 +34,17 @@ tab split
 \ + w + t + f
 ```
 
+### open stacktrace with quickfix
+```
+$ cat stacktrace.log
+app/decorators/article_decorator.rb:6:in `canonical_url'
+app/views/articles/show.html.slim:4:in `_app_views_articles_show_html_slim___1326588904754898243_132601740'
+app/controllers/article_admin/articles_controller.rb:220:in `render_preview'
+app/controllers/article_admin/articles_controller.rb:56:in `update'
+app/controllers/article_admin/articles_controller.rb:13:in `user_time_zone'
+$ vim -q stacktrace.log
+```
+
 ### git-vim
 ```
 \ + g + b
