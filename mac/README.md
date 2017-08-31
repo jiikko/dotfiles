@@ -1,4 +1,7 @@
 # Mac
+* 動作確認しているバージョン
+  * Sierra
+
 ## Install Command Line Tools
 ```shell
 xcode-select --install
@@ -65,13 +68,14 @@ brew install youtube-dl
 brew cask install vlc
 ```
 
-## Setup karabinar
+## Import karabinar-elements config
 ```shell
-brew cask install karabiner
+brew cask install karabiner-elements
 ```
 search karabiner in spotligth. enable karabinar on アクセシビリティ.
+
 ```shell
-curl https://raw.githubusercontent.com/jiikko/dotfiles/master/mac/setup_karabinar.sh | sh
+cp ~/dotfiles/mac/karabiner.json　~/.config/karabiner/karabiner.json
 ```
 
 ## Setup system config
@@ -119,11 +123,7 @@ ssh-keygen -t rsa -b 4096 -C "jiikko"
 * 音量変更音を有効
 * 設定 -> アクセシビリティ -> マウス/トラックパッド -> トラックパッドオプション -> ドラッグを有効にする「3本指のドラッグ」
 
-### Kenesis Keyboard
-http://kinesis-ergo.com/wp-content/uploads/2014/02/advantage-userguide-9-13.pdf
-
-### メンテナンス karabiner-import.sh
+### karabiner設定ファイルのエクスポート
 ```shell
-/Applications/Karabiner.app/Contents/Library/bin/karabiner export > ~/Desktop/karabiner-import.sh
-mv ~/Desktop/karabiner-import.sh ~/dotfiles/mac/setup_karabinar.sh
+cp ~/.config/karabiner/karabiner.json ~/dotfiles/mac/karabiner.json
 ```
