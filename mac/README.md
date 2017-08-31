@@ -75,7 +75,7 @@ brew cask install karabiner-elements
 search karabiner in spotligth. enable karabinar on アクセシビリティ.
 
 ```shell
-cp ~/dotfiles/mac/karabiner.json　~/.config/karabiner/karabiner.json
+cp ~/dotfiles/mac/karabiner.json ~/.config/karabiner/karabiner.json
 ```
 
 ## Setup system config
