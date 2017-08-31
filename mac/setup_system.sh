@@ -10,9 +10,10 @@ killall Finder
 defaults write .GlobalPreferences com.apple.mouse.scaling 4
 
 # キーリピート
-defaults write .GlobalPreferences KeyRepeat 1.0
+defaults write -g KeyRepeat -int 1 # normal minimum is 2 (30 ms)
 # 長押し
-defaults write .GlobalPreferences InitialKeyRepeat 13
+defaults write -g InitialKeyRepeat -int 15 # normal minimum is 15 (225 ms)
+
 
 # タップでクリック
 defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool true
