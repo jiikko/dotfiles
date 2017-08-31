@@ -34,7 +34,7 @@ brew install homebrew/dupes/screen --HEAD
 brew install imagemagick ghostscript
 brew install qt
 brew install zsh
-brew install phantomjs --HEAD
+brew install phantomjs
 ```
 
 ### GUI tools
