@@ -9,6 +9,7 @@ killall Finder
 # カーソル移動
 defaults write .GlobalPreferences com.apple.mouse.scaling 4
 
+defaults write -g ApplePressAndHoldEnabled -bool false
 # キーリピート
 defaults write -g KeyRepeat -int 1 # normal minimum is 2 (30 ms)
 # 長押し
