@@ -7,7 +7,6 @@ xcode-select --install
 ## Install homebrew
 ```shell
 ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
-brew install caskroom/cask/brew-cask
 brew update
 brew upgrade
 ```
@@ -38,20 +37,15 @@ brew install phantomjs --HEAD
 ### GUI tools
 ```
 brew cask install coteditor
-brew cask install skype
-brew cask install seil
 brew cask install Caskroom/cask/xquartz
 brew cask install google-japanese-ime
 brew cask install firefox
 brew cask install google-chrome
 brew cask install virtualbox
 brew cask install kindle
-brew cask install torbrowser
 brew cask install logitech-control-center
 brew cask install skitch
-brew cask install licecap
 brew cask install night-owl
-brew cask install amethyst
 brew cask install intel-power-gadget
 brew cask install licecap
 brew cask install tuxgitter
