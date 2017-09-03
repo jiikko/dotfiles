@@ -11,9 +11,9 @@ defaults write .GlobalPreferences com.apple.mouse.scaling 4
 
 defaults write -g ApplePressAndHoldEnabled -bool false
 # キーリピート
-defaults write -g KeyRepeat -int 1 # normal minimum is 2 (30 ms)
+defaults write NSGlobalDomain KeyRepeat -int 1
 # 長押し
-defaults write -g InitialKeyRepeat -int 13 # normal minimum is 15 (225 ms)
+defaults write NSGlobalDomain InitialKeyRepeat -int 12
 
 # タップでクリック
 defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool true
