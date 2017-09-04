@@ -659,3 +659,7 @@ commit_id_url() {
 }
 
 export SCREENDIR="`echo ~`/.screens"
+
+rehash
+eval "$(rbenv init -)"
+rbenv rehash
