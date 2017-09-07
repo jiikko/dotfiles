@@ -633,11 +633,12 @@
             "selected": true,
             "simple_modifications": {
                 "japanese_eisuu": "a",
-                "japanese_kana": "right_control"
+                "japanese_kana": "right_control",
+                "right_option": "right_command"
             },
             "virtual_hid_keyboard": {
                 "caps_lock_delay_milliseconds": 0,
-                "keyboard_type": "jis"
+                "keyboard_type": "ansi"
             }
         }
     ]
