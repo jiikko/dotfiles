@@ -49,6 +49,15 @@ zcompile ~/.zshrc
 # コマンド入力中にヘルプ（man）を見る
 # ESC-h
 
+# Global Functions
+function is_rbenv (){ # use subshell
+  if test -d "$HOME/.rbenv"; then
+    exit 0
+  else
+    exit 1
+  fi
+}
+
 ##========================================================##
 ##================== キーバインドの設定 ==================##
 ##========================================================##
@@ -297,7 +306,11 @@ alias rr='rake routes'
 alias sb='source ~/.bashrc'
 alias sz='source ~/.zshrc'
 
-alias rc='rvm current'
+if [[ (is_rbenv) ]]; then
+  alias rc='rbenv version'
+else
+  alias rc='rvm current'
+fi
 alias rvms='source .rvmrc'
 
 alias v='vim'
@@ -660,7 +673,7 @@ commit_id_url() {
 
 export SCREENDIR="`echo ~`/.screens"
 
-if test -d "$HOME/.rbenv"; then
+if [[ is_rbenv ]]; then
   export PATH="$HOME/.rbenv/bin:$PATH"
   eval "$(rbenv init -)"
 fi
