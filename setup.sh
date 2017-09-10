@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # set rc limlink
-for file in gemrc screenrc bashrc bash_profile gvimrc vimrc zshrc rspec gitconfig gitignore_global pryrc zlogin; do
+for file in gemrc screenrc bashrc bash_profile gvimrc vimrc zshrc rspec gitconfig gitignore_global pryrc zlogin railsrc; do
   echo 'making symlink' _$file '->' ~/.$file
   ln -s -F ~/dotfiles/_$file ~/.$file
 done
