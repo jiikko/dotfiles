@@ -461,8 +461,8 @@ inoremap <silent> <ESC> <ESC>:set iminsert=0<CR>
 " 保存時に行末の空白を除去する
 autocmd BufWritePre * :%s/\s\+$//ge
 
-
-
+" cwindow を一緒に実行してくれる
+autocmd QuickFixCmdPost *grep* cwindow
 
 "----------------------------------------------------
 " インデント
