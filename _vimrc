@@ -257,19 +257,52 @@ set clipboard+=unnamed
 set guioptions+=a
 set ttymouse=xterm2
 
-"ヤンクした文字は、システムのクリップボードに入れる"
-" "set clipboard=unnamed
+set smarttab
+set smartindent
+
+set ttyfast
+
+" showbreaks
+set showbreak=↪
+
 " 挿入モードでCtrl+kを押すとクリップボードの内容を貼り付けられるようにする "
 " imap "*pa
 
+" jjでエスケープ
+inoremap <silent> jj <ESC>
+
+" 日本語入力で”っj”と入力してもEnterキーで確定させればインサートモードを抜ける
+inoremap <silent> っｊ <ESC>
+
+"行頭・行末の移動
+nnoremap 1 0
+nnoremap 0 ^
+nnoremap 9 $
+
+" 改行
+nnoremap ; :<C-u>call append(expand('.'), '')<CR>j
+
+"バッファ切り替え
+" nnoremap <silent><Right> :<C-u>bnext<CR>
+" nnoremap <silent><Left>  :<C-u>bprevious<CR>
+nnoremap <silent><Down>  :<C-u>bw<CR>
+nnoremap <silent><Up>    :<C-u>UniteWithBufferDir -buffer-name=files buffer file_mru bookmark file<CR>
+
+" QuickFix
+nnoremap <C-p> :cprevious<CR>   " 前へ
+nnoremap <C-n> :cnext<CR>       " 次へ
+" nnoremap <C-P> :<C-u>cfirst<CR> " 最初へ
+" nnoremap <C-N> :<C-u>clast<CR>  " 最後へ
+
+
 "ノーマルモードでクリップボードからペースト
-nnoremap <C-p> "+p
+" nnoremap <C-p> "+p
 
 " emacs like
-nnoremap <C-f> <Right>
-nnoremap <C-b> <Left>
-inoremap <C-f> <Right>
-inoremap <C-b> <Left>
+" nnoremap <C-f> <Right>
+" nnoremap <C-b> <Left>
+" inoremap <C-f> <Right>
+" inoremap <C-b> <Left>
 
 ""インサートモードでクリップボードの内容をペースト
 inoremap <C-p> <ESC>"*pa
