@@ -67,6 +67,7 @@ call neobundle#begin(s:neobundledir)
   NeoBundle 'SQLUtilities' " SQLUtilities : SQL整形、生成ユーティリティ
   NeoBundle 'Align' " Align : 高機能整形・桁揃えプラグイン
   NeoBundle 'vim-ruby/vim-ruby'
+  NeoBundle 'derekwyatt/vim-scala'
 
 call neobundle#end()
 " NEOBUNDLE_END
@@ -459,7 +460,7 @@ inoremap <silent> <ESC> <ESC>:set iminsert=0<CR>
 " "inoremap , ,<Space>
 
 " 保存時に行末の空白を除去する
-autocmd BufWritePre * :%s/\s\+$//ge
+" autocmd BufWritePre * :%s/\s\+$//ge
 
 
 
