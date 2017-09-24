@@ -327,7 +327,7 @@ nnoremap # :<C-u>set hlsearch<Return>#
 
 " for conding
 nnoremap <leader>wtf oputs "#" * 90<c-m>puts caller<c-m>puts "#" * 90<esc>
-nnoremap <leader>bi binding.pry<esc>
+nnoremap <leader>bi obinding.pry<esc>
 "Yankした情報を他のアプリケーションでも利用
 set clipboard=unnamed
 
