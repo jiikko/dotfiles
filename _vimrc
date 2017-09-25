@@ -328,6 +328,12 @@ nnoremap # :<C-u>set hlsearch<Return>#
 " for conding
 nnoremap <leader>wtf oputs "#" * 90<c-m>puts caller<c-m>puts "#" * 90<esc>
 nnoremap <leader>bi obinding.pry<esc>
+
+" 便利
+nnoremap <leader>aa :tabedit<CR>
+nnoremap <leader>lr :%s/ *$//g<CR>
+
+
 "Yankした情報を他のアプリケーションでも利用
 set clipboard=unnamed
 
