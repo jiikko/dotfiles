@@ -275,11 +275,6 @@ inoremap <silent> jj <ESC>
 " 日本語入力で”っj”と入力してもEnterキーで確定させればインサートモードを抜ける
 inoremap <silent> っｊ <ESC>
 
-"行頭・行末の移動
-nnoremap 1 0
-nnoremap 0 ^
-nnoremap 9 $
-
 " 改行
 nnoremap ; :<C-u>call append(expand('.'), '')<CR>j
 
