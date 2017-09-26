@@ -328,6 +328,10 @@ nnoremap <leader>bi obinding.pry<esc>
 nnoremap <leader>aa :tabedit<CR>
 nnoremap <leader>lr :%s/ *$//g<CR>
 
+" NERDTREE, NERDTree
+nnoremap <leader>nt :NERDTree<CR>
+nnoremap <leader>nf :NERDTreeFind<CR>
+
 
 "Yankした情報を他のアプリケーションでも利用
 set clipboard=unnamed
