@@ -290,19 +290,17 @@ set showbreak=↪
 " 挿入モードでCtrl+kを押すとクリップボードの内容を貼り付けられるようにする "
 " imap "*pa
 
-" jjでエスケープ
-inoremap <silent> jj <ESC>
-
-" 日本語入力で”っj”と入力してもEnterキーで確定させればインサートモードを抜ける
-inoremap <silent> っｊ <ESC>
 
 " 改行
 nnoremap ; :<C-u>call append(expand('.'), '')<CR>j
 
-"バッファ切り替え
-" nnoremap <silent><Right> :<C-u>bnext<CR>
-" nnoremap <silent><Left>  :<C-u>bprevious<CR>
-nnoremap <silent><Down>  :<C-u>bw<CR>
+"左右
+noremap <Right> gt
+noremap <Left> gT
+
+" 上下, bw でもいいけどバッファから消えてほしくない
+" nnoremap <silent><Down>  :<C-u>bw<CR>
+nnoremap <silent><Down>  :<C-u>q<CR>
 nnoremap <silent><Up>    :<C-u>UniteWithBufferDir -buffer-name=files buffer file_mru bookmark file<CR>
 
 " QuickFix
