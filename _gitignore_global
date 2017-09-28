@@ -9,3 +9,4 @@ log/
 .swo
 *~
 .sass-cache
+.vimsessions/
