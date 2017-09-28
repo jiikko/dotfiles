@@ -671,6 +671,11 @@ commit_id_url() {
   echo https://${HOST_AND_PATH}/commit/${HEAD_COMMMIT_ID}
 }
 
+# for vim-session
+init_vimenv() {
+  mkdir '.vimsessions'
+}
+
 export SCREENDIR="`echo ~`/.screens"
 
 if [[ is_rbenv ]]; then
