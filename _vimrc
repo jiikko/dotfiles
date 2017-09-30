@@ -347,6 +347,9 @@ nnoremap <leader>bi obinding.pry<esc>
 nnoremap <leader>aa :tabedit<CR>
 nnoremap <leader>lr :%s/ *$//g<CR>
 nnoremap <C-y><C-w> :w<CR>
+nnoremap <leader>sp :sp<CR>
+nnoremap <leader>vs :vs<CR>
+
 
 " NERDTREE, NERDTree
 nnoremap <leader>nt :NERDTree<CR>
