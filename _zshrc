@@ -673,7 +673,7 @@ commit_id_url() {
 
 # for vim-session
 init_vimenv() {
-  mkdir '.vimsessions'
+  mkdir -p '.vimsessions'
 }
 
 export SCREENDIR="`echo ~`/.screens"
