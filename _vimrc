@@ -346,6 +346,8 @@ nnoremap <leader>bi obinding.pry<esc>
 " 便利
 nnoremap <leader>aa :tabedit<CR>
 nnoremap <leader>lr :%s/ *$//g<CR>
+inoremap <C-y><C-w> <ESC>:w<CR>
+
 nnoremap <C-y><C-w> :w<CR>
 nnoremap <leader>sp :sp<CR>
 nnoremap <leader>vs :vs<CR>
