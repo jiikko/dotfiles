@@ -71,6 +71,7 @@ call neobundle#begin(s:neobundledir)
   NeoBundle 'xolox/vim-session', {
         \ 'depends' : 'xolox/vim-misc',
         \ }
+  NeoBundle 'kien/tabman.vim'
 
 call neobundle#end()
 " NEOBUNDLE_END
@@ -79,6 +80,9 @@ call neobundle#end()
 "----------------------------------------------------
 " プラギンの設定
 "----------------------------------------------------
+
+let g:tabman_toggle = '<leader>mt'
+let g:tabman_focus  = '<leader>mf'
 
 " vim-session
 " 現在のディレクトリ直下の .vimsessions/ を取得
