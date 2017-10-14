@@ -139,7 +139,8 @@ nnoremap <silent> ,g  :<C-u>Unite grep:. -buffer-name=search-buffer<CR>
 " unite grepにjvgrepを使う
 if executable('jvgrep')
   let g:unite_source_grep_command = 'jvgrep'
-  let g:unite_source_grep_default_opts = '-r --color=never'
+  let g:unite_source_grep_default_opts = "-r --color=never --exclude='vendor/bundle|tmp/cache|.log$|bundle.js$'"
+
   let g:unite_source_grep_recursive_opt = '-R'
 endif
 
