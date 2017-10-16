@@ -349,6 +349,7 @@ nnoremap <leader>wtf oputs "#" * 90<c-m>puts caller<c-m>puts "#" * 90<esc>
 nnoremap <leader>bi obinding.pry<esc>
 
 " 便利
+nnoremap <C-m><C-m> :TMToggle<CR>
 nnoremap <leader>aa :tabedit<CR>
 nnoremap <leader>lr :%s/ *$//g<CR>
 inoremap <C-y><C-w> <ESC>:w<CR>
