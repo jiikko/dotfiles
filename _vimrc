@@ -81,6 +81,7 @@ call neobundle#end()
 " プラギンの設定
 "----------------------------------------------------
 
+let g:tabman_width = 50
 let g:tabman_toggle = '<leader>mt'
 let g:tabman_focus  = '<leader>mf'
 
