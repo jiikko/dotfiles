@@ -345,7 +345,7 @@ nnoremap ? :<C-u>set hlsearch<Return>?
 nnoremap * :<C-u>set hlsearch<Return>*
 nnoremap # :<C-u>set hlsearch<Return>#
 
-" for conding
+" for coding
 nnoremap <leader>wtf oputs "#" * 90<c-m>puts caller<c-m>puts "#" * 90<esc>
 nnoremap <leader>bi obinding.pry<esc>
 nnoremap <leader>rw oFile.write("/tmp/ruby_caller", caller.join("\n")) && raise<esc>
