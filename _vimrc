@@ -351,6 +351,8 @@ nnoremap <leader>bi obinding.pry<esc>
 nnoremap <leader>rw oFile.write("/tmp/ruby_caller", caller.join("\n")) && raise<esc>
 nnoremap <leader>rr :cfile /tmp/ruby_caller<CR>:cw<esc>
 nnoremap <leader>re :e /tmp/ruby_caller<esc>
+" \rwで入力待ちを消す
+nmap none <Plug>RestoreWinPosn
 
 " 便利
 nnoremap <C-n><C-m> :TMToggle<CR>
