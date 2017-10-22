@@ -306,7 +306,8 @@ noremap <Left> gT
 
 " 上下, bw でもいいけどバッファから消えてほしくない
 " nnoremap <silent><Down>  :<C-u>bw<CR>
-nnoremap <silent><Down>  :<C-u>q<CR>
+" nnoremap <silent><Down>  :<C-u>q<CR>
+nnoremap <C-a><C-a> :<C-u>q<CR>
 nnoremap <silent><Up>    :<C-u>UniteWithBufferDir -buffer-name=files buffer file_mru bookmark file<CR>
 
 " QuickFix
