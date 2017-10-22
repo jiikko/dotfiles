@@ -10,3 +10,4 @@ log/
 *~
 .sass-cache
 .vimsessions/
+node_modules
