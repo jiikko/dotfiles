@@ -358,7 +358,7 @@ nmap none <Plug>RestoreWinPosn
 " 便利
 nnoremap <C-n><C-m> :TMToggle<CR>
 nnoremap <leader>aa :tabedit<CR>
-nnoremap <leader>lr :%s/ *$//g<CR>
+nnoremap <leader>lr :%s/ *$//g<CR>:noh<CR>
 inoremap <C-y><C-w> <ESC>:w<CR>
 
 nnoremap <C-y><C-w> :w<CR>
