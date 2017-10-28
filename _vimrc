@@ -349,7 +349,7 @@ nnoremap # :<C-u>set hlsearch<Return>#
 " for coding
 nnoremap <leader>wtf oputs "#" * 90<c-m>puts caller<c-m>puts "#" * 90<esc>
 nnoremap <leader>bi obinding.pry<esc>
-nnoremap <leader>rw oFile.write("/tmp/ruby_caller", caller.join("\n")) && raise<esc>
+nnoremap <leader>rw obegin; raise; rescue => e; File.write("/tmp/ruby_caller", e.backtrace.join("\n")) && raise; end<esc>
 nnoremap <leader>rr :cfile /tmp/ruby_caller<CR>:cw<esc>
 nnoremap <leader>re :e /tmp/ruby_caller<esc>
 " \rwで入力待ちを消す
