@@ -72,6 +72,8 @@ call neobundle#begin(s:neobundledir)
         \ 'depends' : 'xolox/vim-misc',
         \ }
   NeoBundle 'kien/tabman.vim'
+  NeoBundle 'Townk/vim-autoclose'
+  NeoBundle 'othree/yajs.vim'
 
 call neobundle#end()
 " NEOBUNDLE_END
