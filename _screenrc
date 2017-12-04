@@ -1,8 +1,6 @@
 # https://rvm.io/workflow/screen
 shell -${SHELL}
 
-term "screen-256color"
-
 # http://www.ayu.ics.keio.ac.jp/~mukai/tips/screen.html
 ## Prefixキーの設定
 escape "^Tt"
