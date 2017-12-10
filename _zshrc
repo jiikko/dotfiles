@@ -682,6 +682,10 @@ init_vimenv() {
   mkdir -p '.vimsessions'
 }
 
+make_ruby_version_file() {
+echo 2.4.2 > .ruby_version
+}
+
 export SCREENDIR="`echo ~`/.screens"
 
 if [[ is_rbenv ]]; then
