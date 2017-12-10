@@ -300,6 +300,8 @@ alias gc='git commit \-m'
 alias gm='git pull origin master'
 
 alias gf='git-flow'
+alias ggl='git log --graph --pretty=oneline --abbrev-commit --decorate --all'
+
 
 alias rr='rake routes'
 
