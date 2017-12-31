@@ -690,7 +690,7 @@ echo 2.4.2 > .ruby-version
 
 export SCREENDIR="`echo ~`/.screens"
 
-if [[ is_rbenv ]]; then
+if [[ is_rbenv = '0' ]]; then
   export PATH="$HOME/.rbenv/bin:$PATH"
   eval "$(rbenv init -)"
 fi
