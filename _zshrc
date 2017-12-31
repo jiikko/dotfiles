@@ -308,7 +308,7 @@ alias rr='rake routes'
 alias sb='source ~/.bashrc'
 alias sz='source ~/.zshrc'
 
-if [[ (is_rbenv) ]]; then
+if [ is_rbenv = '0' ]; then
   alias rc='rbenv version'
 else
   alias rc='rvm current'
