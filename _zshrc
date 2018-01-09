@@ -51,11 +51,7 @@ zcompile ~/.zshrc
 
 # Global Functions
 function is_rbenv (){ # use subshell
-  if test -d "$HOME/.rbenv"; then
-    exit 0
-  else
-    exit 1
-  fi
+  [[ -d "$HOME/.rbenv" ]]
 }
 
 ##========================================================##
@@ -308,7 +304,7 @@ alias rr='rake routes'
 alias sb='source ~/.bashrc'
 alias sz='source ~/.zshrc'
 
-if [ is_rbenv = '0' ]; then
+if [ is_rbenv ]; then
   alias rc='rbenv version'
 else
   alias rc='rvm current'
@@ -690,7 +686,7 @@ echo 2.4.2 > .ruby-version
 
 export SCREENDIR="`echo ~`/.screens"
 
-if [[ is_rbenv = '0' ]]; then
+if [ is_rbenv ]; then
   export PATH="$HOME/.rbenv/bin:$PATH"
   eval "$(rbenv init -)"
 fi
