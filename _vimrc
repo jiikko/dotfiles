@@ -354,6 +354,7 @@ nnoremap <leader>bi obinding.pry<esc>
 nnoremap <leader>rw obegin; raise; rescue => e; File.write("/tmp/ruby_caller", e.backtrace.join("\n")) && raise; end<esc>
 nnoremap <leader>rr :cfile /tmp/ruby_caller<CR>:cw<esc>
 nnoremap <leader>re :e /tmp/ruby_caller<esc>
+nnoremap <leader>ds :e db/schema.rb<esc>
 " \rwで入力待ちを消す
 nmap none <Plug>RestoreWinPosn
 
