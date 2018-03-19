@@ -681,7 +681,12 @@ init_vimenv() {
 }
 
 make_ruby_version_file() {
-echo 2.4.2 > .ruby-version
+  echo 2.4.2 > .ruby-version
+}
+make_readme_md() {
+  DIR_NAME=$(echo "$(basename $(pwd))")
+  H1=$(echo $DIR_NAME | ruby -e 'puts(gets.tap { |x| x[0] = x[0].upcase! })')
+  echo "# $H1" >> README.md
 }
 
 whichppr() {
