@@ -683,6 +683,20 @@ init_vimenv() {
 make_ruby_version_file() {
   echo 2.4.2 > .ruby-version
 }
+
+init_database_yml() {
+  DATABACE_URL=$(cat<<EOH
+development:
+  adapter: mysql2
+  database: tekuaka_production
+  username: root
+  password:
+  socket: "/tmp/mysql.sock"
+EOH
+)
+  echo "$DATABACE_URL" > config/database.yml
+}
+
 make_readme_md() {
   DIR_NAME=$(echo "$(basename $(pwd))")
   H1=$(echo $DIR_NAME | ruby -e 'puts(gets.tap { |x| x[0] = x[0].upcase! })')
