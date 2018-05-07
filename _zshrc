@@ -1,3 +1,4 @@
+export DISABLE_SPRING=1
 export PATH="$PATH:$HOME/.rvm/bin" # Add RVM to PATH for scripting
 export EDITOR="/opt/local/bin/vim"
 
