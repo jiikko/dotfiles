@@ -308,7 +308,7 @@ alias rr='rake routes'
 alias sb='source ~/.bashrc'
 alias sz='source ~/.zshrc'
 
-if [ is_rbenv ]; then
+if [[ is_rbenv == 0 ]]; then
   alias rc='rbenv version'
 else
   alias rc='rvm current'
@@ -731,7 +731,7 @@ whichppr() {
 
 export SCREENDIR="`echo ~`/.screens"
 
-if [ is_rbenv ]; then
+if [[ is_rbenv == 0 ]]; then
   export PATH="$HOME/.rbenv/bin:$PATH"
   eval "$(rbenv init -)"
 fi
