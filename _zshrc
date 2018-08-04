@@ -1,6 +1,9 @@
 export DISABLE_SPRING=1
 export PATH="$PATH:$HOME/.rvm/bin" # Add RVM to PATH for scripting
 export EDITOR="/opt/local/bin/vim"
+export LANG=ja_JP.UTF-8
+export LC_CTYPE=ja_JP.UTF-8
+export PATH=$HOME/.nodebrew/current/bin:$PATH
 
 export IOS_UA='iOS 10.3.2  Mozilla/5.0 (iPhone; CPU iPhone OS 10_3_2 like Mac OS X) AppleWebKit/603.2.4 (KHTML, like Gecko) Version/10.0 Mobile/14F89 Safari/602.1'
 # for rubyコンパイル
@@ -305,7 +308,7 @@ alias rr='rake routes'
 alias sb='source ~/.bashrc'
 alias sz='source ~/.zshrc'
 
-if [ is_rbenv ]; then
+if [[ is_rbenv == 0 ]]; then
   alias rc='rbenv version'
 else
   alias rc='rvm current'
@@ -728,7 +731,7 @@ whichppr() {
 
 export SCREENDIR="`echo ~`/.screens"
 
-if [ is_rbenv ]; then
+if [[ is_rbenv == 0 ]]; then
   export PATH="$HOME/.rbenv/bin:$PATH"
   eval "$(rbenv init -)"
 fi
