@@ -35,6 +35,8 @@ brew install imagemagick ghostscript
 brew install qt
 brew install zsh
 brew install phantomjs
+brew install rbenv
+brew install pyenv-virtualenv
 ```
 
 ### GUI tools
@@ -82,14 +84,6 @@ cp ~/dotfiles/mac/karabiner.json ~/.config/karabiner/karabiner.json
 キーリポートなど
 ```shell
 curl https://raw.githubusercontent.com/jiikko/dotfiles/master/mac/setup_system.sh | sh
-```
-
-## Setup rvm
-```shell
-\curl -sSL https://get.rvm.io | bash
-rvm install ruby-2.2.0
-rvm install 2.1.0
-rvm install 2.1.1
 ```
 
 ## Setup Terminal
