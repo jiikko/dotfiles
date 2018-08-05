@@ -731,7 +731,7 @@ whichppr() {
 
 export SCREENDIR="`echo ~`/.screens"
 
-if [[ is_rbenv == 0 ]]; then
+if [ is_rbenv ]; then
   export PATH="$HOME/.rbenv/bin:$PATH"
   eval "$(rbenv init -)"
 fi
