@@ -10,3 +10,4 @@ tmp/
 .vimsessions/
 node_modules
 *tmp-browserify*
+vendor/bundler/
