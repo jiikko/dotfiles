@@ -663,6 +663,16 @@ gcb () {
   git branch | awk '/\*/ { print $2; }'
 }
 
+puma_ps () {
+  ROOT_SCREEN_PID=$(ps x | grep -E "S $(echo `basename "$PWD"`)$" | awk '{ print $1}')
+  if [[ $ROOT_SCREEN_PID == '' ]]; then
+    echo 'カレントディレクトリ名のscreenセッションが見つかりませんでした'
+    exit 1
+  else
+    pstree -p $ROOT_SCREEN_PID | grep puma
+  fi
+}
+
 #!/bin/sh
 # github.comでHEADコミットのURLを表示する関数です
 # Usage: open $(bin/head_commit_id_url)
