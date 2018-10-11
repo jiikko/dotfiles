@@ -1,0 +1,13 @@
+screen -t ubi
+screen -t ubi
+screen -t ubi
+screen -t ubi
+screen -t '-'
+screen -t '-'
+screen -t '-'
+screen -t '-'
+screen -t '-'
+screen -t stock
+screen -t stock
+screen -t stock
+screen -t stock
