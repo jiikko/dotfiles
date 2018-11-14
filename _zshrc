@@ -368,8 +368,6 @@ bindkey "^S" history-incremental-search-forward
 
 # PATH=$PATH:$HOME/.rvm/bin # Add RVM to PATH for scripting
 
-export CDPATH=~/sites/:~/dev/actindi/rails/
-
 #Mac用
 export PATH=/opt/local/bin:/opt/local/sbin:$PATH
 # Finished adapting your PATH environment variable for use with MacPorts.
