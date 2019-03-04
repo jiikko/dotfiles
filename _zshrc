@@ -278,6 +278,7 @@ find-grep () { find . -type f -print | xargs grep -n --binary-files=without-matc
 # Global alias
 alias al='alias'
 alias be="bundle exec"
+alias b="bundle exec"
 
 alias va='vagrant'
 alias bu='bundle install'
