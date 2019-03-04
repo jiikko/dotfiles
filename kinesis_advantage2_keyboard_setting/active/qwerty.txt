@@ -21,3 +21,5 @@
 {rctrl}{6}>{.}
 {rctrl}{7}>{/}
 {rctrl}{8}>{-lshift}{`}{+lshift}
+{rctrl}{9}>{obrack}
+{rctrl}{0}>{cbrack}
