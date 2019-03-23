@@ -74,6 +74,7 @@ call neobundle#begin(s:neobundledir)
   NeoBundle 'kien/tabman.vim'
   " NeoBundle 'Townk/vim-autoclose'
   NeoBundle 'othree/yajs.vim'
+  NeoBundle 'mustache/vim-mustache-handlebars'
 
 call neobundle#end()
 " NEOBUNDLE_END
@@ -567,3 +568,8 @@ function! HandleURL()
   endif
 endfunction
 nmap <silent> <Leader>b <Esc>:call HandleURL()<CR>
+
+
+
+# for mobylette
+au BufRead,BufNewFile *.mobile.erb set filetype=eruby
