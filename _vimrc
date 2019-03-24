@@ -571,5 +571,5 @@ nmap <silent> <Leader>b <Esc>:call HandleURL()<CR>
 
 
 
-# for mobylette
+" for mobylette
 au BufRead,BufNewFile *.mobile.erb set filetype=eruby
