@@ -11,3 +11,5 @@
   default = current
 [fetch]
   prune = true
+[http]
+  postBuffer = 1048576000
