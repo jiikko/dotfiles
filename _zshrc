@@ -701,7 +701,12 @@ init_vimenv() {
 }
 
 make_ruby_version_file() {
-  echo 2.4.2 > .ruby-version
+  RUBY_VERSION=$1
+  if [[ "$RUBY_VERSION" ]]; then
+    echo "$RUBY_VERSION" > .ruby-version
+  else
+    echo 2.5.3 > .ruby-version
+  fi
 }
 
 init_database_yml() {
