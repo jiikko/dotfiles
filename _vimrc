@@ -75,6 +75,7 @@ call neobundle#begin(s:neobundledir)
   " NeoBundle 'Townk/vim-autoclose'
   NeoBundle 'othree/yajs.vim'
   NeoBundle 'mustache/vim-mustache-handlebars'
+  NeoBundle 'vim-scripts/gtags.vim'
 
 call neobundle#end()
 " NEOBUNDLE_END
