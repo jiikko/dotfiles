@@ -11,3 +11,5 @@ tmp/
 node_modules
 *tmp-browserify*
 vendor/bundler/
+
+app/assets/audios/*
