@@ -763,3 +763,5 @@ if [ -d "${PYENV_ROOT}" ]; then
     eval "$(pyenv init -)"
     eval "$(pyenv virtualenv-init -)"
 fi
+
+ssh-add ~/.ssh/id_rsa
