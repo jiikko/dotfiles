@@ -1,6 +1,7 @@
 # Mac
 * 動作確認しているバージョン
   * Sierra
+  * Mojave
 
 ## Install Command Line Tools
 ```shell
@@ -34,7 +35,6 @@ brew install screen --HEAD
 brew install imagemagick ghostscript
 brew install qt
 brew install zsh
-brew install phantomjs
 brew install rbenv
 brew install pyenv-virtualenv
 ```
@@ -79,7 +79,7 @@ search karabiner in spotligth. enable karabinar on アクセシビリティ.
 ```shell
 cp ~/dotfiles/mac/karabiner.json ~/.config/karabiner/karabiner.json
 ```
-
+ 
 ## Setup system config
 キーリポートなど
 ```shell
