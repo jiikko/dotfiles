@@ -1,6 +1,7 @@
 # Mac
 * 動作確認しているバージョン
   * Sierra
+  * Mojave
 
 ## Install Command Line Tools
 ```shell
@@ -30,11 +31,10 @@ brew install rake-completion
 brew install rails-completion
 brew install mysql
 brew install v8
-brew install homebrew/dupes/screen --HEAD
+brew install screen --HEAD
 brew install imagemagick ghostscript
 brew install qt
 brew install zsh
-brew install phantomjs
 brew install rbenv
 brew install pyenv-virtualenv
 ```
@@ -79,7 +79,7 @@ search karabiner in spotligth. enable karabinar on アクセシビリティ.
 ```shell
 cp ~/dotfiles/mac/karabiner.json ~/.config/karabiner/karabiner.json
 ```
-
+ 
 ## Setup system config
 キーリポートなど
 ```shell
@@ -103,7 +103,7 @@ cd dotfiles
 ## Change login shell
 ```
 echo "/usr/local/bin/zsh" | sudo tee -a /etc/shells
-chsh -s /usr/local/bin/zsh
+chsh -s /bin/zsh
 ```
 
 ## Generate ssh key
