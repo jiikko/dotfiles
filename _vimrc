@@ -39,17 +39,7 @@ nnoremap Q <Nop>
 let s:neobundledir   = expand('~/.vim/bundle')
 execute 'set runtimepath+=' . s:neobundledir . '/neobundle.vim'
 call neobundle#begin(s:neobundledir)
-  NeoBundle 'Shougo/vimproc', {
-        \ 'build' : {
-        \     'windows' : 'echo "Sorry, cannot update vimproc binary file in Windows."',
-        \     'cygwin' : 'make -f make_cygwin.mak',
-        \     'mac' : 'make -f make_mac.mak',
-        \     'unix' : 'make -f make_unix.mak',
-        \    },
-        \ }
-
   NeoBundle 'tpope/vim-rails'
-  NeoBundle "unite.vim"
   " NeoBundle 'Shougo/neomru'
   NeoBundle 'scrooloose/nerdtree'
   NeoBundle 'taku-o/vim-toggle'
@@ -107,47 +97,6 @@ else
   let g:session_autoload = 'no'
 endif
 unlet s:local_session_directory
-
-" unite
-""" unite.vim
-
-" autocmd vimenter * if !argc() | Unite file | endif
-
-" 入力モードで開始する
-let g:unite_enable_start_insert=1
-call unite#custom_default_action('file', 'tabopen')
-" バッファ一覧
-nnoremap <silent> ,ub :<C-u>Unite buffer<CR>
-" ファイル一覧
-nnoremap <silent> ,uf :<C-u>UniteWithBufferDir -buffer-name=files file<CR>
-" レジスタ一覧
-nnoremap <silent> ,ur :<C-u>Unite -buffer-name=register register<CR>
-" 最近使用したファイル一覧
-nnoremap <silent> ,um :<C-u>Unite file_mru<CR>
-" 常用セット
-nnoremap <silent> ,uu :<C-u>Unite buffer file_mru<CR>
-" 全部乗せ
-nnoremap <silent> ,ua :<C-u>UniteWithBufferDir -buffer-name=files buffer file_mru bookmark file<CR>
-" ウィンドウを分割して開く
-au FileType unite nnoremap <silent> <buffer> <expr> <C-j> unite#do_action('split')
-au FileType unite inoremap <silent> <buffer> <expr> <C-j> unite#do_action('split')
-" ウィンドウを縦に分割して開く
-au FileType unite nnoremap <silent> <buffer> <expr> <C-l> unite#do_action('vsplit')
-au FileType unite inoremap <silent> <buffer> <expr> <C-l> unite#do_action('vsplit')
-" ESCキーを2回押すと終了する
-au FileType unite nnoremap <silent> <buffer> <ESC><ESC> q
-au FileType unite inoremap <silent> <buffer> <ESC><ESC> <ESC>q
-
-" grep検索のショートカット
-nnoremap <silent> ,g  :<C-u>Unite grep:. -buffer-name=search-buffer<CR>
-
-" unite grepにjvgrepを使う
-if executable('jvgrep')
-  let g:unite_source_grep_command = 'jvgrep'
-  let g:unite_source_grep_default_opts = "-r --color=never --exclude='vendor/bundle|tmp/cache|.log$|node_modules|bundle.js$'"
-
-  let g:unite_source_grep_recursive_opt = '-R'
-endif
 
 " for vimdoc-ja
 " helptags ~/.vim/bundle/vimdoc-ja/doc
