@@ -48,7 +48,7 @@ brew cask install firefox
 brew cask install google-chrome
 brew cask install virtualbox
 brew cask install kindle
-brew cask install logitech-control-center
+brew install homebrew/cask-drivers/logitech-control-center 
 brew cask install skitch
 brew cask install night-owl
 brew cask install intel-power-gadget
