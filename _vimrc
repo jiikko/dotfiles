@@ -188,6 +188,9 @@ filetype plugin indent on
 map <Leader>c <Plug>(operator-camelize)
 map <Leader>C <Plug>(operator-decamelize)
 
+" hangupする
+map <S-k> <Esc>
+
 " emmet
 let g:user_emmet_leader_key = '<c-g>'
 
