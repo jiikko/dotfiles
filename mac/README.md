@@ -32,7 +32,7 @@ brew install rails-completion
 brew install mysql
 brew install v8
 brew install screen --HEAD
-brew install imagemagick ghostscript
+brew install imagemagick
 brew install qt
 brew install zsh
 brew install rbenv
@@ -48,7 +48,8 @@ brew cask install firefox
 brew cask install google-chrome
 brew cask install virtualbox
 brew cask install kindle
-brew install homebrew/cask-drivers/logitech-control-center 
+brew install homebrew/cask-drivers/logitech-control-center
+brew cask install kensington-trackball-works
 brew cask install skitch
 brew cask install night-owl
 brew cask install intel-power-gadget
@@ -79,7 +80,7 @@ search karabiner in spotligth. enable karabinar on アクセシビリティ.
 ```shell
 cp ~/dotfiles/mac/karabiner.json ~/.config/karabiner/karabiner.json
 ```
- 
+
 ## Setup system config
 キーリポートなど
 ```shell
