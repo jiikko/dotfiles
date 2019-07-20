@@ -39,6 +39,14 @@ nnoremap Q <Nop>
 let s:neobundledir   = expand('~/.vim/bundle')
 execute 'set runtimepath+=' . s:neobundledir . '/neobundle.vim'
 call neobundle#begin(s:neobundledir)
+  NeoBundle 'Shougo/vimproc', {
+        \ 'build' : {
+        \     'windows' : 'echo "Sorry, cannot update vimproc binary file in Windows."',
+        \     'cygwin' : 'make -f make_cygwin.mak',
+        \     'mac' : 'make -f make_mac.mak',
+        \     'unix' : 'make -f make_unix.mak',
+        \    },
+        \ }
   NeoBundle 'tpope/vim-rails'
   " NeoBundle 'Shougo/neomru'
   NeoBundle 'scrooloose/nerdtree'
