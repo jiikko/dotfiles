@@ -74,6 +74,7 @@ call neobundle#begin(s:neobundledir)
   NeoBundle 'othree/yajs.vim'
   NeoBundle 'mustache/vim-mustache-handlebars'
   NeoBundle 'vim-scripts/gtags.vim'
+  NeoBundle 'hashivim/vim-terraform'
 
 call neobundle#end()
 " NEOBUNDLE_END
@@ -86,6 +87,10 @@ call neobundle#end()
 let g:tabman_width = 50
 let g:tabman_toggle = '<leader>mt'
 let g:tabman_focus  = '<leader>mf'
+
+let g:terraform_align=1
+"let g:terraform_fold_sections=1
+let g:terraform_fmt_on_save=1
 
 " vim-session
 " 現在のディレクトリ直下の .vimsessions/ を取得
