@@ -75,6 +75,7 @@ call neobundle#begin(s:neobundledir)
   NeoBundle 'mustache/vim-mustache-handlebars'
   NeoBundle 'vim-scripts/gtags.vim'
   NeoBundle 'hashivim/vim-terraform'
+  NeoBundle 'fatih/vim-go'
 
 call neobundle#end()
 " NEOBUNDLE_END
@@ -110,6 +111,9 @@ else
   let g:session_autoload = 'no'
 endif
 unlet s:local_session_directory
+
+" for vim-go
+let g:go_null_module_warning = 0
 
 " for vimdoc-ja
 " helptags ~/.vim/bundle/vimdoc-ja/doc
