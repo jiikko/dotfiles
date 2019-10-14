@@ -770,3 +770,5 @@ if [ -d "${PYENV_ROOT}" ]; then
 fi
 
 ssh-add ~/.ssh/id_rsa
+
+eval "$(direnv hook zsh)"
