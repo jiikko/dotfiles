@@ -65,11 +65,6 @@ brew cask install Caskroom/cask/xquartz
 brew install homebrew/x11/xpdf
 brew cask install java
 ```
-### ???
-```
-brew install youtube-dl
-brew cask install vlc
-```
 
 ## Import karabinar-elements config
 ```shell
