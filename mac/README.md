@@ -21,6 +21,7 @@ brew upgrade
 brew install wget
 brew install nkf
 brew install vim
+brew install awscli
 brew install jvgrep
 brew install coreutils
 brew install jq
@@ -65,11 +66,6 @@ brew cask install Caskroom/cask/xquartz
 brew install homebrew/x11/xpdf
 brew cask install java
 ```
-### ???
-```
-brew install youtube-dl
-brew cask install vlc
-```
 
 ## Import karabinar-elements config
 ```shell
@@ -104,7 +100,7 @@ cd dotfiles
 ## Change login shell
 ```
 echo "/usr/local/bin/zsh" | sudo tee -a /etc/shells
-chsh -s /bin/zsh
+chsh -s /usr/local/bin/zsh
 ```
 
 ## Generate ssh key
