@@ -548,4 +548,10 @@ nmap <silent> <Leader>b <Esc>:call HandleURL()<CR>
 " for mobylette
 au BufRead,BufNewFile *.mobile.erb set filetype=eruby
 " 折りたたみ
-set foldmethod=indent set foldlevel=2 set foldcolumn=3
+
+" for macvim
+" http://taku25.hatenablog.com/entry/2014/06/02/012118
+if !has('gui_running')
+    set ttyfast
+    set lazyredraw
+endif
