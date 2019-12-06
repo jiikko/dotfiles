@@ -548,4 +548,5 @@ nmap <silent> <Leader>b <Esc>:call HandleURL()<CR>
 " for mobylette
 au BufRead,BufNewFile *.mobile.erb set filetype=eruby
 " 折りたたみ
-"set foldmethod=indent set foldlevel=2 set foldcolumn=3
+set foldmethod=indent
+set foldlevel=100
