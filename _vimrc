@@ -76,6 +76,11 @@ call neobundle#begin(s:neobundledir)
   NeoBundle 'vim-scripts/gtags.vim'
   NeoBundle 'hashivim/vim-terraform'
   NeoBundle 'fatih/vim-go'
+  NeoBundle 'pangloss/vim-javascript'
+  NeoBundle 'moll/vim-node'
+  NeoBundle 'maxmellon/vim-jsx-pretty'
+  NeoBundle 'leafgarland/typescript-vim'
+  NeoBundle 'peitalin/vim-jsx-typescript'
 
 call neobundle#end()
 " NEOBUNDLE_END
@@ -111,6 +116,9 @@ else
   let g:session_autoload = 'no'
 endif
 unlet s:local_session_directory
+
+" typescript
+" autocmd FileType typescript :set makeprg=tsc
 
 " for vim-go
 let g:go_null_module_warning = 0
@@ -197,6 +205,17 @@ cmap <silent> <C-e> <C-u>:NERDTreeToggle<CR>
 let g:NERDTreeMinimalUI=1
 let g:NERDTreeDirArrows=0
 let g:NERDTreeMouseMode=2
+
+" js
+" Setup used libraries
+let g:used_javascript_libs = 'jquery,underscore,react,flux,jasmine,d3'
+let b:javascript_lib_use_jquery = 1
+let b:javascript_lib_use_underscore = 1
+let b:javascript_lib_use_react = 1
+let b:javascript_lib_use_flux = 1
+let b:javascript_lib_use_jasmine = 1
+let b:javascript_lib_use_d3 = 1
+
 
 " vim-slim
 syntax enable
