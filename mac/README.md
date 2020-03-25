@@ -98,9 +98,13 @@ cd dotfiles
 ```
 
 ## Change login shell
-```
-echo "/usr/local/bin/zsh" | sudo tee -a /etc/shells
+
+``` 
+# if Catalina 
 chsh -s /bin/zsh
+# else
+echo "/usr/local/bin/zsh" | sudo tee -a /etc/shells
+chsh -s /usr/local/bin/zsh
 ```
 
 ## Generate ssh key
