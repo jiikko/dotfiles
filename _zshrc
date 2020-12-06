@@ -6,7 +6,9 @@ export LC_CTYPE=ja_JP.UTF-8
 export PATH=$HOME/.nodebrew/current/bin:$PATH
 
 export GOPATH=$HOME/go
-export GOROOT=$( go env GOROOT )
+if type go > /dev/null 2>&1; then
+  export GOROOT=$( go env GOROOT )
+fi
 export PATH=$GOPATH/bin:$PATH
 export HUSKY_SKIP_HOOKS=1
 
