@@ -31,6 +31,9 @@ autodetach on
 # Vimを開いた時に別窓で表示するのでバッファが汚れない
 altscreen on
 
+## マウススクロール有効
+termcapinfo xterm* ti@:te@
+
 # Vim的なキーバインドで画面を移動する。
 bind j eval 'focus down'
 bind k eval 'focus up'
