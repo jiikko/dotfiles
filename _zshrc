@@ -6,7 +6,9 @@ export LC_CTYPE=ja_JP.UTF-8
 export PATH=$HOME/.nodebrew/current/bin:$PATH
 
 export GOPATH=$HOME/go
-export GOROOT=$( go env GOROOT )
+if type go > /dev/null 2>&1; then
+  export GOROOT=$( go env GOROOT )
+fi
 export PATH=$GOPATH/bin:$PATH
 export HUSKY_SKIP_HOOKS=1
 
@@ -772,8 +774,11 @@ fi
 
 ssh-add ~/.ssh/id_rsa
 
-eval "$(direnv hook zsh)"
+if type direnv > /dev/null 2>&1; then
+  eval "$(direnv hook zsh)"
+fi
 
 export NVM_DIR="$HOME/.nvm"
 [ -s "/usr/local/opt/nvm/nvm.sh" ] && . "/usr/local/opt/nvm/nvm.sh"  # This loads nvm
 [ -s "/usr/local/opt/nvm/etc/bash_completion.d/nvm" ] && . "/usr/local/opt/nvm/etc/bash_completion.d/nvm"
+export PATH="/usr/local/opt/mysql@5.7/bin:$PATH"
