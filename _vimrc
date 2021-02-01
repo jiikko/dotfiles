@@ -10,7 +10,9 @@ set wildignore+=*.sw?
 set wildignore+=.DS_Store
 set wildignore+=node_modules,bower_components,elm-stuff
 
-set grepprg=jvgrep
+" set grepprg=jvgrep
+" set grepprg=git\ grep\ --no-index\ --exclude-standard\ -I\ --perl-regexp\ --line-number
+set grepprg=git\ grep\ -I\ --line-number
 
 " Viとの互換断ち
 set nocompatible
