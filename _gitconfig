@@ -7,7 +7,7 @@
 [user]
   name = jiikko
   email = n905i.1214@gmail.com
-	signingkey = 4CE8B98705CF27FC0D5DD207A17D95928FD1DE41
+	signingkey = 067F6BAF5DFDDD757B65F6483604A9B02FAF6571
 [push]
   default = current
 [fetch]
