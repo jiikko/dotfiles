@@ -387,6 +387,7 @@ export PATH=/opt/local/bin:/opt/local/sbin:$PATH
 # http://webdev.jp.net/mac-osx-mysql-install-start/
 # export PATH=$PATH:/opt/local/lib/mysql5/bin
 
+# echo 'export PATH="/usr/local/opt/mysql@5.7/bin:$PATH"' >> ~/.zshrc
 
 # gitx
 export PATH=/Applications/GitX.app/Contents/MacOS:$PATH
@@ -781,3 +782,4 @@ fi
 export NVM_DIR="$HOME/.nvm"
 [ -s "/usr/local/opt/nvm/nvm.sh" ] && . "/usr/local/opt/nvm/nvm.sh"  # This loads nvm
 [ -s "/usr/local/opt/nvm/etc/bash_completion.d/nvm" ] && . "/usr/local/opt/nvm/etc/bash_completion.d/nvm"
+export PATH="/usr/local/opt/mysql@5.7/bin:$PATH"
