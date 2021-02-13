@@ -765,6 +765,9 @@ if [[ $(is_rbenv) == 0 ]]; then
   eval "$(rbenv init -)"
 fi
 
+# anyenv install --init
+eval "$(anyenv init -)"
+
 export PYENV_ROOT=${HOME}/.pyenv
 if [ -d "${PYENV_ROOT}" ]; then
     export PATH=${PYENV_ROOT}/bin:$PATH
