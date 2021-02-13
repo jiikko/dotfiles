@@ -122,3 +122,10 @@ ssh-keygen -t rsa -b 4096 -C "jiikko"
 ```shell
 cp ~/.config/karabiner/karabiner.json ~/dotfiles/mac/karabiner.json
 ```
+
+## gpg
+```
+brew install gpg pinentry-mac
+echo "pinentry-program /usr/local/bin/pinentry-mac" >> ~/.gnupg/gpg-agent.conf
+killall gpg-agent
+```
