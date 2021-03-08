@@ -83,8 +83,9 @@ call neobundle#begin(s:neobundledir)
   NeoBundle 'maxmellon/vim-jsx-pretty'
   NeoBundle 'leafgarland/typescript-vim'
   NeoBundle 'peitalin/vim-jsx-typescript'
-  NeoBundleLazy 'kamykn/spelunker.vim',  {
+  NeoBundleLazy 'kamykn/spelunker.vim', {
     \ "autoload" : { "filetypes" : [ "ruby" ] } }
+  NeoBundleLazy 'noprompt/vim-yardoc', { "autoload" : { "filetypes" : [ "ruby" ] } }
 
 call neobundle#end()
 " NEOBUNDLE_END
