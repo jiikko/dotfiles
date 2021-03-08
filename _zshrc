@@ -387,6 +387,7 @@ export PATH=/opt/local/bin:/opt/local/sbin:$PATH
 # http://webdev.jp.net/mac-osx-mysql-install-start/
 # export PATH=$PATH:/opt/local/lib/mysql5/bin
 
+# echo 'export PATH="/usr/local/opt/mysql@5.7/bin:$PATH"' >> ~/.zshrc
 
 # gitx
 export PATH=/Applications/GitX.app/Contents/MacOS:$PATH
@@ -764,6 +765,9 @@ if [[ $(is_rbenv) == 0 ]]; then
   export PATH="$HOME/.rbenv/bin:$PATH"
   eval "$(rbenv init -)"
 fi
+
+# anyenv install --init
+eval "$(anyenv init -)"
 
 export PYENV_ROOT=${HOME}/.pyenv
 if [ -d "${PYENV_ROOT}" ]; then
