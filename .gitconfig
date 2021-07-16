@@ -8,3 +8,5 @@
 	email = n905i.1214@gmail.com
 [push]
 	default = simple
+[pull]
+	rebase = false
