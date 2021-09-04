@@ -2,6 +2,7 @@
   editor = vim
   pager = less -R
   excludesfile = /Users/koji/.gitignore_global
+  quotepath = false
 [color]
   ui = true
 [user]
@@ -15,6 +16,8 @@
 [http]
   postBuffer = 1048576000
 [gpg]
-	program = /usr/local/bin/gpg
+	program = /opt/homebrew/bin/gpg
 [commit]
-	gpgsign = true
+	gpgsign = false
+[pull]
+	rebase = false
