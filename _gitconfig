@@ -2,6 +2,7 @@
   editor = vim
   pager = less -R
   excludesfile = /Users/koji/.gitignore_global
+  quotepath = false
 [color]
   ui = true
 [user]
@@ -17,4 +18,4 @@
 [gpg]
 	program = /usr/local/bin/gpg
 [commit]
-	gpgsign = true
+  # gpgsign = true
