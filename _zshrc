@@ -731,6 +731,15 @@ EOH
   echo "$DATABACE_URL" > config/database.yml
 }
 
+make_gtags() {
+  if type gtags > /dev/null 2>&1; then
+    gtags -v
+    gtags --gtagslabel=pygments -v
+  else
+    echo "not found gtags command!! run `brew install global`"
+  fi
+}
+
 make_readme_md() {
   DIR_NAME=$(echo "$(basename $(pwd))")
   H1=$(echo $DIR_NAME | ruby -e 'puts(gets.tap { |x| x[0] = x[0].upcase! })')
@@ -766,8 +775,12 @@ if [[ $(is_rbenv) == 0 ]]; then
   eval "$(rbenv init -)"
 fi
 
-# anyenv install --init
-eval "$(anyenv init -)"
+if type anyenv > /dev/null 2>&1; then
+  # anyenv install --init
+  eval "$(anyenv init -)"
+else
+  :
+fi
 
 export PYENV_ROOT=${HOME}/.pyenv
 if [ -d "${PYENV_ROOT}" ]; then
