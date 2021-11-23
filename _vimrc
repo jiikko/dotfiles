@@ -67,7 +67,6 @@ call neobundle#begin(s:neobundledir)
   NeoBundle 'SQLUtilities' " SQLUtilities : SQL整形、生成ユーティリティ
   NeoBundle 'Align' " Align : 高機能整形・桁揃えプラグイン
   NeoBundle 'vim-ruby/vim-ruby'
-  NeoBundle 'derekwyatt/vim-scala'
   NeoBundle 'xolox/vim-session', {
         \ 'depends' : 'xolox/vim-misc',
         \ }
@@ -83,6 +82,7 @@ call neobundle#begin(s:neobundledir)
   NeoBundle 'maxmellon/vim-jsx-pretty'
   NeoBundle 'leafgarland/typescript-vim'
   NeoBundle 'peitalin/vim-jsx-typescript'
+  NeoBundle 'tpope/vim-markdown'
   NeoBundleLazy 'kamykn/spelunker.vim', {
     \ "autoload" : { "filetypes" : [ "ruby" ] } }
   NeoBundleLazy 'noprompt/vim-yardoc', { "autoload" : { "filetypes" : [ "ruby" ] } }
