@@ -399,8 +399,6 @@ alias gitx='GitX .'
 # http://stackoverflow.com/questions/11785126/cfurlcopyresourcepropertyforkey-failed-because-it-was-passed-this-url-which-has
 alias gitk='gitk 2>/dev/null'
 
-alias yochi='cd ~/dev/rails/yochi_app'
-
 export MANPATH=/opt/local/man:$MANPATH
 
 export PATH=/opt/local/lib/postgresql92/bin:$PATH
@@ -741,6 +739,7 @@ make_gtags() {
     echo "not found gtags command!! run `brew install global`"
   fi
 }
+alias mt='make_gtags'
 
 make_readme_md() {
   DIR_NAME=$(echo "$(basename $(pwd))")
