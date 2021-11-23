@@ -235,9 +235,10 @@ map <S-k> <Esc>
 " emmet
 let g:user_emmet_leader_key = '<c-g>'
 
+map <C-j> :GtagsCursor<CR>
+map <C-k> :Gtags -r <C-r><C-w><CR>
 map <C-g> :Gtags
 map <C-h> :Gtags -f %<CR>
-map <C-j> :GtagsCursor<CR>
 
 "----------------------------------------------------
 " 基本設定(base basic)
