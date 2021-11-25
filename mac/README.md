@@ -30,7 +30,7 @@ brew install gem-completion
 brew install bundler-completion
 brew install rake-completion
 brew install rails-completion
-brew install mysql
+brew install mysql@5.7
 brew install v8
 brew install screen --HEAD
 brew install imagemagick
@@ -42,21 +42,15 @@ brew install pyenv-virtualenv
 
 ### GUI tools
 ```
-brew cask install coteditor
-brew cask install Caskroom/cask/xquartz
-brew cask install google-japanese-ime
-brew cask install firefox
-brew cask install google-chrome
-brew cask install virtualbox
-brew cask install kindle
+brew install coteditor --cask
+brew install Caskroom/cask/xquartz --cask
+brew install firefox --cask
+brew install google-chrome --cask
+brew install virtualbox --cask
+brew install kindle --cask
 brew install homebrew/cask-drivers/logitech-control-center
-brew cask install kensington-trackball-works
-brew cask install skitch
-brew cask install night-owl
-brew cask install intel-power-gadget
-brew cask install licecap
-brew cask install tuxgitter
-brew cask install vagrant
+brew install kensington-trackball-works --cask
+brew install skitch --cask
 ```
 ### for Job
 ```
@@ -69,7 +63,7 @@ brew cask install java
 
 ## Import karabinar-elements config
 ```shell
-brew cask install karabiner-elements
+brew install karabiner-elements --cask
 ```
 search karabiner in spotligth. enable karabinar on アクセシビリティ.
 
