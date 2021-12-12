@@ -4,8 +4,12 @@ export EDITOR="/usr/local/bin/vim"
 export LANG=ja_JP.UTF-8
 export LC_CTYPE=ja_JP.UTF-8
 export PATH=$HOME/.nodebrew/current/bin:$PATH
-export PATH="$HOME/.nodenv/bin:$PATH"
-eval "$(nodenv init -)"
+if type nodenv > /dev/null 2>&1; then
+  export PATH="$HOME/.nodenv/bin:$PATH"
+  eval "$(nodenv init -)"
+else
+  :
+fi
 
 export GOPATH=$HOME/go
 if type go > /dev/null 2>&1; then
@@ -62,17 +66,6 @@ zcompile ~/.zshrc
 
 # コマンド入力中にヘルプ（man）を見る
 # ESC-h
-
-# Global Functions
-function is_rbenv(){ # use subshell
-  if [[ -d "$HOME/.rbenv" ]]; then
-    echo 0
-    return
-  else
-    echo 1
-    return
-  fi
-}
 
 ##========================================================##
 ##================== キーバインドの設定 ==================##
@@ -324,13 +317,6 @@ alias rr='rake routes'
 
 alias sb='source ~/.bashrc'
 alias sz='source ~/.zshrc'
-
-if [[ $(is_rbenv) == 0 ]]; then
-  alias rc='rbenv version'
-else
-  alias rc='rvm current'
-fi
-alias rvms='source .rvmrc'
 
 alias v='vim'
 alias iv='vim'
@@ -771,9 +757,11 @@ whichppr() {
 
 export SCREENDIR="`echo ~`/.screens"
 
-if [[ $(is_rbenv) == 0 ]]; then
+if type rbenv > /dev/null 2>&1; then
   export PATH="$HOME/.rbenv/bin:$PATH"
   eval "$(rbenv init -)"
+else
+  :
 fi
 
 if type anyenv > /dev/null 2>&1; then
@@ -801,3 +789,4 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "/usr/local/opt/nvm/etc/bash_completion.d/nvm" ] && . "/usr/local/opt/nvm/etc/bash_completion.d/nvm"
 export PATH="/usr/local/opt/mysql@5.7/bin:$PATH"
 export PATH="/opt/homebrew/opt/mysql@5.7/bin:$PATH"
+export PATH="/opt/homebrew/bin:$PATH"
