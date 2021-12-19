@@ -319,6 +319,7 @@ alias sb='source ~/.bashrc'
 alias sz='source ~/.zshrc'
 
 alias v='vim'
+alias i='vim'
 alias iv='vim'
 alias vi='vim'
 alias vo='vim'
