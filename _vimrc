@@ -83,6 +83,7 @@ call neobundle#begin(s:neobundledir)
   NeoBundle 'leafgarland/typescript-vim'
   NeoBundle 'peitalin/vim-jsx-typescript'
   NeoBundle 'tpope/vim-markdown'
+  NeoBundle 'zebult/auto-gtags.vim'
   NeoBundleLazy 'kamykn/spelunker.vim', {
     \ "autoload" : { "filetypes" : [ "ruby" ] } }
   NeoBundleLazy 'noprompt/vim-yardoc', { "autoload" : { "filetypes" : [ "ruby" ] } }
@@ -94,6 +95,8 @@ call neobundle#end()
 "----------------------------------------------------
 " プラギンの設定
 "----------------------------------------------------
+
+let g:auto_gtags = 1
 
 let g:tabman_width = 50
 let g:tabman_toggle = '<leader>mt'
