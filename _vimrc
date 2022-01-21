@@ -235,7 +235,17 @@ map <S-k> <Esc>
 " emmet
 let g:user_emmet_leader_key = '<c-g>'
 
-map <C-j> :GtagsCursor<CR>
+" gtags.vimのGtagsCursorで、1件しか関数定義がないなら、quickfix-windowを開かないようにする
+" https://qiita.com/sunaemon0/items/c9d4885fb1e867000a3f
+function! GtagsCursor_()
+  execute "GtagsCursor"
+
+  if (len(getqflist()) <= 1)
+    cclose
+  endif
+endfunction
+
+map <C-j> :call GtagsCursor_()<CR>
 map <C-k> :Gtags -r <C-r><C-w><CR>
 map <C-g> :Gtags
 map <C-h> :Gtags -f %<CR>
