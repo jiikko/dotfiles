@@ -55,7 +55,6 @@ call neobundle#begin(s:neobundledir)
   NeoBundle 'taku-o/vim-toggle'
   NeoBundle 'easymotion/vim-easymotion'
   NeoBundle 'motemen/git-vim'
-  NeoBundle 'Shougo/neocomplcache'
   NeoBundle 'surround.vim'
   NeoBundle 'vim-jp/vimdoc-ja'
   NeoBundle 'kchmck/vim-coffee-script'
@@ -87,6 +86,7 @@ call neobundle#begin(s:neobundledir)
   NeoBundleLazy 'kamykn/spelunker.vim', {
     \ "autoload" : { "filetypes" : [ "ruby" ] } }
   NeoBundleLazy 'noprompt/vim-yardoc', { "autoload" : { "filetypes" : [ "ruby" ] } }
+  NeoBundle 'github/copilot.vim'
 
 call neobundle#end()
 " NEOBUNDLE_END
@@ -169,35 +169,6 @@ nmap <Leader>l <Plug>(easymotion-overwin-line)
 " Move to word
 map  <Leader>w <Plug>(easymotion-bd-w)
 nmap <Leader>w <Plug>(easymotion-overwin-w)
-
-" for neocomplcache
-" http://teppeis.hatenablog.com/entry/20100926/1285502391
-let g:neocomplcache_enable_at_startup = 1
-let g:neocomplcache_max_list = 30
-let g:neocomplcache_auto_completion_start_length = 2
-let g:neocomplcache_enable_smart_case = 1
-let g:neocomplcache_enable_auto_select = 1
-let g:neocomplcache_enable_camel_case_completion = 1
-let g:neocomplcache_enable_underbar_completion = 1
-let g:neocomplcache_min_syntax_length = 3
-inoremap <expr><C-g> neocomplcache#undo_completion()
-inoremap <expr><C-l> neocomplcache#complete_common_string()
-inoremap <expr><CR> pumvisible() ? neocomplcache#close_popup() : "\<CR>"
-inoremap <expr><TAB> pumvisible() ? "\<C-n>" : "\<TAB>"
-inoremap <expr><C-h> neocomplcache#smart_close_popup() . "\<C-h>"
-inoremap <expr><BS> neocomplcache#smart_close_popup() . "\<C-h>"
-inoremap <expr><C-y> neocomplcache#close_popup()
-inoremap <expr><C-e> neocomplcache#cancel_popup()
-
-" http://okuhiiro.daiwa-hotcom.com/wordpress/?cat=28
-let g:neocomplcache_dictionary_filetype_lists = {
-    \ 'default' : '',
-    \ 'javascript' :     [$HOME.'/.vim/dict/javascript.dict', $HOME.'/.vim/dict/jquery.dict'],
-    \ 'coffee' : [$HOME.'/.vim/dict/javascript.dict', $HOME.'/.vim/dict/jquery.dict'],
-    \ 'html' :    $HOME.'/.vim/dict/javascript.dict',
-    \ 'ruby' :      $HOME.'/.vim/dict/ruby2.1.0.dict'
-    \ }
-
 
 " for nerdtree
 " Vim起動時にNerdTreeが起動するようにする
