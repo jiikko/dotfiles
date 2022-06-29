@@ -55,7 +55,6 @@ call neobundle#begin(s:neobundledir)
   NeoBundle 'taku-o/vim-toggle'
   NeoBundle 'easymotion/vim-easymotion'
   NeoBundle 'motemen/git-vim'
-  NeoBundle 'Shougo/neocomplcache'
   NeoBundle 'surround.vim'
   NeoBundle 'vim-jp/vimdoc-ja'
   NeoBundle 'kchmck/vim-coffee-script'
@@ -83,9 +82,11 @@ call neobundle#begin(s:neobundledir)
   NeoBundle 'leafgarland/typescript-vim'
   NeoBundle 'peitalin/vim-jsx-typescript'
   NeoBundle 'tpope/vim-markdown'
+  NeoBundle 'zebult/auto-gtags.vim'
   NeoBundleLazy 'kamykn/spelunker.vim', {
     \ "autoload" : { "filetypes" : [ "ruby" ] } }
   NeoBundleLazy 'noprompt/vim-yardoc', { "autoload" : { "filetypes" : [ "ruby" ] } }
+  NeoBundle 'github/copilot.vim'
 
 call neobundle#end()
 " NEOBUNDLE_END
@@ -94,6 +95,8 @@ call neobundle#end()
 "----------------------------------------------------
 " プラギンの設定
 "----------------------------------------------------
+
+let g:auto_gtags = 1
 
 let g:tabman_width = 50
 let g:tabman_toggle = '<leader>mt'
@@ -167,35 +170,6 @@ nmap <Leader>l <Plug>(easymotion-overwin-line)
 map  <Leader>w <Plug>(easymotion-bd-w)
 nmap <Leader>w <Plug>(easymotion-overwin-w)
 
-" for neocomplcache
-" http://teppeis.hatenablog.com/entry/20100926/1285502391
-let g:neocomplcache_enable_at_startup = 1
-let g:neocomplcache_max_list = 30
-let g:neocomplcache_auto_completion_start_length = 2
-let g:neocomplcache_enable_smart_case = 1
-let g:neocomplcache_enable_auto_select = 1
-let g:neocomplcache_enable_camel_case_completion = 1
-let g:neocomplcache_enable_underbar_completion = 1
-let g:neocomplcache_min_syntax_length = 3
-inoremap <expr><C-g> neocomplcache#undo_completion()
-inoremap <expr><C-l> neocomplcache#complete_common_string()
-inoremap <expr><CR> pumvisible() ? neocomplcache#close_popup() : "\<CR>"
-inoremap <expr><TAB> pumvisible() ? "\<C-n>" : "\<TAB>"
-inoremap <expr><C-h> neocomplcache#smart_close_popup() . "\<C-h>"
-inoremap <expr><BS> neocomplcache#smart_close_popup() . "\<C-h>"
-inoremap <expr><C-y> neocomplcache#close_popup()
-inoremap <expr><C-e> neocomplcache#cancel_popup()
-
-" http://okuhiiro.daiwa-hotcom.com/wordpress/?cat=28
-let g:neocomplcache_dictionary_filetype_lists = {
-    \ 'default' : '',
-    \ 'javascript' :     [$HOME.'/.vim/dict/javascript.dict', $HOME.'/.vim/dict/jquery.dict'],
-    \ 'coffee' : [$HOME.'/.vim/dict/javascript.dict', $HOME.'/.vim/dict/jquery.dict'],
-    \ 'html' :    $HOME.'/.vim/dict/javascript.dict',
-    \ 'ruby' :      $HOME.'/.vim/dict/ruby2.1.0.dict'
-    \ }
-
-
 " for nerdtree
 " Vim起動時にNerdTreeが起動するようにする
 " autocmd vimenter * if !argc() | NERDTree | endif
@@ -235,7 +209,17 @@ map <S-k> <Esc>
 " emmet
 let g:user_emmet_leader_key = '<c-g>'
 
-map <C-j> :GtagsCursor<CR>
+" gtags.vimのGtagsCursorで、1件しか関数定義がないなら、quickfix-windowを開かないようにする
+" https://qiita.com/sunaemon0/items/c9d4885fb1e867000a3f
+function! GtagsCursor_()
+  execute "GtagsCursor"
+
+  if (len(getqflist()) <= 1)
+    cclose
+  endif
+endfunction
+
+map <C-j> :call GtagsCursor_()<CR>
 map <C-k> :Gtags -r <C-r><C-w><CR>
 map <C-g> :Gtags
 map <C-h> :Gtags -f %<CR>
