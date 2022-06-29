@@ -6,6 +6,9 @@ for file in gemrc screenrc bashrc bash_profile gvimrc vimrc zshrc rspec gitconfi
   ln -s -F ~/dotfiles/_$file ~/.$file
 done
 
+mkdir -p ~/.config/nvim
+ln -s -F ~/dotfiles/_nvimconfig ~/.config/nvim/init.vim
+
 # set dict symlink
 mkdir -p ~/.vim/dict
 DOTFILE_FULLPATH=`ls -al ~/.zshrc | awk '{print $11}' |  sed -e "s|/_zshrc||"`
