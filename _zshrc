@@ -318,18 +318,18 @@ alias rr='rake routes'
 alias sb='source ~/.bashrc'
 alias sz='source ~/.zshrc'
 
-alias v='vim'
-alias i='vim'
-alias iv='vim'
-alias vi='vim'
-alias bi='vim'
-alias vo='vim'
-alias ci='vim'
-alias c='vim'
-alias vb='vim ~/.bashrc'
-alias vz='vim ~/.zshrc'
-alias vbpro='vim ~/.bash_profile'
-alias vv='vim ~/.vimrc'
+alias v='nvim'
+alias i='nvim'
+alias iv='nvim'
+alias vi='nvim'
+alias bi='nvim'
+alias vo='nvim'
+alias ci='nvim'
+alias c='nvim'
+alias vb='nvim ~/.bashrc'
+alias vz='nvim ~/.zshrc'
+alias vbpro='nvim ~/.bash_profile'
+alias vv='nvim ~/.vimrc'
 alias nv='nvim'
 alias n='nvim'
 
@@ -345,7 +345,7 @@ alias -g W='| wc'
 alias ssh='ssh -o ServerAliveInterval=60'
 
 # alias
-alias e='vim'
+alias e='nvim'
 alias h='history'
 alias ha='history-all'
 alias screen='TERM=xterm screen'
@@ -792,3 +792,8 @@ export NVM_DIR="$HOME/.nvm"
 export PATH="/usr/local/opt/mysql@5.7/bin:$PATH"
 export PATH="/opt/homebrew/opt/mysql@5.7/bin:$PATH"
 export PATH="/opt/homebrew/bin:$PATH"
+
+
+export NVM_DIR="$HOME/.nvm"
+[ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"  # This loads nvm
+[ -s "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm" ] && \. "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm"  # This loads nvm bash_completion
