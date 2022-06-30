@@ -330,7 +330,8 @@ alias vb='vim ~/.bashrc'
 alias vz='vim ~/.zshrc'
 alias vbpro='vim ~/.bash_profile'
 alias vv='vim ~/.vimrc'
-alias ign='vim .gitignore'
+alias nv='nvim'
+alias n='nvim'
 
 
 alias -g L='| less'
