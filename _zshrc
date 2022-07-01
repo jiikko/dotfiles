@@ -329,7 +329,7 @@ alias c='nvim'
 alias vb='nvim ~/.bashrc'
 alias vz='nvim ~/.zshrc'
 alias vbpro='nvim ~/.bash_profile'
-alias vv='nvim ~/.vimrc'
+alias vv='nvim ~/.config/nvim/init.vim'
 alias nv='nvim'
 alias n='nvim'
 
