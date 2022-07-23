@@ -85,8 +85,18 @@ call dein#add('peitalin/vim-jsx-typescript')
 call dein#add('tpope/vim-markdown')
 call dein#add('kamykn/spelunker.vim', { "autoload" : { "filetypes" : [ "ruby" ] } })
 call dein#add('noprompt/vim-yardoc', { "autoload" : { "filetypes" : [ "ruby" ] } })
-call dein#add('noprompt/vim-yardoc', { "autoload" : { "filetypes" : [ "ruby" ] } })
+call dein#add('nvim-lua/popup.nvim')
 call dein#add('zebult/auto-gtags.vim')
+
+call dein#add('folke/lsp-colors.nvim')
+
+" ハイライト
+call dein#add('nvim-treesitter/nvim-treesitter', { 'do': ':TSUpdate' })
+" 閉じてくれる
+call dein#add('windwp/nvim-autopairs')
+call dein#add('windwp/nvim-ts-autotag')
+
+" TODO LSP系
 
 " Required:
 call dein#end()
