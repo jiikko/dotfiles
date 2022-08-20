@@ -88,7 +88,12 @@ call dein#add('noprompt/vim-yardoc', { "autoload" : { "filetypes" : [ "ruby" ] }
 call dein#add('nvim-lua/popup.nvim')
 call dein#add('zebult/auto-gtags.vim')
 
-call dein#add('folke/lsp-colors.nvim')
+call dein#add('prabirshrestha/vim-lsp')
+call dein#add('mattn/vim-lsp-settings')
+call dein#add('prabirshrestha/async.vim')
+call dein#add('prabirshrestha/asyncomplete.vim')
+call dein#add('prabirshrestha/asyncomplete:lsp.vim')
+
 
 " ハイライト
 call dein#add('nvim-treesitter/nvim-treesitter', { 'do': ':TSUpdate' })
@@ -114,6 +119,8 @@ endif
 "----------------------------------------------------
 " プラギンの設定
 "----------------------------------------------------
+let g:asyncomplete_auto_popup = 0
+
 
 let g:auto_gtags = 1
 
