@@ -87,12 +87,14 @@ call dein#add('noprompt/vim-yardoc', { "autoload" : { "filetypes" : [ "ruby" ] }
 call dein#add('nvim-lua/popup.nvim')
 call dein#add('zebult/auto-gtags.vim')
 call dein#add('neoclide/coc.nvim', { 'merged':0, 'rev': 'release' })
-call dein#add('tpope/vim-endwise')
-
-" 閉じてくれる
+call dein#add('RRethy/vim-illuminate')
+call dein#add('andymass/vim-matchup')
 call dein#add('windwp/nvim-autopairs')
 call dein#add('windwp/nvim-ts-autotag')
 call dein#add('nvim-treesitter/nvim-treesitter', { 'do': ':TSUpdate' })
+call dein#add('tpope/nvim-treesitter-endwise')
+call dein#add('folke/which-key.nvim')
+
 
 " Required:
 call dein#end()
@@ -111,8 +113,11 @@ endif
 " プラギンの設定
 "----------------------------------------------------
 
+" coc
 inoremap <silent><expr> <CR> coc#pum#visible() ? coc#pum#confirm() : "\<CR>"
-" autocmd CursorHold * silent call CocActionAsync('highlight')
+
+" vim-matchup
+let g:loaded_matchit = 1
 
 let g:auto_gtags = 1
 
