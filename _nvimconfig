@@ -112,7 +112,7 @@ endif
 "----------------------------------------------------
 
 inoremap <silent><expr> <CR> coc#pum#visible() ? coc#pum#confirm() : "\<CR>"
-autocmd CursorHold * silent call CocActionAsync('highlight')
+" autocmd CursorHold * silent call CocActionAsync('highlight')
 
 let g:auto_gtags = 1
 
