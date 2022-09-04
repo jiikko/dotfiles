@@ -90,9 +90,9 @@ call dein#add('neoclide/coc.nvim', { 'merged':0, 'rev': 'release' })
 call dein#add('tpope/vim-endwise')
 
 " 閉じてくれる
-" call dein#add('windwp/nvim-autopairs')
-" call dein#add('windwp/nvim-ts-autotag')
-" call dein#add('nvim-treesitter/nvim-treesitter', { 'do': ':TSUpdate' })
+call dein#add('windwp/nvim-autopairs')
+call dein#add('windwp/nvim-ts-autotag')
+call dein#add('nvim-treesitter/nvim-treesitter', { 'do': ':TSUpdate' })
 
 " Required:
 call dein#end()
