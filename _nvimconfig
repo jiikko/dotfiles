@@ -154,7 +154,7 @@ unlet s:local_session_directory
 " for vim-go
 let g:go_null_module_warning = 0
 
-colorscheme delek
+colorscheme darkblue
 
 "vim立ち上げたときに、自動的にvim-indent-guidesをオンにする
 let g:indent_guides_enable_on_vim_startup=1
