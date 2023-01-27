@@ -502,11 +502,6 @@ syntax enable
 "----------------------------------------------------
 " 編集 edit
 "----------------------------------------------------
-" insertモードを抜けるとIMEオフ
-set noimdisable
-set iminsert=0 imsearch=0
-set noimcmdline
-inoremap <silent> <ESC> <ESC>:set iminsert=0<CR>
 
 " コンマの後に自動的にスペースを挿入
 " "inoremap , ,<Space>
