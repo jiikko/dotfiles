@@ -94,6 +94,7 @@ call dein#add('windwp/nvim-ts-autotag')
 call dein#add('nvim-treesitter/nvim-treesitter', { 'do': ':TSUpdate' })
 call dein#add('tpope/nvim-treesitter-endwise')
 call dein#add('folke/which-key.nvim')
+call dein#add('itchyny/lightline.vim')
 
 
 " Required:
@@ -113,8 +114,23 @@ endif
 " プラギンの設定
 "----------------------------------------------------
 
+let g:lightline = {
+  \'active': {
+    \'right': [
+      \['coc']
+    \]
+  \},
+  \'component_function': {
+    \'coc': 'coc#status'
+  \}
+\}
+"Diagnosticsの、左横のアイコンの色設定
+highlight CocErrorSign ctermfg=15 ctermbg=196
+highlight CocWarningSign ctermfg=0 ctermbg=172
+
 " coc
 inoremap <silent><expr> <CR> coc#pum#visible() ? coc#pum#confirm() : "\<CR>"
+nmap <silent> <space><space> :<C-u>CocList<cr>
 
 " vim-matchup
 let g:loaded_matchit = 1
@@ -153,8 +169,6 @@ unlet s:local_session_directory
 
 " for vim-go
 let g:go_null_module_warning = 0
-
-" colorscheme darkblue
 
 "vim立ち上げたときに、自動的にvim-indent-guidesをオンにする
 let g:indent_guides_enable_on_vim_startup=1
