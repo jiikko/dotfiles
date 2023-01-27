@@ -86,9 +86,8 @@ cd dotfiles
 ```
 
 ### Setup Vim
-バックグラウンドにするとsuspendしてしまう(謎)
 ```shell
-./vim_setup.sh
+sh -c "$(wget -O- https://raw.githubusercontent.com/Shougo/dein-installer.vim/master/installer.sh)"
 ```
 
 ## Change login shell
