@@ -131,6 +131,17 @@ highlight CocWarningSign ctermfg=0 ctermbg=172
 inoremap <silent><expr> <CR> coc#pum#visible() ? coc#pum#confirm() : "\<CR>"
 nmap <silent> <space><space> :<C-u>CocList<cr>
 
+" Tabキーを使って補完候補
+function! s:check_back_space() abort
+  let col = col('.') - 1
+  return !col || getline('.')[col - 1]  =~ '\s'
+endfunction
+
+inoremap <silent><expr> <Tab>
+      \ pumvisible() ? "\<C-n>" :
+      \ <SID>check_back_space() ? "\<Tab>" :
+      \ coc#refresh()
+
 " vim-matchup
 let g:loaded_matchit = 1
 
