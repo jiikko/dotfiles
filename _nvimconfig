@@ -1,7 +1,3 @@
-if &compatible
-  set nocompatible               " Be iMproved
-endif
-
 set re=1
 set background=light
 
@@ -38,8 +34,6 @@ command TABe tabe
 command TABE tabe
 
 nnoremap Q <Nop>
-
-
 
 " Required:
 set runtimepath+=~/.cache/dein/repos/github.com/Shougo/dein.vim
@@ -100,8 +94,8 @@ call dein#add('itchyny/lightline.vim')
 call dein#end()
 
 " Required:
-filetype plugin indent on
 syntax enable
+filetype plugin indent on
 
 " If you want to install not installed plugins on startup.
 if dein#check_install()
@@ -240,10 +234,6 @@ let b:javascript_lib_use_jasmine = 1
 let b:javascript_lib_use_d3 = 1
 
 
-" vim-slim
-syntax enable
-filetype plugin indent on
-
 map <Leader>c <Plug>(operator-camelize)
 map <Leader>C <Plug>(operator-decamelize)
 
@@ -277,7 +267,7 @@ map <C-h> :Gtags -f %<CR>
 " start   : 挿入モード開始位置より手前の文
 set backspace=indent,eol,start
 set number
-set history=1000
+set history=10000
 " show the cursor position all the time
 set ruler
 "コマンドを表示する
@@ -346,7 +336,6 @@ nnoremap <C-n> :cnext<CR>       " 次へ
 " nnoremap <C-P> :<C-u>cfirst<CR> " 最初へ
 " nnoremap <C-N> :<C-u>clast<CR>  " 最後へ
 
-
 "ノーマルモードでクリップボードからペースト
 " nnoremap <C-p> "+p
 
@@ -355,9 +344,6 @@ nnoremap <C-f> <Right>
 nnoremap <C-b> <Left>
 inoremap <C-f> <Right>
 inoremap <C-b> <Left>
-
-""インサートモードでクリップボードの内容をペースト
-" inoremap <C-p> <ESC>"*pa
 
 " silent ]
 inoremap <C-]> <ESC>
@@ -407,23 +393,12 @@ nnoremap <leader>nf :NERDTreeFind<CR>
 "Yankした情報を他のアプリケーションでも利用
 set clipboard=unnamed
 
-filetype plugin indent on
-
 "----------------------------------------------------
 " 表示
 "----------------------------------------------------
 " 全角スペースの表示
 highlight ZenkakuSpace cterm=underline ctermfg=lightblue guibg=darkgray
 match ZenkakuSpace /　/
-
-" ステータスラインに表示する情報の指定
-set statusline=%n\:%y%F\ \|%{(&fenc!=''?&fenc:&enc).'\|'.&ff.'\|'}%m%r%=
-set statusline=%<%f\ %m%r%h%w%{'['.(&fenc!=''?&fenc:&enc).']['.&ff.']'}%=%l,%c%V%8P
-
-" 現バッファの差分表示(変更箇所の表示)
-if !exists(":DiffOrig")
-  command! DiffOrig vert new | set bt=nofile | r # | 0d_ | diffthis | wincmd p | diffthis
-endif
 
 " カレントウィンドウにのみ罫線を引く
 augroup cch
