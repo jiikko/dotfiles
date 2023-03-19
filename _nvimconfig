@@ -105,6 +105,23 @@ endif
 "----------------------------------------------------
 " プラギンの設定
 "----------------------------------------------------
+" nvim-treesitterの設定
+lua << EOF
+require('nvim-treesitter.configs').setup {
+  endwise = { enable = true, },
+  highlight = {
+    enable = true,
+    disable = {
+      'ruby',
+      'lua',
+    }
+  },
+  indent = {
+    enable = true,
+  },
+  ensure_installed = { 'ruby', 'markdown' },
+}
+EOF
 
 let g:lightline = {
   \'active': {
@@ -287,8 +304,6 @@ set guioptions+=a
 
 set smarttab
 set smartindent
-
-set ttyfast
 
 " showbreaks
 set showbreak=↪
