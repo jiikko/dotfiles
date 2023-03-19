@@ -49,7 +49,6 @@ call dein#add('~/.cache/dein/repos/github.com/Shougo/dein.vim')
 call dein#add('scrooloose/nerdtree')
 call dein#add('tpope/vim-rails')
 call dein#add('taku-o/vim-toggle')
-call dein#add('easymotion/vim-easymotion')
 call dein#add('motemen/git-vim')
 call dein#add('Shougo/neocomplcache')
 call dein#add('vim-scripts/surround.vim')
@@ -188,25 +187,6 @@ autocmd VimEnter,Colorscheme * :hi IndentGuidesEven guibg=#3c3c3c ctermbg=darkgr
 let g:indent_guides_color_change_percent = 30
 " ガイドの幅
 let g:indent_guides_guide_size = 1
-
-"" for easymotion
-" <Leader>f{char} to move to {char}
-map  <Leader>f <Plug>(easymotion-bd-f)
-nmap <Leader>f <Plug>(easymotion-overwin-f)
-
-" s{char}{char} to move to {char}{char}
-nmap s <Plug>(easymotion-overwin-f2)
-vmap s <Plug>(easymotion-bd-f2)
-
-" Move to line
-map <Leader>l <Plug>(easymotion-bd-jk)
-nmap <Leader>l <Plug>(easymotion-overwin-line)
-
-" Move to word
-map  <Leader>w <Plug>(easymotion-bd-w)
-nmap <Leader>w <Plug>(easymotion-overwin-w)
-
-
 
 " for nerdtree
 " Vim起動時にNerdTreeが起動するようにする
