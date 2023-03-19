@@ -518,3 +518,10 @@ nmap <silent> <Leader>b <Esc>:call HandleURL()<CR>
 " 折りたたみ
 set foldmethod=indent
 set foldlevel=100
+
+" .ctagsファイルを自動で読み込む
+set tags+=./.ctags
+
+" gfコマンドでrubyのrequireしたファイルを開く
+set path+=**
+au FileType ruby nnoremap gf <C-w>gf
