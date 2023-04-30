@@ -86,6 +86,7 @@ call dein#add('nvim-treesitter/nvim-treesitter', { 'do': ':TSUpdate' })
 call dein#add('tpope/nvim-treesitter-endwise')
 call dein#add('folke/which-key.nvim')
 call dein#add('itchyny/lightline.vim')
+call dein#add('jlcrochet/vim-rbs')
 
 
 " Required:
