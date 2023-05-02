@@ -87,6 +87,7 @@ call dein#add('tpope/nvim-treesitter-endwise')
 call dein#add('folke/which-key.nvim')
 call dein#add('itchyny/lightline.vim')
 call dein#add('jlcrochet/vim-rbs')
+call dein#add('tpope/vim-abolish')
 
 
 " Required:
