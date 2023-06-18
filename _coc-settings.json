@@ -1,0 +1,7 @@
+{
+  "solargraph.autoformat": true,
+  "solargraph.formatting": true,
+  "codeLens.enable": true,
+   // "solargraph.useBundler": true,
+  "solargraph.hover": true
+}

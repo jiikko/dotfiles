@@ -8,3 +8,4 @@ done
 
 mkdir -p ~/.config/nvim
 ln -s -F ~/dotfiles/_nvimconfig ~/.config/nvim/init.vim
+ln -s -F ~/dotfiles/_coc-settings.json ~/.config/nvim/coc-settings.json
