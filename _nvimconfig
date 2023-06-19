@@ -525,3 +525,6 @@ au FileType ruby nnoremap gf <C-w>gf
 
 " Highlight entire word including special characters like !
 set iskeyword+=33
+
+
+colorscheme default
