@@ -82,7 +82,7 @@ call dein#add('andymass/vim-matchup')
 call dein#add('windwp/nvim-autopairs')
 call dein#add('windwp/nvim-ts-autotag')
 call dein#add('nvim-treesitter/nvim-treesitter', { 'do': ':TSUpdate' })
-call dein#add('tpope/nvim-treesitter-endwise')
+call dein#add('tpope/vim-endwise')
 call dein#add('folke/which-key.nvim')
 call dein#add('itchyny/lightline.vim')
 call dein#add('jlcrochet/vim-rbs')
@@ -105,25 +105,6 @@ endif
 "----------------------------------------------------
 " プラギンの設定
 "----------------------------------------------------
-" nvim-treesitterの設定
-lua << EOF
-require('nvim-treesitter.configs').setup {
-  endwise = { enable = true, },
-  highlight = {
-    enable = true,
-    disable = {
-      'ruby',
-      'javascript',
-      'lua',
-    }
-  },
-  indent = {
-    enable = true,
-  },
-  ensure_installed = { 'ruby', 'markdown' },
-}
-EOF
-
 let g:lightline = {
   \'active': {
     \'right': [
@@ -503,8 +484,9 @@ set tags+=./.ctags
 set path+=**
 au FileType ruby nnoremap gf <C-w>gf
 
-" Highlight entire word including special characters like !
+" Highlight entire word including special characters like !, ?
 set iskeyword+=33
+set iskeyword+=63
 
 
 colorscheme default
