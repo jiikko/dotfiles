@@ -717,7 +717,6 @@ EOH
 
 make_gtags() {
   if type gtags > /dev/null 2>&1; then
-    gtags -v
     gtags --gtagslabel=pygments -v
   else
     echo "not found gtags command!! run `brew install global`"
