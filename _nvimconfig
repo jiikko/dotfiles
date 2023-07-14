@@ -87,6 +87,7 @@ call dein#add('folke/which-key.nvim')
 call dein#add('itchyny/lightline.vim')
 call dein#add('jlcrochet/vim-rbs')
 call dein#add('tpope/vim-abolish')
+call dein#add('github/copilot.vim')
 
 
 " Required:
