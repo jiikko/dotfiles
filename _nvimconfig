@@ -61,7 +61,6 @@ call dein#add('tyru/operator-camelize.vim')
 call dein#add('vim-scripts/SQLUtilities') " SQLUtilities : SQL整形、生成ユーティリティ
 call dein#add('vim-scripts/Align') " Align : 高機能整形・桁揃えプラグイン
 call dein#add('vim-ruby/vim-ruby')
-call dein#add('xolox/vim-session')
 call dein#add('xolox/vim-misc')
 call dein#add('othree/yajs.vim')
 call dein#add('vim-scripts/gtags.vim')
@@ -83,11 +82,12 @@ call dein#add('andymass/vim-matchup')
 call dein#add('windwp/nvim-autopairs')
 call dein#add('windwp/nvim-ts-autotag')
 call dein#add('nvim-treesitter/nvim-treesitter', { 'do': ':TSUpdate' })
-call dein#add('tpope/nvim-treesitter-endwise')
+call dein#add('tpope/vim-endwise')
 call dein#add('folke/which-key.nvim')
 call dein#add('itchyny/lightline.vim')
 call dein#add('jlcrochet/vim-rbs')
 call dein#add('tpope/vim-abolish')
+call dein#add('github/copilot.vim')
 
 
 " Required:
@@ -106,25 +106,6 @@ endif
 "----------------------------------------------------
 " プラギンの設定
 "----------------------------------------------------
-" nvim-treesitterの設定
-lua << EOF
-require('nvim-treesitter.configs').setup {
-  endwise = { enable = true, },
-  highlight = {
-    enable = true,
-    disable = {
-      'ruby',
-      'javascript',
-      'lua',
-    }
-  },
-  indent = {
-    enable = true,
-  },
-  ensure_installed = { 'ruby', 'markdown' },
-}
-EOF
-
 let g:lightline = {
   \'active': {
     \'right': [
@@ -166,25 +147,6 @@ let g:tabman_focus  = '<leader>mf'
 let g:terraform_align=1
 "let g:terraform_fold_sections=1
 let g:terraform_fmt_on_save=1
-
-" vim-session
-" 現在のディレクトリ直下の .vimsessions/ を取得
-let s:local_session_directory = xolox#misc#path#merge(getcwd(), '.vimsessions')
-" 存在すれば
-if isdirectory(s:local_session_directory)
-  " session保存ディレクトリをそのディレクトリの設定
-  let g:session_directory = s:local_session_directory
-  " vimを辞める時に自動保存
-  let g:session_autosave = 'yes'
-  " 引数なしでvimを起動した時にsession保存ディレクトリのdefault.vimを開く
-  let g:session_autoload = 'yes'
-  " 1分間に1回自動保存
-  let g:session_autosave_periodic = 1
-else
-  let g:session_autosave = 'no'
-  let g:session_autoload = 'no'
-endif
-unlet s:local_session_directory
 
 " typescript
 " autocmd FileType typescript :set makeprg=tsc
@@ -523,8 +485,9 @@ set tags+=./.ctags
 set path+=**
 au FileType ruby nnoremap gf <C-w>gf
 
-" Highlight entire word including special characters like !
+" Highlight entire word including special characters like !, ?
 set iskeyword+=33
+set iskeyword+=63
 
 
 colorscheme default

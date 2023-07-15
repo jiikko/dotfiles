@@ -300,6 +300,7 @@ alias gg='git grep -n'
 alias gst='git status'
 alias gd='git diff'
 alias gl='git log'
+alias tl='git log'
 alias gb='git branch'
 alias gch='git checkout'
 alias g='git'
@@ -716,7 +717,6 @@ EOH
 
 make_gtags() {
   if type gtags > /dev/null 2>&1; then
-    gtags -v
     gtags --gtagslabel=pygments -v
   else
     echo "not found gtags command!! run `brew install global`"
