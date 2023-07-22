@@ -4,5 +4,12 @@
   "solargraph.formatting": true,
   "codeLens.enable": true,
    // "solargraph.useBundler": true,
-  "solargraph.hover": true
+  "solargraph.hover": true,
+  "languageserver": {
+    "golang": {
+      "command": "gopls",
+      "rootPatterns": ["go.mod"],
+      "filetypes": ["go"]
+    }
+  }
 }
