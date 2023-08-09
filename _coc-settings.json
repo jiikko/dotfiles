@@ -3,13 +3,18 @@
   "solargraph.diagnostics": true,
   "solargraph.formatting": true,
   "codeLens.enable": true,
-   // "solargraph.useBundler": true,
+  // "solargraph.useBundler": true,
   "solargraph.hover": true,
   "languageserver": {
     "golang": {
       "command": "gopls",
       "rootPatterns": ["go.mod"],
       "filetypes": ["go"]
+    },
+    "typescript": {
+      "command": "tsserver",
+      "rootPatterns": ["tsconfig.json"],
+      "filetypes": ["typescript", "ts", "tsx"]
     }
   }
 }
