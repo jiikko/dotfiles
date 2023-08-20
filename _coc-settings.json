@@ -2,6 +2,7 @@
   "solargraph.autoformat": true,
   "solargraph.diagnostics": true,
   "solargraph.formatting": true,
+  "tsserver.enable": true,
   "codeLens.enable": true,
   // "solargraph.useBundler": true,
   "solargraph.hover": true,
