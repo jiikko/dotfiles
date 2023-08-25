@@ -106,6 +106,26 @@ endif
 "----------------------------------------------------
 " プラギンの設定
 "----------------------------------------------------
+let g:coc_global_extensions = [
+      \'coc-actions',
+      \'coc-cspell-dicts',
+      \'coc-diagnostic',
+      \'coc-dictionary',
+      \'coc-eslint',
+      \'coc-git',
+      \'coc-highlight',
+      \'coc-json',
+      \'coc-lists',
+      \'coc-markdownlint',
+      \'coc-metals',
+      \'coc-pairs',
+      \'coc-prettier',
+      \'coc-spell-checker',
+      \'coc-tslint-plugin',
+      \'coc-tsserver',
+      \'coc-ultisnips',
+      \'coc-yaml'
+\]
 let g:lightline = {
   \'active': {
     \'right': [

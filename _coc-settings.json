@@ -17,5 +17,6 @@
       "rootPatterns": ["tsconfig.json"],
       "filetypes": ["typescript", "ts", "tsx"]
     }
-  }
+  },
+  "snippets.ultisnips.pythonPrompt": false
 }
