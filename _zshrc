@@ -357,7 +357,7 @@ alias tac='tail -r'
 # HTMLファイルに張り付け用の、タブ、空白、< > の変換コマンド
 alias htmlconv='sed -e "s/</\&lt;/g;s/>/\&gt;/g;s/\t/\&nbsp;\&nbsp;\&nbsp;\&nbsp;/g;s/\s/\&nbsp;/g" '
 
-
+alias lint='pre-commit run --config ~/dotfiles/pre-commit-config.yml'
 
 bindkey "^R" history-incremental-search-backward
 bindkey "^S" history-incremental-search-forward

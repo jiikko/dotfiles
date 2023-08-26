@@ -17,34 +17,21 @@ repos:
       - id: check-symlinks
       - id: check-yaml
       - id: no-commit-to-branch
-        args: [--branch, staging, --branch, main, --branch, master]
+        args: [--branch, develop, --branch, staging, --branch, main, --branch, master]
   - repo: https://github.com/mattlqx/pre-commit-ruby
     rev: v1.3.5
     hooks:
       - id: rubocop
       - id: rspec
   - repo: https://github.com/jumanjihouse/pre-commit-hooks
-    rev: master
+    rev: 3.0.0
     hooks:
       - id: bundler-audit
       - id: fasterer
       - id: markdownlint
       - id: reek
-  - repo: https://github.com/lietu/go-pre-commit
-    rev: master
+  - repo: https://github.com/jiikko/pre-commit-hooks.git
+    rev: 0.1.0
     hooks:
-      - id: errcheck
-      - id: go-fmt-goimports
-      - id: go-test
-      - id: go-vet
-      - id: gofumpt
-      - id: golangci-lint
-      - id: golint
-      - id: staticcheck
-      - id: go-mod-tidy
-  - repo: https://github.com/Yelp/detect-secrets
-    rev: v1.4.0
-    hooks:
-    -   id: detect-secrets
-        args: ['--baseline', '.secrets.baseline']
-        exclude: package.lock.json
+      - id: rails-outdated-schema
+      - id: rails-missing-migration-file
