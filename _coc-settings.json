@@ -18,5 +18,8 @@
       "filetypes": ["typescript", "ts", "tsx"]
     }
   },
+  "cSpell.words": [
+    "nvim", "findy",
+  ],
   "snippets.ultisnips.pythonPrompt": false
 }
