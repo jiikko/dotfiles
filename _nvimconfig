@@ -502,8 +502,8 @@ set foldlevel=100
 set tags+=./.ctags
 
 " gfコマンドでrubyのrequireしたファイルを開く
-set path+=**
-au FileType ruby nnoremap gf <C-w>gf
+"set path+=**
+" au FileType ruby nnoremap gf <C-w>gf
 
 " Highlight entire word including special characters like !, ?
 set iskeyword+=33
