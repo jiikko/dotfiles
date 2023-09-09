@@ -510,7 +510,7 @@ pygments-parser|Pygments plug-in parser:\
 	:langmap=TeX\:.tex.aux.toc:\
 	:langmap=Tea\:.tea:\
 	:langmap=Treetop\:.treetop.tt:\
-	:langmap=TypeScript\:.ts:\
+	:langmap=TypeScript\:.ts.tsx:\
 	:langmap=UrbiScript\:.u:\
 	:langmap=VB.net\:.vb.bas:\
 	:langmap=VGL\:.rpf:\
