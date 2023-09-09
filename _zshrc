@@ -786,6 +786,8 @@ if type pyenv > /dev/null 2>&1; then
   eval "$(pyenv init -)"
 fi
 
+ulimit -Sn 524288
+
 export PATH="/usr/local/opt/mysql@5.7/bin:$PATH"
 export PATH="/opt/homebrew/opt/mysql@5.7/bin:$PATH"
 export PATH="/opt/homebrew/bin:$PATH"
