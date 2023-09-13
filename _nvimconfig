@@ -117,14 +117,11 @@ let g:coc_global_extensions = [
       \'coc-json',
       \'coc-lists',
       \'coc-markdownlint',
-      \'coc-metals',
-      \'coc-pairs',
       \'coc-prettier',
       \'coc-spell-checker',
       \'coc-tslint-plugin',
       \'coc-tsserver',
-      \'coc-ultisnips',
-      \'coc-yaml'
+      \'coc-yaml',
 \]
 let g:lightline = {
   \'active': {
