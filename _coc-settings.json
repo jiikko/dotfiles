@@ -15,6 +15,10 @@
     "typescript": {
       "command": "tsserver",
       "rootPatterns": ["tsconfig.json"],
+      "coc.preferences.formatOnSaveFiletypes": ["typescript", "tsx"],
+      "typescript.suggest.enabled": true,
+      "typescript.suggest.autoImports": true,
+      "typescript.preferences.importModuleSpecifier": "relative",
       "filetypes": ["typescript", "ts", "tsx"]
     }
   },
