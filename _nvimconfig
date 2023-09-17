@@ -369,6 +369,9 @@ nnoremap <leader>nf :NERDTreeFind<CR>
 "Yankした情報を他のアプリケーションでも利用
 set clipboard=unnamed
 
+" 現在のファイル名表示する
+nnoremap <leader>f :echo expand('%:~:.')<CR>
+
 " 現在のバッファの相対パスをクリップボードにコピー
 nnoremap <leader>c :let @+ = expand('%:~:.')<CR>:echo "ファイル名をコピーしました"<CR>
 

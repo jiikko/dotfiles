@@ -6,6 +6,7 @@
   "codeLens.enable": true,
   // "solargraph.useBundler": true,
   "solargraph.hover": true,
+  "coc.source.tsserver.enable": true,
   "languageserver": {
     "golang": {
       "command": "gopls",
@@ -15,10 +16,6 @@
     "typescript": {
       "command": "tsserver",
       "rootPatterns": ["tsconfig.json"],
-      "coc.preferences.formatOnSaveFiletypes": ["typescript", "tsx"],
-      "typescript.suggest.enabled": true,
-      "typescript.suggest.autoImports": true,
-      "typescript.preferences.importModuleSpecifier": "relative",
       "filetypes": ["typescript", "ts", "tsx"]
     }
   },
