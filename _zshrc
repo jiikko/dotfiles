@@ -721,6 +721,21 @@ make_readme_md() {
   echo "# $H1" >> README.md
 }
 
+# test runner for rails
+rt() {
+  local filename="$1"  # 引数（ファイル名）をローカル変数に格納
+
+  if [[ "$filename" =~ "_test.rb$" ]]; then
+    echo "Running bin/rails test for $filename"
+    bin/rails test "$filename"
+  elif [[ "$filename" =~ "_spec.rb" ]]; then
+    echo "Running bundle exec rspec for $filename"
+    bundle exec rspec "$filename"
+  else
+    echo "Unknown file type: $filename"
+  fi
+}
+
 whichppr() {
   COMMIT_ID=$1
   if [[ $COMMIT_ID = '' ]]; then
