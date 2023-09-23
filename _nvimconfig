@@ -85,6 +85,7 @@ call dein#add('jlcrochet/vim-rbs')
 call dein#add('tpope/vim-abolish')
 call dein#add('github/copilot.vim')
 call dein#add('morhetz/gruvbox')
+call dein#add('delphinus/vim-auto-cursorline')
 
 
 " Required:
@@ -343,10 +344,27 @@ nnoremap <C-y><C-w> :w<CR>
 nnoremap <leader>sp :sp<CR>
 nnoremap <leader>vs :vs<CR>
 
-
 " NERDTREE, NERDTree
 nnoremap <leader>nt :NERDTree<CR>
 nnoremap <leader>nf :NERDTreeFind<CR>
+
+" coc.nvim
+set updatetime=300
+set signcolumn=yes
+
+" Add `:Format` command to format current buffer
+command! -nargs=0 Format :call CocActionAsync('format')
+
+" Add `:Fold` command to fold current buffer
+command! -nargs=? Fold :call CocAction('fold', <f-args>)
+
+" Add `:OR` command for organize imports of the current buffer
+command! -nargs=0 OR   :call CocActionAsync('runCommand', 'editor.action.organizeImport')
+
+" Highlight the symbol and its references when holding the cursor
+autocmd CursorHold * call CocActionAsync('highlight')
+
+set statusline^=%{coc#status()}%{get(b:,'coc_current_function','')}
 
 
 "Yankした情報を他のアプリケーションでも利用
@@ -515,8 +533,3 @@ colorscheme gruvbox
 set background=dark
 let g:ligthline = { 'colorscheme': 'gruvbox' }
 set t_Co=256
-
-
-set updatetime=300
-
-set signcolumn=yes
