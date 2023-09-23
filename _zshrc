@@ -715,15 +715,6 @@ EOH
   echo "$DATABACE_URL" > config/database.yml
 }
 
-make_gtags() {
-  if type gtags > /dev/null 2>&1; then
-    gtags --gtagslabel=pygments -v
-  else
-    echo "not found gtags command!! run `brew install global`"
-  fi
-}
-alias mt='make_gtags'
-
 make_readme_md() {
   DIR_NAME=$(echo "$(basename $(pwd))")
   H1=$(echo $DIR_NAME | ruby -e 'puts(gets.tap { |x| x[0] = x[0].upcase! })')
