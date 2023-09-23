@@ -207,16 +207,13 @@ let b:javascript_lib_use_flux = 1
 let b:javascript_lib_use_jasmine = 1
 let b:javascript_lib_use_d3 = 1
 
-
-map <Leader>c <Plug>(operator-camelize)
-map <Leader>C <Plug>(operator-decamelize)
-
 " hangupする
 map <S-k> <Esc>
 
 " emmet
 let g:user_emmet_leader_key = '<c-g>'
 
+" コードジャンプ
 map <C-j> <Plug>(coc-definition)
 map <C-k> <Plug>(coc-references)
 nmap <C-g> :CocList symbols<CR>
@@ -358,6 +355,10 @@ set clipboard=unnamed
 " 現在のファイル名表示する
 nnoremap <leader>f :echo expand('%:~:.')<CR>
 
+" ケースの変換
+map <leader>c <Plug>(operator-camelize)
+map <leader>C <Plug>(operator-decamelize)
+
 " カーソルを合わせてTを押すとドキュメントを表示
 function! s:show_documentation() abort
   if index(['vim','help'], &filetype) >= 0
@@ -368,7 +369,7 @@ function! s:show_documentation() abort
 endfunction
 nnoremap <silent> T             <Cmd>call <SID>show_documentation()<CR>
 " 現在のバッファの相対パスをクリップボードにコピー
-nnoremap <leader>c :let @+ = expand('%:~:.')<CR>:echo "ファイル名をコピーしました"<CR>
+nnoremap <C-c> :let @+ = expand('%:~:.')<CR>:echo "ファイル名をコピーしました"<CR>
 
 "----------------------------------------------------
 " 表示
