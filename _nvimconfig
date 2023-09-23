@@ -352,8 +352,8 @@ nnoremap <leader>nf :NERDTreeFind<CR>
 "Yankした情報を他のアプリケーションでも利用
 set clipboard=unnamed
 
-" 現在のファイル名表示する
-nnoremap <leader>f :echo expand('%:~:.')<CR>
+" 現在のファイル名表示して、クリップボードにコピーする
+nnoremap <leader>f :let @+ = expand('%:~:.')<CR>:echo "\"" . expand('%:~:.') . "をコピーしました\""<CR>
 
 " ケースの変換
 map <leader>c <Plug>(operator-camelize)
@@ -368,8 +368,6 @@ function! s:show_documentation() abort
   endif
 endfunction
 nnoremap <silent> T             <Cmd>call <SID>show_documentation()<CR>
-" 現在のバッファの相対パスをクリップボードにコピー
-nnoremap <C-c> :let @+ = expand('%:~:.')<CR>:echo "ファイル名をコピーしました"<CR>
 
 "----------------------------------------------------
 " 表示
