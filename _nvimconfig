@@ -58,8 +58,6 @@ call dein#add('mattn/emmet-vim')
 call dein#add('slim-template/vim-slim')
 call dein#add('kana/vim-operator-user')
 call dein#add('tyru/operator-camelize.vim')
-call dein#add('vim-scripts/SQLUtilities') " SQLUtilities : SQL整形、生成ユーティリティ
-" call dein#add('vim-scripts/Align') " Align : 高機能整形・桁揃えプラグイン
 call dein#add('vim-ruby/vim-ruby')
 call dein#add('xolox/vim-misc')
 call dein#add('othree/yajs.vim')
@@ -121,6 +119,7 @@ let g:coc_global_extensions = [
       \'coc-tslint-plugin',
       \'coc-tsserver',
       \'coc-yaml',
+      \'coc-sql',
 \]
 let g:lightline = {
   \'active': {
@@ -354,7 +353,10 @@ nnoremap <leader>nf :NERDTreeFind<CR>
 set clipboard=unnamed
 
 " 現在のファイル名表示して、クリップボードにコピーする
-nnoremap <leader>f :let @+ = expand('%:~:.')<CR>:echo "\"" . expand('%:~:.') . "をコピーしました\""<CR>
+nnoremap <leader>cf :let @+ = expand('%:~:.')<CR>:echo "\"" . expand('%:~:.') . "をコピーしました\""<CR>
+
+xmap <leader>f  <Plug>(coc-format-selected)
+nmap <leader>f  <Plug>(coc-format-selected)
 
 " ケースの変換
 map <leader>c <Plug>(operator-camelize)
