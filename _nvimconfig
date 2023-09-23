@@ -59,7 +59,7 @@ call dein#add('slim-template/vim-slim')
 call dein#add('kana/vim-operator-user')
 call dein#add('tyru/operator-camelize.vim')
 call dein#add('vim-scripts/SQLUtilities') " SQLUtilities : SQL整形、生成ユーティリティ
-call dein#add('vim-scripts/Align') " Align : 高機能整形・桁揃えプラグイン
+" call dein#add('vim-scripts/Align') " Align : 高機能整形・桁揃えプラグイン
 call dein#add('vim-ruby/vim-ruby')
 call dein#add('xolox/vim-misc')
 call dein#add('othree/yajs.vim')
@@ -86,6 +86,7 @@ call dein#add('itchyny/lightline.vim')
 call dein#add('jlcrochet/vim-rbs')
 call dein#add('tpope/vim-abolish')
 call dein#add('github/copilot.vim')
+call dein#add('morhetz/gruvbox')
 
 
 " Required:
@@ -367,7 +368,8 @@ function! s:show_documentation() abort
     call CocActionAsync('doHover')
   endif
 endfunction
-nnoremap <silent> T             <Cmd>call <SID>show_documentation()<CR>
+nnoremap <silent>T <Cmd>call <SID>show_documentation()<CR>
+nnoremap <leader>t <Cmd>call <SID>show_documentation()<CR>
 
 "----------------------------------------------------
 " 表示
@@ -507,4 +509,8 @@ set iskeyword+=33
 set iskeyword+=63
 
 
-colorscheme default
+" colorscheme default
+colorscheme gruvbox
+set background=dark
+let g:ligthline = { 'colorscheme': 'gruvbox' }
+set t_Co=256
