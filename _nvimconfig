@@ -372,6 +372,15 @@ set clipboard=unnamed
 " 現在のファイル名表示する
 nnoremap <leader>f :echo expand('%:~:.')<CR>
 
+" カーソルを合わせてTを押すとドキュメントを表示
+function! s:show_documentation() abort
+  if index(['vim','help'], &filetype) >= 0
+    execute 'h ' . expand('<cword>')
+  elseif coc#rpc#ready()
+    call CocActionAsync('doHover')
+  endif
+endfunction
+nnoremap <silent> T             <Cmd>call <SID>show_documentation()<CR>
 " 現在のバッファの相対パスをクリップボードにコピー
 nnoremap <leader>c :let @+ = expand('%:~:.')<CR>:echo "ファイル名をコピーしました"<CR>
 
