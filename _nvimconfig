@@ -370,7 +370,6 @@ function! s:show_documentation() abort
     call CocActionAsync('doHover')
   endif
 endfunction
-nnoremap <silent>T <Cmd>call <SID>show_documentation()<CR>
 nnoremap <leader>t <Cmd>call <SID>show_documentation()<CR>
 
 "----------------------------------------------------
@@ -516,3 +515,8 @@ colorscheme gruvbox
 set background=dark
 let g:ligthline = { 'colorscheme': 'gruvbox' }
 set t_Co=256
+
+
+set updatetime=300
+
+set signcolumn=yes
