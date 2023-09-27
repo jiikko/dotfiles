@@ -740,18 +740,18 @@ whichppr() {
   COMMIT_ID=$1
   if [[ $COMMIT_ID = '' ]]; then
     echo require commit id
-    exit 1
+    return 1
   fi
 
   (git show $COMMIT_ID > /dev/null 2>&1 )
   if [[ $? != 0 ]]; then
     echo not found commit id
-    exit 1
+    return 1
   fi
   PULL_REQUEST_ID=$(git log --merges --oneline --reverse --ancestry-path $COMMIT_ID...master | head -n1 | grep -o -E ' #[^ ]*' | grep -o -E '[0-9]*$')
   if [[ $PULL_REQUEST_ID = '' ]]; then
     echo not found PULL_REQUEST_ID
-    exit 1
+    return 1
   fi
   REPO_NAME=$(git remote -v | grep origin | head -n1 | grep -o ':[^.]*' | grep -o '[^:]*$')
   BASE=https://github.com
