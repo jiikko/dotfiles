@@ -755,7 +755,7 @@ whichppr() {
   fi
   REPO_NAME=$(git remote -v | grep origin | head -n1 | grep -o ':[^.]*' | grep -o '[^:]*$')
   BASE=https://github.com
-  open $(open $BASE/$REPO_NAME/pull/$PULL_REQUEST_ID)
+  open "$BASE/$REPO_NAME/pull/$PULL_REQUEST_ID"
 }
 
 export SCREENDIR="`echo ~`/.screens"
