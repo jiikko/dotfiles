@@ -13,8 +13,5 @@ node_modules
 vendor/bundler/
 
 app/assets/audios/*
-GPATH
-GRTAGS
-GTAGS
 vendor
 .envrc
