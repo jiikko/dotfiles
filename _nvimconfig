@@ -421,7 +421,7 @@ vnoremap <silent><nowait><expr> <C-f> coc#float#has_scroll() ? coc#float#scroll(
 vnoremap <silent><nowait><expr> <C-b> coc#float#has_scroll() ? coc#float#scroll(0) : "\<C-b>"
 
 " Use <c-space> to trigger completion
-inoremap <expr> tt coc#refresh()
+" inoremap <expr> tt coc#refresh()
 
 
 nmap <silent> [g <Plug>(coc-diagnostic-prev)
