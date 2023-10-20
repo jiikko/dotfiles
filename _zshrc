@@ -725,7 +725,7 @@ make_readme_md() {
 rt() {
   local filename="$1"  # 引数（ファイル名）をローカル変数に格納
 
-  if [[ "$filename" =~ "_test.rb$" ]]; then
+  if [[ "$filename" =~ "_test.rb" ]]; then
     echo "Running bin/rails test for $filename"
     bin/rails test "$filename"
   elif [[ "$filename" =~ "_spec.rb" ]]; then
