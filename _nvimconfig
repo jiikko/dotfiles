@@ -106,7 +106,12 @@ endif
 "----------------------------------------------------
 let g:coc_global_extensions = [
       \'coc-actions',
+      \'coc-graphql',
+      \'coc-sh',
       \'coc-cspell-dicts',
+      \'coc-html',
+      \'coc-css',
+      \'coc-docker',
       \'coc-diagnostic',
       \'coc-dictionary',
       \'coc-eslint',
@@ -120,6 +125,7 @@ let g:coc_global_extensions = [
       \'coc-tslint-plugin',
       \'coc-tsserver',
       \'coc-yaml',
+      \'coc-solargraph',
       \'coc-sql',
 \]
 function! CocCurrentFunction()
