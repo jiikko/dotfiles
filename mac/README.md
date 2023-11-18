@@ -18,6 +18,7 @@ brew upgrade
 ### for Development
 シムリンクとかの案内が表示されるので手動でやる
 ```
+brew install neovim
 brew install wget
 brew install nkf
 brew install vim
@@ -32,7 +33,7 @@ brew install rake-completion
 brew install rails-completion
 brew install mysql@5.7
 brew install v8
-brew install screen --HEAD
+brew install screen
 brew install imagemagick
 brew install qt
 brew install zsh
@@ -43,12 +44,9 @@ brew install pyenv-virtualenv
 ### GUI tools
 ```
 brew install coteditor --cask
-brew install Caskroom/cask/xquartz --cask
 brew install firefox --cask
 brew install google-chrome --cask
 brew install virtualbox --cask
-brew install kindle --cask
-brew install homebrew/cask-drivers/logitech-control-center
 brew install kensington-trackball-works --cask
 brew install skitch --cask
 ```
