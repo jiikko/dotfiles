@@ -1930,18 +1930,7 @@
                     },
                     "ignore": false,
                     "manipulate_caps_lock_led": true,
-                    "simple_modifications": [
-                        {
-                            "from": {
-                                "key_code": "left_control"
-                            },
-                            "to": [
-                                {
-                                    "key_code": "vk_none"
-                                }
-                            ]
-                        }
-                    ],
+                    "simple_modifications": [],
                     "treat_as_built_in_keyboard": false
                 },
                 {
