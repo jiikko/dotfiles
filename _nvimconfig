@@ -575,8 +575,8 @@ set foldlevel=100
 " au FileType ruby nnoremap gf <C-w>gf
 
 " Highlight entire word including special characters like !, ?
-set iskeyword+=33
-set iskeyword+=63
+" set iskeyword+=33
+" set iskeyword+=63
 
 
 " colorscheme default
