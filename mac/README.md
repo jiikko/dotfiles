@@ -15,48 +15,9 @@ brew update
 brew upgrade
 ```
 
-### for Development
-シムリンクとかの案内が表示されるので手動でやる
+## Install packages
 ```
-brew install neovim
-brew install wget
-brew install nkf
-brew install vim
-brew install awscli
-brew install jvgrep
-brew install coreutils
-brew install jq
-brew install ruby-completion
-brew install gem-completion
-brew install bundler-completion
-brew install rake-completion
-brew install rails-completion
-brew install mysql@5.7
-brew install v8
-brew install screen
-brew install imagemagick
-brew install qt
-brew install zsh
-brew install rbenv
-brew install pyenv-virtualenv
-```
-
-### GUI tools
-```
-brew install coteditor --cask
-brew install firefox --cask
-brew install google-chrome --cask
-brew install virtualbox --cask
-brew install kensington-trackball-works --cask
-brew install skitch --cask
-```
-### for Job
-```
-brew install redis
-brew cask install mactex
-brew cask install Caskroom/cask/xquartz
-brew install homebrew/x11/xpdf
-brew cask install java
+brew bundle
 ```
 
 ## Import karabinar-elements config
