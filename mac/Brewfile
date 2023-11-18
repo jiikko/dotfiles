@@ -19,7 +19,7 @@ brew "pre-commit"
 
 # for dev
 brew "ruby-completion"
-brew "gem-completion "
+brew "gem-completion"
 brew "bundler-completion"
 brew "rake-completion"
 brew "rails-completion"
