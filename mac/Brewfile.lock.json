@@ -959,6 +959,12 @@
         "options": {
           "full_name": "vlc"
         }
+      },
+      "slack": {
+        "version": "4.35.126",
+        "options": {
+          "full_name": "slack"
+        }
       }
     }
   },
