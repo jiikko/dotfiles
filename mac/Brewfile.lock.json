@@ -930,12 +930,6 @@
           "full_name": "karabiner-elements"
         }
       },
-      "skitch": {
-        "version": "2.9",
-        "options": {
-          "full_name": "skitch"
-        }
-      },
       "discord": {
         "version": "0.0.284",
         "options": {
