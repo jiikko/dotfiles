@@ -965,6 +965,12 @@
         "options": {
           "full_name": "slack"
         }
+      },
+      "1password": {
+        "version": "8.10.20",
+        "options": {
+          "full_name": "1password"
+        }
       }
     }
   },
