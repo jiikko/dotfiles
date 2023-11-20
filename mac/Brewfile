@@ -16,6 +16,7 @@ brew "nodenv"
 brew "yarn"
 brew "pre-commit"
 brew "shared-mime-info"
+brew 'direnv'
 
 
 # for dev
