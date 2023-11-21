@@ -731,6 +731,9 @@ rt() {
   elif [[ "$filename" =~ "_spec.rb" ]]; then
     echo "Running bundle exec rspec for $filename"
     bundle exec rspec "$filename"
+  elif [[ "$filename" =~ ".feature" ]]; then
+    echo "Running cucumber for $filename"
+    bundle exec cucumber "$filename"
   else
     echo "Unknown file type: $filename"
   fi
