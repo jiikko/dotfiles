@@ -180,6 +180,8 @@ let g:terraform_fmt_on_save=1
 " typescript
 " autocmd FileType typescript :set makeprg=tsc
 
+autocmd BufRead,BufNewFile *.sql.erb set filetype=sql
+
 " for vim-go
 let g:go_null_module_warning = 0
 
