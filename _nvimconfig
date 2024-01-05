@@ -11,7 +11,6 @@ set wildignore+=*.sw?
 set wildignore+=.DS_Store
 set wildignore+=node_modules,bower_components,elm-stuff
 
-" set grepprg=jvgrep
 " set grepprg=git\ grep\ --no-index\ --exclude-standard\ -I\ --perl-regexp\ --line-number
 set grepprg=git\ grep\ -I\ --line-number
 
@@ -106,7 +105,13 @@ endif
 "----------------------------------------------------
 let g:coc_global_extensions = [
       \'coc-actions',
+      \'coc-graphql',
+      \'coc-sh',
       \'coc-cspell-dicts',
+      \'coc-html',
+      \'coc-css',
+      \'coc-html-css-support',
+      \'coc-docker',
       \'coc-diagnostic',
       \'coc-dictionary',
       \'coc-eslint',
@@ -119,6 +124,7 @@ let g:coc_global_extensions = [
       \'coc-tslint-plugin',
       \'coc-tsserver',
       \'coc-yaml',
+      \'coc-solargraph',
       \'coc-sql',
 \]
 function! CocCurrentFunction()
@@ -172,6 +178,8 @@ let g:terraform_fmt_on_save=1
 
 " typescript
 " autocmd FileType typescript :set makeprg=tsc
+
+autocmd BufRead,BufNewFile *.sql.erb set filetype=sql
 
 " for vim-go
 let g:go_null_module_warning = 0
@@ -567,8 +575,8 @@ set foldlevel=100
 " au FileType ruby nnoremap gf <C-w>gf
 
 " Highlight entire word including special characters like !, ?
-set iskeyword+=33
-set iskeyword+=63
+" set iskeyword+=33
+" set iskeyword+=63
 
 
 " colorscheme default

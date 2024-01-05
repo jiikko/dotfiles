@@ -1,0 +1,45 @@
+tap "homebrew/bundle"
+
+# cli
+brew "coreutils"
+brew "jq"
+brew "screen"
+brew "vim"
+brew "wget"
+brew "zsh"
+brew "neovim"
+brew "awscli"
+brew "nkf"
+brew "curl"
+brew "rbenv"
+brew "nodenv"
+brew "yarn"
+brew "pre-commit"
+brew "shared-mime-info"
+brew 'direnv'
+
+
+# for dev
+brew "ruby-completion"
+brew "gem-completion"
+brew "bundler-completion"
+brew "rake-completion"
+brew "rails-completion"
+
+
+# middleware
+brew "mysql"
+brew "redis"
+
+
+# cask
+cask "coteditor"
+cask "firefox"
+cask "google-chrome"
+cask "karabiner-elements"
+cask "discord"
+cask "docker"
+cask "parsec"
+cask "vlc"
+cask "slack"
+cask "1password"
