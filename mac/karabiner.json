@@ -39,7 +39,7 @@
                         ]
                     },
                     {
-                        "description": "right-command + j to scroll-down",
+                        "description": "right_command + j to scroll-down",
                         "manipulators": [
                             {
                                 "from": {
@@ -63,7 +63,7 @@
                         ]
                     },
                     {
-                        "description": "right-command + k to scroll-up",
+                        "description": "right_command + k to scroll-up",
                         "manipulators": [
                             {
                                 "from": {
@@ -79,54 +79,6 @@
                                     {
                                         "mouse_key": {
                                             "vertical_wheel": -64
-                                        }
-                                    }
-                                ],
-                                "type": "basic"
-                            }
-                        ]
-                    },
-                    {
-                        "description": "left-command + k to scroll-up",
-                        "manipulators": [
-                            {
-                                "from": {
-                                    "key_code": "k",
-                                    "modifiers": {
-                                        "mandatory": [
-                                            "left_command"
-                                        ],
-                                        "optional": []
-                                    }
-                                },
-                                "to": [
-                                    {
-                                        "mouse_key": {
-                                            "vertical_wheel": -64
-                                        }
-                                    }
-                                ],
-                                "type": "basic"
-                            }
-                        ]
-                    },
-                    {
-                        "description": "left-command + j to scroll-down",
-                        "manipulators": [
-                            {
-                                "from": {
-                                    "key_code": "j",
-                                    "modifiers": {
-                                        "mandatory": [
-                                            "left_command"
-                                        ],
-                                        "optional": []
-                                    }
-                                },
-                                "to": [
-                                    {
-                                        "mouse_key": {
-                                            "vertical_wheel": 64
                                         }
                                     }
                                 ],
