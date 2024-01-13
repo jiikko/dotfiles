@@ -18,6 +18,27 @@
                 },
                 "rules": [
                     {
+                        "description": "disable command + h",
+                        "manipulators": [
+                            {
+                                "from": {
+                                    "key_code": "h",
+                                    "modifiers": {
+                                        "mandatory": [
+                                            "command"
+                                        ]
+                                    }
+                                },
+                                "to": [
+                                    {
+                                    "key_code": "vk_none"
+                                    }
+                                ],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
                         "description": "right-command + j to scroll-down",
                         "manipulators": [
                             {
