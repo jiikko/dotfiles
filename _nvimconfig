@@ -119,7 +119,6 @@ let g:coc_global_extensions = [
       \'coc-pyright',
       \'coc-highlight',
       \'coc-json',
-      \'coc-lists',
       \'coc-markdownlint',
       \'coc-prettier',
       \'coc-spell-checker',
