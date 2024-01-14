@@ -18,7 +18,28 @@
                 },
                 "rules": [
                     {
-                        "description": "disable command + h",
+                        "description": "disable command + d(Chormeではお気に入り, Terminalだと分割)",
+                        "manipulators": [
+                            {
+                                "from": {
+                                    "key_code": "d",
+                                    "modifiers": {
+                                        "mandatory": [
+                                            "command"
+                                        ]
+                                    }
+                                },
+                                "to": [
+                                    {
+                                        "key_code": "vk_none"
+                                    }
+                                ],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
+                        "description": "disable command + h(ウィンドウの非表示)",
                         "manipulators": [
                             {
                                 "from": {
