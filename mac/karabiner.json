@@ -18,6 +18,27 @@
                 },
                 "rules": [
                     {
+                        "description": "disable command + o(Chormeではファイルオープン)",
+                        "manipulators": [
+                            {
+                                "from": {
+                                    "key_code": "o",
+                                    "modifiers": {
+                                        "mandatory": [
+                                            "command"
+                                        ]
+                                    }
+                                },
+                                "to": [
+                                    {
+                                        "key_code": "vk_none"
+                                    }
+                                ],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
                         "description": "disable command + d(Chormeではお気に入り, Terminalだと分割)",
                         "manipulators": [
                             {
