@@ -18,6 +18,27 @@
                 },
                 "rules": [
                     {
+                        "description": "disable command + m(最小化)",
+                        "manipulators": [
+                            {
+                                "from": {
+                                    "key_code": "m",
+                                    "modifiers": {
+                                        "mandatory": [
+                                            "command"
+                                        ]
+                                    }
+                                },
+                                "to": [
+                                    {
+                                        "key_code": "vk_none"
+                                    }
+                                ],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
                         "description": "disable command + o(Chormeではファイルオープン)",
                         "manipulators": [
                             {
