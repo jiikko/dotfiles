@@ -20,8 +20,8 @@ hardstatus alwayslastline "%{= rw} %H %{= wk}%-Lw%{= bw}%n%f* %t%{= wk}%+Lw %{= 
 msgminwait 1
 
 # エンコーディング
-defencoding utf8
-encoding utf8 utf8
+defc1 off
+defutf8 on
 
 # スタートアップメニューの削除
 startup_message off
