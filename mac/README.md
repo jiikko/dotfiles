@@ -24,18 +24,6 @@ brew upgrade
 brew bundle
 ```
 
-## Import karabinar-elements config
-
-```shell
-brew install karabiner-elements --cask
-```
-
-search karabiner in spotligth. enable karabinar on アクセシビリティ.
-
-```shell
-cp ~/dotfiles/mac/karabiner.json ~/.config/karabiner/karabiner.json
-```
-
 ## Setup system config
 
 キーリポートなど
@@ -48,7 +36,7 @@ curl https://raw.githubusercontent.com/jiikko/dotfiles/master/mac/setup_system.s
 
 ```shell
 cd ~
-git clone git@github.com:jiikko/dotfiles.git || git clone ttps://github.com/jiikko/dotfiles.git
+git clone git@github.com:jiikko/dotfiles.git || git clone https://github.com/jiikko/dotfiles.git
 cd dotfiles
 ./setup.sh
 ```
@@ -82,9 +70,3 @@ ssh-keygen -t rsa -b 4096 -C "jiikko"
 - 壁紙変更
 - 音量変更音を有効
 - 設定 -> アクセシビリティ -> マウス/トラックパッド -> トラックパッドオプション -> ドラッグを有効にする「3 本指のドラッグ」
-
-### karabiner 設定ファイルのエクスポート
-
-```shell
-cp ~/.config/karabiner/karabiner.json ~/dotfiles/mac/karabiner.json
-```
