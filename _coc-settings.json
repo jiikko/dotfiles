@@ -6,7 +6,6 @@
   "codeLens.enable": true,
   "colors.enable": true,
   "highlight.trace": "verbose",
-  "solargraph.useBundler": true,
   "solargraph.hover": true,
   "coc.source.tsserver.enable": true,
   "languageserver": {
