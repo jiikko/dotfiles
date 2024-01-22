@@ -36,7 +36,7 @@ curl https://raw.githubusercontent.com/jiikko/dotfiles/master/mac/setup_system.s
 
 ```shell
 cd ~
-git clone git@github.com:jiikko/dotfiles.git || git clone ttps://github.com/jiikko/dotfiles.git
+git clone git@github.com:jiikko/dotfiles.git || git clone https://github.com/jiikko/dotfiles.git
 cd dotfiles
 ./setup.sh
 ```
