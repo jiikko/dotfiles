@@ -23,7 +23,6 @@ brew 'direnv'
 brew "ruby-completion"
 brew "gem-completion"
 brew "bundler-completion"
-brew "rake-completion"
 brew "rails-completion"
 
 
