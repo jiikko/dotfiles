@@ -735,11 +735,9 @@ rt() {
 
   # 引数が与えられていない場合の処理
   if [ -z "$filename" ]; then
-    # カレントディレクトリにtestディレクトリが存在するかチェック
     if [ -d "test" ]; then
       echo "Running bundle exec rails test for all test files in the test directory"
       bundle exec rails test
-    # specディレクトリが存在するかチェック
     elif [ -d "spec" ]; then
       echo "Running bundle exec rspec for all spec files"
       bundle exec rspec
@@ -749,7 +747,7 @@ rt() {
   elif [[ "$filename" =~ "_test.rb" ]]; then
     echo "Running bundle exec rails test for $filename"
     bundle exec rails test "$filename"
-  elif [[ "$filename" =~ "_spec.rb" ]]; then
+  elif [[ "$filename" =~ "_spec.rb" ]] || [[ "$filename" =~ "spec/" ]]; then
     echo "Running bundle exec rspec for $filename"
     bundle exec rspec "$filename"
   elif [[ "$filename" =~ ".feature" ]]; then
