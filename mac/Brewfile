@@ -1,20 +1,12 @@
 tap "homebrew/bundle"
 
 # cli
-brew "coreutils"
-brew "jq"
 brew "screen"
 brew "wget"
 brew "zsh"
 brew "neovim"
-brew "awscli"
 brew "nkf"
 brew "curl"
-brew "rbenv"
-brew "nodenv"
-brew "yarn"
-brew "shared-mime-info"
-brew 'direnv'
 
 
 # for dev
@@ -23,6 +15,14 @@ brew "gem-completion"
 brew "bundler-completion"
 brew "rails-completion"
 brew "pre-commit"
+brew "rbenv"
+brew "nodenv"
+brew "yarn"
+brew "shared-mime-info"
+brew 'direnv'
+brew "awscli"
+brew "coreutils"
+brew "jq"
 
 
 # middleware
