@@ -18,6 +18,22 @@
                 },
                 "rules": [
                     {
+                        "description": "disable caps_lock",
+                        "manipulators": [
+                            {
+                                "from": {
+                                    "key_code": "caps_lock"
+                                },
+                                "to": [
+                                    {
+                                        "key_code": "vk_none"
+                                    }
+                                ],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
                         "description": "disable command + m(最小化)",
                         "manipulators": [
                             {
