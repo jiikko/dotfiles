@@ -4,7 +4,6 @@ tap "homebrew/bundle"
 brew "coreutils"
 brew "jq"
 brew "screen"
-brew "vim"
 brew "wget"
 brew "zsh"
 brew "neovim"
@@ -14,7 +13,6 @@ brew "curl"
 brew "rbenv"
 brew "nodenv"
 brew "yarn"
-brew "pre-commit"
 brew "shared-mime-info"
 brew 'direnv'
 
@@ -24,6 +22,7 @@ brew "ruby-completion"
 brew "gem-completion"
 brew "bundler-completion"
 brew "rails-completion"
+brew "pre-commit"
 
 
 # middleware
