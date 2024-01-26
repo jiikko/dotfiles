@@ -12,6 +12,7 @@ brew "neovim"
 brew "nkf"
 brew "curl"
 brew 'direnv'
+brew "git"
 
 
 # for dev
