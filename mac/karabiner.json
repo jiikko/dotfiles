@@ -18,6 +18,35 @@
                 },
                 "rules": [
                     {
+                        "description": "disable command to close tab on terminal",
+                        "manipulators": [
+                            {
+                                "from": {
+                                    "key_code": "w",
+                                    "modifiers": {
+                                        "mandatory": [
+                                            "command"
+                                        ]
+                                    }
+                                },
+                                "to": [
+                                    {
+                                        "key_code": "vk_none"
+                                    }
+                                ],
+                                "type": "basic",
+                                "conditions": [
+                                  {
+                                    "type": "frontmost_application_if",
+                                    "bundle_identifiers": [
+                                      "^com\\.apple\\.Terminal"
+                                    ]
+                                  }
+                                ]
+                            }
+                        ]
+                    },
+                    {
                         "description": "disable caps_lock",
                         "manipulators": [
                             {
