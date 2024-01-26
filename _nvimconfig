@@ -569,6 +569,9 @@ function! HandleURL()
 endfunction
 nmap <silent> <Leader>b <Esc>:call HandleURL()<CR>
 
+" Format leader + f
+nnoremap <leader>f :Format<CR>
+
 
 " 折りたたみ
 set foldmethod=indent
