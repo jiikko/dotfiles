@@ -29,6 +29,7 @@ brew "shared-mime-info"
 brew "awscli"
 brew "coreutils"
 brew "jq"
+brew "shellcheck"
 
 
 # middleware
