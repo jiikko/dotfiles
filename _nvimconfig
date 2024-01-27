@@ -183,10 +183,6 @@ inoremap <silent><expr> <Tab>
 " vim-matchup
 let g:loaded_matchit = 1
 
-let g:tabman_width = 50
-let g:tabman_toggle = '<leader>mt'
-let g:tabman_focus  = '<leader>mf'
-
 let g:terraform_align=1
 "let g:terraform_fold_sections=1
 let g:terraform_fmt_on_save=1
@@ -366,7 +362,6 @@ nnoremap <leader>yp o@param []<esc>
 nmap none <Plug>RestoreWinPosn
 
 " 便利
-nnoremap <C-n><C-m> :TMToggle<CR>
 nnoremap <leader>aa :tabedit<CR>
 nnoremap <leader>lr :%s/ *$//g<CR>:noh<CR>
 inoremap <C-y><C-w> <ESC>:w<CR>
