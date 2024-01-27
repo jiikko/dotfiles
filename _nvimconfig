@@ -105,7 +105,6 @@ endif
 "----------------------------------------------------
 let g:coc_global_extensions = [
       \'coc-actions',
-      \'coc-graphql',
       \'coc-sh',
       \'coc-cspell-dicts',
       \'coc-html',
