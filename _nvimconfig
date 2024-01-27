@@ -47,7 +47,7 @@ call dein#add('~/.cache/dein/repos/github.com/Shougo/dein.vim')
 " Add or remove your plugins here like this:
 call dein#add('scrooloose/nerdtree')
 call dein#add('tpope/vim-rails')
-call dein#add('taku-o/vim-toggle')
+call dein#add('lukelbd/vim-toggle')
 call dein#add('motemen/git-vim')
 call dein#add('tpope/vim-surround')
 call dein#add('vim-jp/vimdoc-ja')
@@ -143,6 +143,17 @@ let g:lightline = {
       \   'currentfunction': 'CocCurrentFunction'
       \ },
       \ }
+
+let g:toggle_map = '+'
+let g:toggle_words_on = [
+  \ 'and', 'if', 'unless', 'elsif', 'it', 'specify', 'describe',
+  \ 'true', 'yes', 'on', 'public', 'protected', '&&'
+\]
+
+let g:toggle_words_off = [
+\ 'or', 'unless', 'if', 'else', 'specify', 'it', 'context',
+\ 'false', 'no', 'off', 'protected', 'private', '||'
+\]
 
 
 " https://github.com/neovim/neovim/issues/14433
