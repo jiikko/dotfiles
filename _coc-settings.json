@@ -9,9 +9,20 @@
   "solargraph.hover": true,
   "coc.source.tsserver.enable": true,
   "sh.enable": true,
-  "languageserver": {
-    "golang": {
-      "command": "gopls",
+  "diagnostic-languageserver.formatFiletypes": {
+    "sh": "shfmt"
+  },
+  "diagnostic-languageserver.filetypes": {
+    "sh": "shellcheck"
+  },
+  "diagnostic-languageserver.formatters": {
+    "shfmt": {
+      "command": "shfmt",
+      "args": ["-i", "2", "-bn", "-ci", "-sr"]
+    },
+    "languageserver": {
+      "golang": {
+        "command": "gopls",
       "rootPatterns": ["go.mod"],
       "filetypes": ["go"]
     },
@@ -22,7 +33,7 @@
     }
   },
   "cSpell.words": [
-    "nvim", "findy",
+    "nvim", "findy", "shfmt"
   ],
   "snippets.ultisnips.pythonPrompt": false
 }

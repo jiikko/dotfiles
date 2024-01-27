@@ -30,6 +30,7 @@ brew "awscli"
 brew "coreutils"
 brew "jq"
 brew "shellcheck"
+brew "shfmt"
 
 
 # middleware
