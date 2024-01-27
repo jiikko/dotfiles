@@ -8,6 +8,7 @@
   "highlight.trace": "verbose",
   "solargraph.hover": true,
   "coc.source.tsserver.enable": true,
+  "sh.enable": true,
   "languageserver": {
     "golang": {
       "command": "gopls",
