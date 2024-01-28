@@ -18,6 +18,31 @@
                 },
                 "rules": [
                     {
+                      "description": "CTRL+Cを押したときに、英数キーを送信してからEscapeキーを送信する（Vim用）",
+                      "manipulators": [
+                        {
+                          "type": "basic",
+                          "from": {
+                            "key_code": "c",
+                            "modifiers": {
+                              "mandatory": ["control"]
+                            }
+                          },
+                          "to": [
+                            {
+                              "key_code": "japanese_eisuu"
+                            },
+                            {
+                              "key_code": "escape"
+                            },
+                            {
+                              "key_code": "escape"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
                         "description": "disable command to close tab on terminal",
                         "manipulators": [
                             {
