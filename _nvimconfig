@@ -1,3 +1,6 @@
+" sql pluginのマッピングが干渉するので無効にする
+let g:omni_sql_no_default_maps = 1
+
 set re=1
 set background=light
 
@@ -156,9 +159,6 @@ let g:toggle_words_off = [
 \]
 
 
-" https://github.com/neovim/neovim/issues/14433
-" `SQLComplete: the dbext plugin must be loaded for dynamic SQL completion`のエラーを回避する
-let g:omni_sql_default_compl_type = 'syntax'
 
 
 "Diagnosticsの、左横のアイコンの色設定
