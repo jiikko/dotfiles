@@ -581,6 +581,19 @@ set foldlevel=100
 " set iskeyword+=63
 
 
+tnoremap <C-l> <C-\><C-n>
+tnoremap <ESC> <C-\><C-n>
+nnoremap sT :sp<CR>:terminal<CR>i
+lua << EOF
+vim.keymap.set("n", "<leader>r", function()
+	vim.cmd("split")
+	vim.cmd("cd パス")
+	vim.cmd("terminal コマンド")
+end)
+EOF
+
+
+
 " colorscheme default
 colorscheme gruvbox
 set background=dark
