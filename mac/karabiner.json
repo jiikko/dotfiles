@@ -30,6 +30,12 @@
                           },
                           "to": [
                             {
+                              "key_code": "c",
+                              "modifiers": [
+                                "control"
+                              ]
+                            },
+                            {
                               "key_code": "japanese_eisuu"
                             },
                             {
@@ -37,12 +43,6 @@
                             },
                             {
                               "key_code": "escape"
-                            },
-                            {
-                              "key_code": "c",
-                              "modifiers": [
-                                "control"
-                              ]
                             }
                           ]
                         }
