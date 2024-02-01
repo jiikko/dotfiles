@@ -358,6 +358,7 @@ alias h='history'
 alias ha='history-all'
 # alias screen='TERM=xterm screen'
 alias cd_dotfiles='cd ~/dotfiles'
+alias cd_src='cd ~/src'
 
 alias tac='tail -r'
 
