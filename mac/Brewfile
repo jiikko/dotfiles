@@ -17,10 +17,6 @@ brew "youtube-dl"
 
 
 # for dev
-brew "ruby-completion"
-brew "gem-completion"
-brew "bundler-completion"
-brew "rails-completion"
 brew "pre-commit"
 brew "rbenv"
 brew "nodenv"
