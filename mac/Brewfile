@@ -27,6 +27,7 @@ brew "coreutils"
 brew "jq"
 brew "shellcheck"
 brew "shfmt"
+brew "ripgrep"
 
 
 # middleware
