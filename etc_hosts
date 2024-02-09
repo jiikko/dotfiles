@@ -13,7 +13,6 @@
 127.0.0.1 statics.creativecdn.com
 
 127.0.0.1 pubads.g.doubleclick.net
-127.0.0.1 securepubads.g.doubleclick.ne
 127.0.0.1 googleads.g.doubleclick.net
 127.0.0.1 doubleclick.net
 127.0.0.1 ads.as.criteo.com
@@ -26,3 +25,9 @@
 ::1 adclick.g.doubleclick.net
 ::1 googleads.g.doubleclick.net
 ::1 s2.2mdn.net
+
+127.0.0.1 pagead2.googlesyndication.com
+::1 pagead2.googlesyndication.com
+
+127.0.0.1 securepubads.g.doubleclick.net
+::1 securepubads.g.doubleclick.net

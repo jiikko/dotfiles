@@ -130,6 +130,8 @@ let g:coc_global_extensions = [
       \'coc-solargraph',
       \'coc-sh',
       \'coc-sql',
+      \'coc-markdown-preview-enhanced',
+      \'coc-webview',
 \]
 function! CocCurrentFunction()
     return get(b:, 'coc_current_function', '')
