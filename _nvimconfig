@@ -570,7 +570,6 @@ require('telescope').setup{
       "^node_modules/",
     },
     border = true,
-    borderchars = { '-', '|', '-', '|', '/', '╮', '╯', '╰' },
     prompt_prefix='🔍 ',
   },
   extensions = {
