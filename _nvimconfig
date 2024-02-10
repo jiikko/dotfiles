@@ -1,7 +1,6 @@
 " sql pluginのマッピングが干渉するので無効にする
 let g:omni_sql_no_default_maps = 1
 
-" set ambiwidth=double
 set nobackup
 set noswapfile
 
@@ -86,6 +85,7 @@ call dein#add('delphinus/vim-auto-cursorline')
 call dein#add('nvim-telescope/telescope.nvim')
 call dein#add('nvim-lua/plenary.nvim')
 call dein#add('fannheyward/telescope-coc.nvim')
+call dein#add('rbtnn/vim-ambiwidth')
 
 
 " Required:
