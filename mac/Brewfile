@@ -3,6 +3,7 @@
 #   $ brew bundle
 #
 tap "homebrew/bundle"
+tap "homebrew/cask-fonts"
 
 # cli
 brew "screen"
@@ -42,6 +43,7 @@ cask "google-chrome"
 cask "karabiner-elements"
 cask "discord"
 cask "docker"
+cask "font-hack-nerd-font"
 # cask "parsec"
 cask "vlc"
 cask "slack"

@@ -3,6 +3,9 @@
     "tap": {
       "homebrew/bundle": {
         "revision": "bb632218e19f001228fdbdd632fd7ce027bf5a4a"
+      },
+      "homebrew/cask-fonts": {
+        "revision": "2708973cc6ff7d88c36aa461c7614d6d1e6b8044"
       }
     },
     "brew": {
@@ -1122,6 +1125,12 @@
         "version": "5.17.5.29101",
         "options": {
           "full_name": "zoom"
+        }
+      },
+      "font-hack-nerd-font": {
+        "version": "3.1.1",
+        "options": {
+          "full_name": "font-hack-nerd-font"
         }
       }
     }
