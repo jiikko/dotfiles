@@ -79,6 +79,8 @@ call dein#add('nvim-telescope/telescope.nvim')
 call dein#add('nvim-lua/plenary.nvim')
 call dein#add('fannheyward/telescope-coc.nvim')
 call dein#add('rbtnn/vim-ambiwidth')
+call dein#add('romgrk/barbar.nvim')
+call dein#add('nvim-tree/nvim-web-devicons')
 
 
 " Required:
@@ -286,14 +288,14 @@ set showbreak=↪
 nnoremap ; :<C-u>call append(expand('.'), '')<CR>j
 
 "左右
-noremap <Right> gt
-noremap <Left> gT
+noremap <Right> <Cmd>BufferNext<CR>
+noremap <Left> <Cmd>BufferPrevious<CR>
+
 
 " 上下, bw でもいいけどバッファから消えてほしくない
 " nnoremap <silent><Down>  :<C-u>bw<CR>
 " nnoremap <silent><Down>  :<C-u>q<CR>
-nnoremap <C-a><C-a> :<C-u>q<CR>
-nnoremap <silent><Up>    :<C-u>UniteWithBufferDir -buffer-name=files buffer file_mru bookmark file<CR>
+nnoremap <C-a><C-a> :BufferClose<CR>
 
 " QuickFix
 nnoremap <C-p> :cprevious<CR>   " 前へ
@@ -580,7 +582,14 @@ require('telescope').setup{
   },
 }
 require('telescope').load_extension('coc')
+require'bufferline'.setup {
+}
+require'barbar'.setup {
+  auto_hide = true,
+}
 EOF
+
+let g:webdevicons_enable_nerdtree = 1
 
 nnoremap <leader>ff <cmd>Telescope find_files<cr>
 nnoremap <leader>fg <cmd>Telescope live_grep<cr>
