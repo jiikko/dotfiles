@@ -344,7 +344,7 @@ nnoremap <leader>yp o@param []<esc>
 nmap none <Plug>RestoreWinPosn
 
 " 便利
-nnoremap <leader>aa :tabedit<CR>
+nnoremap <leader>aa :enew<CR>
 nnoremap <leader>lr :%s/ *$//g<CR>:noh<CR>
 inoremap <C-y><C-w> <ESC>:w<CR>
 
