@@ -207,9 +207,6 @@ let g:indent_guides_color_change_percent = 30
 let g:indent_guides_guide_size = 1
 
 " for nerdtree
-" Vim起動時にNerdTreeが起動するようにする
-" autocmd vimenter * if !argc() | NERDTree | endif
-" autocmd bufenter * if (winnr("$") == 1 && exists("b:NERDTreeType") && b:NERDTreeType == "primary") | q | endif
 nmap <silent> <C-e>      :NERDTreeToggle<CR>
 vmap <silent> <C-e> <Esc>:NERDTreeToggle<CR>
 omap <silent> <C-e>      :NERDTreeToggle<CR>
