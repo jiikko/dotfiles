@@ -77,6 +77,7 @@ call dein#add('nvim-tree/nvim-web-devicons')
 call dein#add('tiagofumo/vim-nerdtree-syntax-highlight')
 call dein#add('ryanoasis/vim-devicons')
 call dein#add('lukas-reineke/indent-blankline.nvim')
+call dein#add("rcarriga/nvim-notify")
 
 
 " Required:
@@ -90,6 +91,10 @@ filetype plugin indent on
 if dein#check_install()
   call dein#install()
 endif
+
+lua << EOF
+  vim.notify = require("notify")
+EOF
 
 
 "----------------------------------------------------
