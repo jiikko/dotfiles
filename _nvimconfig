@@ -555,10 +555,9 @@ require('telescope').setup{
     file_ignore_patterns = { --検索対象に含めないファイルを指定
       "^.git/",
       "^node_modules/",
-      "^package.json",
-      "^package-lock.json",
-      "^yarn.lock",
-      "^yarn-error.log",
+      "package-lock.json",
+      "yarn.lock",
+      "yarn-error.log",
     },
     border = true,
     prompt_prefix='🔍 ',
