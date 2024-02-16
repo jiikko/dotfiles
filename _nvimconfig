@@ -289,6 +289,8 @@ nnoremap ; :<C-u>call append(expand('.'), '')<CR>j
 "左右
 noremap <Right> <Cmd>BufferNext<CR>
 noremap <Left> <Cmd>BufferPrevious<CR>
+noremap gt <Cmd>BufferNext<CR>
+noremap gT <Cmd>BufferPrevious<CR>
 
 
 " 上下, bw でもいいけどバッファから消えてほしくない
