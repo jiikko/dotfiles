@@ -79,6 +79,8 @@ call dein#add('ryanoasis/vim-devicons')
 call dein#add('lukas-reineke/indent-blankline.nvim')
 call dein#add("rcarriga/nvim-notify")
 call dein#add("numToStr/Comment.nvim")
+call dein#add("CopilotC-Nvim/CopilotChat.nvim", { 'rev': 'canary' })
+call dein#add("nvim-telescope/telescope-ui-select.nvim")
 
 
 " Required:
@@ -346,7 +348,6 @@ nmap none <Plug>RestoreWinPosn
 nnoremap <leader>aa :enew<CR>
 nnoremap <leader>lr :%s/ *$//g<CR>:noh<CR>
 inoremap <C-y><C-w> <ESC>:w<CR>
-
 nnoremap <C-y><C-w> :w<CR>
 nnoremap <leader>sp :sp<CR>
 nnoremap <leader>vs :vs<CR>
@@ -538,7 +539,7 @@ function! HandleURL()
     echo "No URI found in line."
   endif
 endfunction
-nmap <silent> <Leader>b <Esc>:call HandleURL()<CR>
+nmap <silent> <leader>b <Esc>:call HandleURL()<CR>
 
 " Format leader + f
 nnoremap <leader>f :Format<CR>
@@ -569,16 +570,64 @@ require('telescope').setup{
         theme = 'ivy',
         prefer_locations = true, -- always use Telescope locations to preview definitions/declarations/implementations etc
     },
+    ["ui-select"] = {
+      require("telescope.themes").get_dropdown {
+      }
+    },
   },
 }
 require('telescope').load_extension('coc')
-require'bufferline'.setup {
-}
+require('telescope').load_extension('ui-select')
+
 require'barbar'.setup {
   auto_hide = false,
 }
 require("ibl").setup()
 require('Comment').setup()
+
+require("CopilotChat").setup {
+  debug = true,
+  show_user_selection = true, -- Shows user selection in chat
+  show_system_prompt = false, -- Shows system prompt in chat
+  show_folds = true, -- Shows folds for sections in chat
+  clear_chat_on_new_prompt = false, -- Clears chat on every new prompt
+  auto_follow_cursor = true, -- Auto-follow cursor in chat
+  name = 'CopilotChat', -- Name to use in chat
+  separator = '---', -- Separator to use in chat
+  prompts = {
+    Explain = {
+      prompt = '動作原理を説明してください。',
+    },
+    Tests = {
+      prompt = '選択されたコードの動作を簡潔に説明して、その後ユニットテストを生成してください。',
+    },
+    Commit = {
+      prompt = 'Commitizen規約に従って日本語で変更のコミットメッセージを書いてください。タイトルは最大50文字、メッセージは72文字で折り返してください。全メッセージをgitcommit言語でコードブロックに包んでください。',
+    },
+    CommitStaged = {
+      prompt = 'Commitizen規約に従って日本語で変更のコミットメッセージを書いてください。タイトルは最大50文字、メッセージは72文字で折り返してください。全メッセージをgitcommit言語でコードブロックに包んでください。',
+    },
+  },
+  window = {
+    layout = 'float',
+    relative = 'cursor',
+    width = 1,
+    height = 0.4,
+    row
+  },
+  mappings = {
+    close = 'q',
+    reset = '<C-l>',
+    complete_after_slash = '<Tab>',
+    submit_prompt = '<CR>',
+    accept_diff = '<C-y><C-y>',
+    show_diff = '<C-d><C-d>',
+  },
+
+  -- selection = function(source)
+  --  return vim.ui.select(source)
+  -- end,
+}
 
 EOF
 
