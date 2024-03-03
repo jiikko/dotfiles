@@ -72,6 +72,35 @@
                         ]
                     },
                     {
+                        "description": "disable command to quit terminal with ctrl",
+                        "manipulators": [
+                            {
+                                "from": {
+                                    "key_code": "q",
+                                    "modifiers": {
+                                        "mandatory": [
+                                            "control"
+                                        ]
+                                    }
+                                },
+                                "to": [
+                                    {
+                                        "key_code": "vk_none"
+                                    }
+                                ],
+                                "type": "basic",
+                                "conditions": [
+                                  {
+                                    "type": "frontmost_application_if",
+                                    "bundle_identifiers": [
+                                      "^com\\.apple\\.Terminal"
+                                    ]
+                                  }
+                                ]
+                            }
+                        ]
+                    },
+                    {
                         "description": "disable caps_lock",
                         "manipulators": [
                             {
