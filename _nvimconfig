@@ -637,4 +637,7 @@ nnoremap <leader>ff <cmd>Telescope find_files<cr>
 nnoremap <leader>fg <cmd>Telescope live_grep<cr>
 nnoremap <leader>fb <cmd>Telescope buffers<cr>
 
+vnoremap <leader>cce <cmd>CopilotChatExplain<cr>
+nnoremap <leader>cce <cmd>CopilotChatExplain<cr>
+
 colorscheme gruvbox
