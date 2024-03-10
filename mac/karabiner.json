@@ -43,6 +43,30 @@
                       ]
                     },
                     {
+                      "description": "日本語入力中にでも行頭まで選択できるショートカットを使えるようにする(CTRL+SHILFT+aを押したときに、英数キーも送信する)",
+                      "manipulators": [
+                        {
+                          "type": "basic",
+                          "from": {
+                            "key_code": "a",
+                            "modifiers": {
+                              "mandatory": ["control", "shift"]
+                            }
+
+                          },
+                          "to": [
+                            {
+                              "key_code": "japanese_eisuu"
+                            },
+                            {
+                              "key_code": "a",
+                              "modifiers": ["control", "shift"]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
                         "description": "disable command to close tab on terminal",
                         "manipulators": [
                             {
