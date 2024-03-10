@@ -134,6 +134,16 @@ function! CocCurrentFunction()
     return get(b:, 'coc_current_function', '')
 endfunction
 
+function! RelativePathFromGitRoot()
+    let l:root = system("git -C " . expand('%:p:h') . " rev-parse --show-toplevel")
+    let l:root = substitute(l:root, '\n$', '', '')
+    if v:shell_error
+        return expand('%') " Gitリポジトリ外ではファイル名のみを返す
+    endif
+    let l:relative_path = substitute(expand('%:p'), '^' . l:root . '/', '', '')
+    return l:relative_path
+endfunction
+
 let g:lightline = {
       \ 'colorscheme': 'wombat',
       \ 'active': {
@@ -142,7 +152,8 @@ let g:lightline = {
       \ },
       \ 'component_function': {
       \   'cocstatus': 'coc#status',
-      \   'currentfunction': 'CocCurrentFunction'
+      \   'currentfunction': 'CocCurrentFunction',
+      \   'filename': 'RelativePathFromGitRoot',
       \ },
       \ }
 
