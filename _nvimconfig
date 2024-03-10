@@ -44,7 +44,6 @@ call dein#add('~/.cache/dein/repos/github.com/Shougo/dein.vim')
 call dein#add('scrooloose/nerdtree')
 call dein#add('tpope/vim-rails')
 call dein#add('lukelbd/vim-toggle')
-call dein#add('motemen/git-vim')
 call dein#add('tpope/vim-surround')
 call dein#add('vim-jp/vimdoc-ja')
 call dein#add('Shougo/vimproc.vim')
@@ -81,6 +80,7 @@ call dein#add("rcarriga/nvim-notify")
 call dein#add("numToStr/Comment.nvim")
 call dein#add("CopilotC-Nvim/CopilotChat.nvim", { 'rev': 'canary' })
 call dein#add("nvim-telescope/telescope-ui-select.nvim")
+call dein#add("APZelos/blamer.nvim")
 
 
 " Required:
@@ -639,6 +639,13 @@ let g:webdevicons_enable_nerdtree = 1
 nnoremap <leader>ff <cmd>Telescope find_files<cr>
 nnoremap <leader>fg <cmd>Telescope live_grep<cr>
 nnoremap <leader>fb <cmd>Telescope buffers<cr>
+
+let g:blamer_enabled = 0
+let g:blamer_date_format = '%Y/%m/%d'
+let g:blamer_template = '<commit-short> <committer-time> <committer>:  <summary>'
+vnoremap <leader>gb <cmd>BlamerToggle<cr>
+nnoremap <leader>gb <cmd>BlamerToggle<cr>
+
 
 vnoremap <leader>cce <cmd>CopilotChatExplain<cr>
 nnoremap <leader>cce <cmd>CopilotChatExplain<cr>
