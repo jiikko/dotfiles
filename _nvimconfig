@@ -31,6 +31,8 @@ command TABE tabe
 
 nnoremap Q <Nop>
 
+set mouse=n
+
 " Required:
 set runtimepath+=~/.cache/dein/repos/github.com/Shougo/dein.vim
 
@@ -81,6 +83,7 @@ call dein#add("numToStr/Comment.nvim")
 call dein#add("CopilotC-Nvim/CopilotChat.nvim", { 'rev': 'canary' })
 call dein#add("nvim-telescope/telescope-ui-select.nvim")
 call dein#add("APZelos/blamer.nvim")
+call dein#add("anuvyklack/fold-preview.nvim")
 
 
 " Required:
@@ -643,6 +646,9 @@ require("CopilotChat").setup {
   -- end,
 }
 
+ require('fold-preview').setup({
+   auto = 1
+  })
 EOF
 
 let g:webdevicons_enable_nerdtree = 1
