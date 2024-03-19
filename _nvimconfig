@@ -561,6 +561,8 @@ nmap <silent> <leader>b <Esc>:call HandleURL()<CR>
 " Format leader + f
 nnoremap <leader>f :Format<CR>
 
+nnoremap <leader>fa za<CR>
+
 
 " 折りたたみ
 set foldmethod=indent
@@ -647,7 +649,8 @@ require("CopilotChat").setup {
 }
 
  require('fold-preview').setup({
-   auto = 1
+   auto = 1,
+   default_keybindings = false
   })
 EOF
 
