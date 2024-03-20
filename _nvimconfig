@@ -84,6 +84,7 @@ call dein#add("CopilotC-Nvim/CopilotChat.nvim", { 'rev': 'canary' })
 call dein#add("nvim-telescope/telescope-ui-select.nvim")
 call dein#add("APZelos/blamer.nvim")
 call dein#add("anuvyklack/fold-preview.nvim")
+call dein#add("petertriho/nvim-scrollbar")
 
 
 " Required:
@@ -652,6 +653,8 @@ require("CopilotChat").setup {
    auto = 1,
    default_keybindings = false
   })
+
+  require("scrollbar").setup()
 EOF
 
 let g:webdevicons_enable_nerdtree = 1
@@ -671,8 +674,6 @@ vnoremap <leader>cce <cmd>CopilotChatExplain<cr>
 nnoremap <leader>cce <cmd>CopilotChatExplain<cr>
 
 colorscheme gruvbox
-
-
 
 
 " スムーズスクロール
