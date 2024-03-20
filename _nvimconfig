@@ -48,7 +48,6 @@ call dein#add('tpope/vim-rails')
 call dein#add('lukelbd/vim-toggle')
 call dein#add('tpope/vim-surround')
 call dein#add('vim-jp/vimdoc-ja')
-call dein#add('Shougo/vimproc.vim')
 call dein#add('mattn/emmet-vim')
 call dein#add('kana/vim-operator-user')
 call dein#add('tyru/operator-camelize.vim')
@@ -67,7 +66,6 @@ call dein#add('folke/which-key.nvim')
 call dein#add('itchyny/lightline.vim')
 call dein#add('github/copilot.vim')
 call dein#add('morhetz/gruvbox')
-call dein#add('delphinus/vim-auto-cursorline')
 call dein#add('nvim-telescope/telescope.nvim')
 call dein#add('nvim-lua/plenary.nvim')
 call dein#add('fannheyward/telescope-coc.nvim')
@@ -460,13 +458,6 @@ nmap <leader>qf  <Plug>(coc-fix-current)
 highlight ZenkakuSpace cterm=underline ctermfg=lightblue guibg=darkgray
 match ZenkakuSpace /　/
 
-" カレントウィンドウにのみ罫線を引く
-augroup cch
-  autocmd! cch
-  autocmd WinLeave * set nocursorline
-  autocmd WinEnter,BufRead * set cursorline
-augroup END
-
 " コメント文の色を変更
 highlight Comment ctermfg=DarkCyan
 " " コマンドライン補完を拡張モードにする
@@ -477,6 +468,14 @@ set showmatch
 
 " タイトルをウインドウ枠に表示する
 set title
+
+
+" カレントバッファにのみ罫線を引く
+augroup cch
+  autocmd! cch
+  autocmd WinLeave * set nocursorline
+  autocmd WinEnter,BufRead * set cursorline
+augroup END
 
 " カーソル行をハイライト
 set cursorline
@@ -673,7 +672,6 @@ vnoremap <leader>cce <cmd>CopilotChatExplain<cr>
 nnoremap <leader>cce <cmd>CopilotChatExplain<cr>
 
 colorscheme gruvbox
-
 
 " スムーズスクロール
 let s:stop_time = 1
