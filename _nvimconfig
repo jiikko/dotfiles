@@ -566,7 +566,7 @@ nnoremap fa za<CR>
 
 
 " 折りたたみ
-set foldmethod=syntax
+set foldmethod=indent
 set foldlevel=100
 
 lua << EOF
