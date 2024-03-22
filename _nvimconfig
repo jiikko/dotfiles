@@ -96,9 +96,15 @@ if dein#check_install()
 endif
 
 lua << EOF
-  vim.notify = require("notify")
+  vim.api.nvim_set_option('termguicolors', false)
+  local notify = require('notify')
+  notify.setup({
+    render = "minimal",
+    stages = "fade_in_slide_out",
+    dismissed = {},
+  })
+  vim.notify = notify
 EOF
-
 
 "----------------------------------------------------
 " プラギンの設定
@@ -566,7 +572,8 @@ set foldexpr=nvim_treesitter#foldexpr()
 " set nofoldenable                     " Disable folding at startup.
 
 lua << EOF
-require('telescope').setup{
+local telescope = require('telescope')
+telescope.setup{
   defaults = {
     sorting_strategy = "ascending", -- 検索結果を上から下に並べる
     layout_strategy = 'vertical',
@@ -587,13 +594,17 @@ require('telescope').setup{
         prefer_locations = true, -- always use Telescope locations to preview definitions/declarations/implementations etc
     },
     ["ui-select"] = {
-      require("telescope.themes").get_dropdown {
-      }
+      require("telescope.themes").get_dropdown {}
     },
   },
 }
-require('telescope').load_extension('coc')
-require('telescope').load_extension('ui-select')
+telescope.load_extension('coc')
+telescope.load_extension('ui-select')
+telescope.load_extension('notify')
+
+vim.keymap.set('n', '<leader>fn', function()
+  telescope.extensions.notify.notify()
+end)
 
 require'barbar'.setup {
   auto_hide = false,
