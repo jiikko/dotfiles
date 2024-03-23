@@ -80,7 +80,8 @@ call dein#add("nvim-telescope/telescope-ui-select.nvim")
 call dein#add("APZelos/blamer.nvim")
 call dein#add("anuvyklack/fold-preview.nvim")
 call dein#add("petertriho/nvim-scrollbar")
-call dein#add("karb94/neoscroll.nvim")
+call dein#add("psliwka/vim-smoothie")
+call dein#add('gen740/SmoothCursor.nvim',)
 
 
 " Required:
@@ -479,9 +480,6 @@ augroup cch
   autocmd WinEnter,BufRead * set cursorline
 augroup END
 
-" カーソル行をハイライト
-set cursorline
-
 " コマンド実行中は再描画しない
 set lazyredraw
 
@@ -665,7 +663,7 @@ require("CopilotChat").setup {
 
   require('nvim-treesitter.configs').setup {
     auto_install = true,
-    ensure_installed = { "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "graphql", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "typescript", "vim", "yaml" },
+    ensure_installed = { "jax", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "graphql", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "typescript", "vim", "yaml" },
     ignore_install = { "agda", "apex", "arduino", "asm", "authzed", "awk", "bass", "beancount", "bibtex", "bicep", "bitbake", "blueprint", "cairo", "capnp", "chatito", "clojure", "comment", "commonlisp", "cooklang", "corn", "cpon", "cuda", "cue", "d", "dart", "devicetree", "dhall", "diff", "disassembly", "dot", "doxygen", "dtd", "ebnf", "eds", "eex", "elsa", "elvish", "embedded_template", "facility", "faust", "fennel", "fidl", "firrtl", "foam", "forth", "fsh", "func", "fusion", "gdscript", "gdshader", "gitattributes", "gitcommit", "gitignore", "gleam", "glimmer", "gn", "gnuplot", "godot_resource", "gomod", "gosum", "gowork", "gpg", "groovy", "gstlaunch", "hack", "hare", "haskell_persistent", "hcl", "heex", "hjson", "hlsl", "hlsplaylist", "hocon", "hoon", "htmldjango", "hurl", "hyprlang", "ispc", "janet_simple", "jq", "jsdoc", "json5", "jsonc", "jsonnet", "kconfig", "kdl", "kusto", "lalrpop", "ledger", "leo", "linkerscript", "liquidsoap", "llvm", "luadoc", "luap", "luau", "m68k", "menhir", "mermaid", "meson", "mlir", "muttrc", "nasm", "nickel", "nim", "nim_format_string", "ninja", "norg", "nqc", "objc", "objdump", "ocaml_interface", "ocamllex", "odin", "org", "pascal", "passwd", "pem", "phpdoc", "pioasm", "po", "pod", "poe_filter", "pony", "printf", "prisma", "promql", "properties", "proto", "prql", "psv", "pug", "puppet", "purescript", "pymanifest", "ql", "qmldir", "qmljs", "query", "racket", "rasi", "rbs", "re2c", "readline", "regex", "rego", "requirements", "rnoweb", "robot", "ron", "rst", "scfg", "scheme", "slang", "slint", "smali", "smithy", "snakemake", "solidity", "soql", "sosl", "sourcepawn", "sparql", "squirrel", "ssh_config", "starlark", "strace", "styled", "supercollider", "surface", "svelte", "sxhkdrc", "systemtap", "t32", "tablegen", "tcl", "teal", "templ", "terraform", "textproto", "thrift", "tiger", "tlaplus", "tmux", "todotxt", "tsv", "tsx", "turtle", "twig", "typoscript", "typst", "udev", "ungrammar", "unison", "usd", "uxntal", "v", "vala", "verilog", "vhs", "vimdoc", "vue", "wgsl", "wgsl_bevy", "wing", "xcompose", "yang", "yuck", "zathurarc", "zig", },
     highlight = {
       enable = true,
@@ -676,8 +674,7 @@ require("CopilotChat").setup {
     indent = { enable = true, }
   }
 
-  require('neoscroll').setup({
-    mappings = {'<C-u>', '<C-d>'},
+  require('smoothcursor').setup({
   })
 EOF
 
@@ -696,5 +693,8 @@ nnoremap <leader>gb <cmd>BlamerToggle<cr>
 
 vnoremap <leader>cce <cmd>CopilotChatExplain<cr>
 nnoremap <leader>cce <cmd>CopilotChatExplain<cr>
+
+nnoremap <unique> <C-D> <cmd>call smoothie#do("\<C-D>") <CR>
+vnoremap <unique> <C-D> <cmd>call smoothie#do("\<C-D>") <CR>
 
 colorscheme gruvbox
