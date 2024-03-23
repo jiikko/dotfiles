@@ -103,7 +103,17 @@ lua << EOF
     stages = "fade_in_slide_out",
     dismissed = {},
   })
-  vim.notify = notify
+
+  local original_notify = notify
+  local custom_notify = function(msg, log_level, opts)
+     -- FIXME: ターミナルがtrue colorに対応していないので無視する
+    if msg:match("Opacity changes require termguicolors to be set.") then
+      return
+    end
+    original_notify(msg, log_level, opts)
+  end
+
+  vim.notify = custom_notify
 EOF
 
 "----------------------------------------------------
@@ -670,7 +680,9 @@ require("CopilotChat").setup {
         "ruby",
       },
     },
-    indent = { enable = true, }
+    indent = {
+      enable = true,
+    }
   }
 
 EOF
