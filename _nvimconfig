@@ -10,7 +10,6 @@ set wildignore+=*.sw?
 set wildignore+=.DS_Store
 set wildignore+=node_modules,bower_components,elm-stuff
 
-" set grepprg=git\ grep\ --no-index\ --exclude-standard\ -I\ --perl-regexp\ --line-number
 set grepprg=git\ grep\ -I\ --line-number
 
 syntax on
@@ -95,27 +94,6 @@ if dein#check_install()
   call dein#install()
 endif
 
-lua << EOF
-  vim.api.nvim_set_option('termguicolors', false)
-  local notify = require('notify')
-  notify.setup({
-    render = "minimal",
-    stages = "fade_in_slide_out",
-    dismissed = {},
-  })
-
-  local original_notify = notify
-  local custom_notify = function(msg, log_level, opts)
-     -- FIXME: ターミナルがtrue colorに対応していないので無視する
-    if msg:match("Opacity changes require termguicolors to be set.") then
-      return
-    end
-    original_notify(msg, log_level, opts)
-  end
-
-  vim.notify = custom_notify
-EOF
-
 "----------------------------------------------------
 " プラギンの設定
 "----------------------------------------------------
@@ -186,6 +164,27 @@ let g:toggle_words_off = [
 
 
 
+lua << EOF
+  vim.api.nvim_set_option('termguicolors', false)
+  local notify = require('notify')
+  notify.setup({
+    render = "minimal",
+    stages = "fade_in_slide_out",
+    dismissed = {},
+  })
+
+  local original_notify = notify
+  local custom_notify = function(msg, log_level, opts)
+     -- FIXME: ターミナルがtrue colorに対応していないので無視する
+    if msg:match("Opacity changes require termguicolors to be set.") then
+      return
+    end
+    original_notify(msg, log_level, opts)
+  end
+
+  vim.notify = custom_notify
+EOF
+
 
 "Diagnosticsの、左横のアイコンの色設定
 highlight CocErrorSign ctermfg=15 ctermbg=196
@@ -216,6 +215,7 @@ let g:terraform_fmt_on_save=1
 " typescript
 " autocmd FileType typescript :set makeprg=tsc
 
+" sql
 autocmd BufRead,BufNewFile *.sql.erb set filetype=sql
 
 " for vim-go
@@ -453,6 +453,10 @@ vnoremap <silent><nowait><expr> <C-b> coc#float#has_scroll() ? coc#float#scroll(
 nmap <silent> [g <Plug>(coc-diagnostic-prev)
 nmap <silent> ]g <Plug>(coc-diagnostic-next)
 
+" Format leader + f
+nnoremap <leader>f :Format<CR>
+
+
 " カーソル位置で適用できるコードアクションを呼び出す
 nmap <leader>ac  <Plug>(coc-codeaction-cursor)
 
@@ -566,17 +570,13 @@ function! HandleURL()
 endfunction
 nmap <silent> <leader>b <Esc>:call HandleURL()<CR>
 
-" Format leader + f
-nnoremap <leader>f :Format<CR>
-
-nnoremap fa za<CR>
-
 
 " 折りたたみ
 set foldlevel=10
 set foldmethod=expr
 set foldexpr=nvim_treesitter#foldexpr()
-" set nofoldenable                     " Disable folding at startup.
+nnoremap fa za<CR>
+
 
 lua << EOF
 local telescope = require('telescope')
