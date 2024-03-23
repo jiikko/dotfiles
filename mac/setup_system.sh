@@ -11,7 +11,7 @@ defaults write .GlobalPreferences com.apple.mouse.scaling 4
 
 defaults write -g ApplePressAndHoldEnabled -bool false
 # キーリピート
-defaults write NSGlobalDomain KeyRepeat -int 1
+defaults write NSGlobalDomain KeyRepeat -int 2
 # 長押し
 defaults write NSGlobalDomain InitialKeyRepeat -int 12
 
