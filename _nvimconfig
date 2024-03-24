@@ -613,6 +613,9 @@ vim.keymap.set('n', '<leader>fn', function()
   telescope.extensions.notify.notify()
 end)
 
+local builtin = require("telescope.builtin")
+vim.keymap.set("n", "<leader>fd", "<Cmd>CocDiagnostics<CR>")
+
 require'barbar'.setup {
   auto_hide = false,
 }
