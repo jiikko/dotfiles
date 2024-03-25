@@ -1971,6 +1971,27 @@
             ]
           },
           {
+            "description": "右Ctrl+2を押すと```を入力する",
+            "manipulators": [
+              {
+                "from": {
+                  "key_code": "2",
+                  "modifiers": {
+                    "mandatory": ["right_control"],
+                    "optional": ["any"]
+                  }
+                },
+                "to": [
+                  { "key_code": "japanese_eisuu" },
+                  { "key_code": "grave_accent_and_tilde" },
+                  { "key_code": "grave_accent_and_tilde" },
+                  { "key_code": "grave_accent_and_tilde" }
+                ],
+                "type": "basic"
+              }
+            ]
+          },
+          {
             "description": "右Ctrl+6を押すとピリオドを入力する",
             "manipulators": [
               {
@@ -2001,6 +2022,42 @@
                 },
                 "to": [
                   { "key_code": "slash" }
+                ],
+                "type": "basic"
+              }
+            ]
+          },
+          {
+            "description": "右Ctrl+9を押すと[を入力する",
+            "manipulators": [
+              {
+                "from": {
+                  "key_code": "9",
+                  "modifiers": {
+                    "mandatory": ["right_control"],
+                    "optional": ["any"]
+                  }
+                },
+                "to": [
+                  { "key_code": "open_bracket" }
+                ],
+                "type": "basic"
+              }
+            ]
+          },
+          {
+            "description": "右Ctrl+0を押すと]を入力する",
+            "manipulators": [
+              {
+                "from": {
+                  "key_code": "0",
+                  "modifiers": {
+                    "mandatory": ["right_control"],
+                    "optional": ["any"]
+                  }
+                },
+                "to": [
+                  { "key_code": "close_bracket" }
                 ],
                 "type": "basic"
               }
