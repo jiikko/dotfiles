@@ -11,8 +11,6 @@
 [spc]>[rwin]
 [end]>[a]
 [pgdn]>[esc]
-{rctr}{9}>{s5}{x1}{obrk}
-{rctr}{0}>{s5}{x1}{cbrk}
 <keypad>
 <function1>
 <function2>
