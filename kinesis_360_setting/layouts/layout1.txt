@@ -11,7 +11,6 @@
 [spc]>[rwin]
 [end]>[a]
 [pgdn]>[esc]
-{rctr}{1}>{s5}{x1}{-lshf}{scol}{+lshf}{b}{o}{w}{-lshf}{scol}{+lshf}
 {rctr}{6}>{s5}{x1}{perd}
 {rctr}{9}>{s5}{x1}{obrk}
 {rctr}{0}>{s5}{x1}{cbrk}
