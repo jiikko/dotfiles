@@ -1971,6 +1971,42 @@
             ]
           },
           {
+            "description": "右Ctrl+6を押すとピリオドを入力する",
+            "manipulators": [
+              {
+                "from": {
+                  "key_code": "6",
+                  "modifiers": {
+                    "mandatory": ["right_control"],
+                    "optional": ["any"]
+                  }
+                },
+                "to": [
+                  { "key_code": "period" }
+                ],
+                "type": "basic"
+              }
+            ]
+          },
+          {
+            "description": "右Ctrl+7を押すとスラッシュを入力する",
+            "manipulators": [
+              {
+                "from": {
+                  "key_code": "7",
+                  "modifiers": {
+                    "mandatory": ["right_control"],
+                    "optional": ["any"]
+                  }
+                },
+                "to": [
+                  { "key_code": "slash" }
+                ],
+                "type": "basic"
+              }
+            ]
+          },
+          {
             "description": "Ctrl+[を押したときに、escキーと英数キーを送信する",
             "manipulators": [
               {
