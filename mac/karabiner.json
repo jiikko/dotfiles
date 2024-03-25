@@ -73,9 +73,7 @@
                                 "from": {
                                     "key_code": "w",
                                     "modifiers": {
-                                        "mandatory": [
-                                            "command"
-                                        ]
+                                        "mandatory": [ "command" ]
                                     }
                                 },
                                 "to": [
@@ -2082,6 +2080,30 @@
                                 "type": "basic"
                             }
                         ]
+                    },
+                    {
+                      "description": "右Ctrl+1を押すと:bow:を入力する",
+                      "manipulators": [
+                        {
+                          "from": {
+                            "key_code": "1",
+                            "modifiers": {
+                              "mandatory": ["right_control"],
+                              "optional": [ "any" ]
+                            }
+                          },
+                          "to": [
+                            { "key_code": "japanese_eisuu" },
+                            { "key_code": "spacebar" },
+                            { "key_code": "semicolon", "modifiers": ["left_shift"] },
+                            { "key_code": "b" },
+                            { "key_code": "o" },
+                            { "key_code": "w" },
+                            { "key_code": "semicolon", "modifiers": ["left_shift"]  }
+                          ],
+                          "type": "basic"
+                        }
+                      ]
                     },
                     {
                         "description": "Ctrl+[を押したときに、escキーと英数キーを送信する",
