@@ -23,17 +23,28 @@
     "languageserver": {
       "golang": {
         "command": "gopls",
-      "rootPatterns": ["go.mod"],
-      "filetypes": ["go"]
-    },
-    "typescript": {
-      "command": "tsserver",
-      "rootPatterns": ["tsconfig.json"],
-      "filetypes": ["typescript", "ts", "tsx"]
+        "rootPatterns": ["go.mod"],
+        "filetypes": ["go"]
+      },
+      "typescript": {
+        "command": "tsserver",
+        "rootPatterns": ["tsconfig.json"],
+        "filetypes": ["typescript", "ts", "tsx"]
+      }
     }
   },
-  "cSpell.words": [
-    "nvim", "findy", "shfmt"
-  ],
-  "snippets.ultisnips.pythonPrompt": false
+  "cSpell.language": "en",
+  "cSpell.words": ["nvim", "findy", "shfmt"],
+  "cSpell.ignoreRegExpList": [
+    "<!-- prettier-ignore -->\\n(`{3,})\\w*\\n[\\s\\S]+?\\1",
+    "\\[(\\*{2})?@[-\\w]+?\\1\\]",
+    "by @[-\\w]+(?:, @[-\\w]+)*",
+    "ve{2,}r{2,}y",
+    "ve+r+y+long\\w*",
+    "\\(https?://.*?\\)",
+    "author: \".*?\"",
+    "authorURL: \".*?\"",
+    "\"author\": \".*?\"",
+    "(long|after){3,}"
+  ]
 }
