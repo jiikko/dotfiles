@@ -251,6 +251,8 @@ let g:NERDTreeMouseMode=2
 " hangupする
 map <S-k> <Esc>
 
+nnoremap <Ctrl-l> :noh<CR>
+
 " コードジャンプ
 map <C-j> <Plug>(coc-definition)
 map <C-k> <Plug>(coc-references)

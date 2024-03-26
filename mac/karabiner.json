@@ -130,6 +130,32 @@
             ]
           },
           {
+            "description": "command + l to ctrl + l for Terminal(ターミナルでの画面クリア対策)",
+            "manipulators": [
+              {
+                "from": {
+                  "key_code": "l",
+                  "modifiers": {
+                    "mandatory": ["command"]
+                  }
+                },
+                "to": [
+                  {
+                    "key_code": "l",
+                    "modifiers": ["right_control"]
+                  }
+                ],
+                "type": "basic",
+                "conditions": [
+                  {
+                    "type": "frontmost_application_if",
+                    "bundle_identifiers": ["^com\\.apple\\.Terminal"]
+                  }
+                ]
+              }
+            ]
+          },
+          {
             "description": "disable command + p(プリント)",
             "manipulators": [
               {
@@ -139,7 +165,7 @@
                     "mandatory": ["command"]
                   }
                 },
-                "to": [ { "key_code": "vk_none" } ],
+                "to": [{ "key_code": "vk_none" }],
                 "type": "basic"
               }
             ]
