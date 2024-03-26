@@ -130,6 +130,21 @@
             ]
           },
           {
+            "description": "command + j to enter",
+            "manipulators": [
+              {
+                "from": {
+                  "key_code": "j",
+                  "modifiers": {
+                    "mandatory": ["command"]
+                  }
+                },
+                "to": [ { "key_code": "return_or_enter" } ],
+                "type": "basic"
+              }
+            ]
+          },
+          {
             "description": "disable command + m(最小化)",
             "manipulators": [
               {
@@ -2027,9 +2042,7 @@
                     "optional": ["any"]
                   }
                 },
-                "to": [
-                  { "key_code": "period" }
-                ],
+                "to": [{ "key_code": "period" }],
                 "type": "basic"
               }
             ]
@@ -2045,9 +2058,7 @@
                     "optional": ["any"]
                   }
                 },
-                "to": [
-                  { "key_code": "slash" }
-                ],
+                "to": [{ "key_code": "slash" }],
                 "type": "basic"
               }
             ]
@@ -2066,9 +2077,7 @@
                     "optional": ["any"]
                   }
                 },
-                "to": [
-                  { "key_code": "open_bracket" }
-                ],
+                "to": [{ "key_code": "open_bracket" }],
                 "type": "basic"
               },
               {
@@ -2082,9 +2091,7 @@
                     "optional": ["any"]
                   }
                 },
-                "to": [
-                  { "key_code": "close_bracket" }
-                ],
+                "to": [{ "key_code": "close_bracket" }],
                 "type": "basic"
               }
             ]
@@ -2103,9 +2110,7 @@
                     "optional": ["any"]
                   }
                 },
-                "to": [
-                  { "key_code": "close_bracket" }
-                ],
+                "to": [{ "key_code": "close_bracket" }],
                 "type": "basic"
               },
               {
@@ -2119,9 +2124,7 @@
                     "optional": ["any"]
                   }
                 },
-                "to": [
-                  { "key_code": "backslash" }
-                ],
+                "to": [{ "key_code": "backslash" }],
                 "type": "basic"
               }
             ]
