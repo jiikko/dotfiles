@@ -130,21 +130,6 @@
             ]
           },
           {
-            "description": "command + j to enter",
-            "manipulators": [
-              {
-                "from": {
-                  "key_code": "j",
-                  "modifiers": {
-                    "mandatory": ["command"]
-                  }
-                },
-                "to": [ { "key_code": "return_or_enter" } ],
-                "type": "basic"
-              }
-            ]
-          },
-          {
             "description": "disable command + p(プリント)",
             "manipulators": [
               {
