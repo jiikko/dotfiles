@@ -1947,9 +1947,12 @@
             ]
           },
           {
-            "description": "右Ctrl+1を押すと:bow:を入力する",
+            "description": "右Ctrl+1を押すと:bow:を入力する(ANSI layout)",
             "manipulators": [
               {
+                "conditions": [
+                  { "type": "keyboard_type_if", "keyboard_types": ["ansi"] }
+                ],
                 "from": {
                   "key_code": "1",
                   "modifiers": {
@@ -1965,6 +1968,33 @@
                   { "key_code": "o" },
                   { "key_code": "w" },
                   { "key_code": "semicolon", "modifiers": ["left_shift"] }
+                ],
+                "type": "basic"
+              }
+            ]
+          },
+          {
+            "description": "右Ctrl+1を押すと:bow:を入力する(JIS layout)",
+            "manipulators": [
+              {
+                "conditions": [
+                  { "type": "keyboard_type_if", "keyboard_types": ["jis"] }
+                ],
+                "from": {
+                  "key_code": "1",
+                  "modifiers": {
+                    "mandatory": ["right_control"],
+                    "optional": ["any"]
+                  }
+                },
+                "to": [
+                  { "key_code": "japanese_eisuu" },
+                  { "key_code": "spacebar" },
+                  { "key_code": "quote" },
+                  { "key_code": "b" },
+                  { "key_code": "o" },
+                  { "key_code": "w" },
+                  { "key_code": "quote" }
                 ],
                 "type": "basic"
               }
@@ -2028,9 +2058,12 @@
             ]
           },
           {
-            "description": "右Ctrl+9を押すと[を入力する",
+            "description": "右Ctrl+9を押すと[を入力する(ANSI layout)",
             "manipulators": [
               {
+                "conditions": [
+                  { "type": "keyboard_type_if", "keyboard_types": ["ansi"] }
+                ],
                 "from": {
                   "key_code": "9",
                   "modifiers": {
@@ -2046,9 +2079,33 @@
             ]
           },
           {
-            "description": "右Ctrl+0を押すと]を入力する",
+            "description": "右Ctrl+9を押すと[を入力する(JIS layout)",
             "manipulators": [
               {
+                "conditions": [
+                  { "type": "keyboard_type_if", "keyboard_types": ["jis"] }
+                ],
+                "from": {
+                  "key_code": "9",
+                  "modifiers": {
+                    "mandatory": ["right_control"],
+                    "optional": ["any"]
+                  }
+                },
+                "to": [
+                  { "key_code": "close_bracket" }
+                ],
+                "type": "basic"
+              }
+            ]
+          },
+          {
+            "description": "右Ctrl+0を押すと]を入力する(ANSI layout)",
+            "manipulators": [
+              {
+                "conditions": [
+                  { "type": "keyboard_type_if", "keyboard_types": ["ansi"] }
+                ],
                 "from": {
                   "key_code": "0",
                   "modifiers": {
@@ -2058,6 +2115,27 @@
                 },
                 "to": [
                   { "key_code": "close_bracket" }
+                ],
+                "type": "basic"
+              }
+            ]
+          },
+          {
+            "description": "右Ctrl+0を押すと]を入力する(JIS layout)",
+            "manipulators": [
+              {
+                "conditions": [
+                  { "type": "keyboard_type_if", "keyboard_types": ["jis"] }
+                ],
+                "from": {
+                  "key_code": "0",
+                  "modifiers": {
+                    "mandatory": ["right_control"],
+                    "optional": ["any"]
+                  }
+                },
+                "to": [
+                  { "key_code": "backslash" }
                 ],
                 "type": "basic"
               }
