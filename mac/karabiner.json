@@ -1947,7 +1947,7 @@
             ]
           },
           {
-            "description": "右Ctrl+1を押すと:bow:を入力する(ANSI layout)",
+            "description": "右Ctrl+1を押すと:bow:を入力する",
             "manipulators": [
               {
                 "conditions": [
@@ -1970,12 +1970,7 @@
                   { "key_code": "semicolon", "modifiers": ["left_shift"] }
                 ],
                 "type": "basic"
-              }
-            ]
-          },
-          {
-            "description": "右Ctrl+1を押すと:bow:を入力する(JIS layout)",
-            "manipulators": [
+              },
               {
                 "conditions": [
                   { "type": "keyboard_type_if", "keyboard_types": ["jis"] }
@@ -2058,7 +2053,7 @@
             ]
           },
           {
-            "description": "右Ctrl+9を押すと[を入力する(ANSI layout)",
+            "description": "右Ctrl+9を押すと[を入力する",
             "manipulators": [
               {
                 "conditions": [
@@ -2075,12 +2070,7 @@
                   { "key_code": "open_bracket" }
                 ],
                 "type": "basic"
-              }
-            ]
-          },
-          {
-            "description": "右Ctrl+9を押すと[を入力する(JIS layout)",
-            "manipulators": [
+              },
               {
                 "conditions": [
                   { "type": "keyboard_type_if", "keyboard_types": ["jis"] }
@@ -2100,7 +2090,7 @@
             ]
           },
           {
-            "description": "右Ctrl+0を押すと]を入力する(ANSI layout)",
+            "description": "右Ctrl+0を押すと]を入力する",
             "manipulators": [
               {
                 "conditions": [
@@ -2117,12 +2107,7 @@
                   { "key_code": "close_bracket" }
                 ],
                 "type": "basic"
-              }
-            ]
-          },
-          {
-            "description": "右Ctrl+0を押すと]を入力する(JIS layout)",
-            "manipulators": [
+              },
               {
                 "conditions": [
                   { "type": "keyboard_type_if", "keyboard_types": ["jis"] }
