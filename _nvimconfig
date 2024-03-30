@@ -575,7 +575,7 @@ nmap <silent> <leader>b <Esc>:call HandleURL()<CR>
 
 
 " 折りたたみ
-set foldlevel=0
+set foldlevel=100
 set foldmethod=expr
 set foldexpr=nvim_treesitter#foldexpr()
 nnoremap fa za<CR>
