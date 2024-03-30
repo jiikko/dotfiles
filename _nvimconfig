@@ -109,6 +109,7 @@ let g:coc_global_extensions = [
       \'coc-dictionary',
       \'coc-eslint',
       \'coc-git',
+      \'coc-go',
       \'coc-pyright',
       \'coc-highlight',
       \'coc-json',
@@ -574,7 +575,7 @@ nmap <silent> <leader>b <Esc>:call HandleURL()<CR>
 
 
 " 折りたたみ
-set foldlevel=10
+set foldlevel=0
 set foldmethod=expr
 set foldexpr=nvim_treesitter#foldexpr()
 nnoremap fa za<CR>
