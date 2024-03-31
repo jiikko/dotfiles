@@ -2067,7 +2067,10 @@
                     "mandatory": ["right_control"]
                   }
                 },
-                "to": [{ "key_code": "spacebar" }],
+                "to": [
+                  { "key_code": "japanese_eisuu" },
+                  { "key_code": "spacebar" }
+                ],
                 "type": "basic"
               }
             ]
@@ -2082,7 +2085,10 @@
                     "mandatory": ["right_control"]
                   }
                 },
-                "to": [{ "key_code": "tab" }],
+                "to": [
+                  { "key_code": "japanese_eisuu" },
+                  { "key_code": "tab" }
+                ],
                 "type": "basic"
               }
             ]
