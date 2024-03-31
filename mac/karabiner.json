@@ -2058,6 +2058,51 @@
             ]
           },
           {
+            "description": "右Ctrl+3を押すとspaceを入力する",
+            "manipulators": [
+              {
+                "from": {
+                  "key_code": "3",
+                  "modifiers": {
+                    "mandatory": ["right_control"]
+                  }
+                },
+                "to": [{ "key_code": "spacebar" }],
+                "type": "basic"
+              }
+            ]
+          },
+          {
+            "description": "右Ctrl+4を押すとtabを入力する",
+            "manipulators": [
+              {
+                "from": {
+                  "key_code": "4",
+                  "modifiers": {
+                    "mandatory": ["right_control"]
+                  }
+                },
+                "to": [{ "key_code": "tab" }],
+                "type": "basic"
+              }
+            ]
+          },
+          {
+            "description": "右Ctrl+5を押すとaを入力する",
+            "manipulators": [
+              {
+                "from": {
+                  "key_code": "5",
+                  "modifiers": {
+                    "mandatory": ["right_control"]
+                  }
+                },
+                "to": [{ "key_code": "a" }],
+                "type": "basic"
+              }
+            ]
+          },
+          {
             "description": "右Ctrl+6を押すとピリオドを入力する",
             "manipulators": [
               {
