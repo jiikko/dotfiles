@@ -80,6 +80,7 @@ call dein#add("APZelos/blamer.nvim")
 call dein#add("anuvyklack/fold-preview.nvim")
 call dein#add("petertriho/nvim-scrollbar")
 call dein#add("psliwka/vim-smoothie")
+call dein#add("easymotion/vim-easymotion")
 
 
 " Required:
@@ -162,6 +163,23 @@ let g:toggle_words_off = [
 \ 'or', 'unless', 'if', 'else', 'specify', 'it', 'context',
 \ 'false', 'no', 'off', 'protected', 'private', '||'
 \]
+
+map fl <Plug>(easymotion-lineforward)
+map fj <Plug>(easymotion-j)
+map fk <Plug>(easymotion-k)
+map fh <Plug>(easymotion-linebackward)
+" <Leader>f{char} to move to {char}
+map  ff <Plug>(easymotion-bd-f)
+nmap ff <Plug>(easymotion-overwin-f)
+" s{char}{char} to move to {char}{char}
+nmap fs <Plug>(easymotion-overwin-f2)
+" Move to line
+map <c-l> <Plug>(easymotion-bd-jk)
+nmap <c-l> <Plug>(easymotion-overwin-line)
+" Move to word
+map  fw <Plug>(easymotion-bd-w)
+nmap fw <Plug>(easymotion-overwin-w)
+let g:EasyMotion_use_migemo = 1
 
 
 
@@ -360,7 +378,7 @@ nnoremap * :<C-u>set hlsearch<Return>*
 nnoremap # :<C-u>set hlsearch<Return>#
 
 " for coding
-nnoremap <leader>wtf oputs "#" * 90<c-m>puts caller<c-m>puts "#" * 90<esc>
+" nnoremap <leader>wtf oputs "#" * 90<c-m>puts caller<c-m>puts "#" * 90<esc>
 autocmd FileType ruby nnoremap <buffer> <leader>bi obinding.pry<esc>
 autocmd FileType javascript,typescript,typescriptreact,javascriptreact nnoremap <buffer> <leader>bi odebugger<esc>
 autocmd FileType eruby nnoremap <buffer> <leader>bi o<% binding.pry %><esc>
