@@ -168,10 +168,10 @@ map fl <Plug>(easymotion-lineforward)
 map fj <Plug>(easymotion-j)
 map fk <Plug>(easymotion-k)
 map fh <Plug>(easymotion-linebackward)
-" <Leader>f{char} to move to {char}
+" move to {char}
 map  ff <Plug>(easymotion-bd-f)
 nmap ff <Plug>(easymotion-overwin-f)
-" s{char}{char} to move to {char}{char}
+" move to {char}{char}
 nmap s <Plug>(easymotion-overwin-f2)
 " Move to line
 map <c-l> <Plug>(easymotion-bd-jk)
