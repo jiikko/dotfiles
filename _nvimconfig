@@ -715,6 +715,8 @@ nnoremap <leader>ff <cmd>Telescope find_files<cr>
 nnoremap <leader>fg <cmd>Telescope live_grep<cr>
 nnoremap <leader>fb <cmd>Telescope buffers<cr>
 
+autocmd BufRead,BufNewFile db/Schemafile set filetype=ruby
+
 let g:blamer_enabled = 0
 let g:blamer_date_format = '%Y/%m/%d'
 let g:blamer_template = '<commit-short> <committer-time> <committer>:  <summary>'
