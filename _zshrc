@@ -339,6 +339,7 @@ alias vb='nvim ~/.bashrc'
 alias vz='nvim ~/.zshrc'
 alias vbpro='nvim ~/.bash_profile'
 alias vv='nvim ~/.config/nvim/init.vim'
+alias vk='nvim ~/dotfiles/mac/karabiner.json'
 alias nv='nvim'
 alias n='nvim'
 
