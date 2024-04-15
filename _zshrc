@@ -278,19 +278,16 @@ fi
 open "http://www.google.co.jp/search?hl=ja&q=$str"
 }
 # wikipedia 検索
-function wikipedia() { open "http://ja.wikipedia.crg/wiki/$1" }
+function wikipedia() { open "https://ja.wikipedia.org/w/index.php?search=$1" }
 
 # テキスト検索
 find-grep () { find . -type f -print | xargs grep -n --binary-files=without-match $@ }
 
 
 # Global alias
-alias mg=':'
-alias al='alias'
 alias be="bundle exec"
 alias b="bundle exec"
 
-alias va='vagrant'
 alias bu='bundle install'
 
 alias ls='ls -G'
@@ -318,9 +315,7 @@ alias gad='git add \.'
 alias gc='git commit \-m'
 alias gm='git pull origin master'
 
-alias gf='git-flow'
 alias ggl='git log --graph --pretty=oneline --abbrev-commit --decorate --all'
-
 
 alias rr='rake routes'
 
@@ -343,15 +338,6 @@ alias vk='nvim ~/dotfiles/mac/karabiner.json'
 alias nv='nvim'
 alias n='nvim'
 
-
-alias -g L='| less'
-alias -g H='| head'
-alias -g T='| tail'
-alias -g G='| grep'
-alias -g S='| sed'
-alias -g A='| awk'
-alias -g W='| wc'
-
 alias ssh='ssh -o ServerAliveInterval=60'
 
 alias e='nvim'
@@ -360,9 +346,6 @@ alias ha='history-all'
 # alias screen='TERM=xterm screen'
 alias cd_dotfiles='cd ~/dotfiles'
 alias cd_src='cd ~/src'
-
-alias tac='tail -r'
-
 
 # HTMLファイルに張り付け用の、タブ、空白、< > の変換コマンド
 alias htmlconv='sed -e "s/</\&lt;/g;s/>/\&gt;/g;s/\t/\&nbsp;\&nbsp;\&nbsp;\&nbsp;/g;s/\s/\&nbsp;/g" '
