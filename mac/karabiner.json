@@ -171,6 +171,21 @@
             ]
           },
           {
+            "description": "disable command + s(ファイルに保存)",
+            "manipulators": [
+              {
+                "from": {
+                  "key_code": "s",
+                  "modifiers": {
+                    "mandatory": ["command"]
+                  }
+                },
+                "to": [{ "key_code": "vk_none" }],
+                "type": "basic"
+              }
+            ]
+          },
+          {
             "description": "disable command + m(最小化)",
             "manipulators": [
               {
