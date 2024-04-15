@@ -686,34 +686,6 @@ init_vimenv() {
   mkdir -p '.vimsessions'
 }
 
-make_ruby_version_file() {
-  RUBY_VERSION=$1
-  if [[ "$RUBY_VERSION" ]]; then
-    echo "$RUBY_VERSION" > .ruby-version
-  else
-    echo 2.5.3 > .ruby-version
-  fi
-}
-
-init_database_yml() {
-  DATABACE_URL=$(cat<<EOH
-development:
-  adapter: mysql2
-  database: tekuaka_production
-  username: root
-  password:
-  socket: "/tmp/mysql.sock"
-EOH
-)
-  echo "$DATABACE_URL" > config/database.yml
-}
-
-make_readme_md() {
-  DIR_NAME=$(echo "$(basename $(pwd))")
-  H1=$(echo $DIR_NAME | ruby -e 'puts(gets.tap { |x| x[0] = x[0].upcase! })')
-  echo "# $H1" >> README.md
-}
-
 # test runner for rails
 rt() {
   local filename="$1"  # 引数（ファイル名）をローカル変数に格納
