@@ -2110,7 +2110,7 @@
             ]
           },
           {
-            "description": "右Ctrl+4を押すとtabを入力する",
+            "description": "右Ctrl+4を押すと...を入力する",
             "manipulators": [
               {
                 "from": {
@@ -2121,7 +2121,9 @@
                 },
                 "to": [
                   { "key_code": "japanese_eisuu" },
-                  { "key_code": "tab" }
+                  { "key_code": "period" },
+                  { "key_code": "period" },
+                  { "key_code": "period" }
                 ],
                 "type": "basic"
               }
