@@ -147,14 +147,65 @@
             ]
           },
           {
-            "description": "disable command + s(ファイルに保存)",
+            "description": "command-s twice",
             "manipulators": [
+              {
+                "conditions": [
+                  {
+                    "name": "command-s",
+                    "type": "variable_if",
+                    "value": 1
+                  }
+                ],
+                "from": {
+                  "key_code": "s",
+                  "modifiers": {
+                    "mandatory": ["command"],
+                    "optional": ["caps_lock"]
+                  }
+                },
+                "to": [
+                  {
+                    "key_code": "s",
+                    "modifiers": ["left_command"]
+                  }
+                ],
+                "type": "basic"
+              },
               {
                 "from": {
                   "key_code": "s",
-                  "modifiers": { "mandatory": ["command"] }
+                  "modifiers": {
+                    "mandatory": ["command"],
+                    "optional": ["caps_lock"]
+                  }
                 },
-                "to": [{ "key_code": "vk_none" }],
+                "to": [
+                  {
+                    "set_variable": {
+                      "name": "command-s",
+                      "value": 1
+                    }
+                  }
+                ],
+                "to_delayed_action": {
+                  "to_if_canceled": [
+                    {
+                      "set_variable": {
+                        "name": "command-s",
+                        "value": 0
+                      }
+                    }
+                  ],
+                  "to_if_invoked": [
+                    {
+                      "set_variable": {
+                        "name": "command-s",
+                        "value": 0
+                      }
+                    }
+                  ]
+                },
                 "type": "basic"
               }
             ]
