@@ -24,9 +24,7 @@
                 "type": "basic",
                 "from": {
                   "key_code": "c",
-                  "modifiers": {
-                    "mandatory": ["control"]
-                  }
+                  "modifiers": { "mandatory": ["control"] }
                 },
                 "to": [
                   {
@@ -47,9 +45,7 @@
                 "type": "basic",
                 "from": {
                   "key_code": "a",
-                  "modifiers": {
-                    "mandatory": ["control", "shift"]
-                  }
+                  "modifiers": { "mandatory": ["control", "shift"] }
                 },
                 "to": [
                   {
@@ -69,15 +65,9 @@
               {
                 "from": {
                   "key_code": "w",
-                  "modifiers": {
-                    "mandatory": ["command"]
-                  }
+                  "modifiers": { "mandatory": ["command"] }
                 },
-                "to": [
-                  {
-                    "key_code": "vk_none"
-                  }
-                ],
+                "to": [{ "key_code": "vk_none" }],
                 "type": "basic",
                 "conditions": [
                   {
@@ -94,15 +84,9 @@
               {
                 "from": {
                   "key_code": "q",
-                  "modifiers": {
-                    "mandatory": ["control"]
-                  }
+                  "modifiers": { "mandatory": ["control"] }
                 },
-                "to": [
-                  {
-                    "key_code": "vk_none"
-                  }
-                ],
+                "to": [{ "key_code": "vk_none" }],
                 "type": "basic",
                 "conditions": [
                   {
@@ -117,14 +101,8 @@
             "description": "disable caps_lock",
             "manipulators": [
               {
-                "from": {
-                  "key_code": "caps_lock"
-                },
-                "to": [
-                  {
-                    "key_code": "vk_none"
-                  }
-                ],
+                "from": { "key_code": "caps_lock" },
+                "to": [{ "key_code": "vk_none" }],
                 "type": "basic"
               }
             ]
@@ -161,9 +139,20 @@
               {
                 "from": {
                   "key_code": "p",
-                  "modifiers": {
-                    "mandatory": ["command"]
-                  }
+                  "modifiers": { "mandatory": ["command"] }
+                },
+                "to": [{ "key_code": "vk_none" }],
+                "type": "basic"
+              }
+            ]
+          },
+          {
+            "description": "disable command + s(ファイルに保存)",
+            "manipulators": [
+              {
+                "from": {
+                  "key_code": "s",
+                  "modifiers": { "mandatory": ["command"] }
                 },
                 "to": [{ "key_code": "vk_none" }],
                 "type": "basic"
@@ -176,15 +165,9 @@
               {
                 "from": {
                   "key_code": "m",
-                  "modifiers": {
-                    "mandatory": ["command"]
-                  }
+                  "modifiers": { "mandatory": ["command"] }
                 },
-                "to": [
-                  {
-                    "key_code": "vk_none"
-                  }
-                ],
+                "to": [{ "key_code": "vk_none" }],
                 "type": "basic"
               }
             ]

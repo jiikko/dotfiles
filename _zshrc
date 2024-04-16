@@ -278,19 +278,16 @@ fi
 open "http://www.google.co.jp/search?hl=ja&q=$str"
 }
 # wikipedia 検索
-function wikipedia() { open "http://ja.wikipedia.crg/wiki/$1" }
+function wikipedia() { open "https://ja.wikipedia.org/w/index.php?search=$1" }
 
 # テキスト検索
 find-grep () { find . -type f -print | xargs grep -n --binary-files=without-match $@ }
 
 
 # Global alias
-alias mg=':'
-alias al='alias'
 alias be="bundle exec"
 alias b="bundle exec"
 
-alias va='vagrant'
 alias bu='bundle install'
 
 alias ls='ls -G'
@@ -318,9 +315,7 @@ alias gad='git add \.'
 alias gc='git commit \-m'
 alias gm='git pull origin master'
 
-alias gf='git-flow'
 alias ggl='git log --graph --pretty=oneline --abbrev-commit --decorate --all'
-
 
 alias rr='rake routes'
 
@@ -339,17 +334,9 @@ alias vb='nvim ~/.bashrc'
 alias vz='nvim ~/.zshrc'
 alias vbpro='nvim ~/.bash_profile'
 alias vv='nvim ~/.config/nvim/init.vim'
+alias vk='nvim ~/dotfiles/mac/karabiner.json'
 alias nv='nvim'
 alias n='nvim'
-
-
-alias -g L='| less'
-alias -g H='| head'
-alias -g T='| tail'
-alias -g G='| grep'
-alias -g S='| sed'
-alias -g A='| awk'
-alias -g W='| wc'
 
 alias ssh='ssh -o ServerAliveInterval=60'
 
@@ -359,9 +346,6 @@ alias ha='history-all'
 # alias screen='TERM=xterm screen'
 alias cd_dotfiles='cd ~/dotfiles'
 alias cd_src='cd ~/src'
-
-alias tac='tail -r'
-
 
 # HTMLファイルに張り付け用の、タブ、空白、< > の変換コマンド
 alias htmlconv='sed -e "s/</\&lt;/g;s/>/\&gt;/g;s/\t/\&nbsp;\&nbsp;\&nbsp;\&nbsp;/g;s/\s/\&nbsp;/g" '
@@ -700,34 +684,6 @@ git_file_url() {
 # for vim-session
 init_vimenv() {
   mkdir -p '.vimsessions'
-}
-
-make_ruby_version_file() {
-  RUBY_VERSION=$1
-  if [[ "$RUBY_VERSION" ]]; then
-    echo "$RUBY_VERSION" > .ruby-version
-  else
-    echo 2.5.3 > .ruby-version
-  fi
-}
-
-init_database_yml() {
-  DATABACE_URL=$(cat<<EOH
-development:
-  adapter: mysql2
-  database: tekuaka_production
-  username: root
-  password:
-  socket: "/tmp/mysql.sock"
-EOH
-)
-  echo "$DATABACE_URL" > config/database.yml
-}
-
-make_readme_md() {
-  DIR_NAME=$(echo "$(basename $(pwd))")
-  H1=$(echo $DIR_NAME | ruby -e 'puts(gets.tap { |x| x[0] = x[0].upcase! })')
-  echo "# $H1" >> README.md
 }
 
 # test runner for rails
