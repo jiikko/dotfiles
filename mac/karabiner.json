@@ -2082,6 +2082,30 @@
             ]
           },
           {
+            "description": "Convert full-width space to half-width space for japanese input source",
+            "manipulators": [
+              {
+                "type": "basic",
+                "from": {
+                  "key_code": "spacebar"
+                },
+                "to": [
+                  { "key_code": "spacebar", "modifiers": ["shift"] }
+                ],
+                "conditions": [
+                  {
+                    "type": "input_source_if",
+                    "input_sources": [
+                      {
+                        "language": "ja"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
             "description": "右Ctrl+1を押すと:bow:を入力する",
             "manipulators": [
               {
