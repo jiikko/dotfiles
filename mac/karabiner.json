@@ -34,7 +34,10 @@
                   {
                     "key_code": "japanese_eisuu"
                   }
-                ]
+                ],
+                "conditions": [
+                  { "input_sources": [ { "language": "ja" } ], "type": "input_source_if" }
+                 ]
               }
             ]
           },
@@ -55,6 +58,9 @@
                     "key_code": "a",
                     "modifiers": ["command"]
                   }
+                ],
+                "conditions": [
+                  { "input_sources": [ { "language": "ja" } ], "type": "input_source_if" }
                 ]
               }
             ]
@@ -76,6 +82,9 @@
                     "key_code": "a",
                     "modifiers": ["control", "shift"]
                   }
+                ],
+                "conditions": [
+                  { "input_sources": [ { "language": "ja" } ], "type": "input_source_if" }
                 ]
               }
             ]
@@ -2032,7 +2041,10 @@
                   { "key_code": "japanese_eisuu" },
                   { "key_code": "quote" }
                 ],
-                "type": "basic"
+                "type": "basic",
+                "conditions": [
+                  { "input_sources": [ { "language": "ja" } ], "type": "input_source_if" }
+                 ]
               },
               {
                 "from": { "key_code": "semicolon", "modifiers": { "optional": ["any"] } },
@@ -2040,7 +2052,10 @@
                   { "key_code": "japanese_eisuu" },
                   { "key_code": "semicolon" }
                 ],
-                "type": "basic"
+                "type": "basic",
+                "conditions": [
+                  { "input_sources": [ { "language": "ja" } ], "type": "input_source_if" }
+                 ]
               }
             ]
           },
@@ -2059,7 +2074,10 @@
                     "key_code": "japanese_eisuu"
                   }
                 ],
-                "type": "basic"
+                "type": "basic",
+                "conditions": [
+                  { "input_sources": [ { "language": "ja" } ], "type": "input_source_if" }
+                 ]
               }
             ]
           },
@@ -2289,47 +2307,29 @@
             "manipulators": [
               {
                 "conditions": [
-                  {
-                    "keyboard_types": ["ansi", "iso"],
-                    "type": "keyboard_type_if"
-                  }
+                  { "keyboard_types": ["ansi", "iso"], "type": "keyboard_type_if" }
                 ],
                 "from": {
                   "key_code": "open_bracket",
-                  "modifiers": {
-                    "mandatory": ["control"]
-                  }
+                  "modifiers": { "mandatory": ["control"] }
                 },
                 "to": [
-                  {
-                    "key_code": "escape"
-                  },
-                  {
-                    "key_code": "japanese_eisuu"
-                  }
+                  { "key_code": "escape" },
+                  { "key_code": "japanese_eisuu" }
                 ],
                 "type": "basic"
               },
               {
                 "conditions": [
-                  {
-                    "keyboard_types": ["jis"],
-                    "type": "keyboard_type_if"
-                  }
+                  { "keyboard_types": ["jis"], "type": "keyboard_type_if" }
                 ],
                 "from": {
                   "key_code": "close_bracket",
-                  "modifiers": {
-                    "mandatory": ["control"]
-                  }
+                  "modifiers": { "mandatory": ["control"] }
                 },
                 "to": [
-                  {
-                    "key_code": "escape"
-                  },
-                  {
-                    "key_code": "japanese_eisuu"
-                  }
+                  { "key_code": "escape" },
+                  { "key_code": "japanese_eisuu" }
                 ],
                 "type": "basic"
               }
