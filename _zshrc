@@ -317,7 +317,7 @@ alias gm='git pull origin master'
 
 alias ggl='git log --graph --pretty=oneline --abbrev-commit --decorate --all'
 
-alias rr='rake routes'
+alias rr='bundle exec rails routes'
 
 alias sb='source ~/.bashrc'
 alias sz='source ~/.zshrc'
