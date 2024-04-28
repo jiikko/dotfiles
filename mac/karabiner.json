@@ -2094,6 +2094,10 @@
                 ],
                 "conditions": [
                   {
+                    "type": "frontmost_application_if",
+                    "bundle_identifiers": ["^com\\.apple\\.Terminal"]
+                  },
+                  {
                     "type": "input_source_if",
                     "input_sources": [
                       {
