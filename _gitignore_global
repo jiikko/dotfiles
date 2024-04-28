@@ -11,6 +11,7 @@ tmp/
 node_modules
 *tmp-browserify*
 vendor/bundler/
+test*.sql
 
 app/assets/audios/*
 vendor

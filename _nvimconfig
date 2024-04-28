@@ -100,7 +100,6 @@ endif
 "----------------------------------------------------
 let g:coc_global_extensions = [
       \'coc-actions',
-      \'coc-sh',
       \'coc-cspell-dicts',
       \'coc-html',
       \'coc-css',
@@ -172,7 +171,7 @@ map fh <Plug>(easymotion-linebackward)
 map  ff <Plug>(easymotion-bd-f)
 nmap ff <Plug>(easymotion-overwin-f)
 " move to {char}{char}
-nmap s <Plug>(easymotion-overwin-f2)
+nmap fg <Plug>(easymotion-overwin-f2)
 " Move to line
 map <c-l> <Plug>(easymotion-bd-jk)
 nmap <c-l> <Plug>(easymotion-overwin-line)
@@ -266,6 +265,10 @@ cmap <silent> <C-e> <C-u>:NERDTreeToggle<CR>
 let g:NERDTreeMinimalUI=1
 let g:NERDTreeDirArrows=0
 let g:NERDTreeMouseMode=2
+
+nnoremap <leader>nt :NERDTree<CR>
+nnoremap <leader>nf :NERDTreeFind<CR>
+
 
 " hangupする
 map <S-k> <Esc>
@@ -397,10 +400,6 @@ inoremap <C-y><C-w> <ESC>:w<CR>
 nnoremap <C-y><C-w> :w<CR>
 nnoremap <leader>sp :sp<CR>
 nnoremap <leader>vs :vs<CR>
-
-" NERDTREE, NERDTree
-nnoremap <leader>nt :NERDTree<CR>
-nnoremap <leader>nf :NERDTreeFind<CR>
 
 " coc.nvim
 set updatetime=300
@@ -731,6 +730,8 @@ let g:webdevicons_enable_nerdtree = 1
 nnoremap <leader>ff <cmd>Telescope find_files<cr>
 nnoremap <leader>fg <cmd>Telescope live_grep<cr>
 nnoremap <leader>fb <cmd>Telescope buffers<cr>
+
+autocmd BufRead,BufNewFile db/Schemafile set filetype=ruby
 
 let g:blamer_enabled = 0
 let g:blamer_date_format = '%Y/%m/%d'
