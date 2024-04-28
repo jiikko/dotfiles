@@ -672,12 +672,29 @@ require("CopilotChat").setup {
     row
   },
   mappings = {
-    close = 'q',
-    reset = '<C-l>',
-    complete_after_slash = '<Tab>',
-    submit_prompt = '<CR>',
-    accept_diff = '<C-y><C-y>',
-    show_diff = '<C-d><C-d>',
+    close = {
+      normal = 'q',
+      insert = '<C-c>'
+    },
+    reset = {
+      normal ='<C-l>',
+      insert = '<C-l>'
+    },
+    complete = {
+      detail = 'Use @<Tab> or /<Tab> for options.',
+      insert ='<Tab>',
+    },
+    submit_prompt = {
+      normal = '<CR>',
+      insert = '<C-m>'
+    },
+    accept_diff = {
+      normal = '<C-y><C-y>',
+      insert = '<C-y><C-y>'
+    },
+    show_diff = {
+      normal = '<C-d><C-d>'
+    },
   },
 
   -- selection = function(source)
