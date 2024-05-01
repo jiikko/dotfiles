@@ -32,6 +32,13 @@ brew bundle
 curl https://raw.githubusercontent.com/jiikko/dotfiles/master/mac/setup_system.sh | sh
 ```
 
+## Textlint
+```shell
+npm i -g textling textlint-rule-preset-ja-technical-writing
+```
+
+* `textlint --preset ja-technical-writing [校正対象ファイル]`
+
 ## Setup Terminal
 
 ```shell
