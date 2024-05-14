@@ -42,6 +42,30 @@
             ]
           },
           {
+            "description": "日本語入力中に、ctrl+uを押したら変換を確定してctrl+uを強制実行する",
+            "manipulators": [
+              {
+                "type": "basic",
+                "from": {
+                  "key_code": "u",
+                  "modifiers": { "mandatory": ["control"] }
+                },
+                "to": [
+                  {
+                    "key_code": "japanese_eisuu"
+                  },
+                  {
+                    "key_code": "u",
+                    "modifiers": ["control"]
+                  }
+                ],
+                "conditions": [
+                  { "input_sources": [ { "language": "ja" } ], "type": "input_source_if" }
+                ]
+              }
+            ]
+          },
+          {
             "description": "Command+aを押したら変換を確定して全体選択する",
             "manipulators": [
               {
