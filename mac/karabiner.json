@@ -42,7 +42,39 @@
             ]
           },
           {
-            "description": "日本語入力中に、ctrl+uを押したら変換を確定してctrl+uを強制実行する",
+            "description": "ctrl+uを押したら行頭まで文字を消す(for Terminal以外)",
+            "manipulators": [
+              {
+                "type": "basic",
+                "from": {
+                  "key_code": "u",
+                  "modifiers": { "mandatory": ["right_control"] }
+                },
+                "to": [
+                  {
+                    "key_code": "japanese_eisuu"
+                  },
+                  {
+                    "key_code": "e",
+                    "modifiers": ["right_control"]
+                  },
+                  {
+                    "key_code": "a",
+                    "modifiers": ["shift", "right_control"]
+                  },
+                  {
+                    "key_code": "delete_or_backspace"
+                  }
+                ],
+                "conditions": [
+                  { "type": "frontmost_application_unless", "bundle_identifiers": ["^com\\.apple\\.Terminal"]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "description": "日本語入力中に、ctrl+uを押したら変換を確定してctrl+uを強制実行する(for Terminal)",
             "manipulators": [
               {
                 "type": "basic",
@@ -60,7 +92,8 @@
                   }
                 ],
                 "conditions": [
-                  { "input_sources": [ { "language": "ja" } ], "type": "input_source_if" }
+                  { "input_sources": [ { "language": "ja" } ], "type": "input_source_if" },
+                  { "type": "frontmost_application_if", "bundle_identifiers": ["^com\\.apple\\.Terminal"] }
                 ]
               }
             ]
