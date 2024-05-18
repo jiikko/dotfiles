@@ -2289,6 +2289,24 @@
             ]
           },
           {
+            "description": "右Ctrl+8を押すと?を入力する",
+            "manipulators": [
+              {
+                "from": {
+                  "key_code": "8",
+                  "modifiers": {
+                    "mandatory": ["right_control"],
+                    "optional": ["any"]
+                  }
+                },
+                "to": [
+                  { "key_code": "slash", "modifiers": ["shift"] }
+                ],
+                "type": "basic"
+              }
+            ]
+          },
+          {
             "description": "右Ctrl+9を押すと[を入力する",
             "manipulators": [
               {
