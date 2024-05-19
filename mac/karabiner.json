@@ -368,13 +368,13 @@
             ]
           },
           {
-            "description": "right_command + j to scroll-down",
+            "description": "command + j to scroll-down",
             "manipulators": [
               {
                 "from": {
                   "key_code": "j",
                   "modifiers": {
-                    "mandatory": ["right_command"],
+                    "mandatory": ["command"],
                     "optional": []
                   }
                 },
@@ -390,13 +390,13 @@
             ]
           },
           {
-            "description": "right_command + k to scroll-up",
+            "description": "command + k to scroll-up",
             "manipulators": [
               {
                 "from": {
                   "key_code": "k",
                   "modifiers": {
-                    "mandatory": ["right_command"],
+                    "mandatory": ["command"],
                     "optional": []
                   }
                 },
