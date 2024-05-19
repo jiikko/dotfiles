@@ -185,16 +185,6 @@
             ]
           },
           {
-            "description": "disable caps_lock",
-            "manipulators": [
-              {
-                "from": { "key_code": "caps_lock" },
-                "to": [{ "key_code": "vk_none" }],
-                "type": "basic"
-              }
-            ]
-          },
-          {
             "description": "command + l to ctrl + l for Terminal(ターミナルでの画面クリア対策)",
             "manipulators": [
               {
@@ -2612,18 +2602,7 @@
           "mouse_flip_y": false,
           "mouse_swap_wheels": false,
           "mouse_swap_xy": false,
-          "simple_modifications": [
-            {
-              "from": {
-                "key_code": "caps_lock"
-              },
-              "to": [
-                {
-                  "key_code": "vk_none"
-                }
-              ]
-            }
-          ],
+          "simple_modifications": [],
           "treat_as_built_in_keyboard": false
         },
         {
@@ -2848,6 +2827,16 @@
           "to": [
             {
               "key_code": "right_command"
+            }
+          ]
+        },
+        {
+          "from": {
+            "key_code": "caps_lock"
+          },
+          "to": [
+            {
+              "key_code": "vk_none"
             }
           ]
         }
