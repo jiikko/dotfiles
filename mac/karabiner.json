@@ -2275,7 +2275,7 @@
             ]
           },
           {
-            "description": "右Ctrl+5を押すとaを入力する",
+            "description": "右Ctrl+5を押すとenterを入力する",
             "manipulators": [
               {
                 "from": {
@@ -2284,7 +2284,7 @@
                     "mandatory": ["right_control"]
                   }
                 },
-                "to": [{ "key_code": "a" }],
+                "to": [{ "key_code": "return_or_enter" }],
                 "type": "basic"
               }
             ]
