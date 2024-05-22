@@ -185,6 +185,25 @@
             ]
           },
           {
+            "description": "command + h to delete_or_backspace",
+            "manipulators": [
+              {
+                "from": {
+                  "key_code": "h",
+                  "modifiers": {
+                    "mandatory": ["command"]
+                  }
+                },
+                "to": [
+                  {
+                    "key_code": "delete_or_backspace"
+                  }
+                ],
+                "type": "basic"
+              }
+            ]
+          },
+          {
             "description": "command + l to ctrl + l for Terminal(ターミナルでの画面クリア対策)",
             "manipulators": [
               {
