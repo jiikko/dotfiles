@@ -2271,7 +2271,8 @@
                 "from": {
                   "key_code": "5",
                   "modifiers": {
-                    "mandatory": ["right_control"]
+                    "mandatory": ["right_control"],
+                    "optional": ["any"]
                   }
                 },
                 "to": [{ "key_code": "return_or_enter" }],
