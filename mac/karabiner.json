@@ -18,7 +18,7 @@
         },
         "rules": [
           {
-            "description": "CTRL+Cを押したときに、英数キーを送信する（Vim用）",
+            "description": "ctrl+cを押したときに、英数キーを送信する（Vim用）",
             "manipulators": [
               {
                 "type": "basic",
@@ -38,6 +38,19 @@
                 "conditions": [
                   { "input_sources": [ { "language": "ja" } ], "type": "input_source_if" }
                  ]
+              }
+            ]
+          },
+          {
+            "description": "ctrl+semicolonを押したときに、aを送信する",
+            "manipulators": [
+              {
+                "type": "basic",
+                "from": {
+                  "key_code": "semicolon",
+                  "modifiers": { "mandatory": ["control"] }
+                },
+                "to": [ { "key_code": "a" } ]
               }
             ]
           },
