@@ -1,0 +1,14 @@
+#!/bin/bash
+
+set -e
+
+# リポジトリ情報
+OWNER="jiikko"
+REPO="filetree-meta-manager"
+ASSET_NAME="filetree_dumper-darwin-arm64"
+BIN_NAME="filetree_dumper"
+
+RELEASES_URL="https://github.com/$OWNER/$REPO/releases/latest/download/$ASSET_NAME"
+curl -L -o $BIN_NAME $RELEASES_URL
+chmod +x "$BIN_NAME"
+echo "Downloaded $ASSET_NAME  as $BIN_NAME"
