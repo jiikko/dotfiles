@@ -773,6 +773,5 @@ fi
 
 ulimit -Sn 524288
 
-export PATH="/usr/local/opt/mysql@5.7/bin:$PATH"
-export PATH="/opt/homebrew/opt/mysql@5.7/bin:$PATH"
+export PATH="/Users/koji/dotfiles/bin:$PATH"
 export PATH="/opt/homebrew/bin:$PATH"
