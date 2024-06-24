@@ -61,7 +61,7 @@
                 "type": "basic",
                 "from": {
                   "key_code": "u",
-                  "modifiers": { "mandatory": ["right_control"] }
+                  "modifiers": { "mandatory": ["control"] }
                 },
                 "to": [
                   {
