@@ -687,29 +687,31 @@ init_vimenv() {
 }
 
 # test runner for rails
-rt() {
+function rt() {
   local filename="$1"  # 引数（ファイル名）をローカル変数に格納
+  shift  # 最初の引数（ファイル名）をシフトして、残りの引数を取得
+  local args="$@"  # 残りの引数を格納
 
   # 引数が与えられていない場合の処理
   if [ -z "$filename" ]; then
     if [ -d "test" ]; then
       echo "Running bundle exec rails test for all test files in the test directory"
-      bundle exec rails test
+      bundle exec rails test $args
     elif [ -d "spec" ]; then
       echo "Running bundle exec rspec for all spec files"
-      bundle exec rspec
+      bundle exec rspec $args
     else
       echo "No test or spec directory found in the current directory"
     fi
   elif [[ "$filename" =~ "_test.rb" ]]; then
     echo "Running bundle exec rails test for $filename"
-    bundle exec rails test "$filename"
+    bundle exec rails test "$filename" $args
   elif [[ "$filename" =~ "_spec.rb" ]] || [[ "$filename" =~ "spec/" ]]; then
     echo "Running bundle exec rspec for $filename"
-    bundle exec rspec "$filename"
+    bundle exec rspec "$filename" $args
   elif [[ "$filename" =~ ".feature" ]]; then
     echo "Running cucumber for $filename"
-    bundle exec cucumber "$filename"
+    bundle exec cucumber "$filename" $args
   else
     echo "Unknown file type: $filename"
   fi
