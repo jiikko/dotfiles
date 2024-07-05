@@ -2259,7 +2259,7 @@
             ]
           },
           {
-            "description": "右Ctrl+3を押すとspaceを入力する",
+            "description": "右Ctrl+3を押すと!を入力する",
             "manipulators": [
               {
                 "from": {
@@ -2270,7 +2270,7 @@
                 },
                 "to": [
                   { "key_code": "japanese_eisuu" },
-                  { "key_code": "spacebar" }
+                  { "key_code": "1", "modifiers": ["shift"] }
                 ],
                 "type": "basic"
               }
