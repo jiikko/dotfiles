@@ -717,7 +717,42 @@ function rt() {
   fi
 }
 
-whichppr() {
+function retry_command() {
+  local max_retries=50
+  local OPTIND opt
+
+  while getopts ":n:" opt; do
+    case $opt in
+      n)
+        max_retries=$OPTARG
+        ;;
+      \?)
+        echo "無効なオプション: -$OPTARG" >&2
+        return 1
+        ;;
+      :)
+        echo "オプション -$OPTARG には値が必要です" >&2
+        return 1
+        ;;
+    esac
+  done
+  shift $((OPTIND -1))
+
+  local command="$@"
+  for try in $(seq 1 $max_retries); do
+    eval "$command" || break
+    echo "試行回数: $try"
+    sleep 1
+  done
+
+  if [ $try -eq $max_retries ]; then
+    echo "最大試行回数に到達しましたが、コマンドは成功しませんでした"
+  else
+    echo "コマンドは試行回数 $try で成功しました"
+  fi
+}
+
+function whichppr() {
   COMMIT_ID=$1
   if [[ $COMMIT_ID = '' ]]; then
     echo require commit id
