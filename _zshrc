@@ -640,7 +640,7 @@ add-zsh-hook precmd _update_vcs_info_msg
 
 # screen のセッション名にカレントディレクトリ名にしてくれる
 # http://hitode909.hatenablog.com/entry/20090731/1249051564
-ss () {
+function ss () {
   if [ -n "$1" ]; then
     name="$1"
   else
@@ -650,12 +650,12 @@ ss () {
 }
 
 # git current branch
-gcb () {
+function gcb () {
   # or git rev-parse --abbrev-ref HEAD
   git branch | awk '/\*/ { print $2; }'
 }
 
-puma_ps () {
+function puma_ps () {
   ROOT_SCREEN_PID=$(ps x | grep -E "S $(echo `basename "$PWD"`)$" | awk '{ print $1}')
   if [[ $ROOT_SCREEN_PID == '' ]]; then
     echo 'カレントディレクトリ名のscreenセッションが見つかりませんでした'
@@ -666,24 +666,19 @@ puma_ps () {
 }
 
 #!/bin/sh
-# github.comでHEADコミットのURLを表示する関数です
-# Usage: open $(bin/head_commit_id_url)
+# github.comでコミットのURLを表示する関数です
+# Usage: open $(commit_id_url)
 # => open browser!!
-commit_id_url() {
+function commit_id_url() {
   HOST_AND_PATH=$(git remote -v | grep origin | head -n 1 | tr ':' '/' | sed -e 's|.*@\(github.com/[^.]*\)\..*$|\1|')
   HEAD_COMMMIT_ID=$(git rev-parse HEAD)
   echo https://${HOST_AND_PATH}/commit/${HEAD_COMMMIT_ID}
 }
 
-git_file_url() {
+function git_file_url() {
   HOST_AND_PATH=$(git remote -v | grep origin | head -n 1 | tr ':' '/' | sed -e 's|.*@\(github.com/[^.]*\)\..*$|\1|')
   HEAD_COMMMIT_ID=$(git rev-parse HEAD)
   echo https://${HOST_AND_PATH}/blob/$HEAD_COMMMIT_ID/$1
-}
-
-# for vim-session
-init_vimenv() {
-  mkdir -p '.vimsessions'
 }
 
 # test runner for rails
