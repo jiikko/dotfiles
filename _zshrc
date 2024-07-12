@@ -132,6 +132,7 @@ function history-all { history -E 1 }
 ##========================================================##
 ##=================== プロンプトの設定 ===================##
 ##========================================================##
+# https://qiita.com/kumatira/items/41562f1d9001927e9888
 autoload -U promptinit ; promptinit
 autoload -U colors     ; colors
 autoload -Uz vcs_info
