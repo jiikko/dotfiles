@@ -18,6 +18,22 @@ else
   :
 fi
 
+if type anyenv > /dev/null 2>&1; then
+  # anyenv install --init
+  eval "$(anyenv init -)"
+else
+  :
+fi
+
+if type pyenv > /dev/null 2>&1; then
+  eval "$(pyenv init -)"
+  eval "$(pyenv init --path)"
+fi
+
+if type direnv > /dev/null 2>&1; then
+  eval "$(direnv hook zsh)"
+fi
+
 export GOPATH=$HOME/go
 if type go > /dev/null 2>&1; then
   export GOROOT=$( go env GOROOT )
@@ -25,54 +41,10 @@ fi
 export PATH=$GOPATH/bin:$PATH
 export HUSKY_SKIP_HOOKS=1
 
-export IOS_UA='iOS 10.3.2  Mozilla/5.0 (iPhone; CPU iPhone OS 10_3_2 like Mac OS X) AppleWebKit/603.2.4 (KHTML, like Gecko) Version/10.0 Mobile/14F89 Safari/602.1'
-export REDIS_ENDPOINT=redis://localhost:6379/
 # for rubyコンパイル
 #export CFLAGS='-Wno-error=shorten-64-to-32'
 
-## <エスケープシーケンス>
-## prompt_bang が有効な場合、!=現在の履歴イベント番号, !!='!' (リテラル)
-# ${WINDOW:+"[$WINDOW]"} = screen 実行時にスクリーン番号を表示 (prompt_subst が必要)
-# %/ or %d = ディレクトリ (0=全て, -1=前方からの数)
-# %~ = ディレクトリ
-# %h or %! = 現在の履歴イベント番号
-# %L = 現在の $SHLVL の値
-# %M = マシンのフルホスト名
-# %m = ホスト名の最初の `.' までの部分
-# %S (%s) = 突出モードの開始 (終了)
-# %U (%u) = 下線モードの開始 (終了)
-# %B (%b) = 太字モードの開始 (終了)
-# %t or %@ = 12 時間制, am/pm 形式での現在時刻
-# %n or $USERNAME = ユーザー ($USERNAME は環境変数なので setopt prompt_subst が必要)
-# %N = シェル名
-# %i = %N によって与えられるスクリプト, ソース, シェル関数で, 現在実行されている行の番号 (debug用)
-# %T = 24 時間制での現在時刻
-# %* = 24 時間制での現在時刻, 秒付き
-# %w = `曜日-日' の形式での日付
-# %W = `月/日/年' の形式での日付
-# %D = `年-月-日' の形式での日付
-# %D{string} = strftime 関数を用いて整形された文字列 (man 3 strftime でフォーマット指定が分かる)
-# %l = ユーザがログインしている端末から, /dev/ プレフィックスを取り除いたもの
-# %y = ユーザがログインしている端末から, /dev/ プレフィックスを取り除いたもの (/dev/tty* はソノママ)
-# %? = プロンプトの直前に実行されたコマンドのリターンコード
-# %_ = パーサの状態
-# %E = 行末までクリア
-# %# = 特権付きでシェルが実行されているならば `#', そうでないならば `%' == %(!.#.%%)
-# %v = psvar 配列パラメータの最初の要素の値
-# %{...%} = リテラルのエスケープシーケンスとして文字列をインクルード
-# %(x.true-text.false-text) = 三つ組の式
-# %<,>string>, %[xstring] = プロンプトの残りの部分に対する, 切り詰めの振る舞い
-#         `<' の形式は文字列の左側を切り詰め, `>' の形式は文字列の右側を切り詰めます
-# %c, %., %C = $PWD の後ろ側の構成要素
-
-# .zshrc をコンパイルして .zshrc.zwc を生成するコマンド
 zcompile ~/.zshrc
-
-# コマンドラインスタック（入力中コマンドをスタックに退避させる）
-# ESC-q
-
-# コマンド入力中にヘルプ（man）を見る
-# ESC-h
 
 ##========================================================##
 ##================== キーバインドの設定 ==================##
@@ -87,7 +59,6 @@ bindkey -e      # emacs キーバインド
 # ls, #dir, vdir の設定
 alias s='screen -U'
 alias sk='kill -9 $$'
-#alias ll='ls -l'
 alias ls='ls --G'
 alias grep='grep --color=auto'
 alias tn='terminal-notifier -sound default'
@@ -142,7 +113,6 @@ HISTFILE=$HOME/.zsh_history  # 履歴をファイルに保存する
 HISTSIZE=1000000              # メモリ内の履歴の数
 SAVEHIST=1000000              # 保存される履歴の数
 setopt extended_history      # 履歴ファイルに開始時刻と経過時間を記録
-#unsetopt extended_history
 setopt append_history        # 履歴を追加 (毎回 .zhistory を作るのではなく)
 setopt inc_append_history    # 履歴をインクリメンタルに追加
 setopt share_history         # 履歴の共有
@@ -170,7 +140,6 @@ zstyle ':vcs_info:git:*' formats '%b'
 precmd () { vcs_info }
 export PROMPT='%K{250} %F{016}%C%k%K{118}%f%F{250}%f%F{016}%{${vcs_info_msg_0_}%f%k%F{118}%f $ '
 
-
 ##========================================================##
 ##================ ディレクトリ移動の設定 ================##
 ##========================================================##
@@ -179,17 +148,12 @@ setopt auto_pushd            # 普通に cd するときにもディレクトリ
 setopt pushd_ignore_dups     # ディレクトリスタックに重複する物は古い方を削除
 setopt pushd_to_home         # pushd 引数ナシ == pushd $HOME
 setopt pushd_silent          # pushd,popdの度にディレクトリスタックの中身を表示しない
-# pop command
-alias pd='popd'
-alias gd='dirs -v; echo -n "select number: ";
-read newdir; cd +"$newdir" '
 
 ##========================================================##
 ##====================== 雑多な設定 ======================##
 ##========================================================##
 #setopt AUTOLOGOUT=n          # n分後に自動的にログアウト
 setopt no_beep               # コマンド入力エラーでBeepを鳴らさない
-#setopt beep
 
 setopt complete_in_word
 setopt extended_glob         # 拡張グロブを有効にする
@@ -271,8 +235,6 @@ find-grep () { find . -type f -print | xargs grep -n --binary-files=without-matc
 alias be="bundle exec"
 alias b="bundle exec"
 
-alias bu='bundle install'
-
 alias ls='ls -G'
 if [ `uname` = "Linux" ]; then
   alias ls='ls --color'
@@ -342,41 +304,6 @@ bindkey "^S" history-incremental-search-forward
 # bindkey "^A" beginning-of-line
 # bindkey "^H" backward-delete-char
 
-#Mac用
-export PATH=/opt/local/bin:/opt/local/sbin:$PATH
-# Finished adapting your PATH environment variable for use with MacPorts.
-
-# mysql5rvm
-# export PATH=/opt/local/lib/mysql5/bin:$PATH
-
-# http://webdev.jp.net/mac-osx-mysql-install-start/
-# export PATH=$PATH:/opt/local/lib/mysql5/bin
-
-# echo 'export PATH="/usr/local/opt/mysql@5.7/bin:$PATH"' >> ~/.zshrc
-
-# gitx
-export PATH=/Applications/GitX.app/Contents/MacOS:$PATH
-alias gitx='GitX .'
-
-# gitk
-# http://stackoverflow.com/questions/11785126/cfurlcopyresourcepropertyforkey-failed-because-it-was-passed-this-url-which-has
-alias gitk='gitk 2>/dev/null'
-
-export MANPATH=/opt/local/man:$MANPATH
-
-export PATH=/opt/local/lib/postgresql92/bin:$PATH
-
-
-if [ -f /opt/local/etc/profile.d/bash_completion.sh ]; then
-  . /opt/local/etc/profile.d/bash_completion.sh
-fi
-
-# http://architects.dzone.com/articles/bash-gitps1-command-not-found
-if [ -f /opt/local/share/doc/git-core/contrib/completion/git-prompt.sh ]; then
-  . /opt/local/share/doc/git-core/contrib/completion/git-prompt.sh
-fi
-
-
 # source libs
 # -------------------------
 # zaw
@@ -435,7 +362,6 @@ zle -N git_diff _git_diff
 zle -N git_commit _git_commit
 zle -N shell_ls _shell_ls
 bindkey '^G^S' git_status
-bindkey '^G^M' git_commit
 # bindkey '^G^\D' git_diff
 bindkey '^G^G' git_diff
 bindkey '^L^S' shell_ls
@@ -451,12 +377,6 @@ function ss () {
     name=`basename "$PWD"`
   fi
   screen -x $name || screen -r $name || screen -S $name
-}
-
-# git current branch
-function gcb () {
-  # or git rev-parse --abbrev-ref HEAD
-  git branch | awk '/\*/ { print $2; }'
 }
 
 function puma_ps () {
@@ -575,39 +495,9 @@ function whichppr() {
 
 export SCREENDIR="`echo ~`/.screens"
 
-# export PATH="$HOME/.rbenv/bin:$PATH"
-# if type rbenv > /dev/null 2>&1; then
-#   eval "$(rbenv init -)"
-# else
-#   :
-# fi
-
-if type anyenv > /dev/null 2>&1; then
-  # anyenv install --init
-  eval "$(anyenv init -)"
-else
-  :
-fi
-
-export PYENV_ROOT=${HOME}/.pyenv
-if [ -d "${PYENV_ROOT}" ]; then
-    export PATH=${PYENV_ROOT}/bin:$PATH
-    eval "$(pyenv init -)"
-    eval "$(pyenv virtualenv-init -)"
-fi
-
-ssh-add ~/.ssh/id_rsa
-
-if type direnv > /dev/null 2>&1; then
-  eval "$(direnv hook zsh)"
-fi
-
-if type pyenv > /dev/null 2>&1; then
-  eval "$(pyenv init --path)"
-  eval "$(pyenv init -)"
-fi
-
 ulimit -Sn 524288
 
 export PATH="/Users/koji/dotfiles/bin:$PATH"
 export PATH="/opt/homebrew/bin:$PATH"
+
+ssh-add ~/.ssh/id_rsa
