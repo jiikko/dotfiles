@@ -29,4 +29,8 @@ else
   echo -e "\033[31m'fzf' is not installed. Please run 'brew install fzf' to install it.\033[0m"
 fi
 
-source $(brew --prefix)/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+if [ -f "$(brew --prefix)/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]; then
+  source $(brew --prefix)/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+else
+  echo -e "\033[31m'zsh-syntax-highlighting' is not installed. Please run 'brew install zsh-syntax-highlighting' to install it.\033[0m"
+fi
