@@ -299,37 +299,6 @@ alias htmlconv='sed -e "s/</\&lt;/g;s/>/\&gt;/g;s/\t/\&nbsp;\&nbsp;\&nbsp;\&nbsp
 
 alias lint='pre-commit run --config ~/dotfiles/pre-commit-config.yml'
 
-bindkey "^R" history-incremental-search-backward
-bindkey "^S" history-incremental-search-forward
-
-# bindkey "^E" end-of-line
-# bindkey "^A" beginning-of-line
-# bindkey "^H" backward-delete-char
-
-# source libs
-# -------------------------
-# zaw
-# -------------------------
-# http://qiita.com/termoshtt/items/68a5372a43543037667f
-DOTFILE_FULLPATH=`ls -al ~/.zshrc | awk '{print $11}' |  sed -e "s|/_zshrc||"`
-source "${DOTFILE_FULLPATH}/lib/zsh/zaw/zaw.zsh"
-
-autoload -Uz chpwd_recent_dirs cdr add-zsh-hook
-add-zsh-hook chpwd chpwd_recent_dirs
-zstyle ':chpwd:*' recent-dirs-max 500 # cdrの履歴を保存する個数
-zstyle ':chpwd:*' recent-dirs-default yes
-zstyle ':completion:*' recent-dirs-insert both
-
-zstyle ':filter-select:highlight' selected fg=black,bg=white,standout
-zstyle ':filter-select' case-insensitive yes
-
-bindkey '^@' zaw-cdr
-bindkey '^R' zaw-history
-bindkey '^X^F' zaw-git-files
-bindkey '^X^B' zaw-git-branches
-bindkey '^X^P' zaw-process
-bindkey '^X^S' zaw-screens
-
 # http://qiita.com/yuku_t/items/e58cbecf13407446bd50
 function _git_status() {
   if [ "$(git rev-parse --is-inside-work-tree 2> /dev/null)" = 'true' ]; then
@@ -364,7 +333,6 @@ zle -N git_diff _git_diff
 zle -N git_commit _git_commit
 zle -N shell_ls _shell_ls
 bindkey '^G^S' git_status
-# bindkey '^G^\D' git_diff
 bindkey '^G^G' git_diff
 bindkey '^L^S' shell_ls
 
@@ -501,3 +469,5 @@ export PATH="/Users/koji/dotfiles/bin:$PATH"
 export PATH="/opt/homebrew/bin:$PATH"
 
 ssh-add ~/.ssh/id_rsa
+
+export FZF_DEFAULT_OPTS='--height 80% --reverse --border'

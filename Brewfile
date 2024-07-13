@@ -16,6 +16,8 @@ brew "curl"
 brew 'direnv'
 brew "git"
 brew "youtube-dl"
+brew "zsh-syntax-highlighting"
+brew "fzf"
 
 
 # for dev

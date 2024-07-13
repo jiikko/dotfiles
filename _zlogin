@@ -15,3 +15,12 @@ fi
 
 ### Added by the Heroku Toolbelt
 export PATH="/usr/local/heroku/bin:$PATH"
+
+
+if type fzf > /dev/null 2>&1 && [ -f ~/.fzf.zsh ]; then
+  source ~/.fzf.zsh
+else
+  echo -e "\033[31m'fzf' is not installed. Please run 'brew install fzf' to install it.\033[0m"
+fi
+
+source $(brew --prefix)/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
