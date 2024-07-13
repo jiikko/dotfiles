@@ -1,3 +1,5 @@
+# vi: ft=zsh
+
 export PATH="$HOME/.rbenv/bin:$PATH"
 if type rbenv > /dev/null 2>&1; then
   eval "$(rbenv init -)"
@@ -17,8 +19,12 @@ fi
 export PATH="/usr/local/heroku/bin:$PATH"
 
 
-if type fzf > /dev/null 2>&1 && [ -f ~/.fzf.zsh ]; then
-  source ~/.fzf.zsh
+if type fzf > /dev/null 2>&1; then
+  if [[ ! "$PATH" == */opt/homebrew/opt/fzf/bin* ]]; then
+    PATH="${PATH:+${PATH}:}/opt/homebrew/opt/fzf/bin"
+  fi
+
+  source <(fzf --zsh)
 else
   echo -e "\033[31m'fzf' is not installed. Please run 'brew install fzf' to install it.\033[0m"
 fi
