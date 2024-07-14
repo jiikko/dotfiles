@@ -39,7 +39,13 @@ if type go > /dev/null 2>&1; then
   export GOROOT=$( go env GOROOT )
 fi
 export PATH=$GOPATH/bin:$PATH
+export PATH="/Users/koji/dotfiles/bin:$PATH"
+export PATH="/opt/homebrew/bin:$PATH"
+
 export HUSKY_SKIP_HOOKS=1
+export FZF_DEFAULT_OPTS='--height 80% --reverse --border'
+export SCREENDIR="`echo ~`/.screens"
+
 
 # for rubyコンパイル
 #export CFLAGS='-Wno-error=shorten-64-to-32'
@@ -201,12 +207,6 @@ unsetopt no_clobber
 # less の動作（man less 参照）
 LESS=-M
 export LESS
-if type /usr/bin/lesspipe &>/dev/null
-then
-LESSOPEN="| /usr/bin/lesspipe '%s'"
-LESSCLOSE="/usr/bin/lesspipe '%s' '%s'"
-export LESSOPEN LESSCLOSE
-fi
 
 umask 022 # ファイルを作るとき、どんな属性で作るか（man umask 参照）
 ulimit -s unlimited  # stack size 制限解除
@@ -217,20 +217,20 @@ export G_FILENAME_ENCODING=@locale
 
 # google 検索
 function google() {
-local str
-if [ $# != 0 ]; then # 引数が存在すれば
-for i in $*; do
- str="$str+$i"
-done
-str=`echo $str | sed 's/^\+//'` #先頭の「+」を削除
-fi
-open "http://www.google.co.jp/search?hl=ja&q=$str"
+  local str
+  if [ $# != 0 ]; then # 引数が存在すれば
+    for i in $*; do
+      str="$str+$i"
+    done
+    str=`echo $str | sed 's/^\+//'` #先頭の「+」を削除
+  fi
+  open "http://www.google.co.jp/search?hl=ja&q=$str"
 }
 # wikipedia 検索
 function wikipedia() { open "https://ja.wikipedia.org/w/index.php?search=$1" }
 
 # テキスト検索
-find-grep () { find . -type f -print | xargs grep -n --binary-files=without-match $@ }
+function find-grep () { find . -type f -print | xargs grep -n --binary-files=without-match $@ }
 
 
 # Global alias
@@ -290,7 +290,6 @@ alias ssh='ssh -o ServerAliveInterval=60'
 alias e='nvim'
 alias h='history'
 alias ha='history-all'
-# alias screen='TERM=xterm screen'
 alias cd_dotfiles='cd ~/dotfiles'
 alias cd_src='cd ~/src'
 
@@ -304,13 +303,6 @@ function _git_status() {
   if [ "$(git rev-parse --is-inside-work-tree 2> /dev/null)" = 'true' ]; then
     echo git statusb # git statusを実行したっぽくみせかける
     git status
-  fi
-  zle reset-prompt
-}
-
-function _git_commit() {
-  if [ "$(git rev-parse --is-inside-work-tree 2> /dev/null)" = 'true' ]; then
-    git commit
   fi
   zle reset-prompt
 }
@@ -330,7 +322,6 @@ function _shell_ls() {
 
 zle -N git_status _git_status  # _git_status関数をgit_status widgetとして登録
 zle -N git_diff _git_diff
-zle -N git_commit _git_commit
 zle -N shell_ls _shell_ls
 bindkey '^G^S' git_status
 bindkey '^G^G' git_diff
@@ -463,11 +454,4 @@ function whichppr() {
   open "$BASE/$REPO_NAME/pull/$PULL_REQUEST_ID"
 }
 
-export SCREENDIR="`echo ~`/.screens"
-
-export PATH="/Users/koji/dotfiles/bin:$PATH"
-export PATH="/opt/homebrew/bin:$PATH"
-
 ssh-add ~/.ssh/id_rsa
-
-export FZF_DEFAULT_OPTS='--height 80% --reverse --border'
