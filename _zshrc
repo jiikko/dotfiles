@@ -369,7 +369,10 @@ function git_file_url() {
 # test runner for rails
 function rt() {
   local filename="$1"  # 引数（ファイル名）をローカル変数に格納
-  shift  # 最初の引数（ファイル名）をシフトして、残りの引数を取得
+  if [ $# -gt 0 ]; then
+    shift  # 最初の引数（ファイル名）をシフトして、残りの引数を取得
+  fi
+
   local args="$@"  # 残りの引数を格納
 
   # 引数が与えられていない場合の処理
