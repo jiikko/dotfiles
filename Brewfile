@@ -3,7 +3,6 @@
 #   $ brew bundle
 #
 tap "homebrew/bundle"
-tap "homebrew/cask-fonts"
 tap "homebrew/services"
 
 # cli
