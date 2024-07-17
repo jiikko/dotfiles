@@ -1104,24 +1104,6 @@
           "full_name": "karabiner-elements"
         }
       },
-      "discord": {
-        "version": "0.0.311",
-        "options": {
-          "full_name": "discord"
-        }
-      },
-      "docker": {
-        "version": "4.31.0,153195",
-        "options": {
-          "full_name": "docker"
-        }
-      },
-      "parsec": {
-        "version": "150.91.1",
-        "options": {
-          "full_name": "parsec"
-        }
-      },
       "vlc": {
         "version": "3.0.21",
         "options": {
@@ -1150,12 +1132,6 @@
         "version": "1.8.5",
         "options": {
           "full_name": "raspberry-pi-imager"
-        }
-      },
-      "zoom": {
-        "version": "6.1.1.36333",
-        "options": {
-          "full_name": "zoom"
         }
       },
       "font-hack-nerd-font": {
