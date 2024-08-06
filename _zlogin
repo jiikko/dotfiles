@@ -18,6 +18,13 @@ fi
 ### Added by the Heroku Toolbelt
 export PATH="/usr/local/heroku/bin:$PATH"
 
+source $(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+
+if [ -f "$(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]; then
+  source $(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+else
+  echo -e "\033[31m'zsh-autosuggestions' is not installed. Please run 'brew install zsh-autosuggestions' to install it.\033[0m"
+fi
 
 if type fzf > /dev/null 2>&1; then
   if [[ ! "$PATH" == */opt/homebrew/opt/fzf/bin* ]]; then
