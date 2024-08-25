@@ -110,6 +110,7 @@ let g:coc_global_extensions = [
       \'coc-git',
       \'coc-go',
       \'coc-pyright',
+      \'@yaegassy/coc-tailwindcss3',
       \'coc-highlight',
       \'coc-json',
       \'coc-markdownlint',
