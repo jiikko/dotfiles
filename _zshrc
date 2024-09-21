@@ -143,10 +143,11 @@ autoload -U promptinit ; promptinit
 autoload -U colors     ; colors
 autoload -Uz vcs_info
 setopt prompt_subst
-zstyle ':vcs_info:git:*' formats '%b'
+# zstyle ':vcs_info:git:*' formats '%b'
+zstyle ':vcs_info:git:*' formats '%F{black}%K{green}[%b]%f%k'
 precmd () { vcs_info }
-export PROMPT='%K{250} %F{016}%C%k%K{118}%f%F{250}%f%F{016}%{${vcs_info_msg_0_}%f%k%F{118}%f $ '
-
+PROMPT='%B%50<..<%~ %b${vcs_info_msg_0_}'
+PROMPT+='%(?.%(!.%F{white}❯%F{yellow}❯%F{red}.%F{blue}❯%F{cyan}❯%F{green})❯.%F{red}❯❯❯)%f '
 ##========================================================##
 ##================ ディレクトリ移動の設定 ================##
 ##========================================================##
