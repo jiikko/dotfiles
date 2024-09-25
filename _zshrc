@@ -233,6 +233,13 @@ function wikipedia() { open "https://ja.wikipedia.org/w/index.php?search=$1" }
 # テキスト検索
 function find-grep () { find . -type f -print | xargs grep -n --binary-files=without-match $@ }
 
+# 現在のgit branch名をクリップボードにコピー
+function gb() {
+  branch_name=$(git branch | grep \* | cut -d ' ' -f2)
+  echo "$branch_name" | pbcopy
+  echo "ブランチ名 '$branch_name' をクリップボードにコピーしました"
+}
+
 
 # Global alias
 alias be="bundle exec"
@@ -254,7 +261,6 @@ alias gst='git status'
 alias gd='git diff'
 alias gl='git log'
 alias tl='git log'
-alias gb='git branch'
 alias gch='git checkout'
 alias g='git'
 alias gv='git --version'
