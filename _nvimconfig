@@ -476,6 +476,9 @@ nmap <silent> ]g <Plug>(coc-diagnostic-next)
 " Format leader + f
 nnoremap <leader>f :Format<CR>
 
+" 「*/#」キーでハイライト検索した時にカーソルが次の候補に移動しないようにする
+nmap * *N
+nmap # #N
 
 " カーソル位置で適用できるコードアクションを呼び出す
 nmap <leader>ac  <Plug>(coc-codeaction-cursor)
