@@ -236,7 +236,7 @@ function find-grep () { find . -type f -print | xargs grep -n --binary-files=wit
 # 現在のgit branch名をクリップボードにコピー
 function gb() {
   branch_name=$(git branch | grep \* | cut -d ' ' -f2)
-  echo "$branch_name" | pbcopy
+  echo -n "$branch_name" | tr -d '\n' | pbcopy
   echo "ブランチ名 '$branch_name' をクリップボードにコピーしました"
 }
 
