@@ -51,9 +51,6 @@ termcapinfo xterm* ti@:te@
 # デタッチしたときに分割を維持する
 layout save default
 
-# プロセスが終了したときにこのキーを押すまで残る
-# zombie ^[
-
 # 見た目
 sorendition "+rb .G"
 
