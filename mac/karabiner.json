@@ -2297,7 +2297,7 @@
             ]
           },
           {
-            "description": "右Ctrl+5を押すとenterを入力する",
+            "description": "Ctrl+5を押すと!を入力する",
             "manipulators": [
               {
                 "from": {
@@ -2307,7 +2307,7 @@
                     "optional": ["any"]
                   }
                 },
-                "to": [{ "key_code": "return_or_enter" }],
+                "to": [{ "key_code": "1", "modifiers": ["shift"] }],
                 "type": "basic"
               }
             ]
