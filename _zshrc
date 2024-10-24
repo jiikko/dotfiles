@@ -103,7 +103,7 @@ setopt auto_resume           # サスペンド中のプロセスと同じコマ�
 #setopt correct_all           # コマンドライン全てのスペルチェックをする
 
 ##========================================================##
-##==================== 予測補完の設定 ====================##
+##==================== git branchの検索 ====================##
 ##========================================================##
 # NOTE: https://www.mizdra.net/entry/2024/10/19/172323
 export FZF_DEFAULT_OPTS="--reverse --no-sort --no-hscroll --preview-window=down"
@@ -124,7 +124,7 @@ function select-git-branch-friendly() {
   zle redisplay
 }
 zle -N select-git-branch-friendly
-bindkey '^b' select-git-branch-friendly
+bindkey '^g^b' select-git-branch-friendly
 
 ##========================================================##
 ##====================== 履歴の設定 ======================##
