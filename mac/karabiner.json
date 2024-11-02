@@ -243,14 +243,30 @@
             ]
           },
           {
-            "description": "disable command + p(プリント)",
+            "description": "command-p twice",
             "manipulators": [
               {
-                "from": {
-                  "key_code": "p",
-                  "modifiers": { "mandatory": ["command"] }
+                "conditions": [
+                  { "name": "command-p", "type": "variable_if", "value": 1 }
+                ],
+                "from": { "key_code": "p", "modifiers": { "mandatory": ["command"], "optional": ["caps_lock"] } },
+                "to": [ { "key_code": "p", "modifiers": ["left_command"] } ],
+                "type": "basic"
+              },
+              {
+                "from": { "key_code": "p", "modifiers": { "mandatory": ["command"], "optional": ["caps_lock"] }
                 },
-                "to": [{ "key_code": "vk_none" }],
+                "to": [
+                  { "set_variable": { "name": "command-p", "value": 1 } }
+                ],
+                "to_delayed_action": {
+                  "to_if_canceled": [
+                    { "set_variable": { "name": "command-p", "value": 0 } }
+                  ],
+                  "to_if_invoked": [
+                    { "set_variable": { "name": "command-p", "value": 0 } }
+                  ]
+                },
                 "type": "basic"
               }
             ]
