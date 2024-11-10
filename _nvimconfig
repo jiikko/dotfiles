@@ -443,15 +443,9 @@ function! s:show_documentation() abort
     call CocActionAsync('doHover')
   endif
 endfunction
+
 nnoremap <leader>t <Cmd>call <SID>show_documentation()<CR>
-
-
-nnoremap <silent><nowait> <space>a  :<C-u>CocList diagnostics<cr>
-nnoremap <silent><nowait> <space>e  :<C-u>CocList extensions<cr>
-" Do default action for next item
-nnoremap <silent><nowait> <space>j  :<C-u>CocNext<CR>
-" Do default action for previous item
-nnoremap <silent><nowait> <space>k  :<C-u>CocPrev<CR>
+nnoremap <nowait> <leader>a  :<C-u>CocList diagnostics<cr>
 
 
 " Use CTRL-S for selections ranges
@@ -465,9 +459,6 @@ inoremap <silent><nowait><expr> <C-f> coc#float#has_scroll() ? "\<c-r>=coc#float
 inoremap <silent><nowait><expr> <C-b> coc#float#has_scroll() ? "\<c-r>=coc#float#scroll(0)\<cr>" : "\<Left>"
 vnoremap <silent><nowait><expr> <C-f> coc#float#has_scroll() ? coc#float#scroll(1) : "\<C-f>"
 vnoremap <silent><nowait><expr> <C-b> coc#float#has_scroll() ? coc#float#scroll(0) : "\<C-b>"
-
-" Use <c-space> to trigger completion
-" inoremap <expr> tt coc#refresh()
 
 
 nmap <silent> [g <Plug>(coc-diagnostic-prev)
@@ -518,10 +509,6 @@ augroup END
 
 " コマンド実行中は再描画しない
 set lazyredraw
-
-" 高速ターミナル接続を行う
-set ttyfast
-
 
 "----------------------------------------------------
 " 編集 edit
@@ -644,29 +631,25 @@ require'barbar'.setup {
 }
 require("ibl").setup()
 require('Comment').setup()
-
- require('fold-preview').setup({
-   auto = 1,
-   default_keybindings = false
-  })
-
-  require("scrollbar").setup()
-
-  require('nvim-treesitter.configs').setup {
-    auto_install = true,
-    ensure_installed = { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "graphql", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "typescript", "vim", "yaml" },
-    ignore_install = { "agda", "apex", "arduino", "asm", "authzed", "awk", "bass", "beancount", "bibtex", "bicep", "bitbake", "blueprint", "cairo", "capnp", "chatito", "clojure", "comment", "commonlisp", "cooklang", "corn", "cpon", "cuda", "cue", "d", "dart", "devicetree", "dhall", "disassembly", "dot", "doxygen", "dtd", "ebnf", "eds", "eex", "elsa", "elvish", "embedded_template", "facility", "faust", "fennel", "fidl", "firrtl", "foam", "forth", "fsh", "func", "fusion", "gdscript", "gdshader", "gitattributes", "gitcommit", "gitignore", "gleam", "glimmer", "gn", "gnuplot", "godot_resource", "gomod", "gosum", "gowork", "gpg", "groovy", "gstlaunch", "hack", "hare", "haskell_persistent", "hcl", "heex", "hjson", "hlsl", "hlsplaylist", "hocon", "hoon", "htmldjango", "hurl", "hyprlang", "ispc", "janet_simple", "jq", "jsdoc", "json5", "jsonc", "jsonnet", "kconfig", "kdl", "kusto", "lalrpop", "ledger", "leo", "linkerscript", "liquidsoap", "llvm", "luadoc", "luap", "luau", "m68k", "menhir", "mermaid", "meson", "mlir", "muttrc", "nasm", "nickel", "nim", "nim_format_string", "ninja", "norg", "nqc", "objc", "objdump", "ocaml_interface", "ocamllex", "odin", "org", "pascal", "passwd", "pem", "phpdoc", "pioasm", "po", "pod", "poe_filter", "pony", "printf", "prisma", "promql", "properties", "proto", "prql", "psv", "pug", "puppet", "purescript", "pymanifest", "ql", "qmldir", "qmljs", "query", "racket", "rasi", "rbs", "re2c", "readline", "regex", "rego", "requirements", "rnoweb", "robot", "ron", "rst", "scfg", "scheme", "slang", "slint", "smali", "smithy", "snakemake", "solidity", "soql", "sosl", "sourcepawn", "sparql", "squirrel", "ssh_config", "starlark", "strace", "styled", "supercollider", "surface", "svelte", "sxhkdrc", "systemtap", "t32", "tablegen", "tcl", "teal", "templ", "terraform", "textproto", "thrift", "tiger", "tlaplus", "tmux", "todotxt", "tsv", "tsx", "turtle", "twig", "typoscript", "typst", "udev", "ungrammar", "unison", "usd", "uxntal", "v", "vala", "verilog", "vhs", "vimdoc", "vue", "wgsl", "wgsl_bevy", "wing", "xcompose", "yang", "yuck", "zathurarc", "zig", },
-    highlight = {
-      enable = true,
-      disable = {
-        "ruby",
-      },
-    },
-    indent = {
-      enable = true,
-    }
-  }
-
+require('fold-preview').setup({
+  auto = 1,
+  default_keybindings = false
+ })
+ require("scrollbar").setup()
+ require('nvim-treesitter.configs').setup {
+   auto_install = true,
+   ensure_installed = { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "graphql", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "typescript", "vim", "yaml" },
+   ignore_install = { "agda", "apex", "arduino", "asm", "authzed", "awk", "bass", "beancount", "bibtex", "bicep", "bitbake", "blueprint", "cairo", "capnp", "chatito", "clojure", "comment", "commonlisp", "cooklang", "corn", "cpon", "cuda", "cue", "d", "dart", "devicetree", "dhall", "disassembly", "dot", "doxygen", "dtd", "ebnf", "eds", "eex", "elsa", "elvish", "embedded_template", "facility", "faust", "fennel", "fidl", "firrtl", "foam", "forth", "fsh", "func", "fusion", "gdscript", "gdshader", "gitattributes", "gitcommit", "gitignore", "gleam", "glimmer", "gn", "gnuplot", "godot_resource", "gomod", "gosum", "gowork", "gpg", "groovy", "gstlaunch", "hack", "hare", "haskell_persistent", "hcl", "heex", "hjson", "hlsl", "hlsplaylist", "hocon", "hoon", "htmldjango", "hurl", "hyprlang", "ispc", "janet_simple", "jq", "jsdoc", "json5", "jsonc", "jsonnet", "kconfig", "kdl", "kusto", "lalrpop", "ledger", "leo", "linkerscript", "liquidsoap", "llvm", "luadoc", "luap", "luau", "m68k", "menhir", "mermaid", "meson", "mlir", "muttrc", "nasm", "nickel", "nim", "nim_format_string", "ninja", "norg", "nqc", "objc", "objdump", "ocaml_interface", "ocamllex", "odin", "org", "pascal", "passwd", "pem", "phpdoc", "pioasm", "po", "pod", "poe_filter", "pony", "printf", "prisma", "promql", "properties", "proto", "prql", "psv", "pug", "puppet", "purescript", "pymanifest", "ql", "qmldir", "qmljs", "query", "racket", "rasi", "rbs", "re2c", "readline", "regex", "rego", "requirements", "rnoweb", "robot", "ron", "rst", "scfg", "scheme", "slang", "slint", "smali", "smithy", "snakemake", "solidity", "soql", "sosl", "sourcepawn", "sparql", "squirrel", "ssh_config", "starlark", "strace", "styled", "supercollider", "surface", "svelte", "sxhkdrc", "systemtap", "t32", "tablegen", "tcl", "teal", "templ", "terraform", "textproto", "thrift", "tiger", "tlaplus", "tmux", "todotxt", "tsv", "tsx", "turtle", "twig", "typoscript", "typst", "udev", "ungrammar", "unison", "usd", "uxntal", "v", "vala", "verilog", "vhs", "vimdoc", "vue", "wgsl", "wgsl_bevy", "wing", "xcompose", "yang", "yuck", "zathurarc", "zig", },
+   highlight = {
+     enable = true,
+     disable = {
+       "ruby",
+     },
+   },
+   indent = {
+     enable = true,
+   }
+ }
 EOF
 
 let g:webdevicons_enable_nerdtree = 1
@@ -682,9 +665,5 @@ let g:blamer_date_format = '%Y/%m/%d'
 let g:blamer_template = '<commit-short> <committer-time> <committer>:  <summary>'
 vnoremap <leader>gb <cmd>BlamerToggle<cr>
 nnoremap <leader>gb <cmd>BlamerToggle<cr>
-
-
-vnoremap <leader>cce <cmd>CopilotChatExplain<cr>
-nnoremap <leader>cce <cmd>CopilotChatExplain<cr>
 
 colorscheme gruvbox
