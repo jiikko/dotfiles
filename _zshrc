@@ -281,7 +281,7 @@ alias gv='git --version'
 alias gp='git push'
 alias gad='git add \.'
 alias gc='git commit \-m'
-alias gm='git pull origin master'
+alias gm='branch=$(git remote show origin | grep "HEAD branch" | awk "{print \$NF}"); if [[ "$branch" == "master" || "$branch" == "main" ]]; then git pull origin $branch; else echo "Error: Default branch is neither master nor main"; fi'
 
 alias ggl='git log --graph --pretty=oneline --abbrev-commit --decorate --all'
 
