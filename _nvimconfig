@@ -237,6 +237,7 @@ let g:terraform_fmt_on_save=1
 
 " sql
 autocmd BufRead,BufNewFile *.sql.erb set filetype=sql
+autocmd BufRead,BufNewFile *.schemafile set filetype=ruby
 
 " for vim-go
 let g:go_null_module_warning = 0
