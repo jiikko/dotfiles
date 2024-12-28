@@ -9,6 +9,7 @@ set wildignore+=*.jpg,*.bmp,*.gif,*.png,*.jpeg
 set wildignore+=*.sw?
 set wildignore+=.DS_Store
 set wildignore+=node_modules,bower_components,elm-stuff
+set synmaxcol=200
 
 set grepprg=git\ grep\ -I\ --line-number
 
