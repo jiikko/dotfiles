@@ -9,6 +9,7 @@ set wildignore+=*.jpg,*.bmp,*.gif,*.png,*.jpeg
 set wildignore+=*.sw?
 set wildignore+=.DS_Store
 set wildignore+=node_modules,bower_components,elm-stuff
+set synmaxcol=200
 
 set grepprg=git\ grep\ -I\ --line-number
 
@@ -76,7 +77,6 @@ call dein#add("rcarriga/nvim-notify")
 call dein#add("numToStr/Comment.nvim")
 call dein#add("nvim-telescope/telescope-ui-select.nvim")
 call dein#add("APZelos/blamer.nvim")
-call dein#add("anuvyklack/fold-preview.nvim")
 call dein#add("petertriho/nvim-scrollbar")
 call dein#add("psliwka/vim-smoothie")
 call dein#add("easymotion/vim-easymotion")
@@ -411,9 +411,6 @@ set signcolumn=yes
 " Add `:Format` command to format current buffer
 command! -nargs=0 Format :call CocActionAsync('format')
 
-" Add `:Fold` command to fold current buffer
-command! -nargs=? Fold :call CocAction('fold', <f-args>)
-
 " Add `:OR` command for organize imports of the current buffer
 command! -nargs=0 OR   :call CocActionAsync('runCommand', 'editor.action.organizeImport')
 
@@ -582,14 +579,25 @@ endfunction
 nmap <silent> <leader>b <Esc>:call HandleURL()<CR>
 
 
-" 折りたたみ
-set foldlevel=100
+" 折りたたみ, fold, Fold
 set foldmethod=expr
+set foldlevel=100
 set foldexpr=nvim_treesitter#foldexpr()
-nnoremap fa za<CR>
-
 
 lua << EOF
+function Foldtext()
+  local line = vim.fn.getline(vim.v.foldstart)
+  local count = vim.v.foldend - vim.v.foldstart + 1
+  return string.format("%s (%d lines folded)", line, count)
+end
+vim.opt.foldtext = "v:lua.Foldtext()"
+vim.opt.fillchars = { fold = " " } -- 折りたたんだ際のあまりの部分をスペースにする
+
+vim.keymap.set("n", "<Tab>", "zo")
+vim.keymap.set("n", "<S-Tab>", "zc")
+vim.keymap.set("n", "<Leader><Tab>", "zR")
+vim.keymap.set("n", "<Leader><S-Tab>", "zM")
+
 local telescope = require('telescope')
 telescope.setup{
   defaults = {
@@ -632,25 +640,21 @@ require'barbar'.setup {
 }
 require("ibl").setup()
 require('Comment').setup()
-require('fold-preview').setup({
-  auto = 1,
-  default_keybindings = false
- })
- require("scrollbar").setup()
- require('nvim-treesitter.configs').setup {
-   auto_install = true,
-   ensure_installed = { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "graphql", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "typescript", "vim", "yaml" },
+require("scrollbar").setup()
+require('nvim-treesitter.configs').setup {
+  auto_install = true,
+  ensure_installed = { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "graphql", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "typescript", "vim", "yaml" },
    ignore_install = { "agda", "apex", "arduino", "asm", "authzed", "awk", "bass", "beancount", "bibtex", "bicep", "bitbake", "blueprint", "cairo", "capnp", "chatito", "clojure", "comment", "commonlisp", "cooklang", "corn", "cpon", "cuda", "cue", "d", "dart", "devicetree", "dhall", "disassembly", "dot", "doxygen", "dtd", "ebnf", "eds", "eex", "elsa", "elvish", "embedded_template", "facility", "faust", "fennel", "fidl", "firrtl", "foam", "forth", "fsh", "func", "fusion", "gdscript", "gdshader", "gitattributes", "gitcommit", "gitignore", "gleam", "glimmer", "gn", "gnuplot", "godot_resource", "gomod", "gosum", "gowork", "gpg", "groovy", "gstlaunch", "hack", "hare", "haskell_persistent", "hcl", "heex", "hjson", "hlsl", "hlsplaylist", "hocon", "hoon", "htmldjango", "hurl", "hyprlang", "ispc", "janet_simple", "jq", "jsdoc", "json5", "jsonc", "jsonnet", "kconfig", "kdl", "kusto", "lalrpop", "ledger", "leo", "linkerscript", "liquidsoap", "llvm", "luadoc", "luap", "luau", "m68k", "menhir", "mermaid", "meson", "mlir", "muttrc", "nasm", "nickel", "nim", "nim_format_string", "ninja", "norg", "nqc", "objc", "objdump", "ocaml_interface", "ocamllex", "odin", "org", "pascal", "passwd", "pem", "phpdoc", "pioasm", "po", "pod", "poe_filter", "pony", "printf", "prisma", "promql", "properties", "proto", "prql", "psv", "pug", "puppet", "purescript", "pymanifest", "ql", "qmldir", "qmljs", "query", "racket", "rasi", "rbs", "re2c", "readline", "regex", "rego", "requirements", "rnoweb", "robot", "ron", "rst", "scfg", "scheme", "slang", "slint", "smali", "smithy", "snakemake", "solidity", "soql", "sosl", "sourcepawn", "sparql", "squirrel", "ssh_config", "starlark", "strace", "styled", "supercollider", "surface", "svelte", "sxhkdrc", "systemtap", "t32", "tablegen", "tcl", "teal", "templ", "terraform", "textproto", "thrift", "tiger", "tlaplus", "tmux", "todotxt", "tsv", "tsx", "turtle", "twig", "typoscript", "typst", "udev", "ungrammar", "unison", "usd", "uxntal", "v", "vala", "verilog", "vhs", "vimdoc", "vue", "wgsl", "wgsl_bevy", "wing", "xcompose", "yang", "yuck", "zathurarc", "zig", },
-   highlight = {
-     enable = true,
-     disable = {
-       "ruby",
-     },
-   },
-   indent = {
-     enable = true,
-   }
- }
+  highlight = {
+    enable = true,
+    disable = {
+      "ruby",
+    },
+  },
+  indent = {
+    enable = true,
+  }
+}
 EOF
 
 let g:webdevicons_enable_nerdtree = 1
