@@ -227,6 +227,8 @@ inoremap <silent><expr> <Tab>
 
 " vim-matchup
 let g:loaded_matchit = 1
+let g:matchup_matchparen_stopline = 400
+let g:matchup_matchparen_deferred = 1
 
 let g:terraform_align=1
 "let g:terraform_fold_sections=1
@@ -640,7 +642,7 @@ require'barbar'.setup {
 }
 require("ibl").setup()
 require('Comment').setup()
-require("scrollbar").setup()
+require("scrollbar").setup({ handlers = { cursor = false } })
 require('nvim-treesitter.configs').setup {
   auto_install = true,
   ensure_installed = { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "graphql", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "typescript", "vim", "yaml" },
