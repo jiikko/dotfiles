@@ -55,7 +55,6 @@ call dein#add('hashivim/vim-terraform')
 call dein#add('fatih/vim-go')
 call dein#add('nvim-lua/popup.nvim')
 call dein#add('neoclide/coc.nvim', { 'merged':0, 'rev': 'release' })
-call dein#add('RRethy/vim-illuminate')
 call dein#add('andymass/vim-matchup')
 call dein#add('windwp/nvim-ts-autotag')
 call dein#add('nvim-treesitter/nvim-treesitter', { 'do': ':TSUpdate' })
@@ -417,7 +416,7 @@ command! -nargs=0 Format :call CocActionAsync('format')
 command! -nargs=0 OR   :call CocActionAsync('runCommand', 'editor.action.organizeImport')
 
 " Highlight the symbol and its references when holding the cursor
-autocmd CursorHold * silent call CocActionAsync('highlight')
+ autocmd CursorHold * call timer_start(500, {-> CocActionAsync('highlight')})
 
 set statusline^=%{coc#status()}%{get(b:,'coc_current_function','')}
 
@@ -667,7 +666,7 @@ nnoremap <leader>fb <cmd>Telescope buffers<cr>
 
 autocmd BufRead,BufNewFile db/Schemafile set filetype=ruby
 
-let g:blamer_enabled = 0
+let g:blamer_enabled = 1
 let g:blamer_date_format = '%Y/%m/%d'
 let g:blamer_template = '<commit-short> <committer-time> <committer>:  <summary>'
 vnoremap <leader>gb <cmd>BlamerToggle<cr>
