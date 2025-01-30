@@ -482,4 +482,8 @@ function whichppr() {
   open "$BASE/$REPO_NAME/pull/$PULL_REQUEST_ID"
 }
 
+function d() {
+  yt-dlp "$1" &
+}
+
 ssh-add ~/.ssh/id_rsa > /dev/null 2>&1
