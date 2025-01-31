@@ -58,7 +58,6 @@ call dein#add('neoclide/coc.nvim', { 'merged':0, 'rev': 'release' })
 call dein#add('andymass/vim-matchup')
 call dein#add('windwp/nvim-ts-autotag')
 call dein#add('nvim-treesitter/nvim-treesitter', { 'do': ':TSUpdate' })
-call dein#add('tpope/vim-endwise')
 call dein#add('folke/which-key.nvim')
 call dein#add('itchyny/lightline.vim')
 call dein#add('github/copilot.vim')
@@ -79,7 +78,7 @@ call dein#add("APZelos/blamer.nvim")
 call dein#add("petertriho/nvim-scrollbar")
 call dein#add("psliwka/vim-smoothie")
 call dein#add("easymotion/vim-easymotion")
-
+call dein#add("RRethy/nvim-treesitter-endwise")
 
 " Required:
 call dein#end()
@@ -655,6 +654,9 @@ require('nvim-treesitter.configs').setup {
   },
   matchup = {
     enable = true,
+  },
+  endwise = {
+    enable = true
   },
   indent = {
     enable = true,
