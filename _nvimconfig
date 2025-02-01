@@ -72,11 +72,12 @@ call dein#add('lukas-reineke/indent-blankline.nvim')
 call dein#add("rcarriga/nvim-notify")
 call dein#add("numToStr/Comment.nvim")
 call dein#add("nvim-telescope/telescope-ui-select.nvim")
-call dein#add("APZelos/blamer.nvim")
+" call dein#add("APZelos/blamer.nvim")
 call dein#add("petertriho/nvim-scrollbar")
 call dein#add("psliwka/vim-smoothie")
 call dein#add("easymotion/vim-easymotion")
 call dein#add("RRethy/nvim-treesitter-endwise")
+call dein#add("ntpeters/vim-better-whitespace")
 
 " Required:
 call dein#end()
@@ -670,9 +671,9 @@ nnoremap <leader>fb <cmd>Telescope buffers<cr>
 
 autocmd BufRead,BufNewFile db/Schemafile set filetype=ruby
 
-let g:blamer_enabled = 1
-let g:blamer_date_format = '%Y/%m/%d'
-let g:blamer_template = '<commit-short> <committer-time> <committer>:  <summary>'
+" let g:blamer_enabled = 1
+" let g:blamer_date_format = '%Y/%m/%d'
+" let g:blamer_template = '<commit-short> <committer-time> <committer>:  <summary>'
 vnoremap <leader>gb <cmd>BlamerToggle<cr>
 nnoremap <leader>gb <cmd>BlamerToggle<cr>
 
