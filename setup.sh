@@ -7,5 +7,5 @@ for file in gemrc screenrc bashrc bash_profile gvimrc zshrc rspec gitconfig pryr
 done
 
 mkdir -p ~/.config/nvim
-ln -s -F ~/dotfiles/_nvimconfig ~/.config/nvim/init.vim
+ln -s -F ~/dotfiles/_nviminit.lua ~/.config/nvim/init.lua
 ln -s -F ~/dotfiles/_coc-settings.json ~/.config/nvim/coc-settings.json
