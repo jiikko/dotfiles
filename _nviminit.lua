@@ -375,6 +375,7 @@ require("lazy").setup({
     config = function()
       vim.g.blamer_enabled = 1
       vim.g.blamer_date_format = "%Y/%m/%d"
+      vim.g.blamer_show_in_insert_modes = 0
       vim.g.blamer_template = "<commit-short> <committer-time> <committer>:  <summary>"
       vim.api.nvim_set_keymap("n", "<leader>gb", "<cmd>BlamerToggle<CR>", { noremap = true, silent = true })
       vim.api.nvim_set_keymap("v", "<leader>gb", "<cmd>BlamerToggle<CR>", { noremap = true, silent = true })
