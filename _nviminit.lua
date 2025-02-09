@@ -184,7 +184,6 @@ require("lazy").setup({
         "coc-solargraph",
         "coc-sh",
         "coc-sql",
-        "coc-markdown-preview-enhanced",
         "coc-webview",
       }
 
@@ -339,6 +338,7 @@ require("lazy").setup({
             enable = true,
             open_win_config = {
               width = 50,
+              height = 60,
             }
           },
         },
@@ -435,7 +435,7 @@ require("lazy").setup({
       local animate = require("mini.animate")
       animate.setup({
         cursor = {
-          enable = false,
+          enable = true,
           timing = animate.gen_timing.exponential({ easing = "out", duration = 800, unit = "total" }),
           path = animate.gen_path.line({ predicate = function() return true end }),
         },
@@ -447,7 +447,7 @@ require("lazy").setup({
 
     end,
   },
-  { "ntpeters/vim-better-whitespace" }
+  { "ntpeters/vim-better-whitespace" },
 }, {
   install = { colorscheme = { "habamax" } },
   checker = { enabled = true },
