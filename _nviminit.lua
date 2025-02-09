@@ -186,6 +186,12 @@ require("lazy").setup({
       vim.o.updatetime = 300
       -- signcolumn を常に表示
       vim.wo.signcolumn = "yes"
+      -- CocActionAsyncを呼び出してバッファ整形を実行する
+      vim.api.nvim_create_user_command('Format', function()
+        -- Cocの非同期フォーマットアクションを実行
+        vim.fn.CocActionAsync('format')
+      end, {})
+      vim.api.nvim_set_keymap('n', '<leader>f', ':Format<CR>', { noremap = true, silent = true })
       -- `:OR` コマンドを追加 (インポート整理)
       vim.api.nvim_create_user_command("OR", function()
         vim.fn.CocActionAsync("runCommand", "editor.action.organizeImport")
