@@ -130,6 +130,21 @@ require("lazy").setup({
   { "folke/which-key.nvim" },
   { "itchyny/lightline.vim",
     config = function()
+      vim.cmd([[
+        function! RelativePathFromGitRoot()
+          if exists("b:git_dir")
+            let l:root = fnamemodify(b:git_dir, ':h')
+          else
+            let l:root = system("git -C " . expand('%:p:h') . " rev-parse --show-toplevel")
+            let l:root = substitute(l:root, '\n$', '', '')
+          endif
+          if v:shell_error
+            return expand('%')
+          endif
+          let l:relative_path = substitute(expand('%:p'), '^' . l:root . '/', '', '')
+          return l:relative_path
+        endfunction
+      ]])
       vim.g.lightline = {
         colorscheme = "wombat",
         active = { left = { { "mode", "paste" }, { "cocstatus", "currentfunction", "readonly", "filename", "modified" } } },
