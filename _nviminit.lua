@@ -448,6 +448,7 @@ require("lazy").setup({
     end,
   },
   { "ntpeters/vim-better-whitespace" },
+  { "MeanderingProgrammer/render-markdown.nvim" },
 }, {
   install = { colorscheme = { "habamax" } },
   checker = { enabled = true },
