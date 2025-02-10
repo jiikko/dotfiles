@@ -62,7 +62,7 @@ bindkey -e      # emacs キーバインド
 ##================= リストの色つけの設定 =================##
 ##========================================================##
 # ls, #dir, vdir の設定
-alias s='screen -U'
+alias s='screen -U' # @deprecated
 alias sk='kill -9 $$'
 alias ls='ls --G'
 alias grep='grep --color=auto'
@@ -353,7 +353,29 @@ bindkey '^G^G' git_diff
 bindkey '^L^S' shell_ls
 
 
+function t () {
+  if [ -z "${1-}" ]; then
+    name="s$(date +%s)"  # セッション名が重複しないように一意の名前を生成
+  else
+    name="$1"
+  fi
+  tmux new-session -d -s "$name" ';' new-window ';' new-window ';' new-window ';' new-window ';' attach-session -t "$name"
+}
+function tt () {
+  if [ -n "$1" ]; then
+    name="$1"
+  else
+    name=$(basename "$PWD")
+  fi
 
+  if tmux has-session -t "$name" 2>/dev/null; then
+    tmux attach-session -t "$name"
+  else
+    t "$name"
+  fi
+}
+
+# @deprecated
 # screen のセッション名にカレントディレクトリ名にしてくれる
 # http://hitode909.hatenablog.com/entry/20090731/1249051564
 function ss () {
