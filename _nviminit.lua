@@ -408,7 +408,8 @@ require("lazy").setup({
     end,
   },
   { "psliwka/vim-smoothie" },
-   "easymotion/vim-easymotion",
+  {
+    "easymotion/vim-easymotion",
     config = function()
       vim.g.EasyMotion_use_migemo = 1
       -- キーマッピング設定
@@ -430,12 +431,13 @@ require("lazy").setup({
       keymap("n", "fw", "<Plug>(easymotion-bd-w)", opts)
       keymap("n", "fW", "<Plug>(easymotion-overwin-w)", opts)
     end,
+  },
   { 'echasnovski/mini.nvim', version = '*',
     config = function()
       local animate = require("mini.animate")
       animate.setup({
         cursor = {
-          enable = true,
+          enable = false,
           timing = animate.gen_timing.exponential({ easing = "out", duration = 800, unit = "total" }),
           path = animate.gen_path.line({ predicate = function() return true end }),
         },
