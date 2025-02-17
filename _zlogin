@@ -39,3 +39,5 @@ if [ -f "$(brew --prefix)/share/zsh-syntax-highlighting/zsh-syntax-highlighting.
 else
   echo -e "\033[31m'zsh-syntax-highlighting' is not installed. Please run 'brew install zsh-syntax-highlighting' to install it.\033[0m"
 fi
+
+bindkey -r '^T'
