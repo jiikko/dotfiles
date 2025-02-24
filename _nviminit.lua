@@ -228,10 +228,13 @@ require("lazy").setup({
       keymap("n", "<leader>C", "<Plug>(operator-decamelize)", opts)
       -- カーソル位置のドキュメント表示
       function _G.show_documentation()
-        if vim.tbl_contains({ "vim", "help" }, vim.bo.filetype) then
+        local filetype = vim.bo.filetype
+        if vim.tbl_contains({ "vim", "help" }, filetype) then
           vim.cmd("help " .. vim.fn.expand("<cword>"))
-        elseif vim.fn.CocRpcReady() == 1 then
+        elseif vim.fn.eval('coc#rpc#ready()') == 1 then
           vim.fn.CocActionAsync("doHover")
+        else
+          print("No documentation available")
         end
       end
       keymap("n", "<leader>t", "<Cmd>lua show_documentation()<CR>", opts)
