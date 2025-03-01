@@ -508,4 +508,24 @@ function d() {
   yt-dlp "$1" &
 }
 
+function rrr() {
+  local inputfile="$1"
+  if [[ ! -f "$inputfile" ]]; then
+    echo "Error: File not found - $inputfile" >&2
+    return 1
+  fi
+  local dir="${inputfile:h}"
+  local basename="${inputfile:t}"
+  local tmpfile="${dir}/.${basename}.mp4.tmp"
+
+  if ffmpeg -i "$inputfile" -c copy -tag:v hvc1 -movflags +faststart -f mp4 "$tmpfile"; then
+    mv "$tmpfile" "$inputfile"
+    echo "Repacked and replaced: $inputfile"
+  else
+    echo "Error: ffmpeg failed for $inputfile" >&2
+    rm -f "$tmpfile"
+    return 1
+  fi
+}
+
 ssh-add ~/.ssh/id_rsa > /dev/null 2>&1
