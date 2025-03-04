@@ -397,7 +397,7 @@ require("lazy").setup({
   { "numToStr/Comment.nvim" },
   { "APZelos/blamer.nvim",
     config = function()
-      vim.g.blamer_enabled = 1
+      vim.g.blamer_enabled = 0
       vim.g.blamer_date_format = "%Y/%m/%d"
       vim.g.blamer_show_in_insert_modes = 0
       vim.g.blamer_template = "<commit-short> <committer-time> <committer>:  <summary>"
