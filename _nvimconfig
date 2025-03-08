@@ -154,12 +154,12 @@ let g:lightline = {
 let g:toggle_map = '+'
 let g:toggle_words_on = [
   \ 'and', 'if', 'unless', 'elsif', 'it', 'specify', 'describe',
-  \ 'true', 'yes', 'on', 'public', 'protected', '&&'
+  \ 'true', 'yes', 'on', 'public', 'protected', '&&', 'ある', 'はい'
 \]
 
 let g:toggle_words_off = [
 \ 'or', 'unless', 'if', 'else', 'specify', 'it', 'context',
-\ 'false', 'no', 'off', 'protected', 'private', '||'
+\ 'false', 'no', 'off', 'protected', 'private', '||', 'ない', 'いいえ'
 \]
 
 map fl <Plug>(easymotion-lineforward)
