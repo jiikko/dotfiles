@@ -516,6 +516,23 @@ function d() {
   yt-dlp "$1" &
 }
 
+
+# NOTE: benchmark disk write speed
+bdr() {
+  if [[ -z "$1" ]]; then
+    echo "Usage: bdr <output_file>"
+    return 1
+  fi
+
+  local output_file="$1"
+  local bs="1m"
+  local count="10000"
+  local oflag="direct"
+
+  echo "Writing zeros to $output_file..."
+  dd if=/dev/zero of="$output_file" bs="$bs" count="$count" oflag="$oflag" status=progress
+}
+
 function rrr() {
   local inputfile="$1"
   if [[ ! -f "$inputfile" ]]; then
