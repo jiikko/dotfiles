@@ -359,8 +359,16 @@ function t () {
   else
     name="$1"
   fi
-  tmux new-session -d -s "$name" ';' new-window ';' new-window ';' new-window ';' new-window ';' select-window -t "$name":0 ';' attach-session -t "$name"
+  tmux new-session -d -s "$name"
+  tmux new-window -t "$name"
+  tmux new-window -t "$name"
+  tmux new-window -t "$name"
+  tmux new-window -t "$name"
+
+  tmux select-window -t "$name":0
+  tmux attach-session -t "$name"
 }
+
 function tt () {
   if [ -n "$1" ]; then
     name="$1"
