@@ -260,6 +260,9 @@ require("lazy").setup({
       keymap("n", "<leader>ac", "<Plug>(coc-codeaction-cursor)", opts)
       keymap("n", "<leader>as", "<Plug>(coc-codeaction-source)", opts)
       keymap("n", "<leader>qf", "<Plug>(coc-fix-current)", opts)
+      -- 定義ジャンプと参照リスト（便利キーバインド）
+      keymap("n", "<C-j>", "<Plug>(coc-definition)", opts)
+      keymap("n", "<C-k>", "<Plug>(coc-references)", opts)
 
       -- NOTE: 必要か？
       -- Diagnosticsの、左横のアイコンの色設定
