@@ -6,7 +6,7 @@ tap "homebrew/bundle"
 tap "homebrew/services"
 
 # cli
-brew "screen"
+brew "tmux"
 brew "wget"
 brew "zsh"
 brew "neovim"
@@ -19,7 +19,7 @@ brew "fzf"
 
 
 # for dev
-brew "pre-commit"
+# brew "pre-commit"
 brew "rbenv"
 brew "nodenv"
 brew "yarn"
@@ -46,7 +46,7 @@ cask "font-hack-nerd-font"
 cask "vlc"
 cask "slack"
 cask "google-cloud-sdk"
-cask "raspberry-pi-imager"
+# cask "raspberry-pi-imager"
 
 # cask "1password"
 # cask "docker"
