@@ -76,11 +76,11 @@ require("lazy").setup({
       vim.g.toggle_map = '+'
       vim.g.toggle_words_on = {
         "and", "if", "unless", "elsif", "it", "specify", "describe",
-        "true", "yes", "on", "public", "protected", "&&"
+        "true", "yes", "on", "public", "protected", "&&", "ある", "はい", "とき", "なし", "する"
       }
       vim.g.toggle_words_off = {
         "or", "unless", "if", "else", "specify", "it", "context",
-        "false", "no", "off", "protected", "private", "||"
+        "false", "no", "off", "protected", "private", "||", "ない", "いいえ", "時", "あり", "しない"
       }
     end,
   },
