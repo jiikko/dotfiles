@@ -412,28 +412,18 @@ require("lazy").setup({
   },
   { "psliwka/vim-smoothie" },
   {
-    "easymotion/vim-easymotion",
-    config = function()
-      vim.g.EasyMotion_use_migemo = 1
-      -- キーマッピング設定
-      local keymap = vim.api.nvim_set_keymap
-      local opts = { noremap = true, silent = true }
-      -- 行移動
-      keymap("n", "fl", "<Plug>(easymotion-lineforward)", opts)
-      keymap("n", "fh", "<Plug>(easymotion-linebackward)", opts)
-      keymap("n", "fj", "<Plug>(easymotion-j)", opts)
-      keymap("n", "fk", "<Plug>(easymotion-k)", opts)
-      -- 文字移動
-      keymap("n", "ff", "<Plug>(easymotion-bd-f)", opts)
-      keymap("n", "ff", "<Plug>(easymotion-overwin-f)", opts)
-      -- 2文字移動
-      keymap("n", "fg", "<Plug>(easymotion-overwin-f2)", opts)
-      -- 行移動（Ctrl + L）
-      keymap("n", "<C-l>", "<Plug>(easymotion-overwin-line)", opts)
-      -- 単語移動
-      keymap("n", "fw", "<Plug>(easymotion-bd-w)", opts)
-      keymap("n", "fW", "<Plug>(easymotion-overwin-w)", opts)
-    end,
+    "folke/flash.nvim",
+    event = "VeryLazy",
+    ---@type Flash.Config
+    opts = {},
+    -- stylua: ignore
+    keys = {
+      { "s", mode = { "n", "x", "o" }, function() require("flash").jump() end, desc = "Flash" },
+      { "S", mode = { "n", "x", "o" }, function() require("flash").treesitter() end, desc = "Flash Treesitter" },
+      { "r", mode = "o", function() require("flash").remote() end, desc = "Remote Flash" },
+      { "R", mode = { "o", "x" }, function() require("flash").treesitter_search() end, desc = "Treesitter Search" },
+      { "<c-s>", mode = { "c" }, function() require("flash").toggle() end, desc = "Toggle Flash Search" },
+    },
   },
   { 'echasnovski/mini.nvim', version = '*',
     config = function()
