@@ -365,7 +365,7 @@ require("lazy").setup({
       vim.api.nvim_set_keymap("c", "<C-e>", "<C-u>:NvimTreeToggle<CR>", opts)
       -- <leader>nt, <leader>nf マッピング
       vim.api.nvim_set_keymap("n", "<leader>nt", ":NvimTreeToggle<CR>", { silent = true, noremap = true })
-      vim.api.nvim_set_keymap("n", "<leader>nf", ":NvimTreeFindFile<CR>", { silent = true, noremap = true })
+      vim.api.nvim_set_keymap("n", "<leader>nf", ":NvimTreeFindFile!<CR>", { noremap = true, silent = true })
     end,
   },
   { "nvim-tree/nvim-web-devicons", lazy = false },
