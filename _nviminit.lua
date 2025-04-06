@@ -23,6 +23,8 @@ vim.g.maplocalleader = "\\"
 
 -- グローバル変数の設定
 vim.g.omni_sql_no_default_maps = 1  -- omni_sqlのデフォルトマッピングを無効化
+-- マウスを無効にする
+vim.opt.mouse = ""
 
 -- オプション設定
 vim.opt.backup = false        -- バックアップファイルを作成しない
