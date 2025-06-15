@@ -239,7 +239,7 @@ require("lazy").setup({
           print("No documentation available")
         end
       end
-      keymap("n", "<leader>t", "<Cmd>lua show_documentation()<CR>", opts)
+      keymap("n", "t", "<Cmd>lua show_documentation()<CR>", opts)
       -- 診断リストを開く
       keymap("n", "<leader>a", ":CocList diagnostics<CR>", opts)
       -- 選択範囲を指定 (CTRL-S)
@@ -421,6 +421,13 @@ require("lazy").setup({
     event = "VeryLazy",
     ---@type Flash.Config
     opts = {},
+    opts = {
+      modes = {
+        char = {
+          keys = {},
+        },
+      },
+    },
     -- stylua: ignore
     keys = {
       { "s", mode = { "n", "x", "o" }, function() require("flash").jump() end, desc = "Flash" },
