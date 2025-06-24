@@ -468,6 +468,7 @@ vim.cmd("source /Users/koji/dotfiles/basic.vim")
 vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, { pattern = "db/Schemafile", command = "set filetype=ruby", })
 vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, { pattern = "*.sql.erb", command = "set filetype=sql", })
 vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, { pattern = "*.Schemafile", command = "set filetype=ruby", })
+vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, { pattern = "*.yml", command = "set filetype=yaml", })
 
 
 -- 折り畳みの設定
