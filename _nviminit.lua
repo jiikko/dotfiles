@@ -187,6 +187,7 @@ require("lazy").setup({
         "coc-sh",
         "coc-sql",
         "coc-webview",
+        "coc-swagger",
       }
 
       local keymap = vim.api.nvim_set_keymap
