@@ -17,18 +17,18 @@
           "mouse_motion_to_scroll.speed": 100
         },
         "rules": [
-           {
-            "description": "右Ctrlキーを押した時に英数キーを送信し、そのままCtrlキーとして機能させる",
+          {
+            "description": "右CtrlキーとTキーを同時押しした時に英数キーを送信する",
             "manipulators": [
               {
                 "type": "basic",
                 "from": {
-                  "key_code": "right_control",
-                  "modifiers": { "optional": [ "any" ] }
+                  "key_code": "t",
+                  "modifiers": { "mandatory": ["control"] }
                 },
                 "to": [
                   { "key_code": "japanese_eisuu" },
-                  { "key_code": "right_control" }
+                  { "key_code": "t", "modifiers": ["right_control"] }
                 ]
               }
             ]
