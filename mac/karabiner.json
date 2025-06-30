@@ -438,6 +438,30 @@
             ]
           },
           {
+            "description": "disable command + i for Terminal",
+            "manipulators": [
+              {
+                "from": {
+                  "key_code": "i",
+                  "modifiers": { "mandatory": ["command"] }
+                },
+                "to": [{ "key_code": "vk_none" }],
+                "type": "basic",
+                "conditions": [
+                  {
+                    "type": "frontmost_application_if",
+                    "bundle_identifiers": [
+                      "^com\\.apple\\.Terminal$",
+                      "^com\\.googlecode\\.iterm2$",
+                      "^co\\.zeit\\.hyperterm$",
+                      "^co\\.zeit\\.hyper$"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
             "description": "command + j to scroll-down",
             "manipulators": [
               {
