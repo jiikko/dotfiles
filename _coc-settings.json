@@ -4,7 +4,7 @@
   "solargraph.formatting": true,
   "solargraph.checkGemVersion": false,
   "solargraph.useBundler": true,
-  "solargraph.commandPath": "bundle",
+  "solargraph.commandPath": "solargraph",
   "solargraph.bundlerPath": "bundle",
   "solargraph.hover": true,
   "tsserver.enable": true,
