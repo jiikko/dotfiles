@@ -119,7 +119,7 @@ require("lazy").setup({
       require("nvim-treesitter.configs").setup({
         auto_install = true,
         ensure_installed = { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "graphql", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "typescript", "vim", "yaml" },
-        highlight = { enable = true, disable = { "ruby" } },
+        highlight = { enable = true },
         matchup = { enable = true },
         endwise = { enable = true },
         indent = { enable = true },
