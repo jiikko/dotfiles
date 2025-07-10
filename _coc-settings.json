@@ -1,12 +1,11 @@
 {
-  "solargraph.autoformat": true,
   "solargraph.diagnostics": true,
   "solargraph.formatting": true,
   "solargraph.checkGemVersion": false,
   "solargraph.useBundler": true,
-  "solargraph.commandPath": "solargraph",
   "solargraph.bundlerPath": "bundle",
   "solargraph.hover": true,
+
   "tsserver.enable": true,
   "codeLens.enable": true,
   "colors.enable": true,
