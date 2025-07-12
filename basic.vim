@@ -52,6 +52,7 @@ set showbreak=↪
 
 " 改行
 nnoremap ; :<C-u>call append(expand('.'), '')<CR>j
+nnoremap <Return><Return> <c-w><c-w>
 
 "左右
 noremap <Right> <Cmd>BufferNext<CR>
