@@ -9,7 +9,7 @@
   email = n905i.1214@gmail.com
 	signingkey = 067F6BAF5DFDDD757B65F6483604A9B02FAF6571
 [push]
-  default = current
+  default = simple
 [fetch]
   prune = true
 [http]
