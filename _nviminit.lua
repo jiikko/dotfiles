@@ -100,6 +100,9 @@ require("lazy").setup({
     build = ":GoUpdateBinaries",
     config = function()
       vim.g.go_null_module_warning = 0
+      -- GoDecls のキーマッピング
+      vim.api.nvim_set_keymap('n', '<leader>gd', ':GoDecls<CR>', { noremap = true, silent = true })
+      vim.api.nvim_set_keymap('n', '<leader>gD', ':GoDeclsDir<CR>', { noremap = true, silent = true })
     end
   },
   { "nvim-lua/popup.nvim" },
@@ -399,6 +402,14 @@ require("lazy").setup({
 
       vim.notify = custom_notify
     end
+  },
+  {
+    "junegunn/fzf",
+    build = "./install --all",
+  },
+  {
+    "junegunn/fzf.vim",
+    dependencies = { "junegunn/fzf" },
   },
   { "numToStr/Comment.nvim" },
   { "APZelos/blamer.nvim",
