@@ -299,7 +299,6 @@ alias vi='nvim'
 alias bi='nvim'
 alias vo='nvim'
 alias ci='nvim'
-alias c='nvim'
 alias vb='nvim ~/.bashrc'
 alias vz='nvim ~/.zshrc'
 alias vbpro='nvim ~/.bash_profile'
@@ -536,6 +535,19 @@ function rrr() {
     echo "Error: ffmpeg failed for $inputfile" >&2
     rm -f "$tmpfile"
     return 1
+  fi
+}
+
+# 🤖 claudeコマンドのラッパー関数 - tmuxウィンドウ名を自動設定
+function claude() {
+  if [ -n "$TMUX" ]; then
+    tmux rename-window "🤖 claude"
+    command claude "$@"
+    local exit_code=$?
+    tmux rename-window "zsh"
+    return $exit_code
+  else
+    command claude "$@"
   fi
 }
 
