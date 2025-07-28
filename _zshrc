@@ -551,4 +551,17 @@ function claude() {
   fi
 }
 
+# 🤖 geminiコマンドのラッパー関数 - tmuxウィンドウ名を自動設定
+function gemini() {
+  if [ -n "$TMUX" ]; then
+    tmux rename-window "🤖 gemini"
+    command gemini "$@"
+    local exit_code=$?
+    tmux rename-window "zsh"
+    return $exit_code
+  else
+    command gemini "$@"
+  fi
+}
+
 ssh-add ~/.ssh/id_rsa > /dev/null 2>&1
