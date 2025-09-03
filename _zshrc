@@ -564,4 +564,17 @@ function gemini() {
   fi
 }
 
+# 🤖 codexコマンドのラッパー関数 - tmuxウィンドウ名を自動設定
+function codex() {
+  if [ -n "$TMUX" ]; then
+    tmux rename-window "🤖 codex"
+    command codex "$@"
+    local exit_code=$?
+    tmux rename-window "zsh"
+    return $exit_code
+  else
+    command codex "$@"
+  fi
+}
+
 ssh-add ~/.ssh/id_rsa > /dev/null 2>&1
