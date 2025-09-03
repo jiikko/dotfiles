@@ -267,7 +267,16 @@ require("lazy").setup({
       keymap("n", "<leader>as", "<Plug>(coc-codeaction-source)", opts)
       keymap("n", "<leader>qf", "<Plug>(coc-fix-current)", opts)
       -- 定義ジャンプと参照リスト（便利キーバインド）
-      keymap("n", "<C-j>", "<Plug>(coc-definition)", opts)
+      -- スマートジャンプ: 実装があれば実装へ、なければ定義へ
+      function _G.smart_go_to_definition()
+        vim.fn.CocActionAsync('jumpImplementation', function(err, result)
+          if err or not result or vim.tbl_isempty(result) then
+            -- 実装が見つからない場合は定義へジャンプ
+            vim.fn.CocActionAsync('jumpDefinition')
+          end
+        end)
+      end
+      keymap("n", "<C-j>", "<Cmd>lua smart_go_to_definition()<CR>", opts)
       keymap("n", "<C-k>", "<Plug>(coc-references)", opts)
 
       -- NOTE: 必要か？
