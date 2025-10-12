@@ -566,6 +566,27 @@ function gemini() {
   fi
 }
 
+# 🤖 codexコマンドのラッパー関数 - tmuxウィンドウ名を自動設定
+function codex() {
+  if [ -n "$TMUX" ]; then
+    tmux rename-window "🤖 codex"
+    command codex "$@"
+    local exit_code=$?
+    tmux rename-window "zsh"
+    return $exit_code
+  else
+    command codex "$@"
+  fi
+}
+
 ssh-add ~/.ssh/id_rsa > /dev/null 2>&1
 
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+
+# anyenvの初期化
+if type anyenv > /dev/null 2>&1; then
+  eval "$(anyenv init -)"
+else
+  echo "❗ anyenvがインストールされていません"
+  echo "   実行: brew install anyenv"
+fi
