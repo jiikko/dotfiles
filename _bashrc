@@ -72,3 +72,5 @@ else
   # for Mac
   PS1='\[\033[36m\][\u@\h:\[\033[33m\]\w\[\033[36m\]]\[\033[0m\]\[\033[31m\] \e[m \n $ '
 fi
+
+[ -f ~/.fzf.bash ] && source ~/.fzf.bash
