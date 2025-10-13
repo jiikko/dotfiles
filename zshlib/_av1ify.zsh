@@ -153,7 +153,7 @@ EOF
     # 再帰で対象拡張子のみ列挙（(#i)で大文字小文字無視、.Nで通常ファイルのみ）
     setopt LOCAL_OPTIONS extended_glob null_glob
     local -a files
-    files=($target/**/*.(#i)(avi|mkv|rm|wmv|mpg)(.N))
+    files=($target/**/*.(#i)(avi|mkv|rm|wmv|mpg|mpeg|mov|mp4|flv|webm|3gp)(.N))
     if (( ${#files[@]} == 0 )); then
       print -r -- "（対象ファイルなし: $target）"; return 0
     fi
