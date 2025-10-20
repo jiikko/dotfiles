@@ -2,6 +2,83 @@
 # av1ify — 入力された動画ファイル、またはディレクトリ内の動画ファイルをAV1形式のMP4に一括変換します。
 # ------------------------------------------------------------------------------
 
+# 内部補助: 変換後の検査で NG の場合にファイル名へ注記を付加
+__av1ify_mark_issue() {
+  local path="$1" note="$2"
+  local dir="${path:h}"
+  local base="${path:t}"
+  local stem ext new_name dest
+
+  if [[ "$base" == *.* && "$base" != .* ]]; then
+    stem="${base%.*}"
+    ext="${base##*.}"
+    new_name="${stem}-${note}.${ext}"
+  else
+    new_name="${base}-${note}"
+  fi
+
+  if [[ "$dir" == "." ]]; then
+    dest="$new_name"
+  else
+    dest="$dir/$new_name"
+  fi
+
+  if mv -f -- "$path" "$dest"; then
+    REPLY="$dest"
+    return 0
+  fi
+
+  REPLY="$path"
+  return 1
+}
+
+# 内部補助: 出力ファイルの簡易チェック（音声有無と音ズレ）
+__av1ify_postcheck() {
+  local path="$1"
+  local -a issues suffixes
+
+  local audio_stream
+  audio_stream=$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 -- "$path" 2>/dev/null | head -n1)
+  if [[ -z "$audio_stream" ]]; then
+    issues+=("音声ストリーム検出できず")
+    suffixes+=("noaudio")
+  fi
+
+  local v_dur_raw a_dur_raw diff
+  v_dur_raw=$(ffprobe -v error -select_streams v:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$path" 2>/dev/null | head -n1)
+  a_dur_raw=$(ffprobe -v error -select_streams a:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$path" 2>/dev/null | head -n1)
+  if [[ -n "$v_dur_raw" && -n "$a_dur_raw" ]]; then
+    diff=$(awk -v a="$a_dur_raw" -v v="$v_dur_raw" 'BEGIN{ if (a=="" || v=="") exit 1; d=a-v; if (d<0) d=-d; printf "%.6f", d }' 2>/dev/null) || diff=""
+    if [[ -n "$diff" ]]; then
+      local threshold="${AV1IFY_SYNC_TOLERANCE:-0.5}"
+      local -F diff_f threshold_f
+      diff_f=$diff
+      threshold_f=$threshold
+      if (( diff_f > threshold_f )); then
+        issues+=("音ズレ疑い (Δ=${diff}s)")
+        suffixes+=("avsync")
+      fi
+    fi
+  fi
+
+  REPLY="$path"
+  if (( ${#issues[@]} )); then
+    local note="check_ng"
+    if (( ${#suffixes[@]} )); then
+      note+="-${(j:-:)suffixes}"
+    fi
+    local new_path="$path"
+    if __av1ify_mark_issue "$path" "$note"; then
+      new_path="$REPLY"
+    fi
+    print -r -- "⚠️ チェック警告: ${(j:, :)issues}"
+    REPLY="$new_path"
+    return 1
+  fi
+
+  return 0
+}
+
 # 内部: 単一ファイル処理
 __av1ify_one() {
   local in="$1"
@@ -84,7 +161,14 @@ __av1ify_one() {
   print -r -- ">> 出力(処理中マーカー): $tmp"
   if ffmpeg "${args[@]}" -- "$tmp"; then
     mv -f -- "$tmp" "$out"
-    print -r -- "✅ 完了: $out"
+    if __av1ify_postcheck "$out"; then
+      out="$REPLY"
+      print -r -- "✅ 完了: $out"
+    else
+      out="$REPLY"
+      print -r -- "⚠️ 完了 (要確認): $out"
+      return 1
+    fi
   else
     [[ -e "$tmp" ]] && rm -f -- "$tmp"
     print -r -- "❌ 失敗: $in"
@@ -94,7 +178,13 @@ __av1ify_one() {
 
 # 公開関数: ファイル/ディレクトリを受け取って処理
 av1ify() {
-  if [[ "$1" == "-h" || "$1" == "--help" || -z "$1" ]]; then
+  local __av1ify_internal=0
+  if [[ -n ${__AV1IFY_INTERNAL_CALL:-} ]]; then
+    __av1ify_internal=1
+    unset __AV1IFY_INTERNAL_CALL
+  fi
+
+  if (( ! __av1ify_internal )) && [[ "$1" == "-h" || "$1" == "--help" || -z "$1" ]]; then
     cat <<'EOF'
 av1ify — 入力された動画ファイル、またはディレクトリ内の動画ファイルをAV1形式のMP4に一括変換します。
 
@@ -103,6 +193,7 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
   - 出力ファイル名は `<元のファイル名>-enc.mp4` となります。
   - 既に変換済みのファイルが存在する場合は、処理をスキップします。
   - 処理中には `<ファイル名>.in_progress` という一時ファイルを作成し、変換成功後にリネームします。
+  - 変換後に音声ストリームと音ズレを簡易チェックし、問題が見つかればファイル名末尾に注意書きを付けます。
   - ffprobeを使用して入力ファイルの音声コーデックを判別し、可能であれば音声を無劣化でコピーします。
     (デフォルトでAAC, ALAC, MP3に対応)
     対応していない形式の場合は、AAC (192kbps, 48kHz, 2ch) に再エンコードします。
@@ -158,9 +249,10 @@ EOF
       print -r -- "（対象ファイルなし: $target）"; return 0
     fi
     local f ok=0 ng=0
+    # 各ファイルは av1ify() を通して単体処理ルートを再利用（直列実行）
     for f in "${files[@]}"; do
       print -r -- "---- 処理: $f"
-      if __av1ify_one "$f"; then ((ok++)); else ((ng++)); fi
+      if __AV1IFY_INTERNAL_CALL=1 av1ify "$f"; then ((ok++)); else ((ng++)); fi
     done
     print -r -- "== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))"
   else
