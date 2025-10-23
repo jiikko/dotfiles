@@ -48,7 +48,50 @@ __av1ify_postcheck() {
   v_dur_raw=$(ffprobe -v error -select_streams v:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
   a_dur_raw=$(ffprobe -v error -select_streams a:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
   if [[ -n "$v_dur_raw" && -n "$a_dur_raw" ]]; then
-    diff=$(awk -v a="$a_dur_raw" -v v="$v_dur_raw" 'BEGIN{ if (a=="" || v=="") exit 1; d=a-v; if (d<0) d=-d; printf "%.6f", d }' 2>/dev/null) || diff=""
+    diff=$(awk -v a="$a_dur_raw" -v v="$v_dur_raw" 'BEGIN{ if (a=="" || v=="") exit 1; d=a-v; if (d<0) d=-d; printf "%.6f", d }
+
+# 内部補助: 事前リペア（コンテナ/インデックス修復のためのストリームコピー）
+# 入力: $1=元ファイルパス
+# 出力: REPLY=リペア後パス（成功時は <stem>-repaired.<ext>、失敗/スキップ時は元パス）
+__av1ify_pre_repair() {
+  local src="$1"
+  local stem ext repaired tmp
+  if [[ "$src" == *.* && "$src" != .* ]]; then
+    stem="${src%.*}"; ext="${src##*.}"
+  else
+    stem="$src"; ext=""
+  fi
+  repaired="${stem}-repaired${ext:+.${ext}}"
+  tmp="${repaired}.in_progress"
+
+  # 既存の repaired があれば再利用
+  if [[ -e "$repaired" ]]; then
+    print -r -- "→ 事前リペア済みを使用: $repaired"
+    REPLY="$repaired"; return 0
+  fi
+  [[ -e "$tmp" ]] && { print -r -- "⚠️ 残骸削除: $tmp"; rm -f -- "$tmp"; }
+
+  # 判定: packed B-frames 展開が必要な mpeg4（Xvid/DivX）かどうか
+  local vcodec fmt
+  vcodec=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=nk=1:nw=1 -- "$src" 2>/dev/null)
+  fmt=$(ffprobe -v error -show_entries format=format_name -of default=nk=1:nw=1 -- "$src" 2>/dev/null)
+
+  local -a args=( -hide_banner -loglevel warning -y -fflags +genpts -i "$src" -map 0 -c copy )
+  if [[ "${vcodec:l}" == "mpeg4" ]]; then
+    args+=( -bsf:v mpeg4_unpack_bframes )
+  fi
+
+  print -r -- ">> 事前リペア: stream copy (${fmt:-unknown}/${vcodec:-?}) → $repaired"
+  if ffmpeg "${args[@]}" -- "$tmp"; then
+    mv -f -- "$tmp" "$repaired"
+    REPLY="$repaired"; return 0
+  else
+    [[ -e "$tmp" ]] && rm -f -- "$tmp"
+    print -r -- "⚠️ 事前リペア失敗: $src（元ファイルで続行）"
+    REPLY="$src"; return 0
+  fi
+}
+' 2>/dev/null) || diff=""
     if [[ -n "$diff" ]]; then
       local threshold="${AV1IFY_SYNC_TOLERANCE:-0.5}"
       local -F diff_f threshold_f
@@ -80,13 +123,13 @@ __av1ify_postcheck() {
 }
 
 # 内部: 単一ファイル処理
-__av1ify_one() {
-  local in="$1"
+__av1ify_one() {  local in="$1"
   if [[ "$in" == *-enc.mp4 ]]; then
     print -r -- "→ SKIP 既に出力ファイル形式です: $in"
     return 0
   fi
   [[ ! -f "$in" ]] && { print -r -- "✗ ファイルが無い: $in"; return 1; }
+
 
   # ベース出力名（copyや無音時）
   local stem="${in%.*}"
