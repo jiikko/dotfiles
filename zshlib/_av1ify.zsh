@@ -4,9 +4,9 @@
 
 # 内部補助: 変換後の検査で NG の場合にファイル名へ注記を付加
 __av1ify_mark_issue() {
-  local path="$1" note="$2"
-  local dir="${path:h}"
-  local base="${path:t}"
+  local fpath="$1" note="$2"
+  local dir="${fpath:h}"
+  local base="${fpath:t}"
   local stem ext new_name dest
 
   if [[ "$base" == *.* && "$base" != .* ]]; then
@@ -23,32 +23,75 @@ __av1ify_mark_issue() {
     dest="$dir/$new_name"
   fi
 
-  if mv -f -- "$path" "$dest"; then
+  if mv -f -- "$fpath" "$dest"; then
     REPLY="$dest"
     return 0
   fi
 
-  REPLY="$path"
+  REPLY="$fpath"
   return 1
 }
 
 # 内部補助: 出力ファイルの簡易チェック（音声有無と音ズレ）
 __av1ify_postcheck() {
-  local path="$1"
+  local filepath="$1"
   local -a issues suffixes
 
   local audio_stream
-  audio_stream=$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 -- "$path" 2>/dev/null | head -n1)
+  audio_stream=$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 -- "$filepath" 2>/dev/null | head -n1)
   if [[ -z "$audio_stream" ]]; then
     issues+=("音声ストリーム検出できず")
     suffixes+=("noaudio")
   fi
 
   local v_dur_raw a_dur_raw diff
-  v_dur_raw=$(ffprobe -v error -select_streams v:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$path" 2>/dev/null | head -n1)
-  a_dur_raw=$(ffprobe -v error -select_streams a:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$path" 2>/dev/null | head -n1)
+  v_dur_raw=$(ffprobe -v error -select_streams v:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
+  a_dur_raw=$(ffprobe -v error -select_streams a:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
   if [[ -n "$v_dur_raw" && -n "$a_dur_raw" ]]; then
-    diff=$(awk -v a="$a_dur_raw" -v v="$v_dur_raw" 'BEGIN{ if (a=="" || v=="") exit 1; d=a-v; if (d<0) d=-d; printf "%.6f", d }' 2>/dev/null) || diff=""
+    diff=$(awk -v a="$a_dur_raw" -v v="$v_dur_raw" 'BEGIN{ if (a=="" || v=="") exit 1; d=a-v; if (d<0) d=-d; printf "%.6f", d }
+
+# 内部補助: 事前リペア（コンテナ/インデックス修復のためのストリームコピー）
+# 入力: $1=元ファイルパス
+# 出力: REPLY=リペア後パス（成功時は <stem>-repaired.<ext>、失敗/スキップ時は元パス）
+__av1ify_pre_repair() {
+  local src="$1"
+  local stem ext repaired tmp
+  if [[ "$src" == *.* && "$src" != .* ]]; then
+    stem="${src%.*}"; ext="${src##*.}"
+  else
+    stem="$src"; ext=""
+  fi
+  repaired="${stem}-repaired${ext:+.${ext}}"
+  tmp="${repaired}.in_progress"
+
+  # 既存の repaired があれば再利用
+  if [[ -e "$repaired" ]]; then
+    print -r -- "→ 事前リペア済みを使用: $repaired"
+    REPLY="$repaired"; return 0
+  fi
+  [[ -e "$tmp" ]] && { print -r -- "⚠️ 残骸削除: $tmp"; rm -f -- "$tmp"; }
+
+  # 判定: packed B-frames 展開が必要な mpeg4（Xvid/DivX）かどうか
+  local vcodec fmt
+  vcodec=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=nk=1:nw=1 -- "$src" 2>/dev/null)
+  fmt=$(ffprobe -v error -show_entries format=format_name -of default=nk=1:nw=1 -- "$src" 2>/dev/null)
+
+  local -a args=( -hide_banner -loglevel warning -y -fflags +genpts -i "$src" -map 0 -c copy )
+  if [[ "${vcodec:l}" == "mpeg4" ]]; then
+    args+=( -bsf:v mpeg4_unpack_bframes )
+  fi
+
+  print -r -- ">> 事前リペア: stream copy (${fmt:-unknown}/${vcodec:-?}) → $repaired"
+  if ffmpeg "${args[@]}" -- "$tmp"; then
+    mv -f -- "$tmp" "$repaired"
+    REPLY="$repaired"; return 0
+  else
+    [[ -e "$tmp" ]] && rm -f -- "$tmp"
+    print -r -- "⚠️ 事前リペア失敗: $src（元ファイルで続行）"
+    REPLY="$src"; return 0
+  fi
+}
+' 2>/dev/null) || diff=""
     if [[ -n "$diff" ]]; then
       local threshold="${AV1IFY_SYNC_TOLERANCE:-0.5}"
       local -F diff_f threshold_f
@@ -61,14 +104,14 @@ __av1ify_postcheck() {
     fi
   fi
 
-  REPLY="$path"
+  REPLY="$filepath"
   if (( ${#issues[@]} )); then
     local note="check_ng"
     if (( ${#suffixes[@]} )); then
       note+="-${(j:-:)suffixes}"
     fi
-    local new_path="$path"
-    if __av1ify_mark_issue "$path" "$note"; then
+    local new_path="$filepath"
+    if __av1ify_mark_issue "$filepath" "$note"; then
       new_path="$REPLY"
     fi
     print -r -- "⚠️ チェック警告: ${(j:, :)issues}"
@@ -80,25 +123,20 @@ __av1ify_postcheck() {
 }
 
 # 内部: 単一ファイル処理
-__av1ify_one() {
-  local in="$1"
+__av1ify_one() {  local in="$1"
   if [[ "$in" == *-enc.mp4 ]]; then
     print -r -- "→ SKIP 既に出力ファイル形式です: $in"
     return 0
   fi
   [[ ! -f "$in" ]] && { print -r -- "✗ ファイルが無い: $in"; return 1; }
 
-  # 出力パス決定: <stem>-enc.mp4
+
+  # ベース出力名（copyや無音時）
   local stem="${in%.*}"
   local out="${stem}-enc.mp4"
   local tmp="${out}.in_progress"
 
-  # 既に最終ファイルがあれば SKIP
-  if [[ -e "$out" ]]; then
-    print -r -- "→ SKIP 既存: $out"
-    return 0
-  fi
-  # 古い in_progress が残っていたら掃除（途中失敗の取り残し対策）
+  # 古い in_progress が残っていたら掃除
   if [[ -e "$tmp" ]]; then
     print -r -- "⚠️ 残骸削除: $tmp"
     rm -f -- "$tmp"
@@ -163,9 +201,9 @@ __av1ify_one() {
   # 中断時に in_progress を掃除
   trap '[[ -n "$tmp" && -e "$tmp" ]] && rm -f -- "$tmp"' INT TERM HUP
 
-  # ffmpeg 共通引数（※ zsh の ? 展開回避のため -map はクォート）
-  local -a args
-  args=(
+  # ffmpeg 共通引数
+  local -a args_common args_audio
+  args_common=(
     -hide_banner -stats -y
     -i "$in"
     -map "0:v:0"
@@ -174,38 +212,91 @@ __av1ify_one() {
     -f mp4
   )
 
-  # 音声指定
+  # 音声指定（命名用フラグ・ビットレート保持）
+  local did_aac=0
+  local aac_bitrate_resolved=""
+
   if [[ -z "$acodec" ]]; then
-    args+=(-an)
+    args_audio=(-an)
     print -r -- ">> 音声: なし（-an）"
   elif (( use_copy )); then
-    args+=(-map "0:a:0?" -c:a copy)
+    args_audio=(-map "0:a:0?" -c:a copy)
     print -r -- ">> 音声: copy (codec=$acodec)"
   else
-    args+=(-map "0:a:0?" -c:a aac -b:a 192k -ac 2 -ar 48000)
+    aac_bitrate_resolved="${AV1_AAC_BITRATE:-96k}"
+    args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac 2 -ar 48000)
+    did_aac=1
     print -r -- ">> 音声: aac へ再エンコード (元=$acodec)"
+  fi
+
+  # 予定される最終出力ファイル（copyや無音なら -enc.mp4、AACエンコードなら -aac{br}-enc.mp4）
+  local final_out="$out"
+  if (( did_aac )); then
+    local br="${aac_bitrate_resolved:l}" tag
+    if [[ "$br" == *k ]]; then
+      tag="$br"
+    elif [[ "$br" == <-> ]]; then
+      local kb; (( kb = (br + 500) / 1000 ))
+      tag="${kb}k"
+    else
+      tag="$br"
+    fi
+    final_out="${stem}-aac${tag}-enc.mp4"
+  fi
+
+  # 既存チェック（過去の出力があればスキップ）
+  if [[ -e "$final_out" || -e "$out" ]]; then
+    local exist="$final_out"
+    [[ -e "$out" ]] && exist="$out"
+    print -r -- "→ SKIP 既存: $exist"
+    return 0
   fi
 
   print -r -- ">> 映像: $vcodec (crf=$crf, preset=$preset)"
   print -r -- ">> 出力(処理中マーカー): $tmp"
-  if ffmpeg "${args[@]}" -- "$tmp"; then
-    mv -f -- "$tmp" "$out"
-    if __av1ify_postcheck "$out"; then
-      out="$REPLY"
-      print -r -- "✅ 完了: $out"
-    else
-      out="$REPLY"
-      print -r -- "⚠️ 完了 (要確認): $out"
-      return 1
-    fi
-  else
-    [[ -e "$tmp" ]] && rm -f -- "$tmp"
-    print -r -- "❌ 失敗: $in"
-    return 1
-  fi
-}
 
-# 公開関数: ファイル/ディレクトリを受け取って処理
+  # 1回目: 設定通りに実行
+  if ffmpeg "${args_common[@]}" "${args_audio[@]}" -- "$tmp"; then
+    mv -f -- "$tmp" "$final_out"
+    if __av1ify_postcheck "$final_out"; then
+      final_out="$REPLY"; print -r -- "✅ 完了: $final_out"; return 0
+    else
+      final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"; return 1
+    fi
+  fi
+
+  # 失敗時: copy 選択だった場合は AAC で再試行（命名もAACタグへ）
+  [[ -e "$tmp" ]] && rm -f -- "$tmp"
+  if (( use_copy )); then
+    print -r -- "⚠️ 音声copy失敗 → AAC再エンコードで再試行"
+    aac_bitrate_resolved="${AV1_AAC_BITRATE:-96k}"
+    args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac 2 -ar 48000)
+    did_aac=1
+    # 再計算: 最終出力名
+    local br="${aac_bitrate_resolved:l}" tag
+    if [[ "$br" == *k ]]; then
+      tag="$br"
+    elif [[ "$br" == <-> ]]; then
+      local kb; (( kb = (br + 500) / 1000 ))
+      tag="${kb}k"
+    else
+      tag="$br"
+    fi
+    final_out="${stem}-aac${tag}-enc.mp4"
+
+    if ffmpeg "${args_common[@]}" "${args_audio[@]}" -- "$tmp"; then
+      mv -f -- "$tmp" "$final_out"
+      if __av1ify_postcheck "$final_out"; then
+        final_out="$REPLY"; print -r -- "✅ 完了: $final_out"; return 0
+      else
+        final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"; return 1
+      fi
+    fi
+  fi
+
+  print -r -- "❌ 失敗: $in"
+  return 1
+}
 av1ify() {
   local __av1ify_internal=0
   if [[ -n ${__AV1IFY_INTERNAL_CALL:-} ]]; then
@@ -225,7 +316,7 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
   - 変換後に音声ストリームと音ズレを簡易チェックし、問題が見つかればファイル名末尾に注意書きを付けます。
   - ffprobeを使用して入力ファイルの音声コーデックを判別し、可能であれば音声を無劣化でコピーします。
     (デフォルトでAAC, ALAC, MP3に対応)
-    対応していない形式の場合は、AAC (192kbps, 48kHz, 2ch) に再エンコードします。
+    対応していない形式の場合は、AAC (96kbps, 48kHz, 2ch) に再エンコードします。
   - ディレクトリを指定した場合、再帰的に動画ファイル (avi, mkv, rm, wmv, mpg) を検索して変換します。
     (ファイル名の大文字・小文字は区別しません)
 
@@ -272,6 +363,7 @@ EOF
   if [[ -d "$target" ]]; then
     # 再帰で対象拡張子のみ列挙（(#i)で大文字小文字無視、.Nで通常ファイルのみ）
     setopt LOCAL_OPTIONS extended_glob null_glob
+    unsetopt LOCAL_OPTIONS SH_WORD_SPLIT
     local -a files
     files=($target/**/*.(#i)(avi|mkv|rm|wmv|mpg|mpeg|mov|mp4|flv|webm|3gp)(.N))
     if (( ${#files[@]} == 0 )); then
