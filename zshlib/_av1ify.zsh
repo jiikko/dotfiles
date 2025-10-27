@@ -110,8 +110,37 @@ __av1ify_one() {
     vcodec="libaom-av1"
     print -r -- "⚠️ libsvtav1 不在 → ${vcodec} に切替"
   fi
-  local crf="${AV1_CRF:-40}"
-  local preset="${AV1_PRESET:-5}"
+
+  # 解像度を取得して CRF を自動調整（環境変数が優先）
+  local crf preset
+  if [[ -n "${AV1_CRF:-}" ]]; then
+    crf="$AV1_CRF"
+  else
+    # 縦解像度を取得
+    local height
+    height=$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
+             -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
+
+    if [[ -n "$height" && "$height" =~ ^[0-9]+$ ]]; then
+      # 解像度に応じて CRF を設定
+      if (( height <= 480 )); then
+        crf=30  # SD: 高画質に
+      elif (( height <= 720 )); then
+        crf=35  # HD 720p
+      elif (( height <= 1080 )); then
+        crf=45  # Full HD 1080p
+      elif (( height <= 1440 )); then
+        crf=50  # 2K
+      else
+        crf=54  # 4K以上
+      fi
+      print -r -- ">> 解像度: ${height}p → CRF=$crf を自動設定"
+    else
+      crf=40  # デフォルト
+      print -r -- "⚠️ 解像度取得失敗 → CRF=$crf（デフォルト）"
+    fi
+  fi
+  preset="${AV1_PRESET:-5}"
 
   # 音声コーデック事前判定（a:0 が無ければ空）
   local acodec
