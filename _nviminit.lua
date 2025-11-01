@@ -228,7 +228,7 @@ require("lazy").setup({
       -- ステータスラインに Coc の状態を表示
       vim.o.statusline = "%{coc#status()}%{get(b:,'coc_current_function','')}"
       -- 現在のファイル名をクリップボードにコピー
-      keymap("n", "<leader>cf", ':let @+ = expand("%:~:.")<CR>:echo "\\"".expand("%:~:.")."をコピーしました\\""<CR>', opts)
+      keymap("n", "<leader>f", ':let @+ = expand("%:~:.")<CR>:echo "\\"".expand("%:~:.")."をコピーしました\\""<CR>', opts)
       -- ケース変換
       keymap("n", "<leader>c", "<Plug>(operator-camelize)", opts)
       keymap("n", "<leader>C", "<Plug>(operator-decamelize)", opts)
