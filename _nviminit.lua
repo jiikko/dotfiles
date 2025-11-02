@@ -18,8 +18,8 @@ vim.opt.rtp:prepend(lazypath)
 -- Make sure to setup `mapleader` and `maplocalleader` before
 -- loading lazy.nvim so that mappings are correct.
 -- This is also a good place to setup other settings (vim.opt)
-vim.g.mapleader = "\\"
-vim.g.maplocalleader = "\\"
+vim.g.mapleader = " "
+vim.g.maplocalleader = " "
 
 -- グローバル変数の設定
 vim.g.omni_sql_no_default_maps = 1  -- omni_sqlのデフォルトマッピングを無効化
@@ -228,7 +228,11 @@ require("lazy").setup({
       -- ステータスラインに Coc の状態を表示
       vim.o.statusline = "%{coc#status()}%{get(b:,'coc_current_function','')}"
       -- 現在のファイル名をクリップボードにコピー
-      keymap("n", "<leader>f", ':let @+ = expand("%:~:.")<CR>:echo "\\"".expand("%:~:.")."をコピーしました\\""<CR>', opts)
+      vim.keymap.set("n", "<leader>n", function()
+        local filepath = vim.fn.expand("%:~:.")
+        vim.fn.setreg("+", filepath)
+        print(string.format('"%s" をコピーしました', filepath))
+      end, opts)
       -- ケース変換
       keymap("n", "<leader>c", "<Plug>(operator-camelize)", opts)
       keymap("n", "<leader>C", "<Plug>(operator-decamelize)", opts)
