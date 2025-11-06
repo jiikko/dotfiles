@@ -29,6 +29,7 @@ vim.opt.mouse = ""
 -- オプション設定
 vim.opt.backup = false        -- バックアップファイルを作成しない
 vim.opt.swapfile = false      -- スワップファイルを作成しない
+vim.opt.shortmess:append("I") -- 起動時のメッセージを非表示
 
 -- wildignore の設定（指定したパターンのファイルを無視）
 vim.opt.wildignore:append({ ".git", ".svn" })
