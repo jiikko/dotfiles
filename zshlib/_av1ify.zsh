@@ -162,9 +162,9 @@ __av1ify_one() {  local in="$1"
     if [[ -n "$height" && "$height" =~ ^[0-9]+$ ]]; then
       # 解像度に応じて CRF を設定
       if (( height <= 480 )); then
-        crf=30  # SD: 高画質に
+        crf=40  # SD:
       elif (( height <= 720 )); then
-        crf=35  # HD 720p
+        crf=40  # HD 720p
       elif (( height <= 1080 )); then
         crf=45  # Full HD 1080p
       elif (( height <= 1440 )); then
