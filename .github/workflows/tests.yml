@@ -1,0 +1,15 @@
+name: Tests
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+jobs:
+  zshrc:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run zshrc tests
+        shell: bash
+        run: tests/zshrc/test_zshrc.sh

@@ -11,3 +11,11 @@ cd dotfiles
 ```
 
 [for Mac](./mac "for Mac")
+
+## Testing
+
+Run the zsh configuration regression tests locally:
+
+```
+tests/zshrc/test_zshrc.sh
+```
