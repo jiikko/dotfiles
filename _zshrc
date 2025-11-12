@@ -47,7 +47,8 @@ export PATH="/opt/homebrew/bin:$PATH"
 export PATH="/usr/local/heroku/bin:$PATH"
 
 export HUSKY_SKIP_HOOKS=1
-export FZF_DEFAULT_OPTS='--height 80% --reverse --border --no-sort --no-hscroll --preview-window=down'
+export FZF_DEFAULT_OPTS='--height 80% --reverse --border'
+FZF_GIT_BRANCH_OPTS='--no-sort --no-hscroll --preview-window=down'
 
 
 if [ ~/.zshrc -nt ~/.zshrc.zwc ]; then
@@ -135,7 +136,8 @@ function select-git-branch-friendly() {
   selected_branch=$(
     git branch --sort=-committerdate --format=$fmt --color=always \
     | column -ts'|' \
-    | fzf --ansi --exact --preview='git log --oneline --graph --decorate --color=always -50 {+1}' \
+    | FZF_DEFAULT_OPTS="$FZF_DEFAULT_OPTS $FZF_GIT_BRANCH_OPTS" \
+      fzf --ansi --exact --preview='git log --oneline --graph --decorate --color=always -50 {+1}' \
     | awk '{print $1}' \
   )
   BUFFER="${LBUFFER}${selected_branch}${RBUFFER}"
