@@ -292,6 +292,13 @@ require("lazy").setup({
     end,
   },
   { "nvim-telescope/telescope.nvim",
+    cmd = "Telescope",
+    keys = {
+      { "<leader>ff", function() require("telescope.builtin").find_files() end, desc = "Find files" },
+      { "<leader>fg", function() require("telescope.builtin").live_grep() end, desc = "Live grep" },
+      { "<leader>fb", function() require("telescope.builtin").buffers() end, desc = "List buffers" },
+      { "<leader>fn", function() require("telescope").extensions.notify.notify() end, desc = "Notify history" },
+    },
     dependencies = {
       "nvim-lua/plenary.nvim",
       "fannheyward/telescope-coc.nvim",
@@ -321,16 +328,7 @@ require("lazy").setup({
       telescope.load_extension("coc")
       telescope.load_extension("ui-select")
       telescope.load_extension("notify")
-
-      vim.keymap.set('n', '<leader>fn', function()
-        telescope.extensions.notify.notify()
-      end)
-
-      local builtin = require("telescope.builtin")
       vim.keymap.set("n", "<leader>fd", "<Cmd>CocDiagnostics<CR>")
-      vim.keymap.set("n", "<leader>ff", "<cmd>Telescope find_files<CR>", { silent = true })
-      vim.keymap.set("n", "<leader>fg", "<cmd>Telescope live_grep<CR>", { silent = true })
-      vim.keymap.set("n", "<leader>fb", "<cmd>Telescope buffers<CR>", { silent = true })
     end,
   },
   { "rbtnn/vim-ambiwidth" },
@@ -341,7 +339,16 @@ require("lazy").setup({
   },
   {
     "nvim-tree/nvim-tree.lua",
-    lazy = false,
+    cmd = { "NvimTreeToggle", "NvimTreeFocus", "NvimTreeFindFile", "NvimTreeFindFileToggle" },
+    keys = {
+      { "<C-e>", "<cmd>NvimTreeToggle<CR>", desc = "Toggle file tree", mode = { "n" } },
+      { "<C-e>", "<Esc>:NvimTreeToggle<CR>", desc = "Toggle file tree", mode = "v" },
+      { "<C-e>", "<Esc>:NvimTreeToggle<CR>", desc = "Toggle file tree", mode = "i" },
+      { "<C-e>", ":NvimTreeToggle<CR>", desc = "Toggle file tree", mode = "o" },
+      { "<C-e>", "<C-u>:NvimTreeToggle<CR>", desc = "Toggle file tree", mode = "c" },
+      { "<leader>nt", "<cmd>NvimTreeToggle<CR>", desc = "Toggle file tree" },
+      { "<leader>nf", "<cmd>NvimTreeFindFile!<CR>", desc = "Reveal file" },
+    },
     config = function()
       -- https://github.com/nvim-tree/nvim-tree.lua/blob/70825f23db61ecd900c4cfea169bffe931926a9d/doc/nvim-tree-lua.txt#L158
       local function my_on_attach(bufnr)
@@ -375,16 +382,6 @@ require("lazy").setup({
         on_attach = my_on_attach,
       })
 
-      local opts = { silent = false }
-      -- <C-e> マッピング
-      vim.api.nvim_set_keymap("n", "<C-e>", ":NvimTreeToggle<CR>", opts)
-      vim.api.nvim_set_keymap("v", "<C-e>", "<Esc>:NvimTreeToggle<CR>", opts)
-      vim.cmd('omap <silent> <C-e> :NvimTreeToggle<CR>')
-      vim.api.nvim_set_keymap("i", "<C-e>", "<Esc>:NvimTreeToggle<CR>", opts)
-      vim.api.nvim_set_keymap("c", "<C-e>", "<C-u>:NvimTreeToggle<CR>", opts)
-      -- <leader>nt, <leader>nf マッピング
-      vim.api.nvim_set_keymap("n", "<leader>nt", ":NvimTreeToggle<CR>", { silent = true, noremap = true })
-      vim.api.nvim_set_keymap("n", "<leader>nf", ":NvimTreeFindFile!<CR>", { noremap = true, silent = true })
     end,
   },
   { "nvim-tree/nvim-web-devicons", lazy = false },
