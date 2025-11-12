@@ -108,7 +108,6 @@ require("lazy").setup({
       vim.api.nvim_set_keymap('n', '<leader>gD', ':GoDeclsDir<CR>', { noremap = true, silent = true })
     end
   },
-  { "nvim-lua/popup.nvim" },
   { "andymass/vim-matchup",
     config = function()
       vim.g.loaded_matchit = 1
