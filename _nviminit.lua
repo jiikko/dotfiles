@@ -67,7 +67,6 @@ vim.keymap.set("n", "Q", "<Nop>", { noremap = true })  -- Qを無効化するマ
 
 -- Setup lazy.nvim
 require("lazy").setup({
-  ui = false,
   { "morhetz/gruvbox",
     config = function()
       vim.cmd("colorscheme gruvbox")
@@ -395,6 +394,14 @@ require("lazy").setup({
     end
   },
   { "rcarriga/nvim-notify",
+    init = function()
+      local default_notify = vim.notify
+      vim.notify = function(...)
+        vim.notify = default_notify
+        require("lazy").load({ plugins = { "nvim-notify" } })
+        return vim.notify(...)
+      end
+    end,
     config = function()
       -- TODO: これいる？
       vim.api.nvim_set_option('termguicolors', false)
@@ -481,7 +488,9 @@ require("lazy").setup({
     end,
   },
   { "ntpeters/vim-better-whitespace" },
-  { "MeanderingProgrammer/render-markdown.nvim" },
+  { "MeanderingProgrammer/render-markdown.nvim",
+    ft = { "markdown", "md", "mdx", "rmd" },
+  },
 }, {
   install = { colorscheme = { "habamax" } },
   checker = { enabled = true },
