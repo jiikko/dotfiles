@@ -8,7 +8,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-cat <<'EOF' > "$TMP_ZDOTDIR/.zshrc"
+cat <<EOF > "$TMP_ZDOTDIR/.zshrc"
 source "$ROOT_DIR/_zshrc"
 EOF
 
