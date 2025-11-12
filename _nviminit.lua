@@ -72,8 +72,9 @@ require("lazy").setup({
       vim.cmd("colorscheme gruvbox")
     end,
   },
-  { "tpope/vim-rails" },
+  { "tpope/vim-rails", ft = { "ruby", "eruby" } },
   { "lukelbd/vim-toggle",
+    event = "VeryLazy",
     init = function()
       vim.g.toggle_map = '+'
       vim.g.toggle_words_on = {
@@ -90,6 +91,7 @@ require("lazy").setup({
   { "kana/vim-operator-user" },
   { "tyru/operator-camelize.vim", lazy = true },
   { "hashivim/vim-terraform",
+    ft = { "terraform", "tf", "hcl" },
     config = function()
       vim.g.terraform_align = 1
       vim.g.terraform_fold_sections = 1
@@ -97,6 +99,7 @@ require("lazy").setup({
     end
   },
   { "fatih/vim-go",
+    ft = { "go" },
     build = ":GoUpdateBinaries",
     config = function()
       vim.g.go_null_module_warning = 0
@@ -333,6 +336,8 @@ require("lazy").setup({
   },
   { "rbtnn/vim-ambiwidth" },
   { "romgrk/barbar.nvim",
+    event = "BufAdd",
+    dependencies = { "nvim-tree/nvim-web-devicons" },
     config = function()
       require("barbar").setup({ auto_hide = false })
     end,
@@ -384,7 +389,7 @@ require("lazy").setup({
 
     end,
   },
-  { "nvim-tree/nvim-web-devicons", lazy = false },
+  { "nvim-tree/nvim-web-devicons" },
   { "lukas-reineke/indent-blankline.nvim",
     config = function()
       require("ibl").setup()
@@ -431,21 +436,30 @@ require("lazy").setup({
   },
   { "numToStr/Comment.nvim" },
   { "APZelos/blamer.nvim",
-    config = function()
+    cmd = { "BlamerToggle" },
+    keys = {
+      { "<leader>gb", function()
+          require("lazy").load({ plugins = { "blamer.nvim" } })
+          vim.cmd("BlamerToggle")
+        end,
+        desc = "Toggle git blame",
+        mode = { "n", "v" }
+      },
+    },
+    init = function()
       vim.g.blamer_enabled = 0
       vim.g.blamer_date_format = "%Y/%m/%d"
       vim.g.blamer_show_in_insert_modes = 0
       vim.g.blamer_template = "<commit-short> <committer-time> <committer>:  <summary>"
-      vim.api.nvim_set_keymap("n", "<leader>gb", "<cmd>BlamerToggle<CR>", { noremap = true, silent = true })
-      vim.api.nvim_set_keymap("v", "<leader>gb", "<cmd>BlamerToggle<CR>", { noremap = true, silent = true })
     end,
   },
   { "petertriho/nvim-scrollbar",
+    event = "BufWinEnter",
     config = function()
       require("scrollbar").setup({ handlers = { cursor = false } })
     end,
   },
-  { "psliwka/vim-smoothie" },
+  { "psliwka/vim-smoothie", event = "VeryLazy" },
   {
     "folke/flash.nvim",
     event = "VeryLazy",
@@ -467,7 +481,7 @@ require("lazy").setup({
       { "<c-s>", mode = { "c" }, function() require("flash").toggle() end, desc = "Toggle Flash Search" },
     },
   },
-  { 'echasnovski/mini.nvim', version = '*',
+  { 'echasnovski/mini.nvim', version = '*', event = "VeryLazy",
     config = function()
       local animate = require("mini.animate")
       animate.setup({
@@ -484,7 +498,7 @@ require("lazy").setup({
 
     end,
   },
-  { "ntpeters/vim-better-whitespace" },
+  { "ntpeters/vim-better-whitespace", event = { "BufReadPost", "BufNewFile" } },
   { "MeanderingProgrammer/render-markdown.nvim",
     ft = { "markdown", "md", "mdx", "rmd" },
   },
