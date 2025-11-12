@@ -582,11 +582,3 @@ function codex() {
 ssh-add ~/.ssh/id_rsa > /dev/null 2>&1
 
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
-
-# anyenvの初期化
-if type anyenv > /dev/null 2>&1; then
-  eval "$(anyenv init -)"
-else
-  echo "❗ anyenvがインストールされていません"
-  echo "   実行: brew install anyenv"
-fi
