@@ -26,8 +26,11 @@ else
 fi
 
 if type pyenv > /dev/null 2>&1; then
+  export PYENV_DISABLE_AUTO_REHASH=1
+  if [[ -o login ]]; then
+    eval "$(pyenv init --path)"
+  fi
   eval "$(pyenv init -)"
-  eval "$(pyenv init --path)"
 fi
 
 if type direnv > /dev/null 2>&1; then
@@ -599,7 +602,9 @@ function codex() {
   fi
 }
 
-ssh-add ~/.ssh/id_rsa > /dev/null 2>&1
+if [[ -n "$SSH_AUTH_SOCK" ]] && ! ssh-add -l > /dev/null 2>&1; then
+  ssh-add ~/.ssh/id_rsa > /dev/null 2>&1
+fi
 
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 
