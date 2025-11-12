@@ -41,9 +41,10 @@ fi
 export PATH=$GOPATH/bin:$PATH
 export PATH="$HOME/dotfiles/bin:$PATH"
 export PATH="/opt/homebrew/bin:$PATH"
+export PATH="/usr/local/heroku/bin:$PATH"
 
 export HUSKY_SKIP_HOOKS=1
-export FZF_DEFAULT_OPTS='--height 80% --reverse --border'
+export FZF_DEFAULT_OPTS='--height 80% --reverse --border --no-sort --no-hscroll --preview-window=down'
 
 
 if [ ~/.zshrc -nt ~/.zshrc.zwc ]; then
@@ -56,13 +57,13 @@ fi
 bindkey -e      # emacs キーバインド
 # bindkey -v      # vi キーバインド
 # set -o vi
+bindkey -r '^T'
 
 ##========================================================##
 ##================= リストの色つけの設定 =================##
 ##========================================================##
 # ls, #dir, vdir の設定
 alias sk='kill -9 $$'
-alias ls='ls --G'
 alias grep='grep --color=auto'
 alias tn='terminal-notifier -sound default'
 export MAILCHECK=0
@@ -75,7 +76,25 @@ zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([%0-9]#)*=0=01;31
 ##========================================================##
 ##====================== 補完の設定 ======================##
 ##========================================================##
-autoload -U compinit ; compinit
+# Speed up completion init by caching the compiled dump under ~/.cache
+autoload -Uz compinit
+: "${XDG_CACHE_HOME:=$HOME/.cache}"
+: "${ZSH_COMPDUMP:=$XDG_CACHE_HOME/zsh/zcompdump-$ZSH_VERSION}"
+compdump_dir="${ZSH_COMPDUMP:h}"
+if [[ ! -d "$compdump_dir" ]]; then
+  if ! mkdir -p "$compdump_dir" 2>/dev/null; then
+    ZSH_COMPDUMP="$HOME/.zcompdump"
+    compdump_dir="${ZSH_COMPDUMP:h}"
+  fi
+fi
+if [[ -s "$ZSH_COMPDUMP" ]]; then
+  compinit -C -d "$ZSH_COMPDUMP"
+else
+  compinit -d "$ZSH_COMPDUMP"
+fi
+if [[ -s "$ZSH_COMPDUMP" && ( ! -s "${ZSH_COMPDUMP}.zwc" || "$ZSH_COMPDUMP" -nt "${ZSH_COMPDUMP}.zwc" ) ]]; then
+  zcompile "$ZSH_COMPDUMP"
+fi
 # 補完候補の大文字小文字の違いを無視
 #zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
 zstyle ':completion:*:default' menu select=1 # 補完候補を←↓↑→で選択
@@ -104,7 +123,6 @@ setopt auto_resume           # サスペンド中のプロセスと同じコマ�
 ##==================== git branchの検索 ====================##
 ##========================================================##
 # NOTE: https://www.mizdra.net/entry/2024/10/19/172323
-export FZF_DEFAULT_OPTS="--reverse --no-sort --no-hscroll --preview-window=down"
 user_name=$(git config user.name)
 fmt="\
 %(if:equals=$user_name)%(authorname)%(then)%(color:default)%(else)%(color:brightred)%(end)%(refname:short)|\
@@ -261,9 +279,11 @@ function gb() {
 alias be="bundle exec"
 alias b="bundle exec"
 
-alias ls='ls -G'
-if [ `uname` = "Linux" ]; then
-  alias ls='ls --color'
+# ls colorization
+if [[ "$OSTYPE" == linux* ]]; then
+  alias ls='ls --color=auto'
+else
+  alias ls='ls -G'
 fi
 
 alias ll='ls -l'
@@ -582,3 +602,15 @@ function codex() {
 ssh-add ~/.ssh/id_rsa > /dev/null 2>&1
 
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+
+if command -v brew > /dev/null 2>&1; then
+  brew_prefix="$(brew --prefix)"
+
+  if [ -f "$brew_prefix/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]; then
+    source "$brew_prefix/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
+  fi
+
+  if [ -f "$brew_prefix/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]; then
+    source "$brew_prefix/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+  fi
+fi
