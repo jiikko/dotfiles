@@ -319,7 +319,6 @@ alias ggl='git log --graph --pretty=oneline --abbrev-commit --decorate --all'
 
 alias rr='bundle exec rails routes'
 
-alias sb='source ~/.bashrc'
 alias sz='source ~/.zshrc'
 
 alias v='nvim'
@@ -329,9 +328,7 @@ alias vi='nvim'
 alias bi='nvim'
 alias vo='nvim'
 alias ci='nvim'
-alias vb='nvim ~/.bashrc'
 alias vz='nvim ~/.zshrc'
-alias vbpro='nvim ~/.bash_profile'
 alias vv='nvim ~/.config/nvim/init.lua'
 alias vk='nvim ~/dotfiles/mac/karabiner.json'
 alias nv='nvim'
