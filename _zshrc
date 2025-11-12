@@ -49,10 +49,15 @@ export PATH="/usr/local/heroku/bin:$PATH"
 export HUSKY_SKIP_HOOKS=1
 export FZF_DEFAULT_OPTS='--height 80% --reverse --border'
 FZF_GIT_BRANCH_OPTS='--no-sort --no-hscroll --preview-window=down'
+if [[ -z "${FZF_CTRL_R_OPTS:-}" ]]; then
+  export FZF_CTRL_R_OPTS="$FZF_GIT_BRANCH_OPTS"
+fi
 
 
-if [ ~/.zshrc -nt ~/.zshrc.zwc ]; then
-   zcompile ~/.zshrc
+if [ -s ~/.zshrc ]; then
+  if [ ! -s ~/.zshrc.zwc ] || [ ~/.zshrc -nt ~/.zshrc.zwc ]; then
+    zcompile ~/.zshrc
+  fi
 fi
 
 ##========================================================##
@@ -608,7 +613,15 @@ if [[ -n "$SSH_AUTH_SOCK" ]] && ! ssh-add -l > /dev/null 2>&1; then
   ssh-add ~/.ssh/id_rsa > /dev/null 2>&1
 fi
 
-[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+if [ -f ~/.fzf.zsh ]; then
+  source ~/.fzf.zsh
+elif [ -f /opt/homebrew/opt/fzf/shell/key-bindings.zsh ]; then
+  source /opt/homebrew/opt/fzf/shell/key-bindings.zsh
+fi
+if (( $+functions[fzf-history-widget] )); then
+  bindkey -M emacs '^R' fzf-history-widget
+  bindkey -M vicmd '^R' fzf-history-widget 2>/dev/null
+fi
 
 if command -v brew > /dev/null 2>&1; then
   brew_prefix="$(brew --prefix)"
