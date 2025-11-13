@@ -3,14 +3,20 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP_ZDOTDIR="$(mktemp -d)"
+TMP_HOME="$(mktemp -d)"
 cleanup() {
-  rm -rf "$TMP_ZDOTDIR"
+  rm -rf "$TMP_ZDOTDIR" "$TMP_HOME"
 }
 trap cleanup EXIT
 
 cat <<EOF > "$TMP_ZDOTDIR/.zshrc"
 source "$ROOT_DIR/_zshrc"
 EOF
+
+# mimic expected home layout
+ln -s "$ROOT_DIR" "$TMP_HOME/dotfiles"
+mkdir -p "$TMP_HOME/.rbenv/bin"
+mkdir -p "$TMP_HOME/.nodebrew/current/bin"
 
 run_zsh() {
   local cmd="$1"
@@ -19,7 +25,7 @@ run_zsh() {
   if [[ "$mode" == "login" ]]; then
     opts=(-i -l)
   fi
-  ZDOTDIR="$TMP_ZDOTDIR" zsh "${opts[@]}" -c "$cmd"
+  HOME="$TMP_HOME" ZDOTDIR="$TMP_ZDOTDIR" zsh "${opts[@]}" -c "$cmd"
 }
 
 assert_contains() {
