@@ -1,23 +1,20 @@
 SHELL := /bin/sh
 
-.PHONY: test test-nvim test-tmux test-setup test-nvim-zsh test-tmux-zsh test-setup-zsh
+.PHONY: test test-nvim test-tmux test-setup test-zshrc test-syntax
 
-test: test-nvim test-tmux test-setup
+test: test-syntax test-zshrc test-nvim test-tmux test-setup
 
 test-nvim:
-	@./scripts/test_nvim.sh
-
-test-tmux:
-	@./scripts/test_tmux.sh
-
-test-setup:
-	@./scripts/test_setup.sh
-
-test-nvim-zsh:
 	@./scripts/test_nvim.zsh
 
-test-tmux-zsh:
+test-tmux:
 	@./scripts/test_tmux.zsh
 
-test-setup-zsh:
+test-setup:
 	@./scripts/test_setup.zsh
+
+test-zshrc:
+	@tests/zshrc/test_zshrc.sh
+
+test-syntax:
+	@./scripts/check_syntax.zsh

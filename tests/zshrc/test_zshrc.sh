@@ -102,4 +102,12 @@ fi
 git_branch_binding="$(run_zsh 'bindkey "^g^b"')"
 assert_contains "$git_branch_binding" "select-git-branch-friendly" "Ctrl-g Ctrl-b is bound to branch selector"
 
+# 8. zcompile command exists (used by zshrc)
+if run_zsh 'command -v zcompile >/dev/null'; then
+  printf '✓ zcompile is available in zsh\n'
+else
+  printf '✗ zcompile is missing; required for cached compdump\n'
+  exit 1
+fi
+
 printf 'All zshrc tests passed.\n'

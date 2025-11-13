@@ -20,11 +20,12 @@ Run the regression test suite (Neovim, tmux, setup.sh, plus existing zsh tests) 
 make test
 ```
 
-You can run individual checks as well (replace with the `.zsh` suffix if you prefer the zsh implementations):
+You can run individual checks as well:
 
 ```
+make test-syntax # zsh/zlogin/setup.sh syntax checks + tmux/nvim smoke
 make test-nvim   # verifies Neovim config loads and lazy.nvim is reachable
-make test-tmux   # ensures _tmux.conf can boot a tmux server
+make test-tmux   # ensures _tmux.conf can boot a tmux server (skips if tmux sockets are disallowed)
 make test-setup  # exercises setup.sh in a temporary HOME
-tests/zshrc/test_zshrc.sh  # existing zsh tests
+tests/zshrc/test_zshrc.sh  # existing zsh tests (also run via make test)
 ```

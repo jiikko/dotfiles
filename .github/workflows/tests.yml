@@ -6,10 +6,15 @@ on:
   pull_request:
 
 jobs:
-  zshrc:
-    runs-on: macos-latest
+  dotfiles-tests:
+    runs-on: ubuntu-slim
     steps:
       - uses: actions/checkout@v4
-      - name: Run zshrc tests
-        shell: bash
-        run: tests/zshrc/test_zshrc.sh
+
+      - name: Install dependencies (Neovim, tmux, zsh)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y neovim tmux zsh make
+
+      - name: Run dotfiles test suite
+        run: make test
