@@ -28,5 +28,7 @@ make test-nvim   # verifies Neovim config loads and lazy.nvim is reachable
 make test-tmux   # ensures _tmux.conf can boot a tmux server (skips if tmux sockets are disallowed)
 make test-setup  # exercises setup.sh in a temporary HOME
 make test-shellcheck # runs shellcheck on shell-compatible scripts
+make test-yaml   # yamllint on workflow/pre-commit config
+make test-json   # jq validation for JSON configs
 tests/zshrc/test_zshrc.sh  # existing zsh tests (also run via make test)
 ```
