@@ -1,13 +1,14 @@
 SHELL := /bin/sh
 
 SHELLCHECK_FILES := setup.sh zshlib/_av1ify.zsh
-YAML_FILES := pre-commit-config.yml .github/workflows/tests.yml
+YAML_FILES := pre-commit-config.yml .github/workflows/tests.yml .github/workflows/lint.yml
 JSON_FILES := mac/karabiner.json _coc-settings.json Brewfile.lock.json
 
+.PHONY: test test-runtime test-nvim test-tmux test-setup test-zshrc test-syntax test-shellcheck test-yaml test-json test-lint
 
-.PHONY: test test-nvim test-tmux test-setup test-zshrc test-syntax test-shellcheck test-yaml test-json
+test: test-lint test-runtime
 
-test: test-shellcheck test-yaml test-json test-syntax test-zshrc test-nvim test-tmux test-setup
+test-runtime: test-syntax test-zshrc test-nvim test-tmux test-setup
 
 test-nvim:
 	@./scripts/test_nvim.zsh
@@ -39,3 +40,5 @@ test-yaml:
 
 test-json:
 	@for file in $(JSON_FILES); do jq empty "$$file"; done
+
+test-lint: test-shellcheck test-yaml test-json
