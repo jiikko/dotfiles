@@ -1,8 +1,10 @@
 SHELL := /bin/sh
 
-.PHONY: test test-nvim test-tmux test-setup test-zshrc test-syntax
+SHELLCHECK_FILES := setup.sh zshlib/_av1ify.zsh
 
-test: test-syntax test-zshrc test-nvim test-tmux test-setup
+.PHONY: test test-nvim test-tmux test-setup test-zshrc test-syntax test-shellcheck
+
+test: test-shellcheck test-syntax test-zshrc test-nvim test-tmux test-setup
 
 test-nvim:
 	@./scripts/test_nvim.zsh
@@ -18,3 +20,6 @@ test-zshrc:
 
 test-syntax:
 	@./scripts/check_syntax.zsh
+
+test-shellcheck:
+	@shellcheck $(SHELLCHECK_FILES)
