@@ -495,9 +495,9 @@ require("lazy").setup({
         close = { enable = false, },
       })
 
+      require("mini.trailspace").setup()
     end,
   },
-  { "ntpeters/vim-better-whitespace", event = { "BufReadPost", "BufNewFile" } },
   { "MeanderingProgrammer/render-markdown.nvim",
     ft = { "markdown", "md", "mdx", "rmd" },
   },
