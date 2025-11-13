@@ -108,7 +108,6 @@ require("lazy").setup({
       vim.api.nvim_set_keymap('n', '<leader>gD', ':GoDeclsDir<CR>', { noremap = true, silent = true })
     end
   },
-  { "nvim-lua/popup.nvim" },
   { "andymass/vim-matchup",
     config = function()
       vim.g.loaded_matchit = 1
@@ -496,9 +495,9 @@ require("lazy").setup({
         close = { enable = false, },
       })
 
+      require("mini.trailspace").setup()
     end,
   },
-  { "ntpeters/vim-better-whitespace", event = { "BufReadPost", "BufNewFile" } },
   { "MeanderingProgrammer/render-markdown.nvim",
     ft = { "markdown", "md", "mdx", "rmd" },
   },

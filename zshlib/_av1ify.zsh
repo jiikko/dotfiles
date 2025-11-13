@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # ------------------------------------------------------------------------------
 # av1ify — 入力された動画ファイル、またはディレクトリ内の動画ファイルをAV1形式のMP4に一括変換します。
 # ------------------------------------------------------------------------------
@@ -105,19 +106,25 @@ __av1ify_pre_repair() {
   fi
 
   REPLY="$filepath"
-  if (( ${#issues[@]} )); then
-    local note="check_ng"
-    if (( ${#suffixes[@]} )); then
-      note+="-${(j:-:)suffixes}"
+    if (( ${#issues[@]} )); then
+      local note="check_ng"
+      if (( ${#suffixes[@]} )); then
+        local suffix_joined
+        local IFS='-'
+        suffix_joined="${suffixes[*]}"
+        note+="-$suffix_joined"
+      fi
+      local new_path="$filepath"
+      if __av1ify_mark_issue "$filepath" "$note"; then
+        new_path="$REPLY"
+      fi
+      local issues_joined
+      issues_joined=$(printf '%s, ' "${issues[@]}")
+      issues_joined="${issues_joined%, }"
+      print -r -- "⚠️ チェック警告: $issues_joined"
+      REPLY="$new_path"
+      return 1
     fi
-    local new_path="$filepath"
-    if __av1ify_mark_issue "$filepath" "$note"; then
-      new_path="$REPLY"
-    fi
-    print -r -- "⚠️ チェック警告: ${(j:, :)issues}"
-    REPLY="$new_path"
-    return 1
-  fi
 
   return 0
 }
@@ -235,7 +242,7 @@ __av1ify_one() {  local in="$1"
     local br="${aac_bitrate_resolved:l}" tag
     if [[ "$br" == *k ]]; then
       tag="$br"
-    elif [[ "$br" == <-> ]]; then
+    elif [[ "$br" =~ ^[0-9]+$ ]]; then
       local kb; (( kb = (br + 500) / 1000 ))
       tag="${kb}k"
     else
@@ -276,7 +283,7 @@ __av1ify_one() {  local in="$1"
     local br="${aac_bitrate_resolved:l}" tag
     if [[ "$br" == *k ]]; then
       tag="$br"
-    elif [[ "$br" == <-> ]]; then
+    elif [[ "$br" =~ ^[0-9]+$ ]]; then
       local kb; (( kb = (br + 500) / 1000 ))
       tag="${kb}k"
     else
@@ -364,8 +371,14 @@ EOF
     # 再帰で対象拡張子のみ列挙（(#i)で大文字小文字無視、.Nで通常ファイルのみ）
     setopt LOCAL_OPTIONS extended_glob null_glob
     unsetopt LOCAL_OPTIONS SH_WORD_SPLIT
-    local -a files
-    files=($target/**/*.(#i)(avi|mkv|rm|wmv|mpg|mpeg|mov|mp4|flv|webm|3gp)(.N))
+    local -a files=()
+    while IFS= read -r -d '' f; do
+      files+=("$f")
+    done < <(find "$target" -type f \( \
+        -iname '*.avi' -o -iname '*.mkv' -o -iname '*.rm' -o -iname '*.wmv' -o \
+        -iname '*.mpg' -o -iname '*.mpeg' -o -iname '*.mov' -o -iname '*.mp4' -o \
+        -iname '*.flv' -o -iname '*.webm' -o -iname '*.3gp' \
+      \) -print0)
     if (( ${#files[@]} == 0 )); then
       print -r -- "（対象ファイルなし: $target）"; return 0
     fi

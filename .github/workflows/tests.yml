@@ -1,0 +1,20 @@
+name: Tests
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+jobs:
+  dotfiles-tests:
+    runs-on: ubuntu-slim
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install runtime dependencies (Neovim, tmux, zsh)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y neovim tmux zsh make
+
+      - name: Run dotfiles test suite
+        run: make test-runtime

@@ -1,0 +1,20 @@
+name: Lint
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+jobs:
+  dotfiles-lint:
+    runs-on: ubuntu-slim
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install lint dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsh shellcheck yamllint jq
+
+      - name: Run lint suite
+        run: make test-lint
