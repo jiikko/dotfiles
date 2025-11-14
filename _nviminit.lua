@@ -506,7 +506,113 @@ require("lazy").setup({
   checker = { enabled = true },
 })
 
-vim.cmd("source /Users/koji/dotfiles/basic.vim")
+-- Basic editor settings (ported from legacy basic.vim)
+local opt = vim.opt
+opt.backspace = { "indent", "eol", "start" }
+opt.number = true
+opt.history = 10000
+opt.ruler = true
+opt.showcmd = true
+opt.incsearch = true
+opt.laststatus = 2
+opt.hlsearch = true
+opt.wrap = true
+opt.expandtab = true
+opt.tabstop = 2
+opt.shiftwidth = 2
+opt.softtabstop = 0
+opt.scrolloff = 5
+opt.formatoptions = "lmoq"
+opt.showmode = true
+opt.clipboard = { "unnamed", "unnamedplus" }
+opt.smarttab = true
+opt.smartindent = true
+opt.showbreak = "↪"
+opt.wildmenu = true
+opt.showmatch = true
+opt.title = true
+opt.lazyredraw = true
+opt.vb = true
+pcall(function() -- newer Neovim versions removed this termcap option
+  opt.t_vb = ""
+end)
+opt.wildchar = 9
+
+local map = vim.keymap.set
+local silent = { silent = true }
+map("n", ";", [[:<C-u>call append(expand('.'), '')<CR>j]], silent)
+map("n", "<CR><CR>", "<C-w><C-w>", silent)
+map({ "n", "v", "o" }, "<Right>", "<Cmd>BufferNext<CR>", silent)
+map({ "n", "v", "o" }, "<Left>", "<Cmd>BufferPrevious<CR>", silent)
+map("n", "gt", "<Cmd>BufferNext<CR>", silent)
+map("n", "gT", "<Cmd>BufferPrevious<CR>", silent)
+map("n", "<C-a><C-a>", ":BufferClose<CR>", silent)
+map("n", "<C-p>", ":cprevious<CR>", silent)
+map("n", "<C-n>", ":cnext<CR>", silent)
+map("n", "<C-f>", "<Right>", silent)
+map("n", "<C-b>", "<Left>", silent)
+map("i", "<C-f>", "<Right>", silent)
+map("i", "<C-b>", "<Left>", silent)
+map("i", "<C-]>", "<Esc>", silent)
+map("n", "<C-]>", "<Esc>", silent)
+map("n", "<Esc><Esc>", [[:<C-u>set nohlsearch<CR>]], silent)
+map("n", "/", [[:<C-u>set hlsearch<CR>/]], { silent = false })
+map("n", "?", [[:<C-u>set hlsearch<CR>?]], { silent = false })
+map("n", "*", [[:<C-u>set hlsearch<CR>*]], { silent = false })
+map("n", "#", [[:<C-u>set hlsearch<CR>#]], { silent = false })
+map("n", "<leader>rw", [[obegin; raise; rescue => e; File.write("/tmp/ruby_caller", e.backtrace.join("\n")) && raise; end<Esc>]], silent)
+map("n", "<leader>rr", [[:cfile /tmp/ruby_caller<CR>:cw<Esc>]], silent)
+map("n", "<leader>re", ":e /tmp/ruby_caller<Esc>", silent)
+map("n", "<leader>ds", ":e db/schema.rb<Esc>", silent)
+map("n", "<leader>yr", "o@return []<Esc>", silent)
+map("n", "<leader>yp", "o@param []<Esc>", silent)
+map("n", "<leader>aa", ":enew<CR>", silent)
+map("n", "<leader>lr", ":%s/ *$//g<CR>:noh<CR>", silent)
+map("i", "<C-y><C-w>", "<Esc>:w<CR>", silent)
+map("n", "<C-y><C-w>", ":w<CR>", silent)
+map("n", "<leader>sp", ":sp<CR>", silent)
+map("n", "<leader>vs", ":vs<CR>", silent)
+
+local function buf_leader_bi(text)
+  return function(event)
+    map("n", "<leader>bi", text, { buffer = event.buf, silent = true })
+  end
+end
+
+local ft_group = vim.api.nvim_create_augroup("dotfiles_basic_filetype", { clear = true })
+vim.api.nvim_create_autocmd("FileType", {
+  group = ft_group,
+  pattern = "ruby",
+  callback = buf_leader_bi("obinding.pry<Esc>"),
+})
+vim.api.nvim_create_autocmd("FileType", {
+  group = ft_group,
+  pattern = { "javascript", "typescript", "typescriptreact", "javascriptreact" },
+  callback = buf_leader_bi("odebugger<Esc>"),
+})
+vim.api.nvim_create_autocmd("FileType", {
+  group = ft_group,
+  pattern = "eruby",
+  callback = buf_leader_bi("o<% binding.pry %><Esc>"),
+})
+
+vim.cmd([[highlight ZenkakuSpace cterm=underline ctermfg=lightblue guibg=darkgray]])
+vim.cmd([[match ZenkakuSpace /　/]])
+vim.cmd([[highlight Comment ctermfg=DarkCyan]])
+
+local cch = vim.api.nvim_create_augroup("dotfiles_cch", { clear = true })
+vim.api.nvim_create_autocmd("WinLeave", {
+  group = cch,
+  callback = function()
+    vim.opt_local.cursorline = false
+  end,
+})
+vim.api.nvim_create_autocmd({ "WinEnter", "BufRead" }, {
+  group = cch,
+  callback = function()
+    vim.opt_local.cursorline = true
+  end,
+})
 
 
 vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, { pattern = "db/Schemafile", command = "set filetype=ruby", })
