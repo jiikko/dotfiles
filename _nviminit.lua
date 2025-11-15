@@ -452,13 +452,24 @@ require("lazy").setup({
       vim.g.blamer_template = "<commit-short> <committer-time> <committer>:  <summary>"
     end,
   },
-  { "petertriho/nvim-scrollbar",
-    event = "BufWinEnter",
+  { "dstein64/nvim-scrollview",
+    event = "BufReadPost",
     config = function()
-      require("scrollbar").setup({ handlers = { cursor = false } })
+      require("scrollview").setup()
     end,
   },
-  { "psliwka/vim-smoothie", event = "VeryLazy" },
+  { "karb94/neoscroll.nvim",
+    event = "VeryLazy",
+    config = function()
+      require("neoscroll").setup({
+        mappings = { "<C-u>", "<C-d>" },
+        hide_cursor = true,
+        respect_scrolloff = true,
+        easing_function = "cubic",
+        performance_mode = false,
+      })
+    end,
+  },
   {
     "folke/flash.nvim",
     event = "VeryLazy",

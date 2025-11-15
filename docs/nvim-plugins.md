@@ -23,10 +23,10 @@
 | ✅ nvim-tree/nvim-web-devicons | アイコン | 2025-04-07 | 同プラグイン | × | × | いいえ | 事実上の標準。 |
 | ✅ lukas-reineke/indent-blankline.nvim | インデントガイド | 2025-03-18 | `echasnovski/mini.indentscope`, `glepnir/indent-guides.nvim` | ○ | △ | いいえ | mini/indent-guides は軽量。 |
 | ✅ rcarriga/nvim-notify | 通知 UI | 2025-01-20 | 同プラグイン | × | × | いいえ | 競合が少なく現状維持。 |
-| ✅ petertriho/nvim-scrollbar | スクロールバー | 2024-10-17 | `dstein64/nvim-scrollview`, `Xuyuanp/scrollbar.nvim` | ○ | ○ | いいえ | 重いとの報告多し。Scrollview 等へ置換か削除を推奨。 |
-| ✅ psliwka/vim-smoothie | スクロールアニメ | 2022-06-10 | `karb94/neoscroll.nvim` | ○ | ○ | はい | メンテ停滞＆Neovim 非推奨。Neoscroll へ移行推奨。 |
+| ✅ dstein64/nvim-scrollview | スクロールバー | 2025-10-02 | `petertriho/nvim-scrollbar`, `Xuyuanp/scrollbar.nvim` | △ | × | いいえ | 仮想テキストのみで軽量。Neoscroll とも競合しにくい。 |
+| ✅ karb94/neoscroll.nvim | スクロールアニメ | 2024-12-06 | 同プラグイン | × | × | いいえ | Lua 実装で保守継続中。Smoothie から置換済み。 |
 | ✅ folke/flash.nvim | 高速ジャンプ | 2025-02-14 | 同プラグイン | × | × | いいえ | 代替少。維持。 |
-| ✅ echasnovski/mini.nvim (animate) | ミニユーティリティ | 2025-01-30 | `folke/zen-mode.nvim`, `pocco81/true-zen.nvim` | △ | △ | いいえ | 使うモジュールだけ残せば軽量。 |
+| ✅ echasnovski/mini.nvim (animate) | ミニユーティリティ | 2025-01-30 | `folke/zen-mode.nvim`, `pocco81/true-zen.nvim` | △ | △ | いいえ | 使うモジュールだけ残せば軽量。リポジトリは `nvim-mini` へ移管済み。 |
 
 ## ナビゲーション / 検索
 
@@ -70,7 +70,7 @@
 
 ## 乗り換え優先度の目安
 
-1. **軽量化を急ぐ**: Barbar, vim-smoothie, nvim-scrollbar, blamer.nvim, vim-better-whitespace を優先的に整理。
+1. **軽量化を急ぐ**: Barbar, blamer.nvim, vim-better-whitespace を優先的に整理。
 2. **UI/テーマ**: Lightline→Lualine、gruvbox Vimscript→Lua 版。
 3. **Git/開発補助**: blamer.nvim→gitsigns、vim-better-whitespace→mini.trailspace。
 4. **言語/LSP**: vim-go, vim-terraform, coc.nvim を徐々にネイティブ LSP 構成へ。
@@ -81,50 +81,46 @@
 ## 直近で着手したい整理項目
 
 - **romgrk/barbar.nvim → akinsho/bufferline.nvim**: Barbar は重さが課題で「今すぐ捨てる? = ○」。Bufferline へ移れば Lua/Treesitter 対応で描画が軽い。
-- **petertriho/nvim-scrollbar → dstein64/nvim-scrollview**: `nvim-scrollbar` は仮想テキスト描画でもコストが高い。Scrollview なら遅延読込と軽量化を両立できる。
-- **psliwka/vim-smoothie → karb94/neoscroll.nvim**: Vimscript 実装がメンテ停止中。Neoscroll の Lua 実装へ置き換えて Neovim 最適化を得る。
 - **junegunn/fzf + fzf.vim の整理**: Telescope と役割が重複中。CLI 版に依存したいケースを精査し、片方に統一して読み込みを減らす。
 - **APZelos/blamer.nvim → lewis6991/gitsigns.nvim**: Blamer は情報量が少なく更新も停滞。Gitsigns へ切り替えると blame/差分/操作を一括管理できる。
 - **tyru/operator-camelize.vim → tpope/vim-abolish**: Abolish なら camelCase ↔ snake_case 変換だけでなく置換辞書も統合できるため、操作系を一本化できる。
 
 ## 推奨プラグイン候補（リサーチ結果）
 
-| 候補                                                                                                           | Stars (2025-11) | 最終 Push  | 用途                                      | 採用メリット                                        |
-| -------------------------------------------------------------------------------------------------------------- | --------------- | ---------- | ----------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| 候補                                                                                                           | Stars (2025-11) | 最終 Push  | 用途/置き換え先                           | 採用メリット                                        | 今の構成での乗り換え可否                                                                   |
+| 候補                                                                                                           | Stars (2025-11-14) | 最終 Push  | 用途                                      | 採用メリット                                        |
+| -------------------------------------------------------------------------------------------------------------- | ------------------ | ---------- | ----------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| 候補                                                                                                           | Stars (2025-11-14) | 最終 Push  | 用途/置き換え先                           | 採用メリット                                        | 今の構成での乗り換え可否                                                                   |
 | ---                                                                                                            | ---             | ---        | ---                                       | ---                                                 | ---                                                                                        |
 | [`akinsho/bufferline.nvim`](https://github.com/akinsho/bufferline.nvim)                                        | 4.1k            | 2025-01-14 | タブライン（→ `barbar.nvim`）             | Lua/Tree-sitter 対応。Barbar より軽量で機能が豊富。 | ○: Barbar のキーマップを移すだけでほぼ互換。                                               |
-| [`dstein64/nvim-scrollview`](https://github.com/dstein64/nvim-scrollview)                                      | 667             | 2025-10-02 | スクロールバー（→ `nvim-scrollbar`）      | 仮想テキストのみで描画し軽量。                      | ○: `require("scrollbar")` 呼び出しを差し替えるだけで導入可。                               |
-| [`karb94/neoscroll.nvim`](https://github.com/karb94/neoscroll.nvim)                                            | 1.9k            | 2024-12-06 | スムーズスクロール（→ `vim-smoothie`）    | Lua 実装でメンテ継続中。                            | ○: Smoothie を消して `require("neoscroll").setup()` を足すだけ。                           |
 | [`lewis6991/gitsigns.nvim`](https://github.com/lewis6991/gitsigns.nvim)                                        | 6.3k            | 2025-10-19 | Git ハイライト（→ `blamer.nvim`）         | blame/差分/アクションを一本化。                     | ○: `gitsigns.setup()` を追加し `<leader>gb` を置換で完了。                                 |
-| [`echasnovski/mini.trailspace`](https://github.com/echasnovski/mini.nvim/blob/main/readmes/mini-trailspace.md) | (mini.nvim 4k+) | 2025-01-30 | 末尾空白削除（→ `vim-better-whitespace`） | Vimscript 版より軽量・遅延ロードしやすい。          | ○: mini.nvim 既存依存があるため設定1行で置換可能。                                         |
+| [`echasnovski/mini.trailspace`](https://github.com/nvim-mini/mini.nvim/blob/main/readmes/mini-trailspace.md) | (mini.nvim 4k+) | 2025-01-30 | 末尾空白削除（→ `vim-better-whitespace`） | Vimscript 版より軽量・遅延ロードしやすい。          | ○: mini.nvim 既存依存があるため設定1行で置換可能。                                         |
 | [`ellisonleao/gruvbox.nvim`](https://github.com/ellisonleao/gruvbox.nvim)                                      | 2.9k            | 2025-09-30 | カラースキーム（→ `morhetz/gruvbox`）     | Lua 版で truecolor/透明度の調整が容易。             | ○: colorscheme 名を差し替えるだけ。                                                        |
-| [`nvim-lualine/lualine.nvim`](https://github.com/nvim-lualine/lualine.nvim)                                    | 20k             | 2025-10-03 | ステータスライン（→ `lightline.vim`）     | 高速・拡張性抜群。Coc/Copilot 情報も統合しやすい。  | △: Lightline 依存関数を Lualine フォーマットに書き換える必要あり。                         |
+| [`nvim-lualine/lualine.nvim`](https://github.com/nvim-lualine/lualine.nvim)                                    | 4.9k             | 2025-10-03 | ステータスライン（→ `lightline.vim`）     | 高速・拡張性抜群。Coc/Copilot 情報も統合しやすい。  | △: Lightline 依存関数を Lualine フォーマットに書き換える必要あり。                         |
 | [`ray-x/go.nvim`](https://github.com/ray-x/go.nvim)                                                            | 2.1k            | 2025-09-15 | Go 開発（→ `vim-go`）                     | gopls + 補助ツールを一括管理。軽量。                | △: LSP + mason 連携前提。Coc との住み分けが必要。                                          |
 | [`hashicorp/terraform-ls`](https://github.com/hashicorp/terraform-ls) + `nvim-lspconfig`                       | 3.5k            | 2025-10-23 | Terraform LSP（→ `vim-terraform`）        | 公式 Language Server で整形/補完を統合。            | △: LSP セットアップ（mason + conform などの formatter 連携）が未整備なので段階的導入推奨。 |
 | [`zbirenbaum/copilot.lua`](https://github.com/zbirenbaum/copilot.lua)                                          | 3.8k            | 2025-09-27 | Copilot（→ `copilot.vim`）                | Lua 版で遅延ロード・cmp 連携が簡単。                | ○: 現在の Copilot キーは最小限で、Lua 版の設定にも転用しやすい。                           |
 
-> Note: Stars/Push dates are取得時点 (2025-11-12) の GitHub API レスポンスより。採用前に再チェック推奨。
+> Note: Stars/Push dates are取得時点 (2025-11-14) の GitHub API レスポンスより。採用前に再チェック推奨。
 
 ## 今すぐ導入を検討したいプラグイン
 
-| プラグイン                                                                | Stars (2025-11) | 用途                           | 追加メリット                                                                                  |
-| ------------------------------------------------------------------------- | --------------- | ------------------------------ | --------------------------------------------------------------------------------------------- |
-| [`folke/todo-comments.nvim`](https://github.com/folke/todo-comments.nvim) | 3.5k            | TODO/FIXME のハイライト & 検索 | コメントベースのタスク管理。プロジェクト横断で TODO を拾いやすい。                            |
-| [`kylechui/nvim-surround`](https://github.com/kylechui/nvim-surround)     | 2.6k            | 囲み編集                       | `vim-surround` の Lua 後継で軽量＆Neovim向けに最適化。                                        |
-| [`stevearc/conform.nvim`](https://github.com/stevearc/conform.nvim)       | 3.1k            | フォーマッタ統合               | 各言語の formatter を簡潔に管理。Coc 依存を減らせる。                                         |
+| プラグイン                                                                | Stars (2025-11-14) | 用途                           | 追加メリット                                                                                  |
+| ------------------------------------------------------------------------- | ------------------ | ------------------------------ | --------------------------------------------------------------------------------------------- |
+| [`folke/todo-comments.nvim`](https://github.com/folke/todo-comments.nvim) | 3.9k            | TODO/FIXME のハイライト & 検索 | コメントベースのタスク管理。プロジェクト横断で TODO を拾いやすい。                            |
+| [`kylechui/nvim-surround`](https://github.com/kylechui/nvim-surround)     | 3.9k            | 囲み編集                       | `vim-surround` の Lua 後継で軽量＆Neovim向けに最適化。                                        |
+| [`stevearc/conform.nvim`](https://github.com/stevearc/conform.nvim)       | 4.6k            | フォーマッタ統合               | 各言語の formatter を簡潔に管理。Coc 依存を減らせる。                                         |
 | [`nvimdev/lspsaga.nvim`](https://github.com/nvimdev/lspsaga.nvim)         | 3.8k            | LSP UI 拡張                    | 使いやすい hover/rename/codeaction UI を提供。Coc/ネイティブどちらでも利用可。                |
-| [`folke/trouble.nvim`](https://github.com/folke/trouble.nvim)             | 4.7k            | Diagnostics/UI                 | LSP や Coc のエラー/警告を視覚的に表示し、移動が楽になる。                                    |
-| [`williamboman/mason.nvim`](https://github.com/williamboman/mason.nvim)   | 7.1k            | ツール/LSP マネージャ          | LSP サーバー/フォーマッタ/リンターを一括インストール管理。将来的な LSP ネイティブ移行が簡単。 |
-| [`folke/noice.nvim`](https://github.com/folke/noice.nvim)                 | 4.5k            | UI リッチ化                    | コマンドラインや LSP メッセージをリッチ化し、通知/入力 UI を改善。                            |
+| [`folke/trouble.nvim`](https://github.com/folke/trouble.nvim)             | 6.5k            | Diagnostics/UI                 | LSP や Coc のエラー/警告を視覚的に表示し、移動が楽になる。                                    |
+| [`mason-org/mason.nvim`](https://github.com/mason-org/mason.nvim)         | 9.7k            | ツール/LSP マネージャ          | LSP サーバー/フォーマッタ/リンターを一括インストール管理。将来的な LSP ネイティブ移行が簡単。 |
+| [`folke/noice.nvim`](https://github.com/folke/noice.nvim)                 | 5.4k            | UI リッチ化                    | コマンドラインや LSP メッセージをリッチ化し、通知/入力 UI を改善。                            |
 
 > いずれも現在の `init.lua` には含まれていないが、導入すると利便性・UI 体験が向上する定番。優先度はプロジェクトや用途に合わせて調整。
 
-## 新しめの注目プラグイン（2025年11月リサーチ）
+## 新しめの注目プラグイン（2025年11月14日リサーチ）
 
-| プラグイン | Stars (2025-11) | 最終 Push | 主な用途 | 推奨理由 |
+| プラグイン | Stars (2025-11-14) | 最終 Push | 主な用途 | 推奨理由 |
 | --- | --- | --- | --- | --- |
-| [`folke/tokyonight.nvim`](https://github.com/folke/tokyonight.nvim) | 7.5k | 2025-11-05 | Lua テーマ | LSP/Treesitter 最適化済みで UI 系プラグインとの相性が良い。morhetz/gruvbox からの移行候補。 |
+| [`folke/tokyonight.nvim`](https://github.com/folke/tokyonight.nvim) | 7.6k | 2025-11-05 | Lua テーマ | LSP/Treesitter 最適化済みで UI 系プラグインとの相性が良い。morhetz/gruvbox からの移行候補。 |
 | [`rmagatti/auto-session`](https://github.com/rmagatti/auto-session) | 1.7k | 2025-10-30 | セッション管理 | バッファやウィンドウ構成を自動保存/復元。開発用プロジェクトを頻繁に切り替える場合に便利。 |
 | [`mason-org/mason.nvim`](https://github.com/mason-org/mason.nvim) | 9.7k | 2025-10-01 | LSP/Formatter管理 | GUI パッケージマネージャ。将来的に Coc からネイティブ LSP へ移行する際の土台になる。 |
 | [`folke/todo-comments.nvim`](https://github.com/folke/todo-comments.nvim) | 3.9k | 2025-11-10 | TODO ハイライト | コメント内の TODO/FIXME を一元管理し、一覧表示もできる。長期案件でタスク管理に有効。 |
@@ -137,8 +133,8 @@
 
 ## パフォーマンス最適化プラグイン/ツール
 
-| ツール                                                                    | Stars (2025-11) | 状態                   | 役割                     | メモ                                                                                                                                                 |
-| ------------------------------------------------------------------------- | --------------- | ---------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ツール                                                                    | Stars (2025-11-14) | 状態                   | 役割                     | メモ                                                                                                                                                 |
+| ------------------------------------------------------------------------- | ------------------ | ---------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`nathom/filetype.nvim`](https://github.com/nathom/filetype.nvim)         | 547             | **Archived** (2024-05) | 高速 filetype 判定       | Neovim 0.9 未満なら有効。0.10 以降は `vim.filetype.add()` + 標準 `vim.filetype` で代替。                                                             |
 | [`stevearc/profile.nvim`](https://github.com/stevearc/profile.nvim)       | 182             | Active (2025-03 push)  | Lua プロファイラ         | `require('profile').instrument_autocmds()` などで起動/ランタイムのホットスポット可視化。Lazy プラグインの負荷特定に便利。                            |
 | [`dstein64/vim-startuptime`](https://github.com/dstein64/vim-startuptime) | 649             | Active (2025-02 push)  | 起動イベント計測         | 純正 `nvim --startuptime` の結果をフローティングで整形表示。履歴比較ができる。                                                                       |
