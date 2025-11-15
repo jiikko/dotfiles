@@ -649,6 +649,12 @@ if [ -f ~/.fzf.zsh ]; then
 elif [ -f /opt/homebrew/opt/fzf/shell/key-bindings.zsh ]; then
   source /opt/homebrew/opt/fzf/shell/key-bindings.zsh
 fi
+if [[ -o interactive ]] && ! (( $+functions[fzf-history-widget] )); then
+  fzf-history-widget() {
+    zle history-incremental-search-backward -- "$@"
+  }
+  zle -N fzf-history-widget
+fi
 if (( $+functions[fzf-history-widget] )); then
   bindkey -M emacs '^R' fzf-history-widget
   bindkey -M vicmd '^R' fzf-history-widget 2>/dev/null
