@@ -567,6 +567,24 @@ function rrr() {
   fi
 }
 
+# Homebrew で CLI を保証するユーティリティ
+function _ensure_cli_with_brew() {
+  local cmd="$1"
+  local formula="${2:-$1}"
+  if command -v "$cmd" > /dev/null 2>&1; then
+    return 0
+  fi
+  if ! command -v brew > /dev/null 2>&1; then
+    echo "Error: '$cmd' is not installed and Homebrew is unavailable." >&2
+    return 1
+  fi
+  if brew list "$formula" > /dev/null 2>&1; then
+    return 0
+  fi
+  echo "Installing $formula via Homebrew..." >&2
+  brew install "$formula"
+}
+
 # 🤖 claudeコマンドのラッパー関数 - tmuxウィンドウ名を自動設定
 function claude() {
   if [ -n "$TMUX" ]; then
@@ -580,8 +598,23 @@ function claude() {
   fi
 }
 
+# 🤖 claudecode コマンドのラッパー関数 - tmuxウィンドウ名を自動設定
+function claudecode() {
+  _ensure_cli_with_brew "claudecode" "claudecode" || return 1
+  if [ -n "$TMUX" ]; then
+    tmux rename-window "🤖 claudecode"
+    command claudecode "$@"
+    local exit_code=$?
+    tmux rename-window "zsh"
+    return $exit_code
+  else
+    command claudecode "$@"
+  fi
+}
+
 # 🤖 geminiコマンドのラッパー関数 - tmuxウィンドウ名を自動設定
 function gemini() {
+  _ensure_cli_with_brew "gemini" "gemini-cli" || return 1
   if [ -n "$TMUX" ]; then
     tmux rename-window "🤖 gemini"
     command gemini "$@"
@@ -595,6 +628,7 @@ function gemini() {
 
 # 🤖 codexコマンドのラッパー関数 - tmuxウィンドウ名を自動設定
 function codex() {
+  _ensure_cli_with_brew "codex" "codex" || return 1
   if [ -n "$TMUX" ]; then
     tmux rename-window "🤖 codex"
     command codex "$@"
