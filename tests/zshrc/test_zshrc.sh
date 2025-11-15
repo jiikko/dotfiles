@@ -68,6 +68,7 @@ fi
 
 # 5. PATH includes expected local bins
 path_output="$(run_zsh 'print -r -- $PATH' | awk 'END{print}')"
+expected_home="$TMP_HOME"
 assert_path_contains() {
   local path_str="$1"
   shift
@@ -91,9 +92,9 @@ assert_path_contains() {
   printf '✓ PATH contains required entries\n'
 }
 assert_path_contains "$path_output" \
-  "$HOME/.rbenv/bin" \
-  "$HOME/.nodebrew/current/bin" \
-  "$HOME/dotfiles/bin"
+  "$expected_home/.rbenv/bin" \
+  "$expected_home/.nodebrew/current/bin" \
+  "$expected_home/dotfiles/bin"
 
 # 6. Login shells include pyenv shims early (if pyenv exists)
 if command -v pyenv >/dev/null 2>&1; then
