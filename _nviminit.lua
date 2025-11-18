@@ -100,7 +100,6 @@ require("lazy").setup({
     end,
   },
   { "vim-jp/vimdoc-ja" },
-  { "kana/vim-operator-user" },
   { "hashivim/vim-terraform",
     ft = { "terraform", "tf", "hcl" },
     config = function()
