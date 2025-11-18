@@ -1,3 +1,4 @@
+---
 repos:
   - repo: https://github.com/koalaman/shellcheck-precommit
     rev: v0.9.0
@@ -17,7 +18,15 @@ repos:
       - id: check-symlinks
       - id: check-yaml
       - id: no-commit-to-branch
-        args: [--branch, develop, --branch, staging, --branch, main, --branch, master]
+        args:
+          - --branch
+          - develop
+          - --branch
+          - staging
+          - --branch
+          - main
+          - --branch
+          - master
   - repo: https://github.com/mattlqx/pre-commit-ruby
     rev: v1.3.5
     hooks:
