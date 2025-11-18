@@ -350,6 +350,12 @@ require("lazy").setup({
           show_buffer_close_icons = false,
           always_show_bufferline = true,
         },
+        highlights = {
+          buffer_selected = {
+            ctermfg = 0,   -- 黒（読みやすさ重視）
+            ctermbg = 205, -- 落ち着いたピンク（ターミナルカラー）
+          },
+        },
       })
 
       local map = vim.keymap.set
