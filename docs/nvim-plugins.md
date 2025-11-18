@@ -15,7 +15,7 @@
 
 | 現行 | 主な役割 | 最終更新 | デファクト候補 | 乗り換え可否 | 今すぐ捨てる? | Vimscript依存? | メモ |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| ✅ morhetz/gruvbox | カラースキーム | 2023-08-14 | `ellisonleao/gruvbox.nvim`, `folke/tokyonight.nvim` | ○ | △ | はい | Lua 版は遅延ロード対応が良く起動が軽い。 |
+| ✅ ellisonleao/gruvbox.nvim | カラースキーム | 2025-09-30 | 同プラグイン, `folke/tokyonight.nvim` | × | × | いいえ | Vimscript 版から移行済み。Lua 版で truecolor/透明度設定が容易。 |
 | ✅ folke/which-key.nvim | キーマップチートシート | 2025-02-22 | 同プラグインがデファクト | × | × | いいえ | 定番。置き換え不要。 |
 | ✅ nvim-lualine/lualine.nvim | ステータスライン | 2025-10-03 | 同プラグイン | × | × | いいえ | Lightline から移行済み。Coc の状態/関数名も Lua 側で統合。 |
 | ✅ akinsho/bufferline.nvim | タブライン | 2025-01-14 | `romgrk/barbar.nvim`, 標準タブライン | × | × | いいえ | Barbar から移行済み。LSP/診断アイコンも扱える Lua 実装で軽量。 |
@@ -88,7 +88,7 @@
 | 候補                                                                                                           | Stars (2025-11-14) | 最終 Push  | 用途/置き換え先                           | 採用メリット                                        | 今の構成での乗り換え可否                                                                   |
 | ---                                                                                                            | ---             | ---        | ---                                       | ---                                                 | ---                                                                                        |
 | [`echasnovski/mini.trailspace`](https://github.com/nvim-mini/mini.nvim/blob/main/readmes/mini-trailspace.md) | (mini.nvim 4k+) | 2025-01-30 | 末尾空白削除（導入済み）                  | Lua 実装で Trim/可視化を一本化済み。                 | -: `<leader>lr` も mini.trailspace の API を呼ぶよう更新済み。                              |
-| [`ellisonleao/gruvbox.nvim`](https://github.com/ellisonleao/gruvbox.nvim)                                      | 2.9k            | 2025-09-30 | カラースキーム（→ `morhetz/gruvbox`）     | Lua 版で truecolor/透明度の調整が容易。             | ○: colorscheme 名を差し替えるだけ。                                                        |
+| [`ellisonleao/gruvbox.nvim`](https://github.com/ellisonleao/gruvbox.nvim)                                      | 2.9k            | 2025-09-30 | カラースキーム（導入済み）                | Lua 版で truecolor/透明度の調整が容易。             | -: Vimscript 版から移行済み。                                                              |
 | [`nvim-lualine/lualine.nvim`](https://github.com/nvim-lualine/lualine.nvim)                                    | 4.9k             | 2025-10-03 | ステータスライン（導入済み）              | 高速・拡張性抜群。Coc/Copilot 情報も統合しやすい。  | -: Lightline→lualine へ切り替え済み。                                                      |
 | [`ray-x/go.nvim`](https://github.com/ray-x/go.nvim)                                                            | 2.1k            | 2025-09-15 | Go 開発（→ `vim-go`）                     | gopls + 補助ツールを一括管理。軽量。                | △: LSP + mason 連携前提。Coc との住み分けが必要。                                          |
 | [`hashicorp/terraform-ls`](https://github.com/hashicorp/terraform-ls) + `nvim-lspconfig`                       | 3.5k            | 2025-10-23 | Terraform LSP（→ `vim-terraform`）        | 公式 Language Server で整形/補完を統合。            | △: LSP セットアップ（mason + conform などの formatter 連携）が未整備なので段階的導入推奨。 |

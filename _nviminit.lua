@@ -67,8 +67,20 @@ vim.keymap.set("n", "Q", "<Nop>", { noremap = true })  -- Qを無効化するマ
 
 -- Setup lazy.nvim
 require("lazy").setup({
-  { "morhetz/gruvbox",
+  { "ellisonleao/gruvbox.nvim",
+    priority = 1000,
     config = function()
+      require("gruvbox").setup({
+        transparent_mode = false,
+        terminal_colors = true,
+        italic = {
+          strings = false,
+          comments = false,
+          folds = false,
+          operations = false,
+        },
+        overrides = {},
+      })
       vim.cmd("colorscheme gruvbox")
     end,
   },
@@ -449,8 +461,6 @@ require("lazy").setup({
       end
     end,
     config = function()
-      -- TODO: これいる？
-      vim.api.nvim_set_option('termguicolors', false)
       local notify = require('notify')
       notify.setup({
         render = "minimal",
@@ -460,10 +470,8 @@ require("lazy").setup({
 
       local original_notify = notify
       local custom_notify = function(msg, log_level, opts)
-        -- FIXME: ターミナルがtrue colorに対応していないので無視する
-        if msg:match("Opacity changes require termguicolors to be set.") then
-          return
-        end
+        -- FIXME: true color 非対応端末では透明度警告が出るため握りつぶす
+        if msg:match("Opacity changes require termguicolors to be set.") then return end
         original_notify(msg, log_level, opts)
       end
 
@@ -573,7 +581,7 @@ require("lazy").setup({
     ft = { "markdown", "md", "mdx", "rmd" },
   },
 }, {
-  install = { colorscheme = { "habamax" } },
+  install = { colorscheme = { "gruvbox" } },
   checker = { enabled = true },
 })
 
