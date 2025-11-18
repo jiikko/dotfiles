@@ -101,7 +101,6 @@ require("lazy").setup({
   },
   { "vim-jp/vimdoc-ja" },
   { "kana/vim-operator-user" },
-  { "tyru/operator-camelize.vim", lazy = true },
   { "hashivim/vim-terraform",
     ft = { "terraform", "tf", "hcl" },
     config = function()
@@ -266,9 +265,6 @@ require("lazy").setup({
         vim.fn.setreg("+", filepath)
         print(string.format('"%s" をコピーしました', filepath))
       end, opts)
-      -- ケース変換
-      keymap("n", "<leader>c", "<Plug>(operator-camelize)", opts)
-      keymap("n", "<leader>C", "<Plug>(operator-decamelize)", opts)
       -- カーソル位置のドキュメント表示
       function _G.show_documentation()
         local filetype = vim.bo.filetype
