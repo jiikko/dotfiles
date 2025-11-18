@@ -135,32 +135,53 @@ require("lazy").setup({
     dependencies = { "nvim-treesitter/nvim-treesitter" }
   },
   { "folke/which-key.nvim" },
-  { "itchyny/lightline.vim",
+  { "nvim-lualine/lualine.nvim",
+    dependencies = { "nvim-tree/nvim-web-devicons" },
     config = function()
-      vim.cmd([[
-        function! RelativePathFromGitRoot()
-          if exists("b:git_dir")
-            let l:root = fnamemodify(b:git_dir, ':h')
-          else
-            let l:root = system("git -C " . expand('%:p:h') . " rev-parse --show-toplevel")
-            let l:root = substitute(l:root, '\n$', '', '')
-          endif
-          if v:shell_error
-            return expand('%')
-          endif
-          let l:relative_path = substitute(expand('%:p'), '^' . l:root . '/', '', '')
-          return l:relative_path
-        endfunction
-      ]])
-      vim.g.lightline = {
-        colorscheme = "wombat",
-        active = { left = { { "mode", "paste" }, { "cocstatus", "currentfunction", "readonly", "filename", "modified" } } },
-        component_function = {
-          cocstatus = "coc#status",
-          currentfunction = "CocCurrentFunction",
-          filename = "RelativePathFromGitRoot",
+      local function relative_path_from_git_root()
+        local git_dir = vim.b.git_dir
+        if not git_dir or git_dir == "" then
+          return vim.fn.expand("%")
+        end
+        local root = vim.fn.fnamemodify(git_dir, ":h")
+        local file = vim.fn.expand("%:p")
+        local relative = file:gsub("^" .. vim.pesc(root) .. "/", "")
+        return relative
+      end
+
+      local function coc_status()
+        if vim.g.coc_status ~= nil or vim.fn.exists("*coc#status") == 1 then
+          return vim.fn["coc#status"]()
+        end
+        return ""
+      end
+
+      local function coc_current_function()
+        if vim.b.coc_current_function and vim.b.coc_current_function ~= "" then
+          return vim.b.coc_current_function
+        end
+        if vim.fn.exists("*CocCurrentFunction") == 1 then
+          return vim.fn.CocCurrentFunction()
+        end
+        return ""
+      end
+
+      require("lualine").setup({
+        options = {
+          theme = "auto",
+          section_separators = "",
+          component_separators = "",
+          icons_enabled = true,
         },
-      }
+        sections = {
+          lualine_a = { "mode" },
+          lualine_b = { { coc_status }, { coc_current_function }, "branch" },
+          lualine_c = { { relative_path_from_git_root } },
+          lualine_x = { "encoding", "fileformat", "filetype" },
+          lualine_y = { "progress" },
+          lualine_z = { "location" },
+        },
+      })
     end,
   },
   { "github/copilot.vim" },
@@ -227,8 +248,6 @@ require("lazy").setup({
           end)
         end,
       })
-      -- ステータスラインに Coc の状態を表示
-      vim.o.statusline = "%{coc#status()}%{get(b:,'coc_current_function','')}"
       -- 現在のファイル名をクリップボードにコピー
       vim.keymap.set("n", "<leader>n", function()
         local filepath = vim.fn.expand("%:~:.")

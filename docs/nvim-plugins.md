@@ -17,13 +17,13 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | ✅ morhetz/gruvbox | カラースキーム | 2023-08-14 | `ellisonleao/gruvbox.nvim`, `folke/tokyonight.nvim` | ○ | △ | はい | Lua 版は遅延ロード対応が良く起動が軽い。 |
 | ✅ folke/which-key.nvim | キーマップチートシート | 2025-02-22 | 同プラグインがデファクト | × | × | いいえ | 定番。置き換え不要。 |
-| ✅ itchyny/lightline.vim | ステータスライン | 2024-12-30 | `nvim-lualine/lualine.nvim`, `famiu/feline.nvim` | ○ | △ | はい | Lua 実装の方が高速・非同期。余裕があれば移行。 |
+| ✅ nvim-lualine/lualine.nvim | ステータスライン | 2025-10-03 | 同プラグイン | × | × | いいえ | Lightline から移行済み。Coc の状態/関数名も Lua 側で統合。 |
 | ✅ akinsho/bufferline.nvim | タブライン | 2025-01-14 | `romgrk/barbar.nvim`, 標準タブライン | × | × | いいえ | Barbar から移行済み。LSP/診断アイコンも扱える Lua 実装で軽量。 |
 | ✅ nvim-tree/nvim-tree.lua | ファイラ | 2025-04-04 | `nvim-neo-tree/neo-tree.nvim`, `stevearc/oil.nvim` | △ | △ | いいえ | Oil は軽量、Neo-tree は機能豊富。好み。 |
 | ✅ nvim-tree/nvim-web-devicons | アイコン | 2025-04-07 | 同プラグイン | × | × | いいえ | 事実上の標準。 |
 | ✅ lukas-reineke/indent-blankline.nvim | インデントガイド | 2025-03-18 | `echasnovski/mini.indentscope`, `glepnir/indent-guides.nvim` | ○ | △ | いいえ | mini/indent-guides は軽量。 |
 | ✅ rcarriga/nvim-notify | 通知 UI | 2025-01-20 | 同プラグイン | × | × | いいえ | 競合が少なく現状維持。 |
-| ✅ dstein64/nvim-scrollview | スクロールバー | 2025-10-02 | `petertriho/nvim-scrollbar`, `Xuyuanp/scrollbar.nvim` | △ | × | いいえ | 仮想テキストのみで軽量。Neoscroll とも競合しにくい。 |
+| ✅ dstein64/nvim-scrollview | スクロールバー | 2025-10-02 | `petertriho/nvim-scrollbar`, `scrollbar.nvim` | △ | × | いいえ | 仮想テキストのみで軽量。Neoscroll とも競合しにくい。 |
 | ✅ karb94/neoscroll.nvim | スクロールアニメ | 2024-12-06 | 同プラグイン | × | × | いいえ | Lua 実装で保守継続中。Smoothie から置換済み。 |
 | ✅ folke/flash.nvim | 高速ジャンプ | 2025-02-14 | 同プラグイン | × | × | いいえ | 代替少。維持。 |
 | ✅ echasnovski/mini.nvim (animate) | ミニユーティリティ | 2025-01-30 | `folke/zen-mode.nvim`, `pocco81/true-zen.nvim` | △ | △ | いいえ | 使うモジュールだけ残せば軽量。リポジトリは `nvim-mini` へ移管済み。 |
@@ -89,7 +89,7 @@
 | ---                                                                                                            | ---             | ---        | ---                                       | ---                                                 | ---                                                                                        |
 | [`echasnovski/mini.trailspace`](https://github.com/nvim-mini/mini.nvim/blob/main/readmes/mini-trailspace.md) | (mini.nvim 4k+) | 2025-01-30 | 末尾空白削除（導入済み）                  | Lua 実装で Trim/可視化を一本化済み。                 | -: `<leader>lr` も mini.trailspace の API を呼ぶよう更新済み。                              |
 | [`ellisonleao/gruvbox.nvim`](https://github.com/ellisonleao/gruvbox.nvim)                                      | 2.9k            | 2025-09-30 | カラースキーム（→ `morhetz/gruvbox`）     | Lua 版で truecolor/透明度の調整が容易。             | ○: colorscheme 名を差し替えるだけ。                                                        |
-| [`nvim-lualine/lualine.nvim`](https://github.com/nvim-lualine/lualine.nvim)                                    | 4.9k             | 2025-10-03 | ステータスライン（→ `lightline.vim`）     | 高速・拡張性抜群。Coc/Copilot 情報も統合しやすい。  | △: Lightline 依存関数を Lualine フォーマットに書き換える必要あり。                         |
+| [`nvim-lualine/lualine.nvim`](https://github.com/nvim-lualine/lualine.nvim)                                    | 4.9k             | 2025-10-03 | ステータスライン（導入済み）              | 高速・拡張性抜群。Coc/Copilot 情報も統合しやすい。  | -: Lightline→lualine へ切り替え済み。                                                      |
 | [`ray-x/go.nvim`](https://github.com/ray-x/go.nvim)                                                            | 2.1k            | 2025-09-15 | Go 開発（→ `vim-go`）                     | gopls + 補助ツールを一括管理。軽量。                | △: LSP + mason 連携前提。Coc との住み分けが必要。                                          |
 | [`hashicorp/terraform-ls`](https://github.com/hashicorp/terraform-ls) + `nvim-lspconfig`                       | 3.5k            | 2025-10-23 | Terraform LSP（→ `vim-terraform`）        | 公式 Language Server で整形/補完を統合。            | △: LSP セットアップ（mason + conform などの formatter 連携）が未整備なので段階的導入推奨。 |
 | [`zbirenbaum/copilot.lua`](https://github.com/zbirenbaum/copilot.lua)                                          | 3.8k            | 2025-09-27 | Copilot（→ `copilot.vim`）                | Lua 版で遅延ロード・cmp 連携が簡単。                | ○: 現在の Copilot キーは最小限で、Lua 版の設定にも転用しやすい。                           |
