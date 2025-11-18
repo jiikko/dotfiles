@@ -112,11 +112,14 @@ require("lazy").setup({
   { "fatih/vim-go",
     ft = { "go" },
     build = ":GoUpdateBinaries",
-    config = function()
+    init = function()
       vim.g.go_null_module_warning = 0
-      -- GoDecls のキーマッピング
-      vim.api.nvim_set_keymap('n', '<leader>gd', ':GoDecls<CR>', { noremap = true, silent = true })
-      vim.api.nvim_set_keymap('n', '<leader>gD', ':GoDeclsDir<CR>', { noremap = true, silent = true })
+    end,
+    config = function()
+      vim.g.go_decls_mode = ""
+      local opts = { silent = true, desc = "GoDecls" }
+      vim.keymap.set("n", "<leader>gd", "<Plug>(go-decls)", opts)
+      vim.keymap.set("n", "<leader>gD", "<Plug>(go-decls-dir)", { silent = true, desc = "GoDeclsDir" })
     end
   },
   { "andymass/vim-matchup",
