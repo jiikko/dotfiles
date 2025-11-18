@@ -1,6 +1,5 @@
-#!/bin/sh
+#!/usr/bin/env zsh
 
-# shellcheck disable=SC3040
 set -o pipefail
 
 # set rc limlink
