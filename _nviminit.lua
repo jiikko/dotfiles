@@ -551,6 +551,11 @@ require("lazy").setup({
       })
 
       require("mini.trailspace").setup()
+      vim.api.nvim_set_hl(0, "MiniTrailspace", {
+        fg = "NONE",
+        bg = "#fb4934",
+        ctermbg = 160,
+      })
     end,
   },
   { "MeanderingProgrammer/render-markdown.nvim",
@@ -617,7 +622,14 @@ map("n", "<leader>ds", ":e db/schema.rb<Esc>", silent)
 map("n", "<leader>yr", "o@return []<Esc>", silent)
 map("n", "<leader>yp", "o@param []<Esc>", silent)
 map("n", "<leader>aa", ":enew<CR>", silent)
-map("n", "<leader>lr", ":%s/ *$//g<CR>:noh<CR>", silent)
+map("n", "<leader>lr", function()
+  local ok, trail = pcall(require, "mini.trailspace")
+  if not ok then
+    return
+  end
+  trail.trim()
+  vim.cmd.nohlsearch()
+end, { silent = true, desc = "Trim trailing whitespace" })
 map("i", "<C-y><C-w>", "<Esc>:w<CR>", silent)
 map("n", "<C-y><C-w>", ":w<CR>", silent)
 map("n", "<leader>sp", ":sp<CR>", silent)
