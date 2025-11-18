@@ -17,6 +17,7 @@ cd dotfiles
 Run the regression test suite (Neovim, tmux, setup.sh, plus existing zsh tests) with:
 
 ```
+
 make test
 ```
 

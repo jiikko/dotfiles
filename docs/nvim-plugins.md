@@ -35,7 +35,7 @@
 | ✅ nvim-telescope/telescope.nvim | ファジーファインダ | 2025-03-18              | `ibhagwan/fzf-lua`, `junegunn/fzf.vim`              | △            | △             | いいえ          | Telescope は機能性◎。軽量化なら fzf-lua。 |
 | ✅ junegunn/fzf + fzf.vim        | CLI FZF            | 2025-07-25 / 2025-06-20 | `nvim-telescope/telescope.nvim`, `ibhagwan/fzf-lua` | △            | ○             | はい             | Telescope と役割が被るので整理候補。      |
 | ✅ rbtnn/vim-ambiwidth           | 全角幅調整         | 2024-10-24              | 代替少                                              | ×            | ×             | はい             | 日本語環境では維持推奨。                  |
-| ✅ APZelos/blamer.nvim           | 行単位 blame       | 2023-09-19              | `lewis6991/gitsigns.nvim`                           | ○            | ○             | はい             | 更新停止気味で機能不足。Gitsigns を推奨。 |
+| ✅ lewis6991/gitsigns.nvim       | Git ハイライト     | 2025-10-19              | 同プラグイン                                         | ×            | ×             | いいえ          | 差分/ブレーム/ステージングまで一括管理できる Lua 実装。 |
 
 ## テキスト編集支援
 
@@ -70,9 +70,9 @@
 
 ## 乗り換え優先度の目安
 
-1. **軽量化を急ぐ**: blamer.nvim, vim-better-whitespace を優先的に整理。
+1. **軽量化を急ぐ**: vim-better-whitespace を優先的に整理。
 2. **UI/テーマ**: Lightline→Lualine、gruvbox Vimscript→Lua 版。
-3. **Git/開発補助**: blamer.nvim→gitsigns、vim-better-whitespace→mini.trailspace。
+3. **Git/開発補助**: vim-better-whitespace→mini.trailspace のように重複プラグインを整理。
 4. **言語/LSP**: vim-go, vim-terraform, coc.nvim を徐々にネイティブ LSP 構成へ。
 5. **AI 補完**: copilot.vim→copilot.lua 等 Lua 版へ移行。
 
@@ -81,7 +81,6 @@
 ## 直近で着手したい整理項目
 
 - **junegunn/fzf + fzf.vim の整理**: Telescope と役割が重複中。CLI 版に依存したいケースを精査し、片方に統一して読み込みを減らす。
-- **APZelos/blamer.nvim → lewis6991/gitsigns.nvim**: Blamer は情報量が少なく更新も停滞。Gitsigns へ切り替えると blame/差分/操作を一括管理できる。
 - **tyru/operator-camelize.vim → tpope/vim-abolish**: Abolish なら camelCase ↔ snake_case 変換だけでなく置換辞書も統合できるため、操作系を一本化できる。
 
 ## 推奨プラグイン候補（リサーチ結果）
@@ -90,7 +89,6 @@
 | -------------------------------------------------------------------------------------------------------------- | ------------------ | ---------- | ----------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | 候補                                                                                                           | Stars (2025-11-14) | 最終 Push  | 用途/置き換え先                           | 採用メリット                                        | 今の構成での乗り換え可否                                                                   |
 | ---                                                                                                            | ---             | ---        | ---                                       | ---                                                 | ---                                                                                        |
-| [`lewis6991/gitsigns.nvim`](https://github.com/lewis6991/gitsigns.nvim)                                        | 6.3k            | 2025-10-19 | Git ハイライト（→ `blamer.nvim`）         | blame/差分/アクションを一本化。                     | ○: `gitsigns.setup()` を追加し `<leader>gb` を置換で完了。                                 |
 | [`echasnovski/mini.trailspace`](https://github.com/nvim-mini/mini.nvim/blob/main/readmes/mini-trailspace.md) | (mini.nvim 4k+) | 2025-01-30 | 末尾空白削除（→ `vim-better-whitespace`） | Vimscript 版より軽量・遅延ロードしやすい。          | ○: mini.nvim 既存依存があるため設定1行で置換可能。                                         |
 | [`ellisonleao/gruvbox.nvim`](https://github.com/ellisonleao/gruvbox.nvim)                                      | 2.9k            | 2025-09-30 | カラースキーム（→ `morhetz/gruvbox`）     | Lua 版で truecolor/透明度の調整が容易。             | ○: colorscheme 名を差し替えるだけ。                                                        |
 | [`nvim-lualine/lualine.nvim`](https://github.com/nvim-lualine/lualine.nvim)                                    | 4.9k             | 2025-10-03 | ステータスライン（→ `lightline.vim`）     | 高速・拡張性抜群。Coc/Copilot 情報も統合しやすい。  | △: Lightline 依存関数を Lualine フォーマットに書き換える必要あり。                         |

@@ -460,22 +460,40 @@ require("lazy").setup({
     dependencies = { "junegunn/fzf" },
   },
   { "numToStr/Comment.nvim" },
-  { "APZelos/blamer.nvim",
-    cmd = { "BlamerToggle" },
-    keys = {
-      { "<leader>gb", function()
-          require("lazy").load({ plugins = { "blamer.nvim" } })
-          vim.cmd("BlamerToggle")
-        end,
-        desc = "Toggle git blame",
-        mode = { "n", "v" }
-      },
-    },
-    init = function()
-      vim.g.blamer_enabled = 0
-      vim.g.blamer_date_format = "%Y/%m/%d"
-      vim.g.blamer_show_in_insert_modes = 0
-      vim.g.blamer_template = "<commit-short> <committer-time> <committer>:  <summary>"
+  { "lewis6991/gitsigns.nvim",
+    event = { "BufReadPre", "BufNewFile" },
+    config = function()
+      local gitsigns = require("gitsigns")
+      gitsigns.setup({
+        current_line_blame = false,
+        current_line_blame_opts = {
+          virt_text = true,
+          virt_text_pos = "eol",
+          delay = 500,
+        },
+        current_line_blame_formatter = "<abbrev_sha> <author_time:%Y/%m/%d> <author>: <summary>",
+        signs = {
+          add = { text = "▎" },
+          change = { text = "▎" },
+          delete = { text = "" },
+          topdelete = { text = "" },
+          changedelete = { text = "▎" },
+          untracked = { text = "▎" },
+        },
+      })
+
+      vim.api.nvim_set_hl(0, "GitSignsCurrentLineBlame", {
+        fg = "#1d2021",
+        bg = "#fabd2f",
+        ctermfg = 234,
+        ctermbg = 214,
+        bold = true,
+        italic = false,
+      })
+
+      local map = vim.keymap.set
+      local opts = { silent = true, desc = "Toggle git blame" }
+      map({ "n", "v" }, "<leader>gb", gitsigns.toggle_current_line_blame, opts)
     end,
   },
   { "dstein64/nvim-scrollview",
