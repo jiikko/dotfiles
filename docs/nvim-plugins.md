@@ -33,7 +33,6 @@
 | 現行                             | 主な役割           | 最終更新                | デファクト候補                                      | 乗り換え可否 | 今すぐ捨てる? | Vimscript依存? | メモ                                      |
 | -------------------------------- | ------------------ | ----------------------- | --------------------------------------------------- | ------------ | ------------- | --------------- | ----------------------------------------- |
 | ✅ nvim-telescope/telescope.nvim | ファジーファインダ | 2025-03-18              | `ibhagwan/fzf-lua`, `junegunn/fzf.vim`              | △            | △             | いいえ          | Telescope は機能性◎。軽量化なら fzf-lua。 |
-| ✅ junegunn/fzf + fzf.vim        | CLI FZF            | 2025-07-25 / 2025-06-20 | `nvim-telescope/telescope.nvim`, `ibhagwan/fzf-lua` | △            | ○             | はい             | Telescope と役割が被るので整理候補。      |
 | ✅ rbtnn/vim-ambiwidth           | 全角幅調整         | 2024-10-24              | 代替少                                              | ×            | ×             | はい             | 日本語環境では維持推奨。                  |
 | ✅ lewis6991/gitsigns.nvim       | Git ハイライト     | 2025-10-19              | 同プラグイン                                         | ×            | ×             | いいえ          | 差分/ブレーム/ステージングまで一括管理できる Lua 実装。 |
 
@@ -80,7 +79,6 @@
 
 ## 直近で着手したい整理項目
 
-- **junegunn/fzf + fzf.vim の整理**: Telescope と役割が重複中。CLI 版に依存したいケースを精査し、片方に統一して読み込みを減らす。
 - **tyru/operator-camelize.vim → tpope/vim-abolish**: Abolish なら camelCase ↔ snake_case 変換だけでなく置換辞書も統合できるため、操作系を一本化できる。
 
 ## 推奨プラグイン候補（リサーチ結果）

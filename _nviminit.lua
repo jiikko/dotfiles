@@ -451,14 +451,6 @@ require("lazy").setup({
       vim.notify = custom_notify
     end
   },
-  {
-    "junegunn/fzf",
-    build = "./install --all",
-  },
-  {
-    "junegunn/fzf.vim",
-    dependencies = { "junegunn/fzf" },
-  },
   { "numToStr/Comment.nvim" },
   { "lewis6991/gitsigns.nvim",
     event = { "BufReadPre", "BufNewFile" },
