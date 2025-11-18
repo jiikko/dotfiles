@@ -18,7 +18,7 @@
 | ✅ morhetz/gruvbox | カラースキーム | 2023-08-14 | `ellisonleao/gruvbox.nvim`, `folke/tokyonight.nvim` | ○ | △ | はい | Lua 版は遅延ロード対応が良く起動が軽い。 |
 | ✅ folke/which-key.nvim | キーマップチートシート | 2025-02-22 | 同プラグインがデファクト | × | × | いいえ | 定番。置き換え不要。 |
 | ✅ itchyny/lightline.vim | ステータスライン | 2024-12-30 | `nvim-lualine/lualine.nvim`, `famiu/feline.nvim` | ○ | △ | はい | Lua 実装の方が高速・非同期。余裕があれば移行。 |
-| ✅ romgrk/barbar.nvim | タブライン | 2025-02-12 | `akinsho/bufferline.nvim`, 標準タブライン | △ | ○ | いいえ | Issue でも重さが指摘される。Bufferline or 標準タブに移行推奨。 |
+| ✅ akinsho/bufferline.nvim | タブライン | 2025-01-14 | `romgrk/barbar.nvim`, 標準タブライン | × | × | いいえ | Barbar から移行済み。LSP/診断アイコンも扱える Lua 実装で軽量。 |
 | ✅ nvim-tree/nvim-tree.lua | ファイラ | 2025-04-04 | `nvim-neo-tree/neo-tree.nvim`, `stevearc/oil.nvim` | △ | △ | いいえ | Oil は軽量、Neo-tree は機能豊富。好み。 |
 | ✅ nvim-tree/nvim-web-devicons | アイコン | 2025-04-07 | 同プラグイン | × | × | いいえ | 事実上の標準。 |
 | ✅ lukas-reineke/indent-blankline.nvim | インデントガイド | 2025-03-18 | `echasnovski/mini.indentscope`, `glepnir/indent-guides.nvim` | ○ | △ | いいえ | mini/indent-guides は軽量。 |
@@ -70,7 +70,7 @@
 
 ## 乗り換え優先度の目安
 
-1. **軽量化を急ぐ**: Barbar, blamer.nvim, vim-better-whitespace を優先的に整理。
+1. **軽量化を急ぐ**: blamer.nvim, vim-better-whitespace を優先的に整理。
 2. **UI/テーマ**: Lightline→Lualine、gruvbox Vimscript→Lua 版。
 3. **Git/開発補助**: blamer.nvim→gitsigns、vim-better-whitespace→mini.trailspace。
 4. **言語/LSP**: vim-go, vim-terraform, coc.nvim を徐々にネイティブ LSP 構成へ。
@@ -80,7 +80,6 @@
 
 ## 直近で着手したい整理項目
 
-- **romgrk/barbar.nvim → akinsho/bufferline.nvim**: Barbar は重さが課題で「今すぐ捨てる? = ○」。Bufferline へ移れば Lua/Treesitter 対応で描画が軽い。
 - **junegunn/fzf + fzf.vim の整理**: Telescope と役割が重複中。CLI 版に依存したいケースを精査し、片方に統一して読み込みを減らす。
 - **APZelos/blamer.nvim → lewis6991/gitsigns.nvim**: Blamer は情報量が少なく更新も停滞。Gitsigns へ切り替えると blame/差分/操作を一括管理できる。
 - **tyru/operator-camelize.vim → tpope/vim-abolish**: Abolish なら camelCase ↔ snake_case 変換だけでなく置換辞書も統合できるため、操作系を一本化できる。
@@ -91,7 +90,6 @@
 | -------------------------------------------------------------------------------------------------------------- | ------------------ | ---------- | ----------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | 候補                                                                                                           | Stars (2025-11-14) | 最終 Push  | 用途/置き換え先                           | 採用メリット                                        | 今の構成での乗り換え可否                                                                   |
 | ---                                                                                                            | ---             | ---        | ---                                       | ---                                                 | ---                                                                                        |
-| [`akinsho/bufferline.nvim`](https://github.com/akinsho/bufferline.nvim)                                        | 4.1k            | 2025-01-14 | タブライン（→ `barbar.nvim`）             | Lua/Tree-sitter 対応。Barbar より軽量で機能が豊富。 | ○: Barbar のキーマップを移すだけでほぼ互換。                                               |
 | [`lewis6991/gitsigns.nvim`](https://github.com/lewis6991/gitsigns.nvim)                                        | 6.3k            | 2025-10-19 | Git ハイライト（→ `blamer.nvim`）         | blame/差分/アクションを一本化。                     | ○: `gitsigns.setup()` を追加し `<leader>gb` を置換で完了。                                 |
 | [`echasnovski/mini.trailspace`](https://github.com/nvim-mini/mini.nvim/blob/main/readmes/mini-trailspace.md) | (mini.nvim 4k+) | 2025-01-30 | 末尾空白削除（→ `vim-better-whitespace`） | Vimscript 版より軽量・遅延ロードしやすい。          | ○: mini.nvim 既存依存があるため設定1行で置換可能。                                         |
 | [`ellisonleao/gruvbox.nvim`](https://github.com/ellisonleao/gruvbox.nvim)                                      | 2.9k            | 2025-09-30 | カラースキーム（→ `morhetz/gruvbox`）     | Lua 版で truecolor/透明度の調整が容易。             | ○: colorscheme 名を差し替えるだけ。                                                        |

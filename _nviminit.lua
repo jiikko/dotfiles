@@ -334,11 +334,31 @@ require("lazy").setup({
     end,
   },
   { "rbtnn/vim-ambiwidth" },
-  { "romgrk/barbar.nvim",
+  { "akinsho/bufferline.nvim",
     event = "BufAdd",
     dependencies = { "nvim-tree/nvim-web-devicons" },
     config = function()
-      require("barbar").setup({ auto_hide = false })
+      local ok, bufferline = pcall(require, "bufferline")
+      if not ok then
+        return
+      end
+
+      bufferline.setup({
+        options = {
+          diagnostics = "nvim_lsp",
+          show_close_icon = false,
+          show_buffer_close_icons = false,
+          always_show_bufferline = true,
+        },
+      })
+
+      local map = vim.keymap.set
+      local silent = { silent = true }
+      map({ "n", "v", "o" }, "<Right>", "<Cmd>BufferLineCycleNext<CR>", silent)
+      map({ "n", "v", "o" }, "<Left>", "<Cmd>BufferLineCyclePrev<CR>", silent)
+      map("n", "gt", "<Cmd>BufferLineCycleNext<CR>", silent)
+      map("n", "gT", "<Cmd>BufferLineCyclePrev<CR>", silent)
+      map("n", "<C-a><C-a>", "<Cmd>bdelete<CR>", silent)
     end,
   },
   {
@@ -553,11 +573,6 @@ local map = vim.keymap.set
 local silent = { silent = true }
 map("n", ";", [[:<C-u>call append(expand('.'), '')<CR>j]], silent)
 map("n", "<CR><CR>", "<C-w><C-w>", silent)
-map({ "n", "v", "o" }, "<Right>", "<Cmd>BufferNext<CR>", silent)
-map({ "n", "v", "o" }, "<Left>", "<Cmd>BufferPrevious<CR>", silent)
-map("n", "gt", "<Cmd>BufferNext<CR>", silent)
-map("n", "gT", "<Cmd>BufferPrevious<CR>", silent)
-map("n", "<C-a><C-a>", ":BufferClose<CR>", silent)
 map("n", "<C-p>", ":cprevious<CR>", silent)
 map("n", "<C-n>", ":cnext<CR>", silent)
 map("n", "<C-f>", "<Right>", silent)
