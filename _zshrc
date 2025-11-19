@@ -1,3 +1,5 @@
+# vim: set filetype=zsh
+
 export DISABLE_SPRING=1
 export EDITOR="/opt/homebrew/bin/nvim"
 export LANG=ja_JP.UTF-8

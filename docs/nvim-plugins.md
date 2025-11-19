@@ -54,9 +54,10 @@
 | ------------------------- | ------------ | ---------- | -------------------------------------------------------- | ------------ | ------------- | --------------- | ---------------------------------------------------- |
 | ✅ tpope/vim-rails        | Rails 支援   | 2025-02-19 | 同プラグイン                                             | × | × | はい | Rails 界隈でデファクト。 |
 | ✅ hashivim/vim-terraform | Terraform    | 2025-01-20 | `hashicorp/terraform-ls` + LSP, `mfussenegger/nvim-lint` | △ | △ | はい | LSP/formatter へ徐々に移行可能。 |
-| ✅ fatih/vim-go           | Go 補助      | 2025-03-09 | `ray-x/go.nvim`, `nvim-lspconfig` + `gopls`              | △ | △ | はい | “重い/設定過多” の声が多く、LSP 構成へ移行推奨。 |
+| ✅ fatih/vim-go | Go 補助 | 2025-03-09 | `ray-x/go.nvim`, `nvim-lspconfig` + `gopls` | △ | △ | はい | “重い/設定過多” の声が多く、LSP 構成へ移行推奨。 |
 | ✅ github/copilot.vim     | AI 補完      | 2025-03-24 | `zbirenbaum/copilot.lua`, `sourcegraph/sg.nvim`          | ○ | △ | はい | Vimscript 版は重いとの声。Lua 版へ移行推奨。 |
 | ✅ neoclide/coc.nvim      | LSP/補完統合 | 2025-04-06 | `nvim-lspconfig` + `nvim-cmp`                            | △ | △ | はい | Node 依存で重いとの評判。長期的にネイティブ LSP へ。 |
+
 
 ## 補助 / その他
 
