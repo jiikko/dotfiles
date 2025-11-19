@@ -575,8 +575,17 @@ require("lazy").setup({
       })
     end,
   },
-  { "MeanderingProgrammer/render-markdown.nvim",
-    ft = { "markdown", "md", "mdx", "rmd" },
+  {
+    "OXY2DEV/markview.nvim",
+    lazy = false,
+    dependencies = {
+      "nvim-treesitter/nvim-treesitter",
+      "nvim-tree/nvim-web-devicons",
+    },
+    config = function()
+      -- Load eagerly so markview can hook highlight groups after the colorscheme
+      require("markview").setup()
+    end,
   },
 }, {
   install = { colorscheme = { "gruvbox" } },
