@@ -642,12 +642,12 @@ function codex() {
   _ensure_cli_with_brew "codex" "codex" || return 1
   if [ -n "$TMUX" ]; then
     tmux rename-window "🤖 codex"
-    command codex "$@"
+    command codex --search "$@"
     local exit_code=$?
     tmux rename-window "zsh"
     return $exit_code
   else
-    command codex "$@"
+    command codex --search "$@"
   fi
 }
 
