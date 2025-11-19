@@ -1,1 +1,2 @@
+# vim: set filetype=ruby:
 Pry.config.pager = false

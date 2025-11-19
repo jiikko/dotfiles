@@ -14,27 +14,27 @@
 ## UI / 操作性
 
 | 現行 | 主な役割 | 最終更新 | デファクト候補 | 乗り換え可否 | 今すぐ捨てる? | Vimscript依存? | メモ |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| ✅ ellisonleao/gruvbox.nvim | カラースキーム | 2025-09-30 | 同プラグイン, `folke/tokyonight.nvim` | × | × | いいえ | Vimscript 版から移行済み。Lua 版で truecolor/透明度設定が容易。 |
-| ✅ folke/which-key.nvim | キーマップチートシート | 2025-02-22 | 同プラグインがデファクト | × | × | いいえ | 定番。置き換え不要。 |
-| ✅ nvim-lualine/lualine.nvim | ステータスライン | 2025-10-03 | 同プラグイン | × | × | いいえ | Lightline から移行済み。Coc の状態/関数名も Lua 側で統合。 |
+| ---- | -------- | -------- | -------------- | ------------ | ------------- | -------------- | ---- |
+| ✅ ellisonleao/gruvbox.nvim | カラースキーム | 2025-09-04 | 同プラグイン, `folke/tokyonight.nvim` | × | × | いいえ | Vimscript 版から移行済み。Lua 版で truecolor/透明度設定が容易。 |
+| ✅ folke/which-key.nvim | キーマップチートシート | 2025-10-28 | 同プラグインがデファクト | × | × | いいえ | 定番。置き換え不要。 |
+| ✅ nvim-lualine/lualine.nvim | ステータスライン | 2025-10-16 | 同プラグイン | × | × | いいえ | Lightline から移行済み。Coc の状態/関数名も Lua 側で統合。 |
 | ✅ akinsho/bufferline.nvim | タブライン | 2025-01-14 | `romgrk/barbar.nvim`, 標準タブライン | × | × | いいえ | Barbar から移行済み。LSP/診断アイコンも扱える Lua 実装で軽量。 |
-| ✅ nvim-tree/nvim-tree.lua | ファイラ | 2025-04-04 | `nvim-neo-tree/neo-tree.nvim`, `stevearc/oil.nvim` | △ | △ | いいえ | Oil は軽量、Neo-tree は機能豊富。好み。 |
-| ✅ nvim-tree/nvim-web-devicons | アイコン | 2025-04-07 | 同プラグイン | × | × | いいえ | 事実上の標準。 |
-| ✅ lukas-reineke/indent-blankline.nvim | インデントガイド | 2025-03-18 | `echasnovski/mini.indentscope`, `glepnir/indent-guides.nvim` | ○ | △ | いいえ | mini/indent-guides は軽量。 |
-| ✅ rcarriga/nvim-notify | 通知 UI | 2025-01-20 | 同プラグイン | × | × | いいえ | 競合が少なく現状維持。 |
-| ✅ dstein64/nvim-scrollview | スクロールバー | 2025-10-02 | `petertriho/nvim-scrollbar`, `scrollbar.nvim` | △ | × | いいえ | 仮想テキストのみで軽量。Neoscroll とも競合しにくい。 |
+| ✅ nvim-tree/nvim-tree.lua | ファイラ | 2025-11-10 | `nvim-neo-tree/neo-tree.nvim`, `stevearc/oil.nvim` | △ | △ | いいえ | Oil は軽量、Neo-tree は機能豊富。好み。 |
+| ✅ nvim-tree/nvim-web-devicons | アイコン | 2025-10-25 | 同プラグイン | × | × | いいえ | 事実上の標準。 |
+| ✅ lukas-reineke/indent-blankline.nvim | インデントガイド | 2025-03-17 | `echasnovski/mini.indentscope`, `glepnir/indent-guides.nvim` | ○ | △ | いいえ | mini/indent-guides は軽量。 |
+| ✅ rcarriga/nvim-notify | 通知 UI | 2025-09-06 | 同プラグイン | × | × | いいえ | 競合が少なく現状維持。 |
+| ✅ dstein64/nvim-scrollview | スクロールバー | 2025-10-01 | `petertriho/nvim-scrollbar`, `scrollbar.nvim` | △ | × | いいえ | 仮想テキストのみで軽量。Neoscroll とも競合しにくい。 |
 | ✅ karb94/neoscroll.nvim | スクロールアニメ | 2024-12-06 | 同プラグイン | × | × | いいえ | Lua 実装で保守継続中。Smoothie から置換済み。 |
-| ✅ folke/flash.nvim | 高速ジャンプ | 2025-02-14 | 同プラグイン | × | × | いいえ | 代替少。維持。 |
-| ✅ echasnovski/mini.nvim (animate) | ミニユーティリティ | 2025-01-30 | `folke/zen-mode.nvim`, `pocco81/true-zen.nvim` | △ | △ | いいえ | 使うモジュールだけ残せば軽量。リポジトリは `nvim-mini` へ移管済み。 |
+| ✅ folke/flash.nvim | 高速ジャンプ | 2025-10-28 | 同プラグイン | × | × | いいえ | 代替少。維持。 |
+| ✅ echasnovski/mini.nvim (animate) | ミニユーティリティ | 2025-11-17 | `folke/zen-mode.nvim`, `pocco81/true-zen.nvim` | △ | △ | いいえ | 使うモジュールだけ残せば軽量。リポジトリは `nvim-mini` へ移管済み。 |
 
 ## ナビゲーション / 検索
 
 | 現行                             | 主な役割           | 最終更新                | デファクト候補                                      | 乗り換え可否 | 今すぐ捨てる? | Vimscript依存? | メモ                                      |
 | -------------------------------- | ------------------ | ----------------------- | --------------------------------------------------- | ------------ | ------------- | --------------- | ----------------------------------------- |
-| ✅ nvim-telescope/telescope.nvim | ファジーファインダ | 2025-03-18              | `ibhagwan/fzf-lua`, `junegunn/fzf.vim`              | △            | △             | いいえ          | Telescope は機能性◎。軽量化なら fzf-lua。 |
+| ✅ nvim-telescope/telescope.nvim | ファジーファインダ | 2025-11-07              | `ibhagwan/fzf-lua`, `junegunn/fzf.vim`              | △            | △             | いいえ          | Telescope は機能性◎。軽量化なら fzf-lua。 |
 | ✅ rbtnn/vim-ambiwidth           | 全角幅調整         | 2024-10-24              | 代替少                                              | ×            | ×             | はい             | 日本語環境では維持推奨。                  |
-| ✅ lewis6991/gitsigns.nvim       | Git ハイライト     | 2025-10-19              | 同プラグイン                                         | ×            | ×             | いいえ          | 差分/ブレーム/ステージングまで一括管理できる Lua 実装。 |
+| ✅ lewis6991/gitsigns.nvim       | Git ハイライト     | 2025-11-16              | 同プラグイン                                         | ×            | ×             | いいえ          | 差分/ブレーム/ステージングまで一括管理できる Lua 実装。 |
 
 ## テキスト編集支援
 
@@ -42,11 +42,11 @@
 | -------------------------------------------- | --------------- | ---------- | ---------------------------------------------------- | ------------ | ------------- | --------------- | ---------------------------------------------------- |
 | ✅ lukelbd/vim-toggle                        | トグル          | 2025-02-03 | `echasnovski/mini.operators`, `folke/which-key`      | △ | △ | はい | 辞書が充実しており今も実用。重さも許容範囲なので当面維持。 |
 | ✅ andymass/vim-matchup                      | 括弧/タグマッチ | 2025-03-30 | 同プラグイン                                         | × | × | いいえ | Treesitter 対応でデファクト。 |
-| ✅ windwp/nvim-ts-autotag                    | タグ補完        | 2025-02-18 | 同プラグイン                                         | × | × | いいえ | 標準的。 |
+| ✅ windwp/nvim-ts-autotag                    | タグ補完        | 2025-09-10 | 同プラグイン                                         | × | × | いいえ | 標準的。 |
 | ✅ nvim-treesitter/\*                        | 構文解析        | 2025-04-07 | 同プロジェクト                                       | × | × | いいえ | 乗り換え不要。 |
 | ✅ numToStr/Comment.nvim                     | コメントトグル  | 2024-06-09 | `folke/ts-comments.nvim`, `echasnovski/mini.comment` | ○ | △ | いいえ | mini/commentary 系は軽量。余裕があれば移行。 |
 | ✅ echasnovski/mini.trailspace               | 末尾空白可視    | 2025-01-30 | `echasnovski/mini.trailspace`, `axieax/typo.nvim`    | × | × | いいえ | 末尾空白削除を mini.trailspace で実装。既に mini.nvim を使用中のため安定。 |
-| ✅ MeanderingProgrammer/render-markdown.nvim | Markdown レンダ | 2025-04-08 | `ellisonleao/glow.nvim`, `OXY2DEV/markview.nvim`     | △ | △ | いいえ | 描画が重いとの報告あり。Glow/markview で軽量化。 |
+| ✅ OXY2DEV/markview.nvim | Markdown プレビュー | 2025-11-16 | `MeanderingProgrammer/render-markdown.nvim`, `ellisonleao/glow.nvim` | × | × | いいえ | README 推奨どおり lazy=false で配色後に読み込み。`:checkhealth markview` で要件確認すると安心。 |
 
 ## 言語・LSP
 
@@ -54,9 +54,10 @@
 | ------------------------- | ------------ | ---------- | -------------------------------------------------------- | ------------ | ------------- | --------------- | ---------------------------------------------------- |
 | ✅ tpope/vim-rails        | Rails 支援   | 2025-02-19 | 同プラグイン                                             | × | × | はい | Rails 界隈でデファクト。 |
 | ✅ hashivim/vim-terraform | Terraform    | 2025-01-20 | `hashicorp/terraform-ls` + LSP, `mfussenegger/nvim-lint` | △ | △ | はい | LSP/formatter へ徐々に移行可能。 |
-| ✅ fatih/vim-go           | Go 補助      | 2025-03-09 | `ray-x/go.nvim`, `nvim-lspconfig` + `gopls`              | △ | △ | はい | “重い/設定過多” の声が多く、LSP 構成へ移行推奨。 |
+| ✅ fatih/vim-go | Go 補助 | 2025-03-09 | `ray-x/go.nvim`, `nvim-lspconfig` + `gopls` | △ | △ | はい | “重い/設定過多” の声が多く、LSP 構成へ移行推奨。 |
 | ✅ github/copilot.vim     | AI 補完      | 2025-03-24 | `zbirenbaum/copilot.lua`, `sourcegraph/sg.nvim`          | ○ | △ | はい | Vimscript 版は重いとの声。Lua 版へ移行推奨。 |
 | ✅ neoclide/coc.nvim      | LSP/補完統合 | 2025-04-06 | `nvim-lspconfig` + `nvim-cmp`                            | △ | △ | はい | Node 依存で重いとの評判。長期的にネイティブ LSP へ。 |
+
 
 ## 補助 / その他
 
@@ -79,10 +80,8 @@
 
 ## 推奨プラグイン候補（リサーチ結果）
 
-| 候補                                                                                                           | Stars (2025-11-14) | 最終 Push  | 用途                                      | 採用メリット                                        |
-| -------------------------------------------------------------------------------------------------------------- | ------------------ | ---------- | ----------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| 候補                                                                                                           | Stars (2025-11-14) | 最終 Push  | 用途/置き換え先                           | 採用メリット                                        | 今の構成での乗り換え可否                                                                   |
-| ---                                                                                                            | ---             | ---        | ---                                       | ---                                                 | ---                                                                                        |
+| 候補                                                                                                           | Stars (2025-11-14) | 最終 Push  | 用途/置き換え先                           | 採用メリット                                        | 今の構成での乗り換え可否 |
+| --------- | ------------------ | ---------- | ----------------------------------------- | --------------------------------------------------- | ------------------------ |
 | [`echasnovski/mini.trailspace`](https://github.com/nvim-mini/mini.nvim/blob/main/readmes/mini-trailspace.md) | (mini.nvim 4k+) | 2025-01-30 | 末尾空白削除（導入済み）                  | Lua 実装で Trim/可視化を一本化済み。                 | -: `<leader>lr` も mini.trailspace の API を呼ぶよう更新済み。                              |
 | [`ellisonleao/gruvbox.nvim`](https://github.com/ellisonleao/gruvbox.nvim)                                      | 2.9k            | 2025-09-30 | カラースキーム（導入済み）                | Lua 版で truecolor/透明度の調整が容易。             | -: Vimscript 版から移行済み。                                                              |
 | [`nvim-lualine/lualine.nvim`](https://github.com/nvim-lualine/lualine.nvim)                                    | 4.9k             | 2025-10-03 | ステータスライン（導入済み）              | 高速・拡張性抜群。Coc/Copilot 情報も統合しやすい。  | -: Lightline→lualine へ切り替え済み。                                                      |

@@ -1,3 +1,4 @@
+# vim: set filetype=gitconfig:
 [core]
   pager = less -R
   excludesfile = /Users/koji/.gitignore_global

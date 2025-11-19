@@ -1,3 +1,4 @@
+# vim: set filetype=ruby:
 # Usage:
 #   $ brew bundle cleanup
 #   $ brew bundle
