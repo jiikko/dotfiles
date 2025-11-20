@@ -328,11 +328,14 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
     (ファイル名の大文字・小文字は区別しません)
 
 使い方:
-  av1ify [オプション] <ファイルパス または ディレクトリパス>
+  av1ify [オプション] <ファイルパス または ディレクトリパス> [<ファイルパス2> ...]
 
   例:
     # 単一のファイルを変換
     av1ify "/path/to/movie.avi"
+
+    # 複数のファイルを順番に変換
+    av1ify xxx.mp4 yyy.mp4 zzz.mp4
 
     # ディレクトリ内のすべての動画ファイルを変換
     av1ify "/path/to/dir"
@@ -365,6 +368,17 @@ EOF
   fi
 
   set -o pipefail
+
+  # 複数の引数がある場合は、それぞれを順番に処理
+  if (( $# > 1 )); then
+    local target ok=0 ng=0
+    for target in "$@"; do
+      print -r -- "---- 処理: $target"
+      if __AV1IFY_INTERNAL_CALL=1 av1ify "$target"; then ((ok++)); else ((ng++)); fi
+    done
+    print -r -- "== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))"
+    return 0
+  fi
 
   local target="$1"
   if [[ -d "$target" ]]; then
