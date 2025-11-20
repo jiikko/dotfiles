@@ -5,26 +5,39 @@ export EDITOR="/opt/homebrew/bin/nvim"
 export LANG=ja_JP.UTF-8
 export LC_CTYPE=ja_JP.UTF-8
 
+# Lazy loading for version managers (performance optimization)
+# Instead of running expensive eval commands on every shell startup,
+# we define wrapper functions that initialize on first use.
+
 export PATH="$HOME/.rbenv/bin:$PATH"
 if type rbenv > /dev/null 2>&1; then
-  eval "$(rbenv init -)"
-else
-  :
+  # Add shims to PATH immediately so ruby commands work before lazy init
+  export PATH="$HOME/.rbenv/shims:$PATH"
+  rbenv() {
+    unfunction rbenv
+    eval "$(command rbenv init -)"
+    rbenv "$@"
+  }
 fi
 
 export PATH=$HOME/.nodebrew/current/bin:$PATH
 if type nodenv > /dev/null 2>&1; then
   export PATH="$HOME/.nodenv/bin:$PATH"
-  eval "$(nodenv init -)"
-else
-  :
+  # Add shims to PATH immediately so node commands work before lazy init
+  export PATH="$HOME/.nodenv/shims:$PATH"
+  nodenv() {
+    unfunction nodenv
+    eval "$(command nodenv init -)"
+    nodenv "$@"
+  }
 fi
 
 if type anyenv > /dev/null 2>&1; then
-  # anyenv install --init
-  eval "$(anyenv init -)"
-else
-  :
+  anyenv() {
+    unfunction anyenv
+    eval "$(command anyenv init -)"
+    anyenv "$@"
+  }
 fi
 
 if type pyenv > /dev/null 2>&1; then
@@ -32,10 +45,17 @@ if type pyenv > /dev/null 2>&1; then
   if [[ -o login ]]; then
     eval "$(pyenv init --path)"
   fi
-  eval "$(pyenv init -)"
+  # Add shims to PATH immediately so python commands work before lazy init
+  export PATH="$HOME/.pyenv/shims:$PATH"
+  pyenv() {
+    unfunction pyenv
+    eval "$(command pyenv init -)"
+    pyenv "$@"
+  }
 fi
 
 if type direnv > /dev/null 2>&1; then
+  # direnv needs to be initialized immediately for auto-loading .envrc files
   eval "$(direnv hook zsh)"
 fi
 
