@@ -589,34 +589,7 @@ function rrr() {
   fi
 }
 
-# Homebrew で CLI を保証するユーティリティ
-function _ensure_cli_with_brew() {
-  local cmd="$1"
-  local formula="${2:-$1}"
-  if command -v "$cmd" > /dev/null 2>&1; then
-    return 0
-  fi
-  if ! command -v brew > /dev/null 2>&1; then
-    echo "Error: '$cmd' is not installed and Homebrew is unavailable." >&2
-    return 1
-  fi
-  if brew list "$formula" > /dev/null 2>&1; then
-    return 0
-  fi
-  echo "Installing $formula via Homebrew..." >&2
-  if ! brew install "$formula"; then
-    echo "Error: Failed to install $formula via Homebrew." >&2
-    return 1
-  fi
-  # コマンドハッシュをリフレッシュして新しくインストールされたコマンドを認識
-  hash -r
-  # インストール後に再度コマンドが利用可能か確認
-  if ! command -v "$cmd" > /dev/null 2>&1; then
-    echo "Error: '$cmd' was installed but is not available in PATH." >&2
-    return 1
-  fi
-  return 0
-}
+source $HOME/dotfiles/zshlib/_ensure_cli_with_brew.zsh
 
 # 🤖 claudeコマンドのラッパー関数 - tmuxウィンドウ名を自動設定
 function claude() {

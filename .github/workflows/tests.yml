@@ -12,10 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install runtime dependencies (Neovim, tmux, zsh)
+      - name: Install runtime dependencies (Neovim, tmux, zsh, bats)
         run: |
           sudo apt-get update
-          sudo apt-get install -y neovim tmux zsh make
+          sudo apt-get install -y neovim tmux zsh make bats
 
       - name: Run dotfiles test suite
         run: make test-runtime

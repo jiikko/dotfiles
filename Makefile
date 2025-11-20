@@ -4,11 +4,11 @@ SHELLCHECK_FILES := setup.sh zshlib/_av1ify.zsh
 YAML_FILES := pre-commit-config.yml .github/workflows/tests.yml .github/workflows/lint.yml
 JSON_FILES := mac/karabiner.json _coc-settings.json Brewfile.lock.json
 
-.PHONY: test test-runtime test-nvim test-tmux test-setup test-zshrc test-syntax test-shellcheck test-yaml test-json test-lint
+.PHONY: test test-runtime test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-yaml test-json test-lint
 
 test: test-lint test-runtime
 
-test-runtime: test-syntax test-zshrc test-nvim test-tmux test-setup
+test-runtime: test-syntax test-zshrc test-bats test-nvim test-tmux test-setup
 
 test-nvim:
 	@./scripts/test_nvim.zsh
@@ -21,6 +21,13 @@ test-setup:
 
 test-zshrc:
 	@tests/zshrc/test_zshrc.sh
+
+test-bats:
+	@if command -v bats >/dev/null 2>&1; then \
+		bats tests/_ensure_cli_with_brew.bats; \
+	else \
+		echo "bats not found, skipping bats tests"; \
+	fi
 
 test-syntax:
 	@./scripts/check_syntax.zsh
