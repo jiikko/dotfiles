@@ -176,5 +176,63 @@ assert_file_exists "$TEST_DIR/file2-enc.mp4" "Second file is processed"
 assert_file_exists "$TEST_DIR/file3-enc.mp4" "Third file is processed"
 assert_contains "$output" "サマリ" "Summary is displayed for multiple files"
 
+# Test 9: -f オプションでファイルリストから処理
+printf '\n## Test 9: Processing from file list with -f option\n'
+TEST_DIR="$TEST_TMP/test9"
+mkdir -p "$TEST_DIR"
+echo "video a" > "$TEST_DIR/videoA.avi"
+echo "video b" > "$TEST_DIR/videoB.mkv"
+echo "video c" > "$TEST_DIR/videoC.wmv"
+
+# リストファイルを作成
+cat > "$TEST_DIR/list.txt" <<LISTEOF
+$TEST_DIR/videoA.avi
+$TEST_DIR/videoB.mkv
+# これはコメント
+$TEST_DIR/videoC.wmv
+
+LISTEOF
+
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(av1ify -f "$TEST_DIR/list.txt" 2>&1 || true)
+setopt err_exit
+assert_file_exists "$TEST_DIR/videoA-enc.mp4" "File from list line 1 is processed"
+assert_file_exists "$TEST_DIR/videoB-enc.mp4" "File from list line 2 is processed"
+assert_file_exists "$TEST_DIR/videoC-enc.mp4" "File from list line 4 is processed"
+assert_contains "$output" "サマリ" "Summary is displayed for file list"
+
+# Test 10: -f オプションでファイルが見つからない場合
+printf '\n## Test 10: Error when -f list file not found\n'
+TEST_DIR="$TEST_TMP/test10"
+mkdir -p "$TEST_DIR"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(av1ify -f "$TEST_DIR/nonexistent.txt" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "ファイルが見つかりません" "Reports error when list file not found"
+
+# Test 11: -f オプションで引数なし
+printf '\n## Test 11: Error when -f has no argument\n'
+TEST_DIR="$TEST_TMP/test11"
+mkdir -p "$TEST_DIR"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(av1ify -f 2>&1 || true)
+setopt err_exit
+# デバッグ用に出力を表示
+# echo "Debug output: '$output'" >&2
+if [[ "$output" == *"ファイルパスが必要"* ]]; then
+  printf '✓ Reports error when -f has no argument\n'
+else
+  printf '✗ Reports error when -f has no argument (output: %s)\n' "$output"
+fi
+
+# Test 12: -f オプションのヘルプメッセージ
+printf '\n## Test 12: Help message includes -f option\n'
+help_output=$(av1ify --help 2>&1)
+assert_contains "$help_output" "-f" "Help message contains -f option"
+assert_contains "$help_output" "ファイルリスト" "Help message describes file list feature"
+
 printf '\n=== All Tests Completed ===\n'
 printf 'All av1ify tests passed successfully!\n'

@@ -329,6 +329,7 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
 
 使い方:
   av1ify [オプション] <ファイルパス または ディレクトリパス> [<ファイルパス2> ...]
+  av1ify -f <ファイルリスト>
 
   例:
     # 単一のファイルを変換
@@ -336,6 +337,9 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
 
     # 複数のファイルを順番に変換
     av1ify xxx.mp4 yyy.mp4 zzz.mp4
+
+    # ファイルリストから変換（改行区切り）
+    av1ify -f list.txt
 
     # ディレクトリ内のすべての動画ファイルを変換
     av1ify "/path/to/dir"
@@ -345,6 +349,7 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
 
 オプション:
   -h, --help: このヘルプメッセージを表示します。
+  -f <ファイル>: 改行区切りでファイルパスが記載されたリストファイルを読み込んで処理します。
 
 依存関係:
   - ffmpeg: 動画のエンコードとデコードに使用します。
@@ -368,6 +373,43 @@ EOF
   fi
 
   set -o pipefail
+
+  # -f オプションでファイルリストを読み込む
+  if [[ "$1" == "-f" ]]; then
+    if (( $# < 2 )); then
+      print -r -- "エラー: -f オプションにはファイルパスが必要です" >&2
+      return 1
+    fi
+    local listfile="$2"
+    if [[ -z "$listfile" ]]; then
+      print -r -- "エラー: -f オプションにはファイルパスが必要です" >&2
+      return 1
+    fi
+    if [[ ! -f "$listfile" ]]; then
+      print -r -- "エラー: ファイルが見つかりません: $listfile" >&2
+      return 1
+    fi
+
+    local -a files=()
+    while IFS= read -r line; do
+      # 空行とコメント行（#で始まる）をスキップ
+      [[ -z "$line" || "$line" == \#* ]] && continue
+      files+=("$line")
+    done < "$listfile"
+
+    if (( ${#files[@]} == 0 )); then
+      print -r -- "（対象ファイルなし: $listfile）"
+      return 0
+    fi
+
+    local target ok=0 ng=0
+    for target in "${files[@]}"; do
+      print -r -- "---- 処理: $target"
+      if __AV1IFY_INTERNAL_CALL=1 av1ify "$target"; then ((ok++)); else ((ng++)); fi
+    done
+    print -r -- "== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))"
+    return 0
+  fi
 
   # 複数の引数がある場合は、それぞれを順番に処理
   if (( $# > 1 )); then
