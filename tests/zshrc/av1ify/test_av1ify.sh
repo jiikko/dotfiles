@@ -4,7 +4,7 @@ setopt err_exit no_unset pipe_fail
 
 # zshでの現在のスクリプトパス取得
 SCRIPT_PATH="${(%):-%x}"
-ROOT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/../.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/../../.." && pwd)"
 TEST_TMP="$(mktemp -d)"
 
 cleanup() {

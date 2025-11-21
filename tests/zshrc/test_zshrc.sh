@@ -16,6 +16,7 @@ EOF
 # mimic expected home layout
 ln -s "$ROOT_DIR" "$TMP_HOME/dotfiles"
 mkdir -p "$TMP_HOME/.rbenv/bin"
+mkdir -p "$TMP_HOME/.rbenv/shims"
 mkdir -p "$TMP_HOME/.nodebrew/current/bin"
 
 run_zsh() {
@@ -92,7 +93,7 @@ assert_path_contains() {
   printf '✓ PATH contains required entries\n'
 }
 assert_path_contains "$path_output" \
-  "$expected_home/.rbenv/bin" \
+  "$expected_home/.rbenv/shims" \
   "$expected_home/.nodebrew/current/bin" \
   "$expected_home/dotfiles/bin"
 

@@ -21,6 +21,9 @@ test-setup:
 
 test-zshrc:
 	@tests/zshrc/test_zshrc.sh
+	@tests/zshrc/ai-commands/test_ai_commands.sh
+	@tests/zshrc/av1ify/test_av1ify.sh
+	@tests/zshrc/lazy-loading/test_version_managers.sh
 
 test-bats:
 	@if command -v bats >/dev/null 2>&1; then \
