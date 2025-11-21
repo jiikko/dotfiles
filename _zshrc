@@ -511,17 +511,27 @@ function retry_command() {
   shift $((OPTIND -1))
 
   local command="$@"
+  local exit_status=1
+
   for try in $(seq 1 $max_retries); do
-    eval "$command" || break
     echo "試行回数: $try"
-    sleep 1
+    if eval "$command"; then
+      exit_status=0
+      echo "コマンドは試行回数 $try で成功しました"
+      break
+    fi
+
+    if [ $try -lt $max_retries ]; then
+      sleep 1
+    fi
   done
 
-  if [ $try -eq $max_retries ]; then
-    echo "最大試行回数に到達しましたが、コマンドは成功しませんでした"
-  else
-    echo "コマンドは試行回数 $try で成功しました"
+  if [ $exit_status -ne 0 ]; then
+    echo "最大試行回数 $max_retries に到達しましたが、コマンドは成功しませんでした"
+    return 1
   fi
+
+  return 0
 }
 
 function whichppr() {
