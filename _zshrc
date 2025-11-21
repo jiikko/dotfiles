@@ -621,20 +621,6 @@ function claude() {
   fi
 }
 
-# 🤖 claudecode コマンドのラッパー関数 - tmuxウィンドウ名を自動設定
-function claudecode() {
-  _ensure_cli_with_brew "claudecode" "claudecode" || return 1
-  if [ -n "$TMUX" ]; then
-    tmux rename-window "🤖 claudecode"
-    command claudecode "$@"
-    local exit_code=$?
-    tmux rename-window "zsh"
-    return $exit_code
-  else
-    command claudecode "$@"
-  fi
-}
-
 # 🤖 geminiコマンドのラッパー関数 - tmuxウィンドウ名を自動設定
 function gemini() {
   _ensure_cli_with_brew "gemini" "gemini-cli" || return 1
