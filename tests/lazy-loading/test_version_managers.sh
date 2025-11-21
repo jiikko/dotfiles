@@ -15,24 +15,39 @@ EOF
 
 # mimic expected home layout
 ln -s "$ROOT_DIR" "$TMP_HOME/dotfiles"
-mkdir -p "$TMP_HOME/.rbenv/bin"
-mkdir -p "$TMP_HOME/.rbenv/shims"
 mkdir -p "$TMP_HOME/.nodebrew/current/bin"
+mkdir -p "$TMP_HOME/.anyenv/envs"
+
+create_fake_env() {
+  local tool="$1"
+  local root="$2"
+  mkdir -p "$root/bin" "$root/shims"
+  local tool_bin="$root/bin/$tool"
+  local upper_tool
+  upper_tool="$(printf '%s' "$tool" | tr '[:lower:]' '[:upper:]')"
+  cat <<EOF_TOOL > "$tool_bin"
+#!/usr/bin/env bash
+if [[ "\$1" == "init" && "\$2" == "-" ]]; then
+  cat <<SCRIPT
+export ${upper_tool}_INIT_CALLED=1
+${tool}() {
+  printf '${tool} real: %s\n' "\$*"
+}
+SCRIPT
+else
+  printf '${tool} binary invoked %s\n' "\$*" >&2
+fi
+EOF_TOOL
+  chmod +x "$tool_bin"
+}
+
+create_fake_env "rbenv" "$TMP_HOME/.rbenv"
+create_fake_env "nodenv" "$TMP_HOME/.nodenv"
+create_fake_env "goenv" "$TMP_HOME/.anyenv/envs/goenv"
 
 run_zsh() {
   local cmd="$1"
   HOME="$TMP_HOME" ZDOTDIR="$TMP_ZDOTDIR" zsh -i -c "$cmd"
-}
-
-assert_command_available() {
-  local cmd="$1"
-  local message="$2"
-  if run_zsh "command -v $cmd >/dev/null 2>&1"; then
-    printf '✓ %s\n' "$message"
-  else
-    printf '✗ %s\n' "$message"
-    exit 1
-  fi
 }
 
 assert_is_function() {
@@ -48,55 +63,71 @@ assert_is_function() {
   fi
 }
 
-printf '\n=== rbenv Lazy Loading Tests ===\n\n'
+assert_root_variable() {
+  local tool="$1"
+  local expected="$2"
+  local upper
+  upper="$(printf '%s' "$tool" | tr '[:lower:]' '[:upper:]')"
+  local actual
+  actual=$(run_zsh "print -r -- \${${upper}_ROOT:-}" | tr -d '\r')
+  if [[ "$actual" == "$expected" ]]; then
+    printf '✓ %s_ROOT is set to %s\n' "$upper" "$expected"
+  else
+    printf '✗ %s_ROOT expected %s but got %s\n' "$upper" "$expected" "${actual:-<empty>}"
+    exit 1
+  fi
+}
 
-# Test 1: rbenv コマンドが使える
-if command -v rbenv >/dev/null 2>&1; then
-  printf '## Test 1: rbenv command availability\n'
-  assert_command_available "rbenv" "rbenv command is available"
+assert_path_priority() {
+  local dir="$1"
+  local reference="$2"
+  local description="$3"
+  local listing
+  listing=$(run_zsh 'for d in $path; do echo $d; done')
+  local idx_dir idx_ref idx=1
+  while IFS= read -r line; do
+    if [[ "$line" == "$dir" ]]; then
+      idx_dir=$idx
+    fi
+    if [[ "$line" == "$reference" ]]; then
+      idx_ref=$idx
+    fi
+    ((idx++))
+  done <<< "$listing"
 
-  # Test 2: rbenv が関数として定義されている（遅延読み込み）
-  printf '\n## Test 2: rbenv lazy loading function\n'
-  assert_is_function "rbenv" "rbenv is defined as a lazy-loading function"
-else
-  printf '↷ rbenv not installed; skipping rbenv tests\n'
-fi
+  if [[ -z "${idx_dir:-}" ]]; then
+    printf '✗ PATH does not include %s\n' "$dir"
+    exit 1
+  fi
+  if [[ -z "${idx_ref:-}" ]]; then
+    printf '✗ PATH does not include %s\n' "$reference"
+    exit 1
+  fi
 
-# Test 3: nodenv コマンドが使える
-if command -v nodenv >/dev/null 2>&1; then
-  printf '\n## Test 3: nodenv command availability\n'
-  assert_command_available "nodenv" "nodenv command is available"
+  if (( idx_dir < idx_ref )); then
+    printf '✓ %s\n' "$description"
+  else
+    printf '✗ %s (expected index %d < %d)\n' "$description" "$idx_dir" "$idx_ref"
+    exit 1
+  fi
+}
 
-  # Test 4: nodenv が関数として定義されている
-  printf '\n## Test 4: nodenv lazy loading function\n'
-  assert_is_function "nodenv" "nodenv is defined as a lazy-loading function"
-else
-  printf '↷ nodenv not installed; skipping nodenv tests\n'
-fi
+printf '\n=== _lazy_anyenv_manager Tests ===\n\n'
 
-# Test 5: pyenv コマンドが使える
-if command -v pyenv >/dev/null 2>&1; then
-  printf '\n## Test 5: pyenv command availability\n'
-  assert_command_available "pyenv" "pyenv command is available"
+for tool in rbenv nodenv goenv; do
+  printf '## Testing %s lazy loading\n' "$tool"
+  assert_is_function "$tool" "$tool is defined as a lazy-loading function"
 
-  # Test 6: pyenv が関数として定義されている
-  printf '\n## Test 6: pyenv lazy loading function\n'
-  assert_is_function "pyenv" "pyenv is defined as a lazy-loading function"
-else
-  printf '↷ pyenv not installed; skipping pyenv tests\n'
-fi
+  if [[ "$tool" == "goenv" ]]; then
+    expected_root="$TMP_HOME/.anyenv/envs/goenv"
+  else
+    expected_root="$TMP_HOME/.${tool}"
+  fi
+  assert_root_variable "$tool" "$expected_root"
 
-# Test 7: anyenv コマンドが使える
-if command -v anyenv >/dev/null 2>&1; then
-  printf '\n## Test 7: anyenv command availability\n'
-  assert_command_available "anyenv" "anyenv command is available"
+  assert_path_priority "$expected_root/shims" "/usr/bin" "$tool shims precede /usr/bin"
+  assert_path_priority "$expected_root/bin" "/usr/bin" "$tool bin precedes /usr/bin"
+  printf '\n'
+done
 
-  # Test 8: anyenv が関数として定義されている
-  printf '\n## Test 8: anyenv lazy loading function\n'
-  assert_is_function "anyenv" "anyenv is defined as a lazy-loading function"
-else
-  printf '↷ anyenv not installed; skipping anyenv tests\n'
-fi
-
-printf '\n=== All Tests Completed ===\n'
-printf 'All version manager tests passed successfully!\n'
+printf 'All _lazy_anyenv_manager tests passed successfully!\n'
