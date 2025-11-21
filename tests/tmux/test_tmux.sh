@@ -4,7 +4,7 @@ set -euo pipefail
 
 TMUX_BIN_PATH=${TMUX_BIN:-tmux}
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-ROOT_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
+ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
 CONF_FILE="$ROOT_DIR/_tmux.conf"
 TMUX_TMPDIR=$(mktemp -d)
 export TMUX_TMPDIR

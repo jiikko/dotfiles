@@ -4,7 +4,7 @@ set -euo pipefail
 
 NVIM_BIN=${NVIM:-nvim}
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-ROOT_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
+ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
 CONFIG_FILE="$ROOT_DIR/_nviminit.lua"
 
 if ! command -v "$NVIM_BIN" >/dev/null 2>&1; then

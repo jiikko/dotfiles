@@ -11,13 +11,13 @@ test: test-lint test-runtime
 test-runtime: test-syntax test-zshrc test-bats test-nvim test-tmux test-setup
 
 test-nvim:
-	@./scripts/test_nvim.zsh
+	@tests/nvim/test_nvim.sh
 
 test-tmux:
-	@./scripts/test_tmux.zsh
+	@tests/tmux/test_tmux.sh
 
 test-setup:
-	@./scripts/test_setup.zsh
+	@tests/setup/test_setup.sh
 
 test-zshrc:
 	@tests/zshrc/test_zshrc.sh
