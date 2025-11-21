@@ -8,29 +8,44 @@ export LC_CTYPE=ja_JP.UTF-8
 # Lazy loading for version managers (performance optimization)
 # Instead of running expensive eval commands on every shell startup,
 # we define wrapper functions that initialize on first use.
+_lazy_anyenv_manager() {
+  local tool="$1"
+  local root=""
 
-export PATH="$HOME/.rbenv/bin:$PATH"
-if type rbenv > /dev/null 2>&1; then
-  # Add shims to PATH immediately so ruby commands work before lazy init
-  export PATH="$HOME/.rbenv/shims:$PATH"
-  rbenv() {
-    unfunction rbenv
-    eval "$(command rbenv init -)"
-    rbenv "$@"
-  }
-fi
+  if [ -d "$HOME/.anyenv/envs/$tool" ]; then
+    root="$HOME/.anyenv/envs/$tool"
+  elif [ -d "$HOME/.${tool}" ]; then
+    root="$HOME/.${tool}"
+  else
+    return
+  fi
 
-export PATH=$HOME/.nodebrew/current/bin:$PATH
-if type nodenv > /dev/null 2>&1; then
-  export PATH="$HOME/.nodenv/bin:$PATH"
-  # Add shims to PATH immediately so node commands work before lazy init
-  export PATH="$HOME/.nodenv/shims:$PATH"
-  nodenv() {
-    unfunction nodenv
-    eval "$(command nodenv init -)"
-    nodenv "$@"
-  }
-fi
+  local bin_dir="$root/bin"
+  local shim_dir="$root/shims"
+  local tool_path="$bin_dir/$tool"
+  if [ ! -x "$tool_path" ]; then
+    tool_path="$(command -v "$tool" 2>/dev/null)" || return
+    bin_dir="${tool_path:h}"
+  fi
+  local upper="${tool:u}"
+  eval "export ${upper}_ROOT=\"$root\""
+
+  # Move bin and shim dirs to the front of $PATH (deduplicating if present)
+  if [ -d "$bin_dir" ]; then
+    path=("$bin_dir" "${(@)path:#$bin_dir}")
+  fi
+  if [ -d "$shim_dir" ]; then
+    path=("$shim_dir" "${(@)path:#$shim_dir}")
+  fi
+
+  eval "
+$tool() {
+  unfunction $tool
+  eval \"\$($tool_path init -)\"
+  $tool \"\$@\"
+}
+"
+}
 
 if type anyenv > /dev/null 2>&1; then
   anyenv() {
@@ -40,25 +55,12 @@ if type anyenv > /dev/null 2>&1; then
   }
 fi
 
-if type pyenv > /dev/null 2>&1; then
-  export PYENV_DISABLE_AUTO_REHASH=1
-  if [[ -o login ]]; then
-    eval "$(pyenv init --path)"
-  fi
-  # Add shims to PATH immediately so python commands work before lazy init
-  export PATH="$HOME/.pyenv/shims:$PATH"
-  pyenv() {
-    unfunction pyenv
-    eval "$(command pyenv init -)"
-    pyenv "$@"
-  }
-fi
-
 if type direnv > /dev/null 2>&1; then
   # direnv needs to be initialized immediately for auto-loading .envrc files
   eval "$(direnv hook zsh)"
 fi
 
+export PATH=$HOME/.nodebrew/current/bin:$PATH
 export GOPATH=$HOME/go
 if type go > /dev/null 2>&1; then
   export GOROOT=$( go env GOROOT )
@@ -67,6 +69,11 @@ export PATH=$GOPATH/bin:$PATH
 export PATH="$HOME/dotfiles/bin:$PATH"
 export PATH="/opt/homebrew/bin:$PATH"
 export PATH="/usr/local/heroku/bin:$PATH"
+
+for _env in rbenv nodenv goenv; do
+  _lazy_anyenv_manager "$_env"
+done
+unset _env
 
 export HUSKY_SKIP_HOOKS=1
 export FZF_DEFAULT_OPTS='--height 80% --reverse --border'
