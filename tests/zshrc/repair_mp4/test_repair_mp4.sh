@@ -143,7 +143,7 @@ export MOCK_FPS="90000/1"
 output=$(repair_mp4 "$TEST_DIR/broken.mp4" 2>&1)
 assert_file_exists "$TEST_DIR/broken-repaired.mp4" "Output file is created"
 assert_contains "$output" "異常なフレームレート" "Detects abnormal framerate"
-assert_contains "$output" "libx264" "Uses re-encoding for abnormal framerate"
+assert_contains "$output" "copy" "Uses stream copy for abnormal framerate"
 assert_contains "$output" "30fpsに正規化" "Normalizes to 30fps"
 
 # Test 4: 既存の-repairedファイルのスキップ

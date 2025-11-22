@@ -71,12 +71,11 @@ __repair_mp4_one() {
   fi
 
   local target_fps="${REPAIR_MP4_FPS:-30}"
-  local -a vfilter=()
+  local -a input_opts=()
 
   if (( fps_val > 240 )); then
     print -r -- "⚠️ 異常なフレームレート検出: ${fps_val}fps → ${target_fps}fpsに正規化"
-    vfilter=(-vf "fps=${target_fps}")
-    need_reencode=1
+    input_opts=(-r "$target_fps")
   else
     print -r -- ">> フレームレート: ${fps_val}fps (正常)"
   fi
@@ -95,20 +94,13 @@ __repair_mp4_one() {
   local -a args=(
     -hide_banner -stats -y
     -fflags +genpts
+    "${input_opts[@]}"
     -i "$in"
     -map 0:v:0
+    -c:v copy
   )
 
-  # 映像処理
-  if (( need_reencode )); then
-    # フレームレート正規化が必要な場合は再エンコード
-    args+=("${vfilter[@]}" -c:v libx264 -crf 18 -preset medium)
-    print -r -- ">> 映像: libx264 再エンコード (fps正規化のため)"
-  else
-    # ストリームコピー
-    args+=(-c:v copy)
-    print -r -- ">> 映像: copy (codec=$vcodec)"
-  fi
+  print -r -- ">> 映像: copy (codec=$vcodec)"
 
   # 音声処理
   if [[ -n "$acodec" ]]; then
