@@ -72,12 +72,25 @@ __repair_mp4_one() {
 
   local target_fps="${REPAIR_MP4_FPS:-30}"
   local -a input_opts=()
+  local need_repair=0
 
   if (( fps_val > 240 )); then
     print -r -- "⚠️ 異常なフレームレート検出: ${fps_val}fps → ${target_fps}fpsに正規化"
     input_opts=(-r "$target_fps")
+    need_repair=1
   else
     print -r -- ">> フレームレート: ${fps_val}fps (正常)"
+  fi
+
+  # コンテナがMP4以外なら修復が必要
+  if [[ "$fmt" != *mp4* && "$fmt" != *mov* ]]; then
+    need_repair=1
+  fi
+
+  # 修復が不要な場合はスキップ
+  if (( ! need_repair )); then
+    print -r -- "→ 修復不要: $in"
+    return 0
   fi
 
   # 映像コーデック取得

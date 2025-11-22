@@ -239,5 +239,29 @@ printf '\n## Test 12: Help message includes environment variable\n'
 help_output=$(repair_mp4 --help 2>&1)
 assert_contains "$help_output" "REPAIR_MP4_FPS" "Help message contains REPAIR_MP4_FPS"
 
+# Test 13: 修復不要なファイルのスキップ（MP4コンテナ + 正常なフレームレート）
+printf '\n## Test 13: Skip files that do not need repair\n'
+TEST_DIR="$TEST_TMP/test13"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/normal.mp4"
+cd "$TEST_DIR"
+export MOCK_FPS="30/1"
+export MOCK_FORMAT="mov,mp4,m4a,3gp,3g2,mj2"
+output=$(repair_mp4 "$TEST_DIR/normal.mp4" 2>&1)
+assert_contains "$output" "修復不要" "Reports no repair needed for normal MP4"
+assert_file_not_exists "$TEST_DIR/normal-repaired.mp4" "No output file created for normal MP4"
+
+# Test 14: mpegtsコンテナは修復が必要（正常なフレームレートでも）
+printf '\n## Test 14: mpegts container needs repair even with normal framerate\n'
+TEST_DIR="$TEST_TMP/test14"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/video.mp4"
+cd "$TEST_DIR"
+export MOCK_FPS="30/1"
+export MOCK_FORMAT="mpegts"
+output=$(repair_mp4 "$TEST_DIR/video.mp4" 2>&1)
+assert_file_exists "$TEST_DIR/video-repaired.mp4" "Output file created for mpegts container"
+assert_not_contains "$output" "修復不要" "Does not report no repair needed for mpegts"
+
 printf '\n=== All Tests Completed ===\n'
 printf 'All repair_mp4 tests passed successfully!\n'
