@@ -19,6 +19,13 @@ mkdir -p "$TMP_HOME/.rbenv/bin"
 mkdir -p "$TMP_HOME/.rbenv/shims"
 mkdir -p "$TMP_HOME/.nodebrew/current/bin"
 
+# Create dummy rbenv script for lazy loading to work
+cat > "$TMP_HOME/.rbenv/bin/rbenv" <<'RBENV'
+#!/bin/sh
+echo "dummy rbenv"
+RBENV
+chmod +x "$TMP_HOME/.rbenv/bin/rbenv"
+
 run_zsh() {
   local cmd="$1"
   local mode="${2:-interactive}"
