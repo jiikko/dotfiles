@@ -263,5 +263,36 @@ output=$(repair_mp4 "$TEST_DIR/video.mp4" 2>&1)
 assert_file_exists "$TEST_DIR/video-repaired.mp4" "Output file created for mpegts container"
 assert_not_contains "$output" "修復不要" "Does not report no repair needed for mpegts"
 
+# Test 15: -i オプションで元ファイルを上書き
+printf '\n## Test 15: In-place mode overwrites original file\n'
+TEST_DIR="$TEST_TMP/test15"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/video.mp4"
+cd "$TEST_DIR"
+export MOCK_FPS="90000/1"
+export MOCK_FORMAT="mpegts"
+output=$(repair_mp4 -i "$TEST_DIR/video.mp4" 2>&1)
+assert_file_exists "$TEST_DIR/video.mp4" "Original file still exists (overwritten)"
+assert_file_not_exists "$TEST_DIR/video-repaired.mp4" "No -repaired.mp4 file created"
+assert_contains "$output" "完了" "Reports completion"
+
+# Test 16: --in-place オプション（長いフォーム）
+printf '\n## Test 16: --in-place long option\n'
+TEST_DIR="$TEST_TMP/test16"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/video.mp4"
+cd "$TEST_DIR"
+export MOCK_FPS="90000/1"
+export MOCK_FORMAT="mpegts"
+output=$(repair_mp4 --in-place "$TEST_DIR/video.mp4" 2>&1)
+assert_file_exists "$TEST_DIR/video.mp4" "Original file still exists"
+assert_file_not_exists "$TEST_DIR/video-repaired.mp4" "No -repaired.mp4 file created"
+
+# Test 17: ヘルプに -i オプションの説明がある
+printf '\n## Test 17: Help message includes -i option\n'
+help_output=$(repair_mp4 --help 2>&1)
+assert_contains "$help_output" "-i" "Help message contains -i option"
+assert_contains "$help_output" "--in-place" "Help message contains --in-place option"
+
 printf '\n=== All Tests Completed ===\n'
 printf 'All repair_mp4 tests passed successfully!\n'

@@ -57,6 +57,16 @@ assert_file_exists() {
   fi
 }
 
+assert_file_not_exists() {
+  local file="$1" message="$2"
+  if [[ ! -f "$file" ]]; then
+    printf '✓ %s\n' "$message"
+  else
+    printf '✗ %s (file exists: %s)\n' "$message" "$file"
+    return 1
+  fi
+}
+
 assert_contains() {
   local haystack="$1" needle="$2" message="$3"
   if [[ "$haystack" == *"$needle"* ]]; then
@@ -142,6 +152,25 @@ mkdir -p "$TEST_DIR"
 echo "dummy" > "$TEST_DIR/VIDEO.MP4"
 repair "$TEST_DIR/VIDEO.MP4" > /dev/null 2>&1
 assert_file_exists "$TEST_DIR/VIDEO-repaired.mp4" ".MP4 processed"
+
+# Test 9: -i オプションで元ファイルを上書き
+printf '\n## Test 9: In-place mode\n'
+TEST_DIR="$TEST_TMP/test9"
+mkdir -p "$TEST_DIR"
+echo "dummy" > "$TEST_DIR/video.mp4"
+export MOCK_FPS="90000/1"
+export MOCK_FORMAT="mpegts"
+repair -i "$TEST_DIR/video.mp4" > /dev/null 2>&1
+assert_file_exists "$TEST_DIR/video.mp4" "Original file exists"
+assert_file_not_exists "$TEST_DIR/video-repaired.mp4" "-repaired.mp4 not created"
+
+# Test 10: ヘルプに -i オプションの説明がある
+printf '\n## Test 10: Help includes -i option\n'
+unsetopt err_exit
+help_output=$(repair --help 2>&1 || true)
+setopt err_exit
+assert_contains "$help_output" "-i" "Help contains -i"
+assert_contains "$help_output" "--in-place" "Help contains --in-place"
 
 printf '\n=== All Tests Completed ===\n'
 printf 'All repair tests passed!\n'

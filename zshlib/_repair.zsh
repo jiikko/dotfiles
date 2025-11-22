@@ -19,19 +19,46 @@ repair — 問題のある動画ファイルを修復します
   .mp4, .m4v, .mov, .ts, .mts, .m2ts
 
 使い方:
-  repair <ファイルパス> [<ファイルパス2> ...]
+  repair [オプション] <ファイルパス> [<ファイルパス2> ...]
+
+オプション:
+  -i, --in-place    元のファイルを上書きする（-repaired.mp4を作成しない）
 
   例:
     repair movie.mp4
+    repair -i movie.mp4       # 元ファイルを上書き
     repair video1.mp4 video2.ts video3.mov
 EOF
     return 0
   fi
 
+  local in_place=0
+  local -a files=()
+
+  # オプション解析
+  while (( $# > 0 )); do
+    case "$1" in
+      -i|--in-place)
+        in_place=1
+        shift
+        ;;
+      -*)
+        print -r -- "不明なオプション: $1" >&2
+        return 1
+        ;;
+      *)
+        files+=("$1")
+        shift
+        ;;
+    esac
+  done
+
   local file
   local ok=0 ng=0 skip=0
+  local -a repair_opts=()
+  (( in_place )) && repair_opts+=(-i)
 
-  for file in "$@"; do
+  for file in "${files[@]}"; do
     if [[ ! -f "$file" ]]; then
       print -r -- "✗ ファイルが無い: $file"
       (( ng++ )) || true
@@ -42,7 +69,7 @@ EOF
 
     case "$ext" in
       mp4|m4v|mov|ts|mts|m2ts)
-        if repair_mp4 "$file"; then
+        if repair_mp4 "${repair_opts[@]}" "$file"; then
           (( ok++ )) || true
         else
           (( ng++ )) || true
@@ -55,7 +82,7 @@ EOF
     esac
   done
 
-  if (( $# > 1 )); then
-    print -r -- "== サマリ: OK=$ok / NG=$ng / SKIP=$skip / ALL=$#"
+  if (( ${#files[@]} > 1 )); then
+    print -r -- "== サマリ: OK=$ok / NG=$ng / SKIP=$skip / ALL=${#files[@]}"
   fi
 }
