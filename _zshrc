@@ -585,6 +585,7 @@ bdr() {
 }
 
 source $HOME/dotfiles/zshlib/_av1ify.zsh
+source $HOME/dotfiles/zshlib/_repair.zsh
 
 function rrr() {
   local inputfile="$1"
