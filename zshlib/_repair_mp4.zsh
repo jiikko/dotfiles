@@ -15,10 +15,14 @@ repair_mp4 — 問題のあるコンテナ（mpegts等）を正常なMP4に修�
   - 出力: <元ファイル名>-repaired.mp4
 
 使い方:
-  repair_mp4 <ファイルパス> [<ファイルパス2> ...]
+  repair_mp4 [オプション] <ファイルパス> [<ファイルパス2> ...]
+
+オプション:
+  -i, --in-place    元のファイルを上書きする（-repaired.mp4を作成しない）
 
   例:
     repair_mp4 movie.mp4
+    repair_mp4 -i movie.mp4     # 元ファイルを上書き
     repair_mp4 *.mp4
 
 環境変数:
@@ -28,24 +32,56 @@ EOF
     return 0
   fi
 
+  local in_place=0
+  local -a files=()
+
+  # オプション解析
+  while (( $# > 0 )); do
+    case "$1" in
+      -i|--in-place)
+        in_place=1
+        shift
+        ;;
+      -*)
+        print -r -- "不明なオプション: $1" >&2
+        return 1
+        ;;
+      *)
+        files+=("$1")
+        shift
+        ;;
+    esac
+  done
+
   local file
-  for file in "$@"; do
-    __repair_mp4_one "$file"
+  for file in "${files[@]}"; do
+    __repair_mp4_one "$file" "$in_place"
   done
 }
 
 __repair_mp4_one() {
   local in="$1"
+  local in_place="${2:-0}"
   [[ ! -f "$in" ]] && { print -r -- "✗ ファイルが無い: $in"; return 1; }
 
   local stem="${in%.*}"
-  local out="${stem}-repaired.mp4"
-  local tmp="${out}.in_progress"
+  local ext="${in:e}"
+  local out tmp
 
-  # 既存チェック
-  if [[ -e "$out" ]]; then
-    print -r -- "→ SKIP 既存: $out"
-    return 0
+  if (( in_place )); then
+    # in-placeモード: 元ファイルを上書き
+    out="$in"
+    tmp="${stem}.mp4.in_progress"
+  else
+    # 通常モード: -repaired.mp4を作成
+    out="${stem}-repaired.mp4"
+    tmp="${out}.in_progress"
+
+    # 既存チェック（in-placeモードでは不要）
+    if [[ -e "$out" ]]; then
+      print -r -- "→ SKIP 既存: $out"
+      return 0
+    fi
   fi
 
   # 古い in_progress を掃除
