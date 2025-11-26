@@ -42,6 +42,10 @@ _lazy_anyenv_manager() {
 $tool() {
   unfunction $tool
   eval \"\$($tool_path init -)\"
+  # goenvの場合、GOROOTも設定
+  if [[ \"$tool\" == \"goenv\" ]] && type go > /dev/null 2>&1; then
+    export GOROOT=\$(go env GOROOT)
+  fi
   $tool \"\$@\"
 }
 "
@@ -62,9 +66,6 @@ fi
 
 export PATH=$HOME/.nodebrew/current/bin:$PATH
 export GOPATH=$HOME/go
-if type go > /dev/null 2>&1; then
-  export GOROOT=$( go env GOROOT )
-fi
 export PATH=$GOPATH/bin:$PATH
 export PATH="$HOME/dotfiles/bin:$PATH"
 export PATH="/opt/homebrew/bin:$PATH"
