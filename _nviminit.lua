@@ -30,6 +30,7 @@ vim.opt.mouse = ""
 vim.opt.backup = false        -- バックアップファイルを作成しない
 vim.opt.swapfile = false      -- スワップファイルを作成しない
 vim.opt.shortmess:append("I") -- 起動時のメッセージを非表示
+vim.opt.autoread = true       -- 外部でファイルが変更されたら自動で読み込む
 
 -- wildignore の設定（指定したパターンのファイルを無視）
 vim.opt.wildignore:append({ ".git", ".svn" })
@@ -742,5 +743,25 @@ vim.api.nvim_create_autocmd('QuickFixCmdPost', {
     if not vim.tbl_isempty(vim.fn.getqflist()) then
       vim.cmd('cwindow')
     end
+  end,
+})
+
+-- 外部でファイルが変更されたときに自動でリロード（アクティブなバッファのみ）
+vim.api.nvim_create_autocmd({ 'FocusGained', 'BufEnter' }, {
+  pattern = '*',
+  callback = function()
+    if vim.fn.mode() ~= 'c' then
+      -- カレントバッファのみチェック
+      local bufnr = vim.fn.bufnr('%')
+      vim.cmd('checktime ' .. bufnr)
+    end
+  end,
+})
+
+-- ファイル変更検知時に通知（オプション）
+vim.api.nvim_create_autocmd('FileChangedShellPost', {
+  pattern = '*',
+  callback = function()
+    vim.notify('File changed on disk. Buffer reloaded.', vim.log.levels.WARN)
   end,
 })
