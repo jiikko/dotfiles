@@ -584,6 +584,13 @@ require("lazy").setup({
     },
     opts = {},
   },
+  {
+    "TaDaa/vimade",
+    opts = {
+      recipe = { "default", { animate = true } },
+      fadelevel = 0.4,
+    },
+  },
 }, {
   install = { colorscheme = { "gruvbox" } },
   checker = { enabled = true },
