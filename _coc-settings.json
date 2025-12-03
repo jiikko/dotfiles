@@ -2,7 +2,7 @@
   "solargraph.diagnostics": true,
   "solargraph.formatting": true,
   "solargraph.checkGemVersion": false,
-  "solargraph.useBundler": true,
+  "solargraph.useBundler": false,
   "solargraph.bundlerPath": "bundle",
   "solargraph.hover": true,
 
