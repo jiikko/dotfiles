@@ -464,13 +464,18 @@ require("lazy").setup({
       notify.setup({
         render = "minimal",
         stages = "fade_in_slide_out",
-        dismissed = {},
+        timeout = 3000,
+        max_width = 80,
+        max_height = 10,
+        background_colour = "#000000",
       })
 
       local original_notify = notify
       local custom_notify = function(msg, log_level, opts)
         -- FIXME: true color 非対応端末では透明度警告が出るため握りつぶす
-        if msg:match("Opacity changes require termguicolors to be set.") then return end
+        if msg and type(msg) == "string" and msg:match("Opacity changes require termguicolors to be set.") then return end
+        -- Invalid 'priority' エラーを握りつぶす
+        if msg and type(msg) == "string" and msg:match("Invalid 'priority'") then return end
         original_notify(msg, log_level, opts)
       end
 
@@ -590,6 +595,74 @@ require("lazy").setup({
       recipe = { "default", { animate = true } },
       fadelevel = 0.4,
     },
+  },
+  {
+    "b0o/incline.nvim",
+    event = "BufReadPre",
+    config = function()
+      local incline = require("incline")
+      incline.setup({
+        hide = {
+          cursorline = false,
+        },
+        render = function(props)
+          local bufname = vim.api.nvim_buf_get_name(props.buf)
+          local filename = vim.fn.fnamemodify(bufname, ":t")
+          if filename == "" then
+            filename = "[No Name]"
+          end
+
+          -- 一般的なファイル名の場合は親ディレクトリも表示
+          local common_names = {
+            "index.tsx", "index.ts", "index.jsx", "index.js",
+            "page.tsx", "page.ts", "layout.tsx", "layout.ts",
+            "main.go", "main.rs", "main.py", "main.rb",
+            "test.rb", "test.py", "test.js", "test.ts",
+            "spec.rb", "spec.ts", "spec.js",
+            "config.rb", "config.ts", "config.js",
+            "README.md", "package.json", "tsconfig.json"
+          }
+          local show_parent = false
+          for _, name in ipairs(common_names) do
+            if filename == name then
+              show_parent = true
+              break
+            end
+          end
+
+          local display_name = filename
+          if show_parent and bufname ~= "" then
+            local parent = vim.fn.fnamemodify(bufname, ":h:t")
+            if parent ~= "" and parent ~= "." then
+              display_name = parent .. "/" .. filename
+            end
+          end
+
+          local modified = vim.bo[props.buf].modified
+
+          -- 色の設定（inactive時は薄く）
+          local fg_color = "#ebdbb2"  -- gruvbox light
+          local bg_color = "#3c3836"  -- gruvbox bg1
+
+          if not props.focused then
+            -- inactive時は存在感を弱める
+            fg_color = "#665c54"  -- gruvbox gray
+            bg_color = "#282828"  -- gruvbox bg0
+          end
+
+          local res = {
+            { display_name, guifg = fg_color, guibg = bg_color },
+          }
+
+          if modified then
+            table.insert(res, { " ●", guifg = "#fe8019", guibg = bg_color })  -- gruvbox orange
+          end
+
+          return res
+        end,
+      })
+
+    end,
   },
 }, {
   install = { colorscheme = { "gruvbox" } },
