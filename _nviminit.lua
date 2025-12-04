@@ -604,6 +604,11 @@ require("lazy").setup({
           enabled = false, -- tmux/zellijを使わない場合はfalse
         },
         watch = true, -- AIが変更したファイルを自動リロード
+        win = {
+          layout = "float", -- フロートウィンドウで表示
+          width = 0.6,      -- 画面の60%
+          height = 0.7,     -- 画面の70%
+        },
       },
     },
     keys = {
