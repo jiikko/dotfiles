@@ -658,7 +658,7 @@ require("lazy").setup({
     },
     keys = {
       {
-        "<leader>sk",
+        "<C-Space>",
         function() require("sidekick.cli").toggle() end,
         desc = "Sidekick Toggle",
         mode = { "n", "t", "i", "x" },
