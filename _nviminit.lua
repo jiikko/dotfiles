@@ -624,7 +624,7 @@ require("lazy").setup({
         mux = {
           enabled = false, -- tmux/zellijを使わない場合はfalse
         },
-        watch = true, -- AIが変更したファイルを自動リロード
+        watch = false, -- autoreadで既に自動リロードしているので不要
         win = {
           layout = "float", -- フロートウィンドウで表示
           width = 0.6,      -- 画面の60%
