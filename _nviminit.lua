@@ -482,6 +482,30 @@ require("lazy").setup({
       vim.notify = custom_notify
     end
   },
+  {
+    "folke/noice.nvim",
+    event = "VeryLazy",
+    dependencies = {
+      "MunifTanjim/nui.nvim",
+      "rcarriga/nvim-notify",
+    },
+    opts = {
+      lsp = {
+        override = {
+          ["vim.lsp.util.convert_input_to_markdown_lines"] = true,
+          ["vim.lsp.util.stylize_markdown"] = true,
+          ["coc.util.float_scroll"] = true,
+        },
+      },
+      presets = {
+        bottom_search = false,         -- 検索もフロート表示（trueなら画面下部）
+        command_palette = true,        -- コマンドパレットスタイル
+        long_message_to_split = true,  -- 長いメッセージは分割表示
+        inc_rename = false,
+        lsp_doc_border = false,
+      },
+    },
+  },
   { "numToStr/Comment.nvim" },
   { "lewis6991/gitsigns.nvim",
     event = { "BufReadPre", "BufNewFile" },
