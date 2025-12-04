@@ -597,6 +597,18 @@ require("lazy").setup({
     },
   },
   {
+    "mvllow/modes.nvim",
+    tag = "v0.2.1",
+    config = function()
+      require("modes").setup({
+        set_cursor = true,      -- カーソルの色を変える
+        set_cursorline = false, -- 背景色は無効（標準Terminalで動かないため）
+        set_number = false,     -- 行番号の背景色も無効
+        ignore_filetypes = { "NvimTree", "TelescopePrompt" },
+      })
+    end,
+  },
+  {
     "folke/sidekick.nvim",
     opts = {
       cli = {
