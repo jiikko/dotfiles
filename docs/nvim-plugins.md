@@ -29,6 +29,8 @@
 | ✅ echasnovski/mini.nvim (animate) | ミニユーティリティ | 2025-11-17 | `folke/zen-mode.nvim`, `pocco81/true-zen.nvim` | △ | △ | いいえ | 使うモジュールだけ残せば軽量。リポジトリは `nvim-mini` へ移管済み。 |
 | ✅ b0o/incline.nvim | 浮動ファイル名表示 | 2025-12-03 | `akinsho/bufferline.nvim` のみでも可 | △ | × | いいえ | 分割ウィンドウで各ウィンドウにファイル名表示。未保存/親ディレクトリ表示など実装。 |
 | ✅ TaDaa/vimade | 非アクティブフェード | 2025-12-03 | `levouh/tint.nvim`, `folke/twilight.nvim` | △ | × | いいえ | 非アクティブウィンドウを暗くして集中力向上。アニメーション対応。 |
+| ✅ folke/noice.nvim | UI リッチ化 | 2025-12-05 | 同プラグイン | × | × | いいえ | コマンドライン・検索・LSPメッセージをリッチ化。nvim-notify連携。 |
+| ✅ mvllow/modes.nvim | モード別カーソル色 | 2025-12-05 | 同プラグイン | × | × | いいえ | Insert/Visual等のモードでカーソル色を変更。視認性向上。 |
 
 ## ナビゲーション / 検索
 
@@ -67,6 +69,8 @@
 | ------------------------ | ------------------ | ---------- | -------------- | ------------ | ------------- | --------------- | -------------------------- |
 | ✅ vim-jp/vimdoc-ja      | 日本語ヘルプ       | 2025-04-07 | 同プラグイン   | × | × | はい | 国内での標準ドキュメント。 |
 | ✅ nvim-lua/plenary.nvim | Lua ユーティリティ | 2025-02-11 | 同プラグイン   | × | × | いいえ | Telescope 等の依存が多い。 |
+| ✅ chrisgrieser/nvim-early-retirement | バッファ自動削除 | 2025-12-05 | 同プラグイン | × | × | いいえ | 20分未使用バッファを自動削除。最低4バッファは保持。 |
+| ✅ folke/sidekick.nvim | CLI統合 | 2025-12-05 | 同プラグイン | × | × | いいえ | Claude Code等のCLIをフロートウィンドウで表示。`<C-Space>`でトグル。 |
 
 ## 乗り換え優先度の目安
 
@@ -79,6 +83,21 @@
 必要に応じてこの表を更新し、プラグイン整理や設定刷新時の判断材料にする。
 
 ## 直近で着手したい整理項目
+
+### 完了 (2025-12-05)
+- ✅ `folke/noice.nvim` を導入：コマンドライン・検索UIのリッチ化
+  - コマンドパレットスタイルの表示
+  - 長いメッセージの分割表示
+  - nvim-notify連携
+- ✅ `chrisgrieser/nvim-early-retirement` を導入：未使用バッファの自動削除
+  - 20分間使わなかったバッファを自動削除
+  - 最低4バッファは保持
+- ✅ `mvllow/modes.nvim` を導入：モード別カーソル色変更
+  - Insert/Visualモードでカーソル色を変更
+  - 標準Terminal向けに背景色変更は無効化
+- ✅ `folke/sidekick.nvim` を導入：CLI統合
+  - Claude Code等のCLIをNeovim内で表示
+  - `<C-Space>`でフロートウィンドウをトグル
 
 ### 完了 (2025-12-03)
 - ✅ `b0o/incline.nvim` を導入：分割ウィンドウでファイル名を浮動表示
@@ -113,7 +132,6 @@
 | [`nvimdev/lspsaga.nvim`](https://github.com/nvimdev/lspsaga.nvim)         | 3.8k            | LSP UI 拡張                    | 使いやすい hover/rename/codeaction UI を提供。Coc/ネイティブどちらでも利用可。                |
 | [`folke/trouble.nvim`](https://github.com/folke/trouble.nvim)             | 6.5k            | Diagnostics/UI                 | LSP や Coc のエラー/警告を視覚的に表示し、移動が楽になる。                                    |
 | [`mason-org/mason.nvim`](https://github.com/mason-org/mason.nvim)         | 9.7k            | ツール/LSP マネージャ          | LSP サーバー/フォーマッタ/リンターを一括インストール管理。将来的な LSP ネイティブ移行が簡単。 |
-| [`folke/noice.nvim`](https://github.com/folke/noice.nvim)                 | 5.4k            | UI リッチ化                    | コマンドラインや LSP メッセージをリッチ化し、通知/入力 UI を改善。                            |
 
 > いずれも現在の `init.lua` には含まれていないが、導入すると利便性・UI 体験が向上する定番。優先度はプロジェクトや用途に合わせて調整。
 
