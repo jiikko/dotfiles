@@ -27,6 +27,8 @@
 | ✅ karb94/neoscroll.nvim | スクロールアニメ | 2024-12-06 | 同プラグイン | × | × | いいえ | Lua 実装で保守継続中。Smoothie から置換済み。 |
 | ✅ folke/flash.nvim | 高速ジャンプ | 2025-10-28 | 同プラグイン | × | × | いいえ | 代替少。維持。 |
 | ✅ echasnovski/mini.nvim (animate) | ミニユーティリティ | 2025-11-17 | `folke/zen-mode.nvim`, `pocco81/true-zen.nvim` | △ | △ | いいえ | 使うモジュールだけ残せば軽量。リポジトリは `nvim-mini` へ移管済み。 |
+| ✅ b0o/incline.nvim | 浮動ファイル名表示 | 2025-12-03 | `akinsho/bufferline.nvim` のみでも可 | △ | × | いいえ | 分割ウィンドウで各ウィンドウにファイル名表示。未保存/親ディレクトリ表示など実装。 |
+| ✅ TaDaa/vimade | 非アクティブフェード | 2025-12-03 | `levouh/tint.nvim`, `folke/twilight.nvim` | △ | × | いいえ | 非アクティブウィンドウを暗くして集中力向上。アニメーション対応。 |
 
 ## ナビゲーション / 検索
 
@@ -46,7 +48,7 @@
 | ✅ nvim-treesitter/\*                        | 構文解析        | 2025-04-07 | 同プロジェクト                                       | × | × | いいえ | 乗り換え不要。 |
 | ✅ numToStr/Comment.nvim                     | コメントトグル  | 2024-06-09 | `folke/ts-comments.nvim`, `echasnovski/mini.comment` | ○ | △ | いいえ | mini/commentary 系は軽量。余裕があれば移行。 |
 | ✅ echasnovski/mini.trailspace               | 末尾空白可視    | 2025-01-30 | `echasnovski/mini.trailspace`, `axieax/typo.nvim`    | × | × | いいえ | 末尾空白削除を mini.trailspace で実装。既に mini.nvim を使用中のため安定。 |
-| ✅ OXY2DEV/markview.nvim | Markdown プレビュー | 2025-11-16 | `MeanderingProgrammer/render-markdown.nvim`, `ellisonleao/glow.nvim` | × | × | いいえ | README 推奨どおり lazy=false で配色後に読み込み。`:checkhealth markview` で要件確認すると安心。 |
+| ✅ MeanderingProgrammer/render-markdown.nvim | Markdown レンダリング | 2025-12-03 | `OXY2DEV/markview.nvim`, `ellisonleao/glow.nvim` | × | × | いいえ | Treesitter ベースで見出し/リスト/コードブロックを装飾。軽量でシンプル。 |
 
 ## 言語・LSP
 
@@ -77,6 +79,16 @@
 必要に応じてこの表を更新し、プラグイン整理や設定刷新時の判断材料にする。
 
 ## 直近で着手したい整理項目
+
+### 完了 (2025-12-03)
+- ✅ `b0o/incline.nvim` を導入：分割ウィンドウでファイル名を浮動表示
+  - 未保存時のオレンジ●マーク表示
+  - 一般的なファイル名（index.tsx等）での親ディレクトリ表示
+  - inactive時の薄い表示
+- ✅ `TaDaa/vimade` を導入：非アクティブウィンドウのフェード機能
+- ✅ `MeanderingProgrammer/render-markdown.nvim` を導入：Markdown装飾
+- ✅ `WilliamHsieh/overlook.nvim` を削除：不要と判断
+- ✅ coc-solargraphの設定調整：`useBundler: false`でシステムsolargraphを使用
 
 ## 推奨プラグイン候補（リサーチ結果）
 

@@ -597,6 +597,35 @@ require("lazy").setup({
     },
   },
   {
+    "folke/sidekick.nvim",
+    opts = {
+      cli = {
+        mux = {
+          enabled = false, -- tmux/zellijを使わない場合はfalse
+        },
+        watch = true, -- AIが変更したファイルを自動リロード
+      },
+    },
+    keys = {
+      {
+        "<leader>sk",
+        function() require("sidekick.cli").toggle() end,
+        desc = "Sidekick Toggle",
+        mode = { "n", "t", "i", "x" },
+      },
+      {
+        "<leader>sc",
+        function() require("sidekick.cli").toggle({ name = "claude", focus = true }) end,
+        desc = "Sidekick Toggle Claude",
+      },
+      {
+        "<leader>ss",
+        function() require("sidekick.cli").select() end,
+        desc = "Sidekick Select CLI",
+      },
+    },
+  },
+  {
     "b0o/incline.nvim",
     event = "BufReadPre",
     config = function()
