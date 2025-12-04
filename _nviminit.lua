@@ -597,6 +597,15 @@ require("lazy").setup({
     },
   },
   {
+    "chrisgrieser/nvim-early-retirement",
+    event = "VeryLazy",
+    opts = {
+      retirementAgeMins = 20,  -- 20分間使わなかったら自動削除
+      minimumBufferNum = 4,    -- バッファが4個未満の時は削除しない
+      notificationOnAutoClose = true, -- 削除時に通知（nvim-notifyが必要）
+    },
+  },
+  {
     "mvllow/modes.nvim",
     tag = "v0.2.1",
     config = function()
