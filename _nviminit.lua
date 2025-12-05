@@ -83,6 +83,8 @@ require("lazy").setup({
         overrides = {},
       })
       vim.cmd("colorscheme gruvbox")
+      -- 選択範囲をショッキングピンクで強調
+      vim.api.nvim_set_hl(0, "Visual", { bg = "#d3869b", fg = "#1d2021" })
     end,
   },
   { "tpope/vim-rails", ft = { "ruby", "eruby" } },
@@ -664,9 +666,9 @@ require("lazy").setup({
     opts = {
       cli = {
         mux = {
-          enabled = false, -- tmux/zellijを使わない場合はfalse
+          enabled = true, -- tmux統合を有効化
         },
-        watch = false, -- autoreadで既に自動リロードしているので不要
+        watch = true,
         win = {
           layout = "float", -- フロートウィンドウで表示
           width = 0.6,      -- 画面の60%
@@ -923,14 +925,12 @@ vim.api.nvim_create_autocmd('QuickFixCmdPost', {
   end,
 })
 
--- 外部でファイルが変更されたときに自動でリロード（アクティブなバッファのみ）
-vim.api.nvim_create_autocmd({ 'FocusGained', 'BufEnter' }, {
+-- 外部でファイルが変更されたときに自動でリロード（全バッファ）
+vim.api.nvim_create_autocmd({ 'FocusGained', 'BufEnter', 'CursorHold', 'CursorHoldI' }, {
   pattern = '*',
   callback = function()
     if vim.fn.mode() ~= 'c' then
-      -- カレントバッファのみチェック
-      local bufnr = vim.fn.bufnr('%')
-      vim.cmd('checktime ' .. bufnr)
+      vim.cmd('checktime')
     end
   end,
 })
