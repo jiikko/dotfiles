@@ -648,9 +648,9 @@ require("lazy").setup({
     opts = {
       cli = {
         mux = {
-          enabled = false, -- tmux/zellijを使わない場合はfalse
+          enabled = true, -- tmux統合を有効化
         },
-        watch = false, -- autoreadで既に自動リロードしているので不要
+        watch = true,
         win = {
           layout = "float", -- フロートウィンドウで表示
           width = 0.6,      -- 画面の60%
