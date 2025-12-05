@@ -463,13 +463,31 @@ require("lazy").setup({
     end,
     config = function()
       local notify = require('notify')
+      local stages_util = require("notify.stages.util")
+
       notify.setup({
         render = "minimal",
-        stages = "fade_in_slide_out",
         timeout = 3000,
         max_width = 80,
         max_height = 10,
         background_colour = "#000000",
+        stages = {
+          function(state)
+            local next_row = stages_util.available_slot(state.open_windows, state.message.height + 2, stages_util.DIRECTION.BOTTOM_UP)
+            if not next_row then return nil end
+            return {
+              relative = "editor",
+              anchor = "SW",
+              width = state.message.width,
+              height = state.message.height,
+              col = 0,
+              row = next_row,
+              border = "rounded",
+              style = "minimal",
+            }
+          end,
+          function() return { time = true } end,
+        },
       })
 
       local original_notify = notify
