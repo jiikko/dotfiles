@@ -84,7 +84,7 @@ require("lazy").setup({
       })
       vim.cmd("colorscheme gruvbox")
       -- 選択範囲をショッキングピンクで強調
-      vim.api.nvim_set_hl(0, "Visual", { bg = "#d3869b", fg = "#1d2021" })
+      vim.api.nvim_set_hl(0, "Visual", { bg = "#d3869b" })
     end,
   },
   { "tpope/vim-rails", ft = { "ruby", "eruby" } },
