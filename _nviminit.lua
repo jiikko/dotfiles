@@ -905,14 +905,12 @@ vim.api.nvim_create_autocmd('QuickFixCmdPost', {
   end,
 })
 
--- 外部でファイルが変更されたときに自動でリロード（アクティブなバッファのみ）
-vim.api.nvim_create_autocmd({ 'FocusGained', 'BufEnter' }, {
+-- 外部でファイルが変更されたときに自動でリロード（全バッファ）
+vim.api.nvim_create_autocmd({ 'FocusGained', 'BufEnter', 'CursorHold', 'CursorHoldI' }, {
   pattern = '*',
   callback = function()
     if vim.fn.mode() ~= 'c' then
-      -- カレントバッファのみチェック
-      local bufnr = vim.fn.bufnr('%')
-      vim.cmd('checktime ' .. bufnr)
+      vim.cmd('checktime')
     end
   end,
 })
