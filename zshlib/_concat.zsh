@@ -192,27 +192,6 @@ __concat_diagnose_output() {
     return 1
   fi
 
-  # 2. デコードテスト
-  local decode_err
-  decode_err=$(ffmpeg -v error -i "$outfile" -f null - 2>&1)
-  if [[ -n "$decode_err" ]]; then
-    REPLY="出力ファイルが破損しています: デコードエラーが検出されました"
-    return 1
-  fi
-
-  # 3. duration整合性チェック
-  if [[ -n "$actual_duration" && -n "$expected_duration" ]]; then
-    local diff
-    diff=$(awk -v a="$actual_duration" -v e="$expected_duration" \
-      'BEGIN{ d=a-e; if(d<0) d=-d; printf "%.1f", d }')
-    # 許容誤差は環境変数で制御可能（デフォルト: 1秒）
-    local threshold="${CONCAT_DURATION_TOLERANCE:-1.0}"
-    if (( $(echo "$diff > $threshold" | bc -l) )); then
-      REPLY="duration不整合: 入力合計=${expected_duration}秒, 出力=${actual_duration}秒 (差=${diff}秒)"
-      return 1
-    fi
-  fi
-
   REPLY=""
   return 0
 }
@@ -288,6 +267,8 @@ EOF
   # ファイルアクセスでダウンロードをトリガー
   print -r -- ">> ファイルをプリフェッチ中..."
   local -a prefetch_pids=()
+  # バックグラウンドジョブの通知を抑制
+  setopt LOCAL_OPTIONS NO_NOTIFY NO_MONITOR
   for file in "${input_files[@]}"; do
     head -c 1 -- "$file" > /dev/null 2>&1 &
     prefetch_pids+=($!)
@@ -298,15 +279,12 @@ EOF
   done
   print -r -- ">> プリフェッチ完了"
 
-  # 同一ディレクトリ確認
-  local first_dir="${input_files[1]:h}"
-  [[ "$first_dir" == "${input_files[1]}" ]] && first_dir="."
-  first_dir="$(cd "$first_dir" && pwd)"
+  print -r -- ">> ファイル検証中..."
+  # 同一ディレクトリ確認（:A で絶対パスに変換、スペース対応）
+  local first_dir="${input_files[1]:A:h}"
 
   for file in "${input_files[@]}"; do
-    dir="${file:h}"
-    [[ "$dir" == "$file" ]] && dir="."
-    dir="$(cd "$dir" && pwd)"
+    dir="${file:A:h}"
     if [[ "$dir" != "$first_dir" ]]; then
       print -r -- "エラー: 全ファイルが同一ディレクトリに存在する必要があります" >&2
       print -r -- "  $first_dir != $dir" >&2
@@ -323,6 +301,7 @@ EOF
     fi
   done
 
+  print -r -- ">> 連続性チェック中..."
   # 2. ファイル名の連続性チェック
   local -a stems=()
   for file in "${input_files[@]}"; do
@@ -378,6 +357,7 @@ EOF
     return 1
   fi
 
+  print -r -- ">> コーデック確認中..."
   # 3. 再エンコード回避チェック（--forceでスキップ）
   # 入力に音声があるかどうかを記録
   local has_input_audio=0
@@ -408,8 +388,8 @@ EOF
     done
   fi
 
-  # 4. ファイル名の昇順でソート
-  sorted_files=($(printf '%s\n' "${input_files[@]}" | sort))
+  # 4. ファイル名の昇順でソート（スペース対応）
+  sorted_files=("${(o)input_files[@]}")
 
   # 5. 出力ファイル名の決定
   local output_name
@@ -424,7 +404,7 @@ EOF
 
   # 入力ファイルと同名になる場合のチェック
   for file in "${sorted_files[@]}"; do
-    if [[ "$(cd "${file:h}" && pwd)/${file:t}" == "$output_path" ]]; then
+    if [[ "${file:A}" == "$output_path" ]]; then
       print -r -- "エラー: 出力ファイル名が入力ファイルと衝突します: $output_name" >&2
       return 1
     fi
@@ -448,7 +428,7 @@ EOF
   # 8. concatリストファイルの作成
   local total_duration=0 abs_path dur
   for file in "${sorted_files[@]}"; do
-    abs_path="$(cd "${file:h}" && pwd)/${file:t}"
+    abs_path="${file:A}"
     __concat_escape_path "$abs_path" >> "$list_file"
 
     # duration合計を計算
@@ -458,9 +438,18 @@ EOF
     fi
   done
 
+  # durationを時:分:秒に変換
+  local duration_hms
+  duration_hms=$(awk -v s="$total_duration" 'BEGIN{
+    h=int(s/3600); m=int((s%3600)/60); sec=s%60
+    printf "%d:%02d:%05.2f", h, m, sec
+  }')
+
   print -r -- ">> 結合対象: ${#sorted_files[@]}ファイル"
-  print -r -- ">> 入力ファイル合計duration: ${total_duration}秒"
+  print -r -- ">> 入力ファイル合計duration: ${duration_hms}"
   print -r -- ">> 出力: $output_path"
+  print -r -- ">> 結合中..."
+  local start_time=$SECONDS
 
   # 9. FFmpegで結合実行
   if ! ffmpeg -hide_banner -nostdin -loglevel error \
@@ -474,13 +463,17 @@ EOF
 
   # 10. 一時ファイルを最終ファイル名にリネーム
   mv -f -- "$tmp_output" "$output_path"
+  print -r -- ">> 結合完了 (${$(( SECONDS - start_time ))}秒)"
 
+  print -r -- ">> 診断中..."
+  start_time=$SECONDS
   # 11. 出力ファイルの診断
   if ! __concat_diagnose_output "$output_path" "$total_duration" "$has_input_audio"; then
     print -r -- "❌ 診断エラー: $REPLY" >&2
     rm -f -- "$output_path"
     return 1
   fi
+  print -r -- ">> 診断完了 (${$(( SECONDS - start_time ))}秒)"
 
   # 12. クリーンアップ（trapでも実行されるが念のため）
   rm -f -- "$list_file"

@@ -484,5 +484,18 @@ for ext in avi mov mkv webm flv wmv m4v mpg mpeg 3gp ts m2ts; do
   fi
 done
 
+# Test 22: スペースを含むパス
+printf '\n## Test 22: Paths with spaces\n'
+TEST_DIR="$TEST_TMP/test22 with spaces/sub dir"
+mkdir -p "$TEST_DIR"
+echo "video 1" > "$TEST_DIR/video file_001.mp4"
+echo "video 2" > "$TEST_DIR/video file_002.mp4"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(concat "$TEST_DIR/video file_001.mp4" "$TEST_DIR/video file_002.mp4" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_file_exists "$TEST_DIR/video file.mp4" "Output file is created with spaces in path"
+
 printf '\n=== All Tests Completed ===\n'
 printf 'All concat tests passed successfully!\n'
