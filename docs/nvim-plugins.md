@@ -135,6 +135,33 @@
 
 > いずれも現在の `init.lua` には含まれていないが、導入すると利便性・UI 体験が向上する定番。優先度はプロジェクトや用途に合わせて調整。
 
+## 新しめの注目プラグイン（2025年12月6日リサーチ）
+
+| プラグイン | Stars | 最終 Push | 主な用途 | 推奨理由 |
+| --- | --- | --- | --- | --- |
+| [`rareitems/printer.nvim`](https://github.com/rareitems/printer.nvim) | 300+ | Active | デバッグprint挿入 | VSCodeのturbo console log的な機能。変数名を含むprint文を自動生成。 |
+| [`luukvbaal/statuscol.nvim`](https://github.com/luukvbaal/statuscol.nvim) | 800+ | Active | 折り畳みバー | クリック可能な折り畳みガター。マウス操作対応。 |
+| [`utilyre/sentiment.nvim`](https://github.com/utilyre/sentiment.nvim) | 200+ | Active | ペアブロックハイライト | カーソル位置のブロック対応（括弧等）をハイライト。 |
+
+> 出典: [innei.ren - nvim-plugin-recommend](https://blog.innei.ren/nvim-plugin-recommend)
+
+## ネイティブLSP移行後に使えるプラグイン
+
+現在Cocを使用しているため利用できないが、ネイティブLSPに移行すると使えるようになるプラグイン。
+
+| プラグイン | Stars | 主な用途 | 推奨理由 |
+| --- | --- | --- | --- |
+| [`rmagatti/goto-preview`](https://github.com/rmagatti/goto-preview) | 1,000+ | LSP参照プレビュー | 定義/参照をフローティングで表示。ジャンプ前に確認できる。Telescope連携あり。 |
+| [`nvimdev/lspsaga.nvim`](https://github.com/nvimdev/lspsaga.nvim) | 3.8k | LSP UI拡張 | hover/rename/codeactionのUIをリッチ化。アウトライン表示も。 |
+| [`ray-x/lsp_signature.nvim`](https://github.com/ray-x/lsp_signature.nvim) | 2.0k | 関数シグネチャ表示 | 関数呼び出し時に引数のヒントをリアルタイム表示。 |
+| [`SmiteshP/nvim-navic`](https://github.com/SmiteshP/nvim-navic) | 1.4k | パンくずリスト | lualineに現在のコード位置（クラス > メソッド等）を表示。 |
+| [`kosayoda/nvim-lightbulb`](https://github.com/kosayoda/nvim-lightbulb) | 800+ | CodeAction通知 | CodeActionが利用可能な行に💡アイコンを表示。 |
+| [`j-hui/fidget.nvim`](https://github.com/j-hui/fidget.nvim) | 2.0k | LSP進捗表示 | LSPの読み込み状況を右下に小さく表示。noice.nvimと併用可。 |
+| [`folke/neodev.nvim`](https://github.com/folke/neodev.nvim) | 2.0k | Neovim Lua開発 | Neovim APIの型定義・補完を提供。init.lua編集が快適に。 |
+| [`Wansmer/symbol-usage.nvim`](https://github.com/Wansmer/symbol-usage.nvim) | 300+ | 参照数表示 | 関数/変数の参照数をインラインで表示（VSCode風）。 |
+
+> これらはネイティブLSP専用のため、Cocでは動作しない。移行の動機付けとして参考に。
+
 ## 新しめの注目プラグイン（2025年11月14日リサーチ）
 
 | プラグイン | Stars (2025-11-14) | 最終 Push | 主な用途 | 推奨理由 |

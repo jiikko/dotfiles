@@ -294,17 +294,12 @@ require("lazy").setup({
       keymap("n", "<leader>as", "<Plug>(coc-codeaction-source)", opts)
       keymap("n", "<leader>qf", "<Plug>(coc-fix-current)", opts)
       -- 定義ジャンプと参照リスト（便利キーバインド）
-      -- スマートジャンプ: 実装があれば実装へ、なければ定義へ
-      function _G.smart_go_to_definition()
-        vim.fn.CocActionAsync('jumpImplementation', function(err, result)
-          if err or not result or vim.tbl_isempty(result) then
-            -- 実装が見つからない場合は定義へジャンプ
-            vim.fn.CocActionAsync('jumpDefinition')
-          end
-        end)
-      end
-      keymap("n", "<C-j>", "<Cmd>lua smart_go_to_definition()<CR>", opts)
-      keymap("n", "<C-k>", "<Plug>(coc-references)", opts)
+      -- Telescopeでプレビュー付き表示
+      keymap("n", "<C-j>", "<Cmd>Telescope coc implementations<CR>", opts)
+      keymap("n", "<C-k>", "<Cmd>Telescope coc references<CR>", opts)
+      -- 直接ジャンプしたい場合用
+      keymap("n", "gd", "<Plug>(coc-definition)", opts)
+      keymap("n", "gD", "<Plug>(coc-implementation)", opts)
 
       -- NOTE: 必要か？
       -- Diagnosticsの、左横のアイコンの色設定
@@ -340,7 +335,12 @@ require("lazy").setup({
         },
         extensions = {
           coc = {
-            theme = "ivy",
+            layout_strategy = "horizontal",
+            layout_config = {
+              width = 0.9,
+              height = 0.9,
+              preview_width = 0.6,
+            },
             prefer_locations = true,
           },
           ["ui-select"] = {
