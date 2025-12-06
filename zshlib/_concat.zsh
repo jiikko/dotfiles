@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck disable=SC2154,SC2076,SC2207,SC2296
+# concat v1.0.0
 # ------------------------------------------------------------------------------
 # concat — 複数の動画ファイルを無劣化で結合するzshコマンド
 # ------------------------------------------------------------------------------
@@ -38,57 +40,39 @@ __concat_get_stem() {
   fi
 }
 
-# 内部補助: 最長共通プレフィックスを取得
-__concat_common_prefix() {
-  local -a names=("$@")
-  local first="${names[1]}"
-  local prefix="$first"
-  local name
-
-  for name in "${names[@]:1}"; do
-    while [[ -n "$prefix" && "${name:0:${#prefix}}" != "$prefix" ]]; do
-      prefix="${prefix:0:$((${#prefix}-1))}"
-    done
-  done
-
-  # 末尾の数字と区切り文字を削除（連番部分を除去）
-  # 例: video_00 → video, clip-0 → clip, file_part → file
-  prefix="${prefix%%[0-9]*}"
-  prefix="${prefix%[-_]}"
-  prefix="${prefix%\(}"
-  prefix="${prefix%part}"
-  prefix="${prefix%[-_]}"  # part削除後の区切り文字も削除
-  echo "$prefix"
-}
-
-# 内部補助: 連番パターンを検出して番号とサフィックスを抽出
-# 戻り値: REPLY に "番号:サフィックス" を設定（サフィックスがない場合は "番号:"）
+# 内部補助: 連番パターンを検出して番号、サフィックス、プレフィックスを抽出
+# 戻り値: REPLY に "番号:サフィックス:プレフィックス" を設定
 __concat_extract_number() {
   local stem="$1"
-  local num="" suffix=""
+  local num="" suffix="" prefix=""
 
   # パターン: _NNN または -NNN (末尾)
-  if [[ "$stem" =~ _([0-9]+)$ ]]; then
-    num="${match[1]}"
+  if [[ "$stem" =~ ^(.*)_([0-9]+)$ ]]; then
+    prefix="${match[1]}"
+    num="${match[2]}"
     suffix=""
-  elif [[ "$stem" =~ -([0-9]+)$ ]]; then
-    num="${match[1]}"
+  elif [[ "$stem" =~ ^(.*)-([0-9]+)$ ]]; then
+    prefix="${match[1]}"
+    num="${match[2]}"
     suffix=""
   # パターン: (N)
-  elif [[ "$stem" =~ '\(([0-9]+)\)$' ]]; then
-    num="${match[1]}"
+  elif [[ "$stem" =~ '^(.*)\(([0-9]+)\)$' ]]; then
+    prefix="${match[1]}"
+    num="${match[2]}"
     suffix=""
   # パターン: partN
-  elif [[ "$stem" =~ part([0-9]+)$ ]]; then
-    num="${match[1]}"
+  elif [[ "$stem" =~ ^(.*)part([0-9]+)$ ]]; then
+    prefix="${match[1]}"
+    num="${match[2]}"
     suffix=""
   # パターン: -N-<suffix> または _N_<suffix>
-  elif [[ "$stem" =~ '[-_]([0-9]+)([-_][^0-9]+)$' ]]; then
-    num="${match[1]}"
-    suffix="${match[2]}"
+  elif [[ "$stem" =~ '^(.*)[-_]([0-9]+)([-_][^0-9]+)$' ]]; then
+    prefix="${match[1]}"
+    num="${match[2]}"
+    suffix="${match[3]}"
   fi
 
-  REPLY="${num}:${suffix}"
+  REPLY="${num}:${suffix}:${prefix}"
   [[ -n "$num" ]]
 }
 
@@ -300,6 +284,20 @@ EOF
     fi
   done
 
+  # 1.5. クラウドストレージ対応: 並列プリフェッチ
+  # ファイルアクセスでダウンロードをトリガー
+  print -r -- ">> ファイルをプリフェッチ中..."
+  local -a prefetch_pids=()
+  for file in "${input_files[@]}"; do
+    head -c 1 -- "$file" > /dev/null 2>&1 &
+    prefetch_pids+=($!)
+  done
+  # 全プリフェッチ完了を待機
+  for pid in "${prefetch_pids[@]}"; do
+    wait "$pid" 2>/dev/null
+  done
+  print -r -- ">> プリフェッチ完了"
+
   # 同一ディレクトリ確認
   local first_dir="${input_files[1]:h}"
   [[ "$first_dir" == "${input_files[1]}" ]] && first_dir="."
@@ -331,39 +329,48 @@ EOF
     stems+=("$(__concat_get_stem "$file")")
   done
 
-  # 共通プレフィックスの確認
-  local common_prefix
-  common_prefix=$(__concat_common_prefix "${stems[@]}")
-  if (( ${#common_prefix} < 3 )); then
-    print -r -- "エラー: ファイル名に連続性がありません: 共通プレフィックスが3文字未満です" >&2
-    return 1
-  fi
-
   # 連番パターンの検出と検証
   local -a numbers=()
-  local -a suffixes=()
-  local first_suffix=""
+  local first_suffix="" first_prefix="" common_prefix=""
   for stem in "${stems[@]}"; do
     if __concat_extract_number "$stem"; then
-      # REPLY は "番号:サフィックス" 形式
+      # REPLY は "番号:サフィックス:プレフィックス" 形式
       local num_part="${REPLY%%:*}"
-      local suffix_part="${REPLY#*:}"
+      local rest="${REPLY#*:}"
+      local suffix_part="${rest%%:*}"
+      local prefix_part="${rest#*:}"
+
       # 先頭の0を除去して数値として扱う
       numbers+=("$((10#$num_part))")
-      suffixes+=("$suffix_part")
 
-      # サフィックスの一致チェック
-      if [[ -z "$first_suffix" ]]; then
+      # サフィックスとプレフィックスの一致チェック
+      if [[ -z "$first_prefix" ]]; then
         first_suffix="$suffix_part"
-      elif [[ "$suffix_part" != "$first_suffix" ]]; then
-        print -r -- "エラー: サフィックスが異なります: '$first_suffix' と '$suffix_part'" >&2
-        return 1
+        first_prefix="$prefix_part"
+      else
+        if [[ "$suffix_part" != "$first_suffix" ]]; then
+          print -r -- "エラー: サフィックスが異なります: '$first_suffix' と '$suffix_part'" >&2
+          return 1
+        fi
+        if [[ "$prefix_part" != "$first_prefix" ]]; then
+          print -r -- "エラー: ファイル名に連続性がありません: 共通プレフィックスがありません ('$first_prefix' と '$prefix_part')" >&2
+          return 1
+        fi
       fi
     else
       print -r -- "エラー: ファイル名に連番パターンがありません: $stem" >&2
       return 1
     fi
   done
+
+  # 共通プレフィックスを設定
+  common_prefix="$first_prefix"
+
+  # 共通プレフィックスの長さチェック
+  if (( ${#common_prefix} < 3 )); then
+    print -r -- "エラー: ファイル名に連続性がありません: 共通プレフィックスが3文字未満です" >&2
+    return 1
+  fi
 
   # 連番の連続性検証
   if ! __concat_validate_sequence "${numbers[@]}"; then
@@ -406,8 +413,10 @@ EOF
 
   # 5. 出力ファイル名の決定
   local output_name
-  if (( ${#common_prefix} >= 3 )); then
-    output_name="${common_prefix}.mp4"
+  # 末尾の _ や - を除去
+  local clean_prefix="${common_prefix%[-_]}"
+  if (( ${#clean_prefix} >= 3 )); then
+    output_name="${clean_prefix}.mp4"
   else
     output_name="output.mp4"
   fi
