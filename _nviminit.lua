@@ -68,12 +68,12 @@ vim.keymap.set("n", "Q", "<Nop>", { noremap = true })  -- Qを無効化するマ
 
 -- Setup lazy.nvim
 require("lazy").setup({
-  { "savq/melange-nvim",
+  { "ellisonleao/gruvbox.nvim",
     priority = 1000,
     config = function()
-      vim.cmd("colorscheme melange")
+      vim.cmd("colorscheme gruvbox")
       -- 選択範囲をショッキングピンクで強調
-      vim.api.nvim_set_hl(0, "Visual", { bg = "#d3869b" })
+      vim.api.nvim_set_hl(0, "Visual", { bg = "#d3869b", ctermbg = 175 })
     end,
   },
   { "tpope/vim-rails", ft = { "ruby", "eruby" } },
@@ -756,7 +756,7 @@ require("lazy").setup({
     end,
   },
 }, {
-  install = { colorscheme = { "melange", "gruvbox" } },
+  install = { colorscheme = { "gruvbox" } },
   checker = { enabled = true },
 })
 
