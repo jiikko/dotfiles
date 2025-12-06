@@ -149,11 +149,11 @@ __av1ify_one() {  local in="$1"
     rm -f -- "$tmp"
   fi
 
-  # 映像エンコーダ選択（SVT-AV1 優先、無ければ AOM-AV1）
+  # 映像エンコーダ（SVT-AV1 必須）
   local vcodec="libsvtav1"
   if ! ffmpeg -hide_banner -h encoder=libsvtav1 >/dev/null 2>&1; then
-    vcodec="libaom-av1"
-    print -r -- "⚠️ libsvtav1 不在 → ${vcodec} に切替"
+    print -r -- "❌ libsvtav1 が利用できません。ffmpeg を libsvtav1 付きでビルドしてください。"
+    return 1
   fi
 
   # 解像度を取得して CRF を自動調整（環境変数が優先）
