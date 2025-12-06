@@ -68,21 +68,10 @@ vim.keymap.set("n", "Q", "<Nop>", { noremap = true })  -- Qを無効化するマ
 
 -- Setup lazy.nvim
 require("lazy").setup({
-  { "ellisonleao/gruvbox.nvim",
+  { "savq/melange-nvim",
     priority = 1000,
     config = function()
-      require("gruvbox").setup({
-        transparent_mode = false,
-        terminal_colors = true,
-        italic = {
-          strings = false,
-          comments = false,
-          folds = false,
-          operations = false,
-        },
-        overrides = {},
-      })
-      vim.cmd("colorscheme gruvbox")
+      vim.cmd("colorscheme melange")
       -- 選択範囲をショッキングピンクで強調
       vim.api.nvim_set_hl(0, "Visual", { bg = "#d3869b" })
     end,
@@ -683,6 +672,9 @@ require("lazy").setup({
         desc = "Sidekick Toggle",
         mode = { "n", "t", "i", "x" },
       },
+      -- ターミナルモード内でスクロール
+      { "<C-u>", [[<C-\><C-n><C-u>]], mode = "t", desc = "Scroll up in terminal" },
+      { "<C-d>", [[<C-\><C-n><C-d>]], mode = "t", desc = "Scroll down in terminal" },
       {
         "<leader>sc",
         function() require("sidekick.cli").toggle({ name = "claude", focus = true }) end,
@@ -764,7 +756,7 @@ require("lazy").setup({
     end,
   },
 }, {
-  install = { colorscheme = { "gruvbox" } },
+  install = { colorscheme = { "melange", "gruvbox" } },
   checker = { enabled = true },
 })
 
