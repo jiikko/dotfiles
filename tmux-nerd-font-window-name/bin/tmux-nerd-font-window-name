@@ -18,7 +18,7 @@ case "$cmd_lc" in
   node) icon="" ;;      # nf-dev-nodejs_small
   deno) icon="" ;;
   python|python3) icon="" ;;
-  ruby) icon="" ;;
+  ruby|brew) icon="" ;;
   go) icon="" ;;
   rustc|cargo) icon="" ;;
   git) icon="" ;;

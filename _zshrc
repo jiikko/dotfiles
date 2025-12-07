@@ -610,48 +610,17 @@ function rrr() {
 }
 
 source $HOME/dotfiles/zshlib/_ensure_cli_with_brew.zsh
+source $HOME/dotfiles/zshlib/_tmux_window_name.zsh
 
-# AI CLIコマンドのtmuxラッパー共通関数
-function _wrap_ai_command_with_tmux() {
-  local cmd_name="$1"
-  local brew_formula="${2:-$cmd_name}"
-  shift 2
-
-  # Homebrewでインストールを保証（claude以外）
-  if [[ "$cmd_name" != "claude" ]]; then
-    _ensure_cli_with_brew "$cmd_name" "$brew_formula" || return 1
-  fi
-
-  if [ -n "$TMUX" ]; then
-    # tmux pane のユーザー変数にコマンド名を入れて自動リネームで拾わせる
-    tmux set-option -pqu @ai_name 2>/dev/null
-    tmux set-option -pq  @ai_name "🤖 $cmd_name" 2>/dev/null
-  fi
-
-  command "$cmd_name" "$@"
-  local exit_code=$?
-
-  if [ -n "$TMUX" ]; then
-    # 後片付け
-    tmux set-option -pqu @ai_name 2>/dev/null
-  fi
-
-  return $exit_code
-}
-
-# 🤖 claudeコマンドのラッパー関数 - tmuxウィンドウ名を自動設定
-function claude() {
-  _wrap_ai_command_with_tmux claude claude-code "$@"
-}
-
-# 🤖 geminiコマンドのラッパー関数 - tmuxウィンドウ名を自動設定
+# gemini/codex は brew で自動インストールするラッパー
 function gemini() {
-  _wrap_ai_command_with_tmux gemini gemini-cli "$@"
+  _ensure_cli_with_brew gemini gemini-cli || return 1
+  command gemini "$@"
 }
 
-# 🤖 codexコマンドのラッパー関数 - tmuxウィンドウ名を自動設定
 function codex() {
-  _wrap_ai_command_with_tmux codex codex --search "$@"
+  _ensure_cli_with_brew codex codex || return 1
+  command codex "$@"
 }
 
 if [[ -n "$SSH_AUTH_SOCK" ]] && ! ssh-add -l > /dev/null 2>&1; then
