@@ -132,5 +132,16 @@ else
   exit 1
 fi
 
+# Test 9: コマンド抽出がプレフィックスや代入をスキップする
+printf '\n## Test 9: Command extraction skips wrappers\n'
+result=$(run_zsh '_tmux_extract_command "sudo env FOO=1 /usr/bin/nvim file.txt"')
+assert_equals "nvim" "$result" "_tmux_extract_command strips sudo/env/assignments"
+
+result=$(run_zsh '_tmux_extract_command "FOO=bar brew install fzf"')
+assert_equals "brew" "$result" "_tmux_extract_command ignores leading assignments"
+
+result=$(run_zsh '_tmux_resolve_alias v')
+assert_equals "nvim" "$result" "_tmux_resolve_alias returns aliased command"
+
 printf '\n=== All Tests Completed ===\n'
 printf 'All tmux window name tests passed successfully!\n'
