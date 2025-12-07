@@ -133,21 +133,30 @@ cd "$TEST_DIR"
 output=$(av1ify "$TEST_DIR/video-enc.mp4" 2>&1)
 assert_contains "$output" "SKIP" "Skips -enc.mp4 input files"
 
-# Test 5: 存在しないファイルのエラー処理
-printf '\n## Test 5: Error handling for non-existent file\n'
+# Test 5: -encoded.* ファイルのスキップ
+printf '\n## Test 5: Skip -encoded.* input files\n'
 TEST_DIR="$TEST_TMP/test5"
+mkdir -p "$TEST_DIR"
+echo "already encoded" > "$TEST_DIR/gachi625_hd縦ロール.mp4-encoded.mp4"
+cd "$TEST_DIR"
+output=$(av1ify "$TEST_DIR/gachi625_hd縦ロール.mp4-encoded.mp4" 2>&1)
+assert_contains "$output" "SKIP" "Skips -encoded.* input files"
+
+# Test 6: 存在しないファイルのエラー処理
+printf '\n## Test 6: Error handling for non-existent file\n'
+TEST_DIR="$TEST_TMP/test6"
 mkdir -p "$TEST_DIR"
 cd "$TEST_DIR"
 output=$(av1ify "$TEST_DIR/nonexistent.avi" 2>&1 || true)
 assert_contains "$output" "ファイルが無い" "Reports error for non-existent file"
 
-# Test 6: 空の引数でヘルプ表示（スキップ - 環境依存）
-printf '\n## Test 6: Help display with empty argument (SKIPPED)\n'
+# Test 7: 空の引数でヘルプ表示（スキップ - 環境依存）
+printf '\n## Test 7: Help display with empty argument (SKIPPED)\n'
 printf '↷ Skipped due to environment-specific behavior\n'
 
-# Test 7: ディレクトリの再帰処理
-printf '\n## Test 7: Directory recursive processing\n'
-TEST_DIR="$TEST_TMP/test7"
+# Test 8: ディレクトリの再帰処理
+printf '\n## Test 8: Directory recursive processing\n'
+TEST_DIR="$TEST_TMP/test8"
 mkdir -p "$TEST_DIR/subdir"
 echo "video 1" > "$TEST_DIR/video1.avi"
 echo "video 2" > "$TEST_DIR/subdir/video2.mkv"
@@ -160,9 +169,9 @@ assert_file_exists "$TEST_DIR/video1-enc.mp4" "Top-level video is processed"
 assert_file_exists "$TEST_DIR/subdir/video2-enc.mp4" "Subdirectory video is processed"
 assert_file_not_exists "$TEST_DIR/readme-enc.mp4" "Non-video files are not processed"
 
-# Test 8: 複数ファイルの処理（新機能）
-printf '\n## Test 8: Multiple files processing\n'
-TEST_DIR="$TEST_TMP/test8"
+# Test 9: 複数ファイルの処理（新機能）
+printf '\n## Test 9: Multiple files processing\n'
+TEST_DIR="$TEST_TMP/test9"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/file1.avi"
 echo "video 2" > "$TEST_DIR/file2.mkv"
@@ -176,9 +185,9 @@ assert_file_exists "$TEST_DIR/file2-enc.mp4" "Second file is processed"
 assert_file_exists "$TEST_DIR/file3-enc.mp4" "Third file is processed"
 assert_contains "$output" "サマリ" "Summary is displayed for multiple files"
 
-# Test 9: -f オプションでファイルリストから処理
-printf '\n## Test 9: Processing from file list with -f option\n'
-TEST_DIR="$TEST_TMP/test9"
+# Test 10: -f オプションでファイルリストから処理
+printf '\n## Test 10: Processing from file list with -f option\n'
+TEST_DIR="$TEST_TMP/test10"
 mkdir -p "$TEST_DIR"
 echo "video a" > "$TEST_DIR/videoA.avi"
 echo "video b" > "$TEST_DIR/videoB.mkv"
@@ -202,9 +211,9 @@ assert_file_exists "$TEST_DIR/videoB-enc.mp4" "File from list line 2 is processe
 assert_file_exists "$TEST_DIR/videoC-enc.mp4" "File from list line 4 is processed"
 assert_contains "$output" "サマリ" "Summary is displayed for file list"
 
-# Test 10: -f オプションでファイルが見つからない場合
-printf '\n## Test 10: Error when -f list file not found\n'
-TEST_DIR="$TEST_TMP/test10"
+# Test 11: -f オプションでファイルが見つからない場合
+printf '\n## Test 11: Error when -f list file not found\n'
+TEST_DIR="$TEST_TMP/test11"
 mkdir -p "$TEST_DIR"
 cd "$TEST_DIR"
 unsetopt err_exit
@@ -212,9 +221,9 @@ output=$(av1ify -f "$TEST_DIR/nonexistent.txt" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "ファイルが見つかりません" "Reports error when list file not found"
 
-# Test 11: -f オプションで引数なし
-printf '\n## Test 11: Error when -f has no argument\n'
-TEST_DIR="$TEST_TMP/test11"
+# Test 12: -f オプションで引数なし
+printf '\n## Test 12: Error when -f has no argument\n'
+TEST_DIR="$TEST_TMP/test12"
 mkdir -p "$TEST_DIR"
 cd "$TEST_DIR"
 unsetopt err_exit
@@ -228,8 +237,8 @@ else
   printf '✗ Reports error when -f has no argument (output: %s)\n' "$output"
 fi
 
-# Test 12: -f オプションのヘルプメッセージ
-printf '\n## Test 12: Help message includes -f option\n'
+# Test 13: -f オプションのヘルプメッセージ
+printf '\n## Test 13: Help message includes -f option\n'
 help_output=$(av1ify --help 2>&1)
 assert_contains "$help_output" "-f" "Help message contains -f option"
 assert_contains "$help_output" "ファイルリスト" "Help message describes file list feature"
