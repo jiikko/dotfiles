@@ -131,7 +131,7 @@ __av1ify_pre_repair() {
 
 # 内部: 単一ファイル処理
 __av1ify_one() {  local in="$1"
-  if [[ "$in" == *-enc.mp4 ]]; then
+  if [[ "$in" == *-enc.mp4 || "$in" == *-encoded.* ]]; then
     print -r -- "→ SKIP 既に出力ファイル形式です: $in"
     return 0
   fi
