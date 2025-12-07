@@ -627,6 +627,8 @@ function _wrap_ai_command_with_tmux() {
     command "$cmd_name" "$@"
     local exit_code=$?
     tmux rename-window "zsh"
+    # Force tmux to redraw status so the new window name shows immediately
+    tmux refresh-client -S
     return $exit_code
   else
     command "$cmd_name" "$@"
