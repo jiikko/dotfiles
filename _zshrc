@@ -623,16 +623,20 @@ function _wrap_ai_command_with_tmux() {
   fi
 
   if [ -n "$TMUX" ]; then
-    tmux rename-window "🤖 $cmd_name"
-    command "$cmd_name" "$@"
-    local exit_code=$?
-    tmux rename-window "zsh"
-    # Force tmux to redraw status so the new window name shows immediately
-    tmux refresh-client -S
-    return $exit_code
-  else
-    command "$cmd_name" "$@"
+    # tmux pane のユーザー変数にコマンド名を入れて自動リネームで拾わせる
+    tmux set-option -pqu @ai_name 2>/dev/null
+    tmux set-option -pq  @ai_name "🤖 $cmd_name" 2>/dev/null
   fi
+
+  command "$cmd_name" "$@"
+  local exit_code=$?
+
+  if [ -n "$TMUX" ]; then
+    # 後片付け
+    tmux set-option -pqu @ai_name 2>/dev/null
+  fi
+
+  return $exit_code
 }
 
 # 🤖 claudeコマンドのラッパー関数 - tmuxウィンドウ名を自動設定
