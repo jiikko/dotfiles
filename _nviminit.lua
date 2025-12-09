@@ -597,9 +597,11 @@ require("lazy").setup({
   },
   {
     "TaDaa/vimade",
+    event = "WinEnter",
     opts = {
-      recipe = { "default", { animate = true } },
       fadelevel = 0.4,
+      -- アニメーションなしで軽量化
+      recipe = { "default", { animate = false } },
     },
   },
   {
