@@ -23,8 +23,13 @@ vim.g.maplocalleader = " "
 
 -- グローバル変数の設定
 vim.g.omni_sql_no_default_maps = 1  -- omni_sqlのデフォルトマッピングを無効化
--- マウスを無効にする
+-- マウスを無効にする（ターミナルバッファのみ有効）
 vim.opt.mouse = ""
+vim.api.nvim_create_autocmd("TermOpen", {
+  callback = function()
+    vim.wo.mouse = "a"
+  end,
+})
 
 -- オプション設定
 vim.opt.backup = false        -- バックアップファイルを作成しない
