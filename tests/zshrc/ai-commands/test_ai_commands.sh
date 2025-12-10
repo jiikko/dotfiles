@@ -50,57 +50,44 @@ assert_is_function() {
 
 printf '\n=== AI Commands Tests ===\n\n'
 
-# Test 1: _wrap_ai_command_with_tmux 関数が定義されている
-printf '## Test 1: _wrap_ai_command_with_tmux function exists\n'
-assert_function_exists "_wrap_ai_command_with_tmux" "_wrap_ai_command_with_tmux function is defined"
-
-# Test 2: claude 関数が定義されている
-printf '\n## Test 2: claude function exists\n'
-assert_is_function "claude" "claude is defined as a function"
-
-# Test 3: gemini 関数が定義されている
-printf '\n## Test 3: gemini function exists\n'
+# Test 1: gemini 関数が定義されている (brew auto-install wrapper)
+printf '## Test 1: gemini function exists\n'
 assert_is_function "gemini" "gemini is defined as a function"
 
-# Test 4: codex 関数が定義されている
-printf '\n## Test 4: codex function exists\n'
+# Test 2: codex 関数が定義されている (brew auto-install wrapper)
+printf '\n## Test 2: codex function exists\n'
 assert_is_function "codex" "codex is defined as a function"
 
-# Test 5: Functions are callable (basic smoke test)
-printf '\n## Test 5: Functions are callable\n'
-
-# 実際のコマンドが存在する場合のみテスト
-if command -v claude >/dev/null 2>&1; then
-  if run_zsh "type claude | grep -q function"; then
-    printf '✓ claude function is callable\n'
-  else
-    printf '✗ claude function check failed\n'
-    exit 1
-  fi
+# Test 3: claude はコマンドとして存在するか確認 (ラッパー関数は不要になった)
+printf '\n## Test 3: claude command check\n'
+if run_zsh "command -v claude >/dev/null 2>&1"; then
+  printf '✓ claude command is available\n'
 else
-  printf '↷ claude command not installed; skipping claude test\n'
+  printf '↷ claude command not installed; skipping\n'
 fi
 
-if command -v gemini >/dev/null 2>&1; then
-  if run_zsh "type gemini | grep -q function"; then
-    printf '✓ gemini function is callable\n'
-  else
-    printf '✗ gemini function check failed\n'
-    exit 1
-  fi
+# Test 4: tmux window name の YAML に AI コマンドが定義されている
+printf '\n## Test 4: AI commands defined in tmux-window-name.yaml\n'
+yaml_file="$ROOT_DIR/tmux-window-name.yaml"
+if grep -q "^claude:" "$yaml_file"; then
+  printf '✓ claude is defined in YAML\n'
 else
-  printf '↷ gemini command not installed; skipping gemini test\n'
+  printf '✗ claude is not defined in YAML\n'
+  exit 1
 fi
 
-if command -v codex >/dev/null 2>&1; then
-  if run_zsh "type codex | grep -q function"; then
-    printf '✓ codex function is callable\n'
-  else
-    printf '✗ codex function check failed\n'
-    exit 1
-  fi
+if grep -q "^gemini:" "$yaml_file"; then
+  printf '✓ gemini is defined in YAML\n'
 else
-  printf '↷ codex command not installed; skipping codex test\n'
+  printf '✗ gemini is not defined in YAML\n'
+  exit 1
+fi
+
+if grep -q "^codex:" "$yaml_file"; then
+  printf '✓ codex is defined in YAML\n'
+else
+  printf '✗ codex is not defined in YAML\n'
+  exit 1
 fi
 
 printf '\n=== All Tests Completed ===\n'

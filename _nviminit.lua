@@ -15,56 +15,22 @@ if not (vim.uv or vim.loop).fs_stat(lazypath) then
 end
 vim.opt.rtp:prepend(lazypath)
 
+local config_dir = vim.fn.fnamemodify(vim.fn.resolve(vim.env.MYVIMRC or ""), ":p:h")
+local nvim_dir = config_dir ~= "" and (config_dir .. "/nvim") or ""
+if nvim_dir ~= "" and vim.fn.isdirectory(nvim_dir) == 1 then
+  vim.opt.rtp:prepend(nvim_dir)
+end
+if config_dir ~= "" then
+  vim.opt.rtp:prepend(config_dir)
+end
+
 -- Make sure to setup `mapleader` and `maplocalleader` before
 -- loading lazy.nvim so that mappings are correct.
 -- This is also a good place to setup other settings (vim.opt)
 vim.g.mapleader = " "
 vim.g.maplocalleader = " "
 
--- グローバル変数の設定
-vim.g.omni_sql_no_default_maps = 1  -- omni_sqlのデフォルトマッピングを無効化
--- マウスを無効にする
-vim.opt.mouse = ""
-
--- オプション設定
-vim.opt.backup = false        -- バックアップファイルを作成しない
-vim.opt.swapfile = false      -- スワップファイルを作成しない
-vim.opt.shortmess:append("I") -- 起動時のメッセージを非表示
-vim.opt.autoread = true       -- 外部でファイルが変更されたら自動で読み込む
-
--- wildignore の設定（指定したパターンのファイルを無視）
-vim.opt.wildignore:append({ ".git", ".svn" })
-vim.opt.wildignore:append({ "*.jpg", "*.bmp", "*.gif", "*.png", "*.jpeg" })
-vim.opt.wildignore:append("*.sw?")
-vim.opt.wildignore:append(".DS_Store")
-vim.opt.wildignore:append({ "node_modules", "bower_components", "elm-stuff" })
-
--- シンタックスハイライトの列数上限
-vim.opt.synmaxcol = 200
-
--- grepコマンドの設定（git grepを使用）
-vim.opt.grepprg = [[git grep -nI --no-color $*]]
-vim.opt.grepformat = "%f:%l:%m"
-
--- ユーザーコマンドの定義用ヘルパー関数
-local create_cmd = function(name, command)
-  vim.api.nvim_create_user_command(name, command, {})
-end
-
--- ユーザーコマンドの定義
-create_cmd("Q", "quit")
-create_cmd("W", "write")
-create_cmd("Wq", "wq")
-create_cmd("WQ", "wq")
-create_cmd("Vs", "vs")
-create_cmd("VS", "vs")
-create_cmd("Sp", "sp")
-create_cmd("SP", "sp")
-create_cmd("Tabe", "tabe")
-create_cmd("TAbe", "tabe")
-create_cmd("TABe", "tabe")
-create_cmd("TABE", "tabe")
-vim.keymap.set("n", "Q", "<Nop>", { noremap = true })  -- Qを無効化するマッピング
+require("dotfiles.basic").setup()
 
 -- Setup lazy.nvim
 require("lazy").setup({
@@ -612,6 +578,13 @@ require("lazy").setup({
         bg = "#fb4934",
         ctermbg = 160,
       })
+
+      local map = vim.keymap.set
+      local trim_opts = { silent = true, desc = "Trim trailing whitespace" }
+      map("n", "<leader>lr", function()
+        require("mini.trailspace").trim()
+        vim.cmd.nohlsearch()
+      end, trim_opts)
     end,
   },
   {
@@ -760,123 +733,6 @@ require("lazy").setup({
   checker = { enabled = true },
 })
 
--- Basic editor settings (ported from legacy basic.vim)
-local opt = vim.opt
-opt.backspace = { "indent", "eol", "start" }
-opt.number = true
-opt.history = 10000
-opt.ruler = true
-opt.showcmd = true
-opt.incsearch = true
-opt.laststatus = 2
-opt.hlsearch = true
-opt.wrap = true
-opt.expandtab = true
-opt.tabstop = 2
-opt.shiftwidth = 2
-opt.softtabstop = 0
-opt.scrolloff = 5
-opt.formatoptions = "lmoq"
-opt.showmode = true
-opt.clipboard = { "unnamed", "unnamedplus" }
-opt.smarttab = true
-opt.smartindent = true
-opt.showbreak = "↪"
-opt.wildmenu = true
-opt.showmatch = true
-opt.title = true
-opt.lazyredraw = true
-opt.vb = true
-pcall(function() -- newer Neovim versions removed this termcap option
-  opt.t_vb = ""
-end)
-opt.wildchar = 9
-
-local map = vim.keymap.set
-local silent = { silent = true }
-map("n", ";", [[:<C-u>call append(expand('.'), '')<CR>j]], silent)
-map("n", "<CR><CR>", "<C-w><C-w>", silent)
-map("n", "<C-p>", ":cprevious<CR>", silent)
-map("n", "<C-n>", ":cnext<CR>", silent)
-map("n", "<C-f>", "<Right>", silent)
-map("n", "<C-b>", "<Left>", silent)
-map("i", "<C-f>", "<Right>", silent)
-map("i", "<C-b>", "<Left>", silent)
-map("i", "<C-]>", "<Esc>", silent)
-map("n", "<C-]>", "<Esc>", silent)
-map("n", "<Esc><Esc>", [[:<C-u>set nohlsearch<CR>]], silent)
-map("n", "/", [[:<C-u>set hlsearch<CR>/]], { silent = false })
-map("n", "?", [[:<C-u>set hlsearch<CR>?]], { silent = false })
-map("n", "*", [[:<C-u>set hlsearch<CR>*]], { silent = false })
-map("n", "#", [[:<C-u>set hlsearch<CR>#]], { silent = false })
-map("n", "<leader>rw", [[obegin; raise; rescue => e; File.write("/tmp/ruby_caller", e.backtrace.join("\n")) && raise; end<Esc>]], silent)
-map("n", "<leader>rr", [[:cfile /tmp/ruby_caller<CR>:cw<Esc>]], silent)
-map("n", "<leader>re", ":e /tmp/ruby_caller<Esc>", silent)
-map("n", "<leader>ds", ":e db/schema.rb<Esc>", silent)
-map("n", "<leader>yr", "o@return []<Esc>", silent)
-map("n", "<leader>yp", "o@param []<Esc>", silent)
-map("n", "<leader>aa", ":enew<CR>", silent)
-map("n", "<leader>lr", function()
-  local ok, trail = pcall(require, "mini.trailspace")
-  if not ok then
-    return
-  end
-  trail.trim()
-  vim.cmd.nohlsearch()
-end, { silent = true, desc = "Trim trailing whitespace" })
-map("i", "<C-y><C-w>", "<Esc>:w<CR>", silent)
-map("n", "<C-y><C-w>", ":w<CR>", silent)
-map("n", "<leader>sp", ":sp<CR>", silent)
-map("n", "<leader>vs", ":vs<CR>", silent)
-
-local function buf_leader_bi(text)
-  return function(event)
-    map("n", "<leader>bi", text, { buffer = event.buf, silent = true })
-  end
-end
-
-local ft_group = vim.api.nvim_create_augroup("dotfiles_basic_filetype", { clear = true })
-vim.api.nvim_create_autocmd("FileType", {
-  group = ft_group,
-  pattern = "ruby",
-  callback = buf_leader_bi("obinding.pry<Esc>"),
-})
-vim.api.nvim_create_autocmd("FileType", {
-  group = ft_group,
-  pattern = { "javascript", "typescript", "typescriptreact", "javascriptreact" },
-  callback = buf_leader_bi("odebugger<Esc>"),
-})
-vim.api.nvim_create_autocmd("FileType", {
-  group = ft_group,
-  pattern = "eruby",
-  callback = buf_leader_bi("o<% binding.pry %><Esc>"),
-})
-
-vim.cmd([[highlight ZenkakuSpace cterm=underline ctermfg=lightblue guibg=darkgray]])
-vim.cmd([[match ZenkakuSpace /　/]])
-vim.cmd([[highlight Comment ctermfg=DarkCyan]])
-
-local cch = vim.api.nvim_create_augroup("dotfiles_cch", { clear = true })
-vim.api.nvim_create_autocmd("WinLeave", {
-  group = cch,
-  callback = function()
-    vim.opt_local.cursorline = false
-  end,
-})
-vim.api.nvim_create_autocmd({ "WinEnter", "BufRead" }, {
-  group = cch,
-  callback = function()
-    vim.opt_local.cursorline = true
-  end,
-})
-
-
-vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, { pattern = "db/Schemafile", command = "set filetype=ruby", })
-vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, { pattern = "*.sql.erb", command = "set filetype=sql", })
-vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, { pattern = "*.Schemafile", command = "set filetype=ruby", })
-vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, { pattern = "*.yml", command = "set filetype=yaml", })
-
-
 -- 折り畳みの設定
 vim.opt.foldmethod = "expr"
 vim.opt.foldlevel = 100
@@ -892,45 +748,3 @@ vim.keymap.set("n", "<Tab>", "zo")
 vim.keymap.set("n", "<S-Tab>", "zc")
 vim.keymap.set("n", "<Leader><Tab>", "zR")
 vim.keymap.set("n", "<Leader><S-Tab>", "zM")
-
-
-
--- カーソル位置を記憶して復元する設定
-vim.api.nvim_create_autocmd('BufReadPost', {
-  pattern = '*',
-  callback = function()
-    local mark = vim.api.nvim_buf_get_mark(0, '"')
-    local lcount = vim.api.nvim_buf_line_count(0)
-    if mark[1] > 0 and mark[1] <= lcount then
-      vim.api.nvim_win_set_cursor(0, mark)
-    end
-  end,
-})
-
--- :grep 実行後に QuickFix ウィンドウを自動的に開く
-vim.api.nvim_create_autocmd('QuickFixCmdPost', {
-  pattern = '*grep*',
-  callback = function()
-    if not vim.tbl_isempty(vim.fn.getqflist()) then
-      vim.cmd('cwindow')
-    end
-  end,
-})
-
--- 外部でファイルが変更されたときに自動でリロード（全バッファ）
-vim.api.nvim_create_autocmd({ 'FocusGained', 'BufEnter', 'CursorHold', 'CursorHoldI' }, {
-  pattern = '*',
-  callback = function()
-    if vim.fn.mode() ~= 'c' then
-      vim.cmd('checktime')
-    end
-  end,
-})
-
--- ファイル変更検知時に通知（オプション）
-vim.api.nvim_create_autocmd('FileChangedShellPost', {
-  pattern = '*',
-  callback = function()
-    vim.notify('File changed on disk. Buffer reloaded.', vim.log.levels.WARN)
-  end,
-})
