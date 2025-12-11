@@ -3,6 +3,23 @@
 # av1ify — 入力された動画ファイル、またはディレクトリ内の動画ファイルをAV1形式のMP4に一括変換します。
 # ------------------------------------------------------------------------------
 
+typeset -gi __AV1IFY_ABORT_REQUESTED=0
+typeset -g  __AV1IFY_CURRENT_TMP=""
+
+__av1ify_on_interrupt() {
+  if (( __AV1IFY_ABORT_REQUESTED )); then
+    return
+  fi
+  __AV1IFY_ABORT_REQUESTED=1
+  local tmp="${__AV1IFY_CURRENT_TMP:-}"
+  if [[ -n "$tmp" && -e "$tmp" ]]; then
+    rm -f -- "$tmp"
+    print -r -- "✋ 中断要求: 進行中の一時ファイルを削除しました ($tmp)"
+  else
+    print -r -- "✋ 中断要求: 残りの処理を停止します"
+  fi
+}
+
 # 内部補助: 変換後の検査で NG の場合にファイル名へ注記を付加
 __av1ify_mark_issue() {
   local fpath="$1" note="$2"
@@ -132,6 +149,11 @@ __av1ify_pre_repair() {
 # 内部: 単一ファイル処理
 __av1ify_one() {  local in="$1"
 
+  if (( __AV1IFY_ABORT_REQUESTED )); then
+    print -r -- "✋ 中断済みのためスキップ: $in"
+    return 130
+  fi
+
   if [[ "$in" == *enc.mp4 || "$in" == *encoded.* ]]; then
     print -r -- "→ SKIP 既に出力ファイル形式です: $in"
     return 0
@@ -209,9 +231,6 @@ __av1ify_one() {  local in="$1"
     done
   fi
 
-  # 中断時に in_progress を掃除
-  trap '[[ -n "$tmp" && -e "$tmp" ]] && rm -f -- "$tmp"' INT TERM HUP
-
   # ffmpeg 共通引数
   local -a args_common args_audio
   args_common=(
@@ -265,46 +284,66 @@ __av1ify_one() {  local in="$1"
 
   print -r -- ">> 映像: $vcodec (crf=$crf, preset=$preset)"
   print -r -- ">> 出力(処理中マーカー): $tmp"
+  __AV1IFY_CURRENT_TMP="$tmp"
 
   # 1回目: 設定通りに実行
   if ffmpeg "${args_common[@]}" "${args_audio[@]}" -- "$tmp"; then
+    __AV1IFY_CURRENT_TMP=""
     mv -f -- "$tmp" "$final_out"
     if __av1ify_postcheck "$final_out"; then
       final_out="$REPLY"; print -r -- "✅ 完了: $final_out"; return 0
     else
       final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"; return 1
     fi
-  fi
-
-  # 失敗時: copy 選択だった場合は AAC で再試行（命名もAACタグへ）
-  [[ -e "$tmp" ]] && rm -f -- "$tmp"
-  if (( use_copy )); then
-    print -r -- "⚠️ 音声copy失敗 → AAC再エンコードで再試行"
-    aac_bitrate_resolved="${AV1_AAC_BITRATE:-96k}"
-    args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac 2 -ar 48000)
-    did_aac=1
-    # 再計算: 最終出力名
-    local br="${aac_bitrate_resolved:l}" tag
-    if [[ "$br" == *k ]]; then
-      tag="$br"
-    elif [[ "$br" =~ ^[0-9]+$ ]]; then
-      local kb; (( kb = (br + 500) / 1000 ))
-      tag="${kb}k"
-    else
-      tag="$br"
+  else
+    local ffmpeg_status=$?
+    [[ -e "$tmp" ]] && rm -f -- "$tmp"
+    if (( __AV1IFY_ABORT_REQUESTED || ffmpeg_status == 130 )); then
+      __AV1IFY_CURRENT_TMP=""
+      print -r -- "✋ 中断: $in"
+      return 130
     fi
-    final_out="${stem}-aac${tag}-enc.mp4"
 
-    if ffmpeg "${args_common[@]}" "${args_audio[@]}" -- "$tmp"; then
-      mv -f -- "$tmp" "$final_out"
-      if __av1ify_postcheck "$final_out"; then
-        final_out="$REPLY"; print -r -- "✅ 完了: $final_out"; return 0
+    # 失敗時: copy 選択だった場合は AAC で再試行（命名もAACタグへ）
+    if (( use_copy )); then
+      print -r -- "⚠️ 音声copy失敗 → AAC再エンコードで再試行"
+      aac_bitrate_resolved="${AV1_AAC_BITRATE:-96k}"
+      args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac 2 -ar 48000)
+      did_aac=1
+      # 再計算: 最終出力名
+      local br="${aac_bitrate_resolved:l}" tag
+      if [[ "$br" == *k ]]; then
+        tag="$br"
+      elif [[ "$br" =~ ^[0-9]+$ ]]; then
+        local kb; (( kb = (br + 500) / 1000 ))
+        tag="${kb}k"
       else
-        final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"; return 1
+        tag="$br"
+      fi
+      final_out="${stem}-aac${tag}-enc.mp4"
+
+      __AV1IFY_CURRENT_TMP="$tmp"
+      if ffmpeg "${args_common[@]}" "${args_audio[@]}" -- "$tmp"; then
+        __AV1IFY_CURRENT_TMP=""
+        mv -f -- "$tmp" "$final_out"
+        if __av1ify_postcheck "$final_out"; then
+          final_out="$REPLY"; print -r -- "✅ 完了: $final_out"; return 0
+        else
+          final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"; return 1
+        fi
+      else
+        local retry_status=$?
+        [[ -e "$tmp" ]] && rm -f -- "$tmp"
+        if (( __AV1IFY_ABORT_REQUESTED || retry_status == 130 )); then
+          __AV1IFY_CURRENT_TMP=""
+          print -r -- "✋ 中断: $in"
+          return 130
+        fi
       fi
     fi
   fi
 
+  __AV1IFY_CURRENT_TMP=""
   print -r -- "❌ 失敗: $in"
   return 1
 }
@@ -314,6 +353,8 @@ av1ify() {
     __av1ify_internal=1
     unset __AV1IFY_INTERNAL_CALL
   fi
+
+  setopt LOCAL_OPTIONS localtraps
 
   if (( ! __av1ify_internal )) && [[ "$1" == "-h" || "$1" == "--help" || -z "$1" ]]; then
     cat <<'EOF'
@@ -376,6 +417,14 @@ EOF
     return 0
   fi
 
+  local __av1ify_is_root=0
+  if (( ! __av1ify_internal )); then
+    __av1ify_is_root=1
+    __AV1IFY_ABORT_REQUESTED=0
+    __AV1IFY_CURRENT_TMP=""
+    trap '__av1ify_on_interrupt' INT TERM HUP
+  fi
+
   set -o pipefail
 
   # -f オプションでファイルリストを読み込む
@@ -409,7 +458,16 @@ EOF
     local target ok=0 ng=0
     for target in "${files[@]}"; do
       print -r -- "---- 処理: $target"
-      if __AV1IFY_INTERNAL_CALL=1 av1ify "$target"; then ((ok++)); else ((ng++)); fi
+      if __AV1IFY_INTERNAL_CALL=1 av1ify "$target"; then
+        ((ok++))
+      else
+        local status=$?
+        if (( status == 130 || __AV1IFY_ABORT_REQUESTED )); then
+          print -r -- "✋ 中断: 残りのファイルをスキップします"
+          return 130
+        fi
+        ((ng++))
+      fi
     done
     print -r -- "== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))"
     return 0
@@ -420,7 +478,16 @@ EOF
     local target ok=0 ng=0
     for target in "$@"; do
       print -r -- "---- 処理: $target"
-      if __AV1IFY_INTERNAL_CALL=1 av1ify "$target"; then ((ok++)); else ((ng++)); fi
+      if __AV1IFY_INTERNAL_CALL=1 av1ify "$target"; then
+        ((ok++))
+      else
+        local status=$?
+        if (( status == 130 || __AV1IFY_ABORT_REQUESTED )); then
+          print -r -- "✋ 中断: 残りのファイルをスキップします"
+          return 130
+        fi
+        ((ng++))
+      fi
     done
     print -r -- "== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))"
     return 0
@@ -446,7 +513,16 @@ EOF
     # 各ファイルは av1ify() を通して単体処理ルートを再利用（直列実行）
     for f in "${files[@]}"; do
       print -r -- "---- 処理: $f"
-      if __AV1IFY_INTERNAL_CALL=1 av1ify "$f"; then ((ok++)); else ((ng++)); fi
+      if __AV1IFY_INTERNAL_CALL=1 av1ify "$f"; then
+        ((ok++))
+      else
+        local status=$?
+        if (( status == 130 || __AV1IFY_ABORT_REQUESTED )); then
+          print -r -- "✋ 中断: 残りのファイルをスキップします"
+          return 130
+        fi
+        ((ng++))
+      fi
     done
     print -r -- "== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))"
   else
