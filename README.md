@@ -65,12 +65,14 @@ repair -h                  # ヘルプ
 av1ify movie.avi           # 単一ファイル
 av1ify /path/to/dir        # ディレクトリ内を再帰処理
 av1ify -f list.txt         # ファイルリストから処理
+av1ify /path/to/dir --dry-run  # 変更せず実行内容だけ確認
 AV1_CRF=35 av1ify movie.mp4  # CRF指定
 ```
 
 - SVT-AV1エンコーダを使用（なければAOM-AV1にフォールバック）
 - 解像度に応じてCRFを自動調整
 - 音声は可能な限りコピー、非対応形式はAACに再エンコード
+- `--dry-run` で実行内容のみ表示（ファイルを変更しない）
 - 対応形式: `.avi`, `.mkv`, `.rm`, `.wmv`, `.mpg`, `.mpeg`, `.mov`, `.mp4`, `.flv`, `.webm`, `.3gp`
 - 出力: `*-enc.mp4`
 - 依存: `ffmpeg`, `ffprobe` (SVT-AV1サポート付き)

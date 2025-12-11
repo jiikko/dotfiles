@@ -5,6 +5,7 @@
 
 typeset -gi __AV1IFY_ABORT_REQUESTED=0
 typeset -g  __AV1IFY_CURRENT_TMP=""
+typeset -gi __AV1IFY_DRY_RUN=0
 
 __av1ify_on_interrupt() {
   if (( __AV1IFY_ABORT_REQUESTED )); then
@@ -169,10 +170,16 @@ __av1ify_one() {  local in="$1"
   local out="${stem}-enc.mp4"
   local tmp="${out}.in_progress"
 
-  # 古い in_progress が残っていたら掃除
+  local dry_run="${__AV1IFY_DRY_RUN:-0}"
+
+  # 古い in_progress が残っていたら掃除（ドライラン時は触らない）
   if [[ -e "$tmp" ]]; then
-    print -r -- "⚠️ 残骸削除: $tmp"
-    rm -f -- "$tmp"
+    if (( dry_run )); then
+      print -r -- "[DRY-RUN] 残骸検出: $tmp（変更なし）"
+    else
+      print -r -- "⚠️ 残骸削除: $tmp"
+      rm -f -- "$tmp"
+    fi
   fi
 
   # 映像エンコーダ（SVT-AV1 必須）
@@ -282,6 +289,21 @@ __av1ify_one() {  local in="$1"
     return 0
   fi
 
+  if (( dry_run )); then
+    local audio_plan
+    if [[ -z "$acodec" ]]; then
+      audio_plan="無音 (-an)"
+    elif (( use_copy )); then
+      audio_plan="copy (codec=$acodec)"
+    else
+      audio_plan="aac 再エンコード (target=${aac_bitrate_resolved:-${AV1_AAC_BITRATE:-96k}})"
+    fi
+    print -r -- "[DRY-RUN] 変換予定: $in → $final_out"
+    print -r -- "[DRY-RUN] 映像: $vcodec (crf=$crf, preset=$preset)"
+    print -r -- "[DRY-RUN] 音声: $audio_plan"
+    return 0
+  fi
+
   print -r -- ">> 映像: $vcodec (crf=$crf, preset=$preset)"
   print -r -- ">> 出力(処理中マーカー): $tmp"
   __AV1IFY_CURRENT_TMP="$tmp"
@@ -356,7 +378,32 @@ av1ify() {
 
   setopt LOCAL_OPTIONS localtraps
 
-  if (( ! __av1ify_internal )) && [[ "$1" == "-h" || "$1" == "--help" || -z "$1" ]]; then
+  local dry_run="${__AV1IFY_DRY_RUN:-0}"
+  local show_help=0
+  local -a positional=()
+  while (( $# > 0 )); do
+    case "$1" in
+      --dry-run|-n)
+        dry_run=1
+        ;;
+      -h|--help)
+        (( ! __av1ify_internal )) && show_help=1
+        ;;
+      *)
+        positional+=("$1")
+        ;;
+    esac
+    shift
+  done
+  set -- "${positional[@]}"
+
+  if (( ! __av1ify_internal )); then
+    __AV1IFY_DRY_RUN=$dry_run
+  else
+    dry_run="${__AV1IFY_DRY_RUN:-$dry_run}"
+  fi
+
+  if (( ! __av1ify_internal )) && { (( show_help )) || (( $# == 0 )); }; then
     cat <<'EOF'
 av1ify — 入力された動画ファイル、またはディレクトリ内の動画ファイルをAV1形式のMP4に一括変換します。
 
@@ -394,6 +441,7 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
 
 オプション:
   -h, --help: このヘルプメッセージを表示します。
+  -n, --dry-run: 実行内容のみを表示し、ファイルを変更しません。
   -f <ファイル>: 改行区切りでファイルパスが記載されたリストファイルを読み込んで処理します。
 
 依存関係:
