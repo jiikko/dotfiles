@@ -172,6 +172,21 @@ __av1ify_one() {  local in="$1"
 
   local dry_run="${__AV1IFY_DRY_RUN:-0}"
 
+  # ドライランでは実ファイルを触らない・重い ffprobe/ffmpeg もしない
+  if (( dry_run )); then
+    if [[ -e "$out" ]]; then
+      print -r -- "→ SKIP 既存: $out"
+      return 0
+    fi
+    local crf_plan="${AV1_CRF:-auto}"
+    local preset_plan="${AV1_PRESET:-5}"
+    print -r -- "[DRY-RUN] 変換予定: $in"
+    print -r -- "[DRY-RUN] 出力候補: $out (音声判定後に確定)"
+    print -r -- "[DRY-RUN] 映像: libsvtav1 (crf=${crf_plan}, preset=${preset_plan})"
+    print -r -- "[DRY-RUN] 音声: 判定スキップ（実行時に判定）"
+    return 0
+  fi
+
   # 古い in_progress が残っていたら掃除（ドライラン時は触らない）
   if [[ -e "$tmp" ]]; then
     if (( dry_run )); then
@@ -289,21 +304,6 @@ __av1ify_one() {  local in="$1"
     return 0
   fi
 
-  if (( dry_run )); then
-    local audio_plan
-    if [[ -z "$acodec" ]]; then
-      audio_plan="無音 (-an)"
-    elif (( use_copy )); then
-      audio_plan="copy (codec=$acodec)"
-    else
-      audio_plan="aac 再エンコード (target=${aac_bitrate_resolved:-${AV1_AAC_BITRATE:-96k}})"
-    fi
-    print -r -- "[DRY-RUN] 変換予定: $in → $final_out"
-    print -r -- "[DRY-RUN] 映像: $vcodec (crf=$crf, preset=$preset)"
-    print -r -- "[DRY-RUN] 音声: $audio_plan"
-    return 0
-  fi
-
   print -r -- ">> 映像: $vcodec (crf=$crf, preset=$preset)"
   print -r -- ">> 出力(処理中マーカー): $tmp"
   __AV1IFY_CURRENT_TMP="$tmp"
@@ -402,6 +402,7 @@ av1ify() {
   else
     dry_run="${__AV1IFY_DRY_RUN:-$dry_run}"
   fi
+  (( ! __av1ify_internal && dry_run )) && print -r -- "[DRY-RUN] ファイルは変更しません"
 
   if (( ! __av1ify_internal )) && { (( show_help )) || (( $# == 0 )); }; then
     cat <<'EOF'
@@ -509,8 +510,8 @@ EOF
       if __AV1IFY_INTERNAL_CALL=1 av1ify "$target"; then
         ((ok++))
       else
-        local status=$?
-        if (( status == 130 || __AV1IFY_ABORT_REQUESTED )); then
+        local exit_status=$?
+        if (( exit_status == 130 || __AV1IFY_ABORT_REQUESTED )); then
           print -r -- "✋ 中断: 残りのファイルをスキップします"
           return 130
         fi
@@ -529,8 +530,8 @@ EOF
       if __AV1IFY_INTERNAL_CALL=1 av1ify "$target"; then
         ((ok++))
       else
-        local status=$?
-        if (( status == 130 || __AV1IFY_ABORT_REQUESTED )); then
+        local exit_status=$?
+        if (( exit_status == 130 || __AV1IFY_ABORT_REQUESTED )); then
           print -r -- "✋ 中断: 残りのファイルをスキップします"
           return 130
         fi
@@ -564,8 +565,8 @@ EOF
       if __AV1IFY_INTERNAL_CALL=1 av1ify "$f"; then
         ((ok++))
       else
-        local status=$?
-        if (( status == 130 || __AV1IFY_ABORT_REQUESTED )); then
+        local exit_status=$?
+        if (( exit_status == 130 || __AV1IFY_ABORT_REQUESTED )); then
           print -r -- "✋ 中断: 残りのファイルをスキップします"
           return 130
         fi
