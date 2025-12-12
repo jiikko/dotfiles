@@ -159,11 +159,6 @@ __av1ify_one() {  local in="$1"
     print -r -- "→ SKIP 既に出力ファイル形式です: $in"
     return 0
   fi
-  [[ ! -f "$in" ]] && { print -r -- "✗ ファイルが無い: $in"; return 1; }
-
-  # クラウド/ネットワークストレージの場合、ここで実ファイル取得が始まることがある
-  print -r -- ">> ファイル取得中: $in"
-
 
   # ベース出力名（copyや無音時）
   local stem="${in%.*}"
@@ -172,20 +167,21 @@ __av1ify_one() {  local in="$1"
 
   local dry_run="${__AV1IFY_DRY_RUN:-0}"
 
-  # ドライランでは実ファイルを触らない・重い ffprobe/ffmpeg もしない
+  # ドライラン: ファイル名ベースで計画だけ表示（ファイルへ一切アクセスしない）
   if (( dry_run )); then
-    if [[ -e "$out" ]]; then
-      print -r -- "→ SKIP 既存: $out"
-      return 0
-    fi
     local crf_plan="${AV1_CRF:-auto}"
     local preset_plan="${AV1_PRESET:-5}"
     print -r -- "[DRY-RUN] 変換予定: $in"
-    print -r -- "[DRY-RUN] 出力候補: $out (音声判定後に確定)"
+    print -r -- "[DRY-RUN] 出力候補: $out (音声/解像度は実行時判定: ファイル未参照)"
     print -r -- "[DRY-RUN] 映像: libsvtav1 (crf=${crf_plan}, preset=${preset_plan})"
-    print -r -- "[DRY-RUN] 音声: 判定スキップ（実行時に判定）"
+    print -r -- "[DRY-RUN] 音声: 実行時に判定"
     return 0
   fi
+
+  [[ ! -f "$in" ]] && { print -r -- "✗ ファイルが無い: $in"; return 1; }
+
+  # クラウド/ネットワークストレージの場合、ここで実ファイル取得が始まることがある
+  print -r -- ">> ファイル取得中: $in"
 
   # 古い in_progress が残っていたら掃除（ドライラン時は触らない）
   if [[ -e "$tmp" ]]; then
@@ -378,7 +374,8 @@ av1ify() {
 
   setopt LOCAL_OPTIONS localtraps
 
-  local dry_run="${__AV1IFY_DRY_RUN:-0}"
+  # ルート呼び出しでは毎回デフォルト0（内部呼び出しのみ伝搬）
+  local dry_run=0
   local show_help=0
   local -a positional=()
   while (( $# > 0 )); do
