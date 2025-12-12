@@ -3,6 +3,14 @@
 # av1ify — 入力された動画ファイル、またはディレクトリ内の動画ファイルをAV1形式のMP4に一括変換します。
 # ------------------------------------------------------------------------------
 
+__AV1IFY_VERSION="1.2.0"
+__AV1IFY_SPEC_VERSION="1.2.0"
+
+# 内部補助: バナー出力
+__av1ify_banner() {
+  print -ru2 -- "av1ify v${__AV1IFY_VERSION} (spec: v${__AV1IFY_SPEC_VERSION})"
+}
+
 # 内部補助: 変換後の検査で NG の場合にファイル名へ注記を付加
 __av1ify_mark_issue() {
   local fpath="$1" note="$2"
@@ -130,12 +138,21 @@ __av1ify_pre_repair() {
 }
 
 # 内部: 単一ファイル処理
-__av1ify_one() {  local in="$1"
+__av1ify_one() {
+  local in="$1"
+  local dryrun="${__AV1IFY_DRYRUN:-0}"
+
   if [[ "$in" == *-enc.mp4 || "$in" == *-encoded.* ]]; then
-    print -r -- "→ SKIP 既に出力ファイル形式です: $in"
+    (( dryrun )) || print -r -- "→ SKIP 既に出力ファイル形式です: $in"
     return 0
   fi
   [[ ! -f "$in" ]] && { print -r -- "✗ ファイルが無い: $in"; return 1; }
+
+  # dry-run モード: 対象ファイル名のみ出力して終了
+  if (( dryrun )); then
+    print -r -- "$in"
+    return 0
+  fi
 
 
   # ベース出力名（copyや無音時）
@@ -306,9 +323,28 @@ __av1ify_one() {  local in="$1"
 }
 av1ify() {
   local __av1ify_internal=0
+  local __av1ify_dryrun=0
   if [[ -n ${__AV1IFY_INTERNAL_CALL:-} ]]; then
     __av1ify_internal=1
     unset __AV1IFY_INTERNAL_CALL
+  fi
+  if [[ -n ${__AV1IFY_DRYRUN:-} ]]; then
+    __av1ify_dryrun=1
+  fi
+
+  # --dry-run オプションの処理
+  if [[ "$1" == "-n" || "$1" == "--dry-run" ]]; then
+    shift
+    export __AV1IFY_DRYRUN=1
+    av1ify "$@"
+    local ret=$?
+    unset __AV1IFY_DRYRUN
+    return $ret
+  fi
+
+  # バナー出力（内部呼び出し・ヘルプ時は除く）
+  if (( ! __av1ify_internal )) && [[ "$1" != "-h" && "$1" != "--help" && -n "$1" ]]; then
+    __av1ify_banner
   fi
 
   if (( ! __av1ify_internal )) && [[ "$1" == "-h" || "$1" == "--help" || -z "$1" ]]; then
@@ -349,6 +385,7 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
 
 オプション:
   -h, --help: このヘルプメッセージを表示します。
+  -n, --dry-run: 実際の変換を行わず、処理対象となるファイルの一覧を表示します。
   -f <ファイル>: 改行区切りでファイルパスが記載されたリストファイルを読み込んで処理します。
 
 依存関係:
@@ -404,10 +441,14 @@ EOF
 
     local target ok=0 ng=0
     for target in "${files[@]}"; do
-      print -r -- "---- 処理: $target"
+      (( __av1ify_dryrun )) || print -r -- "---- 処理: $target"
       if __AV1IFY_INTERNAL_CALL=1 av1ify "$target"; then ((ok++)); else ((ng++)); fi
     done
-    print -r -- "== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))"
+    if (( __av1ify_dryrun )); then
+      print -r -- "== 対象ファイル数: $((ok+ng))"
+    else
+      print -r -- "== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))"
+    fi
     return 0
   fi
 
@@ -415,10 +456,14 @@ EOF
   if (( $# > 1 )); then
     local target ok=0 ng=0
     for target in "$@"; do
-      print -r -- "---- 処理: $target"
+      (( __av1ify_dryrun )) || print -r -- "---- 処理: $target"
       if __AV1IFY_INTERNAL_CALL=1 av1ify "$target"; then ((ok++)); else ((ng++)); fi
     done
-    print -r -- "== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))"
+    if (( __av1ify_dryrun )); then
+      print -r -- "== 対象ファイル数: $((ok+ng))"
+    else
+      print -r -- "== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))"
+    fi
     return 0
   fi
 
@@ -441,10 +486,14 @@ EOF
     local f ok=0 ng=0
     # 各ファイルは av1ify() を通して単体処理ルートを再利用（直列実行）
     for f in "${files[@]}"; do
-      print -r -- "---- 処理: $f"
+      (( __av1ify_dryrun )) || print -r -- "---- 処理: $f"
       if __AV1IFY_INTERNAL_CALL=1 av1ify "$f"; then ((ok++)); else ((ng++)); fi
     done
-    print -r -- "== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))"
+    if (( __av1ify_dryrun )); then
+      print -r -- "== 対象ファイル数: $((ok+ng))"
+    else
+      print -r -- "== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))"
+    fi
   else
     __av1ify_one "$target"
   fi
