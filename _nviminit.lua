@@ -439,6 +439,7 @@ require("lazy").setup({
               row = next_row,
               border = "rounded",
               style = "minimal",
+              focusable = false,
             }
           end,
           function() return { time = true } end,

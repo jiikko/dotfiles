@@ -111,7 +111,7 @@ if [[ -n "$TMUX" ]]; then
   _tmux_preexec() {
     local cmd
     cmd=$(_tmux_extract_command "$1")
-    cmd=$(_tmux_resolve_alias "$cmd")
+    # alias名をそのまま使う（展開しない）
     _tmux_set_window_title "$(_tmux_get_display_name "$cmd")"
   }
 

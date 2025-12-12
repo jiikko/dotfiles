@@ -88,12 +88,6 @@ __concat_validate_sequence() {
   min="${sorted_nums[1]}"
   max="${sorted_nums[-1]}"
 
-  # 0または1から始まるか確認
-  if (( min != 0 && min != 1 )); then
-    REPLY="連番が0または1から始まっていません: 最小値=$min"
-    return 1
-  fi
-
   # 欠番チェック
   local -a missing=()
   for (( i = min; i <= max; i++ )); do
