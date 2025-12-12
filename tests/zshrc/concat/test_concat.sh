@@ -287,8 +287,8 @@ exit_code=$?
 setopt err_exit
 assert_contains "$output" "欠番があります" "Reports error for missing sequence numbers"
 
-# Test 9: 連番が0/1から始まらないエラー
-printf '\n## Test 9: Error for sequence not starting from 0 or 1\n'
+# Test 9: 連番が0/1以外から始まっても成功
+printf '\n## Test 9: Sequence starting from 5 succeeds\n'
 TEST_DIR="$TEST_TMP/test9"
 mkdir -p "$TEST_DIR"
 echo "video 5" > "$TEST_DIR/video_005.mp4"
@@ -298,7 +298,8 @@ unsetopt err_exit
 output=$(concat "$TEST_DIR/video_005.mp4" "$TEST_DIR/video_006.mp4" 2>&1)
 exit_code=$?
 setopt err_exit
-assert_contains "$output" "0または1から始まっていません" "Reports error for sequence not starting from 0 or 1"
+assert_file_exists "$TEST_DIR/video.mp4" "Output file is created for sequence starting from 5"
+assert_contains "$output" "完了" "Reports success for sequence starting from 5"
 
 # Test 10: コーデック不一致のエラー
 printf '\n## Test 10: Error for codec mismatch\n'

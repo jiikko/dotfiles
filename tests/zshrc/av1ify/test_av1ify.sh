@@ -105,6 +105,16 @@ assert_contains "$help_output" "av1ify" "Help message contains command name"
 assert_contains "$help_output" "使い方" "Help message is in Japanese"
 assert_contains "$help_output" "複数のファイルを順番に変換" "Help message mentions multiple file support"
 
+# Test 1b: ドライラン表示
+printf '\n## Test 1b: Dry-run option\n'
+TEST_DIR="$TEST_TMP/test1b"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify "$TEST_DIR/input.avi" --dry-run 2>&1 || true)
+assert_file_not_exists "$TEST_DIR/input-enc.mp4" "Dry-run does not create output file"
+assert_contains "$output" "DRY-RUN" "Dry-run output contains marker"
+
 # Test 2: 単一ファイルの処理
 printf '\n## Test 2: Single file processing\n'
 TEST_DIR="$TEST_TMP/test2"
