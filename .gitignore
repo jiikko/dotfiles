@@ -3,3 +3,8 @@
 .zshrc.zwc
 .vagrant
 installer.sh
+
+# Keep vendored dependencies trackable even if a user has a global ignore for
+# "vendor/".
+!vendor/
+!vendor/**
