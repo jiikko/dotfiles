@@ -430,6 +430,9 @@ function tt () {
     name=$(basename "$PWD")
   fi
 
+  # ドットをアンダースコアに置換（tmuxのセッション名では.が区切り文字として解釈されるため）
+  name="${name//./_}"
+
   if tmux has-session -t "$name" 2>/dev/null; then
     tmux attach-session -t "$name"
   else
