@@ -14,6 +14,10 @@ ln -sf ~/dotfiles/_nviminit.lua ~/.config/nvim/init.lua
 ln -sf ~/dotfiles/_tmux.conf ~/.tmux.conf
 ln -sf ~/dotfiles/_coc-settings.json ~/.config/nvim/coc-settings.json
 
+# setup .claude directory
+mkdir -p ~/.claude
+ln -sfn ~/dotfiles/_claude/agents ~/.claude/agents
+
 # cleanup legacy bash symlinks (extendable)
 legacy_links="bashrc bash_profile"
 for legacy in $legacy_links; do
