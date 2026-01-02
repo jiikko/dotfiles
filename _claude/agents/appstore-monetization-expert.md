@@ -1,6 +1,6 @@
 ---
 name: appstore-monetization-expert
-description: Use this agent when implementing App Store monetization, In-App Purchases, subscriptions, or preparing for App Store submission. Trigger this agent when: (1) designing pricing and monetization strategy, (2) implementing StoreKit/StoreKit 2, (3) setting up subscriptions or IAP, (4) handling App Store review guidelines, (5) optimizing trial periods and pricing tiers. Examples:
+description: "Use when: implementing App Store monetization for macOS/iOS apps. This is the primary agent for: StoreKit/StoreKit 2 implementation, In-App Purchases, subscriptions, pricing strategy, trial periods, App Store review guidelines compliance, and receipt validation. Use alongside swift-language-expert for Swift code and swiftui-macos-designer for paywall UI.\n\nExamples:"
 
 <example>
 Context: User is adding subscription feature to their macOS app.

@@ -1,6 +1,6 @@
 ---
 name: swift-language-expert
-description: Use this agent when working with Swift language features, concurrency, memory management, or type safety. Trigger this agent when: (1) implementing async/await or actors, (2) designing protocols and generics, (3) debugging retain cycles or memory leaks, (4) using advanced Swift features like property wrappers or result builders, (5) handling errors with Result or throws. Examples:
+description: "Use when: writing, modifying, or reviewing Swift code focusing on language features. This is a primary agent for Swift language-level concerns: async/await, actors, protocols, generics, memory management (retain cycles, weak/unowned), property wrappers, result builders, and error handling. Use alongside swiftui-macos-designer for UI work, data-persistence-expert for storage, and macos-system-integration-expert for system APIs.\n\nExamples:"
 
 <example>
 Context: User is implementing concurrent data fetching.

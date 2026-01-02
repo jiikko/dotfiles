@@ -1,6 +1,6 @@
 ---
 name: data-persistence-expert
-description: Use this agent when implementing data persistence, storage, or synchronization in Swift/macOS apps. Trigger this agent when: (1) choosing between SwiftData/Core Data/UserDefaults, (2) designing database models and relationships, (3) implementing iCloud sync or CloudKit, (4) handling data migration, (5) optimizing fetch requests or queries. Examples:
+description: "Use when: implementing data persistence in Swift/macOS apps. This is the primary agent for: SwiftData, Core Data, UserDefaults, CloudKit, iCloud sync, data model design, relationships, migrations, fetch request optimization, and batch operations. Use alongside swift-language-expert for Swift code and swiftui-macos-designer for data-bound UI.\n\nExamples:"
 
 <example>
 Context: User is starting a new app and needs to choose storage solution.
