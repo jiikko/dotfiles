@@ -1,6 +1,6 @@
 ---
 name: macos-system-integration-expert
-description: Use this agent when integrating with macOS system APIs, managing permissions, or implementing native macOS features. Trigger this agent when: (1) implementing file access or security-scoped URLs, (2) managing app sandbox and entitlements, (3) integrating with Keychain, Notification Center, or Spotlight, (4) creating menu bar apps or dock integration, (5) handling system permissions (camera, microphone, files). Examples:
+description: "Use when: integrating with macOS system APIs in Swift apps. This is the primary agent for: App Sandbox & entitlements, security-scoped bookmarks, Keychain Services, NSStatusItem (menu bar), Notification Center, Spotlight indexing, NSWorkspace, AppleScript integration, and system permissions (camera, microphone, files). Use alongside swift-language-expert for language features and swiftui-macos-designer for UI.\n\nExamples:"
 
 <example>
 Context: User needs to implement persistent file access across app launches.

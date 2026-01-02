@@ -1,6 +1,6 @@
 ---
 name: swiftui-macos-designer
-description: Use this agent when designing or implementing SwiftUI interfaces for macOS applications. Trigger this agent when: (1) creating new SwiftUI views or components, (2) implementing state management, (3) integrating AppKit with SwiftUI, (4) optimizing view performance, (5) ensuring macOS Human Interface Guidelines compliance. Examples:
+description: "Use when: writing, modifying, or reviewing SwiftUI code for macOS apps. This is the primary agent for ALL SwiftUI/macOS UI work including: views, state management (@State, @StateObject, @ObservedObject), AppKit integration (NSViewRepresentable), view performance, and macOS Human Interface Guidelines compliance. Use alongside swift-language-expert for language features.\n\nExamples:"
 
 <example>
 Context: User is creating a new macOS app feature with SwiftUI.
