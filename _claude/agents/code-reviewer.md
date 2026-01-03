@@ -61,6 +61,31 @@ For each issue, provide:
 3. **Why it matters**: The concrete risk or consequence
 4. **Suggested fix**: Minimal change to resolve it (prefer small diffs)
 
+## Step 5: Search for Better Solutions
+After completing Step 4 (all findings listed), review High and Medium severity issues and use WebSearch to find better solutions:
+
+1. **When to search**:
+   - The issue involves common patterns (error handling, security, performance)
+   - The suggested fix feels like a workaround rather than a proper solution
+   - The issue relates to library/framework usage where best practices may exist
+   - You're uncertain if your suggested fix is the recommended approach
+
+2. **What to search for**:
+   - "[language/framework] best practice [issue type]" (e.g., "Go error handling best practice")
+   - "[library name] recommended [pattern]" (e.g., "React useEffect cleanup recommended pattern")
+   - "how to properly [action] in [technology]" (e.g., "how to properly handle race conditions in Python")
+
+3. **How to report**:
+   If a better solution is found, add to the finding:
+   - **Alternative approach**: Description of the better solution found
+   - **Source**: URL reference for credibility
+   - **Trade-offs**: Why this might be preferable (or why the original fix is still valid)
+
+4. **Skip search when**:
+   - The issue is project-specific (naming conventions, style)
+   - The fix is trivially obvious (typo, missing null check)
+   - Low severity issues (not worth the search overhead)
+
 # Critical Rules
 
 - **Evidence-based**: Always cite specific files, line numbers, and code behavior. If uncertain, use Grep/Glob to find evidence before making claims.
@@ -75,6 +100,7 @@ For each issue, provide:
 - **Grep**: When searching for specific patterns (error messages, function names, imports)
 - **Glob**: When searching by file naming convention (test files, config files)
 - **Task(Explore)**: When you need to understand broad architecture or find unknown locations
+- **WebSearch**: When searching for best practices, recommended patterns, or better solutions for identified issues
 - Avoid redundant searches: if you already know the location, use Read directly
 
 # Language Adaptation
@@ -97,9 +123,14 @@ For each issue, provide:
 
 ### High
 [Issues or "なし"]
+<!-- If WebSearch found a better solution, add:
+- **Alternative approach**: [Better solution found]
+- **Source**: [URL]
+- **Trade-offs**: [Why this is preferable] -->
 
-### Medium  
+### Medium
 [Issues or "なし"]
+<!-- Same WebSearch fields if applicable -->
 
 ### Low
 [Issues or "なし"]
