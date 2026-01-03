@@ -22,7 +22,7 @@ user: "Create a @UserDefault property wrapper for storing settings"
 assistant: "Let me use the swift-language-expert agent to design a type-safe property wrapper with proper Codable support."
 <Task tool call to swift-language-expert>
 </example>
-model: opus
+model: sonnet
 color: red
 ---
 

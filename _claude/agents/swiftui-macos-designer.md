@@ -29,7 +29,7 @@ user: "Add a feature to track document changes with undo/redo support"
 assistant: "I'll use the swiftui-macos-designer agent to design the state architecture with proper ObservableObject setup and UndoManager integration."
 <Task tool call to swiftui-macos-designer>
 </example>
-model: opus
+model: sonnet
 color: blue
 ---
 

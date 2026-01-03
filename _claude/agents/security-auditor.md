@@ -1,7 +1,7 @@
 ---
 name: security-auditor
 description: "Use when: code changes involve authentication, authorization, session management, user input handling, file operations, or network communications. MUST be triggered for login flows, permission checks, form submissions, API endpoints accepting user data, file upload/download, or external service integrations. Language-agnostic; applies to all codebases.\n\nExamples:\n\n<example>\nContext: User has implemented a new login endpoint with password verification.\nuser: \"Add a login endpoint that checks username and password against the database\"\nassistant: \"Here is the login endpoint implementation:\"\n<function call omitted for brevity>\nassistant: \"Now let me use the security-auditor agent to review this authentication code for potential vulnerabilities\"\n</example>\n\n<example>\nContext: User has added a file upload feature to their application.\nuser: \"Create a file upload handler that saves user files to the uploads directory\"\nassistant: \"Here is the file upload implementation:\"\n<function call omitted for brevity>\nassistant: \"This involves file operations with user input, so I'll use the security-auditor agent to check for path traversal and other file-related vulnerabilities\"\n</example>\n\n<example>\nContext: User modified an API endpoint that queries the database based on user input.\nuser: \"Update the search endpoint to filter results by the user's query parameter\"\nassistant: \"Here is the updated search endpoint:\"\n<function call omitted for brevity>\nassistant: \"Since this endpoint processes user input for database queries, I'll invoke the security-auditor agent to check for SQL injection and other input validation issues\"\n</example>"
-model: opus
+model: sonnet
 color: purple
 ---
 

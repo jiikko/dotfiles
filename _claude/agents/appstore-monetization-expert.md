@@ -29,7 +29,7 @@ user: "Should I use one-time purchase or subscription for my productivity app?"
 assistant: "I'll use the appstore-monetization-expert agent to analyze your app type, target market, and recommend the optimal monetization strategy."
 <Task tool call to appstore-monetization-expert>
 </example>
-model: opus
+model: sonnet
 color: green
 ---
 

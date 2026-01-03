@@ -22,7 +22,7 @@ user: "Fetching my list of 10,000 items is really slow"
 assistant: "Let me use the data-persistence-expert agent to analyze the fetch request and add proper indexing and batching."
 <Task tool call to data-persistence-expert>
 </example>
-model: opus
+model: sonnet
 color: purple
 ---
 

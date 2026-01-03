@@ -1,7 +1,7 @@
 ---
 name: debugger
 description: "Use when: user reports runtime errors, stack traces, crashes, exceptions, or unexpected behavior. For language-specific errors (Go, Rails/Ruby, Swift/SwiftUI), prefer language-specific agents first (go-architecture-designer, rails-domain-designer, swift-language-expert), then use debugger for cross-cutting debugging that spans multiple languages or for general debugging methodology.\n\nExamples:\n\n<example>\nContext: User encounters an error while running their application.\nuser: \"I'm getting a TypeError: Cannot read property 'map' of undefined when I run my app\"\nassistant: \"I'll use the debugger agent to investigate this error and find the root cause.\"\n</example>\n\n<example>\nContext: User sees unexpected behavior after making code changes.\nuser: \"My API endpoint was working yesterday but now it returns a 500 error\"\nassistant: \"Let me launch the debugger agent to diagnose why your API endpoint is failing.\"\n</example>\n\n<example>\nContext: User shares a stack trace from their application.\nuser: \"Here's the error I'm seeing: NullPointerException at UserService.java:142\"\nassistant: \"I'll use the debugger agent to analyze this NullPointerException and trace it to its root cause.\"\n</example>"
-model: opus
+model: sonnet
 color: yellow
 ---
 

@@ -21,7 +21,7 @@ Context: User's test suite is hanging and not completing.
 user: \"My tests are stuck and not finishing, the test runner just hangs\"
 assistant: \"Let me invoke the swiftui-test-expert agent to investigate the hang and identify deadlocks or async issues.\"
 </example>"
-model: opus
+model: sonnet
 color: green
 ---
 

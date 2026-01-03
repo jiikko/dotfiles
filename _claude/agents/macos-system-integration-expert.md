@@ -22,7 +22,7 @@ user: "Create a menu bar app that shows system stats"
 assistant: "Let me use the macos-system-integration-expert agent to design the NSStatusItem setup and menu structure."
 <Task tool call to macos-system-integration-expert>
 </example>
-model: opus
+model: sonnet
 color: teal
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: test-runner
 description: "Use when: code changes are complete and tests need to be run to verify correctness. Trigger PROACTIVELY after implementing features, fixing bugs, or refactoring. Works with any language/framework (pytest, jest, rspec, go test, cargo test, etc.).\n\nExamples:\n\n<example>\nContext: User has just implemented a new feature or modified existing code.\nuser: \"Add a function to validate email addresses in the user service\"\nassistant: \"Here is the email validation function:\"\n<function implementation completed>\nassistant: \"Now let me use the test-runner agent to run relevant tests and ensure the changes work correctly\"\n</example>\n\n<example>\nContext: User has completed a refactoring task.\nuser: \"Refactor the payment processing module to use async/await\"\nassistant: \"I've refactored the payment processing module. Here are the changes:\"\n<refactoring completed>\nassistant: \"Let me proactively run the test-runner agent to verify the refactoring didn't break any existing functionality\"\n</example>\n\n<example>\nContext: User fixed a bug in the codebase.\nuser: \"Fix the null pointer exception in the order service\"\nassistant: \"I've fixed the null pointer exception by adding proper null checks:\"\n<bug fix completed>\nassistant: \"I'll now use the test-runner agent to run tests and confirm the fix works without introducing regressions\"\n</example>"
-model: opus
+model: sonnet
 color: blue
 ---
 
