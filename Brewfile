@@ -34,13 +34,13 @@ brew "ripgrep"
 
 
 # middleware
-brew "mysql"
-brew "redis"
+# brew "mysql"
+# brew "redis"
 
 
 # cask
 cask "coteditor"
-cask "firefox"
+# cask "firefox"
 cask "google-chrome"
 cask "karabiner-elements"
 cask "font-hack-nerd-font"
