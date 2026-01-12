@@ -651,10 +651,14 @@ if command -v brew > /dev/null 2>&1; then
 
   if [ -f "$brew_prefix/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]; then
     source "$brew_prefix/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
+  else
+    echo "zsh-autosuggestions がインストールされていません。brew install zsh-autosuggestions を実行してインストールしてね。"
   fi
 
   if [ -f "$brew_prefix/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]; then
     source "$brew_prefix/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+  else
+    echo "zsh-syntax-highlighting がインストールされていません。brew install zsh-syntax-highlighting を実行してインストールしてね。"
   fi
 fi
 
