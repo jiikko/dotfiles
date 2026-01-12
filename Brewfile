@@ -16,6 +16,7 @@ brew "curl"
 brew 'direnv'
 brew "git"
 brew "zsh-syntax-highlighting"
+brew "zsh-autosuggestions"
 brew "fzf"
 
 
