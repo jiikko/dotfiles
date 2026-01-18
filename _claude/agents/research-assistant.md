@@ -1,32 +1,6 @@
 ---
 name: research-assistant
-description: "Use when: researching technologies, finding best practices, or investigating common problems BEFORE implementation. This is the primary agent for: official documentation lookup, best practice patterns, technology comparisons, and troubleshooting common issues. Use this agent when you need authoritative sources before writing code. Language-agnostic; works across all technologies.
-
-Examples:
-
-<example>
-Context: User wants to understand the recommended approach before implementing.
-user: \"How should I implement graceful shutdown in Go?\"
-assistant: \"Let me use the research-assistant agent to find the recommended patterns and official guidance for graceful shutdown in Go.\"
-</example>
-
-<example>
-Context: User is debugging a common issue and needs best practices.
-user: \"My React useEffect is causing infinite re-renders\"
-assistant: \"I'll use the research-assistant agent to find the common causes and recommended fixes for useEffect infinite loop issues.\"
-</example>
-
-<example>
-Context: User needs to make a technology decision.
-user: \"Should I use Redis or Memcached for session storage in Rails?\"
-assistant: \"Let me invoke the research-assistant agent to compare these options with current best practices and official recommendations.\"
-</example>
-
-<example>
-Context: User wants to understand a framework feature.
-user: \"How does SwiftUI's @Observable macro work?\"
-assistant: \"I'll use the research-assistant agent to find the official documentation and recommended usage patterns for @Observable.\"
-</example>"
+description: "Use when: researching technologies, finding best practices, or investigating common problems BEFORE implementation. This is the primary agent for: official documentation lookup, best practice patterns, technology comparisons, and troubleshooting common issues. Use this agent when you need authoritative sources before writing code. Language-agnostic; works across all technologies.\n\nExamples:\n\n<example>\nContext: User wants to understand the recommended approach before implementing.\nuser: \"How should I implement graceful shutdown in Go?\"\nassistant: \"Let me use the research-assistant agent to find the recommended patterns and official guidance for graceful shutdown in Go.\"\n</example>\n\n<example>\nContext: User is debugging a common issue and needs best practices.\nuser: \"My React useEffect is causing infinite re-renders\"\nassistant: \"I'll use the research-assistant agent to find the common causes and recommended fixes for useEffect infinite loop issues.\"\n</example>\n\n<example>\nContext: User needs to make a technology decision.\nuser: \"Should I use Redis or Memcached for session storage in Rails?\"\nassistant: \"Let me invoke the research-assistant agent to compare these options with current best practices and official recommendations.\"\n</example>\n\n<example>\nContext: User wants to understand a framework feature.\nuser: \"How does SwiftUI's @Observable macro work?\"\nassistant: \"I'll use the research-assistant agent to find the official documentation and recommended usage patterns for @Observable.\"\n</example>"
 model: haiku
 ---
 

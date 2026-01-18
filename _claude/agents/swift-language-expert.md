@@ -1,27 +1,6 @@
 ---
 name: swift-language-expert
-description: "Use when: writing, modifying, or reviewing Swift code focusing on language features. This is a primary agent for Swift language-level concerns: async/await, actors, protocols, generics, memory management (retain cycles, weak/unowned), property wrappers, result builders, and error handling. Use alongside swiftui-macos-designer for UI work, data-persistence-expert for storage, and macos-system-integration-expert for system APIs.\n\nExamples:"
-
-<example>
-Context: User is implementing concurrent data fetching.
-user: "I need to fetch multiple API endpoints concurrently and combine results"
-assistant: "Let me use the swift-language-expert agent to design the proper async/await structure with TaskGroup and error handling."
-<Task tool call to swift-language-expert>
-</example>
-
-<example>
-Context: User encounters a retain cycle in their SwiftUI app.
-user: "My app is leaking memory when dismissing this view"
-assistant: "I'll use the swift-language-expert agent to analyze the closure captures and identify the retain cycle."
-<Task tool call to swift-language-expert>
-</example>
-
-<example>
-Context: User wants to implement a custom property wrapper.
-user: "Create a @UserDefault property wrapper for storing settings"
-assistant: "Let me use the swift-language-expert agent to design a type-safe property wrapper with proper Codable support."
-<Task tool call to swift-language-expert>
-</example>
+description: "Use when: writing, modifying, or reviewing Swift code focusing on language features. This is a primary agent for Swift language-level concerns: async/await, actors, protocols, generics, memory management (retain cycles, weak/unowned), property wrappers, result builders, and error handling. Use alongside swiftui-macos-designer for UI work, data-persistence-expert for storage, and macos-system-integration-expert for system APIs.\n\nExamples:\n\n<example>\nContext: User is implementing concurrent data fetching.\nuser: \"I need to fetch multiple API endpoints concurrently and combine results\"\nassistant: \"Let me use the swift-language-expert agent to design the proper async/await structure with TaskGroup and error handling.\"\n<Task tool call to swift-language-expert>\n</example>\n\n<example>\nContext: User encounters a retain cycle in their SwiftUI app.\nuser: \"My app is leaking memory when dismissing this view\"\nassistant: \"I'll use the swift-language-expert agent to analyze the closure captures and identify the retain cycle.\"\n<Task tool call to swift-language-expert>\n</example>\n\n<example>\nContext: User wants to implement a custom property wrapper.\nuser: \"Create a @UserDefault property wrapper for storing settings\"\nassistant: \"Let me use the swift-language-expert agent to design a type-safe property wrapper with proper Codable support.\"\n<Task tool call to swift-language-expert>\n</example>"
 model: sonnet
 color: red
 ---

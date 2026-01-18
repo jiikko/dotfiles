@@ -1,26 +1,6 @@
 ---
 name: swiftui-test-expert
-description: "Use when: writing, debugging, or troubleshooting SwiftUI/Swift tests. This is the primary agent for: XCTest unit tests, XCUITest E2E tests, ViewInspector, async test patterns, flaky test fixes, and diagnosing stuck/hanging tests. Use alongside swift-language-expert for language features and swiftui-macos-designer for UI architecture.
-
-Examples:
-
-<example>
-Context: User needs to write tests for a SwiftUI view.
-user: \"Write tests for my SettingsView that has toggle switches and text fields\"
-assistant: \"Let me use the swiftui-test-expert agent to design testable view architecture and write comprehensive tests.\"
-</example>
-
-<example>
-Context: User's UI tests are flaky and intermittently failing.
-user: \"My XCUITest keeps failing randomly on CI but passes locally\"
-assistant: \"I'll use the swiftui-test-expert agent to diagnose the flakiness and implement stable waiting strategies.\"
-</example>
-
-<example>
-Context: User's test suite is hanging and not completing.
-user: \"My tests are stuck and not finishing, the test runner just hangs\"
-assistant: \"Let me invoke the swiftui-test-expert agent to investigate the hang and identify deadlocks or async issues.\"
-</example>"
+description: "Use when: writing, debugging, or troubleshooting SwiftUI/Swift tests. This is the primary agent for: XCTest unit tests, XCUITest E2E tests, ViewInspector, async test patterns, flaky test fixes, and diagnosing stuck/hanging tests. Use alongside swift-language-expert for language features and swiftui-macos-designer for UI architecture.\n\nExamples:\n\n<example>\nContext: User needs to write tests for a SwiftUI view.\nuser: \"Write tests for my SettingsView that has toggle switches and text fields\"\nassistant: \"Let me use the swiftui-test-expert agent to design testable view architecture and write comprehensive tests.\"\n</example>\n\n<example>\nContext: User's UI tests are flaky and intermittently failing.\nuser: \"My XCUITest keeps failing randomly on CI but passes locally\"\nassistant: \"I'll use the swiftui-test-expert agent to diagnose the flakiness and implement stable waiting strategies.\"\n</example>\n\n<example>\nContext: User's test suite is hanging and not completing.\nuser: \"My tests are stuck and not finishing, the test runner just hangs\"\nassistant: \"Let me invoke the swiftui-test-expert agent to investigate the hang and identify deadlocks or async issues.\"\n</example>"
 model: sonnet
 color: green
 ---

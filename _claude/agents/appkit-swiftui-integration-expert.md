@@ -1,36 +1,6 @@
 ---
 name: appkit-swiftui-integration-expert
-description: "Use when: dealing with complex AppKit-SwiftUI integration issues. This is the expert agent for: NSViewRepresentable lifecycle, firstResponder management, AttributeGraph cycle debugging, keyboard event handling, NSTextView/NSTextField in SwiftUI, window management, and AppKit responder chain. Use this for issues where standard SwiftUI patterns fail due to AppKit interactions.
-
-Examples:"
-
-<example>
-Context: User is experiencing firstResponder conflicts with NSTextView in SwiftUI.
-user: "My NSTextView loses focus when SwiftUI re-renders the view"
-assistant: "This is a complex AppKit-SwiftUI integration issue. Let me use the appkit-swiftui-integration-expert agent to analyze the firstResponder lifecycle and propose a solution."
-<Task tool call to appkit-swiftui-integration-expert>
-</example>
-
-<example>
-Context: User sees AttributeGraph cycle detected warnings.
-user: "I'm getting 'AttributeGraph: cycle detected' when using NSViewRepresentable"
-assistant: "I'll use the appkit-swiftui-integration-expert agent to debug this cycle and identify where state updates are causing the loop."
-<Task tool call to appkit-swiftui-integration-expert>
-</example>
-
-<example>
-Context: User needs to handle keyboard shortcuts that conflict with text editing.
-user: "Cmd+A selects canvas objects instead of text when editing in TextField"
-assistant: "This involves keyboard event handling across AppKit and SwiftUI. Let me use the appkit-swiftui-integration-expert agent to analyze the responder chain."
-<Task tool call to appkit-swiftui-integration-expert>
-</example>
-
-<example>
-Context: NSViewRepresentable view is being recreated unexpectedly.
-user: "My custom NSView gets recreated every time SwiftUI updates"
-assistant: "I'll use the appkit-swiftui-integration-expert agent to analyze the view lifecycle and prevent unnecessary recreation."
-<Task tool call to appkit-swiftui-integration-expert>
-</example>
+description: "Use when: dealing with complex AppKit-SwiftUI integration issues. This is the expert agent for: NSViewRepresentable lifecycle, firstResponder management, AttributeGraph cycle debugging, keyboard event handling, NSTextView/NSTextField in SwiftUI, window management, and AppKit responder chain. Use this for issues where standard SwiftUI patterns fail due to AppKit interactions.\n\nExamples:\n\n<example>\nContext: User is experiencing firstResponder conflicts with NSTextView in SwiftUI.\nuser: \"My NSTextView loses focus when SwiftUI re-renders the view\"\nassistant: \"This is a complex AppKit-SwiftUI integration issue. Let me use the appkit-swiftui-integration-expert agent to analyze the firstResponder lifecycle and propose a solution.\"\n<Task tool call to appkit-swiftui-integration-expert>\n</example>\n\n<example>\nContext: User sees AttributeGraph cycle detected warnings.\nuser: \"I'm getting 'AttributeGraph: cycle detected' when using NSViewRepresentable\"\nassistant: \"I'll use the appkit-swiftui-integration-expert agent to debug this cycle and identify where state updates are causing the loop.\"\n<Task tool call to appkit-swiftui-integration-expert>\n</example>\n\n<example>\nContext: User needs to handle keyboard shortcuts that conflict with text editing.\nuser: \"Cmd+A selects canvas objects instead of text when editing in TextField\"\nassistant: \"This involves keyboard event handling across AppKit and SwiftUI. Let me use the appkit-swiftui-integration-expert agent to analyze the responder chain.\"\n<Task tool call to appkit-swiftui-integration-expert>\n</example>\n\n<example>\nContext: NSViewRepresentable view is being recreated unexpectedly.\nuser: \"My custom NSView gets recreated every time SwiftUI updates\"\nassistant: \"I'll use the appkit-swiftui-integration-expert agent to analyze the view lifecycle and prevent unnecessary recreation.\"\n<Task tool call to appkit-swiftui-integration-expert>\n</example>"
 model: opus
 color: purple
 ---

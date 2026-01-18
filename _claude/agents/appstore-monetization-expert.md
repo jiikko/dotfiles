@@ -1,34 +1,6 @@
 ---
 name: appstore-monetization-expert
-description: "Use when: implementing App Store monetization for macOS/iOS apps. This is the primary agent for: StoreKit/StoreKit 2 implementation, In-App Purchases, subscriptions, pricing strategy, trial periods, App Store review guidelines compliance, and receipt validation. Use alongside swift-language-expert for Swift code and swiftui-macos-designer for paywall UI.\n\nExamples:"
-
-<example>
-Context: User is adding subscription feature to their macOS app.
-user: "I want to add a monthly subscription with a 7-day free trial"
-assistant: "Let me use the appstore-monetization-expert agent to design the subscription architecture, StoreKit 2 implementation, and ensure App Store guidelines compliance."
-<Task tool call to appstore-monetization-expert>
-</example>
-
-<example>
-Context: User is implementing In-App Purchases.
-user: "Add IAP for unlocking premium features"
-assistant: "I'll use the appstore-monetization-expert agent to design the proper consumable/non-consumable product setup, receipt validation, and restore purchases flow."
-<Task tool call to appstore-monetization-expert>
-</example>
-
-<example>
-Context: User's app was rejected by App Store review.
-user: "My app was rejected for guideline 2.1 - Performance: App Completeness"
-assistant: "Let me use the appstore-monetization-expert agent to analyze the rejection reason and provide specific fixes to pass review."
-<Task tool call to appstore-monetization-expert>
-</example>
-
-<example>
-Context: User is planning pricing strategy.
-user: "Should I use one-time purchase or subscription for my productivity app?"
-assistant: "I'll use the appstore-monetization-expert agent to analyze your app type, target market, and recommend the optimal monetization strategy."
-<Task tool call to appstore-monetization-expert>
-</example>
+description: "Use when: implementing App Store monetization for macOS/iOS apps. This is the primary agent for: StoreKit/StoreKit 2 implementation, In-App Purchases, subscriptions, pricing strategy, trial periods, App Store review guidelines compliance, and receipt validation. Use alongside swift-language-expert for Swift code and swiftui-macos-designer for paywall UI.\n\nExamples:\n\n<example>\nContext: User is adding subscription feature to their macOS app.\nuser: \"I want to add a monthly subscription with a 7-day free trial\"\nassistant: \"Let me use the appstore-monetization-expert agent to design the subscription architecture, StoreKit 2 implementation, and ensure App Store guidelines compliance.\"\n<Task tool call to appstore-monetization-expert>\n</example>\n\n<example>\nContext: User is implementing In-App Purchases.\nuser: \"Add IAP for unlocking premium features\"\nassistant: \"I'll use the appstore-monetization-expert agent to design the proper consumable/non-consumable product setup, receipt validation, and restore purchases flow.\"\n<Task tool call to appstore-monetization-expert>\n</example>\n\n<example>\nContext: User's app was rejected by App Store review.\nuser: \"My app was rejected for guideline 2.1 - Performance: App Completeness\"\nassistant: \"Let me use the appstore-monetization-expert agent to analyze the rejection reason and provide specific fixes to pass review.\"\n<Task tool call to appstore-monetization-expert>\n</example>\n\n<example>\nContext: User is planning pricing strategy.\nuser: \"Should I use one-time purchase or subscription for my productivity app?\"\nassistant: \"I'll use the appstore-monetization-expert agent to analyze your app type, target market, and recommend the optimal monetization strategy.\"\n<Task tool call to appstore-monetization-expert>\n</example>"
 model: sonnet
 color: green
 ---

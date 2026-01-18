@@ -1,27 +1,6 @@
 ---
 name: macos-system-integration-expert
-description: "Use when: integrating with macOS system APIs in Swift apps. This is the primary agent for: App Sandbox & entitlements, security-scoped bookmarks, Keychain Services, NSStatusItem (menu bar), Notification Center, Spotlight indexing, NSWorkspace, AppleScript integration, and system permissions (camera, microphone, files). Use alongside swift-language-expert for language features and swiftui-macos-designer for UI.\n\nExamples:"
-
-<example>
-Context: User needs to implement persistent file access across app launches.
-user: "My app needs to save and restore access to user-selected folders"
-assistant: "Let me use the macos-system-integration-expert agent to design security-scoped bookmark handling with proper sandbox entitlements."
-<Task tool call to macos-system-integration-expert>
-</example>
-
-<example>
-Context: User wants to store API keys securely.
-user: "How should I store the user's API token securely?"
-assistant: "I'll use the macos-system-integration-expert agent to implement Keychain Services with proper access control."
-<Task tool call to macos-system-integration-expert>
-</example>
-
-<example>
-Context: User is creating a menu bar utility app.
-user: "Create a menu bar app that shows system stats"
-assistant: "Let me use the macos-system-integration-expert agent to design the NSStatusItem setup and menu structure."
-<Task tool call to macos-system-integration-expert>
-</example>
+description: "Use when: integrating with macOS system APIs in Swift apps. This is the primary agent for: App Sandbox & entitlements, security-scoped bookmarks, Keychain Services, NSStatusItem (menu bar), Notification Center, Spotlight indexing, NSWorkspace, AppleScript integration, and system permissions (camera, microphone, files). Use alongside swift-language-expert for language features and swiftui-macos-designer for UI.\n\nExamples:\n\n<example>\nContext: User needs to implement persistent file access across app launches.\nuser: \"My app needs to save and restore access to user-selected folders\"\nassistant: \"Let me use the macos-system-integration-expert agent to design security-scoped bookmark handling with proper sandbox entitlements.\"\n<Task tool call to macos-system-integration-expert>\n</example>\n\n<example>\nContext: User wants to store API keys securely.\nuser: \"How should I store the user's API token securely?\"\nassistant: \"I'll use the macos-system-integration-expert agent to implement Keychain Services with proper access control.\"\n<Task tool call to macos-system-integration-expert>\n</example>\n\n<example>\nContext: User is creating a menu bar utility app.\nuser: \"Create a menu bar app that shows system stats\"\nassistant: \"Let me use the macos-system-integration-expert agent to design the NSStatusItem setup and menu structure.\"\n<Task tool call to macos-system-integration-expert>\n</example>"
 model: sonnet
 color: teal
 ---
