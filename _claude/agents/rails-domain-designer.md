@@ -1,7 +1,7 @@
 ---
 name: rails-domain-designer
 description: "Use when: writing, modifying, or reviewing Rails/Ruby code. This is the primary agent for ALL Rails work including: models, controllers, services, query objects, ActiveRecord queries, associations, migrations, and business logic placement. MUST be used for any Rails codebase changes. Ensures clean architecture and proper domain boundaries.\n\nExamples:\n\n<example>\nContext: User asks to add a new feature involving business logic.\nuser: \"Add a function to calculate the total price including discounts for an order\"\nassistant: \"Before implementing, let me use the rails-domain-designer agent to determine the proper placement of this business logic.\"\n</example>\n\n<example>\nContext: User is creating a new service class.\nuser: \"Create a service to handle user registration with email verification\"\nassistant: \"I'll use the rails-domain-designer agent to review the service design and ensure proper domain boundaries.\"\n</example>\n\n<example>\nContext: User modifies a controller action with complex logic.\nassistant: \"I've added the order processing logic to the controller. Now let me proactively use the rails-domain-designer agent to verify the domain boundaries are maintained.\"\n</example>\n\n<example>\nContext: User adds a new model with associations.\nuser: \"Add a BiddingStatus model to track status changes with timestamps\"\nassistant: \"I'll use the rails-domain-designer agent to review the model design, associations, and determine where related logic should live.\"\n</example>"
-model: sonnet
+model: opus
 color: cyan
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: go-architecture-designer
 description: "Use when: writing, modifying, or reviewing Go code. This is the primary agent for ALL Go language work including: new features, architecture design, package splitting, interface design, concurrency patterns, error handling, and code review. MUST be used for any Go codebase changes. Goal: 'changeable design' and 'clear boundaries'.\n\nExamples:\n\n<example>\nContext: User is adding a new feature that requires database access and API endpoints.\nuser: \"I need to add a bidding status tracking feature that saves status changes with timestamps\"\nassistant: \"Before implementing this feature, let me use the go-architecture-designer agent to design the proper boundaries and dependencies.\"\n</example>\n\n<example>\nContext: User is refactoring existing code to split a large package.\nuser: \"The bidding package is getting too large, I want to split it\"\nassistant: \"I'll use the go-architecture-designer agent to analyze the current structure and propose a clean separation with proper dependency directions.\"\n</example>\n\n<example>\nContext: User is adding concurrent processing to an existing feature.\nuser: \"I need to process multiple bidding status updates concurrently\"\nassistant: \"Let me invoke the go-architecture-designer agent to design the concurrency boundaries and ensure proper goroutine lifecycle management.\"\n</example>"
-model: sonnet
+model: opus
 color: orange
 ---
 
