@@ -409,6 +409,36 @@ exit_code=$?
 setopt err_exit
 assert_contains "$output" "サフィックスが異なります" "Reports error for mismatched suffix"
 
+# Test 16c: サフィックスに数字を含むパターン（-aac96k-enc など）
+printf '\n## Test 16c: Suffix containing numbers\n'
+TEST_DIR="$TEST_TMP/test16c"
+mkdir -p "$TEST_DIR"
+echo "video 1" > "$TEST_DIR/video_1-aac96k-enc.mp4"
+echo "video 2" > "$TEST_DIR/video_2-aac96k-enc.mp4"
+echo "video 3" > "$TEST_DIR/video_3-aac96k-enc.mp4"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(concat "$TEST_DIR/video_1-aac96k-enc.mp4" "$TEST_DIR/video_2-aac96k-enc.mp4" "$TEST_DIR/video_3-aac96k-enc.mp4" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_file_exists "$TEST_DIR/video.mp4" "Output file is created with numeric suffix pattern"
+assert_contains "$output" "完了" "Reports success for numeric suffix pattern"
+
+# Test 16d: 共通サフィックス除去後に連番を検出（clipNN_00-suffix パターン）
+printf '\n## Test 16d: Common suffix removal then sequence detection\n'
+TEST_DIR="$TEST_TMP/test16d"
+mkdir -p "$TEST_DIR"
+echo "video 1" > "$TEST_DIR/clip28_00-aac96k-enc.mp4"
+echo "video 2" > "$TEST_DIR/clip29_00-aac96k-enc.mp4"
+echo "video 3" > "$TEST_DIR/clip30_00-aac96k-enc.mp4"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(concat "$TEST_DIR/clip28_00-aac96k-enc.mp4" "$TEST_DIR/clip29_00-aac96k-enc.mp4" "$TEST_DIR/clip30_00-aac96k-enc.mp4" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_file_exists "$TEST_DIR/clip.mp4" "Output file is created with common suffix removal pattern"
+assert_contains "$output" "完了" "Reports success for common suffix removal pattern"
+
 # Test 17: 出力ファイル既存時のスキップ
 printf '\n## Test 17: Skip when output file exists\n'
 TEST_DIR="$TEST_TMP/test17"

@@ -40,6 +40,38 @@ __concat_get_stem() {
   fi
 }
 
+# 内部補助: 複数の文字列から共通サフィックスを見つける
+# $1...: 文字列の配列
+# 戻り値: REPLY に共通サフィックスを設定
+__concat_find_common_suffix() {
+  local -a strings=("$@")
+  (( ${#strings[@]} == 0 )) && { REPLY=""; return 0; }
+
+  local first="${strings[1]}"
+  local suffix=""
+  local i len char all_match
+
+  # 末尾から1文字ずつ比較
+  len=${#first}
+  for (( i = 0; i < len; i++ )); do
+    char="${first:(-1-i):1}"
+    all_match=1
+    for s in "${strings[@]:1}"; do
+      if (( ${#s} <= i )) || [[ "${s:(-1-i):1}" != "$char" ]]; then
+        all_match=0
+        break
+      fi
+    done
+    if (( all_match )); then
+      suffix="${char}${suffix}"
+    else
+      break
+    fi
+  done
+
+  REPLY="$suffix"
+}
+
 # 内部補助: 連番パターンを検出して番号、サフィックス、プレフィックスを抽出
 # 戻り値: REPLY に "番号:サフィックス:プレフィックス" を設定
 __concat_extract_number() {
@@ -65,11 +97,17 @@ __concat_extract_number() {
     prefix="${match[1]}"
     num="${match[2]}"
     suffix=""
-  # パターン: -N-<suffix> または _N_<suffix>
-  elif [[ "$stem" =~ '^(.*)[-_]([0-9]+)([-_][^0-9]+)$' ]]; then
+  # パターン: -N-<suffix> または _N_<suffix>（サフィックスに数字を含む場合も対応）
+  elif [[ "$stem" =~ '^(.*)[-_]([0-9]+)([-_].+)$' ]]; then
     prefix="${match[1]}"
     num="${match[2]}"
     suffix="${match[3]}"
+  # パターン: 末尾が数字（区切り文字なし、例: clip28）
+  # 共通サフィックス除去後のフォールバックとして使用
+  elif [[ "$stem" =~ '^(.*[^0-9])([0-9]+)$' ]]; then
+    prefix="${match[1]}"
+    num="${match[2]}"
+    suffix=""
   fi
 
   REPLY="${num}:${suffix}:${prefix}"
@@ -303,38 +341,120 @@ EOF
   done
 
   # 連番パターンの検出と検証
+  # まず通常のstemで試し、プレフィックスが一致しない場合は共通サフィックスを除去して再試行
   local -a numbers=()
   local first_suffix="" first_prefix="" common_prefix=""
+  local use_stripped_stems=0
+  local detected_common_suffix=""
+
+  # 最初のパス: 通常のstemで連番を検出
+  local -a temp_numbers=()
+  local -a temp_prefixes=()
+  local -a temp_suffixes=()
+  local all_matched=1
   for stem in "${stems[@]}"; do
     if __concat_extract_number "$stem"; then
-      # REPLY は "番号:サフィックス:プレフィックス" 形式
       local num_part="${REPLY%%:*}"
       local rest="${REPLY#*:}"
       local suffix_part="${rest%%:*}"
       local prefix_part="${rest#*:}"
-
-      # 先頭の0を除去して数値として扱う
-      numbers+=("$((10#$num_part))")
-
-      # サフィックスとプレフィックスの一致チェック
-      if [[ -z "$first_prefix" ]]; then
-        first_suffix="$suffix_part"
-        first_prefix="$prefix_part"
-      else
-        if [[ "$suffix_part" != "$first_suffix" ]]; then
-          print -r -- "エラー: サフィックスが異なります: '$first_suffix' と '$suffix_part'" >&2
-          return 1
-        fi
-        if [[ "$prefix_part" != "$first_prefix" ]]; then
-          print -r -- "エラー: ファイル名に連続性がありません: 共通プレフィックスがありません ('$first_prefix' と '$prefix_part')" >&2
-          return 1
-        fi
-      fi
+      temp_numbers+=("$((10#$num_part))")
+      temp_prefixes+=("$prefix_part")
+      temp_suffixes+=("$suffix_part")
     else
-      print -r -- "エラー: ファイル名に連番パターンがありません: $stem" >&2
-      return 1
+      all_matched=0
+      break
     fi
   done
+
+  # プレフィックスとサフィックスが一致するかチェック
+  if (( all_matched )); then
+    local prefixes_match=1
+    local suffixes_match=1
+    for p in "${temp_prefixes[@]:1}"; do
+      if [[ "$p" != "${temp_prefixes[1]}" ]]; then
+        prefixes_match=0
+        break
+      fi
+    done
+    for s in "${temp_suffixes[@]:1}"; do
+      if [[ "$s" != "${temp_suffixes[1]}" ]]; then
+        suffixes_match=0
+        break
+      fi
+    done
+
+    if (( prefixes_match && suffixes_match )); then
+      # 通常のstemで成功
+      numbers=("${temp_numbers[@]}")
+      first_prefix="${temp_prefixes[1]}"
+      first_suffix="${temp_suffixes[1]}"
+    elif (( ! suffixes_match )); then
+      # サフィックスが一致しない: エラー
+      print -r -- "エラー: サフィックスが異なります: '${temp_suffixes[1]}' と 異なるサフィックスがあります" >&2
+      return 1
+    else
+      # プレフィックスが一致しない: 共通サフィックスを除去して再試行
+      use_stripped_stems=1
+    fi
+  else
+    # 連番パターンが見つからない: 共通サフィックスを除去して再試行
+    use_stripped_stems=1
+  fi
+
+  # 共通サフィックス除去が必要な場合
+  if (( use_stripped_stems )); then
+    __concat_find_common_suffix "${stems[@]}"
+    detected_common_suffix="$REPLY"
+
+    if [[ -z "$detected_common_suffix" ]]; then
+      # 共通サフィックスがない場合は元のエラーを出力
+      for stem in "${stems[@]}"; do
+        if ! __concat_extract_number "$stem"; then
+          print -r -- "エラー: ファイル名に連番パターンがありません: $stem" >&2
+          return 1
+        fi
+      done
+      print -r -- "エラー: ファイル名に連続性がありません: 共通プレフィックスがありません" >&2
+      return 1
+    fi
+
+    # 共通サフィックスを除去したstemsを作成
+    local -a stripped_stems=()
+    for stem in "${stems[@]}"; do
+      stripped_stems+=("${stem%$detected_common_suffix}")
+    done
+
+    # 再試行
+    numbers=()
+    for stem in "${stripped_stems[@]}"; do
+      if __concat_extract_number "$stem"; then
+        local num_part="${REPLY%%:*}"
+        local rest="${REPLY#*:}"
+        local suffix_part="${rest%%:*}"
+        local prefix_part="${rest#*:}"
+
+        numbers+=("$((10#$num_part))")
+
+        if [[ -z "$first_prefix" ]]; then
+          first_suffix="$suffix_part"
+          first_prefix="$prefix_part"
+        else
+          if [[ "$suffix_part" != "$first_suffix" ]]; then
+            print -r -- "エラー: サフィックスが異なります: '$first_suffix' と '$suffix_part'" >&2
+            return 1
+          fi
+          if [[ "$prefix_part" != "$first_prefix" ]]; then
+            print -r -- "エラー: ファイル名に連続性がありません: 共通プレフィックスがありません ('$first_prefix' と '$prefix_part')" >&2
+            return 1
+          fi
+        fi
+      else
+        print -r -- "エラー: ファイル名に連番パターンがありません: $stem" >&2
+        return 1
+      fi
+    done
+  fi
 
   # 共通プレフィックスを設定
   common_prefix="$first_prefix"
