@@ -623,7 +623,7 @@ function gemini() {
 
 function codex() {
   _ensure_cli_with_brew codex codex || return 1
-  command codex "$@"
+  command codex --sandbox danger-full-access "$@"
 }
 
 if [[ -n "$SSH_AUTH_SOCK" ]] && ! ssh-add -l > /dev/null 2>&1; then
