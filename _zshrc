@@ -663,4 +663,3 @@ if command -v brew > /dev/null 2>&1; then
 fi
 
 # Ignore commands starting with space from history
-setopt HIST_IGNORE_SPACE

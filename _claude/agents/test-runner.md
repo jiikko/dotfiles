@@ -1,7 +1,7 @@
 ---
 name: test-runner
 description: "Use when: code changes are complete and tests need to be run to verify correctness. Trigger PROACTIVELY after implementing features, fixing bugs, or refactoring. Works with any language/framework (pytest, jest, rspec, go test, cargo test, etc.).\n\nExamples:\n\n<example>\nContext: User has just implemented a new feature or modified existing code.\nuser: \"Add a function to validate email addresses in the user service\"\nassistant: \"Here is the email validation function:\"\n<function implementation completed>\nassistant: \"Now let me use the test-runner agent to run relevant tests and ensure the changes work correctly\"\n</example>\n\n<example>\nContext: User has completed a refactoring task.\nuser: \"Refactor the payment processing module to use async/await\"\nassistant: \"I've refactored the payment processing module. Here are the changes:\"\n<refactoring completed>\nassistant: \"Let me proactively run the test-runner agent to verify the refactoring didn't break any existing functionality\"\n</example>\n\n<example>\nContext: User fixed a bug in the codebase.\nuser: \"Fix the null pointer exception in the order service\"\nassistant: \"I've fixed the null pointer exception by adding proper null checks:\"\n<bug fix completed>\nassistant: \"I'll now use the test-runner agent to run tests and confirm the fix works without introducing regressions\"\n</example>"
-model: sonnet
+model: opus
 color: blue
 ---
 
@@ -138,3 +138,91 @@ Use WebFetch to check for framework-specific best practices or assertion methods
   - CLAUDE.md contains Japanese instructions
 - Use English otherwise
 - Keep technical terms in English (e.g., "test coverage", "assertion failure")
+
+## Project-Specific: ThumbnailThumb Testing
+
+This section applies when working on the ThumbnailThumb project (macOS SwiftUI app).
+
+### Test Execution Commands
+
+```bash
+# Standard test run
+make test
+
+# With timeout and stack trace capture on hang
+make test-debug
+
+# Custom timeout (default: 180 seconds)
+make test-debug TIMEOUT=60
+```
+
+### Stack Detection and Analysis
+
+When tests hang, `make test-debug` automatically captures diagnostics:
+
+**Output files on timeout**:
+| File | Content |
+|------|---------|
+| `./tmp/thumbnailthumb-test.log` | Test output and progress |
+| `./tmp/test-stacktrace-{PID}.txt` | Stack trace of hung xctest process |
+
+**Analyzing Stack Traces**:
+
+```bash
+# 1. Check which test was running when it hung
+cat ./tmp/thumbnailthumb-test.log | tail -50
+
+# 2. Analyze the stack trace
+cat ./tmp/test-stacktrace-*.txt
+
+# 3. Look for these common patterns:
+```
+
+**Common Stack Patterns and Fixes**:
+
+| Stack Pattern | Cause | Fix |
+|---------------|-------|-----|
+| `dispatch_semaphore_wait` + `MainActor` | Semaphore deadlock | Use `Task.detached` (see Issue #096) |
+| `swift_task_switch` stuck | Async deadlock | Check for sync calls to MainActor |
+| `_dispatch_lane_barrier_sync_invoke` | Main thread block | Offload heavy work with `Task.detached` |
+| `XCTWaiter.wait` timeout | Missing expectation.fulfill() | Add timeout or check fulfill logic |
+
+**Handler Deadlock Pattern (Most Common)**:
+
+```swift
+// ❌ This causes deadlock - detected in stack as semaphore_wait
+func test_handler() {
+    let result = StatusHandler.handleGetStatus()  // BLOCKS
+}
+
+// ✅ Required pattern for ThumbnailThumb
+func test_handler() async {
+    let result = await Task.detached {
+        StatusHandler.handleGetStatus()
+    }.value
+}
+```
+
+**Reference**: `issues/done/096-api-handler-deadlock.md` for detailed case study.
+
+### SwiftLint Integration
+
+This project has a SwiftLint rule `handler_direct_call_in_tests` that prevents the deadlock pattern:
+
+```bash
+# Check for violations before running tests
+make lint
+
+# The rule catches:
+# - Direct calls to *Handler.handle* in test files
+# - Missing Task.detached wrapper
+```
+
+### Debugging Workflow
+
+1. **Test hangs** → Run `make test-debug TIMEOUT=60`
+2. **Check log** → `cat ./tmp/thumbnailthumb-test.log | tail -50`
+3. **Analyze stack** → `cat ./tmp/test-stacktrace-*.txt`
+4. **Identify pattern** → Match against table above
+5. **Apply fix** → Usually `Task.detached` wrapper
+6. **Verify** → `make test`

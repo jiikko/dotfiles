@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(mdfind:*)",
+      "Bash(xcodebuild:*)",
+      "Bash(swift test:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat\\(Issue 019\\): LayerOrderHelpersを抽出してElementRef重複を解消\n\n- Sources/Helpers/LayerOrderHelpers.swift を新規作成\n- ElementRef, ElementType を共通定義に集約\n- bringForward, sendBackward, normalizeZIndexes の計算ロジックを純粋関数として抽出\n- ZIndexSwapResult 構造体で計算結果を返す設計\n- 14件のユニットテストを追加\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "WebSearch",
+      "Bash(make test:*)"
+    ]
+  }
+}
