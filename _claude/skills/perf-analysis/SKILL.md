@@ -1,3 +1,9 @@
+---
+name: perf-analysis
+version: 1.0.0
+description: Performance Analysis - パフォーマンス分析。./tmp/perf.log を分析してボトルネックを特定し、パフォーマンス改善 Issue を作成するスキル。
+---
+
 # Performance Analysis - パフォーマンス分析
 
 `./tmp/perf.log` を分析してボトルネックを特定し、パフォーマンス改善 Issue を作成するスキル。
@@ -154,119 +160,6 @@ cat ./tmp/perf.log
 **次の Issue 番号を確認:**
 ```bash
 ls issues/*.md | grep -oE 'issues/[0-9]+' | sort -t/ -k2 -n | tail -1
-```
-
-**Issue フォーマット:**
-
-```markdown
-# Issue NNN: パフォーマンス改善 - [特定された問題]
-
-## 概要
-
-perf.log 分析により特定されたパフォーマンス問題。
-
-## 分析日時
-
-YYYY-MM-DD HH:MM:SS
-
-## テスト環境
-
-- キャンバス数: X
-- 要素数（平均）: Y
-- macOS バージョン: (必要に応じて)
-
-## 発見された問題
-
-### 1. [問題タイトル]
-
-**重大度**: 高 / 中 / 低
-
-**測定値**:
-| 操作 | 平均 | 最大 | 最小 | 閾値 |
-|------|------|------|------|------|
-| xxx  | Xms  | Xms  | Xms  | 100ms |
-
-**ログ抜粋**:
-```json
-[PERF] {"op":"xxx","event":"end","duration_ms":XXX,...}
-```
-
-**推定原因**:
-- 原因1
-- 原因2
-
-**改善案**:
-- 案1
-- 案2
-
-### 2. [次の問題...]
-
-## パフォーマンスサマリー
-
-| カテゴリ | 操作 | 平均時間 | 状態 |
-|---------|------|---------|------|
-| 要素追加 | addText | Xms | ✅/⚠️/❌ |
-| 要素追加 | addImage | Xms | ✅/⚠️/❌ |
-| ドラッグ | dragMove | X fps | ✅/⚠️/❌ |
-| プレビュー | preview | Xms | ✅/⚠️/❌ |
-
-**凡例**: ✅ 良好 / ⚠️ 要注意 / ❌ 要改善
-
-## 推奨アクション
-
-1. [優先度高] xxx
-2. [優先度中] yyy
-3. [優先度低] zzz
-
-## 関連
-
-- [PerfLog.swift](ThumbnailThumb/Sources/Services/PerfLog.swift)
-- 関連 Issue: #XXX
-```
-
-### 5. 問題発見時の対応
-
-重大な問題が見つかった場合は、以下のエージェントを活用して深掘り:
-
-#### パフォーマンス問題の深掘り
-
-| 問題の種類 | 使用エージェント | モデル |
-|-----------|-----------------|--------|
-| View再描画問題 | **swiftui-performance-expert** | opus |
-| メモリリーク | **swift-language-expert** | opus |
-| async/actorの問題 | **swift-concurrency-expert** | opus |
-| 全体的な遅さ | **debugger** | opus |
-| アーキテクチャ起因 | **architecture-reviewer** | opus |
-
-#### 調査手順
-
-1. **swiftui-performance-expert エージェント起動** - View 再描画、メモリ問題の徹底分析（opus）
-2. **クラッシュログの確認** - パフォーマンス問題がクラッシュを引き起こしていないか
-3. **詳細調査** - Instruments 等での追加プロファイリングを提案
-4. **Issue の優先度付け** - 他の Issue との関連を確認
-
-**重要**: パフォーマンス問題は表面的な症状だけでなく、根本原因まで追求する。Opus モデルの深い分析能力を活用して、単なるワークアラウンドではなく本質的な解決策を提案すること。
-
-## ログフォーマット
-
-### start/end イベント
-
-```json
-{"op":"addText","event":"start","timestamp_ms":1234567890123,"cpu_percent":12.5,"mem_mb":256.3}
-{"op":"addText","event":"end","timestamp_ms":1234567890223,"duration_ms":100.0,"cpu_percent":15.2,"mem_mb":258.1}
-```
-
-### ドラッグイベント
-
-```json
-{"op":"dragMove","event":"move","count":3,"frame":45,"timestamp_ms":1234567890123,"cpu_percent":25.0,"mem_mb":260.0}
-{"op":"dragMove","event":"end","count":3,"total_frames":120,"timestamp_ms":1234567891123,"duration_ms":1000.0,"cpu_percent":18.0,"mem_mb":262.0}
-```
-
-### プロパティ変更イベント
-
-```json
-{"op":"updateText","prop":"fontSize","value":96,"timestamp_ms":1234567890123,"cpu_percent":10.0,"mem_mb":256.0}
 ```
 
 ## 閾値設定
