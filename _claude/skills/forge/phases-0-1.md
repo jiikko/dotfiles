@@ -127,6 +127,18 @@
 | システム API 使用 | macos-system-integration-expert | opus |
 | UI エディタ関連 | image-editing-expert | opus |
 
+### 言語別エージェント（プロジェクト検出時に自動追加）
+
+| 検出条件 | 追加エージェント | 代替する必須エージェント |
+|---------|-----------------|----------------------|
+| `.go`, `go.mod` | go-architecture-designer | swift-language-expert |
+| `.rb`, `Gemfile`, Rails | rails-domain-designer | swift-language-expert, swiftui-macos-designer |
+| `.css`, `.scss`, CSS-in-JS | css-expert | swiftui-macos-designer |
+| `.js`, `.ts`, `package.json` | nodejs-expert | swift-language-expert |
+| `electron`, `BrowserWindow` | electron-expert | (追加) |
+
+**注意**: 非 Swift プロジェクトでは、必須エージェント #1-2 を上記の言語別エージェントに置き換える。
+
 ### Maximum 専用エージェント（Phase 1）
 
 Maximum モード選択時は、以下のエージェントを**必ず追加で並行起動**する：

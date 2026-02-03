@@ -18,6 +18,12 @@
 | `NSStatusItem`, `Keychain`, `SecurityScoped` | macos-system-integration-expert |
 | `@State`, `@Observable`, View 構造体 | swiftui-macos-designer |
 | `async`, `await`, `actor`, `Task` | swift-concurrency-expert |
+| `.css`, `.scss`, `.sass`, `styled-components`, `@media`, `flexbox`, `grid` | css-expert |
+| `.js`, `.ts`, `package.json`, `node_modules`, `require(`, `import from`, `express`, `fastify` | nodejs-expert |
+| `electron`, `BrowserWindow`, `ipcMain`, `ipcRenderer`, `preload`, `contextBridge` | electron-expert |
+| `.go`, `go.mod`, `go.sum`, `goroutine`, `chan`, `interface{}` | go-architecture-designer |
+| `.rb`, `Gemfile`, `Rails`, `ActiveRecord`, `ApplicationController` | rails-domain-designer |
+| 大規模リファクタリング、Extract Method/Class、Strangler Fig | refactoring-patterns |
 
 ### 必須エージェント（6つ）
 
@@ -97,6 +103,13 @@
 |------|-----------------|--------|
 | async/await, actor, Task を含む | swift-concurrency-expert | opus |
 | ファイル操作、外部入力、API 通信 | security-auditor | opus |
+| CSS/SCSS ファイル、スタイリング関連 | css-expert | opus |
+| JavaScript/TypeScript、Node.js 関連 | nodejs-expert | opus |
+| Electron、デスクトップアプリ関連 | electron-expert | opus |
+| Go 言語ファイル | go-architecture-designer | opus |
+| Rails/Ruby ファイル | rails-domain-designer | opus |
+| 大規模リファクタリング、構造変更 | refactoring-patterns | opus |
+| Swift 大規模構造変更 | swift-architecture-designer | opus |
 
 ### Maximum 専用エージェント（Phase 4）
 
@@ -118,6 +131,83 @@
    テストに関する推奨事項を報告してください。"
 ```
 
+### フロントエンド/デスクトップ専用エージェント（条件付き）
+
+```
+9. css-expert (model: opus) - CSS/SCSS ファイル検出時
+   prompt: "以下のコードを CSS の観点からレビューしてください。
+   - Specificity（詳細度）の問題
+   - レイアウト（Flexbox, Grid）の適切性
+   - パフォーマンス（GPU アクセラレーション、再描画）
+   - レスポンシブデザイン
+   - CSS 変数の活用
+   - ブラウザ互換性
+   対象: [ファイルパス]
+   問題点と改善案を箇条書きで報告してください。"
+
+10. nodejs-expert (model: opus) - JavaScript/TypeScript 検出時
+   prompt: "以下のコードを Node.js の観点からレビューしてください。
+   - 非同期パターン（Promise, async/await）の適切性
+   - イベントループのブロッキング
+   - ストリーム処理とメモリ効率
+   - エラーハンドリング
+   - セキュリティ（入力検証、依存関係）
+   - パフォーマンス最適化
+   対象: [ファイルパス]
+   問題点と改善案を箇条書きで報告してください。"
+
+11. electron-expert (model: opus) - Electron 関連コード検出時
+   prompt: "以下のコードを Electron の観点からレビューしてください。
+   - プロセス分離（main/renderer）の適切性
+   - IPC 通信のセキュリティ
+   - Context Isolation と preload スクリプト
+   - パッケージング・配布設定
+   - パフォーマンス（起動時間、メモリ使用量）
+   - 自動更新の実装
+   対象: [ファイルパス]
+   問題点と改善案を箇条書きで報告してください。"
+
+12. go-architecture-designer (model: opus) - Go ファイル検出時
+   prompt: "以下のコードを Go アーキテクチャの観点からレビューしてください。
+   - パッケージ構成と境界設計
+   - インターフェース設計（依存性逆転）
+   - 並行処理パターン（goroutine, channel）
+   - エラーハンドリング
+   - テスタビリティ
+   対象: [ファイルパス]
+   問題点と改善案を箇条書きで報告してください。"
+
+13. rails-domain-designer (model: opus) - Rails/Ruby 検出時
+   prompt: "以下のコードを Rails ドメイン設計の観点からレビューしてください。
+   - レイヤー配置（Fat Model/Controller の回避）
+   - ActiveRecord の適切な使用
+   - Service/Query オブジェクトの設計
+   - N+1 クエリ問題
+   - バリデーションとビジネスロジックの分離
+   対象: [ファイルパス]
+   問題点と改善案を箇条書きで報告してください。"
+
+14. refactoring-patterns (model: opus) - 大規模構造変更時
+   prompt: "以下のコードをリファクタリングの観点からレビューしてください。
+   - Extract Method/Class の機会
+   - 重複コードの統合可能性
+   - 段階的移行戦略（Strangler Fig）
+   - 既存動作を壊さない変更方法
+   - テストの維持方針
+   対象: [ファイルパス]
+   安全なリファクタリング戦略を報告してください。"
+
+15. swift-architecture-designer (model: opus) - Swift 大規模構造変更時
+   prompt: "以下のコードを Swift アーキテクチャの観点からレビューしてください。
+   - モジュール/パッケージ構成
+   - Protocol vs 具象型の選択
+   - 依存方向の適切性
+   - Manager/Service/ViewModel の責務分離
+   - God Object の分割可能性
+   対象: [ファイルパス]
+   アーキテクチャ改善案を報告してください。"
+```
+
 ---
 
 ## Phase 4.1: クロスレビュー（両モード共通）
@@ -134,6 +224,13 @@ Phase 4 の各エージェント出力を、**別の観点を持つエージェ�
 | swiftui-performance-expert | swiftui-macos-designer | パフォーマンス改善がUX を損なわないか |
 | swiftui-test-expert | Explore | テストの指摘が既存パターンと整合しているか |
 | Explore | swiftui-test-expert | 関連コードの指摘にテスト観点が含まれているか |
+| css-expert | nodejs-expert | CSS の指摘がビルド設定と整合しているか |
+| nodejs-expert | security-auditor | Node.js の指摘がセキュリティを考慮しているか |
+| electron-expert | nodejs-expert | Electron の指摘が Node.js パターンと整合しているか |
+| go-architecture-designer | security-auditor | Go の指摘がセキュリティを考慮しているか |
+| rails-domain-designer | security-auditor | Rails の指摘がセキュリティを考慮しているか |
+| refactoring-patterns | architecture-reviewer | リファクタリング案がアーキテクチャと整合しているか |
+| swift-architecture-designer | swift-language-expert | 構造変更が言語制約を考慮しているか |
 
 ### クロスレビュー プロンプト
 
