@@ -253,5 +253,172 @@ help_output=$(av1ify --help 2>&1)
 assert_contains "$help_output" "-f" "Help message contains -f option"
 assert_contains "$help_output" "ファイルリスト" "Help message describes file list feature"
 
+# Test 14: --resolution オプションのヘルプメッセージ
+printf '\n## Test 14: Help message includes --resolution option\n'
+help_output=$(av1ify --help 2>&1)
+assert_contains "$help_output" "--resolution" "Help message contains --resolution option"
+assert_contains "$help_output" "-r," "Help message contains -r short option"
+assert_contains "$help_output" "アスペクト比は維持" "Help message mentions aspect ratio preservation"
+
+# Test 15: --fps オプションのヘルプメッセージ
+printf '\n## Test 15: Help message includes --fps option\n'
+help_output=$(av1ify --help 2>&1)
+assert_contains "$help_output" "--fps" "Help message contains --fps option"
+assert_contains "$help_output" "フレームレート" "Help message mentions frame rate"
+
+# Test 16: --resolution オプション (dry-run)
+printf '\n## Test 16: Resolution option with dry-run\n'
+TEST_DIR="$TEST_TMP/test16"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run -r 720p "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "resolution=720p" "Dry-run shows resolution=720p"
+assert_file_not_exists "$TEST_DIR/input-720p-enc.mp4" "Dry-run does not create output file"
+
+# Test 17: --fps オプション (dry-run)
+printf '\n## Test 17: FPS option with dry-run\n'
+TEST_DIR="$TEST_TMP/test17"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run --fps 24 "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "fps=24" "Dry-run shows fps=24"
+
+# Test 18: --resolution と --fps の組み合わせ (dry-run)
+printf '\n## Test 18: Resolution and FPS combined with dry-run\n'
+TEST_DIR="$TEST_TMP/test18"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run -r 1080p --fps 30 "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "resolution=1080p" "Dry-run shows resolution=1080p"
+assert_contains "$output" "fps=30" "Dry-run shows fps=30"
+
+# Test 19: 無効な解像度のバリデーション
+printf '\n## Test 19: Invalid resolution validation\n'
+TEST_DIR="$TEST_TMP/test19"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run -r 0 "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "無効な解像度指定" "Reports invalid resolution for 0"
+assert_contains "$output" "resolution=auto" "Falls back to auto when invalid"
+
+output=$(av1ify --dry-run -r 10000 "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "無効な解像度指定" "Reports invalid resolution for 10000"
+
+output=$(av1ify --dry-run -r abc "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "無効な解像度指定" "Reports invalid resolution for non-numeric"
+
+# Test 20: 無効なfpsのバリデーション
+printf '\n## Test 20: Invalid FPS validation\n'
+TEST_DIR="$TEST_TMP/test20"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run --fps 0 "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "無効なfps指定" "Reports invalid FPS for 0"
+assert_contains "$output" "fps=auto" "Falls back to auto when invalid"
+
+output=$(av1ify --dry-run --fps 300 "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "無効なfps指定" "Reports invalid FPS for 300"
+
+output=$(av1ify --dry-run --fps abc "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "無効なfps指定" "Reports invalid FPS for non-numeric"
+
+# Test 21: 有効な解像度のバリエーション
+printf '\n## Test 21: Valid resolution variations\n'
+TEST_DIR="$TEST_TMP/test21"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+
+for res in 480p 720p 1080p 1440p 4k 540; do
+  output=$(av1ify --dry-run -r "$res" "$TEST_DIR/input.avi" 2>&1 || true)
+  if [[ "$output" != *"無効な解像度"* ]]; then
+    printf '✓ Resolution %s is valid\n' "$res"
+  else
+    printf '✗ Resolution %s should be valid\n' "$res"
+  fi
+done
+
+# Test 22: 有効なfpsのバリエーション (小数点含む)
+printf '\n## Test 22: Valid FPS variations including decimal\n'
+TEST_DIR="$TEST_TMP/test22"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+
+for fps in 24 30 60 29.97 23.976; do
+  output=$(av1ify --dry-run --fps "$fps" "$TEST_DIR/input.avi" 2>&1 || true)
+  if [[ "$output" != *"無効なfps"* ]]; then
+    printf '✓ FPS %s is valid\n' "$fps"
+  else
+    printf '✗ FPS %s should be valid\n' "$fps"
+  fi
+done
+
+# Test 23: 環境変数 AV1_RESOLUTION
+printf '\n## Test 23: AV1_RESOLUTION environment variable\n'
+TEST_DIR="$TEST_TMP/test23"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(AV1_RESOLUTION=720p av1ify --dry-run "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "resolution=720p" "AV1_RESOLUTION env var works"
+
+# Test 24: 環境変数 AV1_FPS
+printf '\n## Test 24: AV1_FPS environment variable\n'
+TEST_DIR="$TEST_TMP/test24"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(AV1_FPS=24 av1ify --dry-run "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "fps=24" "AV1_FPS env var works"
+
+# Test 25: CLIオプションが環境変数より優先される
+printf '\n## Test 25: CLI option takes priority over env var\n'
+TEST_DIR="$TEST_TMP/test25"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(AV1_RESOLUTION=480p AV1_FPS=30 av1ify --dry-run -r 1080p --fps 60 "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "resolution=1080p" "CLI -r overrides AV1_RESOLUTION"
+assert_contains "$output" "fps=60" "CLI --fps overrides AV1_FPS"
+
+# Test 26: --resolution オプションで実際にファイル処理
+printf '\n## Test 26: Resolution option creates output file with tag\n'
+TEST_DIR="$TEST_TMP/test26"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+av1ify -r 720p "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
+setopt err_exit
+assert_file_exists "$TEST_DIR/input-720p-enc.mp4" "Output file has resolution tag"
+
+# Test 27: --fps オプションで実際にファイル処理
+printf '\n## Test 27: FPS option creates output file with tag\n'
+TEST_DIR="$TEST_TMP/test27"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+av1ify --fps 24 "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
+setopt err_exit
+assert_file_exists "$TEST_DIR/input-24fps-enc.mp4" "Output file has fps tag"
+
+# Test 28: --resolution と --fps の組み合わせで実際にファイル処理
+printf '\n## Test 28: Resolution and FPS combined creates output file\n'
+TEST_DIR="$TEST_TMP/test28"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+av1ify -r 720p --fps 24 "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
+setopt err_exit
+assert_file_exists "$TEST_DIR/input-720p-24fps-enc.mp4" "Output file has both resolution and fps tags"
+
 printf '\n=== All Tests Completed ===\n'
 printf 'All av1ify tests passed successfully!\n'
