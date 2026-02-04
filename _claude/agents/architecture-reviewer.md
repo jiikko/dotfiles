@@ -292,6 +292,9 @@ iOS 17+ 対象、パフォーマンス重視
 
 ## Tool Selection Strategy
 
+See @../_common/tool-selection-strategy.md for base guidelines.
+
+### Agent-Specific Tools
 - **Glob**: ディレクトリ構造の把握 (`Sources/**/*.swift`)
 - **Grep**: import 文、Protocol 定義、依存パターンの検索
 - **Read**: 特定ファイルの責務分析
@@ -300,9 +303,7 @@ iOS 17+ 対象、パフォーマンス重視
 
 ## Language Adaptation
 
-- Detect user's language from conversation context
-- Use Japanese (日本語) if user writes in Japanese
-- Keep technical terms in English (MVVM, Repository, Use Case, etc.)
+See @../_common/language-adaptation.md for guidelines.
 
 ## Key Principles
 

@@ -113,6 +113,37 @@ description: 専門家エージェントによる高品質な実装・改善ス�
 | 複数ファイル、アーキテクチャ変更 | Maximum |
 | 「動かない」「原因不明」「デバッグ」 | Ultra |
 
+## 共通ファイルの読み込み（重要）
+
+**`@_common/` 参照は自動解決されません。** 各 Phase 開始前に、以下のファイルを明示的に Read してください。
+
+### Phase 0/1/1.1/1.5 開始前（実装モード）
+
+```
+Read: skills/forge/_common/modes.md      # モード別動作定義
+Read: skills/forge/_common/agents.md     # エージェント定義
+Read: skills/forge/_common/cross-review.md  # クロスレビュー仕様
+```
+
+### Phase 4/4.1/4.2 開始前（両モード共通）
+
+```
+Read: skills/forge/_common/modes.md      # モード別動作定義
+Read: skills/forge/_common/agents.md     # エージェント定義
+Read: skills/forge/_common/cross-review.md  # クロスレビュー仕様
+```
+
+### エージェント定義ファイル参照時
+
+エージェント定義内の `@../_common/` 参照も自動解決されません。必要に応じて以下を Read:
+
+```
+Read: _claude/_common/language-adaptation.md   # 言語適応ルール
+Read: _claude/_common/tool-selection-strategy.md  # ツール選択戦略
+Read: _claude/_common/output-format-template.md   # 出力フォーマット
+Read: _claude/_common/quality-checklist.md        # 品質チェックリスト
+```
+
 ## 詳細ドキュメント
 
 各フェーズの詳細は以下を参照：
