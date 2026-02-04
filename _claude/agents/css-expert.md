@@ -478,29 +478,31 @@ When analyzing CSS code, perform multi-layered analysis:
 - Identify duplicate rules and patterns
 - Assess custom property usage
 
-### Layer 4: Accessibility Compliance (WCAG 2.1 AA)
+### Layer 4: Accessibility Compliance (WCAG 2.2)
 
 **WCAG コントラスト比検証（必須）**:
 
-| テキストタイプ | 最小コントラスト比 | 検証ツール |
-|--------------|-----------------|----------|
-| 通常テキスト (< 18px) | 4.5:1 | WebAIM Contrast Checker |
-| 大きいテキスト (≥ 18px bold / 24px) | 3:1 | - |
-| UI コンポーネント | 3:1 | - |
-| 非テキスト（アイコン等） | 3:1 | - |
+| テキストタイプ | AA 最小 | AAA 推奨 | 該当 SC |
+|--------------|---------|----------|---------|
+| 通常テキスト (< 24px / < 18.67px bold) | 4.5:1 | 7:1 | 1.4.3 / 1.4.6 |
+| 大きいテキスト (≥ 24px / ≥ 18.67px bold) | 3:1 | 4.5:1 | 1.4.3 / 1.4.6 |
+| UI コンポーネント・グラフィック | 3:1 | -- | 1.4.11 |
+| フォーカスインジケーター（状態変化） | -- | 3:1 (+ 2px solid) | 2.4.13 |
+
+> **注意**: 大きいテキストは 18pt (24px) 以上、または 14pt (18.67px) 以上かつ bold。`18px` と `18pt` は異なる値（1pt = 1.333px）。
 
 **Light/Dark モード両方での検証（必須）**:
 ```css
 /* ✅ 両モードでのコントラスト確認 */
 :root {
-  --text-primary: #1a1a1a;      /* Light mode: 12.6:1 on white */
-  --text-secondary: #6b7280;    /* Light mode: 5.4:1 on white */
+  --text-primary: #1a1a1a;      /* Light mode: ~16.1:1 on white */
+  --text-secondary: #6b7280;    /* Light mode: ~5.0:1 on white */
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --text-primary: #f3f4f6;    /* Dark mode: 15.8:1 on #1a1a1a */
-    --text-secondary: #9ca3af;  /* Dark mode: 7.5:1 on #1a1a1a */
+    --text-primary: #f3f4f6;    /* Dark mode: ~15.1:1 on #1a1a1a */
+    --text-secondary: #9ca3af;  /* Dark mode: ~8.2:1 on #1a1a1a */
   }
 }
 
@@ -508,13 +510,14 @@ When analyzing CSS code, perform multi-layered analysis:
 ```
 
 **チェックリスト**:
-- [ ] フォーカス状態が視覚的に明確（outline: 2px+ または同等）
 - [ ] カラーコントラスト比が WCAG AA を満たす
+- [ ] フォーカス状態が視覚的に明確（2px+ solid outline、破線の場合は 4px+）
+- [ ] フォーカス要素が他の要素に隠されない（SC 2.4.11）
 - [ ] `prefers-reduced-motion` でアニメーション削減
-- [ ] タッチターゲット 48x48px 以上（モバイル）
+- [ ] タッチターゲット 24x24px 以上（SC 2.5.8、モバイルは 48x48px 推奨）
 - [ ] Light モードでの可読性確認
 - [ ] Dark モードでの可読性確認
-- [ ] ホバー/フォーカス状態のコントラスト確認
+- [ ] ホバー/フォーカス/disabled 状態のコントラスト確認
 
 ## Tool Selection Strategy
 
