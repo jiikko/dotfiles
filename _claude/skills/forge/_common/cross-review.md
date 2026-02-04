@@ -183,3 +183,101 @@
 2. 各エージェントの根拠を併記
 3. メイン Claude はユーザーに判断を委ねる（独自判断しない）
 ```
+
+---
+
+## 構造化出力フォーマット（並行エージェント統合用）
+
+並行エージェント実行時、各エージェントは以下の JSON 形式で出力することで、統合を決定論的に行える。
+
+### 目的
+
+- 統合処理を機械的・決定論的に実行
+- セッション中断時の再開を容易に
+- 重複排除と矛盾検出を自動化
+
+### 標準 JSON スキーマ
+
+```json
+{
+  "agent": "agent-name",
+  "phase": "1" | "4",
+  "timestamp": "2025-02-05T12:00:00Z",
+  "target": "filepath or task description",
+  "summary": "1-2 文のサマリー",
+  "issues": [
+    {
+      "id": "unique-issue-id",
+      "line": 42,
+      "severity": "high" | "medium" | "low",
+      "category": "category-name",
+      "description": "問題の詳細説明",
+      "suggestion": "具体的な修正案",
+      "confidence": 0.95,
+      "references": ["filepath:line", "url"]
+    }
+  ],
+  "recommendations": [
+    {
+      "priority": 1,
+      "action": "アクションの説明",
+      "rationale": "理由"
+    }
+  ],
+  "cross_review_notes": {
+    "reviewed_by": "reviewer-agent-name",
+    "verdict": "agree" | "needs_discussion" | "disagree",
+    "comments": "追加コメント"
+  }
+}
+```
+
+### カテゴリ一覧（統一）
+
+| カテゴリ | 説明 |
+|---------|------|
+| `security` | セキュリティ脆弱性 |
+| `performance` | パフォーマンス問題 |
+| `accessibility` | アクセシビリティ（WCAG 等） |
+| `architecture` | 設計・アーキテクチャ |
+| `maintainability` | 保守性・可読性 |
+| `correctness` | ロジックエラー |
+| `consistency` | 既存コードとの一貫性 |
+| `testing` | テスト関連 |
+| `documentation` | ドキュメント不足 |
+
+### 統合時のマージルール
+
+```
+1. 同一 issue の判定:
+   - same file + same line + same category → 重複とみなす
+   - 重複時は severity が高い方を採用
+
+2. 矛盾の判定:
+   - 同一箇所で異なる recommendation → 矛盾としてマーク
+
+3. 優先度ソート:
+   - high (severity) → confidence → line number
+```
+
+### プロンプトへの組み込み例
+
+```
+並行エージェント実行時は、以下の JSON 形式で出力してください：
+
+{
+  "agent": "your-agent-name",
+  "file": "target-file-path",
+  "issues": [
+    {
+      "line": number,
+      "severity": "high" | "medium" | "low",
+      "category": "category-name",
+      "description": "問題の説明",
+      "suggestion": "修正案"
+    }
+  ]
+}
+
+これにより統合処理が機械的に行えます。
+```

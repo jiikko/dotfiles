@@ -478,11 +478,43 @@ When analyzing CSS code, perform multi-layered analysis:
 - Identify duplicate rules and patterns
 - Assess custom property usage
 
-### Layer 4: Accessibility Compliance
-- Verify focus states are visible
-- Check color contrast ratios
-- Ensure animations respect prefers-reduced-motion
-- Verify touch target sizes (48x48px minimum)
+### Layer 4: Accessibility Compliance (WCAG 2.1 AA)
+
+**WCAG コントラスト比検証（必須）**:
+
+| テキストタイプ | 最小コントラスト比 | 検証ツール |
+|--------------|-----------------|----------|
+| 通常テキスト (< 18px) | 4.5:1 | WebAIM Contrast Checker |
+| 大きいテキスト (≥ 18px bold / 24px) | 3:1 | - |
+| UI コンポーネント | 3:1 | - |
+| 非テキスト（アイコン等） | 3:1 | - |
+
+**Light/Dark モード両方での検証（必須）**:
+```css
+/* ✅ 両モードでのコントラスト確認 */
+:root {
+  --text-primary: #1a1a1a;      /* Light mode: 12.6:1 on white */
+  --text-secondary: #6b7280;    /* Light mode: 5.4:1 on white */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text-primary: #f3f4f6;    /* Dark mode: 15.8:1 on #1a1a1a */
+    --text-secondary: #9ca3af;  /* Dark mode: 7.5:1 on #1a1a1a */
+  }
+}
+
+/* ⚠️ 警告: 薄いグレーテキストは両モードで問題になりやすい */
+```
+
+**チェックリスト**:
+- [ ] フォーカス状態が視覚的に明確（outline: 2px+ または同等）
+- [ ] カラーコントラスト比が WCAG AA を満たす
+- [ ] `prefers-reduced-motion` でアニメーション削減
+- [ ] タッチターゲット 48x48px 以上（モバイル）
+- [ ] Light モードでの可読性確認
+- [ ] Dark モードでの可読性確認
+- [ ] ホバー/フォーカス状態のコントラスト確認
 
 ## Tool Selection Strategy
 
@@ -494,6 +526,8 @@ When analyzing CSS code, perform multi-layered analysis:
 - **WebFetch**: Check MDN or caniuse.com for specific property support
 
 ## Review Output Format
+
+### 標準出力フォーマット（Markdown）
 
 ```
 ## CSS コード詳細分析結果
@@ -515,6 +549,12 @@ When analyzing CSS code, perform multi-layered analysis:
 - 再描画トリガー: [問題のあるプロパティ]
 - 最適化機会: [content-visibility 等]
 
+#### WCAG アクセシビリティ（必須）
+- コントラスト比: [検証結果]
+- Light/Dark モード: [両モード検証結果]
+- フォーカス状態: [視認性]
+- Motion 設定: [prefers-reduced-motion 対応]
+
 ### 具体的な改善提案
 
 #### 優先度高
@@ -526,6 +566,42 @@ When analyzing CSS code, perform multi-layered analysis:
 ### ブラウザ互換性
 - 確認が必要な機能: [機能名と対応状況]
 - フォールバック: [推奨する代替手段]
+```
+
+### 構造化出力フォーマット（並行エージェント統合用）
+
+並行実行時は以下の JSON 形式で出力し、統合を容易にする：
+
+```json
+{
+  "agent": "css-expert",
+  "file": "path/to/file.css",
+  "summary": "簡潔な1行サマリー",
+  "issues": [
+    {
+      "line": 42,
+      "severity": "high",
+      "category": "accessibility",
+      "description": "コントラスト比が 2.8:1 で WCAG AA 基準（4.5:1）未満",
+      "suggestion": "color: #4b5563 から color: #374151 に変更",
+      "wcag": "1.4.3"
+    },
+    {
+      "line": 78,
+      "severity": "medium",
+      "category": "performance",
+      "description": "box-shadow アニメーションがレイアウト再計算を引き起こす",
+      "suggestion": "transform: scale() を代替として使用"
+    }
+  ],
+  "wcag_check": {
+    "contrast_pass": false,
+    "light_mode_tested": true,
+    "dark_mode_tested": true,
+    "focus_visible": true,
+    "reduced_motion": true
+  }
+}
 ```
 
 ## Language Adaptation
