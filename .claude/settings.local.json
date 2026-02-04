@@ -17,7 +17,8 @@
       "Bash(for file in *.md)",
       "Bash(do if grep -q \"## Language Adaptation\" \"$file\")",
       "Bash(! grep -q \"@_common/language-adaptation.md\" \"$file\")",
-      "Bash(then echo \"Updating: $file\" fi done)"
+      "Bash(then echo \"Updating: $file\" fi done)",
+      "WebFetch(domain:platform.openai.com)"
     ]
   }
 }
