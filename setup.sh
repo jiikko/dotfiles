@@ -17,6 +17,7 @@ ln -sf ~/dotfiles/_coc-settings.json ~/.config/nvim/coc-settings.json
 # setup .claude directory
 mkdir -p ~/.claude
 ln -sfn ~/dotfiles/_claude/agents ~/.claude/agents
+ln -sfn ~/dotfiles/_claude/skills ~/.claude/skills
 ln -sf ~/dotfiles/_claude/keybindings.json ~/.claude/keybindings.json
 
 # cleanup legacy bash symlinks (extendable)
