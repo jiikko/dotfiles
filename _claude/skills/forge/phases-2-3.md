@@ -228,3 +228,45 @@ Phase 3 セルフレビュー中に判定困難な問題が発生しました。
 2. 推奨される対応
 3. 判断の根拠
 ```
+
+---
+
+## Phase 3.5: スキル自動検証（VALIDATION）
+
+> **Minimum モード**: このフェーズは省略
+> **詳細**: @_common/skill-triggers.md を参照
+
+Phase 3 完了後、`skill-triggers.md` のトリガーレジストリに基づき、**VALIDATION カテゴリ**のスキルを自動実行する。
+
+### 実行条件
+
+1. Phase 3 セルフレビュー完了（BLOCKER 0 件）
+2. `applicable_skills`（Phase 0 で特定済み）に VALIDATION スキルが存在
+3. モードが Standard 以上
+
+### 実行手順
+
+1. Phase 2 で変更されたファイルから、該当スキルの対象ファイルを特定
+2. 該当スキルの SKILL.md に定義されたフローを実行（Task ツール使用）
+3. 結果を解析し、High/Medium/Low を分類
+
+### 結果の扱い
+
+| スキル結果 | 対応 |
+|-----------|------|
+| **High あり** | BLOCKER 扱い → Phase 2 に戻って修正 |
+| **Medium/Low のみ** | 記録して Phase 4 へ進行。結果をエージェントコンテキストに含める |
+| **問題なし** | Phase 4 へ進行 |
+
+### 例: style-review の自動実行
+
+CSS/SCSS ファイルが変更対象に含まれる場合:
+
+```
+1. Glob で変更対象の *.css, *.scss, *.module.css を特定
+2. style-review SKILL.md の「css-expert 指示テンプレート」を使用
+3. css-expert エージェントを Task ツールで起動
+4. WCAG コントラスト比、フォーカス状態、モーション設定を検証
+5. High（AA 違反）あり → Phase 2 に戻る
+6. High なし → 結果を記録して Phase 4 へ
+```

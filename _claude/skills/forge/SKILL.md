@@ -59,7 +59,7 @@ description: 専門家エージェントによる高品質な実装・改善ス�
 | 入力パターン | タイプ | フロー |
 |-------------|--------|--------|
 | ファイル/ディレクトリパス | レビュー | Phase -1 → 4 → 4.1 → 4.2 → 修正 → 繰り返し |
-| それ以外（タスク説明） | 実装 | Phase -1 → 0 → 1 → 1.1 → 1.5 → 2 → 3 → 4 → 4.1 → 4.2 → 繰り返し |
+| それ以外（タスク説明） | 実装 | Phase -1 → 0 → 1 → 1.1 → 1.5 → 2 → 3 → 3.5 → 4 → 4.1 → 4.2 → 5 → 5.5 → 完了 |
 
 ## Phase -1: モード選択（必須）
 
@@ -95,12 +95,12 @@ description: 専門家エージェントによる高品質な実装・改善ス�
 
 ### モード別動作
 
-| モード | エージェント数 | 実行方式 | クロスレビュー | 用途 |
-|-------|--------------|---------|--------------|------|
-| **Minimum** | 3 | 直列 | 省略 | 軽量タスク、単純な修正 |
-| **Standard** | 6 | 並行 | 実行 | 通常の実装・レビュー |
-| **Maximum** | 全て | 並行 | 実行 | 重要機能、大規模変更 |
-| **Ultra** | 全て | 反復並行 | Phase 4.3 | 複雑なデバッグ、原因不明のバグ |
+| モード | エージェント数 | 実行方式 | クロスレビュー | スキル自動起動 | 用途 |
+|-------|--------------|---------|--------------|--------------|------|
+| **Minimum** | 3 | 直列 | 省略 | スキル自動起動なし | 軽量タスク、単純な修正 |
+| **Standard** | 6 | 並行 | 実行 | VALIDATION のみ | 通常の実装・レビュー |
+| **Maximum** | 全て | 並行 | 実行 | 全カテゴリ | 重要機能、大規模変更 |
+| **Ultra** | 全て | 反復並行 | Phase 4.3 | 全カテゴリ | 複雑なデバッグ、原因不明のバグ |
 
 ### モード推奨ロジック（参考表示）
 
@@ -120,17 +120,19 @@ description: 専門家エージェントによる高品質な実装・改善ス�
 ### Phase 0/1/1.1/1.5 開始前（実装モード）
 
 ```
-Read: skills/forge/_common/modes.md      # モード別動作定義
-Read: skills/forge/_common/agents.md     # エージェント定義
-Read: skills/forge/_common/cross-review.md  # クロスレビュー仕様
+Read: skills/forge/_common/modes.md          # モード別動作定義
+Read: skills/forge/_common/agents.md         # エージェント定義
+Read: skills/forge/_common/cross-review.md   # クロスレビュー仕様
+Read: skills/forge/_common/skill-triggers.md # スキル自動起動定義
 ```
 
-### Phase 4/4.1/4.2 開始前（両モード共通）
+### Phase 3.5/4/4.1/4.2/5.5 開始前（両モード共通）
 
 ```
-Read: skills/forge/_common/modes.md      # モード別動作定義
-Read: skills/forge/_common/agents.md     # エージェント定義
-Read: skills/forge/_common/cross-review.md  # クロスレビュー仕様
+Read: skills/forge/_common/modes.md          # モード別動作定義
+Read: skills/forge/_common/agents.md         # エージェント定義
+Read: skills/forge/_common/cross-review.md   # クロスレビュー仕様
+Read: skills/forge/_common/skill-triggers.md # スキル自動起動定義
 ```
 
 ### エージェント定義ファイル参照時
