@@ -28,6 +28,9 @@
 2. architecture-reviewer
 3. swiftui-test-expert
 
+**非 Swift プロジェクトの場合**:
+- @_common/agents.md の「言語別エージェント置換ルール」に従い、必須エージェント #1-2 を言語別エージェント（css-expert, nodejs-expert, go-architecture-designer 等）に置換
+
 **条件付き・追加エージェント**:
 - @_common/agents.md の「条件付き必須エージェント」「追加エージェント」を参照
 

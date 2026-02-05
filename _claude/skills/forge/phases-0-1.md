@@ -39,6 +39,25 @@
 | 「〜のバグを修正」 | 再現手順は？期待動作は？ |
 | 「〜を最適化」 | 何を基準に？許容範囲は？ |
 
+### スキル候補の特定（Phase 0 完了時）
+
+> **詳細**: @_common/skill-triggers.md を参照
+
+要件確認後、変更対象ファイルから自動起動スキルの候補を特定する:
+
+1. 変更対象ファイルの拡張子・パスパターンを skill-triggers.md の検出パターンと照合
+2. 該当スキルを `applicable_skills` リストに追加
+3. 選択されたモードの制約でフィルタ
+4. 要件確認の表示に含める:
+
+```
+スキル自動実行予定:
+- style-review (VALIDATION, Phase 3.5) - CSS ファイルの変更を検出
+- smoke-test (TESTING, Phase 5.5) - ThumbnailThumb 関連の変更を検出 [要確認]
+```
+
+> **注意**: `applicable_skills` がない場合（検出パターンに該当なし）はスキル表示を省略し、Phase 3.5/5.5 も自動スキップとなる。
+
 ---
 
 ## Phase 1: 事前調査 + 類似コード特定（実装モードのみ）
@@ -50,9 +69,17 @@
 > **詳細**: @_common/agents.md を参照
 
 **Phase 1 で使用するエージェント**:
-- 必須6エージェント（Standard/Maximum/Ultra）
+- 必須6エージェント + swiftui-performance-expert（Standard/Maximum/Ultra）
+  1. swift-language-expert
+  2. swiftui-macos-designer
+  3. research-assistant（Phase 1 のみ）
+  4. Explore
+  5. architecture-reviewer
+  6. swiftui-test-expert
+  7. swiftui-performance-expert（Phase 4 で常時必須、Phase 1 では View/UI 関連タスク時）
 - 条件付き必須エージェント（ファイル内容に応じて追加）
 - Maximum 専用エージェント（dependency-analyzer, test-coverage-advisor, refactoring-patterns）
+- 非 Swift プロジェクト: @_common/agents.md の「言語別エージェント置換ルール」に従い #1-2 を置換
 
 **Minimum モード時のエージェント（3つのみ、直列）**:
 1. swift-language-expert

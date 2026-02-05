@@ -115,9 +115,9 @@
 
 ---
 
-## 必須エージェント（6つ）
+## 必須エージェント（6+1つ）
 
-以下の6エージェントは Standard/Maximum/Ultra モードで常に使用します。
+以下の6エージェント + swiftui-performance-expert（Phase 4 常時必須）を Standard/Maximum/Ultra モードで使用します。
 
 ### 1. swift-language-expert (model: opus)
 
