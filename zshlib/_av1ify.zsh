@@ -3,8 +3,8 @@
 # av1ify — 入力された動画ファイル、またはディレクトリ内の動画ファイルをAV1形式のMP4に一括変換します。
 # ------------------------------------------------------------------------------
 
-__AV1IFY_VERSION="1.3.0"
-__AV1IFY_SPEC_VERSION="1.3.0"
+__AV1IFY_VERSION="1.4.0"
+__AV1IFY_SPEC_VERSION="1.4.0"
 
 # 内部補助: バナー出力
 __av1ify_banner() {
@@ -250,6 +250,21 @@ __av1ify_one() {
     return 1
   fi
 
+  # ソース映像の寸法を取得（アップスケール防止・CRF自動調整・縦横判定に使用）
+  local source_width="" source_height="" source_short_side="" source_is_portrait=0
+  source_width=$(ffprobe -v error -select_streams v:0 -show_entries stream=width \
+           -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
+  source_height=$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
+           -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
+  if [[ -n "$source_width" && "$source_width" =~ ^[0-9]+$ && -n "$source_height" && "$source_height" =~ ^[0-9]+$ ]]; then
+    if (( source_height > source_width )); then
+      source_is_portrait=1
+      source_short_side=$source_width
+    else
+      source_short_side=$source_height
+    fi
+  fi
+
   # 解像度オプションの解析（縦解像度を数値に変換）
   # バリデーション済みの値を使用
   local target_height="" resolution_tag=""
@@ -268,6 +283,15 @@ __av1ify_one() {
     print -r -- ">> 出力解像度: ${resolution_tag} (height=${target_height})"
   fi
 
+  # アップスケール防止: 元の短辺が指定解像度以下なら解像度指定を無視
+  if [[ -n "$target_height" && -n "$source_short_side" ]]; then
+    if (( source_short_side <= target_height )); then
+      print -r -- ">> 元の短辺 (${source_short_side}px) が指定解像度 (${resolution_tag}) 以下のため、解像度指定をスキップします"
+      target_height=""
+      resolution_tag=""
+    fi
+  fi
+
   # fps オプションの解析（バリデーション済みの値を使用）
   local fps_tag=""
   if [[ -n "$validated_fps" ]]; then
@@ -284,10 +308,12 @@ __av1ify_one() {
   if [[ -n "${AV1_CRF:-}" ]]; then
     crf="$AV1_CRF"
   else
-    # CRF判定に使う解像度（出力解像度優先、なければ入力解像度）
+    # CRF判定に使う解像度（出力解像度優先、なければソース短辺、最終手段でffprobe height）
     local height_for_crf
     if [[ -n "$target_height" ]]; then
       height_for_crf="$target_height"
+    elif [[ -n "$source_short_side" ]]; then
+      height_for_crf="$source_short_side"
     else
       height_for_crf=$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
                -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
@@ -332,10 +358,14 @@ __av1ify_one() {
     done
   fi
 
-  # ビデオフィルタの構築
+  # ビデオフィルタの構築（縦長動画は短辺=width にスケーリング）
   local -a vf_parts=()
   if [[ -n "$target_height" ]]; then
-    vf_parts+=("scale=-2:${target_height}")
+    if (( source_is_portrait )); then
+      vf_parts+=("scale=${target_height}:-2")
+    else
+      vf_parts+=("scale=-2:${target_height}")
+    fi
   fi
   local vf_option=""
   if (( ${#vf_parts[@]} > 0 )); then
