@@ -318,7 +318,7 @@
 |-------------|-------------|
 | `.css`, `.scss`, `styled-components`, `@media`, `flexbox`, `grid` | css-expert |
 | `.js`, `.ts`, `package.json`, `express`, `fastify` | nodejs-expert |
-| `electron`, `BrowserWindow`, `ipcMain`, `ipcRenderer` | electron-expert |
+| `electron`, `BrowserWindow`, `ipcMain`, `ipcRenderer`, `electron-vite`, `electron-forge`, `@electron-forge`, `electron-store`, `safeStorage` | electron-expert |
 
 ### バックエンド関連
 
