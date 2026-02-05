@@ -616,6 +616,8 @@ When analyzing Node.js code, perform multi-layered analysis:
 
 ## Review Output Format
 
+### 標準出力フォーマット（Markdown）
+
 ```
 ## Node.js コード詳細分析結果
 
@@ -646,6 +648,41 @@ When analyzing Node.js code, perform multi-layered analysis:
 
 ### 推奨ライブラリ
 - [目的]: [ライブラリ名] - [理由]
+```
+
+### 構造化出力フォーマット（並行エージェント統合用）
+
+並行実行時は以下の JSON 形式で出力し、統合を容易にする：
+
+```json
+{
+  "agent": "nodejs-expert",
+  "file": "path/to/file.js",
+  "summary": "簡潔な1行サマリー",
+  "issues": [
+    {
+      "line": 42,
+      "severity": "high",
+      "category": "security",
+      "description": "ユーザー入力が SQL クエリに直接使用されている",
+      "suggestion": "パラメータ化クエリを使用: db.query('SELECT * FROM users WHERE id = $1', [userId])"
+    },
+    {
+      "line": 78,
+      "severity": "medium",
+      "category": "performance",
+      "description": "イベントループをブロックする同期ファイル読み込み",
+      "suggestion": "fs.readFileSync を fs.promises.readFile に変更"
+    }
+  ],
+  "recommendations": [
+    {
+      "priority": 1,
+      "action": "入力バリデーション追加",
+      "rationale": "Zod で型安全なバリデーション"
+    }
+  ]
+}
 ```
 
 ## Language Adaptation

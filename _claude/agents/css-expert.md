@@ -478,11 +478,46 @@ When analyzing CSS code, perform multi-layered analysis:
 - Identify duplicate rules and patterns
 - Assess custom property usage
 
-### Layer 4: Accessibility Compliance
-- Verify focus states are visible
-- Check color contrast ratios
-- Ensure animations respect prefers-reduced-motion
-- Verify touch target sizes (48x48px minimum)
+### Layer 4: Accessibility Compliance (WCAG 2.2)
+
+**WCAG コントラスト比検証（必須）**:
+
+| テキストタイプ | AA 最小 | AAA 推奨 | 該当 SC |
+|--------------|---------|----------|---------|
+| 通常テキスト (< 24px / < 18.67px bold) | 4.5:1 | 7:1 | 1.4.3 / 1.4.6 |
+| 大きいテキスト (≥ 24px / ≥ 18.67px bold) | 3:1 | 4.5:1 | 1.4.3 / 1.4.6 |
+| UI コンポーネント・グラフィック | 3:1 | -- | 1.4.11 |
+| フォーカスインジケーター（状態変化） | -- | 3:1 (+ 2px solid) | 2.4.13 |
+
+> **注意**: 大きいテキストは 18pt (24px) 以上、または 14pt (18.67px) 以上かつ bold。`18px` と `18pt` は異なる値（1pt = 1.333px）。
+
+**Light/Dark モード両方での検証（必須）**:
+```css
+/* ✅ 両モードでのコントラスト確認 */
+:root {
+  --text-primary: #1a1a1a;      /* Light mode: ~16.1:1 on white */
+  --text-secondary: #6b7280;    /* Light mode: ~5.0:1 on white */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text-primary: #f3f4f6;    /* Dark mode: ~15.1:1 on #1a1a1a */
+    --text-secondary: #9ca3af;  /* Dark mode: ~8.2:1 on #1a1a1a */
+  }
+}
+
+/* ⚠️ 警告: 薄いグレーテキストは両モードで問題になりやすい */
+```
+
+**チェックリスト**:
+- [ ] カラーコントラスト比が WCAG AA を満たす
+- [ ] フォーカス状態が視覚的に明確（2px+ solid outline、破線の場合は 4px+）
+- [ ] フォーカス要素が他の要素に隠されない（SC 2.4.11）
+- [ ] `prefers-reduced-motion` でアニメーション削減
+- [ ] タッチターゲット 24x24px 以上（SC 2.5.8、モバイルは 48x48px 推奨）
+- [ ] Light モードでの可読性確認
+- [ ] Dark モードでの可読性確認
+- [ ] ホバー/フォーカス/disabled 状態のコントラスト確認
 
 ## Tool Selection Strategy
 
@@ -494,6 +529,8 @@ When analyzing CSS code, perform multi-layered analysis:
 - **WebFetch**: Check MDN or caniuse.com for specific property support
 
 ## Review Output Format
+
+### 標準出力フォーマット（Markdown）
 
 ```
 ## CSS コード詳細分析結果
@@ -515,6 +552,12 @@ When analyzing CSS code, perform multi-layered analysis:
 - 再描画トリガー: [問題のあるプロパティ]
 - 最適化機会: [content-visibility 等]
 
+#### WCAG アクセシビリティ（必須）
+- コントラスト比: [検証結果]
+- Light/Dark モード: [両モード検証結果]
+- フォーカス状態: [視認性]
+- Motion 設定: [prefers-reduced-motion 対応]
+
 ### 具体的な改善提案
 
 #### 優先度高
@@ -526,6 +569,42 @@ When analyzing CSS code, perform multi-layered analysis:
 ### ブラウザ互換性
 - 確認が必要な機能: [機能名と対応状況]
 - フォールバック: [推奨する代替手段]
+```
+
+### 構造化出力フォーマット（並行エージェント統合用）
+
+並行実行時は以下の JSON 形式で出力し、統合を容易にする：
+
+```json
+{
+  "agent": "css-expert",
+  "file": "path/to/file.css",
+  "summary": "簡潔な1行サマリー",
+  "issues": [
+    {
+      "line": 42,
+      "severity": "high",
+      "category": "accessibility",
+      "description": "コントラスト比が 2.8:1 で WCAG AA 基準（4.5:1）未満",
+      "suggestion": "color: #4b5563 から color: #374151 に変更",
+      "wcag": "1.4.3"
+    },
+    {
+      "line": 78,
+      "severity": "medium",
+      "category": "performance",
+      "description": "box-shadow アニメーションがレイアウト再計算を引き起こす",
+      "suggestion": "transform: scale() を代替として使用"
+    }
+  ],
+  "wcag_check": {
+    "contrast_pass": false,
+    "light_mode_tested": true,
+    "dark_mode_tested": true,
+    "focus_visible": true,
+    "reduced_motion": true
+  }
+}
 ```
 
 ## Language Adaptation

@@ -101,6 +101,44 @@ description: "Comprehensive frontend and desktop development skill combining CSS
 | Node.js | P99 latency < 200ms | APM ツール |
 | Electron | 起動時間 < 2s | 内部計測 |
 
+## WCAG コンプライアンス検証（CSS 変更時必須）
+
+CSS/UI 変更時は以下の検証を行う：
+
+### 検証チェックリスト
+
+```
+□ コントラスト比 (WCAG AA)
+  - 通常テキスト: 4.5:1 以上
+  - 大きいテキスト: 3:1 以上
+  - UI コンポーネント: 3:1 以上
+
+□ Light/Dark モード両方で検証
+  - テキスト可読性
+  - ボーダー視認性
+  - シャドウ効果
+
+□ インタラクション状態
+  - :hover のコントラスト
+  - :focus の視認性 (2px+ outline)
+  - :disabled の区別
+
+□ モーション設定
+  - prefers-reduced-motion 対応
+```
+
+### 推奨ワークフロー
+
+```
+1. CSS 変更実装
+2. /style-review で自動検証
+3. 問題修正
+4. Light/Dark 両モードで目視確認
+5. コミット
+```
+
+> **スキル連携**: `/style-review` スキルで WCAG 検証を自動化可能
+
 ## 関連リソース
 
 ### 公式ドキュメント
