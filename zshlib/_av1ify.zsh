@@ -3,8 +3,8 @@
 # av1ify — 入力された動画ファイル、またはディレクトリ内の動画ファイルをAV1形式のMP4に一括変換します。
 # ------------------------------------------------------------------------------
 
-__AV1IFY_VERSION="1.2.0"
-__AV1IFY_SPEC_VERSION="1.2.0"
+__AV1IFY_VERSION="1.4.0"
+__AV1IFY_SPEC_VERSION="1.4.0"
 
 # 内部補助: バナー出力
 __av1ify_banner() {
@@ -14,6 +14,8 @@ __av1ify_banner() {
 typeset -gi __AV1IFY_ABORT_REQUESTED=0
 typeset -g  __AV1IFY_CURRENT_TMP=""
 typeset -gi __AV1IFY_DRY_RUN=0
+typeset -g  __AV1IFY_RESOLUTION=""
+typeset -g  __AV1IFY_FPS=""
 
 __av1ify_on_interrupt() {
   if (( __AV1IFY_ABORT_REQUESTED )); then
@@ -75,7 +77,42 @@ __av1ify_postcheck() {
   v_dur_raw=$(ffprobe -v error -select_streams v:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
   a_dur_raw=$(ffprobe -v error -select_streams a:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
   if [[ -n "$v_dur_raw" && -n "$a_dur_raw" ]]; then
-    diff=$(awk -v a="$a_dur_raw" -v v="$v_dur_raw" 'BEGIN{ if (a=="" || v=="") exit 1; d=a-v; if (d<0) d=-d; printf "%.6f", d }
+    diff=$(awk -v a="$a_dur_raw" -v v="$v_dur_raw" 'BEGIN{ if (a=="" || v=="") exit 1; d=a-v; if (d<0) d=-d; printf "%.6f", d }' 2>/dev/null) || diff=""
+    if [[ -n "$diff" ]]; then
+      local threshold="${AV1IFY_SYNC_TOLERANCE:-0.5}"
+      local -F diff_f threshold_f
+      diff_f=$diff
+      threshold_f=$threshold
+      if (( diff_f > threshold_f )); then
+        issues+=("音ズレ疑い (Δ=${diff}s)")
+        suffixes+=("avsync")
+      fi
+    fi
+  fi
+
+  REPLY="$filepath"
+    if (( ${#issues[@]} )); then
+      local note="check_ng"
+      if (( ${#suffixes[@]} )); then
+        local suffix_joined
+        local IFS='-'
+        suffix_joined="${suffixes[*]}"
+        note+="-$suffix_joined"
+      fi
+      local new_path="$filepath"
+      if __av1ify_mark_issue "$filepath" "$note"; then
+        new_path="$REPLY"
+      fi
+      local issues_joined
+      issues_joined=$(printf '%s, ' "${issues[@]}")
+      issues_joined="${issues_joined%, }"
+      print -r -- "⚠️ チェック警告: $issues_joined"
+      REPLY="$new_path"
+      return 1
+    fi
+
+  return 0
+}
 
 # 内部補助: 事前リペア（コンテナ/インデックス修復のためのストリームコピー）
 # 入力: $1=元ファイルパス
@@ -118,45 +155,10 @@ __av1ify_pre_repair() {
     REPLY="$src"; return 0
   fi
 }
-' 2>/dev/null) || diff=""
-    if [[ -n "$diff" ]]; then
-      local threshold="${AV1IFY_SYNC_TOLERANCE:-0.5}"
-      local -F diff_f threshold_f
-      diff_f=$diff
-      threshold_f=$threshold
-      if (( diff_f > threshold_f )); then
-        issues+=("音ズレ疑い (Δ=${diff}s)")
-        suffixes+=("avsync")
-      fi
-    fi
-  fi
-
-  REPLY="$filepath"
-    if (( ${#issues[@]} )); then
-      local note="check_ng"
-      if (( ${#suffixes[@]} )); then
-        local suffix_joined
-        local IFS='-'
-        suffix_joined="${suffixes[*]}"
-        note+="-$suffix_joined"
-      fi
-      local new_path="$filepath"
-      if __av1ify_mark_issue "$filepath" "$note"; then
-        new_path="$REPLY"
-      fi
-      local issues_joined
-      issues_joined=$(printf '%s, ' "${issues[@]}")
-      issues_joined="${issues_joined%, }"
-      print -r -- "⚠️ チェック警告: $issues_joined"
-      REPLY="$new_path"
-      return 1
-    fi
-
-  return 0
-}
 
 # 内部: 単一ファイル処理
-__av1ify_one() {  local in="$1"
+__av1ify_one() {
+  local in="$1"
 
   if (( __AV1IFY_ABORT_REQUESTED )); then
     print -r -- "✋ 中断済みのためスキップ: $in"
@@ -175,13 +177,53 @@ __av1ify_one() {  local in="$1"
 
   local dry_run="${__AV1IFY_DRY_RUN:-0}"
 
+  # 解像度・fps オプションを取得
+  local target_resolution="${__AV1IFY_RESOLUTION:-${AV1_RESOLUTION:-}}"
+  local target_fps="${__AV1IFY_FPS:-${AV1_FPS:-}}"
+
+  # 解像度・fpsのバリデーション（dry-run時も実行）
+  local validated_resolution="" validated_fps=""
+  if [[ -n "$target_resolution" ]]; then
+    case "${target_resolution:l}" in
+      480p|720p|1080p|1440p|4k)
+        validated_resolution="$target_resolution"
+        ;;
+      *)
+        if [[ "$target_resolution" =~ ^[0-9]+$ ]]; then
+          if (( target_resolution >= 16 && target_resolution <= 8640 )); then
+            validated_resolution="$target_resolution"
+          else
+            print -r -- "⚠️ 無効な解像度指定: $target_resolution（16-8640の範囲で指定してください）"
+          fi
+        else
+          print -r -- "⚠️ 無効な解像度指定: $target_resolution（無視します）"
+        fi
+        ;;
+    esac
+  fi
+  if [[ -n "$target_fps" ]]; then
+    if [[ "$target_fps" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+      local fps_valid
+      fps_valid=$(awk -v fps="$target_fps" 'BEGIN { print (fps > 0 && fps <= 240) ? 1 : 0 }')
+      if (( fps_valid )); then
+        validated_fps="$target_fps"
+      else
+        print -r -- "⚠️ 無効なfps指定: $target_fps（0より大きく240以下で指定してください）"
+      fi
+    else
+      print -r -- "⚠️ 無効なfps指定: $target_fps（無視します）"
+    fi
+  fi
+
   # ドライラン: ファイル名ベースで計画だけ表示（ファイルへ一切アクセスしない）
   if (( dry_run )); then
     local crf_plan="${AV1_CRF:-auto}"
     local preset_plan="${AV1_PRESET:-5}"
+    local res_plan="${validated_resolution:-auto}"
+    local fps_plan="${validated_fps:-auto}"
     print -r -- "[DRY-RUN] 変換予定: $in"
     print -r -- "[DRY-RUN] 出力候補: $out (音声/解像度は実行時判定: ファイル未参照)"
-    print -r -- "[DRY-RUN] 映像: libsvtav1 (crf=${crf_plan}, preset=${preset_plan})"
+    print -r -- "[DRY-RUN] 映像: libsvtav1 (crf=${crf_plan}, preset=${preset_plan}, resolution=${res_plan}, fps=${fps_plan})"
     print -r -- "[DRY-RUN] 音声: 実行時に判定"
     return 0
   fi
@@ -208,30 +250,89 @@ __av1ify_one() {  local in="$1"
     return 1
   fi
 
+  # ソース映像の寸法を取得（アップスケール防止・CRF自動調整・縦横判定に使用）
+  local source_width="" source_height="" source_short_side="" source_is_portrait=0
+  source_width=$(ffprobe -v error -select_streams v:0 -show_entries stream=width \
+           -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
+  source_height=$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
+           -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
+  if [[ -n "$source_width" && "$source_width" =~ ^[0-9]+$ && -n "$source_height" && "$source_height" =~ ^[0-9]+$ ]]; then
+    if (( source_height > source_width )); then
+      source_is_portrait=1
+      source_short_side=$source_width
+    else
+      source_short_side=$source_height
+    fi
+  fi
+
+  # 解像度オプションの解析（縦解像度を数値に変換）
+  # バリデーション済みの値を使用
+  local target_height="" resolution_tag=""
+  if [[ -n "$validated_resolution" ]]; then
+    case "${validated_resolution:l}" in
+      480p)  target_height=480;  resolution_tag="480p" ;;
+      720p)  target_height=720;  resolution_tag="720p" ;;
+      1080p) target_height=1080; resolution_tag="1080p" ;;
+      1440p) target_height=1440; resolution_tag="1440p" ;;
+      4k)    target_height=2160; resolution_tag="4k" ;;
+      *)
+        target_height="$validated_resolution"
+        resolution_tag="${validated_resolution}p"
+        ;;
+    esac
+    print -r -- ">> 出力解像度: ${resolution_tag} (height=${target_height})"
+  fi
+
+  # アップスケール防止: 元の短辺が指定解像度以下なら解像度指定を無視
+  if [[ -n "$target_height" && -n "$source_short_side" ]]; then
+    if (( source_short_side <= target_height )); then
+      print -r -- ">> 元の短辺 (${source_short_side}px) が指定解像度 (${resolution_tag}) 以下のため、解像度指定をスキップします"
+      target_height=""
+      resolution_tag=""
+    fi
+  fi
+
+  # fps オプションの解析（バリデーション済みの値を使用）
+  local fps_tag=""
+  if [[ -n "$validated_fps" ]]; then
+    target_fps="$validated_fps"
+    fps_tag="${validated_fps}fps"
+    print -r -- ">> 出力フレームレート: ${validated_fps}fps"
+  else
+    target_fps=""
+  fi
+
   # 解像度を取得して CRF を自動調整（環境変数が優先）
+  # 出力解像度が指定されている場合はそれを基準にする
   local crf preset
   if [[ -n "${AV1_CRF:-}" ]]; then
     crf="$AV1_CRF"
   else
-    # 縦解像度を取得
-    local height
-    height=$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
-             -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
+    # CRF判定に使う解像度（出力解像度優先、なければソース短辺、最終手段でffprobe height）
+    local height_for_crf
+    if [[ -n "$target_height" ]]; then
+      height_for_crf="$target_height"
+    elif [[ -n "$source_short_side" ]]; then
+      height_for_crf="$source_short_side"
+    else
+      height_for_crf=$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
+               -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
+    fi
 
-    if [[ -n "$height" && "$height" =~ ^[0-9]+$ ]]; then
+    if [[ -n "$height_for_crf" && "$height_for_crf" =~ ^[0-9]+$ ]]; then
       # 解像度に応じて CRF を設定
-      if (( height <= 480 )); then
+      if (( height_for_crf <= 480 )); then
         crf=40  # SD:
-      elif (( height <= 720 )); then
+      elif (( height_for_crf <= 720 )); then
         crf=40  # HD 720p
-      elif (( height <= 1080 )); then
+      elif (( height_for_crf <= 1080 )); then
         crf=45  # Full HD 1080p
-      elif (( height <= 1440 )); then
+      elif (( height_for_crf <= 1440 )); then
         crf=50  # 2K
       else
         crf=54  # 4K以上
       fi
-      print -r -- ">> 解像度: ${height}p → CRF=$crf を自動設定"
+      print -r -- ">> 解像度: ${height_for_crf}p → CRF=$crf を自動設定"
     else
       crf=40  # デフォルト
       print -r -- "⚠️ 解像度取得失敗 → CRF=$crf（デフォルト）"
@@ -257,6 +358,20 @@ __av1ify_one() {  local in="$1"
     done
   fi
 
+  # ビデオフィルタの構築（縦長動画は短辺=width にスケーリング）
+  local -a vf_parts=()
+  if [[ -n "$target_height" ]]; then
+    if (( source_is_portrait )); then
+      vf_parts+=("scale=${target_height}:-2")
+    else
+      vf_parts+=("scale=-2:${target_height}")
+    fi
+  fi
+  local vf_option=""
+  if (( ${#vf_parts[@]} > 0 )); then
+    vf_option=$(IFS=','; echo "${vf_parts[*]}")
+  fi
+
   # ffmpeg 共通引数
   local -a args_common args_audio
   args_common=(
@@ -264,6 +379,16 @@ __av1ify_one() {  local in="$1"
     -i "$in"
     -map "0:v:0"
     -c:v "$vcodec" -crf "$crf" -preset "$preset" -pix_fmt yuv420p
+  )
+  # ビデオフィルタ追加
+  if [[ -n "$vf_option" ]]; then
+    args_common+=(-vf "$vf_option")
+  fi
+  # fps 追加
+  if [[ -n "$target_fps" ]]; then
+    args_common+=(-r "$target_fps")
+  fi
+  args_common+=(
     -movflags +faststart -tag:v av01
     -f mp4
   )
@@ -285,8 +410,16 @@ __av1ify_one() {  local in="$1"
     print -r -- ">> 音声: aac へ再エンコード (元=$acodec)"
   fi
 
-  # 予定される最終出力ファイル（copyや無音なら -enc.mp4、AACエンコードなら -aac{br}-enc.mp4）
+  # 予定される最終出力ファイル
+  # 命名規則: <stem>[-解像度][-fps][-aac{br}]-enc.mp4
   local final_out="$out"
+  local name_suffix=""
+  if [[ -n "$resolution_tag" ]]; then
+    name_suffix+="-${resolution_tag}"
+  fi
+  if [[ -n "$fps_tag" ]]; then
+    name_suffix+="-${fps_tag}"
+  fi
   if (( did_aac )); then
     local br="${aac_bitrate_resolved:l}" tag
     if [[ "$br" == *k ]]; then
@@ -297,7 +430,10 @@ __av1ify_one() {  local in="$1"
     else
       tag="$br"
     fi
-    final_out="${stem}-aac${tag}-enc.mp4"
+    name_suffix+="-aac${tag}"
+  fi
+  if [[ -n "$name_suffix" ]]; then
+    final_out="${stem}${name_suffix}-enc.mp4"
   fi
 
   # 既存チェック（過去の出力があればスキップ）
@@ -336,7 +472,7 @@ __av1ify_one() {  local in="$1"
       aac_bitrate_resolved="${AV1_AAC_BITRATE:-96k}"
       args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac 2 -ar 48000)
       did_aac=1
-      # 再計算: 最終出力名
+      # 再計算: 最終出力名（解像度/fpsタグを維持）
       local br="${aac_bitrate_resolved:l}" tag
       if [[ "$br" == *k ]]; then
         tag="$br"
@@ -346,7 +482,15 @@ __av1ify_one() {  local in="$1"
       else
         tag="$br"
       fi
-      final_out="${stem}-aac${tag}-enc.mp4"
+      name_suffix=""
+      if [[ -n "$resolution_tag" ]]; then
+        name_suffix+="-${resolution_tag}"
+      fi
+      if [[ -n "$fps_tag" ]]; then
+        name_suffix+="-${fps_tag}"
+      fi
+      name_suffix+="-aac${tag}"
+      final_out="${stem}${name_suffix}-enc.mp4"
 
       __AV1IFY_CURRENT_TMP="$tmp"
       if ffmpeg "${args_common[@]}" "${args_audio[@]}" -- "$tmp"; then
@@ -382,9 +526,11 @@ av1ify() {
 
   setopt LOCAL_OPTIONS localtraps
 
-  # ルート呼び出しでは毎回デフォルト0（内部呼び出しのみ伝搬）
+  # ルート呼び出しでは毎回デフォルト（内部呼び出しのみ伝搬）
   local dry_run=0
   local show_help=0
+  local opt_resolution=""
+  local opt_fps=""
   local -a positional=()
   while (( $# > 0 )); do
     case "$1" in
@@ -393,6 +539,22 @@ av1ify() {
         ;;
       -h|--help)
         (( ! __av1ify_internal )) && show_help=1
+        ;;
+      -r|--resolution)
+        shift
+        if (( $# == 0 )); then
+          print -r -- "エラー: --resolution には値が必要です" >&2
+          return 1
+        fi
+        opt_resolution="$1"
+        ;;
+      --fps)
+        shift
+        if (( $# == 0 )); then
+          print -r -- "エラー: --fps には値が必要です" >&2
+          return 1
+        fi
+        opt_fps="$1"
         ;;
       *)
         positional+=("$1")
@@ -404,6 +566,8 @@ av1ify() {
 
   if (( ! __av1ify_internal )); then
     __AV1IFY_DRY_RUN=$dry_run
+    __AV1IFY_RESOLUTION="$opt_resolution"
+    __AV1IFY_FPS="$opt_fps"
   else
     dry_run="${__AV1IFY_DRY_RUN:-$dry_run}"
   fi
@@ -451,10 +615,22 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
     # CRF値を指定して画質を調整
     AV1_CRF=35 av1ify "/path/to/movie.mp4"
 
+    # 720pに解像度を変更して変換（アスペクト比は維持）
+    av1ify -r 720p "/path/to/movie.mp4"
+
+    # 24fpsに変更して変換
+    av1ify --fps 24 "/path/to/movie.mp4"
+
+    # 解像度とfpsを両方指定
+    av1ify -r 1080p --fps 30 "/path/to/movie.mp4"
+
 オプション:
   -h, --help: このヘルプメッセージを表示します。
   -n, --dry-run: 実行内容のみを表示し、ファイルを変更しません。
   -f <ファイル>: 改行区切りでファイルパスが記載されたリストファイルを読み込んで処理します。
+  -r, --resolution <値>: 出力解像度（縦）を指定します。アスペクト比は維持されます。
+      480p / 720p / 1080p / 1440p / 4k または数値（例: 540）
+  --fps <値>: 出力フレームレートを指定します（例: 24, 30, 60）。
 
 依存関係:
   - ffmpeg: 動画のエンコードとデコードに使用します。
@@ -473,6 +649,14 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
 
   AV1_COPY_OK (デフォルト: "aac,alac,mp3")
     MP4コンテナで音声を無劣化コピーすることを許可する音声コーデックをカンマ区切りで指定します。
+
+  AV1_RESOLUTION (デフォルト: なし)
+    出力解像度を指定します。--resolution オプションと同等です。
+    CLIオプションが優先されます。
+
+  AV1_FPS (デフォルト: なし)
+    出力フレームレートを指定します。--fps オプションと同等です。
+    CLIオプションが優先されます。
 EOF
     return 0
   fi
