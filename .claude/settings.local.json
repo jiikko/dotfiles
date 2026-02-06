@@ -18,7 +18,10 @@
       "Bash(do if grep -q \"## Language Adaptation\" \"$file\")",
       "Bash(! grep -q \"@_common/language-adaptation.md\" \"$file\")",
       "Bash(then echo \"Updating: $file\" fi done)",
-      "WebFetch(domain:platform.openai.com)"
+      "WebFetch(domain:platform.openai.com)",
+      "WebFetch(domain:electron-vite.org)",
+      "WebFetch(domain:www.electronjs.org)",
+      "WebFetch(domain:www.electronforge.io)"
     ]
   }
 }

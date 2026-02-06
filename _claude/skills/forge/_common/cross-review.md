@@ -27,6 +27,8 @@
 | css-expert | nodejs-expert | CSS の指摘がビルド設定と整合しているか |
 | nodejs-expert | security-auditor | Node.js の指摘がセキュリティを考慮しているか |
 | electron-expert | nodejs-expert | Electron の指摘が Node.js パターンと整合しているか |
+| electron-expert (フレームワーク統合) | css-expert | フレームワーク統合がスタイリング/CSP と整合しているか |
+| electron-expert (データ永続化) | security-auditor | ストレージのセキュリティ（暗号化、パス検証）が適切か |
 
 ### バックエンド用
 
