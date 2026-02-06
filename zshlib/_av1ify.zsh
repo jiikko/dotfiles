@@ -300,10 +300,14 @@ __av1ify_one() {
     print -r -- ">> 出力解像度: ${resolution_tag} (height=${target_height})"
   fi
 
-  # アップスケール防止: 元の短辺が指定解像度以下なら解像度指定を無視
-  if [[ -n "$target_height" && -n "$source_short_side" ]]; then
+  # アップスケール防止: 解像度オプション指定時にソース解像度が必須
+  if [[ -n "$target_height" ]]; then
+    if [[ -z "$source_short_side" ]]; then
+      print -r -- "❌ 解像度変更が指定されていますが、ソース映像の解像度を取得できませんでした: $in"
+      return 1
+    fi
     if (( source_short_side <= target_height )); then
-      print -r -- ">> 元の短辺 (${source_short_side}px) が指定解像度 (${resolution_tag}) 以下のため、解像度指定をスキップします"
+      print -r -- ">> 元の短辺 (${source_short_side}px) が指定解像度 (${resolution_tag}) 以下のため、解像度変更をスキップします"
       target_height=""
       resolution_tag=""
     fi

@@ -44,9 +44,9 @@ elif echo "$*" | grep -q "stream=index"; then
 elif echo "$*" | grep -q "duration"; then
   echo "10.0"
 elif echo "$*" | grep -q "width"; then
-  echo "${MOCK_WIDTH:-1920}"
+  echo "${MOCK_WIDTH-1920}"
 elif echo "$*" | grep -q "height"; then
-  echo "${MOCK_HEIGHT:-1080}"
+  echo "${MOCK_HEIGHT-1080}"
 elif echo "$*" | grep -q "format_name"; then
   echo "mp4"
 fi
@@ -432,7 +432,7 @@ unsetopt err_exit
 # mock は 1920x1080（短辺=1080）。-r 1080p 指定 → 短辺が同じなのでスキップ
 output=$(av1ify -r 1080p "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
-assert_contains "$output" "解像度指定をスキップ" "Skips resolution when source short side equals target"
+assert_contains "$output" "解像度変更をスキップ" "Skips resolution when source short side equals target"
 assert_file_exists "$TEST_DIR/input-enc.mp4" "Output file has no resolution tag (no upscale)"
 assert_file_not_exists "$TEST_DIR/input-1080p-enc.mp4" "No 1080p-tagged file created"
 
@@ -446,7 +446,7 @@ unsetopt err_exit
 # mock は 1920x1080（短辺=1080）。-r 1440p 指定 → 短辺1080 < 1440 なのでスキップ
 output=$(av1ify -r 1440p "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
-assert_contains "$output" "解像度指定をスキップ" "Skips resolution when source is lower than target"
+assert_contains "$output" "解像度変更をスキップ" "Skips resolution when source is lower than target"
 assert_file_exists "$TEST_DIR/input-enc.mp4" "Output file has no resolution tag (no upscale)"
 
 # Test 31: ダウンスケールは正常動作
@@ -471,7 +471,7 @@ unsetopt err_exit
 # mock を縦長に設定: 1080x1920（短辺=width=1080）。-r 1080p → スキップ
 output=$(MOCK_WIDTH=1080 MOCK_HEIGHT=1920 av1ify -r 1080p "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
-assert_contains "$output" "解像度指定をスキップ" "Portrait 1080p is correctly detected as 1080p"
+assert_contains "$output" "解像度変更をスキップ" "Portrait 1080p is correctly detected as 1080p"
 assert_file_exists "$TEST_DIR/input-enc.mp4" "Portrait video: no upscale, no resolution tag"
 
 # Test 33: 縦長動画 — ダウンスケール時は scale=W:-2 が使われる
@@ -539,6 +539,18 @@ unsetopt err_exit
 av1ify -r 720p --denoise medium "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
 assert_file_exists "$TEST_DIR/input-720p-dn2-enc.mp4" "Output file has both resolution and denoise tags"
+
+# Test 39: 解像度オプション指定時にソース解像度が取得できない場合はエラー
+printf '\n## Test 39: Resolution option errors when source resolution unavailable\n'
+TEST_DIR="$TEST_TMP/test39"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_WIDTH="" MOCK_HEIGHT="" av1ify -r 720p "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "解像度を取得できません" "Reports error when source resolution unavailable"
+assert_file_not_exists "$TEST_DIR/input-720p-enc.mp4" "No output file created when resolution unavailable"
 
 printf '\n=== All Tests Completed ===\n'
 printf 'All av1ify tests passed successfully!\n'
