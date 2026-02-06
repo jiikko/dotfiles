@@ -18,7 +18,9 @@ ln -sf ~/dotfiles/_coc-settings.json ~/.config/nvim/coc-settings.json
 mkdir -p ~/.claude
 ln -sfn ~/dotfiles/_claude/agents ~/.claude/agents
 ln -sfn ~/dotfiles/_claude/skills ~/.claude/skills
+ln -sfn ~/dotfiles/_claude/teams ~/.claude/teams
 ln -sf ~/dotfiles/_claude/keybindings.json ~/.claude/keybindings.json
+ln -sf ~/dotfiles/_claude/settings.local.json ~/.claude/settings.local.json
 
 # cleanup legacy bash symlinks (extendable)
 legacy_links="bashrc bash_profile"
