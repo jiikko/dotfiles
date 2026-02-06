@@ -3,8 +3,8 @@
 # av1ify — 入力された動画ファイル、またはディレクトリ内の動画ファイルをAV1形式のMP4に一括変換します。
 # ------------------------------------------------------------------------------
 
-__AV1IFY_VERSION="1.4.0"
-__AV1IFY_SPEC_VERSION="1.4.0"
+__AV1IFY_VERSION="1.5.0"
+__AV1IFY_SPEC_VERSION="1.5.0"
 
 # 内部補助: バナー出力
 __av1ify_banner() {
@@ -16,6 +16,7 @@ typeset -g  __AV1IFY_CURRENT_TMP=""
 typeset -gi __AV1IFY_DRY_RUN=0
 typeset -g  __AV1IFY_RESOLUTION=""
 typeset -g  __AV1IFY_FPS=""
+typeset -g  __AV1IFY_DENOISE=""
 
 __av1ify_on_interrupt() {
   if (( __AV1IFY_ABORT_REQUESTED )); then
@@ -215,23 +216,35 @@ __av1ify_one() {
     fi
   fi
 
+  # ノイズ除去オプションのバリデーション
+  local target_denoise="${__AV1IFY_DENOISE:-${AV1_DENOISE:-}}"
+  local validated_denoise=""
+  if [[ -n "$target_denoise" ]]; then
+    case "${target_denoise:l}" in
+      light|medium|strong)
+        validated_denoise="${target_denoise:l}"
+        ;;
+      *)
+        print -r -- "⚠️ 無効なdenoise指定: $target_denoise（light/medium/strong から選択してください）"
+        ;;
+    esac
+  fi
+
   # ドライラン: ファイル名ベースで計画だけ表示（ファイルへ一切アクセスしない）
   if (( dry_run )); then
     local crf_plan="${AV1_CRF:-auto}"
     local preset_plan="${AV1_PRESET:-5}"
     local res_plan="${validated_resolution:-auto}"
     local fps_plan="${validated_fps:-auto}"
+    local denoise_plan="${validated_denoise:-off}"
     print -r -- "[DRY-RUN] 変換予定: $in"
     print -r -- "[DRY-RUN] 出力候補: $out (音声/解像度は実行時判定: ファイル未参照)"
-    print -r -- "[DRY-RUN] 映像: libsvtav1 (crf=${crf_plan}, preset=${preset_plan}, resolution=${res_plan}, fps=${fps_plan})"
+    print -r -- "[DRY-RUN] 映像: libsvtav1 (crf=${crf_plan}, preset=${preset_plan}, resolution=${res_plan}, fps=${fps_plan}, denoise=${denoise_plan})"
     print -r -- "[DRY-RUN] 音声: 実行時に判定"
     return 0
   fi
 
   [[ ! -f "$in" ]] && { print -r -- "✗ ファイルが無い: $in"; return 1; }
-
-  # クラウド/ネットワークストレージの場合、ここで実ファイル取得が始まることがある
-  print -r -- ">> ファイル取得中: $in"
 
   # 古い in_progress が残っていたら掃除（ドライラン時は触らない）
   if [[ -e "$tmp" ]]; then
@@ -250,12 +263,16 @@ __av1ify_one() {
     return 1
   fi
 
+  # クラウド/ネットワークストレージの場合、ここで実ファイル取得が始まることがある
+  # ffprobe でメタデータ取得することでファイルのダウンロードがトリガーされる
+  print -r -- ">> ファイル取得中: $in"
+
   # ソース映像の寸法を取得（アップスケール防止・CRF自動調整・縦横判定に使用）
   local source_width="" source_height="" source_short_side="" source_is_portrait=0
   source_width=$(ffprobe -v error -select_streams v:0 -show_entries stream=width \
-           -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
+           -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
   source_height=$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
-           -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
+           -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
   if [[ -n "$source_width" && "$source_width" =~ ^[0-9]+$ && -n "$source_height" && "$source_height" =~ ^[0-9]+$ ]]; then
     if (( source_height > source_width )); then
       source_is_portrait=1
@@ -343,7 +360,7 @@ __av1ify_one() {
   # 音声コーデック事前判定（a:0 が無ければ空）
   local acodec
   acodec=$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name \
-           -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
+           -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
 
   # copy 許可コーデック（MP4 と相性の良いもの）
   local allow="${AV1_COPY_OK:-aac,alac,mp3}"
@@ -360,6 +377,27 @@ __av1ify_one() {
 
   # ビデオフィルタの構築（縦長動画は短辺=width にスケーリング）
   local -a vf_parts=()
+  local denoise_tag=""
+  # ノイズ除去フィルタ（hqdn3d）を最初に適用
+  if [[ -n "$validated_denoise" ]]; then
+    case "$validated_denoise" in
+      light)
+        vf_parts+=("hqdn3d=2:2:3:3")
+        denoise_tag="dn1"
+        print -r -- ">> ノイズ除去: light (hqdn3d=2:2:3:3)"
+        ;;
+      medium)
+        vf_parts+=("hqdn3d=4:4:6:6")
+        denoise_tag="dn2"
+        print -r -- ">> ノイズ除去: medium (hqdn3d=4:4:6:6)"
+        ;;
+      strong)
+        vf_parts+=("hqdn3d=6:6:9:9")
+        denoise_tag="dn3"
+        print -r -- ">> ノイズ除去: strong (hqdn3d=6:6:9:9)"
+        ;;
+    esac
+  fi
   if [[ -n "$target_height" ]]; then
     if (( source_is_portrait )); then
       vf_parts+=("scale=${target_height}:-2")
@@ -411,7 +449,7 @@ __av1ify_one() {
   fi
 
   # 予定される最終出力ファイル
-  # 命名規則: <stem>[-解像度][-fps][-aac{br}]-enc.mp4
+  # 命名規則: <stem>[-解像度][-fps][-denoise][-aac{br}]-enc.mp4
   local final_out="$out"
   local name_suffix=""
   if [[ -n "$resolution_tag" ]]; then
@@ -419,6 +457,9 @@ __av1ify_one() {
   fi
   if [[ -n "$fps_tag" ]]; then
     name_suffix+="-${fps_tag}"
+  fi
+  if [[ -n "$denoise_tag" ]]; then
+    name_suffix+="-${denoise_tag}"
   fi
   if (( did_aac )); then
     local br="${aac_bitrate_resolved:l}" tag
@@ -489,6 +530,9 @@ __av1ify_one() {
       if [[ -n "$fps_tag" ]]; then
         name_suffix+="-${fps_tag}"
       fi
+      if [[ -n "$denoise_tag" ]]; then
+        name_suffix+="-${denoise_tag}"
+      fi
       name_suffix+="-aac${tag}"
       final_out="${stem}${name_suffix}-enc.mp4"
 
@@ -531,6 +575,7 @@ av1ify() {
   local show_help=0
   local opt_resolution=""
   local opt_fps=""
+  local opt_denoise=""
   local -a positional=()
   while (( $# > 0 )); do
     case "$1" in
@@ -556,6 +601,14 @@ av1ify() {
         fi
         opt_fps="$1"
         ;;
+      --denoise)
+        shift
+        if (( $# == 0 )); then
+          print -r -- "エラー: --denoise には値が必要です" >&2
+          return 1
+        fi
+        opt_denoise="$1"
+        ;;
       *)
         positional+=("$1")
         ;;
@@ -568,6 +621,7 @@ av1ify() {
     __AV1IFY_DRY_RUN=$dry_run
     __AV1IFY_RESOLUTION="$opt_resolution"
     __AV1IFY_FPS="$opt_fps"
+    __AV1IFY_DENOISE="$opt_denoise"
   else
     dry_run="${__AV1IFY_DRY_RUN:-$dry_run}"
   fi
@@ -624,6 +678,12 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
     # 解像度とfpsを両方指定
     av1ify -r 1080p --fps 30 "/path/to/movie.mp4"
 
+    # ノイズ除去で圧縮率を上げる（ノイジーな素材に効果的）
+    av1ify --denoise medium "/path/to/movie.mp4"
+
+    # 720p + ノイズ除去の組み合わせ
+    av1ify -r 720p --denoise light "/path/to/movie.mp4"
+
 オプション:
   -h, --help: このヘルプメッセージを表示します。
   -n, --dry-run: 実行内容のみを表示し、ファイルを変更しません。
@@ -631,6 +691,10 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
   -r, --resolution <値>: 出力解像度（縦）を指定します。アスペクト比は維持されます。
       480p / 720p / 1080p / 1440p / 4k または数値（例: 540）
   --fps <値>: 出力フレームレートを指定します（例: 24, 30, 60）。
+  --denoise <レベル>: ノイズ除去を適用します。圧縮率が向上しますが、ディテールが失われます。
+      light: 軽度（hqdn3d=2:2:3:3）
+      medium: 中程度（hqdn3d=4:4:6:6）
+      strong: 強め（hqdn3d=6:6:9:9）
 
 依存関係:
   - ffmpeg: 動画のエンコードとデコードに使用します。
@@ -657,6 +721,10 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
   AV1_FPS (デフォルト: なし)
     出力フレームレートを指定します。--fps オプションと同等です。
     CLIオプションが優先されます。
+
+  AV1_DENOISE (デフォルト: なし)
+    ノイズ除去レベルを指定します。--denoise オプションと同等です。
+    light / medium / strong から選択。CLIオプションが優先されます。
 EOF
     return 0
   fi

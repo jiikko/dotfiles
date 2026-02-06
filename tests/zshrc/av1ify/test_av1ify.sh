@@ -494,5 +494,51 @@ MOCK_WIDTH=2160 MOCK_HEIGHT=3840 av1ify -r 1080p "$TEST_DIR/input.avi" > /dev/nu
 setopt err_exit
 assert_file_exists "$TEST_DIR/input-1080p-enc.mp4" "Portrait 4K downscaled to 1080p creates tagged file"
 
+# Test 34: --denoise オプションのヘルプメッセージ
+printf '\n## Test 34: Help message includes --denoise option\n'
+help_output=$(av1ify --help 2>&1)
+assert_contains "$help_output" "--denoise" "Help message contains --denoise option"
+assert_contains "$help_output" "ノイズ除去" "Help message describes noise reduction"
+
+# Test 35: --denoise オプション (dry-run)
+printf '\n## Test 35: Denoise option with dry-run\n'
+TEST_DIR="$TEST_TMP/test35"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run --denoise medium "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "denoise=medium" "Dry-run shows denoise=medium"
+
+# Test 36: 無効な denoise 指定
+printf '\n## Test 36: Invalid denoise validation\n'
+TEST_DIR="$TEST_TMP/test36"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run --denoise invalid "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "無効なdenoise指定" "Reports invalid denoise value"
+
+# Test 37: --denoise オプションで実際にファイル処理
+printf '\n## Test 37: Denoise option creates output file with tag\n'
+TEST_DIR="$TEST_TMP/test37"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+av1ify --denoise light "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
+setopt err_exit
+assert_file_exists "$TEST_DIR/input-dn1-enc.mp4" "Output file has denoise tag (dn1)"
+
+# Test 38: --resolution と --denoise の組み合わせ
+printf '\n## Test 38: Resolution and denoise combined\n'
+TEST_DIR="$TEST_TMP/test38"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+av1ify -r 720p --denoise medium "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
+setopt err_exit
+assert_file_exists "$TEST_DIR/input-720p-dn2-enc.mp4" "Output file has both resolution and denoise tags"
+
 printf '\n=== All Tests Completed ===\n'
 printf 'All av1ify tests passed successfully!\n'
