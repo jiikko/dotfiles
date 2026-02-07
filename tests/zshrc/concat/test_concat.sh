@@ -409,6 +409,21 @@ exit_code=$?
 setopt err_exit
 assert_contains "$output" "サフィックスが異なります" "Reports error for mismatched suffix"
 
+# Test 16b2: サフィックス不一致でも末尾数字が連番なら成功
+printf '\n## Test 16b2: Suffix mismatch but trailing numbers form sequence\n'
+TEST_DIR="$TEST_TMP/test16b2"
+mkdir -p "$TEST_DIR"
+echo "video 1" > "$TEST_DIR/lecture_vol3_topic_review2.mp4"
+echo "video 2" > "$TEST_DIR/lecture_vol3_topic_review1.mp4"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(concat "$TEST_DIR/lecture_vol3_topic_review2.mp4" "$TEST_DIR/lecture_vol3_topic_review1.mp4" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_exit_code "0" "$exit_code" "Trailing number retry succeeds"
+assert_file_exists "$TEST_DIR/lecture_vol3_topic_review.mp4" "Output file uses trailing-number prefix"
+assert_contains "$output" "完了" "Reports success for trailing number pattern"
+
 # Test 16c: サフィックスに数字を含むパターン（-aac96k-enc など）
 printf '\n## Test 16c: Suffix containing numbers\n'
 TEST_DIR="$TEST_TMP/test16c"
@@ -527,6 +542,25 @@ output=$(concat "$TEST_DIR/video file_001.mp4" "$TEST_DIR/video file_002.mp4" 2>
 exit_code=$?
 setopt err_exit
 assert_file_exists "$TEST_DIR/video file.mp4" "Output file is created with spaces in path"
+
+# Test 23: NFD/NFC混在ファイル名
+printf '\n## Test 23: Mixed NFD/NFC filenames\n'
+TEST_DIR="$TEST_TMP/test23"
+mkdir -p "$TEST_DIR"
+# NFD: プ = フ(U+30D5) + combining semi-voiced mark(U+309A)
+# NFC: プ = U+30D7
+nfd_pu=$'\xe3\x83\x95\xe3\x82\x9a'  # フ + combining mark
+nfc_pu=$'\xe3\x83\x97'               # プ
+echo "video 1" > "$TEST_DIR/clip_${nfd_pu}_1.mp4"
+echo "video 2" > "$TEST_DIR/clip_${nfc_pu}_2.mp4"
+echo "video 3" > "$TEST_DIR/clip_${nfc_pu}_3.mp4"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(concat "$TEST_DIR/clip_${nfd_pu}_1.mp4" "$TEST_DIR/clip_${nfc_pu}_2.mp4" "$TEST_DIR/clip_${nfc_pu}_3.mp4" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_exit_code "0" "$exit_code" "Mixed NFD/NFC succeeds after normalization"
+assert_contains "$output" "完了" "Reports success for mixed NFD/NFC"
 
 printf '\n=== All Tests Completed ===\n'
 printf 'All concat tests passed successfully!\n'

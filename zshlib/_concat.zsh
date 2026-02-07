@@ -29,15 +29,18 @@ __concat_get_ext() {
   fi
 }
 
-# 内部補助: ファイルからベースネーム（拡張子なし）を取得
+# 内部補助: ファイルからベースネーム（拡張子なし）を取得（NFC正規化済み）
 __concat_get_stem() {
   local file="$1"
   local base="${file:t}"
+  local stem
   if [[ "$base" == *.* ]]; then
-    echo "${base%.*}"
+    stem="${base%.*}"
   else
-    echo "$base"
+    stem="$base"
   fi
+  # macOSのファイルシステムはNFDを使う場合があるためNFCに正規化
+  printf '%s' "$stem" | iconv -f UTF-8-MAC -t UTF-8 2>/dev/null || printf '%s' "$stem"
 }
 
 # 内部補助: 複数の文字列から共通サフィックスを見つける
@@ -390,9 +393,40 @@ EOF
       first_prefix="${temp_prefixes[1]}"
       first_suffix="${temp_suffixes[1]}"
     elif (( ! suffixes_match )); then
-      # サフィックスが一致しない: エラー
-      print -r -- "エラー: サフィックスが異なります: '${temp_suffixes[1]}' と 異なるサフィックスがあります" >&2
-      return 1
+      # サフィックスが異なる → 末尾数字パターンで再試行
+      local -a retry_numbers=()
+      local -a retry_prefixes=()
+      local retry_all_matched=1
+      for stem in "${stems[@]}"; do
+        if [[ "$stem" =~ '^(.*[^0-9])([0-9]+)$' ]]; then
+          retry_prefixes+=("${match[1]}")
+          retry_numbers+=("$((10#${match[2]}))")
+        else
+          retry_all_matched=0
+          break
+        fi
+      done
+
+      if (( retry_all_matched )); then
+        local retry_prefixes_match=1
+        for p in "${retry_prefixes[@]:1}"; do
+          if [[ "$p" != "${retry_prefixes[1]}" ]]; then
+            retry_prefixes_match=0
+            break
+          fi
+        done
+        if (( retry_prefixes_match )); then
+          numbers=("${retry_numbers[@]}")
+          first_prefix="${retry_prefixes[1]}"
+          first_suffix=""
+        else
+          print -r -- "エラー: サフィックスが異なります: '${temp_suffixes[1]}' と 異なるサフィックスがあります" >&2
+          return 1
+        fi
+      else
+        print -r -- "エラー: サフィックスが異なります: '${temp_suffixes[1]}' と 異なるサフィックスがあります" >&2
+        return 1
+      fi
     else
       # プレフィックスが一致しない: 共通サフィックスを除去して再試行
       use_stripped_stems=1
@@ -595,6 +629,12 @@ EOF
   # trapを解除（正常終了）
   trap - INT TERM HUP EXIT
 
+  print -r -- ">> 結合順序:"
+  local idx=1
+  for file in "${sorted_files[@]}"; do
+    print -r -- "   ${idx}. ${file:t}"
+    (( idx++ ))
+  done
   print -r -- "✅ 完了: $output_path"
   return 0
 }
