@@ -180,10 +180,13 @@ __concat_get_duration() {
 # 内部補助: パスをエスケープしてconcat用に整形
 __concat_escape_path() {
   local path="$1"
-  # バックスラッシュとシングルクォートをエスケープ
+  # FFmpeg concat demuxerのエスケープ: 特殊文字をバックスラッシュでエスケープ
   path="${path//\\/\\\\}"
-  path="${path//\'/\'\\\'\'}"
-  echo "file '$path'"
+  path="${path//\'/\\\'}"
+  path="${path// /\\ }"
+  path="${path//;/\\;}"
+  path="${path//\#/\\#}"
+  echo "file $path"
 }
 
 # 内部補助: 出力ファイルの診断
