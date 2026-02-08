@@ -3,8 +3,8 @@
 # av1ify — 入力された動画ファイル、またはディレクトリ内の動画ファイルをAV1形式のMP4に一括変換します。
 # ------------------------------------------------------------------------------
 
-__AV1IFY_VERSION="1.5.0"
-__AV1IFY_SPEC_VERSION="1.5.0"
+__AV1IFY_VERSION="1.6.0"
+__AV1IFY_SPEC_VERSION="1.6.0"
 
 # 内部補助: バナー出力
 __av1ify_banner() {
@@ -580,6 +580,7 @@ av1ify() {
   local opt_resolution=""
   local opt_fps=""
   local opt_denoise=""
+  local opt_compact=0
   local -a positional=()
   while (( $# > 0 )); do
     case "$1" in
@@ -588,6 +589,9 @@ av1ify() {
         ;;
       -h|--help)
         (( ! __av1ify_internal )) && show_help=1
+        ;;
+      -c|--compact)
+        opt_compact=1
         ;;
       -r|--resolution)
         shift
@@ -620,6 +624,12 @@ av1ify() {
     shift
   done
   set -- "${positional[@]}"
+
+  # --compact: 720p + 30fps プリセット（明示的な -r/--fps が優先）
+  if (( opt_compact )); then
+    [[ -z "$opt_resolution" ]] && opt_resolution="720p"
+    [[ -z "$opt_fps" ]] && opt_fps="30"
+  fi
 
   if (( ! __av1ify_internal )); then
     __AV1IFY_DRY_RUN=$dry_run
@@ -688,6 +698,12 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
     # 720p + ノイズ除去の組み合わせ
     av1ify -r 720p --denoise light "/path/to/movie.mp4"
 
+    # 保存用プリセット（720p + 30fps）
+    av1ify --compact "/path/to/movie.mp4"
+
+    # --compact + 解像度だけ上書き（480p + 30fps）
+    av1ify --compact -r 480p "/path/to/movie.mp4"
+
 オプション:
   -h, --help: このヘルプメッセージを表示します。
   -n, --dry-run: 実行内容のみを表示し、ファイルを変更しません。
@@ -695,6 +711,7 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
   -r, --resolution <値>: 出力解像度（縦）を指定します。アスペクト比は維持されます。
       480p / 720p / 1080p / 1440p / 4k または数値（例: 540）
   --fps <値>: 出力フレームレートを指定します（例: 24, 30, 60）。
+  -c, --compact: 保存用プリセット（720p + 30fps）。-r や --fps で個別に上書き可能。
   --denoise <レベル>: ノイズ除去を適用します。圧縮率が向上しますが、ディテールが失われます。
       light: 軽度（hqdn3d=2:2:3:3）
       medium: 中程度（hqdn3d=4:4:6:6）

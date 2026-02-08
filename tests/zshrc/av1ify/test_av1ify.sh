@@ -552,5 +552,76 @@ setopt err_exit
 assert_contains "$output" "解像度を取得できません" "Reports error when source resolution unavailable"
 assert_file_not_exists "$TEST_DIR/input-720p-enc.mp4" "No output file created when resolution unavailable"
 
+# Test 40: --compact オプションのヘルプメッセージ
+printf '\n## Test 40: Help message includes --compact option\n'
+help_output=$(av1ify --help 2>&1)
+assert_contains "$help_output" "--compact" "Help message contains --compact option"
+assert_contains "$help_output" "720p" "Help message mentions 720p for compact"
+assert_contains "$help_output" "30fps" "Help message mentions 30fps for compact"
+
+# Test 41: --compact オプション (dry-run)
+printf '\n## Test 41: Compact option with dry-run\n'
+TEST_DIR="$TEST_TMP/test41"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run --compact "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "resolution=720p" "Compact dry-run shows resolution=720p"
+assert_contains "$output" "fps=30" "Compact dry-run shows fps=30"
+
+# Test 42: --compact で実際にファイル処理
+printf '\n## Test 42: Compact option creates output file with tags\n'
+TEST_DIR="$TEST_TMP/test42"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+av1ify --compact "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
+setopt err_exit
+assert_file_exists "$TEST_DIR/input-720p-30fps-enc.mp4" "Compact creates file with 720p and 30fps tags"
+
+# Test 43: --compact + 明示的な -r で解像度だけ上書き
+printf '\n## Test 43: Compact with explicit resolution override\n'
+TEST_DIR="$TEST_TMP/test43"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run --compact -r 480p "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "resolution=480p" "Compact + explicit -r uses 480p"
+assert_contains "$output" "fps=30" "Compact + explicit -r still uses 30fps"
+
+# Test 44: --compact + 明示的な --fps で fps だけ上書き
+printf '\n## Test 44: Compact with explicit fps override\n'
+TEST_DIR="$TEST_TMP/test44"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run --compact --fps 24 "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "resolution=720p" "Compact + explicit --fps still uses 720p"
+assert_contains "$output" "fps=24" "Compact + explicit --fps uses 24"
+
+# Test 45: --compact はアップスケール防止が効く
+printf '\n## Test 45: Compact respects upscale prevention\n'
+TEST_DIR="$TEST_TMP/test45"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# mock は 480x854（短辺=480）。--compact → 720p 指定だが 480 < 720 なのでスキップ
+output=$(MOCK_WIDTH=480 MOCK_HEIGHT=854 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "解像度変更をスキップ" "Compact skips upscale for low-res source"
+assert_file_exists "$TEST_DIR/input-30fps-enc.mp4" "Compact low-res: fps tag only, no resolution tag"
+
+# Test 46: -c 省略形が --compact と同じ動作
+printf '\n## Test 46: Short -c alias for --compact\n'
+TEST_DIR="$TEST_TMP/test46"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run -c "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "resolution=720p" "-c dry-run shows resolution=720p"
+assert_contains "$output" "fps=30" "-c dry-run shows fps=30"
+
 printf '\n=== All Tests Completed ===\n'
 printf 'All av1ify tests passed successfully!\n'
