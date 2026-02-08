@@ -17,6 +17,7 @@ typeset -gi __AV1IFY_DRY_RUN=0
 typeset -g  __AV1IFY_RESOLUTION=""
 typeset -g  __AV1IFY_FPS=""
 typeset -g  __AV1IFY_DENOISE=""
+typeset -gi __AV1IFY_COMPACT=0
 
 __av1ify_on_interrupt() {
   if (( __AV1IFY_ABORT_REQUESTED )); then
@@ -240,7 +241,11 @@ __av1ify_one() {
     print -r -- "[DRY-RUN] 変換予定: $in"
     print -r -- "[DRY-RUN] 出力候補: $out (音声/解像度は実行時判定: ファイル未参照)"
     print -r -- "[DRY-RUN] 映像: libsvtav1 (crf=${crf_plan}, preset=${preset_plan}, resolution=${res_plan}, fps=${fps_plan}, denoise=${denoise_plan})"
-    print -r -- "[DRY-RUN] 音声: 実行時に判定"
+    if (( __AV1IFY_COMPACT )); then
+      print -r -- "[DRY-RUN] 音声: compact (96kbps超はaac 96kへ再エンコード)"
+    else
+      print -r -- "[DRY-RUN] 音声: 実行時に判定"
+    fi
     return 0
   fi
 
@@ -443,8 +448,24 @@ __av1ify_one() {
     args_audio=(-an)
     print -r -- ">> 音声: なし（-an）"
   elif (( use_copy )); then
-    args_audio=(-map "0:a:0?" -c:a copy)
-    print -r -- ">> 音声: copy (codec=$acodec)"
+    # compact モード: 音声ビットレートが96kbps超ならAAC 96kに再エンコード
+    if (( __AV1IFY_COMPACT )); then
+      local src_abitrate
+      src_abitrate=$(ffprobe -v error -select_streams a:0 -show_entries stream=bit_rate \
+                     -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
+      if [[ -n "$src_abitrate" && "$src_abitrate" =~ ^[0-9]+$ ]] && (( src_abitrate > 96000 )); then
+        aac_bitrate_resolved="96k"
+        args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac 2 -ar 48000)
+        did_aac=1
+        print -r -- ">> 音声: aac 96k へ再エンコード (compact, 元=$acodec ${src_abitrate}bps)"
+      else
+        args_audio=(-map "0:a:0?" -c:a copy)
+        print -r -- ">> 音声: copy (codec=$acodec, compact だが96kbps以下)"
+      fi
+    else
+      args_audio=(-map "0:a:0?" -c:a copy)
+      print -r -- ">> 音声: copy (codec=$acodec)"
+    fi
   else
     aac_bitrate_resolved="${AV1_AAC_BITRATE:-96k}"
     args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac 2 -ar 48000)
@@ -643,6 +664,7 @@ av1ify() {
     __AV1IFY_RESOLUTION="$opt_resolution"
     __AV1IFY_FPS="$opt_fps"
     __AV1IFY_DENOISE="$opt_denoise"
+    __AV1IFY_COMPACT=$opt_compact
   else
     dry_run="${__AV1IFY_DRY_RUN:-$dry_run}"
   fi
