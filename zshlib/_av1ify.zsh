@@ -643,6 +643,9 @@ av1ify() {
   # バナー出力（内部呼び出し・ヘルプ時は除く）
   if (( ! __av1ify_internal )) && (( ! show_help )) && (( $# > 0 )); then
     __av1ify_banner
+    if (( opt_compact )); then
+      print -r -- ">> compact モード: -r ${opt_resolution} --fps ${opt_fps}"
+    fi
   fi
 
   (( ! __av1ify_internal && dry_run )) && print -r -- "[DRY-RUN] ファイルは変更しません"
