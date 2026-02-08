@@ -623,5 +623,41 @@ output=$(av1ify --dry-run -c "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "resolution=720p" "-c dry-run shows resolution=720p"
 assert_contains "$output" "fps=30" "-c dry-run shows fps=30"
 
+# Test 47: 不明なオプションでエラー終了
+printf '\n## Test 47: Unknown option causes error\n'
+TEST_DIR="$TEST_TMP/test47"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(av1ify --unknown-option "$TEST_DIR/input.avi" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_contains "$output" "不明なオプション" "Reports unknown option error"
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero (%d)\n' "$exit_code" || printf '✗ Exit code should be non-zero (got %d)\n' "$exit_code"
+
+# Test 48: -x のような短い不明オプションでもエラー
+printf '\n## Test 48: Unknown short option causes error\n'
+unsetopt err_exit
+output=$(av1ify -x "$TEST_DIR/input.avi" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_contains "$output" "不明なオプション" "Reports unknown short option error"
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero (%d)\n' "$exit_code" || printf '✗ Exit code should be non-zero (got %d)\n' "$exit_code"
+
+# Test 49: -f は引き続き正常に動作する
+printf '\n## Test 49: -f option still works after unknown option guard\n'
+TEST_DIR="$TEST_TMP/test49"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/video.avi"
+cat > "$TEST_DIR/list.txt" <<LISTEOF
+$TEST_DIR/video.avi
+LISTEOF
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(av1ify -f "$TEST_DIR/list.txt" 2>&1 || true)
+setopt err_exit
+assert_file_exists "$TEST_DIR/video-enc.mp4" "-f option processes files correctly"
+
 printf '\n=== All Tests Completed ===\n'
 printf 'All av1ify tests passed successfully!\n'

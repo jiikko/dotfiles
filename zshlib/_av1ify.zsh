@@ -617,6 +617,13 @@ av1ify() {
         fi
         opt_denoise="$1"
         ;;
+      -f)
+        positional+=("$1")
+        ;;
+      -*)
+        print -r -- "エラー: 不明なオプション: $1" >&2
+        return 1
+        ;;
       *)
         positional+=("$1")
         ;;
