@@ -597,6 +597,7 @@ av1ify() {
   functions[av1ify]="$_saved"
   return $_ret
 }
+alias av1c='av1ify -c'
 source $HOME/dotfiles/zshlib/_repair.zsh
 source $HOME/dotfiles/zshlib/_concat.zsh
 
