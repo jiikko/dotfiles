@@ -588,7 +588,15 @@ bdr() {
   dd if=/dev/zero of="$output_file" bs="$bs" count="$count" oflag="$oflag" status=progress
 }
 
-source $HOME/dotfiles/zshlib/_av1ify.zsh
+# av1ify: 呼び出し時に毎回ソースを再読み込み（編集後にシェル再起動不要）
+av1ify() {
+  local _saved="${functions[av1ify]}"
+  source $HOME/dotfiles/zshlib/_av1ify.zsh
+  av1ify "$@"
+  local _ret=$?
+  functions[av1ify]="$_saved"
+  return $_ret
+}
 source $HOME/dotfiles/zshlib/_repair.zsh
 source $HOME/dotfiles/zshlib/_concat.zsh
 
