@@ -447,7 +447,7 @@ __av1ify_one() {
   # ffmpeg 共通引数
   local -a args_common args_audio
   args_common=(
-    -hide_banner -stats -y
+    -hide_banner -nostdin -stats -y
     -i "$in"
     -map "0:v:0"
     -c:v "$vcodec" -crf "$crf" -preset "$preset" -pix_fmt yuv420p
