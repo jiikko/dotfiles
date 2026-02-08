@@ -319,11 +319,36 @@ __av1ify_one() {
   fi
 
   # fps オプションの解析（バリデーション済みの値を使用）
+  # ソースfpsがtarget以下なら変更しない（キャップ動作）
   local fps_tag=""
   if [[ -n "$validated_fps" ]]; then
-    target_fps="$validated_fps"
-    fps_tag="${validated_fps}fps"
-    print -r -- ">> 出力フレームレート: ${validated_fps}fps"
+    local source_fps_raw source_fps_val=""
+    source_fps_raw=$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate \
+             -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
+    if [[ -n "$source_fps_raw" ]]; then
+      # r_frame_rate は "30000/1001" のような分数形式
+      source_fps_val=$(awk -v fps="$source_fps_raw" 'BEGIN {
+        n = split(fps, a, "/")
+        if (n == 2 && a[2]+0 > 0) printf "%.3f", a[1] / a[2]
+        else printf "%.3f", a[1]+0
+      }')
+    fi
+    if [[ -n "$source_fps_val" ]]; then
+      local fps_skip
+      fps_skip=$(awk -v src="$source_fps_val" -v tgt="$validated_fps" 'BEGIN { print (src <= tgt) ? 1 : 0 }')
+      if (( fps_skip )); then
+        print -r -- ">> ソースfps (${source_fps_val}) が ${validated_fps}fps 以下のため、fps変更をスキップ"
+        target_fps=""
+      else
+        target_fps="$validated_fps"
+        fps_tag="${validated_fps}fps"
+        print -r -- ">> 出力フレームレート: ${source_fps_val}fps → ${validated_fps}fps"
+      fi
+    else
+      target_fps="$validated_fps"
+      fps_tag="${validated_fps}fps"
+      print -r -- ">> 出力フレームレート: ${validated_fps}fps (ソースfps取得失敗)"
+    fi
   else
     target_fps=""
   fi
