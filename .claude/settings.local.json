@@ -21,7 +21,17 @@
       "WebFetch(domain:platform.openai.com)",
       "WebFetch(domain:electron-vite.org)",
       "WebFetch(domain:www.electronjs.org)",
-      "WebFetch(domain:www.electronforge.io)"
+      "WebFetch(domain:www.electronforge.io)",
+      "WebFetch(domain:holyswift.app)",
+      "WebFetch(domain:forums.swift.org)",
+      "WebFetch(domain:nalexn.github.io)",
+      "WebFetch(domain:www.avanderlee.com)",
+      "WebFetch(domain:fatbobman.com)",
+      "Bash(xcodegen generate:*)",
+      "Bash(xargs:*)",
+      "Bash(grep:*)",
+      "Bash(git checkout:*)",
+      "Bash(git stash pop:*)"
     ]
   }
 }
