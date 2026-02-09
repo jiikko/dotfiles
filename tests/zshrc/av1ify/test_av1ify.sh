@@ -41,8 +41,12 @@ if echo "$*" | grep -q "codec_name"; then
   echo "aac"
 elif echo "$*" | grep -q "stream=index"; then
   echo "0"
+elif echo "$*" | grep -q "stream=bit_rate"; then
+  echo "${MOCK_AUDIO_BITRATE-248000}"
 elif echo "$*" | grep -q "duration"; then
   echo "10.0"
+elif echo "$*" | grep -q "r_frame_rate"; then
+  echo "${MOCK_FPS-30000/1001}"
 elif echo "$*" | grep -q "width"; then
   echo "${MOCK_WIDTH-1920}"
 elif echo "$*" | grep -q "height"; then
@@ -551,6 +555,208 @@ output=$(MOCK_WIDTH="" MOCK_HEIGHT="" av1ify -r 720p "$TEST_DIR/input.avi" 2>&1 
 setopt err_exit
 assert_contains "$output" "解像度を取得できません" "Reports error when source resolution unavailable"
 assert_file_not_exists "$TEST_DIR/input-720p-enc.mp4" "No output file created when resolution unavailable"
+
+# Test 40: --compact オプションのヘルプメッセージ
+printf '\n## Test 40: Help message includes --compact option\n'
+help_output=$(av1ify --help 2>&1)
+assert_contains "$help_output" "--compact" "Help message contains --compact option"
+assert_contains "$help_output" "720p" "Help message mentions 720p for compact"
+assert_contains "$help_output" "30fps" "Help message mentions 30fps for compact"
+
+# Test 41: --compact オプション (dry-run)
+printf '\n## Test 41: Compact option with dry-run\n'
+TEST_DIR="$TEST_TMP/test41"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run --compact "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "resolution=720p" "Compact dry-run shows resolution=720p"
+assert_contains "$output" "fps=30" "Compact dry-run shows fps=30"
+
+# Test 42: --compact で実際にファイル処理
+printf '\n## Test 42: Compact option creates output file with tags\n'
+TEST_DIR="$TEST_TMP/test42"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# mock を 60fps にして両方のタグが付くことを確認
+MOCK_FPS="60/1" av1ify --compact "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
+setopt err_exit
+assert_file_exists "$TEST_DIR/input-720p-30fps-aac96k-enc.mp4" "Compact creates file with 720p, 30fps and aac96k tags"
+
+# Test 43: --compact + 明示的な -r で解像度だけ上書き
+printf '\n## Test 43: Compact with explicit resolution override\n'
+TEST_DIR="$TEST_TMP/test43"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run --compact -r 480p "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "resolution=480p" "Compact + explicit -r uses 480p"
+assert_contains "$output" "fps=30" "Compact + explicit -r still uses 30fps"
+
+# Test 44: --compact + 明示的な --fps で fps だけ上書き
+printf '\n## Test 44: Compact with explicit fps override\n'
+TEST_DIR="$TEST_TMP/test44"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run --compact --fps 24 "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "resolution=720p" "Compact + explicit --fps still uses 720p"
+assert_contains "$output" "fps=24" "Compact + explicit --fps uses 24"
+
+# Test 45: --compact はアップスケール防止が効く
+printf '\n## Test 45: Compact respects upscale prevention\n'
+TEST_DIR="$TEST_TMP/test45"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# mock は 480x854（短辺=480）、60fps。--compact → 720p 指定だが 480 < 720 なのでスキップ、fps は適用
+output=$(MOCK_WIDTH=480 MOCK_HEIGHT=854 MOCK_FPS="60/1" av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "解像度変更をスキップ" "Compact skips upscale for low-res source"
+assert_file_exists "$TEST_DIR/input-30fps-aac96k-enc.mp4" "Compact low-res: fps and aac96k tags, no resolution tag"
+
+# Test 46: -c 省略形が --compact と同じ動作
+printf '\n## Test 46: Short -c alias for --compact\n'
+TEST_DIR="$TEST_TMP/test46"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run -c "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "resolution=720p" "-c dry-run shows resolution=720p"
+assert_contains "$output" "fps=30" "-c dry-run shows fps=30"
+
+# Test 47: 不明なオプションでエラー終了
+printf '\n## Test 47: Unknown option causes error\n'
+TEST_DIR="$TEST_TMP/test47"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(av1ify --unknown-option "$TEST_DIR/input.avi" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_contains "$output" "不明なオプション" "Reports unknown option error"
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero (%d)\n' "$exit_code" || printf '✗ Exit code should be non-zero (got %d)\n' "$exit_code"
+
+# Test 48: -x のような短い不明オプションでもエラー
+printf '\n## Test 48: Unknown short option causes error\n'
+unsetopt err_exit
+output=$(av1ify -x "$TEST_DIR/input.avi" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_contains "$output" "不明なオプション" "Reports unknown short option error"
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero (%d)\n' "$exit_code" || printf '✗ Exit code should be non-zero (got %d)\n' "$exit_code"
+
+# Test 49: -f は引き続き正常に動作する
+printf '\n## Test 49: -f option still works after unknown option guard\n'
+TEST_DIR="$TEST_TMP/test49"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/video.avi"
+cat > "$TEST_DIR/list.txt" <<LISTEOF
+$TEST_DIR/video.avi
+LISTEOF
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(av1ify -f "$TEST_DIR/list.txt" 2>&1 || true)
+setopt err_exit
+assert_file_exists "$TEST_DIR/video-enc.mp4" "-f option processes files correctly"
+
+# Test 50: compact モードで音声が96kbps超ならAAC再エンコード
+printf '\n## Test 50: Compact re-encodes audio when bitrate > 96kbps\n'
+TEST_DIR="$TEST_TMP/test50"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# デフォルトの MOCK_AUDIO_BITRATE=248000 (248kbps > 96kbps)
+output=$(MOCK_FPS="60/1" av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "aac 96k へ再エンコード" "Compact re-encodes audio to 96k"
+assert_file_exists "$TEST_DIR/input-720p-30fps-aac96k-enc.mp4" "Compact output has aac96k tag"
+
+# Test 51: compact モードで音声が96kbps以下ならcopy
+printf '\n## Test 51: Compact copies audio when bitrate <= 96kbps\n'
+TEST_DIR="$TEST_TMP/test51"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_AUDIO_BITRATE=96000 MOCK_FPS="60/1" av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "copy" "Compact copies audio when <= 96kbps"
+assert_file_exists "$TEST_DIR/input-720p-30fps-enc.mp4" "Compact output has no aac tag when copying"
+
+# Test 52: 非compact モードでは音声は常にcopy（許可コーデックの場合）
+printf '\n## Test 52: Non-compact always copies audio for allowed codecs\n'
+TEST_DIR="$TEST_TMP/test52"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "音声: copy" "Non-compact copies audio regardless of bitrate"
+
+# Test 53: compact dry-runで音声再エンコードが表示される
+printf '\n## Test 53: Compact dry-run shows audio re-encode plan\n'
+TEST_DIR="$TEST_TMP/test53"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run --compact "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "compact" "Compact dry-run mentions compact audio"
+
+# Test 54: fps キャップ — ソースが30fps以下ならfps変更スキップ
+printf '\n## Test 54: FPS cap - skip when source <= target\n'
+TEST_DIR="$TEST_TMP/test54"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# mock は 30000/1001 (29.97fps)。--fps 30 → 29.97 <= 30 なのでスキップ
+output=$(MOCK_FPS="30000/1001" av1ify --fps 30 "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "fps変更をスキップ" "Skips fps change when source (29.97) <= target (30)"
+assert_file_exists "$TEST_DIR/input-enc.mp4" "No fps tag when skipped"
+assert_file_not_exists "$TEST_DIR/input-30fps-enc.mp4" "No 30fps-tagged file created"
+
+# Test 55: fps キャップ — ソースが60fpsなら30fpsに落とす
+printf '\n## Test 55: FPS cap - apply when source > target\n'
+TEST_DIR="$TEST_TMP/test55"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_FPS="60000/1001" av1ify --fps 30 "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "→ 30fps" "Applies fps change when source (59.94) > target (30)"
+assert_file_exists "$TEST_DIR/input-30fps-enc.mp4" "Output file has fps tag"
+
+# Test 56: --compact + 29.97fps ソース → fpsスキップ、解像度のみ適用
+printf '\n## Test 56: Compact with 29.97fps source skips fps\n'
+TEST_DIR="$TEST_TMP/test56"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_FPS="30000/1001" MOCK_AUDIO_BITRATE=96000 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "fps変更をスキップ" "Compact skips fps for 29.97fps source"
+assert_file_exists "$TEST_DIR/input-720p-enc.mp4" "Only resolution tag, no fps tag"
+
+# Test 57: --compact + 60fps ソース → 両方適用
+printf '\n## Test 57: Compact with 60fps source applies both\n'
+TEST_DIR="$TEST_TMP/test57"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_FPS="60000/1001" MOCK_AUDIO_BITRATE=96000 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_file_exists "$TEST_DIR/input-720p-30fps-enc.mp4" "Compact with 60fps: both tags applied"
 
 printf '\n=== All Tests Completed ===\n'
 printf 'All av1ify tests passed successfully!\n'

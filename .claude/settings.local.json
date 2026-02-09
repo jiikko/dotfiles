@@ -31,7 +31,8 @@
       "Bash(xargs:*)",
       "Bash(grep:*)",
       "Bash(git checkout:*)",
-      "Bash(git stash pop:*)"
+      "Bash(git stash pop:*)",
+      "Bash(grep:*)"
     ]
   }
 }

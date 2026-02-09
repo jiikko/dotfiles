@@ -3,8 +3,8 @@
 # av1ify — 入力された動画ファイル、またはディレクトリ内の動画ファイルをAV1形式のMP4に一括変換します。
 # ------------------------------------------------------------------------------
 
-__AV1IFY_VERSION="1.5.0"
-__AV1IFY_SPEC_VERSION="1.5.0"
+__AV1IFY_VERSION="1.6.0"
+__AV1IFY_SPEC_VERSION="1.6.0"
 
 # 内部補助: バナー出力
 __av1ify_banner() {
@@ -17,6 +17,7 @@ typeset -gi __AV1IFY_DRY_RUN=0
 typeset -g  __AV1IFY_RESOLUTION=""
 typeset -g  __AV1IFY_FPS=""
 typeset -g  __AV1IFY_DENOISE=""
+typeset -gi __AV1IFY_COMPACT=0
 
 __av1ify_on_interrupt() {
   if (( __AV1IFY_ABORT_REQUESTED )); then
@@ -240,7 +241,11 @@ __av1ify_one() {
     print -r -- "[DRY-RUN] 変換予定: $in"
     print -r -- "[DRY-RUN] 出力候補: $out (音声/解像度は実行時判定: ファイル未参照)"
     print -r -- "[DRY-RUN] 映像: libsvtav1 (crf=${crf_plan}, preset=${preset_plan}, resolution=${res_plan}, fps=${fps_plan}, denoise=${denoise_plan})"
-    print -r -- "[DRY-RUN] 音声: 実行時に判定"
+    if (( __AV1IFY_COMPACT )); then
+      print -r -- "[DRY-RUN] 音声: compact (96kbps超はaac 96kへ再エンコード)"
+    else
+      print -r -- "[DRY-RUN] 音声: 実行時に判定"
+    fi
     return 0
   fi
 
@@ -314,11 +319,36 @@ __av1ify_one() {
   fi
 
   # fps オプションの解析（バリデーション済みの値を使用）
+  # ソースfpsがtarget以下なら変更しない（キャップ動作）
   local fps_tag=""
   if [[ -n "$validated_fps" ]]; then
-    target_fps="$validated_fps"
-    fps_tag="${validated_fps}fps"
-    print -r -- ">> 出力フレームレート: ${validated_fps}fps"
+    local source_fps_raw source_fps_val=""
+    source_fps_raw=$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate \
+             -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
+    if [[ -n "$source_fps_raw" ]]; then
+      # r_frame_rate は "30000/1001" のような分数形式
+      source_fps_val=$(awk -v fps="$source_fps_raw" 'BEGIN {
+        n = split(fps, a, "/")
+        if (n == 2 && a[2]+0 > 0) printf "%.3f", a[1] / a[2]
+        else printf "%.3f", a[1]+0
+      }')
+    fi
+    if [[ -n "$source_fps_val" ]]; then
+      local fps_skip
+      fps_skip=$(awk -v src="$source_fps_val" -v tgt="$validated_fps" 'BEGIN { print (src <= tgt) ? 1 : 0 }')
+      if (( fps_skip )); then
+        print -r -- ">> ソースfps (${source_fps_val}) が ${validated_fps}fps 以下のため、fps変更をスキップ"
+        target_fps=""
+      else
+        target_fps="$validated_fps"
+        fps_tag="${validated_fps}fps"
+        print -r -- ">> 出力フレームレート: ${source_fps_val}fps → ${validated_fps}fps"
+      fi
+    else
+      target_fps="$validated_fps"
+      fps_tag="${validated_fps}fps"
+      print -r -- ">> 出力フレームレート: ${validated_fps}fps (ソースfps取得失敗)"
+    fi
   else
     target_fps=""
   fi
@@ -417,7 +447,7 @@ __av1ify_one() {
   # ffmpeg 共通引数
   local -a args_common args_audio
   args_common=(
-    -hide_banner -stats -y
+    -hide_banner -nostdin -stats -y
     -i "$in"
     -map "0:v:0"
     -c:v "$vcodec" -crf "$crf" -preset "$preset" -pix_fmt yuv420p
@@ -443,8 +473,24 @@ __av1ify_one() {
     args_audio=(-an)
     print -r -- ">> 音声: なし（-an）"
   elif (( use_copy )); then
-    args_audio=(-map "0:a:0?" -c:a copy)
-    print -r -- ">> 音声: copy (codec=$acodec)"
+    # compact モード: 音声ビットレートが96kbps超ならAAC 96kに再エンコード
+    if (( __AV1IFY_COMPACT )); then
+      local src_abitrate
+      src_abitrate=$(ffprobe -v error -select_streams a:0 -show_entries stream=bit_rate \
+                     -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
+      if [[ -n "$src_abitrate" && "$src_abitrate" =~ ^[0-9]+$ ]] && (( src_abitrate > 96000 )); then
+        aac_bitrate_resolved="96k"
+        args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac 2 -ar 48000)
+        did_aac=1
+        print -r -- ">> 音声: aac 96k へ再エンコード (compact, 元=$acodec ${src_abitrate}bps)"
+      else
+        args_audio=(-map "0:a:0?" -c:a copy)
+        print -r -- ">> 音声: copy (codec=$acodec, compact だが96kbps以下)"
+      fi
+    else
+      args_audio=(-map "0:a:0?" -c:a copy)
+      print -r -- ">> 音声: copy (codec=$acodec)"
+    fi
   else
     aac_bitrate_resolved="${AV1_AAC_BITRATE:-96k}"
     args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac 2 -ar 48000)
@@ -580,6 +626,7 @@ av1ify() {
   local opt_resolution=""
   local opt_fps=""
   local opt_denoise=""
+  local opt_compact=0
   local -a positional=()
   while (( $# > 0 )); do
     case "$1" in
@@ -588,6 +635,9 @@ av1ify() {
         ;;
       -h|--help)
         (( ! __av1ify_internal )) && show_help=1
+        ;;
+      -c|--compact)
+        opt_compact=1
         ;;
       -r|--resolution)
         shift
@@ -613,6 +663,13 @@ av1ify() {
         fi
         opt_denoise="$1"
         ;;
+      -f)
+        positional+=("$1")
+        ;;
+      -*)
+        print -r -- "エラー: 不明なオプション: $1" >&2
+        return 1
+        ;;
       *)
         positional+=("$1")
         ;;
@@ -621,11 +678,18 @@ av1ify() {
   done
   set -- "${positional[@]}"
 
+  # --compact: 720p + 30fps プリセット（明示的な -r/--fps が優先）
+  if (( opt_compact )); then
+    [[ -z "$opt_resolution" ]] && opt_resolution="720p"
+    [[ -z "$opt_fps" ]] && opt_fps="30"
+  fi
+
   if (( ! __av1ify_internal )); then
     __AV1IFY_DRY_RUN=$dry_run
     __AV1IFY_RESOLUTION="$opt_resolution"
     __AV1IFY_FPS="$opt_fps"
     __AV1IFY_DENOISE="$opt_denoise"
+    __AV1IFY_COMPACT=$opt_compact
   else
     dry_run="${__AV1IFY_DRY_RUN:-$dry_run}"
   fi
@@ -633,6 +697,9 @@ av1ify() {
   # バナー出力（内部呼び出し・ヘルプ時は除く）
   if (( ! __av1ify_internal )) && (( ! show_help )) && (( $# > 0 )); then
     __av1ify_banner
+    if (( opt_compact )); then
+      print -r -- ">> compact モード: -r ${opt_resolution} --fps ${opt_fps}"
+    fi
   fi
 
   (( ! __av1ify_internal && dry_run )) && print -r -- "[DRY-RUN] ファイルは変更しません"
@@ -688,6 +755,12 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
     # 720p + ノイズ除去の組み合わせ
     av1ify -r 720p --denoise light "/path/to/movie.mp4"
 
+    # 保存用プリセット（720p + 30fps）
+    av1ify --compact "/path/to/movie.mp4"
+
+    # --compact + 解像度だけ上書き（480p + 30fps）
+    av1ify --compact -r 480p "/path/to/movie.mp4"
+
 オプション:
   -h, --help: このヘルプメッセージを表示します。
   -n, --dry-run: 実行内容のみを表示し、ファイルを変更しません。
@@ -695,6 +768,7 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
   -r, --resolution <値>: 出力解像度（縦）を指定します。アスペクト比は維持されます。
       480p / 720p / 1080p / 1440p / 4k または数値（例: 540）
   --fps <値>: 出力フレームレートを指定します（例: 24, 30, 60）。
+  -c, --compact: 保存用プリセット（720p + 30fps）。-r や --fps で個別に上書き可能。
   --denoise <レベル>: ノイズ除去を適用します。圧縮率が向上しますが、ディテールが失われます。
       light: 軽度（hqdn3d=2:2:3:3）
       medium: 中程度（hqdn3d=4:4:6:6）

@@ -15,9 +15,26 @@ ln -sf ~/dotfiles/_tmux.conf ~/.tmux.conf
 ln -sf ~/dotfiles/_coc-settings.json ~/.config/nvim/coc-settings.json
 
 # setup .claude directory
-mkdir -p ~/.claude
-ln -sfn ~/dotfiles/_claude/agents ~/.claude/agents
-ln -sfn ~/dotfiles/_claude/skills ~/.claude/skills
+# migrate: ディレクトリ丸ごとシンボリックリンクだった旧形式を個別リンク形式に変換
+for dir in ~/.claude/agents ~/.claude/skills; do
+  if [ -L "$dir" ]; then
+    echo "migrating $dir: replacing directory symlink with individual symlinks"
+    rm "$dir"
+  fi
+  # skills/skills, agents/agents のような二重リンクが残っていたら削除
+  nested="$dir/$(basename "$dir")"
+  if [ -L "$nested" ]; then
+    echo "migrating $dir: removing nested symlink $nested"
+    rm "$nested"
+  fi
+done
+mkdir -p ~/.claude/agents ~/.claude/skills
+for f in ~/dotfiles/_claude/agents/*; do
+  [ -e "$f" ] && ln -sfn "$f" ~/.claude/agents/"$(basename "$f")"
+done
+for d in ~/dotfiles/_claude/skills/*/; do
+  [ -d "$d" ] && ln -sfn "$d" ~/.claude/skills/"$(basename "$d")"
+done
 ln -sf ~/dotfiles/_claude/keybindings.json ~/.claude/keybindings.json
 
 # cleanup legacy bash symlinks (extendable)
