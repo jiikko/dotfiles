@@ -21,7 +21,8 @@
       "WebFetch(domain:platform.openai.com)",
       "WebFetch(domain:electron-vite.org)",
       "WebFetch(domain:www.electronjs.org)",
-      "WebFetch(domain:www.electronforge.io)"
+      "WebFetch(domain:www.electronforge.io)",
+      "Bash(grep:*)"
     ]
   }
 }
