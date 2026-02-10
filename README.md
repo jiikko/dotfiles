@@ -76,3 +76,35 @@ AV1_CRF=35 av1ify movie.mp4  # CRF指定
 - 対応形式: `.avi`, `.mkv`, `.rm`, `.wmv`, `.mpg`, `.mpeg`, `.mov`, `.mp4`, `.flv`, `.webm`, `.3gp`
 - 出力: `*-enc.mp4`
 - 依存: `ffmpeg`, `ffprobe` (SVT-AV1サポート付き)
+
+### concat
+
+複数の動画ファイルを無劣化で結合します。
+
+```bash
+concat video_001.mp4 video_002.mp4 video_003.mp4  # 連番ファイルを結合
+concat --force video1.mp4 video2.mp4               # コーデック不一致でも強制実行
+concat -h                                          # ヘルプ
+```
+
+- FFmpegのconcat demuxerを使用して無劣化結合
+- 同一コーデック・フォーマットの動画を高速に連結
+- ファイル名の連続性（連番パターン）を自動チェック
+- コーデック・解像度の不一致を検出
+- クラウドストレージ（Dropbox等）の自動プリフェッチに対応
+- 対応形式: `.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`, `.flv`, `.wmv`, `.m4v`, `.mpg`, `.mpeg`, `.3gp`, `.ts`, `.m2ts`
+- 出力: 共通プレフィックス + `.mp4` (例: `video_001.mp4, video_002.mp4` → `video.mp4`)
+- 依存: `ffmpeg`, `ffprobe`
+
+## macOS Integration
+
+### Finder Quick Actions
+
+Finderの右クリックメニューから動画処理コマンドを実行できます。
+
+```bash
+# セットアップ
+~/dotfiles/mac/finder-actions/setup-concat-finder-action.sh
+```
+
+詳細は [mac/finder-actions/README.md](./mac/finder-actions/README.md) を参照。
