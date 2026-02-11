@@ -146,6 +146,24 @@ __av1ify_postcheck() {
     fi
   fi
 
+  # ファイルサイズの妥当性チェック
+  if [[ -n "$src_path" && -f "$src_path" && -f "$filepath" ]]; then
+    local src_size out_size
+    src_size=$(stat -f%z -- "$src_path" 2>/dev/null) || src_size=""
+    out_size=$(stat -f%z -- "$filepath" 2>/dev/null) || out_size=""
+    if [[ -n "$src_size" && "$src_size" =~ ^[0-9]+$ && -n "$out_size" && "$out_size" =~ ^[0-9]+$ ]] && (( src_size > 0 )); then
+      local size_ratio
+      size_ratio=$(awk -v o="$out_size" -v s="$src_size" 'BEGIN{ printf "%.4f", o / s }')
+      local min_ratio="${AV1IFY_MIN_SIZE_RATIO:-0.001}"
+      local too_small
+      too_small=$(awk -v r="$size_ratio" -v m="$min_ratio" 'BEGIN{ print (r < m) ? 1 : 0 }')
+      if (( too_small )); then
+        issues+=("ファイルサイズ異常 (src=${src_size}B, out=${out_size}B, ratio=${size_ratio})")
+        suffixes+=("tinyfile")
+      fi
+    fi
+  fi
+
   REPLY="$filepath"
     if (( ${#issues[@]} )); then
       local note="check_ng"

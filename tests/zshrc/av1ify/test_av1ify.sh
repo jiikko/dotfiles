@@ -928,5 +928,47 @@ else
   printf '✗ Portrait resolution should use short side (width)\n'
 fi
 
+# Test 68: ファイルサイズ異常の検出
+printf '\n## Test 68: File size anomaly detection\n'
+TEST_DIR="$TEST_TMP/test68"
+mkdir -p "$TEST_DIR"
+# ソースを十分大きく (100KB)
+dd if=/dev/zero of="$TEST_DIR/input.avi" bs=1024 count=100 2>/dev/null
+cd "$TEST_DIR"
+# ffmpegモックの出力は "mock video data" (15バイト) → ratio≈0.00015 < 0.001
+unsetopt err_exit
+output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "ファイルサイズ異常" "Detects abnormally small output file"
+assert_contains "$output" "check_ng" "Output is marked as check_ng"
+
+# Test 69: ファイルサイズが妥当なら警告なし
+printf '\n## Test 69: File size normal - no warning\n'
+TEST_DIR="$TEST_TMP/test69"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+# ソースも小さい(12B)、モック出力も小さい(15B) → ratio≈1.25 > 0.001 で正常
+unsetopt err_exit
+output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"ファイルサイズ異常"* ]]; then
+  printf '✓ No file size warning for normal ratio\n'
+else
+  printf '✗ Should not warn when file size ratio is normal\n'
+fi
+
+# Test 70: AV1IFY_MIN_SIZE_RATIO で閾値をカスタマイズ
+printf '\n## Test 70: Custom file size ratio via AV1IFY_MIN_SIZE_RATIO\n'
+TEST_DIR="$TEST_TMP/test70"
+mkdir -p "$TEST_DIR"
+# ソース200バイト、出力15バイト → ratio≈0.075。閾値を0.1にすると検出
+dd if=/dev/zero of="$TEST_DIR/input.avi" bs=1 count=200 2>/dev/null
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(AV1IFY_MIN_SIZE_RATIO=0.1 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "ファイルサイズ異常" "Custom ratio threshold detects small output"
+
 printf '\n=== All Tests Completed ===\n'
 printf 'All av1ify tests passed successfully!\n'
