@@ -38,7 +38,16 @@ cat > "$MOCK_BIN_DIR/ffprobe" <<'EOF'
 #!/usr/bin/env sh
 # どんなクエリでも成功を返す（MOCK_WIDTH/MOCK_HEIGHT で上書き可能）
 if echo "$*" | grep -q "codec_name"; then
-  echo "aac"
+  if echo "$*" | grep -q "select_streams v"; then
+    last_arg=""
+    for arg in "$@"; do last_arg="$arg"; done
+    case "$last_arg" in
+      *-enc*|*check_ng*) echo "${MOCK_OUTPUT_VCODEC-av1}" ;;
+      *) echo "${MOCK_VCODEC-h264}" ;;
+    esac
+  else
+    echo "aac"
+  fi
 elif echo "$*" | grep -q "stream=index"; then
   echo "0"
 elif echo "$*" | grep -q "stream=bit_rate"; then
@@ -969,6 +978,34 @@ unsetopt err_exit
 output=$(AV1IFY_MIN_SIZE_RATIO=0.1 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "ファイルサイズ異常" "Custom ratio threshold detects small output"
+
+# Test 71: 出力映像コーデック不一致の検出
+printf '\n## Test 71: Output video codec mismatch detection\n'
+TEST_DIR="$TEST_TMP/test71"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# 出力コーデックが h264 → av1 でないので警告
+output=$(MOCK_OUTPUT_VCODEC=h264 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "映像コーデック不一致" "Detects non-AV1 output codec"
+assert_contains "$output" "check_ng" "Output is marked as check_ng"
+
+# Test 72: 出力コーデックが av1 なら警告なし
+printf '\n## Test 72: Output video codec is av1 - no warning\n'
+TEST_DIR="$TEST_TMP/test72"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_OUTPUT_VCODEC=av1 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"映像コーデック不一致"* ]]; then
+  printf '✓ No codec warning when output is av1\n'
+else
+  printf '✗ Should not warn when output codec is av1\n'
+fi
 
 printf '\n=== All Tests Completed ===\n'
 printf 'All av1ify tests passed successfully!\n'

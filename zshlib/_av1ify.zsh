@@ -164,6 +164,14 @@ __av1ify_postcheck() {
     fi
   fi
 
+  # 出力映像コーデックの検証
+  local out_vcodec
+  out_vcodec=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
+  if [[ -n "$out_vcodec" && "${out_vcodec:l}" != "av1" ]]; then
+    issues+=("映像コーデック不一致 (期待=av1, 実際=${out_vcodec})")
+    suffixes+=("codec")
+  fi
+
   REPLY="$filepath"
     if (( ${#issues[@]} )); then
       local note="check_ng"
