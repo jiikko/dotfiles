@@ -67,6 +67,7 @@ __av1ify_mark_issue() {
 __av1ify_postcheck() {
   local filepath="$1"
   local src_path="${2:-}"
+  local fps_changed="${3:-0}"
   local -a issues suffixes
 
   local audio_stream
@@ -109,6 +110,19 @@ __av1ify_postcheck() {
           issues+=("再生時間ズレ (src=${src_fmt_dur}s, out=${out_fmt_dur}s, Δ=${dur_diff}s)")
           suffixes+=("duration")
         fi
+      fi
+    fi
+  fi
+
+  # フレーム数比較（fps変更なしの場合のみ）
+  if [[ -n "$src_path" ]] && (( ! fps_changed )); then
+    local src_frames out_frames
+    src_frames=$(ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of default=nk=1:nw=1 -- "$src_path" 2>/dev/null | head -n1)
+    out_frames=$(ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
+    if [[ -n "$src_frames" && "$src_frames" =~ ^[0-9]+$ && -n "$out_frames" && "$out_frames" =~ ^[0-9]+$ ]]; then
+      if (( src_frames != out_frames )); then
+        issues+=("フレーム数不一致 (src=${src_frames}, out=${out_frames})")
+        suffixes+=("frames")
       fi
     fi
   fi
@@ -564,7 +578,7 @@ __av1ify_one() {
   if ffmpeg "${args_common[@]}" "${args_audio[@]}" -- "$tmp"; then
     __AV1IFY_CURRENT_TMP=""
     mv -f -- "$tmp" "$final_out"
-    if __av1ify_postcheck "$final_out" "$in"; then
+    if __av1ify_postcheck "$final_out" "$in" "$( [[ -n "$target_fps" ]] && echo 1 || echo 0 )"; then
       final_out="$REPLY"; print -r -- "✅ 完了: $final_out"; return 0
     else
       final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"; return 1
@@ -611,7 +625,7 @@ __av1ify_one() {
       if ffmpeg "${args_common[@]}" "${args_audio[@]}" -- "$tmp"; then
         __AV1IFY_CURRENT_TMP=""
         mv -f -- "$tmp" "$final_out"
-        if __av1ify_postcheck "$final_out" "$in"; then
+        if __av1ify_postcheck "$final_out" "$in" "$( [[ -n "$target_fps" ]] && echo 1 || echo 0 )"; then
           final_out="$REPLY"; print -r -- "✅ 完了: $final_out"; return 0
         else
           final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"; return 1

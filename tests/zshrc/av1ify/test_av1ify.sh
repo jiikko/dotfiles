@@ -43,6 +43,13 @@ elif echo "$*" | grep -q "stream=index"; then
   echo "0"
 elif echo "$*" | grep -q "stream=bit_rate"; then
   echo "${MOCK_AUDIO_BITRATE-248000}"
+elif echo "$*" | grep -q "nb_frames"; then
+  last_arg=""
+  for arg in "$@"; do last_arg="$arg"; done
+  case "$last_arg" in
+    *-enc*|*check_ng*) echo "${MOCK_OUTPUT_NB_FRAMES-${MOCK_NB_FRAMES-300}}" ;;
+    *) echo "${MOCK_NB_FRAMES-300}" ;;
+  esac
 elif echo "$*" | grep -q "format=duration"; then
   # format duration: ソース vs 出力を区別（-enc を含むファイルは出力扱い）
   last_arg=""
@@ -806,6 +813,50 @@ unsetopt err_exit
 output=$(AV1IFY_DURATION_TOLERANCE=1.0 MOCK_FORMAT_DURATION=10.0 MOCK_OUTPUT_FORMAT_DURATION=8.5 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "再生時間ズレ" "Custom tolerance detects smaller duration mismatch"
+
+# Test 61: フレーム数不一致の検出
+printf '\n## Test 61: Frame count mismatch detection\n'
+TEST_DIR="$TEST_TMP/test61"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# ソース=300フレーム, 出力=250フレーム → 不一致で警告
+output=$(MOCK_NB_FRAMES=300 MOCK_OUTPUT_NB_FRAMES=250 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "フレーム数不一致" "Detects frame count mismatch"
+assert_contains "$output" "check_ng" "Output is marked as check_ng"
+
+# Test 62: フレーム数一致なら警告なし
+printf '\n## Test 62: Frame count match - no warning\n'
+TEST_DIR="$TEST_TMP/test62"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_NB_FRAMES=300 MOCK_OUTPUT_NB_FRAMES=300 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"フレーム数不一致"* ]]; then
+  printf '✓ No frame count warning when counts match\n'
+else
+  printf '✗ Should not warn when frame counts match\n'
+fi
+
+# Test 63: fps変更時はフレーム数チェックをスキップ
+printf '\n## Test 63: Frame count check skipped when fps changed\n'
+TEST_DIR="$TEST_TMP/test63"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# fps変更あり(60→30)の場合、フレーム数が異なっても警告しない
+output=$(MOCK_FPS="60000/1001" MOCK_NB_FRAMES=600 MOCK_OUTPUT_NB_FRAMES=300 av1ify --fps 30 "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"フレーム数不一致"* ]]; then
+  printf '✓ No frame count warning when fps changed\n'
+else
+  printf '✗ Should not check frame count when fps is changed\n'
+fi
 
 printf '\n=== All Tests Completed ===\n'
 printf 'All av1ify tests passed successfully!\n'
