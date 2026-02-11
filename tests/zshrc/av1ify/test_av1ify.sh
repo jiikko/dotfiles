@@ -43,6 +43,14 @@ elif echo "$*" | grep -q "stream=index"; then
   echo "0"
 elif echo "$*" | grep -q "stream=bit_rate"; then
   echo "${MOCK_AUDIO_BITRATE-248000}"
+elif echo "$*" | grep -q "format=duration"; then
+  # format duration: ソース vs 出力を区別（-enc を含むファイルは出力扱い）
+  last_arg=""
+  for arg in "$@"; do last_arg="$arg"; done
+  case "$last_arg" in
+    *-enc*|*check_ng*) echo "${MOCK_OUTPUT_FORMAT_DURATION-${MOCK_FORMAT_DURATION-10.0}}" ;;
+    *) echo "${MOCK_FORMAT_DURATION-10.0}" ;;
+  esac
 elif echo "$*" | grep -q "duration"; then
   echo "10.0"
 elif echo "$*" | grep -q "r_frame_rate"; then
@@ -757,6 +765,47 @@ unsetopt err_exit
 output=$(MOCK_FPS="60000/1001" MOCK_AUDIO_BITRATE=96000 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_file_exists "$TEST_DIR/input-720p-30fps-enc.mp4" "Compact with 60fps: both tags applied"
+
+# Test 58: 再生時間ズレ検出 — 出力がソースより大きくずれている場合に警告
+printf '\n## Test 58: Duration mismatch detection\n'
+TEST_DIR="$TEST_TMP/test58"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# ソース=10.0s, 出力=5.0s → Δ=5.0s > 2.0s(デフォルト閾値）で警告
+output=$(MOCK_FORMAT_DURATION=10.0 MOCK_OUTPUT_FORMAT_DURATION=5.0 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "再生時間ズレ" "Detects duration mismatch between source and output"
+assert_contains "$output" "check_ng" "Output is marked as check_ng"
+
+# Test 59: 再生時間が許容範囲内なら警告なし
+printf '\n## Test 59: Duration within tolerance - no warning\n'
+TEST_DIR="$TEST_TMP/test59"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# ソース=10.0s, 出力=9.5s → Δ=0.5s < 2.0s で正常
+output=$(MOCK_FORMAT_DURATION=10.0 MOCK_OUTPUT_FORMAT_DURATION=9.5 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"再生時間ズレ"* ]]; then
+  printf '✓ No duration warning within tolerance\n'
+else
+  printf '✗ Should not warn when duration difference is within tolerance\n'
+fi
+
+# Test 60: AV1IFY_DURATION_TOLERANCE で閾値をカスタマイズ
+printf '\n## Test 60: Custom duration tolerance via AV1IFY_DURATION_TOLERANCE\n'
+TEST_DIR="$TEST_TMP/test60"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# Δ=1.5s, デフォルト閾値(2.0s)では通るが閾値を1.0sに下げると検出
+output=$(AV1IFY_DURATION_TOLERANCE=1.0 MOCK_FORMAT_DURATION=10.0 MOCK_OUTPUT_FORMAT_DURATION=8.5 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "再生時間ズレ" "Custom tolerance detects smaller duration mismatch"
 
 printf '\n=== All Tests Completed ===\n'
 printf 'All av1ify tests passed successfully!\n'

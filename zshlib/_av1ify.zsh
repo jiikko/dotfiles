@@ -66,6 +66,7 @@ __av1ify_mark_issue() {
 # 内部補助: 出力ファイルの簡易チェック（音声有無と音ズレ）
 __av1ify_postcheck() {
   local filepath="$1"
+  local src_path="${2:-}"
   local -a issues suffixes
 
   local audio_stream
@@ -88,6 +89,26 @@ __av1ify_postcheck() {
       if (( diff_f > threshold_f )); then
         issues+=("音ズレ疑い (Δ=${diff}s)")
         suffixes+=("avsync")
+      fi
+    fi
+  fi
+
+  # ソースとの再生時間比較
+  if [[ -n "$src_path" ]]; then
+    local src_fmt_dur out_fmt_dur dur_diff
+    src_fmt_dur=$(ffprobe -v error -show_entries format=duration -of default=nk=1:nw=1 -- "$src_path" 2>/dev/null | head -n1)
+    out_fmt_dur=$(ffprobe -v error -show_entries format=duration -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
+    if [[ -n "$src_fmt_dur" && -n "$out_fmt_dur" ]]; then
+      dur_diff=$(awk -v s="$src_fmt_dur" -v o="$out_fmt_dur" 'BEGIN{ if (s=="" || o=="") exit 1; d=s-o; if (d<0) d=-d; printf "%.3f", d }' 2>/dev/null) || dur_diff=""
+      if [[ -n "$dur_diff" ]]; then
+        local dur_threshold="${AV1IFY_DURATION_TOLERANCE:-2.0}"
+        local -F dur_diff_f dur_threshold_f
+        dur_diff_f=$dur_diff
+        dur_threshold_f=$dur_threshold
+        if (( dur_diff_f > dur_threshold_f )); then
+          issues+=("再生時間ズレ (src=${src_fmt_dur}s, out=${out_fmt_dur}s, Δ=${dur_diff}s)")
+          suffixes+=("duration")
+        fi
       fi
     fi
   fi
@@ -543,7 +564,7 @@ __av1ify_one() {
   if ffmpeg "${args_common[@]}" "${args_audio[@]}" -- "$tmp"; then
     __AV1IFY_CURRENT_TMP=""
     mv -f -- "$tmp" "$final_out"
-    if __av1ify_postcheck "$final_out"; then
+    if __av1ify_postcheck "$final_out" "$in"; then
       final_out="$REPLY"; print -r -- "✅ 完了: $final_out"; return 0
     else
       final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"; return 1
@@ -590,7 +611,7 @@ __av1ify_one() {
       if ffmpeg "${args_common[@]}" "${args_audio[@]}" -- "$tmp"; then
         __AV1IFY_CURRENT_TMP=""
         mv -f -- "$tmp" "$final_out"
-        if __av1ify_postcheck "$final_out"; then
+        if __av1ify_postcheck "$final_out" "$in"; then
           final_out="$REPLY"; print -r -- "✅ 完了: $final_out"; return 0
         else
           final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"; return 1
