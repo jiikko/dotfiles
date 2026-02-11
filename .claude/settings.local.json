@@ -32,7 +32,15 @@
       "Bash(grep:*)",
       "Bash(git checkout:*)",
       "Bash(git stash pop:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "WebFetch(domain:news.ycombinator.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:support.claude.com)",
+      "WebFetch(domain:community.openai.com)",
+      "WebFetch(domain:usagebar.com)",
+      "WebFetch(domain:help.openai.com)",
+      "WebFetch(domain:developers.openai.com)",
+      "Bash(python3:*)"
     ]
   }
 }
