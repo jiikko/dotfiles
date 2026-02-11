@@ -68,6 +68,7 @@ __av1ify_postcheck() {
   local filepath="$1"
   local src_path="${2:-}"
   local fps_changed="${3:-0}"
+  local expected_height="${4:-}"
   local -a issues suffixes
 
   local audio_stream
@@ -123,6 +124,24 @@ __av1ify_postcheck() {
       if (( src_frames != out_frames )); then
         issues+=("フレーム数不一致 (src=${src_frames}, out=${out_frames})")
         suffixes+=("frames")
+      fi
+    fi
+  fi
+
+  # 出力解像度の検証
+  if [[ -n "$expected_height" ]]; then
+    local out_w out_h out_short
+    out_w=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
+    out_h=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
+    if [[ -n "$out_w" && "$out_w" =~ ^[0-9]+$ && -n "$out_h" && "$out_h" =~ ^[0-9]+$ ]]; then
+      if (( out_h > out_w )); then
+        out_short=$out_w
+      else
+        out_short=$out_h
+      fi
+      if (( out_short != expected_height )); then
+        issues+=("解像度不一致 (期待=${expected_height}p, 実際=${out_short}p, ${out_w}x${out_h})")
+        suffixes+=("resolution")
       fi
     fi
   fi
@@ -578,7 +597,7 @@ __av1ify_one() {
   if ffmpeg "${args_common[@]}" "${args_audio[@]}" -- "$tmp"; then
     __AV1IFY_CURRENT_TMP=""
     mv -f -- "$tmp" "$final_out"
-    if __av1ify_postcheck "$final_out" "$in" "$( [[ -n "$target_fps" ]] && echo 1 || echo 0 )"; then
+    if __av1ify_postcheck "$final_out" "$in" "$( [[ -n "$target_fps" ]] && echo 1 || echo 0 )" "$target_height"; then
       final_out="$REPLY"; print -r -- "✅ 完了: $final_out"; return 0
     else
       final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"; return 1
@@ -625,7 +644,7 @@ __av1ify_one() {
       if ffmpeg "${args_common[@]}" "${args_audio[@]}" -- "$tmp"; then
         __AV1IFY_CURRENT_TMP=""
         mv -f -- "$tmp" "$final_out"
-        if __av1ify_postcheck "$final_out" "$in" "$( [[ -n "$target_fps" ]] && echo 1 || echo 0 )"; then
+        if __av1ify_postcheck "$final_out" "$in" "$( [[ -n "$target_fps" ]] && echo 1 || echo 0 )" "$target_height"; then
           final_out="$REPLY"; print -r -- "✅ 完了: $final_out"; return 0
         else
           final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"; return 1

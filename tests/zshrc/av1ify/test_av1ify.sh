@@ -63,9 +63,19 @@ elif echo "$*" | grep -q "duration"; then
 elif echo "$*" | grep -q "r_frame_rate"; then
   echo "${MOCK_FPS-30000/1001}"
 elif echo "$*" | grep -q "width"; then
-  echo "${MOCK_WIDTH-1920}"
+  last_arg=""
+  for arg in "$@"; do last_arg="$arg"; done
+  case "$last_arg" in
+    *-enc*|*check_ng*) echo "${MOCK_OUTPUT_WIDTH-${MOCK_WIDTH-1920}}" ;;
+    *) echo "${MOCK_WIDTH-1920}" ;;
+  esac
 elif echo "$*" | grep -q "height"; then
-  echo "${MOCK_HEIGHT-1080}"
+  last_arg=""
+  for arg in "$@"; do last_arg="$arg"; done
+  case "$last_arg" in
+    *-enc*|*check_ng*) echo "${MOCK_OUTPUT_HEIGHT-${MOCK_HEIGHT-1080}}" ;;
+    *) echo "${MOCK_HEIGHT-1080}" ;;
+  esac
 elif echo "$*" | grep -q "format_name"; then
   echo "mp4"
 fi
@@ -415,7 +425,7 @@ mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
-av1ify -r 720p "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
+MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify -r 720p "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
 assert_file_exists "$TEST_DIR/input-720p-enc.mp4" "Output file has resolution tag"
 
@@ -437,7 +447,7 @@ mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
-av1ify -r 720p --fps 24 "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
+MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify -r 720p --fps 24 "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
 assert_file_exists "$TEST_DIR/input-720p-24fps-enc.mp4" "Output file has both resolution and fps tags"
 
@@ -476,7 +486,7 @@ echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
 # mock は 1920x1080（短辺=1080）。-r 720p 指定 → 短辺1080 > 720 なのでダウンスケール
-av1ify -r 720p "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
+MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify -r 720p "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
 assert_file_exists "$TEST_DIR/input-720p-enc.mp4" "Downscale creates file with resolution tag"
 
@@ -509,7 +519,7 @@ mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
-MOCK_WIDTH=2160 MOCK_HEIGHT=3840 av1ify -r 1080p "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
+MOCK_WIDTH=2160 MOCK_HEIGHT=3840 MOCK_OUTPUT_WIDTH=1080 MOCK_OUTPUT_HEIGHT=1920 av1ify -r 1080p "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
 assert_file_exists "$TEST_DIR/input-1080p-enc.mp4" "Portrait 4K downscaled to 1080p creates tagged file"
 
@@ -555,7 +565,7 @@ mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
-av1ify -r 720p --denoise medium "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
+MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify -r 720p --denoise medium "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
 assert_file_exists "$TEST_DIR/input-720p-dn2-enc.mp4" "Output file has both resolution and denoise tags"
 
@@ -596,7 +606,7 @@ echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
 # mock を 60fps にして両方のタグが付くことを確認
-MOCK_FPS="60/1" av1ify --compact "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
+MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
 assert_file_exists "$TEST_DIR/input-720p-30fps-aac96k-enc.mp4" "Compact creates file with 720p, 30fps and aac96k tags"
 
@@ -687,7 +697,7 @@ echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
 # デフォルトの MOCK_AUDIO_BITRATE=248000 (248kbps > 96kbps)
-output=$(MOCK_FPS="60/1" av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
+output=$(MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "aac 96k へ再エンコード" "Compact re-encodes audio to 96k"
 assert_file_exists "$TEST_DIR/input-720p-30fps-aac96k-enc.mp4" "Compact output has aac96k tag"
@@ -699,7 +709,7 @@ mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
-output=$(MOCK_AUDIO_BITRATE=96000 MOCK_FPS="60/1" av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
+output=$(MOCK_AUDIO_BITRATE=96000 MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "copy" "Compact copies audio when <= 96kbps"
 assert_file_exists "$TEST_DIR/input-720p-30fps-enc.mp4" "Compact output has no aac tag when copying"
@@ -757,7 +767,7 @@ mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
-output=$(MOCK_FPS="30000/1001" MOCK_AUDIO_BITRATE=96000 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
+output=$(MOCK_FPS="30000/1001" MOCK_AUDIO_BITRATE=96000 MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "fps変更をスキップ" "Compact skips fps for 29.97fps source"
 assert_file_exists "$TEST_DIR/input-720p-enc.mp4" "Only resolution tag, no fps tag"
@@ -769,7 +779,7 @@ mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
-output=$(MOCK_FPS="60000/1001" MOCK_AUDIO_BITRATE=96000 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
+output=$(MOCK_FPS="60000/1001" MOCK_AUDIO_BITRATE=96000 MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_file_exists "$TEST_DIR/input-720p-30fps-enc.mp4" "Compact with 60fps: both tags applied"
 
@@ -856,6 +866,66 @@ if [[ "$output" != *"フレーム数不一致"* ]]; then
   printf '✓ No frame count warning when fps changed\n'
 else
   printf '✗ Should not check frame count when fps is changed\n'
+fi
+
+# Test 64: 出力解像度不一致の検出
+printf '\n## Test 64: Output resolution mismatch detection\n'
+TEST_DIR="$TEST_TMP/test64"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# -r 720p指定だが出力が1080pのまま → 不一致で警告
+output=$(MOCK_OUTPUT_WIDTH=1920 MOCK_OUTPUT_HEIGHT=1080 av1ify -r 720p "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "解像度不一致" "Detects output resolution mismatch"
+
+# Test 65: 出力解像度が期待通りなら警告なし
+printf '\n## Test 65: Output resolution match - no warning\n'
+TEST_DIR="$TEST_TMP/test65"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# -r 720p指定で出力も720p → 正常
+output=$(MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify -r 720p "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"解像度不一致"* ]]; then
+  printf '✓ No resolution warning when output matches expected\n'
+else
+  printf '✗ Should not warn when resolution matches\n'
+fi
+
+# Test 66: 解像度指定なしでは解像度チェックをスキップ
+printf '\n## Test 66: Resolution check skipped when no -r specified\n'
+TEST_DIR="$TEST_TMP/test66"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# -r なし。出力解像度が何であっても警告しない
+output=$(MOCK_OUTPUT_WIDTH=640 MOCK_OUTPUT_HEIGHT=480 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"解像度不一致"* ]]; then
+  printf '✓ No resolution check when -r not specified\n'
+else
+  printf '✗ Should not check resolution when -r is not specified\n'
+fi
+
+# Test 67: 縦長出力の解像度チェック（短辺=widthで判定）
+printf '\n## Test 67: Portrait output resolution check uses short side\n'
+TEST_DIR="$TEST_TMP/test67"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# ソース: 2160x3840(縦長4K), -r 1080p指定, 出力が1080x1920 → 短辺=1080=期待値で正常
+output=$(MOCK_WIDTH=2160 MOCK_HEIGHT=3840 MOCK_OUTPUT_WIDTH=1080 MOCK_OUTPUT_HEIGHT=1920 av1ify -r 1080p "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"解像度不一致"* ]]; then
+  printf '✓ Portrait resolution check uses short side correctly\n'
+else
+  printf '✗ Portrait resolution should use short side (width)\n'
 fi
 
 printf '\n=== All Tests Completed ===\n'
