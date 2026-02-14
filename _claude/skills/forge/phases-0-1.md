@@ -81,7 +81,7 @@
 - Maximum 専用エージェント（dependency-analyzer, test-coverage-advisor, refactoring-patterns）
 - 非 Swift プロジェクト: @_common/agents.md の「言語別エージェント置換ルール」に従い #1-2 を置換
 
-**Minimum モード時のエージェント（3つのみ、直列）**:
+**Minimum / Minimum+ モード時のエージェント（3つのみ、直列）**:
 1. swift-language-expert
 2. architecture-reviewer
 3. swiftui-test-expert
@@ -91,6 +91,7 @@
 ## Phase 1.1: クロスレビュー（実装モードのみ）
 
 > **Minimum モード**: このフェーズは省略
+> **Minimum+ モード**: 実行（3エージェント間ペアリング。@_common/cross-review.md の「Minimum+ モード用ペアリング」を参照）
 > **Ultra モード**: このフェーズは省略（Phase 4.3 で代替）
 
 Phase 1 の各エージェント出力を、**別の観点を持つエージェントが検証**する。
@@ -160,7 +161,7 @@ Phase 1 の各エージェント出力を、**別の観点を持つエージェ�
 - [あれば記載]
 ```
 
-### Minimum モード用設計書（簡潔版）
+### Minimum / Minimum+ モード用設計書（簡潔版）
 
 ```markdown
 ## 設計書: [タスク名]

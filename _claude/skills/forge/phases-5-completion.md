@@ -127,7 +127,7 @@ Phase 4 の統合結果に `performance` カテゴリの High 指摘が含まれ
 
 ## Phase 5.5: スキルテスト（TESTING）
 
-> **Minimum/Standard モード**: このフェーズは省略
+> **Minimum/Minimum+/Standard モード**: このフェーズは省略
 > **詳細**: @_common/skill-triggers.md の「Phase 5.5」セクションを参照
 
 Phase 5 の修正が収束した後、**TESTING カテゴリ**のスキルを実行する。

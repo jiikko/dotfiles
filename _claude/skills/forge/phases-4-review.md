@@ -23,7 +23,7 @@
 - Explore
 - swiftui-performance-expert ★常時必須
 
-**Minimum モード時のエージェント（3つのみ、直列）**:
+**Minimum / Minimum+ モード時のエージェント（3つのみ、直列）**:
 1. swift-language-expert
 2. architecture-reviewer
 3. swiftui-test-expert
@@ -43,6 +43,7 @@
 ## Phase 4.1: クロスレビュー（両モード共通）
 
 > **Minimum モード**: このフェーズは省略
+> **Minimum+ モード**: 実行（3エージェント間ペアリング。@_common/cross-review.md の「Minimum+ モード用ペアリング」を参照）
 > **Ultra モード**: このフェーズは省略（Phase 4.3 で代替）
 
 Phase 4 の各エージェント出力を、**別の観点を持つエージェントが検証**する。
@@ -56,6 +57,7 @@ Phase 4 の各エージェント出力を、**別の観点を持つエージェ�
 ## Phase 4.2: 統合レビュー（両モード共通）
 
 > **Minimum モード**: このフェーズは省略
+> **Minimum+ モード**: 実行
 > **Ultra モード**: このフェーズは省略（Phase 4.3 で代替）
 
 クロスレビュー完了後、**統合エージェント（opus）**を起動して結果を統合。
