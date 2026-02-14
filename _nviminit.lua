@@ -216,17 +216,17 @@ require("lazy").setup({
         end,
       })
       -- カーソル位置のドキュメント表示
-      function _G.show_documentation()
+      local function show_documentation()
         local filetype = vim.bo.filetype
         if vim.tbl_contains({ "vim", "help" }, filetype) then
           vim.cmd("help " .. vim.fn.expand("<cword>"))
-        elseif vim.fn.eval('coc#rpc#ready()') == 1 then
+        elseif vim.fn['coc#rpc#ready']() == 1 then
           vim.fn.CocActionAsync("doHover")
         else
           print("No documentation available")
         end
       end
-      keymap("n", "t", "<Cmd>lua show_documentation()<CR>", opts)
+      vim.keymap.set("n", "t", show_documentation, opts)
       -- 診断リストを開く
       keymap("n", "<leader>a", ":CocList diagnostics<CR>", opts)
       -- 選択範囲を指定 (CTRL-S)
