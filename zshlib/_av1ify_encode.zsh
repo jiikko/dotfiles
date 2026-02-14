@@ -64,29 +64,12 @@ __av1ify_one() {
   local dry_run="${__AV1IFY_DRY_RUN:-0}"
 
   # 解像度・fps オプションを取得
-  local target_resolution="${__AV1IFY_RESOLUTION:-${AV1_RESOLUTION:-}}"
+  # 解像度は av1ify() で CLI/環境変数を統合・検証済み
+  local target_resolution="$__AV1IFY_RESOLUTION"
   local target_fps="${__AV1IFY_FPS:-${AV1_FPS:-}}"
 
-  # 解像度・fpsのバリデーション（dry-run時も実行）
-  local validated_resolution="" validated_fps=""
-  if [[ -n "$target_resolution" ]]; then
-    case "${target_resolution:l}" in
-      480p|720p|1080p|1440p|4k)
-        validated_resolution="$target_resolution"
-        ;;
-      *)
-        if [[ "$target_resolution" =~ ^[0-9]+$ ]]; then
-          if (( target_resolution >= 16 && target_resolution <= 8640 )); then
-            validated_resolution="$target_resolution"
-          else
-            print -r -- "⚠️ 無効な解像度指定: $target_resolution（16-8640の範囲で指定してください）"
-          fi
-        else
-          print -r -- "⚠️ 無効な解像度指定: $target_resolution（無視します）"
-        fi
-        ;;
-    esac
-  fi
+  # fpsのバリデーション（dry-run時も実行）
+  local validated_resolution="$target_resolution" validated_fps=""
   if [[ -n "$target_fps" ]]; then
     if [[ "$target_fps" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
       local fps_valid

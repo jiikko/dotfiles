@@ -4,7 +4,7 @@ SCRIPT_PATH="${(%):-%x}"
 source "$(dirname "$SCRIPT_PATH")/test_helper.sh"
 
 # テスト開始
-printf '\n=== av1ify Options Tests (14-57) ===\n\n'
+printf '\n=== av1ify Options Tests (14-61) ===\n\n'
 
 # Test 14: --resolution オプションのヘルプメッセージ
 printf '## Test 14: Help message includes --resolution option\n'
@@ -48,21 +48,33 @@ output=$(av1ify --dry-run -r 1080p --fps 30 "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "resolution=1080p" "Dry-run shows resolution=1080p"
 assert_contains "$output" "fps=30" "Dry-run shows fps=30"
 
-# Test 19: 無効な解像度のバリデーション
-printf '\n## Test 19: Invalid resolution validation\n'
+# Test 19: 無効な解像度のバリデーション（エラー終了）
+printf '\n## Test 19: Invalid resolution validation (error exit)\n'
 TEST_DIR="$TEST_TMP/test19"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
-output=$(av1ify --dry-run -r 0 "$TEST_DIR/input.avi" 2>&1 || true)
-assert_contains "$output" "無効な解像度指定" "Reports invalid resolution for 0"
-assert_contains "$output" "resolution=auto" "Falls back to auto when invalid"
 
-output=$(av1ify --dry-run -r 10000 "$TEST_DIR/input.avi" 2>&1 || true)
-assert_contains "$output" "無効な解像度指定" "Reports invalid resolution for 10000"
+unsetopt err_exit
+output=$(av1ify --dry-run -r 0 "$TEST_DIR/input.avi" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_contains "$output" "無効な解像度" "Reports invalid resolution for 0"
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero for -r 0 (%d)\n' "$exit_code" || printf '✗ Exit code should be non-zero for -r 0 (got %d)\n' "$exit_code"
 
-output=$(av1ify --dry-run -r abc "$TEST_DIR/input.avi" 2>&1 || true)
-assert_contains "$output" "無効な解像度指定" "Reports invalid resolution for non-numeric"
+unsetopt err_exit
+output=$(av1ify --dry-run -r 10000 "$TEST_DIR/input.avi" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_contains "$output" "無効な解像度" "Reports invalid resolution for 10000"
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero for -r 10000 (%d)\n' "$exit_code" || printf '✗ Exit code should be non-zero for -r 10000 (got %d)\n' "$exit_code"
+
+unsetopt err_exit
+output=$(av1ify --dry-run -r abc "$TEST_DIR/input.avi" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_contains "$output" "無効な解像度" "Reports invalid resolution for non-numeric"
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero for -r abc (%d)\n' "$exit_code" || printf '✗ Exit code should be non-zero for -r abc (got %d)\n' "$exit_code"
 
 # Test 20: 無効なfpsのバリデーション
 printf '\n## Test 20: Invalid FPS validation\n'
@@ -504,5 +516,45 @@ unsetopt err_exit
 output=$(MOCK_FPS="60000/1001" MOCK_AUDIO_BITRATE=96000 MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_file_exists "$TEST_DIR/input-720p-30fps-enc.mp4" "Compact with 60fps: both tags applied"
+
+# Test 58: 部分一致 — "7" は "720p" に解決
+printf '\n## Test 58: Partial match - "7" resolves to 720p\n'
+TEST_DIR="$TEST_TMP/test58"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run -r 7 "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "720p に解決しました" "Partial match '7' resolves to 720p"
+assert_contains "$output" "resolution=720p" "Dry-run shows resolved resolution=720p"
+
+# Test 59: 部分一致 — "10" は "1080p" に解決
+printf '\n## Test 59: Partial match - "10" resolves to 1080p\n'
+TEST_DIR="$TEST_TMP/test59"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run -r 10 "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "1080p に解決しました" "Partial match '10' resolves to 1080p"
+assert_contains "$output" "resolution=1080p" "Dry-run shows resolved resolution=1080p"
+
+# Test 60: 部分一致 — "14" は "1440p" に解決
+printf '\n## Test 60: Partial match - "14" resolves to 1440p\n'
+TEST_DIR="$TEST_TMP/test60"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run -r 14 "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "1440p に解決しました" "Partial match '14' resolves to 1440p"
+assert_contains "$output" "resolution=1440p" "Dry-run shows resolved resolution=1440p"
+
+# Test 61: 部分一致（複数候補） — "4" は "480p" に解決（最小解像度を選択）
+printf '\n## Test 61: Partial match with multiple candidates - "4" resolves to 480p\n'
+TEST_DIR="$TEST_TMP/test61"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run -r 4 "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "480p に解決しました" "Partial match '4' resolves to 480p (first candidate)"
+assert_contains "$output" "resolution=480p" "Dry-run shows resolved resolution=480p"
 
 printf '\n=== av1ify Options Tests Completed ===\n'

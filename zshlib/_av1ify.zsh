@@ -41,6 +41,56 @@ __av1ify_on_interrupt() {
 source "$HOME/dotfiles/zshlib/_av1ify_postcheck.zsh"
 source "$HOME/dotfiles/zshlib/_av1ify_encode.zsh"
 
+# 解像度値の検証と部分一致解決
+# 入力: $1 = 解像度文字列
+# 出力: REPLY = 解決後の解像度値
+# 戻り値: 0=成功, 1=エラー
+__av1ify_resolve_resolution() {
+  local input="$1"
+  local input_lower="${input:l}"
+
+  # 完全一致（プリセット名）
+  case "$input_lower" in
+    480p|720p|1080p|1440p|4k)
+      REPLY="$input_lower"
+      return 0
+      ;;
+  esac
+
+  # 純粋な数値で有効範囲内
+  if [[ "$input" =~ ^[0-9]+$ ]] && (( input >= 16 && input <= 8640 )); then
+    REPLY="$input"
+    return 0
+  fi
+
+  # 部分一致（プリセット名の前方一致）
+  local -a presets=(480p 720p 1080p 1440p 4k)
+  local -a matches=()
+  local p
+  for p in "${presets[@]}"; do
+    if [[ "$p" == "$input_lower"* ]]; then
+      matches+=("$p")
+    fi
+  done
+
+  if (( ${#matches[@]} == 1 )); then
+    print -r -- ">> 解像度 '${input}' → ${matches[1]} に解決しました"
+    REPLY="${matches[1]}"
+    return 0
+  fi
+
+  if (( ${#matches[@]} > 1 )); then
+    print -r -- ">> 解像度 '${input}' → ${matches[1]} に解決しました (候補: ${(j:, :)matches})"
+    REPLY="${matches[1]}"
+    return 0
+  fi
+
+  # 一致なし → エラー
+  print -r -- "エラー: 無効な解像度: ${input}" >&2
+  print -r -- "  有効な値: 480p, 720p, 1080p, 1440p, 4k, または 16-8640 の数値" >&2
+  return 1
+}
+
 av1ify() {
   local __av1ify_internal=0
   if [[ -n ${__AV1IFY_INTERNAL_CALL:-} ]]; then
@@ -116,7 +166,9 @@ av1ify() {
 
   if (( ! __av1ify_internal )); then
     __AV1IFY_DRY_RUN=$dry_run
-    __AV1IFY_RESOLUTION="$opt_resolution"
+    # CLI オプションと環境変数 AV1_RESOLUTION をここで統合
+    # → 各ファイル処理 (__av1ify_one) での二重バリデーションを回避
+    __AV1IFY_RESOLUTION="${opt_resolution:-${AV1_RESOLUTION:-}}"
     __AV1IFY_FPS="$opt_fps"
     __AV1IFY_DENOISE="$opt_denoise"
     __AV1IFY_COMPACT=$opt_compact
@@ -127,6 +179,19 @@ av1ify() {
   # バナー出力（内部呼び出し・ヘルプ時は除く）
   if (( ! __av1ify_internal )) && (( ! show_help )) && (( $# > 0 )); then
     __av1ify_banner
+  fi
+
+  # 解像度の早期バリデーション（バナー出力後に配置し、解決メッセージの表示順を統一）
+  if (( ! __av1ify_internal )) && [[ -n "$__AV1IFY_RESOLUTION" ]]; then
+    if __av1ify_resolve_resolution "$__AV1IFY_RESOLUTION"; then
+      __AV1IFY_RESOLUTION="$REPLY"
+      opt_resolution="$REPLY"
+    else
+      return 1
+    fi
+  fi
+
+  if (( ! __av1ify_internal )) && (( ! show_help )) && (( $# > 0 )); then
     if (( opt_compact )); then
       print -r -- ">> compact モード: -r ${opt_resolution} --fps ${opt_fps}"
     fi
