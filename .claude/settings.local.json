@@ -32,7 +32,10 @@
       "Bash(grep:*)",
       "Bash(git checkout:*)",
       "Bash(git stash pop:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:deepwiki.com)",
+      "WebFetch(domain:gpanders.com)"
     ]
   }
 }
