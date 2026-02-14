@@ -34,8 +34,9 @@
 
 macOS アプリがクラッシュした場合:
 ```bash
-ls ~/Library/Logs/DiagnosticReports/ | grep -i thumbnail
-cat ~/Library/Logs/DiagnosticReports/ThumbnailThumb-*.ips | head -200
+# アプリ名に合わせてフィルタ
+ls ~/Library/Logs/DiagnosticReports/ | grep -i [アプリ名]
+cat ~/Library/Logs/DiagnosticReports/[アプリ名]-*.ips | head -200
 ```
 
 ---

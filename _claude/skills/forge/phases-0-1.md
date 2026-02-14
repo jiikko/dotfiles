@@ -64,27 +64,10 @@
 
 > **モード別動作**: @_common/modes.md を参照
 
-### エージェント定義
+### エージェント選択
 
-> **詳細**: @_common/agents.md を参照
-
-**Phase 1 で使用するエージェント**:
-- 必須6エージェント + swiftui-performance-expert（Standard/Maximum/Ultra）
-  1. swift-language-expert
-  2. swiftui-macos-designer
-  3. research-assistant（Phase 1 のみ）
-  4. Explore
-  5. architecture-reviewer
-  6. swiftui-test-expert
-  7. swiftui-performance-expert（Phase 4 で常時必須、Phase 1 では View/UI 関連タスク時）
-- 条件付き必須エージェント（ファイル内容に応じて追加）
-- Maximum 専用エージェント（dependency-analyzer, test-coverage-advisor, refactoring-patterns）
-- 非 Swift プロジェクト: @_common/agents.md の「言語別エージェント置換ルール」に従い #1-2 を置換
-
-**Minimum / Minimum+ モード時のエージェント（3つのみ、直列）**:
-1. swift-language-expert
-2. architecture-reviewer
-3. swiftui-test-expert
+> **エージェント定義・プロンプト・選択ルール**: @_common/agents.md を参照
+> **モード別のエージェント数・実行方式**: @_common/modes.md を参照
 
 ---
 
@@ -113,7 +96,7 @@ Phase 1 の各エージェント出力を、**別の観点を持つエージェ�
 質問: 「調査結果に漏れはありますか？」
 
 調査結果サマリー:
-- 類似コード: [Explore が特定したファイル:行]
+- 類似コード: [Explore が特定したファイル:行]（Minimum+ では省略）
 - 技術方針: [swift-language-expert の提案]
 - 設計観点: [architecture-reviewer の指摘]
 - テスト観点: [swiftui-test-expert の指摘]
@@ -123,6 +106,8 @@ Phase 1 の各エージェント出力を、**別の観点を持つエージェ�
 2. 追加調査が必要（詳細を入力）
 3. 別の観点から調査してほしい
 ```
+
+> **Minimum+ モード**: Explore が不在のため「類似コード」は省略。他の3エージェントの結果のみでサマリーを構成する。
 
 ---
 
