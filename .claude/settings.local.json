@@ -40,7 +40,9 @@
       "WebFetch(domain:usagebar.com)",
       "WebFetch(domain:help.openai.com)",
       "WebFetch(domain:developers.openai.com)",
-      "Bash(python3:*)"
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:deepwiki.com)",
+      "WebFetch(domain:gpanders.com)"
     ]
   }
 }
