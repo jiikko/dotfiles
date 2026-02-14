@@ -20,6 +20,18 @@
 | research-assistant | security-auditor | swift-language-expert | 調査したベストプラクティスにセキュリティ懸念はないか |
 | swiftui-performance-expert | swiftui-macos-designer | - | パフォーマンス改善がUX を損なわないか |
 
+### Minimum+ モード用ペアリング（3エージェント間）
+
+Minimum+ モードでは3エージェントのみのため、以下の専用ペアリングを使用:
+
+| 元エージェント | レビュー担当 | 検証観点 |
+|---------------|-------------|---------|
+| swift-language-expert | architecture-reviewer | 言語機能の選択が設計に適合しているか |
+| architecture-reviewer | swift-language-expert | 設計が Swift の言語機能を活かしているか |
+| swiftui-test-expert | architecture-reviewer | テスト戦略がアーキテクチャと整合しているか |
+
+> **注意**: Standard 以上では swiftui-test-expert のレビューは Explore が担当するが、Minimum+ では Explore が不在のため architecture-reviewer が代替する。
+
 ### フロントエンド/デスクトップ用
 
 | 元エージェント | レビュー担当 | 検証観点 |

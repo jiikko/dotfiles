@@ -324,8 +324,8 @@ EOF
     done < <(find "$target" -type f \( \
         -iname '*.avi' -o -iname '*.mkv' -o -iname '*.rm' -o -iname '*.wmv' -o \
         -iname '*.mpg' -o -iname '*.mpeg' -o -iname '*.mov' -o -iname '*.mp4' -o \
-        -iname '*.flv' -o -iname '*.webm' -o -iname '*.3gp' \
-      \) -print0)
+        -iname '*.flv' -o -iname '*.webm' -o -iname '*.3gp' -o -iname '*.ts' \
+      \) -print0 | sort -z)
     if (( ${#files[@]} == 0 )); then
       print -r -- "（対象ファイルなし: $target）"; return 0
     fi
