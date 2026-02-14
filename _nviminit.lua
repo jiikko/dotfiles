@@ -196,10 +196,6 @@ require("lazy").setup({
         'coc#pum#visible() ? coc#pum#confirm() : "\\<CR>"',
         { expr = true, silent = true }
       )
-      -- 更新間隔を短縮
-      vim.o.updatetime = 300
-      -- signcolumn を常に表示
-      vim.wo.signcolumn = "yes"
       -- CocActionAsyncを呼び出してバッファ整形を実行する
       vim.api.nvim_create_user_command('Format', function()
         -- Cocの非同期フォーマットアクションを実行
@@ -219,12 +215,6 @@ require("lazy").setup({
           end)
         end,
       })
-      -- 現在のファイル名をクリップボードにコピー
-      vim.keymap.set("n", "<leader>n", function()
-        local filepath = vim.fn.expand("%:~:.")
-        vim.fn.setreg("+", filepath)
-        print(string.format('"%s" をコピーしました', filepath))
-      end, opts)
       -- カーソル位置のドキュメント表示
       function _G.show_documentation()
         local filetype = vim.bo.filetype
@@ -252,9 +242,6 @@ require("lazy").setup({
       -- 診断メッセージの前後移動
       keymap("n", "[g", "<Plug>(coc-diagnostic-prev)", opts)
       keymap("n", "]g", "<Plug>(coc-diagnostic-next)", opts)
-      -- ハイライト検索時にカーソルを次の候補に移動しない
-      keymap("n", "*", "*N", opts)
-      keymap("n", "#", "#N", opts)
       -- コードアクション
       keymap("n", "<leader>ac", "<Plug>(coc-codeaction-cursor)", opts)
       keymap("n", "<leader>as", "<Plug>(coc-codeaction-source)", opts)

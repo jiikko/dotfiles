@@ -49,6 +49,8 @@ local function set_options()
   opt.lazyredraw = true
   opt.vb = true
   opt.wildchar = 9
+  opt.updatetime = 300
+  vim.wo.signcolumn = "yes"
 end
 
 local function set_user_commands()
@@ -89,6 +91,15 @@ local function set_keymaps()
   map("n", "<C-y><C-w>", ":w<CR>", silent)
   map("n", "<leader>sp", ":sp<CR>", silent)
   map("n", "<leader>vs", ":vs<CR>", silent)
+  -- 現在のファイル名をクリップボードにコピー
+  map("n", "<leader>n", function()
+    local filepath = vim.fn.expand("%:~:.")
+    vim.fn.setreg("+", filepath)
+    print(string.format('"%s" をコピーしました', filepath))
+  end, silent)
+  -- ハイライト検索時にカーソルを次の候補に移動しない
+  map("n", "*", "*N", { noremap = true, silent = true })
+  map("n", "#", "#N", { noremap = true, silent = true })
 end
 
 local function set_highlights()
