@@ -4,7 +4,7 @@ SCRIPT_PATH="${(%):-%x}"
 source "$(dirname "$SCRIPT_PATH")/test_helper.sh"
 
 # テスト開始
-printf '\n=== av1ify Options Tests (14-61) ===\n\n'
+printf '\n=== av1ify Options Tests (14-64) ===\n\n'
 
 # Test 14: --resolution オプションのヘルプメッセージ
 printf '## Test 14: Help message includes --resolution option\n'
@@ -547,7 +547,7 @@ output=$(av1ify --dry-run -r 14 "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "1440p に解決しました" "Partial match '14' resolves to 1440p"
 assert_contains "$output" "resolution=1440p" "Dry-run shows resolved resolution=1440p"
 
-# Test 61: 部分一致（複数候補） — "4" は "480p" に解決（最小解像度を選択）
+# Test 61: 部分一致（複数候補） — "4" は "480p" に解決（配列の先頭候補を選択）
 printf '\n## Test 61: Partial match with multiple candidates - "4" resolves to 480p\n'
 TEST_DIR="$TEST_TMP/test61"
 mkdir -p "$TEST_DIR"
@@ -556,5 +556,33 @@ cd "$TEST_DIR"
 output=$(av1ify --dry-run -r 4 "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "480p に解決しました" "Partial match '4' resolves to 480p (first candidate)"
 assert_contains "$output" "resolution=480p" "Dry-run shows resolved resolution=480p"
+
+# Test 62: 環境変数 AV1_RESOLUTION での部分一致
+printf '\n## Test 62: Env var AV1_RESOLUTION partial match - "7" resolves to 720p\n'
+TEST_DIR="$TEST_TMP/test62"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(AV1_RESOLUTION=7 av1ify --dry-run "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "720p に解決しました" "Env var partial match '7' resolves to 720p"
+assert_contains "$output" "resolution=720p" "Dry-run shows resolved resolution=720p via env var"
+
+# Test 63: 大文字入力 "4K" は "4k" に解決
+printf '\n## Test 63: Uppercase input "4K" resolves to 4k\n'
+TEST_DIR="$TEST_TMP/test63"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run -r 4K "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "resolution=4k" "Uppercase '4K' resolves to 4k"
+
+# Test 64: 大文字入力 "720P" は "720p" に解決
+printf '\n## Test 64: Uppercase input "720P" resolves to 720p\n'
+TEST_DIR="$TEST_TMP/test64"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+output=$(av1ify --dry-run -r 720P "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "resolution=720p" "Uppercase '720P' resolves to 720p"
 
 printf '\n=== av1ify Options Tests Completed ===\n'
