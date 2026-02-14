@@ -48,9 +48,6 @@ local function set_options()
   opt.title = true
   opt.lazyredraw = true
   opt.vb = true
-  pcall(function()
-    opt.t_vb = ""
-  end)
   opt.wildchar = 9
 end
 

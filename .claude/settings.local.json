@@ -42,7 +42,10 @@
       "WebFetch(domain:developers.openai.com)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:deepwiki.com)",
-      "WebFetch(domain:gpanders.com)"
+      "WebFetch(domain:gpanders.com)",
+      "WebFetch(domain:neovim.io)",
+      "WebFetch(domain:lazy.folke.io)",
+      "Bash(make test-zshrc:*)"
     ]
   }
 }
