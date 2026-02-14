@@ -504,6 +504,67 @@ EOF
     return 1
   fi
 
+  # ディレクトリ内の同一パターンファイル欠落チェック
+  print -r -- ">> ディレクトリ内の関連ファイルチェック中..."
+  setopt LOCAL_OPTIONS EXTENDED_GLOB
+  local check_ext
+  check_ext="${$(__concat_get_ext "${input_files[1]}"):l}"  # 小文字に正規化
+
+  local -a input_abs=()
+  for file in "${input_files[@]}"; do
+    input_abs+=("${file:A}")
+  done
+
+  local -a missing_files=()
+  for f in "$first_dir"/(#i)*."$check_ext"(N); do
+    local f_abs="${f:A}"
+    local is_input=0
+    for inp in "${input_abs[@]}"; do
+      if [[ "$f_abs" == "$inp" ]]; then
+        is_input=1
+        break
+      fi
+    done
+    (( is_input )) && continue
+
+    local f_stem
+    f_stem=$(__concat_get_stem "$f")
+
+    local f_check_stem="$f_stem"
+    if (( use_stripped_stems )) && [[ -n "$detected_common_suffix" ]]; then
+      [[ "$f_stem" != *"$detected_common_suffix" ]] && continue
+      f_check_stem="${f_stem%$detected_common_suffix}"
+    fi
+
+    # common_prefixで始まるか確認（文字列比較）
+    if [[ "${f_check_stem:0:${#common_prefix}}" != "$common_prefix" ]]; then
+      continue
+    fi
+
+    local remaining="${f_check_stem:${#common_prefix}}"
+
+    # first_suffixがあればそれで終わるか確認して除去
+    if [[ -n "$first_suffix" ]]; then
+      [[ "$remaining" != *"$first_suffix" ]] && continue
+      remaining="${remaining%$first_suffix}"
+    fi
+
+    # 残りが [separator?][number] のパターンに一致するか
+    if [[ "$remaining" =~ '^[-_]?[0-9]+$' ]] || \
+       [[ "$remaining" =~ '^part[0-9]+$' ]] || \
+       [[ "$remaining" =~ '^\([0-9]+\)$' ]]; then
+      missing_files+=("${f:t}")
+    fi
+  done
+
+  if (( ${#missing_files[@]} > 0 )); then
+    print -r -- "エラー: 同じパターンのファイルが指定されていません:" >&2
+    for mf in "${missing_files[@]}"; do
+      print -r -- "  - $mf" >&2
+    done
+    return 1
+  fi
+
   print -r -- ">> コーデック確認中..."
   # 3. 再エンコード回避チェック（--forceでスキップ）
   # 入力に音声があるかどうかを記録
