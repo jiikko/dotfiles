@@ -59,6 +59,10 @@ if echo "$*" | grep -q "codec_name"; then
   fi
 elif echo "$*" | grep -q "stream=index"; then
   echo "0"
+elif echo "$*" | grep -q "sample_rate"; then
+  echo "${MOCK_SAMPLE_RATE-48000}"
+elif echo "$*" | grep -q "stream=channels"; then
+  echo "${MOCK_CHANNELS-2}"
 elif echo "$*" | grep -q "stream=bit_rate"; then
   echo "${MOCK_AUDIO_BITRATE-248000}"
 elif echo "$*" | grep -q "nb_frames"; then
@@ -140,6 +144,19 @@ assert_contains() {
     return 0
   else
     printf '✗ %s (expected to contain: %s)\n' "$message" "$needle"
+    return 1
+  fi
+}
+
+assert_not_contains() {
+  local haystack="$1"
+  local needle="$2"
+  local message="$3"
+  if [[ "$haystack" != *"$needle"* ]]; then
+    printf '✓ %s\n' "$message"
+    return 0
+  else
+    printf '✗ %s (expected NOT to contain: %s)\n' "$message" "$needle"
     return 1
   fi
 }
