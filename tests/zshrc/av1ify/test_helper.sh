@@ -55,7 +55,7 @@ if echo "$*" | grep -q "codec_name"; then
       *) echo "${MOCK_VCODEC-h264}" ;;
     esac
   else
-    echo "aac"
+    echo "${MOCK_ACODEC-aac}"
   fi
 elif echo "$*" | grep -q "stream=index"; then
   echo "0"

@@ -592,4 +592,57 @@ cd "$TEST_DIR"
 output=$(av1ify --dry-run -r 720P "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "resolution=720p" "Uppercase '720P' resolves to 720p"
 
+# Test 65: 非copyコーデックで低ビットレート → アップスケール防止でキャップ
+printf '\n## Test 65: Non-copy codec low bitrate - caps to source bitrate\n'
+TEST_DIR="$TEST_TMP/test65"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# vorbis 48kbps → AAC 96k ではなく 48k にキャップされるべき
+output=$(MOCK_ACODEC=vorbis MOCK_AUDIO_BITRATE=48000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "アップスケール防止" "Non-copy low bitrate triggers upscale prevention"
+assert_contains "$output" "aac 48k" "Bitrate is capped to 48k"
+
+# Test 66: 非copyコーデックで高ビットレート → 通常の96kで再エンコード
+printf '\n## Test 66: Non-copy codec high bitrate - uses default target bitrate\n'
+TEST_DIR="$TEST_TMP/test66"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# vorbis 192kbps → 96k に再エンコード（通常動作）
+output=$(MOCK_ACODEC=vorbis MOCK_AUDIO_BITRATE=192000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "aac 96k" "Non-copy high bitrate uses default 96k"
+if [[ "$output" != *"アップスケール防止"* ]]; then
+  printf '✓ No upscale prevention message for high bitrate\n'
+else
+  printf '✗ Should not show upscale prevention for high bitrate\n'
+fi
+
+# Test 67: 非copyコーデックで極低ビットレート → 最低32kフロア
+printf '\n## Test 67: Non-copy codec very low bitrate - minimum 32k floor\n'
+TEST_DIR="$TEST_TMP/test67"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# vorbis 16kbps → 32k にフロア
+output=$(MOCK_ACODEC=vorbis MOCK_AUDIO_BITRATE=16000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "aac 32k" "Very low bitrate is floored to 32k"
+
+# Test 68: 非copyコーデックでビットレート不明 → デフォルトの96kを使用
+printf '\n## Test 68: Non-copy codec unknown bitrate - uses default\n'
+TEST_DIR="$TEST_TMP/test68"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_ACODEC=vorbis MOCK_AUDIO_BITRATE="" av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "ビットレート不明" "Shows unknown bitrate message"
+
 printf '\n=== Options Tests Completed ===\n'

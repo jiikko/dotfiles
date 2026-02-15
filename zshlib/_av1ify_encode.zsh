@@ -399,9 +399,30 @@ __av1ify_one() {
     fi
   else
     aac_bitrate_resolved="${AV1_AAC_BITRATE:-96k}"
+    # ソースビットレートを取得してアップスケール防止
+    local src_abitrate_raw
+    src_abitrate_raw=$(ffprobe -v error -select_streams a:0 -show_entries stream=bit_rate \
+                       -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
+    if [[ -n "$src_abitrate_raw" && "$src_abitrate_raw" =~ ^[0-9]+$ ]]; then
+      # target bitrate を bps に変換して比較
+      local target_bps
+      case "$aac_bitrate_resolved" in
+        *[kK]) target_bps=$(( ${aac_bitrate_resolved%[kK]} * 1000 )) ;;
+        *) target_bps="$aac_bitrate_resolved" ;;
+      esac
+      if (( src_abitrate_raw < target_bps )); then
+        local capped_kbps=$(( src_abitrate_raw / 1000 ))
+        (( capped_kbps < 32 )) && capped_kbps=32
+        aac_bitrate_resolved="${capped_kbps}k"
+        print -r -- ">> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps, アップスケール防止)"
+      else
+        print -r -- ">> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps)"
+      fi
+    else
+      print -r -- ">> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec, ビットレート不明)"
+    fi
     args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac 2 -ar 48000)
     did_aac=1
-    print -r -- ">> 音声: aac へ再エンコード (元=$acodec)"
   fi
 
   # 予定される最終出力ファイル
@@ -467,6 +488,22 @@ __av1ify_one() {
     if (( use_copy )); then
       print -r -- "⚠️ 音声copy失敗 → AAC再エンコードで再試行"
       aac_bitrate_resolved="${AV1_AAC_BITRATE:-96k}"
+      # アップスケール防止: ソースビットレートが target 未満ならキャップ
+      local src_abitrate_retry
+      src_abitrate_retry=$(ffprobe -v error -select_streams a:0 -show_entries stream=bit_rate \
+                           -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
+      if [[ -n "$src_abitrate_retry" && "$src_abitrate_retry" =~ ^[0-9]+$ ]]; then
+        local target_bps_retry
+        case "$aac_bitrate_resolved" in
+          *[kK]) target_bps_retry=$(( ${aac_bitrate_resolved%[kK]} * 1000 )) ;;
+          *) target_bps_retry="$aac_bitrate_resolved" ;;
+        esac
+        if (( src_abitrate_retry < target_bps_retry )); then
+          local capped_kbps_retry=$(( src_abitrate_retry / 1000 ))
+          (( capped_kbps_retry < 32 )) && capped_kbps_retry=32
+          aac_bitrate_resolved="${capped_kbps_retry}k"
+        fi
+      fi
       args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac 2 -ar 48000)
       did_aac=1
       # 再計算: 最終出力名（解像度/fpsタグを維持）
