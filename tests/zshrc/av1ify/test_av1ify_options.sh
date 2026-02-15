@@ -1,13 +1,20 @@
 #!/usr/bin/env zsh
 # shellcheck shell=bash
-SCRIPT_PATH="${(%):-%x}"
-source "$(dirname "$SCRIPT_PATH")/test_helper.sh"
+# av1ify オプションテスト (Test 13-64)
+# 解像度、fps、denoise、compact、バリデーション、アップスケール防止、縦長動画、fpsキャップ、音声処理、部分一致
 
-# テスト開始
-printf '\n=== av1ify Options Tests (14-64) ===\n\n'
+source "${0:A:h}/test_helper.sh"
+
+printf '\n=== av1ify Options Tests (13-64) ===\n\n'
+
+# Test 13: -f オプションのヘルプメッセージ
+printf '## Test 13: Help message includes -f option\n'
+help_output=$(av1ify --help 2>&1)
+assert_contains "$help_output" "-f" "Help message contains -f option"
+assert_contains "$help_output" "ファイルリスト" "Help message describes file list feature"
 
 # Test 14: --resolution オプションのヘルプメッセージ
-printf '## Test 14: Help message includes --resolution option\n'
+printf '\n## Test 14: Help message includes --resolution option\n'
 help_output=$(av1ify --help 2>&1)
 assert_contains "$help_output" "--resolution" "Help message contains --resolution option"
 assert_contains "$help_output" "-r," "Help message contains -r short option"
@@ -585,4 +592,4 @@ cd "$TEST_DIR"
 output=$(av1ify --dry-run -r 720P "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "resolution=720p" "Uppercase '720P' resolves to 720p"
 
-printf '\n=== av1ify Options Tests Completed ===\n'
+printf '\n=== Options Tests Completed ===\n'

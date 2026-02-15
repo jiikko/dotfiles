@@ -140,25 +140,25 @@ __av1ify_postcheck() {
   fi
 
   REPLY="$filepath"
-    if (( ${#issues[@]} )); then
-      local note="check_ng"
-      if (( ${#suffixes[@]} )); then
-        local suffix_joined
-        local IFS='-'
-        suffix_joined="${suffixes[*]}"
-        note+="-$suffix_joined"
-      fi
-      local new_path="$filepath"
-      if __av1ify_mark_issue "$filepath" "$note"; then
-        new_path="$REPLY"
-      fi
-      local issues_joined
-      issues_joined=$(printf '%s, ' "${issues[@]}")
-      issues_joined="${issues_joined%, }"
-      print -r -- "⚠️ チェック警告: $issues_joined"
-      REPLY="$new_path"
-      return 1
+  if (( ${#issues[@]} )); then
+    local note="check_ng"
+    if (( ${#suffixes[@]} )); then
+      local suffix_joined
+      local IFS='-'
+      suffix_joined="${suffixes[*]}"
+      note+="-$suffix_joined"
     fi
+    local new_path="$filepath"
+    if __av1ify_mark_issue "$filepath" "$note"; then
+      new_path="$REPLY"
+    fi
+    local issues_joined
+    issues_joined=$(printf '%s, ' "${issues[@]}")
+    issues_joined="${issues_joined%, }"
+    print -r -- "⚠️ チェック警告: $issues_joined"
+    REPLY="$new_path"
+    return 1
+  fi
 
   return 0
 }
