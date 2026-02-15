@@ -40,7 +40,16 @@ __concat_get_stem() {
     stem="$base"
   fi
   # macOSのファイルシステムはNFDを使う場合があるためNFCに正規化
-  printf '%s' "$stem" | iconv -f UTF-8-MAC -t UTF-8 2>/dev/null || printf '%s' "$stem"
+  # macOS: iconv -f UTF-8-MAC, Linux: uconv or perl
+  if printf '%s' "$stem" | iconv -f UTF-8-MAC -t UTF-8 2>/dev/null; then
+    :
+  elif command -v uconv >/dev/null 2>&1; then
+    printf '%s' "$stem" | uconv -x nfc 2>/dev/null || printf '%s' "$stem"
+  elif command -v perl >/dev/null 2>&1; then
+    printf '%s' "$stem" | perl -CSA -MUnicode::Normalize -ne 'print NFC($_)' 2>/dev/null || printf '%s' "$stem"
+  else
+    printf '%s' "$stem"
+  fi
 }
 
 # 内部補助: 複数の文字列から共通サフィックスを見つける
