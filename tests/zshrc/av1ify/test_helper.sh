@@ -22,6 +22,11 @@ mkdir -p "$MOCK_BIN_DIR"
 # ffmpegモックスクリプトを作成（シンプル版）
 cat > "$MOCK_BIN_DIR/ffmpeg" <<'EOF'
 #!/usr/bin/env sh
+# -h フラグ（encoder チェック等）は即 exit 0
+for arg in "$@"; do
+  case "$arg" in -h) exit 0 ;; esac
+done
+
 # 最後の引数を出力ファイルとして扱う
 for arg in "$@"; do
   last_arg="$arg"

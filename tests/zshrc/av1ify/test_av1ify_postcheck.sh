@@ -1,14 +1,15 @@
 #!/usr/bin/env zsh
 # shellcheck shell=bash
-SCRIPT_PATH="${(%):-%x}"
-source "$(dirname "$SCRIPT_PATH")/test_helper.sh"
+# av1ify ポストチェックテスト (Test 65-79)
+# 再生時間ズレ、フレーム数、解像度、ファイルサイズ、コーデックの変換後チェック
 
-# テスト開始
-printf '\n=== av1ify Postcheck Tests (58-72) ===\n\n'
+source "${0:A:h}/test_helper.sh"
 
-# Test 58: 再生時間ズレ検出 — 出力がソースより大きくずれている場合に警告
-printf '## Test 58: Duration mismatch detection\n'
-TEST_DIR="$TEST_TMP/test58"
+printf '\n=== av1ify Postcheck Tests (65-79) ===\n\n'
+
+# Test 65: 再生時間ズレ検出 — 出力がソースより大きくずれている場合に警告
+printf '## Test 65: Duration mismatch detection\n'
+TEST_DIR="$TEST_TMP/test65"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
@@ -19,9 +20,9 @@ setopt err_exit
 assert_contains "$output" "再生時間ズレ" "Detects duration mismatch between source and output"
 assert_contains "$output" "check_ng" "Output is marked as check_ng"
 
-# Test 59: 再生時間が許容範囲内なら警告なし
-printf '\n## Test 59: Duration within tolerance - no warning\n'
-TEST_DIR="$TEST_TMP/test59"
+# Test 66: 再生時間が許容範囲内なら警告なし
+printf '\n## Test 66: Duration within tolerance - no warning\n'
+TEST_DIR="$TEST_TMP/test66"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
@@ -35,9 +36,9 @@ else
   printf '✗ Should not warn when duration difference is within tolerance\n'
 fi
 
-# Test 60: AV1IFY_DURATION_TOLERANCE で閾値をカスタマイズ
-printf '\n## Test 60: Custom duration tolerance via AV1IFY_DURATION_TOLERANCE\n'
-TEST_DIR="$TEST_TMP/test60"
+# Test 67: AV1IFY_DURATION_TOLERANCE で閾値をカスタマイズ
+printf '\n## Test 67: Custom duration tolerance via AV1IFY_DURATION_TOLERANCE\n'
+TEST_DIR="$TEST_TMP/test67"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
@@ -47,9 +48,9 @@ output=$(AV1IFY_DURATION_TOLERANCE=1.0 MOCK_FORMAT_DURATION=10.0 MOCK_OUTPUT_FOR
 setopt err_exit
 assert_contains "$output" "再生時間ズレ" "Custom tolerance detects smaller duration mismatch"
 
-# Test 61: フレーム数不一致の検出
-printf '\n## Test 61: Frame count mismatch detection\n'
-TEST_DIR="$TEST_TMP/test61"
+# Test 68: フレーム数不一致の検出
+printf '\n## Test 68: Frame count mismatch detection\n'
+TEST_DIR="$TEST_TMP/test68"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
@@ -60,9 +61,9 @@ setopt err_exit
 assert_contains "$output" "フレーム数不一致" "Detects frame count mismatch"
 assert_contains "$output" "check_ng" "Output is marked as check_ng"
 
-# Test 62: フレーム数一致なら警告なし
-printf '\n## Test 62: Frame count match - no warning\n'
-TEST_DIR="$TEST_TMP/test62"
+# Test 69: フレーム数一致なら警告なし
+printf '\n## Test 69: Frame count match - no warning\n'
+TEST_DIR="$TEST_TMP/test69"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
@@ -75,9 +76,9 @@ else
   printf '✗ Should not warn when frame counts match\n'
 fi
 
-# Test 63: fps変更時はフレーム数チェックをスキップ
-printf '\n## Test 63: Frame count check skipped when fps changed\n'
-TEST_DIR="$TEST_TMP/test63"
+# Test 70: fps変更時はフレーム数チェックをスキップ
+printf '\n## Test 70: Frame count check skipped when fps changed\n'
+TEST_DIR="$TEST_TMP/test70"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
@@ -91,9 +92,9 @@ else
   printf '✗ Should not check frame count when fps is changed\n'
 fi
 
-# Test 64: 出力解像度不一致の検出
-printf '\n## Test 64: Output resolution mismatch detection\n'
-TEST_DIR="$TEST_TMP/test64"
+# Test 71: 出力解像度不一致の検出
+printf '\n## Test 71: Output resolution mismatch detection\n'
+TEST_DIR="$TEST_TMP/test71"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
@@ -103,9 +104,9 @@ output=$(MOCK_OUTPUT_WIDTH=1920 MOCK_OUTPUT_HEIGHT=1080 av1ify -r 720p "$TEST_DI
 setopt err_exit
 assert_contains "$output" "解像度不一致" "Detects output resolution mismatch"
 
-# Test 65: 出力解像度が期待通りなら警告なし
-printf '\n## Test 65: Output resolution match - no warning\n'
-TEST_DIR="$TEST_TMP/test65"
+# Test 72: 出力解像度が期待通りなら警告なし
+printf '\n## Test 72: Output resolution match - no warning\n'
+TEST_DIR="$TEST_TMP/test72"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
@@ -119,9 +120,9 @@ else
   printf '✗ Should not warn when resolution matches\n'
 fi
 
-# Test 66: 解像度指定なしでは解像度チェックをスキップ
-printf '\n## Test 66: Resolution check skipped when no -r specified\n'
-TEST_DIR="$TEST_TMP/test66"
+# Test 73: 解像度指定なしでは解像度チェックをスキップ
+printf '\n## Test 73: Resolution check skipped when no -r specified\n'
+TEST_DIR="$TEST_TMP/test73"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
@@ -135,9 +136,9 @@ else
   printf '✗ Should not check resolution when -r is not specified\n'
 fi
 
-# Test 67: 縦長出力の解像度チェック（短辺=widthで判定）
-printf '\n## Test 67: Portrait output resolution check uses short side\n'
-TEST_DIR="$TEST_TMP/test67"
+# Test 74: 縦長出力の解像度チェック（短辺=widthで判定）
+printf '\n## Test 74: Portrait output resolution check uses short side\n'
+TEST_DIR="$TEST_TMP/test74"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
@@ -151,9 +152,9 @@ else
   printf '✗ Portrait resolution should use short side (width)\n'
 fi
 
-# Test 68: ファイルサイズ異常の検出
-printf '\n## Test 68: File size anomaly detection\n'
-TEST_DIR="$TEST_TMP/test68"
+# Test 75: ファイルサイズ異常の検出
+printf '\n## Test 75: File size anomaly detection\n'
+TEST_DIR="$TEST_TMP/test75"
 mkdir -p "$TEST_DIR"
 # ソースを十分大きく (100KB)
 dd if=/dev/zero of="$TEST_DIR/input.avi" bs=1024 count=100 2>/dev/null
@@ -165,9 +166,9 @@ setopt err_exit
 assert_contains "$output" "ファイルサイズ異常" "Detects abnormally small output file"
 assert_contains "$output" "check_ng" "Output is marked as check_ng"
 
-# Test 69: ファイルサイズが妥当なら警告なし
-printf '\n## Test 69: File size normal - no warning\n'
-TEST_DIR="$TEST_TMP/test69"
+# Test 76: ファイルサイズが妥当なら警告なし
+printf '\n## Test 76: File size normal - no warning\n'
+TEST_DIR="$TEST_TMP/test76"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
@@ -181,9 +182,9 @@ else
   printf '✗ Should not warn when file size ratio is normal\n'
 fi
 
-# Test 70: AV1IFY_MIN_SIZE_RATIO で閾値をカスタマイズ
-printf '\n## Test 70: Custom file size ratio via AV1IFY_MIN_SIZE_RATIO\n'
-TEST_DIR="$TEST_TMP/test70"
+# Test 77: AV1IFY_MIN_SIZE_RATIO で閾値をカスタマイズ
+printf '\n## Test 77: Custom file size ratio via AV1IFY_MIN_SIZE_RATIO\n'
+TEST_DIR="$TEST_TMP/test77"
 mkdir -p "$TEST_DIR"
 # ソース200バイト、出力15バイト → ratio≈0.075。閾値を0.1にすると検出
 dd if=/dev/zero of="$TEST_DIR/input.avi" bs=1 count=200 2>/dev/null
@@ -193,9 +194,9 @@ output=$(AV1IFY_MIN_SIZE_RATIO=0.1 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "ファイルサイズ異常" "Custom ratio threshold detects small output"
 
-# Test 71: 出力映像コーデック不一致の検出
-printf '\n## Test 71: Output video codec mismatch detection\n'
-TEST_DIR="$TEST_TMP/test71"
+# Test 78: 出力映像コーデック不一致の検出
+printf '\n## Test 78: Output video codec mismatch detection\n'
+TEST_DIR="$TEST_TMP/test78"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
@@ -206,9 +207,9 @@ setopt err_exit
 assert_contains "$output" "映像コーデック不一致" "Detects non-AV1 output codec"
 assert_contains "$output" "check_ng" "Output is marked as check_ng"
 
-# Test 72: 出力コーデックが av1 なら警告なし
-printf '\n## Test 72: Output video codec is av1 - no warning\n'
-TEST_DIR="$TEST_TMP/test72"
+# Test 79: 出力コーデックが av1 なら警告なし
+printf '\n## Test 79: Output video codec is av1 - no warning\n'
+TEST_DIR="$TEST_TMP/test79"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
@@ -221,4 +222,4 @@ else
   printf '✗ Should not warn when output codec is av1\n'
 fi
 
-printf '\n=== av1ify Postcheck Tests Completed ===\n'
+printf '\n=== Postcheck Tests Completed ===\n'
