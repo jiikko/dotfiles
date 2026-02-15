@@ -92,14 +92,9 @@ require("lazy").setup({
   { "nvim-treesitter/nvim-treesitter",
     build = ":TSUpdate",
     config = function()
-      require("nvim-treesitter.configs").setup({
-        auto_install = true,
-        ensure_installed = { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "graphql", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "typescript", "vim", "yaml" },
-        highlight = { enable = true },
-        matchup = { enable = true },
-        endwise = { enable = true },
-        indent = { enable = true },
-      })
+      require("nvim-treesitter").setup()
+      local ensure = { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "graphql", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "typescript", "vim", "yaml" }
+      require("nvim-treesitter").install(ensure)
     end,
   },
   { "RRethy/nvim-treesitter-endwise",

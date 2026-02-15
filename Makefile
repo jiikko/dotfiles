@@ -23,9 +23,10 @@ test-zshrc:
 	@tests/zshrc/test_zshrc.sh
 	@tests/zshrc/ai-commands/test_ai_commands.sh
 	@tests/zshrc/av1ify/test_av1ify_basic.sh
-	@tests/zshrc/av1ify/test_av1ify_batch.sh
+	@tests/zshrc/av1ify/test_av1ify_audio.sh
 	@tests/zshrc/av1ify/test_av1ify_options.sh
 	@tests/zshrc/av1ify/test_av1ify_postcheck.sh
+	@tests/zshrc/av1ify/test_av1ify_variants.sh
 	@tests/zshrc/concat/test_concat.sh
 	@tests/zshrc/lazy-loading/test_version_managers.sh
 

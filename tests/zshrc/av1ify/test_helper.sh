@@ -1,10 +1,13 @@
 #!/usr/bin/env zsh
 # shellcheck shell=bash
+# av1ify テスト共通ヘルパー
+# 各テストファイルの冒頭で source して使う
+
 setopt err_exit no_unset pipe_fail
 
-# zshでの現在のスクリプトパス取得
-SCRIPT_PATH="${(%):-%x}"
-ROOT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/../../.." && pwd)"
+# zshでの現在のスクリプトパス取得（呼び出し元のパスを使う）
+_HELPER_DIR="${0:A:h}"
+ROOT_DIR="$(cd "$_HELPER_DIR/../../.." && pwd)"
 TEST_TMP="$(mktemp -d)"
 
 cleanup() {
@@ -19,6 +22,11 @@ mkdir -p "$MOCK_BIN_DIR"
 # ffmpegモックスクリプトを作成（シンプル版）
 cat > "$MOCK_BIN_DIR/ffmpeg" <<'EOF'
 #!/usr/bin/env sh
+# -h フラグ（encoder チェック等）は即 exit 0
+for arg in "$@"; do
+  case "$arg" in -h) exit 0 ;; esac
+done
+
 # 最後の引数を出力ファイルとして扱う
 for arg in "$@"; do
   last_arg="$arg"
@@ -33,10 +41,11 @@ exit 1
 EOF
 chmod +x "$MOCK_BIN_DIR/ffmpeg"
 
-# ffprobeモックスクリプトを作成（シンプル版）
+# ffprobeモックスクリプトを作成（ソース vs 出力ファイルを区別）
 cat > "$MOCK_BIN_DIR/ffprobe" <<'EOF'
 #!/usr/bin/env sh
 # どんなクエリでも成功を返す（MOCK_WIDTH/MOCK_HEIGHT で上書き可能）
+# -enc を含むファイルは出力ファイル扱い（MOCK_OUTPUT_* で上書き可能）
 if echo "$*" | grep -q "codec_name"; then
   if echo "$*" | grep -q "select_streams v"; then
     last_arg=""
@@ -46,10 +55,14 @@ if echo "$*" | grep -q "codec_name"; then
       *) echo "${MOCK_VCODEC-h264}" ;;
     esac
   else
-    echo "aac"
+    echo "${MOCK_ACODEC-aac}"
   fi
 elif echo "$*" | grep -q "stream=index"; then
   echo "0"
+elif echo "$*" | grep -q "sample_rate"; then
+  echo "${MOCK_SAMPLE_RATE-48000}"
+elif echo "$*" | grep -q "stream=channels"; then
+  echo "${MOCK_CHANNELS-2}"
 elif echo "$*" | grep -q "stream=bit_rate"; then
   echo "${MOCK_AUDIO_BITRATE-248000}"
 elif echo "$*" | grep -q "nb_frames"; then
@@ -131,6 +144,19 @@ assert_contains() {
     return 0
   else
     printf '✗ %s (expected to contain: %s)\n' "$message" "$needle"
+    return 1
+  fi
+}
+
+assert_not_contains() {
+  local haystack="$1"
+  local needle="$2"
+  local message="$3"
+  if [[ "$haystack" != *"$needle"* ]]; then
+    printf '✓ %s\n' "$message"
+    return 0
+  else
+    printf '✗ %s (expected NOT to contain: %s)\n' "$message" "$needle"
     return 1
   fi
 }

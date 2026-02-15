@@ -10,7 +10,12 @@ __av1ify_mark_issue() {
   if [[ "$base" == *.* && "$base" != .* ]]; then
     stem="${base%.*}"
     ext="${base##*.}"
-    new_name="${stem}-${note}.${ext}"
+    # -enc の前にアノテーションを挿入 (例: foo-enc.mp4 → foo-check_ng-enc.mp4)
+    if [[ "$stem" == *-enc ]]; then
+      new_name="${stem%-enc}-${note}-enc.${ext}"
+    else
+      new_name="${stem}-${note}.${ext}"
+    fi
   else
     new_name="${base}-${note}"
   fi
@@ -116,8 +121,9 @@ __av1ify_postcheck() {
   # ファイルサイズの妥当性チェック
   if [[ -n "$src_path" && -f "$src_path" && -f "$filepath" ]]; then
     local src_size out_size
-    src_size=$(stat -f%z -- "$src_path" 2>/dev/null) || src_size=""
-    out_size=$(stat -f%z -- "$filepath" 2>/dev/null) || out_size=""
+    # macOS: stat -f%z, Linux: stat -c%s
+    src_size=$(stat -f%z -- "$src_path" 2>/dev/null || stat -c%s -- "$src_path" 2>/dev/null) || src_size=""
+    out_size=$(stat -f%z -- "$filepath" 2>/dev/null || stat -c%s -- "$filepath" 2>/dev/null) || out_size=""
     if [[ -n "$src_size" && "$src_size" =~ ^[0-9]+$ && -n "$out_size" && "$out_size" =~ ^[0-9]+$ ]] && (( src_size > 0 )); then
       local size_ratio
       size_ratio=$(awk -v o="$out_size" -v s="$src_size" 'BEGIN{ printf "%.4f", o / s }')
@@ -140,25 +146,25 @@ __av1ify_postcheck() {
   fi
 
   REPLY="$filepath"
-    if (( ${#issues[@]} )); then
-      local note="check_ng"
-      if (( ${#suffixes[@]} )); then
-        local suffix_joined
-        local IFS='-'
-        suffix_joined="${suffixes[*]}"
-        note+="-$suffix_joined"
-      fi
-      local new_path="$filepath"
-      if __av1ify_mark_issue "$filepath" "$note"; then
-        new_path="$REPLY"
-      fi
-      local issues_joined
-      issues_joined=$(printf '%s, ' "${issues[@]}")
-      issues_joined="${issues_joined%, }"
-      print -r -- "⚠️ チェック警告: $issues_joined"
-      REPLY="$new_path"
-      return 1
+  if (( ${#issues[@]} )); then
+    local note="check_ng"
+    if (( ${#suffixes[@]} )); then
+      local suffix_joined
+      local IFS='-'
+      suffix_joined="${suffixes[*]}"
+      note+="-$suffix_joined"
     fi
+    local new_path="$filepath"
+    if __av1ify_mark_issue "$filepath" "$note"; then
+      new_path="$REPLY"
+    fi
+    local issues_joined
+    issues_joined=$(printf '%s, ' "${issues[@]}")
+    issues_joined="${issues_joined%, }"
+    print -r -- "⚠️ チェック警告: $issues_joined"
+    REPLY="$new_path"
+    return 1
+  fi
 
   return 0
 }

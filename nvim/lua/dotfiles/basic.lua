@@ -46,7 +46,7 @@ local function set_options()
   opt.wildmenu = true
   opt.showmatch = true
   opt.title = true
-  opt.lazyredraw = true
+  opt.lazyredraw = false
   opt.vb = true
   opt.wildchar = 9
   opt.updatetime = 300

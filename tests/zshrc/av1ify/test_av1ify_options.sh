@@ -1,13 +1,20 @@
 #!/usr/bin/env zsh
 # shellcheck shell=bash
-SCRIPT_PATH="${(%):-%x}"
-source "$(dirname "$SCRIPT_PATH")/test_helper.sh"
+# av1ify オプションテスト (Test 13-49, 54-64)
+# 解像度、fps、denoise、compact、バリデーション、アップスケール防止、縦長動画、fpsキャップ、部分一致
 
-# テスト開始
-printf '\n=== av1ify Options Tests (14-64) ===\n\n'
+source "${0:A:h}/test_helper.sh"
+
+printf '\n=== av1ify Options Tests (13-64) ===\n\n'
+
+# Test 13: -f オプションのヘルプメッセージ
+printf '## Test 13: Help message includes -f option\n'
+help_output=$(av1ify --help 2>&1)
+assert_contains "$help_output" "-f" "Help message contains -f option"
+assert_contains "$help_output" "ファイルリスト" "Help message describes file list feature"
 
 # Test 14: --resolution オプションのヘルプメッセージ
-printf '## Test 14: Help message includes --resolution option\n'
+printf '\n## Test 14: Help message includes --resolution option\n'
 help_output=$(av1ify --help 2>&1)
 assert_contains "$help_output" "--resolution" "Help message contains --resolution option"
 assert_contains "$help_output" "-r," "Help message contains -r short option"
@@ -423,51 +430,6 @@ output=$(av1ify -f "$TEST_DIR/list.txt" 2>&1 || true)
 setopt err_exit
 assert_file_exists "$TEST_DIR/video-enc.mp4" "-f option processes files correctly"
 
-# Test 50: compact モードで音声が96kbps超ならAAC再エンコード
-printf '\n## Test 50: Compact re-encodes audio when bitrate > 96kbps\n'
-TEST_DIR="$TEST_TMP/test50"
-mkdir -p "$TEST_DIR"
-echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
-unsetopt err_exit
-# デフォルトの MOCK_AUDIO_BITRATE=248000 (248kbps > 96kbps)
-output=$(MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
-setopt err_exit
-assert_contains "$output" "aac 96k へ再エンコード" "Compact re-encodes audio to 96k"
-assert_file_exists "$TEST_DIR/input-720p-30fps-aac96k-enc.mp4" "Compact output has aac96k tag"
-
-# Test 51: compact モードで音声が96kbps以下ならcopy
-printf '\n## Test 51: Compact copies audio when bitrate <= 96kbps\n'
-TEST_DIR="$TEST_TMP/test51"
-mkdir -p "$TEST_DIR"
-echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
-unsetopt err_exit
-output=$(MOCK_AUDIO_BITRATE=96000 MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
-setopt err_exit
-assert_contains "$output" "copy" "Compact copies audio when <= 96kbps"
-assert_file_exists "$TEST_DIR/input-720p-30fps-enc.mp4" "Compact output has no aac tag when copying"
-
-# Test 52: 非compact モードでは音声は常にcopy（許可コーデックの場合）
-printf '\n## Test 52: Non-compact always copies audio for allowed codecs\n'
-TEST_DIR="$TEST_TMP/test52"
-mkdir -p "$TEST_DIR"
-echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
-unsetopt err_exit
-output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
-setopt err_exit
-assert_contains "$output" "音声: copy" "Non-compact copies audio regardless of bitrate"
-
-# Test 53: compact dry-runで音声再エンコードが表示される
-printf '\n## Test 53: Compact dry-run shows audio re-encode plan\n'
-TEST_DIR="$TEST_TMP/test53"
-mkdir -p "$TEST_DIR"
-echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
-output=$(av1ify --dry-run --compact "$TEST_DIR/input.avi" 2>&1 || true)
-assert_contains "$output" "compact" "Compact dry-run mentions compact audio"
-
 # Test 54: fps キャップ — ソースが30fps以下ならfps変更スキップ
 printf '\n## Test 54: FPS cap - skip when source <= target\n'
 TEST_DIR="$TEST_TMP/test54"
@@ -585,4 +547,4 @@ cd "$TEST_DIR"
 output=$(av1ify --dry-run -r 720P "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "resolution=720p" "Uppercase '720P' resolves to 720p"
 
-printf '\n=== av1ify Options Tests Completed ===\n'
+printf '\n=== Options Tests Completed ===\n'

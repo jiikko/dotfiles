@@ -38,8 +38,10 @@ __av1ify_on_interrupt() {
 #   _av1ify_encode.zsh    — __av1ify_pre_repair() + __av1ify_one() (エンコード処理)
 #   _av1ify.zsh (本ファイル) — 状態変数, バナー, 割り込み処理, av1ify() エントリポイント
 # 読み込み順: postcheck → encode（__av1ify_one が __av1ify_postcheck を呼ぶため）
-source "$HOME/dotfiles/zshlib/_av1ify_postcheck.zsh"
-source "$HOME/dotfiles/zshlib/_av1ify_encode.zsh"
+# shellcheck disable=SC1091
+source "${0:A:h}/_av1ify_postcheck.zsh"
+# shellcheck disable=SC1091
+source "${0:A:h}/_av1ify_encode.zsh"
 
 # 解像度値の検証と部分一致解決
 # 入力: $1 = 解像度文字列
@@ -80,6 +82,7 @@ __av1ify_resolve_resolution() {
   fi
 
   if (( ${#matches[@]} > 1 )); then
+    # shellcheck disable=SC2296
     print -r -- ">> 解像度 '${input}' → ${matches[1]} に解決しました (候補: ${(j:, :)matches})"
     REPLY="${matches[1]}"
     return 0
