@@ -249,6 +249,45 @@ __av1ify_one() {
     return 0
   fi
 
+  # 早期スキップ: ffprobe前に既存出力をチェック（クラウドファイルの不要なダウンロードを防止）
+  if [[ -e "$out" ]]; then
+    print -r -- "→ SKIP 既存: $out"
+    return 0
+  fi
+  local -a __av1ify_early_variants=( "${stem}"-*-enc.mp4(N) )
+  if (( ${#__av1ify_early_variants[@]} > 0 )); then
+    local __ev __et __ev_valid __ev_seg
+    for __ev in "${__av1ify_early_variants[@]}"; do
+      __et="${__ev#${stem}-}"
+      __et="${__et%-enc.mp4}"
+      __ev_valid=1
+      [[ -z "$__et" ]] && __ev_valid=0
+      while [[ -n "$__et" ]]; do
+        if [[ "$__et" == *-* ]]; then
+          __ev_seg="${__et%%-*}"
+          __et="${__et#*-}"
+        else
+          __ev_seg="$__et"
+          __et=""
+        fi
+        if [[ "$__ev_seg" =~ ^[0-9]+p$ ]] || \
+           [[ "$__ev_seg" == "4k" ]] || \
+           [[ "$__ev_seg" =~ ^[0-9]+(\.[0-9]+)?fps$ ]] || \
+           [[ "$__ev_seg" =~ ^aac[0-9]+k$ ]] || \
+           [[ "$__ev_seg" =~ ^dn[0-9]+$ ]]; then
+          :
+        else
+          __ev_valid=0
+          break
+        fi
+      done
+      if (( __ev_valid )); then
+        print -r -- "→ SKIP 既存(別バリアント): $__ev"
+        return 0
+      fi
+    done
+  fi
+
   [[ ! -f "$in" ]] && { print -r -- "✗ ファイルが無い: $in"; return 1; }
 
   # 古い in_progress が残っていたら掃除（ドライラン時は触らない）
