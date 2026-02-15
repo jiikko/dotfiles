@@ -599,7 +599,15 @@ av1ify() {
 }
 alias av1c='av1ify -c'
 source $HOME/dotfiles/zshlib/_repair.zsh
-source $HOME/dotfiles/zshlib/_concat.zsh
+# concat: 呼び出し時に毎回ソースを再読み込み（編集後にシェル再起動不要）
+concat() {
+  local _saved="${functions[concat]}"
+  source $HOME/dotfiles/zshlib/_concat.zsh
+  concat "$@"
+  local _ret=$?
+  functions[concat]="$_saved"
+  return $_ret
+}
 
 function rrr() {
   local inputfile="$1"
