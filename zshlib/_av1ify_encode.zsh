@@ -141,7 +141,8 @@ __av1ify_one() {
            [[ "$__ev_seg" == "4k" ]] || \
            [[ "$__ev_seg" =~ ^[0-9]+(\.[0-9]+)?fps$ ]] || \
            [[ "$__ev_seg" =~ ^aac[0-9]+k$ ]] || \
-           [[ "$__ev_seg" =~ ^dn[0-9]+$ ]]; then
+           [[ "$__ev_seg" =~ ^dn[0-9]+$ ]] || \
+           [[ "$__ev_seg" == "auderr" ]]; then
           :
         else
           __ev_valid=0
@@ -313,17 +314,20 @@ __av1ify_one() {
   # AAC再エンコード時の上限（ソースがこれより低ければソースに合わせる）
   local aac_max_ar=48000 aac_max_ac=2
   local aac_ar="${aac_max_ar}" aac_ac="${aac_max_ac}"
-  local aac_audio_adjusted=""
-  if [[ -n "$src_sample_rate" && "$src_sample_rate" =~ ^[0-9]+$ ]] && (( src_sample_rate < aac_max_ar )); then
-    aac_ar="$src_sample_rate"
-    aac_audio_adjusted+=" ar:${src_sample_rate}Hz"
-  fi
-  if [[ -n "$src_channels" && "$src_channels" =~ ^[0-9]+$ ]] && (( src_channels < aac_max_ac )); then
-    aac_ac="$src_channels"
-    aac_audio_adjusted+=" ch:${src_channels}"
-  fi
-  if [[ -n "$aac_audio_adjusted" ]]; then
-    print -r -- ">> 音声パラメータ: ソースに合わせて調整 (${aac_audio_adjusted# })"
+  local aac_params_available=1
+  if [[ -n "$acodec" ]]; then
+    if [[ -z "$src_sample_rate" || ! "$src_sample_rate" =~ ^[0-9]+$ ]]; then
+      aac_params_available=0
+    elif (( src_sample_rate < aac_max_ar )); then
+      aac_ar="$src_sample_rate"
+      print -r -- ">> 音声: ソースが ${src_sample_rate}Hz のため ${aac_max_ar}Hz へのアップスケールをスキップ"
+    fi
+    if [[ -z "$src_channels" || ! "$src_channels" =~ ^[0-9]+$ ]]; then
+      aac_params_available=0
+    elif (( src_channels < aac_max_ac )); then
+      aac_ac="$src_channels"
+      print -r -- ">> 音声: ソースが mono のためステレオへのアップスケールをスキップ"
+    fi
   fi
 
   # copy 許可コーデック（MP4 と相性の良いもの）
@@ -397,6 +401,7 @@ __av1ify_one() {
 
   # 音声指定（命名用フラグ・ビットレート保持）
   local did_aac=0
+  local audio_param_error=0
   local aac_bitrate_resolved=""
 
   if [[ -z "$acodec" ]]; then
@@ -409,10 +414,16 @@ __av1ify_one() {
       src_abitrate=$(ffprobe -v error -select_streams a:0 -show_entries stream=bit_rate \
                      -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
       if [[ -n "$src_abitrate" && "$src_abitrate" =~ ^[0-9]+$ ]] && (( src_abitrate > 96000 )); then
-        aac_bitrate_resolved="96k"
-        args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac "$aac_ac" -ar "$aac_ar")
-        did_aac=1
-        print -r -- ">> 音声: aac 96k へ再エンコード (compact, 元=$acodec ${src_abitrate}bps)"
+        if (( ! aac_params_available )); then
+          args_audio=(-map "0:a:0?" -c:a copy)
+          audio_param_error=1
+          print -r -- "⚠️ 音声パラメータ取得失敗のため copy にフォールバック (codec=$acodec)"
+        else
+          aac_bitrate_resolved="96k"
+          args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac "$aac_ac" -ar "$aac_ar")
+          did_aac=1
+          print -r -- ">> 音声: aac 96k へ再エンコード (compact, 元=$acodec ${src_abitrate}bps)"
+        fi
       else
         args_audio=(-map "0:a:0?" -c:a copy)
         print -r -- ">> 音声: copy (codec=$acodec, compact だが96kbps以下)"
@@ -422,35 +433,43 @@ __av1ify_one() {
       print -r -- ">> 音声: copy (codec=$acodec)"
     fi
   else
-    aac_bitrate_resolved="${AV1_AAC_BITRATE:-96k}"
-    # ソースビットレートを取得してアップスケール防止
-    local src_abitrate_raw
-    src_abitrate_raw=$(ffprobe -v error -select_streams a:0 -show_entries stream=bit_rate \
-                       -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
-    if [[ -n "$src_abitrate_raw" && "$src_abitrate_raw" =~ ^[0-9]+$ ]]; then
-      # target bitrate を bps に変換して比較
-      local target_bps
-      case "$aac_bitrate_resolved" in
-        *[kK]) target_bps=$(( ${aac_bitrate_resolved%[kK]} * 1000 )) ;;
-        *) target_bps="$aac_bitrate_resolved" ;;
-      esac
-      if (( src_abitrate_raw < target_bps )); then
-        local capped_kbps=$(( src_abitrate_raw / 1000 ))
-        (( capped_kbps < 32 )) && capped_kbps=32
-        aac_bitrate_resolved="${capped_kbps}k"
-        print -r -- ">> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps, アップスケール防止)"
-      else
-        print -r -- ">> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps)"
-      fi
-    else
-      print -r -- ">> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec, ビットレート不明)"
+    if (( ! aac_params_available )); then
+      args_audio=(-map "0:a:0?" -c:a copy)
+      audio_param_error=1
+      use_copy=1  # retry パスを有効化
+      print -r -- "⚠️ 音声パラメータ取得失敗のため copy にフォールバック (codec=$acodec)"
     fi
-    args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac "$aac_ac" -ar "$aac_ar")
-    did_aac=1
+    if (( ! audio_param_error )); then
+      aac_bitrate_resolved="${AV1_AAC_BITRATE:-96k}"
+      # ソースビットレートを取得してアップスケール防止
+      local src_abitrate_raw
+      src_abitrate_raw=$(ffprobe -v error -select_streams a:0 -show_entries stream=bit_rate \
+                         -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
+      if [[ -n "$src_abitrate_raw" && "$src_abitrate_raw" =~ ^[0-9]+$ ]]; then
+        # target bitrate を bps に変換して比較
+        local target_bps
+        case "$aac_bitrate_resolved" in
+          *[kK]) target_bps=$(( ${aac_bitrate_resolved%[kK]} * 1000 )) ;;
+          *) target_bps="$aac_bitrate_resolved" ;;
+        esac
+        if (( src_abitrate_raw < target_bps )); then
+          local capped_kbps=$(( src_abitrate_raw / 1000 ))
+          (( capped_kbps < 32 )) && capped_kbps=32
+          aac_bitrate_resolved="${capped_kbps}k"
+          print -r -- ">> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps, アップスケール防止)"
+        else
+          print -r -- ">> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps)"
+        fi
+      else
+        print -r -- ">> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec, ビットレート不明)"
+      fi
+      args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac "$aac_ac" -ar "$aac_ar")
+      did_aac=1
+    fi
   fi
 
   # 予定される最終出力ファイル
-  # 命名規則: <stem>[-解像度][-fps][-denoise][-aac{br}]-enc.mp4
+  # 命名規則: <stem>[-解像度][-fps][-denoise][-aac{br}][-auderr]-enc.mp4
   local final_out="$out"
   local name_suffix=""
   if [[ -n "$resolution_tag" ]]; then
@@ -473,6 +492,9 @@ __av1ify_one() {
       tag="$br"
     fi
     name_suffix+="-aac${tag}"
+  fi
+  if (( audio_param_error )); then
+    name_suffix+="-auderr"
   fi
   if [[ -n "$name_suffix" ]]; then
     final_out="${stem}${name_suffix}-enc.mp4"
@@ -510,6 +532,10 @@ __av1ify_one() {
 
     # 失敗時: copy 選択だった場合は AAC で再試行（命名もAACタグへ）
     if (( use_copy )); then
+      if (( audio_param_error )); then
+        print -r -- "❌ 音声copy失敗 & パラメータ不明のため再試行不可: $in"
+        return 1
+      fi
       print -r -- "⚠️ 音声copy失敗 → AAC再エンコードで再試行"
       aac_bitrate_resolved="${AV1_AAC_BITRATE:-96k}"
       # アップスケール防止: ソースビットレートが target 未満ならキャップ
@@ -551,6 +577,9 @@ __av1ify_one() {
         name_suffix+="-${denoise_tag}"
       fi
       name_suffix+="-aac${tag}"
+      if (( audio_param_error )); then
+        name_suffix+="-auderr"
+      fi
       final_out="${stem}${name_suffix}-enc.mp4"
 
       __AV1IFY_CURRENT_TMP="$tmp"

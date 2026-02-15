@@ -110,7 +110,7 @@ cd "$TEST_DIR"
 unsetopt err_exit
 output=$(MOCK_ACODEC=vorbis MOCK_CHANNELS=1 MOCK_AUDIO_BITRATE=48000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
-assert_contains "$output" "ch:1" "Mono source: adjusts to 1 channel"
+assert_contains "$output" "mono のためステレオへのアップスケールをスキップ" "Mono source: skips stereo upscale"
 
 # Test 70: 低サンプルレートソース → サンプルレートをアップスケールしない
 printf '\n## Test 70: Low sample rate source - no sample rate upscale\n'
@@ -121,7 +121,7 @@ cd "$TEST_DIR"
 unsetopt err_exit
 output=$(MOCK_ACODEC=vorbis MOCK_SAMPLE_RATE=22050 MOCK_AUDIO_BITRATE=48000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
-assert_contains "$output" "ar:22050Hz" "Low sample rate: adjusts to source rate"
+assert_contains "$output" "22050Hz のため 48000Hz へのアップスケールをスキップ" "Low sample rate: skips upscale"
 
 # Test 71: stereo 48kHz ソース → 調整メッセージなし（上限と同じ）
 printf '\n## Test 71: Standard stereo 48kHz - no adjustment message\n'
@@ -132,10 +132,10 @@ cd "$TEST_DIR"
 unsetopt err_exit
 output=$(MOCK_ACODEC=vorbis MOCK_CHANNELS=2 MOCK_SAMPLE_RATE=48000 MOCK_AUDIO_BITRATE=192000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
-assert_not_contains "$output" "ソースに合わせて調整" "No adjustment message for standard stereo 48kHz"
+assert_not_contains "$output" "アップスケールをスキップ" "No skip message for standard stereo 48kHz"
 
-# Test 72: mono 22050Hz ソース → 両方調整
-printf '\n## Test 72: Mono 22050Hz source - both adjusted\n'
+# Test 72: mono 22050Hz ソース → 両方スキップ
+printf '\n## Test 72: Mono 22050Hz source - both skipped\n'
 TEST_DIR="$TEST_TMP/test72"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
@@ -143,10 +143,10 @@ cd "$TEST_DIR"
 unsetopt err_exit
 output=$(MOCK_ACODEC=vorbis MOCK_CHANNELS=1 MOCK_SAMPLE_RATE=22050 MOCK_AUDIO_BITRATE=32000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
-assert_contains "$output" "ar:22050Hz" "Both adjusted: sample rate"
-assert_contains "$output" "ch:1" "Both adjusted: channels"
+assert_contains "$output" "22050Hz のため" "Both skipped: sample rate"
+assert_contains "$output" "mono のため" "Both skipped: channels"
 
-# Test 73: compact + mono低サンプルレート → aac_ar/aac_acが反映される
+# Test 73: compact + mono低サンプルレート → アップスケールスキップが反映される
 printf '\n## Test 73: Compact with mono low sample rate source\n'
 TEST_DIR="$TEST_TMP/test73"
 mkdir -p "$TEST_DIR"
@@ -155,8 +155,46 @@ cd "$TEST_DIR"
 unsetopt err_exit
 output=$(MOCK_CHANNELS=1 MOCK_SAMPLE_RATE=22050 MOCK_AUDIO_BITRATE=248000 MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
-assert_contains "$output" "ch:1" "Compact mono: channel adjusted"
-assert_contains "$output" "ar:22050Hz" "Compact low sample rate: adjusted"
+assert_contains "$output" "mono のため" "Compact mono: stereo upscale skipped"
+assert_contains "$output" "22050Hz のため" "Compact low sample rate: upscale skipped"
 assert_contains "$output" "aac 96k へ再エンコード" "Compact still re-encodes to 96k"
+
+# Test 74: 非copyコーデックで音声パラメータ取得失敗 → copyフォールバック + auderrタグ
+printf '\n## Test 74: Non-copy codec param error - copy fallback with auderr tag\n'
+TEST_DIR="$TEST_TMP/test74"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_ACODEC=vorbis MOCK_SAMPLE_RATE="" MOCK_AUDIO_BITRATE=48000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "パラメータ取得失敗" "Non-copy param error: shows fallback message"
+assert_contains "$output" "copy にフォールバック" "Non-copy param error: falls back to copy"
+assert_file_exists "$TEST_DIR/input-auderr-enc.mp4" "Non-copy param error: output has auderr tag"
+
+# Test 75: compactモードで音声パラメータ取得失敗 → copyフォールバック + auderrタグ
+printf '\n## Test 75: Compact param error - copy fallback with auderr tag\n'
+TEST_DIR="$TEST_TMP/test75"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_SAMPLE_RATE="" MOCK_AUDIO_BITRATE=248000 MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "パラメータ取得失敗" "Compact param error: shows fallback message"
+assert_contains "$output" "copy にフォールバック" "Compact param error: falls back to copy"
+assert_file_exists "$TEST_DIR/input-720p-30fps-auderr-enc.mp4" "Compact param error: output has auderr tag"
+
+# Test 76: チャンネル数のみ取得失敗 → copyフォールバック + auderrタグ
+printf '\n## Test 76: Channels-only param error - copy fallback with auderr tag\n'
+TEST_DIR="$TEST_TMP/test76"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_ACODEC=vorbis MOCK_CHANNELS="" MOCK_SAMPLE_RATE=22050 MOCK_AUDIO_BITRATE=48000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "パラメータ取得失敗" "Channels-only error: shows fallback message"
+assert_file_exists "$TEST_DIR/input-auderr-enc.mp4" "Channels-only error: output has auderr tag"
 
 printf '\n=== Audio Tests Completed ===\n'
