@@ -27,7 +27,9 @@ test-zshrc:
 	@tests/zshrc/av1ify/test_av1ify_options.sh
 	@tests/zshrc/av1ify/test_av1ify_postcheck.sh
 	@tests/zshrc/av1ify/test_av1ify_variants.sh
-	@tests/zshrc/concat/test_concat.sh
+	@tests/zshrc/concat/test_concat_basic.sh
+	@tests/zshrc/concat/test_concat_edge.sh
+	@tests/zshrc/concat/test_concat_missing.sh
 	@tests/zshrc/lazy-loading/test_version_managers.sh
 
 test-bats:
