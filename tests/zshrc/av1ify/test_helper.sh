@@ -36,24 +36,59 @@ exit 1
 EOF
 chmod +x "$MOCK_BIN_DIR/ffmpeg"
 
-# ffprobeモックスクリプトを作成（シンプル版）
+# ffprobeモックスクリプトを作成（ソース vs 出力ファイルを区別）
 cat > "$MOCK_BIN_DIR/ffprobe" <<'EOF'
 #!/usr/bin/env sh
 # どんなクエリでも成功を返す（MOCK_WIDTH/MOCK_HEIGHT で上書き可能）
+# -enc を含むファイルは出力ファイル扱い（MOCK_OUTPUT_* で上書き可能）
 if echo "$*" | grep -q "codec_name"; then
-  echo "aac"
+  if echo "$*" | grep -q "select_streams v"; then
+    last_arg=""
+    for arg in "$@"; do last_arg="$arg"; done
+    case "$last_arg" in
+      *-enc*|*check_ng*) echo "${MOCK_OUTPUT_VCODEC-av1}" ;;
+      *) echo "${MOCK_VCODEC-h264}" ;;
+    esac
+  else
+    echo "aac"
+  fi
 elif echo "$*" | grep -q "stream=index"; then
   echo "0"
 elif echo "$*" | grep -q "stream=bit_rate"; then
   echo "${MOCK_AUDIO_BITRATE-248000}"
+elif echo "$*" | grep -q "nb_frames"; then
+  last_arg=""
+  for arg in "$@"; do last_arg="$arg"; done
+  case "$last_arg" in
+    *-enc*|*check_ng*) echo "${MOCK_OUTPUT_NB_FRAMES-${MOCK_NB_FRAMES-300}}" ;;
+    *) echo "${MOCK_NB_FRAMES-300}" ;;
+  esac
+elif echo "$*" | grep -q "format=duration"; then
+  # format duration: ソース vs 出力を区別（-enc を含むファイルは出力扱い）
+  last_arg=""
+  for arg in "$@"; do last_arg="$arg"; done
+  case "$last_arg" in
+    *-enc*|*check_ng*) echo "${MOCK_OUTPUT_FORMAT_DURATION-${MOCK_FORMAT_DURATION-10.0}}" ;;
+    *) echo "${MOCK_FORMAT_DURATION-10.0}" ;;
+  esac
 elif echo "$*" | grep -q "duration"; then
   echo "10.0"
 elif echo "$*" | grep -q "r_frame_rate"; then
   echo "${MOCK_FPS-30000/1001}"
 elif echo "$*" | grep -q "width"; then
-  echo "${MOCK_WIDTH-1920}"
+  last_arg=""
+  for arg in "$@"; do last_arg="$arg"; done
+  case "$last_arg" in
+    *-enc*|*check_ng*) echo "${MOCK_OUTPUT_WIDTH-${MOCK_WIDTH-1920}}" ;;
+    *) echo "${MOCK_WIDTH-1920}" ;;
+  esac
 elif echo "$*" | grep -q "height"; then
-  echo "${MOCK_HEIGHT-1080}"
+  last_arg=""
+  for arg in "$@"; do last_arg="$arg"; done
+  case "$last_arg" in
+    *-enc*|*check_ng*) echo "${MOCK_OUTPUT_HEIGHT-${MOCK_HEIGHT-1080}}" ;;
+    *) echo "${MOCK_HEIGHT-1080}" ;;
+  esac
 elif echo "$*" | grep -q "format_name"; then
   echo "mp4"
 fi

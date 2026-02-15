@@ -34,8 +34,9 @@
 
 macOS アプリがクラッシュした場合:
 ```bash
-ls ~/Library/Logs/DiagnosticReports/ | grep -i thumbnail
-cat ~/Library/Logs/DiagnosticReports/ThumbnailThumb-*.ips | head -200
+# アプリ名に合わせてフィルタ
+ls ~/Library/Logs/DiagnosticReports/ | grep -i [アプリ名]
+cat ~/Library/Logs/DiagnosticReports/[アプリ名]-*.ips | head -200
 ```
 
 ---
@@ -127,7 +128,7 @@ Phase 4 の統合結果に `performance` カテゴリの High 指摘が含まれ
 
 ## Phase 5.5: スキルテスト（TESTING）
 
-> **Minimum/Standard モード**: このフェーズは省略
+> **Minimum/Minimum+/Standard モード**: このフェーズは省略
 > **詳細**: @_common/skill-triggers.md の「Phase 5.5」セクションを参照
 
 Phase 5 の修正が収束した後、**TESTING カテゴリ**のスキルを実行する。
