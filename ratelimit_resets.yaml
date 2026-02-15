@@ -1,0 +1,27 @@
+# Weekly Rate Limit リセットタイミング管理
+#
+# リセット時刻が変わったら各ツールで確認して更新する:
+#   Claude Code: /usage コマンド
+#   Codex: /status コマンド
+#
+# day: Monday/Tuesday/Wednesday/Thursday/Friday/Saturday/Sunday
+# time: HH:MM (JST)
+# calendar: gcalcli で使うカレンダー名 (default = デフォルトカレンダー)
+
+services:
+  - name: "Claude Code (会社)"
+    day: "Monday"
+    time: "09:00"
+    calendar: "default"
+  - name: "Claude Code (個人)"
+    day: "Monday"
+    time: "09:00"
+    calendar: "default"
+  - name: "Codex (会社)"
+    day: "Monday"
+    time: "09:00"
+    calendar: "default"
+  - name: "Codex (個人)"
+    day: "Monday"
+    time: "09:00"
+    calendar: "default"

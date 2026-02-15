@@ -48,7 +48,13 @@
       "Bash(make test-zshrc:*)",
       "Bash(gh run view:*)",
       "Bash(shellcheck:*)",
-      "Bash(make test-lint:*)"
+      "Bash(make test-lint:*)",
+      "Bash(git show:*)",
+      "Bash(printf:*)",
+      "Bash(iconv:*)",
+      "Bash(ret=$?)",
+      "Bash(echo:*)",
+      "Bash(/dev/null echo ret=$?)"
     ]
   }
 }
