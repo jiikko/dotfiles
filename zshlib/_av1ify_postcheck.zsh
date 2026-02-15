@@ -10,7 +10,12 @@ __av1ify_mark_issue() {
   if [[ "$base" == *.* && "$base" != .* ]]; then
     stem="${base%.*}"
     ext="${base##*.}"
-    new_name="${stem}-${note}.${ext}"
+    # -enc の前にアノテーションを挿入 (例: foo-enc.mp4 → foo-check_ng-enc.mp4)
+    if [[ "$stem" == *-enc ]]; then
+      new_name="${stem%-enc}-${note}-enc.${ext}"
+    else
+      new_name="${stem}-${note}.${ext}"
+    fi
   else
     new_name="${base}-${note}"
   fi
