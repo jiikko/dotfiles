@@ -41,8 +41,9 @@ __concat_get_stem() {
   fi
   # macOSのファイルシステムはNFDを使う場合があるためNFCに正規化
   # macOS: iconv -f UTF-8-MAC, Linux: uconv or perl
-  if printf '%s' "$stem" | iconv -f UTF-8-MAC -t UTF-8 2>/dev/null; then
-    :
+  local __nfc
+  if __nfc=$(printf '%s' "$stem" | iconv -f UTF-8-MAC -t UTF-8 2>/dev/null); then
+    printf '%s' "$__nfc"
   elif command -v uconv >/dev/null 2>&1; then
     printf '%s' "$stem" | uconv -x nfc 2>/dev/null || printf '%s' "$stem"
   elif command -v perl >/dev/null 2>&1; then
