@@ -121,10 +121,12 @@ __av1ify_one() {
     print -r -- "→ SKIP 既存: $out"
     return 0
   fi
+  # shellcheck disable=SC1036,SC2206
   local -a __av1ify_early_variants=( "${stem}"-*-enc.mp4(N) )
   if (( ${#__av1ify_early_variants[@]} > 0 )); then
     local __ev __et __ev_valid __ev_seg
     for __ev in "${__av1ify_early_variants[@]}"; do
+      # shellcheck disable=SC2295
       __et="${__ev#${stem}-}"
       __et="${__et%-enc.mp4}"
       __ev_valid=1
