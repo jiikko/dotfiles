@@ -543,6 +543,37 @@ exit_code=$?
 setopt err_exit
 assert_file_exists "$TEST_DIR/video file.mp4" "Output file is created with spaces in path"
 
+# Test 23a: __concat_get_stem のNFC正規化ユニットテスト
+printf '\n## Test 23a: __concat_get_stem normalizes NFD to NFC\n'
+nfd_pu=$'\xe3\x83\x95\xe3\x82\x9a'  # フ + combining mark (NFD)
+nfc_pu=$'\xe3\x83\x97'               # プ (NFC)
+result_nfd=$(__concat_get_stem "/path/to/clip_${nfd_pu}.mp4")
+result_nfc=$(__concat_get_stem "/path/to/clip_${nfc_pu}.mp4")
+if [[ "$result_nfd" == "$result_nfc" ]]; then
+  printf '✓ NFD and NFC inputs produce identical stems\n'
+else
+  printf '✗ NFD and NFC stems differ (nfd=%s, nfc=%s)\n' "$result_nfd" "$result_nfc"
+  return 1
+fi
+assert_contains "$result_nfd" "clip_" "Stem contains expected prefix"
+
+# Test 23b: __concat_get_stem の基本動作
+printf '\n## Test 23b: __concat_get_stem basic behavior\n'
+result=$(__concat_get_stem "/some/dir/video_001.mp4")
+if [[ "$result" == "video_001" ]]; then
+  printf '✓ Extracts stem without extension\n'
+else
+  printf '✗ Expected video_001, got %s\n' "$result"
+  return 1
+fi
+result=$(__concat_get_stem "noext")
+if [[ "$result" == "noext" ]]; then
+  printf '✓ Handles file without extension\n'
+else
+  printf '✗ Expected noext, got %s\n' "$result"
+  return 1
+fi
+
 # Test 23: NFD/NFC混在ファイル名
 printf '\n## Test 23: Mixed NFD/NFC filenames\n'
 TEST_DIR="$TEST_TMP/test23"
