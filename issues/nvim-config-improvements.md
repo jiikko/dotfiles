@@ -5,10 +5,9 @@
 
 ## 🔴 High Priority
 
-### 1. `lazyredraw = true` が noice.nvim と競合
-- **ファイル**: `nvim/lua/dotfiles/basic.lua:49`
-- **内容**: noice.nvim 使用時に `lazyredraw = true` は RAM リークを引き起こす。noice.nvim の FAQ でも明記されている
-- **対応**: 該当行を削除
+### ~~1. `lazyredraw = true` が noice.nvim と競合~~ 対応済み
+- **対応日**: 2026-02-15
+- **内容**: `lazyredraw = false` に変更（noice.nvim との競合を解消）
 
 ### 2. foldexpr が非推奨 API を使用
 - **ファイル**: `_nviminit.lua:742`
