@@ -205,9 +205,7 @@ require("lazy").setup({
       vim.api.nvim_create_autocmd("CursorHold", {
         pattern = "*",
         callback = function()
-          vim.fn.timer_start(500, function()
-            vim.fn.CocActionAsync("highlight")
-          end)
+          vim.fn.CocActionAsync("highlight")
         end,
       })
       -- カーソル位置のドキュメント表示

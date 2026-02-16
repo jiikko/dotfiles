@@ -29,10 +29,9 @@
 - **対応日**: 2026-02-14
 - **内容**: `nvim/lua/dotfiles/basic.lua` の set_options() へ移動
 
-### 6. CursorHold + timer_start による二重遅延
-- **ファイル**: `_nviminit.lua:214-221`
-- **内容**: CursorHold（300ms）+ timer_start(500) で合計800msの遅延。ハイライト表示が遅い
-- **対応**: timer_start を削除し CursorHold だけで直接実行
+### ~~6. CursorHold + timer_start による二重遅延~~ 対応済み
+- **対応日**: 2026-02-16
+- **内容**: timer_start(500) を削除し CursorHold から直接 CocActionAsync("highlight") を呼出し
 
 ### ~~7. filepath コピーキーマップが coc 設定内に配置~~ 対応済み
 - **対応日**: 2026-02-14
