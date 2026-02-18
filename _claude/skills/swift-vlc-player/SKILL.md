@@ -156,12 +156,13 @@ class PlayerController: NSObject, VLCMediaPlayerDelegate {
 
 ```swift
 // From bundle
-let media = VLCMedia(path: Bundle.main.path(forResource: "video", ofType: "mp4")!)
+guard let path = Bundle.main.path(forResource: "video", ofType: "mp4") else { return }
+let media = VLCMedia(path: path)
 
 // From Documents
-let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-    .appendingPathComponent("video.mkv")
-let media = VLCMedia(url: url)
+guard let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+let fileURL = docsURL.appendingPathComponent("video.mkv")
+let media = VLCMedia(url: fileURL)
 
 player.media = media
 player.play()
@@ -171,18 +172,21 @@ player.play()
 
 ```swift
 // RTSP
-let media = VLCMedia(url: URL(string: "rtsp://192.168.1.100:554/stream")!)
+guard let url = URL(string: "rtsp://192.168.1.100:554/stream") else { return }
+let media = VLCMedia(url: url)
 media.addOptions([
     "network-caching": 300,
     "rtsp-tcp": ""          // Force TCP (more reliable)
 ])
 
 // HLS
-let media = VLCMedia(url: URL(string: "https://example.com/stream/playlist.m3u8")!)
+guard let url = URL(string: "https://example.com/stream/playlist.m3u8") else { return }
+let media = VLCMedia(url: url)
 media.addOptions(["network-caching": 1000])
 
 // RTMP
-let media = VLCMedia(url: URL(string: "rtmp://live.example.com/app/stream_key")!)
+guard let url = URL(string: "rtmp://live.example.com/app/stream_key") else { return }
+let media = VLCMedia(url: url)
 media.addOptions(["network-caching": 500])
 
 player.media = media
@@ -369,9 +373,13 @@ struct PlayerScreen: View {
 <key>com.apple.security.network.client</key>
 <true/>
 
-<!-- For user-selected local files -->
+<!-- For user-selected local files (read only) -->
 <key>com.apple.security.files.user-selected.read-only</key>
 <true/>
+
+<!-- Recording/Snapshot 機能を使う場合のみ追加 (NSSavePanel 経由で使用) -->
+<!-- <key>com.apple.security.files.user-selected.read-write</key> -->
+<!-- <true/> -->
 ```
 
 ## Common Issues
@@ -952,13 +960,19 @@ func load(url: URL, options: [String: Any]? = nil) {
 ## Recording and Snapshots
 
 ```swift
-// Record stream to file
-player.startRecording(atPath: "/path/to/output.ts")
+// NSSavePanel でユーザーにパスを選択させるのが最も安全
+let panel = NSSavePanel()
+panel.allowedContentTypes = [.mpeg2TransportStream]
+if panel.runModal() == .OK, let url = panel.url {
+    player.startRecording(atPath: url.path)
+}
 player.stopRecording()
 
 // Save video snapshot
-player.saveVideoSnapshot(at: "/path/to/snapshot.png", withWidth: 1920, andHeight: 1080)
+player.saveVideoSnapshot(at: outputPath, withWidth: 1920, andHeight: 1080)
 ```
+
+> **注意**: `startRecording(atPath:)` / `saveVideoSnapshot(at:)` はファイル書き込みを行う。ユーザー入力からパスを構築する場合はパストラバーサルに注意。Sandbox 有効時は `files.user-selected.read-write` entitlement が必要。
 
 ## Third-Party SwiftUI Wrapper
 
@@ -967,7 +981,62 @@ player.saveVideoSnapshot(at: "/path/to/snapshot.png", withWidth: 1920, andHeight
 ```swift
 import VLCUI
 
-VLCVideoPlayer(url: URL(string: "https://example.com/video.mp4")!)
+guard let url = URL(string: "https://example.com/video.mp4") else { return }
+VLCVideoPlayer(url: url)
+```
+
+## Security Considerations
+
+### URL バリデーション (SSRF 防止)
+
+ユーザー入力から URL を構築する場合、プロトコルのホワイトリスト検証が必須。VLCKit は `file://`, `smb://`, `ftp://` 等も処理できるため、意図しないプロトコルでの内部リソースアクセスを防ぐ。
+
+```swift
+let allowedSchemes: Set<String> = ["rtsp", "rtsps", "rtmp", "http", "https"]
+
+func validateStreamURL(_ urlString: String) -> URL? {
+    guard let url = URL(string: urlString),
+          let scheme = url.scheme?.lowercased(),
+          allowedSchemes.contains(scheme),
+          url.host != nil else {
+        return nil
+    }
+    return url
+}
+```
+
+### パストラバーサル防止
+
+`startRecording(atPath:)` や `saveVideoSnapshot(at:)` にユーザー入力を含める場合:
+
+```swift
+func safeOutputPath(baseDir: URL, filename: String) -> URL? {
+    let sanitized = filename
+        .replacingOccurrences(of: "/", with: "_")
+        .replacingOccurrences(of: "..", with: "_")
+    let fullPath = baseDir.appendingPathComponent(sanitized)
+    let resolved = fullPath.standardizedFileURL
+    guard resolved.path.hasPrefix(baseDir.standardizedFileURL.path) else {
+        return nil  // ベースディレクトリ外への書き込みを拒否
+    }
+    return resolved
+}
+```
+
+### libvlc オプションの安全な設定
+
+`media.addOptions()` にユーザー入力を含めないこと。特に `--sout` (ストリーム出力) や `--input-record` はファイルシステム書き込みにつながる。
+
+```swift
+// 安全: 許可リストに基づく定数オプション
+struct SafeMediaOptions {
+    static let networkCachingRange = 100...5000
+
+    static func streaming(networkCaching: Int = 1000) -> [String: Any] {
+        let clamped = networkCaching.clamped(to: networkCachingRange)
+        return ["network-caching": clamped, "rtsp-tcp": ""]
+    }
+}
 ```
 
 ## Resources
