@@ -26,6 +26,7 @@ disable-model-invocation: true
 | design | 設計 | 設計改善 | 今後問題になりうる設計上の課題を探す |
 | responsibility | 設計 | 責務集中 | 責務が集中しているクラス/モジュールを探す |
 | duplication | 設計 | コード重複 | コピペされたロジック、抽出すべき類似実装を探す |
+| ui-components | 設計 | UIコンポーネント共通化 | 共通化できるビュー・UIパターンを探す |
 | ux | UX | UX改善 | UX的に劣っている箇所を探す |
 | security | 品質 | セキュリティ | ハードコードされた秘密情報、インジェクション脆弱性、安全でない依存関係などOWASP観点の問題を探す |
 | resource-leaks | 品質 | リソースリーク | リソースリークの可能性が高いコードを探す |
@@ -45,7 +46,7 @@ disable-model-invocation: true
 AskUserQuestion は最大4選択肢のため、カテゴリ別に2段階で選択させてください。
 
 **1問目**: カテゴリを選択（multiSelect: true）
-- 設計 (design, responsibility, duplication)
+- 設計 (design, responsibility, duplication, ui-components)
 - 品質 (security, resource-leaks, broken-code, dead-code, error-handling, performance)
 - テスト (test-cleanup, test-helpers)
 - その他 (ux, dependency, issues-done, lint-from-done, general)
@@ -84,6 +85,7 @@ AskUserQuestion は最大4選択肢のため、カテゴリ別に2段階で選�
 - **design**: `[モード名]モードで実行して。今後問題になりうる、設計系に改善するべき実装を探してissuesディレクトリに書き出して`
 - **responsibility**: `[モード名]モードで実行して。責務が集中しているクラスを探してissuesディレクトリに書き出して`
 - **duplication**: `[モード名]モードで実行して。コピペされたロジックや類似実装を探して、共通化すべき箇所をissuesディレクトリに書き出して`
+- **ui-components**: `[モード名]モードで実行して。UIコンポーネント（モーダル、リスト、ボタン、フォーム等）の中で共通化・抽出できるビューパターンを探してissuesディレクトリに書き出して`
 - **ux**: `[モード名]モードで実行して。UX的に劣っている箇所を探してissuesディレクトリに書き出して`
 - **security**: `[モード名]モードで実行して。ハードコードされた秘密情報、インジェクション脆弱性、安全でない依存関係などセキュリティ上の問題を探してissuesディレクトリに書き出して`
 - **resource-leaks**: `[モード名]モードで実行して。リソースリークしている可能性の高いコードを探してissuesディレクトリに書き出して`
@@ -107,6 +109,7 @@ Explore エージェントでコードベースを調査し、発見事項を is
 各監査タイプの調査指針:
 
 - **design**: アーキテクチャ全体を俯瞰し、密結合・循環依存・レイヤー違反・拡張困難な箇所を探す
+- **ui-components**: モーダル・リスト・ボタン・フォーム等のUIパターンを横断的に比較し、共通コンポーネントとして抽出できる類似実装を探す
 - **ux**: ユーザー操作フロー・エラーメッセージ・レスポンス速度・一貫性の観点で劣っている箇所を探す
 - **issues-done**: issues/done 内のファイルを読み、実装済みかどうかをコードベースと照合して確認する
 - **resource-leaks**: ファイルハンドル・DB接続・イベントリスナー・タイマーなど、解放漏れの可能性がある箇所を探す
