@@ -147,5 +147,6 @@ audit-log 自体も commit に含めてください。
 ## 注意事項
 
 - issues ディレクトリが存在しない場合は作成してください
-- 出力ファイル名は `issues/<audit-type-id>-<簡潔な説明>.md` としてください
+- **issue ファイルの命名規則は `issues/readme.md` に従うこと**。作成前に必ず `issues/readme.md` を読み、ファイル名の形式（番号プレフィックス等）と次の issue 番号を確認してください
+- `issues/readme.md` が存在しない場合は `issues/<audit-type-id>-<簡潔な説明>.md` をフォールバックとしてください
 - 既存の issue ファイルと同じカテゴリの場合、既存ファイルへの追記も検討してください
