@@ -37,6 +37,7 @@ for d in ~/dotfiles/_claude/skills/*/; do
 done
 ln -sf ~/dotfiles/_claude/keybindings.json ~/.claude/keybindings.json
 ln -sf ~/dotfiles/_claude/CLAUDE.md ~/.claude/CLAUDE.md
+ln -sf ~/dotfiles/_claude/statusline-command.sh ~/.claude/statusline-command.sh
 
 # cleanup legacy bash symlinks (extendable)
 legacy_links="bashrc bash_profile"
