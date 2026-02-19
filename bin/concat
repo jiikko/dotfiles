@@ -1,0 +1,15 @@
+#!/usr/bin/env zsh
+# @DotfilesSyncer:finder-menu true
+# @DotfilesSyncer:accepts .mp4,.mov,.mkv,.avi,.webm,.flv,.wmv,.m4v,.mpg,.mpeg,.3gp,.ts,.m2ts
+# @DotfilesSyncer:input-type files
+# @DotfilesSyncer:description concatで結合
+#
+# concat — 複数の動画ファイルを無劣化で結合
+#
+# 実装: ~/dotfiles/zshlib/_concat.zsh
+#
+# 同じ機能が以下にも定義されています（呼び出し元）:
+#   - ~/dotfiles/_zshrc:603  concat() 遅延ローディングラッパー
+
+source "${0:A:h}/../zshlib/_concat.zsh"
+concat "$@"

@@ -1,0 +1,17 @@
+#!/usr/bin/env zsh
+# @DotfilesSyncer:finder-menu true
+# @DotfilesSyncer:accepts .mp4,.mov,.mkv,.avi,.wmv,.rm,.mpg,.mpeg,.flv,.webm,.3gp,.ts
+# @DotfilesSyncer:input-type file,files,directory
+# @DotfilesSyncer:description av1c（720p+30fps）で変換
+# @DotfilesSyncer:submenu resolution --resolution:720p,1080p
+#
+# av1c — av1ify --compact のショートハンド（720p + 30fps プリセット）
+#
+# 実装: ~/dotfiles/zshlib/_av1ify.zsh
+#
+# 同じ機能が以下にも定義されています（呼び出し元）:
+#   - ~/dotfiles/_zshrc:600  alias av1c='av1ify -c'
+#   - ~/dotfiles/bin/av1ify  フルオプション版
+
+source "${0:A:h}/../zshlib/_av1ify.zsh"
+av1ify --compact "$@"

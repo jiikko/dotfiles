@@ -1,0 +1,17 @@
+#!/usr/bin/env zsh
+# @DotfilesSyncer:finder-menu true
+# @DotfilesSyncer:accepts .mp4,.mov,.mkv,.avi,.wmv,.rm,.mpg,.mpeg,.flv,.webm,.3gp,.ts
+# @DotfilesSyncer:input-type file,files,directory
+# @DotfilesSyncer:description av1ifyで変換
+# @DotfilesSyncer:submenu resolution --resolution:default,compact,480p,720p,1080p,1440p,4k
+#
+# av1ify — 動画ファイルをAV1形式のMP4に変換
+#
+# 実装: ~/dotfiles/zshlib/_av1ify.zsh
+#
+# 同じ機能が以下にも定義されています（呼び出し元）:
+#   - ~/dotfiles/_zshrc:592  av1ify() 遅延ローディングラッパー
+#   - ~/dotfiles/bin/av1c    av1ify --compact のショートハンド
+
+source "${0:A:h}/../zshlib/_av1ify.zsh"
+av1ify "$@"
