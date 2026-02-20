@@ -18,7 +18,7 @@
 
 | スキル名 | カテゴリ | 検出パターン | モード制約 | 実行方式 |
 |---------|---------|-------------|----------|---------|
-| style-review | VALIDATION | `.css`, `.scss`, `.module.css`, `styled-components`, CSS-in-JS | Standard 以上 | 自動 |
+| style-review | VALIDATION | `.css`, `.scss`, `.module.css`, `styled-components`, CSS-in-JS | Minimum+ 以上（CSS変更検出時） | 自動 |
 | smoke-test | TESTING | `bin/tt-client` 存在、ThumbnailThumb 関連ファイル変更 | Maximum 以上 | 確認付き |
 | perf-analysis | DIAGNOSTIC | Phase 4 で `performance` カテゴリの High 指摘あり | Standard 以上 | 確認付き |
 | ios-simulator-skill | TESTING | `.xcodeproj`/`project.yml` + iOS ターゲット変更 | Maximum 以上 | 確認付き |
@@ -36,7 +36,7 @@
 
 | スキルカテゴリ | Minimum | Minimum+ | Standard | Maximum | Ultra |
 |-------------|---------|----------|----------|---------|-------|
-| VALIDATION | **省略** | **省略** | 自動 | 自動 | 自動 |
+| VALIDATION | **省略** | CSS検出時自動 | 自動 | 自動 | 自動 |
 | TESTING | **省略** | **省略** | **省略** | 確認付き | 確認付き |
 | DIAGNOSTIC | **省略** | **省略** | 確認付き | 確認付き | 確認付き |
 
@@ -76,7 +76,8 @@ Phase 0（要件確認）完了時に、以下のロジックでスキル候補�
 
 - `applicable_skills` に VALIDATION カテゴリのスキルが存在
 - Phase 3 のセルフレビューが完了（BLOCKER 0 件）
-- モードが Standard 以上
+- **Minimum+ の場合**: CSS/SCSS ファイルの変更が検出されていること
+- **Standard 以上の場合**: 変更ファイルに関わらず常時実行
 
 ### 実行手順
 

@@ -14,8 +14,8 @@
 
 `~/.claude/skills/` に専門知識スキルが格納されている。以下のキーワードに関連するタスクでは、対応する SKILL.md を作業前に Read すること。
 
-| キーワード | スキルパス |
-|-----------|-----------|
+| キーワード | 参照先 |
+|-----------|-------|
 | 監査, audit, コードレビュー全体 | `~/.claude/skills/audit/SKILL.md` |
 | コミット, commit, git commit | `~/.claude/skills/c/SKILL.md` |
 | forge, 専門家実装, クロスレビュー | `~/.claude/skills/forge/SKILL.md` |
@@ -27,3 +27,4 @@
 | WCAG, アクセシビリティ, ダークモード, スタイルレビュー | `~/.claude/skills/style-review/SKILL.md` |
 | VLCKit, MobileVLCKit, VLCMediaPlayer, RTSP, HLS, RTMP, メディア再生 | `~/.claude/skills/swift-vlc-player/SKILL.md` |
 | watchOS, Apple Watch, WatchKit, WatchConnectivity, HealthKit, コンプリケーション | `~/.claude/skills/watchos-expert/SKILL.md` |
+| App Store, TestFlight, 審査, リジェクト, App Store Connect | agent: `appstore-submission-expert` |

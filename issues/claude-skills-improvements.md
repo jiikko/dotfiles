@@ -8,7 +8,7 @@
 
 ## 🔴 High Priority
 
-### 1. VALIDATION スキル（style-review）の実行条件が矛盾している
+### ~~1. VALIDATION スキル（style-review）の実行条件が矛盾している~~ 対応済み 2026-02-19
 - **ファイル**: `_claude/skills/forge/_common/skill-triggers.md`
 - **内容**: `skill-triggers.md` では Minimum/Minimum+ モードで VALIDATION スキルを「省略」と定義しているが、CSS 変更を含む実装をこれらのモードで行った場合、WCAG 検証がスキップされる。audit/SKILL.md は「forge 経由で実行」を推奨しているため、Minimum+ で audit → forge → CSS 変更という経路では style-review が実行されない
 - **推奨**: VALIDATION を全モード標準実行にするか、CSS/スタイル変更検出時は強制的に実行するロジックを追加する
@@ -23,7 +23,7 @@
 - **内容**: Section 7 (398-749行) と Section 8 (751-959行) に「BAD → GOOD パターン」が合計9回繰り返されている。パターンの共通部分が抽出されていない
 - **推奨**: `_common/` 相当のサブファイルに分割（例: `race-condition-patterns.md`, `error-recovery-patterns.md`）。SKILL.md 自体は参照のみにする
 
-### 4. Minimum モードのクロスレビュー・ペアリング定義が存在しない
+### ~~4. Minimum モードのクロスレビュー・ペアリング定義が存在しない~~ 対応済み 2026-02-19
 - **ファイル**: `_claude/skills/forge/_common/cross-review.md`
 - **内容**: `cross-review.md` には「Minimum+ モード用ペアリング」テーブルはあるが、Minimum モードのペアリングが未定義。modes.md では Minimum の Phase 1.1 は「省略」と記載されているが、実際に Minimum モードでクロスレビューを省略するロジックがどのエージェントが担当するか明記されていない
 - **推奨**: `cross-review.md` に「Minimum モード: クロスレビューなし（理由: 速度優先）」と明記する
@@ -32,7 +32,7 @@
 
 ## 🟡 Medium Priority
 
-### 5. モード定義が3ファイルに分散している（DRY 違反）
+### ~~5. モード定義が3ファイルに分散している（DRY 違反）~~ 一部対応済み 2026-02-19（forge/SKILL.md の Phase -1 を短縮、audit は modes.md 参照済み）
 - **ファイル**: `_claude/skills/forge/SKILL.md:64-99`, `_claude/skills/forge/_common/modes.md`, `_claude/skills/audit/SKILL.md:62-73`
 - **内容**: Minimum/Minimum+/Standard/Maximum/Ultra のモード説明が約70%重複した内容で3ファイルに書かれている。modes.md を更新しても他ファイルへの反映が漏れる可能性がある
 - **推奨**: `modes.md` を Single Source of Truth として、他ファイルは「詳細は `_common/modes.md` を参照」のみに変更する
@@ -47,7 +47,7 @@
 - **内容**: デッドロック防止のための `Task.detached` パターン（ほぼ同一のコード例）が少なくとも4エージェントにコピーされている
 - **推奨**: `_common/swift-concurrency-patterns.md` として抽出し、各エージェントから参照する
 
-### 8. 6エージェントがどのスキルトリガーにも登録されていない
+### ~~8. 6エージェントがどのスキルトリガーにも登録されていない~~ 一部対応済み 2026-02-19（appstore-submission-expert を CLAUDE.md に追加。残りは TT 固有のため未対応）
 - **ファイル**: `_claude/skills/forge/_common/skill-triggers.md`, `~/.claude/CLAUDE.md`
 - **内容**: `appstore-submission-expert`, `crash-analyzer`, `smoke-test-runner`, `statusline-setup`, `tt-api-expert`, `xcodebuild-runner` など複数のエージェントがトリガーなしで定義されているため、ユーザーが名前を知らないと利用できない
 - **推奨**: CLAUDE.md のスキルトリガーテーブルにこれらのエージェントを追加するか、`agents/README.md` として全エージェントのカタログを作成する
