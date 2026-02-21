@@ -54,7 +54,10 @@
       "Bash(iconv:*)",
       "Bash(ret=$?)",
       "Bash(echo:*)",
-      "Bash(/dev/null echo ret=$?)"
+      "Bash(/dev/null echo ret=$?)",
+      "mcp__chrome-devtools__take_snapshot",
+      "mcp__chrome-devtools__fill",
+      "mcp__chrome-devtools__evaluate_script"
     ]
   }
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env zsh
-# @DotfilesSyncer:finder-menu true
+# @DotfilesSyncer: finder-menu false
 # @DotfilesSyncer:accepts .mp4,.mov,.mkv,.avi,.wmv,.rm,.mpg,.mpeg,.flv,.webm,.3gp,.ts
 # @DotfilesSyncer:input-type file,files,directory
 # @DotfilesSyncer:description av1ifyで変換

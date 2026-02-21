@@ -1,5 +1,5 @@
 #!/usr/bin/env zsh
-# @DotfilesSyncer:finder-menu true
+# @DotfilesSyncer: finder-menu true
 # @DotfilesSyncer:accepts .mp4,.mov,.mkv,.avi,.webm,.flv,.wmv,.m4v,.mpg,.mpeg,.3gp,.ts,.m2ts
 # @DotfilesSyncer:input-type files
 # @DotfilesSyncer:description concatで結合
