@@ -43,3 +43,4 @@
 | VLCKit, MobileVLCKit, VLCMediaPlayer, RTSP, HLS, RTMP, メディア再生 | `~/.claude/skills/swift-vlc-player/SKILL.md` |
 | watchOS, Apple Watch, WatchKit, WatchConnectivity, HealthKit, コンプリケーション | `~/.claude/skills/watchos-expert/SKILL.md` |
 | App Store, TestFlight, 審査, リジェクト, App Store Connect | agent: `appstore-submission-expert` |
+| issue-sync, issue同期, 完了漏れ, done移動 | `~/.claude/skills/issue-sync/SKILL.md` |
