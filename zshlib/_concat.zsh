@@ -24,6 +24,7 @@ concat — 複数の動画ファイルを無劣化で結合します。
 使い方:
   concat <ファイル1> <ファイル2> [<ファイル3> ...]
   concat --force <ファイル1> <ファイル2> ...
+  concat --verbose <ファイル1> <ファイル2> ...
 
   例:
     # 連番ファイルを結合
@@ -35,6 +36,7 @@ concat — 複数の動画ファイルを無劣化で結合します。
 オプション:
   -h, --help: このヘルプメッセージを表示します。
   --force: コーデック不一致でも強制的に結合を実行します（結果は保証されません）。
+  --verbose: 検査途中の詳細ログを表示します。
 
 入力:
   - 2つ以上の動画ファイルパス
@@ -51,12 +53,16 @@ EOF
     return 0
   fi
 
-  # --force オプションの処理
+  # オプションの処理
   local force_mode=0
-  if [[ "$1" == "--force" ]]; then
-    force_mode=1
-    shift
-  fi
+  local verbose_mode=0
+  while [[ "$1" == --* ]]; do
+    case "$1" in
+      --force)   force_mode=1; shift ;;
+      --verbose) verbose_mode=1; shift ;;
+      *) break ;;
+    esac
+  done
 
   # 引数チェック: 最低2ファイル必要
   if (( $# < 2 )); then
@@ -79,7 +85,7 @@ EOF
 
   # 1.5. クラウドストレージ対応: 並列プリフェッチ
   # ファイルアクセスでダウンロードをトリガー
-  print -r -- ">> ファイルをプリフェッチ中..."
+  (( verbose_mode )) && print -r -- ">> ファイルをプリフェッチ中..."
   local -a prefetch_pids=()
   # バックグラウンドジョブの通知を抑制
   setopt LOCAL_OPTIONS NO_NOTIFY NO_MONITOR
@@ -91,9 +97,9 @@ EOF
   for pid in "${prefetch_pids[@]}"; do
     wait "$pid" 2>/dev/null
   done
-  print -r -- ">> プリフェッチ完了"
+  (( verbose_mode )) && print -r -- ">> プリフェッチ完了"
 
-  print -r -- ">> ファイル検証中..."
+  (( verbose_mode )) && print -r -- ">> ファイル検証中..."
   # 同一ディレクトリ確認（:A で絶対パスに変換、スペース対応）
   local first_dir="${input_files[1]:A:h}"
 
@@ -115,7 +121,7 @@ EOF
     fi
   done
 
-  print -r -- ">> 連続性チェック中..."
+  (( verbose_mode )) && print -r -- ">> 連続性チェック中..."
   # 2. ファイル名の連続性チェック
   local -a stems=()
   for file in "${input_files[@]}"; do
@@ -285,7 +291,7 @@ EOF
   fi
 
   # ディレクトリ内の同一パターンファイル欠落チェック
-  print -r -- ">> ディレクトリ内の関連ファイルチェック中..."
+  (( verbose_mode )) && print -r -- ">> ディレクトリ内の関連ファイルチェック中..."
   setopt LOCAL_OPTIONS EXTENDED_GLOB
   local check_ext
   check_ext="${$(__concat_get_ext "${input_files[1]}"):l}"  # 小文字に正規化
@@ -345,7 +351,7 @@ EOF
     return 1
   fi
 
-  print -r -- ">> コーデック確認中..."
+  (( verbose_mode )) && print -r -- ">> コーデック確認中..."
   # 3. 再エンコード回避チェック（--forceでスキップ）
   # 入力に音声があるかどうかを記録
   local has_input_audio=0
@@ -453,7 +459,7 @@ EOF
   mv -f -- "$tmp_output" "$output_path"
   print -r -- ">> 結合完了 (${$(( SECONDS - start_time ))}秒)"
 
-  print -r -- ">> 診断中..."
+  (( verbose_mode )) && print -r -- ">> 診断中..."
   start_time=$SECONDS
   # 11. 出力ファイルの診断
   if ! __concat_diagnose_output "$output_path" "$total_duration" "$has_input_audio"; then
@@ -461,7 +467,7 @@ EOF
     rm -f -- "$output_path"
     return 1
   fi
-  print -r -- ">> 診断完了 (${$(( SECONDS - start_time ))}秒)"
+  (( verbose_mode )) && print -r -- ">> 診断完了 (${$(( SECONDS - start_time ))}秒)"
 
   # 12. クリーンアップ（trapでも実行されるが念のため）
   rm -f -- "$list_file"
