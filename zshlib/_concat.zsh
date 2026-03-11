@@ -439,7 +439,16 @@ EOF
     printf "%d:%02d:%05.2f", h, m, sec
   }')
 
-  print -r -- ">> 結合対象: ${#sorted_files[@]}ファイル"
+  # 入力ファイル合計サイズを計算
+  local total_size=0
+  for file in "${sorted_files[@]}"; do
+    local fsize
+    fsize=$(stat -f%z -- "$file" 2>/dev/null || stat -c%s -- "$file" 2>/dev/null)
+    [[ -n "$fsize" ]] && total_size=$((total_size + fsize))
+  done
+  local total_size_mb=$((total_size / 1024 / 1024))
+
+  print -r -- ">> 結合対象: ${#sorted_files[@]}ファイル (合計 ${total_size_mb}MB)"
   print -r -- ">> 入力ファイル合計duration: ${duration_hms}"
   print -r -- ">> 出力: $output_path"
   print -r -- ">> 結合中..."
@@ -462,7 +471,7 @@ EOF
   (( verbose_mode )) && print -r -- ">> 診断中..."
   start_time=$SECONDS
   # 11. 出力ファイルの診断
-  if ! __concat_diagnose_output "$output_path" "$total_duration" "$has_input_audio"; then
+  if ! __concat_diagnose_output "$output_path" "$total_duration" "$has_input_audio" "$total_size"; then
     print -r -- "❌ 診断エラー: $REPLY" >&2
     rm -f -- "$output_path"
     return 1
