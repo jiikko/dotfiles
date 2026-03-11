@@ -237,8 +237,8 @@ __concat_diagnose_output() {
     return 1
   fi
 
-  # サイズ乖離チェック（入力合計の5%以上小さければ異常）
-  if (( expected_size > 0 )); then
+  # サイズ乖離チェック（入力合計の5%以上小さければ異常、1MB未満はスキップ）
+  if (( expected_size > 1048576 )); then
     local actual_size
     actual_size=$(stat -f%z -- "$outfile" 2>/dev/null || stat -c%s -- "$outfile" 2>/dev/null)
     if [[ -n "$actual_size" ]] && (( actual_size > 0 )); then

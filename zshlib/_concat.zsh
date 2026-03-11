@@ -23,12 +23,16 @@ concat — 複数の動画ファイルを無劣化で結合します。
 
 使い方:
   concat <ファイル1> <ファイル2> [<ファイル3> ...]
+  concat <ディレクトリ>
   concat --force <ファイル1> <ファイル2> ...
   concat --verbose <ファイル1> <ファイル2> ...
 
   例:
     # 連番ファイルを結合
     concat video_001.mp4 video_002.mp4 video_003.mp4
+
+    # ディレクトリ内のグループを自動検出して結合（非再帰）
+    concat /path/to/videos
 
     # コーデック不一致でも強制実行
     concat --force video1.mp4 video2.mp4
@@ -63,6 +67,84 @@ EOF
       *) break ;;
     esac
   done
+
+  # ディレクトリモード: 引数が1つのディレクトリならグループを自動検出して結合
+  if (( $# == 1 )) && [[ -d "$1" ]]; then
+    local target_dir="${1:A}"
+    local -a _opts=()
+    (( force_mode )) && _opts+=(--force)
+    (( verbose_mode )) && _opts+=(--verbose)
+
+    # ディレクトリ内の動画ファイルを収集（非再帰）
+    local -a video_files=()
+    local _f _ext
+    for _f in "$target_dir"/*(.N); do
+      _ext=$(__concat_get_ext "$_f")
+      [[ -n "$_ext" ]] && __concat_is_allowed_ext "$_ext" && video_files+=("$_f")
+    done
+
+    if (( ${#video_files[@]} == 0 )); then
+      print -r -- "エラー: ディレクトリ内に動画ファイルが見つかりません" >&2
+      return 1
+    fi
+
+    # ファイルをグループ化（番号部分を除いた共通部分でグルーピング）
+    local -A file_to_key=()
+    local -a all_keys=()
+    local _stem _num _rest _suffix _prefix _key
+    for _f in "${video_files[@]}"; do
+      _stem=$(__concat_get_stem "$_f")
+      if __concat_extract_number "$_stem"; then
+        _num="${REPLY%%:*}"
+        _rest="${REPLY#*:}"
+        _suffix="${_rest%%:*}"
+        _prefix="${_rest#*:}"
+        _key="${_prefix}::${_suffix}"
+        file_to_key[${_f:A}]="$_key"
+        all_keys+=("$_key")
+      fi
+    done
+
+    local -a unique_keys=(${(u)all_keys})
+    local _total=0 _ok=0 _fail=0
+
+    local -a group_files sorted_group
+    for _key in "${unique_keys[@]}"; do
+      group_files=()
+      for _f in "${video_files[@]}"; do
+        [[ "${file_to_key[${_f:A}]}" == "$_key" ]] && group_files+=("$_f")
+      done
+      (( ${#group_files[@]} < 2 )) && continue
+
+      _total=$((_total + 1))
+      sorted_group=(${(o)group_files})
+
+      print -r -- ""
+      print -r -- "=========================================="
+      print -r -- "グループ ${_total}: ${sorted_group[1]:t} 他${#sorted_group[@]}ファイル"
+      print -r -- "=========================================="
+
+      if concat "${_opts[@]}" "${sorted_group[@]}"; then
+        _ok=$((_ok + 1))
+        print -r -- ">> 元ファイルを削除中..."
+        for _f in "${sorted_group[@]}"; do
+          rm -f -- "$_f" && print -r -- "   削除: ${_f:t}"
+        done
+      else
+        _fail=$((_fail + 1))
+      fi
+    done
+
+    if (( _total == 0 )); then
+      print -r -- "結合可能なグループが見つかりませんでした"
+      return 0
+    fi
+    print -r -- ""
+    print -r -- "=========================================="
+    print -r -- "完了: ${_ok}/${_total} グループ成功${_fail:+, ${_fail}失敗}"
+    print -r -- "=========================================="
+    return $(( _fail > 0 ))
+  fi
 
   # 引数チェック: 最低2ファイル必要
   if (( $# < 2 )); then
@@ -140,12 +222,13 @@ EOF
   local -a temp_prefixes=()
   local -a temp_suffixes=()
   local all_matched=1
+  local num_part rest suffix_part prefix_part
   for stem in "${stems[@]}"; do
     if __concat_extract_number "$stem"; then
-      local num_part="${REPLY%%:*}"
-      local rest="${REPLY#*:}"
-      local suffix_part="${rest%%:*}"
-      local prefix_part="${rest#*:}"
+      num_part="${REPLY%%:*}"
+      rest="${REPLY#*:}"
+      suffix_part="${rest%%:*}"
+      prefix_part="${rest#*:}"
       temp_numbers+=("$((10#$num_part))")
       temp_prefixes+=("$prefix_part")
       temp_suffixes+=("$suffix_part")
@@ -248,10 +331,10 @@ EOF
     numbers=()
     for stem in "${stripped_stems[@]}"; do
       if __concat_extract_number "$stem"; then
-        local num_part="${REPLY%%:*}"
-        local rest="${REPLY#*:}"
-        local suffix_part="${rest%%:*}"
-        local prefix_part="${rest#*:}"
+        num_part="${REPLY%%:*}"
+        rest="${REPLY#*:}"
+        suffix_part="${rest%%:*}"
+        prefix_part="${rest#*:}"
 
         numbers+=("$((10#$num_part))")
 
@@ -302,9 +385,10 @@ EOF
   done
 
   local -a missing_files=()
+  local f_abs is_input f_stem f_check_stem remaining
   for f in "$first_dir"/(#i)*."$check_ext"(N); do
-    local f_abs="${f:A}"
-    local is_input=0
+    f_abs="${f:A}"
+    is_input=0
     for inp in "${input_abs[@]}"; do
       if [[ "$f_abs" == "$inp" ]]; then
         is_input=1
@@ -313,10 +397,9 @@ EOF
     done
     (( is_input )) && continue
 
-    local f_stem
     f_stem=$(__concat_get_stem "$f")
 
-    local f_check_stem="$f_stem"
+    f_check_stem="$f_stem"
     if (( use_stripped_stems )) && [[ -n "$detected_common_suffix" ]]; then
       [[ "$f_stem" != *"$detected_common_suffix" ]] && continue
       f_check_stem="${f_stem%$detected_common_suffix}"
@@ -327,7 +410,7 @@ EOF
       continue
     fi
 
-    local remaining="${f_check_stem:${#common_prefix}}"
+    remaining="${f_check_stem:${#common_prefix}}"
 
     # first_suffixがあればそれで終わるか確認して除去
     if [[ -n "$first_suffix" ]]; then
@@ -360,9 +443,9 @@ EOF
   first_audio_info=$(__concat_get_audio_info "${input_files[1]}")
   [[ -n "$first_audio_info" ]] && has_input_audio=1
 
+  local video_info audio_info
   if (( ! force_mode )); then
     for file in "${input_files[@]:1}"; do
-      local video_info audio_info
       video_info=$(__concat_get_video_info "$file")
       audio_info=$(__concat_get_audio_info "$file")
 
@@ -440,9 +523,8 @@ EOF
   }')
 
   # 入力ファイル合計サイズを計算
-  local total_size=0
+  local total_size=0 fsize
   for file in "${sorted_files[@]}"; do
-    local fsize
     fsize=$(stat -f%z -- "$file" 2>/dev/null || stat -c%s -- "$file" 2>/dev/null)
     [[ -n "$fsize" ]] && total_size=$((total_size + fsize))
   done
