@@ -31,6 +31,9 @@ concat — 複数の動画ファイルを無劣化で結合します。
     # 連番ファイルを結合
     concat video_001.mp4 video_002.mp4 video_003.mp4
 
+    # 複数グループを自動検出して結合
+    concat clip_01.mp4 clip_02.mp4 scene_1.mp4 scene_2.mp4
+
     # ディレクトリ内のグループを自動検出して結合（非再帰）
     concat /path/to/videos
 
@@ -150,6 +153,78 @@ EOF
   if (( $# < 2 )); then
     print -r -- "エラー: 最低2つのファイルが必要です" >&2
     return 1
+  fi
+
+  # マルチグループ検出: 複数ファイルが異なるグループに属するなら自動振り分け
+  if (( $# >= 3 )); then
+    local -A _mg_file_to_key=()
+    local -a _mg_all_keys=()
+    local _mgf _mg_stem _mg_num _mg_rest _mg_suffix _mg_prefix _mg_key
+    for _mgf in "$@"; do
+      _mg_stem=$(__concat_get_stem "$_mgf")
+      if __concat_extract_number "$_mg_stem"; then
+        _mg_num="${REPLY%%:*}"
+        _mg_rest="${REPLY#*:}"
+        _mg_suffix="${_mg_rest%%:*}"
+        _mg_prefix="${_mg_rest#*:}"
+        _mg_key="${_mg_prefix}::${_mg_suffix}"
+        _mg_file_to_key[${_mgf:A}]="$_mg_key"
+        _mg_all_keys+=("$_mg_key")
+      fi
+    done
+
+    local -a _mg_unique_keys=(${(u)_mg_all_keys})
+
+    # 結合可能（2ファイル以上）なグループが2つ以上あるか判定
+    local _mg_viable=0 _mg_count
+    for _mg_key in "${_mg_unique_keys[@]}"; do
+      _mg_count=0
+      for _mgf in "$@"; do
+        [[ "${_mg_file_to_key[${_mgf:A}]}" == "$_mg_key" ]] && _mg_count=$((_mg_count + 1))
+      done
+      (( _mg_count >= 2 )) && _mg_viable=$((_mg_viable + 1))
+    done
+
+    if (( _mg_viable >= 2 )); then
+      local -a _mg_opts=()
+      (( force_mode )) && _mg_opts+=(--force)
+      (( verbose_mode )) && _mg_opts+=(--verbose)
+
+      local _mg_total=0 _mg_ok=0 _mg_fail=0
+      local -a _mg_group_files _mg_sorted_group
+      for _mg_key in "${_mg_unique_keys[@]}"; do
+        _mg_group_files=()
+        for _mgf in "$@"; do
+          [[ "${_mg_file_to_key[${_mgf:A}]}" == "$_mg_key" ]] && _mg_group_files+=("$_mgf")
+        done
+        (( ${#_mg_group_files[@]} < 2 )) && continue
+
+        _mg_total=$((_mg_total + 1))
+        _mg_sorted_group=(${(o)_mg_group_files})
+
+        print -r -- ""
+        print -r -- "=========================================="
+        print -r -- "グループ ${_mg_total}: ${_mg_sorted_group[1]:t} 他${#_mg_sorted_group[@]}ファイル"
+        print -r -- "=========================================="
+
+        if concat "${_mg_opts[@]}" "${_mg_sorted_group[@]}"; then
+          _mg_ok=$((_mg_ok + 1))
+        else
+          _mg_fail=$((_mg_fail + 1))
+        fi
+      done
+
+      if (( _mg_total == 0 )); then
+        print -r -- "結合可能なグループが見つかりませんでした"
+        return 0
+      fi
+      print -r -- ""
+      print -r -- "=========================================="
+      print -r -- "完了: ${_mg_ok}/${_mg_total} グループ成功${_mg_fail:+, ${_mg_fail}失敗}"
+      print -r -- "=========================================="
+      return $(( _mg_fail > 0 ))
+    fi
+    # 1グループならそのまま既存の単一グループロジックへフォールスルー
   fi
 
   local -a input_files=("$@")
@@ -496,8 +571,8 @@ EOF
   # 一時ファイル名の生成（UUID）
   local uuid
   uuid=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s%N)
-  local list_file="./${uuid}.txt"
-  local tmp_output="./${uuid}.mp4"
+  local list_file="$first_dir/.concat_${uuid}.txt"
+  local tmp_output="$first_dir/.concat_${uuid}.mp4"
 
   # 7. シグナルハンドラ設定
   trap '[[ -n "${list_file:-}" && -e "$list_file" ]] && rm -f -- "$list_file"; [[ -n "${tmp_output:-}" && -e "$tmp_output" ]] && rm -f -- "$tmp_output"' INT TERM HUP EXIT
