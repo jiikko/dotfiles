@@ -574,75 +574,74 @@ EOF
   local list_file="$first_dir/.concat_${uuid}.txt"
   local tmp_output="$first_dir/.concat_${uuid}.mp4"
 
-  # 7. シグナルハンドラ設定
-  trap '[[ -n "${list_file:-}" && -e "$list_file" ]] && rm -f -- "$list_file"; [[ -n "${tmp_output:-}" && -e "$tmp_output" ]] && rm -f -- "$tmp_output"' INT TERM HUP EXIT
+  # 7. 結合実行（alwaysブロックで一時ファイルを確実にクリーンアップ）
+  # trap ではなく always を使うことで、再帰呼び出し時に外側の trap を破壊しない
+  {
+    # 8. concatリストファイルの作成
+    local total_duration=0 abs_path dur
+    for file in "${sorted_files[@]}"; do
+      abs_path="${file:A}"
+      __concat_escape_path "$abs_path" >> "$list_file"
 
-  # 8. concatリストファイルの作成
-  local total_duration=0 abs_path dur
-  for file in "${sorted_files[@]}"; do
-    abs_path="${file:A}"
-    __concat_escape_path "$abs_path" >> "$list_file"
+      # duration合計を計算
+      dur=$(__concat_get_duration "$file")
+      if [[ -n "$dur" ]]; then
+        total_duration=$(awk -v t="$total_duration" -v d="$dur" 'BEGIN{ printf "%.3f", t+d }')
+      fi
+    done
 
-    # duration合計を計算
-    dur=$(__concat_get_duration "$file")
-    if [[ -n "$dur" ]]; then
-      total_duration=$(awk -v t="$total_duration" -v d="$dur" 'BEGIN{ printf "%.3f", t+d }')
+    # durationを時:分:秒に変換
+    local duration_hms
+    duration_hms=$(awk -v s="$total_duration" 'BEGIN{
+      h=int(s/3600); m=int((s%3600)/60); sec=s%60
+      printf "%d:%02d:%05.2f", h, m, sec
+    }')
+
+    # 入力ファイル合計サイズを計算
+    local total_size=0 fsize
+    for file in "${sorted_files[@]}"; do
+      fsize=$(stat -f%z -- "$file" 2>/dev/null || stat -c%s -- "$file" 2>/dev/null)
+      [[ -n "$fsize" ]] && total_size=$((total_size + fsize))
+    done
+    local total_size_mb=$((total_size / 1024 / 1024))
+
+    print -r -- ">> 結合対象: ${#sorted_files[@]}ファイル (合計 ${total_size_mb}MB)"
+    print -r -- ">> 入力ファイル合計duration: ${duration_hms}"
+    print -r -- ">> 出力: $output_path"
+    print -r -- ">> 結合中..."
+    local start_time=$SECONDS
+
+    # 9. FFmpegで結合実行
+    if ! ffmpeg -hide_banner -nostdin -loglevel error \
+      -f concat -safe 0 -i "$list_file" \
+      -fflags +genpts -avoid_negative_ts make_zero \
+      -c copy -movflags +faststart \
+      -y "$tmp_output"; then
+      print -r -- "❌ FFmpegエラー: 結合に失敗しました" >&2
+      return 1
     fi
-  done
 
-  # durationを時:分:秒に変換
-  local duration_hms
-  duration_hms=$(awk -v s="$total_duration" 'BEGIN{
-    h=int(s/3600); m=int((s%3600)/60); sec=s%60
-    printf "%d:%02d:%05.2f", h, m, sec
-  }')
+    # 10. 一時ファイルを最終ファイル名にリネーム
+    if ! mv -f -- "$tmp_output" "$output_path"; then
+      print -r -- "❌ エラー: 出力ファイルのリネームに失敗しました" >&2
+      return 1
+    fi
+    print -r -- ">> 結合完了 (${$(( SECONDS - start_time ))}秒)"
 
-  # 入力ファイル合計サイズを計算
-  local total_size=0 fsize
-  for file in "${sorted_files[@]}"; do
-    fsize=$(stat -f%z -- "$file" 2>/dev/null || stat -c%s -- "$file" 2>/dev/null)
-    [[ -n "$fsize" ]] && total_size=$((total_size + fsize))
-  done
-  local total_size_mb=$((total_size / 1024 / 1024))
-
-  print -r -- ">> 結合対象: ${#sorted_files[@]}ファイル (合計 ${total_size_mb}MB)"
-  print -r -- ">> 入力ファイル合計duration: ${duration_hms}"
-  print -r -- ">> 出力: $output_path"
-  print -r -- ">> 結合中..."
-  local start_time=$SECONDS
-
-  # 9. FFmpegで結合実行
-  if ! ffmpeg -hide_banner -nostdin -loglevel error \
-    -f concat -safe 0 -i "$list_file" \
-    -fflags +genpts -avoid_negative_ts make_zero \
-    -c copy -movflags +faststart \
-    -y "$tmp_output"; then
-    print -r -- "❌ FFmpegエラー: 結合に失敗しました" >&2
-    return 1
-  fi
-
-  # 10. 一時ファイルを最終ファイル名にリネーム
-  if ! mv -f -- "$tmp_output" "$output_path"; then
-    print -r -- "❌ エラー: 出力ファイルのリネームに失敗しました" >&2
-    return 1
-  fi
-  print -r -- ">> 結合完了 (${$(( SECONDS - start_time ))}秒)"
-
-  (( verbose_mode )) && print -r -- ">> 診断中..."
-  start_time=$SECONDS
-  # 11. 出力ファイルの診断
-  if ! __concat_diagnose_output "$output_path" "$total_duration" "$has_input_audio" "$total_size"; then
-    print -r -- "❌ 診断エラー: $REPLY" >&2
-    rm -f -- "$output_path"
-    return 1
-  fi
-  (( verbose_mode )) && print -r -- ">> 診断完了 (${$(( SECONDS - start_time ))}秒)"
-
-  # 12. クリーンアップ（trapでも実行されるが念のため）
-  rm -f -- "$list_file"
-
-  # trapを解除（正常終了）
-  trap - INT TERM HUP EXIT
+    (( verbose_mode )) && print -r -- ">> 診断中..."
+    start_time=$SECONDS
+    # 11. 出力ファイルの診断
+    if ! __concat_diagnose_output "$output_path" "$total_duration" "$has_input_audio" "$total_size"; then
+      print -r -- "❌ 診断エラー: $REPLY" >&2
+      rm -f -- "$output_path"
+      return 1
+    fi
+    (( verbose_mode )) && print -r -- ">> 診断完了 (${$(( SECONDS - start_time ))}秒)"
+  } always {
+    # 一時ファイルのクリーンアップ（成功・失敗・シグナル問わず実行）
+    rm -f -- "$list_file"
+    [[ -e "$tmp_output" ]] && rm -f -- "$tmp_output"
+  }
 
   print -r -- ">> 結合順序:"
   local idx=1
