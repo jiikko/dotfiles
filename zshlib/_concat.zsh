@@ -622,7 +622,10 @@ EOF
   fi
 
   # 10. 一時ファイルを最終ファイル名にリネーム
-  mv -f -- "$tmp_output" "$output_path"
+  if ! mv -f -- "$tmp_output" "$output_path"; then
+    print -r -- "❌ エラー: 出力ファイルのリネームに失敗しました" >&2
+    return 1
+  fi
   print -r -- ">> 結合完了 (${$(( SECONDS - start_time ))}秒)"
 
   (( verbose_mode )) && print -r -- ">> 診断中..."
