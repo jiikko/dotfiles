@@ -109,6 +109,16 @@ __concat_extract_number() {
     prefix="${match[1]}"
     num="${match[2]}"
     suffix=""
+  # パターン: 第N話 (Japanese episode numbering, e.g., 第1話, 第2話)
+  elif [[ "$stem" =~ '^(.*)第([0-9]+)話$' ]]; then
+    prefix="${match[1]}"
+    num="${match[2]}"
+    suffix=""
+  # パターン: 英字ワード+数字 (e.g., _Scene1, _Part2, _Vol3)
+  elif [[ "$stem" =~ '^(.*[-_][a-zA-Z]+)([0-9]+)$' ]]; then
+    prefix="${match[1]}"
+    num="${match[2]}"
+    suffix=""
   # パターン: -N-<suffix> または _N_<suffix>（サフィックスに数字を含む場合も対応）
   elif [[ "$stem" =~ '^(.*)[-_]([0-9]+)([-_].+)$' ]]; then
     prefix="${match[1]}"
@@ -191,7 +201,7 @@ __concat_escape_path() {
   local path="$1"
   # FFmpeg concat demuxerのエスケープ: シングルクォートで囲み、' は '\'' でエスケープ
   path="${path//\'/\'\\\'\'}"
-  echo "file '${path}'"
+  print -r -- "file '${path}'"
 }
 
 # 内部補助: 出力ファイルの診断
