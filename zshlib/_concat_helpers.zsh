@@ -247,6 +247,28 @@ __concat_diagnose_output() {
     return 1
   fi
 
+  # duration乖離チェック（入力合計と±5%以上乖離していれば異常、10秒未満はスキップ）
+  if [[ -n "$expected_duration" ]] && (( $(echo "$expected_duration > 10" | bc -l) )); then
+    local dur_ratio
+    dur_ratio=$(awk -v a="$actual_duration" -v e="$expected_duration" 'BEGIN{ printf "%.4f", a/e }')
+    if (( $(echo "$dur_ratio < 0.95" | bc -l) )); then
+      local dur_pct expected_hms actual_hms
+      dur_pct=$(awk -v r="$dur_ratio" 'BEGIN{ printf "%.1f", (1-r)*100 }')
+      expected_hms=$(awk -v s="$expected_duration" 'BEGIN{ h=int(s/3600); m=int((s%3600)/60); sec=s%60; printf "%d:%02d:%05.2f", h, m, sec }')
+      actual_hms=$(awk -v s="$actual_duration" 'BEGIN{ h=int(s/3600); m=int((s%3600)/60); sec=s%60; printf "%d:%02d:%05.2f", h, m, sec }')
+      REPLY="出力durationが入力合計より${dur_pct}%短い (入力: ${expected_hms}, 出力: ${actual_hms})"
+      return 1
+    fi
+    if (( $(echo "$dur_ratio > 1.05" | bc -l) )); then
+      local dur_pct expected_hms actual_hms
+      dur_pct=$(awk -v r="$dur_ratio" 'BEGIN{ printf "%.1f", (r-1)*100 }')
+      expected_hms=$(awk -v s="$expected_duration" 'BEGIN{ h=int(s/3600); m=int((s%3600)/60); sec=s%60; printf "%d:%02d:%05.2f", h, m, sec }')
+      actual_hms=$(awk -v s="$actual_duration" 'BEGIN{ h=int(s/3600); m=int((s%3600)/60); sec=s%60; printf "%d:%02d:%05.2f", h, m, sec }')
+      REPLY="出力durationが入力合計より${dur_pct}%長い (入力: ${expected_hms}, 出力: ${actual_hms})"
+      return 1
+    fi
+  fi
+
   # サイズ乖離チェック（入力合計と±5%以上乖離していれば異常、1MB未満はスキップ）
   if (( expected_size > 1048576 )); then
     local actual_size
