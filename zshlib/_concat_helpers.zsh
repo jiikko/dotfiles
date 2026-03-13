@@ -247,7 +247,7 @@ __concat_diagnose_output() {
     return 1
   fi
 
-  # サイズ乖離チェック（入力合計の5%以上小さければ異常、1MB未満はスキップ）
+  # サイズ乖離チェック（入力合計と±5%以上乖離していれば異常、1MB未満はスキップ）
   if (( expected_size > 1048576 )); then
     local actual_size
     actual_size=$(stat -f%z -- "$outfile" 2>/dev/null || stat -c%s -- "$outfile" 2>/dev/null)
@@ -258,6 +258,12 @@ __concat_diagnose_output() {
         local pct
         pct=$(awk -v r="$ratio" 'BEGIN{ printf "%.1f", (1-r)*100 }')
         REPLY="出力サイズが入力合計より${pct}%小さい (入力: $((expected_size/1024/1024))MB, 出力: $((actual_size/1024/1024))MB)"
+        return 1
+      fi
+      if (( $(echo "$ratio > 1.05" | bc -l) )); then
+        local pct
+        pct=$(awk -v r="$ratio" 'BEGIN{ printf "%.1f", (r-1)*100 }')
+        REPLY="出力サイズが入力合計より${pct}%大きい (入力: $((expected_size/1024/1024))MB, 出力: $((actual_size/1024/1024))MB)"
         return 1
       fi
     fi

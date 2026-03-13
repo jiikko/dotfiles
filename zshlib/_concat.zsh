@@ -44,6 +44,7 @@ concat — 複数の動画ファイルを無劣化で結合します。
   -h, --help: このヘルプメッセージを表示します。
   --force: コーデック不一致でも強制的に結合を実行します（結果は保証されません）。
   --verbose: 検査途中の詳細ログを表示します。
+  --dryrun: 実際の結合を行わず、検証結果のみ表示します。
 
 入力:
   - 2つ以上の動画ファイルパス
@@ -67,10 +68,12 @@ EOF
   # オプションの処理
   local force_mode=0
   local verbose_mode=0
+  local dryrun_mode=0
   while [[ "$1" == --* ]]; do
     case "$1" in
       --force)   force_mode=1; shift ;;
       --verbose) verbose_mode=1; shift ;;
+      --dryrun)  dryrun_mode=1; shift ;;
       *) break ;;
     esac
   done
@@ -81,6 +84,7 @@ EOF
     local -a _opts=()
     (( force_mode )) && _opts+=(--force)
     (( verbose_mode )) && _opts+=(--verbose)
+    (( dryrun_mode )) && _opts+=(--dryrun)
 
     # ディレクトリ内の動画ファイルを収集（非再帰）
     local -a video_files=()
@@ -133,10 +137,12 @@ EOF
 
       if concat "${_opts[@]}" "${sorted_group[@]}"; then
         _ok=$((_ok + 1))
-        print -r -- ">> 元ファイルを削除中..."
-        for _f in "${sorted_group[@]}"; do
-          rm -f -- "$_f" && print -r -- "   削除: ${_f:t}"
-        done
+        if (( ! dryrun_mode )); then
+          print -r -- ">> 元ファイルを削除中..."
+          for _f in "${sorted_group[@]}"; do
+            rm -f -- "$_f" && print -r -- "   削除: ${_f:t}"
+          done
+        fi
       else
         _fail=$((_fail + 1))
       fi
@@ -193,6 +199,7 @@ EOF
       local -a _mg_opts=()
       (( force_mode )) && _mg_opts+=(--force)
       (( verbose_mode )) && _mg_opts+=(--verbose)
+      (( dryrun_mode )) && _mg_opts+=(--dryrun)
 
       local _mg_total=0 _mg_ok=0 _mg_fail=0
       local -a _mg_group_files _mg_sorted_group
@@ -612,6 +619,19 @@ EOF
     print -r -- ">> 結合対象: ${#sorted_files[@]}ファイル (合計 ${total_size_mb}MB)"
     print -r -- ">> 入力ファイル合計duration: ${duration_hms}"
     print -r -- ">> 出力: $output_path"
+
+    # dryrun: 結合順序を表示して終了
+    if (( dryrun_mode )); then
+      print -r -- ">> 結合順序:"
+      local idx=1
+      for file in "${sorted_files[@]}"; do
+        print -r -- "   ${idx}. ${file:t}"
+        (( idx++ ))
+      done
+      print -r -- ">> dryrun: 結合をスキップしました"
+      return 0
+    fi
+
     print -r -- ">> 結合中..."
     local start_time=$SECONDS
 
