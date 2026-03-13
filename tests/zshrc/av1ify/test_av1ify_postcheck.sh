@@ -76,6 +76,34 @@ else
   printf '✗ Should not warn when frame counts match\n'
 fi
 
+# Test 69b: フレーム数差が閾値内（Δ≤24）なら警告なし
+printf '\n## Test 69b: Frame count difference within tolerance - no warning\n'
+TEST_DIR="$TEST_TMP/test69b"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# ソース=300フレーム, 出力=285フレーム → Δ=15 ≤ 24(デフォルト閾値)で正常
+output=$(MOCK_NB_FRAMES=300 MOCK_OUTPUT_NB_FRAMES=285 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"フレーム数不一致"* ]]; then
+  printf '✓ No frame count warning when difference is within tolerance\n'
+else
+  printf '✗ Should not warn when frame count difference ≤ 24\n'
+fi
+
+# Test 69c: AV1IFY_FRAME_TOLERANCE で閾値をカスタマイズ
+printf '\n## Test 69c: Custom frame tolerance via AV1IFY_FRAME_TOLERANCE\n'
+TEST_DIR="$TEST_TMP/test69c"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# Δ=15, デフォルト閾値(24)では通るが閾値を10に下げると検出
+output=$(AV1IFY_FRAME_TOLERANCE=10 MOCK_NB_FRAMES=300 MOCK_OUTPUT_NB_FRAMES=285 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "フレーム数不一致" "Custom frame tolerance detects smaller difference"
+
 # Test 70: fps変更時はフレーム数チェックをスキップ
 printf '\n## Test 70: Frame count check skipped when fps changed\n'
 TEST_DIR="$TEST_TMP/test70"

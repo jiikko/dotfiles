@@ -23,11 +23,19 @@ concat — 複数の動画ファイルを無劣化で結合します。
 
 使い方:
   concat <ファイル1> <ファイル2> [<ファイル3> ...]
+  concat <ディレクトリ>
   concat --force <ファイル1> <ファイル2> ...
+  concat --verbose <ファイル1> <ファイル2> ...
 
   例:
     # 連番ファイルを結合
     concat video_001.mp4 video_002.mp4 video_003.mp4
+
+    # 複数グループを自動検出して結合
+    concat clip_01.mp4 clip_02.mp4 scene_1.mp4 scene_2.mp4
+
+    # ディレクトリ内のグループを自動検出して結合（非再帰）
+    concat /path/to/videos
 
     # コーデック不一致でも強制実行
     concat --force video1.mp4 video2.mp4
@@ -35,6 +43,7 @@ concat — 複数の動画ファイルを無劣化で結合します。
 オプション:
   -h, --help: このヘルプメッセージを表示します。
   --force: コーデック不一致でも強制的に結合を実行します（結果は保証されません）。
+  --verbose: 検査途中の詳細ログを表示します。
 
 入力:
   - 2つ以上の動画ファイルパス
@@ -47,21 +56,179 @@ concat — 複数の動画ファイルを無劣化で結合します。
   - 形式: .mp4（固定）
   - ファイル名: 入力ファイル名の共通プレフィックスから自動生成
     例: video_001.mp4, video_002.mp4 → video.mp4
+
+注意:
+  - ファイル指定モード: 元ファイルは削除されません。
+  - ディレクトリモード: 結合成功後、元ファイルは自動的に削除されます。
 EOF
     return 0
   fi
 
-  # --force オプションの処理
+  # オプションの処理
   local force_mode=0
-  if [[ "$1" == "--force" ]]; then
-    force_mode=1
-    shift
+  local verbose_mode=0
+  while [[ "$1" == --* ]]; do
+    case "$1" in
+      --force)   force_mode=1; shift ;;
+      --verbose) verbose_mode=1; shift ;;
+      *) break ;;
+    esac
+  done
+
+  # ディレクトリモード: 引数が1つのディレクトリならグループを自動検出して結合
+  if (( $# == 1 )) && [[ -d "$1" ]]; then
+    local target_dir="${1:A}"
+    local -a _opts=()
+    (( force_mode )) && _opts+=(--force)
+    (( verbose_mode )) && _opts+=(--verbose)
+
+    # ディレクトリ内の動画ファイルを収集（非再帰）
+    local -a video_files=()
+    local _f _ext
+    for _f in "$target_dir"/*(.N); do
+      _ext=$(__concat_get_ext "$_f")
+      [[ -n "$_ext" ]] && __concat_is_allowed_ext "$_ext" && video_files+=("$_f")
+    done
+
+    if (( ${#video_files[@]} == 0 )); then
+      print -r -- "エラー: ディレクトリ内に動画ファイルが見つかりません" >&2
+      return 1
+    fi
+
+    # ファイルをグループ化（番号部分を除いた共通部分でグルーピング）
+    local -A file_to_key=()
+    local -a all_keys=()
+    local _stem _num _rest _suffix _prefix _key
+    for _f in "${video_files[@]}"; do
+      _stem=$(__concat_get_stem "$_f")
+      if __concat_extract_number "$_stem"; then
+        _num="${REPLY%%:*}"
+        _rest="${REPLY#*:}"
+        _suffix="${_rest%%:*}"
+        _prefix="${_rest#*:}"
+        _key="${_prefix}::${_suffix}"
+        file_to_key[${_f:A}]="$_key"
+        all_keys+=("$_key")
+      fi
+    done
+
+    local -a unique_keys=(${(u)all_keys})
+    local _total=0 _ok=0 _fail=0
+
+    local -a group_files sorted_group
+    for _key in "${unique_keys[@]}"; do
+      group_files=()
+      for _f in "${video_files[@]}"; do
+        [[ "${file_to_key[${_f:A}]}" == "$_key" ]] && group_files+=("$_f")
+      done
+      (( ${#group_files[@]} < 2 )) && continue
+
+      _total=$((_total + 1))
+      sorted_group=(${(o)group_files})
+
+      print -r -- ""
+      print -r -- "=========================================="
+      print -r -- "グループ ${_total}: ${sorted_group[1]:t} 他${#sorted_group[@]}ファイル"
+      print -r -- "=========================================="
+
+      if concat "${_opts[@]}" "${sorted_group[@]}"; then
+        _ok=$((_ok + 1))
+        print -r -- ">> 元ファイルを削除中..."
+        for _f in "${sorted_group[@]}"; do
+          rm -f -- "$_f" && print -r -- "   削除: ${_f:t}"
+        done
+      else
+        _fail=$((_fail + 1))
+      fi
+    done
+
+    if (( _total == 0 )); then
+      print -r -- "結合可能なグループが見つかりませんでした"
+      return 0
+    fi
+    print -r -- ""
+    print -r -- "=========================================="
+    print -r -- "完了: ${_ok}/${_total} グループ成功${_fail:+, ${_fail}失敗}"
+    print -r -- "=========================================="
+    return $(( _fail > 0 ))
   fi
 
   # 引数チェック: 最低2ファイル必要
   if (( $# < 2 )); then
     print -r -- "エラー: 最低2つのファイルが必要です" >&2
     return 1
+  fi
+
+  # マルチグループ検出: 複数ファイルが異なるグループに属するなら自動振り分け
+  if (( $# >= 3 )); then
+    local -A _mg_file_to_key=()
+    local -a _mg_all_keys=()
+    local _mgf _mg_stem _mg_num _mg_rest _mg_suffix _mg_prefix _mg_key
+    for _mgf in "$@"; do
+      _mg_stem=$(__concat_get_stem "$_mgf")
+      if __concat_extract_number "$_mg_stem"; then
+        _mg_num="${REPLY%%:*}"
+        _mg_rest="${REPLY#*:}"
+        _mg_suffix="${_mg_rest%%:*}"
+        _mg_prefix="${_mg_rest#*:}"
+        _mg_key="${_mg_prefix}::${_mg_suffix}"
+        _mg_file_to_key[${_mgf:A}]="$_mg_key"
+        _mg_all_keys+=("$_mg_key")
+      fi
+    done
+
+    local -a _mg_unique_keys=(${(u)_mg_all_keys})
+
+    # 結合可能（2ファイル以上）なグループが2つ以上あるか判定
+    local _mg_viable=0 _mg_count
+    for _mg_key in "${_mg_unique_keys[@]}"; do
+      _mg_count=0
+      for _mgf in "$@"; do
+        [[ "${_mg_file_to_key[${_mgf:A}]}" == "$_mg_key" ]] && _mg_count=$((_mg_count + 1))
+      done
+      (( _mg_count >= 2 )) && _mg_viable=$((_mg_viable + 1))
+    done
+
+    if (( _mg_viable >= 2 )); then
+      local -a _mg_opts=()
+      (( force_mode )) && _mg_opts+=(--force)
+      (( verbose_mode )) && _mg_opts+=(--verbose)
+
+      local _mg_total=0 _mg_ok=0 _mg_fail=0
+      local -a _mg_group_files _mg_sorted_group
+      for _mg_key in "${_mg_unique_keys[@]}"; do
+        _mg_group_files=()
+        for _mgf in "$@"; do
+          [[ "${_mg_file_to_key[${_mgf:A}]}" == "$_mg_key" ]] && _mg_group_files+=("$_mgf")
+        done
+        (( ${#_mg_group_files[@]} < 2 )) && continue
+
+        _mg_total=$((_mg_total + 1))
+        _mg_sorted_group=(${(o)_mg_group_files})
+
+        print -r -- ""
+        print -r -- "=========================================="
+        print -r -- "グループ ${_mg_total}: ${_mg_sorted_group[1]:t} 他${#_mg_sorted_group[@]}ファイル"
+        print -r -- "=========================================="
+
+        if concat "${_mg_opts[@]}" "${_mg_sorted_group[@]}"; then
+          _mg_ok=$((_mg_ok + 1))
+        else
+          _mg_fail=$((_mg_fail + 1))
+        fi
+      done
+
+      if (( _mg_total == 0 )); then
+        print -r -- "結合可能なグループが見つかりませんでした"
+        return 0
+      fi
+      print -r -- ""
+      print -r -- "=========================================="
+      print -r -- "完了: ${_mg_ok}/${_mg_total} グループ成功${_mg_fail:+, ${_mg_fail}失敗}"
+      print -r -- "=========================================="
+      return $(( _mg_fail > 0 ))
+    fi
+    # 1グループならそのまま既存の単一グループロジックへフォールスルー
   fi
 
   local -a input_files=("$@")
@@ -79,7 +246,7 @@ EOF
 
   # 1.5. クラウドストレージ対応: 並列プリフェッチ
   # ファイルアクセスでダウンロードをトリガー
-  print -r -- ">> ファイルをプリフェッチ中..."
+  (( verbose_mode )) && print -r -- ">> ファイルをプリフェッチ中..."
   local -a prefetch_pids=()
   # バックグラウンドジョブの通知を抑制
   setopt LOCAL_OPTIONS NO_NOTIFY NO_MONITOR
@@ -91,9 +258,9 @@ EOF
   for pid in "${prefetch_pids[@]}"; do
     wait "$pid" 2>/dev/null
   done
-  print -r -- ">> プリフェッチ完了"
+  (( verbose_mode )) && print -r -- ">> プリフェッチ完了"
 
-  print -r -- ">> ファイル検証中..."
+  (( verbose_mode )) && print -r -- ">> ファイル検証中..."
   # 同一ディレクトリ確認（:A で絶対パスに変換、スペース対応）
   local first_dir="${input_files[1]:A:h}"
 
@@ -115,7 +282,7 @@ EOF
     fi
   done
 
-  print -r -- ">> 連続性チェック中..."
+  (( verbose_mode )) && print -r -- ">> 連続性チェック中..."
   # 2. ファイル名の連続性チェック
   local -a stems=()
   for file in "${input_files[@]}"; do
@@ -134,12 +301,13 @@ EOF
   local -a temp_prefixes=()
   local -a temp_suffixes=()
   local all_matched=1
+  local num_part rest suffix_part prefix_part
   for stem in "${stems[@]}"; do
     if __concat_extract_number "$stem"; then
-      local num_part="${REPLY%%:*}"
-      local rest="${REPLY#*:}"
-      local suffix_part="${rest%%:*}"
-      local prefix_part="${rest#*:}"
+      num_part="${REPLY%%:*}"
+      rest="${REPLY#*:}"
+      suffix_part="${rest%%:*}"
+      prefix_part="${rest#*:}"
       temp_numbers+=("$((10#$num_part))")
       temp_prefixes+=("$prefix_part")
       temp_suffixes+=("$suffix_part")
@@ -242,10 +410,10 @@ EOF
     numbers=()
     for stem in "${stripped_stems[@]}"; do
       if __concat_extract_number "$stem"; then
-        local num_part="${REPLY%%:*}"
-        local rest="${REPLY#*:}"
-        local suffix_part="${rest%%:*}"
-        local prefix_part="${rest#*:}"
+        num_part="${REPLY%%:*}"
+        rest="${REPLY#*:}"
+        suffix_part="${rest%%:*}"
+        prefix_part="${rest#*:}"
 
         numbers+=("$((10#$num_part))")
 
@@ -285,7 +453,7 @@ EOF
   fi
 
   # ディレクトリ内の同一パターンファイル欠落チェック
-  print -r -- ">> ディレクトリ内の関連ファイルチェック中..."
+  (( verbose_mode )) && print -r -- ">> ディレクトリ内の関連ファイルチェック中..."
   setopt LOCAL_OPTIONS EXTENDED_GLOB
   local check_ext
   check_ext="${$(__concat_get_ext "${input_files[1]}"):l}"  # 小文字に正規化
@@ -296,9 +464,10 @@ EOF
   done
 
   local -a missing_files=()
+  local f_abs is_input f_stem f_check_stem remaining
   for f in "$first_dir"/(#i)*."$check_ext"(N); do
-    local f_abs="${f:A}"
-    local is_input=0
+    f_abs="${f:A}"
+    is_input=0
     for inp in "${input_abs[@]}"; do
       if [[ "$f_abs" == "$inp" ]]; then
         is_input=1
@@ -307,10 +476,9 @@ EOF
     done
     (( is_input )) && continue
 
-    local f_stem
     f_stem=$(__concat_get_stem "$f")
 
-    local f_check_stem="$f_stem"
+    f_check_stem="$f_stem"
     if (( use_stripped_stems )) && [[ -n "$detected_common_suffix" ]]; then
       [[ "$f_stem" != *"$detected_common_suffix" ]] && continue
       f_check_stem="${f_stem%$detected_common_suffix}"
@@ -321,7 +489,7 @@ EOF
       continue
     fi
 
-    local remaining="${f_check_stem:${#common_prefix}}"
+    remaining="${f_check_stem:${#common_prefix}}"
 
     # first_suffixがあればそれで終わるか確認して除去
     if [[ -n "$first_suffix" ]]; then
@@ -345,7 +513,7 @@ EOF
     return 1
   fi
 
-  print -r -- ">> コーデック確認中..."
+  (( verbose_mode )) && print -r -- ">> コーデック確認中..."
   # 3. 再エンコード回避チェック（--forceでスキップ）
   # 入力に音声があるかどうかを記録
   local has_input_audio=0
@@ -354,9 +522,9 @@ EOF
   first_audio_info=$(__concat_get_audio_info "${input_files[1]}")
   [[ -n "$first_audio_info" ]] && has_input_audio=1
 
+  local video_info audio_info
   if (( ! force_mode )); then
     for file in "${input_files[@]:1}"; do
-      local video_info audio_info
       video_info=$(__concat_get_video_info "$file")
       audio_info=$(__concat_get_audio_info "$file")
 
@@ -407,67 +575,77 @@ EOF
   # 一時ファイル名の生成（UUID）
   local uuid
   uuid=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s%N)
-  local list_file="./${uuid}.txt"
-  local tmp_output="./${uuid}.mp4"
+  local list_file="$first_dir/.concat_${uuid}.txt"
+  local tmp_output="$first_dir/.concat_${uuid}.mp4"
 
-  # 7. シグナルハンドラ設定
-  trap '[[ -n "${list_file:-}" && -e "$list_file" ]] && rm -f -- "$list_file"; [[ -n "${tmp_output:-}" && -e "$tmp_output" ]] && rm -f -- "$tmp_output"' INT TERM HUP EXIT
+  # 7. 結合実行（alwaysブロックで一時ファイルを確実にクリーンアップ）
+  # trap ではなく always を使うことで、再帰呼び出し時に外側の trap を破壊しない
+  {
+    # 8. concatリストファイルの作成
+    local total_duration=0 abs_path dur
+    for file in "${sorted_files[@]}"; do
+      abs_path="${file:A}"
+      __concat_escape_path "$abs_path" >> "$list_file"
 
-  # 8. concatリストファイルの作成
-  local total_duration=0 abs_path dur
-  for file in "${sorted_files[@]}"; do
-    abs_path="${file:A}"
-    __concat_escape_path "$abs_path" >> "$list_file"
+      # duration合計を計算
+      dur=$(__concat_get_duration "$file")
+      if [[ -n "$dur" ]]; then
+        total_duration=$(awk -v t="$total_duration" -v d="$dur" 'BEGIN{ printf "%.3f", t+d }')
+      fi
+    done
 
-    # duration合計を計算
-    dur=$(__concat_get_duration "$file")
-    if [[ -n "$dur" ]]; then
-      total_duration=$(awk -v t="$total_duration" -v d="$dur" 'BEGIN{ printf "%.3f", t+d }')
+    # durationを時:分:秒に変換
+    local duration_hms
+    duration_hms=$(awk -v s="$total_duration" 'BEGIN{
+      h=int(s/3600); m=int((s%3600)/60); sec=s%60
+      printf "%d:%02d:%05.2f", h, m, sec
+    }')
+
+    # 入力ファイル合計サイズを計算
+    local total_size=0 fsize
+    for file in "${sorted_files[@]}"; do
+      fsize=$(stat -f%z -- "$file" 2>/dev/null || stat -c%s -- "$file" 2>/dev/null)
+      [[ -n "$fsize" ]] && total_size=$((total_size + fsize))
+    done
+    local total_size_mb=$((total_size / 1024 / 1024))
+
+    print -r -- ">> 結合対象: ${#sorted_files[@]}ファイル (合計 ${total_size_mb}MB)"
+    print -r -- ">> 入力ファイル合計duration: ${duration_hms}"
+    print -r -- ">> 出力: $output_path"
+    print -r -- ">> 結合中..."
+    local start_time=$SECONDS
+
+    # 9. FFmpegで結合実行
+    if ! ffmpeg -hide_banner -nostdin -loglevel error \
+      -f concat -safe 0 -i "$list_file" \
+      -fflags +genpts -avoid_negative_ts make_zero \
+      -c copy -movflags +faststart \
+      -y "$tmp_output"; then
+      print -r -- "❌ FFmpegエラー: 結合に失敗しました" >&2
+      return 1
     fi
-  done
 
-  # durationを時:分:秒に変換
-  local duration_hms
-  duration_hms=$(awk -v s="$total_duration" 'BEGIN{
-    h=int(s/3600); m=int((s%3600)/60); sec=s%60
-    printf "%d:%02d:%05.2f", h, m, sec
-  }')
+    # 10. 一時ファイルを最終ファイル名にリネーム
+    if ! mv -f -- "$tmp_output" "$output_path"; then
+      print -r -- "❌ エラー: 出力ファイルのリネームに失敗しました" >&2
+      return 1
+    fi
+    print -r -- ">> 結合完了 (${$(( SECONDS - start_time ))}秒)"
 
-  print -r -- ">> 結合対象: ${#sorted_files[@]}ファイル"
-  print -r -- ">> 入力ファイル合計duration: ${duration_hms}"
-  print -r -- ">> 出力: $output_path"
-  print -r -- ">> 結合中..."
-  local start_time=$SECONDS
-
-  # 9. FFmpegで結合実行
-  if ! ffmpeg -hide_banner -nostdin -loglevel error \
-    -f concat -safe 0 -i "$list_file" \
-    -fflags +genpts -avoid_negative_ts make_zero \
-    -c copy -movflags +faststart \
-    -y "$tmp_output"; then
-    print -r -- "❌ FFmpegエラー: 結合に失敗しました" >&2
-    return 1
-  fi
-
-  # 10. 一時ファイルを最終ファイル名にリネーム
-  mv -f -- "$tmp_output" "$output_path"
-  print -r -- ">> 結合完了 (${$(( SECONDS - start_time ))}秒)"
-
-  print -r -- ">> 診断中..."
-  start_time=$SECONDS
-  # 11. 出力ファイルの診断
-  if ! __concat_diagnose_output "$output_path" "$total_duration" "$has_input_audio"; then
-    print -r -- "❌ 診断エラー: $REPLY" >&2
-    rm -f -- "$output_path"
-    return 1
-  fi
-  print -r -- ">> 診断完了 (${$(( SECONDS - start_time ))}秒)"
-
-  # 12. クリーンアップ（trapでも実行されるが念のため）
-  rm -f -- "$list_file"
-
-  # trapを解除（正常終了）
-  trap - INT TERM HUP EXIT
+    (( verbose_mode )) && print -r -- ">> 診断中..."
+    start_time=$SECONDS
+    # 11. 出力ファイルの診断
+    if ! __concat_diagnose_output "$output_path" "$total_duration" "$has_input_audio" "$total_size"; then
+      print -r -- "❌ 診断エラー: $REPLY" >&2
+      rm -f -- "$output_path"
+      return 1
+    fi
+    (( verbose_mode )) && print -r -- ">> 診断完了 (${$(( SECONDS - start_time ))}秒)"
+  } always {
+    # 一時ファイルのクリーンアップ（成功・失敗・シグナル問わず実行）
+    rm -f -- "$list_file"
+    [[ -e "$tmp_output" ]] && rm -f -- "$tmp_output"
+  }
 
   print -r -- ">> 結合順序:"
   local idx=1

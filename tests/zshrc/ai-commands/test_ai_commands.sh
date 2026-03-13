@@ -68,7 +68,7 @@ fi
 
 # Test 4: tmux window name の YAML に AI コマンドが定義されている
 printf '\n## Test 4: AI commands defined in tmux-window-name.yaml\n'
-yaml_file="$ROOT_DIR/tmux-window-name.yaml"
+yaml_file="$ROOT_DIR/zshlib/tmux-window-name.yaml"
 if grep -q "^claude:" "$yaml_file"; then
   printf '✓ claude is defined in YAML\n'
 else

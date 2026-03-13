@@ -109,6 +109,16 @@ __concat_extract_number() {
     prefix="${match[1]}"
     num="${match[2]}"
     suffix=""
+  # パターン: 第N話 (Japanese episode numbering, e.g., 第1話, 第2話)
+  elif [[ "$stem" =~ '^(.*)第([0-9]+)話$' ]]; then
+    prefix="${match[1]}"
+    num="${match[2]}"
+    suffix=""
+  # パターン: 英字ワード+数字 (e.g., _Scene1, _Part2, _Vol3)
+  elif [[ "$stem" =~ '^(.*[-_][a-zA-Z]+)([0-9]+)$' ]]; then
+    prefix="${match[1]}"
+    num="${match[2]}"
+    suffix=""
   # パターン: -N-<suffix> または _N_<suffix>（サフィックスに数字を含む場合も対応）
   elif [[ "$stem" =~ '^(.*)[-_]([0-9]+)([-_].+)$' ]]; then
     prefix="${match[1]}"
@@ -191,17 +201,19 @@ __concat_escape_path() {
   local path="$1"
   # FFmpeg concat demuxerのエスケープ: シングルクォートで囲み、' は '\'' でエスケープ
   path="${path//\'/\'\\\'\'}"
-  echo "file '${path}'"
+  print -r -- "file '${path}'"
 }
 
 # 内部補助: 出力ファイルの診断
 # $1: 出力ファイルパス
 # $2: 期待されるduration
 # $3: 入力に音声があったかどうか (1=あり, 0=なし)
+# $4: 入力ファイル合計サイズ (bytes, optional)
 __concat_diagnose_output() {
   local outfile="$1"
   local expected_duration="$2"
   local has_input_audio="${3:-1}"
+  local expected_size="${4:-0}"
 
   # 1. メタデータ取得
   local info
@@ -233,6 +245,22 @@ __concat_diagnose_output() {
   if [[ -z "$actual_duration" ]] || (( $(echo "$actual_duration <= 0" | bc -l) )); then
     REPLY="durationが0以下または取得できません"
     return 1
+  fi
+
+  # サイズ乖離チェック（入力合計の5%以上小さければ異常、1MB未満はスキップ）
+  if (( expected_size > 1048576 )); then
+    local actual_size
+    actual_size=$(stat -f%z -- "$outfile" 2>/dev/null || stat -c%s -- "$outfile" 2>/dev/null)
+    if [[ -n "$actual_size" ]] && (( actual_size > 0 )); then
+      local ratio
+      ratio=$(awk -v a="$actual_size" -v e="$expected_size" 'BEGIN{ printf "%.4f", a/e }')
+      if (( $(echo "$ratio < 0.95" | bc -l) )); then
+        local pct
+        pct=$(awk -v r="$ratio" 'BEGIN{ printf "%.1f", (1-r)*100 }')
+        REPLY="出力サイズが入力合計より${pct}%小さい (入力: $((expected_size/1024/1024))MB, 出力: $((actual_size/1024/1024))MB)"
+        return 1
+      fi
+    fi
   fi
 
   REPLY=""

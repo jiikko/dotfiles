@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-YAML_FILE="$ROOT_DIR/tmux-window-name.yaml"
+YAML_FILE="$ROOT_DIR/zshlib/tmux-window-name.yaml"
 ZSH_LIB="$ROOT_DIR/zshlib/_tmux_window_name.zsh"
 
 TMP_ZDOTDIR="$(mktemp -d)"

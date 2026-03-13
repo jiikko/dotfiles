@@ -20,6 +20,11 @@
 | research-assistant | security-auditor | swift-language-expert | 調査したベストプラクティスにセキュリティ懸念はないか |
 | swiftui-performance-expert | swiftui-macos-designer | - | パフォーマンス改善がUX を損なわないか |
 
+### Minimum モード: クロスレビューなし
+
+Phase 1.1 および Phase 4.1 はスキップ。速度優先のため、クロスレビューは実施しない。
+エージェントの出力はそのまま統合（マージ）に使用する。
+
 ### Minimum+ モード用ペアリング（3エージェント間）
 
 Minimum+ モードでは3エージェントのみのため、以下の専用ペアリングを使用:

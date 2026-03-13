@@ -93,8 +93,10 @@ __av1ify_postcheck() {
     src_frames=$(ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of default=nk=1:nw=1 -- "$src_path" 2>/dev/null | head -n1)
     out_frames=$(ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
     if [[ -n "$src_frames" && "$src_frames" =~ ^[0-9]+$ && -n "$out_frames" && "$out_frames" =~ ^[0-9]+$ ]]; then
-      if (( src_frames != out_frames )); then
-        issues+=("フレーム数不一致 (src=${src_frames}, out=${out_frames})")
+      local frame_diff=$(( src_frames > out_frames ? src_frames - out_frames : out_frames - src_frames ))
+      local frame_tolerance="${AV1IFY_FRAME_TOLERANCE:-24}"
+      if (( frame_diff > frame_tolerance )); then
+        issues+=("フレーム数不一致 (src=${src_frames}, out=${out_frames}, Δ=${frame_diff})")
         suffixes+=("frames")
       fi
     fi
