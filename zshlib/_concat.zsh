@@ -112,19 +112,19 @@ EOF
       fi
     done
 
-    local -a unique_keys=(${(u)all_keys})
+    local -a unique_keys=("${(u)all_keys[@]}")
     local _total=0 _ok=0 _fail=0
 
     local -a group_files sorted_group
     for _key in "${unique_keys[@]}"; do
       group_files=()
       for _f in "${video_files[@]}"; do
-        [[ "${file_to_key[${_f:A}]}" == "$_key" ]] && group_files+=("$_f")
+        [[ "${file_to_key[${_f:A}]-}" == "$_key" ]] && group_files+=("$_f")
       done
       (( ${#group_files[@]} < 2 )) && continue
 
       _total=$((_total + 1))
-      sorted_group=(${(o)group_files})
+      sorted_group=("${(o)group_files[@]}")
 
       print -r -- ""
       print -r -- "=========================================="
@@ -177,7 +177,7 @@ EOF
       fi
     done
 
-    local -a _mg_unique_keys=(${(u)_mg_all_keys})
+    local -a _mg_unique_keys=("${(u)_mg_all_keys[@]}")
 
     # 結合可能（2ファイル以上）なグループが2つ以上あるか判定
     local _mg_viable=0 _mg_count
@@ -204,7 +204,7 @@ EOF
         (( ${#_mg_group_files[@]} < 2 )) && continue
 
         _mg_total=$((_mg_total + 1))
-        _mg_sorted_group=(${(o)_mg_group_files})
+        _mg_sorted_group=("${(o)_mg_group_files[@]}")
 
         print -r -- ""
         print -r -- "=========================================="
