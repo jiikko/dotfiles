@@ -667,6 +667,18 @@ EOF
       return 1
     fi
     (( verbose_mode )) && print -r -- ">> 診断完了 (${$(( SECONDS - start_time ))}秒)"
+
+    # 12. フレーム順序の検証（入力ファイルを独自ソートして検証）
+    if (( !dryrun_mode )); then
+      (( verbose_mode )) && print -r -- ">> フレーム順序検証中..."
+      start_time=$SECONDS
+      if ! __concat_verify_frame_order "$output_path" "${input_files[@]}"; then
+        print -r -- "❌ フレーム順序エラー: $REPLY" >&2
+        rm -f -- "$output_path"
+        return 1
+      fi
+      (( verbose_mode )) && print -r -- ">> フレーム順序検証完了 (${$(( SECONDS - start_time ))}秒)"
+    fi
   } always {
     # 一時ファイルのクリーンアップ（成功・失敗・シグナル問わず実行）
     rm -f -- "$list_file"

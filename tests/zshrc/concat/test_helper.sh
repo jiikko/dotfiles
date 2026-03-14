@@ -49,6 +49,11 @@ fi
 
 # 出力ファイルがあればダミーデータを書き込む
 if [ -n "$output_file" ] && [ "${output_file#-}" = "$output_file" ]; then
+  # pipe:1 は ffmpeg の stdout 出力指定 — リテラルファイルではなく stdout に出力
+  if [ "$output_file" = "pipe:1" ]; then
+    printf "mock rawvideo frame data"
+    exit 0
+  fi
   echo "mock concatenated video data" > "$output_file"
   exit 0
 fi

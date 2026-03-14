@@ -289,11 +289,15 @@ __concat_diagnose_output() {
     return 1
   fi
 
-  # duration乖離チェック（入力合計と±5%以上乖離していれば異常、10秒未満はスキップ）
+  # duration乖離チェック（入力合計と±N%以上乖離していれば異常、10秒未満はスキップ）
+  local _dur_tol="${CONCAT_DURATION_TOLERANCE:-5}"
+  local _dur_lo _dur_hi
+  _dur_lo=$(awk -v t="$_dur_tol" 'BEGIN{ printf "%.4f", 1 - t/100 }')
+  _dur_hi=$(awk -v t="$_dur_tol" 'BEGIN{ printf "%.4f", 1 + t/100 }')
   if [[ -n "$expected_duration" ]] && (( $(echo "$expected_duration > 10" | bc -l) )); then
     local dur_ratio
     dur_ratio=$(awk -v a="$actual_duration" -v e="$expected_duration" 'BEGIN{ printf "%.4f", a/e }')
-    if (( $(echo "$dur_ratio < 0.95" | bc -l) )); then
+    if (( $(echo "$dur_ratio < $_dur_lo" | bc -l) )); then
       local dur_pct expected_hms actual_hms
       dur_pct=$(awk -v r="$dur_ratio" 'BEGIN{ printf "%.1f", (1-r)*100 }')
       expected_hms=$(awk -v s="$expected_duration" 'BEGIN{ h=int(s/3600); m=int((s%3600)/60); sec=s%60; printf "%d:%02d:%05.2f", h, m, sec }')
@@ -301,7 +305,7 @@ __concat_diagnose_output() {
       REPLY="出力durationが入力合計より${dur_pct}%短い (入力: ${expected_hms}, 出力: ${actual_hms})"
       return 1
     fi
-    if (( $(echo "$dur_ratio > 1.05" | bc -l) )); then
+    if (( $(echo "$dur_ratio > $_dur_hi" | bc -l) )); then
       local dur_pct expected_hms actual_hms
       dur_pct=$(awk -v r="$dur_ratio" 'BEGIN{ printf "%.1f", (r-1)*100 }')
       expected_hms=$(awk -v s="$expected_duration" 'BEGIN{ h=int(s/3600); m=int((s%3600)/60); sec=s%60; printf "%d:%02d:%05.2f", h, m, sec }')
@@ -363,6 +367,107 @@ __concat_diagnose_output() {
     fi
   fi
 
+  REPLY=""
+  return 0
+}
+
+# 内部補助: 指定タイムスタンプのフレームをハッシュ化
+# ffmpegが失敗した場合は空文字を返す（shasumの空入力ハッシュによる偽一致を防止）
+__concat_frame_hash() {
+  local file="$1" timestamp="$2"
+  local _raw
+  _raw=$(ffmpeg -hide_banner -nostdin -loglevel error \
+    -ss "$timestamp" -i "$file" \
+    -vframes 1 -f rawvideo -pix_fmt rgb24 pipe:1 2>/dev/null)
+  if [[ -z "$_raw" ]]; then
+    echo ""
+    return 1
+  fi
+  echo "$_raw" | shasum | cut -d' ' -f1
+}
+
+# 内部補助: 結合後のフレーム順序を検証
+# $1: 出力ファイル
+# $2...: 入力ファイル（未ソート — 本関数が独自にソートする）
+# 目的: メインのソートロジックと独立した順序決定により、誤った結合順序を検出する
+__concat_verify_frame_order() {
+  local outfile="$1"
+  shift
+  local -a raw_files=("$@")
+
+  # --- 独自ソートロジック ---
+  # ファイル名から連番部分を抽出し、数値昇順でソートする
+  # メインのconcat関数とは独立した実装にすることで、ソートバグの検出が可能
+  local -a sorted_files=()
+  local -A num_map  # ファイルパス → 抽出された連番
+  local f basename num
+
+  for f in "${raw_files[@]}"; do
+    basename="${f:t:r}"  # 拡張子なしのファイル名
+    # 末尾の連番を抽出（_NNN, -NNN, (N), partN パターン）
+    num=""
+    if [[ "$basename" =~ '_([0-9]+)$' ]]; then
+      num="${match[1]}"
+    elif [[ "$basename" =~ '-([0-9]+)(-[^0-9].*)?$' ]]; then
+      num="${match[1]}"
+    elif [[ "$basename" =~ '\(([0-9]+)\)$' ]]; then
+      num="${match[1]}"
+    elif [[ "$basename" =~ 'part([0-9]+)' ]]; then
+      num="${match[1]}"
+    elif [[ "$basename" =~ '([0-9]+)$' ]]; then
+      # フォールバック: 末尾の数値
+      num="${match[1]}"
+    fi
+    if [[ -z "$num" ]]; then
+      # 連番を抽出できない場合は検証をスキップ（メインと同一ソートでは検証の意味がない）
+      REPLY=""
+      return 0
+    fi
+    # 先頭ゼロを除去して数値化
+    num_map[$f]=$((10#$num))
+  done
+
+  if (( ${#num_map} > 0 )); then
+    # 連番の数値昇順でソート
+    sorted_files=()
+    local -a pairs=()
+    for f in "${raw_files[@]}"; do
+      pairs+=("${num_map[$f]}"$'\t'"${f}")
+    done
+    local line
+    for line in "${(f)$(printf '%s\n' "${pairs[@]}" | sort -t$'\t' -k1,1n)}"; do
+      sorted_files+=("${line#*$'\t'}")
+    done
+  fi
+
+  # --- フレームハッシュ比較 ---
+  local cumulative=0
+  local file dur sample_t output_t
+  local input_hash output_hash
+
+  for file in "${sorted_files[@]}"; do
+    dur=$(__concat_get_duration "$file")
+    if [[ -z "$dur" ]]; then
+      REPLY="duration取得失敗: ${file:t}"
+      return 1
+    fi
+    sample_t=$(awk -v d="$dur" 'BEGIN{
+      t=d*0.3; if(t<0.5) t=0.5; if(t>10) t=10; if(t>d*0.8) t=d*0.8
+      printf "%.3f", t
+    }')
+    input_hash=$(__concat_frame_hash "$file" "$sample_t")
+    output_t=$(awk -v c="$cumulative" -v s="$sample_t" 'BEGIN{ printf "%.3f", c+s }')
+    output_hash=$(__concat_frame_hash "$outfile" "$output_t")
+    if [[ -z "$input_hash" ]] || [[ -z "$output_hash" ]]; then
+      REPLY="フレーム抽出失敗: ${file:t}"
+      return 1
+    fi
+    if [[ "$input_hash" != "$output_hash" ]]; then
+      REPLY="フレーム不一致: ${file:t} (入力 ${sample_t}s ≠ 出力 ${output_t}s)"
+      return 1
+    fi
+    cumulative=$(awk -v c="$cumulative" -v d="$dur" 'BEGIN{ printf "%.3f", c+d }')
+  done
   REPLY=""
   return 0
 }
