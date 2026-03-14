@@ -109,7 +109,7 @@ __av1ify_one() {
     print -r -- "[DRY-RUN] 出力候補: $out (音声/解像度は実行時判定: ファイル未参照)"
     print -r -- "[DRY-RUN] 映像: libsvtav1 (crf=${crf_plan}, preset=${preset_plan}, resolution=${res_plan}, fps=${fps_plan}, denoise=${denoise_plan})"
     if (( __AV1IFY_COMPACT )); then
-      print -r -- "[DRY-RUN] 音声: compact (96kbps超はaac 96kへ再エンコード)"
+      print -r -- "[DRY-RUN] 音声: compact (130kbps超はaac 96kへ再エンコード)"
     else
       print -r -- "[DRY-RUN] 音声: 実行時に判定"
     fi
@@ -415,7 +415,7 @@ __av1ify_one() {
       local src_abitrate
       src_abitrate=$(ffprobe -v error -select_streams a:0 -show_entries stream=bit_rate \
                      -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
-      if [[ -n "$src_abitrate" && "$src_abitrate" =~ ^[0-9]+$ ]] && (( src_abitrate > 96000 )); then
+      if [[ -n "$src_abitrate" && "$src_abitrate" =~ ^[0-9]+$ ]] && (( src_abitrate > 130000 )); then
         if (( ! aac_params_available )); then
           args_audio=(-map "0:a:0?" -c:a copy)
           audio_param_error=1
@@ -428,7 +428,7 @@ __av1ify_one() {
         fi
       else
         args_audio=(-map "0:a:0?" -c:a copy)
-        print -r -- ">> 音声: copy (codec=$acodec, compact だが96kbps以下)"
+        print -r -- ">> 音声: copy (codec=$acodec, compact だが130kbps以下)"
       fi
     else
       args_audio=(-map "0:a:0?" -c:a copy)
