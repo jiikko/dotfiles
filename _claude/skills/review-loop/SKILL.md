@@ -83,6 +83,7 @@ git branch --list 'review/*' | grep -v 'review/base' | xargs -r git branch -D
 
 ## ルール
 
+- **レビュー中は master に push しない。** 修正コミットはレビューブランチにのみ push する（`git push origin HEAD:review/{branch-name}`）。master に push するとPRの差分が消え、未レビューの変更が本番に入ってしまう。master への push はレビュー完了後（手順6）のみ。
 - 修正コミットには対応する issue 番号を含める
 - `make lint` と `npm test`（または該当プロジェクトのテストコマンド）が通ることを確認してから push
 - Codex の P1/P2 指摘は必ず修正する
