@@ -3,7 +3,7 @@
 # YAML でコマンド名 -> 表示名のマッピングを定義可能
 # NOTE: このファイルは source で読み込むこと (autoload 不可: ${0:A:h} に依存)
 
-: "${_TMUX_WINDOW_NAME_YAML:=${0:A:h}/tmux-window-name.yaml}"
+_TMUX_WINDOW_NAME_YAML="${0:A:h}/tmux-window-name.yaml"
 
 # 連想配列でマッピングをキャッシュ（起動時に1回だけ読み込み）
 typeset -gA _TMUX_WINDOW_NAMES
