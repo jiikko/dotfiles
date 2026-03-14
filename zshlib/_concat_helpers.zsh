@@ -204,16 +204,58 @@ __concat_escape_path() {
   print -r -- "file '${path}'"
 }
 
+# 内部補助: MP4ファイルの実効サイズを返す（有効なトップレベルボックスの合計）
+# 孤立データ（moovから参照されないmdat以降のゴミ）を除外したサイズを計算
+# $1: ファイルパス
+# 標準出力: 実効サイズ（バイト）
+__concat_mp4_effective_size() {
+  python3 -c "
+import struct, sys
+try:
+    with open(sys.argv[1], 'rb') as f:
+        f.seek(0, 2)
+        fsize = f.tell()
+        f.seek(0)
+        total = 0
+        while f.tell() < fsize:
+            pos = f.tell()
+            hdr = f.read(8)
+            if len(hdr) < 8:
+                break
+            raw_size, = struct.unpack('>I', hdr[:4])
+            btype = hdr[4:8]
+            if raw_size == 1:
+                ext = f.read(8)
+                if len(ext) < 8:
+                    break
+                raw_size, = struct.unpack('>Q', ext)
+            elif raw_size == 0:
+                raw_size = fsize - pos
+            if not all(0x20 <= b < 0x7f for b in btype):
+                break
+            if raw_size < 8 or pos + raw_size > fsize:
+                break
+            total += raw_size
+            f.seek(pos + raw_size)
+        print(total)
+except Exception:
+    print(0)
+" "$1" 2>/dev/null || echo "0"
+}
+
 # 内部補助: 出力ファイルの診断
 # $1: 出力ファイルパス
 # $2: 期待されるduration
 # $3: 入力に音声があったかどうか (1=あり, 0=なし)
 # $4: 入力ファイル合計サイズ (bytes, optional)
+# $5...: 入力ファイルパス（サイズ乖離時の原因特定用、省略可）
 __concat_diagnose_output() {
   local outfile="$1"
   local expected_duration="$2"
   local has_input_audio="${3:-1}"
   local expected_size="${4:-0}"
+  shift 4
+  local -a input_files=("$@")
 
   # 1. メタデータ取得
   local info
@@ -279,7 +321,37 @@ __concat_diagnose_output() {
       if (( $(echo "$ratio < 0.95" | bc -l) )); then
         local pct
         pct=$(awk -v r="$ratio" 'BEGIN{ printf "%.1f", (1-r)*100 }')
-        REPLY="出力サイズが入力合計より${pct}%小さい (入力: $((expected_size/1024/1024))MB, 出力: $((actual_size/1024/1024))MB)"
+        local _msg="出力サイズが入力合計より${pct}%小さい (入力: $((expected_size/1024/1024))MB, 出力: $((actual_size/1024/1024))MB)"
+
+        # 入力ファイルの実効サイズを調べて原因候補を特定
+        if (( ${#input_files[@]} > 0 )); then
+          local _eff _stat _orphaned _orphaned_mb _suspect=""
+          local _effective_total=0
+          for _infile in "${input_files[@]}"; do
+            _eff=$(__concat_mp4_effective_size "$_infile")
+            _stat=$(stat -f%z -- "$_infile" 2>/dev/null || stat -c%s -- "$_infile" 2>/dev/null)
+            (( _effective_total += _eff ))
+            if [[ -n "$_eff" ]] && [[ -n "$_stat" ]] && (( _stat > 0 && _eff > 0 )); then
+              _orphaned=$((_stat - _eff))
+              if (( _orphaned > 10485760 )); then  # > 10MB
+                _orphaned_mb=$((_orphaned / 1024 / 1024))
+                _suspect="${_suspect}"$'\n'"  ⚠️  ${_infile:t}: 未参照データ ${_orphaned_mb}MB (実効: $((_eff/1024/1024))MB / ファイル: $((_stat/1024/1024))MB)"
+              fi
+            fi
+          done
+          if [[ -n "$_suspect" ]]; then
+            # 実効サイズ合計で再判定: 出力が実効合計の95%以上なら正常
+            local _eff_ratio
+            _eff_ratio=$(awk -v a="$actual_size" -v e="$_effective_total" 'BEGIN{ printf "%.4f", (e>0) ? a/e : 0 }')
+            if (( $(echo "$_eff_ratio >= 0.95 && $_eff_ratio <= 1.05" | bc -l) )); then
+              REPLY="${_msg}${_suspect}"$'\n'"  → 再生時間・映像・音声に影響はありません"
+              return 2  # 警告（出力は正常だが入力にゴミデータあり）
+            fi
+            _msg="${_msg}${_suspect}"
+          fi
+        fi
+
+        REPLY="$_msg"
         return 1
       fi
       if (( $(echo "$ratio > 1.05" | bc -l) )); then

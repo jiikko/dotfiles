@@ -655,7 +655,13 @@ EOF
     (( verbose_mode )) && print -r -- ">> 診断中..."
     start_time=$SECONDS
     # 11. 出力ファイルの診断
-    if ! __concat_diagnose_output "$output_path" "$total_duration" "$has_input_audio" "$total_size"; then
+    __concat_diagnose_output "$output_path" "$total_duration" "$has_input_audio" "$total_size" "${sorted_files[@]}"
+    local _diag_rc=$?
+    if (( _diag_rc == 2 )); then
+      # 警告: 入力に未参照データあるが出力は正常
+      print -r -- "⚠️  診断警告:" >&2
+      print -r -- "$REPLY" >&2
+    elif (( _diag_rc != 0 )); then
       print -r -- "❌ 診断エラー: $REPLY" >&2
       rm -f -- "$output_path"
       return 1
