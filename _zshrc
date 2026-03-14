@@ -680,3 +680,4 @@ if command -v brew > /dev/null 2>&1; then
 fi
 
 # Ignore commands starting with space from history
+export PATH="$HOME/.local/bin:$PATH"

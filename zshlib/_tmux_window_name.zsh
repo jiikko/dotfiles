@@ -2,7 +2,7 @@
 # tmux ウィンドウ名を実行コマンドに基づいて設定する
 # YAML でコマンド名 -> 表示名のマッピングを定義可能
 
-: "${_TMUX_WINDOW_NAME_YAML:=$HOME/dotfiles/tmux-window-name.yaml}"
+: "${_TMUX_WINDOW_NAME_YAML:=${0:A:h}/tmux-window-name.yaml}"
 
 # 連想配列でマッピングをキャッシュ（起動時に1回だけ読み込み）
 typeset -gA _TMUX_WINDOW_NAMES
