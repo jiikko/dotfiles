@@ -101,7 +101,7 @@ EOF
 
     # ファイルをグループ化（番号部分を除いた共通部分でグルーピング）
     local -A file_to_key=()
-    local -a all_keys=()
+    local -a all_keys=() _skipped_files=()
     local _stem _num _rest _suffix _prefix _key
     for _f in "${video_files[@]}"; do
       _stem=$(__concat_get_stem "$_f")
@@ -113,8 +113,13 @@ EOF
         _key="${_prefix}::${_suffix}"
         file_to_key[${_f:A}]="$_key"
         all_keys+=("$_key")
+      else
+        _skipped_files+=("${_f:t}")
       fi
     done
+    if (( ${#_skipped_files[@]} > 0 )); then
+      print -r -- "⚠️  連番パターンに一致しないファイルをスキップしました: ${(j:, :)_skipped_files}" >&2
+    fi
 
     local -a unique_keys=("${(u)all_keys[@]}")
     local _total=0 _ok=0 _fail=0
@@ -128,7 +133,7 @@ EOF
       (( ${#group_files[@]} < 2 )) && continue
 
       _total=$((_total + 1))
-      sorted_group=("${(o)group_files[@]}")
+      sorted_group=("${(on)group_files[@]}")
 
       print -r -- ""
       print -r -- "=========================================="
@@ -168,7 +173,7 @@ EOF
   # マルチグループ検出: 複数ファイルが異なるグループに属するなら自動振り分け
   if (( $# >= 3 )); then
     local -A _mg_file_to_key=()
-    local -a _mg_all_keys=()
+    local -a _mg_all_keys=() _mg_skipped_files=()
     local _mgf _mg_stem _mg_num _mg_rest _mg_suffix _mg_prefix _mg_key
     for _mgf in "$@"; do
       _mg_stem=$(__concat_get_stem "$_mgf")
@@ -180,8 +185,13 @@ EOF
         _mg_key="${_mg_prefix}::${_mg_suffix}"
         _mg_file_to_key[${_mgf:A}]="$_mg_key"
         _mg_all_keys+=("$_mg_key")
+      else
+        _mg_skipped_files+=("${_mgf:t}")
       fi
     done
+    if (( ${#_mg_skipped_files[@]} > 0 )); then
+      print -r -- "⚠️  連番パターンに一致しないファイルをスキップしました: ${(j:, :)_mg_skipped_files}" >&2
+    fi
 
     local -a _mg_unique_keys=("${(u)_mg_all_keys[@]}")
 
@@ -211,7 +221,7 @@ EOF
         (( ${#_mg_group_files[@]} < 2 )) && continue
 
         _mg_total=$((_mg_total + 1))
-        _mg_sorted_group=("${(o)_mg_group_files[@]}")
+        _mg_sorted_group=("${(on)_mg_group_files[@]}")
 
         print -r -- ""
         print -r -- "=========================================="
@@ -552,7 +562,7 @@ EOF
   fi
 
   # 4. ファイル名の昇順でソート（スペース対応）
-  sorted_files=("${(o)input_files[@]}")
+  sorted_files=("${(on)input_files[@]}")
 
   # 5. 出力ファイル名の決定
   local output_name
@@ -581,56 +591,59 @@ EOF
 
   # 一時ファイル名の生成（UUID）
   local uuid
-  uuid=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || date +%s%N)
+  uuid=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "${$}_${RANDOM}")
   local list_file="$first_dir/.concat_${uuid}.txt"
   local tmp_output="$first_dir/.concat_${uuid}.mp4"
 
-  # 7. 結合実行（alwaysブロックで一時ファイルを確実にクリーンアップ）
+  # 7. duration・サイズの事前計算
+  local total_duration=0 abs_path dur
+  for file in "${sorted_files[@]}"; do
+    dur=$(__concat_get_duration "$file")
+    if [[ -n "$dur" ]]; then
+      total_duration=$(awk -v t="$total_duration" -v d="$dur" 'BEGIN{ printf "%.3f", t+d }')
+    fi
+  done
+
+  local duration_hms
+  duration_hms=$(awk -v s="$total_duration" 'BEGIN{
+    h=int(s/3600); m=int((s%3600)/60); sec=s%60
+    printf "%d:%02d:%05.2f", h, m, sec
+  }')
+
+  local total_size=0 fsize
+  for file in "${sorted_files[@]}"; do
+    fsize=$(stat -f%z -- "$file" 2>/dev/null || stat -c%s -- "$file" 2>/dev/null)
+    [[ -n "$fsize" ]] && total_size=$((total_size + fsize))
+  done
+  local total_size_mb=$((total_size / 1024 / 1024))
+
+  print -r -- ">> 結合対象: ${#sorted_files[@]}ファイル (合計 ${total_size_mb}MB)"
+  print -r -- ">> 入力ファイル合計duration: ${duration_hms}"
+  print -r -- ">> 出力: $output_path"
+
+  # dryrun: 結合順序を表示して終了（一時ファイルを作成しない）
+  if (( dryrun_mode )); then
+    print -r -- ">> 結合順序:"
+    local idx=1
+    for file in "${sorted_files[@]}"; do
+      print -r -- "   ${idx}. ${file:t}"
+      (( idx++ ))
+    done
+    print -r -- ">> dryrun: 結合をスキップしました"
+    return 0
+  fi
+
+  # 8. 結合実行（alwaysブロックで一時ファイルを確実にクリーンアップ）
   # trap ではなく always を使うことで、再帰呼び出し時に外側の trap を破壊しない
   {
-    # 8. concatリストファイルの作成
-    local total_duration=0 abs_path dur
+    # 9. concatリストファイルの作成
     for file in "${sorted_files[@]}"; do
       abs_path="${file:A}"
-      __concat_escape_path "$abs_path" >> "$list_file"
-
-      # duration合計を計算
-      dur=$(__concat_get_duration "$file")
-      if [[ -n "$dur" ]]; then
-        total_duration=$(awk -v t="$total_duration" -v d="$dur" 'BEGIN{ printf "%.3f", t+d }')
+      if ! __concat_escape_path "$abs_path" >> "$list_file"; then
+        print -r -- "エラー: パスのエスケープに失敗しました: $abs_path" >&2
+        return 1
       fi
     done
-
-    # durationを時:分:秒に変換
-    local duration_hms
-    duration_hms=$(awk -v s="$total_duration" 'BEGIN{
-      h=int(s/3600); m=int((s%3600)/60); sec=s%60
-      printf "%d:%02d:%05.2f", h, m, sec
-    }')
-
-    # 入力ファイル合計サイズを計算
-    local total_size=0 fsize
-    for file in "${sorted_files[@]}"; do
-      fsize=$(stat -f%z -- "$file" 2>/dev/null || stat -c%s -- "$file" 2>/dev/null)
-      [[ -n "$fsize" ]] && total_size=$((total_size + fsize))
-    done
-    local total_size_mb=$((total_size / 1024 / 1024))
-
-    print -r -- ">> 結合対象: ${#sorted_files[@]}ファイル (合計 ${total_size_mb}MB)"
-    print -r -- ">> 入力ファイル合計duration: ${duration_hms}"
-    print -r -- ">> 出力: $output_path"
-
-    # dryrun: 結合順序を表示して終了
-    if (( dryrun_mode )); then
-      print -r -- ">> 結合順序:"
-      local idx=1
-      for file in "${sorted_files[@]}"; do
-        print -r -- "   ${idx}. ${file:t}"
-        (( idx++ ))
-      done
-      print -r -- ">> dryrun: 結合をスキップしました"
-      return 0
-    fi
 
     print -r -- ">> 結合中..."
     local start_time=$SECONDS

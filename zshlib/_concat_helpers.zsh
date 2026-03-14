@@ -22,9 +22,9 @@ __concat_get_ext() {
   local file="$1"
   local base="${file:t}"
   if [[ "$base" == *.* ]]; then
-    echo "${base##*.}"
+    print -r -- "${base##*.}"
   else
-    echo ""
+    print -r -- ""
   fi
 }
 
@@ -199,7 +199,10 @@ __concat_get_duration() {
 # 内部補助: パスをエスケープしてconcat用に整形
 __concat_escape_path() {
   local path="$1"
-  # FFmpeg concat demuxerのエスケープ: シングルクォートで囲み、' は '\'' でエスケープ
+  # FFmpeg concat demuxerのエスケープ:
+  # 1. バックスラッシュを先にエスケープ（順序重要）
+  # 2. シングルクォートで囲み、' は '\'' でエスケープ
+  path="${path//\\/\\\\}"
   path="${path//\'/\'\\\'\'}"
   print -r -- "file '${path}'"
 }
@@ -268,14 +271,14 @@ __concat_diagnose_output() {
   fi
 
   # 映像ストリームの存在確認（スペースの有無に対応）
-  if ! echo "$info" | grep -q '"codec_type"[[:space:]]*:[[:space:]]*"video"'; then
+  if ! print -r -- "$info" | grep -q '"codec_type"[[:space:]]*:[[:space:]]*"video"'; then
     REPLY="映像ストリームが存在しません"
     return 1
   fi
 
   # 音声ストリームの存在確認（入力にあれば）
   if (( has_input_audio )); then
-    if ! echo "$info" | grep -q '"codec_type"[[:space:]]*:[[:space:]]*"audio"'; then
+    if ! print -r -- "$info" | grep -q '"codec_type"[[:space:]]*:[[:space:]]*"audio"'; then
       REPLY="音声ストリームが存在しません（入力には音声がありました）"
       return 1
     fi
@@ -296,7 +299,7 @@ __concat_diagnose_output() {
   _dur_hi=$(awk -v t="$_dur_tol" 'BEGIN{ printf "%.4f", 1 + t/100 }')
   if [[ -n "$expected_duration" ]] && (( $(echo "$expected_duration > 10" | bc -l) )); then
     local dur_ratio
-    dur_ratio=$(awk -v a="$actual_duration" -v e="$expected_duration" 'BEGIN{ printf "%.4f", a/e }')
+    dur_ratio=$(awk -v a="$actual_duration" -v e="$expected_duration" 'BEGIN{ if(e==0){print "1.0000";exit} printf "%.4f", a/e }')
     if (( $(echo "$dur_ratio < $_dur_lo" | bc -l) )); then
       local dur_pct expected_hms actual_hms
       dur_pct=$(awk -v r="$dur_ratio" 'BEGIN{ printf "%.1f", (1-r)*100 }')
@@ -380,10 +383,10 @@ __concat_frame_hash() {
     -ss "$timestamp" -i "$file" \
     -vframes 1 -f rawvideo -pix_fmt rgb24 pipe:1 2>/dev/null)
   if [[ -z "$_raw" ]]; then
-    echo ""
+    print -r -- ""
     return 1
   fi
-  echo "$_raw" | shasum | cut -d' ' -f1
+  print -r -- "$_raw" | shasum | cut -d' ' -f1
 }
 
 # 内部補助: 結合後のフレーム順序を検証
