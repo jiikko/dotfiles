@@ -135,6 +135,11 @@ __av1ify_postcheck() {
       if (( too_small )); then
         issues+=("ファイルサイズ異常 (src=${src_size}B, out=${out_size}B, ratio=${size_ratio})")
         suffixes+=("tinyfile")
+      elif (( out_size > src_size )); then
+        local pct_increase
+        pct_increase=$(awk -v o="$out_size" -v s="$src_size" 'BEGIN{ printf "%.0f", (o - s) / s * 100 }')
+        issues+=("サイズ増加 (src=${src_size}B, out=${out_size}B, +${pct_increase}%)")
+        suffixes+=("bigger")
       fi
     fi
   fi

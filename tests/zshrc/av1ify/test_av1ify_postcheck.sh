@@ -198,13 +198,13 @@ assert_contains "$output" "check_ng" "Output is marked as check_ng"
 printf '\n## Test 76: File size normal - no warning\n'
 TEST_DIR="$TEST_TMP/test76"
 mkdir -p "$TEST_DIR"
-echo "dummy video" > "$TEST_DIR/input.avi"
+# ソース100B > モック出力16B → tinyfileにもbiggerにもならない
+dd if=/dev/zero of="$TEST_DIR/input.avi" bs=1 count=100 2>/dev/null
 cd "$TEST_DIR"
-# ソースも小さい(12B)、モック出力も小さい(15B) → ratio≈1.25 > 0.001 で正常
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
-if [[ "$output" != *"ファイルサイズ異常"* ]]; then
+if [[ "$output" != *"ファイルサイズ異常"* && "$output" != *"サイズ増加"* ]]; then
   printf '✓ No file size warning for normal ratio\n'
 else
   printf '✗ Should not warn when file size ratio is normal\n'
@@ -221,6 +221,48 @@ unsetopt err_exit
 output=$(AV1IFY_MIN_SIZE_RATIO=0.1 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "ファイルサイズ異常" "Custom ratio threshold detects small output"
+
+# Test 77b: サイズ増加の検出 — 出力がソースより大きい場合に警告
+printf '\n## Test 77b: File size increase detection\n'
+TEST_DIR="$TEST_TMP/test77b"
+mkdir -p "$TEST_DIR"
+# ソース2B、モック出力16B → out > src でサイズ増加検出
+echo -n "x" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "サイズ増加" "Detects output larger than source"
+assert_contains "$output" "bigger" "Output filename contains bigger tag"
+assert_contains "$output" "check_ng" "Output is marked as check_ng"
+
+# Test 77c: 出力がソースより小さい場合はサイズ増加警告なし
+printf '\n## Test 77c: File size decrease - no bigger warning\n'
+TEST_DIR="$TEST_TMP/test77c"
+mkdir -p "$TEST_DIR"
+# ソース100B > モック出力16B → biggerにならない
+dd if=/dev/zero of="$TEST_DIR/input.avi" bs=1 count=100 2>/dev/null
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"サイズ増加"* ]]; then
+  printf '✓ No size increase warning when output is smaller\n'
+else
+  printf '✗ Should not warn when output is smaller than source\n'
+fi
+
+# Test 77d: サイズ増加時に増加率(%)が表示される
+printf '\n## Test 77d: Size increase percentage is shown\n'
+TEST_DIR="$TEST_TMP/test77d"
+mkdir -p "$TEST_DIR"
+# ソース10B、モック出力16B → +60%
+dd if=/dev/zero of="$TEST_DIR/input.avi" bs=1 count=10 2>/dev/null
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "+60%" "Shows correct percentage increase"
 
 # Test 78: 出力映像コーデック不一致の検出
 printf '\n## Test 78: Output video codec mismatch detection\n'
