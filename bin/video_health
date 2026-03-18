@@ -1,0 +1,8 @@
+#!/usr/bin/env zsh
+#
+# video_health — 動画ファイルの健全性チェック
+#
+# 実装: ~/dotfiles/zshlib/_video_health.zsh
+
+source "${0:A:h}/../zshlib/_video_health.zsh"
+video_health "$@"
