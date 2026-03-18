@@ -1,0 +1,8 @@
+#!/usr/bin/env zsh
+#
+# repair-mp4-timebase — 動画ファイルのtime_baseを修正
+#
+# 実装: ~/dotfiles/zshlib/_repair_mp4_timebase.zsh
+
+source "${0:A:h}/../zshlib/_repair_mp4_timebase.zsh"
+repair-mp4-timebase "$@"
