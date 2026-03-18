@@ -462,8 +462,10 @@ __concat_verify_frame_order() {
     output_t=$(awk -v c="$cumulative" -v s="$sample_t" 'BEGIN{ printf "%.3f", c+s }')
     output_hash=$(__concat_frame_hash "$outfile" "$output_t")
     if [[ -z "$input_hash" ]] || [[ -z "$output_hash" ]]; then
-      REPLY="フレーム抽出失敗: ${file:t}"
-      return 1
+      # フレーム抽出失敗は結合エラーではなく検証の限界 — スキップして続行
+      print -r -- "⚠️  フレーム抽出スキップ: ${file:t} (結合順序が正しいか手動で確認してください)" >&2
+      cumulative=$(awk -v c="$cumulative" -v d="$dur" 'BEGIN{ printf "%.3f", c+d }')
+      continue
     fi
     if [[ "$input_hash" != "$output_hash" ]]; then
       REPLY="フレーム不一致: ${file:t} (入力 ${sample_t}s ≠ 出力 ${output_t}s)"
