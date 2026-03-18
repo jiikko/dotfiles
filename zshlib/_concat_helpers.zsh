@@ -181,6 +181,14 @@ __concat_get_video_info() {
     -of csv=p=0 -- "$file" 2>/dev/null | head -n1
 }
 
+# 内部補助: ffprobeで映像のtime_baseを取得
+__concat_get_video_time_base() {
+  local file="$1"
+  ffprobe -v error -select_streams v:0 \
+    -show_entries stream=time_base \
+    -of csv=p=0 -- "$file" 2>/dev/null | head -n1
+}
+
 # 内部補助: ffprobeで音声情報を取得
 __concat_get_audio_info() {
   local file="$1"

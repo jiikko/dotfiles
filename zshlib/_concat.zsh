@@ -540,6 +540,8 @@ EOF
   [[ -n "$first_audio_info" ]] && has_input_audio=1
 
   local video_info audio_info
+  local first_time_base video_time_base
+  first_time_base=$(__concat_get_video_time_base "${input_files[1]}")
   if (( ! force_mode )); then
     for file in "${input_files[@]:1}"; do
       video_info=$(__concat_get_video_info "$file")
@@ -556,6 +558,20 @@ EOF
         print -r -- "エラー: 再エンコードが必要です - 音声情報不一致:" >&2
         print -r -- "  ${input_files[1]:t}: $first_audio_info" >&2
         print -r -- "  ${file:t}: $audio_info" >&2
+        return 1
+      fi
+
+      video_time_base=$(__concat_get_video_time_base "$file")
+      if [[ "$video_time_base" != "$first_time_base" ]]; then
+        print -P -- "\n%F{red}%B❌ エラー: time_base不一致%b%f" >&2
+        print -P -- "%F{red}無劣化結合すると再生が破損します%f\n" >&2
+        print -P -- "  %F{cyan}${input_files[1]:t}%f: %F{green}$first_time_base%f" >&2
+        print -P -- "  %F{cyan}${file:t}%f: %F{yellow}$video_time_base%f\n" >&2
+        local _repair_dir="${file:A:h}"
+        local _repair_name="${file:t:r}_repaired.${file:t:e}"
+        print -P -- "%F{white}%B修復方法:%b%f" >&2
+        print -r -- "  ffmpeg -i \"${file}\" -c copy \"${_repair_dir}/${_repair_name}\"" >&2
+        print "" >&2
         return 1
       fi
     done

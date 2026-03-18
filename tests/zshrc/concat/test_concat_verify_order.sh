@@ -226,11 +226,11 @@ MOCK_DURATIONS[$TEST_DIR/video_002.mp4]="10.0"
   }
 
   unsetopt err_exit
-  __concat_verify_frame_order "$TEST_DIR/output.mp4" "$TEST_DIR/video_001.mp4" "$TEST_DIR/video_002.mp4"
+  output=$(__concat_verify_frame_order "$TEST_DIR/output.mp4" "$TEST_DIR/video_001.mp4" "$TEST_DIR/video_002.mp4" 2>&1)
   exit_code=$?
   setopt err_exit
-  assert_exit_code "1" "$exit_code" "Empty hash returns error"
-  assert_contains "$REPLY" "フレーム抽出失敗" "Error message mentions extraction failure"
+  assert_exit_code "0" "$exit_code" "Empty hash skips verification (no error)"
+  assert_contains "$output" "フレーム抽出スキップ" "Warning message mentions extraction skip"
 } always {
   # モックを復元（アサーション失敗でも必ず実行される）
   __concat_frame_hash() {

@@ -92,6 +92,15 @@ esac
 
 # 映像情報
 if echo "$*" | grep -q "select_streams v:0"; then
+  # time_base クエリ
+  if echo "$*" | grep -q "stream=time_base"; then
+    if echo "$input_file" | grep -q "tbase_002"; then
+      echo "1/30000"
+    else
+      echo "1/90000"
+    fi
+    exit 0
+  fi
   # mismatch_002 ファイルの場合は異なる情報を返す
   if echo "$input_file" | grep -q "mismatch_002"; then
     echo "hevc,1280,720,30/1,yuv422p"
