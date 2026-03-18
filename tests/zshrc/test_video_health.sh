@@ -23,9 +23,46 @@ done
 # stream duration (映像)
 if echo "$*" | grep -q "select_streams v:0" && echo "$*" | grep -q "stream=duration"; then
   case "$input_file" in
-    *corrupted*) echo "7194.0" ;;
-    *no_video*)  echo "" ;;
-    *)           echo "14212.0" ;;
+    *corrupted*)    echo "7194.0" ;;
+    *no_video*)     echo "" ;;
+    *avsync_bad*)   echo "17931.0" ;;
+    *fps_broken*)   echo "17931.0" ;;
+    *multi_issue*)  echo "7194.0" ;;
+    *)              echo "14212.0" ;;
+  esac
+  exit 0
+fi
+
+# stream duration (音声)
+if echo "$*" | grep -q "select_streams a:0" && echo "$*" | grep -q "stream=duration"; then
+  case "$input_file" in
+    *no_video*)     echo "" ;;
+    *no_audio*)     echo "" ;;
+    *avsync_bad*)   echo "5977.0" ;;
+    *multi_issue*)  echo "14212.0" ;;
+    *)              echo "14212.0" ;;
+  esac
+  exit 0
+fi
+
+# r_frame_rate
+if echo "$*" | grep -q "select_streams v:0" && echo "$*" | grep -q "r_frame_rate"; then
+  case "$input_file" in
+    *no_video*)     echo "" ;;
+    *fps_broken*)   echo "30000/1001" ;;
+    *multi_issue*)  echo "30000/1001" ;;
+    *)              echo "30000/1001" ;;
+  esac
+  exit 0
+fi
+
+# avg_frame_rate
+if echo "$*" | grep -q "select_streams v:0" && echo "$*" | grep -q "avg_frame_rate"; then
+  case "$input_file" in
+    *no_video*)     echo "" ;;
+    *fps_broken*)   echo "10000/1001" ;;
+    *multi_issue*)  echo "10000/1001" ;;
+    *)              echo "30000/1001" ;;
   esac
   exit 0
 fi
@@ -33,8 +70,20 @@ fi
 # format duration
 if echo "$*" | grep -q "format=duration"; then
   case "$input_file" in
+    *no_video*)     echo "" ;;
+    *avsync_bad*)   echo "17931.0" ;;
+    *fps_broken*)   echo "17931.0" ;;
+    *)              echo "14212.0" ;;
+  esac
+  exit 0
+fi
+
+# audio stream index (select_streams a without :0 suffix)
+if echo "$*" | grep -q "select_streams a " && echo "$*" | grep -q "stream=index"; then
+  case "$input_file" in
     *no_video*) echo "" ;;
-    *)          echo "14212.0" ;;
+    *no_audio*) echo "" ;;
+    *)          echo "1" ;;
   esac
   exit 0
 fi
@@ -135,5 +184,55 @@ exit_code=$?
 setopt err_exit
 assert_exit_code "0" "$exit_code" "Help returns 0"
 assert_contains "$output" "video_health" "Help contains command name"
+
+# Test 8: A/V音ズレ検出
+printf '\n## Test 8: A/V sync drift detected\n'
+touch "$TEST_TMP/avsync_bad.mp4"
+unsetopt err_exit
+__video_health_check "$TEST_TMP/avsync_bad.mp4"
+exit_code=$?
+setopt err_exit
+assert_exit_code "1" "$exit_code" "A/V sync drift returns 1"
+assert_contains "$REPLY" "A/V音ズレ" "Error mentions A/V sync"
+
+# Test 9: フレームレート異常検出
+printf '\n## Test 9: Frame rate anomaly detected\n'
+touch "$TEST_TMP/fps_broken.mp4"
+unsetopt err_exit
+__video_health_check "$TEST_TMP/fps_broken.mp4"
+exit_code=$?
+setopt err_exit
+assert_exit_code "1" "$exit_code" "Frame rate anomaly returns 1"
+assert_contains "$REPLY" "フレームレート異常" "Error mentions frame rate anomaly"
+
+# Test 10: 複数の問題を同時検出（time_base破損 + fps異常）
+printf '\n## Test 10: Multiple issues detected\n'
+touch "$TEST_TMP/multi_issue.mp4"
+unsetopt err_exit
+__video_health_check "$TEST_TMP/multi_issue.mp4"
+exit_code=$?
+setopt err_exit
+assert_exit_code "1" "$exit_code" "Multiple issues returns 1"
+assert_contains "$REPLY" "time_base破損" "Error mentions time_base corruption"
+assert_contains "$REPLY" "フレームレート異常" "Error mentions frame rate anomaly"
+
+# Test 11: 音声ストリームなし検出
+printf '\n## Test 11: No audio stream detected\n'
+touch "$TEST_TMP/no_audio.mp4"
+unsetopt err_exit
+__video_health_check "$TEST_TMP/no_audio.mp4"
+exit_code=$?
+setopt err_exit
+assert_exit_code "1" "$exit_code" "No audio stream returns 1"
+assert_contains "$REPLY" "音声ストリームなし" "Error mentions no audio"
+
+# Test 12: 正常ファイル（全チェック閾値内）
+printf '\n## Test 12: Normal file passes all checks\n'
+touch "$TEST_TMP/all_good.mp4"
+unsetopt err_exit
+__video_health_check "$TEST_TMP/all_good.mp4"
+exit_code=$?
+setopt err_exit
+assert_exit_code "0" "$exit_code" "Normal file passes all 3 checks"
 
 printf '\n=== video_health Tests Completed ===\n'

@@ -386,9 +386,14 @@ __concat_diagnose_output() {
 # ffmpegが失敗した場合は空文字を返す（shasumの空入力ハッシュによる偽一致を防止）
 __concat_frame_hash() {
   local file="$1" timestamp="$2"
+  # 2段階シーク: input seeking (高速・近傍keyframeへ) + output seeking (正確なフレーム位置)
+  # input seekingだけではconcat出力ファイルの深い位置で誤ったフレームに到達する場合がある
+  local _approx _fine
+  _approx=$(awk -v t="$timestamp" 'BEGIN{ a=t-5; if(a<0) a=0; printf "%.3f", a }')
+  _fine=$(awk -v t="$timestamp" -v a="$_approx" 'BEGIN{ printf "%.3f", t-a }')
   local _raw
   _raw=$(ffmpeg -hide_banner -nostdin -loglevel error \
-    -ss "$timestamp" -i "$file" \
+    -ss "$_approx" -i "$file" -ss "$_fine" \
     -vframes 1 -f rawvideo -pix_fmt rgb24 pipe:1 2>/dev/null)
   if [[ -z "$_raw" ]]; then
     print -r -- ""
