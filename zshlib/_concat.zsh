@@ -567,10 +567,9 @@ EOF
         print -P -- "%F{red}無劣化結合すると再生が破損します%f\n" >&2
         print -P -- "  %F{cyan}${input_files[1]:t}%f: %F{green}$first_time_base%f" >&2
         print -P -- "  %F{cyan}${file:t}%f: %F{yellow}$video_time_base%f\n" >&2
-        local _repair_dir="${file:A:h}"
-        local _repair_name="${file:t:r}_repaired.${file:t:e}"
+        local _target_timescale="${first_time_base#1/}"
         print -P -- "%F{white}%B修復方法:%b%f" >&2
-        print -r -- "  ffmpeg -i \"${file}\" -c copy \"${_repair_dir}/${_repair_name}\"" >&2
+        print -r -- "  repair-mp4-timebase ${_target_timescale} \"${file}\"" >&2
         print "" >&2
         return 1
       fi

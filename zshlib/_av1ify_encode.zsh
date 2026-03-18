@@ -196,6 +196,16 @@ __av1ify_one() {
     fi
   fi
 
+  # 健全性チェック: time_base破損等の検出
+  __video_health_check "$in"
+  local _health_rc=$?
+  if (( _health_rc == 1 )); then
+    print -P -- "❌ %F{red}%B入力ファイルが破損しています%b%f: ${in:t}" >&2
+    print -P -- "   %F{red}$REPLY%f" >&2
+    print -r -- "   → エンコードをスキップします" >&2
+    return 1
+  fi
+
   # 解像度オプションの解析（縦解像度を数値に変換）
   # バリデーション済みの値を使用
   local target_height="" resolution_tag=""

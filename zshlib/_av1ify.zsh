@@ -39,6 +39,7 @@ __av1ify_on_interrupt() {
 #   _av1ify.zsh (本ファイル) — 状態変数, バナー, 割り込み処理, av1ify() エントリポイント
 # 読み込み順: postcheck → encode（__av1ify_one が __av1ify_postcheck を呼ぶため）
 # shellcheck disable=SC1091
+source "${0:A:h}/_video_health.zsh"
 source "${0:A:h}/_av1ify_postcheck.zsh"
 # shellcheck disable=SC1091
 source "${0:A:h}/_av1ify_encode.zsh"

@@ -20,7 +20,7 @@ setopt err_exit
 assert_exit_code "1" "$exit_code" "Returns exit code 1 for time_base mismatch"
 assert_contains "$output" "time_base不一致" "Reports time_base mismatch error"
 assert_contains "$output" "修復方法" "Shows repair instructions"
-assert_contains "$output" "_repaired.mp4" "Shows repaired filename"
+assert_contains "$output" "repair-mp4-timebase" "Shows repair-mp4-timebase command"
 
 # Test 2: time_base不一致でも--forceで無視
 printf '\n## Test 2: --force ignores time_base mismatch\n'
