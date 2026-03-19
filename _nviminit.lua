@@ -150,7 +150,11 @@ require("lazy").setup({
       })
     end,
   },
-  { "github/copilot.vim" },
+  { "github/copilot.vim",
+    config = function()
+      vim.g.copilot_filetypes = { markdown = false }
+    end,
+  },
   { "neoclide/coc.nvim", branch = "release",
     config = function()
       vim.g.coc_global_extensions = {
