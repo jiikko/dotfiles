@@ -57,7 +57,8 @@
       "Bash(/dev/null echo ret=$?)",
       "mcp__chrome-devtools__take_snapshot",
       "mcp__chrome-devtools__fill",
-      "mcp__chrome-devtools__evaluate_script"
+      "mcp__chrome-devtools__evaluate_script",
+      "WebFetch(domain:nyosegawa.com)"
     ]
   }
 }

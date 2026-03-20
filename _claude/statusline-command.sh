@@ -30,7 +30,27 @@ green_fg="\033[32m"
 
 # Build the status line: bold path + optional git branch
 if [ -n "$branch" ]; then
-  printf "${bold}${short_cwd}${reset} ${black_fg}${green_bg}[${branch}]${reset}"
+  path_part="${bold}${short_cwd}${reset} ${black_fg}${green_bg}[${branch}]${reset}"
 else
-  printf "${bold}${short_cwd}${reset}"
+  path_part="${bold}${short_cwd}${reset}"
 fi
+
+# Rate limits
+yellow="\033[33m"
+rate_part=""
+five_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty' 2>/dev/null)
+seven_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty' 2>/dev/null)
+
+if [ -n "$five_pct" ] || [ -n "$seven_pct" ]; then
+  parts=""
+  if [ -n "$five_pct" ]; then
+    parts="5h:${five_pct%.*}%"
+  fi
+  if [ -n "$seven_pct" ]; then
+    [ -n "$parts" ] && parts="$parts " || true
+    parts="${parts}7d:${seven_pct%.*}%"
+  fi
+  rate_part=" ${yellow}${parts}${reset}"
+fi
+
+printf "%b%b" "$path_part" "$rate_part"
