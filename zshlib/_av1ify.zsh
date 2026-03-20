@@ -18,6 +18,7 @@ typeset -g  __AV1IFY_RESOLUTION=""
 typeset -g  __AV1IFY_FPS=""
 typeset -g  __AV1IFY_DENOISE=""
 typeset -gi __AV1IFY_COMPACT=0
+typeset -gi __AV1IFY_FORCE=0
 
 __av1ify_on_interrupt() {
   if (( __AV1IFY_ABORT_REQUESTED )); then
@@ -111,6 +112,7 @@ av1ify() {
   local opt_fps=""
   local opt_denoise=""
   local opt_compact=0
+  local opt_force=0
   local -a positional=()
   while (( $# > 0 )); do
     case "$1" in
@@ -122,6 +124,9 @@ av1ify() {
         ;;
       -c|--compact)
         opt_compact=1
+        ;;
+      --force)
+        opt_force=1
         ;;
       -r|--resolution)
         shift
@@ -176,6 +181,7 @@ av1ify() {
     __AV1IFY_FPS="$opt_fps"
     __AV1IFY_DENOISE="$opt_denoise"
     __AV1IFY_COMPACT=$opt_compact
+    __AV1IFY_FORCE=$opt_force
   else
     dry_run="${__AV1IFY_DRY_RUN:-$dry_run}"
   fi
@@ -272,6 +278,8 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
       light: 軽度（hqdn3d=2:2:3:3）
       medium: 中程度（hqdn3d=4:4:6:6）
       strong: 強め（hqdn3d=6:6:9:9）
+  --force: 入力ファイルの健全性チェックに失敗してもエンコードを続行します。
+      軽微なA/V音ズレなど、許容できる問題がある場合に使用してください。
 
 依存関係:
   - ffmpeg: 動画のエンコードとデコードに使用します。

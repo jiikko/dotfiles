@@ -200,10 +200,15 @@ __av1ify_one() {
   __video_health_check "$in"
   local _health_rc=$?
   if (( _health_rc == 1 )); then
-    print -P -- "❌ %F{red}%B入力ファイルが破損しています%b%f: ${in:t}" >&2
-    print -P -- "   %F{red}$REPLY%f" >&2
-    print -r -- "   → エンコードをスキップします" >&2
-    return 1
+    if (( __AV1IFY_FORCE )); then
+      print -P -- "⚠️ %F{yellow}%B健全性チェック警告（--force で続行）%b%f: ${in:t}" >&2
+      print -P -- "   %F{yellow}$REPLY%f" >&2
+    else
+      print -P -- "❌ %F{red}%B入力ファイルが破損しています%b%f: ${in:t}" >&2
+      print -P -- "   %F{red}$REPLY%f" >&2
+      print -r -- "   → エンコードをスキップします（--force で強制続行可能）" >&2
+      return 1
+    fi
   fi
 
   # 解像度オプションの解析（縦解像度を数値に変換）
