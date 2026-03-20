@@ -35,8 +35,31 @@ else
   path_part="${bold}${short_cwd}${reset}"
 fi
 
-# Rate limits
-yellow="\033[33m"
+# Rate limits with visual bar
+# Usage color: green (<50%) -> yellow (50-79%) -> red (>=80%)
+rate_color() {
+  pct=$1
+  if [ "$pct" -ge 80 ]; then
+    printf "\033[31m"  # red
+  elif [ "$pct" -ge 50 ]; then
+    printf "\033[33m"  # yellow
+  else
+    printf "\033[32m"  # green
+  fi
+}
+
+# Build a 4-slot bar: e.g. [||..] for 50%
+rate_bar() {
+  pct=$1
+  filled=$(( (pct + 12) / 25 ))  # 0-24%->0, 25-49%->1, 50-74%->2, 75-99%->3, 100%->4
+  [ "$filled" -gt 4 ] && filled=4
+  empty=$(( 4 - filled ))
+  bar=""
+  i=0; while [ $i -lt $filled ]; do bar="${bar}█"; i=$((i+1)); done
+  i=0; while [ $i -lt $empty ];  do bar="${bar}░"; i=$((i+1)); done
+  printf "%s" "$bar"
+}
+
 rate_part=""
 five_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty' 2>/dev/null)
 seven_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty' 2>/dev/null)
@@ -44,13 +67,31 @@ seven_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // emp
 if [ -n "$five_pct" ] || [ -n "$seven_pct" ]; then
   parts=""
   if [ -n "$five_pct" ]; then
-    parts="5h:${five_pct%.*}%"
+    p=${five_pct%.*}
+    c=$(rate_color "$p")
+    b=$(rate_bar "$p")
+    parts="${c}5h:[${b}]${p}%${reset}"
   fi
   if [ -n "$seven_pct" ]; then
+    p=${seven_pct%.*}
+    c=$(rate_color "$p")
+    b=$(rate_bar "$p")
     [ -n "$parts" ] && parts="$parts " || true
-    parts="${parts}7d:${seven_pct%.*}%"
+    parts="${parts}${c}7d:[${b}]${p}%${reset}"
   fi
-  rate_part=" ${yellow}${parts}${reset}"
+  rate_part=" ${parts}"
 fi
 
-printf "%b%b" "$path_part" "$rate_part"
+# Right-align rate_part using terminal width
+if [ -n "$rate_part" ]; then
+  cols=$(tput cols 2>/dev/null || echo 80)
+  # Calculate visible (non-ANSI) lengths
+  left_len=$(printf "%b" "$path_part" | sed 's/\x1b\[[0-9;]*m//g' | wc -m | tr -d ' ')
+  right_len=$(printf "%b" "$rate_part" | sed 's/\x1b\[[0-9;]*m//g' | wc -m | tr -d ' ')
+  gap=$(( cols - left_len - right_len ))
+  [ "$gap" -lt 1 ] && gap=1
+  padding=$(printf "%${gap}s" "")
+  printf "%b%s%b" "$path_part" "$padding" "$rate_part"
+else
+  printf "%b" "$path_part"
+fi
