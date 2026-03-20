@@ -41,6 +41,7 @@ __av1ify_on_interrupt() {
 # 読み込み順: postcheck → encode（__av1ify_one が __av1ify_postcheck を呼ぶため）
 # shellcheck disable=SC1091
 source "${0:A:h}/_video_health.zsh"
+# shellcheck disable=SC1091
 source "${0:A:h}/_av1ify_postcheck.zsh"
 # shellcheck disable=SC1091
 source "${0:A:h}/_av1ify_encode.zsh"

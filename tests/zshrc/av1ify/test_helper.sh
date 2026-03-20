@@ -34,7 +34,11 @@ done
 
 # -で始まらない最後の引数が出力ファイル
 if [ -n "$last_arg" ] && [ "${last_arg#-}" = "$last_arg" ]; then
-  echo "mock video data" > "$last_arg"
+  if [ -n "$MOCK_FFMPEG_OUTPUT_SIZE" ]; then
+    dd if=/dev/zero of="$last_arg" bs=1 count="$MOCK_FFMPEG_OUTPUT_SIZE" 2>/dev/null
+  else
+    echo "mock" > "$last_arg"
+  fi
   exit 0
 fi
 exit 1

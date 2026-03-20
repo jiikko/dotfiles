@@ -260,7 +260,7 @@ mkdir -p "$TEST_DIR"
 dd if=/dev/zero of="$TEST_DIR/input.avi" bs=1 count=10 2>/dev/null
 cd "$TEST_DIR"
 unsetopt err_exit
-output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+output=$(MOCK_FFMPEG_OUTPUT_SIZE=16 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "+60%" "Shows correct percentage increase"
 
