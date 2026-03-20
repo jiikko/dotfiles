@@ -168,7 +168,9 @@ cd "$TEST_DIR"
 unsetopt err_exit
 MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify -r 720p "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
-assert_file_exists "$TEST_DIR/input-720p-enc.mp4" "Output file has resolution tag"
+# NOTE: postcheckの「サイズ増加」検出でcheck_ng-biggerにリネームされるため
+# input-720p-enc.mp4 ではなく input-720p-check_ng-bigger-enc.mp4 になる
+assert_file_exists "$TEST_DIR/input-720p-check_ng-bigger-enc.mp4" "Output file has resolution tag (with postcheck annotation)"
 
 # Test 27: --fps オプションで実際にファイル処理
 printf '\n## Test 27: FPS option creates output file with tag\n'

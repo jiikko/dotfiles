@@ -80,8 +80,14 @@ elif echo "$*" | grep -q "format=duration"; then
     *-enc*|*check_ng*) echo "${MOCK_OUTPUT_FORMAT_DURATION-${MOCK_FORMAT_DURATION-10.0}}" ;;
     *) echo "${MOCK_FORMAT_DURATION-10.0}" ;;
   esac
+elif echo "$*" | grep -q "select_streams v:0" && echo "$*" | grep -q "duration"; then
+  echo "${MOCK_VIDEO_DURATION-10.0}"
+elif echo "$*" | grep -q "select_streams a:0" && echo "$*" | grep -q "duration"; then
+  echo "${MOCK_AUDIO_DURATION-10.0}"
 elif echo "$*" | grep -q "duration"; then
   echo "10.0"
+elif echo "$*" | grep -q "avg_frame_rate"; then
+  echo "${MOCK_AVG_FPS-${MOCK_FPS-30000/1001}}"
 elif echo "$*" | grep -q "r_frame_rate"; then
   echo "${MOCK_FPS-30000/1001}"
 elif echo "$*" | grep -q "width"; then
