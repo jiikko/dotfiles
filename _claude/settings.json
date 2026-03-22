@@ -8,10 +8,11 @@
   },
   "enabledPlugins": {
     "gopls-lsp@claude-plugins-official": true,
-    "swift-lsp@claude-plugins-official": true
+    "swift-lsp@claude-plugins-official": true,
+    "clangd-lsp@claude-plugins-official": true
   },
   "language": "日本語",
   "alwaysThinkingEnabled": true,
-  "skipAutoPermissionPrompt": true,
-  "effortLevel": "low"
+  "effortLevel": "max",
+  "skipAutoPermissionPrompt": true
 }
