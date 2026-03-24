@@ -182,17 +182,32 @@ __av1ify_one() {
   print -r -- ">> ファイル取得中: $in"
 
   # ソース映像の寸法を取得（アップスケール防止・CRF自動調整・縦横判定に使用）
-  local source_width="" source_height="" source_short_side="" source_is_portrait=0
+  local source_width="" source_height="" source_display_width="" source_display_height="" source_short_side="" source_is_portrait=0 source_rotation=""
   source_width=$(ffprobe -v error -select_streams v:0 -show_entries stream=width \
            -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
   source_height=$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
            -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
+  source_rotation=$(ffprobe -v error -select_streams v:0 -show_entries stream_side_data=rotation \
+             -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
   if [[ -n "$source_width" && "$source_width" =~ ^[0-9]+$ && -n "$source_height" && "$source_height" =~ ^[0-9]+$ ]]; then
-    if (( source_height > source_width )); then
+    source_display_width=$source_width
+    source_display_height=$source_height
+    if [[ -n "$source_rotation" && "$source_rotation" =~ ^-?[0-9]+$ ]]; then
+      local normalized_rotation=$(( (source_rotation % 360 + 360) % 360 ))
+      if (( normalized_rotation == 90 || normalized_rotation == 270 )); then
+        source_display_width=$source_height
+        source_display_height=$source_width
+      fi
+    fi
+
+    if (( source_display_height > source_display_width )); then
       source_is_portrait=1
-      source_short_side=$source_width
+    fi
+
+    if (( source_display_width < source_display_height )); then
+      source_short_side=$source_display_width
     else
-      source_short_side=$source_height
+      source_short_side=$source_display_height
     fi
   fi
 

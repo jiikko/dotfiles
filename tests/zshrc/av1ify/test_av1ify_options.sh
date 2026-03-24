@@ -547,4 +547,17 @@ cd "$TEST_DIR"
 output=$(av1ify --dry-run -r 720P "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "resolution=720p" "Uppercase '720P' resolves to 720p"
 
+# Test 65: 回転メタデータ付き横持ちソースを縦動画として扱う
+printf '\n## Test 65: Rotation metadata makes 720p portrait output 720x1280\n'
+TEST_DIR="$TEST_TMP/test65"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_WIDTH=1920 MOCK_HEIGHT=1080 MOCK_ROTATION=90 MOCK_OUTPUT_WIDTH=720 MOCK_OUTPUT_HEIGHT=1280 av1ify -r 720p "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "出力解像度: 720p" "Resolution option is applied for rotated portrait input"
+assert_file_exists "$TEST_DIR/input-720p-enc.mp4" "Rotated portrait input still produces 720p output"
+assert_not_contains "$output" "解像度不一致" "Rotated portrait input accepts 720x1280 as expected output"
+
 printf '\n=== Options Tests Completed ===\n'

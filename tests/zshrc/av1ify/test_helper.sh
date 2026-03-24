@@ -94,6 +94,8 @@ elif echo "$*" | grep -q "avg_frame_rate"; then
   echo "${MOCK_AVG_FPS-${MOCK_FPS-30000/1001}}"
 elif echo "$*" | grep -q "r_frame_rate"; then
   echo "${MOCK_FPS-30000/1001}"
+elif echo "$*" | grep -q "stream_side_data=rotation"; then
+  echo "${MOCK_ROTATION-}"
 elif echo "$*" | grep -q "width"; then
   last_arg=""
   for arg in "$@"; do last_arg="$arg"; done
