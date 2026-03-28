@@ -126,6 +126,31 @@ Phase 4 の統合結果に `performance` カテゴリの High 指摘が含まれ
 
 ---
 
+## Phase 5.3: Codex Review（全モード必須）
+
+Phase 5 の修正が収束した後、`/codex-review` スキルを使って Codex による外部レビューを実施する。
+
+### 実行条件
+
+- Phase 5 の修正サイクルが収束済み（または「修正しない」を選択済み）
+- コミット済みまたは未コミットの変更が存在する
+
+### 実行手順
+
+1. `/codex-review` スキルの SKILL.md を Read する
+2. SKILL.md の手順に従い、`codex review` コマンドを実行する
+   - 実装モード: `codex review --uncommitted`（未コミットの場合）または直近のコミットをレビュー
+   - レビューモード: 対象ファイルの変更をレビュー
+3. Codex の指摘を Phase 5 と同じフローで処理する（P1/P2 は修正、P3 は Issue 化を検討）
+4. P1/P2 の修正があった場合、`make lint && make build && make test` を再実行
+
+### 注意
+
+- Forge の専門家エージェント群とは異なる視点（Codex = GPT ベース）でのセカンドオピニオンとして機能する
+- Codex の指摘と Forge エージェントの指摘が矛盾する場合、Phase 4.2 の矛盾解決ルールに従う
+
+---
+
 ## Phase 5.5: スキルテスト（TESTING）
 
 > **Minimum/Minimum+/Standard モード**: このフェーズは省略
