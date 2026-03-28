@@ -1,7 +1,7 @@
 ---
 name: cross-review
 version: 1.0.0
-description: 有識者エージェント並行レビュー + Codex レビューによるクロスレビュー。forge を使わず単体で実行できる軽量版。
+description: クロスレビュー。有識者エージェント並行レビュー + Codex レビューで変更をレビューする。「クロスレビューして」「cross-reviewして」「複数視点でレビューして」で発動。
 ---
 
 # Cross Review
