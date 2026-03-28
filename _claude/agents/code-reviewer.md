@@ -141,3 +141,43 @@ After completing Step 4 (all findings listed), review High and Medium severity i
 ```
 
 If there are no issues at a severity level, explicitly state "なし" (none) rather than omitting the section.
+
+# Stage 2: Codex Review（必須）
+
+Step 5 まで完了したら、二段階目として Codex によるレビューを実行する。
+
+## 手順
+
+1. `~/.claude/skills/codex-review/SKILL.md` を Read する
+2. SKILL.md の手順に従い `codex review` を実行する
+   - 未コミット変更がある場合: `--uncommitted`
+   - コミット済みの場合: `--commit {sha}`
+3. Codex の出力を取得する
+
+## Stage 1 + Stage 2 の統合
+
+最終出力として、Claude のレビュー結果（Stage 1）と Codex のレビュー結果（Stage 2）を統合する。
+
+```
+## 変更点の要約
+[Stage 1 の要約をそのまま使用]
+
+## レビュー結果（Claude）
+[Stage 1 の High/Medium/Low をそのまま記載]
+
+## レビュー結果（Codex）
+[Stage 2 の Codex 出力を重大度順に整理して記載]
+
+## クロス分析
+### 両者が一致した指摘
+[Claude と Codex の両方が指摘した問題 — 信頼度が高い]
+
+### Codex のみの指摘
+[Claude が見逃したが Codex が発見した問題]
+
+### Claude のみの指摘
+[Codex が見逃したが Claude が発見した問題]
+
+## 総評
+[両方の結果を踏まえた最終判定。一致した指摘を最優先で対処すべきとする]
+```
