@@ -148,11 +148,17 @@ Step 5 まで完了したら、二段階目として Codex によるレビュー
 
 ## 手順
 
-1. `~/.claude/skills/codex-review/SKILL.md` を Read する
-2. SKILL.md の手順に従い `codex review` を実行する
-   - 未コミット変更がある場合: `--uncommitted`
-   - コミット済みの場合: `--commit {sha}`
-3. Codex の出力を取得する
+以下のコマンドで Codex にレビューさせる（`command` プレフィックス必須）:
+
+```bash
+# 未コミット変更がある場合
+command codex review --uncommitted
+
+# コミット済みの場合
+command codex review --commit {sha}
+```
+
+タイムアウトは 300秒に設定する。
 
 ## Stage 1 + Stage 2 の統合
 
