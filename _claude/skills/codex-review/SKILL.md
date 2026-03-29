@@ -1,6 +1,6 @@
 ---
 name: codex-review
-version: 1.2.0
+version: 1.3.0
 description: codex review コマンドでコード変更のレビューを依頼し、指摘事項を報告する。
 ---
 
@@ -35,7 +35,17 @@ description: codex review コマンドでコード変更のレビューを依頼
 
 **重要: `codex review` CLI は `--commit`/`--base`/`--uncommitted` フラグと `[PROMPT]` 引数を併用できない。**
 
-実行パターン:
+#### 推奨フロー（改修中のレビュー）
+
+カスタム指示でレビュー精度を上げるため、**コミット前**にパターン B で実行する:
+
+1. 改修完了（未コミット状態）
+2. `command codex review "重点観点"` でレビュー
+3. P1/P2 指摘があれば修正
+4. コミット
+5. 必要に応じて `--base` で最終確認
+
+#### 実行パターン
 
 ```bash
 # パターン A: フラグあり（プロンプト指定不可 — Codex のデフォルトレビューを使う）
@@ -43,7 +53,7 @@ command codex review --commit {sha}
 command codex review --base {base_sha}
 command codex review --uncommitted
 
-# パターン B: プロンプトのみ（フラグなし、未コミット変更が対象になる）
+# パターン B: プロンプトのみ（フラグなし、未コミット変更が対象になる）★推奨
 command codex review "カスタム指示テキスト"
 ```
 
