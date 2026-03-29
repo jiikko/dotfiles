@@ -549,7 +549,12 @@ __av1ify_one() {
     __AV1IFY_CURRENT_TMP=""
     mv -f -- "$tmp" "$final_out"
     if __av1ify_postcheck "$final_out" "$in" "$( [[ -n "$target_fps" ]] && echo 1 || echo 0 )" "$target_height"; then
-      final_out="$REPLY"; print -r -- "✅ 完了: $final_out"; return 0
+      final_out="$REPLY"; print -r -- "✅ 完了: $final_out"
+      if (( __AV1IFY_DELETE_ORIGIN )) && [[ -f "$in" ]]; then
+        rm -f -- "$in"
+        print -r -- "🗑️ 元ファイル削除: $in"
+      fi
+      return 0
     else
       final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"; return 1
     fi
@@ -619,7 +624,12 @@ __av1ify_one() {
         __AV1IFY_CURRENT_TMP=""
         mv -f -- "$tmp" "$final_out"
         if __av1ify_postcheck "$final_out" "$in" "$( [[ -n "$target_fps" ]] && echo 1 || echo 0 )" "$target_height"; then
-          final_out="$REPLY"; print -r -- "✅ 完了: $final_out"; return 0
+          final_out="$REPLY"; print -r -- "✅ 完了: $final_out"
+          if (( __AV1IFY_DELETE_ORIGIN )) && [[ -f "$in" ]]; then
+            rm -f -- "$in"
+            print -r -- "🗑️ 元ファイル削除: $in"
+          fi
+          return 0
         else
           final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"; return 1
         fi

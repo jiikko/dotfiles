@@ -14,4 +14,4 @@
 #   - ~/dotfiles/bin/av1ify  フルオプション版
 
 source "${0:A:h}/../zshlib/_av1ify.zsh"
-av1ify --compact "$@"
+av1ify --compact --delete-origin-if-success-and-no-ng "$@"

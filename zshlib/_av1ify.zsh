@@ -19,6 +19,7 @@ typeset -g  __AV1IFY_FPS=""
 typeset -g  __AV1IFY_DENOISE=""
 typeset -gi __AV1IFY_COMPACT=0
 typeset -gi __AV1IFY_FORCE=0
+typeset -gi __AV1IFY_DELETE_ORIGIN=0
 
 __av1ify_on_interrupt() {
   if (( __AV1IFY_ABORT_REQUESTED )); then
@@ -114,6 +115,7 @@ av1ify() {
   local opt_denoise=""
   local opt_compact=0
   local opt_force=0
+  local opt_delete_origin=0
   local -a positional=()
   while (( $# > 0 )); do
     case "$1" in
@@ -128,6 +130,12 @@ av1ify() {
         ;;
       --force)
         opt_force=1
+        ;;
+      --delete-origin-if-success-and-no-ng)
+        opt_delete_origin=1
+        ;;
+      --no-delete-origin-if-success-and-no-ng)
+        opt_delete_origin=0
         ;;
       -r|--resolution)
         shift
@@ -183,6 +191,7 @@ av1ify() {
     __AV1IFY_DENOISE="$opt_denoise"
     __AV1IFY_COMPACT=$opt_compact
     __AV1IFY_FORCE=$opt_force
+    __AV1IFY_DELETE_ORIGIN=$opt_delete_origin
   else
     dry_run="${__AV1IFY_DRY_RUN:-$dry_run}"
   fi
@@ -281,6 +290,9 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
       strong: 強め（hqdn3d=6:6:9:9）
   --force: 入力ファイルの健全性チェックに失敗してもエンコードを続行します。
       軽微なA/V音ズレなど、許容できる問題がある場合に使用してください。
+  --delete-origin-if-success-and-no-ng: 変換成功かつpostcheckでNG無しの場合、元ファイルを削除します。
+      av1c (compactショートハンド) ではデフォルトで有効です。
+      --no-delete-origin-if-success-and-no-ng で明示的に無効化できます。
 
 依存関係:
   - ffmpeg: 動画のエンコードとデコードに使用します。
