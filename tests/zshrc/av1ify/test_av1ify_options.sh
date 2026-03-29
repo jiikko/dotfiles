@@ -1,11 +1,11 @@
 #!/usr/bin/env zsh
 # shellcheck shell=bash
-# av1ify オプションテスト (Test 13-49, 54-64)
+# av1ify オプションテスト (Test 13-49, 54-70)
 # 解像度、fps、denoise、compact、バリデーション、アップスケール防止、縦長動画、fpsキャップ、部分一致
 
 source "${0:A:h}/test_helper.sh"
 
-printf '\n=== av1ify Options Tests (13-64) ===\n\n'
+printf '\n=== av1ify Options Tests (13-70) ===\n\n'
 
 # Test 13: -f オプションのヘルプメッセージ
 printf '## Test 13: Help message includes -f option\n'
@@ -559,5 +559,62 @@ setopt err_exit
 assert_contains "$output" "出力解像度: 720p" "Resolution option is applied for rotated portrait input"
 assert_file_exists "$TEST_DIR/input-720p-enc.mp4" "Rotated portrait input still produces 720p output"
 assert_not_contains "$output" "解像度不一致" "Rotated portrait input accepts 720x1280 as expected output"
+
+# Test 66: --delete-origin-if-success-and-no-ng ヘルプ表示
+printf '\n## Test 66: Help message includes --delete-origin-if-success-and-no-ng option\n'
+help_output=$(av1ify --help 2>&1)
+assert_contains "$help_output" "--delete-origin-if-success-and-no-ng" "Help message contains --delete-origin-if-success-and-no-ng option"
+assert_contains "$help_output" "--no-delete-origin-if-success-and-no-ng" "Help message contains --no- variant"
+
+# Test 67: --delete-origin-if-success-and-no-ng 有効時、成功で元ファイル削除
+printf '\n## Test 67: Delete origin on success with no NG\n'
+TEST_DIR="$TEST_TMP/test67"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(av1ify --delete-origin-if-success-and-no-ng "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "元ファイル削除" "Output mentions origin file deletion"
+assert_file_not_exists "$TEST_DIR/input.avi" "Origin file is deleted on success"
+assert_file_exists "$TEST_DIR/input-enc.mp4" "Output file exists"
+
+# Test 68: デフォルト（オプション無し）では元ファイルを残す
+printf '\n## Test 68: Default does not delete origin\n'
+TEST_DIR="$TEST_TMP/test68"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_not_contains "$output" "元ファイル削除" "No deletion message without option"
+assert_file_exists "$TEST_DIR/input.avi" "Origin file is preserved by default"
+assert_file_exists "$TEST_DIR/input-enc.mp4" "Output file exists"
+
+# Test 69: --no-delete-origin-if-success-and-no-ng で明示的に無効化
+printf '\n## Test 69: --no-delete-origin-if-success-and-no-ng disables deletion\n'
+TEST_DIR="$TEST_TMP/test69"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(av1ify --delete-origin-if-success-and-no-ng --no-delete-origin-if-success-and-no-ng "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_not_contains "$output" "元ファイル削除" "No deletion when explicitly disabled"
+assert_file_exists "$TEST_DIR/input.avi" "Origin file is preserved when disabled"
+
+# Test 70: postcheck NG時は --delete-origin でも元ファイルを残す
+printf '\n## Test 70: Do not delete origin when postcheck has NG\n'
+TEST_DIR="$TEST_TMP/test70"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# コーデック不一致でNG発生させる
+output=$(MOCK_OUTPUT_VCODEC=h264 av1ify --delete-origin-if-success-and-no-ng "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_not_contains "$output" "元ファイル削除" "No deletion when postcheck NG"
+assert_file_exists "$TEST_DIR/input.avi" "Origin file preserved on postcheck NG"
 
 printf '\n=== Options Tests Completed ===\n'

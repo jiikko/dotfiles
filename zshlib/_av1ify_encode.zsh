@@ -42,6 +42,27 @@ __av1ify_pre_repair() {
   fi
 }
 
+# 内部補助: エンコード成功後の後処理（postcheck + 元ファイル削除）
+# 引数: $1=tmp, $2=final_out, $3=in, $4=target_fps, $5=target_height
+# 戻り値: 0=成功, 1=要確認(NG)
+# 副作用: REPLY に最終パスを設定
+__av1ify_finalize() {
+  local tmp="$1" final_out="$2" in="$3" target_fps="$4" target_height="$5"
+  __AV1IFY_CURRENT_TMP=""
+  mv -f -- "$tmp" "$final_out"
+  if __av1ify_postcheck "$final_out" "$in" "$( [[ -n "$target_fps" ]] && echo 1 || echo 0 )" "$target_height"; then
+    final_out="$REPLY"; print -r -- "✅ 完了: $final_out"
+    if (( __AV1IFY_DELETE_ORIGIN )) && [[ -f "$in" ]]; then
+      rm -f -- "$in"
+      print -r -- "🗑️ 元ファイル削除: $in"
+    fi
+    REPLY="$final_out"; return 0
+  else
+    final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"
+    REPLY="$final_out"; return 1
+  fi
+}
+
 # 内部: 単一ファイル処理
 __av1ify_one() {
   local in="$1"
@@ -546,17 +567,10 @@ __av1ify_one() {
 
   # 1回目: 設定通りに実行
   if ffmpeg "${args_common[@]}" "${args_audio[@]}" -- "$tmp"; then
-    __AV1IFY_CURRENT_TMP=""
-    mv -f -- "$tmp" "$final_out"
-    if __av1ify_postcheck "$final_out" "$in" "$( [[ -n "$target_fps" ]] && echo 1 || echo 0 )" "$target_height"; then
-      final_out="$REPLY"; print -r -- "✅ 完了: $final_out"
-      if (( __AV1IFY_DELETE_ORIGIN )) && [[ -f "$in" ]]; then
-        rm -f -- "$in"
-        print -r -- "🗑️ 元ファイル削除: $in"
-      fi
+    if __av1ify_finalize "$tmp" "$final_out" "$in" "$target_fps" "$target_height"; then
       return 0
     else
-      final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"; return 1
+      return 1
     fi
   else
     local ffmpeg_status=$?
@@ -621,17 +635,10 @@ __av1ify_one() {
 
       __AV1IFY_CURRENT_TMP="$tmp"
       if ffmpeg "${args_common[@]}" "${args_audio[@]}" -- "$tmp"; then
-        __AV1IFY_CURRENT_TMP=""
-        mv -f -- "$tmp" "$final_out"
-        if __av1ify_postcheck "$final_out" "$in" "$( [[ -n "$target_fps" ]] && echo 1 || echo 0 )" "$target_height"; then
-          final_out="$REPLY"; print -r -- "✅ 完了: $final_out"
-          if (( __AV1IFY_DELETE_ORIGIN )) && [[ -f "$in" ]]; then
-            rm -f -- "$in"
-            print -r -- "🗑️ 元ファイル削除: $in"
-          fi
+        if __av1ify_finalize "$tmp" "$final_out" "$in" "$target_fps" "$target_height"; then
           return 0
         else
-          final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"; return 1
+          return 1
         fi
       else
         local retry_status=$?
