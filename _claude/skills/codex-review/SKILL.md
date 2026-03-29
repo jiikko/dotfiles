@@ -1,23 +1,24 @@
 ---
 name: codex-review
-version: 1.3.0
-description: codex review コマンドでコード変更のレビューを依頼し、指摘事項を報告する。
+version: 2.0.0
+description: codex exec review コマンドでコード変更のレビューを依頼し、指摘事項を報告する。
 ---
 
 # Codex Review
 
-`codex review` コマンドを使って、コード変更に対する Codex のレビューを取得する。
+`codex exec review` を使って、コード変更に対する Codex のレビューを取得する。
 
 ## 引数
 
-`$ARGUMENTS` は自由テキスト。commit ID、コミット範囲、重点的に見てほしい観点を含められる。
+`$ARGUMENTS` は自由テキスト。commit ID、差分の基点、重点的に見てほしい観点を含められる。
 
 ```
-/codex-review                                    → 未コミットの変更をレビュー
+/codex-review                                    → 既定ブランチとの差分をレビュー
+/codex-review --uncommitted                      → 未コミット変更をレビュー
 /codex-review abc1234                            → 特定コミットをレビュー
-/codex-review abc1234..def5678                   → コミット範囲をレビュー（--base abc1234）
+/codex-review abc1234..HEAD                      → 現在の HEAD に対する差分をレビュー（--base abc1234）
 /codex-review abc1234 削除ロジックの安全性を重点的に見て
-/codex-review 同期周りのモデリングが適切か確認して
+/codex-review --strict                           → 厳しめレビュー
 ```
 
 ## 手順
@@ -26,52 +27,99 @@ description: codex review コマンドでコード変更のレビューを依頼
 
 `$ARGUMENTS` から以下を抽出する:
 
-- **コミット範囲**: `{sha1}..{sha2}` 形式があれば `--base {sha1}` として使用（sha2 は無視、HEAD までの差分）
+- **`--uncommitted`**: 明示的にフラグがあれば未コミット変更をレビュー
+- **`--strict`**: 厳しめレビューモード
+- **コミット範囲**: `{sha1}..HEAD` または `{sha1}..{current_head_sha}` 形式のみ `--base {sha1}` として使用
+- **任意のコミット範囲**: `{sha1}..{sha2}` で `{sha2} != HEAD` の場合、`codex exec review` ではそのまま表現できない。誤った差分をレビューしないため、そのまま `--base` に変換せず、終点を `HEAD` に合わせて実行するかをユーザーに確認する
 - **commit ID**: 7〜40文字の hex 文字列（`[0-9a-f]{7,40}`）が単独であれば `--commit {sha}` として使用
-- **カスタム指示**: commit ID / 範囲 以外のテキスト
-- **両方なし**: `--uncommitted` で未コミット変更をレビュー
+- **カスタム指示**: 上記以外のテキスト（レビュー指示に追記する）
+- **デフォルト**: 何も指定がなければ、リモート既定ブランチとの差分をレビュー
 
-### 2. レビューの実行
+### 2. 既定ブランチと出力先の準備
 
-**重要: `codex review` CLI は `--commit`/`--base`/`--uncommitted` フラグと `[PROMPT]` 引数を併用できない。**
+```bash
+default_base="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')"
+if [ -z "$default_base" ]; then
+  if git rev-parse --verify --quiet main >/dev/null; then
+    default_base=main
+  elif git rev-parse --verify --quiet master >/dev/null; then
+    default_base=master
+  else
+    echo "default base branch could not be determined" >&2
+    exit 1
+  fi
+fi
 
-#### 推奨フロー（改修中のレビュー）
+mkdir -p ./tmp
+review_out="./tmp/codex-review.$(date +%Y%m%d-%H%M%S).$$.md"
+```
 
-カスタム指示でレビュー精度を上げるため、**コミット前**にパターン B で実行する:
+- `origin/HEAD` を優先して既定ブランチを解決する
+- 解決できない場合のみ `main`、次に `master` を試す
+- 出力ファイルは毎回ユニークなパスにする
 
-1. 改修完了（未コミット状態）
-2. `command codex review "重点観点"` でレビュー
-3. P1/P2 指摘があれば修正
-4. コミット
-5. 必要に応じて `--base` で最終確認
+### 3. レビューの実行
+
+`codex exec review` を使用する。`--full-auto --ephemeral -o "$review_out"` は常に付与する。
+
+#### レビュー指示テンプレート
+
+**通常モード（デフォルト）:**
+
+```
+コードレビューして。バグ、リグレッション、仕様逸脱、テスト不足を優先。問題があるものだけを重要度順に列挙し、各項目に file:line、理由、最小修正案を書く。要約や称賛は不要。
+```
+
+**厳しめモード（`--strict`）:**
+
+```
+厳しめにコードレビューして。バグ、データ破壊、クラッシュ、並行処理の不整合、仕様逸脱、テスト不足を優先。良い点の記述は不要。問題があるものだけを重要度順に列挙し、各項目に file:line、再現条件、理由、最小修正案を書く。
+```
+
+カスタム指示がある場合は、テンプレートの末尾に追記する。
 
 #### 実行パターン
 
 ```bash
-# パターン A: フラグあり（プロンプト指定不可 — Codex のデフォルトレビューを使う）
-command codex review --commit {sha}
-command codex review --base {base_sha}
-command codex review --uncommitted
+# パターン A: 既定ブランチとの差分（デフォルト）
+command codex exec review --base "$default_base" --full-auto --ephemeral -o "$review_out" \
+  'コードレビューして。バグ、リグレッション、仕様逸脱、テスト不足を優先。問題があるものだけを重要度順に列挙し、各項目に file:line、理由、最小修正案を書く。要約や称賛は不要。'
 
-# パターン B: プロンプトのみ（フラグなし、未コミット変更が対象になる）★推奨
-command codex review "カスタム指示テキスト"
+# パターン B: 未コミット変更
+command codex exec review --uncommitted --full-auto --ephemeral -o "$review_out" \
+  'コードレビューして。...'
+
+# パターン C: 特定コミット
+command codex exec review --commit {sha} --full-auto --ephemeral -o "$review_out" \
+  'コードレビューして。...'
+
+# パターン D: 現在の HEAD に対する範囲
+command codex exec review --base {base_sha} --full-auto --ephemeral -o "$review_out" \
+  'コードレビューして。...'
 ```
 
 - `command` プレフィックス必須（zsh の関数オーバーライドを回避）
-- タイムアウトは 300秒（5分）に設定する
+- コマンド実行ツールのタイムアウトは 300000ms（5分）に設定する
 
-### 3. 結果の報告
+### 4. 結果の読み取りと報告
 
-Codex の出力をユーザーに報告する。指摘がある場合は重大度順に整理する。
+1. `"$review_out"` を Read ツールで読む
+2. 指摘を以下の3カテゴリに分けて報告する:
+   - **すぐ直すべきもの**（バグ、クラッシュ、データ破壊など）
+   - **後回しでよいもの**（コードスタイル、軽微な改善など）
+   - **指摘なし** の場合はその旨を報告
+3. 高重大度の指摘があれば、修正するか確認する
 
 ## プロジェクト固有のコンテキスト
 
-Codex は自動的にリポジトリのコンテキスト（CLAUDE.md, README 等）を読むため、プロンプトへのプロジェクトルール手動追記は不要。
+Codex はリポジトリ内のコンテキストをある程度拾えるが、重要なプロジェクトルールや今回のレビュー観点は必要に応じてプロンプトに追記する。
 
 ## ルール
 
-- `command codex` を使うこと（`codex` 直接呼び出しは zsh 関数オーバーライドでエラーになる場合がある）
+- `command codex exec review` を使うこと（`codex` 直接呼び出しは zsh 関数オーバーライドでエラーになる場合がある）
+- 常に `--full-auto --ephemeral -o "$review_out"` を付与する
+- stdout 直読みではなく、`-o` で出力されたファイルを読むこと（stdout には警告や進捗が混ざるため）
 - レビュー結果はそのままユーザーに見せる（要約しすぎない）
-- P1/P2 の指摘があれば、修正するか確認する
-- `codex review` はリードオンリーなので、コードを変更しない
-- タイムアウトは 300秒（5分）に設定する
+- `codex exec review` はリードオンリーなので、コードを変更しない
+- `origin/HEAD` を優先して既定ブランチを解決し、任意の `{sha1}..{sha2}` を安易に `--base {sha1}` へ変換しない
+- コマンド実行ツールのタイムアウトは 300000ms（5分）に設定する
