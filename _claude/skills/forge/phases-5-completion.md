@@ -138,9 +138,10 @@ Phase 5 の修正が収束した後、`/codex-review` スキルを使って Code
 ### 実行手順
 
 1. `/codex-review` スキルの SKILL.md を Read する
-2. SKILL.md の手順に従い、`codex review` コマンドを実行する
-   - 実装モード: `codex review --uncommitted`（未コミットの場合）または直近のコミットをレビュー
-   - レビューモード: 対象ファイルの変更をレビュー
+2. SKILL.md の手順に従い、`command codex exec review` を基本にレビューを実行する
+   - 未コミット変更のデフォルトレビューなら `command codex exec review --uncommitted`
+   - selector と追加指示を両立させる必要がある場合は `command codex exec -s read-only` の fallback を使う
+   - 出力は `./tmp` の `-o` ファイルを優先し、空なら Codex コマンドの stdout / stderr を使う
 3. Codex の指摘を Phase 5 と同じフローで処理する（P1/P2 は修正、P3 は Issue 化を検討）
 4. P1/P2 の修正があった場合、`make lint && make build && make test` を再実行
 
