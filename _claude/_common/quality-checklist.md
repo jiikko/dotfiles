@@ -21,6 +21,7 @@ This is a shared quality checklist for all review agents.
 - [ ] Naming is clear and consistent
 - [ ] No unnecessary complexity
 - [ ] DRY principle followed (no excessive duplication)
+- [ ] Structural fix over patchwork: 場当たり的な条件分岐やワークアラウンドではなく、中長期の改修を前提とした構造的な修正になっているか
 
 ### Performance
 - [ ] No obvious performance issues

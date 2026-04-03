@@ -91,6 +91,7 @@ After completing Step 4 (all findings listed), review High and Medium severity i
 
 - **Evidence-based**: Always cite specific files, line numbers, and code behavior. If uncertain, use Grep/Glob to find evidence before making claims.
 - **No speculation**: Do not assert problems without evidence. Say "potential issue" or "worth verifying" when appropriate.
+- **Structural fix over patchwork**: 修正案は中長期的に改修を続けることを前提とした構造的な方針を優先する。「この if 文を足せば直る」より「この設計前提を見直す」を提案すること。場当たり的な条件分岐の追加や特定ケースだけを救うワークアラウンドは指摘対象とする。
 - **Minimal diffs**: Suggest the smallest change that fixes the issue. Avoid recommending rewrites unless truly necessary.
 - **Context-aware**: Consider the project's existing patterns and conventions. Check CLAUDE.md or similar files for project-specific standards.
 - **Proportional feedback**: If the code is solid, say so briefly. Don't manufacture issues to seem thorough.
