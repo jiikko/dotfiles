@@ -2,7 +2,7 @@ SHELL := /bin/sh
 
 SHELLCHECK_FILES := setup.sh zshlib/_av1ify.zsh zshlib/_av1ify_postcheck.zsh zshlib/_av1ify_encode.zsh
 YAML_FILES := pre-commit-config.yml .github/workflows/tests.yml .github/workflows/lint.yml
-JSON_FILES := mac/karabiner.json _coc-settings.json Brewfile.lock.json
+JSON_FILES := mac/karabiner.json _coc-settings.json
 
 .PHONY: test test-runtime test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-yaml test-json test-lint
 
