@@ -22,9 +22,9 @@ brew "fzf"
 
 # for dev
 # brew "pre-commit"
-brew "rbenv"
-brew "nodenv"
-brew "yarn"
+# brew "rbenv"
+# brew "nodenv"
+# brew "yarn"
 brew "shared-mime-info"
 brew "awscli"
 brew "coreutils"
