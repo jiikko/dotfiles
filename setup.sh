@@ -40,6 +40,28 @@ ln -sf ~/dotfiles/_claude/CLAUDE.md ~/.claude/CLAUDE.md
 ln -sf ~/dotfiles/_claude/statusline-command.sh ~/.claude/statusline-command.sh
 ln -sf ~/dotfiles/_claude/settings.json ~/.claude/settings.json
 
+# anyenv: 必要な *env が入っていなければ警告、入っていれば global バージョンを設定
+if command -v anyenv >/dev/null 2>&1; then
+  for pair in nodenv:node goenv:go; do
+    env=${pair%%:*}
+    lang=${pair##*:}
+    if ! command -v "$env" >/dev/null 2>&1; then
+      echo "WARN: ${env} is not installed. Run: anyenv install ${env}"
+      continue
+    fi
+    version_file=~/dotfiles/global_${lang}_version
+    if [ -f "$version_file" ]; then
+      ver=$(cat "$version_file" | tr -d '[:space:]')
+      if "$env" versions --bare 2>/dev/null | grep -qx "$ver"; then
+        "$env" global "$ver"
+        echo "${env} global set to ${ver}"
+      else
+        echo "WARN: ${env} version ${ver} is not installed. Run: ${env} install ${ver}"
+      fi
+    fi
+  done
+fi
+
 # cleanup legacy bash symlinks (extendable)
 legacy_links="bashrc bash_profile"
 for legacy in $legacy_links; do
