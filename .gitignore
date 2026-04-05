@@ -10,3 +10,4 @@ installer.sh
 !vendor/**
 
 CLAUDE.md
+Brewfile.lock.json
