@@ -3,8 +3,6 @@
 #   $ brew bundle cleanup
 #   $ brew bundle
 #
-tap "homebrew/bundle"
-tap "homebrew/services"
 
 # cli
 brew "tmux"
@@ -47,7 +45,7 @@ cask "karabiner-elements"
 cask "font-hack-nerd-font"
 cask "vlc"
 cask "slack"
-cask "google-cloud-sdk"
+cask "gcloud-cli"
 # cask "raspberry-pi-imager"
 
 # cask "1password"
