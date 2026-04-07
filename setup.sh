@@ -4,7 +4,7 @@
 set -o pipefail
 
 # set rc limlink
-for file in gemrc screenrc gvimrc zshrc rspec gitconfig pryrc zlogin railsrc gitignore_global; do
+for file in gemrc gvimrc zshrc rspec gitconfig pryrc zlogin railsrc gitignore_global; do
   echo 'making symlink' _$file '->' ~/.$file
   ln -sf ~/dotfiles/_$file ~/.$file
 done
@@ -65,13 +65,13 @@ else
 fi
 
 # cleanup legacy bash symlinks (extendable)
-legacy_links="bashrc bash_profile"
+legacy_links="bashrc bash_profile screenrc"
 for legacy in $legacy_links; do
   target="$HOME/.${legacy}"
   if [ -L "$target" ]; then
     linked_path=$(readlink "$target")
     case "$linked_path" in
-      *dotfiles/_bashrc|*dotfiles/_bash_profile)
+      *dotfiles/_bashrc|*dotfiles/_bash_profile|*dotfiles/_screenrc)
         echo "removing legacy symlink $target -> $linked_path"
         rm "$target"
         ;;
