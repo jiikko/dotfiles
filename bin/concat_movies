@@ -1,0 +1,235 @@
+#!/usr/bin/env bash
+# concat_movies — 動画を結合し、サムネイル挿入とフェードアウトを適用する
+#
+# 使い方:
+#   concat_movies [オプション] <動画1> <動画2> [<動画3> ...]
+#   concat_movies [オプション] '<動画1> <動画2> <動画3>'
+#
+#   ファイルパスはスペース区切りの1つの文字列としても渡せます。
+#   内部で個別のファイルに分割されます。
+#
+# オプション:
+#   --thumbnail <画像>          先頭に静止画を挿入（必須）
+#   --thumbnail-duration <秒>   サムネイルの表示秒数（デフォルト: 2）
+#   --fadeout <秒>              各クリップ末尾の映像・音声フェードアウト秒数
+#   --crf <値>                  映像品質 0-51（デフォルト: 12、小さいほど高品質）
+#   -o, --output <パス>         出力ファイルパス（デフォルト: 入力ディレクトリ/combined.mp4）
+#   -h, --help                  このヘルプを表示
+#
+# 例:
+#   # サムネイル2秒 + 各クリップ末尾0.7秒フェードアウト
+#   concat_movies --thumbnail thumb.png --fadeout 0.7 clip1.mp4 clip2.mp4 clip3.mp4
+#
+#   # サムネイル3秒、品質指定
+#   concat_movies --thumbnail thumb.png --thumbnail-duration 3 --crf 8 clip1.mp4 clip2.mp4
+#
+#   # フェードアウトのみ
+#   concat_movies --thumbnail thumb.png --fadeout 0.5 clip1.mp4 clip2.mp4
+
+set -euo pipefail
+
+# 依存コマンドチェック
+for cmd in ffmpeg ffprobe bc; do
+  if ! command -v "$cmd" &>/dev/null; then
+    echo "エラー: $cmd が見つかりません。インストールしてください" >&2
+    exit 1
+  fi
+done
+
+usage() {
+  sed -n '2,/^$/s/^# //p' "$0"
+  exit "${1:-0}"
+}
+
+# デフォルト値
+thumbnail=""
+thumbnail_duration=2
+fadeout=""
+crf=12
+output=""
+files=()
+
+# 引数なしならヘルプ表示
+if (( $# == 0 )); then
+  usage
+fi
+
+# 引数パース
+while (( $# > 0 )); do
+  case "$1" in
+    -h|--help) usage ;;
+    --thumbnail|-t) thumbnail="$2"; shift 2 ;;
+    --thumbnail-duration) thumbnail_duration="$2"; shift 2 ;;
+    --fadeout) fadeout="$2"; shift 2 ;;
+    --crf) crf="$2"; shift 2 ;;
+    -o|--output) output="$2"; shift 2 ;;
+    --) shift; files+=("$@"); break ;;
+    -*) echo "エラー: 不明なオプション: $1" >&2; echo "ヘルプ: concat_movies --help" >&2; exit 1 ;;
+    *) files+=("$1"); shift ;;
+  esac
+done
+
+# スペース区切りの単一文字列を個別ファイルに分割
+# 例: 'file1.mp4 file2.mp4' → file1.mp4, file2.mp4
+# 拡張子の直後のスペースで分割する
+expanded_files=()
+for entry in "${files[@]}"; do
+  if [[ -f "$entry" ]]; then
+    expanded_files+=("$entry")
+  else
+    # 拡張子の後のスペースで分割を試みる
+    remaining="$entry"
+    found_any=false
+    while [[ -n "$remaining" ]]; do
+      remaining="${remaining#"${remaining%%[![:space:]]*}"}"  # 先頭空白除去
+      [[ -z "$remaining" ]] && break
+      matched=false
+      # 最短一致で拡張子の位置を探す
+      for ext in .mp4 .MP4 .mov .MOV .mkv .MKV .avi .AVI .webm .flv .wmv .m4v .mpg .mpeg .3gp .ts .m2ts; do
+        if [[ "$remaining" == *"$ext"* ]]; then
+          # 最初に出現する拡張子の位置で切る
+          path="${remaining%%"$ext"*}${ext}"
+          if [[ -f "$path" ]]; then
+            expanded_files+=("$path")
+            remaining="${remaining#"$path"}"
+            matched=true
+            found_any=true
+            break
+          fi
+        fi
+      done
+      if ! $matched; then
+        if ! $found_any; then
+          echo "エラー: ファイルが見つかりません: $entry" >&2
+          exit 1
+        fi
+        remaining="${remaining#"${remaining%%[![:space:]]*}"}"
+        if [[ -n "$remaining" ]]; then
+          echo "エラー: ファイルが見つかりません: $remaining" >&2
+          exit 1
+        fi
+        break
+      fi
+    done
+  fi
+done
+files=("${expanded_files[@]}")
+
+if (( ${#files[@]} < 1 )); then
+  echo "エラー: 最低1つの動画ファイルが必要です" >&2
+  exit 1
+fi
+
+# 入力ファイル存在確認
+for f in "${files[@]}"; do
+  if [[ ! -f "$f" ]]; then
+    echo "エラー: ファイルが見つかりません: $f" >&2
+    exit 1
+  fi
+done
+
+# サムネイル必須チェック
+if [[ -z "$thumbnail" ]]; then
+  echo "エラー: --thumbnail は必須です" >&2
+  exit 1
+fi
+if [[ ! -f "$thumbnail" ]]; then
+  echo "エラー: サムネイル画像が見つかりません: $thumbnail" >&2
+  exit 1
+fi
+
+# 出力パスのデフォルト
+if [[ -z "$output" ]]; then
+  first_dir="$(cd "$(dirname "${files[0]}")" && pwd)"
+  output="$first_dir/combined.mp4"
+fi
+
+# 出力ファイルの存在確認
+if [[ -e "$output" ]]; then
+  echo "エラー: 出力ファイルが既に存在します: $output" >&2
+  exit 1
+fi
+
+# 最初の動画から解像度・フレームレートを取得
+ref_info=$(ffprobe -v error -select_streams v:0 \
+  -show_entries stream=width,height,r_frame_rate -of csv=p=0 "${files[0]}")
+ref_width=$(echo "$ref_info" | cut -d, -f1)
+ref_height=$(echo "$ref_info" | cut -d, -f2)
+ref_fps_frac=$(echo "$ref_info" | cut -d, -f3)
+ref_fps=$(echo "$ref_fps_frac" | awk -F/ '{if($2>0) printf "%.0f", $1/$2; else print $1}')
+
+echo ">> 解像度: ${ref_width}x${ref_height}, FPS: ${ref_fps}"
+
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+
+clip_index=0
+
+# サムネイル処理
+if [[ -n "$thumbnail" ]]; then
+  echo ">> サムネイル: $thumbnail (${thumbnail_duration}秒)"
+  thumb_out="$tmpdir/clip_$(printf '%03d' $clip_index).mp4"
+
+  thumb_filter="scale=${ref_width}:${ref_height}:flags=lanczos,setsar=1,format=yuv420p"
+  if [[ -n "$fadeout" ]]; then
+    fade_st=$(echo "$thumbnail_duration - $fadeout" | bc)
+    thumb_filter="${thumb_filter},fade=t=out:st=${fade_st}:d=${fadeout}"
+  fi
+
+  ffmpeg -y -hide_banner -loglevel error \
+    -loop 1 -framerate "$ref_fps" -t "$thumbnail_duration" -i "$thumbnail" \
+    -f lavfi -t "$thumbnail_duration" -i "anullsrc=r=44100:cl=stereo" \
+    -filter_complex "[0:v]${thumb_filter}[v]" \
+    -map "[v]" -map 1:a \
+    -c:v libx264 -preset medium -crf "$crf" -pix_fmt yuv420p \
+    -c:a aac -b:a 192k \
+    -shortest \
+    "$thumb_out"
+
+  clip_index=$((clip_index + 1))
+fi
+
+# 各動画クリップの処理
+for f in "${files[@]}"; do
+  clip_out="$tmpdir/clip_$(printf '%03d' $clip_index).mp4"
+  echo ">> クリップ $((clip_index)): $(basename "$f")"
+
+  if [[ -n "$fadeout" ]]; then
+    dur=$(ffprobe -v error -select_streams v:0 \
+      -show_entries stream=duration -of csv=p=0 "$f")
+    fade_st=$(echo "$dur - $fadeout" | bc)
+    ffmpeg -y -hide_banner -loglevel error \
+      -i "$f" \
+      -vf "fade=t=out:st=${fade_st}:d=${fadeout}" \
+      -af "afade=t=out:st=${fade_st}:d=${fadeout}" \
+      -c:v libx264 -preset medium -crf "$crf" -pix_fmt yuv420p \
+      -c:a aac -b:a 192k -ar 44100 -ac 2 \
+      "$clip_out"
+  else
+    ffmpeg -y -hide_banner -loglevel error \
+      -i "$f" \
+      -c:v libx264 -preset medium -crf "$crf" -pix_fmt yuv420p \
+      -c:a aac -b:a 192k -ar 44100 -ac 2 \
+      "$clip_out"
+  fi
+
+  clip_index=$((clip_index + 1))
+done
+
+# concat リスト作成
+concat_list="$tmpdir/concat.txt"
+for c in "$tmpdir"/clip_*.mp4; do
+  echo "file '$c'" >> "$concat_list"
+done
+
+# 結合
+echo ">> 結合中..."
+ffmpeg -y -hide_banner -loglevel error \
+  -f concat -safe 0 -i "$concat_list" \
+  -c copy -movflags +faststart \
+  "$output"
+
+output_size=$(stat -f%z "$output" 2>/dev/null || stat -c%s "$output" 2>/dev/null)
+output_size_mb=$((output_size / 1024 / 1024))
+
+echo "✅ 完了: $output (${output_size_mb}MB)"
