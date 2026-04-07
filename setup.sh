@@ -51,7 +51,7 @@ if command -v anyenv >/dev/null 2>&1; then
     fi
     version_file=~/dotfiles/global_${lang}_version
     if [ -f "$version_file" ]; then
-      ver=$(cat "$version_file" | tr -d '[:space:]')
+      ver=$(tr -d '[:space:]' < "$version_file")
       if "$env" versions --bare 2>/dev/null | grep -qx "$ver"; then
         "$env" global "$ver"
         echo "${env} global set to ${ver}"
