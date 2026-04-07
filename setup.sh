@@ -60,6 +60,8 @@ if command -v anyenv >/dev/null 2>&1; then
       fi
     fi
   done
+else
+  echo "WARN: anyenv is not installed. Run: brew install anyenv"
 fi
 
 # cleanup legacy bash symlinks (extendable)
