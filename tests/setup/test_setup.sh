@@ -37,7 +37,7 @@ check_link() {
   fi
 }
 
-for file in gemrc screenrc gvimrc zshrc rspec gitconfig pryrc zlogin railsrc gitignore_global; do
+for file in gemrc gvimrc zshrc rspec gitconfig pryrc zlogin railsrc gitignore_global; do
   check_link "$file"
 done
 
