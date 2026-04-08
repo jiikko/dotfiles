@@ -71,6 +71,8 @@ require("lazy").setup({
     build = ":GoUpdateBinaries",
     init = function()
       vim.g.go_null_module_warning = 0
+      vim.g.go_gopls_enabled = 0        -- coc-goのgoplsと競合するため無効化
+      vim.g.go_def_mapping_enabled = 0   -- coc-definitionに任せる
     end,
     config = function()
       vim.g.go_decls_mode = ""
@@ -244,8 +246,13 @@ require("lazy").setup({
       keymap("n", "<leader>as", "<Plug>(coc-codeaction-source)", opts)
       keymap("n", "<leader>qf", "<Plug>(coc-fix-current)", opts)
       -- 定義ジャンプと参照リスト（便利キーバインド）
-      -- Telescopeでプレビュー付き表示
-      keymap("n", "<C-j>", "<Cmd>Telescope coc implementations<CR>", opts)
+      -- <C-j>: implementations を試し、失敗したら definitions にフォールバック
+      vim.keymap.set("n", "<C-j>", function()
+        local ok, result = pcall(vim.fn.CocAction, "jumpImplementation")
+        if not ok or result == false then
+          vim.cmd("Telescope coc definitions")
+        end
+      end, opts)
       keymap("n", "<C-k>", "<Cmd>Telescope coc references<CR>", opts)
       -- 直接ジャンプしたい場合用
       keymap("n", "gd", "<Plug>(coc-definition)", opts)
