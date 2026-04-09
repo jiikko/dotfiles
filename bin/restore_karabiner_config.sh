@@ -1,4 +1,6 @@
 #!/bin/sh
+# @DotfilesSyncer:name Karabiner 設定を復元
+# @DotfilesSyncer:description dotfiles の Karabiner 設定を復元してキーボード種別を自動設定
 
 cp ~/dotfiles/mac/karabiner.json ~/.config/karabiner/karabiner.json
 
