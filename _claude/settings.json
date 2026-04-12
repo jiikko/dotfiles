@@ -2,6 +2,7 @@
   "permissions": {
     "defaultMode": "auto"
   },
+  "model": "sonnet",
   "statusLine": {
     "type": "command",
     "command": "~/.claude/statusline-command.sh"
@@ -13,6 +14,10 @@
   },
   "language": "日本語",
   "alwaysThinkingEnabled": true,
-  "effortLevel": "max",
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "voiceEnabled": true,
+  "voice": {
+    "enabled": true,
+    "mode": "hold"
+  }
 }

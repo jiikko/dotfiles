@@ -15,8 +15,15 @@ fi
 
 # Git branch via vcs_info equivalent
 branch=""
+changed_count=0
+untracked_count=0
 if git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   branch=$(git -C "$cwd" symbolic-ref --short HEAD 2>/dev/null || git -C "$cwd" rev-parse --short HEAD 2>/dev/null)
+  porcelain=$(git -C "$cwd" status --porcelain 2>/dev/null)
+  if [ -n "$porcelain" ]; then
+    changed_count=$(printf "%s\n" "$porcelain" | grep -c "^[^?]")
+    untracked_count=$(printf "%s\n" "$porcelain" | grep -c "^??")
+  fi
 fi
 
 # ANSI colors
@@ -28,9 +35,13 @@ blue_fg="\033[34m"
 cyan_fg="\033[36m"
 green_fg="\033[32m"
 
-# Build the status line: bold path + optional git branch
+# Build the status line: bold path + optional git branch + file counts
 if [ -n "$branch" ]; then
-  path_part="${bold}${short_cwd}${reset} ${black_fg}${green_bg}[${branch}]${reset}"
+  git_info="${branch}"
+  if [ "$changed_count" -gt 0 ] || [ "$untracked_count" -gt 0 ]; then
+    git_info="${git_info} ~${changed_count} ?${untracked_count}"
+  fi
+  path_part="${bold}${short_cwd}${reset} ${black_fg}${green_bg}[${git_info}]${reset}"
 else
   path_part="${bold}${short_cwd}${reset}"
 fi
