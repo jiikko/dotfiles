@@ -1,0 +1,5 @@
+#!/bin/sh
+# @DotfilesSyncer:name Claude Code 更新
+# @DotfilesSyncer:description Claude Code を最新版に更新
+
+claude update

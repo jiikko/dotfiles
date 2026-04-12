@@ -14,10 +14,11 @@
   },
   "language": "日本語",
   "alwaysThinkingEnabled": true,
-  "skipAutoPermissionPrompt": true,
+  "advisorModel": "opus",
   "voiceEnabled": true,
   "voice": {
     "enabled": true,
     "mode": "hold"
-  }
+  },
+  "skipAutoPermissionPrompt": true
 }
