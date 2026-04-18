@@ -384,13 +384,22 @@ __concat_diagnose_output() {
 
 # 内部補助: 指定タイムスタンプのフレームをハッシュ化
 # ffmpegが失敗した場合は空文字を返す（shasumの空入力ハッシュによる偽一致を防止）
+#
+# シーク精度のために目的 PTS から 1ms 引いてから -ss する（_EPS=0.001）。
+# 理由: -ss T は「PTS >= T の最初のフレーム」を返すが、T が目的フレームの
+# PTS と厳密に一致する場合、浮動小数点丸め（container timescale と
+# 引数表記の食い違い、例: 4312.331966 vs 4312.332）により次フレームに
+# 超過してしまうことがある。1ms 手前にオフセットすれば必ず目的フレームに
+# 着地する（通常のフレーム間隔 16〜42ms より十分小さい）。
 __concat_frame_hash() {
   local file="$1" timestamp="$2"
+  local _EPS=0.001
+  local _target _approx _fine
+  _target=$(awk -v t="$timestamp" -v e="$_EPS" 'BEGIN{ a=t-e; if(a<0) a=0; printf "%.3f", a }')
   # 2段階シーク: input seeking (高速・近傍keyframeへ) + output seeking (正確なフレーム位置)
   # input seekingだけではconcat出力ファイルの深い位置で誤ったフレームに到達する場合がある
-  local _approx _fine
-  _approx=$(awk -v t="$timestamp" 'BEGIN{ a=t-5; if(a<0) a=0; printf "%.3f", a }')
-  _fine=$(awk -v t="$timestamp" -v a="$_approx" 'BEGIN{ printf "%.3f", t-a }')
+  _approx=$(awk -v t="$_target" 'BEGIN{ a=t-5; if(a<0) a=0; printf "%.3f", a }')
+  _fine=$(awk -v t="$_target" -v a="$_approx" 'BEGIN{ printf "%.3f", t-a }')
   local _raw
   _raw=$(ffmpeg -hide_banner -nostdin -loglevel error \
     -ss "$_approx" -i "$file" -ss "$_fine" \
@@ -457,6 +466,9 @@ __concat_verify_frame_order() {
   fi
 
   # --- フレームハッシュ比較 ---
+  # cumulative は format=duration で積む（concat demuxer が各セグメントを
+  # その値ぶんシフトするため、次セグメントの映像フレームは output 側で
+  # PTS = cumulative + file内PTS の位置に並ぶ）
   local cumulative=0
   local file dur sample_t output_t
   local input_hash output_hash
