@@ -1,0 +1,35 @@
+#!/usr/bin/env zsh
+# parallel-each — run a command template over each line of a file in parallel,
+# with an interactive TUI. Go implementation at:
+#   ~/dotfiles/src/parallel-each/
+# This wrapper auto-builds the binary on first use and re-builds when the
+# source is newer than the compiled artifact.
+
+set -u
+
+src_dir="${0:A:h}/../src/parallel-each"
+bin="$src_dir/parallel-each"
+
+needs_build=0
+if [[ ! -x "$bin" ]]; then
+  needs_build=1
+else
+  # Rebuild if any .go source is newer than the binary.
+  for f in "$src_dir"/*.go "$src_dir"/go.mod "$src_dir"/go.sum; do
+    [[ -e "$f" ]] || continue
+    if [[ "$f" -nt "$bin" ]]; then
+      needs_build=1
+      break
+    fi
+  done
+fi
+
+if (( needs_build )); then
+  echo "parallel-each: building..." >&2
+  (cd "$src_dir" && go build -o parallel-each .) || {
+    echo "parallel-each: build failed" >&2
+    exit 1
+  }
+fi
+
+exec "$bin" "$@"
