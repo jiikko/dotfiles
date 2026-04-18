@@ -265,6 +265,90 @@ func TestTUIModelFocusClearsOnEnd(t *testing.T) {
 	}
 }
 
+func TestModelETA(t *testing.T) {
+	cases := []struct {
+		name      string
+		total     int
+		completed int
+		par       int
+		recent    []recentEntry
+		wantZero  bool
+		wantRange [2]time.Duration // inclusive bounds; ignored if wantZero
+	}{
+		{
+			name:     "no completions yet -> 0",
+			total:    10,
+			wantZero: true,
+		},
+		{
+			name:      "complete -> 0",
+			total:     5,
+			completed: 5,
+			recent:    []recentEntry{{Duration: time.Second}},
+			wantZero:  true,
+		},
+		{
+			name:      "half done, P=2, avg 1s, 5 left -> ~2.5s",
+			total:     10,
+			completed: 5,
+			par:       2,
+			recent: []recentEntry{
+				{Duration: time.Second},
+				{Duration: time.Second},
+			},
+			wantRange: [2]time.Duration{2 * time.Second, 3 * time.Second},
+		},
+		{
+			name:      "remaining < parallelism clamps par",
+			total:     10,
+			completed: 9,
+			par:       4,
+			recent: []recentEntry{
+				{Duration: 2 * time.Second},
+			},
+			// remaining=1, par clamped to 1 -> ETA ~= avg = 2s
+			wantRange: [2]time.Duration{time.Second + 500*time.Millisecond, 2*time.Second + 500*time.Millisecond},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := model{
+				cfg:       Config{Parallelism: c.par},
+				total:     c.total,
+				completed: c.completed,
+				recent:    c.recent,
+			}
+			got := m.eta()
+			if c.wantZero {
+				if got != 0 {
+					t.Errorf("want 0, got %v", got)
+				}
+				return
+			}
+			if got < c.wantRange[0] || got > c.wantRange[1] {
+				t.Errorf("eta = %v, want in [%v, %v]", got, c.wantRange[0], c.wantRange[1])
+			}
+		})
+	}
+}
+
+func TestVisibleLen(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int
+	}{
+		{"hello", 5},
+		{"\x1b[31mred\x1b[0m", 3},
+		{"\x1b[1;38;5;196mstyled\x1b[0mplain", 11},
+		{"", 0},
+	}
+	for _, c := range cases {
+		if got := visibleLen(c.in); got != c.want {
+			t.Errorf("visibleLen(%q) = %d, want %d", c.in, got, c.want)
+		}
+	}
+}
+
 func TestMaxInt(t *testing.T) {
 	cases := []struct{ a, b, want int }{
 		{1, 2, 2},

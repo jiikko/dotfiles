@@ -626,6 +626,174 @@ func TestRunnerAppendsOnResume(t *testing.T) {
 	}
 }
 
+// A job that fails N times then succeeds should end up with ok and a single
+// FAIL-free row in result.log, while the per-job log records all attempts.
+func TestRunnerRetriesThenSucceeds(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a counter file. The template increments the counter and fails
+	// until the counter reaches 3, then succeeds.
+	counter := filepath.Join(dir, "counter")
+	if err := os.WriteFile(counter, []byte("0"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{
+		Parallelism: 1,
+		Retries:     5,
+		Template: `n=$(cat ` + counter + `); n=$((n+1)); echo $n > ` + counter +
+			`; echo attempt=$n item={item}; [ $n -ge 3 ]`,
+	}
+
+	r := NewRunner(cfg, []string{"alpha"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	starts := 0
+	var finalEnd Event
+	for ev := range r.Events() {
+		switch ev.Kind {
+		case EventStart:
+			starts++
+		case EventEnd:
+			finalEnd = ev
+		}
+	}
+
+	if starts != 3 {
+		t.Errorf("EventStart count = %d, want 3", starts)
+	}
+	if finalEnd.ExitCode != 0 {
+		t.Errorf("final ExitCode = %d, want 0", finalEnd.ExitCode)
+	}
+	if finalEnd.Attempt != 3 || finalEnd.MaxAttempts != 6 {
+		t.Errorf("final Attempt/MaxAttempts = %d/%d, want 3/6", finalEnd.Attempt, finalEnd.MaxAttempts)
+	}
+
+	// Log file should contain retry separators for attempts 2 and 3.
+	entries, _ := os.ReadDir(logDir)
+	var logPath string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), "-alpha.log") {
+			logPath = filepath.Join(logDir, e.Name())
+		}
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	if !strings.Contains(s, "=== retry 1/5") {
+		t.Errorf("log missing 'retry 1/5' separator:\n%s", s)
+	}
+	if !strings.Contains(s, "=== retry 2/5") {
+		t.Errorf("log missing 'retry 2/5' separator")
+	}
+	if !strings.Contains(s, "attempt=3") {
+		t.Errorf("log missing final attempt output")
+	}
+
+	// result.log records only the final outcome.
+	resData, _ := os.ReadFile(filepath.Join(logDir, "result.log"))
+	rows := strings.Split(strings.TrimRight(string(resData), "\n"), "\n")
+	if len(rows) != 1 {
+		t.Errorf("result.log rows = %d, want 1", len(rows))
+	}
+	if !strings.HasPrefix(rows[0], "ok\t0\t") {
+		t.Errorf("result.log row = %q", rows[0])
+	}
+}
+
+// After exhausting retries the job should be marked FAIL.
+func TestRunnerRetriesExhausted(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Retries: 2, Template: `echo fail; exit 7`}
+	r := NewRunner(cfg, []string{"a"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	starts := 0
+	var finalEnd Event
+	for ev := range r.Events() {
+		switch ev.Kind {
+		case EventStart:
+			starts++
+		case EventEnd:
+			finalEnd = ev
+		}
+	}
+	if starts != 3 {
+		t.Errorf("starts = %d, want 3 (1 + 2 retries)", starts)
+	}
+	if finalEnd.ExitCode != 7 {
+		t.Errorf("final ExitCode = %d, want 7", finalEnd.ExitCode)
+	}
+	if finalEnd.Attempt != 3 {
+		t.Errorf("Attempt = %d, want 3", finalEnd.Attempt)
+	}
+}
+
+// A job exceeding the per-attempt timeout is killed and retried.
+func TestRunnerTimeoutPerAttempt(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{
+		Parallelism: 1,
+		Retries:     1,
+		Timeout:     300 * time.Millisecond,
+		Template:    `sleep 5`,
+	}
+
+	r := NewRunner(cfg, []string{"a"})
+	start := time.Now()
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	starts := 0
+	var finalEnd Event
+	for ev := range r.Events() {
+		if ev.Kind == EventStart {
+			starts++
+		} else {
+			finalEnd = ev
+		}
+	}
+	elapsed := time.Since(start)
+
+	// Should have attempted twice (initial + 1 retry), each killed at ~300ms.
+	if starts != 2 {
+		t.Errorf("starts = %d, want 2", starts)
+	}
+	if !finalEnd.TimedOut {
+		t.Errorf("TimedOut = false, want true")
+	}
+	if finalEnd.ExitCode == 0 {
+		t.Errorf("ExitCode = 0, want non-zero")
+	}
+	// Sanity: total runtime should be roughly 2 * 300ms, not 2 * 5s.
+	if elapsed > 3*time.Second {
+		t.Errorf("elapsed = %v; timeout didn't fire", elapsed)
+	}
+}
+
 // --fresh truncates existing result.log.
 func TestRunnerFreshTruncates(t *testing.T) {
 	dir := t.TempDir()

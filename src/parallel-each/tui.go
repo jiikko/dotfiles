@@ -49,11 +49,13 @@ func tickEvery(d time.Duration) tea.Cmd {
 // --- model ----------------------------------------------------------------
 
 type slotState struct {
-	Active   bool
-	JobIndex int
-	Line     string
-	Started  time.Time
-	LogPath  string
+	Active      bool
+	JobIndex    int
+	Line        string
+	Started     time.Time // current attempt start
+	LogPath     string
+	Attempt     int
+	MaxAttempts int
 }
 
 type recentEntry struct {
@@ -200,11 +202,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch ev.Kind {
 		case EventStart:
 			m.slots[ev.SlotID] = slotState{
-				Active:   true,
-				JobIndex: ev.JobIndex,
-				Line:     ev.Line,
-				Started:  ev.Started,
-				LogPath:  ev.LogPath,
+				Active:      true,
+				JobIndex:    ev.JobIndex,
+				Line:        ev.Line,
+				Started:     ev.Started,
+				LogPath:     ev.LogPath,
+				Attempt:     ev.Attempt,
+				MaxAttempts: ev.MaxAttempts,
 			}
 		case EventEnd:
 			m.completed++
@@ -261,12 +265,17 @@ func (m model) View() string {
 	elapsed := time.Since(m.startedAt).Round(time.Second)
 	okCount := m.completed - m.failed
 	running := len(m.slots)
-	b.WriteString(fmt.Sprintf("  %s %d/%d   %s %d   %s %d   %s %d   %s %s\n",
+	etaStr := "—"
+	if eta := m.eta(); eta > 0 {
+		etaStr = formatDur(eta)
+	}
+	b.WriteString(fmt.Sprintf("  %s %d/%d   %s %d   %s %d   %s %d   %s %s   %s %s\n",
 		styleHeader.Render("done:"), m.completed, m.total,
 		styleOK.Render("ok:"), okCount,
 		styleFail.Render("fail:"), m.failed,
 		styleRunning.Render("running:"), running,
 		styleDim.Render("elapsed:"), elapsed,
+		styleDim.Render("eta:"), etaStr,
 	))
 	b.WriteString("\n")
 
@@ -311,14 +320,19 @@ func (m model) renderOverview() string {
 		for _, id := range ids {
 			s := m.slots[id]
 			dur := now.Sub(s.Started).Round(100 * time.Millisecond)
-			available := m.width - 22
+			retryTag := ""
+			if s.Attempt > 1 {
+				retryTag = "  " + styleFail.Render(fmt.Sprintf("retry %d/%d", s.Attempt-1, s.MaxAttempts-1))
+			}
+			available := m.width - 22 - visibleLen(retryTag)
 			if available < 10 {
 				available = 10
 			}
-			b.WriteString(fmt.Sprintf("    %s %s %s\n",
+			b.WriteString(fmt.Sprintf("    %s %s %s%s\n",
 				styleRunning.Render(fmt.Sprintf("▶ [%d]", id)),
 				styleDim.Render(fmt.Sprintf("%6s", formatDur(dur))),
 				truncate(s.Line, available),
+				retryTag,
 			))
 			// Inline tail (feature A).
 			lines := m.tails[id]
@@ -463,6 +477,54 @@ func sortedSlotIDs(m map[int]slotState) []int {
 	}
 	sort.Ints(ids)
 	return ids
+}
+
+// eta returns an estimate of remaining wall-clock time based on the average
+// duration of recent completions. Returns 0 when no data is available.
+func (m model) eta() time.Duration {
+	if m.completed == 0 || m.completed >= m.total {
+		return 0
+	}
+	var totalDur time.Duration
+	count := 0
+	for _, r := range m.recent {
+		totalDur += r.Duration
+		count++
+	}
+	if count == 0 {
+		return 0
+	}
+	avg := totalDur / time.Duration(count)
+	remaining := m.total - m.completed
+	par := m.cfg.Parallelism
+	if par <= 0 || par > remaining {
+		par = remaining
+	}
+	if par == 0 {
+		return 0
+	}
+	return time.Duration(remaining) * avg / time.Duration(par)
+}
+
+// visibleLen returns the visible column width of s, ignoring ANSI escape
+// sequences from lipgloss styling.
+func visibleLen(s string) int {
+	n := 0
+	inEsc := false
+	for _, r := range s {
+		if r == '\x1b' {
+			inEsc = true
+			continue
+		}
+		if inEsc {
+			if r == 'm' {
+				inEsc = false
+			}
+			continue
+		}
+		n++
+	}
+	return n
 }
 
 func (m model) renderProgress(width int) string {

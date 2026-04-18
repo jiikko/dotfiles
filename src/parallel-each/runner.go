@@ -265,88 +265,156 @@ func (r *Runner) Start(parent context.Context) error {
 	return nil
 }
 
-func (r *Runner) runOne(ctx context.Context, slotID, index int, line string) {
-	started := time.Now()
+func (r *Runner) runOne(_ context.Context, slotID, index int, line string) {
+	overallStart := time.Now()
 	idxStr := fmt.Sprintf("%0*d", r.width, index)
 	safe := escapeFilename(line)
 	logPath := filepath.Join(logDir, idxStr+"-"+safe+".log")
 	logAbs := filepath.Join(r.logDirAbs, filepath.Base(logPath))
 
 	resolved := strings.ReplaceAll(r.cfg.Template, "{item}", line)
+	shellCmd := buildShellCommand(r.cfg.Template)
 
-	r.events <- Event{
-		Kind:     EventStart,
-		SlotID:   slotID,
-		JobIndex: index,
-		Total:    len(r.lines),
-		Line:     line,
-		Started:  started,
-		LogPath:  logAbs,
+	maxAttempts := r.cfg.Retries + 1
+	if maxAttempts < 1 {
+		maxAttempts = 1
 	}
 
+	// Create log file once; retries append to the same file.
 	logFile, err := os.Create(logPath)
 	if err != nil {
 		r.events <- Event{
 			Kind: EventEnd, SlotID: slotID, JobIndex: index, Total: len(r.lines),
-			Line: line, Started: started, Ended: time.Now(),
+			Line: line, Started: overallStart, Ended: time.Now(),
 			ExitCode: -1, LogPath: logAbs, Err: err,
+			Attempt: 1, MaxAttempts: maxAttempts,
 		}
 		r.appendResult("FAIL", -1, line, logAbs)
 		return
 	}
+	defer logFile.Close()
 
-	// Header.
 	fmt.Fprintf(logFile, "# item: %s\n", line)
 	fmt.Fprintf(logFile, "# cmd: %s\n", resolved)
-	fmt.Fprintf(logFile, "# time: %s\n", started.Format(time.RFC3339))
+	fmt.Fprintf(logFile, "# time: %s\n", overallStart.Format(time.RFC3339))
+	if r.cfg.Timeout > 0 {
+		fmt.Fprintf(logFile, "# timeout: %s  retries: %d\n", r.cfg.Timeout, r.cfg.Retries)
+	}
 	fmt.Fprintln(logFile, "---")
 
-	shellCmd := buildShellCommand(r.cfg.Template)
-	cmd := exec.CommandContext(ctx, "sh", "-c", shellCmd, "_", line)
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-	// Put the child in its own process group so we can signal it cleanly on cancel.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
+	var (
+		finalExitCode = -1
+		finalErr      error
+		finalTimedOut bool
+		attempt       int
+	)
+
+	for attempt = 1; attempt <= maxAttempts; attempt++ {
+		// Honour an external graceful-stop request between attempts.
+		if attempt > 1 && r.stopCtx.Err() != nil {
+			break
+		}
+
+		attemptStart := time.Now()
+		r.events <- Event{
+			Kind:        EventStart,
+			SlotID:      slotID,
+			JobIndex:    index,
+			Total:       len(r.lines),
+			Line:        line,
+			Started:     attemptStart,
+			LogPath:     logAbs,
+			Attempt:     attempt,
+			MaxAttempts: maxAttempts,
+		}
+
+		if attempt > 1 {
+			fmt.Fprintf(logFile, "\n=== retry %d/%d (previous exit=%d%s) ===\n",
+				attempt-1, maxAttempts-1, finalExitCode, timedOutSuffix(finalTimedOut))
+		}
+
+		// Each attempt gets its own timeout context derived from killCtx.
+		var cmdCtx context.Context
+		var cancelTO context.CancelFunc
+		if r.cfg.Timeout > 0 {
+			cmdCtx, cancelTO = context.WithTimeout(r.killCtx, r.cfg.Timeout)
+		} else {
+			cmdCtx, cancelTO = context.WithCancel(r.killCtx)
+		}
+
+		cmd := exec.CommandContext(cmdCtx, "sh", "-c", shellCmd, "_", line)
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.Cancel = func() error {
+			if cmd.Process == nil {
+				return nil
+			}
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 			return nil
 		}
-		// Signal the whole process group.
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
-		return nil
-	}
 
-	runErr := cmd.Run()
-	ended := time.Now()
-	logFile.Close()
+		runErr := cmd.Run()
+		cancelTO()
 
-	exitCode := 0
-	if runErr != nil {
-		if ee, ok := runErr.(*exec.ExitError); ok {
-			exitCode = ee.ExitCode()
-		} else {
-			exitCode = -1
+		exitCode := 0
+		if runErr != nil {
+			if ee, ok := runErr.(*exec.ExitError); ok {
+				exitCode = ee.ExitCode()
+			} else {
+				exitCode = -1
+			}
+		}
+		// Distinguish timeout from user-initiated kill.
+		timedOut := cmdCtx.Err() == context.DeadlineExceeded && r.killCtx.Err() == nil
+
+		finalExitCode = exitCode
+		finalErr = runErr
+		finalTimedOut = timedOut
+
+		// Success or externally cancelled: no more attempts.
+		if exitCode == 0 {
+			break
+		}
+		if r.killCtx.Err() != nil || r.stopCtx.Err() != nil {
+			break
 		}
 	}
 
+	// Cap the attempt counter at what actually ran (in case we bailed early).
+	if attempt > maxAttempts {
+		attempt = maxAttempts
+	}
+
+	ended := time.Now()
 	tag := "ok"
-	if exitCode != 0 {
+	if finalExitCode != 0 {
 		tag = "FAIL"
 	}
-	r.appendResult(tag, exitCode, line, logAbs)
+	r.appendResult(tag, finalExitCode, line, logAbs)
 
 	r.events <- Event{
-		Kind:     EventEnd,
-		SlotID:   slotID,
-		JobIndex: index,
-		Total:    len(r.lines),
-		Line:     line,
-		Started:  started,
-		Ended:    ended,
-		ExitCode: exitCode,
-		LogPath:  logAbs,
-		Err:      runErr,
+		Kind:        EventEnd,
+		SlotID:      slotID,
+		JobIndex:    index,
+		Total:       len(r.lines),
+		Line:        line,
+		Started:     overallStart,
+		Ended:       ended,
+		ExitCode:    finalExitCode,
+		LogPath:     logAbs,
+		Err:         finalErr,
+		Attempt:     attempt,
+		MaxAttempts: maxAttempts,
+		TimedOut:    finalTimedOut,
 	}
+}
+
+func timedOutSuffix(timedOut bool) string {
+	if timedOut {
+		return " TIMEOUT"
+	}
+	return ""
 }
 
 func (r *Runner) appendResult(tag string, exitCode int, line, logAbs string) {
