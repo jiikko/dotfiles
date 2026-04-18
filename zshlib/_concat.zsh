@@ -26,10 +26,14 @@ concat — 複数の動画ファイルを無劣化で結合します。
   concat <ディレクトリ>
   concat --force <ファイル1> <ファイル2> ...
   concat --verbose <ファイル1> <ファイル2> ...
+  concat --keep <ファイル1> <ファイル2> ...
 
   例:
-    # 連番ファイルを結合
+    # 連番ファイルを結合（元ファイルはデフォルトで削除される）
     concat video_001.mp4 video_002.mp4 video_003.mp4
+
+    # 元ファイルを残す
+    concat --keep video_001.mp4 video_002.mp4
 
     # 複数グループを自動検出して結合
     concat clip_01.mp4 clip_02.mp4 scene_1.mp4 scene_2.mp4
@@ -45,6 +49,7 @@ concat — 複数の動画ファイルを無劣化で結合します。
   --force: コーデック不一致でも強制的に結合を実行します（結果は保証されません）。
   --verbose: 検査途中の詳細ログを表示します。
   --dryrun: 実際の結合を行わず、検証結果のみ表示します。
+  --keep: 結合成功後も元ファイルを削除せず残します（デフォルトは削除）。
 
 入力:
   - 2つ以上の動画ファイルパス
@@ -59,8 +64,9 @@ concat — 複数の動画ファイルを無劣化で結合します。
     例: video_001.mp4, video_002.mp4 → video.mp4
 
 注意:
-  - ファイル指定モード: 元ファイルは削除されません。
-  - ディレクトリモード: 結合成功後、元ファイルは自動的に削除されます。
+  - デフォルト: 結合成功後、元ファイルは自動的に削除されます。
+  - 既存の出力ファイルがあってスキップされた場合は削除しません。
+  - --dryrun 指定時は削除されません。
 EOF
     return 0
   fi
@@ -69,11 +75,13 @@ EOF
   local force_mode=0
   local verbose_mode=0
   local dryrun_mode=0
+  local keep_mode=0
   while [[ "$1" == --* ]]; do
     case "$1" in
       --force)   force_mode=1; shift ;;
       --verbose) verbose_mode=1; shift ;;
       --dryrun)  dryrun_mode=1; shift ;;
+      --keep)    keep_mode=1; shift ;;
       *) break ;;
     esac
   done
@@ -85,6 +93,7 @@ EOF
     (( force_mode )) && _opts+=(--force)
     (( verbose_mode )) && _opts+=(--verbose)
     (( dryrun_mode )) && _opts+=(--dryrun)
+    (( keep_mode )) && _opts+=(--keep)
 
     # ディレクトリ内の動画ファイルを収集（非再帰）
     local -a video_files=()
@@ -140,14 +149,9 @@ EOF
       print -r -- "グループ ${_total}: ${sorted_group[1]:t} 他${#sorted_group[@]}ファイル"
       print -r -- "=========================================="
 
+      # 単一グループ側で削除処理を行うため、ここでは削除しない
       if concat "${_opts[@]}" "${sorted_group[@]}"; then
         _ok=$((_ok + 1))
-        if (( ! dryrun_mode )); then
-          print -r -- ">> 元ファイルを削除中..."
-          for _f in "${sorted_group[@]}"; do
-            rm -f -- "$_f" && print -r -- "   削除: ${_f:t}"
-          done
-        fi
       else
         _fail=$((_fail + 1))
       fi
@@ -210,6 +214,7 @@ EOF
       (( force_mode )) && _mg_opts+=(--force)
       (( verbose_mode )) && _mg_opts+=(--verbose)
       (( dryrun_mode )) && _mg_opts+=(--dryrun)
+      (( keep_mode )) && _mg_opts+=(--keep)
 
       local _mg_total=0 _mg_ok=0 _mg_fail=0
       local -a _mg_group_files _mg_sorted_group
@@ -720,5 +725,16 @@ EOF
     (( idx++ ))
   done
   print -r -- "✅ 完了: $output_path"
+
+  # 元ファイル削除（デフォルト動作、--keep / --dryrun 指定時はスキップ）
+  if (( ! keep_mode )) && (( ! dryrun_mode )); then
+    print -r -- ">> 元ファイルを削除中..."
+    for file in "${sorted_files[@]}"; do
+      if rm -f -- "$file"; then
+        print -r -- "   削除: ${file:t}"
+      fi
+    done
+  fi
+
   return 0
 }
