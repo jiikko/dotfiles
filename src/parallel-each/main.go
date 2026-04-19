@@ -97,6 +97,11 @@ LIVE ADD (TUI only)
   line. Enter pushes it into the live queue; esc / ctrl-c cancels; ctrl-u
   clears the buffer; backspace deletes.
 
+  Paste multi-line text directly into the prompt: each line is auto-submitted
+  as a separate queue item. A trailing partial line (without newline) stays
+  in the buffer for you to finish or clear. A single batch flash message
+  reports counts of added / duplicate / failed.
+
   Added items are checked against the resume set and the current queue — a
   duplicate is rejected with an inline error flash. Each accepted item gets
   the next sequential job number and its own per-job log, and a row in

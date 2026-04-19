@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -517,6 +518,148 @@ func TestTUIModelRecentIgnoredWhenEmpty(t *testing.T) {
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	if u.(model).recentMode {
 		t.Error("r should be ignored when recent is empty")
+	}
+}
+
+// Pasting multi-line text auto-submits each complete line; trailing partial
+// line (without newline) stays in the buffer.
+func TestTUIModelMultilinePasteSubmitsEachLine(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 2, Template: `sleep 5`}
+	r := NewRunner(cfg, []string{"existing"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+	// Open input mode.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = u.(model)
+
+	// Simulate a paste with 3 newline-terminated lines + one trailing partial.
+	paste := []rune("alpha\nbeta gamma\nhttps://example.com/x\npartial")
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: paste})
+	m = u.(model)
+
+	if !m.inputMode {
+		t.Fatal("input mode should remain active after multi-line paste")
+	}
+	if string(m.inputBuf) != "partial" {
+		t.Errorf("trailing partial = %q, want %q", string(m.inputBuf), "partial")
+	}
+	if m.addedLive != 3 {
+		t.Errorf("addedLive = %d, want 3", m.addedLive)
+	}
+	if r.AddedCount() != 3 {
+		t.Errorf("runner.AddedCount = %d, want 3", r.AddedCount())
+	}
+	if m.total != 4 { // 1 original + 3 added
+		t.Errorf("total = %d, want 4", m.total)
+	}
+}
+
+// Pasted lines mixed with duplicates report aggregate counts.
+func TestTUIModelMultilinePasteMixedResults(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `sleep 5`}
+	r := NewRunner(cfg, []string{"existing"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = u.(model)
+
+	// "existing" is a duplicate; "" (blank between \n\n) is skipped.
+	paste := []rune("new1\nexisting\n\nnew2\n")
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: paste})
+	m = u.(model)
+
+	if m.addedLive != 2 {
+		t.Errorf("addedLive = %d, want 2 (new1, new2)", m.addedLive)
+	}
+	if !strings.Contains(m.flashMsg, "added 2") {
+		t.Errorf("flash = %q, want '... added 2 ...'", m.flashMsg)
+	}
+	if !strings.Contains(m.flashMsg, "duplicate 1") {
+		t.Errorf("flash = %q, want '... duplicate 1 ...'", m.flashMsg)
+	}
+}
+
+// CRLF line endings are handled the same as LF.
+func TestTUIModelMultilinePasteCRLF(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `sleep 5`}
+	r := NewRunner(cfg, []string{"existing"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = u.(model)
+
+	paste := []rune("first\r\nsecond\r\n")
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: paste})
+	m = u.(model)
+
+	if r.AddedCount() != 2 {
+		t.Errorf("AddedCount = %d, want 2", r.AddedCount())
+	}
+}
+
+func TestContainsNewline(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"hello", false},
+		{"hello\nworld", true},
+		{"hello\r", true},
+		{"", false},
+		{"\n", true},
+	}
+	for _, c := range cases {
+		if got := containsNewline([]rune(c.in)); got != c.want {
+			t.Errorf("containsNewline(%q) = %v, want %v", c.in, got, c.want)
+		}
 	}
 }
 

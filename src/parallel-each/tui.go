@@ -352,6 +352,8 @@ func (m model) View() string {
 		b.WriteString(string(m.inputBuf))
 		b.WriteString(styleRunning.Render("▌"))
 		b.WriteString("\n")
+		b.WriteString(styleDim.Render("    tip: paste multiple lines to enqueue them at once"))
+		b.WriteString("\n")
 		b.WriteString(styleKey.Render("  enter: submit   esc: cancel   ctrl-u: clear"))
 		b.WriteString("\n")
 		return b.String()
@@ -546,6 +548,11 @@ func (m model) renderFocus() string {
 }
 
 // handleInputKey processes keystrokes while the add-item prompt is active.
+//
+// Enter submits the current buffer as a single item and exits input mode.
+// KeyRunes containing newline characters (from a multi-line paste) are split
+// on each '\n' / '\r' and submitted one at a time; input mode stays open so
+// the user can paste or type more.
 func (m model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter:
@@ -555,13 +562,7 @@ func (m model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if line == "" {
 			return m, nil
 		}
-		if err := m.runner.Enqueue(line); err != nil {
-			m.setFlash("✗ "+err.Error(), true)
-		} else {
-			m.addedLive++
-			m.total++
-			m.setFlash(fmt.Sprintf("✓ added: %s", truncate(line, 60)), false)
-		}
+		m.submitLine(line, false)
 		return m, nil
 	case tea.KeyEsc, tea.KeyCtrlC:
 		m.inputMode = false
@@ -576,13 +577,102 @@ func (m model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.inputBuf = m.inputBuf[:0]
 		return m, nil
 	case tea.KeyRunes:
-		m.inputBuf = append(m.inputBuf, msg.Runes...)
+		if !containsNewline(msg.Runes) {
+			m.inputBuf = append(m.inputBuf, msg.Runes...)
+			return m, nil
+		}
+		m = m.consumePastedRunes(msg.Runes)
 		return m, nil
 	case tea.KeySpace:
 		m.inputBuf = append(m.inputBuf, ' ')
 		return m, nil
 	}
 	return m, nil
+}
+
+func containsNewline(rs []rune) bool {
+	for _, r := range rs {
+		if r == '\n' || r == '\r' {
+			return true
+		}
+	}
+	return false
+}
+
+// consumePastedRunes splits the input on '\n' / '\r', submitting each non-
+// empty segment via Enqueue. The final segment (after the last newline) stays
+// in inputBuf so the user can finish typing it. Input mode is preserved.
+func (m model) consumePastedRunes(rs []rune) model {
+	var ok, dup, fail int
+	for _, r := range rs {
+		if r == '\n' || r == '\r' {
+			line := strings.TrimSpace(string(m.inputBuf))
+			m.inputBuf = m.inputBuf[:0]
+			if line == "" {
+				continue
+			}
+			switch result := m.submitLine(line, true); result {
+			case submitOK:
+				ok++
+			case submitDuplicate:
+				dup++
+			case submitError:
+				fail++
+			}
+		} else {
+			m.inputBuf = append(m.inputBuf, r)
+		}
+	}
+	m = m.flashBatch(ok, dup, fail)
+	return m
+}
+
+type submitResult int
+
+const (
+	submitOK submitResult = iota
+	submitDuplicate
+	submitError
+)
+
+// submitLine enqueues one line into the runner. If batch is true the caller
+// aggregates flash messages itself; otherwise an individual flash is set.
+func (m *model) submitLine(line string, batch bool) submitResult {
+	err := m.runner.Enqueue(line)
+	if err == nil {
+		m.addedLive++
+		m.total++
+		if !batch {
+			m.setFlash(fmt.Sprintf("✓ added: %s", truncate(line, 60)), false)
+		}
+		return submitOK
+	}
+	dup := strings.Contains(err.Error(), "duplicate")
+	if !batch {
+		m.setFlash("✗ "+err.Error(), true)
+	}
+	if dup {
+		return submitDuplicate
+	}
+	return submitError
+}
+
+func (m model) flashBatch(ok, dup, fail int) model {
+	if ok+dup+fail == 0 {
+		return m
+	}
+	parts := []string{}
+	if ok > 0 {
+		parts = append(parts, fmt.Sprintf("✓ added %d", ok))
+	}
+	if dup > 0 {
+		parts = append(parts, fmt.Sprintf("↻ duplicate %d", dup))
+	}
+	if fail > 0 {
+		parts = append(parts, fmt.Sprintf("✗ failed %d", fail))
+	}
+	m.setFlash(strings.Join(parts, ", "), fail > 0)
+	return m
 }
 
 // handleRecentKey processes keystrokes while the full recent view is open.
