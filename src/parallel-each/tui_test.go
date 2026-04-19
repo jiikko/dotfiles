@@ -645,8 +645,8 @@ func TestTUIModelMultilinePasteCRLF(t *testing.T) {
 	}
 }
 
-// +/= increases parallelism; - decreases (with floor 1).
-func TestTUIModelParallelismKeys(t *testing.T) {
+// 'p' opens parallelism input; Enter confirms twice to apply.
+func TestTUIModelParallelismFlow(t *testing.T) {
 	dir := t.TempDir()
 	cwd, _ := os.Getwd()
 	defer os.Chdir(cwd)
@@ -670,34 +670,150 @@ func TestTUIModelParallelismKeys(t *testing.T) {
 		t.Fatalf("initial par = %d, want 2", m.par)
 	}
 
-	// '+' -> 3
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'+'}})
+	// 'p' opens input mode.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
 	m = u.(model)
-	if m.par != 3 || r.Parallelism() != 3 {
-		t.Errorf("after +: model=%d runner=%d, want 3/3", m.par, r.Parallelism())
+	if !m.parInputMode {
+		t.Fatal("parInputMode should be true after 'p'")
 	}
 
-	// '=' also grows
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'='}})
+	// Type "6".
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'6'}})
 	m = u.(model)
-	if m.par != 4 {
-		t.Errorf("after =: par=%d, want 4", m.par)
+	if string(m.parInputBuf) != "6" {
+		t.Fatalf("parInputBuf = %q, want %q", string(m.parInputBuf), "6")
 	}
 
-	// '-' -> 3
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'-'}})
+	// Enter → confirm step (does not apply yet).
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = u.(model)
-	if m.par != 3 {
-		t.Errorf("after -: par=%d, want 3", m.par)
+	if m.parInputMode {
+		t.Error("parInputMode should be false after Enter")
+	}
+	if !m.parConfirmMode {
+		t.Fatal("parConfirmMode should be true")
+	}
+	if m.parPending != 6 {
+		t.Errorf("parPending = %d, want 6", m.parPending)
+	}
+	if r.Parallelism() != 2 {
+		t.Errorf("runner par changed too early: %d", r.Parallelism())
 	}
 
-	// Shrink to floor.
-	for i := 0; i < 10; i++ {
-		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'-'}})
+	// Enter again → apply.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(model)
+	if m.parConfirmMode {
+		t.Error("parConfirmMode should be false after apply")
+	}
+	if m.par != 6 || r.Parallelism() != 6 {
+		t.Errorf("after apply: model=%d runner=%d, want 6/6", m.par, r.Parallelism())
+	}
+}
+
+// Esc at either step cancels without applying.
+func TestTUIModelParallelismCancel(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 2, Template: `sleep 5`}
+	r := NewRunner(cfg, []string{"a", "b"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 2, r.Events(), r, 0)
+
+	// Open, type, then Esc at input step.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	m = u.(model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'9'}})
+	m = u.(model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(model)
+	if m.parInputMode || m.parConfirmMode {
+		t.Error("Esc at input step should exit")
+	}
+	if r.Parallelism() != 2 {
+		t.Errorf("runner par changed on cancel: %d", r.Parallelism())
+	}
+
+	// Open, Enter, then Esc at confirm step.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	m = u.(model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'9'}})
+	m = u.(model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(model)
+	if !m.parConfirmMode {
+		t.Fatal("should be in confirm step")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(model)
+	if m.parConfirmMode {
+		t.Error("Esc at confirm step should exit")
+	}
+	if r.Parallelism() != 2 {
+		t.Errorf("runner par changed on confirm-cancel: %d", r.Parallelism())
+	}
+}
+
+// Input validation: non-digit letters are ignored, 0 is rejected.
+func TestTUIModelParallelismValidation(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 2, Template: `sleep 5`}
+	r := NewRunner(cfg, []string{"a"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+
+	// Non-digit keys are ignored in input mode.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	m = u.(model)
+	for _, ch := range "abc1x2" {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
 		m = u.(model)
 	}
-	if m.par != 1 {
-		t.Errorf("floor par = %d, want 1", m.par)
+	if string(m.parInputBuf) != "12" {
+		t.Errorf("parInputBuf = %q, want %q", string(m.parInputBuf), "12")
+	}
+
+	// Entering 0 is rejected with a flash.
+	for len(m.parInputBuf) > 0 {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		m = u.(model)
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'0'}})
+	m = u.(model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(model)
+	if m.parConfirmMode {
+		t.Error("0 should not enter confirm mode")
+	}
+	if !m.flashErr {
+		t.Error("expected error flash")
 	}
 }
 

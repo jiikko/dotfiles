@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,9 +81,15 @@ type model struct {
 	activeStart time.Time
 	accumActive time.Duration
 
-	// Current target parallelism (mirror of runner). Adjustable at runtime
-	// with the +/- keys.
+	// Current target parallelism (mirror of runner).
 	par int
+
+	// Parallelism change state: 'p' opens an input prompt for a new value;
+	// Enter moves to a confirmation step; Enter there applies the change.
+	parInputMode   bool
+	parInputBuf    []rune
+	parConfirmMode bool
+	parPending     int
 
 	// Tails captured from each active slot's log file.
 	tails          map[int][]string // slotID -> last N lines
@@ -210,11 +217,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// Input mode captures almost every key as text.
+		// Modal handlers take priority over the regular key map.
 		if m.inputMode {
 			return m.handleInputKey(msg)
 		}
-		// Recent-full mode has its own navigation keys.
+		if m.parConfirmMode {
+			return m.handleParConfirmKey(msg)
+		}
+		if m.parInputMode {
+			return m.handleParInputKey(msg)
+		}
 		if m.recentMode {
 			return m.handleRecentKey(msg)
 		}
@@ -237,18 +249,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.flashMsg = ""
 			}
 			return m, nil
-		case "+", "=":
-			if m.runner != nil && !m.stopping {
-				m.par++
-				m.runner.SetParallelism(m.par)
-				m.setFlash(fmt.Sprintf("↑ parallelism: %d", m.par), false)
-			}
-			return m, nil
-		case "-", "_":
-			if m.runner != nil && !m.stopping && m.par > 1 {
-				m.par--
-				m.runner.SetParallelism(m.par)
-				m.setFlash(fmt.Sprintf("↓ parallelism: %d (excess workers retire after current job)", m.par), false)
+		case "p":
+			// Enter parallelism-change mode.
+			if m.runner != nil && !m.stopping && m.focusSlot == 0 {
+				m.parInputMode = true
+				m.parInputBuf = m.parInputBuf[:0]
 			}
 			return m, nil
 		case "r":
@@ -424,6 +429,39 @@ func (m model) View() string {
 		return b.String()
 	}
 
+	// Parallelism change: step 1 (type number).
+	if m.parInputMode {
+		b.WriteString("  ")
+		b.WriteString(styleHeader.Render(fmt.Sprintf("set parallelism (current: %d):", m.par)))
+		b.WriteString(" ")
+		b.WriteString(string(m.parInputBuf))
+		b.WriteString(styleRunning.Render("▌"))
+		b.WriteString("\n")
+		b.WriteString(styleKey.Render("  enter: continue   esc: cancel"))
+		b.WriteString("\n")
+		return b.String()
+	}
+
+	// Parallelism change: step 2 (confirm).
+	if m.parConfirmMode {
+		delta := m.parPending - m.par
+		arrow := "↑"
+		tail := "A new worker will start immediately."
+		if delta < 0 {
+			arrow = "↓"
+			tail = "Excess workers retire gracefully after their current job — running jobs are never interrupted."
+		}
+		b.WriteString("  ")
+		b.WriteString(styleHeader.Render("confirm parallelism change:"))
+		b.WriteString(fmt.Sprintf(" %s  %d → %d\n", arrow, m.par, m.parPending))
+		b.WriteString("    ")
+		b.WriteString(styleDim.Render(tail))
+		b.WriteString("\n")
+		b.WriteString(styleKey.Render("  enter: apply   esc: cancel"))
+		b.WriteString("\n")
+		return b.String()
+	}
+
 	if m.stopping {
 		if running > 0 {
 			b.WriteString(styleFail.Render(fmt.Sprintf(
@@ -436,9 +474,9 @@ func (m model) View() string {
 	} else if m.focusSlot != 0 {
 		b.WriteString(styleKey.Render("  esc / 0: back to overview   a: add item   q / ctrl-c: stop"))
 	} else if m.completed >= m.total && running == 0 {
-		b.WriteString(styleKey.Render("  all done — a: add   +/-: par   r: recent   q: exit"))
+		b.WriteString(styleKey.Render("  all done — a: add   p: par   r: recent   q: exit"))
 	} else {
-		b.WriteString(styleKey.Render("  1-9: focus   a: add   +/-: par   r: recent   q: stop"))
+		b.WriteString(styleKey.Render("  1-9: focus   a: add   p: par   r: recent   q: stop"))
 	}
 	b.WriteString("\n")
 
@@ -739,6 +777,71 @@ func (m model) flashBatch(ok, dup, fail int) model {
 	}
 	m.setFlash(strings.Join(parts, ", "), fail > 0)
 	return m
+}
+
+// handleParInputKey captures digits for the new parallelism value.
+// Enter validates and transitions to confirmation; Esc cancels.
+func (m model) handleParInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		raw := strings.TrimSpace(string(m.parInputBuf))
+		m.parInputMode = false
+		m.parInputBuf = m.parInputBuf[:0]
+		if raw == "" {
+			return m, nil
+		}
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			m.setFlash(fmt.Sprintf("✗ invalid parallelism: %q", raw), true)
+			return m, nil
+		}
+		if n == m.par {
+			m.setFlash(fmt.Sprintf("parallelism already %d — no change", n), false)
+			return m, nil
+		}
+		m.parPending = n
+		m.parConfirmMode = true
+		return m, nil
+	case tea.KeyEsc, tea.KeyCtrlC:
+		m.parInputMode = false
+		m.parInputBuf = m.parInputBuf[:0]
+		return m, nil
+	case tea.KeyBackspace, tea.KeyCtrlH:
+		if n := len(m.parInputBuf); n > 0 {
+			m.parInputBuf = m.parInputBuf[:n-1]
+		}
+		return m, nil
+	case tea.KeyRunes:
+		for _, r := range msg.Runes {
+			if r >= '0' && r <= '9' {
+				m.parInputBuf = append(m.parInputBuf, r)
+			}
+		}
+		return m, nil
+	}
+	return m, nil
+}
+
+// handleParConfirmKey asks the user to confirm (Enter) or cancel (Esc) a
+// pending parallelism change.
+func (m model) handleParConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		old := m.par
+		m.runner.SetParallelism(m.parPending)
+		m.par = m.parPending
+		m.parConfirmMode = false
+		if m.par > old {
+			m.setFlash(fmt.Sprintf("↑ parallelism: %d → %d (new worker started)", old, m.par), false)
+		} else {
+			m.setFlash(fmt.Sprintf("↓ parallelism: %d → %d (excess workers retire gracefully)", old, m.par), false)
+		}
+		return m, nil
+	case tea.KeyEsc, tea.KeyCtrlC:
+		m.parConfirmMode = false
+		return m, nil
+	}
+	return m, nil
 }
 
 // handleRecentKey processes keystrokes while the full recent view is open.
