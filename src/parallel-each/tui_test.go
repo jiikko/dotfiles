@@ -788,7 +788,8 @@ func TestTUIModelExportStripsSlashes(t *testing.T) {
 	}
 }
 
-// renderWrapper produces a wrapper with the expected flag set.
+// renderWrapper produces a wrapper with the expected flag set and invokes
+// `parallel-each` via PATH (not an absolute path).
 func TestRenderWrapperIncludesNonDefaultFlags(t *testing.T) {
 	cfg := Config{
 		Parallelism:     8,
@@ -805,6 +806,7 @@ func TestRenderWrapperIncludesNonDefaultFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	wants := []string{
+		"exec parallel-each",
 		"-P 8",
 		"--attempt-timeout 30s",
 		"--total-timeout 1h0m0s",
@@ -819,6 +821,10 @@ func TestRenderWrapperIncludesNonDefaultFlags(t *testing.T) {
 		if !strings.Contains(out, w) {
 			t.Errorf("wrapper missing %q:\n%s", w, out)
 		}
+	}
+	// Should NOT embed an absolute path to the binary.
+	if strings.Contains(out, "/parallel-each") {
+		t.Errorf("wrapper should not hard-code an absolute path to parallel-each:\n%s", out)
 	}
 }
 
