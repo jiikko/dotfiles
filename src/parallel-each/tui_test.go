@@ -645,6 +645,204 @@ func TestTUIModelMultilinePasteCRLF(t *testing.T) {
 	}
 }
 
+// 'o' opens the other menu; '1' transitions into the export prompt;
+// typing a name + Enter writes a wrapper.
+func TestTUIModelExportWrapperFlow(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	// Override writeWrapperFn to capture the output instead of writing to disk.
+	var capturedPath, capturedContent string
+	orig := writeWrapperFn
+	writeWrapperFn = func(path, content string) error {
+		capturedPath = path
+		capturedContent = content
+		return nil
+	}
+	defer func() { writeWrapperFn = orig }()
+
+	cfg := Config{
+		Parallelism:    4,
+		File:           "urls.txt",
+		Template:       "dm {item}",
+		AttemptTimeout: time.Hour,
+		Retries:        5,
+	}
+	r := NewRunner(cfg, []string{"a"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+
+	// 'o' opens the menu.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	m = u.(model)
+	if !m.otherMenu {
+		t.Fatal("expected otherMenu=true after 'o'")
+	}
+
+	// '1' transitions to export input.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+	m = u.(model)
+	if m.otherMenu {
+		t.Error("otherMenu should close after selection")
+	}
+	if !m.exportInput {
+		t.Fatal("expected exportInput=true")
+	}
+
+	// Type a filename.
+	for _, ch := range "my-dm" {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		m = u.(model)
+	}
+
+	// Enter writes the wrapper.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(model)
+	if m.exportInput {
+		t.Error("exportInput should be false after Enter")
+	}
+	if capturedPath == "" {
+		t.Fatal("writeWrapperFn was not called")
+	}
+	if !strings.HasSuffix(capturedPath, "/my-dm") {
+		t.Errorf("captured path = %q, want to end with /my-dm", capturedPath)
+	}
+	if !strings.Contains(capturedContent, "-P 4") {
+		t.Errorf("wrapper missing -P flag: %q", capturedContent)
+	}
+	if !strings.Contains(capturedContent, "--attempt-timeout 1h0m0s") {
+		t.Errorf("wrapper missing attempt-timeout: %q", capturedContent)
+	}
+	if !strings.Contains(capturedContent, "'dm {item}'") {
+		t.Errorf("wrapper missing template: %q", capturedContent)
+	}
+	if !strings.Contains(capturedContent, `"$@"`) {
+		t.Errorf("wrapper missing $@ forwarding: %q", capturedContent)
+	}
+	if m.flashErr {
+		t.Errorf("unexpected error flash: %q", m.flashMsg)
+	}
+}
+
+// Filename with '/' characters is stripped at input time.
+func TestTUIModelExportStripsSlashes(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	called := false
+	orig := writeWrapperFn
+	writeWrapperFn = func(path, content string) error {
+		called = true
+		return nil
+	}
+	defer func() { writeWrapperFn = orig }()
+
+	cfg := Config{Parallelism: 1, File: "x", Template: "echo {item}", AttemptTimeout: time.Second, Retries: 5}
+	r := NewRunner(cfg, []string{"a"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	m = u.(model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+	m = u.(model)
+
+	for _, ch := range "../escape" {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		m = u.(model)
+	}
+	if strings.ContainsAny(string(m.exportBuf), "/\\") {
+		t.Errorf("buffer should not contain slashes: %q", string(m.exportBuf))
+	}
+
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(model)
+	if !called {
+		t.Error("wrapper should have been written with the sanitized name")
+	}
+}
+
+// renderWrapper produces a wrapper with the expected flag set.
+func TestRenderWrapperIncludesNonDefaultFlags(t *testing.T) {
+	cfg := Config{
+		Parallelism:     8,
+		File:            "/tmp/urls.txt",
+		Template:        "dm {item}",
+		AttemptTimeout:  30 * time.Second,
+		TotalTimeout:    time.Hour,
+		Retries:         3,
+		Fresh:           true,
+		SkipUniqueCheck: true,
+	}
+	out, err := renderWrapper(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wants := []string{
+		"-P 8",
+		"--attempt-timeout 30s",
+		"--total-timeout 1h0m0s",
+		"--retries 3",
+		"--fresh",
+		"--skip-unique-txt-rows",
+		"-F '/tmp/urls.txt'",
+		`'dm {item}'`,
+		`"$@"`,
+	}
+	for _, w := range wants {
+		if !strings.Contains(out, w) {
+			t.Errorf("wrapper missing %q:\n%s", w, out)
+		}
+	}
+}
+
+// renderWrapper omits default flag values to keep output minimal.
+func TestRenderWrapperOmitsDefaults(t *testing.T) {
+	cfg := Config{
+		Parallelism:    4,
+		File:           "urls.txt",
+		Template:       "dm {item}",
+		AttemptTimeout: time.Minute,
+		Retries:        5, // default
+	}
+	out, err := renderWrapper(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "--retries") {
+		t.Errorf("wrapper should not emit --retries when it equals the default:\n%s", out)
+	}
+	if strings.Contains(out, "--total-timeout") {
+		t.Errorf("wrapper should not emit --total-timeout when unset:\n%s", out)
+	}
+	if strings.Contains(out, "--fresh") {
+		t.Errorf("wrapper should not emit --fresh when false:\n%s", out)
+	}
+}
+
 // 'p' opens parallelism input; Enter confirms twice to apply.
 func TestTUIModelParallelismFlow(t *testing.T) {
 	dir := t.TempDir()

@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -90,6 +93,12 @@ type model struct {
 	parInputBuf    []rune
 	parConfirmMode bool
 	parPending     int
+
+	// "Other" menu & export-wrapper sub-flow.
+	otherMenu      bool
+	exportInput    bool
+	exportBuf      []rune
+	exportTargetDir string // where the exported wrapper will be written
 
 	// Tails captured from each active slot's log file.
 	tails          map[int][]string // slotID -> last N lines
@@ -227,6 +236,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.parInputMode {
 			return m.handleParInputKey(msg)
 		}
+		if m.exportInput {
+			return m.handleExportKey(msg)
+		}
+		if m.otherMenu {
+			return m.handleOtherMenuKey(msg)
+		}
 		if m.recentMode {
 			return m.handleRecentKey(msg)
 		}
@@ -254,6 +269,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.runner != nil && !m.stopping && m.focusSlot == 0 {
 				m.parInputMode = true
 				m.parInputBuf = m.parInputBuf[:0]
+			}
+			return m, nil
+		case "o":
+			if m.focusSlot == 0 && !m.stopping {
+				m.otherMenu = true
 			}
 			return m, nil
 		case "r":
@@ -442,6 +462,34 @@ func (m model) View() string {
 		return b.String()
 	}
 
+	// Other menu.
+	if m.otherMenu {
+		b.WriteString("  ")
+		b.WriteString(styleHeader.Render("other actions:"))
+		b.WriteString("\n")
+		b.WriteString("    1) Export wrapper script to ")
+		b.WriteString(styleDim.Render(resolveExportDir()))
+		b.WriteString("\n\n")
+		b.WriteString(styleKey.Render("  select a number, or esc to close"))
+		b.WriteString("\n")
+		return b.String()
+	}
+
+	// Export wrapper: filename input.
+	if m.exportInput {
+		b.WriteString("  ")
+		b.WriteString(styleHeader.Render(fmt.Sprintf("wrapper filename (→ %s/):", m.exportTargetDir)))
+		b.WriteString(" ")
+		b.WriteString(string(m.exportBuf))
+		b.WriteString(styleRunning.Render("▌"))
+		b.WriteString("\n")
+		b.WriteString(styleDim.Render("    the wrapper will bake in current -P, --attempt-timeout, -F, and template; extra args forward via $@"))
+		b.WriteString("\n")
+		b.WriteString(styleKey.Render("  enter: write   esc: cancel"))
+		b.WriteString("\n")
+		return b.String()
+	}
+
 	// Parallelism change: step 2 (confirm).
 	if m.parConfirmMode {
 		delta := m.parPending - m.par
@@ -474,9 +522,9 @@ func (m model) View() string {
 	} else if m.focusSlot != 0 {
 		b.WriteString(styleKey.Render("  esc / 0: back to overview   a: add item   q / ctrl-c: stop"))
 	} else if m.completed >= m.total && running == 0 {
-		b.WriteString(styleKey.Render("  all done — a: add   p: par   r: recent   q: exit"))
+		b.WriteString(styleKey.Render("  all done — a: add   p: par   r: recent   o: other   q: exit"))
 	} else {
-		b.WriteString(styleKey.Render("  1-9: focus   a: add   p: par   r: recent   q: stop"))
+		b.WriteString(styleKey.Render("  1-9: focus   a: add   p: par   r: recent   o: other   q: stop"))
 	}
 	b.WriteString("\n")
 
@@ -842,6 +890,165 @@ func (m model) handleParConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+// handleOtherMenuKey handles the numbered menu opened with 'o'. Currently
+// option 1 is the only entry (export wrapper); more can be added later.
+func (m model) handleOtherMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "o", "q":
+		m.otherMenu = false
+		return m, nil
+	case "1":
+		m.otherMenu = false
+		m.exportInput = true
+		m.exportBuf = m.exportBuf[:0]
+		m.exportTargetDir = resolveExportDir()
+		return m, nil
+	}
+	return m, nil
+}
+
+// handleExportKey handles the filename-input prompt for the wrapper export.
+func (m model) handleExportKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		name := strings.TrimSpace(string(m.exportBuf))
+		m.exportInput = false
+		m.exportBuf = m.exportBuf[:0]
+		if name == "" {
+			return m, nil
+		}
+		if strings.ContainsAny(name, `/\`) {
+			m.setFlash("✗ wrapper name cannot contain '/' or '\\'", true)
+			return m, nil
+		}
+		path := filepath.Join(m.exportTargetDir, name)
+		if err := writeWrapper(path, m.cfg); err != nil {
+			m.setFlash("✗ export failed: "+err.Error(), true)
+		} else {
+			m.setFlash("✓ wrote "+path, false)
+		}
+		return m, nil
+	case tea.KeyEsc, tea.KeyCtrlC:
+		m.exportInput = false
+		m.exportBuf = m.exportBuf[:0]
+		return m, nil
+	case tea.KeyBackspace, tea.KeyCtrlH:
+		if n := len(m.exportBuf); n > 0 {
+			m.exportBuf = m.exportBuf[:n-1]
+		}
+		return m, nil
+	case tea.KeyCtrlU:
+		m.exportBuf = m.exportBuf[:0]
+		return m, nil
+	case tea.KeyRunes:
+		// Allow basic filename-safe characters.
+		for _, r := range msg.Runes {
+			if r == '/' || r == '\\' || r == 0 {
+				continue
+			}
+			m.exportBuf = append(m.exportBuf, r)
+		}
+		return m, nil
+	case tea.KeySpace:
+		// Spaces are unusual in wrapper names but allow them; the user can
+		// quote the filename when invoking.
+		m.exportBuf = append(m.exportBuf, ' ')
+		return m, nil
+	}
+	return m, nil
+}
+
+// resolveExportDir picks a reasonable directory to write the wrapper into:
+// the directory of the `parallel-each` found on PATH, else ~/bin.
+func resolveExportDir() string {
+	if p, err := execLookPath("parallel-each"); err == nil {
+		return filepath.Dir(p)
+	}
+	if home, err := osUserHomeDir(); err == nil {
+		return filepath.Join(home, "bin")
+	}
+	return "."
+}
+
+// Indirection for tests.
+var (
+	execLookPath   = exec.LookPath
+	osUserHomeDir  = os.UserHomeDir
+	writeWrapperFn = writeWrapperFile
+)
+
+// writeWrapper generates and writes a wrapper script for the given config.
+func writeWrapper(path string, cfg Config) error {
+	content, err := renderWrapper(cfg)
+	if err != nil {
+		return err
+	}
+	return writeWrapperFn(path, content)
+}
+
+func writeWrapperFile(path, content string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(content), 0o755)
+}
+
+// renderWrapper builds the text of a zsh wrapper that reproduces the given
+// config. The wrapper hard-codes all parameters and forwards extra arguments
+// via "$@" so the user can override or extend at call time.
+func renderWrapper(cfg Config) (string, error) {
+	cmd, err := execLookPath("parallel-each")
+	if err != nil {
+		// Fall back to the running executable.
+		if exe, exErr := os.Executable(); exErr == nil {
+			cmd = exe
+		} else {
+			return "", fmt.Errorf("cannot locate parallel-each: %w", err)
+		}
+	}
+
+	absFile := cfg.File
+	if abs, err := filepath.Abs(cfg.File); err == nil {
+		absFile = abs
+	}
+
+	var args []string
+	args = append(args, fmt.Sprintf("-P %d", cfg.Parallelism))
+	if cfg.AttemptTimeout > 0 {
+		args = append(args, fmt.Sprintf("--attempt-timeout %s", cfg.AttemptTimeout))
+	}
+	if cfg.TotalTimeout > 0 {
+		args = append(args, fmt.Sprintf("--total-timeout %s", cfg.TotalTimeout))
+	}
+	if cfg.Retries != 5 {
+		args = append(args, fmt.Sprintf("--retries %d", cfg.Retries))
+	}
+	if cfg.Fresh {
+		args = append(args, "--fresh")
+	}
+	if cfg.SkipUniqueCheck {
+		args = append(args, "--skip-unique-txt-rows")
+	}
+	args = append(args, "-F "+shellSingleQuote(absFile))
+	args = append(args, shellSingleQuote(cfg.Template))
+
+	var b strings.Builder
+	b.WriteString("#!/usr/bin/env zsh\n")
+	fmt.Fprintf(&b, "# Generated by parallel-each on %s\n", time.Now().Format("2006-01-02"))
+	b.WriteString("# Extra arguments are forwarded via \"$@\"; flags earlier in the line take\n")
+	b.WriteString("# precedence unless you use -- to separate.\n")
+	fmt.Fprintf(&b, "exec %s \\\n    %s \\\n    \"$@\"\n",
+		shellSingleQuote(cmd),
+		strings.Join(args, " \\\n    "))
+	return b.String(), nil
+}
+
+// shellSingleQuote wraps s in single quotes suitable for sh/zsh, escaping
+// any embedded single quotes.
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // handleRecentKey processes keystrokes while the full recent view is open.
