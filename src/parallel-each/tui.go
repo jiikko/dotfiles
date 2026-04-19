@@ -81,6 +81,11 @@ type model struct {
 	focusSlot      int              // slotID under focus; 0 = overview (feature B)
 	focusTailLines int              // tail lines in focus view
 
+	// Resume state: how many input rows were skipped because they were already
+	// present in result.log. Purely informational — the total count already
+	// excludes these.
+	skipped int
+
 	width    int
 	height   int
 	events   <-chan Event
@@ -89,7 +94,7 @@ type model struct {
 	stopping bool // true once a graceful stop has been requested
 }
 
-func newModel(cfg Config, total int, events <-chan Event, runner *Runner) model {
+func newModel(cfg Config, total int, events <-chan Event, runner *Runner, skipped int) model {
 	return model{
 		cfg:            cfg,
 		total:          total,
@@ -102,6 +107,7 @@ func newModel(cfg Config, total int, events <-chan Event, runner *Runner) model 
 		events:         events,
 		runner:         runner,
 		width:          100,
+		skipped:        skipped,
 	}
 }
 
@@ -277,6 +283,10 @@ func (m model) View() string {
 		styleDim.Render("elapsed:"), elapsed,
 		styleDim.Render("eta:"), etaStr,
 	))
+	if m.skipped > 0 {
+		b.WriteString(fmt.Sprintf("  %s %d already in result.log (use --fresh to rerun all)\n",
+			styleDim.Render("resumed — skipped:"), m.skipped))
+	}
 	b.WriteString("\n")
 
 	if m.focusSlot != 0 {
@@ -580,14 +590,14 @@ func formatDur(d time.Duration) string {
 }
 
 // runTUI drives the TUI and blocks until jobs are done (or user quits).
-func runTUI(ctx context.Context, cfg Config, lines []string) int {
+func runTUI(ctx context.Context, cfg Config, lines []string, skipped int) int {
 	r := NewRunner(cfg, lines)
 	if err := r.Start(ctx); err != nil {
 		fmt.Printf("error: %v\n", err)
 		return 1
 	}
 
-	mdl := newModel(cfg, len(lines), r.Events(), r)
+	mdl := newModel(cfg, len(lines), r.Events(), r, skipped)
 	p := tea.NewProgram(mdl, tea.WithAltScreen())
 
 	// Parent context cancel (from external SIGTERM, etc.) triggers force-kill.

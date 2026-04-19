@@ -66,7 +66,7 @@ func TestTUIModelTwoStageShutdown(t *testing.T) {
 	}
 	defer r.ForceKill()
 
-	m := newModel(cfg, 2, r.Events(), r)
+	m := newModel(cfg, 2, r.Events(), r, 0)
 
 	// Press q once: graceful stop requested.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
@@ -120,7 +120,7 @@ func TestTUIModelCtrlCEquivalent(t *testing.T) {
 	}
 	defer r.ForceKill()
 
-	m := newModel(cfg, 1, r.Events(), r)
+	m := newModel(cfg, 1, r.Events(), r, 0)
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if !updated.(model).stopping {
 		t.Fatal("ctrl+c should trigger graceful stop")
@@ -154,7 +154,7 @@ func TestTUIModelFocusKeys(t *testing.T) {
 	}
 	defer r.ForceKill()
 
-	m := newModel(cfg, 2, r.Events(), r)
+	m := newModel(cfg, 2, r.Events(), r, 0)
 	// Seed two active slots.
 	m.slots[1] = slotState{Active: true, JobIndex: 1, Line: "a", LogPath: "/tmp/a.log"}
 	m.slots[2] = slotState{Active: true, JobIndex: 2, Line: "b", LogPath: "/tmp/b.log"}
@@ -226,7 +226,7 @@ func TestTUIModelFocusIgnoresInactive(t *testing.T) {
 	}
 	defer r.ForceKill()
 
-	m := newModel(cfg, 1, r.Events(), r)
+	m := newModel(cfg, 1, r.Events(), r, 0)
 	m.slots[1] = slotState{Active: true, JobIndex: 1, Line: "a"}
 
 	// Pressing '5' when only slot 1 exists should not set focus.
@@ -252,7 +252,7 @@ func TestTUIModelFocusClearsOnEnd(t *testing.T) {
 	}
 	defer r.ForceKill()
 
-	m := newModel(cfg, 1, r.Events(), r)
+	m := newModel(cfg, 1, r.Events(), r, 0)
 	m.slots[1] = slotState{Active: true, JobIndex: 1, Line: "a"}
 	m.focusSlot = 1
 

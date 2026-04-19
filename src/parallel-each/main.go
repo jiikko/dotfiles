@@ -243,6 +243,7 @@ func main() {
 	}
 
 	// Resume support: filter out lines already present in result.log.
+	skipped := 0
 	if !cfg.Fresh {
 		processed, err := loadProcessedLines(filepath.Join(logDir, "result.log"))
 		if err != nil {
@@ -252,13 +253,11 @@ func main() {
 		if len(processed) > 0 {
 			before := len(lines)
 			lines = filterProcessed(lines, processed)
-			skipped := before - len(lines)
-			if skipped > 0 {
-				fmt.Fprintf(os.Stderr, "resuming: skipped %d of %d items already in %s/result.log (use --fresh to rerun all)\n",
-					skipped, before, logDir)
-			}
+			skipped = before - len(lines)
 			if len(lines) == 0 {
-				fmt.Fprintf(os.Stderr, "nothing to do: all items already processed\n")
+				fmt.Fprintf(os.Stderr,
+					"nothing to do: all %d items are already in %s/result.log (use --fresh to rerun all)\n",
+					before, logDir)
 				os.Exit(0)
 			}
 		}
@@ -279,9 +278,9 @@ func main() {
 
 	var rc int
 	if useTUI {
-		rc = runTUI(ctx, cfg, lines)
+		rc = runTUI(ctx, cfg, lines, skipped)
 	} else {
-		rc = runPlain(ctx, cfg, lines)
+		rc = runPlain(ctx, cfg, lines, skipped)
 	}
 	os.Exit(rc)
 }

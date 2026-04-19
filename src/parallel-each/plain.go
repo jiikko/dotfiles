@@ -16,7 +16,12 @@ import (
 // Shutdown is two-stage, mirroring the TUI:
 //   1st SIGINT/SIGTERM  -> graceful stop (no new jobs, wait for running)
 //   2nd                 -> force-kill running subprocesses
-func runPlain(ctx context.Context, cfg Config, lines []string) int {
+func runPlain(ctx context.Context, cfg Config, lines []string, skipped int) int {
+	if skipped > 0 {
+		fmt.Fprintf(os.Stderr,
+			"resumed: skipped %d items already in %s/result.log (use --fresh to rerun all)\n",
+			skipped, logDir)
+	}
 	r := NewRunner(cfg, lines)
 	if err := r.Start(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
