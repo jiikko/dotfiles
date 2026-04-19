@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -226,7 +227,13 @@ func (r *Runner) Enqueue(line string) error {
 		// Best-effort append to the -F input file. Any error is surfaced via
 		// stderr but does not roll back the enqueue — the job is already
 		// headed for the workers.
-		if err := r.appendToInputFile(line); err != nil {
+		switch err := r.appendToInputFile(line); {
+		case err == nil:
+		case errors.Is(err, errInputLineExists):
+			fmt.Fprintf(os.Stderr,
+				"warning: %q is already a line in %s; skipped input-file append\n",
+				line, r.cfg.File)
+		default:
 			fmt.Fprintf(os.Stderr, "warning: could not append to %s: %v\n", r.cfg.File, err)
 		}
 		return nil
@@ -239,13 +246,44 @@ func (r *Runner) Enqueue(line string) error {
 	}
 }
 
-// appendToInputFile atomically appends "<line>\n" to the -F input file.
-// Short writes to an O_APPEND file are atomic under POSIX on macOS/Linux.
+// errInputLineExists signals that a would-be appended line is already present
+// in the -F input file, so we leave the file untouched.
+var errInputLineExists = errors.New("line already in input file")
+
+// appendToInputFile appends "<line>\n" to the -F input file if the line is
+// not already present (exact match against any existing row, ignoring
+// surrounding whitespace). Short writes to an O_APPEND file are atomic under
+// POSIX on macOS/Linux.
 func (r *Runner) appendToInputFile(line string) error {
 	if r.cfg.File == "" {
 		return nil
 	}
-	f, err := os.OpenFile(r.cfg.File, os.O_APPEND|os.O_WRONLY, 0o644)
+
+	// Defensive scan: if the exact line is already in the file (e.g. the
+	// file was edited externally mid-run), don't duplicate it.
+	if existing, err := os.Open(r.cfg.File); err == nil {
+		sc := bufio.NewScanner(existing)
+		sc.Buffer(make([]byte, 64*1024), 1024*1024)
+		found := false
+		for sc.Scan() {
+			if strings.TrimSpace(sc.Text()) == line {
+				found = true
+				break
+			}
+		}
+		scanErr := sc.Err()
+		existing.Close()
+		if scanErr != nil {
+			return scanErr
+		}
+		if found {
+			return errInputLineExists
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	f, err := os.OpenFile(r.cfg.File, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
 	if err != nil {
 		return err
 	}

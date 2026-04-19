@@ -914,6 +914,52 @@ func TestRunnerEnqueueAppendsToInputFile(t *testing.T) {
 	}
 }
 
+// If another process / the user added the same line to the input file after
+// startup, Enqueue still succeeds (in-memory dedupe didn't know about it)
+// but skips the append step so the file isn't duplicated.
+func TestRunnerEnqueueSkipsAppendWhenLineAlreadyInFile(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	inputPath := filepath.Join(dir, "urls.txt")
+	if err := os.WriteFile(inputPath, []byte("orig\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, File: inputPath, Template: `sleep 5`}
+	r := NewRunner(cfg, []string{"orig"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	// Simulate an external write of a line that is NOT yet in our queued set.
+	if err := os.WriteFile(inputPath, []byte("orig\nextern\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.Enqueue("extern"); err != nil {
+		t.Fatalf("Enqueue(extern): %v", err)
+	}
+
+	data, _ := os.ReadFile(inputPath)
+	if string(data) != "orig\nextern\n" {
+		t.Errorf("file was modified despite pre-existing line: %q", string(data))
+	}
+	if r.AddedCount() != 1 {
+		t.Errorf("AddedCount = %d, want 1 (enqueue still succeeds)", r.AddedCount())
+	}
+}
+
 // Duplicate Enqueue does NOT append (no-op for on-disk file too).
 func TestRunnerEnqueueDuplicateDoesNotAppend(t *testing.T) {
 	dir := t.TempDir()
