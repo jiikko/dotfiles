@@ -263,6 +263,8 @@ func main() {
 		return
 	}
 
+	useTUI := !cfg.NoTUI && term.IsTerminal(int(os.Stdout.Fd()))
+
 	// Resume support: filter out lines already present in result.log.
 	skipped := 0
 	if !cfg.Fresh {
@@ -276,10 +278,17 @@ func main() {
 			lines = filterProcessed(lines, processed)
 			skipped = before - len(lines)
 			if len(lines) == 0 {
+				if !useTUI {
+					fmt.Fprintf(os.Stderr,
+						"nothing to do: all %d items are already in %s/result.log (use --fresh to rerun all)\n",
+						before, logDir)
+					os.Exit(0)
+				}
+				// In TUI mode: launch with an empty queue so the user can
+				// append items via 'a' or exit with 'q'.
 				fmt.Fprintf(os.Stderr,
-					"nothing to do: all %d items are already in %s/result.log (use --fresh to rerun all)\n",
-					before, logDir)
-				os.Exit(0)
+					"all %d items already processed — launching TUI: press 'a' to append more, 'q' to exit.\n",
+					before)
 			}
 		}
 	}
@@ -294,8 +303,6 @@ func main() {
 		ctx, tcancel = context.WithTimeout(ctx, cfg.TotalTimeout)
 		defer tcancel()
 	}
-
-	useTUI := !cfg.NoTUI && term.IsTerminal(int(os.Stdout.Fd()))
 
 	var rc int
 	if useTUI {
