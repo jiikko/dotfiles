@@ -80,6 +80,10 @@ type model struct {
 	activeStart time.Time
 	accumActive time.Duration
 
+	// Current target parallelism (mirror of runner). Adjustable at runtime
+	// with the +/- keys.
+	par int
+
 	// Tails captured from each active slot's log file.
 	tails          map[int][]string // slotID -> last N lines
 	tailPerSlot    int              // inline tail lines in overview (feature A)
@@ -130,6 +134,11 @@ func newModel(cfg Config, total int, events <-chan Event, runner *Runner, skippe
 	// If we start with pending work, the clock is already running.
 	if total > 0 {
 		m.activeStart = time.Now()
+	}
+	if runner != nil {
+		m.par = runner.Parallelism()
+	} else {
+		m.par = cfg.Parallelism
 	}
 	return m
 }
@@ -226,6 +235,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inputMode = true
 				m.inputBuf = m.inputBuf[:0]
 				m.flashMsg = ""
+			}
+			return m, nil
+		case "+", "=":
+			if m.runner != nil && !m.stopping {
+				m.par++
+				m.runner.SetParallelism(m.par)
+				m.setFlash(fmt.Sprintf("↑ parallelism: %d", m.par), false)
+			}
+			return m, nil
+		case "-", "_":
+			if m.runner != nil && !m.stopping && m.par > 1 {
+				m.par--
+				m.runner.SetParallelism(m.par)
+				m.setFlash(fmt.Sprintf("↓ parallelism: %d (excess workers retire after current job)", m.par), false)
 			}
 			return m, nil
 		case "r":
@@ -351,11 +374,12 @@ func (m model) View() string {
 	if eta := m.eta(); eta > 0 {
 		etaStr = formatDur(eta)
 	}
-	b.WriteString(fmt.Sprintf("  %s %d/%d   %s %d   %s %d   %s %d   %s %s   %s %s\n",
+	b.WriteString(fmt.Sprintf("  %s %d/%d   %s %d   %s %d   %s %d   %s %d   %s %s   %s %s\n",
 		styleHeader.Render("done:"), m.completed, m.total,
 		styleOK.Render("ok:"), okCount,
 		styleFail.Render("fail:"), m.failed,
 		styleRunning.Render("running:"), running,
+		styleDim.Render("par:"), m.par,
 		styleDim.Render("elapsed:"), elapsed,
 		styleDim.Render("eta:"), etaStr,
 	))
@@ -412,9 +436,9 @@ func (m model) View() string {
 	} else if m.focusSlot != 0 {
 		b.WriteString(styleKey.Render("  esc / 0: back to overview   a: add item   q / ctrl-c: stop"))
 	} else if m.completed >= m.total && running == 0 {
-		b.WriteString(styleKey.Render("  all done — a: add more   r: recent   q: exit"))
+		b.WriteString(styleKey.Render("  all done — a: add   +/-: par   r: recent   q: exit"))
 	} else {
-		b.WriteString(styleKey.Render("  1-9: focus   a: add item   r: recent   q / ctrl-c: stop (twice=force)"))
+		b.WriteString(styleKey.Render("  1-9: focus   a: add   +/-: par   r: recent   q: stop"))
 	}
 	b.WriteString("\n")
 

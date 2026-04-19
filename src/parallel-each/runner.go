@@ -169,6 +169,20 @@ type Runner struct {
 	queuedMu   sync.Mutex
 	queued     map[string]struct{}
 	addedCount int // tracks items added via Enqueue (read under queuedMu)
+
+	// Dynamic worker pool state.
+	jobs          chan runnerJob
+	wg            sync.WaitGroup
+	workerMu      sync.Mutex
+	targetPar     int // desired worker count (>=1)
+	activeWorkers int // currently running worker goroutines
+	nextSlotID    int // monotonic slot id for new workers
+}
+
+// runnerJob is passed to workers via r.jobs.
+type runnerJob struct {
+	index int
+	line  string
 }
 
 func NewRunner(cfg Config, lines []string) *Runner {
@@ -346,40 +360,21 @@ func (r *Runner) Start(parent context.Context) error {
 	r.stopCtx, r.stopCancel = context.WithCancel(parent)
 	r.killCtx, r.killCancel = context.WithCancel(parent)
 
-	parallelism := r.cfg.Parallelism
-	if parallelism <= 0 {
-		parallelism = len(r.lines)
+	initialPar := r.cfg.Parallelism
+	if initialPar <= 0 {
+		initialPar = len(r.lines)
 	}
-	if parallelism < 1 {
-		parallelism = 1
+	if initialPar < 1 {
+		initialPar = 1
 	}
 
-	// Job queue and worker pool.
-	type job struct {
-		index int
-		line  string
-	}
-	jobs := make(chan job)
-
-	var wg sync.WaitGroup
-	for slot := 1; slot <= parallelism; slot++ {
-		wg.Add(1)
-		go func(slotID int) {
-			defer wg.Done()
-			for j := range jobs {
-				// Stop has been requested: skip queued jobs without running them.
-				if r.stopCtx.Err() != nil {
-					continue
-				}
-				r.runOne(r.killCtx, slotID, j.index, j.line)
-			}
-		}(slot)
-	}
+	r.jobs = make(chan runnerJob)
+	r.SetParallelism(initialPar)
 
 	go func() {
 		defer func() {
-			close(jobs)
-			wg.Wait()
+			close(r.jobs)
+			r.wg.Wait()
 			r.resultLog.Close()
 			close(r.events)
 		}()
@@ -390,7 +385,7 @@ func (r *Runner) Start(parent context.Context) error {
 			select {
 			case <-r.stopCtx.Done():
 				return
-			case jobs <- job{index: nextIdx, line: line}:
+			case r.jobs <- runnerJob{index: nextIdx, line: line}:
 			}
 		}
 		// Phase 2: in live mode, wait for Enqueue. Loop until stopCtx fires.
@@ -406,13 +401,62 @@ func (r *Runner) Start(parent context.Context) error {
 				select {
 				case <-r.stopCtx.Done():
 					return
-				case jobs <- job{index: nextIdx, line: line}:
+				case r.jobs <- runnerJob{index: nextIdx, line: line}:
 				}
 			}
 		}
 	}()
 
 	return nil
+}
+
+// SetParallelism adjusts the target number of concurrent workers. Minimum 1.
+// Growing spawns new worker goroutines; shrinking signals the excess workers
+// to exit after their current job completes (does not interrupt in-flight
+// work). Safe to call at any time after Start.
+func (r *Runner) SetParallelism(n int) {
+	if n < 1 {
+		n = 1
+	}
+	r.workerMu.Lock()
+	defer r.workerMu.Unlock()
+	r.targetPar = n
+	for r.activeWorkers < r.targetPar {
+		r.nextSlotID++
+		slotID := r.nextSlotID
+		r.activeWorkers++
+		r.wg.Add(1)
+		go r.workerLoop(slotID)
+	}
+}
+
+// Parallelism returns the current target worker count.
+func (r *Runner) Parallelism() int {
+	r.workerMu.Lock()
+	defer r.workerMu.Unlock()
+	return r.targetPar
+}
+
+// workerLoop consumes jobs and retires itself when the target shrinks below
+// the current active count.
+func (r *Runner) workerLoop(slotID int) {
+	defer r.wg.Done()
+	for j := range r.jobs {
+		if r.stopCtx.Err() != nil {
+			continue
+		}
+		r.runOne(r.killCtx, slotID, j.index, j.line)
+		r.workerMu.Lock()
+		if r.activeWorkers > r.targetPar {
+			r.activeWorkers--
+			r.workerMu.Unlock()
+			return
+		}
+		r.workerMu.Unlock()
+	}
+	r.workerMu.Lock()
+	r.activeWorkers--
+	r.workerMu.Unlock()
 }
 
 func (r *Runner) runOne(_ context.Context, slotID, index int, line string) {

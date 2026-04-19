@@ -645,6 +645,62 @@ func TestTUIModelMultilinePasteCRLF(t *testing.T) {
 	}
 }
 
+// +/= increases parallelism; - decreases (with floor 1).
+func TestTUIModelParallelismKeys(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 2, Template: `sleep 5`}
+	r := NewRunner(cfg, []string{"a", "b"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 2, r.Events(), r, 0)
+	if m.par != 2 {
+		t.Fatalf("initial par = %d, want 2", m.par)
+	}
+
+	// '+' -> 3
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'+'}})
+	m = u.(model)
+	if m.par != 3 || r.Parallelism() != 3 {
+		t.Errorf("after +: model=%d runner=%d, want 3/3", m.par, r.Parallelism())
+	}
+
+	// '=' also grows
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'='}})
+	m = u.(model)
+	if m.par != 4 {
+		t.Errorf("after =: par=%d, want 4", m.par)
+	}
+
+	// '-' -> 3
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'-'}})
+	m = u.(model)
+	if m.par != 3 {
+		t.Errorf("after -: par=%d, want 3", m.par)
+	}
+
+	// Shrink to floor.
+	for i := 0; i < 10; i++ {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'-'}})
+		m = u.(model)
+	}
+	if m.par != 1 {
+		t.Errorf("floor par = %d, want 1", m.par)
+	}
+}
+
 // elapsed() freezes while queue is empty and resumes when work is added.
 // Verified via internal state (avoids the second-level rounding in elapsed()).
 func TestModelActiveStateTransitions(t *testing.T) {

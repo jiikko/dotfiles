@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -911,6 +912,113 @@ func TestRunnerEnqueueAppendsToInputFile(t *testing.T) {
 	want := initial + "added-1\n" + "added 2 with spaces\n"
 	if got != want {
 		t.Errorf("input file mismatch:\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+// SetParallelism grows the worker pool so more items complete concurrently.
+func TestRunnerSetParallelismGrows(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `sleep 0.4`}
+	items := make([]string, 8)
+	for i := range items {
+		items[i] = fmt.Sprintf("item-%d", i)
+	}
+	r := NewRunner(cfg, items)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Immediately scale up to 4 workers.
+	r.SetParallelism(4)
+	if got := r.Parallelism(); got != 4 {
+		t.Errorf("Parallelism() = %d, want 4", got)
+	}
+
+	start := time.Now()
+	ends := 0
+	for ev := range r.Events() {
+		if ev.Kind == EventEnd {
+			ends++
+		}
+	}
+	elapsed := time.Since(start)
+	if ends != 8 {
+		t.Errorf("ends = %d, want 8", ends)
+	}
+	// 8 items × 0.4s at parallelism 1 would be 3.2s. With par=4 it should
+	// finish much faster. Allow a generous margin.
+	if elapsed > 2*time.Second {
+		t.Errorf("elapsed = %v, expected <2s with par=4", elapsed)
+	}
+}
+
+// SetParallelism shrinking lets running jobs finish, retires extras.
+func TestRunnerSetParallelismShrinks(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 4, Template: `sleep 0.2`}
+	items := make([]string, 12)
+	for i := range items {
+		items[i] = fmt.Sprintf("item-%d", i)
+	}
+	r := NewRunner(cfg, items)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Shrink after a short delay so initial 4 workers started.
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		r.SetParallelism(1)
+	}()
+
+	ends := 0
+	for ev := range r.Events() {
+		if ev.Kind == EventEnd {
+			ends++
+		}
+	}
+	if ends != 12 {
+		t.Errorf("ends = %d, want 12", ends)
+	}
+	if got := r.Parallelism(); got != 1 {
+		t.Errorf("final Parallelism = %d, want 1", got)
+	}
+}
+
+// SetParallelism(0) is clamped to 1.
+func TestRunnerSetParallelismMinimum(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 2, Template: `echo {item}`}
+	r := NewRunner(cfg, []string{"a"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+	r.SetParallelism(0)
+	if got := r.Parallelism(); got != 1 {
+		t.Errorf("Parallelism after Set(0) = %d, want 1", got)
 	}
 }
 

@@ -88,6 +88,10 @@ TUI
                tail fills the lower half of the screen.
     esc, 0     Exit focus mode and return to the overview.
     a          Add a new item to the queue (see LIVE ADD below).
+    + / =      Increase parallelism by 1 (spawns a new worker).
+    -          Decrease parallelism by 1. Excess workers retire after their
+               current job completes — running jobs are NOT interrupted.
+               Minimum 1.
     r          Open the full recent view — a scrollable list of every
                completed job (↑/↓ or j/k, pgup/pgdown, g/G, esc/r to close).
     q, ctrl-c  Stop (see SHUTDOWN below).
