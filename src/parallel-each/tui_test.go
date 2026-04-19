@@ -421,6 +421,105 @@ func TestTUIModelAddItemDuplicate(t *testing.T) {
 	}
 }
 
+// 'r' enters the full recent view; scrolling works; esc/r exits.
+func TestTUIModelRecentView(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `echo {item}`}
+	r := NewRunner(cfg, []string{"x"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+	// Seed 50 completions.
+	for i := 1; i <= 50; i++ {
+		m.recent = append(m.recent, recentEntry{
+			JobIndex: i, Line: "item", ExitCode: 0, Duration: time.Second,
+		})
+	}
+	m.height = 30 // pageSize ~= 24
+
+	// Pressing 'r' enters recent mode.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	m = u.(model)
+	if !m.recentMode {
+		t.Fatal("expected recentMode after pressing r")
+	}
+
+	// Down arrow scrolls by 1.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = u.(model)
+	if m.recentScroll != 1 {
+		t.Errorf("scroll after down = %d, want 1", m.recentScroll)
+	}
+
+	// 'j' also scrolls down.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = u.(model)
+	if m.recentScroll != 2 {
+		t.Errorf("scroll after j = %d, want 2", m.recentScroll)
+	}
+
+	// 'G' goes to the end.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = u.(model)
+	if m.recentScroll != 49 {
+		t.Errorf("scroll after G = %d, want 49", m.recentScroll)
+	}
+
+	// 'g' returns to top.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m = u.(model)
+	if m.recentScroll != 0 {
+		t.Errorf("scroll after g = %d, want 0", m.recentScroll)
+	}
+
+	// esc exits.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(model)
+	if m.recentMode {
+		t.Fatal("esc should exit recentMode")
+	}
+}
+
+// 'r' is a no-op when there are no completions.
+func TestTUIModelRecentIgnoredWhenEmpty(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `echo {item}`}
+	r := NewRunner(cfg, []string{"x"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if u.(model).recentMode {
+		t.Error("r should be ignored when recent is empty")
+	}
+}
+
 func TestModelETA(t *testing.T) {
 	cases := []struct {
 		name      string

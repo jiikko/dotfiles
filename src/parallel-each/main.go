@@ -88,6 +88,8 @@ TUI
                tail fills the lower half of the screen.
     esc, 0     Exit focus mode and return to the overview.
     a          Add a new item to the queue (see LIVE ADD below).
+    r          Open the full recent view — a scrollable list of every
+               completed job (↑/↓ or j/k, pgup/pgdown, g/G, esc/r to close).
     q, ctrl-c  Stop (see SHUTDOWN below).
 
 LIVE ADD (TUI only)

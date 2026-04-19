@@ -94,6 +94,10 @@ type model struct {
 	flashUntil time.Time
 	addedLive  int // count of items successfully Enqueued
 
+	// Full recent-view state.
+	recentMode   bool
+	recentScroll int // number of rows scrolled down from the top (newest)
+
 	width    int
 	height   int
 	events   <-chan Event
@@ -108,10 +112,12 @@ func newModel(cfg Config, total int, events <-chan Event, runner *Runner, skippe
 		total:          total,
 		startedAt:      time.Now(),
 		slots:          make(map[int]slotState),
-		maxRecent:      20,
+		maxRecent:      10000,
 		tails:          make(map[int][]string),
 		tailPerSlot:    2,
 		focusTailLines: 20,
+		// maxRecent caps in-memory history. Overview shows a height-limited
+		// subset; 'r' opens a scrollable full view.
 		events:         events,
 		runner:         runner,
 		width:          100,
@@ -159,6 +165,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.inputMode {
 			return m.handleInputKey(msg)
 		}
+		// Recent-full mode has its own navigation keys.
+		if m.recentMode {
+			return m.handleRecentKey(msg)
+		}
 		s := msg.String()
 		// Digit keys 1-9 toggle focus on the corresponding slot, if active.
 		if len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
@@ -172,18 +182,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch s {
 		case "a":
-			// Enter add-to-queue input mode (only when focus is off).
 			if m.focusSlot == 0 && m.runner != nil && !m.stopping {
 				m.inputMode = true
 				m.inputBuf = m.inputBuf[:0]
 				m.flashMsg = ""
 			}
 			return m, nil
+		case "r":
+			// Full scrollable recent view. Disabled while in focus mode.
+			if m.focusSlot == 0 && len(m.recent) > 0 {
+				m.recentMode = true
+				m.recentScroll = 0
+			}
+			return m, nil
 		case "0":
 			m.focusSlot = 0
 			return m, nil
 		case "esc":
-			// In focus mode, esc exits focus rather than triggering shutdown.
 			if m.focusSlot != 0 {
 				m.focusSlot = 0
 				return m, nil
@@ -309,7 +324,9 @@ func (m model) View() string {
 	}
 	b.WriteString("\n")
 
-	if m.focusSlot != 0 {
+	if m.recentMode {
+		b.WriteString(m.renderRecentFull())
+	} else if m.focusSlot != 0 {
 		b.WriteString(m.renderFocus())
 	} else {
 		b.WriteString(m.renderOverview())
@@ -347,12 +364,14 @@ func (m model) View() string {
 		} else {
 			b.WriteString(styleFail.Render("  stopping…"))
 		}
+	} else if m.recentMode {
+		b.WriteString(styleKey.Render("  ↑/↓ or j/k: scroll   pgup/pgdown: page   g/G: top/bottom   esc/r: back"))
 	} else if m.focusSlot != 0 {
 		b.WriteString(styleKey.Render("  esc / 0: back to overview   a: add item   q / ctrl-c: stop"))
 	} else if m.completed >= m.total && running == 0 {
-		b.WriteString(styleKey.Render("  all done — a: add more   q: exit"))
+		b.WriteString(styleKey.Render("  all done — a: add more   r: recent   q: exit"))
 	} else {
-		b.WriteString(styleKey.Render("  1-9: focus slot   a: add item   q / ctrl-c: stop (twice = force-kill)"))
+		b.WriteString(styleKey.Render("  1-9: focus   a: add item   r: recent   q / ctrl-c: stop (twice=force)"))
 	}
 	b.WriteString("\n")
 
@@ -566,6 +585,61 @@ func (m model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleRecentKey processes keystrokes while the full recent view is open.
+func (m model) handleRecentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	pageSize := m.recentPageSize()
+	total := len(m.recent)
+	clamp := func(s int) int {
+		if s < 0 {
+			return 0
+		}
+		if total > 0 && s > total-1 {
+			return total - 1
+		}
+		return s
+	}
+
+	switch msg.String() {
+	case "esc", "r", "q":
+		m.recentMode = false
+		m.recentScroll = 0
+		return m, nil
+	case "ctrl+c":
+		// Let the normal shutdown logic handle Ctrl-C even from this view.
+		m.recentMode = false
+		if !m.stopping {
+			m.stopping = true
+			m.runner.RequestStop()
+		} else {
+			m.runner.ForceKill()
+		}
+		return m, nil
+	case "up", "k":
+		m.recentScroll = clamp(m.recentScroll - 1)
+	case "down", "j":
+		m.recentScroll = clamp(m.recentScroll + 1)
+	case "pgup", "b":
+		m.recentScroll = clamp(m.recentScroll - pageSize)
+	case "pgdown", " ", "f":
+		m.recentScroll = clamp(m.recentScroll + pageSize)
+	case "home", "g":
+		m.recentScroll = 0
+	case "end", "G":
+		m.recentScroll = clamp(total - 1)
+	}
+	return m, nil
+}
+
+// recentPageSize returns how many recent rows fit in the content area of the
+// full-view screen.
+func (m model) recentPageSize() int {
+	n := m.height - 6 // header + title + footer
+	if n < 5 {
+		n = 5
+	}
+	return n
+}
+
 // setFlash records a transient message shown above the footer. Pointer
 // receiver intentionally not used — model is a value type in Bubble Tea, and
 // callers re-assign the returned model.
@@ -573,6 +647,75 @@ func (m *model) setFlash(msg string, isErr bool) {
 	m.flashMsg = msg
 	m.flashErr = isErr
 	m.flashUntil = time.Now().Add(3 * time.Second)
+}
+
+// renderRecentFull renders a scrollable list of all recorded completions
+// (newest first). `recentScroll` is the index of the topmost visible row.
+func (m model) renderRecentFull() string {
+	var b strings.Builder
+	total := len(m.recent)
+	okN, failN := 0, 0
+	for _, e := range m.recent {
+		if e.ExitCode == 0 {
+			okN++
+		} else {
+			failN++
+		}
+	}
+
+	b.WriteString(styleHeader.Render(fmt.Sprintf("  recent (full) — %d entries", total)))
+	b.WriteString("  ")
+	b.WriteString(styleOK.Render(fmt.Sprintf("ok %d", okN)))
+	b.WriteString("  ")
+	b.WriteString(styleFail.Render(fmt.Sprintf("fail %d", failN)))
+	b.WriteString("\n\n")
+
+	if total == 0 {
+		b.WriteString(styleDim.Render("    (no completions yet)"))
+		b.WriteString("\n")
+		return b.String()
+	}
+
+	pageSize := m.recentPageSize()
+	start := m.recentScroll
+	if start > total-1 {
+		start = total - 1
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+
+	available := m.width - 26
+	if available < 10 {
+		available = 10
+	}
+
+	for i := start; i < end; i++ {
+		e := m.recent[i]
+		mark := styleOK.Render("✓")
+		tail := ""
+		if e.ExitCode != 0 {
+			mark = styleFail.Render("✗")
+			tail = styleFail.Render(fmt.Sprintf(" (exit=%d)", e.ExitCode))
+		}
+		b.WriteString(fmt.Sprintf("    %s %s %s %s%s\n",
+			mark,
+			styleDim.Render(fmt.Sprintf("%04d", e.JobIndex)),
+			styleDim.Render(fmt.Sprintf("%7s", formatDur(e.Duration))),
+			truncate(e.Line, available),
+			tail,
+		))
+	}
+
+	// Scrollbar / position indicator
+	if total > 0 {
+		b.WriteString("\n    ")
+		b.WriteString(styleDim.Render(fmt.Sprintf("showing %d–%d of %d", start+1, end, total)))
+		b.WriteString("\n")
+	}
+
+	return b.String()
 }
 
 func sortedSlotIDs(m map[int]slotState) []int {
