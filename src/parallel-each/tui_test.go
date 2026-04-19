@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -716,8 +717,10 @@ func TestTUIModelExportWrapperFlow(t *testing.T) {
 	if capturedPath == "" {
 		t.Fatal("writeWrapperFn was not called")
 	}
-	if !strings.HasSuffix(capturedPath, "/my-dm") {
-		t.Errorf("captured path = %q, want to end with /my-dm", capturedPath)
+	canonDir, _ := filepath.EvalSymlinks(dir)
+	wantPath := filepath.Join(canonDir, "bin", "my-dm")
+	if capturedPath != wantPath {
+		t.Errorf("captured path = %q, want %q (under <cwd>/bin)", capturedPath, wantPath)
 	}
 	if !strings.Contains(capturedContent, "-P 4") {
 		t.Errorf("wrapper missing -P flag: %q", capturedContent)
@@ -816,6 +819,26 @@ func TestRenderWrapperIncludesNonDefaultFlags(t *testing.T) {
 		if !strings.Contains(out, w) {
 			t.Errorf("wrapper missing %q:\n%s", w, out)
 		}
+	}
+}
+
+// resolveExportDir returns <cwd>/bin.
+func TestResolveExportDirUsesCwdBin(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	// macOS symlinks /var → /private/var; eval on the existing dir only,
+	// then re-join bin/.
+	wantBase, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(wantBase, "bin")
+	if got := resolveExportDir(); got != want {
+		t.Errorf("resolveExportDir() = %q, want %q", got, want)
 	}
 }
 

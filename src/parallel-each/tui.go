@@ -467,8 +467,8 @@ func (m model) View() string {
 		b.WriteString("  ")
 		b.WriteString(styleHeader.Render("other actions:"))
 		b.WriteString("\n")
-		b.WriteString("    1) Export wrapper script to ")
-		b.WriteString(styleDim.Render(resolveExportDir()))
+		b.WriteString("    1) Export wrapper script → ")
+		b.WriteString(styleDim.Render(resolveExportDir() + "/"))
 		b.WriteString("\n\n")
 		b.WriteString(styleKey.Render("  select a number, or esc to close"))
 		b.WriteString("\n")
@@ -478,12 +478,12 @@ func (m model) View() string {
 	// Export wrapper: filename input.
 	if m.exportInput {
 		b.WriteString("  ")
-		b.WriteString(styleHeader.Render(fmt.Sprintf("wrapper filename (→ %s/):", m.exportTargetDir)))
-		b.WriteString(" ")
+		b.WriteString(styleHeader.Render(fmt.Sprintf("wrapper filename → %s/", m.exportTargetDir)))
+		b.WriteString("\n  ")
 		b.WriteString(string(m.exportBuf))
 		b.WriteString(styleRunning.Render("▌"))
 		b.WriteString("\n")
-		b.WriteString(styleDim.Render("    the wrapper will bake in current -P, --attempt-timeout, -F, and template; extra args forward via $@"))
+		b.WriteString(styleDim.Render("    the wrapper bakes in -P, --attempt-timeout, -F (absolute), and template; extra args forward via $@"))
 		b.WriteString("\n")
 		b.WriteString(styleKey.Render("  enter: write   esc: cancel"))
 		b.WriteString("\n")
@@ -960,22 +960,20 @@ func (m model) handleExportKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// resolveExportDir picks a reasonable directory to write the wrapper into:
-// the directory of the `parallel-each` found on PATH, else ~/bin.
+// resolveExportDir returns <cwd>/bin — the wrapper is written alongside the
+// project from which parallel-each was invoked, so the user can re-run the
+// exact same invocation as ./bin/<name>.
 func resolveExportDir() string {
-	if p, err := execLookPath("parallel-each"); err == nil {
-		return filepath.Dir(p)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "bin"
 	}
-	if home, err := osUserHomeDir(); err == nil {
-		return filepath.Join(home, "bin")
-	}
-	return "."
+	return filepath.Join(cwd, "bin")
 }
 
 // Indirection for tests.
 var (
 	execLookPath   = exec.LookPath
-	osUserHomeDir  = os.UserHomeDir
 	writeWrapperFn = writeWrapperFile
 )
 

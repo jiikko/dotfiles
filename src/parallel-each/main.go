@@ -97,11 +97,13 @@ TUI
     r          Open the full recent view — a scrollable list of every
                completed job (↑/↓ or j/k, pgup/pgdown, g/G, esc/r to close).
     o          Open the "other actions" menu. Currently contains:
-                 1) Export wrapper script — writes a zsh wrapper that
-                    bakes in the current -P / --attempt-timeout / -F /
-                    template, forwarding extra args via "$@". Destination
-                    defaults to the directory of the 'parallel-each' found
-                    on PATH.
+                 1) Export wrapper script — writes a zsh wrapper into
+                    ./bin/ (the bin/ directory of your current working
+                    directory) that bakes in the current -P /
+                    --attempt-timeout / --total-timeout / --retries (when
+                    non-default) / -F (absolute path) / template, and
+                    forwards extra args via "$@". Next time, run it with
+                    ./bin/<name> from that project root.
     q, ctrl-c  Stop (see SHUTDOWN below).
 
 LIVE ADD (TUI only)
