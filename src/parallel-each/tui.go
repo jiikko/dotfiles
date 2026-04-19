@@ -70,10 +70,15 @@ type model struct {
 	total     int
 	completed int
 	failed    int
-	startedAt time.Time
 	slots     map[int]slotState
 	recent    []recentEntry
 	maxRecent int
+
+	// elapsed tracking: accumulates only while there is pending or running
+	// work. When the queue empties, the timer freezes until more items are
+	// added. activeStart is zero while idle.
+	activeStart time.Time
+	accumActive time.Duration
 
 	// Tails captured from each active slot's log file.
 	tails          map[int][]string // slotID -> last N lines
@@ -107,10 +112,9 @@ type model struct {
 }
 
 func newModel(cfg Config, total int, events <-chan Event, runner *Runner, skipped int) model {
-	return model{
+	m := model{
 		cfg:            cfg,
 		total:          total,
-		startedAt:      time.Now(),
 		slots:          make(map[int]slotState),
 		maxRecent:      10000,
 		tails:          make(map[int][]string),
@@ -118,11 +122,47 @@ func newModel(cfg Config, total int, events <-chan Event, runner *Runner, skippe
 		focusTailLines: 20,
 		// maxRecent caps in-memory history. Overview shows a height-limited
 		// subset; 'r' opens a scrollable full view.
-		events:         events,
-		runner:         runner,
-		width:          100,
-		skipped:        skipped,
+		events:  events,
+		runner:  runner,
+		width:   100,
+		skipped: skipped,
 	}
+	// If we start with pending work, the clock is already running.
+	if total > 0 {
+		m.activeStart = time.Now()
+	}
+	return m
+}
+
+// updateActiveState transitions between "running" and "idle" when the
+// pending-work predicate (completed < total) changes. Must be called after
+// any mutation to total or completed.
+func (m *model) updateActiveState() {
+	hasWork := m.completed < m.total
+	running := !m.activeStart.IsZero()
+	now := time.Now()
+	switch {
+	case hasWork && !running:
+		m.activeStart = now
+	case !hasWork && running:
+		m.accumActive += now.Sub(m.activeStart)
+		m.activeStart = time.Time{}
+	}
+}
+
+// elapsed returns the total active processing time, excluding idle intervals,
+// rounded to seconds for display.
+func (m model) elapsed() time.Duration {
+	return m.elapsedRaw().Round(time.Second)
+}
+
+// elapsedRaw returns the un-rounded accumulated active time. Used by tests.
+func (m model) elapsedRaw() time.Duration {
+	d := m.accumActive
+	if !m.activeStart.IsZero() {
+		d += time.Since(m.activeStart)
+	}
+	return d
 }
 
 func (m model) Init() tea.Cmd {
@@ -271,6 +311,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.recent) > m.maxRecent {
 				m.recent = m.recent[:m.maxRecent]
 			}
+			m.updateActiveState()
 		}
 		return m, waitForEvent(m.events)
 
@@ -303,7 +344,7 @@ func (m model) View() string {
 	b.WriteString("\n")
 
 	// Summary line.
-	elapsed := time.Since(m.startedAt).Round(time.Second)
+	elapsed := m.elapsed()
 	okCount := m.completed - m.failed
 	running := len(m.slots)
 	etaStr := "—"
@@ -642,6 +683,7 @@ func (m *model) submitLine(line string, batch bool) submitResult {
 	if err == nil {
 		m.addedLive++
 		m.total++
+		m.updateActiveState()
 		if !batch {
 			m.setFlash(fmt.Sprintf("✓ added: %s", truncate(line, 60)), false)
 		}

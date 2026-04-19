@@ -645,6 +645,72 @@ func TestTUIModelMultilinePasteCRLF(t *testing.T) {
 	}
 }
 
+// elapsed() freezes while queue is empty and resumes when work is added.
+// Verified via internal state (avoids the second-level rounding in elapsed()).
+func TestModelActiveStateTransitions(t *testing.T) {
+	m := model{total: 0, completed: 0}
+	m.updateActiveState()
+	if !m.activeStart.IsZero() {
+		t.Fatal("idle at start: activeStart should be zero")
+	}
+
+	// Transition to active via new work.
+	m.total = 1
+	m.updateActiveState()
+	if m.activeStart.IsZero() {
+		t.Fatal("after total++: activeStart should be set")
+	}
+
+	// Complete all: transition to idle, accumulate duration.
+	time.Sleep(20 * time.Millisecond)
+	m.completed = 1
+	m.updateActiveState()
+	if !m.activeStart.IsZero() {
+		t.Fatal("after completed == total: activeStart should be zero")
+	}
+	if m.accumActive < 10*time.Millisecond {
+		t.Errorf("accumActive = %v, want >=10ms", m.accumActive)
+	}
+
+	// While idle, accumActive must not grow.
+	saved := m.accumActive
+	time.Sleep(30 * time.Millisecond)
+	if m.accumActive != saved {
+		t.Errorf("accumActive changed while idle: %v -> %v", saved, m.accumActive)
+	}
+
+	// Resume by adding more work.
+	m.total = 2
+	m.updateActiveState()
+	if m.activeStart.IsZero() {
+		t.Fatal("after resume: activeStart should be set")
+	}
+	time.Sleep(20 * time.Millisecond)
+	if el := m.elapsedRaw(); el <= saved {
+		t.Errorf("elapsed should advance after resume: saved=%v el=%v", saved, el)
+	}
+}
+
+// Starting with pending items arms activeStart immediately.
+func TestModelElapsedStartsWithWork(t *testing.T) {
+	m := newModel(Config{}, 3, nil, nil, 0)
+	if m.activeStart.IsZero() {
+		t.Fatal("activeStart should be set when total > 0")
+	}
+}
+
+// Starting with all items already resumed keeps the timer at 0.
+func TestModelElapsedStartsIdleWhenEmpty(t *testing.T) {
+	m := newModel(Config{}, 0, nil, nil, 3)
+	if !m.activeStart.IsZero() {
+		t.Fatal("activeStart should be zero when total = 0")
+	}
+	time.Sleep(60 * time.Millisecond)
+	if got := m.elapsed(); got != 0 {
+		t.Errorf("elapsed = %v, want 0", got)
+	}
+}
+
 func TestContainsNewline(t *testing.T) {
 	cases := []struct {
 		in   string
