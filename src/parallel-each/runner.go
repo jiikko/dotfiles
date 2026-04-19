@@ -195,6 +195,11 @@ func (r *Runner) SetLive(live bool) {
 // Enqueue pushes a new item into the live queue. Returns an error if the
 // runner is not live, if the item was already processed/queued, or if the
 // runner has been asked to stop. Thread-safe.
+//
+// On successful enqueue the line is also appended to the -F input file so
+// the on-disk list stays a faithful record of everything that was processed.
+// An input-append failure is non-fatal (logged via the returned warning,
+// but the in-memory enqueue still succeeds).
 func (r *Runner) Enqueue(line string) error {
 	line = strings.TrimSpace(line)
 	if line == "" {
@@ -218,15 +223,35 @@ func (r *Runner) Enqueue(line string) error {
 
 	select {
 	case r.adds <- line:
+		// Best-effort append to the -F input file. Any error is surfaced via
+		// stderr but does not roll back the enqueue — the job is already
+		// headed for the workers.
+		if err := r.appendToInputFile(line); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not append to %s: %v\n", r.cfg.File, err)
+		}
 		return nil
 	default:
-		// Channel full — roll back the dedup entry so user can retry later.
 		r.queuedMu.Lock()
 		delete(r.queued, line)
 		r.addedCount--
 		r.queuedMu.Unlock()
 		return fmt.Errorf("queue full; try again shortly")
 	}
+}
+
+// appendToInputFile atomically appends "<line>\n" to the -F input file.
+// Short writes to an O_APPEND file are atomic under POSIX on macOS/Linux.
+func (r *Runner) appendToInputFile(line string) error {
+	if r.cfg.File == "" {
+		return nil
+	}
+	f, err := os.OpenFile(r.cfg.File, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.WriteString(line + "\n")
+	return err
 }
 
 // AddedCount returns the number of items pushed via Enqueue.

@@ -869,6 +869,87 @@ func TestRunnerLiveEnqueue(t *testing.T) {
 	}
 }
 
+// Successful Enqueue appends the line to the -F input file.
+func TestRunnerEnqueueAppendsToInputFile(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	inputPath := filepath.Join(dir, "urls.txt")
+	initial := "original-1\noriginal-2\n"
+	if err := os.WriteFile(inputPath, []byte(initial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, File: inputPath, Template: `sleep 5`}
+	r := NewRunner(cfg, []string{"original-1", "original-2"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	if err := r.Enqueue("added-1"); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	if err := r.Enqueue("added 2 with spaces"); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	data, err := os.ReadFile(inputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	want := initial + "added-1\n" + "added 2 with spaces\n"
+	if got != want {
+		t.Errorf("input file mismatch:\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+// Duplicate Enqueue does NOT append (no-op for on-disk file too).
+func TestRunnerEnqueueDuplicateDoesNotAppend(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	inputPath := filepath.Join(dir, "urls.txt")
+	initial := "original\n"
+	if err := os.WriteFile(inputPath, []byte(initial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, File: inputPath, Template: `sleep 5`}
+	r := NewRunner(cfg, []string{"original"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	if err := r.Enqueue("original"); err == nil {
+		t.Fatal("expected duplicate Enqueue to fail")
+	}
+	data, _ := os.ReadFile(inputPath)
+	if string(data) != initial {
+		t.Errorf("file was modified on duplicate: %q", string(data))
+	}
+}
+
 // Non-live runner: Enqueue returns an error.
 func TestRunnerEnqueueRejectedWhenNotLive(t *testing.T) {
 	dir := t.TempDir()

@@ -107,6 +107,10 @@ LIVE ADD (TUI only)
   the next sequential job number and its own per-job log, and a row in
   result.log on completion.
 
+  Accepted items are also appended to the -F input file (atomic O_APPEND
+  write, one line per entry). This keeps the on-disk list a faithful record
+  of everything the run processed.
+
   In live mode the TUI does not auto-exit when all items finish; press q to
   exit, or press a to add more. Plain mode does not support live add.
 
