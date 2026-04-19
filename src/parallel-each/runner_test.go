@@ -755,10 +755,10 @@ func TestRunnerTimeoutPerAttempt(t *testing.T) {
 	}
 
 	cfg := Config{
-		Parallelism: 1,
-		Retries:     1,
-		Timeout:     300 * time.Millisecond,
-		Template:    `sleep 5`,
+		Parallelism:    1,
+		Retries:        1,
+		AttemptTimeout: 300 * time.Millisecond,
+		Template:       `sleep 5`,
 	}
 
 	r := NewRunner(cfg, []string{"a"})
@@ -791,6 +791,49 @@ func TestRunnerTimeoutPerAttempt(t *testing.T) {
 	// Sanity: total runtime should be roughly 2 * 300ms, not 2 * 5s.
 	if elapsed > 3*time.Second {
 		t.Errorf("elapsed = %v; timeout didn't fire", elapsed)
+	}
+}
+
+// When the parent context hits its total deadline, everything is force-killed
+// regardless of per-attempt timeout or retries.
+func TestRunnerTotalTimeoutForceKills(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{
+		Parallelism:    2,
+		Retries:        10, // plenty of retries; total-timeout should cut it short
+		AttemptTimeout: 10 * time.Second,
+		Template:       `sleep 30`,
+	}
+	lines := []string{"a", "b", "c", "d"}
+
+	parent, cancelParent := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancelParent()
+
+	r := NewRunner(cfg, lines)
+	start := time.Now()
+	if err := r.Start(parent); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mirror what main.go does: force-kill when parent expires.
+	go func() {
+		<-parent.Done()
+		r.ForceKill()
+	}()
+
+	for range r.Events() {
+	}
+	elapsed := time.Since(start)
+
+	// Should finish well within the per-attempt timeout * parallelism.
+	if elapsed > 3*time.Second {
+		t.Errorf("total-timeout did not fire promptly: elapsed=%v", elapsed)
 	}
 }
 

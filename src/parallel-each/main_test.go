@@ -14,7 +14,7 @@ func TestParseArgs(t *testing.T) {
 	}{
 		{
 			name: "minimal",
-			argv: []string{"-F", "in.txt", "--timeout", "30s", "dm {item}"},
+			argv: []string{"-F", "in.txt", "--attempt-timeout", "30s", "dm {item}"},
 			check: func(t *testing.T, c Config) {
 				if c.Parallelism != 4 {
 					t.Errorf("Parallelism = %d, want 4", c.Parallelism)
@@ -28,8 +28,11 @@ func TestParseArgs(t *testing.T) {
 				if c.Retries != 5 {
 					t.Errorf("Retries = %d, want 5 (default)", c.Retries)
 				}
-				if c.Timeout != 30*time.Second {
-					t.Errorf("Timeout = %v, want 30s", c.Timeout)
+				if c.AttemptTimeout != 30*time.Second {
+					t.Errorf("AttemptTimeout = %v, want 30s", c.AttemptTimeout)
+				}
+				if c.TotalTimeout != 0 {
+					t.Errorf("TotalTimeout = %v, want 0 (unset)", c.TotalTimeout)
 				}
 				if c.DryRun || c.NoTUI || c.Fresh || c.SkipUniqueCheck || c.Wizard {
 					t.Errorf("unexpected flag set: %+v", c)
@@ -41,7 +44,8 @@ func TestParseArgs(t *testing.T) {
 			argv: []string{
 				"-P", "8",
 				"-F", "data.txt",
-				"--timeout", "2m",
+				"--attempt-timeout", "2m",
+				"--total-timeout", "1h30m",
 				"--retries", "3",
 				"-n",
 				"--no-tui",
@@ -53,11 +57,14 @@ func TestParseArgs(t *testing.T) {
 				if c.Parallelism != 8 {
 					t.Errorf("P = %d", c.Parallelism)
 				}
-				if c.Timeout != 2*time.Minute {
-					t.Errorf("Timeout = %v, want 2m", c.Timeout)
+				if c.AttemptTimeout != 2*time.Minute {
+					t.Errorf("AttemptTimeout = %v, want 2m", c.AttemptTimeout)
 				}
 				if c.Retries != 3 {
 					t.Errorf("Retries = %d, want 3", c.Retries)
+				}
+				if c.TotalTimeout != 90*time.Minute {
+					t.Errorf("TotalTimeout = %v, want 1h30m", c.TotalTimeout)
 				}
 				if !c.DryRun {
 					t.Error("DryRun not set")
@@ -75,7 +82,7 @@ func TestParseArgs(t *testing.T) {
 		},
 		{
 			name: "multi-word template joined",
-			argv: []string{"-F", "in.txt", "--timeout", "10s", "curl", "-sSfL", "-o", "/dev/null", "{item}"},
+			argv: []string{"-F", "in.txt", "--attempt-timeout", "10s", "curl", "-sSfL", "-o", "/dev/null", "{item}"},
 			check: func(t *testing.T, c Config) {
 				want := "curl -sSfL -o /dev/null {item}"
 				if c.Template != want {
@@ -85,22 +92,39 @@ func TestParseArgs(t *testing.T) {
 		},
 		{
 			name:    "missing -F",
-			argv:    []string{"--timeout", "10s", "dm {item}"},
+			argv:    []string{"--attempt-timeout", "10s", "dm {item}"},
 			wantErr: true,
 		},
 		{
 			name:    "missing template",
-			argv:    []string{"-F", "in.txt", "--timeout", "10s"},
+			argv:    []string{"-F", "in.txt", "--attempt-timeout", "10s"},
 			wantErr: true,
 		},
 		{
 			name:    "template without {item}",
-			argv:    []string{"-F", "in.txt", "--timeout", "10s", "echo hello"},
+			argv:    []string{"-F", "in.txt", "--attempt-timeout", "10s", "echo hello"},
 			wantErr: true,
 		},
 		{
-			name:    "missing --timeout",
+			name:    "missing --attempt-timeout",
 			argv:    []string{"-F", "in.txt", "dm {item}"},
+			wantErr: true,
+		},
+		{
+			name: "hour-style duration accepted",
+			argv: []string{"-F", "in.txt", "--attempt-timeout", "1h", "--total-timeout", "2h30m", "dm {item}"},
+			check: func(t *testing.T, c Config) {
+				if c.AttemptTimeout != time.Hour {
+					t.Errorf("AttemptTimeout = %v, want 1h", c.AttemptTimeout)
+				}
+				if c.TotalTimeout != 2*time.Hour+30*time.Minute {
+					t.Errorf("TotalTimeout = %v, want 2h30m", c.TotalTimeout)
+				}
+			},
+		},
+		{
+			name:    "negative total-timeout rejected",
+			argv:    []string{"-F", "in.txt", "--attempt-timeout", "1s", "--total-timeout", "-1s", "dm {item}"},
 			wantErr: true,
 		},
 		{
@@ -123,17 +147,17 @@ func TestParseArgs(t *testing.T) {
 		},
 		{
 			name:    "negative parallelism",
-			argv:    []string{"-P", "-1", "-F", "in.txt", "--timeout", "10s", "dm {item}"},
+			argv:    []string{"-P", "-1", "-F", "in.txt", "--attempt-timeout", "10s", "dm {item}"},
 			wantErr: true,
 		},
 		{
 			name:    "negative retries",
-			argv:    []string{"-F", "in.txt", "--timeout", "10s", "--retries", "-1", "dm {item}"},
+			argv:    []string{"-F", "in.txt", "--attempt-timeout", "10s", "--retries", "-1", "dm {item}"},
 			wantErr: true,
 		},
 		{
 			name: "zero parallelism allowed",
-			argv: []string{"-P", "0", "-F", "in.txt", "--timeout", "10s", "dm {item}"},
+			argv: []string{"-P", "0", "-F", "in.txt", "--attempt-timeout", "10s", "dm {item}"},
 			check: func(t *testing.T, c Config) {
 				if c.Parallelism != 0 {
 					t.Errorf("Parallelism = %d, want 0", c.Parallelism)
@@ -142,7 +166,7 @@ func TestParseArgs(t *testing.T) {
 		},
 		{
 			name: "zero retries allowed",
-			argv: []string{"-F", "in.txt", "--timeout", "10s", "--retries", "0", "dm {item}"},
+			argv: []string{"-F", "in.txt", "--attempt-timeout", "10s", "--retries", "0", "dm {item}"},
 			check: func(t *testing.T, c Config) {
 				if c.Retries != 0 {
 					t.Errorf("Retries = %d, want 0", c.Retries)

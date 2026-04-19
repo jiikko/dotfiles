@@ -23,10 +23,16 @@ OPTIONS
   -P <jobs>              Parallel job count. Default: 4. 0 = unbounded.
   -F <file>              Input file. One item per line. Blank and '#' lines
                          are skipped.
-  --timeout <d>          Per-attempt timeout (REQUIRED; e.g. 30s, 5m). Each
-                         attempt that runs longer is SIGTERMed and counted as
-                         a failure (eligible for --retries). Not required in
-                         --wizard mode (you'll be prompted) or with -n.
+  --attempt-timeout <d>  Per-attempt timeout (REQUIRED; e.g. 30s, 5m, 1h,
+                         1h30m). Each attempt running longer than this is
+                         SIGTERMed and counted as a failure (eligible for
+                         --retries). Not required in --wizard mode or with -n.
+                         Applies independently to each retry, so the worst-
+                         case time for one input is attempt-timeout * (retries+1).
+  --total-timeout <d>    Overall wall-clock limit for the whole run (optional;
+                         e.g. 1h, 2h30m). When exceeded, all in-flight jobs
+                         are force-killed (SIGTERM) and queued jobs are
+                         dropped. 0 or omitted = no limit.
   --retries <n>          Additional attempts after a non-zero exit. Default: 5
                          (so up to 6 total tries). 0 disables retries. A
                          single per-job log file records all attempts,
@@ -113,7 +119,8 @@ type Config struct {
 	Fresh           bool          // --fresh: ignore existing result.log and run everything
 	SkipUniqueCheck bool          // --skip-unique-txt-rows: don't fail on duplicate input lines
 	Retries         int           // --retries: additional attempts after an initial non-zero exit (0 disables)
-	Timeout         time.Duration // --timeout: required; applied per attempt
+	AttemptTimeout  time.Duration // --attempt-timeout: required; applied per attempt
+	TotalTimeout    time.Duration // --total-timeout: optional; force-kill everything after this much wall-clock
 	Wizard          bool          // --wizard: interactively prompt for values before running
 }
 
@@ -129,9 +136,10 @@ func parseArgs(argv []string) (Config, error) {
 		noTUI    = fs.Bool("no-tui", false, "disable TUI")
 		fresh    = fs.Bool("fresh", false, "ignore existing result.log")
 		skipUniq = fs.Bool("skip-unique-txt-rows", false, "skip duplicate-row validation")
-		retries  = fs.Int("retries", 5, "retries on non-zero exit")
-		timeout  = fs.Duration("timeout", 0, "per-attempt timeout (required)")
-		wizard   = fs.Bool("wizard", false, "interactive prompt for all values")
+		retries        = fs.Int("retries", 5, "retries on non-zero exit")
+		attemptTimeout = fs.Duration("attempt-timeout", 0, "per-attempt timeout (required; e.g. 30s, 5m, 1h)")
+		totalTimeout   = fs.Duration("total-timeout", 0, "overall wall-clock limit; 0 = no limit (e.g. 1h, 2h30m)")
+		wizard         = fs.Bool("wizard", false, "interactive prompt for all values")
 		help     = fs.Bool("h", false, "help")
 		help2    = fs.Bool("help", false, "help")
 	)
@@ -159,8 +167,8 @@ func parseArgs(argv []string) (Config, error) {
 		if !strings.Contains(tmpl, "{item}") {
 			return Config{}, fmt.Errorf("command template must contain {item}")
 		}
-		if !*dry && *timeout <= 0 {
-			return Config{}, fmt.Errorf("--timeout is required (e.g. --timeout 30s); use --wizard for interactive input")
+		if !*dry && *attemptTimeout <= 0 {
+			return Config{}, fmt.Errorf("--attempt-timeout is required (e.g. --attempt-timeout 30s); use --wizard for interactive input")
 		}
 	}
 	if *jobs < 0 {
@@ -168,6 +176,9 @@ func parseArgs(argv []string) (Config, error) {
 	}
 	if *retries < 0 {
 		return Config{}, fmt.Errorf("--retries must be >= 0")
+	}
+	if *totalTimeout < 0 {
+		return Config{}, fmt.Errorf("--total-timeout must be >= 0")
 	}
 
 	return Config{
@@ -179,7 +190,8 @@ func parseArgs(argv []string) (Config, error) {
 		Fresh:           *fresh,
 		SkipUniqueCheck: *skipUniq,
 		Retries:         *retries,
-		Timeout:         *timeout,
+		AttemptTimeout:  *attemptTimeout,
+		TotalTimeout:    *totalTimeout,
 		Wizard:          *wizard,
 	}, nil
 }
@@ -253,9 +265,15 @@ func main() {
 	}
 
 	// runPlain and runTUI install their own two-stage signal handlers
-	// (1st SIGINT = graceful stop, 2nd = force-kill).
+	// (1st SIGINT = graceful stop, 2nd = force-kill). --total-timeout applies
+	// at this outer layer and triggers force-kill when the deadline fires.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	if cfg.TotalTimeout > 0 {
+		var tcancel context.CancelFunc
+		ctx, tcancel = context.WithTimeout(ctx, cfg.TotalTimeout)
+		defer tcancel()
+	}
 
 	useTUI := !cfg.NoTUI && term.IsTerminal(int(os.Stdout.Fd()))
 
@@ -343,13 +361,13 @@ func runWizard(defaults Config) (Config, error) {
 		break
 	}
 
-	// Timeout (required, no default).
+	// Per-attempt timeout (required, no default).
 	for {
 		def := ""
-		if defaults.Timeout > 0 {
-			def = defaults.Timeout.String()
+		if defaults.AttemptTimeout > 0 {
+			def = defaults.AttemptTimeout.String()
 		}
-		v, err := ask("Per-attempt timeout (e.g. 30s, 5m)", def)
+		v, err := ask("Per-attempt timeout (e.g. 30s, 5m, 1h)", def)
 		if err != nil {
 			return defaults, err
 		}
@@ -362,7 +380,30 @@ func runWizard(defaults Config) (Config, error) {
 			fmt.Fprintf(os.Stderr, "  invalid duration: %v\n", perr)
 			continue
 		}
-		defaults.Timeout = d
+		defaults.AttemptTimeout = d
+		break
+	}
+
+	// Total timeout (optional; empty disables).
+	for {
+		def := ""
+		if defaults.TotalTimeout > 0 {
+			def = defaults.TotalTimeout.String()
+		}
+		v, err := ask("Total timeout for entire run, empty = no limit (e.g. 1h, 2h30m)", def)
+		if err != nil {
+			return defaults, err
+		}
+		if v == "" {
+			defaults.TotalTimeout = 0
+			break
+		}
+		d, perr := time.ParseDuration(v)
+		if perr != nil || d <= 0 {
+			fmt.Fprintf(os.Stderr, "  invalid duration: %v\n", perr)
+			continue
+		}
+		defaults.TotalTimeout = d
 		break
 	}
 
@@ -381,8 +422,14 @@ func runWizard(defaults Config) (Config, error) {
 		break
 	}
 
-	fmt.Fprintf(os.Stderr, "\nabout to run:\n  %s\n  input=%s  P=%d  timeout=%s  retries=%d\n\n",
-		defaults.Template, defaults.File, defaults.Parallelism, defaults.Timeout, defaults.Retries)
+	totalStr := "none"
+	if defaults.TotalTimeout > 0 {
+		totalStr = defaults.TotalTimeout.String()
+	}
+	fmt.Fprintf(os.Stderr,
+		"\nabout to run:\n  %s\n  input=%s  P=%d  attempt-timeout=%s  total-timeout=%s  retries=%d\n\n",
+		defaults.Template, defaults.File, defaults.Parallelism,
+		defaults.AttemptTimeout, totalStr, defaults.Retries)
 
 	return defaults, nil
 }

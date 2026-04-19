@@ -297,8 +297,8 @@ func (r *Runner) runOne(_ context.Context, slotID, index int, line string) {
 	fmt.Fprintf(logFile, "# item: %s\n", line)
 	fmt.Fprintf(logFile, "# cmd: %s\n", resolved)
 	fmt.Fprintf(logFile, "# time: %s\n", overallStart.Format(time.RFC3339))
-	if r.cfg.Timeout > 0 {
-		fmt.Fprintf(logFile, "# timeout: %s  retries: %d\n", r.cfg.Timeout, r.cfg.Retries)
+	if r.cfg.AttemptTimeout > 0 {
+		fmt.Fprintf(logFile, "# attempt-timeout: %s  retries: %d\n", r.cfg.AttemptTimeout, r.cfg.Retries)
 	}
 	fmt.Fprintln(logFile, "---")
 
@@ -336,8 +336,8 @@ func (r *Runner) runOne(_ context.Context, slotID, index int, line string) {
 		// Each attempt gets its own timeout context derived from killCtx.
 		var cmdCtx context.Context
 		var cancelTO context.CancelFunc
-		if r.cfg.Timeout > 0 {
-			cmdCtx, cancelTO = context.WithTimeout(r.killCtx, r.cfg.Timeout)
+		if r.cfg.AttemptTimeout > 0 {
+			cmdCtx, cancelTO = context.WithTimeout(r.killCtx, r.cfg.AttemptTimeout)
 		} else {
 			cmdCtx, cancelTO = context.WithCancel(r.killCtx)
 		}

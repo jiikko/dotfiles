@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -41,9 +42,13 @@ func runPlain(ctx context.Context, cfg Config, lines []string) int {
 		}
 	}()
 
-	// Parent context cancel also forces a stop (e.g. if caller cancels externally).
+	// Parent context cancel also forces a stop (e.g. --total-timeout or
+	// external cancellation).
 	go func() {
 		<-ctx.Done()
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			fmt.Fprintln(os.Stderr, "\n--total-timeout reached; force-killing running jobs...")
+		}
 		r.ForceKill()
 	}()
 
@@ -66,9 +71,18 @@ func runPlain(ctx context.Context, cfg Config, lines []string) int {
 		}
 	}
 
-	if atomic.LoadInt32(&sigCount) > 0 {
-		fmt.Fprintf(os.Stderr, "cancelled: %d/%d completed, %d failed (logs: %s/)\n",
-			done, total, fail, logDir)
+	interrupted := atomic.LoadInt32(&sigCount) > 0 ||
+		errors.Is(ctx.Err(), context.DeadlineExceeded)
+
+	if interrupted {
+		reason := "cancelled"
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			reason = "timed out"
+		}
+		skipped := total - done
+		fmt.Fprintf(os.Stderr,
+			"%s: %d/%d completed (%d ok, %d failed, %d not run) (logs: %s/)\n",
+			reason, done, total, done-fail, fail, skipped, logDir)
 		return 1
 	}
 	if fail > 0 {
