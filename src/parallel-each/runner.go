@@ -146,6 +146,10 @@ func buildShellCommand(template string) string {
 //     subprocesses (via exec.CommandContext cancellation).
 //
 // Calling ForceKill implies RequestStop; both are idempotent.
+//
+// Live mode (SetLive(true)) keeps the dispatcher alive after the original
+// input list is exhausted so that Enqueue can push additional items at
+// runtime (used by the TUI).
 type Runner struct {
 	cfg        Config
 	lines      []string
@@ -158,15 +162,78 @@ type Runner struct {
 	stopCancel context.CancelFunc
 	killCtx    context.Context
 	killCancel context.CancelFunc
+
+	adds       chan string
+	live       bool
+	queuedMu   sync.Mutex
+	queued     map[string]struct{}
+	addedCount int // tracks items added via Enqueue (read under queuedMu)
 }
 
 func NewRunner(cfg Config, lines []string) *Runner {
+	queued := make(map[string]struct{}, len(lines))
+	for _, l := range lines {
+		queued[l] = struct{}{}
+	}
 	return &Runner{
 		cfg:    cfg,
 		lines:  lines,
 		events: make(chan Event, 64),
 		width:  digitWidth(len(lines)),
+		adds:   make(chan string, 256),
+		queued: queued,
 	}
+}
+
+// SetLive toggles "live" dispatch: after the original input list is drained,
+// the dispatcher blocks waiting for Enqueue instead of closing the job channel.
+// Must be called before Start; ignored afterwards.
+func (r *Runner) SetLive(live bool) {
+	r.live = live
+}
+
+// Enqueue pushes a new item into the live queue. Returns an error if the
+// runner is not live, if the item was already processed/queued, or if the
+// runner has been asked to stop. Thread-safe.
+func (r *Runner) Enqueue(line string) error {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return fmt.Errorf("empty input")
+	}
+	if !r.live {
+		return fmt.Errorf("runner not in live mode")
+	}
+	if r.stopCtx != nil && r.stopCtx.Err() != nil {
+		return fmt.Errorf("runner stopping")
+	}
+
+	r.queuedMu.Lock()
+	if _, exists := r.queued[line]; exists {
+		r.queuedMu.Unlock()
+		return fmt.Errorf("duplicate: %q already queued or processed", line)
+	}
+	r.queued[line] = struct{}{}
+	r.addedCount++
+	r.queuedMu.Unlock()
+
+	select {
+	case r.adds <- line:
+		return nil
+	default:
+		// Channel full — roll back the dedup entry so user can retry later.
+		r.queuedMu.Lock()
+		delete(r.queued, line)
+		r.addedCount--
+		r.queuedMu.Unlock()
+		return fmt.Errorf("queue full; try again shortly")
+	}
+}
+
+// AddedCount returns the number of items pushed via Enqueue.
+func (r *Runner) AddedCount() int {
+	r.queuedMu.Lock()
+	defer r.queuedMu.Unlock()
+	return r.addedCount
 }
 
 func (r *Runner) Events() <-chan Event { return r.events }
@@ -253,11 +320,31 @@ func (r *Runner) Start(parent context.Context) error {
 			r.resultLog.Close()
 			close(r.events)
 		}()
-		for i, line := range r.lines {
+		// Phase 1: original input list.
+		nextIdx := 0
+		for _, line := range r.lines {
+			nextIdx++
 			select {
 			case <-r.stopCtx.Done():
 				return
-			case jobs <- job{index: i + 1, line: line}:
+			case jobs <- job{index: nextIdx, line: line}:
+			}
+		}
+		// Phase 2: in live mode, wait for Enqueue. Loop until stopCtx fires.
+		if !r.live {
+			return
+		}
+		for {
+			select {
+			case <-r.stopCtx.Done():
+				return
+			case line := <-r.adds:
+				nextIdx++
+				select {
+				case <-r.stopCtx.Done():
+					return
+				case jobs <- job{index: nextIdx, line: line}:
+				}
 			}
 		}
 	}()

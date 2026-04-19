@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -791,6 +792,160 @@ func TestRunnerTimeoutPerAttempt(t *testing.T) {
 	// Sanity: total runtime should be roughly 2 * 300ms, not 2 * 5s.
 	if elapsed > 3*time.Second {
 		t.Errorf("elapsed = %v; timeout didn't fire", elapsed)
+	}
+}
+
+// Live mode: items Enqueue'd after Start are picked up and processed. Non-live
+// mode rejects Enqueue.
+func TestRunnerLiveEnqueue(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 2, Template: `echo {item}`}
+	r := NewRunner(cfg, []string{"a", "b"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Drain events in the background to keep the dispatcher moving.
+	var seenLines []string
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for ev := range r.Events() {
+			if ev.Kind == EventEnd {
+				mu.Lock()
+				seenLines = append(seenLines, ev.Line)
+				mu.Unlock()
+			}
+		}
+	}()
+
+	// Wait briefly then enqueue two more items.
+	time.Sleep(200 * time.Millisecond)
+	if err := r.Enqueue("c"); err != nil {
+		t.Fatalf("Enqueue(c): %v", err)
+	}
+	if err := r.Enqueue("d"); err != nil {
+		t.Fatalf("Enqueue(d): %v", err)
+	}
+	// Duplicate should fail.
+	if err := r.Enqueue("c"); err == nil {
+		t.Error("expected duplicate Enqueue to fail")
+	}
+	// Empty should fail.
+	if err := r.Enqueue("  "); err == nil {
+		t.Error("expected empty Enqueue to fail")
+	}
+
+	// Give the added items time to flow through, then stop.
+	time.Sleep(300 * time.Millisecond)
+	r.RequestStop()
+	wg.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+	for _, want := range []string{"a", "b", "c", "d"} {
+		found := false
+		for _, got := range seenLines {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing processed item %q (got %v)", want, seenLines)
+		}
+	}
+	if r.AddedCount() != 2 {
+		t.Errorf("AddedCount = %d, want 2", r.AddedCount())
+	}
+}
+
+// Non-live runner: Enqueue returns an error.
+func TestRunnerEnqueueRejectedWhenNotLive(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `echo {item}`}
+	r := NewRunner(cfg, []string{"a"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.RequestStop()
+		for range r.Events() {
+		}
+	}()
+
+	if err := r.Enqueue("b"); err == nil {
+		t.Error("expected Enqueue to fail on non-live runner")
+	}
+}
+
+// Enqueue is rejected after RequestStop.
+func TestRunnerEnqueueRejectedAfterStop(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `echo {item}`}
+	r := NewRunner(cfg, []string{"a"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// Drain events in background.
+	go func() {
+		for range r.Events() {
+		}
+	}()
+
+	r.RequestStop()
+	time.Sleep(50 * time.Millisecond)
+	if err := r.Enqueue("b"); err == nil {
+		t.Error("expected Enqueue to fail after RequestStop")
+	}
+}
+
+// Items already in result.log (added to queued set at NewRunner) are also
+// rejected as duplicates via Enqueue.
+func TestRunnerEnqueueRejectsExistingOriginal(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `sleep 5`}
+	r := NewRunner(cfg, []string{"a", "b"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	if err := r.Enqueue("a"); err == nil {
+		t.Error("expected duplicate-of-original Enqueue to fail")
 	}
 }
 

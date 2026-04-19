@@ -265,6 +265,162 @@ func TestTUIModelFocusClearsOnEnd(t *testing.T) {
 	}
 }
 
+// Pressing 'a' enters input mode; typing + Enter Enqueues a new item.
+func TestTUIModelAddItemFlow(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `sleep 5; echo {item}`}
+	r := NewRunner(cfg, []string{"a"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+
+	// Press 'a' to enter input mode.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = u.(model)
+	if !m.inputMode {
+		t.Fatal("expected inputMode after pressing 'a'")
+	}
+
+	// Type "new-item" character by character.
+	for _, r := range "new-item" {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = u.(model)
+	}
+	if string(m.inputBuf) != "new-item" {
+		t.Fatalf("inputBuf = %q, want %q", string(m.inputBuf), "new-item")
+	}
+
+	// Submit with Enter.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(model)
+	if m.inputMode {
+		t.Fatal("inputMode should be false after Enter")
+	}
+	if m.addedLive != 1 {
+		t.Errorf("addedLive = %d, want 1", m.addedLive)
+	}
+	if m.total != 2 {
+		t.Errorf("total = %d, want 2 (original + added)", m.total)
+	}
+	if m.flashErr {
+		t.Errorf("unexpected error flash: %q", m.flashMsg)
+	}
+	if r.AddedCount() != 1 {
+		t.Errorf("runner.AddedCount = %d, want 1", r.AddedCount())
+	}
+}
+
+// Backspace and Esc behave correctly in input mode.
+func TestTUIModelInputEditing(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `echo {item}`}
+	r := NewRunner(cfg, []string{"x"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = u.(model)
+
+	for _, ch := range "abc" {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		m = u.(model)
+	}
+
+	// Backspace
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	m = u.(model)
+	if string(m.inputBuf) != "ab" {
+		t.Errorf("after backspace: %q, want %q", string(m.inputBuf), "ab")
+	}
+
+	// Ctrl+U clears
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	m = u.(model)
+	if len(m.inputBuf) != 0 {
+		t.Errorf("after ctrl-u buf = %q, want empty", string(m.inputBuf))
+	}
+
+	// Esc cancels without submitting
+	for _, ch := range "zzz" {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		m = u.(model)
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(model)
+	if m.inputMode {
+		t.Error("esc should exit input mode")
+	}
+	if r.AddedCount() != 0 {
+		t.Errorf("nothing should be added; got %d", r.AddedCount())
+	}
+}
+
+// Duplicate submission yields an error flash.
+func TestTUIModelAddItemDuplicate(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `sleep 5`}
+	r := NewRunner(cfg, []string{"alpha"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = u.(model)
+	for _, ch := range "alpha" {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		m = u.(model)
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(model)
+	if !m.flashErr {
+		t.Error("expected error flash on duplicate")
+	}
+	if m.total != 1 {
+		t.Errorf("total = %d, want 1 (duplicate rejected)", m.total)
+	}
+}
+
 func TestModelETA(t *testing.T) {
 	cases := []struct {
 		name      string

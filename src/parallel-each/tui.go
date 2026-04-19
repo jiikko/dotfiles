@@ -86,6 +86,14 @@ type model struct {
 	// excludes these.
 	skipped int
 
+	// Interactive add-to-queue state.
+	inputMode  bool
+	inputBuf   []rune
+	flashMsg   string
+	flashErr   bool
+	flashUntil time.Time
+	addedLive  int // count of items successfully Enqueued
+
 	width    int
 	height   int
 	events   <-chan Event
@@ -147,6 +155,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Input mode captures almost every key as text.
+		if m.inputMode {
+			return m.handleInputKey(msg)
+		}
 		s := msg.String()
 		// Digit keys 1-9 toggle focus on the corresponding slot, if active.
 		if len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
@@ -159,6 +171,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch s {
+		case "a":
+			// Enter add-to-queue input mode (only when focus is off).
+			if m.focusSlot == 0 && m.runner != nil && !m.stopping {
+				m.inputMode = true
+				m.inputBuf = m.inputBuf[:0]
+				m.flashMsg = ""
+			}
+			return m, nil
 		case "0":
 			m.focusSlot = 0
 			return m, nil
@@ -296,6 +316,30 @@ func (m model) View() string {
 	}
 
 	b.WriteString("\n")
+
+	// Transient flash message (e.g., add confirmation / error).
+	if m.flashMsg != "" && time.Now().Before(m.flashUntil) {
+		if m.flashErr {
+			b.WriteString("  " + styleFail.Render(m.flashMsg))
+		} else {
+			b.WriteString("  " + styleOK.Render(m.flashMsg))
+		}
+		b.WriteString("\n")
+	}
+
+	// Input prompt when adding a new item.
+	if m.inputMode {
+		b.WriteString("  ")
+		b.WriteString(styleHeader.Render("add item:"))
+		b.WriteString(" ")
+		b.WriteString(string(m.inputBuf))
+		b.WriteString(styleRunning.Render("▌"))
+		b.WriteString("\n")
+		b.WriteString(styleKey.Render("  enter: submit   esc: cancel   ctrl-u: clear"))
+		b.WriteString("\n")
+		return b.String()
+	}
+
 	if m.stopping {
 		if running > 0 {
 			b.WriteString(styleFail.Render(fmt.Sprintf(
@@ -304,9 +348,11 @@ func (m model) View() string {
 			b.WriteString(styleFail.Render("  stopping…"))
 		}
 	} else if m.focusSlot != 0 {
-		b.WriteString(styleKey.Render("  esc / 0: back to overview   q / ctrl-c: stop"))
+		b.WriteString(styleKey.Render("  esc / 0: back to overview   a: add item   q / ctrl-c: stop"))
+	} else if m.completed >= m.total && running == 0 {
+		b.WriteString(styleKey.Render("  all done — a: add more   q: exit"))
 	} else {
-		b.WriteString(styleKey.Render("  1-9: focus slot   q / ctrl-c: stop (twice = force-kill)"))
+		b.WriteString(styleKey.Render("  1-9: focus slot   a: add item   q / ctrl-c: stop (twice = force-kill)"))
 	}
 	b.WriteString("\n")
 
@@ -480,6 +526,55 @@ func (m model) renderFocus() string {
 	return b.String()
 }
 
+// handleInputKey processes keystrokes while the add-item prompt is active.
+func (m model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		line := strings.TrimSpace(string(m.inputBuf))
+		m.inputBuf = m.inputBuf[:0]
+		m.inputMode = false
+		if line == "" {
+			return m, nil
+		}
+		if err := m.runner.Enqueue(line); err != nil {
+			m.setFlash("✗ "+err.Error(), true)
+		} else {
+			m.addedLive++
+			m.total++
+			m.setFlash(fmt.Sprintf("✓ added: %s", truncate(line, 60)), false)
+		}
+		return m, nil
+	case tea.KeyEsc, tea.KeyCtrlC:
+		m.inputMode = false
+		m.inputBuf = m.inputBuf[:0]
+		return m, nil
+	case tea.KeyBackspace, tea.KeyCtrlH:
+		if n := len(m.inputBuf); n > 0 {
+			m.inputBuf = m.inputBuf[:n-1]
+		}
+		return m, nil
+	case tea.KeyCtrlU:
+		m.inputBuf = m.inputBuf[:0]
+		return m, nil
+	case tea.KeyRunes:
+		m.inputBuf = append(m.inputBuf, msg.Runes...)
+		return m, nil
+	case tea.KeySpace:
+		m.inputBuf = append(m.inputBuf, ' ')
+		return m, nil
+	}
+	return m, nil
+}
+
+// setFlash records a transient message shown above the footer. Pointer
+// receiver intentionally not used — model is a value type in Bubble Tea, and
+// callers re-assign the returned model.
+func (m *model) setFlash(msg string, isErr bool) {
+	m.flashMsg = msg
+	m.flashErr = isErr
+	m.flashUntil = time.Now().Add(3 * time.Second)
+}
+
 func sortedSlotIDs(m map[int]slotState) []int {
 	ids := make([]int, 0, len(m))
 	for id := range m {
@@ -592,6 +687,7 @@ func formatDur(d time.Duration) string {
 // runTUI drives the TUI and blocks until jobs are done (or user quits).
 func runTUI(ctx context.Context, cfg Config, lines []string, skipped int) int {
 	r := NewRunner(cfg, lines)
+	r.SetLive(true) // enable interactive Enqueue via the TUI 'a' key
 	if err := r.Start(ctx); err != nil {
 		fmt.Printf("error: %v\n", err)
 		return 1

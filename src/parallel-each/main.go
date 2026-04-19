@@ -87,7 +87,21 @@ TUI
     1-9        Focus on the slot with that ID. In focus mode the slot's log
                tail fills the lower half of the screen.
     esc, 0     Exit focus mode and return to the overview.
+    a          Add a new item to the queue (see LIVE ADD below).
     q, ctrl-c  Stop (see SHUTDOWN below).
+
+LIVE ADD (TUI only)
+  Press 'a' from the overview to open an inline prompt and type a new input
+  line. Enter pushes it into the live queue; esc / ctrl-c cancels; ctrl-u
+  clears the buffer; backspace deletes.
+
+  Added items are checked against the resume set and the current queue — a
+  duplicate is rejected with an inline error flash. Each accepted item gets
+  the next sequential job number and its own per-job log, and a row in
+  result.log on completion.
+
+  In live mode the TUI does not auto-exit when all items finish; press q to
+  exit, or press a to add more. Plain mode does not support live add.
 
 SHUTDOWN (two-stage)
   The same semantics apply in TUI keypresses and plain-mode signals.
