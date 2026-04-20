@@ -463,29 +463,29 @@ func TestTUIModelRecentView(t *testing.T) {
 	// Down arrow moves cursor by 1.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = u.(model)
-	if m.recentCursor != 1 {
-		t.Errorf("cursor after down = %d, want 1", m.recentCursor)
+	if m.recentList.cursor != 1 {
+		t.Errorf("cursor after down = %d, want 1", m.recentList.cursor)
 	}
 
 	// 'j' also moves cursor down.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	m = u.(model)
-	if m.recentCursor != 2 {
-		t.Errorf("cursor after j = %d, want 2", m.recentCursor)
+	if m.recentList.cursor != 2 {
+		t.Errorf("cursor after j = %d, want 2", m.recentList.cursor)
 	}
 
 	// 'G' goes to the end.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
 	m = u.(model)
-	if m.recentCursor != 49 {
-		t.Errorf("cursor after G = %d, want 49", m.recentCursor)
+	if m.recentList.cursor != 49 {
+		t.Errorf("cursor after G = %d, want 49", m.recentList.cursor)
 	}
 
 	// 'g' returns to top.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	m = u.(model)
-	if m.recentCursor != 0 {
-		t.Errorf("cursor after g = %d, want 0", m.recentCursor)
+	if m.recentList.cursor != 0 {
+		t.Errorf("cursor after g = %d, want 0", m.recentList.cursor)
 	}
 
 	// esc exits.
@@ -627,16 +627,16 @@ func TestTUIModelQueueView(t *testing.T) {
 	// Down arrow moves cursor.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = u.(model)
-	if m.queueCursor != 1 {
-		t.Errorf("cursor after down = %d, want 1", m.queueCursor)
+	if m.queueList.cursor != 1 {
+		t.Errorf("cursor after down = %d, want 1", m.queueList.cursor)
 	}
 
 	// 'G' goes to end.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
 	m = u.(model)
 	want := len(m.queueSnapshot) - 1
-	if m.queueCursor != want {
-		t.Errorf("cursor after G = %d, want %d", m.queueCursor, want)
+	if m.queueList.cursor != want {
+		t.Errorf("cursor after G = %d, want %d", m.queueList.cursor, want)
 	}
 
 	// Esc closes.
