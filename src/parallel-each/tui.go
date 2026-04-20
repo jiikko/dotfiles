@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -66,6 +67,7 @@ type recentEntry struct {
 	Line     string
 	ExitCode int
 	Duration time.Duration
+	LogPath  string
 }
 
 type model struct {
@@ -120,7 +122,8 @@ type model struct {
 
 	// Full recent-view state.
 	recentMode   bool
-	recentScroll int // number of rows scrolled down from the top (newest)
+	recentScroll int // viewport top row (index into m.recent)
+	recentCursor int // highlighted row (index into m.recent)
 
 	width    int
 	height   int
@@ -280,6 +283,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.focusSlot == 0 && len(m.recent) > 0 {
 				m.recentMode = true
 				m.recentScroll = 0
+				m.recentCursor = 0
+			}
+			return m, nil
+		case "e":
+			// In focus mode, open the focused slot's log in $EDITOR.
+			if m.focusSlot != 0 {
+				if s, ok := m.slots[m.focusSlot]; ok && s.LogPath != "" {
+					return m, openEditorCmd(s.LogPath)
+				}
 			}
 			return m, nil
 		case "0":
@@ -353,6 +365,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Line:     ev.Line,
 				ExitCode: ev.ExitCode,
 				Duration: ev.Ended.Sub(ev.Started),
+				LogPath:  ev.LogPath,
 			}
 			m.recent = append([]recentEntry{entry}, m.recent...)
 			if len(m.recent) > m.maxRecent {
@@ -361,6 +374,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateActiveState()
 		}
 		return m, waitForEvent(m.events)
+
+	case editorDoneMsg:
+		if msg.err != nil {
+			m.setFlash("✗ editor error: "+msg.err.Error(), true)
+		} else {
+			m.setFlash("✓ closed "+filepath.Base(msg.path), false)
+		}
+		return m, nil
 
 	case doneMsg:
 		m.done = true
@@ -517,9 +538,9 @@ func (m model) View() string {
 			b.WriteString(styleFail.Render("  stopping…"))
 		}
 	} else if m.recentMode {
-		b.WriteString(styleKey.Render("  ↑/↓ or j/k: scroll   pgup/pgdown: page   g/G: top/bottom   esc/r: back"))
+		b.WriteString(styleKey.Render("  ↑/↓ or j/k: move   pgup/pgdown: page   g/G: top/bottom   enter: open log   esc/r: back"))
 	} else if m.focusSlot != 0 {
-		b.WriteString(styleKey.Render("  esc / 0: back to overview   a: add item   q / ctrl-c: stop"))
+		b.WriteString(styleKey.Render("  esc / 0: back   e: open log in $EDITOR   a: add   q: stop"))
 	} else if m.completed >= m.total && running == 0 {
 		b.WriteString(styleKey.Render("  all done — a: add   p: par   r: recent   o: other   q: exit"))
 	} else {
@@ -1035,6 +1056,30 @@ func shellSingleQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// editorDoneMsg is emitted after the external editor exits.
+type editorDoneMsg struct {
+	path string
+	err  error
+}
+
+// openEditorCmd suspends the TUI and runs $EDITOR (or $VISUAL, or vi) on the
+// given path. When the editor exits the TUI resumes.
+var openEditorCmd = func(path string) tea.Cmd {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = os.Getenv("VISUAL")
+	}
+	if editor == "" {
+		editor = "vi"
+	}
+	// Support editors with embedded args (e.g. "code -w").
+	cmd := exec.Command("sh", "-c",
+		fmt.Sprintf("%s %s", editor, shellSingleQuote(path)))
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return editorDoneMsg{path: path, err: err}
+	})
+}
+
 // handleRecentKey processes keystrokes while the full recent view is open.
 func (m model) handleRecentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	pageSize := m.recentPageSize()
@@ -1048,14 +1093,35 @@ func (m model) handleRecentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return s
 	}
+	ensureCursorVisible := func() {
+		if m.recentCursor < m.recentScroll {
+			m.recentScroll = m.recentCursor
+		}
+		if m.recentCursor >= m.recentScroll+pageSize {
+			m.recentScroll = m.recentCursor - pageSize + 1
+		}
+		m.recentScroll = clamp(m.recentScroll)
+	}
+
+	if msg.Type == tea.KeyEnter {
+		if total == 0 {
+			return m, nil
+		}
+		e := m.recent[m.recentCursor]
+		if e.LogPath == "" {
+			m.setFlash("✗ no log path for this entry", true)
+			return m, nil
+		}
+		return m, openEditorCmd(e.LogPath)
+	}
 
 	switch msg.String() {
 	case "esc", "r", "q":
 		m.recentMode = false
 		m.recentScroll = 0
+		m.recentCursor = 0
 		return m, nil
 	case "ctrl+c":
-		// Let the normal shutdown logic handle Ctrl-C even from this view.
 		m.recentMode = false
 		if !m.stopping {
 			m.stopping = true
@@ -1065,17 +1131,23 @@ func (m model) handleRecentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "up", "k":
-		m.recentScroll = clamp(m.recentScroll - 1)
+		m.recentCursor = clamp(m.recentCursor - 1)
+		ensureCursorVisible()
 	case "down", "j":
-		m.recentScroll = clamp(m.recentScroll + 1)
+		m.recentCursor = clamp(m.recentCursor + 1)
+		ensureCursorVisible()
 	case "pgup", "b":
-		m.recentScroll = clamp(m.recentScroll - pageSize)
+		m.recentCursor = clamp(m.recentCursor - pageSize)
+		ensureCursorVisible()
 	case "pgdown", " ", "f":
-		m.recentScroll = clamp(m.recentScroll + pageSize)
+		m.recentCursor = clamp(m.recentCursor + pageSize)
+		ensureCursorVisible()
 	case "home", "g":
+		m.recentCursor = 0
 		m.recentScroll = 0
 	case "end", "G":
-		m.recentScroll = clamp(total - 1)
+		m.recentCursor = clamp(total - 1)
+		ensureCursorVisible()
 	}
 	return m, nil
 }
@@ -1149,7 +1221,12 @@ func (m model) renderRecentFull() string {
 			mark = styleFail.Render("✗")
 			tail = styleFail.Render(fmt.Sprintf(" (exit=%d)", e.ExitCode))
 		}
-		b.WriteString(fmt.Sprintf("    %s %s %s %s%s\n",
+		pointer := "  "
+		if i == m.recentCursor {
+			pointer = styleRunning.Render("▶ ")
+		}
+		b.WriteString(fmt.Sprintf("  %s%s %s %s %s%s\n",
+			pointer,
 			mark,
 			styleDim.Render(fmt.Sprintf("%04d", e.JobIndex)),
 			styleDim.Render(fmt.Sprintf("%7s", formatDur(e.Duration))),

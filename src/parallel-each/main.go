@@ -95,7 +95,10 @@ TUI
                current job completes; running jobs are NOT interrupted.
                Minimum 1.
     r          Open the full recent view — a scrollable list of every
-               completed job (↑/↓ or j/k, pgup/pgdown, g/G, esc/r to close).
+               completed job. Navigate with ↑/↓ or j/k, pgup/pgdown, g/G.
+               Press Enter on a row to open its per-job log in $EDITOR
+               (falls back to $VISUAL, then vi). esc/r/q to close.
+    e          (focus mode) Open the focused slot's per-job log in $EDITOR.
     o          Open the "other actions" menu. Currently contains:
                  1) Export wrapper script — writes a zsh wrapper into
                     ./bin/ (the bin/ directory of your current working

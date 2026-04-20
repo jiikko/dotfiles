@@ -459,32 +459,32 @@ func TestTUIModelRecentView(t *testing.T) {
 		t.Fatal("expected recentMode after pressing r")
 	}
 
-	// Down arrow scrolls by 1.
+	// Down arrow moves cursor by 1.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = u.(model)
-	if m.recentScroll != 1 {
-		t.Errorf("scroll after down = %d, want 1", m.recentScroll)
+	if m.recentCursor != 1 {
+		t.Errorf("cursor after down = %d, want 1", m.recentCursor)
 	}
 
-	// 'j' also scrolls down.
+	// 'j' also moves cursor down.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	m = u.(model)
-	if m.recentScroll != 2 {
-		t.Errorf("scroll after j = %d, want 2", m.recentScroll)
+	if m.recentCursor != 2 {
+		t.Errorf("cursor after j = %d, want 2", m.recentCursor)
 	}
 
 	// 'G' goes to the end.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
 	m = u.(model)
-	if m.recentScroll != 49 {
-		t.Errorf("scroll after G = %d, want 49", m.recentScroll)
+	if m.recentCursor != 49 {
+		t.Errorf("cursor after G = %d, want 49", m.recentCursor)
 	}
 
 	// 'g' returns to top.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	m = u.(model)
-	if m.recentScroll != 0 {
-		t.Errorf("scroll after g = %d, want 0", m.recentScroll)
+	if m.recentCursor != 0 {
+		t.Errorf("cursor after g = %d, want 0", m.recentCursor)
 	}
 
 	// esc exits.
@@ -492,6 +492,97 @@ func TestTUIModelRecentView(t *testing.T) {
 	m = u.(model)
 	if m.recentMode {
 		t.Fatal("esc should exit recentMode")
+	}
+}
+
+// Enter in recent view triggers an editor launch for the cursor row's log.
+func TestTUIModelRecentEnterOpensEditor(t *testing.T) {
+	var openedPath string
+	orig := openEditorCmd
+	openEditorCmd = func(path string) tea.Cmd {
+		openedPath = path
+		return nil
+	}
+	defer func() { openEditorCmd = orig }()
+
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `echo {item}`}
+	r := NewRunner(cfg, []string{"x"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+	m.recent = []recentEntry{
+		{JobIndex: 1, Line: "alpha", ExitCode: 0, Duration: time.Second, LogPath: "/tmp/p/001-alpha.log"},
+		{JobIndex: 2, Line: "beta", ExitCode: 1, Duration: time.Second, LogPath: "/tmp/p/002-beta.log"},
+	}
+	m.height = 30
+
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	m = u.(model)
+	// Move cursor to second row then Enter.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = u.(model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_ = u
+	if openedPath != "/tmp/p/002-beta.log" {
+		t.Errorf("openEditorCmd called with %q, want %q", openedPath, "/tmp/p/002-beta.log")
+	}
+}
+
+// 'e' in focus mode opens the focused slot's log in the editor.
+func TestTUIModelFocusEOpensEditor(t *testing.T) {
+	var openedPath string
+	orig := openEditorCmd
+	openEditorCmd = func(path string) tea.Cmd {
+		openedPath = path
+		return nil
+	}
+	defer func() { openEditorCmd = orig }()
+
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `sleep 10`}
+	r := NewRunner(cfg, []string{"x"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+	m.slots[1] = slotState{
+		Active:   true,
+		JobIndex: 1,
+		Line:     "x",
+		LogPath:  "/tmp/p/001-x.log",
+	}
+	m.focusSlot = 1
+
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	_ = u
+	if openedPath != "/tmp/p/001-x.log" {
+		t.Errorf("openEditorCmd called with %q, want /tmp/p/001-x.log", openedPath)
 	}
 }
 
