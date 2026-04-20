@@ -997,6 +997,67 @@ func TestRunnerSetParallelismShrinks(t *testing.T) {
 	}
 }
 
+// PendingSnapshot reflects original lines at Start, shrinks as workers run,
+// and grows when Enqueue is called.
+func TestRunnerPendingSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, File: filepath.Join(dir, "in.txt"),
+		Template: `sleep 0.3`}
+	if err := os.WriteFile(cfg.File, []byte("a\nb\nc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := NewRunner(cfg, []string{"a", "b", "c"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	// Immediately after Start: all 3 items are pending.
+	if got := r.PendingSnapshot(); len(got) != 3 {
+		t.Errorf("initial pending = %v, want 3 items", got)
+	}
+
+	// Wait for at least one job to start (worker will consume from pending).
+	deadline := time.Now().Add(2 * time.Second)
+	for r.PendingCount() == 3 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if n := r.PendingCount(); n >= 3 {
+		t.Errorf("pending did not shrink: %d", n)
+	}
+
+	// Enqueue → pending count +1
+	prior := r.PendingCount()
+	if err := r.Enqueue("live-added"); err != nil {
+		t.Fatal(err)
+	}
+	if n := r.PendingCount(); n != prior+1 {
+		t.Errorf("after Enqueue: pending = %d, want %d", n, prior+1)
+	}
+	snap := r.PendingSnapshot()
+	found := false
+	for _, s := range snap {
+		if s == "live-added" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("enqueued item not in pending snapshot: %v", snap)
+	}
+}
+
 // SetParallelism(0) is clamped to 1.
 func TestRunnerSetParallelismMinimum(t *testing.T) {
 	dir := t.TempDir()

@@ -125,6 +125,12 @@ type model struct {
 	recentScroll int // viewport top row (index into m.recent)
 	recentCursor int // highlighted row (index into m.recent)
 
+	// Queue view state (pending items).
+	queueMode     bool
+	queueScroll   int
+	queueCursor   int
+	queueSnapshot []string
+
 	width    int
 	height   int
 	events   <-chan Event
@@ -247,6 +253,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.recentMode {
 			return m.handleRecentKey(msg)
 		}
+		if m.queueMode {
+			return m.handleQueueKey(msg)
+		}
 		s := msg.String()
 		// Digit keys 1-9 toggle focus on the corresponding slot, if active.
 		if len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
@@ -286,6 +295,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.recentCursor = 0
 			}
 			return m, nil
+		case "l":
+			// Queue / pending list.
+			if m.focusSlot == 0 && m.runner != nil {
+				m.queueMode = true
+				m.queueScroll = 0
+				m.queueCursor = 0
+				m.queueSnapshot = m.runner.PendingSnapshot()
+			}
+			return m, nil
 		case "e":
 			// In focus mode, open the focused slot's log in $EDITOR.
 			if m.focusSlot != 0 {
@@ -318,10 +336,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.done {
 			return m, nil
 		}
-		// Refresh tails for active slots, then schedule the next tick.
+		// Refresh tails for active slots; also refresh queue snapshot if
+		// the queue view is open.
 		lines := m.tailPerSlot
 		if m.focusSlot != 0 {
 			lines = m.focusTailLines
+		}
+		if m.queueMode && m.runner != nil {
+			m.queueSnapshot = m.runner.PendingSnapshot()
+			if m.queueCursor >= len(m.queueSnapshot) && len(m.queueSnapshot) > 0 {
+				m.queueCursor = len(m.queueSnapshot) - 1
+			}
 		}
 		return m, tea.Batch(
 			refreshTailsCmd(m.slots, lines),
@@ -436,6 +461,8 @@ func (m model) View() string {
 
 	if m.recentMode {
 		b.WriteString(m.renderRecentFull())
+	} else if m.queueMode {
+		b.WriteString(m.renderQueue())
 	} else if m.focusSlot != 0 {
 		b.WriteString(m.renderFocus())
 	} else {
@@ -539,12 +566,14 @@ func (m model) View() string {
 		}
 	} else if m.recentMode {
 		b.WriteString(styleKey.Render("  ↑/↓ or j/k: move   pgup/pgdown: page   g/G: top/bottom   enter: open log   esc/r: back"))
+	} else if m.queueMode {
+		b.WriteString(styleKey.Render("  ↑/↓ or j/k: move   pgup/pgdown: page   g/G: top/bottom   esc/l: back"))
 	} else if m.focusSlot != 0 {
 		b.WriteString(styleKey.Render("  esc / 0: back   e: open log in $EDITOR   a: add   q: stop"))
 	} else if m.completed >= m.total && running == 0 {
-		b.WriteString(styleKey.Render("  all done — a: add   p: par   r: recent   o: other   q: exit"))
+		b.WriteString(styleKey.Render("  all done — a: add   p: par   r: recent   l: queue   o: other   q: exit"))
 	} else {
-		b.WriteString(styleKey.Render("  1-9: focus   a: add   p: par   r: recent   o: other   q: stop"))
+		b.WriteString(styleKey.Render("  1-9: focus   a: add   p: par   r: recent   l: queue   o: other   q: stop"))
 	}
 	b.WriteString("\n")
 
@@ -1080,6 +1109,64 @@ var openEditorCmd = func(path string) tea.Cmd {
 	})
 }
 
+// handleQueueKey processes keystrokes while the queue (pending) view is open.
+func (m model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	pageSize := m.recentPageSize()
+	total := len(m.queueSnapshot)
+	clamp := func(s int) int {
+		if s < 0 {
+			return 0
+		}
+		if total > 0 && s > total-1 {
+			return total - 1
+		}
+		return s
+	}
+	ensureCursorVisible := func() {
+		if m.queueCursor < m.queueScroll {
+			m.queueScroll = m.queueCursor
+		}
+		if m.queueCursor >= m.queueScroll+pageSize {
+			m.queueScroll = m.queueCursor - pageSize + 1
+		}
+		m.queueScroll = clamp(m.queueScroll)
+	}
+
+	switch msg.String() {
+	case "esc", "l", "q":
+		m.queueMode = false
+		return m, nil
+	case "ctrl+c":
+		m.queueMode = false
+		if !m.stopping {
+			m.stopping = true
+			m.runner.RequestStop()
+		} else {
+			m.runner.ForceKill()
+		}
+		return m, nil
+	case "up", "k":
+		m.queueCursor = clamp(m.queueCursor - 1)
+		ensureCursorVisible()
+	case "down", "j":
+		m.queueCursor = clamp(m.queueCursor + 1)
+		ensureCursorVisible()
+	case "pgup", "b":
+		m.queueCursor = clamp(m.queueCursor - pageSize)
+		ensureCursorVisible()
+	case "pgdown", " ", "f":
+		m.queueCursor = clamp(m.queueCursor + pageSize)
+		ensureCursorVisible()
+	case "home", "g":
+		m.queueCursor = 0
+		m.queueScroll = 0
+	case "end", "G":
+		m.queueCursor = clamp(total - 1)
+		ensureCursorVisible()
+	}
+	return m, nil
+}
+
 // handleRecentKey processes keystrokes while the full recent view is open.
 func (m model) handleRecentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	pageSize := m.recentPageSize()
@@ -1242,6 +1329,45 @@ func (m model) renderRecentFull() string {
 		b.WriteString("\n")
 	}
 
+	return b.String()
+}
+
+// renderQueue renders a scrollable list of pending items.
+func (m model) renderQueue() string {
+	var b strings.Builder
+	total := len(m.queueSnapshot)
+	b.WriteString(styleHeader.Render(fmt.Sprintf("  queue (pending) — %d item(s)", total)))
+	b.WriteString("\n\n")
+	if total == 0 {
+		b.WriteString(styleDim.Render("    (empty)"))
+		b.WriteString("\n")
+		return b.String()
+	}
+	pageSize := m.recentPageSize()
+	start := m.queueScroll
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	available := m.width - 10
+	if available < 10 {
+		available = 10
+	}
+	for i := start; i < end; i++ {
+		line := m.queueSnapshot[i]
+		pointer := "  "
+		if i == m.queueCursor {
+			pointer = styleRunning.Render("▶ ")
+		}
+		b.WriteString(fmt.Sprintf("  %s%s %s\n",
+			pointer,
+			styleDim.Render(fmt.Sprintf("%04d", i+1)),
+			truncate(line, available),
+		))
+	}
+	b.WriteString("\n    ")
+	b.WriteString(styleDim.Render(fmt.Sprintf("showing %d–%d of %d", start+1, end, total)))
+	b.WriteString("\n")
 	return b.String()
 }
 

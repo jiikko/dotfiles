@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -583,6 +584,66 @@ func TestTUIModelFocusEOpensEditor(t *testing.T) {
 	_ = u
 	if openedPath != "/tmp/p/001-x.log" {
 		t.Errorf("openEditorCmd called with %q, want /tmp/p/001-x.log", openedPath)
+	}
+}
+
+// 'l' opens the queue view, populates snapshot, cursor/scroll work.
+func TestTUIModelQueueView(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	items := make([]string, 50)
+	for i := range items {
+		items[i] = fmt.Sprintf("item-%02d", i+1)
+	}
+	cfg := Config{Parallelism: 1, Template: `sleep 10`}
+	r := NewRunner(cfg, items)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, len(items), r.Events(), r, 0)
+	m.height = 30
+
+	// 'l' opens queue view and loads snapshot.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	m = u.(model)
+	if !m.queueMode {
+		t.Fatal("expected queueMode=true after 'l'")
+	}
+	if len(m.queueSnapshot) == 0 {
+		t.Fatal("queueSnapshot should be populated")
+	}
+
+	// Down arrow moves cursor.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = u.(model)
+	if m.queueCursor != 1 {
+		t.Errorf("cursor after down = %d, want 1", m.queueCursor)
+	}
+
+	// 'G' goes to end.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	m = u.(model)
+	want := len(m.queueSnapshot) - 1
+	if m.queueCursor != want {
+		t.Errorf("cursor after G = %d, want %d", m.queueCursor, want)
+	}
+
+	// Esc closes.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(model)
+	if m.queueMode {
+		t.Fatal("esc should close queue view")
 	}
 }
 

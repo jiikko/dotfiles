@@ -170,6 +170,12 @@ type Runner struct {
 	queued     map[string]struct{}
 	addedCount int // tracks items added via Enqueue (read under queuedMu)
 
+	// Snapshot of items that have not started running yet. Items are added
+	// when registered (original list on Start, or Enqueue) and removed when
+	// a worker picks them up. Used by the TUI 'queue' view.
+	pendingMu sync.Mutex
+	pending   []string
+
 	// Dynamic worker pool state.
 	jobs          chan runnerJob
 	wg            sync.WaitGroup
@@ -238,9 +244,9 @@ func (r *Runner) Enqueue(line string) error {
 
 	select {
 	case r.adds <- line:
-		// Best-effort append to the -F input file. Any error is surfaced via
-		// stderr but does not roll back the enqueue — the job is already
-		// headed for the workers.
+		// Track the new item in the pending snapshot for the queue view.
+		r.addPending(line)
+		// Best-effort append to the -F input file.
 		switch err := r.appendToInputFile(line); {
 		case err == nil:
 		case errors.Is(err, errInputLineExists):
@@ -313,6 +319,43 @@ func (r *Runner) AddedCount() int {
 	return r.addedCount
 }
 
+// PendingSnapshot returns a copy of the lines that have been registered but
+// not yet started by a worker. Order is insertion order (original input
+// first, adds appended in the order they were Enqueue'd).
+func (r *Runner) PendingSnapshot() []string {
+	r.pendingMu.Lock()
+	defer r.pendingMu.Unlock()
+	out := make([]string, len(r.pending))
+	copy(out, r.pending)
+	return out
+}
+
+// PendingCount returns the number of not-yet-started items (cheap).
+func (r *Runner) PendingCount() int {
+	r.pendingMu.Lock()
+	defer r.pendingMu.Unlock()
+	return len(r.pending)
+}
+
+func (r *Runner) addPending(line string) {
+	r.pendingMu.Lock()
+	r.pending = append(r.pending, line)
+	r.pendingMu.Unlock()
+}
+
+// removePending removes the first occurrence of line from the pending list.
+// Pending entries are unique thanks to the dedup check, so "first" == "only".
+func (r *Runner) removePending(line string) {
+	r.pendingMu.Lock()
+	defer r.pendingMu.Unlock()
+	for i, l := range r.pending {
+		if l == line {
+			r.pending = append(r.pending[:i], r.pending[i+1:]...)
+			return
+		}
+	}
+}
+
 func (r *Runner) Events() <-chan Event { return r.events }
 
 // RequestStop signals the runner to stop dispatching new jobs. Jobs currently
@@ -369,6 +412,12 @@ func (r *Runner) Start(parent context.Context) error {
 	}
 
 	r.jobs = make(chan runnerJob)
+
+	// Seed the pending snapshot with the original input list.
+	r.pendingMu.Lock()
+	r.pending = append(r.pending, r.lines...)
+	r.pendingMu.Unlock()
+
 	r.SetParallelism(initialPar)
 
 	go func() {
@@ -442,6 +491,8 @@ func (r *Runner) Parallelism() int {
 func (r *Runner) workerLoop(slotID int) {
 	defer r.wg.Done()
 	for j := range r.jobs {
+		// Job has been claimed by a worker — remove from the pending view.
+		r.removePending(j.line)
 		if r.stopCtx.Err() != nil {
 			continue
 		}
