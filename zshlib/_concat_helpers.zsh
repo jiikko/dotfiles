@@ -485,15 +485,37 @@ __concat_verify_frame_order() {
     }')
     input_hash=$(__concat_frame_hash "$file" "$sample_t")
     output_t=$(awk -v c="$cumulative" -v s="$sample_t" 'BEGIN{ printf "%.3f", c+s }')
-    output_hash=$(__concat_frame_hash "$outfile" "$output_t")
-    if [[ -z "$input_hash" ]] || [[ -z "$output_hash" ]]; then
+    if [[ -z "$input_hash" ]]; then
       # フレーム抽出失敗は結合エラーではなく検証の限界 — スキップして続行
       print -r -- "⚠️  フレーム抽出スキップ: ${file:t} (結合順序が正しいか手動で確認してください)" >&2
       cumulative=$(awk -v c="$cumulative" -v d="$dur" 'BEGIN{ printf "%.3f", c+d }')
       continue
     fi
-    if [[ "$input_hash" != "$output_hash" ]]; then
-      REPLY="フレーム不一致: ${file:t} (入力 ${sample_t}s ≠ 出力 ${output_t}s)"
+    # concat demuxer がストリーム start_time を数十ms シフトすることがあるため、
+    # ±50ms の窓内で一致するフレームを探す(~1-3 フレーム相当の許容)
+    local matched=0
+    local probe_skipped=1
+    local probe_t=""
+    local probe_hash=""
+    local _offset=""
+    for _offset in 0 0.033 -0.033 0.050 -0.050; do
+      probe_t=$(awk -v t="$output_t" -v o="$_offset" 'BEGIN{ v=t+o; if(v<0) v=0; printf "%.3f", v }')
+      probe_hash=$(__concat_frame_hash "$outfile" "$probe_t")
+      if [[ -n "$probe_hash" ]]; then
+        probe_skipped=0
+        if [[ "$probe_hash" == "$input_hash" ]]; then
+          matched=1
+          break
+        fi
+      fi
+    done
+    if (( probe_skipped )); then
+      print -r -- "⚠️  フレーム抽出スキップ: ${file:t} (結合順序が正しいか手動で確認してください)" >&2
+      cumulative=$(awk -v c="$cumulative" -v d="$dur" 'BEGIN{ printf "%.3f", c+d }')
+      continue
+    fi
+    if (( ! matched )); then
+      REPLY="フレーム不一致: ${file:t} (入力 ${sample_t}s の周辺 ±50ms に一致フレームなし)"
       return 1
     fi
     cumulative=$(awk -v c="$cumulative" -v d="$dur" 'BEGIN{ printf "%.3f", c+d }')
