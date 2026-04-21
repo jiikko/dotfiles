@@ -134,6 +134,11 @@ type model struct {
 	runner   *Runner
 	paused   bool // 1st-press state: pause dispatching (reversible via 'c')
 	stopping bool // 2nd-press state: graceful stop is final
+
+	// Force-kill confirmation window: set when the 3rd press arms the
+	// confirmation; press q / Ctrl-C again before it expires to actually
+	// force-kill, otherwise the window auto-dismisses.
+	forceKillConfirmUntil time.Time
 }
 
 func newModel(cfg Config, total int, events <-chan Event, runner *Runner, skipped int) model {
@@ -162,6 +167,12 @@ func newModel(cfg Config, total int, events <-chan Event, runner *Runner, skippe
 		m.par = cfg.Parallelism
 	}
 	return m
+}
+
+// forceKillConfirmActive reports whether the 3rd-stage shutdown confirmation
+// window is currently open.
+func (m model) forceKillConfirmActive() bool {
+	return !m.forceKillConfirmUntil.IsZero() && time.Now().Before(m.forceKillConfirmUntil)
 }
 
 // updateActiveState transitions between "running" and "idle" when the
@@ -332,9 +343,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// 2nd press: commit to graceful stop (final).
 				m.stopping = true
 				m.runner.RequestStop()
-			default:
-				// 3rd press: force-kill.
+			case m.forceKillConfirmActive():
+				// 4th press within the window: confirmed → force-kill.
+				m.forceKillConfirmUntil = time.Time{}
 				m.runner.ForceKill()
+			default:
+				// 3rd press: arm 3-second confirmation.
+				m.forceKillConfirmUntil = time.Now().Add(3 * time.Second)
 			}
 			return m, nil
 		}
@@ -343,6 +358,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		if m.done {
 			return m, nil
+		}
+		// Expire the force-kill confirmation window after its deadline.
+		if !m.forceKillConfirmUntil.IsZero() && time.Now().After(m.forceKillConfirmUntil) {
+			m.forceKillConfirmUntil = time.Time{}
 		}
 		// Refresh tails for active slots; also refresh queue snapshot if
 		// the queue view is open.
@@ -565,9 +584,17 @@ func (m model) View() string {
 	}
 
 	if m.stopping {
-		if running > 0 {
+		if m.forceKillConfirmActive() {
+			remaining := int(time.Until(m.forceKillConfirmUntil).Round(time.Second) / time.Second)
+			if remaining < 1 {
+				remaining = 1
+			}
 			b.WriteString(styleFail.Render(fmt.Sprintf(
-				"  stopping… waiting for %d running job(s). press q / ctrl-c again to force-kill.", running)))
+				"  ⚠ force-kill? press q / ctrl-c again within %ds to confirm (running: %d).",
+				remaining, running)))
+		} else if running > 0 {
+			b.WriteString(styleFail.Render(fmt.Sprintf(
+				"  stopping… waiting for %d running job(s). press q / ctrl-c to force-kill.", running)))
 		} else {
 			b.WriteString(styleFail.Render("  stopping…"))
 		}

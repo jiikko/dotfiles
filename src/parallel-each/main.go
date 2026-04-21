@@ -142,9 +142,12 @@ SHUTDOWN
                       (or wait as long as you like) to resume.
     2nd q / Ctrl-C:   Graceful stop (final). Queued items are dropped,
                       running jobs finish, the program exits.
-    3rd q / Ctrl-C:   Force-kill. SIGTERM is sent to each still-running
-                      sh subprocess; they exit non-zero and are recorded as
-                      FAIL in result.log.
+    3rd q / Ctrl-C:   Arm force-kill confirmation. A 3-second window opens;
+                      press q / Ctrl-C again within it to actually SIGTERM
+                      the running sh subprocesses. If the window expires
+                      the attempt is silently cancelled (stopping state
+                      continues). Forced jobs exit non-zero and land in
+                      result.log as FAIL.
 
   Plain mode: two-stage (no reversible pause).
 

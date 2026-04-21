@@ -53,10 +53,12 @@ func TestFormatDur(t *testing.T) {
 	}
 }
 
-// Three-stage shutdown in the TUI:
+// Three-stage shutdown in the TUI, with a 3-second confirm window before
+// the actual force-kill:
 //   q #1 -> paused (reversible, stopCtx still live)
 //   q #2 -> stopping (final graceful stop, stopCtx cancelled)
-//   q #3 -> force-kill (killCtx cancelled)
+//   q #3 -> arms force-kill confirmation (nothing killed yet)
+//   q #4 -> confirmed, killCtx cancelled (actual force-kill)
 func TestTUIModelThreeStageShutdown(t *testing.T) {
 	dir := t.TempDir()
 	cwd, _ := os.Getwd()
@@ -111,19 +113,79 @@ func TestTUIModelThreeStageShutdown(t *testing.T) {
 	default:
 	}
 
-	// 3rd q: force-kill.
+	// 3rd q: arm confirmation (kill NOT yet fired).
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
-	_ = u
+	m = u.(model)
+	if !m.forceKillConfirmActive() {
+		t.Fatal("3rd q should arm force-kill confirmation")
+	}
+	select {
+	case <-r.killCtx.Done():
+		t.Fatal("killCtx should NOT be cancelled on confirm arm")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	// 4th q within the window: confirmed → actually force-kill.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	m = u.(model)
+	if m.forceKillConfirmActive() {
+		t.Fatal("confirmation should have been consumed")
+	}
 	select {
 	case <-r.killCtx.Done():
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("killCtx not cancelled after 3rd q")
+		t.Fatal("killCtx not cancelled after confirmed 4th q")
 	}
 
 	select {
 	case <-eventsDrained(r.Events()):
 	case <-time.After(3 * time.Second):
 		t.Fatal("runner did not drain after force kill")
+	}
+}
+
+// If the user waits past the 3s window, the force-kill arm is silently
+// cancelled and the runner is not killed.
+func TestTUIModelForceKillConfirmExpires(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `sleep 10; echo {item}`}
+	r := NewRunner(cfg, []string{"a"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer r.ForceKill()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+	// Walk through pause → stop → arm confirm.
+	for i := 0; i < 3; i++ {
+		u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+		m = u.(model)
+	}
+	if !m.forceKillConfirmActive() {
+		t.Fatal("expected confirm to be active after 3 presses")
+	}
+	// Simulate time passing past the window.
+	m.forceKillConfirmUntil = time.Now().Add(-time.Second)
+	if m.forceKillConfirmActive() {
+		t.Fatal("confirm should have expired")
+	}
+	// Trigger a tick — the expired field should be zeroed.
+	u, _ := m.Update(tickMsg(time.Now()))
+	m = u.(model)
+	if !m.forceKillConfirmUntil.IsZero() {
+		t.Errorf("tick should clear expired forceKillConfirmUntil, got %v", m.forceKillConfirmUntil)
+	}
+	// killCtx was never triggered.
+	select {
+	case <-r.killCtx.Done():
+		t.Fatal("killCtx should not be cancelled on expiry")
+	default:
 	}
 }
 
