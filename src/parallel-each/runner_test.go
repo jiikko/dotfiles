@@ -1165,6 +1165,79 @@ func TestRunnerEnqueueDuplicateDoesNotAppend(t *testing.T) {
 	}
 }
 
+// EnqueueFront inserts at the head of the pending queue; subsequent prepends
+// push the previous prepend further back (LIFO).
+func TestRunnerEnqueueFrontInsertsAtHead(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, File: filepath.Join(dir, "urls.txt"),
+		Template: `sleep 5`}
+	if err := os.WriteFile(cfg.File, []byte("orig-1\norig-2\norig-3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := NewRunner(cfg, []string{"orig-1", "orig-2", "orig-3"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	// Wait until the first item is being worked on so we can inspect queue.
+	deadline := time.Now().Add(1 * time.Second)
+	for r.PendingCount() > 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Pending should now be [orig-2, orig-3] (orig-1 in flight).
+	if err := r.EnqueueFront("urgent-1"); err != nil {
+		t.Fatalf("EnqueueFront: %v", err)
+	}
+	if err := r.EnqueueFront("urgent-2"); err != nil {
+		t.Fatalf("EnqueueFront: %v", err)
+	}
+	// urgent-2 pushed on top of urgent-1.
+	got := r.PendingSnapshot()
+	want := []string{"urgent-2", "urgent-1", "orig-2", "orig-3"}
+	if !equalStrings(got, want) {
+		t.Errorf("PendingSnapshot = %v, want %v", got, want)
+	}
+}
+
+// EnqueueFront rejects duplicates just like Enqueue.
+func TestRunnerEnqueueFrontDeduplicates(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `sleep 5`}
+	r := NewRunner(cfg, []string{"existing"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	if err := r.EnqueueFront("existing"); err == nil {
+		t.Error("expected duplicate prepend to fail")
+	}
+}
+
 // Non-live runner: Enqueue returns an error.
 func TestRunnerEnqueueRejectedWhenNotLive(t *testing.T) {
 	dir := t.TempDir()

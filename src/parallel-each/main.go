@@ -87,7 +87,11 @@ TUI
     1-9        Focus on the slot with that ID. In focus mode the slot's log
                tail fills the lower half of the screen.
     esc, 0     Exit focus mode and return to the overview.
-    a          Add a new item to the queue (see LIVE ADD below).
+    a          Append a new item to the TAIL of the queue (see LIVE ADD below).
+    A          Prepend a new item to the HEAD of the queue — it will be the
+               next item dispatched after the currently running jobs. Multi-
+               line pastes are prepended as a block, preserving the paste
+               order at the queue head.
     p          Change parallelism. Opens a prompt — type the new target
                worker count, press Enter to preview, Enter again to confirm
                (or Esc to cancel). Increases spawn a new worker immediately.

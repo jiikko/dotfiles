@@ -171,17 +171,18 @@ type Runner struct {
 	paused  bool
 	pauseCh chan struct{}
 
-	adds       chan string
 	live       bool
 	queuedMu   sync.Mutex
 	queued     map[string]struct{}
 	addedCount int // tracks items added via Enqueue (read under queuedMu)
 
-	// Snapshot of items that have not started running yet. Items are added
-	// when registered (original list on Start, or Enqueue) and removed when
-	// a worker picks them up. Used by the TUI 'queue' view.
-	pendingMu sync.Mutex
-	pending   []string
+	// Unified dispatch queue. Protected by queueMu. Dispatch pops from the
+	// head; Enqueue appends to the tail; EnqueueFront inserts at the head.
+	// Also serves as the snapshot source for the TUI's queue view.
+	queueMu    sync.Mutex
+	queue      []runnerJob
+	queueWake  chan struct{} // buffered 1; signals queue has items or state changed
+	nextIndex  int           // monotonic job index (protected by queueMu)
 
 	// Dynamic worker pool state.
 	jobs          chan runnerJob
@@ -208,7 +209,6 @@ func NewRunner(cfg Config, lines []string) *Runner {
 		lines:  lines,
 		events: make(chan Event, 64),
 		width:  digitWidth(len(lines)),
-		adds:   make(chan string, 256),
 		queued: queued,
 	}
 }
@@ -220,15 +220,22 @@ func (r *Runner) SetLive(live bool) {
 	r.live = live
 }
 
-// Enqueue pushes a new item into the live queue. Returns an error if the
-// runner is not live, if the item was already processed/queued, or if the
-// runner has been asked to stop. Thread-safe.
-//
-// On successful enqueue the line is also appended to the -F input file so
-// the on-disk list stays a faithful record of everything that was processed.
-// An input-append failure is non-fatal (logged via the returned warning,
-// but the in-memory enqueue still succeeds).
+// Enqueue pushes a new item to the tail of the live queue (appended after
+// any currently pending items). See EnqueueFront for "prepend" semantics.
 func (r *Runner) Enqueue(line string) error {
+	return r.enqueueInternal(line, false)
+}
+
+// EnqueueFront inserts a new item at the HEAD of the live queue so that it
+// will be dispatched before any other pending items. Useful for injecting
+// an urgent job interactively.
+func (r *Runner) EnqueueFront(line string) error {
+	return r.enqueueInternal(line, true)
+}
+
+// enqueueInternal performs the common dedup + queue insert + input-file
+// append logic for both Enqueue (tail) and EnqueueFront (head).
+func (r *Runner) enqueueInternal(line string, front bool) error {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return fmt.Errorf("empty input")
@@ -249,27 +256,85 @@ func (r *Runner) Enqueue(line string) error {
 	r.addedCount++
 	r.queuedMu.Unlock()
 
-	select {
-	case r.adds <- line:
-		// Track the new item in the pending snapshot for the queue view.
-		r.addPending(line)
-		// Best-effort append to the -F input file.
-		switch err := r.appendToInputFile(line); {
-		case err == nil:
-		case errors.Is(err, errInputLineExists):
-			fmt.Fprintf(os.Stderr,
-				"warning: %q is already a line in %s; skipped input-file append\n",
-				line, r.cfg.File)
-		default:
-			fmt.Fprintf(os.Stderr, "warning: could not append to %s: %v\n", r.cfg.File, err)
-		}
-		return nil
+	r.pushQueue(line, front)
+
+	// Best-effort append to the -F input file.
+	switch err := r.appendToInputFile(line); {
+	case err == nil:
+	case errors.Is(err, errInputLineExists):
+		fmt.Fprintf(os.Stderr,
+			"warning: %q is already a line in %s; skipped input-file append\n",
+			line, r.cfg.File)
 	default:
-		r.queuedMu.Lock()
-		delete(r.queued, line)
-		r.addedCount--
-		r.queuedMu.Unlock()
-		return fmt.Errorf("queue full; try again shortly")
+		fmt.Fprintf(os.Stderr, "warning: could not append to %s: %v\n", r.cfg.File, err)
+	}
+	return nil
+}
+
+// pushQueue appends (front=false) or prepends (front=true) the line to the
+// dispatch queue, assigning it a fresh monotonic index, and wakes the
+// dispatcher goroutine.
+func (r *Runner) pushQueue(line string, front bool) {
+	r.queueMu.Lock()
+	r.nextIndex++
+	j := runnerJob{index: r.nextIndex, line: line}
+	if front {
+		r.queue = append([]runnerJob{j}, r.queue...)
+	} else {
+		r.queue = append(r.queue, j)
+	}
+	r.queueMu.Unlock()
+	r.wakeQueue()
+}
+
+// peekQueue blocks until the queue has an item or the runner is stopped /
+// ends (live=false and queue empty). Returns the head job WITHOUT removing
+// it. The caller must call commitJob(j.index) after the job is actually sent
+// to a worker so that PendingSnapshot continues to reflect the item as
+// pending until the moment it's picked up.
+func (r *Runner) peekQueue() (runnerJob, bool) {
+	for {
+		r.queueMu.Lock()
+		if len(r.queue) > 0 {
+			j := r.queue[0]
+			r.queueMu.Unlock()
+			return j, true
+		}
+		empty := !r.live
+		r.queueMu.Unlock()
+		if empty {
+			return runnerJob{}, false
+		}
+		select {
+		case <-r.queueWake:
+		case <-r.stopCtx.Done():
+			return runnerJob{}, false
+		}
+	}
+}
+
+// commitJob removes the queued job with the given index. Safe to call for an
+// index that is no longer present (e.g. already removed). We match by index,
+// not position, because a concurrent EnqueueFront might have inserted a new
+// head between peekQueue and commitJob.
+func (r *Runner) commitJob(idx int) {
+	r.queueMu.Lock()
+	defer r.queueMu.Unlock()
+	for i, j := range r.queue {
+		if j.index == idx {
+			r.queue = append(r.queue[:i], r.queue[i+1:]...)
+			return
+		}
+	}
+}
+
+func (r *Runner) wakeQueue() {
+	if r.queueWake == nil {
+		return
+	}
+	select {
+	case r.queueWake <- struct{}{}:
+	default:
 	}
 }
 
@@ -338,41 +403,24 @@ func (r *Runner) SeedDedup(lines []string) {
 	}
 }
 
-// PendingSnapshot returns a copy of the lines that have been registered but
-// not yet started by a worker. Order is insertion order (original input
-// first, adds appended in the order they were Enqueue'd).
+// PendingSnapshot returns a copy of the lines currently in the dispatch
+// queue (original input that has not been picked up yet, plus any items
+// pushed via Enqueue / EnqueueFront). Order matches dispatch order.
 func (r *Runner) PendingSnapshot() []string {
-	r.pendingMu.Lock()
-	defer r.pendingMu.Unlock()
-	out := make([]string, len(r.pending))
-	copy(out, r.pending)
+	r.queueMu.Lock()
+	defer r.queueMu.Unlock()
+	out := make([]string, len(r.queue))
+	for i, j := range r.queue {
+		out[i] = j.line
+	}
 	return out
 }
 
-// PendingCount returns the number of not-yet-started items (cheap).
+// PendingCount returns the number of not-yet-dispatched items.
 func (r *Runner) PendingCount() int {
-	r.pendingMu.Lock()
-	defer r.pendingMu.Unlock()
-	return len(r.pending)
-}
-
-func (r *Runner) addPending(line string) {
-	r.pendingMu.Lock()
-	r.pending = append(r.pending, line)
-	r.pendingMu.Unlock()
-}
-
-// removePending removes the first occurrence of line from the pending list.
-// Pending entries are unique thanks to the dedup check, so "first" == "only".
-func (r *Runner) removePending(line string) {
-	r.pendingMu.Lock()
-	defer r.pendingMu.Unlock()
-	for i, l := range r.pending {
-		if l == line {
-			r.pending = append(r.pending[:i], r.pending[i+1:]...)
-			return
-		}
-	}
+	r.queueMu.Lock()
+	defer r.queueMu.Unlock()
+	return len(r.queue)
 }
 
 func (r *Runner) Events() <-chan Event { return r.events }
@@ -383,6 +431,8 @@ func (r *Runner) RequestStop() {
 	if r.stopCancel != nil {
 		r.stopCancel()
 	}
+	r.wakeQueue()
+	r.wakePause()
 }
 
 // ForceKill sends SIGTERM to running subprocesses and stops dispatching.
@@ -394,8 +444,9 @@ func (r *Runner) ForceKill() {
 	if r.killCancel != nil {
 		r.killCancel()
 	}
-	// Wake any paused dispatcher loop so it can see stopCtx.Done().
+	// Wake any dispatcher waiting on pause / an empty queue.
 	r.wakePause()
+	r.wakeQueue()
 }
 
 // Pause blocks further dispatching without stopping the runner. Running jobs
@@ -485,11 +536,15 @@ func (r *Runner) Start(parent context.Context) error {
 	}
 
 	r.jobs = make(chan runnerJob)
+	r.queueWake = make(chan struct{}, 1)
 
-	// Seed the pending snapshot with the original input list.
-	r.pendingMu.Lock()
-	r.pending = append(r.pending, r.lines...)
-	r.pendingMu.Unlock()
+	// Seed the queue with the original input list.
+	r.queueMu.Lock()
+	for _, line := range r.lines {
+		r.nextIndex++
+		r.queue = append(r.queue, runnerJob{index: r.nextIndex, line: line})
+	}
+	r.queueMu.Unlock()
 
 	r.SetParallelism(initialPar)
 
@@ -500,40 +555,19 @@ func (r *Runner) Start(parent context.Context) error {
 			r.resultLog.Close()
 			close(r.events)
 		}()
-		// Phase 1: original input list.
-		nextIdx := 0
-		for _, line := range r.lines {
-			nextIdx++
-			if !r.waitForUnpause() {
-				return
-			}
-			select {
-			case <-r.stopCtx.Done():
-				return
-			case r.jobs <- runnerJob{index: nextIdx, line: line}:
-			}
-		}
-		// Phase 2: in live mode, wait for Enqueue. Loop until stopCtx fires.
-		if !r.live {
-			return
-		}
 		for {
 			if !r.waitForUnpause() {
 				return
 			}
+			j, ok := r.peekQueue()
+			if !ok {
+				return
+			}
 			select {
 			case <-r.stopCtx.Done():
 				return
-			case line := <-r.adds:
-				nextIdx++
-				if !r.waitForUnpause() {
-					return
-				}
-				select {
-				case <-r.stopCtx.Done():
-					return
-				case r.jobs <- runnerJob{index: nextIdx, line: line}:
-				}
+			case r.jobs <- j:
+				r.commitJob(j.index)
 			}
 		}
 	}()
@@ -573,8 +607,6 @@ func (r *Runner) Parallelism() int {
 func (r *Runner) workerLoop(slotID int) {
 	defer r.wg.Done()
 	for j := range r.jobs {
-		// Job has been claimed by a worker — remove from the pending view.
-		r.removePending(j.line)
 		if r.stopCtx.Err() != nil {
 			continue
 		}

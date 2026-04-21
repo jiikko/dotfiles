@@ -511,6 +511,91 @@ func TestTUIModelInputEditing(t *testing.T) {
 	}
 }
 
+// 'A' enters input mode with prepend=true; Enter inserts at the queue head.
+func TestTUIModelAKeyPrepends(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `sleep 5`}
+	r := NewRunner(cfg, []string{"orig-1", "orig-2"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	// Let the worker start on orig-1 so pending = [orig-2].
+	time.Sleep(150 * time.Millisecond)
+
+	m := newModel(cfg, 2, r.Events(), r, 0)
+
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	m = u.(model)
+	if !m.inputMode || !m.inputPrepend {
+		t.Fatal("A should open input mode with prepend=true")
+	}
+	for _, ch := range "urgent" {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		m = u.(model)
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_ = u
+
+	got := r.PendingSnapshot()
+	if len(got) == 0 || got[0] != "urgent" {
+		t.Errorf("prepended item not at head: %v", got)
+	}
+}
+
+// Multi-line paste in prepend mode keeps the paste's original order at the
+// queue head.
+func TestTUIModelMultilinePrependPreservesOrder(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `sleep 5`}
+	r := NewRunner(cfg, []string{"orig"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	m = u.(model)
+	// Paste three lines in one go.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x\ny\nz\n")})
+	m = u.(model)
+
+	got := r.PendingSnapshot()
+	// Head of queue should be x, y, z (matching paste order).
+	if len(got) < 3 {
+		t.Fatalf("expected >=3 items, got %v", got)
+	}
+	if got[0] != "x" || got[1] != "y" || got[2] != "z" {
+		t.Errorf("prepended block order broken: head=%v, want [x y z ...]", got[:3])
+	}
+}
+
 // Duplicate submission yields an error flash.
 func TestTUIModelAddItemDuplicate(t *testing.T) {
 	dir := t.TempDir()

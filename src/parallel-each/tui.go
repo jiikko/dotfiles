@@ -111,12 +111,13 @@ type model struct {
 	skipped int
 
 	// Interactive add-to-queue state.
-	inputMode  bool
-	inputBuf   []rune
-	flashMsg   string
-	flashErr   bool
-	flashUntil time.Time
-	addedLive  int // count of items successfully Enqueued
+	inputMode    bool
+	inputPrepend bool // if true, submissions go to the HEAD of the queue
+	inputBuf     []rune
+	flashMsg     string
+	flashErr     bool
+	flashUntil   time.Time
+	addedLive    int // count of items successfully Enqueued
 
 	// Full recent-view state.
 	recentMode bool
@@ -279,6 +280,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "a":
 			if m.focusSlot == 0 && m.runner != nil && !m.stopping {
 				m.inputMode = true
+				m.inputPrepend = false
+				m.inputBuf = m.inputBuf[:0]
+				m.flashMsg = ""
+			}
+			return m, nil
+		case "A":
+			if m.focusSlot == 0 && m.runner != nil && !m.stopping {
+				m.inputMode = true
+				m.inputPrepend = true
 				m.inputBuf = m.inputBuf[:0]
 				m.flashMsg = ""
 			}
@@ -509,8 +519,12 @@ func (m model) View() string {
 
 	// Input prompt when adding a new item.
 	if m.inputMode {
+		label := "add item (append to tail):"
+		if m.inputPrepend {
+			label = "add item (PREPEND to head):"
+		}
 		b.WriteString("  ")
-		b.WriteString(styleHeader.Render("add item:"))
+		b.WriteString(styleHeader.Render(label))
 		b.WriteString(" ")
 		b.WriteString(string(m.inputBuf))
 		b.WriteString(styleRunning.Render("▌"))
@@ -608,9 +622,9 @@ func (m model) View() string {
 	} else if m.focusSlot != 0 {
 		b.WriteString(styleKey.Render("  esc / 0: back   e: open log in $EDITOR   a: add   q: stop"))
 	} else if m.completed >= m.total && running == 0 {
-		b.WriteString(styleKey.Render("  all done — a: add   p: par   r: recent   l: queue   o: other   q: exit"))
+		b.WriteString(styleKey.Render("  all done — a/A: add/prepend   p: par   r: recent   l: queue   o: other   q: exit"))
 	} else {
-		b.WriteString(styleKey.Render("  1-9: focus   a: add   p: par   r: recent   l: queue   o: other   q: stop"))
+		b.WriteString(styleKey.Render("  1-9: focus   a/A: add/prepend   p: par   r: recent   l: queue   o: other   q: stop"))
 	}
 	b.WriteString("\n")
 
@@ -837,31 +851,44 @@ func containsNewline(rs []rune) bool {
 }
 
 // consumePastedRunes splits the input on '\n' / '\r', submitting each non-
-// empty segment via Enqueue. The final segment (after the last newline) stays
-// in inputBuf so the user can finish typing it. Input mode is preserved.
+// empty segment via Enqueue / EnqueueFront. The final segment (after the
+// last newline) stays in inputBuf so the user can finish typing it. Input
+// mode is preserved. In prepend mode the completed lines are submitted in
+// REVERSE order so the final queue head matches the paste's original order.
 func (m model) consumePastedRunes(rs []rune) model {
-	var ok, dup, fail int
+	var completed []string
 	for _, r := range rs {
 		if r == '\n' || r == '\r' {
 			line := strings.TrimSpace(string(m.inputBuf))
 			m.inputBuf = m.inputBuf[:0]
-			if line == "" {
-				continue
-			}
-			switch result := m.submitLine(line, true); result {
-			case submitOK:
-				ok++
-			case submitDuplicate:
-				dup++
-			case submitError:
-				fail++
+			if line != "" {
+				completed = append(completed, line)
 			}
 		} else {
 			m.inputBuf = append(m.inputBuf, r)
 		}
 	}
-	m = m.flashBatch(ok, dup, fail)
-	return m
+
+	order := completed
+	if m.inputPrepend {
+		order = make([]string, len(completed))
+		for i, s := range completed {
+			order[len(completed)-1-i] = s
+		}
+	}
+
+	var ok, dup, fail int
+	for _, line := range order {
+		switch m.submitLine(line, true) {
+		case submitOK:
+			ok++
+		case submitDuplicate:
+			dup++
+		case submitError:
+			fail++
+		}
+	}
+	return m.flashBatch(ok, dup, fail)
 }
 
 type submitResult int
@@ -874,14 +901,24 @@ const (
 
 // submitLine enqueues one line into the runner. If batch is true the caller
 // aggregates flash messages itself; otherwise an individual flash is set.
+// Uses runner.EnqueueFront when the input mode was opened for prepend.
 func (m *model) submitLine(line string, batch bool) submitResult {
-	err := m.runner.Enqueue(line)
+	var err error
+	if m.inputPrepend {
+		err = m.runner.EnqueueFront(line)
+	} else {
+		err = m.runner.Enqueue(line)
+	}
 	if err == nil {
 		m.addedLive++
 		m.total++
 		m.updateActiveState()
 		if !batch {
-			m.setFlash(fmt.Sprintf("✓ added: %s", truncate(line, 60)), false)
+			verb := "added"
+			if m.inputPrepend {
+				verb = "prepended"
+			}
+			m.setFlash(fmt.Sprintf("✓ %s: %s", verb, truncate(line, 60)), false)
 		}
 		return submitOK
 	}
