@@ -134,20 +134,23 @@ LIVE ADD (TUI only)
   In live mode the TUI does not auto-exit when all items finish; press q to
   exit, or press a to add more. Plain mode does not support live add.
 
-SHUTDOWN (two-stage)
-  The same semantics apply in TUI keypresses and plain-mode signals.
+SHUTDOWN
+  TUI: three-stage, reversible on the first step.
 
-    1st press of q / Ctrl-C (TUI) or SIGINT / SIGTERM (plain):
-      Graceful stop. Dispatcher stops queuing new jobs and queued-but-not-yet-
-      started items are dropped. Already-running sh subprocesses are left to
-      finish naturally. Completed items are recorded in result.log as usual,
-      so a later run resumes from where this one stopped.
+    1st q / Ctrl-C:   Pause. Dispatcher stops submitting new jobs. Running
+                      jobs continue to completion. Reversible: press 'c'
+                      (or wait as long as you like) to resume.
+    2nd q / Ctrl-C:   Graceful stop (final). Queued items are dropped,
+                      running jobs finish, the program exits.
+    3rd q / Ctrl-C:   Force-kill. SIGTERM is sent to each still-running
+                      sh subprocess; they exit non-zero and are recorded as
+                      FAIL in result.log.
 
-    2nd press / signal:
-      Force-kill. SIGTERM is sent to each still-running sh subprocess (via the
-      process group), causing them to exit non-zero. Those entries are written
-      to result.log as FAIL rows; to retry them, remove their rows from
-      result.log or use --fresh.
+  Plain mode: two-stage (no reversible pause).
+
+    1st SIGINT / SIGTERM: Graceful stop. Queued items dropped, running
+                           jobs finish, program exits.
+    2nd SIGINT / SIGTERM: Force-kill.
 
 EXIT STATUS
   0   all jobs succeeded

@@ -1245,6 +1245,66 @@ func TestRunnerEnqueueRejectsExistingOriginal(t *testing.T) {
 	}
 }
 
+// Pause halts dispatch without killing running jobs; Resume lifts the pause.
+func TestRunnerPauseResume(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `echo {item}`}
+	items := []string{"a", "b", "c", "d"}
+	r := NewRunner(cfg, items)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer r.ForceKill()
+
+	// Pause immediately; subsequent items should not be processed until
+	// Resume. Wait long enough that without pause all items would complete.
+	r.Pause()
+	if !r.IsPaused() {
+		t.Fatal("IsPaused should be true after Pause()")
+	}
+
+	endsBeforeResume := 0
+	deadline := time.After(500 * time.Millisecond)
+drain:
+	for {
+		select {
+		case ev, ok := <-r.Events():
+			if !ok {
+				break drain
+			}
+			if ev.Kind == EventEnd {
+				endsBeforeResume++
+			}
+		case <-deadline:
+			break drain
+		}
+	}
+	if endsBeforeResume >= len(items) {
+		t.Errorf("all %d items completed while paused: got %d", len(items), endsBeforeResume)
+	}
+
+	// Resume and collect remaining completions.
+	r.Resume()
+	if r.IsPaused() {
+		t.Fatal("IsPaused should be false after Resume()")
+	}
+	totalEnds := endsBeforeResume
+	for ev := range r.Events() {
+		if ev.Kind == EventEnd {
+			totalEnds++
+		}
+	}
+	if totalEnds != len(items) {
+		t.Errorf("total ends = %d, want %d", totalEnds, len(items))
+	}
+}
+
 // When the parent context hits its total deadline, everything is force-killed
 // regardless of per-attempt timeout or retries.
 func TestRunnerTotalTimeoutForceKills(t *testing.T) {

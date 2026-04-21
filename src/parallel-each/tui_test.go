@@ -53,8 +53,11 @@ func TestFormatDur(t *testing.T) {
 	}
 }
 
-// First q triggers graceful stop; second q escalates to force-kill.
-func TestTUIModelTwoStageShutdown(t *testing.T) {
+// Three-stage shutdown in the TUI:
+//   q #1 -> paused (reversible, stopCtx still live)
+//   q #2 -> stopping (final graceful stop, stopCtx cancelled)
+//   q #3 -> force-kill (killCtx cancelled)
+func TestTUIModelThreeStageShutdown(t *testing.T) {
 	dir := t.TempDir()
 	cwd, _ := os.Getwd()
 	defer os.Chdir(cwd)
@@ -71,35 +74,52 @@ func TestTUIModelTwoStageShutdown(t *testing.T) {
 
 	m := newModel(cfg, 2, r.Events(), r, 0)
 
-	// Press q once: graceful stop requested.
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
-	m2 := updated.(model)
-	if !m2.stopping {
-		t.Fatal("after 1st q, stopping should be true")
+	// 1st q: pause.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	m = u.(model)
+	if !m.paused {
+		t.Fatal("1st q should set paused")
 	}
-	// stopCtx should be cancelled; killCtx still live.
+	if m.stopping {
+		t.Fatal("1st q should not set stopping")
+	}
+	if !r.IsPaused() {
+		t.Fatal("runner should be paused")
+	}
+	// stopCtx still live.
 	select {
 	case <-r.stopCtx.Done():
-		// expected
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("stopCtx not cancelled after 1st q")
-	}
-	select {
-	case <-r.killCtx.Done():
-		t.Fatal("killCtx should NOT be cancelled after 1st q")
+		t.Fatal("stopCtx should NOT be cancelled after 1st q")
 	default:
 	}
 
-	// Press q again: escalate to force-kill.
-	m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	// 2nd q: commit to graceful stop.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	m = u.(model)
+	if !m.stopping {
+		t.Fatal("2nd q should set stopping")
+	}
+	select {
+	case <-r.stopCtx.Done():
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("stopCtx not cancelled after 2nd q")
+	}
+	// killCtx still live.
 	select {
 	case <-r.killCtx.Done():
-		// expected
-	case <-time.After(200 * time.Millisecond):
-		t.Fatal("killCtx not cancelled after 2nd q")
+		t.Fatal("killCtx should NOT be cancelled after 2nd q")
+	default:
 	}
 
-	// Wait for runner to finish draining.
+	// 3rd q: force-kill.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	_ = u
+	select {
+	case <-r.killCtx.Done():
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("killCtx not cancelled after 3rd q")
+	}
+
 	select {
 	case <-eventsDrained(r.Events()):
 	case <-time.After(3 * time.Second):
@@ -107,8 +127,8 @@ func TestTUIModelTwoStageShutdown(t *testing.T) {
 	}
 }
 
-// Ctrl-C and esc should behave the same as q.
-func TestTUIModelCtrlCEquivalent(t *testing.T) {
+// 'c' cancels a pending pause and resumes dispatching.
+func TestTUIModelCancelPauseWithC(t *testing.T) {
 	dir := t.TempDir()
 	cwd, _ := os.Getwd()
 	defer os.Chdir(cwd)
@@ -124,9 +144,52 @@ func TestTUIModelCtrlCEquivalent(t *testing.T) {
 	defer r.ForceKill()
 
 	m := newModel(cfg, 1, r.Events(), r, 0)
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if !updated.(model).stopping {
-		t.Fatal("ctrl+c should trigger graceful stop")
+
+	// Pause via q.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	m = u.(model)
+	if !m.paused || !r.IsPaused() {
+		t.Fatal("paused should be true after q")
+	}
+
+	// Resume via c.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	m = u.(model)
+	if m.paused {
+		t.Fatal("paused should be false after c")
+	}
+	if r.IsPaused() {
+		t.Fatal("runner should not be paused after c")
+	}
+	if m.stopping {
+		t.Fatal("stopping should still be false")
+	}
+}
+
+// Ctrl-C parallels q: first press pauses, second commits to stop.
+func TestTUIModelCtrlCPauses(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `sleep 10; echo {item}`}
+	r := NewRunner(cfg, []string{"a"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer r.ForceKill()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = u.(model)
+	if !m.paused {
+		t.Fatal("ctrl+c should pause")
+	}
+	if m.stopping {
+		t.Fatal("ctrl+c should not immediately stop")
 	}
 }
 
@@ -205,11 +268,11 @@ func TestTUIModelFocusKeys(t *testing.T) {
 		t.Fatal("esc in focus should NOT trigger shutdown")
 	}
 
-	// esc again (no focus) -> triggers shutdown
+	// esc again (no focus) -> triggers pause (1st-stage shutdown)
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = u.(model)
-	if !m.stopping {
-		t.Fatal("esc outside focus should trigger shutdown")
+	if !m.paused {
+		t.Fatal("esc outside focus should trigger pause")
 	}
 }
 

@@ -164,6 +164,13 @@ type Runner struct {
 	killCtx    context.Context
 	killCancel context.CancelFunc
 
+	// Pause state: when true, the dispatcher blocks before submitting new
+	// jobs. Reversible via Resume. Independent of stopCtx; used for the
+	// TUI's "undo graceful shutdown" flow.
+	pauseMu sync.Mutex
+	paused  bool
+	pauseCh chan struct{}
+
 	adds       chan string
 	live       bool
 	queuedMu   sync.Mutex
@@ -375,6 +382,59 @@ func (r *Runner) ForceKill() {
 	if r.killCancel != nil {
 		r.killCancel()
 	}
+	// Wake any paused dispatcher loop so it can see stopCtx.Done().
+	r.wakePause()
+}
+
+// Pause blocks further dispatching without stopping the runner. Running jobs
+// continue to completion. Safe to call many times; reversible via Resume.
+func (r *Runner) Pause() {
+	r.pauseMu.Lock()
+	r.paused = true
+	r.pauseMu.Unlock()
+	r.wakePause()
+}
+
+// Resume lifts a pause. If Pause has never been called (or stopCtx already
+// cancelled) this is a no-op.
+func (r *Runner) Resume() {
+	r.pauseMu.Lock()
+	r.paused = false
+	r.pauseMu.Unlock()
+	r.wakePause()
+}
+
+// IsPaused reports whether the runner is currently paused.
+func (r *Runner) IsPaused() bool {
+	r.pauseMu.Lock()
+	defer r.pauseMu.Unlock()
+	return r.paused
+}
+
+func (r *Runner) wakePause() {
+	if r.pauseCh == nil {
+		return
+	}
+	select {
+	case r.pauseCh <- struct{}{}:
+	default:
+	}
+}
+
+// waitForUnpause blocks until pause is lifted or stopCtx fires. Returns true
+// if the dispatcher should continue, false if it should exit.
+func (r *Runner) waitForUnpause() bool {
+	for r.IsPaused() {
+		if r.stopCtx != nil && r.stopCtx.Err() != nil {
+			return false
+		}
+		select {
+		case <-r.pauseCh:
+		case <-r.stopCtx.Done():
+			return false
+		}
+	}
+	return true
 }
 
 // Start launches workers. It returns immediately; results are delivered via Events().
@@ -402,6 +462,7 @@ func (r *Runner) Start(parent context.Context) error {
 
 	r.stopCtx, r.stopCancel = context.WithCancel(parent)
 	r.killCtx, r.killCancel = context.WithCancel(parent)
+	r.pauseCh = make(chan struct{}, 1)
 
 	initialPar := r.cfg.Parallelism
 	if initialPar <= 0 {
@@ -431,6 +492,9 @@ func (r *Runner) Start(parent context.Context) error {
 		nextIdx := 0
 		for _, line := range r.lines {
 			nextIdx++
+			if !r.waitForUnpause() {
+				return
+			}
 			select {
 			case <-r.stopCtx.Done():
 				return
@@ -442,11 +506,17 @@ func (r *Runner) Start(parent context.Context) error {
 			return
 		}
 		for {
+			if !r.waitForUnpause() {
+				return
+			}
 			select {
 			case <-r.stopCtx.Done():
 				return
 			case line := <-r.adds:
 				nextIdx++
+				if !r.waitForUnpause() {
+					return
+				}
 				select {
 				case <-r.stopCtx.Done():
 					return

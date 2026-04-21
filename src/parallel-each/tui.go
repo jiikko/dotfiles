@@ -132,7 +132,8 @@ type model struct {
 	events   <-chan Event
 	done     bool
 	runner   *Runner
-	stopping bool // true once a graceful stop has been requested
+	paused   bool // 1st-press state: pause dispatching (reversible via 'c')
+	stopping bool // 2nd-press state: graceful stop is final
 }
 
 func newModel(cfg Config, total int, events <-chan Event, runner *Runner, skipped int) model {
@@ -307,6 +308,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "0":
 			m.focusSlot = 0
 			return m, nil
+		case "c":
+			// Cancel a pending pause and resume normal dispatching.
+			if m.paused && !m.stopping {
+				m.paused = false
+				m.runner.Resume()
+				m.setFlash("resumed", false)
+			}
+			return m, nil
 		case "esc":
 			if m.focusSlot != 0 {
 				m.focusSlot = 0
@@ -314,10 +323,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			fallthrough
 		case "q", "ctrl+c":
-			if !m.stopping {
+			switch {
+			case !m.paused:
+				// 1st press: reversible pause.
+				m.paused = true
+				m.runner.Pause()
+			case !m.stopping:
+				// 2nd press: commit to graceful stop (final).
 				m.stopping = true
 				m.runner.RequestStop()
-			} else {
+			default:
+				// 3rd press: force-kill.
 				m.runner.ForceKill()
 			}
 			return m, nil
@@ -555,6 +571,9 @@ func (m model) View() string {
 		} else {
 			b.WriteString(styleFail.Render("  stopping…"))
 		}
+	} else if m.paused {
+		b.WriteString(styleFail.Render(fmt.Sprintf(
+			"  paused (running: %d)  —  c: resume   q/ctrl-c: stop for good (→ force-kill)", running)))
 	} else if m.recentMode {
 		b.WriteString(styleKey.Render("  ↑/↓ or j/k: move   pgup/pgdown: page   g/G: top/bottom   enter: open log   esc/r: back"))
 	} else if m.queueMode {
