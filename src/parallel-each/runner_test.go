@@ -1218,6 +1218,40 @@ func TestRunnerEnqueueRejectedAfterStop(t *testing.T) {
 	}
 }
 
+// SeedDedup adds lines to the dedup set so Enqueue rejects them even though
+// they are not in the current input list. Simulates the "already processed
+// in a previous run" scenario.
+func TestRunnerSeedDedupRejectsEnqueue(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `sleep 5`}
+	r := NewRunner(cfg, []string{"new-only"})
+	r.SetLive(true)
+	r.SeedDedup([]string{"previously-processed"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	// Attempting to enqueue a seeded (previously-processed) line fails.
+	if err := r.Enqueue("previously-processed"); err == nil {
+		t.Error("expected Enqueue to reject seeded line")
+	}
+	// A genuinely new line still goes through.
+	if err := r.Enqueue("fresh-item"); err != nil {
+		t.Errorf("fresh Enqueue unexpectedly rejected: %v", err)
+	}
+}
+
 // Items already in result.log (added to queued set at NewRunner) are also
 // rejected as duplicates via Enqueue.
 func TestRunnerEnqueueRejectsExistingOriginal(t *testing.T) {

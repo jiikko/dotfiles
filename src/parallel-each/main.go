@@ -295,8 +295,11 @@ func main() {
 
 	useTUI := !cfg.NoTUI && term.IsTerminal(int(os.Stdout.Fd()))
 
-	// Resume support: filter out lines already present in result.log.
+	// Resume support: filter out lines already present in result.log. The
+	// full processed set is also retained so it can seed the dedup for
+	// interactive Enqueue (see runTUI / runPlain).
 	skipped := 0
+	var processedKeys []string
 	if !cfg.Fresh {
 		processed, err := loadProcessedLines(filepath.Join(logDir, "result.log"))
 		if err != nil {
@@ -304,6 +307,10 @@ func main() {
 			os.Exit(2)
 		}
 		if len(processed) > 0 {
+			processedKeys = make([]string, 0, len(processed))
+			for k := range processed {
+				processedKeys = append(processedKeys, k)
+			}
 			before := len(lines)
 			lines = filterProcessed(lines, processed)
 			skipped = before - len(lines)
@@ -314,8 +321,6 @@ func main() {
 						before, logDir)
 					os.Exit(0)
 				}
-				// In TUI mode: launch with an empty queue so the user can
-				// append items via 'a' or exit with 'q'.
 				fmt.Fprintf(os.Stderr,
 					"all %d items already processed — launching TUI: press 'a' to append more, 'q' to exit.\n",
 					before)
@@ -336,9 +341,9 @@ func main() {
 
 	var rc int
 	if useTUI {
-		rc = runTUI(ctx, cfg, lines, skipped)
+		rc = runTUI(ctx, cfg, lines, skipped, processedKeys)
 	} else {
-		rc = runPlain(ctx, cfg, lines, skipped)
+		rc = runPlain(ctx, cfg, lines, skipped, processedKeys)
 	}
 	os.Exit(rc)
 }

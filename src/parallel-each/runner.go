@@ -326,6 +326,18 @@ func (r *Runner) AddedCount() int {
 	return r.addedCount
 }
 
+// SeedDedup marks each line as "already seen" so future Enqueue calls reject
+// it as a duplicate. Typically called right after NewRunner with lines read
+// from parallel-each-log/result.log to prevent re-queuing rows that were
+// already processed in a prior run.
+func (r *Runner) SeedDedup(lines []string) {
+	r.queuedMu.Lock()
+	defer r.queuedMu.Unlock()
+	for _, l := range lines {
+		r.queued[l] = struct{}{}
+	}
+}
+
 // PendingSnapshot returns a copy of the lines that have been registered but
 // not yet started by a worker. Order is insertion order (original input
 // first, adds appended in the order they were Enqueue'd).
