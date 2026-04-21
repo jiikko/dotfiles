@@ -63,6 +63,24 @@ func digitWidth(n int) int {
 	return w
 }
 
+// dedupError renders a specific reason for the duplicate rejection depending
+// on whether the item is in the current queue, was a prior success, or was a
+// prior failure. Recognised by tests via the "duplicate" prefix.
+func dedupError(line, status string) error {
+	switch status {
+	case "":
+		return fmt.Errorf("duplicate: %q is already in the current queue", line)
+	case "ok":
+		return fmt.Errorf("duplicate: %q already succeeded in a previous run (ok in %s/result.log)",
+			line, logDir)
+	case "FAIL":
+		return fmt.Errorf("duplicate: %q previously failed — remove its row from %s/result.log to retry",
+			line, logDir)
+	default:
+		return fmt.Errorf("duplicate: %q already seen (status=%s)", line, status)
+	}
+}
+
 // findDuplicates returns duplicate values in the input with their counts,
 // sorted lexicographically. Returns nil if all values are unique.
 func findDuplicates(lines []string) []string {
@@ -80,20 +98,21 @@ func findDuplicates(lines []string) []string {
 	return dupes
 }
 
-// loadProcessedLines reads an existing result.log and returns the set of
-// input values (column 3 of TSV). Missing file is not an error and returns
-// an empty map. Malformed rows are silently skipped.
-func loadProcessedLines(path string) (map[string]struct{}, error) {
+// loadProcessedLines reads an existing result.log and returns a map of input
+// line -> status ("ok" or "FAIL", from column 1 of the TSV). Missing file is
+// not an error and returns an empty map. Malformed rows are silently skipped.
+// If the same line appears twice, the LAST row wins (most recent outcome).
+func loadProcessedLines(path string) (map[string]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return map[string]struct{}{}, nil
+			return map[string]string{}, nil
 		}
 		return nil, err
 	}
 	defer f.Close()
 
-	set := make(map[string]struct{})
+	m := make(map[string]string)
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 1024*1024)
 	for sc.Scan() {
@@ -101,17 +120,17 @@ func loadProcessedLines(path string) (map[string]struct{}, error) {
 		if len(cols) < 4 {
 			continue
 		}
-		set[cols[2]] = struct{}{}
+		m[cols[2]] = cols[0]
 	}
 	if err := sc.Err(); err != nil {
 		return nil, err
 	}
-	return set, nil
+	return m, nil
 }
 
-// filterProcessed returns lines whose value is not in the processed set,
-// preserving original order.
-func filterProcessed(lines []string, processed map[string]struct{}) []string {
+// filterProcessed returns lines whose value is not a key in the processed
+// map, preserving original order.
+func filterProcessed(lines []string, processed map[string]string) []string {
 	out := make([]string, 0, len(lines))
 	for _, l := range lines {
 		if _, ok := processed[l]; ok {
@@ -173,7 +192,9 @@ type Runner struct {
 
 	live       bool
 	queuedMu   sync.Mutex
-	queued     map[string]struct{}
+	// queued value is "" for items that are part of this run's queue, or the
+	// status column from result.log ("ok" / "FAIL") for seeded entries.
+	queued     map[string]string
 	addedCount int // tracks items added via Enqueue (read under queuedMu)
 
 	// Unified dispatch queue. Protected by queueMu. Dispatch pops from the
@@ -200,9 +221,9 @@ type runnerJob struct {
 }
 
 func NewRunner(cfg Config, lines []string) *Runner {
-	queued := make(map[string]struct{}, len(lines))
+	queued := make(map[string]string, len(lines))
 	for _, l := range lines {
-		queued[l] = struct{}{}
+		queued[l] = "" // "" marks an item that belongs to this run's pending queue
 	}
 	return &Runner{
 		cfg:    cfg,
@@ -248,11 +269,11 @@ func (r *Runner) enqueueInternal(line string, front bool) error {
 	}
 
 	r.queuedMu.Lock()
-	if _, exists := r.queued[line]; exists {
+	if status, exists := r.queued[line]; exists {
 		r.queuedMu.Unlock()
-		return fmt.Errorf("duplicate: %q already queued or processed", line)
+		return dedupError(line, status)
 	}
-	r.queued[line] = struct{}{}
+	r.queued[line] = ""
 	r.addedCount++
 	r.queuedMu.Unlock()
 
@@ -392,14 +413,19 @@ func (r *Runner) AddedCount() int {
 }
 
 // SeedDedup marks each line as "already seen" so future Enqueue calls reject
-// it as a duplicate. Typically called right after NewRunner with lines read
-// from parallel-each-log/result.log to prevent re-queuing rows that were
-// already processed in a prior run.
-func (r *Runner) SeedDedup(lines []string) {
+// it as a duplicate. The status string ("ok" or "FAIL", as recorded in
+// result.log) is used to produce a specific error message on rejection.
+// Typically called right after NewRunner.
+func (r *Runner) SeedDedup(entries map[string]string) {
 	r.queuedMu.Lock()
 	defer r.queuedMu.Unlock()
-	for _, l := range lines {
-		r.queued[l] = struct{}{}
+	for line, status := range entries {
+		// Don't overwrite a "" (currently-queued) entry with a seeded one —
+		// active queue takes precedence for the error wording.
+		if _, exists := r.queued[line]; exists {
+			continue
+		}
+		r.queued[line] = status
 	}
 }
 

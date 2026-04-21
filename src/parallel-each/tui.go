@@ -1324,7 +1324,7 @@ func (m model) renderProgress(width int) string {
 }
 
 // runTUI drives the TUI and blocks until jobs are done (or user quits).
-func runTUI(ctx context.Context, cfg Config, lines []string, skipped int, processed []string) int {
+func runTUI(ctx context.Context, cfg Config, lines []string, skipped int, processed map[string]string) int {
 	r := NewRunner(cfg, lines)
 	r.SetLive(true) // enable interactive Enqueue via the TUI 'a' key
 	r.SeedDedup(processed)

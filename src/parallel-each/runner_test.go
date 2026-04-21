@@ -496,26 +496,26 @@ func TestLoadProcessedLines(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := map[string]struct{}{
-			"alpha":      {},
-			"beta gamma": {},
-			"gamma":      {},
+		want := map[string]string{
+			"alpha":      "ok",
+			"beta gamma": "FAIL",
+			"gamma":      "ok",
 		}
 		if len(got) != len(want) {
 			t.Fatalf("size mismatch: got %v, want %v", got, want)
 		}
-		for k := range want {
-			if _, ok := got[k]; !ok {
-				t.Errorf("missing key %q", k)
+		for k, v := range want {
+			if got[k] != v {
+				t.Errorf("got[%q]=%q, want %q", k, got[k], v)
 			}
 		}
 	})
 }
 
 func TestFilterProcessed(t *testing.T) {
-	processed := map[string]struct{}{
-		"alpha": {},
-		"gamma": {},
+	processed := map[string]string{
+		"alpha": "ok",
+		"gamma": "FAIL",
 	}
 	got := filterProcessed([]string{"alpha", "beta", "gamma", "delta"}, processed)
 	want := []string{"beta", "delta"}
@@ -1291,6 +1291,51 @@ func TestRunnerEnqueueRejectedAfterStop(t *testing.T) {
 	}
 }
 
+// Enqueue rejects with a descriptive reason depending on where the duplicate
+// came from (current queue, previous ok, previous fail).
+func TestRunnerEnqueueDuplicateMessages(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `sleep 5`}
+	r := NewRunner(cfg, []string{"in-queue"})
+	r.SetLive(true)
+	r.SeedDedup(map[string]string{
+		"prev-ok":   "ok",
+		"prev-fail": "FAIL",
+	})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	cases := []struct {
+		line, mustContain string
+	}{
+		{"in-queue", "already in the current queue"},
+		{"prev-ok", "already succeeded in a previous run"},
+		{"prev-fail", "previously failed"},
+	}
+	for _, c := range cases {
+		err := r.Enqueue(c.line)
+		if err == nil {
+			t.Errorf("Enqueue(%q) unexpectedly succeeded", c.line)
+			continue
+		}
+		if !strings.Contains(err.Error(), c.mustContain) {
+			t.Errorf("Enqueue(%q) error = %q; want it to contain %q", c.line, err, c.mustContain)
+		}
+	}
+}
+
 // SeedDedup adds lines to the dedup set so Enqueue rejects them even though
 // they are not in the current input list. Simulates the "already processed
 // in a previous run" scenario.
@@ -1305,7 +1350,7 @@ func TestRunnerSeedDedupRejectsEnqueue(t *testing.T) {
 	cfg := Config{Parallelism: 1, Template: `sleep 5`}
 	r := NewRunner(cfg, []string{"new-only"})
 	r.SetLive(true)
-	r.SeedDedup([]string{"previously-processed"})
+	r.SeedDedup(map[string]string{"previously-processed": "ok"})
 	if err := r.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
