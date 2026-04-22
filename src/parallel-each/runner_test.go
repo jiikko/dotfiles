@@ -512,6 +512,35 @@ func TestLoadProcessedLines(t *testing.T) {
 	})
 }
 
+func TestLoadProcessedEntriesPreservesOrder(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "result.log")
+	content := strings.Join([]string{
+		"ok\t0\tfirst\t/tmp/001-first.log",
+		"FAIL\t1\tsecond\t/tmp/002-second.log",
+		"ok\t0\tthird\t/tmp/003-third.log",
+	}, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := loadProcessedEntries(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("entries len = %d, want 3", len(entries))
+	}
+	if entries[0].Input != "first" || entries[0].Status != "ok" || entries[0].ExitCode != 0 {
+		t.Errorf("entries[0] = %+v", entries[0])
+	}
+	if entries[1].Input != "second" || entries[1].Status != "FAIL" || entries[1].ExitCode != 1 {
+		t.Errorf("entries[1] = %+v", entries[1])
+	}
+	if entries[2].LogPath != "/tmp/003-third.log" {
+		t.Errorf("entries[2].LogPath = %q", entries[2].LogPath)
+	}
+}
+
 func TestFilterProcessed(t *testing.T) {
 	processed := map[string]string{
 		"alpha": "ok",

@@ -952,6 +952,54 @@ func TestTUIModelQueueView(t *testing.T) {
 	}
 }
 
+// loadHistoricalRecent preloads m.recent from processed result.log entries
+// so the user can see prior runs on startup.
+func TestTUIModelLoadHistoricalRecent(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `echo {item}`}
+	r := NewRunner(cfg, []string{"x"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 0, r.Events(), r, 0)
+	entries := []ProcessedEntry{
+		{Status: "ok", ExitCode: 0, Input: "first", LogPath: "/tmp/001-first.log"},
+		{Status: "FAIL", ExitCode: 1, Input: "second", LogPath: "/tmp/002-second.log"},
+		{Status: "ok", ExitCode: 0, Input: "third", LogPath: "/tmp/003-third.log"},
+	}
+	m = m.loadHistoricalRecent(entries)
+
+	if len(m.recent) != 3 {
+		t.Fatalf("recent len = %d, want 3", len(m.recent))
+	}
+	// Newest (last-in-file) first.
+	if m.recent[0].Line != "third" {
+		t.Errorf("recent[0] = %q, want 'third'", m.recent[0].Line)
+	}
+	if m.recent[2].Line != "first" {
+		t.Errorf("recent[2] = %q, want 'first'", m.recent[2].Line)
+	}
+	// Exit code + index parsing.
+	if m.recent[1].ExitCode != 1 {
+		t.Errorf("second exit = %d, want 1", m.recent[1].ExitCode)
+	}
+	if m.recent[2].JobIndex != 1 {
+		t.Errorf("first JobIndex parsed = %d, want 1 (from '001-')", m.recent[2].JobIndex)
+	}
+}
+
 // '/' in recent view enters filter mode; typing narrows the list live.
 func TestTUIModelRecentFilter(t *testing.T) {
 	dir := t.TempDir()

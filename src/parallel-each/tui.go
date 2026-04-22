@@ -185,6 +185,39 @@ func (m model) forceKillConfirmActive() bool {
 	return !m.forceKillConfirmUntil.IsZero() && time.Now().Before(m.forceKillConfirmUntil)
 }
 
+// historicalJobIndex parses the NNNN prefix out of a per-job log filename
+// (e.g. "001-alpha.log" -> 1). Returns 0 when the prefix is missing / not a
+// number, which is fine for display purposes.
+func historicalJobIndex(logPath string) int {
+	base := filepath.Base(logPath)
+	// Find the first '-'; everything before it is the index.
+	dash := strings.IndexByte(base, '-')
+	if dash <= 0 {
+		return 0
+	}
+	n, _ := strconv.Atoi(base[:dash])
+	return n
+}
+
+// loadHistoricalRecent seeds m.recent with rows read from result.log so the
+// user can see previously-processed entries (and delete them with 'd' to
+// re-add). Entries are kept in "newest first" order.
+func (m model) loadHistoricalRecent(entries []ProcessedEntry) model {
+	for _, e := range entries {
+		m.recent = append([]recentEntry{{
+			JobIndex: historicalJobIndex(e.LogPath),
+			Line:     e.Input,
+			ExitCode: e.ExitCode,
+			LogPath:  e.LogPath,
+			// Duration unknown for historical rows (result.log doesn't record it).
+		}}, m.recent...)
+		if len(m.recent) > m.maxRecent {
+			m.recent = m.recent[:m.maxRecent]
+		}
+	}
+	return m
+}
+
 // handleQuitLetter advances the "quit" typing buffer. Once the full word is
 // typed the buffer is cleared and the current shutdown stage is advanced:
 //
@@ -1579,7 +1612,7 @@ func (m model) renderProgress(width int) string {
 }
 
 // runTUI drives the TUI and blocks until jobs are done (or user quits).
-func runTUI(ctx context.Context, cfg Config, lines []string, skipped int, processed map[string]string) int {
+func runTUI(ctx context.Context, cfg Config, lines []string, skipped int, processed map[string]string, processedEntries []ProcessedEntry) int {
 	r := NewRunner(cfg, lines)
 	r.SetLive(true) // enable interactive Enqueue via the TUI 'a' key
 	r.SeedDedup(processed)
@@ -1589,6 +1622,7 @@ func runTUI(ctx context.Context, cfg Config, lines []string, skipped int, proces
 	}
 
 	mdl := newModel(cfg, len(lines), r.Events(), r, skipped)
+	mdl = mdl.loadHistoricalRecent(processedEntries)
 	p := tea.NewProgram(mdl, tea.WithAltScreen())
 
 	// Parent context cancel (from external SIGTERM, etc.) triggers force-kill.

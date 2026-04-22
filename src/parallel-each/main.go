@@ -321,13 +321,19 @@ func main() {
 	// runTUI / runPlain).
 	skipped := 0
 	var processedMap map[string]string
+	var processedEntries []ProcessedEntry
 	if !cfg.Fresh {
-		processed, err := loadProcessedLines(filepath.Join(logDir, "result.log"))
+		entries, err := loadProcessedEntries(filepath.Join(logDir, "result.log"))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error reading previous result.log: %v\n", err)
 			os.Exit(2)
 		}
-		if len(processed) > 0 {
+		processedEntries = entries
+		if len(entries) > 0 {
+			processed := make(map[string]string, len(entries))
+			for _, e := range entries {
+				processed[e.Input] = e.Status
+			}
 			processedMap = processed
 			before := len(lines)
 			lines = filterProcessed(lines, processed)
@@ -359,7 +365,7 @@ func main() {
 
 	var rc int
 	if useTUI {
-		rc = runTUI(ctx, cfg, lines, skipped, processedMap)
+		rc = runTUI(ctx, cfg, lines, skipped, processedMap, processedEntries)
 	} else {
 		rc = runPlain(ctx, cfg, lines, skipped, processedMap)
 	}

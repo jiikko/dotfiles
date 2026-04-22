@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -98,21 +99,28 @@ func findDuplicates(lines []string) []string {
 	return dupes
 }
 
-// loadProcessedLines reads an existing result.log and returns a map of input
-// line -> status ("ok" or "FAIL", from column 1 of the TSV). Missing file is
-// not an error and returns an empty map. Malformed rows are silently skipped.
-// If the same line appears twice, the LAST row wins (most recent outcome).
-func loadProcessedLines(path string) (map[string]string, error) {
+// ProcessedEntry is one row loaded from result.log.
+type ProcessedEntry struct {
+	Status   string // "ok" or "FAIL"
+	ExitCode int
+	Input    string
+	LogPath  string
+}
+
+// loadProcessedEntries reads an existing result.log and returns rows in file
+// order (oldest first). Missing file is not an error and returns nil.
+// Malformed rows are silently skipped.
+func loadProcessedEntries(path string) ([]ProcessedEntry, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return map[string]string{}, nil
+			return nil, nil
 		}
 		return nil, err
 	}
 	defer f.Close()
 
-	m := make(map[string]string)
+	var out []ProcessedEntry
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 1024*1024)
 	for sc.Scan() {
@@ -120,10 +128,31 @@ func loadProcessedLines(path string) (map[string]string, error) {
 		if len(cols) < 4 {
 			continue
 		}
-		m[cols[2]] = cols[0]
+		exit, _ := strconv.Atoi(cols[1])
+		out = append(out, ProcessedEntry{
+			Status:   cols[0],
+			ExitCode: exit,
+			Input:    cols[2],
+			LogPath:  cols[3],
+		})
 	}
 	if err := sc.Err(); err != nil {
 		return nil, err
+	}
+	return out, nil
+}
+
+// loadProcessedLines is a convenience wrapper returning input -> status.
+// If a line appears more than once the LAST row wins. Kept for tests and
+// callers that don't need per-row detail.
+func loadProcessedLines(path string) (map[string]string, error) {
+	entries, err := loadProcessedEntries(path)
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[string]string, len(entries))
+	for _, e := range entries {
+		m[e.Input] = e.Status
 	}
 	return m, nil
 }
