@@ -142,21 +142,27 @@ LIVE ADD (TUI only)
   exit, or press a to add more. Plain mode does not support live add.
 
 SHUTDOWN
-  TUI: three-stage, reversible on the first step.
+  TUI: every shutdown step requires the user to TYPE the literal word
+  "quit" (four keystrokes, q-u-i-t in sequence). Any other key aborts the
+  in-progress quit and resets the buffer. Single q / Ctrl-C / Esc do NOT
+  start a shutdown — this is deliberate, to prevent accidental quits.
 
-    1st q / Ctrl-C:   Pause. Dispatcher stops submitting new jobs. Running
+    1st 'quit':       Pause. Dispatcher stops submitting new jobs. Running
                       jobs continue to completion. Reversible: press 'c'
-                      (or wait as long as you like) to resume.
-    2nd q / Ctrl-C:   Graceful stop (final). Queued items are dropped,
+                      (a single keystroke) to resume.
+    2nd 'quit':       Graceful stop (final). Queued items are dropped,
                       running jobs finish, the program exits.
-    3rd q / Ctrl-C:   Arm force-kill confirmation. A 3-second window opens;
-                      press q / Ctrl-C again within it to actually SIGTERM
+    3rd 'quit':       Arm force-kill confirmation. A 3-second window opens;
+                      type 'quit' once more within it to actually SIGTERM
                       the running sh subprocesses. If the window expires
-                      the attempt is silently cancelled (stopping state
-                      continues). Forced jobs exit non-zero and land in
-                      result.log as FAIL.
+                      the attempt is cancelled (stopping state continues).
+                      Forced jobs exit non-zero in result.log as FAIL.
+    4th 'quit' (in window): force-kill.
 
-  Plain mode: two-stage (no reversible pause).
+  While typing, a banner shows progress: "quit: qu__ — will pause".
+
+  Plain mode: two-stage (no quit-word protection, since there is no TTY
+  typing guard).
 
     1st SIGINT / SIGTERM: Graceful stop. Queued items dropped, running
                            jobs finish, program exits.

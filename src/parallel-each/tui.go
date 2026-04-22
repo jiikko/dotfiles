@@ -144,6 +144,11 @@ type model struct {
 	// confirmation; press q / Ctrl-C again before it expires to actually
 	// force-kill, otherwise the window auto-dismisses.
 	forceKillConfirmUntil time.Time
+
+	// Accidental-quit guard: the user must type the literal word "quit"
+	// (one letter at a time, in order) to advance any shutdown stage. Any
+	// other key resets the buffer.
+	quitBuffer string
 }
 
 func newModel(cfg Config, total int, events <-chan Event, runner *Runner, skipped int) model {
@@ -178,6 +183,84 @@ func newModel(cfg Config, total int, events <-chan Event, runner *Runner, skippe
 // window is currently open.
 func (m model) forceKillConfirmActive() bool {
 	return !m.forceKillConfirmUntil.IsZero() && time.Now().Before(m.forceKillConfirmUntil)
+}
+
+// handleQuitLetter advances the "quit" typing buffer. Once the full word is
+// typed the buffer is cleared and the current shutdown stage is advanced:
+//
+//	running           -> pause   (reversible via 'c')
+//	paused            -> stop    (graceful, final)
+//	stopping          -> arm 3-second force-kill confirmation
+//	confirm armed     -> actual force-kill
+//
+// Any other (non-quit) keystroke resets the buffer, so accidental 'q' / 'u'
+// / 'i' / 't' presses that aren't sequential don't count.
+func (m model) handleQuitLetter(letter string) model {
+	const word = "quit"
+	next := m.quitBuffer + letter
+	if !strings.HasPrefix(word, next) {
+		// Letter is valid in isolation but doesn't extend the current buffer
+		// (e.g. user typed 'q' then 't'). Restart from this letter if it's
+		// the first letter of the word, else reset.
+		if letter == string(word[0]) {
+			m.quitBuffer = letter
+		} else {
+			m.quitBuffer = ""
+		}
+		m.flashQuitProgress()
+		return m
+	}
+	m.quitBuffer = next
+	if m.quitBuffer == word {
+		m.quitBuffer = ""
+		m = m.advanceShutdown()
+		return m
+	}
+	m.flashQuitProgress()
+	return m
+}
+
+// flashQuitProgress shows a transient banner describing how far the user has
+// typed through "quit" and which action the next stage will perform.
+func (m *model) flashQuitProgress() {
+	if m.quitBuffer == "" {
+		return
+	}
+	action := "pause (reversible with 'c')"
+	switch {
+	case m.stopping && m.forceKillConfirmActive():
+		action = "force-kill running jobs"
+	case m.stopping:
+		action = "arm force-kill confirmation"
+	case m.paused:
+		action = "stop for good (graceful)"
+	}
+	const word = "quit"
+	typed := len([]rune(m.quitBuffer))
+	display := m.quitBuffer + strings.Repeat("_", len(word)-typed)
+	m.setFlash(fmt.Sprintf("quit: %s  — will %s", display, action), false)
+}
+
+// advanceShutdown performs the next shutdown stage when the user has typed
+// the full word "quit".
+func (m model) advanceShutdown() model {
+	switch {
+	case !m.paused:
+		m.paused = true
+		m.runner.Pause()
+		m.setFlash("paused — type 'quit' again to stop, or 'c' to resume", false)
+	case !m.stopping:
+		m.stopping = true
+		m.runner.RequestStop()
+		m.setFlash("stopping — type 'quit' again to arm force-kill", false)
+	case !m.forceKillConfirmActive():
+		m.forceKillConfirmUntil = time.Now().Add(3 * time.Second)
+		// Banner is drawn in the footer; no flash needed.
+	default:
+		m.forceKillConfirmUntil = time.Time{}
+		m.runner.ForceKill()
+	}
+	return m
 }
 
 // updateActiveState transitions between "running" and "idle" when the
@@ -270,6 +353,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleQueueKey(msg)
 		}
 		s := msg.String()
+		// Reset the quit buffer on any non-quit-letter key. The four letters
+		// of "quit" go through handleQuitLetter below, everything else lands
+		// here and aborts an in-progress quit sequence.
+		if s != "q" && s != "u" && s != "i" && s != "t" {
+			m.quitBuffer = ""
+		}
 		// Digit keys 1-9 toggle focus on the corresponding slot, if active.
 		if len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
 			id := int(s[0] - '0')
@@ -334,7 +423,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focusSlot = 0
 			return m, nil
 		case "c":
-			// Cancel a pending pause and resume normal dispatching.
+			// Cancel a pending pause and resume normal dispatching. Always
+			// safe; no quit-guard needed.
 			if m.paused && !m.stopping {
 				m.paused = false
 				m.runner.Resume()
@@ -342,29 +432,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "esc":
+			// esc is only used to exit focus mode. Otherwise it is a no-op
+			// (shutdown requires typing 'quit').
 			if m.focusSlot != 0 {
 				m.focusSlot = 0
-				return m, nil
 			}
-			fallthrough
-		case "q", "ctrl+c":
-			switch {
-			case !m.paused:
-				// 1st press: reversible pause.
-				m.paused = true
-				m.runner.Pause()
-			case !m.stopping:
-				// 2nd press: commit to graceful stop (final).
-				m.stopping = true
-				m.runner.RequestStop()
-			case m.forceKillConfirmActive():
-				// 4th press within the window: confirmed → force-kill.
-				m.forceKillConfirmUntil = time.Time{}
-				m.runner.ForceKill()
-			default:
-				// 3rd press: arm 3-second confirmation.
-				m.forceKillConfirmUntil = time.Now().Add(3 * time.Second)
-			}
+			return m, nil
+		case "q", "u", "i", "t":
+			m = m.handleQuitLetter(s)
+			return m, nil
+		case "ctrl+c":
+			// Single Ctrl-C is ignored on purpose (prevent accidents).
+			// The user can still kill the program from outside (SIGINT via
+			// `kill`) or type 'quit' to advance the shutdown stages.
+			m.setFlash("ctrl-c ignored — type 'quit' to begin shutdown", true)
 			return m, nil
 		}
 		return m, nil
@@ -609,17 +690,17 @@ func (m model) View() string {
 				remaining = 1
 			}
 			b.WriteString(styleFail.Render(fmt.Sprintf(
-				"  ⚠ force-kill? press q / ctrl-c again within %ds to confirm (running: %d).",
+				"  ⚠ force-kill? type 'quit' again within %ds to confirm (running: %d).",
 				remaining, running)))
 		} else if running > 0 {
 			b.WriteString(styleFail.Render(fmt.Sprintf(
-				"  stopping… waiting for %d running job(s). press q / ctrl-c to force-kill.", running)))
+				"  stopping… waiting for %d running job(s). type 'quit' to force-kill.", running)))
 		} else {
 			b.WriteString(styleFail.Render("  stopping…"))
 		}
 	} else if m.paused {
 		b.WriteString(styleFail.Render(fmt.Sprintf(
-			"  paused (running: %d)  —  c: resume   q/ctrl-c: stop for good (→ force-kill)", running)))
+			"  paused (running: %d)  —  c: resume   type 'quit' to stop for good", running)))
 	} else if m.recentMode {
 		if m.recentFilterMode {
 			b.WriteString(styleKey.Render("  type to filter   enter: apply   esc: clear   ctrl-u: reset"))
@@ -635,9 +716,9 @@ func (m model) View() string {
 	} else if m.focusSlot != 0 {
 		b.WriteString(styleKey.Render("  esc / 0: back   e: open log in $EDITOR   a: add   q: stop"))
 	} else if m.completed >= m.total && running == 0 {
-		b.WriteString(styleKey.Render("  all done — a/A: add/prepend   p: par   r: recent   l: queue   o: other   q: exit"))
+		b.WriteString(styleKey.Render("  all done — a/A: add   p: par   r: recent   l: queue   o: other   type 'quit' to exit"))
 	} else {
-		b.WriteString(styleKey.Render("  1-9: focus   a/A: add/prepend   p: par   r: recent   l: queue   o: other   q: stop"))
+		b.WriteString(styleKey.Render("  1-9: focus   a/A: add   p: par   r: recent   l: queue   o: other   type 'quit' to stop"))
 	}
 	b.WriteString("\n")
 
