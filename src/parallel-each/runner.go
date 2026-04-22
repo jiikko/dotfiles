@@ -240,7 +240,7 @@ type Runner struct {
 	workerMu      sync.Mutex
 	targetPar     int // desired worker count (>=1)
 	activeWorkers int // currently running worker goroutines
-	nextSlotID    int // monotonic slot id for new workers
+	slotIDs       map[int]bool // set of slot ids currently in use (1-based)
 }
 
 // runnerJob is passed to workers via r.jobs.
@@ -699,22 +699,35 @@ func (r *Runner) Start(parent context.Context) error {
 }
 
 // SetParallelism adjusts the target number of concurrent workers. Minimum 1.
-// Growing spawns new worker goroutines; shrinking signals the excess workers
-// to exit after their current job completes (does not interrupt in-flight
-// work). Safe to call at any time after Start.
+// Growing spawns new worker goroutines with the smallest available slot ID;
+// shrinking signals the excess workers to exit after their current job
+// completes (does not interrupt in-flight work). Safe to call any time.
 func (r *Runner) SetParallelism(n int) {
 	if n < 1 {
 		n = 1
 	}
 	r.workerMu.Lock()
 	defer r.workerMu.Unlock()
+	if r.slotIDs == nil {
+		r.slotIDs = make(map[int]bool)
+	}
 	r.targetPar = n
 	for r.activeWorkers < r.targetPar {
-		r.nextSlotID++
-		slotID := r.nextSlotID
+		slotID := r.allocSlotIDLocked()
 		r.activeWorkers++
 		r.wg.Add(1)
 		go r.workerLoop(slotID)
+	}
+}
+
+// allocSlotIDLocked returns the smallest unused 1-based slot id, marking it
+// in-use. Caller must hold workerMu.
+func (r *Runner) allocSlotIDLocked() int {
+	for i := 1; ; i++ {
+		if !r.slotIDs[i] {
+			r.slotIDs[i] = true
+			return i
+		}
 	}
 }
 
@@ -726,9 +739,15 @@ func (r *Runner) Parallelism() int {
 }
 
 // workerLoop consumes jobs and retires itself when the target shrinks below
-// the current active count.
+// the current active count. The slot id is released on retirement so the
+// next SetParallelism grow can reuse it (keeps slot numbers compact 1..P).
 func (r *Runner) workerLoop(slotID int) {
 	defer r.wg.Done()
+	defer func() {
+		r.workerMu.Lock()
+		delete(r.slotIDs, slotID)
+		r.workerMu.Unlock()
+	}()
 	for j := range r.jobs {
 		if r.stopCtx.Err() != nil {
 			continue

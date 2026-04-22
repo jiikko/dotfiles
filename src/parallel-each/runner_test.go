@@ -1087,6 +1087,52 @@ func TestRunnerPendingSnapshot(t *testing.T) {
 	}
 }
 
+// allocSlotIDLocked always returns the smallest unused 1-based id, and
+// reuses freed ids before growing upward.
+func TestRunnerAllocSlotIDReusesFreed(t *testing.T) {
+	r := &Runner{slotIDs: map[int]bool{}}
+	r.workerMu.Lock()
+	defer r.workerMu.Unlock()
+
+	if id := r.allocSlotIDLocked(); id != 1 {
+		t.Errorf("1st alloc = %d, want 1", id)
+	}
+	if id := r.allocSlotIDLocked(); id != 2 {
+		t.Errorf("2nd alloc = %d, want 2", id)
+	}
+	if id := r.allocSlotIDLocked(); id != 3 {
+		t.Errorf("3rd alloc = %d, want 3", id)
+	}
+
+	// Free id 2 (simulate that worker retiring); next alloc should reuse 2.
+	delete(r.slotIDs, 2)
+	if id := r.allocSlotIDLocked(); id != 2 {
+		t.Errorf("after free 2: alloc = %d, want 2 (reused)", id)
+	}
+
+	// Free ids 1 and 3; next two allocs should be 1 then 4 (3 is still used
+	// by the reused-2 worker... wait, 3 was freed above. Let me re-check).
+	delete(r.slotIDs, 1)
+	delete(r.slotIDs, 3)
+	got := []int{r.allocSlotIDLocked(), r.allocSlotIDLocked()}
+	want := []int{1, 3}
+	if !intSliceEqual(got, want) {
+		t.Errorf("fresh allocs after freeing 1,3 = %v, want %v", got, want)
+	}
+}
+
+func intSliceEqual(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // SetParallelism(0) is clamped to 1.
 func TestRunnerSetParallelismMinimum(t *testing.T) {
 	dir := t.TempDir()
