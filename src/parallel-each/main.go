@@ -92,6 +92,11 @@ TUI
                next item dispatched after the currently running jobs. Multi-
                line pastes are prepended as a block, preserving the paste
                order at the queue head.
+    P, space   Pause / resume dispatching. Unrelated to shutdown: paused
+               means no new jobs are handed to workers, but running jobs
+               continue and the program stays alive indefinitely. Use for
+               "hold on a sec" situations (CPU relief, manual inspection,
+               etc.). Cannot be used once shutdown has begun.
     p          Change parallelism. Opens a prompt — type the new target
                worker count, press Enter to preview, Enter again to confirm
                (or Esc to cancel). Increases spawn a new worker immediately.
@@ -150,19 +155,18 @@ SHUTDOWN
   in-progress quit and resets the buffer. Single q / Ctrl-C / Esc do NOT
   start a shutdown — this is deliberate, to prevent accidental quits.
 
-    1st 'quit':       Pause. Dispatcher stops submitting new jobs. Running
-                      jobs continue to completion. Reversible: press 'c'
-                      (a single keystroke) to resume.
-    2nd 'quit':       Graceful stop (final). Queued items are dropped,
+    1st 'quit':       Graceful stop (final). Queued items are dropped,
                       running jobs finish, the program exits.
-    3rd 'quit':       Arm force-kill confirmation. A 3-second window opens;
+    2nd 'quit':       Arm force-kill confirmation. A 3-second window opens;
                       type 'quit' once more within it to actually SIGTERM
                       the running sh subprocesses. If the window expires
                       the attempt is cancelled (stopping state continues).
                       Forced jobs exit non-zero in result.log as FAIL.
-    4th 'quit' (in window): force-kill.
+    3rd 'quit' (in window): force-kill.
 
-  While typing, a banner shows progress: "quit: qu__ — will pause".
+  While typing, a banner shows progress: "quit: qu__ — will stop gracefully".
+
+  If you only want to hold the queue (not quit), use P or space to pause.
 
   Plain mode: two-stage (no quit-word protection, since there is no TTY
   typing guard).

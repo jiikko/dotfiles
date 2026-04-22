@@ -226,14 +226,12 @@ func (m *model) flashQuitProgress() {
 	if m.quitBuffer == "" {
 		return
 	}
-	action := "pause (reversible with 'c')"
+	action := "stop gracefully (queued items dropped, running jobs finish)"
 	switch {
 	case m.stopping && m.forceKillConfirmActive():
 		action = "force-kill running jobs"
 	case m.stopping:
 		action = "arm force-kill confirmation"
-	case m.paused:
-		action = "stop for good (graceful)"
 	}
 	const word = "quit"
 	typed := len([]rune(m.quitBuffer))
@@ -242,20 +240,20 @@ func (m *model) flashQuitProgress() {
 }
 
 // advanceShutdown performs the next shutdown stage when the user has typed
-// the full word "quit".
+// the full word "quit". Pause is not part of this flow — it's a separate
+// feature controlled by P / space.
+//
+//	1st "quit" -> stopping (graceful, final)
+//	2nd "quit" -> arm 3-second force-kill confirmation
+//	3rd "quit" (within window) -> actually force-kill
 func (m model) advanceShutdown() model {
 	switch {
-	case !m.paused:
-		m.paused = true
-		m.runner.Pause()
-		m.setFlash("paused — type 'quit' again to stop, or 'c' to resume", false)
 	case !m.stopping:
 		m.stopping = true
 		m.runner.RequestStop()
 		m.setFlash("stopping — type 'quit' again to arm force-kill", false)
 	case !m.forceKillConfirmActive():
 		m.forceKillConfirmUntil = time.Now().Add(3 * time.Second)
-		// Banner is drawn in the footer; no flash needed.
 	default:
 		m.forceKillConfirmUntil = time.Time{}
 		m.runner.ForceKill()
@@ -422,13 +420,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "0":
 			m.focusSlot = 0
 			return m, nil
-		case "c":
-			// Cancel a pending pause and resume normal dispatching. Always
-			// safe; no quit-guard needed.
-			if m.paused && !m.stopping {
+		case "P", " ":
+			// Pause / resume toggle — unrelated to shutdown. Ignored while
+			// the runner is already committed to stopping.
+			if m.stopping {
+				return m, nil
+			}
+			if m.paused {
 				m.paused = false
 				m.runner.Resume()
 				m.setFlash("resumed", false)
+			} else {
+				m.paused = true
+				m.runner.Pause()
+				m.setFlash("paused — press P or space to resume", false)
 			}
 			return m, nil
 		case "esc":
@@ -699,8 +704,8 @@ func (m model) View() string {
 			b.WriteString(styleFail.Render("  stopping…"))
 		}
 	} else if m.paused {
-		b.WriteString(styleFail.Render(fmt.Sprintf(
-			"  paused (running: %d)  —  c: resume   type 'quit' to stop for good", running)))
+		b.WriteString(styleHeader.Render(fmt.Sprintf(
+			"  ⏸ paused (running: %d)  —  P or space: resume   type 'quit' to stop", running)))
 	} else if m.recentMode {
 		if m.recentFilterMode {
 			b.WriteString(styleKey.Render("  type to filter   enter: apply   esc: clear   ctrl-u: reset"))
@@ -718,7 +723,7 @@ func (m model) View() string {
 	} else if m.completed >= m.total && running == 0 {
 		b.WriteString(styleKey.Render("  all done — a/A: add   p: par   r: recent   l: queue   o: other   type 'quit' to exit"))
 	} else {
-		b.WriteString(styleKey.Render("  1-9: focus   a/A: add   p: par   r: recent   l: queue   o: other   type 'quit' to stop"))
+		b.WriteString(styleKey.Render("  1-9: focus   a/A: add   p: par   P: pause   r: recent   l: queue   type 'quit' to stop"))
 	}
 	b.WriteString("\n")
 

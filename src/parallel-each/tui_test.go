@@ -53,12 +53,11 @@ func TestFormatDur(t *testing.T) {
 	}
 }
 
-// Shutdown requires the user to type the literal word "quit". The staged
-// semantics are preserved:
-//   1st "quit" -> paused (reversible)
-//   2nd "quit" -> stopping (final)
-//   3rd "quit" -> force-kill confirm armed
-//   4th "quit" (in window) -> force-kill
+// Shutdown requires the user to type the literal word "quit". Pause is no
+// longer part of the shutdown flow.
+//   1st "quit" -> stopping (final graceful stop)
+//   2nd "quit" -> force-kill confirm armed
+//   3rd "quit" (in window) -> force-kill
 func TestTUIModelThreeStageShutdown(t *testing.T) {
 	dir := t.TempDir()
 	cwd, _ := os.Getwd()
@@ -96,21 +95,15 @@ func TestTUIModelThreeStageShutdown(t *testing.T) {
 		t.Fatalf("quitBuffer should reset after non-quit key, got %q", m.quitBuffer)
 	}
 
-	// 1st "quit" -> pause.
-	typeQuit()
-	if !m.paused {
-		t.Fatal(`1st "quit" should set paused`)
-	}
-
-	// 2nd "quit" -> stop.
+	// 1st "quit" -> stop (skips the former pause stage).
 	typeQuit()
 	if !m.stopping {
-		t.Fatal(`2nd "quit" should set stopping`)
+		t.Fatal(`1st "quit" should set stopping`)
 	}
 	select {
 	case <-r.stopCtx.Done():
 	case <-time.After(100 * time.Millisecond):
-		t.Fatal("stopCtx not cancelled after 2nd quit")
+		t.Fatal("stopCtx not cancelled after 1st quit")
 	}
 	select {
 	case <-r.killCtx.Done():
@@ -118,18 +111,18 @@ func TestTUIModelThreeStageShutdown(t *testing.T) {
 	default:
 	}
 
-	// 3rd "quit" -> arm confirmation.
+	// 2nd "quit" -> arm confirmation.
 	typeQuit()
 	if !m.forceKillConfirmActive() {
-		t.Fatal(`3rd "quit" should arm force-kill`)
+		t.Fatal(`2nd "quit" should arm force-kill`)
 	}
 
-	// 4th "quit" -> force-kill.
+	// 3rd "quit" -> force-kill.
 	typeQuit()
 	select {
 	case <-r.killCtx.Done():
 	case <-time.After(200 * time.Millisecond):
-		t.Fatal("killCtx not cancelled after 4th quit")
+		t.Fatal("killCtx not cancelled after 3rd quit")
 	}
 
 	select {
@@ -157,15 +150,15 @@ func TestTUIModelForceKillConfirmExpires(t *testing.T) {
 	defer r.ForceKill()
 
 	m := newModel(cfg, 1, r.Events(), r, 0)
-	// Walk through pause → stop → arm confirm by typing "quit" three times.
-	for i := 0; i < 3; i++ {
+	// Walk through stop → arm confirm by typing "quit" twice.
+	for i := 0; i < 2; i++ {
 		for _, ch := range "quit" {
 			u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
 			m = u.(model)
 		}
 	}
 	if !m.forceKillConfirmActive() {
-		t.Fatal(`expected confirm to be active after 3 "quit" sequences`)
+		t.Fatal(`expected confirm to be active after 2 "quit" sequences`)
 	}
 	// Simulate time passing past the window.
 	m.forceKillConfirmUntil = time.Now().Add(-time.Second)
@@ -186,8 +179,8 @@ func TestTUIModelForceKillConfirmExpires(t *testing.T) {
 	}
 }
 
-// 'c' cancels a pending pause and resumes dispatching.
-func TestTUIModelCancelPauseWithC(t *testing.T) {
+// P and space toggle pause/resume independently of the shutdown flow.
+func TestTUIModelPauseToggle(t *testing.T) {
 	dir := t.TempDir()
 	cwd, _ := os.Getwd()
 	defer os.Chdir(cwd)
@@ -204,26 +197,47 @@ func TestTUIModelCancelPauseWithC(t *testing.T) {
 
 	m := newModel(cfg, 1, r.Events(), r, 0)
 
-	// Pause via "quit".
-	for _, ch := range "quit" {
-		u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
-		m = u.(model)
-	}
-	if !m.paused || !r.IsPaused() {
-		t.Fatal(`paused should be true after "quit"`)
-	}
-
-	// Resume via c.
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	// P -> pause
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}})
 	m = u.(model)
-	if m.paused {
-		t.Fatal("paused should be false after c")
-	}
-	if r.IsPaused() {
-		t.Fatal("runner should not be paused after c")
+	if !m.paused || !r.IsPaused() {
+		t.Fatal("P should pause")
 	}
 	if m.stopping {
-		t.Fatal("stopping should still be false")
+		t.Fatal("P should not set stopping")
+	}
+
+	// P -> resume
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}})
+	m = u.(model)
+	if m.paused || r.IsPaused() {
+		t.Fatal("second P should resume")
+	}
+
+	// space also toggles
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m = u.(model)
+	if !m.paused {
+		t.Fatal("space should pause")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m = u.(model)
+	if m.paused {
+		t.Fatal("second space should resume")
+	}
+
+	// Once stopping, P/space are ignored.
+	for _, ch := range "quit" {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		m = u.(model)
+	}
+	if !m.stopping {
+		t.Fatal("quit should trigger stopping")
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}})
+	m = u.(model)
+	if m.paused {
+		t.Fatal("P during stopping should not pause")
 	}
 }
 
@@ -265,8 +279,8 @@ func TestTUIModelQuitBufferResets(t *testing.T) {
 	}
 	// Now typing "quit" fully should work (buffer was reset cleanly).
 	send("quit")
-	if !m.paused {
-		t.Fatal("full quit should pause")
+	if !m.stopping {
+		t.Fatal("full quit should trigger stopping")
 	}
 }
 
@@ -299,13 +313,13 @@ func TestTUIModelQuitBufferRestartsOnQ(t *testing.T) {
 	if m.quitBuffer != "" {
 		t.Errorf("buffer = %q, want empty", m.quitBuffer)
 	}
-	if m.paused {
-		t.Fatal("partial sequence must not pause")
+	if m.stopping {
+		t.Fatal("partial sequence must not stop")
 	}
 
 	send("qquit") // re-starts on 'q'
-	if !m.paused {
-		t.Fatal("second full quit should pause")
+	if !m.stopping {
+		t.Fatal("second full quit should stop")
 	}
 }
 
