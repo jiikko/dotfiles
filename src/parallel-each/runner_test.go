@@ -1291,6 +1291,70 @@ func TestRunnerEnqueueRejectedAfterStop(t *testing.T) {
 	}
 }
 
+// ForgetLine drops the dedup entry and removes matching rows from
+// result.log, making the input eligible for Enqueue again.
+func TestRunnerForgetLineReEnableEnqueue(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `echo {item}`, File: filepath.Join(dir, "urls.txt")}
+	if err := os.WriteFile(cfg.File, []byte("a\nb\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := NewRunner(cfg, []string{"a", "b"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// Wait for both jobs to complete.
+	ends := 0
+	for ev := range waitEvents(r) {
+		if ev.Kind == EventEnd {
+			ends++
+			if ends == 2 {
+				break
+			}
+		}
+	}
+	// Sanity: re-enqueueing "a" is rejected (duplicate).
+	if err := r.Enqueue("a"); err == nil {
+		t.Fatal("expected Enqueue to reject pre-forget duplicate")
+	}
+	// Forget "a".
+	if err := r.ForgetLine("a"); err != nil {
+		t.Fatalf("ForgetLine: %v", err)
+	}
+	// Now re-enqueue should succeed.
+	if err := r.Enqueue("a"); err != nil {
+		t.Errorf("Enqueue after ForgetLine failed: %v", err)
+	}
+	// result.log should no longer contain "a" in column 3 for the ORIGINAL row.
+	// (A new row may now exist from the re-enqueue once it runs — we'll find
+	// zero or one matching row at this point since the new job hasn't
+	// completed yet.)
+	data, _ := os.ReadFile(filepath.Join(logDir, "result.log"))
+	count := 0
+	for _, row := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+		cols := strings.Split(row, "\t")
+		if len(cols) >= 4 && cols[2] == "a" {
+			count++
+		}
+	}
+	if count > 1 {
+		t.Errorf("expected at most 1 row for 'a' after forget+re-enqueue, got %d", count)
+	}
+	r.ForceKill()
+	for range r.Events() {
+	}
+}
+
+// waitEvents returns the runner's event channel (thin alias for readability).
+func waitEvents(r *Runner) <-chan Event { return r.Events() }
+
 // Enqueue rejects with a descriptive reason depending on where the duplicate
 // came from (current queue, previous ok, previous fail).
 func TestRunnerEnqueueDuplicateMessages(t *testing.T) {

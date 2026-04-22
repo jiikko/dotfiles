@@ -705,7 +705,7 @@ func (m model) View() string {
 		if m.recentFilterMode {
 			b.WriteString(styleKey.Render("  type to filter   enter: apply   esc: clear   ctrl-u: reset"))
 		} else {
-			b.WriteString(styleKey.Render("  ↑/↓ or j/k: move   pgup/pgdown: page   g/G: top/bottom   enter: open log   /: filter   esc/r: back"))
+			b.WriteString(styleKey.Render("  ↑/↓ j/k: move   enter: open log   d: forget (allow re-add)   /: filter   esc/r: back"))
 		}
 	} else if m.queueMode {
 		if m.queueFilterMode {
@@ -1234,6 +1234,32 @@ func (m model) handleRecentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, openEditorCmd(e.LogPath)
+	}
+
+	if msg.String() == "d" {
+		filtered := m.filteredRecent()
+		if len(filtered) == 0 {
+			return m, nil
+		}
+		target := filtered[m.recentList.cursor]
+		if err := m.runner.ForgetLine(target.Line); err != nil {
+			m.setFlash("✗ forget failed: "+err.Error(), true)
+			return m, nil
+		}
+		// Drop the entry from m.recent (there may be multiple matches, but
+		// the unique-input invariant means at most one; loop defensively).
+		remaining := m.recent[:0]
+		for _, e := range m.recent {
+			if e.Line == target.Line {
+				continue
+			}
+			remaining = append(remaining, e)
+		}
+		m.recent = remaining
+		m.recentList.cursor = clampListIdx(m.recentList.cursor, len(m.filteredRecent()))
+		m.recentList.ensureVisible(len(m.filteredRecent()), m.recentPageSize())
+		m.setFlash(fmt.Sprintf("✓ forgotten: %s (can be re-added)", truncate(target.Line, 50)), false)
+		return m, nil
 	}
 
 	switch msg.String() {

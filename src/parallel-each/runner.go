@@ -412,6 +412,74 @@ func (r *Runner) AddedCount() int {
 	return r.addedCount
 }
 
+// ForgetLine removes a line from both the in-memory dedup set AND the
+// on-disk result.log (all matching rows, identified by column 3). After
+// ForgetLine returns nil, the line is eligible to be Enqueue'd again.
+// Per-job log files under parallel-each-log/ are NOT deleted.
+func (r *Runner) ForgetLine(line string) error {
+	r.queuedMu.Lock()
+	delete(r.queued, line)
+	r.queuedMu.Unlock()
+	return r.rewriteResultLogExcluding(line)
+}
+
+// rewriteResultLogExcluding rewrites parallel-each-log/result.log with all
+// rows whose column-3 equals line filtered out. Uses a tmp + rename so the
+// replacement is atomic on crash; hold resultMu for the duration so no
+// concurrent appendResult interleaves.
+func (r *Runner) rewriteResultLogExcluding(line string) error {
+	r.resultMu.Lock()
+	defer r.resultMu.Unlock()
+
+	path := filepath.Join(logDir, "result.log")
+	// Swap the active file handle out before reading/rewriting, and reopen
+	// for append at the end (even on error paths) so appendResult still works.
+	if r.resultLog != nil {
+		r.resultLog.Close()
+		r.resultLog = nil
+	}
+	defer func() {
+		if r.resultLog == nil {
+			r.resultLog, _ = os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
+		}
+	}()
+
+	src, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var kept []byte
+	sc := bufio.NewScanner(src)
+	sc.Buffer(make([]byte, 64*1024), 1024*1024)
+	for sc.Scan() {
+		text := sc.Text()
+		cols := strings.Split(text, "\t")
+		if len(cols) >= 4 && cols[2] == line {
+			continue
+		}
+		kept = append(kept, []byte(text)...)
+		kept = append(kept, '\n')
+	}
+	scanErr := sc.Err()
+	src.Close()
+	if scanErr != nil {
+		return scanErr
+	}
+
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, kept, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
 // SeedDedup marks each line as "already seen" so future Enqueue calls reject
 // it as a duplicate. The status string ("ok" or "FAIL", as recorded in
 // result.log) is used to produce a specific error message on rejection.
