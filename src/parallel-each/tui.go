@@ -120,13 +120,17 @@ type model struct {
 	addedLive    int // count of items successfully Enqueued
 
 	// Full recent-view state.
-	recentMode bool
-	recentList listState
+	recentMode       bool
+	recentList       listState
+	recentFilter     string // current substring filter (case-insensitive), "" = off
+	recentFilterMode bool   // true while typing the filter
 
 	// Queue view state (pending items).
-	queueMode     bool
-	queueList     listState
-	queueSnapshot []string
+	queueMode        bool
+	queueList        listState
+	queueSnapshot    []string
+	queueFilter      string
+	queueFilterMode  bool
 
 	width    int
 	height   int
@@ -381,8 +385,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.queueMode && m.runner != nil {
 			m.queueSnapshot = m.runner.PendingSnapshot()
-			m.queueList.cursor = clampListIdx(m.queueList.cursor, len(m.queueSnapshot))
-			m.queueList.ensureVisible(len(m.queueSnapshot), m.recentPageSize())
+			total := len(m.filteredQueue())
+			m.queueList.cursor = clampListIdx(m.queueList.cursor, total)
+			m.queueList.ensureVisible(total, m.recentPageSize())
 		}
 		return m, tea.Batch(
 			refreshTailsCmd(m.slots, lines),
@@ -616,9 +621,17 @@ func (m model) View() string {
 		b.WriteString(styleFail.Render(fmt.Sprintf(
 			"  paused (running: %d)  —  c: resume   q/ctrl-c: stop for good (→ force-kill)", running)))
 	} else if m.recentMode {
-		b.WriteString(styleKey.Render("  ↑/↓ or j/k: move   pgup/pgdown: page   g/G: top/bottom   enter: open log   esc/r: back"))
+		if m.recentFilterMode {
+			b.WriteString(styleKey.Render("  type to filter   enter: apply   esc: clear   ctrl-u: reset"))
+		} else {
+			b.WriteString(styleKey.Render("  ↑/↓ or j/k: move   pgup/pgdown: page   g/G: top/bottom   enter: open log   /: filter   esc/r: back"))
+		}
 	} else if m.queueMode {
-		b.WriteString(styleKey.Render("  ↑/↓ or j/k: move   pgup/pgdown: page   g/G: top/bottom   esc/l: back"))
+		if m.queueFilterMode {
+			b.WriteString(styleKey.Render("  type to filter   enter: apply   esc: clear   ctrl-u: reset"))
+		} else {
+			b.WriteString(styleKey.Render("  ↑/↓ or j/k: move   pgup/pgdown: page   g/G: top/bottom   /: filter   esc/l: back"))
+		}
 	} else if m.focusSlot != 0 {
 		b.WriteString(styleKey.Render("  esc / 0: back   e: open log in $EDITOR   a: add   q: stop"))
 	} else if m.completed >= m.total && running == 0 {
@@ -1085,12 +1098,23 @@ func (m model) handleExportKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleQueueKey processes keystrokes while the queue (pending) view is open.
 func (m model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.queueFilterMode {
+		nf, nm, changed := updateFilterInput(msg, m.queueFilter, m.queueFilterMode)
+		m.queueFilter = nf
+		m.queueFilterMode = nm
+		if changed {
+			m.queueList.reset()
+		}
+		return m, nil
+	}
 	switch msg.String() {
 	case "esc", "l", "q":
 		m.queueMode = false
+		m.queueFilter = ""
 		return m, nil
 	case "ctrl+c":
 		m.queueMode = false
+		m.queueFilter = ""
 		if !m.stopping {
 			m.stopping = true
 			m.runner.RequestStop()
@@ -1098,18 +1122,32 @@ func (m model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.runner.ForceKill()
 		}
 		return m, nil
+	case "/":
+		m.queueFilterMode = true
+		return m, nil
 	}
-	m.queueList.handleNavKey(msg.String(), len(m.queueSnapshot), m.recentPageSize())
+	m.queueList.handleNavKey(msg.String(), len(m.filteredQueue()), m.recentPageSize())
 	return m, nil
 }
 
 // handleRecentKey processes keystrokes while the full recent view is open.
 func (m model) handleRecentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.recentFilterMode {
+		nf, nm, changed := updateFilterInput(msg, m.recentFilter, m.recentFilterMode)
+		m.recentFilter = nf
+		m.recentFilterMode = nm
+		if changed {
+			m.recentList.reset()
+		}
+		return m, nil
+	}
+
 	if msg.Type == tea.KeyEnter {
-		if len(m.recent) == 0 {
+		filtered := m.filteredRecent()
+		if len(filtered) == 0 {
 			return m, nil
 		}
-		e := m.recent[m.recentList.cursor]
+		e := filtered[m.recentList.cursor]
 		if e.LogPath == "" {
 			m.setFlash("✗ no log path for this entry", true)
 			return m, nil
@@ -1121,9 +1159,11 @@ func (m model) handleRecentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc", "r", "q":
 		m.recentMode = false
 		m.recentList.reset()
+		m.recentFilter = ""
 		return m, nil
 	case "ctrl+c":
 		m.recentMode = false
+		m.recentFilter = ""
 		if !m.stopping {
 			m.stopping = true
 			m.runner.RequestStop()
@@ -1131,9 +1171,66 @@ func (m model) handleRecentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.runner.ForceKill()
 		}
 		return m, nil
+	case "/":
+		m.recentFilterMode = true
+		return m, nil
 	}
-	m.recentList.handleNavKey(msg.String(), len(m.recent), m.recentPageSize())
+	m.recentList.handleNavKey(msg.String(), len(m.filteredRecent()), m.recentPageSize())
 	return m, nil
+}
+
+// updateFilterInput computes the next (filter, mode) pair for a filter input
+// keystroke. The caller resets its list cursor when changed is true.
+func updateFilterInput(msg tea.KeyMsg, filter string, mode bool) (newFilter string, newMode bool, changed bool) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		return filter, false, true
+	case tea.KeyEsc, tea.KeyCtrlC:
+		return "", false, true
+	case tea.KeyBackspace, tea.KeyCtrlH:
+		if r := []rune(filter); len(r) > 0 {
+			return string(r[:len(r)-1]), mode, true
+		}
+		return filter, mode, false
+	case tea.KeyCtrlU:
+		return "", mode, true
+	case tea.KeyRunes:
+		return filter + string(msg.Runes), mode, true
+	case tea.KeySpace:
+		return filter + " ", mode, true
+	}
+	return filter, mode, false
+}
+
+// filteredRecent returns m.recent narrowed by recentFilter (case-insensitive
+// substring on Line). When the filter is empty, returns the full slice.
+func (m model) filteredRecent() []recentEntry {
+	if m.recentFilter == "" {
+		return m.recent
+	}
+	q := strings.ToLower(m.recentFilter)
+	out := make([]recentEntry, 0, len(m.recent))
+	for _, e := range m.recent {
+		if strings.Contains(strings.ToLower(e.Line), q) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// filteredQueue returns the pending snapshot narrowed by queueFilter.
+func (m model) filteredQueue() []string {
+	if m.queueFilter == "" {
+		return m.queueSnapshot
+	}
+	q := strings.ToLower(m.queueFilter)
+	out := make([]string, 0, len(m.queueSnapshot))
+	for _, line := range m.queueSnapshot {
+		if strings.Contains(strings.ToLower(line), q) {
+			out = append(out, line)
+		}
+	}
+	return out
 }
 
 // recentPageSize returns how many recent rows fit in the content area of the
@@ -1155,13 +1252,14 @@ func (m *model) setFlash(msg string, isErr bool) {
 	m.flashUntil = time.Now().Add(3 * time.Second)
 }
 
-// renderRecentFull renders a scrollable list of all recorded completions
-// (newest first). `recentScroll` is the index of the topmost visible row.
+// renderRecentFull renders a scrollable list of recorded completions, with
+// optional substring filter applied.
 func (m model) renderRecentFull() string {
 	var b strings.Builder
-	total := len(m.recent)
+	visible := m.filteredRecent()
+	total := len(visible)
 	okN, failN := 0, 0
-	for _, e := range m.recent {
+	for _, e := range visible {
 		if e.ExitCode == 0 {
 			okN++
 		} else {
@@ -1169,15 +1267,28 @@ func (m model) renderRecentFull() string {
 		}
 	}
 
-	b.WriteString(styleHeader.Render(fmt.Sprintf("  recent (full) — %d entries", total)))
+	header := fmt.Sprintf("  recent (full) — %d", total)
+	if m.recentFilter != "" {
+		header += fmt.Sprintf(" of %d", len(m.recent))
+	} else {
+		header += " entries"
+	}
+	b.WriteString(styleHeader.Render(header))
 	b.WriteString("  ")
 	b.WriteString(styleOK.Render(fmt.Sprintf("ok %d", okN)))
 	b.WriteString("  ")
 	b.WriteString(styleFail.Render(fmt.Sprintf("fail %d", failN)))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
+
+	b.WriteString(m.renderFilterBar(m.recentFilter, m.recentFilterMode))
+	b.WriteString("\n")
 
 	if total == 0 {
-		b.WriteString(styleDim.Render("    (no completions yet)"))
+		if m.recentFilter != "" {
+			b.WriteString(styleDim.Render("    (no matches)"))
+		} else {
+			b.WriteString(styleDim.Render("    (no completions yet)"))
+		}
 		b.WriteString("\n")
 		return b.String()
 	}
@@ -1198,7 +1309,7 @@ func (m model) renderRecentFull() string {
 	}
 
 	for i := start; i < end; i++ {
-		e := m.recent[i]
+		e := visible[i]
 		mark := styleOK.Render("✓")
 		tail := ""
 		if e.ExitCode != 0 {
@@ -1219,24 +1330,56 @@ func (m model) renderRecentFull() string {
 		))
 	}
 
-	// Scrollbar / position indicator
-	if total > 0 {
-		b.WriteString("\n    ")
-		b.WriteString(styleDim.Render(fmt.Sprintf("showing %d–%d of %d", start+1, end, total)))
-		b.WriteString("\n")
-	}
+	b.WriteString("\n    ")
+	b.WriteString(styleDim.Render(fmt.Sprintf("showing %d–%d of %d", start+1, end, total)))
+	b.WriteString("\n")
 
 	return b.String()
 }
 
-// renderQueue renders a scrollable list of pending items.
+// renderFilterBar renders an optional "/query" line. Shown when the filter is
+// active (mode true) or a filter is applied.
+func (m model) renderFilterBar(filter string, mode bool) string {
+	if !mode && filter == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("  ")
+	if mode {
+		b.WriteString(styleHeader.Render("/"))
+		b.WriteString(filter)
+		b.WriteString(styleRunning.Render("▌"))
+	} else {
+		b.WriteString(styleDim.Render(fmt.Sprintf("filter: /%s", filter)))
+	}
+	b.WriteString("\n")
+	return b.String()
+}
+
+// renderQueue renders a scrollable list of pending items, with optional
+// substring filter applied.
 func (m model) renderQueue() string {
 	var b strings.Builder
-	total := len(m.queueSnapshot)
-	b.WriteString(styleHeader.Render(fmt.Sprintf("  queue (pending) — %d item(s)", total)))
-	b.WriteString("\n\n")
+	visible := m.filteredQueue()
+	total := len(visible)
+
+	header := fmt.Sprintf("  queue (pending) — %d", total)
+	if m.queueFilter != "" {
+		header += fmt.Sprintf(" of %d", len(m.queueSnapshot))
+	} else {
+		header += " item(s)"
+	}
+	b.WriteString(styleHeader.Render(header))
+	b.WriteString("\n")
+	b.WriteString(m.renderFilterBar(m.queueFilter, m.queueFilterMode))
+	b.WriteString("\n")
+
 	if total == 0 {
-		b.WriteString(styleDim.Render("    (empty)"))
+		if m.queueFilter != "" {
+			b.WriteString(styleDim.Render("    (no matches)"))
+		} else {
+			b.WriteString(styleDim.Render("    (empty)"))
+		}
 		b.WriteString("\n")
 		return b.String()
 	}
@@ -1251,7 +1394,7 @@ func (m model) renderQueue() string {
 		available = 10
 	}
 	for i := start; i < end; i++ {
-		line := m.queueSnapshot[i]
+		line := visible[i]
 		pointer := "  "
 		if i == m.queueList.cursor {
 			pointer = styleRunning.Render("▶ ")

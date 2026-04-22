@@ -857,6 +857,123 @@ func TestTUIModelQueueView(t *testing.T) {
 	}
 }
 
+// '/' in recent view enters filter mode; typing narrows the list live.
+func TestTUIModelRecentFilter(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `echo {item}`}
+	r := NewRunner(cfg, []string{"x"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+	m.recent = []recentEntry{
+		{JobIndex: 1, Line: "alpha"},
+		{JobIndex: 2, Line: "beta"},
+		{JobIndex: 3, Line: "gamma"},
+		{JobIndex: 4, Line: "alphabet"},
+	}
+	m.height = 30
+
+	// Open recent, then /
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	m = u.(model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = u.(model)
+	if !m.recentFilterMode {
+		t.Fatal("expected recentFilterMode after '/'")
+	}
+
+	// Type "alp" — should match alpha and alphabet.
+	for _, ch := range "alp" {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		m = u.(model)
+	}
+	if m.recentFilter != "alp" {
+		t.Errorf("recentFilter = %q, want %q", m.recentFilter, "alp")
+	}
+	got := m.filteredRecent()
+	if len(got) != 2 || got[0].Line != "alpha" || got[1].Line != "alphabet" {
+		t.Errorf("filteredRecent = %v", got)
+	}
+
+	// Enter commits (exits input mode, filter stays).
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(model)
+	if m.recentFilterMode {
+		t.Error("Enter should exit filter input mode")
+	}
+	if m.recentFilter != "alp" {
+		t.Errorf("filter cleared unexpectedly: %q", m.recentFilter)
+	}
+
+	// Esc clears filter.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = u.(model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(model)
+	if m.recentFilter != "" {
+		t.Errorf("Esc should clear filter, got %q", m.recentFilter)
+	}
+}
+
+// '/' in queue view enters filter mode; substring filter is case-insensitive.
+func TestTUIModelQueueFilter(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `sleep 10`}
+	items := []string{"Apple", "banana", "APRICOT", "cherry"}
+	r := NewRunner(cfg, items)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, len(items), r.Events(), r, 0)
+	m.height = 30
+
+	// Open queue, filter by "ap".
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	m = u.(model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = u.(model)
+	for _, ch := range "ap" {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		m = u.(model)
+	}
+	got := m.filteredQueue()
+	// Case-insensitive: should match Apple and APRICOT, but not banana or cherry.
+	want := map[string]bool{"Apple": true, "APRICOT": true}
+	if len(got) != len(want) {
+		t.Fatalf("filter results = %v, want %v", got, want)
+	}
+	for _, line := range got {
+		if !want[line] {
+			t.Errorf("unexpected filtered line %q", line)
+		}
+	}
+}
+
 // 'r' is a no-op when there are no completions.
 func TestTUIModelRecentIgnoredWhenEmpty(t *testing.T) {
 	dir := t.TempDir()
