@@ -283,6 +283,39 @@ func (r *Runner) EnqueueFront(line string) error {
 	return r.enqueueInternal(line, true)
 }
 
+// EnqueueForce retries a line that was previously processed (status "ok" /
+// "FAIL" in result.log) by first clearing its dedup entry and result.log row,
+// then enqueueing it like Enqueue. Items currently pending in the live queue
+// are NOT re-enqueued — force is only meaningful for finished items.
+func (r *Runner) EnqueueForce(line string) error {
+	return r.enqueueInternalForce(line, false)
+}
+
+// EnqueueFrontForce is the HEAD-insert counterpart of EnqueueForce.
+func (r *Runner) EnqueueFrontForce(line string) error {
+	return r.enqueueInternalForce(line, true)
+}
+
+func (r *Runner) enqueueInternalForce(line string, front bool) error {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return fmt.Errorf("empty input")
+	}
+	r.queuedMu.Lock()
+	status, exists := r.queued[line]
+	r.queuedMu.Unlock()
+	// Currently pending: force doesn't help — the item will run anyway.
+	if exists && status == "" {
+		return fmt.Errorf("%q is already pending — force not applicable", line)
+	}
+	if exists {
+		if err := r.ForgetLine(line); err != nil {
+			return fmt.Errorf("force: ForgetLine failed: %w", err)
+		}
+	}
+	return r.enqueueInternal(line, front)
+}
+
 // enqueueInternal performs the common dedup + queue insert + input-file
 // append logic for both Enqueue (tail) and EnqueueFront (head).
 func (r *Runner) enqueueInternal(line string, front bool) error {

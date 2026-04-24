@@ -653,7 +653,7 @@ func (m model) View() string {
 		b.WriteString(string(m.inputBuf))
 		b.WriteString(styleRunning.Render("▌"))
 		b.WriteString("\n")
-		b.WriteString(styleDim.Render("    tip: paste multiple lines to enqueue them at once"))
+		b.WriteString(styleDim.Render("    tip: paste multiple lines to enqueue them at once  |  prefix with '!' to force retry"))
 		b.WriteString("\n")
 		b.WriteString(styleKey.Render("  enter: submit   esc: cancel   ctrl-u: clear"))
 		b.WriteString("\n")
@@ -1034,11 +1034,30 @@ const (
 // submitLine enqueues one line into the runner. If batch is true the caller
 // aggregates flash messages itself; otherwise an individual flash is set.
 // Uses runner.EnqueueFront when the input mode was opened for prepend.
+//
+// A leading "!" on line is interpreted as a force marker: the item will be
+// re-enqueued even if it is already in result.log as "ok" / "FAIL".
 func (m *model) submitLine(line string, batch bool) submitResult {
+	force := false
+	if strings.HasPrefix(line, "!") {
+		force = true
+		line = strings.TrimSpace(strings.TrimPrefix(line, "!"))
+		if line == "" {
+			if !batch {
+				m.setFlash("✗ '!' must be followed by an item", true)
+			}
+			return submitError
+		}
+	}
 	var err error
-	if m.inputPrepend {
+	switch {
+	case force && m.inputPrepend:
+		err = m.runner.EnqueueFrontForce(line)
+	case force:
+		err = m.runner.EnqueueForce(line)
+	case m.inputPrepend:
 		err = m.runner.EnqueueFront(line)
-	} else {
+	default:
 		err = m.runner.Enqueue(line)
 	}
 	if err == nil {
@@ -1049,6 +1068,9 @@ func (m *model) submitLine(line string, batch bool) submitResult {
 			verb := "added"
 			if m.inputPrepend {
 				verb = "prepended"
+			}
+			if force {
+				verb = "force-" + verb
 			}
 			m.setFlash(fmt.Sprintf("✓ %s: %s", verb, truncate(line, 60)), false)
 		}

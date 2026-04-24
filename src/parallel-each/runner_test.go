@@ -1430,6 +1430,80 @@ func TestRunnerForgetLineReEnableEnqueue(t *testing.T) {
 // waitEvents returns the runner's event channel (thin alias for readability).
 func waitEvents(r *Runner) <-chan Event { return r.Events() }
 
+// EnqueueForce resurrects a line that was recorded as FAIL in a previous run
+// (loaded via SeedDedup). Plain Enqueue rejects it; EnqueueForce accepts.
+func TestRunnerEnqueueForceRevivesFailed(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `echo {item}`, File: filepath.Join(dir, "urls.txt")}
+	if err := os.WriteFile(cfg.File, []byte("bad\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := NewRunner(cfg, nil)
+	// Simulate "previous run left bad as FAIL in result.log".
+	r.SeedDedup(map[string]string{"bad": "FAIL"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	// Plain Enqueue is rejected with a FAIL-specific message.
+	err := r.Enqueue("bad")
+	if err == nil || !strings.Contains(err.Error(), "previously failed") {
+		t.Fatalf("Enqueue should reject with 'previously failed', got: %v", err)
+	}
+
+	// EnqueueForce succeeds.
+	if err := r.EnqueueForce("bad"); err != nil {
+		t.Fatalf("EnqueueForce after FAIL failed: %v", err)
+	}
+	// And a subsequent plain Enqueue is still rejected (now as "currently queued").
+	if err := r.Enqueue("bad"); err == nil {
+		t.Error("post-force Enqueue should be rejected as already queued")
+	}
+}
+
+// EnqueueForce refuses to re-enqueue a line that is already pending — force
+// only makes sense for items that have finished.
+func TestRunnerEnqueueForceRejectsCurrentlyPending(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, File: filepath.Join(dir, "in.txt"),
+		Template: `sleep 0.3`}
+	if err := os.WriteFile(cfg.File, []byte("a\nb\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := NewRunner(cfg, []string{"a", "b"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	if err := r.EnqueueForce("b"); err == nil {
+		t.Error("EnqueueForce for pending item should have returned an error")
+	}
+}
+
 // RemovePending drops a not-yet-dispatched item from the queue and clears
 // its dedup entry so it can be re-enqueued. Items already running cannot be
 // removed this way.
