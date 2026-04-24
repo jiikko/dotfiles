@@ -441,6 +441,35 @@ func (r *Runner) AddedCount() int {
 	return r.addedCount
 }
 
+// RemovePending drops a line from the pending dispatch queue so it will never
+// be executed. Also clears the dedup entry so the line becomes eligible for
+// re-enqueue via Enqueue / EnqueueFront.
+//
+// Returns an error if the line is not currently pending (either never queued,
+// already dispatched, or already running — RemovePending does NOT cancel
+// running jobs; use ForceKill / RequestStop for that).
+func (r *Runner) RemovePending(line string) error {
+	r.queueMu.Lock()
+	idx := -1
+	for i, j := range r.queue {
+		if j.line == line {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		r.queueMu.Unlock()
+		return fmt.Errorf("line not pending: %q", line)
+	}
+	r.queue = append(r.queue[:idx], r.queue[idx+1:]...)
+	r.queueMu.Unlock()
+
+	r.queuedMu.Lock()
+	delete(r.queued, line)
+	r.queuedMu.Unlock()
+	return nil
+}
+
 // ForgetLine removes a line from both the in-memory dedup set AND the
 // on-disk result.log (all matching rows, identified by column 3). After
 // ForgetLine returns nil, the line is eligible to be Enqueue'd again.

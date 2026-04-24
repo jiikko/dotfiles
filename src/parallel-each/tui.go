@@ -749,7 +749,7 @@ func (m model) View() string {
 		if m.queueFilterMode {
 			b.WriteString(styleKey.Render("  type to filter   enter: apply   esc: clear   ctrl-u: reset"))
 		} else {
-			b.WriteString(styleKey.Render("  ↑/↓ or j/k: move   pgup/pgdown: page   g/G: top/bottom   /: filter   esc/l: back"))
+			b.WriteString(styleKey.Render("  ↑/↓ j/k: move   d: remove   /: filter   esc/l: back"))
 		}
 	} else if m.focusSlot != 0 {
 		b.WriteString(styleKey.Render("  esc / 0: back   e: open log in $EDITOR   a: add   q: stop"))
@@ -1243,6 +1243,22 @@ func (m model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "/":
 		m.queueFilterMode = true
+		return m, nil
+	case "d":
+		filtered := m.filteredQueue()
+		if len(filtered) == 0 {
+			return m, nil
+		}
+		target := filtered[m.queueList.cursor]
+		if err := m.runner.RemovePending(target); err != nil {
+			m.setFlash("✗ remove failed: "+err.Error(), true)
+			return m, nil
+		}
+		m.queueSnapshot = m.runner.PendingSnapshot()
+		total := len(m.filteredQueue())
+		m.queueList.cursor = clampListIdx(m.queueList.cursor, total)
+		m.queueList.ensureVisible(total, m.recentPageSize())
+		m.setFlash(fmt.Sprintf("✓ removed from queue: %s", truncate(target, 50)), false)
 		return m, nil
 	}
 	m.queueList.handleNavKey(msg.String(), len(m.filteredQueue()), m.recentPageSize())

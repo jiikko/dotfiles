@@ -1430,6 +1430,67 @@ func TestRunnerForgetLineReEnableEnqueue(t *testing.T) {
 // waitEvents returns the runner's event channel (thin alias for readability).
 func waitEvents(r *Runner) <-chan Event { return r.Events() }
 
+// RemovePending drops a not-yet-dispatched item from the queue and clears
+// its dedup entry so it can be re-enqueued. Items already running cannot be
+// removed this way.
+func TestRunnerRemovePending(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, File: filepath.Join(dir, "in.txt"),
+		Template: `sleep 0.3`}
+	if err := os.WriteFile(cfg.File, []byte("a\nb\nc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := NewRunner(cfg, []string{"a", "b", "c"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	// Wait until exactly one worker is busy so "b" and "c" remain pending.
+	deadline := time.Now().Add(2 * time.Second)
+	for r.PendingCount() > 2 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if r.PendingCount() != 2 {
+		t.Fatalf("expected 2 pending after first dispatch, got %d", r.PendingCount())
+	}
+
+	// Remove "b" from the queue.
+	if err := r.RemovePending("b"); err != nil {
+		t.Fatalf("RemovePending(b): %v", err)
+	}
+	snap := r.PendingSnapshot()
+	for _, s := range snap {
+		if s == "b" {
+			t.Errorf("b still present after RemovePending: %v", snap)
+		}
+	}
+	if r.PendingCount() != 1 {
+		t.Errorf("after RemovePending: pending = %d, want 1", r.PendingCount())
+	}
+
+	// Removing a line that isn't pending (already running / unknown) errors.
+	if err := r.RemovePending("not-there"); err == nil {
+		t.Errorf("expected error for unknown line, got nil")
+	}
+
+	// After removal the line is eligible for re-enqueue.
+	if err := r.Enqueue("b"); err != nil {
+		t.Errorf("Enqueue after RemovePending failed: %v", err)
+	}
+}
+
 // Enqueue rejects with a descriptive reason depending on where the duplicate
 // came from (current queue, previous ok, previous fail).
 func TestRunnerEnqueueDuplicateMessages(t *testing.T) {
