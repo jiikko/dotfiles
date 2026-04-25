@@ -50,6 +50,9 @@ concat — 複数の動画ファイルを無劣化で結合します。
   --verbose: 検査途中の詳細ログを表示します。
   --dryrun: 実際の結合を行わず、検証結果のみ表示します。
   --keep: 結合成功後も元ファイルを削除せず残します（デフォルトは削除）。
+  --output-info <FILE>: 結合に成功した出力ファイルの絶対パスを <FILE> に
+                        NUL 区切りで追記します（パイプライン連携用）。
+                        失敗・既存スキップ・--dryrun では書き込みません。
 
 入力:
   - 2つ以上の動画ファイルパス
@@ -76,12 +79,19 @@ EOF
   local verbose_mode=0
   local dryrun_mode=0
   local keep_mode=0
+  local output_info_file=""
   while [[ "$1" == --* ]]; do
     case "$1" in
       --force)   force_mode=1; shift ;;
       --verbose) verbose_mode=1; shift ;;
       --dryrun)  dryrun_mode=1; shift ;;
       --keep)    keep_mode=1; shift ;;
+      --output-info)
+        if (( $# < 2 )); then
+          print -r -- "エラー: --output-info にはファイルパスが必要です" >&2
+          return 1
+        fi
+        output_info_file="$2"; shift 2 ;;
       *) break ;;
     esac
   done
@@ -94,6 +104,7 @@ EOF
     (( verbose_mode )) && _opts+=(--verbose)
     (( dryrun_mode )) && _opts+=(--dryrun)
     (( keep_mode )) && _opts+=(--keep)
+    [[ -n "$output_info_file" ]] && _opts+=(--output-info "$output_info_file")
 
     # ディレクトリ内の動画ファイルを収集（非再帰）
     local -a video_files=()
@@ -215,6 +226,7 @@ EOF
       (( verbose_mode )) && _mg_opts+=(--verbose)
       (( dryrun_mode )) && _mg_opts+=(--dryrun)
       (( keep_mode )) && _mg_opts+=(--keep)
+      [[ -n "$output_info_file" ]] && _mg_opts+=(--output-info "$output_info_file")
 
       local _mg_total=0 _mg_ok=0 _mg_fail=0
       local -a _mg_group_files _mg_sorted_group
@@ -725,6 +737,11 @@ EOF
     (( idx++ ))
   done
   print -r -- "✅ 完了: $output_path"
+
+  # 機械可読な連携用: 成功した出力パスを NUL 区切りで追記
+  if [[ -n "$output_info_file" ]]; then
+    printf '%s\0' "${output_path:A}" >> "$output_info_file"
+  fi
 
   # 元ファイル削除（デフォルト動作、--keep / --dryrun 指定時はスキップ）
   if (( ! keep_mode )) && (( ! dryrun_mode )); then
