@@ -13,6 +13,7 @@
   },
   "language": "日本語",
   "alwaysThinkingEnabled": true,
+  "effortLevel": "xhigh",
   "advisorModel": "opus",
   "voice": {
     "enabled": true,

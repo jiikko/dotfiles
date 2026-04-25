@@ -20,6 +20,15 @@
 - 変更したファイルにGodクラス/Godファイルの予兆（責務の混在、過度な行数など）を見つけたら、リファクタリングを提案すること
 - バグフィックス後、そのプロジェクトに導入されているlinterのカスタムルールやpresetルールで再発防止できないか検討し、提案すること
 
+## 単純作業の委譲
+
+機械的な置換・大量の同型書き換え・lint修正など、**判断を伴わない単純作業は gemini CLI に丸投げしてよい**。Claude が自分で1件ずつ書き換えるよりも速く安く処理できる。
+
+- 委譲の目安: 10箇所以上の同パターン置換、ファイル全体への一括 rename、テストヘルパーの mass migration など
+- 委譲時は変更対象・置換ルール・禁止事項を明示すること（場当たり的な修正やfallback追加を防ぐ）
+- 戻ってきた diff は `git diff --stat` と `make build` / テストで必ず検証する。Claude は「指示通りに動いたか」を確認する責任を負う
+- 判断や設計を伴うタスクは委譲しない（自律改善や構造的修正は Claude 自身が考える）
+
 ## コード変更時の自律改善
 
 変更を入れる前に、変更先の周辺コードを読み、以下に該当するものがあれば **変更と同時に** 改善すること（提案ではなく実行）。
@@ -67,3 +76,4 @@
 | クラッシュ, crash, .ips, DiagnosticReports, SIGSEGV, SIGABRT | `~/.claude/skills/crash-log-analyzer/SKILL.md` |
 | codex-review, Codexレビュー, コードレビュー依頼 | `~/.claude/skills/codex-review/SKILL.md` |
 | cross-review, クロスレビュー, 複数視点レビュー | `~/.claude/skills/cross-review/SKILL.md` |
+| gemini, gemini委譲, mass replacement, mass rename, 機械的置換 | `~/.claude/skills/gemini-delegation/SKILL.md` |
