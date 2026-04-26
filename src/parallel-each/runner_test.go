@@ -1026,9 +1026,12 @@ func TestRunnerSetParallelismShrinks(t *testing.T) {
 	}
 }
 
-// SetParallelism shrink should SIGTERM in-flight subprocesses of retired
-// workers immediately rather than waiting for them to finish naturally.
-func TestRunnerSetParallelismShrinksImmediately(t *testing.T) {
+// SetParallelism shrink retires excess workers in two ways depending on
+// whether each is idle or in-flight:
+//   - idle (waiting on the job channel): retired immediately
+//   - in-flight (running a subprocess): the current job runs to completion
+//     and only after that does the worker exit — graceful, no SIGTERM
+func TestRunnerSetParallelismShrinksGracefully(t *testing.T) {
 	dir := t.TempDir()
 	cwd, _ := os.Getwd()
 	defer os.Chdir(cwd)
@@ -1036,61 +1039,100 @@ func TestRunnerSetParallelismShrinksImmediately(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Each item sleeps 5s. With Parallelism=4 the first 4 are all in-flight.
-	// If shrinking were lazy, ending 3 of them would take ~5s; instant
-	// shrink should bring 3 EndEvents within ~1s.
-	cfg := Config{Parallelism: 4, Template: `sleep 5`}
-	r := NewRunner(cfg, []string{"a", "b", "c", "d"})
+	// Long-running jobs so we can observe the timing precisely.
+	// Parallelism=4 with only 2 items: 2 workers in-flight, 2 idle.
+	// SetLive keeps r.jobs open so idle workers stay alive (otherwise
+	// dispatcher would close r.jobs after dispatching the 2 items, which
+	// would also retire the idle workers via the closed-channel branch).
+	cfg := Config{Parallelism: 4, Template: `sleep 1`}
+	r := NewRunner(cfg, []string{"a", "b"})
+	r.SetLive(true)
 	if err := r.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
 	starts := 0
 	ends := 0
-	startCh := make(chan struct{}, 4)
-	endCh := make(chan struct{}, 4)
+	endTimes := []time.Duration{}
+	t0 := time.Now()
+	doneCh := make(chan struct{})
+	startCh := make(chan struct{}, 2)
 	go func() {
 		for ev := range r.Events() {
 			switch ev.Kind {
 			case EventStart:
 				starts++
-				if starts <= 4 {
+				if starts <= 2 {
 					startCh <- struct{}{}
 				}
 			case EventEnd:
 				ends++
-				endCh <- struct{}{}
+				endTimes = append(endTimes, time.Since(t0))
 			}
 		}
+		close(doneCh)
 	}()
 
-	// Wait for all 4 workers to become in-flight.
-	for i := 0; i < 4; i++ {
+	// Wait for 2 in-flight (the only 2 items).
+	for i := 0; i < 2; i++ {
 		select {
 		case <-startCh:
 		case <-time.After(2 * time.Second):
-			t.Fatalf("only %d of 4 started", i)
+			t.Fatalf("only %d starts", i)
 		}
 	}
 
-	// Shrink: 3 retired workers should die quickly.
-	t0 := time.Now()
-	r.SetParallelism(1)
-	for i := 0; i < 3; i++ {
-		select {
-		case <-endCh:
-		case <-time.After(2 * time.Second):
-			t.Fatalf("only %d of 3 retired-worker EndEvents arrived within 2s", i)
-		}
+	// Snapshot before shrink: 4 active workers (2 in-flight + 2 idle).
+	r.workerMu.Lock()
+	beforeShrink := r.activeWorkers
+	r.workerMu.Unlock()
+	if beforeShrink != 4 {
+		t.Fatalf("expected 4 active workers, got %d", beforeShrink)
 	}
-	elapsed := time.Since(t0)
-	if elapsed > 2*time.Second {
-		t.Errorf("shrink should be near-instant; took %v", elapsed)
+
+	// Shrink to 1. The 2 idle workers should exit very quickly; the 2
+	// in-flight workers should keep running their `sleep 1` subprocess.
+	tShrink := time.Now()
+	r.SetParallelism(1)
+
+	// Within ~200ms, idle workers should be gone (active = 2).
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		r.workerMu.Lock()
+		c := r.activeWorkers
+		r.workerMu.Unlock()
+		if c == 2 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	r.workerMu.Lock()
+	afterIdleRetire := r.activeWorkers
+	r.workerMu.Unlock()
+	if afterIdleRetire != 2 {
+		t.Errorf("idle workers should retire immediately; activeWorkers=%d (want 2) %.3fs after shrink",
+			afterIdleRetire, time.Since(tShrink).Seconds())
+	}
+
+	// Wait until both in-flight finish naturally (~1s sleep).
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && ends < 2 {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if ends != 2 {
+		t.Errorf("expected 2 EndEvents, got %d", ends)
+	}
+	// Both EndEvents should have arrived close to the natural sleep-1 mark
+	// (no premature SIGTERM).
+	for i, dur := range endTimes {
+		if dur < 800*time.Millisecond {
+			t.Errorf("end[%d] arrived at %.2fs — too early; in-flight should have finished naturally (~1s)",
+				i, dur.Seconds())
+		}
 	}
 
 	r.ForceKill()
-	for range r.Events() {
-	}
+	<-doneCh
 }
 
 // PendingSnapshot reflects original lines at Start, shrinks as workers run,
