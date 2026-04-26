@@ -241,6 +241,11 @@ type Runner struct {
 	targetPar     int // desired worker count (>=1)
 	activeWorkers int // currently running worker goroutines
 	slotIDs       map[int]bool // set of slot ids currently in use (1-based)
+	// 並列数を下げたとき in-flight の subprocess も即時 SIGTERM できるよう、
+	// 各 worker に個別の cancel context を持たせる。slot id -> cancel。
+	// SetParallelism の shrink 経路で対象 slot の cancel を呼ぶと、その worker
+	// の runOne 内で exec.CommandContext 経由で subprocess に SIGTERM が飛ぶ。
+	workerCancel  map[int]context.CancelFunc
 }
 
 // runnerJob is passed to workers via r.jobs.
@@ -762,8 +767,10 @@ func (r *Runner) Start(parent context.Context) error {
 
 // SetParallelism adjusts the target number of concurrent workers. Minimum 1.
 // Growing spawns new worker goroutines with the smallest available slot ID;
-// shrinking signals the excess workers to exit after their current job
-// completes (does not interrupt in-flight work). Safe to call any time.
+// shrinking immediately cancels the per-worker contexts of excess workers,
+// which sends SIGTERM to their in-flight subprocesses and retires the worker
+// goroutines. Use ForceKill to terminate ALL in-flight work; this only
+// affects (current count - n) workers. Safe to call any time.
 func (r *Runner) SetParallelism(n int) {
 	if n < 1 {
 		n = 1
@@ -773,12 +780,39 @@ func (r *Runner) SetParallelism(n int) {
 	if r.slotIDs == nil {
 		r.slotIDs = make(map[int]bool)
 	}
+	if r.workerCancel == nil {
+		r.workerCancel = make(map[int]context.CancelFunc)
+	}
 	r.targetPar = n
+	// Grow: spawn new workers with their own cancel context derived from killCtx.
 	for r.activeWorkers < r.targetPar {
 		slotID := r.allocSlotIDLocked()
+		ctx, cancel := context.WithCancel(r.killCtx)
+		r.workerCancel[slotID] = cancel
 		r.activeWorkers++
 		r.wg.Add(1)
-		go r.workerLoop(slotID)
+		go r.workerLoop(slotID, ctx)
+	}
+	// Shrink: pick the highest-numbered active slots (so 1..n stays stable)
+	// and cancel their contexts. The worker goroutine sees ctx.Err() != nil
+	// after runOne returns and retires; runOne itself sees the cancel via
+	// cmdCtx (derived from this ctx) and SIGTERMs the running subprocess.
+	for excess := r.activeWorkers - r.targetPar; excess > 0; excess-- {
+		var pickID int
+		for id := range r.workerCancel {
+			if id > pickID {
+				pickID = id
+			}
+		}
+		if pickID == 0 {
+			break
+		}
+		if cancel := r.workerCancel[pickID]; cancel != nil {
+			cancel()
+		}
+		// Don't decrement activeWorkers / release slot here — workerLoop's
+		// deferred cleanup handles that to keep the accounting in one place.
+		delete(r.workerCancel, pickID)
 	}
 }
 
@@ -800,35 +834,41 @@ func (r *Runner) Parallelism() int {
 	return r.targetPar
 }
 
-// workerLoop consumes jobs and retires itself when the target shrinks below
-// the current active count. The slot id is released on retirement so the
-// next SetParallelism grow can reuse it (keeps slot numbers compact 1..P).
-func (r *Runner) workerLoop(slotID int) {
+// workerLoop consumes jobs and retires when its per-worker ctx is cancelled
+// (typically by SetParallelism shrinking). The slot id is released on
+// retirement so the next SetParallelism grow can reuse it (keeps slot
+// numbers compact 1..P). The workerCtx is derived from killCtx and is
+// passed into runOne so each attempt's exec.CommandContext is governed by
+// it — cancelling the ctx therefore SIGTERMs the running subprocess.
+func (r *Runner) workerLoop(slotID int, workerCtx context.Context) {
 	defer r.wg.Done()
 	defer func() {
 		r.workerMu.Lock()
 		delete(r.slotIDs, slotID)
+		delete(r.workerCancel, slotID)
+		r.activeWorkers--
 		r.workerMu.Unlock()
 	}()
 	for j := range r.jobs {
+		// 自身の retire 要求 (parallelism 縮小 / ForceKill) を最優先に確認。
+		if workerCtx.Err() != nil {
+			return
+		}
 		if r.stopCtx.Err() != nil {
 			continue
 		}
-		r.runOne(r.killCtx, slotID, j.index, j.line)
-		r.workerMu.Lock()
-		if r.activeWorkers > r.targetPar {
-			r.activeWorkers--
-			r.workerMu.Unlock()
+		r.runOne(workerCtx, slotID, j.index, j.line)
+		// runOne 中に retire された場合は即終了。
+		if workerCtx.Err() != nil {
 			return
 		}
-		r.workerMu.Unlock()
 	}
-	r.workerMu.Lock()
-	r.activeWorkers--
-	r.workerMu.Unlock()
 }
 
-func (r *Runner) runOne(_ context.Context, slotID, index int, line string) {
+// workerCtx は SetParallelism shrink で個別 cancel される per-worker ctx
+// (= killCtx を親とする派生 ctx)。各 attempt の cmdCtx はこれを親とするため、
+// shrink で workerCtx が cancel されると subprocess に SIGTERM が飛ぶ。
+func (r *Runner) runOne(workerCtx context.Context, slotID, index int, line string) {
 	overallStart := time.Now()
 	idxStr := fmt.Sprintf("%0*d", r.width, index)
 	safe := escapeFilename(line)
@@ -896,13 +936,15 @@ func (r *Runner) runOne(_ context.Context, slotID, index int, line string) {
 				attempt-1, maxAttempts-1, finalExitCode, timedOutSuffix(finalTimedOut))
 		}
 
-		// Each attempt gets its own timeout context derived from killCtx.
+		// Each attempt's cmdCtx is derived from workerCtx (which itself is
+		// derived from killCtx). This allows SetParallelism shrink to
+		// SIGTERM only the targeted worker's subprocess via cmd.Cancel.
 		var cmdCtx context.Context
 		var cancelTO context.CancelFunc
 		if r.cfg.AttemptTimeout > 0 {
-			cmdCtx, cancelTO = context.WithTimeout(r.killCtx, r.cfg.AttemptTimeout)
+			cmdCtx, cancelTO = context.WithTimeout(workerCtx, r.cfg.AttemptTimeout)
 		} else {
-			cmdCtx, cancelTO = context.WithCancel(r.killCtx)
+			cmdCtx, cancelTO = context.WithCancel(workerCtx)
 		}
 
 		cmd := exec.CommandContext(cmdCtx, "sh", "-c", shellCmd, "_", line)
@@ -928,8 +970,10 @@ func (r *Runner) runOne(_ context.Context, slotID, index int, line string) {
 				exitCode = -1
 			}
 		}
-		// Distinguish timeout from user-initiated kill.
-		timedOut := cmdCtx.Err() == context.DeadlineExceeded && r.killCtx.Err() == nil
+		// Distinguish timeout from user-initiated kill (global ForceKill or
+		// per-worker SetParallelism shrink).
+		timedOut := cmdCtx.Err() == context.DeadlineExceeded &&
+			r.killCtx.Err() == nil && workerCtx.Err() == nil
 
 		finalExitCode = exitCode
 		finalErr = runErr
@@ -939,7 +983,7 @@ func (r *Runner) runOne(_ context.Context, slotID, index int, line string) {
 		if exitCode == 0 {
 			break
 		}
-		if r.killCtx.Err() != nil || r.stopCtx.Err() != nil {
+		if r.killCtx.Err() != nil || r.stopCtx.Err() != nil || workerCtx.Err() != nil {
 			break
 		}
 	}

@@ -1026,6 +1026,73 @@ func TestRunnerSetParallelismShrinks(t *testing.T) {
 	}
 }
 
+// SetParallelism shrink should SIGTERM in-flight subprocesses of retired
+// workers immediately rather than waiting for them to finish naturally.
+func TestRunnerSetParallelismShrinksImmediately(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	// Each item sleeps 5s. With Parallelism=4 the first 4 are all in-flight.
+	// If shrinking were lazy, ending 3 of them would take ~5s; instant
+	// shrink should bring 3 EndEvents within ~1s.
+	cfg := Config{Parallelism: 4, Template: `sleep 5`}
+	r := NewRunner(cfg, []string{"a", "b", "c", "d"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	starts := 0
+	ends := 0
+	startCh := make(chan struct{}, 4)
+	endCh := make(chan struct{}, 4)
+	go func() {
+		for ev := range r.Events() {
+			switch ev.Kind {
+			case EventStart:
+				starts++
+				if starts <= 4 {
+					startCh <- struct{}{}
+				}
+			case EventEnd:
+				ends++
+				endCh <- struct{}{}
+			}
+		}
+	}()
+
+	// Wait for all 4 workers to become in-flight.
+	for i := 0; i < 4; i++ {
+		select {
+		case <-startCh:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("only %d of 4 started", i)
+		}
+	}
+
+	// Shrink: 3 retired workers should die quickly.
+	t0 := time.Now()
+	r.SetParallelism(1)
+	for i := 0; i < 3; i++ {
+		select {
+		case <-endCh:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("only %d of 3 retired-worker EndEvents arrived within 2s", i)
+		}
+	}
+	elapsed := time.Since(t0)
+	if elapsed > 2*time.Second {
+		t.Errorf("shrink should be near-instant; took %v", elapsed)
+	}
+
+	r.ForceKill()
+	for range r.Events() {
+	}
+}
+
 // PendingSnapshot reflects original lines at Start, shrinks as workers run,
 // and grows when Enqueue is called.
 func TestRunnerPendingSnapshot(t *testing.T) {
