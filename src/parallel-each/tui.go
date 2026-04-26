@@ -1009,24 +1009,27 @@ func (m model) consumePastedRunes(rs []rune) model {
 		}
 	}
 
-	var ok, dup, fail int
+	var ok, okForce, dup, fail int
 	for _, line := range order {
 		switch m.submitLine(line, true) {
 		case submitOK:
 			ok++
+		case submitOKForce:
+			okForce++
 		case submitDuplicate:
 			dup++
 		case submitError:
 			fail++
 		}
 	}
-	return m.flashBatch(ok, dup, fail)
+	return m.flashBatch(ok, okForce, dup, fail)
 }
 
 type submitResult int
 
 const (
 	submitOK submitResult = iota
+	submitOKForce // success via "!" force route — surfaced separately so paste flash can show it
 	submitDuplicate
 	submitError
 )
@@ -1074,6 +1077,9 @@ func (m *model) submitLine(line string, batch bool) submitResult {
 			}
 			m.setFlash(fmt.Sprintf("✓ %s: %s", verb, truncate(line, 60)), false)
 		}
+		if force {
+			return submitOKForce
+		}
 		return submitOK
 	}
 	dup := strings.Contains(err.Error(), "duplicate")
@@ -1086,13 +1092,16 @@ func (m *model) submitLine(line string, batch bool) submitResult {
 	return submitError
 }
 
-func (m model) flashBatch(ok, dup, fail int) model {
-	if ok+dup+fail == 0 {
+func (m model) flashBatch(ok, okForce, dup, fail int) model {
+	if ok+okForce+dup+fail == 0 {
 		return m
 	}
 	parts := []string{}
 	if ok > 0 {
 		parts = append(parts, fmt.Sprintf("✓ added %d", ok))
+	}
+	if okForce > 0 {
+		parts = append(parts, fmt.Sprintf("✓ force-added %d", okForce))
 	}
 	if dup > 0 {
 		parts = append(parts, fmt.Sprintf("↻ duplicate %d", dup))
