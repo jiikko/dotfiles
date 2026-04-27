@@ -34,6 +34,7 @@ test-zshrc:
 	@tests/zshrc/concat/test_concat_frame_hash_seek.sh
 	@tests/zshrc/concat/test_concat_cleanup.sh
 	@tests/zshrc/concat/test_concat_force.sh
+	@tests/zshrc/concat/test_concat_option_position.sh
 	@tests/zshrc/concat/test_concat_output_info.sh
 	@tests/zshrc/lazy-loading/test_version_managers.sh
 

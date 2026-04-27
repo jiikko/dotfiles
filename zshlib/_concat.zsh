@@ -22,14 +22,14 @@ concat — 複数の動画ファイルを無劣化で結合します。
   - コーデック・解像度などの不一致を検出し、再エンコードが必要な場合はエラーにします。
 
 使い方:
-  concat <ファイル1> <ファイル2> [<ファイル3> ...]
-  concat <ディレクトリ>
-  concat --force <ファイル1> <ファイル2> ...
-  concat --verbose <ファイル1> <ファイル2> ...
-  concat --keep <ファイル1> <ファイル2> ...
+  concat [オプション...] <ファイル1> <ファイル2> [<ファイル3> ...]
+  concat [オプション...] <ディレクトリ>
+
+  オプションは引数の先頭・途中・末尾、どこに置いても認識されます。
+  名前が "--" で始まるファイルを渡したい場合は "--" を区切りに使います。
 
   例:
-    # 連番ファイルを結合（元ファイルはデフォルトで削除される）
+    # 連番ファイルを結合（元ファイルはデフォルトでゴミ箱へ移動される）
     concat video_001.mp4 video_002.mp4 video_003.mp4
 
     # 元ファイルを残す
@@ -40,6 +40,9 @@ concat — 複数の動画ファイルを無劣化で結合します。
 
     # ディレクトリ内のグループを自動検出して結合（非再帰）
     concat /path/to/videos
+
+    # 末尾にオプションを置いてもよい
+    concat video1.mp4 video2.mp4 --force
 
     # コーデック不一致でも強制実行
     concat --force video1.mp4 video2.mp4
@@ -75,13 +78,14 @@ EOF
     return 0
   fi
 
-  # オプションの処理
+  # オプションの処理（位置を問わず受け付ける。"--" 以降は全てファイルパスとして扱う）
   local force_mode=0
   local verbose_mode=0
   local dryrun_mode=0
   local keep_mode=0
   local output_info_file=""
-  while [[ "$1" == --* ]]; do
+  local -a _positional=()
+  while (( $# > 0 )); do
     case "$1" in
       --force)   force_mode=1; shift ;;
       --verbose) verbose_mode=1; shift ;;
@@ -93,9 +97,15 @@ EOF
           return 1
         fi
         output_info_file="$2"; shift 2 ;;
-      *) break ;;
+      --) shift; _positional+=("$@"); break ;;
+      --*)
+        print -r -- "エラー: 不明なオプション: $1" >&2
+        print -r -- "ヒント: 名前が '--' で始まるファイルを渡したい場合は '--' を区切りとして使ってください (concat ... -- --foo.mp4)" >&2
+        return 1 ;;
+      *) _positional+=("$1"); shift ;;
     esac
   done
+  set -- "${_positional[@]}"
 
   # ディレクトリモード: 引数が1つのディレクトリならグループを自動検出して結合
   if (( $# == 1 )) && [[ -d "$1" ]]; then
