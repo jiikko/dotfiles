@@ -46,7 +46,8 @@ concat — 複数の動画ファイルを無劣化で結合します。
 
 オプション:
   -h, --help: このヘルプメッセージを表示します。
-  --force: コーデック不一致でも強制的に結合を実行します（結果は保証されません）。
+  --force: コーデック不一致チェックと結合後のフレーム順序検証をスキップします
+           （結果は保証されません）。安全側に倒すため元ファイルは削除しません。
   --verbose: 検査途中の詳細ログを表示します。
   --dryrun: 実際の結合を行わず、検証結果のみ表示します。
   --keep: 結合成功後も元ファイルを削除せず残します（デフォルトは削除）。
@@ -67,9 +68,9 @@ concat — 複数の動画ファイルを無劣化で結合します。
     例: video_001.mp4, video_002.mp4 → video.mp4
 
 注意:
-  - デフォルト: 結合成功後、元ファイルは自動的に削除されます。
-  - 既存の出力ファイルがあってスキップされた場合は削除しません。
-  - --dryrun 指定時は削除されません。
+  - デフォルト: 結合成功後、元ファイルは自動的にゴミ箱へ移動されます。
+  - 既存の出力ファイルがあってスキップされた場合はゴミ箱へ移動しません。
+  - --dryrun / --force 指定時は元ファイルを残します。
 EOF
     return 0
   fi
@@ -714,7 +715,8 @@ EOF
     (( verbose_mode )) && print -r -- ">> 診断完了 (${$(( SECONDS - start_time ))}秒)"
 
     # 12. フレーム順序の検証（入力ファイルを独自ソートして検証）
-    if (( !dryrun_mode )); then
+    # --force 指定時は検証自体をスキップ（コーデック互換と同じくユーザー判断に委ねる）
+    if (( !dryrun_mode )) && (( !force_mode )); then
       (( verbose_mode )) && print -r -- ">> フレーム順序検証中..."
       start_time=$SECONDS
       if ! __concat_verify_frame_order "$output_path" "${input_files[@]}"; then
@@ -723,6 +725,8 @@ EOF
         return 1
       fi
       (( verbose_mode )) && print -r -- ">> フレーム順序検証完了 (${$(( SECONDS - start_time ))}秒)"
+    elif (( force_mode )); then
+      (( verbose_mode )) && print -r -- ">> フレーム順序検証スキップ (--force)"
     fi
   } always {
     # 一時ファイルのクリーンアップ（成功・失敗・シグナル問わず実行）
@@ -743,12 +747,15 @@ EOF
     printf '%s\0' "${output_path:A}" >> "$output_info_file"
   fi
 
-  # 元ファイル削除（デフォルト動作、--keep / --dryrun 指定時はスキップ）
-  if (( ! keep_mode )) && (( ! dryrun_mode )); then
-    print -r -- ">> 元ファイルを削除中..."
+  # 元ファイルをゴミ箱へ移動（デフォルト動作、--keep / --dryrun / --force 指定時はスキップ）
+  # --force は検証をスキップして結果が保証されないため、安全側に倒して元ファイルを残す
+  if (( ! keep_mode )) && (( ! dryrun_mode )) && (( ! force_mode )); then
+    print -r -- ">> 元ファイルをゴミ箱へ移動中..."
     for file in "${sorted_files[@]}"; do
-      if rm -f -- "$file"; then
-        print -r -- "   削除: ${file:t}"
+      if __concat_trash "$file"; then
+        print -r -- "   ゴミ箱へ: ${file:t}"
+      else
+        print -r -- "   失敗: ${file:t}" >&2
       fi
     done
   fi

@@ -127,8 +127,9 @@ setopt err_exit
 # 単一グループモードにフォールスルーし、プレフィックス不一致でエラーになるはず
 assert_exit_code "1" "$exit_code" "Falls through to single-group and errors on prefix mismatch"
 
-# Test 36: マルチグループで元ファイルが残っている（削除しない）
-printf '\n## Test 36: Multi-group mode does not delete originals\n'
+# Test 36: マルチグループで --keep を指定すれば元ファイルが残る
+# （デフォルトはゴミ箱へ移動されるため、cleanup テスト群と棲み分け）
+printf '\n## Test 36: Multi-group mode with --keep preserves originals\n'
 TEST_DIR="$TEST_TMP/test36"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/aaa_1.mp4"
@@ -137,11 +138,11 @@ echo "video 3" > "$TEST_DIR/bbb_1.mp4"
 echo "video 4" > "$TEST_DIR/bbb_2.mp4"
 cd "$TEST_DIR"
 unsetopt err_exit
-output=$(concat "$TEST_DIR/aaa_1.mp4" "$TEST_DIR/aaa_2.mp4" "$TEST_DIR/bbb_1.mp4" "$TEST_DIR/bbb_2.mp4" 2>&1)
+output=$(concat --keep "$TEST_DIR/aaa_1.mp4" "$TEST_DIR/aaa_2.mp4" "$TEST_DIR/bbb_1.mp4" "$TEST_DIR/bbb_2.mp4" 2>&1)
 exit_code=$?
 setopt err_exit
 assert_exit_code "0" "$exit_code" "Multi-group succeeds"
-assert_file_exists "$TEST_DIR/aaa_1.mp4" "Original file aaa_1.mp4 still exists"
-assert_file_exists "$TEST_DIR/bbb_2.mp4" "Original file bbb_2.mp4 still exists"
+assert_file_exists "$TEST_DIR/aaa_1.mp4" "Original file aaa_1.mp4 still exists with --keep"
+assert_file_exists "$TEST_DIR/bbb_2.mp4" "Original file bbb_2.mp4 still exists with --keep"
 
 printf '\n=== Stdout Leak Tests Completed ===\n'

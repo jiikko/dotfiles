@@ -523,3 +523,27 @@ __concat_verify_frame_order() {
   REPLY=""
   return 0
 }
+
+# 内部補助: ファイルをゴミ箱に移動する（macOS の /usr/bin/trash / osascript / Linux の gio trash の順で試す）
+# 絶対パスに正規化して呼び出すため、ファイル名が "-" で始まっても安全
+__concat_trash() {
+  local file="$1"
+  local _abs="${file:A}"
+  if command -v trash >/dev/null 2>&1; then
+    # /usr/bin/trash は "--" をファイル名として誤解するため付けない（絶対パス渡しで保護）
+    trash "$_abs" >/dev/null 2>&1
+    return $?
+  fi
+  if [[ "$OSTYPE" == darwin* ]]; then
+    local _escaped="${_abs//\\/\\\\}"
+    _escaped="${_escaped//\"/\\\"}"
+    osascript -e "tell application \"Finder\" to delete POSIX file \"$_escaped\"" >/dev/null 2>&1
+    return $?
+  fi
+  if command -v gio >/dev/null 2>&1; then
+    gio trash -- "$_abs" >/dev/null 2>&1
+    return $?
+  fi
+  print -r -- "❌ ゴミ箱への移動方法が見つかりません: $_abs" >&2
+  return 1
+}

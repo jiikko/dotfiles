@@ -9,6 +9,7 @@ setopt err_exit no_unset pipe_fail
 _HELPER_DIR="${0:A:h}"
 ROOT_DIR="$(cd "$_HELPER_DIR/../../.." && pwd)"
 TEST_TMP="$(mktemp -d)"
+export TEST_TMP
 
 cleanup() {
   rm -rf "$TEST_TMP"
@@ -144,6 +145,35 @@ echo "test-uuid-12345"
 EOF
 chmod +x "$MOCK_BIN_DIR/uuidgen"
 
+# trashモック: 実際のゴミ箱には送らず TEST_TMP/_mock_trash/ に退避する
+# __concat_trash は絶対パスを渡してくるため、basename だけを使って保存
+cat > "$MOCK_BIN_DIR/trash" <<'TRASH_MOCK'
+#!/usr/bin/env sh
+trash_dir="${TEST_TMP:-/tmp}/_mock_trash"
+mkdir -p "$trash_dir"
+rc=0
+for f in "$@"; do
+  case "$f" in
+    -*) continue ;;
+  esac
+  if [ -e "$f" ]; then
+    base=$(basename "$f")
+    # 同名衝突は連番を付けて回避
+    dest="$trash_dir/$base"
+    n=1
+    while [ -e "$dest" ]; do
+      dest="$trash_dir/${base}.${n}"
+      n=$((n + 1))
+    done
+    mv -- "$f" "$dest" || rc=1
+  else
+    rc=1
+  fi
+done
+exit $rc
+TRASH_MOCK
+chmod +x "$MOCK_BIN_DIR/trash"
+
 # PATH設定
 export PATH="$MOCK_BIN_DIR:$PATH"
 
@@ -200,6 +230,18 @@ assert_exit_code() {
     return 0
   else
     printf '✗ %s (expected exit code: %s, got: %s)\n' "$message" "$expected" "$actual"
+    return 1
+  fi
+}
+
+assert_in_mock_trash() {
+  local basename="$1"
+  local message="$2"
+  if [[ -f "$TEST_TMP/_mock_trash/$basename" ]]; then
+    printf '✓ %s\n' "$message"
+    return 0
+  else
+    printf '✗ %s (not in mock trash: %s)\n' "$message" "$basename"
     return 1
   fi
 }
