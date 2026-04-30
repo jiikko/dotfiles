@@ -35,6 +35,16 @@ __av1ify_mark_issue() {
   return 1
 }
 
+# 数値判定ヘルパー
+# duration 用: 符号付き小数（負値も許容、ffprobe 出力想定）
+__av1ify_is_num() {
+  [[ "$1" =~ ^-?([0-9]+(\.[0-9]*)?|\.[0-9]+)$ ]]
+}
+# threshold 用: 非負小数（負の閾値で全件警告化を防ぐ）
+__av1ify_is_nonneg_num() {
+  [[ "$1" =~ ^(\+)?([0-9]+(\.[0-9]*)?|\.[0-9]+)$ ]]
+}
+
 # 内部補助: 出力ファイルの簡易チェック（音声有無と音ズレ）
 __av1ify_postcheck() {
   local filepath="$1"
@@ -50,19 +60,70 @@ __av1ify_postcheck() {
     suffixes+=("noaudio")
   fi
 
-  local v_dur_raw a_dur_raw diff
-  v_dur_raw=$(ffprobe -v error -select_streams v:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
-  a_dur_raw=$(ffprobe -v error -select_streams a:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
-  if [[ -n "$v_dur_raw" && -n "$a_dur_raw" ]]; then
-    diff=$(awk -v a="$a_dur_raw" -v v="$v_dur_raw" 'BEGIN{ if (a=="" || v=="") exit 1; d=a-v; if (d<0) d=-d; printf "%.6f", d }' 2>/dev/null) || diff=""
-    if [[ -n "$diff" ]]; then
-      local threshold="${AV1IFY_SYNC_TOLERANCE:-0.5}"
-      local -F diff_f threshold_f
-      diff_f=$diff
-      threshold_f=$threshold
-      if (( diff_f > threshold_f )); then
-        issues+=("音ズレ疑い (Δ=${diff}s)")
-        suffixes+=("avsync")
+  # A/V duration 判定: ソースとの符号付き相対比較で「AV1 が新たに広げた分」を見る
+  # （ソースが元から持っている末尾差を誤検出しないため）
+  local out_v out_a src_v src_a
+  out_v=$(ffprobe -v error -select_streams v:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
+  out_a=$(ffprobe -v error -select_streams a:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
+
+  local threshold="${AV1IFY_SYNC_TOLERANCE:-0.5}"
+  __av1ify_is_nonneg_num "$threshold" || threshold=0.5
+
+  if [[ -z "$audio_stream" ]]; then
+    : # 音声なしは noaudio で扱われるので avsync 判定はスキップ
+  elif ! __av1ify_is_num "$out_v" || ! __av1ify_is_num "$out_a"; then
+    # MKV や一部 MP4 では stream duration が N/A になるが正常なケース。
+    # format duration や frame count など他のチェックに委ねて avsync 判定は無言スキップ。
+    :
+  else
+    local use_relative=0
+    if [[ -n "$src_path" && -f "$src_path" ]]; then
+      src_v=$(ffprobe -v error -select_streams v:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$src_path" 2>/dev/null | head -n1)
+      src_a=$(ffprobe -v error -select_streams a:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$src_path" 2>/dev/null | head -n1)
+      if __av1ify_is_num "$src_v" && __av1ify_is_num "$src_a"; then
+        use_relative=1
+      fi
+    fi
+
+    if (( use_relative )); then
+      # 符号付きで関係差を見る（方向反転も検出）
+      local result
+      result=$(LC_ALL=C awk -v sv="$src_v" -v sa="$src_a" -v ov="$out_v" -v oa="$out_a" -v t="$threshold" 'BEGIN{
+        sd = sa - sv
+        od = oa - ov
+        drift = od - sd; if (drift < 0) drift = -drift
+        printf "%.6f %.6f %.6f %d", sd, od, drift, (drift > t) ? 1 : 0
+      }') || result=""
+      if [[ -n "$result" ]]; then
+        local sd_v="${result%% *}"; result="${result#* }"
+        local od_v="${result%% *}"; result="${result#* }"
+        local drift_v="${result%% *}"; result="${result#* }"
+        local drift_bad="$result"
+        if [[ "$drift_bad" == "1" ]]; then
+          issues+=("音ズレ疑い (src_delta=${sd_v}s out_delta=${od_v}s Δ=${drift_v}s)")
+          suffixes+=("avsync")
+        fi
+      else
+        # awk 失敗時は無言スキップ（他のチェックに委ねる）
+        print -ru2 -- "⚠️ A/V drift計算スキップ (awk失敗)"
+      fi
+    else
+      # fallback: ソース duration 取れない時は従来の絶対値判定
+      local diff
+      diff=$(LC_ALL=C awk -v a="$out_a" -v v="$out_v" -v t="$threshold" 'BEGIN{
+        d = a - v; if (d < 0) d = -d
+        printf "%.6f %d", d, (d > t) ? 1 : 0
+      }') || diff=""
+      if [[ -n "$diff" ]]; then
+        local diff_v="${diff%% *}"
+        local diff_bad="${diff#* }"
+        if [[ "$diff_bad" == "1" ]]; then
+          issues+=("音ズレ疑い (Δ=${diff_v}s)")
+          suffixes+=("avsync")
+        fi
+      else
+        # awk 失敗時は無言スキップ（他のチェックに委ねる）
+        print -ru2 -- "⚠️ A/V diff計算スキップ (awk失敗)"
       fi
     fi
   fi
