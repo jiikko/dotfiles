@@ -114,6 +114,15 @@ assert_contains() {
     return 1
   fi
 }
+assert_not_contains() {
+  local haystack="$1" needle="$2" message="$3"
+  if [[ "$haystack" != *"$needle"* ]]; then
+    printf '✓ %s\n' "$message"
+  else
+    printf '✗ %s (expected NOT to contain: %s)\n' "$message" "$needle"
+    return 1
+  fi
+}
 
 printf '\n=== video_health Tests ===\n\n'
 
@@ -185,15 +194,15 @@ setopt err_exit
 assert_exit_code "0" "$exit_code" "Help returns 0"
 assert_contains "$output" "video_health" "Help contains command name"
 
-# Test 8: A/V音ズレ検出
-printf '\n## Test 8: A/V sync drift detected\n'
+# Test 8: A/V末尾差は破損扱いしない（録画末尾差は正常な現象）
+printf '\n## Test 8: A/V tail mismatch is NOT treated as corruption\n'
 touch "$TEST_TMP/avsync_bad.mp4"
 unsetopt err_exit
 __video_health_check "$TEST_TMP/avsync_bad.mp4"
 exit_code=$?
 setopt err_exit
-assert_exit_code "1" "$exit_code" "A/V sync drift returns 1"
-assert_contains "$REPLY" "A/V音ズレ" "Error mentions A/V sync"
+assert_exit_code "0" "$exit_code" "A/V tail mismatch alone does not return 1"
+assert_not_contains "$REPLY" "A/V音ズレ" "A/V音ズレ message removed from REPLY"
 
 # Test 9: フレームレート異常検出
 printf '\n## Test 9: Frame rate anomaly detected\n'

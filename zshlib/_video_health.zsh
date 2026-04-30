@@ -65,26 +65,12 @@ __video_health_check() {
     issues+=("音声ストリームなし")
   fi
 
-  # --- チェック3: A/V duration差（音ズレ検出） ---
-  local audio_duration
-  audio_duration=$(ffprobe -v error -select_streams a:0 \
-    -show_entries stream=duration -of default=nk=1:nw=1 -- "$file" 2>/dev/null | head -n1)
+  # 注: A/V duration 差のチェックはここでは行わない。
+  # 録画末尾差は録画器材／編集ソフト由来の正常な現象として頻出し、本編のリップシンクとは無関係。
+  # 出力後の postcheck がソース相対比較（|out_delta - src_delta|）で
+  # 「AV1 エンコ起因の真のズレ」だけを検出する。
 
-  if [[ -n "$audio_duration" && "$audio_duration" != "N/A" ]]; then
-    local av_diff av_threshold=0.5
-    av_diff=$(awk -v v="$video_duration" -v a="$audio_duration" \
-      'BEGIN{ d=v-a; if(d<0)d=-d; printf "%.3f", d }')
-    local av_bad
-    av_bad=$(awk -v d="$av_diff" -v t="$av_threshold" 'BEGIN{ print (d > t) ? 1 : 0 }')
-    if (( av_bad )); then
-      local v_hms a_hms
-      v_hms=$(__video_health_hms "$video_duration")
-      a_hms=$(__video_health_hms "$audio_duration")
-      issues+=("A/V音ズレ: 映像=${v_hms} 音声=${a_hms} (差=${av_diff}s)")
-    fi
-  fi
-
-  # --- チェック4: avg_frame_rate vs r_frame_rate 乖離（スロー/早送り検出） ---
+  # --- チェック3: avg_frame_rate vs r_frame_rate 乖離（スロー/早送り検出） ---
   local r_fps avg_fps
   r_fps=$(ffprobe -v error -select_streams v:0 \
     -show_entries stream=r_frame_rate -of default=nk=1:nw=1 -- "$file" 2>/dev/null | head -n1)
@@ -130,8 +116,10 @@ video_health — 動画ファイルの健全性チェック
 動画ファイルの健全性を複数の観点でチェックします。
   1. 映像duration vs コンテナduration の乖離（time_base破損）
   2. 音声ストリームの有無
-  3. 映像duration vs 音声duration の乖離（A/V音ズレ）
-  4. avg_frame_rate vs r_frame_rate の乖離（タイムスタンプ破損→スロー再生）
+  3. avg_frame_rate vs r_frame_rate の乖離（タイムスタンプ破損→スロー再生）
+
+注: A/V duration 末尾差はチェックしません（録画末尾差は正常な現象。
+本物のズレは av1ify postcheck がソース相対比較で検出します）。
 
 使い方:
   video_health <ファイル> [<ファイル2> ...]

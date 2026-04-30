@@ -7,33 +7,30 @@ source "${0:A:h}/test_helper.sh"
 
 printf '\n=== av1ify --force Tests (65-69) ===\n\n'
 
-# Test 65: --force なしで健全性チェック失敗 → エンコードスキップ
-printf '## Test 65: Health check failure without --force skips encoding\n'
+# Test 65: A/V末尾差は事前チェックで破損扱いしない（誤判定回帰テスト）
+printf '## Test 65: A/V tail mismatch alone does NOT block encoding\n'
 TEST_DIR="$TEST_TMP/test65"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
-# 音声duration=100.0, 映像duration=10.0 → A/V差90秒でNG
+# 音声duration=100.0, 映像duration=10.0 → A/V末尾差90秒でも事前チェックは通過し、エンコード成功するべき
 output=$(MOCK_AUDIO_DURATION=100.0 av1ify "$TEST_DIR/input.avi" 2>&1)
 exit_code=$?
 setopt err_exit
-assert_contains "$output" "破損しています" "Reports file corruption"
-assert_contains "$output" "スキップ" "Reports encoding skip"
-assert_contains "$output" "--force" "Suggests --force option"
-assert_file_not_exists "$TEST_DIR/input-enc.mp4" "No output file created"
-(( exit_code != 0 )) && printf '✓ Exit code is non-zero (%d)\n' "$exit_code" || printf '✗ Exit code should be non-zero (got %d)\n' "$exit_code"
+assert_not_contains "$output" "破損しています" "A/V tail mismatch is not reported as corruption"
+assert_not_contains "$output" "エンコードをスキップします" "Encoding is not skipped for A/V tail mismatch"
+assert_file_exists "$TEST_DIR/input-enc.mp4" "Encoded output is created despite A/V tail mismatch"
+(( exit_code == 0 )) && printf '✓ Exit code is 0 (encoding succeeded)\n' || { printf '✗ Exit code should be 0 (got %d)\n' "$exit_code"; false; }
 
-# Test 66: --force ありで健全性チェック失敗 → エンコード続行
-printf '\n## Test 66: Health check failure with --force continues encoding\n'
+# Test 66: --force ありの動作確認（fps異常で確認）
+printf '\n## Test 66: --force with corruption (fps anomaly) continues encoding\n'
 TEST_DIR="$TEST_TMP/test66"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
-# 同じ条件だが --force 付き
-output=$(MOCK_AUDIO_DURATION=100.0 av1ify --force "$TEST_DIR/input.avi" 2>&1)
-exit_code=$?
+output=$(MOCK_AVG_FPS="10000/1001" av1ify --force "$TEST_DIR/input.avi" 2>&1)
 setopt err_exit
 assert_contains "$output" "--force で続行" "Shows force continuation warning"
 assert_not_contains "$output" "スキップします" "Does not skip encoding"
