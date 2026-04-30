@@ -80,14 +80,14 @@ __av1ify_resolve_resolution() {
   done
 
   if (( ${#matches[@]} == 1 )); then
-    print -r -- ">> 解像度 '${input}' → ${matches[1]} に解決しました"
+    print -P -- "%F{cyan}>> 解像度 '${input}' → ${matches[1]} に解決しました%f"
     REPLY="${matches[1]}"
     return 0
   fi
 
   if (( ${#matches[@]} > 1 )); then
     # shellcheck disable=SC2296
-    print -r -- ">> 解像度 '${input}' → ${matches[1]} に解決しました (候補: ${(j:, :)matches})"
+    print -P -- "%F{cyan}>> 解像度 '${input}' → ${matches[1]} に解決しました (候補: ${(j:, :)matches})%f"
     REPLY="${matches[1]}"
     return 0
   fi
@@ -213,7 +213,7 @@ av1ify() {
 
   if (( ! __av1ify_internal )) && (( ! show_help )) && (( $# > 0 )); then
     if (( opt_compact )); then
-      print -r -- ">> compact モード: -r ${opt_resolution} --fps ${opt_fps}"
+      print -P -- "%F{cyan}>> compact モード: -r ${opt_resolution} --fps ${opt_fps}%f"
     fi
   fi
 

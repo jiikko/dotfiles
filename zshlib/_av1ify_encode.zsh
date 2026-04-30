@@ -31,7 +31,7 @@ __av1ify_pre_repair() {
     args+=( -bsf:v mpeg4_unpack_bframes )
   fi
 
-  print -r -- ">> 事前リペア: stream copy (${fmt:-unknown}/${vcodec:-?}) → $repaired"
+  print -P -- "%F{cyan}>> 事前リペア: stream copy (${fmt:-unknown}/${vcodec:-?}) → $repaired%f"
   if ffmpeg "${args[@]}" -- "$tmp"; then
     mv -f -- "$tmp" "$repaired"
     REPLY="$repaired"; return 0
@@ -262,7 +262,7 @@ __av1ify_one() {
         resolution_tag="${validated_resolution}p"
         ;;
     esac
-    print -r -- ">> 出力解像度: ${resolution_tag} (height=${target_height})"
+    print -P -- "%F{cyan}>> 出力解像度: ${resolution_tag} (height=${target_height})%f"
   fi
 
   # アップスケール防止: 解像度オプション指定時にソース解像度が必須
@@ -272,7 +272,7 @@ __av1ify_one() {
       return 1
     fi
     if (( source_short_side <= target_height )); then
-      print -r -- ">> 元の短辺 (${source_short_side}px) が指定解像度 (${resolution_tag}) 以下のため、解像度変更をスキップします"
+      print -P -- "%F{yellow}>> 元の短辺 (${source_short_side}px) が指定解像度 (${resolution_tag}) 以下のため、解像度変更をスキップします%f"
       target_height=""
       resolution_tag=""
     fi
@@ -297,17 +297,17 @@ __av1ify_one() {
       local fps_skip
       fps_skip=$(awk -v src="$source_fps_val" -v tgt="$validated_fps" 'BEGIN { print (src <= tgt) ? 1 : 0 }')
       if (( fps_skip )); then
-        print -r -- ">> ソースfps (${source_fps_val}) が ${validated_fps}fps 以下のため、fps変更をスキップ"
+        print -P -- "%F{yellow}>> ソースfps (${source_fps_val}) が ${validated_fps}fps 以下のため、fps変更をスキップ%f"
         target_fps=""
       else
         target_fps="$validated_fps"
         fps_tag="${validated_fps}fps"
-        print -r -- ">> 出力フレームレート: ${source_fps_val}fps → ${validated_fps}fps"
+        print -P -- "%F{cyan}>> 出力フレームレート: ${source_fps_val}fps → ${validated_fps}fps%f"
       fi
     else
       target_fps="$validated_fps"
       fps_tag="${validated_fps}fps"
-      print -r -- ">> 出力フレームレート: ${validated_fps}fps (ソースfps取得失敗)"
+      print -P -- "%F{cyan}>> 出力フレームレート: ${validated_fps}fps (ソースfps取得失敗)%f"
     fi
   else
     target_fps=""
@@ -343,7 +343,7 @@ __av1ify_one() {
       else
         crf=54  # 4K以上
       fi
-      print -r -- ">> 解像度: ${height_for_crf}p → CRF=$crf を自動設定"
+      print -P -- "%F{cyan}>> 解像度: ${height_for_crf}p → CRF=$crf を自動設定%f"
     else
       crf=40  # デフォルト
       print -r -- "⚠️ 解像度取得失敗 → CRF=$crf（デフォルト）"
@@ -373,13 +373,13 @@ __av1ify_one() {
       aac_params_available=0
     elif (( src_sample_rate < aac_max_ar )); then
       aac_ar="$src_sample_rate"
-      print -r -- ">> 音声: ソースが ${src_sample_rate}Hz のため ${aac_max_ar}Hz へのアップスケールをスキップ"
+      print -P -- "%F{yellow}>> 音声: ソースが ${src_sample_rate}Hz のため ${aac_max_ar}Hz へのアップスケールをスキップ%f"
     fi
     if [[ -z "$src_channels" || ! "$src_channels" =~ ^[0-9]+$ ]]; then
       aac_params_available=0
     elif (( src_channels < aac_max_ac )); then
       aac_ac="$src_channels"
-      print -r -- ">> 音声: ソースが mono のためステレオへのアップスケールをスキップ"
+      print -P -- "%F{yellow}>> 音声: ソースが mono のためステレオへのアップスケールをスキップ%f"
     fi
   fi
 
@@ -405,17 +405,17 @@ __av1ify_one() {
       light)
         vf_parts+=("hqdn3d=2:2:3:3")
         denoise_tag="dn1"
-        print -r -- ">> ノイズ除去: light (hqdn3d=2:2:3:3)"
+        print -P -- "%F{cyan}>> ノイズ除去: light (hqdn3d=2:2:3:3)%f"
         ;;
       medium)
         vf_parts+=("hqdn3d=4:4:6:6")
         denoise_tag="dn2"
-        print -r -- ">> ノイズ除去: medium (hqdn3d=4:4:6:6)"
+        print -P -- "%F{cyan}>> ノイズ除去: medium (hqdn3d=4:4:6:6)%f"
         ;;
       strong)
         vf_parts+=("hqdn3d=6:6:9:9")
         denoise_tag="dn3"
-        print -r -- ">> ノイズ除去: strong (hqdn3d=6:6:9:9)"
+        print -P -- "%F{cyan}>> ノイズ除去: strong (hqdn3d=6:6:9:9)%f"
         ;;
     esac
   fi
@@ -459,7 +459,7 @@ __av1ify_one() {
 
   if [[ -z "$acodec" ]]; then
     args_audio=(-an)
-    print -r -- ">> 音声: なし（-an）"
+    print -P -- "%F{cyan}>> 音声: なし（-an）%f"
   elif (( use_copy )); then
     # compact モード: 音声ビットレートが96kbps超ならAAC 96kに再エンコード
     if (( __AV1IFY_COMPACT )); then
@@ -475,15 +475,15 @@ __av1ify_one() {
           aac_bitrate_resolved="96k"
           args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac "$aac_ac" -ar "$aac_ar")
           did_aac=1
-          print -r -- ">> 音声: aac 96k へ再エンコード (compact, 元=$acodec ${src_abitrate}bps)"
+          print -P -- "%F{cyan}>> 音声: aac 96k へ再エンコード (compact, 元=$acodec ${src_abitrate}bps)%f"
         fi
       else
         args_audio=(-map "0:a:0?" -c:a copy)
-        print -r -- ">> 音声: copy (codec=$acodec, compact だが130kbps以下)"
+        print -P -- "%F{cyan}>> 音声: copy (codec=$acodec, compact だが130kbps以下)%f"
       fi
     else
       args_audio=(-map "0:a:0?" -c:a copy)
-      print -r -- ">> 音声: copy (codec=$acodec)"
+      print -P -- "%F{cyan}>> 音声: copy (codec=$acodec)%f"
     fi
   else
     if (( ! aac_params_available )); then
@@ -509,12 +509,12 @@ __av1ify_one() {
           local capped_kbps=$(( src_abitrate_raw / 1000 ))
           (( capped_kbps < 32 )) && capped_kbps=32
           aac_bitrate_resolved="${capped_kbps}k"
-          print -r -- ">> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps, アップスケール防止)"
+          print -P -- "%F{cyan}>> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps, アップスケール防止)%f"
         else
-          print -r -- ">> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps)"
+          print -P -- "%F{cyan}>> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps)%f"
         fi
       else
-        print -r -- ">> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec, ビットレート不明)"
+        print -P -- "%F{cyan}>> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec, ビットレート不明)%f"
       fi
       args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac "$aac_ac" -ar "$aac_ar")
       did_aac=1
@@ -561,7 +561,7 @@ __av1ify_one() {
     return 0
   fi
 
-  print -r -- ">> 映像: $vcodec (crf=$crf, preset=$preset)"
+  print -P -- "%F{cyan}>> 映像: $vcodec (crf=$crf, preset=$preset)%f"
   print -r -- ">> 出力(処理中マーカー): $tmp"
   __AV1IFY_CURRENT_TMP="$tmp"
 
