@@ -568,8 +568,6 @@ EOF
   [[ -n "$first_audio_info" ]] && has_input_audio=1
 
   local video_info audio_info
-  local first_time_base video_time_base
-  first_time_base=$(__concat_get_video_time_base "${input_files[1]}")
   if (( ! force_mode )); then
     for file in "${input_files[@]:1}"; do
       video_info=$(__concat_get_video_info "$file")
@@ -588,20 +586,53 @@ EOF
         print -r -- "  ${file:t}: $audio_info" >&2
         return 1
       fi
+    done
 
-      video_time_base=$(__concat_get_video_time_base "$file")
-      if [[ "$video_time_base" != "$first_time_base" ]]; then
-        print -P -- "\n%F{red}%B❌ エラー: time_base不一致%b%f" >&2
-        print -P -- "%F{red}無劣化結合すると再生が破損します%f\n" >&2
-        print -P -- "  %F{cyan}${input_files[1]:t}%f: %F{green}$first_time_base%f" >&2
-        print -P -- "  %F{cyan}${file:t}%f: %F{yellow}$video_time_base%f\n" >&2
-        local _target_timescale="${first_time_base#1/}"
-        print -P -- "%F{white}%B修復方法:%b%f" >&2
-        print -r -- "  repair-mp4-timebase ${_target_timescale} \"${file}\"" >&2
-        print "" >&2
-        return 1
+    # time_base 不一致は max timescale (= 高分解能側) に揃える方向で repair する。
+    # 低→高 (例: 1/30000 → 1/90000) は PTS を整数倍するだけなので常に無損失。
+    # 逆方向は PTS が divisor の倍数である必要があり、満たさない場合は丸めが起きる。
+    # 旧実装は「先頭ファイル基準」で揃えていたため、順序によっては低分解能側に
+    # 寄せようとして A/V 同期破綻を招く可能性があった。
+    local -a tb_list=()
+    local target_timescale=0
+    local tb scale i
+    for file in "${input_files[@]}"; do
+      tb=$(__concat_get_video_time_base "$file")
+      tb_list+=("$tb")
+      scale="${tb#1/}"
+      if [[ "$scale" =~ ^[0-9]+$ ]] && (( scale > target_timescale )); then
+        target_timescale=$scale
       fi
     done
+
+    local target_tb="1/${target_timescale}"
+    local -a mismatched_files=()
+    if (( target_timescale > 0 )); then
+      for ((i=1; i<=${#input_files[@]}; i++)); do
+        if [[ "${tb_list[$i]}" != "$target_tb" ]]; then
+          mismatched_files+=("${input_files[$i]}")
+        fi
+      done
+    fi
+
+    if (( ${#mismatched_files[@]} > 0 )); then
+      print -P -- "\n%F{red}%B❌ エラー: time_base不一致%b%f" >&2
+      print -P -- "%F{red}無劣化結合すると再生が破損します%f\n" >&2
+      for ((i=1; i<=${#input_files[@]}; i++)); do
+        if [[ "${tb_list[$i]}" == "$target_tb" ]]; then
+          print -P -- "  %F{cyan}${input_files[$i]:t}%f: %F{green}${tb_list[$i]}%f" >&2
+        else
+          print -P -- "  %F{cyan}${input_files[$i]:t}%f: %F{yellow}${tb_list[$i]}%f" >&2
+        fi
+      done
+      print "" >&2
+      print -P -- "%F{white}%B修復方法 (高分解能側 ${target_tb} に揃える):%b%f" >&2
+      for file in "${mismatched_files[@]}"; do
+        print -r -- "  repair-mp4-timebase ${target_timescale} \"${file}\"" >&2
+      done
+      print "" >&2
+      return 1
+    fi
   fi
 
   # 4. ファイル名の昇順でソート（スペース対応）
