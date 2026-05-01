@@ -327,6 +327,11 @@ func (r *Runner) enqueueInternalForce(line string, front bool) error {
 
 // enqueueInternal performs the common dedup + queue insert + input-file
 // append logic for both Enqueue (tail) and EnqueueFront (head).
+//
+// Under --input-type=url, the line is also passed through a static URL
+// syntax check (urlLooksValid). Reachability is NOT verified — real
+// sites behind Cloudflare etc. routinely block curl-style probes, so a
+// network pre-check would produce false rejections.
 func (r *Runner) enqueueInternal(line string, front bool) error {
 	line = strings.TrimSpace(line)
 	if line == "" {
@@ -337,6 +342,11 @@ func (r *Runner) enqueueInternal(line string, front bool) error {
 	}
 	if r.stopCtx != nil && r.stopCtx.Err() != nil {
 		return fmt.Errorf("runner stopping")
+	}
+	if r.cfg.InputType == "url" {
+		if ok, reason := urlLooksValid(line); !ok {
+			return fmt.Errorf("URL syntax check failed: %s", reason)
+		}
 	}
 
 	r.queuedMu.Lock()

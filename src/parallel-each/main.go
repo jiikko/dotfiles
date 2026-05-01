@@ -45,15 +45,19 @@ OPTIONS
   --skip-unique-txt-rows Don't validate that input rows are unique. By default
                          the run aborts if the input file has duplicate lines.
   --input-type <kind>    Input semantic type. One of:
-                           none (default)  no pre-check; lines are passed through
-                           url             curl pre-check; each line must return
-                                           HTTP 200. Failures are reported and
-                                           dropped from the run (the rest still
-                                           proceed). Useful when the input file
-                                           was scraped/exported and may contain
-                                           dead links.
-  --pre-check-timeout <d> Per-URL timeout for the --input-type=url pre-check
-                         (default 10s).
+                           none (default)  no validation
+                           url             static URL syntax check applied to
+                                           items added at runtime via the TUI
+                                           (a / A keys). Rejects obvious paste
+                                           mistakes (no scheme, typos like
+                                           "quit", javascript: pseudo-URLs)
+                                           but does NOT verify reachability —
+                                           real sites behind Cloudflare etc.
+                                           often 403 curl probes despite being
+                                           perfectly usable from a real browser.
+                                           The startup input file is treated
+                                           as a curated list and dispatched
+                                           as-is.
   --wizard               Interactively prompt for each value (input file,
                          template, parallelism, timeout, retries) before
                          running. Useful when you can't remember flag names.
@@ -203,8 +207,7 @@ type Config struct {
 	AttemptTimeout  time.Duration // --attempt-timeout: required; applied per attempt
 	TotalTimeout    time.Duration // --total-timeout: optional; force-kill everything after this much wall-clock
 	Wizard          bool          // --wizard: interactively prompt for values before running
-	InputType       string        // --input-type: "none" (default) or "url" (curl 200 pre-check)
-	PreCheckTimeout time.Duration // --pre-check-timeout: per-item timeout for input-type=url
+	InputType       string        // --input-type: "none" (default) or "url" (static URL syntax check on live-add)
 }
 
 func parseArgs(argv []string) (Config, error) {
@@ -224,7 +227,6 @@ func parseArgs(argv []string) (Config, error) {
 		totalTimeout   = fs.Duration("total-timeout", 0, "overall wall-clock limit; 0 = no limit (e.g. 1h, 2h30m)")
 		wizard         = fs.Bool("wizard", false, "interactive prompt for all values")
 		inputType      = fs.String("input-type", "none", "input semantic type: none|url")
-		preCheckTO     = fs.Duration("pre-check-timeout", 10*time.Second, "per-URL pre-check timeout when --input-type=url")
 		help     = fs.Bool("h", false, "help")
 		help2    = fs.Bool("help", false, "help")
 	)
@@ -271,9 +273,6 @@ func parseArgs(argv []string) (Config, error) {
 	default:
 		return Config{}, fmt.Errorf("--input-type must be one of: none, url (got %q)", *inputType)
 	}
-	if *preCheckTO <= 0 {
-		return Config{}, fmt.Errorf("--pre-check-timeout must be > 0")
-	}
 
 	return Config{
 		Parallelism:     *jobs,
@@ -288,7 +287,6 @@ func parseArgs(argv []string) (Config, error) {
 		TotalTimeout:    *totalTimeout,
 		Wizard:          *wizard,
 		InputType:       *inputType,
-		PreCheckTimeout: *preCheckTO,
 	}, nil
 }
 
@@ -377,28 +375,11 @@ func main() {
 		}
 	}
 
-	// --input-type pre-check: validate inputs by their declared semantic
-	// type. Currently supports url (curl 200 OK). Done after resume
-	// filtering so we don't waste curl calls on items the user has
-	// already processed.
-	if cfg.InputType == "url" && len(lines) > 0 {
-		fmt.Fprintf(os.Stderr,
-			"input-type=url: pre-checking %d URL(s) (curl 200 OK, timeout=%s)...\n",
-			len(lines), cfg.PreCheckTimeout)
-		kept, dropped := preCheckURLs(lines, cfg.PreCheckTimeout, 16)
-		if len(dropped) > 0 {
-			fmt.Fprintf(os.Stderr, "skipping %d URL(s) that failed pre-check:\n", len(dropped))
-			for _, d := range dropped {
-				fmt.Fprintf(os.Stderr, "  ✗ %s — %s\n", d.Line, d.Reason)
-			}
-		}
-		lines = kept
-		if len(lines) == 0 {
-			fmt.Fprintln(os.Stderr, "no URLs passed pre-check; nothing to do")
-			os.Exit(1)
-		}
-		fmt.Fprintf(os.Stderr, "input-type=url: %d URL(s) passed pre-check\n", len(lines))
-	}
+	// NOTE: --input-type=url does NOT pre-check the startup input file.
+	// The file is treated as a curated list — it is the user's
+	// responsibility to keep dead links out. The pre-check is applied
+	// only to items added at runtime via the TUI (Enqueue path), where
+	// quick rejection of bad pastes is useful.
 
 	// runPlain and runTUI install their own two-stage signal handlers
 	// (1st SIGINT = graceful stop, 2nd = force-kill). --total-timeout applies
@@ -574,27 +555,6 @@ func runWizard(defaults Config) (Config, error) {
 			continue
 		}
 		break
-	}
-
-	// URL pre-check timeout (only when input-type=url).
-	if defaults.InputType == "url" {
-		for {
-			def := "10s"
-			if defaults.PreCheckTimeout > 0 {
-				def = defaults.PreCheckTimeout.String()
-			}
-			v, err := ask("URL pre-check timeout per URL (e.g. 10s)", def)
-			if err != nil {
-				return defaults, err
-			}
-			d, perr := time.ParseDuration(v)
-			if perr != nil || d <= 0 {
-				fmt.Fprintf(os.Stderr, "  invalid duration: %v\n", perr)
-				continue
-			}
-			defaults.PreCheckTimeout = d
-			break
-		}
 	}
 
 	totalStr := "none"

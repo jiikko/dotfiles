@@ -1919,6 +1919,110 @@ func TestRunnerFreshTruncates(t *testing.T) {
 	}
 }
 
+// urlLooksValid is the static URL syntax check applied to live-add
+// inputs under --input-type=url. It rejects obvious paste mistakes
+// (no scheme, typos, javascript: pseudo-URLs) but does not touch the
+// network — Cloudflare-fronted sites routinely 403 curl probes despite
+// being valid, so reachability checks would produce false rejections.
+func TestUrlLooksValid(t *testing.T) {
+	cases := []struct {
+		in        string
+		ok        bool
+		reasonHas string // substring match when ok=false
+	}{
+		{"https://example.com/foo", true, ""},
+		{"http://a.b/", true, ""},
+		{"https://japanhub.net/video/60878/dama-010-実録", true, ""},
+
+		{"", false, "empty"},
+		{"   ", false, "empty"},
+		{"JKSR-018", false, "scheme"},
+		{"quit", false, "scheme"},
+		{"v", false, "scheme"},
+		{"missav.aijavascript:;", false, "scheme"}, // parses with scheme=missav.aijavascript
+		{"javascript:alert(1)", false, "scheme"},
+		{"ftp://example.com/", false, "scheme"},
+		{"https://", false, "host"},
+		{"https://localhost", false, "host has no dot"},
+	}
+	for _, c := range cases {
+		ok, reason := urlLooksValid(c.in)
+		if ok != c.ok {
+			t.Errorf("urlLooksValid(%q) = (%v, %q); want ok=%v", c.in, ok, reason, c.ok)
+			continue
+		}
+		if !ok && !strings.Contains(reason, c.reasonHas) {
+			t.Errorf("urlLooksValid(%q) reason=%q; want substring %q", c.in, reason, c.reasonHas)
+		}
+	}
+}
+
+// --input-type=url applies urlLooksValid to live-add inputs. Valid URLs
+// flow through to the dispatcher; malformed ones are rejected with an
+// error from Enqueue without touching the queue.
+func TestRunnerLiveEnqueueURLSyntaxCheck(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{
+		Parallelism: 1,
+		Template:    `echo {item}`,
+		InputType:   "url",
+	}
+	r := NewRunner(cfg, nil)
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		for range r.Events() {
+		}
+	}()
+	defer r.RequestStop()
+
+	// Valid URLs must be admitted (Enqueue returns nil).
+	for _, valid := range []string{
+		"https://japanhub.net/video/60878/dama-010-実録",
+		"https://example.com/",
+	} {
+		if err := r.Enqueue(valid); err != nil {
+			t.Errorf("valid URL %q rejected: %v", valid, err)
+		}
+	}
+
+	// Malformed inputs must be rejected synchronously with an error
+	// mentioning URL syntax — the dedup map stays clean so the user
+	// can fix the typo and retry.
+	for _, bad := range []string{
+		"JKSR-018",
+		"quit",
+		"missav.aijavascript:;",
+		"javascript:alert(1)",
+	} {
+		err := r.Enqueue(bad)
+		if err == nil {
+			t.Errorf("malformed input %q was admitted; expected URL syntax error", bad)
+			continue
+		}
+		if !strings.Contains(err.Error(), "URL syntax check failed") {
+			t.Errorf("malformed input %q: err=%v; want URL syntax check failed", bad, err)
+		}
+	}
+
+	// Re-add of a syntax-rejected line must work (dedup must NOT have
+	// been polluted by the earlier reject). We use a different malformed
+	// string here only because adding the same one twice would still be
+	// caught by the syntax check, not dedup — what we really care about
+	// is that no entry was left in r.queued. AddedCount confirms that.
+	if got := r.AddedCount(); got != 2 {
+		t.Errorf("AddedCount = %d, want 2 (only the two valid URLs)", got)
+	}
+}
+
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
