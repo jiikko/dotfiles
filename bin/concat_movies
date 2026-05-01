@@ -69,50 +69,14 @@ while (( $# > 0 )); do
   esac
 done
 
-# スペース区切りの単一文字列を個別ファイルに分割
+# スペース区切りの単一文字列を個別ファイルに分割 (拡張子境界で分解)
 # 例: 'file1.mp4 file2.mp4' → file1.mp4, file2.mp4
-# 拡張子の直後のスペースで分割する
+source "$(dirname -- "${BASH_SOURCE[0]}")/lib/video_args.sh"
+
 expanded_files=()
-for entry in "${files[@]}"; do
-  if [[ -f "$entry" ]]; then
-    expanded_files+=("$entry")
-  else
-    # 拡張子の後のスペースで分割を試みる
-    remaining="$entry"
-    found_any=false
-    while [[ -n "$remaining" ]]; do
-      remaining="${remaining#"${remaining%%[![:space:]]*}"}"  # 先頭空白除去
-      [[ -z "$remaining" ]] && break
-      matched=false
-      # 最短一致で拡張子の位置を探す
-      for ext in .mp4 .MP4 .mov .MOV .mkv .MKV .avi .AVI .webm .flv .wmv .m4v .mpg .mpeg .3gp .ts .m2ts; do
-        if [[ "$remaining" == *"$ext"* ]]; then
-          # 最初に出現する拡張子の位置で切る
-          path="${remaining%%"$ext"*}${ext}"
-          if [[ -f "$path" ]]; then
-            expanded_files+=("$path")
-            remaining="${remaining#"$path"}"
-            matched=true
-            found_any=true
-            break
-          fi
-        fi
-      done
-      if ! $matched; then
-        if ! $found_any; then
-          echo "エラー: ファイルが見つかりません: $entry" >&2
-          exit 1
-        fi
-        remaining="${remaining#"${remaining%%[![:space:]]*}"}"
-        if [[ -n "$remaining" ]]; then
-          echo "エラー: ファイルが見つかりません: $remaining" >&2
-          exit 1
-        fi
-        break
-      fi
-    done
-  fi
-done
+while IFS= read -r -d '' f; do
+  expanded_files+=("$f")
+done < <(expand_video_args "${files[@]}")
 files=("${expanded_files[@]}")
 
 if (( ${#files[@]} < 1 )); then

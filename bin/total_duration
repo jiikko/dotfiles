@@ -29,50 +29,15 @@ if (( $# == 0 )); then
   exit 0
 fi
 
-# concat_movies と同じ拡張子境界スプリッタ
-# (スペース入りファイル名でも拡張子の直後で正しく区切るため)
-EXTS=(.mp4 .MP4 .mov .MOV .mkv .MKV .avi .AVI .webm .WEBM .flv .FLV .wmv .WMV .m4v .M4V .mpg .MPG .mpeg .MPEG .3gp .3GP .ts .TS .m2ts .M2TS)
+# 拡張子境界スプリッタを共通ヘルパから読み込む
+# (concat_movies と同じパーサーを使用)
+source "$(dirname -- "${BASH_SOURCE[0]}")/lib/video_args.sh"
 
-# 入力エントリを実ファイルパスの配列に展開
+# 入力エントリを実ファイルパスの配列に展開 (NUL 区切りで安全に読む)
 files=()
-for entry in "$@"; do
-  if [[ -f "$entry" ]]; then
-    files+=("$entry")
-    continue
-  fi
-  remaining="$entry"
-  found_any=false
-  while [[ -n "$remaining" ]]; do
-    # 先頭空白除去
-    remaining="${remaining#"${remaining%%[![:space:]]*}"}"
-    [[ -z "$remaining" ]] && break
-    matched=false
-    for ext in "${EXTS[@]}"; do
-      if [[ "$remaining" == *"$ext"* ]]; then
-        path="${remaining%%"$ext"*}${ext}"
-        if [[ -f "$path" ]]; then
-          files+=("$path")
-          remaining="${remaining#"$path"}"
-          matched=true
-          found_any=true
-          break
-        fi
-      fi
-    done
-    if ! $matched; then
-      if ! $found_any; then
-        echo "エラー: ファイルが見つかりません: $entry" >&2
-        exit 1
-      fi
-      remaining="${remaining#"${remaining%%[![:space:]]*}"}"
-      if [[ -n "$remaining" ]]; then
-        echo "エラー: ファイルが見つかりません: $remaining" >&2
-        exit 1
-      fi
-      break
-    fi
-  done
-done
+while IFS= read -r -d '' f; do
+  files+=("$f")
+done < <(expand_video_args "$@")
 
 if (( ${#files[@]} == 0 )); then
   echo "エラー: 対象ファイルがありません" >&2
