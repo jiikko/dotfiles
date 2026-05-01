@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# total_duration — 動画ファイルの再生時間を列挙して合計を表示する
+#
+# 使い方:
+#   total_duration <ファイル1> [<ファイル2> ...]
+#   total_duration '<ファイル1> <ファイル2> <ファイル3>'
+#
+#   ファイルパスはスペース区切りの 1 つの文字列としても渡せます。
+#   (concat_movies と同じスプリッタを使用するため、スペース入り
+#    日本語ファイル名でも拡張子境界で正しく分解されます)
+#
+# 出力例:
+#   02:01:37.690  ALD-269_1.mp4
+#   01:59:10.477  ALD-269_2.mp4
+#   ────────────────────────
+#   合計: 04:00:48.167  (= 14448.167 秒, 2 ファイル)
+#
+# 依存: ffprobe (ffmpeg に付属), awk
+
+set -euo pipefail
+
+if ! command -v ffprobe >/dev/null 2>&1; then
+  echo "エラー: ffprobe が見つかりません" >&2
+  exit 1
+fi
+
+if (( $# == 0 )); then
+  sed -n '2,/^$/s/^# //p' "$0"
+  exit 0
+fi
+
+# concat_movies と同じ拡張子境界スプリッタ
+# (スペース入りファイル名でも拡張子の直後で正しく区切るため)
+EXTS=(.mp4 .MP4 .mov .MOV .mkv .MKV .avi .AVI .webm .WEBM .flv .FLV .wmv .WMV .m4v .M4V .mpg .MPG .mpeg .MPEG .3gp .3GP .ts .TS .m2ts .M2TS)
+
+# 入力エントリを実ファイルパスの配列に展開
+files=()
+for entry in "$@"; do
+  if [[ -f "$entry" ]]; then
+    files+=("$entry")
+    continue
+  fi
+  remaining="$entry"
+  found_any=false
+  while [[ -n "$remaining" ]]; do
+    # 先頭空白除去
+    remaining="${remaining#"${remaining%%[![:space:]]*}"}"
+    [[ -z "$remaining" ]] && break
+    matched=false
+    for ext in "${EXTS[@]}"; do
+      if [[ "$remaining" == *"$ext"* ]]; then
+        path="${remaining%%"$ext"*}${ext}"
+        if [[ -f "$path" ]]; then
+          files+=("$path")
+          remaining="${remaining#"$path"}"
+          matched=true
+          found_any=true
+          break
+        fi
+      fi
+    done
+    if ! $matched; then
+      if ! $found_any; then
+        echo "エラー: ファイルが見つかりません: $entry" >&2
+        exit 1
+      fi
+      remaining="${remaining#"${remaining%%[![:space:]]*}"}"
+      if [[ -n "$remaining" ]]; then
+        echo "エラー: ファイルが見つかりません: $remaining" >&2
+        exit 1
+      fi
+      break
+    fi
+  done
+done
+
+if (( ${#files[@]} == 0 )); then
+  echo "エラー: 対象ファイルがありません" >&2
+  exit 1
+fi
+
+format_hms() {
+  awk -v t="$1" 'BEGIN {
+    h = int(t / 3600)
+    m = int((t - h * 3600) / 60)
+    s = t - h * 3600 - m * 60
+    printf "%02d:%02d:%06.3f", h, m, s
+  }'
+}
+
+# 列挙する際の左カラム幅 (HH:MM:SS.mmm = 12 文字 + スペース2)
+total=0
+fail_count=0
+for f in "${files[@]}"; do
+  dur=$(ffprobe -v error -show_entries format=duration -of default=nk=1:nw=1 -- "$f" 2>/dev/null || true)
+  if [[ -z "$dur" || "$dur" == "N/A" ]]; then
+    printf '%-12s  %s  ⚠️ duration 取得失敗\n' "??:??:??.???" "$(basename -- "$f")" >&2
+    fail_count=$((fail_count + 1))
+    continue
+  fi
+  hms=$(format_hms "$dur")
+  printf '%s  %s\n' "$hms" "$(basename -- "$f")"
+  total=$(awk -v a="$total" -v b="$dur" 'BEGIN{ printf "%.3f", a + b }')
+done
+
+total_hms=$(format_hms "$total")
+echo "────────────────────────"
+printf '合計: %s  (= %s 秒, %d ファイル' "$total_hms" "$total" "${#files[@]}"
+if (( fail_count > 0 )); then
+  printf ', %d 件失敗' "$fail_count"
+fi
+printf ')\n'
+
+# 1 件でも失敗したら exit 1 (パイプ先で気付けるように)
+if (( fail_count > 0 )); then
+  exit 1
+fi
