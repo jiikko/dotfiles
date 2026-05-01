@@ -114,8 +114,12 @@ __concat_extract_number() {
     prefix="${match[1]}"
     num="${match[2]}"
     suffix=""
-  # パターン: 英字ワード+数字 (e.g., _Scene1, _Part2, _Vol3)
-  elif [[ "$stem" =~ '^(.*[-_][a-zA-Z]+)([0-9]+)$' ]]; then
+  # パターン: 英字ワード+数字 (e.g., _Scene1, _Part2, _Vol3, _#Ep1, _#Sp2)
+  # `#?` はワードの直前にハッシュ記号が入る表記 ("_#Ep1" 等) の許容。
+  # なくても part1 等は通常通り通る (互換)。prefix にワード部 (#Ep / Scene
+  # 等) ごと取り込むので、同一 stem で異なるワード ("_#Ep1" と "_#Sp1") は
+  # 別グループになる。
+  elif [[ "$stem" =~ '^(.*[-_]#?[a-zA-Z]+)([0-9]+)$' ]]; then
     prefix="${match[1]}"
     num="${match[2]}"
     suffix=""

@@ -609,8 +609,16 @@ EOF
 
   # 5. 出力ファイル名の決定
   local output_name
-  # 末尾の _ や - を除去
-  local clean_prefix="${common_prefix%[-_]}"
+  # 末尾の `_#Word` / `-#Word` ("_#Ep" / "_#Sp" 等のシーン区切りマーカー) は
+  # 出力名としては不要なので剥がす。`_Scene` / `_Vol` 等の `#` なし alpha
+  # 接尾辞は意味のある語の可能性があるので残す (例: lecture_vol3_topic_review
+  # → lecture_vol3_topic_review.mp4 を維持)。
+  local clean_prefix="$common_prefix"
+  if [[ "$clean_prefix" =~ '^(.*)[-_]#[a-zA-Z]+$' ]]; then
+    clean_prefix="${match[1]}"
+  fi
+  # 末尾の _ や - を除去 (partN ケース、または上の strip 後の残り)
+  clean_prefix="${clean_prefix%[-_]}"
   if (( ${#clean_prefix} >= 3 )); then
     output_name="${clean_prefix}.mp4"
   else

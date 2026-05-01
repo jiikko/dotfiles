@@ -145,4 +145,60 @@ setopt err_exit
 assert_exit_code "0" "$exit_code" "Mixed NFD/NFC succeeds after normalization"
 assert_contains "$output" "完了" "Reports success for mixed NFD/NFC"
 
+# Test 24a: __concat_extract_number unit test for _#WordN pattern
+printf '\n## Test 24a: __concat_extract_number handles _#WordN\n'
+__concat_extract_number "movie_X_#Ep1"
+if [[ "$REPLY" == "1::movie_X_#Ep" ]]; then
+  printf '✓ _#Ep1 → num=1, prefix=movie_X_#Ep\n'
+else
+  printf '✗ Expected "1::movie_X_#Ep", got "%s"\n' "$REPLY"
+  return 1
+fi
+__concat_extract_number "movie_X_#Sp2"
+if [[ "$REPLY" == "2::movie_X_#Sp" ]]; then
+  printf '✓ _#Sp2 → num=2, prefix=movie_X_#Sp (異ワードは別グループ)\n'
+else
+  printf '✗ Expected "2::movie_X_#Sp", got "%s"\n' "$REPLY"
+  return 1
+fi
+__concat_extract_number "movie_X_#Ep10"
+if [[ "$REPLY" == "10::movie_X_#Ep" ]]; then
+  printf '✓ _#Ep10 → num=10 (multi-digit OK)\n'
+else
+  printf '✗ Expected "10::movie_X_#Ep", got "%s"\n' "$REPLY"
+  return 1
+fi
+# 互換性チェック: 既存パターンが従来通り動くこと
+# partN は専用 branch で "part" を prefix から落とすので prefix=video_
+__concat_extract_number "video_part1"
+if [[ "$REPLY" == "1::video_" ]]; then
+  printf '✓ 互換: _partN は専用 branch で従来通り解釈される (prefix=video_)\n'
+else
+  printf '✗ Backward compat broken for _partN: got "%s"\n' "$REPLY"
+  return 1
+fi
+# SceneN は alpha+num branch で prefix にワードごと取り込む
+__concat_extract_number "video_Scene3"
+if [[ "$REPLY" == "3::video_Scene" ]]; then
+  printf '✓ 互換: _SceneN は alpha+num branch で従来通り解釈される (prefix=video_Scene)\n'
+else
+  printf '✗ Backward compat broken for _SceneN: got "%s"\n' "$REPLY"
+  return 1
+fi
+
+# Test 24: _#WordN 連番パターンの結合 (integration)
+# 出力ファイル名は末尾の _#Ep が剥がれて movie_X.mp4 になる。
+printf '\n## Test 24: _#EpN sequence concat\n'
+TEST_DIR="$TEST_TMP/test24"
+mkdir -p "$TEST_DIR"
+echo "video 1" > "$TEST_DIR/movie_X_#Ep1.mp4"
+echo "video 2" > "$TEST_DIR/movie_X_#Ep2.mp4"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(concat "$TEST_DIR/movie_X_#Ep1.mp4" "$TEST_DIR/movie_X_#Ep2.mp4" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_file_exists "$TEST_DIR/movie_X.mp4" "Output file created for _#EpN sequence (suffix _#Ep stripped)"
+assert_contains "$output" "完了" "Reports success for _#EpN sequence"
+
 printf '\n=== Edge Case Tests Completed ===\n'
