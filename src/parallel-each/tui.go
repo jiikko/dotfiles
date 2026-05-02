@@ -402,19 +402,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch s {
 		case "a":
-			if m.focusSlot == 0 && m.runner != nil && !m.stopping {
-				m.inputMode = true
-				m.inputPrepend = false
-				m.inputBuf = m.inputBuf[:0]
-				m.flashMsg = ""
+			if m.focusSlot == 0 {
+				return m.enterAddInput(false)
 			}
 			return m, nil
 		case "A":
-			if m.focusSlot == 0 && m.runner != nil && !m.stopping {
-				m.inputMode = true
-				m.inputPrepend = true
-				m.inputBuf = m.inputBuf[:0]
-				m.flashMsg = ""
+			if m.focusSlot == 0 {
+				return m.enterAddInput(true)
 			}
 			return m, nil
 		case "p":
@@ -743,13 +737,13 @@ func (m model) View() string {
 		if m.recentFilterMode {
 			b.WriteString(styleKey.Render("  type to filter   enter: apply   esc: clear   ctrl-u: reset"))
 		} else {
-			b.WriteString(styleKey.Render("  ↑/↓ j/k: move   enter: open log   d: forget (allow re-add)   /: filter   esc/r: back"))
+			b.WriteString(styleKey.Render("  ↑/↓ j/k: move   enter: open log   d: forget (allow re-add)   a/A: add   /: filter   esc/r: back"))
 		}
 	} else if m.queueMode {
 		if m.queueFilterMode {
 			b.WriteString(styleKey.Render("  type to filter   enter: apply   esc: clear   ctrl-u: reset"))
 		} else {
-			b.WriteString(styleKey.Render("  ↑/↓ j/k: move   d: remove   /: filter   esc/l: back"))
+			b.WriteString(styleKey.Render("  ↑/↓ j/k: move   d: remove   a/A: add   /: filter   esc/l: back"))
 		}
 	} else if m.focusSlot != 0 {
 		b.WriteString(styleKey.Render("  esc / 0: back   e: open log in $EDITOR   a: add   q: stop"))
@@ -928,6 +922,22 @@ func (m model) renderFocus() string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// enterAddInput switches the model into the add-item prompt. prepend=true
+// matches the uppercase "A" binding (submissions go to the head of the queue).
+// Callable from any non-input modal (overview / recent / queue) — input mode
+// has higher priority in Update, so the recent or queue list stays alive
+// underneath and resumes when the user submits or cancels.
+func (m model) enterAddInput(prepend bool) (tea.Model, tea.Cmd) {
+	if m.runner == nil || m.stopping {
+		return m, nil
+	}
+	m.inputMode = true
+	m.inputPrepend = prepend
+	m.inputBuf = m.inputBuf[:0]
+	m.flashMsg = ""
+	return m, nil
 }
 
 // handleInputKey processes keystrokes while the add-item prompt is active.
@@ -1258,6 +1268,12 @@ func (m model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch msg.String() {
+	case "a":
+		// Stay in the queue view; the input prompt takes priority in Update
+		// and renders as an overlay below the list.
+		return m.enterAddInput(false)
+	case "A":
+		return m.enterAddInput(true)
 	case "esc", "l", "q":
 		m.queueMode = false
 		m.queueFilter = ""
@@ -1348,6 +1364,12 @@ func (m model) handleRecentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
+	case "a":
+		// Stay in the recent view; the input prompt takes priority in Update
+		// and renders as an overlay below the list.
+		return m.enterAddInput(false)
+	case "A":
+		return m.enterAddInput(true)
 	case "esc", "r", "q":
 		m.recentMode = false
 		m.recentList.reset()

@@ -952,6 +952,136 @@ func TestTUIModelQueueView(t *testing.T) {
 	}
 }
 
+// 'a' inside the recent view enters input mode without leaving recentMode,
+// so the user can append a new item while still browsing past completions.
+// After Enter, inputMode closes but recentMode stays open.
+func TestTUIModelRecentViewAddKey(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `sleep 10`}
+	r := NewRunner(cfg, []string{"existing"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+	// Seed one recent entry so 'r' is allowed.
+	m.recent = append(m.recent, recentEntry{
+		JobIndex: 1, Line: "old", ExitCode: 0, Duration: time.Second,
+	})
+	m.height = 30
+
+	// Open recent view.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	m = u.(model)
+	if !m.recentMode {
+		t.Fatal("expected recentMode after 'r'")
+	}
+
+	// 'a' should enter inputMode while keeping recentMode alive.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = u.(model)
+	if !m.inputMode {
+		t.Fatal("expected inputMode after 'a' from recent view")
+	}
+	if !m.recentMode {
+		t.Fatal("recentMode should remain true so the list stays visible")
+	}
+	if m.inputPrepend {
+		t.Fatal("'a' should append (inputPrepend=false)")
+	}
+
+	// Type and submit.
+	for _, ch := range "from-recent" {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		m = u.(model)
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(model)
+	if m.inputMode {
+		t.Fatal("inputMode should close after Enter")
+	}
+	if !m.recentMode {
+		t.Fatal("recentMode should still be true after submitting from recent view")
+	}
+	if m.addedLive != 1 {
+		t.Errorf("addedLive = %d, want 1", m.addedLive)
+	}
+	if r.AddedCount() != 1 {
+		t.Errorf("runner.AddedCount = %d, want 1", r.AddedCount())
+	}
+}
+
+// 'A' inside the queue view enters PREPEND input mode and stays in queueMode.
+// Esc cancels the prompt without closing the queue view.
+func TestTUIModelQueueViewPrependKey(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `sleep 10`}
+	r := NewRunner(cfg, []string{"x", "y"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 2, r.Events(), r, 0)
+	m.height = 30
+
+	// Open queue view.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	m = u.(model)
+	if !m.queueMode {
+		t.Fatal("expected queueMode after 'l'")
+	}
+
+	// 'A' should enter prepend input mode while keeping queueMode alive.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	m = u.(model)
+	if !m.inputMode {
+		t.Fatal("expected inputMode after 'A' from queue view")
+	}
+	if !m.queueMode {
+		t.Fatal("queueMode should remain true while input prompt is overlaid")
+	}
+	if !m.inputPrepend {
+		t.Fatal("'A' should set inputPrepend=true")
+	}
+
+	// Esc cancels the prompt; queueMode survives.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(model)
+	if m.inputMode {
+		t.Fatal("Esc should close inputMode")
+	}
+	if !m.queueMode {
+		t.Fatal("Esc on the input prompt must NOT close the queue view")
+	}
+	if m.addedLive != 0 {
+		t.Errorf("addedLive = %d, want 0 after cancel", m.addedLive)
+	}
+}
+
 // loadHistoricalRecent preloads m.recent from processed result.log entries
 // so the user can see prior runs on startup.
 func TestTUIModelLoadHistoricalRecent(t *testing.T) {
