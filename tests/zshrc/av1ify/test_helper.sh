@@ -117,6 +117,19 @@ exit 0
 EOF
 chmod +x "$MOCK_BIN_DIR/ffprobe"
 
+# trash モック: 受け取った引数を TEST_TRASH_LOG に追記し、対象ファイルを削除する
+# (本物の /usr/bin/trash と違い、Finder の Trash には触らない)
+cat > "$MOCK_BIN_DIR/trash" <<'EOF'
+#!/usr/bin/env sh
+log_file="${TEST_TRASH_LOG:-/dev/null}"
+for arg in "$@"; do
+  printf '%s\n' "$arg" >> "$log_file"
+  [ -e "$arg" ] && rm -f -- "$arg"
+done
+exit 0
+EOF
+chmod +x "$MOCK_BIN_DIR/trash"
+
 # PATH設定
 export PATH="$MOCK_BIN_DIR:$PATH"
 

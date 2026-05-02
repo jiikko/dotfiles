@@ -53,8 +53,12 @@ __av1ify_finalize() {
   if __av1ify_postcheck "$final_out" "$in" "$( [[ -n "$target_fps" ]] && echo 1 || echo 0 )" "$target_height"; then
     final_out="$REPLY"; print -r -- "✅ 完了: $final_out"
     if (( __AV1IFY_DELETE_ORIGIN )) && [[ -f "$in" ]]; then
-      rm -f -- "$in"
-      print -r -- "🗑️ 元ファイル削除: $in"
+      # /usr/bin/trash は -- を end-of-options として扱わないため絶対パスで渡す
+      if command -v trash >/dev/null 2>&1; then
+        trash "${in:A}" && print -r -- "🗑️ 元ファイルをゴミ箱へ移動: $in"
+      else
+        rm -f -- "$in" && print -r -- "🗑️ 元ファイル削除 (trash 未導入のため rm): $in"
+      fi
     fi
     REPLY="$final_out"; return 0
   else

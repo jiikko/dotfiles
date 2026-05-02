@@ -566,31 +566,39 @@ help_output=$(av1ify --help 2>&1)
 assert_contains "$help_output" "--delete-origin-if-success-and-no-ng" "Help message contains --delete-origin-if-success-and-no-ng option"
 assert_contains "$help_output" "--no-delete-origin-if-success-and-no-ng" "Help message contains --no- variant"
 
-# Test 67: --delete-origin-if-success-and-no-ng 有効時、成功で元ファイル削除
-printf '\n## Test 67: Delete origin on success with no NG\n'
+# Test 67: --delete-origin-if-success-and-no-ng 有効時、成功で元ファイルがゴミ箱へ移動
+printf '\n## Test 67: Move origin to Trash on success with no NG\n'
 TEST_DIR="$TEST_TMP/test67"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
+TRASH_LOG="$TEST_TMP/test67.trash.log"
+: > "$TRASH_LOG"
 unsetopt err_exit
-output=$(av1ify --delete-origin-if-success-and-no-ng "$TEST_DIR/input.avi" 2>&1 || true)
+output=$(TEST_TRASH_LOG="$TRASH_LOG" av1ify --delete-origin-if-success-and-no-ng "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
-assert_contains "$output" "元ファイル削除" "Output mentions origin file deletion"
-assert_file_not_exists "$TEST_DIR/input.avi" "Origin file is deleted on success"
+assert_contains "$output" "ゴミ箱へ移動" "Output mentions origin file moved to Trash"
+assert_file_not_exists "$TEST_DIR/input.avi" "Origin file is removed on success"
 assert_file_exists "$TEST_DIR/input-enc.mp4" "Output file exists"
+trash_log_contents="$(<"$TRASH_LOG")"
+assert_contains "$trash_log_contents" "$TEST_DIR/input.avi" "trash command was invoked with origin file path"
 
 # Test 68: デフォルト（オプション無し）では元ファイルを残す
-printf '\n## Test 68: Default does not delete origin\n'
+printf '\n## Test 68: Default does not move origin to Trash\n'
 TEST_DIR="$TEST_TMP/test68"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
+TRASH_LOG="$TEST_TMP/test68.trash.log"
+: > "$TRASH_LOG"
 unsetopt err_exit
-output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+output=$(TEST_TRASH_LOG="$TRASH_LOG" av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
-assert_not_contains "$output" "元ファイル削除" "No deletion message without option"
+assert_not_contains "$output" "🗑️" "No trash/delete message without option"
 assert_file_exists "$TEST_DIR/input.avi" "Origin file is preserved by default"
 assert_file_exists "$TEST_DIR/input-enc.mp4" "Output file exists"
+trash_log_contents="$(<"$TRASH_LOG")"
+assert_not_contains "$trash_log_contents" "input.avi" "trash command was not invoked"
 
 # Test 69: --no-delete-origin-if-success-and-no-ng で明示的に無効化
 printf '\n## Test 69: --no-delete-origin-if-success-and-no-ng disables deletion\n'
@@ -601,11 +609,11 @@ cd "$TEST_DIR"
 unsetopt err_exit
 output=$(av1ify --delete-origin-if-success-and-no-ng --no-delete-origin-if-success-and-no-ng "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
-assert_not_contains "$output" "元ファイル削除" "No deletion when explicitly disabled"
+assert_not_contains "$output" "🗑️" "No trash/delete message when explicitly disabled"
 assert_file_exists "$TEST_DIR/input.avi" "Origin file is preserved when disabled"
 
 # Test 70: postcheck NG時は --delete-origin でも元ファイルを残す
-printf '\n## Test 70: Do not delete origin when postcheck has NG\n'
+printf '\n## Test 70: Do not touch origin when postcheck has NG\n'
 TEST_DIR="$TEST_TMP/test70"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
@@ -614,7 +622,25 @@ unsetopt err_exit
 # コーデック不一致でNG発生させる
 output=$(MOCK_OUTPUT_VCODEC=h264 av1ify --delete-origin-if-success-and-no-ng "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
-assert_not_contains "$output" "元ファイル削除" "No deletion when postcheck NG"
+assert_not_contains "$output" "🗑️" "No trash/delete message when postcheck NG"
 assert_file_exists "$TEST_DIR/input.avi" "Origin file preserved on postcheck NG"
+
+# Test 71: trash には絶対パスが渡される (相対パス入力でも - 始まりのファイル名でも安全)
+printf '\n## Test 71: trash always receives absolute path\n'
+TEST_DIR="$TEST_TMP/test71"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+TRASH_LOG="$TEST_TMP/test71.trash.log"
+: > "$TRASH_LOG"
+unsetopt err_exit
+# 相対パスで渡しても trash には絶対パスで届くこと
+output=$(TEST_TRASH_LOG="$TRASH_LOG" av1ify --delete-origin-if-success-and-no-ng "./input.avi" 2>&1 || true)
+setopt err_exit
+trash_log_contents="$(<"$TRASH_LOG")"
+assert_contains "$trash_log_contents" "$TEST_DIR/input.avi" "trash receives absolute path"
+# 先頭が / で始まる行のみであることを確認 (./input.avi のような相対形は渡されない)
+non_absolute=$(grep -v '^/' "$TRASH_LOG" || true)
+assert_contains "_${non_absolute}_" "__" "No relative path passed to trash"
 
 printf '\n=== Options Tests Completed ===\n'
