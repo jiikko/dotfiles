@@ -42,6 +42,35 @@ __av1ify_pre_repair() {
   fi
 }
 
+# 内部補助: 与えられたパスが属するマウントポイントの filesystem type を返す
+# 例: /Volumes/koji (smbfs マウント) -> "smbfs"
+# 取得できない場合は空文字列
+# macOS の `stat -f "%T"` は file type (ls -F 形式) を返すため使えない。
+# `mount` 出力をパースしてパスにマッチする最長 mount point を選ぶ。
+__av1ify_fs_type_for() {
+  local path="$1"
+  [[ -z "$path" ]] && return 0
+  local mount_bin="mount"
+  command -v "$mount_bin" >/dev/null 2>&1 || mount_bin="/sbin/mount"
+  local line best="" best_len=0 mp
+  while IFS= read -r line; do
+    # フォーマット: "device on /mount/point (fstype, opts...)"
+    mp="${line#* on }"
+    mp="${mp%% \(*}"
+    [[ -z "$mp" ]] && continue
+    if [[ "$path" == "$mp" || "$path" == "$mp/"* || "$mp" == "/" ]]; then
+      if (( ${#mp} > best_len )); then
+        best_len=${#mp}
+        best="$line"
+      fi
+    fi
+  done < <("$mount_bin" 2>/dev/null)
+  local fs="${best##*\(}"
+  fs="${fs%%,*}"
+  fs="${fs%%\)*}"
+  print -r -- "$fs"
+}
+
 # 内部補助: エンコード成功後の後処理（postcheck + 元ファイル削除）
 # 引数: $1=tmp, $2=final_out, $3=in, $4=target_fps, $5=target_height
 # 戻り値: 0=成功, 1=要確認(NG)
@@ -54,11 +83,22 @@ __av1ify_finalize() {
     final_out="$REPLY"; print -r -- "✅ 完了: $final_out"
     if (( __AV1IFY_DELETE_ORIGIN )) && [[ -f "$in" ]]; then
       # /usr/bin/trash は -- を end-of-options として扱わないため絶対パスで渡す
-      if command -v trash >/dev/null 2>&1; then
-        trash "${in:A}" && print -r -- "🗑️ 元ファイルをゴミ箱へ移動: $in"
-      else
-        rm -f -- "$in" && print -r -- "🗑️ 元ファイル削除 (trash 未導入のため rm): $in"
-      fi
+      local in_abs="${in:A}"
+      # ネットワーク FS（smbfs/afpfs/nfs/webdav 等）はゴミ箱を持たないため rm を使う
+      local fs_type
+      fs_type=$(__av1ify_fs_type_for "$in_abs")
+      case "$fs_type" in
+        smbfs|afpfs|nfs|webdav|cifs)
+          rm -f -- "$in_abs" && print -r -- "🗑️ 元ファイル削除 (network volume [$fs_type] のため rm): $in"
+          ;;
+        *)
+          if command -v trash >/dev/null 2>&1; then
+            trash "$in_abs" && print -r -- "🗑️ 元ファイルをゴミ箱へ移動: $in"
+          else
+            rm -f -- "$in_abs" && print -r -- "🗑️ 元ファイル削除 (trash 未導入のため rm): $in"
+          fi
+          ;;
+      esac
     fi
     REPLY="$final_out"; return 0
   else
