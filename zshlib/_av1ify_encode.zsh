@@ -48,8 +48,12 @@ __av1ify_pre_repair() {
 # macOS の `stat -f "%T"` は file type (ls -F 形式) を返すため使えない。
 # `mount` 出力をパースしてパスにマッチする最長 mount point を選ぶ。
 __av1ify_fs_type_for() {
-  local path="$1"
-  [[ -z "$path" ]] && return 0
+  # 注意: zsh では `path` (小文字) は `PATH` (大文字) の配列形 tied parameter なので
+  # `local path=...` で書くと関数内 PATH を引数値で上書きしてしまい、
+  # `command -v` や process substitution での `mount` lookup が壊れる。
+  # 必ず別名 (target_path) を使う。
+  local target_path="$1"
+  [[ -z "$target_path" ]] && return 0
   local mount_bin="mount"
   command -v "$mount_bin" >/dev/null 2>&1 || mount_bin="/sbin/mount"
   local line best="" best_len=0 mp
@@ -58,7 +62,7 @@ __av1ify_fs_type_for() {
     mp="${line#* on }"
     mp="${mp%% \(*}"
     [[ -z "$mp" ]] && continue
-    if [[ "$path" == "$mp" || "$path" == "$mp/"* || "$mp" == "/" ]]; then
+    if [[ "$target_path" == "$mp" || "$target_path" == "$mp/"* || "$mp" == "/" ]]; then
       if (( ${#mp} > best_len )); then
         best_len=${#mp}
         best="$line"

@@ -130,6 +130,18 @@ exit 0
 EOF
 chmod +x "$MOCK_BIN_DIR/trash"
 
+# mount モック: MOCK_MOUNT_OUTPUT があればそれを出力、無ければ実際の mount に委譲
+# `mount` 出力の典型行: "device on /mountpoint (fstype, opts...)"
+cat > "$MOCK_BIN_DIR/mount" <<'EOF'
+#!/usr/bin/env sh
+if [ -n "${MOCK_MOUNT_OUTPUT-}" ]; then
+  printf '%s\n' "$MOCK_MOUNT_OUTPUT"
+  exit 0
+fi
+exec /sbin/mount "$@"
+EOF
+chmod +x "$MOCK_BIN_DIR/mount"
+
 # PATH設定
 export PATH="$MOCK_BIN_DIR:$PATH"
 

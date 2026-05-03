@@ -292,4 +292,75 @@ else
   printf '✗ Should not warn when output codec is av1\n'
 fi
 
+# Test 80: __av1ify_is_nonneg_num — 通常の非負小数を受理
+# 回帰防止: BSD ERE で `\+` を使うと "repetition-operator operand invalid" になる問題
+# (commit 754ce2d の修正: `(\+)?` → `[+]?`) を直接ユニットテスト
+printf '\n## Test 80: __av1ify_is_nonneg_num accepts non-negative decimals\n'
+unsetopt err_exit
+for v in 0 0.5 1 1.5 10 .25 100.0; do
+  err=$(__av1ify_is_nonneg_num "$v" 2>&1)
+  rc=$?
+  if (( rc == 0 )) && [[ -z "$err" ]]; then
+    printf '✓ "%s" is accepted (no stderr)\n' "$v"
+  else
+    printf '✗ "%s" should be accepted (rc=%d, err=%q)\n' "$v" "$rc" "$err"
+  fi
+done
+setopt err_exit
+
+# Test 81: __av1ify_is_nonneg_num — 先頭の `+` を許容（regex 修正の本丸）
+# 修正前は `(\+)?` が BSD ERE で invalid となり、`+` を含まない値ですら
+# stderr に "repetition-operator operand invalid" を毎回吐いていた
+printf '\n## Test 81: __av1ify_is_nonneg_num accepts optional leading +\n'
+unsetopt err_exit
+for v in +0 +0.5 +1 +1.5 +.25; do
+  err=$(__av1ify_is_nonneg_num "$v" 2>&1)
+  rc=$?
+  if (( rc == 0 )) && [[ -z "$err" ]]; then
+    printf '✓ "%s" is accepted (no stderr)\n' "$v"
+  else
+    printf '✗ "%s" should be accepted (rc=%d, err=%q)\n' "$v" "$rc" "$err"
+  fi
+done
+setopt err_exit
+
+# Test 82: __av1ify_is_nonneg_num — 負値や非数値は拒否
+printf '\n## Test 82: __av1ify_is_nonneg_num rejects invalid values\n'
+unsetopt err_exit
+for v in -1 -0.5 abc 1.2.3 '' '+' '.'; do
+  err=$(__av1ify_is_nonneg_num "$v" 2>&1)
+  rc=$?
+  if (( rc != 0 )) && [[ -z "$err" ]]; then
+    printf '✓ "%s" is rejected (no stderr noise)\n' "$v"
+  else
+    printf '✗ "%s" should be rejected silently (rc=%d, err=%q)\n' "$v" "$rc" "$err"
+  fi
+done
+setopt err_exit
+
+# Test 83: 回帰防止 — postcheck 実行時に regex エラーが stderr に漏れない
+# AV1IFY_SYNC_TOLERANCE に正常値を渡した上で、エンコード時のログに
+# "repetition-operator operand invalid" が出ないことを確認
+printf '\n## Test 83: No regex error leaks to stderr during encode\n'
+TEST_DIR="$TEST_TMP/test83"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(AV1IFY_SYNC_TOLERANCE=0.5 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_not_contains "$output" "repetition-operator" "No BSD ERE regex error in encode log"
+assert_not_contains "$output" "operand invalid" "No regex 'operand invalid' message"
+
+# Test 84: 先頭 `+` 付き threshold でも regex エラーが出ない
+printf '\n## Test 84: Leading + threshold does not trigger regex error\n'
+TEST_DIR="$TEST_TMP/test84"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(AV1IFY_SYNC_TOLERANCE=+0.5 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_not_contains "$output" "repetition-operator" "No regex error with '+0.5' threshold"
+
 printf '\n=== Postcheck Tests Completed ===\n'

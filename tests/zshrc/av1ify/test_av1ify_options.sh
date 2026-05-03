@@ -643,4 +643,106 @@ assert_contains "$trash_log_contents" "$TEST_DIR/input.avi" "trash receives abso
 non_absolute=$(grep -v '^/' "$TRASH_LOG" || true)
 assert_contains "_${non_absolute}_" "__" "No relative path passed to trash"
 
+# Test 72: __av1ify_fs_type_for — mount 出力からマッチする最長 mount point を選ぶ
+# 回帰防止: commit adc7823 で導入された fs type 判定ヘルパーのユニットテスト
+printf '\n## Test 72: __av1ify_fs_type_for resolves filesystem type from mount\n'
+unsetopt err_exit
+# 単一マウントポイントのケース
+fs=$(MOCK_MOUNT_OUTPUT="//user@host/share on /tmp/share (smbfs, nodev, nosuid)" \
+  __av1ify_fs_type_for "/tmp/share/sub/file.mp4" 2>&1)
+assert_contains "_${fs}_" "_smbfs_" "smbfs detected for path under smbfs mount"
+
+# afpfs / nfs / webdav も同様に判別
+fs=$(MOCK_MOUNT_OUTPUT="afp_server on /tmp/afp (afpfs, ...)" \
+  __av1ify_fs_type_for "/tmp/afp/x.mp4" 2>&1)
+assert_contains "_${fs}_" "_afpfs_" "afpfs detected"
+
+fs=$(MOCK_MOUNT_OUTPUT="server:/export on /tmp/nfs (nfs, ...)" \
+  __av1ify_fs_type_for "/tmp/nfs/x.mp4" 2>&1)
+assert_contains "_${fs}_" "_nfs_" "nfs detected"
+
+# 最長一致: /tmp と /tmp/share の両方が見える場合は /tmp/share を選ぶ
+mount_out="$(printf '%s\n%s' \
+  "/dev/disk1 on /tmp (apfs, local)" \
+  "//user@host/share on /tmp/share (smbfs, ...)")"
+fs=$(MOCK_MOUNT_OUTPUT="$mount_out" \
+  __av1ify_fs_type_for "/tmp/share/file.mp4" 2>&1)
+assert_contains "_${fs}_" "_smbfs_" "Longest mount-point match wins (smbfs over apfs)"
+
+# 通常のローカルディスク (apfs) は smbfs/afpfs/nfs/webdav/cifs に該当しない
+fs=$(MOCK_MOUNT_OUTPUT="/dev/disk1 on /tmp (apfs, local)" \
+  __av1ify_fs_type_for "/tmp/foo/bar.mp4" 2>&1)
+assert_contains "_${fs}_" "_apfs_" "Local apfs detected (will fall through to trash branch)"
+setopt err_exit
+
+# Test 73: SMB マウント上の元ファイルは trash でなく rm で削除される
+# 回帰防止: ネットワーク FS では `trash` が "volume doesn't have one" で失敗する
+# 注意: av1ify は元ファイルパスを ${in:A} で resolve するため (macOS では
+# /var/folders/... → /private/var/folders/...)、MOCK_MOUNT_OUTPUT 側でも
+# resolve 後のパスをマウントポイントとして渡す必要がある。
+printf '\n## Test 73: SMB mount origin uses rm instead of trash\n'
+TEST_DIR="$TEST_TMP/test73_smb"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+TEST_DIR_RESOLVED="${TEST_DIR:A}"
+TRASH_LOG="$TEST_TMP/test73.trash.log"
+: > "$TRASH_LOG"
+unsetopt err_exit
+output=$(MOCK_MOUNT_OUTPUT="//user@host/share on $TEST_DIR_RESOLVED (smbfs, nodev)" \
+  TEST_TRASH_LOG="$TRASH_LOG" \
+  av1ify --delete-origin-if-success-and-no-ng "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "network volume" "Output mentions network volume rm fallback"
+assert_contains "$output" "smbfs" "Output identifies fs type as smbfs"
+assert_file_not_exists "$TEST_DIR/input.avi" "Origin file is removed via rm"
+trash_log_contents="$(<"$TRASH_LOG")"
+assert_not_contains "$trash_log_contents" "input.avi" "trash command was NOT invoked for smbfs"
+
+# Test 74: AFP / NFS / WebDAV / CIFS も同様に rm 経由
+printf '\n## Test 74: afpfs/nfs/webdav/cifs mounts also use rm\n'
+for fs_type in afpfs nfs webdav cifs; do
+  TEST_DIR="$TEST_TMP/test74_${fs_type}"
+  mkdir -p "$TEST_DIR"
+  echo "dummy video" > "$TEST_DIR/input.avi"
+  cd "$TEST_DIR"
+  TEST_DIR_RESOLVED="${TEST_DIR:A}"
+  TRASH_LOG="$TEST_TMP/test74_${fs_type}.trash.log"
+  : > "$TRASH_LOG"
+  unsetopt err_exit
+  output=$(MOCK_MOUNT_OUTPUT="src on $TEST_DIR_RESOLVED (${fs_type}, opts)" \
+    TEST_TRASH_LOG="$TRASH_LOG" \
+    av1ify --delete-origin-if-success-and-no-ng "$TEST_DIR/input.avi" 2>&1 || true)
+  setopt err_exit
+  if [[ "$output" == *"$fs_type"* ]] && [[ ! -f "$TEST_DIR/input.avi" ]]; then
+    trash_log_contents="$(<"$TRASH_LOG")"
+    if [[ "$trash_log_contents" != *"input.avi"* ]]; then
+      printf '✓ %s: rm path used, trash skipped\n' "$fs_type"
+    else
+      printf '✗ %s: trash should not be invoked\n' "$fs_type"
+    fi
+  else
+    printf '✗ %s: expected rm fallback (output=%s)\n' "$fs_type" "$output"
+  fi
+done
+
+# Test 75: ローカル FS (apfs/hfs) では引き続き trash が使われる
+printf '\n## Test 75: Local apfs mount still uses trash\n'
+TEST_DIR="$TEST_TMP/test75"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+TEST_DIR_RESOLVED="${TEST_DIR:A}"
+TRASH_LOG="$TEST_TMP/test75.trash.log"
+: > "$TRASH_LOG"
+unsetopt err_exit
+output=$(MOCK_MOUNT_OUTPUT="/dev/disk1 on $TEST_DIR_RESOLVED (apfs, local, journaled)" \
+  TEST_TRASH_LOG="$TRASH_LOG" \
+  av1ify --delete-origin-if-success-and-no-ng "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "ゴミ箱へ移動" "Output mentions trash for local apfs"
+assert_not_contains "$output" "network volume" "Output does NOT mention network volume rm"
+trash_log_contents="$(<"$TRASH_LOG")"
+assert_contains "$trash_log_contents" "$TEST_DIR/input.avi" "trash command was invoked for apfs"
+
 printf '\n=== Options Tests Completed ===\n'
