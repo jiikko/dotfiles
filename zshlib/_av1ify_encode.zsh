@@ -91,14 +91,20 @@ __av1ify_finalize() {
       # ネットワーク FS（smbfs/afpfs/nfs/webdav 等）はゴミ箱を持たないため rm を使う
       local fs_type
       fs_type=$(__av1ify_fs_type_for "$in_abs")
+      # trash/rm は Spotlight・Time Machine・iCloud 同期と競合すると
+      # 大きなファイルで数十秒〜分単位ブロックすることがあり「最後でスタック」に見える。
+      # 予告 1 行を出して原因切り分けを容易にする。
       case "$fs_type" in
         smbfs|afpfs|nfs|webdav|cifs)
+          print -r -- ">> 元ファイル削除中 (rm, ${fs_type}): $in"
           rm -f -- "$in_abs" && print -r -- "🗑️ 元ファイル削除 (network volume [$fs_type] のため rm): $in"
           ;;
         *)
           if command -v trash >/dev/null 2>&1; then
+            print -r -- ">> 元ファイルをゴミ箱へ移動中: $in"
             trash "$in_abs" && print -r -- "🗑️ 元ファイルをゴミ箱へ移動: $in"
           else
+            print -r -- ">> 元ファイル削除中 (rm, trash 未導入): $in"
             rm -f -- "$in_abs" && print -r -- "🗑️ 元ファイル削除 (trash 未導入のため rm): $in"
           fi
           ;;
