@@ -99,7 +99,7 @@ __av1ify_finalize() {
   __AV1IFY_CURRENT_TMP=""
   mv -f -- "$tmp" "$final_out"
   if __av1ify_postcheck "$final_out" "$in" "$( [[ -n "$target_fps" ]] && echo 1 || echo 0 )" "$target_height"; then
-    final_out="$REPLY"; print -r -- "✅ 完了: $final_out"
+    final_out="$REPLY"; print -P -- "%F{green}✅ 完了: $final_out%f"
     if (( __AV1IFY_DELETE_ORIGIN )) && [[ -f "$in" ]]; then
       # /usr/bin/trash は -- を end-of-options として扱わないため絶対パスで渡す
       local in_abs="${in:A}"
@@ -112,15 +112,15 @@ __av1ify_finalize() {
       case "$fs_type" in
         smbfs|afpfs|nfs|webdav|cifs)
           print -r -- ">> 元ファイル削除中 (rm, ${fs_type}): $in"
-          rm -f -- "$in_abs" && print -r -- "🗑️ 元ファイル削除 (network volume [$fs_type] のため rm): $in"
+          rm -f -- "$in_abs" && print -P -- "%F{green}🗑️ 元ファイル削除 (network volume [$fs_type] のため rm): $in%f"
           ;;
         *)
           if command -v trash >/dev/null 2>&1; then
             print -r -- ">> 元ファイルをゴミ箱へ移動中: $in"
-            trash "$in_abs" && print -r -- "🗑️ 元ファイルをゴミ箱へ移動: $in"
+            trash "$in_abs" && print -P -- "%F{green}🗑️ 元ファイルをゴミ箱へ移動: $in%f"
           else
             print -r -- ">> 元ファイル削除中 (rm, trash 未導入): $in"
-            rm -f -- "$in_abs" && print -r -- "🗑️ 元ファイル削除 (trash 未導入のため rm): $in"
+            rm -f -- "$in_abs" && print -P -- "%F{green}🗑️ 元ファイル削除 (trash 未導入のため rm): $in%f"
           fi
           ;;
       esac

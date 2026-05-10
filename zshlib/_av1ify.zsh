@@ -125,7 +125,10 @@ __av1ify_run_batch() {
       ng_list+=("${target}"$'\t'"${__AV1IFY_LAST_NG_REASON:-理由不明 (上のログを参照)}")
     fi
   done
-  print -r -- "== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))"
+  # 視認性: NG が無ければ緑 (= 全部 OK で安心), NG があれば黄 (= 下の一覧確認)
+  local sum_color="green"
+  (( ng > 0 )) && sum_color="yellow"
+  print -P -- "%F{${sum_color}}== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))%f"
   if (( ng > 0 )); then
     print -r -- "── NG 一覧 (${ng}件) ──"
     local entry f r
