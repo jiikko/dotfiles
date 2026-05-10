@@ -20,6 +20,9 @@ typeset -g  __AV1IFY_DENOISE=""
 typeset -gi __AV1IFY_COMPACT=0
 typeset -gi __AV1IFY_FORCE=0
 typeset -gi __AV1IFY_DELETE_ORIGIN=0
+# NG 発生時の理由文字列。__av1ify_one / __av1ify_postcheck が return 1 直前に設定し、
+# バッチループ (__av1ify_run_batch) が末尾の NG 一覧で使用する。
+typeset -g  __AV1IFY_LAST_NG_REASON=""
 
 __av1ify_on_interrupt() {
   if (( __AV1IFY_ABORT_REQUESTED )); then
@@ -96,6 +99,44 @@ __av1ify_resolve_resolution() {
   print -r -- "エラー: 無効な解像度: ${input}" >&2
   print -r -- "  有効な値: 480p, 720p, 1080p, 1440p, 4k, または 16-8640 の数値" >&2
   return 1
+}
+
+# 内部補助: バッチ処理ループ + 末尾 NG 一覧の出力
+# 引数: 処理対象ファイル/ディレクトリのパスを位置引数で渡す
+# 出力: 各ファイルの処理ログ + 末尾サマリ + (NG があれば) NG 一覧
+# 戻り値: 0 (中断時のみ 130)
+# 副作用: __AV1IFY_LAST_NG_REASON を反復ごとにクリアする
+__av1ify_run_batch() {
+  local target ok=0 ng=0
+  local -a ng_list=()
+  for target in "$@"; do
+    print -r -- "---- 処理: $target"
+    __AV1IFY_LAST_NG_REASON=""
+    if __AV1IFY_INTERNAL_CALL=1 av1ify "$target"; then
+      ((ok++))
+    else
+      local exit_status=$?
+      if (( exit_status == 130 || __AV1IFY_ABORT_REQUESTED )); then
+        print -r -- "✋ 中断: 残りのファイルをスキップします"
+        return 130
+      fi
+      ((ng++))
+      # TAB を区切りに使い、ファイルパスに改行が混じっても扱えるようにする
+      ng_list+=("${target}"$'\t'"${__AV1IFY_LAST_NG_REASON:-理由不明 (上のログを参照)}")
+    fi
+  done
+  print -r -- "== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))"
+  if (( ng > 0 )); then
+    print -r -- "── NG 一覧 (${ng}件) ──"
+    local entry f r
+    for entry in "${ng_list[@]}"; do
+      f="${entry%%$'\t'*}"
+      r="${entry#*$'\t'}"
+      print -r -- "  ✗ $f"
+      print -r -- "    └─ $r"
+    done
+  fi
+  return 0
 }
 
 av1ify() {
@@ -369,42 +410,14 @@ EOF
       return 0
     fi
 
-    local target ok=0 ng=0
-    for target in "${files[@]}"; do
-      print -r -- "---- 処理: $target"
-      if __AV1IFY_INTERNAL_CALL=1 av1ify "$target"; then
-        ((ok++))
-      else
-        local exit_status=$?
-        if (( exit_status == 130 || __AV1IFY_ABORT_REQUESTED )); then
-          print -r -- "✋ 中断: 残りのファイルをスキップします"
-          return 130
-        fi
-        ((ng++))
-      fi
-    done
-    print -r -- "== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))"
-    return 0
+    __av1ify_run_batch "${files[@]}"
+    return $?
   fi
 
   # 複数の引数がある場合は、それぞれを順番に処理
   if (( $# > 1 )); then
-    local target ok=0 ng=0
-    for target in "$@"; do
-      print -r -- "---- 処理: $target"
-      if __AV1IFY_INTERNAL_CALL=1 av1ify "$target"; then
-        ((ok++))
-      else
-        local exit_status=$?
-        if (( exit_status == 130 || __AV1IFY_ABORT_REQUESTED )); then
-          print -r -- "✋ 中断: 残りのファイルをスキップします"
-          return 130
-        fi
-        ((ng++))
-      fi
-    done
-    print -r -- "== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))"
-    return 0
+    __av1ify_run_batch "$@"
+    return $?
   fi
 
   local target="$1"
@@ -423,22 +436,8 @@ EOF
     if (( ${#files[@]} == 0 )); then
       print -r -- "（対象ファイルなし: $target）"; return 0
     fi
-    local f ok=0 ng=0
     # 各ファイルは av1ify() を通して単体処理ルートを再利用（直列実行）
-    for f in "${files[@]}"; do
-      print -r -- "---- 処理: $f"
-      if __AV1IFY_INTERNAL_CALL=1 av1ify "$f"; then
-        ((ok++))
-      else
-        local exit_status=$?
-        if (( exit_status == 130 || __AV1IFY_ABORT_REQUESTED )); then
-          print -r -- "✋ 中断: 残りのファイルをスキップします"
-          return 130
-        fi
-        ((ng++))
-      fi
-    done
-    print -r -- "== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))"
+    __av1ify_run_batch "${files[@]}"
   else
     __av1ify_one "$target"
   fi

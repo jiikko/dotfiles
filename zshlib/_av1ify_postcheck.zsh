@@ -238,6 +238,7 @@ __av1ify_postcheck() {
     issues_joined=$(printf '%s, ' "${issues[@]}")
     issues_joined="${issues_joined%, }"
     print -r -- "⚠️ チェック警告: $issues_joined"
+    __AV1IFY_LAST_NG_REASON="変換後チェック NG: $issues_joined"
     REPLY="$new_path"
     return 1
   fi

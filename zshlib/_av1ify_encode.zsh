@@ -1,5 +1,20 @@
 # shellcheck shell=bash
 
+# __av1ify_decide_* / __av1ify_auto_crf / __av1ify_build_final_out から
+# 結果を返却するためのグローバル。__av1ify_one が各反復で初期化する。
+# REPLY を 1 つだけ使う関数 (__av1ify_pre_repair, __av1ify_auto_crf,
+# __av1ify_build_final_out, __av1ify_finalize) は REPLY を使い、
+# 複数値を返す関数だけ専用グローバルを使う。
+typeset -g __AV1IFY_R_HEIGHT=""
+typeset -g __AV1IFY_R_RES_TAG=""
+typeset -g __AV1IFY_R_FPS=""
+typeset -g __AV1IFY_R_FPS_TAG=""
+typeset -g __AV1IFY_R_DENOISE_VF=""
+typeset -g __AV1IFY_R_DENOISE_TAG=""
+typeset -g __AV1IFY_R_AAC_BITRATE=""
+typeset -g __AV1IFY_R_AAC_SRC_BPS=""
+typeset -gi __AV1IFY_R_AAC_CAPPED=0
+
 # 内部補助: 事前リペア（コンテナ/インデックス修復のためのストリームコピー）
 # 入力: $1=元ファイルパス
 # 出力: REPLY=リペア後パス（成功時は <stem>-repaired.<ext>、失敗/スキップ時は元パス）
@@ -114,6 +129,211 @@ __av1ify_finalize() {
   else
     final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"
     REPLY="$final_out"; return 1
+  fi
+}
+
+# 内部補助: 解像度オプションを目標 height + 命名タグに解決する
+# 引数: $1 = validated_resolution (空可), $2 = source_short_side (空可), $3 = in (エラー表示用)
+# 出力: __AV1IFY_R_HEIGHT, __AV1IFY_R_RES_TAG (アップスケール防止スキップ時は空)
+# 戻り値: 0=成功, 1=ソース解像度が取得できず変換中止すべき
+__av1ify_decide_resolution() {
+  local validated="$1" short_side="$2" in="$3"
+  __AV1IFY_R_HEIGHT=""
+  __AV1IFY_R_RES_TAG=""
+  [[ -z "$validated" ]] && return 0
+
+  case "${validated:l}" in
+    480p)  __AV1IFY_R_HEIGHT=480;  __AV1IFY_R_RES_TAG="480p" ;;
+    720p)  __AV1IFY_R_HEIGHT=720;  __AV1IFY_R_RES_TAG="720p" ;;
+    1080p) __AV1IFY_R_HEIGHT=1080; __AV1IFY_R_RES_TAG="1080p" ;;
+    1440p) __AV1IFY_R_HEIGHT=1440; __AV1IFY_R_RES_TAG="1440p" ;;
+    4k)    __AV1IFY_R_HEIGHT=2160; __AV1IFY_R_RES_TAG="4k" ;;
+    *)
+      __AV1IFY_R_HEIGHT="$validated"
+      __AV1IFY_R_RES_TAG="${validated}p"
+      ;;
+  esac
+  print -P -- "%F{cyan}>> 出力解像度: ${__AV1IFY_R_RES_TAG} (height=${__AV1IFY_R_HEIGHT})%f"
+
+  # アップスケール防止: ソース解像度が必須
+  if [[ -z "$short_side" ]]; then
+    print -r -- "❌ 解像度変更が指定されていますが、ソース映像の解像度を取得できませんでした: $in"
+    return 1
+  fi
+  if (( short_side <= __AV1IFY_R_HEIGHT )); then
+    print -P -- "%F{yellow}>> 元の短辺 (${short_side}px) が指定解像度 (${__AV1IFY_R_RES_TAG}) 以下のため、解像度変更をスキップします%f"
+    __AV1IFY_R_HEIGHT=""
+    __AV1IFY_R_RES_TAG=""
+  fi
+  return 0
+}
+
+# 内部補助: fps オプションを target_fps + 命名タグに解決する (キャップ動作)
+# 引数: $1 = validated_fps (空可), $2 = in
+# 出力: __AV1IFY_R_FPS, __AV1IFY_R_FPS_TAG (キャップ時は両方空)
+__av1ify_decide_fps() {
+  local validated="$1" in="$2"
+  __AV1IFY_R_FPS=""
+  __AV1IFY_R_FPS_TAG=""
+  [[ -z "$validated" ]] && return 0
+
+  local source_fps_raw source_fps_val=""
+  source_fps_raw=$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate \
+           -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
+  if [[ -n "$source_fps_raw" ]]; then
+    # r_frame_rate は "30000/1001" のような分数形式
+    source_fps_val=$(awk -v fps="$source_fps_raw" 'BEGIN {
+      n = split(fps, a, "/")
+      if (n == 2 && a[2]+0 > 0) printf "%.3f", a[1] / a[2]
+      else printf "%.3f", a[1]+0
+    }')
+  fi
+  if [[ -n "$source_fps_val" ]]; then
+    local fps_skip
+    fps_skip=$(awk -v src="$source_fps_val" -v tgt="$validated" 'BEGIN { print (src <= tgt) ? 1 : 0 }')
+    if (( fps_skip )); then
+      print -P -- "%F{yellow}>> ソースfps (${source_fps_val}) が ${validated}fps 以下のため、fps変更をスキップ%f"
+      return 0
+    fi
+    __AV1IFY_R_FPS="$validated"
+    __AV1IFY_R_FPS_TAG="${validated}fps"
+    print -P -- "%F{cyan}>> 出力フレームレート: ${source_fps_val}fps → ${validated}fps%f"
+  else
+    __AV1IFY_R_FPS="$validated"
+    __AV1IFY_R_FPS_TAG="${validated}fps"
+    print -P -- "%F{cyan}>> 出力フレームレート: ${validated}fps (ソースfps取得失敗)%f"
+  fi
+  return 0
+}
+
+# 内部補助: ノイズ除去レベルから vf 部品と命名タグを返す
+# 引数: $1 = validated_denoise (light/medium/strong/空)
+# 出力: __AV1IFY_R_DENOISE_VF, __AV1IFY_R_DENOISE_TAG (無効値/空入力なら両方空)
+__av1ify_decide_denoise() {
+  __AV1IFY_R_DENOISE_VF=""
+  __AV1IFY_R_DENOISE_TAG=""
+  case "$1" in
+    light)
+      __AV1IFY_R_DENOISE_VF="hqdn3d=2:2:3:3"
+      __AV1IFY_R_DENOISE_TAG="dn1"
+      print -P -- "%F{cyan}>> ノイズ除去: light (hqdn3d=2:2:3:3)%f"
+      ;;
+    medium)
+      __AV1IFY_R_DENOISE_VF="hqdn3d=4:4:6:6"
+      __AV1IFY_R_DENOISE_TAG="dn2"
+      print -P -- "%F{cyan}>> ノイズ除去: medium (hqdn3d=4:4:6:6)%f"
+      ;;
+    strong)
+      __AV1IFY_R_DENOISE_VF="hqdn3d=6:6:9:9"
+      __AV1IFY_R_DENOISE_TAG="dn3"
+      print -P -- "%F{cyan}>> ノイズ除去: strong (hqdn3d=6:6:9:9)%f"
+      ;;
+  esac
+}
+
+# 内部補助: 出力解像度に応じた CRF を自動選択 (AV1_CRF 環境変数があれば優先)
+# 引数: $1 = target_height (空可), $2 = source_short_side (空可), $3 = in (ffprobe フォールバック)
+# 出力: REPLY = crf 値
+__av1ify_auto_crf() {
+  local target_height="$1" source_short_side="$2" in="$3"
+  if [[ -n "${AV1_CRF:-}" ]]; then
+    REPLY="$AV1_CRF"
+    return 0
+  fi
+  # CRF判定に使う解像度（出力解像度優先、なければソース短辺、最終手段でffprobe height）
+  local height_for_crf
+  if [[ -n "$target_height" ]]; then
+    height_for_crf="$target_height"
+  elif [[ -n "$source_short_side" ]]; then
+    height_for_crf="$source_short_side"
+  else
+    height_for_crf=$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
+             -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
+  fi
+  if [[ -n "$height_for_crf" && "$height_for_crf" =~ ^[0-9]+$ ]]; then
+    local crf
+    if (( height_for_crf <= 480 )); then
+      crf=40   # SD
+    elif (( height_for_crf <= 720 )); then
+      crf=40   # HD 720p
+    elif (( height_for_crf <= 1080 )); then
+      crf=45   # Full HD 1080p
+    elif (( height_for_crf <= 1440 )); then
+      crf=50   # 2K
+    else
+      crf=54   # 4K以上
+    fi
+    print -P -- "%F{cyan}>> 解像度: ${height_for_crf}p → CRF=$crf を自動設定%f"
+    REPLY="$crf"
+  else
+    REPLY=40   # デフォルト
+    print -r -- "⚠️ 解像度取得失敗 → CRF=40（デフォルト）"
+  fi
+}
+
+# 内部補助: AAC ターゲットビットレートをソースビットレートでキャップする
+# (ソース < target なら最低 32k 〜 ソース値、ソース ≥ target もしくは取得不能なら desired のまま)
+# 引数: $1=in (ffprobe 用), $2=desired (例: "96k")
+# 出力: __AV1IFY_R_AAC_BITRATE = キャップ後の値
+#       __AV1IFY_R_AAC_SRC_BPS = 取得できたソースビットレート (取得失敗なら空)
+#       __AV1IFY_R_AAC_CAPPED  = 1 ならキャップ発生 (呼び出し側のメッセージ分岐用)
+__av1ify_cap_aac_bitrate() {
+  local in="$1" desired="$2"
+  __AV1IFY_R_AAC_BITRATE="$desired"
+  __AV1IFY_R_AAC_SRC_BPS=""
+  __AV1IFY_R_AAC_CAPPED=0
+
+  local src_abitrate
+  src_abitrate=$(ffprobe -v error -select_streams a:0 -show_entries stream=bit_rate \
+                 -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
+  [[ -z "$src_abitrate" || ! "$src_abitrate" =~ ^[0-9]+$ ]] && return 0
+  __AV1IFY_R_AAC_SRC_BPS="$src_abitrate"
+
+  local target_bps
+  case "$desired" in
+    *[kK]) target_bps=$(( ${desired%[kK]} * 1000 )) ;;
+    *) target_bps="$desired" ;;
+  esac
+  if (( src_abitrate < target_bps )); then
+    local capped_kbps=$(( src_abitrate / 1000 ))
+    (( capped_kbps < 32 )) && capped_kbps=32
+    __AV1IFY_R_AAC_BITRATE="${capped_kbps}k"
+    __AV1IFY_R_AAC_CAPPED=1
+  fi
+}
+
+# 内部補助: 命名規則 <stem>[-解像度][-fps][-denoise][-aac{br}][-auderr]-enc.mp4 から
+# 最終出力ファイル名を組み立てる
+# 引数: $1=stem, $2=resolution_tag, $3=fps_tag, $4=denoise_tag,
+#        $5=did_aac (0/1), $6=aac_bitrate_resolved, $7=audio_param_error (0/1)
+# 出力: REPLY = 最終出力ファイル名
+__av1ify_build_final_out() {
+  local stem="$1"
+  local resolution_tag="$2" fps_tag="$3" denoise_tag="$4"
+  local did_aac="$5" aac_bitrate_resolved="$6" audio_param_error="$7"
+
+  local name_suffix=""
+  [[ -n "$resolution_tag" ]] && name_suffix+="-${resolution_tag}"
+  [[ -n "$fps_tag" ]]        && name_suffix+="-${fps_tag}"
+  [[ -n "$denoise_tag" ]]    && name_suffix+="-${denoise_tag}"
+  if (( did_aac )); then
+    local br="${aac_bitrate_resolved:l}" tag
+    if [[ "$br" == *k ]]; then
+      tag="$br"
+    elif [[ "$br" =~ ^[0-9]+$ ]]; then
+      local kb=$(( (br + 500) / 1000 ))
+      tag="${kb}k"
+    else
+      tag="$br"
+    fi
+    name_suffix+="-aac${tag}"
+  fi
+  (( audio_param_error )) && name_suffix+="-auderr"
+
+  if [[ -n "$name_suffix" ]]; then
+    REPLY="${stem}${name_suffix}-enc.mp4"
+  else
+    REPLY="${stem}-enc.mp4"
   fi
 }
 
@@ -233,7 +453,11 @@ __av1ify_one() {
     done
   fi
 
-  [[ ! -f "$in" ]] && { print -r -- "✗ ファイルが無い: $in"; return 1; }
+  [[ ! -f "$in" ]] && {
+    print -r -- "✗ ファイルが無い: $in"
+    __AV1IFY_LAST_NG_REASON="ファイルが見つからない"
+    return 1
+  }
 
   # 古い in_progress が残っていたら掃除（ドライラン時は触らない）
   if [[ -e "$tmp" ]]; then
@@ -249,6 +473,7 @@ __av1ify_one() {
   local vcodec="libsvtav1"
   if ! ffmpeg -hide_banner -h encoder=libsvtav1 >/dev/null 2>&1; then
     print -r -- "❌ libsvtav1 が利用できません。ffmpeg を libsvtav1 付きでビルドしてください。"
+    __AV1IFY_LAST_NG_REASON="libsvtav1 が利用不可 (ffmpeg を再ビルドしてください)"
     return 1
   fi
 
@@ -297,113 +522,27 @@ __av1ify_one() {
       print -P -- "❌ %F{red}%B入力ファイルが破損しています%b%f: ${in:t}" >&2
       print -P -- "   %F{red}$REPLY%f" >&2
       print -r -- "   → エンコードをスキップします（--force で強制続行可能）" >&2
+      __AV1IFY_LAST_NG_REASON="入力ファイル破損: $REPLY"
       return 1
     fi
   fi
 
-  # 解像度オプションの解析（縦解像度を数値に変換）
-  # バリデーション済みの値を使用
-  local target_height="" resolution_tag=""
-  if [[ -n "$validated_resolution" ]]; then
-    case "${validated_resolution:l}" in
-      480p)  target_height=480;  resolution_tag="480p" ;;
-      720p)  target_height=720;  resolution_tag="720p" ;;
-      1080p) target_height=1080; resolution_tag="1080p" ;;
-      1440p) target_height=1440; resolution_tag="1440p" ;;
-      4k)    target_height=2160; resolution_tag="4k" ;;
-      *)
-        target_height="$validated_resolution"
-        resolution_tag="${validated_resolution}p"
-        ;;
-    esac
-    print -P -- "%F{cyan}>> 出力解像度: ${resolution_tag} (height=${target_height})%f"
+  # 解像度オプション解析 + アップスケール防止
+  if ! __av1ify_decide_resolution "$validated_resolution" "$source_short_side" "$in"; then
+    __AV1IFY_LAST_NG_REASON="ソース解像度を取得できない (アップスケール防止のため中止)"
+    return 1
   fi
+  local target_height="$__AV1IFY_R_HEIGHT" resolution_tag="$__AV1IFY_R_RES_TAG"
 
-  # アップスケール防止: 解像度オプション指定時にソース解像度が必須
-  if [[ -n "$target_height" ]]; then
-    if [[ -z "$source_short_side" ]]; then
-      print -r -- "❌ 解像度変更が指定されていますが、ソース映像の解像度を取得できませんでした: $in"
-      return 1
-    fi
-    if (( source_short_side <= target_height )); then
-      print -P -- "%F{yellow}>> 元の短辺 (${source_short_side}px) が指定解像度 (${resolution_tag}) 以下のため、解像度変更をスキップします%f"
-      target_height=""
-      resolution_tag=""
-    fi
-  fi
+  # fps オプション解析 (キャップ動作: ソース ≤ target なら変更しない)
+  __av1ify_decide_fps "$validated_fps" "$in"
+  target_fps="$__AV1IFY_R_FPS"
+  local fps_tag="$__AV1IFY_R_FPS_TAG"
 
-  # fps オプションの解析（バリデーション済みの値を使用）
-  # ソースfpsがtarget以下なら変更しない（キャップ動作）
-  local fps_tag=""
-  if [[ -n "$validated_fps" ]]; then
-    local source_fps_raw source_fps_val=""
-    source_fps_raw=$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate \
-             -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
-    if [[ -n "$source_fps_raw" ]]; then
-      # r_frame_rate は "30000/1001" のような分数形式
-      source_fps_val=$(awk -v fps="$source_fps_raw" 'BEGIN {
-        n = split(fps, a, "/")
-        if (n == 2 && a[2]+0 > 0) printf "%.3f", a[1] / a[2]
-        else printf "%.3f", a[1]+0
-      }')
-    fi
-    if [[ -n "$source_fps_val" ]]; then
-      local fps_skip
-      fps_skip=$(awk -v src="$source_fps_val" -v tgt="$validated_fps" 'BEGIN { print (src <= tgt) ? 1 : 0 }')
-      if (( fps_skip )); then
-        print -P -- "%F{yellow}>> ソースfps (${source_fps_val}) が ${validated_fps}fps 以下のため、fps変更をスキップ%f"
-        target_fps=""
-      else
-        target_fps="$validated_fps"
-        fps_tag="${validated_fps}fps"
-        print -P -- "%F{cyan}>> 出力フレームレート: ${source_fps_val}fps → ${validated_fps}fps%f"
-      fi
-    else
-      target_fps="$validated_fps"
-      fps_tag="${validated_fps}fps"
-      print -P -- "%F{cyan}>> 出力フレームレート: ${validated_fps}fps (ソースfps取得失敗)%f"
-    fi
-  else
-    target_fps=""
-  fi
-
-  # 解像度を取得して CRF を自動調整（環境変数が優先）
-  # 出力解像度が指定されている場合はそれを基準にする
-  local crf preset
-  if [[ -n "${AV1_CRF:-}" ]]; then
-    crf="$AV1_CRF"
-  else
-    # CRF判定に使う解像度（出力解像度優先、なければソース短辺、最終手段でffprobe height）
-    local height_for_crf
-    if [[ -n "$target_height" ]]; then
-      height_for_crf="$target_height"
-    elif [[ -n "$source_short_side" ]]; then
-      height_for_crf="$source_short_side"
-    else
-      height_for_crf=$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
-               -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
-    fi
-
-    if [[ -n "$height_for_crf" && "$height_for_crf" =~ ^[0-9]+$ ]]; then
-      # 解像度に応じて CRF を設定
-      if (( height_for_crf <= 480 )); then
-        crf=40  # SD:
-      elif (( height_for_crf <= 720 )); then
-        crf=40  # HD 720p
-      elif (( height_for_crf <= 1080 )); then
-        crf=45  # Full HD 1080p
-      elif (( height_for_crf <= 1440 )); then
-        crf=50  # 2K
-      else
-        crf=54  # 4K以上
-      fi
-      print -P -- "%F{cyan}>> 解像度: ${height_for_crf}p → CRF=$crf を自動設定%f"
-    else
-      crf=40  # デフォルト
-      print -r -- "⚠️ 解像度取得失敗 → CRF=$crf（デフォルト）"
-    fi
-  fi
-  preset="${AV1_PRESET:-5}"
+  # CRF 自動選択 (AV1_CRF が指定されていればそちらが優先)
+  __av1ify_auto_crf "$target_height" "$source_short_side" "$in"
+  local crf="$REPLY"
+  local preset="${AV1_PRESET:-5}"
 
   # 音声コーデック事前判定（a:0 が無ければ空）
   local acodec
@@ -452,27 +591,10 @@ __av1ify_one() {
 
   # ビデオフィルタの構築（縦長動画は短辺=width にスケーリング）
   local -a vf_parts=()
-  local denoise_tag=""
   # ノイズ除去フィルタ（hqdn3d）を最初に適用
-  if [[ -n "$validated_denoise" ]]; then
-    case "$validated_denoise" in
-      light)
-        vf_parts+=("hqdn3d=2:2:3:3")
-        denoise_tag="dn1"
-        print -P -- "%F{cyan}>> ノイズ除去: light (hqdn3d=2:2:3:3)%f"
-        ;;
-      medium)
-        vf_parts+=("hqdn3d=4:4:6:6")
-        denoise_tag="dn2"
-        print -P -- "%F{cyan}>> ノイズ除去: medium (hqdn3d=4:4:6:6)%f"
-        ;;
-      strong)
-        vf_parts+=("hqdn3d=6:6:9:9")
-        denoise_tag="dn3"
-        print -P -- "%F{cyan}>> ノイズ除去: strong (hqdn3d=6:6:9:9)%f"
-        ;;
-    esac
-  fi
+  __av1ify_decide_denoise "$validated_denoise"
+  local denoise_tag="$__AV1IFY_R_DENOISE_TAG"
+  [[ -n "$__AV1IFY_R_DENOISE_VF" ]] && vf_parts+=("$__AV1IFY_R_DENOISE_VF")
   if [[ -n "$target_height" ]]; then
     if (( source_is_portrait )); then
       vf_parts+=("scale=${target_height}:-2")
@@ -547,22 +669,11 @@ __av1ify_one() {
       print -r -- "⚠️ 音声パラメータ取得失敗のため copy にフォールバック (codec=$acodec)"
     fi
     if (( ! audio_param_error )); then
-      aac_bitrate_resolved="${AV1_AAC_BITRATE:-96k}"
-      # ソースビットレートを取得してアップスケール防止
-      local src_abitrate_raw
-      src_abitrate_raw=$(ffprobe -v error -select_streams a:0 -show_entries stream=bit_rate \
-                         -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
-      if [[ -n "$src_abitrate_raw" && "$src_abitrate_raw" =~ ^[0-9]+$ ]]; then
-        # target bitrate を bps に変換して比較
-        local target_bps
-        case "$aac_bitrate_resolved" in
-          *[kK]) target_bps=$(( ${aac_bitrate_resolved%[kK]} * 1000 )) ;;
-          *) target_bps="$aac_bitrate_resolved" ;;
-        esac
-        if (( src_abitrate_raw < target_bps )); then
-          local capped_kbps=$(( src_abitrate_raw / 1000 ))
-          (( capped_kbps < 32 )) && capped_kbps=32
-          aac_bitrate_resolved="${capped_kbps}k"
+      __av1ify_cap_aac_bitrate "$in" "${AV1_AAC_BITRATE:-96k}"
+      aac_bitrate_resolved="$__AV1IFY_R_AAC_BITRATE"
+      local src_abitrate_raw="$__AV1IFY_R_AAC_SRC_BPS"
+      if [[ -n "$src_abitrate_raw" ]]; then
+        if (( __AV1IFY_R_AAC_CAPPED )); then
           print -P -- "%F{cyan}>> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps, アップスケール防止)%f"
         else
           print -P -- "%F{cyan}>> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps)%f"
@@ -576,36 +687,9 @@ __av1ify_one() {
   fi
 
   # 予定される最終出力ファイル
-  # 命名規則: <stem>[-解像度][-fps][-denoise][-aac{br}][-auderr]-enc.mp4
-  local final_out="$out"
-  local name_suffix=""
-  if [[ -n "$resolution_tag" ]]; then
-    name_suffix+="-${resolution_tag}"
-  fi
-  if [[ -n "$fps_tag" ]]; then
-    name_suffix+="-${fps_tag}"
-  fi
-  if [[ -n "$denoise_tag" ]]; then
-    name_suffix+="-${denoise_tag}"
-  fi
-  if (( did_aac )); then
-    local br="${aac_bitrate_resolved:l}" tag
-    if [[ "$br" == *k ]]; then
-      tag="$br"
-    elif [[ "$br" =~ ^[0-9]+$ ]]; then
-      local kb; (( kb = (br + 500) / 1000 ))
-      tag="${kb}k"
-    else
-      tag="$br"
-    fi
-    name_suffix+="-aac${tag}"
-  fi
-  if (( audio_param_error )); then
-    name_suffix+="-auderr"
-  fi
-  if [[ -n "$name_suffix" ]]; then
-    final_out="${stem}${name_suffix}-enc.mp4"
-  fi
+  __av1ify_build_final_out "$stem" "$resolution_tag" "$fps_tag" "$denoise_tag" \
+    "$did_aac" "$aac_bitrate_resolved" "$audio_param_error"
+  local final_out="$REPLY"
 
   # 既存チェック（過去の出力があればスキップ）
   if [[ -e "$final_out" || -e "$out" ]]; then
@@ -639,53 +723,18 @@ __av1ify_one() {
     if (( use_copy )); then
       if (( audio_param_error )); then
         print -r -- "❌ 音声copy失敗 & パラメータ不明のため再試行不可: $in"
+        __AV1IFY_LAST_NG_REASON="音声copy失敗 (音声パラメータ取得不能で AAC 再試行も不可)"
         return 1
       fi
       print -r -- "⚠️ 音声copy失敗 → AAC再エンコードで再試行"
-      aac_bitrate_resolved="${AV1_AAC_BITRATE:-96k}"
-      # アップスケール防止: ソースビットレートが target 未満ならキャップ
-      local src_abitrate_retry
-      src_abitrate_retry=$(ffprobe -v error -select_streams a:0 -show_entries stream=bit_rate \
-                           -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
-      if [[ -n "$src_abitrate_retry" && "$src_abitrate_retry" =~ ^[0-9]+$ ]]; then
-        local target_bps_retry
-        case "$aac_bitrate_resolved" in
-          *[kK]) target_bps_retry=$(( ${aac_bitrate_resolved%[kK]} * 1000 )) ;;
-          *) target_bps_retry="$aac_bitrate_resolved" ;;
-        esac
-        if (( src_abitrate_retry < target_bps_retry )); then
-          local capped_kbps_retry=$(( src_abitrate_retry / 1000 ))
-          (( capped_kbps_retry < 32 )) && capped_kbps_retry=32
-          aac_bitrate_resolved="${capped_kbps_retry}k"
-        fi
-      fi
+      __av1ify_cap_aac_bitrate "$in" "${AV1_AAC_BITRATE:-96k}"
+      aac_bitrate_resolved="$__AV1IFY_R_AAC_BITRATE"
       args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac "$aac_ac" -ar "$aac_ar")
       did_aac=1
-      # 再計算: 最終出力名（解像度/fpsタグを維持）
-      local br="${aac_bitrate_resolved:l}" tag
-      if [[ "$br" == *k ]]; then
-        tag="$br"
-      elif [[ "$br" =~ ^[0-9]+$ ]]; then
-        local kb; (( kb = (br + 500) / 1000 ))
-        tag="${kb}k"
-      else
-        tag="$br"
-      fi
-      name_suffix=""
-      if [[ -n "$resolution_tag" ]]; then
-        name_suffix+="-${resolution_tag}"
-      fi
-      if [[ -n "$fps_tag" ]]; then
-        name_suffix+="-${fps_tag}"
-      fi
-      if [[ -n "$denoise_tag" ]]; then
-        name_suffix+="-${denoise_tag}"
-      fi
-      name_suffix+="-aac${tag}"
-      if (( audio_param_error )); then
-        name_suffix+="-auderr"
-      fi
-      final_out="${stem}${name_suffix}-enc.mp4"
+      # 再計算: 最終出力名（解像度/fpsタグを維持しつつ aac ビットレート反映）
+      __av1ify_build_final_out "$stem" "$resolution_tag" "$fps_tag" "$denoise_tag" \
+        "$did_aac" "$aac_bitrate_resolved" "$audio_param_error"
+      final_out="$REPLY"
 
       __AV1IFY_CURRENT_TMP="$tmp"
       if ffmpeg "${args_common[@]}" "${args_audio[@]}" -- "$tmp"; then
@@ -708,5 +757,10 @@ __av1ify_one() {
 
   __AV1IFY_CURRENT_TMP=""
   print -r -- "❌ 失敗: $in"
+  # ffmpeg 失敗ルートでは postcheck が走っていないので reason は基本的に空。
+  # 下流が既に値をセットしているケースに備えて空のときだけデフォルトを書く。
+  if [[ -z "$__AV1IFY_LAST_NG_REASON" ]]; then
+    __AV1IFY_LAST_NG_REASON="ffmpeg エンコード失敗 (詳細はログを参照)"
+  fi
   return 1
 }
