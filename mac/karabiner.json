@@ -1399,6 +1399,29 @@
                         ]
                     },
                     {
+                        "description": "disable command + l for Finder(誤爆対策, Chromeでは無効化しない)",
+                        "manipulators": [
+                            {
+                                "conditions": [
+                                    {
+                                        "bundle_identifiers": [
+                                            "^com\\.apple\\.finder$"
+                                        ],
+                                        "type": "frontmost_application_if"
+                                    }
+                                ],
+                                "from": {
+                                    "key_code": "l",
+                                    "modifiers": {
+                                        "mandatory": ["command"],
+                                        "optional": ["caps_lock"]
+                                    }
+                                },
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
                         "description": "command-p twice",
                         "manipulators": [
                             {
