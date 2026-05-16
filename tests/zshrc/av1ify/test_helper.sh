@@ -85,9 +85,36 @@ elif echo "$*" | grep -q "format=duration"; then
     *) echo "${MOCK_FORMAT_DURATION-10.0}" ;;
   esac
 elif echo "$*" | grep -q "select_streams v:0" && echo "$*" | grep -q "duration"; then
-  echo "${MOCK_VIDEO_DURATION-10.0}"
+  # ソース vs 出力で別の値を返せるよう -enc を含むファイルは出力扱い
+  last_arg=""
+  for arg in "$@"; do last_arg="$arg"; done
+  case "$last_arg" in
+    *-enc*|*check_ng*) echo "${MOCK_OUTPUT_VIDEO_DURATION-${MOCK_VIDEO_DURATION-10.0}}" ;;
+    *) echo "${MOCK_VIDEO_DURATION-10.0}" ;;
+  esac
 elif echo "$*" | grep -q "select_streams a:0" && echo "$*" | grep -q "duration"; then
-  echo "${MOCK_AUDIO_DURATION-10.0}"
+  last_arg=""
+  for arg in "$@"; do last_arg="$arg"; done
+  case "$last_arg" in
+    *-enc*|*check_ng*) echo "${MOCK_OUTPUT_AUDIO_DURATION-${MOCK_AUDIO_DURATION-10.0}}" ;;
+    *) echo "${MOCK_AUDIO_DURATION-10.0}" ;;
+  esac
+elif echo "$*" | grep -q "packet=pts_time"; then
+  # __av1ify_get_stream_end フォールバック用: 末尾 PTS だけ返す
+  # 本物の ffprobe は何百万行も出すが、テストでは tail 相当の最後 1 行で十分
+  last_arg=""
+  for arg in "$@"; do last_arg="$arg"; done
+  if echo "$*" | grep -q "select_streams v"; then
+    case "$last_arg" in
+      *-enc*|*check_ng*) echo "${MOCK_OUTPUT_VIDEO_LAST_PTS-${MOCK_VIDEO_LAST_PTS-${MOCK_VIDEO_DURATION-10.0}}}" ;;
+      *) echo "${MOCK_VIDEO_LAST_PTS-${MOCK_VIDEO_DURATION-10.0}}" ;;
+    esac
+  elif echo "$*" | grep -q "select_streams a"; then
+    case "$last_arg" in
+      *-enc*|*check_ng*) echo "${MOCK_OUTPUT_AUDIO_LAST_PTS-${MOCK_AUDIO_LAST_PTS-${MOCK_AUDIO_DURATION-10.0}}}" ;;
+      *) echo "${MOCK_AUDIO_LAST_PTS-${MOCK_AUDIO_DURATION-10.0}}" ;;
+    esac
+  fi
 elif echo "$*" | grep -q "duration"; then
   echo "10.0"
 elif echo "$*" | grep -q "avg_frame_rate"; then

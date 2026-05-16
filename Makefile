@@ -31,6 +31,7 @@ test-zshrc:
 	@tests/zshrc/av1ify/test_av1ify_force.sh
 	@tests/zshrc/av1ify/test_av1ify_ng_list.sh
 	@tests/zshrc/av1ify/test_av1ify_prefetch.sh
+	@tests/zshrc/av1ify/test_av1ify_avsync.sh
 	@tests/zshrc/concat/test_concat_basic.sh
 	@tests/zshrc/concat/test_concat_edge.sh
 	@tests/zshrc/concat/test_concat_missing.sh
