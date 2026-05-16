@@ -3,7 +3,7 @@
 # av1ify — 入力された動画ファイル、またはディレクトリ内の動画ファイルをAV1形式のMP4に一括変換します。
 # ------------------------------------------------------------------------------
 
-__AV1IFY_VERSION="1.6.1"
+__AV1IFY_VERSION="1.6.2"
 __AV1IFY_SPEC_VERSION="1.6.0"
 
 # 内部補助: バナー出力
@@ -23,12 +23,49 @@ typeset -gi __AV1IFY_DELETE_ORIGIN=0
 # NG 発生時の理由文字列。__av1ify_one / __av1ify_postcheck が return 1 直前に設定し、
 # バッチループ (__av1ify_run_batch) が末尾の NG 一覧で使用する。
 typeset -g  __AV1IFY_LAST_NG_REASON=""
+# 走行中の prefetch (バックグラウンド先読み) の PID。中断時に __av1ify_kill_prefetches でまとめて掃除する。
+typeset -ga __AV1IFY_PREFETCH_PIDS=()
+
+# 内部補助: 次に処理予定のファイルを background で先読みし、
+# Dropbox / iCloud の File Provider materialize を現エンコード中に進めておく。
+#
+# 仕組み: head -c 1 で open() させると File Provider が fetchContents を発火し、
+# replicated extension モデルでは「全体ダウンロードが終わるまで read() がブロック」
+# する。1 byte 読めば materialize は完了済みなので、プロセス終了後もファイルは
+# ローカルに残る。cat /dev/null と違い、materialize 後にローカル SSD 全バイトを
+# 再読みする無駄が無い。
+#
+# range-based fetch の File Provider (一部の iCloud 使い方など) では先頭 1 byte
+# だけしか落ちない可能性があるが、その場合でも prefetch しない場合と比べて損は
+# しないため、最悪ケースでも安全 (= "効かない" だけ)。
+#
+# 引数: $1 = 先読みしたいファイルパス
+# 副作用: __AV1IFY_PREFETCH_PIDS に PID を追加 (中断時掃除用)
+__av1ify_prefetch() {
+  local target="$1"
+  [[ -z "$target" || ! -f "$target" ]] && return
+  (( __AV1IFY_DRY_RUN )) && return
+  ( head -c 1 < "$target" > /dev/null 2>&1 ) &
+  __AV1IFY_PREFETCH_PIDS+=("$!")
+}
+
+# 内部補助: 走行中の prefetch を全て kill (中断時の掃除用)
+# 既に終了している PID への kill は exit 1 を返すが、err_exit 環境 (テスト harness 等)
+# でも安全に呼べるよう `|| true` で吸収する。
+__av1ify_kill_prefetches() {
+  local pid
+  for pid in "${__AV1IFY_PREFETCH_PIDS[@]}"; do
+    kill "$pid" 2>/dev/null || true
+  done
+  __AV1IFY_PREFETCH_PIDS=()
+}
 
 __av1ify_on_interrupt() {
   if (( __AV1IFY_ABORT_REQUESTED )); then
     return
   fi
   __AV1IFY_ABORT_REQUESTED=1
+  __av1ify_kill_prefetches
   local tmp="${__AV1IFY_CURRENT_TMP:-}"
   if [[ -n "$tmp" && -e "$tmp" ]]; then
     rm -f -- "$tmp"
@@ -109,14 +146,23 @@ __av1ify_resolve_resolution() {
 __av1ify_run_batch() {
   local target ok=0 ng=0
   local -a ng_list=()
-  for target in "$@"; do
+  local -a targets=( "$@" )
+  local n=${#targets[@]} i next exit_status
+  # 直前 av1ify 呼び出しから持ち越した stale PID をクリア (PID 再利用での誤 kill を避ける)
+  __AV1IFY_PREFETCH_PIDS=()
+  for (( i = 1; i <= n; i++ )); do
+    target="${targets[i]}"
     print -r -- "---- 処理: $target"
     __AV1IFY_LAST_NG_REASON=""
+    # 次のファイルを background で先読み (クラウド materialize を現エンコード中に進める)
+    next="${targets[i+1]:-}"
+    [[ -n "$next" ]] && __av1ify_prefetch "$next"
     if __AV1IFY_INTERNAL_CALL=1 av1ify "$target"; then
       ((ok++))
     else
-      local exit_status=$?
+      exit_status=$?
       if (( exit_status == 130 || __AV1IFY_ABORT_REQUESTED )); then
+        __av1ify_kill_prefetches
         print -r -- "✋ 中断: 残りのファイルをスキップします"
         return 130
       fi
