@@ -20,7 +20,7 @@ func runPlain(ctx context.Context, cfg Config, lines []string, skipped int, proc
 	if skipped > 0 {
 		fmt.Fprintf(os.Stderr,
 			"resumed: skipped %d items already in %s/result.log (use --fresh to rerun all)\n",
-			skipped, logDir)
+			skipped, cfg.LogDir)
 	}
 	r := NewRunner(cfg, lines)
 	r.SeedDedup(processed)
@@ -88,13 +88,13 @@ func runPlain(ctx context.Context, cfg Config, lines []string, skipped int, proc
 		skipped := total - done
 		fmt.Fprintf(os.Stderr,
 			"%s: %d/%d completed (%d ok, %d failed, %d not run) (logs: %s/)\n",
-			reason, done, total, done-fail, fail, skipped, logDir)
+			reason, done, total, done-fail, fail, skipped, cfg.LogDir)
 		return 1
 	}
 	if fail > 0 {
-		fmt.Fprintf(os.Stderr, "summary: %d/%d failed (logs: %s/)\n", fail, total, logDir)
+		fmt.Fprintf(os.Stderr, "summary: %d/%d failed (logs: %s/)\n", fail, total, cfg.LogDir)
 		return 1
 	}
-	fmt.Fprintf(os.Stderr, "summary: all %d ok (logs: %s/)\n", total, logDir)
+	fmt.Fprintf(os.Stderr, "summary: all %d ok (logs: %s/)\n", total, cfg.LogDir)
 	return 0
 }

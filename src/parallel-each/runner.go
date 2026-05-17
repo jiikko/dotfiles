@@ -17,7 +17,10 @@ import (
 	"time"
 )
 
-const logDir = "parallel-each-log"
+// defaultLogDir is used when Config.LogDir is empty. Override via --log-dir
+// to isolate concurrent parallel-each runs (e.g. two processes pointing at
+// disjoint input files): each gets its own result.log and per-job log files.
+const defaultLogDir = "parallel-each-log"
 
 // readInput loads non-blank, non-comment lines.
 func readInput(path string) ([]string, error) {
@@ -67,7 +70,7 @@ func digitWidth(n int) int {
 // dedupError renders a specific reason for the duplicate rejection depending
 // on whether the item is in the current queue, was a prior success, or was a
 // prior failure. Recognised by tests via the "duplicate" prefix.
-func dedupError(line, status string) error {
+func dedupError(line, status, logDir string) error {
 	switch status {
 	case "":
 		return fmt.Errorf("duplicate: %q is already in the current queue", line)
@@ -205,6 +208,15 @@ type Runner struct {
 	events     chan Event
 	resultMu   sync.Mutex
 	resultLog  *os.File
+	// lockFile holds an exclusive flock on <LogDir>/.lock for the entire
+	// lifetime of Start..cleanup. Released on Close so a subsequent run
+	// against the same LogDir can acquire it.
+	lockFile   *os.File
+	// inputLockFile holds an exclusive flock on cfg.File itself (advisory,
+	// affects only other parallel-each processes — editors / cat / etc.
+	// are unaffected). Catches the "same -F, different --log-dir" pattern
+	// that the log-dir lock alone would not detect.
+	inputLockFile *os.File
 	logDirAbs  string
 	width      int
 	stopCtx    context.Context
@@ -259,6 +271,11 @@ type runnerJob struct {
 }
 
 func NewRunner(cfg Config, lines []string) *Runner {
+	// Normalise LogDir once so all downstream code can rely on cfg.LogDir
+	// being non-empty (callers that omit it get the default).
+	if cfg.LogDir == "" {
+		cfg.LogDir = defaultLogDir
+	}
 	queued := make(map[string]string, len(lines))
 	for _, l := range lines {
 		queued[l] = "" // "" marks an item that belongs to this run's pending queue
@@ -352,7 +369,7 @@ func (r *Runner) enqueueInternal(line string, front bool) error {
 	r.queuedMu.Lock()
 	if status, exists := r.queued[line]; exists {
 		r.queuedMu.Unlock()
-		return dedupError(line, status)
+		return dedupError(line, status, r.cfg.LogDir)
 	}
 	r.queued[line] = ""
 	r.addedCount++
@@ -541,7 +558,7 @@ func (r *Runner) rewriteResultLogExcluding(line string) error {
 	r.resultMu.Lock()
 	defer r.resultMu.Unlock()
 
-	path := filepath.Join(logDir, "result.log")
+	path := filepath.Join(r.cfg.LogDir, "result.log")
 	// Swap the active file handle out before reading/rewriting, and reopen
 	// for append at the end (even on error paths) so appendResult still works.
 	if r.resultLog != nil {
@@ -707,22 +724,94 @@ func (r *Runner) waitForUnpause() bool {
 // Start launches workers. It returns immediately; results are delivered via Events().
 // parent is used as the root context for both cancellation paths.
 func (r *Runner) Start(parent context.Context) error {
-	if err := os.MkdirAll(logDir, 0o755); err != nil {
+	if err := os.MkdirAll(r.cfg.LogDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir log dir: %w", err)
 	}
-	abs, err := filepath.Abs(logDir)
+	abs, err := filepath.Abs(r.cfg.LogDir)
 	if err != nil {
 		return err
 	}
 	r.logDirAbs = abs
 
-	resultPath := filepath.Join(logDir, "result.log")
+	// Acquire an exclusive flock on <LogDir>/.lock to detect concurrent runs
+	// sharing the same output directory. Two parallel-each processes
+	// against the same LogDir would otherwise race on result.log appends
+	// and clobber each other's NNNN-<line>.log job logs. Lock is held for
+	// the lifetime of the run; OS releases it on process exit (defensive
+	// against crashes), but cleanup also closes it explicitly on the
+	// graceful path.
+	lockPath := filepath.Join(r.cfg.LogDir, ".lock")
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return fmt.Errorf("open lock file %s: %w", lockPath, err)
+	}
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		// Read the holder's PID (best-effort) so the user knows who has it.
+		holder := "another parallel-each"
+		if data, rerr := os.ReadFile(lockPath); rerr == nil {
+			if pid := strings.TrimSpace(string(data)); pid != "" {
+				holder = "another parallel-each (PID " + pid + ")"
+			}
+		}
+		lockFile.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return fmt.Errorf("%s is already running with --log-dir %s; use a different --log-dir or stop the other run first (lock at %s)",
+				holder, r.cfg.LogDir, lockPath)
+		}
+		return fmt.Errorf("acquire log-dir lock %s: %w", lockPath, err)
+	}
+	r.lockFile = lockFile
+	// Record our PID so a future blocked instance can identify the holder.
+	lockFile.Truncate(0)
+	lockFile.Seek(0, 0)
+	fmt.Fprintf(lockFile, "%d\n", os.Getpid())
+
+	// Also lock the input file itself. Catches the "same -F, different
+	// --log-dir" case (two parallel-each processes against the same input
+	// file would both dispatch every line, doubling work and racing on
+	// appendToInputFile). flock is advisory and per-fd, so editors / cat /
+	// our own readInput + appendToInputFile (which open separate fds and
+	// don't flock) are unaffected — only another parallel-each trying the
+	// same syscall is blocked.
+	//
+	// A missing input file is tolerated: main.go pre-checks existence for
+	// real invocations, so the only path here is test scaffolding with a
+	// stub File. With no file there is nothing to share with a concurrent
+	// run, so skipping the lock is safe.
+	if r.cfg.File != "" {
+		if ilf, err := os.OpenFile(r.cfg.File, os.O_RDONLY, 0); err == nil {
+			if ferr := syscall.Flock(int(ilf.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); ferr != nil {
+				ilf.Close()
+				r.lockFile.Close()
+				r.lockFile = nil
+				if errors.Is(ferr, syscall.EWOULDBLOCK) {
+					return fmt.Errorf("another parallel-each is already running with -F %s; stop the other run first",
+						r.cfg.File)
+				}
+				return fmt.Errorf("acquire input-file lock: %w", ferr)
+			}
+			r.inputLockFile = ilf
+		} else if !os.IsNotExist(err) {
+			r.lockFile.Close()
+			r.lockFile = nil
+			return fmt.Errorf("open input file for lock: %w", err)
+		}
+	}
+
+	resultPath := filepath.Join(r.cfg.LogDir, "result.log")
 	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
 	if r.cfg.Fresh {
 		flags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
 	}
 	rf, err := os.OpenFile(resultPath, flags, 0o644)
 	if err != nil {
+		// Release locks so we don't leak them on a Start failure.
+		if r.inputLockFile != nil {
+			r.inputLockFile.Close()
+			r.inputLockFile = nil
+		}
+		r.lockFile.Close()
+		r.lockFile = nil
 		return fmt.Errorf("open result.log: %w", err)
 	}
 	r.resultLog = rf
@@ -757,6 +846,14 @@ func (r *Runner) Start(parent context.Context) error {
 			close(r.jobs)
 			r.wg.Wait()
 			r.resultLog.Close()
+			if r.inputLockFile != nil {
+				r.inputLockFile.Close() // releases input-file flock
+				r.inputLockFile = nil
+			}
+			if r.lockFile != nil {
+				r.lockFile.Close() // releases log-dir flock
+				r.lockFile = nil
+			}
 			close(r.events)
 		}()
 		for {
@@ -904,7 +1001,7 @@ func (r *Runner) runOne(_ context.Context, slotID, index int, line string) {
 	overallStart := time.Now()
 	idxStr := fmt.Sprintf("%0*d", r.width, index)
 	safe := escapeFilename(line)
-	logPath := filepath.Join(logDir, idxStr+"-"+safe+".log")
+	logPath := filepath.Join(r.cfg.LogDir, idxStr+"-"+safe+".log")
 	logAbs := filepath.Join(r.logDirAbs, filepath.Base(logPath))
 
 	resolved := strings.ReplaceAll(r.cfg.Template, "{item}", line)

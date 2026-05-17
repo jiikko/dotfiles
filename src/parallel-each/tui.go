@@ -594,15 +594,20 @@ func (m model) View() string {
 	elapsed := m.elapsed()
 	okCount := m.completed - m.failed
 	running := len(m.slots)
+	queueSize := 0
+	if m.runner != nil {
+		queueSize = m.runner.PendingCount()
+	}
 	etaStr := "—"
 	if eta := m.eta(); eta > 0 {
 		etaStr = formatDur(eta)
 	}
-	b.WriteString(fmt.Sprintf("  %s %d/%d   %s %d   %s %d   %s %d   %s %d   %s %s   %s %s\n",
+	b.WriteString(fmt.Sprintf("  %s %d/%d   %s %d   %s %d   %s %d   %s %d   %s %d   %s %s   %s %s\n",
 		styleHeader.Render("done:"), m.completed, m.total,
 		styleOK.Render("ok:"), okCount,
 		styleFail.Render("fail:"), m.failed,
 		styleRunning.Render("running:"), running,
+		styleHeader.Render("queue:"), queueSize,
 		styleDim.Render("par:"), m.par,
 		styleDim.Render("elapsed:"), elapsed,
 		styleDim.Render("eta:"), etaStr,
@@ -1713,9 +1718,9 @@ func runTUI(ctx context.Context, cfg Config, lines []string, skipped int, proces
 
 	finalModel, _ := finalMsg.(model)
 	if finalModel.failed > 0 {
-		fmt.Printf("summary: %d/%d failed (logs: %s/)\n", finalModel.failed, finalModel.total, logDir)
+		fmt.Printf("summary: %d/%d failed (logs: %s/)\n", finalModel.failed, finalModel.total, cfg.LogDir)
 		return 1
 	}
-	fmt.Printf("summary: all %d ok (logs: %s/)\n", finalModel.total, logDir)
+	fmt.Printf("summary: all %d ok (logs: %s/)\n", finalModel.total, cfg.LogDir)
 	return 0
 }

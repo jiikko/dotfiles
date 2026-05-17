@@ -58,6 +58,12 @@ OPTIONS
                                            The startup input file is treated
                                            as a curated list and dispatched
                                            as-is.
+  --log-dir <dir>        Output directory for per-job logs and result.log.
+                         Default: parallel-each-log (in cwd). Use a unique dir
+                         per process when running multiple parallel-each
+                         instances concurrently (e.g. different parallelism
+                         per origin); each run's result.log / resume state is
+                         then fully isolated.
   --wizard               Interactively prompt for each value (input file,
                          template, parallelism, timeout, retries) before
                          running. Useful when you can't remember flag names.
@@ -208,6 +214,7 @@ type Config struct {
 	TotalTimeout    time.Duration // --total-timeout: optional; force-kill everything after this much wall-clock
 	Wizard          bool          // --wizard: interactively prompt for values before running
 	InputType       string        // --input-type: "none" (default) or "url" (static URL syntax check on live-add)
+	LogDir          string        // --log-dir: per-run output directory; defaults to "parallel-each-log"
 }
 
 func parseArgs(argv []string) (Config, error) {
@@ -227,6 +234,7 @@ func parseArgs(argv []string) (Config, error) {
 		totalTimeout   = fs.Duration("total-timeout", 0, "overall wall-clock limit; 0 = no limit (e.g. 1h, 2h30m)")
 		wizard         = fs.Bool("wizard", false, "interactive prompt for all values")
 		inputType      = fs.String("input-type", "none", "input semantic type: none|url")
+		logDirFlag     = fs.String("log-dir", "", "output directory for per-job logs and result.log (default: parallel-each-log)")
 		help     = fs.Bool("h", false, "help")
 		help2    = fs.Bool("help", false, "help")
 	)
@@ -287,6 +295,7 @@ func parseArgs(argv []string) (Config, error) {
 		TotalTimeout:    *totalTimeout,
 		Wizard:          *wizard,
 		InputType:       *inputType,
+		LogDir:          *logDirFlag,
 	}, nil
 }
 
@@ -306,6 +315,12 @@ func main() {
 		}
 	}
 
+	// Normalise LogDir once here so every code path (resume scan in main,
+	// status messages in plain/tui, the runner itself) sees the same value.
+	if cfg.LogDir == "" {
+		cfg.LogDir = defaultLogDir
+	}
+
 	if _, statErr := os.Stat(cfg.File); statErr != nil {
 		fmt.Fprintf(os.Stderr, "error: file not found: %s\n", cfg.File)
 		os.Exit(2)
@@ -315,10 +330,6 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
-	}
-	if len(lines) == 0 {
-		fmt.Fprintf(os.Stderr, "no items in %s\n", cfg.File)
-		os.Exit(0)
 	}
 
 	if !cfg.SkipUniqueCheck {
@@ -338,6 +349,20 @@ func main() {
 
 	useTUI := !cfg.NoTUI && term.IsTerminal(int(os.Stdout.Fd()))
 
+	// Empty input: in TUI mode launch anyway so the user can append items at
+	// runtime via 'a'. Without a TUI there is no interactive add path, so
+	// keep the original exit-0 behaviour (the wrapper / cron caller would
+	// otherwise spin uselessly on an empty queue).
+	if len(lines) == 0 {
+		if !useTUI {
+			fmt.Fprintf(os.Stderr, "no items in %s\n", cfg.File)
+			os.Exit(0)
+		}
+		fmt.Fprintf(os.Stderr,
+			"input file %s is empty — launching TUI: press 'a' to append items, 'q' to exit.\n",
+			cfg.File)
+	}
+
 	// Resume support: filter out lines already present in result.log. The
 	// full processed map (line -> status) is also retained so it can seed
 	// the dedup with per-entry wording for interactive Enqueue (see
@@ -346,7 +371,7 @@ func main() {
 	var processedMap map[string]string
 	var processedEntries []ProcessedEntry
 	if !cfg.Fresh {
-		entries, err := loadProcessedEntries(filepath.Join(logDir, "result.log"))
+		entries, err := loadProcessedEntries(filepath.Join(cfg.LogDir, "result.log"))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error reading previous result.log: %v\n", err)
 			os.Exit(2)
@@ -365,7 +390,7 @@ func main() {
 				if !useTUI {
 					fmt.Fprintf(os.Stderr,
 						"nothing to do: all %d items are already in %s/result.log (use --fresh to rerun all)\n",
-						before, logDir)
+						before, cfg.LogDir)
 					os.Exit(0)
 				}
 				fmt.Fprintf(os.Stderr,

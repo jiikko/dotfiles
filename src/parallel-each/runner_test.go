@@ -197,7 +197,7 @@ func TestRunnerEndToEnd(t *testing.T) {
 	}
 
 	// result.log should have 4 TSV rows.
-	data, err := os.ReadFile(filepath.Join(logDir, "result.log"))
+	data, err := os.ReadFile(filepath.Join(defaultLogDir, "result.log"))
 	if err != nil {
 		t.Fatalf("read result.log: %v", err)
 	}
@@ -229,18 +229,26 @@ func TestRunnerEndToEnd(t *testing.T) {
 	}
 
 	// Per-job log for "alpha" should exist and contain header + stdout.
-	entries, err := os.ReadDir(logDir)
+	entries, err := os.ReadDir(defaultLogDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 4 job logs + result.log = 5 entries.
-	if len(entries) != 5 {
-		t.Errorf("log dir has %d entries, want 5: %v", len(entries), entries)
+	// 4 job logs + result.log = 5 entries (.lock is filtered out below since
+	// it's an implementation-detail file for cross-process flock).
+	var visible []os.DirEntry
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		visible = append(visible, e)
+	}
+	if len(visible) != 5 {
+		t.Errorf("log dir has %d non-hidden entries, want 5: %v", len(visible), visible)
 	}
 	var alphaLog string
 	for _, e := range entries {
 		if strings.HasSuffix(e.Name(), "-alpha.log") {
-			alphaLog = filepath.Join(logDir, e.Name())
+			alphaLog = filepath.Join(defaultLogDir, e.Name())
 			break
 		}
 	}
@@ -583,7 +591,7 @@ func TestRunnerResume(t *testing.T) {
 	}
 
 	// Simulate what main.go does for the second run: load + filter.
-	processed, err := loadProcessedLines(filepath.Join(logDir, "result.log"))
+	processed, err := loadProcessedLines(filepath.Join(defaultLogDir, "result.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -593,7 +601,7 @@ func TestRunnerResume(t *testing.T) {
 	}
 
 	// Verify result.log still has exactly 3 rows (append did not duplicate).
-	data, err := os.ReadFile(filepath.Join(logDir, "result.log"))
+	data, err := os.ReadFile(filepath.Join(defaultLogDir, "result.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -624,7 +632,7 @@ func TestRunnerAppendsOnResume(t *testing.T) {
 	}
 
 	// Second run: a, b, c, d — but after filtering we only want c, d.
-	processed, _ := loadProcessedLines(filepath.Join(logDir, "result.log"))
+	processed, _ := loadProcessedLines(filepath.Join(defaultLogDir, "result.log"))
 	remaining := filterProcessed([]string{"a", "b", "c", "d"}, processed)
 	if !equalStrings(remaining, []string{"c", "d"}) {
 		t.Fatalf("remaining = %v, want [c d]", remaining)
@@ -637,7 +645,7 @@ func TestRunnerAppendsOnResume(t *testing.T) {
 	for range r2.Events() {
 	}
 
-	data, _ := os.ReadFile(filepath.Join(logDir, "result.log"))
+	data, _ := os.ReadFile(filepath.Join(defaultLogDir, "result.log"))
 	rows := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 	if len(rows) != 4 {
 		t.Errorf("result.log rows = %d, want 4:\n%s", len(rows), data)
@@ -707,11 +715,11 @@ func TestRunnerRetriesThenSucceeds(t *testing.T) {
 	}
 
 	// Log file should contain retry separators for attempts 2 and 3.
-	entries, _ := os.ReadDir(logDir)
+	entries, _ := os.ReadDir(defaultLogDir)
 	var logPath string
 	for _, e := range entries {
 		if strings.HasSuffix(e.Name(), "-alpha.log") {
-			logPath = filepath.Join(logDir, e.Name())
+			logPath = filepath.Join(defaultLogDir, e.Name())
 		}
 	}
 	data, err := os.ReadFile(logPath)
@@ -730,7 +738,7 @@ func TestRunnerRetriesThenSucceeds(t *testing.T) {
 	}
 
 	// result.log records only the final outcome.
-	resData, _ := os.ReadFile(filepath.Join(logDir, "result.log"))
+	resData, _ := os.ReadFile(filepath.Join(defaultLogDir, "result.log"))
 	rows := strings.Split(strings.TrimRight(string(resData), "\n"), "\n")
 	if len(rows) != 1 {
 		t.Errorf("result.log rows = %d, want 1", len(rows))
@@ -1520,7 +1528,7 @@ func TestRunnerForgetLineReEnableEnqueue(t *testing.T) {
 	// (A new row may now exist from the re-enqueue once it runs — we'll find
 	// zero or one matching row at this point since the new job hasn't
 	// completed yet.)
-	data, _ := os.ReadFile(filepath.Join(logDir, "result.log"))
+	data, _ := os.ReadFile(filepath.Join(defaultLogDir, "result.log"))
 	count := 0
 	for _, row := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
 		cols := strings.Split(row, "\t")
@@ -1893,11 +1901,11 @@ func TestRunnerFreshTruncates(t *testing.T) {
 	}
 
 	// Pre-populate result.log.
-	if err := os.MkdirAll(logDir, 0o755); err != nil {
+	if err := os.MkdirAll(defaultLogDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	stale := "ok\t0\tstale-item\t/tmp/old.log\n"
-	if err := os.WriteFile(filepath.Join(logDir, "result.log"), []byte(stale), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(defaultLogDir, "result.log"), []byte(stale), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1909,7 +1917,7 @@ func TestRunnerFreshTruncates(t *testing.T) {
 	for range r.Events() {
 	}
 
-	data, _ := os.ReadFile(filepath.Join(logDir, "result.log"))
+	data, _ := os.ReadFile(filepath.Join(defaultLogDir, "result.log"))
 	if strings.Contains(string(data), "stale-item") {
 		t.Errorf("--fresh did not truncate result.log:\n%s", data)
 	}
