@@ -337,8 +337,50 @@ __av1ify_build_final_out() {
   fi
 }
 
+# 内部補助: av1ify バリアントセグメントとして有効なタグかを判定する。
+# av1ify 出力命名 <stem>[-<tag>...]-enc.mp4 における各 <tag> の Single Source of Truth。
+#
+# ⚠️ 重要: __av1ify_build_final_out が新タグを追加する場合、ここにも同じ規則を追加すること。
+# 同期漏れは「変換済みなのに再変換される」誤動作を引き起こす。test_av1ify_prefetch.sh の
+# round-trip テストが builder → validator の一致を検証するので、新タグ追加時にそこも更新する。
+#
+# 引数: $1 = 1 セグメント (例: "720p", "30fps", "aac96k")
+# 戻り値: 0 = 有効, 1 = 無効
+__av1ify_is_valid_variant_tag() {
+  local seg="$1"
+  [[ "$seg" =~ ^[0-9]+p$ ]] && return 0              # NNNp (resolution)
+  [[ "$seg" == "4k" ]] && return 0                   # 4k (resolution)
+  [[ "$seg" =~ ^[0-9]+(\.[0-9]+)?fps$ ]] && return 0 # NN[.N]fps (frame rate)
+  [[ "$seg" =~ ^aac[0-9]+k$ ]] && return 0           # aacNk (audio bitrate)
+  [[ "$seg" =~ ^dn[0-9]+$ ]] && return 0             # dnN (denoise level)
+  [[ "$seg" == "auderr" ]] && return 0               # auderr (audio param error)
+  return 1
+}
+
+# 内部補助: 入力ファイル名が av1ify 出力形式 (-enc.mp4 / -encoded.*) を満たしているか。
+# = 「これ自体が既に av1ify 出力なので再エンコードしない」判定。ファイル内容には触れない。
+# 引数: $1 = 入力パス
+# 戻り値: 0 = 出力形式 (SKIP 対象), 1 = そうでない
+__av1ify_input_is_encoded_form() {
+  local in="$1"
+  [[ "$in" == *enc.mp4 || "$in" == *encoded.* ]]
+}
+
+# 内部補助: 既定出力 <stem>-enc.mp4 が存在するかを判定する。
+# 入力ファイル本体には触れないため、クラウド materialize を起こさない。
+# 引数: $1 = 入力パス
+# 出力: REPLY = 既存ファイルパス (見つからなければ "")
+# 戻り値: 0 = 既存, 1 = 無し
+__av1ify_default_output_exists() {
+  local in="$1"
+  REPLY="${in%.*}-enc.mp4"
+  [[ -e "$REPLY" ]] && return 0
+  REPLY=""
+  return 1
+}
+
 # 内部補助: 入力に対応する既存のバリアント出力 <stem>-<tag>...-enc.mp4 を探す。
-# タグは av1ify 命名規則 (NNNp / 4k / NNfps / aacNNNk / dnN / auderr) のみ受け付ける。
+# タグの妥当性判定は __av1ify_is_valid_variant_tag に委譲 (命名規則の Single Source of Truth)。
 # 入力ファイル本体には触れず、ローカル glob のみで判定するため、クラウド materialize を起こさない。
 # 引数: $1 = 入力パス
 # 出力: REPLY = 一致した既存ファイルパス (見つからなければ "")
@@ -367,14 +409,7 @@ __av1ify_match_existing_variant() {
         seg="$t"
         t=""
       fi
-      if [[ "$seg" =~ ^[0-9]+p$ ]] || \
-         [[ "$seg" == "4k" ]] || \
-         [[ "$seg" =~ ^[0-9]+(\.[0-9]+)?fps$ ]] || \
-         [[ "$seg" =~ ^aac[0-9]+k$ ]] || \
-         [[ "$seg" =~ ^dn[0-9]+$ ]] || \
-         [[ "$seg" == "auderr" ]]; then
-        :
-      else
+      if ! __av1ify_is_valid_variant_tag "$seg"; then
         valid=0
         break
       fi
@@ -391,18 +426,14 @@ __av1ify_match_existing_variant() {
 # 内容は一切読まないため、クラウドの placeholder ファイルでも materialize を起こさない。
 # 主用途: __av1ify_run_batch における prefetch 前ゲート
 #   (ディレクトリ指定でも既変換ファイルは prefetch しない)。
-# __av1ify_one 側の SKIP 判定 (suffix / 既定出力 / バリアント) と同じ条件を網羅する。
+# __av1ify_one 側の SKIP 判定 (suffix / 既定出力 / バリアント) と同じ 3 条件を網羅する。
 # 引数: $1 = 入力パス
 # 戻り値: 0 = SKIP 確定 (prefetch 不要), 1 = 処理候補 (prefetch する価値あり)
 __av1ify_skip_by_name() {
   local in="$1"
   [[ -z "$in" ]] && return 0
-  # 1. 入力自体が既に出力形式
-  [[ "$in" == *enc.mp4 || "$in" == *encoded.* ]] && return 0
-  # 2. 既定出力 <stem>-enc.mp4 が既存
-  local stem="${in%.*}"
-  [[ -e "${stem}-enc.mp4" ]] && return 0
-  # 3. バリアント出力が既存
+  __av1ify_input_is_encoded_form "$in" && return 0
+  __av1ify_default_output_exists "$in" && return 0
   __av1ify_match_existing_variant "$in" && return 0
   return 1
 }
@@ -416,7 +447,7 @@ __av1ify_one() {
     return 130
   fi
 
-  if [[ "$in" == *enc.mp4 || "$in" == *encoded.* ]]; then
+  if __av1ify_input_is_encoded_form "$in"; then
     print -r -- "→ SKIP 既に出力ファイル形式です: $in"
     return 0
   fi
@@ -482,8 +513,8 @@ __av1ify_one() {
   fi
 
   # 早期スキップ: ffprobe前に既存出力をチェック（クラウドファイルの不要なダウンロードを防止）
-  if [[ -e "$out" ]]; then
-    print -r -- "→ SKIP 既存: $out"
+  if __av1ify_default_output_exists "$in"; then
+    print -r -- "→ SKIP 既存: $REPLY"
     return 0
   fi
   if __av1ify_match_existing_variant "$in"; then

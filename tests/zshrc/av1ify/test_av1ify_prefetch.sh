@@ -346,4 +346,231 @@ else
   printf '✗ Expected 0 prefetch calls, got %d\n' "$calls"
 fi
 
+# ----------------------------------------------------------------------
+# Test 13: __av1ify_input_is_encoded_form (suffix check sub-predicate)
+# ----------------------------------------------------------------------
+printf '\n## Test 13: __av1ify_input_is_encoded_form\n'
+# 正例
+for s in foo-enc.mp4 path/to/bar-enc.mp4 baz-encoded.mp4 qux-encoded.mkv; do
+  if __av1ify_input_is_encoded_form "$s"; then
+    printf '✓ matches encoded form: %s\n' "$s"
+  else
+    printf '✗ should match encoded form: %s\n' "$s"
+  fi
+done
+# 反例
+for s in foo.avi bar.mp4 baz-encoder.txt enc.mp4-suffixed.avi; do
+  if ! __av1ify_input_is_encoded_form "$s"; then
+    printf '✓ not encoded form: %s\n' "$s"
+  else
+    printf '✗ should NOT match encoded form: %s\n' "$s"
+  fi
+done
+
+# ----------------------------------------------------------------------
+# Test 14: __av1ify_default_output_exists (default output existence sub-predicate)
+# ----------------------------------------------------------------------
+printf '\n## Test 14: __av1ify_default_output_exists\n'
+TEST_DIR="$TEST_TMP/test_default_out"
+mkdir -p "$TEST_DIR"
+echo "in" > "$TEST_DIR/a.avi"
+echo "out" > "$TEST_DIR/a-enc.mp4"
+if __av1ify_default_output_exists "$TEST_DIR/a.avi"; then
+  if [[ "$REPLY" == "$TEST_DIR/a-enc.mp4" ]]; then
+    printf '✓ existing default → return 0, REPLY=%s\n' "$REPLY"
+  else
+    printf '✗ REPLY should be %s, got %s\n' "$TEST_DIR/a-enc.mp4" "$REPLY"
+  fi
+else
+  printf '✗ should detect existing default output\n'
+fi
+echo "in" > "$TEST_DIR/b.avi"
+if ! __av1ify_default_output_exists "$TEST_DIR/b.avi"; then
+  if [[ -z "$REPLY" ]]; then
+    printf '✓ no default output → return 1, REPLY=""\n'
+  else
+    printf '✗ REPLY should be empty when not found, got %s\n' "$REPLY"
+  fi
+else
+  printf '✗ should NOT detect output for b.avi\n'
+fi
+
+# ----------------------------------------------------------------------
+# Test 15: __av1ify_is_valid_variant_tag (タグ命名規則の Single Source of Truth)
+# ----------------------------------------------------------------------
+printf '\n## Test 15: __av1ify_is_valid_variant_tag positive cases\n'
+# resolution: NNNp / 4k
+for tag in 480p 720p 1080p 1440p 540p 16p 8640p 4k; do
+  if __av1ify_is_valid_variant_tag "$tag"; then
+    printf '✓ valid: %s\n' "$tag"
+  else
+    printf '✗ should be valid: %s\n' "$tag"
+  fi
+done
+# fps: NN[.N]fps
+for tag in 24fps 30fps 60fps 23.976fps 29.97fps; do
+  if __av1ify_is_valid_variant_tag "$tag"; then
+    printf '✓ valid: %s\n' "$tag"
+  else
+    printf '✗ should be valid: %s\n' "$tag"
+  fi
+done
+# denoise: dnN
+for tag in dn1 dn2 dn3; do
+  if __av1ify_is_valid_variant_tag "$tag"; then
+    printf '✓ valid: %s\n' "$tag"
+  else
+    printf '✗ should be valid: %s\n' "$tag"
+  fi
+done
+# aac bitrate: aacNNk
+for tag in aac32k aac96k aac128k aac256k; do
+  if __av1ify_is_valid_variant_tag "$tag"; then
+    printf '✓ valid: %s\n' "$tag"
+  else
+    printf '✗ should be valid: %s\n' "$tag"
+  fi
+done
+# audio param error literal
+if __av1ify_is_valid_variant_tag "auderr"; then
+  printf '✓ valid: auderr\n'
+else
+  printf '✗ should be valid: auderr\n'
+fi
+
+printf '\n## Test 15: __av1ify_is_valid_variant_tag negative cases\n'
+# 無効タグ (誤検出防止)
+for tag in junk foo "" 720 4 abc-def 30 fps aac aac96 dn p 4k.mp4 96kaac; do
+  if ! __av1ify_is_valid_variant_tag "$tag"; then
+    printf '✓ rejected: "%s"\n' "$tag"
+  else
+    printf '✗ should be rejected: "%s"\n' "$tag"
+  fi
+done
+
+# ----------------------------------------------------------------------
+# Test 16: Builder → Validator round-trip
+# __av1ify_build_final_out が生成するタグは全て __av1ify_is_valid_variant_tag に通る、
+# という不変条件を検証する。Builder 側に新タグが追加された場合、Validator も同期
+# 更新しないとこのテストが落ちる (= 「変換済みなのに再変換」事故を未然に検出)。
+# ----------------------------------------------------------------------
+printf '\n## Test 16: build_final_out → is_valid_variant_tag round-trip\n'
+
+verify_roundtrip() {
+  local stem="$1" out_name="$2"
+  local tags_part="${out_name#${stem}}"
+  tags_part="${tags_part%-enc.mp4}"
+  # 先頭の "-" を除去
+  tags_part="${tags_part#-}"
+  if [[ -z "$tags_part" ]]; then
+    printf '  (no tags, base form: %s)\n' "$out_name"
+    return 0
+  fi
+  local tag fail=0
+  # zsh の "-" 分割
+  for tag in ${(s:-:)tags_part}; do
+    if __av1ify_is_valid_variant_tag "$tag"; then
+      printf '  ✓ %s\n' "$tag"
+    else
+      printf '  ✗ builder produced tag rejected by validator: %s (in %s)\n' "$tag" "$out_name"
+      fail=1
+    fi
+  done
+  return $fail
+}
+
+# ケース 1: 何も指定なし → 基本形 (タグ無し)
+__av1ify_build_final_out "stem" "" "" "" "0" "" "0"
+printf '%s\n' "$REPLY"
+verify_roundtrip "stem" "$REPLY"
+
+# ケース 2: 解像度のみ
+__av1ify_build_final_out "stem" "720p" "" "" "0" "" "0"
+printf '%s\n' "$REPLY"
+verify_roundtrip "stem" "$REPLY"
+
+# ケース 3: 4k
+__av1ify_build_final_out "stem" "4k" "" "" "0" "" "0"
+printf '%s\n' "$REPLY"
+verify_roundtrip "stem" "$REPLY"
+
+# ケース 4: fps のみ
+__av1ify_build_final_out "stem" "" "30fps" "" "0" "" "0"
+printf '%s\n' "$REPLY"
+verify_roundtrip "stem" "$REPLY"
+
+# ケース 5: 非整数 fps (23.976)
+__av1ify_build_final_out "stem" "" "23.976fps" "" "0" "" "0"
+printf '%s\n' "$REPLY"
+verify_roundtrip "stem" "$REPLY"
+
+# ケース 6: denoise のみ
+__av1ify_build_final_out "stem" "" "" "dn2" "0" "" "0"
+printf '%s\n' "$REPLY"
+verify_roundtrip "stem" "$REPLY"
+
+# ケース 7: AAC ビットレート (did_aac=1)
+__av1ify_build_final_out "stem" "" "" "" "1" "96k" "0"
+printf '%s\n' "$REPLY"
+verify_roundtrip "stem" "$REPLY"
+
+# ケース 8: auderr フラグ
+__av1ify_build_final_out "stem" "" "" "" "0" "" "1"
+printf '%s\n' "$REPLY"
+verify_roundtrip "stem" "$REPLY"
+
+# ケース 9: フルセット (resolution + fps + denoise + aac + auderr)
+__av1ify_build_final_out "stem" "1080p" "60fps" "dn1" "1" "128k" "1"
+printf '%s\n' "$REPLY"
+verify_roundtrip "stem" "$REPLY"
+
+# ケース 10: compact プリセット相当 (720p + 30fps + aac96k)
+__av1ify_build_final_out "stem" "720p" "30fps" "" "1" "96k" "0"
+printf '%s\n' "$REPLY"
+verify_roundtrip "stem" "$REPLY"
+
+# ----------------------------------------------------------------------
+# Test 17: __av1ify_one の 3 種類の SKIP メッセージが正しく出力される
+# (sub-predicate に抽出したリファクタの動作確認)
+# ----------------------------------------------------------------------
+printf '\n## Test 17: __av1ify_one preserves 3 distinct SKIP messages\n'
+TEST_DIR="$TEST_TMP/skip_messages"
+mkdir -p "$TEST_DIR"
+
+# 17a: 入力自体が -enc.mp4
+echo "x" > "$TEST_DIR/a-enc.mp4"
+cd "$TEST_DIR"
+unsetopt err_exit
+out_self=$(__AV1IFY_INTERNAL_CALL=1 av1ify "$TEST_DIR/a-enc.mp4" 2>&1 || true)
+setopt err_exit
+if [[ "$out_self" == *"既に出力ファイル形式です"* ]]; then
+  printf '✓ "既に出力ファイル形式" message for -enc.mp4 input\n'
+else
+  printf '✗ Expected "既に出力ファイル形式" message, got: %s\n' "$out_self"
+fi
+
+# 17b: 既定出力が存在
+echo "in" > "$TEST_DIR/b.avi"
+echo "out" > "$TEST_DIR/b-enc.mp4"
+unsetopt err_exit
+out_default=$(__AV1IFY_INTERNAL_CALL=1 av1ify "$TEST_DIR/b.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$out_default" == *"SKIP 既存:"* ]] && [[ "$out_default" != *"別バリアント"* ]]; then
+  printf '✓ "SKIP 既存:" message for existing default output\n'
+else
+  printf '✗ Expected "SKIP 既存:" message (not 別バリアント), got: %s\n' "$out_default"
+fi
+
+# 17c: バリアント出力が存在
+echo "in" > "$TEST_DIR/c.avi"
+echo "out" > "$TEST_DIR/c-720p-enc.mp4"
+unsetopt err_exit
+out_variant=$(__AV1IFY_INTERNAL_CALL=1 av1ify "$TEST_DIR/c.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$out_variant" == *"別バリアント"* ]]; then
+  printf '✓ "別バリアント" message for existing variant output\n'
+else
+  printf '✗ Expected "別バリアント" message, got: %s\n' "$out_variant"
+fi
+
 printf '\n=== Prefetch Tests Completed ===\n'
