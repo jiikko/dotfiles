@@ -3,7 +3,7 @@
 # av1ify — 入力された動画ファイル、またはディレクトリ内の動画ファイルをAV1形式のMP4に一括変換します。
 # ------------------------------------------------------------------------------
 
-__AV1IFY_VERSION="1.7.0"
+__AV1IFY_VERSION="1.7.1"
 __AV1IFY_SPEC_VERSION="1.7.0"
 
 # 内部補助: バナー出力
@@ -154,9 +154,15 @@ __av1ify_run_batch() {
     target="${targets[i]}"
     print -r -- "---- 処理: $target"
     __AV1IFY_LAST_NG_REASON=""
-    # 次のファイルを background で先読み (クラウド materialize を現エンコード中に進める)
+    # 次のファイルを background で先読み (クラウド materialize を現エンコード中に進める)。
+    # ただしファイル名/ローカル glob だけで SKIP 確定の対象 (-enc.mp4 自体や既存出力済) は
+    # __av1ify_one が即座に return 0 して終わるので、materialize させる意味が無い。
+    # ディレクトリ指定で大量の既変換ファイルが含まれているケースで「全部 prefetch されて
+    # 不要なダウンロードが走る」事故を防ぐため、prefetch 前にゲートする。
     next="${targets[i+1]:-}"
-    [[ -n "$next" ]] && __av1ify_prefetch "$next"
+    if [[ -n "$next" ]] && ! __av1ify_skip_by_name "$next"; then
+      __av1ify_prefetch "$next"
+    fi
     if __AV1IFY_INTERNAL_CALL=1 av1ify "$target"; then
       ((ok++))
     else

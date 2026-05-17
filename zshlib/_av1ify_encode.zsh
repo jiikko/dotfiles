@@ -337,6 +337,76 @@ __av1ify_build_final_out() {
   fi
 }
 
+# 内部補助: 入力に対応する既存のバリアント出力 <stem>-<tag>...-enc.mp4 を探す。
+# タグは av1ify 命名規則 (NNNp / 4k / NNfps / aacNNNk / dnN / auderr) のみ受け付ける。
+# 入力ファイル本体には触れず、ローカル glob のみで判定するため、クラウド materialize を起こさない。
+# 引数: $1 = 入力パス
+# 出力: REPLY = 一致した既存ファイルパス (見つからなければ "")
+# 戻り値: 0 = 一致あり, 1 = 無し
+__av1ify_match_existing_variant() {
+  local in="$1"
+  REPLY=""
+  [[ -z "$in" ]] && return 1
+  local stem="${in%.*}"
+  setopt LOCAL_OPTIONS extended_glob null_glob
+  # shellcheck disable=SC1036,SC2206
+  local -a variants=( "${stem}"-*-enc.mp4(N) )
+  (( ${#variants[@]} == 0 )) && return 1
+  local v t seg valid
+  for v in "${variants[@]}"; do
+    # shellcheck disable=SC2295
+    t="${v#${stem}-}"
+    t="${t%-enc.mp4}"
+    valid=1
+    [[ -z "$t" ]] && valid=0
+    while [[ -n "$t" ]]; do
+      if [[ "$t" == *-* ]]; then
+        seg="${t%%-*}"
+        t="${t#*-}"
+      else
+        seg="$t"
+        t=""
+      fi
+      if [[ "$seg" =~ ^[0-9]+p$ ]] || \
+         [[ "$seg" == "4k" ]] || \
+         [[ "$seg" =~ ^[0-9]+(\.[0-9]+)?fps$ ]] || \
+         [[ "$seg" =~ ^aac[0-9]+k$ ]] || \
+         [[ "$seg" =~ ^dn[0-9]+$ ]] || \
+         [[ "$seg" == "auderr" ]]; then
+        :
+      else
+        valid=0
+        break
+      fi
+    done
+    if (( valid )); then
+      REPLY="$v"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# 内部補助: 「この入力はファイル名/ローカル glob だけで SKIP 判定できるか」を返す述語。
+# 内容は一切読まないため、クラウドの placeholder ファイルでも materialize を起こさない。
+# 主用途: __av1ify_run_batch における prefetch 前ゲート
+#   (ディレクトリ指定でも既変換ファイルは prefetch しない)。
+# __av1ify_one 側の SKIP 判定 (suffix / 既定出力 / バリアント) と同じ条件を網羅する。
+# 引数: $1 = 入力パス
+# 戻り値: 0 = SKIP 確定 (prefetch 不要), 1 = 処理候補 (prefetch する価値あり)
+__av1ify_skip_by_name() {
+  local in="$1"
+  [[ -z "$in" ]] && return 0
+  # 1. 入力自体が既に出力形式
+  [[ "$in" == *enc.mp4 || "$in" == *encoded.* ]] && return 0
+  # 2. 既定出力 <stem>-enc.mp4 が既存
+  local stem="${in%.*}"
+  [[ -e "${stem}-enc.mp4" ]] && return 0
+  # 3. バリアント出力が既存
+  __av1ify_match_existing_variant "$in" && return 0
+  return 1
+}
+
 # 内部: 単一ファイル処理
 __av1ify_one() {
   local in="$1"
@@ -416,41 +486,9 @@ __av1ify_one() {
     print -r -- "→ SKIP 既存: $out"
     return 0
   fi
-  # shellcheck disable=SC1036,SC2206
-  local -a __av1ify_early_variants=( "${stem}"-*-enc.mp4(N) )
-  if (( ${#__av1ify_early_variants[@]} > 0 )); then
-    local __ev __et __ev_valid __ev_seg
-    for __ev in "${__av1ify_early_variants[@]}"; do
-      # shellcheck disable=SC2295
-      __et="${__ev#${stem}-}"
-      __et="${__et%-enc.mp4}"
-      __ev_valid=1
-      [[ -z "$__et" ]] && __ev_valid=0
-      while [[ -n "$__et" ]]; do
-        if [[ "$__et" == *-* ]]; then
-          __ev_seg="${__et%%-*}"
-          __et="${__et#*-}"
-        else
-          __ev_seg="$__et"
-          __et=""
-        fi
-        if [[ "$__ev_seg" =~ ^[0-9]+p$ ]] || \
-           [[ "$__ev_seg" == "4k" ]] || \
-           [[ "$__ev_seg" =~ ^[0-9]+(\.[0-9]+)?fps$ ]] || \
-           [[ "$__ev_seg" =~ ^aac[0-9]+k$ ]] || \
-           [[ "$__ev_seg" =~ ^dn[0-9]+$ ]] || \
-           [[ "$__ev_seg" == "auderr" ]]; then
-          :
-        else
-          __ev_valid=0
-          break
-        fi
-      done
-      if (( __ev_valid )); then
-        print -r -- "→ SKIP 既存(別バリアント): $__ev"
-        return 0
-      fi
-    done
+  if __av1ify_match_existing_variant "$in"; then
+    print -r -- "→ SKIP 既存(別バリアント): $REPLY"
+    return 0
   fi
 
   [[ ! -f "$in" ]] && {

@@ -220,4 +220,130 @@ else
   printf '✗ Expected -f prefetch=%s, got=%s\n' "$TEST_DIR/q.mkv" "$line1"
 fi
 
+# ----------------------------------------------------------------------
+# Test 10: __av1ify_skip_by_name の単体動作
+# ファイル名/ローカル glob のみで SKIP 判定でき、ファイル本体は読まない。
+# ----------------------------------------------------------------------
+printf '\n## Test 10: __av1ify_skip_by_name predicate\n'
+TEST_DIR="$TEST_TMP/prefetch_test10"
+mkdir -p "$TEST_DIR"
+# 入力自体が -enc.mp4 → SKIP
+if __av1ify_skip_by_name "$TEST_DIR/foo-enc.mp4"; then
+  printf '✓ -enc.mp4 suffix → skip\n'
+else
+  printf '✗ -enc.mp4 suffix should be skipped\n'
+fi
+# encoded. パターン → SKIP
+if __av1ify_skip_by_name "$TEST_DIR/bar-encoded.mp4"; then
+  printf '✓ encoded. suffix → skip\n'
+else
+  printf '✗ encoded. suffix should be skipped\n'
+fi
+# 既定出力が存在 → SKIP
+echo "v" > "$TEST_DIR/baz.avi"
+echo "out" > "$TEST_DIR/baz-enc.mp4"
+if __av1ify_skip_by_name "$TEST_DIR/baz.avi"; then
+  printf '✓ existing default output → skip\n'
+else
+  printf '✗ default output should trigger skip\n'
+fi
+# バリアント出力が存在 → SKIP
+echo "v" > "$TEST_DIR/qux.avi"
+echo "out" > "$TEST_DIR/qux-720p-enc.mp4"
+if __av1ify_skip_by_name "$TEST_DIR/qux.avi"; then
+  printf '✓ existing variant output → skip\n'
+else
+  printf '✗ variant output should trigger skip\n'
+fi
+# 既存出力なし → 処理候補 (skip しない)
+echo "v" > "$TEST_DIR/fresh.avi"
+if ! __av1ify_skip_by_name "$TEST_DIR/fresh.avi"; then
+  printf '✓ no existing output → not skipped (prefetch candidate)\n'
+else
+  printf '✗ fresh file should NOT be skipped\n'
+fi
+# 命名規則に合わないバリアントは SKIP しない (誤一致防止)
+echo "v" > "$TEST_DIR/weird.avi"
+echo "out" > "$TEST_DIR/weird-junk-enc.mp4"
+if ! __av1ify_skip_by_name "$TEST_DIR/weird.avi"; then
+  printf '✓ non-conforming variant tag → not skipped\n'
+else
+  printf '✗ non-conforming variant should NOT trigger skip\n'
+fi
+# 空文字 → SKIP (prefetch 不要)
+if __av1ify_skip_by_name ""; then
+  printf '✓ empty input → skip\n'
+else
+  printf '✗ empty input should be treated as skip\n'
+fi
+
+# ----------------------------------------------------------------------
+# Test 11: __av1ify_run_batch は SKIP 対象に対しては prefetch しない
+# ディレクトリ指定で大量の既変換ファイルが含まれていても全 materialize しない、
+# というのが本来の意図 (バグ修正の本丸)。
+# ----------------------------------------------------------------------
+printf '\n## Test 11: run_batch skips prefetch for already-converted next file\n'
+TEST_DIR="$TEST_TMP/prefetch_test11"
+mkdir -p "$TEST_DIR"
+# a.avi は未変換, b.avi は b-enc.mp4 が既にある, c.avi は未変換
+echo "v" > "$TEST_DIR/a.avi"
+echo "v" > "$TEST_DIR/b.avi"
+echo "out" > "$TEST_DIR/b-enc.mp4"
+echo "v" > "$TEST_DIR/c.avi"
+
+SPY_LOG="$TEST_DIR/prefetch_calls.log"
+: > "$SPY_LOG"
+# Test 7 で spy 化済み: __av1ify_prefetch は SPY_LOG にパスを記録するだけ
+
+cd "$TEST_DIR"
+unsetopt err_exit
+av1ify "$TEST_DIR/a.avi" "$TEST_DIR/b.avi" "$TEST_DIR/c.avi" > /dev/null 2>&1 || true
+setopt err_exit
+
+# 期待:
+#   iter 1 (a.avi): next=b.avi → b-enc.mp4 が既存なので skip_by_name → prefetch しない
+#   iter 2 (b.avi): next=c.avi → c-enc.mp4 は無い → prefetch する
+#   iter 3 (c.avi): next 無し → prefetch しない
+calls=$(wc -l < "$SPY_LOG" | tr -d ' ')
+if (( calls == 1 )); then
+  printf '✓ prefetch called only for non-skippable next (count=1)\n'
+else
+  printf '✗ Expected 1 prefetch call, got %d\n' "$calls"
+fi
+line1=$(sed -n 1p "$SPY_LOG")
+if [[ "$line1" == "$TEST_DIR/c.avi" ]]; then
+  printf '✓ prefetch target = c.avi (b.avi was correctly skipped)\n'
+else
+  printf '✗ Expected prefetch=%s, got=%s\n' "$TEST_DIR/c.avi" "$line1"
+fi
+
+# ----------------------------------------------------------------------
+# Test 12: 次ファイルが -enc.mp4 自体の場合も prefetch しない
+# ディレクトリ列挙で foo.avi と foo-enc.mp4 が同時に拾われるケースを想定。
+# ----------------------------------------------------------------------
+printf '\n## Test 12: prefetch skipped when next is *-enc.mp4 itself\n'
+TEST_DIR="$TEST_TMP/prefetch_test12"
+mkdir -p "$TEST_DIR"
+echo "v" > "$TEST_DIR/x.avi"
+echo "out" > "$TEST_DIR/x-enc.mp4"
+
+SPY_LOG="$TEST_DIR/prefetch_calls.log"
+: > "$SPY_LOG"
+
+cd "$TEST_DIR"
+unsetopt err_exit
+# 並び順: x.avi → x-enc.mp4 を batch に渡す
+av1ify "$TEST_DIR/x.avi" "$TEST_DIR/x-enc.mp4" > /dev/null 2>&1 || true
+setopt err_exit
+
+# 期待:
+#   iter 1 (x.avi): next=x-enc.mp4 → suffix match で skip_by_name → prefetch しない
+#   iter 2 (x-enc.mp4): next 無し
+calls=$(wc -l < "$SPY_LOG" | tr -d ' ')
+if (( calls == 0 )); then
+  printf '✓ no prefetch when next is -enc.mp4\n'
+else
+  printf '✗ Expected 0 prefetch calls, got %d\n' "$calls"
+fi
+
 printf '\n=== Prefetch Tests Completed ===\n'
