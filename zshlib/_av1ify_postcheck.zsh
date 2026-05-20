@@ -53,6 +53,55 @@ __av1ify_is_nonneg_num() {
   [[ "$1" =~ $re ]]
 }
 
+# 内部補助: ストリームの実質的な末尾時刻 (= duration) を取得
+# まず安価な `stream=duration` を試し、N/A なら packet PTS 走査にフォールバックする。
+# MKV / 一部 MP4 は `stream=duration` を出さないため、ソース由来の A/V mismatch を
+# encode 由来と誤検出しないために真の duration が必要 (issue: 元動画の音声末尾が
+# 短いケース)。
+#
+# 引数: $1 = ファイルパス, $2 = stream specifier (例: v:0, a:0)
+# 出力: REPLY = 取得した duration [秒] (取得不能なら空)
+# 戻り値: 0=取得成功, 1=取得不能
+#
+# パフォーマンス: 安価パスは ffprobe 1 回。フォールバックは「format duration 取得」
+# + 「末尾 60s 区間の packet 走査」 (= 5GB クラス MKV で数秒オーダー)。最後の手段
+# として全走査もある (区間スキャンで packet が拾えない超変則ケース用)。
+__av1ify_get_stream_end() {
+  local file="$1" spec="$2" val fmt_dur start
+  # 安価パス: stream=duration
+  val=$(ffprobe -v error -select_streams "$spec" -show_entries stream=duration \
+        -of default=nk=1:nw=1 -- "$file" 2>/dev/null | head -n1)
+  if __av1ify_is_num "$val"; then
+    REPLY="$val"
+    return 0
+  fi
+  # フォールバック 1: 末尾 60s 区間の packet PTS を走査する (MKV など stream=duration N/A 対応)
+  # ffprobe -read_intervals "START%" で START 秒から末尾までを読む。
+  fmt_dur=$(ffprobe -v error -show_entries format=duration \
+            -of default=nk=1:nw=1 -- "$file" 2>/dev/null | head -n1)
+  if __av1ify_is_num "$fmt_dur"; then
+    start=$(LC_ALL=C awk -v d="$fmt_dur" 'BEGIN { s = d - 60; if (s < 0) s = 0; printf "%.0f", s }')
+    # awk で N/A 行を弾きつつ最終数値行だけ拾う (tail -n1 だと N/A を拾いうる)
+    val=$(ffprobe -v error -read_intervals "${start}%" -select_streams "$spec" \
+          -show_entries packet=pts_time -of csv=p=0 -- "$file" 2>/dev/null \
+          | awk '/^[0-9]/ { last = $0 } END { print last }')
+    if __av1ify_is_num "$val"; then
+      REPLY="$val"
+      return 0
+    fi
+  fi
+  # フォールバック 2: 全 packet 走査 (区間スキャンで packet が無い超変則ケースの最後の手段)
+  val=$(ffprobe -v error -select_streams "$spec" -show_entries packet=pts_time \
+        -of csv=p=0 -- "$file" 2>/dev/null \
+        | awk '/^[0-9]/ { last = $0 } END { print last }')
+  if __av1ify_is_num "$val"; then
+    REPLY="$val"
+    return 0
+  fi
+  REPLY=""
+  return 1
+}
+
 # 内部補助: 出力ファイルの簡易チェック（音声有無と音ズレ）
 __av1ify_postcheck() {
   local filepath="$1"
@@ -68,33 +117,41 @@ __av1ify_postcheck() {
     suffixes+=("noaudio")
   fi
 
-  # A/V duration 判定: ソースとの符号付き相対比較で「AV1 が新たに広げた分」を見る
-  # （ソースが元から持っている末尾差を誤検出しないため）
-  local out_v out_a src_v src_a
+  # A/V duration 判定: ソースとの符号付き相対比較で「encode が新たに作った drift」だけを見る。
+  # ソースが元から持っている A/V mismatch (例: 末尾無音映像が残る MKV、雑なリッピング素材)
+  # を encode 由来と誤検出しないために、絶対値ではなく enc 前後の差分のみを評価する。
+  #
+  # 旧バージョンには「ソースの stream=duration が取得不能 (MKV 等) なら絶対値で判定」という
+  # フォールバックがあったが、ソース由来の音ズレ素材で大量の誤検出を出していたため廃止。
+  # 代わりに __av1ify_get_stream_end が packet PTS 走査で MKV でも真の duration を取りに行く。
+  local out_v out_a src_v="" src_a=""
   out_v=$(ffprobe -v error -select_streams v:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
   out_a=$(ffprobe -v error -select_streams a:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
 
-  local threshold="${AV1IFY_SYNC_TOLERANCE:-0.5}"
-  __av1ify_is_nonneg_num "$threshold" || threshold=0.5
+  # 閾値デフォルトは 2.0s。encode (ffmpeg) は通常 1〜数十ms の精度で A/V 同期を保つので、
+  # 2 秒を超える「新たに作った drift」は実害級と判定する。
+  local threshold="${AV1IFY_SYNC_TOLERANCE:-2.0}"
+  __av1ify_is_nonneg_num "$threshold" || threshold=2.0
 
   if [[ -z "$audio_stream" ]]; then
     : # 音声なしは noaudio で扱われるので avsync 判定はスキップ
   elif ! __av1ify_is_num "$out_v" || ! __av1ify_is_num "$out_a"; then
-    # MKV や一部 MP4 では stream duration が N/A になるが正常なケース。
-    # format duration や frame count など他のチェックに委ねて avsync 判定は無言スキップ。
+    # 出力 mp4 で stream duration が取れないのは異常 (av1ify は mp4 出力固定)。他のチェックに委ねる。
+    :
+  elif [[ -z "$src_path" || ! -f "$src_path" ]]; then
+    # ソースが無い場合は判定スキップ (relative 比較ができないため)
     :
   else
-    local use_relative=0
-    if [[ -n "$src_path" && -f "$src_path" ]]; then
-      src_v=$(ffprobe -v error -select_streams v:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$src_path" 2>/dev/null | head -n1)
-      src_a=$(ffprobe -v error -select_streams a:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$src_path" 2>/dev/null | head -n1)
-      if __av1ify_is_num "$src_v" && __av1ify_is_num "$src_a"; then
-        use_relative=1
-      fi
+    # ソースの真の duration を取得 (stream=duration → packet PTS スキャンの順)
+    if __av1ify_get_stream_end "$src_path" "v:0"; then
+      src_v="$REPLY"
+    fi
+    if __av1ify_get_stream_end "$src_path" "a:0"; then
+      src_a="$REPLY"
     fi
 
-    if (( use_relative )); then
-      # 符号付きで関係差を見る（方向反転も検出）
+    if __av1ify_is_num "$src_v" && __av1ify_is_num "$src_a"; then
+      # 符号付きで関係差を見る (方向反転も検出)
       local result
       result=$(LC_ALL=C awk -v sv="$src_v" -v sa="$src_a" -v ov="$out_v" -v oa="$out_a" -v t="$threshold" 'BEGIN{
         sd = sa - sv
@@ -108,32 +165,16 @@ __av1ify_postcheck() {
         local drift_v="${result%% *}"; result="${result#* }"
         local drift_bad="$result"
         if [[ "$drift_bad" == "1" ]]; then
-          issues+=("音ズレ疑い (src_delta=${sd_v}s out_delta=${od_v}s Δ=${drift_v}s)")
+          issues+=("音ズレ疑い (src_delta=${sd_v}s out_delta=${od_v}s Δ=${drift_v}s threshold=${threshold}s)")
           suffixes+=("avsync")
         fi
       else
-        # awk 失敗時は無言スキップ（他のチェックに委ねる）
+        # awk 失敗時は無言スキップ (他のチェックに委ねる)
         print -ru2 -- "⚠️ A/V drift計算スキップ (awk失敗)"
       fi
-    else
-      # fallback: ソース duration 取れない時は従来の絶対値判定
-      local diff
-      diff=$(LC_ALL=C awk -v a="$out_a" -v v="$out_v" -v t="$threshold" 'BEGIN{
-        d = a - v; if (d < 0) d = -d
-        printf "%.6f %d", d, (d > t) ? 1 : 0
-      }') || diff=""
-      if [[ -n "$diff" ]]; then
-        local diff_v="${diff%% *}"
-        local diff_bad="${diff#* }"
-        if [[ "$diff_bad" == "1" ]]; then
-          issues+=("音ズレ疑い (Δ=${diff_v}s)")
-          suffixes+=("avsync")
-        fi
-      else
-        # awk 失敗時は無言スキップ（他のチェックに委ねる）
-        print -ru2 -- "⚠️ A/V diff計算スキップ (awk失敗)"
-      fi
     fi
+    # ソース duration が両方とも取得不能 (= 安価パスも packet 走査も失敗) の超レアケースは
+    # 判定スキップ。絶対値 fallback を入れるとソース音ズレ素材で誤検出が再発するため敢えて入れない。
   fi
 
   # ソースとの再生時間比較
