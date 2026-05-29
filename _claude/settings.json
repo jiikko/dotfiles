@@ -20,5 +20,6 @@
     "mode": "hold"
   },
   "skipAutoPermissionPrompt": true,
-  "voiceEnabled": true
+  "voiceEnabled": true,
+  "skipWorkflowUsageWarning": true
 }
