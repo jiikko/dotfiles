@@ -113,7 +113,7 @@ type model struct {
 	// Interactive add-to-queue state.
 	inputMode    bool
 	inputPrepend bool // if true, submissions go to the HEAD of the queue
-	inputForce   bool // if true, every submission force-retries (toggled with '!')
+	inputForce   bool // session-wide force-retry toggle ('!'), set from the neutral view or the add prompt
 	inputBuf     []rune
 	flashMsg     string
 	flashErr     bool
@@ -410,6 +410,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "A":
 			if m.focusSlot == 0 {
 				return m.enterAddInput(true)
+			}
+			return m, nil
+		case "!":
+			// Arm/disarm session-wide force-retry from the neutral view so the
+			// next a/A add already runs in force mode (no per-line '!' needed).
+			if m.focusSlot == 0 {
+				m.inputForce = !m.inputForce
+				if m.inputForce {
+					m.setFlash("force-retry mode ON — a/A will re-enqueue processed items", false)
+				} else {
+					m.setFlash("force-retry mode OFF", false)
+				}
 			}
 			return m, nil
 		case "p":
@@ -762,9 +774,11 @@ func (m model) View() string {
 	} else if m.focusSlot != 0 {
 		b.WriteString(styleKey.Render("  esc / 0: back   e: open log in $EDITOR   a: add   q: stop"))
 	} else if m.completed >= m.total && running == 0 {
-		b.WriteString(styleKey.Render("  all done — a/A: add   p: par   r: recent   l: queue   o: other   type 'quit' to exit"))
+		b.WriteString(forceBadge(m.inputForce))
+		b.WriteString(styleKey.Render("all done — a/A: add   !: force   p: par   r: recent   l: queue   o: other   type 'quit' to exit"))
 	} else {
-		b.WriteString(styleKey.Render("  1-9: focus   a/A: add   p: par   P: pause   r: recent   l: queue   type 'quit' to stop"))
+		b.WriteString(forceBadge(m.inputForce))
+		b.WriteString(styleKey.Render("1-9: focus   a/A: add   !: force   p: par   P: pause   r: recent   l: queue   type 'quit' to stop"))
 	}
 	b.WriteString("\n")
 
@@ -949,7 +963,9 @@ func (m model) enterAddInput(prepend bool) (tea.Model, tea.Cmd) {
 	}
 	m.inputMode = true
 	m.inputPrepend = prepend
-	m.inputForce = false
+	// inputForce is intentionally NOT reset here: it is a session-wide toggle
+	// that can be armed from the neutral view (press '!') before opening the
+	// prompt, and stays as the user left it across add sessions.
 	m.inputBuf = m.inputBuf[:0]
 	m.flashMsg = ""
 	return m, nil
@@ -1003,6 +1019,16 @@ func (m model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+// forceBadge returns the leading footer segment: a highlighted "[FORCE]" when
+// the session-wide force-retry toggle is armed, otherwise plain indentation so
+// the following hint text keeps its alignment either way.
+func forceBadge(on bool) string {
+	if on {
+		return styleRunning.Render("  [FORCE] ")
+	}
+	return "  "
 }
 
 func containsNewline(rs []rune) bool {

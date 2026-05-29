@@ -602,15 +602,78 @@ func TestTUIModelForceAddToggle(t *testing.T) {
 		t.Errorf("addedLive = %d, want 1 (force re-enqueued)", m.addedLive)
 	}
 
-	// Toggling again turns it back OFF.
+	// Force mode persists across add sessions (it is a session-wide toggle, not
+	// reset when the prompt closes/reopens). Reopening keeps it ON.
+	if !m.inputForce {
+		t.Fatal("force mode should persist after submitting, not reset")
+	}
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	m = u.(model)
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'!'}})
-	m = u.(model)
+	if !m.inputForce {
+		t.Fatal("reopening the prompt should keep force mode ON")
+	}
+
+	// '!' inside the prompt toggles it back OFF.
 	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'!'}})
 	m = u.(model)
 	if m.inputForce {
-		t.Fatal("second '!' should toggle force mode back OFF")
+		t.Fatal("'!' should toggle force mode back OFF")
+	}
+}
+
+// Force mode can be armed from the neutral view (before opening the add
+// prompt) and carries into the subsequent a/A add session.
+func TestTUIModelForceToggleFromNeutral(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `echo {item}`}
+	r := NewRunner(cfg, []string{"seed"})
+	r.SetLive(true)
+	r.SeedDedup(map[string]string{"done": "ok"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+
+	// Arm force mode from the neutral view (no input prompt open yet).
+	if m.inputMode {
+		t.Fatal("should start in neutral view, not input mode")
+	}
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'!'}})
+	m = u.(model)
+	if !m.inputForce {
+		t.Fatal("'!' in neutral view should arm force mode")
+	}
+
+	// Opening the add prompt keeps force mode armed; submitting an already
+	// processed item re-enqueues it without an explicit '!' prefix.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = u.(model)
+	if !m.inputForce {
+		t.Fatal("force mode armed in neutral view should carry into the add prompt")
+	}
+	for _, ch := range "done" {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		m = u.(model)
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(model)
+	if m.flashErr {
+		t.Fatalf("neutral-armed force-add should not error, flash: %q", m.flashMsg)
+	}
+	if m.addedLive != 1 {
+		t.Errorf("addedLive = %d, want 1 (force re-enqueued)", m.addedLive)
 	}
 }
 
