@@ -547,6 +547,110 @@ func TestTUIModelAddItemFlow(t *testing.T) {
 	}
 }
 
+// A lone '!' at the empty prompt toggles force-add mode rather than being
+// inserted into the buffer; a subsequent submission force-retries a line that
+// was already processed.
+func TestTUIModelForceAddToggle(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `echo {item}`}
+	r := NewRunner(cfg, []string{"seed"})
+	r.SetLive(true)
+	// Mark "done" as already succeeded so a plain Enqueue would reject it.
+	r.SeedDedup(map[string]string{"done": "ok"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+
+	// Enter input mode.
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = u.(model)
+
+	// Lone '!' toggles force mode ON without entering the buffer.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'!'}})
+	m = u.(model)
+	if !m.inputForce {
+		t.Fatal("'!' at empty prompt should toggle force mode ON")
+	}
+	if len(m.inputBuf) != 0 {
+		t.Fatalf("'!' should not be inserted into buffer, got %q", string(m.inputBuf))
+	}
+
+	// Typing the already-processed item and submitting should force-retry it.
+	for _, ch := range "done" {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		m = u.(model)
+	}
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(model)
+	if m.flashErr {
+		t.Fatalf("force-add should not error, flash: %q", m.flashMsg)
+	}
+	if m.addedLive != 1 {
+		t.Errorf("addedLive = %d, want 1 (force re-enqueued)", m.addedLive)
+	}
+
+	// Toggling again turns it back OFF.
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = u.(model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'!'}})
+	m = u.(model)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'!'}})
+	m = u.(model)
+	if m.inputForce {
+		t.Fatal("second '!' should toggle force mode back OFF")
+	}
+}
+
+// A '!' typed after other characters stays literal (only a lone leading '!'
+// toggles the mode).
+func TestTUIModelForceToggleOnlyWhenBufferEmpty(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Parallelism: 1, Template: `echo {item}`}
+	r := NewRunner(cfg, []string{"seed"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	m := newModel(cfg, 1, r.Events(), r, 0)
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = u.(model)
+	for _, ch := range "ab!c" {
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		m = u.(model)
+	}
+	if m.inputForce {
+		t.Error("mid-buffer '!' should not toggle force mode")
+	}
+	if string(m.inputBuf) != "ab!c" {
+		t.Errorf("inputBuf = %q, want %q", string(m.inputBuf), "ab!c")
+	}
+}
+
 // Backspace and Esc behave correctly in input mode.
 func TestTUIModelInputEditing(t *testing.T) {
 	dir := t.TempDir()

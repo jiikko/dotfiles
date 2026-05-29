@@ -113,6 +113,7 @@ type model struct {
 	// Interactive add-to-queue state.
 	inputMode    bool
 	inputPrepend bool // if true, submissions go to the HEAD of the queue
+	inputForce   bool // if true, every submission force-retries (toggled with '!')
 	inputBuf     []rune
 	flashMsg     string
 	flashErr     bool
@@ -648,11 +649,19 @@ func (m model) View() string {
 		}
 		b.WriteString("  ")
 		b.WriteString(styleHeader.Render(label))
+		if m.inputForce {
+			b.WriteString(" ")
+			b.WriteString(styleRunning.Render("[FORCE]"))
+		}
 		b.WriteString(" ")
 		b.WriteString(string(m.inputBuf))
 		b.WriteString(styleRunning.Render("▌"))
 		b.WriteString("\n")
-		b.WriteString(styleDim.Render("    tip: paste multiple lines to enqueue them at once  |  prefix with '!' to force retry"))
+		forceTip := "'!': toggle force-retry mode (now OFF)"
+		if m.inputForce {
+			forceTip = "'!': toggle force-retry mode (now ON)"
+		}
+		b.WriteString(styleDim.Render("    tip: paste multiple lines to enqueue them at once  |  " + forceTip))
 		b.WriteString("\n")
 		b.WriteString(styleKey.Render("  enter: submit   esc: cancel   ctrl-u: clear"))
 		b.WriteString("\n")
@@ -940,6 +949,7 @@ func (m model) enterAddInput(prepend bool) (tea.Model, tea.Cmd) {
 	}
 	m.inputMode = true
 	m.inputPrepend = prepend
+	m.inputForce = false
 	m.inputBuf = m.inputBuf[:0]
 	m.flashMsg = ""
 	return m, nil
@@ -975,6 +985,13 @@ func (m model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.inputBuf = m.inputBuf[:0]
 		return m, nil
 	case tea.KeyRunes:
+		// A lone '!' typed at an empty prompt toggles force-add mode instead of
+		// being inserted, so the user can force-retry every item without prefixing
+		// each one. Mid-buffer '!' (or a pasted '!') stays literal.
+		if len(m.inputBuf) == 0 && len(msg.Runes) == 1 && msg.Runes[0] == '!' {
+			m.inputForce = !m.inputForce
+			return m, nil
+		}
 		if !containsNewline(msg.Runes) {
 			m.inputBuf = append(m.inputBuf, msg.Runes...)
 			return m, nil
@@ -1053,10 +1070,11 @@ const (
 // aggregates flash messages itself; otherwise an individual flash is set.
 // Uses runner.EnqueueFront when the input mode was opened for prepend.
 //
-// A leading "!" on line is interpreted as a force marker: the item will be
-// re-enqueued even if it is already in result.log as "ok" / "FAIL".
+// Force-retry (re-enqueue an item already in result.log as "ok" / "FAIL") is
+// requested either by the session-wide force-add mode (m.inputForce, toggled
+// with '!') or by a leading "!" marker on the line itself.
 func (m *model) submitLine(line string, batch bool) submitResult {
-	force := false
+	force := m.inputForce
 	if strings.HasPrefix(line, "!") {
 		force = true
 		line = strings.TrimSpace(strings.TrimPrefix(line, "!"))
