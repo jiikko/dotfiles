@@ -93,16 +93,8 @@ if [ -n "$five_pct" ] || [ -n "$seven_pct" ]; then
   rate_part=" ${parts}"
 fi
 
-# Right-align rate_part using terminal width
-if [ -n "$rate_part" ]; then
-  cols=$(tput cols 2>/dev/null || echo 80)
-  # Calculate visible (non-ANSI) lengths
-  left_len=$(printf "%b" "$path_part" | sed 's/\x1b\[[0-9;]*m//g' | wc -m | tr -d ' ')
-  right_len=$(printf "%b" "$rate_part" | sed 's/\x1b\[[0-9;]*m//g' | wc -m | tr -d ' ')
-  gap=$(( cols - left_len - right_len ))
-  [ "$gap" -lt 1 ] && gap=1
-  padding=$(printf "%${gap}s" "")
-  printf "%b%s%b" "$path_part" "$padding" "$rate_part"
-else
-  printf "%b" "$path_part"
-fi
+# Left-align rate_part right after the branch/path (no right-alignment).
+# Right-alignment relied on `tput cols`, but the statusLine command runs
+# without a controlling TTY so the width was wrong and the rate part
+# overflowed past the right edge. rate_part already carries a leading space.
+printf "%b%b" "$path_part" "$rate_part"
