@@ -11,6 +11,21 @@ export TMUX_TMPDIR
 SOCKET_NAME="dotfiles-test-$$"
 log_file="$TMUX_TMPDIR/tmux.log"
 
+# resurrect / debounce 保存を実データから隔離する。
+# _tmux.conf には window-linked hook（scripts/tmux_resurrect_debounced_save.sh を
+# 走らせる debounce 保存）と continuum autosave があり、テストで conf をロードして
+# セッションを作ると保存が走り得る。resurrect の保存先（helpers.sh）は
+#   1) @resurrect-dir / 2) ~/.tmux/resurrect が在ればそれ / 3) $XDG_DATA_HOME/...
+# の順で解決されるため、XDG_DATA_HOME だけ差し替えても実 HOME に ~/.tmux/resurrect が
+# 在る環境では本物を触り得る。そこで HOME ごと temp に隔離して全候補を temp に倒す。
+# DOTFILES_DIR は明示固定する（conf の plugin パスは ${DOTFILES_DIR:-$HOME/dotfiles}
+# なので HOME を temp にすると $HOME/dotfiles が壊れるため）。
+export HOME="$TMUX_TMPDIR/home"
+export DOTFILES_DIR="$ROOT_DIR"
+export XDG_DATA_HOME="$HOME/.local/share"
+export TT_DEBOUNCE_STATE_DIR="$HOME/.cache/tt-debounce"
+mkdir -p "$HOME" "$XDG_DATA_HOME" "$TT_DEBOUNCE_STATE_DIR"
+
 if ! command -v "$TMUX_BIN_PATH" >/dev/null 2>&1; then
   print -u2 "Error: tmux binary not found. Install tmux or set \$TMUX_BIN."
   exit 1

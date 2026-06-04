@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-SHELLCHECK_FILES := setup.sh zshlib/_av1ify.zsh zshlib/_av1ify_postcheck.zsh zshlib/_av1ify_encode.zsh
+SHELLCHECK_FILES := setup.sh zshlib/_av1ify.zsh zshlib/_av1ify_postcheck.zsh zshlib/_av1ify_encode.zsh scripts/tmux_resurrect_debounced_save.sh
 YAML_FILES := pre-commit-config.yml .github/workflows/tests.yml .github/workflows/lint.yml
 JSON_FILES := mac/karabiner.json _coc-settings.json
 
@@ -24,6 +24,7 @@ test-zshrc:
 	@tests/zshrc/ai-commands/test_ai_commands.sh
 	@tests/zshrc/tmux-window-name/test_tmux_window_name.sh
 	@tests/zshrc/tmux-session/test_tt.sh
+	@tests/zshrc/tmux-session/test_debounced_save.sh
 	@tests/zshrc/av1ify/test_av1ify_basic.sh
 	@tests/zshrc/av1ify/test_av1ify_audio.sh
 	@tests/zshrc/av1ify/test_av1ify_options.sh
