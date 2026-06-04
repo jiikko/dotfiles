@@ -23,6 +23,7 @@ test-zshrc:
 	@tests/zshrc/test_zshrc.sh
 	@tests/zshrc/ai-commands/test_ai_commands.sh
 	@tests/zshrc/tmux-window-name/test_tmux_window_name.sh
+	@tests/zshrc/tmux-session/test_tt.sh
 	@tests/zshrc/av1ify/test_av1ify_basic.sh
 	@tests/zshrc/av1ify/test_av1ify_audio.sh
 	@tests/zshrc/av1ify/test_av1ify_options.sh

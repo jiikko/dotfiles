@@ -407,38 +407,7 @@ bindkey '^G^G' git_diff
 bindkey '^L^S' shell_ls
 
 
-function t () {
-  if [ -z "${1-}" ]; then
-    name="s$(date +%s)"  # セッション名が重複しないように一意の名前を生成
-  else
-    name="$1"
-  fi
-  tmux new-session -d -s "$name"
-  tmux new-window -t "$name"
-  tmux new-window -t "$name"
-  tmux new-window -t "$name"
-  tmux new-window -t "$name"
-
-  tmux select-window -t "$name":0
-  tmux attach-session -t "$name"
-}
-
-function tt () {
-  if [ -n "$1" ]; then
-    name="$1"
-  else
-    name=$(basename "$PWD")
-  fi
-
-  # ドットをアンダースコアに置換（tmuxのセッション名では.が区切り文字として解釈されるため）
-  name="${name//./_}"
-
-  if tmux has-session -t "$name" 2>/dev/null; then
-    tmux attach-session -t "$name"
-  else
-    t "$name"
-  fi
-}
+# t / tt / _tt_wait_for_restore は zshlib/_tmux_session.zsh に切り出し（下部で source）。
 
 function puma_ps () {
   ROOT_SCREEN_PID=$(ps x | grep -E "S $(echo `basename "$PWD"`)$" | awk '{ print $1}')
@@ -630,6 +599,7 @@ function rrr() {
 
 source $HOME/dotfiles/zshlib/_ensure_cli_with_brew.zsh
 source $HOME/dotfiles/zshlib/_tmux_window_name.zsh
+source $HOME/dotfiles/zshlib/_tmux_session.zsh
 
 # gemini/codex は brew で自動インストールするラッパー
 function gemini() {
