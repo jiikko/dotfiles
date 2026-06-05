@@ -19,6 +19,7 @@ typeset -g _TMUX_SESSION_LIB="${${(%):-%x}:A}"
 
 # 新規に 5 窓のセッションを作って attach する実体。
 _t_impl () {
+  local name
   if [ -z "${1-}" ]; then
     name="s$(date +%s)"  # セッション名が重複しないように一意の名前を生成
   else
@@ -86,6 +87,7 @@ _tt_wait_for_restore () {
 
 # カレントディレクトリ名（or 引数）のセッションに attach。無ければ作成する実体。
 _tt_impl () {
+  local name
   if [ -n "$1" ]; then
     name="$1"
   else
