@@ -69,8 +69,11 @@ OUT="$(
     _T_INPROGRESS="1"; _T_SESSIONS="proj"             # epoch=1(1970) → TTL 超過の降り損ね → 復元中でない
     if tt_should_save; then printf "CASE:guard_stale save=yes\n"; else printf "CASE:guard_stale save=no\n"; fi
 
-    _T_INPROGRESS=""; _T_SESSIONS="proj __tt_hold_123"
-    if tt_should_save; then printf "CASE:guard_hold save=yes\n"; else printf "CASE:guard_hold save=no\n"; fi
+    _T_INPROGRESS=""; _T_SESSIONS="__tt_hold_123"     # hold だけ = bootstrap → 抑止
+    if tt_should_save; then printf "CASE:guard_hold_only save=yes\n"; else printf "CASE:guard_hold_only save=no\n"; fi
+
+    _T_INPROGRESS=""; _T_SESSIONS="proj __tt_hold_123" # hold 残置でも実セッション有 → 保存再開
+    if tt_should_save; then printf "CASE:guard_hold_with_real save=yes\n"; else printf "CASE:guard_hold_with_real save=no\n"; fi
 
     _T_INPROGRESS=""; _T_SESSIONS="proj other"
     if tt_should_save; then printf "CASE:guard_ok save=yes\n"; else printf "CASE:guard_ok save=no\n"; fi
@@ -139,10 +142,11 @@ assert_eq_line dbs_set     "sec=3"  "@tt-debounce-save-seconds=3 → 3 秒"
 assert_eq_line dbs_invalid "sec=10" "非数値 → 既定 10 秒"
 
 printf '\n## 保存ガード (last 保護の不変条件)\n'
-assert_eq_line guard_inprogress "save=no"  "復元中 (直近 epoch) は保存しない"
-assert_eq_line guard_stale      "save=yes" "復元フラグが TTL 超過 (降り損ね) なら保存を再開する"
-assert_eq_line guard_hold       "save=no"  "bootstrap hold セッション存在中は保存しない"
-assert_eq_line guard_ok         "save=yes" "平常時 (復元中でも hold でもない) は保存可"
+assert_eq_line guard_inprogress     "save=no"  "復元中 (直近 epoch) は保存しない"
+assert_eq_line guard_stale          "save=yes" "復元フラグが TTL 超過 (降り損ね) なら保存を再開する"
+assert_eq_line guard_hold_only      "save=no"  "hold だけ (bootstrap) は保存しない"
+assert_eq_line guard_hold_with_real "save=yes" "hold 残置でも実セッションがあれば保存再開 (永久抑止しない)"
+assert_eq_line guard_ok             "save=yes" "平常時 (復元中でも hold でもない) は保存可"
 
 printf '\n## 保存スクリプト解決\n'
 assert_eq_line save_run      "runs=1"        "@resurrect-save-script-path を quiet 実行する"

@@ -16,9 +16,15 @@
 #      ガード無しだと「部分復元状態」を last に焼き付け、次回復元が壊れる。
 #      フラグは _tmux.conf の @resurrect-hook-pre/post-restore-all が立て/降ろす。
 #   2. bootstrap 用の hold セッション（_tmux_session.zsh の _tt_impl が作る
-#      __tt_hold_* 。下記「依存」参照）が存在する間も保存しない。
+#      __tt_hold_* 。下記「依存」参照）「だけ」が存在する間は保存しない。
 #      fresh boot 直後は「空の hold だけ」の状態であり、ここで保存すると
 #      復元前に last（唯一の良いスナップショット）を空状態で上書きしてしまう。
+#      ただし抑止するのは「hold が唯一のセッション」のときだけにする。実セッションが
+#      1 つでも存在すれば（= 復元が進んで実体が出来た / 平常運用）保存は安全であり、
+#      抑止しない。これにより _tt_impl が rc=1/2（復元 timeout・フック未設定）で hold を
+#      畳まず残置しても、実セッションがある限り保存が永久停止しない。
+#      復元の「最中」（hold + 部分的な実セッション）は不変条件 1（@tt-restore-in-progress）が
+#      抑止する（pre-restore-all がセッション生成より前にフラグを立てるため）。
 #   3. 同時に複数の保存を走らせない（mkdir lock）。重複・競合した last/archive
 #      を防ぐ。lock はクラッシュ取り残し対策に mtime で stale 自動解除する。
 #   4. イベント連打で保存を多発させない（debounce token: 自分が最後の
@@ -76,18 +82,26 @@ tt_restore_in_progress() {
   [ "$(( now - v ))" -lt "$TT_RESTORE_INPROGRESS_TTL" ]
 }
 
-# bootstrap 用 hold セッションが存在するか（不変条件 2）
-tt_hold_session_present() {
-  tmux list-sessions -F '#{session_name}' 2>/dev/null \
-    | grep -q "^${TT_HOLD_PREFIX}"
+# bootstrap 状態か（hold セッション「だけ」が存在し、実セッションが 1 つも無い）（不変条件 2）。
+# 「hold が 1 つでもある」ではなく「hold 以外が 1 つも無い」を見るのが肝。
+# 実セッションが存在すれば保存は安全なので抑止しない（rc=1/2 の hold 残置で永久抑止しない）。
+tt_only_hold_sessions() {
+  local sessions
+  sessions="$(tmux list-sessions -F '#{session_name}' 2>/dev/null)"
+  # hold 以外（実セッション）が 1 行でもあれば bootstrap ではない → 抑止しない
+  if printf '%s\n' "$sessions" | grep -qv "^${TT_HOLD_PREFIX}"; then
+    return 1
+  fi
+  # ここに来るのは「全行が hold」or「セッション皆無」。hold が最低 1 つあるときだけ bootstrap。
+  printf '%s\n' "$sessions" | grep -q "^${TT_HOLD_PREFIX}"
 }
 
-# 保存してよい状態か（復元中でも bootstrap 中でもない）
+# 保存してよい状態か（復元中でも bootstrap(hold のみ) 中でもない）
 tt_should_save() {
   if tt_restore_in_progress; then
     return 1
   fi
-  if tt_hold_session_present; then
+  if tt_only_hold_sessions; then
     return 1
   fi
   return 0
