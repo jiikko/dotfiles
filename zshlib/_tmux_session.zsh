@@ -95,6 +95,10 @@ _tt_impl () {
   # ドットをアンダースコアに置換（tmuxのセッション名では.が区切り文字として解釈されるため）
   name="${name//./_}"
 
+  # 自動復元を「待って」から attach した場合だけ、attach 時に復元所要秒を flash する。
+  # サーバ既存の高速パス（復元なし）や rc=3（保存なしで復元が走らない）では立てない。
+  local flash_restore=0
+
   # OS 再起動直後などサーバ未起動のときは、空セッションを先に作らず
   # tmux の自動復元（continuum + resurrect）を完了させてから attach する。
   # 先に t で 5 窓を作ると総ペイン数 > 1 となり、resurrect の restore_from_scratch が
@@ -109,9 +113,12 @@ _tt_impl () {
     _tt_wait_for_restore
     local rc=$?
     case "$rc" in
-      0|3)
-        # 0=復元完了（フラグ確認済み）/ 3=復元が走らない（保存なし or 自動復元無効）。
-        # どちらも hold は不要。畳んで通常の attach/create へ進む。
+      0)
+        # 復元完了（フラグ確認済み）。hold を畳み、attach 時に所要秒を flash する。
+        tmux kill-session -t "$hold" 2>/dev/null
+        flash_restore=1 ;;
+      3)
+        # 復元が走らない（保存なし or 自動復元無効）。hold を畳んで通常の attach/create へ。
         tmux kill-session -t "$hold" 2>/dev/null ;;
       *)
         # 1=タイムアウト / 2=完了検知フック未設定。ここで hold を畳んだり 5 窓を作ると
@@ -129,7 +136,17 @@ _tt_impl () {
   fi
 
   if tmux has-session -t "$name" 2>/dev/null; then
-    tmux attach-session -t "$name"
+    # 復元を待った場合のみ、post-restore-all フックが格納した所要秒を読み、
+    # attach と同じコマンド列で display-message する（attach 後はクライアントが
+    # 接続済みなので確実に見える。フック側で出すと表示先が無く見えない）。
+    # -d 5000 で 5 秒表示（display-time をグローバルに書き換えない）。
+    local dur=""
+    [ "$flash_restore" = 1 ] && dur="$(tmux show -gqv @tt-restore-duration 2>/dev/null)"
+    if [ -n "$dur" ]; then
+      tmux attach-session -t "$name" \; display-message -d 5000 "tmux 復元: ${dur}s（${name}）"
+    else
+      tmux attach-session -t "$name"
+    fi
   else
     _t_impl "$name"   # 公開ラッパー t ではなく実体を呼ぶ（無駄な再 source を避ける）
   fi
