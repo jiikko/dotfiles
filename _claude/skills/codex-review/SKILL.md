@@ -1,7 +1,7 @@
 ---
 name: codex-review
-version: 2.1.0
-description: codex exec review を基本に、必要なら codex exec を使ってコード変更のレビューを依頼し、指摘事項を報告する。
+version: 2.2.0
+description: codex exec review を基本に、必要なら codex exec を使ってコード変更のレビューを依頼し、指摘事項を報告する。「codexでレビューして」「codex-review」「/codex-review」で発火。Codex 単体での単独レビュー用途（複数エージェント並行レビューは cross-review を使う）。
 ---
 
 # Codex Review

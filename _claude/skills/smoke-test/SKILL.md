@@ -1,7 +1,7 @@
 ---
 name: smoke-test
-version: 1.0.0
-description: Smoke Test - アプリ全体動作確認。bin/tt-client を使用してアプリの全体的な動作確認を行うスキル。クイック/標準/完全の3段階のテスト範囲を選択可能。
+version: 1.1.0
+description: Smoke Test - アプリ全体動作確認。bin/tt-client を使用してアプリの全体的な動作確認を行うスキル。クイック/標準/完全の3段階のテスト範囲を選択可能。「スモークテスト」「smoke-test」「全体の動作確認して」で発火。ThumbnailThumb 専用（bin/tt-client 依存）。
 ---
 
 # Smoke Test - アプリ全体動作確認

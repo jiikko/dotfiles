@@ -1,7 +1,7 @@
 ---
 name: perf-analysis
-version: 1.0.0
-description: Performance Analysis - パフォーマンス分析。./tmp/perf.log を分析してボトルネックを特定し、パフォーマンス改善 Issue を作成するスキル。
+version: 1.1.0
+description: Performance Analysis - パフォーマンス分析。./tmp/perf.log を分析してボトルネックを特定し、パフォーマンス改善 Issue を作成するスキル。「パフォーマンス分析」「perf-analysis」「ボトルネックを調べて」で発火。ThumbnailThumb 専用（bin/tt-client 依存）。
 ---
 
 # Performance Analysis - パフォーマンス分析
