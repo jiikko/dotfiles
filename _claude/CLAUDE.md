@@ -88,6 +88,6 @@
 | issue-sync, issue同期, 完了漏れ, done移動 | `~/.claude/skills/issue-sync/SKILL.md` |
 | クラッシュ, crash, .ips, DiagnosticReports, SIGSEGV, SIGABRT | `~/.claude/skills/crash-log-analyzer/SKILL.md` |
 | codex-review, Codexレビュー, コードレビュー依頼 | `~/.claude/skills/codex-review/SKILL.md` |
-| 設計レビューと実装レビュー, design-impl-review, codexに設計と実装を通す | `~/.claude/skills/design-impl-review/SKILL.md` |
+| codexにリード, codex主導で着手, 設計から codex に任せて, design-impl-review | `~/.claude/skills/design-impl-review/SKILL.md` |
 | cross-review, クロスレビュー, 複数視点レビュー | `~/.claude/skills/cross-review/SKILL.md` |
 | gemini, gemini委譲, mass replacement, mass rename, 機械的置換 | `~/.claude/skills/gemini-delegation/SKILL.md` |
