@@ -1,7 +1,7 @@
 ---
 name: issue-sync
-version: 2.0.0
-description: Open Issues のうち実は完了済みのものを検出し、done/ への移動と readme.md の更新を行う。
+version: 2.1.0
+description: Open Issues のうち実は完了済みのものを検出し、done/ への移動と readme.md の更新を行う。「issueを整理して」「issue-sync」「完了issueを片付けて」「done漏れを直して」で発火。
 ---
 
 # Issue Sync
