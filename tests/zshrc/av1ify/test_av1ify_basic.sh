@@ -154,4 +154,25 @@ else
   printf '✗ Reports error when -f has no argument (output: %s)\n' "$output"
 fi
 
+# Test 13: 成功時のサイズ削減サマリ表示 (元→出力, 削減率)
+printf '\n## Test 13: Size reduction summary on success\n'
+TEST_DIR="$TEST_TMP/test13"
+mkdir -p "$TEST_DIR"
+cd "$TEST_DIR"
+head -c 1000 /dev/zero > "$TEST_DIR/input.avi"   # 元 1000 bytes
+unsetopt err_exit
+output=$(MOCK_FFMPEG_OUTPUT_SIZE=250 av1ify "$TEST_DIR/input.avi" 2>&1)   # 出力 250 bytes
+setopt err_exit
+assert_contains "$output" "📉" "Shows size-down icon on reduction"
+assert_contains "$output" "1000 B" "Shows source size"
+assert_contains "$output" "250 B" "Shows output size"
+assert_contains "$output" "(-75%)" "Shows reduction percentage"
+
+# Test 14: __av1ify_format_size の人間可読フォーマット (境界値)
+printf '\n## Test 14: __av1ify_format_size human-readable units\n'
+assert_contains "$(__av1ify_format_size 512)" "512 B" "bytes under 1KB"
+assert_contains "$(__av1ify_format_size 1536)" "1.5 KB" "1.5 KB"
+assert_contains "$(__av1ify_format_size 1572864)" "1.5 MB" "1.5 MB"
+assert_contains "$(__av1ify_format_size 1610612736)" "1.5 GB" "1.5 GB"
+
 printf '\n=== Basic Tests Completed ===\n'

@@ -90,6 +90,22 @@ __av1ify_fs_type_for() {
   print -r -- "$fs"
 }
 
+# 内部補助: ファイルサイズ(バイト)を返す。取得失敗時は空文字。
+# macOS: stat -f%z, Linux: stat -c%s
+__av1ify_file_size() {
+  stat -f%z -- "$1" 2>/dev/null || stat -c%s -- "$1" 2>/dev/null
+}
+
+# 内部補助: バイト数を人間可読 (B/KB/MB/GB/TB) にフォーマット
+__av1ify_format_size() {
+  awk -v b="$1" 'BEGIN{
+    if (b < 1024) { printf "%d B", b; exit }
+    u="KMGT"; i=0; s=b
+    do { s /= 1024; i++ } while (s >= 1024 && i < length(u))
+    printf "%.1f %sB", s, substr(u, i, 1)
+  }'
+}
+
 # 内部補助: エンコード成功後の後処理（postcheck + 元ファイル削除）
 # 引数: $1=tmp, $2=final_out, $3=in, $4=target_fps, $5=target_height
 # 戻り値: 0=成功, 1=要確認(NG)
@@ -100,6 +116,19 @@ __av1ify_finalize() {
   mv -f -- "$tmp" "$final_out"
   if __av1ify_postcheck "$final_out" "$in" "$( [[ -n "$target_fps" ]] && echo 1 || echo 0 )" "$target_height"; then
     final_out="$REPLY"; print -P -- "%F{green}✅ 完了: $final_out%f"
+    # サイズ削減サマリ (元→出力)。元ファイル ($in) は削除前なのでサイズ取得可能。
+    local _src_size _out_size
+    _src_size=$(__av1ify_file_size "$in")
+    _out_size=$(__av1ify_file_size "$final_out")
+    if [[ "$_src_size" =~ ^[0-9]+$ && "$_out_size" =~ ^[0-9]+$ ]] && (( _src_size > 0 )); then
+      local _src_h _out_h _pct _icon
+      _src_h=$(__av1ify_format_size "$_src_size")
+      _out_h=$(__av1ify_format_size "$_out_size")
+      # %+.0f で符号付き (削減=負, 増加=正)。削減率 = (out - src) / src * 100
+      _pct=$(awk -v s="$_src_size" -v o="$_out_size" 'BEGIN{ printf "%+.0f", (o - s) / s * 100 }')
+      _icon="📉"; (( _out_size > _src_size )) && _icon="📈"
+      print -P -- "%F{green}   ${_icon} ${_src_h} → ${_out_h} (${_pct}%%)%f"
+    fi
     if (( __AV1IFY_DELETE_ORIGIN )) && [[ -f "$in" ]]; then
       # /usr/bin/trash は -- を end-of-options として扱わないため絶対パスで渡す
       local in_abs="${in:A}"
