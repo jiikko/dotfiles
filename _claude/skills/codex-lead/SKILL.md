@@ -157,7 +157,7 @@ codex がリードした方針に沿って Claude が実装する。
 ## ルール
 
 - **Phase 1（codex の設計リード）を必ず先に通す。** Claude が先に設計を固めて実装に走らない。codex に方針を主導させ、合意を取ってから Phase 2 に進む
-- 設計リードも実装レビューも codex を使い、コードを破壊的に変更しない（codex は read-only）
+- 設計リードも実装レビューも codex はレビュー用途で使い、codex にコードを変更させない（設計リードは `codex exec -s read-only`、実装レビューは `codex exec review` 系のレビューコマンド）
 - `command codex` を使うこと（`codex` 直接呼び出しは zsh 関数オーバーライドでエラーになる場合がある）
 - 設計リードは差分がないため `codex exec -s read-only` を使う（selector は使わない）
 - 常に `--full-auto --ephemeral -o "$lead_out"` を付与する
