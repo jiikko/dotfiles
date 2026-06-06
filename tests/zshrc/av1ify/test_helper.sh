@@ -115,6 +115,13 @@ elif echo "$*" | grep -q "packet=pts_time"; then
       *) echo "${MOCK_AUDIO_LAST_PTS-${MOCK_AUDIO_DURATION-10.0}}" ;;
     esac
   fi
+elif echo "$*" | grep -q "packet=dts"; then
+  # DTS単調性チェック用 (__video_health_check チェック3): MOCK_DTS_BACKWARD=1 で逆行を注入
+  if [ -n "${MOCK_DTS_BACKWARD-}" ]; then
+    printf '0\n3750\n2000\n7500\n'   # 3750→2000 で逆行=破損
+  else
+    printf '0\n3750\n7500\n11250\n'  # 単調増加=健全
+  fi
 elif echo "$*" | grep -q "duration"; then
   echo "10.0"
 elif echo "$*" | grep -q "avg_frame_rate"; then

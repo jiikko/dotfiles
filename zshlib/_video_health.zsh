@@ -70,30 +70,50 @@ __video_health_check() {
   # 出力後の postcheck がソース相対比較（|out_delta - src_delta|）で
   # 「AV1 エンコ起因の真のズレ」だけを検出する。
 
-  # --- チェック3: avg_frame_rate vs r_frame_rate 乖離（スロー/早送り検出） ---
-  local r_fps avg_fps
-  r_fps=$(ffprobe -v error -select_streams v:0 \
-    -show_entries stream=r_frame_rate -of default=nk=1:nw=1 -- "$file" 2>/dev/null | head -n1)
-  avg_fps=$(ffprobe -v error -select_streams v:0 \
-    -show_entries stream=avg_frame_rate -of default=nk=1:nw=1 -- "$file" 2>/dev/null | head -n1)
+  # --- チェック3: DTS 単調性（DTS 逆行 = 本物のタイムスタンプ破損） ---
+  #
+  # 旧実装は r_frame_rate vs avg_frame_rate の乖離を「スロー/早送り破損」として
+  # 検出していたが、これは誤検知製造機だったため撤去した:
+  #   - r_frame_rate は ffprobe の「全タイムスタンプを表現できる最小の基底レート」
+  #     という推測値で、CFR コンテンツでも time_base 由来の非現実的な値を返す。
+  #     実例: CFR 24fps の Web 配信動画 (time_base=1/90000) で r_frame_rate=120 を
+  #     報告。PTS 連続差分の 99% が delta=3750 (=きっかり 1/24 秒) で一定 = 健全な
+  #     CFR なのに、r(120) vs avg(23.59) の比較で「破損」と誤判定していた。
+  #   - VFR では r と avg が大きく乖離するのが正常。
+  #   → CFR (bogus r) / VFR の双方で正常ファイルを破損扱いにし、--force 必須化で
+  #     判定が形骸化していた。
+  #   - そもそも「タイムスタンプ一様引き伸ばしによるスロー再生」は、本来の fps を
+  #     知る術 (= 信頼できる r_frame_rate) が無い以上、metadata からは原理的に検出
+  #     不能 (引き伸ばし後は低 fps の正常動画と区別できない)。
+  #
+  # 代わりに、本物のタイムスタンプ破損である DTS (デコード順タイムスタンプ) の逆行を
+  # 検出する。DTS はストリーム順 = デコード順で単調非減少であるべきで、逆行は破損。
+  # (PTS は B-frame で表示順が前後しうるため判定に使わない。DTS のみで判定する)
+  #
+  # 前提が変わったら再評価: ffprobe が CFR で正確な r_frame_rate を返すようになれば、
+  # スロー再生検出を r ベースで復活させる余地がある (現状の ffprobe 仕様では不可)。
+  #
+  # concat 安全性: このツールの出自は「動画結合 (bin/concat_movies) 後の破損検出」だが、
+  # 結合物でも誤検知しない。concat_movies の最終段は concat demuxer + -c copy で、
+  # ffmpeg の concat demuxer は各セグメントの DTS をオフセットして連続化するため、
+  # 正常な結合物の DTS は単調を保つ (B-frame 入りクリップを -c copy 結合して逆行 0 件を実証)。
+  # concat_movies の結合方式が変わった (例: protocol concat や手動 mux) 場合は再検証が必要。
+  #
+  # 見逃し側の前提: DTS が全フレーム N/A のコンテナでは逆行を検出できず健全扱いになる。
+  # 誤検知 (正常を破損扱い) より見逃しに倒す方針 (--force 必須化で判定が形骸化するのを避ける)。
+  local dts_backward
+  dts_backward=$(ffprobe -v error -select_streams v:0 \
+    -show_entries packet=dts -of csv=p=0 -- "$file" 2>/dev/null | awk '
+      {
+        if ($1 == "N/A" || $1 == "") next
+        cur = $1 + 0
+        if (seen && cur < prev) bad++
+        prev = cur; seen = 1
+      }
+      END { print bad + 0 }')
 
-  if [[ -n "$r_fps" && -n "$avg_fps" && "$r_fps" != "0/0" && "$avg_fps" != "0/0" ]]; then
-    local fps_ratio
-    fps_ratio=$(awk -v r="$r_fps" -v a="$avg_fps" 'BEGIN{
-      split(r, rp, "/"); split(a, ap, "/")
-      rv = (rp[2]+0 > 0) ? rp[1]/rp[2] : 0
-      av = (ap[2]+0 > 0) ? ap[1]/ap[2] : 0
-      if(rv <= 0){ print "0"; exit }
-      printf "%.4f", av/rv
-    }')
-    local fps_bad
-    fps_bad=$(awk -v r="$fps_ratio" 'BEGIN{ print (r < 0.80 || r > 1.20) ? 1 : 0 }')
-    if (( fps_bad )); then
-      local r_val avg_val
-      r_val=$(awk -v f="$r_fps" 'BEGIN{ split(f,p,"/"); printf "%.2f", (p[2]+0>0)?p[1]/p[2]:0 }')
-      avg_val=$(awk -v f="$avg_fps" 'BEGIN{ split(f,p,"/"); printf "%.2f", (p[2]+0>0)?p[1]/p[2]:0 }')
-      issues+=("フレームレート異常: r_frame_rate=${r_val}fps avg_frame_rate=${avg_val}fps (タイムスタンプ破損の疑い)")
-    fi
+  if [[ -n "$dts_backward" ]] && (( dts_backward > 0 )); then
+    issues+=("タイムスタンプ破損: DTS非単調(逆行)を${dts_backward}箇所検出")
   fi
 
   # --- 結果 ---
@@ -116,10 +136,13 @@ video_health — 動画ファイルの健全性チェック
 動画ファイルの健全性を複数の観点でチェックします。
   1. 映像duration vs コンテナduration の乖離（time_base破損）
   2. 音声ストリームの有無
-  3. avg_frame_rate vs r_frame_rate の乖離（タイムスタンプ破損→スロー再生）
+  3. DTS単調性（DTS逆行＝本物のタイムスタンプ破損）
 
-注: A/V duration 末尾差はチェックしません（録画末尾差は正常な現象。
+注1: A/V duration 末尾差はチェックしません（録画末尾差は正常な現象。
 本物のズレは av1ify postcheck がソース相対比較で検出します）。
+注2: avg_frame_rate vs r_frame_rate 比較は廃止しました（r_frame_rate は
+ffprobe の推測値で CFR/VFR とも誤検知するため。詳細は __video_health_check の
+チェック3 のコメントを参照）。
 
 使い方:
   video_health <ファイル> [<ファイル2> ...]

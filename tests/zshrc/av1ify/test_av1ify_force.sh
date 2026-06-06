@@ -23,14 +23,14 @@ assert_not_contains "$output" "エンコードをスキップします" "Encodin
 assert_file_exists "$TEST_DIR/input-enc.mp4" "Encoded output is created despite A/V tail mismatch"
 (( exit_code == 0 )) && printf '✓ Exit code is 0 (encoding succeeded)\n' || { printf '✗ Exit code should be 0 (got %d)\n' "$exit_code"; false; }
 
-# Test 66: --force ありの動作確認（fps異常で確認）
-printf '\n## Test 66: --force with corruption (fps anomaly) continues encoding\n'
+# Test 66: --force ありの動作確認（DTS逆行で確認）
+printf '\n## Test 66: --force with corruption (DTS backward) continues encoding\n'
 TEST_DIR="$TEST_TMP/test66"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
-output=$(MOCK_AVG_FPS="10000/1001" av1ify --force "$TEST_DIR/input.avi" 2>&1)
+output=$(MOCK_DTS_BACKWARD=1 av1ify --force "$TEST_DIR/input.avi" 2>&1)
 setopt err_exit
 assert_contains "$output" "--force で続行" "Shows force continuation warning"
 assert_not_contains "$output" "スキップします" "Does not skip encoding"
@@ -40,30 +40,30 @@ printf '\n## Test 67: Help message includes --force option\n'
 help_output=$(av1ify --help 2>&1)
 assert_contains "$help_output" "--force" "Help message contains --force option"
 
-# Test 68: フレームレート異常で --force なし → スキップ
-printf '\n## Test 68: Frame rate anomaly without --force skips encoding\n'
+# Test 68: タイムスタンプ破損（DTS逆行）で --force なし → スキップ
+printf '\n## Test 68: Timestamp corruption (DTS backward) without --force skips encoding\n'
 TEST_DIR="$TEST_TMP/test68"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
-# avg_fps=10fps vs r_fps=30fps → 比率0.33でNG
-output=$(MOCK_AVG_FPS="10000/1001" av1ify "$TEST_DIR/input.avi" 2>&1)
+# DTS が途中で逆行 → タイムスタンプ破損として検出
+output=$(MOCK_DTS_BACKWARD=1 av1ify "$TEST_DIR/input.avi" 2>&1)
 exit_code=$?
 setopt err_exit
-assert_contains "$output" "破損しています" "Reports corruption for fps anomaly"
+assert_contains "$output" "破損しています" "Reports corruption for DTS backward"
 assert_file_not_exists "$TEST_DIR/input-enc.mp4" "No output file created"
 
-# Test 69: フレームレート異常で --force あり → 続行
-printf '\n## Test 69: Frame rate anomaly with --force continues\n'
+# Test 69: タイムスタンプ破損（DTS逆行）で --force あり → 続行
+printf '\n## Test 69: Timestamp corruption (DTS backward) with --force continues\n'
 TEST_DIR="$TEST_TMP/test69"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
-output=$(MOCK_AVG_FPS="10000/1001" av1ify --force "$TEST_DIR/input.avi" 2>&1)
+output=$(MOCK_DTS_BACKWARD=1 av1ify --force "$TEST_DIR/input.avi" 2>&1)
 exit_code=$?
 setopt err_exit
-assert_contains "$output" "--force で続行" "Shows force continuation for fps anomaly"
+assert_contains "$output" "--force で続行" "Shows force continuation for DTS backward"
 
 printf '\n=== --force Tests Completed ===\n'

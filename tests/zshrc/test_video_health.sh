@@ -26,8 +26,8 @@ if echo "$*" | grep -q "select_streams v:0" && echo "$*" | grep -q "stream=durat
     *corrupted*)    echo "7194.0" ;;
     *no_video*)     echo "" ;;
     *avsync_bad*)   echo "17931.0" ;;
-    *fps_broken*)   echo "17931.0" ;;
     *multi_issue*)  echo "7194.0" ;;
+    *missav*)       echo "3979.86" ;;
     *)              echo "14212.0" ;;
   esac
   exit 0
@@ -45,24 +45,13 @@ if echo "$*" | grep -q "select_streams a:0" && echo "$*" | grep -q "stream=durat
   exit 0
 fi
 
-# r_frame_rate
-if echo "$*" | grep -q "select_streams v:0" && echo "$*" | grep -q "r_frame_rate"; then
+# packet dts (DTS単調性チェック用): 各行が dts 値。逆行(降順)があれば破損
+if echo "$*" | grep -q "packet=dts"; then
   case "$input_file" in
     *no_video*)     echo "" ;;
-    *fps_broken*)   echo "30000/1001" ;;
-    *multi_issue*)  echo "30000/1001" ;;
-    *)              echo "30000/1001" ;;
-  esac
-  exit 0
-fi
-
-# avg_frame_rate
-if echo "$*" | grep -q "select_streams v:0" && echo "$*" | grep -q "avg_frame_rate"; then
-  case "$input_file" in
-    *no_video*)     echo "" ;;
-    *fps_broken*)   echo "10000/1001" ;;
-    *multi_issue*)  echo "10000/1001" ;;
-    *)              echo "30000/1001" ;;
+    *dts_broken*)   printf '0\n3750\n2000\n7500\n' ;;   # 3750→2000 で逆行
+    *multi_issue*)  printf '0\n3750\n2000\n7500\n' ;;   # time_base破損 + DTS逆行
+    *)              printf '0\n3750\n7500\n11250\n' ;;   # 単調増加=健全
   esac
   exit 0
 fi
@@ -72,7 +61,7 @@ if echo "$*" | grep -q "format=duration"; then
   case "$input_file" in
     *no_video*)     echo "" ;;
     *avsync_bad*)   echo "17931.0" ;;
-    *fps_broken*)   echo "17931.0" ;;
+    *missav*)       echo "3980.0" ;;
     *)              echo "14212.0" ;;
   esac
   exit 0
@@ -204,17 +193,17 @@ setopt err_exit
 assert_exit_code "0" "$exit_code" "A/V tail mismatch alone does not return 1"
 assert_not_contains "$REPLY" "A/V音ズレ" "A/V音ズレ message removed from REPLY"
 
-# Test 9: フレームレート異常検出
-printf '\n## Test 9: Frame rate anomaly detected\n'
-touch "$TEST_TMP/fps_broken.mp4"
+# Test 9: タイムスタンプ破損検出（DTS逆行）
+printf '\n## Test 9: Timestamp corruption (DTS backward) detected\n'
+touch "$TEST_TMP/dts_broken.mp4"
 unsetopt err_exit
-__video_health_check "$TEST_TMP/fps_broken.mp4"
+__video_health_check "$TEST_TMP/dts_broken.mp4"
 exit_code=$?
 setopt err_exit
-assert_exit_code "1" "$exit_code" "Frame rate anomaly returns 1"
-assert_contains "$REPLY" "フレームレート異常" "Error mentions frame rate anomaly"
+assert_exit_code "1" "$exit_code" "DTS backward returns 1"
+assert_contains "$REPLY" "タイムスタンプ破損" "Error mentions timestamp corruption"
 
-# Test 10: 複数の問題を同時検出（time_base破損 + fps異常）
+# Test 10: 複数の問題を同時検出（time_base破損 + DTS逆行）
 printf '\n## Test 10: Multiple issues detected\n'
 touch "$TEST_TMP/multi_issue.mp4"
 unsetopt err_exit
@@ -223,7 +212,7 @@ exit_code=$?
 setopt err_exit
 assert_exit_code "1" "$exit_code" "Multiple issues returns 1"
 assert_contains "$REPLY" "time_base破損" "Error mentions time_base corruption"
-assert_contains "$REPLY" "フレームレート異常" "Error mentions frame rate anomaly"
+assert_contains "$REPLY" "タイムスタンプ破損" "Error mentions timestamp corruption"
 
 # Test 11: 音声ストリームなし検出
 printf '\n## Test 11: No audio stream detected\n'
@@ -243,5 +232,21 @@ __video_health_check "$TEST_TMP/all_good.mp4"
 exit_code=$?
 setopt err_exit
 assert_exit_code "0" "$exit_code" "Normal file passes all 3 checks"
+
+# Test 13: CFR + bogus r_frame_rate は破損扱いしない（誤判定回帰テスト）
+#
+# 実ファイル由来の回帰: Web 配信動画 (time_base=1/90000) で
+#   r_frame_rate=120, avg_frame_rate=23.59
+# だが実体は PTS 連続差分が一定の CFR 24fps（破損ではない）。
+# 旧実装は r(120) vs avg(23.59) の乖離で「フレームレート異常」と誤判定していた。
+# 新実装は DTS 単調性のみで判定するため、duration 健全 + DTS 単調なら健全と判定する。
+printf '\n## Test 13: CFR with bogus r_frame_rate is NOT corruption (regression)\n'
+touch "$TEST_TMP/missav.mp4"
+unsetopt err_exit
+__video_health_check "$TEST_TMP/missav.mp4"
+exit_code=$?
+setopt err_exit
+assert_exit_code "0" "$exit_code" "CFR+bogus-r file returns 0 (healthy)"
+assert_not_contains "$REPLY" "破損" "No corruption reported for healthy CFR file"
 
 printf '\n=== video_health Tests Completed ===\n'
