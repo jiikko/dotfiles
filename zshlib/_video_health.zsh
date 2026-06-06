@@ -101,19 +101,32 @@ __video_health_check() {
   #
   # 見逃し側の前提: DTS が全フレーム N/A のコンテナでは逆行を検出できず健全扱いになる。
   # 誤検知 (正常を破損扱い) より見逃しに倒す方針 (--force 必須化で判定が形骸化するのを避ける)。
-  local dts_backward
-  dts_backward=$(ffprobe -v error -select_streams v:0 \
-    -show_entries packet=dts -of csv=p=0 -- "$file" 2>/dev/null | awk '
-      {
-        if ($1 == "N/A" || $1 == "") next
-        cur = $1 + 0
-        if (seen && cur < prev) bad++
-        prev = cur; seen = 1
-      }
-      END { print bad + 0 }')
+  # MPEG-TS (.ts/.m2ts) は DTS 単調性チェックの対象外にする。
+  # 放送録画/splice/PCR discontinuity/33-bit PCR wrap で DTS が「正当に」逆行しうるため、
+  # bad>0 で破損判定すると今回直した fps 比較と同じ failure mode (正常を破損扱い→--force 必須)
+  # を再導入してしまう。TS の正当な不連続を ffprobe 出力だけで安定分類するのは困難なため、
+  # 構造的に「TS コンテナでは DTS 逆行を破損としない」方針とする。
+  # (mp4/mov/mkv/avi 等は単一の連続タイムスタンプ epoch を持つため DTS 逆行=破損)
+  # 判定は拡張子偽装に強い format_name で行う (av1c の入力に .ts が含まれる)。
+  local container_format
+  container_format=$(ffprobe -v error -show_entries format=format_name \
+    -of default=nk=1:nw=1 -- "$file" 2>/dev/null | head -n1)
 
-  if [[ -n "$dts_backward" ]] && (( dts_backward > 0 )); then
-    issues+=("タイムスタンプ破損: DTS非単調(逆行)を${dts_backward}箇所検出")
+  if [[ "$container_format" != *mpegts* ]]; then
+    local dts_backward
+    dts_backward=$(ffprobe -v error -select_streams v:0 \
+      -show_entries packet=dts -of csv=p=0 -- "$file" 2>/dev/null | awk '
+        {
+          if ($1 == "N/A" || $1 == "") next
+          cur = $1 + 0
+          if (seen && cur < prev) bad++
+          prev = cur; seen = 1
+        }
+        END { print bad + 0 }')
+
+    if [[ -n "$dts_backward" ]] && (( dts_backward > 0 )); then
+      issues+=("タイムスタンプ破損: DTS非単調(逆行)を${dts_backward}箇所検出")
+    fi
   fi
 
   # --- 結果 ---

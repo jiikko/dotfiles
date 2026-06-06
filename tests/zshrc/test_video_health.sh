@@ -67,6 +67,16 @@ if echo "$*" | grep -q "format=duration"; then
   exit 0
 fi
 
+# format name (コンテナ判定: mpegts は DTS単調性チェック対象外)
+if echo "$*" | grep -q "format=format_name"; then
+  case "$input_file" in
+    *no_video*)  echo "" ;;
+    *mpegts*)    echo "mpegts" ;;
+    *)           echo "mov,mp4,m4a,3gp,3g2,mj2" ;;
+  esac
+  exit 0
+fi
+
 # audio stream index (select_streams a without :0 suffix)
 if echo "$*" | grep -q "select_streams a " && echo "$*" | grep -q "stream=index"; then
   case "$input_file" in
@@ -248,5 +258,19 @@ exit_code=$?
 setopt err_exit
 assert_exit_code "0" "$exit_code" "CFR+bogus-r file returns 0 (healthy)"
 assert_not_contains "$REPLY" "破損" "No corruption reported for healthy CFR file"
+
+# Test 14: MPEG-TS は DTS逆行でも破損扱いしない（.ts PCR不連続の誤検知回避）
+#
+# MPEG-TS は放送録画/splice/PCR discontinuity/33-bit PCR wrap で DTS が正当に逆行
+# しうるため、DTS 単調性チェックの対象外とする。mpegts_dts_broken は format_name=mpegts
+# かつ DTS逆行を含むが、TS 除外により破損判定されない。
+printf '\n## Test 14: MPEG-TS with DTS backward is NOT corruption (.ts PCR discontinuity)\n'
+touch "$TEST_TMP/mpegts_dts_broken.mp4"
+unsetopt err_exit
+__video_health_check "$TEST_TMP/mpegts_dts_broken.mp4"
+exit_code=$?
+setopt err_exit
+assert_exit_code "0" "$exit_code" "MPEG-TS with DTS backward returns 0 (excluded from DTS check)"
+assert_not_contains "$REPLY" "タイムスタンプ破損" "DTS backward not reported as corruption for MPEG-TS"
 
 printf '\n=== video_health Tests Completed ===\n'
