@@ -577,7 +577,13 @@ __av1ify_one() {
 
   # クラウド/ネットワークストレージの場合、ここで実ファイル取得が始まることがある
   # ffprobe でメタデータ取得することでファイルのダウンロードがトリガーされる
-  print -r -- ">> ファイル取得中: $in"
+  # サイズは stat の論理サイズ。クラウド未 materialize のプレースホルダでも取得できる。
+  local _in_size; _in_size=$(__av1ify_file_size "$in")
+  if [[ "$_in_size" =~ ^[0-9]+$ ]]; then
+    print -r -- ">> ファイル取得中: $in ($(__av1ify_format_size "$_in_size"))"
+  else
+    print -r -- ">> ファイル取得中: $in"
+  fi
 
   # ソース映像の寸法を取得（アップスケール防止・CRF自動調整・縦横判定に使用）
   local source_width="" source_height="" source_display_width="" source_display_height="" source_short_side="" source_is_portrait=0 source_rotation=""

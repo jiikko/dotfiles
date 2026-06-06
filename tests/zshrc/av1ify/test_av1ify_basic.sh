@@ -163,6 +163,7 @@ head -c 1000 /dev/zero > "$TEST_DIR/input.avi"   # 元 1000 bytes
 unsetopt err_exit
 output=$(MOCK_FFMPEG_OUTPUT_SIZE=250 av1ify "$TEST_DIR/input.avi" 2>&1)   # 出力 250 bytes
 setopt err_exit
+assert_contains "$output" "ファイル取得中: $TEST_DIR/input.avi (1000 B)" "Shows source size at fetch start"
 assert_contains "$output" "📉" "Shows size-down icon on reduction"
 assert_contains "$output" "1000 B" "Shows source size"
 assert_contains "$output" "250 B" "Shows output size"
