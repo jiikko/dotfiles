@@ -1,0 +1,18 @@
+#!/usr/bin/env zsh
+# @DotfilesSyncer: finder-menu true
+# @DotfilesSyncer:accepts .mp4
+# @DotfilesSyncer:input-type file,files,directory
+# @DotfilesSyncer:description MP4をフルデコードで破損検証
+#
+# validate-mp4 — MP4 が全フレーム再生可能かを ffmpeg フルデコードで検証
+#
+# 実装: ~/dotfiles/zshlib/_validate_mp4.zsh
+#
+# 同じ機能が以下にも定義されています（呼び出し元）:
+#   - ~/dotfiles/_zshrc  validate-mp4() 遅延ローディングラッパー
+#   - good-chrome-extensions/bin/validate-mp4  本エントリへ forward する薄い wrapper
+#     (miracle/bin/dm がダウンロード後検証で repo-relative path 経由で呼ぶ)
+
+unset CDPATH
+source "${0:A:h}/../zshlib/_validate_mp4.zsh"
+validate_mp4 "$@"

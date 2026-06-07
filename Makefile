@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-SHELLCHECK_FILES := setup.sh zshlib/_av1ify.zsh zshlib/_av1ify_postcheck.zsh zshlib/_av1ify_encode.zsh scripts/tmux_resurrect_debounced_save.sh scripts/tmux_resurrect_save.sh
+SHELLCHECK_FILES := setup.sh zshlib/_av1ify.zsh zshlib/_av1ify_postcheck.zsh zshlib/_av1ify_encode.zsh zshlib/_validate_mp4.zsh scripts/tmux_resurrect_debounced_save.sh scripts/tmux_resurrect_save.sh
 YAML_FILES := pre-commit-config.yml .github/workflows/tests.yml .github/workflows/lint.yml
 JSON_FILES := mac/karabiner.json _coc-settings.json
 
@@ -34,6 +34,7 @@ test-zshrc:
 	@tests/zshrc/av1ify/test_av1ify_ng_list.sh
 	@tests/zshrc/av1ify/test_av1ify_prefetch.sh
 	@tests/zshrc/av1ify/test_av1ify_avsync.sh
+	@tests/zshrc/validate-mp4/test_validate_mp4.sh
 	@tests/zshrc/concat/test_concat_basic.sh
 	@tests/zshrc/concat/test_concat_edge.sh
 	@tests/zshrc/concat/test_concat_missing.sh

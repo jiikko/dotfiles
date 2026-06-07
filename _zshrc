@@ -576,6 +576,16 @@ concat() {
   functions[concat]="$_saved"
   return $_ret
 }
+# validate-mp4: 呼び出し時に毎回ソースを再読み込み（編集後にシェル再起動不要）
+# 実体は zshlib/_validate_mp4.zsh の validate_mp4()。対話シェルではハイフン名でも呼べるようにする。
+validate-mp4() {
+  local _saved="${functions[validate-mp4]}"
+  source $HOME/dotfiles/zshlib/_validate_mp4.zsh
+  validate_mp4 "$@"
+  local _ret=$?
+  functions[validate-mp4]="$_saved"
+  return $_ret
+}
 
 function rrr() {
   local inputfile="$1"
