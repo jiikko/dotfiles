@@ -6,6 +6,9 @@ input=$(cat)
 
 cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd')
 
+# Model display name (e.g. "Opus 4.8"). Provided by Claude Code via stdin JSON.
+model_name=$(echo "$input" | jq -r '.model.display_name // empty')
+
 # Shorten the path: replace $HOME with ~, truncate to 50 chars with leading ..
 home="$HOME"
 short_cwd="${cwd/#$home/\~}"
@@ -35,15 +38,17 @@ blue_fg="\033[34m"
 cyan_fg="\033[36m"
 green_fg="\033[32m"
 
-# Build the status line: bold path + optional git branch + file counts
+# Directory segment (bold path).
+dir_part="${bold}${short_cwd}${reset}"
+
+# Branch segment (leading space, empty when not in a git repo).
+branch_part=""
 if [ -n "$branch" ]; then
   git_info="${branch}"
   if [ "$changed_count" -gt 0 ] || [ "$untracked_count" -gt 0 ]; then
     git_info="${git_info} ~${changed_count} ?${untracked_count}"
   fi
-  path_part="${bold}${short_cwd}${reset} ${black_fg}${green_bg}[${git_info}]${reset}"
-else
-  path_part="${bold}${short_cwd}${reset}"
+  branch_part=" ${black_fg}${green_bg}[${git_info}]${reset}"
 fi
 
 # Rate limits with visual bar
@@ -93,8 +98,14 @@ if [ -n "$five_pct" ] || [ -n "$seven_pct" ]; then
   rate_part=" ${parts}"
 fi
 
-# Left-align rate_part right after the branch/path (no right-alignment).
-# Right-alignment relied on `tput cols`, but the statusLine command runs
-# without a controlling TTY so the width was wrong and the rate part
-# overflowed past the right edge. rate_part already carries a leading space.
-printf "%b%b" "$path_part" "$rate_part"
+# Model segment (leading space, empty when not provided).
+model_part=""
+if [ -n "$model_name" ]; then
+  model_part=" ${cyan_fg}[${model_name}]${reset}"
+fi
+
+# Order: directory, branch, model, rate limits. Each non-first segment carries
+# its own leading space. (No right-alignment: the statusLine command runs
+# without a controlling TTY so `tput cols` reports the wrong width and the
+# rate part would overflow past the right edge.)
+printf "%b%b%b%b" "$dir_part" "$branch_part" "$model_part" "$rate_part"
