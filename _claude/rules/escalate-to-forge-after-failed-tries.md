@@ -73,6 +73,9 @@ forge 1 回起動のコスト: ~30 分。経済的に明らかに割に合う。
 
 ## 関連
 
+- `~/dotfiles/_claude/rules/instrument-before-second-fix.md` — **forge より先に発動する**: 1 回目の
+  仮説 fix が外れたら、まず観測を増やす。観測しても不明なら本ルール (forge) へ。観測データを
+  手土産にすると専門家の収束が速い
 - `~/dotfiles/_claude/rules/check-other-platform-reference.md` — platform 特有バグ調査の前段ルール
 - `~/dotfiles/_claude/rules/issue-creation-codex-review.md` — issue 作成時の codex review ルール (forge とは別経路の検証)
 - DualNote iOS issue #030 の経緯 (本ルールの直接の起源)
