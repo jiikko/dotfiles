@@ -69,7 +69,9 @@ lead_out="./tmp/design-lead.$stamp.md"
 差分はまだないので `codex exec -s read-only` を使い、codex に**設計・実装方針を主導**させる。Claude の案をレビューさせるのではなく、codex 自身に方針を立てさせる。
 
 ```bash
-command codex exec -s read-only --full-auto --ephemeral -o "$lead_out" \
+# `</dev/null` 必須（理由は下記「ルール」参照）。codex 本体の stdin を即 EOF にする。
+# ※ ここの `</dev/null` は codex 用。引数内の `<<'EOF'` は `cat` 用のヒアドキュメントで別物。
+command codex exec -s read-only --full-auto --ephemeral -o "$lead_out" </dev/null \
   "$(cat <<'EOF'
 このタスクの設計・実装方針をあなたにリードしてほしい。リポジトリの現状コードを読んだ上で、どう設計・実装すべきかの方針を主導して提案して。
 
@@ -159,6 +161,7 @@ codex がリードした方針に沿って Claude が実装する。
 - **Phase 1（codex の設計リード）を必ず先に通す。** Claude が先に設計を固めて実装に走らない。codex に方針を主導させ、合意を取ってから Phase 2 に進む
 - 設計リードも実装レビューも codex はレビュー用途で使い、codex にコードを変更させない（設計リードは `codex exec -s read-only`、実装レビューは `codex exec review` 系のレビューコマンド）
 - `command codex` を使うこと（`codex` 直接呼び出しは zsh 関数オーバーライドでエラーになる場合がある）
+- **全ての `command codex exec` 呼び出しに `</dev/null` を必ず付ける**。Claude Code の Bash ツールの stdin は非TTYのパイプ（書き込み側が開いたまま EOF が来ない）なので、prompt を引数で渡しても codex が「Reading additional input from stdin...」で stdin の EOF を待ち続け、コマンドがタイムアウトまでハングする（= このスキルが「スタックして使い勝手が悪い」と感じる主因）。`</dev/null` で stdin を即 EOF にすると解消する（[openai/codex#20919](https://github.com/openai/codex/issues/20919)）。ヒアドキュメントで prompt を組む場合、引数内の `<<'EOF'` は `cat` 用なので別途 codex 行に `</dev/null` が必要。codex 側が修正されたら本対処は不要になる
 - 設計リードは差分がないため `codex exec -s read-only` を使う（selector は使わない）
 - 常に `--full-auto --ephemeral -o "$lead_out"` を付与する
 - まず `-o` の出力ファイルを読み、空なら stdout / stderr を fallback として使う
