@@ -1,6 +1,8 @@
 # shellcheck shell=bash
-# tmux ウィンドウ名を実行コマンドに基づいて設定する
+# 実行コマンドに基づいて tmux ペインタイトル (pane_title) を設定する
 # YAML でコマンド名 -> 表示名のマッピングを定義可能
+# ウィンドウ名への反映は tmux 側の automatic-rename-format '#{pane_title}' が行う
+# (= アクティブペインのタイトルがウィンドウ名になる。_tmux.conf 参照)
 # NOTE: このファイルは source で読み込むこと (autoload 不可: ${0:A:h} に依存)
 
 _TMUX_WINDOW_NAME_YAML="${0:A:h}/tmux-window-name.yaml"
@@ -102,10 +104,13 @@ _tmux_extract_command() {
   print -r -- "$cmd"
 }
 
-_tmux_set_window_title() {
+# OSC 2 で「このペインの」タイトルだけを書く。旧実装の \033k (ウィンドウ名直接
+# リネーム) は非アクティブペインの precmd がウィンドウ名を奪う事故があったため廃止
+# (allow-rename off で無視される。_tmux.conf 参照)
+_tmux_set_pane_title() {
   local title="$1"
   [[ -z "$title" ]] && return
-  printf "\033k%s\033\\" "$title"
+  printf "\033]2;%s\033\\" "$title"
 }
 
 if [[ -n "$TMUX" ]]; then
@@ -113,11 +118,11 @@ if [[ -n "$TMUX" ]]; then
     local cmd
     cmd=$(_tmux_extract_command "$1")
     # alias名をそのまま使う（展開しない）
-    _tmux_set_window_title "$(_tmux_get_display_name "$cmd")"
+    _tmux_set_pane_title "$(_tmux_get_display_name "$cmd")"
   }
 
   _tmux_precmd() {
-    _tmux_set_window_title "$(_tmux_get_display_name zsh)"
+    _tmux_set_pane_title "$(_tmux_get_display_name zsh)"
   }
 
   autoload -Uz add-zsh-hook
