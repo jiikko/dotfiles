@@ -4,6 +4,11 @@
 
 input=$(cat)
 
+# TEMP (remove after capturing): dump one raw statusline input so we can
+# discover the rate_limits reset field names. Negligible cost; overwrites
+# the same file each render.
+printf '%s' "$input" > "$HOME/.claude/.statusline-input-debug.json" 2>/dev/null
+
 cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd')
 
 # Model display name (e.g. "Opus 4.8"). Provided by Claude Code via stdin JSON.
@@ -37,6 +42,7 @@ green_bg="\033[42m"
 blue_fg="\033[34m"
 cyan_fg="\033[36m"
 green_fg="\033[32m"
+magenta_fg="\033[35m"
 
 # Directory segment (bold path).
 dir_part="${bold}${short_cwd}${reset}"
@@ -159,8 +165,17 @@ if [ -n "$transcript" ] && [ -f "$transcript" ]; then
   fi
 fi
 
-# Order: directory, branch, model, context, rate limits. Each non-first
+# Session cost segment (USD, leading space). cost.total_cost_usd is provided
+# directly on stdin by Claude Code.
+cost_part=""
+cost_usd=$(echo "$input" | jq -r '.cost.total_cost_usd // empty')
+if [ -n "$cost_usd" ]; then
+  cost_fmt=$(printf '%.2f' "$cost_usd" 2>/dev/null)
+  [ -n "$cost_fmt" ] && cost_part=" ${magenta_fg}[\$${cost_fmt}]${reset}"
+fi
+
+# Order: directory, branch, model, context, cost, rate limits. Each non-first
 # segment carries its own leading space. (No right-alignment: the statusLine
 # command runs without a controlling TTY so `tput cols` reports the wrong
 # width and the rate part would overflow past the right edge.)
-printf "%b%b%b%b%b" "$dir_part" "$branch_part" "$model_part" "$ctx_part" "$rate_part"
+printf "%b%b%b%b%b%b" "$dir_part" "$branch_part" "$model_part" "$ctx_part" "$cost_part" "$rate_part"
