@@ -4,11 +4,6 @@
 
 input=$(cat)
 
-# TEMP (remove after capturing): dump one raw statusline input so we can
-# discover the rate_limits reset field names. Negligible cost; overwrites
-# the same file each render.
-printf '%s' "$input" > "$HOME/.claude/.statusline-input-debug.json" 2>/dev/null
-
 cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd')
 
 # Model display name (e.g. "Opus 4.8"). Provided by Claude Code via stdin JSON.
@@ -124,58 +119,36 @@ if [ -n "$model_name" ]; then
   model_part=" ${cyan_fg}[${model_name}]${reset}"
 fi
 
-# Context window usage segment (sits to the right of the model).
-# Claude Code does not pass the live context token count on stdin (only the
-# boolean .exceeds_200k_tokens), so we read the most recent main-thread
-# assistant `usage` from the session transcript JSONL and sum the tokens that
-# occupy the context window: input + cache_read + cache_creation.
-#
-# CTX_LIMIT is only the denominator for the fullness color; the displayed
-# value is the absolute token count. Default 1,000,000 for the 1M-context
-# Opus models; drop to 200000 for standard 200k-context sessions.
-CTX_LIMIT=1000000
+# Context window usage segment (sits to the right of the model). Claude Code
+# provides the live numbers on stdin under .context_window, so we read them
+# directly: total_input_tokens is what occupies the window,
+# context_window_size is the model's limit, used_percentage drives the
+# fullness color. (No transcript parsing: this is exact and per-render cheap.)
 ctx_part=""
-transcript=$(echo "$input" | jq -r '.transcript_path // empty')
-if [ -z "$transcript" ] || [ ! -f "$transcript" ]; then
-  # Fallback: derive the transcript path from cwd + session_id when stdin
-  # omits transcript_path. Claude encodes the project dir by replacing
-  # '/' and '.' with '-'.
-  sid=$(echo "$input" | jq -r '.session_id // empty')
-  if [ -n "$sid" ]; then
-    enc=$(printf '%s' "$cwd" | sed -e 's#/#-#g' -e 's#\.#-#g')
-    cand="$HOME/.claude/projects/${enc}/${sid}.jsonl"
-    [ -f "$cand" ] && transcript="$cand"
+ctx_used=$(echo "$input" | jq -r '.context_window.total_input_tokens // empty')
+if [ -n "$ctx_used" ] && [ "$ctx_used" -gt 0 ] 2>/dev/null; then
+  ctx_size=$(echo "$input" | jq -r '.context_window.context_window_size // empty')
+  ctx_pct=$(echo "$input" | jq -r '.context_window.used_percentage // 0')
+  used_label=$(human_tokens "$ctx_used")
+  if [ -n "$ctx_size" ] && [ "$ctx_size" -gt 0 ] 2>/dev/null; then
+    ctx_disp="${used_label}/$(human_tokens "$ctx_size")"
+  else
+    ctx_disp="$used_label"
   fi
-fi
-if [ -n "$transcript" ] && [ -f "$transcript" ]; then
-  # tail bounds the cost on large transcripts; the latest assistant message
-  # (and thus its usage) is always within the final handful of lines.
-  ctx_tokens=$(tail -n 80 "$transcript" 2>/dev/null | jq -rs '
-    [ .[]
-      | select(.isSidechain != true)
-      | .message.usage // empty
-      | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0) ]
-    | last // empty' 2>/dev/null)
-  if [ -n "$ctx_tokens" ] && [ "$ctx_tokens" -gt 0 ] 2>/dev/null; then
-    ctx_pct=$(( ctx_tokens * 100 / CTX_LIMIT ))
-    cc=$(rate_color "$ctx_pct")
-    used_label=$(human_tokens "$ctx_tokens")
-    limit_label=$(human_tokens "$CTX_LIMIT")
-    ctx_part=" ${cc}[ctx:${used_label}/${limit_label}]${reset}"
-  fi
+  cc=$(rate_color "${ctx_pct%.*}")
+  ctx_part=" ${cc}[ctx:${ctx_disp}]${reset}"
 fi
 
-# Session cost segment (USD, leading space). cost.total_cost_usd is provided
-# directly on stdin by Claude Code.
-cost_part=""
-cost_usd=$(echo "$input" | jq -r '.cost.total_cost_usd // empty')
-if [ -n "$cost_usd" ]; then
-  cost_fmt=$(printf '%.2f' "$cost_usd" 2>/dev/null)
-  [ -n "$cost_fmt" ] && cost_part=" ${magenta_fg}[\$${cost_fmt}]${reset}"
+# Effort segment (leading space). .effort.level is the current reasoning
+# effort (e.g. low / medium / high / xhigh), provided directly on stdin.
+effort_part=""
+effort_level=$(echo "$input" | jq -r '.effort.level // empty')
+if [ -n "$effort_level" ]; then
+  effort_part=" ${magenta_fg}[effort:${effort_level}]${reset}"
 fi
 
-# Order: directory, branch, model, context, cost, rate limits. Each non-first
+# Order: directory, branch, model, context, effort, rate limits. Each non-first
 # segment carries its own leading space. (No right-alignment: the statusLine
 # command runs without a controlling TTY so `tput cols` reports the wrong
 # width and the rate part would overflow past the right edge.)
-printf "%b%b%b%b%b%b" "$dir_part" "$branch_part" "$model_part" "$ctx_part" "$cost_part" "$rate_part"
+printf "%b%b%b%b%b%b" "$dir_part" "$branch_part" "$model_part" "$ctx_part" "$effort_part" "$rate_part"
