@@ -76,6 +76,20 @@ rate_bar() {
   printf "%s" "$bar"
 }
 
+# Short human label for a token count: <1M -> "269k", >=1M -> "1M" / "1.5M".
+human_tokens() {
+  n=$1
+  if [ "$n" -ge 1000000 ]; then
+    if [ $(( n % 1000000 )) -eq 0 ]; then
+      printf "%dM" $(( n / 1000000 ))
+    else
+      printf "%d.%dM" $(( n / 1000000 )) $(( (n % 1000000) / 100000 ))
+    fi
+  else
+    printf "%dk" $(( (n + 500) / 1000 ))
+  fi
+}
+
 rate_part=""
 five_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty' 2>/dev/null)
 seven_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty' 2>/dev/null)
@@ -104,8 +118,49 @@ if [ -n "$model_name" ]; then
   model_part=" ${cyan_fg}[${model_name}]${reset}"
 fi
 
-# Order: directory, branch, model, rate limits. Each non-first segment carries
-# its own leading space. (No right-alignment: the statusLine command runs
-# without a controlling TTY so `tput cols` reports the wrong width and the
-# rate part would overflow past the right edge.)
-printf "%b%b%b%b" "$dir_part" "$branch_part" "$model_part" "$rate_part"
+# Context window usage segment (sits to the right of the model).
+# Claude Code does not pass the live context token count on stdin (only the
+# boolean .exceeds_200k_tokens), so we read the most recent main-thread
+# assistant `usage` from the session transcript JSONL and sum the tokens that
+# occupy the context window: input + cache_read + cache_creation.
+#
+# CTX_LIMIT is only the denominator for the fullness color; the displayed
+# value is the absolute token count. Default 1,000,000 for the 1M-context
+# Opus models; drop to 200000 for standard 200k-context sessions.
+CTX_LIMIT=1000000
+ctx_part=""
+transcript=$(echo "$input" | jq -r '.transcript_path // empty')
+if [ -z "$transcript" ] || [ ! -f "$transcript" ]; then
+  # Fallback: derive the transcript path from cwd + session_id when stdin
+  # omits transcript_path. Claude encodes the project dir by replacing
+  # '/' and '.' with '-'.
+  sid=$(echo "$input" | jq -r '.session_id // empty')
+  if [ -n "$sid" ]; then
+    enc=$(printf '%s' "$cwd" | sed -e 's#/#-#g' -e 's#\.#-#g')
+    cand="$HOME/.claude/projects/${enc}/${sid}.jsonl"
+    [ -f "$cand" ] && transcript="$cand"
+  fi
+fi
+if [ -n "$transcript" ] && [ -f "$transcript" ]; then
+  # tail bounds the cost on large transcripts; the latest assistant message
+  # (and thus its usage) is always within the final handful of lines.
+  ctx_tokens=$(tail -n 80 "$transcript" 2>/dev/null | jq -rs '
+    [ .[]
+      | select(.isSidechain != true)
+      | .message.usage // empty
+      | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0) ]
+    | last // empty' 2>/dev/null)
+  if [ -n "$ctx_tokens" ] && [ "$ctx_tokens" -gt 0 ] 2>/dev/null; then
+    ctx_pct=$(( ctx_tokens * 100 / CTX_LIMIT ))
+    cc=$(rate_color "$ctx_pct")
+    used_label=$(human_tokens "$ctx_tokens")
+    limit_label=$(human_tokens "$CTX_LIMIT")
+    ctx_part=" ${cc}[ctx:${used_label}/${limit_label}]${reset}"
+  fi
+fi
+
+# Order: directory, branch, model, context, rate limits. Each non-first
+# segment carries its own leading space. (No right-alignment: the statusLine
+# command runs without a controlling TTY so `tput cols` reports the wrong
+# width and the rate part would overflow past the right edge.)
+printf "%b%b%b%b%b" "$dir_part" "$branch_part" "$model_part" "$ctx_part" "$rate_part"
