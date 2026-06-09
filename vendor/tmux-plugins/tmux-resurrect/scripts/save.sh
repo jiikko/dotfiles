@@ -42,7 +42,9 @@ pane_format() {
 	# pane_title だけ他フィールドの ":" センチネルが無く、空だと IFS=TAB で
 	# フィールドが潰れて以降が 1 つズレ、復元時に cwd が落ちる（home 化）バグの原因。
 	# 空のときはホスト名を出して「空フィールド」を作らない（復元側の変更は不要）。
-	format+="#{?pane_title,#{pane_title},#{host_short}}"
+	# 判定は #{?pane_title,...} の boolean 真偽（title=="0" を false 扱いする）ではなく、
+	# 空文字列の明示比較にする（title が "0" のペインを取りこぼさないため）。
+	format+="#{?#{==:#{pane_title},},#{host_short},#{pane_title}}"
 	format+="${delimiter}"
 	format+=":#{pane_current_path}"
 	format+="${delimiter}"
