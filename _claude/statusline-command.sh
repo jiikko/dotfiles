@@ -10,8 +10,10 @@ cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd')
 model_name=$(echo "$input" | jq -r '.model.display_name // empty')
 
 # Shorten the path: replace $HOME with ~, truncate to 50 chars with leading ..
+# (置換文字列の ~ は変数経由で渡す。リテラル \~ だとバックスラッシュごと表示される)
 home="$HOME"
-short_cwd="${cwd/#$home/\~}"
+tilde="~"
+short_cwd="${cwd/#$home/$tilde}"
 if [ ${#short_cwd} -gt 50 ]; then
   short_cwd="..${short_cwd: -48}"
 fi
@@ -174,8 +176,13 @@ if [ -n "$effort_level" ]; then
   effort_part=" ${magenta_fg}[effort:${effort_level}]${reset}"
 fi
 
-# Order: directory, branch, model, context, effort, rate limits. Each non-first
-# segment carries its own leading space. (No right-alignment: the statusLine
-# command runs without a controlling TTY so `tput cols` reports the wrong
-# width and the rate part would overflow past the right edge.)
-printf "%b%b%b%b%b%b" "$dir_part" "$branch_part" "$model_part" "$ctx_part" "$effort_part" "$rate_part"
+# 1 行目: directory, branch, model, context, effort / 2 行目: rate limits。
+# statusline は複数行出力をサポートする (公式 docs の Display multiple lines)。
+# rate limit が無いとき (Free tier 等) は 2 行目自体を出さない。
+# Each non-first segment carries its own leading space. (No right-alignment:
+# the statusLine command runs without a controlling TTY so `tput cols` reports
+# the wrong width and the line would overflow past the right edge.)
+printf "%b%b%b%b%b" "$dir_part" "$branch_part" "$model_part" "$ctx_part" "$effort_part"
+if [ -n "$rate_part" ]; then
+  printf "\n%b" "${rate_part# }"
+fi
