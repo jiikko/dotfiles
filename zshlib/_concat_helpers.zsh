@@ -236,12 +236,19 @@ __concat_run_groups() {
   shift "$nopts"
   files=( "$@" )
 
+  # グループ構成をループ開始前にローカルへ確定させる。
+  # ループ内の再帰 concat 呼び出しは (3 ファイル以上のグループで) マルチグループ
+  # 検出パスに入って __concat_group_files を再実行し、グローバルを上書きするため、
+  # グローバルを直接参照し続けると後続グループが silent にスキップされる (codex P1)。
+  local -a keys=( "${__CONCAT_GROUP_KEYS[@]}" )
+  local -A key_of=( "${(kv)__CONCAT_GROUP_KEY_OF[@]}" )
+
   local _key _f _total=0 _ok=0 _fail=0
   local -a group_files sorted_group
-  for _key in "${__CONCAT_GROUP_KEYS[@]}"; do
+  for _key in "${keys[@]}"; do
     group_files=()
     for _f in "${files[@]}"; do
-      [[ "${__CONCAT_GROUP_KEY_OF[${_f:A}]-}" == "$_key" ]] && group_files+=("$_f")
+      [[ "${key_of[${_f:A}]-}" == "$_key" ]] && group_files+=("$_f")
     done
     (( ${#group_files[@]} < 2 )) && continue
 

@@ -271,4 +271,27 @@ setopt err_exit
 assert_file_exists "$TEST_DIR/clip.mp4" "Output file is created with common suffix removal pattern"
 assert_contains "$output" "完了" "Reports success for common suffix removal pattern"
 
+# Test 16e: 3ファイル以上のグループ + 後続グループのマルチグループ結合
+# 回帰防止 (codex P1): __concat_run_groups 内の再帰 concat 呼び出し (3ファイル以上の
+# グループ) がグローバルのグルーピング状態を上書きし、後続グループが silent に
+# スキップされていた
+printf '\n## Test 16e: Multi-group with 3+ file group does not skip later groups\n'
+TEST_DIR="$TEST_TMP/test16e"
+mkdir -p "$TEST_DIR"
+echo "video 1" > "$TEST_DIR/clip_001.mp4"
+echo "video 2" > "$TEST_DIR/clip_002.mp4"
+echo "video 3" > "$TEST_DIR/clip_003.mp4"
+echo "video 4" > "$TEST_DIR/scene_001.mp4"
+echo "video 5" > "$TEST_DIR/scene_002.mp4"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(concat --keep "$TEST_DIR/clip_001.mp4" "$TEST_DIR/clip_002.mp4" "$TEST_DIR/clip_003.mp4" \
+  "$TEST_DIR/scene_001.mp4" "$TEST_DIR/scene_002.mp4" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_file_exists "$TEST_DIR/clip.mp4" "Group 1 (3 files) output is created"
+assert_file_exists "$TEST_DIR/scene.mp4" "Group 2 output is created (not silently skipped)"
+assert_contains "$output" "完了: 2/2 グループ成功" "Summary reports both groups succeeded"
+assert_exit_code "0" "$exit_code" "Multi-group concat exits 0"
+
 printf '\n=== Basic Tests Completed ===\n'
