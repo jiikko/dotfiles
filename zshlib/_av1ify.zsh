@@ -45,6 +45,15 @@ __av1ify_prefetch() {
   local target="$1"
   [[ -z "$target" || ! -f "$target" ]] && return
   (( __AV1IFY_DRY_RUN )) && return
+  # 終了済み prefetch の PID をリストから間引く。長いバッチで PID を溜め込むと、
+  # 中断時の __av1ify_kill_prefetches が「とっくに終了して OS に再利用された PID」へ
+  # kill を打つ誤爆リスクが広がるため、生存中のものだけ持ち越す (best-effort)。
+  local -a alive=()
+  local pid
+  for pid in "${__AV1IFY_PREFETCH_PIDS[@]}"; do
+    kill -0 "$pid" 2>/dev/null && alive+=("$pid")
+  done
+  __AV1IFY_PREFETCH_PIDS=("${alive[@]}")
   ( head -c 1 < "$target" > /dev/null 2>&1 ) &
   __AV1IFY_PREFETCH_PIDS+=("$!")
 }
@@ -230,6 +239,7 @@ av1ify() {
   local opt_compact=0
   local opt_force=0
   local opt_delete_origin=0
+  local opt_listfile=""
   local -a positional=()
   while (( $# > 0 )); do
     case "$1" in
@@ -276,7 +286,15 @@ av1ify() {
         opt_denoise="$1"
         ;;
       -f)
-        positional+=("$1")
+        # 旧実装は positional に積んでから「先頭にあるときだけ」処理していたため、
+        # `av1ify a.mp4 -f list.txt` が「-f というファイルが無い」NG になっていた。
+        # 他のオプションと同様に位置非依存でパースする。
+        shift
+        if (( $# == 0 )) || [[ -z "$1" ]]; then
+          print -r -- "エラー: -f オプションにはファイルパスが必要です" >&2
+          return 1
+        fi
+        opt_listfile="$1"
         ;;
       -*)
         print -r -- "エラー: 不明なオプション: $1" >&2
@@ -289,6 +307,10 @@ av1ify() {
     shift
   done
   set -- "${positional[@]}"
+
+  # 処理対象の有無 (位置引数 or -f リスト)。バナー/検証/ヘルプのゲートに使う
+  local have_targets=0
+  { (( $# > 0 )) || [[ -n "$opt_listfile" ]] } && have_targets=1
 
   # --compact: 720p + 30fps プリセット（明示的な -r/--fps が優先）
   if (( opt_compact )); then
@@ -311,7 +333,7 @@ av1ify() {
   fi
 
   # バナー出力（内部呼び出し・ヘルプ時は除く）
-  if (( ! __av1ify_internal )) && (( ! show_help )) && (( $# > 0 )); then
+  if (( ! __av1ify_internal )) && (( ! show_help )) && (( have_targets )); then
     __av1ify_banner
   fi
 
@@ -319,9 +341,9 @@ av1ify() {
   # 旧実装は fps/denoise をファイルごとに警告して黙って無視していたため、`--fps abc` の
   # ようなタイポでも全ファイルが fps 指定なしでフルエンコードされてしまっていた。
   # 配置: バナー出力後 (解決メッセージの表示順を統一)。
-  # ゲート: help 表示・引数なしのときは検証しない (無効な AV1_* 環境変数が残っていても
+  # ゲート: help 表示・処理対象なしのときは検証しない (無効な AV1_* 環境変数が残っていても
   # `av1ify --help` が読めなくなる regression を防ぐ。codex P2 指摘)。
-  if (( ! __av1ify_internal )) && (( ! show_help )) && (( $# > 0 )); then
+  if (( ! __av1ify_internal )) && (( ! show_help )) && (( have_targets )); then
     if [[ -n "$__AV1IFY_RESOLUTION" ]]; then
       if __av1ify_resolve_resolution "$__AV1IFY_RESOLUTION"; then
         __AV1IFY_RESOLUTION="$REPLY"
@@ -347,7 +369,7 @@ av1ify() {
     fi
   fi
 
-  if (( ! __av1ify_internal )) && (( ! show_help )) && (( $# > 0 )); then
+  if (( ! __av1ify_internal )) && (( ! show_help )) && (( have_targets )); then
     if (( opt_compact )); then
       print -P -- "%F{cyan}>> compact モード: -r ${opt_resolution} --fps ${opt_fps}%f"
     fi
@@ -355,7 +377,7 @@ av1ify() {
 
   (( ! __av1ify_internal && dry_run )) && print -r -- "[DRY-RUN] ファイルは変更しません"
 
-  if (( ! __av1ify_internal )) && { (( show_help )) || (( $# == 0 )); }; then
+  if (( ! __av1ify_internal )) && { (( show_help )) || (( ! have_targets )); }; then
     cat <<'EOF'
 av1ify — 入力された動画ファイル、またはディレクトリ内の動画ファイルをAV1形式のMP4に一括変換します。
 
@@ -416,6 +438,7 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
   -h, --help: このヘルプメッセージを表示します。
   -n, --dry-run: 実行内容のみを表示し、ファイルを変更しません。
   -f <ファイル>: 改行区切りでファイルパスが記載されたリストファイルを読み込んで処理します。
+      引数のどの位置でも指定でき、通常のファイル引数と併用できます。
   -r, --resolution <値>: 出力解像度（縦）を指定します。アスペクト比は維持されます。
       480p / 720p / 1080p / 1440p / 4k または数値（例: 540）
   --fps <値>: 出力フレームレートを指定します（例: 24, 30, 60）。
@@ -484,36 +507,27 @@ EOF
 
   set -o pipefail
 
-  # -f オプションでファイルリストを読み込む
-  if [[ "$1" == "-f" ]]; then
-    if (( $# < 2 )); then
-      print -r -- "エラー: -f オプションにはファイルパスが必要です" >&2
-      return 1
-    fi
-    local listfile="$2"
-    if [[ -z "$listfile" ]]; then
-      print -r -- "エラー: -f オプションにはファイルパスが必要です" >&2
-      return 1
-    fi
-    if [[ ! -f "$listfile" ]]; then
-      print -r -- "エラー: ファイルが見つかりません: $listfile" >&2
+  # -f オプションのファイルリストを位置引数の前に連結する
+  # (オプションループで位置非依存にパース済み。位置引数との併用も可)
+  if [[ -n "$opt_listfile" ]]; then
+    if [[ ! -f "$opt_listfile" ]]; then
+      print -r -- "エラー: ファイルが見つかりません: $opt_listfile" >&2
       return 1
     fi
 
-    local -a files=()
+    local -a list_files=()
+    local line
     while IFS= read -r line; do
       # 空行とコメント行（#で始まる）をスキップ
       [[ -z "$line" || "$line" == \#* ]] && continue
-      files+=("$line")
-    done < "$listfile"
+      list_files+=("$line")
+    done < "$opt_listfile"
 
-    if (( ${#files[@]} == 0 )); then
-      print -r -- "（対象ファイルなし: $listfile）"
+    if (( ${#list_files[@]} == 0 )) && (( $# == 0 )); then
+      print -r -- "（対象ファイルなし: $opt_listfile）"
       return 0
     fi
-
-    __av1ify_run_batch "${files[@]}"
-    return $?
+    set -- "${list_files[@]}" "$@"
   fi
 
   # 複数の引数がある場合は、それぞれを順番に処理

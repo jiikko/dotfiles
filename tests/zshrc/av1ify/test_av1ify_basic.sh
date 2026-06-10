@@ -131,6 +131,25 @@ assert_file_exists "$TEST_DIR/videoB-enc.mp4" "File from list line 2 is processe
 assert_file_exists "$TEST_DIR/videoC-enc.mp4" "File from list line 4 is processed"
 assert_contains "$output" "サマリ" "Summary is displayed for file list"
 
+# Test 10b: -f が先頭以外の位置でも機能し、位置引数と併用できる
+# 回帰防止: 旧実装は positional 先頭の "-f" だけを処理していたため、
+# `av1ify a.mp4 -f list.txt` が「-f というファイルが無い」NG になっていた
+printf '\n## Test 10b: -f works in non-leading position combined with positional args\n'
+TEST_DIR="$TEST_TMP/test10b"
+mkdir -p "$TEST_DIR"
+echo "video a" > "$TEST_DIR/posA.avi"
+echo "video b" > "$TEST_DIR/listB.mkv"
+cat > "$TEST_DIR/list.txt" <<LISTEOF
+$TEST_DIR/listB.mkv
+LISTEOF
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(av1ify "$TEST_DIR/posA.avi" -f "$TEST_DIR/list.txt" 2>&1 || true)
+setopt err_exit
+assert_file_exists "$TEST_DIR/posA-enc.mp4" "Positional file is processed"
+assert_file_exists "$TEST_DIR/listB-enc.mp4" "List file entry is processed"
+assert_not_contains "$output" "ファイルが無い: -f" "-f is not treated as a file path"
+
 # Test 11: -f オプションでファイルが見つからない場合
 printf '\n## Test 11: Error when -f list file not found\n'
 TEST_DIR="$TEST_TMP/test11"

@@ -497,11 +497,18 @@ __av1ify_one() {
   fi
 
   # 映像エンコーダ（SVT-AV1 必須）
+  # チェック結果は成功時のみキャッシュ (バッチで毎ファイル ffmpeg を起動しない)。
+  # 失敗はキャッシュしない: シェル常駐の関数なので、ffmpeg を入れ直した後に
+  # 同じシェルから再実行したとき stale な「利用不可」が残らないようにする。
   local vcodec="libsvtav1"
-  if ! ffmpeg -hide_banner -h encoder=libsvtav1 >/dev/null 2>&1; then
-    print -r -- "❌ libsvtav1 が利用できません。ffmpeg を libsvtav1 付きでビルドしてください。"
-    __AV1IFY_LAST_NG_REASON="libsvtav1 が利用不可 (ffmpeg を再ビルドしてください)"
-    return 1
+  if [[ "${__AV1IFY_SVTAV1_OK:-}" != 1 ]]; then
+    if ffmpeg -hide_banner -h encoder=libsvtav1 >/dev/null 2>&1; then
+      typeset -g __AV1IFY_SVTAV1_OK=1
+    else
+      print -r -- "❌ libsvtav1 が利用できません。ffmpeg を libsvtav1 付きでビルドしてください。"
+      __AV1IFY_LAST_NG_REASON="libsvtav1 が利用不可 (ffmpeg を再ビルドしてください)"
+      return 1
+    fi
   fi
 
   # クラウド/ネットワークストレージの場合、ここで実ファイル取得が始まることがある
@@ -515,6 +522,14 @@ __av1ify_one() {
   fi
 
   # ソース映像の寸法を取得（アップスケール防止・CRF自動調整・縦横判定に使用）
+  #
+  # 注: 本関数は ffprobe を項目別に複数回呼ぶ (width / height / rotation / fps /
+  # 音声 codec / sample_rate / channels / bit_rate)。1 回の -show_entries に統合する
+  # 案は、tests/zshrc/av1ify/test_helper.sh の mock ffprobe が「クエリ文字列の部分
+  # 一致で項目別に応答する」設計に依存しているため見送り (統合するなら mock の
+  # 再設計とセットで行うこと)。クラウドファイルの materialize は直前の
+  # 「ファイル取得中」表示時点の初回アクセスで完了しており、以降の ffprobe は
+  # ローカル read (~数十ms/回) なので実害は小さい。
   local source_width="" source_height="" source_display_width="" source_display_height="" source_short_side="" source_is_portrait=0 source_rotation=""
   source_width=$(ffprobe -v error -select_streams v:0 -show_entries stream=width \
            -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
@@ -720,17 +735,13 @@ __av1ify_one() {
   fi
 
   # 予定される最終出力ファイル
+  # 既存チェックは関数冒頭の __av1ify_default_output_exists ($out) と
+  # __av1ify_match_existing_variant (final_out を含む全有効タグ名) で実施済み。
+  # ここでの再チェックは冗長なため削除した (並行実行の競合はエンコード自体が
+  # 分単位で走る以上ここで再確認しても防げない)。
   __av1ify_build_final_out "$stem" "$resolution_tag" "$fps_tag" "$denoise_tag" \
     "$did_aac" "$aac_bitrate_resolved" "$audio_param_error"
   local final_out="$REPLY"
-
-  # 既存チェック（過去の出力があればスキップ）
-  if [[ -e "$final_out" || -e "$out" ]]; then
-    local exist="$final_out"
-    [[ -e "$out" ]] && exist="$out"
-    print -r -- "→ SKIP 既存: $exist"
-    return 0
-  fi
 
   print -P -- "%F{cyan}>> 映像: $vcodec (crf=$crf, preset=$preset)%f"
   print -r -- ">> 出力(処理中マーカー): $tmp"

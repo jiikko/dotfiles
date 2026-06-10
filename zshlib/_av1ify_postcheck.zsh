@@ -248,9 +248,10 @@ __av1ify_postcheck() {
   # ファイルサイズの妥当性チェック
   if [[ -n "$src_path" && -f "$src_path" && -f "$filepath" ]]; then
     local src_size out_size
-    # macOS: stat -f%z, Linux: stat -c%s
-    src_size=$(stat -f%z -- "$src_path" 2>/dev/null || stat -c%s -- "$src_path" 2>/dev/null) || src_size=""
-    out_size=$(stat -f%z -- "$filepath" 2>/dev/null || stat -c%s -- "$filepath" 2>/dev/null) || out_size=""
+    # __av1ify_file_size は _av1ify_encode.zsh 定義 (読み込み順は postcheck → encode
+    # だが、呼び出しは av1ify 実行時 = 全ファイル source 済みなので解決できる)
+    src_size=$(__av1ify_file_size "$src_path") || src_size=""
+    out_size=$(__av1ify_file_size "$filepath") || out_size=""
     if [[ -n "$src_size" && "$src_size" =~ ^[0-9]+$ && -n "$out_size" && "$out_size" =~ ^[0-9]+$ ]] && (( src_size > 0 )); then
       local size_ratio
       size_ratio=$(awk -v o="$out_size" -v s="$src_size" 'BEGIN{ printf "%.4f", o / s }')
