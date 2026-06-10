@@ -67,12 +67,18 @@ fi
 # PATH の重複を自動排除（先勝ち）。以降の PATH 追加で重複が増えないようにする
 typeset -U path PATH
 
-export PATH=$HOME/.nodebrew/current/bin:$PATH
+# nodebrew / heroku は使っていないマシンが多い (このマシンには不存在を確認 2026-06-10)。
+# 他マシンで使っている可能性を考慮し、削除でなく存在ガード付きで PATH に足す
+if [ -d "$HOME/.nodebrew/current/bin" ]; then
+  export PATH=$HOME/.nodebrew/current/bin:$PATH
+fi
 export GOPATH=$HOME/go
 export PATH=$GOPATH/bin:$PATH
 export PATH="$HOME/dotfiles/bin:$PATH"
 export PATH="/opt/homebrew/bin:$PATH"
-export PATH="/usr/local/heroku/bin:$PATH"
+if [ -d "/usr/local/heroku/bin" ]; then
+  export PATH="/usr/local/heroku/bin:$PATH"
+fi
 
 for _env in rbenv nodenv goenv; do
   _lazy_anyenv_manager "$_env"
@@ -349,7 +355,26 @@ alias gv='git --version'
 alias gp='git push'
 alias gad='git add \.'
 alias gc='git commit \-m'
-alias gm='branch=$(git remote show origin | grep "HEAD branch" | awk "{print \$NF}"); if [[ "$branch" == "master" || "$branch" == "main" ]]; then git pull origin $branch; else echo "Error: Default branch is neither master nor main"; fi'
+# origin のデフォルトブランチを pull する。
+# デフォルトブランチ判定は git remote show origin (毎回ネットワーク通信して遅い /
+# オフラインで失敗) ではなく、ローカルの origin/HEAD 参照で行う。
+# origin/HEAD 未設定のリポジトリでは一度だけ set-head --auto で問い合わせて
+# 設定し、以後はローカルで解決する。
+function gm() {
+  local branch
+  branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)
+  if [[ -z "$branch" ]]; then
+    git remote set-head origin --auto >/dev/null 2>&1
+    branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)
+  fi
+  branch=${branch#origin/}
+  if [[ "$branch" == "master" || "$branch" == "main" ]]; then
+    git pull origin "$branch"
+  else
+    echo "Error: Default branch is neither master nor main (got: ${branch:-unknown})"
+    return 1
+  fi
+}
 
 alias ggl='git log --graph --pretty=oneline --abbrev-commit --decorate --all'
 
