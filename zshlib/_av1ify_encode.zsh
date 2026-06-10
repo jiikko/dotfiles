@@ -2,9 +2,8 @@
 
 # __av1ify_decide_* / __av1ify_auto_crf / __av1ify_build_final_out から
 # 結果を返却するためのグローバル。__av1ify_one が各反復で初期化する。
-# REPLY を 1 つだけ使う関数 (__av1ify_pre_repair, __av1ify_auto_crf,
-# __av1ify_build_final_out, __av1ify_finalize) は REPLY を使い、
-# 複数値を返す関数だけ専用グローバルを使う。
+# REPLY を 1 つだけ使う関数 (__av1ify_auto_crf, __av1ify_build_final_out,
+# __av1ify_finalize) は REPLY を使い、複数値を返す関数だけ専用グローバルを使う。
 typeset -g __AV1IFY_R_HEIGHT=""
 typeset -g __AV1IFY_R_RES_TAG=""
 typeset -g __AV1IFY_R_FPS=""
@@ -14,48 +13,6 @@ typeset -g __AV1IFY_R_DENOISE_TAG=""
 typeset -g __AV1IFY_R_AAC_BITRATE=""
 typeset -g __AV1IFY_R_AAC_SRC_BPS=""
 typeset -gi __AV1IFY_R_AAC_CAPPED=0
-
-# 内部補助: 事前リペア（コンテナ/インデックス修復のためのストリームコピー）
-# 入力: $1=元ファイルパス
-# 出力: REPLY=リペア後パス（成功時は <stem>-repaired.<ext>、失敗/スキップ時は元パス）
-__av1ify_pre_repair() {
-  local src="$1"
-  local stem ext repaired tmp
-  if [[ "$src" == *.* && "$src" != .* ]]; then
-    stem="${src%.*}"; ext="${src##*.}"
-  else
-    stem="$src"; ext=""
-  fi
-  repaired="${stem}-repaired${ext:+.${ext}}"
-  tmp="${repaired}.in_progress"
-
-  # 既存の repaired があれば再利用
-  if [[ -e "$repaired" ]]; then
-    print -r -- "→ 事前リペア済みを使用: $repaired"
-    REPLY="$repaired"; return 0
-  fi
-  [[ -e "$tmp" ]] && { print -r -- "⚠️ 残骸削除: $tmp"; rm -f -- "$tmp"; }
-
-  # 判定: packed B-frames 展開が必要な mpeg4（Xvid/DivX）かどうか
-  local vcodec fmt
-  vcodec=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=nk=1:nw=1 -- "$src" 2>/dev/null)
-  fmt=$(ffprobe -v error -show_entries format=format_name -of default=nk=1:nw=1 -- "$src" 2>/dev/null)
-
-  local -a args=( -hide_banner -loglevel warning -y -fflags +genpts -i "$src" -map 0 -c copy )
-  if [[ "${vcodec:l}" == "mpeg4" ]]; then
-    args+=( -bsf:v mpeg4_unpack_bframes )
-  fi
-
-  print -P -- "%F{cyan}>> 事前リペア: stream copy (${fmt:-unknown}/${vcodec:-?}) → $repaired%f"
-  if ffmpeg "${args[@]}" -- "$tmp"; then
-    mv -f -- "$tmp" "$repaired"
-    REPLY="$repaired"; return 0
-  else
-    [[ -e "$tmp" ]] && rm -f -- "$tmp"
-    print -r -- "⚠️ 事前リペア失敗: $src（元ファイルで続行）"
-    REPLY="$src"; return 0
-  fi
-}
 
 # 内部補助: 与えられたパスが属するマウントポイントの filesystem type を返す
 # 例: /Volumes/koji (smbfs マウント) -> "smbfs"

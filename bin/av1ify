@@ -10,8 +10,8 @@
 # 実装: ~/dotfiles/zshlib/_av1ify.zsh
 #
 # 同じ機能が以下にも定義されています（呼び出し元）:
-#   - ~/dotfiles/_zshrc:592  av1ify() 遅延ローディングラッパー
-#   - ~/dotfiles/bin/av1c    av1ify --compact のショートハンド
+#   - ~/dotfiles/_zshrc      av1ify() 遅延ローディングラッパー
+#   - ~/dotfiles/bin/av1c    av1ify --compact + 成功時に元ファイル削除のショートハンド
 
 source "${0:A:h}/../zshlib/_av1ify.zsh"
 av1ify "$@"

@@ -7,11 +7,14 @@
 #
 # av1c — av1ify --compact のショートハンド（720p + 30fps プリセット）
 #
+# ⚠️ 単なる --compact ではない: --delete-origin-if-success-and-no-ng を併用するため、
+# 変換成功 + postcheck NG なしの場合に元ファイルをゴミ箱へ移動する。
+# 元ファイルを残したい場合は bin/av1ify (または av1ify -c) を使うこと。
+#
 # 実装: ~/dotfiles/zshlib/_av1ify.zsh
 #
-# 同じ機能が以下にも定義されています（呼び出し元）:
-#   - ~/dotfiles/_zshrc:600  alias av1c='av1ify -c'
-#   - ~/dotfiles/bin/av1ify  フルオプション版
+# 関連:
+#   - ~/dotfiles/bin/av1ify  フルオプション版 (元ファイルは残す)
 
 source "${0:A:h}/../zshlib/_av1ify.zsh"
 av1ify --compact --delete-origin-if-success-and-no-ng "$@"

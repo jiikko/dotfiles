@@ -77,7 +77,7 @@ __av1ify_on_interrupt() {
 
 # 分割構成:
 #   _av1ify_postcheck.zsh — __av1ify_mark_issue() + __av1ify_postcheck() (変換後チェック)
-#   _av1ify_encode.zsh    — __av1ify_pre_repair() + __av1ify_one() (エンコード処理)
+#   _av1ify_encode.zsh    — __av1ify_one() + エンコード補助ヘルパー群
 #   _av1ify.zsh (本ファイル) — 状態変数, バナー, 割り込み処理, av1ify() エントリポイント
 # 読み込み順: postcheck → encode（__av1ify_one が __av1ify_postcheck を呼ぶため）
 # shellcheck disable=SC1091
