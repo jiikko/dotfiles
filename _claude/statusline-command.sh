@@ -77,6 +77,22 @@ rate_bar() {
   printf "%s" "$bar"
 }
 
+# Remaining-time label until a reset epoch: "3d2h" / "1h23m" / "45m".
+fmt_remaining() {
+  secs=$1
+  [ "$secs" -lt 0 ] && secs=0
+  d=$(( secs / 86400 ))
+  h=$(( (secs % 86400) / 3600 ))
+  m=$(( (secs % 3600) / 60 ))
+  if [ "$d" -gt 0 ]; then
+    printf "%dd%dh" "$d" "$h"
+  elif [ "$h" -gt 0 ]; then
+    printf "%dh%dm" "$h" "$m"
+  else
+    printf "%dm" "$m"
+  fi
+}
+
 # Short human label for a token count: <1M -> "269k", >=1M -> "1M" / "1.5M".
 human_tokens() {
   n=$1
@@ -94,6 +110,11 @@ human_tokens() {
 rate_part=""
 five_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty' 2>/dev/null)
 seven_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty' 2>/dev/null)
+# resets_at: 各ウィンドウがリセットされる時刻 (Unix epoch 秒)。残り時間表示に使う
+five_reset=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty' 2>/dev/null)
+seven_reset=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty' 2>/dev/null)
+gray_fg="\033[90m"
+now=$(date +%s)
 
 if [ -n "$five_pct" ] || [ -n "$seven_pct" ]; then
   parts=""
@@ -102,6 +123,9 @@ if [ -n "$five_pct" ] || [ -n "$seven_pct" ]; then
     c=$(rate_color "$p")
     b=$(rate_bar "$p")
     parts="${c}5h:[${b}]${p}%${reset}"
+    if [ -n "$five_reset" ] 2>/dev/null && [ "$five_reset" -gt "$now" ] 2>/dev/null; then
+      parts="${parts}${gray_fg}↻$(fmt_remaining $(( five_reset - now )))${reset}"
+    fi
   fi
   if [ -n "$seven_pct" ]; then
     p=${seven_pct%.*}
@@ -109,6 +133,9 @@ if [ -n "$five_pct" ] || [ -n "$seven_pct" ]; then
     b=$(rate_bar "$p")
     [ -n "$parts" ] && parts="$parts " || true
     parts="${parts}${c}7d:[${b}]${p}%${reset}"
+    if [ -n "$seven_reset" ] 2>/dev/null && [ "$seven_reset" -gt "$now" ] 2>/dev/null; then
+      parts="${parts}${gray_fg}↻$(fmt_remaining $(( seven_reset - now )))${reset}"
+    fi
   fi
   rate_part=" ${parts}"
 fi
