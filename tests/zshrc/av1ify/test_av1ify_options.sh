@@ -84,15 +84,21 @@ setopt err_exit
 assert_contains "$output" "無効な解像度" "Reports invalid resolution for non-numeric"
 (( exit_code != 0 )) && printf '✓ Exit code is non-zero for -r abc (%d)\n' "$exit_code" || printf '✗ Exit code should be non-zero for -r abc (got %d)\n' "$exit_code"
 
-# Test 20: 無効なfpsのバリデーション
-printf '\n## Test 20: Invalid FPS validation\n'
+# Test 20: 無効なfpsのバリデーション (resolution と同じ fail-fast: 即エラー終了)
+# 旧仕様は「警告して fps なしで続行」だったが、タイポで全ファイルが意図しない
+# 設定でフルエンコードされる事故を防ぐため root で即 return 1 に変更した
+printf '\n## Test 20: Invalid FPS validation (fail-fast)\n'
 TEST_DIR="$TEST_TMP/test20"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
-output=$(av1ify --dry-run --fps 0 "$TEST_DIR/input.avi" 2>&1 || true)
+unsetopt err_exit
+output=$(av1ify --dry-run --fps 0 "$TEST_DIR/input.avi" 2>&1)
+exit_code=$?
+setopt err_exit
 assert_contains "$output" "無効なfps指定" "Reports invalid FPS for 0"
-assert_contains "$output" "fps=auto" "Falls back to auto when invalid"
+assert_not_contains "$output" "変換予定" "Does not proceed to plan when FPS is invalid"
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero for --fps 0 (%d)\n' "$exit_code" || { printf '✗ Exit code should be non-zero for --fps 0 (got %d)\n' "$exit_code"; exit 1; }
 
 output=$(av1ify --dry-run --fps 300 "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "無効なfps指定" "Reports invalid FPS for 300"
@@ -280,14 +286,19 @@ cd "$TEST_DIR"
 output=$(av1ify --dry-run --denoise medium "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "denoise=medium" "Dry-run shows denoise=medium"
 
-# Test 36: 無効な denoise 指定
-printf '\n## Test 36: Invalid denoise validation\n'
+# Test 36: 無効な denoise 指定 (fail-fast: 即エラー終了)
+printf '\n## Test 36: Invalid denoise validation (fail-fast)\n'
 TEST_DIR="$TEST_TMP/test36"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
-output=$(av1ify --dry-run --denoise invalid "$TEST_DIR/input.avi" 2>&1 || true)
+unsetopt err_exit
+output=$(av1ify --dry-run --denoise invalid "$TEST_DIR/input.avi" 2>&1)
+exit_code=$?
+setopt err_exit
 assert_contains "$output" "無効なdenoise指定" "Reports invalid denoise value"
+assert_not_contains "$output" "変換予定" "Does not proceed to plan when denoise is invalid"
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero for --denoise invalid (%d)\n' "$exit_code" || { printf '✗ Exit code should be non-zero for --denoise invalid (got %d)\n' "$exit_code"; exit 1; }
 
 # Test 37: --denoise オプションで実際にファイル処理
 printf '\n## Test 37: Denoise option creates output file with tag\n'

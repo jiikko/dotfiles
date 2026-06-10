@@ -488,40 +488,12 @@ __av1ify_one() {
 
   local dry_run="${__AV1IFY_DRY_RUN:-0}"
 
-  # 解像度・fps オプションを取得
-  # 解像度は av1ify() で CLI/環境変数を統合・検証済み
-  local target_resolution="$__AV1IFY_RESOLUTION"
-  local target_fps="${__AV1IFY_FPS:-${AV1_FPS:-}}"
-
-  # fpsのバリデーション（dry-run時も実行）
-  local validated_resolution="$target_resolution" validated_fps=""
-  if [[ -n "$target_fps" ]]; then
-    if [[ "$target_fps" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-      local fps_valid
-      fps_valid=$(awk -v fps="$target_fps" 'BEGIN { print (fps > 0 && fps <= 240) ? 1 : 0 }')
-      if (( fps_valid )); then
-        validated_fps="$target_fps"
-      else
-        print -r -- "⚠️ 無効なfps指定: $target_fps（0より大きく240以下で指定してください）"
-      fi
-    else
-      print -r -- "⚠️ 無効なfps指定: $target_fps（無視します）"
-    fi
-  fi
-
-  # ノイズ除去オプションのバリデーション
-  local target_denoise="${__AV1IFY_DENOISE:-${AV1_DENOISE:-}}"
-  local validated_denoise=""
-  if [[ -n "$target_denoise" ]]; then
-    case "${target_denoise:l}" in
-      light|medium|strong)
-        validated_denoise="${target_denoise:l}"
-        ;;
-      *)
-        print -r -- "⚠️ 無効なdenoise指定: $target_denoise（light/medium/strong から選択してください）"
-        ;;
-    esac
-  fi
+  # 解像度・fps・denoise は av1ify() root で CLI/環境変数の統合と fail-fast 検証済み
+  # (ここに届く値は常に有効。無効値は root が return 1 でバッチごと止める)
+  local validated_resolution="$__AV1IFY_RESOLUTION"
+  local validated_fps="$__AV1IFY_FPS"
+  local validated_denoise="$__AV1IFY_DENOISE"
+  local target_fps=""
 
   # ドライラン: ファイル名ベースで計画だけ表示（ファイルへ一切アクセスしない）
   if (( dry_run )); then

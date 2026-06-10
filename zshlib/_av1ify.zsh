@@ -138,6 +138,17 @@ __av1ify_resolve_resolution() {
   return 1
 }
 
+# fps 値の検証 (0 < fps <= 240 の数値)
+# 引数: $1 = fps 文字列
+# 戻り値: 0=有効, 1=無効
+__av1ify_validate_fps() {
+  local fps="$1"
+  [[ "$fps" =~ ^[0-9]+(\.[0-9]+)?$ ]] || return 1
+  local ok
+  ok=$(awk -v fps="$fps" 'BEGIN { print (fps > 0 && fps <= 240) ? 1 : 0 }')
+  (( ok ))
+}
+
 # 内部補助: バッチ処理ループ + 末尾 NG 一覧の出力
 # 引数: 処理対象ファイル/ディレクトリのパスを位置引数で渡す
 # 出力: 各ファイルの処理ログ + 末尾サマリ + (NG があれば) NG 一覧
@@ -287,11 +298,11 @@ av1ify() {
 
   if (( ! __av1ify_internal )); then
     __AV1IFY_DRY_RUN=$dry_run
-    # CLI オプションと環境変数 AV1_RESOLUTION をここで統合
+    # CLI オプションと環境変数 (AV1_RESOLUTION / AV1_FPS / AV1_DENOISE) をここで統合
     # → 各ファイル処理 (__av1ify_one) での二重バリデーションを回避
     __AV1IFY_RESOLUTION="${opt_resolution:-${AV1_RESOLUTION:-}}"
-    __AV1IFY_FPS="$opt_fps"
-    __AV1IFY_DENOISE="$opt_denoise"
+    __AV1IFY_FPS="${opt_fps:-${AV1_FPS:-}}"
+    __AV1IFY_DENOISE="${opt_denoise:-${AV1_DENOISE:-}}"
     __AV1IFY_COMPACT=$opt_compact
     __AV1IFY_FORCE=$opt_force
     __AV1IFY_DELETE_ORIGIN=$opt_delete_origin
@@ -312,6 +323,27 @@ av1ify() {
     else
       return 1
     fi
+  fi
+
+  # fps / denoise も root で fail-fast 検証 (resolution と同じ方針)。
+  # 旧実装はファイルごとに警告して黙って無視していたため、`--fps abc` のような
+  # タイポでも全ファイルが fps 指定なしでフルエンコードされてしまっていた。
+  if (( ! __av1ify_internal )) && [[ -n "$__AV1IFY_FPS" ]]; then
+    if ! __av1ify_validate_fps "$__AV1IFY_FPS"; then
+      print -r -- "エラー: 無効なfps指定: ${__AV1IFY_FPS}（0より大きく240以下で指定してください）" >&2
+      return 1
+    fi
+  fi
+  if (( ! __av1ify_internal )) && [[ -n "$__AV1IFY_DENOISE" ]]; then
+    case "${__AV1IFY_DENOISE:l}" in
+      light|medium|strong)
+        __AV1IFY_DENOISE="${__AV1IFY_DENOISE:l}"
+        ;;
+      *)
+        print -r -- "エラー: 無効なdenoise指定: ${__AV1IFY_DENOISE}（light/medium/strong から選択してください）" >&2
+        return 1
+        ;;
+    esac
   fi
 
   if (( ! __av1ify_internal )) && (( ! show_help )) && (( $# > 0 )); then
