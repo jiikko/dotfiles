@@ -77,7 +77,7 @@ rate_bar() {
   printf "%s" "$bar"
 }
 
-# Remaining-time label until a reset epoch: "3d2h" / "1h23m" / "45m".
+# Remaining-time label until a reset epoch: "3日2時間" / "1時間23分" / "45分".
 fmt_remaining() {
   secs=$1
   [ "$secs" -lt 0 ] && secs=0
@@ -85,11 +85,11 @@ fmt_remaining() {
   h=$(( (secs % 86400) / 3600 ))
   m=$(( (secs % 3600) / 60 ))
   if [ "$d" -gt 0 ]; then
-    printf "%dd%dh" "$d" "$h"
+    printf "%d日%d時間" "$d" "$h"
   elif [ "$h" -gt 0 ]; then
-    printf "%dh%dm" "$h" "$m"
+    printf "%d時間%d分" "$h" "$m"
   else
-    printf "%dm" "$m"
+    printf "%d分" "$m"
   fi
 }
 
@@ -124,7 +124,7 @@ if [ -n "$five_pct" ] || [ -n "$seven_pct" ]; then
     b=$(rate_bar "$p")
     parts="${c}5h:[${b}]${p}%${reset}"
     if [ -n "$five_reset" ] 2>/dev/null && [ "$five_reset" -gt "$now" ] 2>/dev/null; then
-      parts="${parts}${gray_fg}↻$(fmt_remaining $(( five_reset - now )))${reset}"
+      parts="${parts}${gray_fg}(残:$(fmt_remaining $(( five_reset - now ))))${reset}"
     fi
   fi
   if [ -n "$seven_pct" ]; then
@@ -134,7 +134,7 @@ if [ -n "$five_pct" ] || [ -n "$seven_pct" ]; then
     [ -n "$parts" ] && parts="$parts " || true
     parts="${parts}${c}7d:[${b}]${p}%${reset}"
     if [ -n "$seven_reset" ] 2>/dev/null && [ "$seven_reset" -gt "$now" ] 2>/dev/null; then
-      parts="${parts}${gray_fg}↻$(fmt_remaining $(( seven_reset - now )))${reset}"
+      parts="${parts}${gray_fg}(残:$(fmt_remaining $(( seven_reset - now ))))${reset}"
     fi
   fi
   rate_part=" ${parts}"
