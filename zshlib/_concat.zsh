@@ -5,7 +5,7 @@
 # concat — 複数の動画ファイルを無劣化で結合するzshコマンド
 # ------------------------------------------------------------------------------
 # 分割構成:
-#   _concat_helpers.zsh — 定数, パス操作, 連番検出, ffprobeラッパー, 診断
+#   _concat_helpers.zsh — 定数, パス操作, 連番検出, グルーピング, ffprobeラッパー, 診断
 #   _concat.zsh (本ファイル) — concat() エントリポイント
 # shellcheck disable=SC1091
 source "${0:A:h}/_concat_helpers.zsh"
@@ -107,15 +107,17 @@ EOF
   done
   set -- "${_positional[@]}"
 
+  # オプション再構成 (ディレクトリ/マルチグループモードがグループごとの再帰呼び出しに使う)
+  local -a _group_opts=()
+  (( force_mode )) && _group_opts+=(--force)
+  (( verbose_mode )) && _group_opts+=(--verbose)
+  (( dryrun_mode )) && _group_opts+=(--dryrun)
+  (( keep_mode )) && _group_opts+=(--keep)
+  [[ -n "$output_info_file" ]] && _group_opts+=(--output-info "$output_info_file")
+
   # ディレクトリモード: 引数が1つのディレクトリならグループを自動検出して結合
   if (( $# == 1 )) && [[ -d "$1" ]]; then
     local target_dir="${1:A}"
-    local -a _opts=()
-    (( force_mode )) && _opts+=(--force)
-    (( verbose_mode )) && _opts+=(--verbose)
-    (( dryrun_mode )) && _opts+=(--dryrun)
-    (( keep_mode )) && _opts+=(--keep)
-    [[ -n "$output_info_file" ]] && _opts+=(--output-info "$output_info_file")
 
     # ディレクトリ内の動画ファイルを収集（非再帰）
     local -a video_files=()
@@ -130,64 +132,10 @@ EOF
       return 1
     fi
 
-    # ファイルをグループ化（番号部分を除いた共通部分でグルーピング）
-    local -A file_to_key=()
-    local -a all_keys=() _skipped_files=()
-    local _stem _num _rest _suffix _prefix _key
-    for _f in "${video_files[@]}"; do
-      _stem=$(__concat_get_stem "$_f")
-      if __concat_extract_number "$_stem"; then
-        _num="${REPLY%%:*}"
-        _rest="${REPLY#*:}"
-        _suffix="${_rest%%:*}"
-        _prefix="${_rest#*:}"
-        _key="${_prefix}::${_suffix}"
-        file_to_key[${_f:A}]="$_key"
-        all_keys+=("$_key")
-      else
-        _skipped_files+=("${_f:t}")
-      fi
-    done
-    if (( ${#_skipped_files[@]} > 0 )); then
-      print -r -- "⚠️  連番パターンに一致しないファイルをスキップしました: ${(j:, :)_skipped_files}" >&2
-    fi
-
-    local -a unique_keys=("${(u)all_keys[@]}")
-    local _total=0 _ok=0 _fail=0
-
-    local -a group_files sorted_group
-    for _key in "${unique_keys[@]}"; do
-      group_files=()
-      for _f in "${video_files[@]}"; do
-        [[ "${file_to_key[${_f:A}]-}" == "$_key" ]] && group_files+=("$_f")
-      done
-      (( ${#group_files[@]} < 2 )) && continue
-
-      _total=$((_total + 1))
-      sorted_group=("${(on)group_files[@]}")
-
-      print -r -- ""
-      print -r -- "=========================================="
-      print -r -- "グループ ${_total}: ${sorted_group[1]:t} 他${#sorted_group[@]}ファイル"
-      print -r -- "=========================================="
-
-      # 単一グループ側で削除処理を行うため、ここでは削除しない
-      if concat "${_opts[@]}" "${sorted_group[@]}"; then
-        _ok=$((_ok + 1))
-      else
-        _fail=$((_fail + 1))
-      fi
-    done
-
-    if (( _total == 0 )); then
-      print -r -- "結合可能なグループが見つかりませんでした"
-      return 0
-    fi
-    print -r -- ""
-    print -r -- "=========================================="
-    print -r -- "完了: ${_ok}/${_total} グループ成功${_fail:+, ${_fail}失敗}"
-    print -r -- "=========================================="
-    return $(( _fail > 0 ))
+    # グルーピング + グループごとの結合 (実装は _concat_helpers.zsh)
+    __concat_group_files "${video_files[@]}"
+    __concat_run_groups ${#_group_opts[@]} "${_group_opts[@]}" "${video_files[@]}"
+    return $?
   fi
 
   # 引数チェック: 最低2ファイル必要
@@ -197,81 +145,12 @@ EOF
   fi
 
   # マルチグループ検出: 複数ファイルが異なるグループに属するなら自動振り分け
+  # (グルーピング実装は _concat_helpers.zsh の __concat_group_files / __concat_run_groups)
   if (( $# >= 3 )); then
-    local -A _mg_file_to_key=()
-    local -a _mg_all_keys=() _mg_skipped_files=()
-    local _mgf _mg_stem _mg_num _mg_rest _mg_suffix _mg_prefix _mg_key
-    for _mgf in "$@"; do
-      _mg_stem=$(__concat_get_stem "$_mgf")
-      if __concat_extract_number "$_mg_stem"; then
-        _mg_num="${REPLY%%:*}"
-        _mg_rest="${REPLY#*:}"
-        _mg_suffix="${_mg_rest%%:*}"
-        _mg_prefix="${_mg_rest#*:}"
-        _mg_key="${_mg_prefix}::${_mg_suffix}"
-        _mg_file_to_key[${_mgf:A}]="$_mg_key"
-        _mg_all_keys+=("$_mg_key")
-      else
-        _mg_skipped_files+=("${_mgf:t}")
-      fi
-    done
-    if (( ${#_mg_skipped_files[@]} > 0 )); then
-      print -r -- "⚠️  連番パターンに一致しないファイルをスキップしました: ${(j:, :)_mg_skipped_files}" >&2
-    fi
-
-    local -a _mg_unique_keys=("${(u)_mg_all_keys[@]}")
-
-    # 結合可能（2ファイル以上）なグループが2つ以上あるか判定
-    local _mg_viable=0 _mg_count
-    for _mg_key in "${_mg_unique_keys[@]}"; do
-      _mg_count=0
-      for _mgf in "$@"; do
-        [[ "${_mg_file_to_key[${_mgf:A}]}" == "$_mg_key" ]] && _mg_count=$((_mg_count + 1))
-      done
-      (( _mg_count >= 2 )) && _mg_viable=$((_mg_viable + 1))
-    done
-
-    if (( _mg_viable >= 2 )); then
-      local -a _mg_opts=()
-      (( force_mode )) && _mg_opts+=(--force)
-      (( verbose_mode )) && _mg_opts+=(--verbose)
-      (( dryrun_mode )) && _mg_opts+=(--dryrun)
-      (( keep_mode )) && _mg_opts+=(--keep)
-      [[ -n "$output_info_file" ]] && _mg_opts+=(--output-info "$output_info_file")
-
-      local _mg_total=0 _mg_ok=0 _mg_fail=0
-      local -a _mg_group_files _mg_sorted_group
-      for _mg_key in "${_mg_unique_keys[@]}"; do
-        _mg_group_files=()
-        for _mgf in "$@"; do
-          [[ "${_mg_file_to_key[${_mgf:A}]}" == "$_mg_key" ]] && _mg_group_files+=("$_mgf")
-        done
-        (( ${#_mg_group_files[@]} < 2 )) && continue
-
-        _mg_total=$((_mg_total + 1))
-        _mg_sorted_group=("${(on)_mg_group_files[@]}")
-
-        print -r -- ""
-        print -r -- "=========================================="
-        print -r -- "グループ ${_mg_total}: ${_mg_sorted_group[1]:t} 他${#_mg_sorted_group[@]}ファイル"
-        print -r -- "=========================================="
-
-        if concat "${_mg_opts[@]}" "${_mg_sorted_group[@]}"; then
-          _mg_ok=$((_mg_ok + 1))
-        else
-          _mg_fail=$((_mg_fail + 1))
-        fi
-      done
-
-      if (( _mg_total == 0 )); then
-        print -r -- "結合可能なグループが見つかりませんでした"
-        return 0
-      fi
-      print -r -- ""
-      print -r -- "=========================================="
-      print -r -- "完了: ${_mg_ok}/${_mg_total} グループ成功${_mg_fail:+, ${_mg_fail}失敗}"
-      print -r -- "=========================================="
-      return $(( _mg_fail > 0 ))
+    __concat_group_files "$@"
+    if (( __CONCAT_GROUP_VIABLE >= 2 )); then
+      __concat_run_groups ${#_group_opts[@]} "${_group_opts[@]}" "$@"
+      return $?
     fi
     # 1グループならそのまま既存の単一グループロジックへフォールスルー
   fi

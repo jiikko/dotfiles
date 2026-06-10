@@ -177,6 +177,105 @@ __concat_validate_sequence() {
   return 0
 }
 
+# --- グルーピング (ディレクトリモード / マルチグループモード共通) ---------------
+# 以前は _concat.zsh のディレクトリモードとマルチグループモードがほぼ同一の
+# グルーピング+実行ループを別実装で持っており、片方だけ修正されるドリフトが
+# 実際に発生していた (連想配列アクセスのガード有無が食い違っていた)。
+# ここに単一実装として集約する。
+
+# __concat_group_files の結果格納先 (zsh は連想配列を戻り値にできないためグローバル)
+typeset -gA __CONCAT_GROUP_KEY_OF   # 絶対パス → グループキー (prefix::suffix)
+typeset -ga __CONCAT_GROUP_KEYS     # 検出順のユニークキー一覧
+typeset -gi __CONCAT_GROUP_VIABLE   # 2 ファイル以上のグループ数
+
+# 内部補助: ファイル群を連番パターンでグルーピングする
+# 引数: ファイルパス (位置引数)
+# 出力: 上記グローバル 3 つ。連番パターンに一致しないファイルは stderr に警告してスキップ
+__concat_group_files() {
+  __CONCAT_GROUP_KEY_OF=()
+  __CONCAT_GROUP_KEYS=()
+  __CONCAT_GROUP_VIABLE=0
+  local f stem rest suffix prefix key
+  local -a skipped=() all_keys=()
+  for f in "$@"; do
+    stem=$(__concat_get_stem "$f")
+    if __concat_extract_number "$stem"; then
+      rest="${REPLY#*:}"
+      suffix="${rest%%:*}"
+      prefix="${rest#*:}"
+      key="${prefix}::${suffix}"
+      __CONCAT_GROUP_KEY_OF[${f:A}]="$key"
+      all_keys+=("$key")
+    else
+      skipped+=("${f:t}")
+    fi
+  done
+  if (( ${#skipped[@]} > 0 )); then
+    print -r -- "⚠️  連番パターンに一致しないファイルをスキップしました: ${(j:, :)skipped}" >&2
+  fi
+  __CONCAT_GROUP_KEYS=("${(u)all_keys[@]}")
+  local k count
+  for k in "${__CONCAT_GROUP_KEYS[@]}"; do
+    count=0
+    for f in "$@"; do
+      [[ "${__CONCAT_GROUP_KEY_OF[${f:A}]-}" == "$k" ]] && count=$((count + 1))
+    done
+    (( count >= 2 )) && __CONCAT_GROUP_VIABLE=$((__CONCAT_GROUP_VIABLE + 1))
+  done
+}
+
+# 内部補助: グルーピング済みファイル群をグループごとに concat へ流し、サマリを出す
+# 前提: 直前に __concat_group_files を呼んでグローバルが populate 済みであること
+#       (ここで再グルーピングすると skip 警告が二重に出るため、敢えて分離している)
+# 引数: $1 = オプション個数 N, $2..$(N+1) = concat へ渡すオプション, 残り = ファイルパス
+# 戻り値: 0=全グループ成功 (結合可能グループなしを含む), 1=失敗グループあり
+__concat_run_groups() {
+  local nopts="$1"; shift
+  local -a opts=() files=()
+  (( nopts > 0 )) && opts=( "${@[1,$nopts]}" )
+  shift "$nopts"
+  files=( "$@" )
+
+  local _key _f _total=0 _ok=0 _fail=0
+  local -a group_files sorted_group
+  for _key in "${__CONCAT_GROUP_KEYS[@]}"; do
+    group_files=()
+    for _f in "${files[@]}"; do
+      [[ "${__CONCAT_GROUP_KEY_OF[${_f:A}]-}" == "$_key" ]] && group_files+=("$_f")
+    done
+    (( ${#group_files[@]} < 2 )) && continue
+
+    _total=$((_total + 1))
+    sorted_group=("${(on)group_files[@]}")
+
+    print -r -- ""
+    print -r -- "=========================================="
+    print -r -- "グループ ${_total}: ${sorted_group[1]:t} 他${#sorted_group[@]}ファイル"
+    print -r -- "=========================================="
+
+    # 元ファイルの削除は単一グループ側 (concat 本体) が行う
+    if concat "${opts[@]}" "${sorted_group[@]}"; then
+      _ok=$((_ok + 1))
+    else
+      _fail=$((_fail + 1))
+    fi
+  done
+
+  if (( _total == 0 )); then
+    print -r -- "結合可能なグループが見つかりませんでした"
+    return 0
+  fi
+  # 旧実装の ${_fail:+...} は "0" も非空のため全成功時にも ", 0失敗" が出ていた。
+  # 失敗があるときだけ表示する。
+  local fail_note=""
+  (( _fail > 0 )) && fail_note=", ${_fail}失敗"
+  print -r -- ""
+  print -r -- "=========================================="
+  print -r -- "完了: ${_ok}/${_total} グループ成功${fail_note}"
+  print -r -- "=========================================="
+  return $(( _fail > 0 ))
+}
+
 # 内部補助: ffprobeで映像情報を取得
 __concat_get_video_info() {
   local file="$1"

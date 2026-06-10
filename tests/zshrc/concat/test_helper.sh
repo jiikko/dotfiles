@@ -222,6 +222,19 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local haystack="$1"
+  local needle="$2"
+  local message="$3"
+  if [[ "$haystack" != *"$needle"* ]]; then
+    printf '✓ %s\n' "$message"
+    return 0
+  else
+    printf '✗ %s (expected NOT to contain: %s)\n' "$message" "$needle"
+    return 1
+  fi
+}
+
 assert_exit_code() {
   local expected="$1"
   local actual="$2"

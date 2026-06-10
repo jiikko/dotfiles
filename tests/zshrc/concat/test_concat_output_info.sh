@@ -200,6 +200,10 @@ else
   printf '✗ Info file missing group 2 path\n'
 fi
 
+# 全グループ成功時のサマリに ", 0失敗" が出ない (旧 ${_fail:+...} は "0" も非空で常時表示されていた)
+assert_contains "$output" "完了: 2/2 グループ成功" "Summary shows group success count"
+assert_not_contains "$output" "0失敗" "Summary does not show '0失敗' on full success"
+
 # ============================================================
 # Test 8: ディレクトリモードで各グループ成功ごとに追記される
 # ============================================================
