@@ -3,7 +3,7 @@
 #
 # 使い方: tmux-pane-state.sh working|input|idle|start|clear
 #   working : "⚙ working" を表示 (UserPromptSubmit / PostToolUse=承認後の自動復帰)
-#   input   : "⏳ input" を表示   (Notification — permission 承認待ち・質問への回答待ち)
+#   input   : "🔔 input" を表示   (Notification — permission 承認待ち・質問への回答待ち)
 #             + ペインが画面に見えていなければ macOS 通知 (音あり)
 #   idle    : "✓ idle" を表示     (Stop = 応答完了)
 #             + ペインが画面に見えていなければ macOS 通知 (音なし)
@@ -45,7 +45,7 @@ notify_if_hidden() {
 
 case "${1:-}" in
   working) set_state "⚙ working" ;;
-  input)   set_state "⏳ input"; notify_if_hidden "⏳ 入力待ち (承認 or 回答が必要)" "default" ;;
+  input)   set_state "🔔 input"; notify_if_hidden "🔔 入力待ち (承認 or 回答が必要)" "default" ;;
   idle)    set_state "✓ idle";  notify_if_hidden "✓ 応答完了" ;;
   start)   set_state "✓ idle" ;;
   clear)   tmux set -p -u -t "$TMUX_PANE" @claude_state 2>/dev/null ;;
