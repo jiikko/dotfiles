@@ -3,8 +3,9 @@ SHELL := /bin/sh
 SHELLCHECK_FILES := setup.sh zshlib/_av1ify.zsh zshlib/_av1ify_postcheck.zsh zshlib/_av1ify_encode.zsh zshlib/_validate_mp4.zsh scripts/tmux_resurrect_debounced_save.sh scripts/tmux_resurrect_save.sh
 YAML_FILES := pre-commit-config.yml .github/workflows/tests.yml .github/workflows/lint.yml
 JSON_FILES := mac/karabiner.json _coc-settings.json
+KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: test test-runtime test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-yaml test-json test-lint
+.PHONY: test test-runtime test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-yaml test-json test-karabiner test-lint
 
 test: test-lint test-runtime
 
@@ -71,4 +72,18 @@ test-yaml:
 test-json:
 	@for file in $(JSON_FILES); do jq empty "$$file"; done
 
-test-lint: test-shellcheck test-yaml test-json
+# karabiner.json の complex modifications を karabiner_cli で意味レベル lint する
+# (test-json の jq empty は構文のみ。karabiner_cli は未知キー/型違いを検出する)。
+# karabiner_cli は asset 形式 ({title, rules}) を期待するため jq で抽出して渡す。
+# Karabiner-Elements 未インストール環境 (Linux CI 等) では skip
+test-karabiner:
+	@if [ -x "$(KARABINER_CLI)" ]; then \
+		mkdir -p tmp; \
+		jq '{title: "dotfiles karabiner rules", rules: .profiles[0].complex_modifications.rules}' mac/karabiner.json > tmp/karabiner-lint.json; \
+		"$(KARABINER_CLI)" --lint-complex-modifications tmp/karabiner-lint.json; \
+		rm -f tmp/karabiner-lint.json; \
+	else \
+		echo "[karabiner] karabiner_cli not found; skipping lint"; \
+	fi
+
+test-lint: test-shellcheck test-yaml test-json test-karabiner
