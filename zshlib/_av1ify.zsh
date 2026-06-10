@@ -315,35 +315,36 @@ av1ify() {
     __av1ify_banner
   fi
 
-  # 解像度の早期バリデーション（バナー出力後に配置し、解決メッセージの表示順を統一）
-  if (( ! __av1ify_internal )) && [[ -n "$__AV1IFY_RESOLUTION" ]]; then
-    if __av1ify_resolve_resolution "$__AV1IFY_RESOLUTION"; then
-      __AV1IFY_RESOLUTION="$REPLY"
-      opt_resolution="$REPLY"
-    else
-      return 1
+  # resolution / fps / denoise の早期バリデーション (fail-fast)。
+  # 旧実装は fps/denoise をファイルごとに警告して黙って無視していたため、`--fps abc` の
+  # ようなタイポでも全ファイルが fps 指定なしでフルエンコードされてしまっていた。
+  # 配置: バナー出力後 (解決メッセージの表示順を統一)。
+  # ゲート: help 表示・引数なしのときは検証しない (無効な AV1_* 環境変数が残っていても
+  # `av1ify --help` が読めなくなる regression を防ぐ。codex P2 指摘)。
+  if (( ! __av1ify_internal )) && (( ! show_help )) && (( $# > 0 )); then
+    if [[ -n "$__AV1IFY_RESOLUTION" ]]; then
+      if __av1ify_resolve_resolution "$__AV1IFY_RESOLUTION"; then
+        __AV1IFY_RESOLUTION="$REPLY"
+        opt_resolution="$REPLY"
+      else
+        return 1
+      fi
     fi
-  fi
-
-  # fps / denoise も root で fail-fast 検証 (resolution と同じ方針)。
-  # 旧実装はファイルごとに警告して黙って無視していたため、`--fps abc` のような
-  # タイポでも全ファイルが fps 指定なしでフルエンコードされてしまっていた。
-  if (( ! __av1ify_internal )) && [[ -n "$__AV1IFY_FPS" ]]; then
-    if ! __av1ify_validate_fps "$__AV1IFY_FPS"; then
+    if [[ -n "$__AV1IFY_FPS" ]] && ! __av1ify_validate_fps "$__AV1IFY_FPS"; then
       print -r -- "エラー: 無効なfps指定: ${__AV1IFY_FPS}（0より大きく240以下で指定してください）" >&2
       return 1
     fi
-  fi
-  if (( ! __av1ify_internal )) && [[ -n "$__AV1IFY_DENOISE" ]]; then
-    case "${__AV1IFY_DENOISE:l}" in
-      light|medium|strong)
-        __AV1IFY_DENOISE="${__AV1IFY_DENOISE:l}"
-        ;;
-      *)
-        print -r -- "エラー: 無効なdenoise指定: ${__AV1IFY_DENOISE}（light/medium/strong から選択してください）" >&2
-        return 1
-        ;;
-    esac
+    if [[ -n "$__AV1IFY_DENOISE" ]]; then
+      case "${__AV1IFY_DENOISE:l}" in
+        light|medium|strong)
+          __AV1IFY_DENOISE="${__AV1IFY_DENOISE:l}"
+          ;;
+        *)
+          print -r -- "エラー: 無効なdenoise指定: ${__AV1IFY_DENOISE}（light/medium/strong から選択してください）" >&2
+          return 1
+          ;;
+      esac
+    fi
   fi
 
   if (( ! __av1ify_internal )) && (( ! show_help )) && (( $# > 0 )); then

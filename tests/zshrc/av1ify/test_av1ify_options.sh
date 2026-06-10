@@ -106,6 +106,15 @@ assert_contains "$output" "無効なfps指定" "Reports invalid FPS for 300"
 output=$(av1ify --dry-run --fps abc "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "無効なfps指定" "Reports invalid FPS for non-numeric"
 
+# Test 20b: 無効な AV1_* 環境変数があっても --help は読める (codex P2 回帰防止)
+printf '\n## Test 20b: --help works even with invalid AV1_* env vars\n'
+unsetopt err_exit
+output=$(AV1_FPS=abc AV1_RESOLUTION=xyz AV1_DENOISE=bogus av1ify --help 2>&1)
+exit_code=$?
+setopt err_exit
+assert_contains "$output" "使い方" "Help text is shown despite invalid env vars"
+(( exit_code == 0 )) && printf '✓ --help exits 0 despite invalid env vars\n' || { printf '✗ --help should exit 0 (got %d)\n' "$exit_code"; exit 1; }
+
 # Test 21: 有効な解像度のバリエーション
 printf '\n## Test 21: Valid resolution variations\n'
 TEST_DIR="$TEST_TMP/test21"
