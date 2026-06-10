@@ -364,6 +364,7 @@ class ExtractResult:
     def __init__(self):
         self.chunks = 0          # ビデオチャンク総数 (= フレームスロット数)
         self.zero_chunks = 0     # サイズ 0 チャンク (ドロップフレームスロット)
+        self.dup_chunks = 0      # 直前と byte 同一の重複チャンク (除去する)
         self.nals = 0
         self.frames = 0          # first_mb_in_slice==0 のスライス数 (= ピクチャ数)
         self.b_slices = 0        # B スライス数 (>0 なら表示順再構築に MP4Box が必要)
@@ -415,11 +416,21 @@ def extract_to_annexb(f, chunk_ids, psize: int, prepend_nals: list[bytes], dst_p
         for nal in prepend_nals:
             dst.write(START_CODE + nal)
 
+        prev_chunk = None
         for chunk, is_zero in iter_video_chunks(f, chunk_ids):
             res.chunks += 1
             if is_zero:
                 res.zero_chunks += 1
                 continue
+            # 直前と byte 同一の重複チャンク (PotEncoder が先頭フレームを
+            # 複数回書き込むパターン) は除去する。同一フレームは POC も同一で、
+            # 残すと MP4Box が 1 サンプルに併合し、プレイヤーによっては
+            # 再生開始時にブロックノイズが出る。除去分のスロットは
+            # 後段の「チャンク数 − サンプル数」オフセット補正が吸収する。
+            if chunk == prev_chunk:
+                res.dup_chunks += 1
+                continue
+            prev_chunk = chunk
             res.payload_bytes += len(chunk)
             pos = 0
             while pos < len(chunk):
@@ -575,8 +586,9 @@ def main() -> None:
         f.close()
         if sps_source == "in-band" and not res.has_inband_sps:
             die("SPS が extradata にもストリーム内にも見つかりません。修復できません")
-        print(f"  チャンク {res.chunks} (サイズ0: {res.zero_chunks}) / "
-              f"NAL {res.nals} / フレーム {res.frames} / {res.payload_bytes} bytes")
+        print(f"  チャンク {res.chunks} (サイズ0: {res.zero_chunks}, 重複除去: "
+              f"{res.dup_chunks}) / NAL {res.nals} / フレーム {res.frames} / "
+              f"{res.payload_bytes} bytes")
 
         # --- mux pass 1: raw Annex-B → 一時コンテナ (タイムスタンプ生成) ---
         # raw h264 入力に直接 -itsoffset を付けても -r のタイムスタンプ生成で
@@ -613,7 +625,8 @@ def main() -> None:
         offset_sec = float(offset_slots / fps)
         if offset_slots:
             print(f"  フレームスロット補正: {offset_slots} slots = {offset_sec:.3f}s "
-                  f"(サイズ0チャンク {res.zero_chunks}, 重複併合 {res.frames - muxed_frames})")
+                  f"(サイズ0 {res.zero_chunks}, 重複除去 {res.dup_chunks}, "
+                  f"併合 {res.frames - muxed_frames})")
             if offset_sec > 1.0:
                 print(f"  ⚠ 補正が {offset_sec:.1f}s と大きく、スロットの分布によっては"
                       "中間部で音ズレが残る可能性があります", file=sys.stderr)
