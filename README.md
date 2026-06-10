@@ -96,6 +96,41 @@ concat -h                                          # ヘルプ
 - 出力: 共通プレフィックス + `.mp4` (例: `video_001.mp4, video_002.mp4` → `video.mp4`)
 - 依存: `ffmpeg`, `ffprobe`
 
+## tmux
+
+### ウィンドウ名の自動反映
+
+ウィンドウ名は「**アクティブペインのタイトル (pane_title) に自動追従**」する構成。
+
+```
+各ペイン内のプログラムが OSC 2 で pane_title をセット
+  ├─ zsh: preexec/precmd が実行コマンドの表示名をセット (zshlib/_tmux_window_name.zsh)
+  │       コマンド名 → アイコン付き表示名のマッピングは zshlib/tmux-window-name.yaml
+  ├─ nvim: 編集中のファイル名を自身でセット
+  └─ Claude Code: セッションの topic を自身でセット
+        ↓
+tmux の automatic-rename-format '#{pane_title}' が
+アクティブペインのタイトルをウィンドウ名に反映 (_tmux.conf)
+        ↓
+ステータスバーでは #{=15:window_name} で 15 文字に切り詰めて表示
+(ウィンドウ名自体・ペイン境界の表示はフルのまま)
+```
+
+- ウィンドウ名を直接リネームする `\033k` エスケープは `allow-rename off` で遮断している。
+  旧構成 (zsh が `\033k` でウィンドウ名を直接書き換え) では「最後にプロンプトを出した
+  ペイン」が非アクティブでもウィンドウ名を奪う事故があった (split 直後に zsh へリセット等)。
+  タイトルはペイン単位の OSC 2 に一本化し、ウィンドウ名への昇格は tmux 側に任せる
+- 既に起動中の zsh は古い zshlib を読んだままなので、挙動を反映するには `exec zsh` が必要
+
+### Claude Code の作業状態表示
+
+Claude Code を動かしているペインの境界に作業状態 (`⚙ working` / `✓ idle`) が出る。
+
+- Claude Code の hooks (`_claude/settings.json`) が `_claude/hooks/tmux-pane-state.sh` を呼び、
+  ペイン単位オプション `@claude_state` を出し入れする
+- `_tmux.conf` の `pane-border-format` が `#{?@claude_state,...,}` で表示。未設定ペイン
+  (通常シェル) には何も出ない。セッション終了 (SessionEnd) で自動クリア
+
 ## macOS Integration
 
 ### Finder Quick Actions
