@@ -310,7 +310,7 @@ av1ify() {
 
   # 処理対象の有無 (位置引数 or -f リスト)。バナー/検証/ヘルプのゲートに使う
   local have_targets=0
-  { (( $# > 0 )) || [[ -n "$opt_listfile" ]] } && have_targets=1
+  { (( $# > 0 )) || [[ -n "$opt_listfile" ]]; } && have_targets=1
 
   # --compact: 720p + 30fps プリセット（明示的な -r/--fps が優先）
   if (( opt_compact )); then

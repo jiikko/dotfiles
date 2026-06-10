@@ -448,6 +448,7 @@ __av1ify_one() {
   # 解像度・fps・denoise は av1ify() root で CLI/環境変数の統合と fail-fast 検証済み
   # (ここに届く値は常に有効。無効値は root が return 1 でバッチごと止める)
   local validated_resolution="$__AV1IFY_RESOLUTION"
+  # shellcheck disable=SC2153  # __AV1IFY_FPS は zshlib/_av1ify.zsh (root) が設定するファイル跨ぎグローバル (誤記ではない)
   local validated_fps="$__AV1IFY_FPS"
   local validated_denoise="$__AV1IFY_DENOISE"
   local target_fps=""
