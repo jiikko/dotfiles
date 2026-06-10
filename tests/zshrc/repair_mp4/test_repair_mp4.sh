@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+unset CDPATH
 # shellcheck shell=bash
 setopt err_exit no_unset pipe_fail
 

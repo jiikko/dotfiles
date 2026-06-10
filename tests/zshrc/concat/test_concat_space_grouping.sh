@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+unset CDPATH
 # shellcheck shell=bash
 # concat スペース含むファイル名でのグループ化リグレッションテスト (Test 40-44)
 # バグ: ${(u)all_keys} がクォートなしで展開されると、キーに含まれるスペースで

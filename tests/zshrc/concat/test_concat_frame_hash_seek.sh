@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+unset CDPATH
 # shellcheck shell=bash
 # __concat_frame_hash のシーク引数リグレッションテスト
 #

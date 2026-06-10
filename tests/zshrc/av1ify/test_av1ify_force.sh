@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+unset CDPATH
 # shellcheck shell=bash
 # av1ify --force オプションテスト (Test 65-69)
 # 健全性チェック失敗時の --force によるスキップ/続行動作

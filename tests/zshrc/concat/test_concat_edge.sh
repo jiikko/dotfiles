@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+unset CDPATH
 # shellcheck shell=bash
 # concat エッジケース + NFC正規化テスト (Test 17-23)
 

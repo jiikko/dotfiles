@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+unset CDPATH
 # shellcheck shell=bash
 # av1ify バリアントスキップテスト (Test 80-96)
 # バリアント検出、偽陽性防止、ハイフンID、日本語ファイル名、早期スキップ、複合タグ

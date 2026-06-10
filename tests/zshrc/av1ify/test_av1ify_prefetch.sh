@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+unset CDPATH
 # shellcheck shell=bash
 # av1ify バックグラウンド先読み (prefetch) テスト
 #

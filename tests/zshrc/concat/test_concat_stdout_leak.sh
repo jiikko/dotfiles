@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+unset CDPATH
 # shellcheck shell=bash
 # concat stdout リグレッションテスト (Test 30-33)
 # zshの local 再宣言によるstdoutリークを検出する

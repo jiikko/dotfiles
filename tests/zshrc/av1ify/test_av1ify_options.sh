@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+unset CDPATH
 # shellcheck shell=bash
 # av1ify オプションテスト (Test 13-49, 54-70)
 # 解像度、fps、denoise、compact、バリデーション、アップスケール防止、縦長動画、fpsキャップ、部分一致

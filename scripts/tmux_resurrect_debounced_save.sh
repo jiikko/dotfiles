@@ -42,6 +42,7 @@
 #   tmux / sleep を直接呼ぶことで、tests/zshrc/tmux-session/test_debounced_save.sh
 #   からスタブ注入して分岐ロジックを検証できる（tt の unit テストと同方式）。
 set -uo pipefail
+unset CDPATH
 
 # --- 設定（環境変数で上書き可能。テストはここを差し替える）---------------------
 TT_DEBOUNCE_STATE_DIR="${TT_DEBOUNCE_STATE_DIR:-$HOME/.cache/tt-resurrect-debounce}"

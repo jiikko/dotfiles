@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+unset CDPATH
 # shellcheck shell=bash
 # concat バリデーション + 正常系テスト (Test 1-16d)
 

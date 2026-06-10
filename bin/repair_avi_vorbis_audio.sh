@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+unset CDPATH
 
 SCRIPT_NAME="$(basename "$0")"
 

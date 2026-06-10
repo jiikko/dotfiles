@@ -13,6 +13,7 @@
 # スクリプトは TT_DEBOUNCE_SOURCE_ONLY=1 で source すると main を実行しないので、
 # 関数を直接呼んで検証する (tt の unit テストと同方式)。
 set -euo pipefail
+unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SCRIPT="$ROOT_DIR/scripts/tmux_resurrect_debounced_save.sh"

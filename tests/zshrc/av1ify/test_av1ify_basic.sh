@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+unset CDPATH
 # shellcheck shell=bash
 # av1ify 基本テスト (Test 1-12)
 # ヘルプ、単一ファイル、スキップ、ディレクトリ、複数ファイル、-f オプション

@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+unset CDPATH
 # shellcheck shell=bash
 # concat テスト共通ヘルパー
 # 各テストファイルの冒頭で source して使う

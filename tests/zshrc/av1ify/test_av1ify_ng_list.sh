@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+unset CDPATH
 # shellcheck shell=bash
 # av1ify NG 一覧テスト
 # バッチ処理 (-f / multi-arg / directory) で失敗したファイルが

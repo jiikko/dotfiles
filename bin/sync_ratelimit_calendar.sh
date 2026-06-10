@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+unset CDPATH
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG="${SCRIPT_DIR}/../ratelimit_resets.yaml"

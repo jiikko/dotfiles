@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+unset CDPATH
 # shellcheck shell=bash
 # av1ify 音声処理テスト (Test 50-53, 65-72)
 # compact音声判定、非copyコーデックのアップスケール防止、サンプルレート/チャンネル数調整

@@ -1,4 +1,5 @@
 #!/bin/sh
+unset CDPATH
 # @DotfilesSyncer:name Karabiner 設定を復元
 # @DotfilesSyncer:description dotfiles の Karabiner 設定を復元してキーボード種別を自動設定
 

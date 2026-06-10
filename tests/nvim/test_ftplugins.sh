@@ -1,6 +1,7 @@
 #!/usr/bin/env zsh
 
 set -euo pipefail
+unset CDPATH
 
 NVIM_BIN=${NVIM:-nvim}
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)

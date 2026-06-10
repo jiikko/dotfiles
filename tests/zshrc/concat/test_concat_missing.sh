@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+unset CDPATH
 # shellcheck shell=bash
 # concat ディレクトリ内欠落チェックテスト (Test 24-29)
 

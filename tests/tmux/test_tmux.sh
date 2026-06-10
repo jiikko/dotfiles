@@ -1,6 +1,7 @@
 #!/usr/bin/env zsh
 
 set -euo pipefail
+unset CDPATH
 
 TMUX_BIN_PATH=${TMUX_BIN:-tmux}
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)

@@ -42,6 +42,7 @@
 # NOTE: 保存期間 lock のみを担う薄い shim。@continuum-save-last-timestamp の更新等は
 #   呼び出し側（debounce スクリプト / continuum）の責務のまま変えない。
 set -uo pipefail
+unset CDPATH
 
 # 本 wrapper はリポジトリの scripts/ 配下にある前提。upstream save.sh は ../vendor/...。
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

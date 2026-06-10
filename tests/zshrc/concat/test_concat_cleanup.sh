@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+unset CDPATH
 # shellcheck shell=bash
 # concat デフォルトのゴミ箱移動動作 & --keep オプションのテスト
 #

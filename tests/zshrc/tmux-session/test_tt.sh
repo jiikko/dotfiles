@@ -12,6 +12,7 @@
 # ロジックは実体 (_t_impl / _tt_impl / _tt_wait_for_restore) に集約されているので、
 # スタブ注入が必要なテストは実体を直接呼ぶ。ラッパー t/tt の再評価挙動は別途検証する。
 set -euo pipefail
+unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 ZSH_LIB="$ROOT_DIR/zshlib/_tmux_session.zsh"

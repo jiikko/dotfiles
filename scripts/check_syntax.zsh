@@ -1,6 +1,7 @@
 #!/usr/bin/env zsh
 
 set -euo pipefail
+unset CDPATH
 
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 tmp_log=""

@@ -4,6 +4,7 @@
 # 500x300以上のサイズじゃないと文字が見きれる
 
 set -eu
+unset CDPATH
 
 if [ "$#" -ne 1 ]; then
   echo lgtm.sh input.image

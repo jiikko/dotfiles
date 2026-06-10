@@ -1,4 +1,5 @@
 #!/usr/bin/env zsh
+unset CDPATH
 # shellcheck shell=bash
 # av1ify ポストチェックテスト (Test 65-79)
 # 再生時間ズレ、フレーム数、解像度、ファイルサイズ、コーデックの変換後チェック

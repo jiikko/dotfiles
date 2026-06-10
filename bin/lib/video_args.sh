@@ -1,4 +1,5 @@
 # video_args.sh — 動画ファイル引数を実パス配列に展開するヘルパー
+unset CDPATH
 #
 # このファイルは source 専用 (実行不可)。
 #

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 TMP_ZDOTDIR="$(mktemp -d)"
