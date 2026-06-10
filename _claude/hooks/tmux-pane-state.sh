@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Claude Code hook: tmux ペイン境界 (@claude_state) に作業状態を反映する。
 #
-# 使い方: tmux-pane-state.sh working|idle|clear
-#   working : "⚙ working" を表示 (UserPromptSubmit)
+# 使い方: tmux-pane-state.sh working|input|idle|clear
+#   working : "⚙ working" を表示 (UserPromptSubmit / PostToolUse=承認後の自動復帰)
+#   input   : "⏳ input" を表示   (Notification — permission 承認待ち・質問への回答待ち)
 #   idle    : "✓ idle" を表示     (Stop / SessionStart)
 #   clear   : 状態を消す          (SessionEnd — Claude 終了後は通常シェルへ戻す)
 #
@@ -18,6 +19,7 @@ command -v tmux >/dev/null 2>&1 || exit 0
 
 case "${1:-}" in
   working) tmux set -p -t "$TMUX_PANE" @claude_state "⚙ working" 2>/dev/null ;;
+  input)   tmux set -p -t "$TMUX_PANE" @claude_state "⏳ input" 2>/dev/null ;;
   idle)    tmux set -p -t "$TMUX_PANE" @claude_state "✓ idle" 2>/dev/null ;;
   clear)   tmux set -p -u -t "$TMUX_PANE" @claude_state 2>/dev/null ;;
 esac

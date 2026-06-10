@@ -124,7 +124,13 @@ tmux の automatic-rename-format '#{pane_title}' が
 
 ### Claude Code の作業状態表示
 
-Claude Code を動かしているペインの境界に作業状態 (`⚙ working` / `✓ idle`) が出る。
+Claude Code を動かしているペインの境界に作業状態が出る。
+
+| 表示 | 色 | 意味 |
+|---|---|---|
+| `⚙ working` | 黄 | 応答処理中 |
+| `⏳ input` | 赤 | permission 承認待ち・質問への回答待ち (承認すると working に自動復帰) |
+| `✓ idle` | 緑 | 完了・次の指示待ち |
 
 - Claude Code の hooks (`_claude/settings.json`) が `_claude/hooks/tmux-pane-state.sh` を呼び、
   ペイン単位オプション `@claude_state` を出し入れする
