@@ -39,7 +39,7 @@ require("lazy").setup({
     config = function()
       vim.cmd("colorscheme gruvbox")
       -- 選択範囲をショッキングピンクで強調
-      vim.api.nvim_set_hl(0, "Visual", { bg = "#d3869b", ctermbg = 175 })
+      vim.api.nvim_set_hl(0, "Visual", { bg = "#d3869b" })
     end,
   },
   { "tpope/vim-rails", ft = { "ruby", "eruby" } },
@@ -97,6 +97,14 @@ require("lazy").setup({
       require("nvim-treesitter").setup()
       local ensure = { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "graphql", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "typescript", "vim", "yaml" }
       require("nvim-treesitter").install(ensure)
+      -- main ブランチは highlight を自動で有効化しないため、明示的に start する
+      -- (パーサー未インストールの filetype は pcall で黙ってスキップ)
+      vim.api.nvim_create_autocmd("FileType", {
+        group = vim.api.nvim_create_augroup("dotfiles_treesitter_start", { clear = true }),
+        callback = function(ev)
+          pcall(vim.treesitter.start, ev.buf)
+        end,
+      })
     end,
   },
   { "RRethy/nvim-treesitter-endwise",
@@ -257,12 +265,10 @@ require("lazy").setup({
       keymap("n", "gd", "<Plug>(coc-definition)", opts)
       keymap("n", "gD", "<Plug>(coc-implementation)", opts)
 
-      -- NOTE: 必要か？
-      -- Diagnosticsの、左横のアイコンの色設定
-      -- CocErrorSign の設定: 前景色 15、背景色 196
-      vim.api.nvim_set_hl(0, "CocErrorSign", { ctermfg = 15, ctermbg = 196 })
-      -- CocWarningSign の設定: 前景色 0、背景色 172
-      vim.api.nvim_set_hl(0, "CocWarningSign", { ctermfg = 0, ctermbg = 172 })
+      -- Diagnostics の左横アイコンの色設定
+      -- (termguicolors 有効時は cterm 値が無視されるため gui 色で指定)
+      vim.api.nvim_set_hl(0, "CocErrorSign", { fg = "#ffffff", bg = "#ff0000" })
+      vim.api.nvim_set_hl(0, "CocWarningSign", { fg = "#000000", bg = "#d78700" })
     end,
   },
   { "nvim-telescope/telescope.nvim",
@@ -328,8 +334,8 @@ require("lazy").setup({
         },
         highlights = {
           buffer_selected = {
-            ctermfg = 0,   -- 黒（読みやすさ重視）
-            ctermbg = 205, -- 落ち着いたピンク（ターミナルカラー）
+            fg = "#1d2021", -- 黒（読みやすさ重視）
+            bg = "#d3869b", -- 落ち着いたピンク（Visual と同じ gruvbox pink）
           },
         },
       })
@@ -437,8 +443,6 @@ require("lazy").setup({
 
       local original_notify = notify
       local custom_notify = function(msg, log_level, opts)
-        -- FIXME: true color 非対応端末では透明度警告が出るため握りつぶす
-        if msg and type(msg) == "string" and msg:match("Opacity changes require termguicolors to be set.") then return end
         -- Invalid 'priority' エラーを握りつぶす
         if msg and type(msg) == "string" and msg:match("Invalid 'priority'") then return end
         original_notify(msg, log_level, opts)
@@ -496,8 +500,6 @@ require("lazy").setup({
       vim.api.nvim_set_hl(0, "GitSignsCurrentLineBlame", {
         fg = "#1d2021",
         bg = "#fabd2f",
-        ctermfg = 234,
-        ctermbg = 214,
         bold = true,
         italic = false,
       })
@@ -545,26 +547,12 @@ require("lazy").setup({
       { "<c-s>", mode = { "c" }, function() require("flash").toggle() end, desc = "Toggle Flash Search" },
     },
   },
-  { 'echasnovski/mini.nvim', version = '*', event = "VeryLazy",
+  { 'echasnovski/mini.trailspace', version = '*', event = "VeryLazy",
     config = function()
-      local animate = require("mini.animate")
-      animate.setup({
-        cursor = {
-          enable = false,
-          timing = animate.gen_timing.exponential({ easing = "out", duration = 800, unit = "total" }),
-          path = animate.gen_path.line({ predicate = function() return true end }),
-        },
-        scroll = { enable = false, },
-        resize = { enable = false, },
-        open = { enable = false, },
-        close = { enable = false, },
-      })
-
       require("mini.trailspace").setup()
       vim.api.nvim_set_hl(0, "MiniTrailspace", {
         fg = "NONE",
         bg = "#fb4934",
-        ctermbg = 160,
       })
 
       local map = vim.keymap.set
@@ -607,7 +595,7 @@ require("lazy").setup({
     config = function()
       require("modes").setup({
         set_cursor = true,      -- カーソルの色を変える
-        set_cursorline = false, -- 背景色は無効（標準Terminalで動かないため）
+        set_cursorline = true,  -- truecolor 端末 + termguicolors 前提 (非対応端末に戻す場合は false)
         set_number = false,     -- 行番号の背景色も無効
         ignore_filetypes = { "NvimTree", "TelescopePrompt" },
       })

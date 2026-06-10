@@ -33,7 +33,7 @@ local function set_options()
   opt.showmatch = true
   opt.title = true
   opt.updatetime = 300
-  vim.wo.signcolumn = "yes"
+  opt.signcolumn = "yes"
 end
 
 local function set_user_commands()
@@ -87,9 +87,9 @@ end
 
 local function set_highlights()
   local function apply()
-    vim.cmd([[highlight ZenkakuSpace cterm=underline ctermfg=lightblue guibg=darkgray]])
+    -- termguicolors 有効時は cterm 値が無視されるため gui 属性で指定
+    vim.api.nvim_set_hl(0, "ZenkakuSpace", { underline = true, bg = "darkgray" })
     vim.cmd([[match ZenkakuSpace /　/]])
-    vim.cmd([[highlight Comment ctermfg=DarkCyan]])
   end
 
   local group = vim.api.nvim_create_augroup("dotfiles_basic_highlights", { clear = true })
