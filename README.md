@@ -139,6 +139,16 @@ Claude Code を動かしているペインの境界に作業状態が出る。
 
 ## macOS Integration
 
+### Karabiner-Elements
+
+設定の正本は [mac/karabiner.json](./mac/karabiner.json)（ANSI 基準。`bin/restore_karabiner_config.sh`
+が適用時にマシンの実キーボード (JIS/ISO) を判定してパッチする。`bin/backup_karabiner_config.sh` は
+live 設定の丸ごとコピーなので、JIS マシンで実行すると ANSI 基準が壊れる点に注意）。
+
+- complex modifications は `make test-karabiner` (karabiner_cli) で意味レベル lint される
+- simple_modifications の **`japanese_eisuu` → `a` は意図的なマッピング**（愛用中。削除しないこと。
+  英数切り替えはコマンドキー単押し・Ctrl+T 等の complex rule 側が担っている）
+
 ### Finder Quick Actions
 
 Finderの右クリックメニューから動画処理コマンドを実行できます。
