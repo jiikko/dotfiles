@@ -50,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh idle"
+            "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh start"
           }
         ]
       }

@@ -132,6 +132,10 @@ Claude Code を動かしているペインの境界に作業状態が出る。
 | `⏳ input` | 赤 | permission 承認待ち・質問への回答待ち (承認すると working に自動復帰) |
 | `✓ idle` | 緑 | 完了・次の指示待ち |
 
+さらに `⏳ input` / `✓ idle` への遷移時、**そのペインが画面に見えていない**
+(別ウィンドウが前面 / ターミナル自体が非アクティブ) なら macOS 通知センターに通知が飛ぶ
+(input は音あり、idle は音なし)。複数 claude 並走時の手待ち検知が画面監視なしでできる。
+
 - Claude Code の hooks (`_claude/settings.json`) が `_claude/hooks/tmux-pane-state.sh` を呼び、
   ペイン単位オプション `@claude_state` を出し入れする
 - `_tmux.conf` の `pane-border-format` が `#{?@claude_state,...,}` で表示。未設定ペイン
