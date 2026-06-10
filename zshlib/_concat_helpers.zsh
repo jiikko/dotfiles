@@ -283,6 +283,22 @@ __concat_run_groups() {
   return $(( _fail > 0 ))
 }
 
+# 内部補助: 浮動小数点比較 (旧実装の bc 依存を、他の計算と同じ awk に統一)
+# 引数: $1=左辺, $2=演算子 (lt/le/gt/ge), $3=右辺
+# 戻り値: 0=真, 1=偽
+# 注: 非数値は awk の数値強制で 0 として扱われる (bc はパースエラーで空を返し、
+#     (( 空 )) が偽になって判定がすり抜けていた。awk 版は N/A 等も比較対象になる)
+__concat_float() {
+  awk -v a="$1" -v b="$3" -v op="$2" 'BEGIN {
+    a += 0; b += 0
+    if (op == "lt") exit !(a < b)
+    if (op == "le") exit !(a <= b)
+    if (op == "gt") exit !(a > b)
+    if (op == "ge") exit !(a >= b)
+    exit 1
+  }'
+}
+
 # 内部補助: ffprobeで映像情報を取得
 __concat_get_video_info() {
   local file="$1"
@@ -405,7 +421,7 @@ __concat_diagnose_output() {
   # duration > 0 のチェック
   local actual_duration
   actual_duration=$(__concat_get_duration "$outfile")
-  if [[ -z "$actual_duration" ]] || (( $(echo "$actual_duration <= 0" | bc -l) )); then
+  if [[ -z "$actual_duration" ]] || __concat_float "$actual_duration" le 0; then
     REPLY="durationが0以下または取得できません"
     return 1
   fi
@@ -415,10 +431,10 @@ __concat_diagnose_output() {
   local _dur_lo _dur_hi
   _dur_lo=$(awk -v t="$_dur_tol" 'BEGIN{ printf "%.4f", 1 - t/100 }')
   _dur_hi=$(awk -v t="$_dur_tol" 'BEGIN{ printf "%.4f", 1 + t/100 }')
-  if [[ -n "$expected_duration" ]] && (( $(echo "$expected_duration > 10" | bc -l) )); then
+  if [[ -n "$expected_duration" ]] && __concat_float "$expected_duration" gt 10; then
     local dur_ratio
     dur_ratio=$(awk -v a="$actual_duration" -v e="$expected_duration" 'BEGIN{ if(e==0){print "1.0000";exit} printf "%.4f", a/e }')
-    if (( $(echo "$dur_ratio < $_dur_lo" | bc -l) )); then
+    if __concat_float "$dur_ratio" lt "$_dur_lo"; then
       local dur_pct expected_hms actual_hms
       dur_pct=$(awk -v r="$dur_ratio" 'BEGIN{ printf "%.1f", (1-r)*100 }')
       expected_hms=$(awk -v s="$expected_duration" 'BEGIN{ h=int(s/3600); m=int((s%3600)/60); sec=s%60; printf "%d:%02d:%05.2f", h, m, sec }')
@@ -426,7 +442,7 @@ __concat_diagnose_output() {
       REPLY="出力durationが入力合計より${dur_pct}%短い (入力: ${expected_hms}, 出力: ${actual_hms})"
       return 1
     fi
-    if (( $(echo "$dur_ratio > $_dur_hi" | bc -l) )); then
+    if __concat_float "$dur_ratio" gt "$_dur_hi"; then
       local dur_pct expected_hms actual_hms
       dur_pct=$(awk -v r="$dur_ratio" 'BEGIN{ printf "%.1f", (r-1)*100 }')
       expected_hms=$(awk -v s="$expected_duration" 'BEGIN{ h=int(s/3600); m=int((s%3600)/60); sec=s%60; printf "%d:%02d:%05.2f", h, m, sec }')
@@ -443,7 +459,7 @@ __concat_diagnose_output() {
     if [[ -n "$actual_size" ]] && (( actual_size > 0 )); then
       local ratio
       ratio=$(awk -v a="$actual_size" -v e="$expected_size" 'BEGIN{ printf "%.4f", a/e }')
-      if (( $(echo "$ratio < 0.95" | bc -l) )); then
+      if __concat_float "$ratio" lt 0.95; then
         local pct
         pct=$(awk -v r="$ratio" 'BEGIN{ printf "%.1f", (1-r)*100 }')
         local _msg="出力サイズが入力合計より${pct}%小さい (入力: $((expected_size/1024/1024))MB, 出力: $((actual_size/1024/1024))MB)"
@@ -468,7 +484,7 @@ __concat_diagnose_output() {
             # 実効サイズ合計で再判定: 出力が実効合計の95%以上なら正常
             local _eff_ratio
             _eff_ratio=$(awk -v a="$actual_size" -v e="$_effective_total" 'BEGIN{ printf "%.4f", (e>0) ? a/e : 0 }')
-            if (( $(echo "$_eff_ratio >= 0.95 && $_eff_ratio <= 1.05" | bc -l) )); then
+            if __concat_float "$_eff_ratio" ge 0.95 && __concat_float "$_eff_ratio" le 1.05; then
               REPLY="${_msg}${_suspect}"$'\n'"  → 再生時間・映像・音声に影響はありません"
               return 2  # 警告（出力は正常だが入力にゴミデータあり）
             fi
@@ -479,7 +495,7 @@ __concat_diagnose_output() {
         REPLY="$_msg"
         return 1
       fi
-      if (( $(echo "$ratio > 1.05" | bc -l) )); then
+      if __concat_float "$ratio" gt 1.05; then
         local pct
         pct=$(awk -v r="$ratio" 'BEGIN{ printf "%.1f", (r-1)*100 }')
         REPLY="出力サイズが入力合計より${pct}%大きい (入力: $((expected_size/1024/1024))MB, 出力: $((actual_size/1024/1024))MB)"
@@ -510,15 +526,23 @@ __concat_frame_hash() {
   # input seekingだけではconcat出力ファイルの深い位置で誤ったフレームに到達する場合がある
   _approx=$(awk -v t="$_target" 'BEGIN{ a=t-5; if(a<0) a=0; printf "%.3f", a }')
   _fine=$(awk -v t="$_target" -v a="$_approx" 'BEGIN{ printf "%.3f", t-a }')
-  local _raw
-  _raw=$(ffmpeg -hide_banner -nostdin -loglevel error \
+  # raw フレーム (1080p rgb24 で ~6MB、NUL バイト含む) をシェル変数に取り込まず
+  # shasum へ直接パイプする。
+  # 「ffmpeg 失敗 (出力なし)」「成功だがフレーム 0 件」(seek 範囲外等) はどちらも
+  # 空入力の既知 SHA-1 になるため、それを失敗扱いにして両側空ハッシュの偽一致を防ぐ
+  # (旧実装が raw 変数の空チェックで防いでいたものと同等)。
+  # 注: pipestatus はコマンド置換内のパイプラインには効かないため ffmpeg の
+  # exit status は直接見ない (旧実装も見ていない)。
+  local _hash
+  _hash=$(ffmpeg -hide_banner -nostdin -loglevel error \
     -ss "$_approx" -i "$file" -ss "$_fine" \
-    -vframes 1 -f rawvideo -pix_fmt rgb24 pipe:1 2>/dev/null)
-  if [[ -z "$_raw" ]]; then
+    -vframes 1 -f rawvideo -pix_fmt rgb24 pipe:1 2>/dev/null | shasum | cut -d' ' -f1)
+  local _EMPTY_SHA1="da39a3ee5e6b4b0d3255bfef95601890afd80709"
+  if [[ -z "$_hash" || "$_hash" == "$_EMPTY_SHA1" ]]; then
     print -r -- ""
     return 1
   fi
-  print -r -- "$_raw" | shasum | cut -d' ' -f1
+  print -r -- "$_hash"
 }
 
 # 内部補助: 結合後のフレーム順序を検証
