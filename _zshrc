@@ -687,6 +687,12 @@ if command -v brew > /dev/null 2>&1; then
   else
     echo "zsh-syntax-highlighting がインストールされていません。brew install zsh-syntax-highlighting を実行してインストールしてね。"
   fi
+
+  # nvim-treesitter (main ブランチ) のパーサーコンパイルに tree-sitter CLI が必須。
+  # brew の tree-sitter formula はライブラリのみで CLI は tree-sitter-cli に分離されている
+  if ! command -v tree-sitter > /dev/null 2>&1; then
+    echo "tree-sitter-cli がインストールされていません。brew install tree-sitter-cli を実行してインストールしてね。"
+  fi
 fi
 
 # Ignore commands starting with space from history
