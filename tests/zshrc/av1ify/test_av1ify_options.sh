@@ -115,6 +115,27 @@ setopt err_exit
 assert_contains "$output" "使い方" "Help text is shown despite invalid env vars"
 (( exit_code == 0 )) && printf '✓ --help exits 0 despite invalid env vars\n' || { printf '✗ --help should exit 0 (got %d)\n' "$exit_code"; exit 1; }
 
+# Test 20c: 環境変数経由の無効値も処理対象があれば fail-fast (CLI と同じ root 検証を通る)
+printf '\n## Test 20c: Invalid AV1_FPS env var fails fast when targets exist\n'
+TEST_DIR="$TEST_TMP/test20c"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(AV1_FPS=abc av1ify --dry-run "$TEST_DIR/input.avi" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_contains "$output" "無効なfps指定" "Reports invalid FPS from env var"
+assert_not_contains "$output" "変換予定" "Does not proceed to plan with invalid AV1_FPS"
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero for AV1_FPS=abc (%d)\n' "$exit_code" || { printf '✗ Exit code should be non-zero for AV1_FPS=abc (got %d)\n' "$exit_code"; exit 1; }
+
+unsetopt err_exit
+output=$(AV1_DENOISE=bogus av1ify --dry-run "$TEST_DIR/input.avi" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_contains "$output" "無効なdenoise指定" "Reports invalid denoise from env var"
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero for AV1_DENOISE=bogus (%d)\n' "$exit_code" || { printf '✗ Exit code should be non-zero for AV1_DENOISE=bogus (got %d)\n' "$exit_code"; exit 1; }
+
 # Test 21: 有効な解像度のバリエーション
 printf '\n## Test 21: Valid resolution variations\n'
 TEST_DIR="$TEST_TMP/test21"
@@ -294,6 +315,13 @@ echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 output=$(av1ify --dry-run --denoise medium "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "denoise=medium" "Dry-run shows denoise=medium"
+
+# Test 35b: 環境変数 AV1_DENOISE (root で CLI と統合される。CLI 指定が優先)
+printf '\n## Test 35b: AV1_DENOISE environment variable\n'
+output=$(AV1_DENOISE=medium av1ify --dry-run "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "denoise=medium" "AV1_DENOISE env var works"
+output=$(AV1_DENOISE=strong av1ify --dry-run --denoise light "$TEST_DIR/input.avi" 2>&1 || true)
+assert_contains "$output" "denoise=light" "CLI --denoise overrides AV1_DENOISE"
 
 # Test 36: 無効な denoise 指定 (fail-fast: 即エラー終了)
 printf '\n## Test 36: Invalid denoise validation (fail-fast)\n'

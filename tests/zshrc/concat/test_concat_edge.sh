@@ -202,4 +202,45 @@ setopt err_exit
 assert_file_exists "$TEST_DIR/movie_X.mp4" "Output file created for _#EpN sequence (suffix _#Ep stripped)"
 assert_contains "$output" "完了" "Reports success for _#EpN sequence"
 
+# Test 25: __concat_float (bc 置き換えの浮動小数点比較ヘルパー) のユニットテスト
+printf '\n## Test 25: __concat_float comparison helper\n'
+unsetopt err_exit
+_float_ok=1
+# 真になるべきケース
+for spec in "0.94:lt:0.95" "0.95:le:0.95" "1.06:gt:1.05" "1.05:ge:1.05" "9.5:le:10" "10.5:gt:10"; do
+  a="${spec%%:*}"; rest="${spec#*:}"; op="${rest%%:*}"; b="${rest#*:}"
+  if __concat_float "$a" "$op" "$b"; then
+    printf '✓ %s %s %s is true\n' "$a" "$op" "$b"
+  else
+    printf '✗ %s %s %s should be true\n' "$a" "$op" "$b"
+    _float_ok=0
+  fi
+done
+# 偽になるべきケース
+for spec in "0.95:lt:0.95" "0.96:le:0.95" "1.05:gt:1.05" "1.04:ge:1.05"; do
+  a="${spec%%:*}"; rest="${spec#*:}"; op="${rest%%:*}"; b="${rest#*:}"
+  if ! __concat_float "$a" "$op" "$b"; then
+    printf '✓ %s %s %s is false\n' "$a" "$op" "$b"
+  else
+    printf '✗ %s %s %s should be false\n' "$a" "$op" "$b"
+    _float_ok=0
+  fi
+done
+# 非数値は 0 に強制される (bc 時代はパースエラーで判定がすり抜けていた値)
+if __concat_float "N/A" le 0; then
+  printf '✓ non-numeric "N/A" coerces to 0 (le 0 is true)\n'
+else
+  printf '✗ non-numeric "N/A" should coerce to 0\n'
+  _float_ok=0
+fi
+# 不明な演算子は偽 (誤用をすり抜けさせない)
+if ! __concat_float 1 bogus 2; then
+  printf '✓ unknown operator returns false\n'
+else
+  printf '✗ unknown operator should return false\n'
+  _float_ok=0
+fi
+setopt err_exit
+(( _float_ok )) || exit 1
+
 printf '\n=== Edge Case Tests Completed ===\n'

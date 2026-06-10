@@ -393,4 +393,58 @@ setopt err_exit
 assert_contains "$output" "音声ストリーム検出できず" "Detects audio lost during encode"
 assert_contains "$output" "check_ng" "Output is marked as check_ng"
 
+# Test 87: ソースが参照できない場合は noaudio 判定をスキップせず NG side に倒す
+# (Test 85 のスキップは「ソースの音声なしを確認できた」場合限定であることの裏面)
+printf '\n## Test 87: Missing source at postcheck - noaudio NG preserved\n'
+TEST_DIR="$TEST_TMP/test87"
+mkdir -p "$TEST_DIR"
+echo "encoded data" > "$TEST_DIR/video-enc.mp4"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_OUTPUT_AUDIO_INDEX= __av1ify_postcheck "$TEST_DIR/video-enc.mp4" "$TEST_DIR/ghost.avi" 0 "" 2>&1)
+rc=$?
+setopt err_exit
+assert_contains "$output" "音声ストリーム検出できず" "Reports noaudio when source is missing"
+(( rc != 0 )) && printf '✓ postcheck returns non-zero (rc=%d)\n' "$rc" || { printf '✗ postcheck should return non-zero\n'; exit 1; }
+assert_file_exists "$TEST_DIR/video-check_ng-noaudio-enc.mp4" "Output is renamed with noaudio tag"
+
+# Test 88: ソースの音声 probe (ffprobe) が失敗した場合も NG side に倒す (codex P2 回帰防止)
+# probe 失敗 (exit 非0) を「音声なしソース」と誤解釈すると、壊れたソースで
+# 音声が消えた出力を黙って受理してしまう
+printf '\n## Test 88: Source audio probe failure - noaudio NG preserved\n'
+TEST_DIR="$TEST_TMP/test88"
+mkdir -p "$TEST_DIR"
+echo "source data" > "$TEST_DIR/input.avi"
+echo "encoded data" > "$TEST_DIR/input-enc.mp4"
+
+# stream=index のみ「出力=空成功 / ソース=exit 1」を返し、他は通常モックへ委譲する wrapper
+PROBE_FAIL_BIN="$TEST_DIR/probe_fail_bin"
+mkdir -p "$PROBE_FAIL_BIN"
+cat > "$PROBE_FAIL_BIN/ffprobe" <<MOCKEOF
+#!/usr/bin/env sh
+last=""
+for a in "\$@"; do last="\$a"; done
+case "\$*" in
+  *"stream=index"*)
+    case "\$last" in
+      *-enc*|*check_ng*) exit 0 ;;
+      *) exit 1 ;;
+    esac ;;
+  *) exec "$MOCK_BIN_DIR/ffprobe" "\$@" ;;
+esac
+MOCKEOF
+chmod +x "$PROBE_FAIL_BIN/ffprobe"
+cd "$TEST_DIR"
+unsetopt err_exit
+__saved_path="$PATH"
+PATH="$PROBE_FAIL_BIN:$PATH"
+output=$(__av1ify_postcheck "$TEST_DIR/input-enc.mp4" "$TEST_DIR/input.avi" 0 "" 2>&1)
+rc=$?
+PATH="$__saved_path"
+unset __saved_path
+setopt err_exit
+assert_contains "$output" "音声ストリーム検出できず" "Probe failure is not treated as silent source"
+assert_not_contains "$output" "noaudio 判定をスキップ" "Skip path is not taken on probe failure"
+(( rc != 0 )) && printf '✓ postcheck returns non-zero (rc=%d)\n' "$rc" || { printf '✗ postcheck should return non-zero\n'; exit 1; }
+
 printf '\n=== Postcheck Tests Completed ===\n'

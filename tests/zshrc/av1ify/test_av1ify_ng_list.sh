@@ -66,12 +66,14 @@ $TEST_DIR/no2.mkv
 LISTEOF
 cd "$TEST_DIR"
 unsetopt err_exit
-output=$(av1ify -f "$TEST_DIR/list.txt" 2>&1 || true)
+output=$(av1ify -f "$TEST_DIR/list.txt" 2>&1)
+rc=$?
 setopt err_exit
 assert_contains "$output" "── NG 一覧 (2件) ──" "-f mode shows NG header"
 assert_contains "$output" "no1.avi" "-f mode lists first NG file"
 assert_contains "$output" "no2.mkv" "-f mode lists second NG file"
 assert_contains "$output" "ファイルが見つからない" "-f mode shows reason"
+(( rc != 0 )) && printf '✓ -f mode batch with NG returns non-zero (rc=%d)\n' "$rc" || { printf '✗ -f mode batch with NG should return non-zero\n'; exit 1; }
 
 # Test 5: 単一ファイル (バッチではない) → NG 一覧は出ない
 printf '\n## Test 5: Single file failure does NOT print NG list (no batch summary)\n'

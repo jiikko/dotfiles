@@ -150,6 +150,23 @@ assert_file_exists "$TEST_DIR/posA-enc.mp4" "Positional file is processed"
 assert_file_exists "$TEST_DIR/listB-enc.mp4" "List file entry is processed"
 assert_not_contains "$output" "ファイルが無い: -f" "-f is not treated as a file path"
 
+# Test 10c: -f の空リスト (コメント/空行のみ) + 位置引数あり → 位置引数は処理される
+# (「対象ファイルなし」で early return するのはリストも位置引数も空のときだけ)
+printf '\n## Test 10c: Empty -f list with positional args still processes positionals\n'
+TEST_DIR="$TEST_TMP/test10c"
+mkdir -p "$TEST_DIR"
+echo "video a" > "$TEST_DIR/posOnly.avi"
+cat > "$TEST_DIR/empty_list.txt" <<LISTEOF
+# コメントのみ
+
+LISTEOF
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(av1ify -f "$TEST_DIR/empty_list.txt" "$TEST_DIR/posOnly.avi" 2>&1 || true)
+setopt err_exit
+assert_file_exists "$TEST_DIR/posOnly-enc.mp4" "Positional file is processed despite empty list"
+assert_not_contains "$output" "対象ファイルなし" "Does not early-return when positionals exist"
+
 # Test 11: -f オプションでファイルが見つからない場合
 printf '\n## Test 11: Error when -f list file not found\n'
 TEST_DIR="$TEST_TMP/test11"
