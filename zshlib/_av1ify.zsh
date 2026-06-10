@@ -141,8 +141,11 @@ __av1ify_resolve_resolution() {
 # 内部補助: バッチ処理ループ + 末尾 NG 一覧の出力
 # 引数: 処理対象ファイル/ディレクトリのパスを位置引数で渡す
 # 出力: 各ファイルの処理ログ + 末尾サマリ + (NG があれば) NG 一覧
-# 戻り値: 0 (中断時のみ 130)
-# 副作用: __AV1IFY_LAST_NG_REASON を反復ごとにクリアする
+# 戻り値: 0=全件OK, 1=NG あり, 130=中断
+# 副作用: __AV1IFY_LAST_NG_REASON を反復ごとにクリアする。
+#         NG ありで返るときは __AV1IFY_LAST_NG_REASON に集計理由をセットする
+#         (バッチ内にディレクトリが混在するケースで、外側のバッチが NG として
+#          集計できるようにするため)
 __av1ify_run_batch() {
   local target ok=0 ng=0
   local -a ng_list=()
@@ -190,6 +193,10 @@ __av1ify_run_batch() {
       print -r -- "  ✗ $f"
       print -r -- "    └─ $r"
     done
+    # NG を exit code に反映する (bin/av1ify・Finder action・スクリプト連携が失敗を検知できる)。
+    # ディレクトリがバッチに混在した場合、ネストしたバッチの NG はこの非0で外側に伝搬する。
+    __AV1IFY_LAST_NG_REASON="バッチ内に NG ${ng}件 (内訳は上の NG 一覧を参照)"
+    return 1
   fi
   return 0
 }

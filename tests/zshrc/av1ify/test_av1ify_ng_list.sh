@@ -147,4 +147,54 @@ assert_contains "$output" "── NG 一覧 (2件) ──" "postcheck failures c
 assert_contains "$output" "変換後チェック NG" "Reason starts with 'postcheck NG' label"
 assert_contains "$output" "サイズ増加" "Reason contains specific issue tag"
 
+# Test 9: NG ありバッチは exit code 非0 / 全件 OK バッチは 0
+# 回帰防止: 旧実装は NG があっても 0 を返し、bin/av1ify・Finder action・
+# スクリプト連携 (&&) から失敗が見えなかった
+printf '\n## Test 9: Batch exit code reflects NG\n'
+TEST_DIR="$TEST_TMP/ng_test9"
+mkdir -p "$TEST_DIR"
+echo "video content data" > "$TEST_DIR/ok1.avi"
+echo "video content data" > "$TEST_DIR/ok2.mkv"
+cd "$TEST_DIR"
+unsetopt err_exit
+av1ify "$TEST_DIR/missing1.avi" "$TEST_DIR/missing2.mkv" > /dev/null 2>&1
+rc_ng=$?
+av1ify "$TEST_DIR/ok1.avi" "$TEST_DIR/ok2.mkv" > /dev/null 2>&1
+rc_ok=$?
+setopt err_exit
+if (( rc_ng != 0 )); then
+  printf '✓ Batch with NG returns non-zero (rc=%d)\n' "$rc_ng"
+else
+  printf '✗ Batch with NG should return non-zero\n'
+  exit 1
+fi
+if (( rc_ok == 0 )); then
+  printf '✓ All-OK batch returns 0\n'
+else
+  printf '✗ All-OK batch should return 0 (rc=%d)\n' "$rc_ok"
+  exit 1
+fi
+
+# Test 10: バッチにディレクトリが混在し、その中に NG がある → 外側のサマリで NG 集計
+# 回帰防止: 旧実装はネストしたバッチが 0 を返すため、ディレクトリ内が全滅でも
+# 外側のサマリで OK にカウントされていた
+printf '\n## Test 10: Nested directory NG propagates to outer batch summary\n'
+TEST_DIR="$TEST_TMP/ng_test10"
+mkdir -p "$TEST_DIR/sub"
+echo "video content data" > "$TEST_DIR/ok.avi"
+printf 'x' > "$TEST_DIR/sub/tiny.avi"   # 1B ソース → postcheck サイズ増加 NG
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(av1ify "$TEST_DIR/ok.avi" "$TEST_DIR/sub" 2>&1)
+rc=$?
+setopt err_exit
+if (( rc != 0 )); then
+  printf '✓ Outer batch returns non-zero when nested dir has NG\n'
+else
+  printf '✗ Outer batch should return non-zero (rc=%d)\n' "$rc"
+  exit 1
+fi
+assert_contains "$output" "OK=1 / NG=1" "Outer summary counts nested-NG directory as NG"
+assert_contains "$output" "バッチ内に NG" "NG list shows nested batch aggregate reason"
+
 printf '\n=== NG List Tests Completed ===\n'
