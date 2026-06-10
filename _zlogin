@@ -2,18 +2,25 @@
 
 # ログインシェル専用の設定を追加したい場合はここに記述する
 
-# 非インタラクティブなログインシェルでも rbenv/nodenv の PATH が通るようにする
-if [ -d "$HOME/.rbenv/bin" ]; then
-  export PATH="$HOME/.rbenv/bin:$PATH"
-fi
-if command -v rbenv > /dev/null 2>&1 && [[ "${RBENV_SHELL:-}" != "zsh" ]]; then
-  eval "$(rbenv init -)"
-fi
+# 非インタラクティブなログインシェル (zsh -lc のスクリプト実行や GUI から起動される
+# プロセス等。zshrc が読まれないため lazy loading が存在しない) でも rbenv/nodenv の
+# PATH と shim が通るように eager init する。
+# 対話シェルでは zshrc の _lazy_anyenv_manager が lazy 初期化を担うため、ここで
+# eager init してはいけない (毎回の対話シェルで lazy loading を無効化してしまう。
+# 対話シェル起動直後に NODENV_SHELL=zsh がセットされていたことで実測確認 2026-06-10)
+if [[ ! -o interactive ]]; then
+  if [ -d "$HOME/.rbenv/bin" ]; then
+    export PATH="$HOME/.rbenv/bin:$PATH"
+  fi
+  if command -v rbenv > /dev/null 2>&1 && [[ "${RBENV_SHELL:-}" != "zsh" ]]; then
+    eval "$(rbenv init -)"
+  fi
 
-if [ -d "$HOME/.nodebrew/current/bin" ]; then
-  export PATH="$HOME/.nodebrew/current/bin:$PATH"
-fi
-if command -v nodenv > /dev/null 2>&1 && [[ -z "${NODENV_SHELL:-}" ]]; then
-  export PATH="$HOME/.nodenv/bin:$PATH"
-  eval "$(nodenv init -)"
+  if [ -d "$HOME/.nodebrew/current/bin" ]; then
+    export PATH="$HOME/.nodebrew/current/bin:$PATH"
+  fi
+  if command -v nodenv > /dev/null 2>&1 && [[ -z "${NODENV_SHELL:-}" ]]; then
+    export PATH="$HOME/.nodenv/bin:$PATH"
+    eval "$(nodenv init -)"
+  fi
 fi
