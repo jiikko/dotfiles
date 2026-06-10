@@ -1132,25 +1132,6 @@
                         ]
                     },
                     {
-                        "description": "右CtrlキーとTキーを同時押しした時に英数キーを送信する",
-                        "manipulators": [
-                            {
-                                "from": {
-                                    "key_code": "t",
-                                    "modifiers": { "mandatory": ["control"] }
-                                },
-                                "to": [
-                                    { "key_code": "japanese_eisuu" },
-                                    {
-                                        "key_code": "t",
-                                        "modifiers": ["right_control"]
-                                    }
-                                ],
-                                "type": "basic"
-                            }
-                        ]
-                    },
-                    {
                         "description": "左Optionキーを押した時に英数キーを送信し、そのままOptionキーとして機能させる",
                         "manipulators": [
                             {
@@ -2314,27 +2295,6 @@
                                     { "key_code": "period" },
                                     { "key_code": "period" },
                                     { "key_code": "period" }
-                                ],
-                                "type": "basic"
-                            }
-                        ]
-                    },
-                    {
-                        "description": "Ctrl+5を押すと!を入力する",
-                        "manipulators": [
-                            {
-                                "from": {
-                                    "key_code": "5",
-                                    "modifiers": {
-                                        "mandatory": ["control"],
-                                        "optional": ["any"]
-                                    }
-                                },
-                                "to": [
-                                    {
-                                        "key_code": "1",
-                                        "modifiers": ["shift"]
-                                    }
                                 ],
                                 "type": "basic"
                             }
