@@ -693,6 +693,12 @@ if command -v brew > /dev/null 2>&1; then
   if ! command -v tree-sitter > /dev/null 2>&1; then
     echo "tree-sitter-cli がインストールされていません。brew install tree-sitter-cli を実行してインストールしてね。"
   fi
+
+  # tmux の pane kill 確認ダイアログ (_tmux.conf の bind x / bind q) が gum confirm を使う。
+  # 無いと kill 確認が exit 127 で常にキャンセル扱いになり pane を閉じられない
+  if ! command -v gum > /dev/null 2>&1; then
+    echo "gum がインストールされていません。brew install gum を実行してインストールしてね。"
+  fi
 fi
 
 # Ignore commands starting with space from history
