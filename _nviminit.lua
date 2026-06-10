@@ -178,7 +178,6 @@ require("lazy").setup({
         "coc-markdownlint",
         "coc-prettier",
         "coc-spell-checker",
-        "coc-tslint-plugin",
         "coc-tsserver",
         "coc-yaml",
         "coc-solargraph",
@@ -323,7 +322,6 @@ require("lazy").setup({
 
       bufferline.setup({
         options = {
-          diagnostics = "nvim_lsp",
           show_close_icon = false,
           show_buffer_close_icons = false,
           always_show_bufferline = true,
@@ -473,7 +471,6 @@ require("lazy").setup({
       },
     },
   },
-  { "numToStr/Comment.nvim" },
   { "lewis6991/gitsigns.nvim",
     event = { "BufReadPre", "BufNewFile" },
     config = function()

@@ -8,10 +8,8 @@ end
 local function set_options()
   local opt = vim.opt
 
-  opt.backup = false
   opt.swapfile = false
   opt.shortmess:append("I")
-  opt.autoread = true
 
   opt.wildignore:append({ ".git", ".svn" })
   opt.wildignore:append({ "*.jpg", "*.bmp", "*.gif", "*.png", "*.jpeg" })
@@ -23,32 +21,17 @@ local function set_options()
   opt.grepprg = [[git grep -nI --no-color $*]]
   opt.grepformat = "%f:%l:%m"
 
-  opt.backspace = { "indent", "eol", "start" }
   opt.number = true
-  opt.history = 10000
-  opt.ruler = true
-  opt.showcmd = true
-  opt.incsearch = true
-  opt.laststatus = 2
-  opt.hlsearch = true
-  opt.wrap = true
   opt.expandtab = true
   opt.tabstop = 2
   opt.shiftwidth = 2
-  opt.softtabstop = 0
   opt.scrolloff = 5
   opt.formatoptions = "lmoq"
-  opt.showmode = true
   opt.clipboard = { "unnamed", "unnamedplus" }
-  opt.smarttab = true
   opt.smartindent = true
   opt.showbreak = "↪"
-  opt.wildmenu = true
   opt.showmatch = true
   opt.title = true
-  opt.lazyredraw = false
-  opt.vb = true
-  opt.wildchar = 9
   opt.updatetime = 300
   vim.wo.signcolumn = "yes"
 end
@@ -151,12 +134,6 @@ local function set_autocmds()
     group = group,
     pattern = "*.Schemafile",
     command = "set filetype=ruby",
-  })
-
-  vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
-    group = group,
-    pattern = "*.yml",
-    command = "set filetype=yaml",
   })
 
   vim.api.nvim_create_autocmd("BufReadPost", {
