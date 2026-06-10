@@ -24,14 +24,10 @@ RIFF を自前でパースして全チャンクを抽出する。
      音声ストリームと再 mux (音声コーデックが MP4 非対応なら MKV に出力)
   5. フレーム数・再生時間・3 地点デコードを検証
 
-usage:
-  repair-avcc-avi [--check] <input.avi> [output]
-
-  --check  診断のみ (修復対象かどうかの判定と検出結果を表示して終了)
-
-exit code: 0=成功 / 1=エラー / 2=対象外 (Annex-B 格納など正常な構造)
+CLI の使い方・使用例・終了コードは `repair-avcc-avi --help` を参照。
 """
 
+import argparse
 import json
 import shutil
 import struct
@@ -40,6 +36,93 @@ import sys
 import tempfile
 from fractions import Fraction
 from pathlib import Path
+
+HELP_DESCRIPTION = """\
+AVCC 形式の H.264 を格納した再生不能 AVI を無劣化 (再エンコードなし) で
+MP4/MKV に修復する。
+
+こんな症状のファイルが対象:
+  - 音声は再生されるのに映像が出ない AVI
+  - ffmpeg / プレイヤーが「No start code is found」
+    「Error splitting the input into NAL units」を大量に出す
+  - ffprobe ではコーデック h264 と認識される (fourcc: avc1/H264/x264 等)
+
+原因: 一部のエンコーダ (PotEncoder 等) が、AVI で期待される Annex-B
+(スタートコード区切り) ではなく MP4 用の AVCC (長さプレフィックス区切り) の
+まま H.264 を書き込むため、ほぼ全てのデコーダがフレームを認識できなくなる。
+データ自体は無傷なので、区切り形式を変換するだけで完全に復元できる。"""
+
+HELP_EPILOG = """\
+使用例:
+  %(prog)s --check broken.avi
+      修復対象かどうかだけ判定する (ファイルは変更しない)
+
+  %(prog)s broken.avi
+      broken_fixed.mp4 を作る (音声が MP4 非対応コーデックなら
+      自動的に broken_fixed.mkv になる)
+
+  %(prog)s broken.avi out.mkv
+      出力先を明示する。拡張子 .mp4/.mkv でコンテナを強制できる
+
+処理内容 (元ファイルは変更しない):
+  1. RIFF を自前パースして全ビデオチャンクを抽出
+     (ffmpeg の AVI demuxer はこの種のファイルでパケットを黙って落とすため)
+  2. AVCC 長さプレフィックス (4/2/1 byte 自動判定) を Annex-B に変換。
+     SPS/PPS は extradata (avcC / Annex-B / 2-byte 連結) か in-band から取得
+  3. B フレームを含む場合は MP4Box で表示順 (POC) を再構築して import
+  4. ドロップフレームスロット分のオフセットを掛けて音声と再 mux
+  5. 検証: フレーム数 / 映像と音声の長さ一致 / 先頭・中間・末尾のデコード /
+     表示順タイムスタンプの単調性
+
+依存コマンド:
+  ffmpeg / ffprobe   必須
+  MP4Box (gpac)      B フレームを含むストリームの修復に必須
+                     (brew install gpac)
+
+終了コード:
+  0  成功 (--check 時: 修復対象である)
+  1  エラー (修復失敗・検証失敗。検証失敗でも出力ファイルは残す)
+  2  対象外 (AVCC-in-AVI ではない)
+
+対象外だったときの代替手段:
+  Annex-B 格納の正常な AVI なのに再生できない → video_health で一般診断
+  「moov atom not found」が出る MP4           → untrunc 等の moov 再構築系
+  音声側が壊れている AVI                      → repair_avi_vorbis_audio.sh
+  再生速度がおかしい MP4                      → repair-mp4-timebase
+
+備考:
+  - 一時ファイルは出力先と同じディレクトリに作り、終了時に削除する
+  - 大きなファイルでは入力と同程度の空き容量が出力先ボリュームに必要"""
+
+
+class ArgParser(argparse.ArgumentParser):
+    """引数エラーの exit code を 1 にする (2 は「修復対象外」の意味で使うため)"""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(f"ERROR: {message}", file=sys.stderr)
+        sys.exit(1)
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    p = ArgParser(
+        prog="repair-avcc-avi",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=HELP_DESCRIPTION,
+        epilog=HELP_EPILOG,
+    )
+    p.add_argument("input", metavar="<input.avi>", help="修復対象の AVI ファイル")
+    p.add_argument(
+        "output", metavar="output", nargs="?",
+        help="出力先 (省略時: <入力名>_fixed.mp4 または .mkv)。"
+             "拡張子 .mp4/.mkv でコンテナを強制できる",
+    )
+    p.add_argument(
+        "--check", action="store_true",
+        help="診断のみ。修復対象かどうかの判定と検出結果を表示して終了する "
+             "(ファイルは変更しない)",
+    )
+    return p
 
 START_CODE = b"\x00\x00\x00\x01"
 H264_FOURCCS = {b"avc1", b"AVC1", b"h264", b"H264", b"x264", b"X264"}
@@ -413,13 +496,10 @@ def audio_codecs(streams: list[StreamInfo]) -> list[tuple[str, bool]]:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    args = [a for a in sys.argv[1:] if a != "--check"]
-    check_only = "--check" in sys.argv[1:]
-    if not 1 <= len(args) <= 2:
-        print(__doc__.strip(), file=sys.stderr)
-        sys.exit(1)
+    opts = build_arg_parser().parse_args()
+    check_only = opts.check
 
-    in_path = Path(args[0]).resolve()
+    in_path = Path(opts.input).resolve()
     if not in_path.is_file():
         die(f"入力ファイルがありません: {in_path}")
 
@@ -473,8 +553,8 @@ def main() -> None:
     # --- 出力先とコンテナ ---
     acodecs = audio_codecs(streams)
     container = "mp4" if all(safe for _, safe in acodecs) else "mkv"
-    if len(args) == 2:
-        out_path = Path(args[1]).resolve()
+    if opts.output:
+        out_path = Path(opts.output).resolve()
         if out_path.suffix.lower() in (".mp4", ".mkv"):
             container = out_path.suffix.lower()[1:]
     else:
