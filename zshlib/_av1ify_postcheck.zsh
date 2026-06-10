@@ -113,8 +113,20 @@ __av1ify_postcheck() {
   local audio_stream
   audio_stream=$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 -- "$filepath" 2>/dev/null | head -n1)
   if [[ -z "$audio_stream" ]]; then
-    issues+=("音声ストリーム検出できず")
-    suffixes+=("noaudio")
+    # ソースに音声が無い場合、出力に音声が無いのは -an エンコードの正常な結果
+    # (__av1ify_one が「音声: なし（-an）」で意図的に作る)。NG にすると音声なし素材が
+    # 毎回 check_ng-noaudio へリネームされ、再実行のたびフルエンコードが再走する。
+    # ソースが参照できない場合は判定不能なので従来どおり NG side に倒す。
+    local src_audio_stream=""
+    if [[ -n "$src_path" && -f "$src_path" ]]; then
+      src_audio_stream=$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 -- "$src_path" 2>/dev/null | head -n1)
+    fi
+    if [[ -n "$src_audio_stream" || -z "$src_path" || ! -f "$src_path" ]]; then
+      issues+=("音声ストリーム検出できず")
+      suffixes+=("noaudio")
+    else
+      print -r -- ">> 音声なしソースのため noaudio 判定をスキップ"
+    fi
   fi
 
   # A/V duration 判定: ソースとの符号付き相対比較で「encode が新たに作った drift」だけを見る。

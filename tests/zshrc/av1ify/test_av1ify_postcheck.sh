@@ -364,4 +364,33 @@ output=$(AV1IFY_SYNC_TOLERANCE=+0.5 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_not_contains "$output" "repetition-operator" "No regex error with '+0.5' threshold"
 
+# Test 85: 音声なしソース → 出力にも音声が無いのは正常 (noaudio NG にしない)
+# 回帰防止: 旧実装は出力の音声有無だけを見ていたため、-an で正常エンコードした
+# 音声なし素材が毎回 check_ng-noaudio にリネームされ、再実行のたび再エンコードされていた。
+# 注: 音声なしソースは __video_health_check (チェック2) が破損扱いするため、
+# このパスへは --force 経由でのみ到達する (health check の仕様は本テストのスコープ外)。
+printf '\n## Test 85: Silent source (--force) - no noaudio false positive\n'
+TEST_DIR="$TEST_TMP/test85"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_ACODEC= MOCK_AUDIO_INDEX= MOCK_OUTPUT_AUDIO_INDEX= av1ify --force "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_not_contains "$output" "音声ストリーム検出できず" "No noaudio issue for silent source"
+assert_not_contains "$output" "check_ng" "Silent source output is not marked check_ng"
+assert_file_exists "$TEST_DIR/input-enc.mp4" "Output keeps normal -enc.mp4 name"
+
+# Test 86: ソースに音声があるのに出力で消えた場合は従来どおり noaudio NG
+printf '\n## Test 86: Audio lost in output - noaudio NG preserved\n'
+TEST_DIR="$TEST_TMP/test86"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_OUTPUT_AUDIO_INDEX= av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "音声ストリーム検出できず" "Detects audio lost during encode"
+assert_contains "$output" "check_ng" "Output is marked as check_ng"
+
 printf '\n=== Postcheck Tests Completed ===\n'

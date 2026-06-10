@@ -63,7 +63,13 @@ if echo "$*" | grep -q "codec_name"; then
     echo "${MOCK_ACODEC-aac}"
   fi
 elif echo "$*" | grep -q "stream=index"; then
-  echo "0"
+  # 音声ストリーム有無の判定用。「音声なし」を再現するには MOCK_AUDIO_INDEX= (空) を設定
+  last_arg=""
+  for arg in "$@"; do last_arg="$arg"; done
+  case "$last_arg" in
+    *-enc*|*check_ng*) echo "${MOCK_OUTPUT_AUDIO_INDEX-0}" ;;
+    *) echo "${MOCK_AUDIO_INDEX-0}" ;;
+  esac
 elif echo "$*" | grep -q "sample_rate"; then
   echo "${MOCK_SAMPLE_RATE-48000}"
 elif echo "$*" | grep -q "stream=channels"; then
