@@ -729,7 +729,7 @@ require("lazy").setup({
 -- 折り畳みの設定
 vim.opt.foldmethod = "expr"
 vim.opt.foldlevel = 100
-vim.opt.foldexpr = "nvim_treesitter#foldexpr()"
+vim.opt.foldexpr = "v:lua.vim.treesitter.foldexpr()"
 function Foldtext()
   local line = vim.fn.getline(vim.v.foldstart)
   local count = vim.v.foldend - vim.v.foldstart + 1
