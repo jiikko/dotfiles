@@ -1,0 +1,613 @@
+#!/usr/bin/env python3
+# @DotfilesSyncer: finder-menu true
+# @DotfilesSyncer:accepts .avi
+# @DotfilesSyncer:input-type file,files
+# @DotfilesSyncer:description 再生不能AVI(AVCC格納H.264)を無劣化修復
+"""repair-avcc-avi — AVCC 形式の H.264 を格納した再生不能 AVI を無劣化修復する。
+
+一部のエンコーダ (PotEncoder 等) は AVI に H.264 を格納する際、AVI で期待される
+Annex-B (スタートコード区切り) ではなく MP4 用の AVCC (長さプレフィックス区切り)
+のままビットストリームを書き込む。さらに codec extradata (SPS/PPS) も標準の
+avcC box ではない独自形式のことがある。このようなファイルは ffmpeg や各種
+プレイヤーが「No start code is found」で全フレームデコード不能になる。
+
+ffmpeg の AVI demuxer はこの種のファイルでビデオパケットを黙って取りこぼす
+ことがある (実測で約 0.5% + SEI 欠落) ため、本ツールは ffmpeg demuxer を使わず
+RIFF を自前でパースして全チャンクを抽出する。
+
+処理の流れ:
+  1. AVI ヘッダ (hdrl) を直接パースし、H.264 ビデオストリーム・fps・extradata を特定
+  2. ビットストリーム形式を判定 (Annex-B なら対象外。長さプレフィックス幅 4/2/1 を推定)
+  3. 全ビデオチャンクを Annex-B に変換 (SPS/PPS は extradata の avcC /
+     Annex-B / 長さプレフィックス連結のいずれの形式からも取得。無ければ in-band 検出)
+  4. サイズ 0 チャンク等のフレームスロット差分をオフセットとして算出し、
+     音声ストリームと再 mux (音声コーデックが MP4 非対応なら MKV に出力)
+  5. フレーム数・再生時間・3 地点デコードを検証
+
+usage:
+  repair-avcc-avi [--check] <input.avi> [output]
+
+  --check  診断のみ (修復対象かどうかの判定と検出結果を表示して終了)
+
+exit code: 0=成功 / 1=エラー / 2=対象外 (Annex-B 格納など正常な構造)
+"""
+
+import json
+import shutil
+import struct
+import subprocess
+import sys
+import tempfile
+from fractions import Fraction
+from pathlib import Path
+
+START_CODE = b"\x00\x00\x00\x01"
+H264_FOURCCS = {b"avc1", b"AVC1", b"h264", b"H264", b"x264", b"X264"}
+# WAVEFORMATEX wFormatTag → コーデック名 (表示用)。
+# MP4 コンテナに -c copy で安全に格納できるものを mp4_safe=True とし、
+# それ以外 (PCM, Vorbis, WMA 等) が混ざっていたら MKV に出力する。
+AUDIO_FORMAT_TAGS = {
+    0x0055: ("mp3", True),
+    0x00FF: ("aac", True),
+    0x2000: ("ac3", True),
+    0x0001: ("pcm_s16le", False),
+    0x0003: ("pcm_float", False),
+    0x2001: ("dts", False),
+    0x0161: ("wmav2", False),
+    0x6771: ("vorbis", False),
+}
+NAL_LENGTH_CAP = 64 * 1024 * 1024  # これを超える NAL 長はプレフィックス解釈の desync とみなす
+
+
+def die(msg: str, code: int = 1) -> "NoReturn":
+    print(f"ERROR: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+# ---------------------------------------------------------------------------
+# AVI ヘッダ解析 (hdrl)
+# ---------------------------------------------------------------------------
+
+class StreamInfo:
+    def __init__(self, index: int):
+        self.index = index
+        self.fcc_type = b""
+        self.handler = b""
+        self.scale = 0
+        self.rate = 0
+        self.compression = b""
+        self.extradata = b""
+        self.audio_format_tag = 0
+
+
+def parse_avi_header(f) -> list[StreamInfo]:
+    """先頭 RIFF セグメントの LIST hdrl から各ストリームの strh/strf を読む"""
+    f.seek(0)
+    if f.read(4) != b"RIFF":
+        die("RIFF (AVI) ファイルではありません", 2)
+    riff_size = int.from_bytes(f.read(4), "little")
+    if f.read(4) != b"AVI ":
+        die("AVI ファイルではありません", 2)
+    riff_end = f.tell() + riff_size - 4
+
+    streams: list[StreamInfo] = []
+
+    def walk(end: int, in_strl: bool) -> None:
+        while f.tell() < end:
+            cid = f.read(4)
+            if len(cid) < 4:
+                return
+            csize = int.from_bytes(f.read(4), "little")
+            cend = f.tell() + csize
+            if cid == b"LIST":
+                ltype = f.read(4)
+                if ltype == b"strl":
+                    streams.append(StreamInfo(len(streams)))
+                    walk(cend, True)
+                elif ltype in (b"hdrl", b"odml"):
+                    walk(cend, in_strl)
+                # movi 以降は読む必要がない
+            elif in_strl and cid == b"strh" and csize >= 28:
+                s = streams[-1]
+                data = f.read(csize)
+                s.fcc_type = data[0:4]
+                s.handler = data[4:8]
+                s.scale = int.from_bytes(data[20:24], "little")
+                s.rate = int.from_bytes(data[24:28], "little")
+            elif in_strl and cid == b"strf":
+                s = streams[-1]
+                data = f.read(csize)
+                if s.fcc_type == b"vids" and csize >= 40:
+                    # BITMAPINFOHEADER: biCompression は offset 16、
+                    # 40 バイトの構造体の後ろが codec extradata
+                    s.compression = data[16:20]
+                    s.extradata = data[40:]
+                elif s.fcc_type == b"auds" and csize >= 2:
+                    # WAVEFORMATEX: 先頭 2 バイトが wFormatTag
+                    s.audio_format_tag = int.from_bytes(data[0:2], "little")
+            else:
+                f.seek(csize, 1)
+            f.seek(cend + (csize % 2))
+            if cid != b"LIST" and f.tell() > end:
+                return
+
+    walk(riff_end, False)
+    return streams
+
+
+# ---------------------------------------------------------------------------
+# SPS/PPS の取得 (extradata の形式バリエーションを吸収する)
+# ---------------------------------------------------------------------------
+
+def split_annexb(data: bytes) -> list[bytes]:
+    nals = []
+    pos = 0
+    while True:
+        idx = data.find(b"\x00\x00\x01", pos)
+        if idx < 0:
+            break
+        start = idx + 3
+        nxt = data.find(b"\x00\x00\x01", start)
+        end = len(data) if nxt < 0 else (nxt - 1 if data[nxt - 1] == 0 else nxt)
+        if end > start:
+            nals.append(data[start:end].rstrip(b"\x00") or data[start:end])
+        pos = start
+    return nals
+
+
+def parse_extradata_nals(extradata: bytes) -> list[bytes]:
+    """extradata から NAL (SPS/PPS) を取り出す。対応形式:
+    avcC box / Annex-B / 2-byte 長プレフィックス連結 (PotEncoder 系の独自形式)"""
+    if len(extradata) < 4:
+        return []
+    if extradata[0] == 0x01:  # avcC: configurationVersion=1
+        nals = []
+        pos = 5
+        num_sps = extradata[pos] & 0x1F
+        pos += 1
+        for _ in range(num_sps):
+            ln = int.from_bytes(extradata[pos : pos + 2], "big")
+            nals.append(extradata[pos + 2 : pos + 2 + ln])
+            pos += 2 + ln
+        num_pps = extradata[pos]
+        pos += 1
+        for _ in range(num_pps):
+            ln = int.from_bytes(extradata[pos : pos + 2], "big")
+            nals.append(extradata[pos + 2 : pos + 2 + ln])
+            pos += 2 + ln
+        return nals
+    if b"\x00\x00\x01" in extradata[:5]:
+        return split_annexb(extradata)
+    # 2-byte 長プレフィックス連結とみなしてパース (ちょうど消費できたら採用)
+    nals = []
+    pos = 0
+    while pos + 2 <= len(extradata):
+        ln = int.from_bytes(extradata[pos : pos + 2], "big")
+        if ln == 0 or pos + 2 + ln > len(extradata):
+            return []
+        nals.append(extradata[pos + 2 : pos + 2 + ln])
+        pos += 2 + ln
+    return nals if pos == len(extradata) else []
+
+
+# ---------------------------------------------------------------------------
+# movi チャンク走査
+# ---------------------------------------------------------------------------
+
+def iter_video_chunks(f, chunk_ids: tuple[bytes, bytes]):
+    """全 RIFF セグメント (OpenDML AVIX 含む) の movi 内ビデオチャンクを
+    (payload bytes, is_zero) で順に yield する。ネストした LIST (rec 等) も辿る。"""
+    f.seek(0)
+    while True:
+        tag = f.read(4)
+        if len(tag) < 4:
+            break
+        if tag != b"RIFF":
+            die(f"未知のトップレベルタグ {tag!r} (offset {f.tell() - 4})")
+        riff_size = int.from_bytes(f.read(4), "little")
+        riff_end = f.tell() + riff_size
+        f.read(4)  # 'AVI ' / 'AVIX'
+
+        stack = [(riff_end, False)]
+        while stack:
+            end, in_movi = stack[-1]
+            if f.tell() >= end:
+                stack.pop()
+                continue
+            cid = f.read(4)
+            if len(cid) < 4:
+                break
+            csize = int.from_bytes(f.read(4), "little")
+            if cid == b"LIST":
+                ltype = f.read(4)
+                stack.append((f.tell() + csize - 4, in_movi or ltype == b"movi"))
+            elif in_movi and cid in chunk_ids:
+                yield f.read(csize), csize == 0
+                if csize % 2:
+                    f.seek(1, 1)
+            else:
+                f.seek(csize + (csize % 2), 1)
+        f.seek(riff_end + (riff_size % 2))
+
+
+# ---------------------------------------------------------------------------
+# ビットストリーム形式の判定
+# ---------------------------------------------------------------------------
+
+def probe_prefix_size(chunks: list[bytes]) -> int | None:
+    """長さプレフィックスのバイト幅 (4/2/1) を推定する。Annex-B なら None ではなく
+    呼び出し元で先に判定すること。どれも合わなければ None。"""
+    for psize in (4, 2, 1):
+        remaining = 0
+        hdr = b""
+        ok = True
+        nal_count = 0
+        for chunk in chunks:
+            pos = 0
+            while pos < len(chunk):
+                if remaining > 0:
+                    take = min(remaining, len(chunk) - pos)
+                    remaining -= take
+                    pos += take
+                    continue
+                need = psize - len(hdr)
+                hdr += chunk[pos : pos + need]
+                pos += min(need, len(chunk) - pos)
+                if len(hdr) < psize:
+                    break
+                ln = int.from_bytes(hdr, "big")
+                hdr = b""
+                if ln == 0 or ln > NAL_LENGTH_CAP:
+                    ok = False
+                    break
+                # 次のバイト (NAL ヘッダ) の forbidden_zero_bit を確認
+                if pos < len(chunk) and chunk[pos] & 0x80:
+                    ok = False
+                    break
+                remaining = ln
+                nal_count += 1
+            if not ok:
+                break
+        if ok and nal_count >= max(1, int(len(chunks) * 0.9)):
+            return psize
+    return None
+
+
+# ---------------------------------------------------------------------------
+# 抽出 + Annex-B 変換
+# ---------------------------------------------------------------------------
+
+class ExtractResult:
+    def __init__(self):
+        self.chunks = 0          # ビデオチャンク総数 (= フレームスロット数)
+        self.zero_chunks = 0     # サイズ 0 チャンク (ドロップフレームスロット)
+        self.nals = 0
+        self.frames = 0          # first_mb_in_slice==0 のスライス数 (= ピクチャ数)
+        self.b_slices = 0        # B スライス数 (>0 なら表示順再構築に MP4Box が必要)
+        self.has_inband_sps = False
+        self.payload_bytes = 0
+
+
+def parse_slice_head(peek: bytes) -> tuple[bool, bool]:
+    """NAL 先頭バイト列から (first_mb_in_slice==0, B スライスか) を返す。
+    slice header は first_mb_in_slice (ue) → slice_type (ue) で始まる。
+    first_mb==0 のとき先頭ビットは '1' で、エミュレーション防止バイト
+    (00 00 03) は混入し得ないため raw ビット読みで安全。"""
+    if len(peek) < 3:
+        return False, False
+    bits = (peek[1] << 8) | peek[2]
+    pos = 15  # MSB から読む
+
+    def read_ue() -> int:
+        nonlocal pos
+        zeros = 0
+        while pos >= 0 and not (bits >> pos) & 1:
+            zeros += 1
+            pos -= 1
+        if pos < 0 or zeros > 7:
+            raise ValueError
+        pos -= 1
+        val = 0
+        for _ in range(zeros):
+            val = (val << 1) | ((bits >> pos) & 1)
+            pos -= 1
+        return (1 << zeros) - 1 + val
+
+    try:
+        first_mb = read_ue()
+        slice_type = read_ue()
+    except ValueError:
+        return False, False
+    return first_mb == 0, slice_type in (1, 6)  # 1/6 = B slice
+
+
+def extract_to_annexb(f, chunk_ids, psize: int, prepend_nals: list[bytes], dst_path: Path) -> ExtractResult:
+    res = ExtractResult()
+    remaining = 0
+    hdr = b""
+    peek = b""       # NAL 先頭 2 バイト (種別 + first_mb 判定用) の収集バッファ
+    peeking = False
+
+    with open(dst_path, "wb") as dst:
+        for nal in prepend_nals:
+            dst.write(START_CODE + nal)
+
+        for chunk, is_zero in iter_video_chunks(f, chunk_ids):
+            res.chunks += 1
+            if is_zero:
+                res.zero_chunks += 1
+                continue
+            res.payload_bytes += len(chunk)
+            pos = 0
+            while pos < len(chunk):
+                if remaining > 0:
+                    take = min(remaining, len(chunk) - pos)
+                    if peeking:
+                        grab = chunk[pos : pos + min(take, 3 - len(peek))]
+                        peek += grab
+                        if len(peek) >= 3 or take == remaining:
+                            t = peek[0] & 0x1F
+                            if t == 7:
+                                res.has_inband_sps = True
+                            if t in (1, 5):
+                                new_pic, is_b = parse_slice_head(peek)
+                                if new_pic:
+                                    res.frames += 1
+                                if is_b:
+                                    res.b_slices += 1
+                            peeking = False
+                    dst.write(chunk[pos : pos + take])
+                    remaining -= take
+                    pos += take
+                    continue
+                need = psize - len(hdr)
+                hdr += chunk[pos : pos + need]
+                pos += min(need, len(chunk) - pos)
+                if len(hdr) < psize:
+                    break  # 長さプレフィックスがチャンク跨ぎ
+                ln = int.from_bytes(hdr, "big")
+                hdr = b""
+                if ln == 0 or ln > NAL_LENGTH_CAP:
+                    die(f"NAL 長 {ln} が不正です (チャンク {res.chunks} 付近で desync)")
+                remaining = ln
+                res.nals += 1
+                peek = b""
+                peeking = True
+                dst.write(START_CODE)
+
+    if remaining or hdr:
+        die("ストリームが NAL の途中で終わっています (desync)")
+    return res
+
+
+# ---------------------------------------------------------------------------
+# ffmpeg / ffprobe ヘルパ
+# ---------------------------------------------------------------------------
+
+def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, capture_output=True, text=True, **kw)
+
+
+def ffprobe_json(path: Path, *args: str) -> dict:
+    p = run(["ffprobe", "-v", "error", "-of", "json", *args, str(path)])
+    if p.returncode != 0:
+        die(f"ffprobe 失敗: {p.stderr.strip()}")
+    return json.loads(p.stdout)
+
+
+def audio_codecs(streams: list[StreamInfo]) -> list[tuple[str, bool]]:
+    """自前パース済みの AVI ヘッダから (コーデック名, mp4格納可) を返す。
+    破損ファイルには ffprobe 自体が失敗することがあるため ffprobe には頼らない。"""
+    result = []
+    for s in streams:
+        if s.fcc_type == b"auds":
+            name, safe = AUDIO_FORMAT_TAGS.get(
+                s.audio_format_tag, (f"tag=0x{s.audio_format_tag:04x}", False)
+            )
+            result.append((name, safe))
+    return result
+
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    args = [a for a in sys.argv[1:] if a != "--check"]
+    check_only = "--check" in sys.argv[1:]
+    if not 1 <= len(args) <= 2:
+        print(__doc__.strip(), file=sys.stderr)
+        sys.exit(1)
+
+    in_path = Path(args[0]).resolve()
+    if not in_path.is_file():
+        die(f"入力ファイルがありません: {in_path}")
+
+    f = open(in_path, "rb")
+    streams = parse_avi_header(f)
+    video = next((s for s in streams if s.fcc_type == b"vids"), None)
+    if video is None:
+        die("ビデオストリームが見つかりません", 2)
+    if video.compression not in H264_FOURCCS:
+        die(f"ビデオコーデックが H.264 ではありません (fourcc={video.compression!r})。"
+            "本ツールの対象外です", 2)
+    if not (video.scale and video.rate):
+        die("strh から fps を取得できません")
+    fps = Fraction(video.rate, video.scale)
+    chunk_ids = (f"{video.index:02d}dc".encode(), f"{video.index:02d}db".encode())
+
+    # --- ビットストリーム形式判定 (先頭チャンクをサンプリング) ---
+    probe_chunks = []
+    for chunk, is_zero in iter_video_chunks(f, chunk_ids):
+        if not is_zero:
+            probe_chunks.append(chunk)
+        if len(probe_chunks) >= 200:
+            break
+    if not probe_chunks:
+        die("ビデオチャンクが見つかりません")
+    head = probe_chunks[0]
+    if head.startswith(b"\x00\x00\x01") or head.startswith(b"\x00\x00\x00\x01"):
+        die("ビットストリームは Annex-B 形式で格納されており、本ツールの修復対象では"
+            "ありません (別の原因を疑ってください。video_health で診断可)", 2)
+    psize = probe_prefix_size(probe_chunks)
+    if psize is None:
+        die("長さプレフィックス形式として解釈できません。"
+            "AVCC-in-AVI 以外の破損の可能性があります", 2)
+
+    # --- SPS/PPS ---
+    param_nals = [n for n in parse_extradata_nals(video.extradata) if n and (n[0] & 0x1F) in (7, 8)]
+    sps_source = "extradata"
+    if not any((n[0] & 0x1F) == 7 for n in param_nals):
+        # extradata に SPS が無い場合は in-band (ストリーム内) を期待する
+        param_nals = []
+        sps_source = "in-band"
+
+    print(f"検出: H.264 (fourcc={video.compression.decode(errors='replace')}) / "
+          f"AVCC {psize}-byte 長プレフィックス / fps={fps} ({float(fps):.3f}) / "
+          f"SPS/PPS={sps_source}")
+
+    if check_only:
+        print("→ 修復対象です。--check なしで実行すると修復します")
+        sys.exit(0)
+
+    # --- 出力先とコンテナ ---
+    acodecs = audio_codecs(streams)
+    container = "mp4" if all(safe for _, safe in acodecs) else "mkv"
+    if len(args) == 2:
+        out_path = Path(args[1]).resolve()
+        if out_path.suffix.lower() in (".mp4", ".mkv"):
+            container = out_path.suffix.lower()[1:]
+    else:
+        out_path = in_path.with_name(f"{in_path.stem}_fixed.{container}")
+    if out_path == in_path:
+        die("出力先が入力と同じです")
+    if acodecs:
+        print(f"音声: {', '.join(name for name, _ in acodecs)} → コンテナ {container}")
+    else:
+        print(f"音声: なし → コンテナ {container}")
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix=".repair-avcc-avi.", dir=out_path.parent))
+    try:
+        # --- 抽出 + Annex-B 変換 ---
+        raw_h264 = tmp_dir / "video.h264"
+        print("ビデオストリームを抽出中 (RIFF 直接パース)...")
+        res = extract_to_annexb(f, chunk_ids, psize, param_nals, raw_h264)
+        f.close()
+        if sps_source == "in-band" and not res.has_inband_sps:
+            die("SPS が extradata にもストリーム内にも見つかりません。修復できません")
+        print(f"  チャンク {res.chunks} (サイズ0: {res.zero_chunks}) / "
+              f"NAL {res.nals} / フレーム {res.frames} / {res.payload_bytes} bytes")
+
+        # --- mux pass 1: raw Annex-B → 一時コンテナ (タイムスタンプ生成) ---
+        # raw h264 入力に直接 -itsoffset を付けても -r のタイムスタンプ生成で
+        # 無視されるため、いったんコンテナに入れてから pass 2 でオフセットを適用する。
+        #
+        # B スライスを含むストリームは MP4Box (gpac) で import する。
+        # ffmpeg の raw h264 demuxer は表示順 (POC) を解析せず pts=dts で
+        # mux するため、B フレームの表示タイミングが壊れてジャダーになる。
+        # MP4Box は POC から正しい ctts (composition offset) を再構築できる。
+        cfr_mp4 = tmp_dir / "video.mp4"
+        if res.b_slices and shutil.which("MP4Box"):
+            p = run(["MP4Box", "-quiet", "-add",
+                     f"{raw_h264}:fps={fps.numerator}/{fps.denominator}",
+                     "-new", str(cfr_mp4)])
+            if p.returncode != 0:
+                die(f"MP4Box (pass1) 失敗: {p.stderr.strip()[-500:]}")
+        elif res.b_slices:
+            die("B フレームを含むストリームの修復には MP4Box が必要です。"
+                "`brew install gpac` でインストールしてください")
+        else:
+            p = run(["ffmpeg", "-v", "error", "-y", "-fflags", "+genpts",
+                     "-r", f"{fps.numerator}/{fps.denominator}",
+                     "-i", str(raw_h264), "-c", "copy", str(cfr_mp4)])
+            if p.returncode != 0:
+                die(f"ffmpeg (pass1) 失敗: {p.stderr.strip()[-500:]}")
+
+        # フレームスロット数 (= AVI チャンク数) と pass1 後の実サンプル数の差分だけ
+        # 映像の開始を遅らせて音声との同期を保つ (スロット = 1/fps)。
+        # 差分の内訳: サイズ 0 チャンク (ドロップフレームスロット) と、
+        # MP4Box が同一 POC の重複フレームを 1 サンプルに併合した分。
+        p1info = ffprobe_json(cfr_mp4, "-show_streams")
+        muxed_frames = int(p1info["streams"][0].get("nb_frames") or res.frames)
+        offset_slots = max(0, res.chunks - muxed_frames)
+        offset_sec = float(offset_slots / fps)
+        if offset_slots:
+            print(f"  フレームスロット補正: {offset_slots} slots = {offset_sec:.3f}s "
+                  f"(サイズ0チャンク {res.zero_chunks}, 重複併合 {res.frames - muxed_frames})")
+            if offset_sec > 1.0:
+                print(f"  ⚠ 補正が {offset_sec:.1f}s と大きく、スロットの分布によっては"
+                      "中間部で音ズレが残る可能性があります", file=sys.stderr)
+
+        # --- mux pass 2: 音声と結合 ---
+        cmd = ["ffmpeg", "-v", "error", "-y"]
+        if offset_slots:
+            cmd += ["-itsoffset", f"{offset_sec:.6f}"]
+        cmd += ["-i", str(cfr_mp4)]
+        if acodecs:
+            cmd += ["-i", str(in_path), "-map", "0:v", "-map", "1:a"]
+        else:
+            cmd += ["-map", "0:v"]
+        cmd += ["-c", "copy"]
+        if container == "mp4":
+            cmd += ["-movflags", "+faststart"]
+        cmd += [str(out_path)]
+        print("音声と再 mux 中...")
+        p = run(cmd)
+        if p.returncode != 0:
+            die(f"ffmpeg (pass2) 失敗: {p.stderr.strip()[-500:]}")
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    # --- 検証 ---
+    print("検証中...")
+    info = ffprobe_json(out_path, "-show_streams", "-show_format")
+    vstreams = [s for s in info["streams"] if s["codec_type"] == "video"]
+    astreams = [s for s in info["streams"] if s["codec_type"] == "audio"]
+    # MKV はストリーム側に duration が乗らないことがあるため format 側にフォールバック
+    vdur = float(vstreams[0].get("duration") or info["format"].get("duration") or 0)
+    nb_frames = int(vstreams[0].get("nb_frames") or 0)
+    errors = []
+
+    if nb_frames and abs(nb_frames - muxed_frames) > max(10, muxed_frames // 1000):
+        errors.append(f"フレーム数不一致: pass1 {muxed_frames} / 出力 {nb_frames}")
+    if astreams:
+        adur = float(astreams[0].get("duration") or 0)
+        if adur and abs(vdur - adur) > 1.0:
+            errors.append(f"映像/音声の長さが {abs(vdur - adur):.1f}s ずれています "
+                          f"(video={vdur:.1f}s audio={adur:.1f}s)")
+
+    for ratio in (0.01, 0.5, 0.98):
+        t = vdur * ratio
+        p = run(["ffmpeg", "-v", "error", "-ss", f"{t:.1f}", "-i", str(out_path),
+                 "-frames:v", "5", "-f", "null", "-"])
+        bad = [l for l in p.stderr.splitlines()
+               if ("error" in l.lower() or "no frame" in l) and "co located" not in l]
+        if p.returncode != 0 or bad:
+            errors.append(f"t={t:.0f}s のデコードに失敗: {(bad or [p.stderr.strip()])[0]}")
+
+    # 表示順タイムスタンプの単調増加チェック (B フレームの pts 再構築漏れを検出)
+    p = run(["ffprobe", "-v", "error", "-select_streams", "v",
+             "-show_entries", "frame=best_effort_timestamp_time", "-of", "csv",
+             "-read_intervals", "%+#90", str(out_path)])
+    ts = [float(l.split(",")[1]) for l in p.stdout.splitlines()
+          if "," in l and l.split(",")[1] not in ("N/A", "")]
+    if len(ts) >= 2:
+        deltas = [b - a for a, b in zip(ts, ts[1:])]
+        if min(deltas) <= 0:
+            errors.append("表示順タイムスタンプが単調増加していません (B フレームの順序破壊)")
+        elif max(deltas) > float(2.5 / fps):
+            errors.append(f"表示順タイムスタンプに {max(deltas):.3f}s の飛びがあります")
+
+    if errors:
+        for e in errors:
+            print(f"✗ {e}", file=sys.stderr)
+        print(f"出力は {out_path} に残してありますが、検証に失敗しました", file=sys.stderr)
+        sys.exit(1)
+
+    nb = nb_frames or res.frames
+    print(f"✓ 修復完了: {out_path}")
+    print(f"  {nb} frames / {vdur:.1f}s / 再エンコードなし (無劣化)。元ファイルは未変更です")
+
+
+if __name__ == "__main__":
+    main()
