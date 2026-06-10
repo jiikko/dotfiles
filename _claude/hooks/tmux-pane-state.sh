@@ -17,8 +17,10 @@
 #
 # 通知条件 = 「画面で状態表示が見えていないとき」だけ:
 # - そのペインのウィンドウがどのクライアントでも前面でない (window_active_clients=0)
-# - またはターミナル自体が非アクティブ (@term_unfocused、_tmux.conf の
-#   client-focus-in/out フックがセットする)
+# NOTE: かつては「ターミナル自体が非アクティブ (@term_unfocused)」も条件だったが、
+# 供給元の client-focus-in/out フックを誤判定のため削除した (_tmux.conf 側の
+# NOTE 参照、2026-06-10) のに伴い本条件も撤去。ターミナルが背面でも claude
+# ウィンドウが tmux 内で前面なら通知は出ない (許容)
 set -uo pipefail
 unset CDPATH
 
@@ -30,10 +32,9 @@ set_state() { tmux set -p -t "$TMUX_PANE" @claude_state "$1" 2>/dev/null; }
 notify_if_hidden() {
   local message="$1" sound="${2:-}"
   command -v terminal-notifier >/dev/null 2>&1 || return 0
-  local visible unfocused target
+  local visible target
   visible=$(tmux display -p -t "$TMUX_PANE" '#{window_active_clients}' 2>/dev/null) || return 0
-  unfocused=$(tmux show -gqv @term_unfocused 2>/dev/null || true)
-  if [ "${visible:-0}" = "0" ] || [ -n "$unfocused" ]; then
+  if [ "${visible:-0}" = "0" ]; then
     target=$(tmux display -p -t "$TMUX_PANE" '#{session_name}:#{window_index}' 2>/dev/null)
     # -group で同一ペインの通知を上書き (通知センターに溜めない)。
     # バックグラウンド起動で hook の応答を遅らせない
