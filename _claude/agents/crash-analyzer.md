@@ -1,6 +1,6 @@
 ---
 name: crash-analyzer
-description: "Use when: app crashes during testing or development. Automatically fetches the latest crash report, analyzes the stack trace, identifies the root cause, and suggests fixes.\n\nExamples:\n\n<example>\nContext: User reports app crashed during smoke test.\nuser: \"The app just crashed when I clicked export\"\nassistant: \"I'll use the crash-analyzer agent to investigate the crash.\"\n</example>\n\n<example>\nContext: User wants to analyze a recent crash.\nuser: \"Check the latest crash log and tell me what happened\"\nassistant: \"Let me launch the crash-analyzer agent to examine the crash report.\"\n</example>\n\n<example>\nContext: Smoke test agent detected a crash.\nassistant: \"Crash detected during smoke test. Launching crash-analyzer agent to investigate.\"\n</example>"
+description: "Use when: app crashes during testing or development. Automatically fetches the latest crash report, analyzes the stack trace, identifies the root cause, and suggests fixes."
 model: sonnet
 color: red
 ---

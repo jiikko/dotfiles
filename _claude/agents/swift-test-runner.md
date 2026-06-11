@@ -1,6 +1,6 @@
 ---
 name: swift-test-runner
-description: "Use when: running Swift/SwiftUI tests and debugging test failures. This is the primary agent for: executing make test, interpreting test results, fixing failing tests, and running specific test cases. Use alongside swiftui-test-expert for test strategy/design and swift-language-expert for language issues.\n\nExamples:\n\n<example>\nContext: User wants to run tests after implementing a feature.\nuser: \"Run the tests to make sure my changes work\"\nassistant: \"Let me use the swift-test-runner agent to run the tests and check for any failures.\"\n</example>\n\n<example>\nContext: Tests are failing and user needs help fixing them.\nuser: \"The tests are failing, can you fix them?\"\nassistant: \"I'll use the swift-test-runner agent to analyze the test failures and fix them.\"\n</example>\n\n<example>\nContext: User wants to run a specific test.\nuser: \"Run only the TextElementTests\"\nassistant: \"Let me use the swift-test-runner agent to run that specific test class.\"\n</example>"
+description: "Use when: running Swift/SwiftUI tests and debugging test failures. This is the primary agent for: executing make test, interpreting test results, fixing failing tests, and running specific test cases. Use alongside swiftui-test-expert for test strategy/design and swift-language-expert for language issues."
 model: sonnet
 color: blue
 ---

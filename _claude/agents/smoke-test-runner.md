@@ -1,6 +1,6 @@
 ---
 name: smoke-test-runner
-description: "Use when: running comprehensive smoke tests for ThumbnailThumb app. Executes API tests using bin/tt-client with three coverage levels: quick (~10 items), standard (~30 items), or complete (~60 items). Automatically detects crashes and escalates to debugger agent.\n\nExamples:\n\n<example>\nContext: User wants to verify app functionality after changes.\nuser: \"Run smoke tests to make sure everything works\"\nassistant: \"I'll use the smoke-test-runner agent to run comprehensive tests.\"\n</example>\n\n<example>\nContext: User wants a quick sanity check.\nuser: \"Quick smoke test please\"\nassistant: \"Let me launch the smoke-test-runner agent for a quick verification.\"\n</example>\n\n<example>\nContext: After implementing a feature, verify it didn't break anything.\nassistant: \"Feature implemented. Launching smoke-test-runner agent to verify no regressions.\"\n</example>"
+description: "Use when: running comprehensive smoke tests for ThumbnailThumb app. Executes API tests using bin/tt-client with three coverage levels: quick (~10 items), standard (~30 items), or complete (~60 items). Automatically detects crashes and escalates to debugger agent."
 model: sonnet
 color: green
 ---

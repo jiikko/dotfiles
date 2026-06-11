@@ -1,6 +1,6 @@
 ---
 name: tt-api-expert
-description: "Use when: working with ThumbnailThumb API mode, testing API endpoints, or debugging API-related issues. Expert in bin/tt-client usage, API testing patterns, crash log analysis, and issue reporting for ThumbnailThumb app.\n\nExamples:\n\n<example>\nContext: User wants to test API functionality.\nuser: \"Test the text element API\"\nassistant: \"I'll use the tt-api-expert agent to test the text element API endpoints.\"\n</example>\n\n<example>\nContext: User reports API is not responding.\nuser: \"The API returns an error when adding images\"\nassistant: \"Let me launch the tt-api-expert agent to investigate the API issue.\"\n</example>\n\n<example>\nContext: User wants to verify API behavior.\nuser: \"Check if the export endpoint works correctly\"\nassistant: \"I'll use the tt-api-expert agent to test the export functionality.\"\n</example>"
+description: "Use when: working with ThumbnailThumb API mode, testing API endpoints, or debugging API-related issues. Expert in bin/tt-client usage, API testing patterns, crash log analysis, and issue reporting for ThumbnailThumb app."
 model: sonnet
 color: cyan
 ---

@@ -1,6 +1,6 @@
 ---
 name: xcodebuild-runner
-description: "Use when: running make build to verify code compiles successfully. Automatically executes xcodebuild, analyzes errors, and provides fix recommendations.\n\nExamples:\n\n<example>\nContext: User wants to verify code compiles after changes.\nuser: \"Run make build to check if it compiles\"\nassistant: \"I'll use the xcodebuild-runner agent to run the build and analyze any errors.\"\n</example>\n\n<example>\nContext: After making code changes, proactively validate build.\nassistant: \"I've completed the refactoring. Let me use the xcodebuild-runner agent to ensure the code still compiles.\"\n</example>\n\n<example>\nContext: User reports build failure.\nuser: \"Build is failing, can you check why?\"\nassistant: \"Let me use the xcodebuild-runner agent to analyze the build errors.\"\n</example>"
+description: "Use when: running make build to verify code compiles successfully. Automatically executes xcodebuild, analyzes errors, and provides fix recommendations."
 model: haiku
 color: green
 ---
