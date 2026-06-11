@@ -82,7 +82,7 @@
 | パフォーマンス分析, perf.log, ボトルネック | `~/.claude/skills/perf-analysis/SKILL.md` |
 | スモークテスト, smoke test, tt-client, 動作確認 | `~/.claude/skills/smoke-test/SKILL.md` |
 | WCAG, アクセシビリティ, ダークモード, スタイルレビュー | `~/.claude/skills/style-review/SKILL.md` |
-| VLCKit, MobileVLCKit, VLCMediaPlayer, RTSP, HLS, RTMP, メディア再生 | `~/.claude/skills/swift-vlc-player/SKILL.md` |
+| AVFoundation, AVPlayer, 動画再生, seek, scrub, frame stepping | `~/.claude/skills/avfoundation-reference/SKILL.md` |
 | watchOS, Apple Watch, WatchKit, WatchConnectivity, HealthKit, コンプリケーション | `~/.claude/skills/watchos-expert/SKILL.md` |
 | App Store, TestFlight, 審査, リジェクト, App Store Connect | agent: `appstore-submission-expert` |
 | issue-sync, issue同期, 完了漏れ, done移動 | `~/.claude/skills/issue-sync/SKILL.md` |
@@ -90,4 +90,5 @@
 | codex-review, Codexレビュー, コードレビュー依頼 | `~/.claude/skills/codex-review/SKILL.md` |
 | codexにリード, codex主導で着手, 設計から codex に任せて, codex-lead | `~/.claude/skills/codex-lead/SKILL.md` |
 | cross-review, クロスレビュー, 複数視点レビュー | `~/.claude/skills/cross-review/SKILL.md` |
-| gemini, gemini委譲, mass replacement, mass rename, 機械的置換 | `~/.claude/skills/gemini-delegation/SKILL.md` |
+| レビューループ, review-loop, make review | `~/.claude/skills/review-loop/SKILL.md` |
+| 視認性, 色被り, UXレビュー | `~/.claude/skills/ux-visibility-review/SKILL.md` |
