@@ -115,29 +115,42 @@ seven_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // emp
 # resets_at: 各ウィンドウがリセットされる時刻 (Unix epoch 秒)。残り時間表示に使う
 five_reset=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty' 2>/dev/null)
 seven_reset=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty' 2>/dev/null)
-gray_fg="\033[90m"
+# 残り時間ラベルの色。90 (dark gray) は暗すぎたので 37 (light gray) にしている
+gray_fg="\033[37m"
 now=$(date +%s)
+
+# リセット時刻到達後の強調色。SGR 5 (blink) は端末/tmux の対応に依存するため、
+# 再描画ごとに epoch 秒の偶奇で赤/黄を入れ替える擬似点滅を重ねる
+# (描画が更新されない間は片方の色で止まる)。
+blink_color() {
+  if [ $(( now % 2 )) -eq 0 ]; then
+    printf "\033[5;1;31m"  # blink bold red
+  else
+    printf "\033[5;1;33m"  # blink bold yellow
+  fi
+}
+
+# 1 ウィンドウ分のセグメント: "5h:[████]87%(残:1時間23分)"。
+# resets_at を過ぎてもデータが更新されるまでは消さず、"(リセット!)" を点滅表示する。
+rate_segment() {
+  seg_label=$1; seg_pct=$2; seg_reset_at=$3
+  p=${seg_pct%.*}
+  printf "%s%s:[%s]%s%%%s" "$(rate_color "$p")" "$seg_label" "$(rate_bar "$p")" "$p" "$reset"
+  if [ -n "$seg_reset_at" ] && [ "$seg_reset_at" -gt "$now" ] 2>/dev/null; then
+    printf "%s(残:%s)%s" "$gray_fg" "$(fmt_remaining $(( seg_reset_at - now )))" "$reset"
+  elif [ -n "$seg_reset_at" ] && [ "$seg_reset_at" -gt 0 ] 2>/dev/null; then
+    printf "%s(リセット!)%s" "$(blink_color)" "$reset"
+  fi
+}
 
 if [ -n "$five_pct" ] || [ -n "$seven_pct" ]; then
   parts=""
   if [ -n "$five_pct" ]; then
-    p=${five_pct%.*}
-    c=$(rate_color "$p")
-    b=$(rate_bar "$p")
-    parts="${c}5h:[${b}]${p}%${reset}"
-    if [ -n "$five_reset" ] 2>/dev/null && [ "$five_reset" -gt "$now" ] 2>/dev/null; then
-      parts="${parts}${gray_fg}(残:$(fmt_remaining $(( five_reset - now ))))${reset}"
-    fi
+    parts="$(rate_segment 5h "$five_pct" "$five_reset")"
   fi
   if [ -n "$seven_pct" ]; then
-    p=${seven_pct%.*}
-    c=$(rate_color "$p")
-    b=$(rate_bar "$p")
     [ -n "$parts" ] && parts="$parts " || true
-    parts="${parts}${c}7d:[${b}]${p}%${reset}"
-    if [ -n "$seven_reset" ] 2>/dev/null && [ "$seven_reset" -gt "$now" ] 2>/dev/null; then
-      parts="${parts}${gray_fg}(残:$(fmt_remaining $(( seven_reset - now ))))${reset}"
-    fi
+    parts="${parts}$(rate_segment 7d "$seven_pct" "$seven_reset")"
   fi
   rate_part=" ${parts}"
 fi
