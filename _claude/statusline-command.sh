@@ -137,7 +137,8 @@ rate_segment() {
   p=${seg_pct%.*}
   printf "%s%s:[%s]%s%%%s" "$(rate_color "$p")" "$seg_label" "$(rate_bar "$p")" "$p" "$reset"
   if [ -n "$seg_reset_at" ] && [ "$seg_reset_at" -gt "$now" ] 2>/dev/null; then
-    printf "%s(残:%s)%s" "$gray_fg" "$(fmt_remaining $(( seg_reset_at - now )))" "$reset"
+    # date -r は BSD (macOS) 形式。%-m / %-d はゼロ埋めなし
+    printf "%s(残:%s / %s)%s" "$gray_fg" "$(fmt_remaining $(( seg_reset_at - now )))" "$(date -r "$seg_reset_at" "+%-m月%-d日%H:%M")" "$reset"
   elif [ -n "$seg_reset_at" ] && [ "$seg_reset_at" -gt 0 ] 2>/dev/null; then
     printf "%s(リセット!)%s" "$(blink_color)" "$reset"
   fi
