@@ -41,6 +41,20 @@ done
 for f in ~/dotfiles/_claude/hooks/*; do
   [ -e "$f" ] && ln -sfn "$f" ~/.claude/hooks/"$(basename "$f")"
 done
+# dotfiles 側で削除されたファイルの symlink が残ると壊れたリンクになるので掃除する。
+# dotfiles/_claude 配下を指すリンクだけを対象にし、ユーザーが手動で張った別由来のリンクは触らない
+for dir in ~/.claude/agents ~/.claude/skills ~/.claude/rules ~/.claude/hooks; do
+  for link in "$dir"/*; do
+    if [ -L "$link" ] && [ ! -e "$link" ]; then
+      case "$(readlink "$link")" in
+        "$HOME"/dotfiles/_claude/*)
+          echo "removing dangling symlink $link"
+          rm "$link"
+          ;;
+      esac
+    fi
+  done
+done
 ln -sf ~/dotfiles/_claude/keybindings.json ~/.claude/keybindings.json
 ln -sf ~/dotfiles/_claude/CLAUDE.md ~/.claude/CLAUDE.md
 ln -sf ~/dotfiles/_claude/statusline-command.sh ~/.claude/statusline-command.sh
