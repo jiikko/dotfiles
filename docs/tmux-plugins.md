@@ -63,7 +63,8 @@ $ tmux
 
 ## 前提条件
 
-- tmux 1.9 以上
+- tmux 3.6 推奨（現行設定は `pane-scrollbars modal` など tmux 3.6 系の機能を使う）
+- 最低ラインは tmux 3.4 以上（`pane-border-indicators` など 3.x の新しめの機能を前提）
 - bash（プラグインが bash 前提）
 - git（`git pull` 用）
 
@@ -129,6 +130,12 @@ Resurrect が保存・復元できるもの（代表例）：
 `~/.tmux.conf`（このリポジトリでは `_tmux.conf`）に書く。
 
 ```tmux
+# tmux 内の TERM
+set -g default-terminal "tmux-256color"
+
+# 外側ターミナルの機能を tmux に明示
+set -as terminal-features ",xterm*:RGB,clipboard,extkeys,focus,title"
+
 # 自動保存の間隔（分）。0 で無効化
 set -g @continuum-save-interval '30'
 
