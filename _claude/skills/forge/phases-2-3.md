@@ -234,7 +234,7 @@ Phase 3 セルフレビュー中に判定困難な問題が発生しました。
 ## Phase 3.5: スキル自動検証（VALIDATION）
 
 > **Minimum/Minimum+ モード**: このフェーズは省略
-> **詳細**: @_common/skill-triggers.md を参照
+> **詳細**: `~/.claude/skills/forge/_common/skill-triggers.md` を参照
 
 Phase 3 完了後、`skill-triggers.md` のトリガーレジストリに基づき、**VALIDATION カテゴリ**のスキルを自動実行する。
 

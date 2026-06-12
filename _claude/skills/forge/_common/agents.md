@@ -56,7 +56,7 @@
 
 ### クロスレビュー時の記号
 
-> **詳細**: `@_common/cross-review.md` の「出力形式」セクションを参照
+> **詳細**: `~/.claude/skills/forge/_common/cross-review.md` の「出力形式」セクションを参照
 
 | 記号 | 意味 |
 |------|------|
@@ -103,7 +103,7 @@
 }
 ```
 
-> **詳細**: `@_common/cross-review.md` の「構造化出力フォーマット」セクションを参照
+> **詳細**: `~/.claude/skills/forge/_common/cross-review.md` の「構造化出力フォーマット」セクションを参照
 
 ### 統合失敗時のリカバリー
 
@@ -287,7 +287,6 @@
 
 | 条件 | エージェント | モデル |
 |------|-------------|--------|
-| View/UI 変更を含む | swiftui-performance-expert | opus |
 | async/await, actor, Task を含む | swift-concurrency-expert | opus |
 | ファイル操作、外部入力、API 通信 | security-auditor | opus |
 

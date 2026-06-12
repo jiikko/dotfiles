@@ -3,7 +3,7 @@
 > **適用条件**: 実装モードが選択された場合のみ実行
 > **流れ**: Phase -1（モード選択）→ このフェーズ → Phase 2-3 → Phase 4
 > **注意**: Phase -1（モード選択）は SKILL.md を参照
-> **重要**: このファイル内の `@_common/` 参照は自動解決されません。SKILL.md の「共通ファイルの読み込み」セクションに従って、事前に Read してください。
+> **重要**: 共通ファイルは Phase -1 直後に一度 Read すれば全フェーズで有効（SKILL.md「共通ファイルの読み込み」参照）。このファイル内の共通ファイル参照は Read 済みであることを前提にしている。
 
 ## Phase 0: 要件確認（実装モードのみ）
 
@@ -41,7 +41,7 @@
 
 ### スキル候補の特定（Phase 0 完了時）
 
-> **詳細**: @_common/skill-triggers.md を参照
+> **詳細**: `~/.claude/skills/forge/_common/skill-triggers.md` を参照
 
 要件確認後、変更対象ファイルから自動起動スキルの候補を特定する:
 
@@ -61,31 +61,31 @@
 
 ## Phase 1: 事前調査 + 類似コード特定（実装モードのみ）
 
-> **モード別動作**: @_common/modes.md を参照
+> **モード別動作**: `~/.claude/skills/forge/_common/modes.md` を参照
 
 ### エージェント選択
 
-> **エージェント定義・プロンプト・選択ルール**: @_common/agents.md を参照
-> **モード別のエージェント数・実行方式**: @_common/modes.md を参照
+> **エージェント定義・プロンプト・選択ルール**: `~/.claude/skills/forge/_common/agents.md` を参照
+> **モード別のエージェント数・実行方式**: `~/.claude/skills/forge/_common/modes.md` を参照
 
 ---
 
 ## Phase 1.1: クロスレビュー（実装モードのみ）
 
 > **Minimum モード**: このフェーズは省略
-> **Minimum+ モード**: 実行（3エージェント間ペアリング。@_common/cross-review.md の「Minimum+ モード用ペアリング」を参照）
+> **Minimum+ モード**: 実行（3エージェント間ペアリング。`~/.claude/skills/forge/_common/cross-review.md` の「Minimum+ モード用ペアリング」を参照）
 > **Ultra モード**: このフェーズは省略（Phase 4.3 で代替）
 
 Phase 1 の各エージェント出力を、**別の観点を持つエージェントが検証**する。
 
 ### クロスレビュー仕様
 
-> **詳細**: @_common/cross-review.md を参照
+> **詳細**: `~/.claude/skills/forge/_common/cross-review.md` を参照
 
 ### 統合エージェントによる結果統合
 
 クロスレビュー完了後、**統合エージェント**を起動して結果を統合。
-統合プロンプトは @_common/cross-review.md の「Phase 1.1 統合用」を参照。
+統合プロンプトは `~/.claude/skills/forge/_common/cross-review.md` の「Phase 1.1 統合用」を参照。
 
 ### 調査結果の確認（ユーザー確認ポイント）
 

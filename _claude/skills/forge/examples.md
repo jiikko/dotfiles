@@ -2,8 +2,8 @@
 
 フレームワーク/言語別の具体例は以下を参照:
 
-- @forge/examples-swiftui.md - Swift/SwiftUI プロジェクト
-- @forge/examples-electron.md - Electron/Node.js プロジェクト
+- `~/.claude/skills/forge/examples-swiftui.md` - Swift/SwiftUI プロジェクト
+- `~/.claude/skills/forge/examples-electron.md` - Electron/Node.js プロジェクト
 
 ## フロー概要
 
@@ -25,6 +25,7 @@ Phase 4.1 → クロスレビュー
 Phase 4.2 → 統合レビュー
 Phase 4.5 → デバッグ支援（エラー発生時）
 Phase 5  → 修正と収束
+Phase 5.3 → Codex Review（全モード必須）
 Phase 5.5 → スキルテスト（TESTING）
 → 完了レポート
 ```
@@ -40,6 +41,7 @@ Phase 4.1 → クロスレビュー
 Phase 4.2 → 統合レビュー
 Phase 4.5 → デバッグ支援（エラー発生時）
 Phase 5  → 修正と収束
+Phase 5.3 → Codex Review（全モード必須）
 Phase 5.5 → スキルテスト（TESTING）
 → 完了レポート
 ```

@@ -95,7 +95,7 @@ Phase 4.2 の「矛盾の解決」ルールに従う。
 
 ### DIAGNOSTIC スキル連携（Phase 4.5+）
 
-> **詳細**: @_common/skill-triggers.md の「Phase 4.5+」セクションを参照
+> **詳細**: `~/.claude/skills/forge/_common/skill-triggers.md` の「Phase 4.5+」セクションを参照
 
 Phase 4 の統合結果に `performance` カテゴリの High 指摘が含まれる場合、`perf-analysis` の自動実行を提案:
 
@@ -155,7 +155,7 @@ Phase 5 の修正が収束した後、`/codex-review` スキルを使って Code
 ## Phase 5.5: スキルテスト（TESTING）
 
 > **Minimum/Minimum+/Standard モード**: このフェーズは省略
-> **詳細**: @_common/skill-triggers.md の「Phase 5.5」セクションを参照
+> **詳細**: `~/.claude/skills/forge/_common/skill-triggers.md` の「Phase 5.5」セクションを参照
 
 Phase 5 の修正が収束した後、**TESTING カテゴリ**のスキルを実行する。
 
@@ -186,7 +186,7 @@ Phase 5 の修正が収束した後、**TESTING カテゴリ**のスキルを実
 [タスク説明 or ファイル/ディレクトリ]
 
 ### モード
-[実装 / レビュー]
+[実装 / レビュー] / [Minimum / Minimum+ / Standard / Maximum / Ultra]
 
 ### 実施サイクル数
 [N] サイクル

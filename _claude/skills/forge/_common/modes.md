@@ -29,7 +29,7 @@
   - swiftui-test-expert
 - **クロスレビュー**: Phase 1.1 / Phase 4.1 を実行（3エージェント間ペアリング）
 - **統合**: Phase 4.2 を実行
-- **ペアリング**: @_common/cross-review.md の「Minimum+ モード用ペアリング」を参照
+- **ペアリング**: `~/.claude/skills/forge/_common/cross-review.md` の「Minimum+ モード用ペアリング」を参照
 
 ### Standard モード
 - **エージェント**: 必須6+1エージェントを**並行実行**
