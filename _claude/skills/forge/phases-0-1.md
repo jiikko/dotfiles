@@ -53,7 +53,6 @@
 ```
 スキル自動実行予定:
 - style-review (VALIDATION, Phase 3.5) - CSS ファイルの変更を検出
-- smoke-test (TESTING, Phase 5.5) - ThumbnailThumb 関連の変更を検出 [要確認]
 ```
 
 > **注意**: `applicable_skills` がない場合（検出パターンに該当なし）はスキル表示を省略し、Phase 3.5/5.5 も自動スキップとなる。

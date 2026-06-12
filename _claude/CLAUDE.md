@@ -76,11 +76,9 @@
 | 監査, audit, コードレビュー全体 | `~/.claude/skills/audit/SKILL.md` |
 | コミット, commit, git commit | `~/.claude/skills/c/SKILL.md` |
 | forge, 専門家実装, クロスレビュー | `~/.claude/skills/forge/SKILL.md` |
-| CSS, Node.js, Electron, フロントエンド, デスクトップアプリ | `~/.claude/skills/frontend-desktop-dev/SKILL.md` |
+| CSS, Node.js, Electron, フロントエンド, デスクトップアプリ | agent: `css-expert` / `nodejs-expert` / `electron-expert` |
 | iOS, iPhone, XcodeGen, SPM, code signing, AVFoundation, @rpath | `~/.claude/skills/ios-app-developer/SKILL.md` |
-| iOS Simulator, シミュレータ, xcrun simctl, UIテスト自動化 | `~/.claude/skills/ios-simulator-skill/SKILL.md` |
 | パフォーマンス分析, perf.log, ボトルネック | `~/.claude/skills/perf-analysis/SKILL.md` |
-| スモークテスト, smoke test, tt-client, 動作確認 | `~/.claude/skills/smoke-test/SKILL.md` |
 | WCAG, アクセシビリティ, ダークモード, スタイルレビュー | `~/.claude/skills/style-review/SKILL.md` |
 | AVFoundation, AVPlayer, 動画再生, seek, scrub, frame stepping | `~/.claude/skills/avfoundation-reference/SKILL.md` |
 | watchOS, Apple Watch, WatchKit, WatchConnectivity, HealthKit, コンプリケーション | `~/.claude/skills/watchos-expert/SKILL.md` |
