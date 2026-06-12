@@ -59,9 +59,11 @@ ScrollView {
 // Container background (watchOS 10+)
 .containerBackground(.blue.gradient, for: .navigation)
 
-// Always-on display support
+// Always-on display support (isLuminanceReduced は「読む」。.environment での set は Preview 用)
+@Environment(\.isLuminanceReduced) var isLuminanceReduced
+
 TimelineView(.everyMinute) { context in
     Text(context.date, style: .time)
+        .foregroundStyle(isLuminanceReduced ? .secondary : .primary)
 }
-.environment(\.isLuminanceReduced, true)
 ```

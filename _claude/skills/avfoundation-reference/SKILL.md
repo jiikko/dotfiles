@@ -91,7 +91,7 @@ AVFoundation 系の問題に当たったら、最低限以下を WebFetch で取
 - `AVPlayerItem.status` / `AVPlayer.timeControlStatus` 等の KVO callback、
   `AVPlayer.seek(to:completionHandler:)` の completion は **任意スレッド** で fire する
 - Main thread でない可能性が常にある
-- 対策: closure 内で `Task { @MainActor in [weak self] ... }` で MainActor へ hop する
+- 対策: closure 内で `Task { @MainActor [weak self] in ... }` で MainActor へ hop する
 - 例外: `addPeriodicTimeObserver(forInterval:queue:using:)` で `queue: .main` を指定した
   closure は確実に main thread で fire する → `MainActor.assumeIsolated` で hop なし可
 
@@ -146,15 +146,15 @@ AVFoundation 系の問題に当たったら、最低限以下を WebFetch で取
   を見落とす
 - `AVPlayer.currentTime` と「実表示 frame」は別物
 - Apple 公式 doc を引いていれば `itemTimeForDisplay` の意味は最初から分かった
-- 詳細は VLCMultiVideoPlayer プロジェクトの `issues/333-bug-click-seek-perceived-no-op.md`
+- 詳細は VLCMultiVideoPlayer プロジェクトの `issues/done/333-bug-click-seek-perceived-no-op.md`
 
 ## 関連プロジェクト / リソース
 
 - VLCMultiVideoPlayer: `~/src/my-products/apps/vlc-multi-video-player/`
   - `VLCMultiVideoPlayer/VideoPlayer/AVFoundationVideoPlayer.swift` (= AVPlayer 実装本体)
   - `VLCMultiVideoPlayer/VideoPlayer/AVPlayerSeekDiagnostics.swift` (= 計測 log)
-  - `issues/332-bug-high-rate-playback-frame-stutter.md` (= rate ≥ 2.5x の stutter 問題)
-  - `issues/333-bug-click-seek-perceived-no-op.md` (= click seek 体感問題、本 skill の主要事例)
+  - `issues/pending/332-bug-high-rate-playback-frame-stutter.md` (= rate ≥ 2.5x の stutter 問題)
+  - `issues/done/333-bug-click-seek-perceived-no-op.md` (= click seek 体感問題、本 skill の主要事例)
 
 - Apple Developer Documentation:
   - AVPlayer: https://developer.apple.com/documentation/avfoundation/avplayer

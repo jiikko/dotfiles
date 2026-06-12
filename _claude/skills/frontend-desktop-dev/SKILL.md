@@ -1,7 +1,7 @@
 ---
 name: frontend-desktop-dev
 version: 1.0.0
-description: "Comprehensive frontend and desktop development skill combining CSS, Node.js, and Electron expertise. Use for building web frontends, Node.js backends, or Electron desktop applications. Automatically coordinates between css-expert, nodejs-expert, and electron-expert agents."
+description: "Comprehensive frontend and desktop development skill combining CSS, Node.js, and Electron expertise. Use for implementing, designing, or optimizing web frontends, Node.js backends, or Electron desktop applications. Coordinates the css-expert, nodejs-expert, and electron-expert agents. Not for review-only tasks: use style-review (WCAG verification) or ux-visibility-review (UX color review) instead."
 ---
 
 # Frontend & Desktop Development

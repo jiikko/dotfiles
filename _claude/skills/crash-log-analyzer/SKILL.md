@@ -1,7 +1,7 @@
 ---
 name: crash-log-analyzer
 version: 1.0.0
-description: macOS クラッシュログ (.ips) を解析し、根本原因を特定するスキル。subagent で解析を代行する。
+description: macOS クラッシュログ (.ips) を解析し、根本原因を特定するスキル。「クラッシュした」「crash」「.ips」「DiagnosticReports」「SIGSEGV / SIGABRT」で発火。解析は crash-analyzer subagent に委譲する。クラッシュログが存在しない一般のバグ調査・テスト失敗には使わない。
 ---
 
 # macOS Crash Log Analyzer
@@ -45,17 +45,17 @@ ls bin/*crash* 2>/dev/null
 
 ## Step 2: ユーザー確認
 
-AskUserQuestion で以下を確認:
+直近 24 時間以内のクラッシュログが 1 件だけで、`procName` がカレントプロジェクトのアプリ名と一致する場合は確認を省略して Step 3 へ進む。それ以外（候補が複数 / 0 件 / アプリ名不一致 / 24 時間以上前のログしかない）は AskUserQuestion で以下を確認:
 
-1. **対象アプリ**: 自動検出した最新のクラッシュがあれば提示し確認
+1. **対象ログ**: 候補のクラッシュログ（アプリ名・日時）を提示して選択してもらう
 2. **クラッシュの状況**: 何をしていたときにクラッシュしたか（任意）
 
 ## Step 3: subagent で解析を実行
 
-Agent ツールで解析 subagent を起動する。以下のプロンプトテンプレートを使用:
+Agent ツールで解析 subagent（`crash-analyzer`、`_claude/agents/crash-analyzer.md` で定義）を起動する。以下のプロンプトテンプレートを使用:
 
 ```
-subagent_type: crash-log-analyzer
+subagent_type: crash-analyzer
 prompt: |
   以下のクラッシュログを解析してください。
 
@@ -288,7 +288,8 @@ macOS のクラッシュレポート (.ips) は JSON 形式で以下の構造を
 
 - subagent は **sonnet** モデルで十分（スタックトレースのパースは定型作業）
 - ソースコードの深い理解が必要な場合のみ **opus** にエスカレーション
-- クラッシュログが 24 時間以上前の場合はユーザーに確認
+- **根拠なく断定しない**: スタックトレースとソースコードの両方で裏付けが取れた場合のみ「根本原因」として報告する。片方しか確認できない場合は「仮説」と明記し、確度（高/中/低）を添える
+- 解析しても原因が特定できない場合は、推測で修正案を出さず、不足している情報（dSYM・再現手順・追加の観測）を明示して debugger agent へのエスカレーションを提案する
 - symbolicate されていない（シンボル名がない）フレームは `atos` コマンドで解決を試みる:
   ```bash
   # dSYM がある場合

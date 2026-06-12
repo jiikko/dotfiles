@@ -1,7 +1,7 @@
 ---
 name: ios-app-developer
 version: 1.1.0
-description: Develops iOS/iPhone applications with XcodeGen, SwiftUI, and SPM. Triggers on XcodeGen project.yml configuration, SPM dependency issues, device deployment problems, code signing errors, camera/AVFoundation debugging, iOS version compatibility, or "Library not loaded @rpath" framework errors. Use when building iOS apps, fixing Xcode build failures, or deploying to real devices.
+description: Develops iOS/iPhone applications with XcodeGen, SwiftUI, and SPM. Triggers on XcodeGen project.yml configuration, SPM dependency issues, device deployment problems, code signing errors, camera/AVFoundation capture debugging, iOS version compatibility, or "Library not loaded @rpath" framework errors. Use when building iOS apps, fixing Xcode build failures, or deploying to real devices. Not for AVPlayer playback issues (seek/scrub/frame stepping → avfoundation-reference skill) or simulator UI automation (→ ios-simulator-skill).
 ---
 
 # iOS App Development

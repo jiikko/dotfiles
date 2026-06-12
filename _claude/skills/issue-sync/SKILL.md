@@ -8,6 +8,8 @@ description: Open Issues のうち実は完了済みのものを検出し、done
 
 Open Issues の中から、実際にはコードベース上で対応済み（done）になっている issue を検出し、done/ への移動と `issues/readme.md` の更新を行うコマンド。
 
+**前提**: プロジェクトが `issues/readme.md` + `issues/done/` 運用であること。ディレクトリ名が `issue/` のプロジェクトでは読み替える。`issues/readme.md` が無い場合は、その旨を報告して終了する（勝手に作らない）。
+
 ## 手順
 
 ### Step 1: issues/readme.md を読み取る
@@ -81,7 +83,7 @@ AskUserQuestion で「これらの issue を done/ に移動して readme.md を
 ## 注意事項
 
 - **Phase B は必ず実行すること**。Phase A のみで終了してはならない
-- Phase B では issue 数が多い場合、Agent（Explore）で並列に検証すると効率的
-- Go デコーダ系の issue（`go-` プレフィックス）は、対象の Go ソースコードを直接確認して判定する
+- Phase B で対象 issue が5件以上ある場合は、Agent（Explore）を複数並行起動して検証する（1エージェントあたり数件ずつ割り当てる）
+- （特定プロジェクト向け）Go デコーダ系の issue（`go-` プレフィックス）は、対象の Go ソースコードを直接確認して判定する
 - **判定に迷った場合は「未完了」とし、誤って done にしない**ことを優先する
 - readme.md のテーブルと詳細セクションの整合性を必ず保つ

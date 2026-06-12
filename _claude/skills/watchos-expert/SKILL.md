@@ -56,8 +56,8 @@ MyWatchApp/
 ├── MyWatchApp Watch App/
 │   ├── MyWatchAppApp.swift
 │   ├── ContentView.swift
-│   ├── ComplicationController.swift
 │   └── Assets.xcassets
+├── MyWatchApp Widgets/        # WidgetKit complications target (see topics/complications.md)
 └── Package.swift              # Optional SPM dependencies
 ```
 
@@ -67,8 +67,7 @@ MyWatchApp/
 
 | watchOS 10+ Only | watchOS 9 Compatible |
 |------------------|----------------------|
-| `NavigationSplitView` | `NavigationView` |
-| `TabView` (vertical paging) | `PageTabViewStyle()` |
+| `TabView` (vertical paging, `.verticalPage`) | `PageTabViewStyle()` |
 | `.containerBackground()` | Custom backgrounds |
 | New Workout APIs | WorkoutKit basics |
 | Smart Stack widgets | Basic complications |

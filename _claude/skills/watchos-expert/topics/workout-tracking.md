@@ -4,7 +4,7 @@
 
 ```swift
 import HealthKit
-import WorkoutKit
+// HKWorkoutSession / HKLiveWorkoutBuilder は HealthKit。WorkoutKit (scheduled workouts 用) は不要
 
 class WorkoutManager: NSObject, ObservableObject {
     let healthStore = HKHealthStore()

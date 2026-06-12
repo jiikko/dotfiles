@@ -1,12 +1,21 @@
 ---
 name: ios-simulator-skill
 version: 1.3.0
-description: 21 production-ready scripts for iOS app testing, building, and automation. Provides semantic UI navigation, build automation, accessibility testing, and simulator lifecycle management. Optimized for AI agents with minimal token output.
+description: 21 production-ready scripts for iOS app testing, building, and automation. Provides semantic UI navigation, build automation, accessibility testing, and simulator lifecycle management. Optimized for AI agents with minimal token output. Not for Xcode build failures or code signing (→ ios-app-developer skill).
 ---
 
 # iOS Simulator Skill
 
 Build, test, and automate iOS applications using accessibility-driven navigation and structured data instead of pixel coordinates.
+
+> **⚠️ 前提確認 (このインストールでは scripts 未同梱)**:
+> 本 skill のディレクトリ (`~/.claude/skills/ios-simulator-skill/`) には現状 SKILL.md しかなく、
+> 以下で参照する `scripts/*.py` / `scripts/*.sh` は **同梱されていない** (2026-06 確認)。
+> 実行前に `ls ~/.claude/skills/ios-simulator-skill/scripts/` で存在を確認し、無ければ
+> `xcrun simctl` 直叩き (boot / shutdown / launch / install / openurl / push / privacy /
+> status_bar / io screenshot 等) で代替すること。upstream
+> ([conorluddy/ios-simulator-skill](https://github.com/conorluddy/ios-simulator-skill)) から
+> scripts を導入したらこの注記を削除してよい。
 
 ## Quick Start
 
@@ -213,10 +222,6 @@ All scripts support `--help` for detailed options and `--json` for machine-reada
 **Structured Data**: Scripts output JSON or formatted text, not raw logs. Easy to parse and integrate.
 
 **Auto-Learning**: Build system remembers your device preference. Configuration stored per-project.
-
----
-
-Use these scripts directly or let Claude Code invoke them automatically when your request matches the skill description.
 
 ## Source
 

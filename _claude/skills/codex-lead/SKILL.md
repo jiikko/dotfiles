@@ -71,7 +71,7 @@ lead_out="./tmp/design-lead.$stamp.md"
 ```bash
 # `</dev/null` 必須（理由は下記「ルール」参照）。codex 本体の stdin を即 EOF にする。
 # ※ ここの `</dev/null` は codex 用。引数内の `<<'EOF'` は `cat` 用のヒアドキュメントで別物。
-command codex exec -s read-only --full-auto --ephemeral -o "$lead_out" </dev/null \
+command codex exec -s read-only --ephemeral -o "$lead_out" </dev/null \
   "$(cat <<'EOF'
 このタスクの設計・実装方針をあなたにリードしてほしい。リポジトリの現状コードを読んだ上で、どう設計・実装すべきかの方針を主導して提案して。
 
@@ -96,12 +96,12 @@ $(cat "$task_out")"
 ```
 
 - `command` プレフィックス必須（zsh の関数オーバーライドを回避）
-- 常に `--full-auto --ephemeral -o "$lead_out"` を付与する
+- 常に `--ephemeral -o "$lead_out"` を付与する（`--full-auto` は付けない。理由は「ルール」参照）
 - コマンド実行ツールのタイムアウトは 900000ms（15分）に設定する
 
 ### 1-3. codex の方針を読み、ユーザーに提示する
 
-1. まず `"$lead_out"` を読む。空なら codex コマンドの stdout / stderr を確認する
+1. まず `"$lead_out"` を読む。空なら codex コマンドの stdout / stderr を確認する。どちらにも方針が出力されていない（codex が非ゼロ終了・タイムアウトした場合を含む）なら、blind リトライはせず、stderr を添えて失敗をユーザーに報告し Phase 2 に進まない
 2. codex が出した設計方針をそのままユーザーに提示する（要約しすぎない）
 3. codex が確認質問を挙げていれば、ユーザーに確認する
 4. Claude として懸念や補足があれば添える（ただし codex の方針を土台にする。勝手に別案へ差し替えない）
@@ -110,7 +110,7 @@ $(cat "$task_out")"
 
 codex の方針をベースに、**実装に進んでよいか確認する**。
 
-- ユーザーが方針を修正したい場合は、修正点を反映して 1-2 を再実行し、codex に方針を更新させる（合意できるまで往復）
+- ユーザーが方針を修正したい場合は、修正点を反映して 1-2 を再実行し、codex に方針を更新させる（往復は 3 ラウンドを目安とし、それでも合意に至らない場合は残る論点を列挙してユーザーに判断を仰ぐ）
 - ユーザーの承認なしに Phase 2 へ進まない
 
 ### 1-5. 一時ファイルの削除
@@ -152,7 +152,7 @@ codex がリードした方針に沿って Claude が実装する。
 
 - **P1/P2**: コードを修正する。場当たり的なパッチではなく構造的に直す
 - **P3**: 取り込むか、issue 化するか、認識のみかを判断する
-- 修正したら必要に応じて再レビュー（指摘が落ち着くまでループ）
+- 修正したら再レビューする。P1/P2 の指摘がゼロになったら終了。再レビューは最大 3 回とし、超えても残る場合は指摘を列挙してユーザーに判断を仰ぐ
 
 ---
 
@@ -163,7 +163,7 @@ codex がリードした方針に沿って Claude が実装する。
 - `command codex` を使うこと（`codex` 直接呼び出しは zsh 関数オーバーライドでエラーになる場合がある）
 - **全ての `command codex exec` 呼び出しに `</dev/null` を必ず付ける**。Claude Code の Bash ツールの stdin は非TTYのパイプ（書き込み側が開いたまま EOF が来ない）なので、prompt を引数で渡しても codex が「Reading additional input from stdin...」で stdin の EOF を待ち続け、コマンドがタイムアウトまでハングする（= このスキルが「スタックして使い勝手が悪い」と感じる主因）。`</dev/null` で stdin を即 EOF にすると解消する（[openai/codex#20919](https://github.com/openai/codex/issues/20919)）。ヒアドキュメントで prompt を組む場合、引数内の `<<'EOF'` は `cat` 用なので別途 codex 行に `</dev/null` が必要。codex 側が修正されたら本対処は不要になる
 - 設計リードは差分がないため `codex exec -s read-only` を使う（selector は使わない）
-- 常に `--full-auto --ephemeral -o "$lead_out"` を付与する
+- 常に `--ephemeral -o "$lead_out"` を付与する。`--full-auto` は付けない（codex-cli 0.139.0 時点で `--sandbox workspace-write` の deprecated alias であり、`-s read-only` と併用すると後勝ちで上書きして codex が書き込み可能になることを実測確認済み。codex 側で alias が削除されたら本注記ごと整理してよい）
 - まず `-o` の出力ファイルを読み、空なら stdout / stderr を fallback として使う
 - レビュー・方針はそのままユーザーに見せる（要約しすぎない）
 - `/tmp` は使わず、出力ファイルは必ず `./tmp` に置く。報告後、このフェーズで書き出したファイルだけを `rm -f` で削除する
