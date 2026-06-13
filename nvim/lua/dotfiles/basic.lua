@@ -32,7 +32,9 @@ local function set_options()
   opt.showbreak = "↪"
   opt.showmatch = true
   opt.title = true
-  opt.updatetime = 300
+  -- CursorHold/CursorHoldI は basic.lua の checktime(disk stat) と coc の highlight(LSP) を
+  -- 同時発火させる。300→500ms で発火密度を下げてタイピング中の連打を緩和 (体感優先)
+  opt.updatetime = 500
   opt.signcolumn = "yes"
 end
 

@@ -90,7 +90,6 @@ require("lazy").setup({
       vim.g.matchup_surround_enabled = 1
     end,
   },
-  { "windwp/nvim-ts-autotag" },
   { "nvim-treesitter/nvim-treesitter",
     build = ":TSUpdate",
     config = function()
@@ -110,7 +109,7 @@ require("lazy").setup({
   { "RRethy/nvim-treesitter-endwise",
     dependencies = { "nvim-treesitter/nvim-treesitter" }
   },
-  { "folke/which-key.nvim" },
+  { "folke/which-key.nvim", event = "VeryLazy" },
   { "nvim-lualine/lualine.nvim",
     dependencies = { "nvim-tree/nvim-web-devicons" },
     config = function()
@@ -215,7 +214,9 @@ require("lazy").setup({
         vim.fn.CocActionAsync("runCommand", "editor.action.organizeImport")
       end, { nargs = 0 })
       -- カーソルをホールドするとシンボルをハイライト
+      -- (augroup で :source / lazy reload 時の重複登録を防ぐ。basic.lua の autocmd 規約に合わせる)
       vim.api.nvim_create_autocmd("CursorHold", {
+        group = vim.api.nvim_create_augroup("dotfiles_coc_highlight", { clear = true }),
         pattern = "*",
         callback = function()
           vim.fn.CocActionAsync("highlight")
@@ -396,10 +397,10 @@ require("lazy").setup({
 
     end,
   },
-  { "nvim-tree/nvim-web-devicons" },
   { "lukas-reineke/indent-blankline.nvim",
+    event = { "BufReadPost", "BufNewFile" },
     config = function()
-      require("ibl").setup()
+      require("ibl").setup({ exclude = { filetypes = { "NvimTree", "help", "lazy" } } })
     end
   },
   { "rcarriga/nvim-notify",
@@ -565,6 +566,7 @@ require("lazy").setup({
   },
   {
     "MeanderingProgrammer/render-markdown.nvim",
+    ft = { "markdown" },
     dependencies = {
       "nvim-treesitter/nvim-treesitter",
       "nvim-tree/nvim-web-devicons",
@@ -708,7 +710,7 @@ require("lazy").setup({
   },
 }, {
   install = { colorscheme = { "gruvbox" } },
-  checker = { enabled = true },
+  checker = { enabled = true, frequency = 86400 },  -- 起動毎チェックはローカル fs のみ。定期 git fetch を 1時間→1日に間引き、更新通知ノイズと background 通信を抑制
 })
 
 -- 折り畳みの設定
