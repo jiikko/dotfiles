@@ -1,0 +1,34 @@
+#!/usr/bin/env zsh
+# disassemble_excel — extract Excel (.xlsx/.xlsm) sheets, formulas and VBA macro
+# source into a directory of diffable text files. Go implementation at:
+#   ~/dotfiles/src/disassemble_excel/
+# This wrapper auto-builds the binary on first use and re-builds when the
+# source is newer than the compiled artifact.
+
+set -u
+
+src_dir="${0:A:h}/../src/disassemble_excel"
+bin="$src_dir/disassemble_excel"
+
+needs_build=0
+if [[ ! -x "$bin" ]]; then
+  needs_build=1
+else
+  for f in "$src_dir"/*.go "$src_dir"/ovba/*.go "$src_dir"/go.mod "$src_dir"/go.sum; do
+    [[ -e "$f" ]] || continue
+    if [[ "$f" -nt "$bin" ]]; then
+      needs_build=1
+      break
+    fi
+  done
+fi
+
+if (( needs_build )); then
+  echo "disassemble_excel: building..." >&2
+  (cd "$src_dir" && go build -o disassemble_excel .) || {
+    echo "disassemble_excel: build failed" >&2
+    exit 1
+  }
+fi
+
+exec "$bin" "$@"
