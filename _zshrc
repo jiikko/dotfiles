@@ -401,6 +401,18 @@ alias e='nvim'
 alias h='history'
 alias ha='history-all'
 alias cd_dotfiles='cd ~/dotfiles'
+alias cd_my-products='cd ~/src/my-products'
+# my-products/apps/* の各 submodule へ
+alias cd_baby-note='cd ~/src/my-products/apps/baby-note'
+alias cd_dotfiles-gui='cd ~/src/my-products/apps/dotfiles-gui'
+alias cd_dropbox-multi-video-player-electron='cd ~/src/my-products/apps/dropbox-multi-video-player-electron'
+alias cd_dualnoteapp='cd ~/src/my-products/apps/DualNoteApp'
+alias cd_fdup-macos='cd ~/src/my-products/apps/fdup-macos'
+alias cd_obaket='cd ~/src/my-products/apps/obaket'
+alias cd_promiseapp='cd ~/src/my-products/apps/promiseApp'
+alias cd_snaptrim='cd ~/src/my-products/apps/SnapTrim'
+alias cd_thumbnailthumb='cd ~/src/my-products/apps/ThumbnailThumb'
+alias cd_vlc-multi-video-player='cd ~/src/my-products/apps/vlc-multi-video-player'
 alias cd_src='cd ~/src'
 
 # HTMLファイルに張り付け用の、タブ、空白、< > の変換コマンド
