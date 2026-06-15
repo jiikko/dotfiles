@@ -122,14 +122,21 @@ else
   printf '↷ _tmux_precmd not defined (expected outside TMUX)\n'
 fi
 
-# Test 8: エイリアス展開のテスト
-printf '\n## Test 8: Alias resolution in preexec\n'
-# v -> nvim のエイリアスが定義されているかテスト
+# Test 8: エイリアスは展開せずタイプ名のまま表示する (2d68f3c の意図的仕様)。
+# v=nvim が定義されていても window 名は "v" のまま (resolve しない) ことを確認する。
+printf '\n## Test 8: Aliases are shown as-typed (not resolved)\n'
 result=$(run_zsh "alias v" || echo "")
 if [[ "$result" == *"nvim"* ]]; then
   printf '✓ alias v=nvim is defined\n'
 else
   printf '✗ alias v=nvim is not defined\n'
+  exit 1
+fi
+# preexec 経路 (extract → display) が alias 'v' を展開せず "v" を保つこと
+result=$(run_zsh '_tmux_get_display_name "$(_tmux_extract_command "v foo.txt")"')
+assert_contains "v" "$result" "alias 'v' is displayed as-is, not expanded to nvim"
+if [[ "$result" == *"nvim"* ]]; then
+  printf '✗ alias was unexpectedly expanded to nvim\n'
   exit 1
 fi
 
@@ -141,8 +148,29 @@ assert_equals "nvim" "$result" "_tmux_extract_command strips sudo/env/assignment
 result=$(run_zsh '_tmux_extract_command "FOO=bar brew install fzf"')
 assert_equals "brew" "$result" "_tmux_extract_command ignores leading assignments"
 
-result=$(run_zsh '_tmux_resolve_alias v')
-assert_equals "nvim" "$result" "_tmux_resolve_alias returns aliased command"
+# wrapper 直後の付随フラグ (sudo -E 等) を読み飛ばして実コマンドを拾う
+result=$(run_zsh '_tmux_extract_command "sudo -E git status"')
+assert_equals "git" "$result" "_tmux_extract_command skips leading flags after wrappers"
+
+result=$(run_zsh '_tmux_extract_command "noglob make build"')
+assert_equals "make" "$result" "_tmux_extract_command skips noglob wrapper"
+
+# Test 10: OSC 2 タイトルのサニタイズ (制御文字の除去)
+printf '\n## Test 10: OSC title sanitization strips control chars\n'
+# BEL (0x07) を含むタイトルを渡し、出力 (printf の OSC シーケンス) に 0x07 が
+# 残っていないことを確認する。ESC は 0x1b なので干渉しない。
+hex=$(run_zsh $'_tmux_set_pane_title "a\abc"' | od -An -tx1 | tr -d ' \n')
+if [[ -n "$hex" && "$hex" != *07* ]]; then
+  printf '✓ control char (BEL) stripped from OSC title\n'
+else
+  printf '✗ control char leaked into OSC title (hex: %s)\n' "$hex"
+  exit 1
+fi
+
+# Test 11: YAML 不在でも _TMUX_ZSH_TITLE が "zsh" にフォールバックする (退行防止)
+printf '\n## Test 11: zsh title falls back when YAML is missing\n'
+result=$(run_zsh '_TMUX_WINDOW_NAME_YAML=/nonexistent/path.yaml; _tmux_reload_window_names; print -r -- "$_TMUX_ZSH_TITLE"')
+assert_equals "zsh" "$result" "_TMUX_ZSH_TITLE falls back to 'zsh' when YAML is absent"
 
 printf '\n=== All Tests Completed ===\n'
 printf 'All tmux window name tests passed successfully!\n'
