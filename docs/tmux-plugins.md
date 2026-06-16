@@ -66,7 +66,7 @@ $ tmux
 
 ## 前提条件
 
-- tmux 3.6 系を想定（現行は 3.6a。`pane-scrollbars modal` など 3.6 系の機能を使う）
+- tmux 3.6 系を想定（現行は 3.6a。`pane-scrollbars` など 3.6 系の機能を使う。なお scrollbar は幅を縮めるため off 運用）
 - 最低ラインは tmux 3.4 以上（`pane-border-indicators` など 3.x の新しめの機能を前提）
 - bash（プラグインが bash 前提）
 - git（`git pull` 用）
