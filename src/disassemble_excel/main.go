@@ -222,6 +222,14 @@ func run(src, outDir, sheetsCSV string, maxCells int, noVBA, noGrid, force bool)
 		return err
 	}
 
+	srcAbs, err := filepath.Abs(src)
+	if err != nil {
+		srcAbs = src
+	}
+	if err := writeReadme(filepath.Join(outDir, "README.md"), man, srcAbs, noGrid); err != nil {
+		return err
+	}
+
 	fmt.Fprintf(os.Stderr, "done: %s (%d sheets, %d VBA modules) in %s\n",
 		outDir, len(sheetManifests), len(modManifests), time.Since(start).Round(time.Millisecond))
 	return nil

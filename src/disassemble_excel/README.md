@@ -34,6 +34,8 @@ line-oriented text you can `diff`, `grep`, and review:
   (module / proc / kind / line) to navigate to each `Sub`/`Function`.
 - Defined names (named ranges, LAMBDA args) → `defined_names.tsv`.
 - `manifest.json` — source SHA-256, per-sheet dimensions and counts, module list.
+- `README.md` — a human-readable provenance file written into the output dir:
+  the source workbook's absolute path, SHA-256, and what every emitted file means.
 - Shared strings are resolved to real text; non-ASCII (e.g. Japanese, via the
   project code page) is decoded in both cell strings and VBA source.
 
@@ -92,6 +94,7 @@ for f in *.xlsm; do disassemble_excel "$f" -o "out/${f%.xlsm}" -f; done
 
 ```
 <out>/
+  README.md                      # provenance: source file path, SHA-256, and what each file means
   manifest.json
   defined_names.tsv              # name  scope  refers_to
   sheets/

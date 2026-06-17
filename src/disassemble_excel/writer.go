@@ -170,3 +170,90 @@ func writeManifest(path string, man Manifest) error {
 	}
 	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
+
+// writeReadme writes a human-readable README.md into the output directory so the
+// disassembled result is self-describing: which tool produced it, the source
+// Excel file it came from, and what every file means. srcAbs is the absolute
+// path of the source workbook; noGrid reports whether values.csv was skipped.
+func writeReadme(path string, man Manifest, srcAbs string, noGrid bool) error {
+	anySlim := false
+	for _, s := range man.Sheets {
+		if s.Slim {
+			anySlim = true
+			break
+		}
+	}
+	hasVBA := len(man.VBAModules) > 0
+
+	var b strings.Builder
+	b.WriteString("# disassemble_excel 出力ディレクトリ\n\n")
+	b.WriteString("このディレクトリは Excel ワークブックを `disassemble_excel` で分解（解体）した結果です。\n")
+	b.WriteString("中身はすべて行指向のプレーンテキストで、`diff` / `grep` / バージョン管理でそのまま比較できます。\n")
+	b.WriteString("Excel を開かずに、シートのセル数式・キャッシュ値・定義名・VBA マクロのソースを読むためのものです。\n\n")
+
+	b.WriteString("## 生成元\n\n")
+	b.WriteString("| 項目 | 値 |\n")
+	b.WriteString("|------|----|\n")
+	fmt.Fprintf(&b, "| 生成ツール | disassemble_excel v%s (https://github.com/jiikko/disassemble_excel) |\n", man.ToolVersion)
+	fmt.Fprintf(&b, "| 元 Excel ファイル（絶対パス） | `%s` |\n", srcAbs)
+	fmt.Fprintf(&b, "| 元 Excel ファイル名 | `%s` |\n", man.Source)
+	fmt.Fprintf(&b, "| 元ファイルの SHA-256 | `%s` |\n", man.SHA256)
+	fmt.Fprintf(&b, "| 抽出日時 | %s |\n\n", man.ExtractedAt)
+	b.WriteString("> 数式は **抽出のみで、評価（再計算）はしていません**。各セルの `value` 列は Excel が\n")
+	b.WriteString("> 最後にファイルへ保存したキャッシュ値であり、このツールが計算した値ではありません。\n\n")
+
+	b.WriteString("## ファイル構成と各ファイルの意味\n\n")
+	b.WriteString("| パス | 内容 |\n")
+	b.WriteString("|------|------|\n")
+	b.WriteString("| `manifest.json` | 機械可読の目録。元ファイル名・SHA-256・抽出日時・ツールバージョン、シートごとの寸法/セル数/数式数、VBA モジュール一覧を持つ |\n")
+	b.WriteString("| `README.md` | このファイル（出力の説明・元ソース・各ファイルの意味） |\n")
+	b.WriteString("| `defined_names.tsv` | 定義名（名前付き範囲・LAMBDA 引数）。列は `name  scope  refers_to` |\n")
+	b.WriteString("| `sheets/<シート名>.cells.tsv` | シートの全セルを 1 セル 1 行で。列は `cell  type  formula  value`、(行,列) でソート・空セルは省略。値中のタブ/改行は `\\t` `\\n` にエスケープ |\n")
+	if !noGrid {
+		b.WriteString("| `sheets/<シート名>.values.csv` | キャッシュ値だけをグリッド（行×列）に並べた目視確認用ビュー |\n")
+	}
+	if anySlim {
+		b.WriteString("| `sheets/<シート名>.slim.tsv` | 巨大シート向けの圧縮ビュー。数式を持つセルだけを残し、値だけのセルは要約。`-max-cells` を超えたシートにのみ出力 |\n")
+	}
+	if hasVBA {
+		b.WriteString("| `vba/<モジュール名>.bas` / `.cls` | VBA モジュールのソースコード（標準モジュール=`.bas`、クラス/ドキュメントモジュール=`.cls`）。コードを持つモジュールごとに 1 ファイル |\n")
+		b.WriteString("| `vba_index.tsv` | VBA の Sub/Function/Property の索引。列は `module  proc  kind  module_line` |\n")
+	}
+	b.WriteString("\n")
+
+	fmt.Fprintf(&b, "## シート一覧（%d 枚）\n\n", len(man.Sheets))
+	if len(man.Sheets) == 0 {
+		b.WriteString("（抽出されたシートはありません）\n\n")
+	} else {
+		b.WriteString("| シート | 範囲 | セル数 | 数式数 | ファイル |\n")
+		b.WriteString("|--------|------|-------:|-------:|----------|\n")
+		for _, s := range man.Sheets {
+			file := "sheets/" + sanitizeFilename(s.Name) + ".cells.tsv"
+			if s.Slim {
+				file += " (+slim)"
+			}
+			fmt.Fprintf(&b, "| %s | %s | %d | %d | `%s` |\n",
+				s.Name, s.Dimension, s.Cells, s.Formulas, file)
+		}
+		b.WriteString("\n")
+	}
+
+	if hasVBA {
+		fmt.Fprintf(&b, "## VBA モジュール一覧（%d 個）\n\n", len(man.VBAModules))
+		b.WriteString("| モジュール | 種別 | プロシージャ数 | 行数 | ファイル |\n")
+		b.WriteString("|------------|------|---------------:|-----:|----------|\n")
+		for _, m := range man.VBAModules {
+			file := m.File
+			if file == "" {
+				file = "（空モジュール: ファイル化なし）"
+			} else {
+				file = "`" + file + "`"
+			}
+			fmt.Fprintf(&b, "| %s | %s | %d | %d | %s |\n",
+				m.Name, m.Type, m.Procs, m.Lines, file)
+		}
+		b.WriteString("\n")
+	}
+
+	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
