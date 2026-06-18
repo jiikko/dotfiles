@@ -1,5 +1,10 @@
 # Phase 4.3: 反復並列思考（Ultra モードのみ）
 
+> **⚙️ 実行は `forge.js`（Workflow）**: Ultra モードのこのフェーズは `_claude/workflows/forge.js` が
+> **`Workflow({scriptPath, args:{kind:"ultra", maxRounds:3, ...}})`** で実行する。収束判定（各エージェントの
+> `hasNewFindings` が全て false / 最大ラウンド到達）も forge.js が行う。main Claude は起動と結果受け取りのみ。
+> **このファイルは forge.js が実装している仕様の索引**。仕様を変更したら forge.js も同期更新すること。
+
 Ultra モード選択時は、Phase 4.1/4.2 の代わりにこのフェーズを実行する。
 
 ## フロー
@@ -68,6 +73,8 @@ Round 2: 再分析（全員の Round 1 結果を入力）
 | 最大ラウンド数（3回）に到達 | **強制終了** |
 | 「未解決の疑問」が減少傾向 | 継続を検討 |
 | 「未解決の疑問」が増加傾向 | 1ラウンド追加して終了 |
+
+> **⚙️ forge.js が実装する収束条件**: 実行可能な判定は **`ULTRA_ROUND_SCHEMA.hasNewFindings` が全応答エージェントで `false`**（= 上表「新たな発見なし」）と **最大ラウンド到達** の 2 つ。各エージェントは「合意事項の一致」「未解決の疑問の増減」を自己評価したうえで `hasNewFindings` に畳み込んで返す（自由記述の `agreements`/`openQuestions` をコード側で機械比較はしない）。上表の他の行はエージェントが `hasNewFindings` を決める際の判断材料であって、forge.js 側の独立した分岐ではない。
 
 ## 統合プロンプト（Ultra モード用）
 

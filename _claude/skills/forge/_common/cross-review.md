@@ -2,6 +2,11 @@
 
 この文書は Phase 1.1 と Phase 4.1 で共通のクロスレビュー仕様です。
 
+> **⚙️ forge.js が実装**: ペアリング表・統合ルール・標準 JSON スキーマは `_claude/workflows/forge.js` の
+> `pairingTable()` / `resolvePairing()` / `integratePrompt()` / 各 `*_SCHEMA` が実装している。
+> ペアリングや統合ルールを変更したら forge.js も同期更新すること。main Claude（skill 層）はこのファイルを
+> 直接読む必要はない（fan-out は forge.js が実行する）。仕様確認の出典としてのみ参照する。
+
 ## クロスレビューの目的
 
 各エージェントの出力を、**別の観点を持つエージェントが検証**することで、見落としや過剰反応を防ぐ。

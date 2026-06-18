@@ -2,6 +2,11 @@
 
 この文書は Forge skill の全フェーズで共通のモード定義です。
 
+> **⚙️ forge.js との同期**: モード別動作テーブル（クロスレビュー/統合の有無、ロスター数）は
+> `_claude/workflows/forge.js` の `DO_CROSS_REVIEW` / `DO_INTEGRATE` / `baseRoster()` が実装している。
+> ここを変更したら forge.js も同期更新すること。**スコアリング（モード推奨・再評価）は main Claude が
+> このファイルを読んで判断する**（forge.js には入っていない。fan-out 前の人間ループ）。
+
 ## モード一覧
 
 | モード | エージェント数 | 実行方式 | クロスレビュー | スキル自動起動 | 用途 |

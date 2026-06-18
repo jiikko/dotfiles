@@ -28,7 +28,7 @@ for dir in ~/.claude/agents ~/.claude/skills ~/.claude/rules; do
     rm "$nested"
   fi
 done
-mkdir -p ~/.claude/agents ~/.claude/skills ~/.claude/rules ~/.claude/hooks
+mkdir -p ~/.claude/agents ~/.claude/skills ~/.claude/rules ~/.claude/hooks ~/.claude/workflows
 for f in ~/dotfiles/_claude/agents/*; do
   [ -e "$f" ] && ln -sfn "$f" ~/.claude/agents/"$(basename "$f")"
 done
@@ -41,9 +41,13 @@ done
 for f in ~/dotfiles/_claude/hooks/*; do
   [ -e "$f" ] && ln -sfn "$f" ~/.claude/hooks/"$(basename "$f")"
 done
+# workflows: Workflow ツールが scriptPath で参照する .js を個別リンク
+for f in ~/dotfiles/_claude/workflows/*; do
+  [ -e "$f" ] && ln -sfn "$f" ~/.claude/workflows/"$(basename "$f")"
+done
 # dotfiles 側で削除されたファイルの symlink が残ると壊れたリンクになるので掃除する。
 # dotfiles/_claude 配下を指すリンクだけを対象にし、ユーザーが手動で張った別由来のリンクは触らない
-for dir in ~/.claude/agents ~/.claude/skills ~/.claude/rules ~/.claude/hooks; do
+for dir in ~/.claude/agents ~/.claude/skills ~/.claude/rules ~/.claude/hooks ~/.claude/workflows; do
   for link in "$dir"/*; do
     if [ -L "$link" ] && [ ! -e "$link" ]; then
       case "$(readlink "$link")" in

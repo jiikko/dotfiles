@@ -72,7 +72,7 @@
   - docs/elements.md を更新
   - make lint/build/test → 通過
 
-→ Phase 3-4-4.1-4.2 再実行
+→ Phase 3（セルフレビュー ×5, skill）→ forge.js（kind=review）を再起動（Phase 4/4.1/4.2）
   - 統合結果: 指摘なし
 
 → 完了（2サイクル）

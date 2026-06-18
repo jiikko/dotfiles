@@ -61,6 +61,12 @@
 
 ## Phase 1: 事前調査 + 類似コード特定（実装モードのみ）
 
+> **⚙️ 実行は `forge.js`（Workflow）**: Phase 1（専門家並行調査）と Phase 1.1（クロスレビュー・統合）は
+> `_claude/workflows/forge.js` が **`Workflow({scriptPath, args:{kind:"investigate", ...}})`** で実行する。
+> main Claude は起動と結果（`integrated`）受け取りのみ。起動契約は SKILL.md「forge.js 呼び出し契約」を参照。
+> 以下のエージェント選択・クロスレビューの記述は forge.js が実装している仕様。**ただし Phase 1.1 末尾の
+> 「調査結果の確認（ユーザー確認ポイント）」は対話なので main Claude（skill 層）が担当する。**
+
 > **モード別動作**: `~/.claude/skills/forge/_common/modes.md` を参照
 
 ### エージェント選択
