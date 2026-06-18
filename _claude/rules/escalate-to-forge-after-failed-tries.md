@@ -2,13 +2,13 @@
 
 ## ルール
 
-- **自分の hypothesis で 1-2 回試行して効果がなかったバグは、3 回目を試す前に必ず `/forge` skill Maximum モードを起動する**
+- **自分の hypothesis で 1-2 回試行して効果がなかったバグは、3 回目を試す前に必ず `/forge` を Maximum モード指定で起動する**（forge v2 はモードを明示すれば Phase -1 のモード選択確認を省略する）
 - 「もう少しで分かりそう」と粘って試行を重ねるのは禁止
 - 「治っていない」という症状報告を受けた時点で、即 forge へ
 
 ## なぜ (起源: DualNote iOS #030 IME バグ, 2026-05-23)
 
-「delegate cycle」という hypothesis に固執して 3 回試行 (フラグ抑制 → delegate=nil → 未検証の overclaim docstring) して全て外した。forge Maximum を起動したら 5 専門家が全員一致で**別の真因**を特定し 1 セッションで構造的解決。損失は 3-4 時間の無駄な試行と「治っていない」報告 2 回。forge 1 回 ~30 分のコストの方が明らかに安い。
+「delegate cycle」という hypothesis に固執して 3 回試行 (フラグ抑制 → delegate=nil → 未検証の overclaim docstring) して全て外した。forge Maximum を起動したら複数の専門家エージェントが全員一致で**別の真因**を特定し 1 セッションで構造的解決。損失は 3-4 時間の無駄な試行と「治っていない」報告 2 回。forge 1 回 ~30 分のコストの方が明らかに安い。
 
 ## 「2 回」が境界の理由
 

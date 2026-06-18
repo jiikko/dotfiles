@@ -1,6 +1,6 @@
 ---
 name: swift-architecture-designer
-description: "Use when: writing, modifying, or reviewing Swift/macOS/iOS code architecture. This is the primary agent for ALL Swift architecture work including: module/package structure, Protocol vs concrete type decisions, dependency direction analysis, Manager/Service/ViewModel responsibility separation, God Object decomposition, and testable design. MUST be used for any significant structural changes. Goal: 'changeable design' and 'clear boundaries'."
+description: "Use when: designing LARGE / structural Swift/macOS/iOS architecture changes (forge では追加エージェント。日常的なアーキ・レビューは architecture-reviewer が先). This is the agent for: module/package structure, Protocol vs concrete type decisions, Manager/Service/ViewModel responsibility separation, God Object decomposition, and testable design. 重要な構造変更の設計で使う。Goal: 'changeable design' and 'clear boundaries'."
 model: opus
 color: blue
 ---

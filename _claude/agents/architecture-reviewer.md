@@ -1,6 +1,6 @@
 ---
 name: architecture-reviewer
-description: "Use when: reviewing or designing application architecture. This is the primary agent for: MVVM/TCA pattern compliance, dependency direction analysis, layer separation, module boundaries, and long-term maintainability. Use alongside language-specific agents (swift-language-expert, swiftui-macos-designer) for implementation details."
+description: "Use when: reviewing application architecture (first-line / default architecture reviewer; forge の標準ロスターに常駐). This is the primary agent for: MVVM/TCA pattern compliance, layer separation, module boundaries, dependency-direction review, and long-term maintainability. 大規模な構造変更・God Object 分解・module/package の新規設計は swift-architecture-designer に回す。Use alongside language-specific agents (swift-language-expert, swiftui-macos-designer) for implementation details."
 model: opus
 color: green
 ---

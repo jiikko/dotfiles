@@ -124,6 +124,8 @@
 
 ## 必須エージェント（6+1つ）
 
+> **⚠️ 以下の per-agent「Phase 1/4 用プロンプト」は実行時には使われない（履歴・参考）**。forge v2 (`forge.js`) は各エージェントを `agentType` として起動し、プロンプト本文は forge.js の汎用 `investigatePrompt()` / `reviewPrompt()` が生成する。**ここのプロンプトを編集しても動作は変わらない**。実運用で意味を持つのは「エージェント名・役割・モデル」と、後述の「条件付き必須」「追加エージェント（検出パターン）」「言語別置換」テーブル（skill 層が `extraAgents` を決めるのに使う）。プロンプトを変えたい場合は `forge.js` を編集すること。
+
 以下の6エージェント + swiftui-performance-expert（Phase 4 常時必須）を Standard/Maximum/Ultra モードで使用します。
 
 ### 1. swift-language-expert (model: opus)

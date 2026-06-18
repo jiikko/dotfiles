@@ -1,7 +1,7 @@
 ---
 name: crash-log-analyzer
 version: 1.0.0
-description: macOS クラッシュログ (.ips) を解析し、根本原因を特定するスキル。「クラッシュした」「crash」「.ips」「DiagnosticReports」「SIGSEGV / SIGABRT」で発火。解析は crash-analyzer subagent に委譲する。クラッシュログが存在しない一般のバグ調査・テスト失敗には使わない。
+description: macOS アプリのクラッシュログ (.ips) を解析し、根本原因を特定するスキル。「クラッシュした」「crash」「.ips」「DiagnosticReports」「SIGSEGV / SIGABRT」で発火。**macOS 専用**（.ips 構造参照と crash-analyzer の bin/tt-crash-log 前提が macOS 向け。iOS の .ips は未対応）。解析は crash-analyzer subagent に委譲する。クラッシュログが存在しない一般のバグ調査・テスト失敗には使わない。
 ---
 
 # macOS Crash Log Analyzer

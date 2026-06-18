@@ -70,7 +70,7 @@ rate_color() {
 # Build a 4-slot bar: e.g. [||..] for 50%
 rate_bar() {
   pct=$1
-  filled=$(( (pct + 12) / 25 ))  # 0-24%->0, 25-49%->1, 50-74%->2, 75-99%->3, 100%->4
+  filled=$(( (pct + 12) / 25 ))  # nearest-quarter rounding: 0-12%->0, 13-37%->1, 38-62%->2, 63-87%->3, 88-100%->4
   [ "$filled" -gt 4 ] && filled=4
   empty=$(( 4 - filled ))
   bar=""

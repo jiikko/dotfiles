@@ -41,9 +41,10 @@ done
 for f in ~/dotfiles/_claude/hooks/*; do
   [ -e "$f" ] && ln -sfn "$f" ~/.claude/hooks/"$(basename "$f")"
 done
-# workflows: Workflow ツールが scriptPath で参照する .js を個別リンク
+# workflows: Workflow ツールが scriptPath で参照する .js のみ個別リンク
+# (CLAUDE.md 等のドキュメントは ~/.claude 側に不要なので除外)
 for f in ~/dotfiles/_claude/workflows/*; do
-  [ -e "$f" ] && ln -sfn "$f" ~/.claude/workflows/"$(basename "$f")"
+  [ -e "$f" ] && [ "${f##*.}" = "js" ] && ln -sfn "$f" ~/.claude/workflows/"$(basename "$f")"
 done
 # dotfiles 側で削除されたファイルの symlink が残ると壊れたリンクになるので掃除する。
 # dotfiles/_claude 配下を指すリンクだけを対象にし、ユーザーが手動で張った別由来のリンクは触らない
@@ -63,6 +64,9 @@ ln -sf ~/dotfiles/_claude/keybindings.json ~/.claude/keybindings.json
 ln -sf ~/dotfiles/_claude/CLAUDE.md ~/.claude/CLAUDE.md
 ln -sf ~/dotfiles/_claude/statusline-command.sh ~/.claude/statusline-command.sh
 ln -sf ~/dotfiles/_claude/settings.json ~/.claude/settings.json
+# _common: agents/*.md が @../_common/ で参照する共通テンプレート置き場。
+# ~/.claude/agents/ 経由で @../_common/ を解決できるよう ~/.claude/_common にもリンクする
+ln -sfn ~/dotfiles/_claude/_common ~/.claude/_common
 
 # anyenv: 必要な *env が入っていなければ警告、入っていれば global バージョンを設定
 if command -v anyenv >/dev/null 2>&1; then
