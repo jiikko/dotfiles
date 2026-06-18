@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -61,10 +62,14 @@ func usage() {
 .xlsx/.xlsm ワークブック 1 ファイルを、行指向のプレーンテキスト群に書き出します:
 全セルの数式とキャッシュ値の両方、定義名、VBA マクロのソースコード。
 数式は抽出のみで評価（再計算）はしません。共有数式は展開され、各セルが
-実際に計算している数式が見えます。完全オフラインで動作します。
+実際に計算している数式が見えます。.xlsx/.xlsm の解体は完全オフラインで動作します。
+
+.xlsb（バイナリ形式）は直接解体できませんが、LibreOffice (soffice) が
+PATH かインストール先に見つかれば、自動で .xlsm に変換してから解体します
+（この場合のみ外部プロセスを起動します）。
 
 使い方:
-  disassemble_excel <file.xlsx|.xlsm> [options]
+  disassemble_excel <file.xlsx|.xlsm|.xlsb> [options]
   （フラグはファイル引数の前後どちらに置いてもよい）
 
 オプション:
@@ -112,8 +117,23 @@ func usage() {
 func run(src, outDir, sheetsCSV string, maxCells int, noVBA, noGrid, force bool) error {
 	start := time.Now()
 
+	// .xlsb (Excel Binary Workbook) is a ZIP container of BIFF12 *binary* records,
+	// not the OOXML (ZIP+XML) parts this tool reads, so excelize and the XML
+	// parsers below cannot open it. If LibreOffice (soffice) is available, convert
+	// it to .xlsm first (xlsm, not xlsx, to keep VBA). This is the ONLY place the
+	// tool ever spawns a subprocess; the .xlsx/.xlsm path stays fully offline.
+	origSrc := src
+	if strings.EqualFold(filepath.Ext(src), ".xlsb") {
+		converted, cleanup, err := convertXLSB(src)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		src = converted
+	}
+
 	if outDir == "" {
-		base := filepath.Base(src)
+		base := filepath.Base(origSrc)
 		outDir = strings.TrimSuffix(base, filepath.Ext(base))
 	}
 	if err := prepareOutDir(outDir, force); err != nil {
@@ -211,8 +231,8 @@ func run(src, outDir, sheetsCSV string, maxCells int, noVBA, noGrid, force bool)
 	}
 
 	man := Manifest{
-		Source:      filepath.Base(src),
-		SHA256:      fileSHA256(src),
+		Source:      filepath.Base(origSrc),
+		SHA256:      fileSHA256(origSrc),
 		ExtractedAt: start.Format(time.RFC3339),
 		ToolVersion: toolVersion,
 		Sheets:      sheetManifests,
@@ -222,9 +242,9 @@ func run(src, outDir, sheetsCSV string, maxCells int, noVBA, noGrid, force bool)
 		return err
 	}
 
-	srcAbs, err := filepath.Abs(src)
+	srcAbs, err := filepath.Abs(origSrc)
 	if err != nil {
-		srcAbs = src
+		srcAbs = origSrc
 	}
 	if err := writeReadme(filepath.Join(outDir, "README.md"), man, srcAbs, noGrid); err != nil {
 		return err
@@ -233,6 +253,65 @@ func run(src, outDir, sheetsCSV string, maxCells int, noVBA, noGrid, force bool)
 	fmt.Fprintf(os.Stderr, "done: %s (%d sheets, %d VBA modules) in %s\n",
 		outDir, len(sheetManifests), len(modManifests), time.Since(start).Round(time.Millisecond))
 	return nil
+}
+
+// convertXLSB converts an .xlsb workbook to .xlsm via LibreOffice (soffice) so
+// the OOXML disassembly path can read it. It returns the converted file path and
+// a cleanup func that removes the temporary directory. The "Calc MS Excel 2007
+// VBA" export filter is named explicitly so macros are preserved (a plain xlsx
+// conversion would drop VBA, which is one of this tool's main outputs).
+func convertXLSB(src string) (string, func(), error) {
+	soffice := findSoffice()
+	if soffice == "" {
+		return "", nil, fmt.Errorf(`.xlsb は OOXML (ZIP+XML) 形式ではないため直接解体できません。
+自動変換に使う LibreOffice (soffice) が見つかりませんでした。次のいずれかで対応してください:
+  1. LibreOffice をインストールする (macOS: brew install --cask libreoffice)。
+     インストール後はこのツールが自動で .xlsm に変換して解体します。
+  2. Excel か LibreOffice で手動で .xlsm へ変換してから渡す
+     (VBA マクロを残すため .xlsx ではなく .xlsm を選ぶこと)`)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "disassemble_excel_xlsb_*")
+	if err != nil {
+		return "", nil, err
+	}
+	cleanup := func() { os.RemoveAll(tmpDir) }
+
+	fmt.Fprintf(os.Stderr, "  xlsb: LibreOffice で .xlsm に変換中 (%s)\n", filepath.Base(soffice))
+	cmd := exec.Command(soffice, "--headless",
+		"--convert-to", "xlsm:Calc MS Excel 2007 VBA",
+		"--outdir", tmpDir, src)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("soffice での xlsb→xlsm 変換に失敗: %w\n%s", err, out)
+	}
+
+	converted := filepath.Join(tmpDir,
+		strings.TrimSuffix(filepath.Base(src), filepath.Ext(src))+".xlsm")
+	if _, err := os.Stat(converted); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("変換後の .xlsm が見つかりません: %s\nsoffice 出力:\n%s", converted, out)
+	}
+	return converted, cleanup, nil
+}
+
+// findSoffice locates the LibreOffice CLI on PATH or in the macOS default
+// install location. Returns "" if not found.
+func findSoffice() string {
+	for _, name := range []string{"soffice", "libreoffice"} {
+		if p, err := exec.LookPath(name); err == nil {
+			return p
+		}
+	}
+	for _, p := range []string{
+		"/Applications/LibreOffice.app/Contents/MacOS/soffice",
+	} {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
 }
 
 func extractVBAFromZip(zr *zip.Reader) ([]Module, error) {

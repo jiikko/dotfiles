@@ -20,8 +20,10 @@ line-oriented text you can `diff`, `grep`, and review:
   cell's real formula is resolved, so you see what every cell actually computes.
 - **VBA macros, decompressed in pure Go.** No `olevba`, no Python, no external
   tool. Module source is extracted straight from `vbaProject.bin`.
-- **Fully offline.** At runtime it only reads the input file and writes output
-  files — no network, no subprocesses.
+- **Fully offline.** Disassembling `.xlsx` / `.xlsm` only reads the input file
+  and writes output files — no network, no subprocesses. (The one exception is
+  `.xlsb` input, which is converted to `.xlsm` via a LibreOffice subprocess
+  first — see *Binary `.xlsb` workbooks* below.)
 
 ## Features
 
@@ -64,7 +66,7 @@ runs entirely offline.
 ## Usage
 
 ```sh
-disassemble_excel <file.xlsx|.xlsm> [options]
+disassemble_excel <file.xlsx|.xlsm|.xlsb> [options]
 # flags may appear before or after the file argument
 ```
 
@@ -134,6 +136,22 @@ value are escaped so each cell stays on one line.
   opens the OLE2 container, and the bundled `ovba` package implements the
   [MS-OVBA] decompression and `dir`-stream parsing. Module source is decoded
   using the project code page.
+
+## Binary `.xlsb` workbooks
+
+`.xlsb` (Excel Binary Workbook) is a ZIP container of BIFF12 **binary** records,
+not the OOXML (ZIP + XML) parts this tool reads, so it cannot be disassembled
+directly. If [LibreOffice](https://www.libreoffice.org/) (`soffice`) is found on
+`PATH` or in the macOS default location
+(`/Applications/LibreOffice.app/Contents/MacOS/soffice`), the tool converts the
+`.xlsb` to `.xlsm` first — using the *Calc MS Excel 2007 VBA* export filter so
+macros are preserved — then disassembles the result. The converted file lives in
+a temp dir and is removed afterwards; `manifest.json` records the original
+`.xlsb` name and SHA-256.
+
+If `soffice` is not installed, the tool prints how to install it
+(`brew install --cask libreoffice`) or convert manually. Convert to `.xlsm`
+(not `.xlsx`) so VBA is not dropped.
 
 ## Limitations
 
