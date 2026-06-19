@@ -36,6 +36,16 @@
             "async": true
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/dotfiles/_claude/hooks/git-state-verify.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "Stop": [
