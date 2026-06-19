@@ -746,7 +746,7 @@
                                     "key_code": "g",
                                     "modifiers": { "optional": ["any"] }
                                 },
-                                "to": [{ "mouse_key": { "speed_multiplier": 0.5 } }],
+                                "to": [{ "mouse_key": { "speed_multiplier": 0.2 } }],
                                 "type": "basic"
                             },
                             {
@@ -795,7 +795,7 @@
                                             "text": "Mouse Keys Mode v4"
                                         }
                                     },
-                                    { "mouse_key": { "speed_multiplier": 0.5 } }
+                                    { "mouse_key": { "speed_multiplier": 0.2 } }
                                 ],
                                 "type": "basic"
                             },
