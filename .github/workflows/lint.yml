@@ -1,7 +1,7 @@
 ---
 name: Lint
 
-'on':
+on:
   push:
     branches: [master]
   pull_request:
@@ -17,9 +17,11 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Install lint dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt-get update
-          sudo apt-get install -y zsh shellcheck yamllint jq
+          sudo apt-get install -y --no-install-recommends zsh shellcheck yamllint jq
 
       - name: Run lint suite
         run: make test-lint

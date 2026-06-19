@@ -1,7 +1,7 @@
 ---
 name: Tests
 
-'on':
+on:
   push:
     branches: [master]
   pull_request:
@@ -17,9 +17,23 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Install runtime dependencies (Neovim, tmux, zsh, bats)
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt-get update
-          sudo apt-get install -y neovim tmux zsh make bats
+          sudo apt-get install -y --no-install-recommends neovim tmux zsh make bats
+
+      # _nviminit.lua の bootstrap が毎回 github.com から lazy.nvim を git clone する
+      # ネットワーク依存を、clone 先 (stdpath('data')=~/.local/share/nvim/lazy) ごと
+      # キャッシュして回避する。CI でプラグイン本体は install されないため lazy ディレクトリ
+      # のみで十分。spec を変えたら鍵が変わるよう _nviminit.lua を hash する。
+      - name: Cache lazy.nvim bootstrap clone
+        uses: actions/cache@v5
+        with:
+          path: ~/.local/share/nvim/lazy
+          key: nvim-lazy-${{ runner.os }}-${{ hashFiles('_nviminit.lua') }}
+          restore-keys: |
+            nvim-lazy-${{ runner.os }}-
 
       - name: Run dotfiles test suite
         run: make test-runtime

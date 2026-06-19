@@ -1,0 +1,11 @@
+---
+# yamllint 設定 (make test-yaml が参照。対象は Makefile の YAML_FILES)。
+# - truthy: GitHub Actions の `on:` キーが boolean と誤検知されるため on/off を許可し、
+#   'on': クォート回避をやめてクォート無し (`on:`) で書けるようにする。
+# - line-length: default の 80 は workflow の式やコメントで超えやすいため 120 に緩和。
+extends: default
+rules:
+  truthy:
+    allowed-values: ['true', 'false', 'on', 'off']
+  line-length:
+    max: 120
