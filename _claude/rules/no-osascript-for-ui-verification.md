@@ -32,7 +32,7 @@ XCUITest は `accessibilityIdentifier` による安定セレクタ・明確な a
 | 4 | スクリーンショット成果物 (XCUITest attachment / `xcrun simctl io screenshot`) | 見た目 (人間のレビュー用に残す) |
 | 5 | osascript | 起動・終了・activate 等の軽い補助のみ |
 
-> **iOS の場合の優先順位**: 優先度3の `xcodebuild test`（XCUITest）はシミュレータを使うため、[`no-ios-simulator-verification.md`](no-ios-simulator-verification.md) が優先する。iOS ではビルド確認（優先度1）まで自発的に行い、**XCUITest の実行はユーザーに委ねる**（osascript も使わない）。macOS アプリにはこの制限はない。
+> **iOS の場合**: 優先度3の `xcodebuild test`（XCUITest）はシミュレータを使うため [`no-ios-simulator-verification.md`](no-ios-simulator-verification.md) が優先し、その**実行はユーザーに委ねる**（osascript も使わない）。iOS で自発的にやってよい範囲・macOS の扱いは同ルールを一次情報とする。
 
 ## 「確認方法を考えさせない」— verify スクリプトへの一本化
 

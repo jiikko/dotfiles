@@ -42,7 +42,7 @@
 
 ## 作成判定の最終ガード
 
-問いかけ前に [`claude-md-maintenance.md`](claude-md-maintenance.md) の「作るタイミング」基準を満たすか自己確認する。**満たさないなら問いかけ自体をスキップする** (中身が単純で local convention が無いディレクトリで無駄な選択を強いない)。「とりあえず CLAUDE.md を置く」は禁止。
+問いかけ前に [`claude-md-maintenance.md`](claude-md-maintenance.md) の「作るタイミング」基準を満たすか自己確認する。**満たさないなら問いかけ自体をスキップする** (中身が単純で local convention が無いディレクトリで無駄な選択を強いない)。
 
 ## やること / やらないこと
 
