@@ -6,11 +6,15 @@ name: Tests
     branches: [master]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   dotfiles-tests:
     runs-on: ubuntu-slim
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install runtime dependencies (Neovim, tmux, zsh, bats)
         run: |

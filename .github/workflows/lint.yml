@@ -6,11 +6,15 @@ name: Lint
     branches: [master]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   dotfiles-lint:
     runs-on: ubuntu-slim
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install lint dependencies
         run: |
