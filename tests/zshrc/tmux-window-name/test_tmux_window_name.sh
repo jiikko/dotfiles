@@ -172,5 +172,85 @@ printf '\n## Test 11: zsh title falls back when YAML is missing\n'
 result=$(run_zsh '_TMUX_WINDOW_NAME_YAML=/nonexistent/path.yaml; _tmux_reload_window_names; print -r -- "$_TMUX_ZSH_TITLE"')
 assert_equals "zsh" "$result" "_TMUX_ZSH_TITLE falls back to 'zsh' when YAML is absent"
 
+# Test 12: サブコマンド抽出 (base コマンドの次に来る最初の素の語)
+printf '\n## Test 12: Subcommand extraction\n'
+result=$(run_zsh '_tmux_extract_subcommand "make test"')
+assert_equals "test" "$result" "_tmux_extract_subcommand returns first plain word after base"
+
+result=$(run_zsh '_tmux_extract_subcommand "make -j4 build"')
+assert_equals "build" "$result" "_tmux_extract_subcommand skips flags after base"
+
+result=$(run_zsh '_tmux_extract_subcommand "make FOO=1 install"')
+assert_equals "install" "$result" "_tmux_extract_subcommand skips assignments after base"
+
+result=$(run_zsh '_tmux_extract_subcommand "sudo make install"')
+assert_equals "install" "$result" "_tmux_extract_subcommand skips wrappers before base"
+
+result=$(run_zsh '_tmux_extract_subcommand "git commit -m x"')
+assert_equals "commit" "$result" "_tmux_extract_subcommand returns git subcommand"
+
+# サブコマンドが無い (base コマンドのみ / 後続がフラグだけ) なら空文字
+result=$(run_zsh '_tmux_extract_subcommand "make"')
+assert_equals "" "$result" "_tmux_extract_subcommand returns empty when no subcommand"
+
+result=$(run_zsh '_tmux_extract_subcommand "ls -la"')
+assert_equals "" "$result" "_tmux_extract_subcommand returns empty when only flags follow"
+
+# 演算子・リダイレクトが続くだけのときは subcommand 無し (シェル演算子を拾わない)
+result=$(run_zsh '_tmux_extract_subcommand "make && echo ok"')
+assert_equals "" "$result" "_tmux_extract_subcommand stops at && (no subcommand)"
+
+result=$(run_zsh '_tmux_extract_subcommand "make | grep x"')
+assert_equals "" "$result" "_tmux_extract_subcommand stops at pipe"
+
+result=$(run_zsh '_tmux_extract_subcommand "make >out"')
+assert_equals "" "$result" "_tmux_extract_subcommand stops at redirection"
+
+result=$(run_zsh '_tmux_extract_subcommand "make; ls"')
+assert_equals "" "$result" "_tmux_extract_subcommand stops at semicolon"
+
+result=$(run_zsh '_tmux_extract_subcommand "make 2>&1 test"')
+assert_equals "" "$result" "_tmux_extract_subcommand stops at fd redirection"
+
+result=$(run_zsh '_tmux_extract_subcommand "make &>log"')
+assert_equals "" "$result" "_tmux_extract_subcommand stops at &> redirection"
+
+result=$(run_zsh '_tmux_extract_subcommand "make &>|log"')
+assert_equals "" "$result" "_tmux_extract_subcommand stops at &>| redirection"
+
+result=$(run_zsh '_tmux_extract_subcommand "make &>>log"')
+assert_equals "" "$result" "_tmux_extract_subcommand stops at &>> redirection"
+
+# 演算子の前に実引数があればそれを拾う (subcommand 抽出は続行)
+result=$(run_zsh '_tmux_extract_subcommand "make build && true"')
+assert_equals "build" "$result" "_tmux_extract_subcommand returns arg that precedes an operator"
+
+result=$(run_zsh '_tmux_extract_subcommand "make test >log"')
+assert_equals "test" "$result" "_tmux_extract_subcommand returns arg before redirection"
+
+# Test 13: whitelist (_subcommands) の set 化
+printf '\n## Test 13: Subcommand whitelist set\n'
+result=$(run_zsh '_tmux_load_yaml; (( ${+_TMUX_SUBCOMMAND_CMDS[make]} )) && echo yes || echo no')
+assert_equals "yes" "$result" "make is in the subcommand whitelist"
+
+result=$(run_zsh '_tmux_load_yaml; (( ${+_TMUX_SUBCOMMAND_CMDS[ls]} )) && echo yes || echo no')
+assert_equals "no" "$result" "ls is NOT in the subcommand whitelist"
+
+# Test 14: window 名の組み立て (preexec のロジックを実関数で再現)
+printf '\n## Test 14: Title composition (whitelist gating)\n'
+# 実 _tmux_preexec と同じ手順 (先頭でロードを親シェルに保証してから whitelist 判定)
+compose='(( _TMUX_WINDOW_NAMES_LOADED )) || _tmux_load_yaml; c=$(_tmux_extract_command "$1"); t=$(_tmux_get_display_name "$c"); if (( ${+_TMUX_SUBCOMMAND_CMDS[$c]} )); then s=$(_tmux_extract_subcommand "$1"); [[ -n "$s" ]] && t="$t $s"; fi; print -r -- "$t"'
+# whitelist コマンドはサブコマンドが付く
+result=$(run_zsh "_compose() { $compose }; _compose 'make test-zshrc'")
+assert_contains "make test-zshrc" "$result" "whitelisted command shows subcommand in title"
+# 非 whitelist コマンドは第1語のみ (フラグは出ない)
+result=$(run_zsh "_compose() { $compose }; _compose 'ls -la'")
+assert_contains "ls" "$result" "non-whitelisted command keeps base name"
+if [[ "$result" == *"-la"* ]]; then
+  printf '✗ non-whitelisted command leaked a flag into the title: "%s"\n' "$result"
+  exit 1
+fi
+printf '✓ non-whitelisted command does not leak flags\n'
+
 printf '\n=== All Tests Completed ===\n'
 printf 'All tmux window name tests passed successfully!\n'

@@ -31,6 +31,12 @@ claude: "🤖 claude"
 claude-code: "🤖 claude-code"
 codex: "🤖 codex"
 gemini: "🤖 gemini"
+
+# サブコマンドも window 名に出すコマンド (whitelist)。空白区切り。
+# 例: `make test` → "make test" にアイコン付き。ここに無いコマンドは第1語のみ表示。
+# 第2語をそのまま拾う簡易判定のため、`git -C /path status` のように値を取るグローバル
+# フラグでは値 (/path) を拾いうる。対話入力では稀なので許容している。
+_subcommands: make git npm yarn pnpm cargo docker go bundle kubectl brew rails terraform gh pip apt systemctl
 _default: " "
 
 # シェル
