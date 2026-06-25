@@ -50,72 +50,144 @@ REAL_SAVE="${TT_REAL_SAVE_SCRIPT:-$SCRIPT_DIR/../vendor/tmux-plugins/tmux-resurr
 
 TT_SAVE_STATE_DIR="${TT_SAVE_STATE_DIR:-$HOME/.cache/tt-resurrect-save}"
 TT_SAVE_LOCK_DIR="$TT_SAVE_STATE_DIR/lock"
-# lock の stale 判定（秒）。これより古い lock はクラッシュ取り残しとみなして解除。
-# 実保存は数秒〜十数秒なので 120s で十分。
+# lock の stale 判定（秒）の mtime フォールバック。通常の生死判定は owner の PID+起動時刻で行い
+# （下記 tt_save_owner_is_stale 参照）、この mtime TTL は「pid ファイルに owner が書かれていない
+# 稀な取り残し」（mkdir 直後・pid 書き込み前に死亡）だけに使う。実保存は数秒〜十数秒なので 120s で十分。
 TT_SAVE_LOCK_STALE_SECONDS="${TT_SAVE_LOCK_STALE_SECONDS:-120}"
+# owner の起動時刻で同定できない（旧形式 PID-only の lock / ps -o lstart= 非対応環境）ときの
+# mtime backstop TTL（秒）。通常は owner の PID+起動時刻で生死を厳密に同定し生存 owner を絶対に
+# 奪わないが、起動時刻が無いと「PID 再利用の取り残し」と「正当な長時間保存」を区別できない。その場合
+# だけ、mtime がこの TTL を超えた生存 owner を取り残しとみなして解除し、保存の永久停止を防ぐ。実保存
+# 最大時間より十分大きく（誤って奪う確率を最小化）、continuum interval（既定 900s）より小さく保つこと
+# （既定 600s）。起動時刻が取れる通常環境ではこの TTL は使われない。
+TT_SAVE_LOCK_HARD_STALE_SECONDS="${TT_SAVE_LOCK_HARD_STALE_SECONDS:-600}"
 # lock を取れないとき待つ上限（秒）。先行保存（数秒〜十数秒）の完了を待ってから保存する。
 # 全 caller が background 実行なので待ってよい。0.2s 間隔でポーリングする。
 TT_SAVE_LOCK_WAIT_SECONDS="${TT_SAVE_LOCK_WAIT_SECONDS:-15}"
-
-if [ ! -x "$REAL_SAVE" ]; then
-  exit 1
-fi
-
-mkdir -p "$TT_SAVE_STATE_DIR" 2>/dev/null
 
 tt_save_release_lock() {
   rm -f "$TT_SAVE_LOCK_DIR/pid" 2>/dev/null || true
   rmdir "$TT_SAVE_LOCK_DIR" 2>/dev/null || true
 }
 
-# lock が「取り残し（owner プロセス死亡）」かを判定する。
-# mtime のみで stale 判定すると、pane contents が巨大等で実保存が stale TTL を超えた場合に
-# 「進行中の正当な lock」を取り残しと誤判定して奪い、再び並行 save.sh の競合を招く（codex 指摘）。
-# そこで owner PID の生存確認を主とし、PID 不明時のみ mtime を保険に使う。
-tt_save_lock_is_stale() {
-  [ -d "$TT_SAVE_LOCK_DIR" ] || return 1
-  local owner
-  owner="$(cat "$TT_SAVE_LOCK_DIR/pid" 2>/dev/null)"
-  if [ -n "$owner" ]; then
-    # owner 生存中 = 保存進行中（待つ）。死亡 = クラッシュ取り残し（解除可）。
-    # PID 再利用で別プロセスが生きている誤検知は「待つ」側（安全）に倒れるだけ。
-    if kill -0 "$owner" 2>/dev/null; then return 1; else return 0; fi
-  fi
-  # PID 不明（mkdir 直後で pid 書き込み前の競合 or 旧形式）→ mtime が stale TTL より古ければ取り残し。
-  [ -z "$(find "$TT_SAVE_LOCK_DIR" -maxdepth 0 -mmin "-$(( TT_SAVE_LOCK_STALE_SECONDS / 60 + 1 ))" 2>/dev/null)" ]
+# owner 行が expected と一致するときだけ解除する conditional release。
+# stale lock の横取り（acquire ループ）と自分の lock 解放（EXIT trap）の両方で使う。
+# 無条件 rmdir だと「判定〜削除の間に別プロセスが取得した新 lock」を消して並行 save.sh を招く
+# （codex 指摘）。owner 一致確認でその窓を大幅に縮める。観測〜削除間の微小 TOCTOU は mkdir lock の
+# 原理上完全には消せないが、万一すり抜けて並行 save が起きても upstream save.sh は直近 5 世代を
+# 保持するため次回保存で回復する（= 残存リスクは許容範囲）。
+tt_save_release_lock_if_owner() {
+  local expected="$1" cur=''
+  cur="$(cat "$TT_SAVE_LOCK_DIR/pid" 2>/dev/null || true)"
+  [ "$cur" = "$expected" ] && tt_save_release_lock
 }
 
-# lock を bounded-wait で取得する。先行保存が進行中なら完了を待ってから自分が保存する
-# （skip を成功扱いにして取りこぼす不変条件破れを避ける。冒頭コメント参照）。
-acquired=
-wait_until=$(( $(date +%s) + TT_SAVE_LOCK_WAIT_SECONDS ))
-while :; do
-  if tt_save_lock_is_stale; then
-    tt_save_release_lock
-  fi
-  if mkdir "$TT_SAVE_LOCK_DIR" 2>/dev/null; then
-    printf '%s\n' "$$" > "$TT_SAVE_LOCK_DIR/pid" 2>/dev/null || true
-    acquired=1
-    break
-  fi
-  [ "$(date +%s)" -ge "$wait_until" ] && break
-  sleep 0.2
-done
+# 自分が現 owner のときだけ lock を解放する（EXIT trap 用）。横取り誤検知などで別プロセスが
+# 再取得した lock を、後から終了した自分の trap が消す連鎖を防ぐ。
+tt_save_release_own_lock() {
+  tt_save_release_lock_if_owner "$$ $(tt_save_proc_starttime "$$")"
+}
 
-# 待っても取れない（異常に長い保持）→ 非 0 で返し、呼び出し側に「保存していない」を伝える。
-# これにより debounce の tt_run_resurrect_save は @continuum-save-last-timestamp を進めず、
-# continuum の周期保存を抑止しない（取りこぼしの連鎖を断つ）。
-# NOTE: continuum 経由は save を background 起動した直後に無条件で last-save-timestamp を
-#   進めるため、本 wrapper の非 0 は continuum 側には伝わらない。しかし「lock を保持して
-#   いる先行保存は必ず現在状態を保存する」ため、continuum が今周期見送っても鮮度は保たれる
-#   （= 実害は軽微）。TT_SAVE_LOCK_WAIT_SECONDS は実保存最大時間より十分長く、continuum
-#   interval より十分短く保つこと（既定 15s: 通常保存<1s, continuum 既定 900s の中間）。
-if [ -z "$acquired" ]; then
-  exit 1
+# lock dir の mtime が指定秒数より「古い」とき真（stale 判定の共通部品）。
+# BSD/GNU 双方で -mmin -N = 「過去 N 分以内に変更=新しい」。find が空（=N 分以内に該当なし）= それより古い。
+# 秒→分の整数除算 +1 で切り上げるため、実効しきい値は名目より最大 ~1 分長い（安全側＝早すぎる解除をしない）。
+tt_save_lock_older_than() {
+  local secs="$1"
+  [ -z "$(find "$TT_SAVE_LOCK_DIR" -maxdepth 0 -mmin "-$(( secs / 60 + 1 ))" 2>/dev/null)" ]
+}
+
+# プロセス PID の起動時刻を空白無しの単一トークンに正規化して返す（存在しなければ空）。
+# PID だけでは再起動跨ぎ / PID 再利用で「別プロセスを同一 owner と誤認」するため、起動時刻を
+# 指紋として併用する。ps -o lstart= は BSD(macOS)/GNU(Linux) 双方で同一プロセスに安定な文字列を返す。
+tt_save_proc_starttime() {
+  ps -o lstart= -p "$1" 2>/dev/null | tr -s '[:space:]' '_'
+}
+
+# 渡された owner 行（"PID 起動時刻トークン"）が「取り残し」かを判定する。owner 行は呼び出し側が
+# lock の pid から一度だけ読んで渡す。判定と解除で別々に pid を読むと、判定後に別プロセスが取得した
+# 新 owner を解除対象として拾い、その生存 lock を誤って消してしまう（codex 指摘）。
+# 単純な PID 生存(kill -0)だけだと二律背反に陥る:
+#   (a) 生存中の正当な長時間保存（巨大 pane contents 等）を mtime TTL で奪うと並行 save.sh の競合、
+#   (b) ~/.cache の lock が再起動を跨いで残置し PID が無関係な長命プロセスに再利用されると
+#       kill -0 が真のままで永久に解除できず、全保存経路が exit 1 を繰り返して保存が止まる。
+# 方針: 生死は kill -0 を主判定にして「生きている owner は絶対に奪わない」((a) を回避)。その上で
+# PID 再利用 ((b)) だけを「記録と現在の起動時刻が両方取得でき、かつ食い違う」ときに限り取り残し扱い
+# にする。起動時刻が取れない/取得失敗の環境では fail-safe で生存 owner を尊重する（誤って奪う方には
+# 倒さない）。pid ファイルに PID が無い稀な取り残し（mkdir 直後で書き込み前に死亡）だけ mtime を保険に使う。
+tt_save_owner_is_stale() {
+  [ -d "$TT_SAVE_LOCK_DIR" ] || return 1
+  local owner_pid='' owner_start='' cur_start=''
+  read -r owner_pid owner_start <<<"${1:-}"
+  if [ -n "$owner_pid" ]; then
+    # 生死は kill -0 が主判定。死亡していれば取り残し（解除可）。
+    kill -0 "$owner_pid" 2>/dev/null || return 0
+    cur_start="$(tt_save_proc_starttime "$owner_pid")"
+    if [ -n "$cur_start" ] && [ -n "$owner_start" ]; then
+      # 起動時刻が両方取れた: 一致 = 同一プロセスが進行中（どれだけ長くても奪わない）。
+      # 不一致 = 別プロセスが同 PID を再利用（再起動跨ぎ等）→ 取り残し（解除可）。
+      [ "$cur_start" = "$owner_start" ] && return 1
+      return 0
+    fi
+    # 起動時刻で同定できない（旧形式 PID-only / ps -o lstart= 非対応）。生存 owner を即奪うと正当な
+    # 保存を壊すが、永久に待つと PID 再利用で保存が止まる。妥協として mtime hard TTL を backstop に:
+    # hard TTL 内なら進行中とみなし待ち、超過なら再利用とみなして取り残し扱いにする（永久停止を防ぐ）。
+    tt_save_lock_older_than "$TT_SAVE_LOCK_HARD_STALE_SECONDS" && return 0
+    return 1
+  fi
+  # PID 不明（mkdir 直後で pid 書き込み前の競合 or 旧形式）→ mtime が soft stale TTL より古ければ取り残し。
+  tt_save_lock_older_than "$TT_SAVE_LOCK_STALE_SECONDS"
+}
+
+# lock を bounded-wait で取得し、保持したまま upstream save.sh を foreground 同期実行する本体。
+# TT_SAVE_SOURCE_ONLY=1 で source するとここは実行されず、関数だけをテストから直接呼べる
+# （tmux_resurrect_debounced_save.sh と同方式。tests/zshrc/tmux-session/test_resurrect_save_lock.sh）。
+tt_save_main() {
+  if [ ! -x "$REAL_SAVE" ]; then
+    return 1
+  fi
+  mkdir -p "$TT_SAVE_STATE_DIR" 2>/dev/null
+
+  # lock を bounded-wait で取得する。先行保存が進行中なら完了を待ってから自分が保存する
+  # （skip を成功扱いにして取りこぼす不変条件破れを避ける。冒頭コメント参照）。
+  local acquired='' wait_until observed
+  wait_until=$(( $(date +%s) + TT_SAVE_LOCK_WAIT_SECONDS ))
+  while :; do
+    # owner 行は一度だけ読み、その同じ行で stale 判定と解除対象の同定を行う（二度読みすると
+    # 判定後に別プロセスが取得した新 owner を解除対象に拾い、その生存 lock を消す。codex 指摘）。
+    observed="$(cat "$TT_SAVE_LOCK_DIR/pid" 2>/dev/null || true)"
+    if tt_save_owner_is_stale "$observed"; then
+      tt_save_release_lock_if_owner "$observed"
+    fi
+    if mkdir "$TT_SAVE_LOCK_DIR" 2>/dev/null; then
+      # owner 同定用に PID と起動時刻を記録する（tt_save_owner_is_stale 参照）。
+      printf '%s %s\n' "$$" "$(tt_save_proc_starttime "$$")" > "$TT_SAVE_LOCK_DIR/pid" 2>/dev/null || true
+      acquired=1
+      break
+    fi
+    [ "$(date +%s)" -ge "$wait_until" ] && break
+    sleep 0.2
+  done
+
+  # 待っても取れない（異常に長い保持）→ 非 0 で返し、呼び出し側に「保存していない」を伝える。
+  # これにより debounce の tt_run_resurrect_save は @continuum-save-last-timestamp を進めず、
+  # continuum の周期保存を抑止しない（取りこぼしの連鎖を断つ）。
+  # NOTE: continuum 経由は save を background 起動した直後に無条件で last-save-timestamp を
+  #   進めるため、本 wrapper の非 0 は continuum 側には伝わらない。しかし「lock を保持して
+  #   いる先行保存は必ず現在状態を保存する」ため、continuum が今周期見送っても鮮度は保たれる
+  #   （= 実害は軽微）。TT_SAVE_LOCK_WAIT_SECONDS は実保存最大時間より十分長く、continuum
+  #   interval より十分短く保つこと（既定 15s: 通常保存<1s, continuum 既定 900s の中間）。
+  if [ -z "$acquired" ]; then
+    return 1
+  fi
+  trap 'tt_save_release_own_lock' EXIT
+
+  # lock を保持したまま upstream save.sh を foreground 同期実行する。
+  # continuum が本 wrapper を `&` で background 起動しても、wrapper プロセスは
+  # save.sh 完了まで生きるため、保存期間中ずっと lock が保持される。
+  "$REAL_SAVE" "$@"
+}
+
+# 直接実行時のみ本体を走らせる。source（テスト）時は関数定義だけ読み込む。
+if [ "${TT_SAVE_SOURCE_ONLY:-}" != "1" ]; then
+  tt_save_main "$@"
 fi
-trap 'tt_save_release_lock' EXIT
-
-# lock を保持したまま upstream save.sh を foreground 同期実行する。
-# continuum が本 wrapper を `&` で background 起動しても、wrapper プロセスは
-# save.sh 完了まで生きるため、保存期間中ずっと lock が保持される。
-"$REAL_SAVE" "$@"

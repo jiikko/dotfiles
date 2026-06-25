@@ -26,6 +26,7 @@ test-zshrc:
 	@tests/zshrc/tmux-window-name/test_tmux_window_name.sh
 	@tests/zshrc/tmux-session/test_tt.sh
 	@tests/zshrc/tmux-session/test_debounced_save.sh
+	@tests/zshrc/tmux-session/test_resurrect_save_lock.sh
 	@tests/zshrc/av1ify/test_av1ify_basic.sh
 	@tests/zshrc/av1ify/test_av1ify_audio.sh
 	@tests/zshrc/av1ify/test_av1ify_options.sh
