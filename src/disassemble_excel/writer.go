@@ -163,6 +163,26 @@ func writeVBAIndex(path string, mods []Module) error {
 	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
 
+// writeObjectsTSV writes one line per sheet object that has a macro assigned,
+// so "what runs when this picture/button is clicked" is diffable and greppable.
+func writeObjectsTSV(path string, objs []DrawingObject) error {
+	var b strings.Builder
+	b.WriteString("sheet\tobject\tkind\tanchor\tmacro\n")
+	for _, o := range objs {
+		b.WriteString(tsvEsc(o.Sheet))
+		b.WriteByte('\t')
+		b.WriteString(tsvEsc(o.Name))
+		b.WriteByte('\t')
+		b.WriteString(o.Kind)
+		b.WriteByte('\t')
+		b.WriteString(o.Anchor)
+		b.WriteByte('\t')
+		b.WriteString(tsvEsc(o.Macro))
+		b.WriteByte('\n')
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
 func writeManifest(path string, man Manifest) error {
 	data, err := json.MarshalIndent(man, "", "  ")
 	if err != nil {
@@ -184,6 +204,7 @@ func writeReadme(path string, man Manifest, srcAbs string, noGrid bool) error {
 		}
 	}
 	hasVBA := len(man.VBAModules) > 0
+	hasObjects := len(man.Objects) > 0
 
 	var b strings.Builder
 	b.WriteString("# disassemble_excel 出力ディレクトリ\n\n")
@@ -219,6 +240,9 @@ func writeReadme(path string, man Manifest, srcAbs string, noGrid bool) error {
 		b.WriteString("| `vba/<モジュール名>.bas` / `.cls` | VBA モジュールのソースコード（標準モジュール=`.bas`、クラス/ドキュメントモジュール=`.cls`）。コードを持つモジュールごとに 1 ファイル |\n")
 		b.WriteString("| `vba_index.tsv` | VBA の Sub/Function/Property の索引。列は `module  proc  kind  module_line` |\n")
 	}
+	if hasObjects {
+		b.WriteString("| `objects.tsv` | マクロが割り当てられたシート上のオブジェクト（画像・図形・ボタン）。クリック時に実行されるマクロが分かる。列は `sheet  object  kind  anchor  macro`。画像自体は復元しない |\n")
+	}
 	b.WriteString("\n")
 
 	fmt.Fprintf(&b, "## シート一覧（%d 枚）\n\n", len(man.Sheets))
@@ -251,6 +275,18 @@ func writeReadme(path string, man Manifest, srcAbs string, noGrid bool) error {
 			}
 			fmt.Fprintf(&b, "| %s | %s | %d | %d | %s |\n",
 				m.Name, m.Type, m.Procs, m.Lines, file)
+		}
+		b.WriteString("\n")
+	}
+
+	if hasObjects {
+		fmt.Fprintf(&b, "## マクロ割り当てオブジェクト一覧（%d 個）\n\n", len(man.Objects))
+		b.WriteString("シート上の画像・図形・ボタンに登録され、クリック時に実行されるマクロです。\n\n")
+		b.WriteString("| シート | オブジェクト | 種別 | 位置 | マクロ |\n")
+		b.WriteString("|--------|--------------|------|------|--------|\n")
+		for _, o := range man.Objects {
+			fmt.Fprintf(&b, "| %s | %s | %s | %s | `%s` |\n",
+				o.Sheet, o.Name, o.Kind, o.Anchor, o.Macro)
 		}
 		b.WriteString("\n")
 	}

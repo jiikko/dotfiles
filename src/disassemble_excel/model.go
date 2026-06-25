@@ -39,6 +39,17 @@ type Proc struct {
 	Line int    // 1-based line within the module source
 }
 
+// DrawingObject is a sheet object (picture, shape, form-control button, ...)
+// that has a macro assigned, i.e. clicking it runs that macro. The image itself
+// is not extracted — only enough to answer "what runs when this is clicked".
+type DrawingObject struct {
+	Sheet  string `json:"sheet"`
+	Name   string `json:"name"`             // cNvPr name (DrawingML) or shape id (VML)
+	Kind   string `json:"kind"`             // pic | sp | cxnSp | graphicFrame | grpSp | button | <objecttype>
+	Anchor string `json:"anchor,omitempty"` // A1 of the top-left anchor cell ("" if absolute)
+	Macro  string `json:"macro"`            // assigned macro name ("[0]!" self-ref prefix stripped)
+}
+
 // --- manifest.json ---
 
 type Manifest struct {
@@ -48,6 +59,7 @@ type Manifest struct {
 	ToolVersion string          `json:"tool_version"`
 	Sheets      []SheetManifest `json:"sheets"`
 	VBAModules  []ModManifest   `json:"vba_modules"`
+	Objects     []DrawingObject `json:"objects,omitempty"` // sheet objects with an assigned macro
 }
 
 type SheetManifest struct {
