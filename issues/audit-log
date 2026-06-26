@@ -1,1 +1,5 @@
 2026-02-19 03:30	design,responsibility,duplication,broken-code,dead-code,general,ux	forge-minimum+	issues/claude-skills-improvements.md
+2026-06-26 20:24	duplication	direct	issues/design-audit-2026-06-26.md
+2026-06-26 20:24	responsibility	direct	issues/design-audit-2026-06-26.md
+2026-06-26 20:24	design	direct	issues/design-audit-2026-06-26.md
+2026-06-26 20:24	polymorphism	direct	issues/design-audit-2026-06-26.md
