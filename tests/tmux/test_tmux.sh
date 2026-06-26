@@ -83,6 +83,23 @@ print "[test-tmux:zsh] starting server with $CONF_FILE"
 run_with_check "$log_file" "failed to create test session" "skip" \
   "${TMUX_CMD[@]}" new-session -d -s dotfiles_test "tail -f /dev/null"
 
+# conf ロード時に tmux が出す設定警告 (invalid option / unknown ...) を検出する。
+# これらは run_with_check の grep "error" では拾えない
+# (例: "invalid option: pane-scrollbars" は "error" を含まない)。
+# また -f での起動時ロード (上の new-session) は警告を呼び出し元の stderr へ返さない
+# (サーバ側に記録されるだけ) ため、source-file を明示実行して呼び出しの出力に警告を
+# 捕捉する (実測: source-file は呼び出し元へ返す / -f 起動は返さない)。
+# 古い tmux でバージョンガード無しに新オプションを足すと壊れる回帰
+# (pane-scrollbars は tmux 3.6+ 専用) を防ぐのが目的。
+print "[test-tmux:zsh] checking config load for tmux warnings"
+"${TMUX_CMD[@]}" source-file "$CONF_FILE" >"$log_file" 2>&1 || true
+conf_warnings=$(grep -niE 'invalid option|unknown option|unknown command|unknown key|invalid or unknown' "$log_file" || true)
+if [[ -n "$conf_warnings" ]]; then
+  print -u2 "[test-tmux:zsh] tmux reported config warnings while loading $CONF_FILE:"
+  print -u2 "$conf_warnings"
+  exit 1
+fi
+
 print "[test-tmux:zsh] dumping global options"
 run_with_check "$log_file" "show-options failed" "fail" \
   "${TMUX_CMD[@]}" show-options -g
