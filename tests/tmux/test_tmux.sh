@@ -108,4 +108,40 @@ print "[test-tmux:zsh] verifying custom key bindings can be listed"
 run_with_check "$log_file" "list-keys failed" "fail" \
   "${TMUX_CMD[@]}" list-keys
 
+# window-status フォーマットのスタイル指定が壊れていないか検査する。
+# #{?cond,#[a#,b],...} のように条件分岐の中で #[...] を使うとき、#[...] 内の
+# カンマを #, でエスケープし忘れると、tmux は条件分岐の区切りカンマと誤認し、
+# スタイル指定が途中で割れて window 名の前に "fg=colour231]" のようなリテラルが
+# 漏れる (zoom 強調色の実装で実際に踏んだ回帰。source-file 警告は出ないため
+# 上のロード検査では拾えず、描画時に初めて壊れる)。
+# 実 format をズーム/非ズーム両状態で展開し、整形済みの #[...] を除去した残りに
+# fg=/bg=/colourN が残っていないか検査する (display-message はパイプ出力時に
+# 正規タグも #[...] のまま出すので、まず正規タグを除去してから漏れを判定する)。
+assert_no_style_leak() {
+  local label="$1" expanded="$2" residual
+  residual=$(print -r -- "$expanded" | sed -E 's/#\[[^]]*\]//g')
+  if print -r -- "$residual" | grep -qE 'fg=|bg=|colour[0-9]'; then
+    print -u2 "[test-tmux:zsh] window-status format leaked a style literal ($label):"
+    print -u2 "  expanded: $expanded"
+    print -u2 "  residual: $residual"
+    exit 1
+  fi
+}
+
+print "[test-tmux:zsh] checking window-status formats expand without leaked style literals"
+"${TMUX_CMD[@]}" split-window -d -t dotfiles_test "tail -f /dev/null" >"$log_file" 2>&1 \
+  || handle_result "$log_file" "split-window failed" "fail"
+fmt_current=$("${TMUX_CMD[@]}" show-options -gv window-status-current-format)
+fmt_other=$("${TMUX_CMD[@]}" show-options -gv window-status-format)
+for zoom_state in unzoomed zoomed; do
+  if [[ "$zoom_state" == zoomed ]]; then
+    "${TMUX_CMD[@]}" resize-pane -t dotfiles_test -Z >"$log_file" 2>&1 \
+      || handle_result "$log_file" "resize-pane -Z failed" "fail"
+  fi
+  assert_no_style_leak "current/$zoom_state" \
+    "$("${TMUX_CMD[@]}" display-message -t dotfiles_test -p "$fmt_current")"
+  assert_no_style_leak "other/$zoom_state" \
+    "$("${TMUX_CMD[@]}" display-message -t dotfiles_test -p "$fmt_other")"
+done
+
 print "[test-tmux:zsh] done"
