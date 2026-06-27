@@ -15,8 +15,12 @@ ln -sf ~/dotfiles/_tmux.conf ~/.tmux.conf
 ln -sf ~/dotfiles/_coc-settings.json ~/.config/nvim/coc-settings.json
 
 # setup .claude directory
-# migrate: ディレクトリ丸ごとシンボリックリンクだった旧形式を個別リンク形式に変換
-for dir in ~/.claude/agents ~/.claude/skills ~/.claude/rules; do
+# migrate: ディレクトリ丸ごとシンボリックリンクだった旧形式を個別リンク形式に変換。
+# per-file リンクを張る全ディレクトリを対象にする: 対象が dir symlink のまま残ると、後続の
+# `ln -sfn "$f" ~/.claude/<dir>/...` がリンク先 (= リポジトリ側の _claude/<dir>/) に書き込み、
+# 元ファイルを自己参照 symlink に置き換えて破壊する (Too many levels of symbolic links)。
+# 通常は実ディレクトリなので [ -L ] ガードで no-op (旧形式 or 手動 dir symlink のときだけ作動)。
+for dir in ~/.claude/agents ~/.claude/skills ~/.claude/rules ~/.claude/hooks ~/.claude/workflows ~/.claude/commands; do
   if [ -L "$dir" ]; then
     echo "migrating $dir: replacing directory symlink with individual symlinks"
     rm "$dir"
@@ -28,9 +32,13 @@ for dir in ~/.claude/agents ~/.claude/skills ~/.claude/rules; do
     rm "$nested"
   fi
 done
-mkdir -p ~/.claude/agents ~/.claude/skills ~/.claude/rules ~/.claude/hooks ~/.claude/workflows
+mkdir -p ~/.claude/agents ~/.claude/skills ~/.claude/rules ~/.claude/hooks ~/.claude/workflows ~/.claude/commands
 for f in ~/dotfiles/_claude/agents/*; do
   [ -e "$f" ] && ln -sfn "$f" ~/.claude/agents/"$(basename "$f")"
+done
+# slash commands: _claude/commands/*.md を個別リンク (/fork-scratch 等の明示実行コマンド)
+for f in ~/dotfiles/_claude/commands/*; do
+  [ -e "$f" ] && ln -sfn "$f" ~/.claude/commands/"$(basename "$f")"
 done
 for d in ~/dotfiles/_claude/skills/*/; do
   [ -d "$d" ] && ln -sfn "$d" ~/.claude/skills/"$(basename "$d")"
@@ -48,7 +56,7 @@ for f in ~/dotfiles/_claude/workflows/*; do
 done
 # dotfiles 側で削除されたファイルの symlink が残ると壊れたリンクになるので掃除する。
 # dotfiles/_claude 配下を指すリンクだけを対象にし、ユーザーが手動で張った別由来のリンクは触らない
-for dir in ~/.claude/agents ~/.claude/skills ~/.claude/rules ~/.claude/hooks ~/.claude/workflows; do
+for dir in ~/.claude/agents ~/.claude/skills ~/.claude/rules ~/.claude/hooks ~/.claude/workflows ~/.claude/commands; do
   for link in "$dir"/*; do
     if [ -L "$link" ] && [ ! -e "$link" ]; then
       case "$(readlink "$link")" in

@@ -5,7 +5,7 @@
 # 効くことを確認済み)。
 # - 最終アクティビティの新しい順に並べる (現在地が先頭、直前に居た場所が 2 番目)
 # - 現在地に「← いまここ」マーク、各行に相対時刻 (◯分前) を表示
-# - scratch (スクラッチ popup 用の専用セッション) は候補から除外する
+# - scratch / claude-fork (popup 専用セッション) は候補から除外する
 set -euo pipefail
 unset CDPATH
 
@@ -14,7 +14,7 @@ now=$(date +%s)
 
 list=$(tmux list-windows -a \
   -F "#{window_activity}	#{session_name}:#{window_index}	#{window_name}#{?#{>:#{window_panes},1}, [#{window_panes}],}" \
-  | awk -F'\t' '$2 !~ /^scratch:/' \
+  | awk -F'\t' '$2 !~ /^(scratch|claude-fork):/' \
   | sort -t$'\t' -k1,1rn \
   | awk -F'\t' -v now="$now" -v cur="$current" '{
       d = now - $1
