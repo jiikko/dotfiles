@@ -144,4 +144,22 @@ for zoom_state in unzoomed zoomed; do
     "$("${TMUX_CMD[@]}" display-message -t dotfiles_test -p "$fmt_other")"
 done
 
+# status-left も同じ「条件分岐内 #[...] のカンマ未エスケープ」回帰の対象
+# (scratch セッション検出時のソフト点滅 flash 分岐で #[...] を使う)。
+print "[test-tmux:zsh] checking status-left expands without leaked style literals"
+fmt_sl=$("${TMUX_CMD[@]}" show-options -gv status-left)
+# 通常(非 scratch)分岐
+assert_no_style_leak "status-left/normal" \
+  "$("${TMUX_CMD[@]}" display-message -t dotfiles_test -p "$fmt_sl")"
+# scratch の flash 分岐を exercise: 検出条件 session_name==scratch を、このテストセッション名
+# (dotfiles_test) に一致するよう差し替えると flash 分岐が選ばれる (条件の差し替えはスタイルの
+# エスケープ検査結果に影響しない。点滅 #() は client 非 attach で空展開だが #[...] 崩れは検出可)。
+fmt_sl_flash=${fmt_sl/,scratch/,dotfiles_test}
+if [[ "$fmt_sl_flash" != "$fmt_sl" ]]; then
+  assert_no_style_leak "status-left/scratch-flash" \
+    "$("${TMUX_CMD[@]}" display-message -t dotfiles_test -p "$fmt_sl_flash")"
+else
+  print -u2 "[test-tmux:zsh] warning: status-left の scratch 検出条件が見つからず flash 分岐を検査できませんでした (条件式が変わった可能性)"
+fi
+
 print "[test-tmux:zsh] done"
