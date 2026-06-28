@@ -1,18 +1,65 @@
 SHELL := /bin/sh
 
-SHELLCHECK_FILES := setup.sh zshlib/_av1ify.zsh zshlib/_av1ify_postcheck.zsh zshlib/_av1ify_encode.zsh zshlib/_validate_mp4.zsh scripts/tmux_resurrect_debounced_save.sh scripts/tmux_resurrect_save.sh scripts/tmux_fzf_jump.sh scripts/tmux_fork_popup.sh scripts/tmux_reap_orphan_servers.sh scripts/tmux_log_session_closed.sh
+# shellcheck で静的解析する shell スクリプト (sh/bash 互換のもの)。
+# zsh 固有構文のファイルは shellcheck が解析できない (SC1071) ため ZSH_SYNTAX_FILES へ。
+SHELLCHECK_FILES := \
+  setup.sh \
+  bin/backup_karabiner_config.sh \
+  bin/concat_movies \
+  bin/lgtm.sh \
+  bin/repair_avi_vorbis_audio.sh \
+  bin/reset-universalcontrol \
+  bin/restore_karabiner_config.sh \
+  bin/sync_ratelimit_calendar.sh \
+  bin/total_duration \
+  bin/update-claudecode \
+  bin/lib/video_args.sh \
+  scripts/tmux_fork_popup.sh \
+  scripts/tmux_fzf_jump.sh \
+  scripts/tmux_fzf_pane_move.sh \
+  scripts/tmux_log_session_closed.sh \
+  scripts/tmux_reap_orphan_servers.sh \
+  scripts/tmux_refresh_all_clients.sh \
+  scripts/tmux_resurrect_debounced_save.sh \
+  scripts/tmux_resurrect_save.sh \
+  scripts/tmux_scratch_blink.sh \
+  zshlib/_av1ify.zsh \
+  zshlib/_av1ify_encode.zsh \
+  zshlib/_av1ify_postcheck.zsh \
+  zshlib/_repair_mp4.zsh \
+  zshlib/_repair_mp4_timebase.zsh \
+  zshlib/_validate_mp4.zsh \
+  zshlib/_video_health.zsh
+
+# zsh 固有構文のため shellcheck できないスクリプト。zsh -n で構文チェックする (test-zsh-syntax)。
+ZSH_SYNTAX_FILES := \
+  bin/av1c \
+  bin/concat \
+  bin/disassemble_excel \
+  bin/parallel-each \
+  bin/repair-mp4-timebase \
+  bin/validate-mp4 \
+  bin/video_health \
+  scripts/check_syntax.zsh \
+  zshlib/_concat.zsh \
+  zshlib/_concat_helpers.zsh \
+  zshlib/_ensure_cli_with_brew.zsh \
+  zshlib/_repair.zsh \
+  zshlib/_tmux_session.zsh \
+  zshlib/_tmux_window_name.zsh
 YAML_FILES := pre-commit-config.yml .github/workflows/tests.yml .github/workflows/lint.yml .github/workflows/karabiner.yml
 JSON_FILES := mac/karabiner.json _coc-settings.json
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: test test-runtime test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-yaml test-json test-karabiner test-lint
+.PHONY: test test-runtime test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-lint test-registration
 
 test: test-lint test-runtime
 
-test-runtime: test-syntax test-zshrc test-bats test-nvim test-tmux test-setup
+test-runtime: test-syntax test-zshrc test-bats test-nvim test-tmux test-setup test-registration
 
 test-nvim:
 	@tests/nvim/test_nvim.sh
+	@tests/nvim/test_ftplugins.sh
 
 test-tmux:
 	@tests/tmux/test_tmux.sh
@@ -47,6 +94,13 @@ test-zshrc:
 	@tests/zshrc/concat/test_concat_force.sh
 	@tests/zshrc/concat/test_concat_option_position.sh
 	@tests/zshrc/concat/test_concat_output_info.sh
+	@tests/zshrc/concat/test_concat_space_grouping.sh
+	@tests/zshrc/concat/test_concat_stdout_leak.sh
+	@tests/zshrc/concat/test_concat_time_base.sh
+	@tests/zshrc/concat/test_concat_verify_order.sh
+	@tests/zshrc/repair_mp4/test_repair_mp4.sh
+	@tests/zshrc/repair_mp4/test_repair.sh
+	@tests/zshrc/test_video_health.sh
 	@tests/zshrc/lazy-loading/test_version_managers.sh
 
 test-bats:
@@ -61,6 +115,16 @@ test-syntax:
 
 test-shellcheck:
 	@shellcheck $(SHELLCHECK_FILES)
+
+# zsh 固有構文で shellcheck できないスクリプトを zsh -n で構文チェックする。
+# zsh 未インストール環境では skip (lint.yml は zsh を入れているので CI では走る)。
+test-zsh-syntax:
+	@if command -v zsh >/dev/null 2>&1; then \
+		for file in $(ZSH_SYNTAX_FILES); do zsh -n "$$file" || exit 1; done; \
+		echo "[zsh-syntax] $(words $(ZSH_SYNTAX_FILES)) ファイル OK"; \
+	else \
+		echo "[zsh-syntax] zsh not found; skipping"; \
+	fi
 
 test-yaml:
 	@if command -v yamllint >/dev/null 2>&1; then \
@@ -89,4 +153,8 @@ test-karabiner:
 		echo "[karabiner] karabiner_cli not found; skipping lint"; \
 	fi
 
-test-lint: test-shellcheck test-yaml test-json test-karabiner
+test-lint: test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner
+
+# tests/ 配下のテストが Makefile に登録されているか検証し、死蔵テストを防ぐ meta テスト。
+test-registration:
+	@tests/test_registration.sh

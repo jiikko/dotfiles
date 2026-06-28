@@ -65,7 +65,6 @@ __repair_mp4_one() {
   [[ ! -f "$in" ]] && { print -r -- "✗ ファイルが無い: $in"; return 1; }
 
   local stem="${in%.*}"
-  local ext="${in:e}"
   local out tmp
 
   if (( in_place )); then
@@ -93,7 +92,7 @@ __repair_mp4_one() {
   print -r -- ">> 入力フォーマット: ${fmt:-unknown}"
 
   # フレームレート検出
-  local fps_raw fps_val=0 need_reencode=0
+  local fps_raw fps_val=0
   fps_raw=$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate \
             -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
 

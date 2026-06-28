@@ -31,6 +31,7 @@ fi
 
 # 拡張子境界スプリッタを共通ヘルパから読み込む
 # (concat_movies と同じパーサーを使用)
+# shellcheck disable=SC1091  # 動的な source パスは追えない。lib は SHELLCHECK_FILES で直接 lint 済み
 source "$(dirname -- "${BASH_SOURCE[0]}")/lib/video_args.sh"
 
 # 入力エントリを実ファイルパスの配列に展開 (NUL 区切りで安全に読む)

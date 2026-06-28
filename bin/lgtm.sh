@@ -18,10 +18,10 @@ convert \
   -pointsize 130 \
   -resize '500x' \
   -antialias \
-  -fill black -annotate +1+1 $LABEL \
-  -annotate -2-2 $LABEL \
-  -annotate +2-2 $LABEL \
-  -annotate +2+2 $LABEL \
-  -annotate -2+2 $LABEL \
-  -fill white -annotate +0+0 $LABEL \
-  $1 $1
+  -fill black -annotate +1+1 "$LABEL" \
+  -annotate -2-2 "$LABEL" \
+  -annotate +2-2 "$LABEL" \
+  -annotate +2+2 "$LABEL" \
+  -annotate -2+2 "$LABEL" \
+  -fill white -annotate +0+0 "$LABEL" \
+  "$1" "$1"
