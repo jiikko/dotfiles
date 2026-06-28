@@ -30,6 +30,36 @@ end
 vim.g.mapleader = " "
 vim.g.maplocalleader = " "
 
+-- ============================================================================
+-- [WORKAROUND] truecolor 非対応端末 (macOS 標準 Terminal.app 等) でもハイライトを出す
+-- ----------------------------------------------------------------------------
+-- 問題: Terminal.app は truecolor (24bit色) 非対応 (256色まで)。本構成の colorscheme
+--   gruvbox.nvim は GUI色しか持たない (cterm 色ゼロ) ため、truecolor の無い端末では
+--   termguicolors=on でも off でもシンタックスが出ない (on=24bit が化ける / off=256色が無い)。
+-- さらに tmux 内では truecolor 対応かの「自動判定」が当てにならない:
+--   _tmux.conf が ",tmux*:RGB" で RGB を無条件広告し、COLORTERM は伝わらず、TERM_PROGRAM も
+--   "tmux" になる。よって env からの自動検出だけでは非対応端末を見分けられない。
+-- 対策: truecolor 非対応と判定したら、cterm(256色)を完備する nvim 同梱 colorscheme
+--   "retrobox" (gruvbox 風) へ切り替え、termguicolors=off にして 256色でハイライトを出す。
+-- 判定の優先順 (上ほど優先):
+--   1. SUPPORT_TRUECOLOR=false/0 — 非対応マシンで ~/.zshenv 等に export する。シェルが
+--      export するため tmux 内でも nvim へ確実に届く「唯一信頼できる」信号。
+--   2. SUPPORT_TRUECOLOR=true/1  — 強制 truecolor。
+--   3. COLORTERM=truecolor/24bit → 対応 / TERM_PROGRAM=Apple_Terminal → 非対応 (best-effort)。
+--   4. 不明 → 対応とみなす (gruvbox 維持。新しめの端末を壊さない安全側)。
+-- → 非対応マシンでは ~/.zshenv に `export SUPPORT_TRUECOLOR=false` の 1 行が必要。
+-- ============================================================================
+-- 注: 実際の colorscheme 分岐は下の gruvbox spec の config で行う (truecolor_supported を参照)。
+-- ColorScheme autocmd 内での colorscheme 切替は再入ガードで効かないため、適用時に直接分岐する。
+_G.dotfiles_truecolor_supported = function()
+  local flag = vim.env.SUPPORT_TRUECOLOR
+  if flag == "false" or flag == "0" then return false end
+  if flag == "true" or flag == "1" then return true end
+  if vim.env.COLORTERM == "truecolor" or vim.env.COLORTERM == "24bit" then return true end
+  if vim.env.TERM_PROGRAM == "Apple_Terminal" then return false end
+  return true
+end
+
 require("dotfiles.basic").setup()
 
 -- Setup lazy.nvim
@@ -37,9 +67,16 @@ require("lazy").setup({
   { "ellisonleao/gruvbox.nvim",
     priority = 1000,
     config = function()
-      vim.cmd("colorscheme gruvbox")
-      -- 選択範囲をショッキングピンクで強調
-      vim.api.nvim_set_hl(0, "Visual", { bg = "#d3869b" })
+      if _G.dotfiles_truecolor_supported() then
+        vim.cmd("colorscheme gruvbox")
+        -- 選択範囲をショッキングピンクで強調
+        vim.api.nvim_set_hl(0, "Visual", { bg = "#d3869b" })
+      else
+        -- truecolor 非対応端末 (上の WORKAROUND 参照): gruvbox は cterm 色を持たず 256色端末で
+        -- 無色になるため、cterm を完備する nvim 同梱の retrobox (gruvbox 風) へ差し替える。
+        vim.opt.termguicolors = false
+        vim.cmd("colorscheme retrobox")
+      end
     end,
   },
   { "tpope/vim-rails", ft = { "ruby", "eruby" } },
