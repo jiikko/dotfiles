@@ -91,18 +91,20 @@ require("lazy").setup({
     end,
   },
   { "nvim-treesitter/nvim-treesitter",
+    -- archived な master ブランチに固定する。master は凍結 = parser と query が固定の
+    -- matched set なので、main (rolling) で起きた parser/query バージョン不整合
+    -- (Invalid node type ...) や checker 自動更新による drift を避けられる。
+    -- classic API (configs.setup) は highlight 用の autocmd を内部で張り自動有効化する
+    -- ため、手動の vim.treesitter.start autocmd は不要。
+    -- branch を変えたら :Lazy update nvim-treesitter + :TSUpdate で parser を再同期すること。
+    branch = "master",
     build = ":TSUpdate",
     config = function()
-      require("nvim-treesitter").setup()
-      local ensure = { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "graphql", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "typescript", "vim", "yaml" }
-      require("nvim-treesitter").install(ensure)
-      -- main ブランチは highlight を自動で有効化しないため、明示的に start する
-      -- (パーサー未インストールの filetype は pcall で黙ってスキップ)
-      vim.api.nvim_create_autocmd("FileType", {
-        group = vim.api.nvim_create_augroup("dotfiles_treesitter_start", { clear = true }),
-        callback = function(ev)
-          pcall(vim.treesitter.start, ev.buf)
-        end,
+      require("nvim-treesitter.configs").setup({
+        ensure_installed = { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "graphql", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "typescript", "vim", "yaml" },
+        auto_install = false,
+        highlight = { enable = true },
+        endwise = { enable = true },
       })
     end,
   },
