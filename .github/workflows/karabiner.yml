@@ -1,0 +1,43 @@
+---
+name: Karabiner Lint
+
+# karabiner.json の complex modifications を karabiner_cli で「意味レベル」lint する。
+# lint.yml (ubuntu) の test-json は jq による構文チェックのみで、未知キー・型違いなど
+# Karabiner のルール仕様レベルの誤りは検出できない。その検証に必要な karabiner_cli は
+# Karabiner-Elements 同梱の macOS 専用バイナリで Linux runner では動かせないため、
+# 専用の macOS job として分離する。
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  karabiner-lint:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      # karabiner_cli は単体配布が無く Karabiner-Elements に同梱される。cask で入れると
+      # /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli が
+      # 配置される。--lint-complex-modifications は静的検証で driver/daemon の起動は不要。
+      - name: Install Karabiner-Elements (provides karabiner_cli)
+        run: brew install --cask karabiner-elements
+
+      # make test-karabiner は karabiner_cli が見つからないと黙って skip する設計。
+      # CI で「未インストール=未検証」を緑にしないよう、ここで存在を明示確認して
+      # 入っていなければ fail-loud で落とす (cask install 失敗の早期検知)。
+      - name: Verify karabiner_cli is available
+        run: |
+          cli="/Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli"
+          if [ ! -x "$cli" ]; then
+            echo "::error::karabiner_cli not found at $cli (cask install failed?)"
+            exit 1
+          fi
+          "$cli" --version
+
+      - name: Lint karabiner.json complex modifications
+        run: make test-karabiner

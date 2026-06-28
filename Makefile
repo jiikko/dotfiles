@@ -1,7 +1,7 @@
 SHELL := /bin/sh
 
 SHELLCHECK_FILES := setup.sh zshlib/_av1ify.zsh zshlib/_av1ify_postcheck.zsh zshlib/_av1ify_encode.zsh zshlib/_validate_mp4.zsh scripts/tmux_resurrect_debounced_save.sh scripts/tmux_resurrect_save.sh scripts/tmux_fzf_jump.sh scripts/tmux_fork_popup.sh scripts/tmux_reap_orphan_servers.sh scripts/tmux_log_session_closed.sh
-YAML_FILES := pre-commit-config.yml .github/workflows/tests.yml .github/workflows/lint.yml
+YAML_FILES := pre-commit-config.yml .github/workflows/tests.yml .github/workflows/lint.yml .github/workflows/karabiner.yml
 JSON_FILES := mac/karabiner.json _coc-settings.json
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
