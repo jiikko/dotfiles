@@ -20,6 +20,11 @@ TMP_HOME="$(mktemp -d)"
 cleanup() { rm -rf "$TMP_HOME"; }
 trap cleanup EXIT
 
+# _tt_impl はサーバ未起動時に孤児 tmux サーバ reap (scripts/tmux_reap_orphan_servers.sh) を
+# 呼ぶが、それは実 pgrep/lsof/kill で動き下の tmux スタブでは傍受できない。unit テストが実環境の
+# プロセスを触らないよう reap を無効化する（子 zsh -c に export で伝播させる）。
+export TT_SKIP_REAP=1
+
 if [[ ! -f "$ZSH_LIB" ]]; then
   printf '✗ lib が存在しません: %s\n' "$ZSH_LIB"
   exit 1

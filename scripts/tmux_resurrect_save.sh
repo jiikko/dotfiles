@@ -138,6 +138,42 @@ tt_save_owner_is_stale() {
   tt_save_lock_older_than "$TT_SAVE_LOCK_STALE_SECONDS"
 }
 
+# ---- Fix B/C: last の壊滅的セッション数退行ガード（2026-06-28）----
+# 背景: continuum の自動 restore が発火しないままサーバが再起動すると（他 tmux サーバ存在で
+#   continuum_restore.sh:25 が Gate2 skip する等）、復元前の貧弱なセッション状態で window hook /
+#   周期 autosave が走り、upstream save.sh:252-253 の無条件 `ln -fs last` が last を貧弱保存へ
+#   前進させ、直前の完全状態保存を孤立させる（実害: 7セッション→2セッションで last が上書きされ
+#   復元不能になった事例）。restore 不発の根治（tests/tmux/test_tmux.sh の probe leak 修正 +
+#   @continuum-restore-max-delay 拡大）に加え、万一 restore が走らなくても完全状態 last を守る
+#   最後の砦としてここで壊滅的退行を弾く。bypass: 正当な大量 kill 直後は TT_SAVE_ALLOW_REGRESSION=1。
+
+# resurrect の保存先 dir を解決する。vendor helpers.sh:1-7,99-103 と同手順（source 副作用を避け
+# wrapper 自己完結）。解決順 @resurrect-dir → ~/.tmux/resurrect → $XDG_DATA_HOME/tmux/resurrect。
+# helpers.sh の解決順を変えたらここも追従すること。
+tt_resurrect_dir() {
+  local d
+  d="$(tmux show -gqv @resurrect-dir 2>/dev/null || true)"
+  if [ -n "$d" ]; then
+    printf '%s\n' "$d" | sed "s,\$HOME,$HOME,g; s,~,$HOME,g"
+  elif [ -d "$HOME/.tmux/resurrect" ]; then
+    printf '%s\n' "$HOME/.tmux/resurrect"
+  else
+    printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/tmux/resurrect"
+  fi
+}
+
+# resurrect 保存ファイルの一意セッション数を数える（window 行 field2=session名, TAB 区切り）。
+tt_count_sessions_in_file() {
+  [ -f "$1" ] || { printf '0\n'; return 0; }
+  awk -F'\t' '$1=="window"{print $2}' "$1" 2>/dev/null | sort -u | grep -c . || true
+}
+
+# Fix C: 退行ガードが last 前進を抑止したことを観測ログに残す（_tmux.conf の startup 観測と同じファイル）。
+tt_save_log_guard() {
+  { mkdir -p "$HOME/.cache" && printf '%s\tregression-blocked prev_sessions=%s new_sessions=%s kept=%s rejected=%s\n' \
+      "$(date +%FT%T)" "$1" "$2" "$3" "$4" >> "$HOME/.cache/tt-restore-trigger.log"; } 2>/dev/null || true
+}
+
 # lock を bounded-wait で取得し、保持したまま upstream save.sh を foreground 同期実行する本体。
 # TT_SAVE_SOURCE_ONLY=1 で source するとここは実行されず、関数だけをテストから直接呼べる
 # （tmux_resurrect_debounced_save.sh と同方式。tests/zshrc/tmux-session/test_resurrect_save_lock.sh）。
@@ -181,10 +217,36 @@ tt_save_main() {
   fi
   trap 'tt_save_release_own_lock' EXIT
 
+  # Fix B: 保存前に現 last のターゲットとセッション数を控える（save.sh が last を前進させる前に）。
+  local tt_rdir='' tt_last_link='' tt_prev_target='' tt_prev_n=0
+  if [ "${TT_SAVE_ALLOW_REGRESSION:-}" != "1" ]; then
+    tt_rdir="$(tt_resurrect_dir)"
+    tt_last_link="$tt_rdir/last"
+    tt_prev_target="$(readlink "$tt_last_link" 2>/dev/null || true)"
+    [ -n "$tt_prev_target" ] && tt_prev_n="$(tt_count_sessions_in_file "$tt_rdir/$tt_prev_target")"
+  fi
+
   # lock を保持したまま upstream save.sh を foreground 同期実行する。
   # continuum が本 wrapper を `&` で background 起動しても、wrapper プロセスは
   # save.sh 完了まで生きるため、保存期間中ずっと lock が保持される。
   "$REAL_SAVE" "$@"
+  local tt_rc=$?
+
+  # Fix B: 壊滅的なセッション数退行なら last を完全状態へ戻す（新ファイルは archive として残す）。
+  # 旧 last が 4 セッション以上あり、新保存がその 1/3 以下（=2/3 以上喪失）のときだけ弾く。
+  # 通常のセッション増減（1〜数個 kill）は誤抑止しない保守的しきい値。bypass は TT_SAVE_ALLOW_REGRESSION=1。
+  if [ "$tt_rc" -eq 0 ] && [ "${TT_SAVE_ALLOW_REGRESSION:-}" != "1" ] && [ -n "$tt_prev_target" ]; then
+    local tt_new_target tt_new_n
+    tt_new_target="$(readlink "$tt_last_link" 2>/dev/null || true)"
+    if [ -n "$tt_new_target" ] && [ "$tt_new_target" != "$tt_prev_target" ]; then
+      tt_new_n="$(tt_count_sessions_in_file "$tt_rdir/$tt_new_target")"
+      if [ "${tt_prev_n:-0}" -ge 4 ] && [ "$(( tt_new_n * 3 ))" -le "${tt_prev_n:-0}" ]; then
+        ln -sf "$tt_prev_target" "$tt_last_link"
+        tt_save_log_guard "$tt_prev_n" "$tt_new_n" "$tt_prev_target" "$tt_new_target"
+      fi
+    fi
+  fi
+  return "$tt_rc"
 }
 
 # 直接実行時のみ本体を走らせる。source（テスト）時は関数定義だけ読み込む。

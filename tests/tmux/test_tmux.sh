@@ -41,9 +41,19 @@ TMUX_CMD=("$TMUX_BIN_PATH" -L "$SOCKET_NAME" -f "$CONF_FILE")
 
 cleanup() {
   "$TMUX_BIN_PATH" -L "$SOCKET_NAME" kill-server >/dev/null 2>&1 || true
+  # probe サーバも全 exit 経路で確実に回収する。probe は専用 TMUX_TMPDIR で起動するので
+  # kill も同じ TMUX_TMPDIR を渡さないと別 socket パスを見て殺し損ね、プロセスが孤児化して
+  # leak する（その leak が continuum の Gate2 を恒常的に破り restore 不発を招いていた）。
+  if [[ -n "${probe_socket:-}" && -n "${probe_dir:-}" ]]; then
+    env TMUX_TMPDIR="$probe_dir" "$TMUX_BIN_PATH" -L "$probe_socket" kill-server >/dev/null 2>&1 || true
+  fi
   rm -rf "$TMUX_TMPDIR"
 }
+# EXIT に加え INT/TERM でも cleanup を走らせる。シグナルは `exit 130` 経由で EXIT trap に集約し
+# 二重実行を避ける。テスト中断で cleanup が走らず named socket サーバ（と probe）が孤児化する経路を
+# 塞ぐ（孤児が continuum の Gate2 を破り復元不発を招く今回の真因クラスを、テスト側でも作らない）。
 trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 handle_result() {
   local log="$1"
@@ -76,7 +86,9 @@ probe_log="$probe_dir/probe.log"
 probe_socket="dotfiles-probe-$$"
 run_with_check "$probe_log" "probe session failed" "skip" \
   env TMUX_TMPDIR="$probe_dir" "$TMUX_BIN_PATH" -L "$probe_socket" new-session -d -s dotfiles_probe "tail -f /dev/null"
-"$TMUX_BIN_PATH" -L "$probe_socket" kill-server >/dev/null 2>&1 || true
+# kill も probe と同じ TMUX_TMPDIR で行う。これを付けないと別 socket パスを見て probe を殺せず、
+# rm -rf "$probe_dir" で socket ファイルだけ消えてサーバプロセスが孤児化＝leak する（trap cleanup も同様に修正済み）。
+env TMUX_TMPDIR="$probe_dir" "$TMUX_BIN_PATH" -L "$probe_socket" kill-server >/dev/null 2>&1 || true
 rm -rf "$probe_dir"
 
 print "[test-tmux:zsh] starting server with $CONF_FILE"

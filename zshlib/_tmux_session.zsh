@@ -107,6 +107,18 @@ _tt_impl () {
   # 無効化されてスクロールバック（バッファ・ログ）が復元されなくなるため
   # （vendor/tmux-plugins/tmux-resurrect/scripts/restore.sh の detect_if_restoring_from_scratch）。
   if ! tmux has-session 2>/dev/null; then
+    # サーバ未起動 = これから新規起動して自動復元を待つ局面。サーバを起こす前に「socket が
+    # 消えたのにプロセスだけ残った孤児 tmux サーバ」を回収しておく。孤児が残っていると
+    # continuum の Gate2（another_tmux_server_running_on_startup が ^tmux プロセス数で判定。
+    # vendor helpers.sh は socket 生存を見ない）が「他サーバ在り」と誤判定し、auto-restore を
+    # 丸ごと skip する（2026-06-28 に判明した 17 日間 復元不発の真因）。reap は生存 socket を
+    # 持つプロセス（実サーバ・接続中 client）には絶対に触れない（scripts 側の不変条件）。
+    local _reap="${_TMUX_SESSION_LIB:h:h}/scripts/tmux_reap_orphan_servers.sh"
+    # TT_SKIP_REAP は unit テスト用の抜け穴。reap は実 pgrep/lsof/kill で動き tmux スタブで
+    # 傍受できないため、_tt_impl のロジックを検証する test_tt.sh が実プロセステーブルを
+    # 触らないようにする（テストが実環境に副作用を持つのは、今回の不具合と同型なので避ける）。
+    if [ -z "${TT_SKIP_REAP:-}" ] && [ -x "$_reap" ]; then "$_reap" 2>/dev/null || true; fi
+
     # tmux サーバはセッションが 1 つも無いと即終了する。復元完了までサーバを生かす hold を置く。
     # hold により総ペイン数 = 1 となり restore_from_scratch が有効化され、
     # 保存セッションがスクロールバックごと復元される。
