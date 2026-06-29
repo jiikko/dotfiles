@@ -713,5 +713,49 @@ if command -v brew > /dev/null 2>&1; then
   fi
 fi
 
+# ---- dotfiles: setup.sh の実行漏れ検出 (direnv 風 / 非同期) ------------------
+# setup.sh は末尾で自身の sha256 を state file に記録する。ここで現在の setup.sh と
+# その記録を比較し、差分があれば再実行を促す。対話シェルのみ・起動をブロックしない。
+# コスト最小化: まず mtime を builtin で比較し、記録以降に setup.sh が変わった時だけ
+# 重い shasum を非同期 (&!) で回す (通常は stat 1回で抜け fork もしない)。結果は次
+# プロンプトで一度だけ表示し、表示後 precmd フックを自己解除する。
+# `-t 1` ガード: stdout が実端末の時だけ発火。テスト等が `zsh -i -c` で出力を
+# キャプチャ (パイプ) する際に警告が混入しないようにする。
+if [[ -o interactive ]] && [[ -t 1 ]]; then
+  _dotfiles_setup_notify() {
+    local f="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/setup-check.result"
+    [[ -f "$f" ]] || return
+    local msg; msg="$(<"$f")"; command rm -f "$f"
+    [[ -n "$msg" ]] && print -r -- "$msg"
+    add-zsh-hook -d precmd _dotfiles_setup_notify  # 結果を受け取ったら自己解除
+  }
+  _dotfiles_setup_check_bg() {
+    local setup="$1" state="$2" f="$3" cur
+    cur="$(shasum -a 256 "$setup" 2>/dev/null | awk '{print $1}')"
+    if [ -n "$cur" ] && [ "$cur" != "$(cat "$state" 2>/dev/null)" ]; then
+      print -r -- "[dotfiles] setup.sh が更新されています。'sh ~/dotfiles/setup.sh' を再実行してね。" > "$f"
+    else
+      print -r -- "" > "$f"
+      command touch "$state" 2>/dev/null  # 内容一致: mtime 更新で次回以降の再ハッシュを抑止
+    fi
+  }
+  () {
+    local setup="$HOME/dotfiles/setup.sh"
+    [ -f "$setup" ] || return
+    local state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/setup-sh.sha256"
+    if [ ! -f "$state" ]; then
+      print -r -- "[dotfiles] setup.sh を未実行のようです。'sh ~/dotfiles/setup.sh' を実行してね。"
+      return
+    fi
+    [ "$setup" -nt "$state" ] || return   # 未変更ならここで終了 (stat 1回のみ)
+    local f="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/setup-check.result"
+    command mkdir -p "${f:h}"; command rm -f "$f"
+    autoload -Uz add-zsh-hook
+    add-zsh-hook precmd _dotfiles_setup_notify
+    _dotfiles_setup_check_bg "$setup" "$state" "$f" &!  # 重い照合は非同期 (起動を止めない)
+  }
+fi
+# ---------------------------------------------------------------------------
+
 # Ignore commands starting with space from history
 export PATH="$HOME/.local/bin:$PATH"

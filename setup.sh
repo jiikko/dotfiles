@@ -114,3 +114,11 @@ for legacy in $legacy_links; do
     esac
   fi
 done
+
+# setup.sh の sha256 を state file に記録する (direnv 風の実行漏れ検出用)。
+# _zshrc が「現在の setup.sh の sha256」とこの記録を比較し、差分があれば再実行を促す。
+# 末尾まで到達した = 一通り適用済み、とみなして記録する (set -e は無いので警告があっても到達)。
+_state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
+mkdir -p "$_state_dir"
+shasum -a 256 ~/dotfiles/setup.sh | awk '{print $1}' > "$_state_dir/setup-sh.sha256"
+echo "recorded setup.sh hash (run-detection)"
