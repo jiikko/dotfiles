@@ -17,8 +17,23 @@
 # ラッパーはこのパスを再 source する。グローバルに置く（ラッパー内 source はローカルスコープ）。
 typeset -g _TMUX_SESSION_LIB="${${(%):-%x}:A}"
 
+# 非TTY/サンドボックスから最初の tmux コマンドを叩くと、その文脈で tmux サーバが
+# 起動され、後続の本物の端末 attach まで壊れる。発生源であるサーバ起動系コマンドに
+# 到達する前に止める。TT_ASSUME_TTY は非TTYの zsh -c で実体を直接検証するテスト用の
+# 抜け穴で、通常利用では設定しない。
+_tt_require_tty () {
+  [[ -n "${TT_ASSUME_TTY:-}" ]] && return 0
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    print -r -- "tt: 対話端末ではありません（tmux サーバを起動しません）。素のターミナルで実行してください。" >&2
+    return 1
+  fi
+  return 0
+}
+
 # 新規に 5 窓のセッションを作って attach する実体。
 _t_impl () {
+  _tt_require_tty || return 1
+
   local name
   if [ -z "${1-}" ]; then
     name="s$(date +%s)"  # セッション名が重複しないように一意の名前を生成
@@ -87,6 +102,8 @@ _tt_wait_for_restore () {
 
 # カレントディレクトリ名（or 引数）のセッションに attach。無ければ作成する実体。
 _tt_impl () {
+  _tt_require_tty || return 1
+
   local name
   if [ -n "$1" ]; then
     name="$1"
