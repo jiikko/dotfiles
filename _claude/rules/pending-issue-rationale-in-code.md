@@ -53,3 +53,4 @@ redirectUri: getEnv('REDIRECT_URI', 'http://localhost:43823/auth/callback'),
 ## 関連
 
 - [`claude-md-maintenance.md`](claude-md-maintenance.md) — 「Why を残す」同思想。ディレクトリ単位の制約は CLAUDE.md、行単位の制約はコードコメント
+- [`comment-no-restate-enforced.md`](comment-no-restate-enforced.md) — 裏返しの規律: 実装 (lint/型/exhaustive switch) で強制済みの不変条件は再掲しない。コメントに残すのは「実装で守れない制約」だけ
