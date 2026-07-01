@@ -11,3 +11,8 @@ installer.sh
 
 CLAUDE.md
 Brewfile.lock.json
+
+# Claude Code のマシンローカル設定 (auto 生成 / 承認 allow リスト)。
+# defaultMode=auto の settings.json 側で吸収済みで追跡する意味がなく、過去に
+# 誤ってコミットされたため無視する。
+_claude/settings.local.json
