@@ -24,7 +24,7 @@ jobs:
       - name: Silence git init.defaultBranch hint
         run: git config --global init.defaultBranch main
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # karabiner_cli は単体配布が無く Karabiner-Elements に同梱される。cask で入れると
       # /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli が

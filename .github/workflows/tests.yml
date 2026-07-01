@@ -19,7 +19,7 @@ jobs:
       - name: Silence git init.defaultBranch hint
         run: git config --global init.defaultBranch main
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install runtime dependencies (Neovim, tmux, zsh, bats)
         env:
@@ -33,7 +33,7 @@ jobs:
       # キャッシュして回避する。CI でプラグイン本体は install されないため lazy ディレクトリ
       # のみで十分。spec を変えたら鍵が変わるよう _nviminit.lua を hash する。
       - name: Cache lazy.nvim bootstrap clone
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.local/share/nvim/lazy
           key: nvim-lazy-${{ runner.os }}-${{ hashFiles('_nviminit.lua') }}
