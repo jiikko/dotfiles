@@ -47,7 +47,7 @@ ZSH_SYNTAX_FILES := \
   zshlib/_repair.zsh \
   zshlib/_tmux_session.zsh \
   zshlib/_tmux_window_name.zsh
-YAML_FILES := pre-commit-config.yml .github/workflows/tests.yml .github/workflows/lint.yml .github/workflows/karabiner.yml
+YAML_FILES := pre-commit-config.yml .github/dependabot.yml .github/workflows/tests.yml .github/workflows/lint.yml .github/workflows/karabiner.yml
 JSON_FILES := mac/karabiner.json _coc-settings.json
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 

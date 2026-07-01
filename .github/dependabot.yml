@@ -1,0 +1,18 @@
+# Dependabot: GitHub Actions の action バージョンを自動更新する。
+# 手動更新 (例: checkout v5→v7 / cache v5→v6) を週次の自動 PR に置き換えるのが目的。
+# 対象は .github/workflows/ 配下の `uses:` (github-actions ecosystem。directory: / で
+# dependabot が workflows ディレクトリを自動探索する)。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # 複数 action の更新を 1 PR にまとめ、レビュー/マージ回数を減らす
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    # このリポジトリの Conventional Commits 風 (ci: / feat(): 等) に合わせる
+    commit-message:
+      prefix: ci
