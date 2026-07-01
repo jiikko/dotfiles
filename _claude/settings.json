@@ -1,11 +1,11 @@
 {
+  "env": {
+    "ENABLE_CLAUDEAI_MCP_SERVERS": "false"
+  },
   "permissions": {
     "defaultMode": "auto"
   },
   "model": "opus[1m]",
-  "env": {
-    "ENABLE_CLAUDEAI_MCP_SERVERS": "false"
-  },
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -96,5 +96,6 @@
     "mode": "hold"
   },
   "skipWorkflowUsageWarning": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "advisorModel": "opus"
 }
