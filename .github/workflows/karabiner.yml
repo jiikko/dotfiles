@@ -19,13 +19,23 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
+      # actions/checkout は内部で `git init` する。runner の git は init.defaultBranch 未設定のため
+      # "Using 'master' ... will change to main in Git 3.0" hint をログに出す。先に設定して抑制する。
+      - name: Silence git init.defaultBranch hint
+        run: git config --global init.defaultBranch main
+
       - uses: actions/checkout@v5
 
       # karabiner_cli は単体配布が無く Karabiner-Elements に同梱される。cask で入れると
       # /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli が
       # 配置される。--lint-complex-modifications は静的検証で driver/daemon の起動は不要。
+      # runner にプリインストールされた aws/tap が Homebrew の tap-trust 警告 (##[warning]) を
+      # 出す。本 workflow は aws/tap を使わないので install 前に untap して警告源を除く
+      # (deprecated な HOMEBREW_NO_REQUIRE_TAP_TRUST は使わない)。|| true で未 tap 環境でも失敗させない。
       - name: Install Karabiner-Elements (provides karabiner_cli)
-        run: brew install --cask karabiner-elements
+        run: |
+          brew untap aws/tap || true
+          brew install --cask karabiner-elements
 
       # make test-karabiner は karabiner_cli が見つからないと黙って skip する設計。
       # CI で「未インストール=未検証」を緑にしないよう、ここで存在を明示確認して

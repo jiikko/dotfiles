@@ -14,6 +14,11 @@ jobs:
     runs-on: ubuntu-slim
     timeout-minutes: 10
     steps:
+      # actions/checkout は内部で `git init` する。runner の git は init.defaultBranch 未設定のため
+      # "Using 'master' ... will change to main in Git 3.0" hint をログに出す。先に設定して抑制する。
+      - name: Silence git init.defaultBranch hint
+        run: git config --global init.defaultBranch main
+
       - uses: actions/checkout@v5
 
       - name: Install runtime dependencies (Neovim, tmux, zsh, bats)
