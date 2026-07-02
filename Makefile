@@ -23,6 +23,7 @@ SHELLCHECK_FILES := \
   scripts/tmux_resurrect_debounced_save.sh \
   scripts/tmux_resurrect_save.sh \
   scripts/tmux_scratch_popup.sh \
+  scripts/tmux_scratch_spotlight.sh \
   zshlib/_av1ify.zsh \
   zshlib/_av1ify_encode.zsh \
   zshlib/_av1ify_postcheck.zsh \
