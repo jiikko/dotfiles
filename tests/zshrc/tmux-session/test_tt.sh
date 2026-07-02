@@ -59,6 +59,7 @@ OUT="$(HOME="$TMP_HOME" zsh -c '
           @resurrect-dir) print -r -- "$_T_RDIR" ;;
           @continuum-restore) print -r -- "$_T_CONT" ;;
           @resurrect-hook-post-restore-all) print -r -- "$_T_HOOK" ;;
+          @resurrect-restore-script-path) print -r -- "$_T_RESTORE_SCRIPT" ;;
           @tt-restore-complete) print -r -- "$_T_FLAG" ;;
         esac ;;
       new-session)   _T_SERVER=1; _T_SESSIONS="$_T_SESSIONS ${4}"; _LOG_NEW="$_LOG_NEW ${4}" ;;
@@ -66,6 +67,10 @@ OUT="$(HOME="$TMP_HOME" zsh -c '
       select-window) _LOG_SELECT="$_LOG_SELECT ${3}" ;;   # select-window -t <name>:0
       kill-session)  _LOG_KILL="$_LOG_KILL ${3}" ;;
       attach-session) _LOG_ATTACH="$_LOG_ATTACH ${3}" ;;
+      list-sessions) print -r -- "$_T_GC_SESSIONS" ;;   # GC 用: "name wins attached" の行群
+      list-panes)    # GC 用: -t =<name> の pane 数を _T_GC_PANES_<name> から返す ($3 = "=name")
+        local _gn="${3#=}"; local _pv; eval "_pv=\"\${_T_GC_PANES_${_gn}:-1}\""
+        local _k; for _k in $(seq 1 "$_pv"); do print -r -- "pane$_k"; done ;;
     esac
     return 0
   }
@@ -90,7 +95,7 @@ OUT="$(HOME="$TMP_HOME" zsh -c '
   ##########################################################################
   # A. _tt_wait_for_restore の戻り値判定 (本物を使用)
   ##########################################################################
-  _T_CONT="on"; _T_HOOK="x"; _T_FLAG=""
+  _T_CONT="on"; _T_HOOK="x"; _T_FLAG=""; _T_RESTORE_SCRIPT="x"
 
   _T_RDIR=""; XDG_DATA_HOME="/nonexistent_a"
   _tt_wait_for_restore; print "CASE:rc_nolast rc=$?"
@@ -102,6 +107,7 @@ OUT="$(HOME="$TMP_HOME" zsh -c '
   _T_FLAG="";  _tt_wait_for_restore; print "CASE:rc_timeout rc=$?"
   _T_HOOK="";  _tt_wait_for_restore; print "CASE:rc_nohook rc=$?"; _T_HOOK="x"
   _T_CONT="off"; _tt_wait_for_restore; print "CASE:rc_contoff rc=$?"; _T_CONT="on"
+  _T_RESTORE_SCRIPT=""; _tt_wait_for_restore; print "CASE:rc_noscript rc=$?"; _T_RESTORE_SCRIPT="x"
   : > "$HOME/tmux_no_auto_restore"
   _tt_wait_for_restore; print "CASE:rc_halt rc=$?"
   rm -f "$HOME/tmux_no_auto_restore"
@@ -183,6 +189,46 @@ OUT="$(HOME="$TMP_HOME" zsh -c '
   print "CASE:name_pwd t=[$_LOG_T]"
 
   ##########################################################################
+  # GC. _tt_gc_stale_holds の三重条件 (pid死亡 + 非attach + pristine のみ kill)
+  ##########################################################################
+  # 死んだ pid を用意 (起動即 kill。テストは <1s で終わるので再利用はまず起きない)
+  sleep 100 & DEADPID=$!; kill "$DEADPID" 2>/dev/null; wait "$DEADPID" 2>/dev/null || true
+  ALIVEPID=$$   # 自分は生きている
+
+  # (kill 対象) 死 pid + 非attach + 1win/1pane → kill される
+  reset_log
+  _T_GC_SESSIONS="__tt_hold_${DEADPID} 1 0
+proj 3 1"
+  _tt_gc_stale_holds
+  print "CASE:gc_stale kill=[$_LOG_KILL]"
+
+  # (保護) 生存 pid の hold → 並行 tt。触らない
+  reset_log
+  _T_GC_SESSIONS="__tt_hold_${ALIVEPID} 1 0"
+  _tt_gc_stale_holds
+  print "CASE:gc_alive kill=[$_LOG_KILL]"
+
+  # (保護) 死 pid だが attach 中 → 採用された作業セッション。触らない
+  reset_log
+  _T_GC_SESSIONS="__tt_hold_${DEADPID} 1 1"
+  _tt_gc_stale_holds
+  print "CASE:gc_attached kill=[$_LOG_KILL]"
+
+  # (保護) 死 pid・非attach だが 2 window → 作業で育った hold。触らない
+  reset_log
+  _T_GC_SESSIONS="__tt_hold_${DEADPID} 2 0"
+  _tt_gc_stale_holds
+  print "CASE:gc_multiwin kill=[$_LOG_KILL]"
+
+  # (保護) 死 pid・非attach・1 window だが 2 pane → split した作業 hold。触らない
+  reset_log
+  _T_GC_SESSIONS="__tt_hold_${DEADPID} 1 0"
+  eval "_T_GC_PANES___tt_hold_${DEADPID}=2"
+  _tt_gc_stale_holds
+  print "CASE:gc_multipane kill=[$_LOG_KILL]"
+  eval "unset _T_GC_PANES___tt_hold_${DEADPID}"
+
+  ##########################################################################
   # E. 非TTYガード (TT_ASSUME_TTY 未設定なら tmux に到達しない)
   ##########################################################################
   source "'"$ZSH_LIB"'"
@@ -258,6 +304,7 @@ assert_eq_line rc_flag    "rc=0" "完了フラグあり → rc=0"
 assert_eq_line rc_timeout "rc=1" "フラグ立たず → rc=1 (タイムアウト)"
 assert_eq_line rc_nohook  "rc=2" "完了検知フック未設定 → rc=2"
 assert_eq_line rc_contoff "rc=3" "@continuum-restore off → rc=3"
+assert_eq_line rc_noscript "rc=3" "@resurrect-restore-script-path 未設定 (plugin 未ロード) → rc=3"
 assert_eq_line rc_halt    "rc=3" "halt file 存在 → rc=3"
 
 printf '\n## 保存先解決規則\n'
@@ -282,6 +329,13 @@ printf '\n## 名前算出\n'
 assert_eq_line name     "t=[ a_b_c]" "引数のドットをアンダースコアに置換"
 assert_eq_line name_colon "t=[ a_b_c]" "引数のコロンもアンダースコアに置換"
 assert_eq_line name_pwd "t=[ x_y]"   "引数なし → basename \$PWD + ドット置換"
+
+printf '\n## stale hold GC (三重条件)\n'
+assert_line_has gc_stale     "kill=[ =__tt_hold_" "死pid+非attach+pristine の hold は kill する"
+assert_eq_line  gc_alive     "kill=[]"           "生存pid の hold は触らない (並行 tt)"
+assert_eq_line  gc_attached  "kill=[]"           "attach 中の hold は触らない (採用された作業)"
+assert_eq_line  gc_multiwin  "kill=[]"           "2 window の hold は触らない (育った作業)"
+assert_eq_line  gc_multipane "kill=[]"           "2 pane の hold は触らない (split した作業)"
 
 printf '\n## 非TTYガード\n'
 assert_line_has guard_t  "rc=1 new=[]" "非TTYの _t_impl: return 1 かつ new-session しない"

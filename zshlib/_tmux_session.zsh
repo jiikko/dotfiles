@@ -86,6 +86,14 @@ _tt_wait_for_restore () {
      || [ "$(tmux show -gqv @continuum-restore 2>/dev/null)" != "on" ]; then
     return 3
   fi
+  # 復元スクリプトが未設定 = resurrect plugin 未ロード（DOTFILES_DIR 誤設定やリポジトリ移動で
+  # _tmux.conf の plugin load ガード `[ -f "$f" ] &&` が両 plugin を silent skip した等）だと
+  # 復元は絶対に走らない。@continuum-restore=on と post-restore-all フックは plugin と独立に
+  # set されるためそれらだけでは検知できず、last があると毎 boot 20 秒待って空 hold に落ちる。
+  # continuum_restore.sh の no-op 条件（@resurrect-restore-script-path 空）をミラーして即 degrade。
+  if [ -z "$(tmux show -gqv @resurrect-restore-script-path 2>/dev/null)" ]; then
+    return 3
+  fi
   # 完了検知は post-restore-all フック依存。未設定だと永遠にフラグが立たず無駄に
   # 待つだけなので、未設定は専用の戻り値で呼び出し側に degrade させる。
   if [ -z "$(tmux show -gqv @resurrect-hook-post-restore-all 2>/dev/null)" ]; then
@@ -99,6 +107,38 @@ _tt_wait_for_restore () {
   done
   return 1
 }
+
+# 過去 boot の rc=1/2 で残置され、last に焼き付いて復元されてきた stale hold を掃除する。
+# rc=1/2 では hold を畳まず attach するため（進行中復元への割り込み防止）、実セッションが
+# 出来ると保存が再開し stale hold も last に含まれ、次 boot で復元されて 1 個ずつ蓄積する。
+# 生きた作業を殺さないよう三重条件で厳しく絞る:
+#   (a) 名前が __tt_hold_<pid> で、その pid が死亡している（kill -0 失敗）
+#   (b) client が attach していない（session_attached=0）
+#   (c) pristine 形状（1 window かつ 1 pane。`tmux new-session -d` 直後の姿）
+# rc=1/2 で hold に attach してユーザーが作業を始めた hold は (b) または (c) で必ず除外される。
+# 生存 pid の hold は並行 tt のものなので (a) で除外される。
+_tt_gc_stale_holds () {
+  local sname wins attached spid panes
+  tmux list-sessions -F '#{session_name} #{session_windows} #{session_attached}' 2>/dev/null \
+  | while read -r sname wins attached; do
+      case "$sname" in
+        "${TT_HOLD_PREFIX:-__tt_hold_}"*) ;;
+        *) continue ;;
+      esac
+      spid="${sname#${TT_HOLD_PREFIX:-__tt_hold_}}"
+      case "$spid" in ''|*[!0-9]*) continue ;; esac   # pid 部が数値でない → 触らない
+      kill -0 "$spid" 2>/dev/null && continue          # (a) pid 生存 = 並行 tt → 触らない
+      [ "${attached:-0}" = "0" ] || continue           # (b) attach 中 → 触らない
+      [ "${wins:-0}" = "1" ] || continue               # (c) 1 window でない → 触らない
+      panes="$(tmux list-panes -t "=$sname" 2>/dev/null | grep -c .)"
+      [ "$panes" = "1" ] || continue                   # (c) 1 pane でない → 触らない
+      tmux kill-session -t "=$sname" 2>/dev/null
+    done
+}
+
+# hold セッション名プレフィックス（scripts/tmux_resurrect_debounced_save.sh の TT_HOLD_PREFIX と
+# 一致させること。grep: __tt_hold_）。_tt_gc_stale_holds が参照する。
+TT_HOLD_PREFIX="${TT_HOLD_PREFIX:-__tt_hold_}"
 
 # カレントディレクトリ名（or 引数）のセッションに attach。無ければ作成する実体。
 _tt_impl () {
@@ -142,7 +182,7 @@ _tt_impl () {
     # tmux サーバはセッションが 1 つも無いと即終了する。復元完了までサーバを生かす hold を置く。
     # hold により総ペイン数 = 1 となり restore_from_scratch が有効化され、
     # 保存セッションがスクロールバックごと復元される。
-    local hold="__tt_hold_$$"
+    local hold="${TT_HOLD_PREFIX}$$"
     tmux new-session -d -s "$hold"
     _tt_wait_for_restore
     local rc=$?
@@ -168,6 +208,11 @@ _tt_impl () {
         return ;;
     esac
   fi
+
+  # サーバにセッションが揃った後（既存サーバ / 復元完了 rc=0 / 復元不要 rc=3）に、
+  # 過去 boot から復元されてきた stale hold を掃除する。rc=1/2（復元進行中）は上の case で
+  # return 済みでここには来ない（進行中復元に触らない）。GC は三重条件で実作業 hold を守る。
+  _tt_gc_stale_holds
 
   # -t は「=名前」で exact match を強制する。素の名前だと tmux の target 解決が
   # プレフィックス一致に落ち、`tt dot` が既存の dotfiles セッションに誤 attach する
