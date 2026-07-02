@@ -748,6 +748,14 @@ require("lazy").setup({
     end,
   },
 }, {
+  -- lazy.nvim は既定 (performance.rtp.reset=true) で runtimepath をリセットし、
+  -- 上で prepend した dotfiles のパスを消してしまう (nvim/ftplugin が丸ごと死んだ実バグ)。
+  -- reset は維持しつつ、残すべきパスを明示する。
+  performance = {
+    rtp = {
+      paths = vim.tbl_filter(function(p) return p ~= "" end, { nvim_dir, config_dir }),
+    },
+  },
   install = { colorscheme = { "gruvbox" } },
   checker = { enabled = true, frequency = 86400 },  -- 起動毎チェックはローカル fs のみ。定期 git fetch を 1時間→1日に間引き、更新通知ノイズと background 通信を抑制
 })
