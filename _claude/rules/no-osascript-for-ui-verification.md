@@ -61,5 +61,5 @@ XCUITest は `accessibilityIdentifier` による安定セレクタ・明確な a
 
 ## 関連
 
-- [`instrument-before-second-fix.md`](instrument-before-second-fix.md) — osascript は観測手段として精度が低すぎるため、XCUITest という構造化された観測に置き換える
+- [`instrument-before-second-fix.md`](instrument-before-second-fix.md) — 「精度の低い観測に頼らず構造化された観測に切り替える」同じ精神 (あちらは修正イテレーションの wire/計測、こちらは UI 検証手段としての XCUITest)
 - [`escalate-to-forge-after-failed-tries.md`](escalate-to-forge-after-failed-tries.md) — 確認手段も 2 回失敗したら手段自体を見直す

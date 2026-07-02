@@ -4,7 +4,7 @@
 
 - **自分の hypothesis で 1-2 回試行して効果がなかったバグは、3 回目を試す前に必ず `/forge` を Maximum モード指定で起動する**（forge v2 はモードを明示すれば Phase -1 のモード選択確認を省略する）
 - 「もう少しで分かりそう」と粘って試行を重ねるのは禁止
-- 「治っていない」という症状報告を受けた時点で、即 forge へ
+- 「治っていない」という症状報告を受けたら、まず [`instrument-before-second-fix.md`](instrument-before-second-fix.md) に従い観測を増やし、観測しても真因が不明なとき forge へ (初回試行直後に blind で forge 直行ではなく、観測データを手土産にする)
 
 ## なぜ (起源: DualNote iOS #030 IME バグ, 2026-05-23)
 

@@ -36,7 +36,7 @@
 
 ## 例外 / 誤用防止
 
-- **回帰防止テスト (実際に起きたバグの再現) は「低価値」に含めない**。過去に発生したバグは高価値なので必ず書く (CLAUDE.md「バグフィックス後の再発防止」)
+- **回帰防止テスト (実際に起きたバグの再現) は「低価値」に含めない**。過去に発生したバグは再現条件が確定していて回帰で必ず困るため高価値。必ず書く
 - ユーザーが「数値目標 (例: 80%) を必達」と明示したら従う。ただし**無益・高コストな箇所を一言明示**し、そこは薄いテストになる旨を添える (黙って水増しテストを量産しない)
 - 「困難だから」を単独理由に高価値ロジックの skip に流用しない (マトリクス左下は refactor して書く)
 
@@ -53,4 +53,4 @@
 
 - [`verify-design-intent-before-refactor.md`](verify-design-intent-before-refactor.md) — thin delegation / 「複雑性が実際に下がるか」で判断する同思想 (本ルールは「価値が実際にあるか」で判断)
 - [`no-osascript-for-ui-verification.md`](no-osascript-for-ui-verification.md) / [`no-ios-simulator-verification.md`](no-ios-simulator-verification.md) — 低価値・困難な検証を避ける同根 (検証手段の版)
-- `~/.claude/CLAUDE.md`「設計方針」— バグフィックス後の再発防止テストは本ルールの例外 (高価値)
+- `~/.claude/CLAUDE.md`「設計方針」— カバレッジ拒否の要点がここからリンクされている (本ルールが一次情報)
