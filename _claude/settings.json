@@ -5,7 +5,7 @@
   "permissions": {
     "defaultMode": "auto"
   },
-  "model": "opus[1m]",
+  "model": "claude-fable-5[1m]",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -91,11 +91,12 @@
   },
   "language": "日本語",
   "alwaysThinkingEnabled": true,
+  "advisorModel": "opus",
   "voice": {
     "enabled": true,
     "mode": "hold"
   },
   "skipWorkflowUsageWarning": true,
   "skipAutoPermissionPrompt": true,
-  "advisorModel": "opus"
+  "effortLevel": "low"
 }
