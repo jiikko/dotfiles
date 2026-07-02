@@ -4,8 +4,8 @@
 #
 # 背景（なぜ必要か）:
 #   保存経路は 3 系統あり、それぞれ別々の（または無い）lock で動いていた:
-#     1. window 増減 → scripts/tmux_resurrect_debounced_save.sh（自前 mkdir lock。
-#        ただし debounce 同士しか守らない）
+#     1. window 増減 → scripts/tmux_resurrect_debounced_save.sh（かつて自前 mkdir lock を
+#        持っていたが skip-as-success の取りこぼしバグがあり撤去済み。直列化は本 wrapper に一本化）
 #     2. continuum の周期 autosave（continuum_save.sh）。これは save を
 #        `save.sh quiet &` と background 起動し、自前の世代 lock を即 trap 解放するため
 #        「保存期間」を保護していない（vendor/.../continuum_save.sh の acquire_lock/
@@ -39,7 +39,9 @@
 #     本 wrapper はリポジトリルート相対で解決する（DOTFILES_DIR ではなく自身の位置基準）。
 #   - 引数（"quiet" 等）はそのまま upstream save.sh に渡す。
 #
-# NOTE: 保存期間 lock のみを担う薄い shim。@continuum-save-last-timestamp の更新等は
+# NOTE: 本 wrapper の責務は「保存期間 lock による直列化」+「全経路に効かせるべき保存ガード
+#   （復元中チェック・Fix B 退行ガード）」。choke point なのでここに置くと continuum 周期保存・
+#   手動 C-s・debounce の 3 経路すべてに一度で効く。@continuum-save-last-timestamp の更新等は
 #   呼び出し側（debounce スクリプト / continuum）の責務のまま変えない。
 set -uo pipefail
 unset CDPATH
@@ -64,6 +66,10 @@ TT_SAVE_LOCK_HARD_STALE_SECONDS="${TT_SAVE_LOCK_HARD_STALE_SECONDS:-600}"
 # lock を取れないとき待つ上限（秒）。先行保存（数秒〜十数秒）の完了を待ってから保存する。
 # 全 caller が background 実行なので待ってよい。0.2s 間隔でポーリングする。
 TT_SAVE_LOCK_WAIT_SECONDS="${TT_SAVE_LOCK_WAIT_SECONDS:-15}"
+# 復元中フラグ(@tt-restore-in-progress)の有効期限（秒）。
+# tmux_resurrect_debounced_save.sh の TT_RESTORE_INPROGRESS_TTL と同セマンティクス
+# （変えるなら両方揃えること。grep: TT_RESTORE_INPROGRESS_TTL）。
+TT_RESTORE_INPROGRESS_TTL="${TT_RESTORE_INPROGRESS_TTL:-120}"
 
 tt_save_release_lock() {
   rm -f "$TT_SAVE_LOCK_DIR/pid" 2>/dev/null || true
@@ -147,6 +153,25 @@ tt_save_owner_is_stale() {
 #   @continuum-restore-max-delay 拡大）に加え、万一 restore が走らなくても完全状態 last を守る
 #   最後の砦としてここで壊滅的退行を弾く。bypass: 正当な大量 kill 直後は TT_SAVE_ALLOW_REGRESSION=1。
 
+# 復元中か（「復元中は絶対に保存しない」不変条件の choke point 検査）。
+# tmux_resurrect_debounced_save.sh の tt_restore_in_progress と同じ判定式（epoch + TTL。
+# あちらのコメント参照。変えるなら両方揃えること。grep: TT_RESTORE_INPROGRESS_TTL）。
+# debounce 入口のガードは sleep + wrapper の bounded-wait の間に stale になるし、
+# continuum 周期保存・手動 C-s はそもそもガードを通らない。全経路が必ず通る本 wrapper で
+# 保存直前に再検査することで、復元途中の部分状態を last に焼き付ける窓を「save.sh 実行時間
+# のみ」まで縮める（完全閉鎖には restore 側の lock 参加が必要だが、変更規模に対して残存窓が
+# 小さいため defense-in-depth のここまでとする）。
+tt_save_restore_in_progress() {
+  local v now
+  v="$(tmux show -gqv @tt-restore-in-progress 2>/dev/null)"
+  case "$v" in
+    ''|0)     return 1 ;;
+    *[!0-9]*) return 1 ;;
+  esac
+  now="$(date +%s)"
+  [ "$(( now - v ))" -lt "$TT_RESTORE_INPROGRESS_TTL" ]
+}
+
 # resurrect の保存先 dir を解決する。vendor helpers.sh:1-7,99-103 と同手順（source 副作用を避け
 # wrapper 自己完結）。解決順 @resurrect-dir → ~/.tmux/resurrect → $XDG_DATA_HOME/tmux/resurrect。
 # helpers.sh の解決順を変えたらここも追従すること。
@@ -154,7 +179,10 @@ tt_resurrect_dir() {
   local d
   d="$(tmux show -gqv @resurrect-dir 2>/dev/null || true)"
   if [ -n "$d" ]; then
-    printf '%s\n' "$d" | sed "s,\$HOME,$HOME,g; s,~,$HOME,g"
+    # helpers.sh:103 と同一の展開式 ($HOME / $HOSTNAME / ~)。$HOSTNAME を欠くと
+    # マルチホスト設定 (@resurrect-dir に $HOSTNAME) で last を取りこぼし、
+    # Fix B 退行ガード全体が silent no-op になる (zshlib/_tmux_session.zsh:80 と同式)。
+    printf '%s\n' "$d" | sed "s,\$HOME,$HOME,g; s,\$HOSTNAME,$(hostname),g; s,\~,$HOME,g"
   elif [ -d "$HOME/.tmux/resurrect" ]; then
     printf '%s\n' "$HOME/.tmux/resurrect"
   else
@@ -216,6 +244,13 @@ tt_save_main() {
     return 1
   fi
   trap 'tt_save_release_own_lock' EXIT
+
+  # 復元中なら保存しない（不変条件の choke point 検査。tt_save_restore_in_progress 参照）。
+  # lock 待ちの間に復元が始まっていた場合をここで捕まえる。非 0 = 「保存せず」は既存契約どおり
+  # 呼び出し側 debounce が正しく扱う（@continuum-save-last-timestamp を進めない）。
+  if tt_save_restore_in_progress; then
+    return 1
+  fi
 
   # Fix B: 保存前に現 last のターゲットとセッション数を控える（save.sh が last を前進させる前に）。
   local tt_rdir='' tt_last_link='' tt_prev_target='' tt_prev_n=0
