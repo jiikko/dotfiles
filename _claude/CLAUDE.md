@@ -97,6 +97,7 @@
 | クラッシュ, crash, .ips, DiagnosticReports, SIGSEGV, SIGABRT | `~/.claude/skills/crash-log-analyzer/SKILL.md` |
 | codex-review, Codexレビュー, コードレビュー依頼 | `~/.claude/skills/codex-review/SKILL.md` |
 | codexにリード, codex主導で着手, 設計から codex に任せて, codex-lead | `~/.claude/skills/codex-lead/SKILL.md` |
+| codexに書かせて, codexメインで実装, codexに作らせて, codex-drive | `~/.claude/skills/codex-drive/SKILL.md` |
 | cross-review, クロスレビュー, 複数視点レビュー | `~/.claude/skills/cross-review/SKILL.md` |
 | レビューループ, review-loop, make review | `~/.claude/skills/review-loop/SKILL.md` |
 | 視認性, 色被り, UXレビュー | `~/.claude/skills/ux-visibility-review/SKILL.md` |

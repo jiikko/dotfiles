@@ -150,7 +150,7 @@ AVFoundation 系の問題に当たったら、最低限以下を WebFetch で取
 
 ## 関連プロジェクト / リソース
 
-- VLCMultiVideoPlayer: `~/src/my-products/apps/vlc-multi-video-player/`
+- VLCMultiVideoPlayer リポジトリ（旧配置 `~/src/my-products/apps/vlc-multi-video-player/` は 2026-07-03 時点でこのマシンに存在しない。参照する前に `mdfind -name AVFoundationVideoPlayer.swift` 等で所在を確認すること）
   - `VLCMultiVideoPlayer/VideoPlayer/AVFoundationVideoPlayer.swift` (= AVPlayer 実装本体)
   - `VLCMultiVideoPlayer/VideoPlayer/AVPlayerSeekDiagnostics.swift` (= 計測 log)
   - `issues/pending/332-bug-high-rate-playback-frame-stutter.md` (= rate ≥ 2.5x の stutter 問題)
