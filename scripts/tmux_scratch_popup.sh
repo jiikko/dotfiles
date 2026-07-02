@@ -21,15 +21,9 @@
 
 client="$1"
 
-# shell-command の流れ (スポットライト = 擬似立体。tmux_scratch_spotlight.sh 冒頭コメント参照):
-# scratch 準備 → spotlight dim (scratch 作成後に呼ぶ: 中身を session スコープで守るため)
-# → attach (ブロック) → popup を閉じる/detach すると attach が戻る → spotlight undim。
-# attach に exec を使わないのは undim を attach 終了後に走らせるため。
-# undim は bind t の detach 側でも叩く二重化 (取りこぼし防止)。
-# shellcheck disable=SC2016  # 単一引用符は意図的: ${...} は popup 実行時に /bin/sh が展開する
 exec tmux display-popup -E -w 80% -h 75% -b heavy \
   ${client:+-c "$client"} \
   -S "fg=colour33,bg=colour201,bold" \
   -s 'bg=colour17' \
   -T "#[fg=colour16] ⚡ SCRATCH #{t/f/%H#:%M:client_activity}〜 — nested tmux (C-t t で閉じる) ⚡ " \
-  'unset TMUX TMUX_TMPDIR; tmux has-session -t scratch 2>/dev/null || tmux new-session -d -s scratch; tmux set -t scratch status-interval 1; tmux set -t scratch status 2; spot="${DOTFILES_DIR:-$HOME/dotfiles}/scripts/tmux_scratch_spotlight.sh"; "$spot" dim; tmux attach -t scratch; "$spot" undim'
+  'unset TMUX TMUX_TMPDIR; tmux has-session -t scratch 2>/dev/null || tmux new-session -d -s scratch; tmux set -t scratch status-interval 1; tmux set -t scratch status 2; exec tmux attach -t scratch'
