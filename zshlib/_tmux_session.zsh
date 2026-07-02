@@ -111,8 +111,11 @@ _tt_impl () {
     name=$(basename "$PWD")
   fi
 
-  # ドットをアンダースコアに置換（tmuxのセッション名では.が区切り文字として解釈されるため）
-  name="${name//./_}"
+  # ドットとコロンをアンダースコアに置換（tmux の target 指定では . と : が区切り文字。
+  # tmux 3.1+ は new-session -s 時に自ら . : を _ へサイレント置換するため、こちらも同じ
+  # 置換をしないと「作られた名前 (foo_bar)」と「target に使う名前 (foo:bar)」が食い違い、
+  # attach 不能なセッションが残る）
+  name="${name//[.:]/_}"
 
   # 自動復元を「待って」から attach した場合だけ、attach 時に復元所要秒を flash する。
   # サーバ既存の高速パス（復元なし）や rc=3（保存なしで復元が走らない）では立てない。
@@ -157,16 +160,19 @@ _tt_impl () {
         # よって新規作成はせず、既に復元済みなら目的セッション、まだなら hold に attach
         # して安全に抜ける。rc=2 は _tmux.conf 未反映等のデプロイ skew なので警告する。
         [ "$rc" -eq 2 ] && echo "tt: _tmux.conf の @resurrect-hook-post-restore-all が未設定です（復元完了を待てません。反映してください）。" >&2
-        if tmux has-session -t "$name" 2>/dev/null; then
-          tmux attach-session -t "$name"
+        if tmux has-session -t "=$name" 2>/dev/null; then
+          tmux attach-session -t "=$name"
         else
-          tmux attach-session -t "$hold"
+          tmux attach-session -t "=$hold"
         fi
         return ;;
     esac
   fi
 
-  if tmux has-session -t "$name" 2>/dev/null; then
+  # -t は「=名前」で exact match を強制する。素の名前だと tmux の target 解決が
+  # プレフィックス一致に落ち、`tt dot` が既存の dotfiles セッションに誤 attach する
+  # （exact 一致が無い場合のみ prefix 一致になる仕様。tmux 3.5a 実測）。
+  if tmux has-session -t "=$name" 2>/dev/null; then
     # 復元を待った場合のみ、post-restore-all フックが格納した所要秒を読み、
     # attach と同じコマンド列で display-message する（attach 後はクライアントが
     # 接続済みなので確実に見える。フック側で出すと表示先が無く見えない）。
@@ -174,9 +180,9 @@ _tt_impl () {
     local dur=""
     [ "$flash_restore" = 1 ] && dur="$(tmux show -gqv @tt-restore-duration 2>/dev/null)"
     if [ -n "$dur" ]; then
-      tmux attach-session -t "$name" \; display-message -d 5000 "tmux 復元: ${dur}s（${name}）"
+      tmux attach-session -t "=$name" \; display-message -d 5000 "tmux 復元: ${dur}s（${name}）"
     else
-      tmux attach-session -t "$name"
+      tmux attach-session -t "=$name"
     fi
   else
     _t_impl "$name"   # 公開ラッパー t ではなく実体を呼ぶ（無駄な再 source を避ける）
