@@ -25,10 +25,19 @@
 #      畳まず残置しても、実セッションがある限り保存が永久停止しない。
 #      復元の「最中」（hold + 部分的な実セッション）は不変条件 1（@tt-restore-in-progress）が
 #      抑止する（pre-restore-all がセッション生成より前にフラグを立てるため）。
-#   3. 同時に複数の保存を走らせない（mkdir lock）。重複・競合した last/archive
-#      を防ぐ。lock はクラッシュ取り残し対策に mtime で stale 自動解除する。
+#   3. 保存の直列化（同時に複数の save.sh を走らせない）は本スクリプトでは行わず、
+#      全保存経路の choke point である wrapper（scripts/tmux_resurrect_save.sh、
+#      @resurrect-save-script-path 経由）の bounded-wait lock に委ねる。
+#      かつて自前 mkdir lock を持っていたが、lock 競合時に「skip して成功扱い」で
+#      イベントを取りこぼし損失窓が最大 15 分に退行するバグがあった（wrapper 冒頭
+#      コメントが明文で禁じたのと同一パターン）。撤去により、先行保存と重なった
+#      後発 debouncer は wrapper 内で完了を待ってから最新状態を保存する（取りこぼし無し）。
 #   4. イベント連打で保存を多発させない（debounce token: 自分が最後の
 #      イベントでなければ何もしない。最後の 1 つだけが実際に保存する）。
+#   5. default socket のサーバ以外からは保存しない（単一環境 gate）。conf は tmux -L 等の
+#      第 2 サーバでも source され本 hook が付くが、resurrect の保存先は HOME 共有のため、
+#      無ガードだと第 2 サーバの状態が main サーバの last を上書きする（continuum は
+#      another_tmux_server_running で同じ理由の gate を持つ。自前 hook にも同じ判断を写す）。
 #
 # 依存（変わったら追従が必要）:
 #   - hold セッション名のプレフィックス __tt_hold_ は zshlib/_tmux_session.zsh の
@@ -47,11 +56,8 @@ unset CDPATH
 # --- 設定（環境変数で上書き可能。テストはここを差し替える）---------------------
 TT_DEBOUNCE_STATE_DIR="${TT_DEBOUNCE_STATE_DIR:-$HOME/.cache/tt-resurrect-debounce}"
 TT_DEBOUNCE_TOKEN_FILE="$TT_DEBOUNCE_STATE_DIR/token"
-TT_DEBOUNCE_LOCK_DIR="$TT_DEBOUNCE_STATE_DIR/lock"
 # hold セッション名プレフィックス（_tmux_session.zsh と一致させる。上記「依存」参照）
 TT_HOLD_PREFIX="${TT_HOLD_PREFIX:-__tt_hold_}"
-# lock の stale 判定（秒）。これより古い lock はクラッシュ取り残しとみなして解除。
-TT_LOCK_STALE_SECONDS="${TT_LOCK_STALE_SECONDS:-120}"
 # 復元中フラグ(@tt-restore-in-progress)の有効期限（秒）。pre-restore-all が立てた
 # フラグを post-restore-all が降ろし損ねた（復元途中のクラッシュ / kill / server 停止）
 # 場合、フラグが永久に残ると debounce 保存が二度と走らなくなる。TTL を超えた
@@ -97,7 +103,25 @@ tt_only_hold_sessions() {
   printf '%s\n' "$sessions" | grep -q "^${TT_HOLD_PREFIX}"
 }
 
-# 保存してよい状態か（復元中でも bootstrap(hold のみ) 中でもない）
+# default socket のサーバか（不変条件 5・単一環境 gate）。
+# 期待値は「継承した TMUX_TMPDIR」ではなく canonical な /tmp 基準で組む: 本 hook の
+# run-shell 子プロセスは第 2 サーバの TMUX_TMPDIR を継承するため、それで期待値を組むと
+# 比較が自己正当化して素通りする（過去事故の scratch 第 2 サーバがまさにこの形態だった）。
+# /tmp 決め打ちは正規の TMUX_TMPDIR 利用者には tmux の文書化挙動から逸れるが、この環境は
+# scratch popup (bind t) が TMUX_TMPDIR を明示 unset して実 default socket を強制する方針
+# (_tmux.conf / scripts/tmux_scratch_popup.sh) なので整合する。
+# macOS の /tmp は /private/tmp への symlink で、tmux の #{socket_path} は解決済みパスを
+# 返す（実測: /private/tmp/tmux-501/default）ため、期待値側も realpath で解決して比較する。
+# socket_path が取れない環境（古い tmux / テストスタブ）は fail-open で保存を殺さない。
+tt_on_default_server() {
+  local actual expected
+  actual="$(tmux display-message -p '#{socket_path}' 2>/dev/null)"
+  [ -n "$actual" ] || return 0
+  expected="$(realpath /tmp 2>/dev/null || echo /tmp)/tmux-$(id -u)/default"
+  [ "$actual" = "$expected" ]
+}
+
+# 保存してよい状態か（復元中でも bootstrap(hold のみ) 中でもなく、default サーバである）
 tt_should_save() {
   if tt_restore_in_progress; then
     return 1
@@ -105,23 +129,10 @@ tt_should_save() {
   if tt_only_hold_sessions; then
     return 1
   fi
-  return 0
-}
-
-# 多重起動 lock の取得（不変条件 3）。取得成功で 0、他が保持中なら 1。
-tt_acquire_lock() {
-  mkdir -p "$TT_DEBOUNCE_STATE_DIR" 2>/dev/null
-  # クラッシュ取り残し lock を stale なら解除（mtime ベース）
-  if [ -d "$TT_DEBOUNCE_LOCK_DIR" ]; then
-    if [ -z "$(find "$TT_DEBOUNCE_LOCK_DIR" -maxdepth 0 -mmin "-$(( TT_LOCK_STALE_SECONDS / 60 + 1 ))" 2>/dev/null)" ]; then
-      rmdir "$TT_DEBOUNCE_LOCK_DIR" 2>/dev/null || true
-    fi
+  if ! tt_on_default_server; then
+    return 1
   fi
-  mkdir "$TT_DEBOUNCE_LOCK_DIR" 2>/dev/null
-}
-
-tt_release_lock() {
-  rmdir "$TT_DEBOUNCE_LOCK_DIR" 2>/dev/null || true
+  return 0
 }
 
 # resurrect 本体の保存スクリプトを quiet で走らせる。
@@ -168,16 +179,14 @@ tt_debounced_save_main() {
     return 0
   fi
 
-  # 復元中 / bootstrap 中は保存しない（last を壊さない）
+  # 復元中 / bootstrap 中 / 非 default サーバは保存しない（last を壊さない）
   if ! tt_should_save; then
     return 0
   fi
 
-  # 多重起動を避ける
-  if ! tt_acquire_lock; then
-    return 0
-  fi
-  trap 'tt_release_lock' EXIT
+  # 直列化は wrapper (@resurrect-save-script-path = tmux_resurrect_save.sh) の
+  # bounded-wait lock が担う。先行保存と重なってもここで skip せず wrapper 内で
+  # 完了を待つ（不変条件 3 のコメント参照。skip すると自イベントを取りこぼす）。
   tt_run_resurrect_save
 }
 
