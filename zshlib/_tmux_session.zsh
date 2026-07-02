@@ -166,6 +166,19 @@ _tt_impl () {
   # 先に t で 5 窓を作ると総ペイン数 > 1 となり、resurrect の restore_from_scratch が
   # 無効化されてスクロールバック（バッファ・ログ）が復元されなくなるため
   # （vendor/tmux-plugins/tmux-resurrect/scripts/restore.sh の detect_if_restoring_from_scratch）。
+  # KNOWN LIMITATION (未対応・2026-07-02 バグハントで確定 P3): bootstrap 区間 (この if 全体) は
+  #   相互排除が無いため、再起動直後に 2 端末でほぼ同時に tt すると壊れうる。
+  #   (i) 両方が has-session 失敗 → 両方 hold 作成 → 一方のサーバ起動時の conf source で
+  #       もう一方の new-session client も ^tmux に数えられ、continuum Gate2 (プロセス数>1) が
+  #       破れて auto-restore が silent skip → 両者 20s 待って空 hold に落ちる。
+  #   (ii) 先着のサーバが立つと後着の has-session が成功 → bootstrap を迂回して 169 行以降へ →
+  #       目的セッション未復元なら _t_impl が復元進行中に 5 窓を作り restore_from_scratch を
+  #       無効化 / 名前衝突で window 混線。
+  #   未対応の理由: 正しい修正は bootstrap 区間を ~/.cache の mkdir lock で直列化しつつ、後着が
+  #   tmux を叩くと自分が Gate2 を汚すため「ファイルシステムで lock 解放を待つ (tmux に触れない)」
+  #   設計が要る + 非 bootstrap 経路 (169行) でも @tt-restore-in-progress 待ちが要る、と両輪で
+  #   スコープが大きい。発火は「再起動直後に複数端末で同時 tt」に限られ、失敗も可視 (20s 待ち /
+  #   混線) で retry (kill-server → tt) で回復するため、当面は未対応とし本コメントで申し送る。
   if ! tmux has-session 2>/dev/null; then
     # サーバ未起動 = これから新規起動して自動復元を待つ局面。サーバを起こす前に「socket が
     # 消えたのにプロセスだけ残った孤児 tmux サーバ」を回収しておく。孤児が残っていると
