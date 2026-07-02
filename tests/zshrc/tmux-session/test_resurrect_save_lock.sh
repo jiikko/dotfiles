@@ -133,6 +133,55 @@ GUARD_OUT="$(
 OUT="$OUT
 $GUARD_OUT"
 
+# ---- Fix B2: pane_contents.tar.gz の退避 (退行時に last と一緒に戻す) ----
+FIXB_RDIR="$TMP_HOME/rdir"; mkdir -p "$FIXB_RDIR"
+FAKE_REALSAVE="$TMP_HOME/fake_realsave.sh"
+cat > "$FAKE_REALSAVE" <<'FS'
+#!/bin/sh
+# 退行を模す fake save: .fake_n セッションの new.txt を作って last を差し替え、
+# 共有 pane_contents.tar.gz を退行後の内容 (DEGRADED) で上書きする。
+n=$(cat "$RDIR/.fake_n" 2>/dev/null || echo 0)
+: > "$RDIR/new.txt"
+i=1
+while [ "$i" -le "$n" ]; do printf 'window\tn%s\tx\n' "$i" >> "$RDIR/new.txt"; i=$((i+1)); done
+ln -sf new.txt "$RDIR/last"
+printf 'DEGRADED' > "$RDIR/pane_contents.tar.gz"
+FS
+chmod +x "$FAKE_REALSAVE"
+
+FIXB_OUT="$(
+  HOME="$TMP_HOME" TT_SAVE_STATE_DIR="$TMP_HOME/state_fixb" TT_SAVE_SOURCE_ONLY=1 \
+  TT_REAL_SAVE_SCRIPT="$FAKE_REALSAVE" RDIR="$FIXB_RDIR" \
+  bash -c '
+    export RDIR
+    tmux() {
+      case "$1 $2 $3" in
+        "show -gqv @resurrect-dir") printf "%s\n" "$RDIR" ;;
+        *) printf "\n" ;;   # restore-in-progress 等は空 = 非復元中
+      esac
+      return 0
+    }
+    source "'"$SCRIPT"'"
+    make_prev() {   # 退行前: 7 セッション + ORIGINAL archive (7→2 は 6<=7 で退行、7→4 は非退行)
+      : > "$RDIR/prev.txt"
+      for ss in s1 s2 s3 s4 s5 s6 s7; do printf "window\t%s\tx\n" "$ss" >> "$RDIR/prev.txt"; done
+      ln -sf prev.txt "$RDIR/last"
+      printf "ORIGINAL" > "$RDIR/pane_contents.tar.gz"
+    }
+    bakcount() { ls "$RDIR"/.pane_contents.ttguard.* 2>/dev/null | wc -l | tr -d " "; }
+
+    # 退行 (5→2): last も archive も退行前へ戻り、退避ファイルは残らない
+    make_prev; printf 2 > "$RDIR/.fake_n"; ( tt_save_main quiet )
+    printf "CASE:fixb_regress last=%s archive=%s bak=%s\n" "$(readlink "$RDIR/last")" "$(cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
+
+    # 非退行 (5→4): last も archive も新しいまま、退避ファイルは掃除される
+    make_prev; printf 4 > "$RDIR/.fake_n"; ( tt_save_main quiet )
+    printf "CASE:fixb_ok last=%s archive=%s bak=%s\n" "$(readlink "$RDIR/last")" "$(cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
+  ' 2>/dev/null
+)"
+OUT="$OUT
+$FIXB_OUT"
+
 # ---- 検証 -------------------------------------------------------------------
 case_line() { printf '%s\n' "$OUT" | grep "CASE:$1 " || true; }
 
@@ -174,5 +223,9 @@ assert_eq_line g_inprogress "guard=block" "復元中 (直近 epoch) は wrapper 
 assert_eq_line g_stale      "guard=pass"  "TTL 超過の降り損ねフラグでは保存を再開する (全経路凍結の防止)"
 assert_eq_line g_clear      "guard=pass"  "フラグ未設定は保存可"
 assert_eq_line g_zero       "guard=pass"  "post-restore-all がクリアした後 (0) は保存可"
+
+printf '\n## Fix B2: pane_contents 退避 (退行時に last と一緒に戻す)\n'
+assert_eq_line fixb_regress "last=prev.txt archive=ORIGINAL bak=0" "退行時: last も pane_contents も退行前へ戻し、退避ファイルを残さない"
+assert_eq_line fixb_ok      "last=new.txt archive=DEGRADED bak=0"  "非退行時: last も archive も新しいまま、退避ファイルは掃除する"
 
 printf '\nAll resurrect-save lock tests passed successfully!\n'

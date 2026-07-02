@@ -254,11 +254,22 @@ tt_save_main() {
 
   # Fix B: 保存前に現 last のターゲットとセッション数を控える（save.sh が last を前進させる前に）。
   local tt_rdir='' tt_last_link='' tt_prev_target='' tt_prev_n=0
+  # Fix B2: pane_contents.tar.gz の退避先（退行を戻すとき last symlink だけでなく共有 archive も
+  # 戻さないと、window は復元されるが大半の pane でスクロールバックが失われる。@resurrect-capture-
+  # pane-contents on の主目的が退行保存 1 回で silent に消える）。退行が起こりうる prev_n>=4 の
+  # ときだけ退避してコストを限定する。upstream は `gzip > file` で同一 inode を truncate 上書き
+  # するため hardlink 退避は不可＝実コピーする。
+  local tt_archive='' tt_archive_bak=''
   if [ "${TT_SAVE_ALLOW_REGRESSION:-}" != "1" ]; then
     tt_rdir="$(tt_resurrect_dir)"
     tt_last_link="$tt_rdir/last"
     tt_prev_target="$(readlink "$tt_last_link" 2>/dev/null || true)"
     [ -n "$tt_prev_target" ] && tt_prev_n="$(tt_count_sessions_in_file "$tt_rdir/$tt_prev_target")"
+    tt_archive="$tt_rdir/pane_contents.tar.gz"
+    if [ "${tt_prev_n:-0}" -ge 4 ] && [ -f "$tt_archive" ]; then
+      tt_archive_bak="$tt_rdir/.pane_contents.ttguard.$$.tar.gz"
+      cp "$tt_archive" "$tt_archive_bak" 2>/dev/null || tt_archive_bak=''
+    fi
   fi
 
   # lock を保持したまま upstream save.sh を foreground 同期実行する。
@@ -277,10 +288,17 @@ tt_save_main() {
       tt_new_n="$(tt_count_sessions_in_file "$tt_rdir/$tt_new_target")"
       if [ "${tt_prev_n:-0}" -ge 4 ] && [ "$(( tt_new_n * 3 ))" -le "${tt_prev_n:-0}" ]; then
         ln -sf "$tt_prev_target" "$tt_last_link"
+        # Fix B2: last と一緒に共有 pane_contents.tar.gz も退行前の内容へ戻す。
+        # 復元側が本 lock を持たずに読むため、temp へ書いてから mv でアトミックに差し替える。
+        if [ -n "$tt_archive_bak" ] && [ -f "$tt_archive_bak" ]; then
+          mv -f "$tt_archive_bak" "$tt_archive" 2>/dev/null || true
+        fi
         tt_save_log_guard "$tt_prev_n" "$tt_new_n" "$tt_prev_target" "$tt_new_target"
       fi
     fi
   fi
+  # 退行を戻さなかった場合は退避コピーを掃除する（戻した場合は上で mv 済み）。
+  [ -n "$tt_archive_bak" ] && [ -f "$tt_archive_bak" ] && rm -f "$tt_archive_bak" 2>/dev/null
   return "$tt_rc"
 }
 
