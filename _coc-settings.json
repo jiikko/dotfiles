@@ -22,18 +22,6 @@
     "shfmt": {
       "command": "shfmt",
       "args": ["-i", "2", "-bn", "-ci", "-sr"]
-    },
-    "languageserver": {
-      "golang": {
-        "command": "gopls",
-        "rootPatterns": ["go.mod"],
-        "filetypes": ["go"]
-      },
-      "typescript": {
-        "command": "tsserver",
-        "rootPatterns": ["tsconfig.json"],
-        "filetypes": ["typescript", "ts", "tsx"]
-      }
     }
   },
   "cSpell.language": "en",
