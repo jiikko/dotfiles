@@ -81,12 +81,15 @@ assert_contains() {
 printf '\n=== repair Unit Tests ===\n\n'
 
 # Test 1: ヘルプ表示
+# 全オプションのヘルプ剥がれ検出もここに集約する (--help 1 回で全 assert)。
+# 新オプション追加時はこのリストにも 1 行足すこと。
 printf '## Test 1: Help message\n'
 unsetopt err_exit
 help_output=$(repair --help 2>&1 || true)
 setopt err_exit
 assert_contains "$help_output" "repair" "Help contains command name"
 assert_contains "$help_output" "対応形式" "Help lists supported formats"
+assert_contains "$help_output" "--in-place" "Help lists -i/--in-place option"
 
 # Test 2: mp4ファイル
 printf '\n## Test 2: .mp4 file\n'
@@ -164,14 +167,6 @@ export MOCK_FORMAT="mpegts"
 repair -i "$TEST_DIR/video.mp4" > /dev/null 2>&1
 assert_file_exists "$TEST_DIR/video.mp4" "Original file exists"
 assert_file_not_exists "$TEST_DIR/video-repaired.mp4" "-repaired.mp4 not created"
-
-# Test 10: ヘルプに -i オプションの説明がある
-printf '\n## Test 10: Help includes -i option\n'
-unsetopt err_exit
-help_output=$(repair --help 2>&1 || true)
-setopt err_exit
-assert_contains "$help_output" "-i" "Help contains -i"
-assert_contains "$help_output" "--in-place" "Help contains --in-place"
 
 printf '\n=== All Tests Completed ===\n'
 printf 'All repair tests passed!\n'

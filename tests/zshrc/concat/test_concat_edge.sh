@@ -21,20 +21,8 @@ exit_code=$?
 setopt err_exit
 assert_contains "$output" "SKIP" "Skips when output file already exists"
 
-# Test 18: 出力ファイル名が入力と衝突するエラー
-printf '\n## Test 18: Error when output filename collides with input\n'
-TEST_DIR="$TEST_TMP/test18"
-mkdir -p "$TEST_DIR"
-echo "video 1" > "$TEST_DIR/video_1.mp4"
-echo "video 2" > "$TEST_DIR/video.mp4"  # これが入力かつ出力名と衝突
-cd "$TEST_DIR"
-# この場合、video.mp4 が入力ファイルで、出力も video.mp4 になる
-# 実際には video_1 と video で共通プレフィックスが "video" になる
-unsetopt err_exit
-output=$(concat "$TEST_DIR/video_1.mp4" "$TEST_DIR/video.mp4" 2>&1 || true)
-# 連番パターンがないのでそちらでエラーになる
-setopt err_exit
-# このテストは連番パターンエラーになるので、別のケースでテスト
+# (旧 Test 18「出力名が入力と衝突」は assert を持たない dead test だったため削除。
+#  当該入力は連番パターンエラーで弾かれるケースで、それは test_concat_basic.sh Test 7 が検証済み)
 
 # Test 19: 0から始まる連番
 printf '\n## Test 19: Sequence starting from 0\n'

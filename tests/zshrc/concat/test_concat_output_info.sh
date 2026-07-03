@@ -40,18 +40,12 @@ file_byte_size() {
 
 printf '\n=== concat --output-info Tests ===\n\n'
 
-# ============================================================
-# Test 1: ヘルプに --output-info の説明が含まれる
-# ============================================================
-printf '## Test 1: Help mentions --output-info\n'
-help_output=$(concat --help 2>&1)
-assert_contains "$help_output" "--output-info" "Help message mentions --output-info option"
-assert_contains "$help_output" "NUL" "Help mentions NUL-separated format"
+# ヘルプ文字列の検証は test_concat_basic.sh Test 1 に集約済み (--help 1 回で全 assert)
 
 # ============================================================
 # Test 2: 結合成功時に絶対パスが NUL 区切りで書き込まれる
 # ============================================================
-printf '\n## Test 2: Successful concat writes NUL-terminated absolute path\n'
+printf '## Test 2: Successful concat writes NUL-terminated absolute path\n'
 TEST_DIR="$TEST_TMP/oi_2"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/clip_001.mp4"

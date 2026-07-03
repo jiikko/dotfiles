@@ -116,11 +116,15 @@ assert_not_contains() {
 printf '\n=== repair_mp4 Unit Tests ===\n\n'
 
 # Test 1: ヘルプメッセージの表示
+# 全オプション・環境変数のヘルプ剥がれ検出もここに集約する (--help 1 回で全 assert)。
+# 新オプション追加時はこのリストにも 1 行足すこと。
 printf '## Test 1: Help message display\n'
 help_output=$(repair_mp4 --help 2>&1)
 assert_contains "$help_output" "repair_mp4" "Help message contains command name"
 assert_contains "$help_output" "問題のあるコンテナ" "Help message describes purpose"
 assert_contains "$help_output" "-repaired.mp4" "Help message mentions output format"
+assert_contains "$help_output" "REPAIR_MP4_FPS" "Help lists REPAIR_MP4_FPS env var"
+assert_contains "$help_output" "--in-place" "Help lists -i/--in-place option"
 
 # Test 2: 単一ファイルの処理（正常なフレームレート）
 printf '\n## Test 2: Single file processing with normal framerate\n'
@@ -235,11 +239,6 @@ export MOCK_FPS="241/1"
 output=$(repair_mp4 "$TEST_DIR/input.mp4" 2>&1)
 assert_contains "$output" "異常なフレームレート" "241fps is treated as abnormal"
 
-# Test 12: ヘルプに環境変数の説明がある
-printf '\n## Test 12: Help message includes environment variable\n'
-help_output=$(repair_mp4 --help 2>&1)
-assert_contains "$help_output" "REPAIR_MP4_FPS" "Help message contains REPAIR_MP4_FPS"
-
 # Test 13: 修復不要なファイルのスキップ（MP4コンテナ + 正常なフレームレート）
 printf '\n## Test 13: Skip files that do not need repair\n'
 TEST_DIR="$TEST_TMP/test13"
@@ -288,12 +287,6 @@ export MOCK_FORMAT="mpegts"
 output=$(repair_mp4 --in-place "$TEST_DIR/video.mp4" 2>&1)
 assert_file_exists "$TEST_DIR/video.mp4" "Original file still exists"
 assert_file_not_exists "$TEST_DIR/video-repaired.mp4" "No -repaired.mp4 file created"
-
-# Test 17: ヘルプに -i オプションの説明がある
-printf '\n## Test 17: Help message includes -i option\n'
-help_output=$(repair_mp4 --help 2>&1)
-assert_contains "$help_output" "-i" "Help message contains -i option"
-assert_contains "$help_output" "--in-place" "Help message contains --in-place option"
 
 printf '\n=== All Tests Completed ===\n'
 printf 'All repair_mp4 tests passed successfully!\n'

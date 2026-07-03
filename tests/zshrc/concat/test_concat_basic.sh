@@ -8,11 +8,21 @@ source "${0:A:h}/test_helper.sh"
 printf '\n=== concat Basic Tests (1-16d) ===\n\n'
 
 # Test 1: ヘルプメッセージの表示
+# 全オプションのヘルプ剥がれ検出もここに集約する (--help 1 回で全 assert)。
+# 新オプション追加時はこのリストにも 1 行足すこと。
 printf '## Test 1: Help message display\n'
+unsetopt err_exit
 help_output=$(concat --help 2>&1)
+help_rc=$?
+setopt err_exit
+assert_exit_code "0" "$help_rc" "concat --help succeeds"
 assert_contains "$help_output" "concat" "Help message contains command name"
 assert_contains "$help_output" "使い方" "Help message is in Japanese"
 assert_contains "$help_output" "--force" "Help message mentions --force option"
+assert_contains "$help_output" "フレーム順序検証をスキップ" "Help describes --force behavior"
+assert_contains "$help_output" "元ファイルは削除しません" "Help mentions source preservation"
+assert_contains "$help_output" "--output-info" "Help message mentions --output-info option"
+assert_contains "$help_output" "NUL" "Help mentions NUL-separated format"
 
 # Test 2: 引数不足のエラー
 printf '\n## Test 2: Error with insufficient arguments\n'

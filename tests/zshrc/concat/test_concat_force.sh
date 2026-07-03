@@ -106,16 +106,6 @@ assert_file_exists "$TEST_DIR/combo.mp4" "Output created"
 assert_file_exists "$TEST_DIR/combo_001.mp4" "Source file 1 kept"
 assert_file_exists "$TEST_DIR/combo_002.mp4" "Source file 2 kept"
 
-# ============================================================
-# Test 6: --force ヘルプ表示の確認
-# ============================================================
-printf '\n## Test 6: --force is documented in help\n'
-unsetopt err_exit
-help_output=$(concat --help 2>&1)
-help_rc=$?
-setopt err_exit
-assert_exit_code "0" "$help_rc" "concat --help succeeds"
-assert_contains "$help_output" "フレーム順序検証をスキップ" "Help mentions verification skip"
-assert_contains "$help_output" "元ファイルは削除しません" "Help mentions source preservation"
+# ヘルプ文字列の検証は test_concat_basic.sh Test 1 に集約済み (--help 1 回で全 assert)
 
 printf '\n=== --force Tests Completed ===\n'
