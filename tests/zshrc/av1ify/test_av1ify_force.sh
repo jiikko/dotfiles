@@ -36,11 +36,6 @@ setopt err_exit
 assert_contains "$output" "--force で続行" "Shows force continuation warning"
 assert_not_contains "$output" "スキップします" "Does not skip encoding"
 
-# Test 67: --force ヘルプメッセージ
-printf '\n## Test 67: Help message includes --force option\n'
-help_output=$(av1ify --help 2>&1)
-assert_contains "$help_output" "--force" "Help message contains --force option"
-
 # Test 68: タイムスタンプ破損（DTS逆行）で --force なし → スキップ
 printf '\n## Test 68: Timestamp corruption (DTS backward) without --force skips encoding\n'
 TEST_DIR="$TEST_TMP/test68"

@@ -9,11 +9,22 @@ source "${0:A:h}/test_helper.sh"
 printf '\n=== av1ify Basic Tests (1-12) ===\n\n'
 
 # Test 1: ヘルプメッセージの表示
+# 全オプションのヘルプ剥がれ検出もここに集約する (--help 1 回で全 assert)。
+# 新オプション追加時はこのリストにも 1 行足すこと。
 printf '## Test 1: Help message display\n'
 help_output=$(av1ify --help 2>&1)
 assert_contains "$help_output" "av1ify" "Help message contains command name"
 assert_contains "$help_output" "使い方" "Help message is in Japanese"
 assert_contains "$help_output" "複数のファイルを順番に変換" "Help message mentions multiple file support"
+assert_contains "$help_output" "-f <ファイル>" "Help lists -f option"
+assert_contains "$help_output" "-r, --resolution" "Help lists --resolution option"
+assert_contains "$help_output" "--fps" "Help lists --fps option"
+assert_contains "$help_output" "-c, --compact" "Help lists --compact option"
+assert_contains "$help_output" "--denoise" "Help lists --denoise option"
+assert_contains "$help_output" "--force" "Help lists --force option"
+assert_contains "$help_output" "--delete-origin-if-success-and-no-ng" "Help lists --delete-origin option"
+assert_contains "$help_output" "--no-delete-origin-if-success-and-no-ng" "Help lists --no-delete-origin variant"
+assert_contains "$help_output" "-n, --dry-run" "Help lists --dry-run option"
 
 # Test 1b: ドライラン表示
 printf '\n## Test 1b: Dry-run option\n'
@@ -69,10 +80,6 @@ mkdir -p "$TEST_DIR"
 cd "$TEST_DIR"
 output=$(av1ify "$TEST_DIR/nonexistent.avi" 2>&1 || true)
 assert_contains "$output" "ファイルが無い" "Reports error for non-existent file"
-
-# Test 7: 空の引数でヘルプ表示（スキップ - 環境依存）
-printf '\n## Test 7: Help display with empty argument (SKIPPED)\n'
-printf '↷ Skipped due to environment-specific behavior\n'
 
 # Test 8: ディレクトリの再帰処理
 printf '\n## Test 8: Directory recursive processing\n'

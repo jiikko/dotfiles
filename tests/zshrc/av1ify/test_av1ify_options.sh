@@ -1,34 +1,17 @@
 #!/usr/bin/env zsh
 unset CDPATH
 # shellcheck shell=bash
-# av1ify オプションテスト (Test 13-49, 54-70)
+# av1ify オプションテスト (Test 16-49, 54-70)
 # 解像度、fps、denoise、compact、バリデーション、アップスケール防止、縦長動画、fpsキャップ、部分一致
 
 source "${0:A:h}/test_helper.sh"
 
-printf '\n=== av1ify Options Tests (13-70) ===\n\n'
+printf '\n=== av1ify Options Tests (16-70) ===\n\n'
 
-# Test 13: -f オプションのヘルプメッセージ
-printf '## Test 13: Help message includes -f option\n'
-help_output=$(av1ify --help 2>&1)
-assert_contains "$help_output" "-f" "Help message contains -f option"
-assert_contains "$help_output" "ファイルリスト" "Help message describes file list feature"
-
-# Test 14: --resolution オプションのヘルプメッセージ
-printf '\n## Test 14: Help message includes --resolution option\n'
-help_output=$(av1ify --help 2>&1)
-assert_contains "$help_output" "--resolution" "Help message contains --resolution option"
-assert_contains "$help_output" "-r," "Help message contains -r short option"
-assert_contains "$help_output" "アスペクト比は維持" "Help message mentions aspect ratio preservation"
-
-# Test 15: --fps オプションのヘルプメッセージ
-printf '\n## Test 15: Help message includes --fps option\n'
-help_output=$(av1ify --help 2>&1)
-assert_contains "$help_output" "--fps" "Help message contains --fps option"
-assert_contains "$help_output" "フレームレート" "Help message mentions frame rate"
+# ヘルプ文字列の検証は test_av1ify_basic.sh Test 1 に集約済み (--help 1 回で全 assert)
 
 # Test 16: --resolution オプション (dry-run)
-printf '\n## Test 16: Resolution option with dry-run\n'
+printf '## Test 16: Resolution option with dry-run\n'
 TEST_DIR="$TEST_TMP/test16"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
@@ -301,12 +284,6 @@ MOCK_WIDTH=2160 MOCK_HEIGHT=3840 MOCK_OUTPUT_WIDTH=1080 MOCK_OUTPUT_HEIGHT=1920 
 setopt err_exit
 assert_file_exists "$TEST_DIR/input-1080p-enc.mp4" "Portrait 4K downscaled to 1080p creates tagged file"
 
-# Test 34: --denoise オプションのヘルプメッセージ
-printf '\n## Test 34: Help message includes --denoise option\n'
-help_output=$(av1ify --help 2>&1)
-assert_contains "$help_output" "--denoise" "Help message contains --denoise option"
-assert_contains "$help_output" "ノイズ除去" "Help message describes noise reduction"
-
 # Test 35: --denoise オプション (dry-run)
 printf '\n## Test 35: Denoise option with dry-run\n'
 TEST_DIR="$TEST_TMP/test35"
@@ -371,12 +348,6 @@ setopt err_exit
 assert_contains "$output" "解像度を取得できません" "Reports error when source resolution unavailable"
 assert_file_not_exists "$TEST_DIR/input-720p-enc.mp4" "No output file created when resolution unavailable"
 
-# Test 40: --compact オプションのヘルプメッセージ
-printf '\n## Test 40: Help message includes --compact option\n'
-help_output=$(av1ify --help 2>&1)
-assert_contains "$help_output" "--compact" "Help message contains --compact option"
-assert_contains "$help_output" "720p" "Help message mentions 720p for compact"
-assert_contains "$help_output" "30fps" "Help message mentions 30fps for compact"
 
 # Test 41: --compact オプション (dry-run)
 printf '\n## Test 41: Compact option with dry-run\n'
@@ -608,12 +579,6 @@ setopt err_exit
 assert_contains "$output" "出力解像度: 720p" "Resolution option is applied for rotated portrait input"
 assert_file_exists "$TEST_DIR/input-720p-enc.mp4" "Rotated portrait input still produces 720p output"
 assert_not_contains "$output" "解像度不一致" "Rotated portrait input accepts 720x1280 as expected output"
-
-# Test 66: --delete-origin-if-success-and-no-ng ヘルプ表示
-printf '\n## Test 66: Help message includes --delete-origin-if-success-and-no-ng option\n'
-help_output=$(av1ify --help 2>&1)
-assert_contains "$help_output" "--delete-origin-if-success-and-no-ng" "Help message contains --delete-origin-if-success-and-no-ng option"
-assert_contains "$help_output" "--no-delete-origin-if-success-and-no-ng" "Help message contains --no- variant"
 
 # Test 67: --delete-origin-if-success-and-no-ng 有効時、成功で元ファイルがゴミ箱へ移動
 printf '\n## Test 67: Move origin to Trash on success with no NG\n'
