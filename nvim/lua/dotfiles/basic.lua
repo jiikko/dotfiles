@@ -62,7 +62,7 @@ local function set_keymaps()
   local silent = { silent = true }
 
   map("n", "Q", "<Nop>", { noremap = true })
-  map("n", ";", [[:<C-u>call append(expand('.'), '')<CR>j]], silent)
+  map("n", ";", [[:<C-u>call append(line('.'), '')<CR>j]], silent)
   map("n", "<CR><CR>", "<C-w><C-w>", silent)
   map("n", "<C-p>", ":cprevious<CR>", silent)
   map("n", "<C-n>", ":cnext<CR>", silent)
