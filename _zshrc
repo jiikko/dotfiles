@@ -76,6 +76,7 @@ export GOPATH=$HOME/go
 export PATH=$GOPATH/bin:$PATH
 export PATH="$HOME/dotfiles/bin:$PATH"
 export PATH="/opt/homebrew/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
 if [ -d "/usr/local/heroku/bin" ]; then
   export PATH="/usr/local/heroku/bin:$PATH"
 fi
@@ -85,6 +86,8 @@ for _env in rbenv nodenv goenv; do
 done
 unset _env
 
+# husky (Node 系プロジェクトの git hooks) をグローバルにスキップする。
+# プロジェクト側の hook (lint-staged 等) を走らせたくなったらこの行を外す
 export HUSKY_SKIP_HOOKS=1
 export FZF_DEFAULT_OPTS='--height 80% --reverse --border'
 FZF_GIT_BRANCH_OPTS='--no-sort --no-hscroll --preview-window=down'
@@ -243,7 +246,6 @@ setopt pushd_silent          # pushd,popdの度にディレクトリスタック
 ##========================================================##
 ##====================== 雑多な設定 ======================##
 ##========================================================##
-#setopt AUTOLOGOUT=n          # n分後に自動的にログアウト
 setopt no_beep               # コマンド入力エラーでBeepを鳴らさない
 
 setopt complete_in_word
@@ -259,34 +261,19 @@ unsetopt flow_control        # (shell editor 内で) C-s, C-q を無効にする
 setopt no_flow_control       # C-s/C-q によるフロー制御を使わない
 setopt hash_cmds             # 各コマンドが実行されるときにパスをハッシュに入れる
 
-#setopt ignore_eof            # C-dでログアウトしない
-
-setopt bsd_echo
+setopt bsd_echo              # echo を BSD 互換にする (エスケープシーケンスを解釈しない)
 setopt no_hup                # ログアウト時にバックグラウンドジョブをkillしない
-#setopt no_checkjobs          # ログアウト時にバックグラウンドジョブを確認しない
 setopt notify                # バックグラウンドジョブが終了したら(プロンプトの表示を待たずに)すぐに知らせる
 setopt long_list_jobs        # 内部コマンド jobs の出力をデフォルトで jobs -L にする
 
 setopt magic_equal_subst     # コマンドラインの引数で --PREFIX=/USR などの = 以降でも補完できる
-#setopt mail_warning
 setopt multios               # 複数のリダイレクトやパイプなど、必要に応じて TEE や CAT の機能が使われる
 setopt short_loops           # FOR, REPEAT, SELECT, IF, FUNCTION などで簡略文法が使えるようになる
-#setopt sun_keyboard_hack     # SUNキーボードでの頻出 typo ` をカバーする
 setopt always_last_prompt    # カーソル位置は保持したままファイル名一覧を順次その場で表示
 setopt cdable_vars sh_word_split
 
 setopt rm_star_wait          # rm * を実行する前に確認
-#setopt rm_star_silent        # rm * を実行する前に確認しない
-#setopt no_clobber            # リダイレクトで上書きを禁止
-unsetopt no_clobber
-
-# setopt no_unset              # 未定義変数の使用禁止
-
-#setopt interactive_comments  # コマンド入力中のコメントを認める
-#setopt chase_links           # シンボリックリンクはリンク先のパスに変換してから実行
-#setopt print_exit_value      # 戻り値が 0 以外の場合終了コードを表示
-#setopt single_line_zle       # デフォルトの複数行コマンドライン編集ではなく、１行編集モードになる
-#setopt xtrace                # コマンドラインがどのように展開され実行されたかを表示する
+unsetopt no_clobber          # リダイレクトでの上書きを許可 (明示)
 
 # less の動作（man less 参照）
 LESS=-M
@@ -389,7 +376,6 @@ alias iv='nvim'
 alias vi='nvim'
 alias bi='nvim'
 alias vo='nvim'
-alias ci='nvim'
 alias vz='nvim ~/.zshrc'
 alias vv='nvim ~/.config/nvim/init.lua'
 alias vk='nvim ~/dotfiles/mac/karabiner.json'
@@ -667,7 +653,11 @@ function codex() {
 }
 
 if [[ -n "$SSH_AUTH_SOCK" ]] && ! ssh-add -l > /dev/null 2>&1; then
-  ssh-add ~/.ssh/id_rsa > /dev/null 2>&1
+  # 存在する鍵だけ登録する (鍵形式の移行で id_rsa 決め打ちが silent に無効化されるのを防ぐ)
+  for _key in ~/.ssh/id_ed25519 ~/.ssh/id_rsa; do
+    [ -f "$_key" ] && ssh-add "$_key" > /dev/null 2>&1
+  done
+  unset _key
 fi
 
 if [ -f ~/.fzf.zsh ]; then
@@ -757,6 +747,3 @@ if [[ -o interactive ]] && [[ -t 1 ]]; then
   }
 fi
 # ---------------------------------------------------------------------------
-
-# Ignore commands starting with space from history
-export PATH="$HOME/.local/bin:$PATH"
