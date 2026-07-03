@@ -19,6 +19,9 @@ typeset -gi __AV1IFY_R_AAC_CAPPED=0
 # 取得できない場合は空文字列
 # macOS の `stat -f "%T"` は file type (ls -F 形式) を返すため使えない。
 # `mount` 出力をパースしてパスにマッチする最長 mount point を選ぶ。
+# ⚠️ macOS の mount 出力形式 "device on /mp (fstype, opts)" 前提。Linux の
+# "device on /mp type ext4 (opts)" 形式はパースできない (空文字列 fallback になり
+# 呼び出し側は trash 経路へ倒れる)。Linux 対応が必要になったら type 形式の分岐を追加すること。
 __av1ify_fs_type_for() {
   # 注意: zsh では `path` (小文字) は `PATH` (大文字) の配列形 tied parameter なので
   # `local path=...` で書くと関数内 PATH を引数値で上書きしてしまい、
@@ -472,6 +475,9 @@ __av1ify_one() {
   fi
 
   # 早期スキップ: ffprobe前に既存出力をチェック（クラウドファイルの不要なダウンロードを防止）
+  # 意図: 既存出力があれば「今回の指定と別バリアント (例: 既存=フル解像度, 今回=-r 720p)」でも
+  # SKIP する。同一ソースの変換は 1 回で十分という運用方針であり、バリアント違いの再変換が
+  # 必要な場合は既存出力を消す (or リネームする) ことで明示的にオプトインする。
   if __av1ify_default_output_exists "$in"; then
     print -r -- "→ SKIP 既存: $REPLY"
     return 0
