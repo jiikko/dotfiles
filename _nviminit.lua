@@ -749,6 +749,9 @@ require("lazy").setup({
   performance = {
     rtp = {
       paths = vim.tbl_filter(function(p) return p ~= "" end, { nvim_dir, config_dir }),
+      -- 使っていない標準 plugin を起動から外す。zip/tar/gz をエディタで直接開きたく
+      -- なったら該当行を外して再有効化する (netrwPlugin は nvim <dir> の挙動が変わるため外していない)
+      disabled_plugins = { "gzip", "tarPlugin", "zipPlugin", "tutor" },
     },
   },
   install = { colorscheme = { "gruvbox" } },

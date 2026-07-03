@@ -36,6 +36,7 @@ local function set_options()
   -- 同時発火させる。300→500ms で発火密度を下げてタイピング中の連打を緩和 (体感優先)
   opt.updatetime = 500
   opt.signcolumn = "yes"
+  opt.showmode = false -- モード表示は lualine が担うため、コマンドラインの -- INSERT -- は二重表示になる
 end
 
 local function set_user_commands()
