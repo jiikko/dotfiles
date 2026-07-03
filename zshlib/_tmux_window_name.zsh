@@ -182,6 +182,35 @@ _tmux_set_pane_title() {
   printf "\033]2;%s\033\\" "$title"
 }
 
+# 「このウィンドウで最後に shell がコマンドを実行した時刻」を window option
+# @last-touched (epoch) に記録する。_tmux.conf の放置フェード (@fade) の唯一の入力。
+# - 発火はコマンド実行の開始 (preexec) と完了 (precmd) のみ。window を select して
+#   前面に出しただけでは絶対に更新しない (ユーザー要件 2026-07-04。フェードの意味が
+#   「見た」ではなく「作業した」であるため)。長時間コマンド (claude / make 等) は
+#   開始時と終了時にスタンプされ、実行中はフェードが進む (実行中の可視化は
+#   @claude_state アイコン等の担当で、フェードとは役割を分ける)。
+# - -t "$TMUX_PANE" への set -w は「その pane が属する window」の option になるので、
+#   split していても正しい window に届く。
+# - precmd 側は「直前に preexec が走った (= 実コマンドの完了)」時だけスタンプする
+#   (_TMUX_TOUCH_PENDING)。素の precmd はシェル起動直後の初回プロンプトや Enter 空打ち
+#   でも発火するため、それを拾うと「zsh を開いただけ / resurrect 復元直後」で全 window が
+#   若返り select 契機と同じ誤判定になる。
+# - throttle: 前回スタンプから 30 秒未満なら fork しない (プロンプト毎に tmux client を
+#   fork しない、というこのファイルの方針を守る。フェードの最小粒度は 30 分なので
+#   30 秒の粗さは表示に影響しない)。時刻は fork 不要の $EPOCHSECONDS を使う。
+# $EPOCHSECONDS は zsh/datetime モジュールが提供する (未ロードだと空になり、throttle の
+# 算術が常に 0-0<30=真 → 即 return でスタンプが一切走らない。実測でハマった)。
+# zshrc 側のロードに依存せず、この lib が自分で保証する (-i: ロード済みなら何もしない)
+zmodload -i zsh/datetime
+typeset -gi _TMUX_LAST_TOUCH_STAMPED=0
+typeset -gi _TMUX_TOUCH_PENDING=0
+_tmux_stamp_window_touched() {
+  [[ -n "$TMUX_PANE" ]] || return 0
+  (( EPOCHSECONDS - _TMUX_LAST_TOUCH_STAMPED < 30 )) && return 0
+  _TMUX_LAST_TOUCH_STAMPED=$EPOCHSECONDS
+  command tmux set-option -w -t "$TMUX_PANE" @last-touched "$EPOCHSECONDS" 2>/dev/null
+}
+
 if [[ -n "$TMUX" ]]; then
   _tmux_preexec() {
     # whitelist 判定で親シェルの _TMUX_SUBCOMMAND_CMDS を参照する。$(...) 経由の
@@ -203,6 +232,8 @@ if [[ -n "$TMUX" ]]; then
       [[ -n "$sub" ]] && title+=" $sub"
     fi
     _tmux_set_pane_title "$title"
+    _TMUX_TOUCH_PENDING=1
+    _tmux_stamp_window_touched
   }
 
   _tmux_precmd() {
@@ -210,6 +241,12 @@ if [[ -n "$TMUX" ]]; then
     # プロンプト毎のコマンド置換 fork を避ける。初回はロードを保証する
     (( _TMUX_WINDOW_NAMES_LOADED )) || _tmux_load_yaml
     _tmux_set_pane_title "$_TMUX_ZSH_TITLE"
+    # 実コマンドの完了時のみ (シェル起動直後・Enter 空打ちの precmd では preexec が
+    # 走っておらず pending が立たない → スタンプしない)
+    if (( _TMUX_TOUCH_PENDING )); then
+      _TMUX_TOUCH_PENDING=0
+      _tmux_stamp_window_touched
+    fi
   }
 
   autoload -Uz add-zsh-hook
