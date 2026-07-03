@@ -1,6 +1,13 @@
 #!/bin/sh
-# scratch popup を開く (bind t の ELSE 側から `run-shell '... #{client_name}'` で呼ばれる)。
-# 引数: $1 = client_name (run-shell の format 展開で渡る。display-popup -c で表示先を明示)
+# scratch popup のトグル (bind t / C-t から `run-shell '... "#{client_name}" "#{session_name}"'`
+# で呼ばれる)。開閉判定ごとここに集約する (旧実装は if-shell -F 込みの 200 文字超の bind
+# 文字列が t / C-t に複製されており、二重エスケープで壊れやすかった)。
+# 引数: $1 = client_name / $2 = session_name (いずれも run-shell の format 展開で渡る)
+#
+# - session_name == scratch (= popup 内で押された) → detach で popup を閉じ、全クライアント
+#   を再描画。refresh は旧 bind の run-shell -b と同じくバックグラウンドで走らせ、
+#   tmux サーバをブロックしない
+# - それ以外 → scratch popup を開く
 #
 # ここに集約した演出:
 # - 2 色枠: 罫線 fg=colour33 (電子ブルー) × 地 bg=colour201 (ショッキングピンク) の固定。
@@ -20,6 +27,15 @@
 # - status 2 は attach 前に設定 (点滅/スピナーの駆動は global の status-interval=1)
 
 client="$1"
+session="${2:-}"
+
+if [ "$session" = "scratch" ]; then
+  # shellcheck disable=SC2086 # ${client:+...} は client 空のとき引数ごと消す意図の word splitting
+  tmux detach-client ${client:+-t "$client"}
+  script_dir=$(cd "$(dirname "$0")" && pwd)
+  "$script_dir/tmux_refresh_all_clients.sh" > /dev/null 2>&1 &
+  exit 0
+fi
 
 exec tmux display-popup -E -w 80% -h 75% -b heavy \
   ${client:+-c "$client"} \
