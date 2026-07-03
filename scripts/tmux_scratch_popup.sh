@@ -17,7 +17,7 @@
 #   持つ環境 (テストサーバ等) でも scratch を必ず実 default socket 側に作り孤児を生まない
 # - has-session ガードで「無ければだけ新規作成」。既存 scratch に `new-session -d -A` を
 #   打ってはいけない (popup 内の最初の C-t t が 1 回効かず「閉じるのに 2 回押す」回帰。実測)
-# - status-interval 1 は attach 前に設定 (status-left の点滅/スピナーの駆動。global は 60 のまま)
+# - status 2 は attach 前に設定 (点滅/スピナーの駆動は global の status-interval=1)
 
 client="$1"
 
@@ -26,4 +26,4 @@ exec tmux display-popup -E -w 80% -h 75% -b heavy \
   -S "fg=colour33,bg=colour201,bold" \
   -s 'bg=colour17' \
   -T "#[fg=colour16] ⚡ SCRATCH #{t/f/%H#:%M:client_activity}〜 — nested tmux (C-t t で閉じる) ⚡ " \
-  'unset TMUX TMUX_TMPDIR; tmux has-session -t scratch 2>/dev/null || tmux new-session -d -s scratch; tmux set -t scratch status-interval 1; tmux set -t scratch status 2; exec tmux attach -t scratch'
+  'unset TMUX TMUX_TMPDIR; tmux has-session -t scratch 2>/dev/null || tmux new-session -d -s scratch; tmux set -t scratch status 2; exec tmux attach -t scratch'
