@@ -51,7 +51,15 @@ YAML_FILES := pre-commit-config.yml .github/dependabot.yml .github/workflows/tes
 JSON_FILES := mac/karabiner.json _coc-settings.json
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: test test-runtime test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-lint test-registration
+.PHONY: pull test test-runtime test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-lint test-registration
+
+# settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
+# pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、
+# 複数セッション常駐中でも pull がコンフリクトしないようにする。
+# 詳細: _claude/hooks/normalize-settings.sh
+pull:
+	@_claude/hooks/normalize-settings.sh
+	@git pull --rebase
 
 test: test-lint test-runtime
 
