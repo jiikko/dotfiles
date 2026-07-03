@@ -447,4 +447,28 @@ assert_contains "$output" "音声ストリーム検出できず" "Probe failure 
 assert_not_contains "$output" "noaudio 判定をスキップ" "Skip path is not taken on probe failure"
 (( rc != 0 )) && printf '✓ postcheck returns non-zero (rc=%d)\n' "$rc" || { printf '✗ postcheck should return non-zero\n'; exit 1; }
 
+# Test 89: mark_issue のリネーム先が既存でも無言上書きしない (連番で衝突回避)
+# 再実行で同名 check_ng が再生成されるケースで、前回の成果物を mv -f で潰さないこと
+printf '\n## Test 89: mark_issue collision - no silent overwrite\n'
+TEST_DIR="$TEST_TMP/test89"
+mkdir -p "$TEST_DIR"
+echo "new output" > "$TEST_DIR/input-enc.mp4"
+echo "previous artifact" > "$TEST_DIR/input-check_ng-enc.mp4"
+unsetopt err_exit
+__av1ify_mark_issue "$TEST_DIR/input-enc.mp4" "check_ng"
+rc=$?
+marked="$REPLY"
+setopt err_exit
+if [[ "$marked" == "$TEST_DIR/input-check_ng2-enc.mp4" && -f "$marked" ]]; then
+  printf '✓ Collision avoided with numbered note (%s)\n' "${marked:t}"
+else
+  printf '✗ Expected input-check_ng2-enc.mp4, got: %s\n' "$marked"; exit 1
+fi
+if [[ "$(cat "$TEST_DIR/input-check_ng-enc.mp4")" == "previous artifact" ]]; then
+  printf '✓ Previous artifact preserved\n'
+else
+  printf '✗ Previous artifact was overwritten\n'; exit 1
+fi
+(( rc == 0 )) || { printf '✗ mark_issue should return 0\n'; exit 1; }
+
 printf '\n=== Postcheck Tests Completed ===\n'

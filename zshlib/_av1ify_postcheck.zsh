@@ -1,30 +1,41 @@
 # shellcheck shell=bash
 
 # 内部補助: 変換後の検査で NG の場合にファイル名へ注記を付加
+# リネーム先が既に存在する場合 (再実行で同名 check_ng が再生成されるケース) は、
+# 前回の成果物を mv -f で無言上書きせず、注記に連番を付けて衝突を回避する
+# (例: foo-check_ng-enc.mp4 が既存なら foo-check_ng2-enc.mp4)。
 __av1ify_mark_issue() {
   local fpath="$1" note="$2"
   local dir="${fpath:h}"
   local base="${fpath:t}"
   local stem ext new_name dest
+  local -i try=1
+  local unique_note="$note"
 
-  if [[ "$base" == *.* && "$base" != .* ]]; then
-    stem="${base%.*}"
-    ext="${base##*.}"
-    # -enc の前にアノテーションを挿入 (例: foo-enc.mp4 → foo-check_ng-enc.mp4)
-    if [[ "$stem" == *-enc ]]; then
-      new_name="${stem%-enc}-${note}-enc.${ext}"
+  while :; do
+    if [[ "$base" == *.* && "$base" != .* ]]; then
+      stem="${base%.*}"
+      ext="${base##*.}"
+      # -enc の前にアノテーションを挿入 (例: foo-enc.mp4 → foo-check_ng-enc.mp4)
+      if [[ "$stem" == *-enc ]]; then
+        new_name="${stem%-enc}-${unique_note}-enc.${ext}"
+      else
+        new_name="${stem}-${unique_note}.${ext}"
+      fi
     else
-      new_name="${stem}-${note}.${ext}"
+      new_name="${base}-${unique_note}"
     fi
-  else
-    new_name="${base}-${note}"
-  fi
 
-  if [[ "$dir" == "." ]]; then
-    dest="$new_name"
-  else
-    dest="$dir/$new_name"
-  fi
+    if [[ "$dir" == "." ]]; then
+      dest="$new_name"
+    else
+      dest="$dir/$new_name"
+    fi
+
+    [[ ! -e "$dest" ]] && break
+    (( try++ ))
+    unique_note="${note}${try}"
+  done
 
   if mv -f -- "$fpath" "$dest"; then
     REPLY="$dest"
