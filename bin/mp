@@ -1,0 +1,20 @@
+#!/bin/sh
+# mp — dotfiles の `make pull` を呼び出すラッパー。
+#
+# どのディレクトリから実行しても dotfiles ルートで pull する。
+# make が無い環境では Makefile の `pull` ターゲット (Makefile:60) の中身を
+# シェルで直接再現する。どちらの経路も冪等:
+#   - normalize-settings.sh は再実行しても同じ正規化結果に収束する
+#   - git pull --rebase は既に最新なら何もしない
+set -eu
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+if command -v make >/dev/null 2>&1; then
+  exec make -C "$ROOT" pull "$@"
+fi
+
+# make フォールバック: Makefile の pull ターゲットと同じ手順・同じ順序で実行する。
+# hook が失敗したら (set -e により) pull へ進まない ＝ make の挙動と一致。
+"$ROOT/_claude/hooks/normalize-settings.sh"
+git -C "$ROOT" pull --rebase
