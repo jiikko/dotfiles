@@ -25,9 +25,17 @@
 # ⚠️ 以下の不変条件は _tmux.conf の bind t コメント (孤児サーバ予防の経緯) 由来。壊さないこと:
 # - `unset TMUX TMUX_TMPDIR`: nested attach ガード越え + 呼び出し元が継承 TMUX_TMPDIR を
 #   持つ環境 (テストサーバ等) でも scratch を必ず実 default socket 側に作り孤児を生まない
-# - has-session ガードで「無ければだけ新規作成」。既存 scratch に `new-session -d -A` を
-#   打ってはいけない (popup 内の最初の C-t t が 1 回効かず「閉じるのに 2 回押す」回帰。実測)
-# - status 2 は attach 前に設定 (点滅/スピナーの駆動は global の status-interval=1)
+# - 既存 scratch に `new-session -d -A` を打ってはいけない (popup 内の最初の C-t t が
+#   1 回効かず「閉じるのに 2 回押す」回帰。実測)。attach 失敗時のみ作成する
+# - status 2 は「作成時に 1 回だけ」設定する (session option はセッションが生きている限り
+#   永続するので毎回叩く必要がない。点滅/スピナーの駆動は global の status-interval=1)
+#
+# 開き側の高速化 (2026-07-04): 旧実装は has-session → set status 2 → attach と popup 内で
+# tmux client を毎回 3 回 fork していた。まず attach を直接試し (通常パス = fork 1 回)、
+# 失敗した時だけ new-session \; set status 2 → attach で作成する (作成パスのみ 3 回)。
+# 2>/dev/null は attach 失敗時 ("no sessions" 等) のエラー表示の抑止 (直後に作成するので不要)。
+# 通常パスの attach は exec しない (attach の成否で || 分岐する shell が必要なため sh が
+# 1 個 popup 内に残るが、popup 自体が sh -c で動いており実害なし)
 
 client="$1"
 session="${2:-}"
@@ -45,4 +53,4 @@ exec tmux display-popup -E -w 80% -h 75% -b heavy \
   -S "fg=colour33,bg=colour201,bold" \
   -s 'bg=colour17' \
   -T "#[fg=colour16] ⚡ SCRATCH #{t/f/%H#:%M:client_activity}〜 — nested tmux (C-t t で閉じる) ⚡ " \
-  'unset TMUX TMUX_TMPDIR; tmux has-session -t scratch 2>/dev/null || tmux new-session -d -s scratch; tmux set -t scratch status 2; exec tmux attach -t scratch'
+  'unset TMUX TMUX_TMPDIR; tmux attach -t scratch 2>/dev/null || { tmux new-session -d -s scratch \; set -t scratch status 2; exec tmux attach -t scratch; }'
