@@ -22,6 +22,7 @@ SHELLCHECK_FILES := \
   scripts/tmux_refresh_all_clients.sh \
   scripts/tmux_resurrect_debounced_save.sh \
   scripts/tmux_extract_popup.sh \
+  scripts/tmux_launcher_run.sh \
   scripts/tmux_resurrect_save.sh \
   scripts/tmux_scratch_popup.sh \
   zshlib/_av1ify.zsh \
