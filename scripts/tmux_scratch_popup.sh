@@ -4,9 +4,12 @@
 # 文字列が t / C-t に複製されており、二重エスケープで壊れやすかった)。
 # 引数: $1 = client_name / $2 = session_name (いずれも run-shell の format 展開で渡る)
 #
-# - session_name == scratch (= popup 内で押された) → detach で popup を閉じ、全クライアント
-#   を再描画。refresh は旧 bind の run-shell -b と同じくバックグラウンドで走らせ、
-#   tmux サーバをブロックしない
+# - session_name が popup 系セッション (scratch / launcher) = popup 内で押された
+#   → detach で popup を閉じ、全クライアントを再描画。refresh は旧 bind の run-shell -b と
+#   同じくバックグラウンドで走らせ、tmux サーバをブロックしない。
+#   launcher (tmux_launcher_run.sh が作る実行結果置き場) も閉じ対象に含めることで、
+#   C-t t を「popup を閉じる」の共通キーにしている (launcher popup 内で C-t t が
+#   scratch popup をネストで開いてしまうスタック事故の防止を兼ねる)
 # - それ以外 → scratch popup を開く
 #
 # ここに集約した演出:
@@ -29,7 +32,7 @@
 client="$1"
 session="${2:-}"
 
-if [ "$session" = "scratch" ]; then
+if [ "$session" = "scratch" ] || [ "$session" = "launcher" ]; then
   # shellcheck disable=SC2086 # ${client:+...} は client 空のとき引数ごと消す意図の word splitting
   tmux detach-client ${client:+-t "$client"}
   script_dir=$(cd "$(dirname "$0")" && pwd)
