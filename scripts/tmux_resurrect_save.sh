@@ -47,8 +47,12 @@ set -uo pipefail
 unset CDPATH
 
 # 本 wrapper はリポジトリの scripts/ 配下にある前提。upstream save.sh は ../vendor/...。
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 REAL_SAVE="${TT_REAL_SAVE_SCRIPT:-$SCRIPT_DIR/../vendor/tmux-plugins/tmux-resurrect/scripts/save.sh}"
+
+# 保存ガード (復元中 / hold のみ / default サーバ) は debounce 経路と共有のライブラリから読む
+# shellcheck source=scripts/lib/tmux_resurrect_guards.sh
+. "$SCRIPT_DIR/lib/tmux_resurrect_guards.sh"
 
 TT_SAVE_STATE_DIR="${TT_SAVE_STATE_DIR:-$HOME/.cache/tt-resurrect-save}"
 TT_SAVE_LOCK_DIR="$TT_SAVE_STATE_DIR/lock"
@@ -66,10 +70,6 @@ TT_SAVE_LOCK_HARD_STALE_SECONDS="${TT_SAVE_LOCK_HARD_STALE_SECONDS:-600}"
 # lock を取れないとき待つ上限（秒）。先行保存（数秒〜十数秒）の完了を待ってから保存する。
 # 全 caller が background 実行なので待ってよい。0.2s 間隔でポーリングする。
 TT_SAVE_LOCK_WAIT_SECONDS="${TT_SAVE_LOCK_WAIT_SECONDS:-15}"
-# 復元中フラグ(@tt-restore-in-progress)の有効期限（秒）。
-# tmux_resurrect_debounced_save.sh の TT_RESTORE_INPROGRESS_TTL と同セマンティクス
-# （変えるなら両方揃えること。grep: TT_RESTORE_INPROGRESS_TTL）。
-TT_RESTORE_INPROGRESS_TTL="${TT_RESTORE_INPROGRESS_TTL:-120}"
 
 tt_save_release_lock() {
   rm -f "$TT_SAVE_LOCK_DIR/pid" 2>/dev/null || true
@@ -147,29 +147,22 @@ tt_save_owner_is_stale() {
 # ---- Fix B/C: last の壊滅的セッション数退行ガード（2026-06-28）----
 # 背景: continuum の自動 restore が発火しないままサーバが再起動すると（他 tmux サーバ存在で
 #   continuum_restore.sh:25 が Gate2 skip する等）、復元前の貧弱なセッション状態で window hook /
-#   周期 autosave が走り、upstream save.sh:252-253 の無条件 `ln -fs last` が last を貧弱保存へ
-#   前進させ、直前の完全状態保存を孤立させる（実害: 7セッション→2セッションで last が上書きされ
+#   周期 autosave が走り、upstream save.sh:252-253 が last を貧弱保存へ前進させ、直前の
+#   完全状態保存を孤立させる (upstream は files_differ = 「前回と差分があるか」しか見ず、
+#   保存内容の健全性は検証しない。差分の有無と中身の妥当性は別物なので Fix B は必要)（実害: 7セッション→2セッションで last が上書きされ
 #   復元不能になった事例）。restore 不発の根治（tests/tmux/test_tmux.sh の probe leak 修正 +
 #   @continuum-restore-max-delay 拡大）に加え、万一 restore が走らなくても完全状態 last を守る
 #   最後の砦としてここで壊滅的退行を弾く。bypass: 正当な大量 kill 直後は TT_SAVE_ALLOW_REGRESSION=1。
 
-# 復元中か（「復元中は絶対に保存しない」不変条件の choke point 検査）。
-# tmux_resurrect_debounced_save.sh の tt_restore_in_progress と同じ判定式（epoch + TTL。
-# あちらのコメント参照。変えるなら両方揃えること。grep: TT_RESTORE_INPROGRESS_TTL）。
+# 復元中か（「復元中は絶対に保存しない」不変条件の choke point 検査）。判定の実体は
+# 共有ライブラリの tt_restore_in_progress (lib/tmux_resurrect_guards.sh)。
 # debounce 入口のガードは sleep + wrapper の bounded-wait の間に stale になるし、
 # continuum 周期保存・手動 C-s はそもそもガードを通らない。全経路が必ず通る本 wrapper で
 # 保存直前に再検査することで、復元途中の部分状態を last に焼き付ける窓を「save.sh 実行時間
 # のみ」まで縮める（完全閉鎖には restore 側の lock 参加が必要だが、変更規模に対して残存窓が
 # 小さいため defense-in-depth のここまでとする）。
 tt_save_restore_in_progress() {
-  local v now
-  v="$(tmux show -gqv @tt-restore-in-progress 2>/dev/null)"
-  case "$v" in
-    ''|0)     return 1 ;;
-    *[!0-9]*) return 1 ;;
-  esac
-  now="$(date +%s)"
-  [ "$(( now - v ))" -lt "$TT_RESTORE_INPROGRESS_TTL" ]
+  tt_restore_in_progress
 }
 
 # resurrect の保存先 dir を解決する。vendor helpers.sh:1-7,99-103 と同手順（source 副作用を避け
@@ -196,10 +189,17 @@ tt_count_sessions_in_file() {
   awk -F'\t' '$1=="window"{print $2}' "$1" 2>/dev/null | sort -u | grep -c . || true
 }
 
+# resurrect 保存ファイルの window 総数を数える。セッション数だけの退行判定では
+# 「1 セッション × 多 window」運用 (tt の基本形) で window 壊滅を見逃すため併用する。
+tt_count_windows_in_file() {
+  [ -f "$1" ] || { printf '0\n'; return 0; }
+  awk -F'\t' '$1=="window"' "$1" 2>/dev/null | grep -c . || true
+}
+
 # Fix C: 退行ガードが last 前進を抑止したことを観測ログに残す（_tmux.conf の startup 観測と同じファイル）。
 tt_save_log_guard() {
-  { mkdir -p "$HOME/.cache" && printf '%s\tregression-blocked prev_sessions=%s new_sessions=%s kept=%s rejected=%s\n' \
-      "$(date +%FT%T)" "$1" "$2" "$3" "$4" >> "$HOME/.cache/tt-restore-trigger.log"; } 2>/dev/null || true
+  { mkdir -p "$HOME/.cache" && printf '%s\tregression-blocked prev_sessions=%s new_sessions=%s prev_windows=%s new_windows=%s kept=%s rejected=%s\n' \
+      "$(date +%FT%T)" "$1" "$2" "$3" "$4" "$5" "$6" >> "$HOME/.cache/tt-restore-trigger.log"; } 2>/dev/null || true
 }
 
 # lock を bounded-wait で取得し、保持したまま upstream save.sh を foreground 同期実行する本体。
@@ -252,8 +252,18 @@ tt_save_main() {
     return 1
   fi
 
+  # bootstrap 中 (hold セッションのみ) と第 2 サーバからの保存も choke point で弾く。
+  # かつて debounce 経路だけのガードで、continuum 周期保存・手動 C-s には効いていなかった
+  # (周期保存が hold のみの瞬間に発火すると貧弱状態を保存しうる非対称。レビュー指摘 2026-07-05)。
+  if tt_only_hold_sessions; then
+    return 1
+  fi
+  if ! tt_on_default_server; then
+    return 1
+  fi
+
   # Fix B: 保存前に現 last のターゲットとセッション数を控える（save.sh が last を前進させる前に）。
-  local tt_rdir='' tt_last_link='' tt_prev_target='' tt_prev_n=0
+  local tt_rdir='' tt_last_link='' tt_prev_target='' tt_prev_n=0 tt_prev_w=0
   # Fix B2: pane_contents.tar.gz の退避先（退行を戻すとき last symlink だけでなく共有 archive も
   # 戻さないと、window は復元されるが大半の pane でスクロールバックが失われる。@resurrect-capture-
   # pane-contents on の主目的が退行保存 1 回で silent に消える）。退行が起こりうる prev_n>=4 の
@@ -264,9 +274,12 @@ tt_save_main() {
     tt_rdir="$(tt_resurrect_dir)"
     tt_last_link="$tt_rdir/last"
     tt_prev_target="$(readlink "$tt_last_link" 2>/dev/null || true)"
-    [ -n "$tt_prev_target" ] && tt_prev_n="$(tt_count_sessions_in_file "$tt_rdir/$tt_prev_target")"
+    if [ -n "$tt_prev_target" ]; then
+      tt_prev_n="$(tt_count_sessions_in_file "$tt_rdir/$tt_prev_target")"
+      tt_prev_w="$(tt_count_windows_in_file "$tt_rdir/$tt_prev_target")"
+    fi
     tt_archive="$tt_rdir/pane_contents.tar.gz"
-    if [ "${tt_prev_n:-0}" -ge 4 ] && [ -f "$tt_archive" ]; then
+    if { [ "${tt_prev_n:-0}" -ge 4 ] || [ "${tt_prev_w:-0}" -ge 8 ]; } && [ -f "$tt_archive" ]; then
       tt_archive_bak="$tt_rdir/.pane_contents.ttguard.$$.tar.gz"
       cp "$tt_archive" "$tt_archive_bak" 2>/dev/null || tt_archive_bak=''
     fi
@@ -278,22 +291,28 @@ tt_save_main() {
   "$REAL_SAVE" "$@"
   local tt_rc=$?
 
-  # Fix B: 壊滅的なセッション数退行なら last を完全状態へ戻す（新ファイルは archive として残す）。
-  # 旧 last が 4 セッション以上あり、新保存がその 1/3 以下（=2/3 以上喪失）のときだけ弾く。
-  # 通常のセッション増減（1〜数個 kill）は誤抑止しない保守的しきい値。bypass は TT_SAVE_ALLOW_REGRESSION=1。
+  # Fix B: 壊滅的な退行なら last を完全状態へ戻す（新ファイルは archive として残す）。
+  # 判定は 2 軸 (どちらかに該当で退行扱い):
+  #   - セッション数: 旧 last が 4 以上 かつ 新保存がその 1/3 以下（=2/3 以上喪失）
+  #   - window 総数:  旧 last が 8 以上 かつ 新保存がその 1/3 以下
+  #     (セッション数だけでは「1 セッション × 多 window」運用で window 壊滅を見逃す。
+  #      レビュー指摘 2026-07-05。tt の基本形は cwd 名の 1 セッション多 window なので実運用で刺さる)
+  # 通常の増減（1〜数個 kill）は誤抑止しない保守的しきい値。bypass は TT_SAVE_ALLOW_REGRESSION=1。
   if [ "$tt_rc" -eq 0 ] && [ "${TT_SAVE_ALLOW_REGRESSION:-}" != "1" ] && [ -n "$tt_prev_target" ]; then
-    local tt_new_target tt_new_n
+    local tt_new_target tt_new_n tt_new_w
     tt_new_target="$(readlink "$tt_last_link" 2>/dev/null || true)"
     if [ -n "$tt_new_target" ] && [ "$tt_new_target" != "$tt_prev_target" ]; then
       tt_new_n="$(tt_count_sessions_in_file "$tt_rdir/$tt_new_target")"
-      if [ "${tt_prev_n:-0}" -ge 4 ] && [ "$(( tt_new_n * 3 ))" -le "${tt_prev_n:-0}" ]; then
+      tt_new_w="$(tt_count_windows_in_file "$tt_rdir/$tt_new_target")"
+      if { [ "${tt_prev_n:-0}" -ge 4 ] && [ "$(( tt_new_n * 3 ))" -le "${tt_prev_n:-0}" ]; } || \
+         { [ "${tt_prev_w:-0}" -ge 8 ] && [ "$(( tt_new_w * 3 ))" -le "${tt_prev_w:-0}" ]; }; then
         ln -sf "$tt_prev_target" "$tt_last_link"
         # Fix B2: last と一緒に共有 pane_contents.tar.gz も退行前の内容へ戻す。
         # 復元側が本 lock を持たずに読むため、temp へ書いてから mv でアトミックに差し替える。
         if [ -n "$tt_archive_bak" ] && [ -f "$tt_archive_bak" ]; then
           mv -f "$tt_archive_bak" "$tt_archive" 2>/dev/null || true
         fi
-        tt_save_log_guard "$tt_prev_n" "$tt_new_n" "$tt_prev_target" "$tt_new_target"
+        tt_save_log_guard "$tt_prev_n" "$tt_new_n" "$tt_prev_w" "$tt_new_w" "$tt_prev_target" "$tt_new_target"
       fi
     fi
   fi
