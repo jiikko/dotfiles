@@ -1,6 +1,9 @@
 #!/bin/sh
 # 実行中の tmux サーバの版数が指定以上かを判定する (conf の if-shell 用ヘルパー)。
 # 引数: $1 = 要求 major / $2 = 要求 minor。満たせば exit 0。
+# 引数なしの場合はリポジトリルートの .tmux-version (この conf 全体の要求版数の
+# 単一情報源) から要求版数を読む。機能単位のガード (3.6 scrollbars / 3.7 separator 等) は
+# 引数指定、conf 冒頭の全体チェックは引数なし、と使い分ける。
 #
 # ⚠️ `tmux -V` を使わないこと: あれはディスク上のクライアントバイナリの版数で、
 # 実行中サーバとはズレうる (brew upgrade 後もサーバは旧バイナリのまま動き続ける)。
@@ -9,8 +12,17 @@
 # 機能の有無を決めるのはサーバ側なので、サーバに #{version} を聞いて判定する。
 set -eu
 
-req_maj="$1"
-req_min="$2"
+if [ $# -ge 2 ]; then
+  req_maj="$1"
+  req_min="$2"
+else
+  script_dir=$(cd "$(dirname "$0")" && pwd)
+  req=$(cat "$script_dir/../.tmux-version")
+  req=$(printf '%s' "$req" | tr -d '[:space:]')
+  req_maj=${req%%.*}
+  req_min=${req#*.}
+  req_min=${req_min%%.*}
+fi
 
 v=$(tmux display-message -p '#{version}' | sed 's/[^0-9.]//g')
 maj=${v%%.*}
