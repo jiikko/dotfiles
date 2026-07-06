@@ -13,11 +13,29 @@
 #      stub claude で claude-fork を作り `--resume <id> --fork-session` を正しく渡す
 #
 # 隔離方針: conf ロード/bind 検査は named socket (-L)。スクリプトの挙動検査は、スクリプトが
-# 素の `tmux` (= default socket) を叩くため、TMUX_TMPDIR を temp に倒した default socket で行う
-# (ユーザーの実 tmux サーバを触らない)。
+# 素の `tmux` (= default socket) を叩くため、TMUX_TMPDIR を temp に倒した default socket で行う。
+# ⚠️ TMUX_TMPDIR 隔離だけでは不十分: tmux クライアントの socket 解決は
+#   -S > -L > $TMUX(継承) > TMUX_TMPDIR/default
+# の優先順で、tmux ペイン内から実行すると継承 $TMUX が TMUX_TMPDIR を上書きし、本テストの
+# bare `tmux kill-server` が実運用サーバを直撃する（2026-07-07 に実発生: ペイン内の make test が
+# default サーバを kill し全セッション消滅 = "[server exited]"）。対策は二段:
+#   (1) 下の Darwin ガード = 開発機 macOS では挙動テストを実行しない
+#   (2) unset TMUX = 実行される環境 (CI/Linux) でも継承 socket 経路を遮断する
 
 set -euo pipefail
 unset CDPATH
+
+# macOS (開発機) では実行しない。本テストは実 tmux サーバと同居する環境で走らせない設計
+# (bare `tmux` を叩く挙動テストを含むため)。CI の Linux runner でのみ実行する。
+# Linux でも tmux ペイン内なら同じ事故が起きるため、無条件の unset TMUX も必須 (下記)。
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  print "[test-fork-scratch:zsh] skipped: macOS (開発機) では実行しない。実 tmux サーバ誤 kill 防止 (2026-07-07 の再発防止)"
+  exit 0
+fi
+
+# 継承 $TMUX を遮断: これが残っていると bare `tmux` が TMUX_TMPDIR でなく実サーバの socket に
+# 接続する (上記 ⚠️ 参照)。TMUX_PANE も対で消す。
+unset TMUX TMUX_PANE 2>/dev/null || true
 
 TMUX_BIN_PATH=${TMUX_BIN:-tmux}
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
