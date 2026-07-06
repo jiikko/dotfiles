@@ -280,7 +280,11 @@ handle_session_0() {
 		if [ "$current_session" == "0" ]; then
 			tmux switch-client -n
 		fi
-		tmux kill-session -t "0"
+		# Vendored patch: target を "=0" の exact match にする。素の "0" だと exact 一致が
+		# 無い場合に tmux の target 解決が prefix 一致へ落ち、"0" 始まりの名前のセッション
+		# (例: 0_inbox) を復元直後に誤って kill する。この分岐は from-scratch 復元 (boot 直後の
+		# hold 1 pane からの復元) のたびに session "0" 不在でも無条件で実行されるため実害がある。
+		tmux kill-session -t "=0"
 	fi
 }
 

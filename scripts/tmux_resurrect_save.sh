@@ -266,10 +266,11 @@ tt_save_main() {
   local tt_rdir='' tt_last_link='' tt_prev_target='' tt_prev_n=0 tt_prev_w=0
   # Fix B2: pane_contents.tar.gz の退避先（退行を戻すとき last symlink だけでなく共有 archive も
   # 戻さないと、window は復元されるが大半の pane でスクロールバックが失われる。@resurrect-capture-
-  # pane-contents on の主目的が退行保存 1 回で silent に消える）。退行が起こりうる prev_n>=4 の
-  # ときだけ退避してコストを限定する。upstream は `gzip > file` で同一 inode を truncate 上書き
-  # するため hardlink 退避は不可＝実コピーする。
-  local tt_archive='' tt_archive_bak=''
+  # pane-contents on の主目的が退行保存 1 回で silent に消える）。全喪失退行 (下記 Fix B の
+  # 第 3 条件) は prev の規模に関係なく起こりうるため、prev が空でない限り退避する
+  # (実測 ~1MB の cp。upstream 自身が毎保存で全 archive を再生成するのに比べ十分軽い)。
+  # upstream は `gzip > file` で同一 inode を truncate 上書きするため hardlink 退避は不可＝実コピーする。
+  local tt_archive='' tt_archive_bak='' tt_bak_old='' tt_bak_pid=''
   if [ "${TT_SAVE_ALLOW_REGRESSION:-}" != "1" ]; then
     tt_rdir="$(tt_resurrect_dir)"
     tt_last_link="$tt_rdir/last"
@@ -279,7 +280,17 @@ tt_save_main() {
       tt_prev_w="$(tt_count_windows_in_file "$tt_rdir/$tt_prev_target")"
     fi
     tt_archive="$tt_rdir/pane_contents.tar.gz"
-    if { [ "${tt_prev_n:-0}" -ge 4 ] || [ "${tt_prev_w:-0}" -ge 8 ]; } && [ -f "$tt_archive" ]; then
+    # 異常終了 (kill / crash は EXIT trap が走らない) で残置された過去の退避コピーを掃除する。
+    # 生成主 pid が死んでいるものだけ消す (lock 保持中なので進行中の正当な保存は存在しないが、
+    # 万一の lock 強制解除経路と競合しないよう kill -0 で保守的に判定する)。
+    for tt_bak_old in "$tt_rdir"/.pane_contents.ttguard.*.tar.gz; do
+      [ -f "$tt_bak_old" ] || continue
+      tt_bak_pid="${tt_bak_old##*.ttguard.}"
+      tt_bak_pid="${tt_bak_pid%.tar.gz}"
+      case "$tt_bak_pid" in ''|*[!0-9]*) continue ;; esac
+      kill -0 "$tt_bak_pid" 2>/dev/null || rm -f "$tt_bak_old" 2>/dev/null
+    done
+    if [ "${tt_prev_w:-0}" -ge 1 ] && [ -f "$tt_archive" ]; then
       tt_archive_bak="$tt_rdir/.pane_contents.ttguard.$$.tar.gz"
       cp "$tt_archive" "$tt_archive_bak" 2>/dev/null || tt_archive_bak=''
     fi
@@ -292,11 +303,18 @@ tt_save_main() {
   local tt_rc=$?
 
   # Fix B: 壊滅的な退行なら last を完全状態へ戻す（新ファイルは archive として残す）。
-  # 判定は 2 軸 (どちらかに該当で退行扱い):
+  # 判定は 3 条件 (いずれかに該当で退行扱い):
   #   - セッション数: 旧 last が 4 以上 かつ 新保存がその 1/3 以下（=2/3 以上喪失）
   #   - window 総数:  旧 last が 8 以上 かつ 新保存がその 1/3 以下
   #     (セッション数だけでは「1 セッション × 多 window」運用で window 壊滅を見逃す。
   #      レビュー指摘 2026-07-05。tt の基本形は cwd 名の 1 セッション多 window なので実運用で刺さる)
+  #   - 全喪失: 旧 last が空でないのに新保存の window が 0 件。これは上 2 つのしきい値
+  #     (prev 4/8 以上) と独立に「常に」退行扱いにする。window 0 件の保存が正当に発生する
+  #     経路は存在しない: 全セッションを kill すると exit-empty でサーバごと落ち、保存自体が
+  #     走らない。よって 0 件保存は「サーバ終了レース中の dump / list-sessions 失敗」の
+  #     artifact と断定できる (実測 2026-07-04: new_sessions=0 の空保存が発生。あのときは
+  #     prev=8 セッションでしきい値に救われたが、prev がセッション 4 未満かつ window 8 未満
+  #     だと素通りして last が空になり復元不能だった)。
   # 通常の増減（1〜数個 kill）は誤抑止しない保守的しきい値。bypass は TT_SAVE_ALLOW_REGRESSION=1。
   if [ "$tt_rc" -eq 0 ] && [ "${TT_SAVE_ALLOW_REGRESSION:-}" != "1" ] && [ -n "$tt_prev_target" ]; then
     local tt_new_target tt_new_n tt_new_w
@@ -305,7 +323,8 @@ tt_save_main() {
       tt_new_n="$(tt_count_sessions_in_file "$tt_rdir/$tt_new_target")"
       tt_new_w="$(tt_count_windows_in_file "$tt_rdir/$tt_new_target")"
       if { [ "${tt_prev_n:-0}" -ge 4 ] && [ "$(( tt_new_n * 3 ))" -le "${tt_prev_n:-0}" ]; } || \
-         { [ "${tt_prev_w:-0}" -ge 8 ] && [ "$(( tt_new_w * 3 ))" -le "${tt_prev_w:-0}" ]; }; then
+         { [ "${tt_prev_w:-0}" -ge 8 ] && [ "$(( tt_new_w * 3 ))" -le "${tt_prev_w:-0}" ]; } || \
+         { [ "${tt_prev_w:-0}" -ge 1 ] && [ "$tt_new_w" -eq 0 ]; }; then
         ln -sf "$tt_prev_target" "$tt_last_link"
         # Fix B2: last と一緒に共有 pane_contents.tar.gz も退行前の内容へ戻す。
         # 復元側が本 lock を持たずに読むため、temp へ書いてから mv でアトミックに差し替える。
