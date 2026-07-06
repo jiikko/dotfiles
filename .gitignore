@@ -15,4 +15,7 @@ Brewfile.lock.json
 # Claude Code のマシンローカル設定 (auto 生成 / 承認 allow リスト)。
 # defaultMode=auto の settings.json 側で吸収済みで追跡する意味がなく、過去に
 # 誤ってコミットされたため無視する。
+# .claude/ 側はこの repo で Claude Code を起動したときのローカル設定で、同じ理由で追跡しない
+# (3153a67 で _claude/ 側だけ除外され、こちらが漏れていた)。
 _claude/settings.local.json
+.claude/settings.local.json
