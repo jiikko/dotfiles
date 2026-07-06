@@ -13,3 +13,5 @@ test*.sql
 app/assets/audios/*
 vendor
 .envrc
+
+**/.claude/settings.local.json
