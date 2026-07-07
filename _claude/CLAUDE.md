@@ -94,6 +94,7 @@
 | watchOS, Apple Watch, WatchKit, WatchConnectivity, HealthKit, コンプリケーション | `~/.claude/skills/watchos-expert/SKILL.md` |
 | App Store, TestFlight, 審査, リジェクト, App Store Connect | agent: `appstore-submission-expert` |
 | issue-sync, issue同期, 完了漏れ, done移動 | `~/.claude/skills/issue-sync/SKILL.md` |
+| fable, fableっぽく, fable流, Fable の働き方, /fable | `~/.claude/skills/fable/SKILL.md` |
 | クラッシュ, crash, .ips, DiagnosticReports, SIGSEGV, SIGABRT | `~/.claude/skills/crash-log-analyzer/SKILL.md` |
 | codex-review, Codexレビュー, コードレビュー依頼 | `~/.claude/skills/codex-review/SKILL.md` |
 | codexにリード, codex主導で着手, 設計から codex に任せて, codex-lead | `~/.claude/skills/codex-lead/SKILL.md` |
