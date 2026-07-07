@@ -23,9 +23,11 @@
 #    _tmux.conf の bind t コメント参照)。ここは attach のみで -A を一切使わない。
 set -eu
 
-# nested attach ガード (TMUX が立っていると attach 拒否) を越えるため TMUX をクリアする。
-# default socket は 1 つなので unset 後の tmux も同一サーバを指す (scratch と同方針)。
-unset TMUX
+# nested attach ガード越え (TMUX) + 実 default socket の強制 (TMUX_TMPDIR)。
+# TMUX_TMPDIR を落とさないと、継承 TMUX_TMPDIR を持つ文脈 (テストサーバ等) から開いたとき
+# claude-fork を別 socket 側で探して「未作成」と誤案内する。scratch (tmux_scratch_popup.sh) /
+# launcher (tmux_launcher_run.sh) と同方針。_tmux.conf の bind b「復活時の注意」も参照。
+unset TMUX TMUX_TMPDIR
 
 sess=claude-fork
 
