@@ -1,10 +1,13 @@
 #!/usr/bin/env zsh
 #
-# /fork-scratch + prefix+b fork popup の回帰テスト。
+# /fork-scratch + prefix+b fork popup + scratch popup (bind t) の回帰テスト。
 # インタラクティブな popup の開閉体感 (display-popup -E) は tty 必須で自動検証できないため、
 # その手前までの「壊れると気づきにくい不変条件」を検査する:
 #   A) bind b が claude-fork popup (tmux_fork_popup.sh) を参照して登録されている
-#   B) bind b / bind t とも new-session -A を使わない (= popup を閉じるのに 2 回押す回帰のガード)
+#      (fork popup が無効化中は skip。bind b 本体の new-session -A 検査も含む)
+#   B) scratch (bind t。2026-06-28 復活済み) は fork の無効状態と独立して常時検査する:
+#      bind t / C-t が tmux_scratch_popup.sh を参照し、bind 本体にもスクリプト実体の
+#      コード行にも new-session -A が無い (= popup を閉じるのに 2 回押す回帰のガード)
 #   C) tmux_fork_popup.sh が new-session を含まない (= 空セッションを作らず偽 fork を生まない不変条件)
 #      かつ has-session ガードを持つ
 #   D) tmux_fzf_jump.sh が claude-fork を候補から除外している (popup 専用セッション)
@@ -45,6 +48,8 @@ POPUP_SCRIPT="$ROOT_DIR/scripts/tmux_fork_popup.sh"
 CMD_FILE="$ROOT_DIR/_claude/commands/fork-scratch.md"
 JUMP_SCRIPT="$ROOT_DIR/scripts/tmux_fzf_jump.sh"
 
+SCRATCH_SCRIPT="$ROOT_DIR/scripts/tmux_scratch_popup.sh"
+
 TMUX_TMPDIR=$(mktemp -d)
 export TMUX_TMPDIR
 # このテストが作った temp dir を控える。cleanup の bare kill-server はこの値と一致するときだけ叩き、
@@ -82,6 +87,7 @@ command -v "$TMUX_BIN_PATH" >/dev/null 2>&1 || { print -u2 "tmux not found (set 
 [[ -f "$POPUP_SCRIPT" ]] || fail "popup script not found: $POPUP_SCRIPT"
 [[ -f "$CMD_FILE" ]]     || fail "command file not found: $CMD_FILE"
 [[ -f "$JUMP_SCRIPT" ]]  || fail "jump script not found: $JUMP_SCRIPT"
+[[ -f "$SCRATCH_SCRIPT" ]] || fail "scratch script not found: $SCRATCH_SCRIPT"
 
 # ---- conf を named socket でロードして bind を検査 (A, B) ----
 log="$TMUX_TMPDIR/tmux.log"
@@ -97,34 +103,44 @@ fi
 
 keys=$("$TMUX_BIN_PATH" -L "$SOCKET_NAME" list-keys -T prefix)
 
-# popup 機構 (bind t scratch / bind b fork) は 2026-06-28 に A/B 観測のため _tmux.conf で
-# 一時無効化されている（コメントアウト）。無効中は fork popup の bind b が登録されないため、
-# bind 依存の検査 (A, B) は skip する。一方 C〜F はスクリプト/コマンドファイル自体を直接検査する
-# ので有効/無効に関係なく走らせる（無効期間もスクリプトの不変条件は守りたい）。
-# popup を復活させたら A/B も自動的に再び検査される。
+# fork popup (bind b) は 2026-06-28 に A/B 観測のため _tmux.conf で一時無効化されている
+# （コメントアウト）。無効中は bind b が登録されないため、bind b 依存の検査 (A) だけ skip する。
+# scratch (bind t) は同日にユーザ判断で先行復活済みのため、B は fork の無効状態と独立して
+# 常時検査する（かつては A/B とも bind b の有効判定に相乗りしており、scratch 復活後も
+# その回帰ガードが一度も走らない false-skip になっていた）。C〜F はスクリプト/コマンド
+# ファイル自体を直接検査するので有効/無効に関係なく走らせる。
 # NOTE: 「有効」の判定に bind の有無を使ってはいけない。tmux の既定で prefix+t は clock-mode に
-#   bind 済みのため、popup 無効でも bind t は list-keys に現れる（誤検知の元）。fork popup が
-#   有効か否かは「bind b が tmux_fork_popup.sh を参照しているか」で判定する。
+#   bind 済みのため、popup 無効でも bind t は list-keys に現れる（誤検知の元）。有効か否かは
+#   「bind が対応スクリプトを参照しているか」で判定する。
 bind_b=$(print -r -- "$keys" | grep -E '^bind-key +-T prefix +b ' || true)
 if ! print -r -- "$bind_b" | grep -q 'tmux_fork_popup.sh'; then
-  print "[test-fork-scratch:zsh] skip A/B: fork popup (bind b) は現在無効 (A/B 観測期間)。C〜F のみ検査する。"
+  print "[test-fork-scratch:zsh] skip A: fork popup (bind b) は現在無効 (A/B 観測期間)。B〜F を検査する。"
 else
-  # A) bind b が claude-fork と tmux_fork_popup.sh を参照
-  [[ -n "$bind_b" ]] || fail "bind b が prefix テーブルに登録されていない (bind t は在るのに b が無い=片肺)"
+  # A) bind b が claude-fork と tmux_fork_popup.sh を参照し、new-session -A を使わない
   print -r -- "$bind_b" | grep -q 'claude-fork'         || fail "bind b が claude-fork を参照していない"
   print -r -- "$bind_b" | grep -q 'tmux_fork_popup.sh'  || fail "bind b が tmux_fork_popup.sh を参照していない"
-  ok "A: bind b が claude-fork popup (tmux_fork_popup.sh) を参照"
-
-  # B) bind b / bind t とも new-session -A を使っていない (2回押し回帰ガード)
-  for k in b t; do
-    body=$(print -r -- "$keys" | grep -E "^bind-key +-T prefix +$k " || true)
-    [[ -n "$body" ]] || fail "bind $k が見つからない (前提が変わった可能性)"
-    if print -r -- "$body" | grep -qE 'new-session[^|]*-A'; then
-      fail "bind $k が new-session -A を使用 (popup を閉じるのに 2 回押す回帰の恐れ)"
-    fi
-  done
-  ok "B: bind b / bind t とも new-session -A 不使用 (2回押し回帰ガード)"
+  if print -r -- "$bind_b" | grep -qE 'new-session[^|]*-A'; then
+    fail "bind b が new-session -A を使用 (popup を閉じるのに 2 回押す回帰の恐れ)"
+  fi
+  ok "A: bind b が claude-fork popup (tmux_fork_popup.sh) を参照 + new-session -A 不使用"
 fi
+
+# B) scratch popup (bind t / C-t。復活済み) の 2 回押し回帰ガード。fork の無効状態と独立して常時検査。
+for k in t C-t; do
+  body=$(print -r -- "$keys" | grep -E "^bind-key +-T prefix +$k " || true)
+  [[ -n "$body" ]] || fail "bind $k が見つからない (scratch 復活状態の前提が変わった可能性)"
+  print -r -- "$body" | grep -q 'tmux_scratch_popup.sh' \
+    || fail "bind $k が tmux_scratch_popup.sh を参照していない (開閉判定の集約が壊れた可能性)"
+  if print -r -- "$body" | grep -qE 'new-session[^|]*-A'; then
+    fail "bind $k が new-session -A を使用 (popup を閉じるのに 2 回押す回帰の恐れ)"
+  fi
+done
+# bind 本体は run-shell でスクリプトを呼ぶだけなので、実体の new-session が -A を
+# 使っていないこともコード行 (コメント除外) で検査する (check C と同型)。
+if grep -vE '^[[:space:]]*#' "$SCRATCH_SCRIPT" | grep -qE 'new-session[^|]*-A'; then
+  fail "tmux_scratch_popup.sh のコード行が new-session -A を使用 (2 回押し回帰の恐れ)"
+fi
+ok "B: bind t / C-t が scratch script を参照 + bind/実体とも new-session -A 不使用"
 
 # C) popup script は new-session を含まない (空セッション非生成) + has-session ガードを持つ。
 # 検査対象は「実コード」であって説明コメントではない。tmux_fork_popup.sh は「なぜ new-session を
