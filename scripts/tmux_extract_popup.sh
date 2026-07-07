@@ -18,7 +18,10 @@ pane=$(tmux display -p '#{pane_id}')
 
 # 画面 + 履歴 1000 行を取得し、下 (=新しい) 行を優先するため逆順にする。
 # -J: 折り返し行を連結 (長い URL / パスが行折り返しで千切れるのを防ぐ)
-captured=$(tmux capture-pane -p -J -S -1000 -t "$pane" | tail -r)
+# 逆順は awk で行う (`tail -r` は BSD 拡張で GNU coreutils に無く、GNU tail が PATH 先頭に
+# 来る環境では set -o pipefail 込みで popup が無言即死する)
+captured=$(tmux capture-pane -p -J -S -1000 -t "$pane" \
+  | awk '{a[NR]=$0} END{for(i=NR;i>=1;i--) print a[i]}')
 
 # 断片抽出。カテゴリごとに色付きタグを付け、出現順 (=新しい順) を保って dedup する。
 # - url:  http(s)://... (末尾の閉じ括弧・句読点は落とす)
