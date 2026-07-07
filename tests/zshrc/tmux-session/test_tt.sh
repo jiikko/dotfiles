@@ -89,6 +89,14 @@ OUT="$(HOME="$TMP_HOME" zsh -c '
   _t_impl   # 引数なし → s<unixtime> のユニーク名で作成
   print "CASE:t_auto new=[$_LOG_NEW] attach=[$_LOG_ATTACH]"
 
+  # t を dotted 名で直接呼ぶ経路 (tt 経由でない) でも . : を置換すること。
+  # tmux 3.1+ は new-session -s で . : を _ にサイレント置換するため、こちらが置換しないと
+  # 「作られた名前 (a_b_c)」と「new-window/attach の target (a.b:c)」が食い違い全 target が
+  # 解決失敗する (9b04822 で tt 側だけ直して t 側が漏れていた回帰の防止)。
+  _T_SERVER=""; _T_SESSIONS=""; reset_log
+  _t_impl "a.b:c"
+  print "CASE:t_dotted new=[$_LOG_NEW] newwin=[$_LOG_NEWWIN] select=[$_LOG_SELECT] attach=[$_LOG_ATTACH]"
+
   # 以降 _t_impl をスタブ化（_tt_impl が新規作成経路に落ちたかを観測する）
   _t_impl() { _LOG_T="$_LOG_T $1"; }
 
@@ -297,6 +305,8 @@ printf '\n## _t_impl 本体\n'
 assert_eq_line  t_named "new=[ myproj] newwin=[ myproj myproj myproj myproj] select=[ myproj:0] attach=[ myproj]" \
   "t: 1 セッション + 4 window 追加 + select :0 + attach"
 assert_line_has t_auto  "new=[ s"  "t 引数なし: s<unixtime> のユニーク名で作成"
+assert_eq_line  t_dotted "new=[ a_b_c] newwin=[ a_b_c a_b_c a_b_c a_b_c] select=[ a_b_c:0] attach=[ a_b_c]" \
+  "t 直呼び: ドット/コロンを置換して作成名と target を一致させる"
 
 printf '\n## _tt_wait_for_restore 戻り値判定\n'
 assert_eq_line rc_nolast  "rc=3" "last 無し → rc=3"

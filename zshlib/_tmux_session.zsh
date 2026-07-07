@@ -30,6 +30,15 @@ _tt_require_tty () {
   return 0
 }
 
+# セッション名のドットとコロンをアンダースコアに置換する（tmux の target 指定では . と : が
+# 区切り文字。tmux 3.1+ は new-session -s 時に自ら . : を _ へサイレント置換するため、こちらも
+# 同じ置換をしないと「作られた名前 (foo_bar)」と「target に使う名前 (foo:bar)」が食い違い、
+# new-window / attach が target 解決に失敗して attach 不能なセッションが残る）。
+# t / tt 両方の入口で必ず通すこと（過去に tt 側だけ直して t 側が漏れた同型バグあり）。
+_tt_sanitize_session_name () {
+  print -rn -- "${1//[.:]/_}"
+}
+
 # 新規に 5 窓のセッションを作って attach する実体。
 _t_impl () {
   _tt_require_tty || return 1
@@ -38,7 +47,7 @@ _t_impl () {
   if [ -z "${1-}" ]; then
     name="s$(date +%s)"  # セッション名が重複しないように一意の名前を生成
   else
-    name="$1"
+    name="$(_tt_sanitize_session_name "$1")"
   fi
   tmux new-session -d -s "$name"
   tmux new-window -t "$name"
@@ -151,11 +160,8 @@ _tt_impl () {
     name=$(basename "$PWD")
   fi
 
-  # ドットとコロンをアンダースコアに置換（tmux の target 指定では . と : が区切り文字。
-  # tmux 3.1+ は new-session -s 時に自ら . : を _ へサイレント置換するため、こちらも同じ
-  # 置換をしないと「作られた名前 (foo_bar)」と「target に使う名前 (foo:bar)」が食い違い、
-  # attach 不能なセッションが残る）
-  name="${name//[.:]/_}"
+  # . : → _ の置換（理由は _tt_sanitize_session_name のコメント参照）
+  name="$(_tt_sanitize_session_name "$name")"
 
   # 自動復元を「待って」から attach した場合だけ、attach 時に復元所要秒を flash する。
   # サーバ既存の高速パス（復元なし）や rc=3（保存なしで復元が走らない）では立てない。
