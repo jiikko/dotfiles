@@ -196,6 +196,24 @@ tt_count_windows_in_file() {
   awk -F'\t' '$1=="window"' "$1" 2>/dev/null | grep -c . || true
 }
 
+# 同一秒再保存ガード: last の実体名が「今この秒」のファイル名と一致する間、次の秒まで待つ。
+# upstream save.sh は秒精度ファイル名（vendor helpers.sh resurrect_file_path:
+# tmux_resurrect_<%Y%m%dT%H%M%S>.txt）で保存し、内容が last と同一なら新ファイルを rm する
+# （save.sh save_all: files_differ → else rm）。直前の保存と同一秒に再保存すると、生成パスが
+# 「last が指す実体そのもの」になり、`>` の truncate で旧内容を破壊 → cmp が同一ファイル比較で
+# 必ず「差分なし」→ rm で last が dangling になる（実体は truncate 済みで復旧不能。次の保存まで
+# 復元が silent に不発）。lock 直列化は並行を防ぐが、逐次の同一秒 2 連保存（debounce 完了直後の
+# continuum 周期/手動 C-s）は防げないため、lock 保持中のここで秒をずらす。
+# 依存（変わったら追従）: upstream のファイル名形式（helpers.sh の RESURRECT_FILE_PREFIX /
+# RESURRECT_FILE_EXTENSION / resurrect_file_path の date フォーマット）。
+tt_save_avoid_same_second_target() {
+  local cur
+  cur="$(readlink "$(tt_resurrect_dir)/last" 2>/dev/null || true)"
+  if [ -n "$cur" ] && [ "$cur" = "tmux_resurrect_$(date +%Y%m%dT%H%M%S).txt" ]; then
+    sleep 1
+  fi
+}
+
 # Fix C: 退行ガードが last 前進を抑止したことを観測ログに残す（_tmux.conf の startup 観測と同じファイル）。
 tt_save_log_guard() {
   { mkdir -p "$HOME/.cache" && printf '%s\tregression-blocked prev_sessions=%s new_sessions=%s prev_windows=%s new_windows=%s kept=%s rejected=%s\n' \
@@ -295,6 +313,10 @@ tt_save_main() {
       cp "$tt_archive" "$tt_archive_bak" 2>/dev/null || tt_archive_bak=''
     fi
   fi
+
+  # 直前の保存と同一秒なら次の秒まで待つ（last dangling 化の遮断。関数コメント参照）。
+  # TT_SAVE_ALLOW_REGRESSION=1 でも last の健全性は守るべきなので Fix B の外に置く。
+  tt_save_avoid_same_second_target
 
   # lock を保持したまま upstream save.sh を foreground 同期実行する。
   # continuum が本 wrapper を `&` で background 起動しても、wrapper プロセスは
