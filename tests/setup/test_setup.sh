@@ -5,14 +5,17 @@ unset CDPATH
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
-TMPDIR=$(mktemp -d)
+# スクラッチ用変数に TMPDIR の名前を使わない: TMPDIR は macOS 等で最初から export 済みの
+# 環境変数で、export 属性は再代入後も保持されるため、setup.sh 以下のプロセスツリーへ
+# 「システム標準の一時領域ポインタ」を意図せず差し替えた状態で継承してしまう。
+TEST_TMPDIR=$(mktemp -d)
 
 cleanup() {
-  rm -rf "$TMPDIR"
+  rm -rf "$TEST_TMPDIR"
 }
 trap cleanup EXIT
 
-export HOME="$TMPDIR/home"
+export HOME="$TEST_TMPDIR/home"
 mkdir -p "$HOME"
 ln -s "$ROOT_DIR" "$HOME/dotfiles"
 
