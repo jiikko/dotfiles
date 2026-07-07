@@ -38,6 +38,9 @@
 #      第 2 サーバでも source され本 hook が付くが、resurrect の保存先は HOME 共有のため、
 #      無ガードだと第 2 サーバの状態が main サーバの last を上書きする（continuum は
 #      another_tmux_server_running で同じ理由の gate を持つ。自前 hook にも同じ判断を写す）。
+#      保存だけでなく debounce token への参加も遮断する（token ファイルも HOME 共有のため、
+#      第 2 サーバが token を横取りすると default サーバのイベントが誰にも保存されない。
+#      main 冒頭の sleep 前 gate 参照）。
 #
 # 依存（変わったら追従が必要）:
 #   - hold セッション名のプレフィックス __tt_hold_ は zshlib/_tmux_session.zsh の
@@ -116,6 +119,16 @@ tt_make_token() {
 
 # 本体: token を立てて DEBOUNCE 秒待ち、自分が最後なら（かつ保存可なら）保存する
 tt_debounced_save_main() {
+  # 第 2 サーバ (default socket 以外) は HOME 共有の debounce token に参加させない。
+  # 参加すると default サーバの token を横取りした上で（下の last-writer 判定で先行 debouncer
+  # に「保存を譲らせる」）、自分は tt_should_save の socket gate で保存しないため、default
+  # サーバ側のイベントが誰にも保存されず取りこぼされる（不変条件 3 が禁じる skip-as-success
+  # と同型の破れ）。socket はプロセス生存中に変わらないため sleep 前の判定で安全。
+  # 復元中 / hold は sleep 中に状態が変わりうるため従来どおり sleep 後 (tt_should_save) に判定する。
+  if ! tt_on_default_server; then
+    return 0
+  fi
+
   mkdir -p "$TT_DEBOUNCE_STATE_DIR" 2>/dev/null
 
   local token tmp

@@ -154,6 +154,18 @@ OUT="$(
     _T_INPROGRESS="$(date +%s)"
     tt_debounced_save_main
     printf "CASE:main_guarded runs=%s\n" "$(wc -l < "'"$TMP_HOME"'/save_runs" | tr -d " ")"
+
+    # (d) 第 2 サーバの main は token に参加せず即終了する。参加すると default サーバの
+    #     token を横取りした上で自分は socket gate で保存せず、イベントが誰にも保存されない
+    #     (skip-as-success の取りこぼし)。token 不変 + 保存 0 回を確認する。
+    : > "'"$TMP_HOME"'/save_runs"
+    printf "sentinel\n" > "$TT_DEBOUNCE_TOKEN_FILE"
+    _T_INPROGRESS=""; _T_SESSIONS="proj"
+    _T_SOCKET="$(realpath /tmp 2>/dev/null || echo /tmp)/tmux-$(id -u)/exp"
+    tt_debounced_save_main
+    printf "CASE:main_second_server runs=%s token=%s\n" \
+      "$(wc -l < "'"$TMP_HOME"'/save_runs" | tr -d " ")" "$(cat "$TT_DEBOUNCE_TOKEN_FILE")"
+    _T_SOCKET=""
   ' 2>/dev/null
 )"
 
@@ -197,5 +209,6 @@ printf '\n## main の debounce token 採否\n'
 assert_eq_line main_latest     "runs=1" "自分が最後のイベント+保存可 → 保存する"
 assert_eq_line main_superseded "runs=0" "待機中に後続イベントが来たら保存しない (debounce)"
 assert_eq_line main_guarded    "runs=0" "自分が最後でも復元中なら保存しない"
+assert_eq_line main_second_server "runs=0 token=sentinel" "第 2 サーバは token に参加しない (default サーバの token を横取りしてイベントを取りこぼさない)"
 
 printf '\nAll debounced-save tests passed successfully!\n'
