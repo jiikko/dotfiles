@@ -47,6 +47,11 @@ cleanup() {
   if [[ -n "${probe_socket:-}" && -n "${probe_dir:-}" ]]; then
     env TMUX_TMPDIR="$probe_dir" "$TMUX_BIN_PATH" -L "$probe_socket" kill-server >/dev/null 2>&1 || true
   fi
+  # probe_dir は正常系では probe 直後に rm 済み (冪等)。probe 起動失敗 → handle_result の
+  # exit 経路では明示 rm に到達しないため、trap 側でも確実に消す (temp dir leak 防止)。
+  if [[ -n "${probe_dir:-}" ]]; then
+    rm -rf "$probe_dir"
+  fi
   rm -rf "$TMUX_TMPDIR"
 }
 # EXIT に加え INT/TERM でも cleanup を走らせる。シグナルは `exit 130` 経由で EXIT trap に集約し
