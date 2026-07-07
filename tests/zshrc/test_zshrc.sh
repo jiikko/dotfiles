@@ -67,13 +67,14 @@ fzf_opts="$(run_zsh 'print -r -- $FZF_DEFAULT_OPTS')"
 assert_contains "$fzf_opts" "--height 80%" "FZF_DEFAULT_OPTS preserves height setting"
 assert_contains "$fzf_opts" "--reverse" "FZF_DEFAULT_OPTS preserves reverse setting"
 
-# 4. rbenv initialization hooks are present (if rbenv exists)
-if command -v rbenv >/dev/null 2>&1; then
-  rbenv_location="$(run_zsh 'command -v rbenv')"
-  assert_contains "$rbenv_location" "rbenv" "rbenv is available in interactive shells"
-else
-  printf '↷ rbenv not installed; skipping rbenv test\n'
-fi
+# 4. rbenv lazy-loading wrapper is defined inside the sandbox
+# ホストの rbenv 有無で gate しない: 検証対象はサンドボックス側 (TMP_HOME に無条件で
+# 用意したダミー rbenv に対し _zshrc の _lazy_anyenv_manager が lazy wrapper 関数を
+# 定義するか) であり、旧実装のホスト gate だと rbenv の無い CI / 新規開発機で毎回
+# silent skip され、せっかくのダミーが一度も使われない false-pass になっていた。
+# PATH 側 (shims が載るか) は Test 5 が無条件で検証している。
+rbenv_kind="$(run_zsh 'whence -w rbenv' | awk 'END{print}')"
+assert_contains "$rbenv_kind" "function" "rbenv lazy wrapper function is defined in interactive shells"
 
 # 5. PATH includes expected local bins
 path_output="$(run_zsh 'print -r -- $PATH' | awk 'END{print}')"
