@@ -356,6 +356,11 @@ WRAP_OUT="$(
     ( tt_save_main quiet ); rc=$?
     printf "CASE:w_default_server rc=%s runs=%s\n" "$rc" "$(runs)"
 
+    # REAL_SAVE が存在しない / 実行不可なら即 非 0 で「保存せず」を返す (冒頭ガード)
+    reset; _T_SOCKET=""
+    ( REAL_SAVE="$RDIR/missing_save.sh"; tt_save_main quiet ); rc=$?
+    printf "CASE:w_no_realsave rc=%s runs=%s\n" "$rc" "$(runs)"
+
     # 生存 owner の lock は奪わない: bounded-wait timeout (=0 で即時化) で保存せず非 0、
     # lock は残る (呼び出し側 debounce が timestamp を進めない契約の前提)
     reset; _T_SESSIONS="proj"; _T_SOCKET=""
@@ -452,6 +457,7 @@ assert_eq_line w_hold_only      "rc=1 runs=0" "hold のみ (bootstrap) は wrapp
 assert_eq_line w_hold_with_real "rc=0 runs=1" "hold 残置でも実セッションがあれば保存する"
 assert_eq_line w_second_server  "rc=1 runs=0" "第 2 サーバ (別 socket) からは保存しない"
 assert_eq_line w_default_server "rc=0 runs=1" "default socket のサーバは保存する"
+assert_eq_line w_no_realsave    "rc=1 runs=0" "REAL_SAVE が実行不可なら保存せず非 0 を返す"
 
 printf '\n## 同一秒再保存ガード (last dangling 化の遮断)\n'
 assert_eq_line ss_same   "slept=1" "last の実体名が現在秒と同名なら次の秒まで待つ"
