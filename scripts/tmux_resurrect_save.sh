@@ -30,9 +30,12 @@
 #     誤認して @continuum-save-last-timestamp を進め、(a) 今回のイベント(新 window 等)が
 #     保存されないまま (b) continuum も次周期(既定 15 分)まで抑止される、という「秒オーダー
 #     保存」不変条件の破れが起きる（先行保存はイベント前の状態を採取済みのため新 window を
-#     含まない）。よって lock は bounded-wait で待ってから保存する。全 caller は background
-#     実行（debounce: run-shell -b / continuum: save.sh quiet & / 手動: run-shell）なので
-#     数秒待ってよい。待っても取れない異常時のみ非 0 で返し、呼び出し側に「保存せず」を伝える。
+#     含まない）。よって lock は bounded-wait で待ってから保存する。自動経路は background
+#     実行（debounce: run-shell -b / continuum: save.sh quiet &）なので数秒待ってよい。
+#     手動 C-s だけは run-shell（非 -b。_tmux.conf の bind C-s）で、lock 競合時は当該
+#     クライアントの command queue を最大 TT_SAVE_LOCK_WAIT_SECONDS+保存時間ブロックするが、
+#     発生は競合時のみ・上限 ~15s なので「skip して取りこぼす」より待つ方を取る。
+#     待っても取れない異常時のみ非 0 で返し、呼び出し側に「保存せず」を伝える。
 #
 # 依存（変わったら追従が必要）:
 #   - upstream save.sh のパス（vendor/tmux-plugins/tmux-resurrect/scripts/save.sh）。
@@ -68,7 +71,8 @@ TT_SAVE_LOCK_STALE_SECONDS="${TT_SAVE_LOCK_STALE_SECONDS:-120}"
 # （既定 600s）。起動時刻が取れる通常環境ではこの TTL は使われない。
 TT_SAVE_LOCK_HARD_STALE_SECONDS="${TT_SAVE_LOCK_HARD_STALE_SECONDS:-600}"
 # lock を取れないとき待つ上限（秒）。先行保存（数秒〜十数秒）の完了を待ってから保存する。
-# 全 caller が background 実行なので待ってよい。0.2s 間隔でポーリングする。
+# 自動経路は background 実行なので待ってよい（手動 C-s のみ同期。冒頭コメント参照）。
+# 0.2s 間隔でポーリングする。
 TT_SAVE_LOCK_WAIT_SECONDS="${TT_SAVE_LOCK_WAIT_SECONDS:-15}"
 
 tt_save_release_lock() {

@@ -11,7 +11,7 @@
 #   損失窓を秒オーダーに縮める。
 #
 # 不変条件（Invariant）— ここが本スクリプトの肝。崩すと last を破壊する:
-#   1. 復元中（@tt-restore-in-progress=1）は絶対に保存しない。
+#   1. 復元中（@tt-restore-in-progress に復元開始 epoch が入り TTL 内）は絶対に保存しない。
 #      復元は new-window/move-window で大量の window-linked を発火させるため、
 #      ガード無しだと「部分復元状態」を last に焼き付け、次回復元が壊れる。
 #      フラグは _tmux.conf の @resurrect-hook-pre/post-restore-all が立て/降ろす。
@@ -44,8 +44,9 @@
 #
 # 依存（変わったら追従が必要）:
 #   - hold セッション名のプレフィックス __tt_hold_ は zshlib/_tmux_session.zsh の
-#     _tt_impl が決める。あちらの命名を変えたら本スクリプトの TT_HOLD_PREFIX も
-#     合わせること（grep: __tt_hold_）。
+#     _tt_impl が決める。あちらの命名を変えたら共有ライブラリ
+#     scripts/lib/tmux_resurrect_guards.sh の TT_HOLD_PREFIX も合わせること
+#     （2026-07-05 の一本化で定義はあちらへ移動済み。grep: __tt_hold_）。
 #   - @tt-restore-in-progress / @tt-restore-complete フラグは _tmux.conf の
 #     @resurrect-hook-pre-restore-all / @resurrect-hook-post-restore-all が制御する。
 #   - 実際の保存は resurrect 本体の save.sh（option @resurrect-save-script-path）。

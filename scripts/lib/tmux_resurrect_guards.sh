@@ -36,11 +36,13 @@ tt_restore_in_progress() {
 tt_only_hold_sessions() {
   local sessions
   sessions="$(tmux list-sessions -F '#{session_name}' 2>/dev/null)"
-  # hold 以外（実セッション）が 1 行でもあれば bootstrap ではない → 抑止しない
+  # hold 以外（実セッション）が 1 行でもあれば bootstrap ではない → 抑止しない。
+  # セッション皆無（list-sessions 失敗/空）のときも printf の空行がここにマッチし
+  # 「実セッションあり」と同じ経路で return 1 する（= 抑止しない。意図どおり）。
   if printf '%s\n' "$sessions" | grep -qv "^${TT_HOLD_PREFIX}"; then
     return 1
   fi
-  # ここに来るのは「全行が hold」or「セッション皆無」。hold が最低 1 つあるときだけ bootstrap。
+  # ここに来るのは「全行が hold」のときだけ。防御的に hold の存在を確認して bootstrap 判定。
   printf '%s\n' "$sessions" | grep -q "^${TT_HOLD_PREFIX}"
 }
 
