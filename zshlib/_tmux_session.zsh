@@ -133,11 +133,14 @@ _tt_wait_for_restore () {
 # rc=1/2 では hold を畳まず attach するため（進行中復元への割り込み防止）、実セッションが
 # 出来ると保存が再開し stale hold も last に含まれ、次 boot で復元されて 1 個ずつ蓄積する。
 # 生きた作業を殺さないよう三重条件で厳しく絞る:
-#   (a) 名前が __tt_hold_<pid> で、その pid が死亡している（kill -0 失敗）
+#   (a) 名前が __tt_hold_<pid> で、その pid が「並行 tt」でない。並行 tt の pid は必ず
+#       zsh プロセス（tt は zsh 関数として動く）なので、pid 死亡に加えて「生存しているが
+#       zsh でない」も並行 tt でないとみなす。pid だけの kill -0 判定だと、boot 跨ぎで
+#       stale hold の pid がデーモン等に再利用された場合に GC が恒久的に skip され、
+#       空セッションが last に焼き付いたまま毎 boot 復元され続ける
 #   (b) client が attach していない（session_attached=0）
 #   (c) pristine 形状（1 window かつ 1 pane。`tmux new-session -d` 直後の姿）
 # rc=1/2 で hold に attach してユーザーが作業を始めた hold は (b) または (c) で必ず除外される。
-# 生存 pid の hold は並行 tt のものなので (a) で除外される。
 _tt_gc_stale_holds () {
   local sname wins attached spid panes
   tmux list-sessions -F '#{session_name} #{session_windows} #{session_attached}' 2>/dev/null \
@@ -148,7 +151,14 @@ _tt_gc_stale_holds () {
       esac
       spid="${sname#${TT_HOLD_PREFIX:-__tt_hold_}}"
       case "$spid" in ''|*[!0-9]*) continue ;; esac   # pid 部が数値でない → 触らない
-      kill -0 "$spid" 2>/dev/null && continue          # (a) pid 生存 = 並行 tt → 触らない
+      # (a) pid 生存 かつ zsh プロセス = 並行 tt → 触らない。zsh 以外への pid 再利用は
+      #     (b)(c) の判定へ進む（attach 中 / 育った hold は依然そちらで守られる）。
+      #     ps -o comm= は macOS で実行パス or ログインシェルの "-zsh"、Linux で "zsh"。
+      if kill -0 "$spid" 2>/dev/null; then
+        case "$(ps -o comm= -p "$spid" 2>/dev/null)" in
+          (*zsh*) continue ;;
+        esac
+      fi
       [ "${attached:-0}" = "0" ] || continue           # (b) attach 中 → 触らない
       [ "${wins:-0}" = "1" ] || continue               # (c) 1 window でない → 触らない
       panes="$(tmux list-panes -t "=$sname" 2>/dev/null | grep -c .)"
