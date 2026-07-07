@@ -7,6 +7,7 @@ SHELLCHECK_FILES := \
   bin/backup_karabiner_config.sh \
   bin/concat_movies \
   bin/lgtm.sh \
+  bin/mp \
   bin/repair_avi_vorbis_audio.sh \
   bin/reset-universalcontrol \
   bin/restore_karabiner_config.sh \
@@ -39,6 +40,7 @@ SHELLCHECK_FILES := \
 # zsh 固有構文のため shellcheck できないスクリプト。zsh -n で構文チェックする (test-zsh-syntax)。
 ZSH_SYNTAX_FILES := \
   bin/av1c \
+  bin/av1ify \
   bin/concat \
   bin/disassemble_excel \
   bin/parallel-each \
