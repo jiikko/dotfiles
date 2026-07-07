@@ -97,6 +97,13 @@ OUT="$(HOME="$TMP_HOME" zsh -c '
   _t_impl "a.b:c"
   print "CASE:t_dotted new=[$_LOG_NEW] newwin=[$_LOG_NEWWIN] select=[$_LOG_SELECT] attach=[$_LOG_ATTACH]"
 
+  # t で既存名を指定 → 中断し、既存セッションへ空 window を注入しない
+  # (duplicate エラーを無視して new-window ×4 が既存セッションに刺さる回帰の防止)
+  _T_SERVER=1; _T_SESSIONS="myproj"; reset_log
+  _t_impl myproj 2>"$HOME/.t_dup_warn"
+  rc=$?
+  print "CASE:t_dup rc=$rc new=[$_LOG_NEW] newwin=[$_LOG_NEWWIN] warn=[$(cat "$HOME/.t_dup_warn")]"
+
   # 以降 _t_impl をスタブ化（_tt_impl が新規作成経路に落ちたかを観測する）
   _t_impl() { _LOG_T="$_LOG_T $1"; }
 
@@ -302,11 +309,13 @@ assert_has() {  # 任意の出力に部分文字列が含まれるか
 }
 
 printf '\n## _t_impl 本体\n'
-assert_eq_line  t_named "new=[ myproj] newwin=[ myproj myproj myproj myproj] select=[ myproj:0] attach=[ myproj]" \
-  "t: 1 セッション + 4 window 追加 + select :0 + attach"
+assert_eq_line  t_named "new=[ myproj] newwin=[ myproj myproj myproj myproj] select=[ myproj:^] attach=[ myproj]" \
+  "t: 1 セッション + 4 window 追加 + select :^ (base-index 非依存) + attach"
 assert_line_has t_auto  "new=[ s"  "t 引数なし: s<unixtime> のユニーク名で作成"
-assert_eq_line  t_dotted "new=[ a_b_c] newwin=[ a_b_c a_b_c a_b_c a_b_c] select=[ a_b_c:0] attach=[ a_b_c]" \
+assert_eq_line  t_dotted "new=[ a_b_c] newwin=[ a_b_c a_b_c a_b_c a_b_c] select=[ a_b_c:^] attach=[ a_b_c]" \
   "t 直呼び: ドット/コロンを置換して作成名と target を一致させる"
+assert_line_has t_dup "rc=1 new=[] newwin=[]" "t 既存名: 中断して new-session / new-window しない"
+assert_line_has t_dup "既に存在します" "t 既存名: stderr に案内を出す"
 
 printf '\n## _tt_wait_for_restore 戻り値判定\n'
 assert_eq_line rc_nolast  "rc=3" "last 無し → rc=3"
@@ -325,11 +334,11 @@ printf '\n## _tt_impl の rc → 分岐\n'
 assert_eq_line  srv_exist   "new=[] attach=[ =proj] t=[]" "既存サーバ+目的有: hold作らず目的に exact attach、新規作成しない"
 assert_eq_line  srv_missing "new=[] t=[ proj]"            "既存サーバ+目的無: hold作らず新規作成"
 assert_line_has rc0_exist   "new=[ __tt_hold_"           "rc=0: hold を作成する"
-assert_line_has rc0_exist   "kill=[ __tt_hold_"          "rc=0: hold を畳む"
+assert_line_has rc0_exist   "kill=[ =__tt_hold_"         "rc=0: hold を =exact で畳む"
 assert_line_has rc0_exist   "attach=[ =proj] t=[]"       "rc=0+目的有: 目的に exact attach、新規作成しない"
-assert_line_has rc0_missing "kill=[ __tt_hold_"          "rc=0+目的無: hold を畳む"
+assert_line_has rc0_missing "kill=[ =__tt_hold_"         "rc=0+目的無: hold を =exact で畳む"
 assert_line_has rc0_missing "t=[ proj]"                  "rc=0+目的無: 新規作成"
-assert_line_has rc3         "kill=[ __tt_hold_"          "rc=3: hold を畳む"
+assert_line_has rc3         "kill=[ =__tt_hold_"         "rc=3: hold を =exact で畳む"
 assert_line_has rc3         "t=[ proj]"                  "rc=3: 新規作成"
 assert_eq_line  rc1_exist   "kill=[] t=[] attach=[ =proj]" "rc=1+目的有: holdを畳まず・新規作成せず、目的に exact attach"
 assert_line_has rc2_missing "t=[] attach=[ =__tt_hold_"  "rc=2+目的無: 新規作成せず hold に exact attach"

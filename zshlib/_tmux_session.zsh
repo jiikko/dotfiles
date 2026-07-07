@@ -49,13 +49,25 @@ _t_impl () {
   else
     name="$(_tt_sanitize_session_name "$1")"
   fi
+
+  # 既存名なら中断する。new-session の duplicate エラーを無視して進むと、後続の
+  # new-window ×4 が「既存セッションが在るからこそ」成功し、作業中セッションに
+  # 空 window を注入してしまう（tt proj のつもりの t proj という 1 文字違い誤用で発火）。
+  if tmux has-session -t "=$name" 2>/dev/null; then
+    print -r -- "t: セッション '$name' は既に存在します（attach するなら tt を使ってください）。" >&2
+    return 1
+  fi
+
   tmux new-session -d -s "$name"
   tmux new-window -t "$name"
   tmux new-window -t "$name"
   tmux new-window -t "$name"
   tmux new-window -t "$name"
 
-  tmux select-window -t "$name":0
+  # 先頭 window の選択は「:^」(最小番号 window) を使う。「:0」決め打ちは
+  # _tmux.conf の base-index 1 と食い違い、window 0 が存在せず毎回失敗していた
+  # (結果: エラー表示 + 最後に作った window 5 がアクティブのまま attach)。
+  tmux select-window -t "$name:^"
   tmux attach-session -t "$name"
 }
 
@@ -208,11 +220,13 @@ _tt_impl () {
     case "$rc" in
       0)
         # 復元完了（フラグ確認済み）。hold を畳み、attach 時に所要秒を flash する。
-        tmux kill-session -t "$hold" 2>/dev/null
+        # -t は attach / GC と同じく =exact match（万一 hold 名が消えていた場合の
+        # prefix 一致落ちで別 __tt_hold_* を巻き込まない）。
+        tmux kill-session -t "=$hold" 2>/dev/null
         flash_restore=1 ;;
       3)
         # 復元が走らない（保存なし or 自動復元無効）。hold を畳んで通常の attach/create へ。
-        tmux kill-session -t "$hold" 2>/dev/null ;;
+        tmux kill-session -t "=$hold" 2>/dev/null ;;
       *)
         # 1=タイムアウト / 2=完了検知フック未設定。ここで hold を畳んだり 5 窓を作ると
         # 進行中の復元に割り込み、部分復元やサーバ巻き込み kill を招く（Codex P1/P2）。
