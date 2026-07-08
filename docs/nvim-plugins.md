@@ -137,10 +137,10 @@
 | ------------------------------------------------------------------------- | ------------------ | ------------------------------ | --------------------------------------------------------------------------------------------- |
 | [`folke/todo-comments.nvim`](https://github.com/folke/todo-comments.nvim) | 3.9k            | TODO/FIXME のハイライト & 検索 | コメントベースのタスク管理。プロジェクト横断で TODO を拾いやすい。                            |
 | [`kylechui/nvim-surround`](https://github.com/kylechui/nvim-surround)     | 3.9k            | 囲み編集                       | `vim-surround` の Lua 後継で軽量＆Neovim向けに最適化。                                        |
-| [`stevearc/conform.nvim`](https://github.com/stevearc/conform.nvim)       | 4.6k            | フォーマッタ統合               | 各言語の formatter を簡潔に管理。Coc 依存を減らせる。                                         |
-| [`nvimdev/lspsaga.nvim`](https://github.com/nvimdev/lspsaga.nvim)         | 3.8k            | LSP UI 拡張                    | 使いやすい hover/rename/codeaction UI を提供。Coc/ネイティブどちらでも利用可。                |
-| [`folke/trouble.nvim`](https://github.com/folke/trouble.nvim)             | 6.5k            | Diagnostics/UI                 | LSP や Coc のエラー/警告を視覚的に表示し、移動が楽になる。                                    |
-| [`mason-org/mason.nvim`](https://github.com/mason-org/mason.nvim)         | 9.7k            | ツール/LSP マネージャ          | LSP サーバー/フォーマッタ/リンターを一括インストール管理。将来的な LSP ネイティブ移行が簡単。 |
+| [`stevearc/conform.nvim`](https://github.com/stevearc/conform.nvim)       | 4.6k            | フォーマッタ統合               | ✅ **導入済み (2026-07)**。prettier/shfmt を統合、他は lsp_format fallback。                  |
+| [`nvimdev/lspsaga.nvim`](https://github.com/nvimdev/lspsaga.nvim)         | 3.8k            | LSP UI 拡張                    | 使いやすい hover/rename/codeaction UI を提供。ネイティブ LSP で利用可。                       |
+| [`folke/trouble.nvim`](https://github.com/folke/trouble.nvim)             | 6.5k            | Diagnostics/UI                 | LSP のエラー/警告を視覚的に表示し、移動が楽になる。                                           |
+| [`mason-org/mason.nvim`](https://github.com/mason-org/mason.nvim)         | 9.7k            | ツール/LSP マネージャ          | ✅ **導入済み (2026-07)**。mason-lspconfig と併用し LSP/formatter/linter を管理。             |
 
 > いずれも現在の `init.lua` には含まれていないが、導入すると利便性・UI 体験が向上する定番。優先度はプロジェクトや用途に合わせて調整。
 
@@ -156,7 +156,7 @@
 
 ## ネイティブLSP移行後に使えるプラグイン
 
-現在Cocを使用しているため利用できないが、ネイティブLSPに移行すると使えるようになるプラグイン。
+ネイティブ LSP へ移行済み (2026-07) のため、以下は追加導入を検討できる LSP 系プラグイン。
 
 | プラグイン | Stars | 主な用途 | 推奨理由 |
 | --- | --- | --- | --- |
@@ -169,7 +169,7 @@
 | [`folke/neodev.nvim`](https://github.com/folke/neodev.nvim) | 2.0k | Neovim Lua開発 | Neovim APIの型定義・補完を提供。init.lua編集が快適に。 |
 | [`Wansmer/symbol-usage.nvim`](https://github.com/Wansmer/symbol-usage.nvim) | 300+ | 参照数表示 | 関数/変数の参照数をインラインで表示（VSCode風）。 |
 
-> これらはネイティブLSP専用のため、Cocでは動作しない。移行の動機付けとして参考に。
+> これらはネイティブLSP専用。移行済みなので導入すれば利用できる。
 
 ## 新しめの注目プラグイン（2025年11月14日リサーチ）
 

@@ -10,23 +10,31 @@ local M = {}
 
 -- サーバ固有 settings。空テーブルのサーバは共通設定のみで足りるので列挙しない。
 M.servers = {
-  -- solargraph は project の Gemfile 側 gem を使う (coc-settings の solargraph.useBundler=true 相当)。
-  -- Gemfile に solargraph が無い project では bundle 実行が失敗しうる。その場合は false にする。
+  -- solargraph は mason が入れたバイナリを直接使う (useBundler=false)。project の Gemfile 側
+  -- solargraph を bundle exec で使いたい場合のみ true にする (Gemfile に無い project では起動失敗)。
   solargraph = {
-    settings = { solargraph = { useBundler = true, diagnostics = true } },
+    settings = { solargraph = { useBundler = false, diagnostics = true } },
   },
 }
 
 -- mason-lspconfig / vim.lsp.enable に渡すサーバ名 (lspconfig の名前)。
 -- coc の LSP 系 extension (tsserver/eslint/pyright/go/solargraph/html/css/json/yaml/sh/docker/tailwind/sql) を踏襲。
 --
--- 意図的に移行しなかった coc 機能 (ユーザー確認済み・2026-07): spell-checker / 色プレビュー /
--- markdownlint / swagger。ネイティブに綺麗な等価が無く、必要になった時点で cspell(nvim-lint) /
--- nvim-colorizer / markdownlint(nvim-lint) を足す方針。欠落ではなく意図した縮退なのでここに明記する。
+-- 意図的に移行しなかった coc 機能 (欠落ではなく意図した縮退。パリティ台帳としてここに明記):
+--   - spell-checker / 色プレビュー / markdownlint / swagger (ユーザー確認済み・2026-07。
+--     必要時に cspell(nvim-lint) / nvim-colorizer / markdownlint(nvim-lint) を足す)
+--   - coc-html-css-support (HTML 内の CSS クラス名補完): ネイティブに直等価なし。html/cssls で部分カバー
+--   - <C-s> range-select (coc-range-select): treesitter incremental_selection 等で代替可 (未設定)
+--   - <C-f>/<C-b> の float スクロール: 0.11 は hover 窓を再フォーカスしてスクロールできるため未マップ
 M.ensure_installed = {
   "ts_ls", "eslint", "pyright", "gopls", "solargraph",
   "html", "cssls", "jsonls", "yamlls", "bashls", "dockerls", "tailwindcss", "sqlls",
 }
+
+-- documentHighlight 用の単一 augroup。バッファ毎に augroup を作ると空グループ名が
+-- 累積する (バッファ削除後も名前が残る) ため 1 グループに集約し、attach 毎に当該バッファの
+-- autocmd を貼り直す (再 attach / LSP 再起動時の重複登録を回避)。
+local hl_augroup = vim.api.nvim_create_augroup("dotfiles_lsp_document_highlight", { clear = true })
 
 -- LspAttach 時にバッファローカルで張るキーマップ (coc 時代の割り当てを踏襲)
 local function on_attach(client, bufnr)
@@ -66,16 +74,6 @@ local function on_attach(client, bufnr)
     end)
   end, "LSP implementation or definition")
 
-  -- ホバー (coc: t)。vim/help は :help にフォールバック
-  map("n", "t", function()
-    local ft = vim.bo[bufnr].filetype
-    if ft == "vim" or ft == "help" then
-      vim.cmd("help " .. vim.fn.expand("<cword>"))
-    else
-      vim.lsp.buf.hover()
-    end
-  end, "Hover / help")
-
   -- コードアクション (coc: <leader>ac=cursor / <leader>as=source / <leader>qf=quickfix)
   map("n", "<leader>ac", vim.lsp.buf.code_action, "Code action")
   map("n", "<leader>as", function()
@@ -93,14 +91,15 @@ local function on_attach(client, bufnr)
   -- カーソル下シンボルのハイライト (coc: CursorHold で highlight)。
   -- サーバが documentHighlight を持つときだけ張り、CursorMoved で消す。
   if client:supports_method("textDocument/documentHighlight") then
-    local grp = vim.api.nvim_create_augroup("dotfiles_lsp_highlight_" .. bufnr, { clear = true })
+    -- 再 attach でも重複しないよう、このバッファ分の既存 autocmd を消してから貼り直す
+    vim.api.nvim_clear_autocmds({ group = hl_augroup, buffer = bufnr })
     vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
-      group = grp,
+      group = hl_augroup,
       buffer = bufnr,
       callback = vim.lsp.buf.document_highlight,
     })
     vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
-      group = grp,
+      group = hl_augroup,
       buffer = bufnr,
       callback = vim.lsp.buf.clear_references,
     })
@@ -152,11 +151,31 @@ function M.setup(capabilities)
     vim.lsp.config(name, cfg)
   end
 
+  -- ホバー (coc の t は global マップだった)。vim/help は :help、それ以外は LSP hover。
+  -- global にすることで help/vim バッファでも :help が効く (coc 時代の挙動を踏襲)。
+  vim.keymap.set("n", "t", function()
+    local ft = vim.bo.filetype
+    if ft == "vim" or ft == "help" then
+      vim.cmd("help " .. vim.fn.expand("<cword>"))
+    else
+      vim.lsp.buf.hover()
+    end
+  end, { silent = true, desc = "Hover / help" })
+
   -- キーマップは attach したサーバ種別に依らずバッファへ張る
+  local grp = vim.api.nvim_create_augroup("dotfiles_lsp_attach", { clear = true })
   vim.api.nvim_create_autocmd("LspAttach", {
-    group = vim.api.nvim_create_augroup("dotfiles_lsp_attach", { clear = true }),
+    group = grp,
     callback = function(args)
       on_attach(vim.lsp.get_client_by_id(args.data.client_id), args.buf)
+    end,
+  })
+  -- client が detach したら、そのバッファに残った highlight autocmd を止める
+  -- (server 再起動等でバッファは開いたまま detach しても CursorHold が空振りし続けないように)
+  vim.api.nvim_create_autocmd("LspDetach", {
+    group = grp,
+    callback = function(args)
+      vim.api.nvim_clear_autocmds({ group = hl_augroup, buffer = args.buf })
     end,
   })
 end

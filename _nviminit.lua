@@ -191,7 +191,8 @@ require("lazy").setup({
   -- キー割り当て・診断・on_attach の本体は nvim/lua/dotfiles/lsp.lua。
   -- ============================================================================
   { "mason-org/mason.nvim", cmd = "Mason", opts = {} },
-  { "neovim/nvim-lspconfig" },
+  -- nvim-lspconfig は mason-lspconfig の依存として BufReadPre で遅延ロードされる
+  -- (automatic_enable が lsp/*.lua を rtp から引く時点で足りる)。top-level の eager spec は置かない。
   { "mason-org/mason-lspconfig.nvim",
     event = { "BufReadPre", "BufNewFile" },
     dependencies = {
