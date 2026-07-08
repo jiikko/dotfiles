@@ -40,6 +40,7 @@ blue_fg="\033[34m"
 cyan_fg="\033[36m"
 green_fg="\033[32m"
 magenta_fg="\033[35m"
+red_fg="\033[31m"
 
 # Directory segment (bold path).
 dir_part="${bold}${short_cwd}${reset}"
@@ -190,13 +191,44 @@ if [ -n "$effort_level" ]; then
   effort_part=" ${magenta_fg}[effort:${effort_level}]${reset}"
 fi
 
-# 1 行目: directory, branch, model, context, effort / 2 行目: rate limits。
+# Advisor segment (effort の右). advisor は executor(本体モデル) と対の概念なので
+# 設定時の色は model セグメントと同じ cyan に揃える。未設定時は赤で「未設定」と明示。
+# statusLine の stdin JSON に advisor フィールドは無い (公式スキーマで確認済み) ため、
+# transcript から読む: 各 assistant 行トップレベルの .advisorModel が現在値 (未選択時
+# はキー自体が無い)。末尾の該当行が現在の選択を反映する (/advisor 変更後、次の
+# assistant ターンで更新される)。transcript_path も stdin JSON から取る。
+# settings.json の advisorModel は使わない: user 設定のみで project/local 上書きを
+# 取りこぼす上、運用によっては頻繁にリセットされ (dotfiles では make pull) 「実際に
+# 効いている advisor」を transcript ほど正確に反映しないため。代償は設定直後〜次の
+# assistant ターンまで赤い「未設定」が出る 1 ターンのラグ (自己修復する)。
+advisor_label="未設定"
+advisor_color="$red_fg"
+transcript=$(echo "$input" | jq -r '.transcript_path // empty')
+if [ -n "$transcript" ] && [ -f "$transcript" ]; then
+  # tail -r (BSD/macOS) で末尾から辿り、最初に見つかった advisorModel 行 = 最新。
+  advisor_model=$(tail -r "$transcript" 2>/dev/null | grep -m1 '"advisorModel"' | jq -r '.advisorModel // empty' 2>/dev/null)
+  if [ -n "$advisor_model" ]; then
+    # 表示名の簡易整形 (未知の id はそのまま表示)。model.display_name のような
+    # 整形名は stdin に無いため id からマップする。
+    case "$advisor_model" in
+      claude-opus-4-8)   advisor_label="Opus 4.8" ;;
+      claude-sonnet-5)   advisor_label="Sonnet 5" ;;
+      claude-fable-5)    advisor_label="Fable 5" ;;
+      claude-haiku-4-5*) advisor_label="Haiku 4.5" ;;
+      *)                 advisor_label="$advisor_model" ;;
+    esac
+    advisor_color="$cyan_fg"
+  fi
+fi
+advisor_part=" ${advisor_color}[advisor:${advisor_label}]${reset}"
+
+# 1 行目: directory, branch, model, context, effort, advisor / 2 行目: rate limits。
 # statusline は複数行出力をサポートする (公式 docs の Display multiple lines)。
 # rate limit が無いとき (Free tier 等) は 2 行目自体を出さない。
 # Each non-first segment carries its own leading space. (No right-alignment:
 # the statusLine command runs without a controlling TTY so `tput cols` reports
 # the wrong width and the line would overflow past the right edge.)
-printf "%b%b%b%b%b" "$dir_part" "$branch_part" "$model_part" "$ctx_part" "$effort_part"
+printf "%b%b%b%b%b%b" "$dir_part" "$branch_part" "$model_part" "$ctx_part" "$effort_part" "$advisor_part"
 if [ -n "$rate_part" ]; then
   printf "\n%b" "${rate_part# }"
 fi
