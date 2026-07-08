@@ -10,7 +10,8 @@
 #      コード行にも new-session -A が無い (= popup を閉じるのに 2 回押す回帰のガード)
 #   C) tmux_fork_popup.sh が new-session を含まない (= 空セッションを作らず偽 fork を生まない不変条件)
 #      かつ has-session ガードを持つ
-#   D) tmux_fzf_jump.sh が claude-fork を候補から除外している (popup 専用セッション)
+#   D) popup 専用セッション (scratch/claude-fork/launcher) の fzf 候補除外が、共有 lib
+#      (lib/tmux_popup_sessions.sh) と jump / pane_move の両利用側で配線されている
 #   E) [挙動] claude-fork 不在時、popup script は案内を出すだけでセッションを作らない
 #   F) [挙動] /fork-scratch の起動コマンドは、env 未設定なら guard で中断し、設定済みなら
 #      stub claude で claude-fork を作り `--resume <id> --fork-session` を正しく渡す
@@ -152,10 +153,26 @@ fi
 grep -q 'has-session' "$POPUP_SCRIPT" || fail "tmux_fork_popup.sh に has-session ガードがない"
 ok "C: popup script は new-session 不使用 + has-session ガードあり"
 
-# D) fzf_jump が claude-fork を除外
-grep -qE '\(scratch\|claude-fork\):' "$JUMP_SCRIPT" \
-  || fail "tmux_fzf_jump.sh が claude-fork を fzf 候補から除外していない"
-ok "D: fzf_jump が claude-fork を除外"
+# D) popup 専用セッション (scratch / claude-fork / launcher) が fzf 候補から除外されること。
+# 除外パターンは lib/tmux_popup_sessions.sh に一本化された (2026-07-08。かつて本チェックは
+# jump スクリプト本文への直書き '(scratch|claude-fork):' を pin しており、一本化で恒久
+# false-fail になった)。よって (1) lib のパターンが 3 セッションを含む / (2) jump と
+# pane_move の両方が lib を source しパターン変数でフィルタしている、の 2 段で検査する。
+POPUP_SESSIONS_LIB="$ROOT_DIR/scripts/lib/tmux_popup_sessions.sh"
+PANE_MOVE_SCRIPT="$ROOT_DIR/scripts/tmux_fzf_pane_move.sh"
+[[ -f "$POPUP_SESSIONS_LIB" ]] || fail "popup sessions lib not found: $POPUP_SESSIONS_LIB"
+[[ -f "$PANE_MOVE_SCRIPT" ]]   || fail "pane_move script not found: $PANE_MOVE_SCRIPT"
+for _name in scratch claude-fork launcher; do
+  grep -E '^TT_POPUP_SESSION_RE=' "$POPUP_SESSIONS_LIB" | grep -q "$_name" \
+    || fail "除外 lib のパターンに $_name が含まれていない"
+done
+for _s in "$JUMP_SCRIPT" "$PANE_MOVE_SCRIPT"; do
+  grep -q 'lib/tmux_popup_sessions.sh' "$_s" \
+    || fail "$(basename "$_s") が共有除外 lib を source していない"
+  grep -q 'TT_POPUP_SESSION_RE' "$_s" \
+    || fail "$(basename "$_s") が除外パターン変数 (TT_POPUP_SESSION_RE) でフィルタしていない"
+done
+ok "D: 除外 lib が scratch/claude-fork/launcher を含み、jump / pane_move とも lib 経由で除外"
 
 # ---- 挙動テスト (default socket は隔離 TMUX_TMPDIR 内) ----
 
