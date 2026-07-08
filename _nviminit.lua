@@ -108,8 +108,8 @@ require("lazy").setup({
     build = ":GoUpdateBinaries",
     init = function()
       vim.g.go_null_module_warning = 0
-      vim.g.go_gopls_enabled = 0        -- coc-goのgoplsと競合するため無効化
-      vim.g.go_def_mapping_enabled = 0   -- coc-definitionに任せる
+      vim.g.go_gopls_enabled = 0        -- ネイティブ LSP の gopls と競合するため vim-go 側の gopls は無効化
+      vim.g.go_def_mapping_enabled = 0   -- 定義ジャンプはネイティブ LSP (gd) に任せる
     end,
     config = function()
       vim.g.go_decls_mode = ""
@@ -163,23 +163,6 @@ require("lazy").setup({
         return relative
       end
 
-      local function coc_status()
-        if vim.g.coc_status ~= nil or vim.fn.exists("*coc#status") == 1 then
-          return vim.fn["coc#status"]()
-        end
-        return ""
-      end
-
-      local function coc_current_function()
-        if vim.b.coc_current_function and vim.b.coc_current_function ~= "" then
-          return vim.b.coc_current_function
-        end
-        if vim.fn.exists("*CocCurrentFunction") == 1 then
-          return vim.fn.CocCurrentFunction()
-        end
-        return ""
-      end
-
       require("lualine").setup({
         options = {
           theme = "auto",
@@ -189,7 +172,7 @@ require("lazy").setup({
         },
         sections = {
           lualine_a = { "mode" },
-          lualine_b = { { coc_status }, { coc_current_function }, "branch" },
+          lualine_b = { "diagnostics", "branch" },
           lualine_c = { { relative_path_from_git_root } },
           lualine_x = { "encoding", "fileformat", "filetype" },
           lualine_y = { "progress" },
@@ -198,112 +181,100 @@ require("lazy").setup({
       })
     end,
   },
-  { "neoclide/coc.nvim", branch = "release",
+  -- ============================================================================
+  -- LSP スタック (2026-07 に coc.nvim から移行)
+  --   mason        : language server / formatter / linter のバイナリ管理
+  --   nvim-lspconfig: 各サーバの既定設定 (nvim 0.11 の vim.lsp.config に載る)
+  --   mason-lspconfig: installed サーバを automatic_enable で vim.lsp.enable() する
+  --   blink.cmp    : 補完 (プリビルドバイナリ。cargo 不要 → version="*" 固定)
+  --   conform.nvim : 整形 (:Format / <leader>f)   nvim-lint : sh の shellcheck
+  -- キー割り当て・診断・on_attach の本体は nvim/lua/dotfiles/lsp.lua。
+  -- ============================================================================
+  { "mason-org/mason.nvim", cmd = "Mason", opts = {} },
+  { "neovim/nvim-lspconfig" },
+  { "mason-org/mason-lspconfig.nvim",
+    event = { "BufReadPre", "BufNewFile" },
+    dependencies = {
+      "mason-org/mason.nvim",
+      "neovim/nvim-lspconfig",
+      "saghen/blink.cmp",
+    },
     config = function()
-      vim.g.coc_global_extensions = {
-        "coc-actions",
-        "coc-cspell-dicts",
-        "coc-html",
-        "coc-css",
-        "coc-html-css-support",
-        "coc-docker",
-        "coc-diagnostic",
-        "coc-dictionary",
-        "coc-eslint",
-        "coc-git",
-        "coc-go",
-        "coc-pyright",
-        "@yaegassy/coc-tailwindcss3",
-        "coc-highlight",
-        "coc-json",
-        "coc-markdownlint",
-        "coc-prettier",
-        "coc-spell-checker",
-        "coc-tsserver",
-        "coc-yaml",
-        "coc-solargraph",
-        "coc-sh",
-        "coc-sql",
-        "coc-webview",
-        "coc-swagger",
-      }
-
-      local keymap = vim.api.nvim_set_keymap
-      local opts = { noremap = true, silent = true }
-      local expr_opts = { noremap = true, silent = true, expr = true }
-      vim.api.nvim_set_keymap(
-        "i",
-        "<CR>",
-        'coc#pum#visible() ? coc#pum#confirm() : "\\<CR>"',
-        { expr = true, silent = true }
-      )
-      -- CocActionAsyncを呼び出してバッファ整形を実行する
-      vim.api.nvim_create_user_command('Format', function()
-        -- Cocの非同期フォーマットアクションを実行
-        vim.fn.CocActionAsync('format')
-      end, {})
-      vim.api.nvim_set_keymap('n', '<leader>f', ':Format<CR>', { noremap = true, silent = true })
-      -- `:OR` コマンドを追加 (インポート整理)
-      vim.api.nvim_create_user_command("OR", function()
-        vim.fn.CocActionAsync("runCommand", "editor.action.organizeImport")
-      end, { nargs = 0 })
-      -- カーソルをホールドするとシンボルをハイライト
-      -- (augroup で :source / lazy reload 時の重複登録を防ぐ。basic.lua の autocmd 規約に合わせる)
-      vim.api.nvim_create_autocmd("CursorHold", {
-        group = vim.api.nvim_create_augroup("dotfiles_coc_highlight", { clear = true }),
-        pattern = "*",
-        callback = function()
-          vim.fn.CocActionAsync("highlight")
-        end,
+      local lsp = require("dotfiles.lsp")
+      -- blink の capabilities を先に確定させてから (契約: lsp.setup 内で vim.lsp.config("*"))、
+      -- mason-lspconfig の automatic_enable にサーバの enable を任せる。
+      local ok, blink = pcall(require, "blink.cmp")
+      lsp.setup(ok and blink.get_lsp_capabilities() or nil)
+      require("mason-lspconfig").setup({
+        ensure_installed = lsp.ensure_installed,
+        automatic_enable = true,
       })
-      -- カーソル位置のドキュメント表示
-      local function show_documentation()
-        local filetype = vim.bo.filetype
-        if vim.tbl_contains({ "vim", "help" }, filetype) then
-          vim.cmd("help " .. vim.fn.expand("<cword>"))
-        elseif vim.fn['coc#rpc#ready']() == 1 then
-          vim.fn.CocActionAsync("doHover")
-        else
-          print("No documentation available")
-        end
-      end
-      vim.keymap.set("n", "t", show_documentation, opts)
-      -- 診断リストを開く
-      keymap("n", "<leader>a", ":CocList diagnostics<CR>", opts)
-      -- 選択範囲を指定 (CTRL-S)
-      keymap("n", "<C-s>", "<Plug>(coc-range-select)", opts)
-      keymap("x", "<C-s>", "<Plug>(coc-range-select)", opts)
-      -- **Coc の浮動ウィンドウスクロール**
-      keymap("n", "<C-f>", 'coc#float#has_scroll() ? coc#float#scroll(1) : "\\<C-f>"', expr_opts)
-      keymap("n", "<C-b>", 'coc#float#has_scroll() ? coc#float#scroll(0) : "\\<C-b>"', expr_opts)
-      keymap("i", "<C-f>", 'coc#float#has_scroll() ? "\\<c-r>=coc#float#scroll(1)\\<cr>" : "\\<Right>"', expr_opts)
-      keymap("i", "<C-b>", 'coc#float#has_scroll() ? "\\<c-r>=coc#float#scroll(0)\\<cr>" : "\\<Left>"', expr_opts)
-      keymap("v", "<C-f>", 'coc#float#has_scroll() ? coc#float#scroll(1) : "\\<C-f>"', expr_opts)
-      keymap("v", "<C-b>", 'coc#float#has_scroll() ? coc#float#scroll(0) : "\\<C-b>"', expr_opts)
-      -- 診断メッセージの前後移動
-      keymap("n", "[g", "<Plug>(coc-diagnostic-prev)", opts)
-      keymap("n", "]g", "<Plug>(coc-diagnostic-next)", opts)
-      -- コードアクション
-      keymap("n", "<leader>ac", "<Plug>(coc-codeaction-cursor)", opts)
-      keymap("n", "<leader>as", "<Plug>(coc-codeaction-source)", opts)
-      keymap("n", "<leader>qf", "<Plug>(coc-fix-current)", opts)
-      -- 定義ジャンプと参照リスト（便利キーバインド）
-      -- <C-j>: implementations を試し、失敗したら definitions にフォールバック
-      vim.keymap.set("n", "<C-j>", function()
-        local ok, result = pcall(vim.fn.CocAction, "jumpImplementation")
-        if not ok or result == false then
-          vim.cmd("Telescope coc definitions")
-        end
-      end, opts)
-      keymap("n", "<C-k>", "<Cmd>Telescope coc references<CR>", opts)
-      -- 直接ジャンプしたい場合用
-      keymap("n", "gd", "<Plug>(coc-definition)", opts)
-      keymap("n", "gD", "<Plug>(coc-implementation)", opts)
-
-      -- Diagnostics の左横アイコンの色設定
-      -- (termguicolors 有効時は cterm 値が無視されるため gui 色で指定)
-      vim.api.nvim_set_hl(0, "CocErrorSign", { fg = "#ffffff", bg = "#ff0000" })
-      vim.api.nvim_set_hl(0, "CocWarningSign", { fg = "#000000", bg = "#d78700" })
+    end,
+  },
+  { "WhoIsSethDaniel/mason-tool-installer.nvim",
+    event = "VeryLazy",
+    dependencies = { "mason-org/mason.nvim" },
+    config = function()
+      -- サーバ以外 (formatter / linter) の実体を入れる。LSP ではないので
+      -- mason-lspconfig の ensure_installed では入らない (レビュー指摘 #3)。
+      require("mason-tool-installer").setup({
+        ensure_installed = { "prettierd", "shfmt", "shellcheck" },
+      })
+    end,
+  },
+  { "saghen/blink.cmp",
+    version = "*", -- プリビルドバイナリを使う。main/build=cargo は cargo 非搭載機で起動時に死ぬ
+    event = { "InsertEnter", "CmdlineEnter" },
+    opts = {
+      keymap = { preset = "enter" }, -- <CR> で確定 (coc#pum#confirm の踏襲。未選択時は改行にフォールバック)
+      appearance = { nerd_font_variant = "mono" },
+      sources = { default = { "lsp", "path", "snippets", "buffer" } },
+      signature = { enabled = true },
+      -- プリビルドバイナリが無い環境では Lua 実装へ自動フォールバック
+      fuzzy = { implementation = "prefer_rust_with_warning" },
+    },
+  },
+  { "stevearc/conform.nvim",
+    cmd = "Format",
+    keys = {
+      { "<leader>f", function() require("conform").format({ async = true, lsp_format = "fallback" }) end, desc = "Format buffer" },
+    },
+    config = function()
+      local conform = require("conform")
+      conform.setup({
+        -- 列挙が無い ft (ruby/go 等) は lsp_format="fallback" でサーバ整形に委ねる
+        formatters_by_ft = {
+          javascript = { "prettierd", "prettier", stop_after_first = true },
+          javascriptreact = { "prettierd", "prettier", stop_after_first = true },
+          typescript = { "prettierd", "prettier", stop_after_first = true },
+          typescriptreact = { "prettierd", "prettier", stop_after_first = true },
+          json = { "prettierd", "prettier", stop_after_first = true },
+          yaml = { "prettierd", "prettier", stop_after_first = true },
+          html = { "prettierd", "prettier", stop_after_first = true },
+          css = { "prettierd", "prettier", stop_after_first = true },
+          scss = { "prettierd", "prettier", stop_after_first = true },
+          markdown = { "prettierd", "prettier", stop_after_first = true },
+          sh = { "shfmt" },
+        },
+        formatters = {
+          -- coc-settings.json の diagnostic-languageserver.formatters.shfmt を踏襲
+          shfmt = { prepend_args = { "-i", "2", "-bn", "-ci", "-sr" } },
+        },
+      })
+      vim.api.nvim_create_user_command("Format", function()
+        conform.format({ async = true, lsp_format = "fallback" })
+      end, {})
+    end,
+  },
+  { "mfussenegger/nvim-lint",
+    event = { "BufReadPost", "BufNewFile" },
+    config = function()
+      -- coc-diagnostic が sh に対して行っていた shellcheck を踏襲 (それ以外の言語は LSP 診断)
+      require("lint").linters_by_ft = { sh = { "shellcheck" }, bash = { "shellcheck" } }
+      vim.api.nvim_create_autocmd({ "BufWritePost", "BufReadPost", "InsertLeave" }, {
+        group = vim.api.nvim_create_augroup("dotfiles_nvim_lint", { clear = true }),
+        callback = function() require("lint").try_lint() end,
+      })
     end,
   },
   { "nvim-telescope/telescope.nvim",
@@ -313,14 +284,18 @@ require("lazy").setup({
       { "<leader>fg", function() require("telescope.builtin").live_grep() end, desc = "Live grep" },
       { "<leader>fb", function() require("telescope.builtin").buffers() end, desc = "List buffers" },
       { "<leader>fn", function() require("telescope").extensions.notify.notify() end, desc = "Notify history" },
+      -- 診断一覧 (coc: <leader>a=CocList diagnostics / <leader>fd=CocDiagnostics の踏襲)。
+      -- lazy load の入口なので config 内ではなく keys に置く (config は初回ロードまで走らない)。
+      { "<leader>a", function() require("telescope.builtin").diagnostics() end, desc = "Diagnostics (all)" },
+      { "<leader>fd", function() require("telescope.builtin").diagnostics({ bufnr = 0 }) end, desc = "Diagnostics (buffer)" },
     },
     dependencies = {
       "nvim-lua/plenary.nvim",
-      "fannheyward/telescope-coc.nvim",
       "nvim-telescope/telescope-ui-select.nvim",
     },
     config = function()
       local telescope = require("telescope")
+      local actions = require("telescope.actions")
       telescope.setup({
         defaults = {
           sorting_strategy = "ascending",
@@ -329,26 +304,23 @@ require("lazy").setup({
           file_ignore_patterns = { "^.git/", "^node_modules/", "package-lock.json", "yarn.lock", "yarn-error.log" },
           border = true,
           prompt_prefix = "🔍 ",
+          -- ファイル名を先頭・ディレクトリを淡色で後置 (find_files / live_grep / lsp_* 全てに効く)
+          path_display = { "filename_first" },
+          mappings = {
+            -- 既定は insert の <esc> が「閉じる」でなく picker 内 normal へ移行するだけで
+            -- 「閉じ方が分からない」状態になる。insert の <esc> を即クローズに割り当てる。
+            -- (<C-c> でも閉じられるのは既定のまま)
+            i = { ["<esc>"] = actions.close },
+          },
         },
         extensions = {
-          coc = {
-            layout_strategy = "horizontal",
-            layout_config = {
-              width = 0.9,
-              height = 0.9,
-              preview_width = 0.6,
-            },
-            prefer_locations = true,
-          },
           ["ui-select"] = {
             require("telescope.themes").get_dropdown({}),
           },
         },
       })
-      telescope.load_extension("coc")
       telescope.load_extension("ui-select")
       telescope.load_extension("notify")
-      vim.keymap.set("n", "<leader>fd", "<Cmd>CocDiagnostics<CR>")
     end,
   },
   { "rbtnn/vim-ambiwidth" },
@@ -366,12 +338,26 @@ require("lazy").setup({
           show_close_icon = false,
           show_buffer_close_icons = false,
           always_show_bufferline = true,
+          -- 選択タブの左端にインジケータバーを出す (非選択との差を強調)
+          indicator = { style = "icon", icon = "▎" },
         },
+        -- アクティブタブと非アクティブタブの差を強く付ける:
+        --   選択 = 黒字 × gruvbox pink + 太字 + 橙のインジケータバー
+        --   非選択 = 暗い地に沈んだ灰字 (存在感を弱める)
+        -- ※ gui 色指定のため truecolor 端末前提 (非対応端末の retrobox 時は既定色にフォールバック。
+        --   従来から gui 指定のみだったため挙動は不変)。
         highlights = {
-          buffer_selected = {
-            fg = "#1d2021", -- 黒（読みやすさ重視）
-            bg = "#d3869b", -- 落ち着いたピンク（Visual と同じ gruvbox pink）
-          },
+          fill = { bg = "#1d2021" },
+          -- 非選択バッファ (最も沈める)
+          background = { fg = "#665c54", bg = "#1d2021" },
+          modified = { fg = "#665c54", bg = "#1d2021" },
+          -- 別ウィンドウで可視だが非アクティブ (中間)
+          buffer_visible = { fg = "#a89984", bg = "#1d2021" },
+          modified_visible = { fg = "#a89984", bg = "#1d2021" },
+          -- アクティブ (最も目立たせる)
+          buffer_selected = { fg = "#1d2021", bg = "#d3869b", bold = true, italic = false },
+          modified_selected = { fg = "#1d2021", bg = "#d3869b", bold = true },
+          indicator_selected = { fg = "#fe8019", bg = "#d3869b" }, -- gruvbox orange のバー
         },
       })
 
@@ -498,7 +484,6 @@ require("lazy").setup({
         override = {
           ["vim.lsp.util.convert_input_to_markdown_lines"] = true,
           ["vim.lsp.util.stylize_markdown"] = true,
-          ["coc.util.float_scroll"] = true,
         },
       },
       presets = {

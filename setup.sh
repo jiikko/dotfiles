@@ -12,7 +12,6 @@ done
 mkdir -p ~/.config/nvim
 ln -sf ~/dotfiles/_nviminit.lua ~/.config/nvim/init.lua
 ln -sf ~/dotfiles/_tmux.conf ~/.tmux.conf
-ln -sf ~/dotfiles/_coc-settings.json ~/.config/nvim/coc-settings.json
 
 # setup .claude directory
 # migrate: ディレクトリ丸ごとシンボリックリンクだった旧形式を個別リンク形式に変換。

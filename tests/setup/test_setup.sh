@@ -56,7 +56,6 @@ ensure_config_link() {
 
 ensure_config_link "$HOME/.config/nvim/init.lua" "$HOME/dotfiles/_nviminit.lua"
 ensure_config_link "$HOME/.tmux.conf" "$HOME/dotfiles/_tmux.conf"
-ensure_config_link "$HOME/.config/nvim/coc-settings.json" "$HOME/dotfiles/_coc-settings.json"
 
 # .claude directory: agents/skills should be real dirs with individual symlinks
 if [[ -L "$HOME/.claude/agents" ]]; then

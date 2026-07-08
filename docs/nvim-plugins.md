@@ -17,7 +17,7 @@
 | ---- | -------- | -------- | -------------- | ------------ | ------------- | -------------- | ---- |
 | ✅ ellisonleao/gruvbox.nvim | カラースキーム | 2025-09-04 | 同プラグイン, `folke/tokyonight.nvim` | × | × | いいえ | Vimscript 版から移行済み。Lua 版で truecolor/透明度設定が容易。 |
 | ✅ folke/which-key.nvim | キーマップチートシート | 2025-10-28 | 同プラグインがデファクト | × | × | いいえ | 定番。置き換え不要。 |
-| ✅ nvim-lualine/lualine.nvim | ステータスライン | 2025-11-23 | 同プラグイン | × | × | いいえ | Lightline から移行済み。Coc の状態/関数名も Lua 側で統合。 |
+| ✅ nvim-lualine/lualine.nvim | ステータスライン | 2025-11-23 | 同プラグイン | × | × | いいえ | Lightline から移行済み。診断表示はネイティブ LSP (vim.diagnostic) の `diagnostics` コンポーネントを統合。 |
 | ✅ akinsho/bufferline.nvim | タブライン | 2025-01-14 | `romgrk/barbar.nvim`, 標準タブライン | × | × | いいえ | Barbar から移行済み。LSP/診断アイコンも扱える Lua 実装で軽量。 |
 | ✅ nvim-tree/nvim-tree.lua | ファイラ | 2026-01-11 | `nvim-neo-tree/neo-tree.nvim`, `stevearc/oil.nvim` | △ | △ | いいえ | Oil は軽量、Neo-tree は機能豊富。好み。 |
 | ✅ nvim-tree/nvim-web-devicons | アイコン | 2026-01-11 | 同プラグイン | × | × | いいえ | 事実上の標準。 |
@@ -35,7 +35,7 @@
 
 | 現行                             | 主な役割           | 最終更新                | デファクト候補                                      | 乗り換え可否 | 今すぐ捨てる? | Vimscript依存? | メモ                                      |
 | -------------------------------- | ------------------ | ----------------------- | --------------------------------------------------- | ------------ | ------------- | --------------- | ----------------------------------------- |
-| ✅ nvim-telescope/telescope.nvim | ファジーファインダ | 2026-01-11              | `ibhagwan/fzf-lua`, `junegunn/fzf.vim`              | △            | △             | いいえ          | Telescope は機能性◎。軽量化なら fzf-lua。telescope-coc / telescope-ui-select を依存に追加。 |
+| ✅ nvim-telescope/telescope.nvim | ファジーファインダ | 2026-01-11              | `ibhagwan/fzf-lua`, `junegunn/fzf.vim`              | △            | △             | いいえ          | Telescope は機能性◎。軽量化なら fzf-lua。依存は telescope-ui-select（ネイティブ LSP 移行で telescope-coc は撤去、ジャンプは builtin `lsp_*` を使用）。`path_display=filename_first`・insert の `<esc>` 即クローズを設定。 |
 | ✅ rbtnn/vim-ambiwidth           | 全角幅調整         | 2025-08-02              | 代替少                                              | ×            | ×             | はい             | 日本語環境では維持推奨。                  |
 | ✅ lewis6991/gitsigns.nvim       | Git ハイライト     | 2026-01-09              | 同プラグイン                                         | ×            | ×             | いいえ          | 差分/ブレーム/ステージングまで一括管理できる Lua 実装。 |
 
@@ -58,7 +58,11 @@
 | ✅ hashivim/vim-terraform | Terraform    | 2025-05-24 | `hashicorp/terraform-ls` + LSP, `mfussenegger/nvim-lint` | △ | △ | はい | LSP/formatter へ徐々に移行可能。 |
 | ✅ fatih/vim-go | Go 補助 | 2025-11-11 | `ray-x/go.nvim`, `nvim-lspconfig` + `gopls` | △ | △ | はい | “重い/設定過多” の声が多く、LSP 構成へ移行推奨。 |
 | ✅ github/copilot.vim     | AI 補完      | 2026-01-09 | `zbirenbaum/copilot.lua`, `sourcegraph/sg.nvim`          | ○ | △ | はい | Vimscript 版は重いとの声。Lua 版へ移行推奨。 |
-| ✅ neoclide/coc.nvim      | LSP/補完統合 | 2026-01-08 | `nvim-lspconfig` + `nvim-cmp`                            | △ | △ | はい | Node 依存で重いとの評判。長期的にネイティブ LSP へ。 |
+| ✅ neovim/nvim-lspconfig  | LSP サーバ設定 | - | 同プロジェクト | × | × | いいえ | 2026-07 に coc.nvim から移行。nvim 0.11 の `vim.lsp.config`/`vim.lsp.enable` に載る。 |
+| ✅ mason-org/mason.nvim + mason-lspconfig | LSP/ツール管理 | - | 同プロジェクト | × | × | いいえ | サーバ/formatter/linter のバイナリ管理。`automatic_enable` で installed サーバを enable。 |
+| ✅ saghen/blink.cmp       | 補完         | - | `hrsh7th/nvim-cmp` | × | × | いいえ | coc の補完後継。`version="*"` でプリビルドバイナリ（cargo 不要）。`<CR>` 確定。 |
+| ✅ stevearc/conform.nvim  | 整形         | - | 同プラグイン | × | × | いいえ | `:Format`/`<leader>f`。prettier/shfmt、他は `lsp_format=fallback`。 |
+| ✅ mfussenegger/nvim-lint | Lint         | - | 同プラグイン | × | × | いいえ | sh の shellcheck（旧 coc-diagnostic 相当）。他言語は LSP 診断。 |
 
 
 ## 補助 / その他
@@ -75,7 +79,7 @@
 1. **軽量化を急ぐ**: 重い Vimscript プラグインは順次 Lua 版へ（候補例: vim-toggle だが元が軽いので移行効果は小）。必要性や労力を見極めつつ進める。
 2. **UI/テーマ**: Lightline→Lualine、gruvbox Vimscript→Lua 版。
 3. **Git/開発補助**: mini.trailspace など Lua ツールへ処理を寄せて重複を解消。
-4. **言語/LSP**: vim-go, vim-terraform, coc.nvim を徐々にネイティブ LSP 構成へ。
+4. **言語/LSP**: ✅ coc.nvim はネイティブ LSP 構成 (nvim-lspconfig + mason + blink.cmp + conform + nvim-lint) へ移行済み (2026-07)。残る vim-go / vim-terraform も順次 LSP へ寄せる。
 5. **AI 補完**: copilot.vim→copilot.lua 等 Lua 版へ移行。
 
 必要に応じてこの表を更新し、プラグイン整理や設定刷新時の判断材料にする。
