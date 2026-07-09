@@ -355,7 +355,7 @@ var errItemHasTab = errors.New("item contains a tab (result.log is TAB-delimited
 func (r *Runner) enqueueInternalForce(line string, front bool) error {
 	line = strings.TrimSpace(line)
 	if line == "" {
-		return fmt.Errorf("empty input")
+		return errors.New("empty input")
 	}
 	if strings.ContainsRune(line, '\t') {
 		return errItemHasTab
@@ -385,16 +385,16 @@ func (r *Runner) enqueueInternalForce(line string, front bool) error {
 func (r *Runner) enqueueInternal(line string, front bool) error {
 	line = strings.TrimSpace(line)
 	if line == "" {
-		return fmt.Errorf("empty input")
+		return errors.New("empty input")
 	}
 	if strings.ContainsRune(line, '\t') {
 		return errItemHasTab
 	}
 	if !r.live {
-		return fmt.Errorf("runner not in live mode")
+		return errors.New("runner not in live mode")
 	}
 	if r.stopCtx != nil && r.stopCtx.Err() != nil {
-		return fmt.Errorf("runner stopping")
+		return errors.New("runner stopping")
 	}
 	if r.cfg.InputType == "url" {
 		if ok, reason := urlLooksValid(line); !ok {

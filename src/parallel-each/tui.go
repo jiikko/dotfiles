@@ -591,7 +591,7 @@ func (m model) View() string {
 
 	// Header.
 	b.WriteString(styleTitle.Render("parallel-each"))
-	b.WriteString(styleDim.Render(fmt.Sprintf("   %s", truncate(m.cfg.Template, maxInt(20, m.width-20)))))
+	b.WriteString(styleDim.Render("   " + truncate(m.cfg.Template, maxInt(20, m.width-20))))
 	b.WriteString("\n")
 
 	// Progress bar.
@@ -884,7 +884,7 @@ func (m model) renderFocus() string {
 
 	b.WriteString(styleHeader.Render(fmt.Sprintf("  focus: slot %d", m.focusSlot)))
 	b.WriteString("  ")
-	b.WriteString(styleDim.Render(fmt.Sprintf("elapsed %s", formatDur(dur))))
+	b.WriteString(styleDim.Render("elapsed " + formatDur(dur)))
 	b.WriteString("\n")
 	b.WriteString("    ")
 	b.WriteString(styleRunning.Render("▶ "))
@@ -1326,7 +1326,7 @@ func (m model) handleQueueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		total := len(m.filteredQueue())
 		m.queueList.cursor = clampListIdx(m.queueList.cursor, total)
 		m.queueList.ensureVisible(total, m.recentPageSize())
-		m.setFlash(fmt.Sprintf("✓ removed from queue: %s", truncate(target, 50)), false)
+		m.setFlash("✓ removed from queue: "+truncate(target, 50), false)
 		return m, nil
 	}
 	m.queueList.handleNavKey(msg.String(), len(m.filteredQueue()), m.recentPageSize())
@@ -1575,7 +1575,7 @@ func (m model) renderFilterBar(filter string, mode bool) string {
 		b.WriteString(filter)
 		b.WriteString(styleRunning.Render("▌"))
 	} else {
-		b.WriteString(styleDim.Render(fmt.Sprintf("filter: /%s", filter)))
+		b.WriteString(styleDim.Render("filter: /" + filter))
 	}
 	b.WriteString("\n")
 	return b.String()

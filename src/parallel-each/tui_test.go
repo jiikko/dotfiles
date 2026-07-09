@@ -845,9 +845,8 @@ func TestTUIModelMultilinePrependPreservesOrder(t *testing.T) {
 	m := newModel(cfg, 1, r.Events(), r, 0)
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
 	m = u.(model)
-	// Paste three lines in one go.
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x\ny\nz\n")})
-	m = u.(model)
+	// Paste three lines in one go (side effect: enqueues into the runner).
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x\ny\nz\n")})
 
 	got := r.PendingSnapshot()
 	// Head of queue should be x, y, z (matching paste order).
@@ -1558,8 +1557,7 @@ func TestTUIModelMultilinePasteCRLF(t *testing.T) {
 	m = u.(model)
 
 	paste := []rune("first\r\nsecond\r\n")
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: paste})
-	m = u.(model)
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: paste})
 
 	if r.AddedCount() != 2 {
 		t.Errorf("AddedCount = %d, want 2", r.AddedCount())
@@ -1701,8 +1699,7 @@ func TestTUIModelExportStripsSlashes(t *testing.T) {
 		t.Errorf("buffer should not contain slashes: %q", string(m.exportBuf))
 	}
 
-	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = u.(model)
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if !called {
 		t.Error("wrapper should have been written with the sanitized name")
 	}

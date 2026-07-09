@@ -28,7 +28,7 @@ if echo "$*" | grep -q "select_streams v:0" && echo "$*" | grep -q "stream=durat
     *no_video*)     echo "" ;;
     *avsync_bad*)   echo "17931.0" ;;
     *multi_issue*)  echo "7194.0" ;;
-    *missav*)       echo "3979.86" ;;
+    *cfr_bogus_rfr*)       echo "3979.86" ;;
     *)              echo "14212.0" ;;
   esac
   exit 0
@@ -62,7 +62,7 @@ if echo "$*" | grep -q "format=duration"; then
   case "$input_file" in
     *no_video*)     echo "" ;;
     *avsync_bad*)   echo "17931.0" ;;
-    *missav*)       echo "3980.0" ;;
+    *cfr_bogus_rfr*)       echo "3980.0" ;;
     *)              echo "14212.0" ;;
   esac
   exit 0
@@ -252,9 +252,9 @@ assert_exit_code "0" "$exit_code" "Normal file passes all 3 checks"
 # 旧実装は r(120) vs avg(23.59) の乖離で「フレームレート異常」と誤判定していた。
 # 新実装は DTS 単調性のみで判定するため、duration 健全 + DTS 単調なら健全と判定する。
 printf '\n## Test 13: CFR with bogus r_frame_rate is NOT corruption (regression)\n'
-touch "$TEST_TMP/missav.mp4"
+touch "$TEST_TMP/cfr_bogus_rfr.mp4"
 unsetopt err_exit
-__video_health_check "$TEST_TMP/missav.mp4"
+__video_health_check "$TEST_TMP/cfr_bogus_rfr.mp4"
 exit_code=$?
 setopt err_exit
 assert_exit_code "0" "$exit_code" "CFR+bogus-r file returns 0 (healthy)"

@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -273,26 +274,26 @@ func parseArgs(argv []string) (Config, error) {
 	// until after the wizard runs.
 	if !*wizard {
 		if *file == "" {
-			return Config{}, fmt.Errorf("-F <file> is required")
+			return Config{}, errors.New("-F <file> is required")
 		}
 		if len(rest) < 1 {
-			return Config{}, fmt.Errorf("command template is required")
+			return Config{}, errors.New("command template is required")
 		}
 		if !strings.Contains(tmpl, "{item}") {
-			return Config{}, fmt.Errorf("command template must contain {item}")
+			return Config{}, errors.New("command template must contain {item}")
 		}
 		if !*dry && *attemptTimeout <= 0 {
-			return Config{}, fmt.Errorf("--attempt-timeout is required (e.g. --attempt-timeout 30s); use --wizard for interactive input")
+			return Config{}, errors.New("--attempt-timeout is required (e.g. --attempt-timeout 30s); use --wizard for interactive input")
 		}
 	}
 	if *jobs < 0 {
-		return Config{}, fmt.Errorf("-P must be >= 0")
+		return Config{}, errors.New("-P must be >= 0")
 	}
 	if *retries < 0 {
-		return Config{}, fmt.Errorf("--retries must be >= 0")
+		return Config{}, errors.New("--retries must be >= 0")
 	}
 	if *totalTimeout < 0 {
-		return Config{}, fmt.Errorf("--total-timeout must be >= 0")
+		return Config{}, errors.New("--total-timeout must be >= 0")
 	}
 	switch *inputType {
 	case "none", "url":

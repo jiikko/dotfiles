@@ -1,0 +1,28 @@
+# golangci-lint v2 config for parallel-each.
+# The standard linters (errcheck, govet, ineffassign, staticcheck, unused) are
+# on by default; the extras below are low-noise, mostly auto-fixable hygiene
+# linters. Run `golangci-lint run --fix ./...` to apply the auto-fixes.
+version: "2"
+
+linters:
+  enable:
+    - copyloopvar    # loop variables needlessly copied (Go 1.22+)
+    - intrange       # for i := 0; i < n; i++  ->  for i := range n
+    - misspell       # common English misspellings in comments/strings
+    - perfsprint     # fmt.Sprintf that a faster stdlib call can replace
+    - unconvert      # redundant type conversions
+    - usestdlibvars  # hand-written constants that exist in the stdlib
+    - wastedassign   # assignments whose value is never read
+  settings:
+    errcheck:
+      # Best-effort operations whose error is conventionally ignored in a CLI:
+      # writes to stderr/stdout/log files, closing read handles, restoring the
+      # cwd in tests, and the best-effort PID write to the lock file.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - os.Chdir
+        - (*os.File).Close
+        - (*os.File).Truncate
+        - (*os.File).Seek
