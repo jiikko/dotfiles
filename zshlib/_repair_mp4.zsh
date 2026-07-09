@@ -60,6 +60,11 @@ EOF
 }
 
 __repair_mp4_one() {
+  # trap を関数スコープに閉じる: 本 lib は対話 zsh に source されるため、INT/TERM/HUP の
+  # trap をグローバルに張ると関数終了後もシェルに残り、以降の Ctrl-C 挙動に干渉する。
+  # local_traps で関数内 trap を退出時に復元し、local_options でその設定自体も戻す。
+  setopt local_options local_traps
+
   local in="$1"
   local in_place="${2:-0}"
   [[ ! -f "$in" ]] && { print -r -- "✗ ファイルが無い: $in"; return 1; }
@@ -138,13 +143,18 @@ __repair_mp4_one() {
   acodec=$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name \
            -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
 
-  # ffmpeg引数構築
+  # ffmpeg引数構築。
+  # 全映像・全音声を map する (0:v / 0:a?)。かつて 0:v:0 / 0:a:0? で「第1映像+第1音声のみ」を
+  # コピーしていたため、複数音声トラック (主+副音声・多言語) を持つ動画を in-place 修復すると
+  # 副音声が黙って失われた (データ損失)。字幕/データ stream は意図的に carry しない: 主用途の
+  # mpegts は DVB 字幕を持ち mp4 へ copy できず remux 全体が失敗するため (A/V の無劣化 remux が
+  # このコマンドの目的)。
   local -a args=(
     -hide_banner -stats -y
     -fflags +genpts
     "${input_opts[@]}"
     -i "$in"
-    -map 0:v:0
+    -map 0:v
     -c:v copy
   )
 
@@ -152,8 +162,8 @@ __repair_mp4_one() {
 
   # 音声処理
   if [[ -n "$acodec" ]]; then
-    args+=(-map "0:a:0?" -c:a copy)
-    print -r -- ">> 音声: copy (codec=$acodec)"
+    args+=(-map "0:a?" -c:a copy)
+    print -r -- ">> 音声: copy (codec=$acodec, 全トラック)"
   else
     args+=(-an)
     print -r -- ">> 音声: なし"

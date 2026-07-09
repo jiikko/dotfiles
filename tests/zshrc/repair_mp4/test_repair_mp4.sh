@@ -20,6 +20,8 @@ mkdir -p "$MOCK_BIN_DIR"
 # ffmpegモックスクリプトを作成
 cat > "$MOCK_BIN_DIR/ffmpeg" <<'EOF'
 #!/usr/bin/env sh
+# FFMPEG_ARGS_LOG が設定されていれば呼び出し引数を記録する (map 検証テスト用)
+[ -n "${FFMPEG_ARGS_LOG:-}" ] && printf '%s\n' "$*" >> "$FFMPEG_ARGS_LOG"
 # 最後の引数を出力ファイルとして扱う
 for arg in "$@"; do
   last_arg="$arg"
@@ -287,6 +289,23 @@ export MOCK_FORMAT="mpegts"
 output=$(repair_mp4 --in-place "$TEST_DIR/video.mp4" 2>&1)
 assert_file_exists "$TEST_DIR/video.mp4" "Original file still exists"
 assert_file_not_exists "$TEST_DIR/video-repaired.mp4" "No -repaired.mp4 file created"
+
+# Test 17: 全音声トラックを map する (第1音声のみに絞らない = 副音声のデータ損失防止)
+printf '\n## Test 17: Maps all audio tracks (not just the first) to avoid dropping secondary audio\n'
+TEST_DIR="$TEST_TMP/test17"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/multi.mp4"
+cd "$TEST_DIR"
+export MOCK_FPS="30/1"
+export MOCK_FORMAT="mpegts"
+export FFMPEG_ARGS_LOG="$TEST_DIR/ffmpeg_args.log"
+: > "$FFMPEG_ARGS_LOG"
+output=$(repair_mp4 -i "$TEST_DIR/multi.mp4" 2>&1)
+ffargs="$(cat "$FFMPEG_ARGS_LOG")"
+unset FFMPEG_ARGS_LOG
+assert_contains "$ffargs" "-map 0:a?" "Maps ALL audio tracks (-map 0:a?)"
+assert_contains "$ffargs" "-map 0:v" "Maps video (-map 0:v)"
+assert_not_contains "$ffargs" "0:a:0?" "Does NOT restrict to first audio stream (0:a:0?)"
 
 printf '\n=== All Tests Completed ===\n'
 printf 'All repair_mp4 tests passed successfully!\n'
