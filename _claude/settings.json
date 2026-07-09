@@ -90,7 +90,7 @@
   },
   "language": "日本語",
   "alwaysThinkingEnabled": true,
+  "advisorModel": "opus",
   "skipWorkflowUsageWarning": true,
-  "skipAutoPermissionPrompt": true,
-  "advisorModel": "opus"
+  "skipAutoPermissionPrompt": true
 }
