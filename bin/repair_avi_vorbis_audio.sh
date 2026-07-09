@@ -50,6 +50,19 @@ else
   OUTPUT="${DIRNAME}/${STEM}_audio_fixed.avi"
 fi
 
+# 出力が入力と同一ファイルなら拒否する。最後の remux は `ffmpeg -y -i "$INPUT" ... "$OUTPUT"`
+# で、同一パスだと入力を読みながら同時に上書きして元ファイルを破壊する (復元不能)。
+# ディレクトリを解決して (./ や symlink を吸収) basename と合わせて比較する。
+__resolve_path() {
+  local d
+  d="$(cd "$(dirname -- "$1")" 2>/dev/null && pwd)" || return 1
+  printf '%s/%s\n' "$d" "$(basename -- "$1")"
+}
+if [[ "$(__resolve_path "$OUTPUT")" == "$(__resolve_path "$INPUT")" ]]; then
+  echo "出力が入力と同一です。上書きで元ファイルを破壊するため別パスを指定してください: $INPUT" >&2
+  exit 1
+fi
+
 for cmd in ffmpeg ffprobe python3; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "Required command not found: $cmd" >&2
