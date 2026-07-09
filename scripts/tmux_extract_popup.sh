@@ -70,7 +70,10 @@ case "$key" in
   ctrl-o)
     case "$text" in
       http://*|https://*) open "$text" ;;
-      *) tmux send-keys -t "$pane" -l "${EDITOR:-nvim} ${text%%:*}" ;;
+      # -l -- : 抽出語が '-' 始まり (--flag / -p/path 等。word/path 正規表現は先頭 '-' を
+      # 許すため頻出) でも send-keys のフラグに誤解釈させず literal 貼り付けする。無しだと
+      # tmux が invalid flag で失敗し、popup -E は即閉じるため silent no-op になる。
+      *) tmux send-keys -t "$pane" -l -- "${EDITOR:-nvim} ${text%%:*}" ;;
     esac ;;
-  *) tmux send-keys -t "$pane" -l "$text" ;;
+  *) tmux send-keys -t "$pane" -l -- "$text" ;;
 esac
