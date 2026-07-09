@@ -221,26 +221,26 @@ func buildShellCommand(template string) string {
 // input list is exhausted so that Enqueue can push additional items at
 // runtime (used by the TUI).
 type Runner struct {
-	cfg        Config
-	lines      []string
-	events     chan Event
-	resultMu   sync.Mutex
-	resultLog  *os.File
+	cfg       Config
+	lines     []string
+	events    chan Event
+	resultMu  sync.Mutex
+	resultLog *os.File
 	// lockFile holds an exclusive flock on <LogDir>/.lock for the entire
 	// lifetime of Start..cleanup. Released on Close so a subsequent run
 	// against the same LogDir can acquire it.
-	lockFile   *os.File
+	lockFile *os.File
 	// inputLockFile holds an exclusive flock on cfg.File itself (advisory,
 	// affects only other parallel-each processes — editors / cat / etc.
 	// are unaffected). Catches the "same -F, different --log-dir" pattern
 	// that the log-dir lock alone would not detect.
 	inputLockFile *os.File
-	logDirAbs  string
-	width      int
-	stopCtx    context.Context
-	stopCancel context.CancelFunc
-	killCtx    context.Context
-	killCancel context.CancelFunc
+	logDirAbs     string
+	width         int
+	stopCtx       context.Context
+	stopCancel    context.CancelFunc
+	killCtx       context.Context
+	killCancel    context.CancelFunc
 
 	// Pause state: when true, the dispatcher blocks before submitting new
 	// jobs. Reversible via Resume. Independent of stopCtx; used for the
@@ -249,8 +249,8 @@ type Runner struct {
 	paused  bool
 	pauseCh chan struct{}
 
-	live       bool
-	queuedMu   sync.Mutex
+	live     bool
+	queuedMu sync.Mutex
 	// queued value is "" for items that are part of this run's queue, or the
 	// status column from result.log ("ok" / "FAIL") for seeded entries.
 	queued     map[string]string
@@ -259,10 +259,10 @@ type Runner struct {
 	// Unified dispatch queue. Protected by queueMu. Dispatch pops from the
 	// head; Enqueue appends to the tail; EnqueueFront inserts at the head.
 	// Also serves as the snapshot source for the TUI's queue view.
-	queueMu    sync.Mutex
-	queue      []runnerJob
-	queueWake  chan struct{} // buffered 1; signals queue has items or state changed
-	nextIndex  int           // monotonic job index (protected by queueMu)
+	queueMu   sync.Mutex
+	queue     []runnerJob
+	queueWake chan struct{} // buffered 1; signals queue has items or state changed
+	nextIndex int           // monotonic job index (protected by queueMu)
 
 	// Dynamic worker pool state.
 	jobs          chan runnerJob
@@ -276,8 +276,8 @@ type Runner struct {
 	// wg.Wait (the runtime panics on that), and a worker spawned after the
 	// job channel is closed is pointless. workerMu thus serialises Add
 	// against the Wait barrier.
-	closing       bool
-	slotIDs       map[int]bool // set of slot ids currently in use (1-based)
+	closing bool
+	slotIDs map[int]bool // set of slot ids currently in use (1-based)
 	// 各 worker に「retire 通知」用の cancel を持たせる。slot id -> cancel。
 	// SetParallelism shrink で対象 slot の cancel を呼ぶと:
 	//   - idle (次の job 待ちで select 中) なら即座に retire (subprocess を
@@ -286,7 +286,7 @@ type Runner struct {
 	//     ctx.Err() != nil を見て retire (graceful)
 	// runOne 自体は引き続き r.killCtx を親に subprocess を起動するので、
 	// shrink ではなく ForceKill を呼んだ場合のみ subprocess に SIGTERM が飛ぶ。
-	workerRetire  map[int]context.CancelFunc
+	workerRetire map[int]context.CancelFunc
 }
 
 // runnerJob is passed to workers via r.jobs.
@@ -935,6 +935,7 @@ func (r *Runner) Start(parent context.Context) error {
 //     immediately (no SIGTERM since no subprocess is running)
 //   - if a target worker is in-flight, it finishes the current job
 //     gracefully (no SIGTERM) and exits before picking up the next job
+//
 // Use ForceKill to also SIGTERM in-flight subprocesses across all workers.
 // Safe to call any time.
 //
@@ -1074,10 +1075,7 @@ func (r *Runner) runOne(_ context.Context, slotID, index int, line string) {
 	resolved := strings.ReplaceAll(r.cfg.Template, "{item}", line)
 	shellCmd := buildShellCommand(r.cfg.Template)
 
-	maxAttempts := r.cfg.Retries + 1
-	if maxAttempts < 1 {
-		maxAttempts = 1
-	}
+	maxAttempts := max(r.cfg.Retries+1, 1)
 
 	// Create log file once; retries append to the same file.
 	logFile, err := os.Create(logPath)
@@ -1246,4 +1244,3 @@ func (r *Runner) emit(ev Event) {
 	case <-r.killCtx.Done():
 	}
 }
-

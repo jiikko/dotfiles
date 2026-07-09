@@ -91,5 +91,6 @@
   "language": "日本語",
   "alwaysThinkingEnabled": true,
   "skipWorkflowUsageWarning": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "advisorModel": "opus"
 }

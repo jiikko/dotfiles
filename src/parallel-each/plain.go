@@ -14,8 +14,9 @@ import (
 // original zsh script. Used for non-TTY stdout or --no-tui.
 //
 // Shutdown is two-stage, mirroring the TUI:
-//   1st SIGINT/SIGTERM  -> graceful stop (no new jobs, wait for running)
-//   2nd                 -> force-kill running subprocesses
+//
+//	1st SIGINT/SIGTERM  -> graceful stop (no new jobs, wait for running)
+//	2nd                 -> force-kill running subprocesses
 func runPlain(ctx context.Context, cfg Config, lines []string, skipped int, processed map[string]string) int {
 	if skipped > 0 {
 		fmt.Fprintf(os.Stderr,
@@ -33,10 +34,10 @@ func runPlain(ctx context.Context, cfg Config, lines []string, skipped int, proc
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
 
-	var sigCount int32
+	var sigCount atomic.Int32
 	go func() {
 		for sig := range sigCh {
-			if atomic.AddInt32(&sigCount, 1) == 1 {
+			if sigCount.Add(1) == 1 {
 				fmt.Fprintf(os.Stderr,
 					"\ngot %s: gracefully stopping. %s again to force-kill running jobs.\n",
 					sig, sig)
@@ -77,7 +78,7 @@ func runPlain(ctx context.Context, cfg Config, lines []string, skipped int, proc
 		}
 	}
 
-	interrupted := atomic.LoadInt32(&sigCount) > 0 ||
+	interrupted := sigCount.Load() > 0 ||
 		errors.Is(ctx.Err(), context.DeadlineExceeded)
 
 	if interrupted {

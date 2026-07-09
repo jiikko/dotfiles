@@ -55,9 +55,10 @@ func TestFormatDur(t *testing.T) {
 
 // Shutdown requires the user to type the literal word "quit". Pause is no
 // longer part of the shutdown flow.
-//   1st "quit" -> stopping (final graceful stop)
-//   2nd "quit" -> force-kill confirm armed
-//   3rd "quit" (in window) -> force-kill
+//
+//	1st "quit" -> stopping (final graceful stop)
+//	2nd "quit" -> force-kill confirm armed
+//	3rd "quit" (in window) -> force-kill
 func TestTUIModelThreeStageShutdown(t *testing.T) {
 	dir := t.TempDir()
 	cwd, _ := os.Getwd()
@@ -151,7 +152,7 @@ func TestTUIModelForceKillConfirmExpires(t *testing.T) {
 
 	m := newModel(cfg, 1, r.Events(), r, 0)
 	// Walk through stop → arm confirm by typing "quit" twice.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		for _, ch := range "quit" {
 			u, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
 			m = u.(model)

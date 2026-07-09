@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -540,8 +541,8 @@ func TestLoadProcessedLines(t *testing.T) {
 		content := strings.Join([]string{
 			"ok\t0\talpha\t/tmp/a.log",
 			"FAIL\t1\tbeta gamma\t/tmp/b.log",
-			"",                        // blank -> <4 cols -> skipped
-			"malformed line",          // no tabs -> skipped
+			"",               // blank -> <4 cols -> skipped
+			"malformed line", // no tabs -> skipped
 			"ok\t0\tgamma\t/tmp/g.log",
 		}, "\n") + "\n"
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -901,9 +902,7 @@ func TestRunnerLiveEnqueue(t *testing.T) {
 	var seenLines []string
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for ev := range r.Events() {
 			if ev.Kind == EventEnd {
 				mu.Lock()
@@ -911,7 +910,7 @@ func TestRunnerLiveEnqueue(t *testing.T) {
 				mu.Unlock()
 			}
 		}
-	}()
+	})
 
 	// Wait briefly then enqueue two more items.
 	time.Sleep(200 * time.Millisecond)
@@ -938,13 +937,7 @@ func TestRunnerLiveEnqueue(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	for _, want := range []string{"a", "b", "c", "d"} {
-		found := false
-		for _, got := range seenLines {
-			if got == want {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(seenLines, want)
 		if !found {
 			t.Errorf("missing processed item %q (got %v)", want, seenLines)
 		}
@@ -1137,7 +1130,7 @@ func TestRunnerSetParallelismShrinksGracefully(t *testing.T) {
 	}()
 
 	// Wait for both items to be in-flight on slots 1 and 2.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		select {
 		case <-startCh:
 		case <-time.After(2 * time.Second):
@@ -1364,13 +1357,7 @@ func TestRunnerPendingSnapshot(t *testing.T) {
 		t.Errorf("after Enqueue: pending = %d, want %d", n, prior+1)
 	}
 	snap := r.PendingSnapshot()
-	found := false
-	for _, s := range snap {
-		if s == "live-added" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(snap, "live-added")
 	if !found {
 		t.Errorf("enqueued item not in pending snapshot: %v", snap)
 	}
@@ -1702,7 +1689,7 @@ func TestRunnerForgetLineReEnableEnqueue(t *testing.T) {
 	// completed yet.)
 	data, _ := os.ReadFile(filepath.Join(defaultLogDir, "result.log"))
 	count := 0
-	for _, row := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+	for row := range strings.SplitSeq(strings.TrimRight(string(data), "\n"), "\n") {
 		cols := strings.Split(row, "\t")
 		if len(cols) >= 4 && cols[2] == "a" {
 			count++
@@ -2112,14 +2099,14 @@ func TestUrlLooksValid(t *testing.T) {
 	}{
 		{"https://example.com/foo", true, ""},
 		{"http://a.b/", true, ""},
-		{"https://japanhub.net/video/60878/dama-010-実録", true, ""},
+		{"https://example.com/記事/123", true, ""},
 
 		{"", false, "empty"},
 		{"   ", false, "empty"},
-		{"JKSR-018", false, "scheme"},
+		{"not-a-url", false, "scheme"},
 		{"quit", false, "scheme"},
 		{"v", false, "scheme"},
-		{"missav.aijavascript:;", false, "scheme"}, // parses with scheme=missav.aijavascript
+		{"example.comjavascript:;", false, "scheme"}, // parses with scheme=example.comjavascript
 		{"javascript:alert(1)", false, "scheme"},
 		{"ftp://example.com/", false, "scheme"},
 		{"https://", false, "host"},
@@ -2166,7 +2153,7 @@ func TestRunnerLiveEnqueueURLSyntaxCheck(t *testing.T) {
 
 	// Valid URLs must be admitted (Enqueue returns nil).
 	for _, valid := range []string{
-		"https://japanhub.net/video/60878/dama-010-実録",
+		"https://example.com/記事/123",
 		"https://example.com/",
 	} {
 		if err := r.Enqueue(valid); err != nil {
@@ -2178,9 +2165,9 @@ func TestRunnerLiveEnqueueURLSyntaxCheck(t *testing.T) {
 	// mentioning URL syntax — the dedup map stays clean so the user
 	// can fix the typo and retry.
 	for _, bad := range []string{
-		"JKSR-018",
+		"not-a-url",
 		"quit",
-		"missav.aijavascript:;",
+		"example.comjavascript:;",
 		"javascript:alert(1)",
 	} {
 		err := r.Enqueue(bad)

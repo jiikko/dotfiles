@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -94,9 +95,9 @@ type model struct {
 	parPending     int
 
 	// "Other" menu & export-wrapper sub-flow.
-	otherMenu      bool
-	exportInput    bool
-	exportBuf      []rune
+	otherMenu       bool
+	exportInput     bool
+	exportBuf       []rune
 	exportTargetDir string // where the exported wrapper will be written
 
 	// Tails captured from each active slot's log file.
@@ -127,11 +128,11 @@ type model struct {
 	recentFilterMode bool   // true while typing the filter
 
 	// Queue view state (pending items).
-	queueMode        bool
-	queueList        listState
-	queueSnapshot    []string
-	queueFilter      string
-	queueFilterMode  bool
+	queueMode       bool
+	queueList       listState
+	queueSnapshot   []string
+	queueFilter     string
+	queueFilterMode bool
 
 	width    int
 	height   int
@@ -523,9 +524,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tailsMsg:
 		// Replace tails for the keys present in the message; drop others.
 		fresh := make(map[int][]string, len(msg))
-		for id, lines := range msg {
-			fresh[id] = lines
-		}
+		maps.Copy(fresh, msg)
 		m.tails = fresh
 		return m, nil
 
@@ -596,10 +595,7 @@ func (m model) View() string {
 	b.WriteString("\n")
 
 	// Progress bar.
-	barW := m.width - 40
-	if barW < 10 {
-		barW = 10
-	}
+	barW := max(m.width-40, 10)
 	b.WriteString(m.renderProgress(barW))
 	b.WriteString("\n")
 
@@ -743,10 +739,7 @@ func (m model) View() string {
 
 	if m.stopping {
 		if m.forceKillConfirmActive() {
-			remaining := int(time.Until(m.forceKillConfirmUntil).Round(time.Second) / time.Second)
-			if remaining < 1 {
-				remaining = 1
-			}
+			remaining := max(int(time.Until(m.forceKillConfirmUntil).Round(time.Second)/time.Second), 1)
 			b.WriteString(styleFail.Render(fmt.Sprintf(
 				"  ⚠ force-kill? type 'quit' again within %ds to confirm (running: %d).",
 				remaining, running)))
@@ -806,10 +799,7 @@ func (m model) renderOverview() string {
 			if s.Attempt > 1 {
 				retryTag = "  " + styleFail.Render(fmt.Sprintf("retry %d/%d", s.Attempt-1, s.MaxAttempts-1))
 			}
-			available := m.width - 22 - visibleLen(retryTag)
-			if available < 10 {
-				available = 10
-			}
+			available := max(m.width-22-visibleLen(retryTag), 10)
 			b.WriteString(fmt.Sprintf("    %s %s %s%s\n",
 				styleRunning.Render(fmt.Sprintf("▶ [%d]", id)),
 				styleDim.Render(fmt.Sprintf("%6s", formatDur(dur))),
@@ -819,14 +809,8 @@ func (m model) renderOverview() string {
 			// Inline tail (feature A).
 			lines := m.tails[id]
 			if m.tailPerSlot > 0 && len(lines) > 0 {
-				n := m.tailPerSlot
-				if len(lines) < n {
-					n = len(lines)
-				}
-				tailWidth := m.width - 10
-				if tailWidth < 20 {
-					tailWidth = 20
-				}
+				n := min(len(lines), m.tailPerSlot)
+				tailWidth := max(m.width-10, 20)
 				for _, ln := range lines[len(lines)-n:] {
 					b.WriteString("        ")
 					b.WriteString(styleDim.Render("│ "))
@@ -861,10 +845,7 @@ func (m model) renderOverview() string {
 				}
 			}
 			used := 8 + slotRows + tailRows + 3
-			remaining := m.height - used
-			if remaining < 3 {
-				remaining = 3
-			}
+			remaining := max(m.height-used, 3)
 			if remaining < limit {
 				limit = remaining
 			}
@@ -877,10 +858,7 @@ func (m model) renderOverview() string {
 				mark = styleFail.Render("✗")
 				tail = styleFail.Render(fmt.Sprintf(" (exit=%d)", e.ExitCode))
 			}
-			available := m.width - 24
-			if available < 10 {
-				available = 10
-			}
+			available := max(m.width-24, 10)
 			b.WriteString(fmt.Sprintf("    %s %s %s %s%s\n",
 				mark,
 				styleDim.Render(fmt.Sprintf("%04d", e.JobIndex)),
@@ -921,10 +899,7 @@ func (m model) renderFocus() string {
 	reservedBelow := 3 // footer
 	avail := m.focusTailLines
 	if m.height > 0 {
-		want := m.height - reservedAbove - reservedBelow
-		if want < 3 {
-			want = 3
-		}
+		want := max(m.height-reservedAbove-reservedBelow, 3)
 		if want < avail {
 			avail = want
 		}
@@ -939,10 +914,7 @@ func (m model) renderFocus() string {
 	if len(lines) > avail {
 		lines = lines[len(lines)-avail:]
 	}
-	tailWidth := m.width - 6
-	if tailWidth < 20 {
-		tailWidth = 20
-	}
+	tailWidth := max(m.width-6, 20)
 	for _, ln := range lines {
 		b.WriteString("    ")
 		b.WriteString(styleDim.Render("│ "))
@@ -1086,8 +1058,8 @@ func (m model) consumePastedRunes(rs []rune) model {
 type submitResult int
 
 const (
-	submitOK submitResult = iota
-	submitOKForce // success via "!" force route — surfaced separately so paste flash can show it
+	submitOK      submitResult = iota
+	submitOKForce              // success via "!" force route — surfaced separately so paste flash can show it
 	submitDuplicate
 	submitError
 )
@@ -1499,10 +1471,9 @@ func (m model) filteredQueue() []string {
 // recentPageSize returns how many recent rows fit in the content area of the
 // full-view screen.
 func (m model) recentPageSize() int {
-	n := m.height - 6 // header + title + footer
-	if n < 5 {
-		n = 5
-	}
+	n := max(
+		// header + title + footer
+		m.height-6, 5)
 	return n
 }
 
@@ -1557,19 +1528,10 @@ func (m model) renderRecentFull() string {
 	}
 
 	pageSize := m.recentPageSize()
-	start := m.recentList.scroll
-	if start > total-1 {
-		start = total - 1
-	}
-	end := start + pageSize
-	if end > total {
-		end = total
-	}
+	start := min(m.recentList.scroll, total-1)
+	end := min(start+pageSize, total)
 
-	available := m.width - 26
-	if available < 10 {
-		available = 10
-	}
+	available := max(m.width-26, 10)
 
 	for i := start; i < end; i++ {
 		e := visible[i]
@@ -1648,14 +1610,8 @@ func (m model) renderQueue() string {
 	}
 	pageSize := m.recentPageSize()
 	start := m.queueList.scroll
-	end := start + pageSize
-	if end > total {
-		end = total
-	}
-	available := m.width - 10
-	if available < 10 {
-		available = 10
-	}
+	end := min(start+pageSize, total)
+	available := max(m.width-10, 10)
 	for i := start; i < end; i++ {
 		line := visible[i]
 		pointer := "  "
@@ -1721,10 +1677,7 @@ func (m model) renderProgress(width int) string {
 	if frac > 1 {
 		frac = 1
 	}
-	filled := int(float64(width) * frac)
-	if filled > width {
-		filled = width
-	}
+	filled := min(int(float64(width)*frac), width)
 	pct := int(frac * 100)
 	return fmt.Sprintf("  %s%s %3d%%",
 		styleBar.Render(strings.Repeat("█", filled)),

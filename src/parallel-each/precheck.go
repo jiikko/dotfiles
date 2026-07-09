@@ -8,7 +8,7 @@ import (
 
 // urlLooksValid is a static URL sanity check applied to live-add inputs
 // when --input-type=url. It rejects obvious paste mistakes (no scheme,
-// pseudo-URL like "missav.aijavascript:;", typos like "quit") without
+// pseudo-URL like "example.comjavascript:;", typos like "quit") without
 // touching the network.
 //
 // Network reachability is intentionally NOT checked: many real sites

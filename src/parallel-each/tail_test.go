@@ -67,7 +67,7 @@ func TestReadTailLargeFileKeepsLastLines(t *testing.T) {
 	var sb strings.Builder
 	sb.WriteString("---\n")
 	// Generate enough lines to exceed the 8KB read window.
-	for i := 0; i < 5000; i++ {
+	for i := range 5000 {
 		sb.WriteString("line ")
 		sb.WriteString(string(rune('A' + (i % 26))))
 		sb.WriteByte('\n')

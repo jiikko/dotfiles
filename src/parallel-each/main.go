@@ -242,20 +242,20 @@ func parseArgs(argv []string) (Config, error) {
 	fs.Usage = func() { fmt.Fprint(os.Stderr, helpText) }
 
 	var (
-		jobs     = fs.Int("P", 4, "parallel jobs")
-		file     = fs.String("F", "", "input file")
-		dry      = fs.Bool("n", false, "dry run")
-		noTUI    = fs.Bool("no-tui", false, "disable TUI")
-		fresh    = fs.Bool("fresh", false, "ignore existing result.log")
-		skipUniq = fs.Bool("skip-unique-txt-rows", false, "skip duplicate-row validation")
+		jobs           = fs.Int("P", 4, "parallel jobs")
+		file           = fs.String("F", "", "input file")
+		dry            = fs.Bool("n", false, "dry run")
+		noTUI          = fs.Bool("no-tui", false, "disable TUI")
+		fresh          = fs.Bool("fresh", false, "ignore existing result.log")
+		skipUniq       = fs.Bool("skip-unique-txt-rows", false, "skip duplicate-row validation")
 		retries        = fs.Int("retries", 5, "retries on non-zero exit")
 		attemptTimeout = fs.Duration("attempt-timeout", 0, "per-attempt timeout (required; e.g. 30s, 5m, 1h)")
 		totalTimeout   = fs.Duration("total-timeout", 0, "overall wall-clock limit; 0 = no limit (e.g. 1h, 2h30m)")
 		wizard         = fs.Bool("wizard", false, "interactive prompt for all values")
 		inputType      = fs.String("input-type", "none", "input semantic type: none|url")
 		logDirFlag     = fs.String("log-dir", "", "output directory for per-job logs and result.log (default: parallel-each-log)")
-		help     = fs.Bool("h", false, "help")
-		help2    = fs.Bool("help", false, "help")
+		help           = fs.Bool("h", false, "help")
+		help2          = fs.Bool("help", false, "help")
 	)
 
 	if err := fs.Parse(argv); err != nil {
