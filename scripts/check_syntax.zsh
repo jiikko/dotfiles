@@ -19,10 +19,10 @@ zsh -n "$ROOT_DIR/_zshrc"
 print "[syntax] checking _zlogin"
 zsh -n "$ROOT_DIR/_zlogin"
 
-if command -v bash >/dev/null 2>&1; then
-  print "[syntax] checking setup.sh with bash -n"
-  bash -n "$ROOT_DIR/setup.sh"
-fi
+# setup.sh は #!/usr/bin/env zsh の zsh スクリプトで nullglob 修飾子 *(N) 等の zsh 構文を使う。
+# bash -n では *(N) が構文エラーになるため zsh -n で検査する (静的解析は shellcheck が shell=bash で別途担う)。
+print "[syntax] checking setup.sh with zsh -n"
+zsh -n "$ROOT_DIR/setup.sh"
 
 print "[syntax] checking _nviminit.lua via Neovim"
 if ! command -v nvim >/dev/null 2>&1; then
