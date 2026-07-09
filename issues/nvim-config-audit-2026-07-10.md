@@ -70,5 +70,5 @@
 
 ## 補足（ぼやきレベル・issue 化は任意）
 
-- `_gvimrc`（`colorscheme koehler` 等）は**古典 gVim/MacVim 専用**で Neovim には効かない（Neovim の GUI は `ginit.vim`）。gVim を使っていないなら dead file。害はないが将来削除候補。
+- ~~`_gvimrc`（`colorscheme koehler` 等）は古典 gVim/MacVim 専用で Neovim には効かない dead file~~ → **削除済み**（`setup.sh` / `tests/setup/test_setup.sh` の symlink ループからも `gvimrc` を除去）。
 - `nvim/ftplugin/ruby.lua` の `<leader>rw`/`<leader>rr`/`<leader>re` が `/tmp/ruby_caller` をハードコード。個人用マップなので任意だが、`vim.fn.stdpath("run")` 等へ寄せると衛生的。

@@ -4,7 +4,7 @@
 set -o pipefail
 
 # set rc limlink
-for file in gemrc gvimrc zshrc rspec gitconfig pryrc zlogin railsrc gitignore_global; do
+for file in gemrc zshrc rspec gitconfig pryrc zlogin railsrc gitignore_global; do
   echo 'making symlink' _$file '->' ~/.$file
   ln -sf ~/dotfiles/_$file ~/.$file
 done
