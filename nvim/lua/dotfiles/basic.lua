@@ -107,6 +107,11 @@ end
 local function set_autocmds()
   local group = vim.api.nvim_create_augroup("dotfiles_basic_autocmds", { clear = true })
 
+  -- .tf/.tfvars を terraform filetype にする。nvim 標準は .tf→"tf" / .tfvars→"terraform-vars" で、
+  -- terraform-ls・conform(terraform_fmt)・treesitter(terraform parser) が前提とする ft=terraform に
+  -- ならない。旧 vim-terraform の ftdetect が担っていた検出を置換で明示する (2026-07)。
+  vim.filetype.add({ extension = { tf = "terraform", tfvars = "terraform" } })
+
   vim.api.nvim_create_autocmd("WinLeave", {
     group = group,
     callback = function()

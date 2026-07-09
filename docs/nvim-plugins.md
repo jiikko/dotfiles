@@ -35,7 +35,7 @@
 | 現行                             | 主な役割           | 最終更新                | デファクト候補                                      | 乗り換え可否 | 今すぐ捨てる? | Vimscript依存? | メモ                                      |
 | -------------------------------- | ------------------ | ----------------------- | --------------------------------------------------- | ------------ | ------------- | --------------- | ----------------------------------------- |
 | ✅ nvim-telescope/telescope.nvim | ファジーファインダ | 2026-01-11              | `ibhagwan/fzf-lua`, `junegunn/fzf.vim`              | △            | △             | いいえ          | Telescope は機能性◎。軽量化なら fzf-lua。依存は telescope-ui-select（ネイティブ LSP 移行で telescope-coc は撤去、ジャンプは builtin `lsp_*` を使用）。`path_display=filename_first`・insert の `<esc>` 即クローズを設定。 |
-| ✅ rbtnn/vim-ambiwidth           | 全角幅調整         | 2025-08-02              | 代替少                                              | ×            | ×             | はい             | 日本語環境では維持推奨。                  |
+| ✅ rbtnn/vim-ambiwidth (**vendored**) | 全角幅調整    | 2025-08-02              | 代替少                                              | ×            | ×             | はい             | 良い Lua 代替が無く日本語環境で必要なため `vendor/nvim-plugins/vim-ambiwidth` に取り込み、lazy の `dir` で読み込み (VENDOR.md 参照)。生成ファイル autoload/ambiwidth.vim も同梱し runtime 生成を回避。 |
 | ✅ lewis6991/gitsigns.nvim       | Git ハイライト     | 2026-01-09              | 同プラグイン                                         | ×            | ×             | いいえ          | 差分/ブレーム/ステージングまで一括管理できる Lua 実装。 |
 
 ## テキスト編集支援
@@ -54,7 +54,7 @@
 | 現行                      | 主な役割     | 最終更新   | デファクト候補                                           | 乗り換え可否 | 今すぐ捨てる? | Vimscript依存? | メモ |
 | ------------------------- | ------------ | ---------- | -------------------------------------------------------- | ------------ | ------------- | --------------- | ---------------------------------------------------- |
 | ✅ tpope/vim-rails        | Rails 支援   | 2025-02-19 | 同プラグイン                                             | × | × | はい | Rails 界隈でデファクト。 |
-| ✅ hashivim/vim-terraform | Terraform    | 2025-05-24 | `hashicorp/terraform-ls` + LSP, `mfussenegger/nvim-lint` | △ | △ | はい | LSP/formatter へ徐々に移行可能。 |
+| ✅ terraform-ls + treesitter + conform | Terraform | - | 同構成 | × | × | いいえ | **2026-07: hashivim/vim-terraform (Vimscript) を置換**。ft は nvim 標準検出、構文/fold は treesitter(terraform/hcl)、補完/診断は terraform-ls、整形は conform terraform_fmt を terraform ft の保存時に発火 (旧 terraform_fmt_on_save 相当)。 |
 | ✅ fatih/vim-go | Go 補助 | 2025-11-11 | `ray-x/go.nvim`, `nvim-lspconfig` + `gopls` | △ | △ | はい | “重い/設定過多” の声が多く、LSP 構成へ移行推奨。 |
 | ✅ github/copilot.vim     | AI 補完      | 2026-01-09 | `zbirenbaum/copilot.lua`, `sourcegraph/sg.nvim`          | ○ | △ | はい | Vimscript 版は重いとの声。Lua 版へ移行推奨。 |
 | ✅ neovim/nvim-lspconfig  | LSP サーバ設定 | - | 同プロジェクト | × | × | いいえ | 2026-07 に coc.nvim から移行。nvim 0.11 の `vim.lsp.config`/`vim.lsp.enable` に載る。 |
@@ -77,7 +77,7 @@
 1. **軽量化を急ぐ**: 重い Vimscript プラグインは順次 Lua 版へ（候補例: vim-toggle だが元が軽いので移行効果は小）。必要性や労力を見極めつつ進める。
 2. **UI/テーマ**: Lightline→Lualine、gruvbox Vimscript→Lua 版。
 3. **Git/開発補助**: mini.trailspace など Lua ツールへ処理を寄せて重複を解消。
-4. **言語/LSP**: ✅ coc.nvim はネイティブ LSP 構成 (nvim-lspconfig + mason + blink.cmp + conform + nvim-lint) へ移行済み (2026-07)。残る vim-go / vim-terraform も順次 LSP へ寄せる。
+4. **言語/LSP**: ✅ coc.nvim はネイティブ LSP 構成 (nvim-lspconfig + mason + blink.cmp + conform + nvim-lint) へ移行済み (2026-07)。✅ vim-terraform も terraform-ls + treesitter + conform へ置換済み (2026-07)。残る vim-go は go.nvim 等へ順次検討。
 5. **AI 補完**: copilot.vim→copilot.lua 等 Lua 版へ移行。
 
 必要に応じてこの表を更新し、プラグイン整理や設定刷新時の判断材料にする。

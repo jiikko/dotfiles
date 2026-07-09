@@ -68,6 +68,7 @@ M.servers = {
 M.ensure_installed = {
   "ts_ls", "eslint", "pyright", "gopls", "solargraph",
   "html", "cssls", "jsonls", "yamlls", "bashls", "dockerls", "tailwindcss", "sqlls",
+  "terraformls", -- vim-terraform 置換 (2026-07): 補完/診断/hover を terraform-ls に委譲
 }
 
 -- documentHighlight 用の単一 augroup。バッファ毎に augroup を作ると空グループ名が

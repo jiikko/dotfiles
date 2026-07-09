@@ -126,14 +126,12 @@ require("lazy").setup({
       }
     end,
   },
-  { "hashivim/vim-terraform",
-    ft = { "terraform", "tf", "hcl" },
-    config = function()
-      vim.g.terraform_align = 1
-      vim.g.terraform_fold_sections = 1
-      vim.g.terraform_fmt_on_save = 1
-    end
-  },
+  -- Terraform: hashivim/vim-terraform (Vimscript) を廃し、ネイティブ構成へ置換 (2026-07)。
+  --   - ft 検出: nvim 標準 (.tf/.tfvars→terraform, .hcl→hcl)。専用プラグイン不要
+  --   - 構文/fold: nvim-treesitter の terraform/hcl parser (下の ensure_installed)
+  --   - 補完/診断/hover: terraform-ls (lsp.lua の ensure_installed=terraformls)
+  --   - 整形 (旧 terraform_fmt_on_save + align 相当): conform の terraform_fmt を terraform ft の
+  --     保存時のみ発火 (下の conform format_on_save)。terraform fmt が align も担う
   { "fatih/vim-go",
     ft = { "go" },
     build = ":GoUpdateBinaries",
@@ -170,7 +168,7 @@ require("lazy").setup({
     config = function()
       -- stale luac cache で "nvim-treesitter.configs not found" になっても自己修復する
       require_resilient("nvim-treesitter.configs").setup({
-        ensure_installed = { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "graphql", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "typescript", "vim", "yaml" },
+        ensure_installed = { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "graphql", "hcl", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "terraform", "typescript", "vim", "yaml" },
         auto_install = false,
         highlight = { enable = true },
         endwise = { enable = true },
@@ -291,7 +289,17 @@ require("lazy").setup({
           scss = { "prettierd" },
           markdown = { "prettierd" },
           sh = { "shfmt" },
+          terraform = { "terraform_fmt" }, -- vim-terraform 置換: terraform fmt (align も担う)
+          hcl = { "terraform_fmt" },
         },
+        -- terraform 系だけ保存時に整形する (旧 vim-terraform の g:terraform_fmt_on_save=1 を踏襲)。
+        -- 他の ft は従来どおり <leader>f / :Format の手動整形のまま (nil を返すと保存時整形なし)。
+        format_on_save = function(bufnr)
+          local ft = vim.bo[bufnr].filetype
+          if ft == "terraform" or ft == "hcl" then
+            return { timeout_ms = 1000 }
+          end
+        end,
         formatters = {
           -- coc-settings.json の diagnostic-languageserver.formatters.shfmt を踏襲
           shfmt = { prepend_args = { "-i", "2", "-bn", "-ci", "-sr" } },
@@ -359,7 +367,9 @@ require("lazy").setup({
       telescope.load_extension("notify")
     end,
   },
-  { "rbtnn/vim-ambiwidth" },
+  -- vim-ambiwidth は repo 内に vendor 済み (vendor/nvim-plugins/vim-ambiwidth、VENDOR.md 参照)。
+  -- 起動時に setcellwidths を張るため遅延トリガは付けず eager ロード。
+  { dir = config_dir .. "/vendor/nvim-plugins/vim-ambiwidth", name = "vim-ambiwidth" },
   { "akinsho/bufferline.nvim",
     event = "BufAdd",
     dependencies = { "nvim-tree/nvim-web-devicons" },
