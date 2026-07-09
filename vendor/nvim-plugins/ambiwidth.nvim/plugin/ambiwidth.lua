@@ -1,5 +1,5 @@
 ------------------------------------------------------------------------------
--- vim-ambiwidth (Lua port) — plugin entry
+-- ambiwidth.nvim (Lua port; 旧 rbtnn/vim-ambiwidth の fork) — plugin entry
 -- Author: Naruhiko Nishino (rbtnn/vim-ambiwidth) / Licence: MIT
 ------------------------------------------------------------------------------
 -- [vendor 2026-07-09] 原 plugin/ambiwidth.vim の Lua 移植。VENDOR.md 参照。

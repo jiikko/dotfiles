@@ -35,7 +35,7 @@
 | 現行                             | 主な役割           | 最終更新                | デファクト候補                                      | 乗り換え可否 | 今すぐ捨てる? | Vimscript依存? | メモ                                      |
 | -------------------------------- | ------------------ | ----------------------- | --------------------------------------------------- | ------------ | ------------- | --------------- | ----------------------------------------- |
 | ✅ nvim-telescope/telescope.nvim | ファジーファインダ | 2026-01-11              | `ibhagwan/fzf-lua`, `junegunn/fzf.vim`              | △            | △             | いいえ          | Telescope は機能性◎。軽量化なら fzf-lua。依存は telescope-ui-select（ネイティブ LSP 移行で telescope-coc は撤去、ジャンプは builtin `lsp_*` を使用）。`path_display=filename_first`・insert の `<esc>` 即クローズを設定。 |
-| ✅ rbtnn/vim-ambiwidth (**vendored, Lua移植**) | 全角幅調整 | 2025-08-02          | 代替少                                              | ×            | ×             | いいえ           | 日本語環境で必要なため `vendor/nvim-plugins/vim-ambiwidth` に取り込み **Lua 移植** (lazy `dir`)。setcellwidths の幅テーブルを Lua 化し、原 .vim/generator(3800行)/list.txt(4200行) は削除。原版との getcellwidths A/B で一致確認 (VENDOR.md 参照)。 |
+| ✅ rbtnn/vim-ambiwidth (**vendored, Lua移植**) | 全角幅調整 | 2025-08-02          | 代替少                                              | ×            | ×             | いいえ           | 日本語環境で必要なため `vendor/nvim-plugins/ambiwidth.nvim` に取り込み **Lua 移植** (lazy `dir`)。setcellwidths の幅テーブルを Lua 化し、原 .vim/generator(3800行)/list.txt(4200行) は削除。原版との getcellwidths A/B で一致確認 (VENDOR.md 参照)。 |
 | ✅ lewis6991/gitsigns.nvim       | Git ハイライト     | 2026-01-09              | 同プラグイン                                         | ×            | ×             | いいえ          | 差分/ブレーム/ステージングまで一括管理できる Lua 実装。 |
 
 ## テキスト編集支援

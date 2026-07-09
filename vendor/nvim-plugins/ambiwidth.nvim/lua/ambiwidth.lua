@@ -1,5 +1,5 @@
 ------------------------------------------------------------------------------
--- vim-ambiwidth (Lua port)
+-- ambiwidth.nvim (Lua port; 旧 rbtnn/vim-ambiwidth の fork)
 -- Author: Naruhiko Nishino (rbtnn/vim-ambiwidth) / Licence: MIT
 ------------------------------------------------------------------------------
 -- [vendor 2026-07-09] 原 Vimscript を Lua へ移植。ambiwidth=single + setcellwidths で
@@ -125,7 +125,7 @@ function M.setup()
   local ok, err = pcall(vim.fn.setcellwidths, list)
   if not ok then
     vim.notify(
-      "vim-ambiwidth: setcellwidths に失敗 (g:ambiwidth_add_list の範囲が不正または重複?): " .. tostring(err),
+      "ambiwidth.nvim: setcellwidths に失敗 (g:ambiwidth_add_list の範囲が不正または重複?): " .. tostring(err),
       vim.log.levels.WARN
     )
   end

@@ -366,9 +366,10 @@ require("lazy").setup({
       telescope.load_extension("notify")
     end,
   },
-  -- vim-ambiwidth は repo 内に vendor 済み (vendor/nvim-plugins/vim-ambiwidth、VENDOR.md 参照)。
+  -- ambiwidth.nvim (旧 rbtnn/vim-ambiwidth を Lua 移植) は repo 内に vendor 済み
+  -- (vendor/nvim-plugins/ambiwidth.nvim、VENDOR.md 参照)。
   -- 起動時に setcellwidths を張るため遅延トリガは付けず eager ロード。
-  { dir = config_dir .. "/vendor/nvim-plugins/vim-ambiwidth", name = "vim-ambiwidth" },
+  { dir = config_dir .. "/vendor/nvim-plugins/ambiwidth.nvim", name = "ambiwidth.nvim" },
   { "akinsho/bufferline.nvim",
     event = "BufAdd",
     dependencies = { "nvim-tree/nvim-web-devicons" },

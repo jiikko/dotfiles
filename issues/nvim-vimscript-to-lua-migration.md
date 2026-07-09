@@ -24,7 +24,7 @@
 | `fatih/vim-go` | Vimscript | 19,167 | 0 | 明示 keymap=GoDecls のみ。**ただし ftplugin が既定で `K`/textobj/`]] [[`/保存時 gofmt+goimports も有効化**（LSP/定義だけネイティブ委譲済み） | 要対応 |
 | `andymass/vim-matchup` | Vimscript(+lua) | 6,848 | 1,210 | `%` マッチ / matchparen / offscreen popup / surround | 触らない推奨 |
 | ~~`tpope/vim-rails`~~ | Vimscript | 5,767 | 0 | 既定挙動（`:A` 等・`gf`・projections・構文） | **✅ 削除済み**(2026-07-10) |
-| `vim-ambiwidth`（vendored） | ~~Vimscript~~→Lua | — | 小(lua) | `setcellwidths()` 補正（起動時） | **✅ 移植完了**(2026-07-10) |
+| `ambiwidth.nvim`（vendored、旧 vim-ambiwidth） | ~~Vimscript~~→Lua | — | 小(lua) | `setcellwidths()` 補正（起動時） | **✅ 移植完了**(2026-07-10) |
 | `vim-toggle`（vendored） | ~~Vimscript~~→Lua | — | ~600(lua) | `+` トグル / `:Toggle` | **移植完了**(2026-07-09) |
 
 （`nvim-scrollview`/`plenary`/`nvim-web-devicons`/`nvim-treesitter` 等に含まれる少量の `.vim` は補助ファイルで、プラグイン本体は Lua。対象外。）
@@ -35,10 +35,10 @@
 
 難易度: 易 / 中 / 難 / 最難
 
-### 1. vim-ambiwidth — ✅ 移植完了（2026-07-10）— 難易度: **易〜中**（移植）
+### 1. ambiwidth.nvim（旧 vim-ambiwidth） — ✅ 移植完了（2026-07-10）— 難易度: **易〜中**（移植）
 - **中身**: `list.txt`（東アジアあいまい幅の Unicode レンジ表）を `ambiwidth_generator.vim` が読み、`setcellwidths()` 呼び出しを生成。`plugin/ambiwidth.vim` が起動時（`has('vim_starting')`）に適用。
 - **移植の勘所**: ランタイム本体は実質 `vim.fn.setcellwidths(ranges)` 1 呼び出し。データ（list.txt）はデータのまま残し、パース + レンジ table 構築を Lua 化するだけ。**難所は「原 Vimscript と同一の幅 table を出す」ことの A/B 一致確認**（vim-toggle と同じ検証作法）。`&encoding=='utf-8'` ガードと起動タイミング（`VimEnter`/即時）を踏襲する。
-- **実施結果**: `vendor/nvim-plugins/vim-ambiwidth/` に vendoring し、上流 Vimscript を全面 Lua 移植。巨大な生成器（`ambiwidth_generator.vim`）とデータ（`list.txt`）は削除し、生成済みの 95 レンジ（base 32 + Cica/Nerd Font PUA 63）だけを `lua/ambiwidth.lua` の table として保持。`plugin/ambiwidth.lua` が utf-8 + `setcellwidths` 対応時に eager ロードで適用。`g:ambiwidth_cica_enabled`/`g:ambiwidth_add_list` は原版どおり尊重。**原 Vimscript との getcellwidths A/B 一致を確認済み**（既定95 / cica off32 / add_list増分、差分ゼロ）。`_nviminit.lua` の lazy spec を `dir=.../vim-ambiwidth` に置換、VENDOR.md も Lua 版へ改訂、回帰テスト `tests/nvim/test_ambiwidth.sh` を追加（設定分岐・不正入力の WARN ガードを固定）。
+- **実施結果**: `vendor/nvim-plugins/ambiwidth.nvim/` に vendoring し、上流 Vimscript を全面 Lua 移植（ディレクトリ名は Lua ネイティブ Neovim プラグインの慣習に合わせ `ambiwidth.nvim`。上流 `rbtnn/vim-ambiwidth` の fork）。巨大な生成器（`ambiwidth_generator.vim`）とデータ（`list.txt`）は削除し、生成済みの 95 レンジ（base 32 + Cica/Nerd Font PUA 63）だけを `lua/ambiwidth.lua` の table として保持。`plugin/ambiwidth.lua` が utf-8 + `setcellwidths` 対応時に eager ロードで適用。`g:ambiwidth_cica_enabled`/`g:ambiwidth_add_list` は原版どおり尊重。**原 Vimscript との getcellwidths A/B 一致を確認済み**（既定95 / cica off32 / add_list増分、差分ゼロ）。`_nviminit.lua` の lazy spec を `dir=.../ambiwidth.nvim` に置換、VENDOR.md も Lua 版へ改訂、回帰テスト `tests/nvim/test_ambiwidth.sh` を追加（設定分岐・不正入力の WARN ガードを固定）。
 
 ### 2. vim-go — 難易度: **中**（置換して削除） / 最難（全書き換え・非推奨）
 - **明示的に keymap しているのは GoDecls のみ**（`_nviminit.lua:135-149`）: `<leader>gd`→`<Plug>(go-decls)`、`<leader>gD`→`<Plug>(go-decls-dir)`、`:GoUpdateBinaries`(build)。`g:go_gopls_enabled=0`/`g:go_def_mapping_enabled=0` で LSP・定義ジャンプは**既にネイティブ委譲済み**。

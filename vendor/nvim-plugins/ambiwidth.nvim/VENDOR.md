@@ -1,4 +1,7 @@
-# vim-ambiwidth (vendored, Lua 移植)
+# ambiwidth.nvim (vendored, 旧 rbtnn/vim-ambiwidth を Lua 移植)
+
+ディレクトリ名は Lua ネイティブ Neovim プラグインの慣習に合わせ `ambiwidth.nvim`。
+上流の Vimscript 版 `rbtnn/vim-ambiwidth` からの fork。
 
 - 取得元: https://github.com/rbtnn/vim-ambiwidth
 - コミット: 4fd05792acac85d29bb0dc08f720a49093abefad (2025-08-02)
@@ -21,7 +24,7 @@
 - 幅テーブルは上流の**生成物** autoload/ambiwidth.vim (list.txt から生成された 95 レンジ) を機械抽出して
   Lua table 化。生成器自体は移植せず、生成済みの結果だけを持つ (この値は Unicode データのスナップショット)。
 - `g:ambiwidth_cica_enabled` (既定 on。false/0 で Cica レンジを除外) と `g:ambiwidth_add_list` は原版どおり尊重。
-- 読み込み: `_nviminit.lua` の lazy spec で `dir = config_dir .. "/vendor/nvim-plugins/vim-ambiwidth"`。
+- 読み込み: `_nviminit.lua` の lazy spec で `dir = config_dir .. "/vendor/nvim-plugins/ambiwidth.nvim"`。
   起動時に setcellwidths を張るため遅延トリガは付けず eager ロード。
 - **原 Vimscript との A/B で getcellwidths() 完全一致を確認** (既定=95 / cica off=32 / add_list=96 レンジ、
   いずれも差分ゼロ)。

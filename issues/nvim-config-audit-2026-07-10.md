@@ -1,7 +1,7 @@
 # Neovim 設定監査 — outdated / 挙動サイレント喪失 (2026-07-10)
 
 調査日: 2026-07-10
-対象: `_nviminit.lua` / `nvim/lua/dotfiles/{basic,lsp,js_ts_common}.lua` / `nvim/ftplugin/*.lua` / `tests/nvim/*.sh` / `_lazy-lock.json`（`vendor/nvim-plugins/vim-ambiwidth` は Lua 化作業中のため対象外）
+対象: `_nviminit.lua` / `nvim/lua/dotfiles/{basic,lsp,js_ts_common}.lua` / `nvim/ftplugin/*.lua` / `tests/nvim/*.sh` / `_lazy-lock.json`（`vendor/nvim-plugins/ambiwidth.nvim` は当時 Lua 化作業中のため対象外。2026-07-10 に移植完了）
 調査方法: **実機 Neovim v0.11.5 での一次情報検証**を主軸に据える。
   1. `-u NONE` / フル config で使用 API の実在・型を実測。
   2. `nvim` ランタイムソース（`$VIMRUNTIME/lua/vim/lsp/*`）を grep して使用 API の非推奨注釈を確認。

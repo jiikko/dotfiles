@@ -6,7 +6,7 @@ unset CDPATH
 NVIM_BIN=${NVIM:-nvim}
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
-AW_DIR="$ROOT_DIR/vendor/nvim-plugins/vim-ambiwidth"
+AW_DIR="$ROOT_DIR/vendor/nvim-plugins/ambiwidth.nvim"
 
 if ! command -v "$NVIM_BIN" >/dev/null 2>&1; then
   print -u2 "Error: nvim binary not found. Install Neovim or set \$NVIM."
@@ -20,7 +20,7 @@ cleanup() {
 trap cleanup EXIT
 
 check="$tmp_root/check_ambiwidth.lua"
-# vendored vim-ambiwidth (Lua 移植) の回帰テスト。setup() の設定分岐と pcall ガードを固定する。
+# vendored ambiwidth.nvim (旧 vim-ambiwidth の Lua 移植) の回帰テスト。setup() の設定分岐と pcall ガードを固定する。
 # データ (95 レンジの中身) はテストせず、設定による件数の関係と失敗時の挙動だけを検証する。
 # 依存を避けるため -u NONE で vendored module を直接 require する。
 #
