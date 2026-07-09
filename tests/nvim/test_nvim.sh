@@ -25,16 +25,26 @@ print "[test-nvim:zsh] verifying config loads headlessly"
   cat "$test_log" >&2
   exit 1
 }
+# nvim は startup error があっても +qall で exit 0 を返すため、exit code だけでは不十分。
+# stderr にエラーが出ていないかを併せて検査する (E123: 形式 / lua chunk error / traceback)。
+if grep -qE 'E[0-9]{2,}:|Error detected while processing|stack traceback' "$test_log"; then
+  print -u2 "[test-nvim:zsh] config load produced errors:"
+  cat "$test_log" >&2
+  exit 1
+fi
 
 lazy_check="$tmp_root/lazy_check.lua"
+# +qall は lua の error を握り潰し exit 0 にするため、error() ではなく cquit で非0終了させる。
 cat <<'EOF' > "$lazy_check"
 local ok, lazy = pcall(require, 'lazy')
 if not ok then
-  error('lazy.nvim not available')
+  vim.api.nvim_err_writeln('lazy.nvim not available')
+  vim.cmd('cquit 1')
 end
 local stats = lazy.stats()
 if not stats or stats.count == 0 then
-  error('lazy.nvim returned empty stats')
+  vim.api.nvim_err_writeln('lazy.nvim returned empty stats')
+  vim.cmd('cquit 1')
 end
 EOF
 

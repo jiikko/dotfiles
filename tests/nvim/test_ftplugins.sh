@@ -25,19 +25,28 @@ run_check() {
   local lua_file="$tmp_root/check_${ft}.lua"
   local log_file="$tmp_root/check_${ft}.log"
 
+  # 注意: +luafile のエラーは exit code に伝わらず後続の +qall が exit 0 にする (nvim の仕様)。
+  # assert 相当を pcall で捕捉し、失敗時は cquit で明示的に非0終了させないと false-pass になる。
   cat >"$lua_file" <<EOF
-local ft = "$ft"
-local expected_rhs = "$expected_rhs"
-vim.cmd("enew")
-vim.cmd("set ft=" .. ft)
-local maps = vim.keymap.get("n", "<leader>bi", { buffer = 0 })
-if not maps or not maps[1] then
-  error(string.format("missing <leader>bi mapping for %s", ft))
-end
-local rhs = maps[1].rhs or ""
-rhs = rhs:gsub("\27", "<Esc>")
-if rhs ~= expected_rhs then
-  error(string.format("unexpected rhs for %s: %q (expected %q)", ft, rhs, expected_rhs))
+local ok, err = pcall(function()
+  local ft = "$ft"
+  local expected_rhs = "$expected_rhs"
+  vim.cmd("enew")
+  vim.cmd("set ft=" .. ft)
+  -- vim.keymap.get は存在しない API (旧テストはこれで常時 error し false-pass に隠れていた)。
+  -- 実在する vim.fn.maparg で buffer-local マッピングの rhs を取得する。
+  local rhs = vim.fn.maparg("<leader>bi", "n")
+  if rhs == nil or rhs == "" then
+    error(string.format("missing <leader>bi mapping for %s", ft))
+  end
+  rhs = rhs:gsub("\27", "<Esc>")
+  if rhs ~= expected_rhs then
+    error(string.format("unexpected rhs for %s: %q (expected %q)", ft, rhs, expected_rhs))
+  end
+end)
+if not ok then
+  vim.api.nvim_err_writeln(tostring(err))
+  vim.cmd("cquit 1")
 end
 EOF
 
