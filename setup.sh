@@ -48,18 +48,22 @@ done
 for f in ~/dotfiles/_claude/rules/*; do
   [ -e "$f" ] && ln -sfn "$f" ~/.claude/rules/"$(basename "$f")"
 done
-for f in ~/dotfiles/_claude/hooks/*; do
+# (N) = zsh の nullglob 修飾子。マッチ無しのとき NOMATCH でスクリプトを abort させず
+# 空展開してループを skip する (本 script は #!/usr/bin/env zsh、set -e 無しでも
+# NOMATCH は当該行で script ごと停止するため。下の掃除ループが本命だが全 glob に付す)。
+for f in ~/dotfiles/_claude/hooks/*(N); do
   [ -e "$f" ] && ln -sfn "$f" ~/.claude/hooks/"$(basename "$f")"
 done
 # workflows: Workflow ツールが scriptPath で参照する .js のみ個別リンク
 # (CLAUDE.md 等のドキュメントは ~/.claude 側に不要なので除外)
-for f in ~/dotfiles/_claude/workflows/*; do
+for f in ~/dotfiles/_claude/workflows/*(N); do
   [ -e "$f" ] && [ "${f##*.}" = "js" ] && ln -sfn "$f" ~/.claude/workflows/"$(basename "$f")"
 done
 # dotfiles 側で削除されたファイルの symlink が残ると壊れたリンクになるので掃除する。
 # dotfiles/_claude 配下を指すリンクだけを対象にし、ユーザーが手動で張った別由来のリンクは触らない
 for dir in ~/.claude/agents ~/.claude/skills ~/.claude/rules ~/.claude/hooks ~/.claude/workflows ~/.claude/commands; do
-  for link in "$dir"/*; do
+  # (N): 対象 dir が空 / 未作成 (fresh マシン) でも NOMATCH abort させず skip する。
+  for link in "$dir"/*(N); do
     if [ -L "$link" ] && [ ! -e "$link" ]; then
       case "$(readlink "$link")" in
         "$HOME"/dotfiles/_claude/*)
