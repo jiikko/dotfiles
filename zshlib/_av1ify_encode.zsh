@@ -74,6 +74,19 @@ __av1ify_finalize() {
   local tmp="$1" final_out="$2" in="$3" target_fps="$4" target_height="$5"
   __AV1IFY_CURRENT_TMP=""
   mv -f -- "$tmp" "$final_out"
+  # データ損失ガード: mv が失敗して出力が存在しない (割り込みが tmp を rm した窓など) と、
+  # 無音ソースでは __av1ify_postcheck が「NG なし」で success を返し (欠落出力に対し全チェックが
+  # no-op)、直後の削除ブロックが元ファイルを trash/rm してしまう (出力も元も消える)。
+  # 出力の生成が確認できないとき、および中断要求時は、元ファイルを絶対に削除せず NG で抜ける。
+  if [[ ! -f "$final_out" ]]; then
+    print -r -- "❌ 出力が生成されませんでした (中断など)。元ファイルは保持します: $in" >&2
+    [[ -n "$tmp" && -e "$tmp" ]] && rm -f -- "$tmp"
+    REPLY="$in"; return 1
+  fi
+  if (( __AV1IFY_ABORT_REQUESTED )); then
+    print -r -- "⚠️ 中断要求のため元ファイルは保持します: $in" >&2
+    REPLY="$final_out"; return 1
+  fi
   if __av1ify_postcheck "$final_out" "$in" "$( [[ -n "$target_fps" ]] && echo 1 || echo 0 )" "$target_height"; then
     final_out="$REPLY"; print -P -- "%F{green}✅ 完了: $final_out%f"
     # サイズ削減サマリ (元→出力)。元ファイル ($in) は削除前なのでサイズ取得可能。

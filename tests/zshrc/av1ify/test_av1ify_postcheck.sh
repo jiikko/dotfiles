@@ -471,4 +471,22 @@ else
 fi
 (( rc == 0 )) || { printf '✗ mark_issue should return 0\n'; exit 1; }
 
+# Test 90: finalize は出力が生成されない (mv 失敗 = 割り込みで tmp が消された窓など) 場合、
+# 元ファイルを絶対に削除しない。無音ソースだと postcheck が欠落出力に対し「NG なし」で
+# success を返し、直後の削除ブロックが元を trash/rm するデータ損失経路の防止。
+printf '\n## Test 90: finalize preserves source when output is missing (data-loss guard)\n'
+TEST_DIR="$TEST_TMP/test90"
+mkdir -p "$TEST_DIR"
+echo "keep me" > "$TEST_DIR/keep.mp4"
+__AV1IFY_DELETE_ORIGIN=1
+unsetopt err_exit
+# tmp が存在しない → mv 失敗 → final_out 未生成 → ガードが削除を阻止し return 1
+__av1ify_finalize "$TEST_DIR/nope_tmp.mp4" "$TEST_DIR/out.av1.mp4" "$TEST_DIR/keep.mp4" "" "" >/dev/null 2>&1
+rc=$?
+setopt err_exit
+__AV1IFY_DELETE_ORIGIN=0
+assert_file_exists "$TEST_DIR/keep.mp4" "Source preserved when output not generated"
+assert_file_not_exists "$TEST_DIR/out.av1.mp4" "No bogus output left behind"
+(( rc == 1 )) || { printf '✗ finalize should return 1 (NG) on missing output\n'; exit 1; }
+
 printf '\n=== Postcheck Tests Completed ===\n'
