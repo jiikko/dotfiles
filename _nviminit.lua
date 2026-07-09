@@ -131,21 +131,21 @@ require("lazy").setup({
   --   - 補完/診断/hover: terraform-ls (lsp.lua の ensure_installed=terraformls)
   --   - 整形 (旧 terraform_fmt_on_save + align 相当): conform の terraform_fmt を terraform ft の
   --     保存時のみ発火 (下の conform format_on_save)。terraform fmt が align も担う
-  { "fatih/vim-go",
-    ft = { "go" },
-    build = ":GoUpdateBinaries",
-    init = function()
-      vim.g.go_null_module_warning = 0
-      vim.g.go_gopls_enabled = 0        -- ネイティブ LSP の gopls と競合するため vim-go 側の gopls は無効化
-      vim.g.go_def_mapping_enabled = 0   -- 定義ジャンプはネイティブ LSP (gd) に任せる
-    end,
-    config = function()
-      vim.g.go_decls_mode = ""
-      local opts = { silent = true, desc = "GoDecls" }
-      vim.keymap.set("n", "<leader>gd", "<Plug>(go-decls)", opts)
-      vim.keymap.set("n", "<leader>gD", "<Plug>(go-decls-dir)", { silent = true, desc = "GoDeclsDir" })
-    end
-  },
+  -- Go: fatih/vim-go (Vimscript 19k 行) を廃し、ネイティブ構成へ置換 (2026-07)。
+  -- 削除前に実挙動を headless で棚卸しして parity を確保した (要点のみ):
+  --   - 構文/ハイライト: nvim-treesitter の go/gomod/gosum parser (下の ensure_installed)。
+  --     vim-go の syntax は元から非稼働 (&syntax='' で treesitter が唯一の highlighter) だった
+  --   - 定義/実装/参照ジャンプ・hover: 既に native LSP + gopls (lsp.lua)。vim-go 側は
+  --     go_gopls_enabled=0 / go_def_mapping_enabled=0 で無効化済みだった。K は 0.11 の
+  --     native LSP 既定 (K=hover) が引き継ぐ
+  --   - 保存時 gofmt+goimports (旧 go_fmt_autosave/go_imports_autosave=既定1): conform の
+  --     formatters_by_ft.go=goimports を go の保存時に発火 (下の conform)。goimports は
+  --     -srcdir 付きで module-aware
+  --   - 関数ジャンプ ]] [[ / テキストオブジェクト af if ac ic: treesitter-textobjects へ
+  --     (nvim/ftplugin/go.lua で Go 限定 buffer-local に再現。vim-go の scope を踏襲)
+  --   - GoDecls (<leader>gd/gD): 元から fzf/ctrlp 未導入でエラー = 非稼働だった。
+  --     telescope の lsp_document/workspace_symbols で置換 (nvim/ftplugin/go.lua)
+  --   - :Go* コマンド群 (:GoTest 等) は未使用のため引き継がない (必要なら go.nvim/nvim-dap-go)
   { "andymass/vim-matchup",
     config = function()
       vim.g.loaded_matchit = 1
@@ -164,13 +164,26 @@ require("lazy").setup({
     -- branch を変えたら :Lazy update nvim-treesitter + :TSUpdate で parser を再同期すること。
     branch = "master",
     build = ":TSUpdate",
+    -- textobjects も master に固定する (nvim-treesitter を master 凍結しているため。default
+    -- ブランチ任せだと main を引いて require パス/統合が食い違い無言で壊れる)。standalone spec
+    -- でなく dependencies に入れて configs.setup 実行時に必ず rtp に載っている状態にする。
+    dependencies = { { "nvim-treesitter/nvim-treesitter-textobjects", branch = "master" } },
     config = function()
       -- stale luac cache で "nvim-treesitter.configs not found" になっても自己修復する
       require_resilient("nvim-treesitter.configs").setup({
-        ensure_installed = { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "graphql", "hcl", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "terraform", "typescript", "vim", "yaml" },
+        -- gomod/gosum は go.mod/go.sum のハイライト用 (vim-go 廃止で syntax 供給元を treesitter に
+        -- 一本化。現状 parser は入っているが ensure_installed 未記載で fresh install 非再現だった)。
+        ensure_installed = { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "gomod", "gosum", "graphql", "hcl", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "terraform", "typescript", "vim", "yaml" },
         auto_install = false,
         highlight = { enable = true },
         endwise = { enable = true },
+        -- textobjects の keymap はここで global に張らず (]] [[ は組み込み section motion を
+        -- 上書きするため)、モジュール有効化と挙動オプションだけ設定する。実際の keymap は
+        -- nvim/ftplugin/go.lua が Go 限定 buffer-local で張る (vim-go の scope を踏襲)。
+        textobjects = {
+          select = { enable = true, lookahead = true },
+          move = { enable = true, set_jumps = true },
+        },
       })
     end,
   },
@@ -248,7 +261,8 @@ require("lazy").setup({
       -- サーバ以外 (formatter / linter) の実体を入れる。LSP ではないので
       -- mason-lspconfig の ensure_installed では入らない (レビュー指摘 #3)。
       require("mason-tool-installer").setup({
-        ensure_installed = { "prettierd", "shfmt", "shellcheck" },
+        -- goimports は vim-go 廃止に伴う Go 保存時整形 (conform formatters_by_ft.go) の実体。
+        ensure_installed = { "prettierd", "shfmt", "shellcheck", "goimports" },
       })
     end,
   },
@@ -267,6 +281,12 @@ require("lazy").setup({
     },
   },
   { "stevearc/conform.nvim",
+    -- BufWritePre で load する: format_on_save は conform.setup 内で BufWritePre autocmd を
+    -- 張るため、conform が「最初の保存より前」に load されていないと初回保存で整形されない。
+    -- cmd/keys だけの lazy だと :Format / <leader>f を一度も押さないセッションで go/terraform の
+    -- 保存時整形が無言で発火しなかった (実測で判明)。lazy は load 後に発火元イベントを再送する
+    -- ので、その回の保存から効く。
+    event = { "BufWritePre" },
     cmd = "Format",
     keys = {
       { "<leader>f", function() require("conform").format({ async = true, lsp_format = "fallback" }) end, desc = "Format buffer" },
@@ -274,8 +294,8 @@ require("lazy").setup({
     config = function()
       local conform = require("conform")
       conform.setup({
-        -- 列挙が無い ft (ruby/go 等) は lsp_format="fallback" でサーバ整形に委ねる
-        -- (ruby は lsp.lua の solargraph.formatting=true 前提。go は gopls が既定で整形)
+        -- 列挙が無い ft (ruby 等) は lsp_format="fallback" でサーバ整形に委ねる
+        -- (ruby は lsp.lua の solargraph.formatting=true 前提)。
         formatters_by_ft = {
           javascript = { "prettierd" },
           javascriptreact = { "prettierd" },
@@ -290,12 +310,14 @@ require("lazy").setup({
           sh = { "shfmt" },
           terraform = { "terraform_fmt" }, -- vim-terraform 置換: terraform fmt (align も担う)
           hcl = { "terraform_fmt" },
+          go = { "goimports" }, -- vim-go 置換: 旧 go_fmt_autosave+go_imports_autosave 相当 (gofmt整形+import増減)
         },
-        -- terraform 系だけ保存時に整形する (旧 vim-terraform の g:terraform_fmt_on_save=1 を踏襲)。
-        -- 他の ft は従来どおり <leader>f / :Format の手動整形のまま (nil を返すと保存時整形なし)。
+        -- terraform 系と go だけ保存時に整形する (terraform=旧 vim-terraform g:terraform_fmt_on_save=1、
+        -- go=旧 vim-go go_fmt_autosave/go_imports_autosave を踏襲)。他の ft は従来どおり
+        -- <leader>f / :Format の手動整形のまま (nil を返すと保存時整形なし)。
         format_on_save = function(bufnr)
           local ft = vim.bo[bufnr].filetype
-          if ft == "terraform" or ft == "hcl" then
+          if ft == "terraform" or ft == "hcl" or ft == "go" then
             return { timeout_ms = 1000 }
           end
         end,

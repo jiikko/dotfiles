@@ -55,7 +55,7 @@
 | ------------------------- | ------------ | ---------- | -------------------------------------------------------- | ------------ | ------------- | --------------- | ---------------------------------------------------- |
 | ✅ tpope/vim-rails        | Rails 支援   | 2025-02-19 | 同プラグイン                                             | × | × | はい | Rails 界隈でデファクト。 |
 | ✅ terraform-ls + treesitter + conform | Terraform | - | 同構成 | × | × | いいえ | **2026-07: hashivim/vim-terraform (Vimscript) を置換**。ft は nvim 標準検出、構文/fold は treesitter(terraform/hcl)、補完/診断は terraform-ls、整形は conform terraform_fmt を terraform ft の保存時に発火 (旧 terraform_fmt_on_save 相当)。 |
-| ✅ fatih/vim-go | Go 補助 | 2025-11-11 | `ray-x/go.nvim`, `nvim-lspconfig` + `gopls` | △ | △ | はい | “重い/設定過多” の声が多く、LSP 構成へ移行推奨。 |
+| ✅ gopls + treesitter + conform + treesitter-textobjects | Go | - | 同構成 | × | × | いいえ | **2026-07: fatih/vim-go (Vimscript 19k 行) を置換**。ハイライトは treesitter(go/gomod/gosum)、定義/実装/参照/hover は gopls (native LSP)、整形は conform goimports を go 保存時に発火 (旧 go_fmt_autosave/go_imports_autosave 相当)、関数ジャンプ `]]`/`[[` とテキストオブジェクト `af`/`if`/`ac`/`ic` は treesitter-textobjects、GoDecls は telescope symbols で置換 (Go 限定は nvim/ftplugin/go.lua)。`K`=hover は nvim 0.11 native 既定。 |
 | ✅ github/copilot.vim     | AI 補完      | 2026-01-09 | `zbirenbaum/copilot.lua`, `sourcegraph/sg.nvim`          | ○ | △ | はい | Vimscript 版は重いとの声。Lua 版へ移行推奨。 |
 | ✅ neovim/nvim-lspconfig  | LSP サーバ設定 | - | 同プロジェクト | × | × | いいえ | 2026-07 に coc.nvim から移行。nvim 0.11 の `vim.lsp.config`/`vim.lsp.enable` に載る。 |
 | ✅ mason-org/mason.nvim + mason-lspconfig | LSP/ツール管理 | - | 同プロジェクト | × | × | いいえ | サーバ/formatter/linter のバイナリ管理。`automatic_enable` で installed サーバを enable。 |
@@ -77,7 +77,7 @@
 1. **軽量化を急ぐ**: 重い Vimscript プラグインは順次 Lua 版へ（候補例: vim-toggle だが元が軽いので移行効果は小）。必要性や労力を見極めつつ進める。
 2. **UI/テーマ**: Lightline→Lualine、gruvbox Vimscript→Lua 版。
 3. **Git/開発補助**: mini.trailspace など Lua ツールへ処理を寄せて重複を解消。
-4. **言語/LSP**: ✅ coc.nvim はネイティブ LSP 構成 (nvim-lspconfig + mason + blink.cmp + conform + nvim-lint) へ移行済み (2026-07)。✅ vim-terraform も terraform-ls + treesitter + conform へ置換済み (2026-07)。残る vim-go は go.nvim 等へ順次検討。
+4. **言語/LSP**: ✅ coc.nvim はネイティブ LSP 構成 (nvim-lspconfig + mason + blink.cmp + conform + nvim-lint) へ移行済み (2026-07)。✅ vim-terraform も terraform-ls + treesitter + conform へ置換済み (2026-07)。✅ vim-go も native (gopls + treesitter + conform goimports + treesitter-textobjects) へ置換済み (2026-07。go.nvim は採らず native 構成を選択)。
 5. **AI 補完**: copilot.vim→copilot.lua 等 Lua 版へ移行。
 
 必要に応じてこの表を更新し、プラグイン整理や設定刷新時の判断材料にする。
