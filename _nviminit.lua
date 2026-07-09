@@ -668,13 +668,15 @@ require("lazy").setup({
   },
   {
     "mvllow/modes.nvim",
-    tag = "v0.2.1",
+    -- v0.2.1 では set_number が未参照で無効だった (set_number ゲートは #45 fix = v0.3.0 以降)。
+    tag = "v0.3.0",
     config = function()
       require("modes").setup({
         set_cursor = true,      -- カーソルの色を変える
         set_cursorline = false, -- gui 色前提で termguicolors=off の 256色運用では無効なため off (SUPPORT_TRUECOLOR=false)
-        set_number = false,     -- 行番号の背景色も無効
-        ignore_filetypes = { "NvimTree", "TelescopePrompt" },
+        set_number = false,     -- 行番号の背景色も無効 (v0.3.0 で実際に効くようになった)
+        set_signcolumn = false, -- v0.3.0 新設。cursorline/number と同じく gui色前提で 256色運用では無効なため off
+        ignore = { "NvimTree", "TelescopePrompt" }, -- v0.3.0 で ignore_filetypes から改称
       })
     end,
   },
@@ -688,8 +690,12 @@ require("lazy").setup({
         watch = true,
         win = {
           layout = "float", -- フロートウィンドウで表示
-          width = 0.6,      -- 画面の60%
-          height = 0.7,     -- 画面の70%
+          -- width/height は layout ごとのネスト (float.* / split.*) 配下に置く必要がある。
+          -- layout の兄弟に直接置くと読まれず既定 0.9/0.9 に落ちる (sidekick c93c0cb 以降の仕様)。
+          float = {
+            width = 0.6,  -- 画面の60%
+            height = 0.7, -- 画面の70%
+          },
         },
       },
     },
