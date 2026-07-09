@@ -30,3 +30,24 @@ jobs:
 
       - name: Run lint suite
         run: make test-lint
+
+  parallel-each-go-lint:
+    runs-on: ubuntu-slim
+    # First run builds golangci-lint from source (go run) and may fetch a
+    # newer Go toolchain; both are cached by setup-go for later runs. Allow
+    # headroom for that cold build.
+    timeout-minutes: 15
+    steps:
+      - name: Silence git init.defaultBranch hint
+        run: git config --global init.defaultBranch main
+
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: src/parallel-each/go.mod
+          cache-dependency-path: src/parallel-each/go.sum
+
+      - name: Lint src/parallel-each (golangci-lint)
+        run: make test-go-lint
