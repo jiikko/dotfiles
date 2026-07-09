@@ -63,7 +63,11 @@ OPTIONS
                          per process when running multiple parallel-each
                          instances concurrently (e.g. different parallelism
                          per origin); each run's result.log / resume state is
-                         then fully isolated.
+                         then fully isolated. Concurrent runs are guarded by
+                         advisory locks: a second run sharing the same
+                         --log-dir (or the same -F input file) is refused with
+                         an "already running" error rather than clobbering
+                         result.log / the shared job logs.
   --wizard               Interactively prompt for each value (input file,
                          template, parallelism, timeout, retries) before
                          running. Useful when you can't remember flag names.
@@ -97,6 +101,12 @@ INPUT VALIDATION
   By default the run aborts if the input file contains duplicate lines. This
   prevents accidentally processing the same item twice (and writing to the
   same per-job log file). Use --skip-unique-txt-rows to disable.
+
+  The run also aborts if any item contains a tab. result.log is TAB-delimited,
+  so a tab would split a row into a bogus column and make resume / dedup match
+  the wrong item on the next run. This check is always on (not affected by
+  --skip-unique-txt-rows); items added at runtime via the TUI are rejected the
+  same way.
 
 TUI
   When stdout is a TTY (and --no-tui is not set), an interactive TUI shows a
@@ -175,6 +185,10 @@ SHUTDOWN
   in-progress quit and resets the buffer. Single q / Ctrl-C / Esc do NOT
   start a shutdown — this is deliberate, to prevent accidental quits.
 
+  The quit-word guard governs in-terminal keystrokes only. An external signal
+  (e.g. 'kill <pid>' sends SIGTERM, or SIGINT) bypasses it: the TUI exits
+  immediately and running jobs are force-killed.
+
     1st 'quit':       Graceful stop (final). Queued items are dropped,
                       running jobs finish, the program exits.
     2nd 'quit':       Arm force-kill confirmation. A 3-second window opens;
@@ -194,6 +208,11 @@ SHUTDOWN
     1st SIGINT / SIGTERM: Graceful stop. Queued items dropped, running
                            jobs finish, program exits.
     2nd SIGINT / SIGTERM: Force-kill.
+
+  Force-kill (and an expired --attempt-timeout / --total-timeout) sends SIGTERM
+  to each running job's process group. A job that ignores SIGTERM is escalated
+  to SIGKILL after a short grace period, so a stuck job can never wedge the
+  timeout or block shutdown indefinitely.
 
 EXIT STATUS
   0   all jobs succeeded
