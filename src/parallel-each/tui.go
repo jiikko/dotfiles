@@ -1700,7 +1700,10 @@ func (m model) eta() time.Duration {
 	}
 	avg := totalDur / time.Duration(count)
 	remaining := m.total - m.completed
-	par := m.cfg.Parallelism
+	// Use the live parallelism (m.par), not the startup -P (m.cfg.Parallelism):
+	// the 'p' key changes m.par at runtime but never touches cfg, so cfg would
+	// give a stale ETA after a parallelism change.
+	par := m.par
 	if par <= 0 || par > remaining {
 		par = remaining
 	}
@@ -1756,7 +1759,17 @@ func runTUI(ctx context.Context, cfg Config, lines []string, skipped int, proces
 		return 1
 	}
 
-	// Drain any remaining events (should already be done, but be safe).
+	// bubbletea converts an external SIGTERM (default `kill`) into a QuitMsg
+	// that returns from p.Run() with a nil error WITHOUT the in-TUI quit flow
+	// running — so RequestStop/ForceKill may never have been called. In live
+	// mode the dispatcher then stays blocked in peekQueue, r.events is never
+	// closed, and the drain below would hang forever, leaking the result.log
+	// FD and both flocks. Force the runner down so the dispatcher exits,
+	// closes r.events, and releases them. On the normal quit path the runner
+	// is already stopped, so this is a harmless no-op.
+	r.ForceKill()
+
+	// Drain any remaining events until r.events is closed.
 	for range r.Events() {
 	}
 

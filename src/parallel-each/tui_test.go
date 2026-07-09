@@ -2095,7 +2095,9 @@ func TestModelETA(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			m := model{
-				cfg:       Config{Parallelism: c.par},
+				// eta() reads the live m.par (see eta): drive it directly so
+				// the test tracks runtime parallelism changes, not startup cfg.
+				par:       c.par,
 				total:     c.total,
 				completed: c.completed,
 				recent:    c.recent,
