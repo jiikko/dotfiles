@@ -75,6 +75,7 @@ test-runtime: test-syntax test-zshrc test-bats test-nvim test-tmux test-setup te
 test-nvim:
 	@tests/nvim/test_nvim.sh
 	@tests/nvim/test_ftplugins.sh
+	@tests/nvim/test_ambiwidth.sh
 
 test-tmux:
 	@tests/tmux/test_tmux.sh
