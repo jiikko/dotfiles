@@ -25,7 +25,10 @@ func sanitizeFilename(name string) string {
 	}
 	out := strings.Map(repl, name)
 	out = strings.TrimSpace(out)
-	if out == "" {
+	if out == "" || out == "." || out == ".." {
+		// "." / ".." はパス区切りを含まないため上位の連結 (name+ext) では脱出しないが、
+		// 拡張子が空の呼び出し (writeModule で Ext="") では filepath.Join(dir, "..") が
+		// 親ディレクトリを指しうる。防御的に無害名へ置換する。
 		out = "_"
 	}
 	return out
@@ -99,6 +102,17 @@ func writeValuesCSV(path string, sh *Sheet) error {
 		if c.Col > maxCol {
 			maxCol = c.Col
 		}
+	}
+	// グリッドの次元は「セル数」ではなく最大セル座標で決まる。遠方に 1 セルあるだけ
+	// (例 XFD1048576 → 16384x1048576 ≈ 170 億セル) で dense グリッドが巨大化し OOM /
+	// ハングする (-max-cells はセル数 gate なので防げない)。グリッドは目視用の便宜ビューで
+	// 完全データは常に .cells.tsv にあるため、次元が過大なときはグリッドを出さず注記だけ残す。
+	const maxGridCells = 10_000_000
+	if int64(maxRow)*int64(maxCol) > maxGridCells {
+		note := fmt.Sprintf(
+			"# grid skipped: dimension %dx%d (%d cells) exceeds %d — see the .cells.tsv for the full data\n",
+			maxRow, maxCol, int64(maxRow)*int64(maxCol), maxGridCells)
+		return os.WriteFile(path, []byte(note), 0o644)
 	}
 	grid := make(map[[2]int]string, len(sh.Cells))
 	for _, c := range sh.Cells {
