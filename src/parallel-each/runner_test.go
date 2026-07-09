@@ -1094,12 +1094,17 @@ func TestRunnerSetParallelismShrinksGracefully(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Long-running jobs so we can observe the timing precisely.
-	// Parallelism=4 with only 2 items: 2 workers in-flight, 2 idle.
-	// SetLive keeps r.jobs open so idle workers stay alive (otherwise
-	// dispatcher would close r.jobs after dispatching the 2 items, which
-	// would also retire the idle workers via the closed-channel branch).
-	cfg := Config{Parallelism: 4, Template: `sleep 1`}
+	// Long-running jobs so we can observe the timing precisely. Start at
+	// Parallelism=2 with 2 items so both jobs are pinned to the lowest slots
+	// (1, 2) as in-flight; grow to 4 afterwards so slots 3, 4 are the idle
+	// ones. This makes the shrink deterministic: shrinking to 1 cancels the
+	// top slots (4, 3, 2), so the surviving slot 1 is always in-flight and the
+	// idle slots (3, 4) always exit immediately — no dependence on which
+	// worker won the r.jobs receive race.
+	// SetLive keeps r.jobs open so idle workers stay alive (otherwise the
+	// dispatcher would close r.jobs after dispatching the 2 items, which would
+	// also retire the idle workers via the closed-channel branch).
+	cfg := Config{Parallelism: 2, Template: `sleep 1`}
 	r := NewRunner(cfg, []string{"a", "b"})
 	r.SetLive(true)
 	if err := r.Start(context.Background()); err != nil {
@@ -1131,7 +1136,7 @@ func TestRunnerSetParallelismShrinksGracefully(t *testing.T) {
 		close(doneCh)
 	}()
 
-	// Wait for 2 in-flight (the only 2 items).
+	// Wait for both items to be in-flight on slots 1 and 2.
 	for i := 0; i < 2; i++ {
 		select {
 		case <-startCh:
@@ -1140,7 +1145,9 @@ func TestRunnerSetParallelismShrinksGracefully(t *testing.T) {
 		}
 	}
 
-	// Snapshot before shrink: 4 active workers (2 in-flight + 2 idle).
+	// Grow to 4: adds two idle workers (slots 3, 4). Spawning is synchronous
+	// under workerMu, so activeWorkers is 4 immediately after this returns.
+	r.SetParallelism(4)
 	r.workerMu.Lock()
 	beforeShrink := r.activeWorkers
 	r.workerMu.Unlock()
@@ -1148,8 +1155,8 @@ func TestRunnerSetParallelismShrinksGracefully(t *testing.T) {
 		t.Fatalf("expected 4 active workers, got %d", beforeShrink)
 	}
 
-	// Shrink to 1. The 2 idle workers should exit very quickly; the 2
-	// in-flight workers should keep running their `sleep 1` subprocess.
+	// Shrink to 1. The 2 idle workers (slots 3, 4) should exit very quickly;
+	// the 2 in-flight workers (slots 1, 2) keep running their `sleep 1`.
 	tShrink := time.Now()
 	r.SetParallelism(1)
 
