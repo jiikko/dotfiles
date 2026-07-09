@@ -152,23 +152,27 @@ __concat_validate_sequence() {
   min="${sorted_nums[1]}"
   max="${sorted_nums[-1]}"
 
-  # 欠番チェック
+  # 欠番チェック: sorted_nums は昇順。かつては [min,max] の全整数を走査し欠番ごとに
+  # subshell を fork していたため、連番が離れている (例 _1 と _1000000) と O(範囲) の
+  # ループ + 大量 fork で事実上ハングした。隣接要素の間隔だけを見て O(件数) で検出し、
+  # 列挙は cap 件で打ち切って (メッセージ肥大 + subshell 暴走の抑止) 末尾に … を付す。
   local -a missing=()
-  for (( i = min; i <= max; i++ )); do
-    local found=0
-    for n in "${sorted_nums[@]}"; do
-      if (( n == i )); then
-        found=1
-        break
-      fi
-    done
-    if (( ! found )); then
-      missing+=("$(printf '%03d' $i)")
+  local prev="" cur j
+  local -i cap=50 truncated=0
+  for cur in "${sorted_nums[@]}"; do
+    if [[ -n "$prev" ]] && (( cur > prev + 1 )); then
+      for (( j = prev + 1; j < cur; j++ )); do
+        if (( ${#missing[@]} >= cap )); then truncated=1; break; fi
+        missing+=("$(printf '%03d' $j)")
+      done
     fi
+    prev="$cur"
+    (( truncated )) && break
   done
 
   if (( ${#missing[@]} > 0 )); then
     local missing_str="${(j:, :)missing}"
+    (( truncated )) && missing_str+=", …"
     REPLY="連番に欠番があります: $missing_str が見つかりません"
     return 1
   fi
