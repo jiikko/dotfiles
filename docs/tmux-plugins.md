@@ -66,7 +66,7 @@ $ tmux
 
 ## 前提条件
 
-- tmux 3.6 系を想定（現行は 3.6a。`pane-scrollbars` など 3.6 系の機能を使う。なお scrollbar は幅を縮めるため off 運用）
+- tmux 3.6 以降を想定（現行は 3.7b。`pane-scrollbars` など 3.6+ の機能はバージョンガード付きで使う。なお scrollbar は幅を縮めるため off 運用）
 - 最低ラインは tmux 3.4 以上（`pane-border-indicators` など 3.x の新しめの機能を前提）
 - bash（プラグインが bash 前提）
 - git（`git pull` 用）
@@ -145,7 +145,7 @@ set -g @resurrect-capture-pane-contents 'on'
 
 # continuum の autosave は status 更新を使うため status はオンに保つ
 set -g status on
-set -g status-interval 60
+set -g status-interval 1   # status-left の毎秒点滅の駆動（continuum 用には >0 であればよい）
 # 右側は非表示だが、continuum の hook 用に最小限の長さ(1)は確保する
 set -g status-right-length 1
 set -g status-right ""

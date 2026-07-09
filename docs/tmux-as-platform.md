@@ -6,7 +6,7 @@ tmux はマルチプレクサであると同時に、外部依存ゼロで使え
 
 これらは bind / hook / シェルから起動でき、内部で任意の tmux コマンドや shell-command を「コマンド + 結果」の単位で実行する。fzf や gum のような外部 TUI を `display-popup` に載せれば、数十行のシェルで「曖昧検索 → tmux コマンド実行」のミニツールが組める。本リポジトリは実際に fzf ジャンプ／window 跨ぎ pane 移動／scratch popup／Claude 状態バッジ／resurrect の debounce 保存を、すべて自前 shell + 真の tmux 機能の組合せで実装している。
 
-実機は **tmux 3.5a (macOS)**。本書では新しめの機能（`display-menu`、`display-popup` の `-x/-y`、`pane-scrollbars` 等）にはバージョン要件を明記する。`man tmux` で実在を確認できる機能だけを扱う。
+実機は **tmux 3.7b (macOS)**（本書の初版は 3.5a 時点で執筆）。本書では新しめの機能（`display-menu`、`display-popup` の `-x/-y`、`pane-scrollbars` 等）にはバージョン要件を明記する。`man tmux` で実在を確認できる機能だけを扱う。
 
 ---
 
@@ -233,7 +233,7 @@ set -g automatic-rename-format '#{pane_title}'  # シェル側: printf '\033]2;%
 set -g status-left "#{?#{==:#{session_name},scratch},#(~/bin/blink.sh),静的}"
 ```
 
-【この repo の実例】`/Users/koji/dotfiles/scripts/tmux_scratch_blink.sh`（現在秒の偶奇を返す）+ `_tmux.conf` の status-left。scratch セッションだけ `status-interval=1` で毎秒 `#()` を評価し bg 色を反転 = 端末非依存の点滅。
+【この repo の実例】**現在は未使用**。scratch/prefix 点滅は旧実装で `#()` スクリプト（tmux_scratch_blink.sh、現在秒の偶奇返し）を毎秒評価していたが、毎秒 fork するため `#{T:@secfmt}`（strftime 展開）+ `#{e|m:...}`（剰余）の format 算術（fork ゼロ）へ置換して削除済み（`_tmux.conf` の status-left コメント参照）。
 
 【バージョン注意】**`#()` 内に `$(...)` を直書きすると、tmux の `#()` パーサがその `)` を閉じ括弧と誤認して壊れる**（実測）。外部スクリプトに閉じ込めるのが定石。
 
@@ -250,7 +250,7 @@ if-shell 'v=$(tmux -V | sed "s/[^0-9.]//g"); maj=${v%%.*}; min=${v#*.}; min=${mi
   'display-message "3.6+ 推奨"'
 ```
 
-【この repo の実例】`/Users/koji/dotfiles/_tmux.conf` の `pane-scrollbars` ガード（3.6 で追加されたオプション。**3.5a で素に set すると "invalid option" 警告が出る**ため、if-shell で版数比較し 3.6+ のときだけ set、未満は upgrade を促す `display-message`）。本環境は 3.5a なので else 節が発火する。
+【この repo の実例】`/Users/koji/dotfiles/_tmux.conf` の `pane-scrollbars` ガード（3.6 で追加されたオプション。**3.5 以前で素に set すると "invalid option" 警告が出る**ため、if-shell で版数比較し 3.6+ のときだけ set、未満は upgrade を促す `display-message`）。本環境は 3.7b なので then 節（`pane-scrollbars off`）が発火する。
 
 ---
 
@@ -341,15 +341,15 @@ v=$(tmux display -p -t "$TMUX_PANE" '#{window_active_clients}')
 
 【何ができるか】特定セッションのステータスバーだけ毎秒マゼンタ↔赤で点滅させ強調する。SGR の blink 属性ではなく毎秒 bg 色を実際に切り替えるので端末非依存。
 
-【使う tmux 機能】status-left に `#{?#{==:#{session_name},scratch},...}`、`#(shell)` で偶奇返し、`#{?#(...),colorA,colorB}` で色切替、`set -t scratch status-interval 1` でセッション単位の更新間隔上書き。
+【使う tmux 機能】status-left に `#{?#{==:#{session_name},scratch},...}`、`@secfmt='%S'` を `#{T:@secfmt}` で strftime 展開、`#{e|m:秒,2}`（剰余）で 2 相の色切替、`set -g status-interval 1` で毎秒再描画。format 算術はサーバ内完結で fork ゼロ。
 
 【最小例】
 ```tmux
-set -g status-left "#{?#(~/blink.sh),#[bg=colour201],#[bg=colour196]} SCRATCH "
-tmux set -t scratch status-interval 1   # そのセッションだけ毎秒更新
+set -g @secfmt '%S'
+set -g status-left "#{?#{==:#{session_name},scratch},#{?#{e|m:#{T:@secfmt},2},#[bg=colour201],#[bg=colour196]} SCRATCH ,静的}"
 ```
 
-【この repo の実例】`/Users/koji/dotfiles/scripts/tmux_scratch_blink.sh`（偶奇返し）と `_tmux.conf` の status-left 点滅分岐、`bind t` で attach 時に `set -t scratch status-interval 1`。
+【この repo の実例】`_tmux.conf` の status-left 点滅分岐（scratch 帯 + prefix 押下帯の 2 相点滅、スピナーは 4 剰余）。旧実装の `#()` スクリプト（毎秒 fork）は削除済み。
 
 #### 分割ペイン + watch / tail -f の常時更新ダッシュボード
 
@@ -367,14 +367,14 @@ tmux send-keys -t :.+ 'watch -n2 docker ps' Enter
 
 #### status-interval による定期更新と continuum の前提
 
-【何ができるか】status-interval を 60 秒に保ち、status の `#(shell)` や `#{...}` を定期再評価する。continuum の autosave も status 更新フックに乗るため `status on` + `interval > 0` + status-right の最小長確保が必要。
+【何ができるか】status-interval で status の `#(shell)` や `#{...}` を定期再評価する。continuum の autosave も status 更新フックに乗るため `status on` + `interval > 0` + status-right の最小長確保が必要。
 
 【使う tmux 機能】`set -g status-interval N`、`status on`、`status-right-length`。
 
 【最小例】
 ```tmux
 set -g status on
-set -g status-interval 60
+set -g status-interval 1   # この repo は prefix 点滅・放置フェードの駆動で 1 秒
 set -g status-right-length 1
 set -g status-right ""   # continuum autosave 用に最小長は残す
 ```
@@ -399,8 +399,8 @@ set -g status-right ""   # continuum autosave 用に最小長は残す
 | 状態アイコン表示 | status / border の format | window-status-format / pane-border-format / #{P:...} | `_tmux.conf` |
 | zoom 色強調 | format | #{?window_zoomed_flag,...} 背景反転 | `_tmux.conf` |
 | アクティブ pane 面色 | 常時 | window-style / window-active-style / cursor-style (3.4+) | `_tmux.conf` |
-| scratch 点滅 | scratch 表示時のみ | #(shell) 偶奇 + status-interval=1 上書き | `scripts/tmux_scratch_blink.sh` |
-| popup 残骸の refresh | scratch close 直後 | refresh-client（3.5a #4920 回避） | `scripts/tmux_refresh_all_clients.sh` |
+| scratch / prefix 点滅 | scratch 表示時・prefix 押下時 | #{T:@secfmt} + #{e|m:} 剰余の format 算術（fork ゼロ） | `_tmux.conf` status-left |
+| popup 残骸の refresh | scratch close 直後 | refresh-client（3.5a〜3.6b #4920 回避。3.7 で修正済みのため削除可） | `scripts/tmux_refresh_all_clients.sh` |
 | セッション bootstrap / 復元待ち | `t` / `tt` コマンド | new-session / has-session / @tt-restore-complete 待ち | `zshlib/_tmux_session.zsh` |
 | window 名 = コマンド名追従 | preexec/precmd | automatic-rename-format '#{pane_title}' + OSC 2 | `zshlib/_tmux_window_name.zsh` |
 
@@ -421,14 +421,14 @@ set -g status-right ""   # continuum autosave 用に最小長は残す
 
 ## バージョン注意
 
-実機は **tmux 3.5a (macOS)**。一方 `docs/tmux-plugins.md` や `_tmux.conf` の一部コメントは 3.6a での実測・3.6 系想定で書かれた箇所があり、実機 (3.5a) と食い違っている（版前提が古いか、別環境時のコメントが残っているとみられる。要整理）。本書のバージョン要件は実機の `man tmux` で確認したものを記載する。
+実機は **tmux 3.7b (macOS)**。本書の初版は 3.5a 時点で執筆したため、「3.5a で実測 / 動作確認済み」の記述はその時点のもの（3.7b でも後方互換で成立する）。バージョン要件自体は `man tmux` で確認したものを記載する。
 
 - **display-popup**: 3.2+。`-e` / `-x/-y` / `#{popup_*}` は 3.3 前後。3.5a で利用可。
 - **popup 内 shell-command の制約**: `#{...}` フォーマット・`-e` の値が展開されず `TMUX_PANE` も無い（3.6a で実測）。対象 pane は popup 内から `tmux display-message -p '#{pane_id}'` で都度解決する（`bind x/q/M-c` のコメント参照）。
-- **popup overlay 再描画バグ（issue #4920）**: 3.5a で popup を閉じた後に枠が ~1 秒残るアーティファクトがある。fix は 3.7/HEAD のみ（stable 3.6b 未収録）。本 repo は閉じた直後に `refresh-client` で潰している（`scripts/tmux_refresh_all_clients.sh`）。3.7+ に上げたらこの回避は削除可。
+- **popup overlay 再描画バグ（issue #4920）**: 3.5a〜3.6b で popup を閉じた後に枠が ~1 秒残るアーティファクトがあった。fix は 3.7 で収録。本 repo は閉じた直後に `refresh-client` で潰す回避（`scripts/tmux_refresh_all_clients.sh`）を入れていたが、実機が 3.7b になったため回避は削除可能（現状は残置）。
 - **`#()` パーサの落とし穴**: format の `#(...)` 内に `$(...)` を直書きすると `)` を閉じ括弧と誤認して壊れる（実測）。外部スクリプト化が定石。
 - **display-menu**: 3.0+、スタイル系は 3.4+。`command-prompt -N/-T` は 3.1+、`-b` は 3.3+。`confirm-before -b` は 3.2+。
-- **pane-scrollbars**: 3.6 で追加。3.5a で素に `set` すると "invalid option" 警告が出るため if-shell で版数ガードしている（この環境では else 節が発火）。3.6a ではバー表示中にペインが 1 列 narrow され本文が reflow されるため off 運用。
+- **pane-scrollbars**: 3.6 で追加。3.5 以前で素に `set` すると "invalid option" 警告が出るため if-shell で版数ガードしている（本環境 3.7b では then 節 = off 設定が発火）。3.6a ではバー表示中にペインが 1 列 narrow され本文が reflow されるため off 運用。
 - **pane-border-indicators**: 3.4+。`pane-border-lines double/heavy`: 3.2+。`cursor-style` / `cursor-colour`: 3.4+。`window_zoomed_flag` / `#{P:...}` / `#{m:}` / `window_active_clients`: 3.x（3.5a 動作確認済み）。
 - **control mode（`tmux -CC`、iTerm2 統合）**: 3.5a の CONTROL MODE 節に実在。本 repo は Terminal.app 前提で未使用（`_tmux.conf` の mouse off コメントで将来の移行候補として言及）。
 
