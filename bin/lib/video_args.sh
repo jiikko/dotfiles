@@ -10,6 +10,13 @@ unset CDPATH
 #     出力: 実在する動画ファイルパスを NUL 区切りで stdout に出力
 #     失敗: 見つからないパスがあれば 1 を返し、エラーを stderr に出す
 #
+#   契約 (重要): 出力は「全引数が解決できたときだけ」まとめて出す (all-or-nothing)。
+#   途中の 1 つでも見つからなければ何も出力せず 1 を返す。呼び出し側は
+#   `< <(expand_video_args ...)` (プロセス置換) で受けると exit code が伝わらないため、
+#   もし部分出力していると「途中まで解決したリスト」を握り潰して成功扱いしてしまう
+#   (concat_movies が一部クリップ欠落で "✅完了" する等)。全解決時のみ出力すれば、
+#   失敗時は空 → 呼び出し側の件数ガード ((( ${#files[@]} < 1 ))) で確実に abort できる。
+#
 # 利用例:
 #   #!/usr/bin/env bash
 #   source "$(dirname -- "${BASH_SOURCE[0]}")/lib/video_args.sh"
@@ -32,9 +39,12 @@ VIDEO_ARGS_EXTS=(
 
 expand_video_args() {
   local entry remaining ext path matched found_any
+  # 解決したパスは一旦ここに溜め、全引数を解決できた場合のみ最後に一括出力する
+  # (all-or-nothing。上記「契約」参照。途中 return 1 では一切出力しない)。
+  local -a resolved=()
   for entry in "$@"; do
     if [[ -f "$entry" ]]; then
-      printf '%s\0' "$entry"
+      resolved+=("$entry")
       continue
     fi
     remaining="$entry"
@@ -48,7 +58,7 @@ expand_video_args() {
         if [[ "$remaining" == *"$ext"* ]]; then
           path="${remaining%%"$ext"*}${ext}"
           if [[ -f "$path" ]]; then
-            printf '%s\0' "$path"
+            resolved+=("$path")
             remaining="${remaining#"$path"}"
             matched=true
             found_any=true
@@ -69,5 +79,10 @@ expand_video_args() {
         break
       fi
     done
+  done
+  # 全引数解決 → まとめて NUL 区切り出力
+  local p
+  for p in "${resolved[@]}"; do
+    printf '%s\0' "$p"
   done
 }
