@@ -57,9 +57,6 @@ ZSH_SYNTAX_FILES := \
 YAML_FILES := pre-commit-config.yml .github/dependabot.yml .github/workflows/tests.yml .github/workflows/lint.yml .github/workflows/karabiner.yml
 JSON_FILES := mac/karabiner.json
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
-# Pin golangci-lint so local and CI lint src/parallel-each identically.
-# Keep in sync with src/parallel-each/.golangci.yml (version: "2").
-GOLANGCI_LINT_VERSION := v2.5.0
 
 .PHONY: pull test test-runtime test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-lint test-go-lint test-registration
 
@@ -174,14 +171,13 @@ test-karabiner:
 
 test-lint: test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner
 
-# src/parallel-each (Go) を golangci-lint で静的解析する。バージョンは固定し
-# go run 経由で取得する (別途インストール不要)。設定は src/parallel-each/.golangci.yml。
-# zsh 系の test-lint とは分離し、CI では Go を用意した専用ジョブから呼ぶ。
-# Go 未インストール環境では skip する。
+# src/parallel-each (Go) の静的解析。実体は src/parallel-each/Makefile の lint
+# ターゲット (go run で golangci-lint をバージョン固定実行) に閉じており、ここは
+# それへ委譲するだけ。zsh 系の test-lint とは分離し、CI では Go を用意した専用
+# ジョブから呼ぶ。Go 未インストール環境では skip する。
 test-go-lint:
 	@if command -v go >/dev/null 2>&1; then \
-		cd src/parallel-each && \
-		go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run ./...; \
+		$(MAKE) -C src/parallel-each lint; \
 	else \
 		echo "[go-lint] go not found; skipping golangci-lint"; \
 	fi
