@@ -574,30 +574,17 @@ require("lazy").setup({
         mappings = { "<C-u>", "<C-d>" },
         hide_cursor = true,
         respect_scrolloff = true,
-        easing_function = "cubic",
-        performance_mode = false,
+        -- スナッピー化: C-u/C-d の既定 250ms アニメを短縮 (×0.4=100ms) + ease-out。
+        -- ⚠️ neoscroll v2 では設定キーは easing (旧 easing_function は無効キーで読まれず、既定 linear の
+        --    まま効いていなかった)。有効な easing 名は scroll.lua: linear/quadratic/cubic/quartic/quintic/
+        --    circular/sine。
+        easing = "quadratic",
+        duration_multiplier = 0.4,
+        -- スクロール中の syntax/treesitter 更新を止めカクつきを抑える (大ファイルで一瞬色が抜ける。
+        -- 気になれば false に戻す)
+        performance_mode = true,
       })
     end,
-  },
-  {
-    "folke/flash.nvim",
-    event = "VeryLazy",
-    ---@type Flash.Config
-    opts = {
-      modes = {
-        char = {
-          keys = {},
-        },
-      },
-    },
-    -- stylua: ignore
-    keys = {
-      { "s", mode = { "n", "x", "o" }, function() require("flash").jump() end, desc = "Flash" },
-      { "S", mode = { "n", "x", "o" }, function() require("flash").treesitter() end, desc = "Flash Treesitter" },
-      { "r", mode = "o", function() require("flash").remote() end, desc = "Remote Flash" },
-      { "R", mode = { "o", "x" }, function() require("flash").treesitter_search() end, desc = "Treesitter Search" },
-      { "<c-s>", mode = { "c" }, function() require("flash").toggle() end, desc = "Toggle Flash Search" },
-    },
   },
   { 'echasnovski/mini.trailspace', version = '*', event = "VeryLazy",
     config = function()
