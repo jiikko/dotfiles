@@ -22,6 +22,15 @@ import (
 // disjoint input files): each gets its own result.log and per-job log files.
 const defaultLogDir = "parallel-each-log"
 
+// forceKillGrace bounds how long we wait for a subprocess to exit after its
+// context is cancelled (timeout or force-kill) and cmd.Cancel has SIGTERMed
+// its process group. If it is still alive after this, exec sends SIGKILL and
+// cmd.Run() returns. Without it, a job that ignores SIGTERM would block its
+// worker forever, defeating both --attempt-timeout and force-kill and hanging
+// shutdown (wg.Wait never returns, locks never released). A var (not const)
+// so tests can shorten it.
+var forceKillGrace = 10 * time.Second
+
 // readInput loads non-blank, non-comment lines.
 func readInput(path string) ([]string, error) {
 	f, err := os.Open(path)
@@ -33,11 +42,20 @@ func readInput(path string) ([]string, error) {
 	var lines []string
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 1024*1024)
+	lineNo := 0
 	for sc.Scan() {
+		lineNo++
 		line := sc.Text()
 		trimmed := strings.TrimLeft(line, " \t")
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
+		}
+		// result.log is TAB-delimited; an item containing a tab would inject a
+		// bogus column and make resume/dedup match the wrong input next run.
+		// Reject at the boundary rather than corrupt result.log silently.
+		if strings.ContainsRune(line, '\t') {
+			return nil, fmt.Errorf("%s:%d: item contains a tab (result.log is TAB-delimited; a tab corrupts resume) — remove it: %q",
+				path, lineNo, line)
 		}
 		lines = append(lines, line)
 	}
@@ -252,6 +270,13 @@ type Runner struct {
 	workerMu      sync.Mutex
 	targetPar     int // desired worker count (>=1)
 	activeWorkers int // currently running worker goroutines
+	// closing is set (under workerMu) by the dispatcher's teardown right
+	// before it calls r.wg.Wait(). SetParallelism checks it under the same
+	// lock and stops spawning: wg.Add must never run concurrently with
+	// wg.Wait (the runtime panics on that), and a worker spawned after the
+	// job channel is closed is pointless. workerMu thus serialises Add
+	// against the Wait barrier.
+	closing       bool
 	slotIDs       map[int]bool // set of slot ids currently in use (1-based)
 	// 各 worker に「retire 通知」用の cancel を持たせる。slot id -> cancel。
 	// SetParallelism shrink で対象 slot の cancel を呼ぶと:
@@ -322,10 +347,18 @@ func (r *Runner) EnqueueFrontForce(line string) error {
 	return r.enqueueInternalForce(line, true)
 }
 
+// errItemHasTab rejects an item containing a tab: result.log is TAB-delimited,
+// so a tab splits the row into a bogus column and makes resume/dedup/forget
+// match the wrong (or a different) input on the next run.
+var errItemHasTab = errors.New("item contains a tab (result.log is TAB-delimited; a tab corrupts resume) — remove it")
+
 func (r *Runner) enqueueInternalForce(line string, front bool) error {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return fmt.Errorf("empty input")
+	}
+	if strings.ContainsRune(line, '\t') {
+		return errItemHasTab
 	}
 	r.queuedMu.Lock()
 	status, exists := r.queued[line]
@@ -353,6 +386,9 @@ func (r *Runner) enqueueInternal(line string, front bool) error {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return fmt.Errorf("empty input")
+	}
+	if strings.ContainsRune(line, '\t') {
+		return errItemHasTab
 	}
 	if !r.live {
 		return fmt.Errorf("runner not in live mode")
@@ -844,8 +880,24 @@ func (r *Runner) Start(parent context.Context) error {
 	go func() {
 		defer func() {
 			close(r.jobs)
+			// Barrier so SetParallelism stops calling wg.Add: adding to a
+			// WaitGroup concurrently with the Wait below is a runtime panic.
+			// Set under workerMu, the same lock that guards wg.Add.
+			r.workerMu.Lock()
+			r.closing = true
+			r.workerMu.Unlock()
 			r.wg.Wait()
-			r.resultLog.Close()
+			// Close result.log under resultMu — the bubbletea goroutine can
+			// still reach rewriteResultLogExcluding (ForgetLine via the 'd'
+			// key or a force re-enqueue) during this teardown window, and it
+			// touches r.resultLog under the same lock. Nil it so a racing
+			// reopen and a double close are both harmless.
+			r.resultMu.Lock()
+			if r.resultLog != nil {
+				r.resultLog.Close()
+				r.resultLog = nil
+			}
+			r.resultMu.Unlock()
 			if r.inputLockFile != nil {
 				r.inputLockFile.Close() // releases input-file flock
 				r.inputLockFile = nil
@@ -885,6 +937,15 @@ func (r *Runner) Start(parent context.Context) error {
 //     gracefully (no SIGTERM) and exits before picking up the next job
 // Use ForceKill to also SIGTERM in-flight subprocesses across all workers.
 // Safe to call any time.
+//
+// Grow/shrink target math uses len(workerRetire) — the count of workers that
+// are still serving (not yet told to retire) — NOT activeWorkers.
+// activeWorkers also counts workers that were cancelled by a previous shrink
+// but are still draining an in-flight job (their decrement is deferred to
+// workerLoop's exit, which under --attempt-timeout can be far away). Driving
+// the math off activeWorkers would double-count those and leave a shrink→grow
+// under target (spawning nothing), or let a repeated shrink over-cancel every
+// live worker down to zero and stall the dispatcher on the unbuffered r.jobs.
 func (r *Runner) SetParallelism(n int) {
 	if n < 1 {
 		n = 1
@@ -898,11 +959,17 @@ func (r *Runner) SetParallelism(n int) {
 		r.workerRetire = make(map[int]context.CancelFunc)
 	}
 	r.targetPar = n
+	// Runner is tearing down (dispatcher closed r.jobs and is in wg.Wait()):
+	// record the intent but don't spawn — a wg.Add here would race the Wait
+	// (runtime panic) and the worker would land on a closed job channel.
+	if r.closing {
+		return
+	}
 	// Grow: spawn new workers, each with its own retire-signal context.
 	// Note: this ctx is NOT used for the subprocess (runOne keeps killCtx);
 	// it only nudges the worker goroutine to exit either right away (idle)
 	// or after the current job completes (in-flight).
-	for r.activeWorkers < r.targetPar {
+	for len(r.workerRetire) < r.targetPar {
 		slotID := r.allocSlotIDLocked()
 		ctx, cancel := context.WithCancel(r.killCtx)
 		r.workerRetire[slotID] = cancel
@@ -913,7 +980,7 @@ func (r *Runner) SetParallelism(n int) {
 	// Shrink: pick highest-numbered slots (so 1..n stays stable) and cancel
 	// their retire-signal ctx. The actual exit timing depends on the worker
 	// being idle vs in-flight (handled in workerLoop).
-	for excess := r.activeWorkers - r.targetPar; excess > 0; excess-- {
+	for excess := len(r.workerRetire) - r.targetPar; excess > 0; excess-- {
 		var pickID int
 		for id := range r.workerRetire {
 			if id > pickID {
@@ -1015,12 +1082,12 @@ func (r *Runner) runOne(_ context.Context, slotID, index int, line string) {
 	// Create log file once; retries append to the same file.
 	logFile, err := os.Create(logPath)
 	if err != nil {
-		r.events <- Event{
+		r.emit(Event{
 			Kind: EventEnd, SlotID: slotID, JobIndex: index, Total: len(r.lines),
 			Line: line, Started: overallStart, Ended: time.Now(),
 			ExitCode: -1, LogPath: logAbs, Err: err,
 			Attempt: 1, MaxAttempts: maxAttempts,
-		}
+		})
 		r.appendResult("FAIL", -1, line, logAbs)
 		return
 	}
@@ -1048,7 +1115,7 @@ func (r *Runner) runOne(_ context.Context, slotID, index int, line string) {
 		}
 
 		attemptStart := time.Now()
-		r.events <- Event{
+		r.emit(Event{
 			Kind:        EventStart,
 			SlotID:      slotID,
 			JobIndex:    index,
@@ -1058,7 +1125,7 @@ func (r *Runner) runOne(_ context.Context, slotID, index int, line string) {
 			LogPath:     logAbs,
 			Attempt:     attempt,
 			MaxAttempts: maxAttempts,
-		}
+		})
 
 		if attempt > 1 {
 			fmt.Fprintf(logFile, "\n=== retry %d/%d (previous exit=%d%s) ===\n",
@@ -1085,6 +1152,8 @@ func (r *Runner) runOne(_ context.Context, slotID, index int, line string) {
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 			return nil
 		}
+		// Escalate to SIGKILL if the process ignores the SIGTERM from Cancel.
+		cmd.WaitDelay = forceKillGrace
 
 		runErr := cmd.Run()
 		cancelTO()
@@ -1125,7 +1194,7 @@ func (r *Runner) runOne(_ context.Context, slotID, index int, line string) {
 	}
 	r.appendResult(tag, finalExitCode, line, logAbs)
 
-	r.events <- Event{
+	r.emit(Event{
 		Kind:        EventEnd,
 		SlotID:      slotID,
 		JobIndex:    index,
@@ -1139,7 +1208,7 @@ func (r *Runner) runOne(_ context.Context, slotID, index int, line string) {
 		Attempt:     attempt,
 		MaxAttempts: maxAttempts,
 		TimedOut:    finalTimedOut,
-	}
+	})
 }
 
 func timedOutSuffix(timedOut bool) string {
@@ -1152,6 +1221,29 @@ func timedOutSuffix(timedOut bool) string {
 func (r *Runner) appendResult(tag string, exitCode int, line, logAbs string) {
 	r.resultMu.Lock()
 	defer r.resultMu.Unlock()
+	if r.resultLog == nil {
+		// Runner already torn down (dispatcher closed and nil'd the handle).
+		// No worker reaches here after wg.Wait(); guard defensively anyway.
+		return
+	}
 	fmt.Fprintf(r.resultLog, "%s\t%d\t%s\t%s\n", tag, exitCode, line, logAbs)
+}
+
+// emit delivers an event to consumers, but abandons the send if the runner is
+// force-killed (killCtx cancelled). Without this, a worker blocks forever on
+// the buffered r.events channel once it fills — which happens when the TUI's
+// event loop is suspended running $EDITOR (tea.ExecProcess). A wedged worker
+// never reaches wg.Done(), so the dispatcher's wg.Wait() never returns and the
+// result.log FD + flocks are never released. Graceful stop (stopCtx) does NOT
+// drop events: those jobs finish and their completions must still be reported.
+//
+// Trade-off: a completion racing force-kill may be dropped here, so the TUI /
+// plain summary COUNTS are approximate at the moment of a force-kill. result.log
+// stays accurate (appendResult runs before emit), and nothing hangs or leaks.
+func (r *Runner) emit(ev Event) {
+	select {
+	case r.events <- ev:
+	case <-r.killCtx.Done():
+	}
 }
 

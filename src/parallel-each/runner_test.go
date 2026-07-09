@@ -85,6 +85,53 @@ func TestReadInputMissingFile(t *testing.T) {
 	}
 }
 
+// A tab in an input item would corrupt the TAB-delimited result.log (breaking
+// resume/dedup), so readInput must reject it rather than accept it silently.
+func TestReadInputRejectsTab(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "in.txt")
+	if err := os.WriteFile(path, []byte("alpha\nbe\tta\ngamma\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := readInput(path)
+	if err == nil {
+		t.Fatal("expected error for tab-containing line, got nil")
+	}
+	if !strings.Contains(err.Error(), "tab") {
+		t.Errorf("error should mention the tab; got %v", err)
+	}
+}
+
+// Enqueue must reject a tab-containing item at runtime for the same reason.
+func TestRunnerEnqueueRejectsTab(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{Parallelism: 1, File: filepath.Join(dir, "in.txt"), Template: `echo {item}`}
+	if err := os.WriteFile(cfg.File, []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := NewRunner(cfg, nil)
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+	if err := r.Enqueue("has\ttab"); err == nil {
+		t.Fatal("expected Enqueue to reject a tab-containing item, got nil")
+	}
+	if n := r.PendingCount(); n != 0 {
+		t.Errorf("rejected item must not be queued; PendingCount=%d", n)
+	}
+}
+
 func TestDigitWidth(t *testing.T) {
 	cases := []struct {
 		in, want int
@@ -1062,6 +1109,7 @@ func TestRunnerSetParallelismShrinksGracefully(t *testing.T) {
 	starts := 0
 	ends := 0
 	endTimes := []time.Duration{}
+	var evMu sync.Mutex // guards ends/endTimes (written by the drain goroutine, read by the test)
 	t0 := time.Now()
 	doneCh := make(chan struct{})
 	startCh := make(chan struct{}, 2)
@@ -1069,13 +1117,15 @@ func TestRunnerSetParallelismShrinksGracefully(t *testing.T) {
 		for ev := range r.Events() {
 			switch ev.Kind {
 			case EventStart:
-				starts++
+				starts++ // goroutine-local
 				if starts <= 2 {
 					startCh <- struct{}{}
 				}
 			case EventEnd:
+				evMu.Lock()
 				ends++
 				endTimes = append(endTimes, time.Since(t0))
+				evMu.Unlock()
 			}
 		}
 		close(doneCh)
@@ -1124,15 +1174,25 @@ func TestRunnerSetParallelismShrinksGracefully(t *testing.T) {
 
 	// Wait until both in-flight finish naturally (~1s sleep).
 	deadline = time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) && ends < 2 {
+	for time.Now().Before(deadline) {
+		evMu.Lock()
+		e := ends
+		evMu.Unlock()
+		if e >= 2 {
+			break
+		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if ends != 2 {
-		t.Errorf("expected 2 EndEvents, got %d", ends)
+	evMu.Lock()
+	gotEnds := ends
+	endTimesCopy := append([]time.Duration(nil), endTimes...)
+	evMu.Unlock()
+	if gotEnds != 2 {
+		t.Errorf("expected 2 EndEvents, got %d", gotEnds)
 	}
 	// Both EndEvents should have arrived close to the natural sleep-1 mark
 	// (no premature SIGTERM).
-	for i, dur := range endTimes {
+	for i, dur := range endTimesCopy {
 		if dur < 800*time.Millisecond {
 			t.Errorf("end[%d] arrived at %.2fs — too early; in-flight should have finished naturally (~1s)",
 				i, dur.Seconds())
@@ -1141,6 +1201,111 @@ func TestRunnerSetParallelismShrinksGracefully(t *testing.T) {
 
 	r.ForceKill()
 	<-doneCh
+}
+
+// A shrink that cancels an in-flight worker (still draining its job) must not
+// be counted as already-gone by a following grow. Target math keys off the
+// live serving set (workerRetire), not activeWorkers, so shrink-then-grow
+// lands exactly on the requested count instead of under-spawning.
+func TestRunnerSetParallelismShrinkThenGrow(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2 workers, 2 long jobs -> both in-flight, none idle. SetLive keeps the
+	// job channel open so a grown worker doesn't hit a closed channel.
+	cfg := Config{Parallelism: 2, Template: `sleep 3`}
+	r := NewRunner(cfg, []string{"a", "b"})
+	r.SetLive(true)
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		r.ForceKill()
+		for range r.Events() {
+		}
+	}()
+
+	// Wait for both jobs to be in-flight.
+	started := 0
+	startCh := make(chan struct{}, 8)
+	go func() {
+		for ev := range r.Events() {
+			if ev.Kind == EventStart {
+				startCh <- struct{}{}
+			}
+		}
+	}()
+	for started < 2 {
+		select {
+		case <-startCh:
+			started++
+		case <-time.After(2 * time.Second):
+			t.Fatalf("only %d starts before timeout", started)
+		}
+	}
+
+	// Shrink to 1: cancels the in-flight slot 2 (still draining its 3s sleep),
+	// so it leaves workerRetire immediately but activeWorkers stays 2 until it
+	// actually exits. Then grow to 3.
+	r.SetParallelism(1)
+	r.SetParallelism(3)
+
+	// The live serving set must equal the requested target right away —
+	// spawning is synchronous under workerMu. Pre-fix, grow read the inflated
+	// activeWorkers and under-spawned (len would be 2, not 3).
+	r.workerMu.Lock()
+	live := len(r.workerRetire)
+	target := r.targetPar
+	r.workerMu.Unlock()
+	if target != 3 {
+		t.Fatalf("targetPar = %d, want 3", target)
+	}
+	if live != 3 {
+		t.Errorf("live serving workers (len workerRetire) = %d, want 3 (shrink-then-grow under-spawned)", live)
+	}
+}
+
+// A subprocess that ignores SIGTERM must still be terminated: cmd.WaitDelay
+// escalates to SIGKILL so force-kill can't be defeated and shutdown can't hang.
+func TestRunnerForceKillEscalatesToSIGKILL(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	// Shorten the SIGKILL grace so the test is fast; restore after.
+	saved := forceKillGrace
+	forceKillGrace = 300 * time.Millisecond
+	defer func() { forceKillGrace = saved }()
+
+	// The job traps SIGTERM and sleeps long; only SIGKILL (via WaitDelay) ends it.
+	cfg := Config{Parallelism: 1, Template: `trap '' TERM; sleep 60`}
+	r := NewRunner(cfg, []string{"a"})
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Let the job start and install its trap, then force-kill.
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		r.ForceKill()
+	}()
+
+	start := time.Now()
+	for range r.Events() {
+	}
+	elapsed := time.Since(start)
+	// SIGTERM is ignored, so termination must come from the WaitDelay SIGKILL:
+	// well under the 60s sleep. Generous upper bound to avoid CI flakiness.
+	if elapsed > 5*time.Second {
+		t.Errorf("shutdown took %v — SIGTERM-ignoring job was not SIGKILLed via WaitDelay", elapsed)
+	}
 }
 
 // PendingSnapshot reflects original lines at Start, shrinks as workers run,
