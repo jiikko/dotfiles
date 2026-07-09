@@ -263,6 +263,8 @@ require("lazy").setup({
       appearance = { nerd_font_variant = "mono" },
       sources = { default = { "lsp", "path", "snippets", "buffer" } },
       signature = { enabled = true },
+      -- 候補選択で説明/型を自動表示 (blink 既定は auto_show=false)
+      completion = { documentation = { auto_show = true, auto_show_delay_ms = 500 } },
       -- プリビルドバイナリが無い環境では Lua 実装へ自動フォールバック
       fuzzy = { implementation = "prefer_rust_with_warning" },
     },
@@ -276,17 +278,18 @@ require("lazy").setup({
       local conform = require("conform")
       conform.setup({
         -- 列挙が無い ft (ruby/go 等) は lsp_format="fallback" でサーバ整形に委ねる
+        -- (ruby は lsp.lua の solargraph.formatting=true 前提。go は gopls が既定で整形)
         formatters_by_ft = {
-          javascript = { "prettierd", "prettier", stop_after_first = true },
-          javascriptreact = { "prettierd", "prettier", stop_after_first = true },
-          typescript = { "prettierd", "prettier", stop_after_first = true },
-          typescriptreact = { "prettierd", "prettier", stop_after_first = true },
-          json = { "prettierd", "prettier", stop_after_first = true },
-          yaml = { "prettierd", "prettier", stop_after_first = true },
-          html = { "prettierd", "prettier", stop_after_first = true },
-          css = { "prettierd", "prettier", stop_after_first = true },
-          scss = { "prettierd", "prettier", stop_after_first = true },
-          markdown = { "prettierd", "prettier", stop_after_first = true },
+          javascript = { "prettierd" },
+          javascriptreact = { "prettierd" },
+          typescript = { "prettierd" },
+          typescriptreact = { "prettierd" },
+          json = { "prettierd" },
+          yaml = { "prettierd" },
+          html = { "prettierd" },
+          css = { "prettierd" },
+          scss = { "prettierd" },
+          markdown = { "prettierd" },
           sh = { "shfmt" },
         },
         formatters = {
@@ -637,7 +640,7 @@ require("lazy").setup({
     config = function()
       require("modes").setup({
         set_cursor = true,      -- カーソルの色を変える
-        set_cursorline = true,  -- truecolor 端末 + termguicolors 前提 (非対応端末に戻す場合は false)
+        set_cursorline = false, -- gui 色前提で termguicolors=off の 256色運用では無効なため off (SUPPORT_TRUECOLOR=false)
         set_number = false,     -- 行番号の背景色も無効
         ignore_filetypes = { "NvimTree", "TelescopePrompt" },
       })

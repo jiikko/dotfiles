@@ -9,11 +9,50 @@
 local M = {}
 
 -- サーバ固有 settings。空テーブルのサーバは共通設定のみで足りるので列挙しない。
+-- inlay hints は既定 off で、<leader>ih トグル (M.setup) で有効化する。サーバ側で hint 種別を
+-- 明示 on にしないと出ないためここで settings を渡す。仮想テキスト描画なので termguicolors=off の
+-- 256色端末でも表示できる (色は淡くなる)。
 M.servers = {
   -- solargraph は mason が入れたバイナリを直接使う (useBundler=false)。project の Gemfile 側
   -- solargraph を bundle exec で使いたい場合のみ true にする (Gemfile に無い project では起動失敗)。
+  -- formatting=true は coc-settings の solargraph.formatting: true を踏襲 (これが無いと Ruby の
+  -- <leader>f/:Format が lsp_format fallback 先の solargraph 既定 off で no-op になる)。
   solargraph = {
-    settings = { solargraph = { useBundler = false, diagnostics = true } },
+    settings = { solargraph = { useBundler = false, diagnostics = true, formatting = true } },
+  },
+  ts_ls = {
+    settings = {
+      typescript = { inlayHints = {
+        includeInlayParameterNameHints = "all",
+        includeInlayVariableTypeHints = true,
+        includeInlayFunctionParameterTypeHints = true,
+        includeInlayFunctionLikeReturnTypeHints = true,
+      } },
+      javascript = { inlayHints = {
+        includeInlayParameterNameHints = "all",
+        includeInlayVariableTypeHints = true,
+        includeInlayFunctionParameterTypeHints = true,
+        includeInlayFunctionLikeReturnTypeHints = true,
+      } },
+    },
+  },
+  gopls = {
+    settings = { gopls = { hints = {
+      parameterNames = true,
+      assignVariableTypes = true,
+      constantValues = true,
+      functionTypeParameters = true,
+      rangeVariableTypes = true,
+      compositeLiteralTypes = true,
+      compositeLiteralFields = true,
+    } } },
+  },
+  pyright = {
+    settings = { python = { analysis = { inlayHints = {
+      variableTypes = true,
+      functionReturnTypes = true,
+      callArgumentNames = true,
+    } } } },
   },
 }
 
@@ -123,9 +162,11 @@ local function setup_diagnostics()
     },
   })
 
-  -- coc 時代のサイン配色 (エラー=白字/赤地・警告=黒字/橙地) を踏襲
-  vim.api.nvim_set_hl(0, "DiagnosticSignError", { fg = "#ffffff", bg = "#ff0000" })
-  vim.api.nvim_set_hl(0, "DiagnosticSignWarn", { fg = "#000000", bg = "#d78700" })
+  -- coc 時代のサイン配色 (エラー=白字/赤地・警告=黒字/橙地) を踏襲。
+  -- gui と cterm を併記する: この環境は SUPPORT_TRUECOLOR=false で termguicolors=off の 256色運用のため
+  -- gui 色だけだと無視され既定色のままになる (bufferline と同じ規律)。
+  vim.api.nvim_set_hl(0, "DiagnosticSignError", { fg = "#ffffff", bg = "#ff0000", ctermfg = 231, ctermbg = 196 })
+  vim.api.nvim_set_hl(0, "DiagnosticSignWarn", { fg = "#000000", bg = "#d78700", ctermfg = 16, ctermbg = 172 })
 
   -- 診断の前後移動 (coc: [g / ]g)。0.11 で goto_prev/goto_next は jump に統合された。
   vim.keymap.set("n", "[g", function()
@@ -161,6 +202,14 @@ function M.setup(capabilities)
       vim.lsp.buf.hover()
     end
   end, { silent = true, desc = "Hover / help" })
+
+  -- inlay hints の opt-in トグル (既定 off)。現在バッファに対して有効/無効を切り替える。
+  -- inlayHint 対応クライアントが無いバッファでは何も起きない (no-op)。
+  vim.keymap.set("n", "<leader>ih", function()
+    local on = vim.lsp.inlay_hint.is_enabled({ bufnr = 0 })
+    vim.lsp.inlay_hint.enable(not on, { bufnr = 0 })
+    vim.notify("Inlay hints: " .. (on and "off" or "on"))
+  end, { silent = true, desc = "Toggle inlay hints" })
 
   -- キーマップは attach したサーバ種別に依らずバッファへ張る
   local grp = vim.api.nvim_create_augroup("dotfiles_lsp_attach", { clear = true })

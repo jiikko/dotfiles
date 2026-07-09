@@ -55,6 +55,7 @@ ensure_config_link() {
 }
 
 ensure_config_link "$HOME/.config/nvim/init.lua" "$HOME/dotfiles/_nviminit.lua"
+ensure_config_link "$HOME/.config/nvim/lazy-lock.json" "$HOME/dotfiles/_lazy-lock.json"
 ensure_config_link "$HOME/.tmux.conf" "$HOME/dotfiles/_tmux.conf"
 
 # .claude directory: agents/skills should be real dirs with individual symlinks

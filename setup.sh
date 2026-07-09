@@ -11,6 +11,9 @@ done
 
 mkdir -p ~/.config/nvim
 ln -sf ~/dotfiles/_nviminit.lua ~/.config/nvim/init.lua
+# lazy-lock.json を repo 管理する。symlink 経由なので :Lazy update/sync の書き込みが
+# repo 側 _lazy-lock.json に反映され、プラグインのバージョン固定が dotfiles で再現される。
+ln -sf ~/dotfiles/_lazy-lock.json ~/.config/nvim/lazy-lock.json
 ln -sf ~/dotfiles/_tmux.conf ~/.tmux.conf
 
 # setup .claude directory
