@@ -62,6 +62,36 @@ end
 
 require("dotfiles.basic").setup()
 
+-- ============================================================================
+-- [SELF-HEAL] vim.loader (luac バイトコードキャッシュ) の stale 自己修復
+-- ----------------------------------------------------------------------------
+-- プラグイン構成を大きく変えた直後の初回起動で、vim.loader のディスクキャッシュ
+-- (~/.cache/nvim/luac) が stale になり、実在するモジュールを "module ... not found" と
+-- 誤判定することがある (coc→ネイティブ LSP 移行時に nvim-treesitter.configs で実際に発生)。
+-- 対策: require が "not found" で失敗し、かつ当該 .lua が rtp に実在するときだけ、luac を
+-- 消して loader をリセットし一度だけ retry する (同一起動で自己修復)。
+-- 真に存在しないモジュール・構文エラーは握り潰さずそのまま投げる (誤検出でエラーを隠さない)。
+local function require_resilient(mod)
+  local ok, m = pcall(require, mod)
+  if ok then return m end
+  local base = mod:gsub("%.", "/")
+  local on_rtp = #vim.api.nvim_get_runtime_file("lua/" .. base .. ".lua", false) > 0
+    or #vim.api.nvim_get_runtime_file("lua/" .. base .. "/init.lua", false) > 0
+  if type(m) == "string" and m:find("not found", 1, true) and on_rtp then
+    vim.fn.delete(vim.fn.stdpath("cache") .. "/luac", "rf")
+    if vim.loader and vim.loader.reset then vim.loader.reset() end
+    package.loaded[mod] = nil
+    vim.schedule(function()
+      vim.notify(
+        ("stale module cache を検出: %s。~/.cache/nvim/luac を消去して復旧しました。"):format(mod),
+        vim.log.levels.WARN
+      )
+    end)
+    return require(mod)
+  end
+  error(m)
+end
+
 -- Setup lazy.nvim
 require("lazy").setup({
   { "ellisonleao/gruvbox.nvim",
@@ -137,7 +167,8 @@ require("lazy").setup({
     branch = "master",
     build = ":TSUpdate",
     config = function()
-      require("nvim-treesitter.configs").setup({
+      -- stale luac cache で "nvim-treesitter.configs not found" になっても自己修復する
+      require_resilient("nvim-treesitter.configs").setup({
         ensure_installed = { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "graphql", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "typescript", "vim", "yaml" },
         auto_install = false,
         highlight = { enable = true },
@@ -342,23 +373,24 @@ require("lazy").setup({
           -- 選択タブの左端にインジケータバーを出す (非選択との差を強調)
           indicator = { style = "icon", icon = "▎" },
         },
-        -- アクティブタブと非アクティブタブの差を強く付ける:
-        --   選択 = 黒字 × gruvbox pink + 太字 + 橙のインジケータバー
+        -- アクティブ/非アクティブの差を強く付ける。
+        --   選択 = 明るい pink 地 × 黒の太字 + 橙のインジケータバー (最も目立たせる)
         --   非選択 = 暗い地に沈んだ灰字 (存在感を弱める)
-        -- ※ gui 色指定のため truecolor 端末前提 (非対応端末の retrobox 時は既定色にフォールバック。
-        --   従来から gui 指定のみだったため挙動は不変)。
+        -- gui(truecolor) と cterm(256色) の両方を指定する。この環境は ~/.zshenv の
+        -- SUPPORT_TRUECOLOR=false で retrobox + termguicolors=off (256色) のため、
+        -- gui 色だけでは一切効かず区別が付かなかった。cterm を併記し 256色端末でも効かせる。
         highlights = {
-          fill = { bg = "#1d2021" },
+          fill = { bg = "#1d2021", ctermbg = 234 },
           -- 非選択バッファ (最も沈める)
-          background = { fg = "#665c54", bg = "#1d2021" },
-          modified = { fg = "#665c54", bg = "#1d2021" },
-          -- 別ウィンドウで可視だが非アクティブ (中間)
-          buffer_visible = { fg = "#a89984", bg = "#1d2021" },
-          modified_visible = { fg = "#a89984", bg = "#1d2021" },
-          -- アクティブ (最も目立たせる)
-          buffer_selected = { fg = "#1d2021", bg = "#d3869b", bold = true, italic = false },
-          modified_selected = { fg = "#1d2021", bg = "#d3869b", bold = true },
-          indicator_selected = { fg = "#fe8019", bg = "#d3869b" }, -- gruvbox orange のバー
+          background = { fg = "#665c54", bg = "#1d2021", ctermfg = 245, ctermbg = 237 },
+          modified = { fg = "#665c54", bg = "#1d2021", ctermfg = 245, ctermbg = 237 },
+          -- 別ウィンドウで可視だが非アクティブ (中間トーン)
+          buffer_visible = { fg = "#a89984", bg = "#1d2021", ctermfg = 250, ctermbg = 237 },
+          modified_visible = { fg = "#a89984", bg = "#1d2021", ctermfg = 250, ctermbg = 237 },
+          -- アクティブ (明るい pink 地 + 黒の太字)
+          buffer_selected = { fg = "#1d2021", bg = "#d3869b", ctermfg = 235, ctermbg = 175, bold = true, italic = false },
+          modified_selected = { fg = "#1d2021", bg = "#d3869b", ctermfg = 235, ctermbg = 175, bold = true },
+          indicator_selected = { fg = "#fe8019", bg = "#d3869b", ctermfg = 208, ctermbg = 175 }, -- 橙のバー
         },
       })
 
