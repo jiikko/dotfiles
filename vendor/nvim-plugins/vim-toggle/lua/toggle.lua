@@ -27,21 +27,19 @@ local function truthy(x)
 end
 
 -- g: のトグルリストを文字列化し、on/off の長さを揃える (長い方を切り詰め)。
--- 原版 s:toggle_validate 相当。呼び出しは M.toggle で invocation ごと 1 回。
+-- 原版 s:toggle_validate 相当。呼び出しは toggle_cursor 内 (数値 early-return より後) = 上流と同位置。
 local function toggle_validate()
+  -- 文字列化は Vim 側で行い string() と完全一致させる (Float 2.0 -> '2.0' 等)。vim.g 経由で Lua に
+  -- marshaling してから fn.string すると Float 情報が落ちて '2' になり原版と食い違うため。
+  for _, nm in ipairs({ 'toggle_chars_off', 'toggle_chars_on', 'toggle_words_off', 'toggle_words_on' }) do
+    if vim.g[nm] ~= nil then
+      vim.cmd('call map(g:' .. nm .. ", {_, v -> type(v) == 1 ? v : string(v)})")
+    end
+  end
   for _, name in ipairs({ 'toggle_chars', 'toggle_words' }) do
     local name0, name1 = name .. '_off', name .. '_on'
     local opts0 = vim.g[name0] or {}
     local opts1 = vim.g[name1] or {}
-    local function stringify(t)
-      local r = {}
-      for i = 1, #t do
-        local v = t[i]
-        r[i] = type(v) == 'string' and v or fn.string(v)
-      end
-      return r
-    end
-    opts0, opts1 = stringify(opts0), stringify(opts1)
     if #opts0 > #opts1 then
       name0, name1, opts0, opts1 = name1, name0, opts1, opts0
     end
@@ -91,6 +89,9 @@ local function toggle_cursor(expand_flag, strict)
 
   -- (2) カーソル下キーワードのトグル (true/false yes/no on/off 等)
   local char = fn.strcharpart(line, fn.charidx(line, cnum - 1), 1)
+  -- リスト正規化は上流と同じくここ (数値 early-return より後) で呼ぶ。invocation 先頭へ hoist すると
+  -- 数値トグル時にも validate が走り、リスト長不一致時に原版が出さない truncation 警告/切り詰めが起きる。
+  toggle_validate()
   if empty(strict) and fn.match(char, [[\C\k]]) ~= -1 then
     -- vim.g[...] はアクセスごとに list 全体を marshaling するのでローカルに 1 回だけ読む
     local words_on, words_off = vim.g.toggle_words_on, vim.g.toggle_words_off
@@ -167,9 +168,6 @@ function M.toggle(repeat_, region, strict, firstline, lastline)
   else                                       -- command range
     lnums = { firstline or fn.line('.'), lastline or fn.line('.') }
   end
-
-  -- リスト正規化は invocation ごと 1 回 (原版は s:toggle_cursor 内で列ごとに呼んでいた)
-  toggle_validate()
 
   local winview = fn.winsaveview()
   for lnum = lnums[1], lnums[2] do
