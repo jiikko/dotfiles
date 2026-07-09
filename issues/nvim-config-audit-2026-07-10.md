@@ -7,27 +7,26 @@
   2. `nvim` ランタイムソース（`$VIMRUNTIME/lua/vim/lsp/*`）を grep して使用 API の非推奨注釈を確認。
   3. フル config を headless ロード + `Lazy! load all` で**全プラグインの setup() を実行**し、非推奨/削除通知と `:checkhealth` を採取（eager だけでなく lazy 経路も網羅）。
   4. Workflow で 19 プラグインのオプション/API を**固定コミットの実ソースに照合**（silent-ignore を含む）、各 finding をアドバーサリアル検証（証拠パス必須、recall 禁止）。計 21 エージェント。確定 finding は main が実ソースで再検閲。
-判定方針: 「実装が既に強制している事実は指摘しない／証拠のない断定を書かない」。**未対応 2 件（いずれも P3）・本セッションで解決 1 件（元 P1）・意図的 2 件・clean 確認多数**。設定本体はおおむね modern。かつて主問題だったテストハーネスの構造欠陥は、本セッション中にユーザーが修正済み（#1 参照）。
+判定方針: 「実装が既に強制している事実は指摘しない／証拠のない断定を書かない」。**本セッションで解決 3 件（P3 2 件 + 元 P1 1 件）・未対応 0 件（要対応タスクなし）・意図的 2 件・clean 確認多数**。設定本体はおおむね modern。テストハーネスの構造欠陥（元 P1）と P3 2 件はいずれも本セッションで修正済み。
 
 ---
 
-## 未対応の課題（2 件、いずれも P3）
+## 対応済みの課題（2 件・P3、本セッション commit `ac23d88` で修正）
 
-### 1. [P3 / silent-behavior-loss] sidekick.nvim: `win.width`/`win.height` がフラット指定で無効 — フロート窓が既定 0.9/0.9 に
+### 1. [P3 / silent-behavior-loss] ✅ sidekick.nvim: `win.width`/`win.height` がフラット指定で無効 — フロート窓が既定 0.9/0.9 に
 
 - **ファイル**: `_nviminit.lua:667-671`（`win = { layout = "float", width = 0.6, height = 0.7 }`）
 - **内容**: 固定バージョン（lazy-lock: `208e1c5`）では、レイアウト寸法は `win.float.{width,height}`（layout="float" 時）/ `win.split.{width,height}` に**ネスト**する仕様。`layout` の兄弟としてフラットに置いた `width`/`height` は**どこからも読まれない**。実ソース `lua/sidekick/cli/terminal.lua:360-361` の `open_win()` は `vim.deepcopy(is_float and win_opts.float or win_opts.split)` と `self.opts.float/split` だけをマージして `nvim_open_win` opts を構築し、`self.opts.width`/`self.opts.height` を参照しない。`config.lua` の `vim.tbl_deep_extend("force", defaults, opts)` はフラット `width`/`height` を「読まれない余剰キー」として黙ってマージする（警告なし）。→ フロート窓は意図の 0.6/0.7 でなく既定 `float.width=0.9, float.height=0.9` になる。
 - **由来**: フラット→ネストの変更は上流 commit `c93c0cb`(2025-09-30, "feat(terminal): added full support for split / float layouts")。`git merge-base --is-ancestor c93c0cb HEAD` = 真（固定コミットは変更後）。
-- **対応**: `win = { layout = "float", float = { width = 0.6, height = 0.7 } }` に修正。
+- **✅ 対応済み** (`ac23d88`): `win = { layout = "float", float = { width = 0.6, height = 0.7 } }` にネストして修正。
 - **検証メモ**: main が実ソース直読で再確認（`terminal.lua:360-372` が読むのは deepcopy 済みローカル `opts` であり `self.opts.width` ではない。トップレベル width/height の読み取り箇所は grep でゼロ）。severity P3 は「窓サイズが既定に落ちるだけで機能は動く」ため。
 
-### 2. [P3 / silent-behavior-loss] modes.nvim: `set_number = false` が固定バージョン v0.2.1 で無効
+### 2. [P3 / silent-behavior-loss] ✅ modes.nvim: `set_number = false` が固定バージョン v0.2.1 で無効
 
 - **ファイル**: `_nviminit.lua:648,654`（`tag = "v0.2.1"` 固定 + `set_number = false`）
 - **内容**: 固定 `v0.2.1`（commit `2cd194d`）の実ソース `lua/modes.lua` で `set_number` は **L15 の既定テーブルにしか現れず、どこからも読まれない**（`grep set_number lua/` のヒットは 1 行のみ）。`M.highlight()` は全 scene の `winhighlight` マップ（`CursorLineNr` 含む）を `set_number` の判定なしに無条件適用する。→ `set_number=false`（行番号背景を無効化する意図）は**効かない**。ゲート `if not config.set_number then winhl_map.CursorLineNr = nil end` は後続 commit `9ca1d68`("fix: ignored `set_number` config (#45)", 2023-09-20) で追加され、これは `2cd194d` の子孫（`git merge-base --is-ancestor 2cd194d 9ca1d68` = 真）。
-- **対応（2 択）**:
-  - (a) **modes.nvim を `v0.3.0` へ更新**する。`set_number` ゲートを含む版であり、この旧ピン（v0.2.1 固定）自体も同時に解消する。更新後に 256色運用で表示崩れがないか目視確認。
-  - (b) v0.2.1 を維持するなら、`set_number = false` は**この版では無効**である旨と「なぜ v0.2.1 に固定するか」を該当行にコメントで残す（[`pending-issue-rationale-in-code.md`] 準拠。現状ピン理由は未文書）。
+- **✅ 対応済み** (`ac23d88`): 案 (a) を採用し **modes.nvim を `v0.3.0` へ更新**（spec の `tag` + lock commit）。`set_number` ゲート（#45 fix）を含む版になり `set_number=false` が効くようになる。v0.3.0 の schema 変更に追従して `ignore_filetypes`→`ignore` へ改称し、新設 `set_signcolumn=false` を追加（256色運用で `set_cursorline`/`set_number` を off にしている既存方針に合わせる。`set_signcolumn` は v0.3.0 で実際に読まれることをソース確認済み）。
+  - **⚠️ 要フォロー（ユーザ操作）**: 反映には `:Lazy restore`（or `:Lazy sync`）が必要（installed は現状まだ v0.2.1=`2cd194d`）。更新後に 256色運用で表示崩れがないか目視確認。
 - **検証メモ**: main が HEAD=2cd194d と set_number 未参照を実測再確認。「v0.2.1 旧ピン」と同一根なので (a) が根本解。severity P3 は「行番号背景の色だけ・256色運用では視認性が低い」ため。
 
 ---
