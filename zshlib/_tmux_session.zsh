@@ -132,7 +132,12 @@ _tt_wait_for_restore () {
 # 過去 boot の rc=1/2 で残置され、last に焼き付いて復元されてきた stale hold を掃除する。
 # rc=1/2 では hold を畳まず attach するため（進行中復元への割り込み防止）、実セッションが
 # 出来ると保存が再開し stale hold も last に含まれ、次 boot で復元されて 1 個ずつ蓄積する。
-# 生きた作業を殺さないよう三重条件で厳しく絞る:
+# 生きた作業を殺さないよう厳しく絞る:
+#   (0) @tt-adopted が立っている hold は形状に関係なく除外する。rc=1/2 でユーザーが attach
+#       して作業を始めた hold（_tt_impl が attach 直前にこのフラグを立てる）は、split も
+#       追加 window もせず 1win/1pane のまま detach（端末を閉じる）と、(b)(c) を素通りして
+#       誤 kill されうる。pristine 形状だけでは disposable な空 hold と区別できないため、
+#       「ユーザーが中に入った」ことを明示フラグで記録して確実に除外する。
 #   (a) 名前が __tt_hold_<pid> で、その pid が「並行 tt」でない。並行 tt の pid は必ず
 #       zsh プロセス（tt は zsh 関数として動く）なので、pid 死亡に加えて「生存しているが
 #       zsh でない」も並行 tt でないとみなす。pid だけの kill -0 判定だと、boot 跨ぎで
@@ -140,7 +145,8 @@ _tt_wait_for_restore () {
 #       空セッションが last に焼き付いたまま毎 boot 復元され続ける
 #   (b) client が attach していない（session_attached=0）
 #   (c) pristine 形状（1 window かつ 1 pane。`tmux new-session -d` 直後の姿）
-# rc=1/2 で hold に attach してユーザーが作業を始めた hold は (b) または (c) で必ず除外される。
+# 旧設計は (a)〜(c) のみで、「rc=1/2 で adopt され pristine のまま detach された live hold」を
+# 誤 kill しえた（データ損失）。それを (0) の @tt-adopted 除外で塞ぐ。
 _tt_gc_stale_holds () {
   local sname wins attached spid panes
   tmux list-sessions -F '#{session_name} #{session_windows} #{session_attached}' 2>/dev/null \
@@ -151,6 +157,10 @@ _tt_gc_stale_holds () {
       esac
       spid="${sname#${TT_HOLD_PREFIX:-__tt_hold_}}"
       case "$spid" in ''|*[!0-9]*) continue ;; esac   # pid 部が数値でない → 触らない
+      # (0) adopted hold（rc=1/2 でユーザーが attach して作業中の hold）は形状に関係なく除外。
+      if [ -n "$(tmux show-options -qv -t "=$sname" @tt-adopted 2>/dev/null)" ]; then
+        continue
+      fi
       # (a) pid 生存 かつ zsh プロセス = 並行 tt → 触らない。zsh 以外への pid 再利用は
       #     (b)(c) の判定へ進む（attach 中 / 育った hold は依然そちらで守られる）。
       #     ps -o comm= は macOS で実行パス or ログインシェルの "-zsh"、Linux で "zsh"。
@@ -246,6 +256,10 @@ _tt_impl () {
         if tmux has-session -t "=$name" 2>/dev/null; then
           tmux attach-session -t "=$name"
         else
+          # 目的セッション未復元 → hold をそのまま作業場所として adopt する。
+          # @tt-adopted を立てて _tt_gc_stale_holds の誤 kill から保護する（pristine な
+          # まま detach しても (b)(c) を素通りして殺されないように。関数側 (0) 参照）。
+          tmux set-option -t "=$hold" @tt-adopted 1 2>/dev/null
           tmux attach-session -t "=$hold"
         fi
         return ;;
