@@ -27,10 +27,12 @@ check="$tmp_root/check_ambiwidth.lua"
 # 重要: +luafile のエラーは終了コードに伝わらず後続の +qall が exit 0 にしてしまう
 # (nvim の仕様)。assert を pcall で捕捉し、失敗時は cquit で明示的に非0終了させる。
 cat >"$check" <<EOF
-vim.opt.rtp:append("$AW_DIR")
-local aw = require("ambiwidth")
-
 local ok, err = pcall(function()
+  -- require も pcall の内側に置く。モジュールが壊れ/改名/構文エラーだと require が throw するが、
+  -- pcall の外だと +qall が exit 0 にして空振り PASS になる (回帰テストの意味が消える)。
+  vim.opt.rtp:append("$AW_DIR")
+  local aw = require("ambiwidth")
+
   local BASE = 32 -- 常時適用の base レンジ数 (上流生成物のスナップショット)
   local CICA = 63 -- Cica/Nerd Font PUA レンジ数
   local DEFAULT = BASE + CICA -- 未設定 = cica on
@@ -91,6 +93,12 @@ EOF
 log="$tmp_root/check_ambiwidth.log"
 print "[test-nvim:zsh] ambiwidth (Lua port) setup()"
 if ! "$NVIM_BIN" --headless -u NONE "+luafile $check" +qall >"$log" 2>&1; then
+  cat "$log" >&2
+  exit 1
+fi
+# cquit を確実に踏むための backstop (握り潰し経路が残っても stderr のエラーで検出する)。
+if grep -qE 'E[0-9]{2,}:|Error detected while processing|stack traceback' "$log"; then
+  print -u2 "[test-nvim:zsh] ambiwidth check produced errors:"
   cat "$log" >&2
   exit 1
 fi

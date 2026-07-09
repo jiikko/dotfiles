@@ -34,16 +34,16 @@ if grep -qE 'E[0-9]{2,}:|Error detected while processing|stack traceback' "$test
 fi
 
 lazy_check="$tmp_root/lazy_check.lua"
-# +qall は lua の error を握り潰し exit 0 にするため、error() ではなく cquit で非0終了させる。
+# +qall は lua の error を握り潰し exit 0 にするため cquit で非0終了させる。require だけでなく
+# lazy.stats() の throw / count 欠落 (nil) も握り潰さないよう、検査全体を pcall で捕捉する。
 cat <<'EOF' > "$lazy_check"
-local ok, lazy = pcall(require, 'lazy')
+local ok, err = pcall(function()
+  local lazy = require('lazy')
+  local stats = lazy.stats()
+  assert(stats and type(stats.count) == 'number' and stats.count > 0, 'lazy.nvim returned empty/invalid stats')
+end)
 if not ok then
-  vim.api.nvim_err_writeln('lazy.nvim not available')
-  vim.cmd('cquit 1')
-end
-local stats = lazy.stats()
-if not stats or stats.count == 0 then
-  vim.api.nvim_err_writeln('lazy.nvim returned empty stats')
+  vim.api.nvim_err_writeln('lazy check failed: ' .. tostring(err))
   vim.cmd('cquit 1')
 end
 EOF
@@ -54,5 +54,11 @@ print "[test-nvim:zsh] checking lazy.nvim availability"
   cat "$lazy_log" >&2
   exit 1
 }
+# cquit を確実に踏むための backstop (config-load 検査と同様、stderr のエラーも検出する)。
+if grep -qE 'E[0-9]{2,}:|Error detected while processing|stack traceback' "$lazy_log"; then
+  print -u2 "[test-nvim:zsh] lazy check produced errors:"
+  cat "$lazy_log" >&2
+  exit 1
+fi
 
 print "[test-nvim:zsh] done"
