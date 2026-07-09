@@ -42,7 +42,7 @@
 
 | 現行                                         | 主な役割        | 最終更新   | デファクト候補                                       | 乗り換え可否 | 今すぐ捨てる? | Vimscript依存? | メモ |
 | -------------------------------------------- | --------------- | ---------- | ---------------------------------------------------- | ------------ | ------------- | --------------- | ---------------------------------------------------- |
-| ✅ lukelbd/vim-toggle                        | トグル          | 2025-02-03 | `echasnovski/mini.operators`, `folke/which-key`      | △ | △ | はい | 辞書が充実しており今も実用。もともと小さく Lua 化しても費用対効果は薄いので当面維持。 |
+| ✅ lukelbd/vim-toggle (**vendored**)         | トグル          | 2025-02-03 | `echasnovski/mini.operators`, `folke/which-key`      | △ | △ | はい | 辞書が充実しており今も実用。上流の更新が遅く語彙を自分で保守するため `vendor/nvim-plugins/vim-toggle` に取り込み、lazy の `dir` でローカル読み込み (VENDOR.md 参照)。 |
 | ✅ andymass/vim-matchup                      | 括弧/タグマッチ | 2025-12-31 | 同プラグイン                                         | × | × | いいえ | Treesitter 対応でデファクト。 |
 | ✅ nvim-treesitter/\*                        | 構文解析        | 2026-01-10 | 同プロジェクト                                       | × | × | いいえ | 乗り換え不要。 |
 | ✅ RRethy/nvim-treesitter-endwise            | end 自動補完    | 2025-12-29 | 同プラグイン, `tpope/vim-endwise`                    | × | × | いいえ | Ruby/Lua/Vimscript 等で `if`〜`end` を自動補完。Treesitter ベースで構文解析に追従。 |

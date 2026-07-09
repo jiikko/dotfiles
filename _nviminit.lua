@@ -110,7 +110,9 @@ require("lazy").setup({
     end,
   },
   { "tpope/vim-rails", ft = { "ruby", "eruby" } },
-  { "lukelbd/vim-toggle",
+  -- vim-toggle は repo 内に vendor 済み (vendor/nvim-plugins/vim-toggle、VENDOR.md 参照)。
+  -- GitHub 取得でなくローカルコピーを dir で読む (トグル語彙を自分で保守するため)。
+  { dir = config_dir .. "/vendor/nvim-plugins/vim-toggle", name = "vim-toggle",
     event = "VeryLazy",
     init = function()
       vim.g.toggle_map = '+'
