@@ -240,10 +240,26 @@ proj 3 1"
   # 非attach + pristine なら kill される (pid 再利用で GC が恒久 skip する回帰の防止)。
   # sleep はスタブ関数なので command で実バイナリを background 起動する (comm=sleep)。
   command sleep 100 & NONZSH=$!
+  # fork-exec レース対策: 起動直後は ps がまだ execve 前の zsh (fork コピー) を返すことが
+  # あり、GC が (a) で「並行 tt」と誤判定して kill を skip する (Linux CI で flaky に落ちた)。
+  # comm が zsh でなくなる (= sleep を exec 済み) まで待つ。sleep はスタブなので実待機は
+  # command sleep で行い、最大 ~2s で打ち切って現状動作にフォールバックする。
+  _gc_wait=0
+  while :; do
+    _gc_comm="$(ps -o comm= -p "$NONZSH" 2>/dev/null)"
+    case "$_gc_comm" in
+      (*zsh*) ;;
+      (*) [ -n "$_gc_comm" ] && break ;;
+    esac
+    _gc_wait=$((_gc_wait+1))
+    [ "$_gc_wait" -ge 100 ] && break
+    command sleep 0.02
+  done
   reset_log
   _T_GC_SESSIONS="__tt_hold_${NONZSH} 1 0"
   _tt_gc_stale_holds
-  print "CASE:gc_pid_reused kill=[$_LOG_KILL]"
+  # comm も出す: CI で再度落ちたら観測した comm から原因 (fork-exec 窓 / 別要因) を切り分ける。
+  print "CASE:gc_pid_reused kill=[$_LOG_KILL] comm=[$_gc_comm]"
   kill "$NONZSH" 2>/dev/null; wait "$NONZSH" 2>/dev/null
 
   # (保護) 死 pid だが attach 中 → 採用された作業セッション。触らない
