@@ -181,7 +181,11 @@ require("lazy").setup({
         -- 上書きするため)、モジュール有効化と挙動オプションだけ設定する。実際の keymap は
         -- nvim/ftplugin/go.lua が Go 限定 buffer-local で張る (vim-go の scope を踏襲)。
         textobjects = {
-          select = { enable = true, lookahead = true },
+          -- @function.inner を linewise(V) にする (旧 vim-go inner 関数は linewise で、dif が
+          -- body を行ごと消した)。select は keymap を持たない (実 keymap は ftplugin/go.lua) ため
+          -- この selection_modes は af/if を張る Go でのみ実質作用する。af(outer) は vim-go 同様
+          -- charwise のまま。
+          select = { enable = true, lookahead = true, selection_modes = { ["@function.inner"] = "V" } },
           move = { enable = true, set_jumps = true },
         },
       })
@@ -317,7 +321,10 @@ require("lazy").setup({
         -- <leader>f / :Format の手動整形のまま (nil を返すと保存時整形なし)。
         format_on_save = function(bufnr)
           local ft = vim.bo[bufnr].filetype
-          if ft == "terraform" or ft == "hcl" or ft == "go" then
+          if ft == "go" then
+            -- 初回 goimports は module-aware (-srcdir) で cold cache 時 1s を超えうるため長めに。
+            return { timeout_ms = 3000 }
+          elseif ft == "terraform" or ft == "hcl" then
             return { timeout_ms = 1000 }
           end
         end,

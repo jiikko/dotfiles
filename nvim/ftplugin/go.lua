@@ -11,22 +11,29 @@
 local ok_move, move = pcall(require, "nvim-treesitter.textobjects.move")
 local ok_sel, select = pcall(require, "nvim-treesitter.textobjects.select")
 
--- 関数間ジャンプ ]] [[ (旧 vim-go go#textobj#FunctionJump)。n/x/o の 3 モードで次/前の
--- 関数先頭へ。jumplist への追加は configs.setup の move.set_jumps=true が担う。
+-- 関数間ジャンプ ]] [[ (旧 vim-go go#textobj#FunctionJump)。normal と visual のみ。
+-- jumplist への追加は configs.setup の move.set_jumps=true が担う。
+-- operator-pending (o) には張らない: goto_next_start は次関数の先頭文字 (func の f) 上へ
+-- 動くため、d]]/c]]/y]] が次関数の 1 文字を巻き込む (実測: d]] → "unc bravo")。関数単位の
+-- 操作はテキストオブジェクト daf/vaf/yaf (下) が正しく担うので、o は組み込み ]] に委ねる。
 if ok_move then
-  vim.keymap.set({ "n", "x", "o" }, "]]", function()
+  vim.keymap.set({ "n", "x" }, "]]", function()
     move.goto_next_start("@function.outer", "textobjects")
   end, { buffer = true, silent = true, desc = "Next function start" })
-  vim.keymap.set({ "n", "x", "o" }, "[[", function()
+  vim.keymap.set({ "n", "x" }, "[[", function()
     move.goto_previous_start("@function.outer", "textobjects")
   end, { buffer = true, silent = true, desc = "Prev function start" })
 end
 
 -- テキストオブジェクト (旧 vim-go go#textobj#Function/Comment)。x(visual)/o(operator-pending)。
---   af/if = 関数 outer/inner、ac/ic = コメント。
--- Go の textobjects query に @comment.inner は無い (@comment.outer のみ) ため、ic も
--- outer にフォールバックさせる (コメント全体を選択。vim-go の「内側」とは厳密には異なるが
--- 無反応より有用)。将来 query に comment.inner が入れば @comment.inner へ切り替える。
+--   af/if = 関数 outer/inner、ac/ic = コメント。inner (if) の linewise 化は _nviminit.lua の
+--   textobjects.select.selection_modes で設定 (旧 vim-go inner は linewise だった)。
+-- 差分メモ (vim-go と厳密一致しない点。いずれも軽微):
+--   - af は関数の直前 doc コメントを含まない。vim-go は go_textobj_include_function_doc=1 で
+--     含んでいたが、treesitter の @function.outer は (function_declaration) 単体で、after-query
+--     追加では base 定義が優先され効かず、query 全 override は TSUpdate で drift するため見送り。
+--   - Go の textobjects query に @comment.inner は無い (@comment.outer のみ) ため ic も outer に
+--     フォールバックさせる (コメント全体を選択)。将来 query に comment.inner が入れば切替。
 if ok_sel then
   local function textobj(lhs, capture, desc)
     vim.keymap.set({ "x", "o" }, lhs, function()
@@ -41,8 +48,11 @@ end
 
 -- GoDecls 置換 (<leader>gd/gD)。旧 vim-go の GoDecls は fzf/ctrlp backend 未導入で
 -- エラー = 非稼働だった (headless 実測で確認)。telescope の LSP symbol picker で置換する。
--- 宣言一覧が主目的なので func/type 系の kind に絞る (gopls が返す SymbolKind の小文字名)。
-local decl_kinds = { "function", "method", "struct", "interface", "type", "constructor", "enum", "constant" }
+-- 宣言一覧が主目的なので kind で絞る。telescope は SymbolKind 名を小文字化して照合するため
+-- ここも小文字で書く。gopls の返す kind は実測: 関数=function、メソッド=method、
+-- struct=struct、interface=interface、`type X string`/`type X = T` 等の named 型=class、
+-- 定数=constant (LSP SymbolKind に "Type" は無く、素の named 型は Class で来る点に注意)。
+local decl_kinds = { "function", "method", "struct", "interface", "class", "constant" }
 vim.keymap.set("n", "<leader>gd", function()
   require("telescope.builtin").lsp_document_symbols({ symbols = decl_kinds })
 end, { buffer = true, silent = true, desc = "Go declarations (document symbols)" })
