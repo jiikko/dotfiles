@@ -92,14 +92,16 @@ local function toggle_cursor(expand_flag, strict)
   -- (2) カーソル下キーワードのトグル (true/false yes/no on/off 等)
   local char = fn.strcharpart(line, fn.charidx(line, cnum - 1), 1)
   if empty(strict) and fn.match(char, [[\C\k]]) ~= -1 then
+    -- vim.g[...] はアクセスごとに list 全体を marshaling するのでローカルに 1 回だけ読む
+    local words_on, words_off = vim.g.toggle_words_on, vim.g.toggle_words_off
     local word = fn.expand('<cword>')
-    local ion = fn.index(vim.g.toggle_words_on, word, 0, 1)   -- 大小無視
-    local ioff = fn.index(vim.g.toggle_words_off, word, 0, 1)
+    local ion = fn.index(words_on, word, 0, 1)    -- 大小無視
+    local ioff = fn.index(words_off, word, 0, 1)
     local other
     if ioff ~= -1 then
-      other = vim.g.toggle_words_on[ioff + 1]   -- Vim index は 0 始まり → Lua は +1
+      other = words_on[ioff + 1]                  -- Vim index は 0 始まり → Lua は +1
     elseif ion ~= -1 then
-      other = vim.g.toggle_words_off[ion + 1]
+      other = words_off[ion + 1]
     else
       other = ''
     end
@@ -120,14 +122,15 @@ local function toggle_cursor(expand_flag, strict)
 
   -- (3) カーソル下の連続 on-off 文字トグル (&/|/+/-/0/1 等)
   local other, expand2 = '', expand_flag
-  local ioff = fn.index(vim.g.toggle_chars_off, char, 0, 0)   -- 大小区別
-  local ion = fn.index(vim.g.toggle_chars_on, char, 0, 0)
+  local chars_off, chars_on = vim.g.toggle_chars_off, vim.g.toggle_chars_on   -- 同上: 1 回だけ読む
+  local ioff = fn.index(chars_off, char, 0, 0)   -- 大小区別
+  local ion = fn.index(chars_on, char, 0, 0)
   if ioff ~= -1 then
-    other = fn.strcharpart(vim.g.toggle_chars_on[ioff + 1], 0, 1)
-    expand2 = truthy(expand_flag) and (fn.index(vim.g.toggle_chars_off, char, 26) ~= -1)
+    other = fn.strcharpart(chars_on[ioff + 1], 0, 1)
+    expand2 = truthy(expand_flag) and (fn.index(chars_off, char, 26) ~= -1)
   elseif ion ~= -1 then
-    other = fn.strcharpart(vim.g.toggle_chars_off[ion + 1], 0, 1)
-    expand2 = truthy(expand_flag) and (fn.index(vim.g.toggle_chars_on, char, 26) ~= -1)
+    other = fn.strcharpart(chars_off[ion + 1], 0, 1)
+    expand2 = truthy(expand_flag) and (fn.index(chars_on, char, 26) ~= -1)
   end
   if not empty(other) then
     local regex0 = '[' .. char .. other .. ']'
