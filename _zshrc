@@ -587,35 +587,28 @@ bdr() {
   dd if=/dev/zero of="$output_file" bs="$bs" count="$count" oflag="$oflag" status=progress
 }
 
-# av1ify: 呼び出し時に毎回ソースを再読み込み（編集後にシェル再起動不要）
-av1ify() {
-  local _saved="${functions[av1ify]}"
-  source $HOME/dotfiles/zshlib/_av1ify.zsh
-  av1ify "$@"
+# 動画系コマンドの lazy-reload ラッパー: 呼び出しのたびに lib を source し直し、
+# lib の編集をシェル再起動なしで次回呼び出しに反映する。lib は公開名と同名の関数を
+# 再定義する (= source 中にこのラッパー自身が上書きされる) ため、実行後にラッパーを
+# 復元する save/restore が必須。
+# なお t/tt (_tmux_session.zsh) は公開名≠実体名で source が冪等なため復元不要の別 idiom
+# で正当 (あちらの意図コメント参照)。ここに統合しないこと。
+# 引数: $1=公開関数名 $2=lib パス $3=lib 内の実体関数名 (以降が実引数)
+_reload_then_call() {
+  local _fname="$1" _lib="$2" _impl="$3"
+  shift 3
+  local _saved="${functions[$_fname]}"
+  source "$_lib"
+  "$_impl" "$@"
   local _ret=$?
-  functions[av1ify]="$_saved"
+  functions[$_fname]="$_saved"
   return $_ret
 }
-source $HOME/dotfiles/zshlib/_repair.zsh
-# concat: 呼び出し時に毎回ソースを再読み込み（編集後にシェル再起動不要）
-concat() {
-  local _saved="${functions[concat]}"
-  source $HOME/dotfiles/zshlib/_concat.zsh
-  concat "$@"
-  local _ret=$?
-  functions[concat]="$_saved"
-  return $_ret
-}
-# validate-mp4: 呼び出し時に毎回ソースを再読み込み（編集後にシェル再起動不要）
-# 実体は zshlib/_validate_mp4.zsh の validate_mp4()。対話シェルではハイフン名でも呼べるようにする。
-validate-mp4() {
-  local _saved="${functions[validate-mp4]}"
-  source $HOME/dotfiles/zshlib/_validate_mp4.zsh
-  validate_mp4 "$@"
-  local _ret=$?
-  functions[validate-mp4]="$_saved"
-  return $_ret
-}
+av1ify()       { _reload_then_call av1ify       "$HOME/dotfiles/zshlib/_av1ify.zsh"       av1ify       "$@" }
+concat()       { _reload_then_call concat       "$HOME/dotfiles/zshlib/_concat.zsh"       concat       "$@" }
+repair()       { _reload_then_call repair       "$HOME/dotfiles/zshlib/_repair.zsh"       repair       "$@" }
+# validate-mp4 の実体は validate_mp4() (対話シェルではハイフン名でも呼べるようにする)
+validate-mp4() { _reload_then_call validate-mp4 "$HOME/dotfiles/zshlib/_validate_mp4.zsh" validate_mp4 "$@" }
 
 function rrr() {
   local inputfile="$1"
