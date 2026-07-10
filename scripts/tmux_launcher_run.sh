@@ -34,8 +34,10 @@ unset TMUX TMUX_TMPDIR
 # 並行レース対策: 2 プロセスが同時に「未存在」判定すると片方の new-session が duplicate
 # session で失敗し、AND-OR リスト末尾の失敗が set -e を発火してスクリプトが無言死する
 # (メニュー選択が消える)。負けた側は再確認して続行する。
-# ⚠️ `new-session -Ad` (attach-or-create) に畳まないこと: 既存セッション時に attach-session
-#   -d 相当となり他 client を detach する (冒頭の「-A は使わない」不変条件と同根)。
+# ⚠️ `new-session -Ad` (attach-or-create) に畳まないこと: 既存セッション時は attach 動作に
+#   なり、run-shell の非 tty 文脈では "not a terminal" で rc=1 → set -e 死となって、この
+#   レース対策で塞ぎたい無言死がむしろ常態化する (3.7b 実測)。冒頭の「-A は使わない」
+#   不変条件も参照。
 tmux has-session -t "$sess" 2>/dev/null \
   || tmux new-session -d -s "$sess" 2>/dev/null \
   || tmux has-session -t "$sess"
