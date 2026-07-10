@@ -825,6 +825,18 @@ require("lazy").setup({
     end,
   },
 }, {
+  -- ベンチマーク用 seam: DOTFILES_NVIM_DISABLE=plugin1,plugin2 で指定プラグインを無効化して
+  -- 起動できる (tests/nvim/bench_nvim.sh の A/B 比較が使う)。通常運用では未設定 = 全て有効。
+  defaults = {
+    cond = function(plugin)
+      local disabled = vim.env.DOTFILES_NVIM_DISABLE
+      if not disabled or disabled == "" then return true end
+      for name in string.gmatch(disabled, "[^,]+") do
+        if plugin.name == name then return false end
+      end
+      return true
+    end,
+  },
   -- lazy.nvim は既定 (performance.rtp.reset=true) で runtimepath をリセットし、
   -- 上で prepend した dotfiles のパスを消してしまう (nvim/ftplugin が丸ごと死んだ実バグ)。
   -- reset は維持しつつ、残すべきパスを明示する。
@@ -841,9 +853,11 @@ require("lazy").setup({
 })
 
 -- 折り畳みの設定
-vim.opt.foldmethod = "expr"
+-- foldmethod は既定 manual のまま、計算は dotfiles.folds (expr で計算 → manual へ凍結、
+-- FastFold 方式) が担う。expr を常時セットするとバッファ再表示のたびに全行再評価が走る
+-- (6000 行で切替 ~3.4ms) ため、ここでは foldmethod/foldexpr を set しない。
 vim.opt.foldlevel = 100
-vim.opt.foldexpr = "v:lua.vim.treesitter.foldexpr()"
+require("dotfiles.folds").setup()
 function Foldtext()
   local line = vim.fn.getline(vim.v.foldstart)
   local count = vim.v.foldend - vim.v.foldstart + 1
