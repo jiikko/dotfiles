@@ -1,6 +1,15 @@
 #!/usr/bin/env zsh
 # shellcheck shell=bash
 
+# `sh setup.sh` のように sh で明示起動されると shebang が無視され、下方で使う zsh グロブ
+# 修飾子 *(N) が POSIX sh では構文エラーになる (line 54 付近で abort)。zsh 以外で起動された
+# 場合は zsh へ再 exec して、どの起動方法でも zsh で走ることを保証する。
+# 注: この guard より前の行は POSIX sh でも parse 可能に保つこと (sh は exec 到達前に
+# 以降を読まないので、下方の *(N) は再 exec 後に zsh が読む)。
+if [ -z "${ZSH_VERSION:-}" ]; then
+  exec zsh "$0" "$@"
+fi
+
 set -o pipefail
 
 # set rc limlink
@@ -51,6 +60,7 @@ done
 # (N) = zsh の nullglob 修飾子。マッチ無しのとき NOMATCH でスクリプトを abort させず
 # 空展開してループを skip する (本 script は #!/usr/bin/env zsh、set -e 無しでも
 # NOMATCH は当該行で script ごと停止するため。下の掃除ループが本命だが全 glob に付す)。
+# なお sh で起動されてもファイル冒頭の guard で zsh へ再 exec 済みなのでここは常に zsh。
 for f in ~/dotfiles/_claude/hooks/*(N); do
   [ -e "$f" ] && ln -sfn "$f" ~/.claude/hooks/"$(basename "$f")"
 done
