@@ -678,20 +678,6 @@ require("lazy").setup({
     },
   },
   {
-    "mvllow/modes.nvim",
-    -- v0.2.1 では set_number が未参照で無効だった (set_number ゲートは #45 fix = v0.3.0 以降)。
-    tag = "v0.3.0",
-    config = function()
-      require("modes").setup({
-        set_cursor = true,      -- カーソルの色を変える
-        set_cursorline = false, -- gui 色前提で termguicolors=off の 256色運用では無効なため off (SUPPORT_TRUECOLOR=false)
-        set_number = false,     -- 行番号の背景色も無効 (v0.3.0 で実際に効くようになった)
-        set_signcolumn = false, -- v0.3.0 新設。cursorline/number と同じく gui色前提で 256色運用では無効なため off
-        ignore = { "NvimTree", "TelescopePrompt" }, -- v0.3.0 で ignore_filetypes から改称
-      })
-    end,
-  },
-  {
     "folke/sidekick.nvim",
     opts = {
       cli = {
