@@ -269,7 +269,26 @@ require("lazy").setup({
       -- サーバを enable する (lsp/*.lua の既定設定は nvim-lspconfig が rtp 提供)。
       local ok, blink = pcall(require, "blink.cmp")
       lsp.setup(ok and blink.get_lsp_capabilities() or nil)
-      vim.lsp.enable(lsp.ensure_installed)
+      -- バイナリが実在するサーバだけ enable する (~4ms)。fresh install ではまだ mason が
+      -- 入れていないサーバがあり、無条件 enable だと spawn 失敗の通知が出るうえ、導入完了後も
+      -- 再起動まで attach しない (codex 指摘 P2)。導入完了イベントで再 enable して同一
+      -- セッション内でも拾う。
+      local function enable_available()
+        local ready = {}
+        for name in pairs(lsp.server_packages) do
+          local cmd = vim.lsp.config[name] and vim.lsp.config[name].cmd
+          -- cmd が関数のサーバは実在判定できないため enable に含める (現行の一覧は全て table)
+          if type(cmd) ~= "table" or vim.fn.executable(cmd[1]) == 1 then
+            table.insert(ready, name)
+          end
+        end
+        if #ready > 0 then vim.lsp.enable(ready) end
+      end
+      enable_available()
+      vim.api.nvim_create_autocmd("User", {
+        pattern = "MasonToolsUpdateCompleted",
+        callback = enable_available,
+      })
     end,
   },
   { "WhoIsSethDaniel/mason-tool-installer.nvim",
