@@ -75,3 +75,19 @@ jobs:
         env:
           DOTFILES_TS_SKIP_ENSURE: "1"
         run: make test-runtime
+
+      # nvim の起動時間 + 操作レイテンシ (イベントハンドラコスト) を Step Summary に記録する。
+      # report-only: shared runner はノイズが大きく絶対値の閾値 fail は flaky になるため、
+      # 失敗しても job は落とさない。回帰の検出は Summary の経時比較 (人間の目) で行う。
+      # 注: CI は treesitter parser 未導入 (DOTFILES_TS_SKIP_ENSURE=1) のため fold/highlight の
+      # コストは載らない。それらを含む実測はローカルで tests/nvim/bench_nvim.sh を叩く。
+      - name: Bench nvim latency (report only)
+        env:
+          DOTFILES_TS_SKIP_ENSURE: "1"
+        run: |
+          {
+            echo "### nvim bench (report only)"
+            echo '```'
+            tests/nvim/bench_nvim.sh || echo "bench failed (non-blocking)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
