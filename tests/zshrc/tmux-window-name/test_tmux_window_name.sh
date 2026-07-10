@@ -89,17 +89,20 @@ assert_contains "function" "$result" "_tmux_get_display_name is a function"
 # Test 5: _tmux_get_display_name が YAML からコマンドを取得できる
 printf '\n## Test 5: _tmux_get_display_name resolves commands from YAML\n'
 
+# 期待値は YAML 定義の正確な文字列を pin する (assert_contains "nvim" だと _default
+# フォールバック時も「アイコン + コマンド名」にコマンド名が含まれて PASS してしまい、
+# per-entry のタイプミス/消失を検出できない。YAML のエントリを変えたらここも更新する)。
 # nvim のテスト
 result=$(run_zsh '_tmux_get_display_name nvim')
-assert_contains "nvim" "$result" "_tmux_get_display_name returns nvim entry"
+assert_equals " nvim" "$result" "_tmux_get_display_name returns exact nvim entry"
 
 # brew のテスト
 result=$(run_zsh '_tmux_get_display_name brew')
-assert_contains "brew" "$result" "_tmux_get_display_name returns brew entry"
+assert_equals " brew" "$result" "_tmux_get_display_name returns exact brew entry"
 
 # claude のテスト
 result=$(run_zsh '_tmux_get_display_name claude')
-assert_contains "claude" "$result" "_tmux_get_display_name returns claude entry"
+assert_equals "🤖 claude" "$result" "_tmux_get_display_name returns exact claude entry"
 
 # Test 6: _default が未定義コマンドに適用される
 printf '\n## Test 6: _default is applied to unknown commands\n'
