@@ -72,4 +72,26 @@ assert_check ok ".tmux-version ($REQ) と同版数のサーバは満たす"     
 assert_check ng ".tmux-version ($REQ) より古いサーバ (0.9) は満たさない" "0.9"
 assert_check ok ".tmux-version ($REQ) より新しい major ($((REQ_MAJ + 1)).0) は満たす" "$((REQ_MAJ + 1)).0"
 
+printf '\n## 引数なし + サフィックス付き .tmux-version (req 側正規化の回帰ガード)\n'
+# 本物の .tmux-version は触らず、一時 ROOT にスクリプトごとコピーして suffix 付き要求を
+# 読ませる (スクリプトは $0 相対で ../.tmux-version を解決するためこれで注入できる)。
+# req 側の正規化が消えると req_min="7b" が test に渡りエラー → 常に「不足」判定になる
+# (サーバが要求を満たしていても全体ゲートが false になる回帰)。
+mkdir -p "$TMP_DIR/suffix_root/scripts"
+cp "$SCRIPT" "$TMP_DIR/suffix_root/scripts/"
+printf '3.7b\n' > "$TMP_DIR/suffix_root/.tmux-version"
+SUFFIX_SCRIPT="$TMP_DIR/suffix_root/scripts/tmux_version_gte.sh"
+if PATH="$TMP_DIR/bin:$PATH" STUB_VERSION="3.7" "$SUFFIX_SCRIPT" 2>/dev/null; then
+  printf '✓ サフィックス付き要求 (3.7b) をサーバ 3.7 が満たす (req 側正規化)\n'
+else
+  printf '✗ サフィックス付き要求 (3.7b) が常に不足判定になる (req 正規化の回帰)\n'
+  exit 1
+fi
+if PATH="$TMP_DIR/bin:$PATH" STUB_VERSION="3.6a" "$SUFFIX_SCRIPT" 2>/dev/null; then
+  printf '✗ サーバ 3.6a がサフィックス付き要求 (3.7b) を満たしてしまう\n'
+  exit 1
+else
+  printf '✓ サーバ 3.6a はサフィックス付き要求 (3.7b) を満たさない\n'
+fi
+
 printf '\nAll version-gte tests passed successfully!\n'

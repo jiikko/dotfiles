@@ -18,7 +18,10 @@ if [ $# -ge 2 ]; then
 else
   script_dir=$(cd "$(dirname "$0")" && pwd)
   req=$(cat "$script_dir/../.tmux-version")
-  req=$(printf '%s' "$req" | tr -d '[:space:]')
+  # サーバ版数 (下の v) と同じ正規化でサフィックスを剥がす ("3.7a" → "3.7")。
+  # これが無いと req_min="7a" が数値比較に渡り test がエラー → 常に「不足」判定になり、
+  # .tmux-version を tmux の標準命名 (3.7a 等) で書いた瞬間に全体ゲートが壊れる。
+  req=$(printf '%s' "$req" | tr -d '[:space:]' | sed 's/[^0-9.]//g')
   req_maj=${req%%.*}
   req_min=${req#*.}
   req_min=${req_min%%.*}
