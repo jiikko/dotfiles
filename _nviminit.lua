@@ -162,6 +162,10 @@ require("lazy").setup({
     -- classic API (configs.setup) は highlight 用の autocmd を内部で張り自動有効化する
     -- ため、手動の vim.treesitter.start autocmd は不要。
     -- branch を変えたら :Lazy update nvim-treesitter + :TSUpdate で parser を再同期すること。
+    -- [2026-07-10] 上流 repo 自体が archive (read-only) 化済み。上流 README いわく
+    -- master は「Nvim 0.11 の後方互換のため locked のまま残す」、main rewrite は 0.12+ 必須。
+    -- → nvim 0.11 で使ううちはこのピンが正解。Neovim 0.12+ へ上げる時に main 系 rewrite へ
+    -- textobjects とセットで移行を再評価 (issues/nvim-plugin-rewrite-candidates-2026-07-10.md 追記節)。
     branch = "master",
     build = ":TSUpdate",
     -- textobjects も master に固定する (nvim-treesitter を master 凍結しているため。default
