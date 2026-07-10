@@ -76,6 +76,32 @@ M.ensure_installed = {
 -- autocmd を貼り直す (再 attach / LSP 再起動時の重複登録を回避)。
 local hl_augroup = vim.api.nvim_create_augroup("dotfiles_lsp_document_highlight", { clear = true })
 
+-- documentHighlight 用の autocmd をバッファへ貼り直す (attach / detach 後の再登録で共用)。
+local function register_document_highlight(bufnr)
+  -- 再 attach でも重複しないよう、このバッファ分の既存 autocmd を消してから貼り直す
+  vim.api.nvim_clear_autocmds({ group = hl_augroup, buffer = bufnr })
+  vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
+    group = hl_augroup,
+    buffer = bufnr,
+    callback = vim.lsp.buf.document_highlight,
+  })
+  vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+    group = hl_augroup,
+    buffer = bufnr,
+    callback = vim.lsp.buf.clear_references,
+  })
+end
+
+-- バッファに attach 中の client (除外 id を除く) に documentHighlight 対応者がいるか
+local function has_highlight_client(bufnr, exclude_id)
+  for _, c in ipairs(vim.lsp.get_clients({ bufnr = bufnr, method = "textDocument/documentHighlight" })) do
+    if c.id ~= exclude_id then
+      return true
+    end
+  end
+  return false
+end
+
 -- LspAttach 時にバッファローカルで張るキーマップ (coc 時代の割り当てを踏襲)
 local function on_attach(client, bufnr)
   if not client then return end
@@ -131,18 +157,7 @@ local function on_attach(client, bufnr)
   -- カーソル下シンボルのハイライト (coc: CursorHold で highlight)。
   -- サーバが documentHighlight を持つときだけ張り、CursorMoved で消す。
   if client:supports_method("textDocument/documentHighlight") then
-    -- 再 attach でも重複しないよう、このバッファ分の既存 autocmd を消してから貼り直す
-    vim.api.nvim_clear_autocmds({ group = hl_augroup, buffer = bufnr })
-    vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
-      group = hl_augroup,
-      buffer = bufnr,
-      callback = vim.lsp.buf.document_highlight,
-    })
-    vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
-      group = hl_augroup,
-      buffer = bufnr,
-      callback = vim.lsp.buf.clear_references,
-    })
+    register_document_highlight(bufnr)
   end
 end
 
@@ -221,11 +236,18 @@ function M.setup(capabilities)
     end,
   })
   -- client が detach したら、そのバッファに残った highlight autocmd を止める
-  -- (server 再起動等でバッファは開いたまま detach しても CursorHold が空振りし続けないように)
+  -- (server 再起動等でバッファは開いたまま detach しても CursorHold が空振りし続けないように)。
+  -- ただし他に documentHighlight 対応 client が残っていれば貼り直す: JS/TS は ts_ls (対応) と
+  -- eslint (非対応) が同時 attach するため、無条件 clear だと eslint 側の detach だけで
+  -- 生きている ts_ls のハイライトまで無言で消えていた。
   vim.api.nvim_create_autocmd("LspDetach", {
     group = grp,
     callback = function(args)
-      vim.api.nvim_clear_autocmds({ group = hl_augroup, buffer = args.buf })
+      if has_highlight_client(args.buf, args.data.client_id) then
+        register_document_highlight(args.buf)
+      else
+        vim.api.nvim_clear_autocmds({ group = hl_augroup, buffer = args.buf })
+      end
     end,
   })
 end
