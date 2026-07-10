@@ -375,6 +375,9 @@ require("lazy").setup({
     dependencies = {
       "nvim-lua/plenary.nvim",
       "nvim-telescope/telescope-ui-select.nvim",
+      -- config 末尾の load_extension("notify") の供給元。現状は top-level spec (start plugin)
+      -- として必ずロード済みだが、そちらを外す改修をしたときに壊れないよう依存を局所化しておく
+      "rcarriga/nvim-notify",
     },
     config = function()
       local telescope = require("telescope")
