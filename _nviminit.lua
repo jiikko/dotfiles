@@ -208,15 +208,16 @@ require("lazy").setup({
   { "nvim-lualine/lualine.nvim",
     dependencies = { "nvim-tree/nvim-web-devicons" },
     config = function()
+      -- git root 相対でファイルパスを表示する。旧実装は vim-fugitive 由来の vim.b.git_dir を
+      -- 参照していたが本構成に設定主体が無く、常に cwd 相対へフォールバックする dead branch
+      -- だった (cwd ≠ git root のとき意図と食い違う)。vim.fs.root で自前解決する。
       local function relative_path_from_git_root()
-        local git_dir = vim.b.git_dir
-        if not git_dir or git_dir == "" then
+        local file = vim.api.nvim_buf_get_name(0)
+        local root = file ~= "" and vim.fs.root(0, ".git")
+        if not root then
           return vim.fn.expand("%")
         end
-        local root = vim.fn.fnamemodify(git_dir, ":h")
-        local file = vim.fn.expand("%:p")
-        local relative = file:gsub("^" .. vim.pesc(root) .. "/", "")
-        return relative
+        return file:gsub("^" .. vim.pesc(root) .. "/", "")
       end
 
       require("lualine").setup({
