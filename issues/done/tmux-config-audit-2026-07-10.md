@@ -1,5 +1,16 @@
 # tmux 設定監査 (2026-07-10) — 検証済みバグ 10 件
 
+> **✅ 対応完了 (2026-07-10)**: #1〜#9 を修正済み (#10 は別タスクチップ task_aaac2ca8 で追跡)。
+> - #1: `6092cf7` (rename 方式) + `bc8af98` (復元進行中ガード + `#` sanitize。実装レビューで
+>   「進行中 restore が rename 済みセッションの pane を kill する」衝突が実プローブで見つかり追補)
+> - #2: `b734159` (`swap-pane -d -s %%`) / #3: `98e8329` + `e8b146b` (menu は二重展開のため `##{q:}`)
+> - #4: `6b3b7f6` / #5: `f41023c` / #6: `7829457` + `84770e7` (却下理由の機序訂正) / #7: `e78ec0b`
+> - #8: `f98adb6` / #9: `1d1e821`
+> - 修正方針からの逸脱: #6 は issue 第一案の `new-session -Ad` でなく第二案 (再確認方式) を採用
+>   (リポジトリの「-A 禁止」不変条件と衝突 + 非 tty run-shell では -Ad が "not a terminal" rc=1)。
+> - 追加で判明: 旧 `@tt-adopted` フラグ保護は tmux 3.7b の `set-option -t "=name"` silent 失敗により
+>   **同一 boot 内でも不発だった** (#1 の重大度を裏付け)。
+
 自作 tmux コード全域 (_tmux.conf 676 行 / zshlib/_tmux_session.zsh / zshlib/_tmux_window_name.zsh /
 scripts/tmux_*.sh / scripts/lib / _claude/hooks / tests) を 9 グループ並列で監査し、
 各指摘を「反証デフォルト」の敵対的検証 (専用ソケット `tmux -L audit_*` での実プローブ含む) に
