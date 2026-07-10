@@ -140,6 +140,12 @@ cat > "$FAKE_REALSAVE" <<'FS'
 #!/bin/sh
 # 退行を模す fake save: .fake_n セッションの new.txt を作って last を差し替え、
 # 共有 pane_contents.tar.gz を退行後の内容 (DEGRADED) で上書きする。
+# .fake_fail があれば「archive 生成中の死」を模す: archive を truncate 相当の
+# 中途半端な内容にしてから rc≠0 で死ぬ (last は前進済みでも未でもよいので触らない)。
+if [ -f "$RDIR/.fake_fail" ]; then
+  printf 'TRUNCATED' > "$RDIR/pane_contents.tar.gz"
+  exit 1
+fi
 n=$(cat "$RDIR/.fake_n" 2>/dev/null || echo 0)
 : > "$RDIR/new.txt"
 i=1
@@ -189,6 +195,13 @@ FIXB_OUT="$(
     }
     make_prev_small; printf 0 > "$RDIR/.fake_n"; ( tt_save_main quiet )
     printf "CASE:fixb_zero_small last=%s archive=%s bak=%s\n" "$(readlink "$RDIR/last")" "$(cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
+
+    # save 失敗 (rc≠0): archive 生成中の死で truncate された共有 archive をバックアップから
+    # 書き戻す (旧実装は rc≠0 だと Fix B 復元ブロックを丸ごと skip して無傷の退避を捨てて
+    # いた)。rc は上流の失敗をそのまま呼び出し側へ返す。
+    make_prev; : > "$RDIR/.fake_fail"; ( tt_save_main quiet ); frc=$?
+    rm -f "$RDIR/.fake_fail"
+    printf "CASE:fixb_fail rc=%s archive=%s bak=%s\n" "$frc" "$(cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
   ' 2>/dev/null
 )"
 OUT="$OUT
@@ -444,6 +457,7 @@ printf '\n## Fix B2: pane_contents 退避 (退行時に last と一緒に戻す)
 assert_eq_line fixb_regress "last=prev.txt archive=ORIGINAL bak=0" "退行時: last も pane_contents も退行前へ戻し、退避ファイルを残さない"
 assert_eq_line fixb_ok      "last=new.txt archive=DEGRADED bak=0"  "非退行時: last も archive も新しいまま、退避ファイルは掃除する"
 assert_eq_line fixb_zero_small "last=prev.txt archive=ORIGINAL bak=0" "全喪失 (2→0): prev がしきい値未満でも last と archive を退行前へ戻す"
+assert_eq_line fixb_fail "rc=1 archive=ORIGINAL bak=0" "save 失敗 (rc≠0): 中途半端な archive をバックアップへ書き戻し、退避も残さない"
 
 printf '\n## Fix B (window 軸): 単一セッション運用での window 壊滅検知\n'
 assert_eq_line fixw_regress "last=prev.txt" "window 壊滅 (12→2, セッション数不変) でも last を退行前へ戻す"

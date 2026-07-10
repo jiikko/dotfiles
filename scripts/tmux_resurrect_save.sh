@@ -361,7 +361,18 @@ tt_save_main() {
       fi
     fi
   fi
-  # 退行を戻さなかった場合は退避コピーを掃除する（戻した場合は上で mv 済み）。
+  # Fix B2 拡張: save.sh が失敗 (rc≠0) した場合、共有 archive は「生成途中で truncate された」
+  # 可能性が最も高い (upstream は layout dump → ln -fs last → `gzip >` で archive を上書き、の
+  # 順で、rc≠0 はまさに archive 生成中の死を含む)。上の退行判定は rc=0 が前提で rc≠0 を守らない
+  # ため、ここで archive がバックアップと異なるときだけ書き戻し、次のクラッシュ→復元での
+  # スクロールバック silent 喪失 (壊れた gzip で tar 展開失敗) を防ぐ。cmp 一致 = archive 無傷
+  # なら書き戻さず下の掃除に任せる。
+  if [ "$tt_rc" -ne 0 ] && [ -n "$tt_archive_bak" ] && [ -f "$tt_archive_bak" ]; then
+    if ! cmp -s "$tt_archive_bak" "$tt_archive" 2>/dev/null; then
+      mv -f "$tt_archive_bak" "$tt_archive" 2>/dev/null || true
+    fi
+  fi
+  # 退行を戻さなかった場合は退避コピーを掃除する（戻した場合は mv 済みで既に無い）。
   [ -n "$tt_archive_bak" ] && [ -f "$tt_archive_bak" ] && rm -f "$tt_archive_bak" 2>/dev/null
   return "$tt_rc"
 }
