@@ -242,42 +242,49 @@ require("lazy").setup({
   -- LSP スタック (2026-07 に coc.nvim から移行)
   --   mason        : language server / formatter / linter のバイナリ管理
   --   nvim-lspconfig: 各サーバの既定設定 (nvim 0.11 の vim.lsp.config に載る)
-  --   mason-lspconfig: installed サーバを automatic_enable で vim.lsp.enable() する
   --   blink.cmp    : 補完 (プリビルドバイナリ。cargo 不要 → version="*" 固定)
   --   conform.nvim : 整形 (:Format / <leader>f)   nvim-lint : sh の shellcheck
   -- キー割り当て・診断・on_attach の本体は nvim/lua/dotfiles/lsp.lua。
+  --
+  -- mason-lspconfig は廃止 (2026-07-11): setup() が mason レジストリ走査 + installed 検出で
+  -- 初回 BufReadPre に ~13ms かかっていたが、買っていたのは実質「installed サーバへの
+  -- vim.lsp.enable()」だけで、サーバ一覧は lsp.server_packages として自前で持っている。
+  -- enable はここで直接呼び、バイナリ導入は mason-tool-installer (VeryLazy) に一本化した。
+  -- トレードオフ: 「mason で新サーバを入れたら自動で enable」は失われる。新サーバは
+  -- lsp.server_packages への 1 行追加で enable+導入の両方に効く。
   -- ============================================================================
   { "mason-org/mason.nvim", cmd = "Mason", opts = {} },
-  -- nvim-lspconfig は mason-lspconfig の依存として BufReadPre で遅延ロードされる
-  -- (automatic_enable が lsp/*.lua を rtp から引く時点で足りる)。top-level の eager spec は置かない。
-  { "mason-org/mason-lspconfig.nvim",
+  { "neovim/nvim-lspconfig",
     event = { "BufReadPre", "BufNewFile" },
-    dependencies = {
-      "mason-org/mason.nvim",
-      "neovim/nvim-lspconfig",
-      "saghen/blink.cmp",
-    },
+    dependencies = { "saghen/blink.cmp" },
     config = function()
       local lsp = require("dotfiles.lsp")
+      -- mason bin を PATH に通す (mason.setup と同じ先頭 prepend)。mason 本体は cmd=Mason の
+      -- 遅延ロードで、初回ファイルオープン時点では未ロードのため自前で通す必要がある。
+      local mason_bin = vim.fn.stdpath("data") .. "/mason/bin"
+      if not string.find(vim.env.PATH or "", mason_bin, 1, true) then
+        vim.env.PATH = mason_bin .. ":" .. (vim.env.PATH or "")
+      end
       -- blink の capabilities を先に確定させてから (契約: lsp.setup 内で vim.lsp.config("*"))、
-      -- mason-lspconfig の automatic_enable にサーバの enable を任せる。
+      -- サーバを enable する (lsp/*.lua の既定設定は nvim-lspconfig が rtp 提供)。
       local ok, blink = pcall(require, "blink.cmp")
       lsp.setup(ok and blink.get_lsp_capabilities() or nil)
-      require("mason-lspconfig").setup({
-        ensure_installed = lsp.ensure_installed,
-        automatic_enable = true,
-      })
+      vim.lsp.enable(lsp.ensure_installed)
     end,
   },
   { "WhoIsSethDaniel/mason-tool-installer.nvim",
     event = "VeryLazy",
     dependencies = { "mason-org/mason.nvim" },
     config = function()
-      -- サーバ以外 (formatter / linter) の実体を入れる。LSP ではないので
-      -- mason-lspconfig の ensure_installed では入らない (レビュー指摘 #3)。
+      -- formatter / linter に加え、LSP サーバ実体の導入もここに一本化
+      -- (mason-lspconfig 廃止に伴い ensure_installed の受け皿がここになった)。
+      local lsp = require("dotfiles.lsp")
       require("mason-tool-installer").setup({
         -- goimports は vim-go 廃止に伴う Go 保存時整形 (conform formatters_by_ft.go) の実体。
-        ensure_installed = { "prettierd", "shfmt", "shellcheck", "goimports" },
+        ensure_installed = vim.list_extend(
+          { "prettierd", "shfmt", "shellcheck", "goimports" },
+          vim.tbl_values(lsp.server_packages)
+        ),
       })
     end,
   },

@@ -56,7 +56,10 @@ M.servers = {
   },
 }
 
--- mason-lspconfig / vim.lsp.enable に渡すサーバ名 (lspconfig の名前)。
+-- 使用サーバの単一真実源: lspconfig 名 → mason パッケージ名。
+--   - enable (_nviminit.lua の vim.lsp.enable) は key (lspconfig 名) を使う
+--   - バイナリ導入 (mason-tool-installer) は value (mason パッケージ名) を使う
+-- 新サーバはここへ 1 行足せば enable と導入の両方に効く。
 -- coc の LSP 系 extension (tsserver/eslint/pyright/go/solargraph/html/css/json/yaml/sh/docker/tailwind/sql) を踏襲。
 --
 -- 意図的に移行しなかった coc 機能 (欠落ではなく意図した縮退。パリティ台帳としてここに明記):
@@ -65,11 +68,23 @@ M.servers = {
 --   - coc-html-css-support (HTML 内の CSS クラス名補完): ネイティブに直等価なし。html/cssls で部分カバー
 --   - <C-s> range-select (coc-range-select): treesitter incremental_selection 等で代替可 (未設定)
 --   - <C-f>/<C-b> の float スクロール: 0.11 は hover 窓を再フォーカスしてスクロールできるため未マップ
-M.ensure_installed = {
-  "ts_ls", "eslint", "pyright", "gopls", "solargraph",
-  "html", "cssls", "jsonls", "yamlls", "bashls", "dockerls", "tailwindcss", "sqlls",
-  "terraformls", -- vim-terraform 置換 (2026-07): 補完/診断/hover を terraform-ls に委譲
+M.server_packages = {
+  ts_ls = "typescript-language-server",
+  eslint = "eslint-lsp",
+  pyright = "pyright",
+  gopls = "gopls",
+  solargraph = "solargraph",
+  html = "html-lsp",
+  cssls = "css-lsp",
+  jsonls = "json-lsp",
+  yamlls = "yaml-language-server",
+  bashls = "bash-language-server",
+  dockerls = "dockerfile-language-server",
+  tailwindcss = "tailwindcss-language-server",
+  sqlls = "sqlls",
+  terraformls = "terraform-ls", -- vim-terraform 置換 (2026-07): 補完/診断/hover を terraform-ls に委譲
 }
+M.ensure_installed = vim.tbl_keys(M.server_packages)
 
 -- documentHighlight 用の単一 augroup。バッファ毎に augroup を作ると空グループ名が
 -- 累積する (バッファ削除後も名前が残る) ため 1 グループに集約し、attach 毎に当該バッファの

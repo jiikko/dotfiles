@@ -58,7 +58,7 @@
 | ✅ gopls + treesitter + conform + treesitter-textobjects | Go | - | 同構成 | × | × | いいえ | **2026-07: fatih/vim-go (Vimscript 19k 行) を置換**。ハイライトは treesitter(go/gomod/gosum)、定義/実装/参照/hover は gopls (native LSP)、整形は conform goimports を go 保存時に発火 (旧 go_fmt_autosave/go_imports_autosave 相当)、関数ジャンプ `]]`/`[[` とテキストオブジェクト `af`/`if`/`ac`/`ic` は treesitter-textobjects、GoDecls は telescope symbols で置換 (Go 限定は nvim/ftplugin/go.lua)。`K`=hover は nvim 0.11 native 既定。 |
 | ~~github/copilot.vim~~    | AI 補完      | — | — | — | — | — | **✅ 削除済み**(2026-07。残骸掃除まで完了)。AI 支援は sidekick.nvim + Claude Code に集約。 |
 | ✅ neovim/nvim-lspconfig  | LSP サーバ設定 | - | 同プロジェクト | × | × | いいえ | 2026-07 に coc.nvim から移行。nvim 0.11 の `vim.lsp.config`/`vim.lsp.enable` に載る。 |
-| ✅ mason-org/mason.nvim + mason-lspconfig | LSP/ツール管理 | - | 同プロジェクト | × | × | いいえ | サーバ/formatter/linter のバイナリ管理。`automatic_enable` で installed サーバを enable。 |
+| ✅ mason-org/mason.nvim | LSP/ツール管理 | - | 同プロジェクト | × | × | いいえ | サーバ/formatter/linter のバイナリ管理。mason-lspconfig は廃止 (2026-07-11、初回 BufReadPre ~13ms 削減)。enable は vim.lsp.enable() 直呼び、導入は mason-tool-installer に一本化。 |
 | ✅ saghen/blink.cmp       | 補完         | - | `hrsh7th/nvim-cmp` | × | × | いいえ | coc の補完後継。`version="*"` でプリビルドバイナリ（cargo 不要）。`<CR>` 確定。 |
 | ✅ stevearc/conform.nvim  | 整形         | - | 同プラグイン | × | × | いいえ | `:Format`/`<leader>f`。prettier/shfmt、他は `lsp_format=fallback`。 |
 | ✅ mfussenegger/nvim-lint | Lint         | - | 同プラグイン | × | × | いいえ | sh の shellcheck（旧 coc-diagnostic 相当）。他言語は LSP 診断。 |
@@ -137,7 +137,7 @@
 | [`stevearc/conform.nvim`](https://github.com/stevearc/conform.nvim)       | 4.6k            | フォーマッタ統合               | ✅ **導入済み (2026-07)**。prettier/shfmt を統合、他は lsp_format fallback。                  |
 | [`nvimdev/lspsaga.nvim`](https://github.com/nvimdev/lspsaga.nvim)         | 3.8k            | LSP UI 拡張                    | 使いやすい hover/rename/codeaction UI を提供。ネイティブ LSP で利用可。                       |
 | [`folke/trouble.nvim`](https://github.com/folke/trouble.nvim)             | 6.5k            | Diagnostics/UI                 | LSP のエラー/警告を視覚的に表示し、移動が楽になる。                                           |
-| [`mason-org/mason.nvim`](https://github.com/mason-org/mason.nvim)         | 9.7k            | ツール/LSP マネージャ          | ✅ **導入済み (2026-07)**。mason-lspconfig と併用し LSP/formatter/linter を管理。             |
+| [`mason-org/mason.nvim`](https://github.com/mason-org/mason.nvim)         | 9.7k            | ツール/LSP マネージャ          | ✅ **導入済み (2026-07)**。LSP/formatter/linter のバイナリ管理 (mason-lspconfig は 2026-07-11 に廃止)。             |
 
 > いずれも現在の `init.lua` には含まれていないが、導入すると利便性・UI 体験が向上する定番。優先度はプロジェクトや用途に合わせて調整。
 
