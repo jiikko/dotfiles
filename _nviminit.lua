@@ -177,7 +177,13 @@ require("lazy").setup({
       require_resilient("nvim-treesitter.configs").setup({
         -- gomod/gosum は go.mod/go.sum のハイライト用 (vim-go 廃止で syntax 供給元を treesitter に
         -- 一本化。現状 parser は入っているが ensure_installed 未記載で fresh install 非再現だった)。
-        ensure_installed = { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "gomod", "gosum", "graphql", "hcl", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "terraform", "typescript", "vim", "yaml" },
+        -- DOTFILES_TS_SKIP_ENSURE=1 は CI 用の抜け穴 (.github/workflows/tests.yml が設定する):
+        -- parser 不在の環境では ensure_installed が毎起動 31 個の非同期 DL+コンパイルジョブを
+        -- 撒き、headless テストの +qall! が中途 kill する不安定要因になる (2026-07-10 の CI
+        -- flake 対策)。CI のテストは parser 非依存に設計されている (go の挙動 assert は parser
+        -- 不在なら skip) ため、CI ではインストール自体を止める。人間の fresh install では
+        -- 未設定 = 従来どおり自動導入される。
+        ensure_installed = (vim.env.DOTFILES_TS_SKIP_ENSURE == "1") and {} or { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "gomod", "gosum", "graphql", "hcl", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "terraform", "typescript", "vim", "yaml" },
         auto_install = false,
         highlight = { enable = true },
         endwise = { enable = true },

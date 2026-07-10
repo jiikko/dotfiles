@@ -107,7 +107,19 @@ local ok, err = pcall(function()
     return vim.treesitter.highlighter.active[vim.api.nvim_get_current_buf()] ~= nil
   end, 50)
 
-  -- (1) buffer-local マッピングが張られているか (builtin ]] は buffer-local でないため、
+  -- (1) textobjects モジュールが実際に解決すること (プラグイン除去や環境要因の検知)。
+  --     mapping 検査 (2) より先にここで検査してエラー本文を出す: go.lua は require 失敗を
+  --     pcall で握りつぶして黙って mapping をスキップするため、mapping assert から先に
+  --     落ちると「なぜ張られなかったか」が CI ログに一切残らない (2026-07-10 の CI 赤で実感)。
+  local ok_move, move_err = pcall(require, "nvim-treesitter.textobjects.move")
+  local ok_sel, sel_err = pcall(require, "nvim-treesitter.textobjects.select")
+  if not (ok_move and ok_sel) then
+    error(string.format(
+      "nvim-treesitter-textobjects modules failed to load:\n  move: %s\n  select: %s",
+      ok_move and "ok" or tostring(move_err), ok_sel and "ok" or tostring(sel_err)))
+  end
+
+  -- (2) buffer-local マッピングが張られているか (builtin ]] は buffer-local でないため、
   --     go.lua が textobjects 経由で張れていれば buffer==1 になる)。
   local function assert_buflocal(lhs, mode)
     local m = vim.fn.maparg(lhs, mode, false, true)
@@ -126,14 +138,6 @@ local ok, err = pcall(function()
   assert_buflocal("ic", "o")         -- inner comment
   assert_buflocal("<leader>gd", "n") -- GoDecls 置換 (document symbols)
   assert_buflocal("<leader>gD", "n") -- GoDeclsDir 置換 (workspace symbols)
-
-  -- (2) textobjects モジュールが実際に解決すること (プラグイン除去の検知)。
-  local ok_move = pcall(require, "nvim-treesitter.textobjects.move")
-  local ok_sel = pcall(require, "nvim-treesitter.textobjects.select")
-  if not (ok_move and ok_sel) then
-    error("nvim-treesitter-textobjects modules failed to load (move=" ..
-      tostring(ok_move) .. " select=" .. tostring(ok_sel) .. ")")
-  end
 
   -- (3) capture が実解決し ]] が実際にカーソルを次関数へ動かすか (非破壊)。
   --     parser 未 install の環境 (auto_install=false の fresh 環境) では flaky を避けて skip。

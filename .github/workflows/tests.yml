@@ -45,19 +45,33 @@ jobs:
       # プラグイン (lazy.nvim 本体 + 各プラグイン) の clone を ~/.local/share/nvim/lazy ごと
       # キャッシュしてネットワーク依存と再 clone を抑える。次段の :Lazy! restore が
       # _lazy-lock.json の固定 commit へ同期する。spec/lock を変えたら鍵が変わるよう hash する。
+      # key の v2 は salt: Tests が赤い間は cache が保存されず、古い restore-key の store
+      # (中身の素性が追えない) を引き続けるため、CI 構成を変えた 2026-07-10 を境に世代を切った。
       - name: Cache Neovim plugins
         uses: actions/cache@v6
         with:
           path: ~/.local/share/nvim/lazy
-          key: nvim-lazy-${{ runner.os }}-${{ hashFiles('_nviminit.lua', '_lazy-lock.json') }}
+          key: nvim-lazy-v2-${{ runner.os }}-${{ hashFiles('_nviminit.lua', '_lazy-lock.json') }}
           restore-keys: |
-            nvim-lazy-${{ runner.os }}-
+            nvim-lazy-v2-${{ runner.os }}-
 
       # プラグインを _lazy-lock.json 通りに事前インストールする。config の ftplugin は
       # nvim-treesitter-textobjects 等を require するため、テスト時に本体が load 済みである必要がある
       # (runtime の遅延 auto-install に頼ると ftplugin の require が間に合わず落ちる)。
+      #
+      # DOTFILES_TS_SKIP_ENSURE=1 (このステップと test 実行の両方に設定):
+      # CI は parser 未インストールのため、素の起動では ensure_installed が毎回 31 個の
+      # 非同期 DL+コンパイルジョブを撒く。コンパイラの無いこの runner では永遠に完走せず、
+      # 各テストの +qall! が in-flight ジョブを中途 kill する不安定要因にしかならない
+      # (テストは parser 非依存に設計済み: go の挙動 assert は parser 不在なら skip)。
+      # ジョブを撒くこと自体を止めて headless 実行を決定論化する (_nviminit.lua の
+      # ensure_installed コメント参照)。
       - name: Install Neovim plugins (lazy restore)
+        env:
+          DOTFILES_TS_SKIP_ENSURE: "1"
         run: nvim --headless -u _nviminit.lua "+Lazy! restore" +qa
 
       - name: Run dotfiles test suite
+        env:
+          DOTFILES_TS_SKIP_ENSURE: "1"
         run: make test-runtime
