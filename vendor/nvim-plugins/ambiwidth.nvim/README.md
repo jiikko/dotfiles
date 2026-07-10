@@ -10,8 +10,10 @@
 
 ### `g:ambiwidth_add_list`
 `g:ambiwidth_add_list` を定義しておくことでこのプラグインで指定している文字に加えて別の文字も追加できます。
+既定のレンジと重複する範囲を指定した場合は add_list 全体が無効になり既定のみ適用されます (WARN 通知あり)。
 ```
-let g:ambiwidth_add_list = [[0xfe566, 0xfe568, 2], [0xff500, 0xffd46, 2]]
+" 例: Supplemental Symbols and Pictographs を全角幅にする (既定レンジには含まれない)
+let g:ambiwidth_add_list = [[0x1f900, 0x1f9ff, 2]]
 ```
 
 ### `g:ambiwidth_cica_enabled`

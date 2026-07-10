@@ -113,21 +113,29 @@ local cica = {
 function M.setup()
   vim.o.ambiwidth = "single"
 
-  local list = vim.list_extend({}, base)
+  local defaults = vim.list_extend({}, base)
   local ce = vim.g.ambiwidth_cica_enabled
   if ce == nil or (ce ~= false and ce ~= 0) then -- 原版 get(g:,...,v:true) 踏襲 (未設定=on)
-    vim.list_extend(list, cica)
+    vim.list_extend(defaults, cica)
   end
-  vim.list_extend(list, vim.g.ambiwidth_add_list or {}) -- 原版 g:ambiwidth_add_list
+  local add = vim.g.ambiwidth_add_list or {} -- 原版 g:ambiwidth_add_list
 
   -- base+cica は上流検証済みで常に妥当なため、setcellwidths が失敗しうるのは実質 g:ambiwidth_add_list の
-  -- 範囲不正/重複のみ。原版は throw していたが、起動時 config ごと落とさず原因を指す通知に留める。
-  local ok, err = pcall(vim.fn.setcellwidths, list)
+  -- 範囲不正/重複 (既定レンジとの重複は E1113) のみ。setcellwidths は all-or-nothing なので、
+  -- add_list を混ぜて一括適用すると add_list の 1 エントリの誤りで全 95 レンジが不適用になる。
+  -- add_list 込みで失敗したら base+cica のみへフォールバックし、原因を指す通知に留める
+  -- (原版は throw して起動時 config ごと落としていた)。
+  local full = vim.list_extend(vim.list_extend({}, defaults), add)
+  local ok, err = pcall(vim.fn.setcellwidths, full)
   if not ok then
-    vim.notify(
-      "ambiwidth.nvim: setcellwidths に失敗 (g:ambiwidth_add_list の範囲が不正または重複?): " .. tostring(err),
-      vim.log.levels.WARN
-    )
+    if #add > 0 and pcall(vim.fn.setcellwidths, defaults) then
+      vim.notify(
+        "ambiwidth.nvim: g:ambiwidth_add_list が不正 (範囲不正または既定レンジと重複) のため既定のみ適用: " .. tostring(err),
+        vim.log.levels.WARN
+      )
+    else
+      vim.notify("ambiwidth.nvim: setcellwidths に失敗: " .. tostring(err), vim.log.levels.WARN)
+    end
   end
 end
 

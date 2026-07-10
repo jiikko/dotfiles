@@ -66,13 +66,14 @@ local ok, err = pcall(function()
   local a = apply(nil, { { 0x1234, 0x1234, 2 }, { 0x1236, 0x1236, 2 } })
   assert(a == DEFAULT + 2, string.format("add_list expected %d, got %d", DEFAULT + 2, a))
 
-  -- 5) 不正 add_list (width=3 は無効) は throw せず WARN 通知し、直前の適用を破壊しない
+  -- 5) 不正 add_list (width=3 は無効) は throw せず WARN 通知し、既定 (base+cica) へ
+  --    フォールバックして生かす (all-or-nothing で全レンジ不適用にしない)
   apply(nil, nil) -- 正常適用しておく
-  local before = #vim.fn.getcellwidths()
+  local defaults_count = #vim.fn.getcellwidths()
   local notified = false
   local orig = vim.notify
   vim.notify = function(msg, lvl)
-    if lvl == vim.log.levels.WARN and tostring(msg):match("setcellwidths") then
+    if lvl == vim.log.levels.WARN and tostring(msg):match("add_list") then
       notified = true
     end
   end
@@ -81,7 +82,17 @@ local ok, err = pcall(function()
   vim.notify = orig
   assert(guarded, "setup must not throw on invalid add_list")
   assert(notified, "setup must warn on invalid add_list")
-  assert(#vim.fn.getcellwidths() == before, "invalid add_list must not corrupt prior cell widths")
+  assert(#vim.fn.getcellwidths() == defaults_count, "invalid add_list must fall back to defaults, not wipe them")
+
+  -- 6) 既定レンジと重複する add_list (E1113 相当) でも既定は生きる
+  -- (WARN 通知はここでも出るため抑止する。素通しすると headless の stderr に乗り
+  --  スクリプト側のエラー grep に誤検知される)
+  vim.g.ambiwidth_add_list = { { 0xfe566, 0xfe568, 2 } } -- 既定 cica に含まれる重複
+  vim.notify = function() end
+  aw.setup()
+  vim.notify = orig
+  assert(#vim.fn.getcellwidths() == defaults_count, "overlapping add_list must fall back to defaults")
+  assert(vim.fn.strdisplaywidth("℃") == 2, "defaults must stay effective after overlapping add_list")
 end)
 
 if not ok then
