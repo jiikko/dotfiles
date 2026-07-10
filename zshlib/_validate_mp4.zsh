@@ -2,6 +2,7 @@
 # shellcheck disable=SC2154,SC2296
 
 # ffprobe 単一フィールド取得は共通ヘルパーを使う (テストが本ファイルを単体 source するため自己 source)
+# shellcheck disable=SC1091,SC2296,SC2298  # zsh 固有の自ファイルパス展開 (shellcheck は解析不可)
 source "${${(%):-%x}:A:h}/_ffprobe_helpers.zsh"
 # ------------------------------------------------------------------------------
 # validate-mp4 — MP4 が全フレーム再生可能かを ffmpeg フルデコードで検証する

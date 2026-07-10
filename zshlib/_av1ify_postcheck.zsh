@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 
 # ffprobe 単一フィールド取得は共通ヘルパーを使う (テストが本ファイルを単体 source するため自己 source)
+# shellcheck disable=SC1091,SC2296,SC2298  # zsh 固有の自ファイルパス展開 (shellcheck は解析不可)
 source "${${(%):-%x}:A:h}/_ffprobe_helpers.zsh"
 
 # 内部補助: 変換後の検査で NG の場合にファイル名へ注記を付加
