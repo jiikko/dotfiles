@@ -133,11 +133,6 @@ _tt_wait_for_restore () {
 # rc=1/2 では hold を畳まず attach するため（進行中復元への割り込み防止）、実セッションが
 # 出来ると保存が再開し stale hold も last に含まれ、次 boot で復元されて 1 個ずつ蓄積する。
 # 生きた作業を殺さないよう厳しく絞る:
-#   (0) @tt-adopted が立っている hold は形状に関係なく除外する。rc=1/2 でユーザーが attach
-#       して作業を始めた hold（_tt_impl が attach 直前にこのフラグを立てる）は、split も
-#       追加 window もせず 1win/1pane のまま detach（端末を閉じる）と、(b)(c) を素通りして
-#       誤 kill されうる。pristine 形状だけでは disposable な空 hold と区別できないため、
-#       「ユーザーが中に入った」ことを明示フラグで記録して確実に除外する。
 #   (a) 名前が __tt_hold_<pid> で、その pid が「並行 tt」でない。並行 tt の pid は必ず
 #       zsh プロセス（tt は zsh 関数として動く）なので、pid 死亡に加えて「生存しているが
 #       zsh でない」も並行 tt でないとみなす。pid だけの kill -0 判定だと、boot 跨ぎで
@@ -145,8 +140,15 @@ _tt_wait_for_restore () {
 #       空セッションが last に焼き付いたまま毎 boot 復元され続ける
 #   (b) client が attach していない（session_attached=0）
 #   (c) pristine 形状（1 window かつ 1 pane。`tmux new-session -d` 直後の姿）
-# 旧設計は (a)〜(c) のみで、「rc=1/2 で adopt され pristine のまま detach された live hold」を
-# 誤 kill しえた（データ損失）。それを (0) の @tt-adopted 除外で塞ぐ。
+# なお rc=1/2 でユーザーが作業を始めた hold は、adopt 時に実名へ rename され hold 名前空間
+# から出る（_tt_impl の adopt 分岐参照）ため、ここに来る __tt_hold_* は「ユーザーが中に
+# いない残骸」だけになる。旧設計は adopt を @tt-adopted セッションオプションで記録して
+# (0) 番目のガードにしていたが、(i) オプションは resurrect の保存対象外で再起動を跨げず、
+# 復元された adopted hold をこの GC が誤 kill する、(ii) tmux 3.7b では set-option /
+# show-options の -t "=name"（コロン無し）が "no such session" で silent 失敗し、フラグ
+# 保護自体が同一 boot 内ですら不発だった（実プローブ確認 2026-07-10）、の 2 点により
+# rename 方式へ置換した。オプション系コマンドに -t "=name" を使う場合は "=name:" が必要な
+# 点に注意（has/kill/rename-session は "=name" で可）。
 _tt_gc_stale_holds () {
   local sname wins attached spid panes
   tmux list-sessions -F '#{session_name} #{session_windows} #{session_attached}' 2>/dev/null \
@@ -157,10 +159,6 @@ _tt_gc_stale_holds () {
       esac
       spid="${sname#${TT_HOLD_PREFIX:-__tt_hold_}}"
       case "$spid" in ''|*[!0-9]*) continue ;; esac   # pid 部が数値でない → 触らない
-      # (0) adopted hold（rc=1/2 でユーザーが attach して作業中の hold）は形状に関係なく除外。
-      if [ -n "$(tmux show-options -qv -t "=$sname" @tt-adopted 2>/dev/null)" ]; then
-        continue
-      fi
       # (a) pid 生存 かつ zsh プロセス = 並行 tt → 触らない。zsh 以外への pid 再利用は
       #     (b)(c) の判定へ進む（attach 中 / 育った hold は依然そちらで守られる）。
       #     ps -o comm= は macOS で実行パス or ログインシェルの "-zsh"、Linux で "zsh"。
@@ -256,11 +254,17 @@ _tt_impl () {
         if tmux has-session -t "=$name" 2>/dev/null; then
           tmux attach-session -t "=$name"
         else
-          # 目的セッション未復元 → hold をそのまま作業場所として adopt する。
-          # @tt-adopted を立てて _tt_gc_stale_holds の誤 kill から保護する（pristine な
-          # まま detach しても (b)(c) を素通りして殺されないように。関数側 (0) 参照）。
-          tmux set-option -t "=$hold" @tt-adopted 1 2>/dev/null
-          tmux attach-session -t "=$hold"
+          # 目的セッション未復元 → hold を実名 $name へ rename して通常セッションに昇格
+          # する（adopt）。hold 名前空間（__tt_hold_*）から出すことで、GC
+          # (_tt_gc_stale_holds)・保存抑止 (tt_only_hold_sessions)・「再起動後に hold 名で
+          # 復元され次 boot の GC に殺される」問題のすべてから構造的に外れる（旧フラグ方式を
+          # 廃止した経緯は _tt_gc_stale_holds のコメント参照）。
+          # rename の失敗は「has-session 確認後に復元が $name を作った」レースの duplicate
+          # session のみ。その場合は pristine な hold を畳み、復元された実名へ attach する。
+          if ! tmux rename-session -t "=$hold" "$name" 2>/dev/null; then
+            tmux kill-session -t "=$hold" 2>/dev/null
+          fi
+          tmux attach-session -t "=$name"
         fi
         return ;;
     esac
