@@ -629,7 +629,9 @@ require("lazy").setup({
     end,
   },
   { "dstein64/nvim-scrollview",
-    event = "BufReadPost",
+    -- BufReadPost は未存在ファイルでは発火しない。新規ファイル起点のセッションでも
+    -- 有効になるよう BufNewFile を併記 (gitsigns/ibl/nvim-lint と同じ規律)
+    event = { "BufReadPost", "BufNewFile" },
     config = function()
       require("scrollview").setup()
     end,
@@ -742,7 +744,9 @@ require("lazy").setup({
   },
   {
     "b0o/incline.nvim",
-    event = "BufReadPre",
+    -- BufReadPre は未存在ファイルでは発火しない。新規ファイル起点のセッションでも
+    -- 有効になるよう BufNewFile を併記 (gitsigns/ibl/nvim-lint と同じ規律)
+    event = { "BufReadPre", "BufNewFile" },
     config = function()
       local incline = require("incline")
       incline.setup({
