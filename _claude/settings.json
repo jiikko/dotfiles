@@ -5,6 +5,7 @@
   "permissions": {
     "defaultMode": "auto"
   },
+  "model": "opus",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -90,6 +91,7 @@
   },
   "language": "日本語",
   "alwaysThinkingEnabled": true,
+  "effortLevel": "low",
   "advisorModel": "opus",
   "skipWorkflowUsageWarning": true,
   "skipAutoPermissionPrompt": true
