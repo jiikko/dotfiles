@@ -130,6 +130,10 @@ _tmux_extract_command() {
   done
 
   [[ -z "$cmd" ]] && cmd="${words[1]:-}"
+  # alias バイパスの `\cmd` は ${(z)} がバックスラッシュをトークンに残すため、そのままだと
+  # YAML 照合を外して _default に落ちる (`\nvim` → "\nvim")。先頭の \ を 1 個剥がして
+  # 実コマンド名で照合する (表示もバックスラッシュ無しになる)
+  cmd="${cmd#\\}"
   [[ "$cmd" == */* ]] && cmd="${cmd:t}"
   print -r -- "$cmd"
 }

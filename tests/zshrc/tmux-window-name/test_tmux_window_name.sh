@@ -155,6 +155,11 @@ assert_equals "git" "$result" "_tmux_extract_command skips leading flags after w
 result=$(run_zsh '_tmux_extract_command "noglob make build"')
 assert_equals "make" "$result" "_tmux_extract_command skips noglob wrapper"
 
+# alias バイパスの \cmd は backslash を剥がして実コマンド名で照合する
+# (剥がさないと "\nvim" が YAML の nvim にヒットせず _default に落ちる回帰の防止)
+result=$(run_zsh '_tmux_extract_command "\nvim file.txt"')
+assert_equals "nvim" "$result" "_tmux_extract_command strips alias-bypass backslash"
+
 # Test 10: OSC 2 タイトルのサニタイズ (制御文字の除去)
 printf '\n## Test 10: OSC title sanitization strips control chars\n'
 # BEL (0x07) を含むタイトルを渡し、出力 (printf の OSC シーケンス) に 0x07 が
