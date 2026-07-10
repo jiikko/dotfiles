@@ -357,15 +357,13 @@ av1ify() {
       return 1
     fi
     if [[ -n "$__AV1IFY_DENOISE" ]]; then
-      case "${__AV1IFY_DENOISE:l}" in
-        light|medium|strong)
-          __AV1IFY_DENOISE="${__AV1IFY_DENOISE:l}"
-          ;;
-        *)
-          print -r -- "エラー: 無効なdenoise指定: ${__AV1IFY_DENOISE}（light/medium/strong から選択してください）" >&2
-          return 1
-          ;;
-      esac
+      # 有効集合は _AV1IFY_DENOISE_PRESETS (_av1ify_encode.zsh) が単一の真実源
+      if (( ${+_AV1IFY_DENOISE_PRESETS[${__AV1IFY_DENOISE:l}]} )); then
+        __AV1IFY_DENOISE="${__AV1IFY_DENOISE:l}"
+      else
+        print -r -- "エラー: 無効なdenoise指定: ${__AV1IFY_DENOISE}（light/medium/strong から選択してください）" >&2
+        return 1
+      fi
     fi
   fi
 

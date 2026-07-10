@@ -208,29 +208,26 @@ __av1ify_decide_fps() {
   return 0
 }
 
+# denoise レベルの単一真実源: レベル → "hqdn3d値 命名タグ"。
+# 有効集合の検証 (_av1ify.zsh のオプション検証) と下の dispatch がともにここを参照する。
+# help テキスト (_av1ify.zsh の usage) は説明文として値を再掲しているので、値を変えたら同期すること。
+typeset -gA _AV1IFY_DENOISE_PRESETS=(
+  [light]="hqdn3d=2:2:3:3 dn1"
+  [medium]="hqdn3d=4:4:6:6 dn2"
+  [strong]="hqdn3d=6:6:9:9 dn3"
+)
+
 # 内部補助: ノイズ除去レベルから vf 部品と命名タグを返す
 # 引数: $1 = validated_denoise (light/medium/strong/空)
 # 出力: __AV1IFY_R_DENOISE_VF, __AV1IFY_R_DENOISE_TAG (無効値/空入力なら両方空)
 __av1ify_decide_denoise() {
   __AV1IFY_R_DENOISE_VF=""
   __AV1IFY_R_DENOISE_TAG=""
-  case "$1" in
-    light)
-      __AV1IFY_R_DENOISE_VF="hqdn3d=2:2:3:3"
-      __AV1IFY_R_DENOISE_TAG="dn1"
-      print -P -- "%F{cyan}>> ノイズ除去: light (hqdn3d=2:2:3:3)%f"
-      ;;
-    medium)
-      __AV1IFY_R_DENOISE_VF="hqdn3d=4:4:6:6"
-      __AV1IFY_R_DENOISE_TAG="dn2"
-      print -P -- "%F{cyan}>> ノイズ除去: medium (hqdn3d=4:4:6:6)%f"
-      ;;
-    strong)
-      __AV1IFY_R_DENOISE_VF="hqdn3d=6:6:9:9"
-      __AV1IFY_R_DENOISE_TAG="dn3"
-      print -P -- "%F{cyan}>> ノイズ除去: strong (hqdn3d=6:6:9:9)%f"
-      ;;
-  esac
+  local preset="${_AV1IFY_DENOISE_PRESETS[$1]-}"
+  [[ -n "$preset" ]] || return 0
+  __AV1IFY_R_DENOISE_VF="${preset%% *}"
+  __AV1IFY_R_DENOISE_TAG="${preset##* }"
+  print -P -- "%F{cyan}>> ノイズ除去: $1 (${__AV1IFY_R_DENOISE_VF})%f"
 }
 
 # 内部補助: 出力解像度に応じた CRF を自動選択 (AV1_CRF 環境変数があれば優先)
