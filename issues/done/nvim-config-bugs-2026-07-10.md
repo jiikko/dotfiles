@@ -1,5 +1,12 @@
 # Neovim 設定バグ監査 — ロジック/キーマップ/遅延ロード契約/256色規律 (2026-07-10)
 
+> **対応完了 (2026-07-11)**: 全 14 項目対応済み。#1=0a9fdb9 (真因は issue の想定と異なり
+> nvim-notify が vim.notify を横取りして stderr に出ないことだった。notify history 検査で解決) /
+> #2=e6ae216 / #3+#12=037a7ae (dotfiles/hl.lua 新設に集約) / #4=9094170 / #5=faebafb /
+> #6=8951dc8 / #7=0847cd8 / #8=c6be6a0 (修正でなく rationale コメント: <Tab> fold の利便を
+> 優先し <C-i> を手放す意図的トレードオフとして明記) / #9=3e02e93 / #10=78d0460 /
+> #11=9c2d77b / #13=02cb71b / #14=df9de5c。各修正は headless 実測で検証済み。
+
 調査日: 2026-07-10
 対象: `_nviminit.lua` / `nvim/lua/dotfiles/{basic,lsp,js_ts_common}.lua` / `nvim/ftplugin/*.lua` / `vendor/nvim-plugins/{vim-toggle,ambiwidth.nvim}` / `tests/nvim/*.sh` / `_lazy-lock.json` / `docs/nvim-plugins.md`
 棲み分け: 同日の [`nvim-config-audit-2026-07-10.md`](nvim-config-audit-2026-07-10.md) は「API 陳腐化 / silent option loss」観点。本 issue は**別レンズ** (Lua ロジックバグ・キーマップの組み込み潰し・lazy ロード契約・256色運用規律・vendored 移植・テスト基盤) で、前回クローズ済み事項は対象外。
