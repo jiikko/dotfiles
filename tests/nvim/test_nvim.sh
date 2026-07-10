@@ -54,16 +54,31 @@ local ok, err = pcall(function()
   -- → イベントループを pump して通知を発火させ、nvim-notify の history から ERROR を検査する。
   -- (エラーが 1 件でもあれば nvim-notify 自体はその通知でロード済みになるので、
   --  package.loaded を見るだけで「未ロード = ERROR 通知ゼロ」と判定できる)
-  vim.wait(500)
-  if package.loaded['notify'] then
+  local function assert_no_error_notifications(phase)
+    if not package.loaded['notify'] then return end
     local errors = {}
     for _, rec in ipairs(require('notify').history()) do
       if rec.level == 'ERROR' or rec.level == vim.log.levels.ERROR then
         table.insert(errors, table.concat(rec.message, ' '))
       end
     end
-    assert(#errors == 0, 'ERROR notifications during startup: ' .. table.concat(errors, ' / '))
+    assert(#errors == 0, 'ERROR notifications during ' .. phase .. ': ' .. table.concat(errors, ' / '))
   end
+  vim.wait(500)
+  assert_no_error_notifications('startup')
+
+  -- 遅延プラグインの config 検査:
+  -- headless では VeryLazy 等のイベントが発火せず、遅延プラグイン (bufferline / noice /
+  -- toggle.nvim 等) の config は起動検査の死角になる。全プラグインを強制ロードして
+  -- config エラーと未ロード残りを検査する。
+  vim.cmd('Lazy! load all')
+  vim.wait(500)
+  assert_no_error_notifications('Lazy! load all')
+  local not_loaded = {}
+  for name, p in pairs(require('lazy.core.config').plugins) do
+    if not p._.loaded then table.insert(not_loaded, name) end
+  end
+  assert(#not_loaded == 0, 'plugins failed to load: ' .. table.concat(not_loaded, ', '))
 end)
 if not ok then
   vim.api.nvim_err_writeln('lazy check failed: ' .. tostring(err))
