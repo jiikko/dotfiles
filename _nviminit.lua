@@ -383,7 +383,14 @@ require("lazy").setup({
           sorting_strategy = "ascending",
           layout_strategy = "vertical",
           layout_config = { height = 0.9 },
-          file_ignore_patterns = { "^.git/", "^node_modules/", "package-lock.json", "yarn.lock", "yarn-error.log" },
+          -- Lua パターンで評価される (telescope 内部で string.find(file, pattern))。glob ではない。
+          -- `-` は量指定子・`.` は任意 1 文字なので %- %. でエスケープしないと文字どおりに
+          -- マッチしない (未エスケープの package-lock.json が一切除外されない実バグがあった)。
+          -- node_modules は cwd 直下 (^) と monorepo のネスト (/) の両方を除外する。
+          file_ignore_patterns = {
+            "^%.git/", "^node_modules/", "/node_modules/",
+            "package%-lock%.json", "yarn%.lock", "yarn%-error%.log",
+          },
           border = true,
           prompt_prefix = "🔍 ",
           -- ファイル名を先頭・ディレクトリを淡色で後置 (find_files / live_grep / lsp_* 全てに効く)
