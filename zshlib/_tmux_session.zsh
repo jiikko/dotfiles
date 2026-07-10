@@ -17,6 +17,11 @@
 # ラッパーはこのパスを再 source する。グローバルに置く（ラッパー内 source はローカルスコープ）。
 typeset -g _TMUX_SESSION_LIB="${${(%):-%x}:A}"
 
+# 保存/復元ガードの共有ライブラリ。adopt 分岐が「復元が実際に進行中か」の判定
+# (tt_restore_in_progress) に使う。保存側 wrapper (scripts/tmux_resurrect_save.sh) と
+# 判定式・TTL を二重定義しないため共有実装を読む (POSIX 互換関数のみで zsh でも動く)。
+. "${_TMUX_SESSION_LIB:h:h}/scripts/lib/tmux_resurrect_guards.sh"
+
 # 非TTY/サンドボックスから最初の tmux コマンドを叩くと、その文脈で tmux サーバが
 # 起動され、後続の本物の端末 attach まで壊れる。発生源であるサーバ起動系コマンドに
 # 到達する前に止める。TT_ASSUME_TTY は非TTYの zsh -c で実体を直接検証するテスト用の
@@ -30,13 +35,17 @@ _tt_require_tty () {
   return 0
 }
 
-# セッション名のドットとコロンをアンダースコアに置換する（tmux の target 指定では . と : が
-# 区切り文字。tmux 3.1+ は new-session -s 時に自ら . : を _ へサイレント置換するため、こちらも
-# 同じ置換をしないと「作られた名前 (foo_bar)」と「target に使う名前 (foo:bar)」が食い違い、
-# new-window / attach が target 解決に失敗して attach 不能なセッションが残る）。
+# セッション名のドット・コロン・シャープをアンダースコアに置換する。
+# - . と : は tmux の target 指定の区切り文字。tmux 3.1+ は new-session -s 時に自ら . : を
+#   _ へサイレント置換するため、こちらも同じ置換をしないと「作られた名前 (foo_bar)」と
+#   「target に使う名前 (foo:bar)」が食い違い、new-window / attach が target 解決に失敗して
+#   attach 不能なセッションが残る。
+# - # は tmux が new-session -s / rename-session の名前引数を format 展開するため
+#   (3.7b 実測: -s 'ns#Stest' → セッション名 "nstest")。ディレクトリ名に #S / #{ 等が
+#   含まれると作成名と $name が食い違い、後続の attach -t "=$name" が失敗する。
 # t / tt 両方の入口で必ず通すこと（過去に tt 側だけ直して t 側が漏れた同型バグあり）。
 _tt_sanitize_session_name () {
-  print -rn -- "${1//[.:]/_}"
+  print -rn -- "${1//[.:#]/_}"
 }
 
 # 新規に 5 窓のセッションを作って attach する実体。
@@ -259,12 +268,24 @@ _tt_impl () {
           # (_tt_gc_stale_holds)・保存抑止 (tt_only_hold_sessions)・「再起動後に hold 名で
           # 復元され次 boot の GC に殺される」問題のすべてから構造的に外れる（旧フラグ方式を
           # 廃止した経緯は _tt_gc_stale_holds のコメント参照）。
-          # rename の失敗は「has-session 確認後に復元が $name を作った」レースの duplicate
-          # session のみ。その場合は pristine な hold を畳み、復元された実名へ attach する。
-          if ! tmux rename-session -t "=$hold" "$name" 2>/dev/null; then
-            tmux kill-session -t "=$hold" 2>/dev/null
+          # ⚠️ ただし復元が実際に進行中（@tt-restore-in-progress が TTL 内）の間は rename
+          # しない: rename 済みの実名セッションへ進行中の restore が後から到達すると、
+          # from-scratch overwrite 分岐（vendor restore.sh の pane_exists &&
+          # is_restoring_from_scratch → new_pane + kill-pane）が attach 中の作業ペインを
+          # プロセスごと kill する（実プローブで再現 2026-07-10）。この場合のみ hold 名の
+          # まま attach する（復元完了後の tt は実名へ attach する。pristine のまま detach
+          # した hold が次 boot の GC に畳まれる残存リスクは、作業ペイン kill より安全側
+          # として許容）。判定は保存ガードと共有の tt_restore_in_progress（冒頭で source）。
+          if tt_restore_in_progress; then
+            tmux attach-session -t "=$hold"
+          else
+            # rename の失敗は「has-session 確認後に復元が $name を作った」レースの duplicate
+            # session のみ。その場合は pristine な hold を畳み、復元された実名へ attach する。
+            if ! tmux rename-session -t "=$hold" "$name" 2>/dev/null; then
+              tmux kill-session -t "=$hold" 2>/dev/null
+            fi
+            tmux attach-session -t "=$name"
           fi
-          tmux attach-session -t "=$name"
         fi
         return ;;
     esac

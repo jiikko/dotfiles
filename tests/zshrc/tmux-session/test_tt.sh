@@ -62,6 +62,7 @@ OUT="$(HOME="$TMP_HOME" zsh -c '
           @resurrect-restore-script-path) print -r -- "$_T_RESTORE_SCRIPT" ;;
           @tt-restore-complete) print -r -- "$_T_FLAG" ;;
           @tt-restore-duration) print -r -- "$_T_DUR" ;;
+          @tt-restore-in-progress) print -r -- "$_T_INPROGRESS" ;;   # adopt の rename ガード用
         esac ;;
       rename-session) # -t <target> <newname>。実 tmux 同様、newname が既存なら duplicate で失敗。
         # _T_RENAME_FAIL=1 で強制失敗 (has-session 確認後に復元が実名を作ったレースの注入用)
@@ -213,6 +214,15 @@ OUT="$(HOME="$TMP_HOME" zsh -c '
   print "CASE:rc2_rename_race kill=[$_LOG_KILL] rename=[$_LOG_RENAME] attach=[$_LOG_ATTACH] t=[$_LOG_T]"
   _T_RENAME_FAIL=""
 
+  # C7c: rc=1 + 目的無 + 復元が実際に進行中 (@tt-restore-in-progress が TTL 内) →
+  # rename せず hold 名のまま attach する。進行中の restore が rename 済み実名に到達すると
+  # from-scratch overwrite が作業ペインを kill するため (adopt 分岐のコメント参照)。
+  _tt_wait_for_restore() { return 1; }
+  _T_SERVER=""; _T_SESSIONS=""; _T_INPROGRESS="$(date +%s)"; reset_log
+  _tt_impl proj 2>/dev/null
+  print "CASE:rc1_restore_live rename=[$_LOG_RENAME] attach=[$_LOG_ATTACH] t=[$_LOG_T]"
+  _T_INPROGRESS=""
+
   ##########################################################################
   # D. _tt_impl の名前算出 (引数あり置換 / 引数なし basename)
   ##########################################################################
@@ -224,6 +234,12 @@ OUT="$(HOME="$TMP_HOME" zsh -c '
   _T_SERVER=1; _T_SESSIONS=""; reset_log
   _tt_impl "a:b.c"
   print "CASE:name_colon t=[$_LOG_T]"
+
+  # シャープも置換される (tmux は new-session -s / rename-session の名前引数を format
+  # 展開するため、# 系が化けて作成名と target が食い違う。3.7b 実測)
+  _T_SERVER=1; _T_SESSIONS=""; reset_log
+  _tt_impl "a#Sb"
+  print "CASE:name_hash t=[$_LOG_T]"
 
   mkdir -p "$HOME/x.y"; cd "$HOME/x.y"   # 引数なし → basename "$PWD"
   _T_SERVER=1; _T_SESSIONS=""; reset_log
@@ -408,10 +424,13 @@ assert_line_has rc2_missing "attach=[ =proj]"             "rc=2+目的無: renam
 assert_line_has rc2_missing "@resurrect-hook-post-restore-all" "rc=2: フック未設定の警告を出す"
 assert_line_has rc2_rename_race "kill=[ =__tt_hold_"      "rc=2 rename 失敗レース: pristine hold を畳む"
 assert_line_has rc2_rename_race "attach=[ =proj] t=[]"    "rc=2 rename 失敗レース: 復元された実名へ attach し新規作成しない"
+assert_line_has rc1_restore_live "rename=[] attach=[ =__tt_hold_" "rc=1+復元進行中: rename せず hold 名のまま attach (restore の pane kill 回避)"
+assert_line_has rc1_restore_live "t=[]"                   "rc=1+復元進行中: 新規作成しない"
 
 printf '\n## 名前算出\n'
 assert_eq_line name     "t=[ a_b_c]" "引数のドットをアンダースコアに置換"
 assert_eq_line name_colon "t=[ a_b_c]" "引数のコロンもアンダースコアに置換"
+assert_eq_line name_hash "t=[ a_Sb]" "引数のシャープもアンダースコアに置換 (名前引数の format 展開対策)"
 assert_eq_line name_pwd "t=[ x_y]"   "引数なし → basename \$PWD + ドット置換"
 
 printf '\n## stale hold GC (三重条件)\n'
