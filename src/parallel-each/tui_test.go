@@ -2114,6 +2114,23 @@ func TestModelETA(t *testing.T) {
 	}
 }
 
+// clampListIdx must return 0 for an empty list (total==0). Before the fix it
+// returned i unchanged, so nav keys on an empty filtered view grew the cursor
+// unbounded; when entries later reappeared (e.g. a completion matching the
+// filter), Enter/'d' indexed filtered[cursor] out of range and panicked.
+func TestClampListIdxEmptyTotal(t *testing.T) {
+	if got := clampListIdx(3, 0); got != 0 {
+		t.Errorf("clampListIdx(3, 0) = %d, want 0", got)
+	}
+	var s listState
+	for range 3 {
+		s.handleNavKey("down", 0, 5)
+	}
+	if s.cursor != 0 {
+		t.Errorf("cursor after 3x down on empty list = %d, want 0", s.cursor)
+	}
+}
+
 func TestVisibleLen(t *testing.T) {
 	cases := []struct {
 		in   string

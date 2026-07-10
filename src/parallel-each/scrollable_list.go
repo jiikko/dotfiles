@@ -16,10 +16,10 @@ func (s *listState) reset() {
 
 // clampListIdx clips i into [0, total-1], or returns 0 when total is 0.
 func clampListIdx(i, total int) int {
-	if i < 0 {
+	if total <= 0 || i < 0 {
 		return 0
 	}
-	if total > 0 && i > total-1 {
+	if i > total-1 {
 		return total - 1
 	}
 	return i
