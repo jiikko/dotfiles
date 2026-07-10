@@ -1,4 +1,4 @@
-# vim-toggle (vendored)
+# toggle.nvim (vendored, 原名 vim-toggle)
 
 - 取得元: https://github.com/lukelbd/vim-toggle
 - コミット: c1c0eaab76e82968d72bc03aa77974e754f6e2e8 (2025-02-03)
@@ -7,7 +7,7 @@
   `g:toggle_words_off`) を自分専用に保守したいため repo 内に取り込む。挙動は上流と同一
   (速度目的ではない)。
 - 読み込み: `_nviminit.lua` の lazy spec で
-  `dir = config_dir .. "/vendor/nvim-plugins/vim-toggle"` として GitHub 取得でなく
+  `dir = config_dir .. "/vendor/nvim-plugins/toggle.nvim"` として GitHub 取得でなく
   このローカルコピーを使う。lazy が `plugin/toggle.lua` を source し `lua/` を rtp に追加する。
 - ライセンス: **GPL v2.0** (原 plugin/toggle.vim・autoload/toggle.vim のヘッダに明記。
   Author: Timo Teifel / Forked: Luke Davis)。移植後のファイルにも継承。

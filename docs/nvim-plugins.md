@@ -42,7 +42,7 @@
 
 | 現行                                         | 主な役割        | 最終更新   | デファクト候補                                       | 乗り換え可否 | 今すぐ捨てる? | Vimscript依存? | メモ |
 | -------------------------------------------- | --------------- | ---------- | ---------------------------------------------------- | ------------ | ------------- | --------------- | ---------------------------------------------------- |
-| ✅ lukelbd/vim-toggle (**vendored, Lua移植**) | トグル          | 2025-02-03 | `echasnovski/mini.operators`, `folke/which-key`      | △ | △ | いいえ | 辞書が充実しており今も実用。上流の更新が遅く語彙を自分で保守するため `vendor/nvim-plugins/vim-toggle` に取り込み **Lua 移植済み** (2026-07-09)。lazy の `dir` でローカル読み込み (VENDOR.md 参照)。 |
+| ✅ lukelbd/vim-toggle (**vendored, Lua移植**) | トグル          | 2025-02-03 | `echasnovski/mini.operators`, `folke/which-key`      | △ | △ | いいえ | 辞書が充実しており今も実用。上流の更新が遅く語彙を自分で保守するため `vendor/nvim-plugins/toggle.nvim` に取り込み (原名 vim-toggle から rename) **Lua 移植済み** (2026-07-09)。lazy の `dir` でローカル読み込み (VENDOR.md 参照)。 |
 | ✅ andymass/vim-matchup                      | 括弧/タグマッチ | 2025-12-31 | 同プラグイン                                         | × | × | はい | 本体は Vimscript 6,848 行（`lua/` は treesitter 連携のみ ~1,210 行）。Treesitter 対応でデファクト。Lua 化は最難・低ROI で対象外（`issues/nvim-vimscript-to-lua-migration.md` §4 参照）。 |
 | ✅ nvim-treesitter/\*                        | 構文解析        | 2026-01-10 | 同プロジェクト                                       | × | × | いいえ | 乗り換え不要。 |
 | ✅ RRethy/nvim-treesitter-endwise            | end 自動補完    | 2025-12-29 | 同プラグイン, `tpope/vim-endwise`                    | × | × | いいえ | Ruby/Lua/Vimscript 等で `if`〜`end` を自動補完。Treesitter ベースで構文解析に追従。 |

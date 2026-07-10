@@ -109,9 +109,9 @@ require("lazy").setup({
       end
     end,
   },
-  -- vim-toggle は repo 内に vendor 済み (vendor/nvim-plugins/vim-toggle、VENDOR.md 参照)。
+  -- toggle.nvim は repo 内に vendor 済み (vendor/nvim-plugins/toggle.nvim、VENDOR.md 参照)。
   -- GitHub 取得でなくローカルコピーを dir で読む (トグル語彙を自分で保守するため)。
-  { dir = config_dir .. "/vendor/nvim-plugins/vim-toggle", name = "vim-toggle",
+  { dir = config_dir .. "/vendor/nvim-plugins/toggle.nvim", name = "toggle.nvim",
     event = "VeryLazy",
     init = function()
       vim.g.toggle_map = '+'
