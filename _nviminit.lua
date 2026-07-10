@@ -417,7 +417,10 @@ require("lazy").setup({
   -- 起動時に setcellwidths を張るため遅延トリガは付けず eager ロード。
   { dir = config_dir .. "/vendor/nvim-plugins/ambiwidth.nvim", name = "ambiwidth.nvim" },
   { "akinsho/bufferline.nvim",
-    event = "BufAdd",
+    -- BufAdd は起動処理中の最初のバッファでは発火しない (:h BufAdd) ため、単一バッファの
+    -- セッションでは一切ロードされず always_show_bufferline と gt/gT 等の keymap が死んでいた。
+    -- UI 常駐プラグインなので VeryLazy (起動完了直後) でロードする。
+    event = "VeryLazy",
     dependencies = { "nvim-tree/nvim-web-devicons" },
     config = function()
       local ok, bufferline = pcall(require, "bufferline")
