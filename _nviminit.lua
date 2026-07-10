@@ -840,6 +840,10 @@ function Foldtext()
 end
 vim.opt.foldtext = "v:lua.Foldtext()"
 vim.opt.fillchars = { fold = " " } -- 折りたたんだ際のあまりの部分をスペースにする
+-- ⚠️ <Tab> と <C-i> は端末では同一キーコード (Apple Terminal + tmux は拡張キー報告で
+-- 区別しない) ため、このマップで <C-i> (jumplist 前進) は fold open に化けて失われる。
+-- fold 開閉を <Tab> に置く利便を優先した意図的なトレードオフ。<C-i> が必要になったら
+-- fold を za/zo 系や <leader> 配下へ移して再評価する。
 vim.keymap.set("n", "<Tab>", "zo")
 vim.keymap.set("n", "<S-Tab>", "zc")
 vim.keymap.set("n", "<Leader><Tab>", "zR")
