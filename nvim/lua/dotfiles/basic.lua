@@ -92,7 +92,21 @@ local function set_highlights()
   -- hl.set = ColorScheme 再適用 + cterm 併記 (256色環境) の規律 (dotfiles/hl.lua 参照)。
   -- ctermbg が無いと主環境 (termguicolors=off) で背景が出なかった (underline のみ)。
   require("dotfiles.hl").set("ZenkakuSpace", { underline = true, bg = "darkgray", ctermbg = "darkgray" })
-  vim.cmd([[match ZenkakuSpace /　/]])
+
+  -- match は window-local なので setup 時の 1 回では :sp / :vs / :tabnew の新規ウィンドウに
+  -- 伝播しない (以降そのウィンドウで全角スペースが不可視のままになる実バグがあった)。
+  -- WinEnter で「現在ウィンドウに未適用なら適用」する (getmatches で重複ガード)。
+  local function apply_match()
+    for _, m in ipairs(vim.fn.getmatches()) do
+      if m.group == "ZenkakuSpace" then return end
+    end
+    vim.fn.matchadd("ZenkakuSpace", "　")
+  end
+  vim.api.nvim_create_autocmd("WinEnter", {
+    group = vim.api.nvim_create_augroup("dotfiles_zenkaku_match", { clear = true }),
+    callback = apply_match,
+  })
+  apply_match() -- 起動直後の最初のウィンドウは WinEnter が発火しないため直接適用
 end
 
 local function set_autocmds()
