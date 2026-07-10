@@ -36,17 +36,22 @@ jobs:
           neovim: true
           version: stable
 
-      # _nviminit.lua の bootstrap が毎回 github.com から lazy.nvim を git clone する
-      # ネットワーク依存を、clone 先 (stdpath('data')=~/.local/share/nvim/lazy) ごと
-      # キャッシュして回避する。CI でプラグイン本体は install されないため lazy ディレクトリ
-      # のみで十分。spec を変えたら鍵が変わるよう _nviminit.lua を hash する。
-      - name: Cache lazy.nvim bootstrap clone
+      # プラグイン (lazy.nvim 本体 + 各プラグイン) の clone を ~/.local/share/nvim/lazy ごと
+      # キャッシュしてネットワーク依存と再 clone を抑える。次段の :Lazy! restore が
+      # _lazy-lock.json の固定 commit へ同期する。spec/lock を変えたら鍵が変わるよう hash する。
+      - name: Cache Neovim plugins
         uses: actions/cache@v6
         with:
           path: ~/.local/share/nvim/lazy
-          key: nvim-lazy-${{ runner.os }}-${{ hashFiles('_nviminit.lua') }}
+          key: nvim-lazy-${{ runner.os }}-${{ hashFiles('_nviminit.lua', '_lazy-lock.json') }}
           restore-keys: |
             nvim-lazy-${{ runner.os }}-
+
+      # プラグインを _lazy-lock.json 通りに事前インストールする。config の ftplugin は
+      # nvim-treesitter-textobjects 等を require するため、テスト時に本体が load 済みである必要がある
+      # (runtime の遅延 auto-install に頼ると ftplugin の require が間に合わず落ちる)。
+      - name: Install Neovim plugins (lazy restore)
+        run: nvim --headless -u _nviminit.lua "+Lazy! restore" +qa
 
       - name: Run dotfiles test suite
         run: make test-runtime
