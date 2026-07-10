@@ -1,8 +1,10 @@
 #!/bin/sh
-# scratch popup のトグル (bind t / C-t から `run-shell '... "#{client_name}" "#{session_name}"'`
+# scratch popup のトグル (bind t / C-t から `run-shell '... #{q:client_name} #{q:session_name}'`
 # で呼ばれる)。開閉判定ごとここに集約する (旧実装は if-shell -F 込みの 200 文字超の bind
 # 文字列が t / C-t に複製されており、二重エスケープで壊れやすかった)。
-# 引数: $1 = client_name / $2 = session_name (いずれも run-shell の format 展開で渡る)
+# 引数: $1 = client_name / $2 = session_name (いずれも run-shell の format 展開で渡る。
+#   #{q:} でシェル特殊文字をエスケープ済み。旧 "#{...}" 埋めは値の " で sh 構文エラーに
+#   なる穴があった — _tmux.conf の launcher menu コメント参照)
 #
 # - session_name が popup 系セッション (scratch / launcher) = popup 内で押された
 #   → detach で popup を閉じ、全クライアントを再描画。refresh は旧 bind の run-shell -b と
