@@ -28,13 +28,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends tmux zsh make bats
 
-      # config は Neovim 0.11+ 前提 (vim.lsp.config / vim.diagnostic.jump / vim.version.ge 等)。
-      # Ubuntu apt の neovim は古い (0.9.5) ため、公式 stable リリースを別途セットアップする。
-      - name: Set up Neovim (stable)
+      # config は Neovim 0.11 系前提 (vim.lsp.config / vim.diagnostic.jump 等)。
+      # Ubuntu apt の neovim は古い (0.9.5) ため公式リリースを別途セットアップする。
+      # ⚠️ version は 0.11 系に pin する ("stable" にしない): stable が 0.12 に進んだ時点で、
+      #   意図的に master 凍結している nvim-treesitter/textobjects (_nviminit.lua 参照) が
+      #   0.12 の iter_matches 変更 (キャプチャがノード配列になる) と非互換になり、go の
+      #   ]] motion が move.lua "attempt to call method 'range'" で死ぬことを 0.12.4 実測で
+      #   確認 (2026-07-10 の CI 赤の真因)。nvim を 0.12 へ上げるときは treesitter main 系への
+      #   移行とセットで行い、この pin も同時に更新すること。
+      - name: Set up Neovim (0.11 系に pin)
         uses: rhysd/action-setup-vim@v1
         with:
           neovim: true
-          version: stable
+          version: v0.11.5
 
       # プラグイン (lazy.nvim 本体 + 各プラグイン) の clone を ~/.local/share/nvim/lazy ごと
       # キャッシュしてネットワーク依存と再 clone を抑える。次段の :Lazy! restore が
