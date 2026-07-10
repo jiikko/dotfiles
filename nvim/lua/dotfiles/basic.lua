@@ -89,19 +89,10 @@ local function set_keymaps()
 end
 
 local function set_highlights()
-  local function apply()
-    -- termguicolors 有効時は cterm 値が無視されるため gui 属性で指定
-    vim.api.nvim_set_hl(0, "ZenkakuSpace", { underline = true, bg = "darkgray" })
-    vim.cmd([[match ZenkakuSpace /　/]])
-  end
-
-  local group = vim.api.nvim_create_augroup("dotfiles_basic_highlights", { clear = true })
-  vim.api.nvim_create_autocmd("ColorScheme", {
-    group = group,
-    callback = apply,
-  })
-
-  apply()
+  -- hl.set = ColorScheme 再適用 + cterm 併記 (256色環境) の規律 (dotfiles/hl.lua 参照)。
+  -- ctermbg が無いと主環境 (termguicolors=off) で背景が出なかった (underline のみ)。
+  require("dotfiles.hl").set("ZenkakuSpace", { underline = true, bg = "darkgray", ctermbg = "darkgray" })
+  vim.cmd([[match ZenkakuSpace /　/]])
 end
 
 local function set_autocmds()

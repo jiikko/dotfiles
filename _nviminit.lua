@@ -99,8 +99,8 @@ require("lazy").setup({
     config = function()
       if _G.dotfiles_truecolor_supported() then
         vim.cmd("colorscheme gruvbox")
-        -- 選択範囲をショッキングピンクで強調
-        vim.api.nvim_set_hl(0, "Visual", { bg = "#d3869b" })
+        -- 選択範囲をショッキングピンクで強調 (hl.set = ColorScheme 再適用 + cterm 併記規律)
+        require("dotfiles.hl").set("Visual", { bg = "#d3869b", ctermbg = 175 })
       else
         -- truecolor 非対応端末 (上の WORKAROUND 参照): gruvbox は cterm 色を持たず 256色端末で
         -- 無色になるため、cterm を完備する nvim 同梱の retrobox (gruvbox 風) へ差し替える。
@@ -610,9 +610,12 @@ require("lazy").setup({
         },
       })
 
-      vim.api.nvim_set_hl(0, "GitSignsCurrentLineBlame", {
+      -- hl.set = ColorScheme 再適用 + cterm 併記 (256色環境) の規律 (dotfiles/hl.lua 参照)
+      require("dotfiles.hl").set("GitSignsCurrentLineBlame", {
         fg = "#1d2021",
         bg = "#fabd2f",
+        ctermfg = 234,
+        ctermbg = 214,
         bold = true,
         italic = false,
       })
@@ -650,9 +653,12 @@ require("lazy").setup({
   { 'echasnovski/mini.trailspace', version = '*', event = "VeryLazy",
     config = function()
       require("mini.trailspace").setup()
-      vim.api.nvim_set_hl(0, "MiniTrailspace", {
+      -- hl.set = ColorScheme 再適用 + cterm 併記 (256色環境) の規律 (dotfiles/hl.lua 参照)。
+      -- cterm が無いと主環境 (termguicolors=off) で末尾空白ハイライトが完全不可視だった。
+      require("dotfiles.hl").set("MiniTrailspace", {
         fg = "NONE",
         bg = "#fb4934",
+        ctermbg = 203,
       })
 
       local map = vim.keymap.set
@@ -775,22 +781,23 @@ require("lazy").setup({
 
           local modified = vim.bo[props.buf].modified
 
-          -- 色の設定（inactive時は薄く）
-          local fg_color = "#ebdbb2"  -- gruvbox light
-          local bg_color = "#3c3836"  -- gruvbox bg1
+          -- 色の設定（inactive時は薄く）。incline は render の戻り値を :highlight コマンドに
+          -- 素通しするため、gui* と cterm* の併記が必要 (256色環境の規律は dotfiles/hl.lua 参照)
+          local fg_color, cterm_fg = "#ebdbb2", 223  -- gruvbox light
+          local bg_color, cterm_bg = "#3c3836", 237  -- gruvbox bg1
 
           if not props.focused then
             -- inactive時は存在感を弱める
-            fg_color = "#665c54"  -- gruvbox gray
-            bg_color = "#282828"  -- gruvbox bg0
+            fg_color, cterm_fg = "#665c54", 245  -- gruvbox gray
+            bg_color, cterm_bg = "#282828", 235  -- gruvbox bg0
           end
 
           local res = {
-            { display_name, guifg = fg_color, guibg = bg_color },
+            { display_name, guifg = fg_color, guibg = bg_color, ctermfg = cterm_fg, ctermbg = cterm_bg },
           }
 
           if modified then
-            table.insert(res, { " ●", guifg = "#fe8019", guibg = bg_color })  -- gruvbox orange
+            table.insert(res, { " ●", guifg = "#fe8019", guibg = bg_color, ctermfg = 208, ctermbg = cterm_bg })  -- gruvbox orange
           end
 
           return res
