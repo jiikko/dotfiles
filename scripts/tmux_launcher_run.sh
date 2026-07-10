@@ -31,7 +31,14 @@ sess=launcher
 # (tmux_scratch_popup.sh の孤児サーバ予防と同方針)
 unset TMUX TMUX_TMPDIR
 
-tmux has-session -t "$sess" 2>/dev/null || tmux new-session -d -s "$sess"
+# 並行レース対策: 2 プロセスが同時に「未存在」判定すると片方の new-session が duplicate
+# session で失敗し、AND-OR リスト末尾の失敗が set -e を発火してスクリプトが無言死する
+# (メニュー選択が消える)。負けた側は再確認して続行する。
+# ⚠️ `new-session -Ad` (attach-or-create) に畳まないこと: 既存セッション時に attach-session
+#   -d 相当となり他 client を detach する (冒頭の「-A は使わない」不変条件と同根)。
+tmux has-session -t "$sess" 2>/dev/null \
+  || tmux new-session -d -s "$sess" 2>/dev/null \
+  || tmux has-session -t "$sess"
 # コマンド終了後に $SHELL へ降りて出力を残す (new-window は終了と同時に閉じるため)
 tmux new-window -t "$sess" -n "$name" -c "$cwd" "$cmd; exec ${SHELL:-zsh}"
 
