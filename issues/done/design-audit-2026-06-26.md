@@ -1,5 +1,13 @@
 # 設計監査 (2026-06-26)
 
+> **対応完了 (2026-07-11)**: 確定 4 件すべて対応済み (ユーザーの明示依頼を trigger として着手)。
+> #1=9ae7ec9 (_ffprobe_helpers.zsh 新設、~30 箇所移行。複数行取得の acodec_names は対象外のまま) /
+> #2=c049050 (__concat_resolve_sequence 抽出、ロジック無変更の移動) /
+> #3=82dfed5 + 34fbbe8 (_reload_then_call 集約 + repair/repair_mp4 対応。repair_mp4 の直接
+> 呼び出しが一時 regression し codex review が検出 → 修正済み) /
+> #4=72dee45 (_AV1IFY_DENOISE_PRESETS 一元化)。
+> 全体 codex review 済み (指摘は上記 P2 の 1 件のみ、対応済み)。make test-zshrc 緑。
+
 調査日: 2026-06-26
 調査方法: 直接実行 — Workflow で 4 タイプ (duplication / responsibility / design / polymorphism) を並列調査し、各 finding をアドバーサリアル検証 (意図的設計 / false-positive / 既存 issue 重複 / 「分割しても複雑性が下がらない」を除外)。計 12 エージェント。
 対象: `zshlib/` `scripts/` `_zshrc` `_claude/hooks/` (vendor 除く)
