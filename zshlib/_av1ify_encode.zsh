@@ -1,5 +1,8 @@
 # shellcheck shell=bash
 
+# ffprobe 単一フィールド取得は共通ヘルパーを使う (テストが本ファイルを単体 source するため自己 source)
+source "${${(%):-%x}:A:h}/_ffprobe_helpers.zsh"
+
 # __av1ify_decide_* / __av1ify_auto_crf / __av1ify_build_final_out から
 # 結果を返却するためのグローバル。__av1ify_one が各反復で初期化する。
 # REPLY を 1 つだけ使う関数 (__av1ify_auto_crf, __av1ify_build_final_out,
@@ -180,8 +183,7 @@ __av1ify_decide_fps() {
   [[ -z "$validated" ]] && return 0
 
   local source_fps_raw source_fps_val=""
-  source_fps_raw=$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate \
-           -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
+  source_fps_raw=$(__ff_stream_field "$in" v:0 stream=r_frame_rate)
   if [[ -n "$source_fps_raw" ]]; then
     # r_frame_rate は "30000/1001" のような分数形式
     source_fps_val=$(awk -v fps="$source_fps_raw" 'BEGIN {
@@ -246,8 +248,7 @@ __av1ify_auto_crf() {
   elif [[ -n "$source_short_side" ]]; then
     height_for_crf="$source_short_side"
   else
-    height_for_crf=$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
-             -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
+    height_for_crf=$(__ff_stream_field "$in" v:0 stream=height)
   fi
   if [[ -n "$height_for_crf" && "$height_for_crf" =~ ^[0-9]+$ ]]; then
     local crf
@@ -283,8 +284,7 @@ __av1ify_cap_aac_bitrate() {
   __AV1IFY_R_AAC_CAPPED=0
 
   local src_abitrate
-  src_abitrate=$(ffprobe -v error -select_streams a:0 -show_entries stream=bit_rate \
-                 -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
+  src_abitrate=$(__ff_stream_field "$in" a:0 stream=bit_rate)
   [[ -z "$src_abitrate" || ! "$src_abitrate" =~ ^[0-9]+$ ]] && return 0
   __AV1IFY_R_AAC_SRC_BPS="$src_abitrate"
 
@@ -548,12 +548,9 @@ __av1ify_one() {
   # 「ファイル取得中」表示時点の初回アクセスで完了しており、以降の ffprobe は
   # ローカル read (~数十ms/回) なので実害は小さい。
   local source_width="" source_height="" source_display_width="" source_display_height="" source_short_side="" source_is_portrait=0 source_rotation=""
-  source_width=$(ffprobe -v error -select_streams v:0 -show_entries stream=width \
-           -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
-  source_height=$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
-           -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
-  source_rotation=$(ffprobe -v error -select_streams v:0 -show_entries stream_side_data=rotation \
-             -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
+  source_width=$(__ff_stream_field "$in" v:0 stream=width)
+  source_height=$(__ff_stream_field "$in" v:0 stream=height)
+  source_rotation=$(__ff_stream_field "$in" v:0 stream_side_data=rotation)
   if [[ -n "$source_width" && "$source_width" =~ ^[0-9]+$ && -n "$source_height" && "$source_height" =~ ^[0-9]+$ ]]; then
     source_display_width=$source_width
     source_display_height=$source_height
@@ -611,16 +608,13 @@ __av1ify_one() {
 
   # 音声コーデック事前判定（a:0 が無ければ空）
   local acodec
-  acodec=$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name \
-           -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
+  acodec=$(__ff_stream_field "$in" a:0 stream=codec_name)
 
   # ソース音声のサンプルレートとチャンネル数を取得（アップスケール防止）
   local src_sample_rate="" src_channels=""
   if [[ -n "$acodec" ]]; then
-    src_sample_rate=$(ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate \
-                      -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
-    src_channels=$(ffprobe -v error -select_streams a:0 -show_entries stream=channels \
-                   -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
+    src_sample_rate=$(__ff_stream_field "$in" a:0 stream=sample_rate)
+    src_channels=$(__ff_stream_field "$in" a:0 stream=channels)
   fi
   # AAC再エンコード時の上限（ソースがこれより低ければソースに合わせる）
   local aac_max_ar=48000 aac_max_ac=2
@@ -705,8 +699,7 @@ __av1ify_one() {
     # compact モード: 音声ビットレートが96kbps超ならAAC 96kに再エンコード
     if (( __AV1IFY_COMPACT )); then
       local src_abitrate
-      src_abitrate=$(ffprobe -v error -select_streams a:0 -show_entries stream=bit_rate \
-                     -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
+      src_abitrate=$(__ff_stream_field "$in" a:0 stream=bit_rate)
       if [[ -n "$src_abitrate" && "$src_abitrate" =~ ^[0-9]+$ ]] && (( src_abitrate > 130000 )); then
         if (( ! aac_params_available )); then
           args_audio=(-map "0:a:0?" -c:a copy)

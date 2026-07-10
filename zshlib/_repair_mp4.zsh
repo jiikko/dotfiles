@@ -1,4 +1,7 @@
 # shellcheck shell=bash
+
+# ffprobe 単一フィールド取得は共通ヘルパーを使う (テストが本ファイルを単体 source するため自己 source)
+source "${${(%):-%x}:A:h}/_ffprobe_helpers.zsh"
 # ------------------------------------------------------------------------------
 # repair_mp4 — 問題のあるコンテナ（mpegts等）を正常なMP4に修復します
 # ------------------------------------------------------------------------------
@@ -93,13 +96,12 @@ __repair_mp4_one() {
 
   # コンテナフォーマット取得
   local fmt
-  fmt=$(ffprobe -v error -show_entries format=format_name -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
+  fmt=$(__ff_format_field "$in" format=format_name)
   print -r -- ">> 入力フォーマット: ${fmt:-unknown}"
 
   # フレームレート検出
   local fps_raw fps_val=0
-  fps_raw=$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate \
-            -of default=nk=1:nw=1 -- "$in" 2>/dev/null | head -n1)
+  fps_raw=$(__ff_stream_field "$in" v:0 stream=r_frame_rate)
 
   if [[ -n "$fps_raw" && "$fps_raw" == */* ]]; then
     local num="${fps_raw%/*}" den="${fps_raw#*/}"
@@ -135,13 +137,11 @@ __repair_mp4_one() {
 
   # 映像コーデック取得
   local vcodec
-  vcodec=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name \
-           -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
+  vcodec=$(__ff_stream_field "$in" v:0 stream=codec_name)
 
   # 音声コーデック取得
   local acodec
-  acodec=$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name \
-           -of default=nk=1:nw=1 -- "$in" 2>/dev/null)
+  acodec=$(__ff_stream_field "$in" a:0 stream=codec_name)
 
   # ffmpeg引数構築。
   # 全映像・全音声を map する (0:v / 0:a?)。かつて 0:v:0 / 0:a:0? で「第1映像+第1音声のみ」を

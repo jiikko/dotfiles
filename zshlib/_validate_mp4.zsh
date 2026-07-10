@@ -1,5 +1,8 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2296
+
+# ffprobe 単一フィールド取得は共通ヘルパーを使う (テストが本ファイルを単体 source するため自己 source)
+source "${${(%):-%x}:A:h}/_ffprobe_helpers.zsh"
 # ------------------------------------------------------------------------------
 # validate-mp4 — MP4 が全フレーム再生可能かを ffmpeg フルデコードで検証する
 #
@@ -34,19 +37,19 @@ __validate_mp4_check() {
   local declared vcodec acodec acodec_names decode_log actual_hms truncated cn trim_risk
 
   # --- チェック1: コンテナが読めるか (ffprobe一発, 速い) ---
-  declared=$(ffprobe -v error -show_entries format=duration -of default=nk=1:nw=1 -- "$file" 2>/dev/null | head -n1 || true)
+  declared=$(__ff_format_field "$file" format=duration || true)
   if [[ -z "$declared" || "$declared" == "N/A" ]]; then
     REPLY="unreadable"; return 1
   fi
 
   # --- チェック2: 映像ストリームの有無 (速い) ---
-  vcodec=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of default=nk=1:nw=1 -- "$file" 2>/dev/null | head -n1 || true)
+  vcodec=$(__ff_stream_field "$file" v:0 stream=codec_type || true)
   if [[ "$vcodec" != "video" ]]; then
     REPLY="no-video"; return 1
   fi
 
   # --- チェック3: 音声ストリームの有無 (速い) ---
-  acodec=$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of default=nk=1:nw=1 -- "$file" 2>/dev/null | head -n1 || true)
+  acodec=$(__ff_stream_field "$file" a:0 stream=codec_type || true)
   if [[ "$acodec" != "audio" ]]; then
     REPLY="no-audio"; return 1
   fi
@@ -55,6 +58,7 @@ __validate_mp4_check() {
   #      出力せず (codec_name が先に出る) パースが壊れるため、codec_name 単一フィールドで取る。
   # 注2: a:0 ではなく全音声ストリーム (-select_streams a) を見る。先頭が AAC でも 2 本目以降に
   #      mp3 等が混ざると、その音声トラックがトリムで失われるため (複数音声 MP4 対策)。
+  #      複数行取得 (head しない) ため __ff_stream_field は使えない (あれは単一フィールド用)。
   acodec_names=$(ffprobe -v error -select_streams a -show_entries stream=codec_name -of default=nk=1:nw=1 -- "$file" 2>/dev/null || true)
 
   # --- チェック4+5: 全デコード1パスで「破損」と「実デコード終端」を両方取る (重い) ---

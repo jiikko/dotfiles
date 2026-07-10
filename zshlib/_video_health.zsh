@@ -1,5 +1,8 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2296
+
+# ffprobe 単一フィールド取得は共通ヘルパーを使う (テストが本ファイルを単体 source するため自己 source)
+source "${${(%):-%x}:A:h}/_ffprobe_helpers.zsh"
 # ------------------------------------------------------------------------------
 # video_health — 動画ファイルの健全性チェック（time_base破損検出など）
 # ------------------------------------------------------------------------------
@@ -19,8 +22,7 @@ __video_health_check() {
   local video_duration format_duration
 
   # 映像ストリームの duration を取得
-  video_duration=$(ffprobe -v error -select_streams v:0 \
-    -show_entries stream=duration -of default=nk=1:nw=1 -- "$file" 2>/dev/null | head -n1)
+  video_duration=$(__ff_stream_field "$file" v:0 stream=duration)
 
   if [[ -z "$video_duration" ]] || [[ "$video_duration" == "N/A" ]]; then
     REPLY="映像ストリームのdurationを取得できません"
@@ -28,8 +30,7 @@ __video_health_check() {
   fi
 
   # フォーマット全体の duration を取得
-  format_duration=$(ffprobe -v error \
-    -show_entries format=duration -of default=nk=1:nw=1 -- "$file" 2>/dev/null | head -n1)
+  format_duration=$(__ff_format_field "$file" format=duration)
 
   if [[ -z "$format_duration" ]] || [[ "$format_duration" == "N/A" ]]; then
     REPLY="フォーマットのdurationを取得できません"
@@ -109,8 +110,7 @@ __video_health_check() {
   # (mp4/mov/mkv/avi 等は単一の連続タイムスタンプ epoch を持つため DTS 逆行=破損)
   # 判定は拡張子偽装に強い format_name で行う (av1c の入力に .ts が含まれる)。
   local container_format
-  container_format=$(ffprobe -v error -show_entries format=format_name \
-    -of default=nk=1:nw=1 -- "$file" 2>/dev/null | head -n1)
+  container_format=$(__ff_format_field "$file" format=format_name)
 
   if [[ "$container_format" != *mpegts* ]]; then
     local dts_backward

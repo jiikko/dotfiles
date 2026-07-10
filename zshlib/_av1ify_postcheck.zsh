@@ -1,5 +1,8 @@
 # shellcheck shell=bash
 
+# ffprobe 単一フィールド取得は共通ヘルパーを使う (テストが本ファイルを単体 source するため自己 source)
+source "${${(%):-%x}:A:h}/_ffprobe_helpers.zsh"
+
 # 内部補助: 変換後の検査で NG の場合にファイル名へ注記を付加
 # リネーム先が既に存在する場合 (再実行で同名 check_ng が再生成されるケース) は、
 # 前回の成果物を mv -f で無言上書きせず、注記に連番を付けて衝突を回避する
@@ -80,16 +83,14 @@ __av1ify_is_nonneg_num() {
 __av1ify_get_stream_end() {
   local file="$1" spec="$2" val fmt_dur start
   # 安価パス: stream=duration
-  val=$(ffprobe -v error -select_streams "$spec" -show_entries stream=duration \
-        -of default=nk=1:nw=1 -- "$file" 2>/dev/null | head -n1)
+  val=$(__ff_stream_field "$file" "$spec" stream=duration)
   if __av1ify_is_num "$val"; then
     REPLY="$val"
     return 0
   fi
   # フォールバック 1: 末尾 60s 区間の packet PTS を走査する (MKV など stream=duration N/A 対応)
   # ffprobe -read_intervals "START%" で START 秒から末尾までを読む。
-  fmt_dur=$(ffprobe -v error -show_entries format=duration \
-            -of default=nk=1:nw=1 -- "$file" 2>/dev/null | head -n1)
+  fmt_dur=$(__ff_format_field "$file" format=duration)
   if __av1ify_is_num "$fmt_dur"; then
     start=$(LC_ALL=C awk -v d="$fmt_dur" 'BEGIN { s = d - 60; if (s < 0) s = 0; printf "%.0f", s }')
     # awk で N/A 行を弾きつつ最終数値行だけ拾う (tail -n1 だと N/A を拾いうる)
@@ -151,8 +152,8 @@ __av1ify_postcheck() {
   # フォールバックがあったが、ソース由来の音ズレ素材で大量の誤検出を出していたため廃止。
   # 代わりに __av1ify_get_stream_end が packet PTS 走査で MKV でも真の duration を取りに行く。
   local out_v out_a src_v="" src_a=""
-  out_v=$(ffprobe -v error -select_streams v:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
-  out_a=$(ffprobe -v error -select_streams a:0 -show_entries stream=duration -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
+  out_v=$(__ff_stream_field "$filepath" v:0 stream=duration)
+  out_a=$(__ff_stream_field "$filepath" a:0 stream=duration)
 
   # 閾値デフォルトは 2.0s。encode (ffmpeg) は通常 1〜数十ms の精度で A/V 同期を保つので、
   # 2 秒を超える「新たに作った drift」は実害級と判定する。
@@ -206,8 +207,8 @@ __av1ify_postcheck() {
   # ソースとの再生時間比較
   if [[ -n "$src_path" ]]; then
     local src_fmt_dur out_fmt_dur dur_diff
-    src_fmt_dur=$(ffprobe -v error -show_entries format=duration -of default=nk=1:nw=1 -- "$src_path" 2>/dev/null | head -n1)
-    out_fmt_dur=$(ffprobe -v error -show_entries format=duration -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
+    src_fmt_dur=$(__ff_format_field "$src_path" format=duration)
+    out_fmt_dur=$(__ff_format_field "$filepath" format=duration)
     if [[ -n "$src_fmt_dur" && -n "$out_fmt_dur" ]]; then
       dur_diff=$(awk -v s="$src_fmt_dur" -v o="$out_fmt_dur" 'BEGIN{ if (s=="" || o=="") exit 1; d=s-o; if (d<0) d=-d; printf "%.3f", d }' 2>/dev/null) || dur_diff=""
       if [[ -n "$dur_diff" ]]; then
@@ -226,8 +227,8 @@ __av1ify_postcheck() {
   # フレーム数比較（fps変更なしの場合のみ）
   if [[ -n "$src_path" ]] && (( ! fps_changed )); then
     local src_frames out_frames
-    src_frames=$(ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of default=nk=1:nw=1 -- "$src_path" 2>/dev/null | head -n1)
-    out_frames=$(ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
+    src_frames=$(__ff_stream_field "$src_path" v:0 stream=nb_frames)
+    out_frames=$(__ff_stream_field "$filepath" v:0 stream=nb_frames)
     if [[ -n "$src_frames" && "$src_frames" =~ ^[0-9]+$ && -n "$out_frames" && "$out_frames" =~ ^[0-9]+$ ]]; then
       local frame_diff=$(( src_frames > out_frames ? src_frames - out_frames : out_frames - src_frames ))
       local frame_tolerance="${AV1IFY_FRAME_TOLERANCE:-24}"
@@ -241,8 +242,8 @@ __av1ify_postcheck() {
   # 出力解像度の検証
   if [[ -n "$expected_height" ]]; then
     local out_w out_h out_short
-    out_w=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
-    out_h=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
+    out_w=$(__ff_stream_field "$filepath" v:0 stream=width)
+    out_h=$(__ff_stream_field "$filepath" v:0 stream=height)
     if [[ -n "$out_w" && "$out_w" =~ ^[0-9]+$ && -n "$out_h" && "$out_h" =~ ^[0-9]+$ ]]; then
       if (( out_h > out_w )); then
         out_short=$out_w
@@ -283,7 +284,7 @@ __av1ify_postcheck() {
 
   # 出力映像コーデックの検証
   local out_vcodec
-  out_vcodec=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=nk=1:nw=1 -- "$filepath" 2>/dev/null | head -n1)
+  out_vcodec=$(__ff_stream_field "$filepath" v:0 stream=codec_name)
   if [[ -n "$out_vcodec" && "${out_vcodec:l}" != "av1" ]]; then
     issues+=("映像コーデック不一致 (期待=av1, 実際=${out_vcodec})")
     suffixes+=("codec")
