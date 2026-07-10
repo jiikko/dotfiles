@@ -607,6 +607,9 @@ _reload_then_call() {
 av1ify()       { _reload_then_call av1ify       "$HOME/dotfiles/zshlib/_av1ify.zsh"       av1ify       "$@" }
 concat()       { _reload_then_call concat       "$HOME/dotfiles/zshlib/_concat.zsh"       concat       "$@" }
 repair()       { _reload_then_call repair       "$HOME/dotfiles/zshlib/_repair.zsh"       repair       "$@" }
+# repair_mp4 は _repair.zsh 経由で定義される直接呼び出し可能なコマンド (旧 eager source で
+# シェル起動時から使えていた互換を維持する)
+repair_mp4()   { _reload_then_call repair_mp4   "$HOME/dotfiles/zshlib/_repair.zsh"       repair_mp4   "$@" }
 # validate-mp4 の実体は validate_mp4() (対話シェルではハイフン名でも呼べるようにする)
 validate-mp4() { _reload_then_call validate-mp4 "$HOME/dotfiles/zshlib/_validate_mp4.zsh" validate_mp4 "$@" }
 
