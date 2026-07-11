@@ -117,10 +117,23 @@ end
 local function set_autocmds()
   local group = vim.api.nvim_create_augroup("dotfiles_basic_autocmds", { clear = true })
 
-  -- .tf/.tfvars を terraform filetype にする。nvim 標準は .tf→"tf" / .tfvars→"terraform-vars" で、
-  -- terraform-ls・conform(terraform_fmt)・treesitter(terraform parser) が前提とする ft=terraform に
-  -- ならない。旧 vim-terraform の ftdetect が担っていた検出を置換で明示する (2026-07)。
-  vim.filetype.add({ extension = { tf = "terraform", tfvars = "terraform" } })
+  -- カスタム filetype 検出は vim.filetype.add へ一本化する (旧実装は BufRead autocmd 3 本と
+  -- 混在していた。二重機構だと追加時にどちらへ書くか迷うため統合。2026-07-12)。
+  -- - .tf/.tfvars→terraform: nvim 標準は .tf→"tf" / .tfvars→"terraform-vars" で、terraform-ls・
+  --   conform(terraform_fmt)・treesitter(terraform parser) が前提とする ft=terraform に
+  --   ならない。旧 vim-terraform の ftdetect が担っていた検出を置換で明示する (2026-07)
+  -- - Schemafile / *.Schemafile (ridgepole) → ruby、*.sql.erb → sql
+  vim.filetype.add({
+    extension = { tf = "terraform", tfvars = "terraform" },
+    filename = { Schemafile = "ruby" },
+    -- ⚠️ pattern に ^ / $ を書かないこと: vim.filetype.add は登録時にキーを '^..$' で
+    -- 自動的に包む (nvim 0.11 filetype.lua M.add "implicitly anchored")。自分で $ を
+    -- 付けると '$$' = リテラル $ 要求に化けて一切マッチしなくなる (実測でハマった)
+    pattern = {
+      [".*%.Schemafile"] = "ruby",
+      [".*%.sql%.erb"] = "sql",
+    },
+  })
 
   vim.api.nvim_create_autocmd("WinLeave", {
     group = group,
@@ -134,24 +147,6 @@ local function set_autocmds()
     callback = function()
       vim.opt_local.cursorline = true
     end,
-  })
-
-  vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
-    group = group,
-    pattern = "db/Schemafile",
-    command = "set filetype=ruby",
-  })
-
-  vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
-    group = group,
-    pattern = "*.sql.erb",
-    command = "set filetype=sql",
-  })
-
-  vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
-    group = group,
-    pattern = "*.Schemafile",
-    command = "set filetype=ruby",
   })
 
   vim.api.nvim_create_autocmd("BufReadPost", {

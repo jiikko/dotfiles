@@ -523,8 +523,8 @@ require("lazy").setup({
 
       require("nvim-tree").setup({
         view = {
-          width = 50,
-          side = "left",
+          -- float 有効時に効く寸法は open_win_config のみ (view.width/side は非 float 用で、
+          -- ここでは dead になるため置かない。float をやめる時に改めて設定する)
           float = {
             enable = true,
             open_win_config = {

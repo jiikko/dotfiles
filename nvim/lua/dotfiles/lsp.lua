@@ -1,9 +1,10 @@
 -- ネイティブ LSP (vim.lsp) のキーマップ・診断・サーバ設定。
 --
 -- 2026-07 に coc.nvim からネイティブ LSP へ移行した際に新設。plugin spec
--- (mason-lspconfig の config) から setup(capabilities) を呼ぶ。
+-- (nvim-lspconfig の config、_nviminit.lua) から setup(capabilities) を呼ぶ。
 --   - capabilities: blink.cmp が広告する補完 capability (nil 可)
---   - サーバの有効化自体は mason-lspconfig の automatic_enable が vim.lsp.enable() で行う。
+--   - サーバの有効化 (vim.lsp.enable) は _nviminit.lua の enable_available() が
+--     server_packages を見て行う (mason-lspconfig は 2026-07-11 廃止)。
 --     ここは "全サーバ共通の設定 (capabilities / on_attach) と、サーバ固有 settings" だけを持つ。
 -- キー割り当ては coc 時代の muscle memory を踏襲する (gd / gD / <C-j> / <C-k> / t / [g / ]g など)。
 local M = {}
@@ -68,6 +69,8 @@ M.servers = {
 --   - coc-html-css-support (HTML 内の CSS クラス名補完): ネイティブに直等価なし。html/cssls で部分カバー
 --   - <C-s> range-select (coc-range-select): treesitter incremental_selection 等で代替可 (未設定)
 --   - <C-f>/<C-b> の float スクロール: 0.11 は hover 窓を再フォーカスしてスクロールできるため未マップ
+-- 注意: このテーブルの参照元は 2 箇所とも _nviminit.lua (enable_available と
+-- mason-tool-installer の ensure_installed)。lsp.lua 内には参照が無い
 M.server_packages = {
   ts_ls = "typescript-language-server",
   eslint = "eslint-lsp",
@@ -84,7 +87,6 @@ M.server_packages = {
   sqlls = "sqlls",
   terraformls = "terraform-ls", -- vim-terraform 置換 (2026-07): 補完/診断/hover を terraform-ls に委譲
 }
-M.ensure_installed = vim.tbl_keys(M.server_packages)
 
 -- documentHighlight 用の単一 augroup。バッファ毎に augroup を作ると空グループ名が
 -- 累積する (バッファ削除後も名前が残る) ため 1 グループに集約し、attach 毎に当該バッファの
@@ -208,10 +210,10 @@ local function setup_diagnostics()
   end, { silent = true, desc = "Next diagnostic" })
 end
 
--- plugin spec (mason-lspconfig の config) から呼ぶ。
--- 呼び出し順の契約: mason-lspconfig.setup() の automatic_enable より前に呼ぶこと。
---   automatic_enable は installed サーバに対して vim.lsp.enable() を実行するため、
---   その前に vim.lsp.config("*") で共通 capabilities を確定させておく必要がある。
+-- plugin spec (nvim-lspconfig の config、_nviminit.lua) から呼ぶ。
+-- 呼び出し順の契約: _nviminit.lua の enable_available() (vim.lsp.enable) より前に呼ぶこと。
+--   enable 済みサーバに後から vim.lsp.config("*") を変えても既起動クライアントには
+--   効かないため、共通 capabilities を先に確定させておく必要がある。
 function M.setup(capabilities)
   setup_diagnostics()
 
