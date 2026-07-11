@@ -883,6 +883,10 @@ require("lazy").setup({
   checker = { enabled = true, frequency = 86400 },  -- 起動毎チェックはローカル fs のみ。定期 git fetch を 1時間→1日に間引き、更新通知ノイズと background 通信を抑制
 })
 
+-- プラグインロードトラッカー (:PluginLoadStats で棚卸し。off は DOTFILES_PLUGIN_LOAD_TRACKER=0。
+-- docs/nvim-plugin-load-tracker.md 参照)
+require("dotfiles.plugin_load_tracker").setup()
+
 -- 折り畳みの設定
 -- foldmethod は既定 manual のまま、計算は dotfiles.folds (expr で計算 → manual へ凍結、
 -- FastFold 方式) が担う。expr を常時セットするとバッファ再表示のたびに全行再評価が走る

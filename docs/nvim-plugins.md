@@ -82,6 +82,8 @@
 
 必要に応じてこの表を更新し、プラグイン整理や設定刷新時の判断材料にする。
 
+トリガーゲート型プラグイン (telescope / nvim-tree / mason / render-markdown / sidekick 等) の実使用は `:PluginLoadStats` で数値確認できる (`docs/nvim-plugin-load-tracker.md`、2026-07-11 導入)。UI 系の無条件ロード型は計測対象外なので従来どおり使用実感で判断する。
+
 ## 直近で着手したい整理項目
 
 ### 完了 (〜2026-06-15 棚卸し時点で反映)
