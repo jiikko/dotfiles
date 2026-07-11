@@ -91,3 +91,16 @@ jobs:
             tests/nvim/bench_nvim.sh || echo "bench failed (non-blocking)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # tmux 側も同方針 (report-only)。ボトルネックになりがちな箇所 = conf ロード /
+      # status format 展開 / hook (debounced_save, mark-seen) 込みの window 操作を計測する。
+      # display -p 系はクライアント fork+往復 (tmux_rtt) が支配的なので、format 自体の
+      # コストは status_render - tmux_rtt の差分で読む。
+      - name: Bench tmux latency (report only)
+        run: |
+          {
+            echo "### tmux bench (report only)"
+            echo '```'
+            tests/tmux/bench_tmux.sh || echo "bench failed (non-blocking)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
