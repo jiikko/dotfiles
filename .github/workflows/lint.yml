@@ -26,7 +26,8 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends zsh shellcheck yamllint jq
+          # ruby は test-ruby-syntax (Brewfile/_pryrc の ruby -c と _gemrc の YAML パース) 用
+          sudo apt-get install -y --no-install-recommends zsh shellcheck yamllint jq ruby
 
       - name: Run lint suite
         run: make test-lint

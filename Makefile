@@ -35,7 +35,11 @@ SHELLCHECK_FILES := \
   zshlib/_repair_mp4.zsh \
   zshlib/_repair_mp4_timebase.zsh \
   zshlib/_validate_mp4.zsh \
-  zshlib/_video_health.zsh
+  zshlib/_video_health.zsh \
+  _claude/hooks/git-state-verify.sh \
+  _claude/hooks/normalize-settings.sh \
+  _claude/hooks/tmux-mark-seen.sh \
+  _claude/hooks/tmux-pane-state.sh
 
 # zsh 固有構文のため shellcheck できないスクリプト。zsh -n で構文チェックする (test-zsh-syntax)。
 ZSH_SYNTAX_FILES := \
@@ -55,10 +59,14 @@ ZSH_SYNTAX_FILES := \
   zshlib/_tmux_session.zsh \
   zshlib/_tmux_window_name.zsh
 YAML_FILES := pre-commit-config.yml .github/dependabot.yml .github/workflows/tests.yml .github/workflows/lint.yml .github/workflows/karabiner.yml
-JSON_FILES := mac/karabiner.json
+JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
+# ruby -c で構文チェックする ruby ファイル (Brewfile は brew の ruby DSL)。
+# _gemrc は YAML だが yamllint default (document-start 必須等) に通らない形式のため
+# YAML_FILES に入れず test-ruby-syntax 側で ruby -ryaml パースする。
+RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: pull test test-runtime test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-lint test-go-lint test-registration
+.PHONY: pull test test-runtime test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-gitconfig test-ruby-syntax test-lint test-go-lint test-registration
 
 # settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
 # pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、
@@ -170,7 +178,24 @@ test-karabiner:
 		echo "[karabiner] karabiner_cli not found; skipping lint"; \
 	fi
 
-test-lint: test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner
+# _gitconfig の構文チェック。壊れた gitconfig は全 git コマンドを道連れにするため
+# 専用ターゲットで守る (git config -f は parse エラーで非 0 を返す)。
+test-gitconfig:
+	@git config -f _gitconfig -l > /dev/null
+	@echo "[gitconfig] _gitconfig OK"
+
+# ruby 系設定ファイルの構文チェック (RUBY_SYNTAX_FILES) + _gemrc の YAML パース。
+# ruby 未インストール環境では skip (lint.yml は ruby を入れているので CI では走る)。
+test-ruby-syntax:
+	@if command -v ruby >/dev/null 2>&1; then \
+		for file in $(RUBY_SYNTAX_FILES); do ruby -c "$$file" > /dev/null || exit 1; done; \
+		ruby -ryaml -e "YAML.safe_load(File.read('_gemrc'))" || exit 1; \
+		echo "[ruby-syntax] $(words $(RUBY_SYNTAX_FILES)) ファイル + _gemrc OK"; \
+	else \
+		echo "[ruby-syntax] ruby not found; skipping"; \
+	fi
+
+test-lint: test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-gitconfig test-ruby-syntax
 
 # src/parallel-each (Go) の静的解析。実体は src/parallel-each/Makefile の lint
 # ターゲット (go run で golangci-lint をバージョン固定実行) に閉じており、ここは
