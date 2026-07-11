@@ -76,31 +76,38 @@ jobs:
           DOTFILES_TS_SKIP_ENSURE: "1"
         run: make test-runtime
 
-      # nvim の起動時間 + 操作レイテンシ (イベントハンドラコスト) を Step Summary に記録する。
-      # report-only: shared runner はノイズが大きく絶対値の閾値 fail は flaky になるため、
-      # 失敗しても job は落とさない。回帰の検出は Summary の経時比較 (人間の目) で行う。
+      # nvim / tmux のレイテンシベンチ。デグレ検出のため予算 (bench_budgets.ci) 超過で
+      # step を fail させる。予算はローカル実測の ~4 倍の粗い上限 = 桁級の回帰
+      # (foldexpr の 678ms 級) を捕まえる安全網で、微差の追跡は Step Summary の経時比較。
+      # 予算超過 / bench 自体の失敗 / metric 改名漏れのいずれも check スクリプトが落とす。
       # 注: CI は treesitter parser 未導入 (DOTFILES_TS_SKIP_ENSURE=1) のため fold/highlight の
       # コストは載らない。それらを含む実測はローカルで tests/nvim/bench_nvim.sh を叩く。
-      - name: Bench nvim latency (report only)
+      - name: Bench nvim latency (budget check)
         env:
           DOTFILES_TS_SKIP_ENSURE: "1"
         run: |
+          bench_rc=0; out="$(tests/nvim/bench_nvim.sh)" || bench_rc=$?
           {
-            echo "### nvim bench (report only)"
+            echo "### nvim bench"
             echo '```'
-            tests/nvim/bench_nvim.sh || echo "bench failed (non-blocking)"
+            echo "$out"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          [ "$bench_rc" -eq 0 ] || { echo "::error::bench_nvim.sh failed (rc=$bench_rc)"; exit 1; }
+          echo "$out" | tests/check_bench_budgets.sh tests/nvim/bench_budgets.ci
 
-      # tmux 側も同方針 (report-only)。ボトルネックになりがちな箇所 = conf ロード /
-      # status format 展開 / hook (debounced_save, mark-seen) 込みの window 操作を計測する。
-      # display -p 系はクライアント fork+往復 (tmux_rtt) が支配的なので、format 自体の
-      # コストは status_render - tmux_rtt の差分で読む。
-      - name: Bench tmux latency (report only)
+      # tmux 側も同方針。ボトルネックになりがちな箇所 = conf ロード / status format 展開 /
+      # hook (debounced_save, mark-seen) 込みの window 操作を計測する。display -p 系は
+      # クライアント fork+往復 (tmux_rtt) が支配的なので、format 自体のコストは
+      # status_render - tmux_rtt の差分で読む。
+      - name: Bench tmux latency (budget check)
         run: |
+          bench_rc=0; out="$(tests/tmux/bench_tmux.sh)" || bench_rc=$?
           {
-            echo "### tmux bench (report only)"
+            echo "### tmux bench"
             echo '```'
-            tests/tmux/bench_tmux.sh || echo "bench failed (non-blocking)"
+            echo "$out"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          [ "$bench_rc" -eq 0 ] || { echo "::error::bench_tmux.sh failed (rc=$bench_rc)"; exit 1; }
+          echo "$out" | tests/check_bench_budgets.sh tests/tmux/bench_budgets.ci

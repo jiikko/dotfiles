@@ -1,0 +1,12 @@
+# tmux bench の CI 予算 (ms)。tests/check_bench_budgets.sh が読む。
+# 値はローカル (M1 mac) 実測の ~4 倍を初期値とした粗い上限 (2026-07-11)。
+# shared runner のノイズで flake しないことを優先し、桁級の回帰だけ捕まえる。
+# CI の実測が安定して見えたら Step Summary の値を基に絞ってよい。
+server_boot 1500
+conf_reload 1500
+tmux_rtt_x100 1200
+status_render_x200 2500
+new_window_x20 600
+kill_window_x20 600
+select_window_x100 2000
+mark_seen_direct_x20 1500
