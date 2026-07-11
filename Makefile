@@ -66,7 +66,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: pull test test-runtime test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-gitconfig test-ruby-syntax test-lint test-go-lint test-registration
+.PHONY: pull test test-runtime test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-go-lint test-registration
 
 # settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
 # pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、
@@ -178,6 +178,17 @@ test-karabiner:
 		echo "[karabiner] karabiner_cli not found; skipping lint"; \
 	fi
 
+# workflow yml を actionlint で意味レベル lint する (test-yaml の yamllint は YAML 構文のみ。
+# actionlint は ${{ }} 式の typo・不正キー・run: ブロックの shellcheck を検出する)。
+# actionlint 未インストール環境では skip (lint.yml が公式バイナリを入れるので CI では走る)。
+test-actionlint:
+	@if command -v actionlint >/dev/null 2>&1; then \
+		actionlint; \
+		echo "[actionlint] .github/workflows OK"; \
+	else \
+		echo "[actionlint] actionlint not found; skipping"; \
+	fi
+
 # _gitconfig の構文チェック。壊れた gitconfig は全 git コマンドを道連れにするため
 # 専用ターゲットで守る (git config -f は parse エラーで非 0 を返す)。
 test-gitconfig:
@@ -195,7 +206,7 @@ test-ruby-syntax:
 		echo "[ruby-syntax] ruby not found; skipping"; \
 	fi
 
-test-lint: test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-gitconfig test-ruby-syntax
+test-lint: test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax
 
 # src/parallel-each (Go) の静的解析。実体は src/parallel-each/Makefile の lint
 # ターゲット (go run で golangci-lint をバージョン固定実行) に閉じており、ここは

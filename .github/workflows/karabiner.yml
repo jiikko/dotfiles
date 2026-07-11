@@ -6,13 +6,29 @@ name: Karabiner Lint
 # Karabiner のルール仕様レベルの誤りは検出できない。その検証に必要な karabiner_cli は
 # Karabiner-Elements 同梱の macOS 専用バイナリで Linux runner では動かせないため、
 # 専用の macOS job として分離する。
+# paths filter: 対象は mac/karabiner.json だけなのに毎 push で macOS runner (ubuntu の
+# 10 倍課金) を起動していたため、関係するファイルの変更時だけ走らせる。Makefile は
+# test-karabiner ターゲットの定義元、workflow 自身は job 定義の変更を拾う。
 on:
   push:
     branches: [master]
+    paths:
+      - mac/karabiner.json
+      - .github/workflows/karabiner.yml
+      - Makefile
   pull_request:
+    paths:
+      - mac/karabiner.json
+      - .github/workflows/karabiner.yml
+      - Makefile
 
 permissions:
   contents: read
+
+# 同一 ref の連続 push では古い run を打ち切る (旧コミットの結果に価値が無いため)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   karabiner-lint:

@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# 同一 ref の連続 push では古い run を打ち切る (旧コミットの結果に価値が無いため)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   dotfiles-lint:
     runs-on: ubuntu-slim
@@ -28,6 +33,19 @@ jobs:
           sudo apt-get update
           # ruby は test-ruby-syntax (Brewfile/_pryrc の ruby -c と _gemrc の YAML パース) 用
           sudo apt-get install -y --no-install-recommends zsh shellcheck yamllint jq ruby
+
+      # actionlint は apt に無いため公式リリースバイナリを取得する (test-actionlint が使う。
+      # shellcheck が PATH にあると run: ブロックのシェル検査も有効になる)
+      - name: Install actionlint
+        run: |
+          ver=$(gh api repos/rhysd/actionlint/releases/latest --jq '.tag_name' | sed 's/^v//')
+          curl -sSL -o "$RUNNER_TEMP/actionlint.tar.gz" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_linux_amd64.tar.gz"
+          mkdir -p "$RUNNER_TEMP/actionlint"
+          tar xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP/actionlint" actionlint
+          echo "$RUNNER_TEMP/actionlint" >> "$GITHUB_PATH"
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Run lint suite
         run: make test-lint

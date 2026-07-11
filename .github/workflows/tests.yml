@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# 同一 ref の連続 push では古い run を打ち切る (旧コミットの結果に価値が無いため)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   dotfiles-tests:
     runs-on: ubuntu-slim
