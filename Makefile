@@ -84,6 +84,7 @@ test-nvim:
 	@tests/nvim/test_nvim.sh
 	@tests/nvim/test_ftplugins.sh
 	@tests/nvim/test_ambiwidth.sh
+	@tests/nvim/test_smooth_scroll.sh
 
 test-tmux:
 	@tests/tmux/test_tmux.sh

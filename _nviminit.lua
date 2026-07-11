@@ -671,25 +671,6 @@ require("lazy").setup({
       require("scrollview").setup()
     end,
   },
-  { "karb94/neoscroll.nvim",
-    event = "VeryLazy",
-    config = function()
-      require("neoscroll").setup({
-        mappings = { "<C-u>", "<C-d>" },
-        hide_cursor = true,
-        respect_scrolloff = true,
-        -- スナッピー化: C-u/C-d の既定 250ms アニメを短縮 (×0.4=100ms) + ease-out。
-        -- ⚠️ neoscroll v2 では設定キーは easing (旧 easing_function は無効キーで読まれず、既定 linear の
-        --    まま効いていなかった)。有効な easing 名は scroll.lua: linear/quadratic/cubic/quartic/quintic/
-        --    circular/sine。
-        easing = "quadratic",
-        duration_multiplier = 0.4,
-        -- スクロール中の syntax/treesitter 更新を止めカクつきを抑える (大ファイルで一瞬色が抜ける。
-        -- 気になれば false に戻す)
-        performance_mode = true,
-      })
-    end,
-  },
   { 'echasnovski/mini.trailspace', version = '*', event = "VeryLazy",
     config = function()
       require("mini.trailspace").setup()
@@ -886,6 +867,10 @@ require("lazy").setup({
 -- プラグインロードトラッカー (:PluginLoadStats で棚卸し。off は DOTFILES_PLUGIN_LOAD_TRACKER=0。
 -- docs/nvim-plugin-load-tracker.md 参照)
 require("dotfiles.plugin_load_tracker").setup()
+
+-- <C-u>/<C-d> スムーズスクロール (neoscroll.nvim の自作置換。単発=アニメ /
+-- 押しっぱなし=素通しで、リピート時のカーソル乱れを構造的に回避。モジュール冒頭コメント参照)
+require("dotfiles.smooth_scroll").setup()
 
 -- 折り畳みの設定
 -- foldmethod は既定 manual のまま、計算は dotfiles.folds (expr で計算 → manual へ凍結、

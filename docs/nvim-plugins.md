@@ -24,7 +24,7 @@
 | ✅ lukas-reineke/indent-blankline.nvim | インデントガイド | 2025-03-18 | `echasnovski/mini.indentscope`, `glepnir/indent-guides.nvim` | ○ | △ | いいえ | mini/indent-guides は軽量。 |
 | ✅ rcarriga/nvim-notify | 通知 UI | 2025-09-06 | 同プラグイン | × | × | いいえ | 競合が少なく現状維持。 |
 | ✅ dstein64/nvim-scrollview | スクロールバー | 2025-10-01 | `petertriho/nvim-scrollbar`, `scrollbar.nvim` | △ | × | いいえ | 仮想テキストのみで軽量。Neoscroll とも競合しにくい。 |
-| ✅ karb94/neoscroll.nvim | スクロールアニメ | 2025-12-31 | 同プラグイン | × | × | いいえ | Lua 実装で保守継続中。Smoothie から置換済み。 |
+| ~~karb94/neoscroll.nvim~~ | スクロールアニメ | — | — | — | — | — | **✅ 削除済み**(2026-07-12)。キーリピート時もアニメし割り込み連鎖でカーソルが乱れた (A/B で確認)。既製アニメ系は「リピート中は素通し」分岐を持たないため `nvim/lua/dotfiles/smooth_scroll.lua` を自作 (単発=アニメ / 押しっぱなし=素通し)。 |
 | ✅ b0o/incline.nvim | 浮動ファイル名表示 | 2025-12-17 | `akinsho/bufferline.nvim` のみでも可 | △ | × | いいえ | 分割ウィンドウで各ウィンドウにファイル名表示。未保存/親ディレクトリ表示など実装。 |
 | ✅ TaDaa/vimade | 非アクティブフェード | 2025-11-09 | `levouh/tint.nvim`, `folke/twilight.nvim` | △ | × | いいえ | 非アクティブウィンドウを暗くして集中力向上。アニメーション対応。 |
 | ✅ folke/noice.nvim | UI リッチ化 | 2025-11-03 | 同プラグイン | × | × | いいえ | コマンドライン・検索・LSPメッセージをリッチ化。nvim-notify連携。 |

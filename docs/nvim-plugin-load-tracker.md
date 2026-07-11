@@ -39,9 +39,9 @@
 
 `event = "VeryLazy"` やパターン無し event(`BufReadPre` / `InsertEnter` 等)のプラグインは、**使っていなくても毎セッションロードされる**ため、カウントしても起動回数にしかならない。ノイズを避けるため計測対象から除外している。
 
-該当: which-key / bufferline / noice / vimade / incline / neoscroll / nvim-scrollview / nvim-early-retirement / mini.trailspace / toggle.nvim / gitsigns / conform / nvim-lint / blink.cmp / indent-blankline / lspconfig ほか eager ロードの全プラグイン。
+該当: which-key / bufferline / noice / vimade / incline / nvim-scrollview / nvim-early-retirement / mini.trailspace / toggle.nvim / gitsigns / conform / nvim-lint / blink.cmp / indent-blankline / lspconfig ほか eager ロードの全プラグイン。
 
-これらの「本当に使っているか」は load イベントでは観測できず、プラグインごとに個別のプロキシ(which-key なら popup 表示、neoscroll ならスクロール関数呼び出し…)を仕込む必要がある。コストの割に得るものが少ないため実装していない(2026-07-11 の判断。UI 系は使用実感ベースで棚卸しする)。
+これらの「本当に使っているか」は load イベントでは観測できず、プラグインごとに個別のプロキシ(which-key なら popup 表示、vimade ならフェード適用回数…)を仕込む必要がある。コストの割に得るものが少ないため実装していない(2026-07-11 の判断。UI 系は使用実感ベースで棚卸しする)。
 
 なお conform のように keys/cmd を持っていても、無条件 event(`BufWritePre`)を併せ持つものは「使わなくてもロードされる経路がある」ため除外側に倒している(判定ロジックは `is_trackable()` 参照)。
 
