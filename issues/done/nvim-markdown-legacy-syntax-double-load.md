@@ -64,3 +64,19 @@ treesitter で維持されること（`vim.treesitter.highlighter.active` = true
   fold の再評価コスト（678ms→27ms）と mason-lspconfig 廃止は対応済みで、これが残件
 - `docs/nvim-plugins.md` の軽量化方針（重い Vimscript の排除）と同系だが、これは
   プラグインでなく nvim ランタイムの syntax ファイル
+
+---
+
+## ✅ 解決 (2026-07-11)
+
+**真因は起票時の想定 (synload.vim の syntaxset 経路) と異なった。** b:ts_highlight の先置き
+(--cmd の早期 autocmd) では抑止できないことを実測し、プラグイン A/B
+(DOTFILES_NVIM_DISABLE) で **render-markdown.nvim の `ft = { "markdown" }` 遅延ロード**が
+trigger と特定: lazy.nvim は ft ゲートのプラグインをロード後に FileType を再発火し、
+その再実行経路が legacy syntax 一式を source していた (render-markdown 無効化 or eager 化で
+0 回になることを確認)。
+
+修正: spec を `event = BufReadPre/BufNewFile *.md,*.markdown` に変更 (FileType より前に
+ロード = 再発火が起きない)。実測: legacy source 3→0 (~16ms 削減)・ts highlight 有効・
+render-markdown ロード確認・非 markdown セッションではロードされないまま。
+トレードオフ (変わり種拡張子/modeline では render-markdown 不発) は spec のコメントに記録。
