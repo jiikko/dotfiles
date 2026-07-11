@@ -1,11 +1,11 @@
 # nvim bench の CI 予算 (ms)。tests/check_bench_budgets.sh が読む。
-# 値はローカル (M1 mac) 実測の ~4 倍を初期値とした粗い上限 (2026-07-11)。
+# 値はCI (ubuntu-slim) 初回実測 (2026-07-11 run 29135313100) の ~2.2 倍以上を確保した粗い上限。
 # shared runner のノイズで flake しないことを優先し、桁級の回帰だけ捕まえる。
 # CI の実測が安定して見えたら Step Summary の値を基に絞ってよい。
 # 注: CI は treesitter parser 未導入 (DOTFILES_TS_SKIP_ENSURE=1) のため
 # fold/highlight のコストは載らない (ローカルより軽く出る項目がある)。
 startup 500
-bufload 400
+bufload 600
 scroll_j_x2000 400
 scroll_ctrl_d_x200 100
 insert_120chars_x10 250
