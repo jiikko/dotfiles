@@ -706,7 +706,14 @@ require("lazy").setup({
   },
   {
     "MeanderingProgrammer/render-markdown.nvim",
-    ft = { "markdown" },
+    -- ⚠️ ft = { "markdown" } にしないこと: lazy.nvim は ft ゲートのプラグインをロードした後
+    -- FileType を再発火し、その再実行がレガシー Vimscript syntax 一式 (markdown.vim →
+    -- html.vim → css.vim, ~16ms) を treesitter highlight と二重にロードする実バグがあった
+    -- (issues/done/nvim-markdown-legacy-syntax-double-load.md、A/B 実測で特定)。
+    -- BufReadPre (FileType より前) でロードすれば再発火が起きず legacy source はゼロになる。
+    -- 拡張子ゲートの限界: 変わり種拡張子 (.mkd 等) や modeline で ft=markdown になるファイル
+    -- では render-markdown がロードされない (実運用は .md/.markdown のみで許容)。
+    event = { "BufReadPre *.md", "BufNewFile *.md", "BufReadPre *.markdown", "BufNewFile *.markdown" },
     dependencies = {
       "nvim-treesitter/nvim-treesitter",
       "nvim-tree/nvim-web-devicons",
