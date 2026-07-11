@@ -538,6 +538,11 @@ require("lazy").setup({
             enable = true,
           },
         },
+        git = {
+          -- 初回オープンの git status は同期実行でここまでブロックする (default 400ms)。
+          -- timeout 超過時は git バッジなしで表示され、以降の更新は非同期で反映される
+          timeout = 200,
+        },
         on_attach = my_on_attach,
       })
 
