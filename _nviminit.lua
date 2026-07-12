@@ -475,6 +475,11 @@ require("lazy").setup({
           always_show_bufferline = true,
           -- 選択タブの左端にインジケータバーを出す (非選択との差を強調)
           indicator = { style = "icon", icon = "▎" },
+          -- タブ境界は細い縦線 (slant の三角 glyph は見た目がうるさかったため thin に変更)
+          separator_style = "thin",
+          -- ordinal 番号を表示 (<leader>1..9 のジャンプ先が見た目から分かる)
+          numbers = "ordinal",
+          color_icons = true,
         },
         -- アクティブ/非アクティブの差を強く付ける。
         --   選択 = 明るい pink 地 × 黒の太字 + 橙のインジケータバー (最も目立たせる)
@@ -494,6 +499,15 @@ require("lazy").setup({
           buffer_selected = { fg = "#1d2021", bg = "#d3869b", ctermfg = 235, ctermbg = 175, bold = true, italic = false },
           modified_selected = { fg = "#1d2021", bg = "#d3869b", ctermfg = 235, ctermbg = 175, bold = true },
           indicator_selected = { fg = "#fe8019", bg = "#d3869b", ctermfg = 208, ctermbg = 175 }, -- 橙のバー
+          -- ordinal 番号 (タブ本体と同じ地色に合わせる)
+          numbers = { fg = "#665c54", bg = "#1d2021", ctermfg = 245, ctermbg = 237 },
+          numbers_visible = { fg = "#a89984", bg = "#1d2021", ctermfg = 250, ctermbg = 237 },
+          numbers_selected = { fg = "#1d2021", bg = "#d3869b", ctermfg = 235, ctermbg = 175, bold = true, italic = false },
+          -- thin セパレータ: fg が縦線の色。地色と同系の沈んだ色にして境界だけ薄く見せる。
+          -- cterm 併記必須 (256色環境では gui 色が無視される)
+          separator = { fg = "#3c3836", bg = "#1d2021", ctermfg = 237, ctermbg = 234 },
+          separator_visible = { fg = "#3c3836", bg = "#1d2021", ctermfg = 237, ctermbg = 234 },
+          separator_selected = { fg = "#3c3836", bg = "#1d2021", ctermfg = 237, ctermbg = 234 },
         },
       })
 
@@ -504,6 +518,10 @@ require("lazy").setup({
       map("n", "gt", "<Cmd>BufferLineCycleNext<CR>", silent)
       map("n", "gT", "<Cmd>BufferLineCyclePrev<CR>", silent)
       map("n", "<C-a><C-a>", "<Cmd>bdelete<CR>", silent)
+      -- ordinal 番号 (numbers = "ordinal") へ直接ジャンプ
+      for i = 1, 9 do
+        map("n", "<leader>" .. i, ("<Cmd>BufferLineGoToBuffer %d<CR>"):format(i), silent)
+      end
     end,
   },
   {
