@@ -24,18 +24,27 @@ if [ -z "$TARGET_PANE" ]; then
     TARGET_ARG=(-t "$TARGET_PANE")
 fi
 
-# Calculate scroll distance based on pane height
-PANE_HEIGHT=$(tmux display-message "${TARGET_ARG[@]}" -p '#{pane_height}')
+# [dotfiles patch] pane 情報と全設定を 1 回の tmux fork でまとめて読む。config__* を
+# 都度呼ぶ元実装は押下ごとに tmux client fork ×5 になり、素通し経路の固定オーバーヘッドの
+# 主因だった (実測)。format の #{@option} は global (set -g) の user option も解決する
+# (tmux 3.7b 実測)。⚠️ 既定値 (:-) は config.sh の同名関数と同期を保つこと。
+# 区切りは \x1f (unit separator): タブ等の IFS 空白文字だと未設定オプションの空フィールドが
+# 潰れて後続がシフトする (実測でハマった)。非空白の IFS は空フィールドを保存する。
+US=$'\x1f'
+FMT="#{pane_height}${US}#{@smooth-scroll-speed}${US}#{@smooth-scroll-normal}${US}#{@smooth-scroll-halfpage}${US}#{@smooth-scroll-fullpage}${US}#{@smooth-scroll-easing}${US}#{@smooth-scroll-repeat-ms}${US}#{@smooth-scroll-max-steps}${US}#{@smooth-scroll-exit-copy-mode-at-bottom}"
+IFS="$US" read -r PANE_HEIGHT OPT_SPEED OPT_NORMAL OPT_HALF OPT_FULL OPT_EASING OPT_REPEAT_MS OPT_MAX_STEPS OPT_EXIT_BOTTOM \
+    < <(tmux display-message "${TARGET_ARG[@]}" -p "$FMT")
 
+# Calculate scroll distance based on pane height
 case "$SCROLL_TYPE" in
     halfpage)
-        LINES="$(config__halfpage_lines "$PANE_HEIGHT")"
+        LINES="${OPT_HALF:-$((PANE_HEIGHT / 2))}"
         ;;
     fullpage)
-        LINES="$(config__fullpage_lines "$PANE_HEIGHT")"
+        LINES="${OPT_FULL:-$PANE_HEIGHT}"
         ;;
     normal)
-        LINES="$(config__normal_lines)"
+        LINES="${OPT_NORMAL:-3}"
         ;;
     small)
         LINES=1
@@ -46,7 +55,7 @@ case "$SCROLL_TYPE" in
 esac
 
 # Base delay per line: 0-100 maps to 1000µs - 10000µs linearly
-BASE_DELAY=$((1000 + $(config__speed) * 90))
+BASE_DELAY=$((1000 + ${OPT_SPEED:-100} * 90))
 
 # ---- [dotfiles patch] 押しっぱなし/連打の素通し + 進行中アニメの世代打ち切り ----
 # upstream は run-shell -b が押下ごとに animator を並行起動するため、キーリピート
@@ -66,19 +75,19 @@ STATE_FILE="$STATE_DIR/$TARGET_PANE"
 # 破れる。上界 = LINES × BASE_DELAY(µs) / velocity_min(0.2 = ×5) / 1000 + 250ms。
 # 過大側に倒すのは安全 (animator が終了時に 0 へ戻すので、上限が効くのは異常終了時のみ)
 CAP_MS=$((LINES * BASE_DELAY * 5 / 1000 + 250))
-read -r GEN HELD < <(perl "$SRC_DIR/arbiter.pl" "$STATE_FILE" "$(config__repeat_ms)" "$CAP_MS")
+read -r GEN HELD < <(perl "$SRC_DIR/arbiter.pl" "$STATE_FILE" "${OPT_REPEAT_MS:-150}" "$CAP_MS")
 
 if [ "$HELD" = "1" ]; then
     # Passthrough: instant native-like jump (and the gen bump kills any running animation)
     tmux send-keys "${TARGET_ARG[@]}" -X -N "$LINES" "scroll-$DIRECTION"
 else
     # Delegate to pure animator
-    "$SRC_DIR/animate.sh" "$DIRECTION" "$LINES" "$BASE_DELAY" "$(config__easing_mode)" "$TARGET_PANE" "$STATE_FILE" "$GEN"
+    "$SRC_DIR/animate.sh" "$DIRECTION" "$LINES" "$BASE_DELAY" "${OPT_EASING:-sine}" "$TARGET_PANE" "$STATE_FILE" "$GEN" "${OPT_MAX_STEPS:-0}"
 fi
 # ---- [dotfiles patch] ここまで (下の bottom 判定は素通し/アニメ両経路に共通で適用) ----
 
 # After scrolling down, exit copy mode if we've reached the bottom
-if [ "$DIRECTION" = "down" ] && [ "$(config__exit_copy_mode_at_bottom)" = "true" ]; then
+if [ "$DIRECTION" = "down" ] && [ "${OPT_EXIT_BOTTOM:-true}" = "true" ]; then
     AT_BOTTOM=$(tmux display-message "${TARGET_ARG[@]}" -p '#{&&:#{pane_in_mode},#{==:#{scroll_position},0}}')
     if [ "$AT_BOTTOM" = "1" ]; then
         tmux send-keys "${TARGET_ARG[@]}" -X cancel

@@ -39,6 +39,21 @@ config__repeat_ms() {
     echo "${ms:-150}"
 }
 
+# [dotfiles patch] アニメ対象のスクロール種別 (space 区切り: normal halfpage fullpage)。
+# init.sh が rebind 対象の絞り込みに使う。normal (C-e/C-y 等) を外すと native の
+# 1 行スクロールのまま維持できる
+config__scopes() {
+    local scopes="$(tmux show-option -gqv "@smooth-scroll-scopes")"
+    echo "${scopes:-normal halfpage fullpage}"
+}
+
+# [dotfiles patch] 1 アニメの最大描画ステップ数 (0 = 行ごと = upstream 挙動)。
+# chunk 化しても easing の時間配分は保存される (animator.pl)。描画が遅い端末向け
+config__max_steps() {
+    local n="$(tmux show-option -gqv "@smooth-scroll-max-steps")"
+    echo "${n:-0}"
+}
+
 # Easing mode: linear, sine, quad
 config__easing_mode() {
     local mode="$(tmux show-option -gqv "@smooth-scroll-easing")"
