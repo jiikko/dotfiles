@@ -9,7 +9,7 @@
 -- キー割り当ては coc 時代の muscle memory を踏襲する (gd / gD / <C-j> / <C-k> / t / [g / ]g など)。
 local M = {}
 
--- サーバ固有 settings。空テーブルのサーバは共通設定のみで足りるので列挙しない。
+-- サーバ固有の設定 (settings / on_attach)。空テーブルのサーバは共通設定のみで足りるので列挙しない。
 -- inlay hints は既定 off で、<leader>ih トグル (M.setup) で有効化する。サーバ側で hint 種別を
 -- 明示 on にしないと出ないためここで settings を渡す。仮想テキスト描画なので termguicolors=off の
 -- 256色端末でも表示できる (色は淡くなる)。
@@ -54,6 +54,19 @@ M.servers = {
       functionReturnTypes = true,
       callArgumentNames = true,
     } } } },
+  },
+  -- nvim-lspconfig (rolling) の lsp/terraformls.lua は on_attach で vim.lsp.codelens.enable を
+  -- 無条件に呼ぶが、これは nvim 0.12 で追加の API で 0.11 には無く、.tf/.hcl を開くたび
+  -- ON_ATTACH_ERROR 通知が出ていた。存在ガード付き on_attach で丸ごと上書きして吸収する
+  -- (on_attach は関数なのでマージでなく後勝ち置換。元の on_attach は codelens.enable の
+  -- 1 行だけで他の機能欠落はない)。nvim 0.12+ へ上げれば自動で codelens が有効になるため、
+  -- その時点でこの override は削除してよい。
+  terraformls = {
+    on_attach = function(_, bufnr)
+      if vim.lsp.codelens.enable then
+        vim.lsp.codelens.enable(true, { bufnr = bufnr })
+      end
+    end,
   },
 }
 
