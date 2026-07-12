@@ -36,4 +36,20 @@ tmux-smooth-scroll	2d686bc5b696c0e66173997e5141b14c8bedd973	https://github.com/a
 #     捨てる (離脱レースの残フレームが tmux メッセージに出ないように) / 終了時の
 #     anim_until クリアも flock 下で gen 一致時のみ
 #   - src/config.sh: @smooth-scroll-repeat-ms (既定 150) を追加
+#   perf (2026-07-12, 同日セルフレビュー。いずれも実測):
+#   - src/init.sh: list-keys 全行 (~88 行) ごとに config__mouse_scroll (= tmux fork) を
+#     呼んでいたのをループ外へ hoist し、bind-key 群も ';' 区切りで 1 クライアントに
+#     バッチ (resurrect/continuum の boot 高速化と同じ手法)。conf ロード 688ms → 49ms
+#   - src/scroll.sh: 設定 + pane 情報の読み取りを display-message の format 1 発に集約
+#     (押下ごとの tmux fork 5 → 1。素通し経路の総所要 ~36ms/回)。フィールド区切りは
+#     \x1f 固定 (タブは IFS 空白文字のため未設定オプションの空フィールドが潰れて後続が
+#     シフトする。実測でハマった)。既定値は config.sh と同期必須
+#   カスタマイズ追加 (2026-07-12, 同日セルフレビュー):
+#   - @smooth-scroll-scopes (既定 "normal halfpage fullpage"): rebind 対象の種別を絞る。
+#     scope 外になったキーは source-file で native へ復元される (Wheel 系は復元対象外)
+#   - @smooth-scroll-max-steps (既定 0 = 行ごと): 1 アニメの描画ステップ上限。chunk 化
+#     しても easing の時間配分・総所要時間は保存される (animator.pl)。遅い端末の
+#     全 pane 再描画コスト対策 (_tmux.conf では 10 を設定)
+#   既知の上流バグ (未修正・当環境は無害): init.sh の show-option -gwq mode-keys は -v が
+#   無く値が "mode-keys vi" になるため emacs 分岐が機能しない (vi 運用では影響なし)。
 #   上流を更新する場合は上記 6 ファイルの再適用が必要 (単純 recopy 不可)。

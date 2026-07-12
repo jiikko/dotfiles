@@ -2,6 +2,7 @@
 # Pure animation executor
 # Input: direction (up|down), lines (int), base_delay_us (int microseconds), easing_mode (linear|sine|quad), target_pane (optional)
 #        [dotfiles patch] + state_file (optional), gen (optional) — 世代打ち切り用 (scroll.sh 参照)
+#        + max_steps (optional, 0=行ごと) — 描画ステップ上限 (animator.pl 参照)
 # Output: executes smooth scroll animation
 
 DIRECTION=$1
@@ -11,6 +12,8 @@ EASING_MODE=${4}
 TARGET_PANE=${5:-}
 STATE_FILE=${6:-}
 GEN=${7:-}
+MAX_STEPS=${8:-0}
+[[ "$MAX_STEPS" =~ ^[0-9]+$ ]] || MAX_STEPS=0
 
 # Validate inputs
 [[ ! "$DIRECTION" =~ ^(up|down)$ ]] && exit 1
@@ -20,4 +23,4 @@ GEN=${7:-}
 
 # Execute animation with easing
 SRC_DIR="$(dirname "$0")"
-exec perl "$SRC_DIR/animator.pl" "$BASE_DELAY_US" "$LINES" "$DIRECTION" "$EASING_MODE" "$TARGET_PANE" "$STATE_FILE" "$GEN"
+exec perl "$SRC_DIR/animator.pl" "$BASE_DELAY_US" "$LINES" "$DIRECTION" "$EASING_MODE" "$TARGET_PANE" "$STATE_FILE" "$GEN" "$MAX_STEPS"

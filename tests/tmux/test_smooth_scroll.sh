@@ -88,6 +88,8 @@ done
 print -r -- "$bound" | grep -q "C-u" || fail "C-u not rebound to scroll.sh"
 print -r -- "$bound" | grep -q "C-d" || fail "C-d not rebound to scroll.sh"
 print -r -- "$bound" | grep -q "Wheel" && fail "Wheel bindings were rebound despite @smooth-scroll-mouse=false"
+# @smooth-scroll-scopes='halfpage fullpage' なので normal (C-e/C-y) は native のまま
+print -r -- "$bound" | grep -qE "C-e|C-y" && fail "normal scope keys were rebound despite scopes"
 
 # スクロールバック素材 (起動コマンドの seq 出力) が溜まるのを待って copy-mode に入る
 for _ in {1..50}; do

@@ -7,7 +7,8 @@ use POSIX qw(ceil);
 use Fcntl qw(:flock); # [dotfiles patch] 終了時の状態更新を arbiter.pl と同じ lock で直列化
 use constant PI => 3.14159265359;
 
-my ($base_delay, $lines, $direction, $mode, $target_pane, $state_file, $my_gen) = @ARGV;
+my ($base_delay, $lines, $direction, $mode, $target_pane, $state_file, $my_gen, $max_steps) = @ARGV;
+$max_steps = 0 unless defined $max_steps && $max_steps =~ /^\d+$/;
 
 # [dotfiles patch] copy-mode 離脱レースで send-keys -X が失敗したときのエラーが
 # run-shell の出力として tmux メッセージに出ないよう、子プロセスの stderr を捨てる
@@ -80,22 +81,44 @@ sub get_delay {
     return ($base_delay * $scale_factor) / $velocity;
 }
 
-# Execute animation
-my @cmd = ("tmux", "send-keys");
-push @cmd, "-t", $target_pane if defined $target_pane && length $target_pane;
-push @cmd, "-X", "scroll-" . $direction;
+# [dotfiles patch] 描画プランを組み立てる: [送る行数, 送出後の待ち時間µs] の列。
+# max_steps=0 (既定) は upstream と同じ行ごと送出。max_steps>0 なら行を均等に chunk 化して
+# 送出回数 (= pane 全体の再描画回数) を上限で抑える。各 chunk の待ち時間は「その chunk に
+# 含まれる行の per-line delay の合計」なので、easing の時間配分と総所要時間は保存される
+# (描画が遅い端末では行ごと再描画がボトルネックになるため。@smooth-scroll-max-steps)。
+my @plan; # [count, delay_us_after]
+if ($max_steps > 0 && $lines > $max_steps) {
+    my $per = int($lines / $max_steps);
+    my $rem = $lines % $max_steps;
+    my $i = 0;
+    for (my $s = 0; $s < $max_steps; $s++) {
+        my $cnt = $per + ($s < $rem ? 1 : 0);
+        my $delay = 0;
+        for (my $k = 0; $k < $cnt; $k++) {
+            $delay += get_delay($i, $lines, $mode) if $i < $lines - 1;
+            $i++;
+        }
+        push @plan, [$cnt, $delay];
+    }
+} else {
+    for (my $i = 0; $i < $lines; $i++) {
+        push @plan, [1, ($i < $lines - 1) ? get_delay($i, $lines, $mode) : 0];
+    }
+}
 
-for (my $i = 0; $i < $lines; $i++) {
+# Execute animation
+my @cmd_base = ("tmux", "send-keys");
+push @cmd_base, "-t", $target_pane if defined $target_pane && length $target_pane;
+
+foreach my $step (@plan) {
+    my ($cnt, $delay) = @$step;
     # [dotfiles patch] 新しい押下に追い越されたら残りフレームを捨てる
     last if interrupted();
     # [dotfiles patch] send-keys の失敗 (copy-mode 離脱・pane 消滅) でも打ち切る
-    last if system(@cmd) != 0;
+    last if system(@cmd_base, "-N", $cnt, "-X", "scroll-" . $direction) != 0;
 
     # Don't delay after last scroll
-    if ($i < $lines - 1) {
-        my $delay = get_delay($i, $lines, $mode);
-        usleep(ceil($delay));
-    }
+    usleep(ceil($delay)) if $delay > 0;
 }
 
 # [dotfiles patch] 終了時は anim_until を 0 に戻す (自分がまだ現世代のときだけ。
