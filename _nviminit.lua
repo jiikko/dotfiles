@@ -147,6 +147,9 @@ require("lazy").setup({
   --     telescope の lsp_document/workspace_symbols で置換 (nvim/ftplugin/go.lua)
   --   - :Go* コマンド群 (:GoTest 等) は未使用のため引き継がない (必要なら go.nvim/nvim-dap-go)
   { "andymass/vim-matchup",
+    -- event を付けず eager でロードする (意図的): 作者が README で event 遅延ロードを
+    -- 非推奨と明言している (起動時ロードは元々最小限で、遅延は不具合時の切り分け対象に
+    -- なるだけ)。BufReadPre/BufNewFile 規約 (gitsigns 等) の対象外。
     config = function()
       vim.g.loaded_matchit = 1
       vim.g.matchup_matchparen_stopline = 400
@@ -162,6 +165,9 @@ require("lazy").setup({
     -- classic API (configs.setup) は highlight 用の autocmd を内部で張り自動有効化する
     -- ため、手動の vim.treesitter.start autocmd は不要。
     -- branch を変えたら :Lazy update nvim-treesitter + :TSUpdate で parser を再同期すること。
+    -- event は付けず eager のまま (意図的): master README が「This plugin does not support
+    -- lazy-loading」と明言しており、BufReadPre/BufNewFile 規約の対象外。dependencies の
+    -- textobjects と下の endwise も configs.setup 実行時に rtp に載っている必要があり同様。
     -- [2026-07-10] 上流 repo 自体が archive (read-only) 化済み。上流 README いわく
     -- master は「Nvim 0.11 の後方互換のため locked のまま残す」、main rewrite は 0.12+ 必須。
     -- → nvim 0.11 で使ううちはこのピンが正解。Neovim 0.12+ へ上げる時に main 系 rewrite へ
