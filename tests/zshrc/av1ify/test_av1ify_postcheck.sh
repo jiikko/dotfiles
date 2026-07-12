@@ -105,6 +105,35 @@ output=$(AV1IFY_FRAME_TOLERANCE=10 MOCK_NB_FRAMES=300 MOCK_OUTPUT_NB_FRAMES=285 
 setopt err_exit
 assert_contains "$output" "フレーム数不一致" "Custom frame tolerance detects smaller difference"
 
+# Test 69d: 長尺では相対許容 (0.5%) が効き、Δ>24 でも警告なし
+printf '\n## Test 69d: Relative tolerance absorbs small drift on long videos\n'
+TEST_DIR="$TEST_TMP/test69d"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# ソース=45000フレーム (25分@30fps 相当), Δ=88。絶対フロア 24 は超えるが
+# 相対許容 45000*0.5%=225 の範囲内 → 警告なし (2026-07-12 の緩和の回帰テスト)
+output=$(MOCK_NB_FRAMES=45000 MOCK_OUTPUT_NB_FRAMES=44912 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"フレーム数不一致"* ]]; then
+  printf '✓ No frame count warning when diff is within relative tolerance\n'
+else
+  printf '✗ Should not warn when diff ≤ 0.5%% of source frames\n'
+fi
+
+# Test 69e: AV1IFY_FRAME_TOLERANCE_PCT で相対許容をカスタマイズ
+printf '\n## Test 69e: Custom relative tolerance via AV1IFY_FRAME_TOLERANCE_PCT\n'
+TEST_DIR="$TEST_TMP/test69e"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# Δ=88, 既定 (0.5%=225) では通るが 0.1% (=45) に絞ると検出
+output=$(AV1IFY_FRAME_TOLERANCE_PCT=0.1 MOCK_NB_FRAMES=45000 MOCK_OUTPUT_NB_FRAMES=44912 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "フレーム数不一致" "Custom relative tolerance detects smaller drift"
+
 # Test 70: fps変更時はフレーム数チェックをスキップ
 printf '\n## Test 70: Frame count check skipped when fps changed\n'
 TEST_DIR="$TEST_TMP/test70"

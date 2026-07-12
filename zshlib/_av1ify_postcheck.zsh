@@ -232,9 +232,17 @@ __av1ify_postcheck() {
     out_frames=$(__ff_stream_field "$filepath" v:0 stream=nb_frames)
     if [[ -n "$src_frames" && "$src_frames" =~ ^[0-9]+$ && -n "$out_frames" && "$out_frames" =~ ^[0-9]+$ ]]; then
       local frame_diff=$(( src_frames > out_frames ? src_frames - out_frames : out_frames - src_frames ))
+      # 許容値 = max(絶対フロア, ソースの相対%)。固定 24 だけだと長尺に厳しすぎる
+      # (Δ=88 でも 25分@30fps なら 0.1% 台。nb_frames はコンテナメタデータでソース側が
+      # 不正確なことも多い)。「途中で切れた」級の実害は再生時間ズレ (AV1IFY_DURATION_TOLERANCE)
+      # が独立に守るため、ここは相対で緩めても事故は素通りしない (2026-07-12)。
       local frame_tolerance="${AV1IFY_FRAME_TOLERANCE:-24}"
+      local frame_tol_pct="${AV1IFY_FRAME_TOLERANCE_PCT:-0.5}"
+      # shellcheck disable=SC2079  # zsh の (( )) は小数を扱える (bash 前提の誤検知)
+      local -i rel_tolerance=$(( src_frames * frame_tol_pct / 100.0 )) # -i 代入で切り捨て
+      (( rel_tolerance > frame_tolerance )) && frame_tolerance=$rel_tolerance
       if (( frame_diff > frame_tolerance )); then
-        issues+=("フレーム数不一致 (src=${src_frames}, out=${out_frames}, Δ=${frame_diff})")
+        issues+=("フレーム数不一致 (src=${src_frames}, out=${out_frames}, Δ=${frame_diff}, 許容=${frame_tolerance})")
         suffixes+=("frames")
       fi
     fi
