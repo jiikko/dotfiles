@@ -123,6 +123,10 @@ require("lazy").setup({
         "or", "unless", "if", "else", "specify", "it", "context",
         "false", "no", "off", "protected", "private", "||", "ない", "いいえ", "時", "あり", "しない"
       }
+      -- 既知の制限 (意図的に現状維持、2026-07-12): "protected" が on/off 両リストに載っており、
+      -- toggle_cursor は off 側優先のため protected→private には到達しない (public↔protected の
+      -- 往復に収束。private→protected は片道)。実用上この往復で足りるため対応しない。
+      -- 3 値サイクルが必要になったら「off=遷移元 / on=遷移先」の 3 ペアへの組み替えで表現可能。
     end,
   },
   -- Terraform: hashivim/vim-terraform (Vimscript) を廃し、ネイティブ構成へ置換 (2026-07)。

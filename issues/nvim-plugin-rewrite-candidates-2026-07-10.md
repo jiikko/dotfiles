@@ -26,7 +26,7 @@
 | 候補 | 総行数 | 上流 | config が使う範囲 | 判定根拠（要約） |
 |---|---:|---|---|---|
 | WhoIsSethDaniel/mason-tool-installer.nvim | 417 | 減速（2026-01） | `ensure_installed` の4個のみ（全機能の5-10%） | 実装は clean。存在価値が「Mason の install API churn からの断熱」そのもの。Mason は直近 v2 に major を上げたばかりで、fork すると次の破壊的変更で自作コードが壊れ**自分が追随義務を負う**。読まない dead code はゼロコスト。リライトは負のROI。 |
-| karb94/neoscroll.nvim | 1540 | 減速（2025-12） | `C-u`/`C-d` + 5オプション（約25%） | 狭い表面が乗るのは**削れないスムーズスクロールエンジン**（タイマーループ + easing time-step + scrolloff/EOF/fold 停止判定 + wrapped-line 補正 + 連続スクロール merge）。忠実版は約250-350行の写経で快適さ向上ゼロ、体感 degrade リスク大。**候補中で cost/risk 最悪**。 |
+| ~~karb94/neoscroll.nvim~~ | 1540 | 減速（2025-12） | `C-u`/`C-d` + 5オプション（約25%） | 狭い表面が乗るのは**削れないスムーズスクロールエンジン**（タイマーループ + easing time-step + scrolloff/EOF/fold 停止判定 + wrapped-line 補正 + 連続スクロール merge）。忠実版は約250-350行の写経で快適さ向上ゼロ、体感 degrade リスク大。**候補中で cost/risk 最悪**。**→ 後日談: 2026-07-12 に実バグ trigger で自作置換・削除済み（下の追記参照）** |
 | mvllow/modes.nvim | 600 | 生存（origin/main 2026-03、tag v0.3.0=2025-05） | `set_cursor` のみ（他3機能は256色運用のため off） | 下記「特記」参照。**唯一の borderline**。リライトはせず（上流生存・正しさ表面 fiddly）、価値限定のため**削除**を選択・実施（2026-07-10）。 |
 | echasnovski/mini.trailspace | 215 | active（mini.nvim mirror） | `trim()` + highlight 機構（default setup） | 上質な単一ファイル実装。素朴な再実装が落とす edge-case（WinEnter/BufEnter 二重処理・buftype 再入対策・normal-mode gating・match-id dedup）を内包。active 上流を fork する負債のみ。 |
 | chrisgrieser/nvim-early-retirement | 174 | active（2026-06、nvim 0.12 対応継続） | 3/11 オプション（コア自動クローズ） | clean な単一ファイル。使うクローズ判定の安全性が約60行のガード群（visible/special/unsaved/alt/quickfix）に依存し忠実版は70-90行で縮まない。上流の nvim 互換追随を失うだけ。 |
@@ -96,3 +96,28 @@
 - **それ以外の全プラグイン**: 追跡ブランチで上流 tip と一致（behind なし）。上流も生存
 - **vendored の上流**: `rbtnn/vim-ambiwidth`（最終 push 2025-08-01）・`lukelbd/vim-toggle`（2025-02-03）とも **vendoring 基点から動きなし** → VENDOR.md の再同期は不要
 - **非推奨 API**: `nvim-config-audit-2026-07-10.md` で headless 全ロード + `:checkhealth` 済み（非推奨/削除通知ゼロ）。本再点検では再実施せず同結果を引用
+
+---
+
+## 追記: 2026-07-12 再点検（多レンズレビュー時）
+
+nvim 設定全体の多レンズレビュー（バグ/API/性能/死コード/堅牢性 × 敵対的検証）を実施した際に、本 issue の「リライト/vendor 候補はあるか」を再点検した。
+
+### 結論: 不変（新たなリライト/vendor 候補なし）
+
+プラグイン構成の変化は 2 件のみで、いずれも本調査の枠組みと整合する形で完了済み:
+
+- **mason-lspconfig.nvim を廃止**（2026-07-11、commit 84a5bcf）: リライトでなく「使用サーフェス（installed サーバの enable）を `vim.lsp.enable()` 直呼びで置換して削除」。
+- **neoscroll.nvim を自作置換**（2026-07-12、commit c29a998）: 本調査では keep-as-is（cost/risk 最悪）と判定したが、その後「押しっぱなしでカーソル乱れ」という**実バグが trigger になり**、エンジンの忠実移植（250-350 行と見積もり）ではなく「リピート中はアニメせず素通し」という**別設計の最小実装**（`nvim/lua/dotfiles/smooth_scroll.lua`、約 100 行）で置換・削除した。「実変更 trigger 待ち」原則どおりの経過で、忠実写経を避けたことで見積もりより小さく済んだ。keep 判定自体は「trigger なしで書き直さない」の意味で正しかった。
+
+### 新観測: nvim-lspconfig (rolling) の 0.11 非互換 drift（watch 事項）
+
+- 事実（2026-07-12 実測）: nvim-lspconfig の `lsp/terraformls.lua` が on_attach で **0.12 専用 API `vim.lsp.codelens.enable`** を無条件に呼び、nvim 0.11.5 では .tf/.hcl を開くたび ON_ATTACH_ERROR になっていた。`lsp/*.lua` の同型呼び出しは grep で terraformls のみ。
+- 対応済み: `nvim/lua/dotfiles/lsp.lua` の `M.servers.terraformls` に存在ガード付き on_attach を追加して吸収（commit efe2c93）。
+- 残るリスク: nvim-lspconfig は rolling（main 追従）のため、**nvim 0.11 に留まる間は `:Lazy update` のたびに同型 drift が再発しうる**。選択肢: (a) 実害が出たら都度 per-server override で吸収（今回の対応。当面はこれで足りる）、(b) 頻発するなら nvim-lspconfig を tag pin（新サーバ定義の取り込みも止まるトレードオフ）、(c) nvim 0.12 リリース後に上げて解消。vendor 化は不適（58k 行の設定集で、価値は上流の追随そのもの）。
+- 解消条件: nvim 0.12+ への更新（その際 lsp.lua の terraformls override も削除してよい）。
+
+### vendored (toggle.nvim) の既知の制限: 現状維持で確定
+
+- 今回のレビューで「protected→private が到達不能（"protected" が on/off 両リストに載り、off 側優先で public↔protected の往復に収束する）」を検出・headless 実測で確認したが、**ユーザー判断で現状維持（対応しない）とした**（2026-07-12。実用上 public↔protected の往復で足りる）。
+- 再検出防止の rationale は `_nviminit.lua` の toggle 語彙リスト直下コメントに記載（3 値サイクルが必要になった場合の組み替え方針も同所に一行残した）。issue ファイルは作らない。
