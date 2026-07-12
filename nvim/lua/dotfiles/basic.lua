@@ -155,10 +155,23 @@ local function set_autocmds()
     end,
   })
 
+  -- 前回カーソル位置の復元。git の一時編集ファイル (毎回内容が新しく、shada に残った
+  -- 前回位置は常にズレる) は除外する。ft=gitcommit での判定は不可: この autocmd は init 中の
+  -- 登録で、後から登録される filetype 検出の BufRead より先に走るため callback 時点の
+  -- filetype は空 (実測済み)。よってファイル名で判定する。
+  local no_restore_names = {
+    COMMIT_EDITMSG = true,
+    MERGE_MSG = true,
+    TAG_EDITMSG = true,
+    ["git-rebase-todo"] = true,
+  }
   vim.api.nvim_create_autocmd("BufReadPost", {
     group = group,
     pattern = "*",
     callback = function()
+      if no_restore_names[vim.fs.basename(vim.api.nvim_buf_get_name(0))] then
+        return
+      end
       local mark = vim.api.nvim_buf_get_mark(0, '"')
       local lcount = vim.api.nvim_buf_line_count(0)
       if mark[1] > 0 and mark[1] <= lcount then
