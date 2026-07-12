@@ -92,6 +92,7 @@ test-tmux:
 	@tests/tmux/test_fork_scratch.sh
 	@tests/tmux/test_reap_orphan_servers.sh
 	@tests/tmux/test_version_gte.sh
+	@tests/tmux/test_smooth_scroll.sh
 
 test-setup:
 	@tests/setup/test_setup.sh

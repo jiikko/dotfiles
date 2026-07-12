@@ -1,6 +1,7 @@
 tpm	99469c4a9b1ccf77fade25842dc7bafbc8ce9946	https://github.com/tmux-plugins/tpm
 tmux-resurrect	cff343cf9e81983d3da0c8562b01616f12e8d548	https://github.com/tmux-plugins/tmux-resurrect
 tmux-continuum	0698e8f4b17d6454c71bf5212895ec055c578da0	https://github.com/tmux-plugins/tmux-continuum
+tmux-smooth-scroll	2d686bc5b696c0e66173997e5141b14c8bedd973	https://github.com/azorng/tmux-smooth-scroll
 # local patches:
 # - tmux-continuum/continuum.tmux: disable upstream `set -x` (noisy debug output)
 # - perf (2026-07-11, boot 時の同期ロード高速化。判定ロジックと実行順序は上流と同一):
@@ -12,3 +13,27 @@ tmux-continuum	0698e8f4b17d6454c71bf5212895ec055c578da0	https://github.com/tmux-
 #     status-right/left の read-modify-write を bash 内合成 + 末尾 1 fork の書き込みへ
 #     (145ms → 83ms/ロード実測)。ps ベースの多重サーバ検出は上書き防止の要なので未変更。
 #   上流を更新する場合は resurrect.tmux / continuum.tmux の再適用が必要 (単純 recopy 不可)。
+# - tmux-smooth-scroll (2026-07-12, 押しっぱなし/連打対策 + pane 固定。upstream は未対策で
+#   run-shell -b が押下ごとに animator を並行起動しアニメが重畳する。upstream の
+#   prevent-race-condition ブランチは未完成 (グローバル lock を touch するだけで判定なし・
+#   8 コミット遅れ) のため自前実装。検証は tests/tmux/test_smooth_scroll.sh):
+#   - src/arbiter.pl (新規): per-pane 状態ファイル (gen/last_press_ms/anim_until_ms) の
+#     read-modify-write を flock で原子化。150ms 未満の再押下 or アニメ進行中の押下は
+#     held=素通し、どの押下でも gen を進めて進行中アニメを打ち切る (nvim の
+#     dotfiles/smooth_scroll.lua と同じ核)。bash での read→判定→write は連打時に並行
+#     インスタンスが同じ旧状態を読み全員アニメ・同値 gen になるレースを実測したため perl
+#     に閉じた (macOS に flock(1) は無いが perl の flock() は使える)
+#   - src/init.sh: keyboard バインドにも TMUX_PANE=#{pane_id} を明示 (fire 時展開で押下時
+#     pane を正確に捕捉。tmux 3.7b 実測で run-shell は TMUX_PANE を設定せず、非同期起動後の
+#     暗黙解決だと押下直後の pane 切替で移動先を誤爆 + 継承 env の stale 値も上書きできる)
+#   - src/scroll.sh: 押下時 pane で以降の全コマンドを -t 固定 (アニメ途中の pane 切替でも
+#     押下 pane だけがスクロール)。held なら send-keys -N の即時ジャンプ、そうでなければ
+#     animator へ委譲。anim_until 上限は LINES×BASE_DELAY からの概算上界 (固定値だと遅い
+#     設定で実アニメ中に切れて素通し仕様が破れる)
+#   - src/animate.sh: state_file/gen を animator へ引き渡し
+#   - src/animator.pl: 各行送出前に gen を確認して自殺 (読みも LOCK_SH で truncate 中の
+#     空読みを排除) / send-keys 失敗 (copy-mode 離脱・pane 消滅) で打ち切り / 子 stderr を
+#     捨てる (離脱レースの残フレームが tmux メッセージに出ないように) / 終了時の
+#     anim_until クリアも flock 下で gen 一致時のみ
+#   - src/config.sh: @smooth-scroll-repeat-ms (既定 150) を追加
+#   上流を更新する場合は上記 6 ファイルの再適用が必要 (単純 recopy 不可)。
