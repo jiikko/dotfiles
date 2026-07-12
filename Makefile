@@ -25,6 +25,7 @@ SHELLCHECK_FILES := \
   scripts/tmux_extract_popup.sh \
   scripts/lib/tmux_popup_sessions.sh \
   scripts/lib/tmux_resurrect_guards.sh \
+  scripts/tmux_jump_last_touched.sh \
   scripts/tmux_launcher_run.sh \
   scripts/tmux_version_gte.sh \
   scripts/tmux_resurrect_save.sh \

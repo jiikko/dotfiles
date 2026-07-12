@@ -21,6 +21,8 @@ on:
       - mac/karabiner.json
       - .github/workflows/karabiner.yml
       - Makefile
+  # paths filter でスキップされた後に単発で回したい時の手動トリガ
+  workflow_dispatch:
 
 permissions:
   contents: read
