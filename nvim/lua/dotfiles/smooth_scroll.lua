@@ -38,15 +38,25 @@ local function scroll_step(key, n)
   vim.wo.scroll = saved
 end
 
-local function animate(key)
+local function animate(key, win)
   generation = generation + 1
   local gen = generation
+  -- 押下直後 (schedule 実行前) にウィンドウが閉じられることがある。vim.wo[win] は
+  -- invalid id で例外になるため、frame 内のガードとは別にここでも先に検証する
+  if not vim.api.nvim_win_is_valid(win) then return end
   animating = true
-  local total = vim.wo.scroll -- 半ページ (native <C-u>/<C-d> と同じ量)
+  local total = vim.wo[win].scroll -- 半ページ (native <C-u>/<C-d> と同じ量)
   local moved = 0
   local i = 1
   local function frame()
     if gen ~= generation then return end -- 新しい押下に追い越された
+    -- フレームは押下時のウィンドウ (win) へ nvim_win_call で適用する。defer_fn の実行時点
+    -- ではフォーカスが別ウィンドウへ移っていることがあり、暗黙のカレントウィンドウ参照だと
+    -- 押下と無関係なウィンドウがスクロールされる (headless 再現済み)。閉じられていたら打ち切る。
+    if not vim.api.nvim_win_is_valid(win) then
+      animating = false
+      return
+    end
     local step
     if i <= #FRAMES then
       step = math.min(math.max(1, math.floor(total * FRAMES[i] + 0.5)), total - moved)
@@ -56,10 +66,15 @@ local function animate(key)
     -- バッファ端の検出は view とカーソルの両方を見る (先頭付近では view (w0=1) が
     -- 動かなくてもカーソルは 1 行目まで動き続けるのが native <C-u> の挙動のため、
     -- view だけで判定すると途中で止まってしまう)
-    local view_before = vim.fn.line("w0")
-    local cursor_before = vim.api.nvim_win_get_cursor(0)[1]
-    scroll_step(key, step)
-    if vim.fn.line("w0") == view_before and vim.api.nvim_win_get_cursor(0)[1] == cursor_before then
+    local stalled
+    vim.api.nvim_win_call(win, function()
+      local view_before = vim.fn.line("w0")
+      local cursor_before = vim.api.nvim_win_get_cursor(0)[1]
+      scroll_step(key, step)
+      stalled = vim.fn.line("w0") == view_before
+        and vim.api.nvim_win_get_cursor(0)[1] == cursor_before
+    end)
+    if stalled then
       animating = false -- 完全に動かなくなった = バッファ端: 残りフレームは空撃ちなので打ち切る
       return
     end
@@ -86,7 +101,8 @@ local function handler(key)
       animating = false
       return key
     end
-    vim.schedule(function() animate(key) end) -- expr 評価中は textlock のため遅延実行
+    local win = vim.api.nvim_get_current_win() -- 押下時のウィンドウを捕捉 (animate 冒頭コメント参照)
+    vim.schedule(function() animate(key, win) end) -- expr 評価中は textlock のため遅延実行
     return ""
   end
 end

@@ -25,7 +25,9 @@ out=$("$NVIM_BIN" --headless -u "$CONFIG_FILE" \
   print -u2 "$out"
   exit 1
 }
-if print -r -- "$out" | grep -q "FAIL:"; then
+# FAIL: は check スクリプトの assert 失敗。Error executing / stack traceback は
+# scheduled callback 内の lua 例外 (assert を通り抜けて OK が出てしまうため個別に検査する)
+if print -r -- "$out" | grep -qE "FAIL:|Error executing|stack traceback"; then
   print -u2 "$out"
   exit 1
 fi
