@@ -42,8 +42,10 @@ tmux-smooth-scroll	2d686bc5b696c0e66173997e5141b14c8bedd973	https://github.com/a
 #     バッチ (resurrect/continuum の boot 高速化と同じ手法)。conf ロード 688ms → 49ms
 #   - src/scroll.sh: 設定 + pane 情報の読み取りを display-message の format 1 発に集約
 #     (押下ごとの tmux fork 5 → 1。素通し経路の総所要 ~36ms/回)。フィールド区切りは
-#     \x1f 固定 (タブは IFS 空白文字のため未設定オプションの空フィールドが潰れて後続が
-#     シフトする。実測でハマった)。既定値は config.sh と同期必須
+#     '|' 固定 (タブは IFS 空白文字のため未設定オプションの空フィールドが潰れて後続が
+#     シフトする。初版の \x1f は tmux 3.4 の display-message が制御文字を "\037" の
+#     リテラル表記へエスケープするため分割不能 = CI で全スクロール不発。2026-07-12 修正)。
+#     既定値は config.sh と同期必須
 #   カスタマイズ追加 (2026-07-12, 同日セルフレビュー):
 #   - @smooth-scroll-scopes (既定 "normal halfpage fullpage"): rebind 対象の種別を絞る。
 #     scope 外になったキーは source-file で native へ復元される (Wheel 系は復元対象外)
