@@ -732,7 +732,14 @@ require("lazy").setup({
       "nvim-treesitter/nvim-treesitter",
       "nvim-tree/nvim-web-devicons",
     },
-    opts = {},
+    -- 挿入モードでは装飾を消して生テキストに戻す (編集中に装飾が邪魔にならない)。
+    -- 読むとき (ノーマルモード) だけインライン装飾が乗る。
+    opts = {
+      render_modes = { "n", "c" },
+    },
+    keys = {
+      { "<leader>mm", "<cmd>RenderMarkdown toggle<cr>", desc = "Toggle render-markdown" },
+    },
   },
   {
     "TaDaa/vimade",
