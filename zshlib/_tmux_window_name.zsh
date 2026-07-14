@@ -199,18 +199,20 @@ _tmux_set_pane_title() {
 #   (_TMUX_TOUCH_PENDING)。素の precmd はシェル起動直後の初回プロンプトや Enter 空打ち
 #   でも発火するため、それを拾うと「zsh を開いただけ / resurrect 復元直後」で全 window が
 #   若返り select 契機と同じ誤判定になる。
-# - throttle: 前回スタンプから 30 秒未満なら fork しない (プロンプト毎に tmux client を
-#   fork しない、というこのファイルの方針を守る。フェードの最小粒度は 30 分なので
-#   30 秒の粗さは表示に影響しない)。時刻は fork 不要の $EPOCHSECONDS を使う。
+# - throttle: 前回スタンプから 3 秒未満なら fork しない (プロンプト毎に tmux client を fork しない方針)。
+#   ⚠️ この 3 秒は _tmux.conf の放置フェード刻み @fade-step-secs (現 5 秒) 以下に保つこと。throttle > step
+#   だと @last-touched が最大 throttle 秒古いまま残り、離れた直後の window が数段沈んで見え「さっき作業
+#   した window 探し」の主目的が壊れる (2026-07-14。5 秒フェード化に合わせ 30→3 へ)。連続作業中でも
+#   スタンプは 3 秒に 1 回の fork に上限が付くので CPU 負荷は軽微。時刻は fork 不要の $EPOCHSECONDS を使う。
 # $EPOCHSECONDS は zsh/datetime モジュールが提供する (未ロードだと空になり、throttle の
-# 算術が常に 0-0<30=真 → 即 return でスタンプが一切走らない。実測でハマった)。
+# 算術が常に 0-0<3=真 → 即 return でスタンプが一切走らない。実測でハマった)。
 # zshrc 側のロードに依存せず、この lib が自分で保証する (-i: ロード済みなら何もしない)
 zmodload -i zsh/datetime
 typeset -gi _TMUX_LAST_TOUCH_STAMPED=0
 typeset -gi _TMUX_TOUCH_PENDING=0
 _tmux_stamp_window_touched() {
   [[ -n "$TMUX_PANE" ]] || return 0
-  (( EPOCHSECONDS - _TMUX_LAST_TOUCH_STAMPED < 30 )) && return 0
+  (( EPOCHSECONDS - _TMUX_LAST_TOUCH_STAMPED < 3 )) && return 0
   _TMUX_LAST_TOUCH_STAMPED=$EPOCHSECONDS
   command tmux set-option -w -t "$TMUX_PANE" @last-touched "$EPOCHSECONDS" 2>/dev/null
 }

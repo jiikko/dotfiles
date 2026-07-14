@@ -5,24 +5,33 @@ status バーの window list で、**最近 shell でコマンドを実行した
 いた window はどれだっけ」を毎回目視で探すことになるため、作業した場所そのものを
 バー上で発光させる。2026-07-04 実装。
 
-## 見た目（3 状態）
+## 見た目（`@fade-step-secs` 秒ごとに 1 段暗くする）
 
-非 current window のセルに適用される（current は従来どおり青い島）:
+非 current window のセルに適用される（current は従来どおり青い島）。最後のコマンド実行からの
+経過を `@fade-step-secs`（現 5 秒）刻みの「段（bucket）」に落とし、明るい水色から 5 段かけて地に溶かす:
 
-| 状態 | 条件 | 表示 |
+| 段 (bucket) | 条件（step=5 秒時） | 表示 (bg × fg) |
 |---|---|---|
-| 点灯 (実行中) | 前面でプロセスが動いている pane を持つ (@busy) | **明るい水色 (bg=colour45) × 黒文字。終わるまで常時** |
-| 点灯 | 最後のコマンド実行から 30 分未満 | 同上 |
-| 減光 | 30 分〜2 時間 | 暗い青 (bg=colour24) × 明灰文字 (fg=colour252) |
-| 消灯 | 2 時間以上 or 実行履歴なし | 背景なし（バー地に溶ける）× fg=colour240 |
+| 実行中 | 前面でプロセスが動いている pane を持つ (@busy) | **最明 colour51 × 黒。終わるまで常時** |
+| 0 | 〜5 秒 | colour51（明るい水色）× 黒 |
+| 1 | 5〜10 秒 | colour44 × 黒 |
+| 2 | 10〜15 秒 | colour37 × 黒 |
+| 3 | 15〜20 秒 | colour30 × 黒 |
+| 4 | 20〜25 秒 | colour23（暗い teal）× 明灰 colour252 |
+| 5（消灯）| 25 秒以上 or 実行履歴なし | 背景なし（バー地に溶ける）× colour240 |
 
-- 配色定数は `_tmux.conf` の `@fade-*-*`（唯一の出典。変えるときはそこだけ触る）。初版の
-  ショッキングピンク (colour199) は 2026-07-05 に current window の島へ譲り、フェード点灯は
-  水色になった
-- 色を派手にしているのは意図的（ユーザー要望 2026-07-04）。初版のグレー階調
-  （bg238/bg240）は「上品だが目に飛び込んでこない」ため不採用。発見装置なので奇抜側に振る
-- 「実行履歴なし（未スタンプ）」を消灯に統合しているのも意図的。第 4 の中間色を置くと
-  点灯との明暗差が濁る。「光っている = 最近作業した」の一義性を優先
+> step=5 秒なので 25 秒（5 段）かけて消灯する。刻みを変えるなら定数 `@fade-step-secs` だけを触る
+> （表の秒数はこの現行値）。旧 30/60 秒の 3 段階閾値（`@fade-hot-secs`/`@fade-warm-secs`）は
+> 2026-07-14 に廃止し、毎 step 秒 1 段の連続減衰へ移行した。
+
+- bg のシアン階調は 256色 cube の対角 `colour(16 + 7×(5−bucket))`（51→44→37→30→23）を算術生成する。
+  定数ではないので色を変えるなら `_tmux.conf` の `@fade` 内の色式を触る。文字色 3 定数
+  （`@fade-hot-fg`=黒 / `@fade-dim-fg`=明灰 / `@fade-cold-fg`=消灯）が `@fade-*` の出典
+- truecolor の連続グラデにしないのは、tmux の format 算術に 16 進整形が無く `#RRGGBB` を組めない
+  ため（実測確認）。6 階調の cube で近似する。grayscale 24 段の方が滑らかだが「上品だが目に飛び
+  込んでこない」ため不採用（2026-07-04。発見装置なので奇抜なシアン側に振る）
+- 「実行履歴なし（未スタンプ）」を消灯に統合しているのは意図的。「光っている = 最近作業した」の
+  一義性を優先（第 4 の中間色を置くと明暗差が濁る）
 - bell のオレンジ反転・zoom の暗赤背景は従来どおりフェードより優先される
 
 ## 「アクティブ」の定義（最重要の仕様）
@@ -48,18 +57,21 @@ preexec（実行開始）と precmd（実行完了）でスタンプされる。
 [書き込み側] zshlib/_tmux_window_name.zsh の _tmux_stamp_window_touched
   zsh preexec/precmd → tmux set-option -w -t $TMUX_PANE @last-touched <epoch>
       ↓ (window user option)
-[表示側] _tmux.conf の @fade / @fadefg
-  window-status-format が #{E:@fade} で epoch と現在時刻の差を 3 段階に分岐
+[表示側] _tmux.conf の @fade-bucket → @fade / @fadefg
+  window-status-format が #{E:@fade} で epoch と現在時刻の差を段 (bucket) に落とし分岐
 ```
 
 - 表示側の現在時刻は `@epochfmt='%s'` を `#{T:@epochfmt}` で strftime 展開する
   トリック（status-left の @secfmt と同型）。追従はステータス再描画単位
   （status-interval=1、prefix 点滅の駆動と共用）なのでほぼ即時。window 切替等の操作でも再描画
 - `@fade` は bg+fg（セル先頭用）、`@fadefg` は fg のみ（pane 数・claude アイコン後の
-  文字色リセット用）。分かれている理由は zoom の暗赤背景を途中で潰さないため。
-  閾値・色を変えるときは**両方を同期して編集**する（_tmux.conf のコメント参照）
-- スタンプの throttle は 30 秒（プロンプト毎に tmux client を fork しない方針）。
-  フェード粒度が 30 分なので表示への影響はない
+  文字色リセット用）。分かれている理由は zoom の暗赤背景を途中で潰さないため。段計算は
+  `@fade-bucket` に集約したので @fade / @fadefg / @fadetrifg / @fadetribg の 4 変数が自動で同期する
+  （色式を変えるときは 4 つとも触る点は従来どおり。_tmux.conf のコメント参照）
+- スタンプの throttle は 3 秒（プロンプト毎に tmux client を fork しない方針。連続作業中でも
+  3 秒に 1 回の fork に上限が付くので CPU は軽微）。⚠️ throttle は `@fade-step-secs`（5 秒）以下で
+  なければならない。throttle > step だと @last-touched が最大 throttle 秒古いまま残り、離れた直後の
+  window が数段沈んで見え、発見性という主目的が壊れる（2026-07-14 に 5 秒フェード化と同時に 30→3 へ）
 
 ## よくある「効いていない」の正体
 
