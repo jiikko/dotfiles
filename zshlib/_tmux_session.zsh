@@ -184,9 +184,9 @@ _tt_gc_stale_holds () {
     done
 }
 
-# hold セッション名プレフィックス（scripts/tmux_resurrect_debounced_save.sh の TT_HOLD_PREFIX と
-# 一致させること。grep: __tt_hold_）。_tt_gc_stale_holds が参照する。
-TT_HOLD_PREFIX="${TT_HOLD_PREFIX:-__tt_hold_}"
+# hold セッション名プレフィックス。定義は 23 行目で source 済みの scripts/lib/tmux_resurrect_guards.sh
+# が唯一の出典 (2026-07-05 の一本化でそこへ集約。旧同期先の debounced_save.sh は自前定義を手放し済み)。
+# ここで再定義しない (guards.sh の source で設定済み)。grep: __tt_hold_。_tt_gc_stale_holds / _tt_impl が参照。
 
 # カレントディレクトリ名（or 引数）のセッションに attach。無ければ作成する実体。
 _tt_impl () {
