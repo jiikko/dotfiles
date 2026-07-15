@@ -104,7 +104,12 @@ if command -v anyenv >/dev/null 2>&1; then
     version_file=~/dotfiles/global_${lang}_version
     if [ -f "$version_file" ]; then
       ver=$(tr -d '[:space:]' < "$version_file")
-      if "$env" versions --bare 2>/dev/null | grep -qx "$ver"; then
+      # ⚠️ パイプ (`… | grep -qx`) にしないこと。この script は先頭 (L13) で set -o pipefail。
+      # grep -qx が一致行で即 exit → producer ($env versions) が SIGPIPE で死ぬ → pipefail が
+      # それを拾い偽の非 0 になり、インストール済みなのに「未インストール」と誤判定する (SIGPIPE
+      # レース。高負荷 + 一覧先頭付近に一致で顕在化)。here-string は単一コマンドで pipefail 非対象
+      # なので免疫 (同根の根治: scripts/lib/tmux_resurrect_guards.sh の tt_only_hold_sessions)。
+      if grep -qx "$ver" <<<"$("$env" versions --bare 2>/dev/null)"; then
         "$env" global "$ver"
         echo "${env} global set to ${ver}"
       else
