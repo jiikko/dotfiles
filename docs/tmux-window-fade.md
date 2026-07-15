@@ -24,9 +24,10 @@ status バーの window list で、**最近 shell でコマンドを実行した
 > （表の秒数はこの現行値）。旧 30/60 秒の 3 段階閾値（`@fade-hot-secs`/`@fade-warm-secs`）は
 > 2026-07-14 に廃止し、毎 step 秒 1 段の連続減衰へ移行した。
 
-- bg のシアン階調は 256色 cube の対角 `colour(16 + 7×(5−bucket))`（51→44→37→30→23）を算術生成する。
-  定数ではないので色を変えるなら `_tmux.conf` の `@fade` 内の色式を触る。文字色 3 定数
-  （`@fade-hot-fg`=黒 / `@fade-dim-fg`=明灰 / `@fade-cold-fg`=消灯）が `@fade-*` の出典
+- bg のシアン階調は 256色 cube の対角 `colour(16 + 7×(max−bucket))`（51→44→37→30→23）を算術生成する。
+  この式は `@fade-ramp-color` に 1 度だけ定義し、`@fade`/`@fadetrifg`/`@fadetribg` が参照する（色を変える
+  なら `@fade-ramp-color` の 1 箇所）。最明色（busy/bucket0）は `@fade-hot-bg`、段数上限は `@fade-bucket-max`、
+  文字色 3 定数（`@fade-hot-fg`=黒 / `@fade-dim-fg`=明灰 / `@fade-cold-fg`=消灯）と、すべて `@fade-*` が出典
 - truecolor の連続グラデにしないのは、tmux の format 算術に 16 進整形が無く `#RRGGBB` を組めない
   ため（実測確認）。6 階調の cube で近似する。grayscale 24 段の方が滑らかだが「上品だが目に飛び
   込んでこない」ため不採用（2026-07-04。発見装置なので奇抜なシアン側に振る）
@@ -57,7 +58,7 @@ preexec（実行開始）と precmd（実行完了）でスタンプされる。
 [書き込み側] zshlib/_tmux_window_name.zsh の _tmux_stamp_window_touched
   zsh preexec/precmd → tmux set-option -w -t $TMUX_PANE @last-touched <epoch>
       ↓ (window user option)
-[表示側] _tmux.conf の @fade-bucket → @fade / @fadefg
+[表示側] _tmux.conf の @fade-bucket / @fade-ramp-color → @fade / @fadefg
   window-status-format が #{E:@fade} で epoch と現在時刻の差を段 (bucket) に落とし分岐
 ```
 
@@ -66,8 +67,9 @@ preexec（実行開始）と precmd（実行完了）でスタンプされる。
   （status-interval=1、prefix 点滅の駆動と共用）なのでほぼ即時。window 切替等の操作でも再描画
 - `@fade` は bg+fg（セル先頭用）、`@fadefg` は fg のみ（pane 数・claude アイコン後の
   文字色リセット用）。分かれている理由は zoom の暗赤背景を途中で潰さないため。段計算は
-  `@fade-bucket` に集約したので @fade / @fadefg / @fadetrifg / @fadetribg の 4 変数が自動で同期する
-  （色式を変えるときは 4 つとも触る点は従来どおり。_tmux.conf のコメント参照）
+  `@fade-bucket`、bg 色式は `@fade-ramp-color`、最明は `@fade-hot-bg`、段数上限は `@fade-bucket-max` に
+  集約したので、@fade / @fadefg / @fadetrifg / @fadetribg の 4 変数が自動で同期する（定数を 1 箇所
+  変えれば全変数へ伝播。以前は色式を 3 変数に複製していたが 2026-07-15 にヘルパーへ集約した）
 - スタンプの throttle は 3 秒（プロンプト毎に tmux client を fork しない方針。連続作業中でも
   3 秒に 1 回の fork に上限が付くので CPU は軽微）。⚠️ throttle は `@fade-step-secs`（5 秒）以下で
   なければならない。throttle > step だと @last-touched が最大 throttle 秒古いまま残り、離れた直後の
