@@ -28,8 +28,17 @@ codex 往復より速いので Claude が直接やってよい (`subagent-model-
 - **1 タスク = 1 検証可能なマイルストーン**にスコープする。codex に「全部」を投げない (15 分制約・精度低下)。
 - **観測駆動** (`instrument-before-second-fix.md`): 修正が外れたら次の blind fix を投げず、まず観測 (ログ/実行/CI) を増やして
   事実を取り、それを codex への次の指示に翻訳する。CI でしか出ない移植/プロトコルバグはこの往復で 1 段ずつ潰す。
-- **モデルはスキル側で明示する**: `-m gpt-5.6-luna -c model_reasoning_effort="low"`。省略すると `~/.codex/config.toml` の
+- **モデルはスキル側で明示する**: `-m gpt-5.6-luna -c model_reasoning_effort=...`。省略すると `~/.codex/config.toml` の
   既定 (対話 TUI 側の都合で変わる) を拾い、実行ごとにモデルが変わってしまう。
+- **effort はタスクに合わせて選ぶ (既定 `low`、substantive なら一段上げる)**:
+  - `low`: 機械的置換・定型修正・grep 系調査・単純な boilerplate・レビューの一次パス。**既定はこれ**。
+  - `medium`: 設計判断を含む実装・複数ファイル横断のリファクタ/rename・非自明な wire/protocol 実装・根本原因分析・
+    分析駆動の構造修正。「low で出したら質が低かった」ときも一段上げてやり直す。
+  - `high`: 上記でも収束しない難所 (framework 内部挙動・並行不整合・二回外した後の分析)。ここまで上げても
+    収束しないなら forge / cross-review へ escalate ([`escalate-to-forge-after-failed-tries.md`](escalate-to-forge-after-failed-tries.md))。
+  → 迷ったら low で 1 回出して質を見て、足りなければ一段上げる。コスト階層 (`subagent-model-tiering.md`) と同じ思想で
+    「安く出して足りなければ上げる」を既定運用にする。以降の実行コマンド例の `="low"` はこの選択の初期値であり、
+    substantive なタスクでは `="medium"` (以上) に置き換えて起動する。
 
 ## Phase 0: codex 適性評価（着手前に必ず・最初にやる）
 
