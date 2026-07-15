@@ -28,11 +28,8 @@ TMUX_TMPDIR=$(mktemp -d)
 export TMUX_TMPDIR
 SOCKET_NAME="dotfiles-bench-$$"
 
-export HOME="$TMUX_TMPDIR/home"
-export DOTFILES_DIR="$ROOT_DIR"
-export XDG_DATA_HOME="$HOME/.local/share"
-export TT_DEBOUNCE_STATE_DIR="$HOME/.cache/tt-debounce"
-mkdir -p "$HOME" "$XDG_DATA_HOME" "$TT_DEBOUNCE_STATE_DIR"
+# 状態隔離 (HOME/XDG/TT_DEBOUNCE を TMUX_TMPDIR 配下へ) は lib へ集約 (test_tmux/smooth_scroll と共通)。
+source "$ROOT_DIR/tests/tmux/lib/isolate_env.sh"
 
 if ! command -v "$TMUX_BIN_PATH" >/dev/null 2>&1; then
   print -u2 "Error: tmux binary not found. Install tmux or set \$TMUX_BIN."

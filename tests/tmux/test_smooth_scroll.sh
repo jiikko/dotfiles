@@ -28,12 +28,11 @@ SOCKET_NAME="dss-$$"
 # resurrect / debounce 保存と smooth-scroll の状態ファイルを実データから隔離する
 # (test_tmux.sh と同じ HOME 隔離 + TMPDIR 隔離。scroll.sh の状態ファイルは
 #  ${TMPDIR:-/tmp}/tmux-smooth-scroll-<uid>/ に置かれるため TMPDIR ごと逃がす)
-export HOME="$TMUX_TMPDIR/home"
-export DOTFILES_DIR="$ROOT_DIR"
-export XDG_DATA_HOME="$HOME/.local/share"
-export TT_DEBOUNCE_STATE_DIR="$HOME/.cache/tt-debounce"
+# 状態隔離 (HOME/XDG/TT_DEBOUNCE) は lib へ集約 (test_tmux/bench と共通)。
+source "$ROOT_DIR/tests/tmux/lib/isolate_env.sh"
+# smooth-scroll の状態ファイルは ${TMPDIR}/tmux-smooth-scroll-<uid>/ なので TMPDIR ごと隔離する (本テスト固有)。
 export TMPDIR="$TMUX_TMPDIR/tmp"
-mkdir -p "$HOME" "$XDG_DATA_HOME" "$TT_DEBOUNCE_STATE_DIR" "$TMPDIR"
+mkdir -p "$TMPDIR"
 
 if ! command -v "$TMUX_BIN_PATH" >/dev/null 2>&1; then
   print -u2 "Error: tmux binary not found. Install tmux or set \$TMUX_BIN."

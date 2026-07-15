@@ -21,11 +21,8 @@ log_file="$TMUX_TMPDIR/tmux.log"
 # 在る環境では本物を触り得る。そこで HOME ごと temp に隔離して全候補を temp に倒す。
 # DOTFILES_DIR は明示固定する（conf の plugin パスは ${DOTFILES_DIR:-$HOME/dotfiles}
 # なので HOME を temp にすると $HOME/dotfiles が壊れるため）。
-export HOME="$TMUX_TMPDIR/home"
-export DOTFILES_DIR="$ROOT_DIR"
-export XDG_DATA_HOME="$HOME/.local/share"
-export TT_DEBOUNCE_STATE_DIR="$HOME/.cache/tt-debounce"
-mkdir -p "$HOME" "$XDG_DATA_HOME" "$TT_DEBOUNCE_STATE_DIR"
+# 状態隔離 (HOME/XDG/TT_DEBOUNCE を TMUX_TMPDIR 配下へ) は lib へ集約 (bench/smooth_scroll と共通)。
+source "$ROOT_DIR/tests/tmux/lib/isolate_env.sh"
 
 if ! command -v "$TMUX_BIN_PATH" >/dev/null 2>&1; then
   print -u2 "Error: tmux binary not found. Install tmux or set \$TMUX_BIN."
