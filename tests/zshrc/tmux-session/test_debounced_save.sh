@@ -177,17 +177,8 @@ OUT="$(
 )"
 
 # ---- 検証 -------------------------------------------------------------------
-case_line() { printf '%s\n' "$OUT" | grep "CASE:$1 " || true; }
-
-assert_eq_line() {
-  local id="$1" expect="$2" msg="$3" line
-  line="$(case_line "$id")"
-  if [[ "$line" != "CASE:$id $expect" ]]; then
-    printf '✗ %s\n  expected: CASE:%s %s\n  actual:   %s\n' "$msg" "$id" "$expect" "$line"
-    exit 1
-  fi
-  printf '✓ %s\n' "$msg"
-}
+# 共通 assertion ヘルパー (case_line / assert_eq_line) は lib へ集約 (3 テストで verbatim 重複していた)。
+source "$(dirname "${BASH_SOURCE[0]}")/lib/case_assert.sh"
 
 printf '\n## debounce 秒数\n'
 assert_eq_line dbs_default "sec=10" "未設定 → 既定 10 秒"

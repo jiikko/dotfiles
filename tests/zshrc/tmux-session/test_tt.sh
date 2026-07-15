@@ -351,17 +351,9 @@ RELOAD_OUT="$(HOME="$TMP_HOME" zsh -c '
 ' 2>/dev/null)"
 
 # ---- 検証 -------------------------------------------------------------------
-case_line() { printf '%s\n' "$OUT" | grep "CASE:$1 " || true; }
-
-assert_eq_line() {  # 行全体が期待文字列と一致するか
-  local id="$1" expect="$2" msg="$3" line
-  line="$(case_line "$id")"
-  if [[ "$line" != "CASE:$id $expect" ]]; then
-    printf '✗ %s\n  expected: CASE:%s %s\n  actual:   %s\n' "$msg" "$id" "$expect" "$line"
-    exit 1
-  fi
-  printf '✓ %s\n' "$msg"
-}
+# 共通 assertion ヘルパー (case_line / assert_eq_line) は lib へ集約 (3 テストで verbatim 重複していた)。
+# assert_line_has / assert_has は test_tt 固有 (他 2 テストに複製なし) なのでここに残す。
+source "$(dirname "${BASH_SOURCE[0]}")/lib/case_assert.sh"
 
 assert_line_has() {  # 行が部分文字列を含むか（hold 名のプレフィックスや date 依存値用）
   local id="$1" needle="$2" msg="$3" line
