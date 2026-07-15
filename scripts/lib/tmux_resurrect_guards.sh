@@ -37,13 +37,21 @@ tt_only_hold_sessions() {
   local sessions
   sessions="$(tmux list-sessions -F '#{session_name}' 2>/dev/null)"
   # hold 以外（実セッション）が 1 行でもあれば bootstrap ではない → 抑止しない。
-  # セッション皆無（list-sessions 失敗/空）のときも printf の空行がここにマッチし
+  # セッション皆無（list-sessions 失敗/空）のときも here-string の空行がここにマッチし
   # 「実セッションあり」と同じ経路で return 1 する（= 抑止しない。意図どおり）。
-  if printf '%s\n' "$sessions" | grep -qv "^${TT_HOLD_PREFIX}"; then
+  #
+  # ⚠️ ここを `printf … | grep -q` のパイプに戻さないこと（here-string 必須）。この lib は
+  #   pipefail 下で source される（tmux_resurrect_save.sh:49 の set -uo pipefail）。パイプにすると
+  #   grep -q が非マッチ行を見つけた瞬間に exit してパイプを閉じ、まだ書いている printf が
+  #   SIGPIPE(141) で死ぬ。pipefail がその 141 を拾ってパイプライン全体を偽の非 0 にするため、
+  #   この early-return が高負荷時に稀に素通りし、実セッションがあるのに「only-hold」と誤判定して
+  #   保存を抑止する（CI flake 2026-07-11 / 2026-07-15 run 29382449580 で観測・根治）。
+  #   here-string は単一コマンドで pipefail の対象外なので SIGPIPE レースの影響を受けない。
+  if grep -qv "^${TT_HOLD_PREFIX}" <<<"$sessions"; then
     return 1
   fi
   # ここに来るのは「全行が hold」のときだけ。防御的に hold の存在を確認して bootstrap 判定。
-  printf '%s\n' "$sessions" | grep -q "^${TT_HOLD_PREFIX}"
+  grep -q "^${TT_HOLD_PREFIX}" <<<"$sessions"
 }
 
 # default socket のサーバか（単一環境 gate）。

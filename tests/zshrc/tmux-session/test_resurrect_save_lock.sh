@@ -322,7 +322,6 @@ $SS_OUT"
 # tt_save_main ごと検証する (ガード関数単体は debounce 側テストが担うが、wrapper が
 # 実際に呼ぶ配線はここでしか守れない)。
 WRAP_RDIR="$TMP_HOME/rdir_wrap"; mkdir -p "$WRAP_RDIR"
-WRAP_TRACE="$TMP_HOME/wrap_trace.log"
 FAKE_REALSAVE_MARK="$TMP_HOME/fake_realsave_mark.sh"
 cat > "$FAKE_REALSAVE_MARK" <<'FS'
 #!/bin/sh
@@ -333,16 +332,8 @@ chmod +x "$FAKE_REALSAVE_MARK"
 WRAP_OUT="$(
   HOME="$TMP_HOME" TT_SAVE_STATE_DIR="$TMP_HOME/state_wrap" TT_SAVE_SOURCE_ONLY=1 \
   TT_REAL_SAVE_SCRIPT="$FAKE_REALSAVE_MARK" RDIR="$WRAP_RDIR" \
-  WRAP_TRACE="$WRAP_TRACE" \
   bash -c '
     export RDIR
-    # CI でのみ稀に w_hold_with_real が rc=1 runs=0 で落ちる flake (2026-07-11, run 29129167971)
-    # の観測用: どのガードで弾かれたかを xtrace で常時採取し、assert 失敗時だけダンプする
-    # (assert_eq_line 参照)。原因特定までは外さないこと。
-    exec 9>"$WRAP_TRACE"
-    export BASH_XTRACEFD=9
-    export PS4="+ \${FUNCNAME[0]:-main}:\${LINENO}: "
-    set -x
     # スタブ状態: _T_SESSIONS (list-sessions の行群) / _T_SOCKET (socket_path)
     tmux() {
       case "$1 $2 $3" in
@@ -428,14 +419,6 @@ assert_eq_line() {
   line="$(case_line "$id")"
   if [[ "$line" != "CASE:$id $expect" ]]; then
     printf '✗ %s\n  expected: CASE:%s %s\n  actual:   %s\n' "$msg" "$id" "$expect" "$line"
-    # CI flake の観測 (2026-07-11): wrap 系ケースの失敗時は xtrace を出し、
-    # どのガード (restore_in_progress / only_hold / default_server / lock) で
-    # 弾かれたかをログから特定できるようにする
-    if [[ -s "${WRAP_TRACE:-}" ]]; then
-      printf -- '---- wrap xtrace (guard 判定の追跡用) ----\n'
-      cat "$WRAP_TRACE"
-      printf -- '---- end wrap xtrace ----\n'
-    fi
     exit 1
   fi
   printf '✓ %s\n' "$msg"
