@@ -434,8 +434,13 @@ func sanitizeDetailLine(s string) string {
 	return b.String()
 }
 
+// logTimestampRe は GitHub Actions ログの各行頭に付く ISO タイムスタンプ。
+// 幅を ~29 桁食う (長い行が枠幅を超えて色落ち・切り詰めされる主因) 上に情報量が薄いので
+// 表示からは落とす。
+var logTimestampRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z ?`)
+
 // logTail は gh run view --log の出力から末尾 n 行を取り出す。各行の
-// "job名<TAB>step名<TAB>" プレフィックスは表示幅の邪魔なので落とし、
+// "job名<TAB>step名<TAB>" プレフィックスとタイムスタンプは表示幅の邪魔なので落とし、
 // 残りは sanitizeDetailLine で枠描画を壊す制御文字を無害化する。
 func logTail(out string, n int) []string {
 	var lines []string
@@ -446,7 +451,9 @@ func logTail(out string, n int) []string {
 		if parts := strings.SplitN(line, "\t", 3); len(parts) == 3 {
 			line = parts[2]
 		}
-		lines = append(lines, sanitizeDetailLine(line))
+		line = sanitizeDetailLine(line)
+		line = logTimestampRe.ReplaceAllString(line, "")
+		lines = append(lines, line)
 	}
 	if len(lines) > n {
 		lines = lines[len(lines)-n:]

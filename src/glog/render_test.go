@@ -252,6 +252,33 @@ func TestWrapToWidth(t *testing.T) {
 	}
 }
 
+func TestDecorateDetailLine(t *testing.T) {
+	// Web UI 風のマーカー着色 (raw ログには色情報が無いので glog 側で再現)
+	tests := []struct {
+		line string
+		want string
+	}{
+		{"##[error]Process completed with exit code 1.", ansiRed},
+		{"[failure] src/a.go:10", ansiRed},
+		{"##[warning]deprecated", ansiYellow},
+		{"##[group]Run make test", ansiDim},
+		{"##[endgroup]", ansiDim},
+	}
+	for _, tt := range tests {
+		got := decorateDetailLine(tt.line, true)
+		if !strings.HasPrefix(got, tt.want) || !strings.HasSuffix(got, ansiReset) {
+			t.Errorf("decorate(%q) = %q; want %s で着色", tt.line, got, tt.want)
+		}
+	}
+	// マーカー無しの行と非カラーはそのまま
+	if got := decorateDetailLine("plain log line", true); got != "plain log line" {
+		t.Errorf("素の行が着色された: %q", got)
+	}
+	if got := decorateDetailLine("##[error]x", false); got != "##[error]x" {
+		t.Errorf("非カラーで着色された: %q", got)
+	}
+}
+
 func TestClipToWidth(t *testing.T) {
 	long := strings.Repeat("x", 100)
 	if got := clipToWidth(long, 40); len([]rune(got)) > 40 {

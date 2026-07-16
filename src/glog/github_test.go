@@ -263,6 +263,19 @@ func TestLogTailSanitizesContent(t *testing.T) {
 	}
 }
 
+func TestLogTailStripsTimestamp(t *testing.T) {
+	// 行頭の ISO タイムスタンプ (~29 桁) は幅の浪費なので落とす
+	out := "j\ts\t2026-07-16T13:11:31.4381694Z ##[group]Run make test\n" +
+		"j\ts\tno timestamp line\n"
+	lines := logTail(out, 50)
+	if lines[0] != "##[group]Run make test" {
+		t.Errorf("タイムスタンプが残っている: %q", lines[0])
+	}
+	if lines[1] != "no timestamp line" {
+		t.Errorf("タイムスタンプ無しの行が変更された: %q", lines[1])
+	}
+}
+
 func TestSanitizeDetailLine(t *testing.T) {
 	if got := sanitizeDetailLine("plain text"); got != "plain text" {
 		t.Errorf("素の行が変更された: %q", got)

@@ -283,6 +283,28 @@ func refColor(name string, dc DecorColors) string {
 	return dc.Branch
 }
 
+// decorateDetailLine は job 詳細の GitHub Actions マーカー行 (##[error] 等) と
+// annotations のレベル見出し ([failure] 等) を Web UI 風に着色する。raw ログに
+// これらの色情報は無い (Web の配色は UI 側の後付け) ため glog 側で再現する。
+// キャッシュには焼き込まず描画時に付ける (colored 判定と将来の色変更を尊重)。
+func decorateDetailLine(line string, colored bool) string {
+	if !colored {
+		return line
+	}
+	switch {
+	case strings.HasPrefix(line, "##[error]"), strings.HasPrefix(line, "[failure]"):
+		return ansiRed + line + ansiReset
+	case strings.HasPrefix(line, "##[warning]"), strings.HasPrefix(line, "[warning]"):
+		return ansiYellow + line + ansiReset
+	case strings.HasPrefix(line, "##[notice]"), strings.HasPrefix(line, "[notice]"):
+		return ansiCyan + line + ansiReset
+	case strings.HasPrefix(line, "##[group]"), strings.HasPrefix(line, "##[endgroup]"),
+		strings.HasPrefix(line, "##[command]"), strings.HasPrefix(line, "##[debug]"):
+		return paint(line, ansiDim, true)
+	}
+	return line
+}
+
 // wrapToWidth は表示幅 width で折り返す (ANSI を含まない行の前提)。width <= 0 なら
 // 折り返さない。単語境界は考慮せず端末の折り返しと同じく文字単位で折る
 // (日本語混じりの commit message では単語境界折りの利得が薄いため)。

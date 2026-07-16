@@ -738,7 +738,10 @@ func (m *browseModel) detailBoxLines(width int) []string {
 		}
 		start := min(m.detailOffset, max(len(lines)-1, 0))
 		end := min(start+m.visibleDetailRows(), len(lines))
-		rows = lines[start:end]
+		rows = make([]string, 0, end-start)
+		for _, l := range lines[start:end] {
+			rows = append(rows, decorateDetailLine(l, m.colored))
+		}
 		title = fmt.Sprintf(" %s [%d-%d/%d] ", name, start+1, end, len(lines))
 	}
 	return buildPanelBox(title, rows, width, m.colored)
