@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -141,13 +142,15 @@ type rollupContext struct {
 	State      string `json:"state"`      // StatusContext: SUCCESS / FAILURE / ERROR / PENDING / EXPECTED
 	DetailsURL string `json:"detailsUrl"` // CheckRun のジョブ詳細ページ
 	TargetURL  string `json:"targetUrl"`  // StatusContext のリンク先
+	DatabaseID int64  `json:"databaseId"` // CheckRun の REST id (= GitHub Actions の job id)
 }
 
 // CheckDetail は展開表示用の Check 1 件分 (ジョブ名 + 状態 + 詳細ページ URL)。
 type CheckDetail struct {
-	Name  string
-	State CIState
-	URL   string // 無い場合は空
+	Name    string
+	State   CIState
+	URL     string // 無い場合は空
+	CheckID int64  // CheckRun の REST id。annotations / ログ取得に使う (StatusContext は 0)
 }
 
 type rollupPayload struct {
@@ -202,7 +205,7 @@ fragment ciStatus on Commit {
     contexts(first: 100) {
       nodes {
         __typename
-        ... on CheckRun { name status conclusion detailsUrl }
+        ... on CheckRun { name status conclusion detailsUrl databaseId }
         ... on StatusContext { context state targetUrl }
       }
     }
@@ -341,9 +344,87 @@ func detailsOf(rollup *rollupPayload) []CheckDetail {
 		if url == "" {
 			url = node.TargetURL
 		}
-		details = append(details, CheckDetail{Name: name, State: nodeState(node), URL: url})
+		details = append(details, CheckDetail{Name: name, State: nodeState(node), URL: url, CheckID: node.DatabaseID})
 	}
 	return details
+}
+
+// jobLogTailLines はログ表示の行数 (末尾から)。
+const jobLogTailLines = 50
+
+// FetchJobDetail は job の「何が起きたか」を取得する。annotations (CI が報告した
+// file:line + メッセージの構造化データ) があればそれを優先し、無ければログの末尾を返す
+// (失敗 job は --log-failed で失敗ステップのみ)。GitHub Actions の CheckRun 限定
+// (StatusContext = 外部 CI はログの取得経路が無い)。
+func FetchJobDetail(ctx context.Context, run CommandRunner, repo Repo, check CheckDetail) ([]string, *GHError) {
+	if check.CheckID == 0 {
+		return []string{"(GitHub Actions の job ではないため詳細を取得できません)"}, nil
+	}
+	id := strconv.FormatInt(check.CheckID, 10)
+	stdout, stderr, err := run(ctx, "gh", "api",
+		fmt.Sprintf("repos/%s/%s/check-runs/%s/annotations", repo.Owner, repo.Name, id))
+	if err != nil {
+		return nil, classifyGHError(err, string(stderr))
+	}
+	if lines := annotationLines(stdout); len(lines) > 0 {
+		return lines, nil
+	}
+	args := []string{"run", "view", "--job", id, "-R", repo.Owner + "/" + repo.Name}
+	if check.State == StateFailure {
+		args = append(args, "--log-failed")
+	} else {
+		args = append(args, "--log")
+	}
+	stdout, stderr, err = run(ctx, "gh", args...)
+	if err != nil {
+		return nil, classifyGHError(err, string(stderr))
+	}
+	lines := logTail(string(stdout), jobLogTailLines)
+	if len(lines) == 0 {
+		return []string{"(ログが空です)"}, nil
+	}
+	return lines, nil
+}
+
+// annotationLines は check-runs annotations API のレスポンスを表示行へ変換する。
+func annotationLines(stdout []byte) []string {
+	var annotations []struct {
+		Path      string `json:"path"`
+		StartLine int    `json:"start_line"`
+		Level     string `json:"annotation_level"`
+		Message   string `json:"message"`
+	}
+	if err := json.Unmarshal(stdout, &annotations); err != nil {
+		return nil
+	}
+	var lines []string
+	for _, a := range annotations {
+		head := fmt.Sprintf("[%s] %s:%d", a.Level, a.Path, a.StartLine)
+		lines = append(lines, head)
+		for msg := range strings.SplitSeq(strings.TrimRight(a.Message, "\n"), "\n") {
+			lines = append(lines, "  "+msg)
+		}
+	}
+	return lines
+}
+
+// logTail は gh run view --log の出力から末尾 n 行を取り出す。各行の
+// "job名<TAB>step名<TAB>" プレフィックスは表示幅の邪魔なので落とす。
+func logTail(out string, n int) []string {
+	var lines []string
+	for line := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		if parts := strings.SplitN(line, "\t", 3); len(parts) == 3 {
+			line = parts[2]
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return lines
 }
 
 func classifyGHError(err error, stderr string) *GHError {

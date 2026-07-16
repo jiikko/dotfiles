@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"os"
 	"os/exec"
 	"runtime"
 	"slices"
@@ -50,6 +51,13 @@ type tickMsg struct{}
 // openURLMsg は job 詳細ページをブラウザで開いた結果。
 type openURLMsg struct{ err error }
 
+// jobDetailMsg は job 詳細 (annotations / ログ tail) のオンデマンド取得の結果。
+type jobDetailMsg struct {
+	key   string // sha/jobIdx (取得中表示とキャッシュのキー)
+	lines []string
+	ghErr *GHError
+}
+
 // openInBrowser はテストで実ブラウザを開かないための差し替え点。
 var openInBrowser = func(url string) error {
 	switch runtime.GOOS {
@@ -58,6 +66,28 @@ var openInBrowser = func(url string) error {
 	default:
 		return exec.Command("xdg-open", url).Run()
 	}
+}
+
+// copyToClipboard はテストで実クリップボードを触らないための差し替え点。
+// tmux 内なら load-buffer -w (tmux バッファ + OSC52 でシステム側にも届く) を優先し、
+// 失敗時や tmux 外は OS のクリップボードコマンドへ。
+var copyToClipboard = func(text string) error {
+	if os.Getenv("TMUX") != "" {
+		cmd := exec.Command("tmux", "load-buffer", "-w", "-")
+		cmd.Stdin = strings.NewReader(text)
+		if err := cmd.Run(); err == nil {
+			return nil
+		}
+	}
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("pbcopy")
+	default:
+		cmd = exec.Command("xclip", "-selection", "clipboard")
+	}
+	cmd.Stdin = strings.NewReader(text)
+	return cmd.Run()
 }
 
 type browseModel struct {
@@ -80,6 +110,10 @@ type browseModel struct {
 	offset         int    // ビューポート先頭の行 index
 	panelSHA       string // job パネルを表示中のコミット SHA ("" = パネルなし)
 	panelCursor    int    // パネル内で選択中の job index (-1 = タイトル行にフォーカス)
+	detailOpen     bool   // job 詳細 (annotations / ログ tail) ポップアップを表示中か
+	detailOffset   int    // 詳細ポップアップのスクロール位置
+	jobDetail      map[string][]string // key (sha/jobIdx) → 詳細行 (メモリ内キャッシュ)
+	jobDetailBusy  map[string]bool     // 取得中の key
 	notice         string // hint 行に出す一時メッセージ (次のキーで消える)
 	fetching       bool
 	done           bool
@@ -102,6 +136,8 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		fetched:        map[string]CIState{},
 		details:        map[string][]CheckDetail{},
 		detailsLoading: map[string]bool{},
+		jobDetail:      map[string][]string{},
+		jobDetailBusy:  map[string]bool{},
 		toFetch:        toFetch,
 		repo:           repo,
 		hasRepo:        hasRepo,
@@ -194,12 +230,42 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			maps.Copy(m.details, msg.details)
 		}
 		return m, nil
+	case jobDetailMsg:
+		delete(m.jobDetailBusy, msg.key)
+		if msg.ghErr != nil {
+			m.ghErr = msg.ghErr
+		}
+		if msg.lines != nil {
+			m.jobDetail[msg.key] = msg.lines
+			if m.detailOpen && m.detailKey() == msg.key {
+				// ログは末尾 (直近の出力) が本題なので下端から表示する
+				m.detailOffset = max(len(msg.lines)-m.visibleDetailRows(), 0)
+			}
+		}
+		return m, nil
 	case openURLMsg:
 		if msg.err != nil {
 			m.notice = "ブラウザを開けませんでした: " + firstLine(msg.err.Error())
 		}
 		return m, nil
 	case tea.KeyMsg:
+		// 高速連打やパイプ入力では複数の文字キーが 1 つの KeyMsg (Runes 長 > 1) に
+		// まとまって届く。分解せず msg.String() だけ見ると "hhq" のような未知キー扱いに
+		// なり、以降の操作が全て無視されたように見える (pty スモークで実測) ため、
+		// 1 文字ずつのキー入力として順に処理する
+		if msg.Type == tea.KeyRunes && len(msg.Runes) > 1 {
+			var cmds []tea.Cmd
+			for _, r := range msg.Runes {
+				_, cmd := m.handleKey(string(r))
+				if cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				if m.done {
+					break
+				}
+			}
+			return m, tea.Batch(cmds...)
+		}
 		return m.handleKey(msg.String())
 	}
 	return m, nil
@@ -244,6 +310,8 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.offset = m.clampOffset(m.offset - m.pageSize()/2)
 	case "enter", " ", "l", "right", "tab":
 		return m, m.openPanel()
+	case "y":
+		m.copyFocusURL()
 	}
 	return m, nil
 }
@@ -251,8 +319,11 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 // handlePanelKey は job パネル表示中のキー操作。j/k はパネル内のフォーカス移動になる。
 // フォーカスの初期位置はタイトル行 (-1) で、この状態の Enter は「閉じる」= Enter 連打で
 // 開閉 toggle が成立する。j で job へフォーカスを降ろした後の Enter はその job を
-// ブラウザで開く (両方ユーザー要望)。
+// ブラウザで開く (両方ユーザー要望)。l は job 詳細 (annotations / ログ tail) ポップアップ。
 func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
+	if m.detailOpen {
+		return m.handleDetailKey(key)
+	}
 	jobs := m.details[m.panelSHA]
 	switch key {
 	case "esc", "h", "left":
@@ -279,10 +350,115 @@ func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 		if len(jobs) > 0 {
 			m.panelCursor = len(jobs) - 1
 		}
+	case "l", "right", "tab":
+		if m.panelCursor < 0 {
+			if len(jobs) > 0 {
+				m.panelCursor = 0
+			}
+			return m, nil
+		}
+		return m, m.openJobDetail()
 	case " ", "o":
 		return m, m.openJob()
+	case "y":
+		m.copyFocusURL()
 	}
 	return m, nil
+}
+
+// handleDetailKey は job 詳細ポップアップ表示中のキー操作。j/k は詳細のスクロール。
+func (m *browseModel) handleDetailKey(key string) (tea.Model, tea.Cmd) {
+	rows := m.visibleDetailRows()
+	maxOffset := max(len(m.jobDetail[m.detailKey()])-rows, 0)
+	switch key {
+	case "esc", "h", "left":
+		m.detailOpen = false
+		m.detailOffset = 0
+	case "j", "down", "ctrl+n":
+		m.detailOffset = min(m.detailOffset+1, maxOffset)
+	case "k", "up", "ctrl+p":
+		m.detailOffset = max(m.detailOffset-1, 0)
+	case "ctrl+d", "pgdown":
+		m.detailOffset = min(m.detailOffset+rows/2, maxOffset)
+	case "ctrl+u", "pgup":
+		m.detailOffset = max(m.detailOffset-rows/2, 0)
+	case "g", "home":
+		m.detailOffset = 0
+	case "G", "end":
+		m.detailOffset = maxOffset
+	case "enter", " ", "o":
+		return m, m.openJob()
+	case "y":
+		m.copyFocusURL()
+	}
+	return m, nil
+}
+
+// detailKey は job 詳細キャッシュのキー。詳細表示中は panelCursor が動かないため安定する。
+func (m *browseModel) detailKey() string {
+	return fmt.Sprintf("%s/%d", m.panelSHA, m.panelCursor)
+}
+
+// jobDetailRows は詳細ポップアップに一度に表示する行数の上限。実際の行数は
+// 端末の高さに合わせて visibleDetailRows が縮める。
+const jobDetailRows = 15
+
+// visibleDetailRows は詳細ポップアップが実際に使える行数 (job パネルとヒント行を
+// 差し引いた残り。低い端末で詳細ボックスがビューポートに切られ、末尾スクロールが
+// 見えなくなるのを防ぐ)。
+func (m *browseModel) visibleDetailRows() int {
+	jobBoxLines := min(max(len(m.details[m.panelSHA]), 1), maxPanelJobs) + 2
+	return max(min(jobDetailRows, m.pageSize()-jobBoxLines-2), 3)
+}
+
+// openJobDetail はフォーカス中 job の annotations / ログ tail のポップアップを開く。
+func (m *browseModel) openJobDetail() tea.Cmd {
+	jobs := m.details[m.panelSHA]
+	if m.panelCursor < 0 || m.panelCursor >= len(jobs) {
+		return nil
+	}
+	m.detailOpen = true
+	m.detailOffset = 0
+	key := m.detailKey()
+	if lines, ok := m.jobDetail[key]; ok {
+		m.detailOffset = max(len(lines)-m.visibleDetailRows(), 0)
+		return nil
+	}
+	if m.jobDetailBusy[key] {
+		return nil
+	}
+	m.jobDetailBusy[key] = true
+	check := jobs[m.panelCursor]
+	repo := m.repo
+	cmd := func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		lines, ghErr := FetchJobDetail(ctx, ExecRunner, repo, check)
+		return jobDetailMsg{key: key, lines: lines, ghErr: ghErr}
+	}
+	return tea.Batch(cmd, tick())
+}
+
+// copyFocusURL はフォーカス位置の URL (job 選択中はその job、それ以外はコミット) を
+// クリップボードへコピーする。LLM に貼る用途 (ユーザー要望)。
+func (m *browseModel) copyFocusURL() {
+	url := ""
+	if m.panelSHA != "" && m.panelCursor >= 0 {
+		if jobs := m.details[m.panelSHA]; m.panelCursor < len(jobs) {
+			url = jobs[m.panelCursor].URL
+		}
+	} else if m.hasRepo && len(m.commits) > 0 {
+		url = fmt.Sprintf("https://github.com/%s/%s/commit/%s", m.repo.Owner, m.repo.Name, m.commits[m.cursor].SHA)
+	}
+	if url == "" {
+		m.notice = "コピーできる URL がありません"
+		return
+	}
+	if err := copyToClipboard(url); err != nil {
+		m.notice = "コピーに失敗しました: " + firstLine(err.Error())
+		return
+	}
+	m.notice = "コピーしました: " + url
 }
 
 // openPanel はカーソル位置のコミットの CI job パネルを開く。詳細が未取得
@@ -323,6 +499,8 @@ func (m *browseModel) openPanel() tea.Cmd {
 func (m *browseModel) closePanel() {
 	m.panelSHA = ""
 	m.panelCursor = -1
+	m.detailOpen = false
+	m.detailOffset = 0
 }
 
 // openJob はパネルで選択中の job の詳細ページをブラウザで開く。
@@ -357,7 +535,7 @@ func (m *browseModel) fillUnknown() {
 }
 
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || len(m.detailsLoading) > 0
+	return m.fetching || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0
 }
 
 func (m *browseModel) spinner() string {
@@ -524,6 +702,38 @@ func (m *browseModel) panelLines() []string {
 	case len(jobs) > 0:
 		title = fmt.Sprintf(" CI jobs: %s (%d 件) %s ", commit.ShortSHA, len(jobs), commit.Subject)
 	}
+	box := buildPanelBox(title, rows, width, m.colored)
+	if m.detailOpen {
+		box = append(box, m.detailBoxLines(width)...)
+	}
+	return box
+}
+
+// detailBoxLines は job 詳細 (annotations / ログ tail) の第 2 ポップアップ。
+// job パネルの直下へ続けて重ねる。
+func (m *browseModel) detailBoxLines(width int) []string {
+	jobs := m.details[m.panelSHA]
+	name := ""
+	if m.panelCursor >= 0 && m.panelCursor < len(jobs) {
+		name = jobs[m.panelCursor].Name
+	}
+	key := m.detailKey()
+	var rows []string
+	title := " " + name + " "
+	switch {
+	case m.jobDetailBusy[key]:
+		rows = []string{paint(m.spinner()+" 詳細を取得中...", ansiDim, m.colored)}
+	default:
+		lines := m.jobDetail[key]
+		if len(lines) == 0 {
+			rows = []string{paint("(詳細なし)", ansiDim, m.colored)}
+			break
+		}
+		start := min(m.detailOffset, max(len(lines)-1, 0))
+		end := min(start+m.visibleDetailRows(), len(lines))
+		rows = lines[start:end]
+		title = fmt.Sprintf(" %s [%d-%d/%d] ", name, start+1, end, len(lines))
+	}
 	return buildPanelBox(title, rows, width, m.colored)
 }
 
@@ -551,13 +761,14 @@ func cursorMark(colored bool) string {
 }
 
 func (m *browseModel) hintLine() string {
-	hint := "j/k: 移動  Enter: CI job  q: 終了"
-	if m.panelSHA != "" {
-		if m.panelCursor >= 0 {
-			hint = "j/k: job 移動  Enter: ブラウザで開く  h/Esc: 閉じる  q: 終了"
-		} else {
-			hint = "j: job を選択  Enter/h/Esc: 閉じる  q: 終了"
-		}
+	hint := "j/k: 移動  Enter: CI job  y: URL コピー  q: 終了"
+	switch {
+	case m.detailOpen:
+		hint = "j/k: スクロール  h: 戻る  y: URL コピー  q: 終了"
+	case m.panelSHA != "" && m.panelCursor >= 0:
+		hint = "j/k: job 移動  Enter: ブラウザ  l: 詳細ログ  y: URL コピー  h: 閉じる  q: 終了"
+	case m.panelSHA != "":
+		hint = "j: job を選択  y: commit URL  Enter/h/Esc: 閉じる  q: 終了"
 	}
 	if m.fetching {
 		hint = m.spinner() + " CI 状態を取得中...  " + hint

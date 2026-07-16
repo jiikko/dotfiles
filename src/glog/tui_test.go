@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -334,6 +335,24 @@ func TestBrowseQuitFillsUnknown(t *testing.T) {
 	}
 }
 
+func TestBrowseBatchedRunesKeyMsg(t *testing.T) {
+	// 高速連打で複数キーが 1 つの KeyMsg (Runes="hhq") にまとまっても 1 文字ずつ
+	// 処理される (未対応だと q が無視されて終了できない: pty スモークで実測した回帰)
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+	withJobs(m, 0)
+	m.openPanel()
+	m.handleKey("j")
+	m.openJobDetail()
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hhq")})
+	if !m.done {
+		t.Fatalf("hhq のまとめ配送で終了しない (detailOpen=%v panelSHA=%q)", m.detailOpen, m.panelSHA)
+	}
+	if cmd == nil {
+		t.Errorf("q の Quit Cmd が返らない")
+	}
+}
+
 func TestBrowseQuitWorksWhilePanelOpen(t *testing.T) {
 	// パネル表示中でも q はアプリ終了
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
@@ -395,6 +414,94 @@ func TestBrowseOpenJobRejectsNonHTTP(t *testing.T) {
 	}
 	if !strings.Contains(m.hintLine(), "http(s) 以外") {
 		t.Errorf("notice が出ていない: %q", m.hintLine())
+	}
+}
+
+func TestBrowseJobDetailPopup(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	withJobs(m, 0)
+	m.openPanel()
+	m.handleKey("j") // job0 へ
+	// l で詳細ポップアップ (未取得なので fetch Cmd が返る)
+	_, cmd := m.handleKey("l")
+	if cmd == nil {
+		t.Fatalf("l で詳細取得 Cmd が返らない")
+	}
+	if !m.detailOpen || !m.jobDetailBusy[m.detailKey()] {
+		t.Fatalf("詳細が開いていない / busy でない")
+	}
+	if !strings.Contains(m.View(), "詳細を取得中") {
+		t.Errorf("取得中表示がない:\n%s", m.View())
+	}
+	// 取得完了 → 末尾から表示
+	lines := make([]string, 30)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("log line %d", i)
+	}
+	m.Update(jobDetailMsg{key: m.detailKey(), lines: lines})
+	rows := m.visibleDetailRows()
+	if m.detailOffset != 30-rows {
+		t.Errorf("detailOffset = %d; want 末尾表示 %d", m.detailOffset, 30-rows)
+	}
+	if !strings.Contains(m.View(), "log line 29") {
+		t.Errorf("末尾行が見えていない (低い端末でも末尾は見える):\n%s", m.View())
+	}
+	// k で上へスクロール、g で先頭
+	m.handleKey("k")
+	if m.detailOffset != 30-rows-1 {
+		t.Errorf("k 後の offset = %d", m.detailOffset)
+	}
+	m.handleKey("g")
+	if m.detailOffset != 0 {
+		t.Errorf("g 後の offset = %d", m.detailOffset)
+	}
+	// h で job フォーカスへ戻る (パネルは開いたまま)
+	m.handleKey("h")
+	if m.detailOpen || m.panelSHA == "" || m.panelCursor != 0 {
+		t.Errorf("h 後の状態: detailOpen=%v panelSHA=%q cursor=%d", m.detailOpen, m.panelSHA, m.panelCursor)
+	}
+	// 再度 l → キャッシュ済みなので fetch なしで即表示
+	if _, cmd := m.handleKey("l"); cmd != nil {
+		t.Errorf("キャッシュ済み詳細で再 fetch した")
+	}
+	if !m.detailOpen {
+		t.Errorf("2 回目の l で開かない")
+	}
+}
+
+func TestBrowseCopyURL(t *testing.T) {
+	var copied string
+	orig := copyToClipboard
+	copyToClipboard = func(text string) error {
+		copied = text
+		return nil
+	}
+	t.Cleanup(func() { copyToClipboard = orig })
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	withJobs(m, 0)
+	// コミット一覧では commit URL
+	m.handleKey("y")
+	wantCommit := "https://github.com/o/r/commit/" + m.commits[0].SHA
+	if copied != wantCommit {
+		t.Errorf("commit URL = %q; want %q", copied, wantCommit)
+	}
+	// job フォーカス中はその job の URL
+	m.openPanel()
+	m.handleKey("j")
+	m.handleKey("y")
+	if copied != "https://github.com/o/r/runs/1" {
+		t.Errorf("job URL = %q", copied)
+	}
+	if !strings.Contains(m.hintLine(), "コピーしました") {
+		t.Errorf("notice が出ていない: %q", m.hintLine())
+	}
+	// URL なし job (job1) は notice
+	m.handleKey("j")
+	m.handleKey("y")
+	if !strings.Contains(m.hintLine(), "コピーできる URL がありません") {
+		t.Errorf("URL なしの notice が出ていない: %q", m.hintLine())
 	}
 }
 

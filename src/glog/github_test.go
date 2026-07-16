@@ -165,6 +165,88 @@ func TestFetchCIStatusesBrokenJSON(t *testing.T) {
 	}
 }
 
+// argsRunner は呼び出し引数に応じて応答を切り替える CommandRunner。
+func argsRunner(t *testing.T, responses map[string]string) CommandRunner {
+	t.Helper()
+	return func(_ context.Context, _ string, args ...string) ([]byte, []byte, error) {
+		joined := strings.Join(args, " ")
+		for pattern, out := range responses {
+			if strings.Contains(joined, pattern) {
+				return []byte(out), nil, nil
+			}
+		}
+		t.Fatalf("想定外のコマンド: gh %s", joined)
+		return nil, nil, nil
+	}
+}
+
+func TestFetchJobDetailPrefersAnnotations(t *testing.T) {
+	run := argsRunner(t, map[string]string{
+		"check-runs/123/annotations": `[
+			{"path":"src/a.go","start_line":10,"annotation_level":"failure","message":"undefined: foo\ndetail"}]`,
+	})
+	lines, ghErr := FetchJobDetail(context.Background(), run, Repo{Owner: "o", Name: "r"},
+		CheckDetail{Name: "lint", State: StateFailure, CheckID: 123})
+	if ghErr != nil {
+		t.Fatalf("ghErr = %v", ghErr)
+	}
+	want := []string{"[failure] src/a.go:10", "  undefined: foo", "  detail"}
+	if len(lines) != 3 || lines[0] != want[0] || lines[1] != want[1] || lines[2] != want[2] {
+		t.Errorf("annotations 行 = %v; want %v", lines, want)
+	}
+}
+
+func TestFetchJobDetailFallsBackToLog(t *testing.T) {
+	logOut := "job\tstep\tline one\njob\tstep\tline two\n"
+	run := argsRunner(t, map[string]string{
+		"annotations": `[]`,
+		"run view":    logOut,
+	})
+	// 失敗 job は --log-failed を使う
+	called := false
+	wrapped := func(ctx context.Context, name string, args ...string) ([]byte, []byte, error) {
+		if strings.Contains(strings.Join(args, " "), "--log-failed") {
+			called = true
+		}
+		return run(ctx, name, args...)
+	}
+	lines, ghErr := FetchJobDetail(context.Background(), wrapped, Repo{Owner: "o", Name: "r"},
+		CheckDetail{Name: "test", State: StateFailure, CheckID: 9})
+	if ghErr != nil {
+		t.Fatalf("ghErr = %v", ghErr)
+	}
+	if !called {
+		t.Errorf("失敗 job で --log-failed が使われていない")
+	}
+	// job/step のタブプレフィックスは落ちる
+	if len(lines) != 2 || lines[0] != "line one" || lines[1] != "line two" {
+		t.Errorf("ログ行 = %v", lines)
+	}
+}
+
+func TestFetchJobDetailNonActions(t *testing.T) {
+	// StatusContext (CheckID=0) は取得経路が無い
+	lines, ghErr := FetchJobDetail(context.Background(), nil, Repo{},
+		CheckDetail{Name: "ci/legacy", State: StateSuccess, CheckID: 0})
+	if ghErr != nil || len(lines) != 1 || !strings.Contains(lines[0], "取得できません") {
+		t.Errorf("lines = %v, ghErr = %v", lines, ghErr)
+	}
+}
+
+func TestLogTail(t *testing.T) {
+	var b strings.Builder
+	for i := range 100 {
+		fmt.Fprintf(&b, "j\ts\tline %d\n", i)
+	}
+	lines := logTail(b.String(), 50)
+	if len(lines) != 50 || lines[0] != "line 50" || lines[49] != "line 99" {
+		t.Errorf("tail = %d 行, 先頭 %q, 末尾 %q", len(lines), lines[0], lines[len(lines)-1])
+	}
+	if got := logTail("", 50); len(got) != 0 {
+		t.Errorf("空ログ = %v", got)
+	}
+}
+
 func TestClassifyGHError(t *testing.T) {
 	exitErr := errors.New("exit status 1")
 	tests := []struct {
