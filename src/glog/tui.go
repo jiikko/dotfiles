@@ -317,9 +317,9 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 }
 
 // handlePanelKey は job パネル表示中のキー操作。j/k はパネル内のフォーカス移動になる。
-// フォーカスの初期位置はタイトル行 (-1) で、この状態の Enter は「閉じる」= Enter 連打で
-// 開閉 toggle が成立する。j で job へフォーカスを降ろした後の Enter はその job を
-// ブラウザで開く (両方ユーザー要望)。l は job 詳細 (annotations / ログ tail) ポップアップ。
+// Enter は一貫して「TUI 内で開閉 (toggle)」: タイトル行 = パネルを閉じる (Enter 連打で
+// 開閉 toggle)、job 行 = 詳細 (annotations / ログ tail) ポップアップを開く。
+// ブラウザで開くのは o (ユーザー要望)。
 func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 	if m.detailOpen {
 		return m.handleDetailKey(key)
@@ -328,12 +328,12 @@ func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc", "h", "left":
 		m.closePanel()
-	case "enter":
+	case "enter", " ":
 		if m.panelCursor < 0 {
 			m.closePanel()
 			return m, nil
 		}
-		return m, m.openJob()
+		return m, m.openJobDetail()
 	case "j", "down", "ctrl+n":
 		if m.panelCursor+1 < len(jobs) {
 			m.panelCursor++
@@ -358,7 +358,7 @@ func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.openJobDetail()
-	case " ", "o":
+	case "o":
 		return m, m.openJob()
 	case "y":
 		m.copyFocusURL()
@@ -367,11 +367,12 @@ func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 }
 
 // handleDetailKey は job 詳細ポップアップ表示中のキー操作。j/k は詳細のスクロール。
+// Enter は toggle の閉じる側、o はブラウザ。
 func (m *browseModel) handleDetailKey(key string) (tea.Model, tea.Cmd) {
 	rows := m.visibleDetailRows()
 	maxOffset := max(len(m.jobDetail[m.detailKey()])-rows, 0)
 	switch key {
-	case "esc", "h", "left":
+	case "enter", " ", "esc", "h", "left":
 		m.detailOpen = false
 		m.detailOffset = 0
 	case "j", "down", "ctrl+n":
@@ -386,7 +387,7 @@ func (m *browseModel) handleDetailKey(key string) (tea.Model, tea.Cmd) {
 		m.detailOffset = 0
 	case "G", "end":
 		m.detailOffset = maxOffset
-	case "enter", " ", "o":
+	case "o":
 		return m, m.openJob()
 	case "y":
 		m.copyFocusURL()
@@ -764,9 +765,9 @@ func (m *browseModel) hintLine() string {
 	hint := "j/k: 移動  Enter: CI job  y: URL コピー  q: 終了"
 	switch {
 	case m.detailOpen:
-		hint = "j/k: スクロール  h: 戻る  y: URL コピー  q: 終了"
+		hint = "j/k: スクロール  Enter/h: 戻る  o: ブラウザ  y: URL コピー  q: 終了"
 	case m.panelSHA != "" && m.panelCursor >= 0:
-		hint = "j/k: job 移動  Enter: ブラウザ  l: 詳細ログ  y: URL コピー  h: 閉じる  q: 終了"
+		hint = "j/k: job 移動  Enter: 詳細ログ  o: ブラウザ  y: URL コピー  h: 閉じる  q: 終了"
 	case m.panelSHA != "":
 		hint = "j: job を選択  y: commit URL  Enter/h/Esc: 閉じる  q: 終了"
 	}

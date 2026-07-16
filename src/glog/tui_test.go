@@ -199,18 +199,14 @@ func TestBrowsePanelJobCursorAndOpen(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { openInBrowser = orig })
-	// タイトル行フォーカスの Enter/Space はブラウザを開かない (toggle 用)
-	if _, cmd := m.handleKey(" "); cmd != nil {
-		t.Errorf("タイトル行フォーカスの Space で Cmd が返った")
-	}
-	// j で job0 にフォーカスして Enter → ブラウザで開く (ユーザー要望)
+	// j で job0 にフォーカスして o → ブラウザで開く (Enter は TUI 内の詳細に使う)
 	m.handleKey("j")
 	if m.panelCursor != 0 {
 		t.Fatalf("j 後の panelCursor = %d; want 0", m.panelCursor)
 	}
-	_, cmd := m.handleKey("enter")
+	_, cmd := m.handleKey("o")
 	if cmd == nil {
-		t.Fatalf("job フォーカス中の Enter で Cmd が返らない")
+		t.Fatalf("job フォーカス中の o で Cmd が返らない")
 	}
 	if msg := cmd(); msg.(openURLMsg).err != nil {
 		t.Fatalf("openURLMsg.err = %v", msg.(openURLMsg).err)
@@ -218,7 +214,7 @@ func TestBrowsePanelJobCursorAndOpen(t *testing.T) {
 	if opened != "https://github.com/o/r/runs/1" {
 		t.Errorf("開いた URL = %q", opened)
 	}
-	// j で job1 へ (末尾で止まる)。URL なし job は notice を出して開かない (o でも同じ経路)
+	// j で job1 へ (末尾で止まる)。URL なし job は notice を出して開かない
 	m.handleKey("j")
 	m.handleKey("j")
 	if m.panelCursor != 1 {
@@ -240,6 +236,27 @@ func TestBrowsePanelJobCursorAndOpen(t *testing.T) {
 	m.handleKey("enter")
 	if m.panelSHA != "" {
 		t.Errorf("タイトル行フォーカスの Enter で閉じない")
+	}
+}
+
+func TestBrowseEnterOpensDetailAndToggles(t *testing.T) {
+	// job 行の Enter は TUI 内の詳細ポップアップの開閉 toggle (ブラウザは o)
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	withJobs(m, 0)
+	m.openPanel()
+	m.handleKey("j")
+	_, cmd := m.handleKey("enter")
+	if cmd == nil || !m.detailOpen {
+		t.Fatalf("job 行の Enter で詳細が開かない (cmd=%v detailOpen=%v)", cmd, m.detailOpen)
+	}
+	m.Update(jobDetailMsg{key: m.detailKey(), lines: []string{"line"}})
+	m.handleKey("enter")
+	if m.detailOpen {
+		t.Errorf("詳細表示中の Enter で閉じない (toggle)")
+	}
+	if m.panelSHA == "" || m.panelCursor != 0 {
+		t.Errorf("詳細を閉じた後 job フォーカスに戻らない: panelSHA=%q cursor=%d", m.panelSHA, m.panelCursor)
 	}
 }
 
@@ -406,7 +423,7 @@ func TestBrowseOpenJobRejectsNonHTTP(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { openInBrowser = orig })
-	if _, cmd := m.handleKey("enter"); cmd != nil {
+	if _, cmd := m.handleKey("o"); cmd != nil {
 		t.Errorf("file:// URL で Cmd が返った")
 	}
 	if called {

@@ -186,23 +186,22 @@ func Usage() string {
 CI job ポップアップ表示中 (開いた直後のフォーカスはタイトル行):
   j / k / ↑ / ↓ / Ctrl-N / Ctrl-P
                             フォーカス移動 (j で job へ降り、k でタイトル行へ戻る)
-  Enter                     タイトル行: ポップアップを閉じる (= Enter 連打で開閉 toggle)
-                            job: その job の詳細ページをブラウザで開く
-  l / → / Tab               job: 詳細ポップアップを開く (annotations があれば
-                            file:line + エラーメッセージ、無ければログ末尾 50 行。
-                            失敗 job は失敗ステップのログのみ。GitHub Actions の job 限定)
-  Space / o                 選択中の job の詳細ページをブラウザで開く
+  Enter / Space             タイトル行: ポップアップを閉じる。job: 詳細ポップアップを
+                            TUI 内で開く (Enter は一貫して「TUI 内の開閉 toggle」)
+  l / → / Tab               job: 詳細ポップアップを開く (Enter と同じ)
+  o                         選択中の job の詳細ページをブラウザで開く
   y                         URL をクリップボードへコピー (job 選択中はその job、
                             それ以外はコミットの URL。LLM に貼る用)
   h / ← / Esc               ポップアップを閉じる
   q / Ctrl-C                終了
 
-job 詳細ポップアップ表示中:
+job 詳細ポップアップ表示中 (annotations があれば file:line + エラーメッセージ、
+無ければログ末尾 50 行。失敗 job は失敗ステップのみ。GitHub Actions の job 限定):
   j / k / Ctrl-D / Ctrl-U / g / G
                             スクロール (開いた直後は末尾 = 直近の出力)
-  Enter / Space / o         ブラウザで開く
+  Enter / h / ← / Esc       閉じて job 一覧へ戻る (Enter は開閉 toggle)
+  o                         ブラウザで開く
   y                         URL コピー
-  h / ← / Esc               閉じて job 一覧へ戻る
 
   全件キャッシュ済みで 1 画面に収まる場合は、ブラウズを開かずそのまま
   出力して終了する (less -F 相当)。stdout がパイプ / リダイレクトの
