@@ -15,13 +15,13 @@ if not (vim.uv or vim.loop).fs_stat(lazypath) then
 end
 vim.opt.rtp:prepend(lazypath)
 
+-- config_dir (dotfiles repo ルート) は vendor プラグインの dir= 解決にのみ使う。
+-- rtp へは載せない: repo ルートに nvim が走査する dir (lua/ftplugin/plugin/colors 等) は
+-- 一つも無く登録が不活性だった (rtp の実体は nvim_dir=repo/nvim/ のみ。2026-07-16 に除去)。
 local config_dir = vim.fn.fnamemodify(vim.fn.resolve(vim.env.MYVIMRC or ""), ":p:h")
 local nvim_dir = config_dir ~= "" and (config_dir .. "/nvim") or ""
 if nvim_dir ~= "" and vim.fn.isdirectory(nvim_dir) == 1 then
   vim.opt.rtp:prepend(nvim_dir)
-end
-if config_dir ~= "" then
-  vim.opt.rtp:prepend(config_dir)
 end
 
 -- Make sure to setup `mapleader` and `maplocalleader` before
@@ -51,7 +51,7 @@ vim.g.maplocalleader = " "
 -- ============================================================================
 -- 注: 実際の colorscheme 分岐は下の gruvbox spec の config で行う (truecolor_supported を参照)。
 -- ColorScheme autocmd 内での colorscheme 切替は再入ガードで効かないため、適用時に直接分岐する。
-_G.dotfiles_truecolor_supported = function()
+local function dotfiles_truecolor_supported()
   local flag = vim.env.SUPPORT_TRUECOLOR
   if flag == "false" or flag == "0" then return false end
   if flag == "true" or flag == "1" then return true end
@@ -97,7 +97,7 @@ require("lazy").setup({
   { "ellisonleao/gruvbox.nvim",
     priority = 1000,
     config = function()
-      if _G.dotfiles_truecolor_supported() then
+      if dotfiles_truecolor_supported() then
         vim.cmd("colorscheme gruvbox")
         -- 選択範囲をショッキングピンクで強調 (hl.set = ColorScheme 再適用 + cterm 併記規律)
         require("dotfiles.hl").set("Visual", { bg = "#d3869b", ctermbg = 175 })
@@ -889,7 +889,7 @@ require("lazy").setup({
   -- reset は維持しつつ、残すべきパスを明示する。
   performance = {
     rtp = {
-      paths = vim.tbl_filter(function(p) return p ~= "" end, { nvim_dir, config_dir }),
+      paths = vim.tbl_filter(function(p) return p ~= "" end, { nvim_dir }),
       -- 使っていない標準 plugin を起動から外す。zip/tar/gz をエディタで直接開きたく
       -- なったら該当行を外して再有効化する (netrwPlugin は nvim <dir> の挙動が変わるため外していない)
       disabled_plugins = { "gzip", "tarPlugin", "zipPlugin", "tutor" },
