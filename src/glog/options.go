@@ -178,6 +178,8 @@ func Usage() string {
                             カーソル移動
   Enter / Space / l / → / Tab
                             CI job 一覧のポップアップを開く (コミット直下に表示)
+  p                         コミットに紐づく PR をブラウザで開く
+                            (associatedPullRequests。複数あれば OPEN > MERGED 優先)
   Ctrl-D / Ctrl-U / PgDn / PgUp
                             ページスクロール
   g / G                     先頭 / 末尾のコミットへ

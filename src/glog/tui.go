@@ -58,6 +58,13 @@ type jobDetailMsg struct {
 	ghErr *GHError
 }
 
+// prMsg は commit に紐づく PR のオンデマンド取得の結果 (p キー)。
+type prMsg struct {
+	sha   string
+	pr    *PRRef // nil = PR なし
+	ghErr *GHError
+}
+
 // openInBrowser はテストで実ブラウザを開かないための差し替え点。
 var openInBrowser = func(url string) error {
 	switch runtime.GOOS {
@@ -114,6 +121,8 @@ type browseModel struct {
 	detailOffset   int    // 詳細ポップアップのスクロール位置
 	jobDetail      map[string][]string // key (sha/jobIdx) → 詳細行 (メモリ内キャッシュ)
 	jobDetailBusy  map[string]bool     // 取得中の key
+	prCache        map[string]*PRRef   // sha → 紐づく PR (nil 格納 = 確認済みで PR なし)
+	prBusy         map[string]bool     // PR 取得中の sha
 	notice         string // hint 行に出す一時メッセージ (次のキーで消える)
 	fetching       bool
 	done           bool
@@ -138,6 +147,8 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		detailsLoading: map[string]bool{},
 		jobDetail:      map[string][]string{},
 		jobDetailBusy:  map[string]bool{},
+		prCache:        map[string]*PRRef{},
+		prBusy:         map[string]bool{},
 		toFetch:        toFetch,
 		repo:           repo,
 		hasRepo:        hasRepo,
@@ -243,6 +254,19 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case prMsg:
+		delete(m.prBusy, msg.sha)
+		m.prCache[msg.sha] = msg.pr
+		if msg.ghErr != nil {
+			m.notice = "PR の取得に失敗しました: " + firstLine(msg.ghErr.Warning())
+			return m, nil
+		}
+		if msg.pr == nil {
+			m.notice = "このコミットに紐づく PR はありません"
+			return m, nil
+		}
+		m.notice = fmt.Sprintf("PR #%d を開きます", msg.pr.Number)
+		return m, m.openURLCmd(msg.pr.URL)
 	case openURLMsg:
 		if msg.err != nil {
 			m.notice = "ブラウザを開けませんでした: " + firstLine(msg.err.Error())
@@ -312,6 +336,8 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.openPanel()
 	case "y":
 		m.copyFocusURL()
+	case "p":
+		return m, m.openPR()
 	}
 	return m, nil
 }
@@ -362,6 +388,8 @@ func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.openJob()
 	case "y":
 		m.copyFocusURL()
+	case "p":
+		return m, m.openPR()
 	}
 	return m, nil
 }
@@ -504,6 +532,19 @@ func (m *browseModel) closePanel() {
 	m.detailOffset = 0
 }
 
+// openURLCmd は URL をブラウザで開く Cmd。StatusContext の targetUrl 等、外部が任意に
+// 設定できる値を通すため、file:// 等でローカルのハンドラを起動させないよう
+// http(s) だけを開く。
+func (m *browseModel) openURLCmd(url string) tea.Cmd {
+	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "http://") {
+		m.notice = "http(s) 以外の URL は開きません"
+		return nil
+	}
+	return func() tea.Msg {
+		return openURLMsg{err: openInBrowser(url)}
+	}
+}
+
 // openJob はパネルで選択中の job の詳細ページをブラウザで開く。
 func (m *browseModel) openJob() tea.Cmd {
 	jobs := m.details[m.panelSHA]
@@ -515,14 +556,42 @@ func (m *browseModel) openJob() tea.Cmd {
 		m.notice = "この job には詳細ページの URL がありません"
 		return nil
 	}
-	// StatusContext の targetUrl は外部 CI が任意に設定できる値。file:// 等で
-	// ローカルのハンドラを起動させないよう http(s) だけを開く
-	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "http://") {
-		m.notice = "http(s) 以外の URL は開きません"
+	return m.openURLCmd(url)
+}
+
+// openPR はカーソル位置のコミットに紐づく PR をブラウザで開く (p キー)。
+// commit → PR の関連は GitHub (associatedPullRequests) から取得し、結果はキャッシュする。
+func (m *browseModel) openPR() tea.Cmd {
+	if len(m.commits) == 0 {
 		return nil
 	}
+	if !m.hasRepo {
+		m.notice = "GitHub の remote が無いため PR を取得できません"
+		return nil
+	}
+	sha := m.commits[m.cursor].SHA
+	if m.statuses[sha] == StateUnpushed {
+		m.notice = "未 push のコミットに PR はありません"
+		return nil
+	}
+	if pr, ok := m.prCache[sha]; ok {
+		if pr == nil {
+			m.notice = "このコミットに紐づく PR はありません"
+			return nil
+		}
+		return m.openURLCmd(pr.URL)
+	}
+	if m.prBusy[sha] {
+		return nil
+	}
+	m.prBusy[sha] = true
+	m.notice = "PR を検索中..."
+	repo := m.repo
 	return func() tea.Msg {
-		return openURLMsg{err: openInBrowser(url)}
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		pr, ghErr := FetchCommitPR(ctx, ExecRunner, repo, sha)
+		return prMsg{sha: sha, pr: pr, ghErr: ghErr}
 	}
 }
 

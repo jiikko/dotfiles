@@ -290,6 +290,35 @@ func TestSanitizeDetailLine(t *testing.T) {
 	}
 }
 
+func TestFetchCommitPR(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	// OPEN > MERGED の優先で選ぶ
+	fixture := `{"data":{"repository":{"object":{"associatedPullRequests":{"nodes":[
+		{"number":10,"url":"https://github.com/o/r/pull/10","state":"MERGED"},
+		{"number":12,"url":"https://github.com/o/r/pull/12","state":"OPEN"}]}}}}}`
+	pr, ghErr := FetchCommitPR(context.Background(), fakeRunner(fixture, "", nil), Repo{Owner: "o", Name: "r"}, sha)
+	if ghErr != nil || pr == nil || pr.Number != 12 {
+		t.Errorf("pr = %+v, ghErr = %v; want OPEN の #12", pr, ghErr)
+	}
+	// MERGED のみならそれ
+	merged := `{"data":{"repository":{"object":{"associatedPullRequests":{"nodes":[
+		{"number":10,"url":"https://github.com/o/r/pull/10","state":"MERGED"}]}}}}}`
+	pr, _ = FetchCommitPR(context.Background(), fakeRunner(merged, "", nil), Repo{Owner: "o", Name: "r"}, sha)
+	if pr == nil || pr.Number != 10 {
+		t.Errorf("pr = %+v; want MERGED の #10", pr)
+	}
+	// PR なし
+	none := `{"data":{"repository":{"object":{"associatedPullRequests":{"nodes":[]}}}}}`
+	pr, ghErr = FetchCommitPR(context.Background(), fakeRunner(none, "", nil), Repo{Owner: "o", Name: "r"}, sha)
+	if pr != nil || ghErr != nil {
+		t.Errorf("PR なしで pr = %+v, ghErr = %v", pr, ghErr)
+	}
+	// 壊れた JSON
+	if _, ghErr = FetchCommitPR(context.Background(), fakeRunner("x", "", nil), Repo{Owner: "o", Name: "r"}, sha); ghErr == nil {
+		t.Errorf("壊れた JSON がエラーにならない")
+	}
+}
+
 func TestClassifyGHError(t *testing.T) {
 	exitErr := errors.New("exit status 1")
 	tests := []struct {

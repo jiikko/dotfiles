@@ -408,6 +408,54 @@ func annotationLines(stdout []byte) []string {
 	return lines
 }
 
+// PRRef は commit に紐づく Pull Request。
+type PRRef struct {
+	Number int    `json:"number"`
+	URL    string `json:"url"`
+	State  string `json:"state"` // OPEN / MERGED / CLOSED
+}
+
+// FetchCommitPR は commit に紐づく PR を返す (無ければ nil)。ブランチの特定は不要で、
+// GitHub が commit → PR の関連 (associatedPullRequests) を保持している。
+// 複数ある場合 (cherry-pick 等) は OPEN > MERGED > その他 の優先で 1 件選ぶ。
+func FetchCommitPR(ctx context.Context, run CommandRunner, repo Repo, sha string) (*PRRef, *GHError) {
+	query := fmt.Sprintf(`query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {
+  object(oid: %q) { ... on Commit { associatedPullRequests(first: 5) { nodes { number url state } } } }
+} }`, sha)
+	stdout, stderr, err := run(ctx, "gh", "api", "graphql",
+		"-F", "owner="+repo.Owner, "-F", "name="+repo.Name, "-f", "query="+query)
+	if err != nil {
+		return nil, classifyGHError(err, string(stderr))
+	}
+	var resp struct {
+		Data struct {
+			Repository struct {
+				Object *struct {
+					AssociatedPullRequests struct {
+						Nodes []PRRef `json:"nodes"`
+					} `json:"associatedPullRequests"`
+				} `json:"object"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(stdout, &resp); err != nil {
+		return nil, &GHError{Kind: GHOther, Detail: "GraphQL レスポンスを解析できません: " + err.Error()}
+	}
+	obj := resp.Data.Repository.Object
+	if obj == nil || len(obj.AssociatedPullRequests.Nodes) == 0 {
+		return nil, nil
+	}
+	nodes := obj.AssociatedPullRequests.Nodes
+	for _, state := range []string{"OPEN", "MERGED"} {
+		for _, n := range nodes {
+			if n.State == state {
+				return &n, nil
+			}
+		}
+	}
+	return &nodes[0], nil
+}
+
 // sanitizeDetailLine は詳細ポップアップの枠描画を壊す制御文字を無害化する。
 // タブが根本原因の実測バグ: runewidth は \t を幅 0 と数えるが端末は 8 桁タブストップへ
 // 展開するため、右枠の桁計算がずれて行が折り返し、インライン再描画の行対応が崩壊する

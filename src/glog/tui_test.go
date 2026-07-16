@@ -533,6 +533,64 @@ func TestBrowseCopyURL(t *testing.T) {
 	}
 }
 
+func TestBrowseOpenPR(t *testing.T) {
+	var opened string
+	orig := openInBrowser
+	openInBrowser = func(url string) error {
+		opened = url
+		return nil
+	}
+	t.Cleanup(func() { openInBrowser = orig })
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StateSuccess
+	// p → 取得 Cmd (実行はしない) と busy
+	_, cmd := m.handleKey("p")
+	if cmd == nil || !m.prBusy[sha] {
+		t.Fatalf("p で PR 取得が始まらない (cmd=%v busy=%v)", cmd, m.prBusy[sha])
+	}
+	// 取得結果 (PR あり) → ブラウザで開く Cmd が返る
+	_, cmd = m.Update(prMsg{sha: sha, pr: &PRRef{Number: 12, URL: "https://github.com/o/r/pull/12", State: "OPEN"}})
+	if cmd == nil {
+		t.Fatalf("prMsg (PR あり) で open Cmd が返らない")
+	}
+	cmd()
+	if opened != "https://github.com/o/r/pull/12" {
+		t.Errorf("開いた URL = %q", opened)
+	}
+	// キャッシュ済みなので 2 回目の p は再取得せず即 open
+	_, cmd = m.handleKey("p")
+	if cmd == nil || m.prBusy[sha] {
+		t.Errorf("キャッシュ済み PR で即 open にならない")
+	}
+}
+
+func TestBrowseOpenPRNotFound(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StateSuccess
+	m.Update(prMsg{sha: sha, pr: nil})
+	if !strings.Contains(m.hintLine(), "PR はありません") {
+		t.Errorf("PR なしの notice が出ない: %q", m.hintLine())
+	}
+	// nil もキャッシュされ、再度 p を押しても API へ行かない
+	_, cmd := m.handleKey("p")
+	if cmd != nil || m.prBusy[sha] {
+		t.Errorf("PR なしキャッシュ後に再取得した")
+	}
+}
+
+func TestBrowseOpenPRUnpushed(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses[m.commits[0].SHA] = StateUnpushed
+	if _, cmd := m.handleKey("p"); cmd != nil {
+		t.Errorf("未 push コミットで PR 取得が走った")
+	}
+	if !strings.Contains(m.hintLine(), "未 push") {
+		t.Errorf("未 push の notice が出ない: %q", m.hintLine())
+	}
+}
+
 func TestBrowseNonGitHubRepoPanel(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.hasRepo = false
