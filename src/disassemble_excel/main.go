@@ -41,7 +41,7 @@ func main() {
 	if len(rawArgs) > 0 && !strings.HasPrefix(rawArgs[0], "-") {
 		src, rawArgs = rawArgs[0], rawArgs[1:]
 	}
-	flag.CommandLine.Parse(rawArgs)
+	_ = flag.CommandLine.Parse(rawArgs) // flag.ExitOnError なのでエラーは返らず exit する
 	if src == "" {
 		src = flag.Arg(0)
 	}
@@ -146,13 +146,13 @@ func run(src, outDir, sheetsCSV string, maxCells int, noVBA, noGrid, force bool)
 	if err != nil {
 		return fmt.Errorf("open workbook: %w", err)
 	}
-	defer xl.Close()
+	defer func() { _ = xl.Close() }()
 
 	zr, err := zip.OpenReader(src)
 	if err != nil {
 		return fmt.Errorf("open zip: %w", err)
 	}
-	defer zr.Close()
+	defer func() { _ = zr.Close() }()
 
 	var only map[string]bool
 	if sheetsCSV != "" {
@@ -286,7 +286,7 @@ func convertXLSB(src string) (string, func(), error) {
 	if err != nil {
 		return "", nil, err
 	}
-	cleanup := func() { os.RemoveAll(tmpDir) }
+	cleanup := func() { _ = os.RemoveAll(tmpDir) } // 一時ディレクトリの掃除は best-effort
 
 	fmt.Fprintf(os.Stderr, "  xlsb: LibreOffice で .xlsm に変換中 (%s)\n", filepath.Base(soffice))
 	cmd := exec.Command(soffice, "--headless",
@@ -330,7 +330,7 @@ func extractVBAFromZip(zr *zip.Reader) ([]Module, error) {
 	if rc == nil {
 		return nil, fmt.Errorf("no vbaProject.bin (not a macro workbook)")
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	bin, err := io.ReadAll(rc)
 	if err != nil {
 		return nil, err
@@ -357,7 +357,7 @@ func fileSHA256(path string) string {
 	if err != nil {
 		return ""
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return ""

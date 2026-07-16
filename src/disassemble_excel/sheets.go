@@ -67,7 +67,7 @@ func parseSharedStrings(zr *zip.Reader) []string {
 	if f == nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	dec := xml.NewDecoder(f)
 	var out []string
 	for {
@@ -105,15 +105,17 @@ func parseWorkbookSheets(zr *zip.Reader) []wbSheet {
 		Sheets []sheetEl `xml:"sheets>sheet"`
 	}
 	if f := openZip(zr, "xl/workbook.xml"); f != nil {
-		xml.NewDecoder(f).Decode(&wb)
-		f.Close()
+		// 欠損/壊れた XML は best-effort (ゼロ値のまま続行し、参照側が空を扱う)
+		_ = xml.NewDecoder(f).Decode(&wb)
+		_ = f.Close()
 	}
 	var rels struct {
 		Rel []relEl `xml:"Relationship"`
 	}
 	if f := openZip(zr, "xl/_rels/workbook.xml.rels"); f != nil {
-		xml.NewDecoder(f).Decode(&rels)
-		f.Close()
+		// 欠損/壊れた XML は best-effort (ゼロ値のまま続行し、参照側が空を扱う)
+		_ = xml.NewDecoder(f).Decode(&rels)
+		_ = f.Close()
 	}
 	ridTarget := map[string]string{}
 	for _, r := range rels.Rel {
@@ -173,7 +175,7 @@ func extractSheet(zr *zip.Reader, target, name string, shared []string, xl *exce
 	if f == nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	sh := &Sheet{Name: name}
 	dec := xml.NewDecoder(f)

@@ -123,9 +123,9 @@ func writeValuesCSV(path string, sh *Sheet) error {
 	if err != nil {
 		return err
 	}
-	defer fp.Close()
+	// 早期 return 時の解放用。正常系は末尾の明示 Close が先に走り、こちらは無害な二重 Close になる
+	defer func() { _ = fp.Close() }()
 	w := csv.NewWriter(fp)
-	defer w.Flush()
 
 	header := make([]string, maxCol+1)
 	header[0] = ""
@@ -145,7 +145,12 @@ func writeValuesCSV(path string, sh *Sheet) error {
 			return err
 		}
 	}
-	return nil
+	// 書き込みファイルなので Flush / Close のエラーは握り潰さない (silent なデータ欠損防止)
+	w.Flush()
+	if err := w.Error(); err != nil {
+		return err
+	}
+	return fp.Close()
 }
 
 func writeDefinedNames(path string, names []DefinedName) error {

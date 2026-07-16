@@ -43,7 +43,7 @@ func sheetDrawingRels(zr *zip.Reader, wsTarget string) (drawings, vmls []string)
 	if f == nil {
 		return nil, nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var rels struct {
 		Rel []struct {
 			Type   string `xml:"Type,attr"`
@@ -118,7 +118,7 @@ func parseDrawingObjects(zr *zip.Reader, target, sheet string) []DrawingObject {
 	if f == nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var out []DrawingObject
 	dec := xml.NewDecoder(f)
@@ -178,7 +178,7 @@ func parseVMLObjects(zr *zip.Reader, target, sheet string) []DrawingObject {
 	if f == nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var out []DrawingObject
 	dec := xml.NewDecoder(f)

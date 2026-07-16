@@ -122,7 +122,8 @@ func findProcs(src string) []Proc {
 		if m == nil {
 			continue
 		}
-		kind := strings.Title(strings.ToLower(strings.Fields(m[1])[0]))
+		word := strings.ToLower(strings.Fields(m[1])[0])
+		kind := strings.ToUpper(word[:1]) + word[1:]
 		if strings.HasPrefix(strings.ToLower(m[1]), "property") {
 			kind = "Property"
 		}
