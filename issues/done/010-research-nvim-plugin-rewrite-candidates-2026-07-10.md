@@ -61,7 +61,7 @@
 
 ## フォローアップ
 1. ~~modes.nvim を「削除 / 現状維持」判断~~ → **✅ 削除を選択・実施済み（2026-07-10）**。`_nviminit.lua` の spec と `_lazy-lock.json` entry を除去。実体は次回 `:Lazy clean` で消える（ユーザー操作）。`docs/nvim-plugins.md`・`008-research-nvim-config-audit-2026-07-10.md` も追従更新。
-2. 関連: [`009-refactor-nvim-vimscript-to-lua-migration.md`](009-refactor-nvim-vimscript-to-lua-migration.md)（Vimscript→Lua 移行の記録）/ [`008-research-nvim-config-audit-2026-07-10.md`](done/008-research-nvim-config-audit-2026-07-10.md)（設定監査）。
+2. 関連: [`009-refactor-nvim-vimscript-to-lua-migration.md`](009-refactor-nvim-vimscript-to-lua-migration.md)（Vimscript→Lua 移行の記録）/ [`008-research-nvim-config-audit-2026-07-10.md`](008-research-nvim-config-audit-2026-07-10.md)（設定監査）。
 
 ---
 

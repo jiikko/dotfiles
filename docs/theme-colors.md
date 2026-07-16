@@ -101,6 +101,6 @@ window を切り替えると、current 島が **切替直前の表示色 → 暗
 - window list の虹色分け (index%6) — 「実使用で見にくい」
 - `#[blink]` 属性 — 消灯位相で読めない
 - 現在地色のローズ / ショッキングピンク / Coral 系は検討済み (採用は蛍光オレンジ 202。
-  候補比較の経緯: issues/017-feat-claude-code-orange-theme-2026-07-16.md)
+  候補比較の経緯: issues/done/017-feat-claude-code-orange-theme-2026-07-16.md)
 - fade のシアンは「オレンジ基調から浮く」(ユーザー判断) で却下しバイオレットへ。シアンは
   bell/メッセージの通知専用に転用 (常在させず稀なイベントに使うことで「浮き」を強みに変えた)

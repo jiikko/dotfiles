@@ -3,7 +3,7 @@
 作成日: 2026-07-16
 目的: 現在の配色 (ニュートラル暗灰の地 + ショッキングピンク現在地 + シアン fade) を、
 Claude Code の UI のような「暖かい暗色の地 + 落ち着いたオレンジのアクセント」基調へ揃える。
-前提資産: 色の定数化と変更ガイドラインは整備済み ([docs/theme-colors.md](../docs/theme-colors.md)、
+前提資産: 色の定数化と変更ガイドラインは整備済み ([docs/theme-colors.md](../../docs/theme-colors.md)、
 nvim は palette.lua / tmux は @cur-accent 等)。**このおかげで変更箇所は「定数」単位で済む**。
 
 ---
@@ -136,6 +136,8 @@ fade をバイオレットへ移行した後の ramp サンプル:
 色言語の全体像: **橙 = いま (自分がいる場所)** / **紫 = さっきまで (残光が冷める)** /
 **シアン = イベント (bell・メッセージの ping)** / 赤 = 危険 / 緑 = 稼働中。
 
+> **完了追記 (2026-07-17)**: Phase 1/2 とも実装済み (e5e9b6d で本体、408ac22 で現在地アクセントを蛍光オレンジ 202 へ強化、7119410 で ClaudeWarm.terminal の復元整備まで)。下記「リスク / 未決定事項」のうち blink/scratch の colour201 は**維持で確定**して運用中 — 実運用で紫 fade と紛れる事象が出たら 213 への変更を再評価する (それまで本 issue は再オープンしない)。現在の色マップの一次情報は docs/theme-colors.md。
+
 ## リスク / 未決定事項
 
 - **fade バイオレットの衝突管理**: hot 201 が現行のシステム magenta 家族と同色のため、
@@ -154,6 +156,6 @@ fade をバイオレットへ移行した後の ramp サンプル:
 
 ## 関連
 
-- [docs/theme-colors.md](../docs/theme-colors.md) — 色の意味マップ・変更手順・ペア表 (適用後に更新)
-- [docs/tmux-window-fade.md](../docs/tmux-window-fade.md) — fade の設計判断 (シアン採用の経緯)
+- [docs/theme-colors.md](../../docs/theme-colors.md) — 色の意味マップ・変更手順・ペア表 (適用後に更新)
+- [docs/tmux-window-fade.md](../../docs/tmux-window-fade.md) — fade の設計判断 (シアン採用の経緯)
 - `nvim/lua/dotfiles/palette.lua` / `_tmux.conf` の `@cur-accent` — 定数の実体
