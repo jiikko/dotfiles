@@ -124,33 +124,100 @@ func parseCount(s string) (int, error) {
 func usageShort() string {
 	return `対応している引数:
   -n <count> / -n<count> / --max-count=<count>   表示件数 (既定 20、負数で無制限)
+  --oneline                                       コンパクト 1 行表示
   --stat                                          diffstat を表示
   -p / --patch                                    patch を表示
-  --oneline                                       コンパクト 1 行表示 (既定は git log 標準形式)
-  --no-pager                                      対話ブラウズせず静的出力する
   --cached                                        HEAD の CI 状態 + staged diff を表示
+  --no-pager                                      対話ブラウズせず静的出力する
   --refresh                                       CI キャッシュを無視して再取得
   --no-cache                                      CI キャッシュを読み書きしない
+  -h / --help                                     このヘルプを表示
   <revision> / -- <pathspec>                      git log へそのまま渡す`
 }
 
 // Usage はヘルプ全文。git log の全引数互換を目標にしない旨を明記する (issue の完了条件)。
 func Usage() string {
-	return `glog — GitHub Actions / Checks の結果を添える git log ラッパー
+	return `glog — GitHub Actions / Checks の結果をコミットごとに添える git log ラッパー
+
+コミット履歴を即時表示し、GitHub の CI 状態 (statusCheckRollup) を非同期で
+埋める。TTY では less 風の対話ブラウズになり、コミットを選んで CI job の
+一覧を展開できる。
 
 使い方:
-  glog [-n <count>] [--stat] [-p] [<revision>] [-- <pathspec>]
+  glog [オプション] [<revision>] [-- <pathspec>]
   glog --cached [--stat | -p]
 
-` + usageShort() + `
+オプション:
+  -n <count>, -n<count>, --max-count=<count>
+        表示するコミット数。既定は 20 (git log と異なり全履歴を流さない。
+        CI の一括取得数が表示件数に比例するため)。git log と同じく負数
+        (例: -n -1) で無制限
+  --oneline
+        コンパクト 1 行形式で表示する。既定は git log 標準 (medium) 形式
+        (commit 行 + Author + Date + メッセージ)
+  --stat
+        各コミットに diffstat を付ける。CI 記号は commit 行にだけ付く
+  -p, --patch
+        各コミットに patch を付ける。出力が大きくなるため -n の併用を推奨
+  --cached
+        git log には無いラッパー独自モード。HEAD の CI 状態と
+        git diff --cached (staged 変更) を表示する。staged 変更自体には
+        CI 結果が存在しないため、表示されるのは「HEAD の」CI 状態
+        (--stat で diffstat、-p でフル patch。既定は diffstat)
+  --no-pager
+        TTY でも対話ブラウズを開かず、CI 取得完了後に静的出力する
+  --refresh
+        CI キャッシュを読まずに再取得する (取得結果はキャッシュへ保存する)
+  --no-cache
+        CI キャッシュを読みも書きもしない
+  -h, --help
+        このヘルプを表示する
 
-git log の全引数への互換は目標にしていません。
-上記以外の引数が必要な場合は git log を直接使ってください。
+対話ブラウズのキー操作 (TTY のみ):
+  j / k / ↑ / ↓ / Ctrl-N / Ctrl-P
+                            コミット移動
+  Enter / Space / l / Tab   CI job 一覧の展開 / 折りたたみ
+  Ctrl-D / Ctrl-U / PgDn / PgUp
+                            ページスクロール
+  g / G                     先頭 / 末尾のコミットへ
+  q / Esc / Ctrl-C          終了 (最終表示はターミナル履歴に残る)
 
-TTY では less 風の対話ブラウズになります:
-  j/k/↑/↓  コミット移動      Enter/Space  CI job 一覧の展開/折りたたみ
-  Ctrl-D/U ページスクロール   q            終了 (最終表示は履歴に残る)
+  全件キャッシュ済みで 1 画面に収まる場合は、ブラウズを開かずそのまま
+  出力して終了する (less -F 相当)。stdout がパイプ / リダイレクトの
+  場合は常に静的出力で、ANSI カーソル制御は出さない。
 
 CI 状態の記号:
-  ✓ 成功   ✗ 失敗   ● 実行中/待機   ⊘ cancelled/skipped   – Check なし   ? 取得不能`
+  ✓  すべての対象 Check が成功 (skipped 混在は成功扱い)
+  ✗  1 つ以上の Check が失敗
+  ●  queued / in_progress / pending
+  ⊘  cancelled / skipped / neutral のみ
+  –  Check が存在しない (未 push のコミットを含む)
+  ?  未取得・取得不能 (gh 未導入 / 未認証 / API 障害)
+  ⠋  取得中 (TTY のみ)
+
+GitHub 連携と前提:
+  - 認証は GitHub CLI (gh) へ委譲する。gh auth login 済みであること。
+    gh が未導入・未認証でも Git 履歴の表示は成立する (CI 欄は ? / –)
+  - remote (upstream → origin) から owner/repo を解決する。GitHub 以外の
+    remote では CI 欄は – になる
+  - CI 状態は ~/.cache/glog/ ($XDG_CACHE_HOME 対応) に状態別 TTL で
+    キャッシュされる (success/failure 24h, pending 10s など)
+
+使用例:
+  glog                     直近 20 件をブラウズ
+  glog -n 5 --oneline      直近 5 件をコンパクト表示
+  glog --stat main..HEAD   main からの差分コミットを diffstat 付きで
+  glog -- src/glog/        特定パスに触れたコミットだけ
+  glog --cached            commit 前に staged 変更と HEAD の CI を確認
+  glog --no-pager -n 50 | grep '✗'
+                           失敗コミットだけ抜き出す (パイプでは記号は素の文字)
+
+終了コード:
+  0    Git 履歴の表示に成功 (CI 取得の失敗は警告 1 行に落として 0 を返す)
+  2    引数エラー (未対応の引数を含む)
+  それ以外  git 自体が失敗した場合、その終了コードをそのまま返す
+
+git log の全引数への互換は目標にしていません。
+上記以外の引数はエラーになります。その場合は git log を直接使ってください。
+詳細: ~/dotfiles/src/glog/README.md`
 }
