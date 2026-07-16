@@ -9,8 +9,10 @@
 #                         放置フェード等の式が重くなっていないかの回帰検知)
 #   - new_window / kill_window : window churn (window-linked/unlinked hook が
 #                        debounced_save を -b で fork する経路込みの体感コスト)
-#   - select_window    : window 切替 (after-select-window hook が tmux-mark-seen.sh を
-#                        -b で fork する経路込み)
+#   - select_window    : window 切替 (after-select-window hook が tmux-mark-seen.sh と
+#                        tmux_ignite_current.sh (点火アニメ) を -b で fork する経路込み。
+#                        アニメーターのフレーム refresh がサーバで直列化するため連打時は
+#                        1 切替あたり数十 ms 相当になる = 意図したコスト。budget 参照)
 #   - mark_seen_direct : tmux-mark-seen.sh の同期実行 1 回あたり (hook の実コスト)
 #
 # 出力: "metric=<name> ms=<value>" 行の列挙。CI では report-only (閾値 fail なし。
@@ -95,7 +97,7 @@ for i in {1..20}; do
 done
 report kill_window_x20 $(( $(now_ms) - t0 ))
 
-# --- select_window: after-select-window hook (mark-seen fork) 込みの切替 --------
+# --- select_window: after-select-window hook (mark-seen + 点火アニメ fork) 込みの切替 ---
 "${TMUX_CMD[@]}" new-window -d -t bench -n alt
 t0=$(now_ms)
 for _ in {1..50}; do

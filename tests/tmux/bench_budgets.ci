@@ -8,5 +8,10 @@ tmux_rtt_x100 1200
 status_render_x200 2500
 new_window_x20 600
 kill_window_x20 600
-select_window_x100 3000
+# select は 2026-07-16 の点火アニメ (scripts/tmux_ignite_current.sh、after-select-window[1] hook)
+# 導入で意図的にコスト増: 切替ごとにアニメーターが fork し、フレームの refresh-client -S
+# (status 再描画) がサーバのイベントループで後続 select と直列化する。導入後の CI 実測
+# 7430ms (run 29500999240) × ~2.2 で更新 (旧 3000 は導入前実測基準)。アニメを削る改修を
+# したらこの値も再実測で絞り直すこと。
+select_window_x100 16000
 mark_seen_direct_x20 1500
