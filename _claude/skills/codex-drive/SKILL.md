@@ -39,7 +39,7 @@ codex 往復より速いので Claude が直接やってよい (`subagent-model-
   - `medium`: 設計判断を含む実装・複数ファイル横断のリファクタ/rename・非自明な wire/protocol 実装・根本原因分析・
     分析駆動の構造修正。「low で出したら質が低かった」ときも一段上げてやり直す。
   - `high`: 上記でも収束しない難所 (framework 内部挙動・並行不整合・二回外した後の分析)。ここまで上げても
-    収束しないなら forge / cross-review へ escalate ([`escalate-to-forge-after-failed-tries.md`](escalate-to-forge-after-failed-tries.md))。
+    収束しないなら forge / cross-review へ escalate ([`escalate-to-forge-after-failed-tries.md`](../../rules/escalate-to-forge-after-failed-tries.md))。
   → 迷ったら low で 1 回出して質を見て、足りなければ一段上げる。コスト階層 (`subagent-model-tiering.md`) と同じ思想で
     「安く出して足りなければ上げる」を既定運用にする。以降の実行コマンド例の `="low"` はこの選択の初期値であり、
     substantive なタスクでは `="medium"` (以上) に置き換えて起動する。

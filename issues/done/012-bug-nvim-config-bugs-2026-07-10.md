@@ -83,7 +83,7 @@
 - **ファイル**: [_nviminit.lua:816](../_nviminit.lua)
 - **内容**: `<Tab>` と `<C-i>` は内部キーコードが同一 (端末が拡張キー報告で区別しない限り。主環境の Apple Terminal + tmux は区別しない)。`nmap <Tab> zo` により `<C-o>` で戻った後 `<C-i>` で進む操作が **fold open に化ける**。
 - **実測**: `<Tab>` に nmap を張り `<C-i>` を feedkeys → **マップが発火** (hit=1)。`maparg("<C-i>","n")` も同一マップを返す (検証: `tmp/nvim-audit/v7_tab.lua`)。
-- **対応方針**: fold 開閉を `<Tab>` 以外 (既定の `za`/`zo` 系や `<leader>` 配下) へ移すのが根本。`<Tab>` を維持するなら「<C-i> は失われる」旨の rationale コメントを添える ([`pending-issue-rationale-in-code.md`](../_claude/rules/pending-issue-rationale-in-code.md))。
+- **対応方針**: fold 開閉を `<Tab>` 以外 (既定の `za`/`zo` 系や `<leader>` 配下) へ移すのが根本。`<Tab>` を維持するなら「<C-i> は失われる」旨の rationale コメントを添える ([`pending-issue-rationale-in-code.md`](../../_claude/rules/pending-issue-rationale-in-code.md))。
 
 ### 9. [keymap-shadow] nmap <C-]> → <Esc> が tag jump を全バッファで潰す (:help のリンク辿り不可)
 
@@ -115,7 +115,7 @@
 
 ### 13. [vendored-doc] ambiwidth.nvim README の g:ambiwidth_add_list 設定例が既定 cica レンジと重複し、従うと全レンジが無効化される
 
-- **ファイル**: [vendor/nvim-plugins/ambiwidth.nvim/README.md:14](../vendor/nvim-plugins/ambiwidth.nvim/README.md)
+- **ファイル**: [vendor/nvim-plugins/ambiwidth.nvim/README.md:14](../../vendor/nvim-plugins/ambiwidth.nvim/README.md)
 - **内容**: 例示の `[[0xfe566, 0xfe568, 2], [0xff500, 0xffd46, 2]]` は既定 cica テーブル (lua/ambiwidth.lua:109-110) に**既に含まれる**。例をそのまま設定すると `setcellwidths()` が E1113 (Overlapping ranges) で失敗し、all-or-nothing のため **base+cica 全 95 レンジが不適用**になる (WARN 通知 1 回のみ)。upstream 由来の doc drift だが vendored 後も実害が残る。
 - **実測**: README の例を設定して setup → `getcellwidths()` = **0 件**、`strdisplaywidth("℃")` = 1 (本来 2)。E1113 の WARN も確認 (検証: `tmp/nvim-audit/v5_ambi.lua`)。
 - **対応方針**: README の例を既定に含まれないレンジへ差し替える。構造側は、setup() で add_list を base+cica と突き合わせて重複を除外 (または add_list 単独で先に検証) すれば「例に従うと全滅」という脆さ自体が消える。

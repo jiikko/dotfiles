@@ -400,7 +400,6 @@ set -g status-right ""   # continuum autosave 用に最小長は残す
 | zoom 色強調 | format | #{?window_zoomed_flag,...} 背景反転 | `_tmux.conf` |
 | アクティブ pane 面色 | 常時 | window-style / window-active-style / cursor-style (3.4+) | `_tmux.conf` |
 | scratch / prefix 点滅 | scratch 表示時・prefix 押下時 | #{T:@secfmt} + #{e|m:} 剰余の format 算術（fork ゼロ） | `_tmux.conf` status-left |
-| popup 残骸の refresh | scratch close 直後 | refresh-client（3.5a〜3.6b #4920 回避。3.7 で修正済みのため削除可） | `scripts/tmux_refresh_all_clients.sh` |
 | セッション bootstrap / 復元待ち | `t` / `tt` コマンド | new-session / has-session / @tt-restore-complete 待ち | `zshlib/_tmux_session.zsh` |
 | window 名 = コマンド名追従 | preexec/precmd | automatic-rename-format '#{pane_title}' + OSC 2 | `zshlib/_tmux_window_name.zsh` |
 
@@ -425,7 +424,7 @@ set -g status-right ""   # continuum autosave 用に最小長は残す
 
 - **display-popup**: 3.2+。`-e` / `-x/-y` / `#{popup_*}` は 3.3 前後。3.5a で利用可。
 - **popup 内 shell-command の制約**: `#{...}` フォーマット・`-e` の値が展開されず `TMUX_PANE` も無い（3.6a で実測）。対象 pane は popup 内から `tmux display-message -p '#{pane_id}'` で都度解決する（`bind x/q/M-c` のコメント参照）。
-- **popup overlay 再描画バグ（issue #4920）**: 3.5a〜3.6b で popup を閉じた後に枠が ~1 秒残るアーティファクトがあった。fix は 3.7 で収録。本 repo は閉じた直後に `refresh-client` で潰す回避（`scripts/tmux_refresh_all_clients.sh`）を入れていたが、実機が 3.7b になったため回避は削除可能（現状は残置）。
+- **popup overlay 再描画バグ（issue #4920）**: 3.5a〜3.6b で popup を閉じた後に枠が ~1 秒残るアーティファクトがあった。fix は 3.7 で収録。本 repo は閉じた直後に `refresh-client` で潰す回避（旧 `scripts/tmux_refresh_all_clients.sh`）を入れていたが、実機が 3.7b になったため回避は撤去済み。
 - **`#()` パーサの落とし穴**: format の `#(...)` 内に `$(...)` を直書きすると `)` を閉じ括弧と誤認して壊れる（実測）。外部スクリプト化が定石。
 - **display-menu**: 3.0+、スタイル系は 3.4+。`command-prompt -N/-T` は 3.1+、`-b` は 3.3+。`confirm-before -b` は 3.2+。
 - **pane-scrollbars**: 3.6 で追加。3.5 以前で素に `set` すると "invalid option" 警告が出るため if-shell で版数ガードしている（本環境 3.7b では then 節 = off 設定が発火）。3.6a ではバー表示中にペインが 1 列 narrow され本文が reflow されるため off 運用。

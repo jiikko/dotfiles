@@ -79,4 +79,4 @@
 
 ## 補足
 - vendoring 済みプラグインは `vendor/nvim-plugins/`（`VENDOR.md` に取得元・ライセンス・更新手順を記載する規約）。**Lua 移植したら VENDOR.md の「更新手順」も Lua 版に改訂**する（vim-toggle が手本）。
-- 関連: 設定監査は [`008-research-nvim-config-audit-2026-07-10.md`](008-research-nvim-config-audit-2026-07-10.md)。
+- 関連: 設定監査は [`008-research-nvim-config-audit-2026-07-10.md`](done/008-research-nvim-config-audit-2026-07-10.md)。

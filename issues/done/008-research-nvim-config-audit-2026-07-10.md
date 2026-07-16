@@ -23,7 +23,7 @@
 
 ### 2. [P3 / silent-behavior-loss] ✅ modes.nvim: `set_number = false` が固定バージョン v0.2.1 で無効
 
-> **後日追記（2026-07-10）**: modes.nvim は**プラグインごと削除**した（この config では truecolor 端末のモード別カーソル色のみに価値が限定されるため。判断経緯は [`010-research-nvim-plugin-rewrite-candidates-2026-07-10.md`](010-research-nvim-plugin-rewrite-candidates-2026-07-10.md)）。下記の v0.3.0 更新対応は削除により moot。`:Lazy restore` の要フォローも不要（代わりに `:Lazy clean` で実体が消える）。
+> **後日追記（2026-07-10）**: modes.nvim は**プラグインごと削除**した（この config では truecolor 端末のモード別カーソル色のみに価値が限定されるため。判断経緯は [`010-research-nvim-plugin-rewrite-candidates-2026-07-10.md`](../010-research-nvim-plugin-rewrite-candidates-2026-07-10.md)）。下記の v0.3.0 更新対応は削除により moot。`:Lazy restore` の要フォローも不要（代わりに `:Lazy clean` で実体が消える）。
 
 - **ファイル**: `_nviminit.lua:648,654`（`tag = "v0.2.1"` 固定 + `set_number = false`）
 - **内容**: 固定 `v0.2.1`（commit `2cd194d`）の実ソース `lua/modes.lua` で `set_number` は **L15 の既定テーブルにしか現れず、どこからも読まれない**（`grep set_number lua/` のヒットは 1 行のみ）。`M.highlight()` は全 scene の `winhighlight` マップ（`CursorLineNr` 含む）を `set_number` の判定なしに無条件適用する。→ `set_number=false`（行番号背景を無効化する意図）は**効かない**。ゲート `if not config.set_number then winhl_map.CursorLineNr = nil end` は後続 commit `9ca1d68`("fix: ignored `set_number` config (#45)", 2023-09-20) で追加され、これは `2cd194d` の子孫（`git merge-base --is-ancestor 2cd194d 9ca1d68` = 真）。
@@ -52,7 +52,7 @@
 
 ### A. nvim-treesitter を frozen `master` ブランチに固定 → intentional-design
 - `_nviminit.lua:159-176`。`branch = "master"` + classic `require("nvim-treesitter.configs").setup(...)`。master は凍結系統（`main` が rolling）だが、**設定コメントに「parser/query の matched set を固定し `main` の drift を避ける」意図が明記済み**。`verify-design-intent-before-refactor.md` に従い「migrate to main」は**指摘しない**。固定コミット `cf12346a`(2026-03-23) で headless ロード・全プラグイン強制ロードとも非推奨/エラーなし。`:checkhealth nvim-treesitter` の "errors found in the query, try to run :TSUpdate {lang}" は**凡例テキスト**で実 parser エラーではない。
-- **後日追記（2026-07-10）**: 上流 repo `nvim-treesitter/nvim-treesitter` は **2026-04 頃に archive（read-only）化された**（API `archived=true` + "Public archive" バッジで確認、最終 push 2026-04-03）。main README は「master は locked、**Nvim 0.11 との後方互換のために残す**／main rewrite は **0.12+ 必須**」と明言しており、nvim 0.11.5 の本 config では master ピンが引き続き正しい選択。**移行トリガー = Neovim 0.12+ への更新時**（main 系 rewrite へ textobjects とセットで移行を計画）。詳細: [`010-research-nvim-plugin-rewrite-candidates-2026-07-10.md`](010-research-nvim-plugin-rewrite-candidates-2026-07-10.md) 追記節。
+- **後日追記（2026-07-10）**: 上流 repo `nvim-treesitter/nvim-treesitter` は **2026-04 頃に archive（read-only）化された**（API `archived=true` + "Public archive" バッジで確認、最終 push 2026-04-03）。main README は「master は locked、**Nvim 0.11 との後方互換のために残す**／main rewrite は **0.12+ 必須**」と明言しており、nvim 0.11.5 の本 config では master ピンが引き続き正しい選択。**移行トリガー = Neovim 0.12+ への更新時**（main 系 rewrite へ textobjects とセットで移行を計画）。詳細: [`010-research-nvim-plugin-rewrite-candidates-2026-07-10.md`](../010-research-nvim-plugin-rewrite-candidates-2026-07-10.md) 追記節。
 
 ### B. blink.cmp `version = "*"` → v1.10.2（最新）で outdated ではない
 - `_nviminit.lua:257`。lazy-lock の固定コミット `78336bc` を `git describe --tags` すると **`v1.10.2`**（この環境はネットワーク未達のため**キャッシュ済みローカルタグ上で最新**。外部最新は未確認だが、`version="*"` は最新リリースを追う指定なので古くはならない）。`"branch":"main"` は lockfile の既定ブランチ表記のノイズであり、commit が権威。プリビルドバイナリ利用 + `fuzzy.implementation="prefer_rust_with_warning"` フォールバックも意図的で、cargo 非搭載機の起動死を回避する正しい設計。誤検出防止のため明示的にクローズ。
