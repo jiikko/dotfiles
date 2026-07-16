@@ -58,7 +58,8 @@
 | ✅ gopls + treesitter + conform + treesitter-textobjects | Go | - | 同構成 | × | × | いいえ | **2026-07: fatih/vim-go (Vimscript 19k 行) を置換**。ハイライトは treesitter(go/gomod/gosum)、定義/実装/参照/hover は gopls (native LSP)、整形は conform goimports を go 保存時に発火 (旧 go_fmt_autosave/go_imports_autosave 相当)、関数ジャンプ `]]`/`[[` とテキストオブジェクト `af`/`if`/`ac`/`ic` は treesitter-textobjects、GoDecls は telescope symbols で置換 (Go 限定は nvim/ftplugin/go.lua)。`K`=hover は nvim 0.11 native 既定。 |
 | ~~github/copilot.vim~~    | AI 補完      | — | — | — | — | — | **✅ 削除済み**(2026-07。残骸掃除まで完了)。AI 支援は sidekick.nvim + Claude Code に集約。 |
 | ✅ neovim/nvim-lspconfig  | LSP サーバ設定 | - | 同プロジェクト | × | × | いいえ | 2026-07 に coc.nvim から移行。nvim 0.11 の `vim.lsp.config`/`vim.lsp.enable` に載る。 |
-| ✅ mason-org/mason.nvim | LSP/ツール管理 | - | 同プロジェクト | × | × | いいえ | サーバ/formatter/linter のバイナリ管理。mason-lspconfig は廃止 (2026-07-11、初回 BufReadPre ~13ms 削減)。enable は vim.lsp.enable() 直呼び、導入は mason-tool-installer に一本化。 |
+| ✅ mason-org/mason.nvim | LSP/ツール管理 | - | 同プロジェクト | × | × | いいえ | サーバ/formatter/linter のバイナリ管理基盤。mason-lspconfig は廃止 (2026-07-11、初回 BufReadPre ~13ms 削減)。enable は vim.lsp.enable() 直呼び、導入は mason-tool-installer に一本化。 |
+| ✅ WhoIsSethDaniel/mason-tool-installer.nvim | LSP/formatter/linter の導入実行 | - | 同プラグイン | × | × | いいえ | ensure_installed の宣言的導入。mason-lspconfig 廃止後は LSP サーバ実体の導入もここが受け皿 (mason.nvim=管理基盤 / 本プラグイン=導入実行の分担)。keep-as-is 判定済み (`issues/nvim-plugin-rewrite-candidates-2026-07-10.md`)。 |
 | ✅ saghen/blink.cmp       | 補完         | - | `hrsh7th/nvim-cmp` | × | × | いいえ | coc の補完後継。`version="*"` でプリビルドバイナリ（cargo 不要）。`<CR>` 確定。 |
 | ✅ stevearc/conform.nvim  | 整形         | - | 同プラグイン | × | × | いいえ | `:Format`/`<leader>f`。prettier/shfmt、他は `lsp_format=fallback`。 |
 | ✅ mfussenegger/nvim-lint | Lint         | - | 同プラグイン | × | × | いいえ | sh の shellcheck（旧 coc-diagnostic 相当）。他言語は LSP 診断。 |
