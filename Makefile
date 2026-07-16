@@ -57,6 +57,7 @@ ZSH_SYNTAX_FILES := \
   zshlib/_concat.zsh \
   zshlib/_concat_helpers.zsh \
   zshlib/_ensure_cli_with_brew.zsh \
+  zshlib/_ffprobe_helpers.zsh \
   zshlib/_repair.zsh \
   zshlib/_tmux_session.zsh \
   zshlib/_tmux_window_name.zsh
@@ -68,7 +69,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: pull test test-runtime test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-go-lint test-registration
+.PHONY: pull test test-runtime test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-go-lint test-registration test-lint-coverage print-lint-files
 
 # settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
 # pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、
@@ -211,7 +212,7 @@ test-ruby-syntax:
 		echo "[ruby-syntax] ruby not found; skipping"; \
 	fi
 
-test-lint: test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax
+test-lint: test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint-coverage
 
 # src/parallel-each (Go) の静的解析。実体は src/parallel-each/Makefile の lint
 # ターゲット (go run で golangci-lint をバージョン固定実行) に閉じており、ここは
@@ -227,3 +228,13 @@ test-go-lint:
 # tests/ 配下のテストが Makefile に登録されているか検証し、死蔵テストを防ぐ meta テスト。
 test-registration:
 	@tests/test_registration.sh
+
+# 全 shell script が lint リスト (SHELLCHECK_FILES / ZSH_SYNTAX_FILES) に登録され、かつ列挙が
+# 実在するか検証する meta テスト。script 増減時のリスト追従漏れ (未 lint / 削除残りで shellcheck が
+# "does not exist" 落ち) を構造的に防ぐ。test-lint に組み込み Lint CI で走る。
+test-lint-coverage:
+	@tests/test_lint_coverage.sh
+
+# lint 対象リストを1行ずつ出力 (test_lint_coverage.sh が権威的に読むため。手動 grep パースを避ける)。
+print-lint-files:
+	@printf '%s\n' $(SHELLCHECK_FILES) $(ZSH_SYNTAX_FILES)
