@@ -10,9 +10,10 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 |---|---|---|---|
 | **現在地** (いまここ) | 蛍光オレンジ `#FF5F00`/202 (cterm 完全一致。変遷: ピンク199→Coral 173→蛍光 202、いずれも 2026-07-16) | `@cur-accent` (current window 島) | `palette.accent.current_accent` (bufferline 選択タブ。選択バーはクリーム light1=蛍光橙地で橙マーカーが消えるため) |
 | 最近作業した (鮮度) | バイオレット ramp 201→164→127→90→53 (黄昏の残光。旧シアン 51→23) | `@fade-*` (放置フェード) | — (対応概念なし。持ち込まない) |
-| 選択中テキスト | Kraft `#D4A27F`/180 (旧ローズ #d3869b) | — | `palette.accent.kraft` (Visual)。現在地 Coral より一段落ち着けたのは意図的 (長時間注視するため)。truecolor/256色の両環境に適用 |
+| 選択中テキスト | Kraft `#D4A27F`/180 (旧ローズ #d3869b) | — | `palette.accent.kraft` (Visual)。現在地 (蛍光オレンジ) より一段落ち着けたのは意図的 (長時間注視するため)。truecolor/256色の両環境に適用 |
 | 通知 (bell/メッセージ) | シアン 51 (fade から転用。稀なイベントの ping 2026-07-16) | bell セル反転・message-style (alert 帯/: プロンプト)・copy-mode current match | — |
-| マーカー (未保存/選択バー) | 橙 208 | copy-mode mark 行 | `palette.bright_orange` (bufferline indicator・incline ●) |
+| マーカー (未保存) | 橙 208 | copy-mode mark 行 | `palette.bright_orange` (incline ● のみ) |
+| 選択バー (bufferline) | クリーム light1 `#ebdbb2`/223 | — | `palette.light1` (indicator_selected。旧橙208は蛍光橙地202と d=40 でほぼ不可視のため変更 2026-07-16) |
 | 点滅/scratch アイデンティティ | マゼンタ 201 | prefix/SCRATCH 点滅・scratch チップ/popup 枠 (fade hot 201 と紛れるなら 213 へ。ライブ判断) | — |
 | 危険/警告状態 | 赤 160 (zoom) / 196 (sync) | `@zoom-accent` / pane-border sync | `palette.diag.error_bg` (診断は coc 踏襲の別系統) |
 | アクティブ pane | 緑 46 (枠・ACTIVE 帯) / terminal 既定地 (=プロファイルの暖色。旧紺 17) | pane-active-border / `window-active-style bg=terminal` | — (nvim は自前で地を塗る) |
@@ -26,10 +27,15 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 - **tmux**: `_tmux.conf` の `@fade-*` (フェード) / `@cur-accent`・`@zoom-accent` (島と zoom) /
   `@claude-state-fg`・`@claude-state-glyph` (Claude 状態)。フェードの設計は
   [`tmux-window-fade.md`](tmux-window-fade.md)
+- **Terminal.app プロファイル (基調層)**: `mac/ClaudeWarm.terminal` — 地 #1F1E1D / 字 Manilla #EBDBBC /
+  カーソル Coral #D97757。256色主環境で唯一フル RGB を持てる層で、tmux の `bg=terminal`・nvim の
+  透過がこの色を継承する。**変えるには**: Terminal.app 設定→プロファイルで調整し、書き出しで
+  この .terminal を上書き (repo が復元手段)。**戻すには**: 適用前に控えた旧既定プロファイルへ
+  切り替えるだけ (このファイルの削除は不要)
 
 ## ツール横断で対にして変える色
 
-**現在地色 (Coral)** は tmux と nvim で同じ色を使う設計 (2026-07-16 統一)。変えるときは必ず両方:
+**現在地色 (蛍光オレンジ)** は tmux と nvim で同じ色を使う設計 (2026-07-16 統一)。変えるときは必ず両方:
 
 1. `_tmux.conf` の `@cur-accent` (256色番号)
 2. `nvim/lua/dotfiles/palette.lua` の `accent.current_accent` (hex + cterm の組)
@@ -40,7 +46,8 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 ## 変え方の手順
 
 ### tmux の色
-1. 実行中の tmux に `tmux set -g @cur-accent colour201` のように打ってライブで見る
+1. 実行中の tmux に `tmux set -g @cur-accent colour209` のように打ってライブで見る
+   (⚠️ 201 は fade hot・213 は点滅退避先の候補なので、試し色には使わないのが無難)
 2. 気に入ったら `_tmux.conf` の定数へ書き戻す (フェード定数と同じ流儀)
 3. `tests/tmux/test_tmux.sh` で format 展開のリーク検査
 
@@ -70,7 +77,7 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 - フェードの grayscale 階調 — 「上品だが目に飛び込んでこない」(2026-07-04)
 - window list の虹色分け (index%6) — 「実使用で見にくい」(2026-07-02)
 - `#[blink]` 属性 — 消灯位相で読めない (2026-07-03)
-- 選択タブの現在地色は ローズ→ショッキングピンク→Coral (オレンジ基調テーマ) と変遷 (いずれも 2026-07-16)。
+- 選択タブの現在地色は ローズ→ショッキングピンク→Coral→蛍光オレンジ 202 と変遷 (いずれも 2026-07-16)。
   戻す/変えるときは `accent.current_accent` と tmux `@cur-accent` の対で (経緯: issues/claude-code-orange-theme-2026-07-16.md)
 - fade のシアンはオレンジ基調テーマで「基調から浮く」(ユーザー判断) となりバイオレットへ変更 (2026-07-16)。
   シアンは bell/メッセージの通知色へ転用 (常在させず稀なイベントに使うことで「浮き」を強みに変えた)
