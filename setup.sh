@@ -136,6 +136,16 @@ for legacy in $legacy_links; do
   fi
 done
 
+# Terminal.app の見た目プロファイル (Claude Warm) を登録し、既定プロファイルにする (macOS のみ)。
+# どのマシンでも setup.sh 一発でプリセット選択が不要になる。実体は restore スクリプト参照。
+# ⚠️ DOTFILES_SKIP_TERMINAL_PROFILE=1 で skip できる: tests/setup が setup.sh を丸ごと実行する
+#   ため、これが無いとテストのたびに実ユーザーの Terminal 設定へ副作用が出る
+#   (defaults/osascript は $HOME 差し替えによる隔離が効かない)。
+if [ "$(uname)" = "Darwin" ] && [ -z "${DOTFILES_SKIP_TERMINAL_PROFILE:-}" ]; then
+  ~/dotfiles/scripts/terminal_profile_restore.sh || \
+    echo "WARN: Terminal プロファイルの適用に失敗。scripts/terminal_profile_restore.sh を単体で再実行して確認"
+fi
+
 # setup.sh の sha256 を state file に記録する (direnv 風の実行漏れ検出用)。
 # _zshrc が「現在の setup.sh の sha256」とこの記録を比較し、差分があれば再実行を促す。
 # 末尾まで到達した = 一通り適用済み、とみなして記録する (set -e は無いので警告があっても到達)。

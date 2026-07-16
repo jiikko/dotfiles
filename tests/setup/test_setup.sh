@@ -16,6 +16,9 @@ cleanup() {
 trap cleanup EXIT
 
 export HOME="$TEST_TMPDIR/home"
+# Terminal プロファイル適用は実ユーザー状態に触れる (defaults/osascript は HOME 隔離が
+# 効かない) ため必ず skip する
+export DOTFILES_SKIP_TERMINAL_PROFILE=1
 mkdir -p "$HOME"
 ln -s "$ROOT_DIR" "$HOME/dotfiles"
 
