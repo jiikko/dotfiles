@@ -4,10 +4,8 @@
 # concat helpers — concat コマンドの内部補助関数群
 # ------------------------------------------------------------------------------
 
-# 許可される拡張子のリスト
 __concat_allowed_extensions=(mp4 avi mov mkv webm flv wmv m4v mpg mpeg 3gp ts m2ts)
 
-# 内部補助: 拡張子が許可されているか確認
 __concat_is_allowed_ext() {
   local ext="${1:l}"  # 小文字に変換
   local allowed
@@ -17,7 +15,6 @@ __concat_is_allowed_ext() {
   return 1
 }
 
-# 内部補助: ファイルから拡張子を取得
 __concat_get_ext() {
   local file="$1"
   local base="${file:t}"
@@ -182,10 +179,7 @@ __concat_validate_sequence() {
 }
 
 # --- グルーピング (ディレクトリモード / マルチグループモード共通) ---------------
-# 以前は _concat.zsh のディレクトリモードとマルチグループモードがほぼ同一の
-# グルーピング+実行ループを別実装で持っており、片方だけ修正されるドリフトが
-# 実際に発生していた (連想配列アクセスのガード有無が食い違っていた)。
-# ここに単一実装として集約する。
+# ディレクトリモード / マルチグループモードで別実装を持つとドリフトするため、単一実装に集約している (再度分離しないこと)。
 
 # __concat_group_files の結果格納先 (zsh は連想配列を戻り値にできないためグローバル)
 typeset -gA __CONCAT_GROUP_KEY_OF   # 絶対パス → グループキー (prefix::suffix)
@@ -276,8 +270,6 @@ __concat_run_groups() {
     print -r -- "結合可能なグループが見つかりませんでした"
     return 0
   fi
-  # 旧実装の ${_fail:+...} は "0" も非空のため全成功時にも ", 0失敗" が出ていた。
-  # 失敗があるときだけ表示する。
   local fail_note=""
   (( _fail > 0 )) && fail_note=", ${_fail}失敗"
   print -r -- ""
@@ -287,7 +279,7 @@ __concat_run_groups() {
   return $(( _fail > 0 ))
 }
 
-# 内部補助: 浮動小数点比較 (旧実装の bc 依存を、他の計算と同じ awk に統一)
+# 内部補助: 浮動小数点比較
 # 引数: $1=左辺, $2=演算子 (lt/le/gt/ge), $3=右辺
 # 戻り値: 0=真, 1=偽
 # 注: 非数値は awk の数値強制で 0 として扱われる (bc はパースエラーで空を返し、
@@ -303,7 +295,6 @@ __concat_float() {
   }'
 }
 
-# 内部補助: ffprobeで映像情報を取得
 __concat_get_video_info() {
   local file="$1"
   ffprobe -v error -select_streams v:0 \
@@ -311,7 +302,6 @@ __concat_get_video_info() {
     -of csv=p=0 -- "$file" 2>/dev/null | head -n1
 }
 
-# 内部補助: ffprobeで映像のtime_baseを取得
 __concat_get_video_time_base() {
   local file="$1"
   ffprobe -v error -select_streams v:0 \
@@ -319,7 +309,6 @@ __concat_get_video_time_base() {
     -of csv=p=0 -- "$file" 2>/dev/null | head -n1
 }
 
-# 内部補助: ffprobeで音声情報を取得
 __concat_get_audio_info() {
   local file="$1"
   ffprobe -v error -select_streams a:0 \
@@ -327,14 +316,12 @@ __concat_get_audio_info() {
     -of csv=p=0 -- "$file" 2>/dev/null | head -n1
 }
 
-# 内部補助: ffprobeでdurationを取得
 __concat_get_duration() {
   local file="$1"
   ffprobe -v error -show_entries format=duration \
     -of default=nk=1:nw=1 -- "$file" 2>/dev/null | head -n1
 }
 
-# 内部補助: パスをエスケープしてconcat用に整形
 __concat_escape_path() {
   local path="$1"
   # FFmpeg concat demuxerのエスケープ:
@@ -687,7 +674,7 @@ __concat_trash() {
 }
 
 # --- 連番解決 (stems → 連番リスト + 命名部品) -----------------------------------
-# concat() 本体にあった 3 段リトライの状態機械を関数契約として切り出したもの:
+# 3 段リトライの状態機械:
 #   1. 通常 stem で連番抽出 (prefix/suffix 一致を要求)
 #   2. suffix 不一致なら「末尾数字」パターンで再試行
 #   3. 連番未検出 / prefix 不一致なら共通サフィックスを除去して再試行

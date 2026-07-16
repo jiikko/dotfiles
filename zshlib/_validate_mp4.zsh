@@ -66,11 +66,9 @@ __validate_mp4_check() {
   # -stats で進捗の time= を強制出力させ、最後の time= を実デコード終端とみなす。
   #
   # ⚠️ ffmpeg の exit code は意図的に見ない (|| true で捨てる)。破損判定は exit code でなく
-  # DECODE_ERROR_RE の特定文字列マッチで行う。理由: ffmpeg は良性警告でも非ゼロ終了したり
-  # stderr に "error" を含めたりするため、exit code を NG に直結させると誤爆する
-  # (上の DECODE_ERROR_RE コメント参照)。なお ffmpeg/ffprobe 不在の環境では、先行する
-  # チェック1 の ffprobe が空を返して unreadable で確定するため、ここに到達しない。
-  # この前提 (ffmpeg の良性非ゼロ終了が存在する) が崩れない限り exit code 判定は追加しない。
+  # DECODE_ERROR_RE の特定文字列マッチで行う (理由は上の DECODE_ERROR_RE コメント参照)。
+  # ffmpeg/ffprobe 不在の環境ではチェック1 の ffprobe が空を返し unreadable で確定するため
+  # ここに到達しない。この前提が崩れない限り exit code 判定は追加しない。
   decode_log=$(ffmpeg -v warning -stats -i "$file" -f null - 2>&1 || true)
 
   # チェック4: デコードエラー
@@ -80,9 +78,8 @@ __validate_mp4_check() {
 
   # チェック5: 宣言duration vs 実デコード終端 (clean truncation検出。同じデコードパスから無料)
   # 「宣言 duration より実デコード終端が 10s 以上手前」= シークバーは長いのに途中で止まる状態のみ
-  # NG とする (declared - actual > 10)。実デコード終端が宣言より長いケースは truncation ではない
-  # ので NG にしない (移植元 bin/validate-mp4 は差を絶対値化していたが、ラベル "truncated" と
-  # コメントの意図 "手前で切れている" に反する latent bug だったため、移植時に directional へ修正)。
+  # NG とする (declared - actual > 10)。実デコード終端が宣言より長いケースは NG にしない
+  # (絶対値化すると latent bug になるため directional のまま維持すること)。
   actual_hms=$(print -r -- "$decode_log" | grep -oE 'time=[0-9:.]+' | tail -n1 | cut -d= -f2 || true)
   if [[ -n "$actual_hms" ]]; then
     truncated=$(awk -F: -v d="$declared" '{ a=($1*3600)+($2*60)+$3; print (d-a>10)?1:0 }' <<< "$actual_hms")

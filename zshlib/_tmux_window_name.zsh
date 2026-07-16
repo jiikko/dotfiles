@@ -34,7 +34,6 @@ _tmux_load_yaml() {
   if [[ -f "$_TMUX_WINDOW_NAME_YAML" ]]; then
     local line key value
     while IFS= read -r line || [[ -n "$line" ]]; do
-      # コメント行と空行をスキップ
       [[ "$line" =~ ^[[:space:]]*# ]] && continue
       [[ -z "${line//[[:space:]]/}" ]] && continue
       [[ "$line" != *:* ]] && continue
@@ -188,25 +187,13 @@ _tmux_set_pane_title() {
 
 # 「このウィンドウで最後に shell がコマンドを実行した時刻」を window option
 # @last-touched (epoch) に記録する。_tmux.conf の放置フェード (@fade) の唯一の入力。
-# - 発火はコマンド実行の開始 (preexec) と完了 (precmd) のみ。window を select して
-#   前面に出しただけでは絶対に更新しない (ユーザー要件 2026-07-04。フェードの意味が
-#   「見た」ではなく「作業した」であるため)。長時間コマンド (claude / make 等) は
-#   開始時と終了時にスタンプされ、実行中はフェードが進む (実行中の可視化は
-#   @claude_state アイコン等の担当で、フェードとは役割を分ける)。
+# アクティブ判定の仕様 (select では若返らない等) の詳細は docs/tmux-window-fade.md 参照。
 # - -t "$TMUX_PANE" への set -w は「その pane が属する window」の option になるので、
 #   split していても正しい window に届く。
-# - precmd 側は「直前に preexec が走った (= 実コマンドの完了)」時だけスタンプする
-#   (_TMUX_TOUCH_PENDING)。素の precmd はシェル起動直後の初回プロンプトや Enter 空打ち
-#   でも発火するため、それを拾うと「zsh を開いただけ / resurrect 復元直後」で全 window が
-#   若返り select 契機と同じ誤判定になる。
-# - throttle: 前回スタンプから 3 秒未満なら fork しない (プロンプト毎に tmux client を fork しない方針)。
-#   ⚠️ この 3 秒は _tmux.conf の放置フェード刻み @fade-step-secs (現 5 秒) 以下に保つこと。throttle > step
-#   だと @last-touched が最大 throttle 秒古いまま残り、離れた直後の window が数段沈んで見え「さっき作業
-#   した window 探し」の主目的が壊れる (2026-07-14。5 秒フェード化に合わせ 30→3 へ)。連続作業中でも
-#   スタンプは 3 秒に 1 回の fork に上限が付くので CPU 負荷は軽微。時刻は fork 不要の $EPOCHSECONDS を使う。
-# $EPOCHSECONDS は zsh/datetime モジュールが提供する (未ロードだと空になり、throttle の
-# 算術が常に 0-0<3=真 → 即 return でスタンプが一切走らない。実測でハマった)。
-# zshrc 側のロードに依存せず、この lib が自分で保証する (-i: ロード済みなら何もしない)
+# - throttle (3 秒) は _tmux.conf の @fade-step-secs 以下に保つこと。超えると @last-touched が
+#   古いまま残り、離れた直後の window が沈んで見える誤判定を招く (詳細: docs/tmux-window-fade.md)。
+# $EPOCHSECONDS は zsh/datetime モジュール必須 (未ロードだと throttle 判定が常に真になり
+# スタンプが無音で止まる)。zshrc 側のロードに依存せず、この lib が -i で自己保証する。
 zmodload -i zsh/datetime
 typeset -gi _TMUX_LAST_TOUCH_STAMPED=0
 typeset -gi _TMUX_TOUCH_PENDING=0
@@ -225,10 +212,8 @@ if [[ -n "$TMUX" ]]; then
     (( _TMUX_WINDOW_NAMES_LOADED )) || _tmux_load_yaml
     local cmd title
     cmd=$(_tmux_extract_command "$1")
-    # alias は展開せず、タイプした名前のまま表示する (意図的な仕様)。
-    # 2d68f3c (2025-12-12) で alias 展開を廃止した。`v` は `nvim` ではなく `v` と出る。
-    # 実コマンド名を出したくなったら alias 解決を再導入することになるが、その判断は
-    # この経緯を踏まえてから行うこと (安易に戻すと過去の決定を覆すことになる)
+        # alias は展開せず、タイプした名前のまま表示する (意図的な仕様。過去に廃止した経緯が
+    # あるため、再導入は経緯を確認してから判断すること)
     title=$(_tmux_get_display_name "$cmd")
     # whitelist (_subcommands) のコマンドは第2語 (サブコマンド) も付けて
     # `make test` / `git commit` のように出す (一覧でコマンドの何かが分かるように)。

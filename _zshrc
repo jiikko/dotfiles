@@ -67,8 +67,7 @@ fi
 # PATH の重複を自動排除（先勝ち）。以降の PATH 追加で重複が増えないようにする
 typeset -U path PATH
 
-# nodebrew / heroku は使っていないマシンが多い (このマシンには不存在を確認 2026-06-10)。
-# 他マシンで使っている可能性を考慮し、削除でなく存在ガード付きで PATH に足す
+# nodebrew / heroku は無いマシンも多いので、存在ガード付きで PATH に足す (無ければ no-op)
 if [ -d "$HOME/.nodebrew/current/bin" ]; then
   export PATH=$HOME/.nodebrew/current/bin:$PATH
 fi
@@ -286,7 +285,6 @@ limit coredumpsize 0 # core 抑制
 # Grip などGlibアプリケーション出力での文字化け防止
 export G_FILENAME_ENCODING=@locale
 
-# google 検索
 function google() {
   local str
   if [ $# != 0 ]; then # 引数が存在すれば
@@ -297,10 +295,8 @@ function google() {
   fi
   open "http://www.google.co.jp/search?hl=ja&q=$str"
 }
-# wikipedia 検索
 function wikipedia() { open "https://ja.wikipedia.org/w/index.php?search=$1" }
 
-# テキスト検索
 function find-grep () { find . -type f -print | xargs grep -n --binary-files=without-match $@ }
 
 # 現在のgit branch名をクリップボードにコピー
@@ -319,7 +315,6 @@ function gb() {
 alias be="bundle exec"
 alias b="bundle exec"
 
-# ls colorization
 if [[ "$OSTYPE" == linux* ]]; then
   alias ls='ls --color=auto'
 else
@@ -343,11 +338,8 @@ alias gv='git --version'
 alias gp='git push'
 alias gad='git add \.'
 alias gc='git commit \-m'
-# origin のデフォルトブランチを pull する。
-# デフォルトブランチ判定は git remote show origin (毎回ネットワーク通信して遅い /
-# オフラインで失敗) ではなく、ローカルの origin/HEAD 参照で行う。
-# origin/HEAD 未設定のリポジトリでは一度だけ set-head --auto で問い合わせて
-# 設定し、以後はローカルで解決する。
+# origin のデフォルトブランチを pull する。判定は git remote show origin (毎回通信が必要で遅く、オフラインでは失敗) を避け、
+# ローカルの origin/HEAD 参照で行う。未設定なら一度だけ set-head --auto で問い合わせて設定し、以後はローカルで解決する。
 function gm() {
   local branch
   branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)
@@ -474,7 +466,6 @@ function rt() {
 
   local args="$@"  # 残りの引数を格納
 
-  # 引数が与えられていない場合の処理
   if [ -z "$filename" ]; then
     if [ -d "test" ]; then
       echo "Running bundle exec rails test for all test files in the test directory"
@@ -587,12 +578,9 @@ bdr() {
   dd if=/dev/zero of="$output_file" bs="$bs" count="$count" oflag="$oflag" status=progress
 }
 
-# 動画系コマンドの lazy-reload ラッパー: 呼び出しのたびに lib を source し直し、
-# lib の編集をシェル再起動なしで次回呼び出しに反映する。lib は公開名と同名の関数を
-# 再定義する (= source 中にこのラッパー自身が上書きされる) ため、実行後にラッパーを
-# 復元する save/restore が必須。
-# なお t/tt (_tmux_session.zsh) は公開名≠実体名で source が冪等なため復元不要の別 idiom
-# で正当 (あちらの意図コメント参照)。ここに統合しないこと。
+# 動画系コマンドの lazy-reload ラッパー: 呼び出しごとに lib を source し直し、シェル再起動なしで
+# lib の編集を反映する。lib は公開名と同名の関数を再定義してこのラッパー自身を上書きするため、
+# 実行後に save/restore で復元が必須 (t/tt は公開名≠実体名で復元不要な別 idiom。ここに統合しないこと)。
 # 引数: $1=公開関数名 $2=lib パス $3=lib 内の実体関数名 (以降が実引数)
 _reload_then_call() {
   local _fname="$1" _lib="$2" _impl="$3"
@@ -701,13 +689,10 @@ if command -v brew > /dev/null 2>&1; then
 fi
 
 # ---- dotfiles: setup.sh の実行漏れ検出 (direnv 風 / 非同期) ------------------
-# setup.sh は末尾で自身の sha256 を state file に記録する。ここで現在の setup.sh と
-# その記録を比較し、差分があれば再実行を促す。対話シェルのみ・起動をブロックしない。
-# コスト最小化: まず mtime を builtin で比較し、記録以降に setup.sh が変わった時だけ
-# 重い shasum を非同期 (&!) で回す (通常は stat 1回で抜け fork もしない)。結果は次
-# プロンプトで一度だけ表示し、表示後 precmd フックを自己解除する。
-# `-t 1` ガード: stdout が実端末の時だけ発火。テスト等が `zsh -i -c` で出力を
-# キャプチャ (パイプ) する際に警告が混入しないようにする。
+# setup.sh は末尾で自身の sha256 を state file に記録する。ここで現在の setup.sh と比較し、
+# 差分があれば再実行を促す (対話シェルのみ・非ブロッキング)。まず mtime を比較し、変更時だけ
+# 重い shasum を非同期 (&!) で実行、結果は次回プロンプトで一度だけ表示して自己解除する。
+# `-t 1` は実端末でのみ発火させ、テストの `zsh -i -c` パイプ出力に警告が混入しないためのガード。
 if [[ -o interactive ]] && [[ -t 1 ]]; then
   _dotfiles_setup_notify() {
     local f="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/setup-check.result"

@@ -2,10 +2,7 @@
 -- tmux 側との対応表は docs/theme-colors.md)。
 --
 -- 主環境は termguicolors=off の 256色運用 (規律の一次情報は dotfiles/hl.lua) で、gui 色 (hex)
--- が設計の真・cterm はその忠実な 256色近似。かつてこの対応が各所 (bufferline highlights /
--- incline render / hl.set 呼び出し) に手書きコピペされ、bufferline 内で同じ #1d2021 に
--- ctermbg=234 と 237 (=#3c3836 の対応値) が混在する drift が起きていた (2026-07-16 に 234 へ
--- 統一)。ここを参照すれば hex と cterm の組が構造的にズレなくなる。
+-- が設計の真・cterm はその忠実な近似。各所への手書きコピペで drift した実例があるため、ここへ一元化している。
 --
 -- 3 節構成 (色を足すときは意味の合う節へ):
 --   トップレベル = gruvbox 公式パレット (名前も公式呼称。テーマの基調色)
@@ -26,11 +23,10 @@ local M = {
 }
 
 M.accent = {
-  -- Claude Code 風オレンジ基調テーマのアクセント (経緯: issues/017-feat-claude-code-orange-theme-2026-07-16.md)。
+  -- Claude Code 風オレンジ基調テーマのアクセント (経緯・変更手順は docs/theme-colors.md)。
   -- current_accent は「現在地」の統一色: tmux の current window 島 (_tmux.conf の @cur-accent =
   -- colour202) と同一。bufferline の選択タブが参照し、tmux バーと nvim タブラインで
-  -- 「いまここ = 蛍光オレンジ」の色言語を揃える (変遷: ショッキングピンク 199 → Coral #D97757/173
-  -- → 蛍光を強めて #FF5F00/202 = cterm 完全一致。いずれも 2026-07-16)。
+  -- 「いまここ = 蛍光オレンジ」の色言語を揃える。
   -- 変えるときは tmux 側 @cur-accent と対で (docs/theme-colors.md のペア表)。
   current_accent = { hex = "#FF5F00", cterm = 202 },
   -- Visual (選択テキスト) 用の暖色。現在地 Coral より一段落ち着いたトーン (tmux ペアなし)。

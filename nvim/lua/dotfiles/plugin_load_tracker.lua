@@ -1,16 +1,6 @@
 -- プラグインロードトラッカー: lazy.nvim の `User LazyLoad` を拾い、「ロード = 使用」と
--- みなせるプラグインだけロード回数を永続化する。棚卸し時に :PluginLoadStats で count=0 の
--- プラグインを削除候補として洗い出すのが目的。
---
--- 計測できるのはトリガーゲート (keys / cmd / ft / パターン付き event) のプラグインのみ。
--- VeryLazy / パターン無し event (BufReadPre 等) のプラグインは毎セッション無条件に
--- ロードされるため「ロード = 使用」が成立せず、計測対象から除外する (カウントしても
--- 起動回数にしかならない)。この制約と読み方は docs/nvim-plugin-load-tracker.md 参照。
---
--- count は「そのプラグインを使ったセッション数」に近い (lazy のロードはセッション中
--- 1 回だけ発火するため、キー押下ごとの加算ではない)。
---
--- off にする: 環境変数 DOTFILES_PLUGIN_LOAD_TRACKER=0 (記録・コマンド登録ごと止まる)。
+-- みなせるプラグインのロード回数を永続化する (:PluginLoadStats で棚卸し)。
+-- 計測対象の条件・count の意味・無効化方法は docs/nvim-plugin-load-tracker.md 参照。
 local M = {}
 
 local state_file = vim.fn.stdpath("state") .. "/plugin-loads.json"
@@ -31,7 +21,6 @@ local function write_db(db)
   f:close()
 end
 
--- event 一覧を table に正規化する
 local function event_list(plugin)
   local ev = plugin.event
   if type(ev) == "string" then return { ev } end

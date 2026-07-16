@@ -1,11 +1,9 @@
 -- ネイティブ LSP (vim.lsp) のキーマップ・診断・サーバ設定。
---
--- 2026-07 に coc.nvim からネイティブ LSP へ移行した際に新設。plugin spec
--- (nvim-lspconfig の config、_nviminit.lua) から setup(capabilities) を呼ぶ。
+-- plugin spec (nvim-lspconfig の config、_nviminit.lua) から setup(capabilities) を呼ぶ。
 --   - capabilities: blink.cmp が広告する補完 capability (nil 可)
 --   - サーバの有効化 (vim.lsp.enable) は _nviminit.lua の enable_available() が
---     server_packages を見て行う (mason-lspconfig は 2026-07-11 廃止)。
---     ここは "全サーバ共通の設定 (capabilities / on_attach) と、サーバ固有 settings" だけを持つ。
+--     server_packages を見て行う。ここは "全サーバ共通の設定 (capabilities / on_attach) と、
+--     サーバ固有 settings" だけを持つ。
 -- キー割り当ては coc 時代の muscle memory を踏襲する (gd / gD / <C-j> / <C-k> / t / [g / ]g など)。
 local M = {}
 
@@ -54,12 +52,10 @@ M.servers = {
       callArgumentNames = true,
     } } } },
   },
-  -- nvim-lspconfig (rolling) の lsp/terraformls.lua は on_attach で vim.lsp.codelens.enable を
-  -- 無条件に呼ぶが、これは nvim 0.12 で追加の API で 0.11 には無く、.tf/.hcl を開くたび
-  -- ON_ATTACH_ERROR 通知が出ていた。存在ガード付き on_attach で丸ごと上書きして吸収する
-  -- (on_attach は関数なのでマージでなく後勝ち置換。元の on_attach は codelens.enable の
-  -- 1 行だけで他の機能欠落はない)。nvim 0.12+ へ上げれば自動で codelens が有効になるため、
-  -- その時点でこの override は削除してよい。
+  -- nvim-lspconfig (rolling) の terraformls.lua on_attach は nvim 0.12 専用の
+  -- vim.lsp.codelens.enable を無条件呼びし、0.11 では ON_ATTACH_ERROR が出るため、存在ガード付き
+  -- on_attach で丸ごと上書きする (元の on_attach は該当 1 行のみなので機能欠落なし)。
+  -- nvim 0.12+ へ上げたら削除してよい。
   terraformls = {
     on_attach = function(_, bufnr)
       if vim.lsp.codelens.enable then
@@ -74,10 +70,8 @@ M.servers = {
 --   - バイナリ導入 (mason-tool-installer) は value (mason パッケージ名) を使う
 -- 新サーバはここへ 1 行足せば enable と導入の両方に効く。
 -- coc の LSP 系 extension (tsserver/eslint/pyright/go/solargraph/html/css/json/yaml/sh/docker/tailwind/sql) を踏襲。
---
 -- 意図的に移行しなかった coc 機能 (欠落ではなく意図した縮退。パリティ台帳としてここに明記):
---   - spell-checker / 色プレビュー / markdownlint / swagger (ユーザー確認済み・2026-07。
---     必要時に cspell(nvim-lint) / nvim-colorizer / markdownlint(nvim-lint) を足す)
+--   - spell-checker / 色プレビュー / markdownlint / swagger (ユーザー確認済み。必要時に cspell(nvim-lint) / nvim-colorizer / markdownlint(nvim-lint) を足す)
 --   - coc-html-css-support (HTML 内の CSS クラス名補完): ネイティブに直等価なし。html/cssls で部分カバー
 --   - <C-s> range-select (coc-range-select): treesitter incremental_selection 等で代替可 (未設定)
 --   - <C-f>/<C-b> の float スクロール: 0.11 は hover 窓を再フォーカスしてスクロールできるため未マップ
@@ -121,7 +115,6 @@ local function register_document_highlight(bufnr)
   })
 end
 
--- バッファに attach 中の client (除外 id を除く) に documentHighlight 対応者がいるか
 local function has_highlight_client(bufnr, exclude_id)
   for _, c in ipairs(vim.lsp.get_clients({ bufnr = bufnr, method = "textDocument/documentHighlight" })) do
     if c.id ~= exclude_id then
@@ -233,7 +226,6 @@ function M.setup(capabilities)
   -- 全サーバ共通の capabilities (blink.cmp)。nil なら素の capability。
   vim.lsp.config("*", { capabilities = capabilities or vim.lsp.protocol.make_client_capabilities() })
 
-  -- サーバ固有 settings のマージ
   for name, cfg in pairs(M.servers) do
     vim.lsp.config(name, cfg)
   end

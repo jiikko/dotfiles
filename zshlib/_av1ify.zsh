@@ -6,7 +6,6 @@
 __AV1IFY_VERSION="1.7.2"
 __AV1IFY_SPEC_VERSION="1.7.0"
 
-# 内部補助: バナー出力
 __av1ify_banner() {
   print -ru2 -- "av1ify v${__AV1IFY_VERSION} (spec: v${__AV1IFY_SPEC_VERSION})"
 }
@@ -286,9 +285,7 @@ av1ify() {
         opt_denoise="$1"
         ;;
       -f)
-        # 旧実装は positional に積んでから「先頭にあるときだけ」処理していたため、
-        # `av1ify a.mp4 -f list.txt` が「-f というファイルが無い」NG になっていた。
-        # 他のオプションと同様に位置非依存でパースする。
+        # -f は他のオプションと同様に位置非依存でパースする（引数のどの位置でも指定可）。
         shift
         if (( $# == 0 )) || [[ -z "$1" ]]; then
           print -r -- "エラー: -f オプションにはファイルパスが必要です" >&2
@@ -332,17 +329,15 @@ av1ify() {
     dry_run="${__AV1IFY_DRY_RUN:-$dry_run}"
   fi
 
-  # バナー出力（内部呼び出し・ヘルプ時は除く）
   if (( ! __av1ify_internal )) && (( ! show_help )) && (( have_targets )); then
     __av1ify_banner
   fi
 
-  # resolution / fps / denoise の早期バリデーション (fail-fast)。
-  # 旧実装は fps/denoise をファイルごとに警告して黙って無視していたため、`--fps abc` の
-  # ようなタイポでも全ファイルが fps 指定なしでフルエンコードされてしまっていた。
+  # resolution / fps / denoise の早期バリデーション (fail-fast)。無効値を検知せず黙って無視すると、
+  # タイポ (例: --fps abc) でも全ファイルが意図しない設定でエンコードされてしまう。
   # 配置: バナー出力後 (解決メッセージの表示順を統一)。
   # ゲート: help 表示・処理対象なしのときは検証しない (無効な AV1_* 環境変数が残っていても
-  # `av1ify --help` が読めなくなる regression を防ぐ。codex P2 指摘)。
+  # `av1ify --help` が読めなくなる regression を防ぐ)。
   if (( ! __av1ify_internal )) && (( ! show_help )) && (( have_targets )); then
     if [[ -n "$__AV1IFY_RESOLUTION" ]]; then
       if __av1ify_resolve_resolution "$__AV1IFY_RESOLUTION"; then
@@ -516,8 +511,6 @@ EOF
 
   set -o pipefail
 
-  # -f オプションのファイルリストを位置引数の前に連結する
-  # (オプションループで位置非依存にパース済み。位置引数との併用も可)
   if [[ -n "$opt_listfile" ]]; then
     if [[ ! -f "$opt_listfile" ]]; then
       print -r -- "エラー: ファイルが見つかりません: $opt_listfile" >&2
@@ -529,7 +522,6 @@ EOF
     while IFS= read -r line; do
       # CRLF のリストファイル (Windows / スプレッドシート由来) の \r を除去
       line="${line%$'\r'}"
-      # 空行とコメント行（#で始まる）をスキップ
       [[ -z "$line" || "$line" == \#* ]] && continue
       list_files+=("$line")
     done < "$opt_listfile"
@@ -541,7 +533,6 @@ EOF
     set -- "${list_files[@]}" "$@"
   fi
 
-  # 複数の引数がある場合は、それぞれを順番に処理
   if (( $# > 1 )); then
     __av1ify_run_batch "$@"
     return $?
@@ -549,7 +540,6 @@ EOF
 
   local target="$1"
   if [[ -d "$target" ]]; then
-    # 再帰で対象拡張子のみ列挙（(#i)で大文字小文字無視、.Nで通常ファイルのみ）
     setopt LOCAL_OPTIONS extended_glob null_glob
     unsetopt LOCAL_OPTIONS SH_WORD_SPLIT
     local -a files=()

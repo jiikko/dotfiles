@@ -1,6 +1,5 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2076,SC2207,SC2296
-# concat v1.0.0
 # ------------------------------------------------------------------------------
 # concat — 複数の動画ファイルを無劣化で結合するzshコマンド
 # ------------------------------------------------------------------------------
@@ -138,7 +137,6 @@ EOF
     return $?
   fi
 
-  # 引数チェック: 最低2ファイル必要
   if (( $# < 2 )); then
     print -r -- "エラー: 最低2つのファイルが必要です" >&2
     return 1
@@ -160,7 +158,6 @@ EOF
   local file dir ext stem
 
   # 1. 入力ファイルのバリデーション
-  # ファイル存在確認
   for file in "${input_files[@]}"; do
     if [[ ! -f "$file" ]]; then
       print -r -- "エラー: ファイルが見つかりません: $file" >&2
@@ -178,7 +175,6 @@ EOF
     head -c 1 -- "$file" > /dev/null 2>&1 &
     prefetch_pids+=($!)
   done
-  # 全プリフェッチ完了を待機
   for pid in "${prefetch_pids[@]}"; do
     wait "$pid" 2>/dev/null
   done
@@ -197,7 +193,6 @@ EOF
     fi
   done
 
-  # 拡張子チェック
   for file in "${input_files[@]}"; do
     ext=$(__concat_get_ext "$file")
     if [[ -z "$ext" ]] || ! __concat_is_allowed_ext "$ext"; then
@@ -223,13 +218,11 @@ EOF
   local use_stripped_stems=$__CONCAT_R_USE_STRIPPED
   local detected_common_suffix="$__CONCAT_R_COMMON_SUFFIX"
 
-  # 共通プレフィックスの長さチェック
   if (( ${#common_prefix} < 3 )); then
     print -r -- "エラー: ファイル名に連続性がありません: 共通プレフィックスが3文字未満です" >&2
     return 1
   fi
 
-  # 連番の連続性検証
   if ! __concat_validate_sequence "${numbers[@]}"; then
     print -r -- "エラー: $REPLY" >&2
     return 1
@@ -298,7 +291,6 @@ EOF
 
   (( verbose_mode )) && print -r -- ">> コーデック確認中..."
   # 3. 再エンコード回避チェック（--forceでスキップ）
-  # 入力に音声があるかどうかを記録
   local has_input_audio=0
   local first_video_info first_audio_info
   first_video_info=$(__concat_get_video_info "${input_files[1]}")
@@ -395,7 +387,6 @@ EOF
   fi
   local output_path="$first_dir/$output_name"
 
-  # 入力ファイルと同名になる場合のチェック
   for file in "${sorted_files[@]}"; do
     if [[ "${file:A}" == "$output_path" ]]; then
       print -r -- "エラー: 出力ファイル名が入力ファイルと衝突します: $output_name" >&2
@@ -409,7 +400,6 @@ EOF
     return 0
   fi
 
-  # 一時ファイル名の生成（UUID）
   local uuid
   uuid=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "${$}_${RANDOM}")
   local list_file="$first_dir/.concat_${uuid}.txt"

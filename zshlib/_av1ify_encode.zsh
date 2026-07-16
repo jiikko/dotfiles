@@ -540,14 +540,8 @@ __av1ify_one() {
   fi
 
   # ソース映像の寸法を取得（アップスケール防止・CRF自動調整・縦横判定に使用）
-  #
-  # 注: 本関数は ffprobe を項目別に複数回呼ぶ (width / height / rotation / fps /
-  # 音声 codec / sample_rate / channels / bit_rate)。1 回の -show_entries に統合する
-  # 案は、tests/zshrc/av1ify/test_helper.sh の mock ffprobe が「クエリ文字列の部分
-  # 一致で項目別に応答する」設計に依存しているため見送り (統合するなら mock の
-  # 再設計とセットで行うこと)。クラウドファイルの materialize は直前の
-  # 「ファイル取得中」表示時点の初回アクセスで完了しており、以降の ffprobe は
-  # ローカル read (~数十ms/回) なので実害は小さい。
+  # 注: ffprobe を項目別に複数回呼ぶのは意図的。1回の -show_entries への統合は
+  # tests/zshrc/av1ify/test_helper.sh の mock ffprobe 設計に依存するため見送り (materialize は取得済みのため実害小)。
   local source_width="" source_height="" source_display_width="" source_display_height="" source_short_side="" source_is_portrait=0 source_rotation=""
   source_width=$(__ff_stream_field "$in" v:0 stream=width)
   source_height=$(__ff_stream_field "$in" v:0 stream=height)
@@ -640,7 +634,6 @@ __av1ify_one() {
   local allow="${AV1_COPY_OK:-aac,alac,mp3}"
   local -a allow_list; IFS=',' read -rA allow_list <<< "$allow"
 
-  # acodec が許可リストに含まれるか（大文字小文字無視）
   local use_copy=0
   if [[ -n "$acodec" ]]; then
     local c
@@ -675,11 +668,9 @@ __av1ify_one() {
     -map "0:v:0"
     -c:v "$vcodec" -crf "$crf" -preset "$preset" -pix_fmt yuv420p
   )
-  # ビデオフィルタ追加
   if [[ -n "$vf_option" ]]; then
     args_common+=(-vf "$vf_option")
   fi
-  # fps 追加
   if [[ -n "$target_fps" ]]; then
     args_common+=(-r "$target_fps")
   fi

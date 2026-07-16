@@ -33,7 +33,7 @@ local function set_options()
   opt.showmatch = true
   opt.title = true
   -- CursorHold/CursorHoldI は basic.lua の checktime(disk stat) と LSP の document_highlight を
-  -- 同時発火させる。300→500ms で発火密度を下げてタイピング中の連打を緩和 (体感優先)
+  -- 同時発火させる。500ms で発火密度を下げてタイピング中の連打を緩和 (体感優先)
   opt.updatetime = 500
   opt.signcolumn = "yes"
   -- 初期値を on にする: 「アクティブウィンドウのみ cursorline」は set_autocmds の
@@ -124,11 +124,11 @@ end
 local function set_autocmds()
   local group = vim.api.nvim_create_augroup("dotfiles_basic_autocmds", { clear = true })
 
-  -- カスタム filetype 検出は vim.filetype.add へ一本化する (旧実装は BufRead autocmd 3 本と
-  -- 混在していた。二重機構だと追加時にどちらへ書くか迷うため統合。2026-07-12)。
-  -- - .tf/.tfvars→terraform: nvim 標準は .tf→"tf" / .tfvars→"terraform-vars" で、terraform-ls・
-  --   conform(terraform_fmt)・treesitter(terraform parser) が前提とする ft=terraform に
-  --   ならない。旧 vim-terraform の ftdetect が担っていた検出を置換で明示する (2026-07)
+  -- カスタム filetype 検出は vim.filetype.add に一本化する (機構が分散すると追加時にどちらへ
+  -- 書くか迷うため)。
+  -- - .tf/.tfvars→terraform: nvim 標準の .tf→"tf" / .tfvars→"terraform-vars" のままだと
+  --   terraform-ls・conform(terraform_fmt)・treesitter(terraform parser) が前提とする
+  --   ft=terraform にならないため明示する。
   -- - Schemafile / *.Schemafile (ridgepole) → ruby、*.sql.erb → sql
   vim.filetype.add({
     extension = { tf = "terraform", tfvars = "terraform" },

@@ -48,7 +48,7 @@ _tt_sanitize_session_name () {
   print -rn -- "${1//[.:#]/_}"
 }
 
-# 新規に 5 窓のセッションを作って attach する実体。
+# t の実体（コマンド概要はファイル先頭参照）。
 _t_impl () {
   _tt_require_tty || return 1
 
@@ -151,13 +151,10 @@ _tt_wait_for_restore () {
 #   (c) pristine 形状（1 window かつ 1 pane。`tmux new-session -d` 直後の姿）
 # なお rc=1/2 でユーザーが作業を始めた hold は、adopt 時に実名へ rename され hold 名前空間
 # から出る（_tt_impl の adopt 分岐参照）ため、ここに来る __tt_hold_* は「ユーザーが中に
-# いない残骸」だけになる。旧設計は adopt を @tt-adopted セッションオプションで記録して
-# (0) 番目のガードにしていたが、(i) オプションは resurrect の保存対象外で再起動を跨げず、
-# 復元された adopted hold をこの GC が誤 kill する、(ii) tmux 3.7b では set-option /
-# show-options の -t "=name"（コロン無し）が "no such session" で silent 失敗し、フラグ
-# 保護自体が同一 boot 内ですら不発だった（実プローブ確認 2026-07-10）、の 2 点により
-# rename 方式へ置換した。オプション系コマンドに -t "=name" を使う場合は "=name:" が必要な
-# 点に注意（has/kill/rename-session は "=name" で可）。
+# いない残骸」だけになる。adopt 記録に @tt-adopted セッションオプションは使わない: 保存
+# 対象外で再起動を跨げず復元後に誤 kill されうる上、tmux 3.7b では set-option/show-options
+# の -t "=name"（コロン無し）が silent 失敗する。オプション系コマンドに -t "=name" を使う
+# 場合は "=name:" が必要な点に注意（has/kill/rename-session は "=name" で可）。
 _tt_gc_stale_holds () {
   local sname wins attached spid panes
   tmux list-sessions -F '#{session_name} #{session_windows} #{session_attached}' 2>/dev/null \
@@ -184,11 +181,10 @@ _tt_gc_stale_holds () {
     done
 }
 
-# hold セッション名プレフィックス。定義は 23 行目で source 済みの scripts/lib/tmux_resurrect_guards.sh
-# が唯一の出典 (2026-07-05 の一本化でそこへ集約。旧同期先の debounced_save.sh は自前定義を手放し済み)。
+# hold セッション名プレフィックス。定義は scripts/lib/tmux_resurrect_guards.sh が唯一の出典。
 # ここで再定義しない (guards.sh の source で設定済み)。grep: __tt_hold_。_tt_gc_stale_holds / _tt_impl が参照。
 
-# カレントディレクトリ名（or 引数）のセッションに attach。無ければ作成する実体。
+# tt の実体（コマンド概要はファイル先頭参照）。
 _tt_impl () {
   _tt_require_tty || return 1
 
@@ -229,8 +225,8 @@ _tt_impl () {
     # 消えたのにプロセスだけ残った孤児 tmux サーバ」を回収しておく。孤児が残っていると
     # continuum の Gate2（another_tmux_server_running_on_startup が ^tmux プロセス数で判定。
     # vendor helpers.sh は socket 生存を見ない）が「他サーバ在り」と誤判定し、auto-restore を
-    # 丸ごと skip する（2026-06-28 に判明した 17 日間 復元不発の真因）。reap は生存 socket を
-    # 持つプロセス（実サーバ・接続中 client）には絶対に触れない（scripts 側の不変条件）。
+    # 丸ごと skip する。reap は生存 socket を持つプロセス（実サーバ・接続中 client）には
+    # 絶対に触れない（scripts 側の不変条件）。
     local _reap="${_TMUX_SESSION_LIB:h:h}/scripts/tmux_reap_orphan_servers.sh"
     # TT_SKIP_REAP は unit テスト用の抜け穴。reap は実 pgrep/lsof/kill で動き tmux スタブで
     # 傍受できないため、_tt_impl のロジックを検証する test_tt.sh が実プロセステーブルを
@@ -256,7 +252,7 @@ _tt_impl () {
         tmux kill-session -t "=$hold" 2>/dev/null ;;
       *)
         # 1=タイムアウト / 2=完了検知フック未設定。ここで hold を畳んだり 5 窓を作ると
-        # 進行中の復元に割り込み、部分復元やサーバ巻き込み kill を招く（Codex P1/P2）。
+        # 進行中の復元に割り込み、部分復元やサーバ巻き込み kill を招く。
         # よって新規作成はせず、既に復元済みなら目的セッション、まだなら hold に attach
         # して安全に抜ける。rc=2 は _tmux.conf 未反映等のデプロイ skew なので警告する。
         [ "$rc" -eq 2 ] && echo "tt: _tmux.conf の @resurrect-hook-post-restore-all が未設定です（復元完了を待てません。反映してください）。" >&2
@@ -272,10 +268,10 @@ _tt_impl () {
           # しない: rename 済みの実名セッションへ進行中の restore が後から到達すると、
           # from-scratch overwrite 分岐（vendor restore.sh の pane_exists &&
           # is_restoring_from_scratch → new_pane + kill-pane）が attach 中の作業ペインを
-          # プロセスごと kill する（実プローブで再現 2026-07-10）。この場合のみ hold 名の
-          # まま attach する（復元完了後の tt は実名へ attach する。pristine のまま detach
-          # した hold が次 boot の GC に畳まれる残存リスクは、作業ペイン kill より安全側
-          # として許容）。判定は保存ガードと共有の tt_restore_in_progress（冒頭で source）。
+          # プロセスごと kill する。この場合のみ hold 名のまま attach する（復元完了後の
+          # tt は実名へ attach する。pristine のまま detach した hold が次 boot の GC に
+          # 畳まれる残存リスクは、作業ペイン kill より安全側として許容）。判定は保存ガード
+          # と共有の tt_restore_in_progress（冒頭で source）。
           if tt_restore_in_progress; then
             tmux attach-session -t "=$hold"
           else
@@ -317,7 +313,6 @@ _tt_impl () {
 }
 
 # --- 公開コマンド（薄いラッパー）------------------------------------------------
-# 実行のたびに lib を読み直してから実体を呼ぶ＝編集が即反映される。
 # source 失敗（編集中の構文エラー等）で t/tt 自体が使えなくならないよう、source は
 # ガードし、失敗時は直近ロード済みの実体で続行する（実体呼び出しまで止めない）。
 t ()  { [[ -r "$_TMUX_SESSION_LIB" ]] && source "$_TMUX_SESSION_LIB"; _t_impl "$@"; }

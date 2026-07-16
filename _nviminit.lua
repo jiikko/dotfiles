@@ -103,18 +103,15 @@ require("lazy").setup({
       if dotfiles_truecolor_supported() then
         vim.cmd("colorscheme gruvbox")
       else
-        -- truecolor 非対応端末 (上の WORKAROUND 参照): gruvbox は cterm 色を持たず 256色端末で
-        -- 無色になるため、cterm を完備する nvim 同梱の retrobox (gruvbox 風) へ差し替える。
+        -- truecolor 非対応端末 (上の WORKAROUND 参照): cterm を完備する retrobox へ差し替える。
         vim.opt.termguicolors = false
         vim.cmd("colorscheme retrobox")
       end
-      -- 選択範囲は Kraft (暖ベージュ) で強調 (hl.set = ColorScheme 再適用 + cterm 併記規律)。
-      -- 長時間注視する領域なので、現在地の Coral (accent.current_accent =
-      -- bufferline 選択タブ / tmux island) より一段落ち着いた色に意図的に分けている
-      -- (旧ローズ #d3869b → Kraft へ。オレンジ基調テーマ 2026-07-16)。
-      -- 分岐の外に置き truecolor (gruvbox) / 256色 (retrobox) の両環境で効かせる
-      -- (以前は truecolor 分岐内のみで、256色主環境は retrobox 既定の青灰 109 のままだった。
-      --  2026-07-16 是正。colorscheme 適用後に呼ぶこと = ColorScheme の全クリアより後に乗せる)
+      -- 選択範囲は Kraft (暖ベージュ、hl.set = ColorScheme 再適用 + cterm 併記規律) で強調。
+      -- 長時間注視する領域なので、現在地 (accent.current_accent = bufferline 選択タブ /
+      -- tmux island) より一段落ち着いた色に意図的に分けている。
+      -- 分岐の外に置き truecolor (gruvbox) / 256色 (retrobox) の両環境で効かせる。
+      -- colorscheme 適用後に呼ぶこと (ColorScheme の全クリアより後に乗せる必要がある)。
       require("dotfiles.hl").set("Visual", { bg = pal.accent.kraft.hex, ctermbg = pal.accent.kraft.cterm })
     end,
   },
@@ -138,27 +135,15 @@ require("lazy").setup({
       -- 3 値サイクルが必要になったら「off=遷移元 / on=遷移先」の 3 ペアへの組み替えで表現可能。
     end,
   },
-  -- Terraform: hashivim/vim-terraform (Vimscript) を廃し、ネイティブ構成へ置換 (2026-07)。
-  --   - ft 検出: nvim 標準 (.tf/.tfvars→terraform, .hcl→hcl)。専用プラグイン不要
-  --   - 構文/fold: nvim-treesitter の terraform/hcl parser (下の ensure_installed)
-  --   - 補完/診断/hover: terraform-ls (lsp.lua の ensure_installed=terraformls)
-  --   - 整形 (旧 terraform_fmt_on_save + align 相当): conform の terraform_fmt を terraform ft の
-  --     保存時のみ発火 (下の conform format_on_save)。terraform fmt が align も担う
-  -- Go: fatih/vim-go (Vimscript 19k 行) を廃し、ネイティブ構成へ置換 (2026-07)。
-  -- 削除前に実挙動を headless で棚卸しして parity を確保した (要点のみ):
-  --   - 構文/ハイライト: nvim-treesitter の go/gomod/gosum parser (下の ensure_installed)。
-  --     vim-go の syntax は元から非稼働 (&syntax='' で treesitter が唯一の highlighter) だった
-  --   - 定義/実装/参照ジャンプ・hover: 既に native LSP + gopls (lsp.lua)。vim-go 側は
-  --     go_gopls_enabled=0 / go_def_mapping_enabled=0 で無効化済みだった。K は 0.11 の
-  --     native LSP 既定 (K=hover) が引き継ぐ
-  --   - 保存時 gofmt+goimports (旧 go_fmt_autosave/go_imports_autosave=既定1): conform の
-  --     formatters_by_ft.go=goimports を go の保存時に発火 (下の conform)。goimports は
-  --     -srcdir 付きで module-aware
-  --   - 関数ジャンプ ]] [[ / テキストオブジェクト af if ac ic: treesitter-textobjects へ
-  --     (nvim/ftplugin/go.lua で Go 限定 buffer-local に再現。vim-go の scope を踏襲)
-  --   - GoDecls (<leader>gd/gD): 元から fzf/ctrlp 未導入でエラー = 非稼働だった。
-  --     telescope の lsp_document/workspace_symbols で置換 (nvim/ftplugin/go.lua)
-  --   - :Go* コマンド群 (:GoTest 等) は未使用のため引き継がない (必要なら go.nvim/nvim-dap-go)
+  -- Terraform: ft 検出は nvim 標準、構文/fold は treesitter (terraform/hcl、下の ensure_installed)、
+  -- 補完/診断/hover は terraform-ls (lsp.lua)、保存時整形は conform の terraform_fmt (下の
+  -- format_on_save。align も担う)。旧 vim-terraform からの移行経緯は docs/nvim-plugins.md 参照。
+  -- Go: 構文/ハイライトは treesitter (go/gomod/gosum、下の ensure_installed)、定義/実装/参照/hover は
+  -- native LSP + gopls (lsp.lua)、保存時整形は conform goimports (下の conform、module-aware
+  -- -srcdir)、関数ジャンプ ]] [[ とテキストオブジェクト af/if/ac/ic は treesitter-textobjects
+  -- (nvim/ftplugin/go.lua で Go 限定 buffer-local)、GoDecls 相当は telescope の
+  -- lsp_document/workspace_symbols (同ファイル)。:Go* コマンド群は未使用のため引き継がない
+  -- (必要なら go.nvim/nvim-dap-go)。旧 vim-go からの移行経緯は docs/nvim-plugins.md 参照。
   { "andymass/vim-matchup",
     -- event を付けず eager でロードする (意図的): 作者が README で event 遅延ロードを
     -- 非推奨と明言している (起動時ロードは元々最小限で、遅延は不具合時の切り分け対象に
@@ -265,12 +250,10 @@ require("lazy").setup({
   --   conform.nvim : 整形 (:Format / <leader>f)   nvim-lint : sh の shellcheck
   -- キー割り当て・診断・on_attach の本体は nvim/lua/dotfiles/lsp.lua。
   --
-  -- mason-lspconfig は廃止 (2026-07-11): setup() が mason レジストリ走査 + installed 検出で
-  -- 初回 BufReadPre に ~13ms かかっていたが、買っていたのは実質「installed サーバへの
-  -- vim.lsp.enable()」だけで、サーバ一覧は lsp.server_packages として自前で持っている。
-  -- enable はここで直接呼び、バイナリ導入は mason-tool-installer (VeryLazy) に一本化した。
-  -- トレードオフ: 「mason で新サーバを入れたら自動で enable」は失われる。新サーバは
-  -- lsp.server_packages への 1 行追加で enable+導入の両方に効く。
+  -- mason-lspconfig は廃止 (installed 検出のオーバーヘッドの割に vim.lsp.enable() 呼び出し以上の
+  -- 価値が無かったため)。enable はここで直接呼び、導入は mason-tool-installer に一本化した
+  -- (経緯は docs/nvim-plugins.md 参照)。新サーバは lsp.server_packages への 1 行追加で
+  -- enable+導入の両方に効く (mason で入れても自動 enable はされない点がトレードオフ)。
   -- ============================================================================
   { "mason-org/mason.nvim", cmd = "Mason", opts = {} },
   { "neovim/nvim-lspconfig",
@@ -372,9 +355,8 @@ require("lazy").setup({
           hcl = { "terraform_fmt" },
           go = { "goimports" }, -- vim-go 置換: 旧 go_fmt_autosave+go_imports_autosave 相当 (gofmt整形+import増減)
         },
-        -- terraform 系と go だけ保存時に整形する (terraform=旧 vim-terraform g:terraform_fmt_on_save=1、
-        -- go=旧 vim-go go_fmt_autosave/go_imports_autosave を踏襲)。他の ft は従来どおり
-        -- <leader>f / :Format の手動整形のまま (nil を返すと保存時整形なし)。
+        -- terraform 系と go だけ保存時に整形する。他の ft は従来どおり <leader>f / :Format の
+        -- 手動整形のまま (nil を返すと保存時整形なし)。
         format_on_save = function(bufnr)
           local ft = vim.bo[bufnr].filetype
           if ft == "go" then
@@ -494,11 +476,8 @@ require("lazy").setup({
         --   選択 = 明るい pink 地 × 黒の太字 + 橙のインジケータバー (最も目立たせる)
         --   非選択 = 暗い地に沈んだ灰字 (存在感を弱める。地色は fill と同じ dark0_hard =
         --   タブは地に溶け、文字色とセパレータ縦線だけで区切るフラットデザイン)
-        -- gui(truecolor) と cterm(256色) の両方を指定する。この環境は ~/.zshenv の
-        -- SUPPORT_TRUECOLOR=false で retrobox + termguicolors=off (256色) のため、
-        -- gui 色だけでは一切効かず区別が付かなかった。hex↔cterm の組は pal (dotfiles/palette) が
-        -- 唯一の出典。かつて手書き併記だった頃、同じ #1d2021 に ctermbg=237 (=dark1 の対応値) が
-        -- 混在し「256色でだけ非選択タブが明るく浮く」drift があった (2026-07-16 に 234 へ統一)。
+        -- gui(truecolor)/cterm(256色) を両方指定する (bufferline は hl.set を経由できないため
+        -- 手動併記。dotfiles/hl.lua 参照)。hex↔cterm の組は pal (dotfiles/palette) が唯一の出典。
         highlights = {
           fill = { bg = pal.dark0_hard.hex, ctermbg = pal.dark0_hard.cterm },
           -- 非選択バッファ (最も沈める)
@@ -507,9 +486,8 @@ require("lazy").setup({
           -- 別ウィンドウで可視だが非アクティブ (中間トーン)
           buffer_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm },
           modified_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm },
-          -- アクティブ (tmux の current window 島と同じ Coral 地 + 黒の太字。
-          -- 「いまここ」の色言語を tmux バーと統一。palette.accent.current_accent 参照。
-          -- 旧ショッキングピンク → Coral へ: オレンジ基調テーマ 2026-07-16)
+          -- アクティブ (tmux の current window 島と同じ地色 + 黒の太字。
+          -- 「いまここ」の色言語を tmux バーと統一。palette.accent.current_accent 参照。)
           buffer_selected = { fg = pal.dark0_hard.hex, bg = pal.accent.current_accent.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.accent.current_accent.cterm, bold = true, italic = false },
           modified_selected = { fg = pal.dark0_hard.hex, bg = pal.accent.current_accent.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.accent.current_accent.cterm, bold = true },
           indicator_selected = { fg = pal.light1.hex, bg = pal.accent.current_accent.hex, ctermfg = pal.light1.cterm, ctermbg = pal.accent.current_accent.cterm }, -- クリームのバー (旧橙208は蛍光橙地202と d=40 でほぼ不可視のため変更 2026-07-16)

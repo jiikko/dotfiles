@@ -22,7 +22,6 @@ __video_health_check() {
   local -a issues=()
   local video_duration format_duration
 
-  # 映像ストリームの duration を取得
   video_duration=$(__ff_stream_field "$file" v:0 stream=duration)
 
   if [[ -z "$video_duration" ]] || [[ "$video_duration" == "N/A" ]]; then
@@ -30,7 +29,6 @@ __video_health_check() {
     return 2
   fi
 
-  # フォーマット全体の duration を取得
   format_duration=$(__ff_format_field "$file" format=duration)
 
   if [[ -z "$format_duration" ]] || [[ "$format_duration" == "N/A" ]]; then
@@ -74,24 +72,12 @@ __video_health_check() {
 
   # --- チェック3: DTS 単調性（DTS 逆行 = 本物のタイムスタンプ破損） ---
   #
-  # 旧実装は r_frame_rate vs avg_frame_rate の乖離を「スロー/早送り破損」として
-  # 検出していたが、これは誤検知製造機だったため撤去した:
-  #   - r_frame_rate は ffprobe の「全タイムスタンプを表現できる最小の基底レート」
-  #     という推測値で、CFR コンテンツでも time_base 由来の非現実的な値を返す。
-  #     実例: CFR 24fps の Web 配信動画 (time_base=1/90000) で r_frame_rate=120 を
-  #     報告。PTS 連続差分の 99% が delta=3750 (=きっかり 1/24 秒) で一定 = 健全な
-  #     CFR なのに、r(120) vs avg(23.59) の比較で「破損」と誤判定していた。
-  #   - VFR では r と avg が大きく乖離するのが正常。
-  #   → CFR (bogus r) / VFR の双方で正常ファイルを破損扱いにし、--force 必須化で
-  #     判定が形骸化していた。
-  #   - そもそも「タイムスタンプ一様引き伸ばしによるスロー再生」は、本来の fps を
-  #     知る術 (= 信頼できる r_frame_rate) が無い以上、metadata からは原理的に検出
-  #     不能 (引き伸ばし後は低 fps の正常動画と区別できない)。
+  # 旧: r_frame_rate vs avg_frame_rate によるスロー/早送り破損検出は誤検知製造機だったため撤去済み
+  # (r_frame_rate は推測値でCFR/VFRとも誤判定する。再追加しないこと)。
   #
   # 代わりに、本物のタイムスタンプ破損である DTS (デコード順タイムスタンプ) の逆行を
   # 検出する。DTS はストリーム順 = デコード順で単調非減少であるべきで、逆行は破損。
-  # (PTS は B-frame で表示順が前後しうるため判定に使わない。DTS のみで判定する)
-  #
+  # (PTS は B-frame で表示順が前後しうるため判定に使わない。DTS のみで判定する)  #
   # 前提が変わったら再評価: ffprobe が CFR で正確な r_frame_rate を返すようになれば、
   # スロー再生検出を r ベースで復活させる余地がある (現状の ffprobe 仕様では不可)。
   #

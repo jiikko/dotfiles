@@ -148,10 +148,6 @@ __av1ify_postcheck() {
   # A/V duration 判定: ソースとの符号付き相対比較で「encode が新たに作った drift」だけを見る。
   # ソースが元から持っている A/V mismatch (例: 末尾無音映像が残る MKV、雑なリッピング素材)
   # を encode 由来と誤検出しないために、絶対値ではなく enc 前後の差分のみを評価する。
-  #
-  # 旧バージョンには「ソースの stream=duration が取得不能 (MKV 等) なら絶対値で判定」という
-  # フォールバックがあったが、ソース由来の音ズレ素材で大量の誤検出を出していたため廃止。
-  # 代わりに __av1ify_get_stream_end が packet PTS 走査で MKV でも真の duration を取りに行く。
   local out_v out_a src_v="" src_a=""
   out_v=$(__ff_stream_field "$filepath" v:0 stream=duration)
   out_a=$(__ff_stream_field "$filepath" a:0 stream=duration)
@@ -235,7 +231,7 @@ __av1ify_postcheck() {
       # 許容値 = max(絶対フロア, ソースの相対%)。固定 24 だけだと長尺に厳しすぎる
       # (Δ=88 でも 25分@30fps なら 0.1% 台。nb_frames はコンテナメタデータでソース側が
       # 不正確なことも多い)。「途中で切れた」級の実害は再生時間ズレ (AV1IFY_DURATION_TOLERANCE)
-      # が独立に守るため、ここは相対で緩めても事故は素通りしない (2026-07-12)。
+      # が独立に守るため、ここは相対で緩めても事故は素通りしない。
       local frame_tolerance="${AV1IFY_FRAME_TOLERANCE:-24}"
       local frame_tol_pct="${AV1IFY_FRAME_TOLERANCE_PCT:-0.5}"
       # shellcheck disable=SC2079  # zsh の (( )) は小数を扱える (bash 前提の誤検知)
