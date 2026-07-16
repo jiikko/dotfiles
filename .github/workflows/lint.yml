@@ -5,7 +5,7 @@ on:
   push:
     branches: [master]
   pull_request:
-  workflow_dispatch: # GitHub UI からの手動再実行 (flake 切り分け用)
+  workflow_dispatch:  # GitHub UI からの手動再実行 (flake 切り分け用)
 
 permissions:
   contents: read
@@ -74,8 +74,7 @@ jobs:
       - name: Lint Go projects (golangci-lint)
         run: make test-go-lint
 
-      # glog は unit + integration (一時 git リポジトリ) を CI でも回す。外部通信はしない
-      # (GitHub API は fake runner に差し替え済み)。parallel-each のテストは TUI 依存で
-      # 重いためここでは回さない (従来どおりローカル実行)。
-      - name: Test src/glog
-        run: make -C src/glog test
+      # glog の go test はここではなく専用 workflow (src_glog.yml、paths filter 付き) で回す。
+      # 全 push で走る lint.yml に置くと glog 非接触の push でもテストが回るため移設した (2026-07-17)。
+      # cache-dependency-path の src/glog/go.sum は golangci-lint (make test-go-lint) が
+      # glog も lint するため残している。

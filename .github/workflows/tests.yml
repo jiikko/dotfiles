@@ -5,7 +5,7 @@ on:
   push:
     branches: [master]
   pull_request:
-  workflow_dispatch: # GitHub UI からの手動再実行 (flake 切り分け用)
+  workflow_dispatch:  # GitHub UI からの手動再実行 (flake 切り分け用)
 
 permissions:
   contents: read
