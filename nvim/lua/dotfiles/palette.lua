@@ -16,7 +16,7 @@ local M = {
   dark0_hard    = { hex = "#1d2021", cterm = 234 },
   dark0         = { hex = "#282828", cterm = 235 },
   dark1         = { hex = "#3c3836", cterm = 237 },
-  dark4         = { hex = "#665c54", cterm = 245 },
+  dark3         = { hex = "#665c54", cterm = 245 },
   light1        = { hex = "#ebdbb2", cterm = 223 },
   light4        = { hex = "#a89984", cterm = 250 },
   bright_red    = { hex = "#fb4934", cterm = 203 },
@@ -26,9 +26,9 @@ local M = {
 }
 
 M.accent = {
-  -- 「現在地」の統一色: tmux の current window 島 (_tmux.conf の @cur-bg = colour199) と同一。
+  -- 「現在地」の統一色: tmux の current window 島 (_tmux.conf の @cur-accent = colour199) と同一。
   -- bufferline の選択タブが参照し、tmux バーと nvim タブラインで「いまここ = ショッキングピンク」
-  -- の色言語を揃える (2026-07-16)。変えるときは tmux 側 @cur-bg と対で (docs/theme-colors.md)。
+  -- の色言語を揃える (2026-07-16)。変えるときは tmux 側 @cur-accent と対で (docs/theme-colors.md)。
   current_pink = { hex = "#ff00af", cterm = 199 },
 }
 

@@ -498,8 +498,8 @@ require("lazy").setup({
         highlights = {
           fill = { bg = pal.dark0_hard.hex, ctermbg = pal.dark0_hard.cterm },
           -- 非選択バッファ (最も沈める)
-          background = { fg = pal.dark4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark4.cterm, ctermbg = pal.dark0_hard.cterm },
-          modified = { fg = pal.dark4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark4.cterm, ctermbg = pal.dark0_hard.cterm },
+          background = { fg = pal.dark3.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark3.cterm, ctermbg = pal.dark0_hard.cterm },
+          modified = { fg = pal.dark3.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark3.cterm, ctermbg = pal.dark0_hard.cterm },
           -- 別ウィンドウで可視だが非アクティブ (中間トーン)
           buffer_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm },
           modified_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm },
@@ -509,7 +509,7 @@ require("lazy").setup({
           modified_selected = { fg = pal.dark0_hard.hex, bg = pal.accent.current_pink.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.accent.current_pink.cterm, bold = true },
           indicator_selected = { fg = pal.bright_orange.hex, bg = pal.accent.current_pink.hex, ctermfg = pal.bright_orange.cterm, ctermbg = pal.accent.current_pink.cterm }, -- 橙のバー
           -- ordinal 番号 (タブ本体と同じ地色に合わせる)
-          numbers = { fg = pal.dark4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark4.cterm, ctermbg = pal.dark0_hard.cterm },
+          numbers = { fg = pal.dark3.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark3.cterm, ctermbg = pal.dark0_hard.cterm },
           numbers_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm },
           numbers_selected = { fg = pal.dark0_hard.hex, bg = pal.accent.current_pink.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.accent.current_pink.cterm, bold = true, italic = false },
           -- thin セパレータ: fg が縦線の色。地色と同系の沈んだ色 (dark1) にして境界だけ薄く見せる。
@@ -861,7 +861,7 @@ require("lazy").setup({
 
           if not props.focused then
             -- inactive時は存在感を弱める
-            fg_color, cterm_fg = pal.dark4.hex, pal.dark4.cterm
+            fg_color, cterm_fg = pal.dark3.hex, pal.dark3.cterm
             bg_color, cterm_bg = pal.dark0.hex, pal.dark0.cterm
           end
 
