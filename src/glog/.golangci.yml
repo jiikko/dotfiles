@@ -7,13 +7,43 @@ version: "2"
 linters:
   enable:
     - copyloopvar    # loop variables needlessly copied (Go 1.22+)
+    - depguard       # アーキテクチャ不変条件: render.go は純粋描画層 (下の rules)
+    - dupl           # コピペ重複の検出 (runLog の 4 行 ×2 コピペを見逃した反省。閾値は下)
+    - errorlint      # errors.Is/As を使わない比較・%w 漏れの検出
+    - forbidigo      # stdout 直接出力の禁止 (下の forbid。main.go だけ除外)
     - intrange       # for i := 0; i < n; i++  ->  for i := range n
     - misspell       # common English misspellings in comments/strings
+    - nolintlint     # 説明なし nolint コメントの禁止
     - perfsprint     # fmt.Sprintf that a faster stdlib call can replace
     - unconvert      # redundant type conversions
     - usestdlibvars  # hand-written constants that exist in the stdlib
     - wastedassign   # assignments whose value is never read
   settings:
+    dupl:
+      threshold: 120
+    forbidigo:
+      # 「TUI 層は stdout へ直接書かず tea.Msg 経由で描画する」(tui.go 冒頭の不変条件)
+      # を機械化する。stdout への出力は main.go の静的経路に限定 (exclusions で許可)。
+      forbid:
+        - pattern: ^fmt\.Print(f|ln)?$
+          msg: stdout への直接出力は main.go に限定する (TUI 層は tea.Msg 経由で描画)
+    depguard:
+      rules:
+        render-pure:
+          # render.go は「状態 → 文字列」の純粋な描画層。I/O・プロセス起動・非同期を
+          # 持ち込むと TUI (毎フレーム呼ばれる) の性能とテスト容易性が壊れる
+          files:
+            - "**/render.go"
+          deny:
+            - pkg: os
+              desc: render.go は純粋描画層 (I/O 禁止)
+            - pkg: os/exec
+              desc: render.go は純粋描画層 (プロセス起動禁止)
+            - pkg: context
+              desc: render.go は純粋描画層 (非同期処理は tui.go へ)
+    nolintlint:
+      require-explanation: true
+      require-specific: true
     errcheck:
       # Best-effort operations whose error is conventionally ignored in a CLI:
       # writes to stderr/stdout, closing/removing temp files on error paths,
@@ -25,3 +55,14 @@ linters:
         - os.Chdir
         - os.Remove
         - (*os.File).Close
+  exclusions:
+    rules:
+      # main.go は静的出力の出口なので stdout 書き込みを許可
+      - path: main\.go
+        linters:
+          - forbidigo
+      # テストのテーブル/フローの相似は仕様 (dupl の対象にしない)
+      - path: _test\.go
+        linters:
+          - dupl
+          - forbidigo
