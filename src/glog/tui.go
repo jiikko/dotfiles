@@ -686,7 +686,7 @@ func (m *browseModel) ensureCursorVisible() {
 
 func (m *browseModel) View() string {
 	if m.done {
-		// TUI 領域を消し、呼び出し元の静的出力 (ターミナル履歴に残る方) に置き換える
+		// 終了確定後は何も描かない (Alt Screen の復帰で表示は消える)
 		return ""
 	}
 	lines := m.lines()
@@ -839,7 +839,10 @@ func buildPanelBox(title string, rows []string, width int, colored bool) []strin
 	}
 	inner := width - 4 // "│ " + " │"
 	lines := make([]string, 0, len(rows)+2)
-	title = runewidth.Truncate(title, width-2, "…")
+	// タイトルは SGR 入りの job 名や commit subject がそのまま載る。ANSI を残すと
+	// 幅計算 (Truncate/StringWidth) がずれて罫線が崩れ、タイトル全体の dim 塗りも
+	// 途中でリセットされるため、タイトルに限っては ANSI を落とす
+	title = runewidth.Truncate(stripANSI(title), width-2, "…")
 	top := "┌" + title + strings.Repeat("─", max(width-2-runewidth.StringWidth(title), 0)) + "┐"
 	lines = append(lines, paint(top, ansiDim, colored))
 	for _, row := range rows {

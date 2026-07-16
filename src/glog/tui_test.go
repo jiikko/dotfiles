@@ -722,3 +722,14 @@ func TestBuildPanelBoxWidths(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildPanelBoxTitleStripsANSI(t *testing.T) {
+	// SGR 入りの job 名/subject がタイトルに載っても罫線幅と dim 塗りを崩さない
+	lines := buildPanelBox(" \x1b[31mred job\x1b[0m ", []string{"row"}, 40, false)
+	if strings.Contains(lines[0], "\x1b") {
+		t.Errorf("タイトルに ANSI が残っている: %q", lines[0])
+	}
+	if w := runewidth.StringWidth(lines[0]); w != 40 {
+		t.Errorf("タイトル行の幅 = %d; want 40: %q", w, lines[0])
+	}
+}
