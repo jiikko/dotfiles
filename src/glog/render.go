@@ -75,6 +75,7 @@ type RenderOpts struct {
 	Oneline        bool
 	Colored        bool
 	Spinner        string
+	Width          int             // >0 ならコミットメッセージを端末幅で折り返す (TUI 用)。
 	Expanded       map[string]bool // 展開中の SHA
 	Details        map[string][]CheckDetail
 	DetailsLoading map[string]bool // 展開したが詳細を取得中の SHA
@@ -165,8 +166,12 @@ func mediumLines(c Commit, idx int, state CIState, o RenderOpts) []Line {
 	lines = append(lines, Line{Text: "Author: " + c.Author + " <" + c.AuthorEmail + ">", CommitIdx: idx})
 	lines = append(lines, Line{Text: "Date:   " + c.Date, CommitIdx: idx})
 	lines = append(lines, Line{Text: "", CommitIdx: idx})
+	// メッセージは git log と同じく切り詰めず折り返す (Width=0 の静的出力では折り返さず
+	// 端末に任せる = git log と同じ挙動)。インデント 4 の分を差し引いて折る
 	for msgLine := range strings.SplitSeq(c.Message, "\n") {
-		lines = append(lines, Line{Text: "    " + msgLine, CommitIdx: idx})
+		for _, seg := range wrapToWidth(msgLine, o.Width-4) {
+			lines = append(lines, Line{Text: "    " + seg, CommitIdx: idx})
+		}
 	}
 	if c.Body != "" {
 		lines = append(lines, Line{Text: "", CommitIdx: idx})
@@ -220,6 +225,32 @@ func RenderCached(head *Commit, state CIState, diff string, colored bool, spinne
 		b.WriteString(diff)
 	}
 	return b.String()
+}
+
+// wrapToWidth は表示幅 width で折り返す (ANSI を含まない行の前提)。width <= 0 なら
+// 折り返さない。単語境界は考慮せず端末の折り返しと同じく文字単位で折る
+// (日本語混じりの commit message では単語境界折りの利得が薄いため)。
+func wrapToWidth(s string, width int) []string {
+	if width <= 0 || runewidth.StringWidth(s) <= width {
+		return []string{s}
+	}
+	var out []string
+	var cur strings.Builder
+	w := 0
+	for _, r := range s {
+		rw := runewidth.RuneWidth(r)
+		if w+rw > width && w > 0 {
+			out = append(out, cur.String())
+			cur.Reset()
+			w = 0
+		}
+		cur.WriteRune(r)
+		w += rw
+	}
+	if cur.Len() > 0 {
+		out = append(out, cur.String())
+	}
+	return out
 }
 
 func paint(s, color string, colored bool) string {

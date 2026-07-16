@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/mattn/go-runewidth"
 )
 
 func testCommits() []Commit {
@@ -155,6 +157,60 @@ func TestRenderLinesHeaderMapping(t *testing.T) {
 	}
 	if lines[headers[0]].CommitIdx != 0 || lines[headers[1]].CommitIdx != 1 {
 		t.Errorf("CommitIdx の対応が不正: %+v", headers)
+	}
+}
+
+func TestRenderLinesWrapsMessage(t *testing.T) {
+	// Width > 0 (TUI) ではメッセージ行を切り詰めず端末幅で折り返す (git log と同じ見え方)
+	commits := testCommits()[:1]
+	commits[0].Message = strings.Repeat("あ", 50) // 表示幅 100
+	lines := RenderLines(commits, map[string]CIState{"a": StateSuccess}, RenderOpts{Width: 44})
+	var msgLines []string
+	for _, l := range lines {
+		if strings.HasPrefix(l.Text, "    ") {
+			msgLines = append(msgLines, l.Text)
+		}
+	}
+	if len(msgLines) < 3 {
+		t.Fatalf("折り返しで複数行になるはずが %d 行: %v", len(msgLines), msgLines)
+	}
+	joined := strings.Join(msgLines, "")
+	if strings.Count(joined, "あ") != 50 {
+		t.Errorf("折り返しで文字が失われた: %q", joined)
+	}
+	for _, l := range msgLines {
+		if w := runewidth.StringWidth(l); w > 44 {
+			t.Errorf("折り返し後も幅超過 (%d): %q", w, l)
+		}
+	}
+	// Width=0 (静的出力) は折り返さない (端末/パイプに任せる = git log と同じ)
+	static := RenderLines(commits, map[string]CIState{"a": StateSuccess}, RenderOpts{})
+	var staticMsg int
+	for _, l := range static {
+		if strings.HasPrefix(l.Text, "    あ") {
+			staticMsg++
+		}
+	}
+	if staticMsg != 1 {
+		t.Errorf("静的出力でメッセージが折り返されている: %d 行", staticMsg)
+	}
+}
+
+func TestWrapToWidth(t *testing.T) {
+	if got := wrapToWidth("short", 10); len(got) != 1 || got[0] != "short" {
+		t.Errorf("幅内の行が変更された: %v", got)
+	}
+	if got := wrapToWidth("", 10); len(got) != 1 || got[0] != "" {
+		t.Errorf("空行 = %v", got)
+	}
+	got := wrapToWidth("abcdefghij", 4)
+	if len(got) != 3 || got[0] != "abcd" || got[2] != "ij" {
+		t.Errorf("ASCII 折り返し = %v", got)
+	}
+	// 全角は 2 幅で数える (幅 5 に「ああ」(4) + 次の「あ」は入らない)
+	got = wrapToWidth("あああ", 5)
+	if len(got) != 2 || got[0] != "ああ" {
+		t.Errorf("全角折り返し = %v", got)
 	}
 }
 

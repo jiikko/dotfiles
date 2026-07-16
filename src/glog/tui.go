@@ -327,6 +327,7 @@ func (m *browseModel) renderOpts() RenderOpts {
 		Oneline: m.oneline,
 		Colored: m.colored,
 		Spinner: m.spinner(),
+		Width:   m.width,
 	}
 }
 
