@@ -20,16 +20,17 @@ SHELLCHECK_FILES := \
   scripts/tmux_fzf_pane_move.sh \
   scripts/tmux_log_session_closed.sh \
   scripts/tmux_reap_orphan_servers.sh \
-  scripts/tmux_refresh_all_clients.sh \
   scripts/tmux_resurrect_debounced_save.sh \
   scripts/tmux_extract_popup.sh \
   scripts/lib/tmux_popup_sessions.sh \
+  scripts/lib/tmux_fzf_window_picker.sh \
   scripts/lib/tmux_resurrect_guards.sh \
   scripts/tmux_jump_last_touched.sh \
   scripts/tmux_launcher_run.sh \
   scripts/tmux_version_gte.sh \
   scripts/tmux_resurrect_save.sh \
   scripts/tmux_scratch_popup.sh \
+  scripts/tmux_kill_confirm.sh \
   zshlib/_av1ify.zsh \
   zshlib/_av1ify_encode.zsh \
   zshlib/_av1ify_postcheck.zsh \
