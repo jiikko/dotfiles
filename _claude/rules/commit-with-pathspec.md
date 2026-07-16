@@ -13,13 +13,24 @@
 
 `git commit -- <pathspec>` は index の状態に関係なく指定ファイルの working tree 内容だけをコミットするため、「変更範囲が被らない」前提が守られている限り混入が構造的に起きない。
 
+## 履歴操作 (reset / amend / rebase) の前に直近コミットの所有者を確認する
+
+pathspec 規律は「混入」は防ぐが、**履歴を書き換える操作は防げない**。branch の先頭には並行セッションのコミットが積まれているかもしれない。
+
+- **`git reset HEAD~N` / `git commit --amend` / `git rebase` の前に、必ず `git log -N --format='%h %ad %s' --date=format:'%H:%M'` で対象コミットが自分のものか確認する**（自分が数分前に作ったコミットと、メッセージ・時刻が一致するか）
+- 「直近コミット = 自分の直近コミット」と思い込まない。自分のコミットの直後に並行セッションが commit していれば、reset HEAD~1 は**他人のコミット**を、自分のコミットの上に他人が積んでいれば**自分のつもりで他人の**を切り落とす
+- 実例 (2026-07-16): 並行セッションの `reset HEAD~1` が、直前に積まれていた別セッションのコミット (issue rename の参照更新 14 ファイル) を切り落とし staged に戻した。reflog と `git diff --cached <旧SHA>` の同一性検証で復旧できたが、気づかなければ次の pathspec なし commit に溶けて消えていた
+- 副次の注意: **`git mv` は即座に stage される**。stage された変更は共有 index 上で「他セッションの pathspec なし commit / reset に拾われ得る」状態になるため、stage から commit までの間隔を最小にする
+
 ## やること / やらないこと
 
 - ✓ `git commit -m "..." -- path1 path2` で自分の変更ファイルだけコミットする
 - ✓ 新規ファイルは自分が作ったものだけ `git add <path>` してから pathspec commit
 - ✓ 見覚えのないステージ済み変更は放置する（並行セッションの作業中かもしれない）
+- ✓ reset / amend / rebase の前に `git log` で対象コミットが自分のものか確認する
 - ✗ pathspec なしの `git commit` / `git commit -a` / `git add .` / `git add -A`
 - ✗ 他セッションのものかもしれない変更の unstage・checkout・restore
+- ✗ 直近コミットの所有者を確認せずに reset HEAD~N / commit --amend する
 
 ## 例外
 
