@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // CIState はコミット単位に集約した CI 状態。
@@ -134,23 +135,26 @@ func ExecRunner(ctx context.Context, name string, args ...string) ([]byte, []byt
 
 // GraphQL レスポンスの必要部分。
 type rollupContext struct {
-	Typename   string `json:"__typename"`
-	Name       string `json:"name"`       // CheckRun のジョブ名
-	Context    string `json:"context"`    // StatusContext のコンテキスト名
-	Status     string `json:"status"`     // CheckRun: QUEUED / IN_PROGRESS / COMPLETED / ...
-	Conclusion string `json:"conclusion"` // CheckRun: SUCCESS / FAILURE / NEUTRAL / CANCELLED / SKIPPED / ...
-	State      string `json:"state"`      // StatusContext: SUCCESS / FAILURE / ERROR / PENDING / EXPECTED
-	DetailsURL string `json:"detailsUrl"` // CheckRun のジョブ詳細ページ
-	TargetURL  string `json:"targetUrl"`  // StatusContext のリンク先
-	DatabaseID int64  `json:"databaseId"` // CheckRun の REST id (= GitHub Actions の job id)
+	Typename    string    `json:"__typename"`
+	Name        string    `json:"name"`        // CheckRun のジョブ名
+	Context     string    `json:"context"`     // StatusContext のコンテキスト名
+	Status      string    `json:"status"`      // CheckRun: QUEUED / IN_PROGRESS / COMPLETED / ...
+	Conclusion  string    `json:"conclusion"`  // CheckRun: SUCCESS / FAILURE / NEUTRAL / CANCELLED / SKIPPED / ...
+	State       string    `json:"state"`       // StatusContext: SUCCESS / FAILURE / ERROR / PENDING / EXPECTED
+	DetailsURL  string    `json:"detailsUrl"`  // CheckRun のジョブ詳細ページ
+	TargetURL   string    `json:"targetUrl"`   // StatusContext のリンク先
+	DatabaseID  int64     `json:"databaseId"`  // CheckRun の REST id (= GitHub Actions の job id)
+	StartedAt   time.Time `json:"startedAt"`   // CheckRun の開始時刻 (所要時間表示用)
+	CompletedAt time.Time `json:"completedAt"` // CheckRun の完了時刻
 }
 
 // CheckDetail は展開表示用の Check 1 件分 (ジョブ名 + 状態 + 詳細ページ URL)。
 type CheckDetail struct {
-	Name    string
-	State   CIState
-	URL     string // 無い場合は空
-	CheckID int64  // CheckRun の REST id。annotations / ログ取得に使う (StatusContext は 0)
+	Name     string
+	State    CIState
+	URL      string        // 無い場合は空
+	CheckID  int64         // CheckRun の REST id。annotations / ログ取得に使う (StatusContext は 0)
+	Duration time.Duration // job の所要時間 (0 = 不明。StatusContext / 実行中)
 }
 
 type rollupPayload struct {
@@ -161,17 +165,30 @@ type rollupPayload struct {
 }
 
 type commitPayload struct {
-	StatusCheckRollup *rollupPayload `json:"statusCheckRollup"`
+	StatusCheckRollup      *rollupPayload `json:"statusCheckRollup"`
+	AssociatedPullRequests struct {
+		Nodes []PRRef `json:"nodes"`
+	} `json:"associatedPullRequests"`
+}
+
+// CIBatch は一括 GraphQL の取得結果。
+type CIBatch struct {
+	Statuses map[string]CIState
+	Details  map[string][]CheckDetail
+	// PRs は commit に紐づく PR (複数あれば OPEN > MERGED 優先で 1 件)。
+	// 「確認したが無い」も nil で格納する (再問い合わせ抑止)
+	PRs map[string]*PRRef
 }
 
 // FetchCIStatuses は表示対象 SHA を 1 リクエストの GraphQL へまとめて問い合わせる
 // (コミットごとの REST 逐次呼び出しはしない: issue の設計)。認証は gh へ委譲する。
-// 返り値の statuses に無い SHA は取得できなかったもの (呼び出し側で StateUnknown 扱い)。
-// details は展開表示用のジョブ一覧 (Check が無い SHA は空スライス)。
-// 部分成功 (data と errors の同時返却) では取れた分と GHError の両方を返す。
-func FetchCIStatuses(ctx context.Context, run CommandRunner, repo Repo, shas []string) (map[string]CIState, map[string][]CheckDetail, *GHError) {
+// Statuses に無い SHA は取得できなかったもの (呼び出し側で StateUnknown 扱い)。
+// Details は展開表示用のジョブ一覧 (Check が無い SHA は空スライス)。PRs はコミット行の
+// バッジと p キーのキャッシュに使う。部分成功 (data と errors の同時返却) では
+// 取れた分と GHError の両方を返す。
+func FetchCIStatuses(ctx context.Context, run CommandRunner, repo Repo, shas []string) (CIBatch, *GHError) {
 	if len(shas) == 0 {
-		return map[string]CIState{}, map[string][]CheckDetail{}, nil
+		return emptyBatch(), nil
 	}
 	if len(shas) > fetchMaxSHAs {
 		shas = shas[:fetchMaxSHAs]
@@ -180,9 +197,17 @@ func FetchCIStatuses(ctx context.Context, run CommandRunner, repo Repo, shas []s
 	stdout, stderr, err := run(ctx, "gh", "api", "graphql",
 		"-F", "owner="+repo.Owner, "-F", "name="+repo.Name, "-f", "query="+query)
 	if err != nil {
-		return nil, nil, classifyGHError(err, string(stderr))
+		return emptyBatch(), classifyGHError(err, string(stderr))
 	}
 	return parseStatusResponse(stdout, shas)
+}
+
+func emptyBatch() CIBatch {
+	return CIBatch{
+		Statuses: map[string]CIState{},
+		Details:  map[string][]CheckDetail{},
+		PRs:      map[string]*PRRef{},
+	}
 }
 
 // buildStatusQuery は SHA ごとの alias で 1 クエリに束ねる。SHA は git が返した 40 桁 hex
@@ -205,16 +230,18 @@ fragment ciStatus on Commit {
     contexts(first: 100) {
       nodes {
         __typename
-        ... on CheckRun { name status conclusion detailsUrl databaseId }
+        ... on CheckRun { name status conclusion detailsUrl databaseId startedAt completedAt }
         ... on StatusContext { context state targetUrl }
       }
     }
   }
+  associatedPullRequests(first: 3) { nodes { number url state } }
 }`)
 	return b.String()
 }
 
-func parseStatusResponse(stdout []byte, shas []string) (map[string]CIState, map[string][]CheckDetail, *GHError) {
+func parseStatusResponse(stdout []byte, shas []string) (CIBatch, *GHError) {
+	batch := emptyBatch()
 	var resp struct {
 		Data struct {
 			Repository map[string]json.RawMessage `json:"repository"`
@@ -224,7 +251,7 @@ func parseStatusResponse(stdout []byte, shas []string) (map[string]CIState, map[
 		} `json:"errors"`
 	}
 	if err := json.Unmarshal(stdout, &resp); err != nil {
-		return nil, nil, &GHError{Kind: GHOther, Detail: "GraphQL レスポンスを解析できません: " + err.Error()}
+		return batch, &GHError{Kind: GHOther, Detail: "GraphQL レスポンスを解析できません: " + err.Error()}
 	}
 	// GraphQL は data と errors を同時に返しうる (部分成功)。取れた分は表示に使いつつ、
 	// 失敗があった事実は警告として通知する (欠落 SHA が黙って ? になるのを防ぐ)。
@@ -234,12 +261,10 @@ func parseStatusResponse(stdout []byte, shas []string) (map[string]CIState, map[
 	}
 	if resp.Data.Repository == nil {
 		if ghErr != nil {
-			return nil, nil, ghErr
+			return batch, ghErr
 		}
-		return nil, nil, &GHError{Kind: GHOther, Detail: "GraphQL レスポンスに repository がありません"}
+		return batch, &GHError{Kind: GHOther, Detail: "GraphQL レスポンスに repository がありません"}
 	}
-	statuses := make(map[string]CIState, len(shas))
-	details := make(map[string][]CheckDetail, len(shas))
 	for i, sha := range shas {
 		raw, ok := resp.Data.Repository[fmt.Sprintf("c%d", i)]
 		if !ok {
@@ -251,14 +276,31 @@ func parseStatusResponse(stdout []byte, shas []string) (map[string]CIState, map[
 		}
 		if commit == nil {
 			// SHA が GitHub 上に存在しない (未 push など) → Check なし扱い
-			statuses[sha] = StateNone
-			details[sha] = []CheckDetail{}
+			batch.Statuses[sha] = StateNone
+			batch.Details[sha] = []CheckDetail{}
 			continue
 		}
-		statuses[sha] = aggregateRollup(commit.StatusCheckRollup)
-		details[sha] = detailsOf(commit.StatusCheckRollup)
+		batch.Statuses[sha] = aggregateRollup(commit.StatusCheckRollup)
+		batch.Details[sha] = detailsOf(commit.StatusCheckRollup)
+		batch.PRs[sha] = pickBestPR(commit.AssociatedPullRequests.Nodes)
 	}
-	return statuses, details, ghErr
+	return batch, ghErr
+}
+
+// pickBestPR は複数 PR (cherry-pick 等) から OPEN > MERGED > その他 の優先で 1 件選ぶ。
+// 無ければ nil。
+func pickBestPR(nodes []PRRef) *PRRef {
+	if len(nodes) == 0 {
+		return nil
+	}
+	for _, state := range []string{"OPEN", "MERGED"} {
+		for _, n := range nodes {
+			if n.State == state {
+				return &n
+			}
+		}
+	}
+	return &nodes[0]
 }
 
 // fillUnknownFetched は一括取得の応答に無かった SHA を unknown で埋めて返す
@@ -359,9 +401,19 @@ func detailsOf(rollup *rollupPayload) []CheckDetail {
 		if url == "" {
 			url = node.TargetURL
 		}
+		var duration time.Duration
+		if !node.StartedAt.IsZero() && !node.CompletedAt.IsZero() {
+			duration = node.CompletedAt.Sub(node.StartedAt)
+		}
 		// name は外部 (StatusContext を作る任意のインテグレーション) が制御できる表示文字列。
 		// パネルと終了後の静的出力にそのまま載るため、ここで無害化する
-		details = append(details, CheckDetail{Name: sanitizeDetailLine(name), State: nodeState(node), URL: url, CheckID: node.DatabaseID})
+		details = append(details, CheckDetail{
+			Name:     sanitizeDetailLine(name),
+			State:    nodeState(node),
+			URL:      url,
+			CheckID:  node.DatabaseID,
+			Duration: duration,
+		})
 	}
 	return details
 }
@@ -369,15 +421,18 @@ func detailsOf(rollup *rollupPayload) []CheckDetail {
 // jobLogTailLines はログ表示の行数 (末尾から)。
 const jobLogTailLines = 50
 
-// FetchJobDetail は job の「何が起きたか」を取得する。annotations (CI が報告した
-// file:line + メッセージの構造化データ) があればそれを優先し、無ければログの末尾を返す
-// (失敗 job は --log-failed で失敗ステップのみ)。GitHub Actions の CheckRun 限定
-// (StatusContext = 外部 CI はログの取得経路が無い)。
+// FetchJobDetail は job の「何が起きたか」を取得する。構成は上から
+// ① step 一覧 (結論 + 所要時間。どの step で落ちた/遅いかの一覧)
+// ② annotations (CI が報告した file:line + メッセージ) があればそれ、無ければ
+// ③ ログの末尾 (失敗 job は --log-failed で失敗ステップのみ)。
+// GitHub Actions の CheckRun 限定 (StatusContext = 外部 CI は取得経路が無い)。
 func FetchJobDetail(ctx context.Context, run CommandRunner, repo Repo, check CheckDetail) ([]string, *GHError) {
 	if check.CheckID == 0 {
 		return []string{"(GitHub Actions の job ではないため詳細を取得できません)"}, nil
 	}
 	id := strconv.FormatInt(check.CheckID, 10)
+	// step 一覧は best-effort (取れなくても annotations/ログは出す)
+	lines := fetchJobSteps(ctx, run, repo, id)
 	// per_page 既定の 30 件では大量 annotation の lint job で取りこぼすため 100 に広げる。
 	// 100 超の pagination は contexts(first:100) と同じ判断で追わない
 	stdout, stderr, err := run(ctx, "gh", "api",
@@ -385,8 +440,8 @@ func FetchJobDetail(ctx context.Context, run CommandRunner, repo Repo, check Che
 	if err != nil {
 		return nil, classifyGHError(err, string(stderr))
 	}
-	if lines := annotationLines(stdout); len(lines) > 0 {
-		return lines, nil
+	if annotations := annotationLines(stdout); len(annotations) > 0 {
+		return appendSection(lines, annotations), nil
 	}
 	args := []string{"run", "view", "--job", id, "-R", repo.Owner + "/" + repo.Name}
 	if check.State == StateFailure {
@@ -398,11 +453,86 @@ func FetchJobDetail(ctx context.Context, run CommandRunner, repo Repo, check Che
 	if err != nil {
 		return nil, classifyGHError(err, string(stderr))
 	}
-	lines := logTail(string(stdout), jobLogTailLines)
-	if len(lines) == 0 {
-		return []string{"(ログが空です)"}, nil
+	tail := logTail(string(stdout), jobLogTailLines)
+	if len(tail) == 0 {
+		tail = []string{"(ログが空です)"}
 	}
-	return lines, nil
+	return appendSection(lines, tail), nil
+}
+
+// appendSection は空行を挟んでセクションを連結する (先頭セクションが空なら区切りなし)。
+func appendSection(head, tail []string) []string {
+	if len(head) == 0 {
+		return tail
+	}
+	return append(append(head, ""), tail...)
+}
+
+// fetchJobSteps は job の step 一覧を「記号 step名 (所要時間)」の行列で返す。
+// 失敗時は空 (詳細本文の取得を妨げない best-effort)。
+func fetchJobSteps(ctx context.Context, run CommandRunner, repo Repo, jobID string) []string {
+	stdout, _, err := run(ctx, "gh", "api",
+		fmt.Sprintf("repos/%s/%s/actions/jobs/%s", repo.Owner, repo.Name, jobID))
+	if err != nil {
+		return nil
+	}
+	var job struct {
+		Steps []struct {
+			Name        string    `json:"name"`
+			Status      string    `json:"status"`
+			Conclusion  string    `json:"conclusion"`
+			StartedAt   time.Time `json:"started_at"`
+			CompletedAt time.Time `json:"completed_at"`
+		} `json:"steps"`
+	}
+	if err := json.Unmarshal(stdout, &job); err != nil || len(job.Steps) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, len(job.Steps))
+	for _, s := range job.Steps {
+		glyph := stepGlyph(s.Status, s.Conclusion)
+		var duration time.Duration
+		if !s.StartedAt.IsZero() && !s.CompletedAt.IsZero() {
+			duration = s.CompletedAt.Sub(s.StartedAt)
+		}
+		line := glyph + " " + sanitizeDetailLine(s.Name)
+		if d := formatDuration(duration); d != "" {
+			line += " (" + d + ")"
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+// stepGlyph は step の状態記号 (コミット/job と同じ語彙)。
+func stepGlyph(status, conclusion string) string {
+	if status != "completed" {
+		return "●"
+	}
+	switch conclusion {
+	case "success":
+		return "✓"
+	case "failure", "timed_out", "action_required", "startup_failure":
+		return "✗"
+	default: // skipped / cancelled / neutral
+		return "⊘"
+	}
+}
+
+// formatDuration は所要時間の短い表記 ("42s" / "2m39s" / "1h2m")。0 以下は空。
+func formatDuration(d time.Duration) string {
+	if d <= 0 {
+		return ""
+	}
+	d = d.Round(time.Second)
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
+	default:
+		return fmt.Sprintf("%dh%dm", int(d.Hours()), int(d.Minutes())%60)
+	}
 }
 
 // annotationLines は check-runs annotations API のレスポンスを表示行へ変換する。
@@ -462,18 +592,10 @@ func FetchCommitPR(ctx context.Context, run CommandRunner, repo Repo, sha string
 		return nil, &GHError{Kind: GHOther, Detail: "GraphQL レスポンスを解析できません: " + err.Error()}
 	}
 	obj := resp.Data.Repository.Object
-	if obj == nil || len(obj.AssociatedPullRequests.Nodes) == 0 {
+	if obj == nil {
 		return nil, nil
 	}
-	nodes := obj.AssociatedPullRequests.Nodes
-	for _, state := range []string{"OPEN", "MERGED"} {
-		for _, n := range nodes {
-			if n.State == state {
-				return &n, nil
-			}
-		}
-	}
-	return &nodes[0], nil
+	return pickBestPR(obj.AssociatedPullRequests.Nodes), nil
 }
 
 // sanitizeDetailLine は CI 由来の表示文字列 (ログ・annotations・job 名) を端末描画に

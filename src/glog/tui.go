@@ -33,17 +33,15 @@ const (
 )
 
 type ciResultMsg struct {
-	fetched map[string]CIState
-	details map[string][]CheckDetail
-	ghErr   *GHError
+	batch CIBatch
+	ghErr *GHError
 }
 
 // detailMsg はパネル表示時のオンデマンド取得 (キャッシュヒットで詳細が無い SHA) の結果。
 type detailMsg struct {
-	sha     string
-	fetched map[string]CIState
-	details map[string][]CheckDetail
-	ghErr   *GHError
+	sha   string
+	batch CIBatch
+	ghErr *GHError
 }
 
 type tickMsg struct{}
@@ -163,8 +161,8 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 	if m.fetching {
 		m.fetch = func() tea.Msg {
 			defer cancel()
-			fetched, details, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, toFetch)
-			return ciResultMsg{fetched: fetched, details: details, ghErr: ghErr}
+			batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, toFetch)
+			return ciResultMsg{batch: batch, ghErr: ghErr}
 		}
 	}
 	return m
@@ -207,12 +205,12 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 応答に無かった SHA は unknown で埋める (fetched へ入れる = 終了時に SaveCache
 		// される 30 秒の負キャッシュ)。q での中断 (fillUnknown) と違い、こちらは API の
 		// 実際の返答に基づく確定
-		filled := fillUnknownFetched(msg.fetched, m.toFetch)
+		filled := fillUnknownFetched(msg.batch.Statuses, m.toFetch)
 		maps.Copy(m.fetched, filled)
 		maps.Copy(m.statuses, filled)
-		if msg.details != nil {
-			maps.Copy(m.details, msg.details)
-		}
+		maps.Copy(m.details, msg.batch.Details)
+		// PR はバッジ表示と p キーの両方で使う (一括取得分で p が即開きになる)
+		maps.Copy(m.prCache, msg.batch.PRs)
 		m.fetching = false
 		// 一括取得待ちでパネルを開いていた SHA の loading を解除する (結果が来なかった
 		// SHA も含めて解除。details 不在は「(CI job 情報なし)」表示に落ちる)
@@ -226,13 +224,10 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.ghErr != nil {
 			m.ghErr = msg.ghErr
 		}
-		if msg.fetched != nil {
-			maps.Copy(m.fetched, msg.fetched)
-			maps.Copy(m.statuses, msg.fetched)
-		}
-		if msg.details != nil {
-			maps.Copy(m.details, msg.details)
-		}
+		maps.Copy(m.fetched, msg.batch.Statuses)
+		maps.Copy(m.statuses, msg.batch.Statuses)
+		maps.Copy(m.details, msg.batch.Details)
+		maps.Copy(m.prCache, msg.batch.PRs)
 		return m, nil
 	case jobDetailMsg:
 		delete(m.jobDetailBusy, msg.key)
@@ -256,6 +251,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.prCache[msg.sha] = msg.pr
+		m.invalidateLines() // コミット行の PR バッジに反映
 		if msg.pr == nil {
 			m.notice = "このコミットに紐づく PR はありません"
 			return m, nil
@@ -535,8 +531,8 @@ func (m *browseModel) openPanel() tea.Cmd {
 	cmd := func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 		defer cancel()
-		fetched, details, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, []string{sha})
-		return detailMsg{sha: sha, fetched: fetched, details: details, ghErr: ghErr}
+		batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, []string{sha})
+		return detailMsg{sha: sha, batch: batch, ghErr: ghErr}
 	}
 	return tea.Batch(cmd, tick())
 }
@@ -638,6 +634,7 @@ func (m *browseModel) renderOpts() RenderOpts {
 		// その分を差し引く (差し引かないと全幅の折り返し行が clip され末尾が欠ける)
 		Width: max(m.width-2, 0),
 		Decor: m.decor,
+		PRs:   m.prCache,
 	}
 }
 
@@ -779,7 +776,11 @@ func (m *browseModel) panelLines() []string {
 			if i == m.panelCursor {
 				mark = cursorMark(m.colored)
 			}
-			rows = append(rows, mark+StatusGlyph(jobs[i].State, m.colored, "")+" "+jobs[i].Name)
+			row := mark + StatusGlyph(jobs[i].State, m.colored, "") + " " + jobs[i].Name
+			if d := formatDuration(jobs[i].Duration); d != "" {
+				row += paint(" ("+d+")", ansiDim, m.colored)
+			}
+			rows = append(rows, row)
 		}
 	}
 	title := fmt.Sprintf(" CI jobs: %s %s ", commit.ShortSHA, commit.Subject)

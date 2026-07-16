@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseGitHubURL(t *testing.T) {
@@ -97,8 +98,9 @@ func TestFetchCIStatuses(t *testing.T) {
 		"c1": {"statusCheckRollup": null},
 		"c2": null
 	}}}`
-	statuses, details, ghErr := FetchCIStatuses(context.Background(), fakeRunner(fixture, "", nil),
+	batch, ghErr := FetchCIStatuses(context.Background(), fakeRunner(fixture, "", nil),
 		Repo{Owner: "o", Name: "r"}, []string{sha1, sha2, sha3})
+	statuses, details := batch.Statuses, batch.Details
 	if ghErr != nil {
 		t.Fatalf("ghErr = %v", ghErr)
 	}
@@ -130,8 +132,8 @@ func TestFetchCIStatusesEmpty(t *testing.T) {
 		called = true
 		return nil, nil, nil
 	}
-	statuses, _, ghErr := FetchCIStatuses(context.Background(), runner, Repo{}, nil)
-	if ghErr != nil || len(statuses) != 0 || called {
+	batch, ghErr := FetchCIStatuses(context.Background(), runner, Repo{}, nil)
+	if ghErr != nil || len(batch.Statuses) != 0 || called {
 		t.Errorf("空 SHA 列で API を呼んではいけない: called=%v", called)
 	}
 }
@@ -144,8 +146,9 @@ func TestFetchCIStatusesPartialErrors(t *testing.T) {
 		"c0": {"statusCheckRollup": {"state":"SUCCESS","contexts":{"nodes":[
 			{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SUCCESS"}]}}}
 	}},"errors":[{"message":"Something went wrong while executing your query."}]}`
-	statuses, _, ghErr := FetchCIStatuses(context.Background(), fakeRunner(fixture, "", nil),
+	batch, ghErr := FetchCIStatuses(context.Background(), fakeRunner(fixture, "", nil),
 		Repo{Owner: "o", Name: "r"}, []string{sha1, sha2})
+	statuses := batch.Statuses
 	if statuses[sha1] != StateSuccess {
 		t.Errorf("部分成功で取れた sha1 = %v; want success", statuses[sha1])
 	}
@@ -158,7 +161,7 @@ func TestFetchCIStatusesPartialErrors(t *testing.T) {
 }
 
 func TestFetchCIStatusesBrokenJSON(t *testing.T) {
-	_, _, ghErr := FetchCIStatuses(context.Background(), fakeRunner("not json", "", nil),
+	_, ghErr := FetchCIStatuses(context.Background(), fakeRunner("not json", "", nil),
 		Repo{Owner: "o", Name: "r"}, []string{strings.Repeat("a", 40)})
 	if ghErr == nil || ghErr.Kind != GHOther {
 		t.Errorf("壊れた JSON は GHOther になるべき: %+v", ghErr)
@@ -182,6 +185,9 @@ func argsRunner(t *testing.T, responses map[string]string) CommandRunner {
 
 func TestFetchJobDetailPrefersAnnotations(t *testing.T) {
 	run := argsRunner(t, map[string]string{
+		"actions/jobs/123": `{"steps":[
+			{"name":"Set up job","status":"completed","conclusion":"success","started_at":"2026-07-17T00:00:00Z","completed_at":"2026-07-17T00:00:02Z"},
+			{"name":"Run lint","status":"completed","conclusion":"failure","started_at":"2026-07-17T00:00:02Z","completed_at":"2026-07-17T00:02:41Z"}]}`,
 		"check-runs/123/annotations": `[
 			{"path":"src/a.go","start_line":10,"annotation_level":"failure","message":"undefined: foo\ndetail"}]`,
 	})
@@ -190,17 +196,51 @@ func TestFetchJobDetailPrefersAnnotations(t *testing.T) {
 	if ghErr != nil {
 		t.Fatalf("ghErr = %v", ghErr)
 	}
-	want := []string{"[failure] src/a.go:10", "  undefined: foo", "  detail"}
-	if len(lines) != 3 || lines[0] != want[0] || lines[1] != want[1] || lines[2] != want[2] {
-		t.Errorf("annotations 行 = %v; want %v", lines, want)
+	// 構成: step 一覧 (結論 + 所要時間) → 空行 → annotations
+	want := []string{
+		"✓ Set up job (2s)",
+		"✗ Run lint (2m39s)",
+		"",
+		"[failure] src/a.go:10",
+		"  undefined: foo",
+		"  detail",
+	}
+	if len(lines) != len(want) {
+		t.Fatalf("行数 = %d; want %d: %v", len(lines), len(want), lines)
+	}
+	for i := range want {
+		if lines[i] != want[i] {
+			t.Errorf("lines[%d] = %q; want %q", i, lines[i], want[i])
+		}
+	}
+}
+
+func TestFetchJobDetailStepsBestEffort(t *testing.T) {
+	// steps の取得失敗は annotations/ログの表示を妨げない
+	run := func(_ context.Context, _ string, args ...string) ([]byte, []byte, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "actions/jobs/") {
+			return nil, []byte("boom"), errors.New("exit status 1")
+		}
+		if strings.Contains(joined, "annotations") {
+			return []byte(`[{"path":"a.go","start_line":1,"annotation_level":"failure","message":"m"}]`), nil, nil
+		}
+		t.Fatalf("想定外: %s", joined)
+		return nil, nil, nil
+	}
+	lines, ghErr := FetchJobDetail(context.Background(), run, Repo{Owner: "o", Name: "r"},
+		CheckDetail{Name: "lint", State: StateFailure, CheckID: 5})
+	if ghErr != nil || len(lines) != 2 || lines[0] != "[failure] a.go:1" {
+		t.Errorf("lines = %v, ghErr = %v; want annotations のみ", lines, ghErr)
 	}
 }
 
 func TestFetchJobDetailFallsBackToLog(t *testing.T) {
 	logOut := "job\tstep\tline one\njob\tstep\tline two\n"
 	run := argsRunner(t, map[string]string{
-		"annotations": `[]`,
-		"run view":    logOut,
+		"actions/jobs/9": `{"steps":[]}`,
+		"annotations":    `[]`,
+		"run view":       logOut,
 	})
 	// 失敗 job は --log-failed を使う
 	called := false
@@ -361,6 +401,47 @@ func TestFetchCommitPR(t *testing.T) {
 	// 壊れた JSON
 	if _, ghErr = FetchCommitPR(context.Background(), fakeRunner("x", "", nil), Repo{Owner: "o", Name: "r"}, sha); ghErr == nil {
 		t.Errorf("壊れた JSON がエラーにならない")
+	}
+}
+
+func TestFormatDuration(t *testing.T) {
+	tests := []struct {
+		d    time.Duration
+		want string
+	}{
+		{0, ""},
+		{-time.Second, ""},
+		{42 * time.Second, "42s"},
+		{2*time.Minute + 39*time.Second, "2m39s"},
+		{time.Hour + 2*time.Minute, "1h2m"},
+	}
+	for _, tt := range tests {
+		if got := formatDuration(tt.d); got != tt.want {
+			t.Errorf("formatDuration(%v) = %q; want %q", tt.d, got, tt.want)
+		}
+	}
+}
+
+func TestParseStatusResponsePRsAndDuration(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	fixture := `{"data":{"repository":{
+		"c0": {"statusCheckRollup": {"state":"SUCCESS","contexts":{"nodes":[
+			{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS",
+			 "startedAt":"2026-07-17T00:00:00Z","completedAt":"2026-07-17T00:02:39Z"}]}},
+		 "associatedPullRequests":{"nodes":[
+			{"number":10,"url":"https://github.com/o/r/pull/10","state":"MERGED"},
+			{"number":12,"url":"https://github.com/o/r/pull/12","state":"OPEN"}]}}
+	}}}`
+	batch, ghErr := FetchCIStatuses(context.Background(), fakeRunner(fixture, "", nil),
+		Repo{Owner: "o", Name: "r"}, []string{sha})
+	if ghErr != nil {
+		t.Fatalf("ghErr = %v", ghErr)
+	}
+	if d := batch.Details[sha][0].Duration; d != 2*time.Minute+39*time.Second {
+		t.Errorf("Duration = %v; want 2m39s", d)
+	}
+	if pr := batch.PRs[sha]; pr == nil || pr.Number != 12 {
+		t.Errorf("PRs = %+v; want OPEN の #12 (優先選択)", pr)
 	}
 }
 

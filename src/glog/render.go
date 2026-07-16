@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -9,13 +10,14 @@ import (
 
 // 状態記号は絵文字ではなく 1 カラム記号を使う (端末幅とフォント差異の影響を抑える: issue の設計)。
 const (
-	ansiReset  = "\x1b[0m"
-	ansiRed    = "\x1b[31m"
-	ansiGreen  = "\x1b[32m"
-	ansiYellow = "\x1b[33m"
-	ansiCyan   = "\x1b[36m"
-	ansiDim    = "\x1b[2m"
-	ansiBold   = "\x1b[1m"
+	ansiReset   = "\x1b[0m"
+	ansiRed     = "\x1b[31m"
+	ansiGreen   = "\x1b[32m"
+	ansiYellow  = "\x1b[33m"
+	ansiMagenta = "\x1b[35m"
+	ansiCyan    = "\x1b[36m"
+	ansiDim     = "\x1b[2m"
+	ansiBold    = "\x1b[1m"
 )
 
 // spinnerFrames は取得中表示のフレーム。
@@ -74,11 +76,12 @@ type Line struct {
 
 // RenderOpts は描画パラメータ。静的出力 (非 TTY / 最終出力) と TUI ビューの共通入力。
 type RenderOpts struct {
-	Oneline  bool
-	Colored  bool
-	Spinner  string
-	Width   int          // >0 ならコミットメッセージを端末幅で折り返す (TUI 用)。
-	Decor   *DecorColors // decoration の色 (nil = git 既定色)
+	Oneline bool
+	Colored bool
+	Spinner string
+	Width   int               // >0 ならコミットメッセージを端末幅で折り返す (TUI 用)。
+	Decor   *DecorColors      // decoration の色 (nil = git 既定色)
+	PRs     map[string]*PRRef // コミット行末尾の PR バッジ (#123)。nil 値 = PR なし
 }
 
 func (o RenderOpts) decorColors() DecorColors {
@@ -145,7 +148,27 @@ func renderOnelineRow(c Commit, state CIState, subjectWidth, authorWidth int, o 
 	b.WriteString(paint(runewidth.FillRight(c.Author, authorWidth), ansiDim, o.Colored))
 	b.WriteString("  ")
 	b.WriteString(paint(c.RelDate, ansiDim, o.Colored))
+	b.WriteString(prBadge(c.SHA, o))
 	return b.String()
+}
+
+// prBadge はコミットに紐づく PR のバッジ (" #123")。行末に置く (列揃えを崩さない)。
+// 色は GitHub の慣例: OPEN=緑 / MERGED=マゼンタ / CLOSED=赤。
+func prBadge(sha string, o RenderOpts) string {
+	pr := o.PRs[sha]
+	if pr == nil {
+		return ""
+	}
+	color := ansiDim
+	switch pr.State {
+	case "OPEN":
+		color = ansiGreen
+	case "MERGED":
+		color = ansiMagenta
+	case "CLOSED":
+		color = ansiRed
+	}
+	return " " + paint(fmt.Sprintf("#%d", pr.Number), color, o.Colored)
 }
 
 // mediumLines は git log 標準形式の 1 コミット分。
@@ -167,6 +190,7 @@ func mediumLines(c Commit, idx int, state CIState, o RenderOpts) []Line {
 		h.WriteString(" ")
 		h.WriteString(renderDecoration(c.Decoration, o))
 	}
+	h.WriteString(prBadge(c.SHA, o))
 	lines = append(lines, Line{Text: h.String(), CommitIdx: idx, Header: true})
 	lines = append(lines, Line{Text: "Author: " + c.Author + " <" + c.AuthorEmail + ">", CommitIdx: idx})
 	lines = append(lines, Line{Text: "Date:   " + c.Date, CommitIdx: idx})

@@ -120,6 +120,41 @@ func TestRenderLinesHeaderMapping(t *testing.T) {
 	}
 }
 
+func TestPRBadge(t *testing.T) {
+	// コミット行末尾の PR バッジ (行末配置なので oneline の列揃えを崩さない)
+	prs := map[string]*PRRef{
+		"a": {Number: 12, State: "OPEN"},
+		"b": nil, // 確認済みで PR なし
+	}
+	// medium: ヘッダー行に #12
+	lines := RenderLines(testCommits(), map[string]CIState{"a": StateSuccess, "b": StateSuccess},
+		RenderOpts{PRs: prs})
+	if !strings.Contains(lines[0].Text, "#12") {
+		t.Errorf("medium ヘッダーに PR バッジがない: %q", lines[0].Text)
+	}
+	// PR なしコミットには出ない
+	for _, l := range lines {
+		if l.Header && l.CommitIdx == 1 && strings.Contains(l.Text, "#") {
+			t.Errorf("PR なしコミットにバッジが出た: %q", l.Text)
+		}
+	}
+	// oneline: 行末に #12
+	one := RenderLines(testCommits(), map[string]CIState{"a": StateSuccess, "b": StateSuccess},
+		RenderOpts{Oneline: true, PRs: prs})
+	if !strings.HasSuffix(one[0].Text, "#12") {
+		t.Errorf("oneline 行末に PR バッジがない: %q", one[0].Text)
+	}
+	// 色: OPEN=緑 / MERGED=マゼンタ
+	colored := prBadge("a", RenderOpts{Colored: true, PRs: prs})
+	if !strings.Contains(colored, ansiGreen) {
+		t.Errorf("OPEN が緑でない: %q", colored)
+	}
+	merged := prBadge("m", RenderOpts{Colored: true, PRs: map[string]*PRRef{"m": {Number: 9, State: "MERGED"}}})
+	if !strings.Contains(merged, ansiMagenta) {
+		t.Errorf("MERGED がマゼンタでない: %q", merged)
+	}
+}
+
 func TestRenderDecorationGitStyle(t *testing.T) {
 	// git log の配色を尊重: HEAD=cyan / ローカル=green / remote=red / tag=yellow
 	o := RenderOpts{Colored: true}

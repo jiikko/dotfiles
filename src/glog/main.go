@@ -113,7 +113,7 @@ func runCached(opts *Options, colored bool) int {
 		return exitGitError(err)
 	}
 	statuses, toFetch, repo, hasRepo, cachePath := planStatuses(opts, []string{head.SHA})
-	ghErr := fetchStatic(statuses, toFetch, repo, hasRepo, cachePath, opts)
+	_, ghErr := fetchStatic(statuses, toFetch, repo, hasRepo, cachePath, opts)
 	fmt.Println(RenderCached(head, stateFor(statuses, head.SHA), diff, colored, ""))
 	if ghErr != nil {
 		fmt.Fprintln(os.Stderr, ghErr.Warning())
@@ -169,7 +169,8 @@ func planStatuses(opts *Options, shas []string) (statuses map[string]CIState, to
 // 非 TTY / --no-pager / less -F 相当のショートカット / TUI 基盤失敗の救済、の
 // すべてがここへ落ちる (出力契約の変更はこの 1 箇所で済む)。
 func showStatic(commits []Commit, statuses map[string]CIState, toFetch []string, repo Repo, hasRepo bool, cachePath string, opts *Options, renderOpts RenderOpts) int {
-	ghErr := fetchStatic(statuses, toFetch, repo, hasRepo, cachePath, opts)
+	prs, ghErr := fetchStatic(statuses, toFetch, repo, hasRepo, cachePath, opts)
+	renderOpts.PRs = prs
 	fmt.Println(RenderStatic(commits, statuses, renderOpts))
 	if ghErr != nil {
 		fmt.Fprintln(os.Stderr, ghErr.Warning())
@@ -180,17 +181,18 @@ func showStatic(commits []Commit, statuses map[string]CIState, toFetch []string,
 // fetchStatic は同期で CI 状態を取得して statuses へマージし、キャッシュへ保存する。
 // 取得できなかった SHA は unknown に落とす (「Check なし」と「取得失敗」を混同しない:
 // issue の懸念点)。GitHub 側の失敗は警告として返し、コマンドの成否には影響させない。
-func fetchStatic(statuses map[string]CIState, toFetch []string, repo Repo, hasRepo bool, cachePath string, opts *Options) *GHError {
+// 返り値の prs はコミット行の PR バッジ用。
+func fetchStatic(statuses map[string]CIState, toFetch []string, repo Repo, hasRepo bool, cachePath string, opts *Options) (map[string]*PRRef, *GHError) {
 	if !hasRepo || len(toFetch) == 0 {
-		return nil
+		return nil, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	defer cancel()
-	fetched, _, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, toFetch)
-	fetched = fillUnknownFetched(fetched, toFetch)
+	batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, toFetch)
+	fetched := fillUnknownFetched(batch.Statuses, toFetch)
 	maps.Copy(statuses, fetched)
 	saveFetched(cachePath, fetched, opts)
-	return ghErr
+	return batch.PRs, ghErr
 }
 
 // saveFetched は取得結果をキャッシュへ書く。best-effort で失敗してもコマンドの成否に

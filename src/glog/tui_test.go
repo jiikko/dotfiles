@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-runewidth"
@@ -295,9 +296,9 @@ func TestBrowsePanelTriggersDetailFetch(t *testing.T) {
 		t.Errorf("取得中表示がない:\n%s", m.View())
 	}
 	// 取得完了メッセージで反映される
-	m.Update(detailMsg{sha: sha,
-		fetched: map[string]CIState{sha: StateSuccess},
-		details: map[string][]CheckDetail{sha: {{Name: "build", State: StateSuccess}}}})
+	m.Update(detailMsg{sha: sha, batch: CIBatch{
+		Statuses: map[string]CIState{sha: StateSuccess},
+		Details:  map[string][]CheckDetail{sha: {{Name: "build", State: StateSuccess}}}}})
 	if m.detailsLoading[sha] {
 		t.Errorf("取得完了後も loading のまま")
 	}
@@ -320,10 +321,10 @@ func TestBrowsePanelDuringBatchFetchWaits(t *testing.T) {
 		t.Errorf("待機中の loading 表示が立っていない")
 	}
 	// 一括取得の完了で loading が解除され details が表示される
-	m.Update(ciResultMsg{
-		fetched: map[string]CIState{shas[0]: StateSuccess},
-		details: map[string][]CheckDetail{shas[0]: {{Name: "build", State: StateSuccess}}},
-	})
+	m.Update(ciResultMsg{batch: CIBatch{
+		Statuses: map[string]CIState{shas[0]: StateSuccess},
+		Details:  map[string][]CheckDetail{shas[0]: {{Name: "build", State: StateSuccess}}},
+	}})
 	if m.detailsLoading[shas[0]] {
 		t.Errorf("一括取得完了後も loading のまま")
 	}
@@ -338,10 +339,10 @@ func TestBrowseCIResultMergesAndStopsSpinner(t *testing.T) {
 	if !m.fetching {
 		t.Fatalf("toFetch ありで fetching が立っていない")
 	}
-	m.Update(ciResultMsg{
-		fetched: map[string]CIState{shas[0]: StateFailure},
-		details: map[string][]CheckDetail{shas[0]: {{Name: "lint", State: StateFailure}}},
-	})
+	m.Update(ciResultMsg{batch: CIBatch{
+		Statuses: map[string]CIState{shas[0]: StateFailure},
+		Details:  map[string][]CheckDetail{shas[0]: {{Name: "lint", State: StateFailure}}},
+	}})
 	if m.fetching {
 		t.Errorf("取得完了後も fetching のまま")
 	}
@@ -432,7 +433,7 @@ func TestBrowseCIResultNegativeCachesUnknown(t *testing.T) {
 	// API から結果が返らなかった SHA は unknown 表示 + 負キャッシュ対象 (fetched) に入る
 	shas := []string{strings.Repeat("a", 40)}
 	m := newTestBrowse(t, 1, map[string]CIState{}, shas)
-	m.Update(ciResultMsg{fetched: map[string]CIState{}})
+	m.Update(ciResultMsg{batch: emptyBatch()})
 	if m.statuses[shas[0]] != StateUnknown {
 		t.Errorf("statuses = %v; want unknown", m.statuses[shas[0]])
 	}
@@ -579,6 +580,48 @@ func TestBrowseCopyURL(t *testing.T) {
 	}
 }
 
+func TestBrowseBatchPRsFeedPCache(t *testing.T) {
+	// 一括取得の PR は p キーのキャッシュとコミット行バッジの両方に合流する
+	shas := []string{strings.Repeat("a", 40)}
+	m := newTestBrowse(t, 1, map[string]CIState{}, shas)
+	m.Update(ciResultMsg{batch: CIBatch{
+		Statuses: map[string]CIState{shas[0]: StateSuccess},
+		Details:  map[string][]CheckDetail{},
+		PRs:      map[string]*PRRef{shas[0]: {Number: 7, URL: "https://github.com/o/r/pull/7", State: "MERGED"}},
+	}})
+	var opened string
+	orig := openInBrowser
+	openInBrowser = func(u string) error {
+		opened = u
+		return nil
+	}
+	t.Cleanup(func() { openInBrowser = orig })
+	// 再取得なしで即 open
+	_, cmd := m.handleKey("p")
+	if cmd == nil || m.prBusy[shas[0]] {
+		t.Fatalf("バッチ由来の PR キャッシュで即 open にならない")
+	}
+	cmd()
+	if opened != "https://github.com/o/r/pull/7" {
+		t.Errorf("URL = %q", opened)
+	}
+	// バッジも View に出る
+	if !strings.Contains(m.View(), "#7") {
+		t.Errorf("PR バッジが View に出ていない:\n%s", m.View())
+	}
+}
+
+func TestBrowsePanelShowsJobDuration(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StateFailure
+	m.details[sha] = []CheckDetail{{Name: "dotfiles-tests", State: StateFailure, Duration: 2*time.Minute + 39*time.Second}}
+	m.openPanel()
+	if !strings.Contains(m.View(), "(2m39s)") {
+		t.Errorf("job 行に所要時間が出ていない:\n%s", m.View())
+	}
+}
+
 func TestBrowseOpenPR(t *testing.T) {
 	var opened string
 	orig := openInBrowser
@@ -684,7 +727,7 @@ func TestBrowseLinesMemoized(t *testing.T) {
 	}
 	// 状態を変える更新 (CI 結果のマージ) では再構築される
 	sha := m.commits[0].SHA
-	m.Update(ciResultMsg{fetched: map[string]CIState{sha: StateFailure}})
+	m.Update(ciResultMsg{batch: CIBatch{Statuses: map[string]CIState{sha: StateFailure}}})
 	rebuilt := m.lines()
 	if &first[0] == &rebuilt[0] {
 		t.Errorf("CI 結果反映後も古い行リストのまま")
