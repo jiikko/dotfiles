@@ -24,10 +24,7 @@
 
 ### ~~6. 優先度ラベル（High/Medium/Low）の定義が4箇所に分散~~ 実質解消（2026-07-16 確認: `forge/_common/agents.md` に「優先度ラベル（統一基準）」テーブルが整備済み。cross-review はソート順の言及のみで定義を持たない。style-review の High/Medium 数による Pass/Fail は「判定基準」であってラベル定義の重複ではない）
 
-### 7. `Task.detached` ハンドラパターンがエージェントに重複 — 現存（2026-07-16 確認: 4→6 ファイルに増殖）
-- **ファイル**: `grep -l "Task.detached" _claude/agents/*.md` で 6 件
-- **内容**: デッドロック防止のための `Task.detached` パターン（ほぼ同一のコード例）がコピーされている
-- **推奨**: `_claude/_common/swift-concurrency-patterns.md` として抽出し、各エージェントから参照する
+### ~~7. `Task.detached` ハンドラパターンがエージェントに重複~~ 対応済み 2026-07-16（真の重複は handler deadlock パターンの 4 ファイルと精査し `_claude/_common/task-detached-deadlock-pattern.md` に集約。appstore-monetization は無関係な StoreKit サンプル、xcodebuild-runner は lint ルール表の 1 行言及のため対象外）
 
 ### 8. 一部エージェントがどのスキルトリガーにも登録されていない — 一部対応済み 2026-02-19（appstore-submission-expert を CLAUDE.md に追加。残りは TT 固有のため未対応）
 - **内容**: `crash-analyzer`, `smoke-test-runner`, `statusline-setup`, `tt-api-expert`, `xcodebuild-runner` はトリガー未登録。名前を知らないと利用できない
@@ -42,9 +39,7 @@
 ### 11. シンボリックリンク依存で断絶リスクがある — 一部対応（2026-07-16 確認: setup.sh に二重リンク掃除・リンク先破壊防止のガードは追加済み。健全性チェック（dangling link 検出）は未実装）
 - **推奨**: setup.sh か make test に dangling symlink 検出を追加する
 
-### 12. CLAUDE.md のスキルトリガーテーブルが手動メンテナンス — 現存
-- **内容**: スキル追加・削除のたびに `_claude/CLAUDE.md` のテーブルを手動更新。自動同期の仕組みがない（実害の実例: smoke-test スキル削除後もテーブル参照が残っていた時期がある）
-- **推奨**: setup.sh でスキル一覧との突き合わせチェックを追加するか、テーブル直上に「スキル追加/削除時にこの表も更新」と明記する
+### ~~12. CLAUDE.md のスキルトリガーテーブルが手動メンテナンス~~ 対応済み 2026-07-16（`tests/claude/test_skill_trigger_table.sh` を新設。削除残り参照・登録漏れを両方向で検出し make test で自動実行。意図的にテーブルへ載せないスキルは EXEMPT_SKILLS へ）
 
 ### 13. プロジェクト固有スキルがグローバルスコープに存在 — 半解消（2026-07-16 確認: smoke-test は削除済み。perf-analysis は残存し description に「ThumbnailThumb 専用」を明記して緩和済み）
 - **推奨**: perf-analysis を ThumbnailThumb リポジトリの `.claude/skills/` へ移動する（ThumbnailThumb 側の作業時にまとめて）。関連: `issues/pending/skills-blog-lessons-improvements.md` 項目 8
