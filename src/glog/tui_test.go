@@ -43,6 +43,15 @@ func TestBrowseCursorNavigation(t *testing.T) {
 	if m.cursor != 0 {
 		t.Errorf("k 連打後の cursor = %d; want 0", m.cursor)
 	}
+	// emacs 風の Ctrl-N / Ctrl-P でも移動できる
+	m.handleKey("ctrl+n")
+	if m.cursor != 1 {
+		t.Errorf("ctrl+n 後の cursor = %d; want 1", m.cursor)
+	}
+	m.handleKey("ctrl+p")
+	if m.cursor != 0 {
+		t.Errorf("ctrl+p 後の cursor = %d; want 0", m.cursor)
+	}
 	m.handleKey("G")
 	if m.cursor != 2 {
 		t.Errorf("G 後の cursor = %d; want 2", m.cursor)

@@ -166,10 +166,10 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		}
 		m.done = true
 		return m, tea.Quit
-	case "j", "down":
+	case "j", "down", "ctrl+n":
 		m.cursor = clampIdx(m.cursor+1, len(m.commits))
 		m.ensureCursorVisible()
-	case "k", "up":
+	case "k", "up", "ctrl+p":
 		m.cursor = clampIdx(m.cursor-1, len(m.commits))
 		m.ensureCursorVisible()
 	case "g", "home":
