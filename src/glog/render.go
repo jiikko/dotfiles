@@ -14,10 +14,14 @@ const (
 	ansiYellow = "\x1b[33m"
 	ansiCyan   = "\x1b[36m"
 	ansiDim    = "\x1b[2m"
+	ansiBold   = "\x1b[1m"
 )
 
 // spinnerFrames は取得中表示のフレーム。
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+// StateLoading は表示専用の擬似状態。statuses map に SHA が無いとき render 側で使う。
+const StateLoading CIState = "loading"
 
 // StatusGlyph は状態 1 つ分の記号 (+色)。loading は spinner フレームを渡す。
 func StatusGlyph(state CIState, colored bool, spinner string) string {
@@ -44,9 +48,6 @@ func StatusGlyph(state CIState, colored bool, spinner string) string {
 	return color + glyph + ansiReset
 }
 
-// StateLoading は表示専用の擬似状態。statuses map に SHA が無いとき render 側で使う。
-const StateLoading CIState = "loading"
-
 func stateFor(statuses map[string]CIState, sha string) CIState {
 	if state, ok := statuses[sha]; ok {
 		return state
@@ -54,22 +55,32 @@ func stateFor(statuses map[string]CIState, sha string) CIState {
 	return StateLoading
 }
 
-// subjectWidthCap は subject 列を揃える幅の上限。極端に長い subject 1 件で
+// Line は描画 1 行分。TUI のビューポートとカーソル位置決めが CommitIdx/Header を使う。
+type Line struct {
+	Text      string
+	CommitIdx int  // どのコミットに属する行か (-1 = どれでもない)
+	Header    bool // コミットヘッダー行 (カーソルが乗る行) か
+}
+
+// RenderOpts は描画パラメータ。静的出力 (非 TTY / 最終出力) と TUI ビューの共通入力。
+type RenderOpts struct {
+	Oneline        bool
+	Colored        bool
+	Spinner        string
+	Expanded       map[string]bool // 展開中の SHA
+	Details        map[string][]CheckDetail
+	DetailsLoading map[string]bool // 展開したが詳細を取得中の SHA
+}
+
+// subjectWidthCap は --oneline で subject 列を揃える幅の上限。極端に長い subject 1 件で
 // 全行が右へ流れるのを防ぐ。
 const subjectWidthCap = 60
 
-// RenderCommits はコミット列を描画する。plain モードは 1 コミット 1 行で列を揃える。
-// --stat / -p はヘッダー行 + git 本文 (CI 記号はヘッダー行にだけ付く: issue の設計)。
-func RenderCommits(commits []Commit, statuses map[string]CIState, width int, colored bool, spinner string) string {
-	hasBody := false
-	for _, c := range commits {
-		if c.Body != "" {
-			hasBody = true
-			break
-		}
-	}
-	var b strings.Builder
-	if !hasBody {
+// RenderLines はコミット列を描画行へ展開する。既定は git log 標準 (medium) 形式、
+// --oneline はコンパクト 1 行形式。CI 記号はコミットヘッダー行にだけ付く (issue の設計)。
+func RenderLines(commits []Commit, statuses map[string]CIState, o RenderOpts) []Line {
+	var lines []Line
+	if o.Oneline {
 		subjectWidth := 0
 		authorWidth := 0
 		for _, c := range commits {
@@ -78,61 +89,106 @@ func RenderCommits(commits []Commit, statuses map[string]CIState, width int, col
 		}
 		subjectWidth = min(subjectWidth, subjectWidthCap)
 		for i, c := range commits {
-			if i > 0 {
-				b.WriteString("\n")
-			}
-			b.WriteString(renderLine(c, stateFor(statuses, c.SHA), subjectWidth, authorWidth, width, colored, spinner))
+			lines = append(lines, Line{Text: renderOnelineRow(c, stateFor(statuses, c.SHA), subjectWidth, authorWidth, o), CommitIdx: i, Header: true})
+			lines = append(lines, expandedLines(c, i, o)...)
 		}
-		return b.String()
+		return lines
 	}
 	for i, c := range commits {
 		if i > 0 {
-			b.WriteString("\n\n")
+			lines = append(lines, Line{Text: "", CommitIdx: i - 1})
 		}
-		b.WriteString(renderHeader(c, stateFor(statuses, c.SHA), colored, spinner))
-		if c.Body != "" {
-			b.WriteString("\n")
-			b.WriteString(c.Body)
-		}
+		lines = append(lines, mediumLines(c, i, stateFor(statuses, c.SHA), o)...)
 	}
-	return b.String()
+	return lines
 }
 
-// renderLine は plain モードの 1 行。列: 記号 / short SHA / (decorations) / subject / author / 相対日時。
-func renderLine(c Commit, state CIState, subjectWidth, authorWidth, termWidth int, colored bool, spinner string) string {
+// RenderStatic は静的出力 (非 TTY / TUI 終了後の最終表示) 用に行を結合する。
+func RenderStatic(commits []Commit, statuses map[string]CIState, o RenderOpts) string {
+	lines := RenderLines(commits, statuses, o)
+	texts := make([]string, len(lines))
+	for i, l := range lines {
+		texts[i] = l.Text
+	}
+	return strings.Join(texts, "\n")
+}
+
+// renderOnelineRow は --oneline の 1 行。列: 記号 / short SHA / (decorations) / subject / author / 相対日時。
+func renderOnelineRow(c Commit, state CIState, subjectWidth, authorWidth int, o RenderOpts) string {
 	var b strings.Builder
-	b.WriteString(StatusGlyph(state, colored, spinner))
+	b.WriteString(StatusGlyph(state, o.Colored, o.Spinner))
 	b.WriteString(" ")
-	b.WriteString(paint(c.ShortSHA, ansiYellow, colored))
+	b.WriteString(paint(c.ShortSHA, ansiYellow, o.Colored))
 	if c.Decoration != "" {
 		b.WriteString(" ")
-		b.WriteString(paint("("+c.Decoration+")", ansiCyan, colored))
+		b.WriteString(paint("("+c.Decoration+")", ansiCyan, o.Colored))
 	}
 	b.WriteString(" ")
 	subject := runewidth.Truncate(c.Subject, subjectWidthCap, "…")
 	b.WriteString(runewidth.FillRight(subject, subjectWidth))
 	b.WriteString("  ")
-	b.WriteString(paint(runewidth.FillRight(c.Author, authorWidth), ansiDim, colored))
+	b.WriteString(paint(runewidth.FillRight(c.Author, authorWidth), ansiDim, o.Colored))
 	b.WriteString("  ")
-	b.WriteString(paint(c.RelDate, ansiDim, colored))
-	return truncateToWidth(b.String(), termWidth, colored)
+	b.WriteString(paint(c.RelDate, ansiDim, o.Colored))
+	return b.String()
 }
 
-// renderHeader は --stat / -p モードのヘッダー行 (列揃えなし)。
-func renderHeader(c Commit, state CIState, colored bool, spinner string) string {
-	var b strings.Builder
-	b.WriteString(StatusGlyph(state, colored, spinner))
-	b.WriteString(" ")
-	b.WriteString(paint(c.ShortSHA, ansiYellow, colored))
+// mediumLines は git log 標準形式の 1 コミット分。
+//
+//	✓ commit <sha> (decorations)
+//	Author: name <email>
+//	Date:   Thu Jul 16 19:12:47 2026 +0900
+//
+//	    message...
+//
+//	[--stat / -p の本文]
+func mediumLines(c Commit, idx int, state CIState, o RenderOpts) []Line {
+	var lines []Line
+	var h strings.Builder
+	h.WriteString(StatusGlyph(state, o.Colored, o.Spinner))
+	h.WriteString(" ")
+	h.WriteString(paint("commit "+c.SHA, ansiYellow, o.Colored))
 	if c.Decoration != "" {
-		b.WriteString(" ")
-		b.WriteString(paint("("+c.Decoration+")", ansiCyan, colored))
+		h.WriteString(" ")
+		h.WriteString(paint("("+c.Decoration+")", ansiCyan, o.Colored))
 	}
-	b.WriteString(" ")
-	b.WriteString(c.Subject)
-	b.WriteString("  ")
-	b.WriteString(paint(c.Author+", "+c.RelDate, ansiDim, colored))
-	return b.String()
+	lines = append(lines, Line{Text: h.String(), CommitIdx: idx, Header: true})
+	lines = append(lines, expandedLines(c, idx, o)...)
+	lines = append(lines, Line{Text: "Author: " + c.Author + " <" + c.AuthorEmail + ">", CommitIdx: idx})
+	lines = append(lines, Line{Text: "Date:   " + c.Date, CommitIdx: idx})
+	lines = append(lines, Line{Text: "", CommitIdx: idx})
+	for msgLine := range strings.SplitSeq(c.Message, "\n") {
+		lines = append(lines, Line{Text: "    " + msgLine, CommitIdx: idx})
+	}
+	if c.Body != "" {
+		lines = append(lines, Line{Text: "", CommitIdx: idx})
+		for bodyLine := range strings.SplitSeq(c.Body, "\n") {
+			lines = append(lines, Line{Text: bodyLine, CommitIdx: idx})
+		}
+	}
+	return lines
+}
+
+// expandedLines は展開中コミットの CI job 一覧 (ヘッダー行直下に差し込む)。
+func expandedLines(c Commit, idx int, o RenderOpts) []Line {
+	if o.Expanded == nil || !o.Expanded[c.SHA] {
+		return nil
+	}
+	if o.DetailsLoading != nil && o.DetailsLoading[c.SHA] {
+		return []Line{{Text: "    " + paint(o.Spinner+" CI job を取得中...", ansiDim, o.Colored), CommitIdx: idx}}
+	}
+	details, ok := o.Details[c.SHA]
+	if !ok {
+		return []Line{{Text: "    " + paint("(CI job 情報なし)", ansiDim, o.Colored), CommitIdx: idx}}
+	}
+	if len(details) == 0 {
+		return []Line{{Text: "    " + paint("(Check はありません)", ansiDim, o.Colored), CommitIdx: idx}}
+	}
+	lines := make([]Line, 0, len(details))
+	for _, d := range details {
+		lines = append(lines, Line{Text: "    " + StatusGlyph(d.State, o.Colored, o.Spinner) + " " + d.Name, CommitIdx: idx})
+	}
+	return lines
 }
 
 // RenderCached は --cached モードの出力 (HEAD の CI 状態 + staged diff)。
@@ -161,27 +217,18 @@ func paint(s, color string, colored bool) string {
 	return color + s + ansiReset
 }
 
-// truncateToWidth は端末幅を超える行を切り詰める (インライン再描画で折り返し行が
-// 描画範囲をずらすのを防ぐ: issue の懸念点)。色付き時は ANSI を考慮できないため、
-// 折り返し許容でそのまま返す... とはせず、幅計算前に色を使わない列構成にしている。
-// 色コードを含む行は幅超過の検出が保守的になる (見かけより長く数える) ので、
-// 超過検出時のみ非色で再構築せず末尾を落とす。
-func truncateToWidth(line string, width int, colored bool) string {
+// clipToWidth は端末幅を超える行を切り詰める (インライン TUI で折り返しが再描画範囲を
+// ずらすのを防ぐ: issue の懸念点)。ANSI を除いた実効幅で判定し、超過時は色を落として
+// 切り詰める (色コードを保ったままの部分切りは複雑さに見合わない)。静的出力では使わない。
+func clipToWidth(line string, width int) string {
 	if width <= 0 {
 		return line
 	}
-	if colored {
-		// ANSI を除いた実効幅で判定する
-		if runewidth.StringWidth(stripANSI(line)) <= width {
-			return line
-		}
-		// 超過時は色を諦めて素の行を切り詰める (稀なケース: 端末が極端に狭い)
-		return runewidth.Truncate(stripANSI(line), width, "…")
-	}
-	if runewidth.StringWidth(line) <= width {
+	plain := stripANSI(line)
+	if runewidth.StringWidth(plain) <= width {
 		return line
 	}
-	return runewidth.Truncate(line, width, "…")
+	return runewidth.Truncate(plain, width, "…")
 }
 
 func stripANSI(s string) string {

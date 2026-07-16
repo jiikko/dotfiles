@@ -3,20 +3,39 @@ package main
 import (
 	"strings"
 	"testing"
-
-	"github.com/mattn/go-runewidth"
 )
 
 func testCommits() []Commit {
 	return []Commit{
-		{SHA: "a", ShortSHA: "aaaaaaa", Subject: "Fix invoice calculation", Author: "koji", RelDate: "2 hours ago", Decoration: "HEAD -> master"},
-		{SHA: "b", ShortSHA: "bbbbbbb", Subject: "Update README", Author: "koji", RelDate: "1 day ago"},
+		{SHA: "a", ShortSHA: "aaaaaaa", Subject: "Fix invoice calculation", Author: "koji", AuthorEmail: "koji@example.com",
+			Date: "Thu Jul 16 19:12:47 2026 +0900", RelDate: "2 hours ago", Decoration: "HEAD -> master",
+			Message: "Fix invoice calculation\n\ndetail line"},
+		{SHA: "b", ShortSHA: "bbbbbbb", Subject: "Update README", Author: "koji", AuthorEmail: "koji@example.com",
+			Date: "Wed Jul 15 10:00:00 2026 +0900", RelDate: "1 day ago", Message: "Update README"},
 	}
 }
 
-func TestRenderCommitsPlain(t *testing.T) {
+func TestRenderStaticMediumFormat(t *testing.T) {
+	// 既定は git log 標準 (medium) 形式に寄せる
 	statuses := map[string]CIState{"a": StateSuccess, "b": StateFailure}
-	out := RenderCommits(testCommits(), statuses, 120, false, "")
+	out := RenderStatic(testCommits(), statuses, RenderOpts{})
+	for _, want := range []string{
+		"✓ commit a (HEAD -> master)",
+		"Author: koji <koji@example.com>",
+		"Date:   Thu Jul 16 19:12:47 2026 +0900",
+		"    Fix invoice calculation",
+		"    detail line",
+		"✗ commit b",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("medium 形式に %q がありません:\n%s", want, out)
+		}
+	}
+}
+
+func TestRenderStaticOneline(t *testing.T) {
+	statuses := map[string]CIState{"a": StateSuccess, "b": StateFailure}
+	out := RenderStatic(testCommits(), statuses, RenderOpts{Oneline: true})
 	lines := strings.Split(out, "\n")
 	if len(lines) != 2 {
 		t.Fatalf("行数 = %d; want 2:\n%s", len(lines), out)
@@ -32,36 +51,38 @@ func TestRenderCommitsPlain(t *testing.T) {
 	}
 }
 
-func TestRenderCommitsLoadingSpinner(t *testing.T) {
+func TestRenderLinesLoadingSpinner(t *testing.T) {
 	// statuses に無い SHA は取得中としてスピナーを出す
-	out := RenderCommits(testCommits(), map[string]CIState{}, 120, false, "⠋")
+	out := RenderStatic(testCommits(), map[string]CIState{}, RenderOpts{Oneline: true, Spinner: "⠋"})
 	if !strings.HasPrefix(out, "⠋ aaaaaaa") {
 		t.Errorf("スピナー行 = %q", out)
 	}
 }
 
-func TestRenderCommitsNoANSIWhenUncolored(t *testing.T) {
-	// 非 TTY (colored=false) では ANSI を一切出さない (issue の完了条件)
+func TestRenderStaticNoANSIWhenUncolored(t *testing.T) {
+	// 非 TTY (Colored=false) では ANSI を一切出さない (issue の完了条件)
 	statuses := map[string]CIState{"a": StateSuccess, "b": StatePending}
-	out := RenderCommits(testCommits(), statuses, 120, false, "")
-	if strings.Contains(out, "\x1b") {
-		t.Errorf("colored=false で ANSI が混入: %q", out)
+	for _, oneline := range []bool{false, true} {
+		out := RenderStatic(testCommits(), statuses, RenderOpts{Oneline: oneline})
+		if strings.Contains(out, "\x1b") {
+			t.Errorf("Colored=false (oneline=%v) で ANSI が混入: %q", oneline, out)
+		}
 	}
 }
 
-func TestRenderCommitsColored(t *testing.T) {
+func TestRenderStaticColored(t *testing.T) {
 	statuses := map[string]CIState{"a": StateSuccess, "b": StateFailure}
-	out := RenderCommits(testCommits(), statuses, 120, true, "")
+	out := RenderStatic(testCommits(), statuses, RenderOpts{Colored: true})
 	if !strings.Contains(out, ansiGreen+"✓"+ansiReset) {
 		t.Errorf("成功記号に色がない: %q", out)
 	}
 }
 
-func TestRenderCommitsWithBody(t *testing.T) {
+func TestRenderStaticWithDiffBody(t *testing.T) {
 	commits := testCommits()
 	commits[0].Body = " file.go | 2 +-\n 1 file changed"
 	statuses := map[string]CIState{"a": StateSuccess, "b": StateSuccess}
-	out := RenderCommits(commits, statuses, 120, false, "")
+	out := RenderStatic(commits, statuses, RenderOpts{})
 	// CI 記号はヘッダー行にだけ付く (issue の設計)
 	var glyphLines int
 	for line := range strings.SplitSeq(out, "\n") {
@@ -77,13 +98,74 @@ func TestRenderCommitsWithBody(t *testing.T) {
 	}
 }
 
-func TestRenderCommitsTruncatesToWidth(t *testing.T) {
-	commits := []Commit{{SHA: "a", ShortSHA: "aaaaaaa", Subject: strings.Repeat("x", 100), Author: "koji", RelDate: "now"}}
-	out := RenderCommits(commits, map[string]CIState{"a": StateSuccess}, 40, false, "")
-	for line := range strings.SplitSeq(out, "\n") {
-		if w := runewidth.StringWidth(line); w > 40 {
-			t.Errorf("幅 %d > 40: %q", w, line)
+func TestRenderLinesExpandedDetails(t *testing.T) {
+	commits := testCommits()
+	statuses := map[string]CIState{"a": StateFailure, "b": StateSuccess}
+	o := RenderOpts{
+		Expanded: map[string]bool{"a": true},
+		Details: map[string][]CheckDetail{
+			"a": {{Name: "build", State: StateSuccess}, {Name: "lint", State: StateFailure}},
+		},
+	}
+	out := RenderStatic(commits, statuses, o)
+	for _, want := range []string{"    ✓ build", "    ✗ lint"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("展開行に %q がありません:\n%s", want, out)
 		}
+	}
+	// 展開していない b のヘッダーの後に check 行が混ざらない
+	if strings.Count(out, "✓ build") != 1 {
+		t.Errorf("展開行が重複:\n%s", out)
+	}
+}
+
+func TestRenderLinesExpandedStates(t *testing.T) {
+	commits := testCommits()[:1]
+	statuses := map[string]CIState{"a": StateSuccess}
+	// 取得中
+	loading := RenderStatic(commits, statuses, RenderOpts{
+		Expanded: map[string]bool{"a": true}, DetailsLoading: map[string]bool{"a": true}, Spinner: "⠋",
+	})
+	if !strings.Contains(loading, "CI job を取得中") {
+		t.Errorf("取得中表示がない:\n%s", loading)
+	}
+	// Check なし
+	empty := RenderStatic(commits, statuses, RenderOpts{
+		Expanded: map[string]bool{"a": true}, Details: map[string][]CheckDetail{"a": {}},
+	})
+	if !strings.Contains(empty, "Check はありません") {
+		t.Errorf("Check なし表示がない:\n%s", empty)
+	}
+}
+
+func TestRenderLinesHeaderMapping(t *testing.T) {
+	// TUI のカーソル位置決めに使う Header/CommitIdx が正しく付く
+	lines := RenderLines(testCommits(), map[string]CIState{"a": StateSuccess, "b": StateSuccess}, RenderOpts{})
+	var headers []int
+	for i, l := range lines {
+		if l.Header {
+			headers = append(headers, i)
+			if !strings.Contains(l.Text, "commit") {
+				t.Errorf("ヘッダー行が commit 行でない: %q", l.Text)
+			}
+		}
+	}
+	if len(headers) != 2 {
+		t.Fatalf("ヘッダー行数 = %d; want 2", len(headers))
+	}
+	if lines[headers[0]].CommitIdx != 0 || lines[headers[1]].CommitIdx != 1 {
+		t.Errorf("CommitIdx の対応が不正: %+v", headers)
+	}
+}
+
+func TestClipToWidth(t *testing.T) {
+	long := strings.Repeat("x", 100)
+	if got := clipToWidth(long, 40); len([]rune(got)) > 40 {
+		t.Errorf("幅超過: %q", got)
+	}
+	colored := ansiGreen + "short" + ansiReset
+	if got := clipToWidth(colored, 40); got != colored {
+		t.Errorf("幅内の色付き行が変更された: %q", got)
 	}
 }
 

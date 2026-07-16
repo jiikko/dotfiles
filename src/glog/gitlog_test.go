@@ -9,13 +9,16 @@ import (
 	"testing"
 )
 
+// rec はテスト用の git log レコード 1 件分 (9 フィールド + 本文)。
+func rec(sha, short, subject, an, ae, ad, ar, deco, message, body string) string {
+	return "\x1e" + strings.Join([]string{sha, short, subject, an, ae, ad, ar, deco, message}, "\x1f") + "\x1f" + body
+}
+
 func TestParseLogPlain(t *testing.T) {
-	out := "\x1e" + strings.Join([]string{
-		strings.Repeat("a", 40), "aaaaaaa", "Fix invoice calculation", "koji", "2 hours ago", "HEAD -> master, origin/master",
-	}, "\x1f") + "\x1f" +
-		"\x1e" + strings.Join([]string{
-		strings.Repeat("b", 40), "bbbbbbb", "Update README", "koji", "1 day ago", "",
-	}, "\x1f") + "\x1f"
+	out := rec(strings.Repeat("a", 40), "aaaaaaa", "Fix invoice calculation", "koji", "koji@example.com",
+		"Thu Jul 16 19:12:47 2026 +0900", "2 hours ago", "HEAD -> master, origin/master", "Fix invoice calculation\n\nbody\n", "") +
+		rec(strings.Repeat("b", 40), "bbbbbbb", "Update README", "koji", "koji@example.com",
+			"Wed Jul 15 10:00:00 2026 +0900", "1 day ago", "", "Update README\n", "")
 	commits, err := ParseLog(out)
 	if err != nil {
 		t.Fatal(err)
@@ -25,7 +28,9 @@ func TestParseLogPlain(t *testing.T) {
 	}
 	c := commits[0]
 	if c.ShortSHA != "aaaaaaa" || c.Subject != "Fix invoice calculation" || c.Author != "koji" ||
-		c.RelDate != "2 hours ago" || c.Decoration != "HEAD -> master, origin/master" || c.Body != "" {
+		c.AuthorEmail != "koji@example.com" || c.Date != "Thu Jul 16 19:12:47 2026 +0900" ||
+		c.RelDate != "2 hours ago" || c.Decoration != "HEAD -> master, origin/master" ||
+		c.Message != "Fix invoice calculation\n\nbody" || c.Body != "" {
 		t.Errorf("commits[0] = %+v", c)
 	}
 	if commits[1].Decoration != "" {
@@ -36,9 +41,7 @@ func TestParseLogPlain(t *testing.T) {
 func TestParseLogWithBody(t *testing.T) {
 	// --stat / -p の本文は最後のフィールドセパレータ以降 (issue のテスト方針: 本文を壊さない)
 	body := "\n file.go | 12 ++++--\n 1 file changed\n"
-	out := "\x1e" + strings.Join([]string{
-		strings.Repeat("a", 40), "aaaaaaa", "subject", "koji", "now", "",
-	}, "\x1f") + "\x1f" + body
+	out := rec(strings.Repeat("a", 40), "aaaaaaa", "subject", "koji", "k@x", "d", "now", "", "subject", body)
 	commits, err := ParseLog(out)
 	if err != nil {
 		t.Fatal(err)
@@ -183,6 +186,24 @@ func TestIntegrationStagedDiff(t *testing.T) {
 	}
 	if head.Subject != "first" {
 		t.Errorf("HEAD subject = %q", head.Subject)
+	}
+}
+
+func TestIntegrationMediumFields(t *testing.T) {
+	newTempRepo(t, []string{"multi line\n\nmessage body here"})
+	commits, err := LoadCommits(&Options{MaxCount: 1}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := commits[0]
+	if c.AuthorEmail != "t@example.com" {
+		t.Errorf("AuthorEmail = %q", c.AuthorEmail)
+	}
+	if c.Date == "" || c.Message == "" {
+		t.Errorf("Date/Message が空: %+v", c)
+	}
+	if !strings.Contains(c.Message, "message body here") {
+		t.Errorf("フルメッセージが取れていない: %q", c.Message)
 	}
 }
 

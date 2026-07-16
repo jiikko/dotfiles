@@ -92,11 +92,12 @@ func TestFetchCIStatuses(t *testing.T) {
 	sha3 := strings.Repeat("c", 40)
 	fixture := `{"data":{"repository":{
 		"c0": {"statusCheckRollup": {"state":"SUCCESS","contexts":{"nodes":[
-			{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SUCCESS"}]}}},
+			{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS"},
+			{"__typename":"StatusContext","context":"ci/legacy","state":"SUCCESS"}]}}},
 		"c1": {"statusCheckRollup": null},
 		"c2": null
 	}}}`
-	statuses, ghErr := FetchCIStatuses(context.Background(), fakeRunner(fixture, "", nil),
+	statuses, details, ghErr := FetchCIStatuses(context.Background(), fakeRunner(fixture, "", nil),
 		Repo{Owner: "o", Name: "r"}, []string{sha1, sha2, sha3})
 	if ghErr != nil {
 		t.Fatalf("ghErr = %v", ghErr)
@@ -110,6 +111,14 @@ func TestFetchCIStatuses(t *testing.T) {
 	if statuses[sha3] != StateNone {
 		t.Errorf("sha3 (GitHub 上に存在しない) = %v; want none", statuses[sha3])
 	}
+	// 展開表示用のジョブ一覧 (CheckRun は name、StatusContext は context を名前に使う)
+	want := []CheckDetail{{Name: "build", State: StateSuccess}, {Name: "ci/legacy", State: StateSuccess}}
+	if got := details[sha1]; len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("details[sha1] = %+v; want %+v", got, want)
+	}
+	if got := details[sha2]; got == nil || len(got) != 0 {
+		t.Errorf("details[sha2] (Check なし) = %+v; want 空スライス", got)
+	}
 }
 
 func TestFetchCIStatusesEmpty(t *testing.T) {
@@ -118,7 +127,7 @@ func TestFetchCIStatusesEmpty(t *testing.T) {
 		called = true
 		return nil, nil, nil
 	}
-	statuses, ghErr := FetchCIStatuses(context.Background(), runner, Repo{}, nil)
+	statuses, _, ghErr := FetchCIStatuses(context.Background(), runner, Repo{}, nil)
 	if ghErr != nil || len(statuses) != 0 || called {
 		t.Errorf("空 SHA 列で API を呼んではいけない: called=%v", called)
 	}
@@ -132,7 +141,7 @@ func TestFetchCIStatusesPartialErrors(t *testing.T) {
 		"c0": {"statusCheckRollup": {"state":"SUCCESS","contexts":{"nodes":[
 			{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SUCCESS"}]}}}
 	}},"errors":[{"message":"Something went wrong while executing your query."}]}`
-	statuses, ghErr := FetchCIStatuses(context.Background(), fakeRunner(fixture, "", nil),
+	statuses, _, ghErr := FetchCIStatuses(context.Background(), fakeRunner(fixture, "", nil),
 		Repo{Owner: "o", Name: "r"}, []string{sha1, sha2})
 	if statuses[sha1] != StateSuccess {
 		t.Errorf("部分成功で取れた sha1 = %v; want success", statuses[sha1])
@@ -146,7 +155,7 @@ func TestFetchCIStatusesPartialErrors(t *testing.T) {
 }
 
 func TestFetchCIStatusesBrokenJSON(t *testing.T) {
-	_, ghErr := FetchCIStatuses(context.Background(), fakeRunner("not json", "", nil),
+	_, _, ghErr := FetchCIStatuses(context.Background(), fakeRunner("not json", "", nil),
 		Repo{Owner: "o", Name: "r"}, []string{strings.Repeat("a", 40)})
 	if ghErr == nil || ghErr.Kind != GHOther {
 		t.Errorf("壊れた JSON は GHOther になるべき: %+v", ghErr)

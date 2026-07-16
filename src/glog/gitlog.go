@@ -11,22 +11,27 @@ import (
 // コミット境界の識別は人間向け出力の正規表現ではなく制御文字レコードで行う (issue の設計)。
 // %x1e = record separator (コミット先頭)、%x1f = field separator。
 // --stat / -p の本文は最後の %x1f 以降に続き、次の %x1e までがそのコミットのレコード。
+// %B (フルメッセージ) はセパレータを含みうる唯一のフィールドなので最後に置く。コミット
+// メッセージに \x1f/\x1e が入っている病的なケースは解析エラーとして明示的に落ちる。
 const (
 	recordSep    = "\x1e"
 	fieldSep     = "\x1f"
-	prettyFormat = "--pretty=format:%x1e%H%x1f%h%x1f%s%x1f%an%x1f%ar%x1f%D%x1f"
-	numFields    = 6
+	prettyFormat = "--pretty=format:%x1e%H%x1f%h%x1f%s%x1f%an%x1f%ae%x1f%ad%x1f%ar%x1f%D%x1f%B%x1f"
+	numFields    = 9
 )
 
 // Commit は git log 1 レコード分。
 type Commit struct {
-	SHA        string
-	ShortSHA   string
-	Subject    string
-	Author     string
-	RelDate    string
-	Decoration string // %D (例: "HEAD -> master, origin/master")、無ければ空
-	Body       string // --stat / -p の本文 (ヘッダー行以外)。無ければ空
+	SHA         string
+	ShortSHA    string
+	Subject     string
+	Author      string
+	AuthorEmail string
+	Date        string // %ad (git 既定の絶対日時。例: "Thu Jul 16 19:12:47 2026 +0900")
+	RelDate     string // %ar (相対日時。--oneline 表示で使う)
+	Decoration  string // %D (例: "HEAD -> master, origin/master")、無ければ空
+	Message     string // %B (subject を含むフルメッセージ)
+	Body        string // --stat / -p の本文 (ヘッダー行以外)。無ければ空
 }
 
 // GitExitError は git コマンド自体の失敗。stderr と終了コードをそのまま伝播する。
@@ -93,16 +98,19 @@ func ParseLog(out string) ([]Commit, error) {
 		if len(parts) != numFields+1 {
 			return nil, fmt.Errorf("glog: git log の出力を解析できません (フィールド数 %d)", len(parts))
 		}
-		body := strings.TrimPrefix(parts[6], "\n")
+		body := strings.TrimPrefix(parts[9], "\n")
 		body = strings.TrimRight(body, "\n")
 		commits = append(commits, Commit{
-			SHA:        parts[0],
-			ShortSHA:   parts[1],
-			Subject:    parts[2],
-			Author:     parts[3],
-			RelDate:    parts[4],
-			Decoration: parts[5],
-			Body:       body,
+			SHA:         parts[0],
+			ShortSHA:    parts[1],
+			Subject:     parts[2],
+			Author:      parts[3],
+			AuthorEmail: parts[4],
+			Date:        parts[5],
+			RelDate:     parts[6],
+			Decoration:  parts[7],
+			Message:     strings.TrimRight(parts[8], "\n"),
+			Body:        body,
 		})
 	}
 	return commits, nil

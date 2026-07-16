@@ -133,9 +133,17 @@ func ExecRunner(ctx context.Context, name string, args ...string) ([]byte, []byt
 // GraphQL レスポンスの必要部分。
 type rollupContext struct {
 	Typename   string `json:"__typename"`
+	Name       string `json:"name"`       // CheckRun のジョブ名
+	Context    string `json:"context"`    // StatusContext のコンテキスト名
 	Status     string `json:"status"`     // CheckRun: QUEUED / IN_PROGRESS / COMPLETED / ...
 	Conclusion string `json:"conclusion"` // CheckRun: SUCCESS / FAILURE / NEUTRAL / CANCELLED / SKIPPED / ...
 	State      string `json:"state"`      // StatusContext: SUCCESS / FAILURE / ERROR / PENDING / EXPECTED
+}
+
+// CheckDetail は展開表示用の Check 1 件分 (ジョブ名 + 状態)。
+type CheckDetail struct {
+	Name  string
+	State CIState
 }
 
 type rollupPayload struct {
@@ -151,11 +159,12 @@ type commitPayload struct {
 
 // FetchCIStatuses は表示対象 SHA を 1 リクエストの GraphQL へまとめて問い合わせる
 // (コミットごとの REST 逐次呼び出しはしない: issue の設計)。認証は gh へ委譲する。
-// 返り値 map に無い SHA は取得できなかったもの (呼び出し側で StateUnknown 扱い)。
-// 部分成功 (data と errors の同時返却) では取れた分の map と GHError の両方を返す。
-func FetchCIStatuses(ctx context.Context, run CommandRunner, repo Repo, shas []string) (map[string]CIState, *GHError) {
+// 返り値の statuses に無い SHA は取得できなかったもの (呼び出し側で StateUnknown 扱い)。
+// details は展開表示用のジョブ一覧 (Check が無い SHA は空スライス)。
+// 部分成功 (data と errors の同時返却) では取れた分と GHError の両方を返す。
+func FetchCIStatuses(ctx context.Context, run CommandRunner, repo Repo, shas []string) (map[string]CIState, map[string][]CheckDetail, *GHError) {
 	if len(shas) == 0 {
-		return map[string]CIState{}, nil
+		return map[string]CIState{}, map[string][]CheckDetail{}, nil
 	}
 	if len(shas) > fetchMaxSHAs {
 		shas = shas[:fetchMaxSHAs]
@@ -164,7 +173,7 @@ func FetchCIStatuses(ctx context.Context, run CommandRunner, repo Repo, shas []s
 	stdout, stderr, err := run(ctx, "gh", "api", "graphql",
 		"-F", "owner="+repo.Owner, "-F", "name="+repo.Name, "-f", "query="+query)
 	if err != nil {
-		return nil, classifyGHError(err, string(stderr))
+		return nil, nil, classifyGHError(err, string(stderr))
 	}
 	return parseStatusResponse(stdout, shas)
 }
@@ -184,8 +193,8 @@ fragment ciStatus on Commit {
     contexts(first: 100) {
       nodes {
         __typename
-        ... on CheckRun { status conclusion }
-        ... on StatusContext { state }
+        ... on CheckRun { name status conclusion }
+        ... on StatusContext { context state }
       }
     }
   }
@@ -193,7 +202,7 @@ fragment ciStatus on Commit {
 	return b.String()
 }
 
-func parseStatusResponse(stdout []byte, shas []string) (map[string]CIState, *GHError) {
+func parseStatusResponse(stdout []byte, shas []string) (map[string]CIState, map[string][]CheckDetail, *GHError) {
 	var resp struct {
 		Data struct {
 			Repository map[string]json.RawMessage `json:"repository"`
@@ -203,7 +212,7 @@ func parseStatusResponse(stdout []byte, shas []string) (map[string]CIState, *GHE
 		} `json:"errors"`
 	}
 	if err := json.Unmarshal(stdout, &resp); err != nil {
-		return nil, &GHError{Kind: GHOther, Detail: "GraphQL レスポンスを解析できません: " + err.Error()}
+		return nil, nil, &GHError{Kind: GHOther, Detail: "GraphQL レスポンスを解析できません: " + err.Error()}
 	}
 	// GraphQL は data と errors を同時に返しうる (部分成功)。取れた分は表示に使いつつ、
 	// 失敗があった事実は警告として通知する (欠落 SHA が黙って ? になるのを防ぐ)。
@@ -213,11 +222,12 @@ func parseStatusResponse(stdout []byte, shas []string) (map[string]CIState, *GHE
 	}
 	if resp.Data.Repository == nil {
 		if ghErr != nil {
-			return nil, ghErr
+			return nil, nil, ghErr
 		}
-		return nil, &GHError{Kind: GHOther, Detail: "GraphQL レスポンスに repository がありません"}
+		return nil, nil, &GHError{Kind: GHOther, Detail: "GraphQL レスポンスに repository がありません"}
 	}
 	statuses := make(map[string]CIState, len(shas))
+	details := make(map[string][]CheckDetail, len(shas))
 	for i, sha := range shas {
 		raw, ok := resp.Data.Repository[fmt.Sprintf("c%d", i)]
 		if !ok {
@@ -230,11 +240,44 @@ func parseStatusResponse(stdout []byte, shas []string) (map[string]CIState, *GHE
 		if commit == nil {
 			// SHA が GitHub 上に存在しない (未 push など) → Check なし扱い
 			statuses[sha] = StateNone
+			details[sha] = []CheckDetail{}
 			continue
 		}
 		statuses[sha] = aggregateRollup(commit.StatusCheckRollup)
+		details[sha] = detailsOf(commit.StatusCheckRollup)
 	}
-	return statuses, ghErr
+	return statuses, details, ghErr
+}
+
+// nodeState は Check 1 件分の状態を CIState へ写す。集約と展開表示の両方が使う。
+func nodeState(node rollupContext) CIState {
+	switch node.Typename {
+	case "CheckRun":
+		if node.Status != "COMPLETED" {
+			return StatePending
+		}
+		switch node.Conclusion {
+		case "SUCCESS":
+			return StateSuccess
+		case "FAILURE", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE":
+			return StateFailure
+		default: // NEUTRAL / CANCELLED / SKIPPED / STALE
+			return StateNeutral
+		}
+	case "StatusContext":
+		switch node.State {
+		case "SUCCESS":
+			return StateSuccess
+		case "FAILURE", "ERROR":
+			return StateFailure
+		case "PENDING", "EXPECTED":
+			return StatePending
+		default:
+			return StateNeutral
+		}
+	default:
+		return StateUnknown
+	}
 }
 
 // aggregateRollup は issue の集約ルールを適用する:
@@ -246,31 +289,15 @@ func aggregateRollup(rollup *rollupPayload) CIState {
 	}
 	var anyFailure, anyPending, anySuccess, anyNeutral bool
 	for _, node := range rollup.Contexts.Nodes {
-		switch node.Typename {
-		case "CheckRun":
-			if node.Status != "COMPLETED" {
-				anyPending = true
-				continue
-			}
-			switch node.Conclusion {
-			case "SUCCESS":
-				anySuccess = true
-			case "FAILURE", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE":
-				anyFailure = true
-			default: // NEUTRAL / CANCELLED / SKIPPED / STALE
-				anyNeutral = true
-			}
-		case "StatusContext":
-			switch node.State {
-			case "SUCCESS":
-				anySuccess = true
-			case "FAILURE", "ERROR":
-				anyFailure = true
-			case "PENDING", "EXPECTED":
-				anyPending = true
-			default:
-				anyNeutral = true
-			}
+		switch nodeState(node) {
+		case StateFailure:
+			anyFailure = true
+		case StatePending:
+			anyPending = true
+		case StateSuccess:
+			anySuccess = true
+		case StateNeutral:
+			anyNeutral = true
 		}
 	}
 	switch {
@@ -285,6 +312,25 @@ func aggregateRollup(rollup *rollupPayload) CIState {
 	default:
 		return StateNone
 	}
+}
+
+// detailsOf は展開表示用のジョブ一覧を組み立てる。
+func detailsOf(rollup *rollupPayload) []CheckDetail {
+	if rollup == nil {
+		return []CheckDetail{}
+	}
+	details := make([]CheckDetail, 0, len(rollup.Contexts.Nodes))
+	for _, node := range rollup.Contexts.Nodes {
+		name := node.Name
+		if name == "" {
+			name = node.Context
+		}
+		if name == "" {
+			name = "(unnamed)"
+		}
+		details = append(details, CheckDetail{Name: name, State: nodeState(node)})
+	}
+	return details
 }
 
 func classifyGHError(err error, stderr string) *GHError {

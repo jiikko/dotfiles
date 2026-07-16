@@ -40,12 +40,12 @@ func TestParseArgsNegativeCountUnlimited(t *testing.T) {
 }
 
 func TestParseArgsFlags(t *testing.T) {
-	opts, err := ParseArgs([]string{"--stat", "-p", "--refresh"})
+	opts, err := ParseArgs([]string{"--stat", "-p", "--refresh", "--oneline", "--no-pager"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !opts.Stat || !opts.Patch || !opts.Refresh {
-		t.Errorf("flags = %+v; want Stat/Patch/Refresh true", opts)
+	if !opts.Stat || !opts.Patch || !opts.Refresh || !opts.Oneline || !opts.NoPager {
+		t.Errorf("flags = %+v; want Stat/Patch/Refresh/Oneline/NoPager true", opts)
 	}
 }
 
@@ -75,7 +75,7 @@ func TestParseArgsPathspecCanContainDashes(t *testing.T) {
 
 func TestParseArgsUnsupported(t *testing.T) {
 	// 未対応引数は黙って無視しない (issue の完了条件)
-	for _, argv := range [][]string{{"--graph"}, {"--follow"}, {"--oneline"}} {
+	for _, argv := range [][]string{{"--graph"}, {"--follow"}, {"--reverse"}} {
 		_, err := ParseArgs(argv)
 		var ua *UnsupportedArgError
 		if !errors.As(err, &ua) {

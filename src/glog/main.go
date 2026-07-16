@@ -1,5 +1,6 @@
 // glog — GitHub Actions / Checks の結果を非同期で添える git log ラッパー。
-// 設計の一次情報: dotfiles の issues/git-log-gha-status-wrapper.md
+// 設計の一次情報: dotfiles の issues/done/git-log-gha-status-wrapper.md
+// (対話ブラウズは元 issue の非目標だったが 2026-07-16 のユーザー指示で解禁)
 package main
 
 import (
@@ -8,7 +9,6 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"strings"
 	"time"
 
 	"golang.org/x/term"
@@ -33,7 +33,7 @@ func run(argv []string) int {
 	colored := isTTY && os.Getenv("NO_COLOR") == ""
 
 	if opts.Mode == ModeCached {
-		return runCached(opts, colored, isTTY)
+		return runCached(opts, colored)
 	}
 	return runLog(opts, colored, isTTY)
 }
@@ -61,13 +61,52 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	for i, c := range commits {
 		shas[i] = c.SHA
 	}
-	render := func(statuses map[string]CIState, width int, spinner string) string {
-		return RenderCommits(commits, statuses, width, colored, spinner)
+
+	statuses, toFetch, repo, hasRepo, cachePath := planStatuses(opts, shas)
+	renderOpts := RenderOpts{Oneline: opts.Oneline, Colored: colored}
+	width, height := terminalSize()
+
+	// 対話ブラウズ (less 風) は TTY のみ。パイプ・リダイレクトへは ANSI カーソル制御を
+	// 出さず、取得完了後に静的な最終結果を 1 回だけ出力する (issue の設計)。
+	// less -F 相当のショートカット: 取得不要 (全部キャッシュ) かつ 1 画面に収まるなら
+	// ブラウズを開かずそのまま出力して終了する。
+	interactive := isTTY && !opts.NoPager
+	if interactive && len(toFetch) == 0 && fitsTerminal(len(RenderLines(commits, statuses, renderOpts)), height) {
+		interactive = false
 	}
-	return resolveAndShow(opts, shas, render, isTTY)
+
+	if !interactive {
+		ghErr := fetchStatic(statuses, toFetch, repo, hasRepo, cachePath, opts)
+		fmt.Println(RenderStatic(commits, statuses, renderOpts))
+		if ghErr != nil {
+			fmt.Fprintln(os.Stderr, ghErr.Warning())
+		}
+		return 0
+	}
+
+	model, err := RunBrowse(newBrowseModel(commits, statuses, toFetch, repo, hasRepo, opts, colored, width, height))
+	if err != nil {
+		// TUI 基盤の失敗は静的経路で救済する
+		ghErr := fetchStatic(statuses, toFetch, repo, hasRepo, cachePath, opts)
+		fmt.Println(RenderStatic(commits, statuses, renderOpts))
+		if ghErr != nil {
+			fmt.Fprintln(os.Stderr, ghErr.Warning())
+		}
+		return 0
+	}
+	// 終了時に TUI 領域は消えているので、最終結果 (展開状態を含む) を静的出力して
+	// ターミナル履歴に残す (issue の完了条件)
+	renderOpts.Expanded = model.expanded
+	renderOpts.Details = model.details
+	fmt.Println(RenderStatic(commits, model.statuses, renderOpts))
+	saveFetched(cachePath, model.fetched, opts)
+	if model.ghErr != nil {
+		fmt.Fprintln(os.Stderr, model.ghErr.Warning())
+	}
+	return 0
 }
 
-func runCached(opts *Options, colored, isTTY bool) int {
+func runCached(opts *Options, colored bool) int {
 	head, err := LoadHeadCommit()
 	if err != nil {
 		return exitGitError(err)
@@ -76,29 +115,26 @@ func runCached(opts *Options, colored, isTTY bool) int {
 	if err != nil {
 		return exitGitError(err)
 	}
-	render := func(statuses map[string]CIState, width int, spinner string) string {
-		return RenderCached(head, stateFor(statuses, head.SHA), diff, colored, spinner)
+	statuses, toFetch, repo, hasRepo, cachePath := planStatuses(opts, []string{head.SHA})
+	ghErr := fetchStatic(statuses, toFetch, repo, hasRepo, cachePath, opts)
+	fmt.Println(RenderCached(head, stateFor(statuses, head.SHA), diff, colored, ""))
+	if ghErr != nil {
+		fmt.Fprintln(os.Stderr, ghErr.Warning())
 	}
-	return resolveAndShow(opts, []string{head.SHA}, render, isTTY)
+	return 0
 }
 
-// resolveAndShow は repo 解決 → キャッシュ反映 → (TUI or 静的) 取得 → 最終表示までの共通経路。
-// GitHub 側の失敗は警告 1 行 (stderr) に落とし、Git 履歴の表示が成立していれば exit 0 を返す。
-func resolveAndShow(opts *Options, shas []string, render renderFunc, isTTY bool) int {
-	statuses := map[string]CIState{}
-	width, height := terminalSize()
-
-	repo, hasRepo := ResolveRepo()
+// planStatuses は repo 解決とキャッシュ反映を行い、表示初期状態と未取得 SHA を返す。
+func planStatuses(opts *Options, shas []string) (statuses map[string]CIState, toFetch []string, repo Repo, hasRepo bool, cachePath string) {
+	statuses = map[string]CIState{}
+	repo, hasRepo = ResolveRepo()
 	if !hasRepo {
 		// remote なし / GitHub 以外 → Check は存在しないので全件 `–` (issue のエラー方針)
 		for _, sha := range shas {
 			statuses[sha] = StateNone
 		}
-		fmt.Println(render(statuses, width, ""))
-		return 0
+		return statuses, nil, repo, false, ""
 	}
-
-	cachePath := ""
 	if !opts.NoCache {
 		if p, err := CachePath(repo); err == nil {
 			cachePath = p
@@ -112,60 +148,41 @@ func resolveAndShow(opts *Options, shas []string, render renderFunc, isTTY bool)
 			}
 		}
 	}
-	var toFetch []string
 	for _, sha := range shas {
 		if _, ok := statuses[sha]; !ok {
 			toFetch = append(toFetch, sha)
 		}
 	}
-	if len(toFetch) == 0 {
-		fmt.Println(render(statuses, width, ""))
-		return 0
-	}
-
-	var ghErr *GHError
-	var fetched map[string]CIState
-	// 動的描画は stdout が TTY のときだけ。パイプ・リダイレクトへは ANSI カーソル制御を
-	// 出さず、取得完了後に静的な最終結果を 1 回だけ出力する (issue の設計)。
-	// 初期描画が端末に収まらない場合もインライン再描画が乱れるため静的へフォールバック。
-	if isTTY && fitsTerminal(render(statuses, width, " "), height) {
-		model, err := RunTUI(newTUIModel(render, statuses, toFetch, repo, width))
-		if err != nil {
-			// TUI 基盤の失敗は静的経路で救済する
-			fetched, ghErr = fetchStatic(statuses, toFetch, repo)
-			fmt.Println(render(statuses, width, ""))
-		} else {
-			fetched, ghErr = model.fetched, model.ghErr
-			// 最終フレームは TUI が残しているため再出力しない
-		}
-	} else {
-		fetched, ghErr = fetchStatic(statuses, toFetch, repo)
-		fmt.Println(render(statuses, width, ""))
-	}
-
-	if cachePath != "" && len(fetched) > 0 {
-		// キャッシュ保存は best-effort。失敗してもコマンドの成否には影響させない
-		_ = SaveCache(cachePath, fetched, time.Now())
-	}
-	if ghErr != nil {
-		fmt.Fprintln(os.Stderr, ghErr.Warning())
-	}
-	return 0
+	return statuses, toFetch, repo, true, cachePath
 }
 
-// fetchStatic は同期で CI 状態を取得して statuses へマージする。取得できなかった SHA は
-// unknown に落とす (「Check なし」と「取得失敗」を混同しない: issue の懸念点)。
-func fetchStatic(statuses map[string]CIState, toFetch []string, repo Repo) (map[string]CIState, *GHError) {
+// fetchStatic は同期で CI 状態を取得して statuses へマージし、キャッシュへ保存する。
+// 取得できなかった SHA は unknown に落とす (「Check なし」と「取得失敗」を混同しない:
+// issue の懸念点)。GitHub 側の失敗は警告として返し、コマンドの成否には影響させない。
+func fetchStatic(statuses map[string]CIState, toFetch []string, repo Repo, hasRepo bool, cachePath string, opts *Options) *GHError {
+	if !hasRepo || len(toFetch) == 0 {
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	defer cancel()
-	fetched, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, toFetch)
+	fetched, _, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, toFetch)
 	maps.Copy(statuses, fetched)
 	for _, sha := range toFetch {
 		if _, ok := statuses[sha]; !ok {
 			statuses[sha] = StateUnknown
 		}
 	}
-	return fetched, ghErr
+	saveFetched(cachePath, fetched, opts)
+	return ghErr
+}
+
+// saveFetched は取得結果をキャッシュへ書く。best-effort で失敗してもコマンドの成否に
+// 影響させない。
+func saveFetched(cachePath string, fetched map[string]CIState, opts *Options) {
+	if opts.NoCache || cachePath == "" || len(fetched) == 0 {
+		return
+	}
+	_ = SaveCache(cachePath, fetched, time.Now())
 }
 
 func terminalSize() (width, height int) {
@@ -176,11 +193,10 @@ func terminalSize() (width, height int) {
 	return w, h
 }
 
-// fitsTerminal は初期描画が端末の高さに収まるかを判定する。
-// 収まらない場合は動的更新を諦めて静的出力へフォールバックする。
-func fitsTerminal(view string, height int) bool {
+// fitsTerminal は初期描画が端末の高さに収まるかを判定する (less -F 相当の判定)。
+func fitsTerminal(lineCount, height int) bool {
 	if height <= 0 {
 		return false
 	}
-	return strings.Count(view, "\n")+2 <= height
+	return lineCount+1 <= height
 }

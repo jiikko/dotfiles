@@ -27,6 +27,8 @@ type Options struct {
 	HasCount bool // -n / --max-count が明示されたか
 	Stat     bool
 	Patch    bool
+	Oneline  bool // コンパクト 1 行表示 (既定は git log 標準形式)
+	NoPager  bool // TTY でも対話ブラウズせず静的出力する
 	Refresh  bool // キャッシュを読まず再取得する (取得結果は保存する)
 	NoCache  bool // キャッシュを読みも書きもしない
 	Help     bool
@@ -84,6 +86,10 @@ func ParseArgs(argv []string) (*Options, error) {
 			opts.Stat = true
 		case arg == "-p" || arg == "--patch":
 			opts.Patch = true
+		case arg == "--oneline":
+			opts.Oneline = true
+		case arg == "--no-pager":
+			opts.NoPager = true
 		case arg == "--cached":
 			opts.Mode = ModeCached
 		case arg == "--refresh":
@@ -120,6 +126,8 @@ func usageShort() string {
   -n <count> / -n<count> / --max-count=<count>   表示件数 (既定 20、負数で無制限)
   --stat                                          diffstat を表示
   -p / --patch                                    patch を表示
+  --oneline                                       コンパクト 1 行表示 (既定は git log 標準形式)
+  --no-pager                                      対話ブラウズせず静的出力する
   --cached                                        HEAD の CI 状態 + staged diff を表示
   --refresh                                       CI キャッシュを無視して再取得
   --no-cache                                      CI キャッシュを読み書きしない
@@ -138,6 +146,10 @@ func Usage() string {
 
 git log の全引数への互換は目標にしていません。
 上記以外の引数が必要な場合は git log を直接使ってください。
+
+TTY では less 風の対話ブラウズになります:
+  j/k/↑/↓  コミット移動      Enter/Space  CI job 一覧の展開/折りたたみ
+  Ctrl-D/U ページスクロール   q            終了 (最終表示は履歴に残る)
 
 CI 状態の記号:
   ✓ 成功   ✗ 失敗   ● 実行中/待機   ⊘ cancelled/skipped   – Check なし   ? 取得不能`
