@@ -11,7 +11,7 @@ status バーの window list で、**最近 shell でコマンドを実行した
 からの経過を `@fade-step-secs`（現 5 秒）刻みの「段（bucket）」に落とし、明るい紫から 5 段かけて
 地に溶かす（黄昏の残光: 橙の陽=現在地が沈んだ場所に紫の残光が残り、闇へ冷めていく。
 旧シアン 51→23 はオレンジ基調テーマで「基調から浮く」ためバイオレットへ変更 2026-07-16。
-経緯: issues/claude-code-orange-theme-2026-07-16.md）:
+経緯: issues/017-feat-claude-code-orange-theme-2026-07-16.md）:
 
 | 段 (bucket) | 条件（step=5 秒時） | 表示 (bg × fg) |
 |---|---|---|

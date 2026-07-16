@@ -4,7 +4,7 @@
 出典: https://claude.com/blog/lessons-from-building-claude-code-how-we-use-skills
 対象: `_claude/skills/` 配下の既存スキル
 
-既存の `issues/claude-skills-improvements.md`（Forge 監査ベース：God File・DRY 等の内部構造）とは観点が異なる。
+既存の `issues/001-docs-claude-skills-improvements.md`（Forge 監査ベース：God File・DRY 等の内部構造）とは観点が異なる。
 こちらはブログの教訓（description / Gotchas / 段階的開示 / コード合成 / メモリ / オンデマンド hook）に基づく。
 
 ---

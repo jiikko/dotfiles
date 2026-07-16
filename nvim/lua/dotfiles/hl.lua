@@ -1,6 +1,6 @@
 -- カスタム highlight の一元管理 (規律の一次情報はこのファイル)。
 --
--- set() を通すことで 2 つの規律を一括担保する (issues/nvim-config-bugs-2026-07-10 #3/#12):
+-- set() を通すことで 2 つの規律を一括担保する (issues/done/012-bug-nvim-config-bugs-2026-07-10.md #3/#12):
 --
 --  1. ColorScheme 再適用: :colorscheme は highlight を全クリアしてから再構築するため、
 --     setup 時に 1 回だけ nvim_set_hl したカスタム色はテーマ切替で既定に戻る。

@@ -184,7 +184,7 @@ require("lazy").setup({
     -- [2026-07-10] 上流 repo 自体が archive (read-only) 化済み。上流 README いわく
     -- master は「Nvim 0.11 の後方互換のため locked のまま残す」、main rewrite は 0.12+ 必須。
     -- → nvim 0.11 で使ううちはこのピンが正解。Neovim 0.12+ へ上げる時に main 系 rewrite へ
-    -- textobjects とセットで移行を再評価 (issues/nvim-plugin-rewrite-candidates-2026-07-10.md 追記節)。
+    -- textobjects とセットで移行を再評価 (issues/010-research-nvim-plugin-rewrite-candidates-2026-07-10.md 追記節)。
     branch = "master",
     build = ":TSUpdate",
     -- textobjects も master に固定する (nvim-treesitter を master 凍結しているため。default
@@ -736,7 +736,7 @@ require("lazy").setup({
     -- ⚠️ ft = { "markdown" } にしないこと: lazy.nvim は ft ゲートのプラグインをロードした後
     -- FileType を再発火し、その再実行がレガシー Vimscript syntax 一式 (markdown.vim →
     -- html.vim → css.vim, ~16ms) を treesitter highlight と二重にロードする実バグがあった
-    -- (issues/done/nvim-markdown-legacy-syntax-double-load.md、A/B 実測で特定)。
+    -- (issues/done/013-bug-nvim-markdown-legacy-syntax-double-load.md、A/B 実測で特定)。
     -- BufReadPre (FileType より前) でロードすれば再発火が起きず legacy source はゼロになる。
     -- 拡張子ゲートの限界: 変わり種拡張子 (.mkd 等) や modeline で ft=markdown になるファイル
     -- では render-markdown がロードされない (実運用は .md/.markdown のみで許容)。

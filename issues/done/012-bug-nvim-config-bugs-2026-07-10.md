@@ -9,7 +9,7 @@
 
 調査日: 2026-07-10
 対象: `_nviminit.lua` / `nvim/lua/dotfiles/{basic,lsp,js_ts_common}.lua` / `nvim/ftplugin/*.lua` / `vendor/nvim-plugins/{vim-toggle,ambiwidth.nvim}` / `tests/nvim/*.sh` / `_lazy-lock.json` / `docs/nvim-plugins.md`
-棲み分け: 同日の [`nvim-config-audit-2026-07-10.md`](nvim-config-audit-2026-07-10.md) は「API 陳腐化 / silent option loss」観点。本 issue は**別レンズ** (Lua ロジックバグ・キーマップの組み込み潰し・lazy ロード契約・256色運用規律・vendored 移植・テスト基盤) で、前回クローズ済み事項は対象外。
+棲み分け: 同日の [`008-research-nvim-config-audit-2026-07-10.md`](008-research-nvim-config-audit-2026-07-10.md) は「API 陳腐化 / silent option loss」観点。本 issue は**別レンズ** (Lua ロジックバグ・キーマップの組み込み潰し・lazy ロード契約・256色運用規律・vendored 移植・テスト基盤) で、前回クローズ済み事項は対象外。
 調査方法: 並行 finder 6 視点 (2 視点はセッション上限で死亡 → main のインライン精読で代替) + main agent が**全 finding を nvim v0.11.5 実機の headless 実測で再検証**してから採録。finder の実測が誤っていた指摘 3 件を棄却済み (末尾「棄却」参照)。実測に使った検証スクリプトは `tmp/nvim-audit/` (git 対象外) に残置。
 
 ---

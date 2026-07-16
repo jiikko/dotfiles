@@ -46,7 +46,7 @@
   2. 残る `set_cursor` の正しさ表面（guicursor の append/remove + focus 時の再設定 + neovim#21018 のカーソルリセット workaround + `vim.on_key` による operator-pending の y/d 色分け）は**fiddly で削れない**。忠実版は結局これを写経。
   3. 過去にこの config を silent break した実績（v0.2.1 で `set_number` 未参照 / `focus_only` 削除・`ignore_filetypes`→`ignore` 改称）はあるが、**v0.3.0 に pin 済みなら以降の churn は起きない**（＝ pin で中和済み。リライトの動機にならない）。
 - **結末（2026-07-10）**: リライトではなく **削除を選択・実施した**。この config での価値が「truecolor 端末のカーソル色のみ」と限定的で（cursorline/number/signcolumn は 256色運用で off、カーソル色も guicursor 経由で 256色では非描画）、リライトより廃止が筋が良いとユーザー判断。`_nviminit.lua` の spec と `_lazy-lock.json` の entry を除去（実体は次回 `:Lazy clean` で消える）。`Modes*` highlight group や basic.lua 等への依存は grep でゼロを確認済み。config は loadfile で構文 OK。
-  - 補足: 削除により、`nvim-config-audit-2026-07-10.md` §2 の「v0.3.0 へ更新（`:Lazy restore` 要フォロー）」は moot になった（実体はまだ buggy な v0.2.1 だったが、そのまま `:Lazy clean` で消える）。
+  - 補足: 削除により、`008-research-nvim-config-audit-2026-07-10.md` §2 の「v0.3.0 へ更新（`:Lazy restore` 要フォロー）」は moot になった（実体はまだ buggy な v0.2.1 だったが、そのまま `:Lazy clean` で消える）。
 
 ---
 
@@ -60,8 +60,8 @@
 ---
 
 ## フォローアップ
-1. ~~modes.nvim を「削除 / 現状維持」判断~~ → **✅ 削除を選択・実施済み（2026-07-10）**。`_nviminit.lua` の spec と `_lazy-lock.json` entry を除去。実体は次回 `:Lazy clean` で消える（ユーザー操作）。`docs/nvim-plugins.md`・`nvim-config-audit-2026-07-10.md` も追従更新。
-2. 関連: [`nvim-vimscript-to-lua-migration.md`](nvim-vimscript-to-lua-migration.md)（Vimscript→Lua 移行の記録）/ [`nvim-config-audit-2026-07-10.md`](nvim-config-audit-2026-07-10.md)（設定監査）。
+1. ~~modes.nvim を「削除 / 現状維持」判断~~ → **✅ 削除を選択・実施済み（2026-07-10）**。`_nviminit.lua` の spec と `_lazy-lock.json` entry を除去。実体は次回 `:Lazy clean` で消える（ユーザー操作）。`docs/nvim-plugins.md`・`008-research-nvim-config-audit-2026-07-10.md` も追従更新。
+2. 関連: [`009-refactor-nvim-vimscript-to-lua-migration.md`](009-refactor-nvim-vimscript-to-lua-migration.md)（Vimscript→Lua 移行の記録）/ [`008-research-nvim-config-audit-2026-07-10.md`](008-research-nvim-config-audit-2026-07-10.md)（設定監査）。
 
 ---
 
@@ -77,7 +77,7 @@
 ### 🔴 発見: nvim-treesitter の上流リポジトリが archive 済み
 
 - **事実**（2独立ソースで確認: API `archived=true` + repo ページの "Public archive" バッジ）: `nvim-treesitter/nvim-treesitter` は **2026-04 頃にアーカイブ（read-only）化**された（最終 push 2026-04-03）。今後 master に修正が入ることは永久にない。
-- **ただし今すぐの問題ではない**: main ブランチ README が「**master は locked だが Nvim 0.11 との後方互換のために残す** / main の rewrite は **Neovim 0.12.0+（nightly）必須**」と明言している。この config は nvim **0.11.5** + master 凍結ピン（意図的設計、`nvim-config-audit-2026-07-10.md` §A）なので、**master ピンは 0.11 向けに正しい唯一の選択のまま**。archive によって挙動が変わるものは何もない。
+- **ただし今すぐの問題ではない**: main ブランチ README が「**master は locked だが Nvim 0.11 との後方互換のために残す** / main の rewrite は **Neovim 0.12.0+（nightly）必須**」と明言している。この config は nvim **0.11.5** + master 凍結ピン（意図的設計、`008-research-nvim-config-audit-2026-07-10.md` §A）なので、**master ピンは 0.11 向けに正しい唯一の選択のまま**。archive によって挙動が変わるものは何もない。
 - **移行トリガー（明確）**: **Neovim を 0.12+ へ上げる時**。その時点で main 系 rewrite（インストール/クエリ管理が全面非互換、`tree-sitter-cli` 必須）への移行を、`nvim-treesitter-textobjects`（同じく master=legacy / main=rewrite の二系統。こちらの repo は非 archive・活動中）とセットで計画する。それまでは何もしない。
 - なお「リライト対象か」の答えは不変: 10k 行の基盤で、後継は自作 fork ではなく上流の main rewrite。
 
@@ -95,7 +95,7 @@
 - **mini.trailspace**: 追跡ブランチが上流 tip より約7週古いのみ（通常の `:Lazy update` サイクル内。問題ではない）
 - **それ以外の全プラグイン**: 追跡ブランチで上流 tip と一致（behind なし）。上流も生存
 - **vendored の上流**: `rbtnn/vim-ambiwidth`（最終 push 2025-08-01）・`lukelbd/vim-toggle`（2025-02-03）とも **vendoring 基点から動きなし** → VENDOR.md の再同期は不要
-- **非推奨 API**: `nvim-config-audit-2026-07-10.md` で headless 全ロード + `:checkhealth` 済み（非推奨/削除通知ゼロ）。本再点検では再実施せず同結果を引用
+- **非推奨 API**: `008-research-nvim-config-audit-2026-07-10.md` で headless 全ロード + `:checkhealth` 済み（非推奨/削除通知ゼロ）。本再点検では再実施せず同結果を引用
 
 ---
 

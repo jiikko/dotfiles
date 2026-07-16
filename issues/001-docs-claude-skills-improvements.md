@@ -42,7 +42,7 @@
 ### ~~12. CLAUDE.md のスキルトリガーテーブルが手動メンテナンス~~ 対応済み 2026-07-16（`tests/claude/test_skill_trigger_table.sh` を新設。削除残り参照・登録漏れを両方向で検出し make test で自動実行。意図的にテーブルへ載せないスキルは EXEMPT_SKILLS へ）
 
 ### 13. プロジェクト固有スキルがグローバルスコープに存在 — 半解消（2026-07-16 確認: smoke-test は削除済み。perf-analysis は残存し description に「ThumbnailThumb 専用」を明記して緩和済み）
-- **推奨**: perf-analysis を ThumbnailThumb リポジトリの `.claude/skills/` へ移動する（ThumbnailThumb 側の作業時にまとめて）。関連: `issues/pending/skills-blog-lessons-improvements.md` 項目 8
+- **推奨**: perf-analysis を ThumbnailThumb リポジトリの `.claude/skills/` へ移動する（ThumbnailThumb 側の作業時にまとめて）。関連: `issues/pending/004-docs-skills-blog-lessons-improvements.md` 項目 8
 
 ### 14. forge スキルが audit スキルの内部ファイルパスを直接参照 — 現存・緩和（2026-07-16 確認: audit が `forge/_common/modes.md` を直接 Read する構造は継続。存在しない場合のフォールバック手順は追記済み）
 - **推奨**: 実害が出るのは forge の内部構造変更時のみ。forge を触る改修が来た時に合わせて見直す（先回り改修はしない）

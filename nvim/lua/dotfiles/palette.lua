@@ -26,7 +26,7 @@ local M = {
 }
 
 M.accent = {
-  -- Claude Code 風オレンジ基調テーマのアクセント (経緯: issues/claude-code-orange-theme-2026-07-16.md)。
+  -- Claude Code 風オレンジ基調テーマのアクセント (経緯: issues/017-feat-claude-code-orange-theme-2026-07-16.md)。
   -- current_accent は「現在地」の統一色: tmux の current window 島 (_tmux.conf の @cur-accent =
   -- colour202) と同一。bufferline の選択タブが参照し、tmux バーと nvim タブラインで
   -- 「いまここ = 蛍光オレンジ」の色言語を揃える (変遷: ショッキングピンク 199 → Coral #D97757/173

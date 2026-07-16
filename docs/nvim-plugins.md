@@ -28,7 +28,7 @@
 | ✅ b0o/incline.nvim | 浮動ファイル名表示 | 2025-12-17 | `akinsho/bufferline.nvim` のみでも可 | △ | × | いいえ | 分割ウィンドウで各ウィンドウにファイル名表示。未保存/親ディレクトリ表示など実装。 |
 | ✅ TaDaa/vimade | 非アクティブフェード | 2025-11-09 | `levouh/tint.nvim`, `folke/twilight.nvim` | △ | × | いいえ | 非アクティブウィンドウを暗くして集中力向上。アニメーション対応。 |
 | ✅ folke/noice.nvim | UI リッチ化 | 2025-11-03 | 同プラグイン | × | × | いいえ | コマンドライン・検索・LSPメッセージをリッチ化。nvim-notify連携。 |
-| ~~mvllow/modes.nvim~~ | モード別カーソル色 | — | — | — | — | — | **✅ 削除済み**(2026-07-10)。この config では truecolor 端末のカーソル色のみに価値が限定される（cursorline/number/signcolumn は 256色運用で off）ため廃止。詳細: `issues/nvim-plugin-rewrite-candidates-2026-07-10.md`。 |
+| ~~mvllow/modes.nvim~~ | モード別カーソル色 | — | — | — | — | — | **✅ 削除済み**(2026-07-10)。この config では truecolor 端末のカーソル色のみに価値が限定される（cursorline/number/signcolumn は 256色運用で off）ため廃止。詳細: `issues/010-research-nvim-plugin-rewrite-candidates-2026-07-10.md`。 |
 
 ## ナビゲーション / 検索
 
@@ -43,7 +43,7 @@
 | 現行                                         | 主な役割        | 最終更新   | デファクト候補                                       | 乗り換え可否 | 今すぐ捨てる? | Vimscript依存? | メモ |
 | -------------------------------------------- | --------------- | ---------- | ---------------------------------------------------- | ------------ | ------------- | --------------- | ---------------------------------------------------- |
 | ✅ lukelbd/vim-toggle (**vendored, Lua移植**) | トグル          | 2025-02-03 | `echasnovski/mini.operators`, `folke/which-key`      | △ | △ | いいえ | 辞書が充実しており今も実用。上流の更新が遅く語彙を自分で保守するため `vendor/nvim-plugins/toggle.nvim` に取り込み (原名 vim-toggle から rename) **Lua 移植済み** (2026-07-09)。lazy の `dir` でローカル読み込み (VENDOR.md 参照)。 |
-| ✅ andymass/vim-matchup                      | 括弧/タグマッチ | 2025-12-31 | 同プラグイン                                         | × | × | はい | 本体は Vimscript 6,848 行（`lua/` は treesitter 連携のみ ~1,210 行）。Treesitter 対応でデファクト。Lua 化は最難・低ROI で対象外（`issues/nvim-vimscript-to-lua-migration.md` §4 参照）。 |
+| ✅ andymass/vim-matchup                      | 括弧/タグマッチ | 2025-12-31 | 同プラグイン                                         | × | × | はい | 本体は Vimscript 6,848 行（`lua/` は treesitter 連携のみ ~1,210 行）。Treesitter 対応でデファクト。Lua 化は最難・低ROI で対象外（`issues/009-refactor-nvim-vimscript-to-lua-migration.md` §4 参照）。 |
 | ✅ nvim-treesitter/\*                        | 構文解析        | 2026-01-10 | 同プロジェクト                                       | × | × | いいえ | 乗り換え不要。 |
 | ✅ RRethy/nvim-treesitter-endwise            | end 自動補完    | 2025-12-29 | 同プラグイン, `tpope/vim-endwise`                    | × | × | いいえ | Ruby/Lua/Vimscript 等で `if`〜`end` を自動補完。Treesitter ベースで構文解析に追従。 |
 | ✅ echasnovski/mini.trailspace               | 末尾空白可視    | 2025-11-03 | `echasnovski/mini.trailspace`, `axieax/typo.nvim`    | × | × | いいえ | 末尾空白削除を mini.trailspace で実装。`mini.nvim` 全体ではなく単体リポジトリのみ導入。 |
@@ -59,7 +59,7 @@
 | ~~github/copilot.vim~~    | AI 補完      | — | — | — | — | — | **✅ 削除済み**(2026-07。残骸掃除まで完了)。AI 支援は sidekick.nvim + Claude Code に集約。 |
 | ✅ neovim/nvim-lspconfig  | LSP サーバ設定 | - | 同プロジェクト | × | × | いいえ | 2026-07 に coc.nvim から移行。nvim 0.11 の `vim.lsp.config`/`vim.lsp.enable` に載る。 |
 | ✅ mason-org/mason.nvim | LSP/ツール管理 | - | 同プロジェクト | × | × | いいえ | サーバ/formatter/linter のバイナリ管理基盤。mason-lspconfig は廃止 (2026-07-11、初回 BufReadPre ~13ms 削減)。enable は vim.lsp.enable() 直呼び、導入は mason-tool-installer に一本化。 |
-| ✅ WhoIsSethDaniel/mason-tool-installer.nvim | LSP/formatter/linter の導入実行 | - | 同プラグイン | × | × | いいえ | ensure_installed の宣言的導入。mason-lspconfig 廃止後は LSP サーバ実体の導入もここが受け皿 (mason.nvim=管理基盤 / 本プラグイン=導入実行の分担)。keep-as-is 判定済み (`issues/nvim-plugin-rewrite-candidates-2026-07-10.md`)。 |
+| ✅ WhoIsSethDaniel/mason-tool-installer.nvim | LSP/formatter/linter の導入実行 | - | 同プラグイン | × | × | いいえ | ensure_installed の宣言的導入。mason-lspconfig 廃止後は LSP サーバ実体の導入もここが受け皿 (mason.nvim=管理基盤 / 本プラグイン=導入実行の分担)。keep-as-is 判定済み (`issues/010-research-nvim-plugin-rewrite-candidates-2026-07-10.md`)。 |
 | ✅ saghen/blink.cmp       | 補完         | - | `hrsh7th/nvim-cmp` | × | × | いいえ | coc の補完後継。`version="*"` でプリビルドバイナリ（cargo 不要）。`<CR>` 確定。 |
 | ✅ stevearc/conform.nvim  | 整形         | - | 同プラグイン | × | × | いいえ | `:Format`/`<leader>f`。prettier/shfmt、他は `lsp_format=fallback`。 |
 | ✅ mfussenegger/nvim-lint | Lint         | - | 同プラグイン | × | × | いいえ | sh の shellcheck（旧 coc-diagnostic 相当）。他言語は LSP 診断。 |
@@ -103,7 +103,7 @@
   - 20分間使わなかったバッファを自動削除
   - 最低4バッファは保持
 - ~~`mvllow/modes.nvim` を導入：モード別カーソル色変更~~
-  - **✅ 削除済み(2026-07-10)**：truecolor 端末のモード別カーソル色のみに価値が限定される（cursorline/number/signcolumn は 256色運用で off、カーソル色も guicursor 経由で 256色では非描画）ため廃止。詳細: `issues/nvim-plugin-rewrite-candidates-2026-07-10.md`
+  - **✅ 削除済み(2026-07-10)**：truecolor 端末のモード別カーソル色のみに価値が限定される（cursorline/number/signcolumn は 256色運用で off、カーソル色も guicursor 経由で 256色では非描画）ため廃止。詳細: `issues/010-research-nvim-plugin-rewrite-candidates-2026-07-10.md`
 - ✅ `folke/sidekick.nvim` を導入：CLI統合
   - Claude Code等のCLIをNeovim内で表示
   - `<C-Space>`でフロートウィンドウをトグル

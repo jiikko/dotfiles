@@ -42,6 +42,8 @@ ls issues issues/pending issues/done | grep -E '^[0-9]{3}-' | sort | tail -1
 - issue の新規作成・大幅改訂は commit 前に codex レビューへ通す（[`issue-creation-codex-review.md`](../_claude/rules/issue-creation-codex-review.md)）
 - issue の記述を鵜呑みにしない。着手前に実コードと git 履歴で検証する（既に修正済み・false positive を弾く）
 
-## 既存の無番号ファイル
+## 既存ファイルの番号付け（2026-07-16 実施済み）
 
-規約導入（2026-07-16）以前のファイルの扱いは**見直し予定（当面はそのまま・番号付けは新規作成分から適用）**。rename する場合は、audit-log・コード内コメント・commit message がパスで参照している点に注意し、少なくとも audit-log 内のパスを同時に更新すること。旧形式の名前のまま done/ へ移動するのは可。
+規約導入以前のファイルは 2026-07-16 に一括 rename 済み（作成日順に 001〜017 を採番。audit-log・コード内コメント・docs・issue 間クロスリンクのパスも同時更新済み。commit message 内の旧パスは immutable なため対象外）。
+
+- **015 は `done/git-log-gha-status-wrapper.md` に予約済み（未 rename）**: 参照元の src/glog が rename 時点で作業中（dirty）だったため保留。glog の作業が落ち着いたら `015-feat-git-log-gha-status-wrapper.md` へ rename し、src/glog/README.md・src/glog/main.go 内の参照を同時更新すること
