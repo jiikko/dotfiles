@@ -12,6 +12,12 @@
 - **コミット & push 前に `git status` で dirty なサブモジュールがないか確認すること**。dirty なサブモジュールがあれば、その中に入って差分を確認し、必要ならコミット & push してから親リポジトリの参照を更新すること。dirty を残したまま作業を終えない
 - **commit / push 後は、成功を報告する前に実際の git state（`git log -1 --stat` / `git status` / push 出力）を確認すること**。ヘルパー関数やツール出力の「成功」表示を鵜呑みにしない（push 失敗や heredoc 破損を成功と誤報した実例がある）
 
+## 並行作業者がいるときの worktree 退避
+
+- **他の作業者（並行セッション・人間）の存在をファイル変更から確認できた場合**（例: `git status` に自分が触っていない modified / staged / untracked が現れる、直近コミットに自分の知らない作業が積まれている）、**git worktree を作成してそこへ移動して作業してよい**（共有 working tree の index 競合・変更巻き込みを構造的に回避するため）
+- worktree で作った**コミットを master ブランチへ移動できた時点で、作成した worktree は必ず削除する**（`git worktree remove`）。worktree を残したまま作業を終えない（放置 worktree は「どこに何があるか分からない」状態と stale ブランチを量産する）
+- worktree を使わず共有 working tree に留まる場合は、pathspec 明示 commit の規律に従う（[`commit-with-pathspec.md`](rules/commit-with-pathspec.md)）
+
 ## 一時ファイルの配置
 
 - **`/tmp` の使用は禁止. `./tmp` を使うこと。絶対に。**
