@@ -65,12 +65,11 @@ func stateFor(statuses map[string]CIState, sha string) CIState {
 	return StateLoading
 }
 
-// Line は描画 1 行分。TUI のビューポートとカーソル位置決めが CommitIdx/Header/JobNum を使う。
+// Line は描画 1 行分。TUI のビューポートとカーソル位置決めが CommitIdx/Header を使う。
 type Line struct {
 	Text      string
 	CommitIdx int  // どのコミットに属する行か (-1 = どれでもない)
 	Header    bool // コミットヘッダー行 (カーソルが乗る行) か
-	JobNum    int  // CI job 行なら 1 始まりの番号 (JobNum-1 = details の index)。0 = job 行ではない
 }
 
 // RenderOpts は描画パラメータ。静的出力 (非 TTY / 最終出力) と TUI ビューの共通入力。
@@ -78,10 +77,8 @@ type RenderOpts struct {
 	Oneline  bool
 	Colored  bool
 	Spinner  string
-	Width    int             // >0 ならコミットメッセージを端末幅で折り返す (TUI 用)。
-	Decor    *DecorColors    // decoration の色 (nil = git 既定色)
-	Expanded map[string]bool // 展開して job 一覧を添える SHA (TUI 終了後の最終出力用)
-	Details  map[string][]CheckDetail
+	Width   int          // >0 ならコミットメッセージを端末幅で折り返す (TUI 用)。
+	Decor   *DecorColors // decoration の色 (nil = git 既定色)
 }
 
 func (o RenderOpts) decorColors() DecorColors {
@@ -109,7 +106,6 @@ func RenderLines(commits []Commit, statuses map[string]CIState, o RenderOpts) []
 		subjectWidth = min(subjectWidth, subjectWidthCap)
 		for i, c := range commits {
 			lines = append(lines, Line{Text: renderOnelineRow(c, stateFor(statuses, c.SHA), subjectWidth, authorWidth, o), CommitIdx: i, Header: true})
-			lines = append(lines, expandedLines(c, i, o)...)
 		}
 		return lines
 	}
@@ -172,7 +168,6 @@ func mediumLines(c Commit, idx int, state CIState, o RenderOpts) []Line {
 		h.WriteString(renderDecoration(c.Decoration, o))
 	}
 	lines = append(lines, Line{Text: h.String(), CommitIdx: idx, Header: true})
-	lines = append(lines, expandedLines(c, idx, o)...)
 	lines = append(lines, Line{Text: "Author: " + c.Author + " <" + c.AuthorEmail + ">", CommitIdx: idx})
 	lines = append(lines, Line{Text: "Date:   " + c.Date, CommitIdx: idx})
 	lines = append(lines, Line{Text: "", CommitIdx: idx})
@@ -195,29 +190,6 @@ func mediumLines(c Commit, idx int, state CIState, o RenderOpts) []Line {
 			}
 			lines = append(lines, Line{Text: bodyLine, CommitIdx: idx})
 		}
-	}
-	return lines
-}
-
-// expandedLines は展開中コミットの CI job 一覧 (ヘッダー行直下に差し込む)。
-func expandedLines(c Commit, idx int, o RenderOpts) []Line {
-	if o.Expanded == nil || !o.Expanded[c.SHA] {
-		return nil
-	}
-	details, ok := o.Details[c.SHA]
-	if !ok {
-		return []Line{{Text: "    " + paint("(CI job 情報なし)", ansiDim, o.Colored), CommitIdx: idx}}
-	}
-	if len(details) == 0 {
-		return []Line{{Text: "    " + paint("(Check はありません)", ansiDim, o.Colored), CommitIdx: idx}}
-	}
-	lines := make([]Line, 0, len(details))
-	for i, d := range details {
-		lines = append(lines, Line{
-			Text:      "    " + StatusGlyph(d.State, o.Colored, o.Spinner) + " " + d.Name,
-			CommitIdx: idx,
-			JobNum:    i + 1,
-		})
 	}
 	return lines
 }

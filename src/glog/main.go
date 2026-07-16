@@ -93,14 +93,9 @@ func runLog(opts *Options, colored, isTTY bool) int {
 		// TUI 基盤の失敗は静的経路で救済する
 		return showStatic(commits, statuses, toFetch, repo, hasRepo, cachePath, opts, renderOpts)
 	}
-	// 終了時に TUI 領域は消えているので、最終結果を静的出力してターミナル履歴に残す
-	// (issue の完了条件)。job パネルを開いたまま終了した場合は、その内容も
-	// インライン展開の形で残す
-	if model.panelSHA != "" {
-		renderOpts.Expanded = map[string]bool{model.panelSHA: true}
-		renderOpts.Details = model.details
-	}
-	fmt.Println(RenderStatic(commits, model.statuses, renderOpts))
+	// Alt Screen なので終了時に表示は消える (git log の pager と同じ)。
+	// 静的な最終出力はしない (ユーザー要望 2026-07-17。残したいものは
+	// y / o / --no-pager で)。取得結果のキャッシュ保存と警告だけ行う
 	saveFetched(cachePath, model.fetched, opts)
 	if model.ghErr != nil {
 		fmt.Fprintln(os.Stderr, model.ghErr.Warning())

@@ -15,14 +15,14 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// Bubble Tea は「非同期レンダリング可能な CLI ランタイム」として使う (issue の設計) が、
-// less 風の対話ブラウズ (カーソル移動 + CI job 表示) をユーザー要望で追加した
-// (元 issue では非目標だった対話 UI を 2026-07-16 に明示指示で解禁)。
-// Alt Screen へは切り替えず、インラインのビューポート描画で行う。終了時は View を空に
-// して TUI 領域を消し、呼び出し元が最終結果を静的出力してターミナル履歴に残す。
+// Bubble Tea による less 風の対話ブラウズ (カーソル移動 + CI job 表示)。
+// 元 issue では「対話 UI は非目標」「Alt Screen 不使用で最終表示を履歴に残す」だったが、
+// どちらもユーザー指示で上書き済み (対話 UI 解禁 2026-07-16 / Alt Screen 化 2026-07-17)。
+// 現在は git log の pager と同じ挙動: Alt Screen 上でブラウズし、q で抜けると表示は
+// 消えて何も残らない。残したいものは y (URL コピー)・o (ブラウザ)・--no-pager で。
 // goroutine (fetch Cmd) は stdout へ直接書かず、結果を必ず tea.Msg として返す。
 //
-// CI job 一覧はリストへ行を差し込まず、ビューポート上部へ重ねるパネル (ポップアップ)
+// CI job 一覧はリストへ行を差し込まず、対象コミット直下へ重ねるパネル (ポップアップ)
 // で表示する。展開方式だと開閉のたびに後続行がずれて高さがガタつくため (ユーザー要望)。
 
 const (
@@ -884,9 +884,10 @@ func clampIdx(i, total int) int {
 	return min(max(i, 0), total-1)
 }
 
-// RunBrowse はインライン TUI を実行し、最終状態のモデルを返す。
+// RunBrowse は TUI を実行し、最終状態のモデルを返す。Alt Screen を使うため、
+// 終了時に表示は消える (git log の pager と同じ。ユーザー要望 2026-07-17)。
 func RunBrowse(m *browseModel) (*browseModel, error) {
-	p := tea.NewProgram(m) // WithAltScreen は使わない (インライン描画)
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	final, err := p.Run()
 	if err != nil {
 		return m, err

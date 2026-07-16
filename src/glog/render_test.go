@@ -100,46 +100,6 @@ func TestRenderStaticWithDiffBody(t *testing.T) {
 	}
 }
 
-func TestRenderLinesExpandedDetails(t *testing.T) {
-	commits := testCommits()
-	statuses := map[string]CIState{"a": StateFailure, "b": StateSuccess}
-	o := RenderOpts{
-		Expanded: map[string]bool{"a": true},
-		Details: map[string][]CheckDetail{
-			"a": {{Name: "build", State: StateSuccess}, {Name: "lint", State: StateFailure}},
-		},
-	}
-	out := RenderStatic(commits, statuses, o)
-	for _, want := range []string{"    ✓ build", "    ✗ lint"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("展開行に %q がありません:\n%s", want, out)
-		}
-	}
-	// 展開していない b のヘッダーの後に check 行が混ざらない
-	if strings.Count(out, "✓ build") != 1 {
-		t.Errorf("展開行が重複:\n%s", out)
-	}
-}
-
-func TestRenderLinesExpandedStates(t *testing.T) {
-	commits := testCommits()[:1]
-	statuses := map[string]CIState{"a": StateSuccess}
-	// Check なし
-	empty := RenderStatic(commits, statuses, RenderOpts{
-		Expanded: map[string]bool{"a": true}, Details: map[string][]CheckDetail{"a": {}},
-	})
-	if !strings.Contains(empty, "Check はありません") {
-		t.Errorf("Check なし表示がない:\n%s", empty)
-	}
-	// 詳細情報なし (details 未取得の SHA)
-	missing := RenderStatic(commits, statuses, RenderOpts{
-		Expanded: map[string]bool{"a": true}, Details: map[string][]CheckDetail{},
-	})
-	if !strings.Contains(missing, "CI job 情報なし") {
-		t.Errorf("情報なし表示がない:\n%s", missing)
-	}
-}
-
 func TestRenderLinesHeaderMapping(t *testing.T) {
 	// TUI のカーソル位置決めに使う Header/CommitIdx が正しく付く
 	lines := RenderLines(testCommits(), map[string]CIState{"a": StateSuccess, "b": StateSuccess}, RenderOpts{})
