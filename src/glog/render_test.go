@@ -124,19 +124,19 @@ func TestRenderLinesExpandedDetails(t *testing.T) {
 func TestRenderLinesExpandedStates(t *testing.T) {
 	commits := testCommits()[:1]
 	statuses := map[string]CIState{"a": StateSuccess}
-	// 取得中
-	loading := RenderStatic(commits, statuses, RenderOpts{
-		Expanded: map[string]bool{"a": true}, DetailsLoading: map[string]bool{"a": true}, Spinner: "⠋",
-	})
-	if !strings.Contains(loading, "CI job を取得中") {
-		t.Errorf("取得中表示がない:\n%s", loading)
-	}
 	// Check なし
 	empty := RenderStatic(commits, statuses, RenderOpts{
 		Expanded: map[string]bool{"a": true}, Details: map[string][]CheckDetail{"a": {}},
 	})
 	if !strings.Contains(empty, "Check はありません") {
 		t.Errorf("Check なし表示がない:\n%s", empty)
+	}
+	// 詳細情報なし (details 未取得の SHA)
+	missing := RenderStatic(commits, statuses, RenderOpts{
+		Expanded: map[string]bool{"a": true}, Details: map[string][]CheckDetail{},
+	})
+	if !strings.Contains(missing, "CI job 情報なし") {
+		t.Errorf("情報なし表示がない:\n%s", missing)
 	}
 }
 
@@ -231,6 +231,29 @@ func TestRenderLinesWrapsMessage(t *testing.T) {
 	}
 	if staticMsg != 1 {
 		t.Errorf("静的出力でメッセージが折り返されている: %d 行", staticMsg)
+	}
+}
+
+func TestRenderLinesExpandsBodyTabsInTUI(t *testing.T) {
+	// TUI (Width > 0) では diff 本文のタブを展開する (幅計算と端末のタブ展開の食い違いで
+	// 表示が崩壊するのを防ぐ)。静的出力 (Width=0) は git log と同じ素通し
+	commits := testCommits()[:1]
+	commits[0].Body = "+\tfunc main() {\n+\t\treturn\n"
+	tui := RenderLines(commits, map[string]CIState{"a": StateSuccess}, RenderOpts{Width: 80})
+	for _, l := range tui {
+		if strings.Contains(l.Text, "\t") {
+			t.Errorf("TUI 描画にタブが残っている: %q", l.Text)
+		}
+	}
+	static := RenderLines(commits, map[string]CIState{"a": StateSuccess}, RenderOpts{})
+	found := false
+	for _, l := range static {
+		if strings.Contains(l.Text, "\t") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("静的出力でタブが変更されている (git log とのパリティが崩れる)")
 	}
 }
 

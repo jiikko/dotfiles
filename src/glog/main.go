@@ -83,12 +83,7 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	}
 
 	if !interactive {
-		ghErr := fetchStatic(statuses, toFetch, repo, hasRepo, cachePath, opts)
-		fmt.Println(RenderStatic(commits, statuses, renderOpts))
-		if ghErr != nil {
-			fmt.Fprintln(os.Stderr, ghErr.Warning())
-		}
-		return 0
+		return showStatic(commits, statuses, toFetch, repo, hasRepo, cachePath, opts, renderOpts)
 	}
 
 	browse := newBrowseModel(commits, statuses, toFetch, repo, hasRepo, opts, colored, width, height)
@@ -96,12 +91,7 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	model, err := RunBrowse(browse)
 	if err != nil {
 		// TUI 基盤の失敗は静的経路で救済する
-		ghErr := fetchStatic(statuses, toFetch, repo, hasRepo, cachePath, opts)
-		fmt.Println(RenderStatic(commits, statuses, renderOpts))
-		if ghErr != nil {
-			fmt.Fprintln(os.Stderr, ghErr.Warning())
-		}
-		return 0
+		return showStatic(commits, statuses, toFetch, repo, hasRepo, cachePath, opts, renderOpts)
 	}
 	// 終了時に TUI 領域は消えているので、最終結果を静的出力してターミナル履歴に残す
 	// (issue の完了条件)。job パネルを開いたまま終了した場合は、その内容も
@@ -180,6 +170,18 @@ func planStatuses(opts *Options, shas []string) (statuses map[string]CIState, to
 	return statuses, toFetch, repo, true, cachePath
 }
 
+// showStatic は静的経路の共通処理: 同期取得 → 最終出力 → 警告 → exit 0。
+// 非 TTY / --no-pager / less -F 相当のショートカット / TUI 基盤失敗の救済、の
+// すべてがここへ落ちる (出力契約の変更はこの 1 箇所で済む)。
+func showStatic(commits []Commit, statuses map[string]CIState, toFetch []string, repo Repo, hasRepo bool, cachePath string, opts *Options, renderOpts RenderOpts) int {
+	ghErr := fetchStatic(statuses, toFetch, repo, hasRepo, cachePath, opts)
+	fmt.Println(RenderStatic(commits, statuses, renderOpts))
+	if ghErr != nil {
+		fmt.Fprintln(os.Stderr, ghErr.Warning())
+	}
+	return 0
+}
+
 // fetchStatic は同期で CI 状態を取得して statuses へマージし、キャッシュへ保存する。
 // 取得できなかった SHA は unknown に落とす (「Check なし」と「取得失敗」を混同しない:
 // issue の懸念点)。GitHub 側の失敗は警告として返し、コマンドの成否には影響させない。
@@ -190,15 +192,7 @@ func fetchStatic(statuses map[string]CIState, toFetch []string, repo Repo, hasRe
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	defer cancel()
 	fetched, _, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, toFetch)
-	if fetched == nil {
-		fetched = map[string]CIState{}
-	}
-	// 結果が得られなかった SHA は unknown として表示し、30 秒の負キャッシュにも載せる
-	for _, sha := range toFetch {
-		if _, ok := fetched[sha]; !ok {
-			fetched[sha] = StateUnknown
-		}
-	}
+	fetched = fillUnknownFetched(fetched, toFetch)
 	maps.Copy(statuses, fetched)
 	saveFetched(cachePath, fetched, opts)
 	return ghErr

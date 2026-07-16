@@ -204,21 +204,14 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ciResultMsg:
 		m.invalidateLines()
 		m.ghErr = msg.ghErr
-		if msg.fetched != nil {
-			maps.Copy(m.fetched, msg.fetched)
-			maps.Copy(m.statuses, msg.fetched)
-		}
+		// 応答に無かった SHA は unknown で埋める (fetched へ入れる = 終了時に SaveCache
+		// される 30 秒の負キャッシュ)。q での中断 (fillUnknown) と違い、こちらは API の
+		// 実際の返答に基づく確定
+		filled := fillUnknownFetched(msg.fetched, m.toFetch)
+		maps.Copy(m.fetched, filled)
+		maps.Copy(m.statuses, filled)
 		if msg.details != nil {
 			maps.Copy(m.details, msg.details)
-		}
-		// 結果が得られなかった SHA は unknown として表示し、30 秒の負キャッシュにも
-		// 載せる (fetched へ入れる = 終了時に SaveCache される)。q での中断 (fillUnknown)
-		// と違い、こちらは API の実際の返答に基づく確定
-		for _, sha := range m.toFetch {
-			if _, ok := m.statuses[sha]; !ok {
-				m.statuses[sha] = StateUnknown
-				m.fetched[sha] = StateUnknown
-			}
 		}
 		m.fetching = false
 		// 一括取得待ちでパネルを開いていた SHA の loading を解除する (結果が来なかった
@@ -256,11 +249,13 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case prMsg:
 		delete(m.prBusy, msg.sha)
-		m.prCache[msg.sha] = msg.pr
 		if msg.ghErr != nil {
+			// 一時エラーをキャッシュすると「PR はありません」という誤答が固定される
+			// (次の p で再試行させる) ため、キャッシュは成功時のみ
 			m.notice = "PR の取得に失敗しました: " + firstLine(msg.ghErr.Warning())
 			return m, nil
 		}
+		m.prCache[msg.sha] = msg.pr
 		if msg.pr == nil {
 			m.notice = "このコミットに紐づく PR はありません"
 			return m, nil
@@ -442,6 +437,16 @@ func (m *browseModel) detailKey() string {
 	return fmt.Sprintf("%s/%d", m.panelSHA, m.panelCursor)
 }
 
+// focusedJob はパネルでフォーカス中の job を返す (タイトル行フォーカス・範囲外・
+// パネル非表示は ok=false)。境界条件の実装をここ 1 箇所に集約する。
+func (m *browseModel) focusedJob() (CheckDetail, bool) {
+	jobs := m.details[m.panelSHA]
+	if m.panelCursor < 0 || m.panelCursor >= len(jobs) {
+		return CheckDetail{}, false
+	}
+	return jobs[m.panelCursor], true
+}
+
 // jobDetailRows は詳細ポップアップに一度に表示する行数の上限。実際の行数は
 // 端末の高さに合わせて visibleDetailRows が縮める。
 const jobDetailRows = 15
@@ -456,8 +461,8 @@ func (m *browseModel) visibleDetailRows() int {
 
 // openJobDetail はフォーカス中 job の annotations / ログ tail のポップアップを開く。
 func (m *browseModel) openJobDetail() tea.Cmd {
-	jobs := m.details[m.panelSHA]
-	if m.panelCursor < 0 || m.panelCursor >= len(jobs) {
+	check, ok := m.focusedJob()
+	if !ok {
 		return nil
 	}
 	m.detailOpen = true
@@ -471,7 +476,6 @@ func (m *browseModel) openJobDetail() tea.Cmd {
 		return nil
 	}
 	m.jobDetailBusy[key] = true
-	check := jobs[m.panelCursor]
 	repo := m.repo
 	cmd := func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
@@ -486,10 +490,8 @@ func (m *browseModel) openJobDetail() tea.Cmd {
 // クリップボードへコピーする。LLM に貼る用途 (ユーザー要望)。
 func (m *browseModel) copyFocusURL() {
 	url := ""
-	if m.panelSHA != "" && m.panelCursor >= 0 {
-		if jobs := m.details[m.panelSHA]; m.panelCursor < len(jobs) {
-			url = jobs[m.panelCursor].URL
-		}
+	if job, ok := m.focusedJob(); ok {
+		url = job.URL
 	} else if m.hasRepo && len(m.commits) > 0 {
 		url = fmt.Sprintf("https://github.com/%s/%s/commit/%s", m.repo.Owner, m.repo.Name, m.commits[m.cursor].SHA)
 	}
@@ -561,16 +563,15 @@ func (m *browseModel) openURLCmd(url string) tea.Cmd {
 
 // openJob はパネルで選択中の job の詳細ページをブラウザで開く。
 func (m *browseModel) openJob() tea.Cmd {
-	jobs := m.details[m.panelSHA]
-	if m.panelCursor < 0 || m.panelCursor >= len(jobs) {
+	job, ok := m.focusedJob()
+	if !ok {
 		return nil
 	}
-	url := jobs[m.panelCursor].URL
-	if url == "" {
+	if job.URL == "" {
 		m.notice = "この job には詳細ページの URL がありません"
 		return nil
 	}
-	return m.openURLCmd(url)
+	return m.openURLCmd(job.URL)
 }
 
 // openPR はカーソル位置のコミットに紐づく PR をブラウザで開く (p キー)。
@@ -633,8 +634,10 @@ func (m *browseModel) renderOpts() RenderOpts {
 		Oneline: m.oneline,
 		Colored: m.colored,
 		Spinner: m.spinner(),
-		Width:   m.width,
-		Decor:   m.decor,
+		// View は全行にカーソル溝 2 桁 ("❯ " / "  ") を足すため、折り返し幅は
+		// その分を差し引く (差し引かないと全幅の折り返し行が clip され末尾が欠ける)
+		Width: max(m.width-2, 0),
+		Decor: m.decor,
 	}
 }
 
@@ -802,10 +805,9 @@ const detailIndent = "  "
 // detailBoxLines は job 詳細 (annotations / ログ tail) の第 2 ポップアップ。
 // job パネルの直下へ続けて重ねる。
 func (m *browseModel) detailBoxLines(width int) []string {
-	jobs := m.details[m.panelSHA]
 	name := ""
-	if m.panelCursor >= 0 && m.panelCursor < len(jobs) {
-		name = jobs[m.panelCursor].Name
+	if job, ok := m.focusedJob(); ok {
+		name = job.Name
 	}
 	key := m.detailKey()
 	var rows []string

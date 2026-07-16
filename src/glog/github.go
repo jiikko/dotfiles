@@ -261,6 +261,21 @@ func parseStatusResponse(stdout []byte, shas []string) (map[string]CIState, map[
 	return statuses, details, ghErr
 }
 
+// fillUnknownFetched は一括取得の応答に無かった SHA を unknown で埋めて返す
+// (表示と 30 秒の負キャッシュの両方に載る)。静的経路 (fetchStatic) と TUI 経路
+// (ciResultMsg) で共通の仕様をここに一本化する。
+func fillUnknownFetched(fetched map[string]CIState, toFetch []string) map[string]CIState {
+	if fetched == nil {
+		fetched = map[string]CIState{}
+	}
+	for _, sha := range toFetch {
+		if _, ok := fetched[sha]; !ok {
+			fetched[sha] = StateUnknown
+		}
+	}
+	return fetched
+}
+
 // nodeState は Check 1 件分の状態を CIState へ写す。集約と展開表示の両方が使う。
 func nodeState(node rollupContext) CIState {
 	switch node.Typename {
@@ -344,7 +359,9 @@ func detailsOf(rollup *rollupPayload) []CheckDetail {
 		if url == "" {
 			url = node.TargetURL
 		}
-		details = append(details, CheckDetail{Name: name, State: nodeState(node), URL: url, CheckID: node.DatabaseID})
+		// name は外部 (StatusContext を作る任意のインテグレーション) が制御できる表示文字列。
+		// パネルと終了後の静的出力にそのまま載るため、ここで無害化する
+		details = append(details, CheckDetail{Name: sanitizeDetailLine(name), State: nodeState(node), URL: url, CheckID: node.DatabaseID})
 	}
 	return details
 }
@@ -361,8 +378,10 @@ func FetchJobDetail(ctx context.Context, run CommandRunner, repo Repo, check Che
 		return []string{"(GitHub Actions の job ではないため詳細を取得できません)"}, nil
 	}
 	id := strconv.FormatInt(check.CheckID, 10)
+	// per_page 既定の 30 件では大量 annotation の lint job で取りこぼすため 100 に広げる。
+	// 100 超の pagination は contexts(first:100) と同じ判断で追わない
 	stdout, stderr, err := run(ctx, "gh", "api",
-		fmt.Sprintf("repos/%s/%s/check-runs/%s/annotations", repo.Owner, repo.Name, id))
+		fmt.Sprintf("repos/%s/%s/check-runs/%s/annotations?per_page=100", repo.Owner, repo.Name, id))
 	if err != nil {
 		return nil, classifyGHError(err, string(stderr))
 	}
@@ -399,7 +418,8 @@ func annotationLines(stdout []byte) []string {
 	}
 	var lines []string
 	for _, a := range annotations {
-		head := fmt.Sprintf("[%s] %s:%d", a.Level, a.Path, a.StartLine)
+		// Level / Path も CI 側が制御する表示文字列なので無害化を通す
+		head := sanitizeDetailLine(fmt.Sprintf("[%s] %s:%d", a.Level, a.Path, a.StartLine))
 		lines = append(lines, head)
 		for msg := range strings.SplitSeq(strings.TrimRight(a.Message, "\n"), "\n") {
 			lines = append(lines, "  "+sanitizeDetailLine(msg))
@@ -456,23 +476,29 @@ func FetchCommitPR(ctx context.Context, run CommandRunner, repo Repo, sha string
 	return &nodes[0], nil
 }
 
-// sanitizeDetailLine は詳細ポップアップの枠描画を壊す制御文字を無害化する。
-// タブが根本原因の実測バグ: runewidth は \t を幅 0 と数えるが端末は 8 桁タブストップへ
-// 展開するため、右枠の桁計算がずれて行が折り返し、インライン再描画の行対応が崩壊する
-// (go test の "ok \tglog\t0.5s" 等、ログのメッセージ部には普通にタブが混ざる)。
-// ANSI カラー (ESC) は枠側の幅計算が対応済みなので残す。BOM (GitHub のログ先頭に付く)
-// と \r 等の他の制御文字は落とす。
+// sanitizeDetailLine は CI 由来の表示文字列 (ログ・annotations・job 名) を端末描画に
+// 対して無害化する。
+//
+//   - タブ → スペース 4: runewidth は \t を幅 0 と数えるが端末は 8 桁タブストップへ展開
+//     するため、右枠の桁計算がずれて行が折り返し、インライン再描画が崩壊する (実測バグ)
+//   - ANSI は SGR (ESC[…m = 色/装飾) だけを通す allowlist。それ以外の CSI (画面消去・
+//     カーソル移動) や OSC/DCS 等 (OSC52 のクリップボード書き込み・タイトル変更) は、
+//     CI 側の第三者 (任意の status インテグレーション等) が混入させられる端末制御
+//     シーケンス注入の経路になるため、シーケンスごと落とす
+//   - BOM (GitHub のログ先頭に付く U+FEFF) と \r 等の残る制御文字は落とす
 func sanitizeDetailLine(s string) string {
-	if !strings.ContainsFunc(s, func(r rune) bool { return (r < 0x20 && r != '\x1b') || r == 0x7f || r == '\ufeff' }) {
+	if !strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f || r == '\ufeff' }) {
 		return s
 	}
+	rs := []rune(s)
 	var b strings.Builder
-	for _, r := range s {
+	for i := 0; i < len(rs); i++ {
+		r := rs[i]
 		switch {
 		case r == '\t':
 			b.WriteString("    ")
 		case r == '\x1b':
-			b.WriteRune(r)
+			i = keepOnlySGR(&b, rs, i)
 		case r < 0x20 || r == 0x7f || r == '\ufeff':
 			// drop
 		default:
@@ -480,6 +506,49 @@ func sanitizeDetailLine(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// keepOnlySGR は rs[i] の ESC から始まるシーケンスを解釈し、SGR (色/装飾) だけを b へ
+// 書き出してそれ以外は捨てる。戻り値は消費したシーケンスの最終 index。
+func keepOnlySGR(b *strings.Builder, rs []rune, i int) int {
+	if i+1 >= len(rs) {
+		return i // 末尾の裸 ESC は捨てる
+	}
+	switch rs[i+1] {
+	case '[': // CSI: ESC [ <param/intermediate 0x20-0x3f>* <final 0x40-0x7e>
+		j := i + 2
+		for j < len(rs) && rs[j] >= 0x20 && rs[j] <= 0x3f {
+			j++
+		}
+		if j >= len(rs) {
+			return len(rs) - 1 // 途切れた CSI は捨てる
+		}
+		if rs[j] == 'm' && runesOnly(rs[i+2:j], "0123456789;:") {
+			b.WriteString(string(rs[i : j+1])) // SGR のみ通す
+		}
+		return j
+	case ']', 'P', '_', '^', 'X': // OSC / DCS / APC / PM / SOS: ST (ESC \) か BEL まで捨てる
+		for j := i + 2; j < len(rs); j++ {
+			if rs[j] == '\a' {
+				return j
+			}
+			if rs[j] == '\x1b' && j+1 < len(rs) && rs[j+1] == '\\' {
+				return j + 1
+			}
+		}
+		return len(rs) - 1
+	default:
+		return i + 1 // その他の 2 文字エスケープ (ESC 7 等) は捨てる
+	}
+}
+
+func runesOnly(rs []rune, allowed string) bool {
+	for _, r := range rs {
+		if !strings.ContainsRune(allowed, r) {
+			return false
+		}
+	}
+	return true
 }
 
 // logTimestampRe は GitHub Actions ログの各行頭に付く ISO タイムスタンプ。

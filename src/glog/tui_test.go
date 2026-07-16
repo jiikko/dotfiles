@@ -72,6 +72,25 @@ func TestBrowseCursorNavigation(t *testing.T) {
 	}
 }
 
+func TestBrowseWrapAccountsForCursorGutter(t *testing.T) {
+	// View は全行にカーソル溝 2 桁を足すため、折り返し幅は width-2 で計算する。
+	// 差し引かないと全幅まで折り返した行が clip され末尾の文字が「…」に食われる
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StateSuccess
+	m.commits[0].Message = strings.Repeat("あ", 38) // 表示幅 76 (旧実装だと 1 行に収まり溝で溢れる)
+	m.height = 30
+	view := m.View()
+	if got := strings.Count(view, "あ"); got != 38 {
+		t.Errorf("折り返しで文字が欠けた: あ が %d 文字 (want 38)\n%s", got, view)
+	}
+	for line := range strings.SplitSeq(view, "\n") {
+		if w := runewidth.StringWidth(stripANSI(line)); w > m.width {
+			t.Errorf("幅超過 (%d > %d): %q", w, m.width, line)
+		}
+	}
+}
+
 func TestBrowseCursorScrollsViewport(t *testing.T) {
 	// medium 形式 1 コミット ≈ 6 行 × 5 件 > 高さ 10 なので、下へ移動すると offset が進む
 	m := newTestBrowse(t, 5, map[string]CIState{}, nil)
@@ -589,6 +608,25 @@ func TestBrowseOpenPR(t *testing.T) {
 	_, cmd = m.handleKey("p")
 	if cmd == nil || m.prBusy[sha] {
 		t.Errorf("キャッシュ済み PR で即 open にならない")
+	}
+}
+
+func TestBrowseOpenPRErrorNotCached(t *testing.T) {
+	// 一時エラーは「PR なし」としてキャッシュしない (次の p で再試行できる)
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StateSuccess
+	m.Update(prMsg{sha: sha, pr: nil, ghErr: &GHError{Kind: GHOther, Detail: "network down"}})
+	if _, ok := m.prCache[sha]; ok {
+		t.Fatalf("エラー結果がキャッシュされている")
+	}
+	if !strings.Contains(m.hintLine(), "PR の取得に失敗") {
+		t.Errorf("エラー notice が出ない: %q", m.hintLine())
+	}
+	// 再度 p → 再取得が走る
+	_, cmd := m.handleKey("p")
+	if cmd == nil || !m.prBusy[sha] {
+		t.Errorf("エラー後の p で再取得しない")
 	}
 }
 

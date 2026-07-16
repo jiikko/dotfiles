@@ -75,14 +75,13 @@ type Line struct {
 
 // RenderOpts は描画パラメータ。静的出力 (非 TTY / 最終出力) と TUI ビューの共通入力。
 type RenderOpts struct {
-	Oneline        bool
-	Colored        bool
-	Spinner        string
-	Width          int             // >0 ならコミットメッセージを端末幅で折り返す (TUI 用)。
-	Decor          *DecorColors    // decoration の色 (nil = git 既定色)
-	Expanded       map[string]bool // 展開中の SHA
-	Details        map[string][]CheckDetail
-	DetailsLoading map[string]bool // 展開したが詳細を取得中の SHA
+	Oneline  bool
+	Colored  bool
+	Spinner  string
+	Width    int             // >0 ならコミットメッセージを端末幅で折り返す (TUI 用)。
+	Decor    *DecorColors    // decoration の色 (nil = git 既定色)
+	Expanded map[string]bool // 展開して job 一覧を添える SHA (TUI 終了後の最終出力用)
+	Details  map[string][]CheckDetail
 }
 
 func (o RenderOpts) decorColors() DecorColors {
@@ -187,6 +186,13 @@ func mediumLines(c Commit, idx int, state CIState, o RenderOpts) []Line {
 	if c.Body != "" {
 		lines = append(lines, Line{Text: "", CommitIdx: idx})
 		for bodyLine := range strings.SplitSeq(c.Body, "\n") {
+			// TUI (Width > 0) ではタブを展開する。clipToWidth は \t を幅 0 と数えるが端末は
+			// タブストップへ展開するため、タブ入り diff (Go ソース等) が幅判定をすり抜けて
+			// 折り返し、インライン再描画が崩壊する (job ログで実測したのと同じ病気)。
+			// 静的出力 (Width=0) は git log と同じ素通しにする
+			if o.Width > 0 {
+				bodyLine = strings.ReplaceAll(bodyLine, "\t", "    ")
+			}
 			lines = append(lines, Line{Text: bodyLine, CommitIdx: idx})
 		}
 	}
@@ -197,9 +203,6 @@ func mediumLines(c Commit, idx int, state CIState, o RenderOpts) []Line {
 func expandedLines(c Commit, idx int, o RenderOpts) []Line {
 	if o.Expanded == nil || !o.Expanded[c.SHA] {
 		return nil
-	}
-	if o.DetailsLoading != nil && o.DetailsLoading[c.SHA] {
-		return []Line{{Text: "    " + paint(o.Spinner+" CI job を取得中...", ansiDim, o.Colored), CommitIdx: idx}}
 	}
 	details, ok := o.Details[c.SHA]
 	if !ok {

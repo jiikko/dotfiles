@@ -233,6 +233,51 @@ func TestFetchJobDetailNonActions(t *testing.T) {
 	}
 }
 
+func TestSanitizeDetailLineDropsNonSGREscapes(t *testing.T) {
+	// SGR 以外の ESC シーケンスは端末制御注入の経路 (CI 側の第三者が混入可能) なので
+	// シーケンスごと落とす
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"CSI 画面消去", "a\x1b[2Jb", "ab"},
+		{"CSI カーソル移動", "a\x1b[10;20Hb", "ab"},
+		{"CSI プライベートモード", "a\x1b[?25lb", "ab"},
+		{"OSC52 クリップボード (ST 終端)", "a\x1b]52;c;ZXZpbA==\x1b\\b", "ab"},
+		{"OSC タイトル変更 (BEL 終端)", "a\x1b]0;evil\ab", "ab"},
+		{"DCS", "a\x1bPq#0\x1b\\b", "ab"},
+		{"2 文字エスケープ", "a\x1b7b", "ab"},
+		{"末尾の裸 ESC", "ab\x1b", "ab"},
+		{"途切れた CSI", "ab\x1b[12", "ab"},
+		{"途切れた OSC", "ab\x1b]0;title", "ab"},
+		{"SGR は残る (混在)", "\x1b[31mred\x1b[0m \x1b[2Jx", "\x1b[31mred\x1b[0m x"},
+	}
+	for _, tt := range tests {
+		if got := sanitizeDetailLine(tt.in); got != tt.want {
+			t.Errorf("%s: sanitize(%q) = %q; want %q", tt.name, tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestDetailsOfSanitizesNames(t *testing.T) {
+	// job 名 (StatusContext.context は外部が任意に設定可能) はパネルと終了後の静的出力に
+	// そのまま載るため、取り込み時に無害化される
+	rollup := rollupOf(rollupContext{Typename: "StatusContext", Context: "ci\x1b]0;evil\a/legacy", State: "SUCCESS"})
+	details := detailsOf(rollup)
+	if len(details) != 1 || details[0].Name != "ci/legacy" {
+		t.Errorf("details = %+v; want name=ci/legacy (ESC 除去)", details)
+	}
+}
+
+func TestAnnotationLinesSanitizesHead(t *testing.T) {
+	fixture := `[{"path":"src/a\u001b[2J.go","start_line":1,"annotation_level":"failure","message":"m"}]`
+	lines := annotationLines([]byte(fixture))
+	if len(lines) == 0 || strings.Contains(lines[0], "\x1b") {
+		t.Errorf("annotations 見出しに ESC が残っている: %q", lines)
+	}
+}
+
 func TestLogTail(t *testing.T) {
 	var b strings.Builder
 	for i := range 100 {
@@ -280,10 +325,10 @@ func TestSanitizeDetailLine(t *testing.T) {
 	if got := sanitizeDetailLine("plain text"); got != "plain text" {
 		t.Errorf("素の行が変更された: %q", got)
 	}
-	// ANSI カラーは残す (枠側の幅計算が対応済み)
+	// SGR (色/装飾) は残す (枠側の幅計算が対応済み)
 	colored := "\x1b[36;1mmake test\x1b[0m"
 	if got := sanitizeDetailLine(colored); got != colored {
-		t.Errorf("ANSI が落ちた: %q", got)
+		t.Errorf("SGR が落ちた: %q", got)
 	}
 	if got := sanitizeDetailLine("a\tb\rc\ufeffd"); got != "a    bcd" {
 		t.Errorf("sanitize = %q; want %q", got, "a    bcd")
