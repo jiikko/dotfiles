@@ -247,6 +247,29 @@ cat "${DOTFILES_DIR:-$HOME/dotfiles}/vendor/tmux-plugins/VERSIONS.txt"
 - 自動復元は「tmux サーバー起動時のみ」なので、いったんサーバーを落として起動し直す必要があるケースがある
 - 手動復元（`C-t Ctrl-r`）で戻るかを確認する
 
+復元の発火には 2 つのゲートがあり、どちらで落ちても**完全に silent**（`_tmux.conf` の
+`@continuum-restore-max-delay` 周辺が設定側の入口）:
+
+- **Gate1（発火窓）**: continuum の `just_started_tmux_server`（vendor continuum.tmux）は「サーバー起動から
+  max-delay 秒以内に conf が source された」時だけ restore を発火する。外部（Claude / IDE）の
+  `tmux new-session -d` は source が既定 10 秒を超えることがあり（実測: start_time +16 秒）、窓を外すと
+  復元不発。このリポジトリでは 60 秒に拡大済み
+- **Gate2（他サーバー検知）**: 他の tmux サーバーが居ると `continuum_restore.sh` が restore を丸ごと skip
+  する。判定（vendor helpers.sh の `all_tmux_processes`）は `ps | grep '^tmux'` で **socket の生存と無関係**の
+  ため、socket だけ消えた孤児サーバーが 1 台でも残ると恒久 skip になる。実例（2026-06-28 判明）: 孤児
+  scratch 2 台で **17 日間復元不発**。気づけたのは `tt-restore-duration.log` の凍結という間接証拠だけで、
+  さらに upstream save.sh の `ln -fs last`（健全性未検証）が完全な保存を貧弱な状態で上書きしていた。
+  対策は 2 段: (1) 発生源対策 = テスト / popup が継承 TMUX_TMPDIR 上に偽 socket を作らない
+  (2) backstop = `tt` 起動時に socket 消滅済みの孤児だけ reap（`scripts/tmux_reap_orphan_servers.sh`）
+- 後追いの観測: `~/.cache/tt-restore-trigger.log`（conf の [観測] run-shell が conf source ごとに記録）の
+  `tmux_procs=N` が Gate2 の入力。次に不発が起きたら「他 tmux プロセスが N 個あって skip された」を確認できる
+
+**KNOWN LIMITATION（未対応 P3・2026-07-02）**: 発火窓を 60 秒に広げた副作用で、起動 60 秒以内の手動
+reload（`C-t R`）が auto-restore を再発火しうる（`just_started` は boot と reload を区別できない）。実害は
+起動直後の reload 限定で、既存 pane はプロセス復元 skip によりほぼ冪等。修正案「complete フラグで gate」は
+continuum の plugin 再ロード（status-right への interpolation 再設定）まで止めて周期 autosave が silent 死
+するため採用不可（バグより悪い）。upstream に再発火 gate が入るまで申し送り
+
 ### 保存ファイルが空 / 壊れている
 
 - 複数の保存経路が直列化されているか（`@resurrect-save-script-path` が `scripts/tmux_resurrect_save.sh` を指しているか）を確認
