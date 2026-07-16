@@ -84,15 +84,16 @@ local function set_keymaps()
   map("n", "<leader>vs", ":vs<CR>", silent)
   -- 現在のファイル名をクリップボードにコピー (<leader>N は :行番号 付き。
   -- コードレビュー・issue・AI への参照共有にそのまま貼れる file:line 形式)
+  -- 値をクリップボード(+)へコピーして通知 (<leader>n/N 共通。文言変更の touch を1箇所に)。
+  local function copy_and_notify(value)
+    vim.fn.setreg("+", value)
+    print(string.format('"%s" をコピーしました', value))
+  end
   map("n", "<leader>n", function()
-    local filepath = vim.fn.expand("%:~:.")
-    vim.fn.setreg("+", filepath)
-    print(string.format('"%s" をコピーしました', filepath))
+    copy_and_notify(vim.fn.expand("%:~:."))
   end, silent)
   map("n", "<leader>N", function()
-    local ref = ("%s:%d"):format(vim.fn.expand("%:~:."), vim.api.nvim_win_get_cursor(0)[1])
-    vim.fn.setreg("+", ref)
-    print(string.format('"%s" をコピーしました', ref))
+    copy_and_notify(("%s:%d"):format(vim.fn.expand("%:~:."), vim.api.nvim_win_get_cursor(0)[1]))
   end, silent)
   -- ハイライト検索時にカーソルを次の候補に移動しない
   map("n", "*", "*N", { noremap = true, silent = true })

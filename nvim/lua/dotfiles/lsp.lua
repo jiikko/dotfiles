@@ -13,6 +13,15 @@ local M = {}
 -- inlay hints は既定 off で、<leader>ih トグル (M.setup) で有効化する。サーバ側で hint 種別を
 -- 明示 on にしないと出ないためここで settings を渡す。仮想テキスト描画なので termguicolors=off の
 -- 256色端末でも表示できる (色は淡くなる)。
+-- TS/JS は同一の inlay hint 設定なので共通 table を1つ参照する (片方だけ変えて drift する事故を防ぐ)。
+-- lspconfig は settings を読むだけで mutate しないため table 共有で挙動不変。
+local ts_js_inlay_hints = {
+  includeInlayParameterNameHints = "all",
+  includeInlayVariableTypeHints = true,
+  includeInlayFunctionParameterTypeHints = true,
+  includeInlayFunctionLikeReturnTypeHints = true,
+}
+
 M.servers = {
   -- solargraph は mason が入れたバイナリを直接使う (useBundler=false)。project の Gemfile 側
   -- solargraph を bundle exec で使いたい場合のみ true にする (Gemfile に無い project では起動失敗)。
@@ -23,18 +32,8 @@ M.servers = {
   },
   ts_ls = {
     settings = {
-      typescript = { inlayHints = {
-        includeInlayParameterNameHints = "all",
-        includeInlayVariableTypeHints = true,
-        includeInlayFunctionParameterTypeHints = true,
-        includeInlayFunctionLikeReturnTypeHints = true,
-      } },
-      javascript = { inlayHints = {
-        includeInlayParameterNameHints = "all",
-        includeInlayVariableTypeHints = true,
-        includeInlayFunctionParameterTypeHints = true,
-        includeInlayFunctionLikeReturnTypeHints = true,
-      } },
+      typescript = { inlayHints = ts_js_inlay_hints },
+      javascript = { inlayHints = ts_js_inlay_hints },
     },
   },
   gopls = {
