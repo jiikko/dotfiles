@@ -51,29 +51,8 @@ jobs:
       - name: Run lint suite
         run: make test-lint
 
-  go-lint:
-    runs-on: ubuntu-slim
-    # First run builds golangci-lint from source (go run) and may fetch a
-    # newer Go toolchain; both are cached by setup-go for later runs. Allow
-    # headroom for that cold build.
-    timeout-minutes: 15
-    steps:
-      - name: Silence git init.defaultBranch hint
-        run: git config --global init.defaultBranch main
-
-      - uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: src/parallel-each/go.mod
-          cache-dependency-path: |
-            src/parallel-each/go.sum
-            src/glog/go.sum
-
-      # glog の go test はここではなく専用 workflow (src_glog.yml、paths filter 付き) で回す。
-      # 全 push で走る lint.yml に置くと glog 非接触の push でもテストが回るため移設した (2026-07-17)。
-      # cache-dependency-path の src/glog/go.sum は golangci-lint (make test-go-lint) が
-      # glog も lint するため残している。
-      - name: Lint Go projects (golangci-lint)
-        run: make test-go-lint
+# Go プロジェクト (src/*) の lint / test は、ここではなくプロジェクトごとの専用 workflow
+# (src_glog.yml / src_parallel-each.yml / src_disassemble_excel.yml、いずれも paths filter 付き)
+# で回す。全 push で走る lint.yml に置くと非接触の push でも毎回実行されるため移設した (2026-07-17)。
+# 新しい Go プロジェクトを src/ に足したら src_*.yml も対で作ること (root Makefile の
+# GO_PROJECT_DIRS コメント参照)。
