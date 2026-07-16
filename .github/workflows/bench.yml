@@ -82,6 +82,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends zsh
 
+      # GHA runner は zsh の system fpath (/usr/share/zsh 等) が group-writable なため、対話シェルの
+      # compinit が「Ignore insecure directories? [ny]」プロンプトを出す。zpty ベンチではこの read が
+      # 事前投入コマンドの先頭 1 文字を回答として食い、残りが 'rint ...' (command not found) として
+      # 実行され marker が永遠に返らない = first_command が 30s タイムアウトで恒常 fail する
+      # (ローカルで group-writable fpath を作り機構ごと再現済み)。compaudit の指摘対象だけを正確に直す。
+      # compaudit は指摘ありのとき非 0 終了する。既定の run シェルは pipefail 無しだが、将来
+      # 明示 shell 指定 (bash は -eo pipefail になる) に変わっても壊れないよう || true で受ける
+      - name: Fix zsh fpath permissions (compaudit)
+        run: |
+          { zsh -lc 'autoload -Uz compaudit; compaudit' || true; } | xargs -r sudo chmod g-w,o-w
+
       # zshenv→zshrc→zlogin の全ロードコスト (startup) と、対話シェルが入力を受け付けて
       # 最初のコマンドが返るまで (first_command、zpty 計測) をゲートする。
       # 詳細は tests/zshrc/bench_zsh.sh のヘッダ参照

@@ -7,6 +7,8 @@
 #   first_command = zpty 上に本物の対話 login シェルを spawn し、起動直後に投入した
 #                   コマンドの出力が返るまで。= zshrc/zlogin ロード + zle/プロンプト初期化 +
 #                   入力受け付け + 最初のコマンド実行完了 (zsh-bench の first-command-lag 相当)
+#   prompt_lag    = ウォームアップ済みの同シェルで 2 コマンド目が返るまで。= 毎プロンプトに
+#                   乗る恒常コスト (precmd hook 等)。hook 追加で毎操作が重くなる回帰を守る
 #
 # 使い方:
 #   tests/zshrc/bench_zsh.sh
@@ -77,6 +79,34 @@ measure_startup() {
   printf '%.1f\n' $(( (t1 - t0) * 1000 ))
 }
 
+# --- zpty 共通ヘルパー ---
+# marker が pty 出力に現れるまで非ブロッキングで読み進める (成功 0 / deadline 超過 1)。
+# 読んだ内容は wait_buf に蓄積 (失敗時の診断 dump 用)。
+# ⚠️ zpty の -t は引数を取らない (-rt = 非ブロッキング読み)。`zpty -r -t 1 name` と書くと
+# "1" が pty 名として解釈され、存在しない pty への read が黙って失敗し続ける (実測でハマった)
+zpty_wait_marker() {
+  local name="$1" marker="$2"
+  local -F deadline="$3"
+  local chunk
+  wait_buf=''
+  while (( EPOCHREALTIME < deadline )); do
+    if zpty -rt "$name" chunk 2>/dev/null; then
+      wait_buf+="$chunk"
+      [[ "$wait_buf" == *${marker}* ]] && return 0
+    fi
+    sleep 0.005
+  done
+  return 1
+}
+
+# 失敗診断: wait_buf の末尾を stderr へ dump して原因を一目で特定できるようにする
+# (compinit の insecure directories プロンプトが投入コマンドの先頭 1 文字を食っていた実例あり。
+#  bench.yml の compaudit step 参照)
+zpty_dump_tail() {
+  local tail_start=$(( ${#wait_buf} > 800 ? ${#wait_buf} - 799 : 1 ))
+  print -ru2 -- "${wait_buf[$tail_start,-1]}"
+}
+
 # --- first_command: zpty の対話 login シェルへ投入したコマンドが返るまで (ms) ---
 # 起動直後 (プロンプト表示前) に書き込む入力は pty の入力バッファが保持するため失われない。
 # zle が入力行を再描画するため、送信した文字列は出力側にもそのまま現れる (実測確認済み。
@@ -85,30 +115,51 @@ measure_startup() {
 # この分断を外すと入力再描画に誤マッチし、コマンド実行完了前 (zle 初期化直後) の時刻を測ってしまう。
 measure_first_command() {
   local marker='__ZSH_BENCH_READY__'
-  local -F t0 t1 deadline
-  local buf='' chunk
+  local -F t0 t1
   t0=$EPOCHREALTIME
   zpty zbench env "${bench_env[@]}" zsh -l -i
   zpty -w zbench "print __ZSH_BENCH_''READY__; exit"
-  deadline=$(( t0 + 30 ))
-  # ⚠️ zpty の -t は引数を取らない (-rt = 非ブロッキング読み)。`zpty -r -t 1 name` と書くと
-  # "1" が pty 名として解釈され、存在しない pty への read が黙って失敗し続ける (実測でハマった)
-  while (( EPOCHREALTIME < deadline )); do
-    if zpty -rt zbench chunk 2>/dev/null; then
-      buf+="$chunk"
-      [[ "$buf" == *${marker}* ]] && break
-    fi
-    sleep 0.005
-  done
-  t1=$EPOCHREALTIME
-  # ⚠️ ここに 2>/dev/null を付けないこと: zsh 5.9 では zpty -d への一時リダイレクトが復元されず、
-  # サブシェルの fd 2 が /dev/null を指したままになり直後の診断 print -u2 が握り潰される
-  # (macOS/Ubuntu 両方で実測)。zpty -d は stderr ノイズを出さないので redirect 自体が不要
-  zpty -d zbench || true
-  if [[ "$buf" != *${marker}* ]]; then
-    print -u2 "first_command 計測失敗: 30s 以内に marker が返らない (zle 初期化以降のハング?)"
+  if ! zpty_wait_marker zbench "$marker" $(( t0 + 30 )); then
+    # ⚠️ zpty -d に 2>/dev/null を付けないこと: zsh 5.9 では zpty -d への一時リダイレクトが
+    # 復元されず、サブシェルの fd 2 が /dev/null を指したままになり直後の診断 print -u2 が
+    # 握り潰される (macOS/Ubuntu 両方で実測)。zpty -d は stderr ノイズを出さない
+    zpty -d zbench || true
+    print -u2 "first_command 計測失敗: 30s 以内に marker が返らない。pty buffer 末尾:"
+    zpty_dump_tail
     return 1
   fi
+  t1=$EPOCHREALTIME
+  zpty -d zbench || true
+  printf '%.1f\n' $(( (t1 - t0) * 1000 ))
+}
+
+# --- prompt_lag: ウォームアップ済み対話シェルで次のコマンドが返るまで (ms) ---
+# first_command が初回コスト (rc ロード + zle 初期化) を含むのに対し、こちらは 2 コマンド目 =
+# 毎プロンプトに乗る恒常コスト (precmd hook・プロンプト再描画・入力受け付け・実行) の回帰を守る。
+# 狙いは「hook 追加で毎操作が重くなる」事故の検出 (tmux の点火アニメで select が重くなった件の
+# zsh 版。この zshrc は precmd に _dotfiles_check_watch 等の仕掛けを持つ)。t0 は 1 コマンド目の
+# 出力確認直後 = 2 プロンプト目の precmd 実行前なので、precmd のコストが計測に含まれる。
+measure_prompt_lag() {
+  local warm='__ZSH_BENCH_WARM__' marker='__ZSH_BENCH_LAG__'
+  local -F t0 t1
+  zpty zbench env "${bench_env[@]}" zsh -l -i
+  zpty -w zbench "print __ZSH_BENCH_''WARM__"
+  if ! zpty_wait_marker zbench "$warm" $(( EPOCHREALTIME + 30 )); then
+    zpty -d zbench || true
+    print -u2 "prompt_lag 計測失敗: warm-up の marker が返らない。pty buffer 末尾:"
+    zpty_dump_tail
+    return 1
+  fi
+  t0=$EPOCHREALTIME
+  zpty -w zbench "print __ZSH_BENCH_''LAG__; exit"
+  if ! zpty_wait_marker zbench "$marker" $(( t0 + 30 )); then
+    zpty -d zbench || true
+    print -u2 "prompt_lag 計測失敗: 2 コマンド目の marker が返らない。pty buffer 末尾:"
+    zpty_dump_tail
+    return 1
+  fi
+  t1=$EPOCHREALTIME
+  zpty -d zbench || true
   printf '%.1f\n' $(( (t1 - t0) * 1000 ))
 }
 
@@ -130,3 +181,4 @@ emit_min_of_5() {
 
 emit_min_of_5 startup measure_startup
 emit_min_of_5 first_command measure_first_command
+emit_min_of_5 prompt_lag measure_prompt_lag
