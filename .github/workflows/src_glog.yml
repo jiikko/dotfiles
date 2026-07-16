@@ -1,0 +1,51 @@
+---
+# src/glog (Go 製 git log ラッパ) の go test 専用 workflow (2026-07-17 ユーザー要望で新設)。
+# それまで glog の go test は lint.yml の go-lint job 内の 1 step だった (paths filter なし =
+# glog 非接触の push でも毎回実行) のを、karabiner.yml と同じ paths filter パターンでここへ移設:
+# glog に触れた変更のときだけ起動し、無関係な push で runner を消費しない。
+# ⚠️ paths filter 付きの check を branch protection の required check に登録しないこと:
+#   glog 非接触 PR では run 自体が生成されず、check が永遠に pending でマージ不能になる
+#   (どうしても required にしたければ paths-ignore の no-op twin workflow が必要)。
+name: src/glog
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/glog/**'
+      - .github/workflows/src_glog.yml
+  pull_request:
+    paths:
+      - 'src/glog/**'
+      - .github/workflows/src_glog.yml
+  workflow_dispatch: # GitHub UI からの手動再実行用
+
+permissions:
+  contents: read
+
+# 同一 ref の連続 push では古い run を打ち切る (旧コミットの結果に価値が無いため)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    steps:
+      # actions/checkout は内部で `git init` する。runner の git は init.defaultBranch 未設定のため
+      # "Using 'master' ..." hint をログに出す。先に設定して抑制する (glog のテストは偽 repo を
+      # git init で作るため、hint がテスト出力に混ざるのも防ぐ)。
+      - name: Silence git init.defaultBranch hint
+        run: git config --global init.defaultBranch main
+
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: src/glog/go.mod
+          cache-dependency-path: src/glog/go.sum
+
+      - name: Run glog tests
+        run: make -C src/glog test
