@@ -90,9 +90,11 @@ unset _env
 export HUSKY_SKIP_HOOKS=1
 export FZF_DEFAULT_OPTS='--height 80% --reverse --border'
 FZF_GIT_BRANCH_OPTS='--no-sort --no-hscroll --preview-window=down'
-if [[ -z "${FZF_CTRL_R_OPTS:-}" ]]; then
-  export FZF_CTRL_R_OPTS="$FZF_GIT_BRANCH_OPTS"
-fi
+# Ctrl-R は tmux popup 化 (tmux 外は --tmux が無視され --no-height の全画面)。inline --height は
+# 下端プロンプトの押し上げが戻らないため。widget が CTRL_R_OPTS を最後に展開するので --height 80% に勝つ。
+# ⚠️ -z ガード付きにしないこと: export 済みの旧値が tmux サーバ/親シェル経由で新しい pane に継承され、
+# 空判定が成立せず zshrc の変更が反映されなくなる (実測)
+export FZF_CTRL_R_OPTS="$FZF_GIT_BRANCH_OPTS --no-height --tmux center,90%,80%"
 
 
 if [ -s ~/.zshrc ]; then
