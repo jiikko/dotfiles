@@ -175,8 +175,11 @@ func Usage() string {
 
 対話ブラウズのキー操作 (TTY のみ):
   j / k / ↑ / ↓ / Ctrl-N / Ctrl-P
-                            コミット移動
-  Enter / Space / l / Tab   CI job 一覧の展開 / 折りたたみ
+                            カーソル移動 (コミット行と展開中の CI job 行を辿る)
+  Enter / Space             コミット行: CI job 一覧の展開 / 折りたたみ
+                            job 行: ブラウザでジョブ詳細ページを開く
+  l / → / Tab               展開する。展開済みなら最初の job へ降りる
+  h / ←                     ツリーを閉じて戻る
   Ctrl-D / Ctrl-U / PgDn / PgUp
                             ページスクロール
   g / G                     先頭 / 末尾のコミットへ

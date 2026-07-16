@@ -55,11 +55,12 @@ func stateFor(statuses map[string]CIState, sha string) CIState {
 	return StateLoading
 }
 
-// Line は描画 1 行分。TUI のビューポートとカーソル位置決めが CommitIdx/Header を使う。
+// Line は描画 1 行分。TUI のビューポートとカーソル位置決めが CommitIdx/Header/JobNum を使う。
 type Line struct {
 	Text      string
 	CommitIdx int  // どのコミットに属する行か (-1 = どれでもない)
 	Header    bool // コミットヘッダー行 (カーソルが乗る行) か
+	JobNum    int  // CI job 行なら 1 始まりの番号 (JobNum-1 = details の index)。0 = job 行ではない
 }
 
 // RenderOpts は描画パラメータ。静的出力 (非 TTY / 最終出力) と TUI ビューの共通入力。
@@ -185,8 +186,12 @@ func expandedLines(c Commit, idx int, o RenderOpts) []Line {
 		return []Line{{Text: "    " + paint("(Check はありません)", ansiDim, o.Colored), CommitIdx: idx}}
 	}
 	lines := make([]Line, 0, len(details))
-	for _, d := range details {
-		lines = append(lines, Line{Text: "    " + StatusGlyph(d.State, o.Colored, o.Spinner) + " " + d.Name, CommitIdx: idx})
+	for i, d := range details {
+		lines = append(lines, Line{
+			Text:      "    " + StatusGlyph(d.State, o.Colored, o.Spinner) + " " + d.Name,
+			CommitIdx: idx,
+			JobNum:    i + 1,
+		})
 	}
 	return lines
 }

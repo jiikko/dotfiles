@@ -92,8 +92,8 @@ func TestFetchCIStatuses(t *testing.T) {
 	sha3 := strings.Repeat("c", 40)
 	fixture := `{"data":{"repository":{
 		"c0": {"statusCheckRollup": {"state":"SUCCESS","contexts":{"nodes":[
-			{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS"},
-			{"__typename":"StatusContext","context":"ci/legacy","state":"SUCCESS"}]}}},
+			{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://github.com/o/r/runs/1"},
+			{"__typename":"StatusContext","context":"ci/legacy","state":"SUCCESS","targetUrl":"https://ci.example.com/42"}]}}},
 		"c1": {"statusCheckRollup": null},
 		"c2": null
 	}}}`
@@ -111,8 +111,11 @@ func TestFetchCIStatuses(t *testing.T) {
 	if statuses[sha3] != StateNone {
 		t.Errorf("sha3 (GitHub 上に存在しない) = %v; want none", statuses[sha3])
 	}
-	// 展開表示用のジョブ一覧 (CheckRun は name、StatusContext は context を名前に使う)
-	want := []CheckDetail{{Name: "build", State: StateSuccess}, {Name: "ci/legacy", State: StateSuccess}}
+	// 展開表示用のジョブ一覧 (CheckRun は name/detailsUrl、StatusContext は context/targetUrl)
+	want := []CheckDetail{
+		{Name: "build", State: StateSuccess, URL: "https://github.com/o/r/runs/1"},
+		{Name: "ci/legacy", State: StateSuccess, URL: "https://ci.example.com/42"},
+	}
 	if got := details[sha1]; len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Errorf("details[sha1] = %+v; want %+v", got, want)
 	}

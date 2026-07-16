@@ -129,6 +129,114 @@ func TestBrowseExpandTriggersDetailFetch(t *testing.T) {
 	}
 }
 
+// expandWithJobs は commit idx を job 2 件付きで展開済みにするテストヘルパー。
+func expandWithJobs(m *browseModel, idx int) {
+	sha := m.commits[idx].SHA
+	m.expanded[sha] = true
+	m.details[sha] = []CheckDetail{
+		{Name: "build", State: StateSuccess, URL: "https://github.com/o/r/runs/1"},
+		{Name: "lint", State: StateFailure, URL: ""},
+	}
+}
+
+func TestBrowseTreeNavigation(t *testing.T) {
+	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+	expandWithJobs(m, 0)
+	// commit0 → job0 → job1 → commit1 と降りる
+	m.handleKey("j")
+	if m.cursor != 0 || m.cursorJob != 0 {
+		t.Fatalf("j 1回目 = (%d,%d); want (0,0)", m.cursor, m.cursorJob)
+	}
+	m.handleKey("j")
+	if m.cursor != 0 || m.cursorJob != 1 {
+		t.Fatalf("j 2回目 = (%d,%d); want (0,1)", m.cursor, m.cursorJob)
+	}
+	m.handleKey("j")
+	if m.cursor != 1 || m.cursorJob != -1 {
+		t.Fatalf("j 3回目 = (%d,%d); want (1,-1)", m.cursor, m.cursorJob)
+	}
+	// 逆順で戻ると commit1 → job1 → job0 → commit0
+	m.handleKey("k")
+	if m.cursor != 0 || m.cursorJob != 1 {
+		t.Fatalf("k 1回目 = (%d,%d); want (0,1)", m.cursor, m.cursorJob)
+	}
+	m.handleKey("k")
+	m.handleKey("k")
+	if m.cursor != 0 || m.cursorJob != -1 {
+		t.Fatalf("k 3回目 = (%d,%d); want (0,-1)", m.cursor, m.cursorJob)
+	}
+}
+
+func TestBrowseDescendAndCollapse(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StateFailure
+	m.details[sha] = []CheckDetail{{Name: "lint", State: StateFailure}}
+	// l: 折りたたみ中 → 展開
+	m.handleKey("l")
+	if !m.expanded[sha] {
+		t.Fatalf("l で展開されない")
+	}
+	// l: 展開済み → 最初の job へ降りる
+	m.handleKey("l")
+	if m.cursorJob != 0 {
+		t.Fatalf("l 2回目で job に降りない: cursorJob=%d", m.cursorJob)
+	}
+	// h: job から親コミットへ戻ってツリーを閉じる
+	m.handleKey("h")
+	if m.cursorJob != -1 || m.expanded[sha] {
+		t.Fatalf("h で閉じない: cursorJob=%d expanded=%v", m.cursorJob, m.expanded[sha])
+	}
+}
+
+func TestBrowseOpenJobInBrowser(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	expandWithJobs(m, 0)
+	var opened string
+	orig := openInBrowser
+	openInBrowser = func(url string) error {
+		opened = url
+		return nil
+	}
+	t.Cleanup(func() { openInBrowser = orig })
+	// job0 (URL あり) で Enter → ブラウザで開く
+	m.handleKey("j")
+	_, cmd := m.handleKey("enter")
+	if cmd == nil {
+		t.Fatalf("job 上の Enter で Cmd が返らない")
+	}
+	if msg := cmd(); msg.(openURLMsg).err != nil {
+		t.Fatalf("openURLMsg.err = %v", msg.(openURLMsg).err)
+	}
+	if opened != "https://github.com/o/r/runs/1" {
+		t.Errorf("開いた URL = %q", opened)
+	}
+	// job1 (URL なし) は notice を出して開かない
+	m.handleKey("j")
+	_, cmd = m.handleKey("enter")
+	if cmd != nil {
+		t.Errorf("URL なし job で Cmd が返った")
+	}
+	if !strings.Contains(m.hintLine(), "URL がありません") {
+		t.Errorf("notice が hint に出ていない: %q", m.hintLine())
+	}
+}
+
+func TestBrowseCursorJobClampedAfterCollapse(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+	expandWithJobs(m, 0)
+	m.handleKey("j") // job0 へ
+	sha := m.commits[0].SHA
+	delete(m.expanded, sha) // 外部要因で閉じた状態を再現
+	m.ensureCursorVisible()
+	if m.cursorJob != -1 {
+		t.Errorf("閉じた後も cursorJob が残っている: %d", m.cursorJob)
+	}
+}
+
 func TestBrowseExpandDuringBatchFetchWaits(t *testing.T) {
 	// 一括取得中にその対象 SHA を展開しても、重複リクエストは打たず結果を待つ
 	shas := []string{strings.Repeat("a", 40)}

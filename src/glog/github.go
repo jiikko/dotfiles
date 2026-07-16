@@ -138,12 +138,15 @@ type rollupContext struct {
 	Status     string `json:"status"`     // CheckRun: QUEUED / IN_PROGRESS / COMPLETED / ...
 	Conclusion string `json:"conclusion"` // CheckRun: SUCCESS / FAILURE / NEUTRAL / CANCELLED / SKIPPED / ...
 	State      string `json:"state"`      // StatusContext: SUCCESS / FAILURE / ERROR / PENDING / EXPECTED
+	DetailsURL string `json:"detailsUrl"` // CheckRun のジョブ詳細ページ
+	TargetURL  string `json:"targetUrl"`  // StatusContext のリンク先
 }
 
-// CheckDetail は展開表示用の Check 1 件分 (ジョブ名 + 状態)。
+// CheckDetail は展開表示用の Check 1 件分 (ジョブ名 + 状態 + 詳細ページ URL)。
 type CheckDetail struct {
 	Name  string
 	State CIState
+	URL   string // 無い場合は空
 }
 
 type rollupPayload struct {
@@ -193,8 +196,8 @@ fragment ciStatus on Commit {
     contexts(first: 100) {
       nodes {
         __typename
-        ... on CheckRun { name status conclusion }
-        ... on StatusContext { context state }
+        ... on CheckRun { name status conclusion detailsUrl }
+        ... on StatusContext { context state targetUrl }
       }
     }
   }
@@ -328,7 +331,11 @@ func detailsOf(rollup *rollupPayload) []CheckDetail {
 		if name == "" {
 			name = "(unnamed)"
 		}
-		details = append(details, CheckDetail{Name: name, State: nodeState(node)})
+		url := node.DetailsURL
+		if url == "" {
+			url = node.TargetURL
+		}
+		details = append(details, CheckDetail{Name: name, State: nodeState(node), URL: url})
 	}
 	return details
 }

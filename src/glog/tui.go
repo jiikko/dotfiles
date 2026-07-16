@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"maps"
+	"os/exec"
+	"runtime"
 	"slices"
 	"time"
 
@@ -37,6 +39,19 @@ type detailMsg struct {
 
 type tickMsg struct{}
 
+// openURLMsg は job 詳細ページをブラウザで開いた結果。
+type openURLMsg struct{ err error }
+
+// openInBrowser はテストで実ブラウザを開かないための差し替え点。
+var openInBrowser = func(url string) error {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", url).Run()
+	default:
+		return exec.Command("xdg-open", url).Run()
+	}
+}
+
 type browseModel struct {
 	commits        []Commit
 	statuses       map[string]CIState // 表示用 (キャッシュ + 取得結果のマージ)
@@ -53,8 +68,10 @@ type browseModel struct {
 	frame          int
 	width          int
 	height         int
-	cursor         int // コミット index
-	offset         int // ビューポート先頭の行 index
+	cursor         int    // コミット index
+	cursorJob      int    // 展開中 job の index (-1 = コミット行にカーソルがある)
+	offset         int    // ビューポート先頭の行 index
+	notice         string // hint 行に出す一時メッセージ (次のキーで消える)
 	fetching       bool
 	done           bool
 	fetch          tea.Cmd
@@ -73,6 +90,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		toFetch:        toFetch,
 		repo:           repo,
 		hasRepo:        hasRepo,
+		cursorJob:      -1,
 		oneline:        opts.Oneline,
 		colored:        colored,
 		width:          width,
@@ -151,6 +169,11 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.ensureCursorVisible()
 		return m, nil
+	case openURLMsg:
+		if msg.err != nil {
+			m.notice = "ブラウザを開けませんでした: " + firstLine(msg.err.Error())
+		}
+		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg.String())
 	}
@@ -158,6 +181,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
+	m.notice = ""
 	switch key {
 	case "q", "ctrl+c", "esc":
 		m.cancel()
@@ -167,25 +191,107 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.done = true
 		return m, tea.Quit
 	case "j", "down", "ctrl+n":
-		m.cursor = clampIdx(m.cursor+1, len(m.commits))
-		m.ensureCursorVisible()
+		m.moveDown()
 	case "k", "up", "ctrl+p":
-		m.cursor = clampIdx(m.cursor-1, len(m.commits))
-		m.ensureCursorVisible()
+		m.moveUp()
 	case "g", "home":
 		m.cursor = 0
+		m.cursorJob = -1
 		m.offset = 0
 	case "G", "end":
 		m.cursor = clampIdx(len(m.commits)-1, len(m.commits))
+		m.cursorJob = -1
 		m.ensureCursorVisible()
 	case "ctrl+d", "pgdown":
 		m.offset = m.clampOffset(m.offset + m.pageSize()/2)
 	case "ctrl+u", "pgup":
 		m.offset = m.clampOffset(m.offset - m.pageSize()/2)
-	case "enter", " ", "l", "tab":
+	case "enter", " ":
+		if m.cursorJob >= 0 {
+			return m, m.openJob()
+		}
 		return m, m.toggleExpand()
+	case "l", "right", "tab":
+		return m, m.descendOrExpand()
+	case "h", "left":
+		m.collapse()
 	}
 	return m, nil
+}
+
+// moveDown / moveUp はコミット行と展開中の job 行を 1 本のツリーとして辿る。
+func (m *browseModel) moveDown() {
+	if m.cursorJob+1 < m.visibleJobs(m.cursor) {
+		m.cursorJob++
+	} else if m.cursor+1 < len(m.commits) {
+		m.cursor++
+		m.cursorJob = -1
+	}
+	m.ensureCursorVisible()
+}
+
+func (m *browseModel) moveUp() {
+	if m.cursorJob >= 0 {
+		m.cursorJob--
+	} else if m.cursor > 0 {
+		m.cursor--
+		m.cursorJob = m.visibleJobs(m.cursor) - 1 // 展開なしなら -1 = コミット行
+	}
+	m.ensureCursorVisible()
+}
+
+// visibleJobs は指定コミットの下に表示されている選択可能な job 行数。
+func (m *browseModel) visibleJobs(idx int) int {
+	if idx < 0 || idx >= len(m.commits) {
+		return 0
+	}
+	sha := m.commits[idx].SHA
+	if !m.expanded[sha] || m.detailsLoading[sha] {
+		return 0
+	}
+	return len(m.details[sha])
+}
+
+// descendOrExpand (l/→): 折りたたみ中なら展開し、展開済みなら最初の job へ降りる。
+func (m *browseModel) descendOrExpand() tea.Cmd {
+	if len(m.commits) == 0 || m.cursorJob >= 0 {
+		return nil
+	}
+	if !m.expanded[m.commits[m.cursor].SHA] {
+		return m.toggleExpand()
+	}
+	if m.visibleJobs(m.cursor) > 0 {
+		m.cursorJob = 0
+		m.ensureCursorVisible()
+	}
+	return nil
+}
+
+// collapse (h/←): job 行からは親コミットへ戻ってツリーを閉じる。コミット行では閉じるだけ。
+func (m *browseModel) collapse() {
+	if len(m.commits) == 0 {
+		return
+	}
+	sha := m.commits[m.cursor].SHA
+	m.cursorJob = -1
+	delete(m.expanded, sha)
+	m.ensureCursorVisible()
+}
+
+// openJob はカーソル位置の job の詳細ページをブラウザで開く。
+func (m *browseModel) openJob() tea.Cmd {
+	details := m.details[m.commits[m.cursor].SHA]
+	if m.cursorJob < 0 || m.cursorJob >= len(details) {
+		return nil
+	}
+	url := details[m.cursorJob].URL
+	if url == "" {
+		m.notice = "この job には詳細ページの URL がありません"
+		return nil
+	}
+	return func() tea.Msg {
+		return openURLMsg{err: openInBrowser(url)}
+	}
 }
 
 // toggleExpand はカーソル位置のコミットの CI job 一覧を開閉する。詳細が未取得
@@ -266,23 +372,37 @@ func (m *browseModel) clampOffset(offset int) int {
 	return min(max(offset, 0), maxOffset)
 }
 
-// ensureCursorVisible はカーソル対象コミットのヘッダー行がビューポート内に入るよう
-// offset を調整する。
+// cursorOn はこの行にカーソルが乗っているか。
+func (m *browseModel) cursorOn(l Line) bool {
+	if l.CommitIdx != m.cursor {
+		return false
+	}
+	if m.cursorJob < 0 {
+		return l.Header
+	}
+	return l.JobNum == m.cursorJob+1
+}
+
+// ensureCursorVisible はカーソル行がビューポート内に入るよう offset を調整する。
+// 展開の開閉で job 数が変わったときの cursorJob の範囲外もここで矯正する。
 func (m *browseModel) ensureCursorVisible() {
+	if m.cursorJob >= m.visibleJobs(m.cursor) {
+		m.cursorJob = -1
+	}
 	lines := m.lines()
-	header := 0
+	target := 0
 	for i, l := range lines {
-		if l.Header && l.CommitIdx == m.cursor {
-			header = i
+		if m.cursorOn(l) {
+			target = i
 			break
 		}
 	}
 	page := m.pageSize()
-	if header < m.offset {
-		m.offset = header
+	if target < m.offset {
+		m.offset = target
 	}
-	if header >= m.offset+page {
-		m.offset = header - page + 1
+	if target >= m.offset+page {
+		m.offset = target - page + 1
 	}
 	m.offset = min(max(m.offset, 0), max(len(lines)-page, 0))
 }
@@ -299,7 +419,7 @@ func (m *browseModel) View() string {
 	var b []byte
 	for i := offset; i < end; i++ {
 		text := lines[i].Text
-		if lines[i].Header && lines[i].CommitIdx == m.cursor {
+		if m.cursorOn(lines[i]) {
 			text = cursorMark(m.colored) + text
 		} else {
 			text = "  " + text
@@ -316,9 +436,15 @@ func cursorMark(colored bool) string {
 }
 
 func (m *browseModel) hintLine() string {
-	hint := "j/k: 移動  Enter: CI job  Ctrl-D/U: スクロール  q: 終了"
+	hint := "j/k: 移動  Enter: CI job  h/l: 閉じる/開く  q: 終了"
+	if m.cursorJob >= 0 {
+		hint = "Enter: ブラウザで開く  h: 戻る  j/k: 移動  q: 終了"
+	}
 	if m.fetching {
 		hint = spinnerFrames[m.frame%len(spinnerFrames)] + " CI 状態を取得中...  " + hint
+	}
+	if m.notice != "" {
+		hint = "⚠ " + m.notice + "  " + hint
 	}
 	if m.ghErr != nil {
 		hint = "⚠ " + firstLine(m.ghErr.Warning()) + "  " + hint
