@@ -188,6 +188,9 @@ func TestBrowsePanelJobCursorAndOpen(t *testing.T) {
 	m.statuses = statusesFor(m, StateFailure)
 	withJobs(m, 0)
 	m.openPanel()
+	if m.panelCursor != -1 {
+		t.Fatalf("開いた直後のフォーカスはタイトル行 (-1) のはず: %d", m.panelCursor)
+	}
 	var opened string
 	orig := openInBrowser
 	openInBrowser = func(url string) error {
@@ -195,10 +198,18 @@ func TestBrowsePanelJobCursorAndOpen(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { openInBrowser = orig })
-	// job0 (URL あり) で Space → ブラウザで開く (Enter はパネル toggle に使うため)
-	_, cmd := m.handleKey(" ")
+	// タイトル行フォーカスの Enter/Space はブラウザを開かない (toggle 用)
+	if _, cmd := m.handleKey(" "); cmd != nil {
+		t.Errorf("タイトル行フォーカスの Space で Cmd が返った")
+	}
+	// j で job0 にフォーカスして Enter → ブラウザで開く (ユーザー要望)
+	m.handleKey("j")
+	if m.panelCursor != 0 {
+		t.Fatalf("j 後の panelCursor = %d; want 0", m.panelCursor)
+	}
+	_, cmd := m.handleKey("enter")
 	if cmd == nil {
-		t.Fatalf("job 上の Space で Cmd が返らない")
+		t.Fatalf("job フォーカス中の Enter で Cmd が返らない")
 	}
 	if msg := cmd(); msg.(openURLMsg).err != nil {
 		t.Fatalf("openURLMsg.err = %v", msg.(openURLMsg).err)
@@ -206,19 +217,28 @@ func TestBrowsePanelJobCursorAndOpen(t *testing.T) {
 	if opened != "https://github.com/o/r/runs/1" {
 		t.Errorf("開いた URL = %q", opened)
 	}
-	// j で job1 へ移動 (末尾で止まる)
+	// j で job1 へ (末尾で止まる)。URL なし job は notice を出して開かない (o でも同じ経路)
 	m.handleKey("j")
 	m.handleKey("j")
 	if m.panelCursor != 1 {
 		t.Errorf("panelCursor = %d; want 1", m.panelCursor)
 	}
-	// job1 (URL なし) は notice を出して開かない (o でも同じ経路)
 	_, cmd = m.handleKey("o")
 	if cmd != nil {
 		t.Errorf("URL なし job で Cmd が返った")
 	}
 	if !strings.Contains(m.hintLine(), "URL がありません") {
 		t.Errorf("notice が hint に出ていない: %q", m.hintLine())
+	}
+	// k でタイトル行まで戻れば Enter は「閉じる」に戻る
+	m.handleKey("k")
+	m.handleKey("k")
+	if m.panelCursor != -1 {
+		t.Fatalf("k で -1 に戻らない: %d", m.panelCursor)
+	}
+	m.handleKey("enter")
+	if m.panelSHA != "" {
+		t.Errorf("タイトル行フォーカスの Enter で閉じない")
 	}
 }
 

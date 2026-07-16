@@ -78,7 +78,7 @@ type browseModel struct {
 	cursor         int    // コミット index
 	offset         int    // ビューポート先頭の行 index
 	panelSHA       string // job パネルを表示中のコミット SHA ("" = パネルなし)
-	panelCursor    int    // パネル内で選択中の job index
+	panelCursor    int    // パネル内で選択中の job index (-1 = タイトル行にフォーカス)
 	notice         string // hint 行に出す一時メッセージ (次のキーで消える)
 	fetching       bool
 	done           bool
@@ -97,6 +97,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		toFetch:        toFetch,
 		repo:           repo,
 		hasRepo:        hasRepo,
+		panelCursor:    -1,
 		oneline:        opts.Oneline,
 		colored:        colored,
 		width:          width,
@@ -227,18 +228,27 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handlePanelKey は job パネル表示中のキー操作。j/k はパネル内の job 移動になる。
-// Enter はパネルの toggle (閉じる) に割り当てるため (ユーザー要望)、ブラウザ起動は
-// Space / o に置く。
+// handlePanelKey は job パネル表示中のキー操作。j/k はパネル内のフォーカス移動になる。
+// フォーカスの初期位置はタイトル行 (-1) で、この状態の Enter は「閉じる」= Enter 連打で
+// 開閉 toggle が成立する。j で job へフォーカスを降ろした後の Enter はその job を
+// ブラウザで開く (両方ユーザー要望)。
 func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 	jobs := m.details[m.panelSHA]
 	switch key {
-	case "enter", "esc", "h", "left":
+	case "esc", "h", "left":
 		m.closePanel()
+	case "enter":
+		if m.panelCursor < 0 {
+			m.closePanel()
+			return m, nil
+		}
+		return m, m.openJob()
 	case "j", "down", "ctrl+n":
-		m.panelCursor = clampIdx(m.panelCursor+1, len(jobs))
+		if m.panelCursor+1 < len(jobs) {
+			m.panelCursor++
+		}
 	case "k", "up", "ctrl+p":
-		m.panelCursor = clampIdx(m.panelCursor-1, len(jobs))
+		m.panelCursor = max(m.panelCursor-1, -1)
 	case "g", "home":
 		m.panelCursor = 0
 	case "G", "end":
@@ -257,7 +267,7 @@ func (m *browseModel) openPanel() tea.Cmd {
 	}
 	sha := m.commits[m.cursor].SHA
 	m.panelSHA = sha
-	m.panelCursor = 0
+	m.panelCursor = -1 // タイトル行フォーカスから開始 (この状態の Enter = 閉じる)
 	if _, ok := m.details[sha]; ok || m.detailsLoading[sha] {
 		return nil
 	}
@@ -286,7 +296,7 @@ func (m *browseModel) openPanel() tea.Cmd {
 
 func (m *browseModel) closePanel() {
 	m.panelSHA = ""
-	m.panelCursor = 0
+	m.panelCursor = -1
 }
 
 // openJob はパネルで選択中の job の詳細ページをブラウザで開く。
@@ -467,8 +477,11 @@ func (m *browseModel) panelLines() []string {
 		}
 	}
 	title := fmt.Sprintf(" CI jobs: %s %s ", commit.ShortSHA, commit.Subject)
-	if len(jobs) > 0 {
+	switch {
+	case len(jobs) > 0 && m.panelCursor >= 0:
 		title = fmt.Sprintf(" CI jobs: %s (%d/%d) %s ", commit.ShortSHA, m.panelCursor+1, len(jobs), commit.Subject)
+	case len(jobs) > 0:
+		title = fmt.Sprintf(" CI jobs: %s (%d 件) %s ", commit.ShortSHA, len(jobs), commit.Subject)
 	}
 	return buildPanelBox(title, rows, width, m.colored)
 }
@@ -499,7 +512,11 @@ func cursorMark(colored bool) string {
 func (m *browseModel) hintLine() string {
 	hint := "j/k: 移動  Enter: CI job  q: 終了"
 	if m.panelSHA != "" {
-		hint = "j/k: job 移動  Space/o: ブラウザで開く  Enter/h: 閉じる  q: 終了"
+		if m.panelCursor >= 0 {
+			hint = "j/k: job 移動  Enter: ブラウザで開く  h/Esc: 閉じる  q: 終了"
+		} else {
+			hint = "j: job を選択  Enter/h/Esc: 閉じる  q: 終了"
+		}
 	}
 	if m.fetching {
 		hint = m.spinner() + " CI 状態を取得中...  " + hint
