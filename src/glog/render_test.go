@@ -240,6 +240,27 @@ func TestRenderCached(t *testing.T) {
 	}
 }
 
+// BenchmarkRenderLinesLargePatch は -p の巨大出力での行構築コストの観測用
+// (browseModel.lines() のメモ化が効く前提の 1 回分のコスト)。
+func BenchmarkRenderLinesLargePatch(b *testing.B) {
+	commits := make([]Commit, 20)
+	patch := strings.Repeat("+added line of a reasonably long diff body text\n", 500)
+	for i := range commits {
+		commits[i] = Commit{
+			SHA: strings.Repeat("a", 39) + string(rune('a'+i)), ShortSHA: "aaaaaaa",
+			Subject: "subject", Author: "koji", AuthorEmail: "k@x", Date: "d", RelDate: "now",
+			Message: "subject", Body: patch,
+		}
+	}
+	statuses := map[string]CIState{}
+	for _, c := range commits {
+		statuses[c.SHA] = StateSuccess
+	}
+	for b.Loop() {
+		RenderLines(commits, statuses, RenderOpts{Width: 120})
+	}
+}
+
 func TestStatusGlyphAllStates(t *testing.T) {
 	want := map[CIState]string{
 		StateSuccess: "✓", StateFailure: "✗", StatePending: "●",

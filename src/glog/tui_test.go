@@ -359,6 +359,48 @@ func TestBrowseNonGitHubRepoPanel(t *testing.T) {
 	}
 }
 
+func TestBrowseLinesMemoized(t *testing.T) {
+	// 行リストはカーソル移動やパネル開閉で再構築しない (メモ化)。-p の巨大 patch で
+	// キー 1 打ごとに全行を組み直す計算量爆発を防ぐ
+	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+	first := m.lines()
+	m.handleKey("j")
+	m.handleKey("ctrl+d")
+	withJobs(m, 0)
+	m.openPanel()
+	if second := m.lines(); &first[0] != &second[0] {
+		t.Errorf("カーソル移動・パネル開閉で行リストが再構築された")
+	}
+	// 状態を変える更新 (CI 結果のマージ) では再構築される
+	sha := m.commits[0].SHA
+	m.Update(ciResultMsg{fetched: map[string]CIState{sha: StateFailure}})
+	rebuilt := m.lines()
+	if &first[0] == &rebuilt[0] {
+		t.Errorf("CI 結果反映後も古い行リストのまま")
+	}
+	if !strings.Contains(rebuilt[0].Text, "✗") {
+		t.Errorf("再構築後の行に新しい状態が反映されていない: %q", rebuilt[0].Text)
+	}
+}
+
+func TestBrowsePanelHomeKeyOnEmptyJobs(t *testing.T) {
+	// job 0 件のパネルで g を押してもタイトル行 (-1) から動かず、Enter で閉じられる
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StateNone
+	m.details[sha] = []CheckDetail{}
+	m.openPanel()
+	m.handleKey("g")
+	if m.panelCursor != -1 {
+		t.Fatalf("空パネルで g がフォーカスを動かした: %d", m.panelCursor)
+	}
+	m.handleKey("enter")
+	if m.panelSHA != "" {
+		t.Errorf("空パネルが Enter で閉じない")
+	}
+}
+
 func TestBuildPanelBoxWidths(t *testing.T) {
 	lines := buildPanelBox(" title ", []string{"row", strings.Repeat("x", 200)}, 40, false)
 	if len(lines) != 4 {

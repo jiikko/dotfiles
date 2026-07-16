@@ -84,6 +84,13 @@ type browseModel struct {
 	done           bool
 	fetch          tea.Cmd
 	cancel         context.CancelFunc
+
+	// lines() のメモ化。行リストの再構築は O(出力全行数) で、-p の巨大 patch では
+	// キー 1 打ごとに数万行を組み直すことになるためキャッシュする。行内容を変えうる
+	// 更新 (statuses/details のマージ・スピナーフレーム・幅変更) だけが無効化する。
+	// カーソル移動・パネル開閉は View の窓側で重ねるだけなので無効化不要
+	linesCache []Line
+	linesValid bool
 }
 
 func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []string, repo Repo, hasRepo bool, opts *Options, colored bool, width, height int) *browseModel {
@@ -136,6 +143,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.invalidateLines() // 幅で折り返し行数が変わる
 		m.ensureCursorVisible()
 		return m, nil
 	case tickMsg:
@@ -143,8 +151,10 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.frame++
+		m.invalidateLines() // 取得中コミットのスピナーフレームが進む
 		return m, tick()
 	case ciResultMsg:
+		m.invalidateLines()
 		m.ghErr = msg.ghErr
 		if msg.fetched != nil {
 			maps.Copy(m.fetched, msg.fetched)
@@ -162,6 +172,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case detailMsg:
+		m.invalidateLines()
 		delete(m.detailsLoading, msg.sha)
 		if msg.ghErr != nil {
 			m.ghErr = msg.ghErr
@@ -250,9 +261,15 @@ func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 	case "k", "up", "ctrl+p":
 		m.panelCursor = max(m.panelCursor-1, -1)
 	case "g", "home":
-		m.panelCursor = 0
+		// job 0 件でフォーカスを 0 にすると、存在しない job にフォーカスが移って
+		// タイトル行 (-1) へ戻れなくなる (Enter で閉じられない) ため空ではしない
+		if len(jobs) > 0 {
+			m.panelCursor = 0
+		}
 	case "G", "end":
-		m.panelCursor = clampIdx(len(jobs)-1, len(jobs))
+		if len(jobs) > 0 {
+			m.panelCursor = len(jobs) - 1
+		}
 	case " ", "o":
 		return m, m.openJob()
 	}
@@ -344,7 +361,15 @@ func (m *browseModel) renderOpts() RenderOpts {
 }
 
 func (m *browseModel) lines() []Line {
-	return RenderLines(m.commits, m.statuses, m.renderOpts())
+	if !m.linesValid {
+		m.linesCache = RenderLines(m.commits, m.statuses, m.renderOpts())
+		m.linesValid = true
+	}
+	return m.linesCache
+}
+
+func (m *browseModel) invalidateLines() {
+	m.linesValid = false
 }
 
 // pageSize はビューポートの行数 (最下段のヒント行を除く)。
