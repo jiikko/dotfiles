@@ -62,6 +62,9 @@ end
 
 require("dotfiles.basic").setup()
 
+-- gruvbox 色の hex↔cterm ペアは palette が唯一の出典 (下の plugin spec 群の closure が参照)。
+local pal = require("dotfiles.palette")
+
 -- ============================================================================
 -- [SELF-HEAL] vim.loader (luac バイトコードキャッシュ) の stale 自己修復
 -- ----------------------------------------------------------------------------
@@ -100,7 +103,7 @@ require("lazy").setup({
       if dotfiles_truecolor_supported() then
         vim.cmd("colorscheme gruvbox")
         -- 選択範囲をショッキングピンクで強調 (hl.set = ColorScheme 再適用 + cterm 併記規律)
-        require("dotfiles.hl").set("Visual", { bg = "#d3869b", ctermbg = 175 })
+        require("dotfiles.hl").set("Visual", { bg = pal.bright_purple.hex, ctermbg = pal.bright_purple.cterm })
       else
         -- truecolor 非対応端末 (上の WORKAROUND 参照): gruvbox は cterm 色を持たず 256色端末で
         -- 無色になるため、cterm を完備する nvim 同梱の retrobox (gruvbox 風) へ差し替える。
@@ -483,31 +486,33 @@ require("lazy").setup({
         },
         -- アクティブ/非アクティブの差を強く付ける。
         --   選択 = 明るい pink 地 × 黒の太字 + 橙のインジケータバー (最も目立たせる)
-        --   非選択 = 暗い地に沈んだ灰字 (存在感を弱める)
+        --   非選択 = 暗い地に沈んだ灰字 (存在感を弱める。地色は fill と同じ dark0_hard =
+        --   タブは地に溶け、文字色とセパレータ縦線だけで区切るフラットデザイン)
         -- gui(truecolor) と cterm(256色) の両方を指定する。この環境は ~/.zshenv の
         -- SUPPORT_TRUECOLOR=false で retrobox + termguicolors=off (256色) のため、
-        -- gui 色だけでは一切効かず区別が付かなかった。cterm を併記し 256色端末でも効かせる。
+        -- gui 色だけでは一切効かず区別が付かなかった。hex↔cterm の組は pal (dotfiles/palette) が
+        -- 唯一の出典。かつて手書き併記だった頃、同じ #1d2021 に ctermbg=237 (=dark1 の対応値) が
+        -- 混在し「256色でだけ非選択タブが明るく浮く」drift があった (2026-07-16 に 234 へ統一)。
         highlights = {
-          fill = { bg = "#1d2021", ctermbg = 234 },
+          fill = { bg = pal.dark0_hard.hex, ctermbg = pal.dark0_hard.cterm },
           -- 非選択バッファ (最も沈める)
-          background = { fg = "#665c54", bg = "#1d2021", ctermfg = 245, ctermbg = 237 },
-          modified = { fg = "#665c54", bg = "#1d2021", ctermfg = 245, ctermbg = 237 },
+          background = { fg = pal.dark4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark4.cterm, ctermbg = pal.dark0_hard.cterm },
+          modified = { fg = pal.dark4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark4.cterm, ctermbg = pal.dark0_hard.cterm },
           -- 別ウィンドウで可視だが非アクティブ (中間トーン)
-          buffer_visible = { fg = "#a89984", bg = "#1d2021", ctermfg = 250, ctermbg = 237 },
-          modified_visible = { fg = "#a89984", bg = "#1d2021", ctermfg = 250, ctermbg = 237 },
+          buffer_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm },
+          modified_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm },
           -- アクティブ (明るい pink 地 + 黒の太字)
-          buffer_selected = { fg = "#1d2021", bg = "#d3869b", ctermfg = 235, ctermbg = 175, bold = true, italic = false },
-          modified_selected = { fg = "#1d2021", bg = "#d3869b", ctermfg = 235, ctermbg = 175, bold = true },
-          indicator_selected = { fg = "#fe8019", bg = "#d3869b", ctermfg = 208, ctermbg = 175 }, -- 橙のバー
+          buffer_selected = { fg = pal.dark0_hard.hex, bg = pal.bright_purple.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.bright_purple.cterm, bold = true, italic = false },
+          modified_selected = { fg = pal.dark0_hard.hex, bg = pal.bright_purple.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.bright_purple.cterm, bold = true },
+          indicator_selected = { fg = pal.bright_orange.hex, bg = pal.bright_purple.hex, ctermfg = pal.bright_orange.cterm, ctermbg = pal.bright_purple.cterm }, -- 橙のバー
           -- ordinal 番号 (タブ本体と同じ地色に合わせる)
-          numbers = { fg = "#665c54", bg = "#1d2021", ctermfg = 245, ctermbg = 237 },
-          numbers_visible = { fg = "#a89984", bg = "#1d2021", ctermfg = 250, ctermbg = 237 },
-          numbers_selected = { fg = "#1d2021", bg = "#d3869b", ctermfg = 235, ctermbg = 175, bold = true, italic = false },
-          -- thin セパレータ: fg が縦線の色。地色と同系の沈んだ色にして境界だけ薄く見せる。
-          -- cterm 併記必須 (256色環境では gui 色が無視される)
-          separator = { fg = "#3c3836", bg = "#1d2021", ctermfg = 237, ctermbg = 234 },
-          separator_visible = { fg = "#3c3836", bg = "#1d2021", ctermfg = 237, ctermbg = 234 },
-          separator_selected = { fg = "#3c3836", bg = "#1d2021", ctermfg = 237, ctermbg = 234 },
+          numbers = { fg = pal.dark4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark4.cterm, ctermbg = pal.dark0_hard.cterm },
+          numbers_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm },
+          numbers_selected = { fg = pal.dark0_hard.hex, bg = pal.bright_purple.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.bright_purple.cterm, bold = true, italic = false },
+          -- thin セパレータ: fg が縦線の色。地色と同系の沈んだ色 (dark1) にして境界だけ薄く見せる。
+          separator = { fg = pal.dark1.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark1.cterm, ctermbg = pal.dark0_hard.cterm },
+          separator_visible = { fg = pal.dark1.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark1.cterm, ctermbg = pal.dark0_hard.cterm },
+          separator_selected = { fg = pal.dark1.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark1.cterm, ctermbg = pal.dark0_hard.cterm },
         },
       })
 
@@ -678,10 +683,10 @@ require("lazy").setup({
 
       -- hl.set = ColorScheme 再適用 + cterm 併記 (256色環境) の規律 (dotfiles/hl.lua 参照)
       require("dotfiles.hl").set("GitSignsCurrentLineBlame", {
-        fg = "#1d2021",
-        bg = "#fabd2f",
-        ctermfg = 234,
-        ctermbg = 214,
+        fg = pal.dark0_hard.hex,
+        bg = pal.bright_yellow.hex,
+        ctermfg = pal.dark0_hard.cterm,
+        ctermbg = pal.bright_yellow.cterm,
         bold = true,
         italic = false,
       })
@@ -706,8 +711,8 @@ require("lazy").setup({
       -- cterm が無いと主環境 (termguicolors=off) で末尾空白ハイライトが完全不可視だった。
       require("dotfiles.hl").set("MiniTrailspace", {
         fg = "NONE",
-        bg = "#fb4934",
-        ctermbg = 203,
+        bg = pal.bright_red.hex,
+        ctermbg = pal.bright_red.cterm,
       })
 
       local map = vim.keymap.set
@@ -848,13 +853,13 @@ require("lazy").setup({
 
           -- 色の設定（inactive時は薄く）。incline は render の戻り値を :highlight コマンドに
           -- 素通しするため、gui* と cterm* の併記が必要 (256色環境の規律は dotfiles/hl.lua 参照)
-          local fg_color, cterm_fg = "#ebdbb2", 223  -- gruvbox light
-          local bg_color, cterm_bg = "#3c3836", 237  -- gruvbox bg1
+          local fg_color, cterm_fg = pal.light1.hex, pal.light1.cterm
+          local bg_color, cterm_bg = pal.dark1.hex, pal.dark1.cterm
 
           if not props.focused then
             -- inactive時は存在感を弱める
-            fg_color, cterm_fg = "#665c54", 245  -- gruvbox gray
-            bg_color, cterm_bg = "#282828", 235  -- gruvbox bg0
+            fg_color, cterm_fg = pal.dark4.hex, pal.dark4.cterm
+            bg_color, cterm_bg = pal.dark0.hex, pal.dark0.cterm
           end
 
           local res = {
@@ -862,7 +867,7 @@ require("lazy").setup({
           }
 
           if modified then
-            table.insert(res, { " ●", guifg = "#fe8019", guibg = bg_color, ctermfg = 208, ctermbg = cterm_bg })  -- gruvbox orange
+            table.insert(res, { " ●", guifg = pal.bright_orange.hex, guibg = bg_color, ctermfg = pal.bright_orange.cterm, ctermbg = cterm_bg })
           end
 
           return res
