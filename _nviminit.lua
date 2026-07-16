@@ -512,7 +512,7 @@ require("lazy").setup({
           -- 旧ショッキングピンク → Coral へ: オレンジ基調テーマ 2026-07-16)
           buffer_selected = { fg = pal.dark0_hard.hex, bg = pal.accent.current_accent.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.accent.current_accent.cterm, bold = true, italic = false },
           modified_selected = { fg = pal.dark0_hard.hex, bg = pal.accent.current_accent.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.accent.current_accent.cterm, bold = true },
-          indicator_selected = { fg = pal.bright_orange.hex, bg = pal.accent.current_accent.hex, ctermfg = pal.bright_orange.cterm, ctermbg = pal.accent.current_accent.cterm }, -- 橙のバー
+          indicator_selected = { fg = pal.light1.hex, bg = pal.accent.current_accent.hex, ctermfg = pal.light1.cterm, ctermbg = pal.accent.current_accent.cterm }, -- クリームのバー (旧橙208は蛍光橙地202と d=40 でほぼ不可視のため変更 2026-07-16)
           -- ordinal 番号 (タブ本体と同じ地色に合わせる)
           numbers = { fg = pal.dark3.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark3.cterm, ctermbg = pal.dark0_hard.cterm },
           numbers_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm },

@@ -8,7 +8,7 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 
 | 意味 | 色 | tmux 側 | nvim 側 |
 |---|---|---|---|
-| **現在地** (いまここ) | Coral `#D97757`/173 (Claude 風オレンジ基調 2026-07-16。旧ショッキングピンク 199) | `@cur-accent` (current window 島) | `palette.accent.current_accent` (bufferline 選択タブ) |
+| **現在地** (いまここ) | 蛍光オレンジ `#FF5F00`/202 (cterm 完全一致。変遷: ピンク199→Coral 173→蛍光 202、いずれも 2026-07-16) | `@cur-accent` (current window 島) | `palette.accent.current_accent` (bufferline 選択タブ。選択バーはクリーム light1=蛍光橙地で橙マーカーが消えるため) |
 | 最近作業した (鮮度) | バイオレット ramp 201→164→127→90→53 (黄昏の残光。旧シアン 51→23) | `@fade-*` (放置フェード) | — (対応概念なし。持ち込まない) |
 | 選択中テキスト | Kraft `#D4A27F`/180 (旧ローズ #d3869b) | — | `palette.accent.kraft` (Visual)。現在地 Coral より一段落ち着けたのは意図的 (長時間注視するため)。truecolor/256色の両環境に適用 |
 | 通知 (bell/メッセージ) | シアン 51 (fade から転用。稀なイベントの ping 2026-07-16) | bell セル反転・message-style (alert 帯/: プロンプト)・copy-mode current match | — |
