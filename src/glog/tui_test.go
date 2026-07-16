@@ -464,6 +464,17 @@ func TestBrowseJobDetailPopup(t *testing.T) {
 	if !strings.Contains(m.View(), "log line 29") {
 		t.Errorf("末尾行が見えていない (低い端末でも末尾は見える):\n%s", m.View())
 	}
+	// 詳細ボックスは job パネルの子であることが分かるよう段差付き (ユーザー要望)
+	indented := false
+	for line := range strings.SplitSeq(m.View(), "\n") {
+		if strings.HasPrefix(stripANSI(line), detailIndent+"┌") {
+			indented = true
+			break
+		}
+	}
+	if !indented {
+		t.Errorf("詳細ボックスに段差がない:\n%s", m.View())
+	}
 	// k で上へスクロール、g で先頭
 	m.handleKey("k")
 	if m.detailOffset != 30-rows-1 {

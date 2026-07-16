@@ -247,6 +247,36 @@ func TestLogTail(t *testing.T) {
 	}
 }
 
+func TestLogTailSanitizesContent(t *testing.T) {
+	// メッセージ部のタブは端末のタブ展開で枠の桁計算を壊す (スクロールで視界に入ると
+	// 表示崩壊する実測バグ) ため、取り込み時に無害化する
+	out := "j\ts\t\ufeffok  \tglog\t0.641s\r\n"
+	lines := logTail(out, 50)
+	if len(lines) != 1 {
+		t.Fatalf("lines = %v", lines)
+	}
+	if strings.ContainsAny(lines[0], "\t\r\ufeff") {
+		t.Errorf("制御文字が残っている: %q", lines[0])
+	}
+	if !strings.Contains(lines[0], "ok      glog") {
+		t.Errorf("タブが空白へ展開されていない: %q", lines[0])
+	}
+}
+
+func TestSanitizeDetailLine(t *testing.T) {
+	if got := sanitizeDetailLine("plain text"); got != "plain text" {
+		t.Errorf("素の行が変更された: %q", got)
+	}
+	// ANSI カラーは残す (枠側の幅計算が対応済み)
+	colored := "\x1b[36;1mmake test\x1b[0m"
+	if got := sanitizeDetailLine(colored); got != colored {
+		t.Errorf("ANSI が落ちた: %q", got)
+	}
+	if got := sanitizeDetailLine("a\tb\rc\ufeffd"); got != "a    bcd" {
+		t.Errorf("sanitize = %q; want %q", got, "a    bcd")
+	}
+}
+
 func TestClassifyGHError(t *testing.T) {
 	exitErr := errors.New("exit status 1")
 	tests := []struct {

@@ -705,10 +705,16 @@ func (m *browseModel) panelLines() []string {
 	}
 	box := buildPanelBox(title, rows, width, m.colored)
 	if m.detailOpen {
-		box = append(box, m.detailBoxLines(width)...)
+		// 詳細ボックスは job パネルの「子」であることが分かるよう段差を付ける (ユーザー要望)
+		for _, line := range m.detailBoxLines(width - len(detailIndent)) {
+			box = append(box, detailIndent+line)
+		}
 	}
 	return box
 }
+
+// detailIndent は job 詳細ボックスのツリー段差 (job パネルの子であることの視覚表現)。
+const detailIndent = "  "
 
 // detailBoxLines は job 詳細 (annotations / ログ tail) の第 2 ポップアップ。
 // job パネルの直下へ続けて重ねる。

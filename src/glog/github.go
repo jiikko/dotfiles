@@ -402,14 +402,41 @@ func annotationLines(stdout []byte) []string {
 		head := fmt.Sprintf("[%s] %s:%d", a.Level, a.Path, a.StartLine)
 		lines = append(lines, head)
 		for msg := range strings.SplitSeq(strings.TrimRight(a.Message, "\n"), "\n") {
-			lines = append(lines, "  "+msg)
+			lines = append(lines, "  "+sanitizeDetailLine(msg))
 		}
 	}
 	return lines
 }
 
+// sanitizeDetailLine は詳細ポップアップの枠描画を壊す制御文字を無害化する。
+// タブが根本原因の実測バグ: runewidth は \t を幅 0 と数えるが端末は 8 桁タブストップへ
+// 展開するため、右枠の桁計算がずれて行が折り返し、インライン再描画の行対応が崩壊する
+// (go test の "ok \tglog\t0.5s" 等、ログのメッセージ部には普通にタブが混ざる)。
+// ANSI カラー (ESC) は枠側の幅計算が対応済みなので残す。BOM (GitHub のログ先頭に付く)
+// と \r 等の他の制御文字は落とす。
+func sanitizeDetailLine(s string) string {
+	if !strings.ContainsFunc(s, func(r rune) bool { return (r < 0x20 && r != '\x1b') || r == 0x7f || r == '\ufeff' }) {
+		return s
+	}
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r == '\t':
+			b.WriteString("    ")
+		case r == '\x1b':
+			b.WriteRune(r)
+		case r < 0x20 || r == 0x7f || r == '\ufeff':
+			// drop
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // logTail は gh run view --log の出力から末尾 n 行を取り出す。各行の
-// "job名<TAB>step名<TAB>" プレフィックスは表示幅の邪魔なので落とす。
+// "job名<TAB>step名<TAB>" プレフィックスは表示幅の邪魔なので落とし、
+// 残りは sanitizeDetailLine で枠描画を壊す制御文字を無害化する。
 func logTail(out string, n int) []string {
 	var lines []string
 	for line := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
@@ -419,7 +446,7 @@ func logTail(out string, n int) []string {
 		if parts := strings.SplitN(line, "\t", 3); len(parts) == 3 {
 			line = parts[2]
 		}
-		lines = append(lines, line)
+		lines = append(lines, sanitizeDetailLine(line))
 	}
 	if len(lines) > n {
 		lines = lines[len(lines)-n:]
