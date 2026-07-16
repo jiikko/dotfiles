@@ -19,6 +19,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# false-pass 防御 (pcall+cquit guard / log backstop) は lib に集約 (rationale は lib 側コメント参照)。
+source "$SCRIPT_DIR/lib/check_log.sh"
+GUARD_LIB="$SCRIPT_DIR/lib/guard.lua"
+
 # 共通: headless で lua を実行し、lua が cquit で落ちたら log を出して非0終了する。
 # 終了は +qall! (強制): behavior 検査で buffer を modified にしても E37 (No write since last
 # change) で hang しないため。lua 側の cquit は qall! より先に走るので失敗検知は保たれる。
@@ -29,6 +33,9 @@ _run_headless_lua() {
     cat "$log_file" >&2
     exit 1
   fi
+  # cquit をすり抜けて stderr にだけ出るエラー (ftplugin 評価中の E 系等) の backstop。
+  # 従来この検査が無く false-pass の残存経路だった (test_nvim/ambiwidth と同じ防御に揃える)。
+  tt_nvim_log_backstop "$log_file" "${lua_file:t}"
 }
 
 run_check() {
@@ -37,10 +44,10 @@ run_check() {
   local lua_file="$tmp_root/check_${ft}.lua"
   local log_file="$tmp_root/check_${ft}.log"
 
-  # 注意: +luafile のエラーは exit code に伝わらず後続の +qall! が exit 0 にする (nvim の仕様)。
-  # assert 相当を pcall で捕捉し、失敗時は cquit で明示的に非0終了させないと false-pass になる。
+  # +luafile のエラー握り潰し (exit 0 化) 対策は lib/guard.lua の pcall+cquit に集約。
   cat >"$lua_file" <<EOF
-local ok, err = pcall(function()
+local guard = dofile([[$GUARD_LIB]])
+guard("ftplugin check ($ft)", function()
   local ft = "$ft"
   local expected_rhs = "$expected_rhs"
   vim.cmd("enew")
@@ -56,10 +63,6 @@ local ok, err = pcall(function()
     error(string.format("unexpected rhs for %s: %q (expected %q)", ft, rhs, expected_rhs))
   end
 end)
-if not ok then
-  vim.api.nvim_err_writeln(tostring(err))
-  vim.cmd("cquit 1")
-end
 EOF
 
   _run_headless_lua "$lua_file" "$log_file"
@@ -97,10 +100,11 @@ func alpha() {
 func bravo() { println("b") }
 GOEOF
 
-  # go_file のパスを lua に注入 (interpolated 1 行) してから本体 (quoted heredoc) を追記する。
+  # go_file/guard のパスを lua に注入 (interpolated 2 行) してから本体 (quoted heredoc) を追記する。
   print -r -- "local GO_FILE = [[$go_file]]" >"$lua_file"
+  print -r -- "local guard = dofile([[$GUARD_LIB]])" >>"$lua_file"
   cat >>"$lua_file" <<'EOF'
-local ok, err = pcall(function()
+guard("go ftplugin check", function()
   vim.cmd("edit " .. vim.fn.fnameescape(GO_FILE))
   -- treesitter parser (gopls 非依存のローカル解析) が有効化されるまで待つ。
   vim.wait(3000, function()
@@ -157,10 +161,6 @@ local ok, err = pcall(function()
     print("[skip] go treesitter parser not active; ]] behavior assert skipped")
   end
 end)
-if not ok then
-  vim.api.nvim_err_writeln(tostring(err))
-  vim.cmd("cquit 1")
-end
 EOF
 
   _run_headless_lua "$lua_file" "$log_file"

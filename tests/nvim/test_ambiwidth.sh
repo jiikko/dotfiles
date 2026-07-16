@@ -7,6 +7,8 @@ NVIM_BIN=${NVIM:-nvim}
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
 AW_DIR="$ROOT_DIR/vendor/nvim-plugins/ambiwidth.nvim"
+# false-pass 防御 (pcall+cquit guard / log backstop) は lib に集約 (rationale は lib 側コメント参照)。
+source "$SCRIPT_DIR/lib/check_log.sh"
 
 if ! command -v "$NVIM_BIN" >/dev/null 2>&1; then
   print -u2 "Error: nvim binary not found. Install Neovim or set \$NVIM."
@@ -24,12 +26,11 @@ check="$tmp_root/check_ambiwidth.lua"
 # データ (95 レンジの中身) はテストせず、設定による件数の関係と失敗時の挙動だけを検証する。
 # 依存を避けるため -u NONE で vendored module を直接 require する。
 #
-# 重要: +luafile のエラーは終了コードに伝わらず後続の +qall が exit 0 にしてしまう
-# (nvim の仕様)。assert を pcall で捕捉し、失敗時は cquit で明示的に非0終了させる。
+# +luafile のエラー握り潰し (exit 0 化) 対策は lib/guard.lua の pcall+cquit に集約。
+# require も guard の内側に置く (外だと throw が exit 0 に化けて空振り PASS になる)。
 cat >"$check" <<EOF
-local ok, err = pcall(function()
-  -- require も pcall の内側に置く。モジュールが壊れ/改名/構文エラーだと require が throw するが、
-  -- pcall の外だと +qall が exit 0 にして空振り PASS になる (回帰テストの意味が消える)。
+local guard = dofile([[$SCRIPT_DIR/lib/guard.lua]])
+guard("ambiwidth test failed", function()
   vim.opt.rtp:append("$AW_DIR")
   local aw = require("ambiwidth")
 
@@ -94,11 +95,6 @@ local ok, err = pcall(function()
   assert(#vim.fn.getcellwidths() == defaults_count, "overlapping add_list must fall back to defaults")
   assert(vim.fn.strdisplaywidth("℃") == 2, "defaults must stay effective after overlapping add_list")
 end)
-
-if not ok then
-  vim.api.nvim_err_writeln("ambiwidth test failed: " .. tostring(err))
-  vim.cmd("cquit 1")
-end
 EOF
 
 log="$tmp_root/check_ambiwidth.log"
@@ -108,9 +104,5 @@ if ! "$NVIM_BIN" --headless -u NONE "+luafile $check" +qall >"$log" 2>&1; then
   exit 1
 fi
 # cquit を確実に踏むための backstop (握り潰し経路が残っても stderr のエラーで検出する)。
-if grep -qE 'E[0-9]{2,}:|Error detected while processing|stack traceback' "$log"; then
-  print -u2 "[test-nvim:zsh] ambiwidth check produced errors:"
-  cat "$log" >&2
-  exit 1
-fi
+tt_nvim_log_backstop "$log" "ambiwidth check"
 print "[test-nvim:zsh] ambiwidth ok"

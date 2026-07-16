@@ -7,6 +7,9 @@ NVIM_BIN=${NVIM:-nvim}
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
 CONFIG_FILE="$ROOT_DIR/_nviminit.lua"
+# false-pass 防御 (pcall+cquit guard / log backstop) は lib に集約 (手書きコピペの適用漏れが
+# 実 false-pass を起こした f51f0b0/54dbc81 の再発防止。rationale は lib 側コメント参照)。
+source "$SCRIPT_DIR/lib/check_log.sh"
 
 if ! command -v "$NVIM_BIN" >/dev/null 2>&1; then
   print -u2 "Error: nvim binary not found. Install Neovim or set \$NVIM."
@@ -30,19 +33,15 @@ print "[test-nvim:zsh] verifying config loads headlessly"
   exit 1
 }
 # nvim は startup error があっても +qall で exit 0 を返すため、exit code だけでは不十分。
-# stderr にエラーが出ていないかを併せて検査する (E123: 形式 / lua chunk error / traceback /
-# lazy.nvim の "Failed to run `config`" 形式)。
-if grep -qE 'E[0-9]{2,}:|Error detected while processing|stack traceback|Failed to run' "$test_log"; then
-  print -u2 "[test-nvim:zsh] config load produced errors:"
-  cat "$test_log" >&2
-  exit 1
-fi
+# stderr のエラー検査は backstop へ (lazy.nvim の "Failed to run `config`" 形式はこの検査固有の追加)。
+tt_nvim_log_backstop "$test_log" "config load" 'Failed to run'
 
 lazy_check="$tmp_root/lazy_check.lua"
-# +qall は lua の error を握り潰し exit 0 にするため cquit で非0終了させる。require だけでなく
-# lazy.stats() の throw / count 欠落 (nil) も握り潰さないよう、検査全体を pcall で捕捉する。
-cat <<'EOF' > "$lazy_check"
-local ok, err = pcall(function()
+# 検査全体 (require 含む) を lib/guard.lua の pcall+cquit で捕捉する (+qall の握り潰し対策)。
+# guard のパスだけ interpolated 1 行で注入し、本体は quoted heredoc (test_ftplugins の go 検査と同型)。
+print -r -- "local guard = dofile([[$SCRIPT_DIR/lib/guard.lua]])" >"$lazy_check"
+cat <<'EOF' >> "$lazy_check"
+guard('lazy check failed', function()
   local lazy = require('lazy')
   local stats = lazy.stats()
   assert(stats and type(stats.count) == 'number' and stats.count > 0, 'lazy.nvim returned empty/invalid stats')
@@ -80,10 +79,6 @@ local ok, err = pcall(function()
   end
   assert(#not_loaded == 0, 'plugins failed to load: ' .. table.concat(not_loaded, ', '))
 end)
-if not ok then
-  vim.api.nvim_err_writeln('lazy check failed: ' .. tostring(err))
-  vim.cmd('cquit 1')
-end
 EOF
 
 lazy_log="$tmp_root/nvim-lazy.log"
@@ -93,10 +88,6 @@ print "[test-nvim:zsh] checking lazy.nvim availability"
   exit 1
 }
 # cquit を確実に踏むための backstop (config-load 検査と同様、stderr のエラーも検出する)。
-if grep -qE 'E[0-9]{2,}:|Error detected while processing|stack traceback' "$lazy_log"; then
-  print -u2 "[test-nvim:zsh] lazy check produced errors:"
-  cat "$lazy_log" >&2
-  exit 1
-fi
+tt_nvim_log_backstop "$lazy_log" "lazy check"
 
 print "[test-nvim:zsh] done"
