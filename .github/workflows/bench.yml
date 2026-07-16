@@ -52,13 +52,19 @@ jobs:
       # 予算超過 / bench 自体の失敗 / metric 改名漏れのいずれも check スクリプトが落とす。
       # 注: CI は treesitter parser 未導入 (DOTFILES_TS_SKIP_ENSURE=1) のため fold/highlight の
       # コストは載らない。それらを含む実測はローカルで tests/nvim/bench_nvim.sh を叩く。
+      # bench は 3 回実行し per-metric min を照合する (tests/bench_min_agg.sh)。単発サンプルの
+      # metric は混雑 runner で粗い予算すら突き破るため (2026-07-17 run 29536560206: 全計測 2〜5 倍
+      # に膨れ bufload/new_window_x20 が超過。min-of-5 集約済みの startup だけ生存)。予算を緩める
+      # 対処は bufload 678ms 級の実回帰を見逃すため採らない。詳細は集約スクリプト冒頭参照。
       - name: Bench nvim latency (budget check)
         env:
           DOTFILES_TS_SKIP_ENSURE: "1"
         run: |
-          bench_rc=0; out="$(tests/nvim/bench_nvim.sh)" || bench_rc=$?
+          set -o pipefail
+          bench_rc=0
+          out="$(for i in 1 2 3; do tests/nvim/bench_nvim.sh || exit 1; done | tests/bench_min_agg.sh)" || bench_rc=$?
           {
-            echo "### nvim bench"
+            echo "### nvim bench (min of 3 runs)"
             echo '```'
             echo "$out"
             echo '```'
@@ -96,11 +102,14 @@ jobs:
       # zshenv→zshrc→zlogin の全ロードコスト (startup) と、対話シェルが入力を受け付けて
       # 最初のコマンドが返るまで (first_command、zpty 計測) をゲートする。
       # 詳細は tests/zshrc/bench_zsh.sh のヘッダ参照
+      # 3 回実行 → per-metric min 照合 (理由は bench-nvim の step コメント参照)
       - name: Bench zsh startup (budget check)
         run: |
-          bench_rc=0; out="$(tests/zshrc/bench_zsh.sh)" || bench_rc=$?
+          set -o pipefail
+          bench_rc=0
+          out="$(for i in 1 2 3; do tests/zshrc/bench_zsh.sh || exit 1; done | tests/bench_min_agg.sh)" || bench_rc=$?
           {
-            echo "### zsh bench"
+            echo "### zsh bench (min of 3 runs)"
             echo '```'
             echo "$out"
             echo '```'
@@ -129,11 +138,14 @@ jobs:
       # hook (debounced_save, mark-seen) 込みの window 操作を計測する。display -p 系は
       # クライアント fork+往復 (tmux_rtt) が支配的なので、format 自体のコストは
       # status_render - tmux_rtt の差分で読む。
+      # 3 回実行 → per-metric min 照合 (理由は bench-nvim の step コメント参照)
       - name: Bench tmux latency (budget check)
         run: |
-          bench_rc=0; out="$(tests/tmux/bench_tmux.sh)" || bench_rc=$?
+          set -o pipefail
+          bench_rc=0
+          out="$(for i in 1 2 3; do tests/tmux/bench_tmux.sh || exit 1; done | tests/bench_min_agg.sh)" || bench_rc=$?
           {
-            echo "### tmux bench"
+            echo "### tmux bench (min of 3 runs)"
             echo '```'
             echo "$out"
             echo '```'

@@ -71,10 +71,9 @@ jobs:
             src/parallel-each/go.sum
             src/glog/go.sum
 
-      - name: Lint Go projects (golangci-lint)
-        run: make test-go-lint
-
       # glog の go test はここではなく専用 workflow (src_glog.yml、paths filter 付き) で回す。
       # 全 push で走る lint.yml に置くと glog 非接触の push でもテストが回るため移設した (2026-07-17)。
       # cache-dependency-path の src/glog/go.sum は golangci-lint (make test-go-lint) が
       # glog も lint するため残している。
+      - name: Lint Go projects (golangci-lint)
+        run: make test-go-lint
