@@ -83,8 +83,9 @@ jobs:
         run: make test-runtime
 
       # nvim / tmux のレイテンシベンチ。デグレ検出のため予算 (bench_budgets.ci) 超過で
-      # step を fail させる。予算はローカル実測の ~4 倍の粗い上限 = 桁級の回帰
+      # step を fail させる。予算は原則ローカル実測の ~4 倍の粗い上限 = 桁級の回帰
       # (foldexpr の 678ms 級) を捕まえる安全網で、微差の追跡は Step Summary の経時比較。
+      # 例外: startup は min-of-5 集約 + CI 実測ベースの「現在速度」ゲート (bench_budgets.ci 参照)。
       # 予算超過 / bench 自体の失敗 / metric 改名漏れのいずれも check スクリプトが落とす。
       # 注: CI は treesitter parser 未導入 (DOTFILES_TS_SKIP_ENSURE=1) のため fold/highlight の
       # コストは載らない。それらを含む実測はローカルで tests/nvim/bench_nvim.sh を叩く。

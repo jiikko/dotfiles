@@ -5,13 +5,13 @@
 # 使い方: tests/nvim/bench_nvim.sh | tests/check_bench_budgets.sh tests/nvim/bench_budgets.ci
 #
 # 予算ファイルの形式: "<metric名> <上限ms>" の行 (# 始まりと空行は無視)。
-# 予算は「shared runner のノイズで flake しない」ことを優先し、桁級の回帰
-# (例: foldexpr の 678ms 級) を捕まえる粗い上限にする。素の性能改善の追跡は
-# Step Summary の経時比較 (人間の目) が担当で、ここは安全網。
+# 各予算値の決め方 (粗い安全網か「現在速度」ゲートか) は予算ファイル側のコメントが一次情報。
 #
 # 検出するもの:
 #   - metric の予算超過
+#   - metric の ms が数値でない (bench 側の計測失敗の素通り防止)
 #   - 予算ファイルに載っている metric が出力に無い (bench 自体の失敗・metric 改名漏れ)
+#   - 予算ファイルの上限が数値でない (予算ファイル破損)
 set -uo pipefail
 
 budget_file="${1:?usage: bench.sh | check_bench_budgets.sh <budget-file>}"
@@ -19,6 +19,11 @@ budget_file="${1:?usage: bench.sh | check_bench_budgets.sh <budget-file>}"
 declare -A budget seen
 while read -r name limit _; do
   [[ -z "$name" || "$name" == \#* ]] && continue
+  # 上限が数値でない (予算ファイル破損) は照合を始める前に loud に落とす
+  if ! [[ "$limit" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+    printf '::error::budget malformed: "%s %s" (%s)\n' "$name" "$limit" "$budget_file"
+    exit 1
+  fi
   budget[$name]="$limit"
 done < "$budget_file"
 
@@ -29,6 +34,13 @@ while IFS= read -r line; do
   name="${line#metric=}"; name="${name%% *}"
   ms="${line##*ms=}"
   seen[$name]=1
+  # ms が数値でない (bench 側の計測失敗の素通り) を fail にする。awk の v+0 は
+  # 空文字や文字列を 0 に潰すため、ここで弾かないと予算照合が黙って pass する
+  if ! [[ "$ms" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+    printf '::error::bench metric malformed: %s ms="%s" (数値でない。bench 側の計測失敗)\n' "$name" "$ms"
+    fail=1
+    continue
+  fi
   limit="${budget[$name]:-}"
   [[ -z "$limit" ]] && continue
   if awk -v v="$ms" -v l="$limit" 'BEGIN { exit !(v + 0 > l + 0) }'; then
