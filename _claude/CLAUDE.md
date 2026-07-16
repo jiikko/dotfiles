@@ -76,7 +76,7 @@
 ## レビュー方針
 
 - **重要なコード変更・バグ修正は、設計と実装の両方を codex レビューに通すことを基本とする**（設計 → codex レビュー → 実装 → テスト → codex レビュー）。codex の指摘は無視せず、根拠の弱い断定・false positive を訂正してから commit する
-- 起動は skill 経由（`codex-review` / `cross-review` / `review-loop` / `codex-lead`、下表参照）。typo・数行の chore など軽微な変更は対象外
+- 起動は skill 経由（`codex-review` / `cross-review` / `review-loop` / `codex-lead` / `codex-drive`、下表参照）。typo・数行の chore など軽微な変更は対象外
 
 ## スキルファイル参照
 
@@ -98,8 +98,8 @@
 | fable, fableっぽく, fable流, Fable の働き方, /fable | `~/.claude/skills/fable/SKILL.md` |
 | クラッシュ, crash, .ips, DiagnosticReports, SIGSEGV, SIGABRT | `~/.claude/skills/crash-log-analyzer/SKILL.md` |
 | codex-review, Codexレビュー, コードレビュー依頼 | `~/.claude/skills/codex-review/SKILL.md` |
-| codexにリード, codex主導で着手, 設計から codex に任せて, codex-lead | `~/.claude/skills/codex-lead/SKILL.md` |
-| codexに書かせて, codexメインで実装, codexに作らせて, codex-drive | `~/.claude/skills/codex-drive/SKILL.md` |
+| codexにリード, codex主導で着手, 設計から codex に任せて（実装は Claude）, codex-lead | `~/.claude/skills/codex-lead/SKILL.md` |
+| codexに書かせて, codexメインで実装, codexに作らせて, 設計から実装まで codex に丸投げ, codex-drive | `~/.claude/skills/codex-drive/SKILL.md` |
 | cross-review, クロスレビュー, 複数視点レビュー | `~/.claude/skills/cross-review/SKILL.md` |
 | レビューループ, review-loop, make review | `~/.claude/skills/review-loop/SKILL.md` |
 | 視認性, 色被り, UXレビュー | `~/.claude/skills/ux-visibility-review/SKILL.md` |
