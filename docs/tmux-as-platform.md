@@ -312,7 +312,7 @@ setw -g window-status-current-format "#{?window_zoomed_flag,#[bg=colour160#,fg=w
 【最小例】
 ```tmux
 set -g window-style        'fg=colour247,bg=colour234'
-set -g window-active-style 'fg=terminal,bg=colour17'
+set -g window-active-style 'fg=terminal,bg=terminal'
 set -g pane-active-border-style fg=colour46,bg=colour46
 ```
 

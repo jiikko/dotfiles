@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>BackgroundColor</key>
+	<data>
+	BAtzdHJlYW10eXBlZIHoA4QBQISEhAdOU0NvbG9yAISECE5TT2JqZWN0AIWEAWMBhARm
+	ZmZmg5bDvD2DbmS3PYOx0LE9AYY=
+	</data>
+	<key>CursorColor</key>
+	<data>
+	BAtzdHJlYW10eXBlZIHoA4QBQISEhAdOU0NvbG9yAISECE5TT2JqZWN0AIWEAWMBhARm
+	ZmZmgxvXTj+DqtrDPoNPo4s+AYY=
+	</data>
+	<key>ProfileCurrentVersion</key>
+	<real>2.0699999999999998</real>
+	<key>TextBoldColor</key>
+	<data>
+	BAtzdHJlYW10eXBlZIHoA4QBQISEhAdOU0NvbG9yAISECE5TT2JqZWN0AIWEAWMBhARm
+	ZmZmgxwbbT+DhvFqP4O60WA/AYY=
+	</data>
+	<key>TextColor</key>
+	<data>
+	BAtzdHJlYW10eXBlZIHoA4QBQISEhAdOU0NvbG9yAISECE5TT2JqZWN0AIWEAWMBhARm
+	ZmZmg3qJZj+DKiJUP4NA6C4/AYY=
+	</data>
+	<key>name</key>
+	<string>Claude Warm</string>
+	<key>type</key>
+	<string>Window Settings</string>
+</dict>
+</plist>

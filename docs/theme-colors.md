@@ -8,13 +8,14 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 
 | 意味 | 色 | tmux 側 | nvim 側 |
 |---|---|---|---|
-| **現在地** (いまここ) | ショッキングピンク #ff00af/199 | `@cur-accent` (current window 島) | `palette.accent.current_pink` (bufferline 選択タブ) |
-| 最近作業した (鮮度) | シアン ramp 51→23 | `@fade-*` (放置フェード) | — (対応概念なし。持ち込まない) |
-| 選択中テキスト | ローズ #d3869b/175 | — | `palette.bright_purple` (Visual)。現在地より一段落ち着けたのは意図的 (長時間注視するため)。truecolor/256色の両環境に適用 (2026-07-16 是正。以前は truecolor のみで retrobox は既定の青灰だった) |
-| 通知/注意 | 橙 208 | bell セル反転 (window list) | `palette.bright_orange` (bufferline indicator・incline ●) |
-| 一時メッセージ/点滅 | マゼンタ 201 | message-style (alert-bell 帯・: プロンプト)・prefix/SCRATCH 点滅・copy-mode current match | — |
+| **現在地** (いまここ) | Coral `#D97757`/173 (Claude 風オレンジ基調 2026-07-16。旧ショッキングピンク 199) | `@cur-accent` (current window 島) | `palette.accent.current_accent` (bufferline 選択タブ) |
+| 最近作業した (鮮度) | バイオレット ramp 201→164→127→90→53 (黄昏の残光。旧シアン 51→23) | `@fade-*` (放置フェード) | — (対応概念なし。持ち込まない) |
+| 選択中テキスト | Kraft `#D4A27F`/180 (旧ローズ #d3869b) | — | `palette.accent.kraft` (Visual)。現在地 Coral より一段落ち着けたのは意図的 (長時間注視するため)。truecolor/256色の両環境に適用 |
+| 通知 (bell/メッセージ) | シアン 51 (fade から転用。稀なイベントの ping 2026-07-16) | bell セル反転・message-style (alert 帯/: プロンプト)・copy-mode current match | — |
+| マーカー (未保存/選択バー) | 橙 208 | copy-mode mark 行 | `palette.bright_orange` (bufferline indicator・incline ●) |
+| 点滅/scratch アイデンティティ | マゼンタ 201 | prefix/SCRATCH 点滅・scratch チップ/popup 枠 (fade hot 201 と紛れるなら 213 へ。ライブ判断) | — |
 | 危険/警告状態 | 赤 160 (zoom) / 196 (sync) | `@zoom-accent` / pane-border sync | `palette.diag.error_bg` (診断は coc 踏襲の別系統) |
-| アクティブ pane | 緑 46 (枠・ACTIVE 帯) / 紺 17 (素シェルの地) | pane-active-border / `window-active-style` | — (nvim は自前で地を塗るため紺の影響を受けない。意図は _tmux.conf の window-style コメント) |
+| アクティブ pane | 緑 46 (枠・ACTIVE 帯) / terminal 既定地 (=プロファイルの暖色。旧紺 17) | pane-active-border / `window-active-style bg=terminal` | — (nvim は自前で地を塗る) |
 | 地色 | 234 (pane/エディタ) / 235 (バー) | `window-style` bg / status-style bg | retrobox Normal bg=234 / `palette.dark0_hard` (bufferline fill)。**両ツールの地は 234 で揃っている** |
 
 ## 定数の出典 (単一ソース)
@@ -28,13 +29,13 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 
 ## ツール横断で対にして変える色
 
-**現在地ピンク**は tmux と nvim で同じ色を使う設計 (2026-07-16 統一)。変えるときは必ず両方:
+**現在地色 (Coral)** は tmux と nvim で同じ色を使う設計 (2026-07-16 統一)。変えるときは必ず両方:
 
 1. `_tmux.conf` の `@cur-accent` (256色番号)
-2. `nvim/lua/dotfiles/palette.lua` の `accent.current_pink` (hex + cterm の組)
+2. `nvim/lua/dotfiles/palette.lua` の `accent.current_accent` (hex + cterm の組)
 
 片方だけ変えると「いまここ」の色言語が再び割れる。tmux/nvim は設定言語が別で定数を共有
-できないため、この対応表が唯一のリンク (grep: `current_pink` / `@cur-accent`)。
+できないため、この対応表が唯一のリンク (grep: `current_accent` / `@cur-accent`)。
 
 ## 変え方の手順
 
@@ -69,5 +70,7 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 - フェードの grayscale 階調 — 「上品だが目に飛び込んでこない」(2026-07-04)
 - window list の虹色分け (index%6) — 「実使用で見にくい」(2026-07-02)
 - `#[blink]` 属性 — 消灯位相で読めない (2026-07-03)
-- 選択タブのローズ→ショッキングピンク統一は 2026-07-16 採用。戻したくなったら
-  `accent.current_pink` を `bright_purple` の値に戻すだけ (1 箇所)
+- 選択タブの現在地色は ローズ→ショッキングピンク→Coral (オレンジ基調テーマ) と変遷 (いずれも 2026-07-16)。
+  戻す/変えるときは `accent.current_accent` と tmux `@cur-accent` の対で (経緯: issues/claude-code-orange-theme-2026-07-16.md)
+- fade のシアンはオレンジ基調テーマで「基調から浮く」(ユーザー判断) となりバイオレットへ変更 (2026-07-16)。
+  シアンは bell/メッセージの通知色へ転用 (常在させず稀なイベントに使うことで「浮き」を強みに変えた)

@@ -26,10 +26,14 @@ local M = {
 }
 
 M.accent = {
-  -- 「現在地」の統一色: tmux の current window 島 (_tmux.conf の @cur-accent = colour199) と同一。
-  -- bufferline の選択タブが参照し、tmux バーと nvim タブラインで「いまここ = ショッキングピンク」
-  -- の色言語を揃える (2026-07-16)。変えるときは tmux 側 @cur-accent と対で (docs/theme-colors.md)。
-  current_pink = { hex = "#ff00af", cterm = 199 },
+  -- Claude Code 風オレンジ基調テーマのアクセント (経緯: issues/claude-code-orange-theme-2026-07-16.md)。
+  -- current_accent は「現在地」の統一色: tmux の current window 島 (_tmux.conf の @cur-accent =
+  -- colour173) と同一。bufferline の選択タブが参照し、tmux バーと nvim タブラインで
+  -- 「いまここ = Coral」の色言語を揃える (旧ショッキングピンク #ff00af/199 → Coral へ 2026-07-16)。
+  -- 変えるときは tmux 側 @cur-accent と対で (docs/theme-colors.md のペア表)。
+  current_accent = { hex = "#D97757", cterm = 173 },
+  -- Visual (選択テキスト) 用の暖色。現在地 Coral より一段落ち着いたトーン (tmux ペアなし)。
+  kraft = { hex = "#D4A27F", cterm = 180 },
 }
 
 M.diag = {
