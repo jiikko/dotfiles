@@ -1,0 +1,35 @@
+#!/usr/bin/env zsh
+# glog — git log with GitHub Actions / Checks status per commit, updated
+# asynchronously. Go implementation at:
+#   ~/dotfiles/src/glog/
+# This wrapper auto-builds the binary on first use and re-builds when the
+# source is newer than the compiled artifact.
+
+set -u
+
+src_dir="${0:A:h}/../src/glog"
+bin="$src_dir/glog"
+
+needs_build=0
+if [[ ! -x "$bin" ]]; then
+  needs_build=1
+else
+  # Rebuild if any .go source is newer than the binary.
+  for f in "$src_dir"/*.go "$src_dir"/go.mod "$src_dir"/go.sum; do
+    [[ -e "$f" ]] || continue
+    if [[ "$f" -nt "$bin" ]]; then
+      needs_build=1
+      break
+    fi
+  done
+fi
+
+if (( needs_build )); then
+  echo "glog: building..." >&2
+  (cd "$src_dir" && go build -o glog .) || {
+    echo "glog: build failed" >&2
+    exit 1
+  }
+fi
+
+exec "$bin" "$@"

@@ -13,6 +13,7 @@ ZSH_SYNTAX_FILES := \
   bin/av1ify \
   bin/concat \
   bin/disassemble_excel \
+  bin/glog \
   bin/parallel-each \
   bin/repair-mp4-timebase \
   bin/validate-mp4 \
@@ -168,13 +169,16 @@ test-ruby-syntax:
 
 test-lint: test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax
 
-# src/parallel-each (Go) の静的解析。実体は src/parallel-each/Makefile の lint
-# ターゲット (go run で golangci-lint をバージョン固定実行) に閉じており、ここは
-# それへ委譲するだけ。zsh 系の test-lint とは分離し、CI では Go を用意した専用
-# ジョブから呼ぶ。Go 未インストール環境では skip する。
+# Go プロジェクトの静的解析。実体は各ディレクトリの Makefile の lint ターゲット
+# (go run で golangci-lint をバージョン固定実行) に閉じており、ここはそれへ委譲する
+# だけ。zsh 系の test-lint とは分離し、CI では Go を用意した専用ジョブから呼ぶ。
+# Go 未インストール環境では skip する。lint ターゲットを持つ Go プロジェクトを
+# 追加したらここに列挙する (src/disassemble_excel は Makefile 無しのため対象外)。
+GO_LINT_DIRS := src/parallel-each src/glog
+
 test-go-lint:
 	@if command -v go >/dev/null 2>&1; then \
-		$(MAKE) -C src/parallel-each lint; \
+		for dir in $(GO_LINT_DIRS); do $(MAKE) -C $$dir lint || exit 1; done; \
 	else \
 		echo "[go-lint] go not found; skipping golangci-lint"; \
 	fi

@@ -51,7 +51,7 @@ jobs:
       - name: Run lint suite
         run: make test-lint
 
-  parallel-each-go-lint:
+  go-lint:
     runs-on: ubuntu-slim
     # First run builds golangci-lint from source (go run) and may fetch a
     # newer Go toolchain; both are cached by setup-go for later runs. Allow
@@ -67,7 +67,15 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: src/parallel-each/go.mod
-          cache-dependency-path: src/parallel-each/go.sum
+          cache-dependency-path: |
+            src/parallel-each/go.sum
+            src/glog/go.sum
 
-      - name: Lint src/parallel-each (golangci-lint)
+      - name: Lint Go projects (golangci-lint)
         run: make test-go-lint
+
+      # glog は unit + integration (一時 git リポジトリ) を CI でも回す。外部通信はしない
+      # (GitHub API は fake runner に差し替え済み)。parallel-each のテストは TUI 依存で
+      # 重いためここでは回さない (従来どおりローカル実行)。
+      - name: Test src/glog
+        run: make -C src/glog test
