@@ -1,0 +1,100 @@
+---
+# nvim / tmux のレイテンシベンチ (予算ゲート)。Tests から分離した workflow (2026-07-16):
+# 「コードが壊れた」(Tests 赤) と「遅くなった / 予算の追従漏れ」(Bench 赤) は対処も緊急度も
+# 違うのに同じ check に混ざっていた。実害 = 意図した機能追加 (点火アニメ) の予算追従漏れで
+# master の Tests が赤になり機能破壊と区別できず (1f37fa1)。また bench は共有 runner の
+# ノイズで flake し得るため、テストを再実行せず bench だけ単独で再実行できる必要がある。
+# nvim の setup (pin/cache/restore) は tests.yml と共有の composite action に一元化。
+name: Bench
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch: # GitHub UI からの手動再実行 (flake 切り分け用)
+
+permissions:
+  contents: read
+
+# 同一 ref の連続 push では古い run を打ち切る (旧コミットの結果に価値が無いため)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # nvim と tmux は独立 job: 並列実行 + 片方だけの再実行が可能で、
+  # tmux 側は重い nvim setup (plugin restore) を持たずに済む。
+  bench-nvim:
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    steps:
+      # actions/checkout は内部で `git init` する。runner の git は init.defaultBranch 未設定のため
+      # "Using 'master' ... will change to main in Git 3.0" hint をログに出す。先に設定して抑制する。
+      - name: Silence git init.defaultBranch hint
+        run: git config --global init.defaultBranch main
+
+      - uses: actions/checkout@v7
+
+      # bench_nvim.sh は zsh スクリプト (#!/usr/bin/env zsh)
+      - name: Install runtime dependencies (zsh)
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zsh
+
+      - uses: ./.github/actions/setup-nvim
+
+      # デグレ検出のため予算 (bench_budgets.ci) 超過で step を fail させる。
+      # 予算は原則ローカル実測の ~4 倍の粗い上限 = 桁級の回帰 (foldexpr の 678ms 級) を
+      # 捕まえる安全網で、微差の追跡は Step Summary の経時比較。
+      # 例外: startup は min-of-5 集約 + CI 実測ベースの「現在速度」ゲート (bench_budgets.ci 参照)。
+      # 予算超過 / bench 自体の失敗 / metric 改名漏れのいずれも check スクリプトが落とす。
+      # 注: CI は treesitter parser 未導入 (DOTFILES_TS_SKIP_ENSURE=1) のため fold/highlight の
+      # コストは載らない。それらを含む実測はローカルで tests/nvim/bench_nvim.sh を叩く。
+      - name: Bench nvim latency (budget check)
+        env:
+          DOTFILES_TS_SKIP_ENSURE: "1"
+        run: |
+          bench_rc=0; out="$(tests/nvim/bench_nvim.sh)" || bench_rc=$?
+          {
+            echo "### nvim bench"
+            echo '```'
+            echo "$out"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$bench_rc" -eq 0 ] || { echo "::error::bench_nvim.sh failed (rc=$bench_rc)"; exit 1; }
+          echo "$out" | tests/check_bench_budgets.sh tests/nvim/bench_budgets.ci
+
+  bench-tmux:
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    steps:
+      - name: Silence git init.defaultBranch hint
+        run: git config --global init.defaultBranch main
+
+      - uses: actions/checkout@v7
+
+      # bench_tmux.sh は zsh スクリプト。計測対象の tmux も必要
+      - name: Install runtime dependencies (tmux, zsh)
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tmux zsh
+
+      # ボトルネックになりがちな箇所 = conf ロード / status format 展開 /
+      # hook (debounced_save, mark-seen) 込みの window 操作を計測する。display -p 系は
+      # クライアント fork+往復 (tmux_rtt) が支配的なので、format 自体のコストは
+      # status_render - tmux_rtt の差分で読む。
+      - name: Bench tmux latency (budget check)
+        run: |
+          bench_rc=0; out="$(tests/tmux/bench_tmux.sh)" || bench_rc=$?
+          {
+            echo "### tmux bench"
+            echo '```'
+            echo "$out"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$bench_rc" -eq 0 ] || { echo "::error::bench_tmux.sh failed (rc=$bench_rc)"; exit 1; }
+          echo "$out" | tests/check_bench_budgets.sh tests/tmux/bench_budgets.ci

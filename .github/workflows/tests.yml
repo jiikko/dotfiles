@@ -34,87 +34,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends tmux zsh make bats
 
-      # config は Neovim 0.11 系前提 (vim.lsp.config / vim.diagnostic.jump 等)。
-      # Ubuntu apt の neovim は古い (0.9.5) ため公式リリースを別途セットアップする。
-      # ⚠️ version は 0.11 系に pin する ("stable" にしない): stable が 0.12 に進んだ時点で、
-      #   意図的に master 凍結している nvim-treesitter/textobjects (_nviminit.lua 参照) が
-      #   0.12 の iter_matches 変更 (キャプチャがノード配列になる) と非互換になり、go の
-      #   ]] motion が move.lua "attempt to call method 'range'" で死ぬことを 0.12.4 実測で
-      #   確認 (2026-07-10 の CI 赤の真因)。nvim を 0.12 へ上げるときは treesitter main 系への
-      #   移行とセットで行い、この pin も同時に更新すること。
-      - name: Set up Neovim (0.11 系に pin)
-        uses: rhysd/action-setup-vim@v1
-        with:
-          neovim: true
-          version: v0.11.5
-
-      # プラグイン (lazy.nvim 本体 + 各プラグイン) の clone を ~/.local/share/nvim/lazy ごと
-      # キャッシュしてネットワーク依存と再 clone を抑える。次段の :Lazy! restore が
-      # _lazy-lock.json の固定 commit へ同期する。spec/lock を変えたら鍵が変わるよう hash する。
-      # key の v2 は salt: Tests が赤い間は cache が保存されず、古い restore-key の store
-      # (中身の素性が追えない) を引き続けるため、CI 構成を変えた 2026-07-10 を境に世代を切った。
-      - name: Cache Neovim plugins
-        uses: actions/cache@v6
-        with:
-          path: ~/.local/share/nvim/lazy
-          key: nvim-lazy-v2-${{ runner.os }}-${{ hashFiles('_nviminit.lua', '_lazy-lock.json') }}
-          restore-keys: |
-            nvim-lazy-v2-${{ runner.os }}-
-
-      # プラグインを _lazy-lock.json 通りに事前インストールする。config の ftplugin は
-      # nvim-treesitter-textobjects 等を require するため、テスト時に本体が load 済みである必要がある
-      # (runtime の遅延 auto-install に頼ると ftplugin の require が間に合わず落ちる)。
-      #
-      # DOTFILES_TS_SKIP_ENSURE=1 (このステップと test 実行の両方に設定):
-      # CI は parser 未インストールのため、素の起動では ensure_installed が毎回 31 個の
-      # 非同期 DL+コンパイルジョブを撒く。コンパイラの無いこの runner では永遠に完走せず、
-      # 各テストの +qall! が in-flight ジョブを中途 kill する不安定要因にしかならない
-      # (テストは parser 非依存に設計済み: go の挙動 assert は parser 不在なら skip)。
-      # ジョブを撒くこと自体を止めて headless 実行を決定論化する (_nviminit.lua の
-      # ensure_installed コメント参照)。
-      - name: Install Neovim plugins (lazy restore)
-        env:
-          DOTFILES_TS_SKIP_ENSURE: "1"
-        run: nvim --headless -u _nviminit.lua "+Lazy! restore" +qa
+      # Neovim 0.11 pin + plugin cache + lazy restore。pin の理由・cache key の世代管理は
+      # action 側に集約 (bench.yml と共有。二重管理を防ぐため詳細はそちらだけに書く)
+      - uses: ./.github/actions/setup-nvim
 
       - name: Run dotfiles test suite
         env:
           DOTFILES_TS_SKIP_ENSURE: "1"
         run: make test-runtime
-
-      # nvim / tmux のレイテンシベンチ。デグレ検出のため予算 (bench_budgets.ci) 超過で
-      # step を fail させる。予算は原則ローカル実測の ~4 倍の粗い上限 = 桁級の回帰
-      # (foldexpr の 678ms 級) を捕まえる安全網で、微差の追跡は Step Summary の経時比較。
-      # 例外: startup は min-of-5 集約 + CI 実測ベースの「現在速度」ゲート (bench_budgets.ci 参照)。
-      # 予算超過 / bench 自体の失敗 / metric 改名漏れのいずれも check スクリプトが落とす。
-      # 注: CI は treesitter parser 未導入 (DOTFILES_TS_SKIP_ENSURE=1) のため fold/highlight の
-      # コストは載らない。それらを含む実測はローカルで tests/nvim/bench_nvim.sh を叩く。
-      - name: Bench nvim latency (budget check)
-        env:
-          DOTFILES_TS_SKIP_ENSURE: "1"
-        run: |
-          bench_rc=0; out="$(tests/nvim/bench_nvim.sh)" || bench_rc=$?
-          {
-            echo "### nvim bench"
-            echo '```'
-            echo "$out"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          [ "$bench_rc" -eq 0 ] || { echo "::error::bench_nvim.sh failed (rc=$bench_rc)"; exit 1; }
-          echo "$out" | tests/check_bench_budgets.sh tests/nvim/bench_budgets.ci
-
-      # tmux 側も同方針。ボトルネックになりがちな箇所 = conf ロード / status format 展開 /
-      # hook (debounced_save, mark-seen) 込みの window 操作を計測する。display -p 系は
-      # クライアント fork+往復 (tmux_rtt) が支配的なので、format 自体のコストは
-      # status_render - tmux_rtt の差分で読む。
-      - name: Bench tmux latency (budget check)
-        run: |
-          bench_rc=0; out="$(tests/tmux/bench_tmux.sh)" || bench_rc=$?
-          {
-            echo "### tmux bench"
-            echo '```'
-            echo "$out"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          [ "$bench_rc" -eq 0 ] || { echo "::error::bench_tmux.sh failed (rc=$bench_rc)"; exit 1; }
-          echo "$out" | tests/check_bench_budgets.sh tests/tmux/bench_budgets.ci
