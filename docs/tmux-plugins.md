@@ -264,11 +264,13 @@ cat "${DOTFILES_DIR:-$HOME/dotfiles}/vendor/tmux-plugins/VERSIONS.txt"
 - 後追いの観測: `~/.cache/tt-restore-trigger.log`（conf の [観測] run-shell が conf source ごとに記録）の
   `tmux_procs=N` が Gate2 の入力。次に不発が起きたら「他 tmux プロセスが N 個あって skip された」を確認できる
 
-**KNOWN LIMITATION（未対応 P3・2026-07-02）**: 発火窓を 60 秒に広げた副作用で、起動 60 秒以内の手動
+**KNOWN LIMITATION（緩和済み）**: 発火窓を 60 秒に広げた副作用で、起動 60 秒以内の手動
 reload（`C-t R`）が auto-restore を再発火しうる（`just_started` は boot と reload を区別できない）。実害は
 起動直後の reload 限定で、既存 pane はプロセス復元 skip によりほぼ冪等。修正案「complete フラグで gate」は
 continuum の plugin 再ロード（status-right への interpolation 再設定）まで止めて周期 autosave が silent 死
-するため採用不可（バグより悪い）。upstream に再発火 gate が入るまで申し送り
+するため採用不可（バグより悪い）。緩和: `bind R` を `scripts/tmux_reload_confirm.sh` の uptime ゲート経由に
+し、発火窓内のリロードだけ gum confirm を挟む（窓外は従来どおり即リロード）。limitation 自体（continuum が
+boot と reload を区別できない）は upstream 側に残る
 
 ### 保存ファイルが空 / 壊れている
 

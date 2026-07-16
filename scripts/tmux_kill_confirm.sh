@@ -5,6 +5,8 @@
 #
 #   tmux_kill_confirm.sh pane    : 現在のペインを kill (メッセージに pane_current_command を出す)
 #   tmux_kill_confirm.sh others  : 現在以外の全ペインを kill (kill-pane -a)
+#   tmux_kill_confirm.sh window  : 現在の window を kill (全 pane 巻き込み。素の confirm-before
+#                                  だった bind & の gum 統一)
 #
 # ⚠️ set -e は使わない: fail-safe は `gum confirm && tmux kill-pane` の && 短絡に依存しており
 #    (gum 未導入なら exit 127 で kill されない。zshrc 起動時に brew install gum を催促)、
@@ -26,5 +28,12 @@ case "$scope" in
     gum confirm --default=false --affirmative "kill する" --negative "やめる" "他の全ペインを kill する？" \
       && tmux kill-pane -a -t "$p"
     ;;
-  *) echo "usage: $0 pane|others" >&2; exit 1 ;;
+  window)
+    w="$(tmux display-message -p '#{window_id}')"
+    n="$(tmux display-message -p -t "$w" '#{window_name}')"
+    k="$(tmux display-message -p -t "$w" '#{window_panes}')"
+    gum confirm --default=false --affirmative "kill する" --negative "やめる" "この window ($n / ${k} pane) を kill する？" \
+      && tmux kill-window -t "$w"
+    ;;
+  *) echo "usage: $0 pane|others|window" >&2; exit 1 ;;
 esac
