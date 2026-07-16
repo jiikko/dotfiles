@@ -201,8 +201,9 @@ CI 状態の記号:
   ✗  1 つ以上の Check が失敗
   ●  queued / in_progress / pending
   ⊘  cancelled / skipped / neutral のみ
-  –  Check が存在しない (未 push のコミットを含む)
-  ?  未取得・取得不能 (gh 未導入 / 未認証 / API 障害)
+  –  push 済みだが Check が存在しない
+  ↑  未 push (GitHub 上にまだ存在しない。API には問い合わせない)
+  ?  未取得・取得不能 (gh 未導入 / 未認証 / API 障害。30 秒だけ再取得しない)
   ⠋  取得中 (TTY のみ)
 
 GitHub 連携と前提:

@@ -302,7 +302,7 @@ func BenchmarkRenderLinesLargePatch(b *testing.B) {
 func TestStatusGlyphAllStates(t *testing.T) {
 	want := map[CIState]string{
 		StateSuccess: "✓", StateFailure: "✗", StatePending: "●",
-		StateNeutral: "⊘", StateNone: "–", StateUnknown: "?",
+		StateNeutral: "⊘", StateNone: "–", StateUnknown: "?", StateUnpushed: "↑",
 	}
 	for state, glyph := range want {
 		if got := StatusGlyph(state, false, ""); got != glyph {

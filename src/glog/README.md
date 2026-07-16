@@ -101,11 +101,15 @@ StatusContext の `targetUrl`。URL が無い job では開かず、その旨を
 | `✗` | 1 つ以上の Check が失敗 |
 | `●` | queued / in_progress / pending |
 | `⊘` | cancelled / skipped / neutral のみ |
-| `–` | Check が存在しない (未 push のコミットを含む) |
+| `–` | push 済みだが Check が存在しない |
+| `↑` | 未 push (GitHub 上にまだ存在しない) |
 | `?` | 未取得・取得不能 (gh 未導入 / 未認証 / API 障害) |
 | `⠋` | 取得中 (TTY のみ) |
 
-「Check なし (`–`)」と「取得失敗 (`?`)」は意図的に区別している。
+「Check なし (`–`)」「未 push (`↑`)」「取得失敗 (`?`)」は意図的に区別している。
+未 push の判定は `git rev-list --not --remotes` によるローカル判定で、これらの SHA は
+GitHub へ問い合わせない (必ず「無い」と返るため。API 消費の節約と、push 直後に
+古い「Check なし」キャッシュが当たる混同の防止)。
 
 ### 終了コード
 
@@ -153,7 +157,7 @@ StatusContext の `targetUrl`。URL が無い job では開かず、その旨を
 | cancelled / skipped / neutral | 1 時間 |
 | pending / in_progress | 10 秒 |
 | Check なし | 5 分 |
-| 取得失敗 (unknown) | 保存しない |
+| 取得失敗 (unknown) | 30 秒 (負キャッシュ。障害中に毎回 10 秒待たない) |
 
 - job 一覧はキャッシュしない (展開時に必要ならオンデマンド取得)
 - 30 日を超えた古いエントリは保存時に間引く
@@ -166,7 +170,8 @@ StatusContext の `targetUrl`。URL が無い job では開かず、その旨を
 |---|---|
 | CI 欄が全部 `?` + 「gh が見つからない」 | `brew install gh` |
 | CI 欄が全部 `?` + 「未認証」 | `gh auth login` |
-| CI 欄が全部 `–` | remote が GitHub でない / 未 push。`git remote -v` を確認 |
+| CI 欄が全部 `–` | remote が GitHub でない。`git remote -v` を確認 |
+| CI 欄が `↑` | 未 push。push すれば次回から取得対象になる |
 | 直前に再実行した CI が反映されない | キャッシュ TTL 内。`glog --refresh` |
 | rate limit の警告 | しばらく待つ。キャッシュがあるので通常は到達しない |
 

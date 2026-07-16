@@ -141,6 +141,32 @@ func LoadHeadCommit() (*Commit, error) {
 	return &commits[0], nil
 }
 
+// UnpushedSHAs は revs (空なら HEAD) の履歴のうち、どの remote ref にも到達していない
+// = GitHub 上にまだ存在しないコミットの集合を返す。これらは API に問い合わせても必ず
+// 「無い」と返るため取得対象から外し、表示も「push 済みだが Check なし (–)」と
+// 区別して ↑ にする。rev-list の失敗 (特殊な ref 状態) は「未 push なし」へ落とす
+// (その場合は従来どおり API 側の判定に任される)。
+func UnpushedSHAs(revs []string) map[string]bool {
+	args := []string{"rev-list"}
+	if len(revs) == 0 {
+		args = append(args, "HEAD")
+	} else {
+		args = append(args, revs...)
+	}
+	args = append(args, "--not", "--remotes")
+	out, err := runGit(args...)
+	if err != nil {
+		return nil
+	}
+	unpushed := map[string]bool{}
+	for sha := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
+		if sha != "" {
+			unpushed[sha] = true
+		}
+	}
+	return unpushed
+}
+
 // DecorColors は decoration (ブランチ名等) の色。git log の見た目を尊重するため、
 // git 本体の既定色と git config の color.decorate.* 上書きをそのまま使う。
 type DecorColors struct {

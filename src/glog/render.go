@@ -45,6 +45,8 @@ func StatusGlyph(state CIState, colored bool, spinner string) string {
 		glyph, color = "⊘", ansiDim
 	case StateNone:
 		glyph, color = "–", ansiDim
+	case StateUnpushed:
+		glyph, color = "↑", ansiDim
 	case StateUnknown:
 		glyph, color = "?", ansiDim
 	default:

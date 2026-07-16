@@ -43,7 +43,7 @@ func TestCacheRoundTrip(t *testing.T) {
 	fetched := map[string]CIState{
 		"sha-success": StateSuccess,
 		"sha-pending": StatePending,
-		"sha-unknown": StateUnknown, // 取得失敗は保存しない
+		"sha-unknown": StateUnknown, // 取得失敗も 30 秒の負キャッシュとして保存する
 	}
 	if err := SaveCache(path, fetched, now); err != nil {
 		t.Fatal(err)
@@ -55,14 +55,17 @@ func TestCacheRoundTrip(t *testing.T) {
 	if got["sha-pending"] != StatePending {
 		t.Errorf("sha-pending = %v", got["sha-pending"])
 	}
-	if _, ok := got["sha-unknown"]; ok {
-		t.Errorf("unknown がキャッシュに保存されている")
+	if got["sha-unknown"] != StateUnknown {
+		t.Errorf("unknown が負キャッシュされていない: %v", got["sha-unknown"])
 	}
-	// pending の TTL (10s) 経過後は返らないが success (24h) は残る
+	// pending (10s) と unknown (30s) は 1 分後に失効するが success (24h) は残る
 	later := now.Add(time.Minute)
 	got = LoadCache(path, later)
 	if _, ok := got["sha-pending"]; ok {
 		t.Errorf("TTL 切れの pending が返った")
+	}
+	if _, ok := got["sha-unknown"]; ok {
+		t.Errorf("TTL 切れの unknown が返った")
 	}
 	if got["sha-success"] != StateSuccess {
 		t.Errorf("TTL 内の success が消えた")

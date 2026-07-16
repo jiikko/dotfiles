@@ -164,7 +164,15 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.details != nil {
 			maps.Copy(m.details, msg.details)
 		}
-		m.fillUnknown()
+		// 結果が得られなかった SHA は unknown として表示し、30 秒の負キャッシュにも
+		// 載せる (fetched へ入れる = 終了時に SaveCache される)。q での中断 (fillUnknown)
+		// と違い、こちらは API の実際の返答に基づく確定
+		for _, sha := range m.toFetch {
+			if _, ok := m.statuses[sha]; !ok {
+				m.statuses[sha] = StateUnknown
+				m.fetched[sha] = StateUnknown
+			}
+		}
 		m.fetching = false
 		// 一括取得待ちでパネルを開いていた SHA の loading を解除する (結果が来なかった
 		// SHA も含めて解除。details 不在は「(CI job 情報なし)」表示に落ちる)
@@ -289,8 +297,8 @@ func (m *browseModel) openPanel() tea.Cmd {
 	if _, ok := m.details[sha]; ok || m.detailsLoading[sha] {
 		return nil
 	}
-	if !m.hasRepo {
-		// remote が GitHub でない場合は取得先が無い
+	if !m.hasRepo || m.statuses[sha] == StateUnpushed {
+		// remote が GitHub でない / 未 push の SHA は取得先が無い
 		m.details[sha] = []CheckDetail{}
 		return nil
 	}
@@ -326,6 +334,12 @@ func (m *browseModel) openJob() tea.Cmd {
 	url := jobs[m.panelCursor].URL
 	if url == "" {
 		m.notice = "この job には詳細ページの URL がありません"
+		return nil
+	}
+	// StatusContext の targetUrl は外部 CI が任意に設定できる値。file:// 等で
+	// ローカルのハンドラを起動させないよう http(s) だけを開く
+	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "http://") {
+		m.notice = "http(s) 以外の URL は開きません"
 		return nil
 	}
 	return func() tea.Msg {

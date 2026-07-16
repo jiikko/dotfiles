@@ -152,9 +152,21 @@ func planStatuses(opts *Options, shas []string) (statuses map[string]CIState, to
 			cachePath = p
 		}
 	}
+	// 未 push の SHA は GitHub 上に存在せず、問い合わせても必ず「無い」と返るため
+	// ローカル判定で確定させて取得対象から外す (キャッシュより優先。push 直後に
+	// 古い none キャッシュが当たって「Check なし」に見える混同も防ぐ)
+	unpushed := UnpushedSHAs(opts.Revs)
+	for _, sha := range shas {
+		if unpushed[sha] {
+			statuses[sha] = StateUnpushed
+		}
+	}
 	if cachePath != "" && !opts.Refresh {
 		cached := LoadCache(cachePath, time.Now())
 		for _, sha := range shas {
+			if _, ok := statuses[sha]; ok {
+				continue
+			}
 			if state, ok := cached[sha]; ok {
 				statuses[sha] = state
 			}
@@ -178,12 +190,16 @@ func fetchStatic(statuses map[string]CIState, toFetch []string, repo Repo, hasRe
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	defer cancel()
 	fetched, _, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, toFetch)
-	maps.Copy(statuses, fetched)
+	if fetched == nil {
+		fetched = map[string]CIState{}
+	}
+	// 結果が得られなかった SHA は unknown として表示し、30 秒の負キャッシュにも載せる
 	for _, sha := range toFetch {
-		if _, ok := statuses[sha]; !ok {
-			statuses[sha] = StateUnknown
+		if _, ok := fetched[sha]; !ok {
+			fetched[sha] = StateUnknown
 		}
 	}
+	maps.Copy(statuses, fetched)
 	saveFetched(cachePath, fetched, opts)
 	return ghErr
 }

@@ -346,6 +346,58 @@ func TestBrowseQuitWorksWhilePanelOpen(t *testing.T) {
 	}
 }
 
+func TestBrowseCIResultNegativeCachesUnknown(t *testing.T) {
+	// API から結果が返らなかった SHA は unknown 表示 + 負キャッシュ対象 (fetched) に入る
+	shas := []string{strings.Repeat("a", 40)}
+	m := newTestBrowse(t, 1, map[string]CIState{}, shas)
+	m.Update(ciResultMsg{fetched: map[string]CIState{}})
+	if m.statuses[shas[0]] != StateUnknown {
+		t.Errorf("statuses = %v; want unknown", m.statuses[shas[0]])
+	}
+	if m.fetched[shas[0]] != StateUnknown {
+		t.Errorf("unknown が負キャッシュ対象 (fetched) に入っていない")
+	}
+}
+
+func TestBrowsePanelUnpushedNoFetch(t *testing.T) {
+	// 未 push の SHA のパネルは GitHub へ問い合わせない
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StateUnpushed
+	if cmd := m.openPanel(); cmd != nil {
+		t.Errorf("未 push SHA で fetch Cmd が返った")
+	}
+	if !strings.Contains(m.View(), "Check はありません") {
+		t.Errorf("Check なし表示がない:\n%s", m.View())
+	}
+}
+
+func TestBrowseOpenJobRejectsNonHTTP(t *testing.T) {
+	// targetUrl は外部 CI が任意に設定できるため http(s) 以外は開かない
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StateSuccess
+	m.details[sha] = []CheckDetail{{Name: "evil", State: StateSuccess, URL: "file:///etc/passwd"}}
+	m.openPanel()
+	m.handleKey("j")
+	called := false
+	orig := openInBrowser
+	openInBrowser = func(string) error {
+		called = true
+		return nil
+	}
+	t.Cleanup(func() { openInBrowser = orig })
+	if _, cmd := m.handleKey("enter"); cmd != nil {
+		t.Errorf("file:// URL で Cmd が返った")
+	}
+	if called {
+		t.Errorf("file:// URL がブラウザに渡された")
+	}
+	if !strings.Contains(m.hintLine(), "http(s) 以外") {
+		t.Errorf("notice が出ていない: %q", m.hintLine())
+	}
+}
+
 func TestBrowseNonGitHubRepoPanel(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.hasRepo = false

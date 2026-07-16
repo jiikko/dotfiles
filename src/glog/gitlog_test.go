@@ -207,6 +207,43 @@ func TestIntegrationMediumFields(t *testing.T) {
 	}
 }
 
+func TestIntegrationUnpushedSHAs(t *testing.T) {
+	newTempRepo(t, []string{"pushed", "local-only"})
+	commits, err := LoadCommits(&Options{MaxCount: defaultMaxCount}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushedSHA, localSHA := commits[1].SHA, commits[0].SHA
+	// remote ref を偽装: 1 つ目のコミットまでが origin/master に到達済みという状態
+	git := func(args ...string) {
+		t.Helper()
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("remote", "add", "origin", "git@github.com:o/r.git")
+	git("update-ref", "refs/remotes/origin/master", pushedSHA)
+	unpushed := UnpushedSHAs(nil)
+	if !unpushed[localSHA] {
+		t.Errorf("ローカルのみのコミットが未 push 判定されない")
+	}
+	if unpushed[pushedSHA] {
+		t.Errorf("remote 到達済みのコミットが未 push 判定された")
+	}
+	// planStatuses が未 push を確定させ、取得対象から外すことも確認
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	statuses, toFetch, _, hasRepo, _ := planStatuses(&Options{}, []string{localSHA, pushedSHA})
+	if !hasRepo {
+		t.Fatalf("github URL の remote が解決されない")
+	}
+	if statuses[localSHA] != StateUnpushed {
+		t.Errorf("statuses[local] = %v; want unpushed", statuses[localSHA])
+	}
+	if len(toFetch) != 1 || toFetch[0] != pushedSHA {
+		t.Errorf("toFetch = %v; want [pushed のみ]", toFetch)
+	}
+}
+
 func TestIntegrationOutsideRepo(t *testing.T) {
 	dir := t.TempDir()
 	prev, err := os.Getwd()

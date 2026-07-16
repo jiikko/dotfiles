@@ -18,8 +18,9 @@ const (
 	StateFailure CIState = "failure" // 1 つ以上失敗
 	StatePending CIState = "pending" // queued / in_progress / pending あり
 	StateNeutral CIState = "neutral" // cancelled / skipped / neutral のみ
-	StateNone    CIState = "none"    // Check が存在しない (未 push の SHA も含む)
-	StateUnknown CIState = "unknown" // 未取得・取得不能
+	StateNone     CIState = "none"     // push 済みだが Check が存在しない
+	StateUnknown  CIState = "unknown"  // 未取得・取得不能
+	StateUnpushed CIState = "unpushed" // まだ push されていない (GitHub 上に SHA が無い)。ローカル判定のみで API には問い合わせない
 )
 
 // fetchMaxSHAs は 1 回の GraphQL で問い合わせる SHA 数の上限。alias 100 × contexts 100 で
@@ -183,6 +184,11 @@ func FetchCIStatuses(ctx context.Context, run CommandRunner, repo Repo, shas []s
 
 // buildStatusQuery は SHA ごとの alias で 1 クエリに束ねる。SHA は git が返した 40 桁 hex
 // なのでクエリ文字列へのリテラル埋め込みで injection の余地はない。
+//
+// contexts は先頭 100 件しか見ない。Check が 100 件を超えるコミットでは 101 件目以降の
+// 失敗を取りこぼして ✓ と誤報しうるが、「100 超の Check を持つ repo は現実に扱わない」
+// とのユーザー判断 (2026-07-16) で totalCount ガード / pagination は見送り。
+// そうした repo を扱うようになったら再評価する (totalCount を見て安全側 ? に倒すのが最小対応)。
 func buildStatusQuery(shas []string) string {
 	var b strings.Builder
 	b.WriteString("query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {\n")

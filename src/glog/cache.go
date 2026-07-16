@@ -96,10 +96,9 @@ func SaveCache(path string, fetched map[string]CIState, now time.Time) error {
 			delete(file.Statuses, sha)
 		}
 	}
+	// unknown (取得失敗) も保存する。TTL 30 秒の負キャッシュとして働き、API 障害中に
+	// 実行のたび 10 秒 timeout を繰り返すのを防ぐ (issue の TTL 表「API error 30秒」)
 	for sha, state := range fetched {
-		if state == StateUnknown {
-			continue
-		}
 		file.Statuses[sha] = cacheEntry{State: state, FetchedAt: now}
 	}
 	pruneToLimit(file.Statuses)
