@@ -180,42 +180,13 @@ cat ./tmp/test-stacktrace-*.txt
 
 **Common Stack Patterns and Fixes**:
 
-| Stack Pattern | Cause | Fix |
-|---------------|-------|-----|
-| `dispatch_semaphore_wait` + `MainActor` | Semaphore deadlock | Use `Task.detached` (see Issue #096) |
-| `swift_task_switch` stuck | Async deadlock | Check for sync calls to MainActor |
-| `_dispatch_lane_barrier_sync_invoke` | Main thread block | Offload heavy work with `Task.detached` |
-| `XCTWaiter.wait` timeout | Missing expectation.fulfill() | Add timeout or check fulfill logic |
-
-**Handler Deadlock Pattern (Most Common)**:
-
-```swift
-// ❌ This causes deadlock - detected in stack as semaphore_wait
-func test_handler() {
-    let result = StatusHandler.handleGetStatus()  // BLOCKS
-}
-
-// ✅ Required pattern for ThumbnailThumb
-func test_handler() async {
-    let result = await Task.detached {
-        StatusHandler.handleGetStatus()
-    }.value
-}
-```
-
-**Reference**: `issues/done/096-api-handler-deadlock.md` for detailed case study.
-
-### SwiftLint Integration
-
-This project has a SwiftLint rule `handler_direct_call_in_tests` that prevents the deadlock pattern:
+最頻出は handler の直接呼び出しによる MainActor デッドロック（semaphore_wait として現れる）。
+スタックパターン早見表・BAD/GOOD 例・SwiftLint rule `handler_direct_call_in_tests` の詳細は
+`~/.claude/_common/task-detached-deadlock-pattern.md` を Read すること。
 
 ```bash
 # Check for violations before running tests
 make lint
-
-# The rule catches:
-# - Direct calls to *Handler.handle* in test files
-# - Missing Task.detached wrapper
 ```
 
 ### Debugging Workflow

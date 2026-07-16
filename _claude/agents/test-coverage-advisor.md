@@ -275,12 +275,8 @@ For visual changes:
 ```
 
 ### Handler Tests
-```swift
-// Avoid deadlock - use Task.detached
-let result = await Task.detached {
-    SomeHandler.handleRequest()
-}.value
-```
+handler テストは `Task.detached { ... }.value` で包む（MainActor デッドロック回避。
+詳細は `~/.claude/_common/task-detached-deadlock-pattern.md` を Read）。
 
 ## Tool Selection Strategy
 

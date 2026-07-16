@@ -396,37 +396,9 @@ class ViewModel {
 
 **Project-Specific: Semaphore + MainActor Deadlock**
 
-⚠️ **Reference**: See `issues/done/096-api-handler-deadlock.md` for detailed case study.
-
-```swift
-// ❌ DEADLOCK: Semaphore blocking thread that MainActor needs
-func handleAPIRequest() -> Response {
-    let semaphore = DispatchSemaphore(value: 0)
-    var result: Response?
-
-    Task { @MainActor in
-        result = await processOnMainActor()
-        semaphore.signal()  // Never reached if main thread is blocked
-    }
-
-    semaphore.wait()  // Blocks current thread (might be main thread!)
-    return result!    // Deadlock: MainActor task waiting for this thread
-}
-
-// ✅ SOLUTION: Use Task.detached to avoid MainActor dependency
-func handleAPIRequestSafe() async -> Response {
-    await Task.detached {
-        await MainActor.run {
-            processOnMainActor()
-        }
-    }.value
-}
-
-// ✅ For tests calling handlers (CLAUDE.md rule):
-let result = await Task.detached {
-    StatusHandler.handleGetStatus()
-}.value
-```
+semaphore で MainActor を待つ同期 API の直接呼び出しはデッドロックする。解法は `Task.detached` で
+MainActor 依存を切ること。問題の構造・BAD/GOOD 例・スタックパターン表は
+`~/.claude/_common/task-detached-deadlock-pattern.md` を Read すること。
 
 ### 8. Testing Async Code
 

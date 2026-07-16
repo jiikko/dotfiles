@@ -408,33 +408,10 @@ Use WebSearch to find solutions for test issues:
 
 ### Handler Calls in Tests (Deadlock Prevention)
 
-**Reference**: See `issues/done/096-api-handler-deadlock.md` for detailed case study.
+API handler をテストから直接呼ぶと MainActor デッドロックする。**すべての handler テストは
+`Task.detached { ... }.value` で包む**（SwiftLint rule `handler_direct_call_in_tests` が ERROR で検出）。
 
-```swift
-// ❌ FORBIDDEN: Direct handler calls cause MainActor deadlock
-// SwiftLint rule `handler_direct_call_in_tests` will flag this as ERROR
-func test_badExample() {
-    let result = StatusHandler.handleGetStatus()  // 🚫 SwiftLint error
-}
-
-// ✅ REQUIRED: Use Task.detached to avoid MainActor dependency
-func test_goodExample() async {
-    let result = await Task.detached {
-        StatusHandler.handleGetStatus()
-    }.value
-
-    XCTAssertEqual(result.status, "ok")
-}
-
-// ✅ REQUIRED for all API handler tests
-func test_canvasHandler() async {
-    let result = await Task.detached {
-        CanvasHandler.handleGetCanvases(projectId: testProjectId)
-    }.value
-
-    XCTAssertFalse(result.canvases.isEmpty)
-}
-```
+詳細（問題の構造・BAD/GOOD 例・スタックパターン表）は `~/.claude/_common/task-detached-deadlock-pattern.md` を Read すること。
 
 ### Detecting Test Hangs (Stack Detection)
 
