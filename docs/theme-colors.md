@@ -28,9 +28,10 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
   [`tmux-window-fade.md`](tmux-window-fade.md)
 - **Terminal.app プロファイル (基調層)**: `mac/ClaudeWarm.terminal` — 地 #1F1E1D / 字 Manilla #EBDBBC /
   カーソル Coral #D97757。256色主環境で唯一フル RGB を持てる層で、tmux の `bg=terminal`・nvim の
-  透過がこの色を継承する。**変えるには**: Terminal.app 設定→プロファイルで調整し、書き出しで
-  この .terminal を上書き (repo が復元手段)。**戻すには**: 適用前に控えた旧既定プロファイルへ
-  切り替えるだけ (このファイルの削除は不要)
+  透過がこの色を継承する。**復元/既定化**: `scripts/terminal_profile_restore.sh` が登録 + 既定
+  プロファイル化まで行う (手でプリセットを選ぶ操作を根絶。新しいマシンでもこれ 1 発)。
+  **変えるには**: Terminal.app 設定→プロファイルで調整し、書き出しでこの .terminal を上書きして
+  restore スクリプトを再実行。**戻すには**: 旧既定プロファイルへ切り替えるだけ (ファイル削除は不要)
 
 ## ツール横断で対にして変える色
 
