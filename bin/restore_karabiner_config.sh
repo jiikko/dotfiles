@@ -8,6 +8,13 @@ target=~/.config/karabiner/karabiner.json
 
 cp "$src" "$target"
 
+# restore 済みの印として repo 側 karabiner.json の sha256 を記録する (setup.sh と同方式)。
+# _zshrc がこの記録と現在の repo ファイルを比較し、git pull 後の restore 忘れを警告する。
+# 後続のレイアウトパッチは target 側のみの変更なので、記録は cp 直後で確定してよい。
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
+mkdir -p "$state_dir"
+shasum -a 256 "$src" | awk '{print $1}' > "$state_dir/karabiner-json.sha256"
+
 # 既知の外部キーボード → レイアウト対応表。
 # キーは "VendorID ProductID"（10進）。値は算術評価で正規化してから渡すので、
 # hidutil の出力が 16進(0x29ea)でも10進でも、macOS バージョン差を問わず一致する。

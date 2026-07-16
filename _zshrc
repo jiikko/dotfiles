@@ -690,43 +690,61 @@ if command -v brew > /dev/null 2>&1; then
   fi
 fi
 
-# ---- dotfiles: setup.sh の実行漏れ検出 (direnv 風 / 非同期) ------------------
-# setup.sh は末尾で自身の sha256 を state file に記録する。ここで現在の setup.sh と比較し、
-# 差分があれば再実行を促す (対話シェルのみ・非ブロッキング)。まず mtime を比較し、変更時だけ
-# 重い shasum を非同期 (&!) で実行、結果は次回プロンプトで一度だけ表示して自己解除する。
+# ---- dotfiles: 適用スクリプトの実行漏れ検出 (direnv 風 / 非同期) --------------
+# 各適用スクリプト (setup.sh / restore_karabiner_config.sh) は実行時に監視対象ファイルの
+# sha256 を state file に記録する。ここで現在のファイルと比較し、差分があれば再実行を促す
+# (対話シェルのみ・非ブロッキング)。まず mtime を比較し、変更時だけ重い shasum を非同期 (&!)
+# で実行、結果は次回プロンプトで一度だけ表示して自己解除する。
 # `-t 1` は実端末でのみ発火させ、テストの `zsh -i -c` パイプ出力に警告が混入しないためのガード。
 if [[ -o interactive ]] && [[ -t 1 ]]; then
-  _dotfiles_setup_notify() {
-    local f="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/setup-check.result"
-    [[ -f "$f" ]] || return
-    local msg; msg="$(<"$f")"; command rm -f "$f"
-    [[ -n "$msg" ]] && print -r -- "$msg"
-    add-zsh-hook -d precmd _dotfiles_setup_notify  # 結果を受け取ったら自己解除
+  typeset -g _dotfiles_check_pending=0
+  _dotfiles_check_notify() {
+    local f msg
+    for f in "${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles"/*-check.result(N); do
+      msg="$(<"$f")"; command rm -f "$f"
+      [[ -n "$msg" ]] && print -r -- "$msg"
+      (( _dotfiles_check_pending-- ))
+    done
+    # 全 watch の結果を受け取ったら自己解除 (未完の非同期 check が残る間は次回 precmd へ持ち越す)
+    (( _dotfiles_check_pending > 0 )) || add-zsh-hook -d precmd _dotfiles_check_notify
   }
-  _dotfiles_setup_check_bg() {
-    local setup="$1" state="$2" f="$3" cur
-    cur="$(shasum -a 256 "$setup" 2>/dev/null | awk '{print $1}')"
+  _dotfiles_check_bg() {
+    local watched="$1" state="$2" f="$3" msg="$4" cur
+    cur="$(shasum -a 256 "$watched" 2>/dev/null | awk '{print $1}')"
     if [ -n "$cur" ] && [ "$cur" != "$(cat "$state" 2>/dev/null)" ]; then
-      print -r -- "[dotfiles] setup.sh が更新されています。'sh ~/dotfiles/setup.sh' を再実行してね。" > "$f"
+      print -r -- "$msg" > "$f"
     else
       print -r -- "" > "$f"
       command touch "$state" 2>/dev/null  # 内容一致: mtime 更新で次回以降の再ハッシュを抑止
     fi
   }
-  () {
-    local setup="$HOME/dotfiles/setup.sh"
-    [ -f "$setup" ] || return
-    local state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/setup-sh.sha256"
+  # watch 1 件を登録する: $1=監視ファイル $2=state $3=結果ファイル名の接頭辞
+  # $4=差分時メッセージ $5=state 未存在時メッセージ (空なら黙る。karabiner のように
+  # 未導入マシンがありうるものは空にし、一度 restore/backup したマシンでだけ監視が始まる)
+  _dotfiles_check_watch() {
+    local watched="$1" state="$2" name="$3" msg="$4" missing_msg="$5"
+    [ -f "$watched" ] || return
     if [ ! -f "$state" ]; then
-      print -r -- "[dotfiles] setup.sh を未実行のようです。'sh ~/dotfiles/setup.sh' を実行してね。"
+      [ -n "$missing_msg" ] && print -r -- "$missing_msg"
       return
     fi
-    [ "$setup" -nt "$state" ] || return   # 未変更ならここで終了 (stat 1回のみ)
-    local f="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/setup-check.result"
+    [ "$watched" -nt "$state" ] || return   # 未変更ならここで終了 (stat 1回のみ)
+    local f="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/${name}-check.result"
     command mkdir -p "${f:h}"; command rm -f "$f"
     autoload -Uz add-zsh-hook
-    add-zsh-hook precmd _dotfiles_setup_notify
-    _dotfiles_setup_check_bg "$setup" "$state" "$f" &!  # 重い照合は非同期 (起動を止めない)
+    add-zsh-hook precmd _dotfiles_check_notify  # 重複登録は add-zsh-hook が弾く
+    (( _dotfiles_check_pending++ ))
+    _dotfiles_check_bg "$watched" "$state" "$f" "$msg" &!  # 重い照合は非同期 (起動を止めない)
   }
+  _dotfiles_check_watch "$HOME/dotfiles/setup.sh" \
+    "${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/setup-sh.sha256" \
+    setup \
+    "[dotfiles] setup.sh が更新されています。'sh ~/dotfiles/setup.sh' を再実行してね。" \
+    "[dotfiles] setup.sh を未実行のようです。'sh ~/dotfiles/setup.sh' を実行してね。"
+  _dotfiles_check_watch "$HOME/dotfiles/mac/karabiner.json" \
+    "${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/karabiner-json.sha256" \
+    karabiner \
+    "[dotfiles] mac/karabiner.json が更新されています。'restore_karabiner_config.sh' を実行してね。" \
+    ""
 fi
 # ---------------------------------------------------------------------------
