@@ -18,7 +18,7 @@ on:
     paths:
       - 'src/glog/**'
       - .github/workflows/src_glog.yml
-  workflow_dispatch: # GitHub UI からの手動再実行用
+  workflow_dispatch:  # GitHub UI からの手動再実行用
 
 permissions:
   contents: read
