@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,9 +84,11 @@ func TestCacheMergePreservesOtherSHAs(t *testing.T) {
 	}
 }
 
-func TestCachePruneOldEntries(t *testing.T) {
+func TestCachePruneExpiredEntries(t *testing.T) {
+	// TTL 切れのエントリは LoadCache が無視する死データなので、保存時に間引かれる
+	// (ファイルが膨れ続けない)
 	path := filepath.Join(t.TempDir(), "repo.json")
-	old := time.Now().Add(-cacheRetention - time.Hour)
+	old := time.Now().Add(-25 * time.Hour) // success の TTL (24h) 超過
 	if err := SaveCache(path, map[string]CIState{"sha-old": StateSuccess}, old); err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +100,33 @@ func TestCachePruneOldEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(data), "sha-old") {
-		t.Errorf("保持期間超過のエントリが間引かれていない: %s", data)
+		t.Errorf("TTL 切れのエントリが間引かれていない: %s", data)
+	}
+	if !strings.Contains(string(data), "sha-new") {
+		t.Errorf("有効なエントリまで消えている: %s", data)
+	}
+}
+
+func TestCacheEntryCountCap(t *testing.T) {
+	// エントリ数はハードキャップで頭打ちになり、新しいものが優先で残る
+	path := filepath.Join(t.TempDir(), "repo.json")
+	now := time.Now()
+	older := map[string]CIState{}
+	for i := range maxCacheEntries {
+		older[fmt.Sprintf("sha-old-%04d", i)] = StateSuccess
+	}
+	if err := SaveCache(path, older, now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveCache(path, map[string]CIState{"sha-newest": StateFailure}, now); err != nil {
+		t.Fatal(err)
+	}
+	got := LoadCache(path, now)
+	if len(got) != maxCacheEntries {
+		t.Errorf("エントリ数 = %d; want 上限 %d", len(got), maxCacheEntries)
+	}
+	if got["sha-newest"] != StateFailure {
+		t.Errorf("最新エントリが上限間引きで消えた")
 	}
 }
 

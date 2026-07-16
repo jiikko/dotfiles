@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 )
 
@@ -20,8 +21,9 @@ type cacheFile struct {
 	Statuses map[string]cacheEntry `json:"statuses"`
 }
 
-// cacheRetention を超えて古いエントリは保存時に間引く (ファイルの無限成長防止)。
-const cacheRetention = 30 * 24 * time.Hour
+// maxCacheEntries はキャッシュファイルのエントリ数の上限 (超過分は取得時刻の新しい順に
+// 残す)。TTL 切れの間引きと合わせた二段構えで、ファイルが膨れ続けないことを保証する。
+const maxCacheEntries = 2000
 
 // cacheTTL は状態ごとの有効期間 (issue の TTL 表)。
 func cacheTTL(state CIState) time.Duration {
@@ -79,6 +81,8 @@ func LoadCache(path string, now time.Time) map[string]CIState {
 
 // SaveCache は取得結果を既存キャッシュへマージして原子的に書き込む (temp + rename)。
 // unknown は「取得できなかった」事実であって観測結果ではないため保存しない。
+// TTL 切れのエントリは LoadCache が無視するだけの死データなので保存時に間引く
+// (最長 TTL が 24h のため、ファイルは常に直近 1 日分程度に収まり膨れ続けない)。
 func SaveCache(path string, fetched map[string]CIState, now time.Time) error {
 	var file cacheFile
 	if data, err := os.ReadFile(path); err == nil {
@@ -88,7 +92,7 @@ func SaveCache(path string, fetched map[string]CIState, now time.Time) error {
 		file.Statuses = map[string]cacheEntry{}
 	}
 	for sha, entry := range file.Statuses {
-		if now.Sub(entry.FetchedAt) > cacheRetention {
+		if !entry.fresh(now) {
 			delete(file.Statuses, sha)
 		}
 	}
@@ -98,10 +102,37 @@ func SaveCache(path string, fetched map[string]CIState, now time.Time) error {
 		}
 		file.Statuses[sha] = cacheEntry{State: state, FetchedAt: now}
 	}
+	pruneToLimit(file.Statuses)
 	data, err := json.MarshalIndent(file, "", "  ")
 	if err != nil {
 		return err
 	}
+	return writeAtomic(path, data)
+}
+
+// pruneToLimit はエントリ数を maxCacheEntries に抑える (取得時刻の新しい順に残す)。
+func pruneToLimit(statuses map[string]cacheEntry) {
+	if len(statuses) <= maxCacheEntries {
+		return
+	}
+	type entryWithSHA struct {
+		sha string
+		at  time.Time
+	}
+	entries := make([]entryWithSHA, 0, len(statuses))
+	for sha, entry := range statuses {
+		entries = append(entries, entryWithSHA{sha: sha, at: entry.FetchedAt})
+	}
+	slices.SortFunc(entries, func(a, b entryWithSHA) int {
+		return b.at.Compare(a.at) // 新しい順
+	})
+	for _, e := range entries[maxCacheEntries:] {
+		delete(statuses, e.sha)
+	}
+}
+
+// writeAtomic は temp + rename の原子的書き込み。
+func writeAtomic(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
