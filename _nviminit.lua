@@ -102,7 +102,9 @@ require("lazy").setup({
     config = function()
       if dotfiles_truecolor_supported() then
         vim.cmd("colorscheme gruvbox")
-        -- 選択範囲をショッキングピンクで強調 (hl.set = ColorScheme 再適用 + cterm 併記規律)
+        -- 選択範囲はローズピンク (bright_purple) で強調 (hl.set = ColorScheme 再適用 + cterm 併記規律)。
+        -- 長時間注視する領域なので、現在地のショッキングピンク (accent.current_pink =
+        -- bufferline 選択タブ / tmux island) より一段落ち着いた色に意図的に分けている
         require("dotfiles.hl").set("Visual", { bg = pal.bright_purple.hex, ctermbg = pal.bright_purple.cterm })
       else
         -- truecolor 非対応端末 (上の WORKAROUND 参照): gruvbox は cterm 色を持たず 256色端末で
@@ -501,14 +503,15 @@ require("lazy").setup({
           -- 別ウィンドウで可視だが非アクティブ (中間トーン)
           buffer_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm },
           modified_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm },
-          -- アクティブ (明るい pink 地 + 黒の太字)
-          buffer_selected = { fg = pal.dark0_hard.hex, bg = pal.bright_purple.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.bright_purple.cterm, bold = true, italic = false },
-          modified_selected = { fg = pal.dark0_hard.hex, bg = pal.bright_purple.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.bright_purple.cterm, bold = true },
-          indicator_selected = { fg = pal.bright_orange.hex, bg = pal.bright_purple.hex, ctermfg = pal.bright_orange.cterm, ctermbg = pal.bright_purple.cterm }, -- 橙のバー
+          -- アクティブ (tmux の current window 島と同じショッキングピンク地 + 黒の太字。
+          -- 「いまここ」の色言語を tmux バーと統一 2026-07-16。palette.accent 参照)
+          buffer_selected = { fg = pal.dark0_hard.hex, bg = pal.accent.current_pink.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.accent.current_pink.cterm, bold = true, italic = false },
+          modified_selected = { fg = pal.dark0_hard.hex, bg = pal.accent.current_pink.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.accent.current_pink.cterm, bold = true },
+          indicator_selected = { fg = pal.bright_orange.hex, bg = pal.accent.current_pink.hex, ctermfg = pal.bright_orange.cterm, ctermbg = pal.accent.current_pink.cterm }, -- 橙のバー
           -- ordinal 番号 (タブ本体と同じ地色に合わせる)
           numbers = { fg = pal.dark4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark4.cterm, ctermbg = pal.dark0_hard.cterm },
           numbers_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm },
-          numbers_selected = { fg = pal.dark0_hard.hex, bg = pal.bright_purple.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.bright_purple.cterm, bold = true, italic = false },
+          numbers_selected = { fg = pal.dark0_hard.hex, bg = pal.accent.current_pink.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.accent.current_pink.cterm, bold = true, italic = false },
           -- thin セパレータ: fg が縦線の色。地色と同系の沈んだ色 (dark1) にして境界だけ薄く見せる。
           separator = { fg = pal.dark1.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark1.cterm, ctermbg = pal.dark0_hard.cterm },
           separator_visible = { fg = pal.dark1.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark1.cterm, ctermbg = pal.dark0_hard.cterm },

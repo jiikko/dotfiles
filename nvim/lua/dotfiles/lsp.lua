@@ -207,11 +207,12 @@ local function setup_diagnostics()
     },
   })
 
-  -- coc 時代のサイン配色 (エラー=白字/赤地・警告=黒字/橙地) を踏襲。
+  -- coc 時代のサイン配色 (エラー=白字/赤地・警告=黒字/橙地) を踏襲。色は palette.diag が出典。
   -- hl.set = ColorScheme 再適用 + cterm 併記 (256色環境) の規律 (dotfiles/hl.lua 参照)
   local hl = require("dotfiles.hl")
-  hl.set("DiagnosticSignError", { fg = "#ffffff", bg = "#ff0000", ctermfg = 231, ctermbg = 196 })
-  hl.set("DiagnosticSignWarn", { fg = "#000000", bg = "#d78700", ctermfg = 16, ctermbg = 172 })
+  local diag = require("dotfiles.palette").diag
+  hl.set("DiagnosticSignError", { fg = diag.error_fg.hex, bg = diag.error_bg.hex, ctermfg = diag.error_fg.cterm, ctermbg = diag.error_bg.cterm })
+  hl.set("DiagnosticSignWarn", { fg = diag.warn_fg.hex, bg = diag.warn_bg.hex, ctermfg = diag.warn_fg.cterm, ctermbg = diag.warn_bg.cterm })
 
   -- 診断の前後移動 (coc: [g / ]g)。0.11 で goto_prev/goto_next は jump に統合された。
   vim.keymap.set("n", "[g", function()

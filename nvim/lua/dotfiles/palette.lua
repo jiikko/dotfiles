@@ -1,4 +1,5 @@
--- gruvbox 色の hex↔cterm ペアの唯一の出典。
+-- カスタム色の hex↔cterm ペアの唯一の出典 (テーマカラーを変えるときの入口。変更手順・
+-- tmux 側との対応表は docs/theme-colors.md)。
 --
 -- 主環境は termguicolors=off の 256色運用 (規律の一次情報は dotfiles/hl.lua) で、gui 色 (hex)
 -- が設計の真・cterm はその忠実な 256色近似。かつてこの対応が各所 (bufferline highlights /
@@ -6,11 +7,12 @@
 -- ctermbg=234 と 237 (=#3c3836 の対応値) が混在する drift が起きていた (2026-07-16 に 234 へ
 -- 統一)。ここを参照すれば hex と cterm の組が構造的にズレなくなる。
 --
--- 名前は gruvbox 公式パレットの呼称 (dark0_hard 等)。値を変える/色を足すときはここだけ触る。
--- 対象は gruvbox 色のみ: lsp.lua の診断サイン (coc 時代踏襲の #ffffff/#ff0000 等。cterm が
--- 完全一致の非 gruvbox 色で drift 余地なし) と nvim-notify の blend 基底 #000000 は対象外。
--- hl.set を通すか (ColorScheme 再適用) はここと直交する別規律 (hl.lua 参照)。
-return {
+-- 3 節構成 (色を足すときは意味の合う節へ):
+--   トップレベル = gruvbox 公式パレット (名前も公式呼称。テーマの基調色)
+--   accent      = tmux と意味を共有するツール横断アクセント (gruvbox 外。tmux 側定数と対で変える)
+--   diag        = 診断サイン (coc 時代踏襲の非 gruvbox 色。cterm 完全一致で drift 余地なし)
+-- nvim-notify の blend 基底 #000000 はテーマ色でないため対象外 (_nviminit.lua 側コメント参照)。
+local M = {
   dark0_hard    = { hex = "#1d2021", cterm = 234 },
   dark0         = { hex = "#282828", cterm = 235 },
   dark1         = { hex = "#3c3836", cterm = 237 },
@@ -22,3 +24,20 @@ return {
   bright_yellow = { hex = "#fabd2f", cterm = 214 },
   bright_purple = { hex = "#d3869b", cterm = 175 },
 }
+
+M.accent = {
+  -- 「現在地」の統一色: tmux の current window 島 (_tmux.conf の @cur-bg = colour199) と同一。
+  -- bufferline の選択タブが参照し、tmux バーと nvim タブラインで「いまここ = ショッキングピンク」
+  -- の色言語を揃える (2026-07-16)。変えるときは tmux 側 @cur-bg と対で (docs/theme-colors.md)。
+  current_pink = { hex = "#ff00af", cterm = 199 },
+}
+
+M.diag = {
+  -- coc 時代のサイン配色 (エラー=白字/赤地・警告=黒字/橙地) の踏襲。意図的に gruvbox 外。
+  error_fg = { hex = "#ffffff", cterm = 231 },
+  error_bg = { hex = "#ff0000", cterm = 196 },
+  warn_fg  = { hex = "#000000", cterm = 16 },
+  warn_bg  = { hex = "#d78700", cterm = 172 },
+}
+
+return M
