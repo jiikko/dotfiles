@@ -61,6 +61,19 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
    ```
 3. `tests/nvim/test_nvim.sh` (config ロード + 全プラグイン強制ロード)
 
+## 点火アニメ (window 切替の「ぬるっと」遷移)
+
+window を切り替えると、current 島が **暗赤 52→94→130→166→蛍光 202 へ ~0.2 秒でランプ**する
+(意味論は放置フェードと対: 離れた window は紫の残光で冷め、入った window は点火する)。
+
+- 仕組み: hook (`after-select-window[1]` / `client-session-changed`) →
+  `scripts/tmux_ignite_current.sh` が一時 option `@ignite` を 4 フレーム駆動 + `refresh-client -S`。
+  描画は `@cur-live` (アニメ中=@ignite / 平常時=@cur-accent) を参照するので、
+  **テーマの色変更は従来どおり `@cur-accent` だけ触ればよい** (@cur-live は仕組み側)
+- 調整ノブ: 軌跡 = スクリプト内の色列 / 速度 = sleep 値。連打時は世代トークンで最後の切替だけ完走
+- 文字単位のスイープ (一文字ずつ色が変わる) は不可: format に部分文字列×スタイル分割の手段が無く、
+  幅可変の reveal 方式は「セル幅が変わると列がずれる」で却下済み (チップ案と同根)
+
 ## 制約 (なぜこうなっているか)
 
 - **主環境は 256色** (~/.zshenv の SUPPORT_TRUECOLOR=false → termguicolors=off。_nviminit.lua

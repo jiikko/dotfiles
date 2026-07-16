@@ -106,5 +106,7 @@ preexec（実行開始）と precmd（実行完了）でスタンプされる。
 
 - 実装: `_tmux.conf`（`@fade` / `@fadefg` / window-status-format）、
   `zshlib/_tmux_window_name.zsh`（`_tmux_stamp_window_touched`）
-- 隣接機能: @claude_state アイコン（Claude の作業状態）/ bell 閃光システム（完了通知）。
-  フェードは「どこで作業していたか」、これらは「いま何が起きているか」で役割が異なる
+- 隣接機能: @claude_state アイコン（Claude の作業状態）/ bell 閃光システム（完了通知）/
+  点火アニメ（window 切替時に current 島が暗赤→蛍光へランプ。scripts/tmux_ignite_current.sh、
+  docs/theme-colors.md 参照）。フェードの「離れた場所が冷める」と点火の「入った場所が点く」は対の演出。
+  フェードは「どこで作業していたか」、@claude_state/bell は「いま何が起きているか」で役割が異なる
