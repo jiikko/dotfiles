@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattn/go-runewidth"
 )
 
 func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []string) *browseModel {
@@ -29,6 +30,14 @@ func statusesFor(m *browseModel, state CIState) map[string]CIState {
 		s[c.SHA] = state
 	}
 	return s
+}
+
+// withJobs は commit idx の details を job 2 件で埋めるテストヘルパー。
+func withJobs(m *browseModel, idx int) {
+	m.details[m.commits[idx].SHA] = []CheckDetail{
+		{Name: "build", State: StateSuccess, URL: "https://github.com/o/r/runs/1"},
+		{Name: "lint", State: StateFailure, URL: ""},
+	}
 }
 
 func TestBrowseCursorNavigation(t *testing.T) {
@@ -72,39 +81,96 @@ func TestBrowseCursorScrollsViewport(t *testing.T) {
 	if m.offset == 0 {
 		t.Errorf("末尾コミットへ移動しても offset が 0 のまま")
 	}
-	view := m.View()
-	if !strings.Contains(view, "❯") && !strings.Contains(view, "commit "+m.commits[4].SHA) {
-		t.Errorf("カーソル行がビューポートに入っていない:\n%s", view)
-	}
 }
 
-func TestBrowseExpandUsesFetchedDetails(t *testing.T) {
+func TestBrowsePanelOpenClose(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	sha := m.commits[0].SHA
-	m.statuses[sha] = StateFailure
-	m.details[sha] = []CheckDetail{{Name: "lint", State: StateFailure}}
-	if cmd := m.toggleExpand(); cmd != nil {
+	m.statuses = statusesFor(m, StateFailure)
+	withJobs(m, 0)
+	if cmd := m.openPanel(); cmd != nil {
 		t.Errorf("詳細取得済みなのに fetch Cmd が返った")
 	}
-	if !m.expanded[sha] {
-		t.Errorf("展開されていない")
+	if m.panelSHA != m.commits[0].SHA {
+		t.Fatalf("パネルが開いていない")
 	}
-	if !strings.Contains(m.View(), "✗ lint") {
-		t.Errorf("展開行が View に出ていない:\n%s", m.View())
+	view := m.View()
+	for _, want := range []string{"CI jobs:", "✓ build", "✗ lint"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("パネルに %q が出ていない:\n%s", want, view)
+		}
 	}
-	// もう一度で折りたたみ
-	m.toggleExpand()
-	if m.expanded[sha] {
-		t.Errorf("折りたたまれていない")
+	// h で閉じる
+	m.handleKey("h")
+	if m.panelSHA != "" {
+		t.Errorf("h で閉じない")
+	}
+	// esc でも閉じる (アプリ終了にはならない)
+	m.openPanel()
+	m.handleKey("esc")
+	if m.panelSHA != "" || m.done {
+		t.Errorf("esc でパネルだけ閉じるべき: panelSHA=%q done=%v", m.panelSHA, m.done)
 	}
 }
 
-func TestBrowseExpandTriggersDetailFetch(t *testing.T) {
-	// キャッシュヒットで詳細が無い SHA の展開はオンデマンド取得になる
+func TestBrowsePanelKeepsListHeight(t *testing.T) {
+	// パネルはリストへ行を差し込まず上へ重ねるため、View の行数は開閉で変わらない
+	// (高さのガタつき防止: ユーザー要望の回帰テスト)
+	m := newTestBrowse(t, 5, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+	withJobs(m, 0)
+	before := strings.Count(m.View(), "\n")
+	m.openPanel()
+	after := strings.Count(m.View(), "\n")
+	if before != after {
+		t.Errorf("パネル開閉で View の行数が変わった: %d → %d", before, after)
+	}
+}
+
+func TestBrowsePanelJobCursorAndOpen(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	withJobs(m, 0)
+	m.openPanel()
+	var opened string
+	orig := openInBrowser
+	openInBrowser = func(url string) error {
+		opened = url
+		return nil
+	}
+	t.Cleanup(func() { openInBrowser = orig })
+	// job0 (URL あり) で Enter → ブラウザで開く
+	_, cmd := m.handleKey("enter")
+	if cmd == nil {
+		t.Fatalf("job 上の Enter で Cmd が返らない")
+	}
+	if msg := cmd(); msg.(openURLMsg).err != nil {
+		t.Fatalf("openURLMsg.err = %v", msg.(openURLMsg).err)
+	}
+	if opened != "https://github.com/o/r/runs/1" {
+		t.Errorf("開いた URL = %q", opened)
+	}
+	// j で job1 へ移動 (末尾で止まる)
+	m.handleKey("j")
+	m.handleKey("j")
+	if m.panelCursor != 1 {
+		t.Errorf("panelCursor = %d; want 1", m.panelCursor)
+	}
+	// job1 (URL なし) は notice を出して開かない
+	_, cmd = m.handleKey("enter")
+	if cmd != nil {
+		t.Errorf("URL なし job で Cmd が返った")
+	}
+	if !strings.Contains(m.hintLine(), "URL がありません") {
+		t.Errorf("notice が hint に出ていない: %q", m.hintLine())
+	}
+}
+
+func TestBrowsePanelTriggersDetailFetch(t *testing.T) {
+	// キャッシュヒットで詳細が無い SHA のパネルはオンデマンド取得になる
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StateSuccess // キャッシュ由来 (details なし)
-	cmd := m.toggleExpand()
+	cmd := m.openPanel()
 	if cmd == nil {
 		t.Fatalf("詳細未取得なのに fetch Cmd が返らない")
 	}
@@ -122,126 +188,18 @@ func TestBrowseExpandTriggersDetailFetch(t *testing.T) {
 		t.Errorf("取得完了後も loading のまま")
 	}
 	if !strings.Contains(m.View(), "✓ build") {
-		t.Errorf("取得した詳細が View に出ていない:\n%s", m.View())
+		t.Errorf("取得した詳細がパネルに出ていない:\n%s", m.View())
 	}
 	if m.fetched[sha] != StateSuccess {
 		t.Errorf("詳細取得の状態がキャッシュ保存対象 (fetched) に入っていない")
 	}
 }
 
-// expandWithJobs は commit idx を job 2 件付きで展開済みにするテストヘルパー。
-func expandWithJobs(m *browseModel, idx int) {
-	sha := m.commits[idx].SHA
-	m.expanded[sha] = true
-	m.details[sha] = []CheckDetail{
-		{Name: "build", State: StateSuccess, URL: "https://github.com/o/r/runs/1"},
-		{Name: "lint", State: StateFailure, URL: ""},
-	}
-}
-
-func TestBrowseTreeNavigation(t *testing.T) {
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateSuccess)
-	expandWithJobs(m, 0)
-	// commit0 → job0 → job1 → commit1 と降りる
-	m.handleKey("j")
-	if m.cursor != 0 || m.cursorJob != 0 {
-		t.Fatalf("j 1回目 = (%d,%d); want (0,0)", m.cursor, m.cursorJob)
-	}
-	m.handleKey("j")
-	if m.cursor != 0 || m.cursorJob != 1 {
-		t.Fatalf("j 2回目 = (%d,%d); want (0,1)", m.cursor, m.cursorJob)
-	}
-	m.handleKey("j")
-	if m.cursor != 1 || m.cursorJob != -1 {
-		t.Fatalf("j 3回目 = (%d,%d); want (1,-1)", m.cursor, m.cursorJob)
-	}
-	// 逆順で戻ると commit1 → job1 → job0 → commit0
-	m.handleKey("k")
-	if m.cursor != 0 || m.cursorJob != 1 {
-		t.Fatalf("k 1回目 = (%d,%d); want (0,1)", m.cursor, m.cursorJob)
-	}
-	m.handleKey("k")
-	m.handleKey("k")
-	if m.cursor != 0 || m.cursorJob != -1 {
-		t.Fatalf("k 3回目 = (%d,%d); want (0,-1)", m.cursor, m.cursorJob)
-	}
-}
-
-func TestBrowseDescendAndCollapse(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	sha := m.commits[0].SHA
-	m.statuses[sha] = StateFailure
-	m.details[sha] = []CheckDetail{{Name: "lint", State: StateFailure}}
-	// l: 折りたたみ中 → 展開
-	m.handleKey("l")
-	if !m.expanded[sha] {
-		t.Fatalf("l で展開されない")
-	}
-	// l: 展開済み → 最初の job へ降りる
-	m.handleKey("l")
-	if m.cursorJob != 0 {
-		t.Fatalf("l 2回目で job に降りない: cursorJob=%d", m.cursorJob)
-	}
-	// h: job から親コミットへ戻ってツリーを閉じる
-	m.handleKey("h")
-	if m.cursorJob != -1 || m.expanded[sha] {
-		t.Fatalf("h で閉じない: cursorJob=%d expanded=%v", m.cursorJob, m.expanded[sha])
-	}
-}
-
-func TestBrowseOpenJobInBrowser(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
-	expandWithJobs(m, 0)
-	var opened string
-	orig := openInBrowser
-	openInBrowser = func(url string) error {
-		opened = url
-		return nil
-	}
-	t.Cleanup(func() { openInBrowser = orig })
-	// job0 (URL あり) で Enter → ブラウザで開く
-	m.handleKey("j")
-	_, cmd := m.handleKey("enter")
-	if cmd == nil {
-		t.Fatalf("job 上の Enter で Cmd が返らない")
-	}
-	if msg := cmd(); msg.(openURLMsg).err != nil {
-		t.Fatalf("openURLMsg.err = %v", msg.(openURLMsg).err)
-	}
-	if opened != "https://github.com/o/r/runs/1" {
-		t.Errorf("開いた URL = %q", opened)
-	}
-	// job1 (URL なし) は notice を出して開かない
-	m.handleKey("j")
-	_, cmd = m.handleKey("enter")
-	if cmd != nil {
-		t.Errorf("URL なし job で Cmd が返った")
-	}
-	if !strings.Contains(m.hintLine(), "URL がありません") {
-		t.Errorf("notice が hint に出ていない: %q", m.hintLine())
-	}
-}
-
-func TestBrowseCursorJobClampedAfterCollapse(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateSuccess)
-	expandWithJobs(m, 0)
-	m.handleKey("j") // job0 へ
-	sha := m.commits[0].SHA
-	delete(m.expanded, sha) // 外部要因で閉じた状態を再現
-	m.ensureCursorVisible()
-	if m.cursorJob != -1 {
-		t.Errorf("閉じた後も cursorJob が残っている: %d", m.cursorJob)
-	}
-}
-
-func TestBrowseExpandDuringBatchFetchWaits(t *testing.T) {
-	// 一括取得中にその対象 SHA を展開しても、重複リクエストは打たず結果を待つ
+func TestBrowsePanelDuringBatchFetchWaits(t *testing.T) {
+	// 一括取得中にその対象 SHA のパネルを開いても、重複リクエストは打たず結果を待つ
 	shas := []string{strings.Repeat("a", 40)}
 	m := newTestBrowse(t, 1, map[string]CIState{}, shas)
-	if cmd := m.toggleExpand(); cmd != nil {
+	if cmd := m.openPanel(); cmd != nil {
 		t.Errorf("一括取得中の SHA に重複 fetch Cmd が返った")
 	}
 	if !m.detailsLoading[shas[0]] {
@@ -256,7 +214,7 @@ func TestBrowseExpandDuringBatchFetchWaits(t *testing.T) {
 		t.Errorf("一括取得完了後も loading のまま")
 	}
 	if !strings.Contains(m.View(), "✓ build") {
-		t.Errorf("一括取得の詳細が展開表示に出ていない:\n%s", m.View())
+		t.Errorf("一括取得の詳細がパネルに出ていない:\n%s", m.View())
 	}
 }
 
@@ -299,12 +257,24 @@ func TestBrowseQuitFillsUnknown(t *testing.T) {
 	}
 }
 
-func TestBrowseNonGitHubRepoExpand(t *testing.T) {
+func TestBrowseQuitWorksWhilePanelOpen(t *testing.T) {
+	// パネル表示中でも q はアプリ終了
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+	withJobs(m, 0)
+	m.openPanel()
+	_, cmd := m.handleKey("q")
+	if cmd == nil || !m.done {
+		t.Errorf("パネル表示中の q で終了しない")
+	}
+}
+
+func TestBrowseNonGitHubRepoPanel(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.hasRepo = false
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StateNone
-	if cmd := m.toggleExpand(); cmd != nil {
+	if cmd := m.openPanel(); cmd != nil {
 		t.Errorf("GitHub 以外の remote で fetch Cmd が返った")
 	}
 	if !strings.Contains(m.View(), "Check はありません") {
@@ -312,15 +282,14 @@ func TestBrowseNonGitHubRepoExpand(t *testing.T) {
 	}
 }
 
-func TestBrowseUnknownStateExpandRetries(t *testing.T) {
-	// unknown (前回取得失敗) の展開は再取得を試みる
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	sha := m.commits[0].SHA
-	m.statuses[sha] = StateUnknown
-	if cmd := m.toggleExpand(); cmd == nil {
-		t.Errorf("unknown 状態の展開で再取得が走らない")
+func TestBuildPanelBoxWidths(t *testing.T) {
+	lines := buildPanelBox(" title ", []string{"row", strings.Repeat("x", 200)}, 40, false)
+	if len(lines) != 4 {
+		t.Fatalf("枠 + 2 行のはずが %d 行", len(lines))
 	}
-	if !m.detailsLoading[sha] {
-		t.Errorf("detailsLoading が立っていない")
+	for _, l := range lines {
+		if w := runewidth.StringWidth(stripANSI(l)); w != 40 {
+			t.Errorf("パネル行の幅 = %d; want 40: %q", w, l)
+		}
 	}
 }

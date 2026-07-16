@@ -20,6 +20,13 @@ const (
 // spinnerFrames は取得中表示のフレーム。
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
+func init() {
+	// East Asian Ambiguous (罫線・✓・● 等) を幅 1 として扱う。runewidth の既定は
+	// locale (LANG=ja_JP.* 等) で幅 2 に切り替わり、パネル枠や列揃えの計算が実行環境
+	// 依存でずれるため固定する (Terminal.app 等の既定も ambiguous = narrow)。
+	runewidth.DefaultCondition.EastAsianWidth = false
+}
+
 // StateLoading は表示専用の擬似状態。statuses map に SHA が無いとき render 側で使う。
 const StateLoading CIState = "loading"
 

@@ -94,10 +94,13 @@ func runLog(opts *Options, colored, isTTY bool) int {
 		}
 		return 0
 	}
-	// 終了時に TUI 領域は消えているので、最終結果 (展開状態を含む) を静的出力して
-	// ターミナル履歴に残す (issue の完了条件)
-	renderOpts.Expanded = model.expanded
-	renderOpts.Details = model.details
+	// 終了時に TUI 領域は消えているので、最終結果を静的出力してターミナル履歴に残す
+	// (issue の完了条件)。job パネルを開いたまま終了した場合は、その内容も
+	// インライン展開の形で残す
+	if model.panelSHA != "" {
+		renderOpts.Expanded = map[string]bool{model.panelSHA: true}
+		renderOpts.Details = model.details
+	}
 	fmt.Println(RenderStatic(commits, model.statuses, renderOpts))
 	saveFetched(cachePath, model.fetched, opts)
 	if model.ghErr != nil {

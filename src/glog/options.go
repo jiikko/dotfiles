@@ -175,15 +175,20 @@ func Usage() string {
 
 対話ブラウズのキー操作 (TTY のみ):
   j / k / ↑ / ↓ / Ctrl-N / Ctrl-P
-                            カーソル移動 (コミット行と展開中の CI job 行を辿る)
-  Enter / Space             コミット行: CI job 一覧の展開 / 折りたたみ
-                            job 行: ブラウザでジョブ詳細ページを開く
-  l / → / Tab               展開する。展開済みなら最初の job へ降りる
-  h / ←                     ツリーを閉じて戻る
+                            カーソル移動
+  Enter / Space / l / → / Tab
+                            CI job 一覧をパネル (画面上部のポップアップ) で開く
   Ctrl-D / Ctrl-U / PgDn / PgUp
                             ページスクロール
   g / G                     先頭 / 末尾のコミットへ
-  q / Esc / Ctrl-C          終了 (最終表示はターミナル履歴に残る)
+  q / Ctrl-C                終了 (最終表示はターミナル履歴に残る)
+
+CI job パネル表示中:
+  j / k / ↑ / ↓ / Ctrl-N / Ctrl-P
+                            job 移動
+  Enter / Space             選択中の job の詳細ページをブラウザで開く
+  h / ← / Esc               パネルを閉じてコミット一覧へ戻る
+  q / Ctrl-C                終了
 
   全件キャッシュ済みで 1 画面に収まる場合は、ブラウズを開かずそのまま
   出力して終了する (less -F 相当)。stdout がパイプ / リダイレクトの
