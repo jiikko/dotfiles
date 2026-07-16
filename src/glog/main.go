@@ -64,6 +64,13 @@ func runLog(opts *Options, colored, isTTY bool) int {
 
 	statuses, toFetch, repo, hasRepo, cachePath := planStatuses(opts, shas)
 	renderOpts := RenderOpts{Oneline: opts.Oneline, Colored: colored}
+	var decor *DecorColors
+	if colored {
+		// decoration の配色は git log を尊重する (color.decorate.* + git 既定色)
+		dc := LoadDecorColors()
+		decor = &dc
+		renderOpts.Decor = decor
+	}
 	width, height := terminalSize()
 
 	// 対話ブラウズ (less 風) は TTY のみ。パイプ・リダイレクトへは ANSI カーソル制御を
@@ -84,7 +91,9 @@ func runLog(opts *Options, colored, isTTY bool) int {
 		return 0
 	}
 
-	model, err := RunBrowse(newBrowseModel(commits, statuses, toFetch, repo, hasRepo, opts, colored, width, height))
+	browse := newBrowseModel(commits, statuses, toFetch, repo, hasRepo, opts, colored, width, height)
+	browse.decor = decor
+	model, err := RunBrowse(browse)
 	if err != nil {
 		// TUI 基盤の失敗は静的経路で救済する
 		ghErr := fetchStatic(statuses, toFetch, repo, hasRepo, cachePath, opts)

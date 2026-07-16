@@ -141,6 +141,64 @@ func LoadHeadCommit() (*Commit, error) {
 	return &commits[0], nil
 }
 
+// DecorColors は decoration (ブランチ名等) の色。git log の見た目を尊重するため、
+// git 本体の既定色と git config の color.decorate.* 上書きをそのまま使う。
+type DecorColors struct {
+	HEAD         string // 既定 bold cyan
+	Branch       string // 既定 bold green
+	RemoteBranch string // 既定 bold red
+	Tag          string // 既定 bold yellow
+	Remotes      []string // remote 名 (remote branch 判定用)
+}
+
+// DefaultDecorColors は git の組み込み既定色 (git config が読めない環境の fallback)。
+func DefaultDecorColors() DecorColors {
+	return DecorColors{
+		HEAD:         "\x1b[1;36m",
+		Branch:       "\x1b[1;32m",
+		RemoteBranch: "\x1b[1;31m",
+		Tag:          "\x1b[1;33m",
+		Remotes:      []string{"origin"},
+	}
+}
+
+// LoadDecorColors は git config --get-color で decoration 色を解決する
+// (ユーザーが color.decorate.* を設定していればそれ、無ければ git と同じ既定色が返る)。
+func LoadDecorColors() DecorColors {
+	dc := DefaultDecorColors()
+	get := func(slot, def string) string {
+		out, err := runGit("config", "--get-color", "color.decorate."+slot, def)
+		if err != nil || out == "" {
+			return ""
+		}
+		return out
+	}
+	if c := get("HEAD", "bold cyan"); c != "" {
+		dc.HEAD = c
+	}
+	if c := get("branch", "bold green"); c != "" {
+		dc.Branch = c
+	}
+	if c := get("remoteBranch", "bold red"); c != "" {
+		dc.RemoteBranch = c
+	}
+	if c := get("tag", "bold yellow"); c != "" {
+		dc.Tag = c
+	}
+	if out, err := runGit("remote"); err == nil {
+		var remotes []string
+		for name := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
+			if name != "" {
+				remotes = append(remotes, name)
+			}
+		}
+		if len(remotes) > 0 {
+			dc.Remotes = remotes
+		}
+	}
+	return dc
+}
+
 // LoadStagedDiff は --cached モードの本文 (git diff --cached) を取得する。
 // フラグ未指定時は --stat 相当を出す (staged 変更の一覧が目的で、既定でフル patch は過剰なため)。
 func LoadStagedDiff(opts *Options, colored bool) (string, error) {

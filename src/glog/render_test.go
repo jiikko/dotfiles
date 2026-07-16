@@ -160,6 +160,44 @@ func TestRenderLinesHeaderMapping(t *testing.T) {
 	}
 }
 
+func TestRenderDecorationGitStyle(t *testing.T) {
+	// git log の配色を尊重: HEAD=cyan / ローカル=green / remote=red / tag=yellow
+	o := RenderOpts{Colored: true}
+	dc := DefaultDecorColors()
+	out := renderDecoration("HEAD -> master, origin/master, origin/HEAD, tag: v1.0, feature/x", o)
+	for _, want := range []string{
+		dc.HEAD + "HEAD" + ansiReset,
+		dc.Branch + "master" + ansiReset,
+		dc.RemoteBranch + "origin/master" + ansiReset,
+		dc.RemoteBranch + "origin/HEAD" + ansiReset,
+		dc.Tag + "tag: v1.0" + ansiReset,
+		// "/" を含むだけのローカルブランチは remote 扱いにしない
+		dc.Branch + "feature/x" + ansiReset,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("decoration に %q がありません:\n%q", want, out)
+		}
+	}
+	// 非カラーでは素の文字列
+	if got := renderDecoration("HEAD -> master", RenderOpts{}); got != "(HEAD -> master)" {
+		t.Errorf("非カラー = %q", got)
+	}
+}
+
+func TestRenderDecorationCustomColors(t *testing.T) {
+	// git config color.decorate.* の上書き (RenderOpts.Decor 経由) が効く
+	dc := DecorColors{HEAD: "[H]", Branch: "[B]", RemoteBranch: "[R]", Tag: "[T]", Remotes: []string{"upstream"}}
+	o := RenderOpts{Colored: true, Decor: &dc}
+	out := renderDecoration("upstream/main, origin/main", o)
+	if !strings.Contains(out, "[R]upstream/main") {
+		t.Errorf("remote 判定が Remotes リストを見ていない: %q", out)
+	}
+	// origin は Remotes に無いのでローカル扱い
+	if !strings.Contains(out, "[B]origin/main") {
+		t.Errorf("未登録 remote 名がローカル扱いになっていない: %q", out)
+	}
+}
+
 func TestRenderLinesWrapsMessage(t *testing.T) {
 	// Width > 0 (TUI) ではメッセージ行を切り詰めず端末幅で折り返す (git log と同じ見え方)
 	commits := testCommits()[:1]

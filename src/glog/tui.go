@@ -70,6 +70,7 @@ type browseModel struct {
 	repo           Repo
 	hasRepo        bool
 	ghErr          *GHError
+	decor          *DecorColors
 	oneline        bool
 	colored        bool
 	frame          int
@@ -357,6 +358,7 @@ func (m *browseModel) renderOpts() RenderOpts {
 		Colored: m.colored,
 		Spinner: m.spinner(),
 		Width:   m.width,
+		Decor:   m.decor,
 	}
 }
 

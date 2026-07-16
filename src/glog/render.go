@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/mattn/go-runewidth"
@@ -76,9 +77,17 @@ type RenderOpts struct {
 	Colored        bool
 	Spinner        string
 	Width          int             // >0 ならコミットメッセージを端末幅で折り返す (TUI 用)。
+	Decor          *DecorColors    // decoration の色 (nil = git 既定色)
 	Expanded       map[string]bool // 展開中の SHA
 	Details        map[string][]CheckDetail
 	DetailsLoading map[string]bool // 展開したが詳細を取得中の SHA
+}
+
+func (o RenderOpts) decorColors() DecorColors {
+	if o.Decor != nil {
+		return *o.Decor
+	}
+	return DefaultDecorColors()
 }
 
 // subjectWidthCap は --oneline で subject 列を揃える幅の上限。極端に長い subject 1 件で
@@ -130,7 +139,7 @@ func renderOnelineRow(c Commit, state CIState, subjectWidth, authorWidth int, o 
 	b.WriteString(paint(c.ShortSHA, ansiYellow, o.Colored))
 	if c.Decoration != "" {
 		b.WriteString(" ")
-		b.WriteString(paint("("+c.Decoration+")", ansiCyan, o.Colored))
+		b.WriteString(renderDecoration(c.Decoration, o))
 	}
 	b.WriteString(" ")
 	subject := runewidth.Truncate(c.Subject, subjectWidthCap, "…")
@@ -159,7 +168,7 @@ func mediumLines(c Commit, idx int, state CIState, o RenderOpts) []Line {
 	h.WriteString(paint("commit "+c.SHA, ansiYellow, o.Colored))
 	if c.Decoration != "" {
 		h.WriteString(" ")
-		h.WriteString(paint("("+c.Decoration+")", ansiCyan, o.Colored))
+		h.WriteString(renderDecoration(c.Decoration, o))
 	}
 	lines = append(lines, Line{Text: h.String(), CommitIdx: idx, Header: true})
 	lines = append(lines, expandedLines(c, idx, o)...)
@@ -225,6 +234,51 @@ func RenderCached(head *Commit, state CIState, diff string, colored bool, spinne
 		b.WriteString(diff)
 	}
 	return b.String()
+}
+
+// renderDecoration は %D の decoration を git log と同じ配色で描画する。
+// 括弧とカンマは commit 行の地色 (yellow)、HEAD は cyan、ローカルブランチは green、
+// remote branch は red、tag は yellow (いずれも git config color.decorate.* を尊重)。
+func renderDecoration(deco string, o RenderOpts) string {
+	if !o.Colored {
+		return "(" + deco + ")"
+	}
+	dc := o.decorColors()
+	var b strings.Builder
+	b.WriteString(ansiYellow + "(" + ansiReset)
+	first := true
+	for item := range strings.SplitSeq(deco, ", ") {
+		if !first {
+			b.WriteString(ansiYellow + ", " + ansiReset)
+		}
+		first = false
+		b.WriteString(decorItem(item, dc))
+	}
+	b.WriteString(ansiYellow + ")" + ansiReset)
+	return b.String()
+}
+
+func decorItem(item string, dc DecorColors) string {
+	if name, ok := strings.CutPrefix(item, "HEAD -> "); ok {
+		return dc.HEAD + "HEAD" + ansiReset + " -> " + refColor(name, dc) + name + ansiReset
+	}
+	if item == "HEAD" {
+		return dc.HEAD + item + ansiReset
+	}
+	if strings.HasPrefix(item, "tag: ") {
+		return dc.Tag + item + ansiReset
+	}
+	return refColor(item, dc) + item + ansiReset
+}
+
+// refColor はブランチ名がリポジトリの remote 配下 (<remote>/...) なら remote branch 色、
+// それ以外はローカルブランチ色。名前に / を含むローカルブランチ (feature/x) を
+// 誤判定しないよう、先頭セグメントが実在する remote 名のときだけ remote 扱いにする。
+func refColor(name string, dc DecorColors) string {
+	if remote, _, ok := strings.Cut(name, "/"); ok && slices.Contains(dc.Remotes, remote) {
+		return dc.RemoteBranch
+	}
+	return dc.Branch
 }
 
 // wrapToWidth は表示幅 width で折り返す (ANSI を含まない行の前提)。width <= 0 なら
