@@ -191,7 +191,7 @@ make lint   # golangci-lint (go run 経由・バージョン固定、設定は .
 
 ## 設計メモ
 
-- 設計の一次情報: dotfiles の `issues/done/git-log-gha-status-wrapper.md`
+- 設計の一次情報: dotfiles の `issues/done/015-feat-git-log-gha-status-wrapper.md`
 - コミット境界の解析は人間向け出力の正規表現ではなく、`--pretty=format:` への
   制御文字 (`%x1e` / `%x1f`) 埋め込みで行う。`--stat` / `-p` の本文を壊さない
 - Bubble Tea はフルスクリーン TUI ではなく「非同期レンダリング可能な CLI

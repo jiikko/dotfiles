@@ -1,5 +1,5 @@
 // glog — GitHub Actions / Checks の結果を非同期で添える git log ラッパー。
-// 設計の一次情報: dotfiles の issues/done/git-log-gha-status-wrapper.md
+// 設計の一次情報: dotfiles の issues/done/015-feat-git-log-gha-status-wrapper.md
 // (対話ブラウズは元 issue の非目標だったが 2026-07-16 のユーザー指示で解禁)
 package main
 

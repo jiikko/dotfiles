@@ -45,5 +45,3 @@ ls issues issues/pending issues/done | grep -E '^[0-9]{3}-' | sort | tail -1
 ## 既存ファイルの番号付け（2026-07-16 実施済み）
 
 規約導入以前のファイルは 2026-07-16 に一括 rename 済み（作成日順に 001〜017 を採番。audit-log・コード内コメント・docs・issue 間クロスリンクのパスも同時更新済み。commit message 内の旧パスは immutable なため対象外）。
-
-- **015 は `done/git-log-gha-status-wrapper.md` に予約済み（未 rename）**: 参照元の src/glog が rename 時点で作業中（dirty）だったため保留。glog の作業が落ち着いたら `015-feat-git-log-gha-status-wrapper.md` へ rename し、src/glog/README.md・src/glog/main.go 内の参照を同時更新すること
