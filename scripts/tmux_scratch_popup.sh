@@ -45,8 +45,8 @@ session="${2:-}"
 if [ "$session" = "scratch" ] || [ "$session" = "launcher" ]; then
   # shellcheck disable=SC2086 # ${client:+...} は client 空のとき引数ごと消す意図の word splitting
   tmux detach-client ${client:+-t "$client"}
-  script_dir=$(cd "$(dirname "$0")" && pwd)
-  "$script_dir/tmux_refresh_all_clients.sh" > /dev/null 2>&1 &
+  # 以前あった close 後の refresh 強制 (tmux 3.5a の popup 再描画同期バグ #4920 対策) は、
+  # #4920 が 3.7 で修正され不要になったため撤去 (2026-07-15、稼働 3.7b)。
   exit 0
 fi
 
