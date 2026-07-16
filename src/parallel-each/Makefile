@@ -6,7 +6,10 @@
 # バージョンは .golangci.yml (version: "2") と整合させること。
 GOLANGCI_LINT_VERSION := v2.5.0
 
-.PHONY: lint
+.PHONY: lint test
 
 lint:
 	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run ./...
+
+test:
+	go test ./...

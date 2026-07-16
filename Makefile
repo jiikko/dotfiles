@@ -39,7 +39,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: pull test test-runtime test-discovered test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-go-lint
+.PHONY: pull test test-runtime test-discovered test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-go-lint test-go
 
 # settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
 # pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、
@@ -49,7 +49,7 @@ pull:
 	@_claude/hooks/normalize-settings.sh
 	@git pull --rebase
 
-test: test-lint test-runtime
+test: test-lint test-runtime test-go
 
 test-runtime: test-syntax test-discovered test-bats
 
@@ -169,17 +169,25 @@ test-ruby-syntax:
 
 test-lint: test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax
 
-# Go プロジェクトの静的解析。実体は各ディレクトリの Makefile の lint ターゲット
-# (go run で golangci-lint をバージョン固定実行) に閉じており、ここはそれへ委譲する
-# だけ。zsh 系の test-lint とは分離し、CI では Go を用意した専用ジョブから呼ぶ。
-# Go 未インストール環境では skip する。lint ターゲットを持つ Go プロジェクトを
+# Go プロジェクトの静的解析とテスト。実体は各ディレクトリの Makefile の lint / test
+# ターゲットに閉じており、ここはそれへ委譲するだけ。lint は zsh 系の test-lint と分離し、
+# CI では Go を用意した専用ジョブ (lint.yml の go-lint) から呼ぶ。test は root の
+# `make test` にも含める (ローカルのコミット前検証で Go テストが漏れないように)。
+# どちらも Go 未インストール環境では skip する。Makefile を持つ Go プロジェクトを
 # 追加したらここに列挙する (src/disassemble_excel は Makefile 無しのため対象外)。
-GO_LINT_DIRS := src/parallel-each src/glog
+GO_PROJECT_DIRS := src/parallel-each src/glog
 
 test-go-lint:
 	@if command -v go >/dev/null 2>&1; then \
-		for dir in $(GO_LINT_DIRS); do $(MAKE) -C $$dir lint || exit 1; done; \
+		for dir in $(GO_PROJECT_DIRS); do $(MAKE) -C $$dir lint || exit 1; done; \
 	else \
 		echo "[go-lint] go not found; skipping golangci-lint"; \
+	fi
+
+test-go:
+	@if command -v go >/dev/null 2>&1; then \
+		for dir in $(GO_PROJECT_DIRS); do $(MAKE) -C $$dir test || exit 1; done; \
+	else \
+		echo "[go-test] go not found; skipping go tests"; \
 	fi
 
