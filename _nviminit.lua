@@ -102,16 +102,19 @@ require("lazy").setup({
     config = function()
       if dotfiles_truecolor_supported() then
         vim.cmd("colorscheme gruvbox")
-        -- 選択範囲はローズピンク (bright_purple) で強調 (hl.set = ColorScheme 再適用 + cterm 併記規律)。
-        -- 長時間注視する領域なので、現在地のショッキングピンク (accent.current_pink =
-        -- bufferline 選択タブ / tmux island) より一段落ち着いた色に意図的に分けている
-        require("dotfiles.hl").set("Visual", { bg = pal.bright_purple.hex, ctermbg = pal.bright_purple.cterm })
       else
         -- truecolor 非対応端末 (上の WORKAROUND 参照): gruvbox は cterm 色を持たず 256色端末で
         -- 無色になるため、cterm を完備する nvim 同梱の retrobox (gruvbox 風) へ差し替える。
         vim.opt.termguicolors = false
         vim.cmd("colorscheme retrobox")
       end
+      -- 選択範囲はローズピンク (bright_purple) で強調 (hl.set = ColorScheme 再適用 + cterm 併記規律)。
+      -- 長時間注視する領域なので、現在地のショッキングピンク (accent.current_pink =
+      -- bufferline 選択タブ / tmux island) より一段落ち着いた色に意図的に分けている。
+      -- 分岐の外に置き truecolor (gruvbox) / 256色 (retrobox) の両環境で効かせる
+      -- (以前は truecolor 分岐内のみで、256色主環境は retrobox 既定の青灰 109 のままだった。
+      --  2026-07-16 是正。colorscheme 適用後に呼ぶこと = ColorScheme の全クリアより後に乗せる)
+      require("dotfiles.hl").set("Visual", { bg = pal.bright_purple.hex, ctermbg = pal.bright_purple.cterm })
     end,
   },
   -- toggle.nvim は repo 内に vendor 済み (vendor/nvim-plugins/toggle.nvim、VENDOR.md 参照)。

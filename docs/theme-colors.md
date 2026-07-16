@@ -10,7 +10,7 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 |---|---|---|---|
 | **現在地** (いまここ) | ショッキングピンク #ff00af/199 | `@cur-accent` (current window 島) | `palette.accent.current_pink` (bufferline 選択タブ) |
 | 最近作業した (鮮度) | シアン ramp 51→23 | `@fade-*` (放置フェード) | — (対応概念なし。持ち込まない) |
-| 選択中テキスト | ローズ #d3869b/175 | — | `palette.bright_purple` (Visual)。現在地より一段落ち着けたのは意図的 (長時間注視するため)。⚠️ truecolor (gruvbox) 分岐のみ。256色主環境の retrobox では既定の青灰 (ctermbg=109) のまま |
+| 選択中テキスト | ローズ #d3869b/175 | — | `palette.bright_purple` (Visual)。現在地より一段落ち着けたのは意図的 (長時間注視するため)。truecolor/256色の両環境に適用 (2026-07-16 是正。以前は truecolor のみで retrobox は既定の青灰だった) |
 | 通知/注意 | 橙 208 | bell セル反転 (window list) | `palette.bright_orange` (bufferline indicator・incline ●) |
 | 一時メッセージ/点滅 | マゼンタ 201 | message-style (alert-bell 帯・: プロンプト)・prefix/SCRATCH 点滅・copy-mode current match | — |
 | 危険/警告状態 | 赤 160 (zoom) / 196 (sync) | `@zoom-accent` / pane-border sync | `palette.diag.error_bg` (診断は coc 踏襲の別系統) |
