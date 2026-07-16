@@ -9,11 +9,11 @@
 #
 # なぜ V 字 (一度暗くする) か: 人の注意は色相差より輝度差に強く反応する。前の色→現在地色の
 #   直行スイープ (v1 補間) は全フレーム高輝度のまま色相だけ変わり「分かりにくい」実感だった
-#   (ユーザーフィードバック 2026-07-16) ため、前の色を 2 フレームで暗く沈めてから固定の点火
+#   (ユーザーフィードバック 2026-07-16) ため、前の色を数フレームで暗く沈めてから固定の点火
 #   ランプ (暗→蛍光) で立ち上げる。既に暗い起点 (消灯 16 / 残光の尾) は沈む工程を自動スキップ
 #   して初版の点火ランプと同じ挙動に縮退する。
-# 例: 残光 hot 201 → 127→90 (紫が沈む) → 52→130→166 (点火) → 202 /
-#     消灯 16 → 52→130→166 → 202。
+# 例: 残光 hot 201 → 164→127→90→53 (紫が沈む) → 52→88→130→166 (点火) → 202 /
+#     消灯 16 → 52→88→130→166 → 202。
 #
 # 仕組み: @ignite (一時 option) へフレームごとに色を書き、refresh-client -S で status だけ再描画する。
 #   window-status-current-format は #{E:@cur-live} (= @ignite があればそれ、無ければ @cur-accent) を
@@ -22,8 +22,8 @@
 # なぜフレーム駆動か: status-interval は下限 1 秒で sub-second のフレーム源にならない。
 #   イベント駆動の明示 refresh なら可能 (同思想の前例: vendor/tmux-plugins/tmux-smooth-scroll)。
 #   CPU は切替の瞬間だけ数 fork で、常時負荷はゼロ (放置フェードと同じ哲学)。
-# 連打対策 (世代トークン): 起動ごとに @ignite-gen を自分の PID で上書きし、フレーム前に自分が
-#   最新世代かを確認する。負けた古いアニメは即座に降りる (unset は勝者に任せる)。
+# 連打対策 (世代トークン): 起動ごとに @ignite-gen を自分の PID で上書きし、各フレームは
+#   「世代一致なら実行」を tmux if -F でサーバ側判定する。負けた古いアニメは残りが no-op になる。
 #   失敗時 (フレーム中の kill) は trap + 次の切替の新世代で自己回復する。
 #
 # TT_IGNITE_DRYRUN=1: tmux への書き込みと sleep をせず、フレーム色を 1 行ずつ print する
@@ -55,8 +55,10 @@ set -- $(cube_of "$end_colour"); r1=$1 g1=$2 b1=$3
 
 # --- 経路の構築: 沈む D フレーム (前の色→暗) + 点火 A フレーム (暗→@cur-accent) ---
 # 速度 = 下の sleep 値 / 形 = D・A。調整ノブは docs/theme-colors.md 参照。
-D=2
-A=3
+# D=A=4 は 256色 cube の量子化上限 (これ以上増やしても中間色が存在せず dedup で消える)。
+# 滑らかさはフレーム数と等間隔ペーシングで稼ぐ (hot 起点で最大 8 フレーム × 35ms ≈ 0.28 秒)。
+D=4
+A=4
 frames=""
 last=""
 add() { [ "$1" = "$last" ] && return 0; frames="$frames $1"; last="$1"; }
@@ -90,19 +92,18 @@ fi
 gen=$$
 tmux set -g @ignite-gen "$gen" 2>/dev/null || exit 0
 
+# 後始末も if -F でサーバ側に条件判定させる (自分が最新世代のときだけ unset = 勝者のアニメを消さない)
 cleanup() {
-  # 自分が最新世代のときだけ後始末する (負けた側が勝者のアニメを消さない)
-  if [ "$(tmux show -gv @ignite-gen 2>/dev/null)" = "$gen" ]; then
-    tmux set -gu @ignite 2>/dev/null
-    tmux refresh-client -S 2>/dev/null
-  fi
+  tmux if -F "#{==:#{@ignite-gen},$gen}" 'set -gu @ignite ; refresh-client -S' 2>/dev/null
 }
 trap cleanup EXIT INT TERM HUP
 
+# フレーム = 「世代一致なら set+refresh」を tmux if -F でサーバ側原子実行 (1 フレーム 1 fork)。
+# 旧実装の show(世代確認)+set+refresh の 3 fork/フレームから削減 = フレームを倍にしても
+# 総 fork は減る。preempt された古いアニメは残りフレームが no-op になるだけで無害
+# (最大 ~0.3 秒 sleep して trap の条件付き後始末で終わる)。
 for c in $frames; do
-  [ "$(tmux show -gv @ignite-gen 2>/dev/null)" = "$gen" ] || exit 0
-  tmux set -g @ignite "$c"
-  tmux refresh-client -S
-  sleep 0.045
+  tmux if -F "#{==:#{@ignite-gen},$gen}" "set -g @ignite $c ; refresh-client -S" 2>/dev/null
+  sleep 0.035
 done
 # 最終フレーム (@ignite unset = 本来の @cur-accent へ) は trap cleanup が担う
