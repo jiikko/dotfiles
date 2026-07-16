@@ -1,9 +1,7 @@
-# parallel-each (Go) の静的解析。root Makefile の test-go-lint と CI
-# (.github/workflows/lint.yml の parallel-each-go-lint ジョブ) から
-# `make -C src/parallel-each lint` として呼ばれる自己完結ターゲット。
-# golangci-lint はインストール不要で go run 経由・バージョン固定。
-# 設定はこのディレクトリの .golangci.yml を自動で読む。
-# バージョンは .golangci.yml (version: "2") と整合させること。
+# parallel-each (Go) の静的解析とテスト。root Makefile の test-go-lint / test-go と CI
+# (.github/workflows/src_parallel-each.yml) から `make -C src/parallel-each lint|test` として
+# 呼ばれる自己完結ターゲット。golangci-lint はインストール不要で go run 経由・バージョン固定。
+# .golangci.yml は置いておらず既定 linter で運用 (カスタム lint が必要になったら glog を参照)。
 GOLANGCI_LINT_VERSION := v2.5.0
 
 .PHONY: lint test

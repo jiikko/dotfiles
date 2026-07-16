@@ -31,7 +31,7 @@ ZSH_SYNTAX_FILES := \
 # zsh 例外を除いた補集合。手書き列挙しない (発見された script は登録なしで自動的に lint 対象)。
 SHELLCHECK_FILES := $(filter-out $(ZSH_SYNTAX_FILES),$(shell scripts/discover_shell_scripts.sh))
 
-YAML_FILES := pre-commit-config.yml .github/dependabot.yml .github/workflows/tests.yml .github/workflows/lint.yml .github/workflows/karabiner.yml .github/workflows/bench.yml .github/workflows/src_glog.yml .github/actions/setup-nvim/action.yml
+YAML_FILES := pre-commit-config.yml .github/dependabot.yml .github/workflows/tests.yml .github/workflows/lint.yml .github/workflows/karabiner.yml .github/workflows/bench.yml .github/workflows/src_glog.yml .github/workflows/src_parallel-each.yml .github/workflows/src_disassemble_excel.yml .github/actions/setup-nvim/action.yml
 JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 # ruby -c で構文チェックする ruby ファイル (Brewfile は brew の ruby DSL)。
 # _gemrc は YAML だが yamllint default (document-start 必須等) に通らない形式のため
@@ -170,12 +170,12 @@ test-ruby-syntax:
 test-lint: test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax
 
 # Go プロジェクトの静的解析とテスト。実体は各ディレクトリの Makefile の lint / test
-# ターゲットに閉じており、ここはそれへ委譲するだけ。lint は zsh 系の test-lint と分離し、
-# CI では Go を用意した専用ジョブ (lint.yml の go-lint) から呼ぶ。test は root の
-# `make test` にも含める (ローカルのコミット前検証で Go テストが漏れないように)。
-# どちらも Go 未インストール環境では skip する。Makefile を持つ Go プロジェクトを
-# 追加したらここに列挙する (src/disassemble_excel は Makefile 無しのため対象外)。
-GO_PROJECT_DIRS := src/parallel-each src/glog
+# ターゲットに閉じており、ここはそれへ委譲するだけ (ローカルのコミット前検証用。root の
+# `make test` に test-go を含める = Go テストの漏れ防止)。CI ではプロジェクトごとの専用
+# workflow (.github/workflows/src_*.yml、paths filter 付き) が同じ lint / test を回す。
+# どちらも Go 未インストール環境では skip する。Go プロジェクトを追加したら
+# ①各プロジェクトに Makefile (lint/test) ②ここへ列挙 ③src_*.yml を対で作る、の 3 点セット。
+GO_PROJECT_DIRS := src/parallel-each src/glog src/disassemble_excel
 
 test-go-lint:
 	@if command -v go >/dev/null 2>&1; then \

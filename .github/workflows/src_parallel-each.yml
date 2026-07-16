@@ -1,0 +1,68 @@
+---
+# src/parallel-each (Go 製 並列実行 TUI) の lint + go test 専用 workflow (2026-07-17)。
+# lint はそれまで lint.yml go-lint job (paths filter なし = 非接触 push でも毎回実行) だったのを
+# karabiner.yml / src_glog.yml と同じ paths filter パターンでここへ移設。
+# test は「TUI 依存で重い」として CI 対象外だったが、実測 (2026-07-17, -count=1) で 8.7s と
+# CI 投入可能な軽さだったため解禁 (headless で pass することも Ubuntu コンテナで事前確認済み)。
+# ⚠️ paths filter 付きの check を branch protection の required check に登録しないこと
+#   (非接触 PR では run が生成されず check が永遠に pending になる)。
+name: src/parallel-each
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/parallel-each/**'
+      - .github/workflows/src_parallel-each.yml
+  pull_request:
+    paths:
+      - 'src/parallel-each/**'
+      - .github/workflows/src_parallel-each.yml
+  workflow_dispatch: # GitHub UI からの手動再実行用
+
+permissions:
+  contents: read
+
+# 同一 ref の連続 push では古い run を打ち切る (旧コミットの結果に価値が無いため)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # lint と test は独立 job: 並列実行 + 片方だけの再実行が可能
+  lint:
+    runs-on: ubuntu-slim
+    # 初回は golangci-lint を go run でソースからビルドするため余裕を持たせる (以降は cache)
+    timeout-minutes: 15
+    steps:
+      - name: Silence git init.defaultBranch hint
+        run: git config --global init.defaultBranch main
+
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: src/parallel-each/go.mod
+          cache-dependency-path: src/parallel-each/go.sum
+
+      - name: Lint
+        run: make -C src/parallel-each lint
+
+  test:
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    steps:
+      - name: Silence git init.defaultBranch hint
+        run: git config --global init.defaultBranch main
+
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: src/parallel-each/go.mod
+          cache-dependency-path: src/parallel-each/go.sum
+
+      - name: Test
+        run: make -C src/parallel-each test
