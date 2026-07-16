@@ -169,13 +169,17 @@ EOF
 
 ```bash
 stamp="$(date +%Y%m%d-%H%M%S).$$"
-reviewA="<scratchpad>/codex-drive.$stamp.reviewA.md"
-reviewB="<scratchpad>/codex-drive.$stamp.reviewB.md"
-# 2 本をそれぞれ run_in_background で起動 (観点だけ差し替える)。selector を併用したい時は codex exec -s read-only を使う。
+# 各観点を「別々の Bash 呼び出し」で run_in_background: true にして同時起動する (これが並列の実体)。
+# 1 つのシェルに複数行を並べると直列実行になるので分けること。selector 併用時は codex exec -s read-only を使う。
+# --- 観点A (Bash 呼び出し 1・run_in_background) ---
 command codex exec review -m gpt-5.6-luna -c model_reasoning_effort="low" \
-  --ephemeral -o "$reviewA" </dev/null "<観点A の指示。file:line・理由・最小修正案を。要約/称賛不要>" 2>&1 | tail -40
+  --ephemeral -o "<scratchpad>/codex-drive.$stamp.reviewA.md" </dev/null \
+  "<観点A の指示。file:line・理由・最小修正案を。要約/称賛不要>" 2>&1 | tail -40
+# --- 観点B (Bash 呼び出し 2・run_in_background で A と同時に) ---
 command codex exec review -m gpt-5.6-luna -c model_reasoning_effort="low" \
-  --ephemeral -o "$reviewB" </dev/null "<観点B の指示。file:line・理由・最小修正案を。要約/称賛不要>" 2>&1 | tail -40
+  --ephemeral -o "<scratchpad>/codex-drive.$stamp.reviewB.md" </dev/null \
+  "<観点B の指示。file:line・理由・最小修正案を。要約/称賛不要>" 2>&1 | tail -40
+# 3 観点に増やす場合は観点C も同じく別 Bash・run_in_background で起動する。
 ```
 
 - `command codex` / `</dev/null` / `--ephemeral -o` / `--full-auto` 禁止は **codex-review スキルが正本**。
@@ -219,10 +223,10 @@ command codex exec review -m gpt-5.6-luna -c model_reasoning_effort="low" \
 - ✓ codex に実装の主役を任せ、Claude は検証・観測・commit・反復に徹する
 - ✓ 1 マイルストーンに絞り、受け入れ条件 (検証方法) を先に決める
 - ✓ codex 出力は必ず build/test/diff で検閲してから commit
-- ✓ マイルストーン green 直後に codex を異なる 2 観点で並列レビューさせ、Claude が統合検閲してから commit
+- ✓ マイルストーン green 直後に codex を直交する複数観点 (既定2・広い時3) で並列レビューさせ、Claude が統合検閲してから commit
 - ✓ 失敗時は観測を増やしてから次の指示を出す (blind fix しない)
 - ✗ codex に git commit させる / 無検閲で commit する
-- ✗ 2観点を直交させず同じ観点で 2 本流す / レビュー出力を無検閲で採用する
+- ✗ 観点を直交させず同じ観点で複数本流す / 1 つのシェルに並べて直列実行する / レビュー出力を無検閲で採用する
 - ✗ 重い実装を Claude が自分で書く (trivial な確定修正は例外)
 - ✗ 「全部まとめて」を 1 回の codex 実行に投げる
 
