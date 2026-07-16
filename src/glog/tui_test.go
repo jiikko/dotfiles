@@ -723,6 +723,50 @@ func TestBuildPanelBoxWidths(t *testing.T) {
 	}
 }
 
+func TestJapanesePanelBoxWidths(t *testing.T) {
+	// 全角の job 名・タイトルでも罫線の幅が揃う (全角境界の切り詰め込み)
+	rows := []string{
+		"❯ ✓ テストジョブ (日本語)",
+		"  ✗ " + strings.Repeat("長", 40), // inner を超えて全角境界で切り詰められる
+	}
+	lines := buildPanelBox(" CI jobs: abc1234 日本語のサブジェクトがとても長い場合の切り詰め ", rows, 40, true)
+	for _, l := range lines {
+		if w := runewidth.StringWidth(stripANSI(l)); w != 40 {
+			t.Errorf("パネル行の幅 = %d; want 40: %q", w, l)
+		}
+	}
+}
+
+func TestJapaneseFullViewStaysInWidth(t *testing.T) {
+	// subject・message・diff 本文・job 名・詳細ログの全部が日本語でも View の全行が幅内
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.height = 40
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StateFailure
+	m.commits[0].Subject = "日本語のサブジェクト: 表示崩れの検証"
+	m.commits[0].Message = "日本語のサブジェクト: 表示崩れの検証\n\n" + strings.Repeat("本文の長い日本語テキスト。", 20)
+	m.commits[0].Body = "+\t日本語のコード行 := \"値\"\n-\tもう一行の日本語\n"
+	m.details[sha] = []CheckDetail{
+		{Name: "テスト (ユニット)", State: StateFailure, URL: "https://github.com/o/r/runs/1"},
+		{Name: strings.Repeat("長いジョブ名", 15), State: StateSuccess},
+	}
+	m.openPanel()
+	m.handleKey("j")
+	m.jobDetail[m.detailKey()] = []string{
+		strings.Repeat("日本語のログ行です。", 12),
+		"##[error]日本語のエラーメッセージ",
+	}
+	m.openJobDetail()
+	for line := range strings.SplitSeq(m.View(), "\n") {
+		if w := runewidth.StringWidth(stripANSI(line)); w > m.width {
+			t.Errorf("幅超過 (%d > %d): %q", w, m.width, line)
+		}
+	}
+	if !strings.Contains(m.View(), "テスト (ユニット)") {
+		t.Errorf("日本語 job 名が表示されていない:\n%s", m.View())
+	}
+}
+
 func TestBuildPanelBoxTitleStripsANSI(t *testing.T) {
 	// SGR 入りの job 名/subject がタイトルに載っても罫線幅と dim 塗りを崩さない
 	lines := buildPanelBox(" \x1b[31mred job\x1b[0m ", []string{"row"}, 40, false)

@@ -217,6 +217,42 @@ func TestRenderLinesExpandsBodyTabsInTUI(t *testing.T) {
 	}
 }
 
+func TestJapaneseOnelineAlignment(t *testing.T) {
+	// 全角 (幅 2) の subject/author が混ざっても列が揃う (幅計算が rune 数でなく
+	// 表示幅ベースであることの検証)
+	commits := []Commit{
+		{SHA: "a", ShortSHA: "aaaaaaa", Subject: "日本語のコミットメッセージ", Author: "川口", RelDate: "2 hours ago"},
+		{SHA: "b", ShortSHA: "bbbbbbb", Subject: "ascii subject", Author: "koji", RelDate: "1 day ago"},
+	}
+	lines := RenderLines(commits, map[string]CIState{"a": StateSuccess, "b": StateFailure}, RenderOpts{Oneline: true})
+	datePos := func(text, marker string) int {
+		idx := strings.Index(text, marker)
+		if idx < 0 {
+			t.Fatalf("%q に %q が無い", text, marker)
+		}
+		return runewidth.StringWidth(text[:idx])
+	}
+	p1 := datePos(lines[0].Text, "2 hours ago")
+	p2 := datePos(lines[1].Text, "1 day ago")
+	if p1 != p2 {
+		t.Errorf("日時列の開始桁が揃っていない: %d vs %d\n%q\n%q", p1, p2, lines[0].Text, lines[1].Text)
+	}
+}
+
+func TestJapaneseSubjectTruncation(t *testing.T) {
+	// 全角 subject の切り詰めが cap を超えない (全角境界で 1 桁はみ出さない)
+	commits := []Commit{{SHA: "a", ShortSHA: "aaaaaaa", Subject: strings.Repeat("長", 50), Author: "k", RelDate: "now"}}
+	lines := RenderLines(commits, map[string]CIState{"a": StateSuccess}, RenderOpts{Oneline: true})
+	if !strings.Contains(lines[0].Text, "…") {
+		t.Fatalf("切り詰めが起きていない: %q", lines[0].Text)
+	}
+	start := strings.Index(lines[0].Text, "長")
+	end := strings.Index(lines[0].Text, "…") + len("…")
+	if w := runewidth.StringWidth(lines[0].Text[start:end]); w > subjectWidthCap {
+		t.Errorf("subject 列の幅 = %d > cap %d", w, subjectWidthCap)
+	}
+}
+
 func TestWrapToWidth(t *testing.T) {
 	if got := wrapToWidth("short", 10); len(got) != 1 || got[0] != "short" {
 		t.Errorf("幅内の行が変更された: %v", got)
@@ -232,6 +268,17 @@ func TestWrapToWidth(t *testing.T) {
 	got = wrapToWidth("あああ", 5)
 	if len(got) != 2 || got[0] != "ああ" {
 		t.Errorf("全角折り返し = %v", got)
+	}
+	// 半角/全角混在でも各行が幅内に収まり、文字が失われない
+	mixed := "aあbいcうdえeお"
+	segs := wrapToWidth(mixed, 5)
+	if strings.Join(segs, "") != mixed {
+		t.Errorf("混在折り返しで文字が失われた: %v", segs)
+	}
+	for _, seg := range segs {
+		if w := runewidth.StringWidth(seg); w > 5 {
+			t.Errorf("混在折り返しの幅超過 (%d): %q", w, seg)
+		}
 	}
 }
 
