@@ -50,7 +50,7 @@ $ tmux kill-server
 
 # 復旧
 $ tmux
-# → 自動復元、または C-t Ctrl-r で手動復元
+# → 自動復元、または C-t Ctrl-r で手動復元 (確認 popup 付き)
 ```
 
 ## 方針（ベンダー運用）
@@ -106,7 +106,7 @@ git pull
 | キーバインド | 動作 |
 | ------------ | ---- |
 | `C-t Ctrl-s` | セッションを保存（このリポジトリでは保存 wrapper 経由） |
-| `C-t Ctrl-r` | セッションを復元 |
+| `C-t Ctrl-r` | セッションを復元（誤爆防止の gum confirm popup 経由） |
 
 保存先は `~/.tmux/resurrect/`。
 
