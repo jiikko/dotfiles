@@ -1,0 +1,11 @@
+# zsh bench の CI 予算 (ms)。tests/check_bench_budgets.sh が読む。
+# 各 metric の意味と計測方式 (min-of-5) は tests/zshrc/bench_zsh.sh のヘッダが一次情報。
+#
+# ⚠️ 暫定値 (2026-07-16 導入時点で CI 実測が未取得): ローカル (M3 Max) 実測
+# min-of-5 = startup 62ms / first_command 120ms を基に、CI (ubuntu-slim) の想定倍率
+# (nvim startup の実績でローカル比 ~3〜4 倍) + ノイズ余裕を乗せた粗い上限。
+# 初回 CI run の Step Summary 実測が取れたら、nvim startup と同じ「現在速度」ゲート
+# (直近実測 min の +~20%) へ絞ること。絞るまでは桁級の回帰しか捕まえられない。
+# min-of-5 前提の値: bench 側のサンプル数 N を変えたら実測を取り直して再較正すること。
+startup 500
+first_command 1000

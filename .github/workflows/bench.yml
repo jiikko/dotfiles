@@ -66,6 +66,37 @@ jobs:
           [ "$bench_rc" -eq 0 ] || { echo "::error::bench_nvim.sh failed (rc=$bench_rc)"; exit 1; }
           echo "$out" | tests/check_bench_budgets.sh tests/nvim/bench_budgets.ci
 
+  bench-zsh:
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    steps:
+      - name: Silence git init.defaultBranch hint
+        run: git config --global init.defaultBranch main
+
+      - uses: actions/checkout@v7
+
+      - name: Install runtime dependencies (zsh)
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zsh
+
+      # zshenv→zshrc→zlogin の全ロードコスト (startup) と、対話シェルが入力を受け付けて
+      # 最初のコマンドが返るまで (first_command、zpty 計測) をゲートする。
+      # 詳細は tests/zshrc/bench_zsh.sh のヘッダ参照
+      - name: Bench zsh startup (budget check)
+        run: |
+          bench_rc=0; out="$(tests/zshrc/bench_zsh.sh)" || bench_rc=$?
+          {
+            echo "### zsh bench"
+            echo '```'
+            echo "$out"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$bench_rc" -eq 0 ] || { echo "::error::bench_zsh.sh failed (rc=$bench_rc)"; exit 1; }
+          echo "$out" | tests/check_bench_budgets.sh tests/zshrc/bench_budgets.ci
+
   bench-tmux:
     runs-on: ubuntu-slim
     timeout-minutes: 10
