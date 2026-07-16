@@ -69,7 +69,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: pull test test-runtime test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-go-lint test-registration test-lint-coverage print-lint-files
+.PHONY: pull test test-runtime test-discovered test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-go-lint test-lint-coverage print-lint-files
 
 # settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
 # pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、
@@ -81,62 +81,45 @@ pull:
 
 test: test-lint test-runtime
 
-test-runtime: test-syntax test-zshrc test-bats test-nvim test-tmux test-setup test-registration
+test-runtime: test-syntax test-discovered test-bats
 
+# tests/ 配下のテストを自動発見して実行する共通ルール。発見規約: test_*.sh (ファイル名に
+# *helper* を含むものは除く。ヘルパーは lib/ か非 test_ 名で置く)。この規約を満たすファイルを
+# 置くだけで実行対象になる = Makefile への登録が不要で、死蔵テスト (書いたのに CI で走らない)
+# が構造的に発生しない。ファイル名の空白・改行は非対応 (旧・手動列挙時代と同じ前提)。
+# 発見 0 件は fail にする (テストを持つディレクトリしか対象にしないため、0 件 = ディレクトリの
+# 改名/不在や find の失敗がパイプに隠れて「未実行なのに成功」する状態。それを弾く)。
+define run_tests
+tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' | sort); \
+[ -n "$$tests" ] || { echo "✗ $(1) 配下にテストが見つかりません (find 失敗 or 0 件)" >&2; exit 1; }; \
+printf '%s\n' "$$tests" | while IFS= read -r t; do echo "[run] $$t"; "$$t" || exit 1; done
+endef
+
+# test-runtime の実行本体。tests/ 全体を走査するため、新ディレクトリ tests/foo/ を作っても
+# 自動で拾われる (ディレクトリ単位の死蔵も発生しない)。tests/ 直下の meta テスト
+# (test_lint_coverage.sh) もここで走る (test-lint 側と重複実行になるが高速なので許容)。
+test-discovered:
+	@$(call run_tests,tests)
+
+# 以下の test-<領域> は人間の選択実行用の便宜フィルタ。test-runtime の実行経路は
+# test-discovered に一本化されているため、新領域をここに足し忘れても死蔵は生まない。
 test-nvim:
-	@tests/nvim/test_nvim.sh
-	@tests/nvim/test_ftplugins.sh
-	@tests/nvim/test_ambiwidth.sh
-	@tests/nvim/test_smooth_scroll.sh
+	@$(call run_tests,tests/nvim)
 
 test-tmux:
-	@tests/tmux/test_tmux.sh
-	@tests/tmux/test_fork_scratch.sh
-	@tests/tmux/test_reap_orphan_servers.sh
-	@tests/tmux/test_version_gte.sh
-	@tests/tmux/test_smooth_scroll_unit.sh
-	@tests/tmux/test_smooth_scroll.sh
+	@$(call run_tests,tests/tmux)
 
 test-setup:
-	@tests/setup/test_setup.sh
+	@$(call run_tests,tests/setup)
 
 test-zshrc:
-	@tests/zshrc/test_zshrc.sh
-	@tests/zshrc/ai-commands/test_ai_commands.sh
-	@tests/zshrc/tmux-window-name/test_tmux_window_name.sh
-	@tests/zshrc/tmux-session/test_tt.sh
-	@tests/zshrc/tmux-session/test_debounced_save.sh
-	@tests/zshrc/tmux-session/test_resurrect_save_lock.sh
-	@tests/zshrc/av1ify/test_av1ify_basic.sh
-	@tests/zshrc/av1ify/test_av1ify_audio.sh
-	@tests/zshrc/av1ify/test_av1ify_options.sh
-	@tests/zshrc/av1ify/test_av1ify_postcheck.sh
-	@tests/zshrc/av1ify/test_av1ify_variants.sh
-	@tests/zshrc/av1ify/test_av1ify_force.sh
-	@tests/zshrc/av1ify/test_av1ify_ng_list.sh
-	@tests/zshrc/av1ify/test_av1ify_prefetch.sh
-	@tests/zshrc/av1ify/test_av1ify_avsync.sh
-	@tests/zshrc/validate-mp4/test_validate_mp4.sh
-	@tests/zshrc/concat/test_concat_basic.sh
-	@tests/zshrc/concat/test_concat_edge.sh
-	@tests/zshrc/concat/test_concat_missing.sh
-	@tests/zshrc/concat/test_concat_frame_hash_seek.sh
-	@tests/zshrc/concat/test_concat_cleanup.sh
-	@tests/zshrc/concat/test_concat_force.sh
-	@tests/zshrc/concat/test_concat_option_position.sh
-	@tests/zshrc/concat/test_concat_output_info.sh
-	@tests/zshrc/concat/test_concat_space_grouping.sh
-	@tests/zshrc/concat/test_concat_stdout_leak.sh
-	@tests/zshrc/concat/test_concat_time_base.sh
-	@tests/zshrc/concat/test_concat_verify_order.sh
-	@tests/zshrc/repair_mp4/test_repair_mp4.sh
-	@tests/zshrc/repair_mp4/test_repair.sh
-	@tests/zshrc/test_video_health.sh
-	@tests/zshrc/lazy-loading/test_version_managers.sh
+	@$(call run_tests,tests/zshrc)
 
+# .bats も同じ規約で自動発見する (発見 0 件なら何もせず成功)。bats 未インストール環境では skip。
 test-bats:
 	@if command -v bats >/dev/null 2>&1; then \
-		bats tests/_ensure_cli_with_brew.bats; \
+		find tests -type f -name '*.bats' ! -name '*helper*' | sort | \
+			while IFS= read -r t; do echo "[run] $$t"; bats "$$t" || exit 1; done; \
 	else \
 		echo "bats not found, skipping bats tests"; \
 	fi
@@ -224,10 +207,6 @@ test-go-lint:
 	else \
 		echo "[go-lint] go not found; skipping golangci-lint"; \
 	fi
-
-# tests/ 配下のテストが Makefile に登録されているか検証し、死蔵テストを防ぐ meta テスト。
-test-registration:
-	@tests/test_registration.sh
 
 # 全 shell script が lint リスト (SHELLCHECK_FILES / ZSH_SYNTAX_FILES) に登録され、かつ列挙が
 # 実在するか検証する meta テスト。script 増減時のリスト追従漏れ (未 lint / 削除残りで shellcheck が

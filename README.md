@@ -31,7 +31,7 @@ make test-shellcheck # runs shellcheck on shell-compatible scripts
 make test-yaml   # yamllint on workflow/pre-commit config
 make test-json   # jq validation for JSON configs
 make test-lint   # aggregate lint target (shellcheck + YAML + JSON)
-make test-runtime # aggregate runtime target (syntax + zshrc + nvim + tmux + setup)
+make test-runtime # aggregate runtime target (syntax + auto-discovered tests/**/test_*.sh + bats)
 make test-bats   # bats tests (skips if bats is not installed)
 tests/zshrc/test_zshrc.sh  # existing zsh tests (also run via make test)
 ```

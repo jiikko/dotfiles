@@ -1,6 +1,6 @@
 #!/bin/sh
 # test_lint_coverage.sh — 全 shell script が Makefile の lint リストに登録され、かつ列挙が
-# 実在ファイルを指すか検証する meta テスト (test_registration.sh の lint リスト版)。
+# 実在ファイルを指すか検証する meta テスト。
 #
 # 目的: scripts を増減したとき Makefile の SHELLCHECK_FILES / ZSH_SYNTAX_FILES への追従を忘れ、
 #   (a) 新 script が lint されないまま放置 / (b) 削除済み script がリストに残り shellcheck が
