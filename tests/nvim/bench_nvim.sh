@@ -15,6 +15,12 @@
 set -euo pipefail
 unset CDPATH
 
+# checker の数値検証 (^[0-9]+(\.[0-9]+)?$) と min 抽出の sort -n は dot 小数前提。カンマ小数
+# ロケールの影響を数値カテゴリだけ C 固定で封じる (LC_ALL は全カテゴリを上書きするので unset。
+# nvim 内部の %.1f は Vim 自体が LC_NUMERIC=C を強制するため元から安全、露出は shell 側のみ)
+unset LC_ALL
+export LC_NUMERIC=C
+
 NVIM_BIN=${NVIM:-nvim}
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)

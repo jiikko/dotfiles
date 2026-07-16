@@ -15,12 +15,17 @@
 #                        1 切替あたり数十 ms 相当になる = 意図したコスト。budget 参照)
 #   - mark_seen_direct : tmux-mark-seen.sh の同期実行 1 回あたり (hook の実コスト)
 #
-# 出力: "metric=<name> ms=<value>" 行の列挙。CI では report-only (閾値 fail なし。
-# shared runner のノイズが大きいため。経時トレンドと A/B 比較用)。
+# 出力: "metric=<name> ms=<value>" 行の列挙。CI では tests/check_bench_budgets.sh が
+# tests/tmux/bench_budgets.ci の予算と突き合わせ、超過で fail する (デグレ検出ゲート)。
 # 隔離方針は tests/tmux/test_tmux.sh と同一 (専用 socket / HOME ごと temp / resurrect 隔離)。
 
 set -euo pipefail
 unset CDPATH
+
+# checker の数値検証 (^[0-9]+(\.[0-9]+)?$) は dot 小数前提。カンマ小数ロケールでは printf %.1f が
+# "12,3" を出すため数値カテゴリだけ C に固定する (LC_ALL は全カテゴリを上書きするので unset が必要)
+unset LC_ALL
+export LC_NUMERIC=C
 
 TMUX_BIN_PATH=${TMUX_BIN:-tmux}
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
