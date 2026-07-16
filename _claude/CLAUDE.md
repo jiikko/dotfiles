@@ -14,7 +14,8 @@
 
 ## 並行作業者がいるときの worktree 退避
 
-- **他の作業者（並行セッション・人間）の存在をファイル変更から確認できた場合**（例: `git status` に自分が触っていない modified / staged / untracked が現れる、直近コミットに自分の知らない作業が積まれている）、**git worktree を作成してそこへ移動して作業してよい**（共有 working tree の index 競合・変更巻き込みを構造的に回避するため）
+- **自分が作業を開始した後に、他の作業者（並行セッション・人間）によるファイル変更を確認できた場合**（例: 作業開始時点には無かった untracked ファイルが増えた、自分が触っていないファイルに新しい差分・ステージが現れた、自分の知らないコミットが積まれた）、**git worktree を作成してそこへ移動して作業してよい**（共有 working tree の index 競合・変更巻き込みを構造的に回避するため）
+- **作業開始時点から存在する** dirty / untracked はこの条件に含めない（過去の作業の残骸かもしれず「今まさに並行作業中」の証拠ではない）。それらは従来どおり「触らない・巻き込まない」で共有 working tree のまま続行してよい
 - worktree で作った**コミットを master ブランチへ移動できた時点で、作成した worktree は必ず削除する**（`git worktree remove`）。worktree を残したまま作業を終えない（放置 worktree は「どこに何があるか分からない」状態と stale ブランチを量産する）
 - worktree を使わず共有 working tree に留まる場合は、pathspec 明示 commit の規律に従う（[`commit-with-pathspec.md`](rules/commit-with-pathspec.md)）
 
