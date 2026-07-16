@@ -7,15 +7,18 @@
 #
 # startup だけは粗い上限でなく「現在速度」ゲート (2026-07-16 に引き締め):
 # bench 側が min-of-5 を出すようになった (ノイズは片側性なので min が真の速度の最良推定)。
-# 根拠 = 直近 15 run (2026-07-15..16) の min-of-3 実測が 166..248ms、生サンプル最大 409ms。
-# 300 = worst 観測 min + ~20% (min-of-5 化でさらに尾が縮む)。flake したらまずこのコメントの
-# 実測分布を gh run のログ (grep 'metric=startup') で取り直してから広げること。
-# この 300 は「min-of-5」前提の値: bench 側のサンプル数 N を変えると min の分布も動くので、
+# 根拠 = 旧環境 15 run の min-of-3 実測 166..248ms (生サンプル最大 409ms)。当初 300 で導入したが、
+# bench.yml 分離 (3 job 並列) 後の初回実測で min-of-5 の worst 273.7ms を観測 (全サンプル 274..395ms
+# に沈む sustained contention の run が 2 run 中 1 回) し、margin 9% は flake 圏内のため 350 へ調整。
+# 350 = 新環境 worst 観測 min + ~28% (それでも旧上限 500 より 30% タイト)。
+# flake したらまずこのコメントの実測分布を gh run のログ (grep 'metric=startup') で取り直してから
+# 広げること。逆に混雑 run の min が安定して低ければ絞り直してよい。
+# この閾値は「min-of-5」前提の値: bench 側のサンプル数 N を変えると min の分布も動くので、
 # N を変えたら実測を取り直して閾値も再較正すること。
 # min でなく median にしない理由: 同 15 run の per-run median は最大 357ms で、median ゲートは
 # 予算 ~430ms が必要になり引き締めの目的が崩れる。捕まえたい回帰 (プラグイン追加等の決定的な
 # config コスト増) は全サンプルに乗るので min でも漏れない。
-startup 300
+startup 350
 bufload 600
 scroll_j_x2000 400
 scroll_ctrl_d_x200 100
