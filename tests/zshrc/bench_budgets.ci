@@ -9,3 +9,6 @@
 # min-of-5 前提の値: bench 側のサンプル数 N を変えたら実測を取り直して再較正すること。
 startup 500
 first_command 1000
+# prompt_lag はローカル実測 min-of-5 = 37ms (遅い precmd 200ms を注入すると 253ms に跳ねることを
+# A/B で確認済み = precmd 回帰の検出器として機能する)。CI 実測が取れたら同様に絞る。
+prompt_lag 500
