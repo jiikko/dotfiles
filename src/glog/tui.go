@@ -297,25 +297,29 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	m.notice = ""
-	if key == "q" || key == "ctrl+c" {
-		m.cancel()
-		if m.fetching {
-			m.fillUnknown()
+	if key == "ctrl+c" {
+		return m.quit()
+	}
+	// q はビューのスタックを 1 段戻る (tig 流。ユーザー要望): 詳細 → job 一覧 →
+	// コミット一覧、と閉じていき、最上位でだけ終了。即終了したいときは Ctrl-C
+	if key == "q" {
+		switch {
+		case m.detailOpen:
+			m.detailOpen = false
+			m.detailOffset = 0
+		case m.panelSHA != "":
+			m.closePanel()
+		default:
+			return m.quit()
 		}
-		m.done = true
-		return m, tea.Quit
+		return m, nil
 	}
 	if m.panelSHA != "" {
 		return m.handlePanelKey(key)
 	}
 	switch key {
 	case "esc":
-		m.cancel()
-		if m.fetching {
-			m.fillUnknown()
-		}
-		m.done = true
-		return m, tea.Quit
+		return m.quit()
 	case "j", "down", "ctrl+n":
 		m.cursor = clampIdx(m.cursor+1, len(m.commits))
 		m.ensureCursorVisible()
@@ -340,6 +344,16 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.openPR()
 	}
 	return m, nil
+}
+
+// quit はアプリ全体を終了する (取得中断分は unknown へ落とす)。
+func (m *browseModel) quit() (tea.Model, tea.Cmd) {
+	m.cancel()
+	if m.fetching {
+		m.fillUnknown()
+	}
+	m.done = true
+	return m, tea.Quit
 }
 
 // handlePanelKey は job パネル表示中のキー操作。j/k はパネル内のフォーカス移動になる。
@@ -840,14 +854,14 @@ func cursorMark(colored bool) string {
 }
 
 func (m *browseModel) hintLine() string {
-	hint := "j/k: 移動  Enter: CI job  y: URL コピー  q: 終了"
+	hint := "j/k: 移動  Enter: CI job  p: PR  y: URL コピー  q: 終了"
 	switch {
 	case m.detailOpen:
-		hint = "j/k: スクロール  Enter/h: 戻る  o: ブラウザ  y: URL コピー  q: 終了"
+		hint = "j/k: スクロール  Enter/h/q: 戻る  o: ブラウザ  y: URL コピー"
 	case m.panelSHA != "" && m.panelCursor >= 0:
-		hint = "j/k: job 移動  Enter: 詳細ログ  o: ブラウザ  y: URL コピー  h: 閉じる  q: 終了"
+		hint = "j/k: job 移動  Enter: 詳細ログ  o: ブラウザ  y: URL コピー  h/q: 閉じる"
 	case m.panelSHA != "":
-		hint = "j: job を選択  y: commit URL  Enter/h/Esc: 閉じる  q: 終了"
+		hint = "j: job を選択  y: commit URL  Enter/h/q: 閉じる"
 	}
 	if m.fetching {
 		hint = m.spinner() + " CI 状態を取得中...  " + hint

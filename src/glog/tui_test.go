@@ -370,15 +370,42 @@ func TestBrowseBatchedRunesKeyMsg(t *testing.T) {
 	}
 }
 
-func TestBrowseQuitWorksWhilePanelOpen(t *testing.T) {
-	// パネル表示中でも q はアプリ終了
+func TestBrowseQPopsViewStack(t *testing.T) {
+	// q はビューのスタックを 1 段戻る (詳細 → job 一覧 → コミット一覧 → 終了)。
+	// 即終了は Ctrl-C (ユーザー要望: tig 流)
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateSuccess)
 	withJobs(m, 0)
 	m.openPanel()
+	m.handleKey("j")
+	m.jobDetail[m.detailKey()] = []string{"line"}
+	m.openJobDetail()
+	m.handleKey("q")
+	if m.detailOpen || m.panelSHA == "" || m.done {
+		t.Fatalf("q 1回目: 詳細だけ閉じるべき (detailOpen=%v panelSHA=%q done=%v)", m.detailOpen, m.panelSHA, m.done)
+	}
+	m.handleKey("q")
+	if m.panelSHA != "" || m.done {
+		t.Fatalf("q 2回目: パネルだけ閉じるべき (panelSHA=%q done=%v)", m.panelSHA, m.done)
+	}
 	_, cmd := m.handleKey("q")
 	if cmd == nil || !m.done {
-		t.Errorf("パネル表示中の q で終了しない")
+		t.Errorf("q 3回目 (一覧) で終了しない")
+	}
+}
+
+func TestBrowseCtrlCQuitsAnywhere(t *testing.T) {
+	// Ctrl-C はどの階層からでも即終了
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+	withJobs(m, 0)
+	m.openPanel()
+	m.handleKey("j")
+	m.jobDetail[m.detailKey()] = []string{"line"}
+	m.openJobDetail()
+	_, cmd := m.handleKey("ctrl+c")
+	if cmd == nil || !m.done {
+		t.Errorf("詳細表示中の Ctrl-C で即終了しない")
 	}
 }
 
