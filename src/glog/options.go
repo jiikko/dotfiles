@@ -177,17 +177,17 @@ func Usage() string {
   j / k / ↑ / ↓ / Ctrl-N / Ctrl-P
                             カーソル移動
   Enter / Space / l / → / Tab
-                            CI job 一覧をパネル (画面上部のポップアップ) で開く
+                            CI job 一覧のポップアップを開く (コミット直下に表示)
   Ctrl-D / Ctrl-U / PgDn / PgUp
                             ページスクロール
   g / G                     先頭 / 末尾のコミットへ
   q / Ctrl-C                終了 (最終表示はターミナル履歴に残る)
 
-CI job パネル表示中:
+CI job ポップアップ表示中:
   j / k / ↑ / ↓ / Ctrl-N / Ctrl-P
                             job 移動
-  Enter / Space             選択中の job の詳細ページをブラウザで開く
-  h / ← / Esc               パネルを閉じてコミット一覧へ戻る
+  Space / o                 選択中の job の詳細ページをブラウザで開く
+  Enter / h / ← / Esc       ポップアップを閉じる (Enter は開閉の toggle)
   q / Ctrl-C                終了
 
   全件キャッシュ済みで 1 画面に収まる場合は、ブラウズを開かずそのまま

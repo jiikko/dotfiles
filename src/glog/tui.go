@@ -228,10 +228,12 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 }
 
 // handlePanelKey は job パネル表示中のキー操作。j/k はパネル内の job 移動になる。
+// Enter はパネルの toggle (閉じる) に割り当てるため (ユーザー要望)、ブラウザ起動は
+// Space / o に置く。
 func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 	jobs := m.details[m.panelSHA]
 	switch key {
-	case "esc", "h", "left":
+	case "enter", "esc", "h", "left":
 		m.closePanel()
 	case "j", "down", "ctrl+n":
 		m.panelCursor = clampIdx(m.panelCursor+1, len(jobs))
@@ -241,7 +243,7 @@ func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 		m.panelCursor = 0
 	case "G", "end":
 		m.panelCursor = clampIdx(len(jobs)-1, len(jobs))
-	case "enter", " ":
+	case " ", "o":
 		return m, m.openJob()
 	}
 	return m, nil
@@ -385,12 +387,17 @@ func (m *browseModel) View() string {
 		}
 		window = append(window, clipToWidth(text, m.width))
 	}
-	// job パネルはビューポート上部へ「重ねる」(リスト行を置き換える)。リストの行構成
-	// 自体は変えないので、開閉で後続行がずれない
+	// job パネルは対象コミットのヘッダー行直下へ「重ねる」(リスト行を置き換える)。
+	// リストの行構成自体は変えないので、開閉で後続行がずれない。
+	// 下に収まらない場合はビューポート内へ収まる位置まで引き上げる
 	if panel := m.panelLines(); len(panel) > 0 {
+		start := m.panelAnchor(lines, offset) + 1
+		start = min(start, max(page-len(panel), 0))
+		start = max(start, 0)
 		for i, p := range panel {
-			if i < len(window) {
-				window[i] = p
+			pos := start + i
+			if pos < len(window) {
+				window[pos] = p
 			} else if len(window) < page {
 				window = append(window, p)
 			}
@@ -403,6 +410,17 @@ func (m *browseModel) View() string {
 	}
 	b.WriteString(m.hintLine())
 	return b.String()
+}
+
+// panelAnchor はパネル対象コミットのヘッダー行のウィンドウ内位置を返す
+// (ウィンドウ外へスクロールしている場合は先頭 -1 = パネルは最上部に出る)。
+func (m *browseModel) panelAnchor(lines []Line, offset int) int {
+	for i, l := range lines {
+		if l.Header && l.CommitIdx < len(m.commits) && m.commits[l.CommitIdx].SHA == m.panelSHA {
+			return i - offset
+		}
+	}
+	return -1
 }
 
 // panelLines は job パネルの描画行 (枠付き)。パネル非表示なら nil。
@@ -481,7 +499,7 @@ func cursorMark(colored bool) string {
 func (m *browseModel) hintLine() string {
 	hint := "j/k: 移動  Enter: CI job  q: 終了"
 	if m.panelSHA != "" {
-		hint = "j/k: job 移動  Enter: ブラウザで開く  h/Esc: 閉じる  q: 終了"
+		hint = "j/k: job 移動  Space/o: ブラウザで開く  Enter/h: 閉じる  q: 終了"
 	}
 	if m.fetching {
 		hint = m.spinner() + " CI 状態を取得中...  " + hint

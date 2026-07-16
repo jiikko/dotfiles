@@ -112,6 +112,63 @@ func TestBrowsePanelOpenClose(t *testing.T) {
 	}
 }
 
+func TestBrowsePanelEnterToggles(t *testing.T) {
+	// Enter は popup の表示・非表示の toggle (ユーザー要望)
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+	withJobs(m, 0)
+	m.handleKey("enter")
+	if m.panelSHA == "" {
+		t.Fatalf("Enter でパネルが開かない")
+	}
+	m.handleKey("enter")
+	if m.panelSHA != "" || m.done {
+		t.Errorf("Enter 2 回目でパネルが閉じない: panelSHA=%q done=%v", m.panelSHA, m.done)
+	}
+}
+
+func TestBrowsePanelAnchoredAtCommit(t *testing.T) {
+	// パネルは一律上部でなく、対象コミットのヘッダー行直下に出る (ユーザー要望)
+	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m.height = 40 // 3 コミットが全部見える高さ
+	m.statuses = statusesFor(m, StateSuccess)
+	withJobs(m, 1)
+	m.handleKey("j") // 2 番目のコミットへ
+	m.openPanel()
+	view := strings.Split(m.View(), "\n")
+	headerIdx, panelIdx := -1, -1
+	for i, line := range view {
+		if strings.Contains(line, "commit "+m.commits[1].SHA) {
+			headerIdx = i
+		}
+		if panelIdx == -1 && strings.Contains(line, "CI jobs:") {
+			panelIdx = i
+		}
+	}
+	if headerIdx == -1 || panelIdx == -1 {
+		t.Fatalf("ヘッダー行 (%d) かパネル (%d) が見つからない:\n%s", headerIdx, panelIdx, m.View())
+	}
+	if panelIdx != headerIdx+1 {
+		t.Errorf("パネル位置 = %d 行目; want ヘッダー直下 %d 行目:\n%s", panelIdx, headerIdx+1, m.View())
+	}
+}
+
+func TestBrowsePanelClampedToViewport(t *testing.T) {
+	// 対象コミットが画面下部でも、パネルはビューポート内へ収まる位置に出る
+	m := newTestBrowse(t, 5, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+	withJobs(m, 4)
+	m.handleKey("G") // 末尾コミットへ (ヘッダーはビューポート下端付近)
+	m.openPanel()
+	view := m.View()
+	if !strings.Contains(view, "CI jobs:") || !strings.Contains(view, "✓ build") {
+		t.Errorf("下端のコミットでパネルが見えていない:\n%s", view)
+	}
+	if got := strings.Count(view, "\n"); got+1 > m.pageSize()+1 {
+		t.Errorf("パネルでビューポートが伸びた: %d 行", got+1)
+	}
+}
+
 func TestBrowsePanelKeepsListHeight(t *testing.T) {
 	// パネルはリストへ行を差し込まず上へ重ねるため、View の行数は開閉で変わらない
 	// (高さのガタつき防止: ユーザー要望の回帰テスト)
@@ -138,10 +195,10 @@ func TestBrowsePanelJobCursorAndOpen(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { openInBrowser = orig })
-	// job0 (URL あり) で Enter → ブラウザで開く
-	_, cmd := m.handleKey("enter")
+	// job0 (URL あり) で Space → ブラウザで開く (Enter はパネル toggle に使うため)
+	_, cmd := m.handleKey(" ")
 	if cmd == nil {
-		t.Fatalf("job 上の Enter で Cmd が返らない")
+		t.Fatalf("job 上の Space で Cmd が返らない")
 	}
 	if msg := cmd(); msg.(openURLMsg).err != nil {
 		t.Fatalf("openURLMsg.err = %v", msg.(openURLMsg).err)
@@ -155,8 +212,8 @@ func TestBrowsePanelJobCursorAndOpen(t *testing.T) {
 	if m.panelCursor != 1 {
 		t.Errorf("panelCursor = %d; want 1", m.panelCursor)
 	}
-	// job1 (URL なし) は notice を出して開かない
-	_, cmd = m.handleKey("enter")
+	// job1 (URL なし) は notice を出して開かない (o でも同じ経路)
+	_, cmd = m.handleKey("o")
 	if cmd != nil {
 		t.Errorf("URL なし job で Cmd が返った")
 	}
