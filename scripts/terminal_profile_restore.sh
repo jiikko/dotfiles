@@ -31,7 +31,10 @@ if pgrep -xq Terminal; then
     echo "✗ swift が無い (色デコードに必要)。Terminal を終了してから再実行すれば defaults 経路で設定できる。" >&2
     exit 1
   }
-  colors=$(swift "$SCRIPT_DIR/lib/terminal_profile_colors.swift" "$FILE")
+  # -suppress-warnings: 旧 streamtyped blob 用の NSUnarchiver フォールバック (swift 側の
+  # ヘッダ参照) が意図的な deprecated API 使用のため、setup.sh 実行のたびに数十行の
+  # deprecation warning が出るのを抑止する
+  colors=$(swift -suppress-warnings "$SCRIPT_DIR/lib/terminal_profile_colors.swift" "$FILE")
   as_lines="tell application \"Terminal\"
   if not (exists settings set \"$NAME\") then
     make new settings set with properties {name:\"$NAME\"}
