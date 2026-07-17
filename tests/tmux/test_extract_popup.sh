@@ -63,9 +63,11 @@ grep -q $'url \x1b\[0m\thttps://example.com/a$' "$FZF_IN" \
 printf '✓ URL 抽出 + 末尾の「).」除去\n'
 [[ "$(grep -c 'src/main.go:12' "$FZF_IN")" -eq 1 ]] || { printf '✗ dedup されていない\n'; exit 1; }
 printf '✓ 同一断片は dedup される\n'
-first_url_line=$(grep -n 'https://example.com/a' "$FZF_IN" | cut -d: -f1)
-hash_line=$(grep -n 'deadbeef1' "$FZF_IN" | cut -d: -f1)
-[[ "$first_url_line" -lt "$hash_line" ]] || { printf '✗ 新しい行 (画面下) の断片が優先されていない\n'; exit 1; }
+# grep 0 件でも set -e で無言死せず ✗ を出す (CI で診断ゼロのまま落ちた実例: run 29556210784)
+first_url_line=$(grep -n 'https://example.com/a' "$FZF_IN" | cut -d: -f1 || true)
+hash_line=$(grep -n 'deadbeef1' "$FZF_IN" | cut -d: -f1 || true)
+[[ -n "$first_url_line" && -n "$hash_line" && "$first_url_line" -lt "$hash_line" ]] \
+  || { printf '✗ 新しい行 (画面下) の断片が優先されていない (url=%s hash=%s):\n' "${first_url_line:-none}" "${hash_line:-none}"; cat "$FZF_IN"; exit 1; }
 printf '✓ 画面下 (新しい行) の断片が先に並ぶ\n'
 [[ "$RC" -eq 0 ]] || { printf '✗ fzf キャンセルで exit %s (0 のはず)\n' "$RC"; exit 1; }
 printf '✓ fzf キャンセル → 何もせず exit 0\n'

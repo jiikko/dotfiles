@@ -45,11 +45,13 @@ list=$(printf '%s\n' "$captured" | awk '
       gsub(/^[("'"'"'`\[<]+|[)"'"'"'`\]>.,;:]+$/, "", t)
       if (t == "") continue
       if (t ~ /^https?:\/\//) continue                    # url で拾済
+      # 桁数は {7,40} 等の interval 指定でなく length() で判定する (mawk が interval
+      # 未対応でリテラル解釈し、Linux CI で hash/word が 1 件も抽出されなくなる)
       if (t ~ /\// || t ~ /^[A-Za-z0-9_.-]+\.[a-z]+:[0-9]+$/)
         print "\033[33mpath\033[0m\t" t
-      else if (t ~ /^[0-9a-f]{7,40}$/ && t ~ /[a-f]/)
+      else if (t ~ /^[0-9a-f]+$/ && t ~ /[a-f]/ && length(t) >= 7 && length(t) <= 40)
         print "\033[35mhash\033[0m\t" t
-      else if (t ~ /^[A-Za-z0-9_.-]{5,}$/)
+      else if (t ~ /^[A-Za-z0-9_.-]+$/ && length(t) >= 5)
         print "\033[90mword\033[0m\t" t
     }
   }' | awk -F'\t' '!seen[$2]++')
