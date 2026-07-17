@@ -7,16 +7,16 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 
 | 意味 | 色 | tmux 側 | nvim 側 |
 |---|---|---|---|
-| **現在地** (いまここ) | 蛍光オレンジ `#FF5F00`/202 (cterm 完全一致) | `@cur-accent` (current window 島) | `palette.accent.current_accent` (bufferline 選択タブ。選択バーはクリーム light1=蛍光橙地で橙マーカーが消えるため) |
+| **現在地** (いまここ) | 蛍光オレンジ `#FF5F00`/202 (cterm 完全一致) | `@cur-accent` (current window 島) | `palette.accent.current_accent` (bufferline 選択タブの pill。両端キャップも同色) |
 | 最近作業した (鮮度) | バイオレット ramp 201→164→127→90→53 (黄昏の残光) | `@fade-*` (放置フェード) | — (対応概念なし。持ち込まない) |
 | 選択中テキスト | Kraft `#D4A27F`/180 | — | `palette.accent.kraft` (Visual)。現在地 (蛍光オレンジ) より一段落ち着けたのは意図的 (長時間注視するため)。truecolor/256色の両環境に適用 |
 | 通知 (bell/メッセージ) | シアン 51 (稀なイベントの ping) | bell セル反転・message-style (alert 帯/: プロンプト)・copy-mode current match | — |
 | マーカー (未保存) | 橙 208 | copy-mode mark 行 | `palette.bright_orange` (incline ● のみ) |
-| 選択バー (bufferline) | クリーム light1 `#ebdbb2`/223 | — | `palette.light1` (indicator_selected。橙系は蛍光橙地 202 と近接して不可視になるため使わない) |
+| 選択バー (bufferline) | — (pill 化で廃止 2026-07-17) | — | slant 系スタイルではインジケータバー自体が描画されない。選択の強調は pill のキャップ (現在地色) が担う。indicator_selected のクリーム light1 指定は非 slant へ戻したとき用に残置 (橙系は蛍光橙地 202 と近接して不可視になるため使わない、の判断ごと保存) |
 | 点滅/scratch アイデンティティ | マゼンタ 201 | prefix/SCRATCH 点滅・scratch チップ/popup 枠 (fade hot 201 と紛れるなら 213 へ。ライブ判断) | — |
 | 危険/警告状態 | 赤 160 (zoom) / 196 (sync) | `@zoom-accent` / pane-border sync | `palette.diag.error_bg` (診断は coc 踏襲の別系統) |
 | アクティブ pane | 緑 46 (枠・ACTIVE 帯) / terminal 既定地 (=プロファイルの暖色) | pane-active-border / `window-active-style bg=terminal` | — (nvim は自前で地を塗る) |
-| 地色 | 234 (pane/エディタ) / 235 (バー) | `window-style` bg / status-style bg | retrobox Normal bg=234 / `palette.dark0_hard` (bufferline fill)。**両ツールの地は 234 で揃っている** |
+| 地色 | 234 (pane/エディタ) / 235 (バー) | `window-style` bg / status-style bg | retrobox Normal bg=234 / `palette.dark0_hard` (bufferline fill)。**両ツールの地は 234 で揃っている**。bufferline の非選択タブ pill だけ一段浮かせた dark0 (235) = tmux バー地と同段 |
 
 ## 定数の出典 (単一ソース)
 

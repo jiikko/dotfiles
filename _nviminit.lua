@@ -459,15 +459,26 @@ require("lazy").setup({
         return
       end
 
+      -- pill (丸カプセル) 化: タブ両端に「タブ自身の地色のキャップ」を描ける機構は
+      -- slant 系 4 スタイル (ui.lua is_slant) にハードコードされていて、公開 API では
+      -- 任意グリフを渡せない。そこで padded_slope の字形テーブルを丸グリフへ差し替えて
+      -- slant 系の per-tab 描画機構を借りる。内部テーブルの構造が変わったら pcall が
+      -- 外れ、素の padded_slope (緩い斜面) に degrade するだけで機能は壊れない
+      pcall(function()
+        require("bufferline.constants").sep_chars.padded_slope = { "\u{e0b4} ", " \u{e0b6}" }
+      end)
+
       bufferline.setup({
         options = {
           show_close_icon = false,
           show_buffer_close_icons = false,
           always_show_bufferline = true,
-          -- 選択タブの左端にインジケータバーを出す (非選択との差を強調)
+          -- slant 系スタイルではインジケータバー (▎) は描画されない (pill のキャップが
+          -- 選択の強調を担う)。icon 指定は非 slant へ戻したときのための既定を維持
           indicator = { style = "icon", icon = "▎" },
-          -- タブ境界は細い縦線 (slant の三角 glyph は見た目がうるさかったため thin に変更)
-          separator_style = "thin",
+          -- タブ境界: 上の sep_chars 差し替えとセットで pill (丸カプセル)。
+          -- 変遷: slant (三角) → うるさいので thin (縦線) → pill (2026-07-17 ユーザー選定)
+          separator_style = "padded_slope",
           -- ordinal 番号を表示 (<leader>1..9 のジャンプ先が見た目から分かる)
           numbers = "ordinal",
           color_icons = true,
@@ -480,12 +491,13 @@ require("lazy").setup({
         -- 手動併記。dotfiles/hl.lua 参照)。hex↔cterm の組は pal (dotfiles/palette) が唯一の出典。
         highlights = {
           fill = { bg = pal.dark0_hard.hex, ctermbg = pal.dark0_hard.cterm },
-          -- 非選択バッファ (最も沈める)
-          background = { fg = pal.dark3.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark3.cterm, ctermbg = pal.dark0_hard.cterm },
-          modified = { fg = pal.dark3.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark3.cterm, ctermbg = pal.dark0_hard.cterm },
+          -- 非選択バッファ。pill 化に伴い地色を fill (dark0_hard) から dark0 へ一段浮かせる
+          -- (fill と同色だと両端のキャップが背景に溶けて pill として見えない)
+          background = { fg = pal.dark3.hex, bg = pal.dark0.hex, ctermfg = pal.dark3.cterm, ctermbg = pal.dark0.cterm },
+          modified = { fg = pal.dark3.hex, bg = pal.dark0.hex, ctermfg = pal.dark3.cterm, ctermbg = pal.dark0.cterm },
           -- 別ウィンドウで可視だが非アクティブ (中間トーン)
-          buffer_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm },
-          modified_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm },
+          buffer_visible = { fg = pal.light4.hex, bg = pal.dark0.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0.cterm },
+          modified_visible = { fg = pal.light4.hex, bg = pal.dark0.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0.cterm },
           -- アクティブ (tmux の current window 島と同じ地色 + 黒の太字。
           -- 「いまここ」の色言語を tmux バーと統一。palette.accent.current_accent 参照。)
           buffer_selected = { fg = pal.dark0_hard.hex, bg = pal.accent.current_accent.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.accent.current_accent.cterm, bold = true, italic = false },
@@ -495,17 +507,18 @@ require("lazy").setup({
           -- bufferline 既定の「暗地 + cterm 指定なし」のままになり、選択タブでは
           -- オレンジ地の中で接頭辞だけ地色が沈んで読めない (実測: macOS/docs/ 接頭辞)。
           -- 接頭辞はファイル名より一段引いた fg + italic (bufferline 既定の視覚言語を踏襲)
-          duplicate = { fg = pal.dark3.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark3.cterm, ctermbg = pal.dark0_hard.cterm, italic = true },
-          duplicate_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm, italic = true },
+          duplicate = { fg = pal.dark3.hex, bg = pal.dark0.hex, ctermfg = pal.dark3.cterm, ctermbg = pal.dark0.cterm, italic = true },
+          duplicate_visible = { fg = pal.light4.hex, bg = pal.dark0.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0.cterm, italic = true },
           duplicate_selected = { fg = pal.dark1.hex, bg = pal.accent.current_accent.hex, ctermfg = pal.dark1.cterm, ctermbg = pal.accent.current_accent.cterm, italic = true },
           -- ordinal 番号 (タブ本体と同じ地色に合わせる)
-          numbers = { fg = pal.dark3.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark3.cterm, ctermbg = pal.dark0_hard.cterm },
-          numbers_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm },
+          numbers = { fg = pal.dark3.hex, bg = pal.dark0.hex, ctermfg = pal.dark3.cterm, ctermbg = pal.dark0.cterm },
+          numbers_visible = { fg = pal.light4.hex, bg = pal.dark0.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0.cterm },
           numbers_selected = { fg = pal.dark0_hard.hex, bg = pal.accent.current_accent.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.accent.current_accent.cterm, bold = true, italic = false },
-          -- thin セパレータ: fg が縦線の色。地色と同系の沈んだ色 (dark1) にして境界だけ薄く見せる。
-          separator = { fg = pal.dark1.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark1.cterm, ctermbg = pal.dark0_hard.cterm },
-          separator_visible = { fg = pal.dark1.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark1.cterm, ctermbg = pal.dark0_hard.cterm },
-          separator_selected = { fg = pal.dark1.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark1.cterm, ctermbg = pal.dark0_hard.cterm },
+          -- pill のキャップ: slant 系では separator がタブ両端の丸グリフに使われる。
+          -- fg = そのタブの地色 / bg = fill (キャップは「タブ色で fill を塗る」半円)
+          separator = { fg = pal.dark0.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark0.cterm, ctermbg = pal.dark0_hard.cterm },
+          separator_visible = { fg = pal.dark0.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark0.cterm, ctermbg = pal.dark0_hard.cterm },
+          separator_selected = { fg = pal.accent.current_accent.hex, bg = pal.dark0_hard.hex, ctermfg = pal.accent.current_accent.cterm, ctermbg = pal.dark0_hard.cterm },
         },
       })
 
