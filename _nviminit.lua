@@ -491,6 +491,13 @@ require("lazy").setup({
           buffer_selected = { fg = pal.dark0_hard.hex, bg = pal.accent.current_accent.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.accent.current_accent.cterm, bold = true, italic = false },
           modified_selected = { fg = pal.dark0_hard.hex, bg = pal.accent.current_accent.hex, ctermfg = pal.dark0_hard.cterm, ctermbg = pal.accent.current_accent.cterm, bold = true },
           indicator_selected = { fg = pal.light1.hex, bg = pal.accent.current_accent.hex, ctermfg = pal.light1.cterm, ctermbg = pal.accent.current_accent.cterm }, -- クリームのバー (旧橙208は蛍光橙地202と d=40 でほぼ不可視のため変更 2026-07-16)
+          -- 同名バッファの区別用ディレクトリ接頭辞 (duplicate)。ここを上書きしないと
+          -- bufferline 既定の「暗地 + cterm 指定なし」のままになり、選択タブでは
+          -- オレンジ地の中で接頭辞だけ地色が沈んで読めない (実測: macOS/docs/ 接頭辞)。
+          -- 接頭辞はファイル名より一段引いた fg + italic (bufferline 既定の視覚言語を踏襲)
+          duplicate = { fg = pal.dark3.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark3.cterm, ctermbg = pal.dark0_hard.cterm, italic = true },
+          duplicate_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm, italic = true },
+          duplicate_selected = { fg = pal.dark1.hex, bg = pal.accent.current_accent.hex, ctermfg = pal.dark1.cterm, ctermbg = pal.accent.current_accent.cterm, italic = true },
           -- ordinal 番号 (タブ本体と同じ地色に合わせる)
           numbers = { fg = pal.dark3.hex, bg = pal.dark0_hard.hex, ctermfg = pal.dark3.cterm, ctermbg = pal.dark0_hard.cterm },
           numbers_visible = { fg = pal.light4.hex, bg = pal.dark0_hard.hex, ctermfg = pal.light4.cterm, ctermbg = pal.dark0_hard.cterm },
