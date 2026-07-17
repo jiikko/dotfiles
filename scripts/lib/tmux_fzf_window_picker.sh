@@ -38,9 +38,15 @@ tt_fzf_window_picker() {
         }
       }')
   [ -n "$rows" ] || return 1
+  # column は util-linux の追加パッケージ扱いで最小 Linux (GH runner の ubuntu-24.04 等) には
+  # 存在しない。プロセス置換内の command not found は set -e でも捕捉されず、候補が window_id
+  # 列だけに silent 劣化する (CI run 29558304635 で実発生)。無ければ桁揃えなしの TSV のまま
+  # fzf へ渡す (失われるのは表示の桁揃えだけで、選択キーは第 1 列の window_id なので機能は同じ)
+  local -a align=(cat)
+  command -v column >/dev/null 2>&1 && align=(column -ts $'\t')
   list=$(paste -d'\t' \
     <(printf '%s\n' "$rows" | cut -f1) \
-    <(printf '%s\n' "$rows" | cut -f2- | column -ts$'\t'))
+    <(printf '%s\n' "$rows" | cut -f2- | "${align[@]}"))
   selected=$(printf '%s\n' "$list" \
     | fzf --ansi --reverse --border --prompt="$prompt" \
           --delimiter=$'\t' --with-nth=2 \
