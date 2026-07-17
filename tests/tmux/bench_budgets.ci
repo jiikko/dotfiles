@@ -2,16 +2,25 @@
 # 値はCI (ubuntu-slim) 初回実測 (2026-07-11 run 29135313100) の ~2.2 倍以上を確保した粗い上限。
 # shared runner のノイズで flake しないことを優先し、桁級の回帰だけ捕まえる。
 # CI の実測が安定して見えたら Step Summary の値を基に絞ってよい。
+#
+# 混雑補正 (2026-07-17 導入): rel 印のループ系 metric は、上限を max(1, 実測rtt/基準rtt) 倍
+# してから判定する。混雑はループ系に乗法的に乗り rtt の膨張率とほぼ一致するため
+# (実測: run 29547499619 attempt1/2 で rtt ×3.32 のとき new_window ×3.26 / kill ×3.47 /
+# select ×3.33。min-of-3-runs でも 3 run 連続混雑で誤爆した)。仕組みの詳細と検出能力が
+# 落ちない理由は checker のヘッダ参照。基準 240 = 静穏 run の rtt 実測 (223.3 / 253.8,
+# run 29547499619 attempt2 / 29537867664)。
+# ⚠️ 較正器の tmux_rtt_x100 自身は絶対予算のまま rel を付けないこと (checker も拒否する)。
+calibrate tmux_rtt_x100 240
 server_boot 3000
 conf_reload 3000
 tmux_rtt_x100 1200
-status_render_x200 2500
-new_window_x20 600
-kill_window_x20 600
+status_render_x200 2500 rel
+new_window_x20 600 rel
+kill_window_x20 600 rel
 # select は 2026-07-16 の点火アニメ (scripts/tmux_ignite_current.sh、after-select-window[1] hook)
 # 導入で意図的にコスト増: 切替ごとにアニメーターが fork し、フレームの refresh-client -S
 # (status 再描画) がサーバのイベントループで後続 select と直列化する。導入後の CI 実測
 # 7430ms (run 29500999240) × ~2.2 で更新 (旧 3000 は導入前実測基準)。アニメを削る改修を
 # したらこの値も再実測で絞り直すこと。
-select_window_x100 16000
-mark_seen_direct_x20 1500
+select_window_x100 16000 rel
+mark_seen_direct_x20 1500 rel
