@@ -64,6 +64,7 @@ nav_keys=$(t list-keys -T nav)
 status_left=$(t show -g status-left)
 
 assert "prefix a で nav へ入る" 'bind-key .* -T prefix +a +switch-client -T nav' "$prefix_keys"
+assert "prefix C-a でも入る (Ctrl 押しっぱなし耐性)" 'bind-key .* -T prefix +C-a +switch-client -T nav' "$prefix_keys"
 
 for key in h j k l a s w d; do
   assert "nav $key = ペイン移動 + モード持続" "bind-key .* -T nav +$key +if-shell .*select-pane.*switch-client -T nav" "$nav_keys"
