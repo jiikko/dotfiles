@@ -39,8 +39,18 @@ jobs:
       # shellcheck が PATH にあると run: ブロックのシェル検査も有効になる)
       - name: Install actionlint
         run: |
-          ver=$(gh api repos/rhysd/actionlint/releases/latest --jq '.tag_name' | sed 's/^v//')
-          curl -sSL -o "$RUNNER_TEMP/actionlint.tar.gz" \
+          # gh api は一時的に HTML エラーページを返すことがある (実例: run 29542275908 の
+          # "invalid character '<'")。version 解決は再試行し、空の ver のまま壊れた URL を
+          # 組み立てるのを防ぐ。curl の -f は HTTP エラー時に 404 ページを tarball として
+          # 保存して後段の tar が「not in gzip format」で死ぬ分かりにくい失敗を防ぐ。
+          for i in 1 2 3; do
+            ver=$(gh api repos/rhysd/actionlint/releases/latest --jq '.tag_name' | sed 's/^v//') \
+              && [ -n "$ver" ] && break
+            echo "actionlint version 解決に失敗 (attempt $i)。再試行..." >&2
+            sleep 5
+          done
+          [ -n "$ver" ] || { echo "::error::actionlint の最新バージョン解決に失敗 (gh api が JSON を返さない)"; exit 1; }
+          curl -fsSL --retry 3 --retry-all-errors -o "$RUNNER_TEMP/actionlint.tar.gz" \
             "https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_linux_amd64.tar.gz"
           mkdir -p "$RUNNER_TEMP/actionlint"
           tar xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP/actionlint" actionlint
