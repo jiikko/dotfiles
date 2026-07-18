@@ -26,6 +26,9 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 - **tmux**: `_tmux.conf` の `@fade-*` (フェード) / `@cur-accent`・`@zoom-accent` (島と zoom) /
   `@claude-state-fg`・`@claude-state-glyph` (Claude 状態)。フェードの設計は
   [`tmux-window-fade.md`](tmux-window-fade.md)
+- **git popup (scripts/tmux_git_popup.sh) の clean 画面**: 独自定数は持たず上の意味マップから
+  借りる (緑 46 = CLEAN バッジ / シアン 51 = ブランチ・↓behind / 橙 208 = 未 push ドット・↑ahead /
+  黄 214 = hash / 灰 240 = push 済みドット)。マップ側の色を変えたらここも grep で追従
 - **Terminal.app プロファイル (基調層)**: `mac/ClaudeWarm.terminal` — 地 #1F1E1D / 字 Manilla #EBDBBC /
   カーソル Coral #D97757。256色主環境で唯一フル RGB を持てる層で、tmux の `bg=terminal`・nvim の
   透過がこの色を継承する。**復元/既定化**: `scripts/terminal_profile_restore.sh` が登録 + 既定

@@ -26,6 +26,9 @@ self="$0"
 # working tree が clean なときのサマリ画面 (空の fzf リストは寂しいので、反転バッジ +
 # ブランチ同期状態 + 未 push ドットグラフ + 直近コミットを出す)。素の ANSI 256 色のみで
 # 描く (gum 不要 = degrade 分岐なし)。
+# 配色は docs/theme-colors.md の意味マップから借りる (tmux/nvim と色言語を揃える):
+#   緑 46 = 正常/アクティブ (ACTIVE 帯と同じ) / シアン 51 = 情報 (バーの session/path 帯と同じ)
+#   橙 208 = 未保存・未 push マーカー / 黄 214 = 数量 (pane 数と同じ) / 灰 240 = 消灯
 show_clean() {
   branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'detached')
   ahead=0
@@ -39,16 +42,16 @@ show_clean() {
     ahead=${ahead:-0}
     behind=${behind:-0}
     if [ "$ahead" = 0 ] && [ "$behind" = 0 ]; then
-      sync="\033[38;5;114m✔ $upstream と同期\033[0m"
+      sync="\033[38;5;46m✔ $upstream と同期\033[0m"
     elif [ "$behind" = 0 ]; then
       sync="\033[38;5;208m↑$ahead\033[0m \033[2mpush 待ち ($upstream)\033[0m"
     elif [ "$ahead" = 0 ]; then
-      sync="\033[38;5;108m↓$behind\033[0m \033[2mpull 待ち ($upstream)\033[0m"
+      sync="\033[38;5;51m↓$behind\033[0m \033[2mpull 待ち ($upstream)\033[0m"
     else
-      sync="\033[38;5;208m↑$ahead\033[0m \033[38;5;108m↓$behind\033[0m \033[2m$upstream と分岐\033[0m"
+      sync="\033[38;5;208m↑$ahead\033[0m \033[38;5;51m↓$behind\033[0m \033[2m$upstream と分岐\033[0m"
     fi
   fi
-  printf '\n\n   \033[1;30;48;5;114m  ✔ CLEAN  \033[0m  \033[38;5;108m⎇ %s\033[0m \033[2m·\033[0m %b\n\n' "$branch" "$sync"
+  printf '\n\n   \033[1;38;5;16;48;5;46m  ✔ CLEAN  \033[0m  \033[38;5;51m⎇ %s\033[0m \033[2m·\033[0m %b\n\n' "$branch" "$sync"
   # 未 push があるときだけ、直近 20 commit を dots で可視化 (橙 = 未 push・灰 = push 済み)
   if [ "$ahead" -gt 0 ] 2>/dev/null; then
     total=$(git rev-list --count --max-count=20 HEAD 2>/dev/null || printf '0')
@@ -67,7 +70,7 @@ show_clean() {
   # --no-pager 必須: popup 内は stdout が tty なので、素の git log は less の alternate
   # screen を開いてしまい、直前に描いたバッジ/ドット行が画面ごと消える (実機で再現済み)
   git --no-pager log -5 --color=always --date=format:'%H:%M' \
-    --format='   %C(yellow)%h%Creset %C(dim)%cd%Creset %<(58,trunc)%s' 2>/dev/null || :
+    --format='   %C(214)%h%Creset %C(dim)%cd%Creset %<(58,trunc)%s' 2>/dev/null || :
   printf '\n   \033[2m(何かキーで閉じる)\033[0m\n'
   wait_key
 }
