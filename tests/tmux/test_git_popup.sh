@@ -38,6 +38,7 @@ case "$*" in
   *"status --short"*) [ "${STUB_CLEAN:-0}" = 1 ] || printf '?? new.txt\n M mod.txt\n' ;;
   *"--symbolic-full-name"*) echo origin/master ;;
   *"rev-list --left-right --count"*) printf '0\t2\n' ;;
+  *"rev-list --count"*) echo 20 ;;
   *"log "*) echo "abc1234 fake commit" ;;
 esac
 exit 0
@@ -90,7 +91,8 @@ STUB_CLEAN=1 run "$STUB" "$SCRIPT" < /dev/null
 assert_not_called "fzf" "clean 時は fzf を起動しない"
 assert_called "git log -5" "clean 時は直近コミットのサマリを出す"
 assert_called "rev-list --left-right --count" "upstream との ahead/behind を判定する"
-assert_called "gum style" "gum があれば枠付きで表示する"
+assert_called "rev-list --count --max-count=20" "未 push ありならドットグラフ用に直近 commit 数を取る"
+assert_not_called "gum" "clean 画面は素の ANSI で描く (gum 非依存)"
 
 echo ""
 echo "## main: repo 外では起動しない"

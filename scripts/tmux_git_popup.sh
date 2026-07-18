@@ -23,35 +23,50 @@ set -eu
 
 self="$0"
 
-# working tree が clean なときのサマリ画面 (空の fzf リストは寂しいので、ブランチの
-# 同期状態と直近コミットを出す)。gum があれば枠付き、無ければ素の色付きテキスト。
+# working tree が clean なときのサマリ画面 (空の fzf リストは寂しいので、反転バッジ +
+# ブランチ同期状態 + 未 push ドットグラフ + 直近コミットを出す)。素の ANSI 256 色のみで
+# 描く (gum 不要 = degrade 分岐なし)。
 show_clean() {
   branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'detached')
-  sync="upstream なし"
+  ahead=0
+  behind=0
+  sync='\033[2mupstream なし\033[0m'
   upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || :)
   if [ -n "$upstream" ]; then
     counts=$(git rev-list --left-right --count "$upstream...HEAD" 2>/dev/null || printf '0 0')
     behind=$(printf '%s' "$counts" | awk '{print $1}')
     ahead=$(printf '%s' "$counts" | awk '{print $2}')
-    if [ "${ahead:-0}" = 0 ] && [ "${behind:-0}" = 0 ]; then
-      sync="$upstream と同期済み"
-    elif [ "${behind:-0}" = 0 ]; then
-      sync="$upstream より ↑$ahead 先行 (push 待ち)"
-    elif [ "${ahead:-0}" = 0 ]; then
-      sync="$upstream より ↓$behind 遅れ (pull 待ち)"
+    ahead=${ahead:-0}
+    behind=${behind:-0}
+    if [ "$ahead" = 0 ] && [ "$behind" = 0 ]; then
+      sync="\033[38;5;114m✔ $upstream と同期\033[0m"
+    elif [ "$behind" = 0 ]; then
+      sync="\033[38;5;208m↑$ahead\033[0m \033[2mpush 待ち ($upstream)\033[0m"
+    elif [ "$ahead" = 0 ]; then
+      sync="\033[38;5;108m↓$behind\033[0m \033[2mpull 待ち ($upstream)\033[0m"
     else
-      sync="$upstream と分岐 (↑$ahead ↓$behind)"
+      sync="\033[38;5;208m↑$ahead\033[0m \033[38;5;108m↓$behind\033[0m \033[2m$upstream と分岐\033[0m"
     fi
   fi
-  body=$(printf '\033[1;38;5;46m   ✔ working tree clean\033[0m\n\n   \033[38;5;51m⎇ %s\033[0m — %s\n\n   \033[2m── 直近のコミット ──\033[0m\n%s' \
-    "$branch" "$sync" \
-    "$(git log -5 --color=always --format='   %C(yellow)%h%Creset %<(60,trunc)%s %C(dim)%cr%Creset' 2>/dev/null || :)")
-  if command -v gum >/dev/null 2>&1; then
-    printf '%s\n' "$body" | gum style --border rounded --border-foreground 46 --padding "1 2" --margin "1 1"
-  else
-    printf '\n%s\n\n' "$body"
+  printf '\n\n   \033[1;30;48;5;114m  ✔ CLEAN  \033[0m  \033[38;5;108m⎇ %s\033[0m \033[2m·\033[0m %b\n\n' "$branch" "$sync"
+  # 未 push があるときだけ、直近 20 commit を dots で可視化 (橙 = 未 push・灰 = push 済み)
+  if [ "$ahead" -gt 0 ] 2>/dev/null; then
+    total=$(git rev-list --count --max-count=20 HEAD 2>/dev/null || printf '0')
+    dots=''
+    i=0
+    while [ "$i" -lt "${total:-0}" ]; do
+      if [ "$i" -lt "$ahead" ]; then
+        dots="$dots\033[38;5;208m●\033[0m"
+      else
+        dots="$dots\033[38;5;240m●\033[0m"
+      fi
+      i=$((i + 1))
+    done
+    printf '   %b  \033[2m← 未 push %s / 最新 %s commit\033[0m\n\n' "$dots" "$ahead" "$total"
   fi
-  printf '   \033[2m(何かキーで閉じる)\033[0m\n'
+  git log -5 --color=always --date=format:'%H:%M' \
+    --format='   %C(yellow)%h%Creset %C(dim)%cd%Creset %<(58,trunc)%s' 2>/dev/null || :
+  printf '\n   \033[2m(何かキーで閉じる)\033[0m\n'
   wait_key
 }
 
