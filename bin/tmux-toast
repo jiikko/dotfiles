@@ -1,0 +1,111 @@
+#!/bin/bash
+# tmux-toast — フォーカスを奪わない toast 通知を tmux の右下に表示する
+#
+# display-popup はモーダル (表示中のキー入力を必ず奪う) で非ブロック化は本家で却下済み
+# (tmux/tmux PR #4379 → floating panes に置き換えられ close, 2026-05)。
+# 代わりにその floating panes (`new-pane -X/-Y`, tmux 3.7 系に搭載) を -d 付きで使う。
+# 通常の pane と同じ描画レイヤなのでフォーカスを奪わず、点滅もしない。
+#
+# floating panes が無い古い tmux では、クライアント tty へ直接エスケープシーケンスで
+# 描画する fallback を使う (tmux の再描画に消されるため短周期で描き直す。点滅は残る)。
+#
+# 使い方: tmux-toast [-d 秒] [-f 前景色] [-b 背景色] メッセージ...
+set -euo pipefail
+
+duration=2
+fg=15
+bg=22   # 濃い緑
+
+usage() {
+  echo "usage: tmux-toast [-d seconds] [-f fg-color] [-b bg-color] message..." >&2
+  exit 2
+}
+
+while getopts 'd:f:b:h' opt; do
+  case "$opt" in
+    d) duration=$OPTARG ;;
+    f) fg=$OPTARG ;;
+    b) bg=$OPTARG ;;
+    *) usage ;;
+  esac
+done
+shift $((OPTIND - 1))
+[ $# -ge 1 ] || usage
+msg="$*"
+
+[ -n "${TMUX:-}" ] || { echo "tmux-toast: not inside tmux" >&2; exit 1; }
+
+# 再入ガード: toast 用の new-pane 自体が after-split-window hook を発火させる (実測,
+# tmux 3.7b)。hook からこのスクリプトを呼ぶ構成だと toast が toast を生む無限ループに
+# なるため、直近 2 秒以内に toast を出していたら黙って skip する。
+# 副作用として 2 秒以内の連続通知は 1 つに間引かれる (通知 UI としては許容)
+now=$(date +%s)
+last=$(tmux show-option -gqv @tmux_toast_last_epoch)
+if [ -n "$last" ] && [ $((now - last)) -lt 2 ]; then
+  exit 0
+fi
+tmux set-option -g @tmux_toast_last_epoch "$now"
+
+# 表示セル幅 (東アジア文字=2セル)。bash の ${#msg} は文字数でありセル幅ではない
+width=$(python3 -c '
+import sys, unicodedata
+s = sys.argv[1]
+print(sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s))
+' "$msg")
+
+# --- 本命: floating pane (tmux 3.7+) ---------------------------------------
+# new-pane の -X/-Y は floating panes 対応ビルドにのみ存在する
+if tmux list-commands new-pane 2>/dev/null | grep -q -- '-X x-position'; then
+  read -r win_w win_h < <(tmux display-message -p '#{window_width} #{window_height}')
+  box_w=$((width + 4))
+  [ "$box_w" -gt "$win_w" ] && box_w=$win_w
+  box_h=3
+  x=$((win_w - box_w))
+  y=$((win_h - box_h))
+  [ "$x" -lt 0 ] && x=0
+  [ "$y" -lt 0 ] && y=0
+  # shellcheck disable=SC2016 # sh -c の '$1'/'$2' は pane 内の sh が展開する (意図どおり)
+  exec tmux new-pane -d -x "$box_w" -y "$box_h" -X "$x" -Y "$y" \
+    -s "fg=colour${fg},bg=colour${bg}" \
+    -R "fg=colour${fg},bg=colour${bg}" \
+    -- sh -c 'printf "\n  %s" "$1"; sleep "$2"' tmux-toast "$msg" "$duration"
+fi
+
+# --- fallback: クライアント tty へ直接描画 (floating panes 非対応 tmux) -----
+read -r tty cols rows < <(tmux display-message -p '#{client_tty} #{client_width} #{client_height}')
+[ -w "$tty" ] || { echo "tmux-toast: client tty not writable: $tty" >&2; exit 1; }
+
+box_w=$((width + 4))
+[ "$box_w" -gt "$cols" ] && box_w=$cols
+col=$((cols - box_w + 1))
+[ "$col" -lt 1 ] && col=1
+row=$((rows - 3))
+
+pad=$(printf '%*s' $((box_w - 2 - width)) '')
+
+# 1 回の write でまとめて描画する (途中で pane 出力と混ざるのを避ける)
+# \e7/\e8 = カーソル保存/復元。SGR 48;5/38;5 = 256 色指定
+draw() {
+  {
+    printf '\e7'
+    printf '\e[%d;%dH\e[38;5;%dm\e[48;5;%dm%*s\e[0m' "$row"       "$col" "$fg" "$bg" "$box_w" ''
+    printf '\e[%d;%dH\e[38;5;%dm\e[48;5;%dm  %s%s\e[0m' $((row+1)) "$col" "$fg" "$bg" "$msg" "$pad"
+    printf '\e[%d;%dH\e[38;5;%dm\e[48;5;%dm%*s\e[0m' $((row+2))   "$col" "$fg" "$bg" "$box_w" ''
+    printf '\e8'
+  } > "$tty"
+}
+
+# tmux 側の再描画 (pane 分割・移動・出力等) に上書きされるため、1 回描いて終わりでは
+# duration より遥かに早く消える。表示期間中は短周期で描き直して勝ち続け、
+# 期間終了後に refresh-client で tmux に再描画させて消す。呼び出し元はブロックしない。
+# tmux の再描画を止める手段は無いため「消される→描き直す」の点滅は原理的に残る
+(
+  ticks=$(python3 -c "print(max(1, round($duration / 0.05)))")
+  i=0
+  while [ "$i" -lt "$ticks" ]; do
+    draw
+    sleep 0.05
+    i=$((i + 1))
+  done
+  tmux refresh-client 2>/dev/null || true
+) &
