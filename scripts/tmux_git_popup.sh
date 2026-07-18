@@ -224,9 +224,13 @@ if [ -z "$entries" ]; then
   exit 0
 fi
 
+# header は 2 行に分ける (1 行だと popup 幅で末尾が見切れる。実機報告 2026-07-18)
+header="[$branch] Tab/Enter: stage⇄unstage  C-a: 全add  C-o: commit
+C-b: push  C-d: diff全画面  Esc: 閉じる"
+
 printf '%s\n' "$entries" | fzf --ansi --no-sort --layout=reverse \
   --prompt='git> ' \
-  --header="[$branch] Tab/Enter: stage⇄unstage  C-a: 全add  C-o: commit  C-b: push  C-d: diff全画面  Esc: 閉じる" \
+  --header="$header" \
   --preview="\"$self\" preview {}" \
   --preview-window='right:55%:wrap' \
   --bind "tab:execute-silent(\"$self\" toggle {})+reload(\"$self\" list)" \
