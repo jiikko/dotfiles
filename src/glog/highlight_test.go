@@ -91,3 +91,51 @@ func TestHighlightDiffPerformance(t *testing.T) {
 		t.Errorf("5000 行のハイライトに %v (5s 超): 切り捨て判断の閾値超過", elapsed)
 	}
 }
+
+// セルフレビューで検出した実バグの回帰ガード: hunk 内の "+++" / "---" 始まりコード行
+// (先頭 ++ / -- の行の追加/削除) をファイルヘッダーと誤分類しないこと。誤分類すると
+// ± マーカーを失う上、偽パスで lexer が潰れ以降のハイライトが消える。
+func TestHighlightDiffHunkContentNotHeader(t *testing.T) {
+	in := []string{
+		"diff --git a/a.go b/a.go",
+		"+++ b/a.go",
+		"@@ -1,2 +1,2 @@",
+		"--- decrement twice",
+		"+++ increment twice",
+		"+var x = 1", // lexer が生きていることの確認用
+	}
+	out := HighlightDiff(in)
+	if !strings.HasPrefix(out[3], ansiRed+"-") {
+		t.Errorf("hunk 内の --- 始まり削除行がヘッダー扱い: %q", out[3])
+	}
+	if !strings.HasPrefix(out[4], ansiGreen+"+") {
+		t.Errorf("hunk 内の +++ 始まり追加行がヘッダー扱い: %q", out[4])
+	}
+	if !strings.Contains(out[5], "\x1b[38;5;") {
+		t.Errorf("偽パスで lexer が潰れて以降のハイライトが消えている: %q", out[5])
+	}
+}
+
+// 複数ファイルのコミット: 2 つ目の diff --git で lexer と hunk 状態がリセットされること。
+func TestHighlightDiffMultiFileResetsState(t *testing.T) {
+	in := []string{
+		"diff --git a/a.go b/a.go",
+		"+++ b/a.go",
+		"@@ -1 +1 @@",
+		"+var x = 1",
+		"diff --git a/data.unknownext b/data.unknownext",
+		"+++ b/data.unknownext",
+		"@@ -1 +1 @@",
+		"+var x = 1",
+	}
+	out := HighlightDiff(in)
+	if !strings.Contains(out[3], "\x1b[38;5;") {
+		t.Errorf("1 つ目のファイル (.go) がハイライトされていない: %q", out[3])
+	}
+	if strings.Contains(out[7], "\x1b[38;5;") {
+		t.Errorf("2 つ目のファイル (言語不明) に前ファイルの lexer が残っている: %q", out[7])
+	}
+	if !strings.HasPrefix(out[5], ansiBold) {
+		t.Errorf("2 つ目の +++ がヘッダー扱いされていない (inHunk リセット漏れ): %q", out[5])
+	}
+}
