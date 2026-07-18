@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"sync"
 	"time"
 
 	"golang.org/x/term"
@@ -50,6 +51,19 @@ func exitGitError(err error) int {
 }
 
 func runLog(opts *Options, colored, isTTY bool) int {
+	// 起動の律速は git fork の直列連鎖 (実測 1 fork ≈ 6ms、直列だと最大 9 本 ≈ 55ms)。
+	// 互いに独立な「repo 解決 + キャッシュ」「decoration 色解決」を git log と並列に
+	// 走らせ、最長チェーン (fork 2 本 ≈ 12ms) まで縮める。goroutine は read-only の
+	// git 実行のみで、エラーで先に return してもプロセス終了で無害に片付く
+	planCh := make(chan repoPlan, 1)
+	go func() { planCh <- gatherRepoPlan(opts) }()
+	var decorCh chan DecorColors
+	if colored {
+		// decoration の配色は git log を尊重する (color.decorate.* + git 既定色)
+		decorCh = make(chan DecorColors, 1)
+		go func() { decorCh <- LoadDecorColors() }()
+	}
+
 	commits, err := LoadCommits(opts, colored)
 	if err != nil {
 		return exitGitError(err)
@@ -62,12 +76,11 @@ func runLog(opts *Options, colored, isTTY bool) int {
 		shas[i] = c.SHA
 	}
 
-	statuses, toFetch, repo, hasRepo, cachePath := planStatuses(opts, shas)
+	statuses, toFetch, repo, hasRepo, cachePath := mergePlan(<-planCh, shas)
 	renderOpts := RenderOpts{Oneline: opts.Oneline, Colored: colored}
 	var decor *DecorColors
 	if colored {
-		// decoration の配色は git log を尊重する (color.decorate.* + git 既定色)
-		dc := LoadDecorColors()
+		dc := <-decorCh
 		decor = &dc
 		renderOpts.Decor = decor
 	}
@@ -87,6 +100,9 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	}
 
 	browse := newBrowseModel(commits, statuses, toFetch, repo, hasRepo, opts, colored, width, height)
+	// quit 経路 (q/Ctrl-C) 以外 — RunBrowse のエラーや fetch 無しでの即終了 — でも
+	// context の timer を解放する (cancel は冪等)
+	defer browse.cancel()
 	browse.decor = decor
 	model, err := RunBrowse(browse)
 	if err != nil {
@@ -104,6 +120,9 @@ func runLog(opts *Options, colored, isTTY bool) int {
 }
 
 func runCached(opts *Options, colored bool) int {
+	// runLog と同じく、独立な repo 解決 + キャッシュ読みを HEAD/diff の取得と並列に走らせる
+	planCh := make(chan repoPlan, 1)
+	go func() { planCh <- gatherRepoPlan(opts) }()
 	head, err := LoadHeadCommit()
 	if err != nil {
 		return exitGitError(err)
@@ -112,7 +131,7 @@ func runCached(opts *Options, colored bool) int {
 	if err != nil {
 		return exitGitError(err)
 	}
-	statuses, toFetch, repo, hasRepo, cachePath := planStatuses(opts, []string{head.SHA})
+	statuses, toFetch, repo, hasRepo, cachePath := mergePlan(<-planCh, []string{head.SHA})
 	_, ghErr := fetchStatic(statuses, toFetch, repo, hasRepo, cachePath, opts)
 	fmt.Println(RenderCached(head, stateFor(statuses, head.SHA), diff, colored, ""))
 	if ghErr != nil {
@@ -121,40 +140,69 @@ func runCached(opts *Options, colored bool) int {
 	return 0
 }
 
-// planStatuses は repo 解決とキャッシュ反映を行い、表示初期状態と未取得 SHA を返す。
+// repoPlan は表示前に必要な repo まわりの情報の束 (gatherRepoPlan が並列に集める)。
+type repoPlan struct {
+	repo      Repo
+	hasRepo   bool
+	cachePath string
+	unpushed  map[string]bool
+	cached    map[string]CIState
+}
+
+// gatherRepoPlan は repo 解決・未 push 判定・キャッシュ読みを並列に行う。
+// ResolveRepo (fork 最大 2 本) と UnpushedSHAs (fork 1 本) は互いに独立で、直列に
+// つなぐと fork 遅延が足し算になる (起動ボトルネックの実測より)。
+// UnpushedSHAs は hasRepo の結果を待たず投機実行する (remote 無し repo では 1 fork
+// 無駄になるが、--max-count 上限があるため軽い)。
+func gatherRepoPlan(opts *Options) repoPlan {
+	var plan repoPlan
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		plan.unpushed = UnpushedSHAs(opts.Revs, opts.MaxCount)
+	})
+	plan.repo, plan.hasRepo = ResolveRepo()
+	if plan.hasRepo && !opts.NoCache {
+		if p, err := CachePath(plan.repo); err == nil {
+			plan.cachePath = p
+			if !opts.Refresh {
+				plan.cached = LoadCache(plan.cachePath, time.Now())
+			}
+		}
+	}
+	wg.Wait()
+	return plan
+}
+
+// planStatuses は repo 解決とキャッシュ反映を行い、表示初期状態と未取得 SHA を返す
+// (gather と merge の合成。runLog は gather を git log と並列化するため別々に呼ぶ)。
 func planStatuses(opts *Options, shas []string) (statuses map[string]CIState, toFetch []string, repo Repo, hasRepo bool, cachePath string) {
+	return mergePlan(gatherRepoPlan(opts), shas)
+}
+
+// mergePlan は集めた repoPlan を表示対象 shas へ適用する純関数部分。
+func mergePlan(plan repoPlan, shas []string) (statuses map[string]CIState, toFetch []string, repo Repo, hasRepo bool, cachePath string) {
 	statuses = map[string]CIState{}
-	repo, hasRepo = ResolveRepo()
-	if !hasRepo {
+	if !plan.hasRepo {
 		// remote なし / GitHub 以外 → Check は存在しないので全件 `–` (issue のエラー方針)
 		for _, sha := range shas {
 			statuses[sha] = StateNone
 		}
-		return statuses, nil, repo, false, ""
-	}
-	if !opts.NoCache {
-		if p, err := CachePath(repo); err == nil {
-			cachePath = p
-		}
+		return statuses, nil, plan.repo, false, ""
 	}
 	// 未 push の SHA は GitHub 上に存在せず、問い合わせても必ず「無い」と返るため
 	// ローカル判定で確定させて取得対象から外す (キャッシュより優先。push 直後に
 	// 古い none キャッシュが当たって「Check なし」に見える混同も防ぐ)
-	unpushed := UnpushedSHAs(opts.Revs)
 	for _, sha := range shas {
-		if unpushed[sha] {
+		if plan.unpushed[sha] {
 			statuses[sha] = StateUnpushed
 		}
 	}
-	if cachePath != "" && !opts.Refresh {
-		cached := LoadCache(cachePath, time.Now())
-		for _, sha := range shas {
-			if _, ok := statuses[sha]; ok {
-				continue
-			}
-			if state, ok := cached[sha]; ok {
-				statuses[sha] = state
-			}
+	for _, sha := range shas {
+		if _, ok := statuses[sha]; ok {
+			continue
+		}
+		if state, ok := plan.cached[sha]; ok {
+			statuses[sha] = state
 		}
 	}
 	for _, sha := range shas {
@@ -162,7 +210,7 @@ func planStatuses(opts *Options, shas []string) (statuses map[string]CIState, to
 			toFetch = append(toFetch, sha)
 		}
 	}
-	return statuses, toFetch, repo, true, cachePath
+	return statuses, toFetch, plan.repo, true, plan.cachePath
 }
 
 // showStatic は静的経路の共通処理: 同期取得 → 最終出力 → 警告 → exit 0。

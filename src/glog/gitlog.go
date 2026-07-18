@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 )
 
 // コミット境界の識別は人間向け出力の正規表現ではなく制御文字レコードで行う (issue の設計)。
@@ -146,7 +147,12 @@ func LoadHeadCommit() (*Commit, error) {
 // 「無い」と返るため取得対象から外し、表示も「push 済みだが Check なし (–)」と
 // 区別して ↑ にする。rev-list の失敗 (特殊な ref 状態) は「未 push なし」へ落とす
 // (その場合は従来どおり API 側の判定に任される)。
-func UnpushedSHAs(revs []string) map[string]bool {
+//
+// limit (>0) は列挙の上限。表示対象は rev-list 先頭の MaxCount 件で、フィルタは相対順序を
+// 保つため「表示範囲内の未 push」は必ずフィルタ後の先頭 limit 件に含まれる = 上限を
+// かけても表示対象の判定は欠けない。remote ref が無い巨大 repo で全履歴を列挙する劣化の
+// ガード。仮に取りこぼしても API 問い合わせが none を返すだけの fail-soft。
+func UnpushedSHAs(revs []string, limit int) map[string]bool {
 	args := []string{"rev-list"}
 	if len(revs) == 0 {
 		args = append(args, "HEAD")
@@ -154,6 +160,9 @@ func UnpushedSHAs(revs []string) map[string]bool {
 		args = append(args, revs...)
 	}
 	args = append(args, "--not", "--remotes")
+	if limit > 0 {
+		args = append(args, fmt.Sprintf("--max-count=%d", limit))
+	}
 	out, err := runGit(args...)
 	if err != nil {
 		return nil
@@ -190,28 +199,34 @@ func DefaultDecorColors() DecorColors {
 
 // LoadDecorColors は git config --get-color で decoration 色を解決する
 // (ユーザーが color.decorate.* を設定していればそれ、無ければ git と同じ既定色が返る)。
+// 5 本の git fork (config ×4 + remote) は互いに独立なので並列に走らせる
+// (直列だと fork 遅延 ≈ 6ms × 5 が起動にそのまま乗る。各 goroutine は別フィールドに
+// 書くためロック不要)。
 func LoadDecorColors() DecorColors {
 	dc := DefaultDecorColors()
-	get := func(slot, def string) string {
-		out, err := runGit("config", "--get-color", "color.decorate."+slot, def)
-		if err != nil || out == "" {
-			return ""
+	var wg sync.WaitGroup
+	slots := []struct {
+		dst  *string
+		slot string
+		def  string
+	}{
+		{&dc.HEAD, "HEAD", "bold cyan"},
+		{&dc.Branch, "branch", "bold green"},
+		{&dc.RemoteBranch, "remoteBranch", "bold red"},
+		{&dc.Tag, "tag", "bold yellow"},
+	}
+	for _, s := range slots {
+		wg.Go(func() {
+			if out, err := runGit("config", "--get-color", "color.decorate."+s.slot, s.def); err == nil && out != "" {
+				*s.dst = out
+			}
+		})
+	}
+	wg.Go(func() {
+		out, err := runGit("remote")
+		if err != nil {
+			return
 		}
-		return out
-	}
-	if c := get("HEAD", "bold cyan"); c != "" {
-		dc.HEAD = c
-	}
-	if c := get("branch", "bold green"); c != "" {
-		dc.Branch = c
-	}
-	if c := get("remoteBranch", "bold red"); c != "" {
-		dc.RemoteBranch = c
-	}
-	if c := get("tag", "bold yellow"); c != "" {
-		dc.Tag = c
-	}
-	if out, err := runGit("remote"); err == nil {
 		var remotes []string
 		for name := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
 			if name != "" {
@@ -221,7 +236,8 @@ func LoadDecorColors() DecorColors {
 		if len(remotes) > 0 {
 			dc.Remotes = remotes
 		}
-	}
+	})
+	wg.Wait()
 	return dc
 }
 

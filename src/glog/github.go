@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -124,13 +125,14 @@ func ParseGitHubURL(url string) (Repo, bool) {
 type CommandRunner func(ctx context.Context, name string, args ...string) (stdout []byte, stderr []byte, err error)
 
 // ExecRunner は実際にコマンドを実行する CommandRunner。
+// bytes.Buffer 直返しで string 経由の再コピーを避ける (gh run view のログは MB 級になりうる)。
 func ExecRunner(ctx context.Context, name string, args ...string) ([]byte, []byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
-	var out, errBuf strings.Builder
+	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
 	err := cmd.Run()
-	return []byte(out.String()), []byte(errBuf.String()), err
+	return out.Bytes(), errBuf.Bytes(), err
 }
 
 // GraphQL レスポンスの必要部分。

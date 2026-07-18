@@ -223,12 +223,17 @@ func TestIntegrationUnpushedSHAs(t *testing.T) {
 	}
 	git("remote", "add", "origin", "git@github.com:o/r.git")
 	git("update-ref", "refs/remotes/origin/master", pushedSHA)
-	unpushed := UnpushedSHAs(nil)
+	unpushed := UnpushedSHAs(nil, 0)
 	if !unpushed[localSHA] {
 		t.Errorf("ローカルのみのコミットが未 push 判定されない")
 	}
 	if unpushed[pushedSHA] {
 		t.Errorf("remote 到達済みのコミットが未 push 判定された")
+	}
+	// limit 付きでも表示範囲 (rev-list 先頭) の未 push は欠けない
+	limited := UnpushedSHAs(nil, 1)
+	if !limited[localSHA] {
+		t.Errorf("limit=1 で先頭の未 push コミットが欠けた")
 	}
 	// planStatuses が未 push を確定させ、取得対象から外すことも確認
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
