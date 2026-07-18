@@ -173,13 +173,15 @@ func Usage() string {
   -h, --help
         このヘルプを表示する
 
-対話ブラウズのキー操作 (TTY のみ):
+対話ブラウズのキー操作 (TTY のみ。Ctrl-B / Ctrl-F は全ビューで ← / → の
+別名として効く = C-n/C-p/C-b/C-f の emacs 4 方向に対応):
   j / k / ↑ / ↓ / Ctrl-N / Ctrl-P
                             カーソル移動
   Enter / Space / l / → / Tab
                             CI job 一覧のポップアップを開く (コミット直下に表示)
   d                         コミットの diff (git show --stat --patch) を
                             ポップアップ表示 (もう一度 d で閉じる toggle)
+  o                         コミットの GitHub ページをブラウザで開く
   p                         コミットに紐づく PR をブラウザで開く
                             (associatedPullRequests。複数あれば OPEN > MERGED 優先)
   Ctrl-D / Ctrl-U / PgDn / PgUp

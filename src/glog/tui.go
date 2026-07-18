@@ -318,6 +318,14 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if key == "ctrl+c" {
 		return m.quit()
 	}
+	// emacs 流の水平移動エイリアス (C-n/C-p = ↓/↑ は各ビューで対応済み)。ここで
+	// 正規化するので全ビュー (一覧/パネル/詳細/diff) に一括で効く
+	switch key {
+	case "ctrl+b":
+		key = "left"
+	case "ctrl+f":
+		key = "right"
+	}
 	// diff ポップアップ表示中はスクロール/閉じる操作だけを受ける (最前面のモーダル)
 	if m.diffSHA != "" {
 		return m.handleDiffKey(key)
@@ -366,6 +374,8 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.openPR()
 	case "d":
 		return m, m.openDiff()
+	case "o":
+		return m, m.openCommitURL()
 	}
 	return m, nil
 }
@@ -519,12 +529,30 @@ func (m *browseModel) openJobDetail() tea.Cmd {
 
 // copyFocusURL はフォーカス位置の URL (job 選択中はその job、それ以外はコミット) を
 // クリップボードへコピーする。LLM に貼る用途 (ユーザー要望)。
+// commitURL はカーソル位置コミットの GitHub commit ページ URL ("" = repo なし/コミットなし)。
+func (m *browseModel) commitURL() string {
+	if !m.hasRepo || len(m.commits) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("https://github.com/%s/%s/commit/%s", m.repo.Owner, m.repo.Name, m.commits[m.cursor].SHA)
+}
+
+// openCommitURL はカーソル位置コミットの GitHub commit ページをブラウザで開く (一覧の o キー)。
+func (m *browseModel) openCommitURL() tea.Cmd {
+	url := m.commitURL()
+	if url == "" {
+		m.notice = "GitHub の remote が無いため開けません"
+		return nil
+	}
+	return m.openURLCmd(url)
+}
+
 func (m *browseModel) copyFocusURL() {
-	url := ""
+	var url string
 	if job, ok := m.focusedJob(); ok {
 		url = job.URL
-	} else if m.hasRepo && len(m.commits) > 0 {
-		url = fmt.Sprintf("https://github.com/%s/%s/commit/%s", m.repo.Owner, m.repo.Name, m.commits[m.cursor].SHA)
+	} else {
+		url = m.commitURL()
 	}
 	if url == "" {
 		m.notice = "コピーできる URL がありません"
@@ -1011,7 +1039,7 @@ func cursorMark(colored bool) string {
 }
 
 func (m *browseModel) hintLine() string {
-	hint := "j/k: 移動  Enter: CI job  d: diff  p: PR  y: URL コピー  q: 終了"
+	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  y: URL コピー  q: 終了"
 	switch {
 	case m.diffSHA != "":
 		hint = "j/k/Space: スクロール  g/G: 先頭/末尾  q/h: 閉じる"

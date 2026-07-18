@@ -999,3 +999,63 @@ func TestBrowseDiffPagerKeysScrollNotClose(t *testing.T) {
 		t.Errorf("q: diffSHA=%q done=%v", m.diffSHA, m.done)
 	}
 }
+
+// --- o (commit をブラウザで開く) と emacs 水平キー ---
+
+func TestBrowseListOpenCommitURL(t *testing.T) {
+	m := newTestBrowse(t, 2, nil, nil)
+	var opened []string
+	orig := openInBrowser
+	openInBrowser = func(url string) error {
+		opened = append(opened, url)
+		return nil
+	}
+	t.Cleanup(func() { openInBrowser = orig })
+
+	m.handleKey("j") // 2 番目のコミットへ
+	_, cmd := m.handleKey("o")
+	if cmd == nil {
+		t.Fatal("o で open コマンドが返らない")
+	}
+	cmd()
+	want := "https://github.com/o/r/commit/" + m.commits[1].SHA
+	if len(opened) != 1 || opened[0] != want {
+		t.Errorf("開いた URL = %v; want %s", opened, want)
+	}
+}
+
+func TestBrowseListOpenCommitURLNoRepo(t *testing.T) {
+	m := newTestBrowse(t, 1, nil, nil)
+	m.hasRepo = false
+	_, cmd := m.handleKey("o")
+	if cmd != nil {
+		t.Error("repo なしで open コマンドが返った")
+	}
+	if m.notice == "" {
+		t.Error("repo なしの notice が出ていない")
+	}
+}
+
+// C-b/C-f は全ビューで ←/→ の別名 (emacs 4 方向)。
+func TestBrowseEmacsHorizontalAliases(t *testing.T) {
+	m := newTestBrowse(t, 1, nil, nil)
+	withJobs(m, 0)
+	// 一覧: C-f = → = パネルを開く
+	m.handleKey("ctrl+f")
+	if m.panelSHA == "" {
+		t.Fatal("C-f でパネルが開かない (right の別名のはず)")
+	}
+	// パネル: C-b = ← = 閉じる
+	m.handleKey("ctrl+b")
+	if m.panelSHA != "" {
+		t.Fatal("C-b でパネルが閉じない (left の別名のはず)")
+	}
+	// diff: C-b = ← = 閉じる
+	stubDiff(t, []string{"x"}, nil)
+	_, cmd := m.handleKey("d")
+	deliverDiffMsg(t, m, cmd)
+	m.handleKey("ctrl+b")
+	if m.diffSHA != "" {
+		t.Fatal("diff 表示中の C-b で閉じない")
+	}
+}
