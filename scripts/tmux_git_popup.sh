@@ -35,8 +35,10 @@ FG_GREEN=$(sgr "38;5;$THEME_ACTIVE_GREEN")
 FG_CYAN=$(sgr "38;5;$THEME_INFO_CYAN")
 FG_ORANGE=$(sgr "38;5;$THEME_MARKER_ORANGE")
 BADGE_ON=$(sgr "1;38;5;16;48;5;$THEME_ACTIVE_GREEN")
-DOT_UNPUSHED=$(sgr "38;5;$THEME_MARKER_ORANGE")●$RESET
-DOT_PUSHED=$(sgr "38;5;$THEME_COLD_GRAY")●$RESET
+# dots の色語彙 (ユーザー指定 2026-07-18): 未 push = 灰 (まだ確定していない/消灯)・
+# push 済み = 緑 (確定済み)。「未 push を橙で目立たせる」逆案は直感と逆と却下済み
+DOT_UNPUSHED=$(sgr "38;5;$THEME_COLD_GRAY")●$RESET
+DOT_PUSHED=$(sgr "38;5;$THEME_ACTIVE_GREEN")●$RESET
 
 # working tree が clean なときのサマリ画面 (空の fzf リストは寂しいので、反転バッジ +
 # ブランチ同期状態 + 未 push ドットグラフ + 直近コミットを出す)。素の ANSI 256 色のみで
@@ -65,7 +67,7 @@ show_clean() {
   fi
   printf '\n\n   %s  ✔ CLEAN  %s  %s⎇ %s%s %s·%s %s\n\n' \
     "$BADGE_ON" "$RESET" "$FG_CYAN" "$branch" "$RESET" "$DIM" "$RESET" "$sync"
-  # 未 push があるときだけ、直近 20 commit を dots で可視化 (橙 = 未 push・灰 = push 済み)
+  # 未 push があるときだけ、直近 20 commit を dots で可視化 (灰 = 未 push・緑 = push 済み)
   if [ "$ahead" -gt 0 ] 2>/dev/null; then
     total=$(git rev-list --count --max-count=20 HEAD 2>/dev/null || printf '0')
     dots=''
