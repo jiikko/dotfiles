@@ -673,21 +673,24 @@ func (m *browseModel) openDiff() tea.Cmd {
 	return tea.Batch(cmd, tick())
 }
 
-// handleDiffKey は diff ポップアップ表示中のキー操作。j/k はスクロール。
+// handleDiffKey は diff ポップアップ表示中のキー操作。中身は pager なので less 流儀:
+// Space/Enter は「閉じる」ではなくスクロール (実機で Space/Enter 送りの途中に突然閉じる
+// 誤爆報告があり修正 2026-07-19)。末尾に達したら最終行を表示したまま止まる (自動で閉じない)。
+// 閉じるのは q / h / Esc / d だけ。
 func (m *browseModel) handleDiffKey(key string) (tea.Model, tea.Cmd) {
 	rows := m.visibleDiffRows()
 	maxOffset := max(len(m.diffCache[m.diffSHA])-rows, 0)
 	switch key {
-	case "q", "esc", "enter", " ", "h", "left", "d":
+	case "q", "esc", "h", "left", "d":
 		m.diffSHA = ""
 		m.diffOffset = 0
-	case "j", "down", "ctrl+n":
+	case "j", "down", "ctrl+n", "enter":
 		m.diffOffset = min(m.diffOffset+1, maxOffset)
 	case "k", "up", "ctrl+p":
 		m.diffOffset = max(m.diffOffset-1, 0)
-	case "ctrl+d", "pgdown":
+	case "ctrl+d", "pgdown", " ", "f":
 		m.diffOffset = min(m.diffOffset+rows/2, maxOffset)
-	case "ctrl+u", "pgup":
+	case "ctrl+u", "pgup", "b":
 		m.diffOffset = max(m.diffOffset-rows/2, 0)
 	case "g", "home":
 		m.diffOffset = 0
@@ -1011,7 +1014,7 @@ func (m *browseModel) hintLine() string {
 	hint := "j/k: 移動  Enter: CI job  d: diff  p: PR  y: URL コピー  q: 終了"
 	switch {
 	case m.diffSHA != "":
-		hint = "j/k: スクロール  C-d/C-u: 半頁  g/G: 先頭/末尾  Enter/h/q: 閉じる"
+		hint = "j/k/Space: スクロール  g/G: 先頭/末尾  q/h: 閉じる"
 	case m.detailOpen:
 		hint = "j/k: スクロール  Enter/h/q: 戻る  o: ブラウザ  y: URL コピー"
 	case m.panelSHA != "" && m.panelCursor >= 0:

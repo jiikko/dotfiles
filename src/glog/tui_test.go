@@ -954,3 +954,48 @@ func TestBrowseDiffErrorShowsNoticeAndCloses(t *testing.T) {
 		t.Errorf("hint に notice が出ていない: %q", m.hintLine())
 	}
 }
+
+// 回帰: diff ポップアップは pager 流儀 — Space/Enter はスクロールであり閉じない。
+// 末尾に達したら最終行を表示したまま止まる (実機で Space 送り中に突然閉じた報告への修正)。
+func TestBrowseDiffPagerKeysScrollNotClose(t *testing.T) {
+	m := newTestBrowse(t, 1, nil, nil)
+	diffLines := make([]string, 30)
+	for i := range diffLines {
+		diffLines[i] = fmt.Sprintf("line-%d", i)
+	}
+	stubDiff(t, diffLines, nil)
+	_, cmd := m.handleKey("d")
+	deliverDiffMsg(t, m, cmd)
+	maxOffset := len(diffLines) - m.visibleDiffRows()
+
+	m.handleKey(" ")
+	if m.diffSHA == "" {
+		t.Fatal("Space で閉じた (半ページスクロールのはず)")
+	}
+	if m.diffOffset == 0 {
+		t.Error("Space でスクロールしていない")
+	}
+	m.handleKey("enter")
+	if m.diffSHA == "" {
+		t.Fatal("Enter で閉じた (1 行スクロールのはず)")
+	}
+	// 末尾を大きく超えて送っても最終行位置で止まり、開いたまま
+	for range 100 {
+		m.handleKey(" ")
+	}
+	if m.diffSHA == "" {
+		t.Fatal("末尾到達後のスクロールで閉じた")
+	}
+	if m.diffOffset != maxOffset {
+		t.Errorf("末尾で offset = %d; want %d (最終行を表示し続ける)", m.diffOffset, maxOffset)
+	}
+	view := m.View()
+	if !strings.Contains(view, diffLines[len(diffLines)-1]) {
+		t.Error("末尾で最終行が描画されていない")
+	}
+	// 閉じるのは q
+	m.handleKey("q")
+	if m.diffSHA != "" || m.done {
+		t.Errorf("q: diffSHA=%q done=%v", m.diffSHA, m.done)
+	}
+}
