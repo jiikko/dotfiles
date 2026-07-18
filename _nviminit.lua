@@ -208,7 +208,23 @@ require("lazy").setup({
   { "RRethy/nvim-treesitter-endwise",
     dependencies = { "nvim-treesitter/nvim-treesitter" }
   },
-  { "folke/which-key.nvim", event = "VeryLazy" },
+  { "folke/which-key.nvim",
+    event = "VeryLazy",
+    -- popup に出すプレフィックスの見出し (group)。個々のキーの説明は各 keymap の
+    -- desc が出典で、ここは「束の意味」だけを与える。ruby/go の ftplugin 由来の
+    -- buffer-local マッピング (r/y/b 等) は該当 buffer でだけ popup に現れる
+    opts = {
+      spec = {
+        { "<leader>f", group = "find (telescope)" },
+        { "<leader>a", group = "code action / 診断" },
+        { "<leader>g", group = "git blame / go 定義" },
+        { "<leader>n", group = "filer (nvim-tree)" },
+        { "<leader>s", group = "split / sidekick" },
+        { "<leader>r", group = "ruby refactor" },
+        { "<leader>y", group = "ruby yard" },
+      },
+    },
+  },
   { "nvim-lualine/lualine.nvim",
     dependencies = { "nvim-tree/nvim-web-devicons" },
     config = function()
