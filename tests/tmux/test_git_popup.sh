@@ -36,9 +36,9 @@ case "$*" in
   *"rev-parse --abbrev-ref HEAD"*) echo master ;;
   *"diff --cached --quiet"*) [ "${STUB_HAS_STAGED:-0}" = 1 ] && exit 1 || exit 0 ;;
   *"status --short"*) [ "${STUB_CLEAN:-0}" = 1 ] || printf '?? new.txt\n M mod.txt\n' ;;
-  *"--symbolic-full-name"*) echo origin/master ;;
+  *"--symbolic-full-name"*) [ "${STUB_NO_UPSTREAM:-0}" = 1 ] && exit 1; echo origin/master ;;
   *"rev-list --left-right --count"*) printf '0\t2\n' ;;
-  *"rev-list --count"*) echo 20 ;;
+  *"rev-list --count"*) echo "${STUB_AHEAD:-20}" ;;
   *"log "*) echo "abc1234 fake commit" ;;
 esac
 exit 0
@@ -153,6 +153,14 @@ reset_calls
 run "$STUB" "$SCRIPT" push < /dev/null
 [[ "$RC" == 0 ]] || { echo "✗ push が rc=$RC"; cat "$CALLS"; exit 1; }
 assert_called "git push" "push サブコマンドは git push を実行する"
+
+reset_calls
+STUB_AHEAD=0 run "$STUB" "$SCRIPT" push < /dev/null
+assert_not_called "git push" "未 push コミットが無ければ push せずメッセージを出す"
+
+reset_calls
+STUB_NO_UPSTREAM=1 run "$STUB" "$SCRIPT" push < /dev/null
+assert_not_called "git push" "upstream が無ければ push せずメッセージを出す"
 
 echo ""
 echo "## commit: gum 未導入の degrade (read fallback)"

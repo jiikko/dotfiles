@@ -110,10 +110,24 @@ wait_key() {
   stty "$old"
 }
 
-# 現在ブランチを upstream へ push する (clean 画面の p / fzf の C-p から)。
+# 現在ブランチを upstream へ push する (clean 画面の p / fzf の C-b から)。
 # 確認なしの一発 push はユーザー指定 (「p とか押すと push されるといい」)。
+# push できない状態 (upstream なし / 未 push コミットなし) では git を黙って走らせず、
+# 明示メッセージ + キー待ちで返す (無言・一瞬表示で「何が起きたか分からない」の防止)。
 push_current() {
-  printf '\n   %spushing...%s\n' "$DIM" "$RESET"
+  up=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || :)
+  if [ -z "$up" ]; then
+    printf '\n   upstream がありません (git push -u origin <branch> で設定してから)\n   %s(何かキーで戻る)%s\n' "$DIM" "$RESET"
+    wait_key >/dev/null
+    return 0
+  fi
+  n=$(git rev-list --count "$up..HEAD" 2>/dev/null || printf '0')
+  if [ "${n:-0}" = 0 ]; then
+    printf '\n   未 push のコミットはありません (%s と同期済み)\n   %s(何かキーで戻る)%s\n' "$up" "$DIM" "$RESET"
+    wait_key >/dev/null
+    return 0
+  fi
+  printf '\n   %spushing... (↑%s → %s)%s\n' "$DIM" "$n" "$up" "$RESET"
   if git push; then
     sleep 1
   else
