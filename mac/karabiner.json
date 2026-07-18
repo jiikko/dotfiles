@@ -5,6 +5,45 @@
                 "parameters": { "basic.to_if_alone_timeout_milliseconds": 400 },
                 "rules": [
                     {
+                        "description": "日本語入力中にCtrlを押したら（単押し・同時押し問わず）英数に切り替えてからCtrlとして機能させる",
+                        "manipulators": [
+                            {
+                                "conditions": [
+                                    {
+                                        "input_sources": [{ "language": "ja" }],
+                                        "type": "input_source_if"
+                                    }
+                                ],
+                                "from": {
+                                    "key_code": "left_control",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "to": [
+                                    { "key_code": "japanese_eisuu" },
+                                    { "key_code": "left_control" }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "input_sources": [{ "language": "ja" }],
+                                        "type": "input_source_if"
+                                    }
+                                ],
+                                "from": {
+                                    "key_code": "right_control",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "to": [
+                                    { "key_code": "japanese_eisuu" },
+                                    { "key_code": "right_control" }
+                                ],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
                         "description": "tmux prefix (Ctrl+t) で半角英数に切り替え（ターミナル限定）",
                         "manipulators": [
                             {
