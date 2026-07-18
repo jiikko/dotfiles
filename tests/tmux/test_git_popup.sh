@@ -35,7 +35,10 @@ case "$*" in
   *"--is-inside-work-tree"*) [ "${STUB_IN_REPO:-1}" = 1 ] && exit 0 || exit 1 ;;
   *"rev-parse --abbrev-ref HEAD"*) echo master ;;
   *"diff --cached --quiet"*) [ "${STUB_HAS_STAGED:-0}" = 1 ] && exit 1 || exit 0 ;;
-  *"status --short"*) printf '?? new.txt\n M mod.txt\n' ;;
+  *"status --short"*) [ "${STUB_CLEAN:-0}" = 1 ] || printf '?? new.txt\n M mod.txt\n' ;;
+  *"--symbolic-full-name"*) echo origin/master ;;
+  *"rev-list --left-right --count"*) printf '0\t2\n' ;;
+  *"log "*) echo "abc1234 fake commit" ;;
 esac
 exit 0
 EOS
@@ -78,6 +81,16 @@ assert_called "toggle {}" "Tab/Enter の stage toggle が配線されている"
 assert_called "git add -A" "C-a の全 add が配線されている"   # bind 文字列内に含まれる
 assert_called "commit" "C-o の commit が配線されている"
 assert_called "preview {}" "diff preview が配線されている"
+
+echo ""
+echo "## main: working tree が clean ならサマリ画面 (fzf を起動しない)"
+reset_calls
+STUB_CLEAN=1 run "$STUB" "$SCRIPT" < /dev/null
+[[ "$RC" == 0 ]] || { echo "✗ clean 時に rc=$RC"; cat "$CALLS"; exit 1; }
+assert_not_called "fzf" "clean 時は fzf を起動しない"
+assert_called "git log -5" "clean 時は直近コミットのサマリを出す"
+assert_called "rev-list --left-right --count" "upstream との ahead/behind を判定する"
+assert_called "gum style" "gum があれば枠付きで表示する"
 
 echo ""
 echo "## main: repo 外では起動しない"

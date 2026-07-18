@@ -23,6 +23,47 @@ set -eu
 
 self="$0"
 
+# working tree が clean なときのサマリ画面 (空の fzf リストは寂しいので、ブランチの
+# 同期状態と直近コミットを出す)。gum があれば枠付き、無ければ素の色付きテキスト。
+show_clean() {
+  branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'detached')
+  sync="upstream なし"
+  upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || :)
+  if [ -n "$upstream" ]; then
+    counts=$(git rev-list --left-right --count "$upstream...HEAD" 2>/dev/null || printf '0 0')
+    behind=$(printf '%s' "$counts" | awk '{print $1}')
+    ahead=$(printf '%s' "$counts" | awk '{print $2}')
+    if [ "${ahead:-0}" = 0 ] && [ "${behind:-0}" = 0 ]; then
+      sync="$upstream と同期済み"
+    elif [ "${behind:-0}" = 0 ]; then
+      sync="$upstream より ↑$ahead 先行 (push 待ち)"
+    elif [ "${ahead:-0}" = 0 ]; then
+      sync="$upstream より ↓$behind 遅れ (pull 待ち)"
+    else
+      sync="$upstream と分岐 (↑$ahead ↓$behind)"
+    fi
+  fi
+  body=$(printf '\033[1;38;5;46m   ✔ working tree clean\033[0m\n\n   \033[38;5;51m⎇ %s\033[0m — %s\n\n   \033[2m── 直近のコミット ──\033[0m\n%s' \
+    "$branch" "$sync" \
+    "$(git log -5 --color=always --format='   %C(yellow)%h%Creset %<(60,trunc)%s %C(dim)%cr%Creset' 2>/dev/null || :)")
+  if command -v gum >/dev/null 2>&1; then
+    printf '%s\n' "$body" | gum style --border rounded --border-foreground 46 --padding "1 2" --margin "1 1"
+  else
+    printf '\n%s\n\n' "$body"
+  fi
+  printf '   \033[2m(何かキーで閉じる)\033[0m\n'
+  wait_key
+}
+
+# 1 キー待ち (canonical mode だと Enter まで待ってしまうので raw に落とす)。非 tty では待たない。
+wait_key() {
+  [ -t 0 ] || return 0
+  old=$(stty -g 2>/dev/null) || return 0
+  stty -icanon -echo min 1 time 0
+  dd bs=1 count=1 >/dev/null 2>&1 || :
+  stty "$old"
+}
+
 # status --short の 1 行からパスを取り出す ("XY PATH" / "XY OLD -> NEW" / quote 付き)。
 line_path() {
   p=${1#???}                     # 先頭の "XY " を落とす
@@ -99,7 +140,15 @@ fi
 
 branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'detached')
 
-"$self" list | fzf --ansi --no-sort --layout=reverse \
+# clean ならサマリ画面 (fzf 内での add/commit 後に clean になったケースは対象外 —
+# その場合は fzf の空リストのまま Esc で閉じる運用)
+entries=$("$self" list)
+if [ -z "$entries" ]; then
+  show_clean
+  exit 0
+fi
+
+printf '%s\n' "$entries" | fzf --ansi --no-sort --layout=reverse \
   --prompt='git> ' \
   --header="[$branch] Tab/Enter: stage⇄unstage  C-a: 全add  C-o: commit  C-d: diff全画面  Esc: 閉じる" \
   --preview="\"$self\" preview {}" \
