@@ -81,7 +81,7 @@ assert_called "--ansi" "fzf はインクリメンタル UI (--ansi) で起動さ
 assert_called "toggle {}" "Tab/Enter の stage toggle が配線されている"
 assert_called "git add -A" "C-a の全 add が配線されている"   # bind 文字列内に含まれる
 assert_called "commit" "C-o の commit が配線されている"
-assert_called "ctrl-p:execute" "C-p の push が配線されている"
+assert_called "ctrl-b:execute" "C-b の push が配線されている (C-p は fzf のカーソル移動と衝突するため不可)"
 assert_called "preview {}" "diff preview が配線されている"
 
 echo ""

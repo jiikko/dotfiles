@@ -12,7 +12,8 @@
 #   Tab / Enter … stage ⇄ unstage トグル (worktree 側に変更があれば add、staged のみなら unstage)
 #   Ctrl-A      … 全部 add (git add -A)
 #   Ctrl-O      … commit (gum input でメッセージ。未導入なら素の read)
-#   Ctrl-P      … push (clean 画面では p。確認なしの一発 push はユーザー指定)
+#   Ctrl-B      … push (clean 画面では p。確認なしの一発 push はユーザー指定)
+#                 ⚠️ C-p にしない: fzf のカーソル上移動の定番キーで誤 push した実績あり (2026-07-18)
 #   Ctrl-D      … フォーカス中ファイルの diff を全画面 (less)
 #   Esc         … 閉じる
 #
@@ -211,13 +212,13 @@ fi
 
 printf '%s\n' "$entries" | fzf --ansi --no-sort --layout=reverse \
   --prompt='git> ' \
-  --header="[$branch] Tab/Enter: stage⇄unstage  C-a: 全add  C-o: commit  C-p: push  C-d: diff全画面  Esc: 閉じる" \
+  --header="[$branch] Tab/Enter: stage⇄unstage  C-a: 全add  C-o: commit  C-b: push  C-d: diff全画面  Esc: 閉じる" \
   --preview="\"$self\" preview {}" \
   --preview-window='right:55%:wrap' \
   --bind "tab:execute-silent(\"$self\" toggle {})+reload(\"$self\" list)" \
   --bind "enter:execute-silent(\"$self\" toggle {})+reload(\"$self\" list)" \
   --bind "ctrl-a:execute-silent(git add -A)+reload(\"$self\" list)" \
   --bind "ctrl-o:execute(\"$self\" commit)+reload(\"$self\" list)" \
-  --bind "ctrl-p:execute(\"$self\" push)+reload(\"$self\" list)" \
+  --bind "ctrl-b:execute(\"$self\" push)+reload(\"$self\" list)" \
   --bind "ctrl-d:execute(\"$self\" preview {} | less -R)" \
   || :
