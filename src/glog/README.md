@@ -71,6 +71,7 @@ glog --help              # ヘルプ (キー操作・記号・終了コードの
 |---|---|
 | `j` / `k` / `↑` / `↓` / `Ctrl-N` / `Ctrl-P` | カーソル移動 |
 | `Enter` / `Space` / `l` / `→` / `Tab` | CI job 一覧のポップアップを開く |
+| `d` | **コミットの diff をポップアップ表示** (`git show --stat --patch`。ほぼ全画面のモーダルで `j`/`k`/`C-d`/`C-u`/`g`/`G` スクロール、`q`/`Enter`/`d` で閉じる。SHA ごとにセッション内キャッシュ) |
 | `p` | **コミットに紐づく PR をブラウザで開く** (`associatedPullRequests` で解決。ブランチ指定は不要。複数あれば OPEN > MERGED 優先。無ければヒント行に通知) |
 | `Ctrl-D` / `Ctrl-U` / `PgDn` / `PgUp` | ページスクロール |
 | `g` / `G` | 先頭 / 末尾のコミットへ |

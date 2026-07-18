@@ -272,3 +272,41 @@ func TestIntegrationOutsideRepo(t *testing.T) {
 		t.Errorf("git の終了コード/stderr が伝播していない: %+v", gitErr)
 	}
 }
+
+// LoadCommitDiff は実 git に対する薄い皮なので、実リポジトリで flag の妥当性ごと検証する。
+func TestLoadCommitDiffRealRepo(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	run := func(args ...string) {
+		t.Helper()
+		if _, err := runGit(args...); err != nil {
+			t.Fatalf("git %v: %v", args, err)
+		}
+	}
+	run("init", "-q")
+	run("config", "user.email", "t@example.com")
+	run("config", "user.name", "t")
+	if err := os.WriteFile("a.txt", []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "a.txt")
+	run("commit", "-q", "-m", "add a")
+	sha, err := runGit("rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines, err := LoadCommitDiff(strings.TrimSpace(sha), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "+hello") {
+		t.Errorf("patch 本文が含まれない:\n%s", joined)
+	}
+	if !strings.Contains(joined, "a.txt") {
+		t.Errorf("stat のファイル名が含まれない:\n%s", joined)
+	}
+	if _, err := LoadCommitDiff("no-such-sha", false); err == nil {
+		t.Error("不正 SHA でエラーが返らない")
+	}
+}

@@ -241,6 +241,32 @@ func LoadDecorColors() DecorColors {
 	return dc
 }
 
+// maxDiffLines は diff ポップアップへ読み込む行数の上限。巨大コミット (自動生成物等) で
+// メモリと描画を際限なく食わないための安全弁で、超過時は末尾に省略注記を足す。
+const maxDiffLines = 5000
+
+// LoadCommitDiff は d キーの diff ポップアップ本文 (git show --stat --patch) を取得する。
+// 行は sanitizeDetailLine で無害化する (SGR 色は残しタブ/制御文字は枠描画を壊すため潰す)。
+func LoadCommitDiff(sha string, colored bool) ([]string, error) {
+	color := "--color=never"
+	if colored {
+		color = "--color=always"
+	}
+	out, err := runGit("show", "--stat", "--patch", color, sha)
+	if err != nil {
+		return nil, err
+	}
+	var lines []string
+	for line := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
+		if len(lines) >= maxDiffLines {
+			lines = append(lines, fmt.Sprintf("... (%d 行を超えるため省略。全文: git show %s)", maxDiffLines, sha))
+			break
+		}
+		lines = append(lines, sanitizeDetailLine(line))
+	}
+	return lines, nil
+}
+
 // LoadStagedDiff は --cached モードの本文 (git diff --cached) を取得する。
 // フラグ未指定時は --stat 相当を出す (staged 変更の一覧が目的で、既定でフル patch は過剰なため)。
 func LoadStagedDiff(opts *Options, colored bool) (string, error) {

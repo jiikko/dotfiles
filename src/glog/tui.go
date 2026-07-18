@@ -63,6 +63,16 @@ type prMsg struct {
 	ghErr *GHError
 }
 
+// diffMsg はコミット diff のオンデマンド取得の結果 (d キー)。
+type diffMsg struct {
+	sha   string
+	lines []string
+	err   error
+}
+
+// loadCommitDiff はテストで実 git を叩かないための差し替え点。
+var loadCommitDiff = LoadCommitDiff
+
 // openInBrowser はテストで実ブラウザを開かないための差し替え点。
 var openInBrowser = func(url string) error {
 	switch runtime.GOOS {
@@ -121,6 +131,10 @@ type browseModel struct {
 	jobDetailBusy  map[string]bool     // 取得中の key
 	prCache        map[string]*PRRef   // sha → 紐づく PR (nil 格納 = 確認済みで PR なし)
 	prBusy         map[string]bool     // PR 取得中の sha
+	diffSHA        string              // diff ポップアップ表示中の SHA ("" = 非表示)
+	diffOffset     int                 // diff ポップアップのスクロール位置
+	diffCache      map[string][]string // sha → 整形済み diff 行 (メモリ内キャッシュ)
+	diffBusy       map[string]bool     // diff 取得中の sha
 	notice         string // hint 行に出す一時メッセージ (次のキーで消える)
 	fetching       bool
 	done           bool
@@ -147,6 +161,8 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		jobDetailBusy:  map[string]bool{},
 		prCache:        map[string]*PRRef{},
 		prBusy:         map[string]bool{},
+		diffCache:      map[string][]string{},
+		diffBusy:       map[string]bool{},
 		toFetch:        toFetch,
 		repo:           repo,
 		hasRepo:        hasRepo,
@@ -258,6 +274,17 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.notice = fmt.Sprintf("PR #%d を開きます", msg.pr.Number)
 		return m, m.openURLCmd(msg.pr.URL)
+	case diffMsg:
+		delete(m.diffBusy, msg.sha)
+		if msg.err != nil {
+			m.notice = "diff の取得に失敗しました: " + firstLine(msg.err.Error())
+			if m.diffSHA == msg.sha {
+				m.diffSHA = ""
+			}
+			return m, nil
+		}
+		m.diffCache[msg.sha] = msg.lines
+		return m, nil
 	case openURLMsg:
 		if msg.err != nil {
 			m.notice = "ブラウザを開けませんでした: " + firstLine(msg.err.Error())
@@ -290,6 +317,10 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	m.notice = ""
 	if key == "ctrl+c" {
 		return m.quit()
+	}
+	// diff ポップアップ表示中はスクロール/閉じる操作だけを受ける (最前面のモーダル)
+	if m.diffSHA != "" {
+		return m.handleDiffKey(key)
 	}
 	// q はビューのスタックを 1 段戻る (tig 流。ユーザー要望): 詳細 → job 一覧 →
 	// コミット一覧、と閉じていき、最上位でだけ終了。即終了したいときは Ctrl-C
@@ -333,6 +364,8 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.copyFocusURL()
 	case "p":
 		return m, m.openPR()
+	case "d":
+		return m, m.openDiff()
 	}
 	return m, nil
 }
@@ -395,6 +428,8 @@ func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 		m.copyFocusURL()
 	case "p":
 		return m, m.openPR()
+	case "d":
+		return m, m.openDiff()
 	}
 	return m, nil
 }
@@ -606,6 +641,108 @@ func (m *browseModel) openPR() tea.Cmd {
 	}
 }
 
+// openDiff はカーソル位置 (パネル表示中はそのコミット) の diff ポップアップを開く (d キー)。
+// 同じコミットで再度 d を押すと閉じる (toggle)。job パネルは閉じてから開く (重ね順の単純化)。
+func (m *browseModel) openDiff() tea.Cmd {
+	if len(m.commits) == 0 {
+		return nil
+	}
+	sha := m.commits[m.cursor].SHA
+	if m.panelSHA != "" {
+		sha = m.panelSHA
+	}
+	m.closePanel()
+	if m.diffSHA == sha {
+		m.diffSHA = ""
+		return nil
+	}
+	m.diffSHA = sha
+	m.diffOffset = 0
+	if _, ok := m.diffCache[sha]; ok {
+		return nil
+	}
+	if m.diffBusy[sha] {
+		return nil
+	}
+	m.diffBusy[sha] = true
+	colored := m.colored
+	cmd := func() tea.Msg {
+		lines, err := loadCommitDiff(sha, colored)
+		return diffMsg{sha: sha, lines: lines, err: err}
+	}
+	return tea.Batch(cmd, tick())
+}
+
+// handleDiffKey は diff ポップアップ表示中のキー操作。j/k はスクロール。
+func (m *browseModel) handleDiffKey(key string) (tea.Model, tea.Cmd) {
+	rows := m.visibleDiffRows()
+	maxOffset := max(len(m.diffCache[m.diffSHA])-rows, 0)
+	switch key {
+	case "q", "esc", "enter", " ", "h", "left", "d":
+		m.diffSHA = ""
+		m.diffOffset = 0
+	case "j", "down", "ctrl+n":
+		m.diffOffset = min(m.diffOffset+1, maxOffset)
+	case "k", "up", "ctrl+p":
+		m.diffOffset = max(m.diffOffset-1, 0)
+	case "ctrl+d", "pgdown":
+		m.diffOffset = min(m.diffOffset+rows/2, maxOffset)
+	case "ctrl+u", "pgup":
+		m.diffOffset = max(m.diffOffset-rows/2, 0)
+	case "g", "home":
+		m.diffOffset = 0
+	case "G", "end":
+		m.diffOffset = maxOffset
+	case "y":
+		m.copyFocusURL()
+	}
+	return m, nil
+}
+
+// visibleDiffRows は diff ポップアップの本文行数。diff は主役コンテンツなので
+// ビューポートほぼ全面 (枠 2 行 + 余白 1 行 + ヒント行ぶんを差し引く) を使う。
+func (m *browseModel) visibleDiffRows() int {
+	return max(m.pageSize()-4, 3)
+}
+
+// diffBoxLines は diff ポップアップの描画行 (枠付き)。非表示なら nil。
+func (m *browseModel) diffBoxLines() []string {
+	if m.diffSHA == "" {
+		return nil
+	}
+	width := m.width
+	if width <= 0 {
+		width = 80
+	}
+	var commit *Commit
+	for i := range m.commits {
+		if m.commits[i].SHA == m.diffSHA {
+			commit = &m.commits[i]
+			break
+		}
+	}
+	if commit == nil {
+		return nil
+	}
+	var rows []string
+	title := fmt.Sprintf(" diff: %s %s ", commit.ShortSHA, commit.Subject)
+	switch {
+	case m.diffBusy[m.diffSHA]:
+		rows = []string{paint(m.spinner()+" diff を取得中...", ansiDim, m.colored)}
+	default:
+		lines := m.diffCache[m.diffSHA]
+		if len(lines) == 0 {
+			rows = []string{paint("(diff はありません)", ansiDim, m.colored)}
+			break
+		}
+		start := min(m.diffOffset, max(len(lines)-1, 0))
+		end := min(start+m.visibleDiffRows(), len(lines))
+		rows = append(rows, lines[start:end]...)
+		title = fmt.Sprintf(" diff: %s [%d-%d/%d] %s ", commit.ShortSHA, start+1, end, len(lines), commit.Subject)
+	}
+	return buildPanelBox(title, rows, width, m.colored)
+}
+
 // fillUnknown は結果が得られなかった SHA を「取得中」のまま残さず unknown へ落とす。
 func (m *browseModel) fillUnknown() {
 	for _, sha := range m.toFetch {
@@ -616,7 +753,7 @@ func (m *browseModel) fillUnknown() {
 }
 
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0
+	return m.fetching || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || len(m.diffBusy) > 0
 }
 
 func (m *browseModel) spinner() string {
@@ -704,17 +841,12 @@ func (m *browseModel) View() string {
 	// リストの行構成自体は変えないので、開閉で後続行がずれない。
 	// 下に収まらない場合はビューポート内へ収まる位置まで引き上げる
 	if panel := m.panelLines(); len(panel) > 0 {
-		start := m.panelAnchor(lines, offset) + 1
-		start = min(start, max(page-len(panel), 0))
-		start = max(start, 0)
-		for i, p := range panel {
-			pos := start + i
-			if pos < len(window) {
-				window[pos] = p
-			} else if len(window) < page {
-				window = append(window, p)
-			}
-		}
+		window = overlayBox(window, panel, m.boxAnchor(lines, offset, m.panelSHA)+1, page)
+	}
+	// diff ポップアップは job パネルよりさらに前面 (openDiff がパネルを閉じるため
+	// 実際に同時表示になることはないが、重ね順の契約としてパネルの後に描く)
+	if diffBox := m.diffBoxLines(); len(diffBox) > 0 {
+		window = overlayBox(window, diffBox, m.boxAnchor(lines, offset, m.diffSHA)+1, page)
 	}
 	var b strings.Builder
 	for _, w := range window {
@@ -725,15 +857,31 @@ func (m *browseModel) View() string {
 	return b.String()
 }
 
-// panelAnchor はパネル対象コミットのヘッダー行のウィンドウ内位置を返す
-// (ウィンドウ外へスクロールしている場合は先頭 -1 = パネルは最上部に出る)。
-func (m *browseModel) panelAnchor(lines []Line, offset int) int {
+// boxAnchor は sha のコミットヘッダー行のウィンドウ内位置を返す
+// (ウィンドウ外へスクロールしている場合は先頭 -1 = ボックスは最上部に出る)。
+func (m *browseModel) boxAnchor(lines []Line, offset int, sha string) int {
 	for i, l := range lines {
-		if l.Header && l.CommitIdx < len(m.commits) && m.commits[l.CommitIdx].SHA == m.panelSHA {
+		if l.Header && l.CommitIdx < len(m.commits) && m.commits[l.CommitIdx].SHA == sha {
 			return i - offset
 		}
 	}
 	return -1
+}
+
+// overlayBox は box をウィンドウの anchor 位置へ重ねる (リスト行を置き換える)。
+// 下に収まらない場合はビューポート内へ収まる位置まで引き上げる。
+func overlayBox(window, box []string, anchor, page int) []string {
+	start := min(anchor, max(page-len(box), 0))
+	start = max(start, 0)
+	for i, p := range box {
+		pos := start + i
+		if pos < len(window) {
+			window[pos] = p
+		} else if len(window) < page {
+			window = append(window, p)
+		}
+	}
+	return window
 }
 
 // panelLines は job パネルの描画行 (枠付き)。パネル非表示なら nil。
@@ -860,8 +1008,10 @@ func cursorMark(colored bool) string {
 }
 
 func (m *browseModel) hintLine() string {
-	hint := "j/k: 移動  Enter: CI job  p: PR  y: URL コピー  q: 終了"
+	hint := "j/k: 移動  Enter: CI job  d: diff  p: PR  y: URL コピー  q: 終了"
 	switch {
+	case m.diffSHA != "":
+		hint = "j/k: スクロール  C-d/C-u: 半頁  g/G: 先頭/末尾  Enter/h/q: 閉じる"
 	case m.detailOpen:
 		hint = "j/k: スクロール  Enter/h/q: 戻る  o: ブラウザ  y: URL コピー"
 	case m.panelSHA != "" && m.panelCursor >= 0:

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -818,5 +819,138 @@ func TestBuildPanelBoxTitleStripsANSI(t *testing.T) {
 	}
 	if w := runewidth.StringWidth(lines[0]); w != 40 {
 		t.Errorf("タイトル行の幅 = %d; want 40: %q", w, lines[0])
+	}
+}
+
+// --- diff ポップアップ (d キー) ---
+
+// stubDiff は loadCommitDiff を差し替え、呼び出し記録と固定行を返す。
+func stubDiff(t *testing.T, lines []string, err error) *[]string {
+	t.Helper()
+	var calls []string
+	orig := loadCommitDiff
+	loadCommitDiff = func(sha string, colored bool) ([]string, error) {
+		calls = append(calls, sha)
+		return lines, err
+	}
+	t.Cleanup(func() { loadCommitDiff = orig })
+	return &calls
+}
+
+// runCmd は tea.Cmd (tea.Batch 含む) を同期実行して diffMsg を探して Update へ流す。
+func deliverDiffMsg(t *testing.T, m *browseModel, cmd tea.Cmd) {
+	t.Helper()
+	if cmd == nil {
+		t.Fatal("cmd が nil (diff 取得コマンドが返っていない)")
+	}
+	var deliver func(msg tea.Msg)
+	deliver = func(msg tea.Msg) {
+		switch v := msg.(type) {
+		case tea.BatchMsg:
+			for _, c := range v {
+				if c != nil {
+					deliver(c())
+				}
+			}
+		case diffMsg:
+			m.Update(v)
+		}
+	}
+	deliver(cmd())
+}
+
+func TestBrowseDiffOpenScrollClose(t *testing.T) {
+	m := newTestBrowse(t, 2, nil, nil)
+	diffLines := make([]string, 20)
+	for i := range diffLines {
+		diffLines[i] = fmt.Sprintf("line-%d", i)
+	}
+	calls := stubDiff(t, diffLines, nil)
+
+	_, cmd := m.handleKey("d")
+	if m.diffSHA != m.commits[0].SHA {
+		t.Fatalf("diffSHA = %q; want カーソル位置のコミット", m.diffSHA)
+	}
+	if !m.diffBusy[m.diffSHA] {
+		t.Error("取得中フラグが立っていない")
+	}
+	deliverDiffMsg(t, m, cmd)
+	if len(*calls) != 1 || (*calls)[0] != m.commits[0].SHA {
+		t.Fatalf("loadCommitDiff の呼び出し = %v", *calls)
+	}
+	if m.diffBusy[m.diffSHA] {
+		t.Error("取得完了後も busy のまま")
+	}
+	view := m.View()
+	if !strings.Contains(view, "line-0") || !strings.Contains(view, "diff:") {
+		t.Fatalf("diff ポップアップが描画されていない:\n%s", view)
+	}
+	// スクロール: j で 1 行、G で末尾
+	m.handleKey("j")
+	if m.diffOffset != 1 {
+		t.Errorf("j 後の offset = %d; want 1", m.diffOffset)
+	}
+	m.handleKey("G")
+	if m.diffOffset != len(diffLines)-m.visibleDiffRows() {
+		t.Errorf("G 後の offset = %d", m.diffOffset)
+	}
+	// q で閉じる (アプリは終了しない)
+	m.handleKey("q")
+	if m.diffSHA != "" || m.done {
+		t.Errorf("q: diffSHA=%q done=%v; want 閉じるのみ", m.diffSHA, m.done)
+	}
+}
+
+func TestBrowseDiffToggleAndCache(t *testing.T) {
+	m := newTestBrowse(t, 1, nil, nil)
+	calls := stubDiff(t, []string{"x"}, nil)
+	_, cmd := m.handleKey("d")
+	deliverDiffMsg(t, m, cmd)
+	m.handleKey("d") // toggle 閉
+	if m.diffSHA != "" {
+		t.Fatal("d の再押下で閉じていない")
+	}
+	_, cmd2 := m.handleKey("d") // 再度開く → キャッシュヒットで再取得しない
+	if cmd2 != nil {
+		t.Error("キャッシュヒット時にも取得コマンドが返った")
+	}
+	if len(*calls) != 1 {
+		t.Errorf("loadCommitDiff 呼び出し回数 = %d; want 1 (キャッシュ)", len(*calls))
+	}
+	if m.diffSHA == "" {
+		t.Error("キャッシュヒット時に開いていない")
+	}
+}
+
+func TestBrowseDiffFromPanelUsesPanelSHA(t *testing.T) {
+	m := newTestBrowse(t, 2, nil, nil)
+	withJobs(m, 0)
+	m.handleKey("enter") // panel を開く
+	if m.panelSHA == "" {
+		t.Fatal("panel が開いていない")
+	}
+	stubDiff(t, []string{"x"}, nil)
+	m.handleKey("d")
+	if m.diffSHA != m.commits[0].SHA {
+		t.Errorf("diffSHA = %q; want panel のコミット", m.diffSHA)
+	}
+	if m.panelSHA != "" {
+		t.Error("diff を開いたら panel は閉じる契約")
+	}
+}
+
+func TestBrowseDiffErrorShowsNoticeAndCloses(t *testing.T) {
+	m := newTestBrowse(t, 1, nil, nil)
+	stubDiff(t, nil, errors.New("boom"))
+	_, cmd := m.handleKey("d")
+	deliverDiffMsg(t, m, cmd)
+	if m.diffSHA != "" {
+		t.Error("取得失敗時にポップアップが開いたまま")
+	}
+	if !strings.Contains(m.notice, "diff の取得に失敗") {
+		t.Errorf("notice = %q", m.notice)
+	}
+	if strings.Contains(m.hintLine(), "diff の取得に失敗") == false {
+		t.Errorf("hint に notice が出ていない: %q", m.hintLine())
 	}
 }
