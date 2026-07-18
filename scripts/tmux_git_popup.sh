@@ -12,6 +12,7 @@
 #   Tab / Enter … stage ⇄ unstage トグル (worktree 側に変更があれば add、staged のみなら unstage)
 #   Ctrl-A      … 全部 add (git add -A)
 #   Ctrl-O      … commit (gum input でメッセージ。未導入なら素の read)
+#   Ctrl-P      … push (clean 画面では p。確認なしの一発 push はユーザー指定)
 #   Ctrl-D      … フォーカス中ファイルの diff を全画面 (less)
 #   Esc         … 閉じる
 #
@@ -83,17 +84,39 @@ show_clean() {
   # screen を開いてしまい、直前に描いたバッジ/ドット行が画面ごと消える (実機で再現済み)
   git --no-pager log -5 --color=always --date=format:'%H:%M' \
     --format="   %C($THEME_QUANTITY_YELLOW)%h%Creset %C(dim)%cd%Creset %<(58,trunc)%s" 2>/dev/null || :
-  printf '\n   %s(何かキーで閉じる)%s\n' "$DIM" "$RESET"
-  wait_key
+  if [ -n "$upstream" ]; then
+    printf '\n   %s(p: push / 他キー: 閉じる)%s\n' "$DIM" "$RESET"
+  else
+    printf '\n   %s(何かキーで閉じる)%s\n' "$DIM" "$RESET"
+  fi
+  key=$(wait_key)
+  if [ "$key" = p ] && [ -n "$upstream" ]; then
+    push_current
+    clear 2>/dev/null || :
+    show_clean   # push 後の同期状態を再描画 (↑N → ✔ 同期 が見える)
+  fi
 }
 
-# 1 キー待ち (canonical mode だと Enter まで待ってしまうので raw に落とす)。非 tty では待たない。
+# 1 キー待ち。押されたキーを stdout へ返す (canonical mode だと Enter まで待ってしまう
+# ので raw に落とす)。非 tty では待たず空を返す。
 wait_key() {
   [ -t 0 ] || return 0
   old=$(stty -g 2>/dev/null) || return 0
   stty -icanon -echo min 1 time 0
-  dd bs=1 count=1 >/dev/null 2>&1 || :
+  dd bs=1 count=1 2>/dev/null || :
   stty "$old"
+}
+
+# 現在ブランチを upstream へ push する (clean 画面の p / fzf の C-p から)。
+# 確認なしの一発 push はユーザー指定 (「p とか押すと push されるといい」)。
+push_current() {
+  printf '\n   %spushing...%s\n' "$DIM" "$RESET"
+  if git push; then
+    sleep 1
+  else
+    printf '   %spush 失敗 (何かキーで戻る)%s\n' "$DIM" "$RESET"
+    wait_key >/dev/null
+  fi
 }
 
 # status --short の 1 行からパスを取り出す ("XY PATH" / "XY OLD -> NEW" / quote 付き)。
@@ -157,9 +180,13 @@ commit)
   sleep 1  # 結果 (sha / 行数) を一瞬見せてから一覧へ戻る
   exit 0
   ;;
+push)
+  push_current
+  exit 0
+  ;;
 "") ;;  # 引数なし = メイン (fzf 起動) へ
 *)
-  printf 'usage: tmux_git_popup.sh [list|toggle|preview|commit]\n' >&2
+  printf 'usage: tmux_git_popup.sh [list|toggle|preview|commit|push]\n' >&2
   exit 2
   ;;
 esac
@@ -182,12 +209,13 @@ fi
 
 printf '%s\n' "$entries" | fzf --ansi --no-sort --layout=reverse \
   --prompt='git> ' \
-  --header="[$branch] Tab/Enter: stage⇄unstage  C-a: 全add  C-o: commit  C-d: diff全画面  Esc: 閉じる" \
+  --header="[$branch] Tab/Enter: stage⇄unstage  C-a: 全add  C-o: commit  C-p: push  C-d: diff全画面  Esc: 閉じる" \
   --preview="\"$self\" preview {}" \
   --preview-window='right:55%:wrap' \
   --bind "tab:execute-silent(\"$self\" toggle {})+reload(\"$self\" list)" \
   --bind "enter:execute-silent(\"$self\" toggle {})+reload(\"$self\" list)" \
   --bind "ctrl-a:execute-silent(git add -A)+reload(\"$self\" list)" \
   --bind "ctrl-o:execute(\"$self\" commit)+reload(\"$self\" list)" \
+  --bind "ctrl-p:execute(\"$self\" push)+reload(\"$self\" list)" \
   --bind "ctrl-d:execute(\"$self\" preview {} | less -R)" \
   || :
