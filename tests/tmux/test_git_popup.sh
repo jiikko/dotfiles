@@ -56,6 +56,7 @@ EOS
 cat > "$TMP_DIR/bin/gum" <<'EOS'
 #!/bin/sh
 echo "gum $*" >> "$CALLS"
+[ "$1" = confirm ] && exit "${STUB_CONFIRM_RC:-0}"
 printf '%s\n' "${STUB_GUM_MSG:-}"
 EOS
 
@@ -161,6 +162,22 @@ assert_not_called "git push" "未 push コミットが無ければ push せず�
 reset_calls
 STUB_NO_UPSTREAM=1 run "$STUB" "$SCRIPT" push < /dev/null
 assert_not_called "git push" "upstream が無ければ push せずメッセージを出す"
+
+reset_calls
+run "$STUB" "$SCRIPT" push < /dev/null
+assert_called "gum confirm --default=false" "push 前に gum confirm (デフォルト No) を挟む"
+
+reset_calls
+STUB_CONFIRM_RC=1 run "$STUB" "$SCRIPT" push < /dev/null
+assert_not_called "git push" "confirm 拒否なら push しない"
+
+reset_calls
+run "$STUB_NOGUM" "$SCRIPT" push <<< "n"
+assert_not_called "git push" "gum 無し: read fallback で n なら push しない"
+
+reset_calls
+run "$STUB_NOGUM" "$SCRIPT" push <<< "y"
+assert_called "git push" "gum 無し: read fallback で y なら push する"
 
 echo ""
 echo "## commit: gum 未導入の degrade (read fallback)"

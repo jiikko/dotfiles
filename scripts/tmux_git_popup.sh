@@ -12,7 +12,7 @@
 #   Tab / Enter … stage ⇄ unstage トグル (worktree 側に変更があれば add、staged のみなら unstage)
 #   Ctrl-A      … 全部 add (git add -A)
 #   Ctrl-O      … commit (gum input でメッセージ。未導入なら素の read)
-#   Ctrl-B      … push (clean 画面では p。確認なしの一発 push はユーザー指定)
+#   Ctrl-B      … push (clean 画面では p)。gum confirm (デフォルト No) を挟む
 #                 ⚠️ C-p にしない: fzf のカーソル上移動の定番キーで誤 push した実績あり (2026-07-18)
 #   Ctrl-D      … フォーカス中ファイルの diff を全画面 (less)
 #   Esc         … 閉じる
@@ -111,7 +111,8 @@ wait_key() {
 }
 
 # 現在ブランチを upstream へ push する (clean 画面の p / fzf の C-b から)。
-# 確認なしの一発 push はユーザー指定 (「p とか押すと push されるといい」)。
+# 実行前に確認を挟む (当初は確認なし一発 push のユーザー指定だったが、誤爆を受けて
+# confirm 追加へ変更 2026-07-18)。gum confirm は kill 確認と同じ --default=false。
 # push できない状態 (upstream なし / 未 push コミットなし) では git を黙って走らせず、
 # 明示メッセージ + キー待ちで返す (無言・一瞬表示で「何が起きたか分からない」の防止)。
 push_current() {
@@ -126,6 +127,13 @@ push_current() {
     printf '\n   未 push のコミットはありません (%s と同期済み)\n   %s(何かキーで戻る)%s\n' "$up" "$DIM" "$RESET"
     wait_key >/dev/null
     return 0
+  fi
+  if command -v gum >/dev/null 2>&1; then
+    gum confirm --default=false "↑$n commit を $up へ push しますか?" || return 0
+  else
+    printf '\n   ↑%s commit を %s へ push しますか? [y/N] ' "$n" "$up"
+    IFS= read -r ans || ans=''
+    case "$ans" in y|Y|yes) ;; *) return 0 ;; esac
   fi
   printf '\n   %spushing... (↑%s → %s)%s\n' "$DIM" "$n" "$up" "$RESET"
   if git push; then
