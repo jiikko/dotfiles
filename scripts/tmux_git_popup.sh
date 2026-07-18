@@ -209,9 +209,33 @@ push)
   push_current
   exit 0
   ;;
+-h|--help|help)
+  cat <<'EOF'
+tmux_git_popup.sh — git 操作 popup (fzf)。tmux の C-g / C-t g から開くが、直接実行も可 (cwd の repo が対象)
+
+使い方: tmux_git_popup.sh              # fzf UI を起動 (clean ならサマリ画面)
+        tmux_git_popup.sh --help
+
+キー (ファイル一覧):
+  タイプ      ファイル絞り込み
+  Tab/Enter   stage ⇄ unstage トグル
+  Ctrl-A      全部 add
+  Ctrl-O      commit (メッセージ入力)
+  Ctrl-B      push (確認あり)
+  Ctrl-D      diff 全画面 (less)
+  Esc         閉じる
+
+clean 画面 (変更なしのとき):
+  p           push (確認あり)
+  他キー      閉じる
+
+内部サブコマンド (fzf の execute/reload から再入する用): list toggle preview commit push
+EOF
+  exit 0
+  ;;
 "") ;;  # 引数なし = メイン (fzf 起動) へ
 *)
-  printf 'usage: tmux_git_popup.sh [list|toggle|preview|commit|push]\n' >&2
+  printf 'usage: tmux_git_popup.sh [--help]\n' >&2
   exit 2
   ;;
 esac
