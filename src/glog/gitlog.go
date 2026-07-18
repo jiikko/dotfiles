@@ -247,12 +247,10 @@ const maxDiffLines = 5000
 
 // LoadCommitDiff は d キーの diff ポップアップ本文 (git show --stat --patch) を取得する。
 // 行は sanitizeDetailLine で無害化する (SGR 色は残しタブ/制御文字は枠描画を壊すため潰す)。
+// 色は git に任せず --color=never で受けて HighlightDiff が付ける (diff 構造色 +
+// chroma のシンタックスハイライト。切り捨て方は highlight.go 冒頭コメント参照)。
 func LoadCommitDiff(sha string, colored bool) ([]string, error) {
-	color := "--color=never"
-	if colored {
-		color = "--color=always"
-	}
-	out, err := runGit("show", "--stat", "--patch", color, sha)
+	out, err := runGit("show", "--stat", "--patch", "--color=never", sha)
 	if err != nil {
 		return nil, err
 	}
@@ -263,6 +261,9 @@ func LoadCommitDiff(sha string, colored bool) ([]string, error) {
 			break
 		}
 		lines = append(lines, sanitizeDetailLine(line))
+	}
+	if colored {
+		lines = HighlightDiff(lines)
 	}
 	return lines, nil
 }
