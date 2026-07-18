@@ -20,6 +20,11 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 
 ## 定数の出典 (単一ソース)
 
+- **役割 → 色番号のカタログ**: [`theme/colors.yml`](../theme/colors.yml) — 機械可読な単一ソース。
+  shell スクリプト用の定数 `scripts/lib/theme_colors.sh` は `scripts/gen_theme_colors.sh` で生成。
+  tmux / nvim は設定言語が別で定数を共有できないため下記の各定数が手書きのまま残るが、
+  `tests/theme/test_theme_colors.sh` (make test に含まれる) が yml との一致を機械検証する
+  (色を変えるときは yml → 生成 → 各定数の順で揃える。ズレたらテストが落ちる)
 - **nvim**: [`nvim/lua/dotfiles/palette.lua`](../nvim/lua/dotfiles/palette.lua) — 全カスタム色の hex↔cterm 組。
   3 節構成 (gruvbox 基調 / accent=tmux 共有 / diag=coc 踏襲)。適用規律 (ColorScheme 再適用・
   cterm 併記) は [`hl.lua`](../nvim/lua/dotfiles/hl.lua) が一次情報

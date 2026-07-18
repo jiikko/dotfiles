@@ -1,0 +1,45 @@
+---
+# dotfiles のベースカラー・カタログ (単一ソース)。
+# 意味 (role) → 色の定義。人間向けの解説・変更手順は docs/theme-colors.md。
+#
+# 反映のしくみ (ツールごとに設定言語が違うため 2 方式):
+#   - 生成: scripts/gen_theme_colors.sh が scripts/lib/theme_colors.sh (sh 定数) を生成する。
+#     git popup 等の shell スクリプトはそれを source する
+#   - 検証: _tmux.conf / nvim palette.lua の該当定数は手書きのまま、
+#     tests/theme/test_theme_colors.sh が本ファイルとの一致を検査する (drift = make test 失敗)
+#
+# フィールド:
+#   cterm: 256色番号 (必須。主環境は 256色運用)
+#   hex:   truecolor 値 (nvim palette.lua に対応エントリがある role のみ。cterm はその近似)
+
+current_accent:      # 現在地 (tmux @cur-accent / nvim bufferline 選択 pill)
+  cterm: 202
+  hex: "#FF5F00"
+kraft:               # 選択中テキスト (nvim Visual)
+  cterm: 180
+  hex: "#D4A27F"
+active_green:        # 正常/アクティブ (tmux ACTIVE 帯・カーソル / popup CLEAN バッジ)
+  cterm: 46
+info_cyan:           # 情報/通知 (tmux バー session/path 帯・bell / popup ブランチ)
+  cterm: 51
+marker_orange:       # 未保存・未 push マーカー (tmux copy-mode mark / nvim incline ● / popup dots)
+  cterm: 208
+  hex: "#fe8019"
+quantity_yellow:     # 数量 (tmux pane 数 / popup hash)
+  cterm: 214
+  hex: "#fabd2f"
+cold_gray:           # 消灯 (tmux fade cold / popup push 済み dots)
+  cterm: 240
+zoom_red:            # zoom 警告 (tmux @zoom-accent)
+  cterm: 160
+error_red:           # 危険 (tmux sync 枠 / nvim diag.error_bg)
+  cterm: 196
+  hex: "#ff0000"
+blink_magenta:       # 点滅/scratch アイデンティティ (tmux)
+  cterm: 201
+base_pane_bg:        # 地色: pane/エディタ (tmux window-style / nvim dark0_hard)
+  cterm: 234
+  hex: "#1d2021"
+base_bar_bg:         # 地色: ステータスバー (tmux status-style / nvim dark0)
+  cterm: 235
+  hex: "#282828"

@@ -23,17 +23,28 @@ set -eu
 
 self="$0"
 
+# 配色定数 (単一ソース theme/colors.yml から生成。役割の対応は docs/theme-colors.md)
+# shellcheck source=scripts/lib/theme_colors.sh
+. "$(dirname "$0")/lib/theme_colors.sh"
+
+sgr() { printf '\033[%sm' "$1"; }
+RESET=$(sgr 0)
+DIM=$(sgr 2)
+FG_GREEN=$(sgr "38;5;$THEME_ACTIVE_GREEN")
+FG_CYAN=$(sgr "38;5;$THEME_INFO_CYAN")
+FG_ORANGE=$(sgr "38;5;$THEME_MARKER_ORANGE")
+BADGE_ON=$(sgr "1;38;5;16;48;5;$THEME_ACTIVE_GREEN")
+DOT_UNPUSHED=$(sgr "38;5;$THEME_MARKER_ORANGE")●$RESET
+DOT_PUSHED=$(sgr "38;5;$THEME_COLD_GRAY")●$RESET
+
 # working tree が clean なときのサマリ画面 (空の fzf リストは寂しいので、反転バッジ +
 # ブランチ同期状態 + 未 push ドットグラフ + 直近コミットを出す)。素の ANSI 256 色のみで
-# 描く (gum 不要 = degrade 分岐なし)。
-# 配色は docs/theme-colors.md の意味マップから借りる (tmux/nvim と色言語を揃える):
-#   緑 46 = 正常/アクティブ (ACTIVE 帯と同じ) / シアン 51 = 情報 (バーの session/path 帯と同じ)
-#   橙 208 = 未保存・未 push マーカー / 黄 214 = 数量 (pane 数と同じ) / 灰 240 = 消灯
+# 描く (gum 不要 = degrade 分岐なし)。配色は冒頭で source した theme/colors.yml 由来の定数。
 show_clean() {
   branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'detached')
   ahead=0
   behind=0
-  sync='\033[2mupstream なし\033[0m'
+  sync="${DIM}upstream なし${RESET}"
   upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || :)
   if [ -n "$upstream" ]; then
     counts=$(git rev-list --left-right --count "$upstream...HEAD" 2>/dev/null || printf '0 0')
@@ -42,16 +53,17 @@ show_clean() {
     ahead=${ahead:-0}
     behind=${behind:-0}
     if [ "$ahead" = 0 ] && [ "$behind" = 0 ]; then
-      sync="\033[38;5;46m✔ $upstream と同期\033[0m"
+      sync="${FG_GREEN}✔ $upstream と同期${RESET}"
     elif [ "$behind" = 0 ]; then
-      sync="\033[38;5;208m↑$ahead\033[0m \033[2mpush 待ち ($upstream)\033[0m"
+      sync="${FG_ORANGE}↑$ahead${RESET} ${DIM}push 待ち ($upstream)${RESET}"
     elif [ "$ahead" = 0 ]; then
-      sync="\033[38;5;51m↓$behind\033[0m \033[2mpull 待ち ($upstream)\033[0m"
+      sync="${FG_CYAN}↓$behind${RESET} ${DIM}pull 待ち ($upstream)${RESET}"
     else
-      sync="\033[38;5;208m↑$ahead\033[0m \033[38;5;51m↓$behind\033[0m \033[2m$upstream と分岐\033[0m"
+      sync="${FG_ORANGE}↑$ahead${RESET} ${FG_CYAN}↓$behind${RESET} ${DIM}$upstream と分岐${RESET}"
     fi
   fi
-  printf '\n\n   \033[1;38;5;16;48;5;46m  ✔ CLEAN  \033[0m  \033[38;5;51m⎇ %s\033[0m \033[2m·\033[0m %b\n\n' "$branch" "$sync"
+  printf '\n\n   %s  ✔ CLEAN  %s  %s⎇ %s%s %s·%s %s\n\n' \
+    "$BADGE_ON" "$RESET" "$FG_CYAN" "$branch" "$RESET" "$DIM" "$RESET" "$sync"
   # 未 push があるときだけ、直近 20 commit を dots で可視化 (橙 = 未 push・灰 = push 済み)
   if [ "$ahead" -gt 0 ] 2>/dev/null; then
     total=$(git rev-list --count --max-count=20 HEAD 2>/dev/null || printf '0')
@@ -59,19 +71,19 @@ show_clean() {
     i=0
     while [ "$i" -lt "${total:-0}" ]; do
       if [ "$i" -lt "$ahead" ]; then
-        dots="$dots\033[38;5;208m●\033[0m"
+        dots="$dots$DOT_UNPUSHED"
       else
-        dots="$dots\033[38;5;240m●\033[0m"
+        dots="$dots$DOT_PUSHED"
       fi
       i=$((i + 1))
     done
-    printf '   %b  \033[2m← 未 push %s / 最新 %s commit\033[0m\n\n' "$dots" "$ahead" "$total"
+    printf '   %s  %s← 未 push %s / 最新 %s commit%s\n\n' "$dots" "$DIM" "$ahead" "$total" "$RESET"
   fi
   # --no-pager 必須: popup 内は stdout が tty なので、素の git log は less の alternate
   # screen を開いてしまい、直前に描いたバッジ/ドット行が画面ごと消える (実機で再現済み)
   git --no-pager log -5 --color=always --date=format:'%H:%M' \
-    --format='   %C(214)%h%Creset %C(dim)%cd%Creset %<(58,trunc)%s' 2>/dev/null || :
-  printf '\n   \033[2m(何かキーで閉じる)\033[0m\n'
+    --format="   %C($THEME_QUANTITY_YELLOW)%h%Creset %C(dim)%cd%Creset %<(58,trunc)%s" 2>/dev/null || :
+  printf '\n   %s(何かキーで閉じる)%s\n' "$DIM" "$RESET"
   wait_key
 }
 
