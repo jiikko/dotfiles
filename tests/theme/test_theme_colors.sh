@@ -36,7 +36,12 @@ assert_tmux "現在地 @cur-accent = current_accent" "@cur-accent 'colour${THEME
 assert_tmux "zoom 警告 @zoom-accent = zoom_red" "@zoom-accent 'colour${THEME_ZOOM_RED}'"
 assert_tmux "消灯 @fade-cold-fg = cold_gray" "@fade-cold-fg 'colour${THEME_COLD_GRAY}'"
 assert_tmux "バー地 status-style = base_bar_bg" "status-style 'bg=colour${THEME_BASE_BAR_BG}"
-assert_tmux "pane 地 window-style = base_pane_bg" "bg=colour${THEME_BASE_PANE_BG}'"
+# window-style は行を特定して検査する (bg=colourN の部分一致だと別行の同色で偽陽性になる)
+if grep -qE "^set -g window-style +'.*bg=colour${THEME_BASE_PANE_BG}'" "$TMUX_CONF"; then
+  ok "pane 地 window-style = base_pane_bg"
+else
+  ng "pane 地 window-style = base_pane_bg — _tmux.conf の window-style 行に bg=colour${THEME_BASE_PANE_BG} が見つからない"
+fi
 assert_tmux "カーソル = active_green" "cursor-colour colour${THEME_ACTIVE_GREEN}"
 
 echo ""
@@ -58,7 +63,8 @@ assert_lua "危険 diag.error_bg" error_bg "$THEME_ERROR_RED_HEX" "$THEME_ERROR_
 
 echo ""
 echo "## 消費者の配線"
-if grep -qF 'lib/theme_colors.sh' "$ROOT_DIR/scripts/tmux_git_popup.sh"; then
+# 実際の source 行 (行頭の ".") を検査する (コメント内の言及だけでは通らないように)
+if grep -qE '^\. .*lib/theme_colors\.sh' "$ROOT_DIR/scripts/tmux_git_popup.sh"; then
   ok "git popup は生成された定数を source している"
 else
   ng "git popup が theme_colors.sh を source していない"
