@@ -64,7 +64,9 @@ show_clean() {
     done
     printf '   %b  \033[2m← 未 push %s / 最新 %s commit\033[0m\n\n' "$dots" "$ahead" "$total"
   fi
-  git log -5 --color=always --date=format:'%H:%M' \
+  # --no-pager 必須: popup 内は stdout が tty なので、素の git log は less の alternate
+  # screen を開いてしまい、直前に描いたバッジ/ドット行が画面ごと消える (実機で再現済み)
+  git --no-pager log -5 --color=always --date=format:'%H:%M' \
     --format='   %C(yellow)%h%Creset %C(dim)%cd%Creset %<(58,trunc)%s' 2>/dev/null || :
   printf '\n   \033[2m(何かキーで閉じる)\033[0m\n'
   wait_key

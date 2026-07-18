@@ -89,7 +89,7 @@ reset_calls
 STUB_CLEAN=1 run "$STUB" "$SCRIPT" < /dev/null
 [[ "$RC" == 0 ]] || { echo "✗ clean 時に rc=$RC"; cat "$CALLS"; exit 1; }
 assert_not_called "fzf" "clean 時は fzf を起動しない"
-assert_called "git log -5" "clean 時は直近コミットのサマリを出す"
+assert_called "git --no-pager log -5" "clean 時は直近コミットのサマリを出す (pager 起動で画面が消えないよう --no-pager 必須)"
 assert_called "rev-list --left-right --count" "upstream との ahead/behind を判定する"
 assert_called "rev-list --count --max-count=20" "未 push ありならドットグラフ用に直近 commit 数を取る"
 assert_not_called "gum" "clean 画面は素の ANSI で描く (gum 非依存)"
