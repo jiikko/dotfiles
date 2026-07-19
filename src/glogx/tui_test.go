@@ -1066,6 +1066,11 @@ func TestBrowsePushFlow(t *testing.T) {
 	if !m.pushConfirm {
 		t.Fatal("C-b で push 確認に入らない")
 	}
+	// 確認中は中央モーダルが出る (幅より狭いボックス + 左パディングでセンタリング)
+	m.width, m.height = 80, 20
+	if v := stripANSI(m.View()); !strings.Contains(v, "git push") || !strings.Contains(v, "push します") {
+		t.Fatal("push 確認モーダルが描画されない")
+	}
 	m.handleKey("n")
 	if m.pushConfirm || pushed != 0 {
 		t.Fatalf("n でキャンセルされない: confirm=%v pushed=%d", m.pushConfirm, pushed)

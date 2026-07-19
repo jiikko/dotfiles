@@ -445,18 +445,53 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 // confirmPush は push 確認 (y/N) に入る。未 push が 1 件も無ければ確認を出さない
 // (誤爆防止と「push 済みなのに聞かれる」違和感の回避)。
 func (m *browseModel) confirmPush() tea.Cmd {
-	unpushed := 0
-	for _, st := range m.statuses {
-		if st == StateUnpushed {
-			unpushed++
-		}
-	}
-	if unpushed == 0 {
+	if m.unpushedCount() == 0 {
 		m.notice = "未 push のコミットはありません"
 		return nil
 	}
 	m.pushConfirm = true
 	return nil
+}
+
+// unpushedCount は未 push コミット数 (push 確認モーダルと confirmPush が共用)。
+func (m *browseModel) unpushedCount() int {
+	n := 0
+	for _, st := range m.statuses {
+		if st == StateUnpushed {
+			n++
+		}
+	}
+	return n
+}
+
+// pushBoxLines は push 確認 (y/N)・実行中の中央モーダル。非表示なら nil。
+// buildPanelBox を狭い幅で組み、左に空白を足して水平センタリングする
+// (垂直は View 側が overlayBox の anchor で中央に置く)。
+func (m *browseModel) pushBoxLines() []string {
+	if !m.pushConfirm && !m.pushing {
+		return nil
+	}
+	width := m.width
+	if width <= 0 {
+		width = 80
+	}
+	boxW := min(44, width)
+	var rows []string
+	if m.pushing {
+		rows = []string{m.spinner() + " pushing..."}
+	} else {
+		rows = []string{
+			fmt.Sprintf("未 push の %d コミットを push します", m.unpushedCount()),
+			"",
+			paint("y: 実行   n/Esc: キャンセル", ansiDim, m.colored),
+		}
+	}
+	pad := strings.Repeat(" ", max((width-boxW)/2, 0))
+	box := buildPanelBox(" git push ", rows, boxW, m.colored)
+	for i := range box {
+		box[i] = pad + box[i]
+	}
+	return box
 }
 
 // quit はアプリ全体を終了する (取得中断分は unknown へ落とす)。
@@ -959,6 +994,11 @@ func (m *browseModel) View() string {
 	// 実際に同時表示になることはないが、重ね順の契約としてパネルの後に描く)
 	if diffBox := m.diffBoxLines(); len(diffBox) > 0 {
 		window = overlayBox(window, diffBox, m.boxAnchor(lines, offset, m.diffSHA)+1, page)
+	}
+	// push 確認/実行中は画面中央のモーダルを最前面に重ねる (ユーザー要望 2026-07-19:
+	// hint 行の [y/N] だけでは気づきにくい)
+	if box := m.pushBoxLines(); len(box) > 0 {
+		window = overlayBox(window, box, max((page-len(box))/2, 0), page)
 	}
 	var b strings.Builder
 	for _, w := range window {
