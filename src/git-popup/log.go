@@ -112,6 +112,11 @@ func (m *logModel) Update(msg tea.Msg) (*logModel, tea.Cmd) {
 	case ciJobsMsg:
 		if msg.sha == m.currentSHA() { // 遅延到着した別コミットの CI は捨てる
 			m.ciJobs = msg.jobs
+			// ジョブ選択中に差し替わっても (A→B→A 移動の遅延到着) カーソルを範囲内に保つ
+			m.jobCursor = min(m.jobCursor, max(len(m.ciJobs)-1, 0))
+			if len(m.ciJobs) == 0 {
+				m.jobSelect = false
+			}
 		}
 	case ciResultMsg:
 		m.ci = msg.states
@@ -167,6 +172,7 @@ func (m *logModel) handleKey(key string) (*logModel, tea.Cmd) {
 		m.detailOffset = 0
 		m.jobSelect = false
 		m.jobCursor = 0
+		m.status = "" // 前の通知を消し、詳細の操作説明 footer を見せる
 		return m, nil
 	}
 	old := m.cursor
@@ -218,6 +224,7 @@ func (m *logModel) handleDetailKey(key string) (*logModel, tea.Cmd) {
 		}
 		m.jobSelect = true
 		m.jobCursor = 0
+		m.status = ""
 	case "j", "down", "ctrl+n":
 		m.detailOffset = min(m.detailOffset+1, maxOff)
 	case "k", "up", "ctrl+p":
@@ -364,13 +371,15 @@ func (m *logModel) View() string {
 		footer = "push しますか? [y/N]"
 	case m.busy:
 		footer = "pushing..."
+	case m.status != "":
+		// status (opened:/エラー等) は操作説明より優先して見せる。詳細/ジョブ選択中でも
+		// 隠さない (入場・o 押下時にクリアするので説明が出ないままにはならない)。
+		footer = m.status
 	case m.detailOpen:
 		footer = fmt.Sprintf("[詳細] j/k・Space/b・g/G スクロール  o: CI job を開く  Esc/h 一覧へ  q 終了  (%d)", m.detailOffset)
 		if m.jobSelect {
 			footer = "[CI job] j/k 選択  Enter/o ブラウザで開く  Esc/h 戻る  q 終了"
 		}
-	case m.status != "":
-		footer = m.status
 	}
 	return l.render(
 		m.buildListLines(l.leftInnerW(), l.paneRows()),

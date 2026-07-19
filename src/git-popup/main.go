@@ -21,14 +21,16 @@ func run(argv []string) int {
 git log の TUI。一覧 (行頭に CI 成否マーク・未 push は橙 SHA) と詳細 (diff + CI job) の 2 ペイン。
 
 Keys:
-  j/k ↑/↓ C-n/C-p   一覧の上下移動
-  g / G              先頭 / 末尾へ
-  Enter → C-f        詳細 (右ペイン) へフォーカス
-    j/k Space/b g/G  詳細スクロール
-    o                CI job 選択 → Enter/o でブラウザで開く
-    Esc/h/C-g        1 段戻る
-  C-b                push (y/N 確認)
-  q / C-c            終了 (一覧では Esc/C-g でも)`)
+  j/k ↑/↓ C-n/C-p     一覧の上下移動
+  g/Home  G/End        先頭 / 末尾へ
+  Enter → C-f          詳細 (右ペイン) へフォーカス
+    j/k ↑/↓ C-n/C-p   1 行スクロール
+    Space/f/C-d/PgDn   半ページ下  (b/C-u/PgUp = 上)
+    g/Home  G/End      先頭 / 末尾
+    o                  CI job 選択 → j/k で選び Enter/o でブラウザで開く
+    Esc/h/←/C-g        1 段戻る (詳細からは Enter でも一覧へ)
+  C-b                  push (y/N 確認)
+  q / C-c              終了 (一覧では Esc/C-g でも)`)
 	}
 	showHelp := help.Bool("help", false, "show this help")
 	help.BoolVar(showHelp, "h", false, "show this help")

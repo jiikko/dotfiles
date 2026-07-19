@@ -127,6 +127,56 @@ func TestLogDetailCIOverlay(t *testing.T) {
 	}
 }
 
+func TestLogListTopBottom(t *testing.T) {
+	m := newLogModel([]Commit{{SHA: "a"}, {SHA: "b"}, {SHA: "c"}})
+	m.handleKey("G")
+	if m.cursor != 2 {
+		t.Fatalf("G で末尾に行かない: %d", m.cursor)
+	}
+	m.handleKey("g")
+	if m.cursor != 0 {
+		t.Fatalf("g で先頭に戻らない: %d", m.cursor)
+	}
+}
+
+func TestLogJobsSwapClampsCursor(t *testing.T) {
+	// ジョブ選択中に同一 sha の ciJobsMsg が空へ差し替わっても panic せず選択モードを解除する
+	m := newLogModel([]Commit{{SHA: "a"}})
+	m.ciJobs = []CIJob{{State: "success", Name: "j1"}, {State: "success", Name: "j2"}}
+	m.handleKey("enter")
+	m.handleKey("o")
+	m.handleKey("j") // jobCursor=1
+	m.Update(ciJobsMsg{sha: "a", jobs: nil})
+	if m.jobSelect {
+		t.Fatalf("空差し替えでジョブ選択が解除されない")
+	}
+	m.handleKey("j") // panic しない (負 index に落ちない)
+	// 1 件へ縮む差し替えではカーソルがクランプされる
+	m.ciJobs = []CIJob{{Name: "j1"}, {Name: "j2"}}
+	m.jobSelect, m.jobCursor = true, 1
+	m.Update(ciJobsMsg{sha: "a", jobs: []CIJob{{Name: "only"}}})
+	if m.jobCursor != 0 {
+		t.Fatalf("縮小差し替えで jobCursor がクランプされない: %d", m.jobCursor)
+	}
+}
+
+func TestLogStatusShownInFooter(t *testing.T) {
+	// 詳細/ジョブ選択中でも status (opened:/エラー) が footer に出る (操作説明より優先)
+	m := newLogModel([]Commit{{SHA: strings.Repeat("a", 40), ShortSHA: "abc", Subject: "s"}})
+	m.width, m.height = 80, 10
+	m.handleKey("enter")
+	m.status = "opened: build"
+	if v := m.View(); !strings.Contains(stripANSI(v), "opened: build") {
+		t.Fatalf("詳細中の status が footer に出ない")
+	}
+	// 詳細へ入り直すと status はクリアされ操作説明に戻る
+	m.handleKey("esc")
+	m.handleKey("enter")
+	if v := m.View(); strings.Contains(stripANSI(v), "opened: build") {
+		t.Fatalf("詳細入場で status がクリアされない")
+	}
+}
+
 func TestLogDetailKeys(t *testing.T) {
 	m := newLogModel([]Commit{{SHA: "a"}})
 	m.ciJobs = []CIJob{{State: "success", Name: "job1", URL: "https://x/1"}}
