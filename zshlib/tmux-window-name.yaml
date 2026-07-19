@@ -30,7 +30,6 @@ npm: "󰛦 npm"
 claude: "🤖 claude"
 claude-code: "🤖 claude-code"
 codex: "🤖 codex"
-gemini: "🤖 gemini"
 
 # サブコマンドも window 名に出すコマンド (whitelist)。空白区切り。
 # 例: `make test` → "make test" にアイコン付き。ここに無いコマンドは第1語のみ表示。

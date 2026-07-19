@@ -627,12 +627,7 @@ source $HOME/dotfiles/zshlib/_ensure_cli_with_brew.zsh
 source $HOME/dotfiles/zshlib/_tmux_window_name.zsh
 source $HOME/dotfiles/zshlib/_tmux_session.zsh
 
-# gemini/codex は brew で自動インストールするラッパー
-function gemini() {
-  _ensure_cli_with_brew gemini gemini-cli || return 1
-  command gemini "$@"
-}
-
+# codex は brew で自動インストールするラッパー
 function codex() {
   _ensure_cli_with_brew codex codex || return 1
   command codex "$@"

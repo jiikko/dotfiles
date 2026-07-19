@@ -51,36 +51,25 @@ assert_is_function() {
 
 printf '\n=== AI Commands Tests ===\n\n'
 
-# Test 1: gemini 関数が定義されている (brew auto-install wrapper)
-printf '## Test 1: gemini function exists\n'
-assert_is_function "gemini" "gemini is defined as a function"
-
-# Test 2: codex 関数が定義されている (brew auto-install wrapper)
-printf '\n## Test 2: codex function exists\n'
+# Test 1: codex 関数が定義されている (brew auto-install wrapper)
+printf '## Test 1: codex function exists\n'
 assert_is_function "codex" "codex is defined as a function"
 
-# Test 3: claude はコマンドとして存在するか確認 (ラッパー関数は不要になった)
-printf '\n## Test 3: claude command check\n'
+# Test 2: claude はコマンドとして存在するか確認 (ラッパー関数は不要になった)
+printf '\n## Test 2: claude command check\n'
 if run_zsh "command -v claude >/dev/null 2>&1"; then
   printf '✓ claude command is available\n'
 else
   printf '↷ claude command not installed; skipping\n'
 fi
 
-# Test 4: tmux window name の YAML に AI コマンドが定義されている
-printf '\n## Test 4: AI commands defined in tmux-window-name.yaml\n'
+# Test 3: tmux window name の YAML に AI コマンドが定義されている
+printf '\n## Test 3: AI commands defined in tmux-window-name.yaml\n'
 yaml_file="$ROOT_DIR/zshlib/tmux-window-name.yaml"
 if grep -q "^claude:" "$yaml_file"; then
   printf '✓ claude is defined in YAML\n'
 else
   printf '✗ claude is not defined in YAML\n'
-  exit 1
-fi
-
-if grep -q "^gemini:" "$yaml_file"; then
-  printf '✓ gemini is defined in YAML\n'
-else
-  printf '✗ gemini is not defined in YAML\n'
   exit 1
 fi
 
