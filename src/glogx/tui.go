@@ -56,7 +56,7 @@ type jobDetailMsg struct {
 	ghErr *GHError
 }
 
-// pushMsg は git push の実行結果 (C-b → y 確認後)。glogx の独自機能で、
+// pushMsg は git push の実行結果 (b → y 確認後)。glogx の独自機能で、
 // 本家 glog (read-only) には無い。
 type pushMsg struct{ err error }
 
@@ -158,7 +158,7 @@ type browseModel struct {
 	diffOffset     int                 // diff ポップアップのスクロール位置
 	diffCache      map[string][]string // sha → 整形済み diff 行 (メモリ内キャッシュ)
 	diffBusy       map[string]bool     // diff 取得中の sha
-	pushConfirm    bool                // C-b の push 確認中 (y/N)
+	pushConfirm    bool                // b の push 確認中 (y/N)
 	pushing        bool                // git push 実行中 (終了以外のキーを無視)
 	pushWarn       string              // push できない理由の警告モーダル (何かキーで閉じる)
 	pushPoll       map[string]bool     // push 直後ポーリング対象の SHA (CI が見えたら外れる)
@@ -429,7 +429,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.pushWarn = ""
 		return m, nil
 	}
-	// push 確認 (C-b → y/N)。glogx の独自機能。
+	// push 確認 (b → y/N)。glogx の独自機能。
 	if m.pushConfirm {
 		if strings.ToLower(key) == "y" {
 			m.pushConfirm = false
@@ -444,16 +444,18 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	}
 	// emacs 流の水平移動エイリアス (C-n/C-p = ↓/↑ は各ビューで対応済み)。ここで
 	// 正規化するので全ビュー (一覧/パネル/詳細/diff) に一括で効く。
-	// ⚠️ 本家 glog と異なり C-b は ← の別名ではなく push (git-popup と同じキー)
-	if key == "ctrl+b" {
-		return m, m.confirmPush()
-	}
+	// ⚠️ 本家 glog と異なり C-b は ← の別名ではない (push を C-b → b に変えた名残で未割当)
 	if key == "ctrl+f" {
 		key = "right"
 	}
 	// diff ポップアップ表示中はスクロール/閉じる操作だけを受ける (最前面のモーダル)
 	if m.diffSHA != "" {
 		return m.handleDiffKey(key)
+	}
+	// b = push (y/N 確認へ)。glogx の独自機能。diff 表示中は b = 半ページ戻るなので、
+	// diff のディスパッチより後で拾う (一覧/パネル/詳細では b は未使用)
+	if key == "b" {
+		return m, m.confirmPush()
 	}
 	// q はビューのスタックを 1 段戻る (tig 流。ユーザー要望): 詳細 → job 一覧 →
 	// コミット一覧、と閉じていき、最上位でだけ終了。即終了したいときは Ctrl-C
@@ -1243,7 +1245,7 @@ func (m *browseModel) cursorLine(text string) string {
 }
 
 func (m *browseModel) hintLine() string {
-	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  y: URL コピー  C-b: push  q: 終了"
+	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  y: URL コピー  b: push  q: 終了"
 	switch {
 	case m.pushConfirm:
 		hint = "push しますか? [y/N]"

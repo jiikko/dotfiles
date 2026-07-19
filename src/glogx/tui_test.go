@@ -1036,7 +1036,7 @@ func TestBrowseListOpenCommitURLNoRepo(t *testing.T) {
 	}
 }
 
-// C-f は全ビューで → の別名。C-b は本家 glog と異なり ← ではなく push (glogx の独自仕様)。
+// C-f は全ビューで → の別名。C-b の ← 別名は無い (push は b。glogx の独自仕様)。
 func TestBrowseEmacsHorizontalAliases(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
 	withJobs(m, 0)
@@ -1045,14 +1045,14 @@ func TestBrowseEmacsHorizontalAliases(t *testing.T) {
 	if m.panelSHA == "" {
 		t.Fatal("C-f でパネルが開かない (right の別名のはず)")
 	}
-	// C-b は left の別名ではない (push 確認へ向かう。未 push なしなら notice のみ)
+	// C-b は left の別名ではない (未割当で何も起きない)
 	m.handleKey("ctrl+b")
 	if m.panelSHA == "" {
-		t.Fatal("C-b でパネルが閉じた (glogx では left の別名ではなく push のはず)")
+		t.Fatal("C-b でパネルが閉じた (glogx では未割当のはず)")
 	}
 }
 
-// C-b → y/N → git push (glogx の独自機能)。
+// b → y/N → git push (glogx の独自機能)。
 func TestBrowsePushFlow(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.statuses[m.commits[0].SHA] = StateUnpushed
@@ -1061,10 +1061,10 @@ func TestBrowsePushFlow(t *testing.T) {
 	orig := runGitPush
 	runGitPush = func() error { pushed++; return nil }
 	t.Cleanup(func() { runGitPush = orig })
-	// C-b で確認に入り、n でキャンセル (push されない)
-	m.handleKey("ctrl+b")
+	// b で確認に入り、n でキャンセル (push されない)
+	m.handleKey("b")
 	if !m.pushConfirm {
-		t.Fatal("C-b で push 確認に入らない")
+		t.Fatal("b で push 確認に入らない")
 	}
 	// 確認中は中央モーダルが出る (幅より狭いボックス + 左パディングでセンタリング)
 	m.width, m.height = 80, 20
@@ -1076,7 +1076,7 @@ func TestBrowsePushFlow(t *testing.T) {
 		t.Fatalf("n でキャンセルされない: confirm=%v pushed=%d", m.pushConfirm, pushed)
 	}
 	// y で push が走り、成功で未 push が unknown へ落ちて再取得に乗る
-	m.handleKey("ctrl+b")
+	m.handleKey("b")
 	_, cmd := m.handleKey("y")
 	if cmd == nil || !m.pushing {
 		t.Fatal("y で push が始まらない")
@@ -1151,7 +1151,7 @@ func TestBrowsePushNoUnpushed(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.statuses[m.commits[0].SHA] = StateSuccess
 	m.statuses[m.commits[1].SHA] = StateSuccess
-	m.handleKey("ctrl+b")
+	m.handleKey("b")
 	if m.pushConfirm {
 		t.Fatal("未 push なしで push 確認に入った")
 	}

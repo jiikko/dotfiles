@@ -1,6 +1,6 @@
 # glogx
 
-**glog (read-only) のコピーに push 機能 (C-b → y/N → git push) を足した派生版。**
+**glog (read-only) のコピーに push 機能 (b → y/N → git push) を足した派生版。**
 read-only という glog 本体の契約を守るため、write 操作はこちらに隔離している。
 
 ## glog との共通コード分離について (2026-07-19 の判断)
@@ -83,7 +83,7 @@ glog --help              # ヘルプ (キー操作・記号・終了コードの
 
 ### 対話ブラウズのキー操作 (TTY のみ)
 
-`Ctrl-B` / `Ctrl-F` は全ビューで `←` / `→` の別名 (`C-n`/`C-p` = ↓/↑ と合わせて emacs の 4 方向に対応)。
+`Ctrl-F` は全ビューで `→` の別名 (`C-n`/`C-p` = ↓/↑)。本家と異なり `Ctrl-B` の `←` 別名は無く、push は `b` (diff 表示中を除く)。
 
 コミット一覧:
 

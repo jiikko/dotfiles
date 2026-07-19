@@ -1,5 +1,5 @@
 // glogx — glog (src/glog、read-only な git log ラッパー) のコピーに push 機能
-// (C-b → y/N → git push) を足した派生版。glog 本体は「読むだけ」という契約を守るため
+// (b → y/N → git push) を足した派生版。glog 本体は「読むだけ」という契約を守るため
 // 拡張せず、write 操作はこちらに隔離する (ユーザー判断 2026-07-19)。
 // CI キャッシュ ($XDG_CACHE_HOME/glog/) は本家と共有する (同一データ・atomic write)。
 // 設計の一次情報: dotfiles の issues/done/015-feat-git-log-gha-status-wrapper.md
