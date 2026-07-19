@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-runewidth"
@@ -14,10 +16,13 @@ type previewMsg struct {
 }
 
 type pushMsg struct{ err error }
+type ciResultMsg struct{ states map[string]CIState }
 
 type logModel struct {
 	commits []Commit
+	ci      map[string]CIState
 	cursor  int
+	offset  int
 	preview string
 	status  string
 	width   int
@@ -32,13 +37,13 @@ func newLogModel(commits []Commit) *logModel {
 }
 
 func (m *logModel) Init() tea.Cmd {
-	if len(m.commits) == 0 {
-		return nil
-	}
-	return m.previewCmd()
+	return tea.Batch(m.previewCmd(), m.ciCmd())
 }
 
 func (m *logModel) previewCmd() tea.Cmd {
+	if len(m.commits) == 0 {
+		return nil
+	}
 	sha := m.commits[m.cursor].SHA
 	return func() tea.Msg {
 		text, err := loadPreview(sha)
@@ -46,16 +51,24 @@ func (m *logModel) previewCmd() tea.Cmd {
 	}
 }
 
+func (m *logModel) ciCmd() tea.Cmd {
+	commits := append([]Commit(nil), m.commits...)
+	return func() tea.Msg { return ciResultMsg{states: loadCI(commits)} }
+}
+
 func (m *logModel) Update(msg tea.Msg) (*logModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.ensureCursorVisible()
 	case previewMsg:
 		if msg.err != nil {
 			m.status = "preview error: " + msg.err.Error()
 		} else {
 			m.preview = msg.text
 		}
+	case ciResultMsg:
+		m.ci = msg.states
 	case pushMsg:
 		m.busy = false
 		if msg.err != nil {
@@ -102,10 +115,42 @@ func (m *logModel) handleKey(key string) (*logModel, tea.Cmd) {
 		m.cursor = max(m.cursor-1, 0)
 	}
 	if m.cursor != old {
+		m.ensureCursorVisible()
 		m.preview = "loading preview..."
 		return m, m.previewCmd()
 	}
 	return m, nil
+}
+
+func (m *logModel) visibleRows() int { return max(m.height-2, 1) }
+
+func (m *logModel) ensureCursorVisible() {
+	rows := m.visibleRows()
+	if m.cursor < m.offset {
+		m.offset = m.cursor
+	}
+	if m.cursor >= m.offset+rows {
+		m.offset = m.cursor - rows + 1
+	}
+	if m.offset < 0 {
+		m.offset = 0
+	}
+}
+
+func (m *logModel) ciMark(sha string) string {
+	if m.ci == nil {
+		return "\x1b[2m·\x1b[0m"
+	}
+	switch m.ci[sha] {
+	case CISuccess:
+		return "\x1b[38;5;2m✓\x1b[0m"
+	case CIFailure:
+		return "\x1b[38;5;1m✗\x1b[0m"
+	case CIPending:
+		return "\x1b[38;5;3m●\x1b[0m"
+	default:
+		return " "
+	}
 }
 
 func (m *logModel) View() string {
@@ -117,17 +162,19 @@ func (m *logModel) View() string {
 	}
 	leftWidth := max(m.width*45/100, 20)
 	rightWidth := max(m.width-leftWidth-1, 10)
-	rows := max(m.height-2, 1)
+	rows := m.visibleRows()
+	m.ensureCursorVisible()
 	left := make([]string, rows)
 	for i := range left {
-		if i >= len(m.commits) {
+		commitIndex := m.offset + i
+		if commitIndex >= len(m.commits) {
 			left[i] = ""
 			continue
 		}
-		commit := m.commits[i]
-		line := fmt.Sprintf("  %s %s", commit.ShortSHA, commit.Subject)
-		if i == m.cursor {
-			line = "> " + commit.ShortSHA + " " + commit.Subject
+		commit := m.commits[commitIndex]
+		line := fmt.Sprintf("  %s %s %s", m.ciMark(commit.SHA), commit.ShortSHA, commit.Subject)
+		if commitIndex == m.cursor {
+			line = fmt.Sprintf("> %s %s %s", m.ciMark(commit.SHA), commit.ShortSHA, commit.Subject)
 		}
 		left[i] = clip(line, leftWidth)
 	}
@@ -155,13 +202,52 @@ func (m *logModel) View() string {
 	return header + "\n" + strings.Join(lines, "\n") + "\n" + footer
 }
 
+// ansiRe は SGR (色) エスケープ列。表示幅計算・truncate から除外するために使う。
+var ansiRe = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+// rw は East Asian Ambiguous (✓ ● ○ · 罫線 等) を幅 1 として扱う条件。StringWidth と
+// RuneWidth を同一条件に揃えないと clip の見積り (RuneWidth) と displayWidth (StringWidth)
+// がズレて 1 桁分の切り過ぎ/揃わずが出る。端末側も ✓/● を 1 桁で描くためこれで一致する。
+var rw = &runewidth.Condition{EastAsianWidth: false}
+
+func stripANSI(s string) string { return ansiRe.ReplaceAllString(s, "") }
+
+func displayWidth(s string) int { return rw.StringWidth(stripANSI(s)) }
+
+// clip は ANSI (色) を保持したまま「見える幅」で切り詰める。素の runewidth を色付き行に
+// 当てると、エスケープ列の分だけ幅を過大評価して早く切れ、さらにエスケープ途中で切ると
+// 端末の色が壊れる (git show --color や CI マークで発生)。エスケープはそのまま通し、
+// 可視幅だけ数える。切り詰めたら末尾に … と reset を足して色残りを断つ。
 func clip(s string, width int) string {
-	if runewidth.StringWidth(s) <= width {
+	if width <= 0 {
+		return ""
+	}
+	if displayWidth(s) <= width {
 		return s
 	}
-	return runewidth.Truncate(s, width, "…")
+	var b strings.Builder
+	vis := 0
+	for i := 0; i < len(s); {
+		if s[i] == '\x1b' {
+			if loc := ansiRe.FindStringIndex(s[i:]); loc != nil && loc[0] == 0 {
+				b.WriteString(s[i : i+loc[1]])
+				i += loc[1]
+				continue
+			}
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		cw := rw.RuneWidth(r)
+		if vis+cw > width-1 { // 末尾の … の 1 桁を確保
+			break
+		}
+		b.WriteString(s[i : i+size])
+		vis += cw
+		i += size
+	}
+	b.WriteString("…\x1b[0m")
+	return b.String()
 }
 
 func pad(s string, width int) string {
-	return s + strings.Repeat(" ", max(width-runewidth.StringWidth(s), 0))
+	return s + strings.Repeat(" ", max(width-displayWidth(s), 0))
 }

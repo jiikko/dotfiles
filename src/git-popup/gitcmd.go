@@ -55,6 +55,10 @@ func parseLog(out string) ([]Commit, error) {
 	}
 	commits := make([]Commit, 0)
 	for record := range strings.SplitSeq(out, "\x1e") {
+		// git log は各レコード (%x1e 終端) の後ろにデフォルトの改行を足すため、
+		// %x1e で分割すると 2 件目以降の先頭に \n が残る。これを落とさないと SHA に
+		// 改行が混入し、後段の graphql oid 文字列が malformed になる (実測)。
+		record = strings.Trim(record, "\n\r")
 		if record == "" {
 			continue
 		}
