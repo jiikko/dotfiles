@@ -158,7 +158,9 @@ func (m *logModel) handleKey(key string) (*logModel, tea.Cmd) {
 	if len(m.commits) == 0 {
 		return m, nil
 	}
-	if key == "enter" { // 選択コミットの詳細 (右ペイン) をスクロールするモードへ
+	// Enter / → / C-f で選択コミットの詳細 (右ペイン) スクロールモードへ
+	// (C-f は emacs 流の → 別名。戻りは handleDetailKey の h/←/Enter 等)
+	if key == "enter" || key == "right" || key == "ctrl+f" {
 		m.detailOpen = true
 		m.detailOffset = 0
 		return m, nil

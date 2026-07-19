@@ -28,6 +28,17 @@ func TestLogKeyHandling(t *testing.T) {
 	if m.cursor != 0 {
 		t.Fatalf("ctrl+p cursor = %d, want 0", m.cursor)
 	}
+	// → / C-f で詳細モードへ (Enter の別名)、h で一覧へ戻る
+	for _, k := range []string{"right", "ctrl+f", "enter"} {
+		m.handleKey(k)
+		if !m.detailOpen {
+			t.Fatalf("%s で詳細モードに入らない", k)
+		}
+		m.handleKey("h")
+		if m.detailOpen {
+			t.Fatalf("h で一覧へ戻らない (%s 後)", k)
+		}
+	}
 	m.Update(tea.KeyMsg{})
 	m.handleKey("q")
 	if !m.done {
