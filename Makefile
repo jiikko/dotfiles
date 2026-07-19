@@ -13,6 +13,7 @@ ZSH_SYNTAX_FILES := \
   bin/av1ify \
   bin/concat \
   bin/disassemble_excel \
+  bin/git-popup \
   bin/glog \
   bin/parallel-each \
   bin/repair-mp4-timebase \

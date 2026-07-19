@@ -61,14 +61,10 @@ assert_lua "pane 地 dark0_hard" dark0_hard "$THEME_BASE_PANE_BG_HEX" "$THEME_BA
 assert_lua "バー地 dark0" dark0 "$THEME_BASE_BAR_BG_HEX" "$THEME_BASE_BAR_BG"
 assert_lua "危険 diag.error_bg" error_bg "$THEME_ERROR_RED_HEX" "$THEME_ERROR_RED"
 
-echo ""
-echo "## 消費者の配線"
-# 実際の source 行 (行頭の ".") を検査する (コメント内の言及だけでは通らないように)
-if grep -qE '^\. .*lib/theme_colors\.sh' "$ROOT_DIR/scripts/tmux_git_popup.sh"; then
-  ok "git popup は生成された定数を source している"
-else
-  ng "git popup が theme_colors.sh を source していない"
-fi
+# NOTE: 「消費者の配線」検査 (git popup が theme_colors.sh を source しているか) は
+# 2026-07-19 に削除。唯一の shell 消費者だった scripts/tmux_git_popup.sh を Go TUI
+# (src/git-popup) へ移行して退役したため、生成された shell 定数の実行時消費者が現状無い。
+# 上の生成正当性 (assert_lua) は維持。将来 Go TUI 等が theme を参照したら消費者検査を復活させる。
 
 echo ""
 if [[ "$fail" != 0 ]]; then
