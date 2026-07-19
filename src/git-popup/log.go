@@ -11,6 +11,7 @@ import (
 )
 
 type previewMsg struct {
+	sha  string // どのコミットの preview か (遅延到着で別選択を上書きしないための照合キー)
 	text string
 	err  error
 }
@@ -47,8 +48,16 @@ func (m *logModel) previewCmd() tea.Cmd {
 	sha := m.commits[m.cursor].SHA
 	return func() tea.Msg {
 		text, err := loadPreview(sha)
-		return previewMsg{text: text, err: err}
+		return previewMsg{sha: sha, text: text, err: err}
 	}
+}
+
+// currentSHA はカーソル位置コミットの SHA ("" = 一覧が空)。preview 照合に使う。
+func (m *logModel) currentSHA() string {
+	if len(m.commits) == 0 {
+		return ""
+	}
+	return m.commits[m.cursor].SHA
 }
 
 func (m *logModel) ciCmd() tea.Cmd {
@@ -62,6 +71,9 @@ func (m *logModel) Update(msg tea.Msg) (*logModel, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.ensureCursorVisible()
 	case previewMsg:
+		if msg.sha != m.currentSHA() {
+			break // 遅延到着した別コミットの preview は捨てる
+		}
 		if msg.err != nil {
 			m.status = "preview error: " + msg.err.Error()
 		} else {
@@ -98,6 +110,9 @@ func (m *logModel) handleKey(key string) (*logModel, tea.Cmd) {
 	if key == "q" || key == "esc" || key == "ctrl+c" || key == "ctrl+g" {
 		m.done = true
 		return m, tea.Quit
+	}
+	if m.busy { // push 実行中は終了以外のキーを無視する
+		return m, nil
 	}
 	if key == "ctrl+b" {
 		m.confirm = true
