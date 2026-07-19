@@ -82,15 +82,6 @@ func loadPreview(sha string) (string, error) {
 	return runGit("show", "--color=always", "--no-ext-diff", sha)
 }
 
-func loadLogPreview(sha string) (string, error) {
-	ci := loadCIJobsPreview(sha)
-	show, err := loadPreview(sha)
-	if err != nil {
-		return "", err
-	}
-	return ci + show, nil
-}
-
 func push() error {
 	_, err := runGit("push")
 	return err

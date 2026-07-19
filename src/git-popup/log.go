@@ -16,6 +16,13 @@ type previewMsg struct {
 	err  error
 }
 
+// ciJobsMsg は選択コミットの CI job 一覧 (別 goroutine で取得)。diff (previewMsg) とは
+// 独立に非同期取得し、先に出た方から描画する (CI 取得の ~1s で diff を待たせない)。
+type ciJobsMsg struct {
+	sha  string
+	text string
+}
+
 type pushMsg struct{ err error }
 type ciResultMsg struct{ states map[string]CIState }
 
@@ -25,6 +32,7 @@ type logModel struct {
 	cursor  int
 	offset  int
 	preview string
+	ciJobs  string // 選択コミットの CI job ブロック (preview の上に重ねる)
 	status  string
 	width   int
 	height  int
@@ -38,17 +46,30 @@ func newLogModel(commits []Commit) *logModel {
 }
 
 func (m *logModel) Init() tea.Cmd {
-	return tea.Batch(m.previewCmd(), m.ciCmd())
+	return tea.Batch(m.previewCmd(), m.ciJobsCmd(), m.ciCmd())
 }
 
+// previewCmd は diff (git show) だけを取得する (速い)。CI job は ciJobsCmd で別途。
 func (m *logModel) previewCmd() tea.Cmd {
 	if len(m.commits) == 0 {
 		return nil
 	}
 	sha := m.commits[m.cursor].SHA
 	return func() tea.Msg {
-		text, err := loadLogPreview(sha)
+		text, err := loadPreview(sha)
 		return previewMsg{sha: sha, text: text, err: err}
+	}
+}
+
+// ciJobsCmd は選択コミットの CI job 一覧を取得する (gh・~1s)。diff とは独立の goroutine で
+// 走らせ、先に出た方から描画する (CI 取得で diff を待たせない)。
+func (m *logModel) ciJobsCmd() tea.Cmd {
+	if len(m.commits) == 0 {
+		return nil
+	}
+	sha := m.commits[m.cursor].SHA
+	return func() tea.Msg {
+		return ciJobsMsg{sha: sha, text: loadCIJobsPreview(sha)}
 	}
 }
 
@@ -78,6 +99,10 @@ func (m *logModel) Update(msg tea.Msg) (*logModel, tea.Cmd) {
 			m.status = "preview error: " + msg.err.Error()
 		} else {
 			m.preview = msg.text
+		}
+	case ciJobsMsg:
+		if msg.sha == m.currentSHA() { // 遅延到着した別コミットの CI は捨てる
+			m.ciJobs = msg.text
 		}
 	case ciResultMsg:
 		m.ci = msg.states
@@ -132,7 +157,8 @@ func (m *logModel) handleKey(key string) (*logModel, tea.Cmd) {
 	if m.cursor != old {
 		m.ensureCursorVisible()
 		m.preview = "loading preview..."
-		return m, m.previewCmd()
+		m.ciJobs = "" // 前コミットの CI ブロックを消し、diff と CI を独立に取り直す
+		return m, tea.Batch(m.previewCmd(), m.ciJobsCmd())
 	}
 	return m, nil
 }
@@ -193,7 +219,8 @@ func (m *logModel) View() string {
 		}
 		left[i] = clip(line, leftWidth)
 	}
-	right := strings.Split(strings.TrimRight(m.preview, "\n"), "\n")
+	// CI job ブロック (先に来たら上に) + diff。どちらも未着なら (no preview)。
+	right := strings.Split(strings.TrimRight(m.ciJobs+m.preview, "\n"), "\n")
 	if len(right) == 1 && right[0] == "" {
 		right = []string{"(no preview)"}
 	}
