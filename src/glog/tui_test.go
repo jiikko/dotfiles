@@ -373,43 +373,6 @@ func TestBrowseQuitFillsUnknown(t *testing.T) {
 	}
 }
 
-func TestBrowseChangesSwitchQuitsWithFlag(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	_, cmd := m.handleKey("c")
-	if cmd == nil || cmd() != tea.Quit() {
-		t.Fatalf("c で Quit が返らない")
-	}
-	if !m.switchToChanges {
-		t.Errorf("c で switchToChanges が立たない")
-	}
-	if !m.done {
-		t.Errorf("c で done が立たない")
-	}
-}
-
-func TestBrowseChangesSwitchOnlyInListView(t *testing.T) {
-	// c は list view (トップ一覧) 限定。diff / panel / 詳細ポップアップ表示中は各ビューの
-	// ディスパッチが先に握るため switchToChanges を立ててはならない (誤爆で popup が
-	// 勝手に changes へ切り替わる回帰の防止)。
-	sha := strings.Repeat("a", 40)
-	cases := []struct {
-		name  string
-		setup func(m *browseModel)
-	}{
-		{"diff popup 表示中", func(m *browseModel) { m.diffSHA = sha }},
-		{"job panel 表示中", func(m *browseModel) { m.panelSHA = sha; m.panelCursor = -1 }},
-		{"job 詳細 表示中", func(m *browseModel) { m.panelSHA = sha; m.detailOpen = true }},
-	}
-	for _, tc := range cases {
-		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-		tc.setup(m)
-		m.handleKey("c")
-		if m.switchToChanges {
-			t.Errorf("%s: c で switchToChanges が立ってしまう (list view 限定のはず)", tc.name)
-		}
-	}
-}
-
 func TestBrowseBatchedRunesKeyMsg(t *testing.T) {
 	// 高速連打で複数キーが 1 つの KeyMsg (Runes="hhq") にまとまっても 1 文字ずつ
 	// 処理される (未対応だと q が無視されて終了できない: pty スモークで実測した回帰)

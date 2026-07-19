@@ -15,10 +15,9 @@
 #   Ctrl-B      … push (clean 画面では p)。gum confirm (デフォルト No) を挟む
 #                 ⚠️ C-p にしない: fzf のカーソル上移動の定番キーで誤 push した実績あり (2026-07-18)
 #   Ctrl-D      … フォーカス中ファイルの diff を全画面 (less)
-#   c           … glog (log 画面) から changes 画面へ
+#   Ctrl-L      … log ⇄ changes を切り替え
+#   Ctrl-G/Esc  … 閉じる (fzf)
 #   l           … clean 画面から log 画面へ
-#   Ctrl-L      … fzf (changes 画面) から log 画面へ
-#   Esc         … 閉じる
 #
 # fzf の execute/reload からはこのスクリプト自身をサブコマンド付きで再入する
 # ($0 list/toggle/preview/commit)。シェル関数を fzf に渡せないことへの定石。
@@ -228,13 +227,18 @@ tmux_git_popup.sh — git 操作 popup (fzf)。tmux の C-g / C-t g から開く
   Esc         閉じる
 
 clean 画面 (変更なしのとき):
-  log は glog (対話 TUI) を自動で開く。glog の c で changes へ切り替え
-  l           log (glog) に戻る
+  l           log に戻る
   p           push (確認あり)
   他キー      閉じる
 
 changes 画面 (変更ありのとき):
-  Ctrl-L      log (glog) に戻る
+  Ctrl-L      log に戻る
+
+log 画面 (初期画面):
+  Ctrl-L      changes に切り替え
+  Ctrl-B      push (確認あり)
+  Enter       選択コミットの diff を全画面表示
+  Ctrl-G/Esc  閉じる
 
 内部サブコマンド (fzf の execute/reload から再入する用): list toggle preview commit push
 EOF
@@ -255,22 +259,27 @@ fi
 
 branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'detached')
 
-# header は 2 行に分ける (1 行だと popup 幅で末尾が見切れる。実機報告 2026-07-18)
+# header は 2 行に分ける (1 行だと popup 幅で末尾が見切れる。実機報告 2026-07-18)。
+# 末尾の「C-l: log  C-g/Esc: 閉じる」は changes fzf 起動時に付け足す (下記)
 header="[$branch] Tab/Enter: stage⇄unstage  C-a: 全add  C-o: commit
-C-b: push  C-d: diff全画面  C-l: log  Esc: 閉じる"
+C-b: push  C-d: diff全画面"
 
-has_glog=1
-command -v glog >/dev/null 2>&1 || has_glog=0
-screen=log
-[ "$has_glog" = 1 ] || screen=changes
+mode=log
 while :; do
-  if [ "$screen" = log ]; then
-    # glog 未導入で l / C-l から log へ来た場合は、存在しない glog を実行せず静かに閉じる
-    [ "$has_glog" = 1 ] || break
-    rc=0
-    glog || rc=$?
-    if [ "$rc" = 20 ]; then
-      screen=changes
+  if [ "$mode" = log ]; then
+    out=$(git log --oneline --color=always | fzf --ansi --no-sort --layout=reverse \
+      --prompt='log> ' \
+      --header="[$branch] log  C-l: changes  C-b: push  Enter: 全画面diff  C-g/Esc: 閉じる" \
+      --expect=ctrl-l \
+      --preview='git show --color=always {1}' \
+      --preview-window='right:55%:wrap' \
+      --bind ctrl-g:abort \
+      --bind "ctrl-b:execute(\"$self\" push)" \
+      --bind 'enter:execute(git show --color {1} | less -R)' \
+      || :)
+    key=$(printf '%s' "$out" | head -n 1)
+    if [ "$key" = ctrl-l ]; then
+      mode=changes
       continue
     fi
     break
@@ -281,7 +290,7 @@ while :; do
     rc=0
     show_clean || rc=$?
     if [ "$rc" = 10 ]; then
-      screen=log
+      mode=log
       continue
     fi
     break
@@ -289,9 +298,10 @@ while :; do
 
   out=$(printf '%s\n' "$entries" | fzf --expect=ctrl-l --ansi --no-sort --layout=reverse \
     --prompt='git> ' \
-    --header="$header" \
+    --header="$header  C-l: log  C-g/Esc: 閉じる" \
     --preview="\"$self\" preview {}" \
     --preview-window='right:55%:wrap' \
+    --bind ctrl-g:abort \
     --bind "tab:execute-silent(\"$self\" toggle {})+reload(\"$self\" list)" \
     --bind "enter:execute-silent(\"$self\" toggle {})+reload(\"$self\" list)" \
     --bind "ctrl-a:execute-silent(git add -A)+reload(\"$self\" list)" \
@@ -301,7 +311,7 @@ while :; do
     || :)
   key=$(printf '%s' "$out" | head -n 1)
   if [ "$key" = ctrl-l ]; then
-    screen=log
+    mode=log
     continue
   fi
   break
