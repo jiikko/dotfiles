@@ -17,10 +17,10 @@ import (
 type CIState string
 
 const (
-	StateSuccess CIState = "success" // 対象 Check がすべて成功 (skipped 混在は許容)
-	StateFailure CIState = "failure" // 1 つ以上失敗
-	StatePending CIState = "pending" // queued / in_progress / pending あり
-	StateNeutral CIState = "neutral" // cancelled / skipped / neutral のみ
+	StateSuccess  CIState = "success"  // 対象 Check がすべて成功 (skipped 混在は許容)
+	StateFailure  CIState = "failure"  // 1 つ以上失敗
+	StatePending  CIState = "pending"  // queued / in_progress / pending あり
+	StateNeutral  CIState = "neutral"  // cancelled / skipped / neutral のみ
 	StateNone     CIState = "none"     // push 済みだが Check が存在しない
 	StateUnknown  CIState = "unknown"  // 未取得・取得不能
 	StateUnpushed CIState = "unpushed" // まだ push されていない (GitHub 上に SHA が無い)。ローカル判定のみで API には問い合わせない
