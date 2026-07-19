@@ -66,11 +66,15 @@ func TestClipANSIAware(t *testing.T) {
 
 func TestLogCIMark(t *testing.T) {
 	m := newLogModel([]Commit{{SHA: "sha"}})
-	if got := m.ciMark("sha"); got != "\x1b[2m·\x1b[0m" {
+	if got := m.ciMark("sha"); got != ansiDim+"·"+ansiReset {
 		t.Fatalf("loading mark = %q", got)
 	}
+	// 色は theme (active_green) から引く。直値でなく paintFg で期待値を作り theme に追従させる
 	m.ci = map[string]CIState{"sha": CISuccess}
-	if got := m.ciMark("sha"); got != "\x1b[38;5;2m✓\x1b[0m" {
+	if got := m.ciMark("sha"); got != paintFg("active_green", "✓") {
 		t.Fatalf("success mark = %q", got)
+	}
+	if stripANSI(m.ciMark("sha")) != "✓" {
+		t.Fatalf("success mark 可視文字 = %q", stripANSI(m.ciMark("sha")))
 	}
 }

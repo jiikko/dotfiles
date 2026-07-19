@@ -154,15 +154,15 @@ func (m *logModel) ensureCursorVisible() {
 
 func (m *logModel) ciMark(sha string) string {
 	if m.ci == nil {
-		return "\x1b[2m·\x1b[0m"
+		return ansiDim + "·" + ansiReset // 取得中プレースホルダ
 	}
 	switch m.ci[sha] {
 	case CISuccess:
-		return "\x1b[38;5;2m✓\x1b[0m"
+		return paintFg("active_green", "✓")
 	case CIFailure:
-		return "\x1b[38;5;1m✗\x1b[0m"
+		return paintFg("error_red", "✗")
 	case CIPending:
-		return "\x1b[38;5;3m●\x1b[0m"
+		return paintFg("marker_orange", "●")
 	default:
 		return " "
 	}

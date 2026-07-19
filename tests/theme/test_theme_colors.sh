@@ -24,6 +24,13 @@ else
   ng "scripts/lib/theme_colors.sh が古い。scripts/gen_theme_colors.sh を実行して commit すること"
 fi
 
+GO_GEN="$ROOT_DIR/src/git-popup/theme_gen.go"
+if diff -u "$GO_GEN" <("$ROOT_DIR/scripts/gen_theme_colors.sh" --go-stdout); then
+  ok "src/git-popup/theme_gen.go は colors.yml と一致 (再生成漏れなし)"
+else
+  ng "src/git-popup/theme_gen.go が古い。scripts/gen_theme_colors.sh を実行して commit すること"
+fi
+
 # shellcheck source=/dev/null
 source "$LIB"
 
@@ -61,10 +68,15 @@ assert_lua "pane 地 dark0_hard" dark0_hard "$THEME_BASE_PANE_BG_HEX" "$THEME_BA
 assert_lua "バー地 dark0" dark0 "$THEME_BASE_BAR_BG_HEX" "$THEME_BASE_BAR_BG"
 assert_lua "危険 diag.error_bg" error_bg "$THEME_ERROR_RED_HEX" "$THEME_ERROR_RED"
 
-# NOTE: 「消費者の配線」検査 (git popup が theme_colors.sh を source しているか) は
-# 2026-07-19 に削除。唯一の shell 消費者だった scripts/tmux_git_popup.sh を Go TUI
-# (src/git-popup) へ移行して退役したため、生成された shell 定数の実行時消費者が現状無い。
-# 上の生成正当性 (assert_lua) は維持。将来 Go TUI 等が theme を参照したら消費者検査を復活させる。
+echo ""
+echo "## 消費者の配線"
+# 生成された Go マップを git-popup TUI が実際に参照しているか (定義だけで未使用だと形骸化する)。
+# 旧 shell popup 退役後の theme 消費者は git-popup。
+if grep -rqE 'themeCterm\[' "$ROOT_DIR/src/git-popup/"; then
+  ok "git-popup は生成された themeCterm を参照している"
+else
+  ng "git-popup が themeCterm を参照していない (theme 配線が切れている)"
+fi
 
 echo ""
 if [[ "$fail" != 0 ]]; then

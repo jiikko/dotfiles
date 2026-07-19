@@ -116,17 +116,18 @@ func classifyCIJob(state string) rune {
 	}
 }
 
+// colorCIJobMark は job 記号を theme 色で包む。色語彙は theme/colors.yml に集約。
 func colorCIJobMark(mark rune) string {
-	color := "38;5;3"
 	switch mark {
 	case ciJobSuccess:
-		color = "38;5;2"
+		return paintFg("active_green", string(mark))
 	case ciJobFailure:
-		color = "38;5;1"
+		return paintFg("error_red", string(mark))
 	case ciJobSkipped:
-		return "\x1b[2m" + string(mark) + "\x1b[0m"
+		return ansiDim + string(mark) + ansiReset
+	default: // 進行中 (running)
+		return paintFg("marker_orange", string(mark))
 	}
-	return "\x1b[" + color + "m" + string(mark) + "\x1b[0m"
 }
 
 // formatCIJobs は gh の jq 整形済み出力を preview 用ブロックへ変換する。

@@ -201,19 +201,19 @@ func (m *changesModel) handleKey(key string) (*changesModel, tea.Cmd) {
 
 // markColor は XY ステータス 2 桁を自前で着色する (porcelain -z は無色のため)。
 // git 既定に倣い staged(index 列)=緑・worktree 列=赤・untracked(?)=赤。空白はそのまま。
+// 色は単一ソース theme/colors.yml (active_green / error_red) から引く。
 func markColor(c Change) string {
-	const green, red, reset = "\x1b[38;5;2m", "\x1b[38;5;1m", "\x1b[0m"
-	col := func(b byte, base string) string {
+	col := func(b byte, role string) string {
 		switch b {
 		case ' ':
 			return " "
 		case '?':
-			return red + "?" + reset
+			return paintFg("error_red", "?")
 		default:
-			return base + string(b) + reset
+			return paintFg(role, string(b))
 		}
 	}
-	return col(c.Index, green) + col(c.Worktree, red)
+	return col(c.Index, "active_green") + col(c.Worktree, "error_red")
 }
 
 func (m *changesModel) visibleRows() int { return max(m.height-2, 1) }
