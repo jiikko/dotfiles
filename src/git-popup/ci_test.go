@@ -56,3 +56,32 @@ func TestClassifyCIState(t *testing.T) {
 		}
 	}
 }
+
+func TestClassifyCIJob(t *testing.T) {
+	tests := map[string]rune{
+		"success": ciJobSuccess, "failure": ciJobFailure, "cancelled": ciJobFailure,
+		"timed_out": ciJobFailure, "action_required": ciJobFailure, "startup_failure": ciJobFailure,
+		"skipped": ciJobSkipped, "neutral": ciJobSkipped, "in_progress": ciJobRunning,
+		"queued": ciJobRunning, "pending": ciJobRunning, "unknown": ciJobRunning,
+	}
+	for input, want := range tests {
+		if got := classifyCIJob(input); got != want {
+			t.Errorf("%q = %c, want %c", input, got, want)
+		}
+	}
+}
+
+func TestFormatCIJobs(t *testing.T) {
+	got := formatCIJobs("success\tbuild\nfailure\ttest\nin_progress\tdeploy\nskipped\tlint\n")
+	for _, want := range []string{"── CI ──", "✓ build", "✗ test", "● deploy", "○ lint", "──────────"} {
+		if !strings.Contains(stripANSI(got), want) {
+			t.Errorf("formatted jobs missing %q: %q", want, got)
+		}
+	}
+	if strings.Index(got, "build") > strings.Index(got, "test") || strings.Index(got, "test") > strings.Index(got, "deploy") {
+		t.Errorf("job order changed: %q", got)
+	}
+	if formatCIJobs("") != "" || formatCIJobs("\n") != "" {
+		t.Errorf("empty input should produce empty output")
+	}
+}

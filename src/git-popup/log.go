@@ -47,7 +47,7 @@ func (m *logModel) previewCmd() tea.Cmd {
 	}
 	sha := m.commits[m.cursor].SHA
 	return func() tea.Msg {
-		text, err := loadPreview(sha)
+		text, err := loadLogPreview(sha)
 		return previewMsg{sha: sha, text: text, err: err}
 	}
 }

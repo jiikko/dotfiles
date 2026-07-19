@@ -1,0 +1,64 @@
+---
+# src/git-popup (Go 製 git 操作 popup TUI) の lint + go test 専用 workflow。
+# src_glog.yml と同じ paths filter パターン: git-popup に触れた変更のときだけ起動し、
+# 無関係な push で runner を消費しない。
+# ⚠️ paths filter 付きの check を branch protection の required check に登録しないこと:
+#   非接触 PR では run 自体が生成されず、check が永遠に pending でマージ不能になる。
+
+name: src/git-popup
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/git-popup/**'
+      - .github/workflows/src_git-popup.yml
+  pull_request:
+    paths:
+      - 'src/git-popup/**'
+      - .github/workflows/src_git-popup.yml
+  workflow_dispatch:  # GitHub UI からの手動再実行用
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-slim
+    timeout-minutes: 15
+    steps:
+      - name: Silence git init.defaultBranch hint
+        run: git config --global init.defaultBranch main
+
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: src/git-popup/go.mod
+          cache-dependency-path: src/git-popup/go.sum
+
+      - name: Lint
+        run: make -C src/git-popup lint
+
+  test:
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    steps:
+      - name: Silence git init.defaultBranch hint
+        run: git config --global init.defaultBranch main
+
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: src/git-popup/go.mod
+          cache-dependency-path: src/git-popup/go.sum
+
+      - name: Run git-popup tests
+        run: make -C src/git-popup test
