@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -1248,6 +1249,11 @@ func (m *browseModel) cursorLine(text string) string {
 	return m.bgLine(text, ansiCursorBg)
 }
 
+// ansiResetRe は SGR リセット。git log --color は "\x1b[0m" でなく短縮形 "\x1b[m" を
+// 多用するため、literal 一致だと色付き行の bg 再適用が途切れる (行末まで塗れない実測
+// 2026-07-19)。両形を 1 つの正規表現で拾う。
+var ansiResetRe = regexp.MustCompile("\x1b\\[0?m")
+
 // bgLine は行全体を指定 bg で端末幅まで塗る (行内の SGR リセットで bg が切れないよう、
 // リセット直後に bg を張り直す)。カーソル行と push 済みエリアの塗りが共用する。
 // 色なしではそのまま返す (bg が使えない)。
@@ -1257,7 +1263,7 @@ func (m *browseModel) bgLine(text, bg string) string {
 	}
 	text = clipToWidth(text, m.width)
 	pad := max(m.width-runewidth.StringWidth(stripANSI(text)), 0)
-	return bg + strings.ReplaceAll(text, ansiReset, ansiReset+bg) +
+	return bg + ansiResetRe.ReplaceAllString(text, "$0"+bg) +
 		strings.Repeat(" ", pad) + ansiReset
 }
 

@@ -1072,6 +1072,15 @@ func TestBrowsePushedAreaBackground(t *testing.T) {
 	if strings.Contains(m.View(), ansiPushedBg) {
 		t.Fatal("全部 push 済みでも bg が塗られた")
 	}
+	// git log --color は短縮形リセット "\x1b[m" を使う。これでも bg を張り直して
+	// 行末まで塗れる (literal "\x1b[0m" 一致だけだと途切れる回帰の防止)
+	got := m.bgLine("\x1b[33mcommit abc\x1b[m subject", ansiPushedBg)
+	if !strings.Contains(got, "\x1b[m"+ansiPushedBg) {
+		t.Fatalf("短縮形リセット後に bg が張り直されない: %q", got)
+	}
+	if !strings.HasSuffix(got, ansiReset) || !strings.Contains(got, "  ") {
+		t.Fatalf("行末までの padding が無い: %q", got)
+	}
 }
 
 // C-f は全ビューで → の別名。C-b の ← 別名は無い (push は b。glogx の独自仕様)。
