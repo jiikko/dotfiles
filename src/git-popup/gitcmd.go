@@ -79,7 +79,12 @@ func parseLog(out string) ([]Commit, error) {
 }
 
 func loadPreview(sha string) (string, error) {
-	return runGit("show", "--color=always", "--no-ext-diff", sha)
+	// --color=never で受けて highlightDiff で構造色 + シンタックスハイライトを付ける。
+	out, err := runGit("show", "--color=never", "--no-ext-diff", sha)
+	if err != nil {
+		return "", err
+	}
+	return highlightDiffText(out), nil
 }
 
 func push() error {
@@ -153,30 +158,34 @@ func commitChanges(message string) error {
 
 func loadChangePreview(change Change) (string, error) {
 	if change.Index == '?' {
-		return runGitNoIndex(change.Path)
+		text, err := runGitNoIndex(change.Path)
+		if err != nil {
+			return "", err
+		}
+		return highlightDiffText(text), nil
 	}
 	var b strings.Builder
 	if change.Index != ' ' {
 		b.WriteString("\x1b[2m── staged ──\x1b[0m\n")
-		text, err := runGit("diff", "--color=always", "--no-ext-diff", "--cached", "--", change.Path)
+		text, err := runGit("diff", "--color=never", "--no-ext-diff", "--cached", "--", change.Path)
 		if err != nil {
 			return "", err
 		}
-		b.WriteString(text)
+		b.WriteString(highlightDiffText(text))
 	}
 	if change.Worktree != ' ' {
 		b.WriteString("\x1b[2m── unstaged ──\x1b[0m\n")
-		text, err := runGit("diff", "--color=always", "--no-ext-diff", "--", change.Path)
+		text, err := runGit("diff", "--color=never", "--no-ext-diff", "--", change.Path)
 		if err != nil {
 			return "", err
 		}
-		b.WriteString(text)
+		b.WriteString(highlightDiffText(text))
 	}
 	return b.String(), nil
 }
 
 func runGitNoIndex(path string) (string, error) {
-	cmd := exec.Command("git", "diff", "--color=always", "--no-ext-diff", "--no-index", "--", "/dev/null", path)
+	cmd := exec.Command("git", "diff", "--color=never", "--no-ext-diff", "--no-index", "--", "/dev/null", path)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
