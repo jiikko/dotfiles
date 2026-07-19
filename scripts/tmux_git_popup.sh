@@ -37,6 +37,7 @@ DIM=$(sgr 2)
 FG_GREEN=$(sgr "38;5;$THEME_ACTIVE_GREEN")
 FG_CYAN=$(sgr "38;5;$THEME_INFO_CYAN")
 FG_ORANGE=$(sgr "38;5;$THEME_MARKER_ORANGE")
+FG_RED=$(sgr "38;5;$THEME_ERROR_RED")
 BADGE_ON=$(sgr "1;38;5;16;48;5;$THEME_ACTIVE_GREEN")
 # dots の色語彙 (ユーザー指定 2026-07-18): 未 push = 灰 (まだ確定していない/消灯)・
 # push 済み = 緑 (確定済み)。「未 push を橙で目立たせる」逆案は直感と逆と却下済み
@@ -153,6 +154,44 @@ line_path() {
   printf '%s\n' "$p"
 }
 
+# 選択コミット SHA の CI job 状態を glog 風 (✓/✗/●/○ + job 名) に出力する best-effort ヘルパー。
+# 主目的は diff プレビューで、CI は「あれば添える」。以下では静かに何も出さず抜ける:
+#   gh 未導入 / 非 GitHub remote / オフライン / CI 結果が無いコミット。
+# gh 本体 (glog) は read-only ツールとして拡張しない方針のため、CI 取得は popup 側で gh を
+# 直接叩く。カーソル移動ごとに gh を叩くと重いので sha 単位で 60 秒ディスクキャッシュする
+# (走行中 job は 60 秒で最新化)。glog とは別キャッシュ (フォーマット結合を避ける)。
+ci_status_lines() {
+  sha=$1
+  command -v gh >/dev/null 2>&1 || return 0
+  cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/tmux_git_popup"
+  cache="$cache_dir/ci-$sha"
+  # 60 秒以内の cache が無ければ取得し直す (空ファイルも「取得済み」として 60 秒は再取得しない)
+  if ! find "$cache" -mmin -1 2>/dev/null | grep -q .; then
+    mkdir -p "$cache_dir" 2>/dev/null || return 0
+    # 一時ファイルへ書いて成功/失敗どちらでも atomic に mv する。fzf はカーソル移動で
+    # preview を kill するため、cache を直接 truncate/write すると中断で壊れた内容が 60 秒
+    # 有効化されうる。gh 失敗時は空ファイルを置いて 60 秒は再取得を抑止する (degrade 維持)。
+    # kill されて mv 前に死んだ場合は cache 未更新のまま (tmp が孤児化するのみ)。
+    tmp="$cache.$$"
+    gh api "repos/{owner}/{repo}/commits/$sha/check-runs" \
+      --jq '.check_runs[] | "\(.conclusion // .status)\t\(.name)"' >"$tmp" 2>/dev/null || :
+    mv -f "$tmp" "$cache" 2>/dev/null || rm -f "$tmp"
+  fi
+  [ -s "$cache" ] || return 0
+  printf '%s─── CI ───%s\n' "$DIM" "$RESET"
+  tab=$(printf '\t')
+  while IFS="$tab" read -r state name; do
+    case "$state" in
+      success) sym="${FG_GREEN}✓${RESET}" ;;
+      failure|cancelled|timed_out|action_required|startup_failure) sym="${FG_RED}✗${RESET}" ;;
+      skipped|neutral|stale) sym="${DIM}○${RESET}" ;;
+      *) sym="${FG_ORANGE}●${RESET}" ;;  # in_progress / queued / pending 等の進行中
+    esac
+    printf '  %s %s\n' "$sym" "$name"
+  done < "$cache"
+  printf '%s──────────%s\n\n' "$DIM" "$RESET"
+}
+
 case "${1:-}" in
 list)
   # 色は fzf --ansi が解釈する。clean なら空リスト (header だけ残る)
@@ -187,6 +226,14 @@ preview)
     printf '\033[2m── unstaged ──\033[0m\n'
     git diff --color -- "$path"
   fi
+  exit 0
+  ;;
+logpreview)
+  # log mode の preview: 選択コミットの CI job (glog 風) を上に添え、下に git show の diff。
+  sha="${2:-}"
+  [ -n "$sha" ] || exit 0
+  ci_status_lines "$sha"
+  git show --color=always "$sha"
   exit 0
   ;;
 commit)
@@ -235,6 +282,7 @@ changes 画面 (変更ありのとき):
   Ctrl-L      log に戻る
 
 log 画面 (初期画面):
+  プレビュー   選択コミットの CI job (gh 取得・glog 風の ✓/✗/●) + git show の diff
   Ctrl-L      changes に切り替え
   Ctrl-B      push (確認あり)
   Enter       選択コミットの diff を全画面表示
@@ -271,7 +319,7 @@ while :; do
       --prompt='log> ' \
       --header="[$branch] log  C-l: changes  C-b: push  Enter: 全画面diff  C-g/Esc: 閉じる" \
       --expect=ctrl-l \
-      --preview='git show --color=always {1}' \
+      --preview="\"$self\" logpreview {1}" \
       --preview-window='right:55%:wrap' \
       --bind ctrl-g:abort \
       --bind "ctrl-b:execute(\"$self\" push)" \

@@ -24,6 +24,9 @@ CALLS="$TMP_DIR/calls.log"
 export CALLS
 : > "$CALLS"
 
+# CI キャッシュ (ci_status_lines) を実 ~/.cache から隔離する
+export XDG_CACHE_HOME="$TMP_DIR/cache"
+
 mkdir -p "$TMP_DIR/bin" "$TMP_DIR/bin_nogum"
 
 # stub git: 呼び出しを記録し、テストごとの応答は環境変数で制御する
@@ -41,6 +44,7 @@ case "$*" in
   *"rev-list --left-right --count"*) printf '0\t2\n' ;;
   *"rev-list --count"*) echo "${STUB_AHEAD:-20}" ;;
   *"log --oneline"*) echo "abc1234 fake log" ;;
+  *"show "*) echo "GITSHOW-DIFF-BODY" ;;  # logpreview の diff 部 (順序検証用マーカー)
 esac
 exit 0
 EOS
@@ -69,6 +73,17 @@ cat > "$TMP_DIR/bin/gum" <<'EOS'
 echo "gum $*" >> "$CALLS"
 [ "$1" = confirm ] && exit "${STUB_CONFIRM_RC:-0}"
 printf '%s\n' "${STUB_GUM_MSG:-}"
+EOS
+
+# stub gh: check-runs API を叩かれたら jq 整形済み相当 (state<TAB>name) を返す。
+# 実際の gh は --jq で整形するが、stub は最終形だけ返せば ci_status_lines の描画を検証できる。
+cat > "$TMP_DIR/bin/gh" <<'EOS'
+#!/bin/sh
+echo "gh $*" >> "$CALLS"
+case "$*" in
+  *check-runs*) printf 'success\tbuild\nfailure\tlint\nin_progress\tdeploy\n' ;;
+esac
+exit 0
 EOS
 
 # stub sleep: テストを待たせない
@@ -105,7 +120,7 @@ assert_called "--expect=ctrl-l" "fzf は C-l を log 遷移キーとして捕捉
 # assert_called は全 fzf 行を横断するため、changes mode にしか無い bind でも通ってしまう穴を塞ぐ。
 log_fzf=$(grep '^fzf ' "$CALLS" | grep -F 'git show' | head -n1)
 [[ -n "$log_fzf" ]] || { echo "✗ log mode の fzf 起動が記録されていない"; cat "$CALLS"; exit 1; }
-for pat in 'ctrl-g:abort' 'ctrl-b:execute' '--expect=ctrl-l' 'git show --color=always {1}' 'enter:execute(git show'; do
+for pat in 'ctrl-g:abort' 'ctrl-b:execute' '--expect=ctrl-l' 'logpreview {1}' 'enter:execute(git show'; do
   case "$log_fzf" in
     *"$pat"*) echo "✓ log mode fzf に $pat が配線されている" ;;
     *) echo "✗ log mode fzf に $pat が無い: $log_fzf"; exit 1 ;;
@@ -135,6 +150,35 @@ status_count=$(grep -c 'status --short' "$CALLS" || true)
 }
 echo "✓ log→changes→log の C-l 遷移"
 assert_called "fzf" "changes 画面では fzf を起動する"
+
+echo ""
+echo "## logpreview: 選択コミットの CI job (glog 風) + git show"
+reset_calls
+rm -rf "$TMP_DIR/cache"  # cache を消して必ず gh を叩かせる
+RUN_OUT="$TMP_DIR/logpreview.out" run "$STUB" "$SCRIPT" logpreview abc1234
+[[ "$RC" == 0 ]] || { echo "✗ logpreview rc=$RC"; cat "$CALLS"; exit 1; }
+assert_called "gh api" "CI 取得に gh api を叩く (glog は使わず popup で gh を直接)"
+assert_called "git show" "diff は git show で出す"
+# ANSI を剥いで state↔job 名の対応・記号・並びを厳密に検証する
+esc=$(printf '\033')
+lp_plain=$(sed "s/${esc}\[[0-9;]*m//g" "$TMP_DIR/logpreview.out")
+# gh stub は success/build・failure/lint・in_progress/deploy を返す → ✓/✗/● に対応
+expected=$'─── CI ───\n  ✓ build\n  ✗ lint\n  ● deploy'
+case "$lp_plain" in
+  *"$expected"*) echo "✓ CI ブロックは state↔job 対応どおり (✓ build / ✗ lint / ● deploy)" ;;
+  *) echo "✗ CI ブロックの並び/対応が違う:"; printf '%s\n' "$lp_plain"; exit 1 ;;
+esac
+# CI ブロックは git show の diff (GITSHOW-DIFF-BODY) より前に出る
+ci_pos=$(printf '%s\n' "$lp_plain" | grep -n '─── CI ───' | head -1 | cut -d: -f1)
+show_pos=$(printf '%s\n' "$lp_plain" | grep -n 'GITSHOW-DIFF-BODY' | head -1 | cut -d: -f1)
+[[ -n "$ci_pos" && -n "$show_pos" && "$ci_pos" -lt "$show_pos" ]] || {
+  echo "✗ CI が git show より後ろ (ci 行=$ci_pos show 行=$show_pos)"; printf '%s\n' "$lp_plain"; exit 1;
+}
+echo "✓ CI ブロックは git show の diff より前に出る"
+# 2 回目は cache が効いて gh を叩かない
+reset_calls
+RUN_OUT=/dev/null run "$STUB" "$SCRIPT" logpreview abc1234
+assert_not_called "gh api" "60 秒以内の再表示は cache を使い gh を叩かない"
 
 echo ""
 echo "## main: changes へ移動後、working tree が clean ならサマリ画面"
