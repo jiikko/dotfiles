@@ -733,8 +733,16 @@ func TestBrowseLinesMemoized(t *testing.T) {
 	if &first[0] == &rebuilt[0] {
 		t.Errorf("CI 結果反映後も古い行リストのまま")
 	}
-	if !strings.Contains(rebuilt[0].Text, "✗") {
-		t.Errorf("再構築後の行に新しい状態が反映されていない: %q", rebuilt[0].Text)
+	// 先頭は all pushed マークになりうるため、ヘッダー行 (CommitIdx 0) で状態を見る
+	var header string
+	for _, l := range rebuilt {
+		if l.Header && l.CommitIdx == 0 {
+			header = l.Text
+			break
+		}
+	}
+	if !strings.Contains(header, "✗") {
+		t.Errorf("再構築後の行に新しい状態が反映されていない: %q", header)
 	}
 }
 

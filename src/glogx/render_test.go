@@ -76,15 +76,30 @@ func TestRenderLinesPushBoundary(t *testing.T) {
 	if out := RenderStatic(testCommits(), statuses, RenderOpts{Oneline: true}); !strings.Contains(out, " origin ") {
 		t.Errorf("oneline で境界線が入らない:\n%s", out)
 	}
-	// 全部 push 済み / 全部未 push / 状態不明では入らない
+	// 全部未 push / repo 不明では入らない
 	for name, st := range map[string]map[string]CIState{
-		"全部 push 済み": {"a": StateSuccess, "b": StateSuccess},
-		"全部未 push":   {"a": StateUnpushed, "b": StateUnpushed},
-		"状態不明":       {},
+		"全部未 push":         {"a": StateUnpushed, "b": StateUnpushed},
+		"repo 不明 (全部済み)": {"a": StateSuccess, "b": StateSuccess},
 	} {
 		if out := RenderStatic(testCommits(), st, RenderOpts{}); strings.Contains(out, " origin ") {
 			t.Errorf("%s で境界線が入った:\n%s", name, out)
 		}
+	}
+	// 全部 push 済み (HasRepo) なら先頭に all pushed マークが入る (ユーザー要望)
+	all := map[string]CIState{"a": StateSuccess, "b": StateSuccess}
+	out := RenderLines(testCommits(), all, RenderOpts{HasRepo: true})
+	if len(out) == 0 || !strings.Contains(stripANSI(out[0].Text), "origin (all pushed ✓)") {
+		t.Fatalf("全部 push 済みの先頭マークが無い: %q", out[0].Text)
+	}
+	// 混在時は先頭マークではなく中間の境界線 (二重に出ない)
+	mixed := RenderLines(testCommits(), statuses, RenderOpts{HasRepo: true})
+	if strings.Contains(stripANSI(mixed[0].Text), "all pushed") {
+		t.Fatal("混在時に先頭へ all pushed マークが出た")
+	}
+	// 全部未 push は HasRepo でも何も出ない
+	un := map[string]CIState{"a": StateUnpushed, "b": StateUnpushed}
+	if out := RenderStatic(testCommits(), un, RenderOpts{HasRepo: true}); strings.Contains(out, " origin ") {
+		t.Fatalf("全部未 push で境界線が入った:\n%s", out)
 	}
 }
 

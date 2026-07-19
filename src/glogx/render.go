@@ -90,6 +90,9 @@ type RenderOpts struct {
 	// git log と機械的に一致する (ユーザー要望 2026-07-19「人力で寄せるのはめんどい」)。
 	// nil は fallback (git log の実行/照合に失敗した場合と --oneline)
 	Verbatim []Line
+	// HasRepo は GitHub repo が解決できているか。「全部 push 済み ✓」の先頭マークの
+	// ゲート (remote 無し repo では push 状態が不明なだけなので出さない)
+	HasRepo bool
 }
 
 func (o RenderOpts) decorColors() DecorColors {
@@ -132,35 +135,48 @@ func RenderLines(commits []Commit, statuses map[string]CIState, o RenderOpts) []
 	return insertPushBoundary(lines, commits, statuses, o)
 }
 
-// insertPushBoundary は未 push と push 済みの間に境界線 (── origin ──) を 1 行挿す。
-// 「どこまで push したか」の視覚化 (ユーザー選定 2026-07-19: 背景塗りつぶし案は却下、
-// カーソルの行全体 bg 塗りと干渉するため)。未 push が 1 件も無い / 全部未 push /
-// push 状態不明のときは何も挿さない。push 成功で statuses から unpushed が消えると
-// 境界線も消える (lines は statuses 更新で再構築される)。
+// insertPushBoundary は「どこまで push したか」の視覚化 (ユーザー選定 2026-07-19:
+// 背景塗りつぶし案は却下、カーソルの行全体 bg 塗りと干渉するため):
+//   - 未 push と push 済みが混在 → その間に境界線 (── origin ──) を 1 行挿す
+//   - 表示範囲が全部 push 済み → 先頭に ── origin (all pushed ✓) ── を挿す
+//     (境界が先頭 = 見えている範囲は全部 origin 済み、という同じ語彙。ユーザー要望)
+//
+// 全部未 push / push 状態不明 (HasRepo=false) のときは何も挿さない。push/pull で
+// statuses が変わると lines は再構築されるため、マークは常に現状を反映する。
 func insertPushBoundary(lines []Line, commits []Commit, statuses map[string]CIState, o RenderOpts) []Line {
+	if len(commits) == 0 {
+		return lines
+	}
 	boundary := -1 // push 済み先頭のコミット index
-	for i, c := range commits {
-		if stateFor(statuses, c.SHA) != StateUnpushed {
-			if i > 0 {
-				boundary = i
-			}
-			break
+	unpushed := 0
+	for _, c := range commits {
+		if stateFor(statuses, c.SHA) == StateUnpushed {
+			unpushed++
 		}
 	}
-	if boundary < 0 {
+	if unpushed > 0 && unpushed < len(commits) {
+		boundary = unpushed // commits は新しい順で未 push が先頭に並ぶ
+	}
+	allPushed := unpushed == 0 && o.HasRepo
+	if boundary < 0 && !allPushed {
 		return lines
 	}
 	width := o.Width
 	if width <= 0 {
 		width = 60
 	}
-	label := " origin "
-	rule := "──" + label + strings.Repeat("─", max(width-2-runewidth.StringWidth(label), 0))
+	rule := func(label string) string {
+		head := "── origin" + label + " "
+		return paint(head+strings.Repeat("─", max(width-runewidth.StringWidth(head), 0)), ansiDim, o.Colored)
+	}
+	if allPushed {
+		return append([]Line{{Text: rule(" (all pushed ✓)"), CommitIdx: 0}}, lines...)
+	}
 	for i, l := range lines {
 		if l.Header && l.CommitIdx == boundary {
 			out := make([]Line, 0, len(lines)+1)
 			out = append(out, lines[:i]...)
-			out = append(out, Line{Text: paint(rule, ansiDim, o.Colored), CommitIdx: boundary - 1})
+			out = append(out, Line{Text: rule(""), CommitIdx: boundary - 1})
 			out = append(out, lines[i:]...)
 			return out
 		}

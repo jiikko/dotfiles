@@ -97,7 +97,7 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	}
 
 	statuses, toFetch, repo, hasRepo, cachePath := mergePlan(<-planCh, shas)
-	renderOpts := RenderOpts{Oneline: opts.Oneline, Colored: colored}
+	renderOpts := RenderOpts{Oneline: opts.Oneline, Colored: colored, HasRepo: hasRepo}
 	if displayCh != nil {
 		if raw := <-displayCh; raw != nil {
 			// ヘッダー照合に失敗したら nil = 自前レンダリングへ fallback (silent 劣化を

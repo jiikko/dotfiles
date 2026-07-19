@@ -1110,6 +1110,7 @@ func (m *browseModel) renderOpts() RenderOpts {
 		Decor:    m.decor,
 		PRs:      m.prCache,
 		Verbatim: m.verbatim,
+		HasRepo:  m.hasRepo,
 	}
 }
 
