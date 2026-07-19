@@ -20,7 +20,7 @@ type previewMsg struct {
 // 独立に非同期取得し、先に出た方から描画する (CI 取得の ~1s で diff を待たせない)。
 type ciJobsMsg struct {
 	sha  string
-	text string
+	jobs []CIJob
 }
 
 type pushMsg struct{ err error }
@@ -32,7 +32,7 @@ type logModel struct {
 	cursor  int
 	offset  int
 	preview string
-	ciJobs  string // 選択コミットの CI job ブロック (preview の上に重ねる)
+	ciJobs  []CIJob // 選択コミットの CI job (preview 上部にオーバーレイ・o でジョブ選択)
 	status  string
 	width   int
 	height  int
@@ -42,6 +42,8 @@ type logModel struct {
 
 	detailOpen   bool // Enter で選択コミットの詳細 (右ペイン) にフォーカスしスクロールするモード
 	detailOffset int  // 詳細スクロール位置 (右ペインの先頭行 index)
+	jobSelect    bool // 詳細モード内の CI ジョブ選択サブモード (o で入り、Enter/o でブラウザ)
+	jobCursor    int  // 選択中の CI job index
 
 	unpushed map[string]bool // @{upstream} に未 push のコミット SHA (色分け用)
 }
@@ -74,7 +76,7 @@ func (m *logModel) ciJobsCmd() tea.Cmd {
 	}
 	sha := m.commits[m.cursor].SHA
 	return func() tea.Msg {
-		return ciJobsMsg{sha: sha, text: loadCIJobsPreview(sha)}
+		return ciJobsMsg{sha: sha, jobs: loadCIJobs(sha)}
 	}
 }
 
@@ -109,7 +111,7 @@ func (m *logModel) Update(msg tea.Msg) (*logModel, tea.Cmd) {
 		}
 	case ciJobsMsg:
 		if msg.sha == m.currentSHA() { // 遅延到着した別コミットの CI は捨てる
-			m.ciJobs = msg.text
+			m.ciJobs = msg.jobs
 		}
 	case ciResultMsg:
 		m.ci = msg.states
@@ -163,6 +165,8 @@ func (m *logModel) handleKey(key string) (*logModel, tea.Cmd) {
 	if key == "enter" || key == "right" || key == "ctrl+f" {
 		m.detailOpen = true
 		m.detailOffset = 0
+		m.jobSelect = false
+		m.jobCursor = 0
 		return m, nil
 	}
 	old := m.cursor
@@ -171,11 +175,15 @@ func (m *logModel) handleKey(key string) (*logModel, tea.Cmd) {
 		m.cursor = min(m.cursor+1, len(m.commits)-1)
 	case "k", "up", "ctrl+p":
 		m.cursor = max(m.cursor-1, 0)
+	case "g", "home": // vim の gg 相当 (g 一発で先頭。g に他の割当が無いため 2 連打は不要)
+		m.cursor = 0
+	case "G", "end":
+		m.cursor = len(m.commits) - 1
 	}
 	if m.cursor != old {
 		m.ensureCursorVisible()
 		m.preview = "loading preview..."
-		m.ciJobs = "" // 前コミットの CI ブロックを消し、diff と CI を独立に取り直す
+		m.ciJobs = nil // 前コミットの CI を消し、diff と CI を独立に取り直す
 		return m, tea.Batch(m.previewCmd(), m.ciJobsCmd())
 	}
 	return m, nil
@@ -187,14 +195,29 @@ func (m *logModel) rightLines() []string {
 	return strings.Split(strings.TrimRight(m.preview, "\n"), "\n")
 }
 
-// handleDetailKey は Enter で入った詳細スクロールモードのキー処理。q/Esc/h/Enter で一覧へ戻る。
+// handleDetailKey は詳細スクロールモードのキー処理。Esc/h/←/Enter で一覧へ戻り、
+// q はプログラム終了 (ユーザー要望 2026-07-19: 詳細でも q は quit)。
+// o で CI ジョブ選択サブモードに入り、j/k で選択・Enter/o でブラウザで開く。
 func (m *logModel) handleDetailKey(key string) (*logModel, tea.Cmd) {
+	if m.jobSelect {
+		return m.handleJobSelectKey(key)
+	}
 	rows := m.paneRows()
 	maxOff := max(len(m.rightLines())-rows, 0)
 	switch key {
-	case "q", "esc", "h", "enter", "left":
+	case "q", "ctrl+c":
+		m.done = true
+		return m, tea.Quit
+	case "esc", "h", "enter", "left", "ctrl+g": // C-g はモーダル (詳細) を閉じて一覧へ
 		m.detailOpen = false
 		m.detailOffset = 0
+	case "o":
+		if len(m.ciJobs) == 0 {
+			m.status = "CI job がありません"
+			return m, nil
+		}
+		m.jobSelect = true
+		m.jobCursor = 0
 	case "j", "down", "ctrl+n":
 		m.detailOffset = min(m.detailOffset+1, maxOff)
 	case "k", "up", "ctrl+p":
@@ -207,6 +230,35 @@ func (m *logModel) handleDetailKey(key string) (*logModel, tea.Cmd) {
 		m.detailOffset = 0
 	case "G", "end":
 		m.detailOffset = maxOff
+	}
+	return m, nil
+}
+
+// handleJobSelectKey は CI ジョブ選択サブモード。Enter/o で選択 job をブラウザで開く。
+func (m *logModel) handleJobSelectKey(key string) (*logModel, tea.Cmd) {
+	switch key {
+	case "q", "ctrl+c":
+		m.done = true
+		return m, tea.Quit
+	case "esc", "h", "left", "ctrl+g": // C-g はモーダル (ジョブ選択) を閉じる
+		m.jobSelect = false
+	case "j", "down", "ctrl+n":
+		m.jobCursor = min(m.jobCursor+1, len(m.ciJobs)-1)
+	case "k", "up", "ctrl+p":
+		m.jobCursor = max(m.jobCursor-1, 0)
+	case "enter", "o":
+		if m.jobCursor < len(m.ciJobs) {
+			job := m.ciJobs[m.jobCursor]
+			if job.URL == "" {
+				m.status = "この job には URL がありません"
+				return m, nil
+			}
+			if err := openInBrowser(job.URL); err != nil {
+				m.status = "ブラウザ起動に失敗: " + err.Error()
+			} else {
+				m.status = "opened: " + job.Name
+			}
+		}
 	}
 	return m, nil
 }
@@ -280,8 +332,14 @@ func (m *logModel) buildDetailLines(w, rows int) []string {
 			lines[i] = clip(diff[idx], w)
 		}
 	}
-	if !m.detailOpen && m.ciJobs != "" {
-		ci := strings.Split(strings.TrimRight(m.ciJobs, "\n"), "\n")
+	// CI オーバーレイ: 一覧モードでは常時、詳細モードではジョブ選択中のみ表示する
+	// (詳細スクロール中は diff を隅々まで読めるよう消す)。
+	if !m.detailOpen || m.jobSelect {
+		sel := -1
+		if m.jobSelect {
+			sel = m.jobCursor
+		}
+		ci := renderCIJobs(m.ciJobs, sel)
 		for i := 0; i < len(ci) && i < rows; i++ {
 			lines[i] = clip(ci[i], w)
 		}
@@ -307,7 +365,10 @@ func (m *logModel) View() string {
 	case m.busy:
 		footer = "pushing..."
 	case m.detailOpen:
-		footer = fmt.Sprintf("[詳細] j/k・Space/b・g/G スクロール  q/Esc/Enter 一覧へ  (%d)", m.detailOffset)
+		footer = fmt.Sprintf("[詳細] j/k・Space/b・g/G スクロール  o: CI job を開く  Esc/h 一覧へ  q 終了  (%d)", m.detailOffset)
+		if m.jobSelect {
+			footer = "[CI job] j/k 選択  Enter/o ブラウザで開く  Esc/h 戻る  q 終了"
+		}
 	case m.status != "":
 		footer = m.status
 	}

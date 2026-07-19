@@ -71,17 +71,39 @@ func TestClassifyCIJob(t *testing.T) {
 	}
 }
 
-func TestFormatCIJobs(t *testing.T) {
-	got := formatCIJobs("success\tbuild\nfailure\ttest\nin_progress\tdeploy\nskipped\tlint\n")
+func TestParseCIJobs(t *testing.T) {
+	jobs := parseCIJobs("success\tbuild\thttps://x/1\nfailure\ttest\t\nin_progress\tdeploy\thttps://x/3\n")
+	if len(jobs) != 3 || jobs[0] != (CIJob{State: "success", Name: "build", URL: "https://x/1"}) {
+		t.Fatalf("parseCIJobs = %#v", jobs)
+	}
+	if jobs[1].URL != "" { // URL 空も許容
+		t.Errorf("empty URL not preserved: %#v", jobs[1])
+	}
+	// 旧 2 フィールド形式の cache も defensive に URL 空で読める
+	old := parseCIJobs("success\tbuild\n")
+	if len(old) != 1 || old[0].URL != "" {
+		t.Errorf("2-field fallback failed: %#v", old)
+	}
+	if parseCIJobs("") != nil || parseCIJobs("\n") != nil {
+		t.Errorf("empty input should be nil")
+	}
+}
+
+func TestRenderCIJobs(t *testing.T) {
+	jobs := []CIJob{{State: "success", Name: "build"}, {State: "failure", Name: "test"}, {State: "in_progress", Name: "deploy"}, {State: "skipped", Name: "lint"}}
+	lines := renderCIJobs(jobs, -1)
+	joined := stripANSI(strings.Join(lines, "\n"))
 	for _, want := range []string{"── CI ──", "✓ build", "✗ test", "● deploy", "○ lint", "──────────"} {
-		if !strings.Contains(stripANSI(got), want) {
-			t.Errorf("formatted jobs missing %q: %q", want, got)
+		if !strings.Contains(joined, want) {
+			t.Errorf("rendered jobs missing %q: %q", want, joined)
 		}
 	}
-	if strings.Index(got, "build") > strings.Index(got, "test") || strings.Index(got, "test") > strings.Index(got, "deploy") {
-		t.Errorf("job order changed: %q", got)
+	// selected=1 でその行にカーソル ▌
+	sel := renderCIJobs(jobs, 1)
+	if !strings.Contains(sel[2], "▌") { // [0]=ヘッダ [1]=build [2]=test
+		t.Errorf("selected job not highlighted: %q", sel[2])
 	}
-	if formatCIJobs("") != "" || formatCIJobs("\n") != "" {
-		t.Errorf("empty input should produce empty output")
+	if renderCIJobs(nil, -1) != nil {
+		t.Errorf("empty jobs should render nil")
 	}
 }

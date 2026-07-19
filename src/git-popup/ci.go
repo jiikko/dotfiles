@@ -74,33 +74,67 @@ func ghRepo() (string, string, error) {
 	return fields[0], fields[1], nil
 }
 
-// loadCIJobsPreview は GitHub の check-runs を best-effort で取得する。
-// gh が無い、remote が GitHub でない、または API が失敗した場合は空文字を返す。
-func loadCIJobsPreview(sha string) string {
+// CIJob は選択コミットの CI job 1 件 (詳細画面のジョブ選択 → ブラウザで開く導線に使う)。
+type CIJob struct {
+	State string // conclusion または status (success / failure / in_progress ...)
+	Name  string
+	URL   string // job の html_url ("" = 開けない)
+}
+
+// loadCIJobs は GitHub の check-runs を best-effort で取得する。
+// gh が無い、remote が GitHub でない、または API が失敗した場合は nil を返す。
+func loadCIJobs(sha string) []CIJob {
 	owner, name, err := ghRepo()
 	if err != nil {
-		return ""
+		return nil
 	}
 	path := ciJobsCachePath(owner, name, sha)
 	if path != "" {
 		if data, ok := readCIJobsCache(path); ok {
-			return formatCIJobs(string(data))
+			return parseCIJobs(string(data))
 		}
 	}
 
 	cmd := exec.Command("gh", "api", "repos/"+owner+"/"+name+"/commits/"+sha+"/check-runs",
-		"--jq", `.check_runs[] | "\(.conclusion // .status)\t\(.name)"`)
+		"--jq", `.check_runs[] | "\(.conclusion // .status)\t\(.name)\t\(.html_url // "")"`)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
 		// 取得失敗は CI 無しとして扱い git show の preview を阻害しない。ただし失敗結果は
 		// キャッシュしない (一時的な失敗で 60 秒 CI が消えたままにならないよう次回再試行)。
-		return ""
+		return nil
 	}
 	if path != "" {
 		writeCIJobsCache(path, out.Bytes())
 	}
-	return formatCIJobs(out.String())
+	return parseCIJobs(out.String())
+}
+
+// parseCIJobs は gh の jq 整形済み出力 (state\tname\turl の行) を []CIJob へ変換する。
+// 旧 2 フィールド形式の cache も URL 空として許容する (defensive)。
+func parseCIJobs(raw string) []CIJob {
+	raw = strings.TrimRight(raw, "\r\n")
+	if raw == "" {
+		return nil
+	}
+	var jobs []CIJob
+	for _, line := range strings.Split(raw, "\n") {
+		fields := strings.SplitN(strings.TrimSuffix(line, "\r"), "\t", 3)
+		if len(fields) < 2 || fields[1] == "" {
+			continue
+		}
+		job := CIJob{State: fields[0], Name: fields[1]}
+		if len(fields) == 3 {
+			job.URL = fields[2]
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs
+}
+
+// openInBrowser は URL を OS 既定ブラウザで開く (テストで差し替え可能)。
+var openInBrowser = func(url string) error {
+	return exec.Command("open", url).Start() // ⓥ macOS 前提 (Linux 対応が要れば xdg-open 分岐)
 }
 
 func classifyCIJob(state string) rune {
@@ -130,30 +164,23 @@ func colorCIJobMark(mark rune) string {
 	}
 }
 
-// formatCIJobs は gh の jq 整形済み出力を preview 用ブロックへ変換する。
-func formatCIJobs(raw string) string {
-	raw = strings.TrimRight(raw, "\r\n")
-	if raw == "" {
-		return ""
+// renderCIJobs は CI job 一覧を preview 用ブロック行へ変換する。selected >= 0 なら
+// その job 行をカーソル (accent の ▌) で強調する (ジョブ選択モード)。空なら nil。
+func renderCIJobs(jobs []CIJob, selected int) []string {
+	if len(jobs) == 0 {
+		return nil
 	}
-	var b strings.Builder
-	b.WriteString("\x1b[2m── CI ──\x1b[0m\n")
-	for _, line := range strings.Split(raw, "\n") {
-		fields := strings.SplitN(strings.TrimSuffix(line, "\r"), "\t", 2)
-		if len(fields) != 2 || fields[1] == "" {
-			continue
+	lines := make([]string, 0, len(jobs)+2)
+	lines = append(lines, ansiDim+"── CI ──"+ansiReset)
+	for i, j := range jobs {
+		cursor := "  "
+		if i == selected {
+			cursor = paintFg("current_accent", "▌") + " "
 		}
-		b.WriteString("  ")
-		b.WriteString(colorCIJobMark(classifyCIJob(fields[0])))
-		b.WriteString(" ")
-		b.WriteString(fields[1])
-		b.WriteString("\n")
+		lines = append(lines, cursor+colorCIJobMark(classifyCIJob(j.State))+" "+j.Name)
 	}
-	if b.Len() == len("\x1b[2m── CI ──\x1b[0m\n") {
-		return ""
-	}
-	b.WriteString("\x1b[2m──────────\x1b[0m\n\n")
-	return b.String()
+	lines = append(lines, ansiDim+"──────────"+ansiReset)
+	return lines
 }
 
 func ciJobsCachePath(owner, name, sha string) string {

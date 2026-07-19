@@ -100,22 +100,66 @@ func TestLogListLinesPushColor(t *testing.T) {
 
 func TestLogDetailCIOverlay(t *testing.T) {
 	m := newLogModel([]Commit{{SHA: "a"}})
-	m.preview = "diff-a\ndiff-b\ndiff-c\ndiff-d"
-	m.ciJobs = "CI-1\nCI-2"
-	// 一覧モード: CI は上部にオーバーレイし diff を押し下げない (top2=CI, その下は diff の続き)
-	lines := m.buildDetailLines(40, 4)
-	if stripANSI(lines[0]) != "CI-1" || stripANSI(lines[1]) != "CI-2" {
+	m.preview = "diff-a\ndiff-b\ndiff-c\ndiff-d\ndiff-e"
+	m.ciJobs = []CIJob{{State: "success", Name: "job1"}}
+	// 一覧モード: CI は上部にオーバーレイし diff を押し下げない
+	// (render は ヘッダ + job1 + フッタ の 3 行。その下は diff の続き = 4 行目)
+	lines := m.buildDetailLines(40, 5)
+	if !strings.Contains(stripANSI(lines[0]), "── CI ──") || !strings.Contains(stripANSI(lines[1]), "✓ job1") {
 		t.Fatalf("CI が上部オーバーレイになっていない: %q", lines)
 	}
-	if stripANSI(lines[2]) != "diff-c" || stripANSI(lines[3]) != "diff-d" {
+	if stripANSI(lines[3]) != "diff-d" || stripANSI(lines[4]) != "diff-e" {
 		t.Fatalf("diff の下部が押し下げられている (占有 overlay のはず): %q", lines)
 	}
-	// 詳細モード: オーバーレイせず detailOffset から diff を出す
+	// 詳細モード (ジョブ選択なし): オーバーレイせず detailOffset から diff を出す
 	m.detailOpen = true
 	m.detailOffset = 1
 	d := m.buildDetailLines(40, 3)
 	if stripANSI(d[0]) != "diff-b" {
 		t.Fatalf("詳細スクロールが offset どおりでない: %q", d)
+	}
+	// ジョブ選択モード: 詳細中でも CI オーバーレイを出し選択行に ▌
+	m.jobSelect = true
+	m.jobCursor = 0
+	js := m.buildDetailLines(40, 3)
+	if !strings.Contains(stripANSI(js[1]), "▌") || !strings.Contains(stripANSI(js[1]), "job1") {
+		t.Fatalf("ジョブ選択中のカーソルが出ていない: %q", js)
+	}
+}
+
+func TestLogDetailKeys(t *testing.T) {
+	m := newLogModel([]Commit{{SHA: "a"}})
+	m.ciJobs = []CIJob{{State: "success", Name: "job1", URL: "https://x/1"}}
+	m.handleKey("enter") // 詳細へ
+	// C-g はモーダル (詳細) を閉じて一覧へ (quit しない)
+	m.handleKey("ctrl+g")
+	if m.detailOpen || m.done {
+		t.Fatalf("詳細の C-g で一覧へ戻るべき: detailOpen=%v done=%v", m.detailOpen, m.done)
+	}
+	// 詳細で q はプログラム終了
+	m.handleKey("enter")
+	if _, cmd := m.handleKey("q"); cmd == nil || !m.done {
+		t.Fatalf("詳細の q で終了しない")
+	}
+	// ジョブ選択 → Enter でブラウザ (差し替えた opener が呼ばれる)
+	m2 := newLogModel([]Commit{{SHA: "a"}})
+	m2.ciJobs = []CIJob{{State: "success", Name: "job1", URL: "https://x/1"}}
+	var opened string
+	orig := openInBrowser
+	openInBrowser = func(url string) error { opened = url; return nil }
+	t.Cleanup(func() { openInBrowser = orig })
+	m2.handleKey("enter")
+	m2.handleKey("o") // ジョブ選択へ
+	if !m2.jobSelect {
+		t.Fatalf("o でジョブ選択に入らない")
+	}
+	m2.handleKey("enter")
+	if opened != "https://x/1" {
+		t.Fatalf("Enter でブラウザを開かない: %q", opened)
+	}
+	m2.handleKey("ctrl+g") // C-g でジョブ選択を閉じる (詳細に留まる)
+	if m2.jobSelect || !m2.detailOpen {
+		t.Fatalf("ジョブ選択の C-g でサブモードだけ閉じるべき")
 	}
 }
 
