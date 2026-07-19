@@ -143,9 +143,9 @@ func TestLogJobsSwapClampsCursor(t *testing.T) {
 	// ジョブ選択中に同一 sha の ciJobsMsg が空へ差し替わっても panic せず選択モードを解除する
 	m := newLogModel([]Commit{{SHA: "a"}})
 	m.ciJobs = []CIJob{{State: "success", Name: "j1"}, {State: "success", Name: "j2"}}
-	m.handleKey("enter")
-	m.handleKey("o")
-	m.handleKey("j") // jobCursor=1
+	m.handleKey("enter") // 詳細へ
+	m.handleKey("enter") // ジョブ選択へ (Enter 二段)
+	m.handleKey("j")     // jobCursor=1
 	m.Update(ciJobsMsg{sha: "a", jobs: nil})
 	if m.jobSelect {
 		t.Fatalf("空差し替えでジョブ選択が解除されない")
@@ -198,10 +198,10 @@ func TestLogDetailKeys(t *testing.T) {
 	orig := openInBrowser
 	openInBrowser = func(url string) error { opened = url; return nil }
 	t.Cleanup(func() { openInBrowser = orig })
-	m2.handleKey("enter")
-	m2.handleKey("o") // ジョブ選択へ
+	m2.handleKey("enter") // 詳細へ
+	m2.handleKey("enter") // ジョブ選択へ (Enter 二段)
 	if !m2.jobSelect {
-		t.Fatalf("o でジョブ選択に入らない")
+		t.Fatalf("詳細の Enter でジョブ選択に入らない")
 	}
 	m2.handleKey("enter")
 	if opened != "https://x/1" {

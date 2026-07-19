@@ -32,7 +32,7 @@ type logModel struct {
 	cursor  int
 	offset  int
 	preview string
-	ciJobs  []CIJob // 選択コミットの CI job (preview 上部にオーバーレイ・o でジョブ選択)
+	ciJobs  []CIJob // 選択コミットの CI job (preview 上部にオーバーレイ・詳細で Enter からジョブ選択)
 	status  string
 	width   int
 	height  int
@@ -42,7 +42,7 @@ type logModel struct {
 
 	detailOpen   bool // Enter で選択コミットの詳細 (右ペイン) にフォーカスしスクロールするモード
 	detailOffset int  // 詳細スクロール位置 (右ペインの先頭行 index)
-	jobSelect    bool // 詳細モード内の CI ジョブ選択サブモード (o で入り、Enter/o でブラウザ)
+	jobSelect    bool // 詳細モード内の CI ジョブ選択サブモード (Enter で入り、Enter でブラウザ)
 	jobCursor    int  // 選択中の CI job index
 
 	unpushed map[string]bool // @{upstream} に未 push のコミット SHA (色分け用)
@@ -201,9 +201,10 @@ func (m *logModel) rightLines() []string {
 	return strings.Split(strings.TrimRight(m.preview, "\n"), "\n")
 }
 
-// handleDetailKey は詳細スクロールモードのキー処理。Esc/h/←/Enter で一覧へ戻り、
+// handleDetailKey は詳細スクロールモードのキー処理。Esc/h/← で一覧へ戻り、
 // q はプログラム終了 (ユーザー要望 2026-07-19: 詳細でも q は quit)。
-// o で CI ジョブ選択サブモードに入り、j/k で選択・Enter/o でブラウザで開く。
+// Enter で CI ジョブ選択サブモードに入り、j/k で選択・Enter でブラウザで開く
+// (Enter 二段方式。専用キー o は廃止: ユーザー要望 2026-07-19)。
 func (m *logModel) handleDetailKey(key string) (*logModel, tea.Cmd) {
 	if m.jobSelect {
 		return m.handleJobSelectKey(key)
@@ -214,10 +215,10 @@ func (m *logModel) handleDetailKey(key string) (*logModel, tea.Cmd) {
 	case "q", "ctrl+c":
 		m.done = true
 		return m, tea.Quit
-	case "esc", "h", "enter", "left", "ctrl+g": // C-g はモーダル (詳細) を閉じて一覧へ
+	case "esc", "h", "left", "ctrl+g": // C-g はモーダル (詳細) を閉じて一覧へ
 		m.detailOpen = false
 		m.detailOffset = 0
-	case "o":
+	case "enter":
 		if len(m.ciJobs) == 0 {
 			m.status = "CI job がありません"
 			return m, nil
@@ -241,7 +242,7 @@ func (m *logModel) handleDetailKey(key string) (*logModel, tea.Cmd) {
 	return m, nil
 }
 
-// handleJobSelectKey は CI ジョブ選択サブモード。Enter/o で選択 job をブラウザで開く。
+// handleJobSelectKey は CI ジョブ選択サブモード。Enter で選択 job をブラウザで開く。
 func (m *logModel) handleJobSelectKey(key string) (*logModel, tea.Cmd) {
 	switch key {
 	case "q", "ctrl+c":
@@ -253,7 +254,7 @@ func (m *logModel) handleJobSelectKey(key string) (*logModel, tea.Cmd) {
 		m.jobCursor = min(m.jobCursor+1, len(m.ciJobs)-1)
 	case "k", "up", "ctrl+p":
 		m.jobCursor = max(m.jobCursor-1, 0)
-	case "enter", "o":
+	case "enter":
 		if m.jobCursor < len(m.ciJobs) {
 			job := m.ciJobs[m.jobCursor]
 			if job.URL == "" {
@@ -376,9 +377,9 @@ func (m *logModel) View() string {
 		// 隠さない (入場・o 押下時にクリアするので説明が出ないままにはならない)。
 		footer = m.status
 	case m.detailOpen:
-		footer = fmt.Sprintf("[詳細] j/k・Space/b・g/G スクロール  o: CI job を開く  Esc/h 一覧へ  q 終了  (%d)", m.detailOffset)
+		footer = fmt.Sprintf("[詳細] j/k・Space/b・g/G スクロール  Enter: CI job 選択  Esc/h 一覧へ  q 終了  (%d)", m.detailOffset)
 		if m.jobSelect {
-			footer = "[CI job] j/k 選択  Enter/o ブラウザで開く  Esc/h 戻る  q 終了"
+			footer = "[CI job] j/k 選択  Enter ブラウザで開く  Esc/h 戻る  q 終了"
 		}
 	}
 	return l.render(

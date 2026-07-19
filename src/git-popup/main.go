@@ -27,8 +27,8 @@ Keys:
     j/k ↑/↓ C-n/C-p   1 行スクロール
     Space/f/C-d/PgDn   半ページ下  (b/C-u/PgUp = 上)
     g/Home  G/End      先頭 / 末尾
-    o                  CI job 選択 → j/k で選び Enter/o でブラウザで開く
-    Esc/h/←/C-g        1 段戻る (詳細からは Enter でも一覧へ)
+    Enter              CI job 選択 → j/k で選び Enter でブラウザで開く
+    Esc/h/←/C-g        1 段戻る
   C-b                  push (y/N 確認)
   q / C-c              終了 (一覧では Esc/C-g でも)`)
 	}
