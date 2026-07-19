@@ -15,6 +15,9 @@
 #   Ctrl-B      … push (clean 画面では p)。gum confirm (デフォルト No) を挟む
 #                 ⚠️ C-p にしない: fzf のカーソル上移動の定番キーで誤 push した実績あり (2026-07-18)
 #   Ctrl-D      … フォーカス中ファイルの diff を全画面 (less)
+#   c           … glog (log 画面) から changes 画面へ
+#   l           … clean 画面から log 画面へ
+#   Ctrl-L      … fzf (changes 画面) から log 画面へ
 #   Esc         … 閉じる
 #
 # fzf の execute/reload からはこのスクリプト自身をサブコマンド付きで再入する
@@ -83,21 +86,20 @@ show_clean() {
     done
     printf '   %s  %s← 未 push %s / 最新 %s commit%s\n\n' "$dots" "$DIM" "$ahead" "$total" "$RESET"
   fi
-  # --no-pager 必須: popup 内は stdout が tty なので、素の git log は less の alternate
-  # screen を開いてしまい、直前に描いたバッジ/ドット行が画面ごと消える (実機で再現済み)
-  git --no-pager log -5 --color=always --date=format:'%H:%M' \
-    --format="   %C($THEME_QUANTITY_YELLOW)%h%Creset %C(dim)%cd%Creset %<(58,trunc)%s" 2>/dev/null || :
   if [ -n "$upstream" ]; then
-    printf '\n   %s(p: push / 他キー: 閉じる)%s\n' "$DIM" "$RESET"
+    printf '\n   %s(l: log / p: push / 他キー: 閉じる)%s\n' "$DIM" "$RESET"
   else
-    printf '\n   %s(何かキーで閉じる)%s\n' "$DIM" "$RESET"
+    printf '\n   %s(l: log / 何かキーで閉じる)%s\n' "$DIM" "$RESET"
   fi
   key=$(wait_key)
   if [ "$key" = p ] && [ -n "$upstream" ]; then
     push_current
     clear 2>/dev/null || :
-    show_clean   # push 後の同期状態を再描画 (↑N → ✔ 同期 が見える)
+    show_clean; return $?   # push 後の同期状態を再描画 (↑N → ✔ 同期)。再帰先の l/閉じるの合図を伝播
+  elif [ "$key" = l ]; then
+    return 10
   fi
+  return 0
 }
 
 # 1 キー待ち。押されたキーを stdout へ返す (canonical mode だと Enter まで待ってしまう
@@ -226,8 +228,13 @@ tmux_git_popup.sh — git 操作 popup (fzf)。tmux の C-g / C-t g から開く
   Esc         閉じる
 
 clean 画面 (変更なしのとき):
+  log は glog (対話 TUI) を自動で開く。glog の c で changes へ切り替え
+  l           log (glog) に戻る
   p           push (確認あり)
   他キー      閉じる
+
+changes 画面 (変更ありのとき):
+  Ctrl-L      log (glog) に戻る
 
 内部サブコマンド (fzf の execute/reload から再入する用): list toggle preview commit push
 EOF
@@ -248,27 +255,54 @@ fi
 
 branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'detached')
 
-# clean ならサマリ画面 (fzf 内での add/commit 後に clean になったケースは対象外 —
-# その場合は fzf の空リストのまま Esc で閉じる運用)
-entries=$("$self" list)
-if [ -z "$entries" ]; then
-  show_clean
-  exit 0
-fi
-
 # header は 2 行に分ける (1 行だと popup 幅で末尾が見切れる。実機報告 2026-07-18)
 header="[$branch] Tab/Enter: stage⇄unstage  C-a: 全add  C-o: commit
-C-b: push  C-d: diff全画面  Esc: 閉じる"
+C-b: push  C-d: diff全画面  C-l: log  Esc: 閉じる"
 
-printf '%s\n' "$entries" | fzf --ansi --no-sort --layout=reverse \
-  --prompt='git> ' \
-  --header="$header" \
-  --preview="\"$self\" preview {}" \
-  --preview-window='right:55%:wrap' \
-  --bind "tab:execute-silent(\"$self\" toggle {})+reload(\"$self\" list)" \
-  --bind "enter:execute-silent(\"$self\" toggle {})+reload(\"$self\" list)" \
-  --bind "ctrl-a:execute-silent(git add -A)+reload(\"$self\" list)" \
-  --bind "ctrl-o:execute(\"$self\" commit)+reload(\"$self\" list)" \
-  --bind "ctrl-b:execute(\"$self\" push)+reload(\"$self\" list)" \
-  --bind "ctrl-d:execute(\"$self\" preview {} | less -R)" \
-  || :
+has_glog=1
+command -v glog >/dev/null 2>&1 || has_glog=0
+screen=log
+[ "$has_glog" = 1 ] || screen=changes
+while :; do
+  if [ "$screen" = log ]; then
+    # glog 未導入で l / C-l から log へ来た場合は、存在しない glog を実行せず静かに閉じる
+    [ "$has_glog" = 1 ] || break
+    rc=0
+    glog || rc=$?
+    if [ "$rc" = 20 ]; then
+      screen=changes
+      continue
+    fi
+    break
+  fi
+
+  entries=$("$self" list)
+  if [ -z "$entries" ]; then
+    rc=0
+    show_clean || rc=$?
+    if [ "$rc" = 10 ]; then
+      screen=log
+      continue
+    fi
+    break
+  fi
+
+  out=$(printf '%s\n' "$entries" | fzf --expect=ctrl-l --ansi --no-sort --layout=reverse \
+    --prompt='git> ' \
+    --header="$header" \
+    --preview="\"$self\" preview {}" \
+    --preview-window='right:55%:wrap' \
+    --bind "tab:execute-silent(\"$self\" toggle {})+reload(\"$self\" list)" \
+    --bind "enter:execute-silent(\"$self\" toggle {})+reload(\"$self\" list)" \
+    --bind "ctrl-a:execute-silent(git add -A)+reload(\"$self\" list)" \
+    --bind "ctrl-o:execute(\"$self\" commit)+reload(\"$self\" list)" \
+    --bind "ctrl-b:execute(\"$self\" push)+reload(\"$self\" list)" \
+    --bind "ctrl-d:execute(\"$self\" preview {} | less -R)" \
+    || :)
+  key=$(printf '%s' "$out" | head -n 1)
+  if [ "$key" = ctrl-l ]; then
+    screen=log
+    continue
+  fi
+  break
+done

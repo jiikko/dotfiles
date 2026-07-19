@@ -187,6 +187,7 @@ func Usage() string {
   Ctrl-D / Ctrl-U / PgDn / PgUp
                             ページスクロール
   g / G                     先頭 / 末尾のコミットへ
+  c                         changes 画面へ切り替える (終了コード 20)
   q / Esc / Ctrl-C          終了 (git log の pager と同じく表示は消える)
 
 CI job ポップアップ表示中 (開いた直後のフォーカスはタイトル行):

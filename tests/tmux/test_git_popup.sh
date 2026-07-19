@@ -44,11 +44,13 @@ esac
 exit 0
 EOS
 
-# stub fzf: 引数を記録するだけ (TUI は開かない)
+# stub fzf: 引数を記録し、STUB_FZF_KEY があれば --expect のキーとして 1 行目に出す
+# (changes→log の ctrl-l ラウンドトリップ検証用)。TUI は開かない。
 cat > "$TMP_DIR/bin/fzf" <<'EOS'
 #!/bin/sh
 echo "fzf $*" >> "$CALLS"
 cat > /dev/null
+printf '%s\n' "${STUB_FZF_KEY:-}"
 exit 0
 EOS
 
@@ -65,6 +67,18 @@ cat > "$TMP_DIR/bin/sleep" <<'EOS'
 #!/bin/sh
 exit 0
 EOS
+
+# stub glog: 実 TUI を開くとテストがハングするため、呼び出し記録だけして即終了する。
+# 1 回目は STUB_GLOG_RC (既定 0)、2 回目以降は STUB_GLOG_RC2 (既定 0) を返す。CALLS 内の
+# 既存 glog 行数で回数を判定するため reset_calls で自然にリセットされる。ラウンドトリップ
+# (changes→log) テストで無限ループにならないよう 2 回目を閉じる (rc 0) にできる。
+cat > "$TMP_DIR/bin/glog" <<'EOS'
+#!/bin/sh
+n=$(grep -c '^glog ' "$CALLS" 2>/dev/null || echo 0)
+echo "glog $*" >> "$CALLS"
+[ "$n" -ge 1 ] && exit "${STUB_GLOG_RC2:-0}"
+exit "${STUB_GLOG_RC:-0}"
+EOS
 chmod +x "$TMP_DIR/bin/"*
 cp "$TMP_DIR/bin/git" "$TMP_DIR/bin/fzf" "$TMP_DIR/bin/sleep" "$TMP_DIR/bin_nogum/"
 chmod +x "$TMP_DIR/bin_nogum/"*
@@ -72,13 +86,21 @@ chmod +x "$TMP_DIR/bin_nogum/"*
 source "$ROOT_DIR/tests/tmux/lib/stub_assert_helper.sh"
 STUB="$TMP_DIR/bin:/usr/bin:/bin"
 STUB_NOGUM="$TMP_DIR/bin_nogum:/usr/bin:/bin"
+export STUB_GLOG_RC=0
 
 echo "## main: fzf の配線"
 reset_calls
-run "$STUB" "$SCRIPT"
+STUB_GLOG_RC=20 run "$STUB" "$SCRIPT"
 [[ "$RC" == 0 ]] || { echo "✗ main が rc=$RC"; cat "$CALLS"; exit 1; }
+glog_line=$(grep -n '^glog' "$CALLS" | head -n1 | cut -d: -f1)
+status_line=$(grep -n 'status --short' "$CALLS" | head -n1 | cut -d: -f1)
+[[ -n "$glog_line" && -n "$status_line" && "$glog_line" -lt "$status_line" ]] || {
+  echo "✗ popup の最初の画面で glog が呼ばれていない"; cat "$CALLS"; exit 1;
+}
+echo "✓ popup は最初に glog (log 画面) を開く"
 assert_called "git rev-parse --is-inside-work-tree" "repo 判定を行う"
 assert_called "--ansi" "fzf はインクリメンタル UI (--ansi) で起動される"
+assert_called "--expect=ctrl-l" "fzf は C-l を log 遷移キーとして捕捉する"
 assert_called "toggle {}" "Tab/Enter の stage toggle が配線されている"
 assert_called "git add -A" "C-a の全 add が配線されている"   # bind 文字列内に含まれる
 assert_called "commit" "C-o の commit が配線されている"
@@ -86,12 +108,23 @@ assert_called "ctrl-b:execute" "C-b の push が配線されている (C-p は f
 assert_called "preview {}" "diff preview が配線されている"
 
 echo ""
+echo "## main: changes(fzf) で C-l を押すと log(glog) に戻る"
+reset_calls
+# 1 回目 glog=20 で changes へ → fzf が ctrl-l を返す → log へ戻り 2 回目 glog=0 で閉じる
+STUB_GLOG_RC=20 STUB_GLOG_RC2=0 STUB_FZF_KEY=ctrl-l run "$STUB" "$SCRIPT"
+[[ "$RC" == 0 ]] || { echo "✗ ラウンドトリップで rc=$RC"; cat "$CALLS"; exit 1; }
+glog_count=$(grep -c '^glog ' "$CALLS" || true)
+[[ "$glog_count" -ge 2 ]] || { echo "✗ C-l で log に戻っていない (glog 呼び出し $glog_count 回)"; cat "$CALLS"; exit 1; }
+echo "✓ changes の C-l で log(glog) に戻る (glog を再度開く)"
+assert_called "fzf" "changes 画面では fzf を起動する"
+
+echo ""
 echo "## main: working tree が clean ならサマリ画面 (fzf を起動しない)"
 reset_calls
-STUB_CLEAN=1 run "$STUB" "$SCRIPT" < /dev/null
+STUB_CLEAN=1 STUB_GLOG_RC=20 run "$STUB" "$SCRIPT" < /dev/null
 [[ "$RC" == 0 ]] || { echo "✗ clean 時に rc=$RC"; cat "$CALLS"; exit 1; }
 assert_not_called "fzf" "clean 時は fzf を起動しない"
-assert_called "git --no-pager log -5" "clean 時は直近コミットのサマリを出す (pager 起動で画面が消えないよう --no-pager 必須)"
+assert_not_called "git --no-pager log -5" "log 表示は静的 git log ではなく glog に委譲する"
 assert_called "rev-list --left-right --count" "upstream との ahead/behind を判定する"
 assert_called "rev-list --count --max-count=20" "未 push ありならドットグラフ用に直近 commit 数を取る"
 assert_not_called "gum" "clean 画面は素の ANSI で描く (gum 非依存)"

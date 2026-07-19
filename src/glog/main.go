@@ -116,6 +116,10 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	if model.ghErr != nil {
 		fmt.Fprintln(os.Stderr, model.ghErr.Warning())
 	}
+	if model.switchToChanges {
+		// exit 20 は呼び出し元の tmux popup に changes 画面への切替を伝える契約。
+		return 20
+	}
 	return 0
 }
 

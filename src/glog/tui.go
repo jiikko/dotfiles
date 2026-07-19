@@ -121,12 +121,12 @@ type browseModel struct {
 	frame          int
 	width          int
 	height         int
-	cursor         int    // コミット index
-	offset         int    // ビューポート先頭の行 index
-	panelSHA       string // job パネルを表示中のコミット SHA ("" = パネルなし)
-	panelCursor    int    // パネル内で選択中の job index (-1 = タイトル行にフォーカス)
-	detailOpen     bool   // job 詳細 (annotations / ログ tail) ポップアップを表示中か
-	detailOffset   int    // 詳細ポップアップのスクロール位置
+	cursor         int                 // コミット index
+	offset         int                 // ビューポート先頭の行 index
+	panelSHA       string              // job パネルを表示中のコミット SHA ("" = パネルなし)
+	panelCursor    int                 // パネル内で選択中の job index (-1 = タイトル行にフォーカス)
+	detailOpen     bool                // job 詳細 (annotations / ログ tail) ポップアップを表示中か
+	detailOffset   int                 // 詳細ポップアップのスクロール位置
 	jobDetail      map[string][]string // key (sha/jobIdx) → 詳細行 (メモリ内キャッシュ)
 	jobDetailBusy  map[string]bool     // 取得中の key
 	prCache        map[string]*PRRef   // sha → 紐づく PR (nil 格納 = 確認済みで PR なし)
@@ -135,11 +135,13 @@ type browseModel struct {
 	diffOffset     int                 // diff ポップアップのスクロール位置
 	diffCache      map[string][]string // sha → 整形済み diff 行 (メモリ内キャッシュ)
 	diffBusy       map[string]bool     // diff 取得中の sha
-	notice         string // hint 行に出す一時メッセージ (次のキーで消える)
+	notice         string              // hint 行に出す一時メッセージ (次のキーで消える)
 	fetching       bool
 	done           bool
 	fetch          tea.Cmd
 	cancel         context.CancelFunc
+
+	switchToChanges bool // 終了コード 20 で呼び出し元 tmux popup に changes 切替を伝える
 
 	// lines() のメモ化。行リストの再構築は O(出力全行数) で、-p の巨大 patch では
 	// キー 1 打ごとに数万行を組み直すことになるためキャッシュする。行内容を変えうる
@@ -349,6 +351,9 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	}
 	switch key {
 	case "esc":
+		return m.quit()
+	case "c":
+		m.switchToChanges = true
 		return m.quit()
 	case "j", "down", "ctrl+n":
 		m.cursor = clampIdx(m.cursor+1, len(m.commits))
@@ -1039,7 +1044,7 @@ func cursorMark(colored bool) string {
 }
 
 func (m *browseModel) hintLine() string {
-	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  y: URL コピー  q: 終了"
+	hint := "j/k: 移動  Enter: CI job  d: diff  c:changes  o: ブラウザ  p: PR  y: URL コピー  q: 終了"
 	switch {
 	case m.diffSHA != "":
 		hint = "j/k/Space: スクロール  g/G: 先頭/末尾  q/h: 閉じる"
