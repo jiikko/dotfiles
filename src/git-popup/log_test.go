@@ -32,7 +32,7 @@ func TestLogScrollKeepsCursorVisible(t *testing.T) {
 		commits[i] = Commit{SHA: string(rune('a' + i)), ShortSHA: "sha", Subject: "subject"}
 	}
 	m := newLogModel(commits)
-	m.height = 4 // two list rows
+	m.height = 5 // paneRows = height-3(footer+border) = 2 行
 	m.handleKey("j")
 	m.handleKey("j")
 	if m.cursor != 2 || m.offset != 1 {

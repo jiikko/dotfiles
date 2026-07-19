@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -42,10 +44,12 @@ type logModel struct {
 
 	detailOpen   bool // Enter で選択コミットの詳細 (右ペイン) にフォーカスしスクロールするモード
 	detailOffset int  // 詳細スクロール位置 (右ペインの先頭行 index)
+
+	unpushed map[string]bool // @{upstream} に未 push のコミット SHA (色分け用)
 }
 
 func newLogModel(commits []Commit) *logModel {
-	return &logModel{commits: commits}
+	return &logModel{commits: commits, unpushed: loadUnpushed()}
 }
 
 func (m *logModel) Init() tea.Cmd {
@@ -174,14 +178,15 @@ func (m *logModel) handleKey(key string) (*logModel, tea.Cmd) {
 	return m, nil
 }
 
-// rightLines は右ペインの全行 (CI job ブロック + diff)。detail スクロールと View で共用。
+// rightLines は右ペインの diff 行 (CI job は含めない。CI は View で上部固定オーバーレイ)。
+// detail スクロールの範囲計算と View で共用。
 func (m *logModel) rightLines() []string {
-	return strings.Split(strings.TrimRight(m.ciJobs+m.preview, "\n"), "\n")
+	return strings.Split(strings.TrimRight(m.preview, "\n"), "\n")
 }
 
 // handleDetailKey は Enter で入った詳細スクロールモードのキー処理。q/Esc/h/Enter で一覧へ戻る。
 func (m *logModel) handleDetailKey(key string) (*logModel, tea.Cmd) {
-	rows := m.visibleRows()
+	rows := m.paneRows()
 	maxOff := max(len(m.rightLines())-rows, 0)
 	switch key {
 	case "q", "esc", "h", "enter", "left":
@@ -203,10 +208,14 @@ func (m *logModel) handleDetailKey(key string) (*logModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m *logModel) visibleRows() int { return max(m.height-2, 1) }
+// レイアウト: 下に footer 1 行、残りを 2 つのボーダー付きペイン (border 上下 2 行)。
+func (m *logModel) paneRows() int    { return max(m.height-1-2, 1) }
+func (m *logModel) leftPaneW() int   { return max(m.width*42/100, 12) }
+func (m *logModel) leftInnerW() int  { return max(m.leftPaneW()-2, 4) }
+func (m *logModel) rightInnerW() int { return max(m.width-m.leftPaneW()-2, 4) }
 
 func (m *logModel) ensureCursorVisible() {
-	rows := m.visibleRows()
+	rows := m.paneRows()
 	if m.cursor < m.offset {
 		m.offset = m.cursor
 	}
@@ -234,62 +243,101 @@ func (m *logModel) ciMark(sha string) string {
 	}
 }
 
-func (m *logModel) View() string {
-	// WindowSizeMsg 到着前 (サイズ未確定) は描かない。既定サイズで大きく描くと、実サイズが
-	// 判明した次フレームとの差分で端末に残像 (カーソル行の "分身") が出る。
-	if m.width < 1 || m.height < 1 {
-		return ""
+// paneStyle は focused に応じてボーダー色を変えた固定サイズのペイン枠を返す。
+// focused = current_accent (theme)・非 focused = cold_gray。どちらのペインに
+// フォーカスがあるか (一覧 or 詳細) をボーダー色で示す。
+func paneStyle(focused bool, w, h int) lipgloss.Style {
+	role := "cold_gray"
+	if focused {
+		role = "current_accent"
 	}
-	leftWidth := max(m.width*45/100, 20)
-	rightWidth := max(m.width-leftWidth-1, 10)
-	rows := m.visibleRows()
-	m.ensureCursorVisible()
-	left := make([]string, rows)
-	for i := range left {
-		commitIndex := m.offset + i
-		if commitIndex >= len(m.commits) {
-			left[i] = ""
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(strconv.Itoa(themeCterm[role]))).
+		Width(w).Height(h)
+}
+
+// buildListLines は左ペインのコミット一覧を rows 行ぶん組む (offset でスクロール)。
+// 行頭: カーソル (accent の ▌) + CI マーク + 短SHA (未 push=橙 / push 済み=灰) + 件名。
+func (m *logModel) buildListLines(w, rows int) []string {
+	lines := make([]string, rows)
+	for i := range lines {
+		idx := m.offset + i
+		if idx >= len(m.commits) {
 			continue
 		}
-		commit := m.commits[commitIndex]
-		line := fmt.Sprintf("  %s %s %s", m.ciMark(commit.SHA), commit.ShortSHA, commit.Subject)
-		if commitIndex == m.cursor {
-			line = fmt.Sprintf("> %s %s %s", m.ciMark(commit.SHA), commit.ShortSHA, commit.Subject)
+		c := m.commits[idx]
+		cursor := "  "
+		if idx == m.cursor {
+			cursor = paintFg("current_accent", "▌") + " "
 		}
-		left[i] = clip(line, leftWidth)
-	}
-	// CI job ブロック (先に来たら上に) + diff。どちらも未着なら (no preview)。
-	right := m.rightLines()
-	if len(right) == 1 && right[0] == "" {
-		right = []string{"(no preview)"}
-	}
-	if m.detailOpen { // 詳細スクロール: 右ペインを detailOffset だけ送る
-		if m.detailOffset < len(right) {
-			right = right[m.detailOffset:]
-		} else {
-			right = nil
+		sha := c.ShortSHA
+		if m.unpushed != nil { // push 状態が分かるときだけ色分け
+			if m.unpushed[c.SHA] {
+				sha = paintFg("marker_orange", c.ShortSHA) // 未 push = 橙で目立たせる
+			} else {
+				sha = paintFg("cold_gray", c.ShortSHA) // push 済み = 落ち着いた灰
+			}
 		}
+		lines[i] = clip(cursor+m.ciMark(c.SHA)+" "+sha+" "+c.Subject, w)
+	}
+	return lines
+}
+
+// buildDetailLines は右ペイン (diff) を rows 行ぶん組む。CI job 結果は「上部固定オーバーレイ」
+// として先頭数行に重ねる (挿入しないので取得完了で diff が押し下がらない = 高さ不変)。
+// 詳細スクロール中 (detailOpen) は diff を隅々まで読めるようオーバーレイしない。
+func (m *logModel) buildDetailLines(w, rows int) []string {
+	diff := m.rightLines()
+	if len(diff) == 1 && diff[0] == "" {
+		diff = []string{ansiDim + "(no preview)" + ansiReset}
+	}
+	base := 0
+	if m.detailOpen {
+		base = m.detailOffset
 	}
 	lines := make([]string, rows)
 	for i := range lines {
-		r := ""
-		if i < len(right) {
-			r = clip(right[i], rightWidth)
+		if idx := base + i; idx < len(diff) {
+			lines[i] = clip(diff[idx], w)
 		}
-		lines[i] = pad(left[i], leftWidth) + "│" + pad(r, rightWidth)
 	}
-	header := "git-popup  log"
-	footer := "j/k move  Enter: 詳細スクロール  C-b push  q/Esc/C-g quit"
-	if m.confirm {
+	if !m.detailOpen && m.ciJobs != "" {
+		ci := strings.Split(strings.TrimRight(m.ciJobs, "\n"), "\n")
+		for i := 0; i < len(ci) && i < rows; i++ {
+			lines[i] = clip(ci[i], w)
+		}
+	}
+	return lines
+}
+
+func (m *logModel) View() string {
+	// WindowSizeMsg 到着前 (サイズ未確定) は描かない (残像=カーソル分身の防止)。
+	if m.width < 1 || m.height < 1 {
+		return ""
+	}
+	m.ensureCursorVisible()
+	rows := m.paneRows()
+	leftContent := strings.Join(m.buildListLines(m.leftInnerW(), rows), "\n")
+	rightContent := strings.Join(m.buildDetailLines(m.rightInnerW(), rows), "\n")
+
+	listFocused := !m.detailOpen
+	leftBox := paneStyle(listFocused, m.leftInnerW(), rows).Render(leftContent)
+	rightBox := paneStyle(!listFocused, m.rightInnerW(), rows).Render(rightContent)
+	body := lipgloss.JoinHorizontal(lipgloss.Top, leftBox, rightBox)
+
+	footer := "j/k 移動  Enter: 詳細  C-b push  q/Esc/C-g 閉じる"
+	switch {
+	case m.confirm:
 		footer = "push しますか? [y/N]"
-	} else if m.busy {
+	case m.busy:
 		footer = "pushing..."
-	} else if m.detailOpen {
-		footer = fmt.Sprintf("[詳細] j/k・Space/b スクロール  g/G 先頭/末尾  q/Esc/Enter 一覧へ  (%d)", m.detailOffset)
-	} else if m.status != "" {
+	case m.detailOpen:
+		footer = fmt.Sprintf("[詳細] j/k・Space/b・g/G スクロール  q/Esc/Enter 一覧へ  (%d)", m.detailOffset)
+	case m.status != "":
 		footer = m.status
 	}
-	return header + "\n" + strings.Join(lines, "\n") + "\n" + footer
+	return body + "\n" + clip(footer, m.width)
 }
 
 // ansiRe は SGR (色) エスケープ列。表示幅計算・truncate から除外するために使う。

@@ -92,6 +92,20 @@ func push() error {
 	return err
 }
 
+// loadUnpushed は upstream に未 push のコミット SHA 集合を返す (@{upstream}..HEAD)。
+// upstream が無い等で取得できなければ nil (= push 状態不明・色分けなし) に degrade する。
+func loadUnpushed() map[string]bool {
+	out, err := runGit("rev-list", "@{upstream}..HEAD")
+	if err != nil {
+		return nil
+	}
+	set := make(map[string]bool)
+	for _, sha := range strings.Fields(out) {
+		set[sha] = true
+	}
+	return set
+}
+
 func loadChanges() ([]Change, error) {
 	// -z (NUL 区切り) を使う。理由: (1) パスの quoting が無効化され `\"`/octal escape や
 	// 空白入りパスをデコード不要で正確に扱える (2) rename/copy は元パスが後続の NUL
