@@ -182,9 +182,9 @@ func (m *changesModel) handleKey(key string) (*changesModel, tea.Cmd) {
 	}
 	old := m.cursor
 	switch key {
-	case "j", "down":
+	case "j", "down", "ctrl+n": // C-n/C-p は emacs 流の上下移動 (log と同じ)
 		m.cursor = min(m.cursor+1, len(m.changes)-1)
-	case "k", "up":
+	case "k", "up", "ctrl+p":
 		m.cursor = max(m.cursor-1, 0)
 	case "space", "enter":
 		m.busy = true

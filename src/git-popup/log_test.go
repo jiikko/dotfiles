@@ -19,6 +19,15 @@ func TestLogKeyHandling(t *testing.T) {
 	if m.cursor != 0 {
 		t.Fatalf("clamped cursor = %d, want 0", m.cursor)
 	}
+	// emacs 流 C-n/C-p でも上下移動できる
+	m.handleKey("ctrl+n")
+	if m.cursor != 1 {
+		t.Fatalf("ctrl+n cursor = %d, want 1", m.cursor)
+	}
+	m.handleKey("ctrl+p")
+	if m.cursor != 0 {
+		t.Fatalf("ctrl+p cursor = %d, want 0", m.cursor)
+	}
 	m.Update(tea.KeyMsg{})
 	m.handleKey("q")
 	if !m.done {
