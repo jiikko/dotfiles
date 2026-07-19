@@ -39,6 +39,9 @@ type logModel struct {
 	done    bool
 	confirm bool
 	busy    bool
+
+	detailOpen   bool // Enter で選択コミットの詳細 (右ペイン) にフォーカスしスクロールするモード
+	detailOffset int  // 詳細スクロール位置 (右ペインの先頭行 index)
 }
 
 func newLogModel(commits []Commit) *logModel {
@@ -132,6 +135,9 @@ func (m *logModel) handleKey(key string) (*logModel, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.detailOpen { // 詳細スクロールモード中は右ペインのスクロールに専念 (下記)
+		return m.handleDetailKey(key)
+	}
 	if key == "q" || key == "esc" || key == "ctrl+c" || key == "ctrl+g" {
 		m.done = true
 		return m, tea.Quit
@@ -147,6 +153,11 @@ func (m *logModel) handleKey(key string) (*logModel, tea.Cmd) {
 	if len(m.commits) == 0 {
 		return m, nil
 	}
+	if key == "enter" { // 選択コミットの詳細 (右ペイン) をスクロールするモードへ
+		m.detailOpen = true
+		m.detailOffset = 0
+		return m, nil
+	}
 	old := m.cursor
 	switch key {
 	case "j", "down":
@@ -159,6 +170,35 @@ func (m *logModel) handleKey(key string) (*logModel, tea.Cmd) {
 		m.preview = "loading preview..."
 		m.ciJobs = "" // 前コミットの CI ブロックを消し、diff と CI を独立に取り直す
 		return m, tea.Batch(m.previewCmd(), m.ciJobsCmd())
+	}
+	return m, nil
+}
+
+// rightLines は右ペインの全行 (CI job ブロック + diff)。detail スクロールと View で共用。
+func (m *logModel) rightLines() []string {
+	return strings.Split(strings.TrimRight(m.ciJobs+m.preview, "\n"), "\n")
+}
+
+// handleDetailKey は Enter で入った詳細スクロールモードのキー処理。q/Esc/h/Enter で一覧へ戻る。
+func (m *logModel) handleDetailKey(key string) (*logModel, tea.Cmd) {
+	rows := m.visibleRows()
+	maxOff := max(len(m.rightLines())-rows, 0)
+	switch key {
+	case "q", "esc", "h", "enter", "left":
+		m.detailOpen = false
+		m.detailOffset = 0
+	case "j", "down", "ctrl+n":
+		m.detailOffset = min(m.detailOffset+1, maxOff)
+	case "k", "up", "ctrl+p":
+		m.detailOffset = max(m.detailOffset-1, 0)
+	case " ", "ctrl+d", "pgdown", "f":
+		m.detailOffset = min(m.detailOffset+max(rows/2, 1), maxOff)
+	case "b", "ctrl+u", "pgup":
+		m.detailOffset = max(m.detailOffset-max(rows/2, 1), 0)
+	case "g", "home":
+		m.detailOffset = 0
+	case "G", "end":
+		m.detailOffset = maxOff
 	}
 	return m, nil
 }
@@ -195,11 +235,10 @@ func (m *logModel) ciMark(sha string) string {
 }
 
 func (m *logModel) View() string {
-	if m.width < 1 {
-		m.width = 80
-	}
-	if m.height < 1 {
-		m.height = 24
+	// WindowSizeMsg 到着前 (サイズ未確定) は描かない。既定サイズで大きく描くと、実サイズが
+	// 判明した次フレームとの差分で端末に残像 (カーソル行の "分身") が出る。
+	if m.width < 1 || m.height < 1 {
+		return ""
 	}
 	leftWidth := max(m.width*45/100, 20)
 	rightWidth := max(m.width-leftWidth-1, 10)
@@ -220,9 +259,16 @@ func (m *logModel) View() string {
 		left[i] = clip(line, leftWidth)
 	}
 	// CI job ブロック (先に来たら上に) + diff。どちらも未着なら (no preview)。
-	right := strings.Split(strings.TrimRight(m.ciJobs+m.preview, "\n"), "\n")
+	right := m.rightLines()
 	if len(right) == 1 && right[0] == "" {
 		right = []string{"(no preview)"}
+	}
+	if m.detailOpen { // 詳細スクロール: 右ペインを detailOffset だけ送る
+		if m.detailOffset < len(right) {
+			right = right[m.detailOffset:]
+		} else {
+			right = nil
+		}
 	}
 	lines := make([]string, rows)
 	for i := range lines {
@@ -233,11 +279,13 @@ func (m *logModel) View() string {
 		lines[i] = pad(left[i], leftWidth) + "│" + pad(r, rightWidth)
 	}
 	header := "git-popup  log"
-	footer := "j/k or ↑/↓ move  C-b push  q/Esc/C-g quit"
+	footer := "j/k move  Enter: 詳細スクロール  C-b push  q/Esc/C-g quit"
 	if m.confirm {
 		footer = "push しますか? [y/N]"
 	} else if m.busy {
 		footer = "pushing..."
+	} else if m.detailOpen {
+		footer = fmt.Sprintf("[詳細] j/k・Space/b スクロール  g/G 先頭/末尾  q/Esc/Enter 一覧へ  (%d)", m.detailOffset)
 	} else if m.status != "" {
 		footer = m.status
 	}

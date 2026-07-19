@@ -231,11 +231,9 @@ func (m *changesModel) ensureCursorVisible() {
 }
 
 func (m *changesModel) View() string {
-	if m.width < 1 {
-		m.width = 80
-	}
-	if m.height < 1 {
-		m.height = 24
+	// WindowSizeMsg 到着前は描かない (log.View と同じ理由: 残像防止)。
+	if m.width < 1 || m.height < 1 {
+		return ""
 	}
 	leftWidth := max(m.width*45/100, 20)
 	rightWidth := max(m.width-leftWidth-1, 10)
