@@ -107,15 +107,15 @@ var openInBrowser = func(url string) error {
 }
 
 // copyToClipboard はテストで実クリップボードを触らないための差し替え点。
-// tmux 内なら load-buffer -w (tmux バッファ + OSC52 でシステム側にも届く) を優先し、
-// 失敗時や tmux 外は OS のクリップボードコマンドへ。
+// OS のクリップボードコマンド (pbcopy/xclip) を真実とし、tmux 内では tmux バッファへも
+// 積む (tmux paste 用のおまけ・best effort)。本家 glog は load-buffer -w の成功 (exit 0)
+// を「システム側にも届いた」とみなすが、-w の実体は OSC52 転送で、外側端末が OSC52 を
+// 解釈しなければ exit 0 のままクリップボードに入らない (glogx で実測 2026-07-19)。
 var copyToClipboard = func(text string) error {
 	if os.Getenv("TMUX") != "" {
 		cmd := exec.Command("tmux", "load-buffer", "-w", "-")
 		cmd.Stdin = strings.NewReader(text)
-		if err := cmd.Run(); err == nil {
-			return nil
-		}
+		_ = cmd.Run() // 失敗しても OS クリップボードが本命なので無視
 	}
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
@@ -160,6 +160,7 @@ type browseModel struct {
 	diffBusy       map[string]bool     // diff 取得中の sha
 	pushConfirm    bool                // C-b の push 確認中 (y/N)
 	pushing        bool                // git push 実行中 (終了以外のキーを無視)
+	pushWarn       string              // push できない理由の警告モーダル (何かキーで閉じる)
 	pushPoll       map[string]bool     // push 直後ポーリング対象の SHA (CI が見えたら外れる)
 	pollAttempts   int                 // push 直後ポーリングの試行回数 (上限で諦める)
 	notice         string              // hint 行に出す一時メッセージ (次のキーで消える)
@@ -423,6 +424,11 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if key == "ctrl+c" || key == "ctrl+g" {
 		return m.quit()
 	}
+	// push 警告モーダルは何かキーで閉じる (そのキーは消費して誤操作を防ぐ)
+	if m.pushWarn != "" {
+		m.pushWarn = ""
+		return m, nil
+	}
 	// push 確認 (C-b → y/N)。glogx の独自機能。
 	if m.pushConfirm {
 		if strings.ToLower(key) == "y" {
@@ -503,7 +509,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 // (誤爆防止と「push 済みなのに聞かれる」違和感の回避)。
 func (m *browseModel) confirmPush() tea.Cmd {
 	if m.unpushedCount() == 0 {
-		m.notice = "未 push のコミットはありません"
+		m.pushWarn = "未 push のコミットはありません" // hint 行でなくモーダルで (ユーザー要望)
 		return nil
 	}
 	m.pushConfirm = true
@@ -525,7 +531,7 @@ func (m *browseModel) unpushedCount() int {
 // buildPanelBox を狭い幅で組み、左に空白を足して水平センタリングする
 // (垂直は View 側が overlayBox の anchor で中央に置く)。
 func (m *browseModel) pushBoxLines() []string {
-	if !m.pushConfirm && !m.pushing {
+	if !m.pushConfirm && !m.pushing && m.pushWarn == "" {
 		return nil
 	}
 	width := m.width
@@ -534,9 +540,16 @@ func (m *browseModel) pushBoxLines() []string {
 	}
 	boxW := min(44, width)
 	var rows []string
-	if m.pushing {
+	switch {
+	case m.pushWarn != "":
+		rows = []string{
+			"⚠ " + m.pushWarn,
+			"",
+			paint("何かキーを押して閉じる", ansiDim, m.colored),
+		}
+	case m.pushing:
 		rows = []string{m.spinner() + " pushing..."}
-	} else {
+	default:
 		rows = []string{
 			fmt.Sprintf("未 push の %d コミットを push します", m.unpushedCount()),
 			"",

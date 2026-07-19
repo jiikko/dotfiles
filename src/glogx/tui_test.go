@@ -1148,14 +1148,25 @@ func TestBrowsePushFlow(t *testing.T) {
 
 // 未 push が 1 件も無いときは確認に入らない。
 func TestBrowsePushNoUnpushed(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.statuses[m.commits[0].SHA] = StateSuccess
+	m.statuses[m.commits[1].SHA] = StateSuccess
 	m.handleKey("ctrl+b")
 	if m.pushConfirm {
 		t.Fatal("未 push なしで push 確認に入った")
 	}
-	if m.notice == "" {
-		t.Fatal("未 push なしの notice が出ない")
+	// hint 行でなく警告モーダルが出る (ユーザー要望)
+	m.width, m.height = 80, 20
+	if v := stripANSI(m.View()); !strings.Contains(v, "未 push のコミットはありません") {
+		t.Fatal("未 push なしの警告モーダルが出ない")
+	}
+	// 何かキーで閉じ、そのキーは消費される (カーソルが動かない)
+	m.handleKey("j")
+	if m.pushWarn != "" {
+		t.Fatal("キーで警告モーダルが閉じない")
+	}
+	if m.cursor != 0 {
+		t.Fatal("モーダルを閉じたキーが消費されずカーソルが動いた")
 	}
 }
 
