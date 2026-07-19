@@ -41,7 +41,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: pull test test-runtime test-discovered test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-go-lint test-go test-src
+.PHONY: pull test test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-go-lint test-go test-src
 
 # settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
 # pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、
@@ -62,7 +62,7 @@ test-runtime: test-syntax test-discovered test-bats
 # 発見 0 件は fail にする (テストを持つディレクトリしか対象にしないため、0 件 = ディレクトリの
 # 改名/不在や find の失敗がパイプに隠れて「未実行なのに成功」する状態。それを弾く)。
 define run_tests
-tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' | sort); \
+tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); \
 [ -n "$$tests" ] || { echo "✗ $(1) 配下にテストが見つかりません (find 失敗 or 0 件)" >&2; exit 1; }; \
 printf '%s\n' "$$tests" | while IFS= read -r t; do echo "[run] $$t"; "$$t" || exit 1; done
 endef
@@ -71,6 +71,22 @@ endef
 # 自動で拾われる (ディレクトリ単位の死蔵も発生しない)。
 test-discovered:
 	@$(call run_tests,tests)
+
+# CI (tests.yml) の並列分割用。実行時間の大きい ffmpeg 系 (av1ify/concat) を heavy として
+# 分離し、rest は「tests/ 全体から heavy を除外」の除外方式にする。新ディレクトリは自動で
+# rest 側に入るため、グループ列挙の更新漏れによる死蔵は発生しない。heavy のパスを
+# 移動/改名した場合は run_tests の 0 件検知が heavy 側を fail させるのでここを更新する。
+CI_HEAVY_TEST_DIRS := tests/zshrc/av1ify tests/zshrc/concat
+CI_HEAVY_PRUNE := \( $(foreach d,$(CI_HEAVY_TEST_DIRS),-path $(d) -o) -false \) -prune -o
+
+test-discovered-heavy:
+	@$(call run_tests,$(CI_HEAVY_TEST_DIRS))
+
+test-discovered-rest:
+	@$(call run_tests,tests $(CI_HEAVY_PRUNE))
+
+# CI の rest ジョブ入口 (test-runtime から test-discovered を rest に差し替えたもの)
+test-runtime-rest: test-syntax test-discovered-rest test-bats
 
 # 以下の test-<領域> は人間の選択実行用の便宜フィルタ。test-runtime の実行経路は
 # test-discovered に一本化されているため、新領域をここに足し忘れても死蔵は生まない。

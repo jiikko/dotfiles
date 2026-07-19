@@ -16,7 +16,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 実行時間短縮のため 2 グループに並列分割 (実測: heavy ≒ 73s / rest ≒ 40s)。
+  # グループ定義 (どのディレクトリが heavy か) は Makefile 側に集約 (CI_HEAVY_TEST_DIRS)。
+  # rest は除外方式なので新テストディレクトリは自動で rest 側で走る。
   dotfiles-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # heavy (av1ify/concat) は nvim テストを含まないため setup-nvim を省略する
+          - group: heavy
+            make-target: test-discovered-heavy
+            needs-nvim: false
+          - group: rest
+            make-target: test-runtime-rest
+            needs-nvim: true
+    name: dotfiles-tests (${{ matrix.group }})
     runs-on: ubuntu-slim
     timeout-minutes: 10
     steps:
@@ -37,8 +52,9 @@ jobs:
       # Neovim 0.11 pin + plugin cache + lazy restore。pin の理由・cache key の世代管理は
       # action 側に集約 (bench.yml と共有。二重管理を防ぐため詳細はそちらだけに書く)
       - uses: ./.github/actions/setup-nvim
+        if: ${{ matrix.needs-nvim }}
 
-      - name: Run dotfiles test suite
+      - name: Run dotfiles test suite (${{ matrix.group }})
         env:
           DOTFILES_TS_SKIP_ENSURE: "1"
-        run: make test-runtime
+        run: make ${{ matrix.make-target }}
