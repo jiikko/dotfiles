@@ -367,13 +367,16 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.hasRepo || len(m.commits) == 0 {
 			return m, nil // 再取得先が無いなら破棄もしない (スピナーのまま固まるだけ)
 		}
-		// push した新規コミット (直前まで unpushed) は CI が見えるまでポーリング対象にする
+		// ポーリング対象は push の先頭 (tip = 最新の unpushed) だけ (ユーザー要望
+		// 2026-07-19)。CI は push イベントの head commit にしか走らないのが普通で、
+		// 途中のコミットまで対象にすると CI が永遠に見えず上限までスピナーが回り続ける。
+		// 途中コミットの「checks なし (–)」は本物なので通常どおり取得・キャッシュする
 		m.pushPoll = map[string]bool{}
 		m.pollAttempts = 0
 		var all []string
 		for _, c := range m.commits {
-			if m.statuses[c.SHA] == StateUnpushed {
-				m.pushPoll[c.SHA] = true
+			if len(m.pushPoll) == 0 && m.statuses[c.SHA] == StateUnpushed {
+				m.pushPoll[c.SHA] = true // commits は新しい順なので最初の unpushed = tip
 			}
 			all = append(all, c.SHA)
 			delete(m.statuses, c.SHA)

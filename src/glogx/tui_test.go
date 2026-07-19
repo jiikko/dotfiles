@@ -1103,7 +1103,7 @@ func TestBrowseEmacsHorizontalAliases(t *testing.T) {
 func TestBrowsePushFlow(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.statuses[m.commits[0].SHA] = StateUnpushed
-	m.statuses[m.commits[1].SHA] = StateSuccess
+	m.statuses[m.commits[1].SHA] = StateUnpushed // 2 コミットまとめて push するケース
 	var pushed int
 	orig := runGitPush
 	runGitPush = func() error { pushed++; return nil }
@@ -1157,14 +1157,18 @@ func TestBrowsePushFlow(t *testing.T) {
 	if !m.fetching || len(m.toFetch) != len(m.commits) {
 		t.Fatalf("push 成功で全件再取得に入らない: fetching=%v toFetch=%d", m.fetching, len(m.toFetch))
 	}
-	// push した新規コミット (元 unpushed) はポーリング対象になる
+	// ポーリング対象は tip (最新の unpushed) だけ。途中のコミットには CI が走らないため
 	newSHA := m.commits[0].SHA
 	if !m.pushPoll[newSHA] {
-		t.Fatal("push した新規コミットがポーリング対象にならない")
+		t.Fatal("push の tip がポーリング対象にならない")
 	}
-	// CI がまだ見えない (none) 応答は捨てられ、ネガティブキャッシュに乗らず再ポーリング
+	if m.pushPoll[m.commits[1].SHA] || len(m.pushPoll) != 1 {
+		t.Fatalf("tip 以外までポーリング対象になった: %v", m.pushPoll)
+	}
+	// tip の「CI がまだ見えない (none)」応答は捨てられ、ネガティブキャッシュに乗らず
+	// 再ポーリング。途中コミットの none は本物なので通常どおり残る
 	m.Update(ciResultMsg{batch: CIBatch{Statuses: map[string]CIState{
-		newSHA: StateNone, m.commits[1].SHA: StateSuccess,
+		newSHA: StateNone, m.commits[1].SHA: StateNone,
 	}}})
 	if _, ok := m.statuses[newSHA]; ok {
 		t.Fatal("CI が見えない応答が statuses に残った (スピナーに戻るべき)")
@@ -1174,6 +1178,9 @@ func TestBrowsePushFlow(t *testing.T) {
 	}
 	if !m.pushPoll[newSHA] {
 		t.Fatal("CI が見えないのにポーリングが止まった")
+	}
+	if m.statuses[m.commits[1].SHA] != StateNone || m.fetched[m.commits[1].SHA] != StateNone {
+		t.Fatal("途中コミットの none (本物) まで捨てられた")
 	}
 	// pushPollMsg で再取得が走る
 	m.fetching = false
