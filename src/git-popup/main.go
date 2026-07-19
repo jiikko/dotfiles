@@ -16,7 +16,19 @@ func run(argv []string) int {
 	help := flag.NewFlagSet("git-popup", flag.ContinueOnError)
 	help.SetOutput(os.Stderr)
 	help.Usage = func() {
-		_, _ = fmt.Fprintln(help.Output(), "Usage: git-popup\n\nKeys: j/k or arrows move, Ctrl-b push, q/Esc/Ctrl-g quit")
+		_, _ = fmt.Fprintln(help.Output(), `Usage: git-popup
+
+git log の TUI。一覧 (行頭に CI 成否マーク・未 push は橙 SHA) と詳細 (diff + CI job) の 2 ペイン。
+
+Keys:
+  j/k ↑/↓ C-n/C-p   一覧の上下移動
+  g / G              先頭 / 末尾へ
+  Enter → C-f        詳細 (右ペイン) へフォーカス
+    j/k Space/b g/G  詳細スクロール
+    o                CI job 選択 → Enter/o でブラウザで開く
+    Esc/h/C-g        1 段戻る
+  C-b                push (y/N 確認)
+  q / C-c            終了 (一覧では Esc/C-g でも)`)
 	}
 	showHelp := help.Bool("help", false, "show this help")
 	help.BoolVar(showHelp, "h", false, "show this help")

@@ -1,6 +1,7 @@
 #!/usr/bin/env zsh
-# git-popup — tmux の git 操作 popup を担う Go TUI。log 一覧 (行頭に CI job の成否マークを
-# 非同期表示) と changes/staging (stage/commit/push) を C-l でトグルする単一 TUI。
+# git-popup — tmux の git popup を担う Go TUI。git log 一覧 (行頭に CI job の成否マークを
+# 非同期表示・未 push は橙 SHA) + 詳細 (diff + CI job → ブラウザ) + push。
+# かつての changes/staging 画面と C-l トグルはユーザー判断 (2026-07-19) で撤去し log 専用。
 # Go 実装は ~/dotfiles/src/git-popup/。glog は read-only ツールとして別物 (本ツールは触らない)。
 # このラッパーは初回にバイナリを自動ビルドし、ソースが新しいと再ビルドする (bin/glog と同方式)。
 
