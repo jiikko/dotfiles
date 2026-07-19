@@ -1036,6 +1036,44 @@ func TestBrowseListOpenCommitURLNoRepo(t *testing.T) {
 	}
 }
 
+// push 済みエリアは薄いオレンジ bg で塗る (未 push との対比があるときだけ)。
+func TestBrowsePushedAreaBackground(t *testing.T) {
+	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m.colored = true
+	m.height = 30
+	m.statuses[m.commits[0].SHA] = StateUnpushed
+	m.statuses[m.commits[1].SHA] = StateSuccess
+	view := strings.Split(m.View(), "\n")
+	var unpushedTinted, pushedTinted bool
+	for _, l := range view {
+		if strings.Contains(l, m.commits[0].ShortSHA) || strings.Contains(stripANSI(l), "commit "+m.commits[0].SHA) {
+			unpushedTinted = unpushedTinted || strings.Contains(l, ansiPushedBg)
+		}
+		if strings.Contains(stripANSI(l), "commit "+m.commits[1].SHA) {
+			pushedTinted = pushedTinted || strings.Contains(l, ansiPushedBg)
+		}
+	}
+	if !pushedTinted {
+		t.Fatal("push 済みコミットの行に bg が塗られていない")
+	}
+	if unpushedTinted {
+		t.Fatal("未 push コミットの行まで bg が塗られた")
+	}
+	// カーソルが push 済み行にあるときはカーソル bg を優先する
+	m.handleKey("j")
+	for _, l := range strings.Split(m.View(), "\n") {
+		if strings.Contains(stripANSI(l), "commit "+m.commits[1].SHA) && strings.Contains(l, ansiPushedBg) {
+			t.Fatal("カーソル行にまで push 済み bg が塗られた (カーソル bg 優先のはず)")
+		}
+	}
+	// 全部 push 済みなら塗らない (対比が無いとノイズ)
+	m.statuses[m.commits[0].SHA] = StateSuccess
+	m.invalidateLines()
+	if strings.Contains(m.View(), ansiPushedBg) {
+		t.Fatal("全部 push 済みでも bg が塗られた")
+	}
+}
+
 // C-f は全ビューで → の別名。C-b の ← 別名は無い (push は b。glogx の独自仕様)。
 func TestBrowseEmacsHorizontalAliases(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
