@@ -1101,8 +1101,14 @@ func TestBrowsePushFlow(t *testing.T) {
 	if m.pushing {
 		t.Fatal("pushMsg 後も pushing のまま")
 	}
-	if m.statuses[m.commits[0].SHA] == StateUnpushed {
-		t.Fatal("push 成功後も unpushed のまま (再取得に乗っていない)")
+	// push 成功でリスト全体のキャッシュが破棄され、全 SHA が再取得に乗る
+	for i, c := range m.commits {
+		if _, ok := m.statuses[c.SHA]; ok {
+			t.Fatalf("push 成功後も commits[%d] の status キャッシュが残っている", i)
+		}
+	}
+	if !m.fetching || len(m.toFetch) != len(m.commits) {
+		t.Fatalf("push 成功で全件再取得に入らない: fetching=%v toFetch=%d", m.fetching, len(m.toFetch))
 	}
 	if !strings.Contains(m.notice, "push") {
 		t.Fatalf("push 完了 notice が出ない: %q", m.notice)

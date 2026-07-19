@@ -308,26 +308,28 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.notice = "push しました"
-		// 未 push だったコミットの CI を取り直す (push 直後は pending で返るのが普通)。
-		// toFetch を差し替えて一括取得と同じ経路 (ciResultMsg) に乗せる
-		var pushed []string
-		for sha, st := range m.statuses {
-			if st == StateUnpushed {
-				pushed = append(pushed, sha)
-				m.statuses[sha] = StateUnknown
-			}
+		// 表示中リスト全体の CI 状態を破棄して取り直す (ユーザー要望 2026-07-19:
+		// push で CI が走り出すため、起動時キャッシュ由来の表示は丸ごと古くなる)。
+		// statuses から消す → スピナー表示に戻り、toFetch 差し替えで一括取得と
+		// 同じ経路 (ciResultMsg) に乗せる。取得結果は fetched 経由で終了時に
+		// SaveCache へマージされ、ファイルキャッシュ側も新しい観測で上書きされる
+		if !m.hasRepo || len(m.commits) == 0 {
+			return m, nil // 再取得先が無いなら破棄もしない (スピナーのまま固まるだけ)
+		}
+		var all []string
+		for _, c := range m.commits {
+			all = append(all, c.SHA)
+			delete(m.statuses, c.SHA)
+			delete(m.details, c.SHA)
 		}
 		m.invalidateLines()
-		if !m.hasRepo || len(pushed) == 0 {
-			return m, nil
-		}
-		m.toFetch = pushed
+		m.toFetch = all
 		m.fetching = true
 		repo := m.repo
 		fetch := func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 			defer cancel()
-			batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, pushed)
+			batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, all)
 			return ciResultMsg{batch: batch, ghErr: ghErr}
 		}
 		return m, tea.Batch(fetch, tick())
