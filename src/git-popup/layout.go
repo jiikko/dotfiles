@@ -22,10 +22,15 @@ type paneLayout struct {
 
 func layoutFor(width, height int) paneLayout { return paneLayout{width: width, height: height} }
 
+// 各ペインの水平オーバーヘッド = ボーダー 2 桁 + 横 padding 2 桁 (paneStyle の Padding(0,1))。
+// padding はボーダーと content の分離用: 無いとフォーカス時の左ボーダー │ (accent) と
+// カーソルマーカー ▌ (同じ accent) が同色で密着し、境界線が隠れて見える (実機報告 2026-07-19)。
+const paneChromeW = 4
+
 func (l paneLayout) paneRows() int    { return max(l.height-1-2, 1) }
 func (l paneLayout) leftPaneW() int   { return max(l.width*42/100, 12) }
-func (l paneLayout) leftInnerW() int  { return max(l.leftPaneW()-2, 4) }
-func (l paneLayout) rightInnerW() int { return max(l.width-l.leftPaneW()-2, 4) }
+func (l paneLayout) leftInnerW() int  { return max(l.leftPaneW()-paneChromeW, 4) }
+func (l paneLayout) rightInnerW() int { return max(l.width-l.leftPaneW()-paneChromeW, 4) }
 
 // tooSmall は極小端末か (ボーダー 2 ペインがはみ出すため degrade する)。
 func (l paneLayout) tooSmall() bool { return l.width < minTermW || l.height < minTermH }
@@ -55,7 +60,9 @@ func paneStyle(focused bool, w, h int) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(strconv.Itoa(themeCterm[role]))).
-		Width(w).Height(h)
+		Padding(0, 1). // ボーダーと content の分離 (paneChromeW のコメント参照)
+		Width(w + 2).  // Width は padding 込みの content 幅
+		Height(h)
 }
 
 // clampOffset は cursor が可視域 (offset..offset+rows-1) に収まるよう offset を返す。
