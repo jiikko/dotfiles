@@ -118,16 +118,52 @@ func RenderLines(commits []Commit, statuses map[string]CIState, o RenderOpts) []
 		for i, c := range commits {
 			lines = append(lines, Line{Text: renderOnelineRow(c, stateFor(statuses, c.SHA), subjectWidth, authorWidth, o), CommitIdx: i, Header: true})
 		}
-		return lines
+		return insertPushBoundary(lines, commits, statuses, o)
 	}
 	if o.Verbatim != nil {
-		return decorateVerbatim(commits, statuses, o)
+		return insertPushBoundary(decorateVerbatim(commits, statuses, o), commits, statuses, o)
 	}
 	for i, c := range commits {
 		if i > 0 {
 			lines = append(lines, Line{Text: "", CommitIdx: i - 1})
 		}
 		lines = append(lines, mediumLines(c, i, stateFor(statuses, c.SHA), o)...)
+	}
+	return insertPushBoundary(lines, commits, statuses, o)
+}
+
+// insertPushBoundary は未 push と push 済みの間に境界線 (── origin ──) を 1 行挿す。
+// 「どこまで push したか」の視覚化 (ユーザー選定 2026-07-19: 背景塗りつぶし案は却下、
+// カーソルの行全体 bg 塗りと干渉するため)。未 push が 1 件も無い / 全部未 push /
+// push 状態不明のときは何も挿さない。push 成功で statuses から unpushed が消えると
+// 境界線も消える (lines は statuses 更新で再構築される)。
+func insertPushBoundary(lines []Line, commits []Commit, statuses map[string]CIState, o RenderOpts) []Line {
+	boundary := -1 // push 済み先頭のコミット index
+	for i, c := range commits {
+		if stateFor(statuses, c.SHA) != StateUnpushed {
+			if i > 0 {
+				boundary = i
+			}
+			break
+		}
+	}
+	if boundary < 0 {
+		return lines
+	}
+	width := o.Width
+	if width <= 0 {
+		width = 60
+	}
+	label := " origin "
+	rule := "──" + label + strings.Repeat("─", max(width-2-runewidth.StringWidth(label), 0))
+	for i, l := range lines {
+		if l.Header && l.CommitIdx == boundary {
+			out := make([]Line, 0, len(lines)+1)
+			out = append(out, lines[:i]...)
+			out = append(out, Line{Text: paint(rule, ansiDim, o.Colored), CommitIdx: boundary - 1})
+			out = append(out, lines[i:]...)
+			return out
+		}
 	}
 	return lines
 }

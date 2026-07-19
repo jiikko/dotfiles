@@ -53,6 +53,41 @@ func TestRenderStaticOneline(t *testing.T) {
 	}
 }
 
+func TestRenderLinesPushBoundary(t *testing.T) {
+	// 未 push と push 済みの間に ── origin ── の境界線が入る (どこまで push したかの視覚化)
+	statuses := map[string]CIState{"a": StateUnpushed, "b": StateSuccess}
+	lines := RenderLines(testCommits(), statuses, RenderOpts{})
+	ruleIdx, headerB := -1, -1
+	for i, l := range lines {
+		if strings.Contains(l.Text, " origin ") && strings.Contains(l.Text, "──") {
+			ruleIdx = i
+		}
+		if l.Header && l.CommitIdx == 1 {
+			headerB = i
+		}
+	}
+	if ruleIdx == -1 {
+		t.Fatalf("境界線が入っていない:\n%s", RenderStatic(testCommits(), statuses, RenderOpts{}))
+	}
+	if headerB == -1 || ruleIdx != headerB-1 {
+		t.Errorf("境界線の位置 = %d; want push 済み先頭ヘッダー (%d) の直前", ruleIdx, headerB)
+	}
+	// oneline でも入る
+	if out := RenderStatic(testCommits(), statuses, RenderOpts{Oneline: true}); !strings.Contains(out, " origin ") {
+		t.Errorf("oneline で境界線が入らない:\n%s", out)
+	}
+	// 全部 push 済み / 全部未 push / 状態不明では入らない
+	for name, st := range map[string]map[string]CIState{
+		"全部 push 済み": {"a": StateSuccess, "b": StateSuccess},
+		"全部未 push":   {"a": StateUnpushed, "b": StateUnpushed},
+		"状態不明":       {},
+	} {
+		if out := RenderStatic(testCommits(), st, RenderOpts{}); strings.Contains(out, " origin ") {
+			t.Errorf("%s で境界線が入った:\n%s", name, out)
+		}
+	}
+}
+
 func TestRenderLinesLoadingSpinner(t *testing.T) {
 	// statuses に無い SHA は取得中としてスピナーを出す
 	out := RenderStatic(testCommits(), map[string]CIState{}, RenderOpts{Oneline: true, Spinner: "⠋"})
