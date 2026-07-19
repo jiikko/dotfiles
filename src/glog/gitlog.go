@@ -60,11 +60,23 @@ func runGit(args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
-// BuildLogArgs は allowlist 済みオプションから git log の引数列を組み立てる。
-// colored は --stat / -p の本文 (git が着色する部分) にのみ効く。ヘッダー行の色は
-// render 側で自前で付けるため、format 文字列には色コードを入れない。
+// BuildLogArgs は allowlist 済みオプションから git log の引数列を組み立てる (データ解析用。
+// prettyFormat の制御文字レコードで機械 parse する)。colored は --stat / -p の本文にのみ効く。
 func BuildLogArgs(opts *Options, colored bool) []string {
-	args := []string{"log", prettyFormat}
+	return buildLogArgsWith(prettyFormat, opts, colored)
+}
+
+// BuildDisplayArgs は表示用 (verbatim) の git log 引数列。format を指定せず git の素の
+// 出力 (medium 形式) をそのまま得る = 見た目は git log と機械的に一致する。
+func BuildDisplayArgs(opts *Options, colored bool) []string {
+	return buildLogArgsWith("", opts, colored)
+}
+
+func buildLogArgsWith(format string, opts *Options, colored bool) []string {
+	args := []string{"log"}
+	if format != "" {
+		args = append(args, format)
+	}
 	args = append(args, fmt.Sprintf("--max-count=%d", opts.MaxCount))
 	if colored {
 		args = append(args, "--color=always")
@@ -83,6 +95,15 @@ func BuildLogArgs(opts *Options, colored bool) []string {
 		args = append(args, opts.Paths...)
 	}
 	return args
+}
+
+// LoadLogDisplay は表示用の git log 実出力を行列で返す (verbatim 方式の入力)。
+func LoadLogDisplay(opts *Options, colored bool) ([]string, error) {
+	out, err := runGit(BuildDisplayArgs(opts, colored)...)
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(strings.TrimRight(out, "\n"), "\n"), nil
 }
 
 // ParseLog は prettyFormat 付き git log の出力をコミット列へ解析する。
@@ -179,10 +200,10 @@ func UnpushedSHAs(revs []string, limit int) map[string]bool {
 // DecorColors は decoration (ブランチ名等) の色。git log の見た目を尊重するため、
 // git 本体の既定色と git config の color.decorate.* 上書きをそのまま使う。
 type DecorColors struct {
-	HEAD         string // 既定 bold cyan
-	Branch       string // 既定 bold green
-	RemoteBranch string // 既定 bold red
-	Tag          string // 既定 bold yellow
+	HEAD         string   // 既定 bold cyan
+	Branch       string   // 既定 bold green
+	RemoteBranch string   // 既定 bold red
+	Tag          string   // 既定 bold yellow
 	Remotes      []string // remote 名 (remote branch 判定用)
 }
 

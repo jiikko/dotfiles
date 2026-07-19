@@ -136,6 +136,7 @@ type browseModel struct {
 	diffCache      map[string][]string // sha → 整形済み diff 行 (メモリ内キャッシュ)
 	diffBusy       map[string]bool     // diff 取得中の sha
 	notice         string              // hint 行に出す一時メッセージ (次のキーで消える)
+	verbatim       []Line              // git log 実出力の取り込み行 (nil = 自前レンダリング)
 	fetching       bool
 	done           bool
 	fetch          tea.Cmd
@@ -800,9 +801,10 @@ func (m *browseModel) renderOpts() RenderOpts {
 		Spinner: m.spinner(),
 		// カーソルは行頭の溝でなくヘッダー行全体の bg 塗り (cursorLine) で示すため、
 		// 折り返し幅は端末の全幅 = git log と左マージンが一致する (ユーザー要望 2026-07-19)
-		Width: m.width,
-		Decor: m.decor,
-		PRs:   m.prCache,
+		Width:    m.width,
+		Decor:    m.decor,
+		PRs:      m.prCache,
+		Verbatim: m.verbatim,
 	}
 }
 

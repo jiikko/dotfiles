@@ -405,3 +405,91 @@ func TestStatusGlyphAllStates(t *testing.T) {
 		t.Errorf("loading = %q; want spinner", got)
 	}
 }
+
+// --- verbatim 方式 (git log 実出力の取り込み) ---
+
+func verbatimFixture() ([]string, []Commit) {
+	commits := []Commit{
+		{SHA: strings.Repeat("a", 40), ShortSHA: "aaaaaaa", Subject: "first"},
+		{SHA: strings.Repeat("b", 40), ShortSHA: "bbbbbbb", Subject: "second"},
+	}
+	raw := []string{
+		"\x1b[33mcommit " + commits[0].SHA + "\x1b[m (HEAD -> master)",
+		"Author: koji <k@x>",
+		"Date:   Sat Jul 19 00:00:00 2026 +0900",
+		"",
+		"    first",
+		"    commit " + commits[1].SHA + " を参照する行", // メッセージ内の言及 (インデント 4) は誤検出しない
+		"",
+		"commit " + commits[1].SHA,
+		"Author: koji <k@x>",
+		"Date:   Sat Jul 19 00:00:00 2026 +0900",
+		"",
+		"    second",
+	}
+	return raw, commits
+}
+
+func TestVerbatimLinesClassifiesHeaders(t *testing.T) {
+	raw, commits := verbatimFixture()
+	lines := VerbatimLines(raw, commits)
+	if lines == nil {
+		t.Fatal("照合に失敗した (nil)")
+	}
+	var headers []int
+	for i, l := range lines {
+		if l.Header {
+			headers = append(headers, i)
+		}
+	}
+	if len(headers) != 2 || headers[0] != 0 || headers[1] != 7 {
+		t.Fatalf("ヘッダー位置 = %v; want [0 7]", headers)
+	}
+	if lines[4].CommitIdx != 0 || lines[11].CommitIdx != 1 {
+		t.Errorf("CommitIdx の帰属が誤り: %d %d", lines[4].CommitIdx, lines[11].CommitIdx)
+	}
+	// 本文は git 出力そのまま (再構築しない)
+	if lines[1].Text != raw[1] {
+		t.Errorf("本文行が変更された: %q", lines[1].Text)
+	}
+}
+
+func TestVerbatimLinesMismatchFallsBack(t *testing.T) {
+	raw, commits := verbatimFixture()
+	if VerbatimLines(raw[:3], commits) != nil {
+		t.Error("ヘッダー数不一致で nil にならない (fallback が働かない)")
+	}
+}
+
+func TestRenderLinesVerbatimDecoratesHeaderOnly(t *testing.T) {
+	raw, commits := verbatimFixture()
+	v := VerbatimLines(raw, commits)
+	statuses := map[string]CIState{commits[0].SHA: StateSuccess, commits[1].SHA: StateFailure}
+	o := RenderOpts{Colored: true, Width: 80, Verbatim: v,
+		PRs: map[string]*PRRef{commits[0].SHA: {Number: 7, State: "OPEN"}}}
+	lines := RenderLines(commits, statuses, o)
+	if !strings.HasPrefix(lines[0].Text, ansiGreen+"✓"+ansiReset+" ") {
+		t.Errorf("ヘッダーに CI 記号が前置されていない: %q", lines[0].Text)
+	}
+	if !strings.Contains(lines[0].Text, "#7") {
+		t.Errorf("PR バッジが付いていない: %q", lines[0].Text)
+	}
+	if !strings.Contains(lines[0].Text, raw[0]) {
+		t.Errorf("ヘッダーの git 出力部分が改変された: %q", lines[0].Text)
+	}
+	if lines[1].Text != raw[1] {
+		t.Errorf("Author 行が git log 出力と一致しない (verbatim 契約違反): %q", lines[1].Text)
+	}
+	// 色なし長行は幅で折り返し、タブは展開される
+	raw2 := append(append([]string{}, raw...), "")
+	raw2[4] = "    " + strings.Repeat("あ", 60)
+	v2 := VerbatimLines(raw2, commits)
+	lines2 := RenderLines(commits, statuses, RenderOpts{Width: 40, Verbatim: v2})
+	count := 0
+	for _, l := range lines2 {
+		count += strings.Count(l.Text, "あ")
+	}
+	if count != 60 {
+		t.Errorf("折り返しで文字が欠けた: あ %d 文字 (want 60)", count)
+	}
+}
