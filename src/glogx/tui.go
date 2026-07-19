@@ -60,6 +60,16 @@ type jobDetailMsg struct {
 // 本家 glog (read-only) には無い。
 type pushMsg struct{ err error }
 
+// pushPollMsg は push 直後ポーリングの周期タイマー。push した新規コミットは CI job が
+// 走り出すまでタイムラグがあり、即 fetch すると「checks なし (StateNone, TTL 5分)」を
+// 拾ってネガティブキャッシュ化するため、CI が見えるまで一定間隔で取り直す (ユーザー要望)。
+type pushPollMsg struct{}
+
+const (
+	pushPollInterval    = 5 * time.Second
+	pushPollMaxAttempts = 24 // 5s × 24 = 最長 2 分で諦める (その回の結果は保存しない)
+)
+
 // runGitPush はテストで実 push しないための差し替え点。
 var runGitPush = func() error {
 	out, err := exec.Command("git", "push").CombinedOutput()
@@ -150,6 +160,8 @@ type browseModel struct {
 	diffBusy       map[string]bool     // diff 取得中の sha
 	pushConfirm    bool                // C-b の push 確認中 (y/N)
 	pushing        bool                // git push 実行中 (終了以外のキーを無視)
+	pushPoll       map[string]bool     // push 直後ポーリング対象の SHA (CI が見えたら外れる)
+	pollAttempts   int                 // push 直後ポーリングの試行回数 (上限で諦める)
 	notice         string              // hint 行に出す一時メッセージ (次のキーで消える)
 	verbatim       []Line              // git log 実出力の取り込み行 (nil = 自前レンダリング)
 	fetching       bool
@@ -249,6 +261,27 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, sha := range m.toFetch {
 			delete(m.detailsLoading, sha)
 		}
+		// push 直後ポーリング: CI がまだ見えない (none/unknown) SHA は結果を捨てて
+		// (statuses から消してスピナーに戻し、fetched からも外してファイルキャッシュへの
+		// ネガティブキャッシュ保存を防ぐ) 次の周期で取り直す。CI が見えたら対象から外す
+		if len(m.pushPoll) > 0 {
+			for sha := range m.pushPoll {
+				switch m.statuses[sha] {
+				case StatePending, StateSuccess, StateFailure, StateNeutral:
+					delete(m.pushPoll, sha) // CI が見えた: 以降は通常のキャッシュ運用
+				default:
+					delete(m.statuses, sha)
+					delete(m.fetched, sha)
+				}
+			}
+			m.invalidateLines()
+			if len(m.pushPoll) > 0 && m.pollAttempts < pushPollMaxAttempts {
+				return m, tea.Batch(
+					tea.Tick(pushPollInterval, func(time.Time) tea.Msg { return pushPollMsg{} }),
+					tick())
+			}
+			m.pushPoll = nil // 上限到達: スピナーは spinnerActive から外れて止まる
+		}
 		return m, nil
 	case detailMsg:
 		m.invalidateLines()
@@ -301,6 +334,22 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.diffCache[msg.sha] = msg.lines
 		return m, nil
+	case pushPollMsg:
+		if len(m.pushPoll) == 0 || m.fetching {
+			return m, nil // fetching 中 (別経路の取得が進行) は次の ciResultMsg 側で判定する
+		}
+		m.pollAttempts++
+		targets := slices.Collect(maps.Keys(m.pushPoll))
+		m.toFetch = targets
+		m.fetching = true
+		repo := m.repo
+		fetch := func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+			defer cancel()
+			batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, targets)
+			return ciResultMsg{batch: batch, ghErr: ghErr}
+		}
+		return m, tea.Batch(fetch, tick())
 	case pushMsg:
 		m.pushing = false
 		if msg.err != nil {
@@ -316,8 +365,14 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.hasRepo || len(m.commits) == 0 {
 			return m, nil // 再取得先が無いなら破棄もしない (スピナーのまま固まるだけ)
 		}
+		// push した新規コミット (直前まで unpushed) は CI が見えるまでポーリング対象にする
+		m.pushPoll = map[string]bool{}
+		m.pollAttempts = 0
 		var all []string
 		for _, c := range m.commits {
+			if m.statuses[c.SHA] == StateUnpushed {
+				m.pushPoll[c.SHA] = true
+			}
 			all = append(all, c.SHA)
 			delete(m.statuses, c.SHA)
 			delete(m.details, c.SHA)
@@ -900,7 +955,7 @@ func (m *browseModel) fillUnknown() {
 }
 
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.pushing || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || len(m.diffBusy) > 0
+	return m.fetching || m.pushing || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || len(m.diffBusy) > 0
 }
 
 func (m *browseModel) spinner() string {

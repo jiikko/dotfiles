@@ -1110,6 +1110,37 @@ func TestBrowsePushFlow(t *testing.T) {
 	if !m.fetching || len(m.toFetch) != len(m.commits) {
 		t.Fatalf("push 成功で全件再取得に入らない: fetching=%v toFetch=%d", m.fetching, len(m.toFetch))
 	}
+	// push した新規コミット (元 unpushed) はポーリング対象になる
+	newSHA := m.commits[0].SHA
+	if !m.pushPoll[newSHA] {
+		t.Fatal("push した新規コミットがポーリング対象にならない")
+	}
+	// CI がまだ見えない (none) 応答は捨てられ、ネガティブキャッシュに乗らず再ポーリング
+	m.Update(ciResultMsg{batch: CIBatch{Statuses: map[string]CIState{
+		newSHA: StateNone, m.commits[1].SHA: StateSuccess,
+	}}})
+	if _, ok := m.statuses[newSHA]; ok {
+		t.Fatal("CI が見えない応答が statuses に残った (スピナーに戻るべき)")
+	}
+	if _, ok := m.fetched[newSHA]; ok {
+		t.Fatal("CI が見えない応答が fetched に残った (ネガティブキャッシュされる)")
+	}
+	if !m.pushPoll[newSHA] {
+		t.Fatal("CI が見えないのにポーリングが止まった")
+	}
+	// pushPollMsg で再取得が走る
+	m.fetching = false
+	if _, cmd := m.Update(pushPollMsg{}); cmd == nil || !m.fetching {
+		t.Fatal("pushPollMsg で再取得が始まらない")
+	}
+	// CI が見えたら (pending) ポーリング対象から外れ、通常のキャッシュ運用に戻る
+	m.Update(ciResultMsg{batch: CIBatch{Statuses: map[string]CIState{newSHA: StatePending}}})
+	if m.pushPoll[newSHA] {
+		t.Fatal("CI が見えてもポーリングが止まらない")
+	}
+	if m.statuses[newSHA] != StatePending {
+		t.Fatalf("pending が反映されない: %v", m.statuses[newSHA])
+	}
 	if !strings.Contains(m.notice, "push") {
 		t.Fatalf("push 完了 notice が出ない: %q", m.notice)
 	}
