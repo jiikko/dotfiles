@@ -74,9 +74,9 @@ func TestBrowseCursorNavigation(t *testing.T) {
 	}
 }
 
-func TestBrowseWrapAccountsForCursorGutter(t *testing.T) {
-	// View は全行にカーソル溝 2 桁を足すため、折り返し幅は width-2 で計算する。
-	// 差し引かないと全幅まで折り返した行が clip され末尾の文字が「…」に食われる
+func TestBrowseWrapUsesFullWidth(t *testing.T) {
+	// カーソル溝の廃止 (git log と左マージンを揃える) 後は端末の全幅で折り返す。
+	// 折り返し幅と clip 幅がずれると全幅の行の末尾が「…」に食われる
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StateSuccess
@@ -1057,5 +1057,49 @@ func TestBrowseEmacsHorizontalAliases(t *testing.T) {
 	m.handleKey("ctrl+b")
 	if m.diffSHA != "" {
 		t.Fatal("diff 表示中の C-b で閉じない")
+	}
+}
+
+// カーソル溝の廃止 (2026-07-19): 行頭 2 桁の溝を足さず git log と左マージンが一致し、
+// カーソルはヘッダー行全体の bg 塗りで示す。
+func TestBrowseCursorIsBgHighlightNotGutter(t *testing.T) {
+	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+	m.colored = true
+	view := strings.Split(m.View(), "\n")
+	var authorLine, cursorHeader, otherHeader string
+	for _, l := range view {
+		if strings.HasPrefix(stripANSI(l), "Author: ") && authorLine == "" {
+			authorLine = l
+		}
+		if strings.Contains(l, "commit "+m.commits[0].SHA) {
+			cursorHeader = l
+		}
+		if strings.Contains(l, "commit "+m.commits[1].SHA) {
+			otherHeader = l
+		}
+	}
+	if authorLine == "" || cursorHeader == "" || otherHeader == "" {
+		t.Fatalf("期待行が見つからない:\n%s", m.View())
+	}
+	// git log と同じく Author 行は列 0 から始まる (旧実装は "  Author")
+	if strings.HasPrefix(stripANSI(authorLine), " ") {
+		t.Errorf("Author 行に左マージンが残っている: %q", authorLine)
+	}
+	if !strings.Contains(cursorHeader, ansiCursorBg) {
+		t.Errorf("カーソル行に bg 塗りがない: %q", cursorHeader)
+	}
+	if strings.Contains(otherHeader, ansiCursorBg) {
+		t.Errorf("非カーソル行に bg が付いている: %q", otherHeader)
+	}
+	// bg は行内のリセット後も維持される (途切れると sha の直後で塗りが切れる)
+	if strings.Contains(cursorHeader, ansiReset+" ") && !strings.Contains(cursorHeader, ansiReset+ansiCursorBg) {
+		t.Errorf("リセット後に bg が張り直されていない: %q", cursorHeader)
+	}
+	// 色なしは "❯ " 前置に degrade
+	m.colored = false
+	m.invalidateLines()
+	if !strings.Contains(m.View(), "❯ ") {
+		t.Error("NO_COLOR で ❯ マーカーが出ていない")
 	}
 }

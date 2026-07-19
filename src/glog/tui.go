@@ -121,12 +121,12 @@ type browseModel struct {
 	frame          int
 	width          int
 	height         int
-	cursor         int    // コミット index
-	offset         int    // ビューポート先頭の行 index
-	panelSHA       string // job パネルを表示中のコミット SHA ("" = パネルなし)
-	panelCursor    int    // パネル内で選択中の job index (-1 = タイトル行にフォーカス)
-	detailOpen     bool   // job 詳細 (annotations / ログ tail) ポップアップを表示中か
-	detailOffset   int    // 詳細ポップアップのスクロール位置
+	cursor         int                 // コミット index
+	offset         int                 // ビューポート先頭の行 index
+	panelSHA       string              // job パネルを表示中のコミット SHA ("" = パネルなし)
+	panelCursor    int                 // パネル内で選択中の job index (-1 = タイトル行にフォーカス)
+	detailOpen     bool                // job 詳細 (annotations / ログ tail) ポップアップを表示中か
+	detailOffset   int                 // 詳細ポップアップのスクロール位置
 	jobDetail      map[string][]string // key (sha/jobIdx) → 詳細行 (メモリ内キャッシュ)
 	jobDetailBusy  map[string]bool     // 取得中の key
 	prCache        map[string]*PRRef   // sha → 紐づく PR (nil 格納 = 確認済みで PR なし)
@@ -135,7 +135,7 @@ type browseModel struct {
 	diffOffset     int                 // diff ポップアップのスクロール位置
 	diffCache      map[string][]string // sha → 整形済み diff 行 (メモリ内キャッシュ)
 	diffBusy       map[string]bool     // diff 取得中の sha
-	notice         string // hint 行に出す一時メッセージ (次のキーで消える)
+	notice         string              // hint 行に出す一時メッセージ (次のキーで消える)
 	fetching       bool
 	done           bool
 	fetch          tea.Cmd
@@ -798,9 +798,9 @@ func (m *browseModel) renderOpts() RenderOpts {
 		Oneline: m.oneline,
 		Colored: m.colored,
 		Spinner: m.spinner(),
-		// View は全行にカーソル溝 2 桁 ("❯ " / "  ") を足すため、折り返し幅は
-		// その分を差し引く (差し引かないと全幅の折り返し行が clip され末尾が欠ける)
-		Width: max(m.width-2, 0),
+		// カーソルは行頭の溝でなくヘッダー行全体の bg 塗り (cursorLine) で示すため、
+		// 折り返し幅は端末の全幅 = git log と左マージンが一致する (ユーザー要望 2026-07-19)
+		Width: m.width,
 		Decor: m.decor,
 		PRs:   m.prCache,
 	}
@@ -861,10 +861,11 @@ func (m *browseModel) View() string {
 	window := make([]string, 0, page)
 	for i := offset; i < end; i++ {
 		text := lines[i].Text
+		// カーソルはヘッダー行全体の bg 塗りで示す (tig/fzf 流)。旧実装の全行 2 桁の
+		// カーソル溝 ("❯ " / "  ") は git log と左マージンがずれるため廃止 (ユーザー要望)
 		if lines[i].Header && lines[i].CommitIdx == m.cursor {
-			text = cursorMark(m.colored) + text
-		} else {
-			text = "  " + text
+			window = append(window, m.cursorLine(text))
+			continue
 		}
 		window = append(window, clipToWidth(text, m.width))
 	}
@@ -1036,6 +1037,19 @@ func buildPanelBox(title string, rows []string, width int, colored bool) []strin
 
 func cursorMark(colored bool) string {
 	return paint("❯ ", ansiBold, colored)
+}
+
+// cursorLine はカーソル位置のコミットヘッダー行を強調する。色ありでは行全体を暗色 bg で
+// 塗る (行内の SGR リセットで bg が切れないよう、リセット直後に bg を張り直す)。
+// 色なし (NO_COLOR) では bg が使えないため "❯ " 前置に degrade する (その行だけ 2 桁ずれる)。
+func (m *browseModel) cursorLine(text string) string {
+	if !m.colored {
+		return clipToWidth("❯ "+text, m.width)
+	}
+	text = clipToWidth(text, m.width)
+	pad := max(m.width-runewidth.StringWidth(stripANSI(text)), 0)
+	return ansiCursorBg + strings.ReplaceAll(text, ansiReset, ansiReset+ansiCursorBg) +
+		strings.Repeat(" ", pad) + ansiReset
 }
 
 func (m *browseModel) hintLine() string {

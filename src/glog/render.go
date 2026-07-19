@@ -17,7 +17,10 @@ const (
 	ansiMagenta = "\x1b[35m"
 	ansiCyan    = "\x1b[36m"
 	ansiDim     = "\x1b[2m"
-	ansiBold    = "\x1b[1m"
+	// カーソル行の bg (256色の暗灰 237)。テーマの意味マップ (docs/theme-colors.md) の
+	// 地色 234/235 より一段明るい段で「選択行の面」を作る (fg 色はそのまま透ける)
+	ansiCursorBg = "\x1b[48;5;237m"
+	ansiBold     = "\x1b[1m"
 )
 
 // spinnerFrames は取得中表示のフレーム。
