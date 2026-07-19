@@ -1049,7 +1049,6 @@ func (m *browseModel) View() string {
 	page := m.pageSize()
 	offset := min(m.offset, max(len(lines)-page, 0))
 	end := min(offset+page, len(lines))
-	pushedFrom := m.pushedBoundary()
 	window := make([]string, 0, page)
 	for i := offset; i < end; i++ {
 		text := lines[i].Text
@@ -1057,13 +1056,6 @@ func (m *browseModel) View() string {
 		// カーソル溝 ("❯ " / "  ") は git log と左マージンがずれるため廃止 (ユーザー要望)
 		if lines[i].Header && lines[i].CommitIdx == m.cursor {
 			window = append(window, m.cursorLine(text))
-			continue
-		}
-		// push 済みエリアは薄いオレンジの bg で面を塗る (境界線と併用の視覚化。
-		// ユーザー要望 2026-07-19)。カーソル行はカーソル bg を優先 (上の continue)
-		// (境界線行は CommitIdx = boundary-1 なので自然に塗り対象外になる)
-		if pushedFrom >= 0 && lines[i].CommitIdx >= pushedFrom {
-			window = append(window, m.bgLine(text, ansiPushedBg))
 			continue
 		}
 		window = append(window, clipToWidth(text, m.width))
@@ -1258,8 +1250,10 @@ func (m *browseModel) cursorLine(text string) string {
 var ansiResetRe = regexp.MustCompile("\x1b\\[0?m")
 
 // bgLine は行全体を指定 bg で端末幅まで塗る (行内の SGR リセットで bg が切れないよう、
-// リセット直後に bg を張り直す)。カーソル行と push 済みエリアの塗りが共用する。
-// 色なしではそのまま返す (bg が使えない)。
+// リセット直後に bg を張り直す)。色なしではそのまま返す (bg が使えない)。
+// NOTE: push 済みエリアの面塗りにも使っていたが、bg の面塗りは環境の配色次第で
+// 視認性を落とすためユーザー判断で撤去 (2026-07-19)。push 境界の可視化は境界線
+// (insertPushBoundary) に一本化。面塗りの再提案はしない。
 func (m *browseModel) bgLine(text, bg string) string {
 	if !m.colored {
 		return clipToWidth(text, m.width)
@@ -1268,21 +1262,6 @@ func (m *browseModel) bgLine(text, bg string) string {
 	pad := max(m.width-runewidth.StringWidth(stripANSI(text)), 0)
 	return bg + ansiResetRe.ReplaceAllString(text, "$0"+bg) +
 		strings.Repeat(" ", pad) + ansiReset
-}
-
-// pushedBoundary は push 済み先頭のコミット index (-1 = 塗らない)。未 push と push 済みが
-// 両方あるときだけ有効 (insertPushBoundary と同じ条件。全部 push 済みで全面が
-// 塗られるのはノイズなので、対比が意味を持つときだけ面を出す)。
-func (m *browseModel) pushedBoundary() int {
-	for i, c := range m.commits {
-		if stateFor(m.statuses, c.SHA) != StateUnpushed {
-			if i > 0 {
-				return i
-			}
-			return -1
-		}
-	}
-	return -1
 }
 
 func (m *browseModel) hintLine() string {

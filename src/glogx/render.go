@@ -20,11 +20,6 @@ const (
 	// カーソル行の bg (256色の暗灰 237)。テーマの意味マップ (docs/theme-colors.md) の
 	// 地色 234/235 より一段明るい段で「選択行の面」を作る (fg 色はそのまま透ける)
 	ansiCursorBg = "\x1b[48;5;237m"
-	// push 済みエリアの行 bg (ごく薄い暗橙。ユーザー要望 2026-07-19「もっと薄く」)。
-	// 256色 cube に薄い橙が無い (94 #875f00 が最弱) ため truecolor 指定。tmux は
-	// terminal-features RGB を設定済み・非対応端末では tmux が近似色へ落とす。
-	// 強さはここ 1 箇所で調整 (前値: 48;5;94)
-	ansiPushedBg = "\x1b[48;2;56;42;20m"
 	ansiBold     = "\x1b[1m"
 )
 

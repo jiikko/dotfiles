@@ -1036,46 +1036,13 @@ func TestBrowseListOpenCommitURLNoRepo(t *testing.T) {
 	}
 }
 
-// push 済みエリアは薄いオレンジ bg で塗る (未 push との対比があるときだけ)。
-func TestBrowsePushedAreaBackground(t *testing.T) {
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+// git log --color は短縮形リセット "\x1b[m" を使う。bgLine (カーソル行の bg 塗り) は
+// これでも bg を張り直して行末まで塗れる (literal "\x1b[0m" 一致だけだと途切れる回帰の防止)。
+func TestBgLineReappliesAfterShortReset(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.colored = true
-	m.height = 30
-	m.statuses[m.commits[0].SHA] = StateUnpushed
-	m.statuses[m.commits[1].SHA] = StateSuccess
-	view := strings.Split(m.View(), "\n")
-	var unpushedTinted, pushedTinted bool
-	for _, l := range view {
-		if strings.Contains(l, m.commits[0].ShortSHA) || strings.Contains(stripANSI(l), "commit "+m.commits[0].SHA) {
-			unpushedTinted = unpushedTinted || strings.Contains(l, ansiPushedBg)
-		}
-		if strings.Contains(stripANSI(l), "commit "+m.commits[1].SHA) {
-			pushedTinted = pushedTinted || strings.Contains(l, ansiPushedBg)
-		}
-	}
-	if !pushedTinted {
-		t.Fatal("push 済みコミットの行に bg が塗られていない")
-	}
-	if unpushedTinted {
-		t.Fatal("未 push コミットの行まで bg が塗られた")
-	}
-	// カーソルが push 済み行にあるときはカーソル bg を優先する
-	m.handleKey("j")
-	for _, l := range strings.Split(m.View(), "\n") {
-		if strings.Contains(stripANSI(l), "commit "+m.commits[1].SHA) && strings.Contains(l, ansiPushedBg) {
-			t.Fatal("カーソル行にまで push 済み bg が塗られた (カーソル bg 優先のはず)")
-		}
-	}
-	// 全部 push 済みなら塗らない (対比が無いとノイズ)
-	m.statuses[m.commits[0].SHA] = StateSuccess
-	m.invalidateLines()
-	if strings.Contains(m.View(), ansiPushedBg) {
-		t.Fatal("全部 push 済みでも bg が塗られた")
-	}
-	// git log --color は短縮形リセット "\x1b[m" を使う。これでも bg を張り直して
-	// 行末まで塗れる (literal "\x1b[0m" 一致だけだと途切れる回帰の防止)
-	got := m.bgLine("\x1b[33mcommit abc\x1b[m subject", ansiPushedBg)
-	if !strings.Contains(got, "\x1b[m"+ansiPushedBg) {
+	got := m.bgLine("\x1b[33mcommit abc\x1b[m subject", ansiCursorBg)
+	if !strings.Contains(got, "\x1b[m"+ansiCursorBg) {
 		t.Fatalf("短縮形リセット後に bg が張り直されない: %q", got)
 	}
 	if !strings.HasSuffix(got, ansiReset) || !strings.Contains(got, "  ") {
