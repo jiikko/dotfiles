@@ -3,12 +3,10 @@ package main
 import (
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -211,29 +209,12 @@ func (m *logModel) handleDetailKey(key string) (*logModel, tea.Cmd) {
 	return m, nil
 }
 
-// ボーダー付き 2 ペインを崩さず描ける最小端末サイズ (これ未満はメッセージ表示に degrade)。
-const (
-	minTermW = 24
-	minTermH = 6
-)
-
-// レイアウト: 下に footer 1 行、残りを 2 つのボーダー付きペイン (border 上下 2 行)。
-func (m *logModel) paneRows() int    { return max(m.height-1-2, 1) }
-func (m *logModel) leftPaneW() int   { return max(m.width*42/100, 12) }
-func (m *logModel) leftInnerW() int  { return max(m.leftPaneW()-2, 4) }
-func (m *logModel) rightInnerW() int { return max(m.width-m.leftPaneW()-2, 4) }
+// layout は現在の端末サイズのペイン寸法 (共通実装は layout.go)。
+func (m *logModel) layout() paneLayout { return layoutFor(m.width, m.height) }
+func (m *logModel) paneRows() int      { return m.layout().paneRows() }
 
 func (m *logModel) ensureCursorVisible() {
-	rows := m.paneRows()
-	if m.cursor < m.offset {
-		m.offset = m.cursor
-	}
-	if m.cursor >= m.offset+rows {
-		m.offset = m.cursor - rows + 1
-	}
-	if m.offset < 0 {
-		m.offset = 0
-	}
+	m.offset = clampOffset(m.cursor, m.offset, m.paneRows())
 }
 
 func (m *logModel) ciMark(sha string) string {
@@ -250,20 +231,6 @@ func (m *logModel) ciMark(sha string) string {
 	default:
 		return " "
 	}
-}
-
-// paneStyle は focused に応じてボーダー色を変えた固定サイズのペイン枠を返す。
-// focused = current_accent (theme)・非 focused = cold_gray。どちらのペインに
-// フォーカスがあるか (一覧 or 詳細) をボーダー色で示す。
-func paneStyle(focused bool, w, h int) lipgloss.Style {
-	role := "cold_gray"
-	if focused {
-		role = "current_accent"
-	}
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color(strconv.Itoa(themeCterm[role]))).
-		Width(w).Height(h)
 }
 
 // buildListLines は左ペインのコミット一覧を rows 行ぶん組む (offset でスクロール)。
@@ -325,20 +292,11 @@ func (m *logModel) View() string {
 	if m.width < 1 || m.height < 1 {
 		return ""
 	}
-	// 極小端末ではボーダー付き 2 ペインが端末をはみ出す (border 4 桁 + 最小 inner)。
-	// 折り返し崩れを避けるため、この場合は短いメッセージだけ出す。
-	if m.width < minTermW || m.height < minTermH {
-		return clip("git-popup: 端末が小さすぎます (最小 "+strconv.Itoa(minTermW)+"x"+strconv.Itoa(minTermH)+")", m.width)
+	l := m.layout()
+	if l.tooSmall() {
+		return l.degradeView()
 	}
 	m.ensureCursorVisible()
-	rows := m.paneRows()
-	leftContent := strings.Join(m.buildListLines(m.leftInnerW(), rows), "\n")
-	rightContent := strings.Join(m.buildDetailLines(m.rightInnerW(), rows), "\n")
-
-	listFocused := !m.detailOpen
-	leftBox := paneStyle(listFocused, m.leftInnerW(), rows).Render(leftContent)
-	rightBox := paneStyle(!listFocused, m.rightInnerW(), rows).Render(rightContent)
-	body := lipgloss.JoinHorizontal(lipgloss.Top, leftBox, rightBox)
 
 	footer := "j/k 移動  Enter: 詳細  C-b push  q/Esc/C-g 閉じる"
 	switch {
@@ -351,7 +309,11 @@ func (m *logModel) View() string {
 	case m.status != "":
 		footer = m.status
 	}
-	return body + "\n" + clip(footer, m.width)
+	return l.render(
+		m.buildListLines(l.leftInnerW(), l.paneRows()),
+		m.buildDetailLines(l.rightInnerW(), l.paneRows()),
+		!m.detailOpen, // 一覧フォーカス時は左を accent (詳細中は右)
+		footer)
 }
 
 // ansiRe は SGR (色) エスケープ列。表示幅計算・truncate から除外するために使う。
