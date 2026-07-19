@@ -64,11 +64,28 @@ func runLog(opts *Options, colored, isTTY bool) int {
 		go func() { decorCh <- LoadDecorColors() }()
 	}
 
+	// 表示用の verbatim git log (medium 形式のみ)。データ解析用の LoadCommits と独立なので
+	// 並列に走らせる (直列だと fork 1 本ぶん起動が延びる)
+	var displayCh chan []string
+	if !opts.Oneline {
+		displayCh = make(chan []string, 1)
+		go func() {
+			raw, err := LoadLogDisplay(opts, colored)
+			if err != nil {
+				raw = nil // 失敗は自前レンダリングへ fallback (エラーにしない)
+			}
+			displayCh <- raw
+		}()
+	}
+
 	commits, err := LoadCommits(opts, colored)
 	if err != nil {
 		return exitGitError(err)
 	}
 	if len(commits) == 0 {
+		if displayCh != nil {
+			<-displayCh // goroutine を看取ってから返す
+		}
 		return 0
 	}
 	shas := make([]string, len(commits))
@@ -78,6 +95,13 @@ func runLog(opts *Options, colored, isTTY bool) int {
 
 	statuses, toFetch, repo, hasRepo, cachePath := mergePlan(<-planCh, shas)
 	renderOpts := RenderOpts{Oneline: opts.Oneline, Colored: colored}
+	if displayCh != nil {
+		if raw := <-displayCh; raw != nil {
+			// ヘッダー照合に失敗したら nil = 自前レンダリングへ fallback (silent 劣化を
+			// 避けたいが、表示は成立するため警告は出さない。乖離時はテストが検出する)
+			renderOpts.Verbatim = VerbatimLines(raw, commits)
+		}
+	}
 	var decor *DecorColors
 	if colored {
 		dc := <-decorCh
@@ -100,13 +124,16 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	}
 
 	browse := newBrowseModel(commits, statuses, toFetch, repo, hasRepo, opts, colored, width, height)
+	browse.verbatim = renderOpts.Verbatim
 	// quit 経路 (q/Ctrl-C) 以外 — RunBrowse のエラーや fetch 無しでの即終了 — でも
 	// context の timer を解放する (cancel は冪等)
 	defer browse.cancel()
 	browse.decor = decor
 	model, err := RunBrowse(browse)
 	if err != nil {
-		// TUI 基盤の失敗は静的経路で救済する
+		// TUI 基盤の失敗は静的経路で救済する。無言だと View の panic 等が
+		// 「なぜかブラウズが開かない」にしか見えず診断不能なので理由を出す
+		fmt.Fprintln(os.Stderr, "glog: 対話ブラウズを開始できません (静的出力に切替):", err)
 		return showStatic(commits, statuses, toFetch, repo, hasRepo, cachePath, opts, renderOpts)
 	}
 	// Alt Screen なので終了時に表示は消える (git log の pager と同じ)。

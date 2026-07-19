@@ -310,3 +310,45 @@ func TestLoadCommitDiffRealRepo(t *testing.T) {
 		t.Error("不正 SHA でエラーが返らない")
 	}
 }
+
+// verbatim 方式の統合: 実リポジトリで LoadLogDisplay + VerbatimLines の照合が成立し、
+// 本文行が git log 実出力と一致すること。
+func TestLoadLogDisplayVerbatimRealRepo(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	run := func(args ...string) {
+		t.Helper()
+		if _, err := runGit(args...); err != nil {
+			t.Fatalf("git %v: %v", args, err)
+		}
+	}
+	run("init", "-q")
+	run("config", "user.email", "t@example.com")
+	run("config", "user.name", "t")
+	for i, msg := range []string{"first commit", "second commit\n\nbody line"} {
+		if err := os.WriteFile("a.txt", []byte(strings.Repeat("x", i+1)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		run("add", "a.txt")
+		run("commit", "-q", "-m", msg)
+	}
+	opts := &Options{MaxCount: 20}
+	commits, err := LoadCommits(opts, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := LoadLogDisplay(opts, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := VerbatimLines(raw, commits)
+	if v == nil {
+		t.Fatalf("実リポジトリで照合に失敗:\n%s", strings.Join(raw, "\n"))
+	}
+	// 本文 (非ヘッダー) 行は git log の出力とバイト一致 = 見た目の機械的一致の根拠
+	for i, l := range v {
+		if !l.Header && l.Text != raw[i] {
+			t.Errorf("行 %d が git log 出力と不一致: %q != %q", i, l.Text, raw[i])
+		}
+	}
+}

@@ -41,7 +41,12 @@ case "$1" in
       *client_tty*) echo "${STUB_TTY:?} 200 50" ;;
       *window_width*) echo "200 50" ;;
     esac ;;
-  show-option) echo "${STUB_LAST:-}" ;;
+  show-option)
+    case "$*" in
+      *@tmux_toast_last_epoch*) echo "${STUB_LAST:-}" ;;
+      *@tmux_toast_pane*) echo "${STUB_TOAST_PANE:-}" ;;
+    esac ;;
+  new-pane) echo '%42' ;;
 esac
 exit 0
 EOS
@@ -83,7 +88,7 @@ fi
 # 「あ b」= あ(2) + space(1) + b(1) = 4 セル → box_w=8, x=200-8=192, y=50-3=47
 reset_calls
 run_toast "あ b"
-if grep -q -- 'new-pane -d -x 8 -y 3 -X 192 -Y 47' "$CALLS"; then
+if grep -q -- 'new-pane -d -P -F #{pane_id} -x 8 -y 3 -X 192 -Y 47' "$CALLS"; then
   ok "floating: -d + セル幅からの右下座標で new-pane を呼ぶ"
 else
   ng "floating: new-pane の引数が期待と違う: $(grep new-pane "$CALLS" || echo '(呼ばれていない)')"
@@ -92,6 +97,28 @@ if grep -q -- 'set-option -g @tmux_toast_last_epoch' "$CALLS"; then
   ok "floating: 再入ガード用の epoch を記録する"
 else
   ng "floating: epoch が記録されていない (ガードが効かなくなる)"
+fi
+if grep -q -- 'set-option -g @tmux_toast_pane %42' "$CALLS"; then
+  ok "floating: -e 除外用に toast pane の id を記録する"
+else
+  ng "floating: toast pane id が記録されていない (閉じ通知の永久ループ防止が効かない)"
+fi
+
+# --- -e 除外: toast 自身の pane 終了は通知しない ----------------------------
+# (pane-exited hook 経由。除外が無いと toast 終了→閉じ通知→その終了→… の永久ループ)
+reset_calls
+STUB_TOAST_PANE='%42' run_toast -e '%42' "🗑 pane を閉じました"
+if grep -q '^tmux new-pane' "$CALLS"; then
+  ng "-e 除外: toast 自身の pane なのに通知が出た (閉じ通知の永久ループ再発)"
+else
+  ok "-e 除外: toast 自身の pane 終了では通知を出さない"
+fi
+reset_calls
+STUB_TOAST_PANE='%42' run_toast -e '%7' "🗑 pane を閉じました"
+if grep -q '^tmux new-pane' "$CALLS"; then
+  ok "-e 除外: 通常 pane の終了では通知を出す"
+else
+  ng "-e 除外: 通常 pane の終了なのに通知が出ない"
 fi
 
 # --- fallback 経路: tty へ直接描画し refresh-client で消す ------------------

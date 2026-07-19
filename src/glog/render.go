@@ -17,7 +17,10 @@ const (
 	ansiMagenta = "\x1b[35m"
 	ansiCyan    = "\x1b[36m"
 	ansiDim     = "\x1b[2m"
-	ansiBold    = "\x1b[1m"
+	// カーソル行の bg (256色の暗灰 237)。テーマの意味マップ (docs/theme-colors.md) の
+	// 地色 234/235 より一段明るい段で「選択行の面」を作る (fg 色はそのまま透ける)
+	ansiCursorBg = "\x1b[48;5;237m"
+	ansiBold     = "\x1b[1m"
 )
 
 // spinnerFrames は取得中表示のフレーム。
@@ -82,6 +85,11 @@ type RenderOpts struct {
 	Width   int               // >0 ならコミットメッセージを端末幅で折り返す (TUI 用)。
 	Decor   *DecorColors      // decoration の色 (nil = git 既定色)
 	PRs     map[string]*PRRef // コミット行末尾の PR バッジ (#123)。nil 値 = PR なし
+	// Verbatim は git log 実出力の取り込み行 (VerbatimLines の結果)。非 nil なら
+	// medium 形式の自前再構築 (mediumLines) の代わりにこれを装飾して使う = 見た目が
+	// git log と機械的に一致する (ユーザー要望 2026-07-19「人力で寄せるのはめんどい」)。
+	// nil は fallback (git log の実行/照合に失敗した場合と --oneline)
+	Verbatim []Line
 }
 
 func (o RenderOpts) decorColors() DecorColors {
@@ -112,6 +120,9 @@ func RenderLines(commits []Commit, statuses map[string]CIState, o RenderOpts) []
 		}
 		return lines
 	}
+	if o.Verbatim != nil {
+		return decorateVerbatim(commits, statuses, o)
+	}
 	for i, c := range commits {
 		if i > 0 {
 			lines = append(lines, Line{Text: "", CommitIdx: i - 1})
@@ -119,6 +130,57 @@ func RenderLines(commits []Commit, statuses map[string]CIState, o RenderOpts) []
 		lines = append(lines, mediumLines(c, i, stateFor(statuses, c.SHA), o)...)
 	}
 	return lines
+}
+
+// VerbatimLines は git log 実出力をコミット境界で分類する。ヘッダー検出は
+// 「stripANSI 後に "commit <次に期待する SHA>" で始まる行」なので、コミットメッセージ内の
+// "commit ..." 行 (インデント 4 だが --color 無しでは理論上先頭に来ない) を誤認しない。
+// ヘッダー数が commits と一致しない場合は nil (呼び出し側が自前レンダリングへ fallback)。
+func VerbatimLines(raw []string, commits []Commit) []Line {
+	lines := make([]Line, 0, len(raw))
+	next := 0
+	for _, line := range raw {
+		if next < len(commits) && strings.HasPrefix(stripANSI(line), "commit "+commits[next].SHA) {
+			lines = append(lines, Line{Text: line, CommitIdx: next, Header: true})
+			next++
+			continue
+		}
+		lines = append(lines, Line{Text: line, CommitIdx: max(next-1, 0)})
+	}
+	if next != len(commits) {
+		return nil
+	}
+	return lines
+}
+
+// decorateVerbatim は verbatim 行へ glog の付加情報だけを足す: ヘッダー行の CI 記号前置と
+// PR バッジ後置。それ以外の行は git log の出力そのまま (TUI では色なし行のみ幅で折り返し、
+// タブは幅計算のため展開する)。
+func decorateVerbatim(commits []Commit, statuses map[string]CIState, o RenderOpts) []Line {
+	out := make([]Line, 0, len(o.Verbatim))
+	for _, l := range o.Verbatim {
+		if l.Header {
+			c := commits[l.CommitIdx]
+			text := StatusGlyph(stateFor(statuses, c.SHA), o.Colored, o.Spinner) + " " + l.Text + prBadge(c.SHA, o)
+			out = append(out, Line{Text: text, CommitIdx: l.CommitIdx, Header: true})
+			continue
+		}
+		text := l.Text
+		if o.Width > 0 {
+			// mediumLines と同じ理由 (タブは clip の幅計算をすり抜けて再描画を崩す)
+			text = strings.ReplaceAll(text, "\t", "    ")
+			if !strings.Contains(text, "\x1b") {
+				for _, seg := range wrapToWidth(text, o.Width) {
+					out = append(out, Line{Text: seg, CommitIdx: l.CommitIdx})
+				}
+				continue
+			}
+			// 色付き行 (diff 本文等) は wrapToWidth が ANSI 非対応のため折り返さない
+			// (View 側の clip に任せる。自前レンダリング時代の body 行と同じ扱い)
+		}
+		out = append(out, Line{Text: text, CommitIdx: l.CommitIdx})
+	}
+	return out
 }
 
 // RenderStatic は静的出力 (非 TTY / TUI 終了後の最終表示) 用に行を結合する。

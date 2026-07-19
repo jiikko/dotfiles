@@ -9,23 +9,28 @@
 # floating panes が無い古い tmux では、クライアント tty へ直接エスケープシーケンスで
 # 描画する fallback を使う (tmux の再描画に消されるため短周期で描き直す。点滅は残る)。
 #
-# 使い方: tmux-toast [-d 秒] [-f 前景色] [-b 背景色] メッセージ...
+# 使い方: tmux-toast [-d 秒] [-f 前景色] [-b 背景色] [-e pane_id] メッセージ...
+#   -e: この pane_id が「直近の toast 自身の pane」なら何も表示しない。
+#       pane-exited hook から呼ぶときに #{hook_pane} を渡す (toast pane の終了で
+#       閉じ通知が再帰的に出続けるのを防ぐ)
 set -euo pipefail
 
 duration=2
 fg=15
 bg=22   # 濃い緑
+exclude_pane=''
 
 usage() {
-  echo "usage: tmux-toast [-d seconds] [-f fg-color] [-b bg-color] message..." >&2
+  echo "usage: tmux-toast [-d seconds] [-f fg-color] [-b bg-color] [-e pane-id] message..." >&2
   exit 2
 }
 
-while getopts 'd:f:b:h' opt; do
+while getopts 'd:f:b:e:h' opt; do
   case "$opt" in
     d) duration=$OPTARG ;;
     f) fg=$OPTARG ;;
     b) bg=$OPTARG ;;
+    e) exclude_pane=$OPTARG ;;
     *) usage ;;
   esac
 done
@@ -34,6 +39,14 @@ shift $((OPTIND - 1))
 msg="$*"
 
 [ -n "${TMUX:-}" ] || { echo "tmux-toast: not inside tmux" >&2; exit 1; }
+
+# toast 自身の pane 起因の呼び出しは無視する (-e に pane-exited の #{hook_pane} が来る)。
+# 記録は直近 1 個だけなので、-d を長くして toast が同時に複数生きるケースでは
+# 古い方の終了を除外できない (稀にスプリアスな閉じ通知が出る)。許容
+if [ -n "$exclude_pane" ] && \
+   [ "$exclude_pane" = "$(tmux show-option -gqv @tmux_toast_pane)" ]; then
+  exit 0
+fi
 
 # 再入ガード: toast 用の new-pane 自体が after-split-window hook を発火させる (実測,
 # tmux 3.7b)。hook からこのスクリプトを呼ぶ構成だと toast が toast を生む無限ループに
@@ -65,10 +78,13 @@ if tmux list-commands new-pane 2>/dev/null | grep -q -- '-X x-position'; then
   [ "$x" -lt 0 ] && x=0
   [ "$y" -lt 0 ] && y=0
   # shellcheck disable=SC2016 # sh -c の '$1'/'$2' は pane 内の sh が展開する (意図どおり)
-  exec tmux new-pane -d -x "$box_w" -y "$box_h" -X "$x" -Y "$y" \
+  pane_id=$(tmux new-pane -d -P -F '#{pane_id}' -x "$box_w" -y "$box_h" -X "$x" -Y "$y" \
     -s "fg=colour${fg},bg=colour${bg}" \
     -R "fg=colour${fg},bg=colour${bg}" \
-    -- sh -c 'printf "\n  %s" "$1"; sleep "$2"' tmux-toast "$msg" "$duration"
+    -- sh -c 'printf "\n  %s" "$1"; sleep "$2"' tmux-toast "$msg" "$duration")
+  # -e 除外用に toast pane の id を記録 (この pane の pane-exited は通知しない)
+  tmux set-option -g @tmux_toast_pane "$pane_id"
+  exit 0
 fi
 
 # --- fallback: クライアント tty へ直接描画 (floating panes 非対応 tmux) -----
