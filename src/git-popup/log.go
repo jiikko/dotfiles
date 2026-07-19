@@ -45,11 +45,12 @@ type logModel struct {
 	jobSelect    bool // 詳細モード内の CI ジョブ選択サブモード (Enter で入り、Enter でブラウザ)
 	jobCursor    int  // 選択中の CI job index
 
-	unpushed map[string]bool // @{upstream} に未 push のコミット SHA (色分け用)
+	unpushed map[string]bool // @{upstream} に未 push のコミット SHA (色分け・push 境界線用)
+	header   string          // 左ペイン先頭のブランチ要約 (例: master → origin/master (ahead 2))
 }
 
 func newLogModel(commits []Commit) *logModel {
-	return &logModel{commits: commits, unpushed: loadUnpushed()}
+	return &logModel{commits: commits, unpushed: loadUnpushed(), header: loadBranchLine()}
 }
 
 func (m *logModel) Init() tea.Cmd {
@@ -126,7 +127,8 @@ func (m *logModel) Update(msg tea.Msg) (*logModel, tea.Cmd) {
 			m.status = "push failed: " + msg.err.Error()
 		} else {
 			m.status = "push completed"
-			m.unpushed = loadUnpushed() // push 成功で未 push 集合が変わる → 色分けを更新
+			m.unpushed = loadUnpushed() // push 成功で未 push 集合が変わる → 色分け・境界線を更新
+			m.header = loadBranchLine() // ahead 数も変わる
 		}
 	case tea.KeyMsg:
 		return m.handleKey(msg.String())
@@ -275,8 +277,38 @@ func (m *logModel) handleJobSelectKey(key string) (*logModel, tea.Cmd) {
 func (m *logModel) layout() paneLayout { return layoutFor(m.width, m.height) }
 func (m *logModel) paneRows() int      { return m.layout().paneRows() }
 
+// boundaryIdx は push 済み先頭のコミット index (= 区切り線を挿す位置)。
+// 「未 push と push 済みが両方ある」ときだけ >0 を返し、それ以外 (全部未 push /
+// 全部 push 済み / upstream 不明) は 0 (区切り線なし)。
+func (m *logModel) boundaryIdx() int {
+	if m.unpushed == nil {
+		return 0
+	}
+	for i, c := range m.commits {
+		if !m.unpushed[c.SHA] {
+			if i == 0 {
+				return 0 // 未 push なし = 境界を描く意味がない
+			}
+			return i
+		}
+	}
+	return 0 // 全部未 push
+}
+
+// rowOf はコミット index → 左ペインの表示行 (ヘッダ 1 行 + 境界線ぶんずれる)。
+func (m *logModel) rowOf(idx int) int {
+	row := idx
+	if m.header != "" {
+		row++
+	}
+	if b := m.boundaryIdx(); b > 0 && idx >= b {
+		row++
+	}
+	return row
+}
+
 func (m *logModel) ensureCursorVisible() {
-	m.offset = clampOffset(m.cursor, m.offset, m.paneRows())
+	m.offset = clampOffset(m.rowOf(m.cursor), m.offset, m.paneRows())
 }
 
 func (m *logModel) ciMark(sha string) string {
@@ -295,16 +327,23 @@ func (m *logModel) ciMark(sha string) string {
 	}
 }
 
-// buildListLines は左ペインのコミット一覧を rows 行ぶん組む (offset でスクロール)。
-// 行頭: カーソル (accent の ▌) + CI マーク + 短SHA (未 push=橙 / push 済み=灰) + 件名。
+// buildListLines は左ペインを rows 行ぶん組む (offset は表示行単位のスクロール)。
+// 構成: ヘッダ (ブランチ要約) → 未 push コミット → push 境界線 (── upstream ──) →
+// push 済みコミット。コミット行の行頭: カーソル (accent の ▌) + CI マーク +
+// 短SHA (未 push=橙 / push 済み=灰) + 件名。
 func (m *logModel) buildListLines(w, rows int) []string {
-	lines := make([]string, rows)
-	for i := range lines {
-		idx := m.offset + i
-		if idx >= len(m.commits) {
-			continue
+	// 表示行を全部組んでから offset で切り出す (行数は高々コミット数+2 で小さい)
+	var all []string
+	if m.header != "" {
+		all = append(all, clip(paintFg("cold_gray", m.header), w))
+	}
+	boundary := m.boundaryIdx()
+	for idx, c := range m.commits {
+		if boundary > 0 && idx == boundary {
+			label := " origin "
+			rule := strings.Repeat("─", 3)
+			all = append(all, clip(paintFg("cold_gray", rule+label+strings.Repeat("─", max(w-len(rule)-displayWidth(label), 0))), w))
 		}
-		c := m.commits[idx]
 		cursor := "  "
 		if idx == m.cursor {
 			cursor = paintFg("current_accent", "▌") + " "
@@ -317,7 +356,13 @@ func (m *logModel) buildListLines(w, rows int) []string {
 				sha = paintFg("cold_gray", c.ShortSHA) // push 済み = 落ち着いた灰
 			}
 		}
-		lines[i] = clip(cursor+m.ciMark(c.SHA)+" "+sha+" "+c.Subject, w)
+		all = append(all, clip(cursor+m.ciMark(c.SHA)+" "+sha+" "+c.Subject, w))
+	}
+	lines := make([]string, rows)
+	for i := range lines {
+		if idx := m.offset + i; idx < len(all) {
+			lines[i] = all[idx]
+		}
 	}
 	return lines
 }

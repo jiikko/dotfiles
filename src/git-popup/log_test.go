@@ -52,7 +52,8 @@ func TestLogScrollKeepsCursorVisible(t *testing.T) {
 		commits[i] = Commit{SHA: string(rune('a' + i)), ShortSHA: "sha", Subject: "subject"}
 	}
 	m := newLogModel(commits)
-	m.height = 5 // paneRows = height-3(footer+border) = 2 行
+	m.header, m.unpushed = "", nil // 実 repo 由来のヘッダ/境界行を除き、行=コミットで数える
+	m.height = 5                   // paneRows = height-3(footer+border) = 2 行
 	m.handleKey("j")
 	m.handleKey("j")
 	if m.cursor != 2 || m.offset != 1 {
@@ -83,6 +84,7 @@ func TestLogViewMinSizeGuard(t *testing.T) {
 
 func TestLogListLinesPushColor(t *testing.T) {
 	m := newLogModel([]Commit{{SHA: "p1", ShortSHA: "pushed1", Subject: "s"}, {SHA: "u1", ShortSHA: "unpush1", Subject: "s"}})
+	m.header = ""
 	m.unpushed = map[string]bool{"u1": true}
 	lines := m.buildListLines(60, 2)
 	// カーソル行 (0) は accent の ▌
@@ -124,6 +126,48 @@ func TestLogDetailCIOverlay(t *testing.T) {
 	js := m.buildDetailLines(40, 3)
 	if !strings.Contains(stripANSI(js[1]), "▌") || !strings.Contains(stripANSI(js[1]), "job1") {
 		t.Fatalf("ジョブ選択中のカーソルが出ていない: %q", js)
+	}
+}
+
+func TestLogHeaderAndPushBoundary(t *testing.T) {
+	// ヘッダ行 + 未 push/push 済みの境界線が入り、カーソル行がずれない
+	m := newLogModel([]Commit{
+		{SHA: "u1", ShortSHA: "u1", Subject: "new"},
+		{SHA: "p1", ShortSHA: "p1", Subject: "old"},
+	})
+	m.header = "master → origin/master (ahead 1)"
+	m.unpushed = map[string]bool{"u1": true}
+	lines := m.buildListLines(60, 4)
+	if !strings.Contains(stripANSI(lines[0]), "ahead 1") {
+		t.Fatalf("先頭行がヘッダでない: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "▌") || !strings.Contains(lines[1], "u1") {
+		t.Fatalf("2 行目がカーソル付き未 push コミットでない: %q", lines[1])
+	}
+	if !strings.Contains(stripANSI(lines[2]), "origin") {
+		t.Fatalf("3 行目が push 境界線でない: %q", lines[2])
+	}
+	if !strings.Contains(lines[3], "p1") {
+		t.Fatalf("4 行目が push 済みコミットでない: %q", lines[3])
+	}
+	// 全部未 push / 全部 push 済み / upstream 不明では境界線を出さない
+	m.unpushed = map[string]bool{"u1": true, "p1": true}
+	if b := m.boundaryIdx(); b != 0 {
+		t.Fatalf("全部未 push で境界 %d", b)
+	}
+	m.unpushed = map[string]bool{}
+	if b := m.boundaryIdx(); b != 0 {
+		t.Fatalf("全部 push 済みで境界 %d", b)
+	}
+	m.unpushed = nil
+	if b := m.boundaryIdx(); b != 0 {
+		t.Fatalf("upstream 不明で境界 %d", b)
+	}
+	// スクロール計算はヘッダ+境界線ぶんずれる (rowOf)
+	m.header = "h"
+	m.unpushed = map[string]bool{"u1": true}
+	if got := m.rowOf(1); got != 3 {
+		t.Fatalf("rowOf(1) = %d, want 3 (ヘッダ+境界線)", got)
 	}
 }
 
