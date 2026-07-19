@@ -120,7 +120,7 @@ assert_called "--expect=ctrl-l" "fzf は C-l を log 遷移キーとして捕捉
 # assert_called は全 fzf 行を横断するため、changes mode にしか無い bind でも通ってしまう穴を塞ぐ。
 log_fzf=$(grep '^fzf ' "$CALLS" | grep -F 'git show' | head -n1)
 [[ -n "$log_fzf" ]] || { echo "✗ log mode の fzf 起動が記録されていない"; cat "$CALLS"; exit 1; }
-for pat in 'ctrl-g:abort' 'ctrl-b:execute' '--expect=ctrl-l' 'logpreview {1}' 'enter:execute(git show'; do
+for pat in 'ctrl-g:abort' 'ctrl-b:execute' '--expect=ctrl-l' 'logpreview {1}' 'enter:execute(git show' '--disabled'; do
   case "$log_fzf" in
     *"$pat"*) echo "✓ log mode fzf に $pat が配線されている" ;;
     *) echo "✗ log mode fzf に $pat が無い: $log_fzf"; exit 1 ;;
@@ -136,6 +136,11 @@ for pat in 'ctrl-g:abort' '--expect=ctrl-l' 'toggle {}' 'git add -A' 'ctrl-o:exe
     *) echo "✗ changes mode fzf に $pat が無い: $changes_fzf"; exit 1 ;;
   esac
 done
+# changes 側は元設計の絞り込み (インクリメンタル filter) を残す = --disabled にしない
+case "$changes_fzf" in
+  *'--disabled'*) echo "✗ changes mode に --disabled が付いている (絞り込みを残す設計のはず)"; exit 1 ;;
+  *) echo "✓ changes mode は絞り込みを残す (--disabled なし)" ;;
+esac
 
 echo ""
 echo "## main: log と changes を C-l で往復する"

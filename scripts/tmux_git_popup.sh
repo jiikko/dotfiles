@@ -281,7 +281,7 @@ clean 画面 (変更なしのとき):
 changes 画面 (変更ありのとき):
   Ctrl-L      log に戻る
 
-log 画面 (初期画面):
+log 画面 (初期画面。絞り込みなし = 入力は無効・j/k で移動):
   プレビュー   選択コミットの CI job (gh 取得・glog 風の ✓/✗/●) + git show の diff
   Ctrl-L      changes に切り替え
   Ctrl-B      push (確認あり)
@@ -315,7 +315,10 @@ C-b: push  C-d: diff全画面"
 mode=log
 while :; do
   if [ "$mode" = log ]; then
+    # --disabled: log は絞り込み不要 (ユーザー要望) なので入力フィルタを無効化する。
+    # j/k 移動・preview・各 bind は有効のまま。changes 側は元設計どおり絞り込みを残す。
     out=$(git log --oneline --color=always | fzf --ansi --no-sort --layout=reverse \
+      --disabled \
       --prompt='log> ' \
       --header="[$branch] log  C-l: changes  C-b: push  Enter: 全画面diff  C-g/Esc: 閉じる" \
       --expect=ctrl-l \
