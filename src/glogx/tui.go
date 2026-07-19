@@ -56,7 +56,7 @@ type jobDetailMsg struct {
 	ghErr *GHError
 }
 
-// pushMsg は git push の実行結果 (C-b → y 確認後)。glog-enhance の独自機能で、
+// pushMsg は git push の実行結果 (C-b → y 確認後)。glogx の独自機能で、
 // 本家 glog (read-only) には無い。
 type pushMsg struct{ err error }
 
@@ -366,7 +366,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if key == "ctrl+c" || key == "ctrl+g" {
 		return m.quit()
 	}
-	// push 確認 (C-b → y/N)。glog-enhance の独自機能。
+	// push 確認 (C-b → y/N)。glogx の独自機能。
 	if m.pushConfirm {
 		if strings.ToLower(key) == "y" {
 			m.pushConfirm = false

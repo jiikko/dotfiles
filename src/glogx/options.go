@@ -42,7 +42,7 @@ type UnsupportedArgError struct {
 }
 
 func (e *UnsupportedArgError) Error() string {
-	return fmt.Sprintf("glog-enhance: 未対応の引数です: %s\n\n%s\n代わりに git log %s をそのまま使ってください。", e.Arg, usageShort(), e.Arg)
+	return fmt.Sprintf("glogx: 未対応の引数です: %s\n\n%s\n代わりに git log %s をそのまま使ってください。", e.Arg, usageShort(), e.Arg)
 }
 
 // ParseArgs は argv (プログラム名を除く) を allowlist で解析する。
@@ -58,11 +58,11 @@ func ParseArgs(argv []string) (*Options, error) {
 			continue
 		case arg == "-n":
 			if i+1 >= len(argv) {
-				return nil, errors.New("glog-enhance: -n には件数が必要です")
+				return nil, errors.New("glogx: -n には件数が必要です")
 			}
 			n, err := parseCount(argv[i+1])
 			if err != nil {
-				return nil, fmt.Errorf("glog-enhance: -n の件数を解釈できません: %s", argv[i+1])
+				return nil, fmt.Errorf("glogx: -n の件数を解釈できません: %s", argv[i+1])
 			}
 			opts.MaxCount = n
 			opts.HasCount = true
@@ -71,14 +71,14 @@ func ParseArgs(argv []string) (*Options, error) {
 		case strings.HasPrefix(arg, "-n") && len(arg) > 2:
 			n, err := parseCount(arg[2:])
 			if err != nil {
-				return nil, fmt.Errorf("glog-enhance: -n の件数を解釈できません: %s", arg[2:])
+				return nil, fmt.Errorf("glogx: -n の件数を解釈できません: %s", arg[2:])
 			}
 			opts.MaxCount = n
 			opts.HasCount = true
 		case strings.HasPrefix(arg, "--max-count="):
 			n, err := parseCount(strings.TrimPrefix(arg, "--max-count="))
 			if err != nil {
-				return nil, fmt.Errorf("glog-enhance: --max-count の件数を解釈できません: %s", arg)
+				return nil, fmt.Errorf("glogx: --max-count の件数を解釈できません: %s", arg)
 			}
 			opts.MaxCount = n
 			opts.HasCount = true
@@ -108,10 +108,10 @@ func ParseArgs(argv []string) (*Options, error) {
 
 	if opts.Mode == ModeCached {
 		if len(opts.Revs) > 0 || len(opts.Paths) > 0 {
-			return nil, errors.New("glog-enhance: --cached は revision / pathspec と併用できません")
+			return nil, errors.New("glogx: --cached は revision / pathspec と併用できません")
 		}
 		if opts.HasCount {
-			return nil, errors.New("glog-enhance: --cached は -n / --max-count と併用できません (対象は HEAD のみ)")
+			return nil, errors.New("glogx: --cached は -n / --max-count と併用できません (対象は HEAD のみ)")
 		}
 	}
 	return opts, nil
@@ -137,15 +137,15 @@ func usageShort() string {
 
 // Usage はヘルプ全文。git log の全引数互換を目標にしない旨を明記する (issue の完了条件)。
 func Usage() string {
-	return `glog-enhance — glog (read-only) に push 機能を足した派生版
+	return `glogx — glog (read-only) に push 機能を足した派生版
 
 コミット履歴を即時表示し、GitHub の CI 状態 (statusCheckRollup) を非同期で
 埋める。TTY では less 風の対話ブラウズになり、コミットを選んで CI job の
 一覧を展開できる。
 
 使い方:
-  glog-enhance [オプション] [<revision>] [-- <pathspec>]
-  glog-enhance --cached [--stat | -p]
+  glogx [オプション] [<revision>] [-- <pathspec>]
+  glogx --cached [--stat | -p]
 
 オプション:
   -n <count>, -n<count>, --max-count=<count>
@@ -239,16 +239,16 @@ GitHub 連携と前提:
     gh が未導入・未認証でも Git 履歴の表示は成立する (CI 欄は ? / –)
   - remote (upstream → origin) から owner/repo を解決する。GitHub 以外の
     remote では CI 欄は – になる
-  - CI 状態は ~/.cache/glog-enhance/ ($XDG_CACHE_HOME 対応) に状態別 TTL で
+  - CI 状態は ~/.cache/glogx/ ($XDG_CACHE_HOME 対応) に状態別 TTL で
     キャッシュされる (success/failure 24h, pending 10s など)
 
 使用例:
-  glog-enhance                     直近 20 件をブラウズ
-  glog-enhance -n 5 --oneline      直近 5 件をコンパクト表示
-  glog-enhance --stat main..HEAD   main からの差分コミットを diffstat 付きで
-  glog-enhance -- src/glog-enhance/        特定パスに触れたコミットだけ
-  glog-enhance --cached            commit 前に staged 変更と HEAD の CI を確認
-  glog-enhance --no-pager -n 50 | grep '✗'
+  glogx                     直近 20 件をブラウズ
+  glogx -n 5 --oneline      直近 5 件をコンパクト表示
+  glogx --stat main..HEAD   main からの差分コミットを diffstat 付きで
+  glogx -- src/glogx/        特定パスに触れたコミットだけ
+  glogx --cached            commit 前に staged 変更と HEAD の CI を確認
+  glogx --no-pager -n 50 | grep '✗'
                            失敗コミットだけ抜き出す (パイプでは記号は素の文字)
 
 終了コード:
@@ -258,5 +258,5 @@ GitHub 連携と前提:
 
 git log の全引数への互換は目標にしていません。
 上記以外の引数はエラーになります。その場合は git log を直接使ってください。
-詳細: ~/dotfiles/src/glog-enhance/README.md`
+詳細: ~/dotfiles/src/glogx/README.md`
 }

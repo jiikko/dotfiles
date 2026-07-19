@@ -1,4 +1,4 @@
-// glog-enhance — glog (src/glog、read-only な git log ラッパー) のコピーに push 機能
+// glogx — glog (src/glog、read-only な git log ラッパー) のコピーに push 機能
 // (C-b → y/N → git push) を足した派生版。glog 本体は「読むだけ」という契約を守るため
 // 拡張せず、write 操作はこちらに隔離する (ユーザー判断 2026-07-19)。
 // CI キャッシュ ($XDG_CACHE_HOME/glog/) は本家と共有する (同一データ・atomic write)。
@@ -49,7 +49,7 @@ func exitGitError(err error) int {
 		fmt.Fprint(os.Stderr, gitErr.Stderr)
 		return gitErr.Code
 	}
-	fmt.Fprintln(os.Stderr, "glog-enhance:", err)
+	fmt.Fprintln(os.Stderr, "glogx:", err)
 	return 1
 }
 
@@ -136,7 +136,7 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	if err != nil {
 		// TUI 基盤の失敗は静的経路で救済する。無言だと View の panic 等が
 		// 「なぜかブラウズが開かない」にしか見えず診断不能なので理由を出す
-		fmt.Fprintln(os.Stderr, "glog-enhance: 対話ブラウズを開始できません (静的出力に切替):", err)
+		fmt.Fprintln(os.Stderr, "glogx: 対話ブラウズを開始できません (静的出力に切替):", err)
 		return showStatic(commits, statuses, toFetch, repo, hasRepo, cachePath, opts, renderOpts)
 	}
 	// Alt Screen なので終了時に表示は消える (git log の pager と同じ)。

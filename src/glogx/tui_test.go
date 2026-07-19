@@ -1036,7 +1036,7 @@ func TestBrowseListOpenCommitURLNoRepo(t *testing.T) {
 	}
 }
 
-// C-f は全ビューで → の別名。C-b は本家 glog と異なり ← ではなく push (glog-enhance の独自仕様)。
+// C-f は全ビューで → の別名。C-b は本家 glog と異なり ← ではなく push (glogx の独自仕様)。
 func TestBrowseEmacsHorizontalAliases(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
 	withJobs(m, 0)
@@ -1048,11 +1048,11 @@ func TestBrowseEmacsHorizontalAliases(t *testing.T) {
 	// C-b は left の別名ではない (push 確認へ向かう。未 push なしなら notice のみ)
 	m.handleKey("ctrl+b")
 	if m.panelSHA == "" {
-		t.Fatal("C-b でパネルが閉じた (glog-enhance では left の別名ではなく push のはず)")
+		t.Fatal("C-b でパネルが閉じた (glogx では left の別名ではなく push のはず)")
 	}
 }
 
-// C-b → y/N → git push (glog-enhance の独自機能)。
+// C-b → y/N → git push (glogx の独自機能)。
 func TestBrowsePushFlow(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.statuses[m.commits[0].SHA] = StateUnpushed

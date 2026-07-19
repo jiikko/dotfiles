@@ -1,21 +1,21 @@
 ---
-# src/glog-enhance (glog の push 機能つき派生版) の lint + go test 専用 workflow
+# src/glogx (glog の push 機能つき派生版) の lint + go test 専用 workflow
 # (2026-07-19 新設。src_glog.yml と同じ paths filter パターン: 触れた変更のときだけ起動)。
 # ⚠️ paths filter 付きの check を branch protection の required check に登録しないこと:
 #   glog 非接触 PR では run 自体が生成されず、check が永遠に pending でマージ不能になる
 #   (どうしても required にしたければ paths-ignore の no-op twin workflow が必要)。
-name: src/glog-enhance
+name: src/glogx
 
 on:
   push:
     branches: [master]
     paths:
-      - 'src/glog-enhance/**'
-      - .github/workflows/src_glog-enhance.yml
+      - 'src/glogx/**'
+      - .github/workflows/src_glogx.yml
   pull_request:
     paths:
-      - 'src/glog-enhance/**'
-      - .github/workflows/src_glog-enhance.yml
+      - 'src/glogx/**'
+      - .github/workflows/src_glogx.yml
   workflow_dispatch:  # GitHub UI からの手動再実行用
 
 permissions:
@@ -41,18 +41,18 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: src/glog-enhance/go.mod
-          cache-dependency-path: src/glog-enhance/go.sum
+          go-version-file: src/glogx/go.mod
+          cache-dependency-path: src/glogx/go.sum
 
       - name: Lint
-        run: make -C src/glog-enhance lint
+        run: make -C src/glogx lint
 
   test:
     runs-on: ubuntu-slim
     timeout-minutes: 10
     steps:
       # actions/checkout は内部で `git init` する。runner の git は init.defaultBranch 未設定のため
-      # "Using 'master' ..." hint をログに出す。先に設定して抑制する (glog-enhance のテストは偽 repo を
+      # "Using 'master' ..." hint をログに出す。先に設定して抑制する (glogx のテストは偽 repo を
       # git init で作るため、hint がテスト出力に混ざるのも防ぐ)。
       - name: Silence git init.defaultBranch hint
         run: git config --global init.defaultBranch main
@@ -62,8 +62,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: src/glog-enhance/go.mod
-          cache-dependency-path: src/glog-enhance/go.sum
+          go-version-file: src/glogx/go.mod
+          cache-dependency-path: src/glogx/go.sum
 
-      - name: Run glog-enhance tests
-        run: make -C src/glog-enhance test
+      - name: Run glogx tests
+        run: make -C src/glogx test

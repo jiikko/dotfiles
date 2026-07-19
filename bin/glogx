@@ -1,13 +1,13 @@
 #!/usr/bin/env zsh
-# glog-enhance — glog (read-only) に push 機能 (C-b) を足した派生版。Go implementation at:
-#   ~/dotfiles/src/glog-enhance/
+# glogx — glog (read-only) に push 機能 (C-b) を足した派生版。Go implementation at:
+#   ~/dotfiles/src/glogx/
 # This wrapper auto-builds the binary on first use and re-builds when the
 # source is newer than the compiled artifact.
 
 set -u
 
-src_dir="${0:A:h}/../src/glog-enhance"
-bin="$src_dir/glog-enhance"
+src_dir="${0:A:h}/../src/glogx"
+bin="$src_dir/glogx"
 
 needs_build=0
 if [[ ! -x "$bin" ]]; then
@@ -24,9 +24,9 @@ else
 fi
 
 if (( needs_build )); then
-  echo "glog-enhance: building..." >&2
-  (cd "$src_dir" && go build -o glog-enhance .) || {
-    echo "glog-enhance: build failed" >&2
+  echo "glogx: building..." >&2
+  (cd "$src_dir" && go build -o glogx .) || {
+    echo "glogx: build failed" >&2
     exit 1
   }
 fi

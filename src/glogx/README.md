@@ -1,4 +1,4 @@
-# glog-enhance
+# glogx
 
 **glog (read-only) のコピーに push 機能 (C-b → y/N → git push) を足した派生版。**
 read-only という glog 本体の契約を守るため、write 操作はこちらに隔離している。

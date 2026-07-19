@@ -1,4 +1,4 @@
-module glog-enhance
+module glogx
 
 go 1.25.0
 
