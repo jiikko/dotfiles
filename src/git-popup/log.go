@@ -98,6 +98,8 @@ func (m *logModel) Update(msg tea.Msg) (*logModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.ensureCursorVisible()
+		// 縦に拡大すると paneRows が増え最大オフセットが減るため詳細スクロール位置を再クランプ
+		m.detailOffset = min(m.detailOffset, max(len(m.rightLines())-m.paneRows(), 0))
 	case previewMsg:
 		if msg.sha != m.currentSHA() {
 			break // 遅延到着した別コミットの preview は捨てる
@@ -119,6 +121,7 @@ func (m *logModel) Update(msg tea.Msg) (*logModel, tea.Cmd) {
 			m.status = "push failed: " + msg.err.Error()
 		} else {
 			m.status = "push completed"
+			m.unpushed = loadUnpushed() // push 成功で未 push 集合が変わる → 色分けを更新
 		}
 	case tea.KeyMsg:
 		return m.handleKey(msg.String())
@@ -207,6 +210,12 @@ func (m *logModel) handleDetailKey(key string) (*logModel, tea.Cmd) {
 	}
 	return m, nil
 }
+
+// ボーダー付き 2 ペインを崩さず描ける最小端末サイズ (これ未満はメッセージ表示に degrade)。
+const (
+	minTermW = 24
+	minTermH = 6
+)
 
 // レイアウト: 下に footer 1 行、残りを 2 つのボーダー付きペイン (border 上下 2 行)。
 func (m *logModel) paneRows() int    { return max(m.height-1-2, 1) }
@@ -315,6 +324,11 @@ func (m *logModel) View() string {
 	// WindowSizeMsg 到着前 (サイズ未確定) は描かない (残像=カーソル分身の防止)。
 	if m.width < 1 || m.height < 1 {
 		return ""
+	}
+	// 極小端末ではボーダー付き 2 ペインが端末をはみ出す (border 4 桁 + 最小 inner)。
+	// 折り返し崩れを避けるため、この場合は短いメッセージだけ出す。
+	if m.width < minTermW || m.height < minTermH {
+		return clip("git-popup: 端末が小さすぎます (最小 "+strconv.Itoa(minTermW)+"x"+strconv.Itoa(minTermH)+")", m.width)
 	}
 	m.ensureCursorVisible()
 	rows := m.paneRows()

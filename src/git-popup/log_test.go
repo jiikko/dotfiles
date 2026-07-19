@@ -45,6 +45,69 @@ func TestLogScrollKeepsCursorVisible(t *testing.T) {
 	}
 }
 
+func TestLogViewMinSizeGuard(t *testing.T) {
+	m := newLogModel([]Commit{{SHA: "a", ShortSHA: "a", Subject: "x"}})
+	m.width, m.height = 10, 3 // 最小未満: ボーダー2ペインを出さず単一行に degrade
+	got := m.View()
+	if strings.Contains(got, "\n") || strings.Contains(got, "╭") {
+		t.Fatalf("極小端末でボーダー2ペインを出している (単一行に degrade すべき): %q", got)
+	}
+	if !strings.HasPrefix(stripANSI(got), "git-popup") {
+		t.Fatalf("degrade メッセージでない: %q", got)
+	}
+	m.width, m.height = 0, 0 // サイズ未確定 (WindowSizeMsg 前) は空
+	if m.View() != "" {
+		t.Fatalf("サイズ未確定で空を返さない")
+	}
+}
+
+func TestLogListLinesPushColor(t *testing.T) {
+	m := newLogModel([]Commit{{SHA: "p1", ShortSHA: "pushed1", Subject: "s"}, {SHA: "u1", ShortSHA: "unpush1", Subject: "s"}})
+	m.unpushed = map[string]bool{"u1": true}
+	lines := m.buildListLines(60, 2)
+	// カーソル行 (0) は accent の ▌
+	if !strings.Contains(lines[0], "▌") {
+		t.Errorf("カーソル行に ▌ が無い: %q", lines[0])
+	}
+	// 未 push は marker_orange・push 済みは cold_gray
+	if !strings.Contains(lines[1], fg("marker_orange")) {
+		t.Errorf("未 push SHA が marker_orange でない: %q", lines[1])
+	}
+	if !strings.Contains(lines[0], fg("cold_gray")) {
+		t.Errorf("push 済み SHA が cold_gray でない: %q", lines[0])
+	}
+}
+
+func TestLogDetailCIOverlay(t *testing.T) {
+	m := newLogModel([]Commit{{SHA: "a"}})
+	m.preview = "diff-a\ndiff-b\ndiff-c\ndiff-d"
+	m.ciJobs = "CI-1\nCI-2"
+	// 一覧モード: CI は上部にオーバーレイし diff を押し下げない (top2=CI, その下は diff の続き)
+	lines := m.buildDetailLines(40, 4)
+	if stripANSI(lines[0]) != "CI-1" || stripANSI(lines[1]) != "CI-2" {
+		t.Fatalf("CI が上部オーバーレイになっていない: %q", lines)
+	}
+	if stripANSI(lines[2]) != "diff-c" || stripANSI(lines[3]) != "diff-d" {
+		t.Fatalf("diff の下部が押し下げられている (占有 overlay のはず): %q", lines)
+	}
+	// 詳細モード: オーバーレイせず detailOffset から diff を出す
+	m.detailOpen = true
+	m.detailOffset = 1
+	d := m.buildDetailLines(40, 3)
+	if stripANSI(d[0]) != "diff-b" {
+		t.Fatalf("詳細スクロールが offset どおりでない: %q", d)
+	}
+}
+
+func TestLogDetailEmptyPreview(t *testing.T) {
+	m := newLogModel([]Commit{{SHA: "a"}})
+	m.preview = "" // preview 未着
+	lines := m.buildDetailLines(40, 3)
+	if !strings.Contains(stripANSI(lines[0]), "no preview") {
+		t.Errorf("空 preview で (no preview) を出さない: %q", lines[0])
+	}
+}
+
 func TestClipANSIAware(t *testing.T) {
 	// 色エスケープは可視幅に数えない: "✓ hello" (可視 7 桁) は width 7 でそのまま返る
 	colored := "\x1b[38;5;2m✓\x1b[0m hello"

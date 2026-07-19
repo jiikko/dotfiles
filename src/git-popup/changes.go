@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -273,6 +274,9 @@ func (m *changesModel) View() string {
 	// WindowSizeMsg 到着前は描かない (log.View と同じ理由: 残像防止)。
 	if m.width < 1 || m.height < 1 {
 		return ""
+	}
+	if m.width < minTermW || m.height < minTermH { // 極小端末は degrade (log と同じ)
+		return clip("git-popup: 端末が小さすぎます (最小 "+strconv.Itoa(minTermW)+"x"+strconv.Itoa(minTermH)+")", m.width)
 	}
 	m.ensureCursorVisible()
 	rows := m.paneRows()
