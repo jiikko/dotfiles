@@ -37,7 +37,11 @@ generate() {
 # git-popup (Go TUI) 用の cterm マップ。全 role を map リテラルに入れるので Go の
 # unused (staticcheck U1000) には当たらない。TUI は themeCterm[role] で必要な色を引く。
 generate_go() {
-  # 出力は gofmt に通して整形する (map リテラルの桁揃え。golangci-lint の gofmt 検査対策)。
+  # map リテラルの桁揃え (golangci-lint の gofmt 検査対策) は awk で gofmt と同じ形に
+  # 整形する。gofmt をパイプする案は不採用: CI の Tests workflow (dotfiles-tests) には
+  # Go toolchain が無く、`gofmt: command not found` で生成が空になり drift 検査が
+  # 全滅する (2026-07-19 に実際に CI が落ちた)。gofmt の整形規則が変わって出力が
+  # ずれた場合は src_git-popup workflow の lint (gofmt 検査) が検出する
   {
     printf '// Code generated from theme/colors.yml by scripts/gen_theme_colors.sh; DO NOT EDIT.\n'
     printf 'package main\n\n'
@@ -46,10 +50,19 @@ generate_go() {
     printf 'var themeCterm = map[string]int{\n'
     awk '
       /^[a-z_]+:/ { role = $1; sub(/:.*/, "", role); next }
-      /^  cterm:/ { printf "\t\"%s\": %s,\n", role, $2 }
+      /^  cterm:/ {
+        n++
+        keys[n] = "\"" role "\":"
+        vals[n] = $2
+        if (length(keys[n]) > maxlen) maxlen = length(keys[n])
+      }
+      END {
+        for (i = 1; i <= n; i++)
+          printf "\t%-*s %s,\n", maxlen, keys[i], vals[i]
+      }
     ' "$yml"
     printf '}\n'
-  } | gofmt
+  }
 }
 
 case "${1:-}" in
