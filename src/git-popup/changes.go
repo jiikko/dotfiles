@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type changesStatusMsg struct {
@@ -216,9 +217,14 @@ func markColor(c Change) string {
 	return col(c.Index, "active_green") + col(c.Worktree, "error_red")
 }
 
-func (m *changesModel) visibleRows() int { return max(m.height-2, 1) }
+// レイアウトは log と同じ: footer 1 行 + ボーダー付き 2 ペイン (border 上下 2 行)。
+func (m *changesModel) paneRows() int    { return max(m.height-1-2, 1) }
+func (m *changesModel) leftPaneW() int   { return max(m.width*42/100, 12) }
+func (m *changesModel) leftInnerW() int  { return max(m.leftPaneW()-2, 4) }
+func (m *changesModel) rightInnerW() int { return max(m.width-m.leftPaneW()-2, 4) }
+
 func (m *changesModel) ensureCursorVisible() {
-	rows := m.visibleRows()
+	rows := m.paneRows()
 	if m.cursor < m.offset {
 		m.offset = m.cursor
 	}
@@ -230,51 +236,66 @@ func (m *changesModel) ensureCursorVisible() {
 	}
 }
 
+// buildListLines は変更ファイル一覧を rows 行ぶん組む (offset でスクロール)。
+// 行頭: カーソル (accent の ▌) + XY マーク (staged=緑/worktree=赤) + パス。
+func (m *changesModel) buildListLines(w, rows int) []string {
+	lines := make([]string, rows)
+	for i := range lines {
+		idx := m.offset + i
+		if idx >= len(m.changes) {
+			continue
+		}
+		c := m.changes[idx]
+		cursor := "  "
+		if idx == m.cursor {
+			cursor = paintFg("current_accent", "▌") + " "
+		}
+		lines[i] = clip(cursor+markColor(c)+" "+c.Path, w)
+	}
+	return lines
+}
+
+func (m *changesModel) buildPreviewLines(w, rows int) []string {
+	right := strings.Split(strings.TrimRight(m.preview, "\n"), "\n")
+	if len(right) == 1 && right[0] == "" {
+		right = []string{ansiDim + "(no diff)" + ansiReset}
+	}
+	lines := make([]string, rows)
+	for i := range lines {
+		if i < len(right) {
+			lines[i] = clip(right[i], w)
+		}
+	}
+	return lines
+}
+
 func (m *changesModel) View() string {
 	// WindowSizeMsg 到着前は描かない (log.View と同じ理由: 残像防止)。
 	if m.width < 1 || m.height < 1 {
 		return ""
 	}
-	leftWidth := max(m.width*45/100, 20)
-	rightWidth := max(m.width-leftWidth-1, 10)
-	rows := m.visibleRows()
 	m.ensureCursorVisible()
-	left := make([]string, rows)
-	for i := range left {
-		index := m.offset + i
-		if index < len(m.changes) {
-			c := m.changes[index]
-			prefix := "  "
-			if index == m.cursor {
-				prefix = "> "
-			}
-			left[i] = clip(prefix+markColor(c)+" "+c.Path, leftWidth)
-		}
-	}
-	right := strings.Split(strings.TrimRight(m.preview, "\n"), "\n")
-	if len(right) == 1 && right[0] == "" {
-		right = []string{"(no changes)"}
-	}
-	lines := make([]string, rows)
-	for i := range lines {
-		r := ""
-		if i < len(right) {
-			r = clip(right[i], rightWidth)
-		}
-		lines[i] = pad(left[i], leftWidth) + "│" + pad(r, rightWidth)
-	}
-	header := "git-popup  changes"
-	footer := "j/k or ↑/↓ move  space/Enter stage  C-a add all  C-o commit  C-b push  C-l log  q/Esc/C-g quit"
-	if m.input == inputCommit {
-		footer = "commit message: " + string(m.message) + "  (Enter commit, Esc cancel)"
-	} else if m.confirm {
+	rows := m.paneRows()
+	leftContent := strings.Join(m.buildListLines(m.leftInnerW(), rows), "\n")
+	rightContent := strings.Join(m.buildPreviewLines(m.rightInnerW(), rows), "\n")
+
+	// changes は常に一覧 (stage/commit 操作先) にフォーカス。log と同じボーダー配色で統一。
+	leftBox := paneStyle(true, m.leftInnerW(), rows).Render(leftContent)
+	rightBox := paneStyle(false, m.rightInnerW(), rows).Render(rightContent)
+	body := lipgloss.JoinHorizontal(lipgloss.Top, leftBox, rightBox)
+
+	footer := "j/k 移動  Space/Enter stage  C-a add  C-o commit  C-b push  C-l log  q/Esc 閉じる"
+	switch {
+	case m.input == inputCommit:
+		footer = "commit message: " + string(m.message) + "  (Enter=commit, Esc=cancel)"
+	case m.confirm:
 		footer = "push しますか? [y/N]"
-	} else if m.busy {
+	case m.busy:
 		footer = "working..."
-	} else if m.status != "" {
+	case m.status != "":
 		footer = m.status
-	} else if len(m.changes) == 0 {
-		footer = "no changes  C-l log"
+	case len(m.changes) == 0:
+		footer = "変更なし  C-l で log へ"
 	}
-	return header + "\n" + strings.Join(lines, "\n") + "\n" + footer
+	return body + "\n" + clip(footer, m.width)
 }

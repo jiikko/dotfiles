@@ -385,7 +385,3 @@ func clip(s string, width int) string {
 	b.WriteString("…\x1b[0m")
 	return b.String()
 }
-
-func pad(s string, width int) string {
-	return s + strings.Repeat(" ", max(width-displayWidth(s), 0))
-}
