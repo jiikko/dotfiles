@@ -361,7 +361,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	m.notice = ""
-	if key == "ctrl+c" {
+	// C-g は即終了: tmux の C-g popup (bind -n C-g) をトグル風に開閉するため
+	// (開くキーと同じキーで閉じる)。本家 glog には無い割当。
+	if key == "ctrl+c" || key == "ctrl+g" {
 		return m.quit()
 	}
 	// push 確認 (C-b → y/N)。glog-enhance の独自機能。
