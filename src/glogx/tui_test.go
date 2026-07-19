@@ -1167,6 +1167,73 @@ func TestBrowsePushFlow(t *testing.T) {
 	}
 }
 
+// u → y/N → git pull --rebase → 一覧の全面リロード (glogx の独自機能)。
+func TestBrowsePullFlow(t *testing.T) {
+	newTempRepo(t, []string{"first", "second"}) // reloadAfterPull が実 git を読むため
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.opts = &Options{MaxCount: 20}
+	var pulled int
+	orig := runGitPullRebase
+	runGitPullRebase = func() error { pulled++; return nil }
+	t.Cleanup(func() { runGitPullRebase = orig })
+	// u で確認に入り、n でキャンセル
+	m.handleKey("u")
+	if !m.pullConfirm {
+		t.Fatal("u で pull 確認に入らない")
+	}
+	m.width, m.height = 80, 20
+	if v := stripANSI(m.View()); !strings.Contains(v, "pull --rebase") {
+		t.Fatal("pull 確認モーダルが描画されない")
+	}
+	m.handleKey("n")
+	if m.pullConfirm || pulled != 0 {
+		t.Fatalf("n でキャンセルされない: confirm=%v pulled=%d", m.pullConfirm, pulled)
+	}
+	// y で pull が走り、成功で一覧が実 repo の内容にリロードされる
+	m.handleKey("u")
+	_, cmd := m.handleKey("y")
+	if cmd == nil || !m.pulling {
+		t.Fatal("y で pull が始まらない")
+	}
+	m.details["stale"] = []CheckDetail{{Name: "old"}}
+	m.cursor = 0
+	var deliver func(msg tea.Msg)
+	deliver = func(msg tea.Msg) {
+		switch v := msg.(type) {
+		case tea.BatchMsg:
+			for _, c := range v {
+				if c != nil {
+					deliver(c())
+				}
+			}
+		case pullMsg:
+			m.Update(v)
+		}
+	}
+	deliver(cmd())
+	if pulled != 1 {
+		t.Fatalf("pull 実行回数 = %d, want 1", pulled)
+	}
+	if m.pulling {
+		t.Fatal("pullMsg 後も pulling のまま")
+	}
+	if len(m.commits) != 2 || m.commits[0].Subject != "second" {
+		t.Fatalf("pull 後に一覧がリロードされない: %+v", m.commits)
+	}
+	if len(m.details) != 0 {
+		t.Fatal("pull 後に旧 SHA の details キャッシュが残っている")
+	}
+	// 失敗は notice に出す (リロードしない)
+	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	runGitPullRebase = func() error { return errors.New("conflict のため rebase を中断して元に戻しました") }
+	m2.handleKey("u")
+	m2.handleKey("y")
+	m2.Update(pullMsg{err: errors.New("conflict のため rebase を中断して元に戻しました")})
+	if !strings.Contains(m2.notice, "conflict") {
+		t.Fatalf("pull 失敗の notice が出ない: %q", m2.notice)
+	}
+}
+
 // 未 push が 1 件も無いときは確認に入らない。
 func TestBrowsePushNoUnpushed(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)

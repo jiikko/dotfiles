@@ -80,6 +80,32 @@ var runGitPush = func() error {
 	return nil
 }
 
+// pullMsg は git pull --rebase の実行結果 (u → y 確認後)。glogx の独自機能。
+type pullMsg struct{ err error }
+
+// runGitPullRebase はテストで実 pull しないための差し替え点。conflict で rebase が
+// 途中停止したら自動で abort して pull 前の状態へ戻す (TUI 内に「rebase 進行中」の
+// 壊れた状態を残さない。解決が必要な conflict はシェルでやるべき作業)。
+var runGitPullRebase = func() error {
+	out, err := exec.Command("git", "pull", "--rebase").CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	gitDir, dirErr := exec.Command("git", "rev-parse", "--git-dir").Output()
+	if dirErr == nil {
+		dir := strings.TrimSpace(string(gitDir))
+		if _, statErr := os.Stat(dir + "/rebase-merge"); statErr == nil {
+			_ = exec.Command("git", "rebase", "--abort").Run()
+			return fmt.Errorf("conflict のため rebase を中断して元に戻しました: %s", firstLine(strings.TrimSpace(string(out))))
+		}
+		if _, statErr := os.Stat(dir + "/rebase-apply"); statErr == nil {
+			_ = exec.Command("git", "rebase", "--abort").Run()
+			return fmt.Errorf("conflict のため rebase を中断して元に戻しました: %s", firstLine(strings.TrimSpace(string(out))))
+		}
+	}
+	return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+}
+
 // prMsg は commit に紐づく PR のオンデマンド取得の結果 (p キー)。
 type prMsg struct {
 	sha   string
@@ -161,7 +187,10 @@ type browseModel struct {
 	diffBusy       map[string]bool     // diff 取得中の sha
 	pushConfirm    bool                // b の push 確認中 (y/N)
 	pushing        bool                // git push 実行中 (終了以外のキーを無視)
-	pushWarn       string              // push できない理由の警告モーダル (何かキーで閉じる)
+	pushWarn       string              // push/pull できない理由の警告モーダル (何かキーで閉じる)
+	pullConfirm    bool                // u の pull --rebase 確認中 (y/N)
+	pulling        bool                // git pull --rebase 実行中 (終了以外のキーを無視)
+	opts           *Options            // pull 後のコミット再読込に使う (revs / max-count)
 	pushPoll       map[string]bool     // push 直後ポーリング対象の SHA (CI が見えたら外れる)
 	pollAttempts   int                 // push 直後ポーリングの試行回数 (上限で諦める)
 	notice         string              // hint 行に出す一時メッセージ (次のキーで消える)
@@ -197,6 +226,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		repo:           repo,
 		hasRepo:        hasRepo,
 		panelCursor:    -1,
+		opts:           opts,
 		oneline:        opts.Oneline,
 		colored:        colored,
 		width:          width,
@@ -352,6 +382,14 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return ciResultMsg{batch: batch, ghErr: ghErr}
 		}
 		return m, tea.Batch(fetch, tick())
+	case pullMsg:
+		m.pulling = false
+		if msg.err != nil {
+			m.notice = "pull に失敗しました: " + firstLine(msg.err.Error())
+			return m, nil
+		}
+		m.notice = "pull --rebase しました"
+		return m, m.reloadAfterPull()
 	case pushMsg:
 		m.pushing = false
 		if msg.err != nil {
@@ -443,7 +481,17 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.pushConfirm = false
 		return m, nil
 	}
-	if m.pushing { // push 実行中は終了以外のキーを無視する
+	// pull --rebase 確認 (u → y/N)。glogx の独自機能。
+	if m.pullConfirm {
+		if strings.ToLower(key) == "y" {
+			m.pullConfirm = false
+			m.pulling = true
+			return m, tea.Batch(func() tea.Msg { return pullMsg{err: runGitPullRebase()} }, tick())
+		}
+		m.pullConfirm = false
+		return m, nil
+	}
+	if m.pushing || m.pulling { // 実行中は終了以外のキーを無視する
 		return m, nil
 	}
 	// emacs 流の水平移動エイリアス (C-n/C-p = ↓/↑ は各ビューで対応済み)。ここで
@@ -456,10 +504,15 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if m.diffSHA != "" {
 		return m.handleDiffKey(key)
 	}
-	// b = push (y/N 確認へ)。glogx の独自機能。diff 表示中は b = 半ページ戻るなので、
-	// diff のディスパッチより後で拾う (一覧/パネル/詳細では b は未使用)
+	// b = push / u = pull --rebase (どちらも y/N 確認へ)。glogx の独自機能。
+	// diff 表示中は b = 半ページ戻るなので、diff のディスパッチより後で拾う
+	// (一覧/パネル/詳細では b/u は未使用。C-u の半ページ上とは別キー)
 	if key == "b" {
 		return m, m.confirmPush()
+	}
+	if key == "u" {
+		m.pullConfirm = true
+		return m, nil
 	}
 	// q はビューのスタックを 1 段戻る (tig 流。ユーザー要望): 詳細 → job 一覧 →
 	// コミット一覧、と閉じていき、最上位でだけ終了。即終了したいときは Ctrl-C
@@ -522,6 +575,57 @@ func (m *browseModel) confirmPush() tea.Cmd {
 	return nil
 }
 
+// reloadAfterPull は pull --rebase 成功後の全面リロード。rebase でローカル SHA が
+// 変わりうるため、コミット列・push 状態・CI・派生キャッシュ (details/PR/diff/job 詳細)
+// をすべて取り直す (部分更新は旧 SHA の残骸が混ざる)。
+func (m *browseModel) reloadAfterPull() tea.Cmd {
+	commits, err := LoadCommits(m.opts, m.colored)
+	if err != nil {
+		m.notice = "pull 後の再読込に失敗しました: " + firstLine(err.Error())
+		return nil
+	}
+	m.commits = commits
+	shas := make([]string, len(commits))
+	for i, c := range commits {
+		shas[i] = c.SHA
+	}
+	m.statuses, m.toFetch, m.repo, m.hasRepo, _ = planStatuses(m.opts, shas)
+	m.details = map[string][]CheckDetail{}
+	m.detailsLoading = map[string]bool{}
+	m.jobDetail = map[string][]string{}
+	m.jobDetailBusy = map[string]bool{}
+	m.prCache = map[string]*PRRef{}
+	m.prBusy = map[string]bool{}
+	m.diffCache = map[string][]string{}
+	m.diffBusy = map[string]bool{}
+	m.closePanel()
+	m.diffSHA = ""
+	m.pushPoll = nil
+	m.cursor, m.offset = 0, 0
+	if !m.oneline {
+		m.verbatim = nil
+		if raw, dispErr := LoadLogDisplay(m.opts, m.colored); dispErr == nil {
+			m.verbatim = VerbatimLines(raw, commits) // 照合失敗は nil = 自前レンダリングへ
+		}
+	}
+	m.invalidateLines()
+	m.ensureCursorVisible()
+	if !m.hasRepo || len(m.toFetch) == 0 {
+		m.fetching = false
+		return nil
+	}
+	m.fetching = true
+	repo := m.repo
+	targets := m.toFetch
+	fetch := func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, targets)
+		return ciResultMsg{batch: batch, ghErr: ghErr}
+	}
+	return tea.Batch(fetch, tick())
+}
+
 // unpushedCount は未 push コミット数 (push 確認モーダルと confirmPush が共用)。
 func (m *browseModel) unpushedCount() int {
 	n := 0
@@ -537,7 +641,7 @@ func (m *browseModel) unpushedCount() int {
 // buildPanelBox を狭い幅で組み、左に空白を足して水平センタリングする
 // (垂直は View 側が overlayBox の anchor で中央に置く)。
 func (m *browseModel) pushBoxLines() []string {
-	if !m.pushConfirm && !m.pushing && m.pushWarn == "" {
+	if !m.pushConfirm && !m.pushing && !m.pullConfirm && !m.pulling && m.pushWarn == "" {
 		return nil
 	}
 	width := m.width
@@ -545,9 +649,11 @@ func (m *browseModel) pushBoxLines() []string {
 		width = 80
 	}
 	boxW := min(44, width)
+	title := " git push "
 	var rows []string
 	switch {
 	case m.pushWarn != "":
+		title = " ⚠ "
 		rows = []string{
 			"⚠ " + m.pushWarn,
 			"",
@@ -555,6 +661,16 @@ func (m *browseModel) pushBoxLines() []string {
 		}
 	case m.pushing:
 		rows = []string{m.spinner() + " pushing..."}
+	case m.pulling:
+		title = " git pull --rebase "
+		rows = []string{m.spinner() + " pulling..."}
+	case m.pullConfirm:
+		title = " git pull --rebase "
+		rows = []string{
+			"origin から pull --rebase します",
+			"",
+			paint("y: 実行   n/Esc: キャンセル", ansiDim, m.colored),
+		}
 	default:
 		rows = []string{
 			fmt.Sprintf("未 push の %d コミットを push します", m.unpushedCount()),
@@ -563,7 +679,7 @@ func (m *browseModel) pushBoxLines() []string {
 		}
 	}
 	pad := strings.Repeat(" ", max((width-boxW)/2, 0))
-	box := buildPanelBox(" git push ", rows, boxW, m.colored)
+	box := buildPanelBox(title, rows, boxW, m.colored)
 	for i := range box {
 		box[i] = pad + box[i]
 	}
@@ -974,7 +1090,7 @@ func (m *browseModel) fillUnknown() {
 }
 
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.pushing || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || len(m.diffBusy) > 0
+	return m.fetching || m.pushing || m.pulling || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || len(m.diffBusy) > 0
 }
 
 func (m *browseModel) spinner() string {
@@ -1265,12 +1381,16 @@ func (m *browseModel) bgLine(text, bg string) string {
 }
 
 func (m *browseModel) hintLine() string {
-	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  y: URL コピー  b: push  q: 終了"
+	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  y: URL コピー  b: push  u: pull  q: 終了"
 	switch {
 	case m.pushConfirm:
 		hint = "push しますか? [y/N]"
+	case m.pullConfirm:
+		hint = "pull --rebase しますか? [y/N]"
 	case m.pushing:
 		hint = m.spinner() + " pushing..."
+	case m.pulling:
+		hint = m.spinner() + " pulling..."
 	case m.diffSHA != "":
 		hint = "j/k/Space: スクロール  g/G: 先頭/末尾  q/h: 閉じる"
 	case m.detailOpen:

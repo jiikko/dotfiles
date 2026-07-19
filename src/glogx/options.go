@@ -177,6 +177,8 @@ func Usage() string {
 ⚠️ 本家 glog と異なり Ctrl-B の ← 別名は無い):
   b                         git push (y/N 確認つき。未 push が無ければ警告のみ。
                             diff 表示中の b はスクロールのまま)
+  u                         git pull --rebase (y/N 確認つき。成功で一覧を再読込。
+                            conflict なら自動で rebase --abort して元に戻す)
   j / k / ↑ / ↓ / Ctrl-N / Ctrl-P
                             カーソル移動
   Enter / Space / l / → / Tab
