@@ -23,11 +23,12 @@
 # runner の速さだけを反映する (真の回帰 = config コスト増は startup_clean に乗らないため
 # 検出能力は落ちない)。導入契機 = sustained contention の run で min-of-15 が 372ms まで
 # 沈み 350 ゲートが誤爆 (run 29721717975。全サンプルが ~1.4 倍に膨れていた)。
-# 基準 60 は暫定 (ローカル比から推定)。CI の Step Summary で startup_clean の実測が
-# 数 run 溜まったら「静穏 run の典型値」に較正し直すこと (基準が実測より高いと補正が
-# 効かず flake が残る / 低いと常時スケールして予算が緩む)。
+# 基準 20 = 静穏 run の CI 初回実測 16.3ms (2026-07-20 run 29725857685、サンプル
+# 16.3/16.3/19.8) の上端に丸めた値。基準が実測より高いと補正が効かず flake が残り
+# (当初の暫定 60 はこの状態だった)、低いと常時スケールして予算が緩む。静穏 run の
+# 実測が 20 を安定して超える/下回るようなら取り直して調整すること。
 # ⚠️ 較正器の startup_clean 自身は絶対予算のまま rel を付けないこと (checker も拒否する)。
-calibrate startup_clean 60
+calibrate startup_clean 20
 startup 350 rel
 startup_clean 250
 bufload 600
