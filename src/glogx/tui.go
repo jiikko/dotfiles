@@ -1283,6 +1283,16 @@ func (m *browseModel) closePanel() {
 	m.panelSHA = ""
 	m.panelCursor = -1
 	m.panelPollSeq++ // 定期リフレッシュの残タイマーを世代で無効化する
+	// panelRefresh も必ず下ろす: 不変条件は「現在開いているパネル向けの refresh が
+	// in-flight」なので、パネルが無ければ false でなければならない。これを怠ると、in-flight
+	// refresh 中にパネルを閉じたとき、遅延到着する detailMsg{旧SHA} が
+	// `msg.sha == m.panelSHA("")` に一致せず panelRefresh を戻せず true に固着し、以降
+	// panelPollMsg が毎回 refresh をスキップしてパネルのライブ更新が恒久停止する
+	// (かつ実行中 job のパネルでは spinnerActive が真のまま tick/poll が空回りし続ける。
+	// レビュー C2/C3/K1)。closePanel は全パネル退出経路 (q/h/esc/left・reloadAfterPull)
+	// の choke point なのでここ 1 箇所で覆える。閉じた後に届く旧 refresh の detailMsg は
+	// panelSHA と不一致で無害 (maps.Copy はキャッシュ更新のみ・poll は再開しない)。
+	m.panelRefresh = false
 	m.detailOpen = false
 	m.detailOffset = 0
 }

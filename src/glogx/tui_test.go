@@ -106,6 +106,37 @@ func TestBrowseCursorScrollsViewport(t *testing.T) {
 }
 
 // job パネル表示中は 3 秒間隔で状態を取り直す (経過時間のライブ監視。ユーザー要望)。
+// in-flight refresh 中にパネルを閉じても panelRefresh が stuck true にならず、以降の
+// パネルのライブ更新が止まらない (レビュー C2/C3/K1 の回帰)。
+func TestBrowsePanelRefreshLatchClearedOnClose(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StatePending
+	running := []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Now().Add(-time.Minute)}}
+	m.details[sha] = running
+	// パネルを開く (details キャッシュ済み → fetch 無し・running job なので poll 予約)
+	m.openPanel()
+	// poll 発火 → refresh 起動 (panelRefresh=true, refresh Cmd が in-flight)
+	if _, cmd := m.Update(panelPollMsg{seq: m.panelPollSeq}); cmd == nil || !m.panelRefresh {
+		t.Fatal("poll で refresh が起動しない")
+	}
+	// refresh 完了前にパネルを閉じる → latch は必ず下りる
+	m.closePanel()
+	if m.panelRefresh {
+		t.Fatal("closePanel で panelRefresh が下りない (stuck-latch)")
+	}
+	// 遅延到着した旧 refresh の detailMsg (sha != panelSHA) は panelRefresh を触らない
+	m.Update(detailMsg{sha: sha, batch: CIBatch{Details: map[string][]CheckDetail{sha: running}}})
+	if m.panelRefresh {
+		t.Fatal("閉じた後の遅延 detailMsg で panelRefresh が復活した")
+	}
+	// 同じ (キャッシュ済み) コミットを開き直すと poll が実際に refresh を起動できる
+	m.openPanel()
+	if _, cmd := m.Update(panelPollMsg{seq: m.panelPollSeq}); cmd == nil || !m.panelRefresh {
+		t.Fatal("再オープン後の poll で refresh が起動しない (latch stuck の疑い)")
+	}
+}
+
 func TestBrowsePanelPolling(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	sha := m.commits[0].SHA
