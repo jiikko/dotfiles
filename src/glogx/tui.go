@@ -339,6 +339,20 @@ func tick() tea.Cmd {
 	return tea.Tick(spinnerInterval, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
+// fetchCIStatusesCmd は targets の CI 状態取得を tea.Cmd にする。ctx/timeout/defer cancel の
+// ボイラープレートを 1 箇所へ集約し、wrap で結果を各 msg (ciResult/detail/basis) に包む
+// (レビュー U1)。同一 SHA 並行取得を避ける注意 (panelPollMsg / fetchPanelDetails のコメント)
+// は呼び出し側のガードが担う。newBrowseModel の初期 fetch だけは m.cancel と ctx を共有して
+// q 中断に使う意図的例外なので、この helper を通さず据え置く。
+func fetchCIStatusesCmd(repo Repo, targets []string, wrap func(CIBatch, *GHError) tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, targets)
+		return wrap(batch, ghErr)
+	}
+}
+
 func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.done {
 		// 終了確定後に届く残メッセージは無視する (q での取得中断が
@@ -501,13 +515,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.panelRefresh = true // detailsLoading と違い表示は「取得中」に落とさない (チラつき防止)
 		sha := m.panelSHA
-		repo := m.repo
-		refresh := func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-			defer cancel()
-			batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, []string{sha})
-			return detailMsg{sha: sha, batch: batch, ghErr: ghErr}
-		}
+		refresh := fetchCIStatusesCmd(m.repo, []string{sha}, func(b CIBatch, e *GHError) tea.Msg {
+			return detailMsg{sha: sha, batch: b, ghErr: e}
+		})
 		return m, tea.Batch(refresh, next)
 	case pushPollMsg:
 		if len(m.pushPoll) == 0 || m.fetching {
@@ -517,13 +527,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		targets := slices.Collect(maps.Keys(m.pushPoll))
 		m.toFetch = targets
 		m.fetching = true
-		repo := m.repo
-		fetch := func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-			defer cancel()
-			batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, targets)
-			return ciResultMsg{batch: batch, ghErr: ghErr}
-		}
+		fetch := fetchCIStatusesCmd(m.repo, targets, func(b CIBatch, e *GHError) tea.Msg {
+			return ciResultMsg{batch: b, ghErr: e}
+		})
 		return m, tea.Batch(fetch, tick())
 	case pullMsg:
 		m.pulling = false
@@ -566,13 +572,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.invalidateLines()
 		m.toFetch = all
 		m.fetching = true
-		repo := m.repo
-		fetch := func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-			defer cancel()
-			batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, all)
-			return ciResultMsg{batch: batch, ghErr: ghErr}
-		}
+		fetch := fetchCIStatusesCmd(m.repo, all, func(b CIBatch, e *GHError) tea.Msg {
+			return ciResultMsg{batch: b, ghErr: e}
+		})
 		return m, tea.Batch(fetch, tick())
 	case openURLMsg:
 		if msg.err != nil {
@@ -792,14 +794,9 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 		return nil
 	}
 	m.fetching = true
-	repo := m.repo
-	targets := m.toFetch
-	fetch := func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-		defer cancel()
-		batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, targets)
-		return ciResultMsg{batch: batch, ghErr: ghErr}
-	}
+	fetch := fetchCIStatusesCmd(m.repo, m.toFetch, func(b CIBatch, e *GHError) tea.Msg {
+		return ciResultMsg{batch: b, ghErr: e}
+	})
 	return tea.Batch(fetch, tick())
 }
 
@@ -1208,13 +1205,9 @@ func (m *browseModel) fetchPanelDetails(sha string) tea.Cmd {
 		return nil
 	}
 	m.detailsLoading[sha] = true
-	repo := m.repo
-	cmd := func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-		defer cancel()
-		batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, []string{sha})
-		return detailMsg{sha: sha, batch: batch, ghErr: ghErr}
-	}
+	cmd := fetchCIStatusesCmd(m.repo, []string{sha}, func(b CIBatch, e *GHError) tea.Msg {
+		return detailMsg{sha: sha, batch: b, ghErr: e}
+	})
 	return tea.Batch(cmd, tick())
 }
 
@@ -1269,13 +1262,9 @@ func (m *browseModel) maybeFetchETABasis() tea.Cmd {
 	for _, sha := range targets {
 		m.detailsLoading[sha] = true
 	}
-	repo := m.repo
-	cmd := func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-		defer cancel()
-		batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, targets)
-		return basisMsg{targets: targets, batch: batch, ghErr: ghErr}
-	}
+	cmd := fetchCIStatusesCmd(m.repo, targets, func(b CIBatch, e *GHError) tea.Msg {
+		return basisMsg{targets: targets, batch: b, ghErr: e}
+	})
 	return tea.Batch(cmd, tick())
 }
 
