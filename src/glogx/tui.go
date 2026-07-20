@@ -80,6 +80,14 @@ const (
 	pushPollMaxAttempts = 24 // 5s × 24 = 最長 2 分で諦める (その回の結果は保存しない)
 )
 
+// panelPollMsg は job パネル表示中の定期リフレッシュ (経過時間をライブで見ている
+// ユーザー向けに job の状態・所要時間も追従させる。ユーザー要望 2026-07-20)。
+// seq はパネルの開閉世代: 開き直しで古いタイマーが二重ポーリングにならないよう、
+// 世代が一致するときだけ有効。
+type panelPollMsg struct{ seq int }
+
+const panelPollInterval = 3 * time.Second
+
 // runGitPush はテストで実 push しないための差し替え点。
 var runGitPush = func() error {
 	out, err := exec.Command("git", "push").CombinedOutput()
@@ -233,6 +241,8 @@ type browseModel struct {
 	offset         int                 // ビューポート先頭の行 index
 	panelSHA       string              // job パネルを表示中のコミット SHA ("" = パネルなし)
 	panelCursor    int                 // パネル内で選択中の job index (-1 = タイトル行にフォーカス)
+	panelPollSeq   int                 // パネル開閉の世代 (panelPollMsg の有効性判定)
+	panelRefresh   bool                // パネルの定期リフレッシュ実行中 (detailsLoading と別: 表示を「取得中」に落とさない)
 	detailOpen     bool                // job 詳細 (annotations / ログ tail) ポップアップを表示中か
 	detailOffset   int                 // 詳細ポップアップのスクロール位置
 	jobDetail      map[string][]string // key (sha/jobIdx) → 詳細行 (メモリ内キャッシュ)
@@ -386,6 +396,10 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case detailMsg:
 		m.invalidateLines()
 		delete(m.detailsLoading, msg.sha)
+		wasRefresh := msg.sha == m.panelSHA && m.panelRefresh
+		if msg.sha == m.panelSHA {
+			m.panelRefresh = false
+		}
 		if msg.ghErr != nil {
 			m.ghErr = msg.ghErr
 		}
@@ -393,9 +407,19 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		maps.Copy(m.statuses, msg.batch.Statuses)
 		maps.Copy(m.details, msg.batch.Details)
 		maps.Copy(m.prCache, msg.batch.PRs)
+		// リフレッシュで job 数が縮んだ場合にフォーカスを範囲内へ戻す
+		if msg.sha == m.panelSHA && m.panelCursor >= len(m.details[m.panelSHA]) {
+			m.panelCursor = len(m.details[m.panelSHA]) - 1
+		}
 		// パネルを開いたコミットの Details が今届いた場合、実行中 job があれば ETA basis
-		// (同名完了 job) をここで補充する (openPanel 時点では details 未取得で判定できない)。
-		return m, m.maybeFetchETABasis()
+		// (同名完了 job) の補充と定期リフレッシュの開始をここで行う (openPanel 時点では
+		// details 未取得で判定できない)。リフレッシュ結果の到着では開始しない
+		// (次回は panelPollMsg ハンドラ側が予約済み。二重 timer で加速するのを防ぐ)
+		var poll tea.Cmd
+		if msg.sha == m.panelSHA && !wasRefresh && m.panelHasRunningJob() {
+			poll = m.schedulePanelPoll()
+		}
+		return m, tea.Batch(m.maybeFetchETABasis(), poll)
 	case basisMsg:
 		m.invalidateLines()
 		if msg.ghErr != nil {
@@ -457,6 +481,29 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case prefixMsg:
 		m.tmuxPrefix = msg.key
 		return m, nil
+	case panelPollMsg:
+		if msg.seq != m.panelPollSeq || m.panelSHA == "" {
+			return m, nil // パネルが閉じた/開き直された後の残タイマーは破棄
+		}
+		if !m.panelHasRunningJob() {
+			return m, nil // 全 job 完了: 追従の必要が無いのでポーリング終了 (開き直しで再開)
+		}
+		next := m.schedulePanelPoll()
+		// 実行中の一括取得/リフレッシュと重ねない (同一 SHA への GraphQL 並行は
+		// 完了順で statuses/details が上書きされる。fetchPanelDetails と同じ注意)
+		if m.panelRefresh || m.detailsLoading[m.panelSHA] || (m.fetching && slices.Contains(m.toFetch, m.panelSHA)) {
+			return m, next
+		}
+		m.panelRefresh = true // detailsLoading と違い表示は「取得中」に落とさない (チラつき防止)
+		sha := m.panelSHA
+		repo := m.repo
+		refresh := func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+			defer cancel()
+			batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, []string{sha})
+			return detailMsg{sha: sha, batch: batch, ghErr: ghErr}
+		}
+		return m, tea.Batch(refresh, next)
 	case pushPollMsg:
 		if len(m.pushPoll) == 0 || m.fetching {
 			return m, nil // fetching 中 (別経路の取得が進行) は次の ciResultMsg 側で判定する
@@ -1118,9 +1165,23 @@ func (m *browseModel) openPanel() tea.Cmd {
 	sha := m.commits[m.cursor].SHA
 	m.panelSHA = sha
 	m.panelCursor = -1 // タイトル行フォーカスから開始 (この状態の Enter = 閉じる)
+	m.panelPollSeq++   // 前のパネルの残タイマーを世代で無効化する
 	// パネルコミットの Details 取得と、実行中 job があれば ETA basis の補充を両方仕掛ける。
 	// details 既取得なら basis 補充だけ即走る (basis 判定に details が要るため)。
-	return tea.Batch(m.fetchPanelDetails(sha), m.maybeFetchETABasis())
+	// 定期リフレッシュは「実行中 job がある」と分かっているときだけ開始する
+	// (details 未取得ならその到着時 = detailMsg 側で開始する。常時 timer を返すと
+	// 「fetch 不要なら Cmd は nil」というパネル系テストの契約も壊れる)。
+	var poll tea.Cmd
+	if m.panelHasRunningJob() {
+		poll = m.schedulePanelPoll()
+	}
+	return tea.Batch(m.fetchPanelDetails(sha), m.maybeFetchETABasis(), poll)
+}
+
+// schedulePanelPoll は現世代の panelPollMsg を panelPollInterval 後に発火させる。
+func (m *browseModel) schedulePanelPoll() tea.Cmd {
+	seq := m.panelPollSeq
+	return tea.Tick(panelPollInterval, func(time.Time) tea.Msg { return panelPollMsg{seq: seq} })
 }
 
 // fetchPanelDetails はパネルコミット sha の Details をオンデマンド取得する Cmd
@@ -1216,6 +1277,7 @@ func (m *browseModel) maybeFetchETABasis() tea.Cmd {
 func (m *browseModel) closePanel() {
 	m.panelSHA = ""
 	m.panelCursor = -1
+	m.panelPollSeq++ // 定期リフレッシュの残タイマーを世代で無効化する
 	m.detailOpen = false
 	m.detailOffset = 0
 }

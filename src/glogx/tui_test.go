@@ -105,6 +105,50 @@ func TestBrowseCursorScrollsViewport(t *testing.T) {
 	}
 }
 
+// job パネル表示中は 3 秒間隔で状態を取り直す (経過時間のライブ監視。ユーザー要望)。
+func TestBrowsePanelPolling(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StatePending
+	running := []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Now().Add(-time.Minute)}}
+	m.details[sha] = running
+	// 実行中 job があるパネルを開く → ポーリング timer が仕掛かる
+	if cmd := m.openPanel(); cmd == nil {
+		t.Fatal("実行中 job ありでポーリング timer が仕掛からない")
+	}
+	seq := m.panelPollSeq
+	// 世代一致の poll → リフレッシュ (panelRefresh) + 次回予約
+	_, cmd := m.Update(panelPollMsg{seq: seq})
+	if cmd == nil || !m.panelRefresh {
+		t.Fatalf("poll でリフレッシュが走らない: cmd=%v refresh=%v", cmd != nil, m.panelRefresh)
+	}
+	// リフレッシュ中の poll は fetch を重ねない (timer 予約のみ = panelRefresh のまま)
+	m.Update(panelPollMsg{seq: seq})
+	if !m.panelRefresh {
+		t.Fatal("リフレッシュ中の poll で状態が壊れた")
+	}
+	// リフレッシュ結果の到着: panelRefresh が解除され、job 縮小でカーソルがクランプされる
+	m.panelCursor = 0
+	m.Update(detailMsg{sha: sha, batch: CIBatch{Details: map[string][]CheckDetail{sha: {}}}})
+	if m.panelRefresh {
+		t.Fatal("detailMsg で panelRefresh が解除されない")
+	}
+	if m.panelCursor != -1 {
+		t.Fatalf("job 0 件への縮小でカーソルがクランプされない: %d", m.panelCursor)
+	}
+	// 全 job 完了 (実行中なし) の poll はポーリングを止める
+	m.details[sha] = []CheckDetail{{Name: "build", State: StateSuccess}}
+	if _, cmd := m.Update(panelPollMsg{seq: m.panelPollSeq}); cmd != nil {
+		t.Fatal("全 job 完了後も poll が続く")
+	}
+	// パネルを閉じた後の残タイマー (旧世代) は無視される
+	m.details[sha] = running
+	m.closePanel()
+	if _, cmd := m.Update(panelPollMsg{seq: seq}); cmd != nil {
+		t.Fatal("閉じた後の残タイマーが有効になっている")
+	}
+}
+
 func TestBrowsePanelOpenClose(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateFailure)
