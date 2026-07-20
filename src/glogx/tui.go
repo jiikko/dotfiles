@@ -146,6 +146,24 @@ func parseTmuxPrefix(out string) string {
 	return ""
 }
 
+// tmuxToast はテストで実 tmux を叩かないための差し替え点。popup 内の TUI notice は
+// 枠の中で完結して見落としやすいため、外側の tmux status line にも display-message で
+// トーストを出す (popup は中央 85% 表示で status line は見えている)。best effort。
+var tmuxToast = func(msg string) {
+	if os.Getenv("TMUX") == "" {
+		return
+	}
+	_ = exec.Command("tmux", "display-message", msg).Run()
+}
+
+// toastCmd は tmuxToast を Update をブロックしない tea.Cmd として返す。
+func toastCmd(msg string) tea.Cmd {
+	return func() tea.Msg {
+		tmuxToast(msg)
+		return nil
+	}
+}
+
 // prMsg は commit に紐づく PR のオンデマンド取得の結果 (p キー)。
 type prMsg struct {
 	sha   string
@@ -579,12 +597,12 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if m.prefixPending && key != m.tmuxPrefix {
 		m.prefixPending = false
 		m.notice = "popup 内では tmux の window 操作はできません (C-g で閉じてから prefix+" + key + ")"
-		return m, nil
+		return m, toastCmd("⚠ popup 内では window 操作不可 — C-g で閉じてから prefix+" + key)
 	}
 	if m.tmuxPrefix != "" && key == m.tmuxPrefix {
 		m.prefixPending = true
 		m.notice = "tmux prefix は popup 内では効きません (C-g で popup を閉じてから)"
-		return m, nil
+		return m, toastCmd("⚠ tmux prefix は popup 内では効きません (C-g で閉じてから)")
 	}
 	// emacs 流の水平移動エイリアス (C-n/C-p = ↓/↑ は各ビューで対応済み)。ここで
 	// 正規化するので全ビュー (一覧/パネル/詳細/diff) に一括で効く。
