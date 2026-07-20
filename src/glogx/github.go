@@ -157,6 +157,10 @@ type CheckDetail struct {
 	URL      string        // 無い場合は空
 	CheckID  int64         // CheckRun の REST id。annotations / ログ取得に使う (StatusContext は 0)
 	Duration time.Duration // job の所要時間 (0 = 不明。StatusContext / 実行中)
+	// StartedAt は CheckRun の開始時刻 (未開始 / StatusContext は zero)。実行中 job の
+	// 「経過時間 = now - StartedAt」表示に使う。完了 job では Duration が所要時間の出典で
+	// あり StartedAt は使わない (完了判定は Duration>0 でなく State で行う)。
+	StartedAt time.Time
 }
 
 type rollupPayload struct {
@@ -410,11 +414,12 @@ func detailsOf(rollup *rollupPayload) []CheckDetail {
 		// name は外部 (StatusContext を作る任意のインテグレーション) が制御できる表示文字列。
 		// パネルと終了後の静的出力にそのまま載るため、ここで無害化する
 		details = append(details, CheckDetail{
-			Name:     sanitizeDetailLine(name),
-			State:    nodeState(node),
-			URL:      url,
-			CheckID:  node.DatabaseID,
-			Duration: duration,
+			Name:      sanitizeDetailLine(name),
+			State:     nodeState(node),
+			URL:       url,
+			CheckID:   node.DatabaseID,
+			Duration:  duration,
+			StartedAt: node.StartedAt,
 		})
 	}
 	return details

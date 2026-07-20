@@ -623,6 +623,147 @@ func TestBrowsePanelShowsJobDuration(t *testing.T) {
 	}
 }
 
+func TestBrowsePanelShowsRunningElapsed(t *testing.T) {
+	orig := timeNow
+	timeNow = func() time.Time { return time.Unix(1000, 0) }
+	t.Cleanup(func() { timeNow = orig })
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StatePending
+	// 開始 90 秒前・ETA basis なし (履歴が画面に無い) → 経過時間だけ出る
+	m.details[sha] = []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Unix(910, 0)}}
+	m.openPanel()
+	view := m.View()
+	if !strings.Contains(view, "1m30s 経過") {
+		t.Errorf("実行中 job の経過時間が出ていない:\n%s", view)
+	}
+	if strings.Contains(view, "残り") {
+		t.Errorf("basis が無いのに ETA が出ている:\n%s", view)
+	}
+	if !m.spinnerActive() {
+		t.Error("実行中 job がある間は tick を回して経過をライブ更新すべき")
+	}
+}
+
+func TestBrowsePanelShowsRunningETA(t *testing.T) {
+	orig := timeNow
+	timeNow = func() time.Time { return time.Unix(1000, 0) }
+	t.Cleanup(func() { timeNow = orig })
+
+	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	running, prev := m.commits[0].SHA, m.commits[1].SHA
+	m.statuses[running] = StatePending
+	m.statuses[prev] = StateSuccess
+	// 実行中 job: 開始 60 秒前。直近の同名完了 job は 100 秒 → 残り ~40s
+	m.details[running] = []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Unix(940, 0)}}
+	m.details[prev] = []CheckDetail{{Name: "build", State: StateSuccess, Duration: 100 * time.Second}}
+	m.openPanel()
+	view := m.View()
+	if !strings.Contains(view, "1m00s 経過") {
+		t.Errorf("経過時間が出ていない:\n%s", view)
+	}
+	if !strings.Contains(view, "残り ~40s") {
+		t.Errorf("ETA (残り ~40s) が出ていない:\n%s", view)
+	}
+}
+
+func TestBrowsePanelRunningETAOverrun(t *testing.T) {
+	orig := timeNow
+	timeNow = func() time.Time { return time.Unix(1000, 0) }
+	t.Cleanup(func() { timeNow = orig })
+
+	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	running, prev := m.commits[0].SHA, m.commits[1].SHA
+	m.statuses[running] = StatePending
+	// 経過 120 秒 > 前回 100 秒 → 予定超過
+	m.details[running] = []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Unix(880, 0)}}
+	m.details[prev] = []CheckDetail{{Name: "build", State: StateSuccess, Duration: 100 * time.Second}}
+	m.openPanel()
+	if !strings.Contains(m.View(), "予定超過") {
+		t.Errorf("前回所要時間を超えたら予定超過を出すべき:\n%s", m.View())
+	}
+}
+
+func TestBrowseRunningETASkipsCancelled(t *testing.T) {
+	orig := timeNow
+	timeNow = func() time.Time { return time.Unix(1000, 0) }
+	t.Cleanup(func() { timeNow = orig })
+
+	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	running := m.commits[0].SHA
+	m.statuses[running] = StatePending
+	// 実行中: 開始 60 秒前
+	m.details[running] = []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Unix(940, 0)}}
+	// 直近 (近い側): cancel された同名 job (Duration>0 だが StateNeutral) → basis に使わない
+	m.details[m.commits[1].SHA] = []CheckDetail{{Name: "build", State: StateNeutral, Duration: 3 * time.Second}}
+	// その先: 正常完了 100 秒 → こちらを basis にして残り ~40s
+	m.details[m.commits[2].SHA] = []CheckDetail{{Name: "build", State: StateSuccess, Duration: 100 * time.Second}}
+	m.openPanel()
+	view := m.View()
+	if strings.Contains(view, "予定超過") {
+		t.Errorf("cancel run (3s) を basis に拾って誤って超過判定している:\n%s", view)
+	}
+	if !strings.Contains(view, "残り ~40s") {
+		t.Errorf("cancel をスキップして正常完了 (100s) を basis にすべき:\n%s", view)
+	}
+}
+
+func TestBrowseRunningETAFetchesMissingBasis(t *testing.T) {
+	orig := timeNow
+	timeNow = func() time.Time { return time.Unix(1000, 0) }
+	t.Cleanup(func() { timeNow = orig })
+
+	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	running, prev := m.commits[0].SHA, m.commits[1].SHA
+	m.statuses[running] = StatePending
+	m.statuses[prev] = StateSuccess // 完了コミット: cache ヒット相当で Details 未取得
+	// 開き直し後の状態: pending は再取得され details あり、完了コミットは Details 無し
+	m.details[running] = []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Unix(940, 0)}}
+
+	cmd := m.openPanel()
+	if cmd == nil {
+		t.Fatal("basis 未取得の完了コミットがあるのに補充 fetch が仕掛けられていない")
+	}
+	if !m.detailsLoading[prev] {
+		t.Errorf("完了コミットを basis 取得対象にしていない")
+	}
+	if strings.Contains(m.View(), "残り") {
+		t.Errorf("basis 未着なのに ETA が出ている:\n%s", m.View())
+	}
+	// basis (prev の完了 job 100s) が届く → 残り ~40s
+	m.Update(basisMsg{targets: []string{prev}, batch: CIBatch{
+		Statuses: map[string]CIState{prev: StateSuccess},
+		Details:  map[string][]CheckDetail{prev: {{Name: "build", State: StateSuccess, Duration: 100 * time.Second}}},
+		PRs:      map[string]*PRRef{},
+	}})
+	if !strings.Contains(m.View(), "残り ~40s") {
+		t.Errorf("basis 補充後に ETA が出ていない:\n%s", m.View())
+	}
+	if m.detailsLoading[prev] {
+		t.Error("basisMsg 到着後も loading が解除されていない")
+	}
+}
+
+func TestBrowseETABasisFillsEmptyToStopRefetch(t *testing.T) {
+	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	prev := m.commits[1].SHA
+	// target を要求したが応答に details が無い (GitHub 上に無い等) → 空スライスで確定させ、
+	// 同じ target を無限に取り直さないこと
+	m.detailsLoading[prev] = true
+	m.Update(basisMsg{targets: []string{prev}, batch: CIBatch{
+		Statuses: map[string]CIState{},
+		Details:  map[string][]CheckDetail{},
+		PRs:      map[string]*PRRef{},
+	}})
+	if _, ok := m.details[prev]; !ok {
+		t.Error("応答に無かった target の Details が確定されず、再取得ループの余地が残る")
+	}
+	if m.detailsLoading[prev] {
+		t.Error("loading が解除されていない")
+	}
+}
+
 func TestBrowseOpenPR(t *testing.T) {
 	var opened string
 	orig := openInBrowser

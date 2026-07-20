@@ -45,6 +45,15 @@ type detailMsg struct {
 	ghErr *GHError
 }
 
+// basisMsg は実行中 job の ETA 用に「同名完了 job の Duration」を補うための、表示中
+// コミット (Details 未取得のもの) の一括取得結果。targets は取得を要求した SHA 群
+// (レスポンスに現れなかったものも loading 解除する)。詳細は maybeFetchETABasis。
+type basisMsg struct {
+	targets []string
+	batch   CIBatch
+	ghErr   *GHError
+}
+
 type tickMsg struct{}
 
 // openURLMsg は job 詳細ページをブラウザで開いた結果。
@@ -314,7 +323,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.pushPoll = nil // 上限到達: スピナーは spinnerActive から外れて止まる
 		}
-		return m, nil
+		// 一括取得で実行中コミットの Details が入った場合も ETA basis を補充する
+		// (パネルを取得中に開いていたケース)。
+		return m, m.maybeFetchETABasis()
 	case detailMsg:
 		m.invalidateLines()
 		delete(m.detailsLoading, msg.sha)
@@ -325,6 +336,26 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		maps.Copy(m.statuses, msg.batch.Statuses)
 		maps.Copy(m.details, msg.batch.Details)
 		maps.Copy(m.prCache, msg.batch.PRs)
+		// パネルを開いたコミットの Details が今届いた場合、実行中 job があれば ETA basis
+		// (同名完了 job) をここで補充する (openPanel 時点では details 未取得で判定できない)。
+		return m, m.maybeFetchETABasis()
+	case basisMsg:
+		m.invalidateLines()
+		if msg.ghErr != nil {
+			m.ghErr = msg.ghErr
+		}
+		maps.Copy(m.fetched, msg.batch.Statuses)
+		maps.Copy(m.statuses, msg.batch.Statuses)
+		maps.Copy(m.details, msg.batch.Details)
+		maps.Copy(m.prCache, msg.batch.PRs)
+		// レスポンスに現れなかった target も含めて loading 解除し、Details エントリを
+		// 空スライスで確定させる (未設定のままだと同じ target を無限に取り直してしまう)。
+		for _, sha := range msg.targets {
+			delete(m.detailsLoading, sha)
+			if _, ok := m.details[sha]; !ok {
+				m.details[sha] = []CheckDetail{}
+			}
+		}
 		return m, nil
 	case jobDetailMsg:
 		delete(m.jobDetailBusy, msg.key)
@@ -794,6 +825,70 @@ func (m *browseModel) focusedJob() (CheckDetail, bool) {
 	return jobs[m.panelCursor], true
 }
 
+// etaBasis は実行中 job (name) の終了予定を概算するための「直近の同名完了 job 1 件」の
+// 所要時間を返す。excludeSHA (実行中の当該コミット) を除き、表示中コミットを
+// excludeSHA に近い順 (まず古い側、次に新しい側) に走査して最初に見つかった同名 job を
+// 採用する。追加 fetch はしない (画面に取得済みの Details だけで概算する)。
+// 見つからなければ ok=false (履歴が画面に無い / 初回実行)。
+//
+// StateNeutral (cancelled / skipped) は除外する: 途中 cancel された run も StartedAt/
+// CompletedAt を持ち Duration>0 になるが、数秒で切られた時間を basis にすると ETA が
+// 極端に短く出て即「予定超過」になり概算が誤る。完了まで走った失敗 (StateFailure) は
+// 所要時間として妥当なので basis に残す。
+func (m *browseModel) etaBasis(name, excludeSHA string) (time.Duration, bool) {
+	idx := -1
+	for i := range m.commits {
+		if m.commits[i].SHA == excludeSHA {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return 0, false
+	}
+	for dist := 1; dist < len(m.commits); dist++ {
+		for _, j := range [2]int{idx + dist, idx - dist} { // 古い側 (下) を先に見る
+			if j < 0 || j >= len(m.commits) {
+				continue
+			}
+			for _, det := range m.details[m.commits[j].SHA] {
+				if det.Name == name && det.Duration > 0 && det.State != StateNeutral {
+					return det.Duration, true
+				}
+			}
+		}
+	}
+	return 0, false
+}
+
+// jobTimeSuffix は job 行末尾の時間表示 ("(...)" の中身。空 = 何も出さない)。
+//   - 実行中 (StatePending) で開始時刻あり: "2m10s 経過" + ETA basis があれば "残り ~50s" / "予定超過"
+//   - 完了: 所要時間 (従来どおり)
+//
+// 実行中判定は State で行う (Duration==0 は StatusContext / 未取得も含むため出典にしない)。
+func (m *browseModel) jobTimeSuffix(job CheckDetail) string {
+	if job.State == StatePending && !job.StartedAt.IsZero() {
+		elapsed := timeNow().Sub(job.StartedAt)
+		el := formatDuration(elapsed)
+		if el == "" { // 開始直後 (<1s) / わずかな時計ずれ
+			el = "0s"
+		}
+		suffix := el + " 経過"
+		if basis, ok := m.etaBasis(job.Name, m.panelSHA); ok {
+			if remain := basis - elapsed; remain > 0 {
+				suffix += ", 残り ~" + formatDuration(remain)
+			} else {
+				suffix += ", 予定超過"
+			}
+		}
+		return suffix
+	}
+	return formatDuration(job.Duration)
+}
+
+// timeNow は経過時間・ETA 算出の現在時刻。テストで固定するため差し替え可能にしている。
+var timeNow = time.Now
+
 // jobDetailRows は詳細ポップアップに一度に表示する行数の上限。実際の行数は
 // 端末の高さに合わせて visibleDetailRows が縮める。
 const jobDetailRows = 15
@@ -880,6 +975,14 @@ func (m *browseModel) openPanel() tea.Cmd {
 	sha := m.commits[m.cursor].SHA
 	m.panelSHA = sha
 	m.panelCursor = -1 // タイトル行フォーカスから開始 (この状態の Enter = 閉じる)
+	// パネルコミットの Details 取得と、実行中 job があれば ETA basis の補充を両方仕掛ける。
+	// details 既取得なら basis 補充だけ即走る (basis 判定に details が要るため)。
+	return tea.Batch(m.fetchPanelDetails(sha), m.maybeFetchETABasis())
+}
+
+// fetchPanelDetails はパネルコミット sha の Details をオンデマンド取得する Cmd
+// (取得不要 / 取得先なしは nil)。openPanel から切り出した本体。
+func (m *browseModel) fetchPanelDetails(sha string) tea.Cmd {
 	if _, ok := m.details[sha]; ok || m.detailsLoading[sha] {
 		return nil
 	}
@@ -902,6 +1005,67 @@ func (m *browseModel) openPanel() tea.Cmd {
 		defer cancel()
 		batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, []string{sha})
 		return detailMsg{sha: sha, batch: batch, ghErr: ghErr}
+	}
+	return tea.Batch(cmd, tick())
+}
+
+// maybeFetchETABasis は、パネルを開いた実行中コミットに ETA basis (同名完了 job の
+// Duration) がセッション内に無いとき、表示中の他コミットのうち Details 未取得のものを
+// 1 回の GraphQL でまとめて取得する Cmd を返す (nil = 取得不要 / 取得先なし)。
+//
+// 完了コミットは State だけがキャッシュされ Details は保存されないため (cache.go)、glogx を
+// 開き直すと完了状態は cache ヒットで toFetch から外れ、その job Duration が欠けて ETA が
+// 出なくなる。パネルを開いた時点でこの穴を能動的に埋める。取得は 1 リクエストに束ね、
+// 対象は表示中コミットに限る (無制限に履歴を遡らない)。
+func (m *browseModel) maybeFetchETABasis() tea.Cmd {
+	if m.panelSHA == "" || !m.hasRepo {
+		return nil
+	}
+	jobs, ok := m.details[m.panelSHA]
+	if !ok {
+		return nil // パネルコミットの Details 未取得。到着後 (detailMsg) に再評価される
+	}
+	// basis を必要とする実行中 job があり、かつ現状 basis が取れないときだけ補充する
+	need := false
+	for _, j := range jobs {
+		if j.State == StatePending && !j.StartedAt.IsZero() {
+			if _, ok := m.etaBasis(j.Name, m.panelSHA); !ok {
+				need = true
+				break
+			}
+		}
+	}
+	if !need {
+		return nil
+	}
+	var targets []string
+	for _, c := range m.commits {
+		switch {
+		case c.SHA == m.panelSHA:
+		case m.detailsLoading[c.SHA]:
+		case m.statuses[c.SHA] == StateUnpushed:
+		case m.fetching && slices.Contains(m.toFetch, c.SHA): // 進行中の一括取得を待つ
+		default:
+			if _, ok := m.details[c.SHA]; !ok { // Details 未取得のものだけ
+				targets = append(targets, c.SHA)
+			}
+		}
+		if len(targets) >= fetchMaxSHAs {
+			break
+		}
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+	for _, sha := range targets {
+		m.detailsLoading[sha] = true
+	}
+	repo := m.repo
+	cmd := func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, targets)
+		return basisMsg{targets: targets, batch: batch, ghErr: ghErr}
 	}
 	return tea.Batch(cmd, tick())
 }
@@ -1090,7 +1254,22 @@ func (m *browseModel) fillUnknown() {
 }
 
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.pushing || m.pulling || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || len(m.diffBusy) > 0
+	return m.fetching || m.pushing || m.pulling || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || len(m.diffBusy) > 0 || m.panelHasRunningJob()
+}
+
+// panelHasRunningJob は表示中の job パネルに実行中 (経過時間が増える) job があるか。
+// tick を回し続けて「N 経過 / 残り ~M」をライブ更新するため (spinnerActive が false だと
+// tick が止まり、パネルを開いたまま経過秒が固まる)。
+func (m *browseModel) panelHasRunningJob() bool {
+	if m.panelSHA == "" {
+		return false
+	}
+	for _, job := range m.details[m.panelSHA] {
+		if job.State == StatePending && !job.StartedAt.IsZero() {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *browseModel) spinner() string {
@@ -1270,8 +1449,8 @@ func (m *browseModel) panelLines() []string {
 				mark = cursorMark(m.colored)
 			}
 			row := mark + StatusGlyph(jobs[i].State, m.colored, "") + " " + jobs[i].Name
-			if d := formatDuration(jobs[i].Duration); d != "" {
-				row += paint(" ("+d+")", ansiDim, m.colored)
+			if suffix := m.jobTimeSuffix(jobs[i]); suffix != "" {
+				row += paint(" ("+suffix+")", ansiDim, m.colored)
 			}
 			rows = append(rows, row)
 		}
