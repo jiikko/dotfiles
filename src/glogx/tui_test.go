@@ -1383,6 +1383,53 @@ func TestBrowsePullFlow(t *testing.T) {
 	}
 }
 
+// tmux prefix (popup 内では tmux に届かない) の誤爆フィードバック。
+func TestBrowseTmuxPrefixFeedback(t *testing.T) {
+	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m.Update(prefixMsg{key: "ctrl+t"})
+	// prefix 単体: 案内を出す (カーソルは動かない)
+	m.handleKey("ctrl+t")
+	if !strings.Contains(m.notice, "popup") {
+		t.Fatalf("prefix の案内が出ない: %q", m.notice)
+	}
+	// prefix に続く 1 キーは飲み込む (p が PR オープンに化けない・j でカーソルも動かない)
+	m.handleKey("j")
+	if m.cursor != 0 {
+		t.Fatal("prefix 直後のキーが飲み込まれずカーソルが動いた")
+	}
+	if !strings.Contains(m.notice, "prefix+j") {
+		t.Fatalf("押したキー名入りの案内が出ない: %q", m.notice)
+	}
+	// 飲み込みは 1 キーだけ (次の j は通常動作)
+	m.handleKey("j")
+	if m.cursor != 1 {
+		t.Fatal("prefix の 2 キー後まで飲み込まれた")
+	}
+	// tmux 外 (prefix 不明) では機能オフ = ctrl+t は何もしない
+	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m2.Update(prefixMsg{key: ""})
+	m2.handleKey("ctrl+t")
+	if m2.notice != "" || m2.prefixPending {
+		t.Fatalf("tmux 外で prefix 案内が出た: %q", m2.notice)
+	}
+}
+
+// parseTmuxPrefix: show-options 出力 → bubbletea キー表記。
+func TestParseTmuxPrefix(t *testing.T) {
+	for out, want := range map[string]string{
+		"prefix C-t":  "ctrl+t",
+		"prefix C-b":  "ctrl+b",
+		"prefix M-a":  "", // C-<英字> 以外は機能オフ
+		"prefix None": "",
+		"garbage":     "",
+		"":            "",
+	} {
+		if got := parseTmuxPrefix(out); got != want {
+			t.Errorf("parseTmuxPrefix(%q) = %q; want %q", out, got, want)
+		}
+	}
+}
+
 // 未 push が 1 件も無いときは確認に入らない。
 func TestBrowsePushNoUnpushed(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)

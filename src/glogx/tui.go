@@ -115,6 +115,37 @@ var runGitPullRebase = func() error {
 	return fmt.Errorf("%s", strings.TrimSpace(string(out)))
 }
 
+// prefixMsg は tmux prefix の取得結果 (起動時に 1 回、非同期)。
+type prefixMsg struct{ key string }
+
+// loadTmuxPrefix は tmux サーバの現在の prefix を bubbletea キー表記で返す
+// ("" = tmux 外 / 取得失敗 / 未対応表記)。tmux.conf のパースはしない: conf は分割・
+// ライブ変更されうるため、サーバの現在値だけが真実 (show-options で聞く)。
+var loadTmuxPrefix = func() string {
+	if os.Getenv("TMUX") == "" {
+		return ""
+	}
+	out, err := exec.Command("tmux", "show-options", "-g", "prefix").Output()
+	if err != nil {
+		return ""
+	}
+	return parseTmuxPrefix(strings.TrimSpace(string(out)))
+}
+
+// parseTmuxPrefix は `prefix C-t` 形式の出力を bubbletea 表記 ("ctrl+t") へ変換する。
+// C-<英字> 以外 (M- 系や None 等) は誤爆判定できないので "" (機能オフ) に落とす。
+func parseTmuxPrefix(out string) string {
+	fields := strings.Fields(out)
+	if len(fields) != 2 {
+		return ""
+	}
+	p := fields[1]
+	if len(p) == 3 && strings.HasPrefix(p, "C-") {
+		return "ctrl+" + strings.ToLower(p[2:])
+	}
+	return ""
+}
+
 // prMsg は commit に紐づく PR のオンデマンド取得の結果 (p キー)。
 type prMsg struct {
 	sha   string
@@ -204,6 +235,8 @@ type browseModel struct {
 	pushPoll       map[string]bool     // push 直後ポーリング対象の SHA (CI が見えたら外れる)
 	pollAttempts   int                 // push 直後ポーリングの試行回数 (上限で諦める)
 	notice         string              // hint 行に出す一時メッセージ (次のキーで消える)
+	tmuxPrefix     string              // tmux prefix の bubbletea 表記 (例 "ctrl+t")。"" = tmux 外/不明で機能オフ
+	prefixPending  bool                // 直前のキーが tmux prefix。次の 1 キーを飲み込む
 	verbatim       []Line              // git log 実出力の取り込み行 (nil = 自前レンダリング)
 	fetching       bool
 	done           bool
@@ -255,10 +288,12 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 }
 
 func (m *browseModel) Init() tea.Cmd {
+	// tmux prefix の取得は非同期 (fork 1 本 ≈ 6ms を初期描画のクリティカルパスに乗せない)
+	prefix := func() tea.Msg { return prefixMsg{key: loadTmuxPrefix()} }
 	if m.fetching {
-		return tea.Batch(m.fetch, tick())
+		return tea.Batch(m.fetch, prefix, tick())
 	}
-	return nil
+	return prefix
 }
 
 func tick() tea.Cmd {
@@ -401,6 +436,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.diffCache[msg.sha] = msg.lines
 		return m, nil
+	case prefixMsg:
+		m.tmuxPrefix = msg.key
+		return m, nil
 	case pushPollMsg:
 		if len(m.pushPoll) == 0 || m.fetching {
 			return m, nil // fetching 中 (別経路の取得が進行) は次の ciResultMsg 側で判定する
@@ -500,6 +538,22 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// (開くキーと同じキーで閉じる)。本家 glog には無い割当。
 	if key == "ctrl+c" || key == "ctrl+g" {
 		return m.quit()
+	}
+	// tmux prefix の誤爆フィードバック: popup 表示中は tmux がキーを処理しない
+	// (display-popup はモーダル) ため、window 移動しようとした prefix+n/p はここへ
+	// 素通りしてくる。無言だと「効かない」だけで理由が分からないので案内を出し、
+	// prefix に続く 1 キーは飲み込む (C-t p が PR オープン等に化ける誤爆の防止)。
+	// 対象キーはハードコードせず起動時に tmux サーバへ聞いた現在値 (prefixMsg)。
+	// tmux 外や取得失敗では tmuxPrefix="" のままこの機能ごと無効になる。ユーザー要望。
+	if m.prefixPending {
+		m.prefixPending = false
+		m.notice = "popup 内では tmux の window 操作はできません (C-g で閉じてから prefix+" + key + ")"
+		return m, nil
+	}
+	if m.tmuxPrefix != "" && key == m.tmuxPrefix {
+		m.prefixPending = true
+		m.notice = "tmux prefix は popup 内では効きません (C-g で popup を閉じてから)"
+		return m, nil
 	}
 	// push 警告モーダルは何かキーで閉じる (そのキーは消費して誤操作を防ぐ)
 	if m.pushWarn != "" {
