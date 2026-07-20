@@ -137,6 +137,53 @@ func TestBrowsePanelRefreshLatchClearedOnClose(t *testing.T) {
 	}
 }
 
+// j/k でビューポートがコミット単位に動くとき、表示 offset を glide させる (ユーザー要望)。
+func TestBrowseScrollAnim(t *testing.T) {
+	m := newTestBrowse(t, 6, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+	m.height = 10 // pageSize 9。medium 1 コミット ~5 行 + 行間で数 j 目にスクロールが起きる
+	scrolled := false
+	for range 5 {
+		prev := m.offset
+		_, cmd := m.handleKey("j")
+		if m.offset == prev {
+			if m.scrollAnim {
+				t.Fatal("画面内のカーソル移動で scrollAnim が立った")
+			}
+			continue
+		}
+		// ビューポートが動いた最初の j: glide 開始
+		if !m.scrollAnim || m.offsetShown != prev || cmd == nil {
+			t.Fatalf("スクロール開始で glide が仕込まれない: scrollAnim=%v offsetShown=%d prev=%d cmd=%v",
+				m.scrollAnim, m.offsetShown, prev, cmd != nil)
+		}
+		scrolled = true
+		break
+	}
+	if !scrolled {
+		t.Fatal("6 コミットで一度もスクロールしなかった (テスト前提の破れ)")
+	}
+	// 連打: glide 中の次の j は積まず即スナップ (押した分だけ遅延する体感を避ける)
+	m.handleKey("j")
+	if m.scrollAnim {
+		t.Fatal("glide 中の j で scrollAnim が積まれた (即スナップのはず)")
+	}
+	// 改めて glide を開始させ、tick で表示 offset が論理 offset へ寄って着地することを確認
+	// (連打スナップ直後は scrollAnim=false なので次の単発 j が改めて glide を張る)
+	for i := 0; i < 6 && !m.scrollAnim; i++ {
+		m.handleKey("j")
+	}
+	if m.scrollAnim {
+		target := m.offset
+		for i := 0; i < 12 && m.scrollAnim; i++ {
+			m.Update(tickMsg{})
+		}
+		if m.scrollAnim || m.offsetShown != target {
+			t.Fatalf("glide が着地しない: scrollAnim=%v offsetShown=%d target=%d", m.scrollAnim, m.offsetShown, target)
+		}
+	}
+}
+
 // 80ms tick は single-flight: チェーンは常に高々 1 本 (レビュー C1)。
 func TestBrowseTickSingleFlight(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)

@@ -249,7 +249,9 @@ type browseModel struct {
 	width          int
 	height         int
 	cursor         int                 // コミット index
-	offset         int                 // ビューポート先頭の行 index
+	offset         int                 // ビューポート先頭の行 index (論理 = カーソル可視化の着地点)
+	offsetShown    int                 // 描画に使う表示 offset (scrollAnim 中だけ offset と乖離し glide)
+	scrollAnim     bool                // j/k のコミット単位スクロールを表示 offset で滑らせている最中か
 	panelSHA       string              // job パネルを表示中のコミット SHA ("" = パネルなし)
 	panelCursor    int                 // パネル内で選択中の job index (-1 = タイトル行にフォーカス)
 	panelPollSeq   int                 // パネル開閉の世代 (panelPollMsg の有効性判定)
@@ -379,6 +381,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.invalidateLines() // 幅で折り返し行数が変わる
+		m.scrollAnim = false // resize 中の glide は破棄して即時 (表示 offset が stale になるため)
 		m.ensureCursorVisible()
 		return m, nil
 	case tickMsg:
@@ -388,6 +391,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.pullAnimating {
 			m.advancePullAnim() // pull で増えた新規行を 1 行/フレームで上から降らせる
+		}
+		if m.scrollAnim {
+			m.advanceScroll() // j/k のコミット単位スクロールを表示 offset で滑らせる
 		}
 		m.frame++
 		// list に毎フレーム変化する内容 (loading スピナー) が乗るのは fetch/pushPoll の 2 状態
@@ -723,21 +729,29 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	case "esc":
 		return m.quit()
 	case "j", "down", "ctrl+n":
+		prev := m.offset
 		m.cursor = clampIdx(m.cursor+1, len(m.commits))
 		m.ensureCursorVisible()
+		return m, m.startScrollAnim(prev)
 	case "k", "up", "ctrl+p":
+		prev := m.offset
 		m.cursor = clampIdx(m.cursor-1, len(m.commits))
 		m.ensureCursorVisible()
+		return m, m.startScrollAnim(prev)
 	case "g", "home":
 		m.cursor = 0
 		m.offset = 0
+		m.scrollAnim = false // ジャンプは即時 (glide 対象外)
 	case "G", "end":
 		m.cursor = clampIdx(len(m.commits)-1, len(m.commits))
 		m.ensureCursorVisible()
+		m.scrollAnim = false
 	case "ctrl+d", "pgdown":
 		m.offset = m.clampOffset(m.offset + m.pageSize()/2)
+		m.scrollAnim = false
 	case "ctrl+u", "pgup":
 		m.offset = m.clampOffset(m.offset - m.pageSize()/2)
+		m.scrollAnim = false
 	case "enter", " ", "l", "right", "tab":
 		return m, m.openPanel()
 	case "y":
@@ -795,6 +809,7 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 	m.closePanel()
 	m.diffSHA = ""
 	m.pushPoll = nil
+	m.scrollAnim = false      // pull リロードは pull アニメ側が担うので j/k glide は破棄
 	m.cursor, m.offset = 0, 0 // カーソルは新規コミットの先頭へ (ユーザー要望 2026-07-20)
 	if !m.oneline {
 		m.verbatim = nil
@@ -870,6 +885,54 @@ func (m *browseModel) advancePullAnim() {
 		m.offset = 0
 		m.pullAnimating = false
 		m.ensureCursorVisible()
+	}
+}
+
+// maxScrollAnimLines は j/k スクロールで glide する最大行数。medium 形式 1 コミット
+// (~7 行) を少し超える程度に抑え、これを超える offset ジャンプ (想定外) は即時に倒す。
+const maxScrollAnimLines = 12
+
+// startScrollAnim は j/k でビューポートがコミット単位に動いたとき、表示 offset (offsetShown)
+// を旧位置 prev から論理 offset へ数フレームで滑らせる (ユーザー要望「にゅっと」)。
+// アニメの積み上げは「押した分だけ遅れて動く」最悪の体感を生むので、連打 (既に scrollAnim)・
+// pull アニメ中・想定外の大ジャンプはアニメせず即時にする (render は m.offset に戻る)。
+// 論理 offset (m.offset) は ensureCursorVisible が既に着地点へ動かしているので触らない。
+func (m *browseModel) startScrollAnim(prev int) tea.Cmd {
+	if m.offset == prev {
+		return nil // カーソルが画面内: ビューポートは動いていない
+	}
+	if m.scrollAnim || m.pullAnimating {
+		m.scrollAnim = false // 連打/pull アニメ中は積まず即時
+		return nil
+	}
+	d := m.offset - prev
+	if d < 0 {
+		d = -d
+	}
+	if d > maxScrollAnimLines {
+		return nil // 想定外の大ジャンプは即時
+	}
+	m.offsetShown = prev
+	m.scrollAnim = true
+	return m.maybeTick()
+}
+
+// advanceScroll は表示 offset を論理 offset へ 1 フレーム分寄せる (ease-out: 残距離の
+// おおよそ半分ずつ = 1 コミット ~7 行を ~4 フレームで着地)。到達で scrollAnim を下ろす。
+func (m *browseModel) advanceScroll() {
+	d := m.offset - m.offsetShown
+	if d == 0 {
+		m.scrollAnim = false
+		return
+	}
+	step := d / 2
+	if step == 0 { // 残り 1 行は 1 ステップで詰める
+		step = d // d は ±1
+	}
+	m.offsetShown += step
+	if (d > 0 && m.offsetShown >= m.offset) || (d < 0 && m.offsetShown <= m.offset) {
+		m.offsetShown = m.offset
+		m.scrollAnim = false
 	}
 }
 
@@ -1481,7 +1544,7 @@ func (m *browseModel) fillUnknown() {
 }
 
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.pushing || m.pulling || m.pullAnimating || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || len(m.diffBusy) > 0 || m.panelHasRunningJob()
+	return m.fetching || m.pushing || m.pulling || m.pullAnimating || m.scrollAnim || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || len(m.diffBusy) > 0 || m.panelHasRunningJob()
 }
 
 // panelHasRunningJob は表示中の job パネルに実行中 (経過時間が増える) job があるか。
@@ -1571,7 +1634,12 @@ func (m *browseModel) View() string {
 	}
 	lines := m.lines()
 	page := m.pageSize()
-	offset := min(m.offset, max(len(lines)-page, 0))
+	// scrollAnim 中は表示 offset (glide 途中) で窓を切る。それ以外は論理 offset。
+	renderOffset := m.offset
+	if m.scrollAnim {
+		renderOffset = m.offsetShown
+	}
+	offset := min(max(renderOffset, 0), max(len(lines)-page, 0))
 	end := min(offset+page, len(lines))
 	window := make([]string, 0, page)
 	for i := offset; i < end; i++ {
