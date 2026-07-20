@@ -199,6 +199,7 @@ type browseModel struct {
 	pushWarn       string              // push/pull できない理由の警告モーダル (何かキーで閉じる)
 	pullConfirm    bool                // u の pull --rebase 確認中 (y/N)
 	pulling        bool                // git pull --rebase 実行中 (終了以外のキーを無視)
+	pullAnimating  bool                // pull 後に先頭へ増えた新規コミット行を上から降らせる演出中 (offset が進行度)
 	opts           *Options            // pull 後のコミット再読込に使う (revs / max-count)
 	pushPoll       map[string]bool     // push 直後ポーリング対象の SHA (CI が見えたら外れる)
 	pollAttempts   int                 // push 直後ポーリングの試行回数 (上限で諦める)
@@ -280,6 +281,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		if !m.spinnerActive() {
 			return m, nil
+		}
+		if m.pullAnimating {
+			m.advancePullAnim() // pull で増えた新規行を 1 行/フレームで上から降らせる
 		}
 		m.frame++
 		m.invalidateLines() // 取得中コミットのスピナーフレームが進む
@@ -615,6 +619,12 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 		m.notice = "pull 後の再読込に失敗しました: " + firstLine(err.Error())
 		return nil
 	}
+	// pull 前の SHA 集合。pull 後に先頭へ増えた新規コミット数を「既知 SHA に当たるまで」で
+	// 数え、アニメーションの対象行数を決める (rebase で SHA が書き換わった場合も破綻しない)。
+	oldSHAs := make(map[string]struct{}, len(m.commits))
+	for _, c := range m.commits {
+		oldSHAs[c.SHA] = struct{}{}
+	}
 	m.commits = commits
 	shas := make([]string, len(commits))
 	for i, c := range commits {
@@ -632,7 +642,7 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 	m.closePanel()
 	m.diffSHA = ""
 	m.pushPoll = nil
-	m.cursor, m.offset = 0, 0
+	m.cursor, m.offset = 0, 0 // カーソルは新規コミットの先頭へ (ユーザー要望 2026-07-20)
 	if !m.oneline {
 		m.verbatim = nil
 		if raw, dispErr := LoadLogDisplay(m.opts, m.colored); dispErr == nil {
@@ -640,9 +650,18 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 		}
 	}
 	m.invalidateLines()
-	m.ensureCursorVisible()
+	// 先頭に増えた新規コミット行を上から降らせる演出。startPullAnim が offset を新規行数だけ
+	// 手前 (下スクロール位置) へ置き、tick で 1 行/フレームずつ 0 へ戻すと新規行が上から入り
+	// 既存行が下へずれて見える。アニメしないと決まったときだけ即カーソル可視化に落とす
+	m.startPullAnim(oldSHAs)
+	if !m.pullAnimating {
+		m.ensureCursorVisible()
+	}
 	if !m.hasRepo || len(m.toFetch) == 0 {
 		m.fetching = false
+		if m.pullAnimating {
+			return tick() // CI 取得は無いが、アニメーションのために tick を回す
+		}
 		return nil
 	}
 	m.fetching = true
@@ -655,6 +674,55 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 		return ciResultMsg{batch: batch, ghErr: ghErr}
 	}
 	return tea.Batch(fetch, tick())
+}
+
+// pullAnimMaxLines は pull アニメで降らせる最大行数。大量 pull でも待ちが伸びすぎないよう
+// 「頭だけ」流し、超過分は最初から所定位置に置く (ユーザー要望 2026-07-20)。
+const pullAnimMaxLines = 8
+
+// startPullAnim は pull 後に先頭へ増えた新規コミットの行数を求め、あれば offset を
+// その分 (上限 pullAnimMaxLines) だけ下げてアニメーションを開始する。tick は
+// reloadAfterPull / tickMsg 側で回す。
+func (m *browseModel) startPullAnim(oldSHAs map[string]struct{}) {
+	newCommits := 0
+	for _, c := range m.commits {
+		if _, ok := oldSHAs[c.SHA]; ok {
+			break // 既知コミットに到達 = ここから下は元からある分
+		}
+		newCommits++
+	}
+	if newCommits == 0 {
+		return
+	}
+	// 新規コミットが占める行数 (medium 表示では 1 コミット複数行)。最初の「既存コミット」の
+	// 行 index が、そのまま先頭からの新規行数になる。全行が新規で既存が下に無いなら
+	// 押し下げる相手がいないのでアニメしない (newLines が 0 のまま)
+	lines := m.lines()
+	newLines := 0
+	for i, l := range lines {
+		if l.CommitIdx >= newCommits {
+			newLines = i
+			break
+		}
+	}
+	// offset スクロールで新規行を画面外上部に隠す方式のため、リスト全体が画面に収まる
+	// (スクロール不能な) 短いリストではアニメできない → 即表示にフォールバック
+	if newLines == 0 || len(lines) <= m.pageSize() {
+		return
+	}
+	m.offset = min(newLines, pullAnimMaxLines)
+	m.pullAnimating = true
+}
+
+// advancePullAnim は pull アニメーションを 1 行分進める (1 フレーム = tick 1 回)。
+// offset を 0 に向けて減らすと、新規行が上から降りて既存行が下へずれる。
+func (m *browseModel) advancePullAnim() {
+	m.offset--
+	if m.offset <= 0 {
+		m.offset = 0
+		m.pullAnimating = false
+		m.ensureCursorVisible()
+	}
 }
 
 // unpushedCount は未 push コミット数 (push 確認モーダルと confirmPush が共用)。
@@ -1254,7 +1322,7 @@ func (m *browseModel) fillUnknown() {
 }
 
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.pushing || m.pulling || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || len(m.diffBusy) > 0 || m.panelHasRunningJob()
+	return m.fetching || m.pushing || m.pulling || m.pullAnimating || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || len(m.diffBusy) > 0 || m.panelHasRunningJob()
 }
 
 // panelHasRunningJob は表示中の job パネルに実行中 (経過時間が増える) job があるか。
