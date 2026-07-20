@@ -1385,21 +1385,39 @@ func TestBrowsePullFlow(t *testing.T) {
 }
 
 // tmux prefix (popup 内では tmux に届かない) の誤爆フィードバック。
+// TUI 内 notice に加えて、外側の tmux status line へのトースト (display-message) も出す。
 func TestBrowseTmuxPrefixFeedback(t *testing.T) {
+	var toasts []string
+	origToast := tmuxToast
+	tmuxToast = func(msg string) { toasts = append(toasts, msg) }
+	t.Cleanup(func() { tmuxToast = origToast })
+	deliverToast := func(cmd tea.Cmd) {
+		if cmd != nil {
+			cmd() // toastCmd は実行時に tmuxToast を呼ぶ (戻り msg は nil)
+		}
+	}
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.Update(prefixMsg{key: "ctrl+t"})
-	// prefix 単体: 案内を出す (カーソルは動かない)
-	m.handleKey("ctrl+t")
+	// prefix 単体: 案内を出す (カーソルは動かない)。tmux トーストも飛ぶ
+	_, cmd := m.handleKey("ctrl+t")
+	deliverToast(cmd)
 	if !strings.Contains(m.notice, "popup") {
 		t.Fatalf("prefix の案内が出ない: %q", m.notice)
 	}
+	if len(toasts) != 1 || !strings.Contains(toasts[0], "効きません") {
+		t.Fatalf("prefix でトーストが飛ばない: %v", toasts)
+	}
 	// prefix に続く 1 キーは飲み込む (p が PR オープンに化けない・j でカーソルも動かない)
-	m.handleKey("j")
+	_, cmd = m.handleKey("j")
+	deliverToast(cmd)
 	if m.cursor != 0 {
 		t.Fatal("prefix 直後のキーが飲み込まれずカーソルが動いた")
 	}
 	if !strings.Contains(m.notice, "prefix+j") {
 		t.Fatalf("押したキー名入りの案内が出ない: %q", m.notice)
+	}
+	if len(toasts) != 2 || !strings.Contains(toasts[1], "prefix+j") {
+		t.Fatalf("飲み込みキーのトーストが飛ばない: %v", toasts)
 	}
 	// 飲み込みは 1 キーだけ (次の j は通常動作)
 	m.handleKey("j")
