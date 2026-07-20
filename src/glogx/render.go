@@ -169,8 +169,8 @@ func insertPushBoundary(lines []Line, commits []Commit, statuses map[string]CISt
 	if width <= 0 {
 		width = 60
 	}
-	rule := func(label string) string {
-		head := "── origin" + label + " "
+	rule := func() string {
+		head := "── origin "
 		return paint(head+strings.Repeat("─", max(width-runewidth.StringWidth(head), 0)), ansiDim, o.Colored)
 	}
 	if allPushed {
@@ -189,7 +189,7 @@ func insertPushBoundary(lines []Line, commits []Commit, statuses map[string]CISt
 		if l.Header && l.CommitIdx == boundary {
 			out := make([]Line, 0, len(lines)+1)
 			out = append(out, lines[:i]...)
-			out = append(out, Line{Text: rule(""), CommitIdx: boundary - 1})
+			out = append(out, Line{Text: rule(), CommitIdx: boundary - 1})
 			out = append(out, lines[i:]...)
 			return out
 		}
@@ -471,6 +471,12 @@ func clipToWidth(line string, width int) string {
 	if width <= 0 {
 		return line
 	}
+	// fast-path: ANSI 無しなら整形式 UTF-8 で表示幅 ≤ byte 長が成り立つので、byte 長が
+	// width 以内なら確実に幅内 = stripANSI の alloc も StringWidth 走査も省ける
+	// (View の可視行の多数派 = Author/Date/message 平文・NO_COLOR 全行がここを通る)。
+	if len(line) <= width && strings.IndexByte(line, '\x1b') < 0 {
+		return line
+	}
 	plain := stripANSI(line)
 	if runewidth.StringWidth(plain) <= width {
 		return line
@@ -479,6 +485,9 @@ func clipToWidth(line string, width int) string {
 }
 
 func stripANSI(s string) string {
+	if strings.IndexByte(s, '\x1b') < 0 {
+		return s // ESC 無しは Builder 確保・rune 走査とも不要
+	}
 	var b strings.Builder
 	inEscape := false
 	for _, r := range s {

@@ -403,6 +403,16 @@ func TestClipToWidth(t *testing.T) {
 	if got := clipToWidth(colored, 40); got != colored {
 		t.Errorf("幅内の色付き行が変更された: %q", got)
 	}
+	// fast-path: ANSI 無し・幅内は無改変で素通し
+	if got := clipToWidth("plain ascii", 40); got != "plain ascii" {
+		t.Errorf("ANSI 無し幅内が変更された: %q", got)
+	}
+	// fast-path の byte 長ヒューリスティックが全角を誤って素通ししない
+	// (あ×30 = 表示幅 60 > 40。byte 長 90 も 40 超なので fast-path を通らず truncate される)
+	wide := strings.Repeat("あ", 30)
+	if got := clipToWidth(wide, 40); runewidth.StringWidth(got) > 40 {
+		t.Errorf("全角行が幅超過のまま素通しされた: 幅 %d", runewidth.StringWidth(got))
+	}
 }
 
 func TestRenderCached(t *testing.T) {
