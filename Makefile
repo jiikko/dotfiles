@@ -67,6 +67,20 @@ tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); 
 printf '%s\n' "$$tests" | while IFS= read -r t; do echo "[run] $$t"; "$$t" || exit 1; done
 endef
 
+# run_tests の並列版。各テストは独自 tempdir で独立しているものだけに使うこと
+# (nvim/tmux 系は共有資源の競合が未検証のため直列の run_tests のまま)。出力は
+# テストごとにファイルへ隔離し、失敗時にまとめて吐く (並列で行が混ざるのを防ぐ)。
+# fail-fast はしない (xargs は失敗後も残りを流し、最後に非 0 (123) を返す)。
+# parallel-each は不採用: CI runner に Go が無くビルドできない・retries/resume の
+# 既定がテスト用途と合わない (状態ファイルを repo に作る) ため、素の xargs -P を使う。
+NPROC := $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
+define run_tests_parallel
+tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); \
+[ -n "$$tests" ] || { echo "✗ $(1) 配下にテストが見つかりません (find 失敗 or 0 件)" >&2; exit 1; }; \
+printf '%s\n' "$$tests" | xargs -P $(NPROC) -n 1 sh -c \
+	'out=$$(mktemp); if "$$0" >"$$out" 2>&1; then echo "[ok] $$0"; rm -f "$$out"; else echo "[FAIL] $$0"; cat "$$out"; rm -f "$$out"; exit 1; fi'
+endef
+
 # test-runtime の実行本体。tests/ 全体を走査するため、新ディレクトリ tests/foo/ を作っても
 # 自動で拾われる (ディレクトリ単位の死蔵も発生しない)。
 test-discovered:
@@ -79,8 +93,10 @@ test-discovered:
 CI_HEAVY_TEST_DIRS := tests/zshrc/av1ify tests/zshrc/concat
 CI_HEAVY_PRUNE := \( $(foreach d,$(CI_HEAVY_TEST_DIRS),-path $(d) -o) -false \) -prune -o
 
+# heavy は 21 本 × ~16s (CI 実測) の直列で 5.6 分に育ったため並列実行する
+# (av1ify/concat は tempdir 独立で並列安全。2026-07-20 に 338s → 数十秒へ)
 test-discovered-heavy:
-	@$(call run_tests,$(CI_HEAVY_TEST_DIRS))
+	@$(call run_tests_parallel,$(CI_HEAVY_TEST_DIRS))
 
 test-discovered-rest:
 	@$(call run_tests,tests $(CI_HEAVY_PRUNE))

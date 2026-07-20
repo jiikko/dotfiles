@@ -16,7 +16,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 実行時間短縮のため 2 グループに並列分割 (実測: heavy ≒ 73s / rest ≒ 40s)。
+  # 実行時間短縮のため 2 グループに並列分割し、heavy はジョブ内でも xargs -P 並列
+  # (Makefile の run_tests_parallel)。テスト増殖で heavy が 5.6 分に育った実測 (2026-07-20)
+  # を受けての措置。
   # グループ定義 (どのディレクトリが heavy か) は Makefile 側に集約 (CI_HEAVY_TEST_DIRS)。
   # rest は除外方式なので新テストディレクトリは自動で rest 側で走る。
   dotfiles-tests:
@@ -24,13 +26,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # heavy (av1ify/concat) は nvim テストを含まないため setup-nvim を省略する
+          # heavy (av1ify/concat) は nvim テストを含まない (setup-nvim 省略)。
+          # zsh テストのみなので apt も zsh/make だけに絞る (tmux/bats の ~60s を節約)
           - group: heavy
             make-target: test-discovered-heavy
             needs-nvim: false
+            packages: zsh make
           - group: rest
             make-target: test-runtime-rest
             needs-nvim: true
+            packages: tmux zsh make bats
     name: dotfiles-tests (${{ matrix.group }})
     runs-on: ubuntu-slim
     timeout-minutes: 10
@@ -42,12 +47,12 @@ jobs:
 
       - uses: actions/checkout@v7
 
-      - name: Install runtime dependencies (tmux, zsh, bats)
+      - name: Install runtime dependencies (${{ matrix.packages }})
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends tmux zsh make bats
+          sudo apt-get install -y --no-install-recommends ${{ matrix.packages }}
 
       # Neovim 0.11 pin + plugin cache + lazy restore。pin の理由・cache key の世代管理は
       # action 側に集約 (bench.yml と共有。二重管理を防ぐため詳細はそちらだけに書く)
