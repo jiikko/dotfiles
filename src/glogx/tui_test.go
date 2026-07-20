@@ -840,6 +840,35 @@ func TestBrowseOpenPR(t *testing.T) {
 	}
 }
 
+// detail/basis/jobDetail の一過性エラーは、後続の成功結果で hint 警告がクリアされる
+// (set-only だとセッション中ずっと張り付いていた・レビュー C4)。
+func TestBrowseGhErrClearedOnSuccess(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	// パネル対象の detail 取得が一過性エラー → 警告が出る
+	m.panelSHA = sha
+	m.Update(detailMsg{sha: sha, batch: emptyBatch(), ghErr: &GHError{Kind: GHOther, Detail: "boom"}})
+	if m.ghErr == nil || !strings.Contains(m.hintLine(), "取得に失敗") {
+		t.Fatalf("detail エラーで警告が出ない: ghErr=%v hint=%q", m.ghErr, m.hintLine())
+	}
+	// 成功 detail が届くと警告はクリアされる (set-only なら残ってしまう)
+	m.Update(detailMsg{sha: sha, batch: emptyBatch(), ghErr: nil})
+	if m.ghErr != nil {
+		t.Fatalf("成功 detail 後も ghErr が残っている: %v", m.ghErr)
+	}
+	// basis / jobDetail も同様に成功でクリアする
+	m.ghErr = &GHError{Kind: GHOther, Detail: "boom2"}
+	m.Update(basisMsg{batch: emptyBatch(), ghErr: nil})
+	if m.ghErr != nil {
+		t.Errorf("成功 basis 後も ghErr が残っている: %v", m.ghErr)
+	}
+	m.ghErr = &GHError{Kind: GHOther, Detail: "boom3"}
+	m.Update(jobDetailMsg{key: "k", lines: []string{"x"}, ghErr: nil})
+	if m.ghErr != nil {
+		t.Errorf("成功 jobDetail 後も ghErr が残っている: %v", m.ghErr)
+	}
+}
+
 func TestBrowseOpenPRErrorNotCached(t *testing.T) {
 	// 一時エラーは「PR なし」としてキャッシュしない (次の p で再試行できる)
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)

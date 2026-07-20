@@ -88,9 +88,20 @@ type panelPollMsg struct{ seq int }
 
 const panelPollInterval = 3 * time.Second
 
+// noPromptGitCmd は remote に触る git (push/pull) 用のコマンドを組む。GIT_TERMINAL_PROMPT=0
+// で「認証情報が要るのに helper が無い」場合に /dev/tty へ対話プロンプトを出させず即エラーに
+// する: bubbletea が同じ端末を raw mode で握っているため、git が tty を奪うと表示が壊れ入力
+// 挙動が未定義になる (対話認証は TUI の外でやるべき作業)。タイムアウトは付けない — 正当な
+// 巨大 push が遅い回線で中断される方が push 失敗として有害なため (レビュー K2)。
+func noPromptGitCmd(args ...string) *exec.Cmd {
+	cmd := exec.Command("git", args...)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	return cmd
+}
+
 // runGitPush はテストで実 push しないための差し替え点。
 var runGitPush = func() error {
-	out, err := exec.Command("git", "push").CombinedOutput()
+	out, err := noPromptGitCmd("push").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
 	}
@@ -104,7 +115,7 @@ type pullMsg struct{ err error }
 // 途中停止したら自動で abort して pull 前の状態へ戻す (TUI 内に「rebase 進行中」の
 // 壊れた状態を残さない。解決が必要な conflict はシェルでやるべき作業)。
 var runGitPullRebase = func() error {
-	out, err := exec.Command("git", "pull", "--rebase").CombinedOutput()
+	out, err := noPromptGitCmd("pull", "--rebase").CombinedOutput()
 	if err == nil {
 		return nil
 	}
@@ -400,9 +411,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.sha == m.panelSHA {
 			m.panelRefresh = false
 		}
-		if msg.ghErr != nil {
-			m.ghErr = msg.ghErr
-		}
+		m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (sticky 警告の防止・レビュー C4)
 		maps.Copy(m.fetched, msg.batch.Statuses)
 		maps.Copy(m.statuses, msg.batch.Statuses)
 		maps.Copy(m.details, msg.batch.Details)
@@ -422,9 +431,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.maybeFetchETABasis(), poll)
 	case basisMsg:
 		m.invalidateLines()
-		if msg.ghErr != nil {
-			m.ghErr = msg.ghErr
-		}
+		m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (レビュー C4)
 		maps.Copy(m.fetched, msg.batch.Statuses)
 		maps.Copy(m.statuses, msg.batch.Statuses)
 		maps.Copy(m.details, msg.batch.Details)
@@ -440,9 +447,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case jobDetailMsg:
 		delete(m.jobDetailBusy, msg.key)
-		if msg.ghErr != nil {
-			m.ghErr = msg.ghErr
-		}
+		m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (レビュー C4)
 		if msg.lines != nil {
 			m.jobDetail[msg.key] = msg.lines
 			if m.detailOpen && m.detailKey() == msg.key {
@@ -1420,13 +1425,7 @@ func (m *browseModel) diffBoxLines() []string {
 	if width <= 0 {
 		width = 80
 	}
-	var commit *Commit
-	for i := range m.commits {
-		if m.commits[i].SHA == m.diffSHA {
-			commit = &m.commits[i]
-			break
-		}
-	}
+	commit := m.commitBySHA(m.diffSHA)
 	if commit == nil {
 		return nil
 	}
@@ -1599,6 +1598,17 @@ func (m *browseModel) boxAnchor(lines []Line, offset int, sha string) int {
 	return -1
 }
 
+// commitBySHA は SHA に一致するコミットを線形探索で返す (無ければ nil)。パネル/diff の
+// 描画で同一ループが重複していたのを 1 本化 (レビュー C5)。表示件数は既定 20 で O(n) は無害。
+func (m *browseModel) commitBySHA(sha string) *Commit {
+	for i := range m.commits {
+		if m.commits[i].SHA == sha {
+			return &m.commits[i]
+		}
+	}
+	return nil
+}
+
 // overlayBox は box をウィンドウの anchor 位置へ重ねる (リスト行を置き換える)。
 // 下に収まらない場合はビューポート内へ収まる位置まで引き上げる。
 func overlayBox(window, box []string, anchor, page int) []string {
@@ -1624,13 +1634,7 @@ func (m *browseModel) panelLines() []string {
 	if width <= 0 {
 		width = 80
 	}
-	var commit *Commit
-	for i := range m.commits {
-		if m.commits[i].SHA == m.panelSHA {
-			commit = &m.commits[i]
-			break
-		}
-	}
+	commit := m.commitBySHA(m.panelSHA)
 	if commit == nil {
 		return nil
 	}
