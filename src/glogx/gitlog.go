@@ -173,7 +173,13 @@ func LoadHeadCommit() (*Commit, error) {
 // 保つため「表示範囲内の未 push」は必ずフィルタ後の先頭 limit 件に含まれる = 上限を
 // かけても表示対象の判定は欠けない。remote ref が無い巨大 repo で全履歴を列挙する劣化の
 // ガード。仮に取りこぼしても API 問い合わせが none を返すだけの fail-soft。
-func UnpushedSHAs(revs []string, limit int) map[string]bool {
+//
+// paths は表示側 (BuildLogArgs の `-- <paths>`) と同じ pathspec。渡さないと表示は
+// 「path 該当の先頭 N 件」・未 push 集合は「path 無視の先頭 N 件」と対象ドメインが食い違い、
+// path を触らない未 push が N 件超あると `glogx -- <path>` で path 該当の未 push が
+// rev-list から溢れて ↑ でなく – と誤表示される (上の subsequence 保証が path 付きで
+// 崩れる)。表示と同じ path フィルタを rev-list にも掛けて集合を揃える。
+func UnpushedSHAs(revs []string, limit int, paths []string) map[string]bool {
 	args := []string{"rev-list"}
 	if len(revs) == 0 {
 		args = append(args, "HEAD")
@@ -183,6 +189,10 @@ func UnpushedSHAs(revs []string, limit int) map[string]bool {
 	args = append(args, "--not", "--remotes")
 	if limit > 0 {
 		args = append(args, fmt.Sprintf("--max-count=%d", limit))
+	}
+	if len(paths) > 0 {
+		args = append(args, "--")
+		args = append(args, paths...)
 	}
 	out, err := runGit(args...)
 	if err != nil {

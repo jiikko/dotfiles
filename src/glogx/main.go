@@ -188,7 +188,7 @@ func gatherRepoPlan(opts *Options) repoPlan {
 	var plan repoPlan
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		plan.unpushed = UnpushedSHAs(opts.Revs, opts.MaxCount)
+		plan.unpushed = UnpushedSHAs(opts.Revs, opts.MaxCount, opts.Paths)
 	})
 	plan.repo, plan.hasRepo = ResolveRepo()
 	if plan.hasRepo && !opts.NoCache {

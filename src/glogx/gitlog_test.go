@@ -223,7 +223,7 @@ func TestIntegrationUnpushedSHAs(t *testing.T) {
 	}
 	git("remote", "add", "origin", "git@github.com:o/r.git")
 	git("update-ref", "refs/remotes/origin/master", pushedSHA)
-	unpushed := UnpushedSHAs(nil, 0)
+	unpushed := UnpushedSHAs(nil, 0, nil)
 	if !unpushed[localSHA] {
 		t.Errorf("ローカルのみのコミットが未 push 判定されない")
 	}
@@ -231,7 +231,7 @@ func TestIntegrationUnpushedSHAs(t *testing.T) {
 		t.Errorf("remote 到達済みのコミットが未 push 判定された")
 	}
 	// limit 付きでも表示範囲 (rev-list 先頭) の未 push は欠けない
-	limited := UnpushedSHAs(nil, 1)
+	limited := UnpushedSHAs(nil, 1, nil)
 	if !limited[localSHA] {
 		t.Errorf("limit=1 で先頭の未 push コミットが欠けた")
 	}
@@ -247,6 +247,75 @@ func TestIntegrationUnpushedSHAs(t *testing.T) {
 	if len(toFetch) != 1 || toFetch[0] != pushedSHA {
 		t.Errorf("toFetch = %v; want [pushed のみ]", toFetch)
 	}
+}
+
+// pathspec 指定時、未 push 集合は表示側 (BuildLogArgs の `-- <paths>`) と同じ path
+// フィルタで絞られる。path を触らない新しい未 push が積まれていても、path 該当の
+// 未 push が集合から欠けない (C12 の回帰: 欠けると ↑ が – と誤表示される)。
+func TestIntegrationUnpushedSHAsPathspec(t *testing.T) {
+	dir := t.TempDir()
+	prev, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(prev) })
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=tester", "GIT_AUTHOR_EMAIL=t@example.com",
+			"GIT_COMMITTER_NAME=tester", "GIT_COMMITTER_EMAIL=t@example.com")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git("init", "-q", "-b", "main")
+	// base (後で push 済みにする) → a を触る未 push → b を触る未 push (最新)
+	write("a.txt", "base\n")
+	git("add", ".")
+	git("commit", "-q", "-m", "base")
+	baseSHA := headSHA(t)
+	write("a.txt", "a change\n")
+	git("add", ".")
+	git("commit", "-q", "-m", "touch a")
+	aSHA := headSHA(t)
+	write("b.txt", "b change\n")
+	git("add", ".")
+	git("commit", "-q", "-m", "touch b")
+	bSHA := headSHA(t)
+	// base までを origin に push 済みと偽装 (a/b は未 push)
+	git("remote", "add", "origin", "git@github.com:o/r.git")
+	git("update-ref", "refs/remotes/origin/master", baseSHA)
+
+	// path 無しなら a/b 両方が未 push
+	all := UnpushedSHAs(nil, defaultMaxCount, nil)
+	if !all[aSHA] || !all[bSHA] {
+		t.Fatalf("path 無しで a/b が未 push 判定されない: %v", all)
+	}
+	// a.txt 指定なら a のみ (b.txt しか触らない bSHA は path 該当せず除外される)。
+	// これが崩れると `glogx -- a.txt` で aSHA が toFetch へ回り – と誤表示される
+	onlyA := UnpushedSHAs(nil, defaultMaxCount, []string{"a.txt"})
+	if !onlyA[aSHA] {
+		t.Errorf("a.txt 指定で aSHA が未 push 判定されない: %v", onlyA)
+	}
+	if onlyA[bSHA] {
+		t.Errorf("a.txt 指定なのに b.txt のみ触る bSHA が未 push 集合に混入: %v", onlyA)
+	}
+}
+
+// headSHA は現在の HEAD の完全 SHA を返すテストヘルパー。
+func headSHA(t *testing.T) string {
+	t.Helper()
+	out, err := exec.Command("git", "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func TestIntegrationOutsideRepo(t *testing.T) {
