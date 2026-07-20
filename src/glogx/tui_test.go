@@ -906,8 +906,9 @@ func TestBrowsePanelHomeKeyOnEmptyJobs(t *testing.T) {
 
 func TestBuildPanelBoxWidths(t *testing.T) {
 	lines := buildPanelBox(" title ", []string{"row", strings.Repeat("x", 200)}, 40, false)
-	if len(lines) != 4 {
-		t.Fatalf("枠 + 2 行のはずが %d 行", len(lines))
+	// 枠 (top/bottom) + 2 行 + 下端の落ち影 1 行 = 5 行。影を足しても footprint 幅は 40 のまま
+	if len(lines) != 5 {
+		t.Fatalf("枠 + 2 行 + 影 1 行のはずが %d 行", len(lines))
 	}
 	for _, l := range lines {
 		if w := runewidth.StringWidth(stripANSI(l)); w != 40 {

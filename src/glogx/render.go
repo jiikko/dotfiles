@@ -21,6 +21,9 @@ const (
 	// 地色 234/235 より一段明るい段で「選択行の面」を作る (fg 色はそのまま透ける)
 	ansiCursorBg = "\x1b[48;5;237m"
 	ansiBold     = "\x1b[1m"
+	// popup の落ち影 bg (256色の暗灰 233)。地色 234/235 より一段暗くして、枠の右下に
+	// 落とすと板が浮いて見える (buildPanelBox の drop shadow)
+	ansiShadowBg = "\x1b[48;5;233m"
 )
 
 // spinnerFrames は取得中表示のフレーム。
