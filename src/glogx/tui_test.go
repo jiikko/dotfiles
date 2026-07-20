@@ -1549,14 +1549,14 @@ func TestBrowsePushNoUnpushed(t *testing.T) {
 
 // カーソル溝の廃止 (2026-07-19): 行頭 2 桁の溝を足さず git log と左マージンが一致し、
 // カーソルはヘッダー行全体の bg 塗りで示す。
-func TestBrowseCursorIsBgHighlightNotGutter(t *testing.T) {
+func TestBrowseCursorGutterArrowAndBgHighlight(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateSuccess)
 	m.colored = true
 	view := strings.Split(m.View(), "\n")
 	var authorLine, cursorHeader, otherHeader string
 	for _, l := range view {
-		if strings.HasPrefix(stripANSI(l), "Author: ") && authorLine == "" {
+		if strings.HasPrefix(stripANSI(l), cursorGutterBlank+"Author: ") && authorLine == "" {
 			authorLine = l
 		}
 		if strings.Contains(l, "commit "+m.commits[0].SHA) {
@@ -1569,9 +1569,12 @@ func TestBrowseCursorIsBgHighlightNotGutter(t *testing.T) {
 	if authorLine == "" || cursorHeader == "" || otherHeader == "" {
 		t.Fatalf("期待行が見つからない:\n%s", m.View())
 	}
-	// git log と同じく Author 行は列 0 から始まる (旧実装は "  Author")
-	if strings.HasPrefix(stripANSI(authorLine), " ") {
-		t.Errorf("Author 行に左マージンが残っている: %q", authorLine)
+	// 全行にカーソル溝 2 桁のマージンがあり、カーソル行だけ「→ 」が入る
+	if !strings.HasPrefix(stripANSI(cursorHeader), cursorGutterMark) {
+		t.Errorf("カーソル行が %q で始まっていない: %q", cursorGutterMark, cursorHeader)
+	}
+	if !strings.HasPrefix(stripANSI(otherHeader), cursorGutterBlank) {
+		t.Errorf("非カーソル行に溝の空白マージンがない: %q", otherHeader)
 	}
 	if !strings.Contains(cursorHeader, ansiCursorBg) {
 		t.Errorf("カーソル行に bg 塗りがない: %q", cursorHeader)
@@ -1583,10 +1586,10 @@ func TestBrowseCursorIsBgHighlightNotGutter(t *testing.T) {
 	if strings.Contains(cursorHeader, ansiReset+" ") && !strings.Contains(cursorHeader, ansiReset+ansiCursorBg) {
 		t.Errorf("リセット後に bg が張り直されていない: %q", cursorHeader)
 	}
-	// 色なしは "❯ " 前置に degrade
+	// 色なしは bg が使えないため「→ 」のみに degrade (溝は全行にあるのでずれない)
 	m.colored = false
 	m.invalidateLines()
-	if !strings.Contains(m.View(), "❯ ") {
-		t.Error("NO_COLOR で ❯ マーカーが出ていない")
+	if !strings.Contains(m.View(), cursorGutterMark) {
+		t.Errorf("NO_COLOR で %q マーカーが出ていない", cursorGutterMark)
 	}
 }

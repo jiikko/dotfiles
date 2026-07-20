@@ -18,8 +18,9 @@ const (
 	ansiCyan    = "\x1b[36m"
 	ansiDim     = "\x1b[2m"
 	// カーソル行の bg (256色の暗灰 237)。テーマの意味マップ (docs/theme-colors.md) の
-	// 地色 234/235 より一段明るい段で「選択行の面」を作る (fg 色はそのまま透ける)
-	ansiCursorBg = "\x1b[48;5;237m"
+	// カーソル行の bg。無彩色の 237 では地色 234/235 と近く見失いやすかったため、
+	// 色相のある暗青 24 に変更 (ユーザー要望 2026-07-21。fg 色はそのまま透ける)
+	ansiCursorBg = "\x1b[48;5;24m"
 	ansiBold     = "\x1b[1m"
 	// confirm モーダルの落ち影 bg (256色の暗灰 233)。地色 234/235 より一段暗くして、
 	// 枠の右下に落とすと板が浮いて見える (buildShadowPanelBox の drop shadow)

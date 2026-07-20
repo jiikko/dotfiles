@@ -1488,9 +1488,10 @@ func (m *browseModel) renderOpts() RenderOpts {
 		Oneline: m.oneline,
 		Colored: m.colored,
 		Spinner: m.spinner(),
-		// カーソルは行頭の溝でなくヘッダー行全体の bg 塗り (cursorLine) で示すため、
-		// 折り返し幅は端末の全幅 = git log と左マージンが一致する (ユーザー要望 2026-07-19)
-		Width:    m.width,
+		// 全行に 2 桁のカーソル溝 (cursorGutter*) を確保するため、折り返し幅は
+		// その分狭い (bg 塗りだけでは視認しにくいという 2026-07-21 のユーザー要望で、
+		// 2026-07-19 の「溝なし・全幅」から再反転した)
+		Width:    max(m.width-cursorGutterWidth, 0),
 		Decor:    m.decor,
 		PRs:      m.prCache,
 		Verbatim: m.verbatim,
@@ -1553,13 +1554,14 @@ func (m *browseModel) View() string {
 	window := make([]string, 0, page)
 	for i := offset; i < end; i++ {
 		text := lines[i].Text
-		// カーソルはヘッダー行全体の bg 塗りで示す (tig/fzf 流)。旧実装の全行 2 桁の
-		// カーソル溝 ("❯ " / "  ") は git log と左マージンがずれるため廃止 (ユーザー要望)
+		// カーソルは全行に確保した 2 桁の溝の「→ 」+ ヘッダー行全体の bg 塗りで示す。
+		// 溝は一度「git log と左マージンがずれる」で廃止したが、bg 塗りだけでは
+		// 視認しにくいため全行マージン込みで復活 (ユーザー要望 2026-07-21)
 		if lines[i].Header && lines[i].CommitIdx == m.cursor {
 			window = append(window, m.cursorLine(text))
 			continue
 		}
-		window = append(window, clipToWidth(text, m.width))
+		window = append(window, cursorGutterBlank+clipToWidth(text, max(m.width-cursorGutterWidth, 0)))
 	}
 	// job パネルは対象コミットのヘッダー行直下へ「重ねる」(リスト行を置き換える)。
 	// リストの行構成自体は変えないので、開閉で後続行がずれない。
@@ -1784,13 +1786,21 @@ func cursorMark(colored bool) string {
 	return paint("❯ ", ansiBold, colored)
 }
 
-// cursorLine はカーソル位置のコミットヘッダー行を強調する。色ありでは行全体を暗色 bg で
-// 塗る。色なし (NO_COLOR) では bg が使えないため "❯ " 前置に degrade する (その行だけ 2 桁ずれる)。
+// カーソル溝: 全リスト行の行頭に確保する 2 桁のマージン。カーソル行だけ「→ 」が入り、
+// 他の行は空白 (行ごとのガタつきを避けるため全行で幅を揃える)。
+const (
+	cursorGutterMark  = "→ "
+	cursorGutterBlank = "  "
+	cursorGutterWidth = 2
+)
+
+// cursorLine はカーソル位置のコミットヘッダー行を強調する。溝の「→ 」に加え、色ありでは
+// 行全体 (溝込み) を暗青 bg で塗る。色なし (NO_COLOR) では矢印のみ。
 func (m *browseModel) cursorLine(text string) string {
 	if !m.colored {
-		return clipToWidth("❯ "+text, m.width)
+		return clipToWidth(cursorGutterMark+text, m.width)
 	}
-	return m.bgLine(text, ansiCursorBg)
+	return m.bgLine(cursorGutterMark+text, ansiCursorBg)
 }
 
 // ansiResetRe は SGR リセット。git log --color は "\x1b[0m" でなく短縮形 "\x1b[m" を
