@@ -146,24 +146,6 @@ func parseTmuxPrefix(out string) string {
 	return ""
 }
 
-// tmuxToast はテストで実 tmux を叩かないための差し替え点。popup 内の TUI notice は
-// 枠の中で完結して見落としやすいため、外側の tmux status line にも display-message で
-// トーストを出す (popup は中央 85% 表示で status line は見えている)。best effort。
-var tmuxToast = func(msg string) {
-	if os.Getenv("TMUX") == "" {
-		return
-	}
-	_ = exec.Command("tmux", "display-message", msg).Run()
-}
-
-// toastCmd は tmuxToast を Update をブロックしない tea.Cmd として返す。
-func toastCmd(msg string) tea.Cmd {
-	return func() tea.Msg {
-		tmuxToast(msg)
-		return nil
-	}
-}
-
 // prMsg は commit に紐づく PR のオンデマンド取得の結果 (p キー)。
 type prMsg struct {
 	sha   string
@@ -597,12 +579,12 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if m.prefixPending && key != m.tmuxPrefix {
 		m.prefixPending = false
 		m.notice = "popup 内では tmux の window 操作はできません (C-g で閉じてから prefix+" + key + ")"
-		return m, toastCmd("⚠ popup 内では window 操作不可 — C-g で閉じてから prefix+"+key)
+		return m, nil
 	}
 	if m.tmuxPrefix != "" && key == m.tmuxPrefix {
 		m.prefixPending = true
 		m.notice = "tmux prefix は popup 内では効きません (C-g で popup を閉じてから)"
-		return m, toastCmd("⚠ tmux prefix は popup 内では効きません (C-g で閉じてから)")
+		return m, nil
 	}
 	// emacs 流の水平移動エイリアス (C-n/C-p = ↓/↑ は各ビューで対応済み)。ここで
 	// 正規化するので全ビュー (一覧/パネル/詳細/diff) に一括で効く。
@@ -1648,47 +1630,25 @@ func (m *browseModel) detailBoxLines(width int) []string {
 	return buildPanelBox(title, rows, width, m.colored)
 }
 
-// shadowRun は落ち影 n セル分。色ありは暗い bg の空白、色なし (NO_COLOR) は bg が
-// 使えないため陰影文字 "░" で代用する。
-func shadowRun(n int, colored bool) string {
-	if n <= 0 {
-		return ""
-	}
-	if !colored {
-		return strings.Repeat("░", n)
-	}
-	return ansiShadowBg + strings.Repeat(" ", n) + ansiReset
-}
-
 // buildPanelBox は枠線付きのパネルを組み立てる。行の実効幅は ANSI を除いて計算する。
-// 右端 1 桁・下端 1 行を「落ち影」に充て、板が左上光源で浮いて見える 3D 風にする
-// (footprint は width のまま。枠自体を fw = width-1 に狭めて影の余白を捻出する)。
 func buildPanelBox(title string, rows []string, width int, colored bool) []string {
 	if width < 10 {
 		width = 10
 	}
-	fw := width - 1    // 枠の幅 (残り 1 桁が右の影)
-	inner := fw - 4    // "│ " + " │"
-	shade := shadowRun(1, colored)
-	lines := make([]string, 0, len(rows)+3)
+	inner := width - 4 // "│ " + " │"
+	lines := make([]string, 0, len(rows)+2)
 	// タイトルは SGR 入りの job 名や commit subject がそのまま載る。ANSI を残すと
 	// 幅計算 (Truncate/StringWidth) がずれて罫線が崩れ、タイトル全体の dim 塗りも
 	// 途中でリセットされるため、タイトルに限っては ANSI を落とす
-	title = runewidth.Truncate(stripANSI(title), fw-2, "…")
-	top := "┌" + title + strings.Repeat("─", max(fw-2-runewidth.StringWidth(title), 0)) + "┐"
-	// 最上段だけ影なし (影は右上角の 1 つ下から始まるのが自然な落ち影)
-	lines = append(lines, paint(top, ansiDim, colored)+" ")
+	title = runewidth.Truncate(stripANSI(title), width-2, "…")
+	top := "┌" + title + strings.Repeat("─", max(width-2-runewidth.StringWidth(title), 0)) + "┐"
+	lines = append(lines, paint(top, ansiDim, colored))
 	for _, row := range rows {
 		content := clipToWidth(row, inner)
 		pad := max(inner-runewidth.StringWidth(stripANSI(content)), 0)
-		lines = append(lines, paint("│ ", ansiDim, colored)+content+strings.Repeat(" ", pad)+paint(" │", ansiDim, colored)+shade)
+		lines = append(lines, paint("│ ", ansiDim, colored)+content+strings.Repeat(" ", pad)+paint(" │", ansiDim, colored))
 	}
-	// 下辺は lower half block でセル下半分を埋める。罫線 ─ はセル中央に細く描かれるため
-	// 下半分が空き、下の落ち影との間に視覚的な余白ができる。▄ で下側に寄せて余白を消す
-	// (横 │ 側は影と余白なく繋がっているのでそのまま)。
-	lines = append(lines, paint(strings.Repeat("▄", fw), ansiDim, colored)+shade)
-	// 下端の影: 左へ 1 桁ずらして右下だけに落とす (古典的なウィンドウのドロップシャドウ)
-	lines = append(lines, " "+shadowRun(width-1, colored))
+	lines = append(lines, paint("└"+strings.Repeat("─", width-2)+"┘", ansiDim, colored))
 	return lines
 }
 
