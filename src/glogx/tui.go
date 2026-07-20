@@ -278,6 +278,7 @@ type browseModel struct {
 	prefixPending  bool                // 直前のキーが tmux prefix。次の 1 キーを飲み込む
 	verbatim       []Line              // git log 実出力の取り込み行 (nil = 自前レンダリング)
 	fetching       bool
+	ticking        bool // 80ms スピナー tick チェーンが 1 本生きているか (maybeTick の single-flight)
 	done           bool
 	fetch          tea.Cmd
 	cancel         context.CancelFunc
@@ -330,13 +331,27 @@ func (m *browseModel) Init() tea.Cmd {
 	// tmux prefix の取得は非同期 (fork 1 本 ≈ 6ms を初期描画のクリティカルパスに乗せない)
 	prefix := func() tea.Msg { return prefixMsg{key: loadTmuxPrefix()} }
 	if m.fetching {
-		return tea.Batch(m.fetch, prefix, tick())
+		return tea.Batch(m.fetch, prefix, m.maybeTick())
 	}
 	return prefix
 }
 
 func tick() tea.Cmd {
 	return tea.Tick(spinnerInterval, func(time.Time) tea.Msg { return tickMsg{} })
+}
+
+// maybeTick は 80ms スピナー tick を single-flight で仕込む。既にチェーンが 1 本生きて
+// いれば nil を返して二重チェーンを作らない。tea.Batch(cmd, tick()) は Init・各 fetch 経路
+// など多数に散らばり、非同期処理が重なるたびに独立した自己増殖チェーンが恒久追加されて
+// (push 直後ポーリングでは最長 2 分間に ~48 本まで) 再描画/アニメが N 倍化していた
+// (レビュー C1)。この single-flight で全 tick 発行を 1 本に束ねる。⚠️ pushPoll/panelPoll の
+// tea.Tick は別周期の独立タイマーなので maybeTick を通さない (それぞれ seq/guard で管理)。
+func (m *browseModel) maybeTick() tea.Cmd {
+	if m.ticking {
+		return nil
+	}
+	m.ticking = true
+	return tick()
 }
 
 // fetchCIStatusesCmd は targets の CI 状態取得を tea.Cmd にする。ctx/timeout/defer cancel の
@@ -367,15 +382,24 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ensureCursorVisible()
 		return m, nil
 	case tickMsg:
+		m.ticking = false // このチェーンが 1 拍消費した。継続は下の maybeTick で単一に保つ
 		if !m.spinnerActive() {
-			return m, nil
+			return m, nil // アニメ対象なし: 再アームせずチェーンを終わらせる
 		}
 		if m.pullAnimating {
 			m.advancePullAnim() // pull で増えた新規行を 1 行/フレームで上から降らせる
 		}
 		m.frame++
-		m.invalidateLines() // 取得中コミットのスピナーフレームが進む
-		return m, tick()
+		// list に毎フレーム変化する内容 (loading スピナー) が乗るのは fetch/pushPoll の 2 状態
+		// だけ。他の spinnerActive 条件 (panelHasRunningJob/pullAnimating/detailsLoading/
+		// jobDetailBusy/diffBusy) のスピナー・経過時間は panelLines/diffBoxLines 側 (lines() の
+		// 外) で毎フレーム描かれるので、ここで list を無効化すると -p 巨大 patch を含む全行を
+		// 80ms ごとに組み直すだけの無駄になる (レビュー C7)。offset を動かす pull アニメも
+		// lines() は不変なので invalidate 不要 (View が窓を切り直す)
+		if m.fetching || len(m.pushPoll) > 0 {
+			m.invalidateLines()
+		}
+		return m, m.maybeTick()
 	case ciResultMsg:
 		m.invalidateLines()
 		m.ghErr = msg.ghErr
@@ -411,7 +435,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.pushPoll) > 0 && m.pollAttempts < pushPollMaxAttempts {
 				return m, tea.Batch(
 					tea.Tick(pushPollInterval, func(time.Time) tea.Msg { return pushPollMsg{} }),
-					tick())
+					m.maybeTick())
 			}
 			m.pushPoll = nil // 上限到達: スピナーは spinnerActive から外れて止まる
 		}
@@ -530,7 +554,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		fetch := fetchCIStatusesCmd(m.repo, targets, func(b CIBatch, e *GHError) tea.Msg {
 			return ciResultMsg{batch: b, ghErr: e}
 		})
-		return m, tea.Batch(fetch, tick())
+		return m, tea.Batch(fetch, m.maybeTick())
 	case pullMsg:
 		m.pulling = false
 		if msg.err != nil {
@@ -575,7 +599,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		fetch := fetchCIStatusesCmd(m.repo, all, func(b CIBatch, e *GHError) tea.Msg {
 			return ciResultMsg{batch: b, ghErr: e}
 		})
-		return m, tea.Batch(fetch, tick())
+		return m, tea.Batch(fetch, m.maybeTick())
 	case openURLMsg:
 		if msg.err != nil {
 			m.notice = "ブラウザを開けませんでした: " + firstLine(msg.err.Error())
@@ -621,7 +645,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		if strings.ToLower(key) == "y" {
 			m.pushConfirm = false
 			m.pushing = true
-			return m, tea.Batch(func() tea.Msg { return pushMsg{err: runGitPush()} }, tick())
+			return m, tea.Batch(func() tea.Msg { return pushMsg{err: runGitPush()} }, m.maybeTick())
 		}
 		m.pushConfirm = false
 		return m, nil
@@ -631,7 +655,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		if strings.ToLower(key) == "y" {
 			m.pullConfirm = false
 			m.pulling = true
-			return m, tea.Batch(func() tea.Msg { return pullMsg{err: runGitPullRebase()} }, tick())
+			return m, tea.Batch(func() tea.Msg { return pullMsg{err: runGitPullRebase()} }, m.maybeTick())
 		}
 		m.pullConfirm = false
 		return m, nil
@@ -789,7 +813,7 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 	if !m.hasRepo || len(m.toFetch) == 0 {
 		m.fetching = false
 		if m.pullAnimating {
-			return tick() // CI 取得は無いが、アニメーションのために tick を回す
+			return m.maybeTick() // CI 取得は無いが、アニメーションのために tick を回す
 		}
 		return nil
 	}
@@ -797,7 +821,7 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 	fetch := fetchCIStatusesCmd(m.repo, m.toFetch, func(b CIBatch, e *GHError) tea.Msg {
 		return ciResultMsg{batch: b, ghErr: e}
 	})
-	return tea.Batch(fetch, tick())
+	return tea.Batch(fetch, m.maybeTick())
 }
 
 // pullAnimMaxLines は pull アニメで降らせる最大行数。大量 pull でも待ちが伸びすぎないよう
@@ -1117,7 +1141,7 @@ func (m *browseModel) openJobDetail() tea.Cmd {
 		lines, ghErr := FetchJobDetail(ctx, ExecRunner, repo, check)
 		return jobDetailMsg{key: key, lines: lines, ghErr: ghErr}
 	}
-	return tea.Batch(cmd, tick())
+	return tea.Batch(cmd, m.maybeTick())
 }
 
 // copyFocusURL はフォーカス位置の URL (job 選択中はその job、それ以外はコミット) を
@@ -1208,7 +1232,7 @@ func (m *browseModel) fetchPanelDetails(sha string) tea.Cmd {
 	cmd := fetchCIStatusesCmd(m.repo, []string{sha}, func(b CIBatch, e *GHError) tea.Msg {
 		return detailMsg{sha: sha, batch: b, ghErr: e}
 	})
-	return tea.Batch(cmd, tick())
+	return tea.Batch(cmd, m.maybeTick())
 }
 
 // maybeFetchETABasis は、パネルを開いた実行中コミットに ETA basis (同名完了 job の
@@ -1265,7 +1289,7 @@ func (m *browseModel) maybeFetchETABasis() tea.Cmd {
 	cmd := fetchCIStatusesCmd(m.repo, targets, func(b CIBatch, e *GHError) tea.Msg {
 		return basisMsg{targets: targets, batch: b, ghErr: e}
 	})
-	return tea.Batch(cmd, tick())
+	return tea.Batch(cmd, m.maybeTick())
 }
 
 func (m *browseModel) closePanel() {
@@ -1377,7 +1401,7 @@ func (m *browseModel) openDiff() tea.Cmd {
 		lines, err := loadCommitDiff(sha, colored)
 		return diffMsg{sha: sha, lines: lines, err: err}
 	}
-	return tea.Batch(cmd, tick())
+	return tea.Batch(cmd, m.maybeTick())
 }
 
 // handleDiffKey は diff ポップアップ表示中のキー操作。中身は pager なので less 流儀:

@@ -137,6 +137,65 @@ func TestBrowsePanelRefreshLatchClearedOnClose(t *testing.T) {
 	}
 }
 
+// 80ms tick は single-flight: チェーンは常に高々 1 本 (レビュー C1)。
+func TestBrowseTickSingleFlight(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	if m.maybeTick() == nil || !m.ticking {
+		t.Fatal("初回 maybeTick が tick を返さない / ticking が立たない")
+	}
+	if m.maybeTick() != nil {
+		t.Fatal("チェーンが生きているのに 2 本目の maybeTick が非 nil (二重チェーン)")
+	}
+	// tickMsg 到着で 1 拍消費 → spinnerActive なら 1 本だけ再アーム
+	m.fetching = true
+	if _, cmd := m.Update(tickMsg{}); cmd == nil || !m.ticking {
+		t.Fatal("spinnerActive 中の tickMsg で再アームされない")
+	}
+	// spinnerActive でなくなれば再アームせずチェーンは死ぬ
+	m.fetching = false
+	if _, cmd := m.Update(tickMsg{}); cmd != nil || m.ticking {
+		t.Fatalf("非 spinnerActive で tick が止まらない: cmd=%v ticking=%v", cmd != nil, m.ticking)
+	}
+}
+
+// pull アニメは 1 tickMsg = offset 1 減算 (複数チェーン併存による 2 倍速化の回帰・C1)。
+func TestBrowseTickPullAnimOncePerTick(t *testing.T) {
+	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m.height = 6 // 短すぎない (offset を持てる)
+	m.pullAnimating = true
+	m.offset = 3
+	m.Update(tickMsg{})
+	if m.offset != 2 {
+		t.Fatalf("1 tickMsg で offset=%d (want 2 = 1 回だけ減算)", m.offset)
+	}
+	m.Update(tickMsg{})
+	if m.offset != 1 {
+		t.Fatalf("2 tickMsg 後 offset=%d (want 1)", m.offset)
+	}
+}
+
+// tickMsg の list 無効化は fetch/pushPoll のときだけ (レビュー C7)。
+func TestBrowseTickInvalidateGate(t *testing.T) {
+	// fetching 中はリストの loading スピナーが動くので無効化する
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.fetching = true
+	m.linesValid = true
+	m.Update(tickMsg{})
+	if m.linesValid {
+		t.Error("fetching 中の tickMsg でリストが無効化されない")
+	}
+	// pullAnimating だけ (fetch/pushPoll 無し) では list 内容は不変なので無効化しない
+	m2 := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m2.height = 6
+	m2.pullAnimating = true
+	m2.offset = 3
+	m2.linesValid = true
+	m2.Update(tickMsg{})
+	if !m2.linesValid {
+		t.Error("pullAnimating のみで list が無効化された (C7 gate 破れ = 毎フレーム全行再構築)")
+	}
+}
+
 func TestBrowsePanelPolling(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	sha := m.commits[0].SHA
