@@ -1405,6 +1405,24 @@ func TestBrowseTmuxPrefixFeedback(t *testing.T) {
 	if m.cursor != 1 {
 		t.Fatal("prefix の 2 キー後まで飲み込まれた")
 	}
+	// prefix 連打 (tmux のリテラル送信の癖) は pending を張り直して同じ案内
+	m.handleKey("ctrl+t")
+	m.handleKey("ctrl+t")
+	if !m.prefixPending || !strings.Contains(m.notice, "効きません") {
+		t.Fatalf("prefix 連打で pending が張り直されない: pending=%v notice=%q", m.prefixPending, m.notice)
+	}
+	m.handleKey("esc") // pending を消化して以降のテストに影響させない
+	// y/N 確認モーダル中はモーダルの語彙を優先: C-t は「任意キー = キャンセル」で
+	// prefix 検知は発動しない (続く y が飲み込まれる事故の防止)
+	m.statuses[m.commits[0].SHA] = StateUnpushed
+	m.handleKey("b")
+	if !m.pushConfirm {
+		t.Fatal("b で push 確認に入らない")
+	}
+	m.handleKey("ctrl+t")
+	if m.pushConfirm || m.prefixPending {
+		t.Fatalf("確認モーダル中の C-t がキャンセルにならない: confirm=%v pending=%v", m.pushConfirm, m.prefixPending)
+	}
 	// tmux 外 (prefix 不明) では機能オフ = ctrl+t は何もしない
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m2.Update(prefixMsg{key: ""})

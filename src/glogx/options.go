@@ -179,6 +179,8 @@ func Usage() string {
                             diff 表示中の b はスクロールのまま)
   u                         git pull --rebase (y/N 確認つき。成功で一覧を再読込。
                             conflict なら自動で rebase --abort して元に戻す)
+  (tmux prefix)             popup 内では tmux にキーが届かないため window 操作は
+                            できない。押すと案内を表示し、続く 1 キーは無視する
   j / k / ↑ / ↓ / Ctrl-N / Ctrl-P
                             カーソル移動
   Enter / Space / l / → / Tab

@@ -539,22 +539,6 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if key == "ctrl+c" || key == "ctrl+g" {
 		return m.quit()
 	}
-	// tmux prefix の誤爆フィードバック: popup 表示中は tmux がキーを処理しない
-	// (display-popup はモーダル) ため、window 移動しようとした prefix+n/p はここへ
-	// 素通りしてくる。無言だと「効かない」だけで理由が分からないので案内を出し、
-	// prefix に続く 1 キーは飲み込む (C-t p が PR オープン等に化ける誤爆の防止)。
-	// 対象キーはハードコードせず起動時に tmux サーバへ聞いた現在値 (prefixMsg)。
-	// tmux 外や取得失敗では tmuxPrefix="" のままこの機能ごと無効になる。ユーザー要望。
-	if m.prefixPending {
-		m.prefixPending = false
-		m.notice = "popup 内では tmux の window 操作はできません (C-g で閉じてから prefix+" + key + ")"
-		return m, nil
-	}
-	if m.tmuxPrefix != "" && key == m.tmuxPrefix {
-		m.prefixPending = true
-		m.notice = "tmux prefix は popup 内では効きません (C-g で popup を閉じてから)"
-		return m, nil
-	}
 	// push 警告モーダルは何かキーで閉じる (そのキーは消費して誤操作を防ぐ)
 	if m.pushWarn != "" {
 		m.pushWarn = ""
@@ -581,6 +565,25 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.pushing || m.pulling { // 実行中は終了以外のキーを無視する
+		return m, nil
+	}
+	// tmux prefix の誤爆フィードバック: popup 表示中は tmux がキーを処理しない
+	// (display-popup はモーダル) ため、window 移動しようとした prefix+n/p はここへ
+	// 素通りしてくる。無言だと「効かない」だけで理由が分からないので案内を出し、
+	// prefix に続く 1 キーは飲み込む (C-t p が PR オープン等に化ける誤爆の防止)。
+	// prefix 連打 (tmux のリテラル送信の癖) は pending を張り直して同じ案内を出す。
+	// 確認モーダル (y/N) 中はここへ来ない (上のモーダル処理が先): モーダル内では
+	// 「y 以外の任意キー = キャンセル」というモーダルの語彙を優先する (セルフレビュー指摘)。
+	// 対象キーはハードコードせず起動時に tmux サーバへ聞いた現在値 (prefixMsg)。
+	// tmux 外や取得失敗では tmuxPrefix="" のままこの機能ごと無効になる。ユーザー要望。
+	if m.prefixPending && key != m.tmuxPrefix {
+		m.prefixPending = false
+		m.notice = "popup 内では tmux の window 操作はできません (C-g で閉じてから prefix+" + key + ")"
+		return m, nil
+	}
+	if m.tmuxPrefix != "" && key == m.tmuxPrefix {
+		m.prefixPending = true
+		m.notice = "tmux prefix は popup 内では効きません (C-g で popup を閉じてから)"
 		return m, nil
 	}
 	// emacs 流の水平移動エイリアス (C-n/C-p = ↓/↑ は各ビューで対応済み)。ここで
