@@ -173,7 +173,16 @@ func insertPushBoundary(lines []Line, commits []Commit, statuses map[string]CISt
 		return paint(head+strings.Repeat("─", max(width-runewidth.StringWidth(head), 0)), ansiDim, o.Colored)
 	}
 	if allPushed {
-		return append([]Line{{Text: rule(" (all pushed ✓)"), CommitIdx: 0}}, lines...)
+		// 全 push 済みは「達成」状態なのでラベルだけ緑+太字で強調する (dim な罫線と差を
+		// つけて視覚的に目立たせる。ユーザー要望)。罫線部分は従来どおり dim
+		head := "── origin"
+		label := " (all pushed ✓)"
+		gap := " "
+		dashes := strings.Repeat("─", max(width-runewidth.StringWidth(head+label+gap), 0))
+		text := paint(head, ansiDim, o.Colored) +
+			paint(label, ansiGreen+ansiBold, o.Colored) +
+			paint(gap+dashes, ansiDim, o.Colored)
+		return append([]Line{{Text: text, CommitIdx: 0}}, lines...)
 	}
 	for i, l := range lines {
 		if l.Header && l.CommitIdx == boundary {
