@@ -168,18 +168,32 @@ func TestBrowseScrollAnim(t *testing.T) {
 	if m.scrollAnim {
 		t.Fatal("glide 中の j で scrollAnim が積まれた (即スナップのはず)")
 	}
-	// 改めて glide を開始させ、tick で表示 offset が論理 offset へ寄って着地することを確認
-	// (連打スナップ直後は scrollAnim=false なので次の単発 j が改めて glide を張る)
-	for i := 0; i < 6 && !m.scrollAnim; i++ {
-		m.handleKey("j")
-	}
-	if m.scrollAnim {
-		target := m.offset
-		for i := 0; i < 12 && m.scrollAnim; i++ {
-			m.Update(tickMsg{})
+}
+
+// advanceScroll は上下どちらの向きでも tick で表示 offset を論理 offset へ寄せ、
+// 有限フレームで着地して scrollAnim を下ろす (geometry 非依存に決定的検証)。
+func TestBrowseScrollAnimConverges(t *testing.T) {
+	for _, tc := range []struct{ from, to int }{
+		{from: 0, to: 7},  // 下スクロール (1 コミット ~7 行)
+		{from: 7, to: 0},  // 上スクロール
+		{from: 3, to: 4},  // 残り 1 行
+		{from: 5, to: 5},  // 動きなし → 即座に scrollAnim を下ろす
+	} {
+		m := newTestBrowse(t, 6, map[string]CIState{}, nil)
+		m.statuses = statusesFor(m, StateSuccess)
+		m.offsetShown = tc.from
+		m.offset = tc.to
+		m.scrollAnim = true
+		frames := 0
+		for m.scrollAnim {
+			m.advanceScroll()
+			frames++
+			if frames > 20 {
+				t.Fatalf("from=%d to=%d: 収束しない (offsetShown=%d)", tc.from, tc.to, m.offsetShown)
+			}
 		}
-		if m.scrollAnim || m.offsetShown != target {
-			t.Fatalf("glide が着地しない: scrollAnim=%v offsetShown=%d target=%d", m.scrollAnim, m.offsetShown, target)
+		if m.offsetShown != tc.to {
+			t.Errorf("from=%d to=%d: 着地 offsetShown=%d, want %d", tc.from, tc.to, m.offsetShown, tc.to)
 		}
 	}
 }
