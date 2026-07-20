@@ -5,7 +5,7 @@
                 "parameters": { "basic.to_if_alone_timeout_milliseconds": 400 },
                 "rules": [
                     {
-                        "description": "日本語入力中にCtrlを押したら（単押し・同時押し問わず）英数に切り替えてからCtrlとして機能させる",
+                        "description": "日本語入力中にCtrlを単押し（他キーと組まずに離した）した時だけ英数に切り替える。Ctrl+hなどの複合キーでは切り替えない",
                         "manipulators": [
                             {
                                 "conditions": [
@@ -18,10 +18,8 @@
                                     "key_code": "left_control",
                                     "modifiers": { "optional": ["any"] }
                                 },
-                                "to": [
-                                    { "key_code": "japanese_eisuu" },
-                                    { "key_code": "left_control" }
-                                ],
+                                "to": [{ "key_code": "left_control" }],
+                                "to_if_alone": [{ "key_code": "japanese_eisuu" }],
                                 "type": "basic"
                             },
                             {
@@ -35,10 +33,8 @@
                                     "key_code": "right_control",
                                     "modifiers": { "optional": ["any"] }
                                 },
-                                "to": [
-                                    { "key_code": "japanese_eisuu" },
-                                    { "key_code": "right_control" }
-                                ],
+                                "to": [{ "key_code": "right_control" }],
+                                "to_if_alone": [{ "key_code": "japanese_eisuu" }],
                                 "type": "basic"
                             }
                         ]
