@@ -272,8 +272,12 @@ func LoadDecorColors() DecorColors {
 	return dc
 }
 
-// maxDiffLines は diff ポップアップへ読み込む行数の上限。巨大コミット (自動生成物等) で
-// メモリと描画を際限なく食わないための安全弁で、超過時は末尾に省略注記を足す。
+// maxDiffLines は diff ポップアップに保持する行数の上限。巨大コミット (自動生成物等) で
+// 描画・保持行数が際限なく増えないための安全弁で、超過時は末尾に省略注記を足す。
+// ⚠️ これがバウンドするのは「保持する行数」だけで、ピークメモリは制限しない: runGit は
+// git show の全出力を bytes.Buffer + String() で一旦フルに展開する (diff 全長 × 約2) ため、
+// 数万行 diff の一時スパイクは起きる (popup クローズ後に GC 解放される一時的なもの)。
+// メモリも真にバウンドしたければ git 出力を行ストリームで読み上限で打ち切る必要がある。
 const maxDiffLines = 5000
 
 // LoadCommitDiff は d キーの diff ポップアップ本文 (git show --stat --patch) を取得する。

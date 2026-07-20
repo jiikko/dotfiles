@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -438,16 +439,35 @@ func FetchJobDetail(ctx context.Context, run CommandRunner, repo Repo, check Che
 		return []string{"(GitHub Actions の job ではないため詳細を取得できません)"}, nil
 	}
 	id := strconv.FormatInt(check.CheckID, 10)
-	// step 一覧は best-effort (取れなくても annotations/ログは出す)
-	lines := fetchJobSteps(ctx, run, repo, id)
-	// per_page 既定の 30 件では大量 annotation の lint job で取りこぼすため 100 に広げる。
-	// 100 超の pagination は contexts(first:100) と同じ判断で追わない
-	stdout, stderr, err := run(ctx, "gh", "api",
-		fmt.Sprintf("repos/%s/%s/check-runs/%s/annotations?per_page=100", repo.Owner, repo.Name, id))
-	if err != nil {
-		return nil, classifyGHError(err, string(stderr))
+	// step 一覧 (best-effort) と annotations は入力が jobID だけで互いに独立、かつ常に
+	// 両方叩くので並列化する (gh 起動 + REST 往復を 2 本直列にすると待ちがほぼ倍。
+	// job 詳細パネルを開く対話操作のレイテンシに直結)。3 本目のログ取得は annotations が
+	// 空のときだけなので後段の直列のまま。CommandRunner は read-only 実行で状態を持たず
+	// 並行安全 (ExecRunner は exec.CommandContext + ローカル buffer)。
+	var (
+		lines     []string
+		annStdout []byte
+		annStderr []byte
+		annErr    error
+		wg        sync.WaitGroup
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		lines = fetchJobSteps(ctx, run, repo, id)
+	}()
+	go func() {
+		defer wg.Done()
+		// per_page 既定の 30 件では大量 annotation の lint job で取りこぼすため 100 に広げる。
+		// 100 超の pagination は contexts(first:100) と同じ判断で追わない
+		annStdout, annStderr, annErr = run(ctx, "gh", "api",
+			fmt.Sprintf("repos/%s/%s/check-runs/%s/annotations?per_page=100", repo.Owner, repo.Name, id))
+	}()
+	wg.Wait()
+	if annErr != nil {
+		return nil, classifyGHError(annErr, string(annStderr))
 	}
-	if annotations := annotationLines(stdout); len(annotations) > 0 {
+	if annotations := annotationLines(annStdout); len(annotations) > 0 {
 		return appendSection(lines, annotations), nil
 	}
 	args := []string{"run", "view", "--job", id, "-R", repo.Owner + "/" + repo.Name}
@@ -456,11 +476,11 @@ func FetchJobDetail(ctx context.Context, run CommandRunner, repo Repo, check Che
 	} else {
 		args = append(args, "--log")
 	}
-	stdout, stderr, err = run(ctx, "gh", args...)
+	stdout, stderr, err := run(ctx, "gh", args...)
 	if err != nil {
 		return nil, classifyGHError(err, string(stderr))
 	}
-	tail := logTail(string(stdout), jobLogTailLines)
+	tail := logTail(stdout, jobLogTailLines)
 	if len(tail) == 0 {
 		tail = []string{"(ログが空です)"}
 	}
@@ -688,21 +708,31 @@ var logTimestampRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\
 // logTail は gh run view --log の出力から末尾 n 行を取り出す。各行の
 // "job名<TAB>step名<TAB>" プレフィックスとタイムスタンプは表示幅の邪魔なので落とし、
 // 残りは sanitizeDetailLine で枠描画を壊す制御文字を無害化する。
-func logTail(out string, n int) []string {
-	var lines []string
-	for line := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
-		if line == "" {
-			continue
+//
+// 入力は []byte のまま受ける (ExecRunner が MB 級ログの string 再コピーを避けて []byte を
+// 返す最適化を尊重する)。整形 (tab 剥がし + sanitize + regex) は末尾 n 非空行にだけ掛ける:
+// 非失敗 job では --log で全ログ (数千〜数万行) が来るのに表示は 50 行だけなので、全行を
+// 整形してから捨てるのは無駄。空行判定・整形はどちらも行単位で 1:1 なので「全行整形 →
+// 末尾 n」と「末尾 n の非空行を整形」は同じ結果になる。
+func logTail(out []byte, n int) []string {
+	raw := bytes.Split(bytes.TrimRight(out, "\n"), []byte{'\n'})
+	// 末尾から非空行を n 本拾う (逆順に集める)
+	kept := make([][]byte, 0, n)
+	for i := len(raw) - 1; i >= 0 && len(kept) < n; i-- {
+		if len(raw[i]) > 0 {
+			kept = append(kept, raw[i])
 		}
+	}
+	// 表示順 (先頭→末尾) に戻しつつ、拾った ~n 行だけ整形する
+	lines := make([]string, 0, len(kept))
+	for i := len(kept) - 1; i >= 0; i-- {
+		line := string(kept[i])
 		if parts := strings.SplitN(line, "\t", 3); len(parts) == 3 {
 			line = parts[2]
 		}
 		line = sanitizeDetailLine(line)
 		line = logTimestampRe.ReplaceAllString(line, "")
 		lines = append(lines, line)
-	}
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
 	}
 	return lines
 }

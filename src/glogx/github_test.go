@@ -323,12 +323,18 @@ func TestLogTail(t *testing.T) {
 	for i := range 100 {
 		fmt.Fprintf(&b, "j\ts\tline %d\n", i)
 	}
-	lines := logTail(b.String(), 50)
+	lines := logTail([]byte(b.String()), 50)
 	if len(lines) != 50 || lines[0] != "line 50" || lines[49] != "line 99" {
 		t.Errorf("tail = %d 行, 先頭 %q, 末尾 %q", len(lines), lines[0], lines[len(lines)-1])
 	}
-	if got := logTail("", 50); len(got) != 0 {
+	if got := logTail(nil, 50); len(got) != 0 {
 		t.Errorf("空ログ = %v", got)
+	}
+	// 空行は非空行のカウントに含めず、末尾 n 非空行を表示順で返す ([]byte 化 + 末尾優先
+	// 処理へのリファクタ後も「全行整形 → 末尾 n」と同結果になることの回帰)
+	got := logTail([]byte("a\n\nb\n\nc\n"), 2)
+	if len(got) != 2 || got[0] != "b" || got[1] != "c" {
+		t.Errorf("空行混じりの末尾 2 = %v; want [b c]", got)
 	}
 }
 
@@ -336,7 +342,7 @@ func TestLogTailSanitizesContent(t *testing.T) {
 	// メッセージ部のタブは端末のタブ展開で枠の桁計算を壊す (スクロールで視界に入ると
 	// 表示崩壊する実測バグ) ため、取り込み時に無害化する
 	out := "j\ts\t\ufeffok  \tglog\t0.641s\r\n"
-	lines := logTail(out, 50)
+	lines := logTail([]byte(out), 50)
 	if len(lines) != 1 {
 		t.Fatalf("lines = %v", lines)
 	}
@@ -352,7 +358,7 @@ func TestLogTailStripsTimestamp(t *testing.T) {
 	// 行頭の ISO タイムスタンプ (~29 桁) は幅の浪費なので落とす
 	out := "j\ts\t2026-07-16T13:11:31.4381694Z ##[group]Run make test\n" +
 		"j\ts\tno timestamp line\n"
-	lines := logTail(out, 50)
+	lines := logTail([]byte(out), 50)
 	if lines[0] != "##[group]Run make test" {
 		t.Errorf("タイムスタンプが残っている: %q", lines[0])
 	}
