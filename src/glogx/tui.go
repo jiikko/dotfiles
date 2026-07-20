@@ -853,7 +853,7 @@ func (m *browseModel) pushBoxLines() []string {
 		}
 	}
 	pad := strings.Repeat(" ", max((width-boxW)/2, 0))
-	box := buildPanelBox(title, rows, boxW, m.colored)
+	box := buildShadowPanelBox(title, rows, boxW, m.colored)
 	for i := range box {
 		box[i] = pad + box[i]
 	}
@@ -1650,23 +1650,71 @@ func (m *browseModel) detailBoxLines(width int) []string {
 
 // buildPanelBox は枠線付きのパネルを組み立てる。行の実効幅は ANSI を除いて計算する。
 func buildPanelBox(title string, rows []string, width int, colored bool) []string {
+	return buildPanelBoxImpl(title, rows, width, colored, false)
+}
+
+// buildShadowPanelBox は buildPanelBox の右下ドロップシャドウ付き版。confirm モーダル
+// (push / pull --rebase) 専用。job/diff パネルは面積が大きく影が主張しすぎたため
+// 一度全面導入 → revert (4fb36a2) した経緯があり、影は小さいモーダルに限定する。
+func buildShadowPanelBox(title string, rows []string, width int, colored bool) []string {
+	return buildPanelBoxImpl(title, rows, width, colored, true)
+}
+
+// shadowRun は落ち影 n セル分。色ありは暗い bg の空白、色なし (NO_COLOR) は bg が
+// 使えないため陰影文字 "░" で代用する。
+func shadowRun(n int, colored bool) string {
+	if n <= 0 {
+		return ""
+	}
+	if !colored {
+		return strings.Repeat("░", n)
+	}
+	return ansiShadowBg + strings.Repeat(" ", n) + ansiReset
+}
+
+// buildPanelBoxImpl が本体。shadow=true では右端 1 桁・下端 1 行を「落ち影」に充て、
+// 板が左上光源で浮いて見える 3D 風にする (footprint は width のまま。枠自体を
+// fw = width-1 に狭めて影の余白を捻出する)。
+func buildPanelBoxImpl(title string, rows []string, width int, colored bool, shadow bool) []string {
 	if width < 10 {
 		width = 10
 	}
-	inner := width - 4 // "│ " + " │"
-	lines := make([]string, 0, len(rows)+2)
+	fw := width // 枠の幅 (shadow 時は残り 1 桁が右の影)
+	if shadow {
+		fw = width - 1
+	}
+	inner := fw - 4 // "│ " + " │"
+	shade := ""
+	if shadow {
+		shade = shadowRun(1, colored)
+	}
+	lines := make([]string, 0, len(rows)+3)
 	// タイトルは SGR 入りの job 名や commit subject がそのまま載る。ANSI を残すと
 	// 幅計算 (Truncate/StringWidth) がずれて罫線が崩れ、タイトル全体の dim 塗りも
 	// 途中でリセットされるため、タイトルに限っては ANSI を落とす
-	title = runewidth.Truncate(stripANSI(title), width-2, "…")
-	top := "┌" + title + strings.Repeat("─", max(width-2-runewidth.StringWidth(title), 0)) + "┐"
-	lines = append(lines, paint(top, ansiDim, colored))
+	title = runewidth.Truncate(stripANSI(title), fw-2, "…")
+	top := "┌" + title + strings.Repeat("─", max(fw-2-runewidth.StringWidth(title), 0)) + "┐"
+	if shadow {
+		// 最上段だけ影なし (影は右上角の 1 つ下から始まるのが自然な落ち影)
+		lines = append(lines, paint(top, ansiDim, colored)+" ")
+	} else {
+		lines = append(lines, paint(top, ansiDim, colored))
+	}
 	for _, row := range rows {
 		content := clipToWidth(row, inner)
 		pad := max(inner-runewidth.StringWidth(stripANSI(content)), 0)
-		lines = append(lines, paint("│ ", ansiDim, colored)+content+strings.Repeat(" ", pad)+paint(" │", ansiDim, colored))
+		lines = append(lines, paint("│ ", ansiDim, colored)+content+strings.Repeat(" ", pad)+paint(" │", ansiDim, colored)+shade)
 	}
-	lines = append(lines, paint("└"+strings.Repeat("─", width-2)+"┘", ansiDim, colored))
+	if shadow {
+		// 下辺は lower half block でセル下半分を埋める。罫線 ─ はセル中央に細く描かれるため
+		// 下半分が空き、下の落ち影との間に視覚的な余白ができる。▄ で下側に寄せて余白を消す
+		// (横 │ 側は影と余白なく繋がっているのでそのまま)。
+		lines = append(lines, paint(strings.Repeat("▄", fw), ansiDim, colored)+shade)
+		// 下端の影: 左へ 1 桁ずらして右下だけに落とす (古典的なウィンドウのドロップシャドウ)
+		lines = append(lines, " "+shadowRun(width-1, colored))
+	} else {
+		lines = append(lines, paint("└"+strings.Repeat("─", fw-2)+"┘", ansiDim, colored))
+	}
 	return lines
 }
 

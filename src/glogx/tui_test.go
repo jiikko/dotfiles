@@ -916,6 +916,19 @@ func TestBuildPanelBoxWidths(t *testing.T) {
 	}
 }
 
+func TestBuildShadowPanelBoxWidths(t *testing.T) {
+	lines := buildShadowPanelBox(" title ", []string{"row", strings.Repeat("x", 200)}, 40, false)
+	// 枠 (top/bottom) + 2 行 + 下端の落ち影 1 行 = 5 行。影を足しても footprint 幅は 40 のまま
+	if len(lines) != 5 {
+		t.Fatalf("枠 + 2 行 + 影 1 行のはずが %d 行", len(lines))
+	}
+	for _, l := range lines {
+		if w := runewidth.StringWidth(stripANSI(l)); w != 40 {
+			t.Errorf("パネル行の幅 = %d; want 40: %q", w, l)
+		}
+	}
+}
+
 func TestJapanesePanelBoxWidths(t *testing.T) {
 	// 全角の job 名・タイトルでも罫線の幅が揃う (全角境界の切り詰め込み)
 	rows := []string{
