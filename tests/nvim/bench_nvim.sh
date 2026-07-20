@@ -50,24 +50,29 @@ bench_file="$tmp_root/bench_target.lua"
 } > "$bench_file"
 cp "$bench_file" "$bench_file.alt.lua"
 
-run_bench() {
-  local label="$1"; shift
-  print -r -- "--- $label ---"
-  # 起動時間: 5 回計測して min を metric として 1 本出す (生値は下の注記行)。
-  # shared runner のノイズは片側性 (遅くなる方にしか出ない) なので min が真の速度の最良推定。
-  # 生サンプルを個別に metric で出すと checker が 1 本ずつ予算照合し、単発スパイク
-  # (CI 実測で 2 倍近く飛ぶ) に耐える粗い予算しか張れない。min 集約が予算を締める前提。
+# measure_startup は起動時間を 5 回計測して min を metric 1 本で出す (生値は注記行)。
+# shared runner のノイズは片側性 (遅くなる方にしか出ない) なので min が真の速度の最良推定。
+# 生サンプルを個別に metric で出すと checker が 1 本ずつ予算照合し、単発スパイク
+# (CI 実測で 2 倍近く飛ぶ) に耐える粗い予算しか張れない。min 集約が予算を締める前提。
+measure_startup() {
+  local metric="$1"; shift
   local i st_log="$tmp_root/st.log" samples="" ms
   for i in 1 2 3 4 5; do
     "$@" --headless --startuptime "$st_log" "$bench_file" "+qa!" >/dev/null 2>&1
     ms=$(awk '/NVIM STARTED/{t=$1} END{print t}' "$st_log")
-    # 空 ms を素通しすると "metric=startup ms=" になり checker が黙って pass する (false-pass 防止)
-    [[ -n "$ms" ]] || { print -u2 "startup 計測失敗: NVIM STARTED が startuptime log に無い ($label)"; return 1; }
+    # 空 ms を素通しすると "metric=... ms=" になり checker が黙って pass する (false-pass 防止)
+    [[ -n "$ms" ]] || { print -u2 "startup 計測失敗: NVIM STARTED が startuptime log に無い ($metric)"; return 1; }
     samples="$samples $ms"
     rm -f "$st_log"
   done
-  print -r -- "startup samples (ms):$samples"
-  print -r -- "metric=startup ms=$(print -r -- "$samples" | tr ' ' '\n' | sort -n | grep -m1 .)"
+  print -r -- "$metric samples (ms):$samples"
+  print -r -- "metric=$metric ms=$(print -r -- "$samples" | tr ' ' '\n' | sort -n | grep -m1 .)"
+}
+
+run_bench() {
+  local label="$1"; shift
+  print -r -- "--- $label ---"
+  measure_startup startup "$@" || return 1
   # 操作レイテンシ (bench_lib.lua)
   BENCH_FILE="$bench_file" "$@" --headless "+lua dofile([[$SCRIPT_DIR/bench_lib.lua]])" "+qa!" 2>&1 \
     | grep -E "^metric=" || {
@@ -77,6 +82,13 @@ run_bench() {
 }
 
 run_bench "full config" "$NVIM_BIN" -u "$CONFIG_FILE"
+
+# startup_clean は混雑補正の較正器 (常時計測)。repo の config を読まない nvim --clean の
+# 起動時間は「runner の速さ」だけを反映するので、これが基準より膨らんだ run では
+# checker (rel 印) が startup の予算を同じ倍率でスケールする。sustained contention の
+# run (全サンプルが沈む) で startup ゲートが誤爆した実測 (2026-07-20 run 29721717975:
+# min-of-15 = 372ms > 350) への構造対策。tmux bench の rtt 較正と同じ仕組み。
+measure_startup startup_clean "$NVIM_BIN" --clean
 
 if [[ "${BENCH_BASELINE:-0}" == "1" ]]; then
   run_bench "clean baseline (--clean)" "$NVIM_BIN" --clean

@@ -18,7 +18,18 @@
 # min でなく median にしない理由: 同 15 run の per-run median は最大 357ms で、median ゲートは
 # 予算 ~430ms が必要になり引き締めの目的が崩れる。捕まえたい回帰 (プラグイン追加等の決定的な
 # config コスト増) は全サンプルに乗るので min でも漏れない。
-startup 350
+# 混雑補正 (2026-07-20 導入): startup は rel 印 = 上限を max(1, startup_clean 実測/基準) 倍に
+# スケールする。較正器 startup_clean は repo config を読まない nvim --clean の起動時間で、
+# runner の速さだけを反映する (真の回帰 = config コスト増は startup_clean に乗らないため
+# 検出能力は落ちない)。導入契機 = sustained contention の run で min-of-15 が 372ms まで
+# 沈み 350 ゲートが誤爆 (run 29721717975。全サンプルが ~1.4 倍に膨れていた)。
+# 基準 60 は暫定 (ローカル比から推定)。CI の Step Summary で startup_clean の実測が
+# 数 run 溜まったら「静穏 run の典型値」に較正し直すこと (基準が実測より高いと補正が
+# 効かず flake が残る / 低いと常時スケールして予算が緩む)。
+# ⚠️ 較正器の startup_clean 自身は絶対予算のまま rel を付けないこと (checker も拒否する)。
+calibrate startup_clean 60
+startup 350 rel
+startup_clean 250
 bufload 600
 scroll_j_x2000 400
 scroll_ctrl_d_x200 100
