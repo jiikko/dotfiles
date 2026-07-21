@@ -86,7 +86,11 @@ func RenderTable(s *Snapshot, now time.Time, colored bool) (header string, rows 
 		wMonth = max(wMonth, runewidth.StringWidth(months[i]))
 		wDate = max(wDate, runewidth.StringWidth(dates[i]))
 	}
-	header = padRight("枠", tblLabelW) + tblGap + padRight("使用", tblUsageW) + tblGap + "残り / リセット"
+	// ヘッダーの「残り」列はデータの残り列と同じ幅で右寄せし、" / " 区切りをデータ行と
+	// 縦に揃える (固定文字列だと列幅ぶんズレる)。リセット見出しは " / " の直後 (左詰め)。
+	remainHdr := padLeft("残り", wDay+wHour+wMin)
+	header = padRight("枠", tblLabelW) + tblGap + padRight("使用", tblUsageW) + tblGap +
+		remainHdr + " / " + "リセット"
 	rows = make([]string, len(ws))
 	for i, w := range ws {
 		// バーは色付き時 ANSI を含むが表示幅は常に barCells+2 なので固定列 (tblUsageW) として扱える。

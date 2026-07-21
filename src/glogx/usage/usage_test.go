@@ -124,7 +124,7 @@ func TestRenderTable(t *testing.T) {
 		{Label: "7d(Fable)", Percent: 48, ResetAt: now}, // 既定描画には出ない
 	}}
 	header, rows := RenderTable(snap, now, false)
-	if want := "枠   使用                残り / リセット"; header != want {
+	if want := "枠   使用                        残り / リセット"; header != want {
 		t.Errorf("header:\n got=%q\nwant=%q", header, want)
 	}
 	if len(rows) != 2 {
@@ -147,10 +147,14 @@ func TestRenderTableAlignsColumns(t *testing.T) {
 		{Label: "5h", Percent: 4, ResetAt: time.Date(2026, 12, 28, 14, 30, 0, 0, time.Local)},
 		{Label: "7d", Percent: 29, ResetAt: time.Date(2026, 7, 3, 9, 5, 0, 0, time.Local)},
 	}}
-	_, rows := RenderTable(snap, now, false)
-	// " / " 区切り = 残り列の右端が両行で同じ桁 (残り時間の整列)。
+	header, rows := RenderTable(snap, now, false)
+	// " / " 区切り = 残り列の右端が両行で同じ桁 (残り時間の整列)。ヘッダーの区切りも
+	// データ行と同じ桁に揃う (固定文字列ヘッダーだと横ずれする回帰の防止)。
 	if a, b := colOf(t, rows[0], " / "), colOf(t, rows[1], " / "); a != b {
 		t.Errorf("残り列の / 位置がずれる: %d vs %d\n%q\n%q", a, b, rows[0], rows[1])
+	}
+	if a, b := colOf(t, header, " / "), colOf(t, rows[0], " / "); a != b {
+		t.Errorf("ヘッダーの / 位置がデータ行とずれる: %d vs %d\n%q\n%q", a, b, header, rows[0])
 	}
 	// リセット時刻 HH:MM が両行で同じ桁 (月日の桁数が違っても揃う)。
 	if a, b := colOf(t, rows[0], "14:30"), colOf(t, rows[1], "09:05"); a != b {
