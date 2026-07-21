@@ -60,9 +60,15 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	// git 実行のみで、エラーで先に return してもプロセス終了で無害に片付く
 	planCh := make(chan repoPlan, 1)
 	go func() { planCh <- gatherRepoPlan(opts) }()
+	// decoration の配色 (color.decorate.* + git 既定色) は自前描画のときだけ要る:
+	// renderDecoration を呼ぶのは mediumLines (verbatim 失敗時の fallback) と renderOnelineRow
+	// (--oneline) だけで、既定の verbatim medium 表示は git --color=always の焼き込み色を使い
+	// decor を参照しない。よって 5 本の git fork (config×4 + remote) を毎起動払わず、必ず自前
+	// 描画になる --oneline のときだけ並列先出しし、medium は verbatim 不成立が判明してから
+	// (rare な fallback) 同期取得する。verbatim 成功時は decor=nil のまま (decorColors の
+	// nil→Default ガードが受ける)。
 	var decorCh chan DecorColors
-	if colored {
-		// decoration の配色は git log を尊重する (color.decorate.* + git 既定色)
+	if colored && opts.Oneline {
 		decorCh = make(chan DecorColors, 1)
 		go func() { decorCh <- LoadDecorColors() }()
 	}
@@ -107,9 +113,15 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	}
 	var decor *DecorColors
 	if colored {
-		dc := <-decorCh
-		decor = &dc
-		renderOpts.Decor = decor
+		switch {
+		case decorCh != nil: // --oneline: 並列取得済み
+			dc := <-decorCh
+			decor = &dc
+		case renderOpts.Verbatim == nil: // medium だが verbatim fallback: ここで同期取得 (rare)
+			dc := LoadDecorColors()
+			decor = &dc
+		}
+		renderOpts.Decor = decor // verbatim 成功時は nil (decorColors が Default を返す)
 	}
 	width, height := terminalSize()
 

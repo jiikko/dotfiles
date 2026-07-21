@@ -207,6 +207,50 @@ func TestIntegrationMediumFields(t *testing.T) {
 	}
 }
 
+// ResolveRepo の優先順 (upstream remote → origin) と投機的 origin 並列取得が、
+// 並列化リファクタ後も元の意味論を保つことを検証する (github.go の ResolveRepo は
+// runGit 直呼びで unit test 不可なので実 repo で確認)。
+func TestIntegrationResolveRepoPriority(t *testing.T) {
+	newTempRepo(t, []string{"c1"})
+	git := func(args ...string) {
+		t.Helper()
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	head := headSHA(t)
+	git("remote", "add", "origin", "git@github.com:o/r.git")
+	git("remote", "add", "up", "git@github.com:up/r.git")
+	git("update-ref", "refs/remotes/up/main", head)
+
+	// upstream = 非 origin remote (up) → up を最優先で解決する
+	git("branch", "--set-upstream-to=up/main", "main")
+	if repo, ok := ResolveRepo(); !ok || repo != (Repo{Owner: "up", Name: "r"}) {
+		t.Fatalf("upstream 優先が効かない: %+v ok=%v; want {up r}", repo, ok)
+	}
+
+	// upstream 未設定 → 投機取得した origin へ fallback
+	git("branch", "--unset-upstream", "main")
+	if repo, ok := ResolveRepo(); !ok || repo != (Repo{Owner: "o", Name: "r"}) {
+		t.Fatalf("origin fallback が効かない: %+v ok=%v; want {o r}", repo, ok)
+	}
+}
+
+// 非 GitHub の remote だけなら ok=false (誤って GitHub 扱いしない)。
+func TestIntegrationResolveRepoNonGitHub(t *testing.T) {
+	newTempRepo(t, []string{"c1"})
+	git := func(args ...string) {
+		t.Helper()
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("remote", "add", "origin", "https://gitlab.com/x/y.git")
+	if repo, ok := ResolveRepo(); ok {
+		t.Fatalf("非 GitHub remote を解決した: %+v ok=%v; want ok=false", repo, ok)
+	}
+}
+
 func TestIntegrationUnpushedSHAs(t *testing.T) {
 	newTempRepo(t, []string{"pushed", "local-only"})
 	commits, err := LoadCommits(&Options{MaxCount: defaultMaxCount}, false)

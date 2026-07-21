@@ -79,28 +79,44 @@ type Repo struct {
 
 // ResolveRepo はカレントリポジトリの remote から owner/name を解決する。
 // 優先順: 現在ブランチの upstream remote → origin。GitHub 以外 / remote なしは ok=false。
+//
+// 起動律速を縮めるため origin の URL を投機的に並列取得する: 素朴に書くと
+// rev-parse @{upstream} の出力を remote get-url の引数に使う 2-fork 直列になり、これが
+// 起動の唯一の複数 fork 直列チェーンだった。共通ケース (upstream remote が origin か未設定)
+// では投機取得した origin URL をそのまま使い 2 本目を消す。upstream が非 origin remote の
+// 稀なケースだけ従来どおり get-url を直列で払う (どのケースでも遅くならない厳密改善)。
+// insteadOf 意味論を保つため git config 直読でなく remote get-url を使い続ける。
 func ResolveRepo() (Repo, bool) {
-	remotes := []string{}
+	originCh := make(chan string, 1)
+	go func() {
+		out, err := runGit("remote", "get-url", "origin")
+		if err != nil {
+			originCh <- ""
+			return
+		}
+		originCh <- strings.TrimSpace(out)
+	}()
+
+	var upstreamRemote string
 	if out, err := runGit("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"); err == nil {
 		// 形式: "origin/main" → remote 名部分
 		if name, _, found := strings.Cut(strings.TrimSpace(out), "/"); found && name != "" {
-			remotes = append(remotes, name)
+			upstreamRemote = name
 		}
 	}
-	remotes = append(remotes, "origin")
-	seen := map[string]bool{}
-	for _, remote := range remotes {
-		if seen[remote] {
-			continue
+	originURL := <-originCh
+
+	// upstream remote (非 origin) を最優先で解決。origin と同じ/未設定なら投機取得を使う。
+	if upstreamRemote != "" && upstreamRemote != "origin" {
+		if out, err := runGit("remote", "get-url", upstreamRemote); err == nil {
+			if repo, ok := ParseGitHubURL(strings.TrimSpace(out)); ok {
+				return repo, true
+			}
 		}
-		seen[remote] = true
-		out, err := runGit("remote", "get-url", remote)
-		if err != nil {
-			continue
-		}
-		if repo, ok := ParseGitHubURL(strings.TrimSpace(out)); ok {
-			return repo, true
-		}
+	}
+	// upstream が無い/非 GitHub/get-url 失敗 → origin へ fallback (元コードと同じ優先順)。
+	if repo, ok := ParseGitHubURL(originURL); ok {
+		return repo, true
 	}
 	return Repo{}, false
 }
