@@ -10,6 +10,12 @@ on:
 permissions:
   contents: read
 
+# git init の hint 抑制 (init.defaultBranch)。env で注入する理由は _go-project.yml 参照。
+env:
+  GIT_CONFIG_COUNT: "1"
+  GIT_CONFIG_KEY_0: init.defaultBranch
+  GIT_CONFIG_VALUE_0: main
+
 # 同一 ref の連続 push では古い run を打ち切る (旧コミットの結果に価値が無いため)
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -20,11 +26,6 @@ jobs:
     runs-on: ubuntu-slim
     timeout-minutes: 5
     steps:
-      # actions/checkout は内部で `git init` する。runner の git は init.defaultBranch 未設定のため
-      # "Using 'master' ... will change to main in Git 3.0" hint をログに出す。先に設定して抑制する。
-      - name: Silence git init.defaultBranch hint
-        run: git config --global init.defaultBranch main
-
       - uses: actions/checkout@v7
 
       - name: Install lint dependencies
@@ -61,8 +62,7 @@ jobs:
       - name: Run lint suite
         run: make test-lint
 
-# Go プロジェクト (src/*) の lint / test は、ここではなくプロジェクトごとの専用 workflow
-# (src_glog.yml / src_parallel-each.yml / src_disassemble_excel.yml、いずれも paths filter 付き)
-# で回す。全 push で走る lint.yml に置くと非接触の push でも毎回実行されるため移設した (2026-07-17)。
-# 新しい Go プロジェクトを src/ に足したら src_*.yml も対で作ること (root Makefile の
-# GO_PROJECT_DIRS コメント参照)。
+# Go プロジェクト (src/*) の lint / test は、ここではなく再利用 workflow _go-project.yml を
+# 呼ぶ paths filter 付きの caller (src_<project>.yml) で回す。全 push で走る lint.yml に置くと
+# 非接触の push でも毎回実行されるため分離した (2026-07-17)。新しい Go プロジェクトを src/ に
+# 足したら src_<project>.yml (caller) を 1 本作ること (root Makefile の GO_PROJECT_DIRS コメント参照)。

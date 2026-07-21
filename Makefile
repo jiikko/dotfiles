@@ -207,8 +207,9 @@ test-lint: test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner te
 # ターゲットに閉じており、ここはそれへ委譲するだけ (ローカルのコミット前検証用。root の
 # `make test` に test-go を含める = Go テストの漏れ防止)。CI ではプロジェクトごとの専用
 # workflow (.github/workflows/src_*.yml、paths filter 付き) が同じ lint / test を回す。
+# 各 src_*.yml は再利用 workflow _go-project.yml を呼ぶだけの薄い caller。
 # どちらも Go 未インストール環境では skip する。Go プロジェクトを追加したら
-# ①各プロジェクトに Makefile (lint/test) ②ここへ列挙 ③src_*.yml を対で作る、の 3 点セット。
+# ①各プロジェクトに Makefile (lint/test) ②ここへ列挙 ③src_<project>.yml (caller) を作る、の 3 点セット。
 GO_PROJECT_DIRS := src/parallel-each src/glog src/glogx src/disassemble_excel src/git-popup
 
 test-go-lint:

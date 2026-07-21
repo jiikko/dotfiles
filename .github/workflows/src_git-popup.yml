@@ -1,10 +1,9 @@
 ---
-# src/git-popup (Go 製 git 操作 popup TUI) の lint + go test 専用 workflow。
-# src_glog.yml と同じ paths filter パターン: git-popup に触れた変更のときだけ起動し、
-# 無関係な push で runner を消費しない。
-# ⚠️ paths filter 付きの check を branch protection の required check に登録しないこと:
-#   非接触 PR では run 自体が生成されず、check が永遠に pending でマージ不能になる。
-
+# src/git-popup (Go 製 git 操作 popup TUI) の CI。lint + test の本体は再利用 workflow
+# _go-project.yml に一元化し、ここは paths filter (触れた変更のときだけ起動) と対象 dir の
+# 指定だけを持つ薄い caller。paths に _go-project.yml を含めるのは、共有本体を編集したときにも
+# 全プロジェクトの CI を走らせて検証するため (含めないと本体変更が誰にも検証されない)。
+# ⚠️ paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
 name: src/git-popup
 
 on:
@@ -13,10 +12,12 @@ on:
     paths:
       - 'src/git-popup/**'
       - .github/workflows/src_git-popup.yml
+      - .github/workflows/_go-project.yml
   pull_request:
     paths:
       - 'src/git-popup/**'
       - .github/workflows/src_git-popup.yml
+      - .github/workflows/_go-project.yml
   workflow_dispatch:  # GitHub UI からの手動再実行用
 
 permissions:
@@ -27,38 +28,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
-    runs-on: ubuntu-slim
-    timeout-minutes: 15
-    steps:
-      - name: Silence git init.defaultBranch hint
-        run: git config --global init.defaultBranch main
-
-      - uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: src/git-popup/go.mod
-          cache-dependency-path: src/git-popup/go.sum
-
-      - name: Lint
-        run: make -C src/git-popup lint
-
-  test:
-    runs-on: ubuntu-slim
-    timeout-minutes: 10
-    steps:
-      - name: Silence git init.defaultBranch hint
-        run: git config --global init.defaultBranch main
-
-      - uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: src/git-popup/go.mod
-          cache-dependency-path: src/git-popup/go.sum
-
-      - name: Run git-popup tests
-        run: make -C src/git-popup test
+  go:
+    uses: ./.github/workflows/_go-project.yml
+    with:
+      dir: src/git-popup

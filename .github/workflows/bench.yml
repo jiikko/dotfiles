@@ -5,6 +5,7 @@
 # master の Tests が赤になり機能破壊と区別できず (1f37fa1)。また bench は共有 runner の
 # ノイズで flake し得るため、テストを再実行せず bench だけ単独で再実行できる必要がある。
 # nvim の setup (pin/cache/restore) は tests.yml と共有の composite action に一元化。
+# 各 job の「3 回実行 → min 集約 → Step Summary → 予算チェック」は tests/run_bench.sh に一元化。
 name: Bench
 
 on:
@@ -15,6 +16,12 @@ on:
 
 permissions:
   contents: read
+
+# git init の hint 抑制 (init.defaultBranch)。env で注入する理由は _go-project.yml 参照。
+env:
+  GIT_CONFIG_COUNT: "1"
+  GIT_CONFIG_KEY_0: init.defaultBranch
+  GIT_CONFIG_VALUE_0: main
 
 # 同一 ref の連続 push では古い run を打ち切る (旧コミットの結果に価値が無いため)
 concurrency:
@@ -28,11 +35,6 @@ jobs:
     runs-on: ubuntu-slim
     timeout-minutes: 10
     steps:
-      # actions/checkout は内部で `git init` する。runner の git は init.defaultBranch 未設定のため
-      # "Using 'master' ... will change to main in Git 3.0" hint をログに出す。先に設定して抑制する。
-      - name: Silence git init.defaultBranch hint
-        run: git config --global init.defaultBranch main
-
       - uses: actions/checkout@v7
 
       # bench_nvim.sh は zsh スクリプト (#!/usr/bin/env zsh)
@@ -45,40 +47,20 @@ jobs:
 
       - uses: ./.github/actions/setup-nvim
 
-      # デグレ検出のため予算 (bench_budgets.ci) 超過で step を fail させる。
-      # 予算は原則ローカル実測の ~4 倍の粗い上限 = 桁級の回帰 (foldexpr の 678ms 級) を
-      # 捕まえる安全網で、微差の追跡は Step Summary の経時比較。
+      # 予算 (bench_budgets.ci) 超過で fail。予算は原則ローカル実測の ~4 倍の粗い上限 = 桁級の
+      # 回帰 (foldexpr の 678ms 級) を捕まえる安全網で、微差の追跡は Step Summary の経時比較。
       # 例外: startup は min-of-5 集約 + CI 実測ベースの「現在速度」ゲート (bench_budgets.ci 参照)。
-      # 予算超過 / bench 自体の失敗 / metric 改名漏れのいずれも check スクリプトが落とす。
       # 注: CI は treesitter parser 未導入 (DOTFILES_TS_SKIP_ENSURE=1) のため fold/highlight の
       # コストは載らない。それらを含む実測はローカルで tests/nvim/bench_nvim.sh を叩く。
-      # bench は 3 回実行し per-metric min を照合する (tests/bench_min_agg.sh)。単発サンプルの
-      # metric は混雑 runner で粗い予算すら突き破るため (2026-07-17 run 29536560206: 全計測 2〜5 倍
-      # に膨れ bufload/new_window_x20 が超過。min-of-5 集約済みの startup だけ生存)。予算を緩める
-      # 対処は bufload 678ms 級の実回帰を見逃すため採らない。詳細は集約スクリプト冒頭参照。
       - name: Bench nvim latency (budget check)
         env:
           DOTFILES_TS_SKIP_ENSURE: "1"
-        run: |
-          set -o pipefail
-          bench_rc=0
-          out="$(for i in 1 2 3; do tests/nvim/bench_nvim.sh || exit 1; done | tests/bench_min_agg.sh)" || bench_rc=$?
-          {
-            echo "### nvim bench (min of 3 runs)"
-            echo '```'
-            echo "$out"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          [ "$bench_rc" -eq 0 ] || { echo "::error::bench_nvim.sh failed (rc=$bench_rc)"; exit 1; }
-          echo "$out" | tests/check_bench_budgets.sh tests/nvim/bench_budgets.ci
+        run: tests/run_bench.sh nvim tests/nvim/bench_nvim.sh tests/nvim/bench_budgets.ci
 
   bench-zsh:
     runs-on: ubuntu-slim
     timeout-minutes: 10
     steps:
-      - name: Silence git init.defaultBranch hint
-        run: git config --global init.defaultBranch main
-
       - uses: actions/checkout@v7
 
       - name: Install runtime dependencies (zsh)
@@ -102,28 +84,13 @@ jobs:
       # zshenv→zshrc→zlogin の全ロードコスト (startup) と、対話シェルが入力を受け付けて
       # 最初のコマンドが返るまで (first_command、zpty 計測) をゲートする。
       # 詳細は tests/zshrc/bench_zsh.sh のヘッダ参照
-      # 3 回実行 → per-metric min 照合 (理由は bench-nvim の step コメント参照)
       - name: Bench zsh startup (budget check)
-        run: |
-          set -o pipefail
-          bench_rc=0
-          out="$(for i in 1 2 3; do tests/zshrc/bench_zsh.sh || exit 1; done | tests/bench_min_agg.sh)" || bench_rc=$?
-          {
-            echo "### zsh bench (min of 3 runs)"
-            echo '```'
-            echo "$out"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          [ "$bench_rc" -eq 0 ] || { echo "::error::bench_zsh.sh failed (rc=$bench_rc)"; exit 1; }
-          echo "$out" | tests/check_bench_budgets.sh tests/zshrc/bench_budgets.ci
+        run: tests/run_bench.sh zsh tests/zshrc/bench_zsh.sh tests/zshrc/bench_budgets.ci
 
   bench-tmux:
     runs-on: ubuntu-slim
     timeout-minutes: 10
     steps:
-      - name: Silence git init.defaultBranch hint
-        run: git config --global init.defaultBranch main
-
       - uses: actions/checkout@v7
 
       # bench_tmux.sh は zsh スクリプト。計測対象の tmux も必要
@@ -138,17 +105,5 @@ jobs:
       # hook (debounced_save, mark-seen) 込みの window 操作を計測する。display -p 系は
       # クライアント fork+往復 (tmux_rtt) が支配的なので、format 自体のコストは
       # status_render - tmux_rtt の差分で読む。
-      # 3 回実行 → per-metric min 照合 (理由は bench-nvim の step コメント参照)
       - name: Bench tmux latency (budget check)
-        run: |
-          set -o pipefail
-          bench_rc=0
-          out="$(for i in 1 2 3; do tests/tmux/bench_tmux.sh || exit 1; done | tests/bench_min_agg.sh)" || bench_rc=$?
-          {
-            echo "### tmux bench (min of 3 runs)"
-            echo '```'
-            echo "$out"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          [ "$bench_rc" -eq 0 ] || { echo "::error::bench_tmux.sh failed (rc=$bench_rc)"; exit 1; }
-          echo "$out" | tests/check_bench_budgets.sh tests/tmux/bench_budgets.ci
+        run: tests/run_bench.sh tmux tests/tmux/bench_tmux.sh tests/tmux/bench_budgets.ci

@@ -1,11 +1,9 @@
 ---
-# src/glog (Go 製 git log ラッパ) の lint + go test 専用 workflow (2026-07-17 ユーザー要望で新設)。
-# それまで glog の go test / lint は lint.yml の go-lint job にあった (paths filter なし =
-# glog 非接触の push でも毎回実行) のを、karabiner.yml と同じ paths filter パターンでここへ移設:
-# glog に触れた変更のときだけ起動し、無関係な push で runner を消費しない。
-# ⚠️ paths filter 付きの check を branch protection の required check に登録しないこと:
-#   glog 非接触 PR では run 自体が生成されず、check が永遠に pending でマージ不能になる
-#   (どうしても required にしたければ paths-ignore の no-op twin workflow が必要)。
+# src/glog (Go 製 git log ラッパ) の CI。lint + test の本体は再利用 workflow _go-project.yml に
+# 一元化し、ここは paths filter (触れた変更のときだけ起動) と対象 dir の指定だけを持つ薄い caller。
+# paths に _go-project.yml を含めるのは、共有本体を編集したときにも全プロジェクトの CI を走らせて
+# 検証するため (含めないと本体変更が誰にも検証されない)。
+# ⚠️ paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
 name: src/glog
 
 on:
@@ -14,10 +12,12 @@ on:
     paths:
       - 'src/glog/**'
       - .github/workflows/src_glog.yml
+      - .github/workflows/_go-project.yml
   pull_request:
     paths:
       - 'src/glog/**'
       - .github/workflows/src_glog.yml
+      - .github/workflows/_go-project.yml
   workflow_dispatch:  # GitHub UI からの手動再実行用
 
 permissions:
@@ -29,43 +29,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # lint と test は独立 job: 並列実行 + 片方だけの再実行が可能
-  lint:
-    runs-on: ubuntu-slim
-    # 初回は golangci-lint を go run でソースからビルドするため余裕を持たせる (以降は cache)
-    timeout-minutes: 15
-    steps:
-      - name: Silence git init.defaultBranch hint
-        run: git config --global init.defaultBranch main
-
-      - uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: src/glog/go.mod
-          cache-dependency-path: src/glog/go.sum
-
-      - name: Lint
-        run: make -C src/glog lint
-
-  test:
-    runs-on: ubuntu-slim
-    timeout-minutes: 10
-    steps:
-      # actions/checkout は内部で `git init` する。runner の git は init.defaultBranch 未設定のため
-      # "Using 'master' ..." hint をログに出す。先に設定して抑制する (glog のテストは偽 repo を
-      # git init で作るため、hint がテスト出力に混ざるのも防ぐ)。
-      - name: Silence git init.defaultBranch hint
-        run: git config --global init.defaultBranch main
-
-      - uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: src/glog/go.mod
-          cache-dependency-path: src/glog/go.sum
-
-      - name: Run glog tests
-        run: make -C src/glog test
+  go:
+    uses: ./.github/workflows/_go-project.yml
+    with:
+      dir: src/glog

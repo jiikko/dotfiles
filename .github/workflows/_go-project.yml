@@ -1,0 +1,67 @@
+---
+# src/<project> の Go lint + test を実行する再利用 workflow (workflow_call)。
+# glog / glogx / git-popup / parallel-each / disassemble_excel の CI 本体が
+# 「プロジェクト dir だけ違う」完全同型だったのを一元化。各プロジェクトは
+# paths filter だけ持つ薄い caller (src_<project>.yml) から dir を渡して呼ぶ。
+# 新しい Go プロジェクトを src/ に足したら caller を 1 本足すだけ
+# (root Makefile の GO_PROJECT_DIRS コメント参照)。ファイル名の先頭 _ は
+# 「top-level トリガを持たない再利用専用」であることの目印。
+#
+# ⚠️ caller の paths filter 付き check を branch protection の required check に
+#   登録しないこと: 非接触 PR では run 自体が生成されず、check が永遠に pending で
+#   マージ不能になる (どうしても required にしたければ paths-ignore の no-op twin が必要)。
+name: go-project
+
+on:
+  workflow_call:
+    inputs:
+      dir:
+        description: 対象プロジェクトの相対パス (例 src/glogx)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# actions/checkout の git init が出す "Using 'master'..." hint を抑制する。
+# init.defaultBranch を git 実行時 config (GIT_CONFIG_*) で注入し、checkout の git init と
+# テストの fake-repo git init (glogx 等) の両方に効かせる。専用の run: ステップにしないのは、
+# ローカル composite action は checkout 後でないと解決できず「checkout 前」に一元化できない
+# ため (env なら全 job / step へ自動継承される)。tests / lint / bench / karabiner も同方式。
+env:
+  GIT_CONFIG_COUNT: "1"
+  GIT_CONFIG_KEY_0: init.defaultBranch
+  GIT_CONFIG_VALUE_0: main
+
+jobs:
+  # lint と test は独立 job: 並列実行 + 片方だけの再実行が可能
+  lint:
+    runs-on: ubuntu-slim
+    # 初回は golangci-lint を go run でソースからビルドするため余裕を持たせる (以降は cache)
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ inputs.dir }}/go.mod
+          cache-dependency-path: ${{ inputs.dir }}/go.sum
+
+      - name: Lint
+        run: make -C ${{ inputs.dir }} lint
+
+  test:
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ inputs.dir }}/go.mod
+          cache-dependency-path: ${{ inputs.dir }}/go.sum
+
+      - name: Test
+        run: make -C ${{ inputs.dir }} test

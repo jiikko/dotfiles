@@ -27,6 +27,12 @@ on:
 permissions:
   contents: read
 
+# git init の hint 抑制 (init.defaultBranch)。env で注入する理由は _go-project.yml 参照。
+env:
+  GIT_CONFIG_COUNT: "1"
+  GIT_CONFIG_KEY_0: init.defaultBranch
+  GIT_CONFIG_VALUE_0: main
+
 # 同一 ref の連続 push では古い run を打ち切る (旧コミットの結果に価値が無いため)
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -37,11 +43,6 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
-      # actions/checkout は内部で `git init` する。runner の git は init.defaultBranch 未設定のため
-      # "Using 'master' ... will change to main in Git 3.0" hint をログに出す。先に設定して抑制する。
-      - name: Silence git init.defaultBranch hint
-        run: git config --global init.defaultBranch main
-
       - uses: actions/checkout@v7
 
       # karabiner_cli は単体配布が無く Karabiner-Elements に同梱される。cask で入れると
