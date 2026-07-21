@@ -28,7 +28,8 @@ import (
 
 const (
 	fetchTimeout    = 10 * time.Second
-	spinnerInterval = 80 * time.Millisecond
+	spinnerInterval = 80 * time.Millisecond // スピナー等の通常 tick (12.5fps。CPU 節約)
+	scrollInterval  = 33 * time.Millisecond // scroll glide 中の高 FPS tick (~30fps。滑らかさ優先)
 	// maxPanelJobs は job パネルに一度に表示する行数。超過分はパネル内でスクロールする。
 	maxPanelJobs = 10
 )
@@ -340,22 +341,29 @@ func (m *browseModel) Init() tea.Cmd {
 	return prefix
 }
 
-func tick() tea.Cmd {
-	return tea.Tick(spinnerInterval, func(time.Time) tea.Msg { return tickMsg{} })
+func tickEvery(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
-// maybeTick は 80ms スピナー tick を single-flight で仕込む。既にチェーンが 1 本生きて
-// いれば nil を返して二重チェーンを作らない。tea.Batch(cmd, tick()) は Init・各 fetch 経路
-// など多数に散らばり、非同期処理が重なるたびに独立した自己増殖チェーンが恒久追加されて
-// (push 直後ポーリングでは最長 2 分間に ~48 本まで) 再描画/アニメが N 倍化していた
-// (レビュー C1)。この single-flight で全 tick 発行を 1 本に束ねる。⚠️ pushPoll/panelPoll の
-// tea.Tick は別周期の独立タイマーなので maybeTick を通さない (それぞれ seq/guard で管理)。
+// maybeTick は tick を single-flight で仕込む。既にチェーンが 1 本生きていれば nil を返して
+// 二重チェーンを作らない。tea.Batch(cmd, maybeTick()) は Init・各 fetch 経路など多数に散らばり、
+// 非同期処理が重なるたびに独立した自己増殖チェーンが恒久追加されて (push 直後ポーリングでは
+// 最長 2 分間に ~48 本まで) 再描画/アニメが N 倍化していた (レビュー C1)。この single-flight で
+// 全 tick 発行を 1 本に束ねる。⚠️ pushPoll/panelPoll の tea.Tick は別周期の独立タイマーなので
+// maybeTick を通さない (それぞれ seq/guard で管理)。
+//
+// 周期は scroll glide 中だけ scrollInterval (~30fps) に上げて滑らかにし、それ以外は
+// spinnerInterval (12.5fps) に落として CPU を節約する。チェーンは毎 tickMsg で maybeTick
+// から張り直されるので、glide 開始/終了で周期が自動的に切り替わる。
 func (m *browseModel) maybeTick() tea.Cmd {
 	if m.ticking {
 		return nil
 	}
 	m.ticking = true
-	return tick()
+	if m.scrollAnim {
+		return tickEvery(scrollInterval)
+	}
+	return tickEvery(spinnerInterval)
 }
 
 // fetchCIStatusesCmd は targets の CI 状態取得を tea.Cmd にする。ctx/timeout/defer cancel の
@@ -913,9 +921,10 @@ func (m *browseModel) startScrollAnim(prev int) tea.Cmd {
 	return m.maybeTick()
 }
 
-// scrollAnimFrames は scroll glide の総フレーム数 (× spinnerInterval 80ms ≒ 240ms)。
-// 少ないほど速い。
-const scrollAnimFrames = 3
+// scrollAnimFrames は scroll glide の総フレーム数 (× scrollInterval 33ms ≒ 200ms)。
+// 少ないほど速い。30fps 化 (12.5→30fps) に合わせて 3→6 に増やし、同程度の duration で
+// ease-in カーブの刻みを細かく = 滑らかにした。
+const scrollAnimFrames = 6
 
 // advanceScroll は scroll glide を 1 フレーム進める。ease-in (二次 t^2) で「最初ゆっくり →
 // 終盤に加速」する (ユーザー要望 2026-07-21)。進捗は開始位置 scrollFrom からの経過フレーム
