@@ -252,6 +252,8 @@ type browseModel struct {
 	offset         int                 // ビューポート先頭の行 index (論理 = カーソル可視化の着地点)
 	offsetShown    int                 // 描画に使う表示 offset (scrollAnim 中だけ offset と乖離し glide)
 	scrollAnim     bool                // j/k のコミット単位スクロールを表示 offset で滑らせている最中か
+	scrollFrom     int                 // scroll glide 開始時の表示 offset (ease-in の進捗基点)
+	scrollFrame    int                 // scroll glide の経過フレーム数 (ease-in の進捗)
 	panelSHA       string              // job パネルを表示中のコミット SHA ("" = パネルなし)
 	panelCursor    int                 // パネル内で選択中の job index (-1 = タイトル行にフォーカス)
 	panelPollSeq   int                 // パネル開閉の世代 (panelPollMsg の有効性判定)
@@ -905,32 +907,40 @@ func (m *browseModel) startScrollAnim(prev int) tea.Cmd {
 		return nil
 	}
 	m.offsetShown = prev
+	m.scrollFrom = prev
+	m.scrollFrame = 0
 	m.scrollAnim = true
 	return m.maybeTick()
 }
 
-// advanceScroll は表示 offset を論理 offset へ 1 フレーム分寄せる (ease-out: 残距離の
-// 約 2/3 ずつ = 1 コミット ~7 行を ~2 フレーム ≒ 160ms で着地)。到達で scrollAnim を下ろす。
-// 速度は ceil(2*mag/3) の 2/3 を変えて調整する (1/2 にすると ~2 倍ゆっくり = ~4 フレーム)。
+// scrollAnimFrames は scroll glide の総フレーム数 (× spinnerInterval 80ms ≒ 240ms)。
+// 少ないほど速い。
+const scrollAnimFrames = 3
+
+// advanceScroll は scroll glide を 1 フレーム進める。ease-in (二次 t^2) で「最初ゆっくり →
+// 終盤に加速」する (ユーザー要望 2026-07-21)。進捗は開始位置 scrollFrom からの経過フレーム
+// 割合 t=frame/scrollAnimFrames で測り、表示 offset = scrollFrom + dist*t^2。最終フレームで
+// 論理 offset へスナップして scrollAnim を下ろす。
+// カーブを変えるならここ: t*(2-t) にすると ease-out (最初速く減速)、t で等速。
 func (m *browseModel) advanceScroll() {
-	d := m.offset - m.offsetShown
-	if d == 0 {
+	dist := m.offset - m.scrollFrom
+	m.scrollFrame++
+	if dist == 0 || m.scrollFrame >= scrollAnimFrames {
+		m.offsetShown = m.offset
 		m.scrollAnim = false
 		return
 	}
-	mag := d
+	// prog = round(|dist| * frame^2 / scrollAnimFrames^2)。符号は dist に合わせる (上下対称)
+	mag := dist
 	if mag < 0 {
 		mag = -mag
 	}
-	step := (2*mag + 2) / 3 // ceil(2*mag/3)。mag>=1 で常に >=1 (残り 1 行も 1 ステップで詰まる)
-	if d < 0 {
-		step = -step
+	f, total := m.scrollFrame, scrollAnimFrames
+	prog := (mag*f*f*2 + total*total) / (2 * total * total) // round-half-up
+	if dist < 0 {
+		prog = -prog
 	}
-	m.offsetShown += step
-	if (d > 0 && m.offsetShown >= m.offset) || (d < 0 && m.offsetShown <= m.offset) {
-		m.offsetShown = m.offset
-		m.scrollAnim = false
-	}
+	m.offsetShown = m.scrollFrom + prog
 }
 
 // unpushedCount は未 push コミット数 (push 確認モーダルと confirmPush が共用)。

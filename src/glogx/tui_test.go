@@ -195,18 +195,30 @@ func TestBrowseScrollAnimConverges(t *testing.T) {
 		m := newTestBrowse(t, 6, map[string]CIState{}, nil)
 		m.statuses = statusesFor(m, StateSuccess)
 		m.offsetShown = tc.from
+		m.scrollFrom = tc.from
+		m.scrollFrame = 0
 		m.offset = tc.to
 		m.scrollAnim = true
+		prevShown := m.offsetShown
 		frames := 0
 		for m.scrollAnim {
 			m.advanceScroll()
 			frames++
+			// ease-in: 表示 offset は目標を通り越さず単調に近づく
+			if (tc.to > tc.from && (m.offsetShown < prevShown || m.offsetShown > tc.to)) ||
+				(tc.to < tc.from && (m.offsetShown > prevShown || m.offsetShown < tc.to)) {
+				t.Fatalf("from=%d to=%d: 非単調/行き過ぎ (offsetShown=%d)", tc.from, tc.to, m.offsetShown)
+			}
+			prevShown = m.offsetShown
 			if frames > 20 {
 				t.Fatalf("from=%d to=%d: 収束しない (offsetShown=%d)", tc.from, tc.to, m.offsetShown)
 			}
 		}
 		if m.offsetShown != tc.to {
 			t.Errorf("from=%d to=%d: 着地 offsetShown=%d, want %d", tc.from, tc.to, m.offsetShown, tc.to)
+		}
+		if frames > scrollAnimFrames {
+			t.Errorf("from=%d to=%d: %d フレーム (scrollAnimFrames=%d 以内のはず)", tc.from, tc.to, frames, scrollAnimFrames)
 		}
 	}
 }
