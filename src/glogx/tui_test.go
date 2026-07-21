@@ -190,10 +190,10 @@ func TestBrowseScrollAnimNoHeightCap(t *testing.T) {
 // 有限フレームで着地して scrollAnim を下ろす (geometry 非依存に決定的検証)。
 func TestBrowseScrollAnimConverges(t *testing.T) {
 	for _, tc := range []struct{ from, to int }{
-		{from: 0, to: 7},  // 下スクロール (1 コミット ~7 行)
-		{from: 7, to: 0},  // 上スクロール
-		{from: 3, to: 4},  // 残り 1 行
-		{from: 5, to: 5},  // 動きなし → 即座に scrollAnim を下ろす
+		{from: 0, to: 7}, // 下スクロール (1 コミット ~7 行)
+		{from: 7, to: 0}, // 上スクロール
+		{from: 3, to: 4}, // 残り 1 行
+		{from: 5, to: 5}, // 動きなし → 即座に scrollAnim を下ろす
 	} {
 		m := newTestBrowse(t, 6, map[string]CIState{}, nil)
 		m.statuses = statusesFor(m, StateSuccess)
@@ -229,6 +229,7 @@ func TestBrowseScrollAnimConverges(t *testing.T) {
 // 80ms tick は single-flight: チェーンは常に高々 1 本 (レビュー C1)。
 func TestBrowseTickSingleFlight(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.usageVisible = false // usage 取得中も spinnerActive になるため、tick 単体の検証から隔離する
 	if m.maybeTick() == nil || !m.ticking {
 		t.Fatal("初回 maybeTick が tick を返さない / ticking が立たない")
 	}
@@ -507,6 +508,11 @@ func TestBrowseEnterOpensDetailAndToggles(t *testing.T) {
 func TestBrowsePanelTriggersDetailFetch(t *testing.T) {
 	// キャッシュヒットで詳細が無い SHA のパネルはオンデマンド取得になる
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	// usage オーバーレイ (取得中は自身が "取得中..." を描く) を隔離しないと、パネルの
+	// ローディング指標が壊れても overlay の "取得中" で下の曖昧 assert が通ってしまう
+	// (マスク。レビュー指摘 2026-07-21)。openPanel を handleKey 経由で呼ばないため overlay が
+	// 自動 dismiss されないので明示的に消す。
+	m.usageVisible = false
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StateSuccess // キャッシュ由来 (details なし)
 	cmd := m.openPanel()
@@ -1834,6 +1840,7 @@ func TestBrowsePushNoUnpushed(t *testing.T) {
 // カーソルはヘッダー行全体の bg 塗りで示す。
 func TestBrowseCursorGutterArrowAndBgHighlight(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m.usageVisible = false // 右上 usage モーダルは上部行を覆うため、カーソル強調の検証から隔離する
 	m.statuses = statusesFor(m, StateSuccess)
 	m.colored = true
 	view := strings.Split(m.View(), "\n")

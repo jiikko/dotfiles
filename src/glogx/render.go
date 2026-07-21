@@ -484,6 +484,42 @@ func clipToWidth(line string, width int) string {
 	return runewidth.Truncate(plain, width, "…")
 }
 
+// truncateKeepANSI は s を表示幅 width まで切り詰めるが SGR エスケープは保持する
+// (可視文字だけを幅に数える)。clipToWidth が切り詰め時に色を捨てるのと対照的に、
+// overlay で覆う行の「見えている左側」を色付きのまま残すために使う。末尾に reset は
+// 付けない (開いたままの色は呼び出し側が境界で閉じる)。
+func truncateKeepANSI(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if strings.IndexByte(s, '\x1b') < 0 {
+		return runewidth.Truncate(s, width, "") // ESC 無し: 素の幅切りで十分
+	}
+	var b strings.Builder
+	w := 0
+	inEscape := false
+	for _, r := range s {
+		switch {
+		case inEscape:
+			b.WriteRune(r)
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEscape = false
+			}
+		case r == '\x1b':
+			inEscape = true
+			b.WriteRune(r)
+		default:
+			rw := runewidth.RuneWidth(r)
+			if w+rw > width {
+				return b.String()
+			}
+			b.WriteRune(r)
+			w += rw
+		}
+	}
+	return b.String()
+}
+
 func stripANSI(s string) string {
 	if strings.IndexByte(s, '\x1b') < 0 {
 		return s // ESC 無しは Builder 確保・rune 走査とも不要
