@@ -18,6 +18,10 @@ else
   # 古いバイナリが残る (**/*.go は zsh 再帰 glob でトップレベルも含む。(N)=nullglob)。
   for f in "$src_dir"/**/*.go(N) "$src_dir"/go.mod "$src_dir"/go.sum; do
     [[ -e "$f" ]] || continue
+    # *_test.go は go build の入力にならない (生成物は同一) ので再ビルドのトリガから除外し、
+    # テスト編集ループ中の無駄なビルド待ちを避ける。**/*.go~*_test.go は zsh の * が / を
+    # 跨がず usage/*_test.go を取りこぼすため、ループ内で弾く。
+    [[ "$f" == *_test.go ]] && continue
     if [[ "$f" -nt "$bin" ]]; then
       needs_build=1
       break
