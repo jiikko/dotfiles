@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -699,6 +701,57 @@ func TestBrowseOpenJobRejectsNonHTTP(t *testing.T) {
 	}
 	if !strings.Contains(m.hintLine(), "http(s) 以外") {
 		t.Errorf("notice が出ていない: %q", m.hintLine())
+	}
+}
+
+// job 詳細ログを e キーで nvim (stdin 渡し) に開く。ANSI は除去し、ファイルは残さない。
+func TestBrowseJobLogOpenInEditor(t *testing.T) {
+	// jobLogText: ANSI 除去 + 各行 + 改行
+	got := jobLogText([]string{ansiGreen + "ok" + ansiReset, "plain", "\x1b[31mred\x1b[0m line"})
+	if got != "ok\nplain\nred line\n" {
+		t.Fatalf("jobLogText = %q", got)
+	}
+
+	// e キー: 詳細表示中に nvim 起動コマンドを組む (実起動はスタブで捕捉)
+	var captured *exec.Cmd
+	orig := runEditorCmd
+	runEditorCmd = func(cmd *exec.Cmd) tea.Cmd {
+		captured = cmd
+		return func() tea.Msg { return editorClosedMsg{} }
+	}
+	t.Cleanup(func() { runEditorCmd = orig })
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	withJobs(m, 0)
+	m.openPanel()
+	m.handleKey("j")
+	m.detailOpen = true
+	m.panelCursor = 0
+	m.jobDetail[m.detailKey()] = []string{ansiRed + "boom" + ansiReset, "at foo.go:10"}
+
+	_, cmd := m.handleKey("e")
+	if cmd == nil || captured == nil {
+		t.Fatal("e で nvim 起動コマンドが組まれない")
+	}
+	if len(captured.Args) < 2 || captured.Args[0] != "nvim" || captured.Args[1] != "-" {
+		t.Fatalf("nvim - で起動していない: %v", captured.Args)
+	}
+	// stdin に ANSI 除去済みログが載っている (ファイルは作らない)
+	buf, _ := io.ReadAll(captured.Stdin)
+	if string(buf) != "boom\nat foo.go:10\n" {
+		t.Fatalf("stdin の中身 = %q", string(buf))
+	}
+	// エラーで閉じたら notice、成功なら無し
+	m.Update(editorClosedMsg{err: errors.New("nvim: not found")})
+	if !strings.Contains(m.notice, "nvim を開けません") {
+		t.Errorf("nvim 起動失敗の notice が出ない: %q", m.notice)
+	}
+
+	// ログが空なら起動しない
+	m.jobDetail[m.detailKey()] = nil
+	if _, cmd := m.handleKey("e"); cmd != nil {
+		t.Error("空ログで nvim を起動しようとした")
 	}
 }
 

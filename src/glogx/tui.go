@@ -60,6 +60,16 @@ type tickMsg struct{}
 // openURLMsg は job 詳細ページをブラウザで開いた結果。
 type openURLMsg struct{ err error }
 
+// editorClosedMsg は job ログを開いた nvim を閉じた結果 (e キー)。
+type editorClosedMsg struct{ err error }
+
+// runEditorCmd はテストで実 nvim を起動しないための差し替え点。tea.ExecProcess は
+// bubbletea の描画を一旦止め、端末を nvim へ明け渡し、終了後に復帰する (エディタ起動用途の
+// 標準経路)。
+var runEditorCmd = func(cmd *exec.Cmd) tea.Cmd {
+	return tea.ExecProcess(cmd, func(err error) tea.Msg { return editorClosedMsg{err} })
+}
+
 // jobDetailMsg は job 詳細 (annotations / ログ tail) のオンデマンド取得の結果。
 type jobDetailMsg struct {
 	key   string // sha/jobIdx (取得中表示とキャッシュのキー)
@@ -605,6 +615,12 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.notice = "ブラウザを開けませんでした: " + firstLine(msg.err.Error())
 		}
 		return m, nil
+	case editorClosedMsg:
+		// nvim を閉じて復帰。stdin 渡しなのでファイルは残らず、バッファも破棄済み
+		if msg.err != nil {
+			m.notice = "nvim を開けませんでした: " + firstLine(msg.err.Error())
+		}
+		return m, nil
 	case tea.KeyMsg:
 		// 高速連打やパイプ入力では複数の文字キーが 1 つの KeyMsg (Runes 長 > 1) に
 		// まとまって届く。分解せず msg.String() だけ見ると "hhq" のような未知キー扱いに
@@ -1092,6 +1108,8 @@ func (m *browseModel) handleDetailKey(key string) (tea.Model, tea.Cmd) {
 		m.detailOffset = maxOffset
 	case "o":
 		return m, m.openJob()
+	case "e":
+		return m, m.openJobLogInEditor()
 	case "y":
 		m.copyFocusURL()
 	}
@@ -1393,6 +1411,31 @@ func (m *browseModel) openURLCmd(url string) tea.Cmd {
 	return func() tea.Msg {
 		return openURLMsg{err: openInBrowser(url)}
 	}
+}
+
+// jobLogText は job 詳細行を nvim へ渡すプレーンテキストにする。ANSI 色 (SGR) を除去して、
+// nvim で yank したときに制御コードが混ざらないようにする。
+func jobLogText(lines []string) string {
+	var b strings.Builder
+	for _, l := range lines {
+		b.WriteString(stripANSI(l))
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// openJobLogInEditor は表示中の job 詳細ログを nvim で開く (e キー・コピー用)。ログは stdin
+// (`nvim -`) で渡すのでディスクにファイルを残さず、nvim を閉じればバッファごと破棄される
+// (ユーザー要望 2026-07-21: ログのテキストをコピーしたいが後に残したくない)。
+func (m *browseModel) openJobLogInEditor() tea.Cmd {
+	lines := m.jobDetail[m.detailKey()]
+	if len(lines) == 0 {
+		m.notice = "開けるログがありません"
+		return nil
+	}
+	cmd := exec.Command("nvim", "-")
+	cmd.Stdin = strings.NewReader(jobLogText(lines))
+	return runEditorCmd(cmd)
 }
 
 // openJob はパネルで選択中の job の詳細ページをブラウザで開く。
@@ -1941,7 +1984,7 @@ func (m *browseModel) hintLine() string {
 	case m.diffSHA != "":
 		hint = "j/k/Space: スクロール  g/G: 先頭/末尾  q/h: 閉じる"
 	case m.detailOpen:
-		hint = "j/k: スクロール  Enter/h/q: 戻る  o: ブラウザ  y: URL コピー"
+		hint = "j/k: スクロール  e: nvim で開く  Enter/h/q: 戻る  o: ブラウザ  y: URL コピー"
 	case m.panelSHA != "" && m.panelCursor >= 0:
 		hint = "j/k: job 移動  Enter: 詳細ログ  o: ブラウザ  y: URL コピー  h/q: 閉じる"
 	case m.panelSHA != "":
