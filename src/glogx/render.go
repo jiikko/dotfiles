@@ -187,10 +187,10 @@ func insertPushBoundary(lines []Line, commits []Commit, statuses map[string]CISt
 		return append([]Line{{Text: text, CommitIdx: 0}}, lines...)
 	}
 	// 混在時: 未 push 件数 (= origin より何コミット先行しているか) を all pushed と同じ
-	// 「先頭」に黄+太字で出す。複数行表示だと push 境界はずっと下 (未 push 件数ぶんの行の
+	// 「先頭」に赤+太字で出す。複数行表示だと push 境界はずっと下 (未 push 件数ぶんの行の
 	// 先) にあり、そこだけに件数を置くとスクロールしないと見えないため (ユーザー要望
 	// 2026-07-22)。加えて push 境界の正確な位置には従来どおり dim の罫線を挿す。
-	summary := labeledRule(fmt.Sprintf(" (↑%d unpushed)", unpushed), ansiYellow+ansiBold)
+	summary := labeledRule(fmt.Sprintf(" (↑%d unpushed)", unpushed), ansiRed+ansiBold)
 	boundaryRule := labeledRule("", ansiDim) // 位置マーカー: ラベル無しの dim 罫線
 	for i, l := range lines {
 		if l.Header && l.CommitIdx == boundary {
