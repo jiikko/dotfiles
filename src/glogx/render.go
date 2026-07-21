@@ -141,7 +141,9 @@ func RenderLines(commits []Commit, statuses map[string]CIState, o RenderOpts) []
 
 // insertPushBoundary は「どこまで push したか」の視覚化 (ユーザー選定 2026-07-19:
 // 背景塗りつぶし案は却下、カーソルの行全体 bg 塗りと干渉するため):
-//   - 未 push と push 済みが混在 → その間に境界線 (── origin ──) を 1 行挿す
+//   - 未 push と push 済みが混在 → 先頭に件数サマリ (── origin (↑N unpushed) ──) を挿し、
+//     さらに実際の push 境界の位置には dim の罫線 (── origin ──) を挿す。件数を先頭に置くのは
+//     複数行表示だと境界がスクロール先に隠れるため (ユーザー要望 2026-07-22)
 //   - 表示範囲が全部 push 済み → 先頭に ── origin (all pushed ✓) ── を挿す
 //     (境界が先頭 = 見えている範囲は全部 origin 済み、という同じ語彙。ユーザー要望)
 //
@@ -169,27 +171,33 @@ func insertPushBoundary(lines []Line, commits []Commit, statuses map[string]CISt
 	if width <= 0 {
 		width = 60
 	}
-	rule := func() string {
-		head := "── origin "
-		return paint(head+strings.Repeat("─", max(width-runewidth.StringWidth(head), 0)), ansiDim, o.Colored)
+	// ラベル付き origin 行を組む共通ヘルパー。head/罫線は dim、ラベルだけ色+太字で強調。
+	labeledRule := func(label, labelColor string) string {
+		head := "── origin"
+		gap := " "
+		dashes := strings.Repeat("─", max(width-runewidth.StringWidth(head+label+gap), 0))
+		return paint(head, ansiDim, o.Colored) +
+			paint(label, labelColor, o.Colored) +
+			paint(gap+dashes, ansiDim, o.Colored)
 	}
 	if allPushed {
 		// 全 push 済みは「達成」状態なのでラベルだけ緑+太字で強調する (dim な罫線と差を
 		// つけて視覚的に目立たせる。ユーザー要望)。罫線部分は従来どおり dim
-		head := "── origin"
-		label := " (all pushed ✓)"
-		gap := " "
-		dashes := strings.Repeat("─", max(width-runewidth.StringWidth(head+label+gap), 0))
-		text := paint(head, ansiDim, o.Colored) +
-			paint(label, ansiGreen+ansiBold, o.Colored) +
-			paint(gap+dashes, ansiDim, o.Colored)
+		text := labeledRule(" (all pushed ✓)", ansiGreen+ansiBold)
 		return append([]Line{{Text: text, CommitIdx: 0}}, lines...)
 	}
+	// 混在時: 未 push 件数 (= origin より何コミット先行しているか) を all pushed と同じ
+	// 「先頭」に黄+太字で出す。複数行表示だと push 境界はずっと下 (未 push 件数ぶんの行の
+	// 先) にあり、そこだけに件数を置くとスクロールしないと見えないため (ユーザー要望
+	// 2026-07-22)。加えて push 境界の正確な位置には従来どおり dim の罫線を挿す。
+	summary := labeledRule(fmt.Sprintf(" (↑%d unpushed)", unpushed), ansiYellow+ansiBold)
+	boundaryRule := labeledRule("", ansiDim) // 位置マーカー: ラベル無しの dim 罫線
 	for i, l := range lines {
 		if l.Header && l.CommitIdx == boundary {
-			out := make([]Line, 0, len(lines)+1)
+			out := make([]Line, 0, len(lines)+2)
+			out = append(out, Line{Text: summary, CommitIdx: 0})
 			out = append(out, lines[:i]...)
-			out = append(out, Line{Text: rule(), CommitIdx: boundary - 1})
+			out = append(out, Line{Text: boundaryRule, CommitIdx: boundary - 1})
 			out = append(out, lines[i:]...)
 			return out
 		}
