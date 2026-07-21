@@ -913,6 +913,7 @@ func TestBrowsePanelShowsRunningElapsed(t *testing.T) {
 	t.Cleanup(func() { timeNow = orig })
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.usageVisible = false // 右上 usage モーダルの "残り / リセット" 見出しが「残り」不在アサートに紛れるのを避ける
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StatePending
 	// 開始 90 秒前・ETA basis なし (履歴が画面に無い) → 経過時間だけ出る
@@ -999,6 +1000,7 @@ func TestBrowseRunningETAFetchesMissingBasis(t *testing.T) {
 	t.Cleanup(func() { timeNow = orig })
 
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m.usageVisible = false // 右上 usage モーダルの "残り / リセット" 見出しが「残り」不在アサートに紛れるのを避ける
 	running, prev := m.commits[0].SHA, m.commits[1].SHA
 	m.statuses[running] = StatePending
 	m.statuses[prev] = StateSuccess // 完了コミット: cache ヒット相当で Details 未取得
