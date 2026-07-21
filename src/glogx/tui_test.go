@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -734,8 +735,12 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	if cmd == nil || captured == nil {
 		t.Fatal("e で nvim 起動コマンドが組まれない")
 	}
-	if len(captured.Args) < 2 || captured.Args[0] != "nvim" || captured.Args[1] != "-" {
-		t.Fatalf("nvim - で起動していない: %v", captured.Args)
+	// nvim -R ... - (readonly、stdin から読む)
+	if captured.Args[0] != "nvim" || captured.Args[len(captured.Args)-1] != "-" {
+		t.Fatalf("nvim ... - で起動していない: %v", captured.Args)
+	}
+	if !slices.Contains(captured.Args, "-R") {
+		t.Fatalf("readonly (-R) で開いていない: %v", captured.Args)
 	}
 	// stdin に ANSI 除去済みログが載っている (ファイルは作らない)
 	buf, _ := io.ReadAll(captured.Stdin)

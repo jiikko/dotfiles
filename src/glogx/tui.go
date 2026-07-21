@@ -1433,7 +1433,10 @@ func (m *browseModel) openJobLogInEditor() tea.Cmd {
 		m.notice = "開けるログがありません"
 		return nil
 	}
-	cmd := exec.Command("nvim", "-")
+	// -R (readonly) + nomodifiable + buftype=nofile で「閲覧してコピーするだけ」の scratch に
+	// する: 誤編集できず :q が常にクリーンに閉じる (素の nvim - だと変更扱い等で :q がエラーに
+	// なる・ユーザー報告 2026-07-21)。yank は nomodifiable でも可能。noswapfile で swap も残さない。
+	cmd := exec.Command("nvim", "-R", "-c", "setlocal buftype=nofile noswapfile nomodifiable", "-")
 	cmd.Stdin = strings.NewReader(jobLogText(lines))
 	return runEditorCmd(cmd)
 }
