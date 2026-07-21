@@ -24,7 +24,7 @@ var defaultOrder = []string{"5h", "7d"}
 
 // RenderLine は Snapshot を 1 行のステータス文字列へ整形する。純関数 (テスト容易)。
 // 単独コマンドやコンパクト表示用。複数行モーダルには RenderRows を使う。
-// 例: "5h:[░░░░]2%(残:4時間39分 / 7月22日03:09) 7d:[█░░░]28%(残:2日9時間 / 7月24日07:59)"
+// 例: "5h:[▱▱▱▱▱▱▱▱▱▱]2%(残:4時間39分 / 7月22日03:09) 7d:[▰▰▰▱▱▱▱▱▱▱]28%(残:2日9時間 / 7月24日07:59)"
 func RenderLine(s *Snapshot, now time.Time, colored bool) string {
 	if s == nil {
 		return ""
@@ -33,7 +33,7 @@ func RenderLine(s *Snapshot, now time.Time, colored bool) string {
 	for _, label := range defaultOrder {
 		if w, ok := s.Find(label); ok {
 			parts = append(parts, fmt.Sprintf("%s:%s%d%%(残:%s / %s)",
-				w.Label, bar4(w.Percent, colored), w.Percent,
+				w.Label, bar(w.Percent, colored), w.Percent,
 				formatRemain(w.ResetAt.Sub(now)), formatReset(w.ResetAt)))
 		}
 	}
@@ -44,7 +44,7 @@ func RenderLine(s *Snapshot, now time.Time, colored bool) string {
 const (
 	tblGap    = "   " // 列間の空白 (3)
 	tblLabelW = 2     // 枠ラベル列 ("5h"/"7d"/"枠" いずれも表示幅 2)
-	tblUsageW = 11    // 使用列 = バー "[░░░░]"(6) + 空白(1) + "%3d%%"(4)
+	tblUsageW = 17    // 使用列 = バー "[" + barCells(10) + "]"(=12) + 空白(1) + "%3d%%"(4)
 )
 
 // RenderTable は複数行モーダル用のヘッダー行とデータ行を、列を揃えて返す。
@@ -52,7 +52,7 @@ const (
 // 残り時間を最大幅に揃えて "/" を縦に揃える。区切り罫線は箱幅を知る呼び出し側が引く。
 // 例: header="枠   使用          残り / リセット"
 //
-//	row  ="5h   [░░░░]   4%   4時間26分 / 7月22日03:09"
+//	row  ="5h   [▰▱▱▱▱▱▱▱▱▱]   4%   4時間26分 / 7月22日03:09"
 func RenderTable(s *Snapshot, now time.Time, colored bool) (header string, rows []string) {
 	if s == nil {
 		return "", nil
@@ -89,8 +89,8 @@ func RenderTable(s *Snapshot, now time.Time, colored bool) (header string, rows 
 	header = padRight("枠", tblLabelW) + tblGap + padRight("使用", tblUsageW) + tblGap + "残り / リセット"
 	rows = make([]string, len(ws))
 	for i, w := range ws {
-		// バーは色付き時 ANSI を含むが表示幅は常に 6 なので固定列 (tblUsageW) として扱える。
-		usageCell := fmt.Sprintf("%s %3d%%", bar4(w.Percent, colored), w.Percent)
+		// バーは色付き時 ANSI を含むが表示幅は常に barCells+2 なので固定列 (tblUsageW) として扱える。
+		usageCell := fmt.Sprintf("%s %3d%%", bar(w.Percent, colored), w.Percent)
 		remainCell := padLeft(days[i], wDay) + padLeft(hours[i], wHour) + padLeft(mins[i], wMin)
 		resetCell := padLeft(months[i], wMonth) + padLeft(dates[i], wDate) + clocks[i]
 		rows[i] = padRight(w.Label, tblLabelW) + tblGap + usageCell + tblGap +
@@ -143,15 +143,18 @@ func resetCols(t time.Time) (month, date, clock string) {
 	return fmt.Sprintf("%d月", int(t.Month())), fmt.Sprintf("%d日", t.Day()), t.Format("15:04")
 }
 
-// bar4 は使用率を 4 セルのバーにする。filled = round(pct/100*4) を整数演算で。
+// barCells はバーのセル数 (使用率の分解能)。列幅定数 tblUsageW と連動するので変更時は両方直す。
+const barCells = 10
+
+// bar は使用率を barCells セルのバーにする。filled = round(pct/100*barCells) を整数演算で。
 // 色付き時は使用率が高いほど赤へ (90%+ 赤 / 75%+ 黄 / それ以外 緑)。
-func bar4(pct int, colored bool) string {
+func bar(pct int, colored bool) string {
 	pct = max(0, min(pct, 100))
-	filled := min((pct*4+50)/100, 4)
+	filled := min((pct*barCells+50)/100, barCells)
 	// ▰/▱ は表示幅が常に 1 (曖昧幅でない) ため塗り数に依らずバー幅が一定になる。█ は
 	// runewidth で幅 2 と判定され (端末は幅 1) 塗り数で列がずれる不具合があったため不可。
 	full := strings.Repeat("▰", filled)
-	empty := strings.Repeat("▱", 4-filled)
+	empty := strings.Repeat("▱", barCells-filled)
 	if !colored {
 		return "[" + full + empty + "]"
 	}

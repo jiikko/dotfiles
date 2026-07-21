@@ -110,7 +110,7 @@ func TestRenderLine(t *testing.T) {
 	}}
 	got := RenderLine(snap, now, false)
 	// 5h: 12:00 → 翌日 3:09 = 15時間9分。7d: → 7/24 7:59 = 2日19時間59分。
-	want := "5h:[▱▱▱▱]2%(残:15時間9分 / 7月22日03:09) 7d:[▰▱▱▱]28%(残:2日19時間 / 7月24日07:59)"
+	want := "5h:[▱▱▱▱▱▱▱▱▱▱]2%(残:15時間9分 / 7月22日03:09) 7d:[▰▰▰▱▱▱▱▱▱▱]28%(残:2日19時間 / 7月24日07:59)"
 	if got != want {
 		t.Errorf("RenderLine:\n got=%q\nwant=%q", got, want)
 	}
@@ -124,7 +124,7 @@ func TestRenderTable(t *testing.T) {
 		{Label: "7d(Fable)", Percent: 48, ResetAt: now}, // 既定描画には出ない
 	}}
 	header, rows := RenderTable(snap, now, false)
-	if want := "枠   使用          残り / リセット"; header != want {
+	if want := "枠   使用                残り / リセット"; header != want {
 		t.Errorf("header:\n got=%q\nwant=%q", header, want)
 	}
 	if len(rows) != 2 {
@@ -132,10 +132,10 @@ func TestRenderTable(t *testing.T) {
 	}
 	// 残り時間は 日/時間/分 の 3 列に右寄せ整列。時間・分は両行で常に出し (粒度を揃える)、
 	// 日は 1 日以上のときだけ。5h の空「日」列と 7d の "5日" が同幅になり単位が同じ桁に来る。
-	if want := "5h   [▱▱▱▱]   4%      4時間26分 / 7月21日16:26"; rows[0] != want {
+	if want := "5h   [▱▱▱▱▱▱▱▱▱▱]   4%      4時間26分 / 7月21日16:26"; rows[0] != want {
 		t.Errorf("row0:\n got=%q\nwant=%q", rows[0], want)
 	}
-	if want := "7d   [▰▱▱▱]  29%   5日3時間 0分 / 7月26日15:00"; rows[1] != want {
+	if want := "7d   [▰▰▰▱▱▱▱▱▱▱]  29%   5日3時間 0分 / 7月26日15:00"; rows[1] != want {
 		t.Errorf("row1:\n got=%q\nwant=%q", rows[1], want)
 	}
 }
@@ -158,11 +158,19 @@ func TestRenderTableAlignsColumns(t *testing.T) {
 	}
 }
 
-func TestBar4(t *testing.T) {
-	cases := map[int]string{0: "[▱▱▱▱]", 2: "[▱▱▱▱]", 13: "[▰▱▱▱]", 28: "[▰▱▱▱]", 50: "[▰▰▱▱]", 90: "[▰▰▰▰]", 100: "[▰▰▰▰]"}
+func TestBar(t *testing.T) {
+	cases := map[int]string{
+		0:   "[▱▱▱▱▱▱▱▱▱▱]",
+		2:   "[▱▱▱▱▱▱▱▱▱▱]",
+		13:  "[▰▱▱▱▱▱▱▱▱▱]",
+		28:  "[▰▰▰▱▱▱▱▱▱▱]",
+		50:  "[▰▰▰▰▰▱▱▱▱▱]",
+		90:  "[▰▰▰▰▰▰▰▰▰▱]",
+		100: "[▰▰▰▰▰▰▰▰▰▰]",
+	}
 	for pct, want := range cases {
-		if got := bar4(pct, false); got != want {
-			t.Errorf("bar4(%d) = %q, want %q", pct, got, want)
+		if got := bar(pct, false); got != want {
+			t.Errorf("bar(%d) = %q, want %q", pct, got, want)
 		}
 	}
 }
