@@ -71,6 +71,17 @@ func firstLine(s string) string {
 	return s
 }
 
+// lastLine は最後の非空行を返す (末尾に要約が来るコマンド出力の notice 用)。全行空なら "".
+func lastLine(s string) string {
+	lines := strings.Split(s, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if t := strings.TrimSpace(lines[i]); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
 // Repo は remote から解決した GitHub リポジトリ。
 type Repo struct {
 	Owner string

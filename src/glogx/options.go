@@ -190,6 +190,8 @@ func Usage() string {
   o                         コミットの GitHub ページをブラウザで開く
   p                         コミットに紐づく PR をブラウザで開く
                             (associatedPullRequests。複数あれば OPEN > MERGED 優先)
+  U                         Claude Code の /usage 残量を右上モーダルで表示 (toggle)
+  C                         claude update を実行する (確認なし即実行。結果は下部に表示)
   Ctrl-D / Ctrl-U / PgDn / PgUp
                             ページスクロール
   g / G                     先頭 / 末尾のコミットへ

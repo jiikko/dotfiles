@@ -167,6 +167,20 @@ var runGitPullRebase = func() error {
 	return fmt.Errorf("%s", strings.TrimSpace(string(out)))
 }
 
+// updateMsg は `claude update` の実行結果 (C キー、確認なし即実行)。glogx の独自機能。
+type updateMsg struct {
+	out string // 表示用に整形済みの結果行 (成功/失敗どちらも notice に出す)
+	err error
+}
+
+// runClaudeUpdate はテストで実 update しないための差し替え点。CLI を自己更新し、
+// 出力の末尾行 (要約になりやすい) を notice 用に返す。remote に触るが git ではないので
+// noPromptGitCmd は使わない (対話プロンプトは claude 側の責務)。
+var runClaudeUpdate = func() (string, error) {
+	out, err := exec.Command("claude", "update").CombinedOutput()
+	return lastLine(strings.TrimSpace(string(out))), err
+}
+
 // prefixMsg は tmux prefix の取得結果 (起動時に 1 回、非同期)。
 type prefixMsg struct{ key string }
 
@@ -288,6 +302,7 @@ type browseModel struct {
 	pushWarn       string              // push/pull できない理由の警告モーダル (何かキーで閉じる)
 	pullConfirm    bool                // u の pull --rebase 確認中 (y/N)
 	pulling        bool                // git pull --rebase 実行中 (終了以外のキーを無視)
+	updating       bool                // claude update 実行中 (終了以外のキーを無視)
 	pullAnimating  bool                // pull 後に先頭へ増えた新規コミット行を上から降らせる演出中 (offset が進行度)
 	opts           *Options            // pull 後のコミット再読込に使う (revs / max-count)
 	pushPoll       map[string]bool     // push 直後ポーリング対象の SHA (CI が見えたら外れる)
@@ -612,6 +627,21 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.notice = "pull --rebase しました"
 		return m, m.reloadAfterPull()
+	case updateMsg:
+		m.updating = false
+		switch {
+		case msg.err != nil:
+			detail := msg.out
+			if detail == "" {
+				detail = firstLine(msg.err.Error())
+			}
+			m.notice = "claude update に失敗しました: " + detail
+		case msg.out != "":
+			m.notice = "claude update: " + msg.out
+		default:
+			m.notice = "claude update しました"
+		}
+		return m, nil
 	case pushMsg:
 		m.pushing = false
 		if msg.err != nil {
@@ -719,7 +749,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.pullConfirm = false
 		return m, nil
 	}
-	if m.pushing || m.pulling { // 実行中は終了以外のキーを無視する
+	if m.pushing || m.pulling || m.updating { // 実行中は終了以外のキーを無視する
 		return m, nil
 	}
 	// tmux prefix の誤爆フィードバック: popup 表示中は tmux がキーを処理しない
@@ -774,6 +804,16 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if key == "u" {
 		m.pullConfirm = true
 		return m, nil
+	}
+	// C = claude update (確認なし即実行。ユーザー選定 2026-07-22)。glogx の独自機能で
+	// U=usage と並ぶ大文字の「Claude Code メタ操作」。実行中は spinner モーダルを出す。
+	if key == "C" {
+		m.updating = true
+		m.notice = ""
+		return m, tea.Batch(func() tea.Msg {
+			out, err := runClaudeUpdate()
+			return updateMsg{out: out, err: err}
+		}, m.maybeTick())
 	}
 	// q はビューのスタックを 1 段戻る (tig 流。ユーザー要望): 詳細 → job 一覧 →
 	// コミット一覧、と閉じていき、最上位でだけ終了。即終了したいときは Ctrl-C
@@ -1024,7 +1064,7 @@ func (m *browseModel) unpushedCount() int {
 // tmux prefix 誤爆トーストのいずれかを、狭い幅の枠 + 左パディングで水平センタリングする
 // (垂直は View 側が overlayBox の anchor で中央に置く)。どれも非表示なら nil。
 func (m *browseModel) pushBoxLines() []string {
-	if !m.pushConfirm && !m.pushing && !m.pullConfirm && !m.pulling && m.pushWarn == "" && m.prefixNote == "" {
+	if !m.pushConfirm && !m.pushing && !m.pullConfirm && !m.pulling && !m.updating && m.pushWarn == "" && m.prefixNote == "" {
 		return nil
 	}
 	width := m.width
@@ -1051,6 +1091,9 @@ func (m *browseModel) pushBoxLines() []string {
 	case m.pulling:
 		title = " git pull --rebase "
 		rows = []string{m.spinner() + " pulling..."}
+	case m.updating:
+		title = " claude update "
+		rows = []string{m.spinner() + " updating..."}
 	case m.pullConfirm:
 		title = " git pull --rebase "
 		rows = []string{
@@ -1655,7 +1698,7 @@ func (m *browseModel) fillUnknown() {
 }
 
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.pushing || m.pulling || m.pullAnimating || m.scrollAnim || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || len(m.diffBusy) > 0 || m.panelHasRunningJob() || m.usageLoading()
+	return m.fetching || m.pushing || m.pulling || m.updating || m.pullAnimating || m.scrollAnim || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || len(m.diffBusy) > 0 || m.panelHasRunningJob() || m.usageLoading()
 }
 
 // usageLoading は usage オーバーレイが取得待ち (spinner を回す) かどうか。表示中かつ
@@ -2114,7 +2157,7 @@ func (m *browseModel) bgLine(text, bg string) string {
 }
 
 func (m *browseModel) hintLine() string {
-	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  y: URL コピー  b: push  u: pull  U: usage  q: 終了"
+	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  y: URL コピー  b: push  u: pull  U: usage  C: update  q: 終了"
 	switch {
 	case m.pushConfirm:
 		hint = "push しますか? [Y/n] (Enter=y)"
@@ -2124,6 +2167,8 @@ func (m *browseModel) hintLine() string {
 		hint = m.spinner() + " pushing..."
 	case m.pulling:
 		hint = m.spinner() + " pulling..."
+	case m.updating:
+		hint = m.spinner() + " claude update..."
 	case m.diffSHA != "":
 		hint = "j/k/Space: スクロール  g/G: 先頭/末尾  q/h: 閉じる"
 	case m.detailOpen:

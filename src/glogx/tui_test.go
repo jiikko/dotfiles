@@ -1574,6 +1574,50 @@ func TestBrowseConfirmEnterConfirms(t *testing.T) {
 	}
 }
 
+// C → claude update (確認なし即実行。glogx の独自機能)。
+func TestBrowseUpdateFlow(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	var calls int
+	orig := runClaudeUpdate
+	runClaudeUpdate = func() (string, error) { calls++; return "Updated to 9.9.9", nil }
+	t.Cleanup(func() { runClaudeUpdate = orig })
+
+	// C で確認を挟まず即実行 (updating=true & cmd 返却)
+	_, cmd := m.handleKey("C")
+	if cmd == nil || !m.updating {
+		t.Fatalf("C で claude update が始まらない: cmd=%v updating=%v", cmd != nil, m.updating)
+	}
+	// 実行中は spinner モーダルが出る
+	m.width, m.height = 80, 20
+	if v := stripANSI(m.View()); !strings.Contains(v, "claude update") || !strings.Contains(v, "updating") {
+		t.Fatal("claude update 実行中モーダルが描画されない")
+	}
+	// cmd を実行して updateMsg を配送
+	var deliver func(msg tea.Msg)
+	deliver = func(msg tea.Msg) {
+		switch v := msg.(type) {
+		case tea.BatchMsg:
+			for _, c := range v {
+				if c != nil {
+					deliver(c())
+				}
+			}
+		case updateMsg:
+			m.Update(v)
+		}
+	}
+	deliver(cmd())
+	if calls != 1 {
+		t.Fatalf("claude update 実行回数 = %d, want 1", calls)
+	}
+	if m.updating {
+		t.Fatal("updateMsg 後も updating のまま")
+	}
+	if !strings.Contains(m.notice, "Updated to 9.9.9") {
+		t.Fatalf("結果が notice に出ない: %q", m.notice)
+	}
+}
+
 func TestBrowsePushFlow(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.statuses[m.commits[0].SHA] = StateUnpushed
