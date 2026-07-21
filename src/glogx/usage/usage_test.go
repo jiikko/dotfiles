@@ -194,3 +194,18 @@ func TestFormatRemain(t *testing.T) {
 		}
 	}
 }
+
+func TestParseVersion(t *testing.T) {
+	cases := map[string]string{
+		"2.1.216 (Claude Code)\n": "2.1.216",
+		"2.1.216":                 "2.1.216",
+		"  1.0.0 (x)  ":           "1.0.0",
+		"":                        "",
+		"   \n":                   "",
+	}
+	for in, want := range cases {
+		if got := parseVersion(in); got != want {
+			t.Errorf("parseVersion(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

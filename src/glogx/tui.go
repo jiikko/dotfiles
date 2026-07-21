@@ -1853,6 +1853,10 @@ func (m *browseModel) usageBoxLines() []string {
 		title = " usage "
 		rows = []string{paint(m.spinner()+" 取得中...", ansiDim, m.colored)}
 	default:
+		// CLI バージョンが取れていればタイトルに添える (取得失敗時は空で従来どおり)。
+		if v := m.usageSnap.Version; v != "" {
+			title = " Claude Code v" + v + " · usage "
+		}
 		header, data := usage.RenderTable(m.usageSnap, time.Now(), m.colored)
 		// 区切り罫線は列内容の最大幅に合わせて引く (箱の inner 幅と一致させる)。ヘッダーは
 		// 列見出し、罫線ともに dim。データ行はバーの色を活かすため素のまま。

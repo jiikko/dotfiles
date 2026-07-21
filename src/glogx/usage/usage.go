@@ -33,6 +33,7 @@ type Window struct {
 // Snapshot は `/usage` 一回分のパース結果。
 type Snapshot struct {
 	Windows []Window
+	Version string // Claude Code の CLI バージョン ("2.1.216" 等)。取得失敗時は空
 }
 
 // Find は label ("5h" / "7d" 等) に一致する Window を返す。
@@ -57,6 +58,11 @@ type claudeResult struct {
 // (num_turns=0・total_cost_usd=0・duration_api_ms=0 を実測) ためモデル指定は結果に影響
 // しないが、将来 /usage が推論を伴う実装に変わった場合に備え最小モデルへ固定しておく (保険)。
 func Fetch(ctx context.Context) (*Snapshot, error) {
+	// バージョンは /usage と独立なので並列取得して起動 fork の直列化を避ける。取得失敗は
+	// 致命ではない (バージョン表示が消えるだけ) ため error は握りつぶし空文字にする。
+	verCh := make(chan string, 1)
+	go func() { verCh <- fetchVersion(ctx) }()
+
 	cmd := exec.CommandContext(ctx, "claude", "-p", "/usage", "--model", "haiku", "--output-format", "json")
 	out, err := cmd.Output()
 	if err != nil {
@@ -69,7 +75,33 @@ func Fetch(ctx context.Context) (*Snapshot, error) {
 	if res.IsError {
 		return nil, errors.New("/usage がエラーを返した")
 	}
-	return Parse(res.Result, time.Now())
+	snap, err := Parse(res.Result, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	snap.Version = <-verCh
+	return snap, nil
+}
+
+// fetchVersion は `claude --version` から CLI バージョン番号だけを取り出す。
+// 出力例: "2.1.216 (Claude Code)" → "2.1.216"。取得・パース失敗はすべて空文字を返す
+// (バージョン表示は付加情報であり、欠けても usage 表示は成立させる)。
+func fetchVersion(ctx context.Context) string {
+	out, err := exec.CommandContext(ctx, "claude", "--version").Output()
+	if err != nil {
+		return ""
+	}
+	return parseVersion(string(out))
+}
+
+// parseVersion は `claude --version` の出力先頭トークンを返す純関数 (テスト容易性のため分離)。
+// "2.1.216 (Claude Code)" → "2.1.216"。空・空白のみは空文字。
+func parseVersion(out string) string {
+	fields := strings.Fields(out)
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
 }
 
 // 例: "Current session: 2% used · resets Jul 22 at 3:09am (Asia/Tokyo)"
