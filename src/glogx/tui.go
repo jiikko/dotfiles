@@ -888,15 +888,14 @@ func (m *browseModel) advancePullAnim() {
 	}
 }
 
-// maxScrollAnimLines は j/k スクロールで glide する最大行数。medium 形式 1 コミット
-// (~7 行) を少し超える程度に抑え、これを超える offset ジャンプ (想定外) は即時に倒す。
-const maxScrollAnimLines = 12
-
 // startScrollAnim は j/k でビューポートがコミット単位に動いたとき、表示 offset (offsetShown)
 // を旧位置 prev から論理 offset へ数フレームで滑らせる (ユーザー要望「にゅっと」)。
 // アニメの積み上げは「押した分だけ遅れて動く」最悪の体感を生むので、連打 (既に scrollAnim)・
-// pull アニメ中・想定外の大ジャンプはアニメせず即時にする (render は m.offset に戻る)。
-// 論理 offset (m.offset) は ensureCursorVisible が既に着地点へ動かしているので触らない。
+// pull アニメ中はアニメせず即時にする (render は m.offset に戻る)。呼び出しは j/k の 1 コミット
+// 移動だけ (g/G・PgDn は元々 snap 経路) なので offset ジャンプはコミット 1 個ぶんに収まり、
+// ease-out が距離でなく時間 (~2 フレーム) を抑えるため、背高コミット (長メッセージ・stat/patch)
+// でも即着地する。高さで animate/snap が変わる違和感を避けるため行数キャップは設けない
+// (ユーザー要望 2026-07-21)。論理 offset は ensureCursorVisible が既に動かしているので触らない。
 func (m *browseModel) startScrollAnim(prev int) tea.Cmd {
 	if m.offset == prev {
 		return nil // カーソルが画面内: ビューポートは動いていない
@@ -904,13 +903,6 @@ func (m *browseModel) startScrollAnim(prev int) tea.Cmd {
 	if m.scrollAnim || m.pullAnimating {
 		m.scrollAnim = false // 連打/pull アニメ中は積まず即時
 		return nil
-	}
-	d := m.offset - prev
-	if d < 0 {
-		d = -d
-	}
-	if d > maxScrollAnimLines {
-		return nil // 想定外の大ジャンプは即時
 	}
 	m.offsetShown = prev
 	m.scrollAnim = true

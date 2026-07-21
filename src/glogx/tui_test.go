@@ -170,6 +170,19 @@ func TestBrowseScrollAnim(t *testing.T) {
 	}
 }
 
+// 背高コミット (大きな offset ジャンプ) でも 1 コミット移動なら glide する
+// (行数キャップ撤去の回帰: 以前は >12 行で snap してコミット高で挙動が変わっていた)。
+func TestBrowseScrollAnimNoHeightCap(t *testing.T) {
+	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+	m.offset = 40 // ensureCursorVisible が背高コミットで飛ばした後を想定した大ジャンプ
+	cmd := m.startScrollAnim(0)
+	if !m.scrollAnim || m.offsetShown != 0 || cmd == nil {
+		t.Fatalf("大ジャンプが animate されない: scrollAnim=%v offsetShown=%d cmd=%v",
+			m.scrollAnim, m.offsetShown, cmd != nil)
+	}
+}
+
 // advanceScroll は上下どちらの向きでも tick で表示 offset を論理 offset へ寄せ、
 // 有限フレームで着地して scrollAnim を下ろす (geometry 非依存に決定的検証)。
 func TestBrowseScrollAnimConverges(t *testing.T) {
