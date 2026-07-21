@@ -656,9 +656,12 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.pushWarn = ""
 		return m, nil
 	}
+	// push/pull 確認の「実行」キー: y か Enter (Enter=y はユーザー要望 2026-07-21)。
+	// それ以外のキーはキャンセル。
+	confirmYes := strings.ToLower(key) == "y" || key == "enter"
 	// push 確認 (b → y/N)。glogx の独自機能。
 	if m.pushConfirm {
-		if strings.ToLower(key) == "y" {
+		if confirmYes {
 			m.pushConfirm = false
 			m.pushing = true
 			return m, tea.Batch(func() tea.Msg { return pushMsg{err: runGitPush()} }, m.maybeTick())
@@ -668,7 +671,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	}
 	// pull --rebase 確認 (u → y/N)。glogx の独自機能。
 	if m.pullConfirm {
-		if strings.ToLower(key) == "y" {
+		if confirmYes {
 			m.pullConfirm = false
 			m.pulling = true
 			return m, tea.Batch(func() tea.Msg { return pullMsg{err: runGitPullRebase()} }, m.maybeTick())
@@ -995,13 +998,13 @@ func (m *browseModel) pushBoxLines() []string {
 		rows = []string{
 			"origin から pull --rebase します",
 			"",
-			paint("y: 実行   n/Esc: キャンセル", ansiDim, m.colored),
+			paint("y/Enter: 実行   n/Esc: キャンセル", ansiDim, m.colored),
 		}
 	default:
 		rows = []string{
 			fmt.Sprintf("未 push の %d コミットを push します", m.unpushedCount()),
 			"",
-			paint("y: 実行   n/Esc: キャンセル", ansiDim, m.colored),
+			paint("y/Enter: 実行   n/Esc: キャンセル", ansiDim, m.colored),
 		}
 	}
 	pad := strings.Repeat(" ", max((width-boxW)/2, 0))
@@ -1938,9 +1941,9 @@ func (m *browseModel) hintLine() string {
 	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  y: URL コピー  b: push  u: pull  q: 終了"
 	switch {
 	case m.pushConfirm:
-		hint = "push しますか? [y/N]"
+		hint = "push しますか? [Y/n] (Enter=y)"
 	case m.pullConfirm:
-		hint = "pull --rebase しますか? [y/N]"
+		hint = "pull --rebase しますか? [Y/n] (Enter=y)"
 	case m.pushing:
 		hint = m.spinner() + " pushing..."
 	case m.pulling:

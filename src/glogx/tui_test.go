@@ -1478,6 +1478,36 @@ func TestBrowseEmacsHorizontalAliases(t *testing.T) {
 }
 
 // b → y/N → git push (glogx の独自機能)。
+// push/pull 確認は Enter を y と同じ「実行」として扱う (ユーザー要望 2026-07-21)。
+func TestBrowseConfirmEnterConfirms(t *testing.T) {
+	// push: Enter で実行
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses[m.commits[0].SHA] = StateUnpushed
+	var pushed int
+	origPush := runGitPush
+	runGitPush = func() error { pushed++; return nil }
+	t.Cleanup(func() { runGitPush = origPush })
+	m.handleKey("b")
+	if !m.pushConfirm {
+		t.Fatal("b で push 確認に入らない")
+	}
+	if _, cmd := m.handleKey("enter"); cmd == nil || !m.pushing || m.pushConfirm {
+		t.Fatalf("Enter で push が実行されない: cmd=%v pushing=%v confirm=%v", cmd != nil, m.pushing, m.pushConfirm)
+	}
+	// pull: Enter で実行
+	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	origPull := runGitPullRebase
+	runGitPullRebase = func() error { return nil }
+	t.Cleanup(func() { runGitPullRebase = origPull })
+	m2.handleKey("u")
+	if !m2.pullConfirm {
+		t.Fatal("u で pull 確認に入らない")
+	}
+	if _, cmd := m2.handleKey("enter"); cmd == nil || !m2.pulling || m2.pullConfirm {
+		t.Fatalf("Enter で pull が実行されない: cmd=%v pulling=%v confirm=%v", cmd != nil, m2.pulling, m2.pullConfirm)
+	}
+}
+
 func TestBrowsePushFlow(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.statuses[m.commits[0].SHA] = StateUnpushed
