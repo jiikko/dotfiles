@@ -1618,9 +1618,13 @@ func TestBrowseUpdateFlow(t *testing.T) {
 	if m.updating {
 		t.Fatal("updateMsg 後も updating のまま")
 	}
-	// 変わった場合は "vX → vY"
-	if !strings.Contains(m.notice, "v2.1.216 → v2.2.0") {
-		t.Fatalf("バージョン変化が notice に出ない: %q", m.notice)
+	// 変わった場合は結果ダイアログに "vX → vY" が出る
+	if !strings.Contains(m.updateResult, "v2.1.216 → v2.2.0") {
+		t.Fatalf("バージョン変化が結果ダイアログに出ない: %q", m.updateResult)
+	}
+	// ダイアログは何かキーで閉じる (キーは消費)
+	if _, cmd := m.handleKey("j"); cmd != nil || m.updateResult != "" {
+		t.Fatalf("結果ダイアログが任意キーで閉じない: cmd=%v result=%q", cmd != nil, m.updateResult)
 	}
 
 	// 変わらなかった場合は「変更なし」
@@ -1644,8 +1648,8 @@ func TestBrowseUpdateFlow(t *testing.T) {
 		dl(c())
 	}
 	deliverTo(m2, cmd2)
-	if !strings.Contains(m2.notice, "変更なし") || !strings.Contains(m2.notice, "v2.2.0") {
-		t.Fatalf("変更なしが notice に出ない: %q", m2.notice)
+	if !strings.Contains(m2.updateResult, "最新版") || !strings.Contains(m2.updateResult, "v2.2.0") {
+		t.Fatalf("最新版が結果ダイアログに出ない: %q", m2.updateResult)
 	}
 }
 

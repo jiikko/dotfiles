@@ -311,6 +311,7 @@ type browseModel struct {
 	pullConfirm    bool                // u の pull --rebase 確認中 (y/N)
 	pulling        bool                // git pull --rebase 実行中 (終了以外のキーを無視)
 	updating       bool                // claude update 実行中 (終了以外のキーを無視)
+	updateResult   string              // claude update の結果ダイアログ本文 ("" = 非表示。何かキーで閉じる)
 	pullAnimating  bool                // pull 後に先頭へ増えた新規コミット行を上から降らせる演出中 (offset が進行度)
 	opts           *Options            // pull 後のコミット再読込に使う (revs / max-count)
 	pushPoll       map[string]bool     // push 直後ポーリング対象の SHA (CI が見えたら外れる)
@@ -637,17 +638,19 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.reloadAfterPull()
 	case updateMsg:
 		m.updating = false
+		// 結果はダイアログで出す (何かキーで閉じる。ユーザー要望 2026-07-22)。バージョンが
+		// 上がったのか latest だったのかを一目で分かるようにする。
 		switch {
 		case msg.err != nil:
-			m.notice = "claude update に失敗しました: " + firstLine(msg.err.Error())
+			m.updateResult = "更新に失敗しました\n" + firstLine(msg.err.Error())
 		case msg.before != "" && msg.after != "" && msg.before != msg.after:
-			m.notice = "claude update: v" + msg.before + " → v" + msg.after
+			m.updateResult = "バージョンが上がりました\nv" + msg.before + " → v" + msg.after
 		case msg.before != "" && msg.before == msg.after:
-			m.notice = "claude update: 変更なし (v" + msg.before + ")"
+			m.updateResult = "すでに最新版です (v" + msg.before + ")"
 		case msg.after != "":
-			m.notice = "claude update: v" + msg.after // before 不明 (比較不可)
+			m.updateResult = "現在のバージョン: v" + msg.after // before 不明で比較できず
 		default:
-			m.notice = "claude update しました" // 前後とも取得できず
+			m.updateResult = "update を実行しました" // 前後とも取得できず
 		}
 		return m, nil
 	case pushMsg:
@@ -738,6 +741,11 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// push 警告モーダルは何かキーで閉じる (そのキーは消費して誤操作を防ぐ)
 	if m.pushWarn != "" {
 		m.pushWarn = ""
+		return m, nil
+	}
+	// claude update の結果ダイアログも何かキーで閉じる (キーは消費する)
+	if m.updateResult != "" {
+		m.updateResult = ""
 		return m, nil
 	}
 	// push/pull 確認の「実行」キー: y か Enter (Enter=y はユーザー要望 2026-07-21)。
@@ -1078,7 +1086,8 @@ func (m *browseModel) unpushedCount() int {
 // tmux prefix 誤爆トーストのいずれかを、狭い幅の枠 + 左パディングで水平センタリングする
 // (垂直は View 側が overlayBox の anchor で中央に置く)。どれも非表示なら nil。
 func (m *browseModel) pushBoxLines() []string {
-	if !m.pushConfirm && !m.pushing && !m.pullConfirm && !m.pulling && !m.updating && m.pushWarn == "" && m.prefixNote == "" {
+	if !m.pushConfirm && !m.pushing && !m.pullConfirm && !m.pulling && !m.updating &&
+		m.pushWarn == "" && m.prefixNote == "" && m.updateResult == "" {
 		return nil
 	}
 	width := m.width
@@ -1100,6 +1109,10 @@ func (m *browseModel) pushBoxLines() []string {
 			"",
 			paint("何かキーを押して閉じる", ansiDim, m.colored),
 		}
+	case m.updateResult != "":
+		title = " claude update "
+		rows = append(strings.Split(m.updateResult, "\n"),
+			"", paint("何かキーを押して閉じる", ansiDim, m.colored))
 	case m.pushing:
 		rows = []string{m.spinner() + " pushing..."}
 	case m.pulling:
