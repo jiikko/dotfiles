@@ -918,16 +918,21 @@ func (m *browseModel) startScrollAnim(prev int) tea.Cmd {
 }
 
 // advanceScroll は表示 offset を論理 offset へ 1 フレーム分寄せる (ease-out: 残距離の
-// おおよそ半分ずつ = 1 コミット ~7 行を ~4 フレームで着地)。到達で scrollAnim を下ろす。
+// 約 2/3 ずつ = 1 コミット ~7 行を ~2 フレーム ≒ 160ms で着地)。到達で scrollAnim を下ろす。
+// 速度は ceil(2*mag/3) の 2/3 を変えて調整する (1/2 にすると ~2 倍ゆっくり = ~4 フレーム)。
 func (m *browseModel) advanceScroll() {
 	d := m.offset - m.offsetShown
 	if d == 0 {
 		m.scrollAnim = false
 		return
 	}
-	step := d / 2
-	if step == 0 { // 残り 1 行は 1 ステップで詰める
-		step = d // d は ±1
+	mag := d
+	if mag < 0 {
+		mag = -mag
+	}
+	step := (2*mag + 2) / 3 // ceil(2*mag/3)。mag>=1 で常に >=1 (残り 1 行も 1 ステップで詰まる)
+	if d < 0 {
+		step = -step
 	}
 	m.offsetShown += step
 	if (d > 0 && m.offsetShown >= m.offset) || (d < 0 && m.offsetShown <= m.offset) {
