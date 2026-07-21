@@ -1579,7 +1579,7 @@ func TestBrowseUpdateFlow(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	var calls int
 	orig := runClaudeUpdate
-	runClaudeUpdate = func() (string, error) { calls++; return "Updated to 9.9.9", nil }
+	runClaudeUpdate = func() (string, string, error) { calls++; return "2.1.216", "2.2.0", nil }
 	t.Cleanup(func() { runClaudeUpdate = orig })
 
 	// C で確認を挟まず即実行 (updating=true & cmd 返却)
@@ -1587,10 +1587,15 @@ func TestBrowseUpdateFlow(t *testing.T) {
 	if cmd == nil || !m.updating {
 		t.Fatalf("C で claude update が始まらない: cmd=%v updating=%v", cmd != nil, m.updating)
 	}
-	// 実行中は spinner モーダルが出る
+	// 実行中は spinner モーダルが出て、終了できない旨も表示する
 	m.width, m.height = 80, 20
-	if v := stripANSI(m.View()); !strings.Contains(v, "claude update") || !strings.Contains(v, "updating") {
+	if v := stripANSI(m.View()); !strings.Contains(v, "claude update") || !strings.Contains(v, "updating") ||
+		!strings.Contains(v, "完了まで終了できません") {
 		t.Fatal("claude update 実行中モーダルが描画されない")
+	}
+	// update 中は Ctrl-G/Ctrl-C で終了できない (自己更新の途中 kill を防ぐ)
+	if _, qcmd := m.handleKey("ctrl+g"); qcmd != nil || m.done || !m.updating {
+		t.Fatalf("update 中に Ctrl-G で終了してしまう: cmd=%v done=%v", qcmd != nil, m.done)
 	}
 	// cmd を実行して updateMsg を配送
 	var deliver func(msg tea.Msg)
@@ -1613,8 +1618,34 @@ func TestBrowseUpdateFlow(t *testing.T) {
 	if m.updating {
 		t.Fatal("updateMsg 後も updating のまま")
 	}
-	if !strings.Contains(m.notice, "Updated to 9.9.9") {
-		t.Fatalf("結果が notice に出ない: %q", m.notice)
+	// 変わった場合は "vX → vY"
+	if !strings.Contains(m.notice, "v2.1.216 → v2.2.0") {
+		t.Fatalf("バージョン変化が notice に出ない: %q", m.notice)
+	}
+
+	// 変わらなかった場合は「変更なし」
+	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	runClaudeUpdate = func() (string, string, error) { return "2.2.0", "2.2.0", nil }
+	_, cmd2 := m2.handleKey("C")
+	deliverTo := func(model *browseModel, c tea.Cmd) {
+		var dl func(tea.Msg)
+		dl = func(msg tea.Msg) {
+			switch v := msg.(type) {
+			case tea.BatchMsg:
+				for _, cc := range v {
+					if cc != nil {
+						dl(cc())
+					}
+				}
+			case updateMsg:
+				model.Update(v)
+			}
+		}
+		dl(c())
+	}
+	deliverTo(m2, cmd2)
+	if !strings.Contains(m2.notice, "変更なし") || !strings.Contains(m2.notice, "v2.2.0") {
+		t.Fatalf("変更なしが notice に出ない: %q", m2.notice)
 	}
 }
 

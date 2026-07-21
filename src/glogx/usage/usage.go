@@ -61,7 +61,7 @@ func Fetch(ctx context.Context) (*Snapshot, error) {
 	// バージョンは /usage と独立なので並列取得して起動 fork の直列化を避ける。取得失敗は
 	// 致命ではない (バージョン表示が消えるだけ) ため error は握りつぶし空文字にする。
 	verCh := make(chan string, 1)
-	go func() { verCh <- fetchVersion(ctx) }()
+	go func() { verCh <- FetchVersion(ctx) }()
 
 	cmd := exec.CommandContext(ctx, "claude", "-p", "/usage", "--model", "haiku", "--output-format", "json")
 	out, err := cmd.Output()
@@ -83,10 +83,10 @@ func Fetch(ctx context.Context) (*Snapshot, error) {
 	return snap, nil
 }
 
-// fetchVersion は `claude --version` から CLI バージョン番号だけを取り出す。
+// FetchVersion は `claude --version` から CLI バージョン番号だけを取り出す。
 // 出力例: "2.1.216 (Claude Code)" → "2.1.216"。取得・パース失敗はすべて空文字を返す
-// (バージョン表示は付加情報であり、欠けても usage 表示は成立させる)。
-func fetchVersion(ctx context.Context) string {
+// (バージョン表示は付加情報であり、欠けても呼び出し側の主処理は成立させる)。
+func FetchVersion(ctx context.Context) string {
 	out, err := exec.CommandContext(ctx, "claude", "--version").Output()
 	if err != nil {
 		return ""

@@ -168,17 +168,25 @@ var runGitPullRebase = func() error {
 }
 
 // updateMsg は `claude update` の実行結果 (C キー、確認なし即実行)。glogx の独自機能。
+// before/after は update 前後の CLI バージョン (取得失敗時は空)。両方取れて差があれば
+// "vX → vY"、同じなら「変更なし」を notice に出す。
 type updateMsg struct {
-	out string // 表示用に整形済みの結果行 (成功/失敗どちらも notice に出す)
-	err error
+	before string
+	after  string
+	err    error // 失敗時のみ。Error() は claude 出力の末尾行を含む
 }
 
-// runClaudeUpdate はテストで実 update しないための差し替え点。CLI を自己更新し、
-// 出力の末尾行 (要約になりやすい) を notice 用に返す。remote に触るが git ではないので
-// noPromptGitCmd は使わない (対話プロンプトは claude 側の責務)。
-var runClaudeUpdate = func() (string, error) {
-	out, err := exec.Command("claude", "update").CombinedOutput()
-	return lastLine(strings.TrimSpace(string(out))), err
+// runClaudeUpdate はテストで実 update しないための差し替え点。update 前後の CLI バージョンを
+// 挟んで取得し (何→何に変わったか表示するため)、CLI を自己更新する。remote に触るが git では
+// ないので noPromptGitCmd は使わない (対話プロンプトは claude 側の責務)。
+var runClaudeUpdate = func() (before, after string, err error) {
+	before = usage.FetchVersion(context.Background())
+	out, e := exec.Command("claude", "update").CombinedOutput()
+	if e != nil {
+		return before, "", fmt.Errorf("%s", lastLine(strings.TrimSpace(string(out))))
+	}
+	after = usage.FetchVersion(context.Background())
+	return before, after, nil
 }
 
 // prefixMsg は tmux prefix の取得結果 (起動時に 1 回、非同期)。
@@ -631,15 +639,15 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updating = false
 		switch {
 		case msg.err != nil:
-			detail := msg.out
-			if detail == "" {
-				detail = firstLine(msg.err.Error())
-			}
-			m.notice = "claude update に失敗しました: " + detail
-		case msg.out != "":
-			m.notice = "claude update: " + msg.out
+			m.notice = "claude update に失敗しました: " + firstLine(msg.err.Error())
+		case msg.before != "" && msg.after != "" && msg.before != msg.after:
+			m.notice = "claude update: v" + msg.before + " → v" + msg.after
+		case msg.before != "" && msg.before == msg.after:
+			m.notice = "claude update: 変更なし (v" + msg.before + ")"
+		case msg.after != "":
+			m.notice = "claude update: v" + msg.after // before 不明 (比較不可)
 		default:
-			m.notice = "claude update しました"
+			m.notice = "claude update しました" // 前後とも取得できず
 		}
 		return m, nil
 	case pushMsg:
@@ -719,6 +727,12 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// C-g は即終了: tmux の C-g popup (bind -n C-g) をトグル風に開閉するため
 	// (開くキーと同じキーで閉じる)。本家 glog には無い割当。
 	if key == "ctrl+c" || key == "ctrl+g" {
+		// claude update 中は終了を握りつぶす (ユーザー選定 2026-07-22): 自己バイナリ更新を
+		// 途中で kill すると CLI が壊れた状態になりうるため、完了 (updateMsg) まで待たせる。
+		// モーダルに「完了まで終了できません」を出しているので無反応には見えない。
+		if m.updating {
+			return m, nil
+		}
 		return m.quit()
 	}
 	// push 警告モーダルは何かキーで閉じる (そのキーは消費して誤操作を防ぐ)
@@ -811,8 +825,8 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.updating = true
 		m.notice = ""
 		return m, tea.Batch(func() tea.Msg {
-			out, err := runClaudeUpdate()
-			return updateMsg{out: out, err: err}
+			before, after, err := runClaudeUpdate()
+			return updateMsg{before: before, after: after, err: err}
 		}, m.maybeTick())
 	}
 	// q はビューのスタックを 1 段戻る (tig 流。ユーザー要望): 詳細 → job 一覧 →
@@ -1093,7 +1107,11 @@ func (m *browseModel) pushBoxLines() []string {
 		rows = []string{m.spinner() + " pulling..."}
 	case m.updating:
 		title = " claude update "
-		rows = []string{m.spinner() + " updating..."}
+		rows = []string{
+			m.spinner() + " updating...",
+			"",
+			paint("完了まで終了できません", ansiDim, m.colored),
+		}
 	case m.pullConfirm:
 		title = " git pull --rebase "
 		rows = []string{
