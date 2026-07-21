@@ -13,8 +13,10 @@ needs_build=0
 if [[ ! -x "$bin" ]]; then
   needs_build=1
 else
-  # Rebuild if any .go source is newer than the binary.
-  for f in "$src_dir"/*.go "$src_dir"/go.mod "$src_dir"/go.sum; do
+  # Rebuild if any .go source is newer than the binary. サブパッケージ (usage/ 等) も
+  # 含めて再帰的に走査する: トップレベル *.go だけだと usage/*.go の変更で再ビルドされず
+  # 古いバイナリが残る (**/*.go は zsh 再帰 glob でトップレベルも含む。(N)=nullglob)。
+  for f in "$src_dir"/**/*.go(N) "$src_dir"/go.mod "$src_dir"/go.sum; do
     [[ -e "$f" ]] || continue
     if [[ "$f" -nt "$bin" ]]; then
       needs_build=1
