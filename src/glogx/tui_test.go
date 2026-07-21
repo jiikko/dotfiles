@@ -705,7 +705,7 @@ func TestBrowseOpenJobRejectsNonHTTP(t *testing.T) {
 	}
 }
 
-// job 詳細ログを e キーで nvim (stdin 渡し) に開く。ANSI は除去し、ファイルは残さない。
+// job 詳細ログを v キーで nvim (stdin 渡し) に開く。ANSI は除去し、ファイルは残さない。
 func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	// jobLogText: ANSI 除去 + 各行 + 改行
 	got := jobLogText([]string{ansiGreen + "ok" + ansiReset, "plain", "\x1b[31mred\x1b[0m line"})
@@ -713,7 +713,7 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 		t.Fatalf("jobLogText = %q", got)
 	}
 
-	// e キー: 詳細表示中に nvim 起動コマンドを組む (実起動はスタブで捕捉)
+	// v キー: 詳細表示中に nvim 起動コマンドを組む (実起動はスタブで捕捉)
 	var captured *exec.Cmd
 	orig := runEditorCmd
 	runEditorCmd = func(cmd *exec.Cmd) tea.Cmd {
@@ -731,9 +731,9 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	m.panelCursor = 0
 	m.jobDetail[m.detailKey()] = []string{ansiRed + "boom" + ansiReset, "at foo.go:10"}
 
-	_, cmd := m.handleKey("e")
+	_, cmd := m.handleKey("v")
 	if cmd == nil || captured == nil {
-		t.Fatal("e で nvim 起動コマンドが組まれない")
+		t.Fatal("v で nvim 起動コマンドが組まれない")
 	}
 	// nvim -R ... - (readonly、stdin から読む)
 	if captured.Args[0] != "nvim" || captured.Args[len(captured.Args)-1] != "-" {
@@ -755,7 +755,7 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 
 	// ログが空なら起動しない
 	m.jobDetail[m.detailKey()] = nil
-	if _, cmd := m.handleKey("e"); cmd != nil {
+	if _, cmd := m.handleKey("v"); cmd != nil {
 		t.Error("空ログで nvim を起動しようとした")
 	}
 }

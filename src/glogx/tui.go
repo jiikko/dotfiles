@@ -1108,7 +1108,7 @@ func (m *browseModel) handleDetailKey(key string) (tea.Model, tea.Cmd) {
 		m.detailOffset = maxOffset
 	case "o":
 		return m, m.openJob()
-	case "e":
+	case "v":
 		return m, m.openJobLogInEditor()
 	case "y":
 		m.copyFocusURL()
@@ -1424,7 +1424,8 @@ func jobLogText(lines []string) string {
 	return b.String()
 }
 
-// openJobLogInEditor は表示中の job 詳細ログを nvim で開く (e キー・コピー用)。ログは stdin
+// openJobLogInEditor は表示中の job 詳細ログを nvim で開く (v キー・コピー用。less の v=エディタ
+// で開く慣習に合わせた「view」)。ログは stdin
 // (`nvim -`) で渡すのでディスクにファイルを残さず、nvim を閉じればバッファごと破棄される
 // (ユーザー要望 2026-07-21: ログのテキストをコピーしたいが後に残したくない)。
 func (m *browseModel) openJobLogInEditor() tea.Cmd {
@@ -1987,7 +1988,7 @@ func (m *browseModel) hintLine() string {
 	case m.diffSHA != "":
 		hint = "j/k/Space: スクロール  g/G: 先頭/末尾  q/h: 閉じる"
 	case m.detailOpen:
-		hint = "j/k: スクロール  e: nvim で開く  Enter/h/q: 戻る  o: ブラウザ  y: URL コピー"
+		hint = "j/k: スクロール  v: nvim で開く  Enter/h/q: 戻る  o: ブラウザ  y: URL コピー"
 	case m.panelSHA != "" && m.panelCursor >= 0:
 		hint = "j/k: job 移動  Enter: 詳細ログ  o: ブラウザ  y: URL コピー  h/q: 閉じる"
 	case m.panelSHA != "":
