@@ -166,23 +166,6 @@ func parseTmuxPrefix(out string) string {
 	return ""
 }
 
-// tmuxToast はテストで実 tmux を叩かないための差し替え点。popup 内の TUI notice は
-// 枠の中で完結して見落としやすいため、外側の tmux status line にも display-message で
-// トーストを出す (popup は中央 85% 表示で status line は見えている)。best effort。
-var tmuxToast = func(msg string) {
-	if os.Getenv("TMUX") == "" {
-		return
-	}
-	_ = exec.Command("tmux", "display-message", msg).Run()
-}
-
-// toastCmd は tmuxToast を Update をブロックしない tea.Cmd として返す。
-func toastCmd(msg string) tea.Cmd {
-	return func() tea.Msg {
-		tmuxToast(msg)
-		return nil
-	}
-}
 
 // prMsg は commit に紐づく PR のオンデマンド取得の結果 (p キー)。
 type prMsg struct {
@@ -281,6 +264,7 @@ type browseModel struct {
 	notice         string              // hint 行に出す一時メッセージ (次のキーで消える)
 	tmuxPrefix     string              // tmux prefix の bubbletea 表記 (例 "ctrl+t")。"" = tmux 外/不明で機能オフ
 	prefixPending  bool                // 直前のキーが tmux prefix。次の 1 キーを飲み込む
+	prefixNote     string              // tmux prefix 誤爆の中央トースト (次のキーで消える。dim フッターより目立つ)
 	verbatim       []Line              // git log 実出力の取り込み行 (nil = 自前レンダリング)
 	fetching       bool
 	ticking        bool // 80ms スピナー tick チェーンが 1 本生きているか (maybeTick の single-flight)
@@ -646,6 +630,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	m.notice = ""
+	m.prefixNote = "" // 中央トーストは次のキーで消える (prefix 系ハンドラだけが再セットする)
 	// C-g は即終了: tmux の C-g popup (bind -n C-g) をトグル風に開閉するため
 	// (開くキーと同じキーで閉じる)。本家 glog には無い割当。
 	if key == "ctrl+c" || key == "ctrl+g" {
@@ -693,13 +678,14 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// tmux 外や取得失敗では tmuxPrefix="" のままこの機能ごと無効になる。ユーザー要望。
 	if m.prefixPending && key != m.tmuxPrefix {
 		m.prefixPending = false
-		m.notice = "popup 内では tmux の window 操作はできません (C-g で閉じてから prefix+" + key + ")"
-		return m, toastCmd("⚠ popup 内では window 操作不可 — C-g で閉じてから prefix+" + key)
+		// 中央トーストで目立たせる (dim フッターだと見落とす、とのユーザー要望 2026-07-21)
+		m.prefixNote = "popup 内では tmux の window 操作はできません\nC-g で popup を閉じてから prefix+" + key
+		return m, nil
 	}
 	if m.tmuxPrefix != "" && key == m.tmuxPrefix {
 		m.prefixPending = true
-		m.notice = "tmux prefix は popup 内では効きません (C-g で popup を閉じてから)"
-		return m, toastCmd("⚠ tmux prefix は popup 内では効きません (C-g で閉じてから)")
+		m.prefixNote = "tmux prefix は popup 内では効きません\nC-g で popup を閉じてから"
+		return m, nil
 	}
 	// emacs 流の水平移動エイリアス (C-n/C-p = ↓/↑ は各ビューで対応済み)。ここで
 	// 正規化するので全ビュー (一覧/パネル/詳細/diff) に一括で効く。
@@ -966,11 +952,11 @@ func (m *browseModel) unpushedCount() int {
 	return n
 }
 
-// pushBoxLines は push 確認 (y/N)・実行中の中央モーダル。非表示なら nil。
-// buildPanelBox を狭い幅で組み、左に空白を足して水平センタリングする
-// (垂直は View 側が overlayBox の anchor で中央に置く)。
+// pushBoxLines は中央モーダル/トーストの描画行。push 確認・実行中・push 警告・
+// tmux prefix 誤爆トーストのいずれかを、狭い幅の枠 + 左パディングで水平センタリングする
+// (垂直は View 側が overlayBox の anchor で中央に置く)。どれも非表示なら nil。
 func (m *browseModel) pushBoxLines() []string {
-	if !m.pushConfirm && !m.pushing && !m.pullConfirm && !m.pulling && m.pushWarn == "" {
+	if !m.pushConfirm && !m.pushing && !m.pullConfirm && !m.pulling && m.pushWarn == "" && m.prefixNote == "" {
 		return nil
 	}
 	width := m.width
@@ -981,6 +967,10 @@ func (m *browseModel) pushBoxLines() []string {
 	title := " git push "
 	var rows []string
 	switch {
+	case m.prefixNote != "":
+		title = " ⚠ tmux "
+		rows = strings.Split(m.prefixNote, "\n")
+		rows = append(rows, "", paint("何かキーで閉じる", ansiDim, m.colored))
 	case m.pushWarn != "":
 		title = " ⚠ "
 		rows = []string{

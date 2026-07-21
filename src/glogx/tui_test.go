@@ -1678,48 +1678,38 @@ func TestBrowsePullFlow(t *testing.T) {
 // tmux prefix (popup 内では tmux に届かない) の誤爆フィードバック。
 // TUI 内 notice に加えて、外側の tmux status line へのトースト (display-message) も出す。
 func TestBrowseTmuxPrefixFeedback(t *testing.T) {
-	var toasts []string
-	origToast := tmuxToast
-	tmuxToast = func(msg string) { toasts = append(toasts, msg) }
-	t.Cleanup(func() { tmuxToast = origToast })
-	deliverToast := func(cmd tea.Cmd) {
-		if cmd != nil {
-			cmd() // toastCmd は実行時に tmuxToast を呼ぶ (戻り msg は nil)
-		}
-	}
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m.width, m.height = 80, 20
 	m.Update(prefixMsg{key: "ctrl+t"})
-	// prefix 単体: 案内を出す (カーソルは動かない)。tmux トーストも飛ぶ
-	_, cmd := m.handleKey("ctrl+t")
-	deliverToast(cmd)
-	if !strings.Contains(m.notice, "popup") {
-		t.Fatalf("prefix の案内が出ない: %q", m.notice)
+	// prefix 単体: 目立つ中央トーストを出す (カーソルは動かない)
+	m.handleKey("ctrl+t")
+	if !strings.Contains(m.prefixNote, "効きません") {
+		t.Fatalf("prefix の中央トーストが出ない: %q", m.prefixNote)
 	}
-	if len(toasts) != 1 || !strings.Contains(toasts[0], "効きません") {
-		t.Fatalf("prefix でトーストが飛ばない: %v", toasts)
+	if v := stripANSI(m.View()); !strings.Contains(v, "効きません") || !strings.Contains(v, "⚠ tmux") {
+		t.Fatal("中央トーストが描画されない")
 	}
 	// prefix に続く 1 キーは飲み込む (p が PR オープンに化けない・j でカーソルも動かない)
-	_, cmd = m.handleKey("j")
-	deliverToast(cmd)
+	m.handleKey("j")
 	if m.cursor != 0 {
 		t.Fatal("prefix 直後のキーが飲み込まれずカーソルが動いた")
 	}
-	if !strings.Contains(m.notice, "prefix+j") {
-		t.Fatalf("押したキー名入りの案内が出ない: %q", m.notice)
+	if !strings.Contains(m.prefixNote, "prefix+j") {
+		t.Fatalf("押したキー名入りの中央トーストが出ない: %q", m.prefixNote)
 	}
-	if len(toasts) != 2 || !strings.Contains(toasts[1], "prefix+j") {
-		t.Fatalf("飲み込みキーのトーストが飛ばない: %v", toasts)
-	}
-	// 飲み込みは 1 キーだけ (次の j は通常動作)
+	// 飲み込みは 1 キーだけ (次の j は通常動作。トーストも消える)
 	m.handleKey("j")
 	if m.cursor != 1 {
 		t.Fatal("prefix の 2 キー後まで飲み込まれた")
 	}
+	if m.prefixNote != "" {
+		t.Fatalf("通常キーで中央トーストが消えない: %q", m.prefixNote)
+	}
 	// prefix 連打 (tmux のリテラル送信の癖) は pending を張り直して同じ案内
 	m.handleKey("ctrl+t")
 	m.handleKey("ctrl+t")
-	if !m.prefixPending || !strings.Contains(m.notice, "効きません") {
-		t.Fatalf("prefix 連打で pending が張り直されない: pending=%v notice=%q", m.prefixPending, m.notice)
+	if !m.prefixPending || !strings.Contains(m.prefixNote, "効きません") {
+		t.Fatalf("prefix 連打で pending が張り直されない: pending=%v note=%q", m.prefixPending, m.prefixNote)
 	}
 	m.handleKey("esc") // pending を消化して以降のテストに影響させない
 	// y/N 確認モーダル中はモーダルの語彙を優先: C-t は「任意キー = キャンセル」で
@@ -1737,8 +1727,8 @@ func TestBrowseTmuxPrefixFeedback(t *testing.T) {
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m2.Update(prefixMsg{key: ""})
 	m2.handleKey("ctrl+t")
-	if m2.notice != "" || m2.prefixPending {
-		t.Fatalf("tmux 外で prefix 案内が出た: %q", m2.notice)
+	if m2.prefixNote != "" || m2.prefixPending {
+		t.Fatalf("tmux 外で prefix 案内が出た: %q", m2.prefixNote)
 	}
 }
 
