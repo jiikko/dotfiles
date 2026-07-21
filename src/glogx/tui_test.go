@@ -229,7 +229,7 @@ func TestBrowseScrollAnimConverges(t *testing.T) {
 // 80ms tick は single-flight: チェーンは常に高々 1 本 (レビュー C1)。
 func TestBrowseTickSingleFlight(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.usageVisible = false // usage 取得中も spinnerActive になるため、tick 単体の検証から隔離する
+	m.usageOv.visible = false // usage 取得中も spinnerActive になるため、tick 単体の検証から隔離する
 	if m.maybeTick() == nil || !m.ticking {
 		t.Fatal("初回 maybeTick が tick を返さない / ticking が立たない")
 	}
@@ -512,7 +512,7 @@ func TestBrowsePanelTriggersDetailFetch(t *testing.T) {
 	// ローディング指標が壊れても overlay の "取得中" で下の曖昧 assert が通ってしまう
 	// (マスク。レビュー指摘 2026-07-21)。openPanel を handleKey 経由で呼ばないため overlay が
 	// 自動 dismiss されないので明示的に消す。
-	m.usageVisible = false
+	m.usageOv.visible = false
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StateSuccess // キャッシュ由来 (details なし)
 	cmd := m.openPanel()
@@ -913,7 +913,7 @@ func TestBrowsePanelShowsRunningElapsed(t *testing.T) {
 	t.Cleanup(func() { timeNow = orig })
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.usageVisible = false // 右上 usage モーダルの "残り / リセット" 見出しが「残り」不在アサートに紛れるのを避ける
+	m.usageOv.visible = false // 右上 usage モーダルの "残り / リセット" 見出しが「残り」不在アサートに紛れるのを避ける
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StatePending
 	// 開始 90 秒前・ETA basis なし (履歴が画面に無い) → 経過時間だけ出る
@@ -1000,7 +1000,7 @@ func TestBrowseRunningETAFetchesMissingBasis(t *testing.T) {
 	t.Cleanup(func() { timeNow = orig })
 
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
-	m.usageVisible = false // 右上 usage モーダルの "残り / リセット" 見出しが「残り」不在アサートに紛れるのを避ける
+	m.usageOv.visible = false // 右上 usage モーダルの "残り / リセット" 見出しが「残り」不在アサートに紛れるのを避ける
 	running, prev := m.commits[0].SHA, m.commits[1].SHA
 	m.statuses[running] = StatePending
 	m.statuses[prev] = StateSuccess // 完了コミット: cache ヒット相当で Details 未取得
@@ -1921,7 +1921,7 @@ func TestBrowsePushNoUnpushed(t *testing.T) {
 // カーソルはヘッダー行全体の bg 塗りで示す。
 func TestBrowseCursorGutterArrowAndBgHighlight(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
-	m.usageVisible = false // 右上 usage モーダルは上部行を覆うため、カーソル強調の検証から隔離する
+	m.usageOv.visible = false // 右上 usage モーダルは上部行を覆うため、カーソル強調の検証から隔離する
 	m.statuses = statusesFor(m, StateSuccess)
 	m.colored = true
 	view := strings.Split(m.View(), "\n")

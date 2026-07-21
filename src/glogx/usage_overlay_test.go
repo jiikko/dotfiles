@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -74,19 +75,19 @@ func TestOverlayBoxTopRightEmpty(t *testing.T) {
 // 起動時は表示、任意キーで非表示、U で再表示 (ユーザー要望の「何か押したら消える」)。
 func TestUsageOverlayDismiss(t *testing.T) {
 	m := newTestBrowse(t, 5, nil, nil)
-	if !m.usageVisible {
-		t.Fatal("起動時に usageVisible=false")
+	if !m.usageOv.visible {
+		t.Fatal("起動時に usageOv.visible=false")
 	}
 	m.handleKey("j") // 何かキー → 消える
-	if m.usageVisible {
-		t.Error("キー押下後も usageVisible=true (消えていない)")
+	if m.usageOv.visible {
+		t.Error("キー押下後も usageOv.visible=true (消えていない)")
 	}
 	m.handleKey("U") // U で再表示
-	if !m.usageVisible {
+	if !m.usageOv.visible {
 		t.Error("U で再表示されない")
 	}
 	m.handleKey("U") // U でまた非表示 (トグル)
-	if m.usageVisible {
+	if m.usageOv.visible {
 		t.Error("U トグルで非表示にならない")
 	}
 }
@@ -95,12 +96,12 @@ func TestUsageOverlayDismiss(t *testing.T) {
 func TestUsageToggleDoesNotBypassConfirmModal(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.pushConfirm = true
-	visBefore := m.usageVisible
+	visBefore := m.usageOv.visible
 	m.handleKey("U")
 	if m.pushConfirm {
 		t.Error("U が push 確認モーダルをキャンセルしていない (残った確認へ Enter で誤 push する footgun)")
 	}
-	if m.usageVisible != visBefore {
+	if m.usageOv.visible != visBefore {
 		t.Error("モーダル中の U が usage をトグルした (モーダルのキャンセル語彙を優先すべき)")
 	}
 }
@@ -119,18 +120,18 @@ func TestUsageToggleDoesNotBypassPrefixPending(t *testing.T) {
 // 取得待ち = spinnerActive で tick が回る (スピナーが animate する前提)。取得完了で止まる。
 func TestUsageLoadingDrivesSpinner(t *testing.T) {
 	m := newTestBrowse(t, 5, nil, nil) // toFetch なし = CI fetch は動かない
-	if !m.usageLoading() {
-		t.Fatal("起動直後は usageLoading=true のはず")
+	if !m.usageOv.loading() {
+		t.Fatal("起動直後は usageOv.loading()=true のはず")
 	}
 	if !m.spinnerActive() {
 		t.Error("usage 取得中に spinnerActive=false (tick が回らずスピナーが止まる)")
 	}
 	// 結果到着でローディング終了 → spinner 対象から外れる。
-	m.usageSnap = &usage.Snapshot{Windows: []usage.Window{
+	m.usageOv.snap = &usage.Snapshot{Windows: []usage.Window{
 		{Label: "5h", Percent: 4, ResetAt: time.Now().Add(time.Hour)},
 	}}
-	if m.usageLoading() {
-		t.Error("snap 到着後も usageLoading=true")
+	if m.usageOv.loading() {
+		t.Error("snap 到着後も usageOv.loading()=true")
 	}
 	if m.spinnerActive() {
 		t.Error("他に動くものが無いのに spinnerActive=true (tick が止まらない)")
@@ -141,7 +142,7 @@ func TestUsageLoadingDrivesSpinner(t *testing.T) {
 func TestUsageBoxLines(t *testing.T) {
 	m := newTestBrowse(t, 5, nil, nil)
 
-	loading := m.usageBoxLines()
+	loading := m.usageOv.boxLines(m.width, m.colored, m.spinner())
 	if len(loading) < 3 { // 上罫線 + 内容 + 下罫線 (影付きは更に多い)
 		t.Fatalf("取得中の box 行数が少ない: %d", len(loading))
 	}
@@ -150,19 +151,51 @@ func TestUsageBoxLines(t *testing.T) {
 		t.Errorf("取得中 box に '取得中' が無い:\n%s", stripANSI(joined))
 	}
 
-	m.usageSnap = &usage.Snapshot{Windows: []usage.Window{
+	m.usageOv.snap = &usage.Snapshot{Windows: []usage.Window{
 		{Label: "5h", Percent: 4, ResetAt: time.Now().Add(4 * time.Hour)},
 		{Label: "7d", Percent: 29, ResetAt: time.Now().Add(50 * time.Hour)},
 	}}
-	box := m.usageBoxLines()
+	box := m.usageOv.boxLines(m.width, m.colored, m.spinner())
 	plain := stripANSI(strings.Join(box, "\n"))
 	if !strings.Contains(plain, "5h") || !strings.Contains(plain, "7d") {
 		t.Errorf("成功 box に 5h/7d が無い:\n%s", plain)
 	}
 
 	// 非表示なら nil。
-	m.usageVisible = false
-	if m.usageBoxLines() != nil {
+	m.usageOv.visible = false
+	if m.usageOv.boxLines(m.width, m.colored, m.spinner()) != nil {
 		t.Error("非表示で nil を返さない")
+	}
+}
+
+// loading は「表示中 かつ 結果未着」のときだけ true。err 到着後も false になり (tick が
+// 止まりスピナーが無限に回らない)、非表示中も false。browseModel を作らず型単体で検証する。
+func TestUsageOverlayLoadingStates(t *testing.T) {
+	cases := []struct {
+		name string
+		ov   usageOverlay
+		want bool
+	}{
+		{"表示中・結果未着", usageOverlay{visible: true}, true},
+		{"表示中・snap 到着", usageOverlay{visible: true, snap: &usage.Snapshot{}}, false},
+		{"表示中・err 到着", usageOverlay{visible: true, err: errors.New("boom")}, false},
+		{"非表示・結果未着", usageOverlay{visible: false}, false},
+	}
+	for _, c := range cases {
+		if got := c.ov.loading(); got != c.want {
+			t.Errorf("%s: loading()=%v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// 取得失敗時の box は "取得失敗" を表示する (エラー描画パスの回帰ガード)。型単体で検証。
+func TestUsageOverlayBoxLinesError(t *testing.T) {
+	ov := usageOverlay{visible: true, err: errors.New("boom")}
+	box := ov.boxLines(80, false, "|")
+	if len(box) == 0 {
+		t.Fatal("エラー時に box が空")
+	}
+	if plain := stripANSI(strings.Join(box, "\n")); !strings.Contains(plain, "取得失敗") {
+		t.Errorf("エラー box に '取得失敗' が無い:\n%s", plain)
 	}
 }

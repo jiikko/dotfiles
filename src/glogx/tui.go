@@ -59,26 +59,6 @@ type basisMsg struct {
 
 type tickMsg struct{}
 
-// usageMsg は /usage の非同期取得結果 (右上オーバーレイ用)。
-type usageMsg struct {
-	snap *usage.Snapshot
-	err  error
-}
-
-// usageFetchCmd は Claude Code の /usage を非同期取得する tea.Cmd。LLM を呼ばない軽い
-// ローカルコマンド (~440ms・ゼロコスト) だが、初期描画のクリティカルパスには乗せない。
-// cancel を m.usageCancel に保持し、quit 時に走行中の subprocess を中断できるようにする
-// (fast-quit で claude 子プロセスがオーファン化するのを防ぐ)。
-func (m *browseModel) usageFetchCmd() tea.Cmd {
-	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-	m.usageCancel = cancel
-	return func() tea.Msg {
-		defer cancel()
-		snap, err := usage.Fetch(ctx)
-		return usageMsg{snap: snap, err: err}
-	}
-}
-
 // openURLMsg は job 詳細ページをブラウザで開いた結果。
 type openURLMsg struct{ err error }
 
@@ -323,13 +303,8 @@ type browseModel struct {
 	verbatim       []Line              // git log 実出力の取り込み行 (nil = 自前レンダリング)
 
 	// usage オーバーレイ (右上に Claude Code の /usage 残量を重ねる)。ユーザー要望 2026-07-21。
-	// 取得は glogx/usage パッケージ (bubbletea 非依存・切り出し可能)。起動時は表示、U でトグル。
-	usageVisible bool               // オーバーレイを表示中か (起動時 true)
-	usageSnap    *usage.Snapshot    // 取得済みの /usage スナップショット (nil = 取得中)
-	usageErr     error              // 取得失敗 (表示は "取得失敗" に落とす)
-	usageCancel  context.CancelFunc // usage fetch 専用の cancel (quit で subprocess を中断)。
-	// CI fetch の m.cancel とは別立て: 共有すると CI fetch 完了時の defer cancel() が走行中の
-	// usage fetch を巻き添えキャンセルして "取得失敗" に落ちる (レビュー指摘 2026-07-21)。
+	// 状態と描画は usageOverlay 型 (usage_overlay.go) に切り出し、ここは 1 フィールドだけ持つ。
+	usageOv usageOverlay
 
 	fetching bool
 	ticking  bool // 80ms スピナー tick チェーンが 1 本生きているか (maybeTick の single-flight)
@@ -370,7 +345,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		height:         height,
 		fetching:       len(toFetch) > 0,
 		cancel:         cancel,
-		usageVisible:   true,
+		usageOv:        usageOverlay{visible: true},
 	}
 	if m.fetching {
 		m.fetch = func() tea.Msg {
@@ -385,7 +360,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 func (m *browseModel) Init() tea.Cmd {
 	// tmux prefix の取得は非同期 (fork 1 本 ≈ 6ms を初期描画のクリティカルパスに乗せない)
 	prefix := func() tea.Msg { return prefixMsg{key: loadTmuxPrefix()} }
-	u := m.usageFetchCmd()
+	u := m.usageOv.fetchCmd()
 	// usage を起動時に取得するため tick を常に起動する (取得中スピナーを回す。取得完了で
 	// spinnerActive が false になり tick は自然に止まる)。CI fetch の有無に依らず起動する。
 	if m.fetching {
@@ -594,8 +569,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.tmuxPrefix = msg.key
 		return m, nil
 	case usageMsg:
-		m.usageSnap = msg.snap
-		m.usageErr = msg.err
+		m.usageOv.handle(msg)
 		return m, nil
 	case panelPollMsg:
 		if msg.seq != m.panelPollSeq || m.panelSHA == "" {
@@ -800,13 +774,13 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// U は明示トグル (取得中なら spinner を回し直す)。それ以外のナビゲーションキーは「起動時
 	// グランス」を引っ込める副作用だけ持たせ、キー本来の動作は下の dispatch/switch で続行する。
 	if key == "U" {
-		m.usageVisible = !m.usageVisible
-		if m.usageVisible {
+		m.usageOv.toggle()
+		if m.usageOv.visible {
 			return m, m.maybeTick()
 		}
 		return m, nil
 	}
-	m.usageVisible = false
+	m.usageOv.dismiss()
 	// emacs 流の水平移動エイリアス (C-n/C-p = ↓/↑ は各ビューで対応済み)。ここで
 	// 正規化するので全ビュー (一覧/パネル/詳細/diff) に一括で効く。
 	// ⚠️ 本家 glog と異なり C-b は ← の別名ではない (push を C-b → b に変えた名残で未割当)
@@ -1150,9 +1124,7 @@ func (m *browseModel) pushBoxLines() []string {
 // quit はアプリ全体を終了する (取得中断分は unknown へ落とす)。
 func (m *browseModel) quit() (tea.Model, tea.Cmd) {
 	m.cancel()
-	if m.usageCancel != nil {
-		m.usageCancel() // 走行中の usage fetch subprocess を中断 (オーファン化防止)
-	}
+	m.usageOv.stop() // 走行中の usage fetch subprocess を中断 (オーファン化防止)
 	if m.fetching {
 		m.fillUnknown()
 	}
@@ -1729,13 +1701,7 @@ func (m *browseModel) fillUnknown() {
 }
 
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.pushing || m.pulling || m.updating || m.pullAnimating || m.scrollAnim || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || len(m.diffBusy) > 0 || m.panelHasRunningJob() || m.usageLoading()
-}
-
-// usageLoading は usage オーバーレイが取得待ち (spinner を回す) かどうか。表示中かつ
-// 結果未着 (snap も err も無い) のときだけ tick を回してぐるぐるを animate する。
-func (m *browseModel) usageLoading() bool {
-	return m.usageVisible && m.usageSnap == nil && m.usageErr == nil
+	return m.fetching || m.pushing || m.pulling || m.updating || m.pullAnimating || m.scrollAnim || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || len(m.diffBusy) > 0 || m.panelHasRunningJob() || m.usageOv.loading()
 }
 
 // panelHasRunningJob は表示中の job パネルに実行中 (経過時間が増える) job があるか。
@@ -1861,7 +1827,7 @@ func (m *browseModel) View() string {
 		window = overlayBox(window, box, max((page-len(box))/2, 0), page)
 	}
 	// usage オーバーレイは最前面 (上部右端の複数行モーダル)。U で再表示、任意キーで消える。
-	if box := m.usageBoxLines(); len(box) > 0 {
+	if box := m.usageOv.boxLines(m.width, m.colored, m.spinner()); len(box) > 0 {
 		window = overlayBoxTopRight(window, box, m.width, m.colored)
 	}
 	var b strings.Builder
@@ -1907,80 +1873,6 @@ func overlayBox(window, box []string, anchor, page int) []string {
 		} else if len(window) < page {
 			window = append(window, p)
 		}
-	}
-	return window
-}
-
-// usageBoxLines は右上オーバーレイの複数行モーダル (影付き枠) を組み立てる。非表示なら nil。
-// 取得中は枠内でスピナーを回し、失敗時は理由、成功時は枠ごとに 1 行整列表示する。
-func (m *browseModel) usageBoxLines() []string {
-	if !m.usageVisible {
-		return nil
-	}
-	title := " Claude Code · usage "
-	var rows []string
-	switch {
-	case m.usageErr != nil:
-		title = " usage "
-		rows = []string{paint("取得失敗", ansiDim, m.colored)}
-	case m.usageSnap == nil:
-		title = " usage "
-		rows = []string{paint(m.spinner()+" 取得中...", ansiDim, m.colored)}
-	default:
-		// CLI バージョンが取れていればタイトルに添える (取得失敗時は空で従来どおり)。
-		if v := m.usageSnap.Version; v != "" {
-			title = " Claude Code v" + v + " · usage "
-		}
-		header, data := usage.RenderTable(m.usageSnap, time.Now(), m.colored)
-		// 区切り罫線は列内容の最大幅に合わせて引く (箱の inner 幅と一致させる)。ヘッダーは
-		// 列見出し、罫線ともに dim。データ行はバーの色を活かすため素のまま。
-		w := runewidth.StringWidth(stripANSI(header))
-		for _, r := range data {
-			w = max(w, runewidth.StringWidth(stripANSI(r)))
-		}
-		rows = append([]string{
-			paint(header, ansiDim, m.colored),
-			paint(strings.Repeat("─", w), ansiDim, m.colored),
-		}, data...)
-	}
-	// 枠幅 = 内容の最大表示幅 + 罫線・影の余白。端末幅を超えない範囲で内容にフィットさせる。
-	inner := 0
-	for _, r := range rows {
-		inner = max(inner, runewidth.StringWidth(stripANSI(r)))
-	}
-	width := min(inner+usageBoxChrome, m.width)
-	return buildShadowPanelBox(title, rows, width, m.colored)
-}
-
-// usageBoxChrome は影付き枠が内容幅に加える固定分 ("│ " + " │" + 影 1 桁 = 5)。
-const usageBoxChrome = 5
-
-// overlayBoxTopRight は複数行の box をウィンドウ上部の右端へ矩形で重ねる (右揃え)。
-// box の各行は buildPanelBox で幅が揃っているため、右端に清潔な長方形として載る。
-// 覆われる各行の左側 (見えている部分) は truncateKeepANSI で色を保ったまま切り、境界で
-// reset を挟んで開いた色/bg を閉じる (取得中に上部行の色が抜ける不具合の修正)。box 行自身の
-// 色はそのまま活きる。
-func overlayBoxTopRight(window, box []string, width int, colored bool) []string {
-	if len(window) == 0 || width <= 0 || len(box) == 0 {
-		return window
-	}
-	reset := ""
-	if colored {
-		reset = ansiReset // 左側の開いた色/bg を box の直前で閉じる
-	}
-	for i, row := range box {
-		if i >= len(window) {
-			break
-		}
-		bw := runewidth.StringWidth(stripANSI(row))
-		if bw >= width {
-			window[i] = clipToWidth(row, width)
-			continue
-		}
-		leftWidth := width - bw
-		left := truncateKeepANSI(window[i], leftWidth)
-		pad := strings.Repeat(" ", max(leftWidth-runewidth.StringWidth(stripANSI(left)), 0))
-		window[i] = left + reset + pad + row
 	}
 	return window
 }
