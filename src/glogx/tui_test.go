@@ -1964,3 +1964,24 @@ func TestBrowseCursorGutterArrowAndBgHighlight(t *testing.T) {
 		t.Errorf("NO_COLOR で %q マーカーが出ていない", cursorGutterMark)
 	}
 }
+
+// pullBlockedByDirtyTree: tracked の未コミット変更 (staged/unstaged) だけを検知し、
+// untracked (??) は rebase を阻まないため無視する (u の dirty-tree 事前検知の要)。
+func TestPullBlockedByDirtyTree(t *testing.T) {
+	cases := []struct {
+		name      string
+		porcelain string
+		want      bool
+	}{
+		{"クリーン", "", false},
+		{"untracked のみは無害", "?? new.go\n?? tmp/\n", false},
+		{"unstaged 変更", " M tui.go\n", true},
+		{"staged 変更", "M  tui.go\n", true},
+		{"untracked と tracked 混在", "?? new.go\n M tui.go\n", true},
+	}
+	for _, c := range cases {
+		if got := pullBlockedByDirtyTree(c.porcelain); got != c.want {
+			t.Errorf("%s: pullBlockedByDirtyTree()=%v, want %v", c.name, got, c.want)
+		}
+	}
+}

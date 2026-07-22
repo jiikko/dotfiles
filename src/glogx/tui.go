@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -127,7 +128,15 @@ type pullMsg struct{ err error }
 // runGitPullRebase はテストで実 pull しないための差し替え点。conflict で rebase が
 // 途中停止したら自動で abort して pull 前の状態へ戻す (TUI 内に「rebase 進行中」の
 // 壊れた状態を残さない。解決が必要な conflict はシェルでやるべき作業)。
+//
+// git pull --rebase は tracked の未コミット変更 (staged/unstaged) があると
+// "cannot pull with rebase: You have unstaged changes" で拒否する (untracked は無害)。
+// 素の git エラーは分かりにくいので、事前に検知して glogx らしい案内を返す (自動 stash は
+// しない: 復元 pop の衝突で working tree に壊れた状態を残しうるため。ユーザー選定 2026-07-22)。
 var runGitPullRebase = func() error {
+	if st, stErr := noPromptGitCmd("status", "--porcelain").Output(); stErr == nil && pullBlockedByDirtyTree(string(st)) {
+		return errors.New("未コミットの変更があるため pull (--rebase) できません。commit か stash してから u で再度 pull してください")
+	}
 	out, err := noPromptGitCmd("pull", "--rebase").CombinedOutput()
 	if err == nil {
 		return nil
@@ -145,6 +154,19 @@ var runGitPullRebase = func() error {
 		}
 	}
 	return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+}
+
+// pullBlockedByDirtyTree は git status --porcelain の出力に rebase を阻む tracked 変更
+// (staged / unstaged) が含まれるかを返す純関数。untracked (先頭 "??") は rebase を阻まない
+// ため無視する。git status は内部で index を refresh するので stat-dirty の偽陽性は出ない。
+func pullBlockedByDirtyTree(porcelain string) bool {
+	for _, line := range strings.Split(porcelain, "\n") {
+		if line == "" || strings.HasPrefix(line, "??") {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // updateMsg は `claude update` の実行結果 (C キー、確認なし即実行)。glogx の独自機能。
