@@ -492,3 +492,12 @@ func TestBuildStatusQueryCapsAndAliases(t *testing.T) {
 		t.Errorf("query に statusCheckRollup がありません")
 	}
 }
+
+// pickBestPR の CLOSED-only fallback: OPEN/MERGED が無ければ先頭を返す (既存テストは OPEN>MERGED
+// と PR なししか見ておらず、CLOSED のみを nil に落とす回帰を捕まえられなかった)。
+func TestPickBestPRClosedOnlyFallback(t *testing.T) {
+	got := pickBestPR([]PRRef{{Number: 5, State: "CLOSED"}, {Number: 8, State: "CLOSED"}})
+	if got == nil || got.Number != 5 {
+		t.Errorf("CLOSED のみのとき先頭 (#5) を返さない: %#v", got)
+	}
+}

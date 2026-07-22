@@ -2395,3 +2395,53 @@ func TestPullBlockedByDirtyTree(t *testing.T) {
 		}
 	}
 }
+
+// ensureCursorVisible の上スクロール分岐: カーソルが窓の上へ戻ったとき offset がカーソル行の
+// header index へ追従する (定数を変えても既存テストが green のままだった無防備な UI 不変条件)。
+// push 境界マーカーで commit0 の header が index 0 とは限らないため、offset は lines() から引いた
+// 実 header index と一致することで検証する。
+func TestEnsureCursorVisibleScrollsUp(t *testing.T) {
+	m := newTestBrowse(t, 10, nil, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+	m.height = 8 // 小さい page で list をスクロール可能に
+	m.cursor = 0
+	m.offset = 12 // カーソル (先頭) より下へスクロールした状態
+	m.ensureCursorVisible()
+	hdr := -1
+	for i, l := range m.lines() {
+		if l.Header && l.CommitIdx == 0 {
+			hdr = i
+			break
+		}
+	}
+	if hdr < 0 {
+		t.Fatal("commit0 の header 行が見つからない")
+	}
+	if m.offset != hdr {
+		t.Errorf("上スクロールで offset が header に追従しない: offset=%d header=%d", m.offset, hdr)
+	}
+}
+
+// advancePullAnim の終端: offset が 0 に達したら pullAnimating を必ず下ろす (負に振れない)。
+// 下ろし損ねると spinnerActive が真のまま tick が 80ms 毎に永久に回る実害があるため termination
+// invariant を対で固定する (offset=1 は 1 回、offset=2 は 2 回で終端)。
+func TestAdvancePullAnimTerminates(t *testing.T) {
+	m := newTestBrowse(t, 5, nil, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+
+	m.pullAnimating, m.offset = true, 1
+	m.advancePullAnim()
+	if m.offset != 0 || m.pullAnimating {
+		t.Errorf("offset=1 から 1 回で終端しない: offset=%d animating=%v", m.offset, m.pullAnimating)
+	}
+
+	m.pullAnimating, m.offset = true, 2
+	m.advancePullAnim()
+	if m.offset != 1 || !m.pullAnimating {
+		t.Errorf("offset=2 の 1 回目: offset=%d animating=%v; want 1/true", m.offset, m.pullAnimating)
+	}
+	m.advancePullAnim()
+	if m.offset != 0 || m.pullAnimating {
+		t.Errorf("offset=2 の 2 回目で終端しない (負に振れた?): offset=%d animating=%v", m.offset, m.pullAnimating)
+	}
+}

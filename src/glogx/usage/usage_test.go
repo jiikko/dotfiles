@@ -209,3 +209,26 @@ func TestParseVersion(t *testing.T) {
 		}
 	}
 }
+
+// parseResetTime の 1 時間緩衝: リセット再計算のレースで「直近に過ぎたリセット」を翌年へ繰り上げ
+// ない緩衝 (usage.go の -time.Hour)。定数を 0 に変えても既存 TestParse 系は green のままだった
+// 無防備な意図的ロジックなので閾値を pin する。
+func TestParseResetTimeOneHourBuffer(t *testing.T) {
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.Local)
+	// 30 分前 (緩衝内) は当年のまま — レースで翌年へ繰り上げない
+	within, err := parseResetTime("Jun 15", "11:30am", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if within.Year() != now.Year() {
+		t.Errorf("30分前 (緩衝内) が当年でない: %v", within)
+	}
+	// 2 時間前 (緩衝超え) は過去のリセット = 年境界とみなし翌年へ
+	past, err := parseResetTime("Jun 15", "10:00am", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if past.Year() != now.Year()+1 {
+		t.Errorf("2時間前が翌年へ繰り上がらない: %v", past)
+	}
+}

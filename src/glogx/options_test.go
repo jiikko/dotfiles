@@ -119,3 +119,13 @@ func TestUsageMentionsNonGoal(t *testing.T) {
 		t.Errorf("Usage() に全引数非対応の明記がありません:\n%s", got)
 	}
 }
+
+// -n の値欠落 (末尾 -n) はガードでエラーになり panic しない (ガードが外れると index-out-of-range)。
+func TestParseArgsMissingCountValue(t *testing.T) {
+	if _, err := ParseArgs([]string{"-n"}); err == nil {
+		t.Error("-n の値欠落でエラーにならない")
+	}
+	if _, err := ParseArgs([]string{"HEAD", "-n"}); err == nil {
+		t.Error("末尾 -n の値欠落でエラーにならない")
+	}
+}
