@@ -244,6 +244,11 @@ func emptyBatch() CIBatch {
 	}
 }
 
+// associatedPRLimit は commit に紐づく PR を GraphQL で取る件数。cherry-pick 等で複数
+// 紐づいても pickBestPR が 1 件へ畳むため、取りこぼしを避けられる程度に多めに取る。
+// 一括取得 (buildStatusQuery) と単発取得 (FetchCommitPR) で同じ値を使う。
+const associatedPRLimit = 5
+
 // buildStatusQuery は SHA ごとの alias で 1 クエリに束ねる。SHA は git が返した 40 桁 hex
 // なのでクエリ文字列へのリテラル埋め込みで injection の余地はない。
 //
@@ -257,7 +262,7 @@ func buildStatusQuery(shas []string) string {
 	for i, sha := range shas {
 		fmt.Fprintf(&b, "c%d: object(oid: %q) { ...ciStatus }\n", i, sha)
 	}
-	b.WriteString(`} }
+	fmt.Fprintf(&b, `} }
 fragment ciStatus on Commit {
   statusCheckRollup {
     state
@@ -269,8 +274,8 @@ fragment ciStatus on Commit {
       }
     }
   }
-  associatedPullRequests(first: 3) { nodes { number url state } }
-}`)
+  associatedPullRequests(first: %d) { nodes { number url state } }
+}`, associatedPRLimit)
 	return b.String()
 }
 
@@ -624,8 +629,8 @@ type PRRef struct {
 // 複数ある場合 (cherry-pick 等) は OPEN > MERGED > その他 の優先で 1 件選ぶ。
 func FetchCommitPR(ctx context.Context, run CommandRunner, repo Repo, sha string) (*PRRef, *GHError) {
 	query := fmt.Sprintf(`query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {
-  object(oid: %q) { ... on Commit { associatedPullRequests(first: 5) { nodes { number url state } } } }
-} }`, sha)
+  object(oid: %q) { ... on Commit { associatedPullRequests(first: %d) { nodes { number url state } } } }
+} }`, sha, associatedPRLimit)
 	stdout, stderr, err := run(ctx, "gh", "api", "graphql",
 		"-F", "owner="+repo.Owner, "-F", "name="+repo.Name, "-f", "query="+query)
 	if err != nil {
