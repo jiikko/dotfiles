@@ -941,7 +941,8 @@ func (m *browseModel) centerModalLines() []string {
 // quit はアプリ全体を終了する (取得中断分は unknown へ落とす)。
 func (m *browseModel) quit() (tea.Model, tea.Cmd) {
 	m.cancel()
-	m.usageOv.stop() // 走行中の usage fetch subprocess を中断 (オーファン化防止)
+	m.usageOv.stop()  // 走行中の usage fetch subprocess を中断 (オーファン化防止)
+	m.actModal.stop() // 走行中の push/pull git subprocess を中断 (stall 中の Ctrl-C 孤児化防止)
 	if m.fetching {
 		m.fillUnknown()
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -1858,7 +1859,7 @@ func TestBrowseConfirmEnterConfirms(t *testing.T) {
 	m.statuses[m.commits[0].SHA] = StateUnpushed
 	var pushed int
 	origPush := runGitPush
-	runGitPush = func() error { pushed++; return nil }
+	runGitPush = func(context.Context) error { pushed++; return nil }
 	t.Cleanup(func() { runGitPush = origPush })
 	m.handleKey("b")
 	if !m.actModal.pushConfirm {
@@ -1870,7 +1871,7 @@ func TestBrowseConfirmEnterConfirms(t *testing.T) {
 	// pull: Enter で実行
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	origPull := runGitPullRebase
-	runGitPullRebase = func() error { return nil }
+	runGitPullRebase = func(context.Context) error { return nil }
 	t.Cleanup(func() { runGitPullRebase = origPull })
 	m2.handleKey("u")
 	if !m2.actModal.pullConfirm {
@@ -2003,13 +2004,45 @@ func TestBrowseUpdateFailureShowsDialogAndClearsUpdating(t *testing.T) {
 	}
 }
 
+// quit (Ctrl-C) 時に走行中の push/pull が孤児化しないよう actModal.stop() が実行中の git を
+// cancel する (leak 監査 2026-07-23: stall 中に Ctrl-C で抜けると git 子プロセスが孤児化する穴)。
+// stub を ctx.Done() で block させ、stop() で解除されることを確認する。
+func TestActionModalStopCancelsRunningPush(t *testing.T) {
+	orig := runGitPush
+	runGitPush = func(ctx context.Context) error {
+		<-ctx.Done() // cancel されるまでブロック (stall した git を模す)
+		return ctx.Err()
+	}
+	t.Cleanup(func() { runGitPush = orig })
+
+	a := &actionModal{pushConfirm: true}
+	consumed, action := a.handleKey("y")
+	if !consumed || action == nil || !a.pushing {
+		t.Fatalf("push が始まらない: consumed=%v action=%v pushing=%v", consumed, action != nil, a.pushing)
+	}
+	if a.cancel == nil {
+		t.Fatal("走行中 push の cancel が保持されていない (quit で中断できない)")
+	}
+	done := make(chan tea.Msg, 1)
+	go func() { done <- action() }() // action は runGitPush(ctx) で block
+	a.stop()                         // quit 相当: 走行中 push を cancel
+	select {
+	case msg := <-done:
+		if pm, ok := msg.(pushMsg); !ok || pm.err == nil {
+			t.Errorf("cancel 後の結果 = %#v; want pushMsg{err=context.Canceled}", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("stop() が走行中 push を cancel しなかった (git が孤児化する)")
+	}
+}
+
 func TestBrowsePushFlow(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.statuses[m.commits[0].SHA] = StateUnpushed
 	m.statuses[m.commits[1].SHA] = StateUnpushed // 2 コミットまとめて push するケース
 	var pushed int
 	orig := runGitPush
-	runGitPush = func() error { pushed++; return nil }
+	runGitPush = func(context.Context) error { pushed++; return nil }
 	t.Cleanup(func() { runGitPush = orig })
 	// b で確認に入り、n でキャンセル (push されない)
 	m.handleKey("b")
@@ -2110,7 +2143,7 @@ func TestBrowsePullFlow(t *testing.T) {
 	m.opts = &Options{MaxCount: 20}
 	var pulled int
 	orig := runGitPullRebase
-	runGitPullRebase = func() error { pulled++; return nil }
+	runGitPullRebase = func(context.Context) error { pulled++; return nil }
 	t.Cleanup(func() { runGitPullRebase = orig })
 	// u で確認に入り、n でキャンセル
 	m.handleKey("u")
@@ -2161,7 +2194,9 @@ func TestBrowsePullFlow(t *testing.T) {
 	}
 	// 失敗は notice に出す (リロードしない)
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	runGitPullRebase = func() error { return errors.New("conflict のため rebase を中断して元に戻しました") }
+	runGitPullRebase = func(context.Context) error {
+		return errors.New("conflict のため rebase を中断して元に戻しました")
+	}
 	m2.handleKey("u")
 	m2.handleKey("y")
 	m2.Update(pullMsg{err: errors.New("conflict のため rebase を中断して元に戻しました")})

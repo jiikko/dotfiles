@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -21,6 +22,9 @@ type actionModal struct {
 	pulling      bool   // git pull --rebase 実行中 (終了以外のキーを無視)
 	updating     bool   // claude update 実行中 (終了以外のキーを無視)
 	updateResult string // claude update の結果ダイアログ本文 ("" = 非表示。何かキーで閉じる)
+	// cancel は走行中の push/pull を quit から中断するための cancel (deadline 無し)。running な
+	// git 子プロセスが Ctrl-C 中断時に孤児化するのを防ぐ (leak 監査 2026-07-23)。stop() で呼ぶ。
+	cancel context.CancelFunc
 }
 
 // active はいずれかのモーダル/トーストが表示中か (描画とセンタリングの要否判定)。
@@ -56,7 +60,11 @@ func (a *actionModal) handleKey(key string) (consumed bool, action tea.Cmd) {
 		a.pushConfirm = false
 		if confirmYes {
 			a.pushing = true
-			return true, func() tea.Msg { return pushMsg{err: runGitPush()} }
+			ctx, cancel := a.startCancelable()
+			return true, func() tea.Msg {
+				defer cancel()
+				return pushMsg{err: runGitPush(ctx)}
+			}
 		}
 		return true, nil
 	}
@@ -64,7 +72,11 @@ func (a *actionModal) handleKey(key string) (consumed bool, action tea.Cmd) {
 		a.pullConfirm = false
 		if confirmYes {
 			a.pulling = true
-			return true, func() tea.Msg { return pullMsg{err: runGitPullRebase()} }
+			ctx, cancel := a.startCancelable()
+			return true, func() tea.Msg {
+				defer cancel()
+				return pullMsg{err: runGitPullRebase(ctx)}
+			}
 		}
 		return true, nil
 	}
@@ -72,6 +84,22 @@ func (a *actionModal) handleKey(key string) (consumed bool, action tea.Cmd) {
 		return true, nil
 	}
 	return false, nil
+}
+
+// startCancelable は push/pull 用の deadline 無し cancel context を張り、cancel を保持する
+// (quit からの中断用)。⚠️ deadline は付けない — 正当な巨大 push を timeout で切らない (K2)。
+// cancel は closure の defer と stop() の双方から呼ばれうるが CancelFunc は冪等なので安全。
+func (a *actionModal) startCancelable() (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	a.cancel = cancel
+	return ctx, cancel
+}
+
+// stop は走行中の push/pull を中断する (quit 時に呼ぶ)。走行中でなければ no-op。
+func (a *actionModal) stop() {
+	if a.cancel != nil {
+		a.cancel()
+	}
 }
 
 // askPull は u で pull --rebase の確認へ入る。

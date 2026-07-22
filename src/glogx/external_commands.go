@@ -20,17 +20,22 @@ import (
 // noPromptGitCmd は remote に触る git (push/pull) 用のコマンドを組む。GIT_TERMINAL_PROMPT=0
 // で「認証情報が要るのに helper が無い」場合に /dev/tty へ対話プロンプトを出させず即エラーに
 // する: bubbletea が同じ端末を raw mode で握っているため、git が tty を奪うと表示が壊れ入力
-// 挙動が未定義になる (対話認証は TUI の外でやるべき作業)。タイムアウトは付けない — 正当な
-// 巨大 push が遅い回線で中断される方が push 失敗として有害なため (レビュー K2)。
-func noPromptGitCmd(args ...string) *exec.Cmd {
-	cmd := exec.Command("git", args...)
+// 挙動が未定義になる (対話認証は TUI の外でやるべき作業)。
+//
+// ⚠️ ctx には deadline を付けない (レビュー K2: 正当な巨大 push が遅い回線で timeout 中断される
+// 方が push 失敗として有害)。ただし cancel は張る: quit (Ctrl-C) 時に走行中の push/pull を
+// cancel できないと、ネットワーク stall 中に抜けたとき git 子プロセスが孤児化して事実上無期限に
+// 居残る (leak 監査 2026-07-23)。呼び出し側 (actionModal) が deadline 無しの cancel context を
+// 渡し、quit からのみ cancel する。
+func noPromptGitCmd(ctx context.Context, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	return cmd
 }
 
-// runGitPush はテストで実 push しないための差し替え点。
-var runGitPush = func() error {
-	out, err := noPromptGitCmd("push").CombinedOutput()
+// runGitPush はテストで実 push しないための差し替え点。ctx は quit 中断用 (deadline 無し)。
+var runGitPush = func(ctx context.Context) error {
+	out, err := noPromptGitCmd(ctx, "push").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
 	}
@@ -45,11 +50,11 @@ var runGitPush = func() error {
 // "cannot pull with rebase: You have unstaged changes" で拒否する (untracked は無害)。
 // 素の git エラーは分かりにくいので、事前に検知して glogx らしい案内を返す (自動 stash は
 // しない: 復元 pop の衝突で working tree に壊れた状態を残しうるため。ユーザー選定 2026-07-22)。
-var runGitPullRebase = func() error {
-	if st, stErr := noPromptGitCmd("status", "--porcelain").Output(); stErr == nil && pullBlockedByDirtyTree(string(st)) {
+var runGitPullRebase = func(ctx context.Context) error {
+	if st, stErr := noPromptGitCmd(ctx, "status", "--porcelain").Output(); stErr == nil && pullBlockedByDirtyTree(string(st)) {
 		return errors.New("未コミットの変更があるため pull (--rebase) できません。commit か stash してから u で再度 pull してください")
 	}
-	out, err := noPromptGitCmd("pull", "--rebase").CombinedOutput()
+	out, err := noPromptGitCmd(ctx, "pull", "--rebase").CombinedOutput()
 	if err == nil {
 		return nil
 	}
