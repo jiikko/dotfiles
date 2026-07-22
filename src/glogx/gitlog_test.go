@@ -465,3 +465,28 @@ func TestLoadLogDisplayVerbatimRealRepo(t *testing.T) {
 		}
 	}
 }
+
+// メッセージに record separator \x1e が入ると record が割れフィールド数不足になり解析エラーで
+// 落ちる (gitlog.go の comment が宣言する不変条件)。
+func TestParseLogRecordSepInMessageErrors(t *testing.T) {
+	fields := []string{"H", "h", "subj", "an", "ae", "ad", "ar", "deco", "before\x1eafter"}
+	out := recordSep + strings.Join(fields, fieldSep) + fieldSep + "body"
+	if _, err := ParseLog(out); err == nil {
+		t.Error("メッセージ内の record separator (\\x1e) が解析エラーにならない")
+	}
+}
+
+// 既知の制限 (gitlog.go の comment と一致): メッセージに field separator \x1f が入ると、単一
+// デリミタ方式では本文の \x1f と区別できず検出できないため、最初の \x1f で無言に切り詰められる。
+// この挙動を golden で固定し、将来「\x1f をエラーにする」変更が本文の \x1f 耐性を壊さないよう見張る。
+func TestParseLogFieldSepInMessageTruncates(t *testing.T) {
+	fields := []string{"H", "h", "subj", "an", "ae", "ad", "ar", "deco", "msgPart1\x1fmsgPart2"}
+	out := recordSep + strings.Join(fields, fieldSep) + fieldSep + "body"
+	commits, err := ParseLog(out)
+	if err != nil {
+		t.Fatalf("既知の制限: エラーでなく切り詰めのはず: %v", err)
+	}
+	if len(commits) != 1 || commits[0].Message != "msgPart1" {
+		t.Errorf("メッセージが最初の \\x1f で切り詰められていない: %#v", commits)
+	}
+}
