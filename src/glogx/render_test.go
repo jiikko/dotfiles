@@ -302,6 +302,32 @@ func TestRenderLinesExpandsBodyTabsInTUI(t *testing.T) {
 	}
 }
 
+// Body と対称: mediumLines fallback (Verbatim==nil) でも TUI (Width>0) はコミットメッセージ内の
+// タブを展開する。展開しないと clipToWidth が \t を幅0と数え端末が展開して再描画が崩れる
+// (Body/decorateVerbatim は展開するのに Message だけ取りこぼしていた片側バグの回帰ガード)。
+func TestRenderLinesExpandsMessageTabsInTUI(t *testing.T) {
+	commits := testCommits()[:1]
+	commits[0].Message = "subject\n\n\tindented body of the message"
+	commits[0].Body = "" // Verbatim==nil の mediumLines 経路でメッセージ行を通す
+	tui := RenderLines(commits, map[string]CIState{"a": StateSuccess}, RenderOpts{Width: 80})
+	for _, l := range tui {
+		if strings.Contains(l.Text, "\t") {
+			t.Errorf("TUI 描画でメッセージ行のタブが残っている: %q", l.Text)
+		}
+	}
+	// 静的出力 (Width=0) は git log と同じくタブ素通し
+	static := RenderLines(commits, map[string]CIState{"a": StateSuccess}, RenderOpts{})
+	foundTab := false
+	for _, l := range static {
+		if strings.Contains(l.Text, "\t") {
+			foundTab = true
+		}
+	}
+	if !foundTab {
+		t.Error("静的出力でメッセージのタブが変更されている (git log パリティ崩れ)")
+	}
+}
+
 func TestJapaneseOnelineAlignment(t *testing.T) {
 	// 全角 (幅 2) の subject/author が混ざっても列が揃う (幅計算が rune 数でなく
 	// 表示幅ベースであることの検証)

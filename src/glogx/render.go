@@ -341,6 +341,12 @@ func mediumLines(c Commit, idx int, state CIState, o RenderOpts) []Line {
 	// メッセージは git log と同じく切り詰めず折り返す (Width=0 の静的出力では折り返さず
 	// 端末に任せる = git log と同じ挙動)。インデント 4 の分を差し引いて折る
 	for msgLine := range strings.SplitSeq(c.Message, "\n") {
+		// TUI (Width > 0) ではタブを展開する (下の Body ループ・decorateVerbatim と同じ理由:
+		// clipToWidth は \t を幅 0 と数えるが端末は展開するため、タブ入りメッセージ行が幅判定を
+		// すり抜けてインライン再描画が崩れる)。静的出力 (Width=0) は git log と同じ素通し。
+		if o.Width > 0 {
+			msgLine = strings.ReplaceAll(msgLine, "\t", "    ")
+		}
 		for _, seg := range wrapToWidth(msgLine, o.Width-4) {
 			lines = append(lines, Line{Text: "    " + seg, CommitIdx: idx})
 		}
