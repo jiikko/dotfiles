@@ -80,8 +80,8 @@ func LoadCache(path string, now time.Time) map[string]CIState {
 }
 
 // SaveCache は取得結果を既存キャッシュへマージして原子的に書き込む (temp + rename)。
-// unknown は「取得できなかった」事実であって観測結果ではないため保存しない。
-// TTL 切れのエントリは LoadCache が無視するだけの死データなので保存時に間引く
+// unknown (取得失敗) も保存する — 30 秒 TTL の負キャッシュとして働く (下の保存ループの
+// コメント参照)。TTL 切れのエントリは LoadCache が無視するだけの死データなので保存時に間引く
 // (最長 TTL が 24h のため、ファイルは常に直近 1 日分程度に収まり膨れ続けない)。
 func SaveCache(path string, fetched map[string]CIState, now time.Time) error {
 	var file cacheFile
