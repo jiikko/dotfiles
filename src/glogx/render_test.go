@@ -78,7 +78,7 @@ func TestRenderLinesPushBoundary(t *testing.T) {
 	}
 	// 全部未 push / repo 不明では入らない
 	for name, st := range map[string]map[string]CIState{
-		"全部未 push":         {"a": StateUnpushed, "b": StateUnpushed},
+		"全部未 push":       {"a": StateUnpushed, "b": StateUnpushed},
 		"repo 不明 (全部済み)": {"a": StateSuccess, "b": StateSuccess},
 	} {
 		if out := RenderStatic(testCommits(), st, RenderOpts{}); strings.Contains(out, " origin ") {
