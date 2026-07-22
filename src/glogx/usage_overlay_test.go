@@ -95,10 +95,10 @@ func TestUsageOverlayDismiss(t *testing.T) {
 // U は push 確認モーダルを素通りせず、通常キー = キャンセルとして扱われる (footgun 回帰)。
 func TestUsageToggleDoesNotBypassConfirmModal(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.pushConfirm = true
+	m.actModal.pushConfirm = true
 	visBefore := m.usageOv.visible
 	m.handleKey("U")
-	if m.pushConfirm {
+	if m.actModal.pushConfirm {
 		t.Error("U が push 確認モーダルをキャンセルしていない (残った確認へ Enter で誤 push する footgun)")
 	}
 	if m.usageOv.visible != visBefore {

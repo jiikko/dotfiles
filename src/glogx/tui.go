@@ -319,14 +319,11 @@ type browseModel struct {
 	// diff ポップアップ (d キー) の状態と描画は diffOverlay 型 (diff_overlay.go) に切り出し、
 	// ここは 1 フィールドだけ持つ。ターゲット選定・非同期取得・URL コピーは境界をまたぐため
 	// openDiff / handleDiffKey に薄く残す。
-	diffOv        diffOverlay
-	pushConfirm   bool            // b の push 確認中 (y/N)
-	pushing       bool            // git push 実行中 (終了以外のキーを無視)
-	pushWarn      string          // push/pull できない理由の警告モーダル (何かキーで閉じる)
-	pullConfirm   bool            // u の pull --rebase 確認中 (y/N)
-	pulling       bool            // git pull --rebase 実行中 (終了以外のキーを無視)
-	updating      bool            // claude update 実行中 (終了以外のキーを無視)
-	updateResult  string          // claude update の結果ダイアログ本文 ("" = 非表示。何かキーで閉じる)
+	diffOv diffOverlay
+	// git push / pull --rebase / claude update の確認〜実行〜結果モーダルの状態機械は
+	// actionModal 型 (action_modal.go) に切り出す。実行の orchestration (pushPoll 編成・
+	// reloadAfterPull・結果整形) は CI/コミット状態と密結合なので browseModel 側に残す。
+	actModal      actionModal
 	pullAnimating bool            // pull 後に先頭へ増えた新規コミット行を上から降らせる演出中 (offset が進行度)
 	opts          *Options        // pull 後のコミット再読込に使う (revs / max-count)
 	pushPoll      map[string]bool // push 直後ポーリング対象の SHA (CI が見えたら外れる)
@@ -631,7 +628,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 		return m, tea.Batch(fetch, m.maybeTick())
 	case pullMsg:
-		m.pulling = false
+		m.actModal.pulling = false
 		if msg.err != nil {
 			m.notice = "pull に失敗しました: " + firstLine(msg.err.Error())
 			return m, nil
@@ -639,24 +636,24 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.notice = "pull --rebase しました"
 		return m, m.reloadAfterPull()
 	case updateMsg:
-		m.updating = false
+		m.actModal.updating = false
 		// 結果はダイアログで出す (何かキーで閉じる。ユーザー要望 2026-07-22)。バージョンが
 		// 上がったのか latest だったのかを一目で分かるようにする。
 		switch {
 		case msg.err != nil:
-			m.updateResult = "更新に失敗しました\n" + firstLine(msg.err.Error())
+			m.actModal.updateResult = "更新に失敗しました\n" + firstLine(msg.err.Error())
 		case msg.before != "" && msg.after != "" && msg.before != msg.after:
-			m.updateResult = "バージョンが上がりました\nv" + msg.before + " → v" + msg.after
+			m.actModal.updateResult = "バージョンが上がりました\nv" + msg.before + " → v" + msg.after
 		case msg.before != "" && msg.before == msg.after:
-			m.updateResult = "すでに最新版です (v" + msg.before + ")"
+			m.actModal.updateResult = "すでに最新版です (v" + msg.before + ")"
 		case msg.after != "":
-			m.updateResult = "現在のバージョン: v" + msg.after // before 不明で比較できず
+			m.actModal.updateResult = "現在のバージョン: v" + msg.after // before 不明で比較できず
 		default:
-			m.updateResult = "update を実行しました" // 前後とも取得できず
+			m.actModal.updateResult = "update を実行しました" // 前後とも取得できず
 		}
 		return m, nil
 	case pushMsg:
-		m.pushing = false
+		m.actModal.pushing = false
 		if msg.err != nil {
 			m.notice = "push に失敗しました: " + firstLine(msg.err.Error())
 			return m, nil
@@ -735,45 +732,18 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		// claude update 中は終了を握りつぶす (ユーザー選定 2026-07-22): 自己バイナリ更新を
 		// 途中で kill すると CLI が壊れた状態になりうるため、完了 (updateMsg) まで待たせる。
 		// モーダルに「完了まで終了できません」を出しているので無反応には見えない。
-		if m.updating {
+		if m.actModal.blocksQuit() {
 			return m, nil
 		}
 		return m.quit()
 	}
-	// push 警告モーダルは何かキーで閉じる (そのキーは消費して誤操作を防ぐ)
-	if m.pushWarn != "" {
-		m.pushWarn = ""
-		return m, nil
-	}
-	// claude update の結果ダイアログも何かキーで閉じる (キーは消費する)
-	if m.updateResult != "" {
-		m.updateResult = ""
-		return m, nil
-	}
-	// push/pull 確認の「実行」キー: y か Enter (Enter=y はユーザー要望 2026-07-21)。
-	// それ以外のキーはキャンセル。
-	confirmYes := strings.ToLower(key) == "y" || key == "enter"
-	// push 確認 (b → y/N)。glogx の独自機能。
-	if m.pushConfirm {
-		if confirmYes {
-			m.pushConfirm = false
-			m.pushing = true
-			return m, tea.Batch(func() tea.Msg { return pushMsg{err: runGitPush()} }, m.maybeTick())
+	// git push/pull/update の確認・実行中・警告・結果ダイアログは action モーダルが捌く
+	// (警告/結果の dismiss・確認 y/N・実行中のキー無視。判定順は actionModal.handleKey 側)。
+	// 実行を伴う確認 y は action (実行 tea.Cmd) を載せて返すので maybeTick と束ねる。
+	if consumed, action := m.actModal.handleKey(key); consumed {
+		if action != nil {
+			return m, tea.Batch(action, m.maybeTick())
 		}
-		m.pushConfirm = false
-		return m, nil
-	}
-	// pull --rebase 確認 (u → y/N)。glogx の独自機能。
-	if m.pullConfirm {
-		if confirmYes {
-			m.pullConfirm = false
-			m.pulling = true
-			return m, tea.Batch(func() tea.Msg { return pullMsg{err: runGitPullRebase()} }, m.maybeTick())
-		}
-		m.pullConfirm = false
-		return m, nil
-	}
-	if m.pushing || m.pulling || m.updating { // 実行中は終了以外のキーを無視する
 		return m, nil
 	}
 	// tmux prefix の誤爆フィードバック: popup 表示中は tmux がキーを処理しない
@@ -826,18 +796,14 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.confirmPush()
 	}
 	if key == "u" {
-		m.pullConfirm = true
+		m.actModal.askPull()
 		return m, nil
 	}
 	// C = claude update (確認なし即実行。ユーザー選定 2026-07-22)。glogx の独自機能で
 	// U=usage と並ぶ大文字の「Claude Code メタ操作」。実行中は spinner モーダルを出す。
 	if key == "C" {
-		m.updating = true
 		m.notice = ""
-		return m, tea.Batch(func() tea.Msg {
-			before, after, err := runClaudeUpdate()
-			return updateMsg{before: before, after: after, err: err}
-		}, m.maybeTick())
+		return m, tea.Batch(m.actModal.startUpdate(), m.maybeTick())
 	}
 	// q はビューのスタックを 1 段戻る (tig 流。ユーザー要望): 詳細 → job 一覧 →
 	// コミット一覧、と閉じていき、最上位でだけ終了。即終了したいときは Ctrl-C
@@ -901,10 +867,10 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 // (誤爆防止と「push 済みなのに聞かれる」違和感の回避)。
 func (m *browseModel) confirmPush() tea.Cmd {
 	if m.unpushedCount() == 0 {
-		m.pushWarn = "未 push のコミットはありません" // hint 行でなくモーダルで (ユーザー要望)
+		m.actModal.pushWarn = "未 push のコミットはありません" // hint 行でなくモーダルで (ユーザー要望)
 		return nil
 	}
-	m.pushConfirm = true
+	m.actModal.pushConfirm = true
 	return nil
 }
 
@@ -1082,69 +1048,31 @@ func (m *browseModel) unpushedCount() int {
 	return n
 }
 
-// pushBoxLines は中央モーダル/トーストの描画行。push 確認・実行中・push 警告・
-// tmux prefix 誤爆トーストのいずれかを、狭い幅の枠 + 左パディングで水平センタリングする
-// (垂直は View 側が overlayBox の anchor で中央に置く)。どれも非表示なら nil。
-func (m *browseModel) pushBoxLines() []string {
-	if !m.pushConfirm && !m.pushing && !m.pullConfirm && !m.pulling && !m.updating &&
-		m.pushWarn == "" && m.prefixNote == "" && m.updateResult == "" {
-		return nil
-	}
-	width := m.width
+// centerBox は狭い幅の影付きモーダルを画面幅内で水平センタリングする (垂直は View 側の
+// overlayBox anchor が中央に置く)。action モーダルと prefixNote トーストで共用する。
+func centerBox(title string, rows []string, width int, colored bool) []string {
 	if width <= 0 {
 		width = 80
 	}
 	boxW := min(44, width)
-	title := " git push "
-	var rows []string
-	switch {
-	case m.prefixNote != "":
-		title = " ⚠ tmux "
-		rows = strings.Split(m.prefixNote, "\n")
-		rows = append(rows, "", paint("何かキーで閉じる", ansiDim, m.colored))
-	case m.pushWarn != "":
-		title = " ⚠ "
-		rows = []string{
-			"⚠ " + m.pushWarn,
-			"",
-			paint("何かキーを押して閉じる", ansiDim, m.colored),
-		}
-	case m.updateResult != "":
-		title = " claude update "
-		rows = append(strings.Split(m.updateResult, "\n"),
-			"", paint("何かキーを押して閉じる", ansiDim, m.colored))
-	case m.pushing:
-		rows = []string{m.spinner() + " pushing..."}
-	case m.pulling:
-		title = " git pull --rebase "
-		rows = []string{m.spinner() + " pulling..."}
-	case m.updating:
-		title = " claude update "
-		rows = []string{
-			m.spinner() + " updating...",
-			"",
-			paint("完了まで終了できません", ansiDim, m.colored),
-		}
-	case m.pullConfirm:
-		title = " git pull --rebase "
-		rows = []string{
-			"origin から pull --rebase します",
-			"",
-			paint("y/Enter: 実行   n/Esc: キャンセル", ansiDim, m.colored),
-		}
-	default:
-		rows = []string{
-			fmt.Sprintf("未 push の %d コミットを push します", m.unpushedCount()),
-			"",
-			paint("y/Enter: 実行   n/Esc: キャンセル", ansiDim, m.colored),
-		}
-	}
 	pad := strings.Repeat(" ", max((width-boxW)/2, 0))
-	box := buildShadowPanelBox(title, rows, boxW, m.colored)
+	box := buildShadowPanelBox(title, rows, boxW, colored)
 	for i := range box {
 		box[i] = pad + box[i]
 	}
 	return box
+}
+
+// centerModalLines は中央モーダル/トーストの描画行。tmux prefix 誤爆トースト (prefixNote) を
+// 最優先で描き、無ければ action モーダル (push/pull/update) を描く。どれも非表示なら nil。
+// prefixNote は tmux の関心事なので actionModal に同居させず、ここで合流させる (元の描画順を保持)。
+func (m *browseModel) centerModalLines() []string {
+	if m.prefixNote != "" {
+		rows := append(strings.Split(m.prefixNote, "\n"),
+			"", paint("何かキーで閉じる", ansiDim, m.colored))
+		return centerBox(" ⚠ tmux ", rows, m.width, m.colored)
+	}
+	return m.actModal.boxLines(m.width, m.colored, m.spinner(), m.unpushedCount())
 }
 
 // quit はアプリ全体を終了する (取得中断分は unknown へ落とす)。
@@ -1674,7 +1602,7 @@ func (m *browseModel) fillUnknown() {
 }
 
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.pushing || m.pulling || m.updating || m.pullAnimating || m.scrollAnim || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || m.diffOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading()
+	return m.fetching || m.actModal.running() || m.pullAnimating || m.scrollAnim || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || m.diffOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading()
 }
 
 // panelHasRunningJob は表示中の job パネルに実行中 (経過時間が増える) job があるか。
@@ -1796,7 +1724,7 @@ func (m *browseModel) View() string {
 	}
 	// push 確認/実行中は画面中央のモーダルを最前面に重ねる (ユーザー要望 2026-07-19:
 	// hint 行の [y/N] だけでは気づきにくい)
-	if box := m.pushBoxLines(); len(box) > 0 {
+	if box := m.centerModalLines(); len(box) > 0 {
 		window = overlayBox(window, box, max((page-len(box))/2, 0), page)
 	}
 	// usage オーバーレイは最前面 (上部右端の複数行モーダル)。U で再表示、任意キーで消える。
@@ -2055,15 +1983,15 @@ func (m *browseModel) bgLine(text, bg string) string {
 func (m *browseModel) hintLine() string {
 	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  y: URL コピー  b: push  u: pull  U: usage  C: update  q: 終了"
 	switch {
-	case m.pushConfirm:
+	case m.actModal.pushConfirm:
 		hint = "push しますか? [Y/n] (Enter=y)"
-	case m.pullConfirm:
+	case m.actModal.pullConfirm:
 		hint = "pull --rebase しますか? [Y/n] (Enter=y)"
-	case m.pushing:
+	case m.actModal.pushing:
 		hint = m.spinner() + " pushing..."
-	case m.pulling:
+	case m.actModal.pulling:
 		hint = m.spinner() + " pulling..."
-	case m.updating:
+	case m.actModal.updating:
 		hint = m.spinner() + " claude update..."
 	case m.diffOv.visible():
 		hint = "j/k/Space: スクロール  g/G: 先頭/末尾  q/h: 閉じる"

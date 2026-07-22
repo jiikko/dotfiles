@@ -1648,11 +1648,11 @@ func TestBrowseConfirmEnterConfirms(t *testing.T) {
 	runGitPush = func() error { pushed++; return nil }
 	t.Cleanup(func() { runGitPush = origPush })
 	m.handleKey("b")
-	if !m.pushConfirm {
+	if !m.actModal.pushConfirm {
 		t.Fatal("b で push 確認に入らない")
 	}
-	if _, cmd := m.handleKey("enter"); cmd == nil || !m.pushing || m.pushConfirm {
-		t.Fatalf("Enter で push が実行されない: cmd=%v pushing=%v confirm=%v", cmd != nil, m.pushing, m.pushConfirm)
+	if _, cmd := m.handleKey("enter"); cmd == nil || !m.actModal.pushing || m.actModal.pushConfirm {
+		t.Fatalf("Enter で push が実行されない: cmd=%v pushing=%v confirm=%v", cmd != nil, m.actModal.pushing, m.actModal.pushConfirm)
 	}
 	// pull: Enter で実行
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
@@ -1660,11 +1660,11 @@ func TestBrowseConfirmEnterConfirms(t *testing.T) {
 	runGitPullRebase = func() error { return nil }
 	t.Cleanup(func() { runGitPullRebase = origPull })
 	m2.handleKey("u")
-	if !m2.pullConfirm {
+	if !m2.actModal.pullConfirm {
 		t.Fatal("u で pull 確認に入らない")
 	}
-	if _, cmd := m2.handleKey("enter"); cmd == nil || !m2.pulling || m2.pullConfirm {
-		t.Fatalf("Enter で pull が実行されない: cmd=%v pulling=%v confirm=%v", cmd != nil, m2.pulling, m2.pullConfirm)
+	if _, cmd := m2.handleKey("enter"); cmd == nil || !m2.actModal.pulling || m2.actModal.pullConfirm {
+		t.Fatalf("Enter で pull が実行されない: cmd=%v pulling=%v confirm=%v", cmd != nil, m2.actModal.pulling, m2.actModal.pullConfirm)
 	}
 }
 
@@ -1678,8 +1678,8 @@ func TestBrowseUpdateFlow(t *testing.T) {
 
 	// C で確認を挟まず即実行 (updating=true & cmd 返却)
 	_, cmd := m.handleKey("C")
-	if cmd == nil || !m.updating {
-		t.Fatalf("C で claude update が始まらない: cmd=%v updating=%v", cmd != nil, m.updating)
+	if cmd == nil || !m.actModal.updating {
+		t.Fatalf("C で claude update が始まらない: cmd=%v updating=%v", cmd != nil, m.actModal.updating)
 	}
 	// 実行中は spinner モーダルが出て、終了できない旨も表示する
 	m.width, m.height = 80, 20
@@ -1688,7 +1688,7 @@ func TestBrowseUpdateFlow(t *testing.T) {
 		t.Fatal("claude update 実行中モーダルが描画されない")
 	}
 	// update 中は Ctrl-G/Ctrl-C で終了できない (自己更新の途中 kill を防ぐ)
-	if _, qcmd := m.handleKey("ctrl+g"); qcmd != nil || m.done || !m.updating {
+	if _, qcmd := m.handleKey("ctrl+g"); qcmd != nil || m.done || !m.actModal.updating {
 		t.Fatalf("update 中に Ctrl-G で終了してしまう: cmd=%v done=%v", qcmd != nil, m.done)
 	}
 	// cmd を実行して updateMsg を配送
@@ -1709,16 +1709,16 @@ func TestBrowseUpdateFlow(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("claude update 実行回数 = %d, want 1", calls)
 	}
-	if m.updating {
+	if m.actModal.updating {
 		t.Fatal("updateMsg 後も updating のまま")
 	}
 	// 変わった場合は結果ダイアログに "vX → vY" が出る
-	if !strings.Contains(m.updateResult, "v2.1.216 → v2.2.0") {
-		t.Fatalf("バージョン変化が結果ダイアログに出ない: %q", m.updateResult)
+	if !strings.Contains(m.actModal.updateResult, "v2.1.216 → v2.2.0") {
+		t.Fatalf("バージョン変化が結果ダイアログに出ない: %q", m.actModal.updateResult)
 	}
 	// ダイアログは何かキーで閉じる (キーは消費)
-	if _, cmd := m.handleKey("j"); cmd != nil || m.updateResult != "" {
-		t.Fatalf("結果ダイアログが任意キーで閉じない: cmd=%v result=%q", cmd != nil, m.updateResult)
+	if _, cmd := m.handleKey("j"); cmd != nil || m.actModal.updateResult != "" {
+		t.Fatalf("結果ダイアログが任意キーで閉じない: cmd=%v result=%q", cmd != nil, m.actModal.updateResult)
 	}
 
 	// 変わらなかった場合は「変更なし」
@@ -1742,8 +1742,8 @@ func TestBrowseUpdateFlow(t *testing.T) {
 		dl(c())
 	}
 	deliverTo(m2, cmd2)
-	if !strings.Contains(m2.updateResult, "最新版") || !strings.Contains(m2.updateResult, "v2.2.0") {
-		t.Fatalf("最新版が結果ダイアログに出ない: %q", m2.updateResult)
+	if !strings.Contains(m2.actModal.updateResult, "最新版") || !strings.Contains(m2.actModal.updateResult, "v2.2.0") {
+		t.Fatalf("最新版が結果ダイアログに出ない: %q", m2.actModal.updateResult)
 	}
 }
 
@@ -1759,7 +1759,7 @@ func TestBrowseUpdateFailureShowsDialogAndClearsUpdating(t *testing.T) {
 	t.Cleanup(func() { runClaudeUpdate = orig })
 
 	_, cmd := m.handleKey("C")
-	if !m.updating {
+	if !m.actModal.updating {
 		t.Fatal("C で updating に入らない")
 	}
 	var dl func(tea.Msg)
@@ -1777,16 +1777,16 @@ func TestBrowseUpdateFailureShowsDialogAndClearsUpdating(t *testing.T) {
 	}
 	dl(cmd())
 
-	if m.updating {
+	if m.actModal.updating {
 		t.Fatal("更新失敗後も updating のまま (無限ブロックから復帰できない)")
 	}
-	if !strings.Contains(m.updateResult, "更新に失敗しました") || !strings.Contains(m.updateResult, "タイムアウト") {
-		t.Fatalf("失敗理由が結果ダイアログに出ない: %q", m.updateResult)
+	if !strings.Contains(m.actModal.updateResult, "更新に失敗しました") || !strings.Contains(m.actModal.updateResult, "タイムアウト") {
+		t.Fatalf("失敗理由が結果ダイアログに出ない: %q", m.actModal.updateResult)
 	}
 	// updating が解けたので、結果ダイアログは任意キーで閉じられる (無反応から復帰済み)。
 	m.handleKey("q")
-	if m.updateResult != "" || m.done {
-		t.Fatalf("q で結果ダイアログが閉じない: result=%q done=%v", m.updateResult, m.done)
+	if m.actModal.updateResult != "" || m.done {
+		t.Fatalf("q で結果ダイアログが閉じない: result=%q done=%v", m.actModal.updateResult, m.done)
 	}
 }
 
@@ -1800,7 +1800,7 @@ func TestBrowsePushFlow(t *testing.T) {
 	t.Cleanup(func() { runGitPush = orig })
 	// b で確認に入り、n でキャンセル (push されない)
 	m.handleKey("b")
-	if !m.pushConfirm {
+	if !m.actModal.pushConfirm {
 		t.Fatal("b で push 確認に入らない")
 	}
 	// 確認中は中央モーダルが出る (幅より狭いボックス + 左パディングでセンタリング)
@@ -1809,13 +1809,13 @@ func TestBrowsePushFlow(t *testing.T) {
 		t.Fatal("push 確認モーダルが描画されない")
 	}
 	m.handleKey("n")
-	if m.pushConfirm || pushed != 0 {
-		t.Fatalf("n でキャンセルされない: confirm=%v pushed=%d", m.pushConfirm, pushed)
+	if m.actModal.pushConfirm || pushed != 0 {
+		t.Fatalf("n でキャンセルされない: confirm=%v pushed=%d", m.actModal.pushConfirm, pushed)
 	}
 	// y で push が走り、成功で未 push が unknown へ落ちて再取得に乗る
 	m.handleKey("b")
 	_, cmd := m.handleKey("y")
-	if cmd == nil || !m.pushing {
+	if cmd == nil || !m.actModal.pushing {
 		t.Fatal("y で push が始まらない")
 	}
 	var deliver func(msg tea.Msg)
@@ -1835,7 +1835,7 @@ func TestBrowsePushFlow(t *testing.T) {
 	if pushed != 1 {
 		t.Fatalf("push 実行回数 = %d, want 1", pushed)
 	}
-	if m.pushing {
+	if m.actModal.pushing {
 		t.Fatal("pushMsg 後も pushing のまま")
 	}
 	// push 成功でリスト全体のキャッシュが破棄され、全 SHA が再取得に乗る
@@ -1901,7 +1901,7 @@ func TestBrowsePullFlow(t *testing.T) {
 	t.Cleanup(func() { runGitPullRebase = orig })
 	// u で確認に入り、n でキャンセル
 	m.handleKey("u")
-	if !m.pullConfirm {
+	if !m.actModal.pullConfirm {
 		t.Fatal("u で pull 確認に入らない")
 	}
 	m.width, m.height = 80, 20
@@ -1909,13 +1909,13 @@ func TestBrowsePullFlow(t *testing.T) {
 		t.Fatal("pull 確認モーダルが描画されない")
 	}
 	m.handleKey("n")
-	if m.pullConfirm || pulled != 0 {
-		t.Fatalf("n でキャンセルされない: confirm=%v pulled=%d", m.pullConfirm, pulled)
+	if m.actModal.pullConfirm || pulled != 0 {
+		t.Fatalf("n でキャンセルされない: confirm=%v pulled=%d", m.actModal.pullConfirm, pulled)
 	}
 	// y で pull が走り、成功で一覧が実 repo の内容にリロードされる
 	m.handleKey("u")
 	_, cmd := m.handleKey("y")
-	if cmd == nil || !m.pulling {
+	if cmd == nil || !m.actModal.pulling {
 		t.Fatal("y で pull が始まらない")
 	}
 	m.details["stale"] = []CheckDetail{{Name: "old"}}
@@ -1937,7 +1937,7 @@ func TestBrowsePullFlow(t *testing.T) {
 	if pulled != 1 {
 		t.Fatalf("pull 実行回数 = %d, want 1", pulled)
 	}
-	if m.pulling {
+	if m.actModal.pulling {
 		t.Fatal("pullMsg 後も pulling のまま")
 	}
 	if len(m.commits) != 2 || m.commits[0].Subject != "second" {
@@ -1998,12 +1998,12 @@ func TestBrowseTmuxPrefixFeedback(t *testing.T) {
 	// prefix 検知は発動しない (続く y が飲み込まれる事故の防止)
 	m.statuses[m.commits[0].SHA] = StateUnpushed
 	m.handleKey("b")
-	if !m.pushConfirm {
+	if !m.actModal.pushConfirm {
 		t.Fatal("b で push 確認に入らない")
 	}
 	m.handleKey("ctrl+t")
-	if m.pushConfirm || m.prefixPending {
-		t.Fatalf("確認モーダル中の C-t がキャンセルにならない: confirm=%v pending=%v", m.pushConfirm, m.prefixPending)
+	if m.actModal.pushConfirm || m.prefixPending {
+		t.Fatalf("確認モーダル中の C-t がキャンセルにならない: confirm=%v pending=%v", m.actModal.pushConfirm, m.prefixPending)
 	}
 	// tmux 外 (prefix 不明) では機能オフ = ctrl+t は何もしない
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
@@ -2036,7 +2036,7 @@ func TestBrowsePushNoUnpushed(t *testing.T) {
 	m.statuses[m.commits[0].SHA] = StateSuccess
 	m.statuses[m.commits[1].SHA] = StateSuccess
 	m.handleKey("b")
-	if m.pushConfirm {
+	if m.actModal.pushConfirm {
 		t.Fatal("未 push なしで push 確認に入った")
 	}
 	// hint 行でなく警告モーダルが出る (ユーザー要望)
@@ -2046,11 +2046,36 @@ func TestBrowsePushNoUnpushed(t *testing.T) {
 	}
 	// 何かキーで閉じ、そのキーは消費される (カーソルが動かない)
 	m.handleKey("j")
-	if m.pushWarn != "" {
+	if m.actModal.pushWarn != "" {
 		t.Fatal("キーで警告モーダルが閉じない")
 	}
 	if m.cursor != 0 {
 		t.Fatal("モーダルを閉じたキーが消費されずカーソルが動いた")
+	}
+}
+
+// 実行中 (pushing/pulling) ガードは一般キーを飲むが、quit だけは updating のときのみブロック
+// される (pushing/pulling 中の Ctrl-C は終了できる)。この非対称は claude update だけ自己
+// バイナリ更新の中断が危険なため。抽出でこの分岐が壊れないよう固定する。
+func TestBrowseRunningGuardSwallowsKeysPushingAllowsQuit(t *testing.T) {
+	// pushing 中: j は飲まれてカーソルは動かない
+	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+	m.actModal.pushing = true
+	m.handleKey("j")
+	if m.cursor != 0 {
+		t.Errorf("pushing 中に j が飲まれずカーソルが動いた: cursor=%d", m.cursor)
+	}
+	// pushing はクォートをブロックしない (updating だけがブロックする)
+	if _, _ = m.handleKey("ctrl+c"); !m.done {
+		t.Error("pushing 中の Ctrl-C で終了できない (updating 以外は quit を許す契約)")
+	}
+
+	// updating 中: Ctrl-C は飲まれて終了しない
+	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m2.actModal.updating = true
+	if _, _ = m2.handleKey("ctrl+c"); m2.done {
+		t.Error("updating 中の Ctrl-C で終了してしまった (完了まで待たせる契約)")
 	}
 }
 
