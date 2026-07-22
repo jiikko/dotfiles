@@ -221,11 +221,12 @@ func buildShellCommand(template string) string {
 // input list is exhausted so that Enqueue can push additional items at
 // runtime (used by the TUI).
 type Runner struct {
-	cfg       Config
-	lines     []string
-	events    chan Event
-	resultMu  sync.Mutex
-	resultLog *os.File
+	cfg    Config
+	lines  []string
+	events chan Event
+	// result.log writer (append / atomic rewrite / close, all mutex-guarded
+	// internally). Extracted to result_log.go so race reasoning is local.
+	resultLog *resultLogWriter
 	// lockFile holds an exclusive flock on <LogDir>/.lock for the entire
 	// lifetime of Start..cleanup. Released on Close so a subsequent run
 	// against the same LogDir can acquire it.
@@ -242,12 +243,10 @@ type Runner struct {
 	killCtx       context.Context
 	killCancel    context.CancelFunc
 
-	// Pause state: when true, the dispatcher blocks before submitting new
-	// jobs. Reversible via Resume. Independent of stopCtx; used for the
-	// TUI's "undo graceful shutdown" flow.
-	pauseMu sync.Mutex
-	paused  bool
-	pauseCh chan struct{}
+	// Pause gate: when paused, the dispatcher blocks before submitting new
+	// jobs. Reversible via Resume. Independent of stopCtx; used for the TUI's
+	// "undo graceful shutdown" flow. State machine lives in pause_gate.go.
+	pause *pauseGate
 
 	live     bool
 	queuedMu sync.Mutex
@@ -311,6 +310,7 @@ func NewRunner(cfg Config, lines []string) *Runner {
 		events: make(chan Event, 64),
 		width:  digitWidth(len(lines)),
 		queued: queued,
+		pause:  newPauseGate(),
 	}
 }
 
@@ -583,64 +583,10 @@ func (r *Runner) ForgetLine(line string) error {
 	r.queuedMu.Lock()
 	delete(r.queued, line)
 	r.queuedMu.Unlock()
-	return r.rewriteResultLogExcluding(line)
-}
-
-// rewriteResultLogExcluding rewrites parallel-each-log/result.log with all
-// rows whose column-3 equals line filtered out. Uses a tmp + rename so the
-// replacement is atomic on crash; hold resultMu for the duration so no
-// concurrent appendResult interleaves.
-func (r *Runner) rewriteResultLogExcluding(line string) error {
-	r.resultMu.Lock()
-	defer r.resultMu.Unlock()
-
-	path := filepath.Join(r.cfg.LogDir, "result.log")
-	// Swap the active file handle out before reading/rewriting, and reopen
-	// for append at the end (even on error paths) so appendResult still works.
-	if r.resultLog != nil {
-		r.resultLog.Close()
-		r.resultLog = nil
+	if r.resultLog == nil {
+		return nil // pre-Start: no result.log to rewrite
 	}
-	defer func() {
-		if r.resultLog == nil {
-			r.resultLog, _ = os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
-		}
-	}()
-
-	src, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	var kept []byte
-	sc := bufio.NewScanner(src)
-	sc.Buffer(make([]byte, 64*1024), 1024*1024)
-	for sc.Scan() {
-		text := sc.Text()
-		cols := strings.Split(text, "\t")
-		if len(cols) >= 4 && cols[2] == line {
-			continue
-		}
-		kept = append(kept, []byte(text)...)
-		kept = append(kept, '\n')
-	}
-	scanErr := sc.Err()
-	src.Close()
-	if scanErr != nil {
-		return scanErr
-	}
-
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, kept, 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
+	return r.resultLog.rewriteExcluding(line)
 }
 
 // SeedDedup marks each line as "already seen" so future Enqueue calls reject
@@ -689,7 +635,7 @@ func (r *Runner) RequestStop() {
 		r.stopCancel()
 	}
 	r.wakeQueue()
-	r.wakePause()
+	r.pause.wake()
 }
 
 // ForceKill sends SIGTERM to running subprocesses and stops dispatching.
@@ -702,59 +648,25 @@ func (r *Runner) ForceKill() {
 		r.killCancel()
 	}
 	// Wake any dispatcher waiting on pause / an empty queue.
-	r.wakePause()
+	r.pause.wake()
 	r.wakeQueue()
 }
 
 // Pause blocks further dispatching without stopping the runner. Running jobs
 // continue to completion. Safe to call many times; reversible via Resume.
-func (r *Runner) Pause() {
-	r.pauseMu.Lock()
-	r.paused = true
-	r.pauseMu.Unlock()
-	r.wakePause()
-}
+func (r *Runner) Pause() { r.pause.pause() }
 
-// Resume lifts a pause. If Pause has never been called (or stopCtx already
-// cancelled) this is a no-op.
-func (r *Runner) Resume() {
-	r.pauseMu.Lock()
-	r.paused = false
-	r.pauseMu.Unlock()
-	r.wakePause()
-}
+// Resume lifts a pause. If Pause has never been called this is a no-op.
+func (r *Runner) Resume() { r.pause.resume() }
 
 // IsPaused reports whether the runner is currently paused.
-func (r *Runner) IsPaused() bool {
-	r.pauseMu.Lock()
-	defer r.pauseMu.Unlock()
-	return r.paused
-}
-
-func (r *Runner) wakePause() {
-	if r.pauseCh == nil {
-		return
-	}
-	select {
-	case r.pauseCh <- struct{}{}:
-	default:
-	}
-}
+func (r *Runner) IsPaused() bool { return r.pause.isPaused() }
 
 // waitForUnpause blocks until pause is lifted or stopCtx fires. Returns true
-// if the dispatcher should continue, false if it should exit.
+// if the dispatcher should continue, false if it should exit. Called only from
+// the dispatcher, after Start has set stopCtx.
 func (r *Runner) waitForUnpause() bool {
-	for r.IsPaused() {
-		if r.stopCtx != nil && r.stopCtx.Err() != nil {
-			return false
-		}
-		select {
-		case <-r.pauseCh:
-		case <-r.stopCtx.Done():
-			return false
-		}
-	}
-	return true
+	return r.pause.waitUntilResumed(r.stopCtx.Done())
 }
 
 // Start launches workers. It returns immediately; results are delivered via Events().
@@ -850,11 +762,12 @@ func (r *Runner) Start(parent context.Context) error {
 		r.lockFile = nil
 		return fmt.Errorf("open result.log: %w", err)
 	}
-	r.resultLog = rf
+	// Wrap the handle (opened above with cfg.Fresh's flags) in the thread-safe
+	// writer. The pause gate is created eagerly in NewRunner, so nothing to init here.
+	r.resultLog = newResultLogWriter(rf, resultPath)
 
 	r.stopCtx, r.stopCancel = context.WithCancel(parent)
 	r.killCtx, r.killCancel = context.WithCancel(parent)
-	r.pauseCh = make(chan struct{}, 1)
 
 	initialPar := r.cfg.Parallelism
 	if initialPar <= 0 {
@@ -887,17 +800,12 @@ func (r *Runner) Start(parent context.Context) error {
 			r.closing = true
 			r.workerMu.Unlock()
 			r.wg.Wait()
-			// Close result.log under resultMu — the bubbletea goroutine can
-			// still reach rewriteResultLogExcluding (ForgetLine via the 'd'
-			// key or a force re-enqueue) during this teardown window, and it
-			// touches r.resultLog under the same lock. Nil it so a racing
+			// Close result.log — the bubbletea goroutine can still reach
+			// rewriteExcluding (ForgetLine via the 'd' key or a force re-enqueue)
+			// during this teardown window. The writer serializes close vs
+			// rewrite/append under its own mutex and nils its handle, so a racing
 			// reopen and a double close are both harmless.
-			r.resultMu.Lock()
-			if r.resultLog != nil {
-				r.resultLog.Close()
-				r.resultLog = nil
-			}
-			r.resultMu.Unlock()
+			r.resultLog.close()
 			if r.inputLockFile != nil {
 				r.inputLockFile.Close() // releases input-file flock
 				r.inputLockFile = nil
@@ -1217,14 +1125,11 @@ func timedOutSuffix(timedOut bool) string {
 }
 
 func (r *Runner) appendResult(tag string, exitCode int, line, logAbs string) {
-	r.resultMu.Lock()
-	defer r.resultMu.Unlock()
 	if r.resultLog == nil {
-		// Runner already torn down (dispatcher closed and nil'd the handle).
-		// No worker reaches here after wg.Wait(); guard defensively anyway.
-		return
+		return // pre-Start; no worker reaches here after wg.Wait() either
 	}
-	fmt.Fprintf(r.resultLog, "%s\t%d\t%s\t%s\n", tag, exitCode, line, logAbs)
+	// The writer no-ops if its handle was already closed by teardown.
+	r.resultLog.append(tag, exitCode, line, logAbs)
 }
 
 // emit delivers an event to consumers, but abandons the send if the runner is
