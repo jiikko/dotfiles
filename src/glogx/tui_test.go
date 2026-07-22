@@ -953,7 +953,7 @@ func TestBrowseJobDetailStaleMsgDoesNotMoveOffset(t *testing.T) {
 		t.Fatalf("前提: offset=0 でない (%d)", m.detailOv.offset)
 	}
 	// 別 job (job1) 宛の遅延結果が届いても、今開いている job0 の offset は動かない
-	staleKey := fmt.Sprintf("%s/1", m.panelSHA)
+	staleKey := m.panelSHA + "/1"
 	longLines := make([]string, 50)
 	for i := range longLines {
 		longLines[i] = fmt.Sprintf("stale %d", i)
