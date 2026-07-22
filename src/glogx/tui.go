@@ -178,16 +178,29 @@ type updateMsg struct {
 	err    error // 失敗時のみ。Error() は claude 出力の末尾行を含む
 }
 
+// updateTimeout は claude update の上限。通常の自己更新 (npm/ダウンロード) はこれより十分速く
+// 完了するため、到達したら更新が本当にハングしている合図。この上限が無いと updating 中は
+// q/Ctrl-C を握りつぶす (handleKey の updating ガード) 設計上、無限ハング時に端末を外部から
+// kill するしか脱出できず、子プロセスが孤児化し raw mode も残る。寛大な値で「更新中は中断させ
+// ない」意図を保ちつつ、病的なハングだけを断ち切る。
+const updateTimeout = 5 * time.Minute
+
 // runClaudeUpdate はテストで実 update しないための差し替え点。update 前後の CLI バージョンを
 // 挟んで取得し (何→何に変わったか表示するため)、CLI を自己更新する。remote に触るが git では
-// ないので noPromptGitCmd は使わない (対話プロンプトは claude 側の責務)。
+// ないので noPromptGitCmd は使わない (対話プロンプトは claude 側の責務)。updateTimeout で
+// context を張り、無期限ブロックを防ぐ (超過時は updateMsg{err} 経由で updating が必ず解ける)。
 var runClaudeUpdate = func() (before, after string, err error) {
-	before = usage.FetchVersion(context.Background())
-	out, e := exec.Command("claude", "update").CombinedOutput()
+	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
+	defer cancel()
+	before = usage.FetchVersion(ctx)
+	out, e := exec.CommandContext(ctx, "claude", "update").CombinedOutput()
 	if e != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return before, "", fmt.Errorf("claude update がタイムアウトしました (%s)", updateTimeout)
+		}
 		return before, "", fmt.Errorf("%s", lastLine(strings.TrimSpace(string(out))))
 	}
-	after = usage.FetchVersion(context.Background())
+	after = usage.FetchVersion(ctx)
 	return before, after, nil
 }
 

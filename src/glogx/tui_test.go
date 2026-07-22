@@ -1653,6 +1653,49 @@ func TestBrowseUpdateFlow(t *testing.T) {
 	}
 }
 
+// 更新失敗 (runClaudeUpdate が err を返す) 経路: updating が必ず解けて結果ダイアログに
+// エラー理由が出る。updateTimeout 超過時のエラーもこの経路を通るため、無限ブロックからの
+// 復帰 (updating 解除 → q/Ctrl-C が再び効く) を保証する回帰テスト。
+func TestBrowseUpdateFailureShowsDialogAndClearsUpdating(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	orig := runClaudeUpdate
+	runClaudeUpdate = func() (string, string, error) {
+		return "2.1.216", "", errors.New("claude update がタイムアウトしました (5m0s)")
+	}
+	t.Cleanup(func() { runClaudeUpdate = orig })
+
+	_, cmd := m.handleKey("C")
+	if !m.updating {
+		t.Fatal("C で updating に入らない")
+	}
+	var dl func(tea.Msg)
+	dl = func(msg tea.Msg) {
+		switch v := msg.(type) {
+		case tea.BatchMsg:
+			for _, cc := range v {
+				if cc != nil {
+					dl(cc())
+				}
+			}
+		case updateMsg:
+			m.Update(v)
+		}
+	}
+	dl(cmd())
+
+	if m.updating {
+		t.Fatal("更新失敗後も updating のまま (無限ブロックから復帰できない)")
+	}
+	if !strings.Contains(m.updateResult, "更新に失敗しました") || !strings.Contains(m.updateResult, "タイムアウト") {
+		t.Fatalf("失敗理由が結果ダイアログに出ない: %q", m.updateResult)
+	}
+	// updating が解けたので、結果ダイアログは任意キーで閉じられる (無反応から復帰済み)。
+	m.handleKey("q")
+	if m.updateResult != "" || m.done {
+		t.Fatalf("q で結果ダイアログが閉じない: result=%q done=%v", m.updateResult, m.done)
+	}
+}
+
 func TestBrowsePushFlow(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.statuses[m.commits[0].SHA] = StateUnpushed
