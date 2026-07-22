@@ -1345,17 +1345,17 @@ func TestBrowseDiffOpenScrollClose(t *testing.T) {
 	calls := stubDiff(t, diffLines, nil)
 
 	_, cmd := m.handleKey("d")
-	if m.diffSHA != m.commits[0].SHA {
-		t.Fatalf("diffSHA = %q; want カーソル位置のコミット", m.diffSHA)
+	if m.diffOv.sha != m.commits[0].SHA {
+		t.Fatalf("diffSHA = %q; want カーソル位置のコミット", m.diffOv.sha)
 	}
-	if !m.diffBusy[m.diffSHA] {
+	if !m.diffOv.busy[m.diffOv.sha] {
 		t.Error("取得中フラグが立っていない")
 	}
 	deliverDiffMsg(t, m, cmd)
 	if len(*calls) != 1 || (*calls)[0] != m.commits[0].SHA {
 		t.Fatalf("loadCommitDiff の呼び出し = %v", *calls)
 	}
-	if m.diffBusy[m.diffSHA] {
+	if m.diffOv.busy[m.diffOv.sha] {
 		t.Error("取得完了後も busy のまま")
 	}
 	view := m.View()
@@ -1364,17 +1364,17 @@ func TestBrowseDiffOpenScrollClose(t *testing.T) {
 	}
 	// スクロール: j で 1 行、G で末尾
 	m.handleKey("j")
-	if m.diffOffset != 1 {
-		t.Errorf("j 後の offset = %d; want 1", m.diffOffset)
+	if m.diffOv.offset != 1 {
+		t.Errorf("j 後の offset = %d; want 1", m.diffOv.offset)
 	}
 	m.handleKey("G")
-	if m.diffOffset != len(diffLines)-m.visibleDiffRows() {
-		t.Errorf("G 後の offset = %d", m.diffOffset)
+	if m.diffOv.offset != len(diffLines)-m.visibleDiffRows() {
+		t.Errorf("G 後の offset = %d", m.diffOv.offset)
 	}
 	// q で閉じる (アプリは終了しない)
 	m.handleKey("q")
-	if m.diffSHA != "" || m.done {
-		t.Errorf("q: diffSHA=%q done=%v; want 閉じるのみ", m.diffSHA, m.done)
+	if m.diffOv.sha != "" || m.done {
+		t.Errorf("q: diffSHA=%q done=%v; want 閉じるのみ", m.diffOv.sha, m.done)
 	}
 }
 
@@ -1384,7 +1384,7 @@ func TestBrowseDiffToggleAndCache(t *testing.T) {
 	_, cmd := m.handleKey("d")
 	deliverDiffMsg(t, m, cmd)
 	m.handleKey("d") // toggle 閉
-	if m.diffSHA != "" {
+	if m.diffOv.sha != "" {
 		t.Fatal("d の再押下で閉じていない")
 	}
 	_, cmd2 := m.handleKey("d") // 再度開く → キャッシュヒットで再取得しない
@@ -1394,7 +1394,7 @@ func TestBrowseDiffToggleAndCache(t *testing.T) {
 	if len(*calls) != 1 {
 		t.Errorf("loadCommitDiff 呼び出し回数 = %d; want 1 (キャッシュ)", len(*calls))
 	}
-	if m.diffSHA == "" {
+	if m.diffOv.sha == "" {
 		t.Error("キャッシュヒット時に開いていない")
 	}
 }
@@ -1408,8 +1408,8 @@ func TestBrowseDiffFromPanelUsesPanelSHA(t *testing.T) {
 	}
 	stubDiff(t, []string{"x"}, nil)
 	m.handleKey("d")
-	if m.diffSHA != m.commits[0].SHA {
-		t.Errorf("diffSHA = %q; want panel のコミット", m.diffSHA)
+	if m.diffOv.sha != m.commits[0].SHA {
+		t.Errorf("diffSHA = %q; want panel のコミット", m.diffOv.sha)
 	}
 	if m.panelSHA != "" {
 		t.Error("diff を開いたら panel は閉じる契約")
@@ -1421,7 +1421,7 @@ func TestBrowseDiffErrorShowsNoticeAndCloses(t *testing.T) {
 	stubDiff(t, nil, errors.New("boom"))
 	_, cmd := m.handleKey("d")
 	deliverDiffMsg(t, m, cmd)
-	if m.diffSHA != "" {
+	if m.diffOv.sha != "" {
 		t.Error("取得失敗時にポップアップが開いたまま")
 	}
 	if !strings.Contains(m.notice, "diff の取得に失敗") {
@@ -1446,25 +1446,25 @@ func TestBrowseDiffPagerKeysScrollNotClose(t *testing.T) {
 	maxOffset := len(diffLines) - m.visibleDiffRows()
 
 	m.handleKey(" ")
-	if m.diffSHA == "" {
+	if m.diffOv.sha == "" {
 		t.Fatal("Space で閉じた (半ページスクロールのはず)")
 	}
-	if m.diffOffset == 0 {
+	if m.diffOv.offset == 0 {
 		t.Error("Space でスクロールしていない")
 	}
 	m.handleKey("enter")
-	if m.diffSHA == "" {
+	if m.diffOv.sha == "" {
 		t.Fatal("Enter で閉じた (1 行スクロールのはず)")
 	}
 	// 末尾を大きく超えて送っても最終行位置で止まり、開いたまま
 	for range 100 {
 		m.handleKey(" ")
 	}
-	if m.diffSHA == "" {
+	if m.diffOv.sha == "" {
 		t.Fatal("末尾到達後のスクロールで閉じた")
 	}
-	if m.diffOffset != maxOffset {
-		t.Errorf("末尾で offset = %d; want %d (最終行を表示し続ける)", m.diffOffset, maxOffset)
+	if m.diffOv.offset != maxOffset {
+		t.Errorf("末尾で offset = %d; want %d (最終行を表示し続ける)", m.diffOv.offset, maxOffset)
 	}
 	view := m.View()
 	if !strings.Contains(view, diffLines[len(diffLines)-1]) {
@@ -1472,8 +1472,102 @@ func TestBrowseDiffPagerKeysScrollNotClose(t *testing.T) {
 	}
 	// 閉じるのは q
 	m.handleKey("q")
-	if m.diffSHA != "" || m.done {
-		t.Errorf("q: diffSHA=%q done=%v", m.diffSHA, m.done)
+	if m.diffOv.sha != "" || m.done {
+		t.Errorf("q: diffSHA=%q done=%v", m.diffOv.sha, m.done)
+	}
+}
+
+// diff が空 (変更なし) のときは "(diff はありません)" を出す (busy でもエラーでもない経路)。
+func TestBrowseDiffEmptyShowsMessage(t *testing.T) {
+	m := newTestBrowse(t, 1, nil, nil)
+	stubDiff(t, []string{}, nil)
+	_, cmd := m.handleKey("d")
+	deliverDiffMsg(t, m, cmd)
+	if m.diffOv.sha == "" {
+		t.Fatal("空 diff でポップアップが閉じてしまった (エラーではないので開いたままが仕様)")
+	}
+	if v := stripANSI(m.View()); !strings.Contains(v, "diff はありません") {
+		t.Fatalf("空 diff の案内が出ていない:\n%s", v)
+	}
+}
+
+// diff ポップアップ表示中の y はカーソル位置コミットの URL をコピーする。
+func TestBrowseDiffCopyURLWhileOpen(t *testing.T) {
+	var copied string
+	orig := copyToClipboard
+	copyToClipboard = func(text string) error { copied = text; return nil }
+	t.Cleanup(func() { copyToClipboard = orig })
+	m := newTestBrowse(t, 1, nil, nil)
+	stubDiff(t, []string{"x"}, nil)
+	_, cmd := m.handleKey("d")
+	deliverDiffMsg(t, m, cmd)
+	m.handleKey("y")
+	want := "https://github.com/o/r/commit/" + m.commits[0].SHA
+	if copied != want {
+		t.Errorf("diff 表示中の y でコピーされた URL = %q; want %q", copied, want)
+	}
+	if m.diffOv.sha == "" {
+		t.Error("y でポップアップが閉じた (コピーのみが仕様)")
+	}
+}
+
+// 上スクロールは 0 で止まり、g で先頭・b (ctrl+u) で半ページ戻る。
+func TestBrowseDiffScrollUpClampAndReset(t *testing.T) {
+	m := newTestBrowse(t, 1, nil, nil)
+	diffLines := make([]string, 40)
+	for i := range diffLines {
+		diffLines[i] = fmt.Sprintf("line-%d", i)
+	}
+	stubDiff(t, diffLines, nil)
+	_, cmd := m.handleKey("d")
+	deliverDiffMsg(t, m, cmd)
+
+	m.handleKey("G") // 末尾へ
+	end := m.diffOv.offset
+	if end == 0 {
+		t.Fatal("G で末尾へ動いていない")
+	}
+	m.handleKey("b") // 半ページ戻る
+	if m.diffOv.offset >= end || m.diffOv.offset < 0 {
+		t.Errorf("b (半ページ上) 後の offset = %d; want 0<=x<%d", m.diffOv.offset, end)
+	}
+	m.handleKey("g") // 先頭
+	if m.diffOv.offset != 0 {
+		t.Errorf("g 後の offset = %d; want 0", m.diffOv.offset)
+	}
+	m.handleKey("k") // 先頭で k は 0 に張り付く
+	if m.diffOv.offset != 0 {
+		t.Errorf("先頭での k 後の offset = %d; want 0 (クランプ)", m.diffOv.offset)
+	}
+}
+
+// esc でも diff ポップアップは閉じる (q/h/left/d と同じ閉じる系キー)。
+func TestBrowseDiffEscCloses(t *testing.T) {
+	m := newTestBrowse(t, 1, nil, nil)
+	stubDiff(t, []string{"x"}, nil)
+	_, cmd := m.handleKey("d")
+	deliverDiffMsg(t, m, cmd)
+	m.handleKey("esc")
+	if m.diffOv.sha != "" || m.done {
+		t.Errorf("esc: diffSHA=%q done=%v; want 閉じるのみ", m.diffOv.sha, m.done)
+	}
+}
+
+// 別コミットの古い diff 取得エラーが遅れて届いても、現在開いている diff は閉じない
+// (diffMsg の sha 一致ガードの回帰。閉じるのは msg.sha == 現在表示中のときだけ)。
+func TestBrowseDiffStaleErrorDoesNotCloseCurrent(t *testing.T) {
+	m := newTestBrowse(t, 2, nil, nil)
+	stubDiff(t, []string{"x"}, nil)
+	_, cmd := m.handleKey("d") // commit[0] の diff を開く
+	deliverDiffMsg(t, m, cmd)
+	current := m.diffOv.sha
+	if current == "" {
+		t.Fatal("diff が開いていない")
+	}
+	// commit[1] 宛の古いエラーが遅れて到着 (直接 Update へ流す)
+	m.Update(diffMsg{sha: m.commits[1].SHA, err: errors.New("stale boom")})
+	if m.diffOv.sha != current {
+		t.Errorf("別 SHA のエラーで現在の diff が閉じた: diffSHA=%q; want %q", m.diffOv.sha, current)
 	}
 }
 

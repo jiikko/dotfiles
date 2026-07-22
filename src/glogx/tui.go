@@ -316,26 +316,26 @@ type browseModel struct {
 	jobDetailBusy  map[string]bool     // 取得中の key
 	prCache        map[string]*PRRef   // sha → 紐づく PR (nil 格納 = 確認済みで PR なし)
 	prBusy         map[string]bool     // PR 取得中の sha
-	diffSHA        string              // diff ポップアップ表示中の SHA ("" = 非表示)
-	diffOffset     int                 // diff ポップアップのスクロール位置
-	diffCache      map[string][]string // sha → 整形済み diff 行 (メモリ内キャッシュ)
-	diffBusy       map[string]bool     // diff 取得中の sha
-	pushConfirm    bool                // b の push 確認中 (y/N)
-	pushing        bool                // git push 実行中 (終了以外のキーを無視)
-	pushWarn       string              // push/pull できない理由の警告モーダル (何かキーで閉じる)
-	pullConfirm    bool                // u の pull --rebase 確認中 (y/N)
-	pulling        bool                // git pull --rebase 実行中 (終了以外のキーを無視)
-	updating       bool                // claude update 実行中 (終了以外のキーを無視)
-	updateResult   string              // claude update の結果ダイアログ本文 ("" = 非表示。何かキーで閉じる)
-	pullAnimating  bool                // pull 後に先頭へ増えた新規コミット行を上から降らせる演出中 (offset が進行度)
-	opts           *Options            // pull 後のコミット再読込に使う (revs / max-count)
-	pushPoll       map[string]bool     // push 直後ポーリング対象の SHA (CI が見えたら外れる)
-	pollAttempts   int                 // push 直後ポーリングの試行回数 (上限で諦める)
-	notice         string              // hint 行に出す一時メッセージ (次のキーで消える)
-	tmuxPrefix     string              // tmux prefix の bubbletea 表記 (例 "ctrl+t")。"" = tmux 外/不明で機能オフ
-	prefixPending  bool                // 直前のキーが tmux prefix。次の 1 キーを飲み込む
-	prefixNote     string              // tmux prefix 誤爆の中央トースト (次のキーで消える。dim フッターより目立つ)
-	verbatim       []Line              // git log 実出力の取り込み行 (nil = 自前レンダリング)
+	// diff ポップアップ (d キー) の状態と描画は diffOverlay 型 (diff_overlay.go) に切り出し、
+	// ここは 1 フィールドだけ持つ。ターゲット選定・非同期取得・URL コピーは境界をまたぐため
+	// openDiff / handleDiffKey に薄く残す。
+	diffOv        diffOverlay
+	pushConfirm   bool            // b の push 確認中 (y/N)
+	pushing       bool            // git push 実行中 (終了以外のキーを無視)
+	pushWarn      string          // push/pull できない理由の警告モーダル (何かキーで閉じる)
+	pullConfirm   bool            // u の pull --rebase 確認中 (y/N)
+	pulling       bool            // git pull --rebase 実行中 (終了以外のキーを無視)
+	updating      bool            // claude update 実行中 (終了以外のキーを無視)
+	updateResult  string          // claude update の結果ダイアログ本文 ("" = 非表示。何かキーで閉じる)
+	pullAnimating bool            // pull 後に先頭へ増えた新規コミット行を上から降らせる演出中 (offset が進行度)
+	opts          *Options        // pull 後のコミット再読込に使う (revs / max-count)
+	pushPoll      map[string]bool // push 直後ポーリング対象の SHA (CI が見えたら外れる)
+	pollAttempts  int             // push 直後ポーリングの試行回数 (上限で諦める)
+	notice        string          // hint 行に出す一時メッセージ (次のキーで消える)
+	tmuxPrefix    string          // tmux prefix の bubbletea 表記 (例 "ctrl+t")。"" = tmux 外/不明で機能オフ
+	prefixPending bool            // 直前のキーが tmux prefix。次の 1 キーを飲み込む
+	prefixNote    string          // tmux prefix 誤爆の中央トースト (次のキーで消える。dim フッターより目立つ)
+	verbatim      []Line          // git log 実出力の取り込み行 (nil = 自前レンダリング)
 
 	// usage オーバーレイ (右上に Claude Code の /usage 残量を重ねる)。ユーザー要望 2026-07-21。
 	// 状態と描画は usageOverlay 型 (usage_overlay.go) に切り出し、ここは 1 フィールドだけ持つ。
@@ -367,8 +367,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		jobDetailBusy:  map[string]bool{},
 		prCache:        map[string]*PRRef{},
 		prBusy:         map[string]bool{},
-		diffCache:      map[string][]string{},
-		diffBusy:       map[string]bool{},
+		diffOv:         newDiffOverlay(),
 		toFetch:        toFetch,
 		repo:           repo,
 		hasRepo:        hasRepo,
@@ -590,15 +589,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.notice = fmt.Sprintf("PR #%d を開きます", msg.pr.Number)
 		return m, m.openURLCmd(msg.pr.URL)
 	case diffMsg:
-		delete(m.diffBusy, msg.sha)
-		if msg.err != nil {
-			m.notice = "diff の取得に失敗しました: " + firstLine(msg.err.Error())
-			if m.diffSHA == msg.sha {
-				m.diffSHA = ""
-			}
-			return m, nil
+		if err := m.diffOv.receive(msg); err != nil {
+			m.notice = "diff の取得に失敗しました: " + firstLine(err.Error())
 		}
-		m.diffCache[msg.sha] = msg.lines
 		return m, nil
 	case prefixMsg:
 		m.tmuxPrefix = msg.key
@@ -823,7 +816,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		key = "right"
 	}
 	// diff ポップアップ表示中はスクロール/閉じる操作だけを受ける (最前面のモーダル)
-	if m.diffSHA != "" {
+	if m.diffOv.visible() {
 		return m.handleDiffKey(key)
 	}
 	// b = push / u = pull --rebase (どちらも y/N 確認へ)。glogx の独自機能。
@@ -942,10 +935,8 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 	m.jobDetailBusy = map[string]bool{}
 	m.prCache = map[string]*PRRef{}
 	m.prBusy = map[string]bool{}
-	m.diffCache = map[string][]string{}
-	m.diffBusy = map[string]bool{}
+	m.diffOv.reset()
 	m.closePanel()
-	m.diffSHA = ""
 	m.pushPoll = nil
 	m.scrollAnim = false      // pull リロードは pull アニメ側が担うので j/k glide は破棄
 	m.cursor, m.offset = 0, 0 // カーソルは新規コミットの先頭へ (ユーザー要望 2026-07-20)
@@ -1629,6 +1620,7 @@ func (m *browseModel) openPR() tea.Cmd {
 
 // openDiff はカーソル位置 (パネル表示中はそのコミット) の diff ポップアップを開く (d キー)。
 // 同じコミットで再度 d を押すと閉じる (toggle)。job パネルは閉じてから開く (重ね順の単純化)。
+// ターゲット選定・パネル閉じ・非同期取得の境界だけをここで持ち、pager の状態は diffOv が持つ。
 func (m *browseModel) openDiff() tea.Cmd {
 	if len(m.commits) == 0 {
 		return nil
@@ -1638,19 +1630,9 @@ func (m *browseModel) openDiff() tea.Cmd {
 		sha = m.panelSHA
 	}
 	m.closePanel()
-	if m.diffSHA == sha {
-		m.diffSHA = ""
-		return nil
+	if !m.diffOv.open(sha) {
+		return nil // toggle 閉 / キャッシュヒット / 取得中: 追加取得は不要
 	}
-	m.diffSHA = sha
-	m.diffOffset = 0
-	if _, ok := m.diffCache[sha]; ok {
-		return nil
-	}
-	if m.diffBusy[sha] {
-		return nil
-	}
-	m.diffBusy[sha] = true
 	colored := m.colored
 	cmd := func() tea.Msg {
 		lines, err := loadCommitDiff(sha, colored)
@@ -1659,71 +1641,27 @@ func (m *browseModel) openDiff() tea.Cmd {
 	return tea.Batch(cmd, m.maybeTick())
 }
 
-// handleDiffKey は diff ポップアップ表示中のキー操作。中身は pager なので less 流儀:
-// Space/Enter は「閉じる」ではなくスクロール (実機で Space/Enter 送りの途中に突然閉じる
-// 誤爆報告があり修正 2026-07-19)。末尾に達したら最終行を表示したまま止まる (自動で閉じない)。
-// 閉じるのは q / h / Esc / d だけ。
+// handleDiffKey は diff ポップアップ表示中のキー操作。y (URL コピー) は境界をまたぐのでここで
+// 処理し、スクロール/閉じるは diffOv.scroll へ委譲する (pager 流儀の詳細は diffOverlay 側)。
 func (m *browseModel) handleDiffKey(key string) (tea.Model, tea.Cmd) {
-	rows := m.visibleDiffRows()
-	maxOffset := max(len(m.diffCache[m.diffSHA])-rows, 0)
-	switch key {
-	case "q", "esc", "h", "left", "d":
-		m.diffSHA = ""
-		m.diffOffset = 0
-	case "j", "down", "ctrl+n", "enter":
-		m.diffOffset = min(m.diffOffset+1, maxOffset)
-	case "k", "up", "ctrl+p":
-		m.diffOffset = max(m.diffOffset-1, 0)
-	case "ctrl+d", "pgdown", " ", "f":
-		m.diffOffset = min(m.diffOffset+rows/2, maxOffset)
-	case "ctrl+u", "pgup", "b":
-		m.diffOffset = max(m.diffOffset-rows/2, 0)
-	case "g", "home":
-		m.diffOffset = 0
-	case "G", "end":
-		m.diffOffset = maxOffset
-	case "y":
+	if key == "y" {
 		m.copyFocusURL()
+		return m, nil
 	}
+	m.diffOv.scroll(key, m.visibleDiffRows())
 	return m, nil
 }
 
 // visibleDiffRows は diff ポップアップの本文行数。diff は主役コンテンツなので
 // ビューポートほぼ全面 (枠 2 行 + 余白 1 行 + ヒント行ぶんを差し引く) を使う。
+// 端末の高さ (pageSize) 依存なのでレイアウトを知る browseModel 側に残す。
 func (m *browseModel) visibleDiffRows() int {
 	return max(m.pageSize()-4, 3)
 }
 
-// diffBoxLines は diff ポップアップの描画行 (枠付き)。非表示なら nil。
+// diffBoxLines は diff ポップアップの描画行 (枠付き)。SHA からコミットを解決して diffOv へ渡す。
 func (m *browseModel) diffBoxLines() []string {
-	if m.diffSHA == "" {
-		return nil
-	}
-	width := m.width
-	if width <= 0 {
-		width = 80
-	}
-	commit := m.commitBySHA(m.diffSHA)
-	if commit == nil {
-		return nil
-	}
-	var rows []string
-	title := fmt.Sprintf(" diff: %s %s ", commit.ShortSHA, commit.Subject)
-	switch {
-	case m.diffBusy[m.diffSHA]:
-		rows = []string{paint(m.spinner()+" diff を取得中...", ansiDim, m.colored)}
-	default:
-		lines := m.diffCache[m.diffSHA]
-		if len(lines) == 0 {
-			rows = []string{paint("(diff はありません)", ansiDim, m.colored)}
-			break
-		}
-		start := min(m.diffOffset, max(len(lines)-1, 0))
-		end := min(start+m.visibleDiffRows(), len(lines))
-		rows = append(rows, lines[start:end]...)
-		title = fmt.Sprintf(" diff: %s [%d-%d/%d] %s ", commit.ShortSHA, start+1, end, len(lines), commit.Subject)
-	}
-	return buildPanelBox(title, rows, width, m.colored)
+	return m.diffOv.boxLines(m.width, m.colored, m.spinner(), m.commitBySHA(m.diffOv.sha), m.visibleDiffRows())
 }
 
 // fillUnknown は結果が得られなかった SHA を「取得中」のまま残さず unknown へ落とす。
@@ -1736,7 +1674,7 @@ func (m *browseModel) fillUnknown() {
 }
 
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.pushing || m.pulling || m.updating || m.pullAnimating || m.scrollAnim || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || len(m.diffBusy) > 0 || m.panelHasRunningJob() || m.usageOv.loading()
+	return m.fetching || m.pushing || m.pulling || m.updating || m.pullAnimating || m.scrollAnim || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || m.diffOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading()
 }
 
 // panelHasRunningJob は表示中の job パネルに実行中 (経過時間が増える) job があるか。
@@ -1854,7 +1792,7 @@ func (m *browseModel) View() string {
 	// diff ポップアップは job パネルよりさらに前面 (openDiff がパネルを閉じるため
 	// 実際に同時表示になることはないが、重ね順の契約としてパネルの後に描く)
 	if diffBox := m.diffBoxLines(); len(diffBox) > 0 {
-		window = overlayBox(window, diffBox, m.boxAnchor(lines, offset, m.diffSHA)+1, page)
+		window = overlayBox(window, diffBox, m.boxAnchor(lines, offset, m.diffOv.sha)+1, page)
 	}
 	// push 確認/実行中は画面中央のモーダルを最前面に重ねる (ユーザー要望 2026-07-19:
 	// hint 行の [y/N] だけでは気づきにくい)
@@ -2127,7 +2065,7 @@ func (m *browseModel) hintLine() string {
 		hint = m.spinner() + " pulling..."
 	case m.updating:
 		hint = m.spinner() + " claude update..."
-	case m.diffSHA != "":
+	case m.diffOv.visible():
 		hint = "j/k/Space: スクロール  g/G: 先頭/末尾  q/h: 閉じる"
 	case m.detailOpen:
 		hint = "j/k: スクロール  v: nvim で開く  Enter/h/q: 戻る  o: ブラウザ  y: URL コピー"
