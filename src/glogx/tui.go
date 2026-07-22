@@ -308,6 +308,19 @@ func fetchCIStatusesCmd(repo Repo, targets []string, wrap func(CIBatch, *GHError
 	}
 }
 
+// mergeCIBatch は CIBatch 応答を browseModel のキャッシュへ吸収する。fetched (終了時 SaveCache
+// 用の負キャッシュ) と statuses (表示用) は常に同一 source を受け、details / prCache も一緒に
+// 更新される — この「4 キャッシュを 1 単位で co-update する」不変条件を ciResult/detail/basis の
+// 3 ハンドラから 1 箇所へ局所化する (第 5 の co-update map が増えても touch は 1 箇所)。PR は
+// コミット行のバッジ表示と p キーの両方で使う。site 固有の invalidateLines / ghErr クリア /
+// detailsLoading 解除 / panelCursor クランプ / pushPoll 掃除は各ハンドラに残す (吸収の関心事ではない)。
+func (m *browseModel) mergeCIBatch(statuses map[string]CIState, details map[string][]CheckDetail, prs map[string]*PRRef) {
+	maps.Copy(m.fetched, statuses)
+	maps.Copy(m.statuses, statuses)
+	maps.Copy(m.details, details)
+	maps.Copy(m.prCache, prs)
+}
+
 func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.done {
 		// 終了確定後に届く残メッセージは無視する (q での取得中断が
@@ -351,11 +364,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// される 30 秒の負キャッシュ)。q での中断 (fillUnknown) と違い、こちらは API の
 		// 実際の返答に基づく確定
 		filled := fillUnknownFetched(msg.batch.Statuses, m.toFetch)
-		maps.Copy(m.fetched, filled)
-		maps.Copy(m.statuses, filled)
-		maps.Copy(m.details, msg.batch.Details)
-		// PR はバッジ表示と p キーの両方で使う (一括取得分で p が即開きになる)
-		maps.Copy(m.prCache, msg.batch.PRs)
+		m.mergeCIBatch(filled, msg.batch.Details, msg.batch.PRs)
 		m.fetching = false
 		// 一括取得待ちでパネルを開いていた SHA の loading を解除する (結果が来なかった
 		// SHA も含めて解除。details 不在は「(CI job 情報なし)」表示に落ちる)
@@ -394,10 +403,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.panelRefresh = false
 		}
 		m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (sticky 警告の防止・レビュー C4)
-		maps.Copy(m.fetched, msg.batch.Statuses)
-		maps.Copy(m.statuses, msg.batch.Statuses)
-		maps.Copy(m.details, msg.batch.Details)
-		maps.Copy(m.prCache, msg.batch.PRs)
+		m.mergeCIBatch(msg.batch.Statuses, msg.batch.Details, msg.batch.PRs)
 		// リフレッシュで job 数が縮んだ場合にフォーカスを範囲内へ戻す
 		if msg.sha == m.panelSHA && m.panelCursor >= len(m.details[m.panelSHA]) {
 			m.panelCursor = len(m.details[m.panelSHA]) - 1
@@ -414,10 +420,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case basisMsg:
 		m.invalidateLines()
 		m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (レビュー C4)
-		maps.Copy(m.fetched, msg.batch.Statuses)
-		maps.Copy(m.statuses, msg.batch.Statuses)
-		maps.Copy(m.details, msg.batch.Details)
-		maps.Copy(m.prCache, msg.batch.PRs)
+		m.mergeCIBatch(msg.batch.Statuses, msg.batch.Details, msg.batch.PRs)
 		// レスポンスに現れなかった target も含めて loading 解除し、Details エントリを
 		// 空スライスで確定させる (未設定のままだと同じ target を無限に取り直してしまう)。
 		for _, sha := range msg.targets {
