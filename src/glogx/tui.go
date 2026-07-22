@@ -163,15 +163,24 @@ var runGitPullRebase = func() error {
 	if dirErr == nil {
 		dir := strings.TrimSpace(string(gitDir))
 		if _, statErr := os.Stat(dir + "/rebase-merge"); statErr == nil {
-			_ = exec.Command("git", "rebase", "--abort").Run()
-			return fmt.Errorf("conflict のため rebase を中断して元に戻しました: %s", firstLine(strings.TrimSpace(string(out))))
+			return abortRebase(out)
 		}
 		if _, statErr := os.Stat(dir + "/rebase-apply"); statErr == nil {
-			_ = exec.Command("git", "rebase", "--abort").Run()
-			return fmt.Errorf("conflict のため rebase を中断して元に戻しました: %s", firstLine(strings.TrimSpace(string(out))))
+			return abortRebase(out)
 		}
 	}
 	return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+}
+
+// abortRebase は途中停止した rebase を中断し、結果に応じたメッセージを返す。
+// abort 自体が失敗したら「元に戻した」とは主張せず (壊れた状態が残っている可能性がある)、
+// 手動復旧を促す。out は pull --rebase の出力 (conflict 内容の提示用)。
+func abortRebase(out []byte) error {
+	conflict := firstLine(strings.TrimSpace(string(out)))
+	if err := exec.Command("git", "rebase", "--abort").Run(); err != nil {
+		return fmt.Errorf("conflict のため rebase 中断を試みましたが失敗しました。手動で `git rebase --abort` してください: %s", conflict)
+	}
+	return fmt.Errorf("conflict のため rebase を中断して元に戻しました: %s", conflict)
 }
 
 // pullBlockedByDirtyTree は git status --porcelain の出力に rebase を阻む tracked 変更

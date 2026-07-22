@@ -53,13 +53,13 @@ func (e *GHError) Error() string { return e.Detail }
 func (e *GHError) Warning() string {
 	switch e.Kind {
 	case GHNotInstalled:
-		return "glog: gh が見つからないため CI 状態を取得できません (brew install gh)"
+		return "glogx: gh が見つからないため CI 状態を取得できません (brew install gh)"
 	case GHNotAuthenticated:
-		return "glog: gh が未認証のため CI 状態を取得できません (gh auth login)"
+		return "glogx: gh が未認証のため CI 状態を取得できません (gh auth login)"
 	case GHRateLimited:
-		return "glog: GitHub API の rate limit に達しています: " + firstLine(e.Detail)
+		return "glogx: GitHub API の rate limit に達しています: " + firstLine(e.Detail)
 	default:
-		return "glog: CI 状態の取得に失敗しました: " + firstLine(e.Detail)
+		return "glogx: CI 状態の取得に失敗しました: " + firstLine(e.Detail)
 	}
 }
 

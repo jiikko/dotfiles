@@ -118,7 +118,7 @@ func ParseLog(out string) ([]Commit, error) {
 		}
 		parts := strings.SplitN(rec, fieldSep, numFields+1)
 		if len(parts) != numFields+1 {
-			return nil, fmt.Errorf("glog: git log の出力を解析できません (フィールド数 %d)", len(parts))
+			return nil, fmt.Errorf("glogx: git log の出力を解析できません (フィールド数 %d)", len(parts))
 		}
 		body := strings.TrimPrefix(parts[9], "\n")
 		body = strings.TrimRight(body, "\n")
@@ -158,7 +158,7 @@ func LoadHeadCommit() (*Commit, error) {
 		return nil, err
 	}
 	if len(commits) == 0 {
-		return nil, errors.New("glog: HEAD コミットがありません")
+		return nil, errors.New("glogx: HEAD コミットがありません")
 	}
 	return &commits[0], nil
 }

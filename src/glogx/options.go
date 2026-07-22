@@ -246,8 +246,8 @@ GitHub 連携と前提:
     gh が未導入・未認証でも Git 履歴の表示は成立する (CI 欄は ? / –)
   - remote (upstream → origin) から owner/repo を解決する。GitHub 以外の
     remote では CI 欄は – になる
-  - CI 状態は ~/.cache/glogx/ ($XDG_CACHE_HOME 対応) に状態別 TTL で
-    キャッシュされる (success/failure 24h, pending 10s など)
+  - CI 状態は ~/.cache/glog/ ($XDG_CACHE_HOME 対応) に状態別 TTL で
+    キャッシュされる (success/failure 24h, pending 10s など。本家 glog と共有)
 
 使用例:
   glogx                     直近 20 件をブラウズ
