@@ -140,6 +140,69 @@ func TestBrowsePanelRefreshLatchClearedOnClose(t *testing.T) {
 	}
 }
 
+// 二重 timer 防止: refresh in-flight (panelRefresh=true) 中に到着した detailMsg は、実行中 job が
+// まだ居ても新しい poll を張らない (panelPollMsg 側が既に次を予約済み)。wasRefresh を panelRefresh
+// クリア前に捕捉する順序が「1 open 世代につきポーリング鎖 1 本」の核。n=1 で maybeFetchETABasis を
+// nil に隔離し、返り Cmd が poll 決定だけを反映するようにする。
+func TestBrowsePanelRefreshArrivalDoesNotDoubleSchedulePoll(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StatePending
+	running := []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Now().Add(-time.Minute)}}
+	m.details[sha] = running
+	m.openPanel() // running job 付き → poll 予約
+	if _, cmd := m.Update(panelPollMsg{seq: m.panelPollSeq}); cmd == nil || !m.panelRefresh {
+		t.Fatal("poll で refresh が起動しない")
+	}
+	// refresh 結果 (detailMsg) が到着。wasRefresh=true なので新しい poll は張らない。n=1 で
+	// maybeFetchETABasis=nil のため、返り Cmd が nil であることが「poll を張っていない」の証跡。
+	_, cmd := m.Update(detailMsg{sha: sha, batch: CIBatch{Details: map[string][]CheckDetail{sha: running}}})
+	if cmd != nil {
+		t.Error("refresh 着地で二重に poll を張った (wasRefresh のとき poll は張らない契約)")
+	}
+	if m.panelRefresh {
+		t.Error("refresh 着地で panelRefresh が下りていない")
+	}
+}
+
+// 遅延 poll 開始: openPanel 時に details 未取得だった実行中コミットは、detailMsg 初到着
+// (wasRefresh=false) かつ実行中 job があるとき初めて poll を張る (openPanel 時点では details 未取得で
+// 判定できないため)。上のテストと対で「初回到着で張る／refresh 着地では張らない」を固定する。
+func TestBrowsePanelStartsPollOnFirstDetailArrival(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StatePending
+	m.openPanel() // details 未取得 → poll はまだ張られない
+	if m.panelHasRunningJob() {
+		t.Fatal("前提: details 未取得なので running 判定は false のはず")
+	}
+	running := []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Now().Add(-time.Minute)}}
+	_, cmd := m.Update(detailMsg{sha: sha, batch: CIBatch{Details: map[string][]CheckDetail{sha: running}}})
+	// n=1 で maybeFetchETABasis=nil。返り Cmd が非 nil なのは poll (schedulePanelPoll) が張られた証跡。
+	if cmd == nil {
+		t.Error("初回 detailMsg 到着で poll が張られない (openPanel 時は details 未取得で判定できないため遅延)")
+	}
+}
+
+// panelPollSeq 世代ガード (パネルが開いている状態): 開き直しで世代が進んだ後、旧世代の
+// panelPollMsg{seq:旧} は panelSHA が非空でも seq 不一致で破棄される (開き直しで残タイマーが
+// 二重ポーリングにならないための不変条件の直接検証)。
+func TestBrowsePanelPollSeqGuardDiscardsStaleGenerationWhileOpen(t *testing.T) {
+	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StatePending)
+	m.openPanel() // commit0
+	oldSeq := m.panelPollSeq
+	m.closePanel()
+	m.cursor = 1
+	m.openPanel() // commit1: 世代が進む・panelSHA は非空
+	if m.panelPollSeq == oldSeq {
+		t.Fatal("前提: 開き直しで世代が進んでいない")
+	}
+	if _, cmd := m.Update(panelPollMsg{seq: oldSeq}); cmd != nil {
+		t.Error("旧世代の panelPollMsg が破棄されず新しい poll を発行した (二重ポーリングの温床)")
+	}
+}
+
 // j/k でビューポートがコミット単位に動くとき、表示 offset を glide させる (ユーザー要望)。
 func TestBrowseScrollAnim(t *testing.T) {
 	m := newTestBrowse(t, 6, map[string]CIState{}, nil)
