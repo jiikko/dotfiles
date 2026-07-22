@@ -190,14 +190,24 @@ func TestBrowsePanelStartsPollOnFirstDetailArrival(t *testing.T) {
 func TestBrowsePanelPollSeqGuardDiscardsStaleGenerationWhileOpen(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StatePending)
+	// ⚠️ commit1 に実行中 job を持たせるのが要: これが無いと panelPollMsg ハンドラが seq 比較の
+	// 直後の `if !panelHasRunningJob()` で先に return し、seq ガードを踏まずにテストが通って
+	// しまう (seq ガードを削除しても PASS = 何も pin しない)。running job で panelHasRunningJob()==true
+	// にして初めて「seq 不一致だから破棄」経路を実際に検証できる。
+	running := []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Now().Add(-time.Minute)}}
 	m.openPanel() // commit0
 	oldSeq := m.panelPollSeq
 	m.closePanel()
 	m.cursor = 1
-	m.openPanel() // commit1: 世代が進む・panelSHA は非空
+	m.details[m.commits[1].SHA] = running
+	m.openPanel() // commit1: 世代が進む・panelSHA 非空・実行中 job あり
 	if m.panelPollSeq == oldSeq {
 		t.Fatal("前提: 開き直しで世代が進んでいない")
 	}
+	if !m.panelHasRunningJob() {
+		t.Fatal("前提: commit1 に実行中 job がない (seq ガードに到達できずテストが無意味化する)")
+	}
+	// 旧世代の panelPollMsg: 実行中 job があっても seq 不一致で破棄される (cmd==nil)。
 	if _, cmd := m.Update(panelPollMsg{seq: oldSeq}); cmd != nil {
 		t.Error("旧世代の panelPollMsg が破棄されず新しい poll を発行した (二重ポーリングの温床)")
 	}
