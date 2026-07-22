@@ -35,7 +35,20 @@ const (
 	scrollInterval  = 33 * time.Millisecond // scroll glide 中の高 FPS tick (~30fps。滑らかさ優先)
 	// maxPanelJobs は job パネルに一度に表示する行数。超過分はパネル内でスクロールする。
 	maxPanelJobs = 10
+	// usageRefreshInterval は usage オーバーレイをバックグラウンド再取得する周期 (ユーザー要望
+	// 2026-07-22)。/usage は LLM を呼ばないゼロコストなローカルコマンドなので毎分でも安価。
+	usageRefreshInterval = time.Minute
 )
+
+// usageRefreshMsg は usage オーバーレイの定期リフレッシュ発火 (usageRefreshInterval ごと)。
+type usageRefreshMsg struct{}
+
+// usageRefreshTick は次回の usage リフレッシュを usageRefreshInterval 後に予約する tea.Cmd。
+// Init で 1 本起動し、usageRefreshMsg ハンドラが毎回 1 本張り直すことで cron 型の単一チェーンに
+// なる (発火ごとに +1 予約なので二重化しない)。
+func usageRefreshTick() tea.Cmd {
+	return tea.Tick(usageRefreshInterval, func(time.Time) tea.Msg { return usageRefreshMsg{} })
+}
 
 type ciResultMsg struct {
 	batch CIBatch
@@ -394,10 +407,11 @@ func (m *browseModel) Init() tea.Cmd {
 	u := m.usageOv.fetchCmd()
 	// usage を起動時に取得するため tick を常に起動する (取得中スピナーを回す。取得完了で
 	// spinnerActive が false になり tick は自然に止まる)。CI fetch の有無に依らず起動する。
+	// usageRefreshTick で 1 分ごとのバックグラウンド再取得チェーンも起動する (ユーザー要望)。
 	if m.fetching {
-		return tea.Batch(m.fetch, prefix, u, m.maybeTick())
+		return tea.Batch(m.fetch, prefix, u, m.maybeTick(), usageRefreshTick())
 	}
-	return tea.Batch(prefix, u, m.maybeTick())
+	return tea.Batch(prefix, u, m.maybeTick(), usageRefreshTick())
 }
 
 func tickEvery(d time.Duration) tea.Cmd {
@@ -592,6 +606,11 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case usageMsg:
 		m.usageOv.handle(msg)
 		return m, nil
+	case usageRefreshMsg:
+		// バックグラウンドで /usage を再取得し、次回リフレッシュを予約する。取得中も snap は
+		// 消さないので loading() は false のままスピナーに落ちず、表示は last-good を維持する
+		// (handle の不変条件)。表示/非表示に依らず回し、隠れていても最新値を用意しておく。
+		return m, tea.Batch(m.usageOv.fetchCmd(), usageRefreshTick())
 	case panelPollMsg:
 		if msg.seq != m.panelPollSeq || m.panelSHA == "" {
 			return m, nil // パネルが閉じた/開き直された後の残タイマーは破棄

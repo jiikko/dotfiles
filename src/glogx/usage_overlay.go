@@ -35,7 +35,8 @@ type usageOverlay struct {
 // fetchCmd は Claude Code の /usage を非同期取得する tea.Cmd。LLM を呼ばない軽いローカル
 // コマンド (~440ms・ゼロコスト) だが初期描画のクリティカルパスには乗せない。cancel を保持し、
 // quit 時に走行中の subprocess を中断できるようにする (fast-quit での claude 子プロセスの
-// オーファン化を防ぐ)。起動時に一度だけ呼ばれる (U トグルは再 fetch しない)。
+// オーファン化を防ぐ)。起動時に 1 回 + 以降 usageRefreshInterval ごとにバックグラウンド再取得
+// で呼ばれる (U トグルは再 fetch しない)。定期リフレッシュ中も表示は last-good を保つ (handle 参照)。
 func (o *usageOverlay) fetchCmd() tea.Cmd {
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	o.cancel = cancel
@@ -47,7 +48,16 @@ func (o *usageOverlay) fetchCmd() tea.Cmd {
 }
 
 // handle は取得結果 (usageMsg) を格納する。
+//
+// 不変条件: 一度取れた usage 表示は、定期リフレッシュの一時的な失敗では失わない。既に
+// スナップショットがある状態で失敗結果が来たら last-good を保持し "取得失敗" へ落とさない
+// (1 分ごとの再取得が回線瞬断等でたまに転けても、右上の残量表示がチラつかない)。初回取得の
+// 失敗 (snap 未取得) はそのままエラー表示する。リフレッシュ成功は last-good を新値へ置き換え、
+// 初回失敗からの回復 (err クリア) も担う。
 func (o *usageOverlay) handle(msg usageMsg) {
+	if msg.err != nil && o.snap != nil {
+		return // 定期リフレッシュの一時失敗: last-good を保持し表示を崩さない
+	}
 	o.snap = msg.snap
 	o.err = msg.err
 }

@@ -199,3 +199,73 @@ func TestUsageOverlayBoxLinesError(t *testing.T) {
 		t.Errorf("エラー box に '取得失敗' が無い:\n%s", plain)
 	}
 }
+
+// --- 1 分ごとのバックグラウンド定期リフレッシュ (ユーザー要望 2026-07-22) ---
+
+// 不変条件: 一度取れた usage は定期リフレッシュの一時失敗で失わない。既に snap がある状態で
+// 失敗結果が来たら last-good を保持し "取得失敗" へ落とさない (毎分の再取得が瞬断で転けても
+// 右上表示がチラつかない)。
+func TestUsageHandlePreservesLastGoodOnRefreshError(t *testing.T) {
+	o := &usageOverlay{visible: true}
+	good := &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 10}}}
+	o.handle(usageMsg{snap: good})
+	// 定期リフレッシュが失敗
+	o.handle(usageMsg{err: errors.New("boom")})
+	if o.snap != good {
+		t.Error("リフレッシュ失敗で last-good スナップショットが消えた")
+	}
+	if o.err != nil {
+		t.Errorf("last-good があるのにエラーが表面化した: %v", o.err)
+	}
+}
+
+// 初回取得の失敗 (snap 未取得) はそのままエラー表示する。
+func TestUsageHandleInitialErrorSurfaces(t *testing.T) {
+	o := &usageOverlay{visible: true}
+	o.handle(usageMsg{err: errors.New("boom")})
+	if o.err == nil {
+		t.Error("初回取得失敗はエラー表示すべき")
+	}
+	if o.snap != nil {
+		t.Error("初回失敗で snap が nil でない")
+	}
+}
+
+// リフレッシュ成功は last-good を新値へ置き換える (err はクリア)。
+func TestUsageHandleRefreshSuccessReplaces(t *testing.T) {
+	o := &usageOverlay{visible: true}
+	v1 := &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 10}}}
+	v2 := &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 42}}}
+	o.handle(usageMsg{snap: v1})
+	o.handle(usageMsg{snap: v2})
+	if o.snap != v2 {
+		t.Error("リフレッシュ成功で新値へ置き換わっていない")
+	}
+	if o.err != nil {
+		t.Errorf("成功なのに err が残った: %v", o.err)
+	}
+}
+
+// 初回失敗 → リフレッシュ成功 で回復する (err クリア + snap セット)。
+func TestUsageHandleRecoversFromInitialError(t *testing.T) {
+	o := &usageOverlay{visible: true}
+	o.handle(usageMsg{err: errors.New("boom")}) // 初回失敗
+	good := &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 10}}}
+	o.handle(usageMsg{snap: good}) // リフレッシュで回復
+	if o.snap != good || o.err != nil {
+		t.Errorf("初回失敗から回復していない: snap=%v err=%v", o.snap, o.err)
+	}
+}
+
+// usageRefreshMsg はバックグラウンド再取得を仕掛け、次回リフレッシュを再予約する
+// (cmd 非 nil = チェーンが継続。fetchCmd 起動で cancel がセットされる)。
+func TestUsageRefreshMsgReschedulesAndFetches(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	_, cmd := m.Update(usageRefreshMsg{})
+	if cmd == nil {
+		t.Fatal("usageRefreshMsg が nil を返した (再取得も再予約もされない = リフレッシュ停止)")
+	}
+	if m.usageOv.cancel == nil {
+		t.Error("リフレッシュで fetchCmd が起動していない (cancel 未セット)")
+	}
+}
