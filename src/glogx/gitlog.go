@@ -43,6 +43,14 @@ type GitExitError struct {
 
 func (e *GitExitError) Error() string { return e.Stderr }
 
+// colorArg は git の --color フラグを colored に応じて返す。
+func colorArg(colored bool) string {
+	if colored {
+		return "--color=always"
+	}
+	return "--color=never"
+}
+
 // runGit は git を実行して stdout を返す。失敗時は *GitExitError。
 func runGit(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
@@ -78,11 +86,7 @@ func buildLogArgsWith(format string, opts *Options, colored bool) []string {
 		args = append(args, format)
 	}
 	args = append(args, fmt.Sprintf("--max-count=%d", opts.MaxCount))
-	if colored {
-		args = append(args, "--color=always")
-	} else {
-		args = append(args, "--color=never")
-	}
+	args = append(args, colorArg(colored))
 	if opts.Stat {
 		args = append(args, "--stat")
 	}
@@ -307,11 +311,7 @@ func LoadCommitDiff(sha string, colored bool) ([]string, error) {
 // フラグ未指定時は --stat 相当を出す (staged 変更の一覧が目的で、既定でフル patch は過剰なため)。
 func LoadStagedDiff(opts *Options, colored bool) (string, error) {
 	args := []string{"diff", "--cached"}
-	if colored {
-		args = append(args, "--color=always")
-	} else {
-		args = append(args, "--color=never")
-	}
+	args = append(args, colorArg(colored))
 	if opts.Patch {
 		// -p: フル patch (git diff --cached の既定出力)
 	} else {

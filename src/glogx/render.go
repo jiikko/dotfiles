@@ -110,11 +110,16 @@ func (o RenderOpts) decorColors() DecorColors {
 // 全行が右へ流れるのを防ぐ。
 const subjectWidthCap = 60
 
+// defaultBoundaryWidth は静的出力 (Width=0) 時の push 境界の罫線幅。subjectWidthCap と
+// 値が同じなのは偶然で意味は無関係 (端末幅の代替 vs subject 列上限)。片方だけ変えてよい。
+const defaultBoundaryWidth = 60
+
 // RenderLines はコミット列を描画行へ展開する。既定は git log 標準 (medium) 形式、
 // --oneline はコンパクト 1 行形式。CI 記号はコミットヘッダー行にだけ付く (issue の設計)。
 func RenderLines(commits []Commit, statuses map[string]CIState, o RenderOpts) []Line {
 	var lines []Line
-	if o.Oneline {
+	switch {
+	case o.Oneline:
 		subjectWidth := 0
 		authorWidth := 0
 		for _, c := range commits {
@@ -125,16 +130,15 @@ func RenderLines(commits []Commit, statuses map[string]CIState, o RenderOpts) []
 		for i, c := range commits {
 			lines = append(lines, Line{Text: renderOnelineRow(c, stateFor(statuses, c.SHA), subjectWidth, authorWidth, o), CommitIdx: i, Header: true})
 		}
-		return insertPushBoundary(lines, commits, statuses, o)
-	}
-	if o.Verbatim != nil {
-		return insertPushBoundary(decorateVerbatim(commits, statuses, o), commits, statuses, o)
-	}
-	for i, c := range commits {
-		if i > 0 {
-			lines = append(lines, Line{Text: "", CommitIdx: i - 1})
+	case o.Verbatim != nil:
+		lines = decorateVerbatim(commits, statuses, o)
+	default:
+		for i, c := range commits {
+			if i > 0 {
+				lines = append(lines, Line{Text: "", CommitIdx: i - 1})
+			}
+			lines = append(lines, mediumLines(c, i, stateFor(statuses, c.SHA), o)...)
 		}
-		lines = append(lines, mediumLines(c, i, stateFor(statuses, c.SHA), o)...)
 	}
 	return insertPushBoundary(lines, commits, statuses, o)
 }
@@ -169,7 +173,7 @@ func insertPushBoundary(lines []Line, commits []Commit, statuses map[string]CISt
 	}
 	width := o.Width
 	if width <= 0 {
-		width = 60
+		width = defaultBoundaryWidth
 	}
 	// ラベル付き origin 行を組む共通ヘルパー。head/罫線は dim、ラベルだけ色+太字で強調。
 	labeledRule := func(label, labelColor string) string {
@@ -266,16 +270,26 @@ func RenderStatic(commits []Commit, statuses map[string]CIState, o RenderOpts) s
 	return strings.Join(texts, "\n")
 }
 
-// renderOnelineRow は --oneline の 1 行。列: 記号 / short SHA / (decorations) / subject / author / 相対日時。
-func renderOnelineRow(c Commit, state CIState, subjectWidth, authorWidth int, o RenderOpts) string {
+// commitHeaderPrefix は "記号 SHA (decorations)" を組み立てる。shaText は表記の違い
+// (short SHA / "commit <full>") を呼び出し側が渡す。PR バッジ・subject は含めない
+// (行末・列揃えの都合で呼び出し側が付ける)。3 つのレンダラ間で共通化し、SHA 表記や
+// decoration の表示条件を 1 箇所で変えられるようにする。
+func commitHeaderPrefix(shaText, decoration string, state CIState, o RenderOpts) string {
 	var b strings.Builder
 	b.WriteString(StatusGlyph(state, o.Colored, o.Spinner))
 	b.WriteString(" ")
-	b.WriteString(paint(c.ShortSHA, ansiYellow, o.Colored))
-	if c.Decoration != "" {
+	b.WriteString(paint(shaText, ansiYellow, o.Colored))
+	if decoration != "" {
 		b.WriteString(" ")
-		b.WriteString(renderDecoration(c.Decoration, o))
+		b.WriteString(renderDecoration(decoration, o))
 	}
+	return b.String()
+}
+
+// renderOnelineRow は --oneline の 1 行。列: 記号 / short SHA / (decorations) / subject / author / 相対日時。
+func renderOnelineRow(c Commit, state CIState, subjectWidth, authorWidth int, o RenderOpts) string {
+	var b strings.Builder
+	b.WriteString(commitHeaderPrefix(c.ShortSHA, c.Decoration, state, o))
 	b.WriteString(" ")
 	subject := runewidth.Truncate(c.Subject, subjectWidthCap, "…")
 	b.WriteString(runewidth.FillRight(subject, subjectWidth))
@@ -318,13 +332,7 @@ func prBadge(sha string, o RenderOpts) string {
 func mediumLines(c Commit, idx int, state CIState, o RenderOpts) []Line {
 	var lines []Line
 	var h strings.Builder
-	h.WriteString(StatusGlyph(state, o.Colored, o.Spinner))
-	h.WriteString(" ")
-	h.WriteString(paint("commit "+c.SHA, ansiYellow, o.Colored))
-	if c.Decoration != "" {
-		h.WriteString(" ")
-		h.WriteString(renderDecoration(c.Decoration, o))
-	}
+	h.WriteString(commitHeaderPrefix("commit "+c.SHA, c.Decoration, state, o))
 	h.WriteString(prBadge(c.SHA, o))
 	lines = append(lines, Line{Text: h.String(), CommitIdx: idx, Header: true})
 	lines = append(lines, Line{Text: "Author: " + c.Author + " <" + c.AuthorEmail + ">", CommitIdx: idx})
@@ -358,9 +366,8 @@ func mediumLines(c Commit, idx int, state CIState, o RenderOpts) []Line {
 func RenderCached(head *Commit, state CIState, diff string, colored bool, spinner string) string {
 	var b strings.Builder
 	b.WriteString("HEAD CI: ")
-	b.WriteString(StatusGlyph(state, colored, spinner))
-	b.WriteString(" ")
-	b.WriteString(paint(head.ShortSHA, ansiYellow, colored))
+	// staged 変更に decoration は無い。RenderOpts は表記共通化のための最小構築。
+	b.WriteString(commitHeaderPrefix(head.ShortSHA, "", state, RenderOpts{Colored: colored, Spinner: spinner}))
 	b.WriteString(" ")
 	b.WriteString(head.Subject)
 	b.WriteString("\nStaged changes:\n")
@@ -492,6 +499,13 @@ func clipToWidth(line string, width int) string {
 	return runewidth.Truncate(plain, width, "…")
 }
 
+// isANSITerminator は ESC シーケンス中の rune r がシーケンスを終端する最終バイトか
+// を返す (CSI の最終バイトは英字)。truncateKeepANSI / dropToColumn / stripANSI が
+// 同じ終端判定を共有し、OSC 等への対応拡張時に 1 箇所だけ直せばよいようにする。
+func isANSITerminator(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+}
+
 // truncateKeepANSI は s を表示幅 width まで切り詰めるが SGR エスケープは保持する
 // (可視文字だけを幅に数える)。clipToWidth が切り詰め時に色を捨てるのと対照的に、
 // overlay で覆う行の「見えている左側」を色付きのまま残すために使う。末尾に reset は
@@ -510,7 +524,7 @@ func truncateKeepANSI(s string, width int) string {
 		switch {
 		case inEscape:
 			b.WriteRune(r)
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			if isANSITerminator(r) {
 				inEscape = false
 			}
 		case r == '\x1b':
@@ -547,7 +561,7 @@ func dropToColumn(s string, n int) string {
 		switch {
 		case inEscape:
 			esc.WriteRune(r)
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			if isANSITerminator(r) {
 				inEscape = false
 				sgr.WriteString(esc.String()) // cut 前の SGR を蓄積 (後で replay)
 				esc.Reset()
@@ -579,7 +593,7 @@ func stripANSI(s string) string {
 	for _, r := range s {
 		switch {
 		case inEscape:
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			if isANSITerminator(r) {
 				inEscape = false
 			}
 		case r == '\x1b':

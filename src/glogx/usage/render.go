@@ -124,21 +124,29 @@ func padLeft(s string, w int) string {
 // remainCols は残り時間を (日 / 時間 / 分) のスロット文字列に分解する。時間と分は常に出し
 // (5h セッションと週制限で粒度を揃え、分の列が片方だけ空いて不揃いに見えるのを防ぐ)、日は
 // 1日以上のときだけ出す。空スロットは "" (呼び出し側が列幅ぶんの空白で埋める)。
+// breakdown は Duration を 日/時間/分 に分解する (秒以下は切り捨て)。remainCols と
+// formatRemain が同じ単位変換を共有し、境界の丸め方を 1 箇所で持つ。
+func breakdown(d time.Duration) (days, hours, minutes int) {
+	if d < 0 {
+		d = 0
+	}
+	days = int(d / (24 * time.Hour))
+	hours = int((d % (24 * time.Hour)) / time.Hour)
+	minutes = int((d % time.Hour) / time.Minute)
+	return
+}
+
 func remainCols(d time.Duration) (day, hour, minute string) {
 	// 経過後 (d<=0) も「0時間0分」を返す (RenderLine の formatRemain は「リセット済み」)。
 	// 意図的な非対称: table は 日/時間/分 の列に分けて縦揃えするため、経過後だけ 1 セルの
 	// 「リセット済み」を返すと列分割が崩れる。ResetAt は fetch 時に固定されるので、モーダルを
 	// 開いたままリセットを跨ぎ再 fetch されずに再描画したときだけ 0 表示になる (行全体が
 	// stale になるレアケースで、隣にリセット時刻が並ぶため致命的誤読ではない)。
-	if d < 0 {
-		d = 0
+	days, hours, minutes := breakdown(d)
+	if days >= 1 {
+		day = fmt.Sprintf("%d日", days)
 	}
-	if d >= 24*time.Hour {
-		day = fmt.Sprintf("%d日", int(d/(24*time.Hour)))
-	}
-	return day,
-		fmt.Sprintf("%d時間", int((d%(24*time.Hour))/time.Hour)),
-		fmt.Sprintf("%d分", int((d%time.Hour)/time.Minute))
+	return day, fmt.Sprintf("%d時間", hours), fmt.Sprintf("%d分", minutes)
 }
 
 // resetCols はリセット時刻を (月 / 日 / 時刻) のスロットに分解する (列右寄せで整列用)。
@@ -178,14 +186,11 @@ func formatRemain(d time.Duration) string {
 	if d <= 0 {
 		return "リセット済み"
 	}
-	if d < 24*time.Hour {
-		h := int(d / time.Hour)
-		m := int((d % time.Hour) / time.Minute)
-		return fmt.Sprintf("%d時間%d分", h, m)
+	days, hours, minutes := breakdown(d)
+	if days < 1 {
+		return fmt.Sprintf("%d時間%d分", hours, minutes)
 	}
-	days := int(d / (24 * time.Hour))
-	h := int((d % (24 * time.Hour)) / time.Hour)
-	return fmt.Sprintf("%d日%d時間", days, h)
+	return fmt.Sprintf("%d日%d時間", days, hours)
 }
 
 // formatReset はリセット時刻を "7月22日03:09" へ整形する (Go の参照時刻 1=月 2=日 15=時 04=分)。
