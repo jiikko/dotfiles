@@ -31,7 +31,6 @@
 | nvim-tree.lua | `<C-e>` / `:NvimTreeToggle` 等 |
 | mason.nvim | `:Mason` |
 | render-markdown.nvim | `.md` / `.markdown` を開いた |
-| sidekick.nvim | `<C-Space>` / `<leader>sc` 等 |
 
 (一覧は固定ではない。`:PluginLoadStats` が spec から動的に判定して表示する)
 

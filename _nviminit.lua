@@ -219,7 +219,7 @@ require("lazy").setup({
         { "<leader>a", group = "code action / 診断" },
         { "<leader>g", group = "git blame / go 定義" },
         { "<leader>n", group = "filer (nvim-tree)" },
-        { "<leader>s", group = "split / sidekick" },
+        { "<leader>s", group = "split" },
         { "<leader>r", group = "ruby refactor" },
         { "<leader>y", group = "ruby yard" },
       },
@@ -784,47 +784,6 @@ require("lazy").setup({
       retirementAgeMins = 20,  -- 20分間使わなかったら自動削除
       minimumBufferNum = 4,    -- バッファが4個未満の時は削除しない
       notificationOnAutoClose = true, -- 削除時に通知（nvim-notifyが必要）
-    },
-  },
-  {
-    "folke/sidekick.nvim",
-    opts = {
-      cli = {
-        mux = {
-          enabled = true, -- tmux統合を有効化
-        },
-        watch = true,
-        win = {
-          layout = "float", -- フロートウィンドウで表示
-          -- width/height は layout ごとのネスト (float.* / split.*) 配下に置く必要がある。
-          -- layout の兄弟に直接置くと読まれず既定 0.9/0.9 に落ちる (sidekick c93c0cb 以降の仕様)。
-          float = {
-            width = 0.6,  -- 画面の60%
-            height = 0.7, -- 画面の70%
-          },
-        },
-      },
-    },
-    keys = {
-      {
-        "<C-Space>",
-        function() require("sidekick.cli").toggle() end,
-        desc = "Sidekick Toggle",
-        mode = { "n", "t", "i", "x" },
-      },
-      -- ターミナルモード内でスクロール
-      { "<C-u>", [[<C-\><C-n><C-u>]], mode = "t", desc = "Scroll up in terminal" },
-      { "<C-d>", [[<C-\><C-n><C-d>]], mode = "t", desc = "Scroll down in terminal" },
-      {
-        "<leader>sc",
-        function() require("sidekick.cli").toggle({ name = "claude", focus = true }) end,
-        desc = "Sidekick Toggle Claude",
-      },
-      {
-        "<leader>ss",
-        function() require("sidekick.cli").select() end,
-        desc = "Sidekick Select CLI",
-      },
     },
   },
   {
