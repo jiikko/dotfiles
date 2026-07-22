@@ -300,22 +300,23 @@ type browseModel struct {
 	frame          int
 	width          int
 	height         int
-	cursor         int                 // コミット index
-	offset         int                 // ビューポート先頭の行 index (論理 = カーソル可視化の着地点)
-	offsetShown    int                 // 描画に使う表示 offset (scrollAnim 中だけ offset と乖離し glide)
-	scrollAnim     bool                // j/k のコミット単位スクロールを表示 offset で滑らせている最中か
-	scrollFrom     int                 // scroll glide 開始時の表示 offset (ease-in の進捗基点)
-	scrollFrame    int                 // scroll glide の経過フレーム数 (ease-in の進捗)
-	panelSHA       string              // job パネルを表示中のコミット SHA ("" = パネルなし)
-	panelCursor    int                 // パネル内で選択中の job index (-1 = タイトル行にフォーカス)
-	panelPollSeq   int                 // パネル開閉の世代 (panelPollMsg の有効性判定)
-	panelRefresh   bool                // パネルの定期リフレッシュ実行中 (detailsLoading と別: 表示を「取得中」に落とさない)
-	detailOpen     bool                // job 詳細 (annotations / ログ tail) ポップアップを表示中か
-	detailOffset   int                 // 詳細ポップアップのスクロール位置
-	jobDetail      map[string][]string // key (sha/jobIdx) → 詳細行 (メモリ内キャッシュ)
-	jobDetailBusy  map[string]bool     // 取得中の key
-	prCache        map[string]*PRRef   // sha → 紐づく PR (nil 格納 = 確認済みで PR なし)
-	prBusy         map[string]bool     // PR 取得中の sha
+	cursor         int    // コミット index
+	offset         int    // ビューポート先頭の行 index (論理 = カーソル可視化の着地点)
+	offsetShown    int    // 描画に使う表示 offset (scrollAnim 中だけ offset と乖離し glide)
+	scrollAnim     bool   // j/k のコミット単位スクロールを表示 offset で滑らせている最中か
+	scrollFrom     int    // scroll glide 開始時の表示 offset (ease-in の進捗基点)
+	scrollFrame    int    // scroll glide の経過フレーム数 (ease-in の進捗)
+	panelSHA       string // job パネルを表示中のコミット SHA ("" = パネルなし)
+	panelCursor    int    // パネル内で選択中の job index (-1 = タイトル行にフォーカス)
+	panelPollSeq   int    // パネル開閉の世代 (panelPollMsg の有効性判定)
+	panelRefresh   bool   // パネルの定期リフレッシュ実行中 (detailsLoading と別: 表示を「取得中」に落とさない)
+	// job 詳細ポップアップ (annotations / ログ tail) の pager 状態と描画は jobDetailOverlay 型
+	// (job_detail_overlay.go) に切り出す。panel-frame (panelSHA/panelCursor/poll/refresh) と ETA・
+	// CI 取得は details/statuses/commits と構造的に結合するため browseModel に残す (詳細は同ファイル)。
+	// cache キー (detailKey) はパネルのカーソル座標から借りる (identity 非所有) ので呼び出し側で注入。
+	detailOv jobDetailOverlay
+	prCache  map[string]*PRRef // sha → 紐づく PR (nil 格納 = 確認済みで PR なし)
+	prBusy   map[string]bool   // PR 取得中の sha
 	// diff ポップアップ (d キー) の状態と描画は diffOverlay 型 (diff_overlay.go) に切り出し、
 	// ここは 1 フィールドだけ持つ。ターゲット選定・非同期取得・URL コピーは境界をまたぐため
 	// openDiff / handleDiffKey に薄く残す。
@@ -360,8 +361,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		fetched:        map[string]CIState{},
 		details:        map[string][]CheckDetail{},
 		detailsLoading: map[string]bool{},
-		jobDetail:      map[string][]string{},
-		jobDetailBusy:  map[string]bool{},
+		detailOv:       newJobDetailOverlay(),
 		prCache:        map[string]*PRRef{},
 		prBusy:         map[string]bool{},
 		diffOv:         newDiffOverlay(),
@@ -559,15 +559,11 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case jobDetailMsg:
-		delete(m.jobDetailBusy, msg.key)
-		m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (レビュー C4)
-		if msg.lines != nil {
-			m.jobDetail[msg.key] = msg.lines
-			if m.detailOpen && m.detailKey() == msg.key {
-				// ログは末尾 (直近の出力) が本題なので下端から表示する
-				m.detailOffset = max(len(msg.lines)-m.visibleDetailRows(), 0)
-			}
-		}
+		m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (レビュー C4)。
+		// ⚠️ ghErr は共有 sticky 警告なので detailOv.receive に閉じず browseModel で無条件代入する。
+		// receive は busy 落とし・cache 格納・(今開いている詳細なら) 末尾スクロールを担う。currentKey は
+		// live な detailKey() を渡す (snapshot 禁止: リフレッシュで panelCursor がクランプされ得るため)。
+		m.detailOv.receive(msg, m.detailKey(), m.visibleDetailRows())
 		return m, nil
 	case prMsg:
 		delete(m.prBusy, msg.sha)
@@ -809,9 +805,8 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// コミット一覧、と閉じていき、最上位でだけ終了。即終了したいときは Ctrl-C
 	if key == "q" {
 		switch {
-		case m.detailOpen:
-			m.detailOpen = false
-			m.detailOffset = 0
+		case m.detailOv.visible():
+			m.detailOv.close()
 		case m.panelSHA != "":
 			m.closePanel()
 		default:
@@ -897,8 +892,7 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 	m.statuses, m.toFetch, m.repo, m.hasRepo, _ = planStatuses(m.opts, shas)
 	m.details = map[string][]CheckDetail{}
 	m.detailsLoading = map[string]bool{}
-	m.jobDetail = map[string][]string{}
-	m.jobDetailBusy = map[string]bool{}
+	m.detailOv.reset() // job 詳細ログキャッシュも破棄 (旧 SHA の残骸を持ち越さない)
 	m.prCache = map[string]*PRRef{}
 	m.prBusy = map[string]bool{}
 	m.diffOv.reset()
@@ -1091,7 +1085,7 @@ func (m *browseModel) quit() (tea.Model, tea.Cmd) {
 // 開閉 toggle)、job 行 = 詳細 (annotations / ログ tail) ポップアップを開く。
 // ブラウザで開くのは o (ユーザー要望)。
 func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
-	if m.detailOpen {
+	if m.detailOv.visible() {
 		return m.handleDetailKey(key)
 	}
 	jobs := m.details[m.panelSHA]
@@ -1140,34 +1134,21 @@ func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleDetailKey は job 詳細ポップアップ表示中のキー操作。j/k は詳細のスクロール。
-// Enter は toggle の閉じる側、o はブラウザ。
+// handleDetailKey は job 詳細ポップアップ表示中のキー操作。o(ブラウザ)/v(nvim)/y(コピー) の
+// 越境キーはここで処理し、スクロール/閉じ (enter/space/esc/h/left/j/k/g/G/pg) は detailOv.scroll へ
+// 委譲する (handleDiffKey が y を残して scroll を委譲するのと同型)。cache キー/表示行数はレイアウト・
+// パネル状態依存なので detailKey()/visibleDetailRows() を引数で注入する。
 func (m *browseModel) handleDetailKey(key string) (tea.Model, tea.Cmd) {
-	rows := m.visibleDetailRows()
-	maxOffset := max(len(m.jobDetail[m.detailKey()])-rows, 0)
 	switch key {
-	case "enter", " ", "esc", "h", "left":
-		m.detailOpen = false
-		m.detailOffset = 0
-	case "j", "down", "ctrl+n":
-		m.detailOffset = min(m.detailOffset+1, maxOffset)
-	case "k", "up", "ctrl+p":
-		m.detailOffset = max(m.detailOffset-1, 0)
-	case "ctrl+d", "pgdown":
-		m.detailOffset = min(m.detailOffset+rows/2, maxOffset)
-	case "ctrl+u", "pgup":
-		m.detailOffset = max(m.detailOffset-rows/2, 0)
-	case "g", "home":
-		m.detailOffset = 0
-	case "G", "end":
-		m.detailOffset = maxOffset
 	case "o":
 		return m, m.openJob()
 	case "v":
 		return m, m.openJobLogInEditor()
 	case "y":
 		m.copyFocusURL()
+		return m, nil
 	}
+	m.detailOv.scroll(key, m.detailKey(), m.visibleDetailRows())
 	return m, nil
 }
 
@@ -1268,17 +1249,10 @@ func (m *browseModel) openJobDetail() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	m.detailOpen = true
-	m.detailOffset = 0
 	key := m.detailKey()
-	if lines, ok := m.jobDetail[key]; ok {
-		m.detailOffset = max(len(lines)-m.visibleDetailRows(), 0)
-		return nil
+	if !m.detailOv.startOpen(key, m.visibleDetailRows()) {
+		return nil // cache ヒット (offset は末尾へ) / 取得中: 追加取得は不要
 	}
-	if m.jobDetailBusy[key] {
-		return nil
-	}
-	m.jobDetailBusy[key] = true
 	repo := m.repo
 	cmd := func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
@@ -1451,8 +1425,7 @@ func (m *browseModel) closePanel() {
 	// の choke point なのでここ 1 箇所で覆える。閉じた後に届く旧 refresh の detailMsg は
 	// panelSHA と不一致で無害 (maps.Copy はキャッシュ更新のみ・poll は再開しない)。
 	m.panelRefresh = false
-	m.detailOpen = false
-	m.detailOffset = 0
+	m.detailOv.close() // 詳細ポップアップも閉じる (panel/detail 両クラスタの choke point)
 }
 
 // openURLCmd は URL をブラウザで開く Cmd。StatusContext の targetUrl 等、外部が任意に
@@ -1484,7 +1457,7 @@ func jobLogText(lines []string) string {
 // (`nvim -`) で渡すのでディスクにファイルを残さず、nvim を閉じればバッファごと破棄される
 // (ユーザー要望 2026-07-21: ログのテキストをコピーしたいが後に残したくない)。
 func (m *browseModel) openJobLogInEditor() tea.Cmd {
-	lines := m.jobDetail[m.detailKey()]
+	lines := m.detailOv.lines(m.detailKey())
 	if len(lines) == 0 {
 		m.notice = "開けるログがありません"
 		return nil
@@ -1602,7 +1575,7 @@ func (m *browseModel) fillUnknown() {
 }
 
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.actModal.running() || m.pullAnimating || m.scrollAnim || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || len(m.jobDetailBusy) > 0 || m.diffOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading()
+	return m.fetching || m.actModal.running() || m.pullAnimating || m.scrollAnim || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading()
 }
 
 // panelHasRunningJob は表示中の job パネルに実行中 (経過時間が増える) job があるか。
@@ -1827,7 +1800,7 @@ func (m *browseModel) panelLines() []string {
 		title = fmt.Sprintf(" CI jobs: %s (%d 件) %s ", commit.ShortSHA, len(jobs), commit.Subject)
 	}
 	box := buildPanelBox(title, rows, width, m.colored)
-	if m.detailOpen {
+	if m.detailOv.visible() {
 		// 詳細ボックスは job パネルの「子」であることが分かるよう段差を付ける (ユーザー要望)
 		for _, line := range m.detailBoxLines(width - len(detailIndent)) {
 			box = append(box, detailIndent+line)
@@ -1839,34 +1812,14 @@ func (m *browseModel) panelLines() []string {
 // detailIndent は job 詳細ボックスのツリー段差 (job パネルの子であることの視覚表現)。
 const detailIndent = "  "
 
-// detailBoxLines は job 詳細 (annotations / ログ tail) の第 2 ポップアップ。
-// job パネルの直下へ続けて重ねる。
+// detailBoxLines は job 詳細ポップアップの描画行。job 名/cache キー/表示行数を解決して detailOv へ
+// 渡す (diffBoxLines が commit を解決して diffOv へ渡すのと同型)。job パネルの直下へ重ねる。
 func (m *browseModel) detailBoxLines(width int) []string {
 	name := ""
 	if job, ok := m.focusedJob(); ok {
 		name = job.Name
 	}
-	key := m.detailKey()
-	var rows []string
-	title := " " + name + " "
-	switch {
-	case m.jobDetailBusy[key]:
-		rows = []string{paint(m.spinner()+" 詳細を取得中...", ansiDim, m.colored)}
-	default:
-		lines := m.jobDetail[key]
-		if len(lines) == 0 {
-			rows = []string{paint("(詳細なし)", ansiDim, m.colored)}
-			break
-		}
-		start := min(m.detailOffset, max(len(lines)-1, 0))
-		end := min(start+m.visibleDetailRows(), len(lines))
-		rows = make([]string, 0, end-start)
-		for _, l := range lines[start:end] {
-			rows = append(rows, decorateDetailLine(l, m.colored))
-		}
-		title = fmt.Sprintf(" %s [%d-%d/%d] ", name, start+1, end, len(lines))
-	}
-	return buildPanelBox(title, rows, width, m.colored)
+	return m.detailOv.boxLines(width, m.colored, m.spinner(), name, m.detailKey(), m.visibleDetailRows())
 }
 
 // buildPanelBox は枠線付きのパネルを組み立てる。行の実効幅は ANSI を除いて計算する。
@@ -1995,7 +1948,7 @@ func (m *browseModel) hintLine() string {
 		hint = m.spinner() + " claude update..."
 	case m.diffOv.visible():
 		hint = "j/k/Space: スクロール  g/G: 先頭/末尾  q/h: 閉じる"
-	case m.detailOpen:
+	case m.detailOv.visible():
 		hint = "j/k: スクロール  v: nvim で開く  Enter/h/q: 戻る  o: ブラウザ  y: URL コピー"
 	case m.panelSHA != "" && m.panelCursor >= 0:
 		hint = "j/k: job 移動  Enter: 詳細ログ  o: ブラウザ  y: URL コピー  h/q: 閉じる"

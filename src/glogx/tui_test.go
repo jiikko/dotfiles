@@ -492,12 +492,12 @@ func TestBrowseEnterOpensDetailAndToggles(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	_, cmd := m.handleKey("enter")
-	if cmd == nil || !m.detailOpen {
-		t.Fatalf("job 行の Enter で詳細が開かない (cmd=%v detailOpen=%v)", cmd, m.detailOpen)
+	if cmd == nil || !m.detailOv.open {
+		t.Fatalf("job 行の Enter で詳細が開かない (cmd=%v detailOpen=%v)", cmd, m.detailOv.open)
 	}
 	m.Update(jobDetailMsg{key: m.detailKey(), lines: []string{"line"}})
 	m.handleKey("enter")
-	if m.detailOpen {
+	if m.detailOv.open {
 		t.Errorf("詳細表示中の Enter で閉じない (toggle)")
 	}
 	if m.panelSHA == "" || m.panelCursor != 0 {
@@ -613,7 +613,7 @@ func TestBrowseBatchedRunesKeyMsg(t *testing.T) {
 	m.openJobDetail()
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hhq")})
 	if !m.done {
-		t.Fatalf("hhq のまとめ配送で終了しない (detailOpen=%v panelSHA=%q)", m.detailOpen, m.panelSHA)
+		t.Fatalf("hhq のまとめ配送で終了しない (detailOpen=%v panelSHA=%q)", m.detailOv.open, m.panelSHA)
 	}
 	if cmd == nil {
 		t.Errorf("q の Quit Cmd が返らない")
@@ -628,11 +628,11 @@ func TestBrowseQPopsViewStack(t *testing.T) {
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
-	m.jobDetail[m.detailKey()] = []string{"line"}
+	m.detailOv.cache[m.detailKey()] = []string{"line"}
 	m.openJobDetail()
 	m.handleKey("q")
-	if m.detailOpen || m.panelSHA == "" || m.done {
-		t.Fatalf("q 1回目: 詳細だけ閉じるべき (detailOpen=%v panelSHA=%q done=%v)", m.detailOpen, m.panelSHA, m.done)
+	if m.detailOv.open || m.panelSHA == "" || m.done {
+		t.Fatalf("q 1回目: 詳細だけ閉じるべき (detailOpen=%v panelSHA=%q done=%v)", m.detailOv.open, m.panelSHA, m.done)
 	}
 	m.handleKey("q")
 	if m.panelSHA != "" || m.done {
@@ -651,7 +651,7 @@ func TestBrowseCtrlCQuitsAnywhere(t *testing.T) {
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
-	m.jobDetail[m.detailKey()] = []string{"line"}
+	m.detailOv.cache[m.detailKey()] = []string{"line"}
 	m.openJobDetail()
 	_, cmd := m.handleKey("ctrl+c")
 	if cmd == nil || !m.done {
@@ -733,9 +733,9 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
-	m.detailOpen = true
+	m.detailOv.open = true
 	m.panelCursor = 0
-	m.jobDetail[m.detailKey()] = []string{ansiRed + "boom" + ansiReset, "at foo.go:10"}
+	m.detailOv.cache[m.detailKey()] = []string{ansiRed + "boom" + ansiReset, "at foo.go:10"}
 
 	_, cmd := m.handleKey("v")
 	if cmd == nil || captured == nil {
@@ -760,7 +760,7 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	}
 
 	// ログが空なら起動しない
-	m.jobDetail[m.detailKey()] = nil
+	m.detailOv.cache[m.detailKey()] = nil
 	if _, cmd := m.handleKey("v"); cmd != nil {
 		t.Error("空ログで nvim を起動しようとした")
 	}
@@ -777,7 +777,7 @@ func TestBrowseJobDetailPopup(t *testing.T) {
 	if cmd == nil {
 		t.Fatalf("l で詳細取得 Cmd が返らない")
 	}
-	if !m.detailOpen || !m.jobDetailBusy[m.detailKey()] {
+	if !m.detailOv.open || !m.detailOv.busy[m.detailKey()] {
 		t.Fatalf("詳細が開いていない / busy でない")
 	}
 	if !strings.Contains(m.View(), "詳細を取得中") {
@@ -790,8 +790,8 @@ func TestBrowseJobDetailPopup(t *testing.T) {
 	}
 	m.Update(jobDetailMsg{key: m.detailKey(), lines: lines})
 	rows := m.visibleDetailRows()
-	if m.detailOffset != 30-rows {
-		t.Errorf("detailOffset = %d; want 末尾表示 %d", m.detailOffset, 30-rows)
+	if m.detailOv.offset != 30-rows {
+		t.Errorf("detailOffset = %d; want 末尾表示 %d", m.detailOv.offset, 30-rows)
 	}
 	if !strings.Contains(m.View(), "log line 29") {
 		t.Errorf("末尾行が見えていない (低い端末でも末尾は見える):\n%s", m.View())
@@ -809,24 +809,164 @@ func TestBrowseJobDetailPopup(t *testing.T) {
 	}
 	// k で上へスクロール、g で先頭
 	m.handleKey("k")
-	if m.detailOffset != 30-rows-1 {
-		t.Errorf("k 後の offset = %d", m.detailOffset)
+	if m.detailOv.offset != 30-rows-1 {
+		t.Errorf("k 後の offset = %d", m.detailOv.offset)
 	}
 	m.handleKey("g")
-	if m.detailOffset != 0 {
-		t.Errorf("g 後の offset = %d", m.detailOffset)
+	if m.detailOv.offset != 0 {
+		t.Errorf("g 後の offset = %d", m.detailOv.offset)
 	}
 	// h で job フォーカスへ戻る (パネルは開いたまま)
 	m.handleKey("h")
-	if m.detailOpen || m.panelSHA == "" || m.panelCursor != 0 {
-		t.Errorf("h 後の状態: detailOpen=%v panelSHA=%q cursor=%d", m.detailOpen, m.panelSHA, m.panelCursor)
+	if m.detailOv.open || m.panelSHA == "" || m.panelCursor != 0 {
+		t.Errorf("h 後の状態: detailOpen=%v panelSHA=%q cursor=%d", m.detailOv.open, m.panelSHA, m.panelCursor)
 	}
 	// 再度 l → キャッシュ済みなので fetch なしで即表示
 	if _, cmd := m.handleKey("l"); cmd != nil {
 		t.Errorf("キャッシュ済み詳細で再 fetch した")
 	}
-	if !m.detailOpen {
+	if !m.detailOv.open {
 		t.Errorf("2 回目の l で開かない")
+	}
+}
+
+// --- job 詳細ポップアップ characterization (jobDetailOverlay 抽出前の振る舞い固定) ---
+
+// キャッシュ済み job 詳細を開き直すと offset がログ末尾へ飛ぶ (先頭ではない)。抽出で
+// startOpen() を diffOv.open (offset=0) の clone にすると『開いた瞬間に最新ログ』が壊れる。
+func TestBrowseJobDetailReopenScrollsToTail(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	withJobs(m, 0)
+	m.openPanel()
+	m.handleKey("j")
+	m.handleKey("l")
+	lines := make([]string, 30)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("log line %d", i)
+	}
+	m.Update(jobDetailMsg{key: m.detailKey(), lines: lines})
+	m.handleKey("g") // 先頭へ
+	if m.detailOv.offset != 0 {
+		t.Fatalf("g で先頭に来ていない: offset=%d", m.detailOv.offset)
+	}
+	m.handleKey("h") // 閉じる (cache は残る)
+	if m.detailOv.open {
+		t.Fatal("h で閉じていない")
+	}
+	m.handleKey("l") // 再オープン (キャッシュヒット)
+	rows := m.visibleDetailRows()
+	if m.detailOv.offset != 30-rows {
+		t.Errorf("再オープン時の offset = %d; want 末尾 %d (最新ログを表示)", m.detailOv.offset, 30-rows)
+	}
+	if !strings.Contains(m.View(), "log line 29") {
+		t.Errorf("再オープンで末尾行が見えない:\n%s", m.View())
+	}
+}
+
+// jobDetailMsg の末尾スクロールは「今開いている詳細 (detailOpen かつ detailKey()==msg.key)」
+// のときだけ発火する。別 key の遅延結果・詳細非表示中の結果は offset を動かさない (identity
+// 非所有なので、抽出で receive が live key を受け取らないと誤発火/不発火する)。
+func TestBrowseJobDetailStaleMsgDoesNotMoveOffset(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	withJobs(m, 0) // job0=build, job1=lint
+	m.openPanel()
+	m.handleKey("j") // job0 (key = panelSHA/0)
+	m.handleKey("l")
+	m.Update(jobDetailMsg{key: m.detailKey(), lines: []string{"a", "b", "c"}})
+	m.handleKey("g") // offset=0
+	if m.detailOv.offset != 0 {
+		t.Fatalf("前提: offset=0 でない (%d)", m.detailOv.offset)
+	}
+	// 別 job (job1) 宛の遅延結果が届いても、今開いている job0 の offset は動かない
+	staleKey := fmt.Sprintf("%s/1", m.panelSHA)
+	longLines := make([]string, 50)
+	for i := range longLines {
+		longLines[i] = fmt.Sprintf("stale %d", i)
+	}
+	m.Update(jobDetailMsg{key: staleKey, lines: longLines})
+	if m.detailOv.offset != 0 {
+		t.Errorf("別 key の遅延結果で offset が動いた: %d; want 0", m.detailOv.offset)
+	}
+	// 詳細を閉じた状態でも jobDetailMsg は offset を動かさない
+	m.handleKey("h")
+	m.Update(jobDetailMsg{key: m.detailKey(), lines: longLines})
+	if m.detailOv.offset != 0 {
+		t.Errorf("詳細非表示中に offset が動いた: %d; want 0", m.detailOv.offset)
+	}
+}
+
+// job 詳細ポップアップ表示中の Space は「閉じる」(diff の Space=半ページ下スクロールとは逆)。
+// tig 流の「詳細→job 一覧へ戻る」。抽出で diffOv.scroll を素朴コピーすると Space が化ける。
+func TestBrowseJobDetailSpaceCloses(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	withJobs(m, 0)
+	m.openPanel()
+	m.handleKey("j")
+	m.handleKey("l")
+	m.Update(jobDetailMsg{key: m.detailKey(), lines: []string{"x", "y", "z"}})
+	m.handleKey(" ")
+	if m.detailOv.open {
+		t.Error("Space で詳細が閉じない (job 詳細では Space=閉じる)")
+	}
+	if m.panelSHA == "" {
+		t.Error("Space で詳細を閉じたら job 一覧に戻る (パネルは開いたまま)")
+	}
+}
+
+// closePanel は panel-frame と detail クラスタの両方を落とす唯一の choke point。詳細を開いた
+// まま閉じる経路 (reloadAfterPull 等) で detailOpen/detailOffset が確実に落ちる。抽出で
+// closePanel の detailOv.close() 化を漏らすと、次に開いたパネルの下に前 job のログが stale 表示。
+func TestBrowseClosePanelClosesOpenDetail(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	withJobs(m, 0)
+	m.openPanel()
+	m.handleKey("j")
+	m.handleKey("l")
+	m.Update(jobDetailMsg{key: m.detailKey(), lines: []string{"a", "b", "c", "d", "e"}})
+	m.handleKey("G") // offset を非 0 に
+	if !m.detailOv.open {
+		t.Fatal("前提: 詳細が開いていない")
+	}
+	m.closePanel()
+	if m.detailOv.open || m.detailOv.offset != 0 || m.panelSHA != "" {
+		t.Errorf("closePanel が詳細を落とさない: detailOpen=%v detailOffset=%d panelSHA=%q",
+			m.detailOv.open, m.detailOv.offset, m.panelSHA)
+	}
+}
+
+// job 詳細取得中 (jobDetailBusy に key) は spinnerActive() が true を返し tick が回り続ける。
+// 抽出で spinnerActive を detailOv.fetching() 参照に変え忘れると取得中スピナーが固まる。
+func TestBrowseJobDetailFetchKeepsSpinnerActive(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	withJobs(m, 0)
+	m.openPanel()
+	m.handleKey("j")
+	m.handleKey("l") // 未取得なので busy が立つ
+	if !m.detailOv.busy[m.detailKey()] {
+		t.Fatal("前提: 取得中フラグが立っていない")
+	}
+	if !m.spinnerActive() {
+		t.Error("job 詳細取得中に spinnerActive() が false (tick が止まりスピナーが固まる)")
+	}
+}
+
+// reloadAfterPull は job 詳細ログキャッシュ (jobDetail/jobDetailBusy) も破棄する。抽出で
+// detailOv.reset() の配線を漏らすと、pull 後 (SHA 不変のコミット) に旧ログ残骸が残る。
+func TestBrowseReloadAfterPullResetsJobDetailCache(t *testing.T) {
+	newTempRepo(t, []string{"first", "second"})
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.opts = &Options{MaxCount: 20}
+	m.detailOv.cache["stale/0"] = []string{"old log"}
+	m.detailOv.busy["stale/0"] = true
+	m.reloadAfterPull()
+	if len(m.detailOv.cache) != 0 || len(m.detailOv.busy) != 0 {
+		t.Errorf("reloadAfterPull で job 詳細キャッシュが残った: cache=%d busy=%d",
+			len(m.detailOv.cache), len(m.detailOv.busy))
 	}
 }
 
@@ -1273,7 +1413,7 @@ func TestJapaneseFullViewStaysInWidth(t *testing.T) {
 	}
 	m.openPanel()
 	m.handleKey("j")
-	m.jobDetail[m.detailKey()] = []string{
+	m.detailOv.cache[m.detailKey()] = []string{
 		strings.Repeat("日本語のログ行です。", 12),
 		"##[error]日本語のエラーメッセージ",
 	}
