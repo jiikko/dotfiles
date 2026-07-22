@@ -93,41 +93,40 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 	if !o.visible {
 		return nil
 	}
+	// 取得中/失敗でも省略しない "Claude Code · usage" を出す (ユーザー要望 2026-07-23)。箱幅は
+	// 下でこのタイトルが切り詰められない幅を最低確保する。
 	title := " Claude Code · usage "
 	var rows []string
 	switch {
 	case o.err != nil:
-		title = " usage "
 		rows = []string{paint("取得失敗", ansiDim, colored)}
 	case o.snap == nil:
-		title = " usage "
 		rows = []string{paint(spinner+" 取得中...", ansiDim, colored)}
 	default:
 		// CLI バージョンが取れていればタイトルに添える (取得失敗時は空で従来どおり)。
 		if v := o.snap.Version; v != "" {
 			title = " Claude Code v" + v + " · usage "
 		}
-		header, data := usage.RenderTable(o.snap, time.Now(), colored)
-		// 区切り罫線は列内容の最大幅に合わせて引く (箱の inner 幅と一致させる)。ヘッダーは
-		// 列見出し、罫線ともに dim。データ行はバーの色を活かすため素のまま。
-		w := runewidth.StringWidth(stripANSI(header))
+		// ヘッダー (列見出し) は自明なので表示しない (ユーザー要望 2026-07-23)。data 行のみ。
+		_, data := usage.RenderTable(o.snap, time.Now(), colored)
+		rows = append(rows, data...)
+		// 自動更新の明示フッターを content 幅に右寄せで添える (ユーザー要望)。値の取得は静かに
+		// 差し替わるので、更新中であることは出さない。
+		w := 0
 		for _, r := range data {
 			w = max(w, runewidth.StringWidth(stripANSI(r)))
 		}
-		rows = append([]string{
-			paint(header, ansiDim, colored),
-			paint(strings.Repeat("─", w), ansiDim, colored),
-		}, data...)
-		// バックグラウンドで usageRefreshInterval ごとに自動更新している旨をフッターで明示する
-		// (ユーザー要望 2026-07-22)。値の取得は静かに差し替わるので、更新中であることは出さない。
-		rows = append(rows, paint("1分ごとに更新", ansiDim, colored))
+		footer := "1分ごとに更新"
+		rows = append(rows, strings.Repeat(" ", max(w-runewidth.StringWidth(footer), 0))+paint(footer, ansiDim, colored))
 	}
-	// 枠幅 = 内容の最大表示幅 + 罫線・影の余白。端末幅を超えない範囲で内容にフィットさせる。
+	// 枠幅 = 内容の最大表示幅 + 罫線・影の余白。ただし title を切り詰めない幅 (title 幅 + 3。
+	// buildShadowPanelBox が title を fw-2=boxWidth-3 に truncate するため) を最低確保する。
+	// 端末幅は超えない。
 	inner := 0
 	for _, r := range rows {
 		inner = max(inner, runewidth.StringWidth(stripANSI(r)))
 	}
-	boxWidth := min(inner+usageBoxChrome, width)
+	boxWidth := min(max(inner+usageBoxChrome, runewidth.StringWidth(stripANSI(title))+3), width)
 	return buildShadowPanelBox(title, rows, boxWidth, colored)
 }
 

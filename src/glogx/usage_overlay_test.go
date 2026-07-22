@@ -196,9 +196,13 @@ func TestUsageBoxLines(t *testing.T) {
 	if len(loading) < 3 { // 上罫線 + 内容 + 下罫線 (影付きは更に多い)
 		t.Fatalf("取得中の box 行数が少ない: %d", len(loading))
 	}
-	joined := strings.Join(loading, "\n")
-	if !strings.Contains(stripANSI(joined), "取得中") {
-		t.Errorf("取得中 box に '取得中' が無い:\n%s", stripANSI(joined))
+	loadingPlain := stripANSI(strings.Join(loading, "\n"))
+	if !strings.Contains(loadingPlain, "取得中") {
+		t.Errorf("取得中 box に '取得中' が無い:\n%s", loadingPlain)
+	}
+	// 取得中でも title は省略せず "Claude Code · usage" を出す (ユーザー要望 2026-07-23)。
+	if !strings.Contains(loadingPlain, "Claude Code") {
+		t.Errorf("取得中 box の title が省略されている ('Claude Code' が無い):\n%s", loadingPlain)
 	}
 
 	m.usageOv.snap = &usage.Snapshot{Windows: []usage.Window{
@@ -209,6 +213,11 @@ func TestUsageBoxLines(t *testing.T) {
 	plain := stripANSI(strings.Join(box, "\n"))
 	if !strings.Contains(plain, "5h") || !strings.Contains(plain, "7d") {
 		t.Errorf("成功 box に 5h/7d が無い:\n%s", plain)
+	}
+	// 列見出し (ヘッダー) は表示しない (ユーザー要望 2026-07-23)。header 専用ラベル "リセット" が
+	// 出ていないことで検証する (データ行はリセット時刻を出すが「リセット」の語は出さない)。
+	if strings.Contains(plain, "リセット") {
+		t.Errorf("ヘッダー (列見出し) が消えていない ('リセット' が残る):\n%s", plain)
 	}
 
 	// 非表示なら nil。
@@ -245,8 +254,13 @@ func TestUsageOverlayBoxLinesError(t *testing.T) {
 	if len(box) == 0 {
 		t.Fatal("エラー時に box が空")
 	}
-	if plain := stripANSI(strings.Join(box, "\n")); !strings.Contains(plain, "取得失敗") {
+	plain := stripANSI(strings.Join(box, "\n"))
+	if !strings.Contains(plain, "取得失敗") {
 		t.Errorf("エラー box に '取得失敗' が無い:\n%s", plain)
+	}
+	// エラー時も title は省略しない (ユーザー要望 2026-07-23)。
+	if !strings.Contains(plain, "Claude Code") {
+		t.Errorf("エラー box の title が省略されている ('Claude Code' が無い):\n%s", plain)
 	}
 }
 
@@ -312,7 +326,9 @@ func TestUsageHandleRecoversFromInitialError(t *testing.T) {
 func TestUsageBoxLinesShowsAutoRefreshFooter(t *testing.T) {
 	ov := usageOverlay{
 		visible: true,
-		snap:    &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 20}}},
+		snap: &usage.Snapshot{Windows: []usage.Window{
+			{Label: "5h", Percent: 20, ResetAt: time.Now().Add(4 * time.Hour)},
+		}},
 	}
 	box := ov.boxLines(80, false, "|")
 	plain := stripANSI(strings.Join(box, "\n"))
@@ -322,6 +338,23 @@ func TestUsageBoxLinesShowsAutoRefreshFooter(t *testing.T) {
 	// フッターは末尾付近 (データ行の後) に出る: 5h 行より後であること
 	if strings.Index(plain, "1分ごとに更新") < strings.Index(plain, "5h") {
 		t.Errorf("フッターがデータ行より前に出ている:\n%s", plain)
+	}
+	// 右寄せ: フッター文言は行の右端 (右罫線 │ の直前) に来る。左端 "│ " 直後には出さない。
+	var footerLine string
+	for _, l := range box {
+		if strings.Contains(stripANSI(l), "1分ごとに更新") {
+			footerLine = stripANSI(l)
+			break
+		}
+	}
+	if footerLine == "" {
+		t.Fatal("フッター行が見つからない")
+	}
+	if !strings.Contains(footerLine, "1分ごとに更新 │") {
+		t.Errorf("フッターが右寄せされていない (右罫線に接していない):\n%q", footerLine)
+	}
+	if strings.Contains(footerLine, "│ 1分ごとに更新") {
+		t.Errorf("フッターが左寄せのまま (左罫線直後に出ている):\n%q", footerLine)
 	}
 }
 
