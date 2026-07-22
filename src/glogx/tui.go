@@ -1066,19 +1066,14 @@ func (m *browseModel) unpushedCount() int {
 	return n
 }
 
-// centerBox は狭い幅の影付きモーダルを画面幅内で水平センタリングする (垂直は View 側の
-// overlayBox anchor が中央に置く)。action モーダルと prefixNote トーストで共用する。
+// centerBox は狭い幅 (最大 44) の影付きモーダル行を組む。水平センタリングと背景リストへの
+// 合成は描画時に overlayCenteredBox が行う (行を塗り潰さず左右の背景を残す)。action モーダルと
+// prefixNote トーストで共用する。
 func centerBox(title string, rows []string, width int, colored bool) []string {
 	if width <= 0 {
 		width = 80
 	}
-	boxW := min(44, width)
-	pad := strings.Repeat(" ", max((width-boxW)/2, 0))
-	box := buildShadowPanelBox(title, rows, boxW, colored)
-	for i := range box {
-		box[i] = pad + box[i]
-	}
-	return box
+	return buildShadowPanelBox(title, rows, min(44, width), colored)
 }
 
 // centerModalLines は中央モーダル/トーストの描画行。tmux prefix 誤爆トースト (prefixNote) を
@@ -1720,9 +1715,10 @@ func (m *browseModel) View() string {
 		window = overlayBox(window, diffBox, m.boxAnchor(lines, offset, m.diffOv.sha)+1, page)
 	}
 	// push 確認/実行中は画面中央のモーダルを最前面に重ねる (ユーザー要望 2026-07-19:
-	// hint 行の [y/N] だけでは気づきにくい)
+	// hint 行の [y/N] だけでは気づきにくい)。overlayCenteredBox は行を塗り潰さず左右の背景
+	// リストを残して合成する (モーダルの左側テキストが消えるのを解消・ユーザー要望 2026-07-22)。
 	if box := m.centerModalLines(); len(box) > 0 {
-		window = overlayBox(window, box, max((page-len(box))/2, 0), page)
+		window = overlayCenteredBox(window, box, m.width, page, m.colored)
 	}
 	// usage オーバーレイは最前面 (上部右端の複数行モーダル)。U で再表示、任意キーで消える。
 	if box := m.usageOv.boxLines(m.width, m.colored, m.spinner()); len(box) > 0 {
@@ -1771,6 +1767,49 @@ func overlayBox(window, box []string, anchor, page int) []string {
 		} else if len(window) < page {
 			window = append(window, p)
 		}
+	}
+	return window
+}
+
+// overlayCenteredBox は box を画面の水平中央に「浮かせて」重ねる。overlayBox が行を塗り潰すのに
+// 対し、こちらは各行で box が占める列だけを box に差し替え、左右の背景リストは残して合成する
+// (右上の usage overlay と同じ発想を中央寄せに広げたもの)。垂直は page 内で中央に置く。
+// 左側は truncateKeepANSI で prefix を保持し、右側は dropToColumn で box の右端以降を復元する。
+// box 行の直前/直後に reset を挟み、背景の色が box に、box の色が右背景に滲まないようにする。
+func overlayCenteredBox(window, box []string, width, page int, colored bool) []string {
+	if len(box) == 0 || len(window) == 0 || width <= 0 {
+		return window
+	}
+	reset := ""
+	if colored {
+		reset = ansiReset
+	}
+	bw := 0
+	for _, r := range box {
+		bw = max(bw, runewidth.StringWidth(stripANSI(r)))
+	}
+	leftGap := max((width-bw)/2, 0)
+	leftPad := strings.Repeat(" ", leftGap)
+	start := min(max((page-len(box))/2, 0), max(page-len(box), 0))
+	for i, boxRow := range box {
+		pos := start + i
+		if pos >= page {
+			break
+		}
+		if pos >= len(window) {
+			if len(window) < page {
+				window = append(window, leftPad+boxRow) // 背景行が無い箇所は素の pad + box
+			}
+			continue
+		}
+		bg := window[pos]
+		// 左背景: 先頭 leftGap 桁を保持し、足りなければ空白で leftGap ちょうどに詰める
+		left := truncateKeepANSI(bg, leftGap)
+		left += strings.Repeat(" ", max(leftGap-runewidth.StringWidth(stripANSI(left)), 0))
+		// 右背景: box 行の右端 (leftGap + この行の表示幅) 以降を復元して継ぐ
+		rowW := runewidth.StringWidth(stripANSI(boxRow))
+		right := dropToColumn(bg, leftGap+rowW)
+		window[pos] = left + reset + boxRow + reset + right
 	}
 	return window
 }

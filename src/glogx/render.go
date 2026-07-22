@@ -528,6 +528,48 @@ func truncateKeepANSI(s string, width int) string {
 	return b.String()
 }
 
+// dropToColumn は s のうち表示列 n (0-based) 以降の suffix を返す。ANSI 対応。cut より前に
+// 現れた SGR エスケープは結果の先頭で replay するので、残った suffix は元の色を保つ
+// (truncateKeepANSI が「左の prefix を保持」する鏡像で、こちらは「左 n 桁を捨てて右を残す」)。
+// 浮動ボックスの右側に背景テキストを合成するのに使う。全角グリフが列 n をまたぐ場合はその
+// グリフを落とし、列 n に揃うよう空白で左詰めする。列 n が内容末尾以降なら "" (右に何も無い)。
+func dropToColumn(s string, n int) string {
+	if n <= 0 {
+		return s
+	}
+	var sgr, esc strings.Builder
+	inEscape := false
+	w := 0
+	runes := []rune(s)
+	i := 0
+	for ; i < len(runes) && w < n; i++ {
+		r := runes[i]
+		switch {
+		case inEscape:
+			esc.WriteRune(r)
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEscape = false
+				sgr.WriteString(esc.String()) // cut 前の SGR を蓄積 (後で replay)
+				esc.Reset()
+			}
+		case r == '\x1b':
+			inEscape = true
+			esc.Reset()
+			esc.WriteRune(r)
+		default:
+			w += runewidth.RuneWidth(r)
+		}
+	}
+	if i >= len(runes) {
+		return "" // 列 n は内容の末尾以降: 右側に残すものが無い
+	}
+	pad := ""
+	if w > n { // 全角グリフが cut をまたいだ: 列 n に揃えるため空白で埋める
+		pad = strings.Repeat(" ", w-n)
+	}
+	return sgr.String() + pad + string(runes[i:])
+}
+
 func stripANSI(s string) string {
 	if strings.IndexByte(s, '\x1b') < 0 {
 		return s // ESC 無しは Builder 確保・rune 走査とも不要

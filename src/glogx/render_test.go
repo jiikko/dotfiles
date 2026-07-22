@@ -415,6 +415,36 @@ func TestClipToWidth(t *testing.T) {
 	}
 }
 
+// dropToColumn は左 N 桁を捨て、cut 前の SGR を replay して右側を復元する
+// (overlayCenteredBox の右背景合成に使う。truncateKeepANSI の鏡像)。
+func TestDropToColumn(t *testing.T) {
+	// 素の ASCII: 先頭 N 桁を落とす
+	if got := dropToColumn("abcdef", 2); got != "cdef" {
+		t.Errorf(`dropToColumn("abcdef",2)=%q; want "cdef"`, got)
+	}
+	// n<=0 は素通し
+	if got := dropToColumn("abc", 0); got != "abc" {
+		t.Errorf(`dropToColumn("abc",0)=%q; want "abc"`, got)
+	}
+	// n が内容末尾以降なら空
+	if got := dropToColumn("abc", 5); got != "" {
+		t.Errorf(`dropToColumn("abc",5)=%q; want ""`, got)
+	}
+	// ANSI: cut より前の色コードを replay し、残り suffix は色を保つ
+	got := dropToColumn(ansiGreen+"abcdef"+ansiReset, 2)
+	if !strings.HasPrefix(got, ansiGreen) {
+		t.Errorf("cut 前の色が replay されていない: %q", got)
+	}
+	if stripANSI(got) != "cdef" {
+		t.Errorf("suffix の内容がずれた: %q (plain=%q)", got, stripANSI(got))
+	}
+	// 全角グリフが cut をまたぐ場合: そのグリフを落とし空白で列 n に揃える
+	// "あい" は各幅 2。n=1 は 'あ'(列0-1) をまたぐ → 'あ' を落とし 1 空白 + 'い'
+	if got := dropToColumn("あい", 1); got != " い" {
+		t.Errorf(`dropToColumn("あい",1)=%q; want " い"`, got)
+	}
+}
+
 func TestRenderCached(t *testing.T) {
 	head := &Commit{SHA: "a", ShortSHA: "aaaaaaa", Subject: "Fix invoice calculation"}
 	out := RenderCached(head, StateSuccess, " 3 files changed", false, "")

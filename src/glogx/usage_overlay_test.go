@@ -72,6 +72,56 @@ func TestOverlayBoxTopRightEmpty(t *testing.T) {
 	_ = overlayBoxTopRight(window, []string{"x"}, 0, false) // width0: panic しなければ OK
 }
 
+// overlayCenteredBox は中央モーダルを行塗り潰しでなく合成で重ね、左右の背景リストを残す
+// (ユーザー要望 2026-07-22: モーダル左側テキストが消える問題の解消)。
+func TestOverlayCenteredBoxKeepsBackgroundBothSides(t *testing.T) {
+	const width = 60
+	// 背景行: 左 8 桁 "L"・中央 44 桁 "m"・右 8 桁 "R" (計 60)
+	bg := strings.Repeat("L", 8) + strings.Repeat("m", 44) + strings.Repeat("R", 8)
+	window := make([]string, 10)
+	for i := range window {
+		window[i] = bg
+	}
+	box := []string{strings.Repeat("B", 44)} // 幅 44 → leftGap=(60-44)/2=8
+	out := overlayCenteredBox(window, box, width, len(window), false)
+
+	// box は縦中央 ((10-1)/2=4) に載る
+	got := out[4]
+	if !strings.HasPrefix(got, strings.Repeat("L", 8)) {
+		t.Errorf("左背景が保持されていない: %q", got)
+	}
+	if !strings.HasSuffix(got, strings.Repeat("R", 8)) {
+		t.Errorf("右背景が保持されていない: %q", got)
+	}
+	if !strings.Contains(got, strings.Repeat("B", 44)) {
+		t.Errorf("box 本体が載っていない: %q", got)
+	}
+	if strings.Contains(got, "m") {
+		t.Errorf("box が占める中央列に背景 'm' が残っている (塗り潰せていない): %q", got)
+	}
+	// box を載せない行は無改変
+	if out[0] != bg {
+		t.Errorf("box 行以外が改変された: %q", out[0])
+	}
+}
+
+// 右背景の色 (cut より後ろの SGR) が合成後も保たれる (dropToColumn の replay 経由)。
+func TestOverlayCenteredBoxPreservesRightColor(t *testing.T) {
+	const width = 60
+	// 右 8 桁を緑に。左 8 "L" + 中央 44 "m" + 緑 "RRRRRRRR"
+	bg := strings.Repeat("L", 8) + strings.Repeat("m", 44) + ansiGreen + strings.Repeat("R", 8) + ansiReset
+	window := []string{bg, bg, bg, bg, bg, bg, bg, bg, bg, bg}
+	box := []string{strings.Repeat("B", 44)}
+	out := overlayCenteredBox(window, box, width, len(window), true)
+	got := out[4]
+	if !strings.Contains(got, ansiGreen) {
+		t.Errorf("右背景の色コードが失われた: %q", got)
+	}
+	if stripANSI(got) != strings.Repeat("L", 8)+strings.Repeat("B", 44)+strings.Repeat("R", 8) {
+		t.Errorf("合成後の可視内容がずれた: plain=%q", stripANSI(got))
+	}
+}
+
 // 起動時は表示、任意キーで非表示、U で再表示 (ユーザー要望の「何か押したら消える」)。
 func TestUsageOverlayDismiss(t *testing.T) {
 	m := newTestBrowse(t, 5, nil, nil)
