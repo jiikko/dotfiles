@@ -30,19 +30,23 @@ jobDetailOverlay) を抽出したのを機に、src 配下の Go プロジェク
 差分ゼロ確認)** で行うこと。着手前に各候補をコード再確認し、複雑性が実際に下がるかを再判定する
 (下記は監査時点の評価)。
 
-### P1: Runner `pauseGate` の抽出 (clean win)
+### P1: Runner `pauseGate` の抽出 (clean win) — ✅ 完了 (commit b30304b)
 
 - 対象フィールド: `pauseMu` / `paused` / `pauseCh` (runner.go:248-250)
 - 本物の可逆条件ゲート。他 29 フィールドへの参照ゼロで自己完結し、単体テスト可能な並行
   プリミティブとして切り出せる。32 フィールドの Runner から最もリスク低く抜ける。
-- 副次: stop 経路の `wakePause` が冗長なら削除できる可能性 (抽出時に確認)。
+- 実施: pause_gate.go へ切り出し。stop シグナルは `waitUntilResumed(done)` へ引数注入し stopCtx
+  結合を持たない。`wakePause` は冗長だったので `wake()` に畳んで Runner から削除。単体テスト 5 本
+  (-race・mutation で load-bearing 確認)。
 
-### P2: Runner `resultLogWriter` (2 フィールド再スコープ)
+### P2: Runner `resultLogWriter` (2 フィールド再スコープ) — ✅ 完了 (commit b30304b)
 
 - 対象フィールド: `resultMu` / `resultLog` (runner.go:227-228) の **2 つだけ** (logDirAbs/width は
   別責務なので含めない)。
 - 型が内部で thread-safe になり、Runner 側はロックを意識せず呼べる。race を推論すべき箇所が
   3 → 0 に減る。
+- 実施: result_log.go へ append / rewriteExcluding / close を切り出し。初期 open (cfg.Fresh の
+  分岐) は Start に残し、開いた handle + path をラップ。単体テスト 7 本 (-race・mutation 確認)。
 
 ### P3: Runner `dispatchQueue` (条件付き・中〜小)
 
