@@ -257,6 +257,24 @@ func TestUsageHandleRecoversFromInitialError(t *testing.T) {
 	}
 }
 
+// 成功時の usage box は自動更新を明示するフッター「1分ごとに更新」を末尾に出す
+// (ユーザー要望 2026-07-22: バックグラウンドで 1 分ごとに更新している旨の明記)。
+func TestUsageBoxLinesShowsAutoRefreshFooter(t *testing.T) {
+	ov := usageOverlay{
+		visible: true,
+		snap:    &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 20}}},
+	}
+	box := ov.boxLines(80, false, "|")
+	plain := stripANSI(strings.Join(box, "\n"))
+	if !strings.Contains(plain, "1分ごとに更新") {
+		t.Errorf("usage box に自動更新フッターが無い:\n%s", plain)
+	}
+	// フッターは末尾付近 (データ行の後) に出る: 5h 行より後であること
+	if strings.Index(plain, "1分ごとに更新") < strings.Index(plain, "5h") {
+		t.Errorf("フッターがデータ行より前に出ている:\n%s", plain)
+	}
+}
+
 // usageRefreshMsg はバックグラウンド再取得を仕掛け、次回リフレッシュを再予約する
 // (cmd 非 nil = チェーンが継続。fetchCmd 起動で cancel がセットされる)。
 func TestUsageRefreshMsgReschedulesAndFetches(t *testing.T) {

@@ -86,8 +86,9 @@ const usageBoxChrome = 5
 
 // boxLines は右上オーバーレイの複数行モーダル (影付き枠) を組み立てる。非表示なら nil。
 // 取得中は枠内でスピナー (呼び出し側が現在フレームを渡す) を回し、失敗時は理由、成功時は
-// 枠ごとに 1 行整列表示する。spinner / colored / width は browseModel 側の状態を受け取る
-// (この型は bubbletea の tick や端末幅を直接知らず、描画に必要な値だけを引数で受ける)。
+// 枠ごとに 1 行整列表示 + 末尾に自動更新の明示フッターを添える。spinner / colored / width は
+// browseModel 側の状態を受け取る (この型は bubbletea の tick や端末幅を直接知らず、描画に
+// 必要な値だけを引数で受ける)。
 func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []string {
 	if !o.visible {
 		return nil
@@ -117,6 +118,9 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 			paint(header, ansiDim, colored),
 			paint(strings.Repeat("─", w), ansiDim, colored),
 		}, data...)
+		// バックグラウンドで usageRefreshInterval ごとに自動更新している旨をフッターで明示する
+		// (ユーザー要望 2026-07-22)。値の取得は静かに差し替わるので、更新中であることは出さない。
+		rows = append(rows, paint("1分ごとに更新", ansiDim, colored))
 	}
 	// 枠幅 = 内容の最大表示幅 + 罫線・影の余白。端末幅を超えない範囲で内容にフィットさせる。
 	inner := 0

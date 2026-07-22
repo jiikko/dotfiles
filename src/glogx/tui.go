@@ -37,6 +37,11 @@ const (
 	maxPanelJobs = 10
 	// usageRefreshInterval は usage オーバーレイをバックグラウンド再取得する周期 (ユーザー要望
 	// 2026-07-22)。/usage は LLM を呼ばないゼロコストなローカルコマンドなので毎分でも安価。
+	// ⚠️ 実装で強制できない 2 つの制約 (変更時に再評価すること):
+	//  1. fetchTimeout より必ず大きく保つ。小さくすると fetch が overlap し、fetchCmd の
+	//     o.cancel 上書きで前回 fetch の cancel を取りこぼす (現状 10s < 60s で overlap しない)。
+	//  2. usage_overlay.go boxLines のフッター文言「1分ごとに更新」がこの値に結合している。
+	//     周期を変えるならフッター文言も揃えること (dim 表示・値は静かに差し替わる旨の明示)。
 	usageRefreshInterval = time.Minute
 )
 
