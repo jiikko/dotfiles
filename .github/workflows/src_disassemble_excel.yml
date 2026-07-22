@@ -29,7 +29,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  go:
+  # job id はチェック名の識別子 (共有 workflow のため check 名が "<id> / lint" になり、全 caller で同一 id だと区別不能)。プロジェクト名にする。
+  disassemble_excel:
     uses: ./.github/workflows/_go-project.yml
     with:
       dir: src/disassemble_excel
