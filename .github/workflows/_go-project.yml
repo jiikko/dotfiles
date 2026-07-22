@@ -37,8 +37,12 @@ jobs:
   # lint と test は独立 job: 並列実行 + 片方だけの再実行が可能
   lint:
     runs-on: ubuntu-slim
-    # 初回は golangci-lint を go run でソースからビルドするため余裕を持たせる (以降は cache)
-    timeout-minutes: 15
+    # make lint は golangci-lint を `go run @version` でソースからビルドする。build cache が warm
+    # なら ~3-5 分だが、cold だと ubuntu-slim で 15 分を超えることがある。timeout でジョブが
+    # cancel されると post-step の cache-save が走らず、次回も cold → また cancel、の悪循環になる
+    # (実測: a43cbe8 / 40b2600 で連続 cancel)。cold compile を完走させ build cache を populate
+    # できるだけの余裕を持たせる (以降は cache 復元で速い)。
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
 
