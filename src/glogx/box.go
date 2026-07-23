@@ -103,6 +103,10 @@ const (
 	shadowGlyphMonoEdge = "░" // NO_COLOR フェザー
 )
 
+// shadowBottomOffset は下端の影の左端を箱の左端から右へずらす桁数 (右下方向へ落とすドロップ
+// シャドウの水平オフセット)。大きいほど影が右下に寄る。ユーザー要望で 1→3 桁へ (2026-07-23)。
+const shadowBottomOffset = 3
+
 // shadowRun は落ち影の本体 n セル分。
 func shadowRun(n int, colored bool) string {
 	if n <= 0 {
@@ -177,9 +181,10 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, sha
 	if shadow {
 		// 右下角の影は最も深いので █ 本体。
 		lines = append(lines, bottom+shadowRun(1, colored))
-		// 下端の影: 左へ 1 桁ずらして右下だけに落とす (古典的なドロップシャドウ)。左端を ▓ フェザーで
-		// ease-in してから █ 本体を敷く (影が地色から立ち上がる縁を柔らかくする)。
-		lines = append(lines, " "+shadowFeather(colored)+shadowRun(width-2, colored))
+		// 下端の影: 左端を shadowBottomOffset 桁だけ右へずらして右下方向に落とす (古典的な
+		// ドロップシャドウ)。左端を ▓ フェザーで ease-in してから █ 本体を敷く。右端は箱の右影列と
+		// 揃える (影全体の幅 = shadowBottomOffset + フェザー1 + 本体 = width)。
+		lines = append(lines, strings.Repeat(" ", shadowBottomOffset)+shadowFeather(colored)+shadowRun(width-1-shadowBottomOffset, colored))
 	} else {
 		lines = append(lines, bottom)
 	}
