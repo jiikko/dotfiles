@@ -202,3 +202,11 @@ var copyToClipboard = func(text string) error {
 	cmd.Stdin = strings.NewReader(text)
 	return cmd.Run()
 }
+
+// macismInstalled は IME 自動切替 (ime.go の switchIMEToASCII) に使う macism CLI が PATH に
+// あるかを返す。テスト差し替え点。起動時の導入案内トーストの判定に使う (実際の切替判定は
+// ime.go 側が別途 LookPath する。切替機能自体は未導入でも no-op で壊れない)。
+var macismInstalled = func() bool {
+	_, err := exec.LookPath("macism")
+	return err == nil
+}

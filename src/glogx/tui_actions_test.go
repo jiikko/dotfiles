@@ -649,3 +649,29 @@ func TestBrowseRerunFailureShowsToast(t *testing.T) {
 		t.Fatal("失敗なのに猶予ポーリングが張られた")
 	}
 }
+
+// 起動時 (Init) に macism 未導入なら error トーストで brew 導入を案内する (ime.go の IME 自動
+// 切替に使う。未導入でも機能自体は no-op で壊れないが能動的に案内。ユーザー要望 2026-07-23)。
+func TestBrowseInitWarnsMissingMacism(t *testing.T) {
+	orig := macismInstalled
+	t.Cleanup(func() { macismInstalled = orig })
+
+	// 未導入 → error トースト (ok=false) に brew コマンドを含む
+	macismInstalled = func() bool { return false }
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.Init()
+	if !m.toast.visible() || m.toast.ok {
+		t.Fatalf("macism 未導入で error トーストが出ない: visible=%v ok=%v", m.toast.visible(), m.toast.ok)
+	}
+	if !strings.Contains(m.toast.text, "brew install") || !strings.Contains(m.toast.text, "macism") {
+		t.Fatalf("brew 導入案内が含まれない: %q", m.toast.text)
+	}
+
+	// 導入済み → トーストは出ない
+	macismInstalled = func() bool { return true }
+	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m2.Init()
+	if m2.toast.visible() {
+		t.Fatalf("macism 導入済みなのに起動トーストが出た: %q", m2.toast.text)
+	}
+}
