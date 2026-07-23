@@ -230,7 +230,24 @@ func TestBrowsePushFlow(t *testing.T) {
 	if m.actModal.pushing {
 		t.Fatal("pushMsg 後も pushing のまま")
 	}
-	// push 成功でリスト全体のキャッシュが破棄され、全 SHA が再取得に乗る
+	// push 成功でまず演出が始まる: 未 push が古い順に 1 tick ごとにスピナー表示へ落ち、
+	// push 境界の罫線が 1 段ずつ上へスライドする (startPushAnim)
+	if !m.pushAnimating {
+		t.Fatal("push 成功で演出が始まらない")
+	}
+	m.Update(tickMsg{})
+	if _, ok := m.statuses[m.commits[1].SHA]; ok {
+		t.Fatal("1 tick 目で最古の unpushed が消えない")
+	}
+	if m.statuses[m.commits[0].SHA] != StateUnpushed {
+		t.Fatal("tip が先に消えた (演出は古い順のはず)")
+	}
+	m.Update(tickMsg{}) // 残る tip が消える
+	m.Update(tickMsg{}) // 全部消えた次の tick で演出終了 → 再取得へ
+	if m.pushAnimating {
+		t.Fatal("演出が終わらない")
+	}
+	// 演出後はリスト全体のキャッシュが破棄され、全 SHA が再取得に乗る
 	for i, c := range m.commits {
 		if _, ok := m.statuses[c.SHA]; ok {
 			t.Fatalf("push 成功後も commits[%d] の status キャッシュが残っている", i)

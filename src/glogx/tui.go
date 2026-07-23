@@ -238,9 +238,13 @@ type browseModel struct {
 
 	fetching bool
 	ticking  bool // 80ms スピナー tick チェーンが 1 本生きているか (maybeTick の single-flight)
-	done     bool
-	fetch    tea.Cmd
-	cancel   context.CancelFunc
+	// push 成功の演出 (startPushAnim)。演出が statuses の StateUnpushed を先に消していく
+	// ため、演出後の CI ポーリング対象 (push 時点の tip) は pushAnimTip に捕捉しておく
+	pushAnimating bool
+	pushAnimTip   string
+	done          bool
+	fetch         tea.Cmd
+	cancel        context.CancelFunc
 
 	// lines() のメモ化。行リストの再構築は O(出力全行数) で、-p の巨大 patch では
 	// キー 1 打ごとに数万行を組み直すことになるためキャッシュする。行内容を変えうる
@@ -376,6 +380,10 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.scrollAnim {
 			m.advanceScroll() // j/k のコミット単位スクロールを表示 offset で滑らせる
 		}
+		var pushRefetchCmd tea.Cmd
+		if m.pushAnimating {
+			pushRefetchCmd = m.advancePushAnim() // push 境界の罫線を 1 コミット/フレームで上へ
+		}
 		var toastHoldCmd tea.Cmd
 		if m.toast.animating() {
 			// トーストの横スライド (右画面外との出入り) をカラム単位で 1 フレーム進める。
@@ -392,7 +400,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.fetching || len(m.pushPoll) > 0 {
 			m.invalidateLines()
 		}
-		return m, tea.Batch(m.maybeTick(), toastHoldCmd)
+		return m, tea.Batch(m.maybeTick(), toastHoldCmd, pushRefetchCmd)
 	case ciResultMsg:
 		m.invalidateLines()
 		m.ghErr = msg.ghErr
@@ -617,36 +625,13 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.maybeTick()
 		}
 		m.toast.show("push しました", true)
-		// 表示中リスト全体の CI 状態を破棄して取り直す (ユーザー要望 2026-07-19:
-		// push で CI が走り出すため、起動時キャッシュ由来の表示は丸ごと古くなる)。
-		// statuses から消す → スピナー表示に戻り、toFetch 差し替えで一括取得と
-		// 同じ経路 (ciResultMsg) に乗せる。取得結果は fetched 経由で終了時に
-		// SaveCache へマージされ、ファイルキャッシュ側も新しい観測で上書きされる
 		if !m.hasRepo || len(m.commits) == 0 {
 			return m, m.maybeTick() // 再取得先が無くてもトーストは出す (アニメ tick を回す)
 		}
-		// ポーリング対象は push の先頭 (tip = 最新の unpushed) だけ (ユーザー要望
-		// 2026-07-19)。CI は push イベントの head commit にしか走らないのが普通で、
-		// 途中のコミットまで対象にすると CI が永遠に見えず上限までスピナーが回り続ける。
-		// 途中コミットの「checks なし (–)」は本物なので通常どおり取得・キャッシュする
-		m.pushPoll = map[string]bool{}
-		m.pollAttempts = 0
-		var all []string
-		for _, c := range m.commits {
-			if len(m.pushPoll) == 0 && m.statuses[c.SHA] == StateUnpushed {
-				m.pushPoll[c.SHA] = true // commits は新しい順なので最初の unpushed = tip
-			}
-			all = append(all, c.SHA)
-			delete(m.statuses, c.SHA)
-			delete(m.details, c.SHA)
+		if m.startPushAnim() {
+			return m, m.maybeTick() // 演出完了後 (advancePushAnim) に refetchAfterPush へ進む
 		}
-		m.invalidateLines()
-		m.toFetch = all
-		m.fetching = true
-		fetch := fetchCIStatusesCmd(m.repo, all, func(b CIBatch, e *GHError) tea.Msg {
-			return ciResultMsg{batch: b, ghErr: e}
-		})
-		return m, tea.Batch(fetch, m.maybeTick())
+		return m, tea.Batch(m.refetchAfterPush(), m.maybeTick())
 	case openURLMsg:
 		if msg.err != nil {
 			m.notice = "ブラウザを開けませんでした: " + firstLine(msg.err.Error())
@@ -954,6 +939,85 @@ func (m *browseModel) advancePullAnim() {
 		m.pullAnimating = false
 		m.ensureCursorVisible()
 	}
+}
+
+// pushAnimMaxSteps は push 演出で 1 フレームずつ流す最大コミット数。大量 push でも
+// 待ちが伸びないよう頭打ちにし、超過分は開始時に即切り替える (pullAnimMaxLines と同型)。
+const pushAnimMaxSteps = 8
+
+// startPushAnim は push 成功の演出を開始する。未 push だったコミットを古い順に
+// 1 コミット/フレームで取得中 (spinner) 表示へ切り替えていくと、insertPushBoundary の
+// 境界罫線が 1 段ずつ上へスライドし、先頭サマリの ↑N が減っていき、最後に
+// (all pushed ✓) へ着地する (描画側は無変更で、statuses の遷移だけで演出が成立する)。
+// 未 push が無ければ何もせず false (呼び出し側が即 refetchAfterPush へ)。
+func (m *browseModel) startPushAnim() bool {
+	var unpushed []string // 新しい順
+	for _, c := range m.commits {
+		if m.statuses[c.SHA] == StateUnpushed {
+			unpushed = append(unpushed, c.SHA)
+		}
+	}
+	if len(unpushed) == 0 {
+		return false
+	}
+	m.pushAnimTip = unpushed[0]
+	for len(unpushed) > pushAnimMaxSteps {
+		last := len(unpushed) - 1
+		delete(m.statuses, unpushed[last])
+		unpushed = unpushed[:last]
+	}
+	m.invalidateLines()
+	m.pushAnimating = true
+	return true
+}
+
+// advancePushAnim は push 演出を 1 コミット分進める (1 フレーム = tick 1 回)。
+// 最も古い StateUnpushed を消すと境界が 1 コミット上がる。全部消えたら演出終了で、
+// 本来の後処理 (CI 全件再取得) へ進む cmd を返す。
+func (m *browseModel) advancePushAnim() tea.Cmd {
+	for i := len(m.commits) - 1; i >= 0; i-- {
+		if m.statuses[m.commits[i].SHA] == StateUnpushed {
+			delete(m.statuses, m.commits[i].SHA)
+			m.invalidateLines()
+			return nil
+		}
+	}
+	m.pushAnimating = false
+	return m.refetchAfterPush()
+}
+
+// refetchAfterPush は push 後の CI 再取得。表示中リスト全体の CI 状態を破棄して取り直す
+// (ユーザー要望 2026-07-19: push で CI が走り出すため、起動時キャッシュ由来の表示は丸ごと
+// 古くなる)。statuses から消す → スピナー表示に戻り、toFetch 差し替えで一括取得と同じ経路
+// (ciResultMsg) に乗せる。取得結果は fetched 経由で終了時に SaveCache へマージされ、
+// ファイルキャッシュ側も新しい観測で上書きされる。
+// ポーリング対象は push の先頭 (tip = 最新の unpushed) だけ (ユーザー要望 2026-07-19)。
+// CI は push イベントの head commit にしか走らないのが普通で、途中のコミットまで対象に
+// すると CI が永遠に見えず上限までスピナーが回り続ける。途中コミットの「checks なし (–)」
+// は本物なので通常どおり取得・キャッシュする。tip は演出が statuses を先に消すため
+// pushAnimTip (startPushAnim が捕捉) を優先する。
+func (m *browseModel) refetchAfterPush() tea.Cmd {
+	m.pushPoll = map[string]bool{}
+	m.pollAttempts = 0
+	if m.pushAnimTip != "" {
+		m.pushPoll[m.pushAnimTip] = true
+		m.pushAnimTip = ""
+	}
+	var all []string
+	for _, c := range m.commits {
+		if len(m.pushPoll) == 0 && m.statuses[c.SHA] == StateUnpushed {
+			m.pushPoll[c.SHA] = true // commits は新しい順なので最初の unpushed = tip
+		}
+		all = append(all, c.SHA)
+		delete(m.statuses, c.SHA)
+		delete(m.details, c.SHA)
+	}
+	m.invalidateLines()
+	m.toFetch = all
+	m.fetching = true
+	return fetchCIStatusesCmd(m.repo, all, func(b CIBatch, e *GHError) tea.Msg {
+		return ciResultMsg{batch: b, ghErr: e}
+	})
 }
 
 // startScrollAnim は j/k でビューポートがコミット単位に動いたとき、表示 offset (offsetShown)
@@ -1717,7 +1781,7 @@ func (m *browseModel) fillUnknown() {
 }
 
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.actModal.running() || m.pullAnimating || m.scrollAnim || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading()
+	return m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || m.scrollAnim || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading()
 }
 
 // panelHasRunningJob は表示中の job パネルに実行中 (経過時間が増える) job があるか。
