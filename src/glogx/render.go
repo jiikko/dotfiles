@@ -95,6 +95,10 @@ type RenderOpts struct {
 	// git log と機械的に一致する (ユーザー要望 2026-07-19「人力で寄せるのはめんどい」)。
 	// nil は fallback (git log の実行/照合に失敗した場合と --oneline)
 	Verbatim []Line
+	// PushAnim は push 成功演出 (startPushAnim) 中。境界罫線は普段 dim の位置マーカー
+	// だが、演出の主役 (1 段ずつ上へスライドする) になるため緑太字の pushing ラベルで
+	// 目立たせる (dim のままでは動きが視認できない: ユーザーフィードバック 2026-07-23)
+	PushAnim bool
 	// HasRepo は GitHub repo が解決できているか。「全部 push 済み ✓」の先頭マークの
 	// ゲート (remote 無し repo では push 状態が不明なだけなので出さない)
 	HasRepo bool
@@ -197,6 +201,9 @@ func insertPushBoundary(lines []Line, commits []Commit, statuses map[string]CISt
 	// 2026-07-22)。加えて push 境界の正確な位置には従来どおり dim の罫線を挿す。
 	summary := labeledRule(fmt.Sprintf(" (↑%d unpushed)", unpushed), ansiRed+ansiBold)
 	boundaryRule := labeledRule("", ansiDim) // 位置マーカー: ラベル無しの dim 罫線
+	if o.PushAnim {
+		boundaryRule = labeledRule(" ↑ pushing…", ansiGreen+ansiBold)
+	}
 	for i, l := range lines {
 		if l.Header && l.CommitIdx == boundary {
 			out := make([]Line, 0, len(lines)+2)

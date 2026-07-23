@@ -295,6 +295,12 @@ func (m *browseModel) Init() tea.Cmd {
 	// tmux prefix の取得は非同期 (fork 1 本 ≈ 6ms を初期描画のクリティカルパスに乗せない)
 	prefix := func() tea.Msg { return prefixMsg{key: loadTmuxPrefix()} }
 	u := m.usageOv.fetchCmd()
+	// IME 自動切替 (ime.go) に使う macism が未導入なら、起動時に error トーストで brew 導入を
+	// 案内する (数秒で自動消滅)。ime.go 側は未導入でも no-op なので機能自体は壊れないが、IME が
+	// 英数へ切り替わらない事実に気づけるよう能動的に案内する (ユーザー要望 2026-07-23)。
+	if !macismInstalled() {
+		m.toast.show("macism 未導入: brew install laishulu/homebrew/macism", false)
+	}
 	// usage を起動時に取得するため tick を常に起動する (取得中スピナーを回す。取得完了で
 	// spinnerActive が false になり tick は自然に止まる)。CI fetch の有無に依らず起動する。
 	// usageRefreshTick で 1 分ごとのバックグラウンド再取得チェーンも起動する (ユーザー要望)。
@@ -948,7 +954,7 @@ const pushAnimMaxSteps = 8
 
 // pushAnimStep は境界が 1 コミット上がる間隔。80ms/段では目で追えない
 // (ユーザーフィードバック 2026-07-23) ため、1 段ずつ確実に視認できる速さにする。
-const pushAnimStep = 1000 * time.Millisecond
+const pushAnimStep = 600 * time.Millisecond
 
 // startPushAnim は push 成功の演出を開始する。未 push だったコミットを古い順に
 // 1 コミット/フレームで取得中 (spinner) 表示へ切り替えていくと、insertPushBoundary の
@@ -1828,6 +1834,7 @@ func (m *browseModel) renderOpts() RenderOpts {
 		PRs:      m.prCache,
 		Verbatim: m.verbatim,
 		HasRepo:  m.hasRepo,
+		PushAnim: m.pushAnimating,
 	}
 }
 
