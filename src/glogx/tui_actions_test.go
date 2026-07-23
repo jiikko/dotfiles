@@ -855,8 +855,9 @@ func TestBrowseFrameView(t *testing.T) {
 		}
 	}
 	// 枠 (上辺 ┌) と下辺/影 (▁) が描かれている
-	if !strings.Contains(v, "┌") || !strings.Contains(v, "▁") {
-		t.Error("フレームが描かれていない")
+	// 上辺は二重罫線 ╔、下辺は接地ブロック ▁ (ユーザー要望 2026-07-24)
+	if !strings.Contains(v, "╔") || !strings.Contains(v, "▁") {
+		t.Error("フレーム (二重上辺 + 接地下辺) が描かれていない")
 	}
 }
 

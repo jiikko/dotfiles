@@ -100,8 +100,9 @@ func TestWrapWindowFrame(t *testing.T) {
 	if strings.TrimSpace(out[0]) != "" {
 		t.Fatalf("先頭は上余白 (空行) のはず: %q", out[0])
 	}
-	if !strings.Contains(out[1], "┌") || !strings.Contains(out[1], "┐") {
-		t.Fatalf("2 行目が上辺 ┌…┐ でない: %q", out[1])
+	// 上辺は二重罫線 ╔…╗ (ユーザー要望 2026-07-24: フレームを二重に)
+	if !strings.Contains(out[1], "╔") || !strings.Contains(out[1], "╗") {
+		t.Fatalf("2 行目が上辺 ╔…╗ でない: %q", out[1])
 	}
 	for i, l := range out {
 		if w := runewidth.StringWidth(stripANSI(l)); w > termW {
