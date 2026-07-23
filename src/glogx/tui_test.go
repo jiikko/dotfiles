@@ -39,6 +39,22 @@ func statusesFor(m *browseModel, state CIState) map[string]CIState {
 	return s
 }
 
+// deliverMsgs は tea.Cmd の結果 msg を BatchMsg の入れ子ごと再帰展開し、match が true を
+// 返した msg だけを m.Update へ届ける (tick 等の無関係な msg で状態を進めないためのフィルタ)。
+func deliverMsgs(m *browseModel, msg tea.Msg, match func(tea.Msg) bool) {
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, c := range batch {
+			if c != nil {
+				deliverMsgs(m, c(), match)
+			}
+		}
+		return
+	}
+	if match(msg) {
+		m.Update(msg)
+	}
+}
+
 // withJobs は commit idx の details を job 2 件で埋めるテストヘルパー。
 func withJobs(m *browseModel, idx int) {
 	m.details[m.commits[idx].SHA] = []CheckDetail{
@@ -2064,20 +2080,7 @@ func TestBrowsePushFlow(t *testing.T) {
 	if cmd == nil || !m.actModal.pushing {
 		t.Fatal("y で push が始まらない")
 	}
-	var deliver func(msg tea.Msg)
-	deliver = func(msg tea.Msg) {
-		switch v := msg.(type) {
-		case tea.BatchMsg:
-			for _, c := range v {
-				if c != nil {
-					deliver(c())
-				}
-			}
-		case pushMsg:
-			m.Update(v)
-		}
-	}
-	deliver(cmd())
+	deliverMsgs(m, cmd(), func(msg tea.Msg) bool { _, ok := msg.(pushMsg); return ok })
 	if pushed != 1 {
 		t.Fatalf("push 実行回数 = %d, want 1", pushed)
 	}
@@ -2463,5 +2466,163 @@ func TestAdvancePullAnimTerminates(t *testing.T) {
 	m.advancePullAnim()
 	if m.offset != 0 || m.pullAnimating {
 		t.Errorf("offset=2 の 2 回目で終端しない (負に振れた?): offset=%d animating=%v", m.offset, m.pullAnimating)
+	}
+}
+
+// --- CI job 再実行 (r キー, issue 019) ---
+
+// withFailedJob は commit idx の details を「失敗 job (CheckID あり)」1 件で埋める。
+func withFailedJob(m *browseModel, idx int, checkID int64, state CIState) {
+	m.details[m.commits[idx].SHA] = []CheckDetail{
+		{Name: "lint", State: state, URL: "https://github.com/o/r/runs/9", CheckID: checkID},
+	}
+}
+
+func TestBrowseRerunFlow(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	withFailedJob(m, 0, 7, StateFailure)
+	var gotJobID int64
+	var gotRepo Repo
+	orig := runJobRerun
+	runJobRerun = func(_ context.Context, repo Repo, jobID int64) error {
+		gotRepo, gotJobID = repo, jobID
+		return nil
+	}
+	t.Cleanup(func() { runJobRerun = orig })
+	m.openPanel()
+	m.handleKey("j") // job へフォーカス
+	// r で確認に入り、n でキャンセル (実行されない)
+	m.handleKey("r")
+	if !m.actModal.rerunConfirm || m.actModal.rerunJobName != "lint" {
+		t.Fatalf("r で再実行確認に入らない: confirm=%v name=%q", m.actModal.rerunConfirm, m.actModal.rerunJobName)
+	}
+	if v := stripANSI(m.View()); !strings.Contains(v, "CI 再実行") || !strings.Contains(v, "lint") {
+		t.Fatal("再実行確認モーダルが描画されない")
+	}
+	m.handleKey("n")
+	if m.actModal.rerunConfirm || gotJobID != 0 {
+		t.Fatalf("n でキャンセルされない: confirm=%v jobID=%d", m.actModal.rerunConfirm, gotJobID)
+	}
+	// y で実行され、成功でトースト + 猶予ポーリングが始まる
+	m.handleKey("r")
+	_, cmd := m.handleKey("y")
+	if cmd == nil || !m.actModal.rerunning {
+		t.Fatal("y で再実行が始まらない")
+	}
+	deliverMsgs(m, cmd(), func(msg tea.Msg) bool { _, ok := msg.(rerunMsg); return ok })
+	if gotJobID != 7 || gotRepo.Owner != "o" || gotRepo.Name != "r" {
+		t.Fatalf("gh run rerun の対象が違う: repo=%+v jobID=%d", gotRepo, gotJobID)
+	}
+	if m.actModal.rerunning {
+		t.Fatal("rerunMsg 後も rerunning のまま")
+	}
+	if !m.toast.visible() || !strings.Contains(m.toast.text, "再実行") {
+		t.Fatalf("成功トーストが出ない: %q", m.toast.text)
+	}
+	if m.panelPollGrace != rerunPollGrace {
+		t.Fatalf("猶予ポーリングが張られない: grace=%d want %d", m.panelPollGrace, rerunPollGrace)
+	}
+}
+
+func TestBrowseRerunGuards(t *testing.T) {
+	orig := runJobRerun
+	called := false
+	runJobRerun = func(context.Context, Repo, int64) error { called = true; return nil }
+	t.Cleanup(func() { runJobRerun = orig })
+	// StatusContext (CheckID=0) は再実行不可
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	withFailedJob(m, 0, 0, StateFailure)
+	m.openPanel()
+	m.handleKey("j")
+	m.handleKey("r")
+	if m.actModal.rerunConfirm || !strings.Contains(m.notice, "GitHub Actions") {
+		t.Fatalf("StatusContext job で確認に入った / notice が出ない: %q", m.notice)
+	}
+	// 失敗以外の job は再実行不可
+	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m2.statuses = statusesFor(m2, StateSuccess)
+	withFailedJob(m2, 0, 7, StateSuccess)
+	m2.openPanel()
+	m2.handleKey("j")
+	m2.handleKey("r")
+	if m2.actModal.rerunConfirm || !strings.Contains(m2.notice, "失敗") {
+		t.Fatalf("成功 job で確認に入った / notice が出ない: %q", m2.notice)
+	}
+	// タイトル行フォーカス (job 未選択) では何も起きない
+	m2.notice = ""
+	m2.panelCursor = -1
+	m2.handleKey("r")
+	if m2.actModal.rerunConfirm || m2.notice != "" {
+		t.Fatal("タイトル行フォーカスで r が反応した")
+	}
+	if called {
+		t.Fatal("ガード経路で runJobRerun が呼ばれた")
+	}
+}
+
+func TestBrowseRerunFailureShowsToast(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	withFailedJob(m, 0, 7, StateFailure)
+	orig := runJobRerun
+	runJobRerun = func(context.Context, Repo, int64) error { return errors.New("run cannot be rerun") }
+	t.Cleanup(func() { runJobRerun = orig })
+	m.openPanel()
+	m.handleKey("j")
+	m.handleKey("r")
+	_, cmd := m.handleKey("y")
+	if cmd == nil {
+		t.Fatal("y で再実行が始まらない")
+	}
+	deliverMsgs(m, cmd(), func(msg tea.Msg) bool { _, ok := msg.(rerunMsg); return ok })
+	if m.actModal.rerunning {
+		t.Fatal("失敗後も rerunning のまま")
+	}
+	if !m.toast.visible() || m.toast.ok || !strings.Contains(m.toast.text, "失敗") {
+		t.Fatalf("失敗トーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
+	}
+	if m.panelPollGrace != 0 {
+		t.Fatal("失敗なのに猶予ポーリングが張られた")
+	}
+}
+
+// 猶予ポーリング: 実行中 job がまだ見えなくても panelPollGrace の残回数だけリフレッシュを続け、
+// 実行中 job が見えたら猶予を終えて通常追従へ、尽きたら止まる。
+func TestPanelPollGrace(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	withFailedJob(m, 0, 7, StateFailure) // 実行中 job なし
+	m.openPanel()
+	m.panelPollGrace = 2
+	if _, cmd := m.Update(panelPollMsg{seq: m.panelPollSeq}); cmd == nil {
+		t.Fatal("猶予中なのにポーリングが止まった")
+	}
+	if m.panelPollGrace != 1 || !m.panelRefresh {
+		t.Fatalf("猶予が減らない / リフレッシュが走らない: grace=%d refresh=%v", m.panelPollGrace, m.panelRefresh)
+	}
+	// 実行中 job が見えたら猶予は 0 に戻り、通常の追従が続く
+	m.panelRefresh = false
+	m.details[m.commits[0].SHA] = []CheckDetail{
+		{Name: "lint", State: StatePending, CheckID: 7, StartedAt: timeNow()},
+	}
+	if _, cmd := m.Update(panelPollMsg{seq: m.panelPollSeq}); cmd == nil {
+		t.Fatal("実行中 job があるのにポーリングが止まった")
+	}
+	if m.panelPollGrace != 0 {
+		t.Fatalf("実行中 job が見えても猶予が残っている: %d", m.panelPollGrace)
+	}
+	// 猶予 0 + 実行中 job なしで停止
+	m.panelRefresh = false
+	withFailedJob(m, 0, 7, StateFailure)
+	if _, cmd := m.Update(panelPollMsg{seq: m.panelPollSeq}); cmd != nil {
+		t.Fatal("猶予が尽きたのにポーリングが続いた")
+	}
+	// closePanel で猶予も破棄される
+	m.panelPollGrace = 5
+	m.closePanel()
+	if m.panelPollGrace != 0 {
+		t.Fatal("closePanel で猶予ポーリングが破棄されない")
 	}
 }

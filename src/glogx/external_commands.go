@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -119,6 +120,27 @@ var runClaudeUpdate = func() (before, after string, err error) {
 	}
 	after = usage.FetchVersion(ctx)
 	return before, after, nil
+}
+
+// runJobRerun はテストで実 rerun しないための差し替え点 (本体は jobRerun)。
+var runJobRerun = func(ctx context.Context, repo Repo, jobID int64) error {
+	return jobRerun(ctx, ExecRunner, repo, jobID)
+}
+
+// jobRerun は失敗 job を GitHub Actions 上で再実行する (`gh run rerun --job <id>`)。
+// run 全体でなく job 単位なのは、パネルのフォーカス単位が job であり run id を
+// 保持していないため (issue 019)。認証は gh へ委譲。
+func jobRerun(ctx context.Context, run CommandRunner, repo Repo, jobID int64) error {
+	_, stderr, err := run(ctx, "gh", "run", "rerun",
+		"--job", strconv.FormatInt(jobID, 10), "-R", repo.Owner+"/"+repo.Name)
+	if err != nil {
+		detail := lastLine(string(stderr))
+		if detail == "" {
+			detail = err.Error()
+		}
+		return errors.New(detail)
+	}
+	return nil
 }
 
 // loadTmuxPrefix は tmux サーバの現在の prefix を bubbletea キー表記で返す

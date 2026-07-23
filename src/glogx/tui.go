@@ -115,6 +115,19 @@ type panelPollMsg struct{ seq int }
 
 const panelPollInterval = 3 * time.Second
 
+// rerunMsg は CI job 再実行要求 (r → y 確認後の gh run rerun --job) の結果。glogx の独自機能。
+// sha は対象コミット (パネルリフレッシュの照合用)。
+type rerunMsg struct {
+	sha string
+	err error
+}
+
+// rerunPollGrace は rerun 直後にパネルへ与える猶予ポーリング回数 (panelPollInterval × 10 = ~30s)。
+// rerun を要求してから GraphQL に queued/in_progress が映るまでラグがあり、その間は
+// panelHasRunningJob が false でポーリングが止まってしまう (パネルの ✗ が固まったままになる)
+// ため、実行中 job が見えるまでの間だけ空振りを許す。上限到達で諦める (反映は次の開き直しで)。
+const rerunPollGrace = 10
+
 // noPromptGitCmd は remote に触る git (push/pull) 用のコマンドを組む。GIT_TERMINAL_PROMPT=0
 // で「認証情報が要るのに helper が無い」場合に /dev/tty へ対話プロンプトを出させず即エラーに
 // する: bubbletea が同じ端末を raw mode で握っているため、git が tty を奪うと表示が壊れ入力
@@ -178,6 +191,7 @@ type browseModel struct {
 	panelCursor    int    // パネル内で選択中の job index (-1 = タイトル行にフォーカス)
 	panelPollSeq   int    // パネル開閉の世代 (panelPollMsg の有効性判定)
 	panelRefresh   bool   // パネルの定期リフレッシュ実行中 (detailsLoading と別: 表示を「取得中」に落とさない)
+	panelPollGrace int    // 実行中 job が見えなくてもポーリングを続ける残回数 (rerun 直後の反映ラグ吸収)
 	// job 詳細ポップアップ (annotations / ログ tail) の pager 状態と描画は jobDetailOverlay 型
 	// (job_detail_overlay.go) に切り出す。panel-frame (panelSHA/panelCursor/poll/refresh) と ETA・
 	// CI 取得は details/statuses/commits と構造的に結合するため browseModel に残す (詳細は同ファイル)。
@@ -485,8 +499,13 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.seq != m.panelPollSeq || m.panelSHA == "" {
 			return m, nil // パネルが閉じた/開き直された後の残タイマーは破棄
 		}
-		if !m.panelHasRunningJob() {
-			return m, nil // 全 job 完了: 追従の必要が無いのでポーリング終了 (開き直しで再開)
+		if m.panelHasRunningJob() {
+			m.panelPollGrace = 0 // 実行中 job が見えた: 猶予は役目を終え、以降は通常の追従
+		} else {
+			if m.panelPollGrace <= 0 {
+				return m, nil // 全 job 完了: 追従の必要が無いのでポーリング終了 (開き直しで再開)
+			}
+			m.panelPollGrace-- // rerun 直後: 実行中 job が GraphQL に映るまで空振りを許す
 		}
 		next := m.schedulePanelPoll()
 		// 実行中の一括取得/リフレッシュと重ねない (同一 SHA への GraphQL 並行は
@@ -521,6 +540,22 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 成功トーストを右下にせり上げつつ全面リロード (アニメで画面が動いてもトーストは数秒残る)。
 		m.toast.show("pull --rebase しました", true)
 		return m, tea.Batch(m.reloadAfterPull(), m.maybeTick())
+	case rerunMsg:
+		m.actModal.rerunning = false
+		if msg.err != nil {
+			m.toast.show("再実行に失敗: "+firstLine(msg.err.Error()), false)
+			return m, m.maybeTick()
+		}
+		m.toast.show("CI を再実行します", true)
+		// パネルを開いたままなら猶予ポーリングで追従する (rerun が GraphQL に映るまでのラグは
+		// rerunPollGrace のコメント参照)。映れば panelHasRunningJob → 既存の定期リフレッシュへ
+		// 自然に引き継がれる。パネルが閉じられていれば何もしない (次の開き直しで最新を取る)
+		var poll tea.Cmd
+		if msg.sha == m.panelSHA && m.panelSHA != "" {
+			m.panelPollGrace = rerunPollGrace
+			poll = m.schedulePanelPoll()
+		}
+		return m, tea.Batch(poll, m.maybeTick())
 	case updateMsg:
 		m.actModal.updating = false
 		// 結果はダイアログで出す (何かキーで閉じる。ユーザー要望 2026-07-22)。バージョンが
@@ -1026,6 +1061,8 @@ func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.openPR()
 	case "d":
 		return m, m.openDiff()
+	case "r":
+		m.askRerun()
 	}
 	return m, nil
 }
@@ -1043,9 +1080,35 @@ func (m *browseModel) handleDetailKey(key string) (tea.Model, tea.Cmd) {
 	case "y":
 		m.copyFocusURL()
 		return m, nil
+	case "r":
+		m.askRerun()
+		return m, nil
 	}
 	m.detailOv.scroll(key, m.detailKey(), m.visibleDetailRows())
 	return m, nil
+}
+
+// askRerun はフォーカス中 job の CI 再実行確認 (y/N) に入る (job パネル / job 詳細の r キー)。
+// 再実行できないケース (StatusContext / 失敗以外) は確認を出さず notice で理由を伝える。
+func (m *browseModel) askRerun() {
+	job, ok := m.focusedJob()
+	if !ok {
+		return
+	}
+	if job.CheckID == 0 {
+		m.notice = "GitHub Actions の job ではないため再実行できません"
+		return
+	}
+	if job.State != StateFailure {
+		m.notice = "再実行できるのは失敗した job だけです"
+		return
+	}
+	repo, sha, id := m.repo, m.panelSHA, job.CheckID
+	m.actModal.askRerun(job.Name, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		return rerunMsg{sha: sha, err: runJobRerun(ctx, repo, id)}
+	})
 }
 
 // detailKey は job 詳細キャッシュのキー。詳細表示中は panelCursor が動かないため安定する。
@@ -1321,6 +1384,7 @@ func (m *browseModel) closePanel() {
 	// の choke point なのでここ 1 箇所で覆える。閉じた後に届く旧 refresh の detailMsg は
 	// panelSHA と不一致で無害 (maps.Copy はキャッシュ更新のみ・poll は再開しない)。
 	m.panelRefresh = false
+	m.panelPollGrace = 0 // rerun 直後の猶予ポーリングもパネルと一緒に終える
 	m.detailOv.close() // 詳細ポップアップも閉じる (panel/detail 両クラスタの choke point)
 }
 
@@ -1888,14 +1952,18 @@ func (m *browseModel) hintLine() string {
 		hint = m.spinner() + " pushing..."
 	case m.actModal.pulling:
 		hint = m.spinner() + " pulling..."
+	case m.actModal.rerunConfirm:
+		hint = "job を再実行しますか? [Y/n] (Enter=y)"
+	case m.actModal.rerunning:
+		hint = m.spinner() + " rerunning..."
 	case m.actModal.updating:
 		hint = m.spinner() + " claude update..."
 	case m.diffOv.visible():
 		hint = "j/k/Space: スクロール  g/G: 先頭/末尾  q/h: 閉じる"
 	case m.detailOv.visible():
-		hint = "j/k: スクロール  v: nvim で開く  Enter/h/q: 戻る  o: ブラウザ  y: URL コピー"
+		hint = "j/k: スクロール  v: nvim で開く  r: 再実行  Enter/h/q: 戻る  o: ブラウザ  y: URL コピー"
 	case m.panelSHA != "" && m.panelCursor >= 0:
-		hint = "j/k: job 移動  Enter: 詳細ログ  o: ブラウザ  y: URL コピー  h/q: 閉じる"
+		hint = "j/k: job 移動  Enter: 詳細ログ  r: 再実行  o: ブラウザ  y: URL コピー  h/q: 閉じる"
 	case m.panelSHA != "":
 		hint = "j: job を選択  y: commit URL  Enter/h/q: 閉じる"
 	}

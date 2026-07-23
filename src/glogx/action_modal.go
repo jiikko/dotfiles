@@ -20,6 +20,12 @@ type actionModal struct {
 	pushWarn     string // push できない理由の警告モーダル (何かキーで閉じる)
 	pullConfirm  bool   // u の pull --rebase 確認中 (y/N)
 	pulling      bool   // git pull --rebase 実行中 (終了以外のキーを無視)
+	rerunConfirm bool   // r の CI job 再実行確認中 (y/N)
+	rerunJobName string // 再実行対象の job 名 (確認モーダルの文言用)
+	// rerunAction は確認 y で実行する tea.Cmd。job id / repo / SHA は browseModel 側の関心事
+	// なので、askRerun 時に closure として注入する (この型は CI 状態を知らない)
+	rerunAction tea.Cmd
+	rerunning   bool // gh run rerun 実行中 (終了以外のキーを無視)
 	updating     bool   // claude update 実行中 (終了以外のキーを無視)
 	updateResult string // claude update の結果ダイアログ本文 ("" = 非表示。何かキーで閉じる)
 	// cancel は走行中の push/pull を quit から中断するための cancel (deadline 無し)。running な
@@ -33,12 +39,15 @@ type actionModal struct {
 
 // active はいずれかのモーダル/トーストが表示中か (描画とセンタリングの要否判定)。
 func (a *actionModal) active() bool {
-	return a.pushConfirm || a.pushing || a.pullConfirm || a.pulling || a.updating ||
-		a.pushWarn != "" || a.updateResult != ""
+	return a.pushConfirm || a.pushing || a.pullConfirm || a.pulling || a.rerunConfirm ||
+		a.rerunning || a.updating || a.pushWarn != "" || a.updateResult != ""
 }
 
 // running は remote/自己更新の実行中か (spinner tick を回し、確認以外のキーを飲む)。
-func (a *actionModal) running() bool { return a.pushing || a.pulling || a.updating }
+// rerunning も含める (実行中の誤操作防止)。ただし quit 側の Ctrl-C ブロック対象は
+// push/pull のみ: rerun は fetchTimeout 付きの短い API 呼び出しで、中断しても
+// 不整合 (mid-rebase のような) を残さないため即終了を許す。
+func (a *actionModal) running() bool { return a.pushing || a.pulling || a.rerunning || a.updating }
 
 // runningQuitHint は実行中モーダルに出す終了ガードの案内。1 回目の Ctrl-C で forceQuitArmed が
 // 立った後は強制終了を促す (progressive disclosure)。
@@ -89,10 +98,28 @@ func (a *actionModal) handleKey(key string) (consumed bool, action tea.Cmd) {
 		}
 		return true, nil
 	}
+	if a.rerunConfirm {
+		a.rerunConfirm = false
+		action := a.rerunAction
+		a.rerunAction = nil
+		if confirmYes {
+			a.rerunning = true
+			return true, action
+		}
+		return true, nil
+	}
 	if a.running() { // 実行中は (確認以外の) キーを無視する
 		return true, nil
 	}
 	return false, nil
+}
+
+// askRerun は r で CI job 再実行の確認へ入る。action は確認 y で実行する tea.Cmd
+// (rerunMsg を返す closure。browseModel 側が組む)。
+func (a *actionModal) askRerun(jobName string, action tea.Cmd) {
+	a.rerunConfirm = true
+	a.rerunJobName = jobName
+	a.rerunAction = action
 }
 
 // startCancelable は push/pull 用の deadline 無し cancel context を張り、cancel を保持する
@@ -151,6 +178,9 @@ func (a *actionModal) boxLines(width int, colored bool, spinner string, unpushed
 	case a.pulling:
 		title = " git pull --rebase "
 		rows = []string{spinner + " pulling...", "", paint(a.runningQuitHint(), ansiDim, colored)}
+	case a.rerunning:
+		title = " CI 再実行 "
+		rows = []string{spinner + " 再実行を要求中..."}
 	case a.updating:
 		title = " claude update "
 		rows = []string{
@@ -162,6 +192,14 @@ func (a *actionModal) boxLines(width int, colored bool, spinner string, unpushed
 		title = " git pull --rebase "
 		rows = []string{
 			"origin から pull --rebase します",
+			"",
+			paint("y/Enter: 実行   n/Esc: キャンセル", ansiDim, colored),
+		}
+	case a.rerunConfirm:
+		title = " CI 再実行 "
+		rows = []string{
+			"失敗した job を再実行します:",
+			a.rerunJobName,
 			"",
 			paint("y/Enter: 実行   n/Esc: キャンセル", ansiDim, colored),
 		}

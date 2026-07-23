@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strconv"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -499,5 +500,35 @@ func TestPickBestPRClosedOnlyFallback(t *testing.T) {
 	got := pickBestPR([]PRRef{{Number: 5, State: "CLOSED"}, {Number: 8, State: "CLOSED"}})
 	if got == nil || got.Number != 5 {
 		t.Errorf("CLOSED のみのとき先頭 (#5) を返さない: %#v", got)
+	}
+}
+
+// jobRerun は gh run rerun --job を正しい引数で叩き、失敗時は stderr 末尾行をエラーにする。
+func TestJobRerun(t *testing.T) {
+	var gotName string
+	var gotArgs []string
+	run := func(_ context.Context, name string, args ...string) ([]byte, []byte, error) {
+		gotName, gotArgs = name, args
+		return nil, nil, nil
+	}
+	if err := jobRerun(context.Background(), run, Repo{Owner: "o", Name: "r"}, 42); err != nil {
+		t.Fatalf("jobRerun() = %v", err)
+	}
+	want := []string{"run", "rerun", "--job", "42", "-R", "o/r"}
+	if gotName != "gh" || !slices.Equal(gotArgs, want) {
+		t.Fatalf("gh 呼び出しが違う: %s %v; want gh %v", gotName, gotArgs, want)
+	}
+	// 失敗: stderr の末尾行がエラーメッセージになる
+	err := jobRerun(context.Background(),
+		fakeRunner("", "some detail\nrun 123 cannot be rerun\n", errors.New("exit status 1")),
+		Repo{Owner: "o", Name: "r"}, 42)
+	if err == nil || err.Error() != "run 123 cannot be rerun" {
+		t.Fatalf("stderr 末尾行がエラーにならない: %v", err)
+	}
+	// stderr が空なら元のエラーを使う
+	err = jobRerun(context.Background(), fakeRunner("", "", errors.New("exit status 1")),
+		Repo{Owner: "o", Name: "r"}, 42)
+	if err == nil || err.Error() != "exit status 1" {
+		t.Fatalf("stderr 空で元エラーが使われない: %v", err)
 	}
 }
