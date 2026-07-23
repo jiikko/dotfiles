@@ -92,16 +92,34 @@ func buildShadowPanelBox(title string, rows []string, width int, colored bool) [
 	return buildPanelBoxImpl(title, rows, width, colored, true)
 }
 
-// shadowRun は落ち影 n セル分。色ありは暗い bg の空白、色なし (NO_COLOR) は bg が
-// 使えないため陰影文字 "░" で代用する。
+// 落ち影は前景ブロック文字で描く (bg ベタ塗りではない)。近黒 fg の █ 本体 + 一段淡い ▓ の
+// 縁で、グリフの隙間から端末の地色が透けて penumbra (半影) になり、角が柔らかく浮いて見える。
+// 色なし (NO_COLOR) は近黒 fg が使えず、地色に対し █ だと明るく浮くため陰影文字 ▒ / ░ で
+// 代用する (現状踏襲の淡いテクスチャ表現。濃淡は body=▒ / feather=░)。
+const (
+	shadowGlyphFull     = "█" // 本体 (最も濃い)
+	shadowGlyphFeather  = "▓" // 縁のフェザー (一段淡い)
+	shadowGlyphMono     = "▒" // NO_COLOR 本体
+	shadowGlyphMonoEdge = "░" // NO_COLOR フェザー
+)
+
+// shadowRun は落ち影の本体 n セル分。
 func shadowRun(n int, colored bool) string {
 	if n <= 0 {
 		return ""
 	}
 	if !colored {
-		return strings.Repeat("░", n)
+		return strings.Repeat(shadowGlyphMono, n)
 	}
-	return ansiShadowBg + strings.Repeat(" ", n) + ansiReset
+	return ansiShadowFg + strings.Repeat(shadowGlyphFull, n) + ansiReset
+}
+
+// shadowFeather は落ち影の縁 1 セル (本体より一段淡く、影が地色へ溶ける ease-in/out 用)。
+func shadowFeather(colored bool) string {
+	if !colored {
+		return shadowGlyphMonoEdge
+	}
+	return ansiShadowFg + shadowGlyphFeather + ansiReset
 }
 
 // buildPanelBoxImpl が本体。shadow=true では右端 1 桁・下端 1 行を「落ち影」に充て、
@@ -116,10 +134,6 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, sha
 		fw = width - 1
 	}
 	inner := fw - 4 // "│ " + " │"
-	shade := ""
-	if shadow {
-		shade = shadowRun(1, colored)
-	}
 	lines := make([]string, 0, len(rows)+3)
 	// タイトルは SGR 入りの job 名や commit subject がそのまま載る。ANSI を残すと
 	// 幅計算 (Truncate/StringWidth) がずれて罫線が崩れ、タイトル全体の dim 塗りも
@@ -132,18 +146,29 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, sha
 	} else {
 		lines = append(lines, paint(top, ansiDim, colored))
 	}
-	for _, row := range rows {
+	for i, row := range rows {
 		content := clipToWidth(row, inner)
 		pad := max(inner-runewidth.StringWidth(stripANSI(content)), 0)
+		shade := ""
+		if shadow {
+			// 右影の上端 (最初の content 行) だけ ▓ フェザーで ease-in し、以降は █ 本体。
+			// 影は最上段に無い (top で 1 行分オフセット) ので、右影の「始まり」を柔らかくする。
+			if i == 0 {
+				shade = shadowFeather(colored)
+			} else {
+				shade = shadowRun(1, colored)
+			}
+		}
 		lines = append(lines, paint("│ ", ansiDim, colored)+content+strings.Repeat(" ", pad)+paint(" │", ansiDim, colored)+shade)
 	}
 	if shadow {
 		// 下辺は lower half block でセル下半分を埋める。罫線 ─ はセル中央に細く描かれるため
 		// 下半分が空き、下の落ち影との間に視覚的な余白ができる。▄ で下側に寄せて余白を消す
-		// (横 │ 側は影と余白なく繋がっているのでそのまま)。
-		lines = append(lines, paint(strings.Repeat("▄", fw), ansiDim, colored)+shade)
-		// 下端の影: 左へ 1 桁ずらして右下だけに落とす (古典的なウィンドウのドロップシャドウ)
-		lines = append(lines, " "+shadowRun(width-1, colored))
+		// (横 │ 側は影と余白なく繋がっているのでそのまま)。右下角は影が最も深いので █ 本体。
+		lines = append(lines, paint(strings.Repeat("▄", fw), ansiDim, colored)+shadowRun(1, colored))
+		// 下端の影: 左へ 1 桁ずらして右下だけに落とす (古典的なドロップシャドウ)。左端を ▓ フェザーで
+		// ease-in してから █ 本体を敷く (影が地色から立ち上がる縁を柔らかくする)。
+		lines = append(lines, " "+shadowFeather(colored)+shadowRun(width-2, colored))
 	} else {
 		lines = append(lines, paint("└"+strings.Repeat("─", fw-2)+"┘", ansiDim, colored))
 	}

@@ -22,9 +22,10 @@ const (
 	// 色相のある暗青 24 に変更 (ユーザー要望 2026-07-21。fg 色はそのまま透ける)
 	ansiCursorBg = "\x1b[48;5;24m"
 	ansiBold     = "\x1b[1m"
-	// confirm モーダルの落ち影 bg (256色の暗灰 233)。地色 234/235 より一段暗くして、
-	// 枠の右下に落とすと板が浮いて見える (buildShadowPanelBox の drop shadow)
-	ansiShadowBg = "\x1b[48;5;233m"
+	// 落ち影の前景色 (256色の近黒 232)。bg ベタ塗りではなく █/▓ の前景ブロックで影を描き、
+	// グリフの隙間から端末の地色が透けて自然な penumbra になる (端末 bg に依存せず、色の
+	// 濃淡 █>▓ で縁をフェザーできる)。buildShadowPanelBox の drop shadow。
+	ansiShadowFg = "\x1b[38;5;232m"
 )
 
 // spinnerFrames は取得中表示のフレーム。

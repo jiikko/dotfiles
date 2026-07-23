@@ -56,3 +56,34 @@ func TestBuildPanelBoxTitleStripsANSI(t *testing.T) {
 		t.Errorf("タイトル行の幅 = %d; want 40: %q", w, lines[0])
 	}
 }
+
+// 落ち影は前景ブロック (█ 本体 / ▓ フェザー) で描き、bg ベタ塗り (旧 233) は使わない。
+// 端末 bg が透けて penumbra になり縁が柔らかくなる。footprint 幅は据え置き。
+func TestShadowForegroundBlocksAndFeather(t *testing.T) {
+	// colored: 前景ブロック + フェザー、旧 bg 塗りは無い
+	lines := buildShadowPanelBox(" t ", []string{"a", "b"}, 20, true)
+	joined := strings.Join(lines, "\n")
+	if strings.Contains(joined, "\x1b[48;5;233m") {
+		t.Error("旧 bg ベタ塗り (256色 233) が残っている")
+	}
+	if !strings.Contains(joined, ansiShadowFg+"█") {
+		t.Error("影本体 █ (近黒前景) が使われていない")
+	}
+	if !strings.Contains(joined, ansiShadowFg+"▓") {
+		t.Error("縁のフェザー ▓ が使われていない")
+	}
+	for _, l := range lines {
+		if w := runewidth.StringWidth(stripANSI(l)); w != 20 {
+			t.Errorf("colored パネル行の幅 = %d; want 20: %q", w, l)
+		}
+	}
+	// NO_COLOR: 近黒 fg が使えないため ▒ 本体 + ░ フェザーの階調で代用、ANSI は含まない
+	mono := buildShadowPanelBox(" t ", []string{"a", "b"}, 20, false)
+	mj := strings.Join(mono, "\n")
+	if strings.ContainsRune(mj, '\x1b') {
+		t.Error("NO_COLOR 出力に ANSI が混入している")
+	}
+	if !strings.Contains(mj, "▒") || !strings.Contains(mj, "░") {
+		t.Error("NO_COLOR の濃淡 (▒ 本体 / ░ フェザー) が出ていない")
+	}
+}
