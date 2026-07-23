@@ -45,9 +45,9 @@ func (e cacheEntry) fresh(now time.Time) bool {
 	return now.Sub(e.FetchedAt) < cacheTTL(e.State)
 }
 
-// CachePath はリポジトリごとのキャッシュファイルパス。
-// $XDG_CACHE_HOME/glog/github.com/<owner>/<name>.json (未設定時は ~/.cache/glog/...)。
-func CachePath(repo Repo) (string, error) {
+// cacheBaseDir は glogx のキャッシュ置き場 ($XDG_CACHE_HOME/glog、未設定時は ~/.cache/glog)。
+// CI キャッシュと claude バージョンキャッシュ (claude_version.go) で共有する。
+func cacheBaseDir() (string, error) {
 	base := os.Getenv("XDG_CACHE_HOME")
 	if base == "" {
 		home, err := os.UserHomeDir()
@@ -56,7 +56,17 @@ func CachePath(repo Repo) (string, error) {
 		}
 		base = filepath.Join(home, ".cache")
 	}
-	return filepath.Join(base, "glog", "github.com", repo.Owner, repo.Name+".json"), nil
+	return filepath.Join(base, "glog"), nil
+}
+
+// CachePath はリポジトリごとのキャッシュファイルパス。
+// $XDG_CACHE_HOME/glog/github.com/<owner>/<name>.json (未設定時は ~/.cache/glog/...)。
+func CachePath(repo Repo) (string, error) {
+	base, err := cacheBaseDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "github.com", repo.Owner, repo.Name+".json"), nil
 }
 
 // LoadCache は fresh なエントリだけを返す。ファイル欠損・破損は「キャッシュなし」に落とす

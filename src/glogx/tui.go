@@ -308,10 +308,13 @@ func (m *browseModel) Init() tea.Cmd {
 	// usage を起動時に取得するため tick を常に起動する (取得中スピナーを回す。取得完了で
 	// spinnerActive が false になり tick は自然に止まる)。CI fetch の有無に依らず起動する。
 	// usageRefreshTick で 1 分ごとのバックグラウンド再取得チェーンも起動する (ユーザー要望)。
+	// Claude Code の新バージョン検出 (claude_version.go)。バックグラウンド 1 回きりで、
+	// 結果は claudeUpdateAvailableMsg (更新なし/失敗は nil Msg で無音)。
+	ver := checkClaudeVersionCmd()
 	if m.fetching {
-		return tea.Batch(m.fetch, prefix, u, m.maybeTick(), usageRefreshTick())
+		return tea.Batch(m.fetch, prefix, u, ver, m.maybeTick(), usageRefreshTick())
 	}
-	return tea.Batch(prefix, u, m.maybeTick(), usageRefreshTick())
+	return tea.Batch(prefix, u, ver, m.maybeTick(), usageRefreshTick())
 }
 
 func tickEvery(d time.Duration) tea.Cmd {
@@ -547,6 +550,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case usageMsg:
 		m.usageOv.handle(msg)
 		return m, nil
+	case claudeUpdateAvailableMsg:
+		m.toast.show("Claude Code v"+msg.latest+" が公開されています (C で更新)", true)
+		return m, m.maybeTick()
 	case toastMsg:
 		m.toast.startLeaving(msg) // 静止明け: 退場アニメへ (世代一致時のみ)。maybeTick で tick 再開
 		return m, m.maybeTick()
