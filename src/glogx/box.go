@@ -161,11 +161,18 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, sha
 		}
 		lines = append(lines, paint("│ ", ansiDim, colored)+content+strings.Repeat(" ", pad)+paint(" │", ansiDim, colored)+shade)
 	}
-	// 下辺は上辺 ┌─┐ と同じ細い罫線 └─┘ (shadow の有無で共通)。以前は shadow 時だけ ▄ の
-	// 半ブロック帯にしていたが、上辺・側辺の細線と太さが不揃いで浮いて見えたため罫線へ統一
-	// (ユーザー指摘 2026-07-23)。影は別行のフェザー前景ブロックで表現するので、下辺を太らせて
-	// 影との余白を埋める必要はなくなった。
-	bottom := paint("└"+strings.Repeat("─", fw-2)+"┘", ansiDim, colored)
+	// 下辺の角は上辺 ┌─┐ と同じ細い └┘ で統一する (▄ の半ブロック帯は側/上辺の細線と太さが
+	// 不揃いで浮いていたため撤去した経緯)。横線は shadow の有無で変える:
+	//   - 通常箱: 中央高の ─ (標準の枠)
+	//   - shadow 箱: 最下段の ▁ 。─ は中央高で下の落ち影との間に半セルの余白ができるが、▁ は
+	//     セル最下段なので影に接し「地に置いた」自然なドロップシャドウになる。角は └┘ を残して
+	//     左右が開くのを防ぐ (ユーザー指摘 2026-07-23: ─ は余白 / ▁ 一様は角が開く →「下線の
+	//     左右だけ角文字に」が本要望。└ + ▁×n + ┘)。
+	midRule := "─"
+	if shadow {
+		midRule = "▁"
+	}
+	bottom := paint("└"+strings.Repeat(midRule, fw-2)+"┘", ansiDim, colored)
 	if shadow {
 		// 右下角の影は最も深いので █ 本体。
 		lines = append(lines, bottom+shadowRun(1, colored))
