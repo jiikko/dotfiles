@@ -2626,3 +2626,79 @@ func TestPanelPollGrace(t *testing.T) {
 		t.Fatal("closePanel で猶予ポーリングが破棄されない")
 	}
 }
+
+// --- job 詳細の一括コピー (Y キー, issue 020) ---
+
+func TestBrowseCopyJobContextCached(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	withFailedJob(m, 0, 7, StateFailure)
+	var copied string
+	orig := copyToClipboard
+	copyToClipboard = func(text string) error { copied = text; return nil }
+	t.Cleanup(func() { copyToClipboard = orig })
+	m.openPanel()
+	m.handleKey("j")
+	// 詳細キャッシュ済み → 即コピー (追加 fetch なし)
+	m.detailOv.cache[m.detailKey()] = []string{"✗ lint (13s)", "", "[failure] a.go:1", "  boom"}
+	if _, cmd := m.handleKey("Y"); cmd != nil {
+		t.Fatal("キャッシュ済みなのに fetch が走った")
+	}
+	for _, want := range []string{"## CI job: lint", "o/r@aaaaaaa", "https://github.com/o/r/runs/9", "[failure] a.go:1"} {
+		if !strings.Contains(copied, want) {
+			t.Fatalf("コピー内容に %q が無い:\n%s", want, copied)
+		}
+	}
+	if strings.Contains(copied, "\x1b[") {
+		t.Fatal("コピー内容に ANSI が残っている")
+	}
+	if !strings.Contains(m.notice, "コピーしました") {
+		t.Fatalf("完了 notice が出ない: %q", m.notice)
+	}
+}
+
+func TestBrowseCopyJobContextFetchesThenCopies(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	withFailedJob(m, 0, 7, StateFailure)
+	var copied string
+	orig := copyToClipboard
+	copyToClipboard = func(text string) error { copied = text; return nil }
+	t.Cleanup(func() { copyToClipboard = orig })
+	m.openPanel()
+	m.handleKey("j")
+	// 未取得 → 詳細ポップアップを開いて取得し、到着時にコピーされる
+	_, cmd := m.handleKey("Y")
+	if cmd == nil || !m.detailOv.visible() || m.copyOnDetail != m.detailKey() {
+		t.Fatalf("Y で詳細取得+コピー予約に入らない: cmd=%v open=%v pending=%q",
+			cmd != nil, m.detailOv.visible(), m.copyOnDetail)
+	}
+	m.Update(jobDetailMsg{key: m.detailKey(), lines: []string{"✗ step", "log line"}})
+	if !strings.Contains(copied, "log line") || !strings.Contains(copied, "## CI job: lint") {
+		t.Fatalf("到着時にコピーされない:\n%s", copied)
+	}
+	if m.copyOnDetail != "" {
+		t.Fatal("コピー予約が消えない")
+	}
+	// 取得失敗 (ghErr) では予約破棄のみでコピーされない
+	copied = ""
+	m.detailOv.reset()
+	m.openPanel()
+	m.handleKey("j")
+	m.handleKey("Y")
+	m.Update(jobDetailMsg{key: m.detailKey(), ghErr: &GHError{Kind: GHOther, Detail: "boom"}})
+	if copied != "" || m.copyOnDetail != "" {
+		t.Fatalf("取得失敗でコピーされた / 予約が残った: copied=%q pending=%q", copied, m.copyOnDetail)
+	}
+	// closePanel で予約破棄 (閉じた後の到着でコピーしない)
+	m.detailOv.reset()
+	m.openPanel()
+	m.handleKey("j")
+	m.handleKey("Y")
+	key := m.detailKey()
+	m.closePanel()
+	m.Update(jobDetailMsg{key: key, lines: []string{"late"}})
+	if copied != "" {
+		t.Fatal("パネルを閉じた後の到着でコピーされた")
+	}
+}

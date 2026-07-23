@@ -192,6 +192,7 @@ type browseModel struct {
 	panelPollSeq   int    // パネル開閉の世代 (panelPollMsg の有効性判定)
 	panelRefresh   bool   // パネルの定期リフレッシュ実行中 (detailsLoading と別: 表示を「取得中」に落とさない)
 	panelPollGrace int    // 実行中 job が見えなくてもポーリングを続ける残回数 (rerun 直後の反映ラグ吸収)
+	copyOnDetail   string // Y で詳細未取得だった detailKey。jobDetailMsg 到着時にコピーして消す ("" = 予約なし)
 	// job 詳細ポップアップ (annotations / ログ tail) の pager 状態と描画は jobDetailOverlay 型
 	// (job_detail_overlay.go) に切り出す。panel-frame (panelSHA/panelCursor/poll/refresh) と ETA・
 	// CI 取得は details/statuses/commits と構造的に結合するため browseModel に残す (詳細は同ファイル)。
@@ -459,6 +460,14 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// receive は busy 落とし・cache 格納・(今開いている詳細なら) 末尾スクロールを担う。currentKey は
 		// live な detailKey() を渡す (snapshot 禁止: リフレッシュで panelCursor がクランプされ得るため)。
 		m.detailOv.receive(msg, m.detailKey(), m.visibleDetailRows())
+		// Y で詳細取得を待っていたら、到着したこの内容をコピーする (issue 020)。取得失敗
+		// (ghErr) は上の sticky 警告に任せ、予約だけ静かに破棄する
+		if m.copyOnDetail == msg.key {
+			m.copyOnDetail = ""
+			if job, ok := m.focusedJob(); ok && msg.ghErr == nil && len(msg.lines) > 0 {
+				m.copyJobContextLines(job, msg.lines)
+			}
+		}
 		return m, nil
 	case prMsg:
 		delete(m.prBusy, msg.sha)
@@ -1057,6 +1066,8 @@ func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.openJob()
 	case "y":
 		m.copyFocusURL()
+	case "Y":
+		return m, m.copyJobContext()
 	case "p":
 		return m, m.openPR()
 	case "d":
@@ -1080,12 +1091,54 @@ func (m *browseModel) handleDetailKey(key string) (tea.Model, tea.Cmd) {
 	case "y":
 		m.copyFocusURL()
 		return m, nil
+	case "Y":
+		return m, m.copyJobContext()
 	case "r":
 		m.askRerun()
 		return m, nil
 	}
 	m.detailOv.scroll(key, m.detailKey(), m.visibleDetailRows())
 	return m, nil
+}
+
+// copyJobContext はフォーカス中 job の「何が起きたか」(step 一覧 + annotations / ログ末尾) を
+// Markdown 整形でクリップボードへコピーする (job パネル / job 詳細の Y キー。LLM に貼る用。
+// issue 020)。詳細が未取得なら詳細ポップアップを開いて取得し、到着 (jobDetailMsg) 時にコピーする。
+func (m *browseModel) copyJobContext() tea.Cmd {
+	job, ok := m.focusedJob()
+	if !ok {
+		m.notice = "job を選択してから Y で詳細をコピーします"
+		return nil
+	}
+	if lines := m.detailOv.lines(m.detailKey()); len(lines) > 0 {
+		m.copyJobContextLines(job, lines)
+		return nil
+	}
+	m.copyOnDetail = m.detailKey()
+	return m.openJobDetail()
+}
+
+// copyJobContextLines は job 詳細行をヘッダ (job 名 / commit / URL) 付きの Markdown にして
+// クリップボードへ入れる。本文は ANSI を除去したプレーンテキスト (jobLogText と同じ)。
+func (m *browseModel) copyJobContextLines(job CheckDetail, lines []string) {
+	var b strings.Builder
+	b.WriteString("## CI job: ")
+	b.WriteString(job.Name)
+	if c := m.commitBySHA(m.panelSHA); c != nil && m.hasRepo {
+		fmt.Fprintf(&b, " — %s/%s@%s %q", m.repo.Owner, m.repo.Name, c.ShortSHA, c.Subject)
+	}
+	b.WriteString("\n")
+	if job.URL != "" {
+		b.WriteString(job.URL)
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(jobLogText(lines))
+	if err := copyToClipboard(b.String()); err != nil {
+		m.notice = "コピーに失敗しました: " + firstLine(err.Error())
+		return
+	}
+	m.notice = fmt.Sprintf("job 詳細をコピーしました (%d 行)", len(lines))
 }
 
 // askRerun はフォーカス中 job の CI 再実行確認 (y/N) に入る (job パネル / job 詳細の r キー)。
@@ -1385,7 +1438,8 @@ func (m *browseModel) closePanel() {
 	// panelSHA と不一致で無害 (maps.Copy はキャッシュ更新のみ・poll は再開しない)。
 	m.panelRefresh = false
 	m.panelPollGrace = 0 // rerun 直後の猶予ポーリングもパネルと一緒に終える
-	m.detailOv.close() // 詳細ポップアップも閉じる (panel/detail 両クラスタの choke point)
+	m.copyOnDetail = ""  // Y のコピー予約も破棄 (閉じた後の到着で意図しないコピーをしない)
+	m.detailOv.close()   // 詳細ポップアップも閉じる (panel/detail 両クラスタの choke point)
 }
 
 // openURLCmd は URL をブラウザで開く Cmd。StatusContext の targetUrl 等、外部が任意に
@@ -1961,9 +2015,9 @@ func (m *browseModel) hintLine() string {
 	case m.diffOv.visible():
 		hint = "j/k/Space: スクロール  g/G: 先頭/末尾  q/h: 閉じる"
 	case m.detailOv.visible():
-		hint = "j/k: スクロール  v: nvim で開く  r: 再実行  Enter/h/q: 戻る  o: ブラウザ  y: URL コピー"
+		hint = "j/k: スクロール  v: nvim で開く  r: 再実行  Enter/h/q: 戻る  o: ブラウザ  y: URL  Y: 詳細コピー"
 	case m.panelSHA != "" && m.panelCursor >= 0:
-		hint = "j/k: job 移動  Enter: 詳細ログ  r: 再実行  o: ブラウザ  y: URL コピー  h/q: 閉じる"
+		hint = "j/k: job 移動  Enter: 詳細ログ  r: 再実行  o: ブラウザ  y: URL  Y: 詳細コピー  h/q: 閉じる"
 	case m.panelSHA != "":
 		hint = "j: job を選択  y: commit URL  Enter/h/q: 閉じる"
 	}
