@@ -303,7 +303,7 @@ func (m *browseModel) Init() tea.Cmd {
 	// 案内する (数秒で自動消滅)。ime.go 側は未導入でも no-op なので機能自体は壊れないが、IME が
 	// 英数へ切り替わらない事実に気づけるよう能動的に案内する (ユーザー要望 2026-07-23)。
 	if !macismInstalled() {
-		m.toast.show("macism 未導入: brew install laishulu/homebrew/macism", false)
+		m.toast.show("macism 未導入: brew tap laishulu/homebrew && brew install macism", false)
 	}
 	// usage を起動時に取得するため tick を常に起動する (取得中スピナーを回す。取得完了で
 	// spinnerActive が false になり tick は自然に止まる)。CI fetch の有無に依らず起動する。
