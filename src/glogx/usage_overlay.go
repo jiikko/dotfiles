@@ -130,12 +130,13 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 	return buildShadowPanelBox(title, rows, boxWidth, colored)
 }
 
-// overlayBoxTopRight は複数行の box をウィンドウ上部の右端へ矩形で重ねる (右揃え)。
-// box の各行は buildPanelBox で幅が揃っているため、右端に清潔な長方形として載る。
-// 覆われる各行の左側 (見えている部分) は truncateKeepANSI で色を保ったまま切り、境界で
-// reset を挟んで開いた色/bg を閉じる (取得中に上部行の色が抜ける不具合の修正)。box 行自身の
-// 色はそのまま活きる。
-func overlayBoxTopRight(window, box []string, width int, colored bool) []string {
+// overlayBoxRight は複数行の box を window の右端へ矩形で重ねる (右揃え)。base は載せ始める行
+// (0=上端 / 下端は max(len(window)-len(box),0))。box の各行は buildPanelBox で幅が揃っているため
+// 右端に清潔な長方形として載る。覆われる各行の左側 (見えている部分) は truncateKeepANSI で色を
+// 保ったまま切り、境界で reset を挟んで開いた色/bg を閉じる (取得中に上部行の色が抜ける不具合の
+// 修正)。box 行自身の色はそのまま活きる。⚠️ この色にじみ防止の合成ロジックの単一情報源 —
+// TopRight/BottomRight で二重持ちして片方だけ退行させないため 1 箇所に集約している。
+func overlayBoxRight(window, box []string, width int, colored bool, base int) []string {
 	if len(window) == 0 || width <= 0 || len(box) == 0 {
 		return window
 	}
@@ -143,35 +144,6 @@ func overlayBoxTopRight(window, box []string, width int, colored bool) []string 
 	if colored {
 		reset = ansiReset // 左側の開いた色/bg を box の直前で閉じる
 	}
-	for i, row := range box {
-		if i >= len(window) {
-			break
-		}
-		bw := runewidth.StringWidth(stripANSI(row))
-		if bw >= width {
-			window[i] = clipToWidth(row, width)
-			continue
-		}
-		leftWidth := width - bw
-		left := truncateKeepANSI(window[i], leftWidth)
-		pad := strings.Repeat(" ", max(leftWidth-runewidth.StringWidth(stripANSI(left)), 0))
-		window[i] = left + reset + pad + row
-	}
-	return window
-}
-
-// overlayBoxBottomRight は box を window の下端・右端へ合成する (overlayBoxTopRight の下端版)。
-// トースト用。左側の背景リストは残し (truncateKeepANSI + pad)、box を右端に載せる。box は
-// window の末尾 len(box) 行 (hint 行の直上) に重なる。
-func overlayBoxBottomRight(window, box []string, width int, colored bool) []string {
-	if len(window) == 0 || width <= 0 || len(box) == 0 {
-		return window
-	}
-	reset := ""
-	if colored {
-		reset = ansiReset
-	}
-	base := max(len(window)-len(box), 0) // 下端 len(box) 行に載せる
 	for i, row := range box {
 		pos := base + i
 		if pos >= len(window) {
@@ -188,4 +160,15 @@ func overlayBoxBottomRight(window, box []string, width int, colored bool) []stri
 		window[pos] = left + reset + pad + row
 	}
 	return window
+}
+
+// overlayBoxTopRight は box をウィンドウ上部の右端へ重ねる (usage オーバーレイ用)。
+func overlayBoxTopRight(window, box []string, width int, colored bool) []string {
+	return overlayBoxRight(window, box, width, colored, 0)
+}
+
+// overlayBoxBottomRight は box を window の下端 (末尾 len(box) 行 = hint 行の直上)・右端へ重ねる
+// (トースト用)。
+func overlayBoxBottomRight(window, box []string, width int, colored bool) []string {
+	return overlayBoxRight(window, box, width, colored, max(len(window)-len(box), 0))
 }
