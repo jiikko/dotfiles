@@ -1011,16 +1011,6 @@ func (m *browseModel) unpushedCount() int {
 	return n
 }
 
-// centerBox は狭い幅 (最大 44) の影付きモーダル行を組む。水平センタリングと背景リストへの
-// 合成は描画時に overlayCenteredBox が行う (行を塗り潰さず左右の背景を残す)。action モーダルと
-// prefixNote トーストで共用する。
-func centerBox(title string, rows []string, width int, colored bool) []string {
-	if width <= 0 {
-		width = 80
-	}
-	return buildShadowPanelBox(title, rows, min(44, width), colored)
-}
-
 // centerModalLines は中央モーダル/トーストの描画行。tmux prefix 誤爆トースト (prefixNote) を
 // 最優先で描き、無ければ action モーダル (push/pull/update) を描く。どれも非表示なら nil。
 // prefixNote は tmux の関心事なので actionModal に同居させず、ここで合流させる (元の描画順を保持)。
@@ -1861,65 +1851,6 @@ func (m *browseModel) commitBySHA(sha string) *Commit {
 	return nil
 }
 
-// overlayBox は box をウィンドウの anchor 位置へ重ねる (リスト行を置き換える)。
-// 下に収まらない場合はビューポート内へ収まる位置まで引き上げる。
-func overlayBox(window, box []string, anchor, page int) []string {
-	start := min(anchor, max(page-len(box), 0))
-	start = max(start, 0)
-	for i, p := range box {
-		pos := start + i
-		if pos < len(window) {
-			window[pos] = p
-		} else if len(window) < page {
-			window = append(window, p)
-		}
-	}
-	return window
-}
-
-// overlayCenteredBox は box を画面の水平中央に「浮かせて」重ねる。overlayBox が行を塗り潰すのに
-// 対し、こちらは各行で box が占める列だけを box に差し替え、左右の背景リストは残して合成する
-// (右上の usage overlay と同じ発想を中央寄せに広げたもの)。垂直は page 内で中央に置く。
-// 左側は truncateKeepANSI で prefix を保持し、右側は dropToColumn で box の右端以降を復元する。
-// box 行の直前/直後に reset を挟み、背景の色が box に、box の色が右背景に滲まないようにする。
-func overlayCenteredBox(window, box []string, width, page int, colored bool) []string {
-	if len(box) == 0 || len(window) == 0 || width <= 0 {
-		return window
-	}
-	reset := ""
-	if colored {
-		reset = ansiReset
-	}
-	bw := 0
-	for _, r := range box {
-		bw = max(bw, runewidth.StringWidth(stripANSI(r)))
-	}
-	leftGap := max((width-bw)/2, 0)
-	leftPad := strings.Repeat(" ", leftGap)
-	start := min(max((page-len(box))/2, 0), max(page-len(box), 0))
-	for i, boxRow := range box {
-		pos := start + i
-		if pos >= page {
-			break
-		}
-		if pos >= len(window) {
-			if len(window) < page {
-				window = append(window, leftPad+boxRow) // 背景行が無い箇所は素の pad + box
-			}
-			continue
-		}
-		bg := window[pos]
-		// 左背景: 先頭 leftGap 桁を保持し、足りなければ空白で leftGap ちょうどに詰める
-		left := truncateKeepANSI(bg, leftGap)
-		left += strings.Repeat(" ", max(leftGap-runewidth.StringWidth(stripANSI(left)), 0))
-		// 右背景: box 行の右端 (leftGap + この行の表示幅) 以降を復元して継ぐ
-		rowW := runewidth.StringWidth(stripANSI(boxRow))
-		right := dropToColumn(bg, leftGap+rowW)
-		window[pos] = left + reset + boxRow + reset + right
-	}
-	return window
-}
-
 // panelLines は job パネルの描画行 (枠付き)。パネル非表示なら nil。
 func (m *browseModel) panelLines() []string {
 	if m.panelSHA == "" {
@@ -1990,88 +1921,6 @@ func (m *browseModel) detailBoxLines(width int) []string {
 	}
 	return m.detailOv.boxLines(width, m.colored, m.spinner(), name, m.detailKey(), m.visibleDetailRows())
 }
-
-// buildPanelBox は枠線付きのパネルを組み立てる。行の実効幅は ANSI を除いて計算する。
-func buildPanelBox(title string, rows []string, width int, colored bool) []string {
-	return buildPanelBoxImpl(title, rows, width, colored, false)
-}
-
-// buildShadowPanelBox は buildPanelBox の右下ドロップシャドウ付き版。confirm モーダル
-// (push / pull --rebase) 専用。job/diff パネルは面積が大きく影が主張しすぎたため
-// 一度全面導入 → revert (4fb36a2) した経緯があり、影は小さいモーダルに限定する。
-func buildShadowPanelBox(title string, rows []string, width int, colored bool) []string {
-	return buildPanelBoxImpl(title, rows, width, colored, true)
-}
-
-// shadowRun は落ち影 n セル分。色ありは暗い bg の空白、色なし (NO_COLOR) は bg が
-// 使えないため陰影文字 "░" で代用する。
-func shadowRun(n int, colored bool) string {
-	if n <= 0 {
-		return ""
-	}
-	if !colored {
-		return strings.Repeat("░", n)
-	}
-	return ansiShadowBg + strings.Repeat(" ", n) + ansiReset
-}
-
-// buildPanelBoxImpl が本体。shadow=true では右端 1 桁・下端 1 行を「落ち影」に充て、
-// 板が左上光源で浮いて見える 3D 風にする (footprint は width のまま。枠自体を
-// fw = width-1 に狭めて影の余白を捻出する)。
-func buildPanelBoxImpl(title string, rows []string, width int, colored bool, shadow bool) []string {
-	if width < 10 {
-		width = 10
-	}
-	fw := width // 枠の幅 (shadow 時は残り 1 桁が右の影)
-	if shadow {
-		fw = width - 1
-	}
-	inner := fw - 4 // "│ " + " │"
-	shade := ""
-	if shadow {
-		shade = shadowRun(1, colored)
-	}
-	lines := make([]string, 0, len(rows)+3)
-	// タイトルは SGR 入りの job 名や commit subject がそのまま載る。ANSI を残すと
-	// 幅計算 (Truncate/StringWidth) がずれて罫線が崩れ、タイトル全体の dim 塗りも
-	// 途中でリセットされるため、タイトルに限っては ANSI を落とす
-	title = runewidth.Truncate(stripANSI(title), fw-2, "…")
-	top := "┌" + title + strings.Repeat("─", max(fw-2-runewidth.StringWidth(title), 0)) + "┐"
-	if shadow {
-		// 最上段だけ影なし (影は右上角の 1 つ下から始まるのが自然な落ち影)
-		lines = append(lines, paint(top, ansiDim, colored)+" ")
-	} else {
-		lines = append(lines, paint(top, ansiDim, colored))
-	}
-	for _, row := range rows {
-		content := clipToWidth(row, inner)
-		pad := max(inner-runewidth.StringWidth(stripANSI(content)), 0)
-		lines = append(lines, paint("│ ", ansiDim, colored)+content+strings.Repeat(" ", pad)+paint(" │", ansiDim, colored)+shade)
-	}
-	if shadow {
-		// 下辺は lower half block でセル下半分を埋める。罫線 ─ はセル中央に細く描かれるため
-		// 下半分が空き、下の落ち影との間に視覚的な余白ができる。▄ で下側に寄せて余白を消す
-		// (横 │ 側は影と余白なく繋がっているのでそのまま)。
-		lines = append(lines, paint(strings.Repeat("▄", fw), ansiDim, colored)+shade)
-		// 下端の影: 左へ 1 桁ずらして右下だけに落とす (古典的なウィンドウのドロップシャドウ)
-		lines = append(lines, " "+shadowRun(width-1, colored))
-	} else {
-		lines = append(lines, paint("└"+strings.Repeat("─", fw-2)+"┘", ansiDim, colored))
-	}
-	return lines
-}
-
-func cursorMark(colored bool) string {
-	return paint("❯ ", ansiBold, colored)
-}
-
-// カーソル溝: 全リスト行の行頭に確保する 2 桁のマージン。カーソル行だけ「→ 」が入り、
-// 他の行は空白 (行ごとのガタつきを避けるため全行で幅を揃える)。
-const (
-	cursorGutterMark  = "→ "
-	cursorGutterBlank = "  "
-	cursorGutterWidth = 2
-)
 
 // cursorLine はカーソル位置のコミットヘッダー行を強調する。溝の「→ 」に加え、色ありでは
 // 行全体 (溝込み) を暗青 bg で塗る。色なし (NO_COLOR) では矢印のみ。

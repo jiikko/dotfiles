@@ -262,10 +262,15 @@ make lint   # golangci-lint (go run 経由・バージョン固定、設定は .
   `external_commands.go` (git/tmux/claude/browser/clipboard の外部プロセスラッパー) /
   `terminal.go` (端末サニタイズ) / `render.go` (行生成) / `highlight.go` (diff の
   シンタックスハイライト) / `tui.go` (Bubble Tea ブラウズの中核・状態遷移) /
+  `box.go` (browseModel 非依存の枠描画プリミティブ = panel/overlay/centerBox/shadow) /
   各種オーバーレイ・モーダル (`diff_overlay.go` / `job_detail_overlay.go` /
-  `usage_overlay.go` / `action_modal.go` / `toast.go`) / `usage/` (Claude Code の
-  /usage 取得・整形。単独コマンドへ切り出し可能) / `main.go` (配線)
+  `usage_overlay.go` / `pr_status_overlay.go` / `action_modal.go` / `toast.go`) /
+  `usage/` (Claude Code の /usage 取得・整形。単独コマンドへ切り出し可能) / `main.go` (配線)
 - GitHub API はテストでは `CommandRunner` を fake に差し替える (fixture 駆動)
+- `tui.go` のテストは機能クラスタで分割: `tui_helpers_test.go` (共有ヘルパー) /
+  `tui_nav_test.go` (カーソル/スクロール/アニメ/View) / `tui_panel_test.go` (job パネル/詳細/ETA/CI 取得) /
+  `tui_actions_test.go` (push/pull/rerun/update) / `tui_overlay_test.go` (diff/PR 状態/コピー) /
+  `box_test.go` (枠描画)
 
 ## 設計メモ
 
