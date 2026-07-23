@@ -161,16 +161,19 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, sha
 		}
 		lines = append(lines, paint("│ ", ansiDim, colored)+content+strings.Repeat(" ", pad)+paint(" │", ansiDim, colored)+shade)
 	}
+	// 下辺は上辺 ┌─┐ と同じ細い罫線 └─┘ (shadow の有無で共通)。以前は shadow 時だけ ▄ の
+	// 半ブロック帯にしていたが、上辺・側辺の細線と太さが不揃いで浮いて見えたため罫線へ統一
+	// (ユーザー指摘 2026-07-23)。影は別行のフェザー前景ブロックで表現するので、下辺を太らせて
+	// 影との余白を埋める必要はなくなった。
+	bottom := paint("└"+strings.Repeat("─", fw-2)+"┘", ansiDim, colored)
 	if shadow {
-		// 下辺は lower half block でセル下半分を埋める。罫線 ─ はセル中央に細く描かれるため
-		// 下半分が空き、下の落ち影との間に視覚的な余白ができる。▄ で下側に寄せて余白を消す
-		// (横 │ 側は影と余白なく繋がっているのでそのまま)。右下角は影が最も深いので █ 本体。
-		lines = append(lines, paint(strings.Repeat("▄", fw), ansiDim, colored)+shadowRun(1, colored))
+		// 右下角の影は最も深いので █ 本体。
+		lines = append(lines, bottom+shadowRun(1, colored))
 		// 下端の影: 左へ 1 桁ずらして右下だけに落とす (古典的なドロップシャドウ)。左端を ▓ フェザーで
 		// ease-in してから █ 本体を敷く (影が地色から立ち上がる縁を柔らかくする)。
 		lines = append(lines, " "+shadowFeather(colored)+shadowRun(width-2, colored))
 	} else {
-		lines = append(lines, paint("└"+strings.Repeat("─", fw-2)+"┘", ansiDim, colored))
+		lines = append(lines, bottom)
 	}
 	return lines
 }
