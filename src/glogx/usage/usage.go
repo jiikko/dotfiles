@@ -52,6 +52,15 @@ type claudeResult struct {
 	IsError bool   `json:"is_error"`
 }
 
+// claudeWaitDelay は ctx キャンセル/プロセス終了後に子孫が I/O パイプを握り続けていても Wait()
+// を確実に戻すための猶予 (Go 1.20+ の Cmd.WaitDelay)。exec.CommandContext は ctx キャンセルで
+// 直接の子 (claude) だけを kill するため、claude が親 stdout の write 端を継承した孫プロセスを
+// 残すと、直接の子を kill しても Output() 内の Wait() がその孫がパイプを閉じるまでブロックしうる。
+// WaitDelay を設けると、キャンセル/終了からこの時間でパイプを強制クローズして Wait を返す。
+// プロセスが正常終了して自分でパイプを閉じる通常ケースには影響しない安全弁 (fetchTimeout=10s に
+// 対して十分小さく、かつ正当な出力の取りこぼしが起きない程度に確保)。
+const claudeWaitDelay = 2 * time.Second
+
 // Fetch は `claude -p "/usage"` を実行して結果をパースする。
 //
 // --model haiku を明示する: /usage はローカルコマンド処理で LLM を呼ばない
@@ -64,6 +73,7 @@ func Fetch(ctx context.Context) (*Snapshot, error) {
 	go func() { verCh <- FetchVersion(ctx) }()
 
 	cmd := exec.CommandContext(ctx, "claude", "-p", "/usage", "--model", "haiku", "--output-format", "json")
+	cmd.WaitDelay = claudeWaitDelay
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("claude /usage 実行失敗: %w", err)
@@ -87,7 +97,9 @@ func Fetch(ctx context.Context) (*Snapshot, error) {
 // 出力例: "2.1.216 (Claude Code)" → "2.1.216"。取得・パース失敗はすべて空文字を返す
 // (バージョン表示は付加情報であり、欠けても呼び出し側の主処理は成立させる)。
 func FetchVersion(ctx context.Context) string {
-	out, err := exec.CommandContext(ctx, "claude", "--version").Output()
+	cmd := exec.CommandContext(ctx, "claude", "--version")
+	cmd.WaitDelay = claudeWaitDelay
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
