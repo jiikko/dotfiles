@@ -528,8 +528,8 @@ func TestBrowsePRStatusFlow(t *testing.T) {
 	sha := m.commits[0].SHA
 	// P で開いて取得に入る
 	_, cmd := m.handleKey("P")
-	if cmd == nil || !m.prStatusOv.visible() || !m.prStatusOv.busy {
-		t.Fatalf("P で PR 取得に入らない: cmd=%v visible=%v busy=%v", cmd != nil, m.prStatusOv.visible(), m.prStatusOv.busy)
+	if cmd == nil || !m.prStatusOv.visible() || !m.prStatusOv.fetching() {
+		t.Fatalf("P で PR 取得に入らない: cmd=%v visible=%v fetching=%v", cmd != nil, m.prStatusOv.visible(), m.prStatusOv.fetching())
 	}
 	// 取得結果が描画される (state / レビュー / conflict / CI)
 	m.Update(prStatusMsg{sha: sha, status: &PRStatus{
@@ -600,5 +600,102 @@ func TestBrowsePRStatusGuardsAndErrors(t *testing.T) {
 	m.Update(prStatusMsg{sha: sha, status: nil})
 	if !strings.Contains(stripANSI(m.View()), "紐づく PR はありません") {
 		t.Fatal("PR なしの表示が出ない")
+	}
+}
+
+// 回帰 (レビュー確定 high): Y でコピー予約後にフォーカスが別 job へ動いたら、旧 job の詳細到着で
+// コピーしない (別 job のヘッダに旧 job 本文を貼る silent 誤コピーの防止)。
+func TestBrowseCopyJobContextFocusMovedDropsCopy(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	m.details[m.commits[0].SHA] = []CheckDetail{
+		{Name: "build", State: StateSuccess, CheckID: 1},
+		{Name: "lint", State: StateFailure, CheckID: 7},
+	}
+	var copied string
+	orig := copyToClipboard
+	copyToClipboard = func(text string) error { copied = text; return nil }
+	t.Cleanup(func() { copyToClipboard = orig })
+	m.openPanel()
+	m.handleKey("j") // job0 (build) にフォーカス
+	key0 := m.detailKey()
+	m.handleKey("Y") // 未取得 → 予約 + 詳細ポップアップ取得
+	if m.copyOnDetail != key0 {
+		t.Fatalf("コピー予約されない: %q", m.copyOnDetail)
+	}
+	m.handleKey("esc") // 詳細ポップアップだけ閉じる (パネルは残る)
+	if m.panelSHA == "" {
+		t.Fatal("esc でパネルまで閉じた")
+	}
+	m.handleKey("j") // job1 (lint) へフォーカス移動
+	m.Update(jobDetailMsg{key: key0, lines: []string{"build log line"}})
+	if copied != "" {
+		t.Fatalf("フォーカス移動後に旧 job をコピーした: %q", copied)
+	}
+	if m.copyOnDetail != "" {
+		t.Fatal("到着で予約が破棄されていない")
+	}
+}
+
+// 回帰 (レビュー確定 medium security): コピー時に job 名/URL の端末制御シーケンス (OSC52 等) を
+// 除去する。stripANSI 単体は OSC を残すため sanitizeDetailLine と併用している。
+func TestBrowseCopyJobContextSanitizesHeader(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	m.details[m.commits[0].SHA] = []CheckDetail{
+		{Name: "li\x1b[31mnt", State: StateFailure, CheckID: 7, URL: "https://x/\x1b]0;pwn\x07ok"},
+	}
+	var copied string
+	orig := copyToClipboard
+	copyToClipboard = func(text string) error { copied = text; return nil }
+	t.Cleanup(func() { copyToClipboard = orig })
+	m.openPanel()
+	m.handleKey("j")
+	m.detailOv.cache[m.detailKey()] = []string{"log"}
+	m.handleKey("Y")
+	if strings.ContainsRune(copied, '\x1b') || strings.ContainsRune(copied, '\x07') {
+		t.Fatalf("コピー内容に端末制御シーケンスが残った: %q", copied)
+	}
+	if !strings.Contains(copied, "lint") || !strings.Contains(copied, "https://x/ok") {
+		t.Fatalf("無害化で本来の文字まで欠けた: %q", copied)
+	}
+}
+
+// 回帰 (レビュー確定 medium): close→reopen 連打で in-flight の PR 取得を二重発火しない。
+func TestPRStatusOverlayNoDoubleFetch(t *testing.T) {
+	o := newPRStatusOverlay()
+	if !o.open("A") {
+		t.Fatal("初回 open が fetch を要求しない")
+	}
+	o.close() // 応答前に閉じる (busy[A] は保持されるべき)
+	if o.open("A") {
+		t.Fatal("in-flight 中の reopen が二重 fetch を要求した")
+	}
+	o.receive("A", &PRStatus{PRRef: PRRef{Number: 1}}, nil) // 応答 → busy 解除 + cache
+	o.close()
+	if o.open("A") {
+		t.Fatal("cache 済みなのに再 fetch を要求した")
+	}
+}
+
+// 回帰 (レビュー確定 low): 別 sha へ移った後に届く PR 取得エラーで、表示中 (別 sha) に無関係な
+// 失敗 notice を被せない。
+func TestBrowsePRStatusStaleErrorNoNotice(t *testing.T) {
+	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+	shaA := m.commits[0].SHA
+	shaB := m.commits[1].SHA
+	m.handleKey("P") // A を開く (fetch A)
+	m.handleKey("P") // A を閉じる (toggle)
+	m.cursor = 1
+	m.handleKey("P") // B を開く (fetch B)
+	m.Update(prStatusMsg{sha: shaB, status: &PRStatus{PRRef: PRRef{Number: 2, State: "OPEN"}, Title: "b"}})
+	m.notice = ""
+	m.Update(prStatusMsg{sha: shaA, ghErr: &GHError{Kind: GHOther, Detail: "boom"}}) // A の遅延エラー
+	if m.notice != "" {
+		t.Fatalf("別 sha の遅延エラーで notice が出た: %q", m.notice)
+	}
+	if !m.prStatusOv.visible() {
+		t.Fatal("別 sha の遅延エラーで B の表示が閉じられた")
 	}
 }

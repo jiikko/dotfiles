@@ -199,6 +199,7 @@ type browseModel struct {
 	panelPollSeq   int    // パネル開閉の世代 (panelPollMsg の有効性判定)
 	panelRefresh   bool   // パネルの定期リフレッシュ実行中 (detailsLoading と別: 表示を「取得中」に落とさない)
 	panelPollGrace int    // 実行中 job が見えなくてもポーリングを続ける残回数 (rerun 直後の反映ラグ吸収)
+	panelPolling   bool   // panelPollMsg の自己更新チェーンが 1 本生きているか (maybeTick と同型の single-flight)
 	copyOnDetail   string // Y で詳細未取得だった detailKey。jobDetailMsg 到着時にコピーして消す ("" = 予約なし)
 	// job 詳細ポップアップ (annotations / ログ tail) の pager 状態と描画は jobDetailOverlay 型
 	// (job_detail_overlay.go) に切り出す。panel-frame (panelSHA/panelCursor/poll/refresh) と ETA・
@@ -449,7 +450,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// (次回は panelPollMsg ハンドラ側が予約済み。二重 timer で加速するのを防ぐ)
 		var poll tea.Cmd
 		if msg.sha == m.panelSHA && !wasRefresh && m.panelHasRunningJob() {
-			poll = m.schedulePanelPoll()
+			poll = m.ensurePanelPoll()
 		}
 		return m, tea.Batch(m.maybeFetchETABasis(), poll)
 	case basisMsg:
@@ -472,10 +473,14 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// live な detailKey() を渡す (snapshot 禁止: リフレッシュで panelCursor がクランプされ得るため)。
 		m.detailOv.receive(msg, m.detailKey(), m.visibleDetailRows())
 		// Y で詳細取得を待っていたら、到着したこの内容をコピーする (issue 020)。取得失敗
-		// (ghErr) は上の sticky 警告に任せ、予約だけ静かに破棄する
+		// (ghErr) は上の sticky 警告に任せ、予約だけ静かに破棄する。
+		// ⚠️ 予約後にフォーカスが動いていたら (detailKey() != msg.key) コピーしない: msg.lines は
+		// 予約時の job のログだが、focusedJob() は現フォーカスを返すため、貼ると「別 job のヘッダに
+		// 旧 job の本文」という silent 誤コピーになる。詳細ポップアップを閉じただけ (closePanel を
+		// 経ない) でカーソル移動できる経路があり、copyOnDetail が残るため起きる (レビュー確定 high)。
 		if m.copyOnDetail == msg.key {
 			m.copyOnDetail = ""
-			if job, ok := m.focusedJob(); ok && msg.ghErr == nil && len(msg.lines) > 0 {
+			if job, ok := m.focusedJob(); ok && m.detailKey() == msg.key && msg.ghErr == nil && len(msg.lines) > 0 {
 				m.copyJobContextLines(job, msg.lines)
 			}
 		}
@@ -497,8 +502,12 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.notice = fmt.Sprintf("PR #%d を開きます", msg.pr.Number)
 		return m, m.openURLCmd(msg.pr.URL)
 	case prStatusMsg:
+		// receive は当該 sha が表示中ならエラー時に close するため、sha 一致は receive の前に捕捉する。
+		// notice は「今表示中の対象」の失敗のときだけ出す: 別 sha へ移った後に届く遅延エラーで
+		// 無関係な失敗 notice を被せない (レビュー確定 low)。
+		wasCurrent := msg.sha == m.prStatusOv.sha
 		m.prStatusOv.receive(msg.sha, msg.status, msg.ghErr)
-		if msg.ghErr != nil {
+		if msg.ghErr != nil && wasCurrent {
 			// 一時エラーはキャッシュしない (receive 側)。理由は notice で伝える
 			m.notice = "PR の取得に失敗しました: " + firstLine(msg.ghErr.Warning())
 		}
@@ -530,7 +539,8 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.panelPollGrace = 0 // 実行中 job が見えた: 猶予は役目を終え、以降は通常の追従
 		} else {
 			if m.panelPollGrace <= 0 {
-				return m, nil // 全 job 完了: 追従の必要が無いのでポーリング終了 (開き直しで再開)
+				m.panelPolling = false // このチェーンは停止する (開き直し/次の開始点で再アーム)
+				return m, nil          // 全 job 完了: 追従の必要が無いのでポーリング終了
 			}
 			m.panelPollGrace-- // rerun 直後: 実行中 job が GraphQL に映るまで空振りを許す
 		}
@@ -580,7 +590,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var poll tea.Cmd
 		if msg.sha == m.panelSHA && m.panelSHA != "" {
 			m.panelPollGrace = rerunPollGrace
-			poll = m.schedulePanelPoll()
+			poll = m.ensurePanelPoll() // 既にチェーンが生きていれば nil (二重化しない)
 		}
 		return m, tea.Batch(poll, m.maybeTick())
 	case updateMsg:
@@ -1134,17 +1144,25 @@ func (m *browseModel) copyJobContext() tea.Cmd {
 }
 
 // copyJobContextLines は job 詳細行をヘッダ (job 名 / commit / URL) 付きの Markdown にして
-// クリップボードへ入れる。本文は ANSI を除去したプレーンテキスト (jobLogText と同じ)。
+// クリップボードへ入れる。ヘッダ・本文とも制御コードを除去したプレーンテキストにする。
+// ⚠️ job.URL (= StatusContext の targetUrl 等) は外部 CI が任意に設定でき無害化を一切通って
+// いない。生のままシステムクリップボードへ流すと、ペースト先の端末で OSC52 (クリップボード
+// 書き換え)/カーソル操作等が発火しうる (レビュー確定)。stripANSI 単体は OSC を落とせない
+// (英字終端判定のため OSC の途中で誤終了し BEL が残る・実測) ので、OSC/DCS を確実に落とす
+// sanitizeDetailLine を先に通し、残る SGR (色) を stripANSI で除去して完全な平文にする。
+// c.Subject は %q が制御文字を Go エスケープするため安全。本文 lines は取得時に
+// sanitizeDetailLine 済みなので jobLogText の stripANSI だけで足りる。
 func (m *browseModel) copyJobContextLines(job CheckDetail, lines []string) {
+	plain := func(s string) string { return stripANSI(sanitizeDetailLine(s)) }
 	var b strings.Builder
 	b.WriteString("## CI job: ")
-	b.WriteString(job.Name)
+	b.WriteString(plain(job.Name))
 	if c := m.commitBySHA(m.panelSHA); c != nil && m.hasRepo {
 		fmt.Fprintf(&b, " — %s/%s@%s %q", m.repo.Owner, m.repo.Name, c.ShortSHA, c.Subject)
 	}
 	b.WriteString("\n")
 	if job.URL != "" {
-		b.WriteString(job.URL)
+		b.WriteString(plain(job.URL))
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
@@ -1345,15 +1363,32 @@ func (m *browseModel) openPanel() tea.Cmd {
 	// 「fetch 不要なら Cmd は nil」というパネル系テストの契約も壊れる)。
 	var poll tea.Cmd
 	if m.panelHasRunningJob() {
-		poll = m.schedulePanelPoll()
+		poll = m.ensurePanelPoll()
 	}
 	return tea.Batch(m.fetchPanelDetails(sha), m.maybeFetchETABasis(), poll)
 }
 
 // schedulePanelPoll は現世代の panelPollMsg を panelPollInterval 後に発火させる。
+// ⚠️ これはチェーンの「継続」用 (panelPollMsg ハンドラ内の再アーム)。チェーンの「開始」は
+// 必ず ensurePanelPoll を通し、複数の開始点 (openPanel / detailMsg / rerunMsg) が独立した
+// チェーンを二重に張らないようにする。
 func (m *browseModel) schedulePanelPoll() tea.Cmd {
 	seq := m.panelPollSeq
 	return tea.Tick(panelPollInterval, func(time.Time) tea.Msg { return panelPollMsg{seq: seq} })
+}
+
+// ensurePanelPoll は panelPollMsg の自己更新チェーンを single-flight で 1 本だけ張る
+// (maybeTick と同型)。既に生きていれば nil を返して二重チェーンを作らない。全ての「開始点」
+// (openPanel / detailMsg 初到着 / rerunMsg) がこれを通ることで、例えば実行中 job があるパネルで
+// rerun したときに openPanel が張った chain と rerunMsg が張る chain が二重化して GraphQL
+// ポーリング頻度が倍になる不具合を防ぐ (レビュー確定)。チェーンの停止点 (grace 尽き / closePanel)
+// で panelPolling=false に戻す。
+func (m *browseModel) ensurePanelPoll() tea.Cmd {
+	if m.panelPolling {
+		return nil
+	}
+	m.panelPolling = true
+	return m.schedulePanelPoll()
 }
 
 // fetchPanelDetails はパネルコミット sha の Details をオンデマンド取得する Cmd
@@ -1452,9 +1487,10 @@ func (m *browseModel) closePanel() {
 	// の choke point なのでここ 1 箇所で覆える。閉じた後に届く旧 refresh の detailMsg は
 	// panelSHA と不一致で無害 (maps.Copy はキャッシュ更新のみ・poll は再開しない)。
 	m.panelRefresh = false
-	m.panelPollGrace = 0 // rerun 直後の猶予ポーリングもパネルと一緒に終える
-	m.copyOnDetail = ""  // Y のコピー予約も破棄 (閉じた後の到着で意図しないコピーをしない)
-	m.detailOv.close()   // 詳細ポップアップも閉じる (panel/detail 両クラスタの choke point)
+	m.panelPollGrace = 0   // rerun 直後の猶予ポーリングもパネルと一緒に終える
+	m.panelPolling = false // ポーリングチェーンの single-flight フラグを戻す (次の開き直しで再アーム可能に)
+	m.copyOnDetail = ""    // Y のコピー予約も破棄 (閉じた後の到着で意図しないコピーをしない)
+	m.detailOv.close()     // 詳細ポップアップも閉じる (panel/detail 両クラスタの choke point)
 }
 
 // openURLCmd は URL をブラウザで開く Cmd。StatusContext の targetUrl 等、外部が任意に

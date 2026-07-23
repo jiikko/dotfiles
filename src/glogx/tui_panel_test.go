@@ -944,3 +944,45 @@ func TestPanelPollGrace(t *testing.T) {
 		t.Fatal("closePanel で猶予ポーリングが破棄されない")
 	}
 }
+
+// 回帰 (レビュー確定 medium): panelPollMsg の自己更新チェーンは single-flight。開始点が複数
+// (openPanel / detailMsg / rerunMsg) あっても二重チェーンを張らない (GraphQL ポーリング倍化の防止)。
+func TestEnsurePanelPollSingleFlight(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.panelSHA = m.commits[0].SHA
+	if cmd := m.ensurePanelPoll(); cmd == nil || !m.panelPolling {
+		t.Fatal("初回 ensurePanelPoll がチェーンを張らない")
+	}
+	if cmd := m.ensurePanelPoll(); cmd != nil {
+		t.Fatal("チェーンが生きているのに 2 本目を張った (二重化)")
+	}
+	m.closePanel()
+	if m.panelPolling {
+		t.Fatal("closePanel で panelPolling が戻らない")
+	}
+	if cmd := m.ensurePanelPoll(); cmd == nil {
+		t.Fatal("closePanel 後に再アームできない")
+	}
+}
+
+// 回帰 (レビュー確定 medium): 実行中 job があるパネルで rerun しても、既存の polling チェーンに
+// 加えて 2 本目を張らない。
+func TestBrowseRerunNoDoublePoll(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	m.details[m.commits[0].SHA] = []CheckDetail{
+		{Name: "test", State: StatePending, CheckID: 1, StartedAt: timeNow()},
+		{Name: "lint", State: StateFailure, CheckID: 7},
+	}
+	m.openPanel() // 実行中 job あり → chain #1 が張られる
+	if !m.panelPolling {
+		t.Fatal("実行中 job で openPanel がチェーンを張らない")
+	}
+	m.Update(rerunMsg{sha: m.commits[0].SHA}) // rerun 成功
+	if !m.panelPolling {
+		t.Fatal("rerun 後に panelPolling が落ちた")
+	}
+	if m.ensurePanelPoll() != nil {
+		t.Fatal("rerun 後もチェーンは 1 本のはず (二重化した)")
+	}
+}
