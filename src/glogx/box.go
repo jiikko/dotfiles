@@ -104,8 +104,9 @@ const (
 )
 
 // shadowBottomOffset は下端の影の左端を箱の左端から右へずらす桁数 (右下方向へ落とすドロップ
-// シャドウの水平オフセット)。大きいほど影が右下に寄る。ユーザー要望で 1→3 桁へ (2026-07-23)。
-const shadowBottomOffset = 3
+// シャドウの水平オフセット)。大きいほど影が右下に寄る。既定 1 桁から調整し 2 桁 (ユーザー要望
+// 2026-07-23)。
+const shadowBottomOffset = 2
 
 // shadowRun は落ち影の本体 n セル分。
 func shadowRun(n int, colored bool) string {
