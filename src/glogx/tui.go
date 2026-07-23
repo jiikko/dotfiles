@@ -351,9 +351,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		var toastHoldCmd tea.Cmd
 		if m.toast.animating() {
-			// トーストの下端せり上がり/引っ込みを 1 行/フレームで進める。入場完了時は
-			// holding へ移り toastHold 後の退場タイマーを返す。
-			toastHoldCmd = m.toast.advance(len(m.toast.fullBox(m.colored)))
+			// トーストの横スライド (右画面外との出入り) をカラム単位で 1 フレーム進める。
+			// 入場完了時は holding へ移り toastHold 後の退場タイマーを返す。
+			toastHoldCmd = m.toast.advance(m.colored)
 		}
 		m.frame++
 		// list に毎フレーム変化する内容 (loading スピナー) が乗るのは fetch/pushPoll の 2 状態
