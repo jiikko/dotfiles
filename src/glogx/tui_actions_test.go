@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattn/go-runewidth"
 )
 
 // b → y/N → git push (glogx の独自機能)。
@@ -816,5 +817,66 @@ func TestBrowseCopyWarningFromNoticeError(t *testing.T) {
 	m.handleKey("w") // handleKey 冒頭で notice はクリアされるが lastWarning は残る
 	if !strings.Contains(copied, "diff の取得に失敗") {
 		t.Fatalf("noticeError が w でコピーされない: copied=%q", copied)
+	}
+}
+
+// フレーム ON の browseModel (newTestBrowse は NoFrame:true 固定なので直接構築)。
+func newFramedBrowse(t *testing.T, w, h int) *browseModel {
+	t.Helper()
+	sha := strings.Repeat("a", 40)
+	commits := []Commit{{SHA: sha, ShortSHA: sha[:7], Subject: "subject", Author: "koji", AuthorEmail: "k@x", Date: "Thu Jul 16 19:12:47 2026 +0900", RelDate: "now", Message: "subject"}}
+	m := newBrowseModel(commits, map[string]CIState{sha: StateSuccess}, nil, Repo{Owner: "o", Name: "r"}, true, &Options{}, false, w, h)
+	t.Cleanup(m.cancel)
+	return m
+}
+
+// 最外周フレーム有効時の寸法と View 出力 (issue 025)。
+func TestBrowseFrameView(t *testing.T) {
+	m := newFramedBrowse(t, 64, 16)
+	if !m.frameActive() {
+		t.Fatal("64x16 で frameActive が false")
+	}
+	if m.contentWidth() != 64-frameHOverhead {
+		t.Errorf("contentWidth = %d; want %d", m.contentWidth(), 64-frameHOverhead)
+	}
+	if m.pageSize() != 16-frameVOverhead {
+		t.Errorf("pageSize = %d; want %d", m.pageSize(), 16-frameVOverhead)
+	}
+	v := m.View()
+	lines := strings.Split(strings.TrimRight(v, "\n"), "\n")
+	// View 出力の行数 = m.height (板 + hint でビューポート一杯)
+	if len(lines) != 16 {
+		t.Fatalf("View 行数 = %d; want 16 (= m.height)", len(lines))
+	}
+	// 幅 canary: 全行の実効幅 <= m.width (contentWidth() 置換漏れの最短検出)
+	for i, l := range lines {
+		if w := runewidth.StringWidth(stripANSI(l)); w > 64 {
+			t.Errorf("行 %d の実効幅 = %d > 64: %q", i, w, l)
+		}
+	}
+	// 枠 (上辺 ┌) と下辺/影 (▁) が描かれている
+	if !strings.Contains(v, "┌") || !strings.Contains(v, "▁") {
+		t.Error("フレームが描かれていない")
+	}
+}
+
+// --no-frame / 極小端末では自動 OFF し従来寸法へフォールバック (issue 025)。
+func TestBrowseFrameAutoOffAndNoFrame(t *testing.T) {
+	// --no-frame 相当 (showFrame=false): 従来寸法
+	m := newFramedBrowse(t, 64, 16)
+	m.showFrame = false
+	if m.frameActive() {
+		t.Fatal("showFrame=false でも frameActive")
+	}
+	if m.contentWidth() != 64 || m.pageSize() != 15 {
+		t.Errorf("no-frame で寸法が従来と違う: cw=%d ps=%d; want 64/15", m.contentWidth(), m.pageSize())
+	}
+	// width < frameMinWidth → 自動 OFF
+	if newFramedBrowse(t, 50, 16).frameActive() {
+		t.Error("width<frameMinWidth で自動 OFF されない")
+	}
+	// height < frameMinHeight → 自動 OFF
+	if newFramedBrowse(t, 64, 10).frameActive() {
+		t.Error("height<frameMinHeight で自動 OFF されない")
 	}
 }

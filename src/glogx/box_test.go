@@ -87,3 +87,34 @@ func TestShadowForegroundBlocksAndFeather(t *testing.T) {
 		t.Error("NO_COLOR の濃淡 (▒ 本体 / ░ フェザー) が出ていない")
 	}
 }
+
+// wrapWindowFrame は content を 上余白 + 枠 + 右下ドロップシャドウで包む (issue 025)。
+func TestWrapWindowFrame(t *testing.T) {
+	content := []string{"line one", "line two"}
+	const termW = 40
+	out := wrapWindowFrame(content, termW, false)
+	// 行数 = content + 4 (上余白 + 上辺 + 下辺 + 下影)
+	if len(out) != len(content)+4 {
+		t.Fatalf("行数 = %d; want %d", len(out), len(content)+4)
+	}
+	if strings.TrimSpace(out[0]) != "" {
+		t.Fatalf("先頭は上余白 (空行) のはず: %q", out[0])
+	}
+	if !strings.Contains(out[1], "┌") || !strings.Contains(out[1], "┐") {
+		t.Fatalf("2 行目が上辺 ┌…┐ でない: %q", out[1])
+	}
+	for i, l := range out {
+		if w := runewidth.StringWidth(stripANSI(l)); w > termW {
+			t.Errorf("行 %d の幅 = %d > termW %d: %q", i, w, termW, l)
+		}
+	}
+	// NO_COLOR は ▒/░ の影グリフ
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "▒") || !strings.Contains(joined, "░") {
+		t.Errorf("NO_COLOR の影グリフ (▒/░) が無い:\n%s", joined)
+	}
+	// colored は近黒 fg の █ (本体)
+	if cj := strings.Join(wrapWindowFrame(content, termW, true), "\n"); !strings.Contains(cj, ansiShadowFg+"█") {
+		t.Errorf("colored で影本体 █ が無い")
+	}
+}

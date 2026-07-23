@@ -31,6 +31,7 @@ type Options struct {
 	NoPager  bool // TTY でも対話ブラウズせず静的出力する
 	Refresh  bool // キャッシュを読まず再取得する (取得結果は保存する)
 	NoCache  bool // キャッシュを読みも書きもしない
+	NoFrame  bool // 最外周フレーム (板 + ドロップシャドウ) を描かない (既定は描く。issue 025)
 	Help     bool
 	Revs     []string // revision 指定 (例: main, HEAD~10..HEAD)
 	Paths    []string // "--" 以降の pathspec
@@ -90,6 +91,8 @@ func ParseArgs(argv []string) (*Options, error) {
 			opts.Oneline = true
 		case arg == "--no-pager":
 			opts.NoPager = true
+		case arg == "--no-frame":
+			opts.NoFrame = true
 		case arg == "--cached":
 			opts.Mode = ModeCached
 		case arg == "--refresh":
@@ -129,6 +132,7 @@ func usageShort() string {
   -p / --patch                                    patch を表示
   --cached                                        HEAD の CI 状態 + staged diff を表示
   --no-pager                                      対話ブラウズせず静的出力する
+  --no-frame                                      最外周フレーム (板 + 影) を描かない
   --refresh                                       CI キャッシュを無視して再取得
   --no-cache                                      CI キャッシュを読み書きしない
   -h / --help                                     このヘルプを表示
@@ -166,6 +170,10 @@ func Usage() string {
         (--stat で diffstat、-p でフル patch。既定は diffstat)
   --no-pager
         TTY でも対話ブラウズを開かず、CI 取得完了後に静的出力する
+  --no-frame
+        対話ブラウズ画面を「余白 + 枠 + 右下ドロップシャドウ」で囲む最外周フレームを
+        描かない (既定は描く)。極小端末では自動で無効化される。tmux popup が自前の枠を
+        描く運用ではこれで二重枠を避けられる
   --refresh
         CI キャッシュを読まずに再取得する (取得結果はキャッシュへ保存する)
   --no-cache

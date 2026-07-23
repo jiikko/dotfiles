@@ -186,6 +186,10 @@ type browseModel struct {
 	decor          *DecorColors
 	oneline        bool
 	colored        bool
+	// showFrame は最外周フレーム (板 + ドロップシャドウ) 描画の有効フラグ (issue 025)。起動時固定
+	// (!opts.NoFrame)。⚠️ 下の frame (int) はスピナーのフレームカウンタで別物 (名前衝突回避のため
+	// bool 側を showFrame とした)。実際に描くかは frameActive() が端末サイズ下限も見て判定する。
+	showFrame      bool
 	frame          int
 	width          int
 	height         int
@@ -280,6 +284,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		opts:           opts,
 		oneline:        opts.Oneline,
 		colored:        colored,
+		showFrame:      !opts.NoFrame,
 		width:          width,
 		height:         height,
 		fetching:       len(toFetch) > 0,
@@ -1101,7 +1106,7 @@ func (m *browseModel) slideColumns(lines []Line) map[int]int {
 	if len(m.pushSlides) == 0 {
 		return nil
 	}
-	depth := m.width / 2
+	depth := m.contentWidth() / 2
 	byCommit := map[int]int{}
 	for i, c := range m.commits {
 		start, ok := m.pushSlides[c.SHA]
@@ -1241,9 +1246,9 @@ func (m *browseModel) centerModalLines() []string {
 	if m.prefixNote != "" {
 		rows := append(strings.Split(m.prefixNote, "\n"),
 			"", paint("何かキーで閉じる", ansiDim, m.colored))
-		return centerBox(" ⚠ tmux ", rows, m.width, m.colored)
+		return centerBox(" ⚠ tmux ", rows, m.contentWidth(), m.colored)
 	}
-	return m.actModal.boxLines(m.width, m.colored, m.spinner(), m.unpushedCount())
+	return m.actModal.boxLines(m.contentWidth(), m.colored, m.spinner(), m.unpushedCount())
 }
 
 // quit はアプリ全体を終了する (取得中断分は unknown へ落とす)。
@@ -1917,7 +1922,7 @@ func (m *browseModel) visibleDiffRows() int {
 
 // diffBoxLines は diff ポップアップの描画行 (枠付き)。SHA からコミットを解決して diffOv へ渡す。
 func (m *browseModel) diffBoxLines() []string {
-	return m.diffOv.boxLines(m.width, m.colored, m.spinner(), m.commitBySHA(m.diffOv.sha), m.visibleDiffRows())
+	return m.diffOv.boxLines(m.contentWidth(), m.colored, m.spinner(), m.commitBySHA(m.diffOv.sha), m.visibleDiffRows())
 }
 
 // fillUnknown は結果が得られなかった SHA を「取得中」のまま残さず unknown へ落とす。
@@ -1962,7 +1967,7 @@ func (m *browseModel) renderOpts() RenderOpts {
 		// 全行に 2 桁のカーソル溝 (cursorGutter*) を確保するため、折り返し幅は
 		// その分狭い (bg 塗りだけでは視認しにくいという 2026-07-21 のユーザー要望で、
 		// 2026-07-19 の「溝なし・全幅」から再反転した)
-		Width:    max(m.width-cursorGutterWidth, 0),
+		Width:    max(m.contentWidth()-cursorGutterWidth, 0),
 		Decor:    m.decor,
 		PRs:      m.prCache,
 		Verbatim: m.verbatim,
@@ -1984,8 +1989,45 @@ func (m *browseModel) invalidateLines() {
 }
 
 // pageSize はビューポートの行数 (最下段のヒント行を除く)。
+// フレーム有効時の寸法オーバーヘッド (issue 025)。
+//
+//	横 frameHOverhead = 左余白1 + "│ "2 + " │"2 + 影1 + 右余白1 = 7
+//	縦 frameVOverhead = 上余白1 + 上辺1 + 下辺1 + 下影1 + hint1 = 5
+//
+// frameMinWidth/Height 未満の端末ではフレームを自動 OFF し従来描画へフォールバックする
+// (tmux の小ペイン/popup でも安全。極小端末で影の見切れを避ける)。
+const (
+	frameHOverhead = 7
+	frameVOverhead = 5
+	frameMinWidth  = 60
+	frameMinHeight = 15
+)
+
+// frameActive は今このフレームで最外周フレームを描くか。起動時固定の showFrame に加え、端末が
+// 下限サイズ以上のときだけ true。入力 (showFrame + width/height) は WindowSizeMsg でのみ変化し、
+// そこで invalidateLines 済みなので linesCache の無効化点は増やさない (issue の不変条件)。
+func (m *browseModel) frameActive() bool {
+	return m.showFrame && m.width >= frameMinWidth && m.height >= frameMinHeight
+}
+
+// contentWidth はコンテンツ (リスト行・overlay・モーダル) が使える横幅。フレーム有効時は枠 + 余白 +
+// 影のぶんを引く。m.width/m.height を直読みしてよいのは frameActive/contentWidth/pageSize と
+// View の wrapWindowFrame 呼び出しだけ、という規約で幅の単一ファネルにする。
+func (m *browseModel) contentWidth() int {
+	if !m.frameActive() {
+		return m.width
+	}
+	return m.width - frameHOverhead
+}
+
+// pageSize はビューポートの行数 (最下段のヒント行を除く)。フレーム有効時は枠・余白・影・hint ぶんを
+// 引く。scroll 半ページ / pull アニメ / detail・diff 行数 / clampOffset / ensureCursorVisible /
+// View が全てここを経由するので、フレーム分が全消費者へ自動伝播する。
 func (m *browseModel) pageSize() int {
-	return max(m.height-1, 1)
+	if !m.frameActive() {
+		return max(m.height-1, 1)
+	}
+	return max(m.height-frameVOverhead, 1)
 }
 
 func (m *browseModel) clampOffset(offset int) int {
@@ -2037,7 +2079,7 @@ func (m *browseModel) View() string {
 		// カーソル強調より優先する (演出中の bg 塗りは動きを汚す)
 		if off := slides[i]; off > 0 {
 			text = strings.Repeat(" ", off) + paint(stripANSI(text), ansiDim, m.colored)
-			window = append(window, cursorGutterBlank+clipToWidth(text, max(m.width-cursorGutterWidth, 0)))
+			window = append(window, cursorGutterBlank+clipToWidth(text, max(m.contentWidth()-cursorGutterWidth, 0)))
 			continue
 		}
 		// カーソルは全行に確保した 2 桁の溝の「→ 」+ ヘッダー行全体の bg 塗りで示す。
@@ -2047,7 +2089,7 @@ func (m *browseModel) View() string {
 			window = append(window, m.cursorLine(text))
 			continue
 		}
-		window = append(window, cursorGutterBlank+clipToWidth(text, max(m.width-cursorGutterWidth, 0)))
+		window = append(window, cursorGutterBlank+clipToWidth(text, max(m.contentWidth()-cursorGutterWidth, 0)))
 	}
 	// job パネルは対象コミットのヘッダー行直下へ「重ねる」(リスト行を置き換える)。
 	// リストの行構成自体は変えないので、開閉で後続行がずれない。
@@ -2062,22 +2104,31 @@ func (m *browseModel) View() string {
 	}
 	// PR 状態ポップアップも対象コミット直下へ重ねる (job パネルとは同時表示にならない:
 	// P は一覧のみで受け、表示中は handlePRStatusKey がモーダルに捌く)
-	if prBox := m.prStatusOv.boxLines(m.width, m.colored, m.spinner(), m.prStatusCILine()); len(prBox) > 0 {
+	if prBox := m.prStatusOv.boxLines(m.contentWidth(), m.colored, m.spinner(), m.prStatusCILine()); len(prBox) > 0 {
 		window = overlayBox(window, prBox, m.boxAnchor(lines, offset, m.prStatusOv.sha)+1, page)
 	}
 	// push 確認/実行中は画面中央のモーダルを最前面に重ねる (ユーザー要望 2026-07-19:
 	// hint 行の [y/N] だけでは気づきにくい)。overlayCenteredBox は行を塗り潰さず左右の背景
 	// リストを残して合成する (モーダルの左側テキストが消えるのを解消・ユーザー要望 2026-07-22)。
 	if box := m.centerModalLines(); len(box) > 0 {
-		window = overlayCenteredBox(window, box, m.width, page, m.colored)
+		window = overlayCenteredBox(window, box, m.contentWidth(), page, m.colored)
 	}
 	// usage オーバーレイは最前面 (上部右端の複数行モーダル)。U で再表示、任意キーで消える。
-	if box := m.usageOv.boxLines(m.width, m.colored, m.spinner()); len(box) > 0 {
-		window = overlayBoxTopRight(window, box, m.width, m.colored)
+	if box := m.usageOv.boxLines(m.contentWidth(), m.colored, m.spinner()); len(box) > 0 {
+		window = overlayBoxTopRight(window, box, m.contentWidth(), m.colored)
 	}
 	// トーストは右下 (hint 行の直上) に数秒だけ。push/pull 完了の結果フィードバック。
 	if box := m.toast.boxLines(m.colored); len(box) > 0 {
-		window = overlayBoxBottomRight(window, box, m.width, m.colored)
+		window = overlayBoxBottomRight(window, box, m.contentWidth(), m.colored)
+	}
+	// フレーム有効時は最外周を余白 + 枠 + 右下ドロップシャドウで包む (issue 025)。板の高さを
+	// 安定させるため、コンテンツが少なくても pageSize 行まで空行でパディングしてから包む
+	// (板が常にビューポート一杯 = リサイズや行数変動で枠が踊らない)。hint は板の外・最下行。
+	if m.frameActive() {
+		for len(window) < page {
+			window = append(window, "")
+		}
+		window = wrapWindowFrame(window, m.width, m.colored)
 	}
 	var b strings.Builder
 	for _, w := range window {
@@ -2115,7 +2166,7 @@ func (m *browseModel) panelLines() []string {
 	if m.panelSHA == "" {
 		return nil
 	}
-	width := m.width
+	width := m.contentWidth()
 	if width <= 0 {
 		width = 80
 	}
@@ -2185,7 +2236,7 @@ func (m *browseModel) detailBoxLines(width int) []string {
 // 行全体 (溝込み) を暗青 bg で塗る。色なし (NO_COLOR) では矢印のみ。
 func (m *browseModel) cursorLine(text string) string {
 	if !m.colored {
-		return clipToWidth(cursorGutterMark+text, m.width)
+		return clipToWidth(cursorGutterMark+text, m.contentWidth())
 	}
 	return m.bgLine(cursorGutterMark+text, ansiCursorBg)
 }
@@ -2202,10 +2253,10 @@ var ansiResetRe = regexp.MustCompile("\x1b\\[0?m")
 // (insertPushBoundary) に一本化。面塗りの再提案はしない。
 func (m *browseModel) bgLine(text, bg string) string {
 	if !m.colored {
-		return clipToWidth(text, m.width)
+		return clipToWidth(text, m.contentWidth())
 	}
-	text = clipToWidth(text, m.width)
-	pad := max(m.width-runewidth.StringWidth(stripANSI(text)), 0)
+	text = clipToWidth(text, m.contentWidth())
+	pad := max(m.contentWidth()-runewidth.StringWidth(stripANSI(text)), 0)
 	return bg + ansiResetRe.ReplaceAllString(text, "$0"+bg) +
 		strings.Repeat(" ", pad) + ansiReset
 }
@@ -2247,7 +2298,14 @@ func (m *browseModel) hintLine() string {
 	if m.ghErr != nil {
 		hint = "⚠ " + firstLine(m.ghErr.Warning()) + "  " + hint
 	}
-	return clipToWidth(paint(hint, ansiDim, m.colored), m.width)
+	painted := paint(hint, ansiDim, m.colored)
+	if m.frameActive() {
+		// hint は板の外 (最下行) だが、左余白 1 桁を付けて板の左端 (┌) と縦に揃える。素朴に
+		// " " を前置すると、既定 hint が clip 後に m.width ちょうどになり実効幅 m.width+1 で
+		// 折り返し崩壊するため、clip 幅を左右余白ぶん (2) 差し引く (板の footprint と同じ span)。
+		return " " + clipToWidth(painted, max(m.width-2, 1))
+	}
+	return clipToWidth(painted, m.width)
 }
 
 func clampIdx(i, total int) int {

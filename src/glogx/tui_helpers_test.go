@@ -17,8 +17,11 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 			Date: "Thu Jul 16 19:12:47 2026 +0900", RelDate: "now", Message: "subject",
 		}
 	}
+	// NoFrame: true = 最外周フレームを明示 OFF (issue 025)。既存の View/overlay/panel テストの
+	// 期待値を変えない。現行 80×10 は frameMinHeight 未満で自動 OFF だが、途中で width/height を
+	// 大きくするテストが誤ってフレームを踏まないよう明示 OFF を決定的にする。
 	m := newBrowseModel(commits, statuses, toFetch, Repo{Owner: "o", Name: "r"}, true,
-		&Options{}, false, 80, 10)
+		&Options{NoFrame: true}, false, 80, 10)
 	t.Cleanup(m.cancel)
 	return m
 }

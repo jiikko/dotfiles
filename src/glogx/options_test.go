@@ -40,12 +40,12 @@ func TestParseArgsNegativeCountUnlimited(t *testing.T) {
 }
 
 func TestParseArgsFlags(t *testing.T) {
-	opts, err := ParseArgs([]string{"--stat", "-p", "--refresh", "--oneline", "--no-pager"})
+	opts, err := ParseArgs([]string{"--stat", "-p", "--refresh", "--oneline", "--no-pager", "--no-frame"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !opts.Stat || !opts.Patch || !opts.Refresh || !opts.Oneline || !opts.NoPager {
-		t.Errorf("flags = %+v; want Stat/Patch/Refresh/Oneline/NoPager true", opts)
+	if !opts.Stat || !opts.Patch || !opts.Refresh || !opts.Oneline || !opts.NoPager || !opts.NoFrame {
+		t.Errorf("flags = %+v; want Stat/Patch/Refresh/Oneline/NoPager/NoFrame true", opts)
 	}
 }
 

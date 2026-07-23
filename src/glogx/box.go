@@ -85,11 +85,31 @@ func buildPanelBox(title string, rows []string, width int, colored bool) []strin
 	return buildPanelBoxImpl(title, rows, width, colored, false)
 }
 
-// buildShadowPanelBox は buildPanelBox の右下ドロップシャドウ付き版。confirm モーダル
-// (push / pull --rebase) 専用。job/diff パネルは面積が大きく影が主張しすぎたため
-// 一度全面導入 → revert (4fb36a2) した経緯があり、影は小さいモーダルに限定する。
+// buildShadowPanelBox は buildPanelBox の右下ドロップシャドウ付き版。呼び出し元は 4 系統の
+// 小面積モーダル/トースト (centerBox 経由の action モーダル + tmux prefix 警告 / toast / usage)
+// と、画面最外周フレーム (wrapWindowFrame → buildPanelBoxImpl を直接呼ぶ) のみ。
+//
+// ⚠️ 影の適用方針: 小面積のモーダル/トーストと最外周フレームに限る。リストのテキストに重なる
+// 大面積 popup (job/diff パネル) への全面シャドウは「面積が大きく影が主張しすぎる」で一度導入 →
+// revert した (4fb36a2)。最外周フレームは画面端の余白セルにだけ影を落としコンテンツと重ならない
+// ため、この方針と衝突しない (issue 025)。
 func buildShadowPanelBox(title string, rows []string, width int, colored bool) []string {
 	return buildPanelBoxImpl(title, rows, width, colored, true)
+}
+
+// wrapWindowFrame は画面全体のコンテンツ (リスト + overlay 群を合成済みの window) を、最外周に
+// 余白を残した枠 + 右下ドロップシャドウで包み「板がターミナル地色の上に浮いている」見た目にする
+// (issue 025)。影の幾何は buildPanelBoxImpl(shadow=true) へ完全委譲する (影の実装は 1 箇所に保つ)。
+// 返す行数 = len(content) + 4 (上余白 + 上辺 + 下辺 + 下影)。左右余白 1 桁ずつ + 影 1 桁で、
+// footprint は termW に収まる (呼び出し側の contentWidth()/frameVOverhead と一致)。
+func wrapWindowFrame(content []string, termW int, colored bool) []string {
+	box := buildPanelBoxImpl("", content, termW-2, colored, true) // -2 = 左右余白 1 桁ずつ
+	out := make([]string, 0, len(box)+1)
+	out = append(out, "") // 上余白 1 行 (端末地色)
+	for _, l := range box {
+		out = append(out, " "+l) // 左余白 1 桁
+	}
+	return out
 }
 
 // 落ち影は前景ブロック文字で描く (bg ベタ塗りではない)。近黒 fg の █ 本体 + 一段淡い ▓ の
