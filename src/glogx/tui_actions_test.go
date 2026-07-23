@@ -711,3 +711,76 @@ func TestBrowseClaudeUpdateToastYieldsToVisible(t *testing.T) {
 		t.Fatalf("再送でも塞がっているのに上書きした: text=%q", m4.toast.text)
 	}
 }
+
+// w で直近の警告をクリップボードへコピー (issue 026)。核となる不変条件は「トーストが消えた後も
+// コピーできる」= lastWarning が表示ライフサイクルと独立に保持されること。
+func TestBrowseCopyLastWarning(t *testing.T) {
+	var copied string
+	stubbed := false
+	orig := copyToClipboard
+	copyToClipboard = func(text string) error { copied = text; stubbed = true; return nil }
+	t.Cleanup(func() { copyToClipboard = orig })
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+
+	// 警告がまだ無い → コピーせず notice
+	m.handleKey("w")
+	if stubbed || !strings.Contains(m.notice, "コピーできる警告はありません") {
+		t.Fatalf("警告無しで w が誤動作: copied=%q notice=%q", copied, m.notice)
+	}
+
+	// 失敗トースト発行 → lastWarning に残る
+	m.showWarning("push に失敗: boom")
+	if m.lastWarning != "push に失敗: boom" {
+		t.Fatalf("showWarning が lastWarning に残さない: %q", m.lastWarning)
+	}
+
+	// 不変条件の核: トースト表示状態をリセット (消滅) しても w でコピーできる
+	m.toast = toast{}
+	m.handleKey("w")
+	if copied != "push に失敗: boom" || !strings.Contains(m.notice, "警告をコピーしました") {
+		t.Fatalf("トースト消滅後に w でコピーできない: copied=%q notice=%q", copied, m.notice)
+	}
+}
+
+// コピー失敗時は理由を notice に出す (既存 y のエラー経路と同型)。
+func TestBrowseCopyLastWarningError(t *testing.T) {
+	orig := copyToClipboard
+	copyToClipboard = func(string) error { return errors.New("clipboard down") }
+	t.Cleanup(func() { copyToClipboard = orig })
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.showWarning("なにか失敗")
+	m.handleKey("w")
+	if !strings.Contains(m.notice, "コピーに失敗しました") {
+		t.Fatalf("コピー失敗の notice が出ない: %q", m.notice)
+	}
+}
+
+// 成功トースト (toast.show(…, true)) は showWarning を通さないので lastWarning を汚さない。
+func TestBrowseSuccessToastDoesNotClobberLastWarning(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.showWarning("失敗A")
+	m.toast.show("push しました", true) // 成功トースト (showWarning 非経由)
+	if m.lastWarning != "失敗A" {
+		t.Fatalf("成功トーストで lastWarning が上書きされた: %q", m.lastWarning)
+	}
+}
+
+// 直接の動機の回帰: macism 未導入トーストの brew コマンドが、消えた後も w でコピーできる。
+func TestBrowseMacismWarningCopyableAfterDismiss(t *testing.T) {
+	origM := macismInstalled
+	macismInstalled = func() bool { return false }
+	t.Cleanup(func() { macismInstalled = origM })
+	var copied string
+	origC := copyToClipboard
+	copyToClipboard = func(text string) error { copied = text; return nil }
+	t.Cleanup(func() { copyToClipboard = origC })
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.Init()          // macism 未導入 → showWarning で lastWarning にも残る
+	m.toast = toast{} // トースト消滅をシミュレート
+	m.handleKey("w")
+	if !strings.Contains(copied, "brew install") || !strings.Contains(copied, "macism") {
+		t.Fatalf("macism 案内が w でコピーされない: %q", copied)
+	}
+}

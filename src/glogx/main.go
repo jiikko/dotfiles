@@ -152,7 +152,8 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	if imeWarn != "" {
 		// macism が導入済みなのにエラーになった場合のみ通知 (未導入は Init の macismInstalled
 		// チェックが brew 導入を案内する)。RunBrowse (Init) 前に仕込めば起動時トーストで出る。
-		browse.toast.show(imeWarn, false)
+		// showWarning 経由で lastWarning にも残し、消えた後も w でコピーできるようにする (issue 026)。
+		browse.showWarning(imeWarn)
 	}
 	model, err := RunBrowse(browse)
 	if err != nil {

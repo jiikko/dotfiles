@@ -192,6 +192,8 @@ func Usage() string {
                             (associatedPullRequests。複数あれば OPEN > MERGED 優先)
   U                         Claude Code の /usage 残量を右上モーダルで表示 (toggle)
   C                         claude update を実行する (確認なし即実行。結果は下部に表示)
+  w                         直近の警告/エラーをクリップボードへコピー (トーストが消えた後も可。
+                            tmux popup 内では copy-mode に入れないため pbcopy 直書きで取り出す)
   P                         コミットに紐づく PR の状態ポップアップ (state / draft /
                             レビュー / conflict / CI。o でブラウザ、y で URL コピー、
                             P/q/h で閉じる)

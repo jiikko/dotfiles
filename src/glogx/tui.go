@@ -225,6 +225,7 @@ type browseModel struct {
 	pushPoll      map[string]bool // push 直後ポーリング対象の SHA (CI が見えたら外れる)
 	pollAttempts  int             // push 直後ポーリングの試行回数 (上限で諦める)
 	notice        string          // hint 行に出す一時メッセージ (次のキーで消える)
+	lastWarning   string          // w でコピーする直近の警告/エラー文字列 (トーストが消えても保持。issue 026)
 	tmuxPrefix    string          // tmux prefix の bubbletea 表記 (例 "ctrl+t")。"" = tmux 外/不明で機能オフ
 	prefixPending bool            // 直前のキーが tmux prefix。次の 1 キーを飲み込む
 	prefixNote    string          // tmux prefix 誤爆の中央トースト (次のキーで消える。dim フッターより目立つ)
@@ -303,7 +304,7 @@ func (m *browseModel) Init() tea.Cmd {
 	// 案内する (数秒で自動消滅)。ime.go 側は未導入でも no-op なので機能自体は壊れないが、IME が
 	// 英数へ切り替わらない事実に気づけるよう能動的に案内する (ユーザー要望 2026-07-23)。
 	if !macismInstalled() {
-		m.toast.show("macism 未導入: brew tap laishulu/homebrew && brew install macism", false)
+		m.showWarning("macism 未導入: brew tap laishulu/homebrew && brew install macism")
 	}
 	// usage を起動時に取得するため tick を常に起動する (取得中スピナーを回す。取得完了で
 	// spinnerActive が false になり tick は自然に止まる)。CI fetch の有無に依らず起動する。
@@ -381,6 +382,15 @@ type claudeUpdateRetryMsg struct{ latest string }
 // 単一スロット・後勝ちの toast 設計を歪めずに「重要度 error > info」を守るための調停:
 // info 側が visible な先行トーストへ道を譲る。retry=true はその 1 回きりの再送で、まだ塞がって
 // いれば諦める (macism 警告は毎起動出るので次回起動で version 通知を読める)。
+// showWarning は失敗/警告トーストを出しつつ lastWarning に残す (w で表示が消えた後もコピー
+// できるように。issue 026)。成功トースト (toast.show(…, true)) はこれを通さない — 成功文言で
+// lastWarning が上書きされると直前のエラーがコピー不能になるため。失敗トーストの発行は必ず
+// これを経由し、コピー対象を漏れなく捕捉する。
+func (m *browseModel) showWarning(text string) {
+	m.lastWarning = text
+	m.toast.show(text, false)
+}
+
 func (m *browseModel) showOrDeferClaudeUpdate(latest string, retry bool) tea.Cmd {
 	if m.toast.visible() {
 		if retry {
@@ -627,7 +637,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pullMsg:
 		m.actModal.pulling = false
 		if msg.err != nil {
-			m.toast.show("pull に失敗: "+firstLine(msg.err.Error()), false)
+			m.showWarning("pull に失敗: " + firstLine(msg.err.Error()))
 			return m, m.maybeTick()
 		}
 		// 成功トーストを右下にせり上げつつ全面リロード (アニメで画面が動いてもトーストは数秒残る)。
@@ -636,7 +646,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case rerunMsg:
 		m.actModal.rerunning = false
 		if msg.err != nil {
-			m.toast.show("再実行に失敗: "+firstLine(msg.err.Error()), false)
+			m.showWarning("再実行に失敗: " + firstLine(msg.err.Error()))
 			return m, m.maybeTick()
 		}
 		m.toast.show("CI を再実行します", true)
@@ -669,7 +679,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pushMsg:
 		m.actModal.pushing = false
 		if msg.err != nil {
-			m.toast.show("push に失敗: "+firstLine(msg.err.Error()), false)
+			m.showWarning("push に失敗: " + firstLine(msg.err.Error()))
 			return m, m.maybeTick()
 		}
 		m.toast.show("push しました", true)
@@ -809,6 +819,21 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if key == "C" {
 		m.notice = ""
 		return m, tea.Batch(m.actModal.startUpdate(), m.maybeTick())
+	}
+	// w = 直近の警告/エラーをクリップボードへコピー (issue 026)。トーストは数秒で消えるが
+	// lastWarning は保持しているので、消えた後でもコピーできる。tmux popup 内では copy-mode に
+	// 入れないため、pbcopy 直書きの copyToClipboard が唯一の取り出し口 (y/Y と同じ仕組み)。
+	if key == "w" {
+		if m.lastWarning == "" {
+			m.notice = "コピーできる警告はありません"
+			return m, nil
+		}
+		if err := copyToClipboard(m.lastWarning); err != nil {
+			m.notice = "コピーに失敗しました: " + firstLine(err.Error())
+			return m, nil
+		}
+		m.notice = "警告をコピーしました"
+		return m, nil
 	}
 	// q はビューのスタックを 1 段戻る (tig 流。ユーザー要望): 詳細 → job 一覧 →
 	// コミット一覧、と閉じていき、最上位でだけ終了。即終了したいときは Ctrl-C
@@ -2170,7 +2195,7 @@ func (m *browseModel) bgLine(text, bg string) string {
 }
 
 func (m *browseModel) hintLine() string {
-	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  y: URL コピー  b: push  u: pull  U: usage  C: update  q: 終了"
+	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  y: URL コピー  b: push  u: pull  U: usage  C: update  w: 警告コピー  q: 終了"
 	switch {
 	case m.actModal.pushConfirm:
 		hint = "push しますか? [Y/n] (Enter=y)"
