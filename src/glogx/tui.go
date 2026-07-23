@@ -369,6 +369,31 @@ func (m *browseModel) mergeCIBatch(statuses map[string]CIState, details map[stri
 	maps.Copy(m.prCache, prs)
 }
 
+// claudeUpdateToastDefer は起動時の先行トースト (macism 未導入 error 警告など) が消えるのを
+// 待ってから version 通知を再送する間隔。toastHold (3s) + 出入りスライドより長めに取る。
+const claudeUpdateToastDefer = 4 * time.Second
+
+// claudeUpdateRetryMsg は先行トースト表示中に version 通知を 1 度だけ遅延再送する合図。
+type claudeUpdateRetryMsg struct{ latest string }
+
+// showOrDeferClaudeUpdate は「新バージョンあり」の info トーストを出す。ただし他のトースト
+// (起動時の macism error 警告など) が表示中なら上書きせず、消えた頃に 1 度だけ遅延再送する。
+// 単一スロット・後勝ちの toast 設計を歪めずに「重要度 error > info」を守るための調停:
+// info 側が visible な先行トーストへ道を譲る。retry=true はその 1 回きりの再送で、まだ塞がって
+// いれば諦める (macism 警告は毎起動出るので次回起動で version 通知を読める)。
+func (m *browseModel) showOrDeferClaudeUpdate(latest string, retry bool) tea.Cmd {
+	if m.toast.visible() {
+		if retry {
+			return nil // 再送してもまだ塞がっている: 今回は諦める
+		}
+		return tea.Tick(claudeUpdateToastDefer, func(time.Time) tea.Msg {
+			return claudeUpdateRetryMsg{latest: latest}
+		})
+	}
+	m.toast.show("Claude Code v"+latest+" が公開されています (C で更新)", true)
+	return m.maybeTick()
+}
+
 func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.done {
 		// 終了確定後に届く残メッセージは無視する (q での取得中断が
@@ -551,8 +576,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.usageOv.handle(msg)
 		return m, nil
 	case claudeUpdateAvailableMsg:
-		m.toast.show("Claude Code v"+msg.latest+" が公開されています (C で更新)", true)
-		return m, m.maybeTick()
+		return m, m.showOrDeferClaudeUpdate(msg.latest, false)
+	case claudeUpdateRetryMsg:
+		return m, m.showOrDeferClaudeUpdate(msg.latest, true)
 	case toastMsg:
 		m.toast.startLeaving(msg) // 静止明け: 退場アニメへ (世代一致時のみ)。maybeTick で tick 再開
 		return m, m.maybeTick()
