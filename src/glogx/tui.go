@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"math"
 	"os/exec"
 	"regexp"
 	"slices"
@@ -243,9 +244,12 @@ type browseModel struct {
 	pushAnimating bool
 	pushAnimTip   string
 	pushAnimNext  time.Time // 次に境界を 1 段進める時刻 (tick 周期は 80/33ms で揺れるため時刻で刻む)
-	done          bool
-	fetch         tea.Cmd
-	cancel        context.CancelFunc
+	// pushSlides は境界が通過したコミットの「右へ沈み込む」演出の開始時刻 (SHA → 開始)。
+	// View 段の変換 (slideColumns) が参照し、pushSlideDuration 経過で tick が破棄する
+	pushSlides map[string]time.Time
+	done       bool
+	fetch      tea.Cmd
+	cancel     context.CancelFunc
 
 	// lines() のメモ化。行リストの再構築は O(出力全行数) で、-p の巨大 patch では
 	// キー 1 打ごとに数万行を組み直すことになるためキャッシュする。行内容を変えうる
@@ -390,6 +394,11 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var pushRefetchCmd tea.Cmd
 		if m.pushAnimating {
 			pushRefetchCmd = m.advancePushAnim() // push 境界の罫線を 1 コミット/フレームで上へ
+		}
+		for sha, start := range m.pushSlides {
+			if time.Since(start) >= pushSlideDuration {
+				delete(m.pushSlides, sha) // 沈み込みが終わった区画は通常表示へ戻す
+			}
 		}
 		var toastHoldCmd tea.Cmd
 		if m.toast.animating() {
@@ -956,6 +965,10 @@ const pushAnimMaxSteps = 8
 // (ユーザーフィードバック 2026-07-23) ため、1 段ずつ確実に視認できる速さにする。
 const pushAnimStep = 600 * time.Millisecond
 
+// pushSlideDuration は境界通過したコミット区画が右へ沈んで戻ってくるまでの時間。
+// pushAnimStep より長いので複数コミットの push では沈み込みが波状に重なる。
+const pushSlideDuration = time.Second
+
 // startPushAnim は push 成功の演出を開始する。未 push だったコミットを古い順に
 // 1 コミット/フレームで取得中 (spinner) 表示へ切り替えていくと、insertPushBoundary の
 // 境界罫線が 1 段ずつ上へスライドし、先頭サマリの ↑N が減っていき、最後に
@@ -994,12 +1007,59 @@ func (m *browseModel) advancePushAnim() tea.Cmd {
 	for i := len(m.commits) - 1; i >= 0; i-- {
 		if m.statuses[m.commits[i].SHA] == StateUnpushed {
 			delete(m.statuses, m.commits[i].SHA)
+			if m.pushSlides == nil {
+				m.pushSlides = map[string]time.Time{}
+			}
+			m.pushSlides[m.commits[i].SHA] = time.Now() // 通過した区画の沈み込みを開始
 			m.invalidateLines()
 			return nil
 		}
 	}
 	m.pushAnimating = false
 	return m.refetchAfterPush()
+}
+
+// slideColumns は push 演出の「origin に吸い込まれる」沈み込み: 境界が通過したコミットの
+// 区画 (ヘッダー行から次のコミットまで) を、画面幅の半分まで右へ滑らせて戻す (ユーザー要望
+// 2026-07-23「50%くらい右に埋まる」)。返り値は行 index → 右オフセット列数 (演出なしは nil)。
+// sin カーブで 0 → 半幅 → 0 と往復し、区画の判定はヘッダー行起点で行う (罫線行は CommitIdx
+// を持つがヘッダー行に後続しないため巻き込まない)。
+func (m *browseModel) slideColumns(lines []Line) map[int]int {
+	if len(m.pushSlides) == 0 {
+		return nil
+	}
+	depth := m.width / 2
+	byCommit := map[int]int{}
+	for i, c := range m.commits {
+		start, ok := m.pushSlides[c.SHA]
+		if !ok {
+			continue
+		}
+		p := float64(time.Since(start)) / float64(pushSlideDuration)
+		if p < 0 || p >= 1 {
+			continue
+		}
+		if off := int(float64(depth) * math.Sin(math.Pi*p)); off > 0 {
+			byCommit[i] = off
+		}
+	}
+	if len(byCommit) == 0 {
+		return nil
+	}
+	cols := map[int]int{}
+	cur, active := -1, 0
+	for i, l := range lines {
+		if l.Header {
+			cur = l.CommitIdx
+			active = byCommit[cur]
+		} else if l.CommitIdx != cur {
+			active = 0 // 区画を抜けた (罫線行や次コミットへの切り替わり)
+		}
+		if active > 0 {
+			cols[i] = active
+		}
+	}
+	return cols
 }
 
 // refetchAfterPush は push 後の CI 再取得。表示中リスト全体の CI 状態を破棄して取り直す
@@ -1797,7 +1857,7 @@ func (m *browseModel) fillUnknown() {
 }
 
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || m.scrollAnim || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading()
+	return m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || m.scrollAnim || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading()
 }
 
 // panelHasRunningJob は表示中の job パネルに実行中 (経過時間が増える) job があるか。
@@ -1896,8 +1956,17 @@ func (m *browseModel) View() string {
 	offset := min(max(renderOffset, 0), max(len(lines)-page, 0))
 	end := min(offset+page, len(lines))
 	window := make([]string, 0, page)
+	slides := m.slideColumns(lines)
 	for i := offset; i < end; i++ {
 		text := lines[i].Text
+		// push 演出の沈み込み中の区画: 元の色を剥がして dim 一色に落とし、右オフセットを
+		// 付けて幅でクリップする (「非活性になって origin へ吸い込まれる」見た目)。
+		// カーソル強調より優先する (演出中の bg 塗りは動きを汚す)
+		if off := slides[i]; off > 0 {
+			text = strings.Repeat(" ", off) + paint(stripANSI(text), ansiDim, m.colored)
+			window = append(window, cursorGutterBlank+clipToWidth(text, max(m.width-cursorGutterWidth, 0)))
+			continue
+		}
 		// カーソルは全行に確保した 2 桁の溝の「→ 」+ ヘッダー行全体の bg 塗りで示す。
 		// 溝は一度「git log と左マージンがずれる」で廃止したが、bg 塗りだけでは
 		// 視認しにくいため全行マージン込みで復活 (ユーザー要望 2026-07-21)
