@@ -2702,3 +2702,86 @@ func TestBrowseCopyJobContextFetchesThenCopies(t *testing.T) {
 		t.Fatal("パネルを閉じた後の到着でコピーされた")
 	}
 }
+
+// --- PR 状態ポップアップ (P キー, issue 021) ---
+
+func TestBrowsePRStatusFlow(t *testing.T) {
+	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	sha := m.commits[0].SHA
+	// P で開いて取得に入る
+	_, cmd := m.handleKey("P")
+	if cmd == nil || !m.prStatusOv.visible() || !m.prStatusOv.busy {
+		t.Fatalf("P で PR 取得に入らない: cmd=%v visible=%v busy=%v", cmd != nil, m.prStatusOv.visible(), m.prStatusOv.busy)
+	}
+	// 取得結果が描画される (state / レビュー / conflict / CI)
+	m.Update(prStatusMsg{sha: sha, status: &PRStatus{
+		PRRef: PRRef{Number: 12, URL: "https://github.com/o/r/pull/12", State: "OPEN"},
+		Title: "new feature", ReviewDecision: "APPROVED", Mergeable: "CONFLICTING",
+		BaseRefName: "master", HeadRefName: "f/new",
+	}})
+	m.details[sha] = []CheckDetail{{Name: "lint", State: StateFailure}}
+	v := stripANSI(m.View())
+	for _, want := range []string{"PR #12: new feature", "OPEN", "f/new → master", "APPROVED", "CONFLICTING", "CI: ✗", "1 job 失敗"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("PR ポップアップに %q が無い:\n%s", want, v)
+		}
+	}
+	// 表示中はモーダル: o でブラウザ、q で閉じる
+	var opened string
+	origOpen := openInBrowser
+	openInBrowser = func(url string) error { opened = url; return nil }
+	t.Cleanup(func() { openInBrowser = origOpen })
+	_, cmd = m.handleKey("o")
+	if cmd == nil {
+		t.Fatal("o でブラウザ Cmd が返らない")
+	}
+	cmd()
+	if opened != "https://github.com/o/r/pull/12" {
+		t.Fatalf("開いた URL が違う: %q", opened)
+	}
+	m.handleKey("q")
+	if m.prStatusOv.visible() {
+		t.Fatal("q で閉じない")
+	}
+	// キャッシュ済みなので開き直しは fetch なし、P の再押下で toggle 閉
+	if _, cmd := m.handleKey("P"); cmd != nil {
+		t.Fatal("キャッシュ済みなのに再取得した")
+	}
+	if !m.prStatusOv.visible() {
+		t.Fatal("開き直せない")
+	}
+	m.handleKey("P")
+	if m.prStatusOv.visible() {
+		t.Fatal("P の再押下で toggle 閉しない")
+	}
+}
+
+func TestBrowsePRStatusGuardsAndErrors(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateUnpushed)
+	// 未 push は取得しない
+	if _, cmd := m.handleKey("P"); cmd != nil || m.prStatusOv.visible() {
+		t.Fatalf("未 push で PR 取得に入った: %q", m.notice)
+	}
+	if !strings.Contains(m.notice, "未 push") {
+		t.Fatalf("未 push notice が出ない: %q", m.notice)
+	}
+	// 取得エラーはキャッシュせず閉じ、notice を出す (次の P で再試行できる)
+	m.statuses = statusesFor(m, StateSuccess)
+	m.handleKey("P")
+	sha := m.commits[0].SHA
+	m.Update(prStatusMsg{sha: sha, ghErr: &GHError{Kind: GHOther, Detail: "boom"}})
+	if m.prStatusOv.visible() || !strings.Contains(m.notice, "PR の取得に失敗") {
+		t.Fatalf("エラーで閉じない / notice が出ない: visible=%v notice=%q", m.prStatusOv.visible(), m.notice)
+	}
+	if _, ok := m.prStatusOv.cache[sha]; ok {
+		t.Fatal("エラーがキャッシュされた (PR なし誤答が固定される)")
+	}
+	// PR なしは nil キャッシュ + その旨の表示
+	m.handleKey("P")
+	m.Update(prStatusMsg{sha: sha, status: nil})
+	if !strings.Contains(stripANSI(m.View()), "紐づく PR はありません") {
+		t.Fatal("PR なしの表示が出ない")
+	}
+}

@@ -155,6 +155,13 @@ type prMsg struct {
 	ghErr *GHError
 }
 
+// prStatusMsg は PR 詳細状態のオンデマンド取得の結果 (P キー, issue 021)。
+type prStatusMsg struct {
+	sha    string
+	status *PRStatus // nil = PR なし
+	ghErr  *GHError
+}
+
 // diffMsg はコミット diff のオンデマンド取得の結果 (d キー)。
 type diffMsg struct {
 	sha   string
@@ -200,6 +207,9 @@ type browseModel struct {
 	detailOv jobDetailOverlay
 	prCache  map[string]*PRRef // sha → 紐づく PR (nil 格納 = 確認済みで PR なし)
 	prBusy   map[string]bool   // PR 取得中の sha
+	// PR 状態ポップアップ (P キー) の状態と描画は prStatusOverlay 型 (pr_status_overlay.go) に
+	// 切り出し、ここは 1 フィールドだけ持つ。CI 行の整形はコミット状態を知る browseModel 側。
+	prStatusOv prStatusOverlay
 	// diff ポップアップ (d キー) の状態と描画は diffOverlay 型 (diff_overlay.go) に切り出し、
 	// ここは 1 フィールドだけ持つ。ターゲット選定・非同期取得・URL コピーは境界をまたぐため
 	// openDiff / handleDiffKey に薄く残す。
@@ -250,6 +260,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		detailOv:       newJobDetailOverlay(),
 		prCache:        map[string]*PRRef{},
 		prBusy:         map[string]bool{},
+		prStatusOv:     newPRStatusOverlay(),
 		diffOv:         newDiffOverlay(),
 		toFetch:        toFetch,
 		repo:           repo,
@@ -485,6 +496,13 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.notice = fmt.Sprintf("PR #%d を開きます", msg.pr.Number)
 		return m, m.openURLCmd(msg.pr.URL)
+	case prStatusMsg:
+		m.prStatusOv.receive(msg.sha, msg.status, msg.ghErr)
+		if msg.ghErr != nil {
+			// 一時エラーはキャッシュしない (receive 側)。理由は notice で伝える
+			m.notice = "PR の取得に失敗しました: " + firstLine(msg.ghErr.Warning())
+		}
+		return m, nil
 	case diffMsg:
 		if err := m.diffOv.receive(msg); err != nil {
 			m.notice = "diff の取得に失敗しました: " + firstLine(err.Error())
@@ -729,6 +747,10 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if m.diffOv.visible() {
 		return m.handleDiffKey(key)
 	}
+	// PR 状態ポップアップ表示中も同様にモーダル (o/y/閉じるだけを受ける)
+	if m.prStatusOv.visible() {
+		return m.handlePRStatusKey(key)
+	}
 	// b = push / u = pull --rebase (どちらも y/N 確認へ)。glogx の独自機能。
 	// diff 表示中は b = 半ページ戻るなので、diff のディスパッチより後で拾う
 	// (一覧/パネル/詳細では b/u は未使用。C-u の半ページ上とは別キー)
@@ -794,6 +816,8 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.copyFocusURL()
 	case "p":
 		return m, m.openPR()
+	case "P":
+		return m, m.openPRStatus()
 	case "d":
 		return m, m.openDiff()
 	case "o":
@@ -839,6 +863,7 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 	m.detailOv.reset() // job 詳細ログキャッシュも破棄 (旧 SHA の残骸を持ち越さない)
 	m.prCache = map[string]*PRRef{}
 	m.prBusy = map[string]bool{}
+	m.prStatusOv.reset() // 旧 SHA の PR 詳細キャッシュも破棄
 	m.diffOv.reset()
 	m.closePanel()
 	m.pushPoll = nil
@@ -1533,6 +1558,83 @@ func (m *browseModel) openPR() tea.Cmd {
 	}
 }
 
+// openPRStatus はカーソル位置コミットの PR 状態ポップアップを開く (P キー, issue 021)。
+// 同じコミットで再度 P を押すと閉じる (toggle)。取得はオンデマンド単発 GraphQL
+// (一括クエリと prCache は number/url/state のまま変えない。理由は PRStatus のコメント)。
+func (m *browseModel) openPRStatus() tea.Cmd {
+	if len(m.commits) == 0 {
+		return nil
+	}
+	if !m.hasRepo {
+		m.notice = "GitHub の remote が無いため PR を取得できません"
+		return nil
+	}
+	sha := m.commits[m.cursor].SHA
+	if m.statuses[sha] == StateUnpushed {
+		m.notice = "未 push のコミットに PR はありません"
+		return nil
+	}
+	if !m.prStatusOv.open(sha) {
+		return nil // toggle 閉 / キャッシュヒット
+	}
+	repo := m.repo
+	cmd := func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		status, ghErr := FetchPRStatus(ctx, ExecRunner, repo, sha)
+		return prStatusMsg{sha: sha, status: status, ghErr: ghErr}
+	}
+	return tea.Batch(cmd, m.maybeTick())
+}
+
+// handlePRStatusKey は PR 状態ポップアップ表示中のキー操作。o (ブラウザ) / y (URL コピー) と
+// 閉じるだけの小さなモーダル (スクロールする本文は無い)。
+func (m *browseModel) handlePRStatusKey(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "q", "h", "left", "esc", "P", "enter":
+		m.prStatusOv.close()
+	case "o":
+		if pr := m.prStatusOv.current(); pr != nil {
+			return m, m.openURLCmd(pr.URL)
+		}
+	case "y":
+		if pr := m.prStatusOv.current(); pr != nil {
+			if err := copyToClipboard(pr.URL); err != nil {
+				m.notice = "コピーに失敗しました: " + firstLine(err.Error())
+			} else {
+				m.notice = "コピーしました: " + pr.URL
+			}
+		}
+	}
+	return m, nil
+}
+
+// prStatusCILine は PR ポップアップに出すコミット CI 状態の 1 行 (出典はコミット行と同じ
+// statuses/details)。失敗時は取得済み details から失敗 job 数を添える。
+func (m *browseModel) prStatusCILine() string {
+	sha := m.prStatusOv.sha
+	if sha == "" {
+		return ""
+	}
+	st, ok := m.statuses[sha]
+	if !ok {
+		return ""
+	}
+	line := StatusGlyph(st, m.colored, m.spinner()) + " " + string(st)
+	if st == StateFailure {
+		n := 0
+		for _, d := range m.details[sha] {
+			if d.State == StateFailure {
+				n++
+			}
+		}
+		if n > 0 {
+			line += fmt.Sprintf(" (%d job 失敗)", n)
+		}
+	}
+	return line
+}
+
 // openDiff はカーソル位置 (パネル表示中はそのコミット) の diff ポップアップを開く (d キー)。
 // 同じコミットで再度 d を押すと閉じる (toggle)。job パネルは閉じてから開く (重ね順の単純化)。
 // ターゲット選定・パネル閉じ・非同期取得の境界だけをここで持ち、pager の状態は diffOv が持つ。
@@ -1589,7 +1691,7 @@ func (m *browseModel) fillUnknown() {
 }
 
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.actModal.running() || m.pullAnimating || m.scrollAnim || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading()
+	return m.fetching || m.actModal.running() || m.pullAnimating || m.scrollAnim || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading()
 }
 
 // panelHasRunningJob は表示中の job パネルに実行中 (経過時間が増える) job があるか。
@@ -1708,6 +1810,11 @@ func (m *browseModel) View() string {
 	// 実際に同時表示になることはないが、重ね順の契約としてパネルの後に描く)
 	if diffBox := m.diffBoxLines(); len(diffBox) > 0 {
 		window = overlayBox(window, diffBox, m.boxAnchor(lines, offset, m.diffOv.sha)+1, page)
+	}
+	// PR 状態ポップアップも対象コミット直下へ重ねる (job パネルとは同時表示にならない:
+	// P は一覧のみで受け、表示中は handlePRStatusKey がモーダルに捌く)
+	if prBox := m.prStatusOv.boxLines(m.width, m.colored, m.spinner(), m.prStatusCILine()); len(prBox) > 0 {
+		window = overlayBox(window, prBox, m.boxAnchor(lines, offset, m.prStatusOv.sha)+1, page)
 	}
 	// push 確認/実行中は画面中央のモーダルを最前面に重ねる (ユーザー要望 2026-07-19:
 	// hint 行の [y/N] だけでは気づきにくい)。overlayCenteredBox は行を塗り潰さず左右の背景
@@ -2014,6 +2121,8 @@ func (m *browseModel) hintLine() string {
 		hint = m.spinner() + " claude update..."
 	case m.diffOv.visible():
 		hint = "j/k/Space: スクロール  g/G: 先頭/末尾  q/h: 閉じる"
+	case m.prStatusOv.visible():
+		hint = "o: PR をブラウザで開く  y: URL コピー  P/q/h: 閉じる"
 	case m.detailOv.visible():
 		hint = "j/k: スクロール  v: nvim で開く  r: 再実行  Enter/h/q: 戻る  o: ブラウザ  y: URL  Y: 詳細コピー"
 	case m.panelSHA != "" && m.panelCursor >= 0:

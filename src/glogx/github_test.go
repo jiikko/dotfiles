@@ -532,3 +532,31 @@ func TestJobRerun(t *testing.T) {
 		t.Fatalf("stderr 空で元エラーが使われない: %v", err)
 	}
 }
+
+// FetchPRStatus は PR 詳細フィールドを取り、複数 PR は OPEN 優先で 1 件選ぶ (issue 021)。
+func TestFetchPRStatus(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	fixture := `{"data":{"repository":{"object":{"associatedPullRequests":{"nodes":[
+		{"number":9,"url":"https://github.com/o/r/pull/9","state":"MERGED","title":"old","isDraft":false,
+		 "reviewDecision":"APPROVED","mergeable":"MERGEABLE","baseRefName":"master","headRefName":"f/old"},
+		{"number":12,"url":"https://github.com/o/r/pull/12","state":"OPEN","title":"new feature","isDraft":true,
+		 "reviewDecision":"REVIEW_REQUIRED","mergeable":"CONFLICTING","baseRefName":"master","headRefName":"f/new"}
+	]}}}}}`
+	pr, ghErr := FetchPRStatus(context.Background(), fakeRunner(fixture, "", nil), Repo{Owner: "o", Name: "r"}, sha)
+	if ghErr != nil {
+		t.Fatalf("FetchPRStatus() error = %v", ghErr)
+	}
+	if pr == nil || pr.Number != 12 || pr.State != "OPEN" {
+		t.Fatalf("OPEN 優先で選ばれない: %+v", pr)
+	}
+	if pr.Title != "new feature" || !pr.IsDraft || pr.ReviewDecision != "REVIEW_REQUIRED" ||
+		pr.Mergeable != "CONFLICTING" || pr.BaseRefName != "master" || pr.HeadRefName != "f/new" {
+		t.Fatalf("詳細フィールドが取れない: %+v", pr)
+	}
+	// PR なし (object はあるが nodes が空) は nil
+	empty := `{"data":{"repository":{"object":{"associatedPullRequests":{"nodes":[]}}}}}`
+	pr, ghErr = FetchPRStatus(context.Background(), fakeRunner(empty, "", nil), Repo{Owner: "o", Name: "r"}, sha)
+	if ghErr != nil || pr != nil {
+		t.Fatalf("PR なしで nil にならない: pr=%+v err=%v", pr, ghErr)
+	}
+}
