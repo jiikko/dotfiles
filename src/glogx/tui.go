@@ -291,8 +291,8 @@ func (m *browseModel) maybeTick() tea.Cmd {
 		return nil
 	}
 	m.ticking = true
-	if m.scrollAnim {
-		return tickEvery(scrollInterval)
+	if m.scrollAnim || m.toast.animating() {
+		return tickEvery(scrollInterval) // スライドを滑らかに (30fps)
 	}
 	return tickEvery(spinnerInterval)
 }
@@ -349,6 +349,12 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.scrollAnim {
 			m.advanceScroll() // j/k のコミット単位スクロールを表示 offset で滑らせる
 		}
+		var toastHoldCmd tea.Cmd
+		if m.toast.animating() {
+			// トーストの下端せり上がり/引っ込みを 1 行/フレームで進める。入場完了時は
+			// holding へ移り toastHold 後の退場タイマーを返す。
+			toastHoldCmd = m.toast.advance(len(m.toast.fullBox(m.colored)))
+		}
 		m.frame++
 		// list に毎フレーム変化する内容 (loading スピナー) が乗るのは fetch/pushPoll の 2 状態
 		// だけ。他の spinnerActive 条件 (panelHasRunningJob/pullAnimating/detailsLoading/
@@ -359,7 +365,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.fetching || len(m.pushPoll) > 0 {
 			m.invalidateLines()
 		}
-		return m, m.maybeTick()
+		return m, tea.Batch(m.maybeTick(), toastHoldCmd)
 	case ciResultMsg:
 		m.invalidateLines()
 		m.ghErr = msg.ghErr
@@ -468,8 +474,8 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.usageOv.handle(msg)
 		return m, nil
 	case toastMsg:
-		m.toast.dismiss(msg) // 世代一致時のみ消す (上書き後の古いタイマーは無視)
-		return m, nil
+		m.toast.startLeaving(msg) // 静止明け: 退場アニメへ (世代一致時のみ)。maybeTick で tick 再開
+		return m, m.maybeTick()
 	case usageRefreshMsg:
 		// バックグラウンドで /usage を再取得し、次回リフレッシュを予約する。取得中も snap は
 		// 消さないので loading() は false のままスピナーに落ちず、表示は last-good を維持する
@@ -509,10 +515,12 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pullMsg:
 		m.actModal.pulling = false
 		if msg.err != nil {
-			return m, m.toast.show("pull に失敗: "+firstLine(msg.err.Error()), false)
+			m.toast.show("pull に失敗: "+firstLine(msg.err.Error()), false)
+			return m, m.maybeTick()
 		}
-		// 成功トーストを右下に出しつつ全面リロード (アニメで画面が動いてもトーストは数秒残る)。
-		return m, tea.Batch(m.toast.show("pull --rebase しました", true), m.reloadAfterPull())
+		// 成功トーストを右下にせり上げつつ全面リロード (アニメで画面が動いてもトーストは数秒残る)。
+		m.toast.show("pull --rebase しました", true)
+		return m, tea.Batch(m.reloadAfterPull(), m.maybeTick())
 	case updateMsg:
 		m.actModal.updating = false
 		// 結果はダイアログで出す (何かキーで閉じる。ユーザー要望 2026-07-22)。バージョンが
@@ -533,16 +541,17 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pushMsg:
 		m.actModal.pushing = false
 		if msg.err != nil {
-			return m, m.toast.show("push に失敗: "+firstLine(msg.err.Error()), false)
+			m.toast.show("push に失敗: "+firstLine(msg.err.Error()), false)
+			return m, m.maybeTick()
 		}
-		toastCmd := m.toast.show("push しました", true)
+		m.toast.show("push しました", true)
 		// 表示中リスト全体の CI 状態を破棄して取り直す (ユーザー要望 2026-07-19:
 		// push で CI が走り出すため、起動時キャッシュ由来の表示は丸ごと古くなる)。
 		// statuses から消す → スピナー表示に戻り、toFetch 差し替えで一括取得と
 		// 同じ経路 (ciResultMsg) に乗せる。取得結果は fetched 経由で終了時に
 		// SaveCache へマージされ、ファイルキャッシュ側も新しい観測で上書きされる
 		if !m.hasRepo || len(m.commits) == 0 {
-			return m, toastCmd // 再取得先が無くてもトーストは出す (スピナーのまま固まるだけ)
+			return m, m.maybeTick() // 再取得先が無くてもトーストは出す (アニメ tick を回す)
 		}
 		// ポーリング対象は push の先頭 (tip = 最新の unpushed) だけ (ユーザー要望
 		// 2026-07-19)。CI は push イベントの head commit にしか走らないのが普通で、
@@ -565,7 +574,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		fetch := fetchCIStatusesCmd(m.repo, all, func(b CIBatch, e *GHError) tea.Msg {
 			return ciResultMsg{batch: b, ghErr: e}
 		})
-		return m, tea.Batch(fetch, m.maybeTick(), toastCmd)
+		return m, tea.Batch(fetch, m.maybeTick())
 	case openURLMsg:
 		if msg.err != nil {
 			m.notice = "ブラウザを開けませんでした: " + firstLine(msg.err.Error())
@@ -1462,7 +1471,7 @@ func (m *browseModel) fillUnknown() {
 }
 
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.actModal.running() || m.pullAnimating || m.scrollAnim || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading()
+	return m.fetching || m.actModal.running() || m.pullAnimating || m.scrollAnim || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading()
 }
 
 // panelHasRunningJob は表示中の job パネルに実行中 (経過時間が増える) job があるか。
