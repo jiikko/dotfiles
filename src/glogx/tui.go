@@ -602,13 +602,23 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// C-g は即終了: tmux の C-g popup (bind -n C-g) をトグル風に開閉するため
 	// (開くキーと同じキーで閉じる)。本家 glog には無い割当。
 	if key == "ctrl+c" || key == "ctrl+g" {
-		// claude update 中は終了を握りつぶす (ユーザー選定 2026-07-22): 自己バイナリ更新を
-		// 途中で kill すると CLI が壊れた状態になりうるため、完了 (updateMsg) まで待たせる。
-		// モーダルに「完了まで終了できません」を出しているので無反応には見えない。
-		if m.actModal.blocksQuit() {
+		switch {
+		case m.actModal.updating:
+			// 自己バイナリ更新の中断は CLI を壊しうるので常にブロック (ユーザー選定 2026-07-22)。
+			// escape は updateTimeout のみ。モーダルに「完了まで終了できません」を出す。
 			return m, nil
+		case m.actModal.pushing || m.actModal.pulling:
+			// 途中終了は不整合 (特に pull --rebase の mid-rebase 状態) を招くので 1 回目はブロック。
+			// ただし stall で永久に閉じられなくならないよう、2 回目の Ctrl-C で強制終了する
+			// (quit() の actModal.stop() が走行中 git を cancel。ユーザー選定 2026-07-23)。
+			if m.actModal.forceQuitArmed {
+				return m.quit()
+			}
+			m.actModal.forceQuitArmed = true
+			return m, nil
+		default:
+			return m.quit()
 		}
-		return m.quit()
 	}
 	// git push/pull/update の確認・実行中・警告・結果ダイアログは action モーダルが捌く
 	// (警告/結果の dismiss・確認 y/N・実行中のキー無視。判定順は actionModal.handleKey 側)。

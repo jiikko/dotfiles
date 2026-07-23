@@ -2305,8 +2305,10 @@ func TestBrowsePushNoUnpushed(t *testing.T) {
 // 実行中 (pushing/pulling) ガードは一般キーを飲むが、quit だけは updating のときのみブロック
 // される (pushing/pulling 中の Ctrl-C は終了できる)。この非対称は claude update だけ自己
 // バイナリ更新の中断が危険なため。抽出でこの分岐が壊れないよう固定する。
-func TestBrowseRunningGuardSwallowsKeysPushingAllowsQuit(t *testing.T) {
-	// pushing 中: j は飲まれてカーソルは動かない
+// push/pull 実行中の終了ガード (ユーザー選定 2026-07-23): 途中終了は不整合を招くので 1 回目の
+// Ctrl-C はブロックし、2 回目で強制終了する。update は自己更新中断が危険なので常にブロック。
+func TestBrowseRunningQuitGuard(t *testing.T) {
+	// pushing 中: 一般キー (j) は飲まれてカーソルは動かない
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateSuccess)
 	m.actModal.pushing = true
@@ -2314,16 +2316,34 @@ func TestBrowseRunningGuardSwallowsKeysPushingAllowsQuit(t *testing.T) {
 	if m.cursor != 0 {
 		t.Errorf("pushing 中に j が飲まれずカーソルが動いた: cursor=%d", m.cursor)
 	}
-	// pushing はクォートをブロックしない (updating だけがブロックする)
+	// pushing 中の 1 回目 Ctrl-C はブロック (終了しない) し、force-quit を arm する
+	if _, _ = m.handleKey("ctrl+c"); m.done {
+		t.Error("pushing 中の 1 回目 Ctrl-C で終了してしまった (1 回目はブロックする契約)")
+	}
+	if !m.actModal.forceQuitArmed {
+		t.Error("1 回目 Ctrl-C で force-quit が arm されていない")
+	}
+	// 2 回目の Ctrl-C で強制終了 (quit() が actModal.stop() で走行中 git を cancel)
 	if _, _ = m.handleKey("ctrl+c"); !m.done {
-		t.Error("pushing 中の Ctrl-C で終了できない (updating 以外は quit を許す契約)")
+		t.Error("pushing 中の 2 回目 Ctrl-C で強制終了できない")
 	}
 
-	// updating 中: Ctrl-C は飲まれて終了しない
+	// pulling も同じ (1 回目ブロック → 2 回目で終了)
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m2.actModal.updating = true
+	m2.actModal.pulling = true
 	if _, _ = m2.handleKey("ctrl+c"); m2.done {
-		t.Error("updating 中の Ctrl-C で終了してしまった (完了まで待たせる契約)")
+		t.Error("pulling 中の 1 回目 Ctrl-C で終了してしまった")
+	}
+	if _, _ = m2.handleKey("ctrl+c"); !m2.done {
+		t.Error("pulling 中の 2 回目 Ctrl-C で強制終了できない")
+	}
+
+	// updating 中: Ctrl-C は何回押しても終了しない (自己更新中断が危険。escape は updateTimeout のみ)
+	m3 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m3.actModal.updating = true
+	m3.handleKey("ctrl+c")
+	if _, _ = m3.handleKey("ctrl+c"); m3.done {
+		t.Error("updating 中は Ctrl-C 2 回でも終了してはいけない (常にブロック)")
 	}
 }
 

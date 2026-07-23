@@ -25,6 +25,10 @@ type actionModal struct {
 	// cancel は走行中の push/pull を quit から中断するための cancel (deadline 無し)。running な
 	// git 子プロセスが Ctrl-C 中断時に孤児化するのを防ぐ (leak 監査 2026-07-23)。stop() で呼ぶ。
 	cancel context.CancelFunc
+	// forceQuitArmed は push/pull 実行中に Ctrl-C が 1 回押されたか。途中終了は不整合 (特に
+	// pull --rebase の mid-rebase 状態) を招くので 1 回目はブロックし、2 回目で cancel して強制
+	// 終了する (stall で永久に閉じられなくなるのを防ぐ escape。ユーザー選定 2026-07-23)。
+	forceQuitArmed bool
 }
 
 // active はいずれかのモーダル/トーストが表示中か (描画とセンタリングの要否判定)。
@@ -36,14 +40,19 @@ func (a *actionModal) active() bool {
 // running は remote/自己更新の実行中か (spinner tick を回し、確認以外のキーを飲む)。
 func (a *actionModal) running() bool { return a.pushing || a.pulling || a.updating }
 
-// blocksQuit は Ctrl-C/Ctrl-G による終了を握りつぶすべきか。claude update だけ自己バイナリ更新の
-// 中断が CLI を壊しうるため完了まで待たせる (push/pull は中断可)。
-func (a *actionModal) blocksQuit() bool { return a.updating }
+// runningQuitHint は実行中モーダルに出す終了ガードの案内。1 回目の Ctrl-C で forceQuitArmed が
+// 立った後は強制終了を促す (progressive disclosure)。
+func (a *actionModal) runningQuitHint() string {
+	if a.forceQuitArmed {
+		return "もう一度 Ctrl-C で強制終了します"
+	}
+	return "完了まで終了できません"
+}
 
 // handleKey は最前面の action モーダルがキーを消費したら consumed=true を返す。push/pull 確認の
 // 実行キー (y/Enter) は実行する tea.Cmd を action に載せる (呼び出し側が maybeTick と束ねる)。
-// ⚠️ ここへ来る前に browseModel が Ctrl-C/Ctrl-G の quit 判定 (blocksQuit) を済ませている前提。
-// 判定順 (警告/結果ダイアログ → push 確認 → pull 確認 → 実行中ガード) は footgun 回避のため厳守。
+// ⚠️ ここへ来る前に browseModel が Ctrl-C/Ctrl-G の quit 判定 (running 中のブロック) を済ませて
+// いる前提。判定順 (警告/結果ダイアログ → push 確認 → pull 確認 → 実行中ガード) は footgun 回避のため厳守。
 func (a *actionModal) handleKey(key string) (consumed bool, action tea.Cmd) {
 	// 警告 / 結果ダイアログは何かキーで閉じる (そのキーは消費して誤操作を防ぐ)
 	if a.pushWarn != "" {
@@ -90,6 +99,7 @@ func (a *actionModal) handleKey(key string) (consumed bool, action tea.Cmd) {
 // (quit からの中断用)。⚠️ deadline は付けない — 正当な巨大 push を timeout で切らない (K2)。
 // cancel は closure の defer と stop() の双方から呼ばれうるが CancelFunc は冪等なので安全。
 func (a *actionModal) startCancelable() (context.Context, context.CancelFunc) {
+	a.forceQuitArmed = false // 新しい操作は「1 回目の Ctrl-C から」でやり直す
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
 	return ctx, cancel
@@ -137,10 +147,10 @@ func (a *actionModal) boxLines(width int, colored bool, spinner string, unpushed
 		rows = append(strings.Split(a.updateResult, "\n"),
 			"", paint("何かキーを押して閉じる", ansiDim, colored))
 	case a.pushing:
-		rows = []string{spinner + " pushing..."}
+		rows = []string{spinner + " pushing...", "", paint(a.runningQuitHint(), ansiDim, colored)}
 	case a.pulling:
 		title = " git pull --rebase "
-		rows = []string{spinner + " pulling..."}
+		rows = []string{spinner + " pulling...", "", paint(a.runningQuitHint(), ansiDim, colored)}
 	case a.updating:
 		title = " claude update "
 		rows = []string{
