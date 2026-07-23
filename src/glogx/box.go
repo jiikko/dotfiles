@@ -127,9 +127,9 @@ func shadowFeather(colored bool) string {
 	return ansiShadowFg + shadowGlyphFeather + ansiReset
 }
 
-// buildPanelBoxImpl が本体。shadow=true では右端 1 桁・下端 1 行を「落ち影」に充て、
-// 板が左上光源で浮いて見える 3D 風にする (footprint は width のまま。枠自体を
-// fw = width-1 に狭めて影の余白を捻出する)。
+// buildPanelBoxImpl が本体。shadow=true では右端 1 桁 (右影) と、その下に shadowBottomOffset 桁
+// 右へずらした下端影の行を足し、板が左上光源で浮いて見える 3D 風にする。footprint は width の
+// まま (枠自体を fw = width-1 に狭めて右影 1 桁分を捻出。下端影は行内の左詰めオフセットで表現)。
 func buildPanelBoxImpl(title string, rows []string, width int, colored bool, shadow bool) []string {
 	if width < 10 {
 		width = 10
