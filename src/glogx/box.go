@@ -161,18 +161,19 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, sha
 		}
 		lines = append(lines, paint("│ ", ansiDim, colored)+content+strings.Repeat(" ", pad)+paint(" │", ansiDim, colored)+shade)
 	}
-	// 下辺の角は上辺 ┌─┐ と同じ細い └┘ で統一する (▄ の半ブロック帯は側/上辺の細線と太さが
-	// 不揃いで浮いていたため撤去した経緯)。横線は shadow の有無で変える:
-	//   - 通常箱: 中央高の ─ (標準の枠)
-	//   - shadow 箱: 最下段の ▁ 。─ は中央高で下の落ち影との間に半セルの余白ができるが、▁ は
-	//     セル最下段なので影に接し「地に置いた」自然なドロップシャドウになる。角は └┘ を残して
-	//     左右が開くのを防ぐ (ユーザー指摘 2026-07-23: ─ は余白 / ▁ 一様は角が開く →「下線の
-	//     左右だけ角文字に」が本要望。└ + ▁×n + ┘)。
-	midRule := "─"
+	// 下辺は shadow の有無で変える:
+	//   - 通常箱: 上辺 ┌─┐ と同じ中央高の細い罫線 └─┘ (標準の枠)
+	//   - shadow 箱: 最下段に寄せた低い横線 ▁ + 左右の角も最下段の低ブロック ▖ ▗ 。─ 中央高だと
+	//     下の落ち影との間に半セルの余白ができ、└┘ の角だけ中央高だと横線 ▁ との間に段差が出る。
+	//     角・横線ともセル最下段で高さを揃え、影に接した段差のない自然なドロップシャドウにする
+	//     (ユーザー指摘 2026-07-23: ─ は余白 / ▁ 一様は角が開く / └┘ 角は段差 → 低ブロックの
+	//     角 ▖ ▗ で接地と角閉じを両立。▖ + ▁×n + ▗)。
+	var bottom string
 	if shadow {
-		midRule = "▁"
+		bottom = paint("▖"+strings.Repeat("▁", fw-2)+"▗", ansiDim, colored)
+	} else {
+		bottom = paint("└"+strings.Repeat("─", fw-2)+"┘", ansiDim, colored)
 	}
-	bottom := paint("└"+strings.Repeat(midRule, fw-2)+"┘", ansiDim, colored)
 	if shadow {
 		// 右下角の影は最も深いので █ 本体。
 		lines = append(lines, bottom+shadowRun(1, colored))
