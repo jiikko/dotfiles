@@ -2131,8 +2131,8 @@ func TestBrowsePushFlow(t *testing.T) {
 	if m.statuses[newSHA] != StatePending {
 		t.Fatalf("pending が反映されない: %v", m.statuses[newSHA])
 	}
-	if !strings.Contains(m.notice, "push") {
-		t.Fatalf("push 完了 notice が出ない: %q", m.notice)
+	if !m.toast.visible() || !m.toast.ok || !strings.Contains(m.toast.text, "push") {
+		t.Fatalf("push 完了トーストが出ない: visible=%v ok=%v text=%q", m.toast.visible(), m.toast.ok, m.toast.text)
 	}
 }
 
@@ -2200,8 +2200,8 @@ func TestBrowsePullFlow(t *testing.T) {
 	m2.handleKey("u")
 	m2.handleKey("y")
 	m2.Update(pullMsg{err: errors.New("conflict のため rebase を中断して元に戻しました")})
-	if !strings.Contains(m2.notice, "conflict") {
-		t.Fatalf("pull 失敗の notice が出ない: %q", m2.notice)
+	if m2.toast.visible() == false || m2.toast.ok || !strings.Contains(m2.toast.text, "conflict") {
+		t.Fatalf("pull 失敗トーストが出ない: visible=%v ok=%v text=%q", m2.toast.visible(), m2.toast.ok, m2.toast.text)
 	}
 }
 

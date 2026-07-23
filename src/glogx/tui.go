@@ -207,6 +207,9 @@ type browseModel struct {
 	// 状態と描画は usageOverlay 型 (usage_overlay.go) に切り出し、ここは 1 フィールドだけ持つ。
 	usageOv usageOverlay
 
+	// toast は右下に数秒だけ出す結果フィードバック (push/pull 完了)。自動消滅 (toast.go)。
+	toast toast
+
 	fetching bool
 	ticking  bool // 80ms スピナー tick チェーンが 1 本生きているか (maybeTick の single-flight)
 	done     bool
@@ -464,6 +467,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case usageMsg:
 		m.usageOv.handle(msg)
 		return m, nil
+	case toastMsg:
+		m.toast.dismiss(msg) // 世代一致時のみ消す (上書き後の古いタイマーは無視)
+		return m, nil
 	case usageRefreshMsg:
 		// バックグラウンドで /usage を再取得し、次回リフレッシュを予約する。取得中も snap は
 		// 消さないので loading() は false のままスピナーに落ちず、表示は last-good を維持する
@@ -503,11 +509,10 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pullMsg:
 		m.actModal.pulling = false
 		if msg.err != nil {
-			m.notice = "pull に失敗しました: " + firstLine(msg.err.Error())
-			return m, nil
+			return m, m.toast.show("pull に失敗: "+firstLine(msg.err.Error()), false)
 		}
-		m.notice = "pull --rebase しました"
-		return m, m.reloadAfterPull()
+		// 成功トーストを右下に出しつつ全面リロード (アニメで画面が動いてもトーストは数秒残る)。
+		return m, tea.Batch(m.toast.show("pull --rebase しました", true), m.reloadAfterPull())
 	case updateMsg:
 		m.actModal.updating = false
 		// 結果はダイアログで出す (何かキーで閉じる。ユーザー要望 2026-07-22)。バージョンが
@@ -528,17 +533,16 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pushMsg:
 		m.actModal.pushing = false
 		if msg.err != nil {
-			m.notice = "push に失敗しました: " + firstLine(msg.err.Error())
-			return m, nil
+			return m, m.toast.show("push に失敗: "+firstLine(msg.err.Error()), false)
 		}
-		m.notice = "push しました"
+		toastCmd := m.toast.show("push しました", true)
 		// 表示中リスト全体の CI 状態を破棄して取り直す (ユーザー要望 2026-07-19:
 		// push で CI が走り出すため、起動時キャッシュ由来の表示は丸ごと古くなる)。
 		// statuses から消す → スピナー表示に戻り、toFetch 差し替えで一括取得と
 		// 同じ経路 (ciResultMsg) に乗せる。取得結果は fetched 経由で終了時に
 		// SaveCache へマージされ、ファイルキャッシュ側も新しい観測で上書きされる
 		if !m.hasRepo || len(m.commits) == 0 {
-			return m, nil // 再取得先が無いなら破棄もしない (スピナーのまま固まるだけ)
+			return m, toastCmd // 再取得先が無くてもトーストは出す (スピナーのまま固まるだけ)
 		}
 		// ポーリング対象は push の先頭 (tip = 最新の unpushed) だけ (ユーザー要望
 		// 2026-07-19)。CI は push イベントの head commit にしか走らないのが普通で、
@@ -561,7 +565,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		fetch := fetchCIStatusesCmd(m.repo, all, func(b CIBatch, e *GHError) tea.Msg {
 			return ciResultMsg{batch: b, ghErr: e}
 		})
-		return m, tea.Batch(fetch, m.maybeTick())
+		return m, tea.Batch(fetch, m.maybeTick(), toastCmd)
 	case openURLMsg:
 		if msg.err != nil {
 			m.notice = "ブラウザを開けませんでした: " + firstLine(msg.err.Error())
@@ -1587,6 +1591,10 @@ func (m *browseModel) View() string {
 	// usage オーバーレイは最前面 (上部右端の複数行モーダル)。U で再表示、任意キーで消える。
 	if box := m.usageOv.boxLines(m.width, m.colored, m.spinner()); len(box) > 0 {
 		window = overlayBoxTopRight(window, box, m.width, m.colored)
+	}
+	// トーストは右下 (hint 行の直上) に数秒だけ。push/pull 完了の結果フィードバック。
+	if box := m.toast.boxLines(m.colored); len(box) > 0 {
+		window = overlayBoxBottomRight(window, box, m.width, m.colored)
 	}
 	var b strings.Builder
 	for _, w := range window {

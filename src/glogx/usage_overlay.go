@@ -159,3 +159,33 @@ func overlayBoxTopRight(window, box []string, width int, colored bool) []string 
 	}
 	return window
 }
+
+// overlayBoxBottomRight は box を window の下端・右端へ合成する (overlayBoxTopRight の下端版)。
+// トースト用。左側の背景リストは残し (truncateKeepANSI + pad)、box を右端に載せる。box は
+// window の末尾 len(box) 行 (hint 行の直上) に重なる。
+func overlayBoxBottomRight(window, box []string, width int, colored bool) []string {
+	if len(window) == 0 || width <= 0 || len(box) == 0 {
+		return window
+	}
+	reset := ""
+	if colored {
+		reset = ansiReset
+	}
+	base := max(len(window)-len(box), 0) // 下端 len(box) 行に載せる
+	for i, row := range box {
+		pos := base + i
+		if pos >= len(window) {
+			break
+		}
+		bw := runewidth.StringWidth(stripANSI(row))
+		if bw >= width {
+			window[pos] = clipToWidth(row, width)
+			continue
+		}
+		leftWidth := width - bw
+		left := truncateKeepANSI(window[pos], leftWidth)
+		pad := strings.Repeat(" ", max(leftWidth-runewidth.StringWidth(stripANSI(left)), 0))
+		window[pos] = left + reset + pad + row
+	}
+	return window
+}
