@@ -144,6 +144,9 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	// context の timer を解放する (cancel は冪等)
 	defer browse.cancel()
 	browse.decor = decor
+	// TUI はキー操作が主なので IME を英数へ。エラー救済経路 (showStatic) を含め
+	// runLog を抜けるときに元へ戻す
+	defer switchIMEToASCII()()
 	model, err := RunBrowse(browse)
 	if err != nil {
 		// TUI 基盤の失敗は静的経路で救済する。無言だと View の panic 等が
