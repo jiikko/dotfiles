@@ -242,6 +242,7 @@ type browseModel struct {
 	// ため、演出後の CI ポーリング対象 (push 時点の tip) は pushAnimTip に捕捉しておく
 	pushAnimating bool
 	pushAnimTip   string
+	pushAnimNext  time.Time // 次に境界を 1 段進める時刻 (tick 周期は 80/33ms で揺れるため時刻で刻む)
 	done          bool
 	fetch         tea.Cmd
 	cancel        context.CancelFunc
@@ -941,9 +942,13 @@ func (m *browseModel) advancePullAnim() {
 	}
 }
 
-// pushAnimMaxSteps は push 演出で 1 フレームずつ流す最大コミット数。大量 push でも
+// pushAnimMaxSteps は push 演出で 1 段ずつ流す最大コミット数。大量 push でも
 // 待ちが伸びないよう頭打ちにし、超過分は開始時に即切り替える (pullAnimMaxLines と同型)。
 const pushAnimMaxSteps = 8
+
+// pushAnimStep は境界が 1 コミット上がる間隔。80ms/段では目で追えない
+// (ユーザーフィードバック 2026-07-23) ため、1 段ずつ確実に視認できる速さにする。
+const pushAnimStep = 1000 * time.Millisecond
 
 // startPushAnim は push 成功の演出を開始する。未 push だったコミットを古い順に
 // 1 コミット/フレームで取得中 (spinner) 表示へ切り替えていくと、insertPushBoundary の
@@ -968,13 +973,18 @@ func (m *browseModel) startPushAnim() bool {
 	}
 	m.invalidateLines()
 	m.pushAnimating = true
+	m.pushAnimNext = time.Now().Add(pushAnimStep)
 	return true
 }
 
-// advancePushAnim は push 演出を 1 コミット分進める (1 フレーム = tick 1 回)。
+// advancePushAnim は pushAnimStep 経過ごとに push 演出を 1 コミット分進める。
 // 最も古い StateUnpushed を消すと境界が 1 コミット上がる。全部消えたら演出終了で、
 // 本来の後処理 (CI 全件再取得) へ進む cmd を返す。
 func (m *browseModel) advancePushAnim() tea.Cmd {
+	if time.Now().Before(m.pushAnimNext) {
+		return nil
+	}
+	m.pushAnimNext = time.Now().Add(pushAnimStep)
 	for i := len(m.commits) - 1; i >= 0; i-- {
 		if m.statuses[m.commits[i].SHA] == StateUnpushed {
 			delete(m.statuses, m.commits[i].SHA)

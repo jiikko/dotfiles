@@ -235,6 +235,13 @@ func TestBrowsePushFlow(t *testing.T) {
 	if !m.pushAnimating {
 		t.Fatal("push 成功で演出が始まらない")
 	}
+	// pushAnimStep 経過前の tick では進まない (80ms tick ごとに 1 段進むと目で追えない)
+	m.Update(tickMsg{})
+	if _, ok := m.statuses[m.commits[1].SHA]; !ok {
+		t.Fatal("pushAnimStep 経過前に演出が進んだ")
+	}
+	// 以降は経過済みとして 1 tick = 1 段で進める
+	m.pushAnimNext = time.Time{}
 	m.Update(tickMsg{})
 	if _, ok := m.statuses[m.commits[1].SHA]; ok {
 		t.Fatal("1 tick 目で最古の unpushed が消えない")
@@ -242,8 +249,10 @@ func TestBrowsePushFlow(t *testing.T) {
 	if m.statuses[m.commits[0].SHA] != StateUnpushed {
 		t.Fatal("tip が先に消えた (演出は古い順のはず)")
 	}
+	m.pushAnimNext = time.Time{}
 	m.Update(tickMsg{}) // 残る tip が消える
-	m.Update(tickMsg{}) // 全部消えた次の tick で演出終了 → 再取得へ
+	m.pushAnimNext = time.Time{}
+	m.Update(tickMsg{}) // 全部消えた次の段で演出終了 → 再取得へ
 	if m.pushAnimating {
 		t.Fatal("演出が終わらない")
 	}
