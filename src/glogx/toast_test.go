@@ -55,18 +55,33 @@ func TestToastLifecycle(t *testing.T) {
 	}
 }
 
+// advanceToHolding は entering のトーストを holding まで tick で進める (テスト用ヘルパー)。
+func advanceToHolding(to *toast) {
+	for guard := 0; to.phase == toastEntering && guard < 100; guard++ {
+		to.advance(false)
+	}
+}
+
 // 連続 push/pull: 前のトーストの退場タイマー (古い seq) は後のトーストを leaving にしない。
+// 新トーストを holding まで進めた状態で試すことで、phase 条件では弾けず seq ガードだけが
+// 分岐を左右する場面を作る (startLeaving の `msg.seq == t.seq` を消すと最初の assert が落ちる)。
 func TestToastStaleTimerDoesNotLeaveNewer(t *testing.T) {
 	var to toast
 	to.show("first", true)
 	oldSeq := to.seq
-	for guard := 0; to.phase == toastEntering && guard < 100; guard++ {
-		to.advance(false) // holding へ
-	}
-	to.show("second", false) // 上書き (seq 前進・entering へ)
+	advanceToHolding(&to)    // 1つ目を holding へ
+	to.show("second", false) // 上書き (seq 前進・entering へリセット)
+	advanceToHolding(&to)    // 2つ目も holding へ = phase==holding は満たされ、残る守りは seq のみ
+
+	// 古い世代のタイマー (oldSeq) が届いても、seq 不一致なので新トーストを退場させない。
 	to.startLeaving(toastMsg{seq: oldSeq})
-	if to.phase == toastLeaving || to.text != "second" {
-		t.Errorf("古いタイマーが新トーストを退場させた: phase=%d text=%q", to.phase, to.text)
+	if to.phase != toastHolding || to.text != "second" {
+		t.Errorf("古い seq のタイマーが新トーストを退場させた: phase=%d text=%q", to.phase, to.text)
+	}
+	// 正しい世代のタイマーなら退場に入る (seq ガードは一致時に通す、の対検証)。
+	to.startLeaving(toastMsg{seq: to.seq})
+	if to.phase != toastLeaving {
+		t.Errorf("正しい seq で退場に入らない: phase=%d", to.phase)
 	}
 }
 
@@ -87,9 +102,7 @@ func TestToastBoxLinesRevealsLeftColumns(t *testing.T) {
 		t.Errorf("入場途中の可視幅が左スライドでない: 可視幅=%d shown=%d boxW=%d", wv, to.shown, boxW)
 	}
 	// holding まで進めると全幅 + ✓/text
-	for guard := 0; to.phase == toastEntering && guard < 100; guard++ {
-		to.advance(false)
-	}
+	advanceToHolding(&to)
 	lines := to.boxLines(false)
 	plain := stripANSI(strings.Join(lines, "\n"))
 	if runewidth.StringWidth(stripANSI(lines[0])) != boxW || !strings.Contains(plain, "✓") || !strings.Contains(plain, "pushed") {
@@ -98,9 +111,7 @@ func TestToastBoxLinesRevealsLeftColumns(t *testing.T) {
 	// 失敗は ✗
 	var ng toast
 	ng.show("failed", false)
-	for guard := 0; ng.phase == toastEntering && guard < 100; guard++ {
-		ng.advance(false)
-	}
+	advanceToHolding(&ng)
 	if !strings.Contains(stripANSI(strings.Join(ng.boxLines(false), "\n")), "✗") {
 		t.Error("失敗トーストに ✗ が無い")
 	}

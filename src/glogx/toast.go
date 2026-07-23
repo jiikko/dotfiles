@@ -7,15 +7,16 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-const (
-	// toastHold は「にゅっと出た」あと引っ込むまでの静止時間。push/pull 完了の結果を見落とさない程度。
-	toastHold = 3 * time.Second
-	// toastSlideFrames は入場/退場の横スライドを何フレームで渡り切るかの目安。箱の総カラム幅を
-	// この数で割ったカラム数/フレームで shown を増減させるので、箱幅に依らずほぼ一定時間
-	// (~12frame × scrollInterval ≈ 400ms) で滑り込む/滑り出る。行 (縦) でなくカラム (横) を
-	// 動かすことで、箱が数行しかなくても解像度の高い滑らかなスライドになる。
-	toastSlideFrames = 12
-)
+// toastHold は「にゅっと出た」あと引っ込むまでの静止時間。push/pull 完了の結果を見落とさない
+// 程度。実時間 (3s) をテストで待たずに退場遷移 (holdCmd → toastMsg) を検証できるよう var に
+// してある (本番値は不変、テストだけ短い値へ差し替える)。
+var toastHold = 3 * time.Second
+
+// toastSlideFrames は入場/退場の横スライドを何フレームで渡り切るかの目安。箱の総カラム幅を
+// この数で割ったカラム数/フレームで shown を増減させるので、箱幅に依らずほぼ一定時間
+// (~12frame × scrollInterval ≈ 400ms) で滑り込む/滑り出る。行 (縦) でなくカラム (横) を
+// 動かすことで、箱が数行しかなくても解像度の高い滑らかなスライドになる。
+const toastSlideFrames = 12
 
 // toastMsg は静止 (holding) が終わって退場アニメを始める合図。seq で世代管理し、新しいトーストが
 // 上書きした後に届く古いタイマーは無視する (連続 push/pull で前の退場が後のを消さないように)。
