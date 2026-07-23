@@ -144,9 +144,16 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	// context の timer を解放する (cancel は冪等)
 	defer browse.cancel()
 	browse.decor = decor
-	// TUI はキー操作が主なので IME を英数へ。エラー救済経路 (showStatic) を含め
-	// runLog を抜けるときに元へ戻す
-	defer switchIMEToASCII()()
+	// TUI はキー操作が主なので IME を英数へ。エラー救済経路 (showStatic) を含め runLog を
+	// 抜けるときに元へ戻す。macism の未導入/エラーは warn で受け取り、起動時に toast で通知する
+	// (switchIMEToASCII が失敗を封じ込めるので glogx はクラッシュしない)。
+	restore, imeWarn := switchIMEToASCII()
+	defer restore()
+	if imeWarn != "" {
+		// macism が導入済みなのにエラーになった場合のみ通知 (未導入は Init の macismInstalled
+		// チェックが brew 導入を案内する)。RunBrowse (Init) 前に仕込めば起動時トーストで出る。
+		browse.toast.show(imeWarn, false)
+	}
 	model, err := RunBrowse(browse)
 	if err != nil {
 		// TUI 基盤の失敗は静的経路で救済する。無言だと View の panic 等が
