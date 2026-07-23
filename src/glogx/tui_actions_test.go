@@ -723,10 +723,13 @@ func TestBrowseCopyLastWarning(t *testing.T) {
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 
-	// 警告がまだ無い → コピーせず notice
+	// 警告がまだ無い → コピーせず error トースト (ユーザー要望 2026-07-23)。lastWarning は汚さない
 	m.handleKey("w")
-	if stubbed || !strings.Contains(m.notice, "コピーできる警告はありません") {
-		t.Fatalf("警告無しで w が誤動作: copied=%q notice=%q", copied, m.notice)
+	if stubbed || m.toast.ok || !strings.Contains(m.toast.text, "コピーできる警告はありません") {
+		t.Fatalf("警告無しで w が誤動作: copied=%q toast=%q ok=%v", copied, m.toast.text, m.toast.ok)
+	}
+	if m.lastWarning != "" {
+		t.Fatalf("『警告なし』トーストが lastWarning を汚した: %q", m.lastWarning)
 	}
 
 	// 失敗トースト発行 → lastWarning に残る
@@ -782,5 +785,36 @@ func TestBrowseMacismWarningCopyableAfterDismiss(t *testing.T) {
 	m.handleKey("w")
 	if !strings.Contains(copied, "brew install") || !strings.Contains(copied, "macism") {
 		t.Fatalf("macism 案内が w でコピーされない: %q", copied)
+	}
+}
+
+// ghErr (CI 取得失敗の sticky 警告) は lastWarning に無くても w で fallback コピーできる (issue 026 #1)。
+func TestBrowseCopyWarningGhErrFallback(t *testing.T) {
+	var copied string
+	orig := copyToClipboard
+	copyToClipboard = func(text string) error { copied = text; return nil }
+	t.Cleanup(func() { copyToClipboard = orig })
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.ghErr = &GHError{Kind: GHOther, Detail: "boom detail"}
+	m.handleKey("w")
+	if !strings.Contains(copied, "取得に失敗") {
+		t.Fatalf("ghErr fallback で w がコピーしない: copied=%q", copied)
+	}
+}
+
+// notice 系エラー (noticeError 経由) は次キーで表示が消えても w でコピーできる (issue 026 #1)。
+func TestBrowseCopyWarningFromNoticeError(t *testing.T) {
+	var copied string
+	orig := copyToClipboard
+	copyToClipboard = func(text string) error { copied = text; return nil }
+	t.Cleanup(func() { copyToClipboard = orig })
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.noticeError("diff の取得に失敗しました: boom")
+	if m.lastWarning != "diff の取得に失敗しました: boom" {
+		t.Fatalf("noticeError が lastWarning に残さない: %q", m.lastWarning)
+	}
+	m.handleKey("w") // handleKey 冒頭で notice はクリアされるが lastWarning は残る
+	if !strings.Contains(copied, "diff の取得に失敗") {
+		t.Fatalf("noticeError が w でコピーされない: copied=%q", copied)
 	}
 }

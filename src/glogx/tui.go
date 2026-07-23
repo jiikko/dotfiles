@@ -391,6 +391,15 @@ func (m *browseModel) showWarning(text string) {
 	m.toast.show(text, false)
 }
 
+// noticeError は hint 行に出すエラー系 notice を出しつつ lastWarning に残す (w でコピー可能に。
+// issue 026)。notice は次のキーで消える transient なので、エラー内容 (取得失敗の詳細など) を
+// コピーで拾えるよう lastWarning へも記録する。成功/情報系の notice はこれを通さない
+// (直接 m.notice に代入する) — lastWarning を無意味な文言で汚さないため。
+func (m *browseModel) noticeError(text string) {
+	m.notice = text
+	m.lastWarning = text
+}
+
 func (m *browseModel) showOrDeferClaudeUpdate(latest string, retry bool) tea.Cmd {
 	if m.toast.visible() {
 		if retry {
@@ -552,7 +561,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.ghErr != nil {
 			// 一時エラーをキャッシュすると「PR はありません」という誤答が固定される
 			// (次の p で再試行させる) ため、キャッシュは成功時のみ
-			m.notice = "PR の取得に失敗しました: " + firstLine(msg.ghErr.Warning())
+			m.noticeError("PR の取得に失敗しました: " + firstLine(msg.ghErr.Warning()))
 			return m, nil
 		}
 		m.prCache[msg.sha] = msg.pr
@@ -571,12 +580,12 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.prStatusOv.receive(msg.sha, msg.status, msg.ghErr)
 		if msg.ghErr != nil && wasCurrent {
 			// 一時エラーはキャッシュしない (receive 側)。理由は notice で伝える
-			m.notice = "PR の取得に失敗しました: " + firstLine(msg.ghErr.Warning())
+			m.noticeError("PR の取得に失敗しました: " + firstLine(msg.ghErr.Warning()))
 		}
 		return m, nil
 	case diffMsg:
 		if err := m.diffOv.receive(msg); err != nil {
-			m.notice = "diff の取得に失敗しました: " + firstLine(err.Error())
+			m.noticeError("diff の取得に失敗しました: " + firstLine(err.Error()))
 		}
 		return m, nil
 	case prefixMsg:
@@ -692,13 +701,13 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.refetchAfterPush(), m.maybeTick())
 	case openURLMsg:
 		if msg.err != nil {
-			m.notice = "ブラウザを開けませんでした: " + firstLine(msg.err.Error())
+			m.noticeError("ブラウザを開けませんでした: " + firstLine(msg.err.Error()))
 		}
 		return m, nil
 	case editorClosedMsg:
 		// nvim を閉じて復帰。stdin 渡しなのでファイルは残らず、バッファも破棄済み
 		if msg.err != nil {
-			m.notice = "nvim を開けませんでした: " + firstLine(msg.err.Error())
+			m.noticeError("nvim を開けませんでした: " + firstLine(msg.err.Error()))
 		}
 		return m, nil
 	case tea.KeyMsg:
@@ -820,15 +829,22 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.notice = ""
 		return m, tea.Batch(m.actModal.startUpdate(), m.maybeTick())
 	}
-	// w = 直近の警告/エラーをクリップボードへコピー (issue 026)。トーストは数秒で消えるが
-	// lastWarning は保持しているので、消えた後でもコピーできる。tmux popup 内では copy-mode に
-	// 入れないため、pbcopy 直書きの copyToClipboard が唯一の取り出し口 (y/Y と同じ仕組み)。
+	// w = 直近の警告/エラーをクリップボードへコピー (issue 026)。トーストや notice は数秒/次キーで
+	// 消えるが lastWarning は保持しているので消えた後でもコピーできる。ghErr (CI 取得失敗の sticky
+	// 警告) は lastWarning に無くても hint に出続けているので fallback で拾う。tmux popup 内では
+	// copy-mode に入れないため、pbcopy 直書きの copyToClipboard が唯一の取り出し口 (y/Y と同じ)。
 	if key == "w" {
-		if m.lastWarning == "" {
-			m.notice = "コピーできる警告はありません"
-			return m, nil
+		warn := m.lastWarning
+		if warn == "" && m.ghErr != nil {
+			warn = m.ghErr.Warning()
 		}
-		if err := copyToClipboard(m.lastWarning); err != nil {
+		if warn == "" {
+			// コピーできる警告が無い旨は error トーストで出す (ユーザー要望 2026-07-23)。lastWarning は
+			// 汚さない (この文言自体はコピー対象でないため showWarning は通さない)。
+			m.toast.show("コピーできる警告はありません", false)
+			return m, m.maybeTick()
+		}
+		if err := copyToClipboard(warn); err != nil {
 			m.notice = "コピーに失敗しました: " + firstLine(err.Error())
 			return m, nil
 		}
@@ -911,7 +927,7 @@ func (m *browseModel) confirmPush() tea.Cmd {
 func (m *browseModel) reloadAfterPull() tea.Cmd {
 	commits, err := LoadCommits(m.opts, m.colored)
 	if err != nil {
-		m.notice = "pull 後の再読込に失敗しました: " + firstLine(err.Error())
+		m.noticeError("pull 後の再読込に失敗しました: " + firstLine(err.Error()))
 		return nil
 	}
 	// pull 前の SHA 集合。pull 後に先頭へ増えた新規コミット数を「既知 SHA に当たるまで」で
