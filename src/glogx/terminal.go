@@ -6,21 +6,6 @@ import "strings"
 // 「CI 由来のテキストが端末制御シーケンスを注入して枠描画を壊す/OSC52 でクリップボードを
 // 触る」のを防ぐ純粋な文字列処理として github.go から分離している (結合ゼロ)。
 
-// dropEmojiVS16 は絵文字異体字セレクタ VS16 (U+FE0F) を除去して、絵文字を text presentation
-// (幅 1) へ倒す。⚠️ (U+26A0 + U+FE0F) のように「VS16 付きだと Terminal.app が幅 2 の色絵文字で
-// 描くが runewidth は幅 1 と数える」文字は、glogx(1) と Terminal(2)・tmux の幅解釈が食い違い、
-// glogx の毎秒再描画のたびにカーソル位置がずれて行がガタつく (ユーザー報告 2026-07-24:
-// Terminal.app + tmux)。VS16 を外すと bare ⚠ (既定 text presentation・幅 1) になり glogx と
-// Terminal が幅 1 で一致して揺れが止まる。commit メッセージ等の git 由来テキストに適用する。
-// VS15 (U+FE0E, text 強制) は既に幅 1 なので触らない。ESC 判定と同様に高速パスを持つ。
-func dropEmojiVS16(s string) string {
-	const vs16 = '\ufe0f' // VS16 (emoji presentation selector)
-	if !strings.ContainsRune(s, vs16) {
-		return s
-	}
-	return strings.ReplaceAll(s, string(vs16), "")
-}
-
 // sanitizeDetailLine は CI 由来の表示文字列 (ログ・annotations・job 名) を端末描画に
 // 対して無害化する。
 //
