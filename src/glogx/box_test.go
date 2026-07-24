@@ -1,6 +1,7 @@
 package main
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -117,5 +118,53 @@ func TestWrapWindowFrame(t *testing.T) {
 	// colored は近黒 fg の █ (本体)
 	if cj := strings.Join(wrapWindowFrame(content, termW, true), "\n"); !strings.Contains(cj, ansiShadowFg+"█") {
 		t.Errorf("colored で影本体 █ が無い")
+	}
+}
+
+// withScrollbar: 収まるときは無改変、溢れるときは thumb が offset に追従し末尾で下端に接地する。
+func TestWithScrollbar(t *testing.T) {
+	rows := func(n int) []string {
+		out := make([]string, n)
+		for i := range out {
+			out[i] = "x"
+		}
+		return out
+	}
+	// 全体が収まる → 列を作らない (本文幅を戻す)
+	in := rows(5)
+	if got := withScrollbar(in, 40, 5, 0, false); !reflect.DeepEqual(got, in) {
+		t.Fatalf("total <= view で改変された: %q", got)
+	}
+	// thumb 位置: 先頭 / 中間 / 末尾
+	thumbAt := func(offset int) []int {
+		var idx []int
+		for i, l := range withScrollbar(rows(10), 40, 100, offset, false) {
+			if strings.HasSuffix(l, scrollbarThumbGlyph) {
+				idx = append(idx, i)
+			} else if !strings.HasSuffix(l, scrollbarTrackGlyph) {
+				t.Fatalf("行 %d にバー列が無い: %q", i, l)
+			}
+		}
+		if len(idx) == 0 {
+			t.Fatalf("offset %d で thumb が無い", offset)
+		}
+		return idx
+	}
+	if got := thumbAt(0); got[0] != 0 {
+		t.Errorf("offset 0 の thumb 開始 = %d, want 0", got)
+	}
+	last := thumbAt(90)
+	if last[len(last)-1] != 9 {
+		t.Errorf("末尾 offset で thumb が下端 (9) に接地していない: %v", last)
+	}
+	if mid := thumbAt(45); mid[0] == 0 || mid[len(mid)-1] == 9 {
+		t.Errorf("中間 offset の thumb が端に張り付いている: %v", mid)
+	}
+	// 幅: バー列を足しても buildPanelBox の本文幅を超えない。幅は描画側と同じ dispWidth
+	// (ansi.StringWidth) で測る — … / █ は runewidth では 2 桁扱い (ambiguous) になり食い違う。
+	for _, l := range withScrollbar([]string{strings.Repeat("a", 100)}, 40, 100, 0, false) {
+		if w := dispWidth(stripANSI(l)); w > 40-4 {
+			t.Errorf("本文行の幅 = %d > inner %d: %q", w, 40-4, l)
+		}
 	}
 }

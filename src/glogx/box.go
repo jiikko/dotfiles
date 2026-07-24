@@ -111,6 +111,59 @@ func wrapWindowFrame(content []string, termW int, colored bool) []string {
 	return out
 }
 
+// minPanelWidth は枠の最小幅 (これ未満の width は buildPanelBoxImpl がここまで押し上げる)。
+const minPanelWidth = 10
+
+// panelInnerWidth は枠幅から本文 (row) に使える表示幅を返す。内訳は左 "│ " + 右 " │" の 4 桁。
+// buildPanelBoxImpl と withScrollbar が同じ式を共有し、罫線の内訳を変えたときに片方だけ
+// ずれて枠が崩れないようにする。
+func panelInnerWidth(frameWidth int) int { return frameWidth - 4 }
+
+// スクロールバーのグリフ。track は枠の側辺 (│) と同じ字形にして「本文の中に走る細い溝」に見せ、
+// thumb だけ █ で持ち上げる。
+const (
+	scrollbarTrackGlyph = "│"
+	scrollbarThumbGlyph = "█"
+)
+
+// withScrollbar は buildPanelBox に渡す本文行の右端に 1 桁のスクロールバー列を足す。
+// total は全行数、offset は本文先頭が全体の何行目か。全体が収まる (total <= len(rows)) ときは
+// 行をそのまま返す (列を作らないので本文幅が戻る)。
+//
+// boxWidth は buildPanelBox に渡すのと同じ幅を受け取り、本文幅 (inner) を内部で再計算する
+// (呼び出し側に枠の内訳を知らせない)。行はバー列 + 手前の空き 1 桁を除いた幅へクリップする。
+func withScrollbar(rows []string, boxWidth, total, offset int, colored bool) []string {
+	view := len(rows)
+	if view == 0 || total <= view {
+		return rows
+	}
+	inner := panelInnerWidth(max(boxWidth, minPanelWidth))
+	contentW := max(inner-2, 1) // バー 1 桁 + 手前の空き 1 桁
+	// thumb 長は表示比率、位置は offset 比率。どちらも最低 1 行を確保し、末尾 (offset=maxOffset)
+	// では thumb が下端に接地する。
+	thumb := min(max(view*view/total, 1), view)
+	maxOffset := total - view
+	start := 0
+	if travel := view - thumb; travel > 0 {
+		start = min((offset*travel+maxOffset/2)/maxOffset, travel)
+	}
+	reset := ""
+	if colored {
+		reset = ansiReset // 行末で色を閉じ、本文の SGR がバー列へ滲まないようにする
+	}
+	out := make([]string, 0, view)
+	for i, row := range rows {
+		glyph := paint(scrollbarTrackGlyph, ansiDim, colored)
+		if i >= start && i < start+thumb {
+			glyph = scrollbarThumbGlyph
+		}
+		content := clipToWidth(row, contentW)
+		pad := strings.Repeat(" ", max(contentW-dispWidth(content), 0))
+		out = append(out, content+reset+pad+" "+glyph)
+	}
+	return out
+}
+
 // 落ち影は前景ブロック文字で描く (bg ベタ塗りではない)。近黒 fg の █ 本体 + 一段淡い ▓ の
 // 縁で、グリフの隙間から端末の地色が透けて penumbra (半影) になり、角が柔らかく浮いて見える。
 // 色なし (NO_COLOR) は近黒 fg が使えず、地色に対し █ だと明るく浮くため陰影文字 ▒ / ░ で
@@ -162,14 +215,14 @@ var (
 // まま (枠自体を fw = width-1 に狭めて右影 1 桁分を捻出。下端影は行内の左詰めオフセットで表現)。
 // b は罫線種別 (上辺・側辺・非 shadow 下辺に効く。shadow 下辺は接地ブロック ▖▁▗ 固定で b 非依存)。
 func buildPanelBoxImpl(title string, rows []string, width int, colored bool, shadow bool, b boxBorder, border string) []string {
-	if width < 10 {
-		width = 10
+	if width < minPanelWidth {
+		width = minPanelWidth
 	}
 	fw := width // 枠の幅 (shadow 時は残り 1 桁が右の影)
 	if shadow {
 		fw = width - 1
 	}
-	inner := fw - 4 // "│ " + " │"
+	inner := panelInnerWidth(fw)
 	lines := make([]string, 0, len(rows)+3)
 	// タイトルは SGR 入りの job 名や commit subject がそのまま載る。ANSI を残すと
 	// 幅計算 (Truncate/StringWidth) がずれて罫線が崩れ、タイトル全体の dim 塗りも

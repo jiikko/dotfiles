@@ -986,3 +986,64 @@ func TestBrowseRerunNoDoublePoll(t *testing.T) {
 		t.Fatal("rerun 後もチェーンは 1 本のはず (二重化した)")
 	}
 }
+
+// job 詳細ポップアップの本文にスクロールバー列が出ても枠が崩れない (全行が同じ表示幅) ことと、
+// 全行が収まるときはバー列が出ないこと。withScrollbar の単体テストではなく描画経路 (boxLines)
+// で幅の均一性を見る (rows と len(lines) の噛み合わせが崩れる回帰を捕まえる)。
+func TestJobDetailBoxLinesScrollbar(t *testing.T) {
+	logLines := func(n int) []string {
+		out := make([]string, n)
+		for i := range out {
+			out[i] = "log line"
+		}
+		return out
+	}
+	uniformWidth := func(t *testing.T, box []string) int {
+		t.Helper()
+		w := dispWidth(stripANSI(box[0]))
+		for i, l := range box {
+			if got := dispWidth(stripANSI(l)); got != w {
+				t.Fatalf("行 %d の表示幅 = %d, 他の行 = %d: %q", i, got, w, l)
+			}
+		}
+		return w
+	}
+
+	const width, rows = 50, 8
+	o := newJobDetailOverlay()
+	o.open = true
+
+	// 溢れる: バー列あり + 幅は均一 + offset に応じて thumb が動く
+	o.cache["over"] = logLines(50)
+	o.offset = 20
+	box := o.boxLines(width, false, "", "job", "over", rows)
+	uniformWidth(t, box)
+	body := box[1 : len(box)-1]
+	thumbs := 0
+	for i, l := range body {
+		trimmed := strings.TrimSuffix(l, " "+borderLight.v)
+		switch {
+		case strings.HasSuffix(trimmed, scrollbarThumbGlyph):
+			thumbs++
+		case strings.HasSuffix(trimmed, scrollbarTrackGlyph):
+		default:
+			t.Fatalf("本文行 %d にバー列が無い: %q", i, l)
+		}
+	}
+	if thumbs == 0 || thumbs == len(body) {
+		t.Fatalf("thumb 行数 = %d (本文 %d 行) — 比率になっていない", thumbs, len(body))
+	}
+
+	// 収まる: バー列なし (本文幅が戻る)。幅は溢れる場合と同じ (枠幅は不変)
+	o.cache["fit"] = logLines(rows - 2)
+	o.offset = 0
+	fit := o.boxLines(width, false, "", "job", "fit", rows)
+	if w := uniformWidth(t, fit); w != dispWidth(stripANSI(box[0])) {
+		t.Fatalf("収まる場合の枠幅 = %d, 溢れる場合 = %d", w, dispWidth(stripANSI(box[0])))
+	}
+	for i, l := range fit[1 : len(fit)-1] {
+		if strings.Contains(l, scrollbarThumbGlyph) {
+			t.Fatalf("収まるのに thumb が出ている (行 %d): %q", i, l)
+		}
+	}
+}
