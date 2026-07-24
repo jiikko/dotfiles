@@ -607,12 +607,22 @@ func TestBrowseRerunGuards(t *testing.T) {
 	if m2.actModal.rerunConfirm || !strings.Contains(m2.toast.text, "失敗") {
 		t.Fatalf("成功 job で確認に入った / トーストが出ない: %q", m2.toast.text)
 	}
-	// タイトル行フォーカス (job 未選択) では何も起きない (トーストは出さない)
+	// タイトル行フォーカス (job 未選択) では確認に入らず、選択を促すトーストを出す
+	// (o/Y と挙動を揃える。UX 統一のためユーザー判断で無言 no-op から変更)
 	m2.toast = toast{}
 	m2.panelCursor = -1
 	m2.handleKey("r")
-	if m2.actModal.rerunConfirm || m2.toast.visible() {
-		t.Fatal("タイトル行フォーカスで r が反応した")
+	if m2.actModal.rerunConfirm {
+		t.Fatal("タイトル行フォーカスで r が確認に入った")
+	}
+	if !strings.Contains(m2.toast.text, "job を選択") {
+		t.Fatalf("タイトル行フォーカスの r で選択を促すトーストが出ない: %q", m2.toast.text)
+	}
+	// o (ブラウザで開く) も同様に選択を促す (o/r/Y の挙動統一)
+	m2.toast = toast{}
+	m2.handleKey("o")
+	if !strings.Contains(m2.toast.text, "job を選択") {
+		t.Fatalf("タイトル行フォーカスの o で選択を促すトーストが出ない: %q", m2.toast.text)
 	}
 	if called {
 		t.Fatal("ガード経路で runJobRerun が呼ばれた")

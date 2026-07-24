@@ -1383,6 +1383,8 @@ func (m *browseModel) copyJobContextLines(job CheckDetail, lines []string) {
 func (m *browseModel) askRerun() {
 	job, ok := m.focusedJob()
 	if !ok {
+		// タイトル行フォーカス (job 未選択) で r。o/Y と揃えて選択を促す。
+		m.toast.show("job を選択してから r で再実行します", false)
 		return
 	}
 	if job.CheckID == 0 {
@@ -1743,6 +1745,9 @@ func (m *browseModel) openJobLogInEditor() tea.Cmd {
 func (m *browseModel) openJob() tea.Cmd {
 	job, ok := m.focusedJob()
 	if !ok {
+		// タイトル行フォーカス (job 未選択) で o。Y (copyJobContext) と揃えて選択を促す
+		// (job パネルの o/r/Y は job 未選択なら無反応なので理由をトーストで出す)。
+		m.toast.show("job を選択してから o で開きます", false)
 		return nil
 	}
 	if job.URL == "" {
