@@ -8,7 +8,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mattn/go-runewidth"
 )
 
 // b → y/N → git push (glogx の独自機能)。
@@ -861,7 +860,7 @@ func TestBrowseFrameView(t *testing.T) {
 	}
 	// 幅 canary: 全行の実効幅 <= m.width (contentWidth() 置換漏れの最短検出)
 	for i, l := range lines {
-		if w := runewidth.StringWidth(stripANSI(l)); w > 64 {
+		if w := dispWidth(l); w > 64 {
 			t.Errorf("行 %d の実効幅 = %d > 64: %q", i, w, l)
 		}
 	}

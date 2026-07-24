@@ -3,8 +3,6 @@ package main
 import (
 	"strings"
 	"testing"
-
-	"github.com/mattn/go-runewidth"
 )
 
 func testCommits() []Commit {
@@ -262,7 +260,7 @@ func TestRenderLinesWrapsMessage(t *testing.T) {
 		t.Errorf("折り返しで文字が失われた: %q", joined)
 	}
 	for _, l := range msgLines {
-		if w := runewidth.StringWidth(l); w > 44 {
+		if w := dispWidth(l); w > 44 {
 			t.Errorf("折り返し後も幅超過 (%d): %q", w, l)
 		}
 	}
@@ -341,7 +339,7 @@ func TestJapaneseOnelineAlignment(t *testing.T) {
 		if idx < 0 {
 			t.Fatalf("%q に %q が無い", text, marker)
 		}
-		return runewidth.StringWidth(text[:idx])
+		return dispWidth(text[:idx])
 	}
 	p1 := datePos(lines[0].Text, "2 hours ago")
 	p2 := datePos(lines[1].Text, "1 day ago")
@@ -359,7 +357,7 @@ func TestJapaneseSubjectTruncation(t *testing.T) {
 	}
 	start := strings.Index(lines[0].Text, "長")
 	end := strings.Index(lines[0].Text, "…") + len("…")
-	if w := runewidth.StringWidth(lines[0].Text[start:end]); w > subjectWidthCap {
+	if w := dispWidth(lines[0].Text[start:end]); w > subjectWidthCap {
 		t.Errorf("subject 列の幅 = %d > cap %d", w, subjectWidthCap)
 	}
 }
@@ -387,7 +385,7 @@ func TestWrapToWidth(t *testing.T) {
 		t.Errorf("混在折り返しで文字が失われた: %v", segs)
 	}
 	for _, seg := range segs {
-		if w := runewidth.StringWidth(seg); w > 5 {
+		if w := dispWidth(seg); w > 5 {
 			t.Errorf("混在折り返しの幅超過 (%d): %q", w, seg)
 		}
 	}
@@ -436,8 +434,8 @@ func TestClipToWidth(t *testing.T) {
 	// fast-path の byte 長ヒューリスティックが全角を誤って素通ししない
 	// (あ×30 = 表示幅 60 > 40。byte 長 90 も 40 超なので fast-path を通らず truncate される)
 	wide := strings.Repeat("あ", 30)
-	if got := clipToWidth(wide, 40); runewidth.StringWidth(got) > 40 {
-		t.Errorf("全角行が幅超過のまま素通しされた: 幅 %d", runewidth.StringWidth(got))
+	if got := clipToWidth(wide, 40); dispWidth(got) > 40 {
+		t.Errorf("全角行が幅超過のまま素通しされた: 幅 %d", dispWidth(got))
 	}
 }
 

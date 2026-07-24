@@ -4,8 +4,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/mattn/go-runewidth"
 )
 
 // colOf は行内の sub が始まる表示幅カラム位置を返す (CJK 幅考慮、ANSI 無し行専用)。
@@ -15,7 +13,7 @@ func colOf(t *testing.T, row, sub string) int {
 	if i < 0 {
 		t.Fatalf("%q が %q に含まれない", sub, row)
 	}
-	return runewidth.StringWidth(row[:i])
+	return dispWidth(row[:i])
 }
 
 const sampleResult = `You are currently using your subscription to power your Claude Code usage

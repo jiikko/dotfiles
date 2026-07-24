@@ -3,8 +3,6 @@ package main
 import (
 	"strings"
 	"testing"
-
-	"github.com/mattn/go-runewidth"
 )
 
 // show → entering、tick で右画面外から左へ滑り込み (shown 0→boxWidth)、入場完了で holding +
@@ -97,7 +95,7 @@ func TestToastBoxLinesRevealsLeftColumns(t *testing.T) {
 	if len(got) != len(full) {
 		t.Errorf("スライド中も全行が出るべき: got=%d 行 want=%d 行", len(got), len(full))
 	}
-	wv := runewidth.StringWidth(stripANSI(got[0]))
+	wv := dispWidth(got[0])
 	if wv != to.shown || wv >= boxW {
 		t.Errorf("入場途中の可視幅が左スライドでない: 可視幅=%d shown=%d boxW=%d", wv, to.shown, boxW)
 	}
@@ -105,7 +103,7 @@ func TestToastBoxLinesRevealsLeftColumns(t *testing.T) {
 	advanceToHolding(&to)
 	lines := to.boxLines(false)
 	plain := stripANSI(strings.Join(lines, "\n"))
-	if runewidth.StringWidth(stripANSI(lines[0])) != boxW || !strings.Contains(plain, "✓") || !strings.Contains(plain, "pushed") {
+	if dispWidth(lines[0]) != boxW || !strings.Contains(plain, "✓") || !strings.Contains(plain, "pushed") {
 		t.Errorf("全表示に ✓/pushed が無い / 全幅でない:\n%s", plain)
 	}
 	// 失敗は ✗

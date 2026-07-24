@@ -5,8 +5,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mattn/go-runewidth"
+	"github.com/charmbracelet/x/ansi"
 )
+
+// dispWidth は文字列の端末表示幅 (ANSI は幅 0)。glogx 本体の width.go と同じ ansi.StringWidth を
+// 使う: runewidth は East Asian ambiguous (罫線・ブロック) を locale 依存で 2 桁と数えるため、
+// このパッケージの出力を glogx 側が dispWidth で測ると環境によって枠がずれる (issue 027)。
+func dispWidth(s string) int { return ansi.StringWidth(s) }
 
 // 自己完結のため ANSI は glogx とは独立に定義する (このパッケージ単独で色付き出力を
 // 完結させ、切り出し時に glogx への依存を残さないため)。
@@ -79,12 +84,12 @@ func RenderTable(s *Snapshot, now time.Time, colored bool) (header string, rows 
 	var wMonth, wDate int
 	for i, w := range ws {
 		days[i], hours[i], mins[i] = remainCols(w.ResetAt.Sub(now))
-		wDay = max(wDay, runewidth.StringWidth(days[i]))
-		wHour = max(wHour, runewidth.StringWidth(hours[i]))
-		wMin = max(wMin, runewidth.StringWidth(mins[i]))
+		wDay = max(wDay, dispWidth(days[i]))
+		wHour = max(wHour, dispWidth(hours[i]))
+		wMin = max(wMin, dispWidth(mins[i]))
 		months[i], dates[i], clocks[i] = resetCols(w.ResetAt)
-		wMonth = max(wMonth, runewidth.StringWidth(months[i]))
-		wDate = max(wDate, runewidth.StringWidth(dates[i]))
+		wMonth = max(wMonth, dispWidth(months[i]))
+		wDate = max(wDate, dispWidth(dates[i]))
 	}
 	// ヘッダーの「残り」列はデータの残り列と同じ幅で右寄せし、" / " 区切りをデータ行と
 	// 縦に揃える (固定文字列だと列幅ぶんズレる)。リセット見出しは " / " の直後 (左詰め)。
@@ -105,7 +110,7 @@ func RenderTable(s *Snapshot, now time.Time, colored bool) (header string, rows 
 
 // padRight は表示幅を w に右詰めパディングする (ANSI を含まないセル専用)。
 func padRight(s string, w int) string {
-	pad := w - runewidth.StringWidth(s)
+	pad := w - dispWidth(s)
 	if pad <= 0 {
 		return s
 	}
@@ -114,7 +119,7 @@ func padRight(s string, w int) string {
 
 // padLeft は表示幅を w に左詰めパディングする = 右寄せ (ANSI を含まないセル専用)。
 func padLeft(s string, w int) string {
-	pad := w - runewidth.StringWidth(s)
+	pad := w - dispWidth(s)
 	if pad <= 0 {
 		return s
 	}
@@ -163,8 +168,8 @@ const barCells = 10
 func bar(pct int, colored bool) string {
 	pct = max(0, min(pct, 100))
 	filled := min((pct*barCells+50)/100, barCells)
-	// ▰/▱ は表示幅が常に 1 (曖昧幅でない) ため塗り数に依らずバー幅が一定になる。█ は
-	// runewidth で幅 2 と判定され (端末は幅 1) 塗り数で列がずれる不具合があったため不可。
+	// ▰/▱ は表示幅が常に 1 (曖昧幅でない) ため塗り数に依らずバー幅が一定になる。
+	// (幅計算を ansi.StringWidth に統一した現在は █ でも桁は合うが、見た目は現状維持)
 	full := strings.Repeat("▰", filled)
 	empty := strings.Repeat("▱", barCells-filled)
 	if !colored {

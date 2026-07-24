@@ -4,8 +4,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/mattn/go-runewidth"
 )
 
 func TestBuildPanelBoxWidths(t *testing.T) {
@@ -14,7 +12,7 @@ func TestBuildPanelBoxWidths(t *testing.T) {
 		t.Fatalf("枠 + 2 行のはずが %d 行", len(lines))
 	}
 	for _, l := range lines {
-		if w := runewidth.StringWidth(stripANSI(l)); w != 40 {
+		if w := dispWidth(l); w != 40 {
 			t.Errorf("パネル行の幅 = %d; want 40: %q", w, l)
 		}
 	}
@@ -27,7 +25,7 @@ func TestBuildShadowPanelBoxWidths(t *testing.T) {
 		t.Fatalf("枠 + 2 行 + 影 1 行のはずが %d 行", len(lines))
 	}
 	for _, l := range lines {
-		if w := runewidth.StringWidth(stripANSI(l)); w != 40 {
+		if w := dispWidth(l); w != 40 {
 			t.Errorf("パネル行の幅 = %d; want 40: %q", w, l)
 		}
 	}
@@ -41,7 +39,7 @@ func TestJapanesePanelBoxWidths(t *testing.T) {
 	}
 	lines := buildPanelBox(" CI jobs: abc1234 日本語のサブジェクトがとても長い場合の切り詰め ", rows, 40, true)
 	for _, l := range lines {
-		if w := runewidth.StringWidth(stripANSI(l)); w != 40 {
+		if w := dispWidth(l); w != 40 {
 			t.Errorf("パネル行の幅 = %d; want 40: %q", w, l)
 		}
 	}
@@ -53,7 +51,7 @@ func TestBuildPanelBoxTitleStripsANSI(t *testing.T) {
 	if strings.Contains(lines[0], "\x1b") {
 		t.Errorf("タイトルに ANSI が残っている: %q", lines[0])
 	}
-	if w := runewidth.StringWidth(lines[0]); w != 40 {
+	if w := dispWidth(lines[0]); w != 40 {
 		t.Errorf("タイトル行の幅 = %d; want 40: %q", w, lines[0])
 	}
 }
@@ -74,7 +72,7 @@ func TestShadowForegroundBlocksAndFeather(t *testing.T) {
 		t.Error("縁のフェザー ▓ が使われていない")
 	}
 	for _, l := range lines {
-		if w := runewidth.StringWidth(stripANSI(l)); w != 20 {
+		if w := dispWidth(l); w != 20 {
 			t.Errorf("colored パネル行の幅 = %d; want 20: %q", w, l)
 		}
 	}
@@ -106,7 +104,7 @@ func TestWrapWindowFrame(t *testing.T) {
 		t.Fatalf("2 行目が上辺 ╔…╗ でない: %q", out[1])
 	}
 	for i, l := range out {
-		if w := runewidth.StringWidth(stripANSI(l)); w > termW {
+		if w := dispWidth(l); w > termW {
 			t.Errorf("行 %d の幅 = %d > termW %d: %q", i, w, termW, l)
 		}
 	}
@@ -163,7 +161,7 @@ func TestWithScrollbar(t *testing.T) {
 	// 幅: バー列を足しても buildPanelBox の本文幅を超えない。幅は描画側と同じ dispWidth
 	// (ansi.StringWidth) で測る — … / █ は runewidth では 2 桁扱い (ambiguous) になり食い違う。
 	for _, l := range withScrollbar([]string{strings.Repeat("a", 100)}, 40, 100, 0, false) {
-		if w := dispWidth(stripANSI(l)); w > 40-4 {
+		if w := dispWidth(l); w > 40-4 {
 			t.Errorf("本文行の幅 = %d > inner %d: %q", w, 40-4, l)
 		}
 	}

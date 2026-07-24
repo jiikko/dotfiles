@@ -110,3 +110,18 @@ TestWrapWindowFrame
   テスト側の未完部分)
 - commit 4c8ee8d — VS16 絵文字の幅ズレ対応 (同じ幅計算まわりの経緯)
 - `src/glogx/width.go` — 幅計算の単一出典
+
+## 対応結果 (2026-07-25 完了)
+
+- テスト 6 ファイル (`box_test.go` / `toast_test.go` / `tui_nav_test.go` / `tui_actions_test.go` /
+  `render_test.go` / `usage_overlay_test.go`) の `runewidth.StringWidth` を `dispWidth` へ置換。
+  `dispWidth` は ANSI を幅 0 として無視するため、併用していた `stripANSI` は外せる箇所で外した
+  (`render_test.go` の生文字列アサートはそのまま)
+- `usage` パッケージ (`usage/render.go` / `usage/usage_test.go`) も `ansi.StringWidth` へ統一。
+  ここは「runewidth が █ を幅 2 と数えるからバーのグリフを ▰/▱ にする」という**回避策で設計が
+  歪んでいた**箇所で、同じ根本原因。出力を glogx 側が `dispWidth` で測る以上、物差しは一致させる
+  必要がある (グリフ自体は見た目維持のため変更なし)
+- 再発防止: `.golangci.yml` の depguard に `width-single-source` を追加し、
+  `github.com/mattn/go-runewidth` の import を全ファイルで禁止 (production/テスト双方)。
+  `go.mod` では indirect 依存に落ちた
+- 確認: `go test -count=1 ./...` が `LANG=ja_JP.UTF-8` / `LANG=C` の両方で green、`make lint` も 0 issues

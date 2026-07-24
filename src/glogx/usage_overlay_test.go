@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"glogx/usage"
-
-	"github.com/mattn/go-runewidth"
 )
 
 // overlayBoxTopRight は box を右上へ右揃えで重ね、覆った各行の表示幅が width ちょうどに
@@ -23,7 +21,7 @@ func TestOverlayBoxTopRightAligns(t *testing.T) {
 		if !strings.HasSuffix(got[i], b) {
 			t.Errorf("行 %d が box 行で終わっていない: %q", i, got[i])
 		}
-		if w := runewidth.StringWidth(stripANSI(got[i])); w != width {
+		if w := dispWidth(got[i]); w != width {
 			t.Errorf("行 %d の表示幅 = %d, want %d", i, w, width)
 		}
 	}
@@ -42,7 +40,7 @@ func TestOverlayBoxTopRightKeepsLeftColor(t *testing.T) {
 		t.Errorf("左側の色 (%q) が保持されていない: %q", ansiGreen, got[0])
 	}
 	// 幅は width ちょうど、右端は box。
-	if w := runewidth.StringWidth(stripANSI(got[0])); w != 40 {
+	if w := dispWidth(got[0]); w != 40 {
 		t.Errorf("表示幅 = %d, want 40", w)
 	}
 	if !strings.HasSuffix(got[0], box[0]) {
@@ -58,7 +56,7 @@ func TestOverlayBoxTopRightTallBox(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("行数が変わった: %d", len(got))
 	}
-	if w := runewidth.StringWidth(stripANSI(got[0])); w != 20 {
+	if w := dispWidth(got[0]); w != 20 {
 		t.Errorf("表示幅 = %d, want 20", w)
 	}
 }

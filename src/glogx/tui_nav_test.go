@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mattn/go-runewidth"
 )
 
 func TestBrowseCursorNavigation(t *testing.T) {
@@ -52,7 +51,7 @@ func TestBrowseWrapUsesFullWidth(t *testing.T) {
 		t.Errorf("折り返しで文字が欠けた: あ が %d 文字 (want 38)\n%s", got, view)
 	}
 	for line := range strings.SplitSeq(view, "\n") {
-		if w := runewidth.StringWidth(stripANSI(line)); w > m.width {
+		if w := dispWidth(line); w > m.width {
 			t.Errorf("幅超過 (%d > %d): %q", w, m.width, line)
 		}
 	}
@@ -348,7 +347,7 @@ func TestJapaneseFullViewStaysInWidth(t *testing.T) {
 	}
 	m.openJobDetail()
 	for line := range strings.SplitSeq(m.View(), "\n") {
-		if w := runewidth.StringWidth(stripANSI(line)); w > m.width {
+		if w := dispWidth(line); w > m.width {
 			t.Errorf("幅超過 (%d > %d): %q", w, m.width, line)
 		}
 	}

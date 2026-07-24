@@ -29,6 +29,16 @@ linters:
           msg: stdout への直接出力は main.go に限定する (TUI 層は tea.Msg 経由で描画)
     depguard:
       rules:
+        width-single-source:
+          # 幅計算の唯一の出典は width.go の dispWidth (= ansi.StringWidth)。runewidth は
+          # East Asian ambiguous (罫線・ブロック・…) を locale 依存で 2 桁と数えるため、
+          # 混在すると枠計算とテストのアサートが実行環境依存でずれる (issue 027: LANG=ja_JP で
+          # テスト 12 件が落ちていた)。production/テストとも import を禁止して構造的に防ぐ。
+          files:
+            - "**/*.go"
+          deny:
+            - pkg: github.com/mattn/go-runewidth
+              desc: 幅は width.go の dispWidth (ansi.StringWidth) で測る (locale 非依存)
         render-pure:
           # render.go は「状態 → 文字列」の純粋な描画層。I/O・プロセス起動・非同期を
           # 持ち込むと TUI (毎フレーム呼ばれる) の性能とテスト容易性が壊れる
