@@ -1825,6 +1825,9 @@ func (m *browseModel) handlePRStatusKey(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "q", "h", "left", "esc", "P", "enter":
 		m.prStatusOv.close()
+	// current()==nil の 2 状態 (取得中 / PR なし) はどちらもポップアップ自身が spinner・
+	// 「(紐づく PR はありません)」で可視化済みなので、o/y は無言 no-op でよい (取得中に
+	// 「PR がありません」トーストを出すと誤報になる)。
 	case "o":
 		if pr := m.prStatusOv.current(); pr != nil {
 			return m, m.openURLCmd(pr.URL)
