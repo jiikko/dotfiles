@@ -111,7 +111,9 @@ func LoadLogDisplay(opts *Options, colored bool) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return strings.Split(strings.TrimRight(out, "\n"), "\n"), nil
+	// VS16 付き絵文字は描画エンジンと端末で幅が食い違いガタつく (dropEmojiVS16 参照)。
+	// verbatim 表示は git 出力をそのまま流すのでここで正規化する。
+	return strings.Split(strings.TrimRight(dropEmojiVS16(out), "\n"), "\n"), nil
 }
 
 // ParseLog は prettyFormat 付き git log の出力をコミット列へ解析する。
@@ -152,7 +154,9 @@ func LoadCommits(opts *Options, colored bool) ([]Commit, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ParseLog(out)
+	// Subject/Message/Body に VS16 付き絵文字が残ると描画エンジンと端末で幅が食い違い
+	// ガタつくため、解析前に正規化する (dropEmojiVS16 参照)。
+	return ParseLog(dropEmojiVS16(out))
 }
 
 // LoadHeadCommit は --cached モード用に HEAD 1 件を取得する。

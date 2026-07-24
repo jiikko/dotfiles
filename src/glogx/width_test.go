@@ -53,6 +53,34 @@ func TestDropToColumnStraddleAndCluster(t *testing.T) {
 	}
 }
 
+// dropEmojiVS16 は VS16 (U+FE0F) を除去し bare 記号 (双方幅 1 で端末と食い違わない) へ倒す。
+func TestDropEmojiVS16(t *testing.T) {
+	const vs16 = "️"
+	got := dropEmojiVS16("危険 ⚠" + vs16 + " 注意")
+	if want := "危険 ⚠ 注意"; got != want {
+		t.Fatalf("VS16 が除去されない: got %q want %q", got, want)
+	}
+	// bare 記号は描画エンジンでも幅 1 (端末実測とも一致) — この不変条件が崩れたら再発
+	if w := dispWidth("⚠"); w != 1 {
+		t.Fatalf("bare ⚠ の dispWidth = %d; want 1", w)
+	}
+	// VS16 無しは同一文字列を素通り (高速パス)
+	if s := "plain ⚠ text"; dropEmojiVS16(s) != s {
+		t.Fatalf("VS16 無しで変化した: %q", dropEmojiVS16(s))
+	}
+	// VS15 (U+FE0E, text 強制) は残す
+	if s := "⚠︎"; dropEmojiVS16(s) != s {
+		t.Fatalf("VS15 まで除去した: %q", dropEmojiVS16(s))
+	}
+}
+
+// sanitizeDetailLine (CI 由来テキストの funnel) も VS16 を正規化する。
+func TestSanitizeDetailLineDropsVS16(t *testing.T) {
+	if got := sanitizeDetailLine("job ⚠️ fail"); got != "job ⚠ fail" {
+		t.Fatalf("sanitizeDetailLine が VS16 を残した: %q", got)
+	}
+}
+
 // overlayCenteredBox: 背景行に ⚠️ が含まれても合成後の各行幅が端末幅と一致する
 // (glogx と端末で幅が食い違うとこの行がガタついていた)。
 func TestOverlayCompositeWidthWithEmoji(t *testing.T) {

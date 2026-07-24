@@ -39,3 +39,21 @@ func fillRight(s string, width int) string {
 // ⚠️ (U+26A0+U+FE0F) のような複数 rune のクラスタを rune 単位で数えて分断/誤幅にしない
 // ため、クラスタ単位で幅を計算する必要のある dropToColumn 等が使う。
 func clusterWidth(cluster string) int { return uniseg.StringWidth(cluster) }
+
+// dropEmojiVS16 は絵文字異体字セレクタ VS16 (U+FE0F) を除去して、⚠️❤️✔️ 等の
+// 「記号 + VS16」を bare な text presentation (⚠❤✔) へ倒す。
+//
+// なぜ幅統一 (dispWidth) と併用が必要か: VS16 付きの字は描画エンジン (x/ansi) が幅 2 と
+// 数える一方、ユーザーの端末 (Terminal.app + tmux, 実測 2026-07-24: printf で数字が
+// めり込む) はカーソルを 1 マスしか進めない。エンジン↔端末が食い違う文字はどちらの幅を
+// glogx が採用してもズレるため、「食い違わない文字 (bare 記号 = 双方幅 1)」へ正規化して
+// 出すしかない。git 由来テキスト (commit message 等) の表示入口で適用する。
+// 端末の絵文字幅の扱いが将来変わったら (Terminal.app が VS16 に 2 マス割り当てるように
+// なったら) この正規化は不要になる。VS15 (U+FE0E) は元々双方幅 1 なので触らない。
+func dropEmojiVS16(s string) string {
+	const vs16 = '\ufe0f'               // VS16 (emoji presentation selector)
+	if !strings.ContainsRune(s, vs16) { // 多数派 (絵文字なし) は無 alloc で素通り
+		return s
+	}
+	return strings.ReplaceAll(s, string(vs16), "")
+}

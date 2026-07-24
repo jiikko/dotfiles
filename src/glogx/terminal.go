@@ -16,7 +16,10 @@ import "strings"
 //     CI 側の第三者 (任意の status インテグレーション等) が混入させられる端末制御
 //     シーケンス注入の経路になるため、シーケンスごと落とす
 //   - BOM (GitHub のログ先頭に付く U+FEFF) と \r 等の残る制御文字は落とす
+//   - VS16 付き絵文字 (⚠️ 等) は描画エンジンと端末で幅が食い違いガタつくため bare 記号へ
+//     正規化する (dropEmojiVS16 参照。git 由来テキストは gitlog.go 側の入口で同じ正規化)
 func sanitizeDetailLine(s string) string {
+	s = dropEmojiVS16(s)
 	if !strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f || r == '\ufeff' }) {
 		return s
 	}
