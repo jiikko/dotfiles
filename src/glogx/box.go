@@ -15,7 +15,7 @@ func centerBox(title string, rows []string, width int, colored bool) []string {
 	if width <= 0 {
 		width = 80
 	}
-	return buildShadowPanelBox(title, rows, min(44, width), colored)
+	return buildShadowPanelBox(title, rows, min(44, width), colored, ansiDim)
 }
 
 // overlayBox は box をウィンドウの anchor 位置へ重ねる (リスト行を置き換える)。
@@ -79,7 +79,7 @@ func overlayCenteredBox(window, box []string, width, page int, colored bool) []s
 
 // buildPanelBox は枠線付きのパネルを組み立てる。行の実効幅は ANSI を除いて計算する。
 func buildPanelBox(title string, rows []string, width int, colored bool) []string {
-	return buildPanelBoxImpl(title, rows, width, colored, false, borderLight)
+	return buildPanelBoxImpl(title, rows, width, colored, false, borderLight, ansiDim)
 }
 
 // buildShadowPanelBox は buildPanelBox の右下ドロップシャドウ付き版。呼び出し元は 4 系統の
@@ -90,8 +90,10 @@ func buildPanelBox(title string, rows []string, width int, colored bool) []strin
 // 大面積 popup (job/diff パネル) への全面シャドウは「面積が大きく影が主張しすぎる」で一度導入 →
 // revert した (4fb36a2)。最外周フレームは画面端の余白セルにだけ影を落としコンテンツと重ならない
 // ため、この方針と衝突しない (issue 025)。
-func buildShadowPanelBox(title string, rows []string, width int, colored bool) []string {
-	return buildPanelBoxImpl(title, rows, width, colored, true, borderLight)
+// border は枠線 (上辺・側辺・非影下辺) の SGR 色。ドロップシャドウのブロックは中立のまま (dim)。
+// 通常は ansiDim を渡す。toast だけが種別色 (緑/赤/シアン) を渡して枠ごと色付けする。
+func buildShadowPanelBox(title string, rows []string, width int, colored bool, border string) []string {
+	return buildPanelBoxImpl(title, rows, width, colored, true, borderLight, border)
 }
 
 // wrapWindowFrame は画面全体のコンテンツ (リスト + overlay 群を合成済みの window) を、最外周に
@@ -100,7 +102,7 @@ func buildShadowPanelBox(title string, rows []string, width int, colored bool) [
 // 返す行数 = len(content) + 4 (上余白 + 上辺 + 下辺 + 下影)。左右余白 1 桁ずつ + 影 1 桁で、
 // footprint は termW に収まる (呼び出し側の contentWidth()/frameVOverhead と一致)。
 func wrapWindowFrame(content []string, termW int, colored bool) []string {
-	box := buildPanelBoxImpl("", content, termW-2, colored, true, borderDouble) // -2 = 左右余白 1 桁ずつ。二重罫線 (ユーザー要望)
+	box := buildPanelBoxImpl("", content, termW-2, colored, true, borderDouble, ansiDim) // -2 = 左右余白 1 桁ずつ。二重罫線 (ユーザー要望)
 	out := make([]string, 0, len(box)+1)
 	out = append(out, "") // 上余白 1 行 (端末地色)
 	for _, l := range box {
@@ -159,7 +161,7 @@ var (
 // 右へずらした下端影の行を足し、板が左上光源で浮いて見える 3D 風にする。footprint は width の
 // まま (枠自体を fw = width-1 に狭めて右影 1 桁分を捻出。下端影は行内の左詰めオフセットで表現)。
 // b は罫線種別 (上辺・側辺・非 shadow 下辺に効く。shadow 下辺は接地ブロック ▖▁▗ 固定で b 非依存)。
-func buildPanelBoxImpl(title string, rows []string, width int, colored bool, shadow bool, b boxBorder) []string {
+func buildPanelBoxImpl(title string, rows []string, width int, colored bool, shadow bool, b boxBorder, border string) []string {
 	if width < 10 {
 		width = 10
 	}
@@ -176,9 +178,9 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, sha
 	top := b.tl + title + strings.Repeat(b.h, max(fw-2-dispWidth(title), 0)) + b.tr
 	if shadow {
 		// 最上段だけ影なし (影は右上角の 1 つ下から始まるのが自然な落ち影)
-		lines = append(lines, paint(top, ansiDim, colored)+" ")
+		lines = append(lines, paint(top, border, colored)+" ")
 	} else {
-		lines = append(lines, paint(top, ansiDim, colored))
+		lines = append(lines, paint(top, border, colored))
 	}
 	for i, row := range rows {
 		content := clipToWidth(row, inner)
@@ -193,7 +195,7 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, sha
 				shade = shadowRun(1, colored)
 			}
 		}
-		lines = append(lines, paint(b.v+" ", ansiDim, colored)+content+strings.Repeat(" ", pad)+paint(" "+b.v, ansiDim, colored)+shade)
+		lines = append(lines, paint(b.v+" ", border, colored)+content+strings.Repeat(" ", pad)+paint(" "+b.v, border, colored)+shade)
 	}
 	// 下辺は shadow の有無で変える:
 	//   - 通常箱: 上辺 ┌─┐ と同じ中央高の細い罫線 └─┘ (標準の枠)
@@ -204,9 +206,10 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, sha
 	//     角 ▖ ▗ で接地と角閉じを両立。▖ + ▁×n + ▗)。
 	var bottom string
 	if shadow {
+		// 接地ブロック ▖▁▗ は落ち影の一部なので中立の dim 固定 (枠色に染めない)。
 		bottom = paint("▖"+strings.Repeat("▁", fw-2)+"▗", ansiDim, colored)
 	} else {
-		bottom = paint(b.bl+strings.Repeat(b.h, fw-2)+b.br, ansiDim, colored)
+		bottom = paint(b.bl+strings.Repeat(b.h, fw-2)+b.br, border, colored)
 	}
 	if shadow {
 		// 右下角の影は最も深いので █ 本体。

@@ -126,7 +126,7 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 		inner = max(inner, dispWidth(r))
 	}
 	boxWidth := min(max(inner+usageBoxChrome, dispWidth(title)+3), width)
-	return buildShadowPanelBox(title, rows, boxWidth, colored)
+	return buildShadowPanelBox(title, rows, boxWidth, colored, ansiDim)
 }
 
 // overlayBoxRight は複数行の box を window の右端へ矩形で重ねる (右揃え)。base は載せ始める行

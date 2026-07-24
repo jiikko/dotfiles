@@ -20,7 +20,7 @@ func TestBuildPanelBoxWidths(t *testing.T) {
 }
 
 func TestBuildShadowPanelBoxWidths(t *testing.T) {
-	lines := buildShadowPanelBox(" title ", []string{"row", strings.Repeat("x", 200)}, 40, false)
+	lines := buildShadowPanelBox(" title ", []string{"row", strings.Repeat("x", 200)}, 40, false, ansiDim)
 	// 枠 (top/bottom) + 2 行 + 下端の落ち影 1 行 = 5 行。影を足しても footprint 幅は 40 のまま
 	if len(lines) != 5 {
 		t.Fatalf("枠 + 2 行 + 影 1 行のはずが %d 行", len(lines))
@@ -61,7 +61,7 @@ func TestBuildPanelBoxTitleStripsANSI(t *testing.T) {
 // 端末 bg が透けて penumbra になり縁が柔らかくなる。footprint 幅は据え置き。
 func TestShadowForegroundBlocksAndFeather(t *testing.T) {
 	// colored: 前景ブロック + フェザー、旧 bg 塗りは無い
-	lines := buildShadowPanelBox(" t ", []string{"a", "b"}, 20, true)
+	lines := buildShadowPanelBox(" t ", []string{"a", "b"}, 20, true, ansiDim)
 	joined := strings.Join(lines, "\n")
 	if strings.Contains(joined, "\x1b[48;5;233m") {
 		t.Error("旧 bg ベタ塗り (256色 233) が残っている")
@@ -78,7 +78,7 @@ func TestShadowForegroundBlocksAndFeather(t *testing.T) {
 		}
 	}
 	// NO_COLOR: 近黒 fg が使えないため ▒ 本体 + ░ フェザーの階調で代用、ANSI は含まない
-	mono := buildShadowPanelBox(" t ", []string{"a", "b"}, 20, false)
+	mono := buildShadowPanelBox(" t ", []string{"a", "b"}, 20, false, ansiDim)
 	mj := strings.Join(mono, "\n")
 	if strings.ContainsRune(mj, '\x1b') {
 		t.Error("NO_COLOR 出力に ANSI が混入している")

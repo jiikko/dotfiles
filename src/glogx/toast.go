@@ -121,7 +121,8 @@ func (t *toast) fullBox(colored bool) []string {
 	}
 	row := paint(mark+" "+t.text, color, colored)
 	boxW := dispWidth(row) + usageBoxChrome
-	return buildShadowPanelBox("", []string{row}, boxW, colored)
+	// 枠線も種別色 (成功=緑 / 失敗=赤 / 進行=シアン) で染めて一体感を出す。影は中立の dim のまま。
+	return buildShadowPanelBox("", []string{row}, boxW, colored, color)
 }
 
 // boxLines は現フレームで見せる箱行 (全行) を返す。各行を箱の左 shown カラムに切り、右端揃えで
