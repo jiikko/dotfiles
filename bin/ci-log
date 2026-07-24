@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+# GitHub Actions の失敗 job ログを一発で見るラッパー。
+# 手動だと gh run list で run を探し → 失敗 job の id を拾い → gh run view --log-failed
+# の多段になるのを畳む。引数なしなら現在のブランチの直近 run を対象にする。
+#
+# 使い方:
+#   ci-log            HEAD コミットの失敗 run すべての失敗 job ログ (1 push で複数 workflow が
+#                     落ちても取りこぼさない。失敗が無ければその旨)
+#   ci-log <run-id>   指定 run の失敗 job のログ
+#   ci-log -a         対象 run の全 job ログ (成功も含む。run-id 指定時のみ意味を持つ)
+#   ci-log -l         直近の run 一覧を出すだけ (対象 id を選ぶ用)
+
+set -euo pipefail
+
+command -v gh >/dev/null 2>&1 || { echo "gh (GitHub CLI) が必要です" >&2; exit 127; }
+
+all=false
+list_only=false
+run_id=""
+for arg in "$@"; do
+  case "$arg" in
+    -a|--all) all=true ;;
+    -l|--list) list_only=true ;;
+    -h|--help) sed -n '3,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -*) echo "不明なオプション: $arg" >&2; exit 2 ;;
+    *) run_id="$arg" ;;
+  esac
+done
+
+if $list_only; then
+  gh run list --limit 15
+  exit 0
+fi
+
+# run-id 明示時: その run だけを見る。-a なら全 job、既定は失敗 job のみ。
+if [ -n "$run_id" ]; then
+  echo "== run $run_id ==" >&2
+  gh run view "$run_id" 2>/dev/null | sed -n '/JOBS/,$p' >&2 || true
+  if $all; then
+    gh run view "$run_id" --log
+  else
+    gh run view "$run_id" --log-failed | grep -q . || echo "(失敗した job はありません)" >&2
+    gh run view "$run_id" --log-failed
+  fi
+  exit 0
+fi
+
+# 既定: HEAD コミットに紐づく run 群を集め、失敗したものすべての失敗ログを出す。
+# gh run list に --commit は無いため headSha で局所フィルタする (1 push = 複数 workflow を網羅)。
+head_sha=$(git rev-parse HEAD 2>/dev/null || echo "")
+[ -n "$head_sha" ] || { echo "git リポジトリではありません" >&2; exit 1; }
+mapfile -t failed < <(gh run list --limit 40 --json databaseId,headSha,conclusion,name \
+  --jq ".[] | select(.headSha==\"$head_sha\" and .conclusion==\"failure\") | \"\(.databaseId)\t\(.name)\"")
+
+if [ "${#failed[@]}" -eq 0 ]; then
+  echo "HEAD ($(git rev-parse --short HEAD)) に失敗した run はありません" >&2
+  gh run list --limit 10
+  exit 0
+fi
+
+for entry in "${failed[@]}"; do
+  id="${entry%%$'\t'*}"
+  name="${entry#*$'\t'}"
+  echo "========== FAILED: $name (run $id) ==========" >&2
+  gh run view "$id" --log-failed
+done
