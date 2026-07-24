@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,11 +12,27 @@ import (
 // してある (本番値は不変、テストだけ短い値へ差し替える)。
 var toastHold = 3 * time.Second
 
-// toastSlideFrames は入場/退場の横スライドを何フレームで渡り切るかの目安。箱の総カラム幅を
-// この数で割ったカラム数/フレームで shown を増減させるので、箱幅に依らずほぼ一定時間
-// (~12frame × scrollInterval ≈ 400ms) で滑り込む/滑り出る。行 (縦) でなくカラム (横) を
-// 動かすことで、箱が数行しかなくても解像度の高い滑らかなスライドになる。
+// toastSlideFrames は入場/退場の横スライドを何フレームで渡り切るか。frame を 0→N で進め、
+// 表示カラム shown = easeOutCubic(frame/N) × 箱幅 とする (箱幅に依らずほぼ一定時間
+// ~12frame × scrollInterval ≈ 400ms)。行 (縦) でなくカラム (横) を動かすため、箱が数行でも
+// 解像度の高い滑らかなスライドになる。
 const toastSlideFrames = 12
+
+// easedShown は frame (0..toastSlideFrames) に対する表示カラム数を easeOutCubic で返す。
+// 線形だと入場/退場の始点・終点で速度が急に切り替わり「カクッ」と見える。easeOutCubic は
+// 終点付近で減速するので、入場 (frame 0→N) は「すっと収まり」、退場 (frame N→0 と逆走) は
+// 曲線を逆に辿るため始めゆっくり→終わり加速で「すっと消える」自然な動きになる。
+func easedShown(frame, w int) int {
+	if frame <= 0 {
+		return 0
+	}
+	if frame >= toastSlideFrames {
+		return w
+	}
+	p := float64(frame) / float64(toastSlideFrames)
+	eased := 1 - math.Pow(1-p, 3) // easeOutCubic
+	return int(math.Round(eased * float64(w)))
+}
 
 // toastMsg は静止 (holding) が終わって退場アニメを始める合図。seq で世代管理し、新しいトーストが
 // 上書きした後に届く古いタイマーは無視する (連続 push/pull で前の退場が後のを消さないように)。
@@ -42,6 +59,7 @@ type toast struct {
 	seq   int  // 世代: 退場タイマーの有効性判定 + 再表示リセット
 	phase toastPhase
 	shown int // 現在見せている箱の左カラム数 (0=画面右外に収納 / boxWidth=全幅表示)
+	frame int // スライドの進捗フレーム (入場 0→N / 退場 N→0)。shown = easedShown(frame)
 }
 
 // show は新しいトーストを右画面外からの滑り込みで出し始める。呼び出し側で maybeTick を Batch して
@@ -50,7 +68,7 @@ func (t *toast) show(text string, ok bool) {
 	t.seq++
 	t.text, t.ok, t.info = text, ok, false
 	t.phase = toastEntering
-	t.shown = 0
+	t.shown, t.frame = 0, 0
 }
 
 // showInfo は進行中/中立のトースト (…シアン) を出す。成功でも失敗でもない一時状態 (例:「検索中」)
@@ -59,7 +77,7 @@ func (t *toast) showInfo(text string) {
 	t.seq++
 	t.text, t.info = text, true
 	t.phase = toastEntering
-	t.shown = 0
+	t.shown, t.frame = 0, 0
 }
 
 // animating は入場/退場アニメ中か (tick を回す必要がある + spinnerActive に含める)。holding は
@@ -79,22 +97,25 @@ func (t *toast) boxWidth(colored bool) int {
 	return dispWidth(full[0])
 }
 
-// advance はアニメを 1 フレーム進める。入場が完了したら holding へ移り、toastHold 後に退場を
-// 始める toastMsg を予約して返す。step は箱幅を toastSlideFrames で割ったカラム数/フレーム。
+// advance はアニメを 1 フレーム進める。frame を入場で 0→N、退場で N→0 に動かし、表示カラムは
+// easedShown(frame) で求める (easeOutCubic)。入場完了で holding へ移り toastHold 後の退場
+// タイマーを予約して返す。退場完了で hidden。
 func (t *toast) advance(colored bool) (holdCmd tea.Cmd) {
 	w := t.boxWidth(colored)
-	step := max(1, (w+toastSlideFrames-1)/toastSlideFrames)
 	switch t.phase {
 	case toastEntering:
-		t.shown = min(t.shown+step, w)
-		if t.shown >= w {
+		t.frame++
+		t.shown = easedShown(t.frame, w)
+		if t.frame >= toastSlideFrames {
+			t.shown = w
 			t.phase = toastHolding
 			seq := t.seq
 			return tea.Tick(toastHold, func(time.Time) tea.Msg { return toastMsg{seq: seq} })
 		}
 	case toastLeaving:
-		t.shown -= step
-		if t.shown <= 0 {
+		t.frame--
+		t.shown = easedShown(t.frame, w)
+		if t.frame <= 0 {
 			t.shown = 0
 			t.phase = toastHidden
 			t.text = ""
@@ -133,7 +154,12 @@ func (t *toast) boxLines(colored bool) []string {
 		return nil
 	}
 	full := t.fullBox(colored)
-	v := min(max(t.shown, 0), t.boxWidth(colored))
+	if len(full) == 0 {
+		return nil
+	}
+	// 箱幅は full から直に導く (boxWidth を呼ぶと fullBox をもう一度組んでしまう。表示中は毎フレーム
+	// 走るので二重構築を避ける)。
+	v := min(max(t.shown, 0), dispWidth(full[0]))
 	if v <= 0 {
 		return nil
 	}
