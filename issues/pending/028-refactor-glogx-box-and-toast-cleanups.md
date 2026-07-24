@@ -127,3 +127,23 @@ file:line と実コードで自己検証済みだが、対応方針の妥当性�
 - [`issues/018-refactor-god-struct-audit-2026-07-22.md`](018-refactor-god-struct-audit-2026-07-22.md) — glogx の構造監査 (browseModel は抽出完了と判定済み)
 - `issues/done/025-feat-glogx-window-drop-shadow.md` — box.go の影実装の経緯 (P1 で触る範囲)
 - `issues/done/026-feat-glogx-copy-last-warning.md` — toast と lastWarning の関係 (P2 の前提)
+
+## 対応状況 (2026-07-25)
+
+**着手条件 (この issue が pending にある理由)**: 残っているのは P2 のみで、trigger は
+「3 つ目以降の遅延通知源が増えたとき」または「`toastHold` を変更したくなったとき」。
+それまでは現状の 1 対 1 調停で足りているため触らない。
+
+- **P1 完了**: `buildPanelBoxImpl` の `shadow bool` / `b boxBorder` / `border string` を
+  `panelBoxStyle{shadow, glyphs, color}` に畳んだ。呼び出しは内部 3 箇所のみで公開ラッパー
+  (`buildPanelBox` / `buildShadowPanelBox`) のシグネチャは不変なので外への波及なし
+- **P4 完了**: `usageBoxChrome` (usage_overlay.go) → `shadowBoxChrome` (box.go) へ移動・改名。
+  値は 5 のまま。toast が usage overlay の定数を借用する結合を切った
+- **P3 完了 (案 B)**: `TestBrowseSpinnerActiveSources` を追加し、14 の非同期/アニメ源を 1 つずつ
+  立てて `spinnerActive()` が true になることを table で網羅。OR の 1 項 (`m.scrollAnim`) を
+  削って実際に FAIL することを確認済み (mutation テスト)。
+  ⚠️ **ただし issue 本文の「追記漏れが test 失敗として現れる」は不正確**: 新しい源を足して
+  `spinnerActive` への追記を忘れるケースは、テーブルへの追記も同時に忘れるため検出できない。
+  このテストが守るのは「既存の項の削除・条件反転」の回帰と、源の一覧のドキュメント化。
+  案 A (登録式) を採らなかった理由も同じ (登録漏れに問題が移るだけ = 複雑性の移動)
+- **P2 未着手** (上記 trigger 待ち。素朴なキュー化は「後勝ち」設計の逆転になるため不可)

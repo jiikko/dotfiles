@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -481,5 +482,51 @@ func TestAdvancePullAnimTerminates(t *testing.T) {
 	m.advancePullAnim()
 	if m.offset != 0 || m.pullAnimating {
 		t.Errorf("offset=2 の 2 回目で終端しない (負に振れた?): offset=%d animating=%v", m.offset, m.pullAnimating)
+	}
+}
+
+// spinnerActive() は 14 個の非同期/アニメ源の OR で、tick チェーンの生存条件そのもの。
+// どれか 1 項を落とすと該当中だけスピナー/経過秒が固まる (静的には検出されない) ため、
+// 「源を 1 つだけ立てたら true」を table で網羅して回帰を検出する (issue 028 P3 案 B)。
+//
+// ⚠️ このテストは「既存の項を消した/条件を反転した」回帰は捕まえるが、**新しい非同期源を
+// 足して spinnerActive への追記を忘れた** ケースは捕まえない (テーブルへの追記も同時に
+// 忘れるため)。新しい源を足すときはここにも 1 行足すこと。
+func TestBrowseSpinnerActiveSources(t *testing.T) {
+	sources := []struct {
+		name string
+		set  func(m *browseModel)
+	}{
+		{"fetching", func(m *browseModel) { m.fetching = true }},
+		{"actModal.running", func(m *browseModel) { m.actModal.pushing = true }},
+		{"pullAnimating", func(m *browseModel) { m.pullAnimating = true }},
+		{"pushAnimating", func(m *browseModel) { m.pushAnimating = true }},
+		{"pushSlides", func(m *browseModel) { m.pushSlides = map[string]time.Time{"a": time.Now()} }},
+		{"scrollAnim", func(m *browseModel) { m.scrollAnim = true }},
+		{"toast.animating", func(m *browseModel) { m.toast.phase = toastEntering }},
+		{"pushPoll", func(m *browseModel) { m.pushPoll = map[string]bool{"a": true} }},
+		{"detailsLoading", func(m *browseModel) { m.detailsLoading["a"] = true }},
+		{"detailOv.fetching", func(m *browseModel) { m.detailOv.busy["a"] = true }},
+		{"diffOv.fetching", func(m *browseModel) { m.diffOv.busy["a"] = true }},
+		{"prStatusOv.fetching", func(m *browseModel) { m.prStatusOv.busy["a"] = true }},
+		{"panelHasRunningJob", func(m *browseModel) {
+			m.panelSHA = m.commits[0].SHA
+			m.details[m.panelSHA] = []CheckDetail{{Name: "job", State: StatePending, StartedAt: time.Now()}}
+		}},
+		{"usageOv.loading", func(m *browseModel) { m.usageOv.visible = true; m.usageOv.snap = nil; m.usageOv.err = nil }},
+	}
+	// 前提: 何も動いていない model は false (これが false でないと以下の検証が無意味になる)
+	base := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	base.usageOv.visible = false
+	if base.spinnerActive() {
+		t.Fatal("前提: idle な model で spinnerActive() が true")
+	}
+	for _, s := range sources {
+		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m.usageOv.visible = false // usage は既定で取得中になりうるので隔離する
+		s.set(m)
+		if !m.spinnerActive() {
+			t.Errorf("%s を立てても spinnerActive() が false (tick が止まりアニメ/経過秒が固まる)", s.name)
+		}
 	}
 }

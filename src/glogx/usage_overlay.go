@@ -80,9 +80,6 @@ func (o *usageOverlay) stop() {
 	}
 }
 
-// usageBoxChrome は影付き枠が内容幅に加える固定分 ("│ " + " │" + 影 1 桁 = 5)。
-const usageBoxChrome = 5
-
 // boxLines は右上オーバーレイの複数行モーダル (影付き枠) を組み立てる。非表示なら nil。
 // 取得中は枠内でスピナー (呼び出し側が現在フレームを渡す) を回し、失敗時は理由、成功時は
 // 枠ごとに 1 行整列表示 + 末尾に自動更新の明示フッターを添える。spinner / colored / width は
@@ -125,7 +122,7 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 	for _, r := range rows {
 		inner = max(inner, dispWidth(r))
 	}
-	boxWidth := min(max(inner+usageBoxChrome, dispWidth(title)+3), width)
+	boxWidth := min(max(inner+shadowBoxChrome, dispWidth(title)+3), width)
 	return buildShadowPanelBox(title, rows, boxWidth, colored, ansiDim)
 }
 

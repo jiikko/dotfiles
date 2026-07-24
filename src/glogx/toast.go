@@ -142,7 +142,7 @@ func (t *toast) fullBox(colored bool) []string {
 		mark, color = "✗", ansiRed
 	}
 	row := paint(mark+" "+t.text, color, colored)
-	boxW := dispWidth(row) + usageBoxChrome
+	boxW := dispWidth(row) + shadowBoxChrome
 	// 枠線も種別色 (成功=緑 / 失敗=赤 / 進行=シアン) で染めて一体感を出す。影は中立の dim のまま。
 	return buildShadowPanelBox("", []string{row}, boxW, colored, color)
 }

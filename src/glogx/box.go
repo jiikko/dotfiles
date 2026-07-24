@@ -77,9 +77,18 @@ func overlayCenteredBox(window, box []string, width, page int, colored bool) []s
 	return window
 }
 
+// panelBoxStyle は枠の見た目 (影の有無・罫線の字形・枠線の色) をまとめる。buildPanelBoxImpl の
+// 引数が 7 個まで伸び、bool 2 連続 + 名前の似た glyphs/color が並んで呼び出し側から意味が
+// 読めなくなったため畳んだ (issue 028 P1)。glyphs は字形、color は SGR で役割が別物。
+type panelBoxStyle struct {
+	shadow bool      // 右下ドロップシャドウを付けるか
+	glyphs boxBorder // 罫線の字形 (borderLight / borderDouble)
+	color  string    // 枠線の SGR 色 (通常 ansiDim。toast だけ種別色)
+}
+
 // buildPanelBox は枠線付きのパネルを組み立てる。行の実効幅は ANSI を除いて計算する。
 func buildPanelBox(title string, rows []string, width int, colored bool) []string {
-	return buildPanelBoxImpl(title, rows, width, colored, false, borderLight, ansiDim)
+	return buildPanelBoxImpl(title, rows, width, colored, panelBoxStyle{glyphs: borderLight, color: ansiDim})
 }
 
 // buildShadowPanelBox は buildPanelBox の右下ドロップシャドウ付き版。呼び出し元は 4 系統の
@@ -93,7 +102,7 @@ func buildPanelBox(title string, rows []string, width int, colored bool) []strin
 // border は枠線 (上辺・側辺・非影下辺) の SGR 色。ドロップシャドウのブロックは中立のまま (dim)。
 // 通常は ansiDim を渡す。toast だけが種別色 (緑/赤/シアン) を渡して枠ごと色付けする。
 func buildShadowPanelBox(title string, rows []string, width int, colored bool, border string) []string {
-	return buildPanelBoxImpl(title, rows, width, colored, true, borderLight, border)
+	return buildPanelBoxImpl(title, rows, width, colored, panelBoxStyle{shadow: true, glyphs: borderLight, color: border})
 }
 
 // wrapWindowFrame は画面全体のコンテンツ (リスト + overlay 群を合成済みの window) を、最外周に
@@ -102,7 +111,8 @@ func buildShadowPanelBox(title string, rows []string, width int, colored bool, b
 // 返す行数 = len(content) + 4 (上余白 + 上辺 + 下辺 + 下影)。左右余白 1 桁ずつ + 影 1 桁で、
 // footprint は termW に収まる (呼び出し側の contentWidth()/frameVOverhead と一致)。
 func wrapWindowFrame(content []string, termW int, colored bool) []string {
-	box := buildPanelBoxImpl("", content, termW-2, colored, true, borderDouble, ansiDim) // -2 = 左右余白 1 桁ずつ。二重罫線 (ユーザー要望)
+	// -2 = 左右余白 1 桁ずつ。二重罫線 (ユーザー要望)
+	box := buildPanelBoxImpl("", content, termW-2, colored, panelBoxStyle{shadow: true, glyphs: borderDouble, color: ansiDim})
 	out := make([]string, 0, len(box)+1)
 	out = append(out, "") // 上余白 1 行 (端末地色)
 	for _, l := range box {
@@ -110,6 +120,12 @@ func wrapWindowFrame(content []string, termW int, colored bool) []string {
 	}
 	return out
 }
+
+// shadowBoxChrome は影付き枠 (buildShadowPanelBox) が内容幅に加える固定分
+// ("│ " + " │" + 影 1 桁 = 5)。box の性質なので box.go が出典 (usage overlay 固有ではない。
+// 以前は usage_overlay.go の usageBoxChrome を toast が借用しており、usage 側の都合で値を
+// 変えるとトーストが無言で崩れる結合があった。issue 028 P4)。
+const shadowBoxChrome = 5
 
 // minPanelWidth は枠の最小幅 (これ未満の width は buildPanelBoxImpl がここまで押し上げる)。
 const minPanelWidth = 10
@@ -213,8 +229,10 @@ var (
 // buildPanelBoxImpl が本体。shadow=true では右端 1 桁 (右影) と、その下に shadowBottomOffset 桁
 // 右へずらした下端影の行を足し、板が左上光源で浮いて見える 3D 風にする。footprint は width の
 // まま (枠自体を fw = width-1 に狭めて右影 1 桁分を捻出。下端影は行内の左詰めオフセットで表現)。
-// b は罫線種別 (上辺・側辺・非 shadow 下辺に効く。shadow 下辺は接地ブロック ▖▁▗ 固定で b 非依存)。
-func buildPanelBoxImpl(title string, rows []string, width int, colored bool, shadow bool, b boxBorder, border string) []string {
+// st.glyphs は罫線種別 (上辺・側辺・非 shadow 下辺に効く。shadow 下辺は接地ブロック ▖▁▗ 固定で
+// glyphs 非依存)。
+func buildPanelBoxImpl(title string, rows []string, width int, colored bool, st panelBoxStyle) []string {
+	shadow, b, border := st.shadow, st.glyphs, st.color
 	if width < minPanelWidth {
 		width = minPanelWidth
 	}
