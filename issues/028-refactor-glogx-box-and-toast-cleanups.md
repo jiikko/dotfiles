@@ -1,0 +1,129 @@
+# 028 refactor: glogx の box 引数肥大 / toast 調停 / spinnerActive 手動不変条件の整理
+
+## 背景
+
+2026-07-25 のトースト改修 (中央ダイアログ → 右下トースト移行 / 枠線の種別色化 / easeOutCubic 化)
+で box.go・toast.go・tui.go を触った際に見つけた改善候補の記録。いずれも**単独では動作に問題
+なし**で、trigger 待ちで凍結してよいもの ([`verify-design-intent-before-refactor.md`](../_claude/rules/verify-design-intent-before-refactor.md))。
+
+**評価原則**: 行数分割はリファクタではない。「認知負荷 (読む時の jump 数 / 変更時の touch 箇所)・
+結合・重複・状態の局所化」が**実際に下がるか**で判定する。「やらない」も正当な結論。
+
+⚠️ 以下は着手前にコードを再確認すること (下記は 2026-07-25 時点の評価)。
+
+## P1: `buildPanelBoxImpl` の引数 7 個 (自分で持ち込んだ負債)
+
+`src/glogx/box.go` の `buildPanelBoxImpl`:
+
+```go
+func buildPanelBoxImpl(title string, rows []string, width int, colored bool, shadow bool, b boxBorder, border string) []string
+```
+
+`colored bool` / `shadow bool` が連続し、`b boxBorder` (罫線の字形) と `border string`
+(枠線の SGR 色) という**名前が似て意味が違う**引数が並ぶ。呼び出し側が意味を読めない:
+
+```go
+buildPanelBoxImpl(title, rows, width, colored, false, borderLight, ansiDim)
+buildPanelBoxImpl("", content, termW-2, colored, true, borderDouble, ansiDim)
+```
+
+7 番目の `border string` は 2026-07-25 にトースト枠の色付けで**私 (Claude) が追加したもの**。
+追加時点で引数が閾値を越えた。
+
+### 方針
+
+`shadow` / `b` / `border` を 1 つの構造体に畳む (例 `panelBoxStyle{shadow bool; glyphs boxBorder; color string}`)。
+
+**scope が小さいのが利点**: `buildPanelBoxImpl` の呼び出しは**内部 3 箇所のみ** (box.go:82 /
+box.go:96 / box.go:105)。公開ラッパー `buildPanelBox` (6 呼び出し) と
+`buildShadowPanelBox` (3 呼び出し) のシグネチャは変えずに済むため、外への波及はゼロ。
+
+- 命名は `boxBorder` (字形) と色を混同させないこと。`glyphs` / `color` のように役割で分ける
+- テストは `box_test.go` がラッパー経由なので影響が小さい (要確認)
+
+## P2: トーストの単一スロット調停をタイマーで実現している
+
+`src/glogx/tui.go` の `claudeUpdateToastDefer` / `claudeUpdateRetryMsg` /
+`showOrDeferClaudeUpdate`:
+
+```go
+const claudeUpdateToastDefer = 4 * time.Second   // toastHold(3s) + スライドより長め
+```
+
+「先行トーストが表示中なら上書きせず、4 秒後に 1 度だけ再送。まだ塞がっていたら諦める」という
+作り。実質「キューが無いことを sleep で埋めている」形で、`toastHold` を変えるとこの定数が
+暗黙に壊れる時間的結合がある。
+
+### ⚠️ ただし現状の設計は意図的と明記されている
+
+コード側コメントで「単一スロット・後勝ちの toast 設計を歪めずに『重要度 error > info』を守る
+ための調停」と説明されており、**素朴なキュー化は設計意図の逆転になりうる** (キューにすると
+「後勝ち」で最新結果を見せる性質が失われ、古い info が新しい結果より先に出る)。
+
+### 方針 (trigger 待ち)
+
+- **今は触らない**。trigger = 「3 つ目以降の遅延通知源が増えたとき」または「`toastHold` を
+  変更したくなったとき」。それまでは現状の 1 対 1 調停で足りている
+- 着手するなら「キュー」ではなく **優先度付き単一スロット** (error > info、同 priority は
+  後勝ち) が設計意図に沿う。この場合 `claudeUpdateToastDefer` と再送メッセージが両方消える
+- 着手前に `issues/done/024-feat-glogx-claude-update-toast.md` / `026` を読み、この調停が
+  どの要件から来たかを確認すること
+
+## P3: `spinnerActive()` の不変条件が手動管理
+
+`src/glogx/tui.go:1933-1935` — 1 行に **14 項**の OR:
+
+```go
+return m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating ||
+  len(m.pushSlides) > 0 || m.scrollAnim || m.toast.animating() || len(m.pushPoll) > 0 ||
+  len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() ||
+  m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading()
+```
+
+問題は行の長さより**不変条件が人手**な点: 新しい非同期処理・アニメを足したときここへの追記を
+忘れると tick が回らずアニメが止まる (静的に検出されない)。2026-07-25 のトースト改修でも
+`m.toast.animating()` がここに入っているかを目視確認する必要があった。
+
+### 方針 (要検討 — 実際に複雑性が下がるか不明)
+
+- 案 A: 「アニメ源」を `[]func() bool` か interface の slice で登録し、`spinnerActive` は
+  それを畳むだけにする。追記漏れは防げるが、**登録漏れ**に問題が移るだけの可能性がある
+  (複雑性の移動 = 却下すべきパターン)
+- 案 B: 現状維持 + テストで担保する。「各非同期状態を立てたら `spinnerActive()` が true」を
+  table test で網羅すれば、追記漏れが test 失敗として現れる。**こちらの方が筋が良い可能性が高い**
+  (構造を変えずに不変条件を機械化できる)
+
+→ 着手するなら案 B から検討する。案 A は「登録漏れ」に問題をずらすだけなら不可。
+
+## P4 (軽微): `toast` が usage overlay の定数を借用
+
+`src/glogx/toast.go:144` が `usageBoxChrome` (`usage_overlay.go:84`、値 5) を使っている:
+
+```go
+boxW := dispWidth(row) + usageBoxChrome
+```
+
+「影付き枠が内容幅に加える固定分 (`"│ "` + `" │"` + 影 1 桁)」という**box の性質**であって
+usage overlay 固有ではない。usage 側の都合で値を変えるとトーストが無言で崩れる。
+
+### 方針
+
+`box.go` へ移して `shadowBoxChrome` 等の中立名にリネームする (定義位置と名前だけの変更で、
+値は不変)。P1 で box.go を触るなら同時にやるのが安い。
+
+## 着手順の推奨
+
+1. **P1** (自分で増やした引数の返却。scope が内部 3 箇所で明確に閉じている)
+2. **P4** (P1 と同じファイルなので同時)
+3. P3 は案 B (テストで担保) の検討から
+4. P2 は trigger 待ち (触らない)
+
+なお本 issue は codex レビュー未通過 (codex 不使用の運用指示による)。事実関係は
+file:line と実コードで自己検証済みだが、対応方針の妥当性は着手時に再評価すること。
+
+## 関連
+
+- [`verify-design-intent-before-refactor.md`](../_claude/rules/verify-design-intent-before-refactor.md) — 「複雑性が実際に下がるか」で判定する原則 (P3 案 A の却下根拠)
+- [`issues/018-refactor-god-struct-audit-2026-07-22.md`](018-refactor-god-struct-audit-2026-07-22.md) — glogx の構造監査 (browseModel は抽出完了と判定済み)
+- `issues/done/025-feat-glogx-window-drop-shadow.md` — box.go の影実装の経緯 (P1 で触る範囲)
+- `issues/done/026-feat-glogx-copy-last-warning.md` — toast と lastWarning の関係 (P2 の前提)
