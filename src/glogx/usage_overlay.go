@@ -8,7 +8,6 @@ import (
 	"glogx/usage"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mattn/go-runewidth"
 )
 
 // usageMsg は /usage の非同期取得結果 (右上オーバーレイ用)。
@@ -114,19 +113,19 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 		// 差し替わるので、更新中であることは出さない。
 		w := 0
 		for _, r := range data {
-			w = max(w, runewidth.StringWidth(stripANSI(r)))
+			w = max(w, dispWidth(r))
 		}
 		footer := "1分ごとに更新"
-		rows = append(rows, strings.Repeat(" ", max(w-runewidth.StringWidth(footer), 0))+paint(footer, ansiDim, colored))
+		rows = append(rows, strings.Repeat(" ", max(w-dispWidth(footer), 0))+paint(footer, ansiDim, colored))
 	}
 	// 枠幅 = 内容の最大表示幅 + 罫線・影の余白。ただし title を切り詰めない幅 (title 幅 + 3。
 	// buildShadowPanelBox が title を fw-2=boxWidth-3 に truncate するため) を最低確保する。
 	// 端末幅は超えない。
 	inner := 0
 	for _, r := range rows {
-		inner = max(inner, runewidth.StringWidth(stripANSI(r)))
+		inner = max(inner, dispWidth(r))
 	}
-	boxWidth := min(max(inner+usageBoxChrome, runewidth.StringWidth(stripANSI(title))+3), width)
+	boxWidth := min(max(inner+usageBoxChrome, dispWidth(title)+3), width)
 	return buildShadowPanelBox(title, rows, boxWidth, colored)
 }
 
@@ -149,14 +148,14 @@ func overlayBoxRight(window, box []string, width int, colored bool, base int) []
 		if pos >= len(window) {
 			break
 		}
-		bw := runewidth.StringWidth(stripANSI(row))
+		bw := dispWidth(row)
 		if bw >= width {
 			window[pos] = clipToWidth(row, width)
 			continue
 		}
 		leftWidth := width - bw
 		left := truncateKeepANSI(window[pos], leftWidth)
-		pad := strings.Repeat(" ", max(leftWidth-runewidth.StringWidth(stripANSI(left)), 0))
+		pad := strings.Repeat(" ", max(leftWidth-dispWidth(left), 0))
 		window[pos] = left + reset + pad + row
 	}
 	return window

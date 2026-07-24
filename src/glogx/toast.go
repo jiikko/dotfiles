@@ -4,7 +4,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mattn/go-runewidth"
 )
 
 // toastHold は「にゅっと出た」あと引っ込むまでの静止時間。push/pull 完了の結果を見落とさない
@@ -67,7 +66,7 @@ func (t *toast) boxWidth(colored bool) int {
 	if len(full) == 0 {
 		return 0
 	}
-	return runewidth.StringWidth(stripANSI(full[0]))
+	return dispWidth(full[0])
 }
 
 // advance はアニメを 1 フレーム進める。入場が完了したら holding へ移り、toastHold 後に退場を
@@ -108,7 +107,7 @@ func (t *toast) fullBox(colored bool) []string {
 		mark, color = "✗", ansiRed
 	}
 	row := paint(mark+" "+t.text, color, colored)
-	boxW := runewidth.StringWidth(stripANSI(row)) + usageBoxChrome
+	boxW := dispWidth(row) + usageBoxChrome
 	return buildShadowPanelBox("", []string{row}, boxW, colored)
 }
 

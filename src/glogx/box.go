@@ -2,8 +2,6 @@ package main
 
 import (
 	"strings"
-
-	"github.com/mattn/go-runewidth"
 )
 
 // 枠描画のプリミティブ (browseModel の状態に依存しない純関数)。状態機械 (tui.go) から
@@ -52,7 +50,7 @@ func overlayCenteredBox(window, box []string, width, page int, colored bool) []s
 	}
 	bw := 0
 	for _, r := range box {
-		bw = max(bw, runewidth.StringWidth(stripANSI(r)))
+		bw = max(bw, dispWidth(r))
 	}
 	leftGap := max((width-bw)/2, 0)
 	leftPad := strings.Repeat(" ", leftGap)
@@ -71,9 +69,9 @@ func overlayCenteredBox(window, box []string, width, page int, colored bool) []s
 		bg := window[pos]
 		// 左背景: 先頭 leftGap 桁を保持し、足りなければ空白で leftGap ちょうどに詰める
 		left := truncateKeepANSI(bg, leftGap)
-		left += strings.Repeat(" ", max(leftGap-runewidth.StringWidth(stripANSI(left)), 0))
+		left += strings.Repeat(" ", max(leftGap-dispWidth(left), 0))
 		// 右背景: box 行の右端 (leftGap + この行の表示幅) 以降を復元して継ぐ
-		rowW := runewidth.StringWidth(stripANSI(boxRow))
+		rowW := dispWidth(boxRow)
 		right := dropToColumn(bg, leftGap+rowW)
 		window[pos] = left + reset + boxRow + reset + right
 	}
@@ -175,8 +173,8 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, sha
 	// タイトルは SGR 入りの job 名や commit subject がそのまま載る。ANSI を残すと
 	// 幅計算 (Truncate/StringWidth) がずれて罫線が崩れ、タイトル全体の dim 塗りも
 	// 途中でリセットされるため、タイトルに限っては ANSI を落とす
-	title = runewidth.Truncate(stripANSI(title), fw-2, "…")
-	top := b.tl + title + strings.Repeat(b.h, max(fw-2-runewidth.StringWidth(title), 0)) + b.tr
+	title = truncateDisp(stripANSI(title), fw-2, "…")
+	top := b.tl + title + strings.Repeat(b.h, max(fw-2-dispWidth(title), 0)) + b.tr
 	if shadow {
 		// 最上段だけ影なし (影は右上角の 1 つ下から始まるのが自然な落ち影)
 		lines = append(lines, paint(top, ansiDim, colored)+" ")
@@ -185,7 +183,7 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, sha
 	}
 	for i, row := range rows {
 		content := clipToWidth(row, inner)
-		pad := max(inner-runewidth.StringWidth(stripANSI(content)), 0)
+		pad := max(inner-dispWidth(content), 0)
 		shade := ""
 		if shadow {
 			// 右影の上端 (最初の content 行) だけ ▓ フェザーで ease-in し、以降は █ 本体。

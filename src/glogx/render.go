@@ -5,7 +5,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mattn/go-runewidth"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/rivo/uniseg"
 )
 
 // 状態記号は絵文字ではなく 1 カラム記号を使う (端末幅とフォント差異の影響を抑える: issue の設計)。
@@ -31,12 +32,8 @@ const (
 // spinnerFrames は取得中表示のフレーム。
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
-func init() {
-	// East Asian Ambiguous (罫線・✓・● 等) を幅 1 として扱う。runewidth の既定は
-	// locale (LANG=ja_JP.* 等) で幅 2 に切り替わり、パネル枠や列揃えの計算が実行環境
-	// 依存でずれるため固定する (Terminal.app 等の既定も ambiguous = narrow)。
-	runewidth.DefaultCondition.EastAsianWidth = false
-}
+// 幅計算は width.go の dispWidth (= ansi.StringWidth) に一本化している。ambiguous
+// 文字は locale 非依存で幅 1、絵文字は端末/描画エンジンと一致する幅で数える。
 
 // StateLoading は表示専用の擬似状態。statuses map に SHA が無いとき render 側で使う。
 const StateLoading CIState = "loading"
@@ -128,8 +125,8 @@ func RenderLines(commits []Commit, statuses map[string]CIState, o RenderOpts) []
 		subjectWidth := 0
 		authorWidth := 0
 		for _, c := range commits {
-			subjectWidth = max(subjectWidth, runewidth.StringWidth(c.Subject))
-			authorWidth = max(authorWidth, runewidth.StringWidth(c.Author))
+			subjectWidth = max(subjectWidth, dispWidth(c.Subject))
+			authorWidth = max(authorWidth, dispWidth(c.Author))
 		}
 		subjectWidth = min(subjectWidth, subjectWidthCap)
 		for i, c := range commits {
@@ -184,7 +181,7 @@ func insertPushBoundary(lines []Line, commits []Commit, statuses map[string]CISt
 	labeledRule := func(label, labelColor string) string {
 		head := "── origin"
 		gap := " "
-		dashes := strings.Repeat("─", max(width-runewidth.StringWidth(head+label+gap), 0))
+		dashes := strings.Repeat("─", max(width-dispWidth(head+label+gap), 0))
 		return paint(head, ansiDim, o.Colored) +
 			paint(label, labelColor, o.Colored) +
 			paint(gap+dashes, ansiDim, o.Colored)
@@ -299,10 +296,10 @@ func renderOnelineRow(c Commit, state CIState, subjectWidth, authorWidth int, o 
 	var b strings.Builder
 	b.WriteString(commitHeaderPrefix(c.ShortSHA, c.Decoration, state, o))
 	b.WriteString(" ")
-	subject := runewidth.Truncate(c.Subject, subjectWidthCap, "…")
-	b.WriteString(runewidth.FillRight(subject, subjectWidth))
+	subject := truncateDisp(c.Subject, subjectWidthCap, "…")
+	b.WriteString(fillRight(subject, subjectWidth))
 	b.WriteString("  ")
-	b.WriteString(paint(runewidth.FillRight(c.Author, authorWidth), ansiDim, o.Colored))
+	b.WriteString(paint(fillRight(c.Author, authorWidth), ansiDim, o.Colored))
 	b.WriteString("  ")
 	b.WriteString(paint(c.RelDate, ansiDim, o.Colored))
 	b.WriteString(prBadge(c.SHA, o))
@@ -464,26 +461,12 @@ func decorateDetailLine(line string, colored bool) string {
 // 折り返さない。単語境界は考慮せず端末の折り返しと同じく文字単位で折る
 // (日本語混じりの commit message では単語境界折りの利得が薄いため)。
 func wrapToWidth(s string, width int) []string {
-	if width <= 0 || runewidth.StringWidth(s) <= width {
+	if width <= 0 || dispWidth(s) <= width {
 		return []string{s}
 	}
-	var out []string
-	var cur strings.Builder
-	w := 0
-	for _, r := range s {
-		rw := runewidth.RuneWidth(r)
-		if w+rw > width && w > 0 {
-			out = append(out, cur.String())
-			cur.Reset()
-			w = 0
-		}
-		cur.WriteRune(r)
-		w += rw
-	}
-	if cur.Len() > 0 {
-		out = append(out, cur.String())
-	}
-	return out
+	// ansi.Hardwrap は grapheme クラスタ単位で折る (旧実装は rune 単位で ⚠️ を VS16 の
+	// 手前で分断していた)。単語境界は見ない (preserveSpace=false)。
+	return strings.Split(ansi.Hardwrap(s, width, false), "\n")
 }
 
 func paint(s, color string, colored bool) string {
@@ -506,11 +489,12 @@ func clipToWidth(line string, width int) string {
 	if len(line) <= width && strings.IndexByte(line, '\x1b') < 0 {
 		return line
 	}
-	plain := stripANSI(line)
-	if runewidth.StringWidth(plain) <= width {
+	if dispWidth(line) <= width {
 		return line
 	}
-	return runewidth.Truncate(plain, width, "…")
+	// ansi.Truncate は ANSI を解しつつ幅で切り、SGR を保持する (旧実装は色を落として
+	// いたが、色を残す方が望ましく複雑さも増えない)。
+	return truncateDisp(line, width, "…")
 }
 
 // isANSITerminator は ESC シーケンス中の rune r がシーケンスを終端する最終バイトか
@@ -528,32 +512,10 @@ func truncateKeepANSI(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	if strings.IndexByte(s, '\x1b') < 0 {
-		return runewidth.Truncate(s, width, "") // ESC 無し: 素の幅切りで十分
-	}
-	var b strings.Builder
-	w := 0
-	inEscape := false
-	for _, r := range s {
-		switch {
-		case inEscape:
-			b.WriteRune(r)
-			if isANSITerminator(r) {
-				inEscape = false
-			}
-		case r == '\x1b':
-			inEscape = true
-			b.WriteRune(r)
-		default:
-			rw := runewidth.RuneWidth(r)
-			if w+rw > width {
-				return b.String()
-			}
-			b.WriteRune(r)
-			w += rw
-		}
-	}
-	return b.String()
+	// ansi.Truncate は SGR を保持したまま表示幅で切る。切り詰め位置で開いていた色は
+	// 末尾に reset が付いて閉じられるが、呼び出し側 (overlay/toast) はいずれも直後に
+	// 自前の reset か box を挟むため無害。
+	return truncateDisp(s, width, "")
 }
 
 // dropToColumn は s のうち表示列 n (0-based) 以降の suffix を返す。ANSI 対応。cut より前に
@@ -565,37 +527,36 @@ func dropToColumn(s string, n int) string {
 	if n <= 0 {
 		return s
 	}
-	var sgr, esc strings.Builder
-	inEscape := false
+	var sgr strings.Builder
 	w := 0
-	runes := []rune(s)
-	i := 0
-	for ; i < len(runes) && w < n; i++ {
-		r := runes[i]
-		switch {
-		case inEscape:
-			esc.WriteRune(r)
-			if isANSITerminator(r) {
-				inEscape = false
-				sgr.WriteString(esc.String()) // cut 前の SGR を蓄積 (後で replay)
-				esc.Reset()
+	i := 0 // s へのバイト index
+	for i < len(s) && w < n {
+		if s[i] == '\x1b' { // SGR エスケープ (幅 0): 後で replay するため蓄積
+			j := i + 1
+			for j < len(s) && !isANSITerminator(rune(s[j])) {
+				j++
 			}
-		case r == '\x1b':
-			inEscape = true
-			esc.Reset()
-			esc.WriteRune(r)
-		default:
-			w += runewidth.RuneWidth(r)
+			if j < len(s) {
+				j++ // 終端バイトも含める
+			}
+			sgr.WriteString(s[i:j])
+			i = j
+			continue
 		}
+		// 次の grapheme クラスタを 1 個。⚠️ 等の複数 rune クラスタを分断/誤幅にしない
+		cluster, _, _, _ := uniseg.FirstGraphemeClusterInString(s[i:], -1)
+		cw := clusterWidth(cluster)
+		if w+cw > n { // 全角グリフが cut をまたいだ: そのグリフを落とし列 n に揃えて空白で埋める
+			i += len(cluster)
+			return sgr.String() + strings.Repeat(" ", (w+cw)-n) + s[i:]
+		}
+		w += cw
+		i += len(cluster)
 	}
-	if i >= len(runes) {
+	if i >= len(s) {
 		return "" // 列 n は内容の末尾以降: 右側に残すものが無い
 	}
-	pad := ""
-	if w > n { // 全角グリフが cut をまたいだ: 列 n に揃えるため空白で埋める
-		pad = strings.Repeat(" ", w-n)
-	}
-	return sgr.String() + pad + string(runes[i:])
+	return sgr.String() + s[i:]
 }
 
 func stripANSI(s string) string {

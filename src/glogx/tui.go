@@ -12,7 +12,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mattn/go-runewidth"
 )
 
 // Bubble Tea による less 風の対話ブラウズ (カーソル移動 + CI job 表示)。
@@ -2256,7 +2255,7 @@ func (m *browseModel) bgLine(text, bg string) string {
 		return clipToWidth(text, m.contentWidth())
 	}
 	text = clipToWidth(text, m.contentWidth())
-	pad := max(m.contentWidth()-runewidth.StringWidth(stripANSI(text)), 0)
+	pad := max(m.contentWidth()-dispWidth(text), 0)
 	return bg + ansiResetRe.ReplaceAllString(text, "$0"+bg) +
 		strings.Repeat(" ", pad) + ansiReset
 }
