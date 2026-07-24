@@ -206,8 +206,9 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, sha
 	//     角 ▖ ▗ で接地と角閉じを両立。▖ + ▁×n + ▗)。
 	var bottom string
 	if shadow {
-		// 接地ブロック ▖▁▗ は落ち影の一部なので中立の dim 固定 (枠色に染めない)。
-		bottom = paint("▖"+strings.Repeat("▁", fw-2)+"▗", ansiDim, colored)
+		// ▖▁▗ は「箱の下辺の枠線」(落ち影に接地させるため低ブロックで描くだけ) なので border 色で
+		// 染める。落ち影本体 (この行末の shadowRun や次のオフセット行) は下で dim のまま描く。
+		bottom = paint("▖"+strings.Repeat("▁", fw-2)+"▗", border, colored)
 	} else {
 		bottom = paint(b.bl+strings.Repeat(b.h, fw-2)+b.br, border, colored)
 	}
