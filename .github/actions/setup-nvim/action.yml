@@ -18,10 +18,20 @@ runs:
     #   確認 (2026-07-10 の CI 赤の真因)。nvim を 0.12 へ上げるときは treesitter main 系への
     #   移行とセットで行い、この pin も同時に更新すること。
     - name: Set up Neovim (0.11 系に pin)
-      uses: rhysd/action-setup-vim@v1
-      with:
-        neovim: true
-        version: v0.11.5
+      shell: bash
+      env:
+        NVIM_VERSION: v0.11.5
+      run: |
+        # 公式リリースを手動 DL する。rhysd/action-setup-vim はリトライ制御ができず、
+        # GitHub リリース配信の一時 504 (Gateway Time-out) で CI が落ちる実例があった
+        # (2026-07-24 の bench 赤)。actionlint (lint.yml) と同じ手動 DL + リトライ方針に揃える。
+        # curl の -f は 404/504 の HTML を tarball として保存して後段の tar を
+        # 「not in gzip format」で殺す分かりにくい失敗を防ぎ、--retry-all-errors で 504 も再試行する。
+        url="https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-linux-x86_64.tar.gz"
+        curl -fsSL --retry 5 --retry-all-errors -o "$RUNNER_TEMP/nvim.tar.gz" "$url"
+        mkdir -p "$RUNNER_TEMP/nvim"
+        tar xzf "$RUNNER_TEMP/nvim.tar.gz" -C "$RUNNER_TEMP/nvim" --strip-components=1
+        echo "$RUNNER_TEMP/nvim/bin" >> "$GITHUB_PATH"
 
     # プラグイン (lazy.nvim 本体 + 各プラグイン) の clone を ~/.local/share/nvim/lazy ごと
     # キャッシュしてネットワーク依存と再 clone を抑える。次段の :Lazy! restore が
