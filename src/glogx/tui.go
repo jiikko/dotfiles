@@ -227,7 +227,6 @@ type browseModel struct {
 	opts          *Options        // pull 後のコミット再読込に使う (revs / max-count)
 	pushPoll      map[string]bool // push 直後ポーリング対象の SHA (CI が見えたら外れる)
 	pollAttempts  int             // push 直後ポーリングの試行回数 (上限で諦める)
-	notice        string          // hint 行に出す一時メッセージ (次のキーで消える)
 	lastWarning   string          // w でコピーする直近の警告/エラー文字列 (トーストが消えても保持。issue 026)
 	tmuxPrefix    string          // tmux prefix の bubbletea 表記 (例 "ctrl+t")。"" = tmux 外/不明で機能オフ
 	prefixPending bool            // 直前のキーが tmux prefix。次の 1 キーを飲み込む
@@ -395,15 +394,6 @@ func (m *browseModel) showWarning(text string) {
 	m.toast.show(text, false)
 }
 
-// noticeError は hint 行に出すエラー系 notice を出しつつ lastWarning に残す (w でコピー可能に。
-// issue 026)。notice は次のキーで消える transient なので、エラー内容 (取得失敗の詳細など) を
-// コピーで拾えるよう lastWarning へも記録する。成功/情報系の notice はこれを通さない
-// (直接 m.notice に代入する) — lastWarning を無意味な文言で汚さないため。
-func (m *browseModel) noticeError(text string) {
-	m.notice = text
-	m.lastWarning = text
-}
-
 func (m *browseModel) showOrDeferClaudeUpdate(latest string, retry bool) tea.Cmd {
 	if m.toast.visible() {
 		if retry {
@@ -565,17 +555,17 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.ghErr != nil {
 			// 一時エラーをキャッシュすると「PR はありません」という誤答が固定される
 			// (次の p で再試行させる) ため、キャッシュは成功時のみ
-			m.noticeError("PR の取得に失敗しました: " + firstLine(msg.ghErr.Warning()))
-			return m, nil
+			m.showWarning("PR の取得に失敗しました: " + firstLine(msg.ghErr.Warning()))
+			return m, m.maybeTick()
 		}
 		m.prCache[msg.sha] = msg.pr
 		m.invalidateLines() // コミット行の PR バッジに反映
 		if msg.pr == nil {
-			m.notice = "このコミットに紐づく PR はありません"
-			return m, nil
+			m.toast.show("このコミットに紐づく PR はありません", false)
+			return m, m.maybeTick()
 		}
-		m.notice = fmt.Sprintf("PR #%d を開きます", msg.pr.Number)
-		return m, m.openURLCmd(msg.pr.URL)
+		m.toast.show(fmt.Sprintf("PR #%d を開きます", msg.pr.Number), true)
+		return m, tea.Batch(m.openURLCmd(msg.pr.URL), m.maybeTick())
 	case prStatusMsg:
 		// receive は当該 sha が表示中ならエラー時に close するため、sha 一致は receive の前に捕捉する。
 		// notice は「今表示中の対象」の失敗のときだけ出す: 別 sha へ移った後に届く遅延エラーで
@@ -583,15 +573,15 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		wasCurrent := msg.sha == m.prStatusOv.sha
 		m.prStatusOv.receive(msg.sha, msg.status, msg.ghErr)
 		if msg.ghErr != nil && wasCurrent {
-			// 一時エラーはキャッシュしない (receive 側)。理由は notice で伝える
-			m.noticeError("PR の取得に失敗しました: " + firstLine(msg.ghErr.Warning()))
+			// 一時エラーはキャッシュしない (receive 側)。理由はトーストで伝える
+			m.showWarning("PR の取得に失敗しました: " + firstLine(msg.ghErr.Warning()))
 		}
-		return m, nil
+		return m, m.maybeTick()
 	case diffMsg:
 		if err := m.diffOv.receive(msg); err != nil {
-			m.noticeError("diff の取得に失敗しました: " + firstLine(err.Error()))
+			m.showWarning("diff の取得に失敗しました: " + firstLine(err.Error()))
 		}
-		return m, nil
+		return m, m.maybeTick()
 	case prefixMsg:
 		m.tmuxPrefix = msg.key
 		return m, nil
@@ -705,15 +695,15 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.refetchAfterPush(), m.maybeTick())
 	case openURLMsg:
 		if msg.err != nil {
-			m.noticeError("ブラウザを開けませんでした: " + firstLine(msg.err.Error()))
+			m.showWarning("ブラウザを開けませんでした: " + firstLine(msg.err.Error()))
 		}
-		return m, nil
+		return m, m.maybeTick()
 	case editorClosedMsg:
 		// nvim を閉じて復帰。stdin 渡しなのでファイルは残らず、バッファも破棄済み
 		if msg.err != nil {
-			m.noticeError("nvim を開けませんでした: " + firstLine(msg.err.Error()))
+			m.showWarning("nvim を開けませんでした: " + firstLine(msg.err.Error()))
 		}
-		return m, nil
+		return m, m.maybeTick()
 	case tea.KeyMsg:
 		// 高速連打やパイプ入力では複数の文字キーが 1 つの KeyMsg (Runes 長 > 1) に
 		// まとまって届く。分解せず msg.String() だけ見ると "hhq" のような未知キー扱いに
@@ -732,13 +722,17 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Batch(cmds...)
 		}
-		return m.handleKey(msg.String())
+		// handleKey はキー経路の唯一の入口。ここで maybeTick を必ず束ねることで、ハンドラや
+		// openX()/copyX() の内部で出したトースト (バリデーション失敗・コピー結果など) が
+		// 呼び出し側で return m, nil されてもアニメ tick が確実に回る (トーストが shown=0 のまま
+		// 凍って見えない事故を防ぐ)。maybeTick は single-flight で冪等なので二重には走らない。
+		model, cmd := m.handleKey(msg.String())
+		return model, tea.Batch(cmd, m.maybeTick())
 	}
 	return m, nil
 }
 
 func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
-	m.notice = ""
 	m.prefixNote = "" // 中央トーストは次のキーで消える (prefix 系ハンドラだけが再セットする)
 	// C-g は即終了: tmux の C-g popup (bind -n C-g) をトグル風に開閉するため
 	// (開くキーと同じキーで閉じる)。本家 glog には無い割当。
@@ -830,11 +824,10 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// C = claude update (確認なし即実行。ユーザー選定 2026-07-22)。glogx の独自機能で
 	// U=usage と並ぶ大文字の「Claude Code メタ操作」。実行中は spinner モーダルを出す。
 	if key == "C" {
-		m.notice = ""
 		return m, tea.Batch(m.actModal.startUpdate(), m.maybeTick())
 	}
-	// w = 直近の警告/エラーをクリップボードへコピー (issue 026)。トーストや notice は数秒/次キーで
-	// 消えるが lastWarning は保持しているので消えた後でもコピーできる。ghErr (CI 取得失敗の sticky
+	// w = 直近の警告/エラーをクリップボードへコピー (issue 026)。トーストは数秒で消えるが
+	// lastWarning は保持しているので消えた後でもコピーできる。ghErr (CI 取得失敗の sticky
 	// 警告) は lastWarning に無くても hint に出続けているので fallback で拾う。tmux popup 内では
 	// copy-mode に入れないため、pbcopy 直書きの copyToClipboard が唯一の取り出し口 (y/Y と同じ)。
 	if key == "w" {
@@ -849,11 +842,13 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 			return m, m.maybeTick()
 		}
 		if err := copyToClipboard(warn); err != nil {
-			m.notice = "コピーに失敗しました: " + firstLine(err.Error())
-			return m, nil
+			// コピー失敗は error トーストで出すが lastWarning は汚さない (コピー対象の警告を
+			// 上書きして w の再試行を潰さないため。848 と同じ理由で showWarning は通さない)。
+			m.toast.show("コピーに失敗しました: "+firstLine(err.Error()), false)
+			return m, m.maybeTick()
 		}
-		m.notice = "警告をコピーしました"
-		return m, nil
+		m.toast.show("警告をコピーしました", true)
+		return m, m.maybeTick()
 	}
 	// q はビューのスタックを 1 段戻る (tig 流。ユーザー要望): 詳細 → job 一覧 →
 	// コミット一覧、と閉じていき、最上位でだけ終了。即終了したいときは Ctrl-C
@@ -931,7 +926,7 @@ func (m *browseModel) confirmPush() tea.Cmd {
 func (m *browseModel) reloadAfterPull() tea.Cmd {
 	commits, err := LoadCommits(m.opts, m.colored)
 	if err != nil {
-		m.noticeError("pull 後の再読込に失敗しました: " + firstLine(err.Error()))
+		m.showWarning("pull 後の再読込に失敗しました: " + firstLine(err.Error()))
 		return nil
 	}
 	// pull 前の SHA 集合。pull 後に先頭へ増えた新規コミット数を「既知 SHA に当たるまで」で
@@ -1349,7 +1344,7 @@ func (m *browseModel) handleDetailKey(key string) (tea.Model, tea.Cmd) {
 func (m *browseModel) copyJobContext() tea.Cmd {
 	job, ok := m.focusedJob()
 	if !ok {
-		m.notice = "job を選択してから Y で詳細をコピーします"
+		m.toast.show("job を選択してから Y で詳細をコピーします", false)
 		return nil
 	}
 	if lines := m.detailOv.lines(m.detailKey()); len(lines) > 0 {
@@ -1385,10 +1380,10 @@ func (m *browseModel) copyJobContextLines(job CheckDetail, lines []string) {
 	b.WriteString("\n")
 	b.WriteString(jobLogText(lines))
 	if err := copyToClipboard(b.String()); err != nil {
-		m.notice = "コピーに失敗しました: " + firstLine(err.Error())
+		m.toast.show("コピーに失敗しました: "+firstLine(err.Error()), false)
 		return
 	}
-	m.notice = fmt.Sprintf("job 詳細をコピーしました (%d 行)", len(lines))
+	m.toast.show(fmt.Sprintf("job 詳細をコピーしました (%d 行)", len(lines)), true)
 }
 
 // askRerun はフォーカス中 job の CI 再実行確認 (y/N) に入る (job パネル / job 詳細の r キー)。
@@ -1399,11 +1394,11 @@ func (m *browseModel) askRerun() {
 		return
 	}
 	if job.CheckID == 0 {
-		m.notice = "GitHub Actions の job ではないため再実行できません"
+		m.toast.show("GitHub Actions の job ではないため再実行できません", false)
 		return
 	}
 	if job.State != StateFailure {
-		m.notice = "再実行できるのは失敗した job だけです"
+		m.toast.show("再実行できるのは失敗した job だけです", false)
 		return
 	}
 	repo, sha, id := m.repo, m.panelSHA, job.CheckID
@@ -1539,7 +1534,7 @@ func (m *browseModel) commitURL() string {
 func (m *browseModel) openCommitURL() tea.Cmd {
 	url := m.commitURL()
 	if url == "" {
-		m.notice = "GitHub の remote が無いため開けません"
+		m.toast.show("GitHub の remote が無いため開けません", false)
 		return nil
 	}
 	return m.openURLCmd(url)
@@ -1553,14 +1548,14 @@ func (m *browseModel) copyFocusURL() {
 		url = m.commitURL()
 	}
 	if url == "" {
-		m.notice = "コピーできる URL がありません"
+		m.toast.show("コピーできる URL がありません", false)
 		return
 	}
 	if err := copyToClipboard(url); err != nil {
-		m.notice = "コピーに失敗しました: " + firstLine(err.Error())
+		m.toast.show("コピーに失敗しました: "+firstLine(err.Error()), false)
 		return
 	}
-	m.notice = "コピーしました: " + url
+	m.toast.show("コピーしました: "+url, true)
 }
 
 // openPanel はカーソル位置のコミットの CI job パネルを開く。詳細が未取得
@@ -1715,7 +1710,7 @@ func (m *browseModel) closePanel() {
 // http(s) だけを開く。
 func (m *browseModel) openURLCmd(url string) tea.Cmd {
 	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "http://") {
-		m.notice = "http(s) 以外の URL は開きません"
+		m.toast.show("http(s) 以外の URL は開きません", false)
 		return nil
 	}
 	return func() tea.Msg {
@@ -1741,7 +1736,7 @@ func jobLogText(lines []string) string {
 func (m *browseModel) openJobLogInEditor() tea.Cmd {
 	lines := m.detailOv.lines(m.detailKey())
 	if len(lines) == 0 {
-		m.notice = "開けるログがありません"
+		m.toast.show("開けるログがありません", false)
 		return nil
 	}
 	// -R (readonly) + nomodifiable + buftype=nofile で「閲覧してコピーするだけ」の scratch に
@@ -1759,7 +1754,7 @@ func (m *browseModel) openJob() tea.Cmd {
 		return nil
 	}
 	if job.URL == "" {
-		m.notice = "この job には詳細ページの URL がありません"
+		m.toast.show("この job には詳細ページの URL がありません", false)
 		return nil
 	}
 	return m.openURLCmd(job.URL)
@@ -1772,17 +1767,17 @@ func (m *browseModel) openPR() tea.Cmd {
 		return nil
 	}
 	if !m.hasRepo {
-		m.notice = "GitHub の remote が無いため PR を取得できません"
+		m.toast.show("GitHub の remote が無いため PR を取得できません", false)
 		return nil
 	}
 	sha := m.commits[m.cursor].SHA
 	if m.statuses[sha] == StateUnpushed {
-		m.notice = "未 push のコミットに PR はありません"
+		m.toast.show("未 push のコミットに PR はありません", false)
 		return nil
 	}
 	if pr, ok := m.prCache[sha]; ok {
 		if pr == nil {
-			m.notice = "このコミットに紐づく PR はありません"
+			m.toast.show("このコミットに紐づく PR はありません", false)
 			return nil
 		}
 		return m.openURLCmd(pr.URL)
@@ -1791,7 +1786,9 @@ func (m *browseModel) openPR() tea.Cmd {
 		return nil
 	}
 	m.prBusy[sha] = true
-	m.notice = "PR を検索中..."
+	// 進行中トースト (…) は直後に届く prMsg の結果トーストで上書きされる。tick は呼び出し側
+	// (handleListKey/handlePanelKey の maybeTick) が回す。
+	m.toast.showInfo("PR を検索中...")
 	repo := m.repo
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
@@ -1809,12 +1806,12 @@ func (m *browseModel) openPRStatus() tea.Cmd {
 		return nil
 	}
 	if !m.hasRepo {
-		m.notice = "GitHub の remote が無いため PR を取得できません"
+		m.toast.show("GitHub の remote が無いため PR を取得できません", false)
 		return nil
 	}
 	sha := m.commits[m.cursor].SHA
 	if m.statuses[sha] == StateUnpushed {
-		m.notice = "未 push のコミットに PR はありません"
+		m.toast.show("未 push のコミットに PR はありません", false)
 		return nil
 	}
 	if !m.prStatusOv.open(sha) {
@@ -1843,9 +1840,9 @@ func (m *browseModel) handlePRStatusKey(key string) (tea.Model, tea.Cmd) {
 	case "y":
 		if pr := m.prStatusOv.current(); pr != nil {
 			if err := copyToClipboard(pr.URL); err != nil {
-				m.notice = "コピーに失敗しました: " + firstLine(err.Error())
+				m.toast.show("コピーに失敗しました: "+firstLine(err.Error()), false)
 			} else {
-				m.notice = "コピーしました: " + pr.URL
+				m.toast.show("コピーしました: "+pr.URL, true)
 			}
 		}
 	}
@@ -2290,9 +2287,6 @@ func (m *browseModel) hintLine() string {
 	}
 	if m.fetching {
 		hint = m.spinner() + " CI 状態を取得中...  " + hint
-	}
-	if m.notice != "" {
-		hint = "⚠ " + m.notice + "  " + hint
 	}
 	if m.ghErr != nil {
 		hint = "⚠ " + firstLine(m.ghErr.Warning()) + "  " + hint

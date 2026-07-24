@@ -93,6 +93,20 @@ func deliverDiffMsg(t *testing.T, m *browseModel, cmd tea.Cmd) {
 	deliver(cmd())
 }
 
+// runCmdTree は cmd を再帰実行する。tea.Batch (BatchMsg) は各要素を辿るので、開く Cmd が
+// maybeTick と束ねられていても副作用 (openInBrowser など) が発火する。
+func runCmdTree(cmd tea.Cmd) {
+	if cmd == nil {
+		return
+	}
+	switch msg := cmd().(type) {
+	case tea.BatchMsg:
+		for _, c := range msg {
+			runCmdTree(c)
+		}
+	}
+}
+
 // withFailedJob は commit idx の details を「失敗 job (CheckID あり)」1 件で埋める。
 func withFailedJob(m *browseModel, idx int, checkID int64, state CIState) {
 	m.details[m.commits[idx].SHA] = []CheckDetail{

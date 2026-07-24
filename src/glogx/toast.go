@@ -37,7 +37,8 @@ const (
 // 動くため tmux-toast (floating pane) は popup に隠れて出せず、glogx 自身の TUI 内に描く。
 type toast struct {
 	text  string
-	ok    bool // true=成功 (✓緑) / false=失敗 (✗赤)
+	ok    bool // true=成功 (✓緑) / false=失敗 (✗赤)。info=true のときは無視される
+	info  bool // true=進行中/中立 (…シアン)。ok より優先し、完了/失敗どちらでもない状態を表す
 	seq   int  // 世代: 退場タイマーの有効性判定 + 再表示リセット
 	phase toastPhase
 	shown int // 現在見せている箱の左カラム数 (0=画面右外に収納 / boxWidth=全幅表示)
@@ -47,7 +48,16 @@ type toast struct {
 // tick を回すこと (アニメは tickMsg で進む)。既存トーストは上書きし世代を進める。
 func (t *toast) show(text string, ok bool) {
 	t.seq++
-	t.text, t.ok = text, ok
+	t.text, t.ok, t.info = text, ok, false
+	t.phase = toastEntering
+	t.shown = 0
+}
+
+// showInfo は進行中/中立のトースト (…シアン) を出す。成功でも失敗でもない一時状態 (例:「検索中」)
+// 用で、直後に show(…) の結果トーストで上書きされることを前提とする。
+func (t *toast) showInfo(text string) {
+	t.seq++
+	t.text, t.info = text, true
 	t.phase = toastEntering
 	t.shown = 0
 }
@@ -103,7 +113,10 @@ func (t *toast) startLeaving(msg toastMsg) {
 // fullBox は内容幅にフィットした影付き小箱 (全行)。スライドの基準になる全幅・全行の算出にも使う。
 func (t *toast) fullBox(colored bool) []string {
 	mark, color := "✓", ansiGreen
-	if !t.ok {
+	switch {
+	case t.info:
+		mark, color = "…", ansiCyan
+	case !t.ok:
 		mark, color = "✗", ansiRed
 	}
 	row := paint(mark+" "+t.text, color, colored)

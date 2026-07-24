@@ -301,8 +301,8 @@ func TestBrowsePanelJobCursorAndOpen(t *testing.T) {
 	if cmd != nil {
 		t.Errorf("URL なし job で Cmd が返った")
 	}
-	if !strings.Contains(m.hintLine(), "URL がありません") {
-		t.Errorf("notice が hint に出ていない: %q", m.hintLine())
+	if !strings.Contains(m.toast.text, "URL がありません") {
+		t.Errorf("トーストが出ていない: %q", m.toast.text)
 	}
 	// k でタイトル行まで戻れば Enter は「閉じる」に戻る
 	m.handleKey("k")
@@ -460,8 +460,8 @@ func TestBrowseOpenJobRejectsNonHTTP(t *testing.T) {
 	if called {
 		t.Errorf("file:// URL がブラウザに渡された")
 	}
-	if !strings.Contains(m.hintLine(), "http(s) 以外") {
-		t.Errorf("notice が出ていない: %q", m.hintLine())
+	if !strings.Contains(m.toast.text, "http(s) 以外") {
+		t.Errorf("トーストが出ていない: %q", m.toast.text)
 	}
 }
 
@@ -507,10 +507,10 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	if string(buf) != "boom\nat foo.go:10\n" {
 		t.Fatalf("stdin の中身 = %q", string(buf))
 	}
-	// エラーで閉じたら notice、成功なら無し
+	// エラーで閉じたら失敗トースト、成功なら無し
 	m.Update(editorClosedMsg{err: errors.New("nvim: not found")})
-	if !strings.Contains(m.notice, "nvim を開けません") {
-		t.Errorf("nvim 起動失敗の notice が出ない: %q", m.notice)
+	if m.toast.ok || !strings.Contains(m.toast.text, "nvim を開けません") {
+		t.Errorf("nvim 起動失敗の失敗トーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
 	}
 
 	// ログが空なら起動しない

@@ -600,8 +600,8 @@ func TestBrowseRerunGuards(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	m.handleKey("r")
-	if m.actModal.rerunConfirm || !strings.Contains(m.notice, "GitHub Actions") {
-		t.Fatalf("StatusContext job で確認に入った / notice が出ない: %q", m.notice)
+	if m.actModal.rerunConfirm || !strings.Contains(m.toast.text, "GitHub Actions") {
+		t.Fatalf("StatusContext job で確認に入った / トーストが出ない: %q", m.toast.text)
 	}
 	// 失敗以外の job は再実行不可
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
@@ -610,14 +610,14 @@ func TestBrowseRerunGuards(t *testing.T) {
 	m2.openPanel()
 	m2.handleKey("j")
 	m2.handleKey("r")
-	if m2.actModal.rerunConfirm || !strings.Contains(m2.notice, "失敗") {
-		t.Fatalf("成功 job で確認に入った / notice が出ない: %q", m2.notice)
+	if m2.actModal.rerunConfirm || !strings.Contains(m2.toast.text, "失敗") {
+		t.Fatalf("成功 job で確認に入った / トーストが出ない: %q", m2.toast.text)
 	}
-	// タイトル行フォーカス (job 未選択) では何も起きない
-	m2.notice = ""
+	// タイトル行フォーカス (job 未選択) では何も起きない (トーストは出さない)
+	m2.toast = toast{}
 	m2.panelCursor = -1
 	m2.handleKey("r")
-	if m2.actModal.rerunConfirm || m2.notice != "" {
+	if m2.actModal.rerunConfirm || m2.toast.visible() {
 		t.Fatal("タイトル行フォーカスで r が反応した")
 	}
 	if called {
@@ -742,12 +742,15 @@ func TestBrowseCopyLastWarning(t *testing.T) {
 	// 不変条件の核: トースト表示状態をリセット (消滅) しても w でコピーできる
 	m.toast = toast{}
 	m.handleKey("w")
-	if copied != "push に失敗: boom" || !strings.Contains(m.notice, "警告をコピーしました") {
-		t.Fatalf("トースト消滅後に w でコピーできない: copied=%q notice=%q", copied, m.notice)
+	if copied != "push に失敗: boom" || !strings.Contains(m.toast.text, "警告をコピーしました") {
+		t.Fatalf("トースト消滅後に w でコピーできない: copied=%q toast=%q", copied, m.toast.text)
+	}
+	if !m.toast.ok {
+		t.Fatalf("コピー成功トーストが緑 (ok) でない: ok=%v", m.toast.ok)
 	}
 }
 
-// コピー失敗時は理由を notice に出す (既存 y のエラー経路と同型)。
+// コピー失敗時は理由を error トーストに出す。lastWarning は汚さない (コピー対象の警告を保持)。
 func TestBrowseCopyLastWarningError(t *testing.T) {
 	orig := copyToClipboard
 	copyToClipboard = func(string) error { return errors.New("clipboard down") }
@@ -755,8 +758,11 @@ func TestBrowseCopyLastWarningError(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.showWarning("なにか失敗")
 	m.handleKey("w")
-	if !strings.Contains(m.notice, "コピーに失敗しました") {
-		t.Fatalf("コピー失敗の notice が出ない: %q", m.notice)
+	if m.toast.ok || !strings.Contains(m.toast.text, "コピーに失敗しました") {
+		t.Fatalf("コピー失敗の error トーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
+	}
+	if m.lastWarning != "なにか失敗" {
+		t.Fatalf("コピー失敗トーストが lastWarning を汚した: %q", m.lastWarning)
 	}
 }
 
@@ -803,20 +809,21 @@ func TestBrowseCopyWarningGhErrFallback(t *testing.T) {
 	}
 }
 
-// notice 系エラー (noticeError 経由) は次キーで表示が消えても w でコピーできる (issue 026 #1)。
-func TestBrowseCopyWarningFromNoticeError(t *testing.T) {
+// 取得失敗系エラー (showWarning 経由) は表示トーストが消えても w でコピーできる (issue 026 #1)。
+func TestBrowseCopyWarningFromShowWarning(t *testing.T) {
 	var copied string
 	orig := copyToClipboard
 	copyToClipboard = func(text string) error { copied = text; return nil }
 	t.Cleanup(func() { copyToClipboard = orig })
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.noticeError("diff の取得に失敗しました: boom")
+	m.showWarning("diff の取得に失敗しました: boom")
 	if m.lastWarning != "diff の取得に失敗しました: boom" {
-		t.Fatalf("noticeError が lastWarning に残さない: %q", m.lastWarning)
+		t.Fatalf("showWarning が lastWarning に残さない: %q", m.lastWarning)
 	}
-	m.handleKey("w") // handleKey 冒頭で notice はクリアされるが lastWarning は残る
+	m.toast = toast{} // トースト消滅をシミュレート
+	m.handleKey("w")  // トーストが消えても lastWarning は残る
 	if !strings.Contains(copied, "diff の取得に失敗") {
-		t.Fatalf("noticeError が w でコピーされない: copied=%q", copied)
+		t.Fatalf("showWarning が w でコピーされない: copied=%q", copied)
 	}
 }
 

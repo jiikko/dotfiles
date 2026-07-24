@@ -31,14 +31,14 @@ func TestBrowseCopyURL(t *testing.T) {
 	if copied != "https://github.com/o/r/runs/1" {
 		t.Errorf("job URL = %q", copied)
 	}
-	if !strings.Contains(m.hintLine(), "コピーしました") {
-		t.Errorf("notice が出ていない: %q", m.hintLine())
+	if !m.toast.ok || !strings.Contains(m.toast.text, "コピーしました") {
+		t.Errorf("コピー成功トーストが出ていない: %q ok=%v", m.toast.text, m.toast.ok)
 	}
-	// URL なし job (job1) は notice
+	// URL なし job (job1) は失敗トースト
 	m.handleKey("j")
 	m.handleKey("y")
-	if !strings.Contains(m.hintLine(), "コピーできる URL がありません") {
-		t.Errorf("URL なしの notice が出ていない: %q", m.hintLine())
+	if m.toast.ok || !strings.Contains(m.toast.text, "コピーできる URL がありません") {
+		t.Errorf("URL なしの失敗トーストが出ていない: %q ok=%v", m.toast.text, m.toast.ok)
 	}
 }
 
@@ -94,9 +94,12 @@ func TestBrowseOpenPR(t *testing.T) {
 	if cmd == nil {
 		t.Fatalf("prMsg (PR あり) で open Cmd が返らない")
 	}
-	cmd()
+	runCmdTree(cmd) // open Cmd は maybeTick と Batch されるので再帰実行する
 	if opened != "https://github.com/o/r/pull/12" {
 		t.Errorf("開いた URL = %q", opened)
+	}
+	if !m.toast.ok || !strings.Contains(m.toast.text, "PR #12") {
+		t.Errorf("PR を開く成功トーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
 	}
 	// キャッシュ済みなので 2 回目の p は再取得せず即 open
 	_, cmd = m.handleKey("p")
@@ -143,8 +146,8 @@ func TestBrowseOpenPRErrorNotCached(t *testing.T) {
 	if _, ok := m.prCache[sha]; ok {
 		t.Fatalf("エラー結果がキャッシュされている")
 	}
-	if !strings.Contains(m.hintLine(), "PR の取得に失敗") {
-		t.Errorf("エラー notice が出ない: %q", m.hintLine())
+	if m.toast.ok || !strings.Contains(m.toast.text, "PR の取得に失敗") {
+		t.Errorf("エラートーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
 	}
 	// 再度 p → 再取得が走る
 	_, cmd := m.handleKey("p")
@@ -158,8 +161,8 @@ func TestBrowseOpenPRNotFound(t *testing.T) {
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StateSuccess
 	m.Update(prMsg{sha: sha, pr: nil})
-	if !strings.Contains(m.hintLine(), "PR はありません") {
-		t.Errorf("PR なしの notice が出ない: %q", m.hintLine())
+	if !strings.Contains(m.toast.text, "PR はありません") {
+		t.Errorf("PR なしのトーストが出ない: %q", m.toast.text)
 	}
 	// nil もキャッシュされ、再度 p を押しても API へ行かない
 	_, cmd := m.handleKey("p")
@@ -174,8 +177,8 @@ func TestBrowseOpenPRUnpushed(t *testing.T) {
 	if _, cmd := m.handleKey("p"); cmd != nil {
 		t.Errorf("未 push コミットで PR 取得が走った")
 	}
-	if !strings.Contains(m.hintLine(), "未 push") {
-		t.Errorf("未 push の notice が出ない: %q", m.hintLine())
+	if !strings.Contains(m.toast.text, "未 push") {
+		t.Errorf("未 push のトーストが出ない: %q", m.toast.text)
 	}
 }
 
@@ -259,7 +262,7 @@ func TestBrowseDiffFromPanelUsesPanelSHA(t *testing.T) {
 	}
 }
 
-func TestBrowseDiffErrorShowsNoticeAndCloses(t *testing.T) {
+func TestBrowseDiffErrorShowsToastAndCloses(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
 	stubDiff(t, nil, errors.New("boom"))
 	_, cmd := m.handleKey("d")
@@ -267,11 +270,11 @@ func TestBrowseDiffErrorShowsNoticeAndCloses(t *testing.T) {
 	if m.diffOv.sha != "" {
 		t.Error("取得失敗時にポップアップが開いたまま")
 	}
-	if !strings.Contains(m.notice, "diff の取得に失敗") {
-		t.Errorf("notice = %q", m.notice)
+	if m.toast.ok || !strings.Contains(m.toast.text, "diff の取得に失敗") {
+		t.Errorf("失敗トーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
 	}
-	if strings.Contains(m.hintLine(), "diff の取得に失敗") == false {
-		t.Errorf("hint に notice が出ていない: %q", m.hintLine())
+	if m.lastWarning != m.toast.text {
+		t.Errorf("取得失敗が lastWarning に残らない: %q", m.lastWarning)
 	}
 }
 
@@ -443,8 +446,8 @@ func TestBrowseListOpenCommitURLNoRepo(t *testing.T) {
 	if cmd != nil {
 		t.Error("repo なしで open コマンドが返った")
 	}
-	if m.notice == "" {
-		t.Error("repo なしの notice が出ていない")
+	if !m.toast.visible() || m.toast.ok {
+		t.Errorf("repo なしの失敗トーストが出ていない: visible=%v ok=%v", m.toast.visible(), m.toast.ok)
 	}
 }
 
@@ -471,8 +474,8 @@ func TestBrowseCopyJobContextCached(t *testing.T) {
 	if strings.Contains(copied, "\x1b[") {
 		t.Fatal("コピー内容に ANSI が残っている")
 	}
-	if !strings.Contains(m.notice, "コピーしました") {
-		t.Fatalf("完了 notice が出ない: %q", m.notice)
+	if !m.toast.ok || !strings.Contains(m.toast.text, "コピーしました") {
+		t.Fatalf("完了トーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
 	}
 }
 
@@ -578,19 +581,20 @@ func TestBrowsePRStatusGuardsAndErrors(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateUnpushed)
 	// 未 push は取得しない
-	if _, cmd := m.handleKey("P"); cmd != nil || m.prStatusOv.visible() {
-		t.Fatalf("未 push で PR 取得に入った: %q", m.notice)
+	// 未 push は取得コマンドを返さないが、理由の失敗トーストは出す (cmd は maybeTick を含む)
+	if m.handleKey("P"); m.prStatusOv.visible() {
+		t.Fatalf("未 push で PR 取得に入った: %q", m.toast.text)
 	}
-	if !strings.Contains(m.notice, "未 push") {
-		t.Fatalf("未 push notice が出ない: %q", m.notice)
+	if !strings.Contains(m.toast.text, "未 push") {
+		t.Fatalf("未 push トーストが出ない: %q", m.toast.text)
 	}
-	// 取得エラーはキャッシュせず閉じ、notice を出す (次の P で再試行できる)
+	// 取得エラーはキャッシュせず閉じ、失敗トーストを出す (次の P で再試行できる)
 	m.statuses = statusesFor(m, StateSuccess)
 	m.handleKey("P")
 	sha := m.commits[0].SHA
 	m.Update(prStatusMsg{sha: sha, ghErr: &GHError{Kind: GHOther, Detail: "boom"}})
-	if m.prStatusOv.visible() || !strings.Contains(m.notice, "PR の取得に失敗") {
-		t.Fatalf("エラーで閉じない / notice が出ない: visible=%v notice=%q", m.prStatusOv.visible(), m.notice)
+	if m.prStatusOv.visible() || m.toast.ok || !strings.Contains(m.toast.text, "PR の取得に失敗") {
+		t.Fatalf("エラーで閉じない / 失敗トーストが出ない: visible=%v toast=%q", m.prStatusOv.visible(), m.toast.text)
 	}
 	if _, ok := m.prStatusOv.cache[sha]; ok {
 		t.Fatal("エラーがキャッシュされた (PR なし誤答が固定される)")
@@ -679,8 +683,8 @@ func TestPRStatusOverlayNoDoubleFetch(t *testing.T) {
 }
 
 // 回帰 (レビュー確定 low): 別 sha へ移った後に届く PR 取得エラーで、表示中 (別 sha) に無関係な
-// 失敗 notice を被せない。
-func TestBrowsePRStatusStaleErrorNoNotice(t *testing.T) {
+// 失敗トーストを被せない。
+func TestBrowsePRStatusStaleErrorNoToast(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateSuccess)
 	shaA := m.commits[0].SHA
@@ -690,10 +694,10 @@ func TestBrowsePRStatusStaleErrorNoNotice(t *testing.T) {
 	m.cursor = 1
 	m.handleKey("P") // B を開く (fetch B)
 	m.Update(prStatusMsg{sha: shaB, status: &PRStatus{PRRef: PRRef{Number: 2, State: "OPEN"}, Title: "b"}})
-	m.notice = ""
+	m.toast = toast{}
 	m.Update(prStatusMsg{sha: shaA, ghErr: &GHError{Kind: GHOther, Detail: "boom"}}) // A の遅延エラー
-	if m.notice != "" {
-		t.Fatalf("別 sha の遅延エラーで notice が出た: %q", m.notice)
+	if m.toast.visible() {
+		t.Fatalf("別 sha の遅延エラーでトーストが出た: %q", m.toast.text)
 	}
 	if !m.prStatusOv.visible() {
 		t.Fatal("別 sha の遅延エラーで B の表示が閉じられた")
