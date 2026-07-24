@@ -230,7 +230,6 @@ type browseModel struct {
 	lastWarning   string          // w でコピーする直近の警告/エラー文字列 (トーストが消えても保持。issue 026)
 	tmuxPrefix    string          // tmux prefix の bubbletea 表記 (例 "ctrl+t")。"" = tmux 外/不明で機能オフ
 	prefixPending bool            // 直前のキーが tmux prefix。次の 1 キーを飲み込む
-	prefixNote    string          // tmux prefix 誤爆の中央トースト (次のキーで消える。dim フッターより目立つ)
 	verbatim      []Line          // git log 実出力の取り込み行 (nil = 自前レンダリング)
 
 	// usage オーバーレイ (右上に Claude Code の /usage 残量を重ねる)。ユーザー要望 2026-07-21。
@@ -733,7 +732,6 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
-	m.prefixNote = "" // 中央トーストは次のキーで消える (prefix 系ハンドラだけが再セットする)
 	// C-g は即終了: tmux の C-g popup (bind -n C-g) をトグル風に開閉するため
 	// (開くキーと同じキーで閉じる)。本家 glog には無い割当。
 	if key == "ctrl+c" || key == "ctrl+g" {
@@ -775,14 +773,14 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// tmux 外や取得失敗では tmuxPrefix="" のままこの機能ごと無効になる。ユーザー要望。
 	if m.prefixPending && key != m.tmuxPrefix {
 		m.prefixPending = false
-		// 中央トーストで目立たせる (dim フッターだと見落とす、とのユーザー要望 2026-07-21)
-		m.prefixNote = "popup 内では tmux の window 操作はできません\nC-g で popup を閉じてから prefix+" + key
-		return m, nil
+		// 右下トーストで通知する (中央ダイアログだと操作を遮って重い、とのユーザー要望 2026-07-24)
+		m.toast.show("window 操作は C-g で popup を閉じてから prefix+"+key, false)
+		return m, m.maybeTick()
 	}
 	if m.tmuxPrefix != "" && key == m.tmuxPrefix {
 		m.prefixPending = true
-		m.prefixNote = "tmux prefix は popup 内では効きません\nC-g で popup を閉じてから"
-		return m, nil
+		m.toast.show("tmux prefix は popup では効きません (C-g で閉じてから)", false)
+		return m, m.maybeTick()
 	}
 	// usage オーバーレイのトグル / dismiss。モーダル (push/pull 確認・pushWarn)・prefix・
 	// 実行中ガードを素通りしないよう必ずそれらの後に置く: 先頭に置くと U が push 確認を
@@ -1233,15 +1231,9 @@ func (m *browseModel) unpushedCount() int {
 	return n
 }
 
-// centerModalLines は中央モーダル/トーストの描画行。tmux prefix 誤爆トースト (prefixNote) を
-// 最優先で描き、無ければ action モーダル (push/pull/update) を描く。どれも非表示なら nil。
-// prefixNote は tmux の関心事なので actionModal に同居させず、ここで合流させる (元の描画順を保持)。
+// centerModalLines は中央モーダルの描画行 (action モーダル: push/pull/update)。非表示なら nil。
+// tmux prefix 誤爆のフィードバックは中央ダイアログをやめて右下 toast へ移した (2026-07-24)。
 func (m *browseModel) centerModalLines() []string {
-	if m.prefixNote != "" {
-		rows := append(strings.Split(m.prefixNote, "\n"),
-			"", paint("何かキーで閉じる", ansiDim, m.colored))
-		return centerBox(" ⚠ tmux ", rows, m.contentWidth(), m.colored)
-	}
 	return m.actModal.boxLines(m.contentWidth(), m.colored, m.spinner(), m.unpushedCount())
 }
 

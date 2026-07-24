@@ -13,7 +13,7 @@ import (
 // browseModel から切り出す。実行そのもの (runGitPush → pushPoll 編成 / runGitPullRebase →
 // reloadAfterPull / runClaudeUpdate の結果整形) は CI・コミット状態と密結合なので browseModel に
 // 残し、この型は「どのモーダルが出ているか」「キーをどう捌くか」「どう描くか」だけを持つ。
-// prefixNote (tmux prefix 誤爆トースト) は tmux の関心事なので同居させない (browseModel が描く)。
+// tmux prefix 誤爆のフィードバックは右下 toast で出す (browseModel が持つ)。ここには同居させない。
 type actionModal struct {
 	pushConfirm  bool   // b の push 確認中 (y/N)
 	pushing      bool   // git push 実行中 (終了以外のキーを無視)

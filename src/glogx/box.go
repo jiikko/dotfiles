@@ -10,8 +10,7 @@ import (
 // など) は tui.go に残す。
 
 // centerBox は狭い幅 (最大 44) の影付きモーダル行を組む。水平センタリングと背景リストへの
-// 合成は描画時に overlayCenteredBox が行う (行を塗り潰さず左右の背景を残す)。action モーダルと
-// prefixNote トーストで共用する。
+// 合成は描画時に overlayCenteredBox が行う (行を塗り潰さず左右の背景を残す)。action モーダルが使う。
 func centerBox(title string, rows []string, width int, colored bool) []string {
 	if width <= 0 {
 		width = 80
@@ -84,7 +83,7 @@ func buildPanelBox(title string, rows []string, width int, colored bool) []strin
 }
 
 // buildShadowPanelBox は buildPanelBox の右下ドロップシャドウ付き版。呼び出し元は 4 系統の
-// 小面積モーダル/トースト (centerBox 経由の action モーダル + tmux prefix 警告 / toast / usage)
+// 小面積モーダル/トースト (centerBox 経由の action モーダル + toast / usage)
 // と、画面最外周フレーム (wrapWindowFrame → buildPanelBoxImpl を直接呼ぶ) のみ。
 //
 // ⚠️ 影の適用方針: 小面積のモーダル/トーストと最外周フレームに限る。リストのテキストに重なる
