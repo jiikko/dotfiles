@@ -57,8 +57,9 @@ Date:   Thu Jul 16 14:03:21 2026 +0900
   (conflict は自動 abort で元に戻す。未コミット変更があるときは案内して中止)。push/pull 後は
   実行中の CI をポーリングして結果を反映する。job パネル / job 詳細の `r` で失敗 job を
   再実行 (y/N 確認。`gh run rerun --job`。反映されるまでパネルをポーリングして追従)
-- **Claude Code 連携**: `U` で `/usage` の残量を右上モーダルに表示 (1 分ごとに自動更新)、
-  `C` で `claude update` を実行 (結果を下部モーダルに表示)
+- **Claude Code 連携**: `U` で `/usage` の残量を右上モーダルに表示 (表示中は 1 分ごとに自動更新。
+  非表示のあいだは更新を止め、再表示時に古ければ取り直す)、`C` で `claude update` を実行
+  (結果を下部モーダルに表示)
 - **tmux popup 対応**: ctrl+g の popup 内では tmux prefix が window 操作に効かないため、
   押すとその旨を案内し、続く 1 キーを無視する (誤爆でコミットを選ばない)
 
@@ -107,7 +108,7 @@ glogx --help              # ヘルプ (キー操作・記号・終了コード�
 | `P` | **PR の状態ポップアップ** (state / draft / レビュー承認 / conflict / CI をブラウザなしで確認。`o` でブラウザ・`y` で URL コピー・`P`/`q`/`h` で閉じる。mergeable は GitHub 側の遅延計算中は「計算中」表示) |
 | `b` | **git push** (y/N 確認。未 push が無ければ警告のみ。diff 表示中の `b` はスクロール) |
 | `u` | **git pull --rebase** (y/N 確認。conflict は自動 abort で元に戻す。未コミット変更があると案内して中止) |
-| `U` | **Claude Code の /usage 残量を右上モーダルで表示** (toggle。1 分ごとに自動更新) |
+| `U` | **Claude Code の /usage 残量を右上モーダルで表示** (toggle。表示中は 1 分ごとに自動更新。非表示中は更新を止め、再表示時に古ければ取り直す) |
 | `C` | **claude update を実行** (確認なし即実行。結果を下部モーダルに表示) |
 | `Ctrl-D` / `Ctrl-U` / `PgDn` / `PgUp` | ページスクロール |
 | `g` / `G` | 先頭 / 末尾のコミットへ |
@@ -138,8 +139,15 @@ job パネルの下に第 2 ポップアップを重ね、その job の「何�
 - **annotations 優先**: CI が報告した `[failure] path:line + メッセージ` の構造化データ
   (`gh api …/check-runs/<id>/annotations`)。エラーの要点が凝縮されていて LLM に渡す素材
   としても最良
-- annotations が無ければ**ログ末尾 50 行** (`gh run view --job <id>`)。失敗 job は
-  `--log-failed` で**失敗ステップのログのみ**。開いた直後は末尾 (直近の出力) を表示
+- annotations が無ければ**ログ末尾 50 行** (`gh api …/actions/jobs/<id>/logs`)。開いた直後は
+  末尾 (直近の出力) を表示。失敗 job だけは `gh run view --job <id> --log-failed` で
+  **失敗ステップのログのみ**に絞る (この絞り込みは REST の job ログ単体では代替できない)
+- **取得は 3 本並列**: step 一覧 / annotations / ログを同時に投げる。annotations の有無は
+  job の結果とほぼ 1:1 (実測: success 10/10 が annotations 0 件、failure 12/12 が 1〜4 件)
+  なので、非失敗 job では「annotations を見てからログを取る」直列 2 往復目が事実上必ず
+  発生していた。ログを投機的に並列化し、annotations が取れた稀ケースでは投機結果を捨てる。
+  `gh run view --log` は run 全体のログ zip を落とすため 1 job の 50 行に固定 ~1.0s 余分に
+  かかり、REST の job ログ単体へ替えた (合わせて 2.69s → 1.17s)
 - 行頭のタイムスタンプは除去 (幅の節約)。ツールが出力した ANSI カラーは保持し、
   `##[error]` / `##[warning]` / `##[group]` 等のマーカーは Web UI 風に glog 側で着色
   (raw ログにこれらの色情報は無いため)
@@ -207,9 +215,13 @@ GitHub へ問い合わせない (必ず「無い」と返るため。API 消費�
 
 - **認証は `gh` へ委譲**。独自トークンは保存しない。API 呼び出しは
   `gh api graphql` 経由
-- **1 リクエスト一括取得**: GraphQL `statusCheckRollup` で表示対象コミット全件
-  (集約状態 + job 名) を SHA ごとの alias で 1 クエリに束ねる。コミットごとの
-  REST 逐次呼び出しはしない。上限 100 SHA (超過分は `?`)
+- **一括取得 (並列チャンク)**: GraphQL `statusCheckRollup` で表示対象コミット
+  (集約状態 + job 名) を SHA ごとの alias で束ねる。コミットごとの REST 逐次呼び出しは
+  しない。上限 100 SHA (超過分は `?`)。レイテンシは SHA 数に線形 (実測: 固定費 ≈ 480ms +
+  約 21ms/SHA) なので、件数が多いときは最大 4 本のチャンクへ割って並列に投げる
+  (`-n 50` の静的出力で 1.53s → 0.85s)。チャンク 1 は表示順の先頭なので、対話ブラウズでは
+  **画面に映っているコミットの CI が最初に埋まる**。1 チャンクが失敗しても取れた分は表示し、
+  失敗チャンクの SHA だけが `?` に落ちる
 - **リポジトリ解決**: 現在ブランチの upstream remote → `origin` の順で remote URL
   から owner/repo を解決。HTTPS / SSH (`git@` / `ssh://`) 両対応。GitHub 以外の
   remote は CI 取得対象外 (CI 欄は `–`)
@@ -235,6 +247,11 @@ GitHub へ問い合わせない (必ず「無い」と返るため。API 消費�
   1 日分程度)。加えてエントリ数の上限 2000 件を超えた分は取得時刻の新しい順に残す
 - 書き込みは temp + rename の原子的更新。キャッシュの欠損・破損は「キャッシュ
   なし」として動作し、コマンドを失敗させない
+- 同じディレクトリに repo 非依存のキャッシュも置く: `claude-latest-version.json`
+  (最新版チェック、TTL 1 時間) と `claude-usage.json` (`/usage` の残量、TTL 1 分)。
+  `claude -p /usage` は 1 回 ≈ 2.0s wall / 1.8s CPU かかる (トークン課金は無いが node 起動 +
+  セッション初期化が重い) ので、起動のたびには払わずキャッシュを使う。定期リフレッシュ側は
+  鮮度を作るのが役目なのでキャッシュを読まない
 
 ## トラブルシューティング
 
@@ -246,12 +263,36 @@ GitHub へ問い合わせない (必ず「無い」と返るため。API 消費�
 | CI 欄が `↑` | 未 push。push すれば次回から取得対象になる |
 | 直前に再実行した CI が反映されない | キャッシュ TTL 内。`glogx --refresh` |
 | rate limit の警告 | しばらく待つ。キャッシュがあるので通常は到達しない |
+| コミットメッセージの絵文字が単色になる | 仕様 (下記「絵文字の幅と脱色」) |
+| 絵文字を含む行が再描画のたびに 1↔2 桁ずれる | 対策を足す前に `go run ./tools/width-probe` を実端末で (tmux の内と外の両方で) 走らせて、どの層が幅を割っているかを測ること |
+
+### 絵文字の幅と脱色
+
+表示に出る外部由来テキスト (commit message / CI ログ / job 名) からは **VS16 (U+FE0F) を除去**
+している。VS16 付きの字は幅の解釈が層ごとに割れる (x/ansi と tmux は 2、runewidth は 1) 一方、
+bare 記号なら全層で 1 に一致するため。割れる文字を出すと、毎フレームの再描画でカラム位置が
+ずれて行が揺れる。
+
+**副作用として絵文字は脱色する** (カラー絵文字 → 端末フォントの単色グリフ)。VS16 は幅だけでなく
+「カラー絵文字として描け」の指示でもあるため。幅の安定と引き換えに受け入れている意図的な
+トレードオフで、色を戻したいなら VS16 を戻す (揺れが再発する) のではなく Unicode Core Mode
+(DEC 2027) で幅計算をエンドツーエンドに揃える方向で検討する。詳細と実測値は `width.go` の
+`dropEmojiVS16` の doc コメント。
+
+この問題は過去に「端末の幅解釈」を測らずに対策を重ねて revert した試行がある (3c74ddf →
+3e5787d)。再発時は必ず `tools/width-probe` で測ってから動くこと。
 
 ## 開発
 
 ```bash
 make test   # go test ./... (unit + 一時 git リポジトリでの integration。外部通信なし)
 make lint   # golangci-lint (go run 経由・バージョン固定、設定は .golangci.yml)
+
+# 幅ズレ調査用 (要 TTY。tmux の内と外で走らせて比べる)
+go run ./tools/width-probe
+
+# 1 フレームの描画コスト観測 (CI では回さない)
+go test -run '^$' -bench BenchmarkView -benchmem .
 ```
 
 - CI: `.github/workflows/src_glogx.yml` (paths filter 付きの薄い caller) が再利用 workflow
@@ -265,7 +306,11 @@ make lint   # golangci-lint (go run 経由・バージョン固定、設定は .
   `box.go` (browseModel 非依存の枠描画プリミティブ = panel/overlay/centerBox/shadow) /
   各種オーバーレイ・モーダル (`diff_overlay.go` / `job_detail_overlay.go` /
   `usage_overlay.go` / `pr_status_overlay.go` / `action_modal.go` / `toast.go`) /
-  `usage/` (Claude Code の /usage 取得・整形。単独コマンドへ切り出し可能) / `main.go` (配線)
+  `usage/` (Claude Code の /usage 取得・整形。単独コマンドへ切り出し可能) /
+  `width.go` (表示幅の単一情報源 = ansi.StringWidth への一本化と絵文字正規化) / `main.go` (配線)
+- `tools/width-probe/`: 端末が各文字に何セル割り当てるかを CPR (CSI 6n) で端末自身に
+  問い合わせる調査ツール。幅ズレの原因層 (glogx / 描画エンジン / tmux / 端末) を推測でなく
+  実測で切り分けるためのもので、本体からは参照しない
 - GitHub API はテストでは `CommandRunner` を fake に差し替える (fixture 駆動)
 - `tui.go` のテストは機能クラスタで分割: `tui_helpers_test.go` (共有ヘルパー) /
   `tui_nav_test.go` (カーソル/スクロール/アニメ/View) / `tui_panel_test.go` (job パネル/詳細/ETA/CI 取得) /
@@ -281,5 +326,14 @@ make lint   # golangci-lint (go run 経由・バージョン固定、設定は .
   ユーザー指示で解禁。さらに元 issue の「Alt Screen 不使用・最終表示を履歴に残す」
   も 2026-07-17 のユーザー指示で上書きし、git log の pager と同じ
   「Alt Screen 上でブラウズ・終了時に表示は消える」へ変更した
+- **起動は fork の並列化で律速を潰している**: 1 fork ≈ 6ms (git) / 40-60ms (macism) で、
+  直列に積むと初回描画が数十 ms 遅れる。`git log` (表示用と解析用の 2 本) / repo 解決 +
+  未 push 判定 / IME 問い合わせ を同時に走らせ、最長チェーンまで縮める
+- **対話ブラウズ中は IME を英数へ切り替える** (キー操作が主なため。終了時に元へ戻す)。
+  切替は macism CLI (`brew tap laishulu/homebrew && brew install macism`) へ委譲し、
+  未導入なら起動時にトーストで案内するだけで機能は壊さない (オプトイン)。
+  ⚠️ 切替の「実行」は TUI 開始前に完了させる必要がある — raw mode でも IME は OS の入力ソース層で
+  効くため、未完了だと打鍵が日本語 IME の composition に吸われる。よって問い合わせ (1 本目) だけを
+  先出しし、切替 (2 本目) は TUI 開始直前に払う
 - 未対応 (必要になったら issue 化): `--watch` / 失敗 workflow への URL 表示 /
   `--json` / GitHub Enterprise Server / GitHub 以外のホスティング
