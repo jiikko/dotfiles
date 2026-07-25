@@ -34,7 +34,24 @@ jobs:
         run: |
           sudo apt-get update
           # ruby は test-ruby-syntax (Brewfile/_pryrc の ruby -c と _gemrc の YAML パース) 用
-          sudo apt-get install -y --no-install-recommends zsh shellcheck yamllint jq ruby
+          # apt からは shellcheck を入れない (下でバージョン固定して導入する)
+          sudo apt-get install -y --no-install-recommends zsh yamllint jq ruby
+
+      # 静的解析の shellcheck はバージョンを固定してリリースバイナリで入れる。
+      # apt (ubuntu 24.04) は 0.9 系で、開発機 (brew = 0.11) と指摘が食い違い「手元 green なのに
+      # CI 赤」を生む (実例 2026-07-25: `[ -n "$x" ] && y || true` が 0.9 では SC2015、0.11 では無指摘)。
+      # ⚠️ 手元の brew shellcheck を上げたらここも同じ版へ更新すること (差が戻ると同じ罠が再発する)。
+      - name: Install shellcheck (pinned)
+        env:
+          SHELLCHECK_VERSION: v0.11.0
+        run: |
+          curl -fsSL --retry 3 --retry-all-errors -o "$RUNNER_TEMP/shellcheck.tar.xz" \
+            "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          tar xJf "$RUNNER_TEMP/shellcheck.tar.xz" -C "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/bin"
+          mv "$RUNNER_TEMP/shellcheck-${SHELLCHECK_VERSION}/shellcheck" "$RUNNER_TEMP/bin/shellcheck"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/bin/shellcheck" --version
 
       # actionlint は apt に無いため公式リリースバイナリを取得する (test-actionlint が使う。
       # shellcheck が PATH にあると run: ブロックのシェル検査も有効になる)
