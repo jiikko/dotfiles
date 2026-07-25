@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // job パネル表示中は 3 秒間隔で状態を取り直す (経過時間のライブ監視。ユーザー要望)。
@@ -171,7 +171,7 @@ func TestBrowsePanelOpenClose(t *testing.T) {
 	if m.panelSHA != m.commits[0].SHA {
 		t.Fatalf("パネルが開いていない")
 	}
-	view := m.View()
+	view := m.View().Content
 	for _, want := range []string{"CI jobs:", "✓ build", "✗ lint"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("パネルに %q が出ていない:\n%s", want, view)
@@ -213,7 +213,7 @@ func TestBrowsePanelAnchoredAtCommit(t *testing.T) {
 	withJobs(m, 1)
 	m.handleKey("j") // 2 番目のコミットへ
 	m.openPanel()
-	view := strings.Split(m.View(), "\n")
+	view := strings.Split(m.View().Content, "\n")
 	headerIdx, panelIdx := -1, -1
 	for i, line := range view {
 		if strings.Contains(line, "commit "+m.commits[1].SHA) {
@@ -224,10 +224,10 @@ func TestBrowsePanelAnchoredAtCommit(t *testing.T) {
 		}
 	}
 	if headerIdx == -1 || panelIdx == -1 {
-		t.Fatalf("ヘッダー行 (%d) かパネル (%d) が見つからない:\n%s", headerIdx, panelIdx, m.View())
+		t.Fatalf("ヘッダー行 (%d) かパネル (%d) が見つからない:\n%s", headerIdx, panelIdx, m.View().Content)
 	}
 	if panelIdx != headerIdx+1 {
-		t.Errorf("パネル位置 = %d 行目; want ヘッダー直下 %d 行目:\n%s", panelIdx, headerIdx+1, m.View())
+		t.Errorf("パネル位置 = %d 行目; want ヘッダー直下 %d 行目:\n%s", panelIdx, headerIdx+1, m.View().Content)
 	}
 }
 
@@ -238,7 +238,7 @@ func TestBrowsePanelClampedToViewport(t *testing.T) {
 	withJobs(m, 4)
 	m.handleKey("G") // 末尾コミットへ (ヘッダーはビューポート下端付近)
 	m.openPanel()
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "CI jobs:") || !strings.Contains(view, "✓ build") {
 		t.Errorf("下端のコミットでパネルが見えていない:\n%s", view)
 	}
@@ -253,9 +253,9 @@ func TestBrowsePanelKeepsListHeight(t *testing.T) {
 	m := newTestBrowse(t, 5, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateSuccess)
 	withJobs(m, 0)
-	before := strings.Count(m.View(), "\n")
+	before := strings.Count(m.View().Content, "\n")
 	m.openPanel()
-	after := strings.Count(m.View(), "\n")
+	after := strings.Count(m.View().Content, "\n")
 	if before != after {
 		t.Errorf("パネル開閉で View の行数が変わった: %d → %d", before, after)
 	}
@@ -354,8 +354,8 @@ func TestBrowsePanelTriggersDetailFetch(t *testing.T) {
 	if !m.detailsLoading[sha] {
 		t.Errorf("detailsLoading が立っていない")
 	}
-	if !strings.Contains(m.View(), "取得中") {
-		t.Errorf("取得中表示がない:\n%s", m.View())
+	if !strings.Contains(m.View().Content, "取得中") {
+		t.Errorf("取得中表示がない:\n%s", m.View().Content)
 	}
 	// 取得完了メッセージで反映される
 	m.Update(detailMsg{sha: sha, batch: CIBatch{
@@ -364,8 +364,8 @@ func TestBrowsePanelTriggersDetailFetch(t *testing.T) {
 	if m.detailsLoading[sha] {
 		t.Errorf("取得完了後も loading のまま")
 	}
-	if !strings.Contains(m.View(), "✓ build") {
-		t.Errorf("取得した詳細がパネルに出ていない:\n%s", m.View())
+	if !strings.Contains(m.View().Content, "✓ build") {
+		t.Errorf("取得した詳細がパネルに出ていない:\n%s", m.View().Content)
 	}
 	if m.fetched[sha] != StateSuccess {
 		t.Errorf("詳細取得の状態がキャッシュ保存対象 (fetched) に入っていない")
@@ -390,8 +390,8 @@ func TestBrowsePanelDuringBatchFetchWaits(t *testing.T) {
 	if m.detailsLoading[shas[0]] {
 		t.Errorf("一括取得完了後も loading のまま")
 	}
-	if !strings.Contains(m.View(), "✓ build") {
-		t.Errorf("一括取得の詳細がパネルに出ていない:\n%s", m.View())
+	if !strings.Contains(m.View().Content, "✓ build") {
+		t.Errorf("一括取得の詳細がパネルに出ていない:\n%s", m.View().Content)
 	}
 }
 
@@ -546,8 +546,8 @@ func TestBrowsePanelUnpushedNoFetch(t *testing.T) {
 	if cmd := m.openPanel(); cmd != nil {
 		t.Errorf("未 push SHA で fetch Cmd が返った")
 	}
-	if !strings.Contains(m.View(), "Check はありません") {
-		t.Errorf("Check なし表示がない:\n%s", m.View())
+	if !strings.Contains(m.View().Content, "Check はありません") {
+		t.Errorf("Check なし表示がない:\n%s", m.View().Content)
 	}
 }
 
@@ -646,8 +646,8 @@ func TestBrowseJobDetailPopup(t *testing.T) {
 	if !m.detailOv.open || !m.detailOv.busy[m.detailKey()] {
 		t.Fatalf("詳細が開いていない / busy でない")
 	}
-	if !strings.Contains(m.View(), "詳細を取得中") {
-		t.Errorf("取得中表示がない:\n%s", m.View())
+	if !strings.Contains(m.View().Content, "詳細を取得中") {
+		t.Errorf("取得中表示がない:\n%s", m.View().Content)
 	}
 	// 取得完了 → 末尾から表示
 	lines := make([]string, 30)
@@ -659,19 +659,19 @@ func TestBrowseJobDetailPopup(t *testing.T) {
 	if m.detailOv.offset != 30-rows {
 		t.Errorf("detailOffset = %d; want 末尾表示 %d", m.detailOv.offset, 30-rows)
 	}
-	if !strings.Contains(m.View(), "log line 29") {
-		t.Errorf("末尾行が見えていない (低い端末でも末尾は見える):\n%s", m.View())
+	if !strings.Contains(m.View().Content, "log line 29") {
+		t.Errorf("末尾行が見えていない (低い端末でも末尾は見える):\n%s", m.View().Content)
 	}
 	// 詳細ボックスは job パネルの子であることが分かるよう段差付き (ユーザー要望)
 	indented := false
-	for line := range strings.SplitSeq(m.View(), "\n") {
+	for line := range strings.SplitSeq(m.View().Content, "\n") {
 		if strings.HasPrefix(stripANSI(line), detailIndent+"┌") {
 			indented = true
 			break
 		}
 	}
 	if !indented {
-		t.Errorf("詳細ボックスに段差がない:\n%s", m.View())
+		t.Errorf("詳細ボックスに段差がない:\n%s", m.View().Content)
 	}
 	// k で上へスクロール、g で先頭
 	m.handleKey("k")
@@ -723,8 +723,8 @@ func TestBrowseJobDetailReopenScrollsToTail(t *testing.T) {
 	if m.detailOv.offset != 30-rows {
 		t.Errorf("再オープン時の offset = %d; want 末尾 %d (最新ログを表示)", m.detailOv.offset, 30-rows)
 	}
-	if !strings.Contains(m.View(), "log line 29") {
-		t.Errorf("再オープンで末尾行が見えない:\n%s", m.View())
+	if !strings.Contains(m.View().Content, "log line 29") {
+		t.Errorf("再オープンで末尾行が見えない:\n%s", m.View().Content)
 	}
 }
 
@@ -840,8 +840,8 @@ func TestBrowsePanelShowsJobDuration(t *testing.T) {
 	m.statuses[sha] = StateFailure
 	m.details[sha] = []CheckDetail{{Name: "dotfiles-tests", State: StateFailure, Duration: 2*time.Minute + 39*time.Second}}
 	m.openPanel()
-	if !strings.Contains(m.View(), "(2m39s)") {
-		t.Errorf("job 行に所要時間が出ていない:\n%s", m.View())
+	if !strings.Contains(m.View().Content, "(2m39s)") {
+		t.Errorf("job 行に所要時間が出ていない:\n%s", m.View().Content)
 	}
 }
 
@@ -857,7 +857,7 @@ func TestBrowsePanelShowsRunningElapsed(t *testing.T) {
 	// 開始 90 秒前・ETA basis なし (履歴が画面に無い) → 経過時間だけ出る
 	m.details[sha] = []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Unix(910, 0)}}
 	m.openPanel()
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "1m30s 経過") {
 		t.Errorf("実行中 job の経過時間が出ていない:\n%s", view)
 	}
@@ -882,7 +882,7 @@ func TestBrowsePanelShowsRunningETA(t *testing.T) {
 	m.details[running] = []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Unix(940, 0)}}
 	m.details[prev] = []CheckDetail{{Name: "build", State: StateSuccess, Duration: 100 * time.Second}}
 	m.openPanel()
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "1m00s 経過") {
 		t.Errorf("経過時間が出ていない:\n%s", view)
 	}
@@ -903,8 +903,8 @@ func TestBrowsePanelRunningETAOverrun(t *testing.T) {
 	m.details[running] = []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Unix(880, 0)}}
 	m.details[prev] = []CheckDetail{{Name: "build", State: StateSuccess, Duration: 100 * time.Second}}
 	m.openPanel()
-	if !strings.Contains(m.View(), "予定超過") {
-		t.Errorf("前回所要時間を超えたら予定超過を出すべき:\n%s", m.View())
+	if !strings.Contains(m.View().Content, "予定超過") {
+		t.Errorf("前回所要時間を超えたら予定超過を出すべき:\n%s", m.View().Content)
 	}
 }
 
@@ -923,7 +923,7 @@ func TestBrowseRunningETASkipsCancelled(t *testing.T) {
 	// その先: 正常完了 100 秒 → こちらを basis にして残り ~40s
 	m.details[m.commits[2].SHA] = []CheckDetail{{Name: "build", State: StateSuccess, Duration: 100 * time.Second}}
 	m.openPanel()
-	view := m.View()
+	view := m.View().Content
 	if strings.Contains(view, "予定超過") {
 		t.Errorf("cancel run (3s) を basis に拾って誤って超過判定している:\n%s", view)
 	}
@@ -952,8 +952,8 @@ func TestBrowseRunningETAFetchesMissingBasis(t *testing.T) {
 	if !m.detailsLoading[prev] {
 		t.Errorf("完了コミットを basis 取得対象にしていない")
 	}
-	if strings.Contains(m.View(), "残り") {
-		t.Errorf("basis 未着なのに ETA が出ている:\n%s", m.View())
+	if strings.Contains(m.View().Content, "残り") {
+		t.Errorf("basis 未着なのに ETA が出ている:\n%s", m.View().Content)
 	}
 	// basis (prev の完了 job 100s) が届く → 残り ~40s
 	m.Update(basisMsg{targets: []string{prev}, batch: CIBatch{
@@ -961,8 +961,8 @@ func TestBrowseRunningETAFetchesMissingBasis(t *testing.T) {
 		Details:  map[string][]CheckDetail{prev: {{Name: "build", State: StateSuccess, Duration: 100 * time.Second}}},
 		PRs:      map[string]*PRRef{},
 	}})
-	if !strings.Contains(m.View(), "残り ~40s") {
-		t.Errorf("basis 補充後に ETA が出ていない:\n%s", m.View())
+	if !strings.Contains(m.View().Content, "残り ~40s") {
+		t.Errorf("basis 補充後に ETA が出ていない:\n%s", m.View().Content)
 	}
 	if m.detailsLoading[prev] {
 		t.Error("basisMsg 到着後も loading が解除されていない")
@@ -996,8 +996,8 @@ func TestBrowseNonGitHubRepoPanel(t *testing.T) {
 	if cmd := m.openPanel(); cmd != nil {
 		t.Errorf("GitHub 以外の remote で fetch Cmd が返った")
 	}
-	if !strings.Contains(m.View(), "Check はありません") {
-		t.Errorf("Check なし表示がない:\n%s", m.View())
+	if !strings.Contains(m.View().Content, "Check はありません") {
+		t.Errorf("Check なし表示がない:\n%s", m.View().Content)
 	}
 }
 

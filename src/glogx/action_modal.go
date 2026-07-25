@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // actionModal は glogx 独自の「実行を伴う操作」= git push / git pull --rebase / claude update の

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // pull/push 完了トーストの退場 (leaving) が tick で hidden まで到達することの回帰テスト。

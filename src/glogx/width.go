@@ -9,13 +9,19 @@ import (
 
 // 幅計算の単一情報源。glogx の表示幅は必ずこのファイルの関数を通す。
 //
-// なぜ ansi (charmbracelet/x/ansi) に一本化するか: 描画エンジン (Bubble Tea の
-// standardRenderer.flush) は各行の切り詰め・パディングを ansi.StringWidth で行う。
+// なぜ ansi (charmbracelet/x/ansi) に一本化するか: 描画エンジンの幅モデルと一致させるため。
 // glogx 側が別ライブラリ (mattn/go-runewidth) で幅を測ると、両者が食い違う文字
 // (⚠️ 等の VS16 付き絵文字・国旗 🇯🇵 は runewidth=1 だが ansi/端末=2) で glogx が
 // 整えた行をエンジンが別位置で測り直し、毎秒の再描画のたびに桁がずれてガタつく
 // (Terminal.app + tmux, ユーザー報告 2026-07-24)。同一ライブラリに揃えれば glogx と
 // エンジンが構造的に一致し、絵文字を削らずに揺れが止まる。
+//
+// ⚠️ エンジンの幅ライブラリは bubbletea 側の実装詳細で、勝手に一致し続けてはくれない:
+// v1 (standardRenderer) は x/ansi だったが、v2 (cursed renderer / ultraviolet) は
+// clipperhouse/displaywidth で測る。v2 化 (2026-07-25) 時点では下表の全ケースで
+// ansi / displaywidth / uniseg の 3 者が一致することを実測して移行した。bubbletea を
+// 上げたら tools/width-probe と同じ観点で一致を測り直すこと (食い違いが出たら、それが
+// 桁ズレ再発の経路)。
 //
 // East Asian Ambiguous (罫線・✓・● 等) は ansi では幅 1 で、locale に依存しない
 // (旧 runewidth は LANG=ja_JP.* 等で幅 2 に切り替わりパネル枠計算が実行環境依存でずれた)。
@@ -48,10 +54,14 @@ func clusterWidth(cluster string) int { return uniseg.StringWidth(cluster) }
 //
 // 実測値 (2026-07-25、CPR と tmux cursor_x で計測):
 //
-//	                 x/ansi  uniseg  runewidth  tmux 3.7b
-//	bare ⚠ (U+26A0)       1       1          1          1   ← 全層一致
-//	⚠+VS16                2       2          1          2
-//	⚠+VS15                1       1          1          1
+//	                 x/ansi  uniseg  displaywidth  runewidth  tmux 3.7b
+//	bare ⚠ (U+26A0)       1       1             1          1          1   ← 全層一致
+//	⚠+VS16                2       2             2          1          2
+//	⚠+VS15                1       1             1          1          1
+//	国旗 🇯🇵                2       2             2          1          -   (tmux 未計測)
+//
+// (displaywidth 列は bubbletea v2 のエンジンが使う幅ライブラリ。v2 移行時に追加。
+// runewidth は v0.0.23 でも VS16 を 1 と数える = 唯一の外れ値のまま)
 //
 // ⚠️ 過去の記述の訂正: 4c8ee8d は「ユーザーの端末は VS16 に 1 マスしか割り当てない
 // (エンジン 2 と食い違う)」と書き、3c74ddf は逆に「端末が幅 2 で数える」と書いていた。

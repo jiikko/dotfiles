@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // Bubble Tea による less 風の対話ブラウズ (カーソル移動 + CI job 表示)。
@@ -808,14 +808,18 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showWarning("nvim を開けませんでした: " + firstLine(msg.err.Error()))
 		}
 		return m, m.maybeTick()
-	case tea.KeyMsg:
-		// 高速連打やパイプ入力では複数の文字キーが 1 つの KeyMsg (Runes 長 > 1) に
-		// まとまって届く。分解せず msg.String() だけ見ると "hhq" のような未知キー扱いに
-		// なり、以降の操作が全て無視されたように見える (pty スモークで実測) ため、
-		// 1 文字ずつのキー入力として順に処理する
-		if msg.Type == tea.KeyRunes && len(msg.Runes) > 1 {
+	// KeyMsg (v2 では KeyPressMsg/KeyReleaseMsg を束ねる interface) ではなく押下だけを取る。
+	// 離鍵イベントは KeyboardEnhancements を要求していないので届かないが、interface で受けると
+	// 将来 enhancement を有効にした瞬間に 1 打が 2 回処理される。
+	case tea.KeyPressMsg:
+		// 高速連打やパイプ入力で複数の文字キーが 1 つのキーイベント (Text 長 > 1) に
+		// まとまって届いた場合の分解。まとめずに msg.String() だけ見ると "hhq" のような
+		// 未知キー扱いになり、以降の操作が全て無視されたように見える (pty スモークで実測)。
+		// v2 の入力デコーダは grapheme クラスタ単位で 1 イベントを返すのでまとまらない想定だが、
+		// 保険として残す (v1 で実際に起きた回帰であり、削っても得られる簡素化は 10 行)。
+		if runes := []rune(msg.Text); len(runes) > 1 {
 			var cmds []tea.Cmd
-			for _, r := range msg.Runes {
+			for _, r := range runes {
 				_, cmd := m.handleKey(string(r))
 				if cmd != nil {
 					cmds = append(cmds, cmd)
@@ -2159,7 +2163,19 @@ func (m *browseModel) ensureCursorVisible() {
 	m.offset = min(max(m.offset, 0), max(len(lines)-page, 0))
 }
 
-func (m *browseModel) View() string {
+// View は画面内容に加えて端末モード (Alt Screen) も宣言する。bubbletea v2 では
+// EnterAltScreen 相当の命令的 Cmd / WithAltScreen オプションが廃され、毎フレームの
+// View が端末機能の唯一の出典になっている。
+func (m *browseModel) View() tea.View {
+	v := tea.NewView(m.viewLines())
+	// Alt Screen 上でブラウズし q で抜けると表示は消える (git log の pager と同じ。
+	// ユーザー要望 2026-07-17)。
+	v.AltScreen = true
+	return v
+}
+
+// viewLines は画面content を組む本体 (旧 View)。テストはここではなく View().Content を見る。
+func (m *browseModel) viewLines() string {
 	if m.done {
 		// 終了確定後は何も描かない (Alt Screen の復帰で表示は消える)
 		return ""
@@ -2426,7 +2442,8 @@ func clampIdx(i, total int) int {
 // RunBrowse は TUI を実行し、最終状態のモデルを返す。Alt Screen を使うため、
 // 終了時に表示は消える (git log の pager と同じ。ユーザー要望 2026-07-17)。
 func RunBrowse(m *browseModel) (*browseModel, error) {
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	// Alt Screen は View が宣言する (v2 では program オプションではない)。
+	p := tea.NewProgram(m)
 	final, err := p.Run()
 	if err != nil {
 		return m, err

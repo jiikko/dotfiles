@@ -65,7 +65,7 @@ func BenchmarkViewSteady(b *testing.B) {
 	m := benchBrowse(b, 20, 120, 40)
 	b.ReportAllocs()
 	for b.Loop() {
-		_ = m.View()
+		_ = m.View().Content
 	}
 }
 
@@ -80,6 +80,6 @@ func BenchmarkViewWithPanel(b *testing.B) {
 	}
 	b.ReportAllocs()
 	for b.Loop() {
-		_ = m.View()
+		_ = m.View().Content
 	}
 }

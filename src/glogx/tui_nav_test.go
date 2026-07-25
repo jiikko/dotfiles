@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestBrowseCursorNavigation(t *testing.T) {
@@ -47,7 +47,7 @@ func TestBrowseWrapUsesFullWidth(t *testing.T) {
 	m.statuses[sha] = StateSuccess
 	m.commits[0].Message = strings.Repeat("あ", 38) // 表示幅 76 (旧実装だと 1 行に収まり溝で溢れる)
 	m.height = 30
-	view := m.View()
+	view := m.View().Content
 	if got := strings.Count(view, "あ"); got != 38 {
 		t.Errorf("折り返しで文字が欠けた: あ が %d 文字 (want 38)\n%s", got, view)
 	}
@@ -232,13 +232,13 @@ func TestBrowseQuitFillsUnknown(t *testing.T) {
 	if m.statuses[shas[0]] != StateUnknown {
 		t.Errorf("取得中断で unknown に落ちていない: %v", m.statuses[shas[0]])
 	}
-	if m.View() != "" {
-		t.Errorf("done 後の View が空でない (TUI 領域が残る): %q", m.View())
+	if m.View().Content != "" {
+		t.Errorf("done 後の View が空でない (TUI 領域が残る): %q", m.View().Content)
 	}
 }
 
 func TestBrowseBatchedRunesKeyMsg(t *testing.T) {
-	// 高速連打で複数キーが 1 つの KeyMsg (Runes="hhq") にまとまっても 1 文字ずつ
+	// 高速連打で複数キーが 1 つのキーイベント (Text="hhq") にまとまっても 1 文字ずつ
 	// 処理される (未対応だと q が無視されて終了できない: pty スモークで実測した回帰)
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateSuccess)
@@ -246,7 +246,7 @@ func TestBrowseBatchedRunesKeyMsg(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	m.openJobDetail()
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hhq")})
+	_, cmd := m.Update(tea.KeyPressMsg{Text: "hhq"})
 	if !m.done {
 		t.Fatalf("hhq のまとめ配送で終了しない (detailOpen=%v panelSHA=%q)", m.detailOv.open, m.panelSHA)
 	}
@@ -347,13 +347,13 @@ func TestJapaneseFullViewStaysInWidth(t *testing.T) {
 		"##[error]日本語のエラーメッセージ",
 	}
 	m.openJobDetail()
-	for line := range strings.SplitSeq(m.View(), "\n") {
+	for line := range strings.SplitSeq(m.View().Content, "\n") {
 		if w := dispWidth(line); w > m.width {
 			t.Errorf("幅超過 (%d > %d): %q", w, m.width, line)
 		}
 	}
-	if !strings.Contains(m.View(), "テスト (ユニット)") {
-		t.Errorf("日本語 job 名が表示されていない:\n%s", m.View())
+	if !strings.Contains(m.View().Content, "テスト (ユニット)") {
+		t.Errorf("日本語 job 名が表示されていない:\n%s", m.View().Content)
 	}
 }
 
@@ -394,7 +394,7 @@ func TestBrowseCursorGutterArrowAndBgHighlight(t *testing.T) {
 	m.usageOv.visible = false // 右上 usage モーダルは上部行を覆うため、カーソル強調の検証から隔離する
 	m.statuses = statusesFor(m, StateSuccess)
 	m.colored = true
-	view := strings.Split(m.View(), "\n")
+	view := strings.Split(m.View().Content, "\n")
 	var authorLine, cursorHeader, otherHeader string
 	for _, l := range view {
 		if strings.HasPrefix(stripANSI(l), cursorGutterBlank+"Author: ") && authorLine == "" {
@@ -408,7 +408,7 @@ func TestBrowseCursorGutterArrowAndBgHighlight(t *testing.T) {
 		}
 	}
 	if authorLine == "" || cursorHeader == "" || otherHeader == "" {
-		t.Fatalf("期待行が見つからない:\n%s", m.View())
+		t.Fatalf("期待行が見つからない:\n%s", m.View().Content)
 	}
 	// 全行にカーソル溝 2 桁のマージンがあり、カーソル行だけ「→ 」が入る
 	if !strings.HasPrefix(stripANSI(cursorHeader), cursorGutterMark) {
@@ -430,7 +430,7 @@ func TestBrowseCursorGutterArrowAndBgHighlight(t *testing.T) {
 	// 色なしは bg が使えないため「→ 」のみに degrade (溝は全行にあるのでずれない)
 	m.colored = false
 	m.invalidateLines()
-	if !strings.Contains(m.View(), cursorGutterMark) {
+	if !strings.Contains(m.View().Content, cursorGutterMark) {
 		t.Errorf("NO_COLOR で %q マーカーが出ていない", cursorGutterMark)
 	}
 }

@@ -7,7 +7,7 @@ import (
 
 	"glogx/usage"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // usageMsg は /usage の非同期取得結果 (右上オーバーレイ用)。

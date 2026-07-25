@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // b → y/N → git push (glogx の独自機能)。
@@ -56,7 +56,7 @@ func TestBrowseUpdateFlow(t *testing.T) {
 	}
 	// 実行中は spinner モーダルが出て、終了できない旨も表示する
 	m.width, m.height = 80, 20
-	if v := stripANSI(m.View()); !strings.Contains(v, "claude update") || !strings.Contains(v, "updating") ||
+	if v := stripANSI(m.View().Content); !strings.Contains(v, "claude update") || !strings.Contains(v, "updating") ||
 		!strings.Contains(v, "完了まで終了できません") {
 		t.Fatal("claude update 実行中モーダルが描画されない")
 	}
@@ -214,7 +214,7 @@ func TestBrowsePushFlow(t *testing.T) {
 	}
 	// 確認中は中央モーダルが出る (幅より狭いボックス + 左パディングでセンタリング)
 	m.width, m.height = 80, 20
-	if v := stripANSI(m.View()); !strings.Contains(v, "git push") || !strings.Contains(v, "push します") {
+	if v := stripANSI(m.View().Content); !strings.Contains(v, "git push") || !strings.Contains(v, "push します") {
 		t.Fatal("push 確認モーダルが描画されない")
 	}
 	m.handleKey("n")
@@ -327,7 +327,7 @@ func TestBrowsePullFlow(t *testing.T) {
 		t.Fatal("u で pull 確認に入らない")
 	}
 	m.width, m.height = 80, 20
-	if v := stripANSI(m.View()); !strings.Contains(v, "pull --rebase") {
+	if v := stripANSI(m.View().Content); !strings.Contains(v, "pull --rebase") {
 		t.Fatal("pull 確認モーダルが描画されない")
 	}
 	m.handleKey("n")
@@ -467,7 +467,7 @@ func TestBrowsePushNoUnpushed(t *testing.T) {
 	for i := 0; i < 200 && m.toast.phase != toastHolding; i++ {
 		m.Update(tickMsg{})
 	}
-	if v := stripANSI(m.View()); !strings.Contains(v, "未 push のコミットはありません") {
+	if v := stripANSI(m.View().Content); !strings.Contains(v, "未 push のコミットはありません") {
 		t.Fatalf("トーストが描画されない (phase=%d shown=%d)", m.toast.phase, m.toast.shown)
 	}
 	// トーストはキーを消費しない (モーダルと違い、次のキーが本来の動作をする)
@@ -562,7 +562,7 @@ func TestBrowseRerunFlow(t *testing.T) {
 	if !m.actModal.rerunConfirm || m.actModal.rerunJobName != "lint" {
 		t.Fatalf("r で再実行確認に入らない: confirm=%v name=%q", m.actModal.rerunConfirm, m.actModal.rerunJobName)
 	}
-	if v := stripANSI(m.View()); !strings.Contains(v, "CI 再実行") || !strings.Contains(v, "lint") {
+	if v := stripANSI(m.View().Content); !strings.Contains(v, "CI 再実行") || !strings.Contains(v, "lint") {
 		t.Fatal("再実行確認モーダルが描画されない")
 	}
 	m.handleKey("n")
@@ -861,7 +861,7 @@ func TestBrowseFrameView(t *testing.T) {
 	if m.pageSize() != 16-frameVOverhead {
 		t.Errorf("pageSize = %d; want %d", m.pageSize(), 16-frameVOverhead)
 	}
-	v := m.View()
+	v := m.View().Content
 	lines := strings.Split(strings.TrimRight(v, "\n"), "\n")
 	// View 出力の行数 = m.height (板 + hint でビューポート一杯)
 	if len(lines) != 16 {

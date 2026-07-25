@@ -68,8 +68,8 @@ func TestBrowseBatchPRsFeedPCache(t *testing.T) {
 		t.Errorf("URL = %q", opened)
 	}
 	// バッジも View に出る
-	if !strings.Contains(m.View(), "#7") {
-		t.Errorf("PR バッジが View に出ていない:\n%s", m.View())
+	if !strings.Contains(m.View().Content, "#7") {
+		t.Errorf("PR バッジが View に出ていない:\n%s", m.View().Content)
 	}
 }
 
@@ -204,7 +204,7 @@ func TestBrowseDiffOpenScrollClose(t *testing.T) {
 	if m.diffOv.busy[m.diffOv.sha] {
 		t.Error("取得完了後も busy のまま")
 	}
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "line-0") || !strings.Contains(view, "diff:") {
 		t.Fatalf("diff ポップアップが描画されていない:\n%s", view)
 	}
@@ -312,7 +312,7 @@ func TestBrowseDiffPagerKeysScrollNotClose(t *testing.T) {
 	if m.diffOv.offset != maxOffset {
 		t.Errorf("末尾で offset = %d; want %d (最終行を表示し続ける)", m.diffOv.offset, maxOffset)
 	}
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, diffLines[len(diffLines)-1]) {
 		t.Error("末尾で最終行が描画されていない")
 	}
@@ -332,7 +332,7 @@ func TestBrowseDiffEmptyShowsMessage(t *testing.T) {
 	if m.diffOv.sha == "" {
 		t.Fatal("空 diff でポップアップが閉じてしまった (エラーではないので開いたままが仕様)")
 	}
-	if v := stripANSI(m.View()); !strings.Contains(v, "diff はありません") {
+	if v := stripANSI(m.View().Content); !strings.Contains(v, "diff はありません") {
 		t.Fatalf("空 diff の案内が出ていない:\n%s", v)
 	}
 }
@@ -541,7 +541,7 @@ func TestBrowsePRStatusFlow(t *testing.T) {
 		BaseRefName: "master", HeadRefName: "f/new",
 	}})
 	m.details[sha] = []CheckDetail{{Name: "lint", State: StateFailure}}
-	v := stripANSI(m.View())
+	v := stripANSI(m.View().Content)
 	for _, want := range []string{"PR #12: new feature", "OPEN", "f/new → master", "APPROVED", "CONFLICTING", "CI: ✗", "1 job 失敗"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("PR ポップアップに %q が無い:\n%s", want, v)
@@ -602,7 +602,7 @@ func TestBrowsePRStatusGuardsAndErrors(t *testing.T) {
 	// PR なしは nil キャッシュ + その旨の表示
 	m.handleKey("P")
 	m.Update(prStatusMsg{sha: sha, status: nil})
-	if !strings.Contains(stripANSI(m.View()), "紐づく PR はありません") {
+	if !strings.Contains(stripANSI(m.View().Content), "紐づく PR はありません") {
 		t.Fatal("PR なしの表示が出ない")
 	}
 }
