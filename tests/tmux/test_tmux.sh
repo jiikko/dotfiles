@@ -218,19 +218,22 @@ run_guard_branch() {
 }
 
 assert_guard_branch() {
-  local label="$1" expected="$2"
-  if [[ "$REPLY" != "$expected" ]]; then
-    print -u2 "[test-tmux:zsh] glogx ガードの分岐が想定と違います ($label): expected '$expected', got '$REPLY'"
+  local label="$1" expected="$2" actual="$3"
+  if [[ "$actual" != "$expected" ]]; then
+    print -u2 "[test-tmux:zsh] glogx ガードの分岐が想定と違います ($label): expected '$expected', got '$actual'"
     exit 1
   fi
 }
 
+# pane_current_path は物理パスで返るため、比較側も pwd -P で揃える
+# (checkout や TMPDIR が symlink 経由だと論理パスと食い違う)
 nogit_dir="$TMUX_TMPDIR/nogit"
 mkdir -p "$nogit_dir"
 nogit_dir=$(cd "$nogit_dir" && pwd -P)
+repo_dir=$(cd "$ROOT_DIR" && pwd -P)
 run_guard_branch glogx_guard_nogit "$nogit_dir"
-assert_guard_branch "repo 外" "toast:$nogit_dir"
-run_guard_branch glogx_guard_repo "$ROOT_DIR"
-assert_guard_branch "repo 内" "popup:$ROOT_DIR"
+assert_guard_branch "repo 外" "toast:$nogit_dir" "$REPLY"
+run_guard_branch glogx_guard_repo "$repo_dir"
+assert_guard_branch "repo 内" "popup:$repo_dir" "$REPLY"
 
 print "[test-tmux:zsh] done"
