@@ -176,4 +176,61 @@ else
   print -u2 "[test-tmux:zsh] warning: status-left の scratch 検出条件が見つからず flash 分岐を検査できませんでした (条件式が変わった可能性)"
 fi
 
+# glogx popup (prefix g / C-g) の git repo ガード。repo 外では popup を出さず toast に
+# 落ちることを、conf 内の実際の条件式を取り出して両方向 (repo 内 / repo 外) で実行して固定する。
+# 条件式を conf から抜いて使うので、ガードの書き換え時にテスト側の複製が腐らない。
+# ⚠️ if-shell の -t は入れ子コマンドの format 展開には効かない (実測 tmux 3.7b) ため、
+# 判定させたいセッションを直前に作って「現在のセッション」にしてから -t なしで実行する。
+print "[test-tmux:zsh] checking the glogx popup binding guards against non-git directories"
+# head -1 は上流に SIGPIPE を投げて pipefail で落ちるため tail -1 で受ける
+guard_line=$("${TMUX_CMD[@]}" list-keys | grep -F 'C-g' | grep -F 'glogx' | tail -1 || true)
+if [[ -z "$guard_line" ]]; then
+  print -u2 "[test-tmux:zsh] C-g の glogx バインドが見つかりません (list-keys)"
+  exit 1
+fi
+for needle in 'rev-parse --git-dir' 'bin/tmux-toast'; do
+  if [[ "$guard_line" != *"$needle"* ]]; then
+    print -u2 "[test-tmux:zsh] C-g のバインドに '$needle' がありません: $guard_line"
+    exit 1
+  fi
+done
+guard_cond=${guard_line#*if-shell \"}
+guard_cond=${guard_cond%%\"*}
+guard_probe="$TMUX_TMPDIR/glogx_guard.log"
+
+# 指定 cwd で条件を評価し、選ばれた枝 (popup / toast) と展開された cwd を返す。
+# run-shell -b は非同期なので、probe への書き込みをポーリングで待つ。
+run_guard_branch() {
+  local session="$1" cwd="$2" waited=0
+  : > "$guard_probe"
+  "${TMUX_CMD[@]}" new-session -d -s "$session" -c "$cwd" "tail -f /dev/null" >"$log_file" 2>&1 \
+    || handle_result "$log_file" "guard 用セッション ($session) の作成に失敗" "fail"
+  "${TMUX_CMD[@]}" if-shell "$guard_cond" \
+    "run-shell -b 'echo popup:#{pane_current_path} >> $guard_probe'" \
+    "run-shell -b 'echo toast:#{pane_current_path} >> $guard_probe'" >"$log_file" 2>&1 \
+    || handle_result "$log_file" "guard 条件の実行に失敗" "fail"
+  while [[ ! -s "$guard_probe" && $waited -lt 50 ]]; do
+    sleep 0.1
+    waited=$(( waited + 1 ))  # (( waited++ )) は戻り値 0 → set -e で即死する
+  done
+  "${TMUX_CMD[@]}" kill-session -t "$session" >/dev/null 2>&1 || true
+  REPLY=$(< "$guard_probe")
+}
+
+assert_guard_branch() {
+  local label="$1" expected="$2"
+  if [[ "$REPLY" != "$expected" ]]; then
+    print -u2 "[test-tmux:zsh] glogx ガードの分岐が想定と違います ($label): expected '$expected', got '$REPLY'"
+    exit 1
+  fi
+}
+
+nogit_dir="$TMUX_TMPDIR/nogit"
+mkdir -p "$nogit_dir"
+nogit_dir=$(cd "$nogit_dir" && pwd -P)
+run_guard_branch glogx_guard_nogit "$nogit_dir"
+assert_guard_branch "repo 外" "toast:$nogit_dir"
+run_guard_branch glogx_guard_repo "$ROOT_DIR"
+assert_guard_branch "repo 内" "popup:$ROOT_DIR"
+
 print "[test-tmux:zsh] done"
