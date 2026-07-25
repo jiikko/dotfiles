@@ -30,7 +30,17 @@ else
 fi
 
 if (( needs_build )); then
-  echo "glogx: building..." >&2
+  # src/glogx/go.mod は go 1.26 を要求する。手元の go が古い場合、GOTOOLCHAIN=auto は
+  # ここで toolchain (~90MB) を黙ってダウンロードするため、ビルドが数十秒〜数分になる。
+  # これは tmux の display-popup 内 (C-g) で起きるので、無言だとフリーズに見える。
+  # GOTOOLCHAIN=local だと DL せず「go.mod requires go >= 1.26.0」で失敗するため、
+  # その場合の対処 (toolchain を入れる) が読めるよう go 側のエラーをそのまま出す。
+  local_go=$(go env GOVERSION 2>/dev/null || echo unknown)
+  required_go=$(awk '$1 == "go" {print $2; exit}' "$src_dir/go.mod" 2>/dev/null)
+  echo "glogx: building... (go=$local_go / go.mod=$required_go)" >&2
+  if [[ -n "$required_go" && "${local_go#go}" != "$required_go"* ]]; then
+    echo "glogx: 初回は Go $required_go の toolchain 取得で時間がかかることがあります" >&2
+  fi
   (cd "$src_dir" && go build -o glogx .) || {
     echo "glogx: build failed" >&2
     exit 1
