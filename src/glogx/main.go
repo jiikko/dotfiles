@@ -60,6 +60,17 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	// git 実行のみで、エラーで先に return してもプロセス終了で無害に片付く
 	planCh := make(chan repoPlan, 1)
 	go func() { planCh <- gatherRepoPlan(opts) }()
+	// IME 切替 (macism) も同じ理由で先出しする。1 fork ≈ 40-60ms で git fork より 1 桁重く、
+	// 直列に置くと初回描画までの時間を数倍にしていた (perf 監査 2026-07-25)。ここで問い合わせ
+	// (1 本目) を始め、切替 (2 本目) は TUI 開始直前の finish() で払う。
+	// 対話ブラウズにならない経路 (非 TTY / --no-pager) では IME を触らないので開始もしない。
+	// ⚠️ 「1 画面に収まるので静的出力」のショートカット (下の interactive 再判定) に落ちる場合は
+	// 問い合わせ 1 本が空振りするが、read-only な問い合わせで副作用は無く、goroutine なので
+	// 起動を遅らせない。
+	var ime *imeSwitch
+	if isTTY && !opts.NoPager {
+		ime = beginIMESwitch()
+	}
 	// decoration の配色 (color.decorate.* + git 既定色) は自前描画のときだけ要る:
 	// renderDecoration を呼ぶのは mediumLines (verbatim 失敗時の fallback) と renderOnelineRow
 	// (--oneline) だけで、既定の verbatim medium 表示は git --color=always の焼き込み色を使い
@@ -144,10 +155,12 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	// context の timer を解放する (cancel は冪等)
 	defer browse.cancel()
 	browse.decor = decor
-	// TUI はキー操作が主なので IME を英数へ。エラー救済経路 (showStatic) を含め runLog を
-	// 抜けるときに元へ戻す。macism の未導入/エラーは warn で受け取り、起動時に toast で通知する
-	// (switchIMEToASCII が失敗を封じ込めるので glogx はクラッシュしない)。
-	restore, imeWarn := switchIMEToASCII()
+	// TUI はキー操作が主なので IME を英数へ。切替そのものは TUI 開始前に完了させる必要がある
+	// (未完了だと打鍵が日本語 IME の composition に吸われる) ので、先出しした問い合わせをここで
+	// join して 2 本目だけ払う。エラー救済経路 (showStatic) を含め runLog を抜けるときに元へ戻す。
+	// macism の未導入/エラーは warn で受け取り、起動時に toast で通知する
+	// (finish が失敗を封じ込めるので glogx はクラッシュしない)。
+	restore, imeWarn := ime.finish()
 	defer restore()
 	if imeWarn != "" {
 		// macism が導入済みなのにエラーになった場合のみ通知 (未導入は Init の macismInstalled
