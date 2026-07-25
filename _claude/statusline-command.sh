@@ -4,10 +4,39 @@
 
 input=$(cat)
 
-cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd')
-
-# Model display name (e.g. "Opus 4.8"). Provided by Claude Code via stdin JSON.
-model_name=$(echo "$input" | jq -r '.model.display_name // empty')
+# stdin JSON から必要な値を 1 回の jq でまとめて読む。
+# ⚠️ フィールドごとに jq を起動しないこと: statusline は再描画ごとに走るため、以前は
+# 1 レンダーで jq を 10 プロセス起動して実測 26ms (レンダー全体 75ms) を払っていた。
+# ⚠️ jq の出力順とこの read 順は 1:1 の契約。フィールドを足すときは両方を同じ位置に足す。
+# ⚠️ 各フィールドは `// ""` で必ず 1 行出すこと (`// empty` だと値が無い行が消えて以降が全部ズレる)。
+# 値が空のときの下流の扱いは従来と同じ ([ -n "$x" ] ガード)。
+{
+  IFS= read -r cwd
+  IFS= read -r model_name
+  IFS= read -r five_pct
+  IFS= read -r seven_pct
+  IFS= read -r five_reset
+  IFS= read -r seven_reset
+  IFS= read -r ctx_used
+  IFS= read -r ctx_size
+  IFS= read -r ctx_pct
+  IFS= read -r effort_level
+  IFS= read -r transcript
+} <<JSON_FIELDS
+$(printf '%s' "$input" | jq -r '
+  (.workspace.current_dir // .cwd // ""),
+  (.model.display_name // ""),
+  (.rate_limits.five_hour.used_percentage // ""),
+  (.rate_limits.seven_day.used_percentage // ""),
+  (.rate_limits.five_hour.resets_at // ""),
+  (.rate_limits.seven_day.resets_at // ""),
+  (.context_window.total_input_tokens // ""),
+  (.context_window.context_window_size // ""),
+  (.context_window.used_percentage // 0),
+  (.effort.level // ""),
+  (.transcript_path // "")
+' 2>/dev/null)
+JSON_FIELDS
 
 # Shorten the path: replace $HOME with ~, truncate to 50 chars with leading ..
 # (置換文字列の ~ は変数経由で渡す。リテラル \~ だとバックスラッシュごと表示される)
@@ -26,8 +55,11 @@ if git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   branch=$(git -C "$cwd" symbolic-ref --short HEAD 2>/dev/null || git -C "$cwd" rev-parse --short HEAD 2>/dev/null)
   porcelain=$(git -C "$cwd" status --porcelain 2>/dev/null)
   if [ -n "$porcelain" ]; then
-    changed_count=$(printf "%s\n" "$porcelain" | grep -c "^[^?]")
-    untracked_count=$(printf "%s\n" "$porcelain" | grep -c "^??")
+    # 変更数と untracked 数は 1 回の awk で数える (grep -c を 2 回起動しない。
+    # 判定は従来と同じ「行頭が ? でない = 変更」「?? = untracked」)
+    counts=$(printf "%s\n" "$porcelain" | awk '/^\?\?/ { u++ } /^[^?]/ { c++ } END { print (c+0), (u+0) }')
+    changed_count=${counts% *}
+    untracked_count=${counts#* }
   fi
 fi
 
@@ -111,11 +143,8 @@ human_tokens() {
 }
 
 rate_part=""
-five_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty' 2>/dev/null)
-seven_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty' 2>/dev/null)
-# resets_at: 各ウィンドウがリセットされる時刻 (Unix epoch 秒)。残り時間表示に使う
-five_reset=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty' 2>/dev/null)
-seven_reset=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty' 2>/dev/null)
+# five_pct / seven_pct / five_reset / seven_reset は冒頭の一括 jq で読んでいる
+# (resets_at = 各ウィンドウがリセットされる時刻 (Unix epoch 秒)。残り時間表示に使う)
 # 残り時間ラベルの色。90 (dark gray) は暗すぎたので 37 (light gray) にしている
 gray_fg="\033[37m"
 now=$(date +%s)
@@ -169,10 +198,7 @@ fi
 # context_window_size is the model's limit, used_percentage drives the
 # fullness color. (No transcript parsing: this is exact and per-render cheap.)
 ctx_part=""
-ctx_used=$(echo "$input" | jq -r '.context_window.total_input_tokens // empty')
 if [ -n "$ctx_used" ] && [ "$ctx_used" -gt 0 ] 2>/dev/null; then
-  ctx_size=$(echo "$input" | jq -r '.context_window.context_window_size // empty')
-  ctx_pct=$(echo "$input" | jq -r '.context_window.used_percentage // 0')
   used_label=$(human_tokens "$ctx_used")
   if [ -n "$ctx_size" ] && [ "$ctx_size" -gt 0 ] 2>/dev/null; then
     ctx_disp="${used_label}/$(human_tokens "$ctx_size")"
@@ -186,7 +212,6 @@ fi
 # Effort segment (leading space). .effort.level is the current reasoning
 # effort (e.g. low / medium / high / xhigh), provided directly on stdin.
 effort_part=""
-effort_level=$(echo "$input" | jq -r '.effort.level // empty')
 if [ -n "$effort_level" ]; then
   effort_part=" ${magenta_fg}[effort:${effort_level}]${reset}"
 fi
@@ -203,7 +228,6 @@ fi
 # assistant ターンまで赤い「未設定」が出る 1 ターンのラグ (自己修復する)。
 advisor_label="未設定"
 advisor_color="$red_fg"
-transcript=$(echo "$input" | jq -r '.transcript_path // empty')
 if [ -n "$transcript" ] && [ -f "$transcript" ]; then
   # tail -r (BSD/macOS) で末尾から辿り、最初に見つかった advisorModel 行 = 最新。
   advisor_model=$(tail -r "$transcript" 2>/dev/null | grep -m1 '"advisorModel"' | jq -r '.advisorModel // empty' 2>/dev/null)
