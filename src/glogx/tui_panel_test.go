@@ -383,7 +383,7 @@ func TestBrowsePanelDuringBatchFetchWaits(t *testing.T) {
 		t.Errorf("待機中の loading 表示が立っていない")
 	}
 	// 一括取得の完了で loading が解除され details が表示される
-	m.Update(ciResultMsg{batch: CIBatch{
+	m.Update(ciResultMsg{shas: shas, batch: CIBatch{
 		Statuses: map[string]CIState{shas[0]: StateSuccess},
 		Details:  map[string][]CheckDetail{shas[0]: {{Name: "build", State: StateSuccess}}},
 	}})
@@ -401,7 +401,7 @@ func TestBrowseCIResultMergesAndStopsSpinner(t *testing.T) {
 	if !m.fetching {
 		t.Fatalf("toFetch ありで fetching が立っていない")
 	}
-	m.Update(ciResultMsg{batch: CIBatch{
+	m.Update(ciResultMsg{shas: shas, batch: CIBatch{
 		Statuses: map[string]CIState{shas[0]: StateFailure},
 		Details:  map[string][]CheckDetail{shas[0]: {{Name: "lint", State: StateFailure}}},
 	}})
@@ -413,11 +413,123 @@ func TestBrowseCIResultMergesAndStopsSpinner(t *testing.T) {
 	}
 }
 
+// 一括取得はチャンクへ割って並列に投げるので ciResultMsg は複数回届く。最後のチャンクが
+// 着弾するまで fetching (= スピナー・invalidate gate・パネルガードの出典) を下ろさず、
+// 着弾ぶんだけ toFetch を縮めること。
+func TestBrowseCIResultChunksLandIncrementally(t *testing.T) {
+	const n = 20 // chunkSHAs が複数チャンクへ割る件数
+	m := newTestBrowse(t, n, map[string]CIState{}, nil)
+	shas := make([]string, n)
+	for i, c := range m.commits {
+		shas[i] = c.SHA
+	}
+	m.startCIFetch(shas)
+	chunks := chunkSHAs(shas)
+	if len(chunks) < 2 {
+		t.Fatalf("チャンク数 = %d; このテストは複数チャンク前提", len(chunks))
+	}
+	for i, chunk := range chunks {
+		statuses := map[string]CIState{}
+		for _, sha := range chunk {
+			statuses[sha] = StateSuccess
+		}
+		m.Update(ciResultMsg{shas: chunk, batch: CIBatch{Statuses: statuses}})
+
+		last := i == len(chunks)-1
+		if m.fetching == last {
+			t.Errorf("チャンク %d/%d 着弾後の fetching = %v", i+1, len(chunks), m.fetching)
+		}
+		// 着弾したチャンクの SHA は toFetch から消え、未着のぶんだけ残る
+		for _, sha := range chunk {
+			if slices.Contains(m.toFetch, sha) {
+				t.Errorf("着弾済み SHA が toFetch に残っている (パネルが無駄に待つ)")
+			}
+			if m.statuses[sha] != StateSuccess {
+				t.Errorf("チャンク %d の SHA が反映されていない: %q", i+1, m.statuses[sha])
+			}
+		}
+	}
+	if len(m.toFetch) != 0 {
+		t.Errorf("全チャンク着弾後の toFetch = %v; want 空", m.toFetch)
+	}
+}
+
+// 回帰: 未着チャンクの SHA 列を壊さない。chunkSHAs は元スライスの部分スライスを返すので、
+// toFetch を in-place に縮める実装 (slices.DeleteFunc) だと共有配列のゼロ埋めで
+// 「まだ飛んでいるチャンク」の SHA が空文字へ潰れ、その結果が届いても反映されなくなる。
+func TestBrowseCIResultKeepsPendingChunkSHAs(t *testing.T) {
+	const n = 20
+	m := newTestBrowse(t, n, map[string]CIState{}, nil)
+	shas := make([]string, n)
+	for i, c := range m.commits {
+		shas[i] = c.SHA
+	}
+	m.startCIFetch(shas)
+	chunks := chunkSHAs(shas)
+	if len(chunks) < 2 {
+		t.Fatalf("チャンク数 = %d; このテストは複数チャンク前提", len(chunks))
+	}
+	// 後続チャンクの内容を先に写しておく (先頭チャンクの処理で壊れたら検出できる)
+	want := make([][]string, len(chunks))
+	for i, c := range chunks {
+		want[i] = slices.Clone(c)
+	}
+	first := map[string]CIState{}
+	for _, sha := range chunks[0] {
+		first[sha] = StateSuccess
+	}
+	m.Update(ciResultMsg{shas: chunks[0], batch: CIBatch{Statuses: first}})
+	for i := 1; i < len(chunks); i++ {
+		if !slices.Equal(chunks[i], want[i]) {
+			t.Fatalf("未着チャンク %d の SHA 列が壊れた:\n got  %q\n want %q", i+1, chunks[i], want[i])
+		}
+	}
+	// 壊れていなければ、後続チャンクの着弾も従来どおり反映される
+	for i := 1; i < len(chunks); i++ {
+		statuses := map[string]CIState{}
+		for _, sha := range chunks[i] {
+			statuses[sha] = StateFailure
+		}
+		m.Update(ciResultMsg{shas: chunks[i], batch: CIBatch{Statuses: statuses}})
+		for _, sha := range chunks[i] {
+			if m.statuses[sha] != StateFailure {
+				t.Errorf("チャンク %d の SHA %q が反映されていない: %q", i+1, sha[:7], m.statuses[sha])
+			}
+		}
+	}
+}
+
+// 成功チャンクが先に失敗したチャンクの警告を消さないこと (逆に新しい取得の開始では消えること)。
+func TestBrowseCIResultKeepsChunkError(t *testing.T) {
+	const n = 20
+	m := newTestBrowse(t, n, map[string]CIState{}, nil)
+	shas := make([]string, n)
+	for i, c := range m.commits {
+		shas[i] = c.SHA
+	}
+	m.startCIFetch(shas)
+	chunks := chunkSHAs(shas)
+	m.Update(ciResultMsg{shas: chunks[0], batch: emptyBatch(), ghErr: &GHError{Kind: GHOther, Detail: "chunk 1 failed"}})
+	ok := map[string]CIState{}
+	for _, sha := range chunks[1] {
+		ok[sha] = StateSuccess
+	}
+	m.Update(ciResultMsg{shas: chunks[1], batch: CIBatch{Statuses: ok}})
+	if m.ghErr == nil || !strings.Contains(m.ghErr.Detail, "chunk 1 failed") {
+		t.Errorf("成功チャンクが失敗チャンクの警告を消した: %+v", m.ghErr)
+	}
+	// 新しい取得の開始では警告をリセットする (sticky 警告の防止)
+	m.startCIFetch(shas)
+	if m.ghErr != nil {
+		t.Errorf("取得開始で警告がリセットされていない: %+v", m.ghErr)
+	}
+}
+
 func TestBrowseCIResultNegativeCachesUnknown(t *testing.T) {
 	// API から結果が返らなかった SHA は unknown 表示 + 負キャッシュ対象 (fetched) に入る
 	shas := []string{strings.Repeat("a", 40)}
 	m := newTestBrowse(t, 1, map[string]CIState{}, shas)
-	m.Update(ciResultMsg{batch: emptyBatch()})
+	m.Update(ciResultMsg{shas: shas, batch: emptyBatch()})
 	if m.statuses[shas[0]] != StateUnknown {
 		t.Errorf("statuses = %v; want unknown", m.statuses[shas[0]])
 	}

@@ -309,7 +309,7 @@ func TestBrowseLinesMemoized(t *testing.T) {
 	}
 	// 状態を変える更新 (CI 結果のマージ) では再構築される
 	sha := m.commits[0].SHA
-	m.Update(ciResultMsg{batch: CIBatch{Statuses: map[string]CIState{sha: StateFailure}}})
+	m.Update(ciResultMsg{shas: []string{sha}, batch: CIBatch{Statuses: map[string]CIState{sha: StateFailure}}})
 	rebuilt := m.lines()
 	if &first[0] == &rebuilt[0] {
 		t.Errorf("CI 結果反映後も古い行リストのまま")

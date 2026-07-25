@@ -46,7 +46,7 @@ func TestBrowseBatchPRsFeedPCache(t *testing.T) {
 	// 一括取得の PR は p キーのキャッシュとコミット行バッジの両方に合流する
 	shas := []string{strings.Repeat("a", 40)}
 	m := newTestBrowse(t, 1, map[string]CIState{}, shas)
-	m.Update(ciResultMsg{batch: CIBatch{
+	m.Update(ciResultMsg{shas: shas, batch: CIBatch{
 		Statuses: map[string]CIState{shas[0]: StateSuccess},
 		Details:  map[string][]CheckDetail{},
 		PRs:      map[string]*PRRef{shas[0]: {Number: 7, URL: "https://github.com/o/r/pull/7", State: "MERGED"}},

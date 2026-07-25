@@ -54,9 +54,15 @@ func usageRefreshTick() tea.Cmd {
 	return tea.Tick(usageRefreshInterval, func(time.Time) tea.Msg { return usageRefreshMsg{} })
 }
 
+// ciResultMsg は一括取得 1 チャンク分の結果。一括取得は chunkSHAs で複数チャンクへ割って
+// 並列に投げるので、この msg は 1 回の取得につき複数回届く (startCIFetch 参照)。
+// shas はそのチャンクが担当した SHA — unknown 埋め / detailsLoading 解除 / toFetch からの
+// 差し引きをチャンクの範囲に閉じるために要る (全 toFetch を使うと、まだ飛んでいるチャンクの
+// SHA を「応答に無かった」と誤判定して unknown に落としてしまう)。
 type ciResultMsg struct {
 	batch CIBatch
 	ghErr *GHError
+	shas  []string
 }
 
 // detailMsg はパネル表示時のオンデマンド取得 (キャッシュヒットで詳細が無い SHA) の結果。
@@ -182,7 +188,14 @@ type browseModel struct {
 	fetched        map[string]CIState // API から取得した分 (終了後のキャッシュ保存用)
 	details        map[string][]CheckDetail
 	detailsLoading map[string]bool
-	toFetch        []string
+	// toFetch は一括取得の「まだ結果が来ていない」SHA。チャンクが着弾するたびに縮む
+	// (fetching も pendingFetches==0 で下りる)。パネルの「進行中の一括取得を待つ」ガードが
+	// これを見るので、既に着弾したチャンクの SHA で待たされないようにするために縮める必要がある。
+	toFetch []string
+	// pendingFetches は未着の一括取得チャンク数。fetching = pendingFetches > 0 を保つ
+	// (スピナー・invalidate gate・パネルガードが fetching を見るので、最後のチャンクが
+	// 着弾するまで下ろせない)。
+	pendingFetches int
 	repo           Repo
 	hasRepo        bool
 	ghErr          *GHError
@@ -293,11 +306,23 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		usageOv:        usageOverlay{visible: true},
 	}
 	if m.fetching {
-		m.fetch = func() tea.Msg {
-			defer cancel()
-			batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, toFetch)
-			return ciResultMsg{batch: batch, ghErr: ghErr}
+		// 起動時の一括取得は m.cancel と ctx を共有する意図的例外 (q 中断で走行中の
+		// GraphQL を止めるため)。チャンクへ割って並列に投げるので、画面に映っている先頭
+		// コミットの CI が最初に埋まる (startCIFetch の分割方針)。
+		//
+		// ⚠️ チャンク closure で cancel() を defer しないこと: 共有 ctx なので最初に終わった
+		// チャンクが残りを巻き添えキャンセルしてしまう。timer の解放は m.cancel
+		// (main.go の defer browse.cancel() と quit 経路) が担う。
+		chunks := chunkSHAs(toFetch)
+		m.pendingFetches = len(chunks)
+		cmds := make([]tea.Cmd, 0, len(chunks))
+		for _, chunk := range chunks {
+			cmds = append(cmds, func() tea.Msg {
+				batch, ghErr := fetchCIChunk(ctx, ExecRunner, repo, chunk)
+				return ciResultMsg{batch: batch, ghErr: ghErr, shas: chunk}
+			})
 		}
+		m.fetch = tea.Batch(cmds...)
 	}
 	return m
 }
@@ -361,6 +386,43 @@ func fetchCIStatusesCmd(repo Repo, targets []string, wrap func(CIBatch, *GHError
 		defer cancel()
 		batch, ghErr := FetchCIStatuses(ctx, ExecRunner, repo, targets)
 		return wrap(batch, ghErr)
+	}
+}
+
+// startCIFetch は一括取得を chunkSHAs のチャンクへ割り、チャンクごとに ciResultMsg を返す Cmd を
+// 束ねて返す。取得の「開始点」は 4 箇所 (起動 / pushPollMsg / reloadAfterPull / refetchAfterPush)
+// あるので、状態 (toFetch / pendingFetches / fetching / ghErr) の立て方をここへ集約する。
+//
+// チャンク 1 が commits の表示順先頭なので、画面に映っているコミットの CI が最初に埋まる
+// (ビューポート計算もカーソル追従も不要。commits が既に表示順なのを利用している)。
+//
+// ghErr はここでクリアする: チャンクごとに無条件代入すると、後から着弾した成功チャンクが先の
+// 失敗チャンクの警告を消してしまう。「新しい取得で警告をリセットする」(レビュー C4 の
+// sticky 警告防止) は開始時にやり、ハンドラ側は非 nil のときだけ立てる。
+func (m *browseModel) startCIFetch(shas []string) tea.Cmd {
+	chunks := chunkSHAs(shas)
+	m.toFetch = shas
+	m.pendingFetches = len(chunks)
+	m.fetching = true
+	m.ghErr = nil
+	cmds := make([]tea.Cmd, 0, len(chunks))
+	for _, chunk := range chunks {
+		cmds = append(cmds, fetchCIChunkCmd(m.repo, chunk))
+	}
+	return tea.Batch(cmds...)
+}
+
+// fetchCIChunkCmd は 1 チャンク = GraphQL 1 リクエスト分の取得 Cmd。
+//
+// ⚠️ FetchCIStatuses を通さないこと: あちらも内部で chunkSHAs するので、既に割ったチャンクを
+// 渡すともう一段割られて同時リクエスト数が fetchConcurrency の二乗側 (最大 16 本) へ膨らむ。
+// 分割はここ (startCIFetch) の 1 段だけに保つ。
+func fetchCIChunkCmd(repo Repo, chunk []string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+		defer cancel()
+		batch, ghErr := fetchCIChunk(ctx, ExecRunner, repo, chunk)
+		return ciResultMsg{batch: batch, ghErr: ghErr, shas: chunk}
 	}
 }
 
@@ -474,16 +536,37 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.maybeTick(), toastHoldCmd, pushRefetchCmd)
 	case ciResultMsg:
 		m.invalidateLines()
-		m.ghErr = msg.ghErr
+		// チャンクごとに届くので、成功チャンクで先の失敗チャンクの警告を消さない
+		// (取得開始時のリセットは startCIFetch が担う)
+		if msg.ghErr != nil {
+			m.ghErr = msg.ghErr
+		}
 		// 応答に無かった SHA は unknown で埋める (fetched へ入れる = 終了時に SaveCache
 		// される 30 秒の負キャッシュ)。q での中断 (fillUnknown) と違い、こちらは API の
-		// 実際の返答に基づく確定
-		filled := fillUnknownFetched(msg.batch.Statuses, m.toFetch)
+		// 実際の返答に基づく確定。範囲はこのチャンクの SHA だけ — 全 toFetch で埋めると
+		// まだ飛んでいるチャンクの SHA を「応答に無かった」と誤判定する
+		filled := fillUnknownFetched(msg.batch.Statuses, msg.shas)
 		m.mergeCIBatch(filled, msg.batch.Details, msg.batch.PRs)
-		m.fetching = false
+		// 未着チャンクが残っている間は fetching を下ろさない (スピナー・invalidate gate・
+		// パネルガードの出典)。toFetch は着弾ぶんを差し引き、パネルが既に結果の来た SHA で
+		// 待たされないようにする
+		m.pendingFetches = max(m.pendingFetches-1, 0)
+		m.fetching = m.pendingFetches > 0
+		// ⚠️ ここを slices.DeleteFunc で書かないこと: あれは in-place 圧縮して破棄した末尾を
+		// ゼロ埋めするが、chunkSHAs は元スライスの部分スライスを返すので m.toFetch と
+		// 未着チャンクの msg.shas は同じ配列を共有している。in-place に削ると「まだ飛んでいる
+		// チャンクの SHA 列」が空文字へ潰れ、その結果が届いても unknown 埋め・loading 解除の
+		// 対象を失う。新しいスライスへ写して共有配列に触らない。
+		remaining := make([]string, 0, len(m.toFetch))
+		for _, sha := range m.toFetch {
+			if !slices.Contains(msg.shas, sha) {
+				remaining = append(remaining, sha)
+			}
+		}
+		m.toFetch = remaining
 		// 一括取得待ちでパネルを開いていた SHA の loading を解除する (結果が来なかった
 		// SHA も含めて解除。details 不在は「(CI job 情報なし)」表示に落ちる)
-		for _, sha := range m.toFetch {
+		for _, sha := range msg.shas {
 			delete(m.detailsLoading, sha)
 		}
 		// push 直後ポーリング: CI がまだ見えない (none/unknown) SHA は結果を捨てて
@@ -655,12 +738,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.pollAttempts++
 		targets := slices.Collect(maps.Keys(m.pushPoll))
-		m.toFetch = targets
-		m.fetching = true
-		fetch := fetchCIStatusesCmd(m.repo, targets, func(b CIBatch, e *GHError) tea.Msg {
-			return ciResultMsg{batch: b, ghErr: e}
-		})
-		return m, tea.Batch(fetch, m.maybeTick())
+		return m, tea.Batch(m.startCIFetch(targets), m.maybeTick())
 	case pullMsg:
 		m.actModal.pulling = false
 		if msg.err != nil {
@@ -996,17 +1074,15 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 		m.ensureCursorVisible()
 	}
 	if !m.hasRepo || len(m.toFetch) == 0 {
+		// fetching == (pendingFetches > 0) の不変条件を保つ (取得を始めないので両方下ろす)
+		m.pendingFetches = 0
 		m.fetching = false
 		if m.pullAnimating {
 			return m.maybeTick() // CI 取得は無いが、アニメーションのために tick を回す
 		}
 		return nil
 	}
-	m.fetching = true
-	fetch := fetchCIStatusesCmd(m.repo, m.toFetch, func(b CIBatch, e *GHError) tea.Msg {
-		return ciResultMsg{batch: b, ghErr: e}
-	})
-	return tea.Batch(fetch, m.maybeTick())
+	return tea.Batch(m.startCIFetch(m.toFetch), m.maybeTick())
 }
 
 // pullAnimMaxLines は pull アニメで降らせる最大行数。大量 pull でも待ちが伸びすぎないよう
@@ -1190,11 +1266,7 @@ func (m *browseModel) refetchAfterPush() tea.Cmd {
 		delete(m.details, c.SHA)
 	}
 	m.invalidateLines()
-	m.toFetch = all
-	m.fetching = true
-	return fetchCIStatusesCmd(m.repo, all, func(b CIBatch, e *GHError) tea.Msg {
-		return ciResultMsg{batch: b, ghErr: e}
-	})
+	return m.startCIFetch(all)
 }
 
 // startScrollAnim は j/k でビューポートがコミット単位に動いたとき、表示 offset (offsetShown)

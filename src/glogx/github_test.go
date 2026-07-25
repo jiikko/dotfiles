@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os/exec"
 	"slices"
 	"strconv"
@@ -416,15 +417,14 @@ func recordingRunner(responses map[string]string, failures map[string]error) (Co
 		mu.Lock()
 		calls = append(calls, joined)
 		mu.Unlock()
-		for pattern, err := range failures {
-			if strings.Contains(joined, pattern) {
-				return nil, []byte("boom"), err
-			}
+		// ⚠️ 長いパターンから照合する: map の反復順は非決定的で、"actions/jobs/7" と
+		// "actions/jobs/7/logs" のように前方一致で競合する組を登録すると、実行ごとに
+		// 別の応答が返って flake する
+		if pattern, ok := longestMatch(joined, slices.Collect(maps.Keys(failures))); ok {
+			return nil, []byte("boom"), failures[pattern]
 		}
-		for pattern, out := range responses {
-			if strings.Contains(joined, pattern) {
-				return []byte(out), nil, nil
-			}
+		if pattern, ok := longestMatch(joined, slices.Collect(maps.Keys(responses))); ok {
+			return []byte(responses[pattern]), nil, nil
 		}
 		return nil, nil, nil
 	}
@@ -433,6 +433,17 @@ func recordingRunner(responses map[string]string, failures map[string]error) (Co
 		defer mu.Unlock()
 		return slices.Clone(calls)
 	}
+}
+
+// longestMatch は s に含まれる最長のパターンを返す (照合順を決定的にするため)。
+func longestMatch(s string, patterns []string) (string, bool) {
+	best, found := "", false
+	for _, p := range patterns {
+		if strings.Contains(s, p) && len(p) > len(best) {
+			best, found = p, true
+		}
+	}
+	return best, found
 }
 
 func calledWith(calls []string, pattern string) bool {
