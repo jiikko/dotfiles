@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -114,8 +116,20 @@ func TestWrapWindowFrame(t *testing.T) {
 		t.Errorf("NO_COLOR の影グリフ (▒/░) が無い:\n%s", joined)
 	}
 	// colored は近黒 fg の █ (本体)
-	if cj := strings.Join(wrapWindowFrame(content, termW, true), "\n"); !strings.Contains(cj, ansiShadowFg+"█") {
+	cj := strings.Join(wrapWindowFrame(content, termW, true), "\n")
+	if !strings.Contains(cj, ansiShadowFg+"█") {
 		t.Errorf("colored で影本体 █ が無い")
+	}
+	// 罫線は scratch と同じマゼンタで染まる。影は中立 dim のまま (染めない)
+	if !strings.Contains(cj, ansiFrameBorder+"╔") {
+		t.Errorf("colored で上辺が枠色に染まっていない:\n%s", cj)
+	}
+	if strings.Contains(cj, ansiFrameBorder+"█") || strings.Contains(cj, ansiFrameBorder+"▓") {
+		t.Errorf("落ち影まで枠色で染まっている (影は中立のままにする):\n%s", cj)
+	}
+	// NO_COLOR では色を出さない (paint が素通しする)
+	if nj := strings.Join(wrapWindowFrame(content, termW, false), "\n"); strings.Contains(nj, ansiFrameBorder) {
+		t.Errorf("NO_COLOR で枠色の SGR が出ている:\n%s", nj)
 	}
 }
 
@@ -164,5 +178,42 @@ func TestWithScrollbar(t *testing.T) {
 		if w := dispWidth(l); w > 40-4 {
 			t.Errorf("本文行の幅 = %d > inner %d: %q", w, 40-4, l)
 		}
+	}
+}
+
+// ansiFrameBorder の色番号が theme/colors.yml の blink_magenta と一致することを機械検証する。
+//
+// なぜテストで守るか: この色は dotfiles のテーマ意味マップ (docs/theme-colors.md) の
+// 「点滅/scratch アイデンティティ」で、tmux の scratch popup 枠と同じ色であることに意味がある
+// (glogx も「ふだんの pane とは別の一時的な板」だと色で示す)。単一ソースは theme/colors.yml だが、
+// 生成器 (scripts/gen_theme_colors.sh) の Go 出力先は src/git-popup 固定なので glogx は
+// 手書きコピーになる。放置すると yml を変えたときに無言でずれるため、ここで突き合わせる。
+func TestFrameBorderMatchesThemeYML(t *testing.T) {
+	const role = "blink_magenta"
+	data, err := os.ReadFile(filepath.Join("..", "..", "theme", "colors.yml"))
+	if err != nil {
+		t.Skipf("theme/colors.yml を読めないのでスキップ (glogx 単体で切り出された場合): %v", err)
+	}
+	// role の直後に続く最初の "cterm: <n>" を取る
+	lines := strings.Split(string(data), "\n")
+	want := ""
+	for i, l := range lines {
+		if !strings.HasPrefix(l, role+":") {
+			continue
+		}
+		for _, next := range lines[i+1:] {
+			if s := strings.TrimSpace(next); strings.HasPrefix(s, "cterm:") {
+				want = strings.TrimSpace(strings.TrimPrefix(s, "cterm:"))
+				break
+			}
+		}
+		break
+	}
+	if want == "" {
+		t.Fatalf("theme/colors.yml に %s の cterm が見つからない", role)
+	}
+	if got := "\x1b[38;5;" + want + "m"; ansiFrameBorder != got {
+		t.Errorf("ansiFrameBorder = %q; theme/colors.yml の %s (cterm %s) は %q\n"+
+			"→ yml を変えたなら render.go の ansiFrameBorder も揃えること", ansiFrameBorder, role, want, got)
 	}
 }

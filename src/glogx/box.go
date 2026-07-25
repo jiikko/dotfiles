@@ -110,9 +110,11 @@ func buildShadowPanelBox(title string, rows []string, width int, colored bool, b
 // (issue 025)。影の幾何は buildPanelBoxImpl(shadow=true) へ完全委譲する (影の実装は 1 箇所に保つ)。
 // 返す行数 = len(content) + 4 (上余白 + 上辺 + 下辺 + 下影)。左右余白 1 桁ずつ + 影 1 桁で、
 // footprint は termW に収まる (呼び出し側の contentWidth()/frameVOverhead と一致)。
+// 罫線は ansiFrameBorder (scratch と同じマゼンタ) で染める。落ち影は中立 dim のまま
+// (buildShadowPanelBox の方針と同じ。トーストが枠だけ種別色にして影を据え置いたのと同型)。
 func wrapWindowFrame(content []string, termW int, colored bool) []string {
 	// -2 = 左右余白 1 桁ずつ。二重罫線 (ユーザー要望)
-	box := buildPanelBoxImpl("", content, termW-2, colored, panelBoxStyle{shadow: true, glyphs: borderDouble, color: ansiDim})
+	box := buildPanelBoxImpl("", content, termW-2, colored, panelBoxStyle{shadow: true, glyphs: borderDouble, color: ansiFrameBorder})
 	out := make([]string, 0, len(box)+1)
 	out = append(out, "") // 上余白 1 行 (端末地色)
 	for _, l := range box {

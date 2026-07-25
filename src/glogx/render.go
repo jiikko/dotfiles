@@ -27,6 +27,15 @@ const (
 	// グリフの隙間から端末の地色が透けて自然な penumbra になる (端末 bg に依存せず、色の
 	// 濃淡 █>▓ で縁をフェザーできる)。buildShadowPanelBox の drop shadow。
 	ansiShadowFg = "\x1b[38;5;232m"
+	// 最外周フレームの罫線色 (256色のマゼンタ 201)。dotfiles のテーマ意味マップ
+	// (docs/theme-colors.md) の「点滅/scratch アイデンティティ」= tmux の scratch popup 枠と
+	// 同じ色で、glogx も「ふだんの pane とは別の一時的な板」であることを色で示す
+	// (ユーザー要望 2026-07-25「scratch tmux terminal みたいに色をつけたい」)。
+	//
+	// ⚠️ 色番号は theme/colors.yml の blink_magenta が出典。変えるなら yml 側と揃えること
+	// (yml は機械可読な単一ソースで、tests/theme/test_theme_colors.sh が tmux/nvim 側の
+	// 定数との一致を検証している。glogx は Go で定数を共有できないため手書きコピーになる)。
+	ansiFrameBorder = "\x1b[38;5;201m"
 )
 
 // spinnerFrames は取得中表示のフレーム。
