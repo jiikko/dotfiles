@@ -94,3 +94,42 @@ jobDetailOverlay) を抽出したのを機に、src 配下の Go プロジェク
   却下)。
 - glog は本 issue 作成と同時に廃止 (未使用・glogx に一本化。commit 40d4a28)。監査当初は glog への
   overlay back-port が最優先候補だったが、削除により moot。
+
+## 完了 (2026-07-25): P3 実施 / P4 却下 → クローズ
+
+### P3: Runner `dispatchQueue` の抽出 — ✅ 完了 (commit 9b5e738)
+
+`dispatch_queue.go` へ切り出し。queue 関連 5 フィールド (`queueMu` / `queue` / `queueWake` /
+`nextIndex` / `live`) → 1 フィールド (`*dispatchQueue`)、`queueMu` を取る 12 箇所が runner.go から
+消えた (1151 → 1053 行)。既存の Runner 側テスト 18 本は無改変で green + 型の単体テスト 10 本 (-race)。
+
+境界は本 issue の指示どおり「queue 操作」で止めた (dedup / -F 追記 / worker への select /
+stopCtx は Runner 側に残置。peek は停止シグナルを channel 引数で受ける = pauseGate と同型)。
+
+着手時の再判定で分かった、監査時点の評価とのズレ 2 点:
+
+- **有利だった点**: `live` は `SetLive` が「Start 前のみ」の契約で、実行中は不変。よって注入では
+  なくキュー側の単一出典に移せた (従来は「無同期書き込み + `queueMu` 下読み」だったので同期も締まった)
+- **不利だった点**: queue の**振る舞い**は既に Runner API レベルの 18 本 (`EnqueueFront...` /
+  `RemovePending` / `PendingSnapshot` / `EnqueueRejectedAfterStop` 等) が押さえており、
+  「切り出して初めてテストできる」P1/P2 とは状況が違った。よって実利は主に *locking の局所化*。
+  ただし **peek → commit の間に `EnqueueFront` が割り込む経路** は直接突くテストが無く、
+  今回それが単体テストで固定された (mutation: commit を位置照合へ退化させると 3 本 FAIL)
+
+### P4: parallel-each `exportOverlay` — ❌ 却下 (現状維持)
+
+着手前にコードを再確認して却下した。理由:
+
+- 状態機械は 3 状態で、読み書きは `handleOtherMenuKey` / `handleExportKey` の **2 関数に既に
+  閉じている** (tui.go の 27 参照はほぼこの 2 関数 + render 1 箇所)
+- 外への結合は `setFlash` の 3 呼び出しだけ。型に閉じるには本 issue が指示するとおり
+  `exportResultMsg` 経由が必須で、**メッセージ型 + Update の case を足して直接呼び 3 つを
+  置き換える**形になる = 結合を切らずにホップを増やす「移動」
+- 6 サブフローのうち 1 つだけ overlay 化しても一貫性は上がらない (全体を揃えるのは下記 trigger 待ち)
+
+### クローズ理由
+
+抽出価値のある候補 (P1/P2/P3) は完了、P4 は却下、残るのは speculative の
+「parallel-each の 6 サブフローを overlay idiom へ揃える」だけ。これは**該当フローを機能追加で
+触るときの trigger 待ち**で、先回りしない方針が正しいため本 issue は閉じる (trigger が来たら
+新しい issue を起こす)。glogx `browseModel` は「これ以上触る価値なし」の判定を維持する。
