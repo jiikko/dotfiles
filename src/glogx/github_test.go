@@ -170,6 +170,143 @@ func TestFetchCIStatusesBrokenJSON(t *testing.T) {
 	}
 }
 
+// chunkSHAs: 少件数は 1 本のまま / 多件数は fetchConcurrency で打ち止め / 全 SHA を
+// 重複なく被覆し / 端数を配って最大チャンク (= wall time) を最小に保つ。
+func TestChunkSHAs(t *testing.T) {
+	shas := func(n int) []string {
+		out := make([]string, n)
+		for i := range out {
+			out[i] = strconv.Itoa(i)
+		}
+		return out
+	}
+	for _, n := range []int{1, 2, minChunkSHAs} {
+		if got := chunkSHAs(shas(n)); len(got) != 1 {
+			t.Errorf("n=%d のチャンク数 = %d, want 1 (往復を増やすに値しない粒)", n, len(got))
+		}
+	}
+	for _, n := range []int{9, 20, 50, 100} {
+		got := chunkSHAs(shas(n))
+		if len(got) > fetchConcurrency {
+			t.Errorf("n=%d のチャンク数 = %d > 並列度上限 %d", n, len(got), fetchConcurrency)
+		}
+		// 被覆: 連結すると元の列に一致する (欠落も重複も順序入れ替えもない)
+		var flat []string
+		lo, hi := len(got[0]), 0
+		for _, c := range got {
+			flat = append(flat, c...)
+			lo, hi = min(lo, len(c)), max(hi, len(c))
+		}
+		if !slices.Equal(flat, shas(n)) {
+			t.Errorf("n=%d で SHA の被覆が壊れた: %v", n, flat)
+		}
+		if hi-lo > 1 {
+			t.Errorf("n=%d のチャンクサイズが偏っている (最小 %d / 最大 %d)", n, lo, hi)
+		}
+	}
+}
+
+// 件数が多いときは並列チャンクへ割って投げ、結果をマージして 1 つの CIBatch にする。
+func TestFetchCIStatusesChunksInParallel(t *testing.T) {
+	const n = 20
+	shas := make([]string, n)
+	for i := range shas {
+		shas[i] = fmt.Sprintf("%040d", i)
+	}
+	var (
+		mu       sync.Mutex
+		inFlight int
+		maxSeen  int
+		queries  int
+	)
+	run := func(_ context.Context, _ string, args ...string) ([]byte, []byte, error) {
+		mu.Lock()
+		inFlight++
+		maxSeen = max(maxSeen, inFlight)
+		queries++
+		mu.Unlock()
+		time.Sleep(20 * time.Millisecond)
+		mu.Lock()
+		inFlight--
+		mu.Unlock()
+		// このチャンクに含まれる alias の数だけ SUCCESS を返す
+		joined := strings.Join(args, " ")
+		var b strings.Builder
+		b.WriteString(`{"data":{"repository":{`)
+		for i := 0; strings.Contains(joined, fmt.Sprintf("c%d: object", i)); i++ {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			fmt.Fprintf(&b, `"c%d": {"statusCheckRollup": {"state":"SUCCESS","contexts":{"nodes":[`+
+				`{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS"}]}}}`, i)
+		}
+		b.WriteString(`}}}`)
+		return []byte(b.String()), nil, nil
+	}
+	batch, ghErr := FetchCIStatuses(context.Background(), run, Repo{Owner: "o", Name: "r"}, shas)
+	if ghErr != nil {
+		t.Fatalf("ghErr = %v", ghErr)
+	}
+	if queries < 2 {
+		t.Fatalf("リクエスト数 = %d; 20 件は分割されるべき", queries)
+	}
+	if maxSeen < 2 {
+		t.Errorf("同時実行数の最大 = %d; チャンクが直列に走っている", maxSeen)
+	}
+	// 全 SHA がマージ後の Statuses に揃っている
+	if len(batch.Statuses) != n {
+		t.Errorf("マージ後の Statuses = %d 件, want %d", len(batch.Statuses), n)
+	}
+	for i, sha := range shas {
+		if batch.Statuses[sha] != StateSuccess {
+			t.Errorf("SHA[%d] が欠けている / 状態違い: %q", i, batch.Statuses[sha])
+		}
+	}
+}
+
+// 1 チャンクが失敗しても、成功したチャンクの結果は捨てない (取れた分 + GHError を返す)。
+// 呼び出し側の fillUnknownFetched が欠けた SHA を unknown に埋めるので、失敗チャンクの
+// SHA だけが `?` に落ちる。
+func TestFetchCIStatusesChunkPartialFailure(t *testing.T) {
+	const n = 20
+	shas := make([]string, n)
+	for i := range shas {
+		shas[i] = fmt.Sprintf("%040d", i)
+	}
+	// 先頭 SHA を含むチャンクだけ失敗させる
+	first := shas[0]
+	run := func(_ context.Context, _ string, args ...string) ([]byte, []byte, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, first) {
+			return nil, []byte("gh: api error"), errors.New("exit status 1")
+		}
+		var b strings.Builder
+		b.WriteString(`{"data":{"repository":{`)
+		for i := 0; strings.Contains(joined, fmt.Sprintf("c%d: object", i)); i++ {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			fmt.Fprintf(&b, `"c%d": {"statusCheckRollup": {"state":"SUCCESS","contexts":{"nodes":[`+
+				`{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS"}]}}}`, i)
+		}
+		b.WriteString(`}}}`)
+		return []byte(b.String()), nil, nil
+	}
+	batch, ghErr := FetchCIStatuses(context.Background(), run, Repo{Owner: "o", Name: "r"}, shas)
+	if ghErr == nil {
+		t.Fatal("失敗チャンクの GHError が返っていない")
+	}
+	if len(batch.Statuses) == 0 {
+		t.Fatal("成功チャンクの結果まで捨てている")
+	}
+	if _, ok := batch.Statuses[first]; ok {
+		t.Errorf("失敗チャンクの SHA が Statuses に入っている (unknown 埋めの対象から漏れる)")
+	}
+	if len(batch.Statuses) >= n {
+		t.Errorf("失敗チャンクぶんが欠けていない: %d 件", len(batch.Statuses))
+	}
+}
+
 // argsRunner は呼び出し引数に応じて応答を切り替える CommandRunner。
 func argsRunner(t *testing.T, responses map[string]string) CommandRunner {
 	t.Helper()

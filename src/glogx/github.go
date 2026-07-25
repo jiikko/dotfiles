@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -220,6 +221,7 @@ type CIBatch struct {
 // Details は展開表示用のジョブ一覧 (Check が無い SHA は空スライス)。PRs はコミット行の
 // バッジと p キーのキャッシュに使う。部分成功 (data と errors の同時返却) では
 // 取れた分と GHError の両方を返す。
+// 件数が多いときは複数チャンクへ割って並列に投げる (chunkSHAs / fetchCIChunk 参照)。
 func FetchCIStatuses(ctx context.Context, run CommandRunner, repo Repo, shas []string) (CIBatch, *GHError) {
 	if len(shas) == 0 {
 		return emptyBatch(), nil
@@ -227,6 +229,36 @@ func FetchCIStatuses(ctx context.Context, run CommandRunner, repo Repo, shas []s
 	if len(shas) > fetchMaxSHAs {
 		shas = shas[:fetchMaxSHAs]
 	}
+	chunks := chunkSHAs(shas)
+	if len(chunks) == 1 {
+		return fetchCIChunk(ctx, run, repo, chunks[0])
+	}
+	batches := make([]CIBatch, len(chunks))
+	errs := make([]*GHError, len(chunks))
+	var wg sync.WaitGroup
+	for i, chunk := range chunks {
+		wg.Go(func() { batches[i], errs[i] = fetchCIChunk(ctx, run, repo, chunk) })
+	}
+	wg.Wait()
+	// 取れた分は全部マージし、エラーはチャンク順で最初のものを返す (部分成功の既存契約と同じ:
+	// 取得できなかった SHA は Statuses に現れず、呼び出し側の fillUnknownFetched が unknown で
+	// 埋める = 失敗チャンクの SHA だけが `?` に落ちる)。
+	merged := emptyBatch()
+	for _, b := range batches {
+		maps.Copy(merged.Statuses, b.Statuses)
+		maps.Copy(merged.Details, b.Details)
+		maps.Copy(merged.PRs, b.PRs)
+	}
+	for _, e := range errs {
+		if e != nil {
+			return merged, e
+		}
+	}
+	return merged, nil
+}
+
+// fetchCIChunk は SHA 1 チャンク分を 1 リクエストの GraphQL で問い合わせる。
+func fetchCIChunk(ctx context.Context, run CommandRunner, repo Repo, shas []string) (CIBatch, *GHError) {
 	query := buildStatusQuery(shas)
 	stdout, stderr, err := run(ctx, "gh", "api", "graphql",
 		"-F", "owner="+repo.Owner, "-F", "name="+repo.Name, "-f", "query="+query)
@@ -234,6 +266,45 @@ func FetchCIStatuses(ctx context.Context, run CommandRunner, repo Repo, shas []s
 		return emptyBatch(), classifyGHError(err, string(stderr))
 	}
 	return parseStatusResponse(stdout, shas)
+}
+
+// 一括取得の並列度とチャンクの最小サイズ。
+//
+// GraphQL のレイテンシは SHA 数に線形で、実測 (2026-07-25) は固定費 ≈ 480ms + 約 21ms/SHA
+// (n=1 0.51s / n=10 0.70s / n=20 0.90s / n=50 1.55s)。よって割って並列に投げると縮む
+// (n=20 → 3 チャンク 0.74s / n=50 → 4 チャンク 0.78s)。
+//
+// ⚠️ fetchConcurrency を上げるときは実測し直すこと。4 並列までは throttling が観測されなかったが
+// (13 SHA × 4 の wall 0.78s ≈ 単発 13 SHA の 0.70s)、それ以上は未計測で GitHub の secondary
+// rate limit (バースト側) に寄る。「チャンクサイズ固定でチャンク数を導く」ではなく「並列度に
+// 上限を置いてチャンクサイズを件数から導く」向きにしているのはこのため。
+//
+// minChunkSHAs はリクエストを 1 本増やすのに値する最小の粒。固定費 480ms に対し 1 SHA の
+// 削減は 21ms なので、細かく割りすぎると往復数だけ増えて wall はほぼ縮まない。
+const (
+	fetchConcurrency = 4
+	minChunkSHAs     = 8
+)
+
+// chunkSHAs は shas を最大 fetchConcurrency 個のチャンクへほぼ均等に割る
+// (件数が少ないときは 1 チャンク = 従来どおりの単発リクエスト)。
+func chunkSHAs(shas []string) [][]string {
+	n := min((len(shas)+minChunkSHAs-1)/minChunkSHAs, fetchConcurrency)
+	if n <= 1 {
+		return [][]string{shas}
+	}
+	chunks := make([][]string, 0, n)
+	// 端数は前のチャンクへ 1 つずつ配る (最大チャンク = wall time なので偏らせない)
+	base, extra := len(shas)/n, len(shas)%n
+	for i, start := 0, 0; i < n; i++ {
+		size := base
+		if i < extra {
+			size++
+		}
+		chunks = append(chunks, shas[start:start+size])
+		start += size
+	}
+	return chunks
 }
 
 func emptyBatch() CIBatch {
