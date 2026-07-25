@@ -84,6 +84,21 @@ var fetchLatestClaudeVersion = func(ctx context.Context) string {
 }
 
 // fetchInstalledClaudeVersion はテストで claude CLI を起動しないための差し替え点。
+//
+// ⚠️ ここを memo 化しない (perf 監査 2026-07-25 で「起動時に claude --version が 2 回走る」
+// と指摘されたが、対応しないと判断した理由):
+//   - 2 回目の出典は usage.Fetch 内の並列取得 (usage/usage.go)。ただし usage 側は
+//     usageCacheTTL のディスクキャッシュが載ったので、cache hit する通常経路では
+//     usage.Fetch 自体が走らず重複は消える。残るのは cache miss の起動だけ。
+//   - どちらもバックグラウンドの tea.Cmd で初期描画のクリティカルパスに乗らない (~160ms)。
+//   - 一方で usage.FetchVersion の process 内 memo 化は壊れる: runClaudeUpdate
+//     (external_commands.go) が `claude update` の前後で FetchVersion を呼び、
+//     before/after の差分を表示に使う。memo があると after が更新前の値になる。
+//     TTL キャッシュにしても、glogx の外で claude を更新したときに古い版を出す新しい
+//     失敗モードを作る。
+//
+// 得るもの (cache miss 時のみ 160ms の非同期 fork 1 本) に対して払うものが大きいので現状維持。
+// usage 側のキャッシュを外す / update の before-after 表示をやめる、のどちらかが起きたら再評価。
 var fetchInstalledClaudeVersion = func(ctx context.Context) string {
 	return usage.FetchVersion(ctx)
 }
