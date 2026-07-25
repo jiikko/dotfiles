@@ -41,9 +41,18 @@ func main() {
 	probes := []probe{
 		{"ASCII x (基準)", "x", 1},
 		{"全角 あ (基準)", "あ", 2},
+		// ⚠ ❤ ✔ は Emoji かつ Extended_Pictographic だが Emoji_Presentation ではない
+		// (実測 2026-07-25、Unicode 16.0 emoji-data.txt)。つまり「VS16 無しなら text 既定」だが
+		// 既定をどう解釈するかは端末の裁量で、絵文字幅 (2) に振る実装がありうる。bare で割れる
+		// なら VS15 (text presentation を明示) で端末に「文字として描け」と指示できる。
+		// この 3 段 (bare / VS16 / VS15) の比較が対策選択の分岐点になる。
 		{"bare ⚠ U+26A0", "⚠", 0},
 		{"⚠+VS16 U+FE0F", "⚠️", 0},
 		{"⚠+VS15 U+FE0E", "⚠︎", 0},
+		{"bare ✔ U+2714", "✔", 0},
+		{"✔+VS15", "✔︎", 0},
+		// 以下は非絵文字 (Emoji プロパティなし) なので構造的に幅 1 で安定するはず。
+		// ここが割れるなら端末の幅モデル自体が疑わしい (glogx の枠・記号が全部ずれる)。
 		{"✓ U+2713", "✓", 0},
 		{"✗ U+2717", "✗", 0},
 		{"● U+25CF", "●", 0},
@@ -100,13 +109,62 @@ func main() {
 	}
 	fmt.Printf("\n食い違い: %d 件\n", mismatch)
 	if mismatch > 0 {
-		fmt.Println("→ 食い違った文字は width.go の正規化対象 (bare へ倒す / 使用をやめる) を検討する。")
+		fmt.Println("→ 食い違った文字は width.go の正規化対象 (bare / VS15 へ倒す・使用をやめる) を検討する。")
 	}
 	if inTmux {
 		fmt.Println("→ tmux の外でも実行して got を比べること (差があれば tmux が幅を書き換えている)。")
 	} else {
 		fmt.Println("→ tmux の中でも実行して got を比べること (差があれば tmux が幅を書き換えている)。")
 	}
+
+	// 症状は「静的なズレ」ではなく「毎秒 1↔2 を往復する揺れ」なので、1 回の測定では捕まらない。
+	// 同じ文字を連続測定して got が振れるかを見る (振れるなら端末が状態依存で幅を変えている =
+	// フォント fallback やリガチャ・再描画のタイミングが絡む)。
+	if err := watchJitter(fd, probes); err != nil {
+		fmt.Fprintln(os.Stderr, "揺れ観測でエラー:", err)
+	}
+}
+
+// watchJitter は各文字を繰り返し測り、測定間で幅が変化するかを報告する。
+// 「毎秒 1↔2 を繰り返す」症状は静的な食い違いではないので、これが本題の観測になる。
+func watchJitter(fd int, probes []probe) error {
+	const rounds = 12
+	old, err := term.MakeRaw(fd)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = term.Restore(fd, old) }()
+
+	seen := make([]map[int]int, len(probes)) // probe ごとに 観測幅 → 回数
+	for i := range seen {
+		seen[i] = map[int]int{}
+	}
+	for range rounds {
+		for i, p := range probes {
+			if got, err := advance(p.s); err == nil {
+				seen[i][got]++
+			}
+		}
+		time.Sleep(120 * time.Millisecond) // 再描画/status-interval と位相をずらす
+	}
+	_ = term.Restore(fd, old)
+
+	fmt.Printf("\n--- 揺れ観測 (%d 回測定。同じ文字で幅が変われば端末が状態依存で幅を変えている) ---\n", rounds)
+	unstable := 0
+	for i, p := range probes {
+		if len(seen[i]) > 1 {
+			unstable++
+			fmt.Printf("%-22s ✗ 揺れた: %v\n", p.label, seen[i])
+		}
+	}
+	if unstable == 0 {
+		fmt.Println("揺れなし — 全文字が毎回同じ幅。この層 (端末単体) は安定している。")
+		fmt.Println("→ ズレが glogx で再現するなら原因は端末の幅解釈ではなく、")
+		fmt.Println("   glogx / 描画エンジンが出すバイト列側 (再描画の差分計算) を疑う。")
+	} else {
+		fmt.Printf("→ %d 文字が揺れた。これが症状の直接原因。該当文字を使わない方向で対策する。\n", unstable)
+	}
+	return nil
 }
 
 // advance は s を出力してカーソルが進んだセル数を CPR で測る。行は測定後に消す。
