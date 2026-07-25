@@ -55,9 +55,21 @@ local function refresh_buf(buf)
   end
 end
 
+-- ⚠️ vim.defer_fn の timer は「自分の callback が走ったとき」にだけ close される
+-- (nvim runtime の実装)。debounce で撃ち直すときに stop() だけして捨てると uv handle が
+-- 開いたまま残り、TextChanged 連打のたびに 1 個ずつ増える (実測: stop のみ 50 回 → 生存
+-- timer 50 個 / stop+close → 1 個)。停止は必ずこの関数を通して close まで行う。
+local function cancel_timer(buf)
+  local t = timers[buf]
+  if not t then return end
+  timers[buf] = nil
+  t:stop()
+  if not t:is_closing() then t:close() end
+end
+
 local function schedule_refresh(buf)
   if not eligible(buf) then return end
-  if timers[buf] then timers[buf]:stop() end
+  cancel_timer(buf)
   timers[buf] = vim.defer_fn(function()
     timers[buf] = nil
     if vim.api.nvim_buf_is_loaded(buf)
@@ -88,14 +100,13 @@ function M.setup()
     end,
   })
 
-  vim.api.nvim_create_autocmd("BufDelete", {
+  -- BufWipeout も拾う: :bwipeout や nvim-early-retirement の自動掃除で消えたバッファの
+  -- エントリが computed_tick に残り続ける (bufnr は再利用されないため単調増加する)。
+  vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
     group = group,
     callback = function(args)
       computed_tick[args.buf] = nil
-      if timers[args.buf] then
-        timers[args.buf]:stop()
-        timers[args.buf] = nil
-      end
+      cancel_timer(args.buf)
     end,
   })
 end
