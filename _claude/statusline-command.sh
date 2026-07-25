@@ -185,7 +185,7 @@ if [ -n "$five_pct" ] || [ -n "$seven_pct" ]; then
     parts="$(rate_segment 5h "$five_pct" "$five_reset")"
   fi
   if [ -n "$seven_pct" ]; then
-    [ -n "$parts" ] && parts="$parts " || true
+    if [ -n "$parts" ]; then parts="$parts "; fi   # 5h の後ろに区切りの空白
     parts="${parts}$(rate_segment 7d "$seven_pct" "$seven_reset")"
   fi
   rate_part=" ${parts}"

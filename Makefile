@@ -131,6 +131,9 @@ test-syntax:
 
 # 1 行目の素実行は発見処理の失敗検知: $(shell) は discover script の exit code を捨てるため、
 # recipe 側で一度実行して find の失敗 (ディレクトリ不在等) を顕在化する。
+# ⚠️ 手元 (brew) と CI (apt) で shellcheck のバージョンが違い、CI の方が厳しいことがある。
+# 実例 (2026-07-25): `[ -n "$$x" ] && y || true` は brew 0.11 では無指摘だが CI (ubuntu 24.04 の
+# apt = 0.9 系) は SC2015 で落ちる。手元 green でも CI で落ちたらこのバージョン差を疑う。
 test-shellcheck:
 	@scripts/discover_shell_scripts.sh >/dev/null
 	@shellcheck $(SHELLCHECK_FILES)
