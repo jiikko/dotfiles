@@ -248,20 +248,17 @@ type Runner struct {
 	// "undo graceful shutdown" flow. State machine lives in pause_gate.go.
 	pause *pauseGate
 
-	live     bool
 	queuedMu sync.Mutex
 	// queued value is "" for items that are part of this run's queue, or the
 	// status column from result.log ("ok" / "FAIL") for seeded entries.
 	queued     map[string]string
 	addedCount int // tracks items added via Enqueue (read under queuedMu)
 
-	// Unified dispatch queue. Protected by queueMu. Dispatch pops from the
-	// head; Enqueue appends to the tail; EnqueueFront inserts at the head.
-	// Also serves as the snapshot source for the TUI's queue view.
-	queueMu   sync.Mutex
-	queue     []runnerJob
-	queueWake chan struct{} // buffered 1; signals queue has items or state changed
-	nextIndex int           // monotonic job index (protected by queueMu)
+	// Unified dispatch queue: the dispatcher takes from the head, Enqueue
+	// appends to the tail, EnqueueFront inserts at the head, and the TUI reads
+	// it as the queue view. State machine + locking live in dispatch_queue.go
+	// (commit-by-index invariant included) so race reasoning is local.
+	queue *dispatchQueue
 
 	// Dynamic worker pool state.
 	jobs          chan runnerJob
@@ -311,6 +308,7 @@ func NewRunner(cfg Config, lines []string) *Runner {
 		width:  digitWidth(len(lines)),
 		queued: queued,
 		pause:  newPauseGate(),
+		queue:  newDispatchQueue(),
 	}
 }
 
@@ -318,7 +316,7 @@ func NewRunner(cfg Config, lines []string) *Runner {
 // the dispatcher blocks waiting for Enqueue instead of closing the job channel.
 // Must be called before Start; ignored afterwards.
 func (r *Runner) SetLive(live bool) {
-	r.live = live
+	r.queue.setLive(live)
 }
 
 // Enqueue pushes a new item to the tail of the live queue (appended after
@@ -390,7 +388,7 @@ func (r *Runner) enqueueInternal(line string, front bool) error {
 	if strings.ContainsRune(line, '\t') {
 		return errItemHasTab
 	}
-	if !r.live {
+	if !r.queue.isLive() {
 		return errors.New("runner not in live mode")
 	}
 	if r.stopCtx != nil && r.stopCtx.Err() != nil {
@@ -411,7 +409,7 @@ func (r *Runner) enqueueInternal(line string, front bool) error {
 	r.addedCount++
 	r.queuedMu.Unlock()
 
-	r.pushQueue(line, front)
+	r.queue.push(line, front)
 
 	// Best-effort append to the -F input file.
 	switch err := r.appendToInputFile(line); {
@@ -424,73 +422,6 @@ func (r *Runner) enqueueInternal(line string, front bool) error {
 		fmt.Fprintf(os.Stderr, "warning: could not append to %s: %v\n", r.cfg.File, err)
 	}
 	return nil
-}
-
-// pushQueue appends (front=false) or prepends (front=true) the line to the
-// dispatch queue, assigning it a fresh monotonic index, and wakes the
-// dispatcher goroutine.
-func (r *Runner) pushQueue(line string, front bool) {
-	r.queueMu.Lock()
-	r.nextIndex++
-	j := runnerJob{index: r.nextIndex, line: line}
-	if front {
-		r.queue = append([]runnerJob{j}, r.queue...)
-	} else {
-		r.queue = append(r.queue, j)
-	}
-	r.queueMu.Unlock()
-	r.wakeQueue()
-}
-
-// peekQueue blocks until the queue has an item or the runner is stopped /
-// ends (live=false and queue empty). Returns the head job WITHOUT removing
-// it. The caller must call commitJob(j.index) after the job is actually sent
-// to a worker so that PendingSnapshot continues to reflect the item as
-// pending until the moment it's picked up.
-func (r *Runner) peekQueue() (runnerJob, bool) {
-	for {
-		r.queueMu.Lock()
-		if len(r.queue) > 0 {
-			j := r.queue[0]
-			r.queueMu.Unlock()
-			return j, true
-		}
-		empty := !r.live
-		r.queueMu.Unlock()
-		if empty {
-			return runnerJob{}, false
-		}
-		select {
-		case <-r.queueWake:
-		case <-r.stopCtx.Done():
-			return runnerJob{}, false
-		}
-	}
-}
-
-// commitJob removes the queued job with the given index. Safe to call for an
-// index that is no longer present (e.g. already removed). We match by index,
-// not position, because a concurrent EnqueueFront might have inserted a new
-// head between peekQueue and commitJob.
-func (r *Runner) commitJob(idx int) {
-	r.queueMu.Lock()
-	defer r.queueMu.Unlock()
-	for i, j := range r.queue {
-		if j.index == idx {
-			r.queue = append(r.queue[:i], r.queue[i+1:]...)
-			return
-		}
-	}
-}
-
-func (r *Runner) wakeQueue() {
-	if r.queueWake == nil {
-		return
-	}
-	select {
-	case r.queueWake <- struct{}{}:
-	default:
-	}
 }
 
 // errInputLineExists signals that a would-be appended line is already present
@@ -554,20 +485,9 @@ func (r *Runner) AddedCount() int {
 // already dispatched, or already running — RemovePending does NOT cancel
 // running jobs; use ForceKill / RequestStop for that).
 func (r *Runner) RemovePending(line string) error {
-	r.queueMu.Lock()
-	idx := -1
-	for i, j := range r.queue {
-		if j.line == line {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 {
-		r.queueMu.Unlock()
+	if !r.queue.removeLine(line) {
 		return fmt.Errorf("line not pending: %q", line)
 	}
-	r.queue = append(r.queue[:idx], r.queue[idx+1:]...)
-	r.queueMu.Unlock()
 
 	r.queuedMu.Lock()
 	delete(r.queued, line)
@@ -609,22 +529,10 @@ func (r *Runner) SeedDedup(entries map[string]string) {
 // PendingSnapshot returns a copy of the lines currently in the dispatch
 // queue (original input that has not been picked up yet, plus any items
 // pushed via Enqueue / EnqueueFront). Order matches dispatch order.
-func (r *Runner) PendingSnapshot() []string {
-	r.queueMu.Lock()
-	defer r.queueMu.Unlock()
-	out := make([]string, len(r.queue))
-	for i, j := range r.queue {
-		out[i] = j.line
-	}
-	return out
-}
+func (r *Runner) PendingSnapshot() []string { return r.queue.snapshot() }
 
 // PendingCount returns the number of not-yet-dispatched items.
-func (r *Runner) PendingCount() int {
-	r.queueMu.Lock()
-	defer r.queueMu.Unlock()
-	return len(r.queue)
-}
+func (r *Runner) PendingCount() int { return r.queue.length() }
 
 func (r *Runner) Events() <-chan Event { return r.events }
 
@@ -634,7 +542,7 @@ func (r *Runner) RequestStop() {
 	if r.stopCancel != nil {
 		r.stopCancel()
 	}
-	r.wakeQueue()
+	r.queue.nudge()
 	r.pause.wake()
 }
 
@@ -649,7 +557,7 @@ func (r *Runner) ForceKill() {
 	}
 	// Wake any dispatcher waiting on pause / an empty queue.
 	r.pause.wake()
-	r.wakeQueue()
+	r.queue.nudge()
 }
 
 // Pause blocks further dispatching without stopping the runner. Running jobs
@@ -778,15 +686,9 @@ func (r *Runner) Start(parent context.Context) error {
 	}
 
 	r.jobs = make(chan runnerJob)
-	r.queueWake = make(chan struct{}, 1)
 
 	// Seed the queue with the original input list.
-	r.queueMu.Lock()
-	for _, line := range r.lines {
-		r.nextIndex++
-		r.queue = append(r.queue, runnerJob{index: r.nextIndex, line: line})
-	}
-	r.queueMu.Unlock()
+	r.queue.seed(r.lines)
 
 	r.SetParallelism(initialPar)
 
@@ -820,7 +722,7 @@ func (r *Runner) Start(parent context.Context) error {
 			if !r.waitForUnpause() {
 				return
 			}
-			j, ok := r.peekQueue()
+			j, ok := r.queue.peek(r.stopCtx.Done())
 			if !ok {
 				return
 			}
@@ -828,7 +730,7 @@ func (r *Runner) Start(parent context.Context) error {
 			case <-r.stopCtx.Done():
 				return
 			case r.jobs <- j:
-				r.commitJob(j.index)
+				r.queue.commit(j.index)
 			}
 		}
 	}()
