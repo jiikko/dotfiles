@@ -766,21 +766,23 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(poll, m.maybeTick())
 	case updateMsg:
 		m.actModal.updating = false
-		// 結果はダイアログで出す (何かキーで閉じる。ユーザー要望 2026-07-22)。バージョンが
-		// 上がったのか latest だったのかを一目で分かるようにする。
+		// 結果は右下トーストで出す (旧: 何かキーで閉じるダイアログ。ユーザー要望 2026-07-25)。
+		// バージョンが上がったのか latest だったのかは 1 行に畳んで一目で分かる形にする。
+		// 「新バージョンあり」の通知 (showOrDeferClaudeUpdate) と違って調停は挟まない:
+		// こちらは C を押した本人への結果なので、先行トーストを上書きする後勝ちが正しい。
 		switch {
 		case msg.err != nil:
-			m.actModal.updateResult = "更新に失敗しました\n" + firstLine(msg.err.Error())
+			m.showWarning("更新に失敗: " + firstLine(msg.err.Error()))
 		case msg.before != "" && msg.after != "" && msg.before != msg.after:
-			m.actModal.updateResult = "バージョンが上がりました\nv" + msg.before + " → v" + msg.after
+			m.toast.show("v"+msg.before+" → v"+msg.after+" に更新しました", true)
 		case msg.before != "" && msg.before == msg.after:
-			m.actModal.updateResult = "すでに最新版です (v" + msg.before + ")"
+			m.toast.show("すでに最新版です (v"+msg.before+")", true)
 		case msg.after != "":
-			m.actModal.updateResult = "現在のバージョン: v" + msg.after // before 不明で比較できず
+			m.toast.show("現在のバージョン: v"+msg.after, true) // before 不明で比較できず
 		default:
-			m.actModal.updateResult = "update を実行しました" // 前後とも取得できず
+			m.toast.show("update を実行しました", true) // 前後とも取得できず
 		}
-		return m, nil
+		return m, m.maybeTick()
 	case pushMsg:
 		m.actModal.pushing = false
 		if msg.err != nil {
@@ -856,7 +858,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 			return m.quit()
 		}
 	}
-	// git push/pull/update の確認・実行中・警告・結果ダイアログは action モーダルが捌く
+	// git push/pull/update の確認と実行中ガードは action モーダルが捌く (通知はトースト)
 	// (警告/結果の dismiss・確認 y/N・実行中のキー無視。判定順は actionModal.handleKey 側)。
 	// 実行を伴う確認 y は action (実行 tea.Cmd) を載せて返すので maybeTick と束ねる。
 	if consumed, action := m.actModal.handleKey(key); consumed {
@@ -885,7 +887,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.toast.show("tmux prefix は popup では効きません (C-g で閉じてから)", false)
 		return m, m.maybeTick()
 	}
-	// usage オーバーレイのトグル / dismiss。モーダル (push/pull 確認・pushWarn)・prefix・
+	// usage オーバーレイのトグル / dismiss。モーダル (push/pull 確認)・prefix・
 	// 実行中ガードを素通りしないよう必ずそれらの後に置く: 先頭に置くと U が push 確認を
 	// キャンセルし損ねて残った確認へ Enter で誤 push する footgun になる (レビュー指摘 2026-07-21)。
 	// U は明示トグル (取得中なら spinner を回し直す)。それ以外のナビゲーションキーは「起動時
@@ -1020,8 +1022,10 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 // (誤爆防止と「push 済みなのに聞かれる」違和感の回避)。
 func (m *browseModel) confirmPush() tea.Cmd {
 	if m.unpushedCount() == 0 {
-		m.actModal.pushWarn = "未 push のコミットはありません" // hint 行でなくモーダルで (ユーザー要望)
-		return nil
+		// 「押しても何も起きない理由」の通知はキー待ちのモーダルでなく右下トーストで出す
+		// (ユーザー要望 2026-07-25)。他の no-op 通知 (コピー対象なし・PR なし等) と同じ経路。
+		m.toast.show("未 push のコミットはありません", false)
+		return m.maybeTick()
 	}
 	m.actModal.pushConfirm = true
 	return nil

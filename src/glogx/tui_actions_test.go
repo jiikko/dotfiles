@@ -85,13 +85,13 @@ func TestBrowseUpdateFlow(t *testing.T) {
 	if m.actModal.updating {
 		t.Fatal("updateMsg 後も updating のまま")
 	}
-	// 変わった場合は結果ダイアログに "vX → vY" が出る
-	if !strings.Contains(m.actModal.updateResult, "v2.1.216 → v2.2.0") {
-		t.Fatalf("バージョン変化が結果ダイアログに出ない: %q", m.actModal.updateResult)
+	// 変わった場合は成功トーストに "vX → vY" が出る (旧: キー待ちの結果ダイアログ)
+	if !m.toast.visible() || !m.toast.ok || !strings.Contains(m.toast.text, "v2.1.216 → v2.2.0") {
+		t.Fatalf("バージョン変化がトーストに出ない: visible=%v ok=%v text=%q", m.toast.visible(), m.toast.ok, m.toast.text)
 	}
-	// ダイアログは何かキーで閉じる (キーは消費)
-	if _, cmd := m.handleKey("j"); cmd != nil || m.actModal.updateResult != "" {
-		t.Fatalf("結果ダイアログが任意キーで閉じない: cmd=%v result=%q", cmd != nil, m.actModal.updateResult)
+	// トーストなのでキー待ちで塞がらない: 通常キーは本来の動作 (カーソル移動) をする
+	if _, _ = m.handleKey("j"); m.cursor != 0 {
+		t.Fatalf("トースト表示中に j が消費された (cursor=%d)", m.cursor)
 	}
 
 	// 変わらなかった場合は「変更なし」
@@ -115,12 +115,12 @@ func TestBrowseUpdateFlow(t *testing.T) {
 		dl(c())
 	}
 	deliverTo(m2, cmd2)
-	if !strings.Contains(m2.actModal.updateResult, "最新版") || !strings.Contains(m2.actModal.updateResult, "v2.2.0") {
-		t.Fatalf("最新版が結果ダイアログに出ない: %q", m2.actModal.updateResult)
+	if !m2.toast.visible() || !strings.Contains(m2.toast.text, "最新版") || !strings.Contains(m2.toast.text, "v2.2.0") {
+		t.Fatalf("最新版がトーストに出ない: visible=%v text=%q", m2.toast.visible(), m2.toast.text)
 	}
 }
 
-// 更新失敗 (runClaudeUpdate が err を返す) 経路: updating が必ず解けて結果ダイアログに
+// 更新失敗 (runClaudeUpdate が err を返す) 経路: updating が必ず解けて error トーストに
 // エラー理由が出る。updateTimeout 超過時のエラーもこの経路を通るため、無限ブロックからの
 // 復帰 (updating 解除 → q/Ctrl-C が再び効く) を保証する回帰テスト。
 func TestBrowseUpdateFailureShowsDialogAndClearsUpdating(t *testing.T) {
@@ -153,13 +153,17 @@ func TestBrowseUpdateFailureShowsDialogAndClearsUpdating(t *testing.T) {
 	if m.actModal.updating {
 		t.Fatal("更新失敗後も updating のまま (無限ブロックから復帰できない)")
 	}
-	if !strings.Contains(m.actModal.updateResult, "更新に失敗しました") || !strings.Contains(m.actModal.updateResult, "タイムアウト") {
-		t.Fatalf("失敗理由が結果ダイアログに出ない: %q", m.actModal.updateResult)
+	if !m.toast.visible() || m.toast.ok || !strings.Contains(m.toast.text, "更新に失敗") || !strings.Contains(m.toast.text, "タイムアウト") {
+		t.Fatalf("失敗理由が error トーストに出ない: visible=%v ok=%v text=%q", m.toast.visible(), m.toast.ok, m.toast.text)
 	}
-	// updating が解けたので、結果ダイアログは任意キーで閉じられる (無反応から復帰済み)。
+	// 失敗文言は w でコピーできるよう lastWarning にも残る (showWarning 経由。issue 026 の規律)
+	if !strings.Contains(m.lastWarning, "更新に失敗") {
+		t.Fatalf("更新失敗が lastWarning に残らない (w でコピーできない): %q", m.lastWarning)
+	}
+	// updating が解けたので q は本来の終了として効く (トーストはキー待ちで塞がない)
 	m.handleKey("q")
-	if m.actModal.updateResult != "" || m.done {
-		t.Fatalf("q で結果ダイアログが閉じない: result=%q done=%v", m.actModal.updateResult, m.done)
+	if !m.done {
+		t.Fatal("updating 解除後に q で終了できない")
 	}
 }
 
@@ -453,18 +457,23 @@ func TestBrowsePushNoUnpushed(t *testing.T) {
 	if m.actModal.pushConfirm {
 		t.Fatal("未 push なしで push 確認に入った")
 	}
-	// hint 行でなく警告モーダルが出る (ユーザー要望)
+	// キー待ちのモーダルでなく右下トーストで出す (ユーザー要望 2026-07-25)
+	if !m.toast.visible() || m.toast.ok || !strings.Contains(m.toast.text, "未 push のコミットはありません") {
+		t.Fatalf("未 push なしの通知がトーストで出ない: visible=%v ok=%v text=%q", m.toast.visible(), m.toast.ok, m.toast.text)
+	}
+	// 入場スライドを holding まで進めてから描画を見る (entering の途中は shown=0 で未描画)
 	m.width, m.height = 80, 20
+	m.maybeTick()
+	for i := 0; i < 200 && m.toast.phase != toastHolding; i++ {
+		m.Update(tickMsg{})
+	}
 	if v := stripANSI(m.View()); !strings.Contains(v, "未 push のコミットはありません") {
-		t.Fatal("未 push なしの警告モーダルが出ない")
+		t.Fatalf("トーストが描画されない (phase=%d shown=%d)", m.toast.phase, m.toast.shown)
 	}
-	// 何かキーで閉じ、そのキーは消費される (カーソルが動かない)
+	// トーストはキーを消費しない (モーダルと違い、次のキーが本来の動作をする)
 	m.handleKey("j")
-	if m.actModal.pushWarn != "" {
-		t.Fatal("キーで警告モーダルが閉じない")
-	}
-	if m.cursor != 0 {
-		t.Fatal("モーダルを閉じたキーが消費されずカーソルが動いた")
+	if m.cursor != 1 {
+		t.Fatalf("トースト表示中に j が消費された (cursor=%d, want 1)", m.cursor)
 	}
 }
 

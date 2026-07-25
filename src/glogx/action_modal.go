@@ -17,7 +17,6 @@ import (
 type actionModal struct {
 	pushConfirm  bool   // b の push 確認中 (y/N)
 	pushing      bool   // git push 実行中 (終了以外のキーを無視)
-	pushWarn     string // push できない理由の警告モーダル (何かキーで閉じる)
 	pullConfirm  bool   // u の pull --rebase 確認中 (y/N)
 	pulling      bool   // git pull --rebase 実行中 (終了以外のキーを無視)
 	rerunConfirm bool   // r の CI job 再実行確認中 (y/N)
@@ -26,8 +25,7 @@ type actionModal struct {
 	// なので、askRerun 時に closure として注入する (この型は CI 状態を知らない)
 	rerunAction tea.Cmd
 	rerunning   bool // gh run rerun 実行中 (終了以外のキーを無視)
-	updating     bool   // claude update 実行中 (終了以外のキーを無視)
-	updateResult string // claude update の結果ダイアログ本文 ("" = 非表示。何かキーで閉じる)
+	updating    bool // claude update 実行中 (終了以外のキーを無視)
 	// cancel は走行中の push/pull を quit から中断するための cancel (deadline 無し)。running な
 	// git 子プロセスが Ctrl-C 中断時に孤児化するのを防ぐ (leak 監査 2026-07-23)。stop() で呼ぶ。
 	cancel context.CancelFunc
@@ -40,7 +38,7 @@ type actionModal struct {
 // active はいずれかのモーダル/トーストが表示中か (描画とセンタリングの要否判定)。
 func (a *actionModal) active() bool {
 	return a.pushConfirm || a.pushing || a.pullConfirm || a.pulling || a.rerunConfirm ||
-		a.rerunning || a.updating || a.pushWarn != "" || a.updateResult != ""
+		a.rerunning || a.updating
 }
 
 // running は remote/自己更新の実行中か (spinner tick を回し、確認以外のキーを飲む)。
@@ -61,17 +59,10 @@ func (a *actionModal) runningQuitHint() string {
 // handleKey は最前面の action モーダルがキーを消費したら consumed=true を返す。push/pull 確認の
 // 実行キー (y/Enter) は実行する tea.Cmd を action に載せる (呼び出し側が maybeTick と束ねる)。
 // ⚠️ ここへ来る前に browseModel が Ctrl-C/Ctrl-G の quit 判定 (running 中のブロック) を済ませて
-// いる前提。判定順 (警告/結果ダイアログ → push 確認 → pull 確認 → 実行中ガード) は footgun 回避のため厳守。
+// いる前提。判定順 (push 確認 → pull 確認 → 実行中ガード) は footgun 回避のため厳守。
+// ⚠️ 通知だけの用件 (push 対象なし・update 結果など) をここへ戻さないこと: キー待ちのモーダルは
+// 次の 1 打を食べるため、no-op の通知には重すぎる。右下トーストで出す (ユーザー要望 2026-07-25)。
 func (a *actionModal) handleKey(key string) (consumed bool, action tea.Cmd) {
-	// 警告 / 結果ダイアログは何かキーで閉じる (そのキーは消費して誤操作を防ぐ)
-	if a.pushWarn != "" {
-		a.pushWarn = ""
-		return true, nil
-	}
-	if a.updateResult != "" {
-		a.updateResult = ""
-		return true, nil
-	}
 	// 確認の「実行」キーは y か Enter (Enter=y はユーザー要望 2026-07-21)。それ以外はキャンセル。
 	confirmYes := strings.ToLower(key) == "y" || key == "enter"
 	if a.pushConfirm {
@@ -162,17 +153,6 @@ func (a *actionModal) boxLines(width int, colored bool, spinner string, unpushed
 	title := " git push "
 	var rows []string
 	switch {
-	case a.pushWarn != "":
-		title = " ⚠ "
-		rows = []string{
-			"⚠ " + a.pushWarn,
-			"",
-			paint("何かキーを押して閉じる", ansiDim, colored),
-		}
-	case a.updateResult != "":
-		title = " claude update "
-		rows = append(strings.Split(a.updateResult, "\n"),
-			"", paint("何かキーを押して閉じる", ansiDim, colored))
 	case a.pushing:
 		rows = []string{spinner + " pushing...", "", paint(a.runningQuitHint(), ansiDim, colored)}
 	case a.pulling:
