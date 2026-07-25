@@ -477,50 +477,92 @@ func FetchJobDetail(ctx context.Context, run CommandRunner, repo Repo, check Che
 	id := strconv.FormatInt(check.CheckID, 10)
 	// step 一覧 (best-effort) と annotations は入力が jobID だけで互いに独立、かつ常に
 	// 両方叩くので並列化する (gh 起動 + REST 往復を 2 本直列にすると待ちがほぼ倍。
-	// job 詳細パネルを開く対話操作のレイテンシに直結)。3 本目のログ取得は annotations が
-	// 空のときだけなので後段の直列のまま。CommandRunner は read-only 実行で状態を持たず
-	// 並行安全 (ExecRunner は exec.CommandContext + ローカル buffer)。
+	// job 詳細パネルを開く対話操作のレイテンシに直結)。CommandRunner は read-only 実行で
+	// 状態を持たず並行安全 (ExecRunner は exec.CommandContext + ローカル buffer)。
+	//
+	// 3 本目のログ取得も、非失敗 job では投機的に並列で始める。実測 (2026-07-25) で
+	// annotations の有無は job の結果とほぼ 1:1 だった:
+	//   success 10/10 → annotations 0 件 (= ログを必ず取りに行く)
+	//   failure 12/12 → annotations 1〜4 件 (= ログは取らない)
+	// つまり非失敗 job では「annotations を見てから」の直列 2 往復目が事実上必ず発生していた。
+	// 投機の無駄は「非失敗なのに annotations が付く」稀ケースだけ (実測 0/10) で、その場合は
+	// 結果を捨てる。失敗 job は投機しない (annotations が出るのでログ自体が不要)。
+	speculateLog := check.State != StateFailure
+	// ⚠️ tail という名前で受けるのは package の logTail 関数を局所で覆い隠さないため
 	var (
 		lines     []string
 		annStdout []byte
 		annStderr []byte
 		annErr    error
+		tail      []string
+		logErr    *GHError
 		wg        sync.WaitGroup
 	)
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		lines = fetchJobSteps(ctx, run, repo, id)
-	}()
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		// per_page 既定の 30 件では大量 annotation の lint job で取りこぼすため 100 に広げる。
 		// 100 超の pagination は contexts(first:100) と同じ判断で追わない
 		annStdout, annStderr, annErr = run(ctx, "gh", "api",
 			fmt.Sprintf("repos/%s/%s/check-runs/%s/annotations?per_page=100", repo.Owner, repo.Name, id))
-	}()
+	})
+	if speculateLog {
+		wg.Go(func() {
+			tail, logErr = fetchJobLogTail(ctx, run, repo, id)
+		})
+	}
 	wg.Wait()
 	if annErr != nil {
 		return nil, classifyGHError(annErr, string(annStderr))
 	}
 	if annotations := annotationLines(annStdout); len(annotations) > 0 {
+		// annotations があればそちらを見せる。投機したログ結果は (エラーも含めて) 捨てる
+		// — 実行中 job でログがまだ無い等の投機失敗を、表示できる annotations より優先しない
 		return appendSection(lines, annotations), nil
 	}
-	args := []string{"run", "view", "--job", id, "-R", repo.Owner + "/" + repo.Name}
-	if check.State == StateFailure {
-		args = append(args, "--log-failed")
-	} else {
-		args = append(args, "--log")
+	if !speculateLog {
+		// 失敗 job で annotations が空だった稀ケース。--log-failed は失敗 step だけに絞る
+		// (直接エンドポイントには無い機能) ので、ここは従来どおり gh run view を直列で使う
+		tail, logErr = fetchFailedJobLogTail(ctx, run, repo, id)
 	}
-	stdout, stderr, err := run(ctx, "gh", args...)
-	if err != nil {
-		return nil, classifyGHError(err, string(stderr))
+	if logErr != nil {
+		return nil, logErr
 	}
-	tail := logTail(stdout, jobLogTailLines)
 	if len(tail) == 0 {
 		tail = []string{"(ログが空です)"}
 	}
 	return appendSection(lines, tail), nil
+}
+
+// fetchJobLogTail は job 単体のログを REST から取って末尾 jobLogTailLines 行を返す。
+//
+// なぜ `gh run view --job ID --log` を使わないか: あれは run 全体のログ zip を落として展開する
+// ため、1 job の 50 行を出すのに固定で ~1.0s 余分に払う。実測 2026-07-25 (run 内 job 数に依らず
+// 再現): gh run view --log 2.14/2.25/2.22s vs この直接エンドポイント 1.17/1.31/1.16s。
+//
+// 出力形式の違いは logTail が吸収する: gh run view の "job名<TAB>step名<TAB>" プレフィックスは
+// 付かず (SplitN が 3 分割にならず素通り)、行頭の ISO タイムスタンプは logTimestampRe が落とす。
+// 先頭の UTF-8 BOM も sanitizeDetailLine が制御文字として除去する。
+func fetchJobLogTail(ctx context.Context, run CommandRunner, repo Repo, id string) ([]string, *GHError) {
+	stdout, stderr, err := run(ctx, "gh", "api",
+		fmt.Sprintf("repos/%s/%s/actions/jobs/%s/logs", repo.Owner, repo.Name, id))
+	if err != nil {
+		return nil, classifyGHError(err, string(stderr))
+	}
+	return logTail(stdout, jobLogTailLines), nil
+}
+
+// fetchFailedJobLogTail は失敗 step だけに絞ったログの末尾を返す (`gh run view --log-failed`)。
+// 失敗 job で annotations が空だった稀ケース専用。絞り込みは REST の job ログ単体では
+// 代替できないため、遅い gh run view を許容する (到達頻度が低い)。
+func fetchFailedJobLogTail(ctx context.Context, run CommandRunner, repo Repo, id string) ([]string, *GHError) {
+	stdout, stderr, err := run(ctx, "gh", "run", "view", "--job", id,
+		"-R", repo.Owner+"/"+repo.Name, "--log-failed")
+	if err != nil {
+		return nil, classifyGHError(err, string(stderr))
+	}
+	return logTail(stdout, jobLogTailLines), nil
 }
 
 // appendSection は空行を挟んでセクションを連結する (先頭セクションが空なら区切りなし)。

@@ -5,9 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"strconv"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -262,6 +263,141 @@ func TestFetchJobDetailFallsBackToLog(t *testing.T) {
 	// job/step のタブプレフィックスは落ちる
 	if len(lines) != 2 || lines[0] != "line one" || lines[1] != "line two" {
 		t.Errorf("ログ行 = %v", lines)
+	}
+}
+
+// recordingRunner は呼ばれたコマンド引数を並行安全に記録する CommandRunner。
+// FetchJobDetail は複数 goroutine から run を呼ぶので、argsRunner のように runner の中で
+// t.Fatalf しない (テスト goroutine 以外からの Fatalf は不正)。判定は Wait 後にまとめて行う。
+func recordingRunner(responses map[string]string, failures map[string]error) (CommandRunner, func() []string) {
+	var (
+		mu    sync.Mutex
+		calls []string
+	)
+	run := func(_ context.Context, _ string, args ...string) ([]byte, []byte, error) {
+		joined := strings.Join(args, " ")
+		mu.Lock()
+		calls = append(calls, joined)
+		mu.Unlock()
+		for pattern, err := range failures {
+			if strings.Contains(joined, pattern) {
+				return nil, []byte("boom"), err
+			}
+		}
+		for pattern, out := range responses {
+			if strings.Contains(joined, pattern) {
+				return []byte(out), nil, nil
+			}
+		}
+		return nil, nil, nil
+	}
+	return run, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(calls)
+	}
+}
+
+func calledWith(calls []string, pattern string) bool {
+	return slices.ContainsFunc(calls, func(c string) bool { return strings.Contains(c, pattern) })
+}
+
+// 非失敗 job は job 単体ログの REST エンドポイントを使い、遅い gh run view は使わない。
+// (gh run view --log は run 全体のログ zip を落とすため固定 ~1.0s 余分にかかる)
+func TestFetchJobDetailUsesDirectLogEndpoint(t *testing.T) {
+	run, calls := recordingRunner(map[string]string{
+		"actions/jobs/7/logs": "2026-07-25T00:00:00.1234567Z line one\n2026-07-25T00:00:01.1234567Z line two\n",
+		"actions/jobs/7":      `{"steps":[]}`,
+		"annotations":         `[]`,
+	}, nil)
+	lines, ghErr := FetchJobDetail(context.Background(), run, Repo{Owner: "o", Name: "r"},
+		CheckDetail{Name: "test", State: StateSuccess, CheckID: 7})
+	if ghErr != nil {
+		t.Fatalf("ghErr = %v", ghErr)
+	}
+	if !calledWith(calls(), "actions/jobs/7/logs") {
+		t.Errorf("job 単体ログのエンドポイントを叩いていない: %v", calls())
+	}
+	if calledWith(calls(), "run view") {
+		t.Errorf("遅い gh run view が使われている: %v", calls())
+	}
+	// タイムスタンプは logTail が落とす
+	if len(lines) != 2 || lines[0] != "line one" || lines[1] != "line two" {
+		t.Errorf("lines = %q; want [line one, line two]", lines)
+	}
+}
+
+// 非失敗 job では annotations を待たずにログ取得を始める (投機)。annotations が空でも
+// ログ取得のために 2 往復目を直列で足さない = 3 本すべてが並行に走っていること。
+func TestFetchJobDetailSpeculatesLogInParallel(t *testing.T) {
+	var (
+		mu       sync.Mutex
+		inFlight int
+		maxSeen  int
+	)
+	run := func(_ context.Context, _ string, args ...string) ([]byte, []byte, error) {
+		mu.Lock()
+		inFlight++
+		maxSeen = max(maxSeen, inFlight)
+		mu.Unlock()
+		time.Sleep(20 * time.Millisecond) // 重なりを観測できるだけの滞留
+		mu.Lock()
+		inFlight--
+		mu.Unlock()
+		switch joined := strings.Join(args, " "); {
+		case strings.Contains(joined, "/logs"):
+			return []byte("tail line\n"), nil, nil
+		case strings.Contains(joined, "annotations"):
+			return []byte(`[]`), nil, nil
+		default:
+			return []byte(`{"steps":[]}`), nil, nil
+		}
+	}
+	if _, ghErr := FetchJobDetail(context.Background(), run, Repo{Owner: "o", Name: "r"},
+		CheckDetail{Name: "test", State: StateSuccess, CheckID: 7}); ghErr != nil {
+		t.Fatalf("ghErr = %v", ghErr)
+	}
+	if maxSeen != 3 {
+		t.Errorf("同時実行数の最大 = %d, want 3 (steps / annotations / log が並行)", maxSeen)
+	}
+}
+
+// 投機したログが失敗しても、annotations が取れているならそちらを見せてエラーにしない
+// (実行中 job でログがまだ無いケース。投機の失敗を表示できる内容より優先しない)
+func TestFetchJobDetailDiscardsSpeculativeLogError(t *testing.T) {
+	run, calls := recordingRunner(
+		map[string]string{
+			"actions/jobs/7": `{"steps":[]}`,
+			"annotations":    `[{"path":"a.go","start_line":1,"annotation_level":"failure","message":"boom"}]`,
+		},
+		map[string]error{"actions/jobs/7/logs": errors.New("exit status 1")},
+	)
+	lines, ghErr := FetchJobDetail(context.Background(), run, Repo{Owner: "o", Name: "r"},
+		CheckDetail{Name: "test", State: StatePending, CheckID: 7})
+	if ghErr != nil {
+		t.Fatalf("投機ログの失敗がエラーとして表に出た: %v", ghErr)
+	}
+	if len(lines) == 0 || !strings.Contains(lines[0], "a.go:1") {
+		t.Errorf("lines = %q; want annotations (先頭が file:line)", lines)
+	}
+	if !calledWith(calls(), "actions/jobs/7/logs") {
+		t.Errorf("投機自体が走っていない: %v", calls())
+	}
+}
+
+// 失敗 job は投機しない (annotations が出るのでログは不要)。annotations があるときに
+// ログ取得が 1 本も飛ばないことを確認する = 無駄なダウンロードをしない。
+func TestFetchJobDetailFailureDoesNotSpeculate(t *testing.T) {
+	run, calls := recordingRunner(map[string]string{
+		"actions/jobs/9": `{"steps":[]}`,
+		"annotations":    `[{"path":"a.go","start_line":1,"annotation_level":"failure","message":"boom"}]`,
+	}, nil)
+	if _, ghErr := FetchJobDetail(context.Background(), run, Repo{Owner: "o", Name: "r"},
+		CheckDetail{Name: "lint", State: StateFailure, CheckID: 9}); ghErr != nil {
+		t.Fatalf("ghErr = %v", ghErr)
+	}
+	if calledWith(calls(), "/logs") || calledWith(calls(), "run view") {
+		t.Errorf("失敗 job でログを取りに行った (annotations があるので不要): %v", calls())
 	}
 }
 
