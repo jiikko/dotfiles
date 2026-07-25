@@ -31,17 +31,35 @@ type usageOverlay struct {
 	cancel context.CancelFunc
 }
 
-// fetchCmd は Claude Code の /usage を非同期取得する tea.Cmd。LLM を呼ばない軽いローカル
-// コマンド (~440ms・ゼロコスト) だが初期描画のクリティカルパスには乗せない。cancel を保持し、
-// quit 時に走行中の subprocess を中断できるようにする (fast-quit での claude 子プロセスの
-// オーファン化を防ぐ)。起動時に 1 回 + 以降 usageRefreshInterval ごとにバックグラウンド再取得
-// で呼ばれる (U トグルは再 fetch しない)。定期リフレッシュ中も表示は last-good を保つ (handle 参照)。
-func (o *usageOverlay) fetchCmd() tea.Cmd {
+// fetchCmd は Claude Code の /usage を非同期取得する tea.Cmd。トークン課金は発生しない
+// (num_turns=0 / total_cost_usd=0) が、subprocess 自体は 1 回 ≈ 2.0s wall / 1.8s CPU と
+// 重い (実測 2026-07-25。支配的なのは node 起動 + Claude Code セッション初期化で、/usage の
+// 内部処理は 462ms)。初期描画のクリティカルパスには乗せない。cancel を保持し、quit 時に
+// 走行中の subprocess を中断できるようにする (fast-quit での claude 子プロセスのオーファン化を
+// 防ぐ)。起動時に 1 回 + 以降 usageRefreshInterval ごとにバックグラウンド再取得で呼ばれる
+// (U トグルは再 fetch しない)。定期リフレッシュ中も表示は last-good を保つ (handle 参照)。
+//
+// useCache=true (起動時) は fresh なディスクキャッシュがあれば subprocess を起こさず即答する。
+// 定期リフレッシュ側は false — 鮮度を作るのがその役目なので、自分が書いたキャッシュを読み返す
+// のは無意味 (TTL == 周期なので必ず miss する) 。取得成功はどちらの経路でもキャッシュへ書き、
+// 次回起動を即時化する。
+func (o *usageOverlay) fetchCmd(useCache bool) tea.Cmd {
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	o.cancel = cancel
 	return func() tea.Msg {
 		defer cancel()
+		// キャッシュ経路の失敗 (path 解決不能・破損・TTL 切れ) はすべて「キャッシュなし」に
+		// 落として通常取得へ進む (キャッシュ都合で usage 表示を失わない)
+		path, pathErr := usageCachePath()
+		if useCache && pathErr == nil {
+			if snap, ok := loadUsageCache(path, time.Now()); ok {
+				return usageMsg{snap: snap}
+			}
+		}
 		snap, err := usage.Fetch(ctx)
+		if err == nil && pathErr == nil {
+			_ = saveUsageCache(path, snap, time.Now()) // best-effort: 保存失敗でも表示は成立させる
+		}
 		return usageMsg{snap: snap, err: err}
 	}
 }

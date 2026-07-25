@@ -31,7 +31,8 @@ const (
 	// maxPanelJobs は job パネルに一度に表示する行数。超過分はパネル内でスクロールする。
 	maxPanelJobs = 10
 	// usageRefreshInterval は usage オーバーレイをバックグラウンド再取得する周期 (ユーザー要望
-	// 2026-07-22)。/usage は LLM を呼ばないゼロコストなローカルコマンドなので毎分でも安価。
+	// 2026-07-22)。トークン課金は発生しないが「安価」ではない: 1 回 ≈ 2.0s wall / 1.8s CPU
+	// (実測 2026-07-25)。usageCacheTTL がこの値に結合しており、表示の許容陳腐度の単一の出典になる。
 	// ⚠️ 実装で強制できない 2 つの制約 (変更時に再評価すること):
 	//  1. fetchTimeout より必ず大きく保つ。小さくすると fetch が overlap し、fetchCmd の
 	//     o.cancel 上書きで前回 fetch の cancel を取りこぼす (現状 10s < 60s で overlap しない)。
@@ -301,7 +302,8 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 func (m *browseModel) Init() tea.Cmd {
 	// tmux prefix の取得は非同期 (fork 1 本 ≈ 6ms を初期描画のクリティカルパスに乗せない)
 	prefix := func() tea.Msg { return prefixMsg{key: loadTmuxPrefix()} }
-	u := m.usageOv.fetchCmd()
+	// 起動時はディスクキャッシュ可 (連続起動のたびに claude subprocess を起こさない)
+	u := m.usageOv.fetchCmd(true)
 	// IME 自動切替 (ime.go) に使う macism が未導入なら、起動時に error トーストで brew 導入を
 	// 案内する (数秒で自動消滅)。ime.go 側は未導入でも no-op なので機能自体は壊れないが、IME が
 	// 英数へ切り替わらない事実に気づけるよう能動的に案内する (ユーザー要望 2026-07-23)。
@@ -598,7 +600,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// バックグラウンドで /usage を再取得し、次回リフレッシュを予約する。取得中も snap は
 		// 消さないので loading() は false のままスピナーに落ちず、表示は last-good を維持する
 		// (handle の不変条件)。表示/非表示に依らず回し、隠れていても最新値を用意しておく。
-		return m, tea.Batch(m.usageOv.fetchCmd(), usageRefreshTick())
+		return m, tea.Batch(m.usageOv.fetchCmd(false), usageRefreshTick())
 	case panelPollMsg:
 		if msg.seq != m.panelPollSeq || m.panelSHA == "" {
 			return m, nil // パネルが閉じた/開き直された後の残タイマーは破棄
