@@ -31,7 +31,7 @@ func easedShown(frame, w int) int {
 	}
 	p := float64(frame) / float64(toastSlideFrames)
 	q := 1 - p
-	eased := 1 - q*q*q // easeOutCubic (math.Pow は staticcheck QF1005 で展開を要求される)
+	eased := 1 - q*q*q // easeOutCubic
 	return int(math.Round(eased * float64(w)))
 }
 
