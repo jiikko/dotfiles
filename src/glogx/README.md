@@ -313,6 +313,8 @@ go test -run '^$' -bench BenchmarkView -benchmem .
 
 - CI: `.github/workflows/src_glogx.yml` (paths filter 付きの薄い caller) が再利用 workflow
   `_go-project.yml` を呼び、lint と test を回す (src/glogx を触った push/PR のときだけ起動)
+- Bubble Tea は v2 (`charm.land/bubbletea/v2`)。移行で変えた点・採らなかった v2 機能・上げるときに
+  測り直すこと (幅モデルの一致) は [`docs/glogx-bubbletea-v2.md`](../../docs/glogx-bubbletea-v2.md)
 - 実装は flat な `package main` (+ bubbletea 非依存の `usage/` サブパッケージ)。主な境界:
   `options.go` (引数 allowlist) / `gitlog.go` (git 実行と %x1e/%x1f レコード解析) /
   `github.go` (repo 解決・GraphQL・集約) / `cache.go` (XDG キャッシュ) /
