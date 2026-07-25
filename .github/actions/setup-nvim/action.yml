@@ -34,15 +34,18 @@ runs:
     # プラグイン (lazy.nvim 本体 + 各プラグイン) の clone を ~/.local/share/nvim/lazy ごと
     # キャッシュしてネットワーク依存と再 clone を抑える。次段の :Lazy! restore が
     # _lazy-lock.json の固定 commit へ同期する。spec/lock を変えたら鍵が変わるよう hash する。
-    # key の v2 は salt: Tests が赤い間は cache が保存されず、古い restore-key の store
-    # (中身の素性が追えない) を引き続けるため、CI 構成を変えた 2026-07-10 を境に世代を切った。
+    # key の v3 は salt: restore-keys は前方一致で古い store を拾うため、プラグインの
+    # branch を変えると「master で clone 済みの nvim-treesitter」を復元してしまい、
+    # restore が main 側 commit へ checkout できず詰む (ローカルでも Lazy sync が
+    # detached のまま止まり rm -rf からの再 install が必要だった)。branch を切り替えた
+    # 2026-07-25 に世代を切る。前の salt v2 は CI 構成を変えた 2026-07-10 に切ったもの。
     - name: Cache Neovim plugins
       uses: actions/cache@v6
       with:
         path: ~/.local/share/nvim/lazy
-        key: nvim-lazy-v2-${{ runner.os }}-${{ hashFiles('_nviminit.lua', '_lazy-lock.json') }}
+        key: nvim-lazy-v3-${{ runner.os }}-${{ hashFiles('_nviminit.lua', '_lazy-lock.json') }}
         restore-keys: |
-          nvim-lazy-v2-${{ runner.os }}-
+          nvim-lazy-v3-${{ runner.os }}-
 
     # プラグインを _lazy-lock.json 通りに事前インストールする。config の ftplugin は
     # nvim-treesitter-textobjects 等を require するため、テスト時に本体が load 済みである必要がある
