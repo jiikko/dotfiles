@@ -182,17 +182,27 @@ fi
 # ⚠️ if-shell の -t は入れ子コマンドの format 展開には効かない (実測 tmux 3.7b) ため、
 # 判定させたいセッションを直前に作って「現在のセッション」にしてから -t なしで実行する。
 print "[test-tmux:zsh] checking the glogx popup binding guards against non-git directories"
+# glogx popup は prefix g と C-g の 2 本ある。片方だけ直してもう片方が素通しになる
+# ドリフトを防ぐため、両方に同じガードが入っていることを確認する。
 # head -1 は上流に SIGPIPE を投げて pipefail で落ちるため tail -1 で受ける
-guard_line=$("${TMUX_CMD[@]}" list-keys | grep -F 'C-g' | grep -F 'glogx' | tail -1 || true)
-if [[ -z "$guard_line" ]]; then
-  print -u2 "[test-tmux:zsh] C-g の glogx バインドが見つかりません (list-keys)"
-  exit 1
-fi
-for needle in 'rev-parse --git-dir' 'bin/tmux-toast'; do
-  if [[ "$guard_line" != *"$needle"* ]]; then
-    print -u2 "[test-tmux:zsh] C-g のバインドに '$needle' がありません: $guard_line"
+glogx_bindings=$("${TMUX_CMD[@]}" list-keys | grep -F 'glogx' || true)
+guard_line=''
+for key_spec in '-T root:C-g' '-T prefix:prefix g'; do
+  table=${key_spec%%:*}
+  key_desc=${key_spec#*:}
+  line=$(print -r -- "$glogx_bindings" | grep -F -- "$table" | tail -1 || true)
+  if [[ -z "$line" ]]; then
+    print -u2 "[test-tmux:zsh] $key_desc の glogx バインドが見つかりません (list-keys)"
     exit 1
   fi
+  for needle in 'rev-parse --git-dir' 'bin/tmux-toast'; do
+    if [[ "$line" != *"$needle"* ]]; then
+      print -u2 "[test-tmux:zsh] $key_desc のバインドに '$needle' がありません: $line"
+      exit 1
+    fi
+  done
+  # 条件式の取り出しは先に見た C-g 側を使う (両者同一であることは上の検査で担保)
+  [[ -n "$guard_line" ]] || guard_line="$line"
 done
 guard_cond=${guard_line#*if-shell \"}
 guard_cond=${guard_cond%%\"*}
