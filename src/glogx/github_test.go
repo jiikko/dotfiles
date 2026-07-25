@@ -309,17 +309,32 @@ func TestFetchCIStatusesChunkPartialFailure(t *testing.T) {
 }
 
 // argsRunner は呼び出し引数に応じて応答を切り替える CommandRunner。
+//
+// ⚠️ この runner の中で t.Fatal* を呼んではいけない (Errorf を使う)。CommandRunner は
+// FetchJobDetail / FetchCIStatuses が goroutine から呼ぶので、テスト goroutine 以外での
+// FailNow は runtime.Goexit でその goroutine だけを終わらせ、「即座に停止」の契約が黙って
+// 破棄される — テストは FetchJobDetail から先へ進み、欠けたデータで後続 assert が落ちて
+// 本当の失敗理由から遠い 2 つ目の失敗 (や nil 参照 panic) を生む。
+//
+// 実測 (2026-07-25): 現状は Goexit でも defer 経由の wg.Done が走るためハングはしない
+// (以前「ハングする」と書いたのは誤り)。ただしそれは偶然で、deferred Done を持たない形
+// (channel の送受信で待つ等) に変えた瞬間に deadlock になる。潜在的な足場として塞いでおく。
+//
+// govet の testinggoroutine はこれを検出できない (production 関数に渡したクロージャの先の
+// goroutine までは追えない。この違反が入った状態で lint が 0 issues だったことで確認済み)
+// ので、実装では強制できない制約としてここに書いておく。
+//
+// 想定外コマンドは Errorf で失敗を記録しつつ error も返す: nil,nil,nil を返すと呼び出し側は
+// 空応答を正常として進み、原因から遠い場所で崩れる。
 func argsRunner(t *testing.T, responses map[string]string) CommandRunner {
 	t.Helper()
 	return func(_ context.Context, _ string, args ...string) ([]byte, []byte, error) {
 		joined := strings.Join(args, " ")
-		for pattern, out := range responses {
-			if strings.Contains(joined, pattern) {
-				return []byte(out), nil, nil
-			}
+		if pattern, ok := longestMatch(joined, slices.Collect(maps.Keys(responses))); ok {
+			return []byte(responses[pattern]), nil, nil
 		}
-		t.Fatalf("想定外のコマンド: gh %s", joined)
-		return nil, nil, nil
+		t.Errorf("想定外のコマンド: gh %s", joined)
+		return nil, nil, fmt.Errorf("想定外のコマンド: gh %s", joined)
 	}
 }
 
@@ -365,8 +380,9 @@ func TestFetchJobDetailStepsBestEffort(t *testing.T) {
 		if strings.Contains(joined, "annotations") {
 			return []byte(`[{"path":"a.go","start_line":1,"annotation_level":"failure","message":"m"}]`), nil, nil
 		}
-		t.Fatalf("想定外: %s", joined)
-		return nil, nil, nil
+		// goroutine から呼ばれるので Fatal* は使えない (argsRunner の注記参照)
+		t.Errorf("想定外: %s", joined)
+		return nil, nil, fmt.Errorf("想定外: %s", joined)
 	}
 	lines, ghErr := FetchJobDetail(context.Background(), run, Repo{Owner: "o", Name: "r"},
 		CheckDetail{Name: "lint", State: StateFailure, CheckID: 5})
