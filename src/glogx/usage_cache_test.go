@@ -9,21 +9,33 @@ import (
 	"glogx/usage"
 )
 
-func usageSnapFixture() *usage.Snapshot {
-	return &usage.Snapshot{
-		Windows: []usage.Window{
-			{Label: "5h", Raw: "Current session", Percent: 12, ResetAt: time.Date(2026, 7, 25, 15, 0, 0, 0, time.Local)},
-			{Label: "7d", Raw: "Current week (all models)", Percent: 40, ResetAt: time.Date(2026, 7, 28, 9, 0, 0, 0, time.Local)},
-		},
-		Version: "2.1.216",
+// usageSnapFixture は本物の /usage 出力を usage.Parse に通して作る。手組みの Snapshot だと
+// 「実際に Fetch が返す形」と食い違っても気づけない: usage.Snapshot / Window は json タグを
+// 持たずフィールド名で符号化され、ResetAt は time.Time。ここが往復で壊れると症状は
+// 「永久に cache miss = 毎起動 claude を起こし続ける」で、どこも失敗しないまま劣化する。
+func usageSnapFixture(t *testing.T) *usage.Snapshot {
+	t.Helper()
+	const realResult = `You are currently using your subscription to power your Claude Code usage
+
+Current session: 2% used · resets Jul 22 at 3:09am (Asia/Tokyo)
+Current week (all models): 29% used · resets Jul 24 at 8am (Asia/Tokyo)
+Current week (Fable): 48% used · resets Jul 24 at 8am (Asia/Tokyo)
+
+What's contributing to your limits usage?
+Last 24h · 875 requests · 7 sessions`
+	snap, err := usage.Parse(realResult, time.Date(2026, 7, 21, 12, 0, 0, 0, time.Local))
+	if err != nil {
+		t.Fatalf("fixture の Parse に失敗: %v", err)
 	}
+	snap.Version = "2.1.216"
+	return snap
 }
 
 // 保存 → TTL 内は読める / TTL 到達で切れる (境界は「以上で切れる」)。
 func TestUsageCacheRoundTripAndTTL(t *testing.T) {
 	path := filepath.Join(t.TempDir(), usageCacheFile)
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.Local)
-	if err := saveUsageCache(path, usageSnapFixture(), now); err != nil {
+	if err := saveUsageCache(path, usageSnapFixture(t), now); err != nil {
 		t.Fatalf("saveUsageCache: %v", err)
 	}
 
@@ -31,11 +43,19 @@ func TestUsageCacheRoundTripAndTTL(t *testing.T) {
 	if !ok {
 		t.Fatal("TTL 内なのにキャッシュが読めない")
 	}
-	if len(got.Windows) != 2 || got.Windows[0].Percent != 12 || got.Version != "2.1.216" {
-		t.Errorf("スナップショットが往復で壊れた: %+v", got)
+	// 全フィールドの往復を突き合わせる (どれか 1 つ欠けても表示が静かに劣化する)
+	want := usageSnapFixture(t)
+	if got.Version != want.Version {
+		t.Errorf("Version = %q, want %q", got.Version, want.Version)
 	}
-	if !got.Windows[0].ResetAt.Equal(usageSnapFixture().Windows[0].ResetAt) {
-		t.Errorf("ResetAt が往復で壊れた: %v", got.Windows[0].ResetAt)
+	if len(got.Windows) != len(want.Windows) {
+		t.Fatalf("枠数 = %d, want %d", len(got.Windows), len(want.Windows))
+	}
+	for i, w := range want.Windows {
+		g := got.Windows[i]
+		if g.Label != w.Label || g.Raw != w.Raw || g.Percent != w.Percent || !g.ResetAt.Equal(w.ResetAt) {
+			t.Errorf("枠 %d が往復で壊れた:\n got  %+v\n want %+v", i, g, w)
+		}
 	}
 
 	if _, ok := loadUsageCache(path, now.Add(usageCacheTTL)); ok {
@@ -78,7 +98,7 @@ func TestFetchCmdUsesCacheOnStartup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := saveUsageCache(path, usageSnapFixture(), time.Now()); err != nil {
+	if err := saveUsageCache(path, usageSnapFixture(t), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	// PATH を空にして claude を見つけられなくする: subprocess 経路へ落ちたら err になる
@@ -105,7 +125,7 @@ func TestFetchCmdRefreshIgnoresCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := saveUsageCache(path, usageSnapFixture(), time.Now()); err != nil {
+	if err := saveUsageCache(path, usageSnapFixture(t), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", "") // subprocess 経路に入ったことを err で観測する
