@@ -13,6 +13,8 @@ typeset -gi _TMUX_WINDOW_NAMES_LOADED=0
 # precmd で毎回参照する zsh の表示名はロード後に不変なので、ここに1回だけ確定させて
 # precmd のコマンド置換 (fork) を無くす (_tmux_load_yaml が設定する)
 typeset -g _TMUX_ZSH_TITLE=""
+# 上記 3 関数の戻り値受け渡し用 (fork 回避のための REPLY 契約)。
+typeset -g REPLY
 # サブコマンドも window 名に出すコマンドの set (whitelist)。YAML の `_subcommands`
 # から _tmux_load_yaml が構築する。make/git 等の「第2語が意味を持つ」コマンド用。
 typeset -gA _TMUX_SUBCOMMAND_CMDS
@@ -71,14 +73,18 @@ _tmux_reload_window_names() {
   _tmux_load_yaml
 }
 
-# YAML から表示名を取得（連想配列から O(1) で取得）
+# YAML から表示名を取得（連想配列から O(1) で取得）。
+# ⚠️ 結果は stdout ではなく REPLY で返す (_tmux_extract_command / _tmux_extract_subcommand も同様)。
+# preexec は毎コマンド走るため $(...) のコマンド置換 = subshell fork を避ける契約
+# (実測: 置換経由 0.42ms/回 → 直呼び 0.03ms/回。preexec 全体で 1.18ms → 0.35ms)。
+# 呼び出し側 (テスト含む) は `_tmux_get_display_name foo; print -r -- "$REPLY"` の形で使う。
 _tmux_get_display_name() {
   (( _TMUX_WINDOW_NAMES_LOADED )) || _tmux_load_yaml
   local cmd="$1"
   if (( ${+_TMUX_WINDOW_NAMES[$cmd]} )); then
-    print -r -- "${_TMUX_WINDOW_NAMES[$cmd]}"
+    REPLY="${_TMUX_WINDOW_NAMES[$cmd]}"
   else
-    print -r -- "${_TMUX_WINDOW_NAMES[_default]}${cmd}"
+    REPLY="${_TMUX_WINDOW_NAMES[_default]}${cmd}"
   fi
 }
 
@@ -134,7 +140,7 @@ _tmux_extract_command() {
   # 実コマンド名で照合する (表示もバックスラッシュ無しになる)
   cmd="${cmd#\\}"
   [[ "$cmd" == */* ]] && cmd="${cmd:t}"
-  print -r -- "$cmd"
+  REPLY="$cmd"
 }
 
 # whitelist コマンド (make/git 等) のサブコマンド = base コマンドの次に来る最初の
@@ -164,10 +170,10 @@ _tmux_extract_subcommand() {
     # 演算子/リダイレクトに当たったら引数は無いと判断して打ち切る。
     _tmux_is_skippable_arg "$word" && continue
     _tmux_is_shell_operator "$word" && break
-    print -r -- "$word"
+    REPLY="$word"
     return
   done
-  print -r -- ""
+  REPLY=""
 }
 
 # OSC 2 で「このペインの」タイトルだけを書く。旧実装の \033k (ウィンドウ名直接
@@ -211,15 +217,15 @@ if [[ -n "$TMUX" ]]; then
     # 保証する (precmd が先に走る前提に依存しない)。
     (( _TMUX_WINDOW_NAMES_LOADED )) || _tmux_load_yaml
     local cmd title
-    cmd=$(_tmux_extract_command "$1")
-        # alias は展開せず、タイプした名前のまま表示する (意図的な仕様。過去に廃止した経緯が
+    _tmux_extract_command "$1"; cmd="$REPLY"
+    # alias は展開せず、タイプした名前のまま表示する (意図的な仕様。過去に廃止した経緯が
     # あるため、再導入は経緯を確認してから判断すること)
-    title=$(_tmux_get_display_name "$cmd")
+    _tmux_get_display_name "$cmd"; title="$REPLY"
     # whitelist (_subcommands) のコマンドは第2語 (サブコマンド) も付けて
     # `make test` / `git commit` のように出す (一覧でコマンドの何かが分かるように)。
     if (( ${+_TMUX_SUBCOMMAND_CMDS[$cmd]} )); then
       local sub
-      sub=$(_tmux_extract_subcommand "$1")
+      _tmux_extract_subcommand "$1"; sub="$REPLY"
       [[ -n "$sub" ]] && title+=" $sub"
     fi
     _tmux_set_pane_title "$title"

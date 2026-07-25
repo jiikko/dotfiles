@@ -93,20 +93,20 @@ printf '\n## Test 5: _tmux_get_display_name resolves commands from YAML\n'
 # フォールバック時も「アイコン + コマンド名」にコマンド名が含まれて PASS してしまい、
 # per-entry のタイプミス/消失を検出できない。YAML のエントリを変えたらここも更新する)。
 # nvim のテスト
-result=$(run_zsh '_tmux_get_display_name nvim')
+result=$(run_zsh '_tmux_get_display_name nvim; print -r -- "$REPLY"')
 assert_equals " nvim" "$result" "_tmux_get_display_name returns exact nvim entry"
 
 # brew のテスト
-result=$(run_zsh '_tmux_get_display_name brew')
+result=$(run_zsh '_tmux_get_display_name brew; print -r -- "$REPLY"')
 assert_equals " brew" "$result" "_tmux_get_display_name returns exact brew entry"
 
 # claude のテスト
-result=$(run_zsh '_tmux_get_display_name claude')
+result=$(run_zsh '_tmux_get_display_name claude; print -r -- "$REPLY"')
 assert_equals "🤖 claude" "$result" "_tmux_get_display_name returns exact claude entry"
 
 # Test 6: _default が未定義コマンドに適用される
 printf '\n## Test 6: _default is applied to unknown commands\n'
-result=$(run_zsh '_tmux_get_display_name unknowncommand123')
+result=$(run_zsh '_tmux_get_display_name unknowncommand123; print -r -- "$REPLY"')
 assert_contains "unknowncommand123" "$result" "_tmux_get_display_name returns unknown command with default icon"
 
 # Test 7: preexec/precmd フックが登録されている (TMUX 環境外ではスキップ)
@@ -136,7 +136,7 @@ else
   exit 1
 fi
 # preexec 経路 (extract → display) が alias 'v' を展開せず "v" を保つこと
-result=$(run_zsh '_tmux_get_display_name "$(_tmux_extract_command "v foo.txt")"')
+result=$(run_zsh '_tmux_extract_command "v foo.txt"; _tmux_get_display_name "$REPLY"; print -r -- "$REPLY"')
 assert_contains "v" "$result" "alias 'v' is displayed as-is, not expanded to nvim"
 if [[ "$result" == *"nvim"* ]]; then
   printf '✗ alias was unexpectedly expanded to nvim\n'
@@ -145,22 +145,22 @@ fi
 
 # Test 9: コマンド抽出がプレフィックスや代入をスキップする
 printf '\n## Test 9: Command extraction skips wrappers\n'
-result=$(run_zsh '_tmux_extract_command "sudo env FOO=1 /usr/bin/nvim file.txt"')
+result=$(run_zsh '_tmux_extract_command "sudo env FOO=1 /usr/bin/nvim file.txt"; print -r -- "$REPLY"')
 assert_equals "nvim" "$result" "_tmux_extract_command strips sudo/env/assignments"
 
-result=$(run_zsh '_tmux_extract_command "FOO=bar brew install fzf"')
+result=$(run_zsh '_tmux_extract_command "FOO=bar brew install fzf"; print -r -- "$REPLY"')
 assert_equals "brew" "$result" "_tmux_extract_command ignores leading assignments"
 
 # wrapper 直後の付随フラグ (sudo -E 等) を読み飛ばして実コマンドを拾う
-result=$(run_zsh '_tmux_extract_command "sudo -E git status"')
+result=$(run_zsh '_tmux_extract_command "sudo -E git status"; print -r -- "$REPLY"')
 assert_equals "git" "$result" "_tmux_extract_command skips leading flags after wrappers"
 
-result=$(run_zsh '_tmux_extract_command "noglob make build"')
+result=$(run_zsh '_tmux_extract_command "noglob make build"; print -r -- "$REPLY"')
 assert_equals "make" "$result" "_tmux_extract_command skips noglob wrapper"
 
 # alias バイパスの \cmd は backslash を剥がして実コマンド名で照合する
 # (剥がさないと "\nvim" が YAML の nvim にヒットせず _default に落ちる回帰の防止)
-result=$(run_zsh '_tmux_extract_command "\nvim file.txt"')
+result=$(run_zsh '_tmux_extract_command "\nvim file.txt"; print -r -- "$REPLY"')
 assert_equals "nvim" "$result" "_tmux_extract_command strips alias-bypass backslash"
 
 # Test 10: OSC 2 タイトルのサニタイズ (制御文字の除去)
@@ -182,58 +182,58 @@ assert_equals "zsh" "$result" "_TMUX_ZSH_TITLE falls back to 'zsh' when YAML is 
 
 # Test 12: サブコマンド抽出 (base コマンドの次に来る最初の素の語)
 printf '\n## Test 12: Subcommand extraction\n'
-result=$(run_zsh '_tmux_extract_subcommand "make test"')
+result=$(run_zsh '_tmux_extract_subcommand "make test"; print -r -- "$REPLY"')
 assert_equals "test" "$result" "_tmux_extract_subcommand returns first plain word after base"
 
-result=$(run_zsh '_tmux_extract_subcommand "make -j4 build"')
+result=$(run_zsh '_tmux_extract_subcommand "make -j4 build"; print -r -- "$REPLY"')
 assert_equals "build" "$result" "_tmux_extract_subcommand skips flags after base"
 
-result=$(run_zsh '_tmux_extract_subcommand "make FOO=1 install"')
+result=$(run_zsh '_tmux_extract_subcommand "make FOO=1 install"; print -r -- "$REPLY"')
 assert_equals "install" "$result" "_tmux_extract_subcommand skips assignments after base"
 
-result=$(run_zsh '_tmux_extract_subcommand "sudo make install"')
+result=$(run_zsh '_tmux_extract_subcommand "sudo make install"; print -r -- "$REPLY"')
 assert_equals "install" "$result" "_tmux_extract_subcommand skips wrappers before base"
 
-result=$(run_zsh '_tmux_extract_subcommand "git commit -m x"')
+result=$(run_zsh '_tmux_extract_subcommand "git commit -m x"; print -r -- "$REPLY"')
 assert_equals "commit" "$result" "_tmux_extract_subcommand returns git subcommand"
 
 # サブコマンドが無い (base コマンドのみ / 後続がフラグだけ) なら空文字
-result=$(run_zsh '_tmux_extract_subcommand "make"')
+result=$(run_zsh '_tmux_extract_subcommand "make"; print -r -- "$REPLY"')
 assert_equals "" "$result" "_tmux_extract_subcommand returns empty when no subcommand"
 
-result=$(run_zsh '_tmux_extract_subcommand "ls -la"')
+result=$(run_zsh '_tmux_extract_subcommand "ls -la"; print -r -- "$REPLY"')
 assert_equals "" "$result" "_tmux_extract_subcommand returns empty when only flags follow"
 
 # 演算子・リダイレクトが続くだけのときは subcommand 無し (シェル演算子を拾わない)
-result=$(run_zsh '_tmux_extract_subcommand "make && echo ok"')
+result=$(run_zsh '_tmux_extract_subcommand "make && echo ok"; print -r -- "$REPLY"')
 assert_equals "" "$result" "_tmux_extract_subcommand stops at && (no subcommand)"
 
-result=$(run_zsh '_tmux_extract_subcommand "make | grep x"')
+result=$(run_zsh '_tmux_extract_subcommand "make | grep x"; print -r -- "$REPLY"')
 assert_equals "" "$result" "_tmux_extract_subcommand stops at pipe"
 
-result=$(run_zsh '_tmux_extract_subcommand "make >out"')
+result=$(run_zsh '_tmux_extract_subcommand "make >out"; print -r -- "$REPLY"')
 assert_equals "" "$result" "_tmux_extract_subcommand stops at redirection"
 
-result=$(run_zsh '_tmux_extract_subcommand "make; ls"')
+result=$(run_zsh '_tmux_extract_subcommand "make; ls"; print -r -- "$REPLY"')
 assert_equals "" "$result" "_tmux_extract_subcommand stops at semicolon"
 
-result=$(run_zsh '_tmux_extract_subcommand "make 2>&1 test"')
+result=$(run_zsh '_tmux_extract_subcommand "make 2>&1 test"; print -r -- "$REPLY"')
 assert_equals "" "$result" "_tmux_extract_subcommand stops at fd redirection"
 
-result=$(run_zsh '_tmux_extract_subcommand "make &>log"')
+result=$(run_zsh '_tmux_extract_subcommand "make &>log"; print -r -- "$REPLY"')
 assert_equals "" "$result" "_tmux_extract_subcommand stops at &> redirection"
 
-result=$(run_zsh '_tmux_extract_subcommand "make &>|log"')
+result=$(run_zsh '_tmux_extract_subcommand "make &>|log"; print -r -- "$REPLY"')
 assert_equals "" "$result" "_tmux_extract_subcommand stops at &>| redirection"
 
-result=$(run_zsh '_tmux_extract_subcommand "make &>>log"')
+result=$(run_zsh '_tmux_extract_subcommand "make &>>log"; print -r -- "$REPLY"')
 assert_equals "" "$result" "_tmux_extract_subcommand stops at &>> redirection"
 
 # 演算子の前に実引数があればそれを拾う (subcommand 抽出は続行)
-result=$(run_zsh '_tmux_extract_subcommand "make build && true"')
+result=$(run_zsh '_tmux_extract_subcommand "make build && true"; print -r -- "$REPLY"')
 assert_equals "build" "$result" "_tmux_extract_subcommand returns arg that precedes an operator"
 
-result=$(run_zsh '_tmux_extract_subcommand "make test >log"')
+result=$(run_zsh '_tmux_extract_subcommand "make test >log"; print -r -- "$REPLY"')
 assert_equals "test" "$result" "_tmux_extract_subcommand returns arg before redirection"
 
 # Test 13: whitelist (_subcommands) の set 化
@@ -247,7 +247,7 @@ assert_equals "no" "$result" "ls is NOT in the subcommand whitelist"
 # Test 14: window 名の組み立て (preexec のロジックを実関数で再現)
 printf '\n## Test 14: Title composition (whitelist gating)\n'
 # 実 _tmux_preexec と同じ手順 (先頭でロードを親シェルに保証してから whitelist 判定)
-compose='(( _TMUX_WINDOW_NAMES_LOADED )) || _tmux_load_yaml; c=$(_tmux_extract_command "$1"); t=$(_tmux_get_display_name "$c"); if (( ${+_TMUX_SUBCOMMAND_CMDS[$c]} )); then s=$(_tmux_extract_subcommand "$1"); [[ -n "$s" ]] && t="$t $s"; fi; print -r -- "$t"'
+compose='(( _TMUX_WINDOW_NAMES_LOADED )) || _tmux_load_yaml; _tmux_extract_command "$1"; c="$REPLY"; _tmux_get_display_name "$c"; t="$REPLY"; if (( ${+_TMUX_SUBCOMMAND_CMDS[$c]} )); then _tmux_extract_subcommand "$1"; s="$REPLY"; [[ -n "$s" ]] && t="$t $s"; fi; print -r -- "$t"'
 # whitelist コマンドはサブコマンドが付く
 result=$(run_zsh "_compose() { $compose }; _compose 'make test-zshrc'")
 assert_contains "make test-zshrc" "$result" "whitelisted command shows subcommand in title"
