@@ -19,11 +19,14 @@ typeset -g REPLY
 # から _tmux_load_yaml が構築する。make/git 等の「第2語が意味を持つ」コマンド用。
 typeset -gA _TMUX_SUBCOMMAND_CMDS
 
+# 前後の空白を落として REPLY に返す。⚠️ stdout を使わないこと: _tmux_load_yaml が
+# YAML の全行 × 2 (key/value) で呼ぶため、$(...) 経由だと 1 行あたり 2 fork になる
+# (実測: 35 行の YAML で 35.9ms = 対話シェル初期化の 55%。REPLY 化で 0.7ms)。
 _tmux_window_name_trim() {
   local str="$1"
   str="${str#"${str%%[![:space:]]*}"}"
   str="${str%"${str##*[![:space:]]}"}"
-  print -r -- "$str"
+  REPLY="$str"
 }
 
 _tmux_load_yaml() {
@@ -44,8 +47,8 @@ _tmux_load_yaml() {
       key="${line%%:*}"
       value="${line#*:}"
 
-      key="$(_tmux_window_name_trim "$key")"
-      value="$(_tmux_window_name_trim "$value")"
+      _tmux_window_name_trim "$key";   key="$REPLY"
+      _tmux_window_name_trim "$value"; value="$REPLY"
       value="${value#\"}"
       value="${value%\"}"
 
