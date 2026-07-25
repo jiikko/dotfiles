@@ -28,12 +28,20 @@ v1 では pty スモークで実測した回帰 (`TestBrowseBatchedRunesKeyMsg`)
 
 ## 幅モデル — v2 でエンジンの計測ライブラリが変わった
 
-`width.go` の不変条件は「glogx の幅計算とエンジンの幅計算が一致すること」。**その相手は bubbletea の実装詳細で、勝手に一致し続けない**:
+`width.go` の不変条件は「glogx の幅計算とエンジンの幅計算が一致すること」。**その相手は bubbletea の実装詳細で、勝手に一致し続けない**。
 
-- v1 (`standardRenderer`) → `charmbracelet/x/ansi`
-- v2 (cursed renderer / `ultraviolet`) → `clipperhouse/displaywidth`
+⚠️ 当初この節に「v2 のエンジンは `clipperhouse/displaywidth` で測る」と書いたが**誤り**（セルフレビューで訂正）。`displaywidth` は `x/ansi` v0.11 以降が内部で使うライブラリで、独立した実装ではない。実際に変わったのは**ライブラリではなく幅モデル (`ansi.Method`)**:
 
-移行時に実測して一致を確認した (詳細な表と適用箇所は `width.go` の `dropEmojiVS16` 直上コメントが出典):
+| | エンジンの幅モデル | glogx (`dispWidth`) |
+|---|---|---|
+| v1 (`standardRenderer`) | `ansi.StringWidth` = **GraphemeWidth** | GraphemeWidth（一致） |
+| v2 (cursed renderer / `ultraviolet`) | `ansi.Method`、**既定は WcWidth**。端末が Unicode Core (mode 2027) 対応を報告したときだけ GraphemeWidth へ昇格（`tea.go` の `ModeReportMsg` → `setWidthMethod`） | GraphemeWidth（**食い違う**） |
+
+食い違うのは「1 クラスタ = 複数 rune」の字だけ。実測 (Grapheme / Wc): `⚠+VS16` 2/1（`dropEmojiVS16` で bare 化するので出てこない）・**国旗 🇯🇵 2/1**・**keycap 1️⃣ 2/1**・ZWJ 絵文字と肌色は 2/2 で一致。
+
+実害を測った結果は「v2 のほうが揃っている」: 国旗を含む行の右枠位置は v1 が 98 セル相当・v2 が 97 セル相当で、**ASCII 行 (97) と一致するのは v2** だった（100 桁 pane・tmux 3.7b で実測）。したがって v2 化で悪化はしていないが、この安定は「エンジンが WcWidth である」ことに乗っている。
+
+以下は GraphemeWidth モデルでの各ライブラリ比較 (詳細な表と適用箇所は `width.go` の `dropEmojiVS16` 直上コメントが出典):
 
 | | x/ansi | uniseg | displaywidth | runewidth |
 |---|---|---|---|---|
@@ -94,7 +102,8 @@ v1 では pty スモークで実測した回帰 (`TestBrowseBatchedRunesKeyMsg`)
 ## 次に bubbletea を上げるときのチェックリスト
 
 1. `go get charm.land/bubbletea/v2@<version> && go mod tidy`
-2. **幅モデルの一致を測り直す** (上表。エンジンの計測ライブラリが変わっていないかも確認する)
+2. **幅モデルを読み直す**: エンジンが使う `ansi.Method` の既定と昇格条件 (`grep -n "setWidthMethod" $(go env GOMODCACHE)/charm.land/bubbletea/v2@*/tea.go`) が変わっていないか。
+   加えて上表のライブラリ間一致を測り直す（国旗・keycap を含む行を実 TUI で 1 度描かせて右枠位置を ASCII 行と比べるのが最短の実害チェック）
 3. `make -C src/glogx lint` / `make -C src/glogx test` (CI の 2 job と同一コマンド)
 4. tmux 上で実 TUI を起動し、最外周フレーム・usage オーバーレイ・`j/k/G/Enter/Esc/q`・Alt Screen 復帰を目視
 5. `PasteMsg` の扱いが変わっていないか (貼り付けがキー実行に戻っていないか)
