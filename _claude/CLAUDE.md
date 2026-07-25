@@ -34,6 +34,7 @@
 - 変更したファイルにGodクラス/Godファイルの予兆（責務の混在、過度な行数など）を見つけたら、リファクタリングを提案すること（ただし行数だけで判断せず、下記のとおり複雑性が実際に下がるかで判断する）
 - **リファクタリングの目的は「複雑性を下げる」こと。行数が多いだけで単純にファイル/クラスを分けるのはリファクタではない**（分割は複雑性を移動するだけで削減しない）。「何をもって複雑性が下がるか」の判断基準と着手前の確認手順は [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md)
 - バグフィックス後、そのプロジェクトに導入されているlinterのカスタムルールやpresetルールで再発防止できないか検討し、提案すること
+- **zsh の hook (precmd/preexec) 経路から呼ぶ関数は `$(...)` でなく `REPLY` で返す**（fork が毎操作の体感レイテンシになる）。詳細は [`zsh-hook-return-via-reply.md`](rules/zsh-hook-return-via-reply.md)
 - **カバレッジ向上を要求されても、対象が「テスト困難 かつ 低価値」の両方を満たすなら拒否する**（数値のための水増しテストを書かない）。判断は「テスト容易性 × 価値」の 2 軸で行い、困難×高価値は逃げずにテスタブルへ直してから書く。詳細は [`refuse-low-value-coverage.md`](rules/refuse-low-value-coverage.md)
 
 ## 単純作業の委譲
