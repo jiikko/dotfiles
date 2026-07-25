@@ -742,5 +742,29 @@ if [[ -o interactive ]] && [[ -t 1 ]]; then
     karabiner \
     "[dotfiles] mac/karabiner.json が更新されています。'restore_karabiner_config.sh' を実行してね。" \
     ""
+
+  # ~/.claude の per-file symlink 漏れ検出。
+  # setup.sh は _claude/{agents,commands,rules,hooks,workflows,skills} の中身を 1 ファイルずつ
+  # ~/.claude 配下へリンクする。よって **repo にファイルを足しただけでは効かず**、setup.sh を
+  # 再実行するまで Claude はそのルール/スキルを読まない。上の setup-sh.sha256 watch は
+  # setup.sh 自身の内容しか見ないためこの漏れを検出できなかった (実例: 2026-07-25 に
+  # rules/ へ追加したルールが未リンクのまま)。
+  # 状態ファイルを持たず「期待されるリンクが実在するか」を直接見る (自己修復・stale なし)。
+  # 実測 0.7ms (glob と [[ -e ]] だけで fork ゼロ) なので起動時に同期実行して構わない。
+  # ⚠️ リンク規約は setup.sh が出典。あちらの対象 (skills はディレクトリ / workflows は .js のみ)
+  # を変えたらここも合わせること。
+  _dotfiles_check_claude_links() {
+    [[ -d "$HOME/.claude" && -d "$HOME/dotfiles/_claude" ]] || return 0
+    local -a missing
+    local f
+    for f in "$HOME"/dotfiles/_claude/{agents,commands,rules,hooks}/*(N) \
+             "$HOME"/dotfiles/_claude/skills/*(N/) \
+             "$HOME"/dotfiles/_claude/workflows/*.js(N); do
+      [[ -e "$HOME/.claude/${f:h:t}/${f:t}" ]] || missing+=("${f:h:t}/${f:t}")
+    done
+    (( ${#missing} )) || return 0
+    print -r -- "[dotfiles] ~/.claude のリンクが ${#missing} 件不足しています (${missing[1,3]})。'sh ~/dotfiles/setup.sh' を実行してね。"
+  }
+  _dotfiles_check_claude_links
 fi
 # ---------------------------------------------------------------------------
