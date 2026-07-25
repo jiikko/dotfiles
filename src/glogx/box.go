@@ -253,20 +253,23 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, st 
 	} else {
 		lines = append(lines, paint(top, border, colored))
 	}
+	// 行ごとに変わらない断片はループの外で 1 度だけ組む。最外周フレーム (wrapWindowFrame) は
+	// 毎フレーム全可視行をここへ通すので、行数 × フレームレートぶんの alloc になっていた。
+	// 右影の上端 (最初の content 行) だけ ▓ フェザーで ease-in し、以降は █ 本体にする
+	// (影は最上段に無い = top で 1 行分オフセットされるので、右影の「始まり」を柔らかくする)。
+	leftEdge, rightEdge := paint(b.v+" ", border, colored), paint(" "+b.v, border, colored)
+	var shadeFirst, shadeRest string
+	if shadow {
+		shadeFirst, shadeRest = shadowFeather(colored), shadowRun(1, colored)
+	}
 	for i, row := range rows {
 		content := clipToWidth(row, inner)
 		pad := max(inner-dispWidth(content), 0)
-		shade := ""
-		if shadow {
-			// 右影の上端 (最初の content 行) だけ ▓ フェザーで ease-in し、以降は █ 本体。
-			// 影は最上段に無い (top で 1 行分オフセット) ので、右影の「始まり」を柔らかくする。
-			if i == 0 {
-				shade = shadowFeather(colored)
-			} else {
-				shade = shadowRun(1, colored)
-			}
+		shade := shadeRest
+		if i == 0 {
+			shade = shadeFirst
 		}
-		lines = append(lines, paint(b.v+" ", border, colored)+content+strings.Repeat(" ", pad)+paint(" "+b.v, border, colored)+shade)
+		lines = append(lines, leftEdge+content+strings.Repeat(" ", pad)+rightEdge+shade)
 	}
 	// 下辺は shadow の有無で変える:
 	//   - 通常箱: 上辺 ┌─┐ と同じ中央高の細い罫線 └─┘ (標準の枠)

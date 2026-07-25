@@ -2144,12 +2144,20 @@ func (m *browseModel) View() string {
 		}
 		window = wrapWindowFrame(window, m.width, m.colored)
 	}
+	// 1 フレーム分の最終文字列は 10-30KB になる。pre-size しないと Builder の倍々成長で
+	// 出力サイズと同程度のバッファを毎フレーム捨てる (alloc プロファイルで View 全体の 57%)。
+	hint := m.hintLine()
+	size := len(hint)
+	for _, w := range window {
+		size += len(w) + 1 // +1 = 行末の "\n"
+	}
 	var b strings.Builder
+	b.Grow(size)
 	for _, w := range window {
 		b.WriteString(w)
 		b.WriteString("\n")
 	}
-	b.WriteString(m.hintLine())
+	b.WriteString(hint)
 	return b.String()
 }
 
