@@ -89,8 +89,24 @@ glogx --cached            # HEAD の CI 状態 + staged diff (独自モード、
 glogx --no-pager          # 対話ブラウズせず静的出力
 glogx --refresh           # CI キャッシュを無視して再取得
 glogx --no-cache          # CI キャッシュを読み書きしない
+glogx --no-frame          # 最外周フレーム (板 + 影) を描かない
 glogx --help              # ヘルプ (キー操作・記号・終了コードの詳細)
 ```
+
+### 最外周フレーム (板)
+
+対話ブラウズでは画面全体を**二重罫線の枠 + 右下ドロップシャドウ**で包み、ターミナルの地色の上に
+板が浮いているように描く (issue 025)。罫線は**マゼンタ 201** — tmux の scratch popup 枠と同じ
+「点滅/scratch アイデンティティ」色で、glogx も「ふだんの pane とは別の一時的な板」であることを
+色で示している (色の意味は [`docs/theme-colors.md`](../../docs/theme-colors.md)、値の出典は
+[`theme/colors.yml`](../../theme/colors.yml) の `blink_magenta`)。落ち影は色を持たせず中立のまま
+(影が主張しないように)。
+
+- `--no-frame` で無効化できる
+- 端末が下限サイズ (60×15) 未満のときは自動で OFF (tmux の小 pane / popup でも崩れない)
+- `NO_COLOR` / 非 TTY では色を出さない (枠の字形だけ残る)
+- 色を変えたいときは `render.go` の `ansiFrameBorder` を差し替える。候補の見比べは
+  `./tools/border-preview.sh` (実端末で実行)
 
 ### 対話ブラウズのキー操作 (TTY のみ)
 
