@@ -43,13 +43,33 @@ func clusterWidth(cluster string) int { return uniseg.StringWidth(cluster) }
 // dropEmojiVS16 は絵文字異体字セレクタ VS16 (U+FE0F) を除去して、⚠️❤️✔️ 等の
 // 「記号 + VS16」を bare な text presentation (⚠❤✔) へ倒す。
 //
-// なぜ幅統一 (dispWidth) と併用が必要か: VS16 付きの字は描画エンジン (x/ansi) が幅 2 と
-// 数える一方、ユーザーの端末 (Terminal.app + tmux, 実測 2026-07-24: printf で数字が
-// めり込む) はカーソルを 1 マスしか進めない。エンジン↔端末が食い違う文字はどちらの幅を
-// glogx が採用してもズレるため、「食い違わない文字 (bare 記号 = 双方幅 1)」へ正規化して
-// 出すしかない。git 由来テキスト (commit message 等) の表示入口で適用する。
-// 端末の絵文字幅の扱いが将来変わったら (Terminal.app が VS16 に 2 マス割り当てるように
-// なったら) この正規化は不要になる。VS15 (U+FE0E) は元々双方幅 1 なので触らない。
+// なぜ幅統一 (dispWidth) と併用が必要か: VS16 付きの字は幅の解釈が層ごとに割れる。
+// bare 記号は全層で幅 1 に一致するので、割れる文字を出さないための正規化を表示入口で行う。
+//
+// 実測値 (2026-07-25、CPR と tmux cursor_x で計測):
+//
+//	                 x/ansi  uniseg  runewidth  tmux 3.7b
+//	bare ⚠ (U+26A0)       1       1          1          1   ← 全層一致
+//	⚠+VS16                2       2          1          2
+//	⚠+VS15                1       1          1          1
+//
+// ⚠️ 過去の記述の訂正: 4c8ee8d は「ユーザーの端末は VS16 に 1 マスしか割り当てない
+// (エンジン 2 と食い違う)」と書き、3c74ddf は逆に「端末が幅 2 で数える」と書いていた。
+// tmux 3.7b の実測は 2 で、少なくとも tmux 層はエンジンと一致する。つまり
+// 「エンジン 2 vs 端末 1」という当時の前提は少なくとも今の環境では成立しない。
+// それでも正規化は続ける価値がある: runewidth が 1 と数えるため、glogx 自身が使わなくても
+// 依存ライブラリや外部ツールが混在すると割れる余地が残る (bare なら全層 1 で一致する)。
+//
+// ⚠️ 未計測の層が 1 つ残っている: tmux の外側の端末エミュレータ本体。ここは TTY が要るので
+// エージェント環境からは測れない。`go run ./tools/width-probe` を実端末で (tmux の内と外の
+// 両方で) 走らせると各層の割り当てを端末自身に問い合わせて表になる。ズレが再発したら
+// 推測で対策を足す前にまずこれを走らせること (この問題は前提を測らずに対策を重ねて
+// revert 済みの試行が 1 件ある: 3c74ddf → 3e5787d)。
+//
+// 適用箇所は「表示に出る外部由来テキスト」の入口すべて: git 由来 (gitlog.go の 2 入口)、
+// CI ログ / annotations 由来 (sanitizeDetailLine)、job 名 (detailsOf)。自前の静的テキストは
+// ソースに bare 記号を直接書く (Usage() は正規化経路を通らないため TestUsageHasNoVS16 で守る)。
+// VS15 (U+FE0E) は元々全層で幅 1 なので触らない。
 func dropEmojiVS16(s string) string {
 	const vs16 = '\ufe0f'               // VS16 (emoji presentation selector)
 	if !strings.ContainsRune(s, vs16) { // 多数派 (絵文字なし) は無 alloc で素通り

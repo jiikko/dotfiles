@@ -504,9 +504,13 @@ func detailsOf(rollup *rollupPayload) []CheckDetail {
 	}
 	details := make([]CheckDetail, 0, len(rollup.Contexts.Nodes))
 	for _, node := range rollup.Contexts.Nodes {
-		name := node.Name
+		// job 名は GitHub Actions の workflow YAML 由来でユーザーが自由に付けられる = 絵文字が
+		// 入りうる。panelLines は job 名をそのまま枠の中に置くので、VS16 付き絵文字が残ると
+		// 枠と本文の幅が食い違う (git 由来テキストは gitlog.go の 2 入口、CI ログ由来は
+		// sanitizeDetailLine で既に正規化済みだが、job 名だけ経路が抜けていた)。
+		name := dropEmojiVS16(node.Name)
 		if name == "" {
-			name = node.Context
+			name = dropEmojiVS16(node.Context)
 		}
 		if name == "" {
 			name = "(unnamed)"

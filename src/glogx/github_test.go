@@ -860,3 +860,26 @@ func TestFetchPRStatus(t *testing.T) {
 		t.Fatalf("PR なしで nil にならない: pr=%+v err=%v", pr, ghErr)
 	}
 }
+
+// job 名は workflow YAML 由来でユーザーが自由に付けられる (絵文字が入りうる)。panelLines は
+// job 名をそのまま枠の中へ置くので、VS16 付き絵文字が残ると枠と本文の幅が食い違う。
+// git 由来テキストは gitlog.go の 2 入口、CI ログ由来は sanitizeDetailLine で正規化済みだが、
+// job 名だけこの経路が抜けていた (実測 2026-07-25)。
+func TestDetailsOfNormalizesVS16InJobName(t *testing.T) {
+	const vs16 = "️"
+	rollup := &rollupPayload{State: "FAILURE"}
+	rollup.Contexts.Nodes = []rollupContext{
+		{Typename: "CheckRun", Name: "build ⚠" + vs16 + " flaky", Status: "COMPLETED", Conclusion: "FAILURE"},
+		{Typename: "StatusContext", Context: "ci/legacy ✔" + vs16, State: "SUCCESS"},
+	}
+	for _, d := range detailsOf(rollup) {
+		if strings.Contains(d.Name, vs16) {
+			t.Errorf("job 名に VS16 が残っている: %q", d.Name)
+		}
+	}
+	// bare 記号自体は消さない (情報を落とさず幅だけ揃える)
+	got := detailsOf(rollup)
+	if len(got) != 2 || !strings.Contains(got[0].Name, "⚠") || !strings.Contains(got[1].Name, "✔") {
+		t.Errorf("bare 記号まで落ちている: %+v", got)
+	}
+}
