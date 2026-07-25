@@ -13,8 +13,6 @@ typeset -gi _TMUX_WINDOW_NAMES_LOADED=0
 # precmd で毎回参照する zsh の表示名はロード後に不変なので、ここに1回だけ確定させて
 # precmd のコマンド置換 (fork) を無くす (_tmux_load_yaml が設定する)
 typeset -g _TMUX_ZSH_TITLE=""
-# 上記 3 関数の戻り値受け渡し用 (fork 回避のための REPLY 契約)。
-typeset -g REPLY
 # サブコマンドも window 名に出すコマンドの set (whitelist)。YAML の `_subcommands`
 # から _tmux_load_yaml が構築する。make/git 等の「第2語が意味を持つ」コマンド用。
 typeset -gA _TMUX_SUBCOMMAND_CMDS
@@ -30,6 +28,7 @@ _tmux_window_name_trim() {
 }
 
 _tmux_load_yaml() {
+  local REPLY   # trim が書く REPLY をこの関数に閉じ込める (呼び出し側へ漏らさない)
   (( _TMUX_WINDOW_NAMES_LOADED )) && return
   _TMUX_WINDOW_NAMES_LOADED=1
   _TMUX_WINDOW_NAMES=()
@@ -215,6 +214,7 @@ _tmux_stamp_window_touched() {
 
 if [[ -n "$TMUX" ]]; then
   _tmux_preexec() {
+    local REPLY   # 上記 3 関数の戻り値受け皿を hook 内に閉じ込める (グローバルを汚さない)
     # whitelist 判定で親シェルの _TMUX_SUBCOMMAND_CMDS を参照する。$(...) 経由の
     # 遅延ロードはサブシェル内でしか set を構築しないため、ここで親シェルにロードを
     # 保証する (precmd が先に走る前提に依存しない)。

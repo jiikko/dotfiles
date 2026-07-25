@@ -70,13 +70,20 @@ end
 local function schedule_refresh(buf)
   if not eligible(buf) then return end
   cancel_timer(buf)
-  timers[buf] = vim.defer_fn(function()
+  -- ⚠️ 満了と callback 実行の間 (defer_fn は schedule_wrap 越しに走る) に cancel_timer +
+  -- 再スケジュールが割り込むことがある。その古い callback は「自分がまだ登録中の timer か」を
+  -- 見てから動く: 見ないと (a) 新しい timer の参照を timers[buf]=nil で捨て、(b) キャンセル
+  -- したはずの refresh が走って fold の開閉状態が foldlevel 既定へ戻る (refresh_win 参照)。
+  local timer
+  timer = vim.defer_fn(function()
+    if timers[buf] ~= timer then return end -- 撃ち直された古い世代
     timers[buf] = nil
     if vim.api.nvim_buf_is_loaded(buf)
       and computed_tick[buf] ~= vim.api.nvim_buf_get_changedtick(buf) then
       refresh_buf(buf)
     end
   end, DEBOUNCE_MS)
+  timers[buf] = timer
 end
 
 function M.setup()

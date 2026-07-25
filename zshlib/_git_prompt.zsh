@@ -91,6 +91,9 @@ _dotfiles_git_branch() {
 # 色は vcs_info 時代の formats '%F{black}%K{green}[%b]%f%k' をそのまま踏襲する。
 typeset -g _DOTFILES_GIT_PROMPT=""
 _dotfiles_git_prompt() {
+  # local REPLY: 中の関数が書く REPLY をこのスコープに閉じ込める (zsh の動的スコープ)。
+  # precmd hook なので、グローバル REPLY を書き換えて他の hook / widget を壊さないため。
+  local REPLY
   if _dotfiles_git_branch; then
     _DOTFILES_GIT_PROMPT="%F{black}%K{green}[${REPLY}]%f%k"
   else
