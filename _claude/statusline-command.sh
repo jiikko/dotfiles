@@ -1,6 +1,13 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Claude Code statusLine command
 # Mirrors the zsh PROMPT configuration from ~/.zshrc
+#
+# ⚠️ shebang は bash 必須 (sh 不可)。パス整形が bash 専用の置換に依存している:
+#   ${cwd/#$home/$tilde} (先頭一致の置換) / ${short_cwd: -48} (末尾からの部分文字列)。
+#   後者は bash が文字単位で数えるため、日本語を含むパスでも文字境界で切れる (POSIX の
+#   tail -c はバイト単位なのでマルチバイト文字を割る)。
+#   macOS の /bin/sh は bash なので #!/bin/sh でも動いていたが、Linux (dash) では
+#   「Bad substitution」で即死する。CI で実際に踏んで発覚 (2026-07-25)。
 
 input=$(cat)
 
@@ -68,9 +75,7 @@ reset="\033[0m"
 bold="\033[1m"
 black_fg="\033[30m"
 green_bg="\033[42m"
-blue_fg="\033[34m"
 cyan_fg="\033[36m"
-green_fg="\033[32m"
 magenta_fg="\033[35m"
 red_fg="\033[31m"
 

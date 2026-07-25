@@ -13,7 +13,10 @@ unset CDPATH
 cd "$(dirname "$0")/.."
 
 # lint 対象を持つディレクトリ。tests/ と vendor/ は対象外 (テストは test-* ターゲット側の管轄)。
-LINT_DIRS="setup.sh bin scripts zshlib _claude/hooks"
+# _claude は hooks だけでなく直下も含める (statusline-command.sh が漏れていた。shellcheck の
+# dialect 判定に載らないため #!/bin/sh のまま bash 専用置換を書いても静かに通り、Linux (dash)
+# 実行で初めて Bad substitution になった。2026-07-25)
+LINT_DIRS="setup.sh bin scripts zshlib _claude"
 
 # find の失敗 (ディレクトリ不在・権限エラー) をパイプに隠さない: 失敗時は番兵を stdout に出して
 # 非 0 で終わる。Make の $(shell) は exit code を捨てるが、番兵が実在しないファイル名として
