@@ -228,12 +228,13 @@ function history-all { history -E 1 }
 # https://qiita.com/kumatira/items/41562f1d9001927e9888
 autoload -U promptinit ; promptinit
 autoload -U colors     ; colors
-autoload -Uz vcs_info
 setopt prompt_subst
-# zstyle ':vcs_info:git:*' formats '%b'
-zstyle ':vcs_info:git:*' formats '%F{black}%K{green}[%b]%f%k'
-precmd () { vcs_info }
-PROMPT='%B%50<..<%~ %b${vcs_info_msg_0_}'
+# git ブランチ表示は vcs_info ではなく .git/HEAD 直読み (fork ゼロ)。
+# 毎プロンプト 16.9ms → 0.1ms 未満。理由と非対応項目は zshlib/_git_prompt.zsh 冒頭。
+source $HOME/dotfiles/zshlib/_git_prompt.zsh
+autoload -Uz add-zsh-hook
+add-zsh-hook precmd _dotfiles_git_prompt
+PROMPT='%B%50<..<%~ %b${_DOTFILES_GIT_PROMPT}'
 PROMPT+='%(?.%(!.%F{white}❯%F{yellow}❯%F{red}.%F{blue}❯%F{cyan}❯%F{green})❯.%F{red}❯❯❯)%f '
 ##========================================================##
 ##================ ディレクトリ移動の設定 ================##
