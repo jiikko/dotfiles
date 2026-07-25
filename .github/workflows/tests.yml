@@ -55,7 +55,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ${{ matrix.packages }}
 
-      # Neovim 0.11 pin + plugin cache + lazy restore。pin の理由・cache key の世代管理は
+      # Neovim 0.12 pin + plugin cache + lazy restore。pin の理由・cache key の世代管理は
       # action 側に集約 (bench.yml と共有。二重管理を防ぐため詳細はそちらだけに書く)
       - uses: ./.github/actions/setup-nvim
         if: ${{ matrix.needs-nvim }}

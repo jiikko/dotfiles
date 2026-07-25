@@ -6,13 +6,13 @@
 -- 上書きするためで、他 filetype を巻き込まないよう vim-go の buffer-local scope を踏襲する。
 -- 定義/実装/参照ジャンプ・hover・診断は lsp.lua が LspAttach で張る (Go も gopls で同一)。
 --
--- 依存: nvim-treesitter-textobjects (master 固定。_nviminit.lua の treesitter dependencies)。
+-- 依存: nvim-treesitter-textobjects (main 固定。_nviminit.lua の treesitter dependencies)。
 
-local ok_move, move = pcall(require, "nvim-treesitter.textobjects.move")
-local ok_sel, select = pcall(require, "nvim-treesitter.textobjects.select")
+local ok_move, move = pcall(require, "nvim-treesitter-textobjects.move")
+local ok_sel, select = pcall(require, "nvim-treesitter-textobjects.select")
 
 -- 関数間ジャンプ ]] [[ (旧 vim-go go#textobj#FunctionJump)。normal と visual のみ。
--- jumplist への追加は configs.setup の move.set_jumps=true が担う。
+-- jumplist への追加は nvim-treesitter-textobjects.setup の move.set_jumps=true が担う。
 -- operator-pending (o) には張らない: goto_next_start は次関数の先頭文字 (func の f) 上へ
 -- 動くため、d]]/c]]/y]] が次関数の 1 文字を巻き込む (実測: d]] → "unc bravo")。関数単位の
 -- 操作はテキストオブジェクト daf/vaf/yaf (下) が正しく担うので、o は組み込み ]] に委ねる。
@@ -27,7 +27,7 @@ end
 
 -- テキストオブジェクト (旧 vim-go go#textobj#Function/Comment)。x(visual)/o(operator-pending)。
 --   af/if = 関数 outer/inner、ac/ic = コメント。inner (if) の linewise 化は _nviminit.lua の
---   textobjects.select.selection_modes で設定 (旧 vim-go inner は linewise だった)。
+--   nvim-treesitter-textobjects.setup の select.selection_modes で設定 (旧 vim-go inner は linewise だった)。
 -- 差分メモ (vim-go と厳密一致しない点。いずれも軽微):
 --   - af は関数の直前 doc コメントを含まない。vim-go は go_textobj_include_function_doc=1 で
 --     含んでいたが、treesitter の @function.outer は (function_declaration) 単体で、after-query

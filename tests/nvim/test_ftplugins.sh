@@ -115,8 +115,8 @@ guard("go ftplugin check", function()
   --     mapping 検査 (2) より先にここで検査してエラー本文を出す: go.lua は require 失敗を
   --     pcall で握りつぶして黙って mapping をスキップするため、mapping assert から先に
   --     落ちると「なぜ張られなかったか」が CI ログに一切残らない (2026-07-10 の CI 赤で実感)。
-  local ok_move, move_err = pcall(require, "nvim-treesitter.textobjects.move")
-  local ok_sel, sel_err = pcall(require, "nvim-treesitter.textobjects.select")
+  local ok_move, move_err = pcall(require, "nvim-treesitter-textobjects.move")
+  local ok_sel, sel_err = pcall(require, "nvim-treesitter-textobjects.select")
   if not (ok_move and ok_sel) then
     error(string.format(
       "nvim-treesitter-textobjects modules failed to load:\n  move: %s\n  select: %s",

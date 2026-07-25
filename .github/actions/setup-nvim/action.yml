@@ -1,7 +1,7 @@
 ---
 name: Set up Neovim with plugins
 description: >-
-  Neovim (0.11 系 pin) のセットアップと lazy.nvim プラグインの cache + restore。
+  Neovim (0.12 系 pin) のセットアップと lazy.nvim プラグインの cache + restore。
   tests.yml と bench.yml の両方が使う共有 setup。pin・cache key・restore 手順を
   ここに一元化し、workflow 間の二重管理 (pin 更新漏れ等の drift) を防ぐ。
   利用側は actions/checkout 済みであること (ローカル action のため)。
@@ -9,18 +9,16 @@ description: >-
 runs:
   using: composite
   steps:
-    # config は Neovim 0.11 系前提 (vim.lsp.config / vim.diagnostic.jump 等)。
-    # Ubuntu apt の neovim は古い (0.9.5) ため公式リリースを別途セットアップする。
-    # ⚠️ version は 0.11 系に pin する ("stable" にしない): stable が 0.12 に進んだ時点で、
-    #   意図的に master 凍結している nvim-treesitter/textobjects (_nviminit.lua 参照) が
-    #   0.12 の iter_matches 変更 (キャプチャがノード配列になる) と非互換になり、go の
-    #   ]] motion が move.lua "attempt to call method 'range'" で死ぬことを 0.12.4 実測で
-    #   確認 (2026-07-10 の CI 赤の真因)。nvim を 0.12 へ上げるときは treesitter main 系への
-    #   移行とセットで行い、この pin も同時に更新すること。
-    - name: Set up Neovim (0.11 系に pin)
+    # config は Neovim 0.12 系前提 (vim.lsp.config / vim.diagnostic.jump に加え、
+    # nvim-treesitter main 系が 0.12+ 必須)。Ubuntu apt の neovim は古い (0.9.5) ため
+    # 公式リリースを別途セットアップする。
+    # ⚠️ version は明示 pin する ("stable" にしない): stable が進んだ瞬間に treesitter 系の
+    #   API 非互換で無関係の PR が赤くなるのを避け、更新をこのファイルの変更として可視化する。
+    #   0.11 系へ戻すことはできない (main 系 nvim-treesitter が 0.12+ 必須)。
+    - name: Set up Neovim (0.12 系に pin)
       shell: bash
       env:
-        NVIM_VERSION: v0.11.5
+        NVIM_VERSION: v0.12.0
       run: |
         # 公式リリースを手動 DL する。rhysd/action-setup-vim はリトライ制御ができず、
         # GitHub リリース配信の一時 504 (Gateway Time-out) で CI が落ちる実例があった
@@ -51,12 +49,12 @@ runs:
     # (runtime の遅延 auto-install に頼ると ftplugin の require が間に合わず落ちる)。
     #
     # DOTFILES_TS_SKIP_ENSURE=1 (このステップと、呼び出し側の nvim 実行ステップの両方に設定):
-    # CI は parser 未インストールのため、素の起動では ensure_installed が毎回 31 個の
+    # CI は parser 未インストールのため、素の起動では install() が毎回 31 個の
     # 非同期 DL+コンパイルジョブを撒く。コンパイラの無いこの runner では永遠に完走せず、
     # 各テストの +qall! が in-flight ジョブを中途 kill する不安定要因にしかならない
     # (テストは parser 非依存に設計済み: go の挙動 assert は parser 不在なら skip)。
     # ジョブを撒くこと自体を止めて headless 実行を決定論化する (_nviminit.lua の
-    # ensure_installed コメント参照)。
+    # install() コメント参照)。
     - name: Install Neovim plugins (lazy restore)
       env:
         DOTFILES_TS_SKIP_ENSURE: "1"

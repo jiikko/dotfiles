@@ -157,55 +157,66 @@ require("lazy").setup({
     end,
   },
   { "nvim-treesitter/nvim-treesitter",
-    -- archived な master ブランチに固定する。master は凍結 = parser と query が固定の
-    -- matched set なので、main (rolling) で起きた parser/query バージョン不整合
-    -- (Invalid node type ...) や checker 自動更新による drift を避けられる。
-    -- classic API (configs.setup) は highlight 用の autocmd を内部で張り自動有効化する
-    -- ため、手動の vim.treesitter.start autocmd は不要。
-    -- branch を変えたら :Lazy update nvim-treesitter + :TSUpdate で parser を再同期すること。
-    -- event は付けず eager のまま (意図的): master README が「This plugin does not support
+    -- main (rewrite) 系に載る。上流 master は archive 済み・凍結で「Nvim 0.11 の後方互換用」と
+    -- 明言されており、Nvim 0.12 では 0.12 の treesitter API 変更 (iter_matches のキャプチャが
+    -- ノード配列になる) と非互換 → injection の directive 評価が
+    -- "attempt to call method 'range' (a nil value)" で死ぬ (render-markdown の md 描画で実発生)。
+    -- 0.12 へ上げた時点が移行トリガーだった (issues/done/010-... の追記節に記録済み)。
+    -- main は完全な別プラグイン扱いで API 互換なし: configs.setup / ensure_installed /
+    -- highlight モジュールは存在せず、install() と vim.treesitter.start() を自分で呼ぶ。
+    -- branch を変えたら :Lazy update nvim-treesitter + :TSUpdate で parser を再同期すること
+    -- (parser の実体は install_dir 側。旧 master の lazy/nvim-treesitter/parser/*.so が残ると
+    -- 新 query と食い違うので、branch 切替時は同ディレクトリを消す)。
+    -- event は付けず eager のまま (意図的): main README も「This plugin does not support
     -- lazy-loading」と明言しており、BufReadPre/BufNewFile 規約の対象外。dependencies の
-    -- textobjects と下の endwise も configs.setup 実行時に rtp に載っている必要があり同様。
-    -- [2026-07-10] 上流 repo 自体が archive (read-only) 化済み。上流 README いわく
-    -- master は「Nvim 0.11 の後方互換のため locked のまま残す」、main rewrite は 0.12+ 必須。
-    -- → nvim 0.11 で使ううちはこのピンが正解。Neovim 0.12+ へ上げる時に main 系 rewrite へ
-    -- textobjects とセットで移行を再評価 (issues/done/010-research-nvim-plugin-rewrite-candidates-2026-07-10.md 追記節)。
-    branch = "master",
+    -- textobjects と下の endwise も config 実行時に rtp に載っている必要があり同様。
+    branch = "main",
     build = ":TSUpdate",
-    -- textobjects も master に固定する (nvim-treesitter を master 凍結しているため。default
-    -- ブランチ任せだと main を引いて require パス/統合が食い違い無言で壊れる)。standalone spec
-    -- でなく dependencies に入れて configs.setup 実行時に必ず rtp に載っている状態にする。
-    dependencies = { { "nvim-treesitter/nvim-treesitter-textobjects", branch = "master" } },
+    -- textobjects も main に揃える (require パスが master 系 `nvim-treesitter.textobjects.*` から
+    -- `nvim-treesitter-textobjects.*` へ変わるため、片方だけ動かすと無言で壊れる。
+    -- 実 require は nvim/ftplugin/go.lua と tests/nvim/test_ftplugins.sh)。
+    dependencies = { { "nvim-treesitter/nvim-treesitter-textobjects", branch = "main" } },
     config = function()
-      -- stale luac cache で "nvim-treesitter.configs not found" になっても自己修復する
-      require_resilient("nvim-treesitter.configs").setup({
-        -- gomod/gosum は go.mod/go.sum のハイライト用 (vim-go 廃止で syntax 供給元を treesitter に
-        -- 一本化。現状 parser は入っているが ensure_installed 未記載で fresh install 非再現だった)。
-        -- DOTFILES_TS_SKIP_ENSURE=1 は CI 用の抜け穴 (.github/workflows/tests.yml が設定する):
-        -- parser 不在の環境では ensure_installed が毎起動 31 個の非同期 DL+コンパイルジョブを
-        -- 撒き、headless テストの +qall! が中途 kill する不安定要因になる (2026-07-10 の CI
-        -- flake 対策)。CI のテストは parser 非依存に設計されている (go の挙動 assert は parser
-        -- 不在なら skip) ため、CI ではインストール自体を止める。人間の fresh install では
-        -- 未設定 = 従来どおり自動導入される。
-        ensure_installed = (vim.env.DOTFILES_TS_SKIP_ENSURE == "1") and {} or { "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "gomod", "gosum", "graphql", "hcl", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "terraform", "typescript", "vim", "yaml" },
-        auto_install = false,
-        highlight = { enable = true },
-        endwise = { enable = true },
-        -- textobjects の keymap はここで global に張らず (]] [[ は組み込み section motion を
-        -- 上書きするため)、モジュール有効化と挙動オプションだけ設定する。実際の keymap は
-        -- nvim/ftplugin/go.lua が Go 限定 buffer-local で張る (vim-go の scope を踏襲)。
-        textobjects = {
-          -- @function.inner を linewise(V) にする (旧 vim-go inner 関数は linewise で、dif が
-          -- body を行ごと消した)。select は keymap を持たない (実 keymap は ftplugin/go.lua) ため
-          -- この selection_modes は af/if を張る Go でのみ実質作用する。af(outer) は vim-go 同様
-          -- charwise のまま。
-          select = { enable = true, lookahead = true, selection_modes = { ["@function.inner"] = "V" } },
-          move = { enable = true, set_jumps = true },
-        },
+      -- stale luac cache で "nvim-treesitter not found" になっても自己修復する
+      local ts = require_resilient("nvim-treesitter")
+      ts.setup()
+
+      -- gomod/gosum は go.mod/go.sum のハイライト用 (vim-go 廃止で syntax 供給元を treesitter に
+      -- 一本化)。DOTFILES_TS_SKIP_ENSURE=1 は CI 用の抜け穴 (.github/actions/setup-nvim が設定):
+      -- parser 不在の環境では install() が毎起動 31 個の非同期 DL+コンパイルジョブを撒き、
+      -- headless テストの +qall! が中途 kill する不安定要因になる (2026-07-10 の CI flake 対策)。
+      -- CI のテストは parser 非依存に設計されている (go の挙動 assert は parser 不在なら skip)
+      -- ため、CI ではインストール自体を止める。人間の fresh install では従来どおり自動導入される。
+      if vim.env.DOTFILES_TS_SKIP_ENSURE ~= "1" then
+        ts.install({ "diff", "awk", "bash", "c", "cmake", "css", "dockerfile", "elixir", "go", "gomod", "gosum", "graphql", "hcl", "html", "http", "javascript", "json", "lua", "make", "markdown", "markdown_inline", "python", "ruby", "rust", "scala", "scss", "sql", "terraform", "typescript", "vim", "yaml" })
+      end
+
+      -- main には highlight モジュールが無く、highlight は Neovim 本体の機能を自分で有効化する
+      -- (master の configs.setup{highlight={enable=true}} 相当)。parser 未導入の filetype では
+      -- start() が error を投げるだけなので pcall で握る (導入済みの言語だけ色が付く = 旧挙動)。
+      vim.api.nvim_create_autocmd("FileType", {
+        group = vim.api.nvim_create_augroup("dotfiles_treesitter_start", { clear = true }),
+        callback = function() pcall(vim.treesitter.start) end,
+      })
+
+      -- textobjects の keymap はここで global に張らず (]] [[ は組み込み section motion を
+      -- 上書きするため)、挙動オプションだけ設定する。実際の keymap は
+      -- nvim/ftplugin/go.lua が Go 限定 buffer-local で張る (vim-go の scope を踏襲)。
+      require_resilient("nvim-treesitter-textobjects").setup({
+        -- @function.inner を linewise(V) にする (旧 vim-go inner 関数は linewise で、dif が
+        -- body を行ごと消した)。select は keymap を持たない (実 keymap は ftplugin/go.lua) ため
+        -- この selection_modes は af/if を張る Go でのみ実質作用する。af(outer) は vim-go 同様
+        -- charwise のまま。
+        select = { lookahead = true, selection_modes = { ["@function.inner"] = "V" } },
+        move = { set_jumps = true },
       })
     end,
   },
   { "RRethy/nvim-treesitter-endwise",
+    -- nvim-treesitter 本体の設定側に endwise の項目は無い (master の configs.setup{endwise=...}
+    -- モジュール登録は廃止)。endwise 自身が nvim-0.9+ では FileType autocmd で attach する
+    -- 実装 (plugin/nvim-treesitter-endwise.lua → init()) になっており、本体には parser の
+    -- 供給元として依存しているだけ。
     dependencies = { "nvim-treesitter/nvim-treesitter" }
   },
   { "folke/which-key.nvim",
