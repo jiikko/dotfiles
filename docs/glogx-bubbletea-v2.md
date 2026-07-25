@@ -39,7 +39,11 @@ v1 では pty スモークで実測した回帰 (`TestBrowseBatchedRunesKeyMsg`)
 |---|---|---|---|---|
 | bare ⚠ (U+26A0) | 1 | 1 | 1 | 1 |
 | ⚠+VS16 | 2 | 2 | 2 | **1** |
-| 国旗 🇯🇵 | 2 | 2 | 2 | **1** |
+| 国旗 🇯🇵 | 2 | 2 | 2 | 2 |
+| ● (ambiguous) | 1 | 1 | 1 | **1/2 (locale 依存)** |
+
+(2026-07-25 の依存更新 — ultraviolet の新スナップショット / runewidth v0.0.27 — 後にも再計測して
+左 3 列の一致を確認済み。runewidth だけが外れ値、というのは移行前から変わっていない)
 
 **bubbletea を上げたらこの一致を測り直すこと。** 食い違いが出たらそれが桁ズレ (Terminal.app + tmux で 2026-07-24 に報告された揺れ) の再発経路。
 端末層まで含めて測るなら、実端末で `go run ./tools/width-probe` を tmux の内と外の両方で走らせる (TTY が要るのでエージェント環境からは測れない)。
@@ -74,6 +78,18 @@ v1 では pty スモークで実測した回帰 (`TestBrowseBatchedRunesKeyMsg`)
 | `ProgressBar` / `WindowTitle` / カーソル制御 | 採らない | 端末対応が前提 (Terminal.app は progress bar 未対応の見込み)。中央モーダル + スピナーの方が確実に見える |
 | `tea.WithFPS` 等で自前 tick 置換 | 不可 | 80ms / 33ms の tick は再描画ではなく状態遷移 (`advanceScroll` / `advancePullAnim` / `toast.advance`) を進めている |
 | bubbles/v2 コンポーネント (viewport / list / help) | 採らない | パネル・diff・overlay は要望起点の独自挙動 (行を差し込まず重ねる等) が固定されており、置換は複雑性の移動にしかならない |
+
+## Go ツールチェーンは glogx だけ 1.26
+
+`src/glogx/go.mod` の `go` ディレクティブは **1.26.0**（他の Go プロジェクトは 1.25.0 のまま。2026-07-25 にユーザー指定で glogx だけ上げた）。
+`GOTOOLCHAIN=auto` なら手元に 1.25 系しか入っていなくても 1.26 が自動ダウンロードされ、CI も `go-version-file: go.mod` なので追随する（workflow 側の変更は不要）。
+
+1.26 で使えるようになったもののうち、glogx で使う価値があるのは:
+
+- **goroutine リーク検出器** (`GOEXPERIMENT=goroutineleakprofile` + pprof の `goroutineleak`)。fetch goroutine と
+  `context` の cancel 取りこぼし（`usageRefreshInterval` のコメントにある overlap の懸念）を機械的に検証できる。まだ使っていない
+- **Green Tea GC が既定** (GC オーバーヘッド 10–40% 減)。ただし glogx は短命 + 1 フレーム 32KB 程度なので体感は期待しない
+- `go fix` の modernizers / `errors.AsType` / `testing` の `ArtifactDir`
 
 ## 次に bubbletea を上げるときのチェックリスト
 

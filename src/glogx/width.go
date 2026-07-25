@@ -58,10 +58,13 @@ func clusterWidth(cluster string) int { return uniseg.StringWidth(cluster) }
 //	bare ⚠ (U+26A0)       1       1             1          1          1   ← 全層一致
 //	⚠+VS16                2       2             2          1          2
 //	⚠+VS15                1       1             1          1          1
-//	国旗 🇯🇵                2       2             2          1          -   (tmux 未計測)
+//	国旗 🇯🇵                2       2             2          2          -   (tmux 未計測)
+//	● (ambiguous)         1       1             1        1/2          -   (runewidth は locale 依存)
 //
 // (displaywidth 列は bubbletea v2 のエンジンが使う幅ライブラリ。v2 移行時に追加。
-// runewidth は v0.0.23 でも VS16 を 1 と数える = 唯一の外れ値のまま)
+// runewidth は v0.0.27 でも VS16 を 1 と数え、ambiguous は LANG=ja_JP.* で 2 / LANG=C で 1 と
+// 実行環境で変わる = 唯一の外れ値のまま。他の 3 者は locale 非依存で一致する。
+// 上段 3 列は 2026-07-25 の依存更新 (ultraviolet / runewidth) 後にも再計測して一致を確認済み)
 //
 // ⚠️ 過去の記述の訂正: 4c8ee8d は「ユーザーの端末は VS16 に 1 マスしか割り当てない
 // (エンジン 2 と食い違う)」と書き、3c74ddf は逆に「端末が幅 2 で数える」と書いていた。
