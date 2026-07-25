@@ -455,6 +455,16 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 外) で毎フレーム描かれるので、ここで list を無効化すると -p 巨大 patch を含む全行を
 		// 80ms ごとに組み直すだけの無駄になる (レビュー C7)。offset を動かす pull アニメも
 		// lines() は不変なので invalidate 不要 (View が窓を切り直す)
+		//
+		// ⚠️ この 2 状態では「header 行のスピナー字形」を変えるために全行を組み直している。
+		// perf 監査 2026-07-25 で指摘されたが、さらに絞る対応はしないと判断した:
+		// 既定 (patch なし) の RenderLines は 7.8µs / 12.6KB で 80ms 周期に対し無視できる。
+		// 効くのは -p 併用時 (実測 332µs / 733KB per frame) だけで、それも fetch 中の数秒に限る
+		// = 80ms 予算の 0.4%。一方 header 行だけの差分更新にするには Line の契約 (Text に
+		// 字形が焼き込まれている) を変えるか、verbatim / mediumLines の 2 経路へ header 生成を
+		// 複製する必要があり、表示バグの危険が利得に見合わない。
+		// -p を常用して fetch 中の描画が重いと体感したら再評価する (その時は Line にスピナー
+		// 位置を持たせて View 側で差し替えるのが筋)。
 		if m.fetching || len(m.pushPoll) > 0 {
 			m.invalidateLines()
 		}
