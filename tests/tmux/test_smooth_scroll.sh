@@ -102,9 +102,34 @@ done
 pane_height=$("${TMUX_CMD[@]}" display-message -p -t "$pane_id" '#{pane_height}')
 half=$((pane_height / 2))
 
+# scroll.sh の per-pane 状態ファイル (内容: "gen last_press_ms anim_until_ms")。
+# gen は arbiter.pl が flock 下で押下 1 回につき必ず +1 する = 「送った押下が処理された」
+# ことの唯一の直接観測点。位置の静止から完了を推測すると、run-shell -b の spawn レイテンシ
+# (数百 ms) が静止判定窓 (300ms) を超えたときに「まだ処理されていない押下」を
+# 「完了」と誤読する (CI で連打ケースが moved=half 相当で落ちた実測。ローカルは spawn が
+# 速いため顕在化しない)。閾値を緩める対処は再発するので、押下の処理完了は gen で待つ。
+STATE_DIR_TEST="$TMPDIR/tmux-smooth-scroll-$(id -u)"
+
+read_gen() {
+  local f="$STATE_DIR_TEST/$1"
+  [[ -r "$f" ]] || { print -r -- 0; return 0; }
+  awk 'NR==1 {print ($1 ~ /^[0-9]+$/) ? $1 : 0; exit} END {if (NR==0) print 0}' "$f"
+}
+
+# 指定 pane の gen が target 以上になるまで待つ (= 送った押下がすべて arbiter を通過した)
+wait_gen() {
+  local pane=$1 target=$2 cur=0
+  for _ in {1..100}; do
+    cur=$(read_gen "$pane")
+    [[ "$cur" -ge "$target" ]] && return 0
+    sleep 0.1
+  done
+  fail "presses were not processed (gen=$cur, expected >= $target)"
+}
+
 # 基準値から動き出すのを待ってから、動かなくなるまで待って返す。
-# アニメは run-shell -b の非同期で、spawn レイテンシ (数百 ms) の間は基準値のまま
-# 静止しているため、「安定 = 完了」だけの判定では開始前を完了と誤読する (実測)
+# ⚠️ 呼ぶ前に wait_gen で「押下が処理済み」を確かめること。未処理の押下が残った状態で
+# 静止を見ると、その押下ぶんを取りこぼした位置を完了値として返す
 wait_settled() {
   local baseline=$1 prev=-1 cur same=0
   for _ in {1..40}; do
@@ -127,16 +152,20 @@ wait_settled() {
 }
 
 # 2. 単発押下: half ちょうど上がる
+gen0=$(read_gen "$pane_id")
 "${TMUX_CMD[@]}" send-keys -t "$pane_id" C-u
+wait_gen "$pane_id" $((gen0 + 1))
 pos1=$(wait_settled 0)
 [[ "$pos1" -eq "$half" ]] || fail "single press: expected scroll_position=$half, got $pos1"
 
 # 3. 3 連打 (間隔ほぼ 0ms): 1 打目のアニメは打ち切られうる (部分 0〜half)、2-3 打目は素通しで
 #    half ずつ。合計は [2*half, 3*half]。重畳 (押下数を超える加算) が無いことが本質の assert
 sleep 0.3 # 直前の押下からリピート判定 (150ms) を跨ぐ
+gen1=$(read_gen "$pane_id")
 "${TMUX_CMD[@]}" send-keys -t "$pane_id" C-u
 "${TMUX_CMD[@]}" send-keys -t "$pane_id" C-u
 "${TMUX_CMD[@]}" send-keys -t "$pane_id" C-u
+wait_gen "$pane_id" $((gen1 + 3)) # 3 打すべてが処理されるまで位置を測らない
 pos2=$(wait_settled "$pos1")
 moved=$((pos2 - pos1))
 if [[ "$moved" -lt $((2 * half)) || "$moved" -gt $((3 * half)) ]]; then
@@ -151,7 +180,9 @@ cu_count=$("${TMUX_CMD[@]}" list-keys -T copy-mode-vi | grep -c "C-u" || true)
 "${TMUX_CMD[@]}" list-keys -T copy-mode-vi | grep "C-u" | grep -q "scroll.sh" \
   || fail "after re-source: C-u no longer bound to scroll.sh"
 sleep 0.3
+gen2=$(read_gen "$pane_id")
 "${TMUX_CMD[@]}" send-keys -t "$pane_id" C-u
+wait_gen "$pane_id" $((gen2 + 1))
 pos3=$(wait_settled "$pos2")
 [[ $((pos3 - pos2)) -eq "$half" ]] || fail "post re-source press: moved $((pos3 - pos2)), expected $half"
 
@@ -172,8 +203,10 @@ pane2_before=$("${TMUX_CMD[@]}" display-message -p -t "$pane2_id" '#{scroll_posi
 # (tmux の resize 仕様、実測)。押下前の基準値はここで取り直す
 pane1_base=$("${TMUX_CMD[@]}" display-message -p -t "$pane_id" '#{scroll_position}')
 sleep 0.3 # リピート判定 (150ms) を跨ぐ
+gen3=$(read_gen "$pane_id")
 "${TMUX_CMD[@]}" send-keys -t "$pane_id" C-u
 "${TMUX_CMD[@]}" select-pane -t "$pane2_id" # scroll.sh 起動より先に切替を仕掛ける
+wait_gen "$pane_id" $((gen3 + 1))
 pos4=$(wait_settled "$pane1_base")
 [[ $((pos4 - pane1_base)) -eq "$half" ]] \
   || fail "pane switch: pressed pane moved $((pos4 - pane1_base)), expected $half"
