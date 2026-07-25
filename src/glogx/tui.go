@@ -50,6 +50,7 @@ type usageRefreshMsg struct{}
 // usageRefreshTick は次回の usage リフレッシュを usageRefreshInterval 後に予約する tea.Cmd。
 // Init で 1 本起動し、usageRefreshMsg ハンドラが毎回 1 本張り直すことで cron 型の単一チェーンに
 // なる (発火ごとに +1 予約なので二重化しない)。
+// 非フォーカス中に止める案の判断は spinnerActive のコメント参照 (このチェーンも同じ扱い)。
 func usageRefreshTick() tea.Cmd {
 	return tea.Tick(usageRefreshInterval, func(time.Time) tea.Msg { return usageRefreshMsg{} })
 }
@@ -2041,6 +2042,14 @@ func (m *browseModel) fillUnknown() {
 	}
 }
 
+// spinnerActive は「毎フレームの tick チェーンを回し続けるか」の単一ゲート
+// (アニメ・スピナー・ライブ経過時間の出典をすべて OR で束ねる)。
+//
+// ⚠️ ここに「フォーカスされているか」を足して非フォーカス中の tick を止める案 (bubbletea v2 の
+// FocusMsg/BlurMsg。o/p で別アプリへ移った後も 80ms tick と usage の毎分リフレッシュが
+// 回り続けるのを削る) は、実装可能・前提も揃っている (tmux は focus-events on) が
+// 「今は不要」とのユーザー判断で見送っている (2026-07-25)。CPU が気になると言われたら再評価する。
+// 経緯と他の未採用 v2 機能は docs/glogx-bubbletea-v2.md。
 func (m *browseModel) spinnerActive() bool {
 	return m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || m.scrollAnim || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading()
 }
