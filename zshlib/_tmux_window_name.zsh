@@ -207,9 +207,18 @@ typeset -gi _TMUX_LAST_TOUCH_STAMPED=0
 typeset -gi _TMUX_TOUCH_PENDING=0
 _tmux_stamp_window_touched() {
   [[ -n "$TMUX_PANE" ]] || return 0
-  (( EPOCHSECONDS - _TMUX_LAST_TOUCH_STAMPED < 3 )) && return 0
-  _TMUX_LAST_TOUCH_STAMPED=$EPOCHSECONDS
-  command tmux set-option -w -t "$TMUX_PANE" @last-touched "$EPOCHSECONDS" 2>/dev/null
+  local now=$EPOCHSECONDS
+  (( now - _TMUX_LAST_TOUCH_STAMPED < 3 )) && return 0
+  _TMUX_LAST_TOUCH_STAMPED=$now
+  # 非同期 (&!) にする理由: この関数は preexec = ユーザーのコマンドが走る直前に呼ばれるため、
+  # tmux client の fork を待つと throttle が明けるたびに体感レイテンシとして乗る
+  # (実測 3.7ms / 混んだ実サーバでは 9.7ms)。fire-and-forget で 0.45ms。
+  # 妥当性: 書き込むのは window option 1 個で、読む側 (status の @fade) は次の再描画
+  # (status-interval=1) で拾うので数 ms の遅延は見えない。throttle の記録 (_TMUX_LAST_TOUCH_STAMPED)
+  # は同期的に済ませているので、非同期化で撃ちすぎることはない。
+  # 既知の縮退: `exec nvim` のように直後にシェルが置き換わると背景ジョブが刈られてスタンプを
+  # 取りこぼしうる。その window は最大 throttle 分だけ古い扱いになるだけで、次のコマンドで復帰する。
+  command tmux set-option -w -t "$TMUX_PANE" @last-touched "$now" 2>/dev/null &!
 }
 
 if [[ -n "$TMUX" ]]; then
