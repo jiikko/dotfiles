@@ -29,6 +29,9 @@ type usageOverlay struct {
 	// CI fetch 用 cancel とは別立て: 共有すると CI fetch 完了時の defer cancel() が走行中の
 	// usage fetch を巻き添えキャンセルして "取得失敗" に落ちる (レビュー指摘 2026-07-21)。
 	cancel context.CancelFunc
+	// fetchedAt は snap を取得した時刻 (zero = 未取得)。非表示中はリフレッシュを止めるので、
+	// 再表示時に「今の表示が古いか」を判断する出典として要る (stale 参照)。
+	fetchedAt time.Time
 }
 
 // fetchCmd は Claude Code の /usage を非同期取得する tea.Cmd。トークン課金は発生しない
@@ -77,6 +80,15 @@ func (o *usageOverlay) handle(msg usageMsg) {
 	}
 	o.snap = msg.snap
 	o.err = msg.err
+	if msg.err == nil {
+		o.fetchedAt = timeNow()
+	}
+}
+
+// stale は今の表示が許容陳腐度 (usageRefreshInterval) を超えているか。未取得も stale 扱い。
+// 非表示中はリフレッシュを止めるため、再表示 (U) のときにこれで取り直しを判断する。
+func (o *usageOverlay) stale() bool {
+	return o.fetchedAt.IsZero() || timeNow().Sub(o.fetchedAt) >= usageRefreshInterval
 }
 
 // toggle は U キーで表示/非表示を反転する。

@@ -368,3 +368,45 @@ func TestUsageRefreshMsgReschedulesAndFetches(t *testing.T) {
 		t.Error("リフレッシュで fetchCmd が起動していない (cancel 未セット)")
 	}
 }
+
+// 非表示中の定期リフレッシュは subprocess を起こさない (見えないもののために claude を
+// 60 秒ごとに起動しない) が、tick チェーンは維持する (再表示後に周期取得が復活する)。
+func TestUsageRefreshSkipsFetchWhileHidden(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.usageOv.dismiss()
+	_, cmd := m.Update(usageRefreshMsg{})
+	if cmd == nil {
+		t.Fatal("非表示でチェーンまで切れた (再表示後に周期取得が復活しない)")
+	}
+	if m.usageOv.cancel != nil {
+		t.Error("非表示なのに fetchCmd が起動した (cancel がセットされた)")
+	}
+}
+
+// U での再表示は、表示が陳腐なら取り直す / fresh なら取り直さない。
+// 非表示中にリフレッシュを止めた分の鮮度をここで回収する。
+func TestUsageToggleRefetchesOnlyWhenStale(t *testing.T) {
+	t.Run("stale なら取り直す", func(t *testing.T) {
+		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m.usageOv.dismiss()
+		m.usageOv.snap = &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 1}}}
+		m.usageOv.fetchedAt = time.Now().Add(-2 * usageRefreshInterval)
+		m.handleKey("U")
+		if !m.usageOv.visible {
+			t.Fatal("U で表示になっていない")
+		}
+		if m.usageOv.cancel == nil {
+			t.Error("stale なのに取り直していない (cancel 未セット)")
+		}
+	})
+	t.Run("fresh なら取り直さない", func(t *testing.T) {
+		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m.usageOv.dismiss()
+		m.usageOv.snap = &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 1}}}
+		m.usageOv.fetchedAt = time.Now()
+		m.handleKey("U")
+		if m.usageOv.cancel != nil {
+			t.Error("fresh なのに取り直した (無駄な subprocess)")
+		}
+	})
+}

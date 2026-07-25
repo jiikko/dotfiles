@@ -599,7 +599,17 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case usageRefreshMsg:
 		// バックグラウンドで /usage を再取得し、次回リフレッシュを予約する。取得中も snap は
 		// 消さないので loading() は false のままスピナーに落ちず、表示は last-good を維持する
-		// (handle の不変条件)。表示/非表示に依らず回し、隠れていても最新値を用意しておく。
+		// (handle の不変条件)。
+		//
+		// 表示中だけ取得する。以前は「隠れていても最新値を用意しておく」ため表示/非表示に
+		// 依らず回していたが、その判断は「/usage は ~440ms でゼロコスト」という誤った前提の
+		// 上にあった (実測 2.0s wall / 1.8s CPU。440ms は JSON の duration_ms = 内部処理時間)。
+		// オーバーレイは起動時グランスの後どのナビゲーションキーでも dismiss されるので、
+		// 実際にはほぼ常に非表示 = 見えないもののために 60 秒ごと永続に node を起こしていた。
+		// 「即座に最新が見える」という元の意図は再表示 (U) 時の stale 判定で保つ。
+		if !m.usageOv.visible {
+			return m, usageRefreshTick() // チェーンは維持 (再表示後に周期取得が復活する)
+		}
 		return m, tea.Batch(m.usageOv.fetchCmd(false), usageRefreshTick())
 	case panelPollMsg:
 		if msg.seq != m.panelPollSeq || m.panelSHA == "" {
@@ -792,6 +802,12 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if key == "U" {
 		m.usageOv.toggle()
 		if m.usageOv.visible {
+			// 非表示中は定期リフレッシュを止めているので、再表示のここで陳腐なら取り直す。
+			// 表示は last-good を出したまま静かに差し替わる (snap があれば loading() は false
+			// のままでスピナーに落ちない = 開いた瞬間に数字が消えない)。
+			if m.usageOv.stale() {
+				return m, tea.Batch(m.usageOv.fetchCmd(false), m.maybeTick())
+			}
 			return m, m.maybeTick()
 		}
 		return m, nil
