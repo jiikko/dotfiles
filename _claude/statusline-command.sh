@@ -240,6 +240,7 @@ if [ -n "$transcript" ] && [ -f "$transcript" ]; then
     # 表示名の簡易整形 (未知の id はそのまま表示)。model.display_name のような
     # 整形名は stdin に無いため id からマップする。
     case "$advisor_model" in
+      claude-opus-5)     advisor_label="Opus 5" ;;
       claude-opus-4-8)   advisor_label="Opus 4.8" ;;
       claude-sonnet-5)   advisor_label="Sonnet 5" ;;
       claude-fable-5)    advisor_label="Fable 5" ;;
