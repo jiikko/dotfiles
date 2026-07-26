@@ -74,6 +74,38 @@ else
   fails=$(( fails + 1 ))
 fi
 
+# advisor: transcript 末尾の advisorModel を拾い、model id から表示名を導出すること。
+# ハードコード表を持たない導出なので、新モデル id (未知の family / version) でも
+# 追加作業なしで整形されることをここで固定する (表方式は追加漏れでドリフトしていた)。
+advisor_render() {  # advisor_render <model-id...> → 最後の id が表示されるはず
+  local tr="$TMP_DIR/transcript-$1.jsonl" id
+  : > "$tr"
+  for id in "$@"; do
+    printf '{"type":"assistant","advisorModel":"%s"}\n' "$id" >> "$tr"
+  done
+  render "{\"cwd\":\"/tmp\",\"transcript_path\":\"$tr\"}"
+}
+assert_contains "$(advisor_render claude-opus-5)"            "[advisor:Opus 5]"    "advisor: family + 1 桁 version"
+assert_contains "$(advisor_render claude-opus-4-8)"          "[advisor:Opus 4.8]"  "advisor: major-minor を . で繋ぐ"
+assert_contains "$(advisor_render claude-haiku-4-5-20251001)" "[advisor:Haiku 4.5]" "advisor: 末尾の日付は落とす"
+assert_contains "$(advisor_render claude-nebula-7-2)"        "[advisor:Nebula 7.2]" "advisor: 未知の family も表方式なしで整形"
+# provider 修飾: minor に食い込む @date / :0 を落とさないと "Sonnet 4" のような誤表示になる
+assert_contains "$(advisor_render 'claude-sonnet-4-5@20250929')" "[advisor:Sonnet 4.5]" "advisor: Vertex の @date を落として minor を残す"
+assert_contains "$(advisor_render 'claude-opus-4-5-v1:0')"   "[advisor:Opus 4.5]"  "advisor: Bedrock の -v1:0 を落として minor を残す"
+# 導出できない形は「誤って整形する」より「生の id を出す」を選ぶ
+assert_contains "$(advisor_render claude-3-5-sonnet-20241022)" "[advisor:claude-3-5-sonnet-20241022]" "advisor: version 先行の旧 id は生のまま出す"
+assert_contains "$(advisor_render claude-mythos-preview)"    "[advisor:claude-mythos-preview]" "advisor: version を持たない id は生のまま出す"
+assert_contains "$(advisor_render 'us.anthropic.claude-opus-4-5-v1:0')" "[advisor:us.anthropic.claude-opus-4-5-v1:0]" "advisor: provider 修飾付き id は生のまま出す"
+latest="$(advisor_render claude-opus-4-8 claude-fable-5)"
+assert_contains "$latest" "[advisor:Fable 5]" "advisor: 複数行なら末尾 (= 最新) を採る"
+assert_lacks "$latest" "Opus 4.8" "advisor: 古い行の値は出さない"
+# transcript はあるが advisorModel 行が無いケース (逆順パイプを通って空になる経路)
+: > "$TMP_DIR/transcript-empty.jsonl"
+printf '{"type":"assistant","message":{"role":"assistant"}}\n' >> "$TMP_DIR/transcript-empty.jsonl"
+assert_contains "$(render "{\"cwd\":\"/tmp\",\"transcript_path\":\"$TMP_DIR/transcript-empty.jsonl\"}")" \
+  "[advisor:未設定]" "advisor: transcript に advisorModel が無ければ未設定"
+assert_contains "$(render '{"cwd":"/tmp","transcript_path":""}')" "[advisor:未設定]" "advisor: transcript 不在なら未設定"
+
 # git 情報: 使い捨て repo で branch と ~変更数 ?untracked 数 を検証
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 repo="$TMP_DIR/repo"

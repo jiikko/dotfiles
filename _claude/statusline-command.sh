@@ -234,19 +234,48 @@ fi
 advisor_label="未設定"
 advisor_color="$red_fg"
 if [ -n "$transcript" ] && [ -f "$transcript" ]; then
-  # tail -r (BSD/macOS) で末尾から辿り、最初に見つかった advisorModel 行 = 最新。
-  advisor_model=$(tail -r "$transcript" 2>/dev/null | grep -m1 '"advisorModel"' | jq -r '.advisorModel // empty' 2>/dev/null)
+  # 末尾から辿り、最初に見つかった advisorModel 行 = 最新。行を逆順に流すコマンドは
+  # 環境で違う (GNU: tac / BSD・macOS: tail -r) ので、OS 名ではなく tac の有無で選ぶ
+  # (Darwin + coreutils・FreeBSD・GNU をどれも取り違えない)。`command -v` は bash の
+  # builtin でフォークは増えない。tac も tail -r も無い環境 (applet を削った busybox 等)
+  # では advisor が黙って「未設定」に劣化する — 表示の劣化だけで他への影響はない。
+  # 全行 grep して tail -1 を採る方式にはしない: advisor 設定済みなら該当行は末尾付近に
+  # あり、逆順 + grep -m1 は巨大な transcript でも最初の一致で打ち切れる (該当行が 1 つも
+  # 無いときだけは、どちらの方式でも全走査になる)。
+  if command -v tac >/dev/null 2>&1; then
+    advisor_rev_cat="tac"
+  else
+    advisor_rev_cat="tail -r"
+  fi
+  advisor_model=$($advisor_rev_cat "$transcript" 2>/dev/null | grep -m1 '"advisorModel"' | jq -r '.advisorModel // empty' 2>/dev/null)
   if [ -n "$advisor_model" ]; then
-    # 表示名の簡易整形 (未知の id はそのまま表示)。model.display_name のような
-    # 整形名は stdin に無いため id からマップする。
-    case "$advisor_model" in
-      claude-opus-5)     advisor_label="Opus 5" ;;
-      claude-opus-4-8)   advisor_label="Opus 4.8" ;;
-      claude-sonnet-5)   advisor_label="Sonnet 5" ;;
-      claude-fable-5)    advisor_label="Fable 5" ;;
-      claude-haiku-4-5*) advisor_label="Haiku 4.5" ;;
-      *)                 advisor_label="$advisor_model" ;;
-    esac
+    # 表示名は id の構造から導出する (model.display_name のような整形名は stdin に無い)。
+    # `claude-<family>-<major>[-<minor>]` の family を頭大文字にし、続く 1〜2 桁の数値
+    # フィールドを "." で繋ぐ: claude-opus-4-8 → Opus 4.8 / claude-haiku-4-5-20251001 →
+    # Haiku 4.5 (数値でないフィールドで打ち切るので末尾の日付は落ちる)。version に食い込む
+    # 修飾子は先に切る: Vertex の `@YYYYMMDD` と Bedrock の `:0` を残すと、minor が
+    # 「数値でない」と判定されて claude-sonnet-4-5@20250929 が "Sonnet 4" になる (誤表示は
+    # 生 id 表示より悪い)。
+    # id → 表示名のハードコード表は持たない: 新モデルが出るたび追加漏れでドリフトする
+    # (claude-opus-5 が未登録で生の id を出していた実例あり、2026-07-27 に発覚)。
+    # 導出できない形 (旧 `claude-3-5-sonnet-*` のような version 先行 id、version を持たない
+    # id、provider 修飾付きの `us.anthropic.claude-*`) は従来どおり生の id をそのまま出す。
+    advisor_label="$advisor_model"
+    if [ "${advisor_model#claude-}" != "$advisor_model" ]; then
+      advisor_rest="${advisor_model#claude-}"
+      advisor_rest="${advisor_rest%%@*}"
+      advisor_rest="${advisor_rest%%:*}"
+      advisor_family="${advisor_rest%%-*}"
+      advisor_ver=""
+      if [[ "$advisor_family" =~ ^[a-z]+$ && "$advisor_rest" == *-* ]]; then
+        IFS='-' read -r -a advisor_ver_fields <<< "${advisor_rest#*-}"
+        for advisor_field in "${advisor_ver_fields[@]}"; do
+          [[ "$advisor_field" =~ ^[0-9]{1,2}$ ]] || break
+          advisor_ver="${advisor_ver:+$advisor_ver.}$advisor_field"
+        done
+      fi
+      [ -n "$advisor_ver" ] && advisor_label="${advisor_family^} $advisor_ver"
+    fi
     advisor_color="$cyan_fg"
   fi
 fi
