@@ -277,6 +277,32 @@ boot と reload を区別できない）は upstream 側に残る
 - 複数の保存経路が直列化されているか（`@resurrect-save-script-path` が `scripts/tmux_resurrect_save.sh` を指しているか）を確認
 - `tmux show -gv @resurrect-save-script-path`
 
+### window 名が pane_title に追従しない（コマンドを打っても名前が変わらない）
+
+window 名の追従は `automatic-rename-format '#{pane_title}'`（\_tmux.conf）が担うが、
+`automatic-rename` は per-window option で、tmux 仕様により `rename-window` /
+`new-window -n` / rename エスケープシーケンスのどれかを受けた window は個別に off になる。
+off の window は pane_title が更新されても名前が固まり、**resurrect が per-window の
+automatic-rename を save/restore するため off がサーバ再起動を跨いで永続化する**。
+
+診断と修復（launcher セッションは `new-window -n` の意図的命名なので除外）:
+
+```sh
+# off の window を列挙
+tmux list-windows -a -F '#{session_name}:#{window_index} auto=#{automatic-rename}' | grep 'auto=0'
+# per-window option を unset して global の automatic-rename on に戻す
+tmux list-windows -a -F '#{session_name}:#{window_index} #{automatic-rename}' \
+  | awk '$2==0 && $1 !~ /^launcher:/ {print $1}' \
+  | while read -r w; do tmux set-option -w -u -t "$w" automatic-rename; done
+```
+
+修復後に保存を一度走らせ（C-s）、保存ファイルへ off が焼き直されていないことを確認する。
+実例 (2026-07-27): OSC 2 移行 (6f33690, 2026-06-10) 以前の旧実装が `\033k` で直接リネーム
+していた時代の off が resurrect 経由で 400 世代以上に残存し、restore のたびに固着が再発
+していた。live の unset + 全世代ファイルの `off` → `:` 除染で解消。再発した場合は legacy
+ではなく生きた rename 経路（手動 `,` や pane 内ツールの `tmux rename-window`）が存在する
+証拠なので、`set-hook -g after-rename-window` で発生源を観測する。
+
 ## 参考リンク
 
 - [tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect)
