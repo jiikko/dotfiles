@@ -45,6 +45,11 @@ func TestIMESwitchFinishClassifies(t *testing.T) {
 	}
 	// 存在しない cli を渡す: 切替 fork を試みたら warn が出るので「試みなかった」ことが観測できる
 	const bogusCLI = "/nonexistent/macism"
+	// TIS 直接切替をスタブして macism fork 経路を検証する (実 TIS を叩くと実行マシンの IME が
+	// 実際に切り替わってしまう。導入時にテストが実機の IME を ABC にした実事故あり 2026-07-29)
+	orig := tisSwitchASCII
+	tisSwitchASCII = func() bool { return false }
+	t.Cleanup(func() { tisSwitchASCII = orig })
 
 	t.Run("nil ハンドル (非 TTY / --no-pager 経路) は no-op", func(t *testing.T) {
 		var s *imeSwitch
@@ -76,6 +81,14 @@ func TestIMESwitchFinishClassifies(t *testing.T) {
 		_, warn := handle(imeCurrent{cli: bogusCLI, prev: "com.apple.inputmethod.Kotoeri.Japanese"}).finish()
 		if !strings.Contains(warn, "切替に失敗") {
 			t.Errorf("warn=%q; want 切替失敗", warn)
+		}
+	})
+	t.Run("TIS 直接切替が成功したら macism fork へ落ちない", func(t *testing.T) {
+		tisSwitchASCII = func() bool { return true }
+		t.Cleanup(func() { tisSwitchASCII = func() bool { return false } })
+		_, warn := handle(imeCurrent{cli: bogusCLI, prev: "com.apple.inputmethod.Kotoeri.Japanese"}).finish()
+		if warn != "" {
+			t.Errorf("warn=%q; want 空 (fork を試みたら bogus cli で warn が出る)", warn)
 		}
 	})
 }

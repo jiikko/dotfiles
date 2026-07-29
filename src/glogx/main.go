@@ -60,13 +60,12 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	// git 実行のみで、エラーで先に return してもプロセス終了で無害に片付く
 	planCh := make(chan repoPlan, 1)
 	go func() { planCh <- gatherRepoPlan(opts) }()
-	// IME 切替 (macism) も同じ理由で先出しする。1 fork ≈ 40-60ms で git fork より 1 桁重く、
-	// 直列に置くと初回描画までの時間を数倍にしていた (perf 監査 2026-07-25)。ここで問い合わせ
-	// (1 本目) を始め、切替 (2 本目) は TUI 開始直前の finish() で払う。
+	// IME の問い合わせもここで先出しし、切替は TUI 開始直前の finish() で払う。取得・切替とも
+	// TIS 直接呼び出し (fork なし ~µs) が主経路で、macism fork (1 本 ≈ 40-60ms、perf 監査
+	// 2026-07-25/2026-07-29) は fallback と終了時の復元だけに残る (ime.go)。
 	// 対話ブラウズにならない経路 (非 TTY / --no-pager) では IME を触らないので開始もしない。
 	// ⚠️ 「1 画面に収まるので静的出力」のショートカット (下の interactive 再判定) に落ちる場合は
-	// 問い合わせ 1 本が空振りするが、read-only な問い合わせで副作用は無く、goroutine なので
-	// 起動を遅らせない。
+	// 問い合わせが空振りするが、read-only で副作用は無い。
 	var ime *imeSwitch
 	if isTTY && !opts.NoPager {
 		ime = beginIMESwitch()

@@ -1,7 +1,9 @@
 // 対話ブラウズ中はキー操作 (j/k/q/b 等) が主なので、起動時に IME を英数 (ABC) へ
-// 切り替え、終了時に元へ戻す。切り替えは macism CLI (brew: laishulu/homebrew/macism)
-// に委譲する。macism は外部 CLI なので、その仕様変更・異常終了・想定外出力が glogx 本体を
-// 巻き込まない (クラッシュさせない) よう、あらゆる失敗を封じ込めて no-op + 警告文に落とす。
+// 切り替え、終了時に元へ戻す。取得と英数への切替は TIS 直接呼び出し (ime_tis_darwin.go、
+// fork なし) を優先し、失敗時と終了時の復元 (CJK IM への切替 = TIS の不安定ケース) は
+// macism CLI (brew: laishulu/homebrew/macism) に委譲する。macism は外部 CLI なので、その
+// 仕様変更・異常終了・想定外出力が glogx 本体を巻き込まない (クラッシュさせない) よう、
+// あらゆる失敗を封じ込めて no-op + 警告文に落とす。
 // 警告文 (macism がエラーになった旨) は呼び出し側が toast で見せる (ユーザー要望 2026-07-23)。
 package main
 
@@ -10,6 +12,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // asciiInputSource は macOS 標準の英数キーボードレイアウトの入力ソース ID。
@@ -23,20 +26,26 @@ type imeCurrent struct {
 	warn string
 }
 
-// imeSwitch は英数への切替を 2 段に分けたハンドル。macism は 1 fork ≈ 40-60ms で、
-// 「現在ソースの取得」→「切替」の直列 2 fork = 80-90ms かかる (実測 2026-07-25)。warm cache の
-// 起動全体が 20-30ms なので、これを同期で払うと初回描画までの時間を数倍にする。取得 (1 本目) を
-// 起動処理と並列に先出しし、切替 (2 本目) だけを TUI 開始直前に払う。
+// imeSwitch は英数への切替を 2 段に分けたハンドル。取得・切替とも TIS 直接呼び出し
+// (ime_tis_darwin.go、fork なし) を優先し、失敗時だけ macism fork (1 本 ≈ 40-60ms、実測
+// 2026-07-25/2026-07-29) へ fallback する。macism 2 fork 直列 = 80-90ms が起動の律速だった。
+// macism 未導入なら TIS が使えても切り替えない (終了時の復元 = CJK IM への切替は
+// TISSelectInputSource の不安定ケースで macism にしか任せられないため。復元手段がないのに
+// 切り替えると英数に置き去りにする)。
 //
 // ⚠️ 完全非同期化はできない (切替を TUI 開始後へ回さないこと): raw mode でも IME は OS の
 // 入力ソース層で効くため、切替完了前の打鍵は日本語 IME の composition に吸われてアプリに
-// 届かない。「先出し + join」に留める。
+// 届かない。「先出し + join」に留める。TIS 直接切替でも反映確認 (confirm ループ) で
+// この不変条件を守る。
 type imeSwitch struct{ ch <-chan imeCurrent }
 
-// beginIMESwitch は現在の入力ソース取得 (macism fork 1 本目) を非同期で開始する。呼び出し側は
-// TUI を開始する直前に finish() で join する。
+// beginIMESwitch は現在の入力ソース取得を開始する。呼び出し側は TUI を開始する直前に
+// finish() で join する。TIS 直読みは main goroutine 上で同期に行い (fork なし ~µs。TIS の
+// スレッド安全性が保証されないため goroutine へ出さない)、goroutine 側には macism の
+// LookPath と fallback の fork だけを残す。
 func beginIMESwitch() *imeSwitch {
 	ch := make(chan imeCurrent, 1) // バッファ 1 = 受け取り手が居なくても goroutine が詰まらない
+	tisPrev, tisOK := tisCurrentSourceID()
 	go func() {
 		// goroutine 側の panic は main の recover では拾えないのでここで封じ込める
 		defer func() {
@@ -51,10 +60,35 @@ func beginIMESwitch() *imeSwitch {
 			ch <- imeCurrent{}
 			return
 		}
+		if tisOK && tisPrev != "" {
+			ch <- imeCurrent{cli: cli, prev: tisPrev}
+			return
+		}
 		prev, warn := macismCurrentWarn(exec.Command(cli).Output())
 		ch <- imeCurrent{cli: cli, prev: prev, warn: warn}
 	}()
 	return &imeSwitch{ch: ch}
+}
+
+// tisSwitchASCII はテストで実 TIS を叩かない (実行マシンの IME を実際に切り替えない) ための
+// 差し替え点 (loadCommitDiff と同型)。
+var tisSwitchASCII = tisSwitchToASCII
+
+// tisSwitchToASCII は TIS 直接呼び出しで英数へ切り替え、反映まで確認する。
+// TISSelectInputSource は要求発行後すぐ返り OS 側の反映が数 ms 遅れうるため、現在ソースが
+// 変わったことを確認して初めて成功とする (「切替完了前に TUI がキーを読まない」不変条件)。
+// false なら呼び出し側が macism fork へ fallback する。
+func tisSwitchToASCII() bool {
+	if !tisSelectSourceID(asciiInputSource) {
+		return false
+	}
+	for range 50 {
+		if cur, ok := tisCurrentSourceID(); ok && cur == asciiInputSource {
+			return true
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return false
 }
 
 // finish は取得完了を待って入力ソースを英数へ切り替え、元へ戻す restore を返す。第 2 戻り値 warn
@@ -88,13 +122,16 @@ func (s *imeSwitch) finish() (restore func(), warn string) {
 	if cur.prev == asciiInputSource {
 		return noop, "" // 既に英数: 何もしないのが正常 (警告なし)
 	}
+	// TIS 直接切替 (fork なし) を優先し、失敗時のみ macism fork へ fallback。
 	// 切替は CombinedOutput で macism の出力も拾い、失敗時の toast に理由を含める。
-	if out, err := exec.Command(cur.cli, asciiInputSource).CombinedOutput(); err != nil {
-		detail := firstLine(err.Error())
-		if s := firstLine(string(out)); s != "" {
-			detail = s
+	if !tisSwitchASCII() {
+		if out, err := exec.Command(cur.cli, asciiInputSource).CombinedOutput(); err != nil {
+			detail := firstLine(err.Error())
+			if s := firstLine(string(out)); s != "" {
+				detail = s
+			}
+			return noop, "macism で英数への切替に失敗しました: " + detail
 		}
-		return noop, "macism で英数への切替に失敗しました: " + detail
 	}
 	return func() {
 		// 終了時の復元。ここでの失敗・想定外は封じて握りつぶす (TUI は既に閉じており toast も
