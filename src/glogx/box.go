@@ -138,10 +138,12 @@ const minPanelWidth = 10
 func panelInnerWidth(frameWidth int) int { return frameWidth - 4 }
 
 // スクロールバーのグリフ。track は枠の側辺 (│) と同じ字形にして「本文の中に走る細い溝」に見せ、
-// thumb だけ █ で持ち上げる。
+// thumb は太い縦罫線 ┃ で持ち上げる。█ (FULL BLOCK) にしないのは、block element はフォントに
+// よってセルを完全に埋めず縦に敷き詰めたとき行間に切れ目が出るため。罫線文字はセル端まで
+// 描画されて縦に連結する (ユーザー要望 2026-07-29)。
 const (
 	scrollbarTrackGlyph = "│"
-	scrollbarThumbGlyph = "█"
+	scrollbarThumbGlyph = "┃"
 )
 
 // withScrollbar は buildPanelBox に渡す本文行の右端に 1 桁のスクロールバー列を足す。
