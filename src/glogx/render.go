@@ -514,6 +514,24 @@ func clipToWidth(line string, width int) string {
 	return truncateDisp(line, width, "…")
 }
 
+// clipMeasure は clipToWidth と同じ切り詰めを行い、結果の表示幅も返す。
+// buildPanelBoxImpl / scrollbarColumn の hot path 用: 旧実装は「clip で 1 回 + pad 計算で
+// もう 1 回」同じ行を grapheme 走査しており、収まる行 (多数派) の 2 回目が丸ごと無駄だった
+// (View 1 フレーム CPU の ~35% が dispWidth に残った実測 2026-07-29)。切り詰めた行だけは
+// 幅を実測し直す (wide グリフ境界で width-1 に落ちるケースで pad を誤ると枠がズレるため、
+// ここは推定でなく実測を維持する)。
+func clipMeasure(line string, width int) (string, int) {
+	if width <= 0 {
+		return line, dispWidth(line)
+	}
+	w := dispWidth(line)
+	if w <= width {
+		return line, w
+	}
+	clipped := truncateDisp(line, width, "…")
+	return clipped, dispWidth(clipped)
+}
+
 // isANSITerminator は ESC シーケンス中の rune r がシーケンスを終端する最終バイトか
 // を返す (CSI の最終バイトは英字)。truncateKeepANSI / dropToColumn / stripANSI が
 // 同じ終端判定を共有し、OSC 等への対応拡張時に 1 箇所だけ直せばよいようにする。

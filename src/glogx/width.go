@@ -46,15 +46,44 @@ import (
 
 // dispWidth は文字列の端末表示幅を返す。ANSI エスケープは幅 0 として無視するので
 // stripANSI 前処理は不要。
-func dispWidth(s string) int { return ansi.StringWidth(s) }
+//
+// 印字可能 ASCII だけの文字列は len がそのまま表示幅なので、grapheme 走査 (ansi.StringWidth)
+// を省く。View 1 フレームの CPU の ~56% が stringWidth だった実測 (2026-07-29 pprof) への
+// 対処で、medium 形式の Author/Date/メッセージ行など大半の行がこの fast-path を通る。
+// 制御文字 (ESC 含む)・8bit 以上は従来どおり ansi に委ねるため幅モデルは変わらない。
+func dispWidth(s string) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] > 0x7e {
+			return ansi.StringWidth(s)
+		}
+	}
+	return len(s)
+}
 
 // truncateDisp は表示幅 width まで切り詰め末尾に tail を付す。SGR は保持する。
 func truncateDisp(s string, width int, tail string) string { return ansi.Truncate(s, width, tail) }
 
+// padSpaces は n 個の空白を返す。毎フレーム全行で呼ばれるため、事前確保した定数文字列の
+// スライス (バッキング共有 = 無 alloc) で返し、超過分だけ strings.Repeat に落ちる。
+const padSpacesBuf = "                                                                " +
+	"                                                                " +
+	"                                                                " +
+	"                                                                " // 256 桁 (通常の端末幅を包含)
+
+func padSpaces(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	if n <= len(padSpacesBuf) {
+		return padSpacesBuf[:n]
+	}
+	return strings.Repeat(" ", n)
+}
+
 // fillRight は表示幅 width まで右を空白で詰める (runewidth.FillRight の置換)。
 func fillRight(s string, width int) string {
 	if pad := width - dispWidth(s); pad > 0 {
-		return s + strings.Repeat(" ", pad)
+		return s + padSpaces(pad)
 	}
 	return s
 }

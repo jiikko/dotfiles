@@ -52,7 +52,7 @@ func overlayCenteredBox(window, box []string, width, page int, colored bool) []s
 		bw = max(bw, dispWidth(r))
 	}
 	leftGap := max((width-bw)/2, 0)
-	leftPad := strings.Repeat(" ", leftGap)
+	leftPad := padSpaces(leftGap)
 	start := min(max((page-len(box))/2, 0), max(page-len(box), 0))
 	for i, boxRow := range box {
 		pos := start + i
@@ -172,15 +172,16 @@ func scrollbarColumn(rows []string, innerWidth, total, offset int, colored bool)
 	if colored {
 		reset = ansiReset // 行末で色を閉じ、本文の SGR がバー列へ滲まないようにする
 	}
+	// track の paint は行不変なのでループ外で 1 回だけ組む (毎フレーム全行で走る)
+	track := paint(scrollbarTrackGlyph, ansiDim, colored)
 	out := make([]string, 0, view)
 	for i, row := range rows {
-		glyph := paint(scrollbarTrackGlyph, ansiDim, colored)
+		glyph := track
 		if i >= start && i < start+thumb {
 			glyph = scrollbarThumbGlyph
 		}
-		content := clipToWidth(row, contentW)
-		pad := strings.Repeat(" ", max(contentW-dispWidth(content), 0))
-		out = append(out, content+reset+pad+" "+glyph)
+		content, cw := clipMeasure(row, contentW)
+		out = append(out, content+reset+padSpaces(contentW-cw)+" "+glyph)
 	}
 	return out
 }
@@ -258,13 +259,13 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, st 
 	leftEdge, rightEdge := paint(b.v+" ", border, colored), paint(" "+b.v, border, colored)
 	shadeFirst, shadeRest := shadowFeather(colored), shadowRun(1, colored)
 	for i, row := range rows {
-		content := clipToWidth(row, inner)
-		pad := max(inner-dispWidth(content), 0)
+		content, cw := clipMeasure(row, inner)
+		pad := max(inner-cw, 0)
 		shade := shadeRest
 		if i == 0 {
 			shade = shadeFirst
 		}
-		lines = append(lines, leftEdge+content+strings.Repeat(" ", pad)+rightEdge+shade)
+		lines = append(lines, leftEdge+content+padSpaces(pad)+rightEdge+shade)
 	}
 	// 下辺は最下段に寄せた低い横線 ▁ + 左右の角も最下段の低ブロック ▖ ▗ 。─ 中央高だと
 	// 下の落ち影との間に半セルの余白ができ、└┘ の角だけ中央高だと横線 ▁ との間に段差が出る。
