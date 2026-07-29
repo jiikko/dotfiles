@@ -224,6 +224,68 @@ func TestBrowseDiffOpenScrollClose(t *testing.T) {
 	}
 }
 
+// diff ポップアップの本文にスクロールバー列が出ても枠が崩れない (全行が同じ表示幅) ことと、
+// 全行が収まるときはバー列が出ないこと (TestJobDetailBoxLinesScrollbar の diff 版。
+// withScrollbar の単体テストではなく描画経路 boxLines で幅の均一性を見る)。
+func TestDiffBoxLinesScrollbar(t *testing.T) {
+	diffLines := func(n int) []string {
+		out := make([]string, n)
+		for i := range out {
+			out[i] = "diff line"
+		}
+		return out
+	}
+	uniformWidth := func(t *testing.T, box []string) int {
+		t.Helper()
+		w := dispWidth(stripANSI(box[0]))
+		for i, l := range box {
+			if got := dispWidth(stripANSI(l)); got != w {
+				t.Fatalf("行 %d の表示幅 = %d, 他の行 = %d: %q", i, got, w, l)
+			}
+		}
+		return w
+	}
+
+	const width, rows = 50, 8
+	commit := &Commit{SHA: "a", ShortSHA: "abc1234", Subject: "subject"}
+	o := newDiffOverlay()
+
+	// 溢れる: バー列あり + 幅は均一 + thumb は比率
+	o.sha = commit.SHA
+	o.cache[commit.SHA] = diffLines(50)
+	o.offset = 20
+	box := o.boxLines(width, false, "", commit, rows)
+	uniformWidth(t, box)
+	body := box[1 : len(box)-1]
+	thumbs := 0
+	for i, l := range body {
+		trimmed := strings.TrimSuffix(l, " "+borderLight.v)
+		switch {
+		case strings.HasSuffix(trimmed, scrollbarThumbGlyph):
+			thumbs++
+		case strings.HasSuffix(trimmed, scrollbarTrackGlyph):
+		default:
+			t.Fatalf("本文行 %d にバー列が無い: %q", i, l)
+		}
+	}
+	if thumbs == 0 || thumbs == len(body) {
+		t.Fatalf("thumb 行数 = %d (本文 %d 行) — 比率になっていない", thumbs, len(body))
+	}
+
+	// 収まる: バー列なし (本文幅が戻る)。枠幅は溢れる場合と同じ
+	o.cache[commit.SHA] = diffLines(rows - 2)
+	o.offset = 0
+	fit := o.boxLines(width, false, "", commit, rows)
+	if w := uniformWidth(t, fit); w != dispWidth(stripANSI(box[0])) {
+		t.Fatalf("収まる場合の枠幅 = %d, 溢れる場合 = %d", w, dispWidth(stripANSI(box[0])))
+	}
+	for i, l := range fit[1 : len(fit)-1] {
+		if strings.Contains(l, scrollbarThumbGlyph) {
+			t.Fatalf("収まるのに thumb が出ている (行 %d): %q", i, l)
+		}
+	}
+}
+
 func TestBrowseDiffToggleAndCache(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
 	calls := stubDiff(t, []string{"x"}, nil)

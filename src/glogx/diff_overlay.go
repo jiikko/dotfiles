@@ -121,6 +121,8 @@ func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *
 		end := min(start+rows, len(lines))
 		body = append(body, lines[start:end]...)
 		title = fmt.Sprintf(" diff: %s [%d-%d/%d] %s ", commit.ShortSHA, start+1, end, len(lines), commit.Subject)
+		// j/k スクロール中の現在位置を視覚化する (job detail overlay と同じ withScrollbar)
+		body = withScrollbar(body, width, len(lines), start, colored)
 	}
 	return buildPanelBox(title, body, width, colored)
 }
