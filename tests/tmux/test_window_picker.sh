@@ -104,6 +104,32 @@ for want in '59秒前' '1分前' '1時間前' '1日前'; do
 done
 printf '✓ 秒/分/時間/日のバケツ境界 (59s→59秒前, 60s→1分前, 3600s→1時間前, 86400s→1日前)\n'
 
+printf '\n## column 不在環境の劣化 (桁揃えなし TSV でも表示情報が欠けない)\n'
+# 実ツール (awk/sort/paste/cut/cat) だけを symlink した PATH を作り、column を不在にする。
+# --with-nth を 2 に狭める回帰が入ると、column 無しでは fzf の表示が session:index だけに
+# 崩壊する (相対時刻・名前・マーク消失)。ここでは「fzf 引数が 2.. であること」と
+# 「入力の第 2 フィールド以降に表示情報が揃っていること」の両方で固定する。
+mkdir -p "$TMP_DIR/nocolbin"
+# head は picker 本体でなく fzf スタブ (head -1) が使う。列挙は「picker + スタブが必要とする
+# 実ツール」の和集合で、column だけを意図的に外す
+for _tool in awk sort paste cut cat head; do
+  ln -s "$(command -v "$_tool")" "$TMP_DIR/nocolbin/$_tool"
+done
+reset_calls; rm -f "$FZF_IN"
+RC=0
+OUT=$(STUB_WINDOWS="$ROWS" STUB_CURRENT="main:1" PATH="$TMP_DIR/bin:$TMP_DIR/nocolbin" \
+      tt_fzf_window_picker "test> " "" 2>"$TMP_DIR/err.log") || RC=$?
+[ -s "$FZF_IN" ] || { printf '✗ column 不在で候補が空 (fallback 経路が死んでいる)\n'; cat "$TMP_DIR/err.log"; exit 1; }
+[[ "$RC" -eq 0 && "$OUT" == "@10" ]] || { printf '✗ column 不在で選択結果が壊れた: RC=%s OUT=%s\n' "$RC" "$OUT"; exit 1; }
+printf '✓ column 不在でも候補構築と window_id 選択が機能\n'
+grep -q -- '--with-nth=2\.\.' "$CALLS" || { printf '✗ fzf に --with-nth=2.. が渡っていない (2 に狭めると column 不在で表示が崩壊する回帰)\n'; exit 1; }
+printf '✓ fzf の表示指定は --with-nth=2.. (column 不在フォールバックの表示契約)\n'
+disp=$(grep '@10' "$FZF_IN" | cut -f2-)
+for want in '秒前' 'vim' 'いまここ'; do
+  printf '%s' "$disp" | grep -q "$want" || { printf '✗ column 不在の表示フィールド (2..) に %s が無い: %s\n' "$want" "$disp"; exit 1; }
+done
+printf '✓ 表示フィールド (2..) に 相対時刻/名前/いまここ が揃っている\n'
+
 printf '\n## 早期 return\n'
 reset_calls; rm -f "$FZF_IN"
 STUB_WINDOWS='999999\t@13\tscratch:0\tzsh\n' STUB_CURRENT="main:1" pick ""
