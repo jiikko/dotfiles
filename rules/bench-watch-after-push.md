@@ -52,5 +52,5 @@
 ## 関連
 
 - `.claude/rules/use-ci-log-for-ci-inspection.md` — CI ログ確認の一本化 (本ルールの下請け)
-- `tests/run_bench.sh` — 3 回実行 → min 集約 → Step Summary + ログ出力 → 予算チェックの実体
+- `tests/run_bench.sh` — 20 回実行 → 統計集約 (bench_stats.sh) → 前回比較つき Step Summary + ログ出力 → 予算チェックの実体
 - `docs/feedback-nvim-tmux-2026-07-29.md` — 実測値の基準 (2026-07-29 時点のローカル値)
