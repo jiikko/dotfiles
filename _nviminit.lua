@@ -316,6 +316,7 @@ require("lazy").setup({
       enable_available()
       vim.api.nvim_create_autocmd("User", {
         pattern = "MasonToolsUpdateCompleted",
+        group = vim.api.nvim_create_augroup("dotfiles_lsp_enable_on_install", { clear = true }),
         callback = enable_available,
       })
     end,
@@ -804,6 +805,20 @@ require("lazy").setup({
     event = { "BufReadPre", "BufNewFile" },
     config = function()
       local incline = require("incline")
+      -- 「一般的なファイル名」= 親ディレクトリも表示する対象 (set)。render は再描画のたびに
+      -- 呼ばれるため、render 内で毎回配列を作って線形走査しない (定数はここで 1 回だけ組む)
+      local common_names = {}
+      for _, name in ipairs({
+        "index.tsx", "index.ts", "index.jsx", "index.js",
+        "page.tsx", "page.ts", "layout.tsx", "layout.ts",
+        "main.go", "main.rs", "main.py", "main.rb",
+        "test.rb", "test.py", "test.js", "test.ts",
+        "spec.rb", "spec.ts", "spec.js",
+        "config.rb", "config.ts", "config.js",
+        "README.md", "package.json", "tsconfig.json",
+      }) do
+        common_names[name] = true
+      end
       incline.setup({
         hide = {
           cursorline = false,
@@ -815,23 +830,7 @@ require("lazy").setup({
             filename = "[No Name]"
           end
 
-          -- 一般的なファイル名の場合は親ディレクトリも表示
-          local common_names = {
-            "index.tsx", "index.ts", "index.jsx", "index.js",
-            "page.tsx", "page.ts", "layout.tsx", "layout.ts",
-            "main.go", "main.rs", "main.py", "main.rb",
-            "test.rb", "test.py", "test.js", "test.ts",
-            "spec.rb", "spec.ts", "spec.js",
-            "config.rb", "config.ts", "config.js",
-            "README.md", "package.json", "tsconfig.json"
-          }
-          local show_parent = false
-          for _, name in ipairs(common_names) do
-            if filename == name then
-              show_parent = true
-              break
-            end
-          end
+          local show_parent = common_names[filename] or false
 
           local display_name = filename
           if show_parent and bufname ~= "" then
