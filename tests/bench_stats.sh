@@ -79,10 +79,14 @@ for m in order:
 
 # --- 前回サンプル (TSV: name \t v1,v2,...) ------------------------------------
 prev: dict[str, list[float]] = {}
+prev_meta: dict[str, str] = {}
 try:
     with open(prev_tsv) as f:
         for row in f:
             parts = row.rstrip("\n").split("\t")
+            if parts and parts[0] == "#meta":
+                prev_meta = dict(kv.split("=", 1) for kv in parts[1:] if "=" in kv)
+                continue
             if len(parts) == 2 and parts[1]:
                 try:
                     prev[parts[0]] = [float(x) for x in parts[1].split(",")]
@@ -92,7 +96,13 @@ except OSError:
     pass
 
 # --- (c) 今回サンプルの持ち越し -----------------------------------------------
+# 先頭にメタ行 (#meta): 次回 run が「どのコミットの計測と比較しているか」を Summary に
+# 明記するための出典 (ユーザー要望 2026-07-29)。GITHUB_* は Actions が注入する
 with open(cur_tsv, "w") as f:
+    f.write("#meta\tsha={}\trun={}\trepo={}\n".format(
+        os.environ.get("GITHUB_SHA", "?")[:12],
+        os.environ.get("GITHUB_RUN_ID", "?"),
+        os.environ.get("GITHUB_REPOSITORY", "?")))
     for m in order:
         f.write(f"{m}\t{','.join(f'{v:.3f}' for v in cur[m])}\n")
 
@@ -133,8 +143,15 @@ def mwu_z(a: list[float], b: list[float]) -> float:
 summary = os.environ.get("GITHUB_STEP_SUMMARY")
 if summary:
     rows = [f"### {name} bench (n={max(len(v) for v in cur.values()) if cur else 0} runs, "
-            "gate=min / 比較=median + Mann-Whitney U p<0.05)",
-            "",
+            "gate=min / 比較=median + Mann-Whitney U p<0.05)"]
+    if prev and prev_meta.get("sha"):
+        run_id, repo = prev_meta.get("run", ""), prev_meta.get("repo", "")
+        link = (f" ([run {run_id}](https://github.com/{repo}/actions/runs/{run_id}))"
+                if run_id and repo and "?" not in (run_id + repo) else "")
+        rows.append(f"prev = commit `{prev_meta['sha']}`{link} の計測")
+    elif prev:
+        rows.append("prev = 出典メタなし (旧形式 cache。次 run から commit が明記される)")
+    rows += ["",
             "| metric | budget (ms) | prev p50 | cur p50 | Δ | 判定 | cur min |",
             "|---|---:|---:|---:|---:|:---|---:|"]
     for m in order:
