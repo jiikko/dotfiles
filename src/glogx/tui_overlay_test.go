@@ -108,6 +108,42 @@ func TestBrowseOpenPR(t *testing.T) {
 	}
 }
 
+// 取得中にカーソルが動いたら、届いた PR は反映 (キャッシュ・バッジ) だけして自動オープン
+// しない。離れたコミットの PR がいきなりブラウザで開く回帰の防止 (2026-07-29)。
+func TestBrowsePRResultAfterCursorMoveDoesNotOpen(t *testing.T) {
+	var opened string
+	orig := openInBrowser
+	openInBrowser = func(url string) error {
+		opened = url
+		return nil
+	}
+	t.Cleanup(func() { openInBrowser = orig })
+	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StateSuccess
+	if _, cmd := m.handleKey("p"); cmd == nil {
+		t.Fatal("p で PR 取得が始まらない")
+	}
+	m.handleKey("j") // 取得中にカーソル移動
+	_, cmd := m.Update(prMsg{sha: sha, pr: &PRRef{Number: 7, URL: "https://github.com/o/r/pull/7", State: "OPEN"}})
+	runCmdTree(cmd)
+	if opened != "" {
+		t.Errorf("カーソル移動後の遅延 PR がブラウザで開いた: %q", opened)
+	}
+	if strings.Contains(m.toast.text, "開きます") {
+		t.Errorf("stale な結果のトーストが出た: %q", m.toast.text)
+	}
+	if pr, ok := m.prCache[sha]; !ok || pr == nil || pr.Number != 7 {
+		t.Errorf("キャッシュ/バッジへの反映まで捨てられた: %v", m.prCache[sha])
+	}
+	// stale なエラーも警告を出さない (無関係な失敗 notice を被せない)
+	m.prBusy[sha] = true
+	m.Update(prMsg{sha: sha, ghErr: &GHError{Kind: GHOther, Detail: "boom"}})
+	if m.lastWarning != "" {
+		t.Errorf("stale なエラーで警告が出た: %q", m.lastWarning)
+	}
+}
+
 // detail/basis/jobDetail の一過性エラーは、後続の成功結果で hint 警告がクリアされる
 // (set-only だとセッション中ずっと張り付いていた・レビュー C4)。
 func TestBrowseGhErrClearedOnSuccess(t *testing.T) {
@@ -485,6 +521,15 @@ func TestBrowseDiffStaleErrorDoesNotCloseCurrent(t *testing.T) {
 	m.Update(diffMsg{sha: m.commits[1].SHA, err: errors.New("stale boom")})
 	if m.diffOv.sha != current {
 		t.Errorf("別 SHA のエラーで現在の diff が閉じた: diffSHA=%q; want %q", m.diffOv.sha, current)
+	}
+	// 表示中でない SHA の遅延エラーは警告トーストも出さない (2026-07-29)
+	if m.lastWarning != "" {
+		t.Errorf("stale な diff エラーで警告が出た: %q", m.lastWarning)
+	}
+	// 表示中の SHA のエラーは従来どおり警告する
+	m.Update(diffMsg{sha: current, err: errors.New("current boom")})
+	if !strings.Contains(m.lastWarning, "diff の取得に失敗") {
+		t.Errorf("表示中 diff のエラーで警告が出ない: %q", m.lastWarning)
 	}
 }
 

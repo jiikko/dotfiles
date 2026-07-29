@@ -667,14 +667,23 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case prMsg:
 		delete(m.prBusy, msg.sha)
+		// 取得中にカーソルが動いていたら、結果の反映 (キャッシュ・バッジ) だけ行い
+		// 自動オープン・トーストは出さない: 離れたコミットの PR がいきなりブラウザで
+		// 開くのを防ぐ (jobDetailMsg / prStatusMsg と同型の stale ガード)
+		wasCurrent := len(m.commits) > 0 && m.commits[m.cursor].SHA == msg.sha
 		if msg.ghErr != nil {
 			// 一時エラーをキャッシュすると「PR はありません」という誤答が固定される
 			// (次の p で再試行させる) ため、キャッシュは成功時のみ
-			m.showWarning("PR の取得に失敗しました: " + firstLine(msg.ghErr.Warning()))
+			if wasCurrent {
+				m.showWarning("PR の取得に失敗しました: " + firstLine(msg.ghErr.Warning()))
+			}
 			return m, m.maybeTick()
 		}
 		m.prCache[msg.sha] = msg.pr
 		m.invalidateLines() // コミット行の PR バッジに反映
+		if !wasCurrent {
+			return m, m.maybeTick()
+		}
 		if msg.pr == nil {
 			m.toast.show("このコミットに紐づく PR はありません", false)
 			return m, m.maybeTick()
@@ -693,7 +702,11 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.maybeTick()
 	case diffMsg:
-		if err := m.diffOv.receive(msg); err != nil {
+		// 警告は「今表示中の対象」の失敗のときだけ出す: 別 SHA へ移った後に届く遅延エラーで
+		// 無関係な失敗 notice を被せない (prStatusMsg の wasCurrent と同型。receive は当該
+		// sha が表示中ならエラー時に close するため、一致は receive の前に捕捉する)
+		wasCurrent := msg.sha == m.diffOv.sha
+		if err := m.diffOv.receive(msg); err != nil && wasCurrent {
 			m.showWarning("diff の取得に失敗しました: " + firstLine(err.Error()))
 		}
 		return m, m.maybeTick()
