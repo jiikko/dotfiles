@@ -279,7 +279,7 @@ func TestBrowsePushFlow(t *testing.T) {
 	}
 	// tip の「CI がまだ見えない (none)」応答は捨てられ、ネガティブキャッシュに乗らず
 	// 再ポーリング。途中コミットの none は本物なので通常どおり残る
-	m.Update(ciResultMsg{shas: []string{newSHA, m.commits[1].SHA}, batch: CIBatch{Statuses: map[string]CIState{
+	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: []string{newSHA, m.commits[1].SHA}, batch: CIBatch{Statuses: map[string]CIState{
 		newSHA: StateNone, m.commits[1].SHA: StateNone,
 	}}})
 	if _, ok := m.statuses[newSHA]; ok {
@@ -300,7 +300,7 @@ func TestBrowsePushFlow(t *testing.T) {
 		t.Fatal("pushPollMsg で再取得が始まらない")
 	}
 	// CI が見えたら (pending) ポーリング対象から外れ、通常のキャッシュ運用に戻る
-	m.Update(ciResultMsg{shas: []string{newSHA}, batch: CIBatch{Statuses: map[string]CIState{newSHA: StatePending}}})
+	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: []string{newSHA}, batch: CIBatch{Statuses: map[string]CIState{newSHA: StatePending}}})
 	if m.pushPoll[newSHA] {
 		t.Fatal("CI が見えてもポーリングが止まらない")
 	}

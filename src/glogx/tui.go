@@ -64,6 +64,7 @@ type ciResultMsg struct {
 	batch CIBatch
 	ghErr *GHError
 	shas  []string
+	epoch int // 発行時点の fetchEpoch (世代不一致の遅延チャンクを捨てるため)
 }
 
 // detailMsg はパネル表示時のオンデマンド取得 (キャッシュヒットで詳細が無い SHA) の結果。
@@ -197,6 +198,11 @@ type browseModel struct {
 	// (スピナー・invalidate gate・パネルガードが fetching を見るので、最後のチャンクが
 	// 着弾するまで下ろせない)。
 	pendingFetches int
+	// fetchEpoch は一括取得の世代。startCIFetch が張り替えるたびに進める。pull/push の
+	// 再取得が toFetch/pendingFetches を新世代へ上書きした後、旧世代のチャンクが届くと
+	// カウンタを誤減算し (スピナー早期消灯)、取得中 SHA を toFetch から誤って間引く
+	// (同一 SHA 並行リクエストのガード無効化) ため、世代不一致の ciResultMsg は捨てる
+	fetchEpoch int
 	repo           Repo
 	hasRepo        bool
 	ghErr          *GHError
@@ -319,11 +325,12 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		// (main.go の defer browse.cancel() と quit 経路) が担う。
 		chunks := chunkSHAs(toFetch)
 		m.pendingFetches = len(chunks)
+		epoch := m.fetchEpoch // closure は別 goroutine で走るので値で捕捉 (m の直読みは race)
 		cmds := make([]tea.Cmd, 0, len(chunks))
 		for _, chunk := range chunks {
 			cmds = append(cmds, func() tea.Msg {
 				batch, ghErr := fetchCIChunk(ctx, ExecRunner, repo, chunk)
-				return ciResultMsg{batch: batch, ghErr: ghErr, shas: chunk}
+				return ciResultMsg{batch: batch, ghErr: ghErr, shas: chunk, epoch: epoch}
 			})
 		}
 		m.fetch = tea.Batch(cmds...)
@@ -406,13 +413,14 @@ func fetchCIStatusesCmd(repo Repo, targets []string, wrap func(CIBatch, *GHError
 func (m *browseModel) startCIFetch(shas []string) tea.Cmd {
 	shas = capFetchSHAs(shas) // 超過分は StateUnknown のまま (newBrowseModel と同じポリシー)
 	chunks := chunkSHAs(shas)
+	m.fetchEpoch++ // 旧世代の未着チャンクを無効化 (ciResultMsg ハンドラの世代ガード)
 	m.toFetch = shas
 	m.pendingFetches = len(chunks)
 	m.fetching = true
 	m.ghErr = nil
 	cmds := make([]tea.Cmd, 0, len(chunks))
 	for _, chunk := range chunks {
-		cmds = append(cmds, fetchCIChunkCmd(m.repo, chunk))
+		cmds = append(cmds, fetchCIChunkCmd(m.repo, chunk, m.fetchEpoch))
 	}
 	return tea.Batch(cmds...)
 }
@@ -422,12 +430,12 @@ func (m *browseModel) startCIFetch(shas []string) tea.Cmd {
 // ⚠️ FetchCIStatuses を通さないこと: あちらも内部で chunkSHAs するので、既に割ったチャンクを
 // 渡すともう一段割られて同時リクエスト数が fetchConcurrency の二乗側 (最大 16 本) へ膨らむ。
 // 分割はここ (startCIFetch) の 1 段だけに保つ。
-func fetchCIChunkCmd(repo Repo, chunk []string) tea.Cmd {
+func fetchCIChunkCmd(repo Repo, chunk []string, epoch int) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 		defer cancel()
 		batch, ghErr := fetchCIChunk(ctx, ExecRunner, repo, chunk)
-		return ciResultMsg{batch: batch, ghErr: ghErr, shas: chunk}
+		return ciResultMsg{batch: batch, ghErr: ghErr, shas: chunk, epoch: epoch}
 	}
 }
 
@@ -540,6 +548,11 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(m.maybeTick(), toastHoldCmd, pushRefetchCmd)
 	case ciResultMsg:
+		// 世代不一致 = pull/push の再取得 (startCIFetch) 前に飛ばした旧世代チャンク。
+		// 丸ごと捨てる (データも捨てる: 同じ SHA は新世代のチャンクが取り直す)
+		if msg.epoch != m.fetchEpoch {
+			return m, m.maybeTick()
+		}
 		m.invalidateLines()
 		// チャンクごとに届くので、成功チャンクで先の失敗チャンクの警告を消さない
 		// (取得開始時のリセットは startCIFetch が担う)
