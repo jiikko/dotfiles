@@ -226,9 +226,7 @@ func FetchCIStatuses(ctx context.Context, run CommandRunner, repo Repo, shas []s
 	if len(shas) == 0 {
 		return emptyBatch(), nil
 	}
-	if len(shas) > fetchMaxSHAs {
-		shas = shas[:fetchMaxSHAs]
-	}
+	shas = capFetchSHAs(shas)
 	chunks := chunkSHAs(shas)
 	if len(chunks) == 1 {
 		return fetchCIChunk(ctx, run, repo, chunks[0])
@@ -286,8 +284,26 @@ const (
 	minChunkSHAs     = 8
 )
 
+// fetchTotalSHAs は 1 回の一括取得で問い合わせる SHA 数の総上限 (1 クエリ上限 × チャンク
+// 並列度)。超過分は問い合わせず StateUnknown のまま表示する (fetchMaxSHAs の切り詰め
+// ポリシーをチャンク並列の全体へ広げたもの)。
+const fetchTotalSHAs = fetchMaxSHAs * fetchConcurrency
+
+// capFetchSHAs は一括取得の対象を fetchTotalSHAs 件へ丸める。chunkSHAs を呼ぶ前に必ず
+// これを通すこと: 丸めずに渡すと 1 チャンクが fetchMaxSHAs を超え、alias 100 超の
+// GraphQL クエリがノード数制限で丸ごと失敗する (TUI の起動/再取得経路が FetchCIStatuses の
+// 上限を素通りしていた実バグ 2026-07-29)。
+func capFetchSHAs(shas []string) []string {
+	if len(shas) > fetchTotalSHAs {
+		return shas[:fetchTotalSHAs]
+	}
+	return shas
+}
+
 // chunkSHAs は shas を最大 fetchConcurrency 個のチャンクへほぼ均等に割る
 // (件数が少ないときは 1 チャンク = 従来どおりの単発リクエスト)。
+// ⚠️ 入力は capFetchSHAs 済み (≤ fetchTotalSHAs) が前提。これにより 1 チャンクは
+// 必ず fetchMaxSHAs 以下になる (等分なので len/fetchConcurrency ≤ fetchMaxSHAs)。
 func chunkSHAs(shas []string) [][]string {
 	n := min((len(shas)+minChunkSHAs-1)/minChunkSHAs, fetchConcurrency)
 	if n <= 1 {

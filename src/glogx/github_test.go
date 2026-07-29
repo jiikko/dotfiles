@@ -207,6 +207,30 @@ func TestChunkSHAs(t *testing.T) {
 	}
 }
 
+// capFetchSHAs で丸めた入力なら 1 チャンクが fetchMaxSHAs (1 クエリの alias 上限) を
+// 超えないこと。TUI の起動/再取得経路がこの上限を素通りして 100 超の alias クエリを
+// 投げていた回帰の防止 (2026-07-29)。
+func TestCapFetchSHAsBoundsChunkSize(t *testing.T) {
+	shas := func(n int) []string {
+		out := make([]string, n)
+		for i := range out {
+			out[i] = strconv.Itoa(i)
+		}
+		return out
+	}
+	for _, n := range []int{101, 399, 400, 401, 1000} {
+		capped := capFetchSHAs(shas(n))
+		if want := min(n, fetchTotalSHAs); len(capped) != want {
+			t.Errorf("n=%d の capFetchSHAs = %d 件, want %d", n, len(capped), want)
+		}
+		for i, c := range chunkSHAs(capped) {
+			if len(c) > fetchMaxSHAs {
+				t.Errorf("n=%d チャンク %d のサイズ = %d > fetchMaxSHAs %d", n, i, len(c), fetchMaxSHAs)
+			}
+		}
+	}
+}
+
 // 件数が多いときは並列チャンクへ割って投げ、結果をマージして 1 つの CIBatch にする。
 func TestFetchCIStatusesChunksInParallel(t *testing.T) {
 	const n = 20

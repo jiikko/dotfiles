@@ -280,6 +280,9 @@ type browseModel struct {
 }
 
 func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []string, repo Repo, hasRepo bool, opts *Options, colored bool, width, height int) *browseModel {
+	// 上限超過分は問い合わせず StateUnknown 表示のまま (capFetchSHAs のポリシー)。
+	// toFetch に残すと「取得中」のまま永遠に解決しない
+	toFetch = capFetchSHAs(toFetch)
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	m := &browseModel{
 		commits:        commits,
@@ -401,6 +404,7 @@ func fetchCIStatusesCmd(repo Repo, targets []string, wrap func(CIBatch, *GHError
 // 失敗チャンクの警告を消してしまう。「新しい取得で警告をリセットする」(レビュー C4 の
 // sticky 警告防止) は開始時にやり、ハンドラ側は非 nil のときだけ立てる。
 func (m *browseModel) startCIFetch(shas []string) tea.Cmd {
+	shas = capFetchSHAs(shas) // 超過分は StateUnknown のまま (newBrowseModel と同じポリシー)
 	chunks := chunkSHAs(shas)
 	m.toFetch = shas
 	m.pendingFetches = len(chunks)
