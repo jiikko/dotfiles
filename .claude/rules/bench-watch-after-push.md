@@ -1,6 +1,4 @@
-# dotfiles: nvim / tmux / zsh / glogx 系の変更を push したら、Bench をウォッチしてデグレ確認までがタスク
-
-対象は dotfiles リポジトリ (jiikko/dotfiles)。他リポジトリには適用しない。
+# nvim / tmux / zsh / glogx 系の変更を push したら、Bench をウォッチしてデグレ確認までがタスク
 
 ## ルール
 
@@ -33,7 +31,7 @@
 
 ## watch の実務
 
-- run の特定と失敗ログは `bin/ci-log` (dotfiles の .claude/rules/use-ci-log-for-ci-inspection.md)。
+- run の特定と失敗ログは `bin/ci-log` ([use-ci-log-for-ci-inspection.md](use-ci-log-for-ci-inspection.md))。
   完了待ちは Monitor 等で `gh run list --commit <sha>` の全 run completed をポーリングする
 - ホットパス (hook 経路・描画ループ・起動列) に触る規模の変更は push 前にローカルでも
   `tests/nvim/bench_nvim.sh` (BENCH_BASELINE=1) / `tests/tmux/bench_tmux.sh` を回し、
@@ -44,11 +42,11 @@
 パフォーマンス回帰は機能テストでは捕まらず、放置すると「いつからか遅い」だけが残って
 原因 commit の特定コストが跳ね上がる。Bench workflow は push ごとに予算ゲートを回している
 ので、**push 直後に watch して原因 commit が 1 つに絞れている瞬間に検知する**のが最安。
-dotfiles はレイテンシ最適化 (REPLY 契約 / fold 凍結 / fork 削減) に投資してきており、
+この repo はレイテンシ最適化 (REPLY 契約 / fold 凍結 / fork 削減) に投資してきており、
 その資産を守る回帰ゲートの運用側がこのルール。
 
 ## 関連
 
-- dotfiles の `.claude/rules/use-ci-log-for-ci-inspection.md` — CI ログ確認の一本化 (本ルールの下請け)
-- dotfiles の `tests/run_bench.sh` — 3 回実行 → min 集約 → Step Summary + ログ出力 → 予算チェックの実体
-- dotfiles の `docs/feedback-nvim-tmux-2026-07-29.md` — 実測値の基準 (2026-07-29 時点のローカル値)
+- [use-ci-log-for-ci-inspection.md](use-ci-log-for-ci-inspection.md) — CI ログ確認の一本化 (本ルールの下請け)
+- `tests/run_bench.sh` — 3 回実行 → min 集約 → Step Summary + ログ出力 → 予算チェックの実体
+- `docs/feedback-nvim-tmux-2026-07-29.md` — 実測値の基準 (2026-07-29 時点のローカル値)
