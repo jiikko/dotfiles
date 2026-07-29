@@ -92,8 +92,8 @@ func buildPanelBox(title string, rows []string, width int, colored bool) []strin
 }
 
 // buildShadowPanelBox は buildPanelBox の右下ドロップシャドウ付き版。呼び出し元は小面積
-// モーダル/トースト (centerBox 経由の action モーダル + toast / usage)、大面積の diff / job
-// パネル + job 詳細、画面最外周フレーム (wrapWindowFrame → buildPanelBoxImpl を直接呼ぶ)。
+// モーダル/トースト (centerBox 経由の action モーダル + toast / usage / PR 状態)、大面積の
+// diff / job パネル + job 詳細、画面最外周フレーム (wrapWindowFrame → buildPanelBoxImpl を直接呼ぶ)。
 //
 // 影の適用経緯: 大面積 popup への全面シャドウは「面積が大きく影が主張しすぎる」で一度導入 →
 // revert した (4fb36a2) が、その後影の描画がフェザー付き近黒に作り直され、ユーザー要望
