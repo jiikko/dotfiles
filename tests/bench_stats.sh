@@ -108,15 +108,34 @@ with open(cur_tsv, "w") as f:
 
 # --- 予算表示用 ---------------------------------------------------------------
 budgets: dict[str, str] = {}
+rel_metrics: set[str] = set()
+calib_name = ""
 try:
     with open(budget_file) as f:
         for row in f:
             parts = row.split()
-            if not parts or parts[0].startswith("#") or parts[0] == "calibrate":
+            if not parts or parts[0].startswith("#"):
+                continue
+            if parts[0] == "calibrate":
+                calib_name = parts[1] if len(parts) > 1 else ""
                 continue
             budgets[parts[0]] = parts[1] + (" rel" if "rel" in parts[2:] else "")
+            if "rel" in parts[2:]:
+                rel_metrics.add(parts[0])
 except OSError:
     pass
+
+# --- 較正スケール ---------------------------------------------------------------
+# prev と cur は別 runner (別 CPU 世代・別混雑度) で測られるため、素の比較は環境の
+# 共通モードシフトを「悪化」と誤判定する (実例 2026-07-29 run 30453173113: 無変更 push で
+# rel 系が軒並み悪化表示)。予算ゲートの rel と同じ思想で、rel 指定の metric は較正器 p50 の
+# 比に正規化してから Δ/U 判定する。絶対予算の metric (RSS 等) は素のまま比較する。
+calib_scale = 0.0
+if calib_name and calib_name in cur and prev.get(calib_name):
+    c_cal = statistics.median(cur[calib_name])
+    p_cal = statistics.median(prev[calib_name])
+    if c_cal > 0 and p_cal > 0:
+        calib_scale = c_cal / p_cal
 
 # --- Mann-Whitney U (正規近似・同順位は平均ランク) ------------------------------
 def mwu_z(a: list[float], b: list[float]) -> float:
@@ -151,6 +170,11 @@ if summary:
         rows.append(f"prev = commit `{prev_meta['sha']}`{link} の計測")
     elif prev:
         rows.append("prev = 出典メタなし (旧形式 cache。次 run から commit が明記される)")
+    if calib_name:
+        note = (f"⚖ = rel metric は較正器 {calib_name} の p50 比 (×{calib_scale:.2f}) で"
+                " runner 環境差を正規化して判定" if calib_scale > 0
+                else f"較正器 {calib_name} の前回値が無いため正規化なし (環境差がそのまま出る)")
+        rows.append(note)
     rows += ["",
             "| metric | budget (ms) | prev p50 | cur p50 | Δ | 判定 | cur min |",
             "|---|---:|---:|---:|---:|:---|---:|"]
@@ -162,12 +186,20 @@ if summary:
             rows.append(f"| {m} | {budgets.get(m, '-')} | - | {c_p50:.1f} | - | 🆕 初計測 | {c_min:.1f} |")
             continue
         p_p50 = statistics.median(p)
-        delta = (c_p50 - p_p50) / p_p50 * 100 if p_p50 else 0.0
-        z = mwu_z(p, c)
+        normalized = m in rel_metrics and calib_scale > 0
+        if normalized:
+            p_cmp = [v * calib_scale for v in p]  # prev を cur 環境のスケールへ換算
+        else:
+            p_cmp = p
+        pc_p50 = statistics.median(p_cmp)
+        delta = (c_p50 - pc_p50) / pc_p50 * 100 if pc_p50 else 0.0
+        z = mwu_z(p_cmp, c)
         if abs(z) >= 1.96 and abs(delta) >= 5:
             verdict = f"🔺 悪化 (|z|={abs(z):.1f})" if delta > 0 else f"✅ 改善 (|z|={abs(z):.1f})"
         else:
             verdict = "➖ 誤差圏"
+        if normalized:
+            verdict += " ⚖"
         rows.append(f"| {m} | {budgets.get(m, '-')} | {p_p50:.1f} | {c_p50:.1f} | "
                     f"{delta:+.1f}% | {verdict} | {c_min:.1f} |")
     with open(summary, "a") as f:
