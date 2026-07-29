@@ -78,20 +78,11 @@ func (o *prStatusOverlay) current() *PRStatus {
 
 // prStateLabel は PR の状態行 ("OPEN" / "OPEN (draft)" / "MERGED" ...) を色付きで返す。
 func prStateLabel(pr *PRStatus, colored bool) string {
-	color := ansiDim
-	switch pr.State {
-	case "OPEN":
-		color = ansiGreen
-	case "MERGED":
-		color = ansiMagenta
-	case "CLOSED":
-		color = ansiRed
-	}
 	label := pr.State
 	if pr.IsDraft {
 		label += " (draft)"
 	}
-	return paint(label, color, colored)
+	return paint(label, prStateColor(pr.State), colored)
 }
 
 // reviewRow は reviewDecision の表示行。ブランチ保護が無い repo では null ("") が返る。

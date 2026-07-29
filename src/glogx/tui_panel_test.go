@@ -1148,17 +1148,6 @@ func TestJobDetailBoxLinesScrollbar(t *testing.T) {
 		}
 		return out
 	}
-	uniformWidth := func(t *testing.T, box []string) int {
-		t.Helper()
-		w := dispWidth(stripANSI(box[0]))
-		for i, l := range box {
-			if got := dispWidth(stripANSI(l)); got != w {
-				t.Fatalf("行 %d の表示幅 = %d, 他の行 = %d: %q", i, got, w, l)
-			}
-		}
-		return w
-	}
-
 	const width, rows = 50, 8
 	o := newJobDetailOverlay()
 	o.open = true

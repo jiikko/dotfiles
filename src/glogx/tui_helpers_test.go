@@ -113,3 +113,17 @@ func withFailedJob(m *browseModel, idx int, checkID int64, state CIState) {
 		{Name: "lint", State: state, URL: "https://github.com/o/r/runs/9", CheckID: checkID},
 	}
 }
+
+// uniformWidth は box 描画行の表示幅が全行で揃っている (枠が崩れていない) ことを検証して
+// その幅を返す。diff / job 詳細のスクロールバーテストが共有する (同一クロージャが 2 ファイルへ
+// コピーされていた。issue 030)。
+func uniformWidth(t *testing.T, box []string) int {
+	t.Helper()
+	w := dispWidth(stripANSI(box[0]))
+	for i, l := range box {
+		if got := dispWidth(stripANSI(l)); got != w {
+			t.Fatalf("行 %d の表示幅 = %d, 他の行 = %d: %q", i, got, w, l)
+		}
+	}
+	return w
+}

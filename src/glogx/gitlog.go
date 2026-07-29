@@ -134,10 +134,11 @@ func LoadLogDisplay(opts *Options, colored bool) ([]string, error) {
 	}
 	// verbatim 表示は git 出力をそのまま流すので、ここで行ごとに無害化する:
 	// VS16 付き絵文字の正規化 (幅ガタつき防止) + 端末制御シーケンス注入の除去
-	// (SGR の焼き込み色は残す)。ParseLog 側のフィールド無害化と対になる
+	// (SGR の焼き込み色は残す)。ParseLog 側のフィールド無害化と対になる。タブは残す
+	// (静的出力のパリティ契約。TUI では decorateVerbatim が展開する)
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	for i, l := range lines {
-		lines[i] = sanitizeDetailLine(l)
+		lines[i] = sanitizeLineKeepTabs(l)
 	}
 	return lines, nil
 }
@@ -160,16 +161,17 @@ func ParseLog(out string) ([]Commit, error) {
 		body = strings.TrimRight(body, "\n")
 		// subject/message/body/author はコミット作者が任意の文字を入れられる外部入力。
 		// CI ログと同じ端末制御シーケンス注入 (OSC52 のクリップボード書き込み等) の経路に
-		// なるため、ここ (解析の単一ファネル) で無害化する。SGR (色) は残る
+		// なるため、ここ (解析の単一ファネル) で無害化する。SGR (色) は残る。タブも残す
+		// (静的出力の git log パリティ契約。タブ展開は TUI 描画側 — sanitizeLineKeepTabs の doc)
 		commits = append(commits, Commit{
 			SHA:         parts[0],
 			ShortSHA:    parts[1],
-			Subject:     sanitizeDetailLine(parts[2]),
-			Author:      sanitizeDetailLine(parts[3]),
-			AuthorEmail: sanitizeDetailLine(parts[4]),
+			Subject:     sanitizeLineKeepTabs(parts[2]),
+			Author:      sanitizeLineKeepTabs(parts[3]),
+			AuthorEmail: sanitizeLineKeepTabs(parts[4]),
 			Date:        parts[5],
 			RelDate:     parts[6],
-			Decoration:  sanitizeDetailLine(parts[7]),
+			Decoration:  sanitizeLineKeepTabs(parts[7]),
 			Message:     sanitizeGitText(strings.TrimRight(parts[8], "\n")),
 			Body:        sanitizeGitText(capGitBody(body, parts[1])),
 		})
@@ -191,15 +193,15 @@ func capGitBody(body, shortSHA string) string {
 	return strings.Join(lines, "\n")
 }
 
-// sanitizeGitText は複数行の git 由来テキストを行ごとに sanitizeDetailLine へ通す
-// (\n は構造なので保持。sanitizeDetailLine は制御文字として \n を落とすため行単位で呼ぶ)。
+// sanitizeGitText は複数行の git 由来テキストを行ごとに sanitizeLineKeepTabs へ通す
+// (\n は構造なので保持。サニタイザは制御文字として \n を落とすため行単位で呼ぶ)。
 func sanitizeGitText(s string) string {
 	if s == "" {
 		return s
 	}
 	lines := strings.Split(s, "\n")
 	for i, l := range lines {
-		lines[i] = sanitizeDetailLine(l)
+		lines[i] = sanitizeLineKeepTabs(l)
 	}
 	return strings.Join(lines, "\n")
 }

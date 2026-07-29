@@ -1616,7 +1616,7 @@ func (m *browseModel) etaBasis(name, excludeSHA string) (time.Duration, bool) {
 //
 // 実行中判定は State で行う (Duration==0 は StatusContext / 未取得も含むため出典にしない)。
 func (m *browseModel) jobTimeSuffix(job CheckDetail) string {
-	if job.State == StatePending && !job.StartedAt.IsZero() {
+	if job.running() {
 		elapsed := timeNow().Sub(job.StartedAt)
 		el := formatDuration(elapsed)
 		if el == "" { // 開始直後 (<1s) / わずかな時計ずれ
@@ -1797,7 +1797,7 @@ func (m *browseModel) maybeFetchETABasis() tea.Cmd {
 	// basis を必要とする実行中 job があり、かつ現状 basis が取れないときだけ補充する
 	need := false
 	for _, j := range jobs {
-		if j.State == StatePending && !j.StartedAt.IsZero() {
+		if j.running() {
 			if _, ok := m.etaBasis(j.Name, m.panelSHA); !ok {
 				need = true
 				break
@@ -2106,7 +2106,7 @@ func (m *browseModel) panelHasRunningJob() bool {
 		return false
 	}
 	for _, job := range m.details[m.panelSHA] {
-		if job.State == StatePending && !job.StartedAt.IsZero() {
+		if job.running() {
 			return true
 		}
 	}

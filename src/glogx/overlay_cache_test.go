@@ -10,7 +10,7 @@ func TestOverlayCacheEvictsOldestKeepingCurrent(t *testing.T) {
 	o := newDiffOverlay()
 	o.sha = "sha-0" // 最古を表示中にして「表示中は evict されない」を同時に検証
 	for i := 0; i <= overlayCacheLimit+1; i++ {
-		o.receive(diffMsg{sha: fmt.Sprintf("sha-%d", i), lines: []string{"x"}})
+		_ = o.receive(diffMsg{sha: fmt.Sprintf("sha-%d", i), lines: []string{"x"}})
 	}
 	if len(o.cache) != overlayCacheLimit {
 		t.Fatalf("cache エントリ数 = %d; want 上限 %d", len(o.cache), overlayCacheLimit)

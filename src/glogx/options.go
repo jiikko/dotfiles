@@ -61,28 +61,19 @@ func ParseArgs(argv []string) (*Options, error) {
 			if i+1 >= len(argv) {
 				return nil, errors.New("glogx: -n には件数が必要です")
 			}
-			n, err := parseCount(argv[i+1])
-			if err != nil {
-				return nil, fmt.Errorf("glogx: -n の件数を解釈できません: %s", argv[i+1])
+			if err := opts.setMaxCount(argv[i+1], "-n"); err != nil {
+				return nil, err
 			}
-			opts.MaxCount = n
-			opts.HasCount = true
 			i += 2
 			continue
 		case strings.HasPrefix(arg, "-n") && len(arg) > 2:
-			n, err := parseCount(arg[2:])
-			if err != nil {
-				return nil, fmt.Errorf("glogx: -n の件数を解釈できません: %s", arg[2:])
+			if err := opts.setMaxCount(arg[2:], "-n"); err != nil {
+				return nil, err
 			}
-			opts.MaxCount = n
-			opts.HasCount = true
 		case strings.HasPrefix(arg, "--max-count="):
-			n, err := parseCount(strings.TrimPrefix(arg, "--max-count="))
-			if err != nil {
-				return nil, fmt.Errorf("glogx: --max-count の件数を解釈できません: %s", arg)
+			if err := opts.setMaxCount(strings.TrimPrefix(arg, "--max-count="), "--max-count"); err != nil {
+				return nil, err
 			}
-			opts.MaxCount = n
-			opts.HasCount = true
 		case arg == "--stat":
 			opts.Stat = true
 		case arg == "-p" || arg == "--patch":
@@ -118,6 +109,18 @@ func ParseArgs(argv []string) (*Options, error) {
 		}
 	}
 	return opts, nil
+}
+
+// setMaxCount は -n <N> / -n<N> / --max-count=<N> の共通処理 (parseCount → エラー整形 →
+// MaxCount/HasCount 代入が 3 分岐へオプション名だけ変えて反復していた。issue 030)。
+func (o *Options) setMaxCount(raw, flag string) error {
+	n, err := parseCount(raw)
+	if err != nil {
+		return fmt.Errorf("glogx: %s の件数を解釈できません: %s", flag, raw)
+	}
+	o.MaxCount = n
+	o.HasCount = true
+	return nil
 }
 
 func parseCount(s string) (int, error) {

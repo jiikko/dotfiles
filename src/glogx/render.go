@@ -258,7 +258,9 @@ func decorateVerbatim(commits []Commit, statuses map[string]CIState, o RenderOpt
 		}
 		text := l.Text
 		if o.Width > 0 {
-			// mediumLines と同じ理由 (タブは clip の幅計算をすり抜けて再描画を崩す)
+			// mediumLines と同じ理由 (タブは clip の幅計算をすり抜けて再描画を崩す)。
+			// 入口 (sanitizeLineKeepTabs) は静的出力のパリティのためタブを残す設計なので
+			// TUI 側で展開する
 			text = strings.ReplaceAll(text, "\t", "    ")
 			if !strings.Contains(text, "\x1b") {
 				for _, seg := range wrapToWidth(text, o.Width) {
@@ -322,16 +324,22 @@ func prBadge(sha string, o RenderOpts) string {
 	if pr == nil {
 		return ""
 	}
-	color := ansiDim
-	switch pr.State {
+	return " " + paint(fmt.Sprintf("#%d", pr.Number), prStateColor(pr.State), o.Colored)
+}
+
+// prStateColor は PR 状態の表示色 (GitHub の慣例: OPEN=緑 / MERGED=マゼンタ / CLOSED=赤)。
+// コミット行のバッジ (prBadge) と PR 状態ポップアップ (prStateLabel) が共有する — 独立に
+// 2 箇所へ書くと状態語彙の変更で片方だけ直して食い違う (issue 030)。
+func prStateColor(state string) string {
+	switch state {
 	case "OPEN":
-		color = ansiGreen
+		return ansiGreen
 	case "MERGED":
-		color = ansiMagenta
+		return ansiMagenta
 	case "CLOSED":
-		color = ansiRed
+		return ansiRed
 	}
-	return " " + paint(fmt.Sprintf("#%d", pr.Number), color, o.Colored)
+	return ansiDim
 }
 
 // mediumLines は git log 標準形式の 1 コミット分。

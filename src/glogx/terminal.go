@@ -19,6 +19,19 @@ import "strings"
 //   - VS16 付き絵文字 (⚠️ 等) は描画エンジンと端末で幅が食い違いガタつくため bare 記号へ
 //     正規化する (dropEmojiVS16 参照。git 由来テキストは gitlog.go 側の入口で同じ正規化)
 func sanitizeDetailLine(s string) string {
+	return sanitizeLine(s, false)
+}
+
+// sanitizeLineKeepTabs \u306f sanitizeDetailLine \u306e\u30bf\u30d6\u975e\u5c55\u958b\u7248\u3002git \u7531\u6765\u30c6\u30ad\u30b9\u30c8 (commit \u306e
+// subject/message/body\u30fbverbatim \u884c) \u306f\u3001\u9759\u7684\u51fa\u529b (--no-pager / \u30d1\u30a4\u30d7) \u3067 git log \u3068\u306e
+// \u30d1\u30ea\u30c6\u30a3 (\u30bf\u30d6\u4fdd\u6301) \u304c\u5951\u7d04\u3055\u308c\u3066\u3044\u308b (render_test \u306e \u2026TabsInTUI \u304c pin) \u305f\u3081\u3001\u5165\u53e3\u3067\u306f
+// \u5236\u5fa1\u30b7\u30fc\u30b1\u30f3\u30b9\u306e\u9664\u53bb\u3060\u3051\u884c\u3044\u3001\u30bf\u30d6\u5c55\u958b\u306f TUI \u63cf\u753b\u5074 (Width > 0 \u306e mediumLines /
+// decorateVerbatim) \u304c\u62c5\u3046\u3002
+func sanitizeLineKeepTabs(s string) string {
+	return sanitizeLine(s, true)
+}
+
+func sanitizeLine(s string, keepTabs bool) string {
 	s = dropEmojiVS16(s)
 	if !strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f || r == '\ufeff' }) {
 		return s
@@ -28,6 +41,8 @@ func sanitizeDetailLine(s string) string {
 	for i := 0; i < len(rs); i++ {
 		r := rs[i]
 		switch {
+		case r == '\t' && keepTabs:
+			b.WriteRune(r)
 		case r == '\t':
 			b.WriteString("    ")
 		case r == '\x1b':

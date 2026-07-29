@@ -192,6 +192,11 @@ type CheckDetail struct {
 	StartedAt time.Time
 }
 
+// running は「実行中 (経過時間が意味を持つ) job」か。pending でも StartedAt が zero のものは
+// queued / StatusContext であって実行中ではない。経過時間表示・ETA basis 取得・パネルの
+// ライブ更新判定が共有する (同じ式が 3 箇所に直書きされていた。issue 030)。
+func (j CheckDetail) running() bool { return j.State == StatePending && !j.StartedAt.IsZero() }
+
 type rollupPayload struct {
 	State    string `json:"state"`
 	Contexts struct {
@@ -765,9 +770,21 @@ type PRRef struct {
 // GitHub が commit → PR の関連 (associatedPullRequests) を保持している。
 // 複数ある場合 (cherry-pick 等) は OPEN > MERGED > その他 の優先で 1 件選ぶ。
 func FetchCommitPR(ctx context.Context, run CommandRunner, repo Repo, sha string) (*PRRef, *GHError) {
+	nodes, ghErr := fetchAssociatedPRs[PRRef](ctx, run, repo, sha, "number url state")
+	if ghErr != nil {
+		return nil, ghErr
+	}
+	return pickBestPR(nodes), nil
+}
+
+// fetchAssociatedPRs は「commit に紐づく PR を単発 GraphQL で取る」骨格の共通実装。
+// FetchCommitPR (PRRef) と FetchPRStatus (PRStatus) は nodes の field list と Node 型だけが
+// 違い、クエリ発行〜レスポンス解析は同一だった (issue 030 の重複除去)。fields は GraphQL の
+// nodes フィールド列。commit が見つからない場合は (nil, nil)。
+func fetchAssociatedPRs[T any](ctx context.Context, run CommandRunner, repo Repo, sha, fields string) ([]T, *GHError) {
 	query := fmt.Sprintf(`query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {
-  object(oid: %q) { ... on Commit { associatedPullRequests(first: %d) { nodes { number url state } } } }
-} }`, sha, associatedPRLimit)
+  object(oid: %q) { ... on Commit { associatedPullRequests(first: %d) { nodes { %s } } } }
+} }`, sha, associatedPRLimit, fields)
 	stdout, stderr, err := run(ctx, "gh", "api", "graphql",
 		"-F", "owner="+repo.Owner, "-F", "name="+repo.Name, "-f", "query="+query)
 	if err != nil {
@@ -778,7 +795,7 @@ func FetchCommitPR(ctx context.Context, run CommandRunner, repo Repo, sha string
 			Repository struct {
 				Object *struct {
 					AssociatedPullRequests struct {
-						Nodes []PRRef `json:"nodes"`
+						Nodes []T `json:"nodes"`
 					} `json:"associatedPullRequests"`
 				} `json:"object"`
 			} `json:"repository"`
@@ -791,7 +808,7 @@ func FetchCommitPR(ctx context.Context, run CommandRunner, repo Repo, sha string
 	if obj == nil {
 		return nil, nil
 	}
-	return pickBestPR(obj.AssociatedPullRequests.Nodes), nil
+	return obj.AssociatedPullRequests.Nodes, nil
 }
 
 // PRStatus は PR 状態ポップアップ (P キー, issue 021) 用の詳細フィールド。一括クエリの
@@ -810,36 +827,12 @@ type PRStatus struct {
 // FetchPRStatus は commit に紐づく PR の詳細状態を返す (無ければ nil)。複数 PR の選定は
 // FetchCommitPR と同じ優先 (OPEN > MERGED > その他)。
 func FetchPRStatus(ctx context.Context, run CommandRunner, repo Repo, sha string) (*PRStatus, *GHError) {
-	query := fmt.Sprintf(`query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {
-  object(oid: %q) { ... on Commit { associatedPullRequests(first: %d) {
-    nodes { number url state title isDraft reviewDecision mergeable baseRefName headRefName }
-  } } }
-} }`, sha, associatedPRLimit)
-	stdout, stderr, err := run(ctx, "gh", "api", "graphql",
-		"-F", "owner="+repo.Owner, "-F", "name="+repo.Name, "-f", "query="+query)
-	if err != nil {
-		return nil, classifyGHError(err, string(stderr))
+	nodes, ghErr := fetchAssociatedPRs[PRStatus](ctx, run, repo, sha,
+		"number url state title isDraft reviewDecision mergeable baseRefName headRefName")
+	if ghErr != nil {
+		return nil, ghErr
 	}
-	var resp struct {
-		Data struct {
-			Repository struct {
-				Object *struct {
-					AssociatedPullRequests struct {
-						Nodes []PRStatus `json:"nodes"`
-					} `json:"associatedPullRequests"`
-				} `json:"object"`
-			} `json:"repository"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(stdout, &resp); err != nil {
-		return nil, &GHError{Kind: GHOther, Detail: "GraphQL レスポンスを解析できません: " + err.Error()}
-	}
-	obj := resp.Data.Repository.Object
-	if obj == nil {
-		return nil, nil
-	}
-	return pickBestByState(obj.AssociatedPullRequests.Nodes,
-		func(p *PRStatus) string { return p.State }), nil
+	return pickBestByState(nodes, func(p *PRStatus) string { return p.State }), nil
 }
 
 // logTimestampRe は GitHub Actions ログの各行頭に付く ISO タイムスタンプ。
