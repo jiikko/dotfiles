@@ -91,14 +91,14 @@ func buildPanelBox(title string, rows []string, width int, colored bool) []strin
 	return buildPanelBoxImpl(title, rows, width, colored, panelBoxStyle{glyphs: borderLight, color: ansiDim})
 }
 
-// buildShadowPanelBox は buildPanelBox の右下ドロップシャドウ付き版。呼び出し元は 4 系統の
-// 小面積モーダル/トースト (centerBox 経由の action モーダル + toast / usage)
-// と、画面最外周フレーム (wrapWindowFrame → buildPanelBoxImpl を直接呼ぶ) のみ。
+// buildShadowPanelBox は buildPanelBox の右下ドロップシャドウ付き版。呼び出し元は小面積
+// モーダル/トースト (centerBox 経由の action モーダル + toast / usage) と diff オーバーレイ、
+// 画面最外周フレーム (wrapWindowFrame → buildPanelBoxImpl を直接呼ぶ)。
 //
-// ⚠️ 影の適用方針: 小面積のモーダル/トーストと最外周フレームに限る。リストのテキストに重なる
-// 大面積 popup (job/diff パネル) への全面シャドウは「面積が大きく影が主張しすぎる」で一度導入 →
-// revert した (4fb36a2)。最外周フレームは画面端の余白セルにだけ影を落としコンテンツと重ならない
-// ため、この方針と衝突しない (issue 025)。
+// ⚠️ 影の適用方針: 大面積 popup への全面シャドウは「面積が大きく影が主張しすぎる」で一度導入 →
+// revert した (4fb36a2) が、その後影の描画がフェザー付き近黒に作り直され、diff パネルは
+// ユーザー要望 (2026-07-29) で再導入した。job パネルは影なしのまま (要望が出たら再評価)。
+// 最外周フレームは画面端の余白セルにだけ影を落としコンテンツと重ならない (issue 025)。
 // border は枠線 (上辺・側辺・非影下辺) の SGR 色。ドロップシャドウのブロックは中立のまま (dim)。
 // 通常は ansiDim を渡す。toast だけが種別色 (緑/赤/シアン) を渡して枠ごと色付けする。
 func buildShadowPanelBox(title string, rows []string, width int, colored bool, border string) []string {
@@ -149,6 +149,13 @@ const (
 // (呼び出し側に枠の内訳を知らせない)。
 func withScrollbar(rows []string, boxWidth, total, offset int, colored bool) []string {
 	return scrollbarColumn(rows, panelInnerWidth(max(boxWidth, minPanelWidth)), total, offset, colored)
+}
+
+// withShadowScrollbar は buildShadowPanelBox に渡す本文行用の withScrollbar。影付き枠は右影 1 桁を
+// width から捻出して枠自体が 1 桁狭い (buildPanelBoxImpl の fw = width-1) ため、本文幅もそれに
+// 合わせて再計算する。素の withScrollbar を使うとバー列が枠の clip に食われて消える。
+func withShadowScrollbar(rows []string, boxWidth, total, offset int, colored bool) []string {
+	return scrollbarColumn(rows, panelInnerWidth(max(boxWidth, minPanelWidth)-1), total, offset, colored)
 }
 
 // scrollbarColumn は行列の右端に 1 桁のスクロールバー列を足す本体。innerWidth は行が使える

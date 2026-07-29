@@ -2022,10 +2022,10 @@ func (m *browseModel) handleDiffKey(key string) (tea.Model, tea.Cmd) {
 }
 
 // visibleDiffRows は diff ポップアップの本文行数。diff は主役コンテンツなので
-// ビューポートほぼ全面 (枠 2 行 + 余白 1 行 + ヒント行ぶんを差し引く) を使う。
+// ビューポートほぼ全面 (枠 2 行 + 下端の落ち影 1 行 + 余白 1 行 + ヒント行ぶんを差し引く) を使う。
 // 端末の高さ (pageSize) 依存なのでレイアウトを知る browseModel 側に残す。
 func (m *browseModel) visibleDiffRows() int {
-	return max(m.pageSize()-4, 3)
+	return max(m.pageSize()-5, 3)
 }
 
 // diffBoxLines は diff ポップアップの描画行 (枠付き)。SHA からコミットを解決して diffOv へ渡す。
