@@ -37,8 +37,11 @@ case "$1" in
       echo 'new-pane (newp) [-bdfhvP] [-l size] [shell-command]'
     fi ;;
   display-message)
+    # client_tty と client_width/height は別々の呼び出しで来る (tmux-toast の fallback は
+    # tty を単独で読む契約。空 tty のフィールド collapse 対策、2026-07-29)
     case "$*" in
-      *client_tty*) echo "${STUB_TTY:?} 200 50" ;;
+      *client_tty*) echo "${STUB_TTY-}" ;;   # 空 = クライアント不在 (headless) の再現
+      *client_width*) echo "200 50" ;;
       *window_width*) echo "200 50" ;;
     esac ;;
   show-option)
@@ -146,6 +149,18 @@ if grep -q 'refresh-client' "$CALLS"; then
   ok "fallback: 表示終了後に refresh-client で消す"
 else
   ng "fallback: refresh-client が呼ばれない (toast が残留する)"
+fi
+
+# --- fallback 経路: クライアント不在 (headless) は無音で exit 0 -------------
+# hook の run-shell がエラー/出力を拾うと view-mode がアクティブ pane に積まれ、
+# tmux 3.4 では copy-mode スクロールが無反応になる (CI test_smooth_scroll step5 の
+# 実障害 2026-07-29)。「表示先が無い = 何もしないで成功」の契約を固定する
+reset_calls
+out=$(STUB_TTY="" STUB_FLOATING=0 run_toast "headless msg" 2>&1); rc=$?
+if [ "$rc" -eq 0 ] && [ -z "$out" ]; then
+  ok "fallback: クライアント不在は無音で exit 0 (hook を汚さない)"
+else
+  ng "fallback: クライアント不在で rc=$rc 出力='$out' (無音 exit 0 の契約違反)"
 fi
 
 exit "$fail"

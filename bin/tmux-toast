@@ -59,12 +59,20 @@ if [ -n "$last" ] && [ $((now - last)) -lt 2 ]; then
 fi
 tmux set-option -g @tmux_toast_last_epoch "$now"
 
-# 表示セル幅 (東アジア文字=2セル)。bash の ${#msg} は文字数でありセル幅ではない
-width=$(python3 -c '
+# 表示セル幅 (東アジア文字=2セル)。bash の ${#msg} は文字数でありセル幅ではない。
+# python3 不在の環境では「全文字 2 セル」の安全側上界で代用する (box が広めに出るだけで
+# 壊れない。幅は後段で window/client 幅に clamp される)。exit 127 で死なせないこと:
+# hook の run-shell はエラーをアクティブ pane の view-mode として積む (下の fallback 冒頭
+# コメント参照)
+if command -v python3 >/dev/null 2>&1; then
+  width=$(python3 -c '
 import sys, unicodedata
 s = sys.argv[1]
 print(sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s))
 ' "$msg")
+else
+  width=$((${#msg} * 2))
+fi
 
 # --- 本命: floating pane (tmux 3.7+) ---------------------------------------
 # new-pane の -X/-Y は floating panes 対応ビルドにのみ存在する
@@ -88,8 +96,17 @@ if tmux list-commands new-pane 2>/dev/null | grep -q -- '-X x-position'; then
 fi
 
 # --- fallback: クライアント tty へ直接描画 (floating panes 非対応 tmux) -----
-read -r tty cols rows < <(tmux display-message -p '#{client_tty} #{client_width} #{client_height}')
-[ -w "$tty" ] || { echo "tmux-toast: client tty not writable: $tty" >&2; exit 1; }
+# 表示先クライアントが無い (detached サーバ / headless テスト等) なら黙って exit 0 する。
+# ⚠️ ここで非 0 や stderr を返さないこと: after-split-window / pane-exited hook の
+# run-shell はエラー出力をアクティブ pane の view-mode として積み、tmux 3.4 では
+# モードスタックが copy-mode のスクロールを無反応にする実害がある (CI の
+# test_smooth_scroll step5 が split 直後の C-u 無反応で fail した実測 2026-07-29)。
+# 通知の表示先が無いのは異常ではなく「何も表示しない」が正しい縮退。
+# client_tty は単独で読む (3 値まとめ読みだと空の tty がフィールド collapse で
+# cols/rows にずれ、誤った値を tty として検査していた)
+tty=$(tmux display-message -p '#{client_tty}')
+[ -n "$tty" ] && [ -w "$tty" ] || exit 0
+read -r cols rows < <(tmux display-message -p '#{client_width} #{client_height}')
 
 box_w=$((width + 4))
 [ "$box_w" -gt "$cols" ] && box_w=$cols
