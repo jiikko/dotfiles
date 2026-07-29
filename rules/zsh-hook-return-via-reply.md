@@ -38,4 +38,4 @@ fork は「1 回 0.4ms」に見えて安いが、hook は 1 操作あたり複�
 
 - `zshlib/_tmux_window_name.zsh` / `zshlib/_git_prompt.zsh` — 実装例 (前者は REPLY 契約、後者は fork ゼロで git 状態を読む例)
 - `tests/zshrc/bench_zsh.sh` — `prompt_lag` metric が hook の恒常コストの回帰ゲート。REPLY 化の効果もここで測る
-- [`comment-no-restate-enforced.md`](comment-no-restate-enforced.md) — コメントに残すのは「実装で強制できない制約」だけ。REPLY 契約は lint で守れないためコメントに書く側
+- `~/.claude/rules/comment-no-restate-enforced.md` — コメントに残すのは「実装で強制できない制約」だけ。REPLY 契約は lint で守れないためコメントに書く側
