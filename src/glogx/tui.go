@@ -1600,10 +1600,10 @@ const jobDetailRows = 15
 
 // visibleDetailRows は詳細ポップアップが実際に使える行数 (job パネルとヒント行を
 // 差し引いた残り。低い端末で詳細ボックスがビューポートに切られ、末尾スクロールが
-// 見えなくなるのを防ぐ)。
+// 見えなくなるのを防ぐ)。-4 = 詳細の枠 2 行 + パネル・詳細それぞれの下端落ち影 1 行ずつ。
 func (m *browseModel) visibleDetailRows() int {
 	jobBoxLines := min(max(len(m.details[m.panelSHA]), 1), maxPanelJobs) + 2
-	return max(min(jobDetailRows, m.pageSize()-jobBoxLines-2), 3)
+	return max(min(jobDetailRows, m.pageSize()-jobBoxLines-4), 3)
 }
 
 // openJobDetail はフォーカス中 job の annotations / ログ tail のポップアップを開く。
@@ -2349,7 +2349,7 @@ func (m *browseModel) panelLines() []string {
 	case len(jobs) > 0:
 		title = fmt.Sprintf(" CI jobs: %s (%d 件) %s ", commit.ShortSHA, len(jobs), commit.Subject)
 	}
-	box := buildPanelBox(title, rows, width, m.colored)
+	box := buildShadowPanelBox(title, rows, width, m.colored, ansiDim)
 	if m.detailOv.visible() {
 		// 詳細ボックスは job パネルの「子」であることが分かるよう段差を付ける (ユーザー要望)
 		for _, line := range m.detailBoxLines(width - len(detailIndent)) {

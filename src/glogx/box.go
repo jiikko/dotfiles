@@ -92,13 +92,13 @@ func buildPanelBox(title string, rows []string, width int, colored bool) []strin
 }
 
 // buildShadowPanelBox は buildPanelBox の右下ドロップシャドウ付き版。呼び出し元は小面積
-// モーダル/トースト (centerBox 経由の action モーダル + toast / usage) と diff オーバーレイ、
-// 画面最外周フレーム (wrapWindowFrame → buildPanelBoxImpl を直接呼ぶ)。
+// モーダル/トースト (centerBox 経由の action モーダル + toast / usage)、大面積の diff / job
+// パネル + job 詳細、画面最外周フレーム (wrapWindowFrame → buildPanelBoxImpl を直接呼ぶ)。
 //
-// ⚠️ 影の適用方針: 大面積 popup への全面シャドウは「面積が大きく影が主張しすぎる」で一度導入 →
-// revert した (4fb36a2) が、その後影の描画がフェザー付き近黒に作り直され、diff パネルは
-// ユーザー要望 (2026-07-29) で再導入した。job パネルは影なしのまま (要望が出たら再評価)。
-// 最外周フレームは画面端の余白セルにだけ影を落としコンテンツと重ならない (issue 025)。
+// 影の適用経緯: 大面積 popup への全面シャドウは「面積が大きく影が主張しすぎる」で一度導入 →
+// revert した (4fb36a2) が、その後影の描画がフェザー付き近黒に作り直され、ユーザー要望
+// (2026-07-29) で diff / job パネルへ再導入した。最外周フレームは画面端の余白セルにだけ影を
+// 落としコンテンツと重ならない (issue 025)。
 // border は枠線 (上辺・側辺・非影下辺) の SGR 色。ドロップシャドウのブロックは中立のまま (dim)。
 // 通常は ansiDim を渡す。toast だけが種別色 (緑/赤/シアン) を渡して枠ごと色付けする。
 func buildShadowPanelBox(title string, rows []string, width int, colored bool, border string) []string {

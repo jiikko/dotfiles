@@ -1130,10 +1130,16 @@ func TestJobDetailBoxLinesScrollbar(t *testing.T) {
 	o.offset = 20
 	box := o.boxLines(width, false, "", "job", "over", rows)
 	uniformWidth(t, box)
-	body := box[1 : len(box)-1]
+	// 影付き箱: 末尾 2 行は下辺 (▖▁▗+影) と下端影なので本文から除く。本文行の行末は
+	// 右影 1 桁 (NO_COLOR は ░/▒) が付く
+	body := box[1 : len(box)-2]
 	thumbs := 0
 	for i, l := range body {
-		trimmed := strings.TrimSuffix(l, " "+borderLight.v)
+		shade := shadowGlyphMono
+		if i == 0 {
+			shade = shadowGlyphMonoEdge
+		}
+		trimmed := strings.TrimSuffix(strings.TrimSuffix(l, shade), " "+borderLight.v)
 		switch {
 		case strings.HasSuffix(trimmed, scrollbarThumbGlyph):
 			thumbs++
@@ -1146,6 +1152,9 @@ func TestJobDetailBoxLinesScrollbar(t *testing.T) {
 		t.Fatalf("thumb 行数 = %d (本文 %d 行) — 比率になっていない", thumbs, len(body))
 	}
 
+	// colored でも幅は均一 (SGR 入りの影・バー列が幅計算を狂わせない)
+	uniformWidth(t, o.boxLines(width, true, "", "job", "over", rows))
+
 	// 収まる: バー列なし (本文幅が戻る)。幅は溢れる場合と同じ (枠幅は不変)
 	o.cache["fit"] = logLines(rows - 2)
 	o.offset = 0
@@ -1153,7 +1162,7 @@ func TestJobDetailBoxLinesScrollbar(t *testing.T) {
 	if w := uniformWidth(t, fit); w != dispWidth(stripANSI(box[0])) {
 		t.Fatalf("収まる場合の枠幅 = %d, 溢れる場合 = %d", w, dispWidth(stripANSI(box[0])))
 	}
-	for i, l := range fit[1 : len(fit)-1] {
+	for i, l := range fit[1 : len(fit)-2] {
 		if strings.Contains(l, scrollbarThumbGlyph) {
 			t.Fatalf("収まるのに thumb が出ている (行 %d): %q", i, l)
 		}
