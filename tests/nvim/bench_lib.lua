@@ -75,4 +75,32 @@ measure("buf_switch_x200", 1, function()
   end
 end)
 
+-- 6) ruby ファイルでの同型計測 (2026-07-29 導入): lua と反応するプラグイン群が違う
+--    (treesitter ruby / endwise / solargraph。CI は parser/solargraph 不在なので
+--    ハンドラ側のコストのみ) ため、カーソル移動と半ページ移動を ruby でも管理対象にする。
+--    ファイルはシェル側 (bench_nvim.sh) が生成して BENCH_RUBY_FILE で渡す。
+local ruby = vim.env.BENCH_RUBY_FILE
+if ruby and ruby ~= "" then
+  local rt0 = vim.uv.hrtime()
+  vim.cmd.edit(ruby)
+  io.stderr:write(string.format("metric=ruby_bufload ms=%.1f\n", (vim.uv.hrtime() - rt0) / 1e6))
+  vim.wait(300) -- BufRead 系の遅延ロードと LSP 起動要求を落ち着かせる (lua 側と同じ)
+
+  vim.fn.cursor(1, 1)
+  measure("ruby_scroll_j_x2000", 1, function()
+    for _ = 1, 2000 do
+      vim.cmd("keepjumps normal! j")
+    end
+    vim.fn.cursor(1, 1)
+  end)
+
+  vim.fn.cursor(1, 1)
+  measure("ruby_scroll_ctrl_d_x200", 1, function()
+    for _ = 1, 200 do
+      vim.cmd([[execute "normal! \<C-d>"]])
+    end
+    vim.fn.cursor(1, 1)
+  end)
+end
+
 io.stderr:write("bench done\n")

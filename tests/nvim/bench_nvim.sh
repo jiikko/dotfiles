@@ -50,6 +50,22 @@ bench_file="$tmp_root/bench_target.lua"
 } > "$bench_file"
 cp "$bench_file" "$bench_file.alt.lua"
 
+# ruby 版のカーソル移動 / 半ページ移動の計測対象 (2026-07-29 導入)。lua と反応する
+# プラグイン群が違う (treesitter ruby / endwise / solargraph) ため別 metric で管理する。
+# 消費側は bench_lib.lua の BENCH_RUBY_FILE ガード節。
+bench_ruby_file="$tmp_root/bench_target.rb"
+{
+  print -r -- "class BenchTarget"
+  for i in {1..1000}; do
+    print -r -- "  def method_$i(a, b)"
+    print -r -- "    result = a + b * $i # コメント $i"
+    print -r -- "    result -= 100 if result > 100"
+    print -r -- "    result"
+    print -r -- "  end"
+  done
+  print -r -- "end"
+} > "$bench_ruby_file"
+
 # measure_startup は起動時間を 5 回計測して min を metric 1 本で出す (生値は注記行)。
 # shared runner のノイズは片側性 (遅くなる方にしか出ない) なので min が真の速度の最良推定。
 # 生サンプルを個別に metric で出すと checker が 1 本ずつ予算照合し、単発スパイク
@@ -74,7 +90,7 @@ run_bench() {
   print -r -- "--- $label ---"
   measure_startup startup "$@" || return 1
   # 操作レイテンシ (bench_lib.lua)
-  BENCH_FILE="$bench_file" "$@" --headless "+lua dofile([[$SCRIPT_DIR/bench_lib.lua]])" "+qa!" 2>&1 \
+  BENCH_FILE="$bench_file" BENCH_RUBY_FILE="$bench_ruby_file" "$@" --headless "+lua dofile([[$SCRIPT_DIR/bench_lib.lua]])" "+qa!" 2>&1 \
     | grep -E "^metric=" || {
       print -u2 "bench_lib failed under: $label"
       return 1

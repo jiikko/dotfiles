@@ -37,3 +37,10 @@ scroll_ctrl_d_x200 100
 insert_120chars_x10 250
 win_switch_x200 100
 buf_switch_x200 300
+# ruby 系 (2026-07-29 導入): CI は treesitter parser / solargraph 不在
+# (DOTFILES_TS_SKIP_ENSURE=1 + mason 未導入) のため lua 系と同等コストになる想定。
+# 予算は lua 系と同値の暫定上限で導入した。CI 実測 (ログの metric= 行 / Step Summary)
+# が数 run 溜まったら実測ベースで締め直すこと
+ruby_bufload 600
+ruby_scroll_j_x2000 400
+ruby_scroll_ctrl_d_x200 100
