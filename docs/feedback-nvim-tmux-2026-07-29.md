@@ -71,8 +71,9 @@ fzf window picker の column 不在劣化 (1a6a80d) は、コメントが「失�
 
 ## 残っている改善候補 (未対応。着手時の参考)
 
-- **fzf_pane_move / fzf_jump の機能テスト不在**: 共有ロジック (window_picker) は厚く
-  テスト済みだが、`join-pane` / `switch-client` を呼ぶ末端は静的 grep 検査のみ。
+- ~~fzf_pane_move / fzf_jump の機能テスト不在~~: 解消済み (同日)。末端の
+  `join-pane` の向き / `switch-client` / キャンセル時の無操作を
+  tests/tmux/test_fzf_jump_pane_move.sh で固定した。
 - **terraformls の on_attach 上書き**: nvim 0.12 へ上げたら削除する (lsp.lua の該当
   コメントが削除条件を持つ。現行 0.11.5 では必要)。
 - **lualine の git root 解決** (`vim.fs.root`) は statusline 更新ごとに上方向 stat 走査
