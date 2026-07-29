@@ -154,7 +154,12 @@ tt_debounced_save_main() {
   # 直列化は wrapper (@resurrect-save-script-path = tmux_resurrect_save.sh) の
   # bounded-wait lock が担う。先行保存と重なってもここで skip せず wrapper 内で
   # 完了を待つ（不変条件 3 のコメント参照。skip すると自イベントを取りこぼす）。
-  tt_run_resurrect_save
+  # 失敗 (lock timeout 等) を本スクリプトの exit code に伝播させない: hook の
+  # run-shell -b はエラーをアクティブ pane の view-mode として積む (tmux 3.4 では
+  # copy-mode スクロールまで壊す。bin/tmux-toast の fallback 冒頭コメントと同じ実害)。
+  # rc の消費者は居らず (fire-and-forget)、失敗時に timestamp を進めない規律は
+  # tt_run_resurrect_save 内で完結している。
+  tt_run_resurrect_save || true
 }
 
 # source 時（テスト）は main を実行しない。直接実行時のみ走らせる。

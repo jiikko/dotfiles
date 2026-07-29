@@ -33,8 +33,10 @@ toast 事故 (b166fdf) の一般化。`set-hook` から呼ぶスクリプトが�
 スタックが copy-mode スクロールを無反応にする実害まで連鎖した。
 **hook から呼ばれるスクリプトは「表示先が無い・依存が無い環境では無音の exit 0」を
 契約にする** (通知系は特に。エラーを返すのが誠実に見えて、hook 文脈では pane を汚す
-方が害が大きい)。tmux-toast にはこの契約をテストで固定済み。新しい hook スクリプトを
-足すときは同じ契約を要求すること。
+方が害が大きい)。tmux-toast にはこの契約をテストで固定済み。既存の hook 呼び出し
+スクリプトは同日監査済み (mark-seen / ignite / log_session_closed は充足、debounce
+保存の rc 伝播だけ穴があり修正 + テスト固定)。規約の正本は scripts/CLAUDE.md
+「hook (set-hook) から呼ばれるスクリプトの無音契約」へ昇格した。
 
 ### 2. 同名 hook の 2 本目は index を振る (index なしは [0] 上書き)
 

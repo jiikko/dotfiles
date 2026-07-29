@@ -151,6 +151,19 @@ else
   ng "fallback: refresh-client が呼ばれない (toast が残留する)"
 fi
 
+# --- python3 不在: 幅を上界概算して表示は続行 (exit 127 で hook を汚さない) --
+# 実ツール (grep/date) だけ symlink した PATH で python3 を不在にする
+# (docs/feedback-nvim-tmux-2026-07-29.md パターン5: fallback は再現テストで固定する)
+reset_calls
+NOPY="$TMP_DIR/nopy"; mkdir -p "$NOPY"
+for _t in grep date; do ln -sf "$(command -v "$_t")" "$NOPY/$_t"; done
+out=$(PATH="$TMP_DIR/bin:$NOPY" TMUX=stub STUB_FLOATING=1 "$SCRIPT" "no python msg" 2>&1); rc=$?
+if [ "$rc" -eq 0 ] && [ -z "$out" ] && grep -q '^tmux new-pane' "$CALLS"; then
+  ok "python3 不在でも無音 exit 0 + 表示続行 (幅は全角=2 セルの上界概算)"
+else
+  ng "python3 不在で rc=$rc 出力='$out' new-pane=$(grep -c '^tmux new-pane' "$CALLS" || true)"
+fi
+
 # --- fallback 経路: クライアント不在 (headless) は無音で exit 0 -------------
 # hook の run-shell がエラー/出力を拾うと view-mode がアクティブ pane に積まれ、
 # tmux 3.4 では copy-mode スクロールが無反応になる (CI test_smooth_scroll step5 の

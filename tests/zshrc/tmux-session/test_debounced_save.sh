@@ -173,6 +173,13 @@ OUT="$(
     printf "CASE:main_second_server runs=%s token=%s\n" \
       "$(wc -l < "'"$TMP_HOME"'/save_runs" | tr -d " ")" "$(cat "$TT_DEBOUNCE_TOKEN_FILE")"
     _T_SOCKET=""
+
+    # (e) 保存失敗でも main は exit 0 相当。非 0 を hook の run-shell -b へ返すと、
+    #     エラーがアクティブ pane の view-mode に積まれる (bin/tmux-toast と同じ契約)
+    : > "'"$TMP_HOME"'/save_runs"
+    _T_INPROGRESS=""; _T_SESSIONS="proj"; _T_SAVE_SCRIPT="$fail_save"
+    if tt_debounced_save_main; then rc=0; else rc=1; fi
+    printf "CASE:main_fail_silent rc=%s\n" "$rc"
   ' 2>/dev/null
 )"
 
@@ -209,5 +216,6 @@ assert_eq_line main_latest     "runs=1" "自分が最後のイベント+保存�
 assert_eq_line main_superseded "runs=0" "待機中に後続イベントが来たら保存しない (debounce)"
 assert_eq_line main_guarded    "runs=0" "自分が最後でも復元中なら保存しない"
 assert_eq_line main_second_server "runs=0 token=sentinel" "第 2 サーバは token に参加しない (default サーバの token を横取りしてイベントを取りこぼさない)"
+assert_eq_line main_fail_silent   "rc=0"  "保存失敗でも hook へは exit 0 (run-shell エラーの view-mode 化防止)"
 
 printf '\nAll debounced-save tests passed successfully!\n'
