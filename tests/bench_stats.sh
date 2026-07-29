@@ -2,8 +2,9 @@
 # 複数回実行した bench の "metric=<name> ms=<value>" 行を統計集約し、
 #   (a) stdout: per-metric min の "metric=<name> ms=<min>" 行 (check_bench_budgets.sh の入力 +
 #       ジョブログでの機械取得用。rules/bench-watch-after-push.md が使う)
-#   (b) $GITHUB_STEP_SUMMARY: 前回 run との比較つき markdown テーブル
-#   (c) $4 (cur_tsv): 今回の全サンプルの TSV (次回 run が前回値として読む。Actions cache で持ち越す)
+#   (b) $GITHUB_STEP_SUMMARY: 直近 run 群との比較つき markdown テーブル
+#   (c) $4 (cur_tsv): 今回 + 直近 run のサンプル台帳 (次回 run が baseline として読む。
+#       Actions cache で持ち越す。詳細は下の「rolling baseline」)
 # を出す。旧 bench_min_agg.sh (min 集約のみ) の後継。
 #
 # 使い方: <N回分の bench 出力> | tests/bench_stats.sh <name> <budget_file> <prev_tsv> <cur_tsv>
@@ -12,10 +13,19 @@
 # 粗い予算すら突き破る (実例 2026-07-17 run 29536560206: 全計測が 2〜5 倍に膨れた)。ノイズは
 # 片側性 (遅くなる方にしか出ない) なので run 間の min が真の速度の最良推定。
 #
-# 前回比較は median + Mann-Whitney U 検定 (正規近似、両側 p<0.05): min は外れ値に強いが
-# 分布の位置変化に鈍く、「全サンプルが少し悪化した」を捕まえられない。U 検定はノンパラで
-# 混雑ノイズの歪んだ分布でも有意差だけを拾う。有意 かつ |Δmedian| >= 5% のときだけ
-# 悪化/改善と表示する (統計的有意でも実務上無意味な微差は誤差圏扱い)。
+# 比較は median + Mann-Whitney U 検定 (正規近似、両側 p<0.05)。有意 かつ |Δmedian| >= 5% の
+# ときだけ 悪化/改善 と表示する (統計的有意でも実務上無意味な微差は誤差圏扱い)。
+#
+# rolling baseline (2026-07-29 導入): baseline は「直前 1 run」でなく「直近 BASELINE_RUNS run の
+# サンプルプール」。台帳 TSV は run ごとのブロック (#meta 行 + metric 行、新しい順) を持ち、
+# 書き出し時に古いブロックを落として自動ローテーションする。単一 run 比較は runner 世代の
+# 当たり外れがそのまま結果に出るため、プールで世代ばらつきを均す (n も 20→最大 100 に増え
+# U 検定の検出力が上がる)。
+#
+# 較正 (⚖): prev と cur は別 runner (別 CPU 世代・別混雑度)。予算ゲートの rel と同じ思想で、
+# rel 指定の metric は「各 prev ブロックの較正器 p50 と cur の較正器 p50 の比」でブロック単位に
+# cur 環境へ換算してからプールする (run ごとに環境が違うため一律スケールは誤り。無変更 push が
+# 軒並み悪化表示になった実例 run 30453173113 への対処)。絶対予算の metric (RSS 等) は素のまま。
 #
 # python3 不在時は (b)(c) を落として (a) だけ出す (予算ゲートは常に生きる縮退)。
 set -uo pipefail
@@ -53,6 +63,8 @@ import sys
 
 name, budget_file, prev_tsv, cur_tsv, data_file = sys.argv[1:6]
 
+BASELINE_RUNS = 5  # プールする直近 run 数 (今回のブロックを含む台帳の保持数)
+
 # --- 今回のサンプル収集 (出現順を保持) --------------------------------------
 order: list[str] = []
 cur: dict[str, list[float]] = {}
@@ -77,27 +89,38 @@ for line in open(data_file):
 for m in order:
     print(f"metric={m} ms={min(cur[m]):.3f}")
 
-# --- 前回サンプル (TSV: name \t v1,v2,...) ------------------------------------
-prev: dict[str, list[float]] = {}
-prev_meta: dict[str, str] = {}
+# --- baseline 台帳の読み込み ----------------------------------------------------
+# 形式: run ごとのブロック (新しい順)。ブロック = "#meta\tsha=..\trun=..\trepo=.." 行 +
+# "name\tv1,v2,..." 行の並び。旧形式 (メタなし単一ブロック / メタ付き単一ブロック) も
+# 「1 ブロックの台帳」としてそのまま読める。
+class Block:
+    def __init__(self) -> None:
+        self.meta: dict[str, str] = {}
+        self.metrics: dict[str, list[float]] = {}
+
+blocks: list[Block] = []
 try:
     with open(prev_tsv) as f:
+        blk: Block | None = None
         for row in f:
             parts = row.rstrip("\n").split("\t")
             if parts and parts[0] == "#meta":
-                prev_meta = dict(kv.split("=", 1) for kv in parts[1:] if "=" in kv)
+                blk = Block()
+                blk.meta = dict(kv.split("=", 1) for kv in parts[1:] if "=" in kv)
+                blocks.append(blk)
                 continue
             if len(parts) == 2 and parts[1]:
+                if blk is None:  # 旧々形式 (メタ行なし): 先頭に匿名ブロックを立てる
+                    blk = Block()
+                    blocks.append(blk)
                 try:
-                    prev[parts[0]] = [float(x) for x in parts[1].split(",")]
+                    blk.metrics[parts[0]] = [float(x) for x in parts[1].split(",")]
                 except ValueError:
                     pass
 except OSError:
     pass
 
-# --- (c) 今回サンプルの持ち越し -----------------------------------------------
-# 先頭にメタ行 (#meta): 次回 run が「どのコミットの計測と比較しているか」を Summary に
-# 明記するための出典 (ユーザー要望 2026-07-29)。GITHUB_* は Actions が注入する
+# --- (c) 台帳の更新 (今回ブロックを先頭に、直近 BASELINE_RUNS 件へローテーション) ----
 with open(cur_tsv, "w") as f:
     f.write("#meta\tsha={}\trun={}\trepo={}\n".format(
         os.environ.get("GITHUB_SHA", "?")[:12],
@@ -105,8 +128,12 @@ with open(cur_tsv, "w") as f:
         os.environ.get("GITHUB_REPOSITORY", "?")))
     for m in order:
         f.write(f"{m}\t{','.join(f'{v:.3f}' for v in cur[m])}\n")
+    for b in blocks[: BASELINE_RUNS - 1]:
+        f.write("#meta\t" + "\t".join(f"{k}={v}" for k, v in b.meta.items()) + "\n")
+        for m, vals in b.metrics.items():
+            f.write(f"{m}\t{','.join(f'{v:.3f}' for v in vals)}\n")
 
-# --- 予算表示用 ---------------------------------------------------------------
+# --- 予算 (表示 + rel/較正器の宣言) ---------------------------------------------
 budgets: dict[str, str] = {}
 rel_metrics: set[str] = set()
 calib_name = ""
@@ -125,17 +152,16 @@ try:
 except OSError:
     pass
 
-# --- 較正スケール ---------------------------------------------------------------
-# prev と cur は別 runner (別 CPU 世代・別混雑度) で測られるため、素の比較は環境の
-# 共通モードシフトを「悪化」と誤判定する (実例 2026-07-29 run 30453173113: 無変更 push で
-# rel 系が軒並み悪化表示)。予算ゲートの rel と同じ思想で、rel 指定の metric は較正器 p50 の
-# 比に正規化してから Δ/U 判定する。絶対予算の metric (RSS 等) は素のまま比較する。
-calib_scale = 0.0
-if calib_name and calib_name in cur and prev.get(calib_name):
-    c_cal = statistics.median(cur[calib_name])
-    p_cal = statistics.median(prev[calib_name])
-    if c_cal > 0 and p_cal > 0:
-        calib_scale = c_cal / p_cal
+# --- ブロック単位の較正スケール (block → cur 環境への換算倍率) -------------------
+cur_calib_p50 = statistics.median(cur[calib_name]) if calib_name and calib_name in cur else 0.0
+block_scales: list[float] = []
+for b in blocks:
+    scale = 0.0
+    if cur_calib_p50 > 0 and b.metrics.get(calib_name):
+        b_cal = statistics.median(b.metrics[calib_name])
+        if b_cal > 0:
+            scale = cur_calib_p50 / b_cal
+    block_scales.append(scale)
 
 # --- Mann-Whitney U (正規近似・同順位は平均ランク) ------------------------------
 def mwu_z(a: list[float], b: list[float]) -> float:
@@ -158,49 +184,65 @@ def mwu_z(a: list[float], b: list[float]) -> float:
     sd = math.sqrt(na * nb * (na + nb + 1) / 12)
     return (u - mean) / sd if sd > 0 else 0.0
 
+# --- metric ごとの baseline プール (rel はブロック単位で cur 環境へ換算) ----------
+def pooled_baseline(m: str) -> tuple[list[float], bool]:
+    pool: list[float] = []
+    normalized = False
+    for b, scale in zip(blocks, block_scales):
+        vals = b.metrics.get(m)
+        if not vals:
+            continue
+        if m in rel_metrics and scale > 0:
+            pool.extend(v * scale for v in vals)
+            normalized = True
+        else:
+            pool.extend(vals)
+    return pool, normalized
+
 # --- (b) Step Summary の比較テーブル -------------------------------------------
 summary = os.environ.get("GITHUB_STEP_SUMMARY")
 if summary:
     rows = [f"### {name} bench (n={max(len(v) for v in cur.values()) if cur else 0} runs, "
-            "gate=min / 比較=median + Mann-Whitney U p<0.05)"]
-    if prev and prev_meta.get("sha"):
-        run_id, repo = prev_meta.get("run", ""), prev_meta.get("repo", "")
-        link = (f" ([run {run_id}](https://github.com/{repo}/actions/runs/{run_id}))"
-                if run_id and repo and "?" not in (run_id + repo) else "")
-        rows.append(f"prev = commit `{prev_meta['sha']}`{link} の計測")
-    elif prev:
-        rows.append("prev = 出典メタなし (旧形式 cache。次 run から commit が明記される)")
+            "gate=min / 比較=直近 run プールの median + Mann-Whitney U p<0.05)"]
+    if blocks:
+        srcs = []
+        for b in blocks:
+            sha = b.meta.get("sha", "?")
+            run_id, repo = b.meta.get("run", ""), b.meta.get("repo", "")
+            if run_id and repo and "?" not in (run_id + repo):
+                srcs.append(f"[`{sha}`](https://github.com/{repo}/actions/runs/{run_id})")
+            else:
+                srcs.append(f"`{sha}`")
+        rows.append(f"baseline = 直近 {len(blocks)} run のプール (新しい順): " + ", ".join(srcs))
     if calib_name:
-        note = (f"⚖ = rel metric は較正器 {calib_name} の p50 比 (×{calib_scale:.2f}) で"
-                " runner 環境差を正規化して判定" if calib_scale > 0
-                else f"較正器 {calib_name} の前回値が無いため正規化なし (環境差がそのまま出る)")
-        rows.append(note)
+        scales = [s for s in block_scales if s > 0]
+        if scales:
+            rng = (f"×{scales[0]:.2f}" if len(scales) == 1
+                   else f"×{min(scales):.2f}〜×{max(scales):.2f}")
+            rows.append(f"⚖ = rel metric は較正器 {calib_name} の p50 比 ({rng}) で"
+                        " 各 baseline run を cur 環境へ換算して判定")
+        elif blocks:
+            rows.append(f"較正器 {calib_name} の baseline 値が無いため正規化なし (環境差がそのまま出る)")
     rows += ["",
-            "| metric | budget (ms) | prev p50 | cur p50 | Δ | 判定 | cur min |",
+            "| metric | budget (ms) | base p50 | cur p50 | Δ | 判定 | cur min |",
             "|---|---:|---:|---:|---:|:---|---:|"]
     for m in order:
         c = cur[m]
         c_p50, c_min = statistics.median(c), min(c)
-        p = prev.get(m)
-        if not p:
+        pool, normalized = pooled_baseline(m)
+        if not pool:
             rows.append(f"| {m} | {budgets.get(m, '-')} | - | {c_p50:.1f} | - | 🆕 初計測 | {c_min:.1f} |")
             continue
-        p_p50 = statistics.median(p)
-        normalized = m in rel_metrics and calib_scale > 0
-        if normalized:
-            p_cmp = [v * calib_scale for v in p]  # prev を cur 環境のスケールへ換算
-        else:
-            p_cmp = p
-        pc_p50 = statistics.median(p_cmp)
-        delta = (c_p50 - pc_p50) / pc_p50 * 100 if pc_p50 else 0.0
-        z = mwu_z(p_cmp, c)
+        b_p50 = statistics.median(pool)
+        delta = (c_p50 - b_p50) / b_p50 * 100 if b_p50 else 0.0
+        z = mwu_z(pool, c)
         if abs(z) >= 1.96 and abs(delta) >= 5:
             verdict = f"🔺 悪化 (|z|={abs(z):.1f})" if delta > 0 else f"✅ 改善 (|z|={abs(z):.1f})"
         else:
             verdict = "➖ 誤差圏"
         if normalized:
             verdict += " ⚖"
-        rows.append(f"| {m} | {budgets.get(m, '-')} | {p_p50:.1f} | {c_p50:.1f} | "
+        rows.append(f"| {m} | {budgets.get(m, '-')} | {b_p50:.1f} | {c_p50:.1f} | "
                     f"{delta:+.1f}% | {verdict} | {c_min:.1f} |")
     with open(summary, "a") as f:
         f.write("\n".join(rows) + "\n\n")

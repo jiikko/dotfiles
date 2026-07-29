@@ -10,8 +10,8 @@
     `vendor/tmux-plugins/` / 各 bench スクリプトと budgets
 - 測定結果の正本は 2 箇所 (どちらも tests/run_bench.sh → tests/bench_stats.sh が出力):
   - **人間向け**: 各 Bench run の Step Summary (markdown。run ページの Summary タブ)。
-    **前回 run との比較テーブル (median + Mann-Whitney U 検定の有意判定) が自動で載る**
-    (前回値は Actions cache で持ち越し。green run のみ save = 赤 run は基準を汚さない)
+    **直近 5 run のプールとの比較テーブル (median + Mann-Whitney U 検定 + 較正器正規化) が自動で載る**
+    (baseline 台帳は Actions cache で持ち越し。green run のみ save = 赤 run は基準を汚さない)
   - **機械向け**: ジョブログの `metric=<name> ms=<value>` 行 (per-metric min)。
     `gh run view <run-id> --log | grep 'metric='` で取得する (Step Summary は API 非公開のため、
     ログ出力が CLI で数値比較できる唯一の経路)
