@@ -31,6 +31,14 @@ concurrency:
 jobs:
   # nvim と tmux は独立 job: 並列実行 + 片方だけの再実行が可能で、
   # tmux 側は重い nvim setup (plugin restore) を持たずに済む。
+  #
+  # さらなる並列化 (matrix shard) は検討済み見送り (2026-07-29):
+  # - job 内の BENCH_RUNS=20 は意図的に直列。同一 runner 上で並列に走らせると計測同士が
+  #   CPU を奪い合い、レイテンシ計測そのものを汚染する (ここを並列化してはいけない)
+  # - shard 化 (例: 4 shard × 5 run + artifacts 集約 job) なら壁時計は縮むが、shard ごとの
+  #   setup 重複で runner-minutes は増え、artifact/集約の配管が要る。現状の最長 job
+  #   (tmux ~3.5 分) は非ブロッキング workflow の watch 遅延にしかならず、割に合わない
+  # - 再評価の閾値: 最長 job が 10 分を超えたら shard 化を実装する
   bench-nvim:
     runs-on: ubuntu-slim
     timeout-minutes: 30  # BENCH_RUNS=20 (run_bench.sh 既定): 1 run ~40-60s 実測 + setup
