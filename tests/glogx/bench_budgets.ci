@@ -8,3 +8,9 @@
 view_steady 3
 view_panel 3
 render_large_patch 10
+# 体感系 (2026-07-29 追加)。導入時ローカル実測 (M3 Max): cursor_move_view 0.265 /
+# view_diff 0.224 / model_init_200 0.407。既存と同じ ~20 倍の粗い上限で導入し、
+# CI 実測が溜まったら ~4 倍を目安に締める
+cursor_move_view 5
+view_diff 5
+model_init_200 10
