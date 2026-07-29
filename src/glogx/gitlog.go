@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 )
 
 // コミット境界の識別は人間向け出力の正規表現ではなく制御文字レコードで行う (issue の設計)。
@@ -56,8 +58,27 @@ func colorArg(colored bool) string {
 }
 
 // runGit は git を実行して stdout を返す。失敗時は *GitExitError。
+// 起動時の同期経路用 (ハングしてもユーザーの Ctrl-C がプロセスごと落とせる)。
+// TUI 対話中に非同期発行される経路は runGitTimeout を使うこと (下記)。
 func runGit(args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	return runGitCmd(exec.Command("git", args...))
+}
+
+// gitOpTimeout は対話中に非同期発行されるローカル git 実行の上限。ローカル操作としては
+// 十分寛大な値で、ネットワークマウント・.git ロック競合・hook の stdin 待ちでハングした
+// git が goroutine ごと残り続けるのを防ぐ (issue 029 P2。ネットワーク経路が全て
+// context.WithTimeout で守られているのと同じ規律)。
+const gitOpTimeout = 30 * time.Second
+
+// runGitTimeout は runGit の timeout 付き版。TUI の tea.Cmd (goroutine) から呼ぶ git は
+// こちらを使う: ハングしても q で抜けた後に子プロセスが残らない。
+func runGitTimeout(args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitOpTimeout)
+	defer cancel()
+	return runGitCmd(exec.CommandContext(ctx, "git", args...))
+}
+
+func runGitCmd(cmd *exec.Cmd) (string, error) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -318,7 +339,8 @@ const maxDiffLines = 5000
 // 色は git に任せず --color=never で受けて HighlightDiff が付ける (diff 構造色 +
 // chroma のシンタックスハイライト。切り捨て方は highlight.go 冒頭コメント参照)。
 func LoadCommitDiff(sha string, colored bool) ([]string, error) {
-	out, err := runGit("show", "--stat", "--patch", "--color=never", sha)
+	// TUI 対話中の非同期経路 (d キー) なので timeout 付き (runGitTimeout の doc 参照)
+	out, err := runGitTimeout("show", "--stat", "--patch", "--color=never", sha)
 	if err != nil {
 		return nil, err
 	}

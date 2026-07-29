@@ -20,6 +20,7 @@ type jobDetailOverlay struct {
 	open   bool                // 詳細ポップアップ表示中か
 	offset int                 // スクロール位置 (行)
 	cache  map[string][]string // key (detailKey) → ログ行 (メモリ内キャッシュ)
+	order  []string            // cache への挿入順 (overlayCacheLimit 超過分の古い順 evict 用)
 	busy   map[string]bool     // 取得中の key
 }
 
@@ -44,6 +45,7 @@ func (o *jobDetailOverlay) close() {
 // reset は pull 後の全面リロードで cache ごと破棄する (旧 SHA のログ残骸を持ち越さない)。
 func (o *jobDetailOverlay) reset() {
 	o.cache = map[string][]string{}
+	o.order = nil
 	o.busy = map[string]bool{}
 	o.close()
 }
@@ -72,7 +74,11 @@ func (o *jobDetailOverlay) startOpen(key string, rows int) (needFetch bool) {
 func (o *jobDetailOverlay) receive(msg jobDetailMsg, currentKey string, rows int) {
 	delete(o.busy, msg.key)
 	if msg.lines != nil {
+		if _, ok := o.cache[msg.key]; !ok {
+			o.order = append(o.order, msg.key)
+		}
 		o.cache[msg.key] = msg.lines
+		o.order = evictOverlayCache(o.cache, o.order, currentKey)
 		if o.open && currentKey == msg.key {
 			o.offset = max(len(msg.lines)-rows, 0)
 		}

@@ -11,6 +11,7 @@ type diffOverlay struct {
 	sha    string              // 表示中の SHA ("" = 非表示)
 	offset int                 // スクロール位置 (行)
 	cache  map[string][]string // sha → 整形済み diff 行 (メモリ内キャッシュ)
+	order  []string            // cache への挿入順 (overlayCacheLimit 超過分の古い順 evict 用)
 	busy   map[string]bool     // 取得中の sha
 }
 
@@ -34,6 +35,7 @@ func (o *diffOverlay) close() {
 // reset は pull 後の全面リロードでキャッシュごと破棄する (旧 SHA の残骸を持ち越さない)。
 func (o *diffOverlay) reset() {
 	o.cache = map[string][]string{}
+	o.order = nil
 	o.busy = map[string]bool{}
 	o.close()
 }
@@ -68,7 +70,11 @@ func (o *diffOverlay) receive(msg diffMsg) error {
 		}
 		return msg.err
 	}
+	if _, ok := o.cache[msg.sha]; !ok {
+		o.order = append(o.order, msg.sha)
+	}
 	o.cache[msg.sha] = msg.lines
+	o.order = evictOverlayCache(o.cache, o.order, o.sha)
 	return nil
 }
 

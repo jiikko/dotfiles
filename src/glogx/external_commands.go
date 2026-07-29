@@ -175,9 +175,13 @@ func parseTmuxPrefix(out string) string {
 var openInBrowser = func(url string) error {
 	switch runtime.GOOS {
 	case "darwin":
-		return exec.Command("open", url).Run()
+		return exec.Command("open", url).Run() // open は即 detach するので timeout 不要
 	default:
-		return exec.Command("xdg-open", url).Run()
+		// xdg-open は環境によってブラウザプロセスへ直接 exec して終了まで戻らないことが
+		// ある (既知挙動)。tea.Cmd の goroutine で同期 Run するため時間で区切る (issue 029 P3)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return exec.CommandContext(ctx, "xdg-open", url).Run()
 	}
 }
 

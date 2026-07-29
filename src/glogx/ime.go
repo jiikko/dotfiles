@@ -8,6 +8,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -136,8 +137,11 @@ func (s *imeSwitch) finish() (restore func(), warn string) {
 	return func() {
 		// 終了時の復元。ここでの失敗・想定外は封じて握りつぶす (TUI は既に閉じており toast も
 		// 出せないため。復元漏れは次回起動時に手動で戻せる範囲の軽微な影響)。
+		// timeout: macism がハングすると exit 全体が道連れになるため時間で区切る (issue 029 P3)
 		defer func() { _ = recover() }()
-		_ = exec.Command(cur.cli, cur.prev).Run()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = exec.CommandContext(ctx, cur.cli, cur.prev).Run()
 	}, ""
 }
 
