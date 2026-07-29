@@ -9,6 +9,9 @@ local function set_options()
   local opt = vim.opt
 
   opt.swapfile = false
+  -- swapfile=false で backup も無い構成なので、undofile が再起動を跨ぐ唯一の復元手段
+  -- (無効だと nvim を閉じた時点で undo 履歴が消える)。保存先は nvim 既定の state dir。
+  opt.undofile = true
   opt.shortmess:append("I")
 
   opt.wildignore:append({ ".git", ".svn" })

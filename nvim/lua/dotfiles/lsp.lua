@@ -24,7 +24,7 @@ M.servers = {
   -- solargraph は mason が入れたバイナリを直接使う (useBundler=false)。project の Gemfile 側
   -- solargraph を bundle exec で使いたい場合のみ true にする (Gemfile に無い project では起動失敗)。
   -- formatting=true は coc-settings の solargraph.formatting: true を踏襲 (これが無いと Ruby の
-  -- <leader>f/:Format が lsp_format fallback 先の solargraph 既定 off で no-op になる)。
+  -- <leader>F/:Format が lsp_format fallback 先の solargraph 既定 off で no-op になる)。
   solargraph = {
     settings = { solargraph = { useBundler = false, diagnostics = true, formatting = true } },
   },

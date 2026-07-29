@@ -274,7 +274,7 @@ require("lazy").setup({
   --   mason        : language server / formatter / linter のバイナリ管理
   --   nvim-lspconfig: 各サーバの既定設定 (nvim 0.11 の vim.lsp.config に載る)
   --   blink.cmp    : 補完 (プリビルドバイナリ。cargo 不要 → version="*" 固定)
-  --   conform.nvim : 整形 (:Format / <leader>f)   nvim-lint : sh の shellcheck
+  --   conform.nvim : 整形 (:Format / <leader>F)   nvim-lint : sh の shellcheck
   -- キー割り当て・診断・on_attach の本体は nvim/lua/dotfiles/lsp.lua。
   --
   -- mason-lspconfig は廃止 (installed 検出のオーバーヘッドの割に vim.lsp.enable() 呼び出し以上の
@@ -354,13 +354,15 @@ require("lazy").setup({
   { "stevearc/conform.nvim",
     -- BufWritePre で load する: format_on_save は conform.setup 内で BufWritePre autocmd を
     -- 張るため、conform が「最初の保存より前」に load されていないと初回保存で整形されない。
-    -- cmd/keys だけの lazy だと :Format / <leader>f を一度も押さないセッションで go/terraform の
+    -- cmd/keys だけの lazy だと :Format / <leader>F を一度も押さないセッションで go/terraform の
     -- 保存時整形が無言で発火しなかった (実測で判明)。lazy は load 後に発火元イベントを再送する
     -- ので、その回の保存から効く。
     event = { "BufWritePre" },
     cmd = "Format",
     keys = {
-      { "<leader>f", function() require("conform").format({ async = true, lsp_format = "fallback" }) end, desc = "Format buffer" },
+      -- <leader>F (大文字): <leader>f は telescope の prefix (ff/fg/..) で、単独押しに Format を
+      -- 置くと which-key popup + timeoutlen 待ちでしか発火しなかった (2026-07-29 に f から移動)
+      { "<leader>F", function() require("conform").format({ async = true, lsp_format = "fallback" }) end, desc = "Format buffer" },
     },
     config = function()
       local conform = require("conform")
@@ -383,7 +385,7 @@ require("lazy").setup({
           hcl = { "terraform_fmt" },
           go = { "goimports" }, -- vim-go 置換: 旧 go_fmt_autosave+go_imports_autosave 相当 (gofmt整形+import増減)
         },
-        -- terraform 系と go だけ保存時に整形する。他の ft は従来どおり <leader>f / :Format の
+        -- terraform 系と go だけ保存時に整形する。他の ft は従来どおり <leader>F / :Format の
         -- 手動整形のまま (nil を返すと保存時整形なし)。
         format_on_save = function(bufnr)
           local ft = vim.bo[bufnr].filetype
