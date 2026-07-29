@@ -905,24 +905,6 @@ require("dotfiles.plugin_load_tracker").setup()
 -- 押しっぱなし=素通しで、リピート時のカーソル乱れを構造的に回避。モジュール冒頭コメント参照)
 require("dotfiles.smooth_scroll").setup()
 
--- 折り畳みの設定
--- foldmethod は既定 manual のまま、計算は dotfiles.folds (expr で計算 → manual へ凍結、
--- FastFold 方式) が担う。expr を常時セットするとバッファ再表示のたびに全行再評価が走る
--- (6000 行で切替 ~3.4ms) ため、ここでは foldmethod/foldexpr を set しない。
-vim.opt.foldlevel = 100
+-- 折り畳み (計算 = FastFold 方式の expr→manual 凍結、表示 = foldtext/開閉 keymap とも
+-- dotfiles/folds.lua に集約。foldmethod をここで set しない理由も同ファイル冒頭参照)
 require("dotfiles.folds").setup()
-function Foldtext()
-  local line = vim.fn.getline(vim.v.foldstart)
-  local count = vim.v.foldend - vim.v.foldstart + 1
-  return string.format("%s (%d lines folded)", line, count)
-end
-vim.opt.foldtext = "v:lua.Foldtext()"
-vim.opt.fillchars = { fold = " " } -- 折りたたんだ際のあまりの部分をスペースにする
--- ⚠️ <Tab> と <C-i> は端末では同一キーコード (Apple Terminal + tmux は拡張キー報告で
--- 区別しない) ため、このマップで <C-i> (jumplist 前進) は fold open に化けて失われる。
--- fold 開閉を <Tab> に置く利便を優先した意図的なトレードオフ。<C-i> が必要になったら
--- fold を za/zo 系や <leader> 配下へ移して再評価する。
-vim.keymap.set("n", "<Tab>", "zo")
-vim.keymap.set("n", "<S-Tab>", "zc")
-vim.keymap.set("n", "<Leader><Tab>", "zR")
-vim.keymap.set("n", "<Leader><S-Tab>", "zM")

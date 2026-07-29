@@ -11,6 +11,9 @@
 --   - BufWinEnter: バッファ初表示、または前回計算後に編集があった場合
 --   - InsertLeave / TextChanged: debounce (400ms) して再計算
 -- 再計算の判定は changedtick 比較で行い、無編集の再表示では走らない。
+--
+-- 表示設定 (foldtext / foldlevel / 開閉 keymap) も setup() が担う (fold 関連の touch 先を
+-- このファイル 1 枚にする。2026-07-29 に _nviminit.lua 末尾から移動)。
 local M = {}
 
 local FOLDEXPR = "v:lua.vim.treesitter.foldexpr()"
@@ -86,7 +89,28 @@ local function schedule_refresh(buf)
   timers[buf] = timer
 end
 
+-- 折り畳み行の表示 (先頭行 + 畳んだ行数)。foldtext オプションから v:lua 経由で呼ばれる。
+function M.foldtext()
+  local line = vim.fn.getline(vim.v.foldstart)
+  local count = vim.v.foldend - vim.v.foldstart + 1
+  return string.format("%s (%d lines folded)", line, count)
+end
+
 function M.setup()
+  -- 表示設定。foldmethod/foldexpr はここでも set しない (ファイル冒頭コメントの
+  -- 「expr で計算 → manual へ凍結」方式の前提)。
+  vim.opt.foldlevel = 100
+  vim.opt.foldtext = "v:lua.require'dotfiles.folds'.foldtext()"
+  vim.opt.fillchars = { fold = " " } -- 折りたたんだ際のあまりの部分をスペースにする
+  -- ⚠️ <Tab> と <C-i> は端末では同一キーコード (Apple Terminal + tmux は拡張キー報告で
+  -- 区別しない) ため、このマップで <C-i> (jumplist 前進) は fold open に化けて失われる。
+  -- fold 開閉を <Tab> に置く利便を優先した意図的なトレードオフ。<C-i> が必要になったら
+  -- fold を za/zo 系や <leader> 配下へ移して再評価する。
+  vim.keymap.set("n", "<Tab>", "zo")
+  vim.keymap.set("n", "<S-Tab>", "zc")
+  vim.keymap.set("n", "<Leader><Tab>", "zR")
+  vim.keymap.set("n", "<Leader><S-Tab>", "zM")
+
   local group = vim.api.nvim_create_augroup("dotfiles_folds", { clear = true })
 
   vim.api.nvim_create_autocmd("BufWinEnter", {
