@@ -17,6 +17,17 @@ tmux_rtt_x100 1200
 status_render_x200 2500 rel
 new_window_x20 600 rel
 kill_window_x20 600 rel
+# pane churn (2026-07-29 導入): after-split-window (toast+debounce) / pane-exited /
+# after-kill-pane hook 込み。導入時ローカル実測 split 131ms / kill 93ms。window churn と
+# 同値の暫定予算で導入し、CI 実測で締める
+split_pane_x20 600 rel
+kill_pane_x20 600 rel
+# 起動フットプリント (2026-07-29 導入)。単位は metric 名が持つ (_mb=MB / _cpu_ms=CPU ms)。
+# RSS は混雑ノイズが乗らないため絶対予算 (導入時ローカル実測 3.9MB)。
+# boot CPU は Linux では刈り取り済み子プロセス (plugin スクリプト) を含むため
+# ローカル (macOS 近似 30ms) より大きく出る想定。CI 実測で締める
+server_rss_mb 30
+server_boot_cpu_ms 2000
 # select は 2026-07-16 の点火アニメ (scripts/tmux_ignite_current.sh、after-select-window[1] hook)
 # 導入で意図的にコスト増: 切替ごとにアニメーターが fork し、フレームの refresh-client -S
 # (status 再描画) がサーバのイベントループで後続 select と直列化する。導入後の CI 実測

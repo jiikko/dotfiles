@@ -44,3 +44,9 @@ buf_switch_x200 300
 ruby_bufload 600
 ruby_scroll_j_x2000 400
 ruby_scroll_ctrl_d_x200 100
+# 起動フットプリント (2026-07-29 導入)。単位は metric 名が持つ (_mb=MB / _cpu_ms=CPU ms。
+# ms= キーはハーネスのパース契約で、checker は数値比較しかしない)。
+# RSS は混雑ノイズが乗らないため絶対予算。導入時ローカル実測 24.4MB / 38.6ms。
+# CI 実測が溜まったら締める (導入時は倍率大きめの粗い上限)
+startup_rss_mb 100
+startup_cpu_ms 500

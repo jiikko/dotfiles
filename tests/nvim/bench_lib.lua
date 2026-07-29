@@ -18,6 +18,18 @@ local function measure(name, iterations, fn)
   io.stderr:write(string.format("metric=%s ms=%.1f\n", name, ms))
 end
 
+-- 起動フットプリント (2026-07-29 導入): config ロード完了時点の常駐メモリ (RSS) と
+-- 消費 CPU 時間。起動が「壁時計は速いがメモリを太らせる / CPU を焼く」方向へ回帰するのを
+-- startup (壁時計) と別軸で捕まえる。単位は metric 名に持たせる (ms= はハーネスの
+-- パース契約であって、checker は数値比較しかしない。budgets 側コメント参照)。
+do
+  local ru = vim.uv.getrusage()
+  io.stderr:write(string.format("metric=startup_cpu_ms ms=%.1f\n",
+    (ru.utime.sec + ru.stime.sec) * 1000 + (ru.utime.usec + ru.stime.usec) / 1000))
+  io.stderr:write(string.format("metric=startup_rss_mb ms=%.1f\n",
+    vim.uv.resident_set_memory() / 1048576))
+end
+
 -- ベンチ対象ファイル (シェル側が生成した lua ファイル) を開く。
 -- buffer-load はウォームアップなしの 1 発を測りたいので measure() を使わない。
 local target = vim.env.BENCH_FILE

@@ -68,6 +68,25 @@ t0=$(now_ms)
 "${TMUX_CMD[@]}" source-file "$CONF_FILE"
 report conf_reload $(( $(now_ms) - t0 ))
 
+# --- server_rss / server_boot_cpu: 起動直後のサーバプロセスのフットプリント -------
+# RSS = boot + conf ロード + plugin (resurrect/continuum) ロード後の常駐メモリ。
+# CPU = その時点までにサーバが消費した CPU 時間。壁時計 (server_boot) と別軸で
+# 「速いが太る / 焼く」方向の回帰を捕まえる。単位は metric 名に持たせる (ms= は
+# ハーネスのパース契約。budgets 側コメント参照)。
+# Linux (/proc) は刈り取り済み子プロセス (plugin スクリプト) の CPU も含む。
+# macOS は ps -o cputime の近似 (子プロセス分を含まない。CI 予算は Linux 実測基準)。
+server_pid=$("${TMUX_CMD[@]}" display-message -p '#{pid}')
+rss_kb=$(ps -o rss= -p "$server_pid" | tr -d ' ')
+report server_rss_mb $(( rss_kb / 1024.0 ))
+if [[ -r "/proc/$server_pid/stat" ]]; then
+  cpu_ticks=$(awk '{print $14 + $15 + $16 + $17}' "/proc/$server_pid/stat")
+  hz=$(getconf CLK_TCK 2>/dev/null || print 100)
+  report server_boot_cpu_ms $(( cpu_ticks * 1000.0 / hz ))
+else
+  cput=$(ps -o cputime= -p "$server_pid" | tr -d ' ')   # macOS: "m:ss.cc"
+  report server_boot_cpu_ms $(( ( ${cput%%:*} * 60 + ${cput#*:} ) * 1000.0 ))
+fi
+
 # --- tmux_rtt: クライアント 1 往復のベースライン --------------------------------
 # 以降の display -p 系メトリクスは「クライアント fork + サーバ往復」を含む。
 # format 自体のコストは (status_render - tmux_rtt) で読む。
@@ -101,6 +120,25 @@ for i in {1..20}; do
   "${TMUX_CMD[@]}" kill-window -t "bench:w$i"
 done
 report kill_window_x20 $(( $(now_ms) - t0 ))
+
+# --- split_pane / kill_pane: pane churn (after-split-window = toast + debounce、
+#     pane-exited / after-kill-pane hook 込み)。toast はヘッドレスではクライアント不在の
+#     無音経路 (bin/tmux-toast の契約) を通り、tmux 3.7+ ではフローティング pane を
+#     作りうるため、kill 側は「消えた pane」レースを許容する (|| true)
+# -l 5 の固定幅: 素の split は active pane を半減させ続け 8 回目前後で "no space" に
+# なるため、1 回あたり 6 列 (5 + border) の線形消費にして 20 回を -x 200 に収める
+t0=$(now_ms)
+for _ in {1..20}; do
+  "${TMUX_CMD[@]}" split-window -d -h -l 5 -t 'bench:^'
+done
+report split_pane_x20 $(( $(now_ms) - t0 ))
+
+bench_panes=($("${TMUX_CMD[@]}" list-panes -t 'bench:^' -F '#{pane_id}'))
+t0=$(now_ms)
+for p in "${bench_panes[@]:1}"; do
+  "${TMUX_CMD[@]}" kill-pane -t "$p" 2>/dev/null || true
+done
+report kill_pane_x20 $(( $(now_ms) - t0 ))
 
 # --- select_window: after-select-window hook (mark-seen + 点火アニメ fork) 込みの切替 ---
 "${TMUX_CMD[@]}" new-window -d -t bench -n alt
