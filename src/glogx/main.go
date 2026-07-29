@@ -150,9 +150,11 @@ func runLog(opts *Options, colored, isTTY bool) int {
 
 	browse := newBrowseModel(commits, statuses, toFetch, repo, hasRepo, opts, colored, width, height)
 	browse.verbatim = renderOpts.Verbatim
-	// quit 経路 (q/Ctrl-C) 以外 — RunBrowse のエラーや fetch 無しでの即終了 — でも
-	// context の timer を解放する (cancel は冪等)
-	defer browse.cancel()
+	// quit 経路 (q/Ctrl-C) 以外でも後始末を保証する多重防御 (cancelAll は冪等):
+	// RunBrowse のエラー・fetch 無しの即終了に加え、SIGINT/SIGTERM 経由の終了は bubbletea が
+	// model.Update を呼ばずに Run を抜けるため quit() が走らない (詳細は cancelAll の doc)。
+	// この defer が無いと push/pull 中のシグナル終了で git 子プロセスが孤児化する
+	defer browse.cancelAll()
 	browse.decor = decor
 	// TUI はキー操作が主なので IME を英数へ。切替そのものは TUI 開始前に完了させる必要がある
 	// (未完了だと打鍵が日本語 IME の composition に吸われる) ので、先出しした問い合わせをここで

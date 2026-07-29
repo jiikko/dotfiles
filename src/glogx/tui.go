@@ -1379,11 +1379,21 @@ func (m *browseModel) centerModalLines() []string {
 	return m.actModal.boxLines(m.contentWidth(), m.colored, m.spinner(), m.unpushedCount())
 }
 
-// quit はアプリ全体を終了する (取得中断分は unknown へ落とす)。
-func (m *browseModel) quit() (tea.Model, tea.Cmd) {
+// cancelAll は走行中の全非同期 subprocess (CI fetch の ctx / usage fetch / push・pull の git)
+// を止める後始末の単一ファネル。冪等。quit() (キー操作の終了) と main.go の defer の両方が
+// 呼ぶ: bubbletea v2 は SIGINT/SIGTERM を InterruptMsg/QuitMsg に変換するが、この 2 つだけは
+// model.Update を経由せず eventLoop が直接 return するため (tea.go の handleSignals/eventLoop)、
+// シグナル終了では quit() が走らない。defer 側が無いと push/pull 中の SIGTERM (tmux
+// kill-window 等) で deadline なしの git 子プロセスが孤児化する (issue 029 P1)。
+func (m *browseModel) cancelAll() {
 	m.cancel()
 	m.usageOv.stop()  // 走行中の usage fetch subprocess を中断 (オーファン化防止)
-	m.actModal.stop() // 走行中の push/pull git subprocess を中断 (stall 中の Ctrl-C 孤児化防止)
+	m.actModal.stop() // 走行中の push/pull git subprocess を中断 (stall 中の孤児化防止)
+}
+
+// quit はアプリ全体を終了する (取得中断分は unknown へ落とす)。
+func (m *browseModel) quit() (tea.Model, tea.Cmd) {
+	m.cancelAll()
 	if m.fetching {
 		m.fillUnknown()
 	}
