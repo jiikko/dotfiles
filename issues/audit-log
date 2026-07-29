@@ -3,3 +3,5 @@
 2026-06-26 20:24	responsibility	direct	issues/006-research-design-audit-2026-06-26.md
 2026-06-26 20:24	design	direct	issues/006-research-design-audit-2026-06-26.md
 2026-06-26 20:24	polymorphism	direct	issues/006-research-design-audit-2026-06-26.md
+2026-07-29 15:10	resource-leaks	direct	issues/029-bug-glogx-resource-leak-audit-2026-07-29.md
+2026-07-29 15:10	duplication,dead-code,responsibility	direct	issues/030-refactor-glogx-refactor-audit-2026-07-29.md
