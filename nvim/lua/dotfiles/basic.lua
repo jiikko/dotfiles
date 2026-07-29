@@ -69,7 +69,7 @@ local function set_keymaps()
   local map = vim.keymap.set
   local silent = { silent = true }
 
-  map("n", "Q", "<Nop>", { noremap = true })
+  map("n", "Q", "<Nop>")
   map("n", ";", [[:<C-u>call append(line('.'), '')<CR>j]], silent)
   map("n", "<CR><CR>", "<C-w><C-w>", silent)
   map("n", "<C-p>", ":cprevious<CR>", silent)
@@ -99,8 +99,8 @@ local function set_keymaps()
     copy_and_notify(("%s:%d"):format(vim.fn.expand("%:~:."), vim.api.nvim_win_get_cursor(0)[1]))
   end, silent)
   -- ハイライト検索時にカーソルを次の候補に移動しない
-  map("n", "*", "*N", { noremap = true, silent = true })
-  map("n", "#", "#N", { noremap = true, silent = true })
+  map("n", "*", "*N", silent)
+  map("n", "#", "#N", silent)
 end
 
 local function set_highlights()

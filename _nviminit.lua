@@ -582,7 +582,9 @@ require("lazy").setup({
       local function my_on_attach(bufnr)
         local api = require("nvim-tree.api")
         local function opts(desc)
-          return { desc = "nvim-tree: " .. desc, buffer = bufnr, noremap = true, silent = true, nowait = true }
+          -- 上流ドキュメントの雛形から noremap=true を除去 (vim.keymap.set は remap 指定が
+          -- 無ければ noremap で、渡した noremap キーは内部で上書きされる死にパラメータ)
+          return { desc = "nvim-tree: " .. desc, buffer = bufnr, silent = true, nowait = true }
         end
         api.config.mappings.default_on_attach(bufnr)
         vim.keymap.del("n", "<C-E>", { buffer = bufnr })
