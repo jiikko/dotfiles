@@ -1,5 +1,5 @@
 ---
-# nvim / tmux のレイテンシベンチ (予算ゲート)。Tests から分離した workflow (2026-07-16):
+# nvim / zsh / tmux / glogx のレイテンシベンチ (予算ゲート)。Tests から分離した workflow (2026-07-16):
 # 「コードが壊れた」(Tests 赤) と「遅くなった / 予算の追従漏れ」(Bench 赤) は対処も緊急度も
 # 違うのに同じ check に混ざっていた。実害 = 意図した機能追加 (点火アニメ) の予算追従漏れで
 # master の Tests が赤になり機能破壊と区別できず (1f37fa1)。また bench は共有 runner の
@@ -107,3 +107,22 @@ jobs:
       # status_render - tmux_rtt の差分で読む。
       - name: Bench tmux latency (budget check)
         run: tests/run_bench.sh tmux tests/tmux/bench_tmux.sh tests/tmux/bench_budgets.ci
+
+  bench-glogx:
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: src/glogx/go.mod
+          cache-dependency-path: src/glogx/go.sum
+
+      # 描画ホットパス (View 1 フレーム / job パネル込み View / 大 patch の一括整形) の
+      # 回帰ゲート。chroma のハイライトは共有 runner で桁膨れした flake 実績があり対象外
+      # (bench_glogx.sh のヘッダ参照)。予算は導入時ローカル実測ベースの緩い上限で、
+      # CI 実測が Step Summary に溜まったら締める (bench_budgets.ci 参照)
+      - name: Bench glogx render hot paths (budget check)
+        run: tests/run_bench.sh glogx tests/glogx/bench_glogx.sh tests/glogx/bench_budgets.ci
