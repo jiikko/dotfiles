@@ -111,9 +111,14 @@ func LoadLogDisplay(opts *Options, colored bool) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	// VS16 付き絵文字は描画エンジンと端末で幅が食い違いガタつく (dropEmojiVS16 参照)。
-	// verbatim 表示は git 出力をそのまま流すのでここで正規化する。
-	return strings.Split(strings.TrimRight(dropEmojiVS16(out), "\n"), "\n"), nil
+	// verbatim 表示は git 出力をそのまま流すので、ここで行ごとに無害化する:
+	// VS16 付き絵文字の正規化 (幅ガタつき防止) + 端末制御シーケンス注入の除去
+	// (SGR の焼き込み色は残す)。ParseLog 側のフィールド無害化と対になる
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	for i, l := range lines {
+		lines[i] = sanitizeDetailLine(l)
+	}
+	return lines, nil
 }
 
 // ParseLog は prettyFormat 付き git log の出力をコミット列へ解析する。
@@ -132,20 +137,36 @@ func ParseLog(out string) ([]Commit, error) {
 		}
 		body := strings.TrimPrefix(parts[9], "\n")
 		body = strings.TrimRight(body, "\n")
+		// subject/message/body/author はコミット作者が任意の文字を入れられる外部入力。
+		// CI ログと同じ端末制御シーケンス注入 (OSC52 のクリップボード書き込み等) の経路に
+		// なるため、ここ (解析の単一ファネル) で無害化する。SGR (色) は残る
 		commits = append(commits, Commit{
 			SHA:         parts[0],
 			ShortSHA:    parts[1],
-			Subject:     parts[2],
-			Author:      parts[3],
-			AuthorEmail: parts[4],
+			Subject:     sanitizeDetailLine(parts[2]),
+			Author:      sanitizeDetailLine(parts[3]),
+			AuthorEmail: sanitizeDetailLine(parts[4]),
 			Date:        parts[5],
 			RelDate:     parts[6],
-			Decoration:  parts[7],
-			Message:     strings.TrimRight(parts[8], "\n"),
-			Body:        body,
+			Decoration:  sanitizeDetailLine(parts[7]),
+			Message:     sanitizeGitText(strings.TrimRight(parts[8], "\n")),
+			Body:        sanitizeGitText(body),
 		})
 	}
 	return commits, nil
+}
+
+// sanitizeGitText は複数行の git 由来テキストを行ごとに sanitizeDetailLine へ通す
+// (\n は構造なので保持。sanitizeDetailLine は制御文字として \n を落とすため行単位で呼ぶ)。
+func sanitizeGitText(s string) string {
+	if s == "" {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = sanitizeDetailLine(l)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // LoadCommits は git log を実行して解析まで行う。
