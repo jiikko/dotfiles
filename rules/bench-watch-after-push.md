@@ -13,9 +13,12 @@
   - **機械向け**: ジョブログの `metric=<name> ms=<value>` 行。
     `gh run view <run-id> --log | grep 'metric='` で取得する (Step Summary は API 非公開のため、
     ログ出力が CLI で数値比較できる唯一の経路。run_bench.sh 側にその旨のコメントあり)
-- **予算 green でも数値は一瞥する**: 直前の master の Bench run と同 metric を比べ、
-  1.5 倍超の悪化があれば予算内でも報告に含める (予算は桁級回帰の安全網で、
-  微デグレの追跡はこの経時比較が担う。.github/workflows/bench.yml ヘッダ参照)
+- **完了報告には対象 metric の before/after を表で提示する**: before = 直前の master の
+  Bench run、after = 今回の run (どちらもジョブログの `metric=` 行から取得)。nvim を
+  触ったら nvim 系、tmux を触ったら tmux/zsh 系、と変更に対応する bench job の metric を
+  貼る。予算 green でも省略しない (予算は桁級回帰の安全網で、微デグレの追跡と
+  「変わっていない」ことの提示はこの before/after が担う)。1.5 倍超の悪化は
+  予算内でも明示して 1〜3 の対処判断に進む (.github/workflows/bench.yml ヘッダ参照)
 
 ## デグレしていたときの対処
 
