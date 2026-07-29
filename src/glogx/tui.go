@@ -2219,6 +2219,10 @@ func (m *browseModel) viewLines() string {
 		}
 		window = append(window, cursorGutterBlank+clipToWidth(text, max(m.contentWidth()-cursorGutterWidth, 0)))
 	}
+	// リストが 1 画面に収まらないときは右端にスクロールバー列を出す (diff/job overlay と同じ
+	// 見た目)。overlay 群の合成より先に足す = ポップアップ類はバーの上に浮く。offset は
+	// scrollAnim 中の表示 offset を使っているので thumb もグライドに追従する。
+	window = scrollbarColumn(window, m.contentWidth(), len(lines), offset, m.colored)
 	// job パネルは対象コミットのヘッダー行直下へ「重ねる」(リスト行を置き換える)。
 	// リストの行構成自体は変えないので、開閉で後続行がずれない。
 	// 下に収まらない場合はビューポート内へ収まる位置まで引き上げる

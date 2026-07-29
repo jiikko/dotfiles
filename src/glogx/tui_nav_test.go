@@ -530,3 +530,46 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		}
 	}
 }
+
+// メインのリストビュー (viewLines) の右端にスクロールバー列が出る (溢れるときだけ)。
+// TestDiffBoxLinesScrollbar / TestJobDetailBoxLinesScrollbar のリストビュー版で、
+// 描画経路での幅とバー列の噛み合わせを固定する。
+func TestMainListScrollbar(t *testing.T) {
+	// medium 形式 ~6 行/コミット × 8 ≫ page (height 10 - hint 1 = 9 行) で必ず溢れる
+	m := newTestBrowse(t, 8, nil, nil)
+	m.usageOv.visible = false // 右上の usage overlay がバー列を覆うので隔離
+	content := m.View().Content
+	rows := strings.Split(content, "\n")
+	rows = rows[:len(rows)-1] // 最終行は hint
+	thumbs, tracks := 0, 0
+	for i, l := range rows {
+		switch {
+		case strings.HasSuffix(l, scrollbarThumbGlyph):
+			thumbs++
+		case strings.HasSuffix(l, scrollbarTrackGlyph):
+			tracks++
+		default:
+			t.Fatalf("リスト行 %d がバー列で終わっていない: %q", i, l)
+		}
+	}
+	if thumbs == 0 || tracks == 0 {
+		t.Fatalf("thumb=%d / track=%d — バーが比率になっていない", thumbs, tracks)
+	}
+
+	// 末尾までスクロールしたら thumb が下端に接地する
+	m.offset = m.clampOffset(1 << 30)
+	rows = strings.Split(m.View().Content, "\n")
+	rows = rows[:len(rows)-1]
+	if !strings.HasSuffix(rows[len(rows)-1], scrollbarThumbGlyph) {
+		t.Fatalf("末尾スクロールで thumb が下端に接地していない: %q", rows[len(rows)-1])
+	}
+
+	// 収まる: バー列なし (1 コミット ~6 行 < 9 行)
+	fit := newTestBrowse(t, 1, nil, nil)
+	fit.usageOv.visible = false
+	for i, l := range strings.Split(fit.View().Content, "\n") {
+		if strings.HasSuffix(l, scrollbarThumbGlyph) || strings.HasSuffix(l, scrollbarTrackGlyph) {
+			t.Fatalf("収まるのにバー列が出ている (行 %d): %q", i, l)
+		}
+	}
+}

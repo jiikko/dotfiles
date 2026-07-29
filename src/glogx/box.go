@@ -145,18 +145,24 @@ const (
 )
 
 // withScrollbar は buildPanelBox に渡す本文行の右端に 1 桁のスクロールバー列を足す。
-// total は全行数、offset は本文先頭が全体の何行目か。全体が収まる (total <= len(rows)) ときは
-// 行をそのまま返す (列を作らないので本文幅が戻る)。
-//
 // boxWidth は buildPanelBox に渡すのと同じ幅を受け取り、本文幅 (inner) を内部で再計算する
-// (呼び出し側に枠の内訳を知らせない)。行はバー列 + 手前の空き 1 桁を除いた幅へクリップする。
+// (呼び出し側に枠の内訳を知らせない)。
 func withScrollbar(rows []string, boxWidth, total, offset int, colored bool) []string {
+	return scrollbarColumn(rows, panelInnerWidth(max(boxWidth, minPanelWidth)), total, offset, colored)
+}
+
+// scrollbarColumn は行列の右端に 1 桁のスクロールバー列を足す本体。innerWidth は行が使える
+// 表示幅そのもの (枠の内訳を差し引いた後の幅)。枠付きパネルは withScrollbar 経由で、
+// メインのリストビュー (viewLines) は contentWidth を直接渡してここを使う。
+// total は全行数、offset は先頭行が全体の何行目か。全体が収まる (total <= len(rows)) ときは
+// 行をそのまま返す (列を作らないので本文幅が戻る)。行はバー列 + 手前の空き 1 桁を除いた幅へ
+// クリップする。
+func scrollbarColumn(rows []string, innerWidth, total, offset int, colored bool) []string {
 	view := len(rows)
 	if view == 0 || total <= view {
 		return rows
 	}
-	inner := panelInnerWidth(max(boxWidth, minPanelWidth))
-	contentW := max(inner-2, 1) // バー 1 桁 + 手前の空き 1 桁
+	contentW := max(innerWidth-2, 1) // バー 1 桁 + 手前の空き 1 桁
 	// thumb 長は表示比率、位置は offset 比率。どちらも最低 1 行を確保し、末尾 (offset=maxOffset)
 	// では thumb が下端に接地する。
 	thumb := min(max(view*view/total, 1), view)
