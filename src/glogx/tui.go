@@ -1451,6 +1451,10 @@ func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.copyJobContext()
 	case "p":
 		return m, m.openPR()
+	case "P":
+		// パネル内では PR 状態ポップアップを開かない仕様 (重ね順が複雑化する)。他の無効操作
+		// (job 未選択の o/r 等) と同様、無反応でなく理由をトーストで返す
+		m.toast.show("PR 状態はパネルを閉じてから P で表示します", false)
 	case "d":
 		return m, m.openDiff()
 	case "r":
@@ -2442,7 +2446,7 @@ func (m *browseModel) bgLine(text, bg string) string {
 }
 
 func (m *browseModel) hintLine() string {
-	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  y: URL コピー  b: push  u: pull  U: usage  C: update  w: 警告コピー  q: 終了"
+	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  P: PR 状態  y: URL コピー  b: push  u: pull  U: usage  C: update  w: 警告コピー  q: 終了"
 	switch {
 	case m.actModal.pushConfirm:
 		hint = "push しますか? [Y/n] (Enter=y)"
@@ -2459,15 +2463,15 @@ func (m *browseModel) hintLine() string {
 	case m.actModal.updating:
 		hint = m.spinner() + " claude update..."
 	case m.diffOv.visible():
-		hint = "j/k/Space: スクロール  g/G: 先頭/末尾  q/h: 閉じる"
+		hint = "j/k/Space: スクロール  g/G: 先頭/末尾  y: URL コピー  q/h: 閉じる"
 	case m.prStatusOv.visible():
 		hint = "o: PR をブラウザで開く  y: URL コピー  P/q/h: 閉じる"
 	case m.detailOv.visible():
 		hint = "j/k: スクロール  v: nvim で開く  r: 再実行  Enter/h/q: 戻る  o: ブラウザ  y: URL  Y: 詳細コピー"
 	case m.panelSHA != "" && m.panelCursor >= 0:
-		hint = "j/k: job 移動  Enter: 詳細ログ  r: 再実行  o: ブラウザ  y: URL  Y: 詳細コピー  h/q: 閉じる"
+		hint = "j/k: job 移動  Enter: 詳細ログ  r: 再実行  o: ブラウザ  d: diff  p: PR  y: URL  Y: 詳細コピー  h/q: 閉じる"
 	case m.panelSHA != "":
-		hint = "j: job を選択  y: commit URL  Enter/h/q: 閉じる"
+		hint = "j: job を選択  d: diff  p: PR  y: commit URL  Enter/h/q: 閉じる"
 	}
 	if m.fetching {
 		hint = m.spinner() + " CI 状態を取得中...  " + hint
