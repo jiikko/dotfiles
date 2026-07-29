@@ -26,7 +26,7 @@
 #   - 予算ファイルに載っている metric が出力に無い (bench 自体の失敗・metric 改名漏れ)
 #   - 予算ファイルの上限が数値でない / calibrate 構成の誤り (予算ファイル破損)
 #
-# 注: 同名 metric が複数回来た場合は最後の値で判定する (bench_min_agg.sh 経由の
+# 注: 同名 metric が複数回来た場合は最後の値で判定する (bench_stats.sh 経由の
 # 正規運用では metric は 1 行ずつしか来ない)。
 set -uo pipefail
 

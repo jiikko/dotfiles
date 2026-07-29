@@ -8,17 +8,18 @@
   - 対象パス: `_nviminit.lua` / `nvim/` / `_tmux.conf` / `scripts/tmux_*` / `scripts/lib/tmux_*` /
     `zshlib/` / `_zshrc` / `bin/tmux-toast` / `src/glogx/` / `vendor/nvim-plugins/` /
     `vendor/tmux-plugins/` / 各 bench スクリプトと budgets
-- 測定結果の正本は 2 箇所 (どちらも tests/run_bench.sh が出力):
-  - **人間向け**: 各 Bench run の Step Summary (markdown。run ページの Summary タブ)
-  - **機械向け**: ジョブログの `metric=<name> ms=<value>` 行。
+- 測定結果の正本は 2 箇所 (どちらも tests/run_bench.sh → tests/bench_stats.sh が出力):
+  - **人間向け**: 各 Bench run の Step Summary (markdown。run ページの Summary タブ)。
+    **前回 run との比較テーブル (median + Mann-Whitney U 検定の有意判定) が自動で載る**
+    (前回値は Actions cache で持ち越し。green run のみ save = 赤 run は基準を汚さない)
+  - **機械向け**: ジョブログの `metric=<name> ms=<value>` 行 (per-metric min)。
     `gh run view <run-id> --log | grep 'metric='` で取得する (Step Summary は API 非公開のため、
-    ログ出力が CLI で数値比較できる唯一の経路。run_bench.sh 側にその旨のコメントあり)
-- **完了報告には対象 metric の before/after を表で提示する**: before = 直前の master の
-  Bench run、after = 今回の run (どちらもジョブログの `metric=` 行から取得)。nvim を
-  触ったら nvim 系、tmux を触ったら tmux/zsh 系、と変更に対応する bench job の metric を
-  貼る。予算 green でも省略しない (予算は桁級回帰の安全網で、微デグレの追跡と
-  「変わっていない」ことの提示はこの before/after が担う)。1.5 倍超の悪化は
-  予算内でも明示して 1〜3 の対処判断に進む (.github/workflows/bench.yml ヘッダ参照)
+    ログ出力が CLI で数値比較できる唯一の経路)
+- **完了報告には対象 metric の before/after を表で提示する**: Step Summary の自動比較
+  テーブル (上記) の該当 job 分を転記すればよい。nvim を触ったら nvim 系、tmux を触ったら
+  tmux/zsh 系、と変更に対応する bench job の metric を貼る。予算 green でも省略しない
+  (予算は桁級回帰の安全網で、微デグレの追跡と「変わっていない」ことの提示は
+  この比較が担う)。「🔺 悪化 (有意)」が出たら 1〜3 の対処判断に進む
 
 ## デグレしていたときの対処
 
