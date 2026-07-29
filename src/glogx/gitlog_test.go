@@ -78,6 +78,24 @@ func TestParseLogSanitizesControlSequences(t *testing.T) {
 	}
 }
 
+// -p / --stat の本文はコミットごとに maxDiffLines で打ち切られる (単一 diff ポップアップと
+// 同じ安全弁。-p × 無制限件数で際限なく保持しない。issue 029)。
+func TestParseLogCapsHugeBody(t *testing.T) {
+	huge := strings.Repeat("+ line\n", maxDiffLines+100)
+	out := rec(strings.Repeat("a", 40), "aaaaaaa", "s", "a", "e", "d", "r", "", "s", "\n"+huge)
+	commits, err := ParseLog(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(commits[0].Body, "\n")
+	if len(lines) != maxDiffLines+1 {
+		t.Fatalf("Body 行数 = %d; want %d (上限 + 省略注記)", len(lines), maxDiffLines+1)
+	}
+	if !strings.Contains(lines[maxDiffLines], "省略") || !strings.Contains(lines[maxDiffLines], "aaaaaaa") {
+		t.Errorf("末尾が省略注記でない: %q", lines[maxDiffLines])
+	}
+}
+
 func TestParseLogEmpty(t *testing.T) {
 	commits, err := ParseLog("")
 	if err != nil || commits != nil {

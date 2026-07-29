@@ -171,10 +171,24 @@ func ParseLog(out string) ([]Commit, error) {
 			RelDate:     parts[6],
 			Decoration:  sanitizeDetailLine(parts[7]),
 			Message:     sanitizeGitText(strings.TrimRight(parts[8], "\n")),
-			Body:        sanitizeGitText(body),
+			Body:        sanitizeGitText(capGitBody(body, parts[1])),
 		})
 	}
 	return commits, nil
+}
+
+// capGitBody は --stat / -p の本文行数をコミットごとに maxDiffLines で打ち切る (単一 diff
+// ポップアップと同じ安全弁)。-p × 無制限件数 (-n -1) で巨大 patch が全コミット分
+// メモリと描画行数に載り続けるのを防ぐ (issue 029)。sanitize より先に呼び、落とす行の
+// 無害化コストを払わない。
+func capGitBody(body, shortSHA string) string {
+	lines := strings.Split(body, "\n")
+	if len(lines) <= maxDiffLines {
+		return body
+	}
+	lines = append(lines[:maxDiffLines],
+		fmt.Sprintf("... (%d 行を超えるため省略。全文: git show %s)", maxDiffLines, shortSHA))
+	return strings.Join(lines, "\n")
 }
 
 // sanitizeGitText は複数行の git 由来テキストを行ごとに sanitizeDetailLine へ通す
