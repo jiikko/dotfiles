@@ -78,3 +78,18 @@ maybeFetchETABasis / panelHasRunningJob に同文で 3 回出現 (行番号確�
 - issues/pending/028 — box/toast の前回監査 (P2 toast 調停は trigger 待ちのまま)
 - issues/done/018 — browseModel は「これ以上触る価値なし」判定済み (再提案しない)
 - `_claude/rules/verify-design-intent-before-refactor.md` — 評価原則の一次情報
+
+## 対応状況 (2026-07-29) — 対応完了・クローズ
+
+- **P2-1 完了** (92fec22): `fetchAssociatedPRs[T]` へ骨格統合。公開シグネチャ不変
+- **P2-2 完了** (92fec22): `prStateColor` に一本化
+- **P2-3 完了** (1674bb8): 起票後に PR 状態ポップアップも影付き化 (080d85a) して
+  `buildPanelBox` 自体の本番呼び出しもゼロになったため、`withScrollbar` 旧版と合わせて
+  非影 box 変種ごと削除。`withShadowScrollbar` は唯一になったので `withScrollbar` へ改名
+- **P2-4 完了** (92fec22): `CheckDetail.running()` へ集約
+- **P3-5 完了** (92fec22): `uniformWidth` を `tui_helpers_test.go` へ
+- **P3-6 は見送りで確定**: 起票時の低確信どおり。B-5 (入口サニタイズ) との整合を検討した
+  結果、「静的出力はタブを git log と同じく素通しする」パリティ契約
+  (TestRenderLinesExpands*TabsInTUI が pin) があり、タブ展開は TUI 描画側 (Width>0) の
+  3 箇所に置くのが契約上正しい配置。展開幅 (4) を変える需要が出たら集約を再検討
+- **P3-7 完了** (92fec22): `Options.setMaxCount` へ集約

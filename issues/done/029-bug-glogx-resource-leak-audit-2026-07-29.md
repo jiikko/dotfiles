@@ -83,3 +83,22 @@ detailOv/prStatusOv/diffOv reset 3 連。grep で他の呼び出し元なしを�
 - issues/done/019 (rerun) / 024 (claude update toast) — actModal の ctx 設計の経緯
 - `_claude/rules/instrument-before-second-fix.md` — P1 修正後は SIGTERM 送信での実挙動確認を
   (子プロセスが消えることを ps で観測)
+
+## 対応状況 (2026-07-29) — 全項対応済み、クローズ
+
+- **P1 完了** (bb0b852): 後始末を `cancelAll()` に集約し `quit()` と main.go の defer の
+  両方から呼ぶ。SIGTERM 実挙動の ps 観測は未実施 (対話環境が必要) — 構造は bubbletea の
+  vendored source で確認済み
+- **P2-1 完了** (cce8bef): `evictOverlayCache` (上限 50・挿入順 evict・表示中 keep) を
+  diff / job 詳細の両キャッシュへ
+- **P2-2 完了** (cce8bef): `runGitTimeout` (30s) を導入し `LoadCommitDiff` へ適用。
+  起動時の同期経路は従来どおり timeout なし (ハングしてもシェルの Ctrl-C がプロセスごと
+  落とせるため。全 runGit への一律適用はしない)
+- **P3 完了** (cce8bef): IME 復元 (5s) / xdg-open (10s) に timeout
+- **追加の関連指摘 (別監査) の見送り 2 件**:
+  - `external_commands.go` の rebase abort が ctx なし → **意図的に見送り**。abort は
+    pull 失敗からの復旧操作で、途中キャンセルすると rebase 中間状態が残り事態が悪化する。
+    中断させないのが安全側
+  - `usageOverlay.cancel` の上書き (連続 fetch の短い時間窓) → 見送り。fetch 自体が
+    10s timeout の ctx を持ち自己完結するため、実害は「最大 10s の余分な subprocess 生存」
+    に留まる
