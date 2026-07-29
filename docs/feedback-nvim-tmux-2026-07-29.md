@@ -58,7 +58,7 @@ resurrect のように状態を焼き込む機構がある場合、移行 checkl
 「同じエラーをどう表面化するか」の差で顕在化した (view-mode 積み / display-message の
 制御文字エスケープ)。**CI が 3.4 を使い続ける限り、tmux 系の不可解な CI 失敗は
 docker 一発で再現するのが最短**:
-`docker run --rm -v ~/dotfiles:/dotfiles:ro ubuntu:24.04` + apt で tmux/zsh/perl を
+`docker run --rm -v ~/dotfiles:/dotfiles:ro ubuntu:24.04` + apt で tmux/zsh/perl/gawk を
 入れて該当テストを叩く (今回この手順で 3 プローブ以内に真因へ到達)。app 層ログの推測より
 先にこれを回すこと (instrument-before-second-fix の tmux 版)。
 

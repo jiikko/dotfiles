@@ -57,8 +57,11 @@ STUB_PATH="$TMP_DIR/bin:/usr/bin:/bin"
 . "$ROOT_DIR/tests/tmux/lib/stub_assert_helper.sh"
 
 export STUB_NOW=1000000
-# 形式: window_activity \t window_id \t session:index \t 表示名 (先頭候補 = @10)
-ROWS='999990\t@10\tmain:2\tvim\n999940\t@11\tsub:1\tserver\n'
+# 形式: window_activity \t window_id \t session:index \t 表示名 (先頭候補 = @10)。
+# 現在地 main:1 (@12) を必ず含める: 含めないと pane_move の exclude-current assert が
+# 「元データに無いから出ない」だけの空振りになる (セルフレビューで検出した罠)。
+# activity は最低にして先頭候補 (=stub fzf の選択) が @10 のままになるようにする
+ROWS='999990\t@10\tmain:2\tvim\n999940\t@11\tsub:1\tserver\n999900\t@12\tmain:1\tzsh\n'
 export STUB_WINDOWS="$ROWS" STUB_CURRENT="main:1" STUB_ME_PANE="%9"
 
 printf '## jump (bind f)\n'
@@ -66,6 +69,10 @@ reset_calls; rm -f "$FZF_IN"
 run "$STUB_PATH" "$ROOT_DIR/scripts/tmux_fzf_jump.sh"
 [ "$RC" -eq 0 ] || { printf '✗ jump: 正常系で rc=%s\n' "$RC"; exit 1; }
 assert_called "tmux switch-client -t @10" "jump: 選択した window_id へ switch-client する"
+# 陽性対照: jump は現在地を候補に含める (これが通ることで下の pane_move 側の
+# 「main:1 が無い」assert が exclude-current の効果を見ていると言える)
+grep -q 'main:1' "$FZF_IN" || { printf '✗ jump: 現在 window が候補に無い (陽性対照の破れ)\n'; exit 1; }
+printf '✓ jump: 現在 window も候補に含まれる (exclude なしの陽性対照)\n'
 
 reset_calls; rm -f "$FZF_IN"
 STUB_FZF_MODE=cancel run "$STUB_PATH" "$ROOT_DIR/scripts/tmux_fzf_jump.sh"
