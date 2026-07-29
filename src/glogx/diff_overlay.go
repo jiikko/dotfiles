@@ -127,8 +127,8 @@ func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *
 		end := min(start+rows, len(lines))
 		body = append(body, lines[start:end]...)
 		title = fmt.Sprintf(" diff: %s [%d-%d/%d] %s ", commit.ShortSHA, start+1, end, len(lines), commit.Subject)
-		// j/k スクロール中の現在位置を視覚化する (影付き枠なので shadow 版スクロールバー)
-		body = withShadowScrollbar(body, width, len(lines), start, colored)
+		// j/k スクロール中の現在位置を視覚化する (withScrollbar が影付き枠の本文幅を補正する)
+		body = withScrollbar(body, width, len(lines), start, colored)
 	}
 	return buildShadowPanelBox(title, body, width, colored, ansiDim)
 }

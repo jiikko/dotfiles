@@ -90,7 +90,7 @@ func TestOverlayCompositeWidthWithEmoji(t *testing.T) {
 	if w := dispWidth(bg[0]); w != width {
 		t.Fatalf("前提: bg[0] の幅 = %d; want %d", w, width)
 	}
-	box := buildPanelBox(" x ", []string{"body"}, 20, false)
+	box := buildShadowPanelBox(" x ", []string{"body"}, 20, false, ansiDim)
 	out := overlayCenteredBox(bg, box, width, 1, false)
 	for i, l := range out {
 		if w := dispWidth(l); w != width {

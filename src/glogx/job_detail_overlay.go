@@ -133,8 +133,8 @@ func (o *jobDetailOverlay) boxLines(width int, colored bool, spinner, name, key 
 			body = append(body, decorateDetailLine(l, colored))
 		}
 		title = fmt.Sprintf(" %s [%d-%d/%d] ", name, start+1, end, len(lines))
-		// j/k スクロール中の現在位置を視覚化する (影付き枠なので shadow 版スクロールバー)。
-		body = withShadowScrollbar(body, width, len(lines), start, colored)
+		// j/k スクロール中の現在位置を視覚化する (withScrollbar が影付き枠の本文幅を補正する)。
+		body = withScrollbar(body, width, len(lines), start, colored)
 	}
 	return buildShadowPanelBox(title, body, width, colored, ansiDim)
 }

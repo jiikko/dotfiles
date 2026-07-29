@@ -8,18 +8,6 @@ import (
 	"testing"
 )
 
-func TestBuildPanelBoxWidths(t *testing.T) {
-	lines := buildPanelBox(" title ", []string{"row", strings.Repeat("x", 200)}, 40, false)
-	if len(lines) != 4 {
-		t.Fatalf("枠 + 2 行のはずが %d 行", len(lines))
-	}
-	for _, l := range lines {
-		if w := dispWidth(l); w != 40 {
-			t.Errorf("パネル行の幅 = %d; want 40: %q", w, l)
-		}
-	}
-}
-
 func TestBuildShadowPanelBoxWidths(t *testing.T) {
 	lines := buildShadowPanelBox(" title ", []string{"row", strings.Repeat("x", 200)}, 40, false, ansiDim)
 	// 枠 (top/bottom) + 2 行 + 下端の落ち影 1 行 = 5 行。影を足しても footprint 幅は 40 のまま
@@ -39,7 +27,7 @@ func TestJapanesePanelBoxWidths(t *testing.T) {
 		"❯ ✓ テストジョブ (日本語)",
 		"  ✗ " + strings.Repeat("長", 40), // inner を超えて全角境界で切り詰められる
 	}
-	lines := buildPanelBox(" CI jobs: abc1234 日本語のサブジェクトがとても長い場合の切り詰め ", rows, 40, true)
+	lines := buildShadowPanelBox(" CI jobs: abc1234 日本語のサブジェクトがとても長い場合の切り詰め ", rows, 40, true, ansiDim)
 	for _, l := range lines {
 		if w := dispWidth(l); w != 40 {
 			t.Errorf("パネル行の幅 = %d; want 40: %q", w, l)
@@ -49,7 +37,7 @@ func TestJapanesePanelBoxWidths(t *testing.T) {
 
 func TestBuildPanelBoxTitleStripsANSI(t *testing.T) {
 	// SGR 入りの job 名/subject がタイトルに載っても罫線幅と dim 塗りを崩さない
-	lines := buildPanelBox(" \x1b[31mred job\x1b[0m ", []string{"row"}, 40, false)
+	lines := buildShadowPanelBox(" \x1b[31mred job\x1b[0m ", []string{"row"}, 40, false, ansiDim)
 	if strings.Contains(lines[0], "\x1b") {
 		t.Errorf("タイトルに ANSI が残っている: %q", lines[0])
 	}
@@ -172,11 +160,12 @@ func TestWithScrollbar(t *testing.T) {
 	if mid := thumbAt(45); mid[0] == 0 || mid[len(mid)-1] == 9 {
 		t.Errorf("中間 offset の thumb が端に張り付いている: %v", mid)
 	}
-	// 幅: バー列を足しても buildPanelBox の本文幅を超えない。幅は描画側と同じ dispWidth
-	// (ansi.StringWidth) で測る — … / █ は runewidth では 2 桁扱い (ambiguous) になり食い違う。
+	// 幅: バー列を足しても buildShadowPanelBox の本文幅 (影 1 桁ぶん狭い枠の inner) を超えない。
+	// 幅は描画側と同じ dispWidth (ansi.StringWidth) で測る — … / █ は runewidth では 2 桁扱い
+	// (ambiguous) になり食い違う。
 	for _, l := range withScrollbar([]string{strings.Repeat("a", 100)}, 40, 100, 0, false) {
-		if w := dispWidth(l); w > 40-4 {
-			t.Errorf("本文行の幅 = %d > inner %d: %q", w, 40-4, l)
+		if w := dispWidth(l); w > 40-5 {
+			t.Errorf("本文行の幅 = %d > inner %d: %q", w, 40-5, l)
 		}
 	}
 }
