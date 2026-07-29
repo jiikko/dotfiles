@@ -44,7 +44,7 @@ cube_of() {
   fi
 }
 
-end_colour=$(tmux show -gv @cur-accent 2>/dev/null)
+end_colour=$(tmux show -gqv @cur-accent 2>/dev/null)
 # shellcheck disable=SC2046 # cube_of の出力 "r g b" を positional へ分解する意図的な word splitting
 set -- $(cube_of "$start"); r0=$1 g0=$2 b0=$3
 # shellcheck disable=SC2046
