@@ -52,7 +52,7 @@ import (
 // 対処で、medium 形式の Author/Date/メッセージ行など大半の行がこの fast-path を通る。
 // 制御文字 (ESC 含む)・8bit 以上は従来どおり ansi に委ねるため幅モデルは変わらない。
 func dispWidth(s string) int {
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		if s[i] < 0x20 || s[i] > 0x7e {
 			return ansi.StringWidth(s)
 		}
