@@ -27,7 +27,7 @@ bench_rc=0
 out="$(for _ in 1 2 3; do "$bench" || exit 1; done | "$here/bench_min_agg.sh")" || bench_rc=$?
 # 集約結果はジョブログにも出す: Step Summary は API 非公開 (check-runs の output.summary は
 # 空) のため、過去 run との数値比較を CLI (`gh run view <id> --log | grep 'metric='`) で
-# 機械的に行う唯一の経路がログになる (.claude/rules/bench-watch-after-push.md が使う)
+# 機械的に行う唯一の経路がログになる (rules/bench-watch-after-push.md が使う)
 printf '%s\n' "$out"
 {
   echo "### $name bench (min of 3 runs)"
