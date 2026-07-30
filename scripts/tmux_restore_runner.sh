@@ -42,16 +42,17 @@ log_line() {
 mkdir -p "$TT_RESTORE_STATE_DIR" 2>/dev/null || true
 LOCK_DIR="$TT_RESTORE_STATE_DIR/lock"
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  owner="$(cat "$LOCK_DIR/pid" 2>/dev/null)"
-  if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then
-    log_line "restore-skipped reason=already-running owner=$owner epoch=$(date +%s)"
+  # owner 判定は pid だけで行わない (pid 再利用で「実行中」と誤認すると手動復元が永久に拒否
+  # される)。起動時刻まで含む同一性判定は guards.sh に集約 (watchdog / periodic_save と共有)
+  if tt_lock_owner_alive "$LOCK_DIR"; then
+    log_line "restore-skipped reason=already-running owner=$(cat "$LOCK_DIR/pid" 2>/dev/null | cut -f1) epoch=$(date +%s)"
     exit 0
   fi
   # owner 不在 = 前回の取り残し。奪って続行する (復元が二度と走らない方が害が大きい)
   rm -rf "$LOCK_DIR" 2>/dev/null
   mkdir "$LOCK_DIR" 2>/dev/null || { log_line "restore-aborted reason=lock-failed epoch=$(date +%s)"; exit 0; }
 fi
-printf '%s\n' "$$" > "$LOCK_DIR/pid" 2>/dev/null || true
+tt_lock_write_owner "$LOCK_DIR"
 # shellcheck disable=SC2329 # trap 経由の間接呼び出し
 release_lock() { rm -rf "$LOCK_DIR" 2>/dev/null; }
 trap release_lock EXIT

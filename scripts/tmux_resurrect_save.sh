@@ -169,23 +169,9 @@ tt_save_restore_in_progress() {
   tt_restore_in_progress
 }
 
-# resurrect の保存先 dir を解決する。vendor helpers.sh:1-7,99-103 と同手順（source 副作用を避け
-# wrapper 自己完結）。解決順 @resurrect-dir → ~/.tmux/resurrect → $XDG_DATA_HOME/tmux/resurrect。
-# helpers.sh の解決順を変えたらここも追従すること。
-tt_resurrect_dir() {
-  local d
-  d="$(tmux show -gqv @resurrect-dir 2>/dev/null || true)"
-  if [ -n "$d" ]; then
-    # helpers.sh:103 と同一の展開式 ($HOME / $HOSTNAME / ~)。$HOSTNAME を欠くと
-    # マルチホスト設定 (@resurrect-dir に $HOSTNAME) で last を取りこぼし、
-    # Fix B 退行ガード全体が silent no-op になる (zshlib/_tmux_session.zsh:80 と同式)。
-    printf '%s\n' "$d" | sed "s,\$HOME,$HOME,g; s,\$HOSTNAME,$(hostname),g; s,\~,$HOME,g"
-  elif [ -d "$HOME/.tmux/resurrect" ]; then
-    printf '%s\n' "$HOME/.tmux/resurrect"
-  else
-    printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/tmux/resurrect"
-  fi
-}
+# tt_resurrect_dir は共有ライブラリ scripts/lib/tmux_resurrect_guards.sh が唯一の出典
+# (冒頭で source 済み)。ここで再定義しない。健全性チェック等の別スクリプトも同じ解決を
+# 必要とするため、2026-07-30 にあちらへ移した。grep: tt_resurrect_dir
 
 # resurrect 保存ファイルの一意セッション数を数える（window 行 field2=session名, TAB 区切り）。
 tt_count_sessions_in_file() {

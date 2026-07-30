@@ -33,6 +33,12 @@ TT_WATCHDOG_DIR="${TT_WATCHDOG_DIR:-$HOME/.cache/tt-watchdog}"
 TT_PSLOG_DIR="${TT_PSLOG_DIR:-$HOME/.cache}"
 TT_PSLOG_KEEP="${TT_PSLOG_KEEP:-10}"
 TT_WATCHDOG_INTERVAL="${TT_WATCHDOG_INTERVAL:-2}"
+# スナップショット健全性チェックの間隔 (秒)。0 で無効。
+# なぜ watchdog が持つか: 周期保存プロセス自身が死んだ場合、それを検出できるのは別プロセスだけ。
+# 「保存が 17 日間 silent に止まっていた」の再発を、独立したこのループで見張る (2026-07-30)。
+TT_HEALTH_CHECK_INTERVAL="${TT_HEALTH_CHECK_INTERVAL:-300}"
+TT_HEALTH_SCRIPT="${TT_HEALTH_SCRIPT:-$SCRIPT_DIR/tmux_snapshot_health.sh}"
+TT_TOAST="${TT_TOAST:-$SCRIPT_DIR/../bin/tmux-toast}"
 # 死因相関の時間窓 (秒)。kill-cmd/session-closed の epoch がこの範囲内なら「直近」とみなす
 TT_VERDICT_WINDOW="${TT_VERDICT_WINDOW:-120}"
 
@@ -48,26 +54,33 @@ exec </dev/null >/dev/null 2>&1
 # ---- 二重起動ガード (conf 再 source で毎回 run-shell が走るため) --------------------
 # lock は「サーバ pid ごと」の mkdir。既存 lock の watcher が生きていれば自分は退く。
 mkdir -p "$TT_WATCHDOG_DIR" 2>/dev/null || exit 0
-# 死んだサーバ/watcher の stale lock を先に掃除する (pid 再利用の誤保護は稀で、実害は
-# 「watchdog 不在」ではなく「二重 watchdog」側に倒れるため許容)
+# 死んだサーバ/watcher の stale lock を掃除する。
+# ⚠️ owner の判定は pid だけで行わないこと。pid 再利用で「先任が生きている」と誤認すると、
+# 新世代の watchdog が無音で退いて **watchdog が 1 つも張られない** (サーバが死んでも死亡記録が
+# 残らず観測装置が丸ごと不発になる。2026-07-30 の監査で実証済み。以前ここには「実害は二重
+# watchdog 側に倒れるので許容」と書いていたが実測と逆で、装置不在側に倒れる)。
+# 起動時刻まで含めた同一性判定は guards.sh の tt_lock_owner_alive / tt_same_proc に集約。
 for d in "$TT_WATCHDOG_DIR"/*.lock; do
   [ -d "$d" ] || continue
   spid="$(basename "$d" .lock)"
-  wpid="$(cat "$d/pid" 2>/dev/null)"
-  if ! kill -0 "$spid" 2>/dev/null && { [ -z "$wpid" ] || ! kill -0 "$wpid" 2>/dev/null; }; then
+  if ! kill -0 "$spid" 2>/dev/null && ! tt_lock_owner_alive "$d"; then
     rm -rf "$d" 2>/dev/null
   fi
 done
 LOCK_DIR="$TT_WATCHDOG_DIR/$SERVER_PID.lock"
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  wpid="$(cat "$LOCK_DIR/pid" 2>/dev/null)"
-  if [ -n "$wpid" ] && kill -0 "$wpid" 2>/dev/null; then
-    exit 0   # 先任の watchdog が生きている
+  if tt_lock_owner_alive "$LOCK_DIR"; then
+    exit 0   # 先任の watchdog が (同一プロセスとして) 生きている
   fi
   rm -rf "$LOCK_DIR" 2>/dev/null
   mkdir "$LOCK_DIR" 2>/dev/null || exit 0
 fi
-printf '%s\n' "$$" > "$LOCK_DIR/pid" 2>/dev/null || true
+tt_lock_write_owner "$LOCK_DIR"
+# 異常終了 (TERM は無視するが INT / エラー / 正常終了) でも lock を残さない。残すと次世代の
+# 起動が上の stale 判定に頼ることになり、pid 再利用の窓を無駄に開ける
+# shellcheck disable=SC2329 # trap 経由の間接呼び出し
+release_watchdog_lock() { rm -rf "$LOCK_DIR" 2>/dev/null; }
+trap release_watchdog_lock EXIT
 
 # サーバ終了時の SIGTERM を無視する (冒頭コメント参照)。HUP も終端切断対策で無視。
 trap '' TERM HUP
@@ -75,6 +88,35 @@ trap '' TERM HUP
 # pid 再利用の誤生存判定を防ぐため、起動時刻も同一性キーに含める (save wrapper の
 # owner 同定と同じ方針)。lstart が取れない環境では kill -0 のみで判定する。
 lstart0="$(ps -o lstart= -p "$SERVER_PID" 2>/dev/null)"
+
+# スナップショット健全性チェック。異常が続いている間、毎回 toast を出すと騒がしいので
+# 「状態が変わったときだけ」通知する (異常になった瞬間と、回復した瞬間)。
+health_last_state=ok
+health_next_check=0
+check_health() {
+  local now out state
+  now="$(date +%s)"
+  [ "$TT_HEALTH_CHECK_INTERVAL" -gt 0 ] 2>/dev/null || return 0
+  [ "$now" -ge "$health_next_check" ] || return 0
+  health_next_check=$(( now + TT_HEALTH_CHECK_INTERVAL ))
+  [ -x "$TT_HEALTH_SCRIPT" ] || return 0
+  if out="$("$TT_HEALTH_SCRIPT" --quiet 2>/dev/null)"; then
+    state=ok
+  else
+    state=ng
+  fi
+  [ "$state" = "$health_last_state" ] && return 0
+  health_last_state="$state"
+  if [ "$state" = ng ]; then
+    { mkdir -p "$(dirname "$TT_TRIGGER_LOG")" && printf '%s\tsnapshot-health ng epoch=%s detail=%s\n' \
+        "$(date +%FT%T)" "$now" "$out" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
+    # 見える通知 (フォーカスを奪わない toast)。落ちても監視は続ける
+    [ -x "$TT_TOAST" ] && "$TT_TOAST" -d 8 -b 52 "⚠️ スナップショット異常: ${out#スナップショット異常: }" 2>/dev/null || true
+  else
+    { mkdir -p "$(dirname "$TT_TRIGGER_LOG")" && printf '%s\tsnapshot-health ok epoch=%s\n' \
+        "$(date +%FT%T)" "$now" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
+  fi
+}
 
 while :; do
   if ! kill -0 "$SERVER_PID" 2>/dev/null; then
@@ -84,6 +126,7 @@ while :; do
     cur="$(ps -o lstart= -p "$SERVER_PID" 2>/dev/null)"
     [ "$cur" = "$lstart0" ] || break   # pid 再利用 = 元のサーバは死んでいる
   fi
+  check_health
   sleep "$TT_WATCHDOG_INTERVAL"
 done
 

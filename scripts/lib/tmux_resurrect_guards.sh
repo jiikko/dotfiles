@@ -54,6 +54,65 @@ tt_only_hold_sessions() {
   grep -q "^${TT_HOLD_PREFIX}" <<<"$sessions"
 }
 
+# ---- プロセス同一性 / lock owner 判定 (常駐プロセスの lock で共有) --------------------
+# pid だけの生存判定は pid 再利用で誤る。「記録時と同一のプロセスか」を起動時刻で照合する。
+# 実害の実証 (2026-07-30 監査): watchdog の残骸 lock の watcher pid が別プロセスに再利用されると、
+# 新世代の watchdog が「先任が生きている」と誤認して無音で退き、**watchdog が 1 つも張られない**
+# (サーバが死んでも死亡記録が残らない = 観測装置が丸ごと不発)。同型の穴が periodic_save の
+# ループ脱出条件と restore_runner の単一実行 lock にもある。3 箇所で同じ判定が要るのでここに集約する。
+tt_proc_starttime() { ps -o lstart= -p "$1" 2>/dev/null; }
+
+# $1=pid $2=記録した起動時刻 (空なら pid 生存のみで判定)
+tt_same_proc() {
+  local pid="$1" want="${2:-}" cur
+  [ -n "$pid" ] || return 1
+  case "$pid" in *[!0-9]*) return 1 ;; esac
+  kill -0 "$pid" 2>/dev/null || return 1
+  [ -n "$want" ] || return 0
+  cur="$(tt_proc_starttime "$pid")"
+  # 起動時刻が取れない環境 (ps 制限等) は pid 生存のみで判定する (fail-open)
+  [ -n "$cur" ] || return 0
+  [ "$cur" = "$want" ]
+}
+
+# lock ディレクトリに自分を owner として記録する ($1=lock dir)。
+# 形式: "<pid>\t<lstart>"。旧形式 (pid のみ) も読み手が受け付ける。
+tt_lock_write_owner() {
+  printf '%s\t%s\n' "$$" "$(tt_proc_starttime $$)" > "$1/pid" 2>/dev/null || true
+}
+
+# lock の owner が「記録時と同一のプロセスとして」生きているか ($1=lock dir)
+tt_lock_owner_alive() {
+  local line pid start
+  line="$(cat "$1/pid" 2>/dev/null)" || return 1
+  [ -n "$line" ] || return 1
+  pid="${line%%	*}"
+  start="${line#*	}"
+  [ "$start" = "$line" ] && start=''   # 旧形式 (pid のみ) は pid 生存のみで判定
+  tt_same_proc "$pid" "$start"
+}
+
+# resurrect の保存先 dir を解決する。vendor helpers.sh:1-7,99-103 と同手順（source 副作用を避け
+# 自己完結）。解決順 @resurrect-dir → ~/.tmux/resurrect → $XDG_DATA_HOME/tmux/resurrect。
+# helpers.sh の解決順を変えたらここも追従すること。
+# 利用者: tmux_resurrect_save.sh (Fix B 退行ガード) / tmux_snapshot_health.sh (鮮度判定)。
+# 2026-07-30 に save wrapper からここへ移動（健全性チェックが同じ解決を必要とし、二重定義に
+# なると片方の更新漏れで last を取りこぼす。この lib が集約点である理由そのもの）。
+tt_resurrect_dir() {
+  local d
+  d="$(tmux show -gqv @resurrect-dir 2>/dev/null || true)"
+  if [ -n "$d" ]; then
+    # helpers.sh:103 と同一の展開式 ($HOME / $HOSTNAME / ~)。$HOSTNAME を欠くと
+    # マルチホスト設定 (@resurrect-dir に $HOSTNAME) で last を取りこぼし、
+    # Fix B 退行ガード全体が silent no-op になる (zshlib/_tmux_session.zsh:80 と同式)。
+    printf '%s\n' "$d" | sed "s,\$HOME,$HOME,g; s,\$HOSTNAME,$(hostname),g; s,\~,$HOME,g"
+  elif [ -d "$HOME/.tmux/resurrect" ]; then
+    printf '%s\n' "$HOME/.tmux/resurrect"
+  else
+    printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/tmux/resurrect"
+  fi
+}
+
 # default socket のサーバか（単一環境 gate）。
 # 期待値は「継承した TMUX_TMPDIR」ではなく canonical な /tmp 基準で組む: hook の
 # run-shell 子プロセスは第 2 サーバの TMUX_TMPDIR を継承するため、それで期待値を組むと

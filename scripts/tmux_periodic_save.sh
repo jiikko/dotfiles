@@ -57,24 +57,24 @@ log_line() {
 
 # ---- 二重起動ガード (conf 再 source で run-shell が毎回走るため) ----------------------
 mkdir -p "$TT_PERIODIC_STATE_DIR" 2>/dev/null || exit 0
+# owner 判定は pid だけで行わない (pid 再利用で先任と誤認すると保存が張られない)。
+# 起動時刻まで含む同一性判定は guards.sh に集約 (watchdog / restore_runner と共有)
 for d in "$TT_PERIODIC_STATE_DIR"/*.lock; do
   [ -d "$d" ] || continue
   spid="$(basename "$d" .lock)"
-  wpid="$(cat "$d/pid" 2>/dev/null)"
-  if ! kill -0 "$spid" 2>/dev/null && { [ -z "$wpid" ] || ! kill -0 "$wpid" 2>/dev/null; }; then
+  if ! kill -0 "$spid" 2>/dev/null && ! tt_lock_owner_alive "$d"; then
     rm -rf "$d" 2>/dev/null
   fi
 done
 LOCK_DIR="$TT_PERIODIC_STATE_DIR/$SERVER_PID.lock"
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  wpid="$(cat "$LOCK_DIR/pid" 2>/dev/null)"
-  if [ -n "$wpid" ] && kill -0 "$wpid" 2>/dev/null; then
-    exit 0   # 先任が生きている
+  if tt_lock_owner_alive "$LOCK_DIR"; then
+    exit 0   # 先任が (同一プロセスとして) 生きている
   fi
   rm -rf "$LOCK_DIR" 2>/dev/null
   mkdir "$LOCK_DIR" 2>/dev/null || exit 0
 fi
-printf '%s\n' "$$" > "$LOCK_DIR/pid" 2>/dev/null || true
+tt_lock_write_owner "$LOCK_DIR"
 # shellcheck disable=SC2329 # trap 経由の間接呼び出し
 cleanup() { rm -rf "$LOCK_DIR" 2>/dev/null; }
 trap cleanup EXIT

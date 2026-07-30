@@ -123,6 +123,29 @@ printf '✓ 二重起動は先任の lock を奪わず退く\n'
 kill "$FAKE" 2>/dev/null
 wait "$WD" 2>/dev/null || true
 
+# --- (3b) pid 再利用の残骸 lock で「watchdog が 1 つも張られない」ことを防ぐ -------------
+# 2026-07-30 の監査で実証された欠陥の回帰テスト: owner を pid の生存だけで判定していたため、
+# 残骸 lock の watcher pid が別プロセスに再利用されると新世代の watchdog が無音で退き、
+# サーバが死んでも死亡記録が残らなかった (観測装置が丸ごと不発)。
+: > "$LOG"
+spawn_fake_server; FAKE="$REPLY_PID"
+# 「生きているが watchdog ではない別プロセス」を owner に持つ残骸 lock を作る。
+# 起動時刻を偽の値にしておくと、同一性判定が pid 再利用を見抜けるはず。
+spawn_fake_server; IMPOSTOR="$REPLY_PID"
+mkdir -p "$TMP_DIR/wd/$FAKE.lock"
+printf '%s\t%s\n' "$IMPOSTOR" "Mon Jan  1 00:00:00 2000" > "$TMP_DIR/wd/$FAKE.lock/pid"
+wd_env "$FAKE" &
+WD=$!
+sleep 0.5
+owner_now="$(cut -f1 "$TMP_DIR/wd/$FAKE.lock/pid" 2>/dev/null)"
+[ "$owner_now" != "$IMPOSTOR" ] \
+  || { printf '✗ pid 再利用の残骸 lock に退いた (watchdog が張られない = 死亡記録が残らない)\n'; exit 1; }
+kill "$FAKE" 2>/dev/null
+wait_for_death_line "$FAKE" "pid 再利用の残骸 lock を乗り越えて看取る"
+wait "$WD" 2>/dev/null || true
+kill "$IMPOSTOR" 2>/dev/null
+printf '✓ pid 再利用の残骸 lock を見抜いて看取りを開始する (装置不在に倒れない)\n'
+
 # --- (4) 非 default socket → 監視しない (lock も作らない) ------------------------------
 : > "$LOG"
 spawn_fake_server; FAKE="$REPLY_PID"
