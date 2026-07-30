@@ -502,6 +502,8 @@ func aggregateRollup(rollup *rollupPayload) CIState {
 			anySuccess = true
 		case StateNeutral:
 			anyNeutral = true
+		case StateNone, StateUnknown, StateUnpushed, StateLoading:
+			// ロールアップに寄与しない (nodeState はこれらを返さない想定。集計フラグを立てない)
 		}
 	}
 	switch {
@@ -747,7 +749,7 @@ func annotationLines(stdout []byte) []string {
 	if err := json.Unmarshal(stdout, &annotations); err != nil {
 		return nil
 	}
-	var lines []string
+	lines := make([]string, 0, len(annotations)*2) // head + message 1 行以上/件
 	for _, a := range annotations {
 		// Level / Path も CI 側が制御する表示文字列なので無害化を通す
 		head := sanitizeDetailLine(fmt.Sprintf("[%s] %s:%d", a.Level, a.Path, a.StartLine))

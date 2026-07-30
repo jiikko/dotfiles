@@ -121,6 +121,8 @@ func (t *toast) advance(colored bool) (holdCmd tea.Cmd) {
 			t.phase = toastHidden
 			t.text = ""
 		}
+	case toastHidden, toastHolding:
+		// advance の駆動対象外 (holding の退場開始は Tick が、hidden→entering は show が担う)
 	}
 	return nil
 }

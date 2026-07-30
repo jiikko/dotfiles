@@ -99,8 +99,7 @@ func runCmdTree(cmd tea.Cmd) {
 	if cmd == nil {
 		return
 	}
-	switch msg := cmd().(type) {
-	case tea.BatchMsg:
+	if msg, ok := cmd().(tea.BatchMsg); ok {
 		for _, c := range msg {
 			runCmdTree(c)
 		}

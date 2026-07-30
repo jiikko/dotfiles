@@ -190,7 +190,7 @@ func cursorCol() (int, error) {
 		_ = f.SetReadDeadline(time.Now().Add(2 * time.Second))
 		defer func() { _ = f.SetReadDeadline(time.Time{}) }()
 	}
-	var buf []byte
+	buf := make([]byte, 0, 32)
 	b := make([]byte, 1)
 	for range 32 {
 		n, err := os.Stdin.Read(b)

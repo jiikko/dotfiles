@@ -99,9 +99,7 @@ var fetchLatestClaudeVersion = func(ctx context.Context) string {
 //
 // 得るもの (cache miss 時のみ 160ms の非同期 fork 1 本) に対して払うものが大きいので現状維持。
 // usage 側のキャッシュを外す / update の before-after 表示をやめる、のどちらかが起きたら再評価。
-var fetchInstalledClaudeVersion = func(ctx context.Context) string {
-	return usage.FetchVersion(ctx)
-}
+var fetchInstalledClaudeVersion = usage.FetchVersion
 
 // versionLess は "2.1.216" 形式の 3 セグメント数値比較で a < b を返す。semver ライブラリは
 // 入れない (pre-release 等は claude の配布に現れず、必要になったら再評価)。パース不能・

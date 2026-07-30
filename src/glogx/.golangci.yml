@@ -6,21 +6,31 @@ version: "2"
 
 linters:
   enable:
+    - contextcheck   # ctx の非伝播・context.Background の握り込み検出 (issue 029 の cancel 系の再発防止)
     - copyloopvar    # loop variables needlessly copied (Go 1.22+)
     - depguard       # アーキテクチャ不変条件: render.go は純粋描画層 (下の rules)
     - dupl           # コピペ重複の検出 (runLog の 4 行 ×2 コピペを見逃した反省。閾値は下)
     - errorlint      # errors.Is/As を使わない比較・%w 漏れの検出
+    - exhaustive     # default なし switch の enum 網羅を強制 (settings 参照。網羅性の機械化)
     - forbidigo      # stdout 直接出力の禁止 (下の forbid。main.go だけ除外)
+    - gocritic       # unlambda / singleCaseSwitch 等の診断 (試走 2 件のみ = 低ノイズを確認済み)
     - intrange       # for i := 0; i < n; i++  ->  for i := range n
     - misspell       # common English misspellings in comments/strings
     - nolintlint     # 説明なし nolint コメントの禁止
     - perfsprint     # fmt.Sprintf that a faster stdlib call can replace
+    - prealloc       # 事前確保できる append ループの検出 (View/整形ホットパスの alloc 削減文化と一致)
     - unconvert      # redundant type conversions
+    - unparam        # 常に同値の引数・未使用戻り値 (テストは除外 = ヘルパーの汎用引数を許す)
     - usestdlibvars  # hand-written constants that exist in the stdlib
     - wastedassign   # assignments whose value is never read
   settings:
     dupl:
       threshold: 120
+    exhaustive:
+      # default 付き switch は「残りは default で受ける」という意図表明なので網羅を要求しない。
+      # default なし switch にだけ enum 全 case を要求する (この repo の「網羅は実装で強制する」
+      # 文化の機械化。~/dotfiles の comment-no-restate-enforced ルールと同じ思想)
+      default-signifies-exhaustive: true
     forbidigo:
       # 「TUI 層は stdout へ直接書かず tea.Msg 経由で描画する」(tui.go 冒頭の不変条件)
       # を機械化する。stdout への出力は main.go の静的経路に限定 (exclusions で許可)。
@@ -76,3 +86,4 @@ linters:
         linters:
           - dupl
           - forbidigo
+          - unparam

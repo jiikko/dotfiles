@@ -148,7 +148,7 @@ func ParseLog(out string) ([]Commit, error) {
 	if out == "" {
 		return nil, nil
 	}
-	var commits []Commit
+	commits := make([]Commit, 0, strings.Count(out, recordSep))
 	for rec := range strings.SplitSeq(out, recordSep) {
 		if rec == "" {
 			continue // 先頭レコード前の空文字列
@@ -360,7 +360,7 @@ func LoadCommitDiff(sha string, colored bool) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var lines []string
+	lines := make([]string, 0, min(strings.Count(out, "\n")+1, maxDiffLines+1))
 	for line := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
 		if len(lines) >= maxDiffLines {
 			lines = append(lines, fmt.Sprintf("... (%d 行を超えるため省略。全文: git show %s)", maxDiffLines, sha))

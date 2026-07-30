@@ -1295,7 +1295,7 @@ func (m *browseModel) refetchAfterPush() tea.Cmd {
 		m.pushPoll[m.pushAnimTip] = true
 		m.pushAnimTip = ""
 	}
-	var all []string
+	all := make([]string, 0, len(m.commits))
 	for _, c := range m.commits {
 		if len(m.pushPoll) == 0 && m.statuses[c.SHA] == StateUnpushed {
 			m.pushPoll[c.SHA] = true // commits は新しい順なので最初の unpushed = tip
