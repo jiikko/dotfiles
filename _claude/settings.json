@@ -58,6 +58,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/dotfiles/_claude/hooks/gofmt-on-edit.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "Stop": [

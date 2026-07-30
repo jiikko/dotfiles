@@ -142,4 +142,3 @@ func loadUnpushed() map[string]bool {
 	}
 	return set
 }
-
