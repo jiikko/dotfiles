@@ -413,8 +413,14 @@ func TestBrowseDiffPagerKeysScrollNotClose(t *testing.T) {
 	if m.diffOv.offset != maxOffset {
 		t.Errorf("末尾で offset = %d; want %d (最終行を表示し続ける)", m.diffOv.offset, maxOffset)
 	}
-	// 半ページ移動は glide (scroll_glide.go) で数フレームかけて着地するため、描画の検証前に
-	// アニメを進める。tick は spinnerActive が回し続けるので実機では自動で着地する。
+	// 半ページ移動は glide (scroll_glide.go) で数フレームかけて着地する。⚠️ ここで手で
+	// advanceGlide を呼ぶ前に「キー処理が tick を返している」ことを必ず確かめる: 手で進める
+	// だけのテストは、tick を張り忘れて実機で永久に固まるバグ (敵対的レビュー P1) を隠す。
+	// ⚠️ cmd の nil 判定では足りない: maybeTick は single-flight で、既にチェーンが生きていれば
+	// nil を返す。不変条件は「glide 中は tick チェーンが生きている (m.ticking)」。
+	if m.handleKey(" "); m.diffOv.glide.active && !m.ticking {
+		t.Fatal("glide 中なのに tick チェーンが無い (実機では中途位置で固まる)")
+	}
 	for range scrollAnimFrames {
 		m.diffOv.advanceGlide()
 	}

@@ -532,7 +532,12 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.invalidateLines() // 幅で折り返し行数が変わる
-		m.glide.stop()      // resize 中の glide は破棄して即時 (表示 offset が stale になるため)
+		// resize 中の glide は破棄して即時にする (表示 offset が stale になるため)。一覧だけでなく
+		// pager 側も止める: 幅で行数が変わり、glide の着地点が resize 前の行数基準で古くなる。
+		m.glide.stop()
+		m.diffOv.glide.stop()
+		m.issuesOv.listGlide.stop()
+		m.issuesOv.bodyGlide.stop()
 		m.ensureCursorVisible()
 		return m, nil
 	case tickMsg:
@@ -2108,6 +2113,13 @@ func (m *browseModel) handleDiffKey(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.diffOv.scroll(key, m.visibleDiffRows())
+	// 半ページ移動は glide (scroll_glide.go) で進むので tick を張る。張らないと advanceGlide を
+	// 呼ぶ者がおらず、表示位置がスクロール前で固まったまま「キーが効かない」ように見える
+	// (敵対的レビュー P1 2026-07-31: Space 後に j を何度押しても先頭行が出続ける実測)。
+	// 1 行移動・閉じるは glide を使わないので tick を増やさない。
+	if m.diffOv.glide.active {
+		return m, m.maybeTick()
+	}
 	return m, nil
 }
 

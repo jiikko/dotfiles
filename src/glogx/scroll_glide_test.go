@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	tea "charm.land/bubbletea/v2"
+)
 
 // advance は上下どちらの向きでも表示 offset を論理 offset へ寄せ、有限フレームで着地して
 // active を下ろす (旧 TestBrowseScrollAnimConverges を共有型のテストへ移設。geometry 非依存)。
@@ -211,4 +215,54 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 			t.Errorf("advanceGlide で着地しない: list=%v body=%v", v.listGlide.active, v.bodyGlide.active)
 		}
 	})
+}
+
+// glide を立てたキー経路は必ず tick を返す (張り忘れると advanceGlide を呼ぶ者がいなくなり、
+// 表示がスクロール前の位置で固まって「キーが効かない」ように見える。敵対的レビュー P1 の回帰)。
+func TestGlideKeyPathsScheduleTick(t *testing.T) {
+	t.Run("diff pager", func(t *testing.T) {
+		m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+		m.usageOv.dismiss()
+		lines := make([]string, 200)
+		for i := range lines {
+			lines[i] = "line"
+		}
+		sha := m.commits[0].SHA
+		m.diffOv.sha = sha
+		m.diffOv.cache[sha] = lines
+		m.ticking = false
+		m.handleKey(" ")
+		if !m.diffOv.glide.active {
+			t.Fatal("Space で glide が立たない (テスト前提の破れ)")
+		}
+		if !m.ticking {
+			t.Error("glide が立ったのに tick チェーンが張られない")
+		}
+	})
+
+	t.Run("コミット一覧", func(t *testing.T) {
+		m := newTestBrowse(t, 30, map[string]CIState{}, nil)
+		m.statuses = statusesFor(m, StateSuccess)
+		m.usageOv.dismiss()
+		m.height = 12
+		m.ticking = false
+		m.handleKey("ctrl+d")
+		if m.glide.active && !m.ticking {
+			t.Error("glide が立ったのに tick チェーンが張られない")
+		}
+	})
+}
+
+// resize は 4 面すべての glide を捨てる (幅で行数が変わり着地点が古くなるため)。
+func TestResizeStopsAllGlides(t *testing.T) {
+	m := newTestBrowse(t, 10, map[string]CIState{}, nil)
+	m.glide.start(0, 10)
+	m.diffOv.glide.start(0, 10)
+	m.issuesOv.listGlide.start(0, 10)
+	m.issuesOv.bodyGlide.start(0, 10)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	if m.glide.active || m.diffOv.glide.active || m.issuesOv.listGlide.active || m.issuesOv.bodyGlide.active {
+		t.Errorf("resize で glide が残る: list=%v diff=%v issuesList=%v issuesBody=%v",
+			m.glide.active, m.diffOv.glide.active, m.issuesOv.listGlide.active, m.issuesOv.bodyGlide.active)
+	}
 }
