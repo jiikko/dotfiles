@@ -166,6 +166,11 @@ go_autobuild_exec() {
       # 失敗記録より新しいソースが無ければ再挑戦しない (fail-open で旧版のまま進む)
       if _go_autobuild_sources_newer_than "$src_dir/.autobuild.failed" "$src_dir"; then
         _go_autobuild_spawn "$src_dir" "$name"
+        # 起動するツールへ「裏でビルド中」を伝える。旧版で exec するため、ツール側からは
+        # 新版の完成もビルド失敗も観測できず無言だった (失敗すると気づかないまま旧版に固定
+        # される)。読む側は任意で、今は glogx がこれを見て決着をトースト通知する
+        # (src/glogx/autobuild.go)。名前を変えるなら読む側も直すこと。
+        export GO_AUTOBUILD_PENDING=1
       fi
     else
       _go_autobuild_build "$src_dir" "$name" 0 || exit 1

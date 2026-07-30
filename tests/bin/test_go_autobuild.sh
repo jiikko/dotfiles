@@ -172,6 +172,25 @@ out="$(AUTOBUILD_ARGS=--async FAKE_GO_MARK=newer run_tool "$ROOT")"
 [[ "$out" == "new" ]] || fail "バックグラウンドビルドが次回起動に反映されない (got: $out)"
 ok "バックグラウンドビルドの結果が次回起動で反映される"
 
+printf '\n## --async: 裏でビルド中であることを env で下流へ伝える\n'
+# 旧バイナリで exec するため、起動したツールからは新版の完成もビルド失敗も観測できない。
+# GO_AUTOBUILD_PENDING はその「裏で走っている」ことを伝える唯一の手がかりで、glogx が
+# これを見て決着をトースト通知する (src/glogx/autobuild.go)。
+ROOT="$(new_project asyncenv)"
+# exec される側 (= 既存バイナリ) が env を読めるよう、実行時展開の probe を焼き込む
+# (偽 go は mark をそのまま `echo <mark>` として書くので、単引用符で展開を遅らせる)
+PROBE='pending=${GO_AUTOBUILD_PENDING-}'
+FAKE_GO_MARK="$PROBE" run_tool "$ROOT" >/dev/null
+freeze "$ROOT"
+out="$(AUTOBUILD_ARGS=--async run_tool "$ROOT")"
+[[ "$out" == "pending=" ]] || fail "再ビルド不要な起動で GO_AUTOBUILD_PENDING が立っている (got: $out)"
+ok "再ビルド不要な起動では GO_AUTOBUILD_PENDING を立てない"
+
+bump "$ROOT/src/tool/main.go"
+out="$(AUTOBUILD_ARGS=--async FAKE_GO_MARK="$PROBE" run_tool "$ROOT")"
+[[ "$out" == "pending=1" ]] || fail "async 再ビルド時に GO_AUTOBUILD_PENDING が立たない (got: $out)"
+ok "async 再ビルドを spawn した起動では GO_AUTOBUILD_PENDING=1 を渡す"
+
 printf '\n## --async のビルド失敗 (fail-open + backoff)\n'
 ROOT="$(new_project asyncfail)"
 FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null

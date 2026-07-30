@@ -261,6 +261,10 @@ type browseModel struct {
 	// 状態と描画は usageOverlay 型 (usage_overlay.go) に切り出し、ここは 1 フィールドだけ持つ。
 	usageOv usageOverlay
 
+	// バックグラウンド再ビルド (bin/lib/go_autobuild.zsh --async) の決着監視。zero value は
+	// 「監視しない」で、shim が GO_AUTOBUILD_PENDING を立てた起動でだけ動く (autobuild.go)。
+	autobuild autobuildWatch
+
 	// issues viewer (i キーで開く全画面の issue ブラウザ)。状態と描画は issuesView 型
 	// (issues_view.go) に切り出し、ここは 1 フィールドだけ持つ。読む規約の一次情報は
 	// docs/issues-viewer-spec.md。
@@ -321,6 +325,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		cancel:         cancel,
 		usageOv:        usageOverlay{visible: true},
 		issuesOv:       newIssuesView(),
+		autobuild:      newAutobuildWatch(selfExePath(), os.Getenv(autobuildPendingEnv) != "", timeNow()),
 	}
 	if m.fetching {
 		// 起動時の一括取得は m.cancel と ctx を共有する意図的例外 (q 中断で走行中の
@@ -362,10 +367,13 @@ func (m *browseModel) Init() tea.Cmd {
 	// Claude Code の新バージョン検出 (claude_version.go)。バックグラウンド 1 回きりで、
 	// 結果は claudeUpdateAvailableMsg (更新なし/失敗は nil Msg で無音)。
 	ver := checkClaudeVersionCmd()
+	// バックグラウンド再ビルドの決着監視 (autobuild.go)。shim が GO_AUTOBUILD_PENDING を
+	// 立てていない通常起動では nil = tick が増えない。
+	ab := m.autobuild.tickCmd()
 	if m.fetching {
-		return tea.Batch(m.fetch, prefix, u, ver, m.maybeTick(), usageRefreshTick())
+		return tea.Batch(m.fetch, prefix, u, ver, ab, m.maybeTick(), usageRefreshTick())
 	}
-	return tea.Batch(prefix, u, ver, m.maybeTick(), usageRefreshTick())
+	return tea.Batch(prefix, u, ver, ab, m.maybeTick(), usageRefreshTick())
 }
 
 // normalizeSpaceKey は Space の表記ゆれを " " へ揃える。キー switch は " " だけを見ればよい。
@@ -750,6 +758,19 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.showOrDeferClaudeUpdate(msg.latest, false)
 	case claudeUpdateRetryMsg:
 		return m, m.showOrDeferClaudeUpdate(msg.latest, true)
+	case autobuildMsg:
+		// 裏のビルドが決着したらトーストで知らせる。他のトーストが出ている間は autobuild 側が
+		// 結果を保持して次の tick で出し直すので、ここでは受け取れたときだけ表示する。
+		res, notify, keep := m.autobuild.handle(msg.result, m.toast.visible(), timeNow())
+		if notify {
+			text, ok := autobuildToast(res)
+			m.toast.show(text, ok)
+			return m, m.maybeTick() // トーストのスライドは tick で進む
+		}
+		if keep {
+			return m, m.autobuild.tickCmd()
+		}
+		return m, nil
 	case toastMsg:
 		m.toast.startLeaving(msg) // 静止明け: 退場アニメへ (世代一致時のみ)。maybeTick で tick 再開
 		return m, m.maybeTick()
