@@ -19,6 +19,7 @@ import (
 //     退場は「既存チェーン」が運ぶ (toastMsg 時の maybeTick は single-flight で nil を返す)。
 //   - usage idle (loading=false): holding で spinnerActive=false になりチェーンが自然停止するので、
 //     toastMsg 時の maybeTick が tick を貼り直して退場を駆動する。
+//
 // どちらの経路でも退場が完走することを両方回して担保する (片方だけ通って油断しないため)。
 func TestToastLeavingReachesHiddenViaTick(t *testing.T) {
 	orig := toastHold

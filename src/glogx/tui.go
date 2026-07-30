@@ -203,12 +203,12 @@ type browseModel struct {
 	// カウンタを誤減算し (スピナー早期消灯)、取得中 SHA を toFetch から誤って間引く
 	// (同一 SHA 並行リクエストのガード無効化) ため、世代不一致の ciResultMsg は捨てる
 	fetchEpoch int
-	repo           Repo
-	hasRepo        bool
-	ghErr          *GHError
-	decor          *DecorColors
-	oneline        bool
-	colored        bool
+	repo       Repo
+	hasRepo    bool
+	ghErr      *GHError
+	decor      *DecorColors
+	oneline    bool
+	colored    bool
 	// showFrame は最外周フレーム (板 + ドロップシャドウ) 描画の有効フラグ (issue 025)。起動時固定
 	// (!opts.NoFrame)。⚠️ 下の frame (int) はスピナーのフレームカウンタで別物 (名前衝突回避のため
 	// bool 側を showFrame とした)。実際に描くかは frameActive() が端末サイズ下限も見て判定する。
