@@ -772,11 +772,13 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 		pad := max(width-cursorGutterWidth-dispWidth(text)-dispWidth(progress), 1)
 		text += padSpaces(pad) + paint(progress, ansiDim, o.colored)
 	}
+	// ⚠️ どの経路も同じ幅に切る。titleW には下限 (4) があるので、極端に狭い幅では固定部分だけで
+	// width を超える。カーソル行だけ切っていたため、そこ以外の行が枠を突き破っていた。
 	if i != v.cursor {
-		return cursorGutterBlank + text
+		return clipToWidth(cursorGutterBlank+text, width)
 	}
 	if o.cursorPaint != nil {
-		return o.cursorPaint(cursorGutterMark + text)
+		return o.cursorPaint(clipToWidth(cursorGutterMark+text, width))
 	}
 	return clipToWidth(cursorGutterMark+paint(text, ansiBold, o.colored), width)
 }

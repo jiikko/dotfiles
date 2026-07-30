@@ -215,15 +215,21 @@ func TestIssuesViewTabChipCountsMatchRows(t *testing.T) {
 }
 
 func TestIssuesViewLinesAlwaysExactlyPageRows(t *testing.T) {
-	for _, page := range []int{3, 5, 20, 40} {
-		for _, v := range []*issuesView{loadedView(sampleIssues()...), loadedView(), {shown: true, scanning: true}} {
-			got := v.lines(renderOpts(page))
-			if len(got) != page {
-				t.Fatalf("page=%d なのに %d 行返った", page, len(got))
-			}
-			for i, ln := range got {
-				if w := dispWidth(ln); w > 80 {
-					t.Fatalf("page=%d 行 %d が幅を超えた (w=%d): %q", page, i, w, ln)
+	// 幅も振る: 狭い幅では固定部分 (溝・番号・バッジ・カテゴリ) だけで幅を超えるため、
+	// 行のクリップが 1 経路でも抜けていると枠を突き破る。
+	for _, width := range []int{20, 40, 80} {
+		for _, page := range []int{3, 5, 20, 40} {
+			for _, v := range []*issuesView{loadedView(sampleIssues()...), loadedView(), {shown: true, scanning: true}} {
+				o := renderOpts(page)
+				o.width = width
+				got := v.lines(o)
+				if len(got) != page {
+					t.Fatalf("width=%d page=%d なのに %d 行返った", width, page, len(got))
+				}
+				for i, ln := range got {
+					if w := dispWidth(ln); w > width {
+						t.Fatalf("width=%d page=%d 行 %d が幅を超えた (w=%d): %q", width, page, i, w, ln)
+					}
 				}
 			}
 		}
