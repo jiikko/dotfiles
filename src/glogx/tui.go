@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"os"
 	"os/exec"
 	"regexp"
 	"slices"
@@ -260,6 +261,11 @@ type browseModel struct {
 	// 状態と描画は usageOverlay 型 (usage_overlay.go) に切り出し、ここは 1 フィールドだけ持つ。
 	usageOv usageOverlay
 
+	// issues viewer (i キーで開く全画面の issue ブラウザ)。状態と描画は issuesView 型
+	// (issues_view.go) に切り出し、ここは 1 フィールドだけ持つ。読む規約の一次情報は
+	// docs/issues-viewer-spec.md。
+	issuesOv issuesView
+
 	// toast は右下に数秒だけ出す結果フィードバック (push/pull 完了)。自動消滅 (toast.go)。
 	toast toast
 
@@ -314,6 +320,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		fetching:       len(toFetch) > 0,
 		cancel:         cancel,
 		usageOv:        usageOverlay{visible: true},
+		issuesOv:       newIssuesView(),
 	}
 	if m.fetching {
 		// 起動時の一括取得は m.cancel と ctx を共有する意図的例外 (q 中断で走行中の
@@ -716,6 +723,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case usageMsg:
 		m.usageOv.handle(msg)
 		return m, nil
+	case issuesScanMsg:
+		m.issuesOv.receive(msg)
+		return m, nil
 	case claudeUpdateAvailableMsg:
 		return m, m.showOrDeferClaudeUpdate(msg.latest, false)
 	case claudeUpdateRetryMsg:
@@ -947,6 +957,12 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if key == "ctrl+f" {
 		key = "right"
 	}
+	// issues viewer 表示中は全画面モーダル: キーは全部 viewer が飲む。⚠️ この判定を下の
+	// 裸の b / u (push / pull) より後ろに置くと、一覧を見ている最中の u が
+	// git pull --rebase の確認を開く footgun になる (U の判定順と同じ事故の型)。
+	if m.issuesOv.visible() {
+		return m, tea.Batch(m.issuesOv.handleKey(key, m.pageSize()), m.maybeTick())
+	}
 	// diff ポップアップ表示中はスクロール/閉じる操作だけを受ける (最前面のモーダル)
 	if m.diffOv.visible() {
 		return m.handleDiffKey(key)
@@ -954,6 +970,16 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// PR 状態ポップアップ表示中も同様にモーダル (o/y/閉じるだけを受ける)
 	if m.prStatusOv.visible() {
 		return m.handlePRStatusKey(key)
+	}
+	// i = issues viewer を開く (全画面。読む規約は docs/issues-viewer-spec.md)。一覧表示中
+	// だけ受ける: job パネル/詳細を開いているときはそちらの語彙を優先する。初回だけ非同期で
+	// スキャンし、以降は結果を保持したまま開閉する (再スキャンは viewer 内の r)。
+	if key == "i" && m.panelSHA == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			cwd = "." // cwd が取れない環境でも repo 直下として探索を試みる
+		}
+		return m, tea.Batch(m.issuesOv.toggle(cwd), m.maybeTick())
 	}
 	// b = push / u = pull --rebase (どちらも y/N 確認へ)。glogx の独自機能。
 	// diff 表示中は b = 半ページ戻るなので、diff のディスパッチより後で拾う
@@ -2095,7 +2121,19 @@ func (m *browseModel) fillUnknown() {
 // 「今は不要」とのユーザー判断で見送っている (2026-07-25)。CPU が気になると言われたら再評価する。
 // 経緯と他の未採用 v2 機能は docs/glogx-bubbletea-v2.md。
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || m.scrollAnim || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading()
+	return m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || m.scrollAnim || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.issuesOv.loading()
+}
+
+// issuesOpts は issues viewer へ渡す描画情報。カーソル行の強調はコミット一覧と同じ
+// cursorLine (溝の矢印 + 暗青 bg) を貸すことで、見た目の語彙を 1 つに保つ。
+func (m *browseModel) issuesOpts() issuesRenderOpts {
+	return issuesRenderOpts{
+		width:       m.contentWidth(),
+		page:        m.pageSize(),
+		colored:     m.colored,
+		spinner:     m.spinner(),
+		cursorPaint: m.cursorLine,
+	}
 }
 
 // panelHasRunningJob は表示中の job パネルに実行中 (経過時間が増える) job があるか。
@@ -2233,8 +2271,13 @@ func (m *browseModel) viewLines() string {
 		// 終了確定後は何も描かない (Alt Screen の復帰で表示は消える)
 		return ""
 	}
-	lines := m.lines()
 	page := m.pageSize()
+	// issues viewer は全画面: コミット一覧とオーバーレイ群を描かずに窓ごと差し替える。
+	// lines() がちょうど page 行返すので、枠と hint 行の経路は共通のまま (finishWindow)。
+	if m.issuesOv.visible() {
+		return m.finishWindow(m.issuesOv.lines(m.issuesOpts()), page)
+	}
+	lines := m.lines()
 	// scrollAnim 中は表示 offset (glide 途中) で窓を切る。それ以外は論理 offset。
 	renderOffset := m.offset
 	if m.scrollAnim {
@@ -2297,6 +2340,12 @@ func (m *browseModel) viewLines() string {
 	if box := m.toast.boxLines(m.colored); len(box) > 0 {
 		window = overlayBoxBottomRight(window, box, m.contentWidth(), m.colored)
 	}
+	return m.finishWindow(window, page)
+}
+
+// finishWindow は組み終わった窓をフレームで包み hint 行を足して 1 フレームの文字列にする。
+// コミット一覧と issues viewer (全画面) の共通の出口 (枠・hint の扱いを 1 箇所に保つ)。
+func (m *browseModel) finishWindow(window []string, page int) string {
 	// フレーム有効時は最外周を余白 + 枠 + 右下ドロップシャドウで包む (issue 025)。板の高さを
 	// 安定させるため、コンテンツが少なくても pageSize 行まで空行でパディングしてから包む
 	// (板が常にビューポート一杯 = リサイズや行数変動で枠が踊らない)。hint は板の外・最下行。
@@ -2446,8 +2495,11 @@ func (m *browseModel) bgLine(text, bg string) string {
 }
 
 func (m *browseModel) hintLine() string {
-	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  P: PR 状態  y: URL コピー  b: push  u: pull  U: usage  C: update  w: 警告コピー  q: 終了"
+	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  P: PR 状態  y: URL コピー  b: push  u: pull  i: issues  U: usage  C: update  w: 警告コピー  q: 終了"
 	switch {
+	case m.issuesOv.visible():
+		// issues viewer は全画面モーダルなので、ここが最優先 (下のパネル系より先に判定する)
+		hint = m.issuesOv.hint()
 	case m.actModal.pushConfirm:
 		hint = "push しますか? [Y/n] (Enter=y)"
 	case m.actModal.pullConfirm:

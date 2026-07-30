@@ -167,8 +167,10 @@ func (v *issuesView) current() *issues.Issue {
 // 一覧を見ている最中の u が git pull --rebase の確認を開く類の誤爆になる: 呼び出し側の
 // dispatch は裸の b / u を push / pull に割り当てているため。
 //
-// rows は 1 画面に入る行数 (半ページ送りとスクロール上限の計算に使う)。
-func (v *issuesView) handleKey(key string, rows int) tea.Cmd {
+// page は画面に使える行数 (hint 行を除く)。リスト/本文に実際に使える行数はヘッダーを
+// 差し引いた visibleRows で、描画と同じ値を使う (ずれると G が末尾に届かなくなる)。
+func (v *issuesView) handleKey(key string, page int) tea.Cmd {
+	rows := v.visibleRows(page)
 	if v.open != nil {
 		return v.handleBodyKey(key, rows)
 	}
@@ -207,6 +209,9 @@ func (v *issuesView) handleKey(key string, rows int) tea.Cmd {
 	}
 	return nil
 }
+
+// visibleRows は page 行のうちリスト/本文に使える行数 (ヘッダーを差し引く)。
+func (v *issuesView) visibleRows(page int) int { return max(page-len(v.headLines(0, false)), 1) }
 
 // handleBodyKey は本文 pager のキー操作 (diffOverlay と同じ語彙)。
 func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
@@ -318,16 +323,34 @@ func (v *issuesView) lines(o issuesRenderOpts) []string {
 	return body[:o.page]
 }
 
-// listLines はタブ + 警告 + リストを描く。
-func (v *issuesView) listLines(o issuesRenderOpts) []string {
-	head := []string{v.tabLine(o)}
+// headLines は現在のモードのヘッダー行 (一覧ならタブ行 + 通知、本文ならパス + 状態)。
+// キー操作側 (visibleRows) と描画側で同じ関数を通すことで行数のずれを防ぐ。width=0 は
+// 行数だけが必要な呼び出し (中身は使われない)。
+func (v *issuesView) headLines(width int, colored bool) []string {
+	if v.open != nil {
+		status := v.open.StatusLabel()
+		if p := v.open.Progress(); p != "" {
+			status += "  " + p
+		}
+		return []string{
+			paint(clipToWidth(v.open.Rel, width), ansiBold, colored),
+			paint(clipToWidth(status, width), ansiDim, colored),
+			"",
+		}
+	}
+	head := []string{v.tabLine(issuesRenderOpts{width: width, colored: colored})}
 	switch {
 	case v.notice != "":
-		head = append(head, paint(clipToWidth(v.notice, o.width), ansiDim, o.colored))
+		head = append(head, paint(clipToWidth(v.notice, width), ansiDim, colored))
 	case len(v.warnings) > 0:
-		head = append(head, paint(clipToWidth("⚠ "+v.warnings[0], o.width), ansiYellow, o.colored))
+		head = append(head, paint(clipToWidth("⚠ "+v.warnings[0], width), ansiYellow, colored))
 	}
-	head = append(head, "")
+	return append(head, "")
+}
+
+// listLines はタブ + 警告 + リストを描く。
+func (v *issuesView) listLines(o issuesRenderOpts) []string {
+	head := v.headLines(o.width, o.colored)
 	if msg := v.emptyMessage(o); msg != "" {
 		return append(head, paint(clipToWidth(msg, o.width), ansiDim, o.colored))
 	}
@@ -419,16 +442,7 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 
 // bodyLines は本文 pager (ヘッダー + 本文) を描く。
 func (v *issuesView) bodyLines(o issuesRenderOpts) []string {
-	iss := v.open
-	status := iss.StatusLabel()
-	if p := iss.Progress(); p != "" {
-		status += "  " + p
-	}
-	header := []string{
-		paint(clipToWidth(iss.Rel, o.width), ansiBold, o.colored),
-		paint(clipToWidth(status, o.width), ansiDim, o.colored),
-		"",
-	}
+	header := v.headLines(o.width, o.colored)
 	rows := max(o.page-len(header), 1)
 	lines := v.body.Lines(o.width-scrollbarReserve, o.colored)
 	offset := max(min(v.bodyOff, max(len(lines)-rows, 0)), 0)

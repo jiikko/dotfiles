@@ -219,15 +219,51 @@ func TestIssuesViewBodyScrollClampsToEnd(t *testing.T) {
 	v.handleKey("enter", 10)
 	// 描画で行数が確定してからスクロールする (Body は幅ごとに整形結果をキャッシュする)
 	v.lines(renderOpts(20))
+	const page = 17
 	for range 100 {
-		v.handleKey("ctrl+d", 17)
+		v.handleKey("ctrl+d", page)
 	}
-	if v.bodyOff != max(v.body.Len()-17, 0) {
-		t.Fatalf("末尾を超えてスクロールした: off=%d len=%d", v.bodyOff, v.body.Len())
+	// handleKey に渡すのは画面行数 (page)。実際にスクロールに使える行数はヘッダーを
+	// 差し引いた visibleRows で、これが描画側とずれると末尾に届かなくなる
+	if v.bodyOff != max(v.body.Len()-v.visibleRows(page), 0) {
+		t.Fatalf("末尾を超えてスクロールした: off=%d len=%d rows=%d", v.bodyOff, v.body.Len(), v.visibleRows(page))
 	}
-	v.handleKey("g", 17)
+	v.handleKey("g", page)
 	if v.bodyOff != 0 {
 		t.Fatalf("g で先頭へ戻らない: %d", v.bodyOff)
+	}
+}
+
+func TestIssuesViewGReachesLastLine(t *testing.T) {
+	// キー操作側と描画側で使う行数が一致していることの担保 (ずれると G が末尾に届かない)。
+	// 一覧と本文の両方で「G を押したら最後の行が実際に描かれる」ことを見る。
+	many := make([]*issues.Issue, 0, 40)
+	for i := 40; i > 0; i-- {
+		many = append(many, fakeIssue(fmt.Sprintf("%03d", i), "feat", "x", issues.StatusOpen))
+	}
+	v := loadedView(many...)
+	const page = 12
+	v.handleKey("G", page)
+	if out := strings.Join(v.lines(renderOpts(page)), "\n"); !strings.Contains(out, "001") {
+		t.Fatalf("一覧で G が末尾に届いていない:\n%s", out)
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "001-feat-long.md")
+	var b strings.Builder
+	for i := range 60 {
+		fmt.Fprintf(&b, "段落 %d\n\n", i)
+	}
+	b.WriteString("最終行マーカー\n")
+	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v2 := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "001-feat-long.md", Number: "001", Category: "feat"})
+	v2.handleKey("enter", page)
+	v2.lines(renderOpts(page)) // 幅ごとの整形を確定させてから G
+	v2.handleKey("G", page)
+	if out := strings.Join(v2.lines(renderOpts(page)), "\n"); !strings.Contains(out, "最終行マーカー") {
+		t.Fatalf("本文で G が末尾に届いていない:\n%s", out)
 	}
 }
 

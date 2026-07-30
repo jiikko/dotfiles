@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"glogx/issues"
 )
 
 func TestBrowseCopyURL(t *testing.T) {
@@ -806,5 +808,84 @@ func TestBrowsePRStatusStaleErrorNoToast(t *testing.T) {
 	}
 	if !m.prStatusOv.visible() {
 		t.Fatal("別 sha の遅延エラーで B の表示が閉じられた")
+	}
+}
+
+// issues viewer (i キー) の結合。ビュー本体のテストは issues_view_test.go にあり、ここでは
+// browseModel 側の配線 (キー経路の判定順・全画面差し替え・hint・スピナー) だけを見る。
+
+func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	_, cmd := m.handleKey("i")
+	if cmd == nil {
+		t.Fatal("i でスキャンの Cmd が返らない")
+	}
+	if !m.issuesOv.visible() {
+		t.Fatal("i で issues viewer が開かない")
+	}
+	// ⚠️ 回帰防止の主眼: viewer 表示中のキーは viewer が全部飲む。判定順を崩すと、一覧を
+	// 見ている最中の u / b が pull / push の確認を開く (裸の b/u が push/pull なので)
+	m.handleKey("u")
+	if m.actModal.pullConfirm {
+		t.Fatal("viewer 表示中の u が pull 確認を開いた")
+	}
+	m.handleKey("b")
+	if m.actModal.pushConfirm {
+		t.Fatal("viewer 表示中の b が push 確認を開いた")
+	}
+	// C (claude update) や w (警告コピー) も素通りしない
+	m.handleKey("C")
+	if m.actModal.updating {
+		t.Fatal("viewer 表示中の C が update を起動した")
+	}
+	m.handleKey("i") // トグルで閉じる
+	if m.issuesOv.visible() {
+		t.Fatal("i で閉じない")
+	}
+}
+
+func TestIssuesViewerReplacesWholeScreen(t *testing.T) {
+	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m.handleKey("i")
+	m.Update(issuesScanMsg{
+		dirs:   []string{"/repo/issues"},
+		issues: []*issues.Issue{fakeIssue("030", "feat", "new-thing", issues.StatusOpen)},
+	})
+	out := m.viewLines()
+	if strings.Contains(out, "subject") {
+		t.Fatalf("コミット一覧が残っている:\n%s", out)
+	}
+	if !strings.Contains(out, "030") || !strings.Contains(out, "feat") {
+		t.Fatalf("issue の行が出ていない:\n%s", out)
+	}
+	// 窓はちょうど pageSize 行 + hint 行 (枠 OFF のテスト設定)
+	if got, want := len(strings.Split(out, "\n")), m.pageSize()+1; got != want {
+		t.Fatalf("行数が違う: got %d want %d", got, want)
+	}
+	if !strings.Contains(m.hintLine(), "カテゴリ") {
+		t.Fatalf("hint が viewer のものになっていない: %q", m.hintLine())
+	}
+}
+
+func TestIssuesViewerNotOpenedWhilePanelOpen(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	withJobs(m, 0)
+	m.openPanel()
+	m.handleKey("i")
+	if m.issuesOv.visible() {
+		t.Fatal("job パネル表示中の i が viewer を開いた (パネルの語彙を優先すべき)")
+	}
+}
+
+func TestIssuesViewerScanKeepsSpinnerAlive(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.handleKey("i")
+	if !m.spinnerActive() {
+		t.Fatal("スキャン中にスピナーの tick が回らない")
+	}
+	m.Update(issuesScanMsg{dirs: []string{"/repo/issues"}})
+	if m.spinnerActive() {
+		t.Fatal("スキャン完了後もスピナーが回り続けている")
 	}
 }

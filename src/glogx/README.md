@@ -125,6 +125,7 @@ glogx --help              # ヘルプ (キー操作・記号・終了コード�
 | `P` | **PR の状態ポップアップ** (state / draft / レビュー承認 / conflict / CI をブラウザなしで確認。`o` でブラウザ・`y` で URL コピー・`P`/`q`/`h` で閉じる。mergeable は GitHub 側の遅延計算中は「計算中」表示) |
 | `b` | **git push** (y/N 確認。未 push が無ければ警告のみ。diff 表示中の `b` はスクロール) |
 | `u` | **git pull --rebase** (y/N 確認。conflict は自動 abort で元に戻す。未コミット変更があると案内して中止) |
+| `i` | **issues viewer を全画面で開く** (toggle。repo 直下と `<sub>/issues` の `*.md` をファイル名のカテゴリ別タブで一覧。`Tab`/`h`/`l` でタブ、`Enter` で本文を markdown 整形して pager 表示、`a` で done も表示、`v` で nvim、`y` でパスコピー、`r` で再読込、`q`/`i` で閉じる。状態は `pending/` `done/` などディレクトリで判定する。規約は [docs/issues-viewer-spec.md](../../docs/issues-viewer-spec.md)) |
 | `U` | **Claude Code / codex の残量を右上モーダルで表示** (toggle。表示中は 1 分ごとに自動更新。非表示中は更新を止め、再表示時に古ければ取り直す) |
 | `C` | **claude update を実行** (確認なし即実行。結果を下部モーダルに表示) |
 | `Ctrl-D` / `Ctrl-U` / `PgDn` / `PgUp` | ページスクロール |

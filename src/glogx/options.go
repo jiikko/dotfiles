@@ -201,6 +201,9 @@ func Usage() string {
   o                         コミットの GitHub ページをブラウザで開く
   p                         コミットに紐づく PR をブラウザで開く
                             (associatedPullRequests。複数あれば OPEN > MERGED 優先)
+  i                         issues viewer を全画面で開く (toggle)。repo 直下と
+                            <sub>/issues の *.md をカテゴリ別タブで一覧し、Enter で本文を
+                            表示する。読む規約は docs/issues-viewer-spec.md
   U                         Claude Code の /usage 残量を右上モーダルで表示 (toggle)
   C                         claude update を実行する (確認なし即実行。結果は下部に表示)
   w                         直近の警告/エラーをクリップボードへコピー (トーストが消えた後も可。
