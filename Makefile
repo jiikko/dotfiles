@@ -15,6 +15,7 @@ ZSH_SYNTAX_FILES := \
   bin/disassemble_excel \
   bin/git-popup \
   bin/glogx \
+  bin/lib/go_autobuild.zsh \
   bin/parallel-each \
   bin/repair-mp4-timebase \
   bin/validate-mp4 \
