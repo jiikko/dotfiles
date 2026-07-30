@@ -243,6 +243,80 @@ func TestIssuesViewBodyScrollClampsToEnd(t *testing.T) {
 	}
 }
 
+// hasCursorMark はカーソル行の矢印が描かれている行があるか。
+func hasCursorMark(lines []string) bool {
+	for _, ln := range lines {
+		if strings.HasPrefix(ln, cursorGutterMark) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestIssuesViewCursorStaysVisibleAfterRowSetChanges(t *testing.T) {
+	// ⚠️ 回帰防止: カーソルは常に窓の中にいる。行数やヘッダー高が変わる経路 (a / Tab /
+	// 通知行の増加) で窓だけ先頭へ飛ぶと、カーソル行がどこにも描かれないまま
+	// current() が見えない行を返し、Enter / v (nvim) / y が別の issue を対象にする。
+	orig := copyToClipboard
+	t.Cleanup(func() { copyToClipboard = orig })
+	copyToClipboard = func(string) error { return nil }
+
+	list := make([]*issues.Issue, 0, 50)
+	for i := 50; i > 0; i-- {
+		st := issues.StatusOpen
+		if i <= 10 {
+			st = issues.StatusDone
+		}
+		list = append(list, fakeIssue(fmt.Sprintf("%03d", i), "feat", "x", st))
+	}
+	const page = 12
+	for _, key := range []string{"a", "tab", "y"} {
+		v := loadedView(list...)
+		v.handleKey("G", page) // カーソルを末尾へ (窓は下端に張り付く)
+		if !hasCursorMark(v.lines(renderOpts(page))) {
+			t.Fatalf("前提が崩れた: G の直後にカーソル行が描かれていない (key=%q)", key)
+		}
+		v.handleKey(key, page)
+		if !hasCursorMark(v.lines(renderOpts(page))) {
+			t.Fatalf("%q の後にカーソル行が窓の外へ出た:\n%s", key, strings.Join(v.lines(renderOpts(page)), "\n"))
+		}
+	}
+}
+
+func TestIssuesViewBodyScrollRecoversAfterWidthGrows(t *testing.T) {
+	// 幅が広がると本文行数が減る。論理 bodyOff を収束させないと k / ctrl+u が
+	// 「押しても画面が動かない」状態になる (上方向だけ固まる)。
+	dir := t.TempDir()
+	path := filepath.Join(dir, "001-feat-long.md")
+	var b strings.Builder
+	for i := range 60 {
+		fmt.Fprintf(&b, "折り返しの対象になる長い段落 %d。ここは幅が狭いと複数行に割れ、広いと 1 行に収まる。\n\n", i)
+	}
+	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "001-feat-long.md", Number: "001", Category: "feat"})
+	const page = 12
+	v.handleKey("enter", page)
+
+	narrow := issuesRenderOpts{width: 40, page: page}
+	v.lines(narrow)
+	v.handleKey("G", page) // 狭い幅での末尾へ
+	v.lines(narrow)
+	tail := v.bodyOff
+
+	wide := issuesRenderOpts{width: 100, page: page}
+	v.lines(wide) // 幅が広がって行数が減る
+	if v.bodyOff >= tail {
+		t.Fatalf("幅を広げても bodyOff が縮まっていない: %d -> %d", tail, v.bodyOff)
+	}
+	before := v.bodyOff
+	v.handleKey("k", page)
+	if v.bodyOff != before-1 {
+		t.Fatalf("幅変更後の k が 1 行戻していない: %d -> %d", before, v.bodyOff)
+	}
+}
+
 func TestIssuesViewGReachesLastLine(t *testing.T) {
 	// キー操作側と描画側で使う行数が一致していることの担保 (ずれると G が末尾に届かない)。
 	// 一覧と本文の両方で「G を押したら最後の行が実際に描かれる」ことを見る。

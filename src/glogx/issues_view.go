@@ -163,11 +163,14 @@ func (v *issuesView) receive(msg issuesScanMsg) {
 }
 
 // refresh は現在のタブ・フィルタで表示対象を作り直す。
+//
+// offset を 0 に戻さないのは、cursor を温存したまま窓だけ先頭へ飛ばすと「カーソル行が
+// どの行にも描かれない」状態が残るため (a / Tab / 再スキャンで実際に起きていた)。窓は
+// windowOffset が cursor から導出するので、ここは行集合の作り直しだけを担う。
 func (v *issuesView) refresh() {
 	v.rows = issues.Filter(v.all, v.currentTab(), v.showDone)
 	v.cursor = clampIdx(v.cursor, len(v.rows))
-	v.offset = 0
-	v.listGlide.stop()
+	v.listGlide.stop() // 行集合が変わったので、旧着地点へ向かう glide は捨てる
 }
 
 // currentTab は選択中のタブ名 ("" = All)。
@@ -324,17 +327,23 @@ func (v *issuesView) moveCursor(delta, rows int) {
 }
 
 // scrollToCursor はカーソルが画面内に入るまで offset を寄せる。
-func (v *issuesView) scrollToCursor(rows int) {
+func (v *issuesView) scrollToCursor(rows int) { v.offset = v.windowOffset(rows) }
+
+// windowOffset は一覧の描画開始行 (論理 offset)。カーソルを必ず含み、末尾では余白を作らない
+// 位置へ寄せる。
+//
+// ⚠️ offset は独立した状態ではなく (cursor, 行数, 表示行数) からの導出値として扱う。表示行数は
+// キー処理時と描画時でずれる: 通知行が出てヘッダーが 1 行増える / リサイズで page が変わる /
+// タブ・フィルタ切替で行数が変わる。offset を状態として持ち回ると、そのずれが「カーソル行が
+// 1 本も描かれず、見えない行が Enter・v・y の対象になる」窓として残る。導出を
+// scrollToCursor (キー) と listLines (描画) の両方が通すことで食い違いを構造的に消す。
+func (v *issuesView) windowOffset(rows int) int {
 	if rows <= 0 {
-		return
+		return 0
 	}
-	if v.cursor < v.offset {
-		v.offset = v.cursor
-	}
-	if v.cursor >= v.offset+rows {
-		v.offset = v.cursor - rows + 1
-	}
-	v.offset = max(min(v.offset, max(len(v.rows)-rows, 0)), 0)
+	offset := min(v.offset, v.cursor)     // カーソルが窓より上に出ない
+	offset = max(offset, v.cursor-rows+1) // カーソルが窓より下に出ない
+	return max(min(offset, max(len(v.rows)-rows, 0)), 0)
 }
 
 // moveTab はタブを切り替える (端で止まらず巡回する)。
@@ -571,6 +580,9 @@ func (v *issuesView) listLines(o issuesRenderOpts) []string {
 		return append(head, paint(clipToWidth(msg, o.width), ansiDim, o.colored))
 	}
 	rows := max(o.page-len(head), 1)
+	// 論理 offset を「描画時の行数でカーソルを含む窓」へ収束させてから、その着地点に対して
+	// glide の途中位置を出す (キー処理時の行数とずれていても窓とカーソルが食い違わない)
+	v.offset = v.windowOffset(rows)
 	offset := max(min(v.listGlide.offset(v.offset), max(len(v.rows)-rows, 0)), 0)
 	end := min(offset+rows, len(v.rows))
 	out := make([]string, 0, rows)
@@ -668,6 +680,10 @@ func (v *issuesView) bodyLines(o issuesRenderOpts) []string {
 	header := v.headLines(o.width, o.colored)
 	rows := max(o.page-len(header), 1)
 	lines := v.body.Lines(o.width-scrollbarReserve, o.colored)
+	// 行数は幅で変わる (Body は幅ごとに整形し直す)。幅が広がって行数が減ると論理 bodyOff が
+	// 上限を超えたまま残り、k / ctrl+u は max(bodyOff-n, 0) しか見ないので「何度押しても
+	// 画面が動かない」打鍵数が生まれる。描画で確定した行数で論理 offset を収束させて防ぐ。
+	v.bodyOff = max(min(v.bodyOff, max(len(lines)-rows, 0)), 0)
 	offset := max(min(v.bodyGlide.offset(v.bodyOff), max(len(lines)-rows, 0)), 0)
 	end := min(offset+rows, len(lines))
 	out := make([]string, 0, rows)
