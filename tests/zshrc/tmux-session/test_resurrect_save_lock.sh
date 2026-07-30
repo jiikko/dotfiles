@@ -142,6 +142,9 @@ cat > "$FAKE_REALSAVE" <<'FS'
 # 共有 pane_contents.tar.gz を退行後の内容 (DEGRADED) で上書きする。
 # .fake_fail があれば「archive 生成中の死」を模す: archive を truncate 相当の
 # 中途半端な内容にしてから rc≠0 で死ぬ (last は前進済みでも未でもよいので触らない)。
+# ⚠️ 健全な archive は実 gzip で書き、TRUNCATED だけ非 gzip にする。wrapper の復旧判定は
+#   サイズや mtime ではなく「gzip として読めるか」なので、fixture もその区別を持つ必要がある
+#   (2026-07-30: rc=0 でも archive が壊れる経路が実証され、判定を rc から中身へ移した)。
 if [ -f "$RDIR/.fake_fail" ]; then
   printf 'TRUNCATED' > "$RDIR/pane_contents.tar.gz"
   exit 1
@@ -151,7 +154,7 @@ n=$(cat "$RDIR/.fake_n" 2>/dev/null || echo 0)
 i=1
 while [ "$i" -le "$n" ]; do printf 'window\tn%s\tx\n' "$i" >> "$RDIR/new.txt"; i=$((i+1)); done
 ln -sf new.txt "$RDIR/last"
-printf 'DEGRADED' > "$RDIR/pane_contents.tar.gz"
+printf 'DEGRADED' | gzip > "$RDIR/pane_contents.tar.gz"
 FS
 chmod +x "$FAKE_REALSAVE"
 
@@ -172,17 +175,34 @@ FIXB_OUT="$(
       : > "$RDIR/prev.txt"
       for ss in s1 s2 s3 s4 s5 s6 s7; do printf "window\t%s\tx\n" "$ss" >> "$RDIR/prev.txt"; done
       ln -sf prev.txt "$RDIR/last"
-      printf "ORIGINAL" > "$RDIR/pane_contents.tar.gz"
+      printf "ORIGINAL" | gzip > "$RDIR/pane_contents.tar.gz"
     }
     bakcount() { ls "$RDIR"/.pane_contents.ttguard.* 2>/dev/null | wc -l | tr -d " "; }
 
-    # 退行 (5→2): last も archive も退行前へ戻り、退避ファイルは残らない
-    make_prev; printf 2 > "$RDIR/.fake_n"; ( tt_save_main quiet )
-    printf "CASE:fixb_regress last=%s archive=%s bak=%s\n" "$(readlink "$RDIR/last")" "$(cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
+    # 退行 (5→2): last も archive も退行前へ戻り、退避ファイルは残らない。
+    # rc は非 0 (= 保存していない)。旧実装は rc=0 を返しており、全呼び出し側が
+    # 「保存成功」を記録していた (periodic-save rc=0 / kill-cmd save=ok / 手動 C-s の
+    # 「Tmux environment saved!」)。rc=0 は「保存した」を意味しなければならない (2026-07-30)
+    make_prev; printf 2 > "$RDIR/.fake_n"; ( tt_save_main quiet ); rrc=$?
+    printf "CASE:fixb_regress last=%s archive=%s bak=%s rc=%s\n" "$(readlink "$RDIR/last")" "$(gunzip -c "$RDIR/pane_contents.tar.gz" 2>/dev/null || cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)" "$rrc"
+
+    # 連続 reject の escape hatch: 同じ縮小を繰り返し保存すると、N 回目で 1 回通して
+    # last を前進させる。これが無いと「正当にセッションを畳んだ」だけで機構が恒久停止する
+    # (2026-07-30 実証: 8→2 セッションにしたあと全保存が reject され続け last が凍結した)
+    make_prev; printf 2 > "$RDIR/.fake_n"
+    # 状態ファイルのパスは sourced 済みの変数から取る (サブシェル内に $TMP_HOME は無く、
+    # wrapper の set -u 下で未定義参照は即死する)
+    rm -f "$TT_SAVE_REJECT_COUNT_FILE"
+    esc=""
+    for _i in 1 2 3 4; do
+      ( tt_save_main quiet ) >/dev/null 2>&1
+      esc="$esc$(readlink "$RDIR/last")|"
+    done
+    printf "CASE:fixb_streak seq=%s\n" "$esc"
 
     # 非退行 (5→4): last も archive も新しいまま、退避ファイルは掃除される
     make_prev; printf 4 > "$RDIR/.fake_n"; ( tt_save_main quiet )
-    printf "CASE:fixb_ok last=%s archive=%s bak=%s\n" "$(readlink "$RDIR/last")" "$(cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
+    printf "CASE:fixb_ok last=%s archive=%s bak=%s\n" "$(readlink "$RDIR/last")" "$(gunzip -c "$RDIR/pane_contents.tar.gz" 2>/dev/null || cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
 
     # 全喪失 (2→0): prev がしきい値未満 (セッション 4 未満 / window 8 未満) でも、
     # window 0 件の保存は無条件で退行扱いにして last も archive も戻す
@@ -191,17 +211,17 @@ FIXB_OUT="$(
       : > "$RDIR/prev.txt"
       for ss in s1 s2; do printf "window\t%s\tx\n" "$ss" >> "$RDIR/prev.txt"; done
       ln -sf prev.txt "$RDIR/last"
-      printf "ORIGINAL" > "$RDIR/pane_contents.tar.gz"
+      printf "ORIGINAL" | gzip > "$RDIR/pane_contents.tar.gz"
     }
     make_prev_small; printf 0 > "$RDIR/.fake_n"; ( tt_save_main quiet )
-    printf "CASE:fixb_zero_small last=%s archive=%s bak=%s\n" "$(readlink "$RDIR/last")" "$(cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
+    printf "CASE:fixb_zero_small last=%s archive=%s bak=%s\n" "$(readlink "$RDIR/last")" "$(gunzip -c "$RDIR/pane_contents.tar.gz" 2>/dev/null || cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
 
     # save 失敗 (rc≠0): archive 生成中の死で truncate された共有 archive をバックアップから
     # 書き戻す (旧実装は rc≠0 だと Fix B 復元ブロックを丸ごと skip して無傷の退避を捨てて
     # いた)。rc は上流の失敗をそのまま呼び出し側へ返す。
     make_prev; : > "$RDIR/.fake_fail"; ( tt_save_main quiet ); frc=$?
     rm -f "$RDIR/.fake_fail"
-    printf "CASE:fixb_fail rc=%s archive=%s bak=%s\n" "$frc" "$(cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
+    printf "CASE:fixb_fail rc=%s archive=%s bak=%s\n" "$frc" "$(gunzip -c "$RDIR/pane_contents.tar.gz" 2>/dev/null || cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
   ' 2>/dev/null
 )"
 OUT="$OUT
@@ -445,7 +465,8 @@ assert_eq_line g_clear      "guard=pass"  "フラグ未設定は保存可"
 assert_eq_line g_zero       "guard=pass"  "post-restore-all がクリアした後 (0) は保存可"
 
 printf '\n## Fix B2: pane_contents 退避 (退行時に last と一緒に戻す)\n'
-assert_eq_line fixb_regress "last=prev.txt archive=ORIGINAL bak=0" "退行時: last も pane_contents も退行前へ戻し、退避ファイルを残さない"
+assert_eq_line fixb_regress "last=prev.txt archive=ORIGINAL bak=0 rc=1" "退行時: last も pane_contents も退行前へ戻し、退避を残さず、rc は非 0 (保存していないので成功を騙らない)"
+assert_eq_line fixb_streak "seq=prev.txt|prev.txt|prev.txt|new.txt|" "連続 reject は 4 回目で 1 回通す (正当な縮小で機構が恒久停止しない escape hatch)"
 assert_eq_line fixb_ok      "last=new.txt archive=DEGRADED bak=0"  "非退行時: last も archive も新しいまま、退避ファイルは掃除する"
 assert_eq_line fixb_zero_small "last=prev.txt archive=ORIGINAL bak=0" "全喪失 (2→0): prev がしきい値未満でも last と archive を退行前へ戻す"
 assert_eq_line fixb_fail "rc=1 archive=ORIGINAL bak=0" "save 失敗 (rc≠0): 中途半端な archive をバックアップへ書き戻し、退避も残さない"

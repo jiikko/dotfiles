@@ -234,8 +234,14 @@ _tt_impl () {
     if [ -z "${TT_SKIP_REAP:-}" ] && [ -x "$_reap" ]; then "$_reap" 2>/dev/null || true; fi
 
     # tmux サーバはセッションが 1 つも無いと即終了する。復元完了までサーバを生かす hold を置く。
-    # hold により総ペイン数 = 1 となり restore_from_scratch が有効化され、
-    # 保存セッションがスクロールバックごと復元される。
+    # ⚠️ hold の目的は「サーバをセッション 0 個で落とさない」ことだけ。かつてここには
+    #   「総ペイン数 = 1 で restore_from_scratch が有効化されスクロールバックごと復元される」と
+    #   書いてあったが、これは誤り (2026-07-30 の A/B 実測で反証)。スクロールバック復元は
+    #   from_scratch と無関係で、new_session/new_window/new_pane が pane_contents_file_exists で
+    #   個別に判定する。from_scratch が支配するのは upstream の overwrite 分岐 (既存 pane を
+    #   作り直して kill する = 作業 pane 破壊) と handle_session_0 だけ。誤った因果説明のせいで
+    #   破壊的分岐が「必要なもの」として温存されていたため、_tmux.conf で
+    #   @resurrect-never-overwrite on を入れて無効化した。
     local hold="${TT_HOLD_PREFIX}$$"
     tmux new-session -d -s "$hold"
     _tt_wait_for_restore

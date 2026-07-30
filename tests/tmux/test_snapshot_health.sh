@@ -70,6 +70,14 @@ mk_snapshot() {  # $1=名前 $2=セッション数 $3=何秒前にするか
   fi
 }
 
+# last の pane 行に対応する健全な archive を作る ($1=セッション数)
+mk_archive() {
+  local d="$TMP_DIR/pc" i
+  rm -rf "$d"; mkdir -p "$d/pane_contents"
+  for i in $(seq 1 "$1"); do printf 'scrollback\n' > "$d/pane_contents/pane-sess$i:1.1"; done
+  ( cd "$d" && tar czf "$RDIR/pane_contents.tar.gz" ./pane_contents/ ) 2>/dev/null
+}
+
 health() {  # 共通 env で実行。追加 env は呼び出し側が前置きする
   run "$STUB_PATH" env \
     TT_WATCHDOG_DIR="$TMP_DIR/wd" TT_PERIODIC_STATE_DIR="$TMP_DIR/ps" \
@@ -88,7 +96,7 @@ spawn_helper; WATCH="$REPLY_PID";    mkdir -p "$TMP_DIR/wd/1.lock"; printf '%s\n
 
 # --- (1) 正常 -------------------------------------------------------------------------
 mk_snapshot snap_ok.txt 3 0
-: > "$RDIR/pane_contents.tar.gz"
+mk_archive 3
 health
 [[ "$RC" -eq 0 ]] || { printf '✗ 正常状態で exit %s (0 のはず):\n' "$RC"; cat "$RUN_OUT"; exit 1; }
 grep -q 'OK' "$RUN_OUT" || { printf '✗ OK と表示されない:\n'; cat "$RUN_OUT"; exit 1; }
@@ -99,9 +107,12 @@ health --quiet
 [[ "$RC" -eq 0 && ! -s "$RUN_OUT" ]] || { printf '✗ --quiet が正常時に出力した:\n'; cat "$RUN_OUT"; exit 1; }
 printf '✓ --quiet は正常時に無出力\n'
 
-# --- (2) last が古い → NG --------------------------------------------------------------
+# --- (2) 最後の保存が古い → NG ---------------------------------------------------------
+# 鮮度の入力は「last と archive の新しい方」なので、両方を過去にずらす必要がある
+# (dedup で last の mtime が動かない世代でも archive は更新されるため。誤検知防止の設計)
 mk_snapshot snap_old.txt 3 7200   # 2 時間前 (閾値 = 15 分 × 2 だが下限 30 分 → 30 分)
-: > "$RDIR/pane_contents.tar.gz"
+mk_archive 3
+touch -t "$(date -v-7200S '+%Y%m%d%H%M.%S' 2>/dev/null || date -d '-7200 seconds' '+%Y%m%d%H%M.%S')" "$RDIR/pane_contents.tar.gz"
 health
 [[ "$RC" -eq 1 ]] || { printf '✗ 古い last で exit %s (1 のはず):\n' "$RC"; cat "$RUN_OUT"; exit 1; }
 grep -q '古い' "$RUN_OUT" || { printf '✗ 鮮度異常が報告されない:\n'; cat "$RUN_OUT"; exit 1; }
@@ -117,14 +128,26 @@ health
 grep -q 'last スナップショットが無い' "$RUN_OUT" || { printf '✗ last 不在が報告されない:\n'; cat "$RUN_OUT"; exit 1; }
 printf '✓ last が無いと NG\n'
 
-# --- (5) archive が last より古い → NG -------------------------------------------------
+# --- (5a) archive が truncate されている → NG (mtime は新しいので中身で判定できるか) ----
+# レビューで実証された欠陥の回帰テスト: 旧実装は mtime 比較だったため、たった今 truncate された
+# 壊れた archive を「新しいから OK」と判定していた。復元すると全 pane の scrollback が空になる。
 mk_snapshot snap_now.txt 3 0
-touch -t "$(date -v-3600S '+%Y%m%d%H%M.%S' 2>/dev/null || date -d '-3600 seconds' '+%Y%m%d%H%M.%S')" "$RDIR/pane_contents.tar.gz"
+printf '\037\213broken' > "$RDIR/pane_contents.tar.gz"   # gzip magic だけの壊れたファイル (mtime は今)
 health
-[[ "$RC" -eq 1 ]] || { printf '✗ archive 世代ずれで exit %s (1 のはず):\n' "$RC"; cat "$RUN_OUT"; exit 1; }
-grep -q 'pane_contents.tar.gz が last より' "$RUN_OUT" || { printf '✗ archive の世代ずれが報告されない:\n'; cat "$RUN_OUT"; exit 1; }
-printf '✓ archive が last より古いと NG (pane 内容が別世代になる silent な喪失)\n'
-: > "$RDIR/pane_contents.tar.gz"
+[[ "$RC" -eq 1 ]] || { printf '✗ 壊れた archive で exit %s (1 のはず):\n' "$RC"; cat "$RUN_OUT"; exit 1; }
+grep -q '壊れている' "$RUN_OUT" || { printf '✗ archive の破損が報告されない:\n'; cat "$RUN_OUT"; exit 1; }
+printf '✓ archive が壊れていると NG (mtime が新しくても中身で判定する)\n'
+
+# --- (5b) archive に last の pane が入っていない → NG (世代不一致・部分欠落) -----------
+mk_snapshot snap_now.txt 5 0   # last は 5 セッション
+mk_archive 2                   # archive は 2 セッション分しか無い
+health
+[[ "$RC" -eq 1 ]] || { printf '✗ archive の pane 欠落で exit %s (1 のはず):\n' "$RC"; cat "$RUN_OUT"; exit 1; }
+grep -q 'last の pane が 3 個入っていない' "$RUN_OUT" \
+  || { printf '✗ pane 欠落数が正しく報告されない:\n'; cat "$RUN_OUT"; exit 1; }
+printf '✓ archive に last の pane が欠けていると NG (その pane は復元しても空になる)\n'
+mk_snapshot snap_now.txt 3 0
+mk_archive 3
 
 # --- (4) 常駐プロセス不在 → NG ---------------------------------------------------------
 kill "$PERIODIC" 2>/dev/null; sleep 0.3

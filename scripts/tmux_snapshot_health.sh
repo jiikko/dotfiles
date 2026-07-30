@@ -60,16 +60,27 @@ threshold=$(( interval_min * 60 * 2 ))
 [ "$threshold" -lt "$TT_HEALTH_MIN_STALE_SECONDS" ] && threshold="$TT_HEALTH_MIN_STALE_SECONDS"
 
 last_target="$(readlink "$last_link" 2>/dev/null || true)"
+archive="$rdir/pane_contents.tar.gz"
 if [ -z "$last_target" ] || [ ! -f "$rdir/$last_target" ]; then
   problems+=("last スナップショットが無い (保存が一度も成功していない)")
   lines+=("last: なし")
   last_age=-1
 else
   last_mtime="$(mtime_of "$rdir/$last_target")"
-  last_age=$(( now - ${last_mtime:-0} ))
-  lines+=("last: $last_target ($(( last_age / 60 )) 分前 / 閾値 $(( threshold / 60 )) 分)")
+  # ⚠️ 鮮度の入力は「last の mtime」だけにしないこと。upstream は状態無変化のとき新 layout を
+  #   捨てて last を据え置く (dedup) ため、保存が成功していても last の mtime は前進しない。
+  #   構成変化のない夜間・週末に「保存経路が止まっている」と誤検知する (レビュー指摘 2026-07-30)。
+  #   保存が走ったことは archive の mtime に現れるので、両者の新しい方を「最後に保存が成功した
+  #   時刻」として使う。
+  fresh_mtime="${last_mtime:-0}"
+  if [ -f "$archive" ]; then
+    a_m="$(mtime_of "$archive")"
+    [ "${a_m:-0}" -gt "$fresh_mtime" ] && fresh_mtime="$a_m"
+  fi
+  last_age=$(( now - fresh_mtime ))
+  lines+=("last: $last_target (最後の保存 $(( last_age / 60 )) 分前 / 閾値 $(( threshold / 60 )) 分)")
   if [ "$last_age" -gt "$threshold" ]; then
-    problems+=("last が $(( last_age / 60 )) 分前で古い (保存間隔 ${interval_min} 分の 2 倍超) — 保存経路が止まっている疑い")
+    problems+=("最後の保存が $(( last_age / 60 )) 分前で古い (保存間隔 ${interval_min} 分の 2 倍超) — 保存経路が止まっている疑い")
   fi
 fi
 
@@ -91,18 +102,33 @@ daemon_alive() {  # $1=state dir, $2=表示名
 daemon_alive "$TT_PERIODIC_STATE_DIR" "周期保存"
 daemon_alive "$TT_WATCHDOG_DIR" "watchdog"
 
-# --- 3. last と archive の世代整合 ------------------------------------------------------
-archive="$rdir/pane_contents.tar.gz"
+# --- 3. archive の中身の健全性 (mtime ではなく実際に読めるかで判定) ---------------------
+# ⚠️ mtime 比較では今回の破損を検出できない。truncate された archive は mtime が新しくなるため
+#   「archive の方が新しい = OK」に見えてしまう (レビューで実証 2026-07-30: 200 byte の壊れた
+#   archive でも mtime 判定は OK を返した)。中身を読んで last の pane 集合を包含しているかだけが
+#   唯一この破損を捕まえる検査。壊れていれば「window は復元されるのに全 pane の scrollback が
+#   空」という silent なデータ喪失が確定している状態。
 if [ "$(tmux show -gqv @resurrect-capture-pane-contents 2>/dev/null)" = "on" ]; then
   if [ ! -f "$archive" ]; then
     problems+=("pane_contents.tar.gz が無い (capture-pane-contents on なのに pane 内容が復元できない)")
     lines+=("archive: なし")
-  elif [ "$last_age" -ge 0 ]; then
-    a_mtime="$(mtime_of "$archive")"
-    skew=$(( ${last_mtime:-0} - ${a_mtime:-0} ))
-    lines+=("archive: last との時差 ${skew} 秒 (許容 ${TT_HEALTH_ARCHIVE_SKEW_SECONDS} 秒)")
-    if [ "$skew" -gt "$TT_HEALTH_ARCHIVE_SKEW_SECONDS" ]; then
-      problems+=("pane_contents.tar.gz が last より ${skew} 秒古い — 復元しても pane 内容が別世代になる")
+  elif ! gzip -t "$archive" 2>/dev/null; then
+    problems+=("pane_contents.tar.gz が壊れている (gzip として読めない) — 復元すると全 pane の scrollback が失われる")
+    lines+=("archive: 破損 ($(wc -c < "$archive" | tr -d ' ') bytes)")
+  else
+    entries="$(tar tzf "$archive" 2>/dev/null | grep -c 'pane-' || true)"
+    lines+=("archive: entry $entries 個")
+    if [ "${entries:-0}" -eq 0 ]; then
+      problems+=("pane_contents.tar.gz に pane が 1 つも入っていない — scrollback が復元されない")
+    elif [ "$last_age" -ge 0 ]; then
+      # last の pane 行が archive の entry に含まれているか (世代不一致・部分欠落の検出)
+      want="$(awk -F'\t' '$1=="pane"{printf "pane-%s:%s.%s\n", $2, $3, $6}' "$rdir/$last_target" 2>/dev/null | sort -u)"
+      have="$(tar tzf "$archive" 2>/dev/null | sed -E 's|^\./pane_contents/||' | sort -u)"
+      miss="$(comm -23 <(printf '%s\n' "$want") <(printf '%s\n' "$have") 2>/dev/null | grep -c . || true)"
+      lines+=("archive: last の pane のうち未収録 $miss 個")
+      if [ "${miss:-0}" -gt 0 ]; then
+        problems+=("archive に last の pane が $miss 個入っていない — その pane は復元しても中身が空になる")
+      fi
     fi
   fi
 fi

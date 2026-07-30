@@ -210,6 +210,39 @@ tt_save_log_guard() {
       "$(date +%FT%T)" "$1" "$2" "$3" "$4" "$5" "$6" >> "$HOME/.cache/tt-restore-trigger.log"; } 2>/dev/null || true
 }
 
+# 観測ログへの汎用 1 行追記 (書式は docs/tmux-plugins.md「観測ログの読み方」の表が読者側の正本)
+tt_save_log() {
+  { mkdir -p "$HOME/.cache" && printf '%s\t%s\n' "$(date +%FT%T)" "$1" \
+      >> "$HOME/.cache/tt-restore-trigger.log"; } 2>/dev/null || true
+}
+
+# pane 内容の保存が有効か
+tt_capture_contents_on() {
+  [ "$(tmux show -gqv @resurrect-capture-pane-contents 2>/dev/null)" = "on" ]
+}
+
+# archive が「gzip として最後まで読めるか」。
+# ⚠️ サイズや mtime で判定しないこと: truncate された壊れた archive は mtime が新しく、
+# サイズも 0 でないことがある (実測: gzip stub が 200 byte 出して死んだケース)。
+# 中身を実際に読めるかだけが唯一の判定基準 (レビューで実証 2026-07-30)。
+# ここは保存経路上の安価なゲートに留める (tar の entry と last の pane 集合の突合という
+# 深い検査は scripts/tmux_snapshot_health.sh の担当。毎保存で tar を展開するのは重い)。
+tt_archive_ok() {
+  [ -s "$1" ] || return 1
+  gzip -t "$1" 2>/dev/null
+}
+
+# 連続 reject 回数の状態ファイル。恒久 freeze を構造的に不可能にするために使う
+TT_SAVE_REJECT_COUNT_FILE="${TT_SAVE_REJECT_COUNT_FILE:-$TT_SAVE_STATE_DIR/reject_streak}"
+# この回数だけ連続 reject したら 1 回通す (正当な縮小で機構が永久停止するのを防ぐ)
+TT_SAVE_REJECT_STREAK_MAX="${TT_SAVE_REJECT_STREAK_MAX:-3}"
+
+tt_reject_streak() { cat "$TT_SAVE_REJECT_COUNT_FILE" 2>/dev/null | tr -dc '0-9' || true; }
+tt_reject_streak_set() {
+  mkdir -p "$(dirname "$TT_SAVE_REJECT_COUNT_FILE")" 2>/dev/null
+  printf '%s\n' "$1" > "$TT_SAVE_REJECT_COUNT_FILE" 2>/dev/null || true
+}
+
 # lock を bounded-wait で取得し、保持したまま upstream save.sh を foreground 同期実行する本体。
 # TT_SAVE_SOURCE_ONLY=1 で source するとここは実行されず、関数だけをテストから直接呼べる
 # （tmux_resurrect_debounced_save.sh と同方式。tests/zshrc/tmux-session/test_resurrect_save_lock.sh）。
@@ -355,6 +388,21 @@ tt_save_main() {
       if { [ "${tt_prev_n:-0}" -ge 4 ] && [ "$(( tt_new_n * 3 ))" -le "${tt_prev_n:-0}" ]; } || \
          { [ "${tt_prev_w:-0}" -ge 8 ] && [ "$(( tt_new_w * 3 ))" -le "${tt_prev_w:-0}" ]; } || \
          { [ "${tt_prev_w:-0}" -ge 1 ] && [ "$tt_new_w" -eq 0 ]; }; then
+        # 連続 reject の escape hatch。
+        # ⚠️ しきい値は「凍結した prev」との比なので、ユーザーが正当にセッションを 1/3 以下へ
+        #   畳むと以後の保存が毎回 reject され、機構が恒久停止する (レビューで実証 2026-07-30:
+        #   8→2 セッションにしたあと全保存が reject され続け、last が 8 セッション世代で凍結)。
+        #   全喪失 (new_w=0) は artifact と断定できるので escape させないが、それ以外は
+        #   N 回連続で reject したら 1 回通して凍結を破る。
+        local tt_streak; tt_streak="$(tt_reject_streak)"; tt_streak="${tt_streak:-0}"
+        if [ "$tt_new_w" -gt 0 ] && [ "$tt_streak" -ge "$TT_SAVE_REJECT_STREAK_MAX" ]; then
+          tt_reject_streak_set 0
+          tt_save_log "regression-stuck-override prev_sessions=$tt_prev_n new_sessions=$tt_new_n prev_windows=$tt_prev_w new_windows=$tt_new_w streak=$tt_streak accepted=$tt_new_target"
+          # last は前進させたまま (= 縮小を受け入れる)。archive も新しいものを残す
+          [ -n "$tt_archive_bak" ] && [ -f "$tt_archive_bak" ] && rm -f "$tt_archive_bak" 2>/dev/null
+          return 0
+        fi
+        tt_reject_streak_set "$(( tt_streak + 1 ))"
         ln -sf "$tt_prev_target" "$tt_last_link"
         # Fix B2: last と一緒に共有 pane_contents.tar.gz も退行前の内容へ戻す。
         # 復元側が本 lock を持たずに読むため、temp へ書いてから mv でアトミックに差し替える。
@@ -362,22 +410,45 @@ tt_save_main() {
           mv -f "$tt_archive_bak" "$tt_archive" 2>/dev/null || true
         fi
         tt_save_log_guard "$tt_prev_n" "$tt_new_n" "$tt_prev_w" "$tt_new_w" "$tt_prev_target" "$tt_new_target"
+        # ⚠️ reject したら非 0 を返す。rc=0 は「保存した」を意味しなければならない。
+        #   旧実装は rc=0 を返しており、全呼び出し側が虚偽の成功を記録していた
+        #   (periodic-save rc=0 / kill-cmd save=ok / 手動 C-s の「Tmux environment saved!」)。
+        #   呼び出し側の扱い: debounce は timestamp を進めず `|| true` で hook 契約を守る /
+        #   kill shim は rejected-rcN と記録 / periodic は rc=1 と記録 / 対話 bind は
+        #   エラーが見えるのが正 (scripts/CLAUDE.md の無音契約の対象外)。
+        return 1
       fi
+      # last を前進させた保存も 1 行残す。
+      # ⚠️ reject だけ記録して pass を記録しないのは非対称で、より危険な結果 (しきい値未満の
+      #   部分喪失が last に焼き付く) の方が観測できなかった (レビュー指摘 2026-07-30)。
+      tt_reject_streak_set 0
+      tt_save_log "save-advanced prev_sessions=${tt_prev_n:-0} new_sessions=$tt_new_n prev_windows=${tt_prev_w:-0} new_windows=$tt_new_w target=$tt_new_target"
     fi
   fi
-  # Fix B2 拡張: save.sh が失敗 (rc≠0) した場合、共有 archive は「生成途中で truncate された」
-  # 可能性が最も高い (upstream は layout dump → ln -fs last → `gzip >` で archive を上書き、の
-  # 順で、rc≠0 はまさに archive 生成中の死を含む)。上の退行判定は rc=0 が前提で rc≠0 を守らない
-  # ため、ここで archive がバックアップと異なるときだけ書き戻し、次のクラッシュ→復元での
-  # スクロールバック silent 喪失 (壊れた gzip で tar 展開失敗) を防ぐ。cmp 一致 = archive 無傷
-  # なら書き戻さず下の掃除に任せる。
-  if [ "$tt_rc" -ne 0 ] && [ -n "$tt_archive_bak" ] && [ -f "$tt_archive_bak" ]; then
-    if ! cmp -s "$tt_archive_bak" "$tt_archive" 2>/dev/null; then
+  # Fix B3: archive の完全性を rc に依らず検証し、壊れていれば退避コピーから復旧する。
+  # ⚠️ rc≠0 だけを見ていた旧実装には穴があった (レビューで実証 2026-07-30):
+  #   upstream の save_all は pane_contents の生成失敗を戻り値に反映しない。gzip が失敗しても
+  #   save.sh は rc=0 を返すため、「last は健全な layout・archive は 0 byte のゴミ」という
+  #   不整合がそのまま残り、復元すると window は全部出るのに全 pane の scrollback が空になる。
+  #   しかも復元側は rc=0 / restore-end 成功を記録するので完全に silent なデータ喪失だった。
+  #   さらに旧実装は下の掃除で退避コピーを無条件削除しており、唯一の良い archive を捨てていた。
+  # よって判定は「gzip として読めて entry が 1 つ以上あるか」に変え、rc は見ない。
+  if [ -f "$tt_archive" ] && ! tt_archive_ok "$tt_archive"; then
+    if [ -n "$tt_archive_bak" ] && [ -s "$tt_archive_bak" ]; then
       mv -f "$tt_archive_bak" "$tt_archive" 2>/dev/null || true
+      tt_save_log "archive-repaired from=backup rc=$tt_rc epoch=$(date +%s)"
+    else
+      # 直せない = この時点で scrollback は失われている。せめて silent にしない
+      tt_save_log "archive-broken norepair rc=$tt_rc epoch=$(date +%s)"
     fi
   fi
-  # 退行を戻さなかった場合は退避コピーを掃除する（戻した場合は mv 済みで既に無い）。
-  [ -n "$tt_archive_bak" ] && [ -f "$tt_archive_bak" ] && rm -f "$tt_archive_bak" 2>/dev/null
+  # 退避コピーの掃除は「現 archive が健全と確認できたとき」だけ行う。確認できないまま捨てると
+  # 復旧手段が消える (旧実装の無条件削除がまさにそれだった)。
+  if [ -n "$tt_archive_bak" ] && [ -f "$tt_archive_bak" ]; then
+    if [ ! -f "$tt_archive" ] || tt_archive_ok "$tt_archive"; then
+      rm -f "$tt_archive_bak" 2>/dev/null
+    fi
+  fi
   return "$tt_rc"
 }
 

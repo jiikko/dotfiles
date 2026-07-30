@@ -67,6 +67,15 @@ fi
 
 log_line "restore-manual-begin epoch=$(date +%s)"
 
+# 復元前に archive の完全性を確かめる。壊れていても復元は続行するが (layout だけでも戻す価値が
+# ある)、記録は残す。upstream は archive 展開の失敗を検証せず rc=0 で完走するため、これが無いと
+# 「window は全部戻ったのに全 pane の scrollback が空」が完全に silent になる (実証 2026-07-30)。
+tt_archive="$(tt_resurrect_dir)/pane_contents.tar.gz"
+if [ "$(tmux show -gqv @resurrect-capture-pane-contents 2>/dev/null)" = "on" ] \
+   && [ -f "$tt_archive" ] && ! gzip -t "$tt_archive" 2>/dev/null; then
+  log_line "restore-archive-broken path=$tt_archive epoch=$(date +%s)"
+fi
+
 # 成否判定の基準を自分の実行に閉じる。@tt-restore-complete はグローバルで sticky なため、
 # 前回成功の 1 が残っている窓で restore.sh が pre-restore-all 到達前に死ぬと「成功」に見え、
 # in-progress フラグの掃除も skip する = runner が消すはずだった silent 途中死そのものになる
@@ -96,6 +105,8 @@ rc=$?
 
 if [ "$(tmux show -gqv @tt-restore-complete 2>/dev/null)" = "1" ]; then
   log_line "restore-end rc=$rc epoch=$(date +%s)"
+  # 「完走した」と「全部復元された」は別。突合して欠落を記録する (rc=0 でも部分復元はありうる)
+  "$SCRIPT_DIR/tmux_verify_restore.sh" >/dev/null 2>&1 || true
 else
   tmux set-option -g @tt-restore-in-progress 0 2>/dev/null || true
   log_line "restore-aborted reason=rc-$rc epoch=$(date +%s)"
