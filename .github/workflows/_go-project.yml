@@ -1,6 +1,6 @@
 ---
 # src/<project> の Go lint + test を実行する再利用 workflow (workflow_call)。
-# glog / glogx / git-popup / parallel-each / disassemble_excel の CI 本体が
+# glogx / git-popup / parallel-each / disassemble_excel の CI 本体が
 # 「プロジェクト dir だけ違う」完全同型だったのを一元化。各プロジェクトは
 # paths filter だけ持つ薄い caller (src_<project>.yml) から dir を渡して呼ぶ。
 # 新しい Go プロジェクトを src/ に足したら caller を 1 本足すだけ

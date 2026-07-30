@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # CI bench ハーネス: 指定ベンチを BENCH_RUNS 回 (既定 20) 実行して統計集約
-# (tests/bench_stats.sh) し、前回 run との比較テーブルを Step Summary に書き出してから
+# (tests/bench_stats.sh) し、直近 run プールとの比較テーブルを Step Summary に書き出してから
 # 予算ファイルで超過をゲートする。bench.yml の nvim / zsh / tmux / glogx が共用する。
 #
 # 多数回実行 → per-metric min 照合の理由: 単発サンプルは混雑した共有 runner で粗い予算すら
 # 突き破る (2026-07-17 run 29536560206: 全計測が 2〜5 倍に膨れた)。min 集約でノイズ耐性を
 # 持たせる。予算を緩める対処は bufload 678ms 級の実回帰を見逃すため採らない。
-# 前回比較 (median + Mann-Whitney U) の設計は bench_stats.sh ヘッダ参照。
+# baseline 比較 (median + Mann-Whitney U) の設計は bench_stats.sh ヘッダ参照。
 #
-# 前回サンプルの持ち越し: BENCH_PREV_FILE (前回 run の TSV。bench.yml が Actions cache で
-# restore) を読み、BENCH_STATS_OUT に今回分を書く (同 cache が save。green run のみ save
-# されるため、赤 run が比較基準を汚さない)。未設定/不在なら比較列は 🆕 になるだけ。
+# baseline サンプルの持ち越し: BENCH_PREV_FILE (直近数 run 分のサンプル台帳 TSV。bench.yml が
+# Actions cache で restore) を読み、BENCH_STATS_OUT に今回分を先頭へ足した台帳を書く (同 cache が
+# save。green run のみ save されるため、赤 run が比較基準を汚さない)。台帳の形式・保持 run 数は
+# bench_stats.sh が出典。未設定/不在なら比較列は 🆕 になるだけ。
 #
 # 予算超過で fail する前に必ず Step Summary を書き出す (結果を残してから落とす)。
 #
