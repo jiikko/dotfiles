@@ -50,12 +50,23 @@ log_line() {
 
 # 発行元の同定: argv に「tmux ... kill-server/kill-session」を持つプロセスを ps から探す。
 # 自分のプロセスツリーとサーバ本体は除外する。複数 (稀) は先頭 3 件まで。
+# ⚠️ 実行ファイル名は basename で判定する。`$2 == "tmux"` の厳密一致だとフルパス起動
+#   (/opt/homebrew/bin/tmux kill-server。スクリプト経由では普通) を取り逃し、この装置の
+#   主目的である「誰が殺したか」が not-found になる (2026-07-30 セルフレビューで検出)。
 find_issuers() {
-  local server_pid self_pid
+  local server_pid self_pid kind_re
   server_pid="$(tmux display-message -p '#{pid}' 2>/dev/null)"
   self_pid=$$
-  ps -axo pid=,command= 2>/dev/null | awk -v kind="$kind" -v srv="${server_pid:-0}" -v self="$self_pid" '
-    $2 == "tmux" && index($0, " " kind) > 0 {
+  # 発行元の argv は略記形かもしれない (tmux は曖昧でない前方一致を受理し、alias も略記に
+  # 張ってある)。正式名で完全一致すると `tmux kill-sessio` の発行元を取り逃すため、
+  # 曖昧でない最短接頭辞 (kill-ser / kill-ses) で照合する。
+  case "$kind" in
+    kill-server)  kind_re=' kill-ser' ;;
+    kill-session) kind_re=' kill-ses' ;;
+    *)            kind_re=" $kind" ;;
+  esac
+  ps -axo pid=,command= 2>/dev/null | awk -v kre="$kind_re" -v srv="${server_pid:-0}" -v self="$self_pid" '
+    $2 ~ /(^|\/)tmux$/ && index($0, kre) > 0 {
       if ($1 == srv || $1 == self) next
       print $1
       if (++n >= 3) exit
@@ -88,7 +99,17 @@ case "$kind" in
   kill-session) [ "${sessions:-0}" -le 1 ] && do_save=1 ;;
 esac
 
+# hold セッション (bootstrap 中の一時セッション) しか無い状態では保存しない。
+# wrapper の only-hold ガードは lock の bounded-wait (15s) より後段にあるため、ここで発火させると
+# tt bootstrap の hold 掃除が最大 15s (shim の cap で 20s) 待たされる。どのみち wrapper は
+# reject するので、待たせる価値がない (レビュー指摘 2026-07-30)。
+if [ "$do_save" -eq 1 ] && tt_only_hold_sessions; then
+  do_save=0
+  hold_only=1
+fi
+
 save_result=skipped
+[ "${hold_only:-0}" = 1 ] && save_result=skipped-hold-only
 if [ "$do_save" -eq 1 ]; then
   save_script="$(tmux show -gqv @resurrect-save-script-path 2>/dev/null)"
   if [ -n "$save_script" ] && [ -x "$save_script" ]; then
@@ -103,7 +124,15 @@ if [ "$do_save" -eq 1 ]; then
     if kill -0 "$save_pid" 2>/dev/null; then
       save_result=timeout   # 保存は走ったまま kill へ進む (部分保存は退行ガードが弾く)
     else
-      save_result=ok
+      # ⚠️ 終了コードを必ず収集する。捨てると「wrapper がガードで reject した (= 何も保存
+      # されていない)」ケースまで save=ok と記録され、ログが「保存できたつもり」の嘘をつく
+      # (レビューで実証: @tt-restore-in-progress 残置中の kill-server が save=ok になった)。
+      wait "$save_pid"; save_rc=$?
+      if [ "$save_rc" -eq 0 ]; then
+        save_result=ok
+      else
+        save_result="rejected-rc$save_rc"
+      fi
     fi
   else
     save_result=no-save-script
@@ -115,6 +144,9 @@ for ipid in $(find_issuers); do
   issuer_info="${issuer_info:+$issuer_info | }$(ancestry_of "$ipid")"
 done
 
-log_line "kill-cmd cmd=$kind sessions=$sessions save=$save_result epoch=$(date +%s) issuer=${issuer_info:-not-found}"
+# server pid を必ず刻む。watchdog の死因分類は共有ログを時間窓だけで相関するため、pid が無いと
+# 「前世代のサーバへの kill-cmd」が新サーバの外因死に誤って結び付く (レビューで実証: 外因死が
+# verdict=kill-server-command になった)。
+log_line "kill-cmd cmd=$kind pid=$(tmux display-message -p '#{pid}' 2>/dev/null) sessions=$sessions save=$save_result epoch=$(date +%s) issuer=${issuer_info:-not-found}"
 
 exit 0

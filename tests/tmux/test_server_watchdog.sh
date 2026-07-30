@@ -20,6 +20,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# ⚠️ 補助プロセス (サーバ役) は必ず `( trap - EXIT; exec ... ) &` で起こすこと。素の `cmd &` は
+#    fork 直後 (exec 前) に kill されると子が EXIT trap を継承したまま走り、cleanup の rm -rf が
+#    テスト途中で TMP_DIR を消す (test_periodic_save.sh で実際に踏み bash -x で特定 2026-07-30)。
+#    本テストは「サーバ役を kill して死亡検知させる」のが本質なので、このレースを最も踏みやすい。
+spawn_fake_server() {  # pid を REPLY_PID に返す
+  ( trap - EXIT; exec sleep 300 ) &
+  REPLY_PID=$!
+  FAKE_PIDS+=("$REPLY_PID")
+}
+
 CALLS="$TMP_DIR/calls.log"; : > "$CALLS"; export CALLS
 mkdir -p "$TMP_DIR/bin" "$TMP_DIR/pslogs" "$TMP_DIR/wd"
 DEFAULT_SOCK="$(realpath /tmp 2>/dev/null || echo /tmp)/tmux-$(id -u)/default"
@@ -51,7 +61,7 @@ wait_for_death_line() {  # $1=pid $2=説明。bounded-wait で server-death 行�
 
 # --- (1) 外因死: 空ログ状態でサーバ kill → external-signal-or-crash + pslog ------------
 : > "$LOG"
-sleep 300 & FAKE=$!; FAKE_PIDS+=("$FAKE")
+spawn_fake_server; FAKE="$REPLY_PID"
 wd_env "$FAKE" &
 WD=$!
 sleep 0.5
@@ -67,11 +77,11 @@ pslog_path="$(sed -n "s/.*pslog=\(.*\)$/\1/p" "$LOG" | tail -1)"
 [ ! -d "$TMP_DIR/wd/$FAKE.lock" ] || { printf '✗ 死亡処理後に lock が残っている\n'; exit 1; }
 printf '✓ 外因死: verdict=external-signal-or-crash + ps スナップショット + lock 掃除\n'
 
-# --- (2) kill-cmd 直近あり → verdict=kill-server-command -------------------------------
+# --- (2) 同一サーバ pid の kill-cmd が直近にある → verdict=kill-server-command ---------
 : > "$LOG"
-printf '%s\tkill-cmd cmd=kill-server sessions=9 save=ok epoch=%s issuer=test\n' \
-  "$(date +%FT%T)" "$(date +%s)" >> "$LOG"
-sleep 300 & FAKE=$!; FAKE_PIDS+=("$FAKE")
+spawn_fake_server; FAKE="$REPLY_PID"
+printf '%s\tkill-cmd cmd=kill-server pid=%s sessions=9 save=ok epoch=%s issuer=test\n' \
+  "$(date +%FT%T)" "$FAKE" "$(date +%s)" >> "$LOG"
 wd_env "$FAKE" &
 WD=$!
 sleep 0.3
@@ -79,12 +89,29 @@ kill "$FAKE" 2>/dev/null
 wait_for_death_line "$FAKE" "kill-cmd 相関"
 wait "$WD" 2>/dev/null || true
 grep -q "server-death pid=$FAKE .*verdict=kill-server-command" "$LOG" \
-  || { printf '✗ kill-cmd 直近ありで verdict が kill-server-command にならない:\n'; cat "$LOG"; exit 1; }
-printf '✓ 直近の kill-cmd 行と相関して verdict=kill-server-command\n'
+  || { printf '✗ 同一 pid の kill-cmd 直近ありで verdict が kill-server-command にならない:\n'; cat "$LOG"; exit 1; }
+printf '✓ 同一サーバ pid の kill-cmd と相関して verdict=kill-server-command\n'
+
+# --- (2b) 別サーバ世代の kill-cmd では kill と誤分類しない (世代跨ぎ誤分類の回帰テスト) --
+# レビューで実証された欠陥: 時間窓だけで相関していたため、前世代を kill-server で落とした後に
+# 新サーバが外因死すると verdict=kill-server-command になり、捜査方向が反転していた。
+: > "$LOG"
+spawn_fake_server; FAKE="$REPLY_PID"
+printf '%s\tkill-cmd cmd=kill-server pid=%s sessions=9 save=ok epoch=%s issuer=other-generation\n' \
+  "$(date +%FT%T)" "$((FAKE + 100000))" "$(date +%s)" >> "$LOG"
+wd_env "$FAKE" &
+WD=$!
+sleep 0.3
+kill "$FAKE" 2>/dev/null
+wait_for_death_line "$FAKE" "別世代の kill-cmd"
+wait "$WD" 2>/dev/null || true
+grep -q "server-death pid=$FAKE .*verdict=external-signal-or-crash" "$LOG" \
+  || { printf '✗ 別サーバ pid の kill-cmd を自分のものとして誤分類した:\n'; cat "$LOG"; exit 1; }
+printf '✓ 別サーバ世代の kill-cmd では誤分類せず external-signal-or-crash\n'
 
 # --- (3) 二重起動ガード: 先任が生きている間、後発は即退く ------------------------------
 : > "$LOG"
-sleep 300 & FAKE=$!; FAKE_PIDS+=("$FAKE")
+spawn_fake_server; FAKE="$REPLY_PID"
 wd_env "$FAKE" &
 WD=$!
 sleep 0.5
@@ -98,7 +125,7 @@ wait "$WD" 2>/dev/null || true
 
 # --- (4) 非 default socket → 監視しない (lock も作らない) ------------------------------
 : > "$LOG"
-sleep 300 & FAKE=$!; FAKE_PIDS+=("$FAKE")
+spawn_fake_server; FAKE="$REPLY_PID"
 TT_TRIGGER_LOG="$LOG" TT_WATCHDOG_DIR="$TMP_DIR/wd" TT_PSLOG_DIR="$TMP_DIR/pslogs" \
   TT_WATCHDOG_INTERVAL=0.05 STUB_SOCKET_PATH="/nowhere/tmux-501/lab" \
   PATH="$STUB_PATH" "$SCRIPT" "$FAKE" "/fake/socket" "1"

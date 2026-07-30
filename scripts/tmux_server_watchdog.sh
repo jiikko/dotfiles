@@ -93,23 +93,36 @@ ts="$(date +%FT%T)"
 pslog="$TT_PSLOG_DIR/tt-server-death-$(date +%Y%m%dT%H%M%S)-$SERVER_PID.pslog"
 ps -axo pid,ppid,user,lstart,command > "$pslog" 2>/dev/null || pslog=none
 
-# 直近ログとの相関で死因を分類する。epoch= フィールドを持つ行だけを時間窓で採用する。
-recent_has() {  # $1: grep パターン。時間窓内の epoch を持つ行があれば真
-  local line epoch
-  line="$(grep -E "$1" "$TT_TRIGGER_LOG" 2>/dev/null | tail -1)"
+# 直近ログとの相関で死因を分類する。採用条件は 3 つ全て:
+#   (1) epoch= が時間窓 (TT_VERDICT_WINDOW) 内
+#   (2) pid= が「今死んだサーバ」と一致する
+#   (3) パターンに一致する行のうち最新のもの
+# ⚠️ (2) が無いと世代を跨いで誤分類する。tmux は kill-server 直後に新サーバが立つため、
+#   「前世代を kill-server で落とし、新サーバが 2 分以内に外因死」で外因死が
+#   verdict=kill-server-command になる (レビューで実証 2026-07-30)。pid は kill shim と
+#   session-closed ロガーが各行に刻む。pid フィールドが無い行 (旧形式) は採用しない
+#   = 分類は「不明なら外因」に倒れる (誤って kill と断定しない安全側)。
+recent_has() {  # $1: grep パターン。窓内 + pid 一致の行があれば真
+  local line epoch pid
+  line="$(grep -E "$1" "$TT_TRIGGER_LOG" 2>/dev/null | grep -E "pid=$SERVER_PID( |$)" | tail -1)"
   [ -n "$line" ] || return 1
   epoch="$(printf '%s' "$line" | sed -n 's/.*epoch=\([0-9]*\).*/\1/p')"
   [ -n "$epoch" ] || return 1
+  pid="$(printf '%s' "$line" | sed -n 's/.*[^a-z]pid=\([0-9]*\).*/\1/p')"
+  [ "$pid" = "$SERVER_PID" ] || return 1
   [ $((now_epoch - epoch)) -le "$TT_VERDICT_WINDOW" ]
 }
 
 if recent_has 'kill-cmd cmd=kill-server'; then
   verdict=kill-server-command
-elif recent_has 'kill-cmd cmd=kill-session' && recent_has 'session-closed remaining=0'; then
+elif recent_has 'kill-cmd cmd=kill-session' && recent_has 'session-closed .*remaining=0'; then
   verdict=kill-session-exit-empty
-elif recent_has 'session-closed remaining=0'; then
+elif recent_has 'session-closed .*remaining=0'; then
   verdict=exit-empty
 else
+  # 「コマンド由来の記録が無い」= 外部シグナル / クラッシュ / shim を通らない経路。
+  # pslog は死亡検知後 (最大 TT_WATCHDOG_INTERVAL 遅れ) の撮影なので、シグナルを撃って即 exit した
+  # 短命な送信元は写らない (macOS はシグナル送信元を記録しないため、そこは原理的な限界)。
   verdict=external-signal-or-crash
 fi
 

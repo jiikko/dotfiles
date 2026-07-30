@@ -94,9 +94,18 @@ main() {
 				# last save option not set, this is first time plugin load
 				batch+=(set-option -gq "$last_auto_save_option" "$(current_timestamp)" ";")
 			fi
-			# add_resurrect_save_interpolation (check interpolation not already added)
-			if ! [[ "$_status_right" == *"$save_command_interpolation"* ]]; then
-				_status_right="${save_command_interpolation}${_status_right}"
+			# Vendored patch (2026-07-30): add_resurrect_save_interpolation を削除。
+			# 上流は status-right に #(continuum_save.sh) を仕込み status 描画ごとに実行するが、
+			# この環境は status-interval 1 なので毎秒 fork される (実測 0.8 回/秒・1 回 50ms・
+			# 派生 fork 込みで 5-10 fork/秒)。実保存は 15 分に 1 回で残りは全て間隔判定のコスト。
+			# 周期保存は長寿命プロセス scripts/tmux_periodic_save.sh (_tmux.conf が起動) が担い、
+			# fork は 15 分に 1 回になる。保存先・ガード・lock は共通 wrapper のままなので
+			# 保存の意味論は変わらない。上流を更新したらこのパッチの再適用が必要。
+			#
+			# 既存の interpolation が status-right に残っている場合 (パッチ適用前に起動した
+			# サーバへ conf を再 source した場合) は取り除く。放置すると毎秒 fork が続く。
+			if [[ "$_status_right" == *"$save_command_interpolation"* ]]; then
+				_status_right="${_status_right//$save_command_interpolation/}"
 			fi
 		fi
 

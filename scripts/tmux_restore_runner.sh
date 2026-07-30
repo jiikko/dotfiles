@@ -19,12 +19,42 @@
 set -uo pipefail
 unset CDPATH
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# shellcheck source=scripts/lib/tmux_resurrect_guards.sh
+. "$SCRIPT_DIR/lib/tmux_resurrect_guards.sh"
+
+# 共有の観測ログに書くスクリプトは default socket ゲートを通す (scripts/CLAUDE.md の不変条件)。
+# -L の隔離サーバで C-t C-r を押したときに本番の観測ログを汚さない。
+tt_on_default_server || exit 0
+
 TT_TRIGGER_LOG="${TT_TRIGGER_LOG:-$HOME/.cache/tt-restore-trigger.log}"
+TT_RESTORE_STATE_DIR="${TT_RESTORE_STATE_DIR:-$HOME/.cache/tt-restore-run}"
 
 log_line() {
   { mkdir -p "$(dirname "$TT_TRIGGER_LOG")" \
       && printf '%s\t%s\n' "$(date +%FT%T)" "$1" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
 }
+
+# ---- 単一実行ガード -------------------------------------------------------------------
+# ⚠️ popup 内同期実行だった旧実装は popup が事実上直列化していたが、detach 化で C-t C-r の
+# 連打や auto-restore との重なりで restore.sh が並行実行できるようになった。並行すると
+# 復元中フラグ (@tt-restore-*) と pane 生成が競合する (2026-07-30 セルフレビューで検出)。
+mkdir -p "$TT_RESTORE_STATE_DIR" 2>/dev/null || true
+LOCK_DIR="$TT_RESTORE_STATE_DIR/lock"
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  owner="$(cat "$LOCK_DIR/pid" 2>/dev/null)"
+  if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then
+    log_line "restore-skipped reason=already-running owner=$owner epoch=$(date +%s)"
+    exit 0
+  fi
+  # owner 不在 = 前回の取り残し。奪って続行する (復元が二度と走らない方が害が大きい)
+  rm -rf "$LOCK_DIR" 2>/dev/null
+  mkdir "$LOCK_DIR" 2>/dev/null || { log_line "restore-aborted reason=lock-failed epoch=$(date +%s)"; exit 0; }
+fi
+printf '%s\n' "$$" > "$LOCK_DIR/pid" 2>/dev/null || true
+# shellcheck disable=SC2329 # trap 経由の間接呼び出し
+release_lock() { rm -rf "$LOCK_DIR" 2>/dev/null; }
+trap release_lock EXIT
 
 # restore.sh は @resurrect-restore-script-path から解決する (ハードコードすると vendor
 # 移動で silent に壊れる。tmux_restore_confirm.sh / _tt_wait_for_restore と同じ出典)
@@ -36,17 +66,27 @@ fi
 
 log_line "restore-manual-begin epoch=$(date +%s)"
 
-# サーバ死亡時の SIGTERM でも後始末 (フラグ掃除 + 記録) を実行してから終わる
+# 成否判定の基準を自分の実行に閉じる。@tt-restore-complete はグローバルで sticky なため、
+# 前回成功の 1 が残っている窓で restore.sh が pre-restore-all 到達前に死ぬと「成功」に見え、
+# in-progress フラグの掃除も skip する = runner が消すはずだった silent 途中死そのものになる
+# (レビュー指摘 2026-07-30)。開始時に自分で降ろしてから実行する。
+tmux set-option -gu @tt-restore-complete 2>/dev/null || true
+
+# サーバ死亡時の SIGTERM でも後始末 (フラグ掃除 + 記録 + lock 解放) を実行してから終わる。
+# ⚠️ この trap は上の release_lock の EXIT trap を置き換えるため、lock 解放を内側に含めること
+# (trap は同一シグナルで後勝ち。分けると lock が残り復元が二度と走らなくなる)。
 finished=0
 # shellcheck disable=SC2329 # trap 経由の間接呼び出し
 cleanup() {
-  [ "$finished" -eq 1 ] && return
-  # post-restore-all 到達済み (@tt-restore-complete=1) なら正常系。未到達なら途中死。
-  if [ "$(tmux show -gqv @tt-restore-complete 2>/dev/null)" != "1" ]; then
-    tmux set-option -g @tt-restore-in-progress 0 2>/dev/null || true
-    log_line "restore-aborted reason=interrupted epoch=$(date +%s)"
+  if [ "$finished" -ne 1 ]; then
+    # post-restore-all 到達済み (@tt-restore-complete=1) なら正常系。未到達なら途中死。
+    if [ "$(tmux show -gqv @tt-restore-complete 2>/dev/null)" != "1" ]; then
+      tmux set-option -g @tt-restore-in-progress 0 2>/dev/null || true
+      log_line "restore-aborted reason=interrupted epoch=$(date +%s)"
+    fi
+    finished=1
   fi
-  finished=1
+  release_lock
 }
 trap cleanup TERM INT EXIT
 

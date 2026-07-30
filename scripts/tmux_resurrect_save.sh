@@ -284,6 +284,24 @@ tt_save_main() {
     return 1
   fi
 
+  # $TMUX 不在なら default socket のサーバから run-shell 相当の値を組んで補う。
+  # 実測 (2026-07-30 A/B): TMUX 未設定で upstream save.sh を走らせると pane / window 行が
+  # 一切出ず state 行だけの空ファイルになる。TMUX を与えると 93 pane / 91 window の健全な
+  # ダンプになり、変数はこれ 1 つだけの差。空ダンプは Fix B の退行ガードが last への昇格を
+  # 弾くのでデータは守られるが、ゴミファイルが毎回積まれ「保存できているつもり」で観測を汚す。
+  # 正規経路 (hook / bind / run-shell 起動の周期保存・kill shim) は必ず TMUX を持つため、
+  # ここに来るのは「tmux の外から wrapper を直叩きした」場合。
+  # 組めない環境 (古い tmux / テストスタブ) では補わずそのまま進む: このガードの目的は
+  # ゴミ保存の予防であって保存の禁止ではなく、判定不能で保存を殺さないのが本ファイル既定の
+  # 方針 (tt_on_default_server の fail-open と同じ)。
+  if [ -z "${TMUX:-}" ]; then
+    local tt_tmux_env
+    tt_tmux_env="$(tmux display-message -p '#{socket_path},#{pid},0' 2>/dev/null)"
+    case "$tt_tmux_env" in
+      /*,[0-9]*,0) export TMUX="$tt_tmux_env" ;;
+    esac
+  fi
+
   # Fix B: 保存前に現 last のターゲットとセッション数を控える（save.sh が last を前進させる前に）。
   local tt_rdir='' tt_last_link='' tt_prev_target='' tt_prev_n=0 tt_prev_w=0
   # Fix B2: pane_contents.tar.gz の退避先（退行を戻すとき last symlink だけでなく共有 archive も

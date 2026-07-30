@@ -285,16 +285,29 @@ boot と reload を区別できない）は upstream 側に残る
 | 行 | 書き手 | 意味 |
 |---|---|---|
 | `conf-source tmux_procs=N` | \_tmux.conf の [観測] run-shell | conf が source された（サーバ起動 or reload）。N は ^tmux プロセス数（テスト残骸の診断値） |
-| `session-closed remaining=N` | `tmux_log_session_closed.sh`（同期 hook） | セッションが閉じた。remaining=0 が直近にあれば exit-empty の連鎖 |
-| `kill-cmd cmd=... issuer=...` | `tmux_log_kill_command.sh`（kill-server/kill-session の alias shim） | 誰が kill したか（発行元プロセスの ppid chain）と直前セーフティ保存の結果 |
-| `server-death pid=... verdict=... pslog=...` | `tmux_server_watchdog.sh` | サーバ死亡の確定記録。verdict は kill-server-command / kill-session-exit-empty / exit-empty / external-signal-or-crash。external の場合は pslog（死亡瞬間の全プロセス一覧）が容疑者リスト |
-| `restore-start` / `restore-end` / `restore-aborted` | pre-restore-all hook / `tmux_restore_runner.sh` | 復元の開始 / 完了 / 途中死（reason 付き） |
+| `session-closed pid=... remaining=N epoch=...` | `tmux_log_session_closed.sh`（同期 hook） | セッションが閉じた。remaining=0 が直近にあれば exit-empty の連鎖 |
+| `kill-cmd cmd=... pid=... save=... issuer=...` | `tmux_log_kill_command.sh`（kill-* の alias shim） | 誰が kill したか（発行元プロセスの ppid chain）と直前セーフティ保存の結果。`save=ok` のみ「実際に保存された」を意味し、`rejected-rc<N>`（ガードで拒否）/ `timeout` / `skipped-hold-only` / `no-save-script` は保存されていない |
+| `server-death pid=... verdict=... pslog=...` | `tmux_server_watchdog.sh` | サーバ死亡の確定記録。verdict は kill-server-command / kill-session-exit-empty / exit-empty / external-signal-or-crash |
+| `restore-start` / `restore-end` / `restore-aborted` | pre/post-restore-all hook・`tmux_restore_runner.sh` | 復元の開始 / 完了 / 途中死（reason 付き）。自動・手動の両経路が書く |
+| `restore-manual-begin` / `restore-skipped reason=...` | `tmux_restore_runner.sh` | 手動復元の起動と、単一実行ガードによる skip |
+| `periodic-save-begin` / `periodic-save rc=...` | `tmux_periodic_save.sh` | 周期スナップショットの駆動開始と各回の結果 |
 | `regression-blocked prev_sessions=...` | 保存 wrapper の退行ガード | 貧弱な保存による last 上書きを拒否した |
 
-クライアント側の終了文言でも切り分けられる（3.7b 実測）: `[server exited]` = kill-server または
+`pid=` と `epoch=` は watchdog の死因分類が読む唯一のキー（サーバ世代の同定と時間窓判定）。
+これが無い行は分類に使われず、判定は安全側（外因扱い）に倒れる。
+
+クライアント側の終了文言でも切り分けられる（3.7b 実測）: `[server exited]` = コマンド kill または
 SIGTERM（両者は文言では区別不能 → kill-cmd 行の有無で判別）、`[exited]` = exit-empty、
-`[server exited unexpectedly]` = クラッシュ。kill-server 経路は shim が kill 直前に resurrect 保存を
-走らせるため、損失窓は構造的にゼロ（シグナル直撃経路は周期 autosave + debounce 保存がカバー）。
+`[server exited unexpectedly]` = クラッシュ。
+
+**損失窓の実際**: kill 経路は shim が kill 直前に保存を走らせるため、`save=ok` が記録された場合に
+限り損失窓ゼロ。保存が bounded-wait（既定 20s）を超えた場合やガードに拒否された場合
+（復元中・hold のみ・退行）は保存されず、周期保存（既定 15 分）+ 構成変化時の debounce 保存の
+鮮度に落ちる。シグナル直撃・クラッシュ経路も同様にこの 2 つがカバーする。
+
+**外因死の捜査の限界**: pslog は死亡「検知後」（最大 `TT_WATCHDOG_INTERVAL` 遅れ）の撮影なので、
+シグナルを撃って即 exit した短命な送信元は写らない。macOS はシグナル送信元を記録しないため、
+そこは原理的な限界（長寿命の祖先プロセスは写る）。確実に追う必要が出たら `sudo eslogger signal`。
 
 ### 保存ファイルが空 / 壊れている
 

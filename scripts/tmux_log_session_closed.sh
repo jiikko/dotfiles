@@ -29,8 +29,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
 tt_on_default_server || exit 0
 
+# ログ先は他の観測スクリプト (kill shim / watchdog / restore runner) と同じ env で上書き可能にする。
+# ここだけ直書きだと、watchdog が TT_TRIGGER_LOG を読んで相関するのに session-closed だけ別ファイル
+# へ逃げ、exit-empty 系 verdict の一次証拠が欠ける (レビュー指摘 2026-07-30)。
+TT_TRIGGER_LOG="${TT_TRIGGER_LOG:-$HOME/.cache/tt-restore-trigger.log}"
+
+# pid は watchdog が「どのサーバ世代のイベントか」を判定するのに使う (kill-cmd 行と同じ理由)
 remaining=$(tmux list-sessions 2>/dev/null | grep -c .)
-{ mkdir -p "$HOME/.cache" && printf '%s\tsession-closed remaining=%s epoch=%s\n' \
-    "$(date +%FT%T)" "$remaining" "$(date +%s)" >> "$HOME/.cache/tt-restore-trigger.log"; } 2>/dev/null || true
+{ mkdir -p "$(dirname "$TT_TRIGGER_LOG")" && printf '%s\tsession-closed pid=%s remaining=%s epoch=%s\n' \
+    "$(date +%FT%T)" "$(tmux display-message -p '#{pid}' 2>/dev/null)" "$remaining" "$(date +%s)" \
+    >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
 
 exit 0

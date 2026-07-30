@@ -43,6 +43,20 @@ expect deny  "pkill -f tmux (全サーバ無差別)" 'pkill -f tmux'
 expect deny  "pkill -x tmux" 'pkill -x tmux'
 expect deny  "killall tmux" 'killall tmux'
 
+# --- 2026-07-30 の敵対的レビューで実証されたバイパス (全て allow だった) --------------
+expect deny  "フルパス起動" '/opt/homebrew/bin/tmux kill-server'
+expect deny  "フルパスの事故コマンド列" \
+  'export TMUX_TMPDIR=$(mktemp -d); /opt/homebrew/bin/tmux -f /dev/null new-session -d -s probe; /opt/homebrew/bin/tmux kill-server'
+expect deny  "bash -c 経由 (引用符が直前)" "bash -c 'tmux kill-server'"
+expect deny  "sh -lc 経由 (二重引用符が直前)" 'sh -lc "tmux kill-session -t probe"'
+expect deny  "subcommand 略記 kill-serve (tmux は前方一致を受理)" 'tmux kill-serve'
+expect deny  "subcommand 略記 kill-ser" 'tmux kill-ser'
+expect deny  "subcommand 略記 kill-sessio" 'tmux kill-sessio -t x'
+expect deny  "行継続で分断された形" 'tmux \
+  kill-server'
+expect deny  "コメント内の -L で免除されない" 'tmux kill-server  # -L probe の後片付け'
+expect deny  "kill トークンより後ろの -L では免除しない" 'tmux kill-session -t x; sort -S 1G /dev/null'
+
 # --- allow すべきもの (ソケット明示 / 無関係) -------------------------------------------
 expect allow "-L 明示の kill-server" 'tmux -L lab kill-server'
 expect allow "-S 明示の kill-server" 'tmux -S /path/sock kill-server'

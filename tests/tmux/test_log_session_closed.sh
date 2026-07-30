@@ -25,7 +25,11 @@ cat > "$TMP_DIR/bin/tmux" <<'EOS'
 #!/bin/sh
 echo "tmux $*" >> "$CALLS"
 case "$1" in
-  display-message) printf '%s\n' "${STUB_SOCKET_PATH:-}" ;;
+  display-message)
+    case "$*" in
+      *socket_path*) printf '%s\n' "${STUB_SOCKET_PATH:-}" ;;
+      *)             printf '%s\n' "99999" ;;   # #{pid} (サーバ世代の同定用)
+    esac ;;
   *)
     [ -n "${STUB_LS_EXIT:-}" ] && exit "$STUB_LS_EXIT"
     printf '%b' "${STUB_SESSIONS:-}" ;;
@@ -40,14 +44,14 @@ LOG="$TMP_DIR/home/.cache/tt-restore-trigger.log"
 HOME="$TMP_DIR/home" STUB_SOCKET_PATH="$DEFAULT_SOCK" \
   STUB_SESSIONS='a: 1 windows\nb: 2 windows\nc: 1 windows\n' run "$STUB_PATH" "$SCRIPT"
 [[ "$RC" -eq 0 ]] || { printf '✗ 正常系で exit %s (hook 用に常時 0 のはず)\n' "$RC"; exit 1; }
-grep -qE '^[0-9T:-]+	session-closed remaining=3 epoch=[0-9]+$' "$LOG" \
+grep -qE '^[0-9T:-]+	session-closed pid=[0-9]+ remaining=3 epoch=[0-9]+$' "$LOG" \
   || { printf '✗ ログ書式が想定と違う:\n'; cat "$LOG" 2>/dev/null; exit 1; }
-printf '✓ 残セッション数 + epoch がタブ区切り書式で追記される (remaining=3)\n'
+printf '✓ サーバ pid + 残セッション数 + epoch がタブ区切り書式で追記される (remaining=3)\n'
 
 HOME="$TMP_DIR/home" STUB_SOCKET_PATH="$DEFAULT_SOCK" STUB_LS_EXIT=1 run "$STUB_PATH" "$SCRIPT"
 [[ "$RC" -eq 0 ]] || { printf '✗ list-sessions 失敗で exit %s (0 のはず)\n' "$RC"; exit 1; }
-grep -q 'session-closed remaining=0' "$LOG" \
-  || { printf '✗ list-sessions 失敗時に remaining=0 が記録されない\n'; exit 1; }
+grep -qE 'session-closed pid=[0-9]+ remaining=0' "$LOG" \
+  || { printf '✗ list-sessions 失敗時に remaining=0 が記録されない:\n'; cat "$LOG"; exit 1; }
 printf '✓ list-sessions 失敗 (サーバ消滅レース) でも exit 0 + remaining=0 を記録\n'
 
 rm -f "$LOG"
