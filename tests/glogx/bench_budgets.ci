@@ -5,12 +5,18 @@
 # として緩く始める。CI の Step Summary に実測が数 run 溜まったら、その ~4 倍を目安に締めること。
 # BenchmarkHighlightDiff (chroma) を予算に足さない理由は tests/glogx/bench_glogx.sh の
 # ヘッダと highlight_test.go の benchmark 直上コメント (CI ゲートは flake 実績あり) を参照。
-view_steady 3
-view_panel 3
-render_large_patch 10
+# 較正器 (2026-07-30 導入): repo コード非依存の固定ワークロード (BenchmarkCalibrate)。
+# 全 metric が runner 世代/混雑で一様に振れる問題への対処 (無変更 push で ×2 級の偽悪化を
+# 実測: run 30454886162 → 30475764682)。基準 0.15 はローカル M3 実測 0.074 からの CI 想定の
+# 暫定値。CI の静穏 run 実測が出たらその値へ取り直すこと (nvim の startup_clean 基準と同じ運用)。
+calibrate glogx_calib 0.15
+glogx_calib 5
+view_steady 3 rel
+view_panel 3 rel
+render_large_patch 10 rel
 # 体感系 (2026-07-29 追加)。導入時ローカル実測 (M3 Max): cursor_move_view 0.265 /
 # view_diff 0.224 / model_init_200 0.407。既存と同じ ~20 倍の粗い上限で導入し、
 # CI 実測が溜まったら ~4 倍を目安に締める
-cursor_move_view 5
-view_diff 5
-model_init_200 10
+cursor_move_view 5 rel
+view_diff 5 rel
+model_init_200 10 rel
