@@ -46,7 +46,11 @@ tt_on_default_server || exit 0
 problems=()
 lines=()
 
-mtime_of() { stat -f '%m' "$1" 2>/dev/null || stat -c '%Y' "$1" 2>/dev/null; }
+# ⚠️ GNU を先に試すこと。`stat -f` は macOS では「書式指定」だが GNU では「ファイルシステム情報の
+# 表示」で、Linux では成功して複数行のゴミを返す (= `||` のフォールバックが発動しない)。
+# 実測 (Ubuntu 24.04): `[: File: ... integer expression expected` で死んだ。
+# GNU に無い `-c` を先に試せば、macOS では invalid option で失敗して `-f` に落ちる。
+mtime_of() { stat -c '%Y' "$1" 2>/dev/null || stat -f '%m' "$1" 2>/dev/null; }
 
 rdir="$(tt_resurrect_dir 2>/dev/null)"
 [ -n "$rdir" ] || rdir="${XDG_DATA_HOME:-$HOME/.local/share}/tmux/resurrect"
