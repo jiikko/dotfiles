@@ -226,6 +226,7 @@ func (v *issuesView) handleKey(key string, page int) tea.Cmd {
 	// (呼び出し側の normalizeSpaceKey と同じ関数。理由はそちらのコメント)
 	key = normalizeSpaceKey(key)
 	v.finishAnim() // 演出中のキーは即着地させる (q が効かない時間を作らないため)
+	v.notice = ""  // 通知は直前の操作の結果なので、次のキーで消す (寿命の理由は headLines)
 	rows := v.visibleRows(page)
 	if v.open != nil {
 		return v.handleBodyKey(key, rows)
@@ -557,13 +558,21 @@ func (v *issuesView) headLines(width int, colored bool) []string {
 		if p := v.open.Progress(); p != "" {
 			status += "  " + p
 		}
-		return []string{
+		head := []string{
 			paint(clipToWidth(v.open.Rel, width), ansiBold, colored),
 			paint(clipToWidth(status, width), ansiDim, colored),
-			"",
 		}
+		// 本文モードでも y / p / Y / N は効く。ここに通知の行が無いと、コピーの成功も失敗も
+		// 画面に一切出ない (トーストは全画面差し替えの下に隠れるので受け皿がここしかない)
+		if v.notice != "" {
+			head = append(head, paint(clipToWidth(v.notice, width), ansiDim, colored))
+		}
+		return append(head, "")
 	}
 	head := []string{v.tabLine(issuesRenderOpts{width: width, colored: colored})}
+	// notice はキー 1 打分の寿命 (handleKey が入口で消す) なので、警告より優先しても恒久的に
+	// 隠すことはない。⚠️ 寿命を外すとスキャン警告 (同名ファイルの二重化 = 静かな内容喪失) が
+	// 二度と出なくなる。
 	switch {
 	case v.notice != "":
 		head = append(head, paint(clipToWidth(v.notice, width), ansiDim, colored))

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -414,6 +415,54 @@ func TestIssuesViewShowsScanWarning(t *testing.T) {
 	})
 	if !strings.Contains(strings.Join(v.lines(renderOpts(10)), "\n"), "同じファイル名") {
 		t.Fatal("スキャンの警告が表示されない")
+	}
+}
+
+func TestIssuesViewNoticeIsTransientAndDoesNotHideWarning(t *testing.T) {
+	// ⚠️ 回帰防止: notice に寿命が無いと、コピーを 1 回した時点でスキャン警告
+	// (同名ファイルの二重化 = conflict も error も出ない静かな内容喪失) が二度と出なくなる。
+	orig := copyToClipboard
+	t.Cleanup(func() { copyToClipboard = orig })
+	copyToClipboard = func(string) error { return nil }
+
+	v := newIssuesView()
+	v.shown = true
+	v.receive(issuesScanMsg{
+		dirs:     []string{"/repo/issues"},
+		issues:   sampleIssues(),
+		warnings: []string{"同じファイル名が複数の状態ディレクトリにあります: 028-x.md / done/028-x.md"},
+	})
+	v.handleKey("y", 10)
+	if !strings.Contains(strings.Join(v.lines(renderOpts(10)), "\n"), "コピーしました") {
+		t.Fatal("コピーの結果が出ていない")
+	}
+	v.handleKey("j", 10) // 次のキーで通知は寿命を終える
+	out := strings.Join(v.lines(renderOpts(10)), "\n")
+	if strings.Contains(out, "コピーしました") {
+		t.Fatalf("通知が次のキーでも残っている:\n%s", out)
+	}
+	if !strings.Contains(out, "同じファイル名") {
+		t.Fatalf("通知が消えても警告が戻らない:\n%s", out)
+	}
+}
+
+func TestIssuesViewBodyModeShowsCopyResult(t *testing.T) {
+	// 本文モードのコピーは成功も失敗も画面に出ない (ヘッダーに通知の行が無い) 状態だった。
+	// 全画面差し替えのためトーストは見えないので、受け皿はこのヘッダーしかない。
+	orig := copyToClipboard
+	t.Cleanup(func() { copyToClipboard = orig })
+	copyToClipboard = func(string) error { return errors.New("pbcopy が見つかりません") }
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "028-refactor-x.md")
+	if err := os.WriteFile(path, []byte("# 028 refactor: タイトル\n\n本文。\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "028-refactor-x.md", Number: "028", Category: "refactor"})
+	v.handleKey("enter", 10)
+	v.handleKey("p", 10)
+	if out := strings.Join(v.lines(renderOpts(10)), "\n"); !strings.Contains(out, "コピーに失敗しました") {
+		t.Fatalf("本文モードでコピー失敗が画面に出ない:\n%s", out)
 	}
 }
 
