@@ -152,4 +152,19 @@ grep -q 'periodic-save skipped=no-save-script' "$LOG" \
   || { printf '✗ skipped=no-save-script が記録されない:\n'; cat "$LOG"; exit 1; }
 printf '✓ 保存スクリプト未解決でも無害終了 + 記録\n'
 
+# --- (8) 観測ログの上限刈り (rotate 無しの単調増加を止める) ----------------------------
+reset_calls
+: > "$LOG"
+for i in $(seq 1 40); do printf 'line-%s\n' "$i" >> "$LOG"; done
+TT_TRIGGER_LOG="$LOG" TT_PERIODIC_STATE_DIR="$TMP_DIR/state" TT_PERIODIC_ONESHOT=1 \
+  TT_TRIGGER_LOG_MAX_LINES=10 \
+  STUB_SOCKET_PATH="$DEFAULT_SOCK" STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
+  run "$STUB_PATH" "$SCRIPT" "$FAKE"
+n="$(wc -l < "$LOG" | tr -d ' ')"
+# 刈った 10 行 + その後に自分が書く periodic-save / periodic-save-end の 2 行
+[ "$n" -le 13 ] || { printf '✗ ログが刈られていない (%s 行):\n' "$n"; head -3 "$LOG"; exit 1; }
+grep -q 'line-40' "$LOG" || { printf '✗ 末尾の新しい行が失われた (古い方を残してしまった)\n'; exit 1; }
+grep -q 'line-1$' "$LOG" && { printf '✗ 古い行が残っている (刈れていない)\n'; exit 1; }
+printf '✓ 観測ログを上限行数に刈る (新しい側を残す。%s 行)\n' "$n"
+
 printf '\nAll periodic-save tests passed successfully!\n'

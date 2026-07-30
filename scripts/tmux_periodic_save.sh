@@ -36,6 +36,11 @@ TT_PERIODIC_STATE_DIR="${TT_PERIODIC_STATE_DIR:-$HOME/.cache/tt-periodic-save}"
 TT_PERIODIC_DEFAULT_MINUTES="${TT_PERIODIC_DEFAULT_MINUTES:-15}"
 # テスト用: 1 周で抜ける (無限ループを回さずに 1 回分の判断と保存を検証する)
 TT_PERIODIC_ONESHOT="${TT_PERIODIC_ONESHOT:-}"
+# 観測ログの上限行数。超えたら末尾だけ残す。周期保存が 15 分毎に 1 行書くため、rotate が無いと
+# 単調増加する (実測 96 行/日 ≒ 8KB/日)。5000 行 ≒ 50 日分で、resurrect のスナップショット保持
+# (@resurrect-delete-backup-after、現在 7 日) より十分長いので forensics を失わない。
+# 既に走っているこのプロセスで刈るので追加の fork は無い。
+TT_TRIGGER_LOG_MAX_LINES="${TT_TRIGGER_LOG_MAX_LINES:-5000}"
 
 case "$SERVER_PID" in ''|*[!0-9]*) exit 0 ;; esac
 
@@ -74,6 +79,22 @@ printf '%s\n' "$$" > "$LOCK_DIR/pid" 2>/dev/null || true
 cleanup() { rm -rf "$LOCK_DIR" 2>/dev/null; }
 trap cleanup EXIT
 
+# 観測ログを上限行数に刈る。書き手は全員 `>> file` の open-append-close なので、
+# tmp + mv で inode を差し替えても書き込みを取りこぼさない (fd を握り続ける書き手が居ない)。
+prune_trigger_log() {
+  local n tmp
+  [ -f "$TT_TRIGGER_LOG" ] || return 0
+  n="$(wc -l < "$TT_TRIGGER_LOG" 2>/dev/null | tr -d ' ')"
+  case "$n" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$n" -gt "$TT_TRIGGER_LOG_MAX_LINES" ] || return 0
+  tmp="$TT_TRIGGER_LOG.prune.$$"
+  if tail -n "$TT_TRIGGER_LOG_MAX_LINES" "$TT_TRIGGER_LOG" > "$tmp" 2>/dev/null; then
+    mv -f "$tmp" "$TT_TRIGGER_LOG" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+  else
+    rm -f "$tmp" 2>/dev/null
+  fi
+}
+
 interval_seconds() {
   local v
   v="$(tmux show -gqv @continuum-save-interval 2>/dev/null)"
@@ -86,11 +107,21 @@ interval_seconds() {
 
 log_line "periodic-save-begin server=$SERVER_PID interval=$(interval_seconds)s epoch=$(date +%s)"
 
+# pid 再利用の誤認防止に起動時刻も同一性キーに含める (watchdog と同方針)。サーバ死亡から
+# 次の周期までは最大 interval 秒あり、その間に pid が再利用されると「別サーバに対して保存を
+# 続ける第 2 の saver」になりうる (wrapper の lock があるので壊れはしないが冗長)。
+# lstart が取れない環境では kill -0 のみで判定する。
+server_lstart="$(ps -o lstart= -p "$SERVER_PID" 2>/dev/null)"
+
 while :; do
   sleep "$(interval_seconds)"
 
   # サーバが消えていたら終わる (SIGTERM を受け損ねた場合の backstop)
   kill -0 "$SERVER_PID" 2>/dev/null || break
+  if [ -n "$server_lstart" ]; then
+    [ "$(ps -o lstart= -p "$SERVER_PID" 2>/dev/null)" = "$server_lstart" ] || break
+  fi
+  prune_trigger_log
   # socket gate は毎周期見る (サーバ入れ替わりで別環境の last を触らない)
   tt_on_default_server || break
 
