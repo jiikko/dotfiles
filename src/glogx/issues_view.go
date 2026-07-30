@@ -21,12 +21,15 @@ import (
 // 仕様 (探索範囲・状態の決め方・カテゴリタブ) の一次情報は docs/issues-viewer-spec.md。
 
 // issuesScanMsg は issues の探索結果。
+//
+// error を持たないのは探索層が部分成功を返す設計だから: 読めなかったディレクトリは空として
+// 扱い、viewer が表示すべき異常 (同名ファイルの二重化など) は warnings に載る。全体が失敗する
+// ケースが無いので、失敗を表す経路も持たない。
 type issuesScanMsg struct {
 	root     string // repo root (貼り付け用の repo 相対パスに使う)
 	dirs     []string
 	issues   []*issues.Issue
 	warnings []string
-	err      error
 }
 
 // issuesView は一覧 (タブ + リスト) と本文 pager の 2 モードを持つ全画面ビュー。
@@ -34,7 +37,6 @@ type issuesView struct {
 	shown    bool
 	loaded   bool // 一度スキャン済みか (再表示で再スキャンしない)
 	scanning bool // スキャン中 (スピナーを回す)
-	err      error
 
 	cwd      string // スキャンの起点 (再読込で使い回す)
 	root     string // repo root
@@ -139,7 +141,6 @@ func (v *issuesView) advanceGlide() {
 func (v *issuesView) scanCmd(cwd string) tea.Cmd {
 	v.cwd = cwd
 	v.scanning = true
-	v.err = nil
 	return func() tea.Msg {
 		root := issues.RepoRoot(cwd)
 		dirs := issues.FindDirs(root)
@@ -156,10 +157,6 @@ func (v *issuesView) scanCmd(cwd string) tea.Cmd {
 func (v *issuesView) receive(msg issuesScanMsg) {
 	v.scanning = false
 	v.loaded = true
-	if msg.err != nil {
-		v.err = msg.err
-		return
-	}
 	v.root, v.dirs, v.all, v.warnings = msg.root, msg.dirs, msg.issues, msg.warnings
 	v.tabs = issues.Tabs(v.all, issues.TabMinCount)
 	v.tabIdx = min(v.tabIdx, len(v.tabs))
@@ -622,8 +619,6 @@ func (v *issuesView) emptyMessage(o issuesRenderOpts) string {
 	switch {
 	case v.scanning:
 		return o.spinner + " issues を探しています..."
-	case v.err != nil:
-		return "エラー: " + firstLine(v.err.Error())
 	case len(v.dirs) == 0:
 		return "issues ディレクトリが見つかりません (repo root と root/*/issues を探しました)"
 	case len(v.rows) == 0 && !v.showDone:
