@@ -254,15 +254,21 @@ cat "${DOTFILES_DIR:-$HOME/dotfiles}/vendor/tmux-plugins/VERSIONS.txt"
   max-delay 秒以内に conf が source された」時だけ restore を発火する。外部（Claude / IDE）の
   `tmux new-session -d` は source が既定 10 秒を超えることがあり（実測: start_time +16 秒）、窓を外すと
   復元不発。このリポジトリでは 60 秒に拡大済み
-- **Gate2（他サーバー検知）**: 他の tmux サーバーが居ると `continuum_restore.sh` が restore を丸ごと skip
-  する。判定（vendor helpers.sh の `all_tmux_processes`）は `ps | grep '^tmux'` で **socket の生存と無関係**の
-  ため、socket だけ消えた孤児サーバーが 1 台でも残ると恒久 skip になる。実例（2026-06-28 判明）: 孤児
-  scratch 2 台で **17 日間復元不発**。気づけたのは `tt-restore-duration.log` の凍結という間接証拠だけで、
-  さらに upstream save.sh の `ln -fs last`（健全性未検証）が完全な保存を貧弱な状態で上書きしていた。
-  対策は 2 段: (1) 発生源対策 = テスト / popup が継承 TMUX_TMPDIR 上に偽 socket を作らない
-  (2) backstop = `tt` 起動時に socket 消滅済みの孤児だけ reap（`scripts/tmux_reap_orphan_servers.sh`）
+- **Gate2（他サーバー検知）**: 他の tmux サーバーが居ると `continuum_restore.sh` が restore を、
+  `continuum.tmux` が周期 autosave の interpolation 導入を、それぞれ丸ごと skip する。
+  **2026-07-30 に判定を vendored patch で置換済み**: 旧判定（vendor helpers.sh の `all_tmux_processes`）は
+  `ps | grep '^tmux'` で socket の生存と無関係のため、(a) socket だけ消えた孤児（実例 2026-06-28: 孤児
+  scratch 2 台で **17 日間復元不発**）だけでなく、(b) **socket が生きたまま放置された `-L` テストサーバ**
+  （実例 2026-07-30: 残骸 9 台で復元不発 + 周期 autosave が一度も起動していなかったと判明）でも恒久 skip
+  になる。(b) は reaper の不変条件（生存 socket は絶対に触らない）の正当な対象外で、ps カウント方式では
+  構造的に防げない。現判定は「自分が default socket のサーバか」（helpers.sh の
+  `on_default_socket_server`。判定式は `scripts/lib/tmux_resurrect_guards.sh` の `tt_on_default_server` と
+  同一に保つ）。default 以外のサーバは autosave / auto-restore とも動かない = 上流より安全側
 - 後追いの観測: `~/.cache/tt-restore-trigger.log`（conf の [観測] run-shell が conf source ごとに記録）の
-  `tmux_procs=N` が Gate2 の入力。次に不発が起きたら「他 tmux プロセスが N 個あって skip された」を確認できる
+  `tmux_procs=N` は旧 Gate2 の入力だった診断値（テスト残骸の検知に今も有用）。復元の開始 / 完了 / 途中死は
+  同ログの `restore-start` / `restore-end` / `restore-aborted` 行で追える（2026-07-30 追加。途中死の実例:
+  手動復元を popup -E 内で同期実行していたため popup close で restore.sh が殺され 22/29 セッションで
+  silent に停止 → runner 分離で根治、`scripts/tmux_restore_runner.sh`）
 
 **KNOWN LIMITATION（緩和済み）**: 発火窓を 60 秒に広げた副作用で、起動 60 秒以内の手動
 reload（`C-t R`）が auto-restore を再発火しうる（`just_started` は boot と reload を区別できない）。実害は
@@ -271,6 +277,24 @@ continuum の plugin 再ロード（status-right への interpolation 再設定�
 するため採用不可（バグより悪い）。緩和: `bind R` を `scripts/tmux_reload_confirm.sh` の uptime ゲート経由に
 し、発火窓内のリロードだけ gum confirm を挟む（窓外は従来どおり即リロード）。limitation 自体（continuum が
 boot と reload を区別できない）は upstream 側に残る
+
+### サーバが突然死んだ（"[server exited]"）— 観測ログの読み方
+
+死因の一次情報は `~/.cache/tt-restore-trigger.log`（タブ区切り、1 行 1 イベント）。主な行種:
+
+| 行 | 書き手 | 意味 |
+|---|---|---|
+| `conf-source tmux_procs=N` | \_tmux.conf の [観測] run-shell | conf が source された（サーバ起動 or reload）。N は ^tmux プロセス数（テスト残骸の診断値） |
+| `session-closed remaining=N` | `tmux_log_session_closed.sh`（同期 hook） | セッションが閉じた。remaining=0 が直近にあれば exit-empty の連鎖 |
+| `kill-cmd cmd=... issuer=...` | `tmux_log_kill_command.sh`（kill-server/kill-session の alias shim） | 誰が kill したか（発行元プロセスの ppid chain）と直前セーフティ保存の結果 |
+| `server-death pid=... verdict=... pslog=...` | `tmux_server_watchdog.sh` | サーバ死亡の確定記録。verdict は kill-server-command / kill-session-exit-empty / exit-empty / external-signal-or-crash。external の場合は pslog（死亡瞬間の全プロセス一覧）が容疑者リスト |
+| `restore-start` / `restore-end` / `restore-aborted` | pre-restore-all hook / `tmux_restore_runner.sh` | 復元の開始 / 完了 / 途中死（reason 付き） |
+| `regression-blocked prev_sessions=...` | 保存 wrapper の退行ガード | 貧弱な保存による last 上書きを拒否した |
+
+クライアント側の終了文言でも切り分けられる（3.7b 実測）: `[server exited]` = kill-server または
+SIGTERM（両者は文言では区別不能 → kill-cmd 行の有無で判別）、`[exited]` = exit-empty、
+`[server exited unexpectedly]` = クラッシュ。kill-server 経路は shim が kill 直前に resurrect 保存を
+走らせるため、損失窓は構造的にゼロ（シグナル直撃経路は周期 autosave + debounce 保存がカバー）。
 
 ### 保存ファイルが空 / 壊れている
 

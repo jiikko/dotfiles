@@ -11,7 +11,10 @@
 #        (on の稀パスは従来どおりスクリプトへ委譲)
 #     4. status-right/left の read-modify-write 往復を bash 内合成 + 末尾 1 回の書き込みへ
 #   ガード分岐 (version / automatic-start / 他サーバ / 初回 restore) の判定意味と実行順序は
-#   上流のまま。ps ベースの多重サーバ検出はデータ上書き防止の要なので手を入れていない。
+#   上流のまま。
+# - 多重サーバ検出 (2026-07-30): ps の ^tmux カウントを「default socket のサーバか」判定に
+#   置換 (helpers.sh のパッチ参照)。-L 隔離サーバの残骸で autosave/auto-restore が恒久 skip
+#   される誤爆の根治。
 
 CURRENT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
@@ -60,12 +63,9 @@ handle_tmux_automatic_start() {
 }
 
 another_tmux_server_running() {
-	if just_started_tmux_server; then
-		another_tmux_server_running_on_startup
-	else
-		# script loaded after tmux server start can have multiple clients attached
-		[ "$(number_tmux_processes_except_current_server)" -gt "$(number_current_server_client_processes)" ]
-	fi
+	# Vendored patch (2026-07-30): 判定を socket 基準に置換 (helpers.sh のパッチ参照)。
+	# socket 基準は「起動直後か否か」で数え方を変える必要がないため上流の分岐は不要
+	another_tmux_server_running_on_startup
 }
 
 just_started_tmux_server() {

@@ -11,8 +11,14 @@ tmux-smooth-scroll	2d686bc5b696c0e66173997e5141b14c8bedd973	https://github.com/a
 #     1 クライアントに集約、check_tmux_version.sh を同一ロジックでインライン化、
 #     handle_tmux_automatic_start.sh の common path (@continuum-boot=off) をインライン化、
 #     status-right/left の read-modify-write を bash 内合成 + 末尾 1 fork の書き込みへ
-#     (145ms → 83ms/ロード実測)。ps ベースの多重サーバ検出は上書き防止の要なので未変更。
+#     (145ms → 83ms/ロード実測)。
 #   上流を更新する場合は resurrect.tmux / continuum.tmux の再適用が必要 (単純 recopy 不可)。
+# - tmux-continuum 多重サーバ検出の置換 (2026-07-30, scripts/helpers.sh + continuum.tmux):
+#   ps の ^tmux カウント (another_tmux_server_running*) を「自分が default socket のサーバか」
+#   判定に置換。-L/TMUX_TMPDIR 隔離のテスト・検証サーバの残骸が居るだけで default サーバの
+#   autosave interpolation 導入と auto-restore が恒久 skip される誤爆の根治 (実害: 2026-06-11
+#   〜28 の 17 日間復元不発、2026-07-30 再発 + 周期保存も一度も動いていなかったと判明)。
+#   判定式は scripts/lib/tmux_resurrect_guards.sh の tt_on_default_server と同一に保つこと。
 # - tmux-smooth-scroll (2026-07-12, 押しっぱなし/連打対策 + pane 固定。upstream は未対策で
 #   run-shell -b が押下ごとに animator を並行起動しアニメが重畳する。upstream の
 #   prevent-race-condition ブランチは未完成 (グローバル lock を touch するだけで判定なし・

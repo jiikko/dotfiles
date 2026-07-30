@@ -28,6 +28,13 @@
 #   zshlib/_tmux_session.zsh の _tt_impl がサーバ未起動を検知した直後に呼ぶ。
 #   手動でも安全に実行できる（孤児が無ければ何もしない）。
 #
+# 現況 (2026-07-30): continuum の Gate2 は「default socket のサーバか」判定へ置換済み
+#   (vendor/.../tmux-continuum/scripts/helpers.sh のパッチ) のため、本スクリプトは復元の
+#   成否には効かなくなった。socket が rm された孤児プロセスの掃除役 (衛生) として存続する。
+#   なお「socket が生きたまま放置されたテストサーバ」は本スクリプトの対象外であり (下記
+#   不変条件のとおり意図的)、それらの後片付けはテスト/probe 側の責務
+#   (_claude/rules/tmux-probe-requires-socket-isolation.md)。
+#
 # DRY_RUN=1 で「kill せず対象だけ列挙」する（検証用）。
 
 set -u

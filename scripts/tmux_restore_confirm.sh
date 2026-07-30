@@ -16,6 +16,13 @@ if [ -z "$restore" ] || [ ! -f "$restore" ]; then
   sleep 3
   exit 1
 fi
+# ⚠️ 実行は popup 内で同期しない。popup -E 内で restore.sh を走らせると「popup を閉じる /
+# キー入力 = 復元プロセスの kill」になり途中死する (2026-07-30 実発: pane 60/93 で途中死し
+# 6 セッション未復元 + in-progress フラグ残置)。runner (detach + 異常終了の観測) に委ねる。
 gum confirm --default=false --affirmative "復元する" --negative "やめる" \
   "保存済み状態を稼働中サーバへ手動復元する？(通常は boot 時の自動復元で足りる)" \
-  && exec bash "$restore"
+  && {
+    tmux run-shell -b "\${DOTFILES_DIR:-\$HOME/dotfiles}/scripts/tmux_restore_runner.sh"
+    echo "復元をバックグラウンドで開始しました (進捗: ~/.cache/tt-restore-trigger.log)"
+    sleep 1
+  }

@@ -127,11 +127,16 @@ printf '✓ path 不在 → degrade\n'
 reset_calls
 STUB_RESTORE_PATH="$TMP_DIR/fake_restore.sh" STUB_GUM_EXIT=1 run "$STUB_PATH" "$RESTORE"
 [[ ! -f "$MARKER" ]] || { printf '✗ 拒否したのに復元が走った\n'; exit 1; }
-printf '✓ 拒否 → 復元は実行されない\n'
+assert_not_called "run-shell" "拒否 → 復元 (runner 委譲) は実行されない"
 reset_calls
 STUB_RESTORE_PATH="$TMP_DIR/fake_restore.sh" STUB_GUM_EXIT=0 run "$STUB_PATH" "$RESTORE"
-[[ -f "$MARKER" ]] || { printf '✗ 承認したのに復元が実行されない\n'; exit 1; }
-printf '✓ 承認 → 解決済みパスの復元スクリプトを exec\n'
+# 復元は popup 内で同期実行せず runner に detach 委譲する (popup close = 復元 kill の途中死
+# 防止。2026-07-30 実発。実行体の挙動は test_restore_runner.sh が pin する)
+assert_called "run-shell -b" "承認 → runner へ detach 委譲 (popup 内では実行しない)"
+grep -q 'tmux_restore_runner.sh' "$CALLS" \
+  || { printf '✗ 委譲先が tmux_restore_runner.sh でない:\n'; cat "$CALLS"; exit 1; }
+[[ ! -f "$MARKER" ]] || { printf '✗ popup 内で restore が同期実行された (途中死リスクの再導入)\n'; exit 1; }
+printf '✓ 承認 → popup 内では復元を実行しない (同期実行の再導入防止)\n'
 
 printf '\n## reload_confirm: uptime ゲートの分岐\n'
 NOW="$(date +%s)"
