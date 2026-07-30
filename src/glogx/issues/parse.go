@@ -267,18 +267,12 @@ func numOf(iss *Issue) (int, bool) {
 func conflicts(issues []*Issue) []string {
 	byName := make(map[string][]*Issue, len(issues))
 	for _, iss := range issues {
-		// 状態でないサブディレクトリ (プロダクト名・時間軸。spec 3 節が正当と認める配置) は
-		// 別の名前空間なので、同名ファイルがあっても二重化ではない。状態を持つ配置 (直下 +
-		// 状態ディレクトリ) だけを比べる: ここを緩めると誤警告が出て、本物の警告が信じられなくなる
-		if iss.Status == StatusUnknown {
-			continue
-		}
 		key := iss.Dir + "\x00" + filepath.Base(iss.Rel)
 		byName[key] = append(byName[key], iss)
 	}
 	warns := make([]string, 0, 2)
 	for _, group := range byName {
-		if len(group) < 2 {
+		if len(group) < 2 || !anyStateful(group) {
 			continue
 		}
 		places := make([]string, 0, len(group))
@@ -292,17 +286,39 @@ func conflicts(issues []*Issue) []string {
 	return warns
 }
 
+// anyStateful は同名グループの中に「状態を持つ配置」(直下・pending/・done/ 等) が 1 つでも
+// あるか。
+//
+// 状態でないサブディレクトリ (プロダクト名・時間軸。spec 3 節が正当と認める配置) だけで
+// 構成されるグループは、別の名前空間に同名ファイルがあるだけなので二重化ではない (同一
+// ディレクトリ内に同名ファイルは存在し得ないので、全員が Unknown なら必ず別サブグループ)。
+// ⚠️ 逆に「Unknown を数える前から除く」と、サブグループの 1 件と done/ の 1 件という
+// 組み合わせ = プロダクト別ディレクトリで運用している repo の done 移動そのものを黙らせる。
+// この警告が存在する唯一の理由 (git mv の取りこぼしで片方が古い内容のまま残る) が、いちばん
+// 踏みやすい形で失われる。
+func anyStateful(group []*Issue) bool {
+	for _, iss := range group {
+		if iss.Status != StatusUnknown {
+			return true
+		}
+	}
+	return false
+}
+
 // Display は一覧に出すタイトル (本文の H1 があればそれ、無ければスラッグ)。
 //
 // H1 が issue 番号で始まる場合は番号を落とす: 一覧では番号を別の列に出しているので
 // 「028  028 refactor: ...」と二重になる (実測でこの repo の H1 は番号始まりが多数)。
+// CATEGORY-NNN 形式は H1 の書き方が両方あるので、完全な ID と番号だけの両方を試す。
 func (iss *Issue) Display() string {
 	if iss.Title == "" {
 		return strings.ReplaceAll(iss.Slug, "-", " ")
 	}
 	title := iss.Title
-	if iss.Number != "" && strings.HasPrefix(title, iss.Number) {
-		title = strings.TrimLeft(strings.TrimPrefix(title, iss.Number), " :-\t")
+	for _, prefix := range []string{iss.Ident(), iss.Number} {
+		if prefix != "" && strings.HasPrefix(title, prefix) {
+			return strings.TrimLeft(strings.TrimPrefix(title, prefix), " :-\t")
+		}
 	}
 	return title
 }

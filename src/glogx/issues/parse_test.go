@@ -3,6 +3,7 @@ package issues
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -195,6 +196,25 @@ func TestConflictsIgnoresNonStatusSubgroupDirs(t *testing.T) {
 	mkFiles(t, filepath.Join(dir, "ubiregi"), "001-fix-a.md")
 	if _, warns := Scan([]string{dir}); len(warns) != 0 {
 		t.Fatalf("サブグループ間の同名ファイルで警告が出た: %q", warns)
+	}
+}
+
+func TestConflictsWarnsWhenSubgroupAndStatusDirShareName(t *testing.T) {
+	// ⚠️ 回帰防止: サブグループを「状態でないから」と数える前に除くと、プロダクト別
+	// ディレクトリで運用している repo の done 移動 (この警告が存在する唯一の理由) を黙らせる。
+	// 片方でも状態を持つ配置にあるなら二重化として警告する。
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	mkFiles(t, filepath.Join(dir, "ubipay"), "001-fix-a.md")
+	mkFiles(t, filepath.Join(dir, "done"), "001-fix-a.md")
+	_, warns := Scan([]string{dir})
+	if len(warns) != 1 {
+		t.Fatalf("サブグループと done/ の二重化を警告しない: %q", warns)
+	}
+	for _, want := range []string{"ubipay/001-fix-a.md", "done/001-fix-a.md"} {
+		if !strings.Contains(warns[0], want) {
+			t.Fatalf("警告に %q が含まれない: %q", want, warns[0])
+		}
 	}
 }
 

@@ -106,7 +106,7 @@ func (v *issuesView) toggle(cwd string) tea.Cmd {
 	return v.scanCmd(cwd)
 }
 
-// close は viewer を閉じる (スキャン結果は保持したまま。再表示は即座)。
+// close は viewer を閉じる (スキャン結果は保持する。再表示は前回の結果を出しながら取り直す)。
 func (v *issuesView) close() {
 	v.shown = false
 	v.animStart = time.Time{}
