@@ -318,6 +318,10 @@ func (v *issuesView) handleKey(key string, page int) tea.Cmd {
 	v.finishAnim() // 演出中のキーは即着地させる (q が効かない時間を作らないため)
 	v.notice = ""  // 通知は直前の操作の結果なので、次のキーで消す (寿命の理由は headLines)
 	rows := v.visibleRows(page)
+	// モードに依らないアクションキーは先に飲む (対象は target() が一覧/本文で切り替える)
+	if cmd, ok := v.actionKey(key); ok {
+		return cmd
+	}
 	if v.open != nil {
 		return v.handleBodyKey(key, rows)
 	}
@@ -355,8 +359,20 @@ func (v *issuesView) handleKey(key string, page int) tea.Cmd {
 		v.refresh()
 	case "r":
 		return v.scanCmd(v.cwd) // loaded は落とさない (取り直し中も前回の結果を出したままにする)
+	}
+	return nil
+}
+
+// actionKey は一覧・本文の両モードで同じ意味を持つキー (対象は target() が決める)。
+// 処理したら handled=true。
+//
+// モードごとの switch に写すのをやめて 1 箇所に寄せている: 二重に持つとキーを 1 本足すたびに
+// 2 箇所を編集する必要があり、片方に入れ忘れても「そのモードでだけ効かない」だけなので
+// テストは緑のまま通る (実際に本文モードのコピーが無通知だったのもこの二重化の側で起きた)。
+func (v *issuesView) actionKey(key string) (tea.Cmd, bool) {
+	switch key {
 	case "v":
-		return v.editCmd()
+		return v.editCmd(), true
 	case "y":
 		v.copyPath()
 	case "p":
@@ -365,8 +381,10 @@ func (v *issuesView) handleKey(key string, page int) tea.Cmd {
 		v.copyReference()
 	case "N":
 		v.copyNextNumber()
+	default:
+		return nil, false
 	}
-	return nil
+	return nil, true
 }
 
 // visibleRows は page 行のうちリスト/本文に使える行数 (ヘッダーを差し引く)。
@@ -396,16 +414,6 @@ func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
 	case "G", "end":
 		v.bodyOff = maxOffset
 		v.bodyGlide.stop()
-	case "v":
-		return v.editCmd()
-	case "y":
-		v.copyPath()
-	case "p":
-		v.copyNumber()
-	case "Y":
-		v.copyReference()
-	case "N":
-		v.copyNextNumber()
 	}
 	return nil
 }

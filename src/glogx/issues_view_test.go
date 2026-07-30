@@ -476,6 +476,47 @@ func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 	}
 }
 
+func TestIssuesViewActionKeysWorkInBothModes(t *testing.T) {
+	// v / y / p / Y / N は一覧でも本文でも同じ対象 (target) に効く。モードごとの switch へ
+	// 写すと、追加時に片方へ入れ忘れても「そのモードでだけ効かない」形で静かに壊れる。
+	origCopy, origEditor := copyToClipboard, runEditorCmd
+	t.Cleanup(func() { copyToClipboard, runEditorCmd = origCopy, origEditor })
+	var copied string
+	copyToClipboard = func(text string) error { copied = text; return nil }
+	editorCalls := 0
+	runEditorCmd = func(*exec.Cmd) tea.Cmd {
+		editorCalls++
+		return func() tea.Msg { return editorClosedMsg{} }
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "028-refactor-x.md")
+	if err := os.WriteFile(path, []byte("# 028 refactor: x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := &issues.Issue{Path: path, Dir: dir, Rel: "028-refactor-x.md", Number: "028", Category: "refactor"}
+	for _, mode := range []string{"一覧", "本文"} {
+		v := loadedView(iss)
+		if mode == "本文" {
+			v.handleKey("enter", 10)
+			if v.open == nil {
+				t.Fatal("本文モードに入れていない")
+			}
+		}
+		for _, key := range []string{"y", "p", "Y", "N"} {
+			copied = ""
+			v.handleKey(key, 10)
+			if copied == "" {
+				t.Fatalf("%s モードで %q がコピーしていない", mode, key)
+			}
+		}
+		before := editorCalls
+		if cmd := v.handleKey("v", 10); cmd == nil || editorCalls != before+1 {
+			t.Fatalf("%s モードで v が nvim を起動しない", mode)
+		}
+	}
+}
+
 func TestIssuesViewRescanReturnsCmd(t *testing.T) {
 	v := loadedView(sampleIssues()...)
 	cmd := v.handleKey("r", 10)
