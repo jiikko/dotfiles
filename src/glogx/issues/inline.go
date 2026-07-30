@@ -116,7 +116,8 @@ func linkText(label, dest string) string {
 }
 
 // matchCode はインラインコード (`...`) を読む。開きと同じ長さのバックティック列で閉じる。
-// 前後 1 個の空白は落とす (CommonMark と同じ: `` ` `` のように記号自体を囲む書き方のため)。
+// 前後 1 個の空白は落とす (CommonMark と同じ: バックティック記号自体をコードとして囲む
+// 書き方に対応するため)。
 func matchCode(s string, i int) (content string, next int, ok bool) {
 	n := 0
 	for i+n < len(s) && s[i+n] == '`' {

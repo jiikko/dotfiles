@@ -1,0 +1,124 @@
+# issues viewer 仕様 — glogx が issue をどう読むか (repo を寄せるときの契約)
+
+glogx の issues viewer (`i` キー) が `issues/` をどう解釈するかの規約。**複数 repo をこの規約に
+寄せる**ための契約書なので、「viewer が何を読むか」だけでなく「なぜその読み方にしたか」を
+実測とともに残す。実装は [`src/glogx/issues/`](../src/glogx/issues/)、状態判定の根拠は
+`parse.go` 冒頭のコメント。
+
+## 1. 探索
+
+| 何を | どこから |
+|---|---|
+| 起点 | `git rev-parse --show-toplevel` (失敗したら cwd) |
+| 対象 | `<root>/issues` と `<root>/*/issues` (深さ 1 まで。`issue` 単数形も可) |
+| 除外 | `.git` / `node_modules` / `vendor` / `build` / `dist` / `tmp` / `Pods` 等の生成物 |
+| 条件 | 直下またはその 1 段下に `.md` が 1 つ以上あること |
+
+- 起点を cwd ではなく repo root にするのは、glogx が tmux popup から `-d '#{pane_current_path}'`
+  で起動されるため。cwd 起点だと「repo に issues があるのに viewer が空」になる
+- 深さ 1 まで掘るのは、`<root>/issues` と `<sub>/issues` の両方を持つ repo が実在するため
+  (DualNoteApp は root に 3 件・`macOS/issues` に 102 件)
+- `.md` の有無を条件にするのは、名前が `issues` でも issue 管理でないディレクトリがあるため
+  (`ubiregi-server/script/issues/19951` は権限 fixture の `.yml` 置き場)
+
+## 2. ファイル名 — 番号とカテゴリ
+
+```
+NNN-<カテゴリ>-<スラッグ>.md        例: 028-refactor-glogx-box-and-toast-cleanups.md
+```
+
+- **タブは「番号の次のトークン」で作る**。この語彙は viewer 側で固定しない: 実測で repo ごとに
+  3 系統 (変更種別 19 語 / サブシステム名 / トークンなし) が併存しており、決め打ちにすると
+  別 repo で空タブと欠落が出る。寄せるなら「番号の次に分類語を置く」だけ守れば足りる
+- カテゴリを 1 件しか持たない語は `other` タブへ寄せる (コンポーネント名を置く repo で
+  タブが数十個に膨らむのを防ぐ)。しきい値は `issues.TabMinCount`
+- `CATEGORY-NNN-<スラッグ>.md` (大文字 ID) も認識する。番号なしファイル (`README.md`、
+  素のスラッグ) はカテゴリを取らず `other` に入る
+- **番号は一意でなくてよい**が、viewer の同一性キーは**パス**であって番号ではない
+  (実測で同一ディレクトリ内の番号重複が dropbox 37 件・SnapTrim 4 件・DualNote 4 件ある)
+
+## 3. 状態 — パス (ディレクトリ) が正本
+
+| 置き場所 | 状態 | バッジ |
+|---|---|---|
+| issue ディレクトリ直下 | open (未完了) | `○` |
+| `pending/` `hold/` `on-hold/` | 保留 (着手条件・trigger 待ち) | `⏸` |
+| `done/` `closed/` `completed/` `resolved/` | 完了 | `✓` |
+| 上記以外のサブディレクトリ | **状態にしない** (サブグループ扱い) | `?` |
+
+未知のサブディレクトリを状態へ写像しないのは、状態でないサブディレクトリを持つ repo が
+実在するため (`src/working/issues` はプロダクト名のディレクトリが 18 個、
+`DualNoteApp/macOS/issues/mid-long-term` は状態ではなく時間軸)。黙って状態にすると
+「存在しない状態」がタブに並ぶ。
+
+`done` は既定で伏せる (`a` キーで表示)。実測で done が全体の 8 割を占める repo があり、
+既定で混ぜると open が埋もれる。
+
+### 同じファイル名が 2 箇所にあったら警告する
+
+同一 issue ディレクトリ内で同じファイル名が複数の状態ディレクトリに現れたら、viewer は
+警告を出す。これは並行セッションの `git mv` (即 stage される) と pathspec commit の
+組み合わせで実際に起きる二重化で、**conflict も error も出ないまま片方が古い内容で残る**
+(scratch repo で再現確認済み)。viewer が言えば静かな喪失に気づける。
+
+## 4. ongoing (着手中) をどう扱うか
+
+**決定: ファイル名に状態を入れない。`ongoing/` ディレクトリも作らない。表したいときは
+本文先頭の front matter に `status:` を 1 行書く (任意)。**
+
+```markdown
+---
+status: ongoing
+---
+# 028 refactor: ...
+```
+
+viewer は `status:` があれば表示し、**パスと食い違う場合は融合せず両方出す**
+(`done ⚠ status:ongoing`)。どちらかを黙って採用すると viewer が確信を持って嘘をつく。
+
+### なぜファイル名に入れないか (実測)
+
+| 根拠 | 実測値 |
+|---|---|
+| 番号の次のトークンは既に 3 系統の語彙で埋まっており、状態語と分離できない | `119-open-with-app-context-menu.md` は `done/` にあるのに名前が `open`。`163-fix-...` は `fix` がカテゴリ |
+| 「名前のどこかに状態語」に逃げても誤判定する | `lint-from-done-*` 5 件、`*-stays-open-on-blur` 等 3 件が誤爆 |
+| 新しいファイル名フィールドは遵守されない | 既存のカテゴリトークン遵守率は dotfiles 30/30 だが SnapTrim 0/48・dropbox 106/218。規約は retroactive に適用されず、古い番号帯は rename されていない。「トークン不在」に既定値を当てるしかなく、未着手と付け忘れが区別できない |
+| basename を含む既存参照が腐る | 35 箇所 (production のコメント 10 箇所を含む)。状態遷移ごとに rename すると毎回切れる |
+| 先行事例が無い | md ベースの issue/task 管理 10 事例 (todo.txt / org-mode / Obsidian Tasks / MADR / Backlog.md / Jekyll / taskwarrior 等) でファイル名を状態 carrier にしているものは 0 件 |
+| 番号の前に置く形は採番を壊す | `wip-030-...` にすると `issues/README.md` の次番号確認コマンドが `^[0-9]{3}-` で落とし、max が 029 に後退する (実測)。番号再利用は他 repo で 37 件発生済み |
+
+### なぜ `ongoing/` ディレクトリも作らないか (実測)
+
+- **記帳する時間が無い**: dotfiles の issue は作成→`done/` 移動が 4〜24 分 (単一セッション内、
+  27 件中 13 件が同日)。誰も viewer を開かない数分のために 2 回の余分な `git mv` を要求する
+  規律は定着しない
+- **1 ファイル 1 ディレクトリでは表せない**: `pending/` の 2 件は両方とも「着手済み・一部完了・
+  残りは trigger 待ち」を同時に満たしている。`ongoing/` と `pending/` のどちらにも該当する
+- **採番コマンドの視界外になる**: `issues/README.md` の次番号確認はディレクトリを固定列挙して
+  いるため、最大番号の issue が `ongoing/` に滞在すると番号が再利用される (実測)。
+  もし `ongoing/` を作るなら**先に採番コマンドを全ディレクトリ走査へ直す**こと
+
+### viewer がやらないこと
+
+- **チェックボックスから状態を導出しない**。実測で両方向に嘘をつく: `done/` にあるのに 0/N の
+  ファイルが 36 件 (dropbox 16 / DualNote 13 / SnapTrim 7)、逆に全チェック済みでも本文が未完を
+  明記している open ファイルがある。チェックボックスは「作業項目」ではなく「将来の実装計画」
+  「Phase 追跡」にも使われていて意味が固定されていない。出すのは生の事実 (`3/7`) だけ
+- **本文を起動時に全件読まない**。ファイル名のみの走査に対して 26〜58 倍 (dropbox 229 ファイルで
+  0.23ms → 13.6ms)。glogx の起動時間は Bench の監視対象なので、本文は遅延で読む
+
+## 5. repo を寄せるときのチェックリスト
+
+- [ ] issue は `<root>/issues` または `<sub>/issues` に置く (深さ 1 まで)
+- [ ] ファイル名を `NNN-<分類語>-<スラッグ>.md` にする (番号の次に分類語)
+- [ ] 状態はディレクトリで表す (`pending/` `done/`)。状態でないサブディレクトリは作ってよいが
+      状態としては扱われない (`other` になる)
+- [ ] 同じファイル名を 2 箇所に置かない (viewer が警告する)
+- [ ] 着手中を明示したいときだけ front matter に `status:` を 1 行足す
+- [ ] ファイル名に状態語 (wip / ongoing / doing) を入れない
+
+## 6. 保守
+
+- 実装が真の出典: 状態ディレクトリの語彙は `parse.go` の `statusDirs`、除外ディレクトリは
+  `discover.go` の `skipDirs`。ここの表と食い違ったら**実装に合わせてこの文書を直す**
+- この規約を変えるときは、寄せた repo 側の運用も同時に見直す (片方だけ変えると viewer が嘘をつく)

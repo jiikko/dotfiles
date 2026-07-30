@@ -38,9 +38,9 @@ const (
 	styleText style = iota
 	styleH1
 	styleH2
-	styleH3         // H3 以降 (見出しの階層は marker 記号で示すので色は 3 段で足る)
-	styleCodeSpan   // インラインコード
-	styleCodeBlock  // コードブロック本文 (colored なら render.go が chroma に回す)
+	styleH3        // H3 以降 (見出しの階層は marker 記号で示すので色は 3 段で足る)
+	styleCodeSpan  // インラインコード
+	styleCodeBlock // コードブロック本文 (colored なら render.go が chroma に回す)
 	styleStrong
 	styleEm
 	styleStrike

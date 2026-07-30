@@ -1,0 +1,119 @@
+package issues
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+// issue ディレクトリの探索。
+//
+// 実測 (このマシンの 6 箇所の issues/ ディレクトリ・計 405 ファイル) に基づく設計判断:
+//
+//   - 起点は git repo の toplevel。glogx は tmux popup から `-d '#{pane_current_path}'` で
+//     起動されるため cwd は repo のサブディレクトリになりうる (nvim を開いていたペイン等)。
+//     cwd 起点にすると「repo に issues があるのに viewer が空」という壊れ方をする
+//   - 深さ 1 まで掘る: root/issues の他に <sub>/issues を持つ repo が実在する
+//     (DualNoteApp は root/issues に 3 件・macOS/issues に 102 件)
+//   - 名前が issues でも issue 管理でないディレクトリが実在する
+//     (ubiregi-server/script/issues/19951 は権限 fixture の .yml 置き場)。
+//     .md を 1 つも持たないディレクトリは対象外にする
+
+// issueDirNames は issue ディレクトリとして認識するディレクトリ名。
+var issueDirNames = map[string]bool{"issues": true, "issue": true}
+
+// skipDirs は深さ 1 を掘るときに入らないディレクトリ (巨大・生成物・VCS)。
+var skipDirs = map[string]bool{
+	".git": true, "node_modules": true, "vendor": true, "Pods": true, "Carthage": true,
+	"DerivedData": true, "build": true, ".build": true, "dist": true, "target": true,
+	"tmp": true, ".venv": true, ".next": true, "coverage": true, ".terraform": true,
+}
+
+// RepoRoot は探索の起点を返す。git repo の toplevel を優先し、取れなければ cwd をそのまま
+// 使う (git 管理外のディレクトリでも issues/ があれば見えるように)。
+func RepoRoot(cwd string) string {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd.Dir = cwd
+	out, err := cmd.Output()
+	if err != nil {
+		return cwd
+	}
+	if root := strings.TrimSpace(string(out)); root != "" {
+		return root
+	}
+	return cwd
+}
+
+// FindDirs は root 直下と root/*/ から issue ディレクトリを探して返す (name 昇順)。
+func FindDirs(root string) []string {
+	found := make([]string, 0, 2)
+	if dir := filepath.Join(root, "issues"); hasMarkdown(dir) {
+		found = append(found, dir)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return found
+	}
+	for _, e := range entries {
+		if !e.IsDir() || skipDirs[e.Name()] || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		if issueDirNames[e.Name()] {
+			if dir := filepath.Join(root, e.Name()); e.Name() != "issues" && hasMarkdown(dir) {
+				found = append(found, dir)
+			}
+			continue
+		}
+		for name := range issueDirNames {
+			dir := filepath.Join(root, e.Name(), name)
+			if hasMarkdown(dir) {
+				found = append(found, dir)
+			}
+		}
+	}
+	// map の走査順は不定なので並べ直す (タブ順・表示順が起動ごとに変わらないように)
+	sort.Strings(found)
+	return found
+}
+
+// hasMarkdown は dir が issue ディレクトリとして扱えるか (直下または直下のサブディレクトリに
+// .md が 1 つでもあるか) を返す。全 issue が done/ に片付いた状態でも拾えるようサブ
+// ディレクトリまで見る。
+func hasMarkdown(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	subdirs := make([]string, 0, 4)
+	for _, e := range entries {
+		if e.IsDir() {
+			if !skipDirs[e.Name()] {
+				subdirs = append(subdirs, e.Name())
+			}
+			continue
+		}
+		if isMarkdown(e.Name()) {
+			return true
+		}
+	}
+	for _, sub := range subdirs {
+		subEntries, err := os.ReadDir(filepath.Join(dir, sub))
+		if err != nil {
+			continue
+		}
+		for _, e := range subEntries {
+			if !e.IsDir() && isMarkdown(e.Name()) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isMarkdown は表示対象のファイルか。実測では issue ファイルは 405/405 が .md で、
+// .md 以外は audit-log (拡張子なし TSV) と .gitkeep だけだった。
+func isMarkdown(name string) bool {
+	return strings.EqualFold(filepath.Ext(name), ".md")
+}
