@@ -23,9 +23,27 @@ const (
 	cRed    = "\x1b[31m"
 )
 
-// defaultOrder は RenderLine が描く枠と順序。5h セッションと weekly(all models) の 2 本。
-// Fable 等の別週枠は Snapshot には入るが既定では描かない (spec 外)。
+// defaultOrder は Claude の枠のうち描くものと順序。5h セッションと weekly(all models) の
+// 2 本。Fable 等の別週枠は Snapshot には入るが既定では描かない (spec 外)。
 var defaultOrder = []string{"5h", "7d"}
+
+// renderWindows は RenderLine / RenderTable が描く枠を返す。Claude は defaultOrder による
+// 選抜、codex は取得できた枠すべて (枠構成がプラン依存で事前に列挙できないため、ラベルで
+// なく Source で拾う)。順序は Claude → codex 固定。
+func renderWindows(s *Snapshot) []Window {
+	var ws []Window
+	for _, label := range defaultOrder {
+		if w, ok := s.Find(label); ok {
+			ws = append(ws, w)
+		}
+	}
+	for _, w := range s.Windows {
+		if w.Source == SourceCodex {
+			ws = append(ws, w)
+		}
+	}
+	return ws
+}
 
 // RenderLine は Snapshot を 1 行のステータス文字列へ整形する。純関数 (テスト容易)。
 // 単独コマンドやコンパクト表示用。複数行モーダルには RenderRows を使う。
@@ -34,13 +52,12 @@ func RenderLine(s *Snapshot, now time.Time, colored bool) string {
 	if s == nil {
 		return ""
 	}
-	var parts []string
-	for _, label := range defaultOrder {
-		if w, ok := s.Find(label); ok {
-			parts = append(parts, fmt.Sprintf("%s:%s%d%%(残:%s / %s)",
-				w.Label, bar(w.Percent, colored), w.Percent,
-				formatRemain(w.ResetAt.Sub(now)), formatReset(w.ResetAt)))
-		}
+	ws := renderWindows(s)
+	parts := make([]string, 0, len(ws))
+	for _, w := range ws {
+		parts = append(parts, fmt.Sprintf("%s:%s%d%%(残:%s / %s)",
+			w.Label, bar(w.Percent, colored), w.Percent,
+			formatRemain(w.ResetAt.Sub(now)), formatReset(w.ResetAt)))
 	}
 	return strings.Join(parts, " ")
 }
@@ -48,7 +65,7 @@ func RenderLine(s *Snapshot, now time.Time, colored bool) string {
 // 表レイアウトの列定義。ヘッダーとデータ行で共有し縦の列を揃える。
 const (
 	tblGap    = "   " // 列間の空白 (3)
-	tblLabelW = 2     // 枠ラベル列 ("5h"/"7d"/"枠" いずれも表示幅 2)
+	tblLabelW = 2     // 枠ラベル列の最小幅 ("5h"/"7d"/"枠" は 2。"cx7d" 等が混ざると実幅で広がる)
 	tblUsageW = 17    // 使用列 = バー "[" + barCells(10) + "]"(=12) + 空白(1) + "%3d%%"(4)
 )
 
@@ -59,14 +76,26 @@ const (
 //
 //	row  ="5h   [▰▱▱▱▱▱▱▱▱▱]   4%   4時間26分 / 7月22日03:09"
 func RenderTable(s *Snapshot, now time.Time, colored bool) (header string, rows []string) {
+	header, groups := RenderTableGroups(s, now, colored)
+	for _, g := range groups {
+		rows = append(rows, g...)
+	}
+	return header, rows
+}
+
+// RenderTableGroups は RenderTable と同じデータ行を、出所 (Claude / codex) が変わる境目で
+// グループに分けて返す (ユーザー要望 2026-07-31: Claude と codex の間に区切り罫線)。列幅は
+// 全グループ横断で揃えるため、間に区切り行を挟んでも列は縦に揃う。区切り罫線そのものは
+// 箱幅を知る呼び出し側が引く。空グループは返さない。
+func RenderTableGroups(s *Snapshot, now time.Time, colored bool) (header string, groups [][]string) {
 	if s == nil {
 		return "", nil
 	}
-	var ws []Window
-	for _, label := range defaultOrder {
-		if w, ok := s.Find(label); ok {
-			ws = append(ws, w)
-		}
+	ws := renderWindows(s)
+	// 枠ラベル列は最長ラベルに合わせて広げる (codex の "cx7d" 等は最小幅 2 に収まらない)。
+	labelW := tblLabelW
+	for _, w := range ws {
+		labelW = max(labelW, dispWidth(w.Label))
 	}
 	// 残り時間を (日 / 時間 / 分) の 3 列に分解し、列ごとに最大幅へ右寄せして単位位置を
 	// 縦に揃える (例: "   4時間25分" と "2日 8時間" の "時間" が同じ桁に来る)。数字の桁数が
@@ -94,18 +123,26 @@ func RenderTable(s *Snapshot, now time.Time, colored bool) (header string, rows 
 	// ヘッダーの「残り」列はデータの残り列と同じ幅で右寄せし、" / " 区切りをデータ行と
 	// 縦に揃える (固定文字列だと列幅ぶんズレる)。リセット見出しは " / " の直後 (左詰め)。
 	remainHdr := padLeft("残り", wDay+wHour+wMin)
-	header = padRight("枠", tblLabelW) + tblGap + padRight("使用", tblUsageW) + tblGap +
+	header = padRight("枠", labelW) + tblGap + padRight("使用", tblUsageW) + tblGap +
 		remainHdr + " / " + "リセット"
-	rows = make([]string, len(ws))
+	cur := make([]string, 0, len(ws))
 	for i, w := range ws {
+		// 出所が変わる境目 (renderWindows の順序で Claude → codex) でグループを切る。
+		if i > 0 && w.Source != ws[i-1].Source {
+			groups = append(groups, cur)
+			cur = nil
+		}
 		// バーは色付き時 ANSI を含むが表示幅は常に barCells+2 なので固定列 (tblUsageW) として扱える。
 		usageCell := fmt.Sprintf("%s %3d%%", bar(w.Percent, colored), w.Percent)
 		remainCell := padLeft(days[i], wDay) + padLeft(hours[i], wHour) + padLeft(mins[i], wMin)
 		resetCell := padLeft(months[i], wMonth) + padLeft(dates[i], wDate) + clocks[i]
-		rows[i] = padRight(w.Label, tblLabelW) + tblGap + usageCell + tblGap +
-			remainCell + " / " + resetCell
+		cur = append(cur, padRight(w.Label, labelW)+tblGap+usageCell+tblGap+
+			remainCell+" / "+resetCell)
 	}
-	return header, rows
+	if len(cur) > 0 {
+		groups = append(groups, cur)
+	}
+	return header, groups
 }
 
 // padRight は表示幅を w に右詰めパディングする (ANSI を含まないセル専用)。

@@ -1,7 +1,7 @@
 # glogx
 
 **glog (read-only) のコピーに write 操作と Claude Code 連携を足した派生版。**
-push (`b`) / pull --rebase (`u`) に加え、Claude Code の `/usage` 残量表示 (`U`) と
+push (`b`) / pull --rebase (`u`) に加え、Claude Code / codex の残量表示 (`U`) と
 `claude update` (`C`) を持つ。read-only という glog 本体の契約を守るため、write 操作は
 こちらに隔離している。
 
@@ -57,7 +57,8 @@ Date:   Thu Jul 16 14:03:21 2026 +0900
   (conflict は自動 abort で元に戻す。未コミット変更があるときは案内して中止)。push/pull 後は
   実行中の CI をポーリングして結果を反映する。job パネル / job 詳細の `r` で失敗 job を
   再実行 (y/N 確認。`gh run rerun --job`。反映されるまでパネルをポーリングして追従)
-- **Claude Code 連携**: `U` で `/usage` の残量を右上モーダルに表示 (表示中は 1 分ごとに自動更新。
+- **Claude Code 連携**: `U` で `/usage` の残量を右上モーダルに表示 (codex CLI があれば
+  その残量も区切り罫線付きで併記。表示中は 1 分ごとに自動更新。
   非表示のあいだは更新を止め、再表示時に古ければ取り直す)、`C` で `claude update` を実行
   (結果を下部モーダルに表示)
 - **tmux popup 対応**: ctrl+g の popup 内では tmux prefix が window 操作に効かないため、
@@ -124,7 +125,7 @@ glogx --help              # ヘルプ (キー操作・記号・終了コード�
 | `P` | **PR の状態ポップアップ** (state / draft / レビュー承認 / conflict / CI をブラウザなしで確認。`o` でブラウザ・`y` で URL コピー・`P`/`q`/`h` で閉じる。mergeable は GitHub 側の遅延計算中は「計算中」表示) |
 | `b` | **git push** (y/N 確認。未 push が無ければ警告のみ。diff 表示中の `b` はスクロール) |
 | `u` | **git pull --rebase** (y/N 確認。conflict は自動 abort で元に戻す。未コミット変更があると案内して中止) |
-| `U` | **Claude Code の /usage 残量を右上モーダルで表示** (toggle。表示中は 1 分ごとに自動更新。非表示中は更新を止め、再表示時に古ければ取り直す) |
+| `U` | **Claude Code / codex の残量を右上モーダルで表示** (toggle。表示中は 1 分ごとに自動更新。非表示中は更新を止め、再表示時に古ければ取り直す) |
 | `C` | **claude update を実行** (確認なし即実行。結果を下部モーダルに表示) |
 | `Ctrl-D` / `Ctrl-U` / `PgDn` / `PgUp` | ページスクロール |
 | `g` / `G` | 先頭 / 末尾のコミットへ |
@@ -264,7 +265,7 @@ GitHub へ問い合わせない (必ず「無い」と返るため。API 消費�
 - 書き込みは temp + rename の原子的更新。キャッシュの欠損・破損は「キャッシュ
   なし」として動作し、コマンドを失敗させない
 - 同じディレクトリに repo 非依存のキャッシュも置く: `claude-latest-version.json`
-  (最新版チェック、TTL 1 時間) と `claude-usage.json` (`/usage` の残量、TTL 1 分)。
+  (最新版チェック、TTL 1 時間) と `claude-usage.json` (`/usage` + codex の残量、TTL 1 分)。
   `claude -p /usage` は 1 回 ≈ 2.0s wall / 1.8s CPU かかる (トークン課金は無いが node 起動 +
   セッション初期化が重い) ので、起動のたびには払わずキャッシュを使う。定期リフレッシュ側は
   鮮度を作るのが役目なのでキャッシュを読まない
@@ -324,7 +325,7 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   `box.go` (browseModel 非依存の枠描画プリミティブ = panel/overlay/centerBox/shadow) /
   各種オーバーレイ・モーダル (`diff_overlay.go` / `job_detail_overlay.go` /
   `usage_overlay.go` / `pr_status_overlay.go` / `action_modal.go` / `toast.go`) /
-  `usage/` (Claude Code の /usage 取得・整形。単独コマンドへ切り出し可能) /
+  `usage/` (Claude Code の /usage と codex rateLimits の取得・整形。単独コマンドへ切り出し可能) /
   `width.go` (表示幅の単一情報源 = ansi.StringWidth への一本化と絵文字正規化) / `main.go` (配線)
 - `tools/width-probe/`: 端末が各文字に何セル割り当てるかを CPR (CSI 6n) で端末自身に
   問い合わせる調査ツール。幅ズレの原因層 (glogx / 描画エンジン / tmux / 端末) を推測でなく

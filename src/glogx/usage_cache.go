@@ -9,10 +9,11 @@ import (
 	"glogx/usage"
 )
 
-// /usage スナップショットのディスクキャッシュ。glogx は git log ラッパーで 1 日に何十回も
-// 起動されるが、`claude -p /usage` は 1 回 ≈ 2.0s wall / 1.8s CPU かかる (実測 2026-07-25。
-// node 起動 + Claude Code セッション初期化が支配的で、/usage 自身の処理は 462ms)。
-// 起動のたびに払うのは無駄なので、直近の取得結果を短 TTL で再利用する。
+// usage スナップショット (Claude /usage + codex rateLimits の併合結果) のディスクキャッシュ。
+// glogx は git log ラッパーで 1 日に何十回も起動されるが、`claude -p /usage` は 1 回 ≈ 2.0s
+// wall / 1.8s CPU かかる (実測 2026-07-25。node 起動 + Claude Code セッション初期化が支配的で、
+// /usage 自身の処理は 462ms)。起動のたびに払うのは無駄なので、直近の取得結果を短 TTL で
+// 再利用する。
 //
 // キャッシュ層をここ (package main) に置く理由: usage パッケージは「glogx / bubbletea に
 // 一切依存しない自己完結」という契約を持つ (usage/usage.go の doc)。キャッシュ置き場は

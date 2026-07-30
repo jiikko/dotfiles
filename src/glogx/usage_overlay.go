@@ -16,7 +16,7 @@ type usageMsg struct {
 	err  error
 }
 
-// usageOverlay は Claude Code の /usage 残量を右上に重ねるオーバーレイの状態と描画。
+// usageOverlay は Claude Code / codex の残量を右上に重ねるオーバーレイの状態と描画。
 // browseModel から usage の関心事 (状態 + fetch/toggle/render) を 1 つの型へ切り出した
 // サブコンポーネント。取得ロジック自体は bubbletea 非依存の usage パッケージにあり、こちらは
 // overlay の UI 状態機械 (bubbletea 結合のため glogx 側に置く)。browseModel は 1 フィールド
@@ -34,12 +34,13 @@ type usageOverlay struct {
 	fetchedAt time.Time
 }
 
-// fetchCmd は Claude Code の /usage を非同期取得する tea.Cmd。トークン課金は発生しない
-// (num_turns=0 / total_cost_usd=0) が、subprocess 自体は 1 回 ≈ 2.0s wall / 1.8s CPU と
-// 重い (実測 2026-07-25。支配的なのは node 起動 + Claude Code セッション初期化で、/usage の
-// 内部処理は 462ms)。初期描画のクリティカルパスには乗せない。cancel を保持し、quit 時に
-// 走行中の subprocess を中断できるようにする (fast-quit での claude 子プロセスのオーファン化を
-// 防ぐ)。起動時に 1 回 + 以降 usageRefreshInterval ごとにバックグラウンド再取得で呼ばれる
+// fetchCmd は Claude Code の /usage と codex の rateLimits を非同期取得する tea.Cmd
+// (usage.FetchAll が両者を並列取得し 1 Snapshot に併合。codex 側は失敗しても Claude 表示を
+// 崩さない)。どちらもトークン課金は発生しないが、claude subprocess は 1 回 ≈ 2.0s wall /
+// 1.8s CPU と重い (実測 2026-07-25。支配的なのは node 起動 + Claude Code セッション初期化で、
+// /usage の内部処理は 462ms。codex app-server は 0.6〜1.2s で並列のため所要は claude 側が
+// 支配)。初期描画のクリティカルパスには乗せない。cancel を保持し、quit 時に走行中の
+// subprocess を中断できるようにする (fast-quit での子プロセスのオーファン化を防ぐ)。起動時に 1 回 + 以降 usageRefreshInterval ごとにバックグラウンド再取得で呼ばれる
 // (U トグルは再 fetch しない)。定期リフレッシュ中も表示は last-good を保つ (handle 参照)。
 //
 // useCache=true (起動時) は fresh なディスクキャッシュがあれば subprocess を起こさず即答する。
@@ -49,6 +50,9 @@ type usageOverlay struct {
 func (o *usageOverlay) fetchCmd(useCache bool) tea.Cmd {
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	o.cancel = cancel
+	// last-good 補完用の前回結果。closure の生成は UI スレッドなのでここで束縛する
+	// (goroutine から o.snap を読むとデータレース)。
+	prev := o.snap
 	return func() tea.Msg {
 		defer cancel()
 		// キャッシュ経路の失敗 (path 解決不能・破損・TTL 切れ) はすべて「キャッシュなし」に
@@ -59,9 +63,15 @@ func (o *usageOverlay) fetchCmd(useCache bool) tea.Cmd {
 				return usageMsg{snap: snap}
 			}
 		}
-		snap, err := usage.Fetch(ctx)
-		if err == nil && pathErr == nil {
-			_ = saveUsageCache(path, snap, time.Now()) // best-effort: 保存失敗でも表示は成立させる
+		snap, err := usage.FetchAll(ctx)
+		if err == nil {
+			// FetchAll は片側 (claude / codex) の一時失敗を err=nil で返すため、欠けた出所の
+			// 枠を前回結果から補完してから表示・キャッシュへ流す (補完しないと handle の
+			// last-good ガードを素通りして、取れていた枠が黙って消える)。
+			snap.MergeLastGood(prev)
+			if pathErr == nil {
+				_ = saveUsageCache(path, snap, time.Now()) // best-effort: 保存失敗でも表示は成立させる
+			}
 		}
 		return usageMsg{snap: snap, err: err}
 	}
@@ -74,6 +84,8 @@ func (o *usageOverlay) fetchCmd(useCache bool) tea.Cmd {
 // (1 分ごとの再取得が回線瞬断等でたまに転けても、右上の残量表示がチラつかない)。初回取得の
 // 失敗 (snap 未取得) はそのままエラー表示する。リフレッシュ成功は last-good を新値へ置き換え、
 // 初回失敗からの回復 (err クリア) も担う。
+// 片側 (claude / codex) だけの失敗は err=nil で来るためこのガードでは受けられず、fetchCmd 側の
+// MergeLastGood が出所単位で同じ不変条件を守る (二層で一対)。
 func (o *usageOverlay) handle(msg usageMsg) {
 	if msg.err != nil && o.snap != nil {
 		return // 定期リフレッシュの一時失敗: last-good を保持し表示を崩さない
@@ -133,15 +145,29 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 		if v := o.snap.Version; v != "" {
 			title = " Claude Code v" + v + " · usage "
 		}
+		// codex の枠が取れているときだけ "+ codex" を添える (codex 未導入環境や取得失敗時に
+		// 名前だけ出さない。行側の cx ラベルと対で、この箱が両 CLI の残量であることを示す)。
+		if o.snap.HasCodex() {
+			title = strings.Replace(title, " · usage ", " + codex · usage ", 1)
+		}
 		// ヘッダー (列見出し) は自明なので表示しない (ユーザー要望 2026-07-23)。data 行のみ。
-		_, data := usage.RenderTable(o.snap, time.Now(), colored)
-		rows = append(rows, data...)
+		// Claude と codex の境目には content 幅の区切り罫線を挟む (ユーザー要望 2026-07-31)。
+		// 罫線幅を全グループの最大行幅に合わせるため、先に幅 w を確定してから組む。
+		_, groups := usage.RenderTableGroups(o.snap, time.Now(), colored)
+		w := 0
+		for _, g := range groups {
+			for _, r := range g {
+				w = max(w, dispWidth(r))
+			}
+		}
+		for gi, g := range groups {
+			if gi > 0 {
+				rows = append(rows, paint(strings.Repeat("─", w), ansiDim, colored))
+			}
+			rows = append(rows, g...)
+		}
 		// 自動更新の明示フッターを content 幅に右寄せで添える (ユーザー要望)。値の取得は静かに
 		// 差し替わるので、更新中であることは出さない。
-		w := 0
-		for _, r := range data {
-			w = max(w, dispWidth(r))
-		}
 		footer := "1分ごとに更新"
 		rows = append(rows, strings.Repeat(" ", max(w-dispWidth(footer), 0))+paint(footer, ansiDim, colored))
 	}

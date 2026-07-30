@@ -1,8 +1,9 @@
-// Package usage は Claude Code の `/usage` 出力を取得・整形する。
+// Package usage は Claude Code の `/usage` 出力と codex の rateLimits を取得・整形する。
 //
 // glogx / bubbletea には一切依存しない自己完結パッケージ。将来 単独コマンドへ
-// 切り出す場合は Fetch + RenderLine を呼ぶだけの main を足せば済む (glogx 側の
+// 切り出す場合は FetchAll + RenderLine を呼ぶだけの main を足せば済む (glogx 側の
 // コード移動は不要)。ユーザー要望 2026-07-21: 「切り離しやすく設計」。
+// codex 側のデータ源と経路選定の理由は codex.go 冒頭を参照。
 //
 // データ源の注意: `/usage` の % は「このマシンのローカルセッションに基づく近似」で、
 // 他デバイス・claude.ai の消費を含まない (出力自身がそう明記している)。リセット時刻は
@@ -24,10 +25,13 @@ import (
 
 // Window は 1 つの利用枠 (5h セッション / weekly) の残量とリセット時刻。
 type Window struct {
-	Label   string    // 表示用ラベル ("5h" / "7d" / "7d(Fable)")
+	Label   string    // 表示用ラベル ("5h" / "7d" / "7d(Fable)" / "cx7d")
 	Raw     string    // /usage の元ラベル ("Current session" 等)
 	Percent int       // 使用率 0-100
 	ResetAt time.Time // 枠がリセットされる時刻 (ローカルタイム)
+	// Source は枠の出所 (SourceCodex = codex、空文字 = Claude Code)。omitempty により
+	// codex 対応前のディスクキャッシュ (フィールドなし) は Claude 枠として読める。
+	Source string `json:",omitempty"`
 }
 
 // Snapshot は `/usage` 一回分のパース結果。
@@ -52,14 +56,14 @@ type claudeResult struct {
 	IsError bool   `json:"is_error"`
 }
 
-// claudeWaitDelay は ctx キャンセル/プロセス終了後に子孫が I/O パイプを握り続けていても Wait()
-// を確実に戻すための猶予 (Go 1.20+ の Cmd.WaitDelay)。exec.CommandContext は ctx キャンセルで
-// 直接の子 (claude) だけを kill するため、claude が親 stdout の write 端を継承した孫プロセスを
-// 残すと、直接の子を kill しても Output() 内の Wait() がその孫がパイプを閉じるまでブロックしうる。
-// WaitDelay を設けると、キャンセル/終了からこの時間でパイプを強制クローズして Wait を返す。
-// プロセスが正常終了して自分でパイプを閉じる通常ケースには影響しない安全弁 (fetchTimeout=10s に
-// 対して十分小さく、かつ正当な出力の取りこぼしが起きない程度に確保)。
-const claudeWaitDelay = 2 * time.Second
+// subprocessWaitDelay は ctx キャンセル/プロセス終了後に子孫が I/O パイプを握り続けていても
+// Wait() を確実に戻すための猶予 (Go 1.20+ の Cmd.WaitDelay)。exec.CommandContext は ctx
+// キャンセルで直接の子 (claude / codex) だけを kill するため、子が親 stdout の write 端を継承
+// した孫プロセスを残すと、直接の子を kill しても Wait() がその孫がパイプを閉じるまでブロック
+// しうる。WaitDelay を設けると、キャンセル/終了からこの時間でパイプを強制クローズして Wait を
+// 返す。プロセスが正常終了して自分でパイプを閉じる通常ケースには影響しない安全弁
+// (fetchTimeout=10s に対して十分小さく、かつ正当な出力の取りこぼしが起きない程度に確保)。
+const subprocessWaitDelay = 2 * time.Second
 
 // Fetch は `claude -p "/usage"` を実行して結果をパースする。
 //
@@ -73,7 +77,7 @@ func Fetch(ctx context.Context) (*Snapshot, error) {
 	go func() { verCh <- FetchVersion(ctx) }()
 
 	cmd := exec.CommandContext(ctx, "claude", "-p", "/usage", "--model", "haiku", "--output-format", "json")
-	cmd.WaitDelay = claudeWaitDelay
+	cmd.WaitDelay = subprocessWaitDelay
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("claude /usage 実行失敗: %w", err)
@@ -98,7 +102,7 @@ func Fetch(ctx context.Context) (*Snapshot, error) {
 // (バージョン表示は付加情報であり、欠けても呼び出し側の主処理は成立させる)。
 func FetchVersion(ctx context.Context) string {
 	cmd := exec.CommandContext(ctx, "claude", "--version")
-	cmd.WaitDelay = claudeWaitDelay
+	cmd.WaitDelay = subprocessWaitDelay
 	out, err := cmd.Output()
 	if err != nil {
 		return ""

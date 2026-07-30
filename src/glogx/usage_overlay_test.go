@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -409,4 +411,85 @@ func TestUsageToggleRefetchesOnlyWhenStale(t *testing.T) {
 			t.Error("fresh なのに取り直した (無駄な subprocess)")
 		}
 	})
+}
+
+// Claude と codex の枠の間に区切り罫線が入る (ユーザー要望 2026-07-31)。単一出所なら罫線なし。
+func TestUsageBoxLinesCodexDivider(t *testing.T) {
+	o := usageOverlay{visible: true, snap: &usage.Snapshot{Windows: []usage.Window{
+		{Label: "5h", Percent: 4, ResetAt: time.Now().Add(4 * time.Hour)},
+		{Label: "7d", Percent: 29, ResetAt: time.Now().Add(50 * time.Hour)},
+		{Label: "cx7d", Source: usage.SourceCodex, Percent: 69, ResetAt: time.Now().Add(120 * time.Hour)},
+	}}}
+	box := o.boxLines(120, false, "")
+	// 区切り行 = 側罫線の内側が ─ の連続だけの行。位置は 7d 行と cx7d 行の間。
+	divider, idx7d, idxCx := -1, -1, -1
+	for i, line := range box {
+		content := strings.Trim(stripANSI(line), "│░▒▓█ ")
+		switch {
+		case content != "" && strings.Trim(content, "─") == "" && i > 0: // 上辺 (┌...┐) は除外
+			divider = i
+		case strings.Contains(line, "cx7d"):
+			idxCx = i
+		case strings.Contains(line, "7d"):
+			idx7d = i
+		}
+	}
+	if divider < 0 {
+		t.Fatalf("区切り罫線が無い:\n%s", strings.Join(box, "\n"))
+	}
+	if idx7d >= divider || divider >= idxCx {
+		t.Errorf("区切り罫線の位置が 7d と cx7d の間でない (7d=%d divider=%d cx=%d)", idx7d, divider, idxCx)
+	}
+
+	// codex 枠が無ければ罫線は出ない。
+	o.snap = &usage.Snapshot{Windows: []usage.Window{
+		{Label: "5h", Percent: 4, ResetAt: time.Now().Add(4 * time.Hour)},
+	}}
+	for i, line := range o.boxLines(120, false, "") {
+		content := strings.Trim(stripANSI(line), "│░▒▓█ ")
+		if i > 0 && content != "" && strings.Trim(content, "─") == "" {
+			t.Errorf("単一出所なのに区切り罫線がある (行 %d):\n%s", i, line)
+		}
+	}
+}
+
+// fetchCmd は片側 (claude) の一時失敗で取れていた枠を失わない (出所単位の last-good)。
+// FetchAll が部分失敗を err=nil で返すため、handle の last-good ガードだけでは受けられない
+// 経路の回帰テスト (敵対的レビュー指摘 2026-07-31)。stub CLI で claude 失敗 + codex 成功を作る。
+func TestUsageFetchCmdKeepsOtherSourceOnPartialFailure(t *testing.T) {
+	dir := t.TempDir()
+	stub := func(name, script string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stub("claude", "exit 1\n")
+	stub("codex", `read _l1
+printf '%s\n' '{"id":1,"result":{}}'
+read _l2
+read _l3
+printf '%s\n' '{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":69,"windowDurationMins":10080,"resetsAt":1785903020},"secondary":null}}}'
+`)
+	t.Setenv("PATH", dir)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir()) // キャッシュ書き込みを隔離
+	prev := &usage.Snapshot{Version: "9.9.9", Windows: []usage.Window{
+		{Label: "5h", Percent: 4},
+		{Label: "7d", Percent: 29},
+		{Label: "cx7d", Source: usage.SourceCodex, Percent: 1},
+	}}
+	o := usageOverlay{visible: true, snap: prev}
+	msg, ok := o.fetchCmd(false)().(usageMsg)
+	if !ok || msg.err != nil {
+		t.Fatalf("fetchCmd: %+v", msg)
+	}
+	if _, found := msg.snap.Find("5h"); !found {
+		t.Errorf("claude 一時失敗で 5h 枠が消えた: %+v", msg.snap.Windows)
+	}
+	if w, _ := msg.snap.Find("cx7d"); w.Percent != 69 {
+		t.Errorf("codex 枠が新値でない: %d, want 69", w.Percent)
+	}
+	if msg.snap.Version != "9.9.9" {
+		t.Errorf("Version の last-good が効いていない: %q", msg.snap.Version)
+	}
 }
