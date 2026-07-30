@@ -119,6 +119,33 @@ func TestIssuesViewTabsAndDoneFilter(t *testing.T) {
 	}
 }
 
+func TestIssuesViewTabChipCountsMatchRows(t *testing.T) {
+	// チップの件数は「そのタブを選んだときに並ぶ行数」と一致する。issues.Tab.Count は done を
+	// 含む全件なので、そのまま出すと done を伏せた既定表示で合計が All と食い違う。
+	v := loadedView(sampleIssues()...)
+	line := v.tabLine(issuesRenderOpts{width: 120})
+	for _, want := range []string{"[All 3]", "[feat 2]", "[refactor 1]", "[other 0]"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("チップの件数が状態フィルタと合っていない (%s が無い): %q", want, line)
+		}
+	}
+	for i := range v.tabs {
+		v.tabIdx = i + 1
+		v.refresh()
+		if len(v.rows) != v.tabCount[i] {
+			t.Fatalf("タブ %s の件数 %d が実際の行数 %d と違う", v.tabs[i].Name, v.tabCount[i], len(v.rows))
+		}
+	}
+	v.tabIdx = 0
+	v.handleKey("a", 10) // done を含めると件数も追従する
+	if v.allCount != 5 {
+		t.Fatalf("done 表示で All の件数が更新されない: %d", v.allCount)
+	}
+	if got := v.tabLine(issuesRenderOpts{width: 120}); !strings.Contains(got, "[other 1]") {
+		t.Fatalf("done 表示で other の件数が更新されない: %q", got)
+	}
+}
+
 func TestIssuesViewLinesAlwaysExactlyPageRows(t *testing.T) {
 	for _, page := range []int{3, 5, 20, 40} {
 		for _, v := range []*issuesView{loadedView(sampleIssues()...), loadedView(), {shown: true, scanning: true}} {

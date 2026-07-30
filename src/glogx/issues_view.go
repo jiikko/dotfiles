@@ -46,6 +46,10 @@ type issuesView struct {
 	tabs     []issues.Tab // All は含まない (表示時に先頭へ足す)
 	tabIdx   int          // 0 = All、1.. = tabs[tabIdx-1]
 	showDone bool
+	// チップに出す件数。issues.Tab.Count は done を含む全件なので表示には使わない (理由は
+	// refresh)。tabCount は tabs と同じ並び、allCount は All チップ用。
+	tabCount []int
+	allCount int
 
 	rows   []*issues.Issue // 現在のタブ・フィルタの表示対象
 	cursor int
@@ -171,6 +175,17 @@ func (v *issuesView) refresh() {
 	v.rows = issues.Filter(v.all, v.currentTab(), v.showDone)
 	v.cursor = clampIdx(v.cursor, len(v.rows))
 	v.listGlide.stop() // 行集合が変わったので、旧着地点へ向かう glide は捨てる
+	// チップの件数は「そのタブを選んだときに実際に並ぶ行数」と同じ Filter から出す。
+	// issues.Tab.Count は done を含む全件なので、そのまま出すと done を伏せた既定表示で
+	// 「カテゴリの合計 ≠ All ≠ 一覧の行数」になる。
+	//
+	// ⚠️ タブ集合そのものは v.all から作る (receive)。Filter 後の集合から作り直すと done だけの
+	// カテゴリが消え、位置で持つ tabIdx が別カテゴリを指す。ここで数えるのは件数だけ。
+	v.allCount = len(issues.Filter(v.all, "", v.showDone))
+	v.tabCount = make([]int, len(v.tabs))
+	for i, t := range v.tabs {
+		v.tabCount[i] = len(issues.Filter(v.all, t.Name, v.showDone))
+	}
 }
 
 // currentTab は選択中のタブ名 ("" = All)。
@@ -623,10 +638,16 @@ func (v *issuesView) emptyMessage(o issuesRenderOpts) string {
 // tabLine はタブ行 (件数つき) と、右端に有効な状態フィルタを描く。
 func (v *issuesView) tabLine(o issuesRenderOpts) string {
 	var b strings.Builder
-	b.WriteString(v.tabChip("All", len(issues.Filter(v.all, "", v.showDone)), v.tabIdx == 0, o.colored))
+	// 件数は refresh が数えた値を読む (毎フレーム・毎打鍵の Filter は全件分の slice を捨てる。
+	// visibleRows も行数を得るためにこの関数を通る)
+	b.WriteString(v.tabChip("All", v.allCount, v.tabIdx == 0, o.colored))
 	for i, t := range v.tabs {
 		b.WriteString(" ")
-		b.WriteString(v.tabChip(t.Name, t.Count, v.tabIdx == i+1, o.colored))
+		count := 0
+		if i < len(v.tabCount) {
+			count = v.tabCount[i]
+		}
+		b.WriteString(v.tabChip(t.Name, count, v.tabIdx == i+1, o.colored))
 	}
 	filter := issues.StatusOpen.Badge() + issues.StatusPending.Badge()
 	if v.showDone {
