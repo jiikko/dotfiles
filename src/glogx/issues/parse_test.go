@@ -148,6 +148,83 @@ func TestFilterByTabAndDone(t *testing.T) {
 	}
 }
 
+func TestTabsAndFilterKeepLiteralOtherCategoryInOneTab(t *testing.T) {
+	// カテゴリ語は任意なので、寄せ先と同綴りの "other" が実在しうる。同名タブが 2 つ並ぶと
+	// tabIdx の指す先が曖昧になり、Filter がどちらでも同じ判定を通るので片方が必ず空になる。
+	// さらに own から除かないと、そのカテゴリの issue がどのタブにも出ない (行が消える)。
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	mkFiles(t, dir, "010-other-misc-one.md", "009-other-misc-two.md",
+		"008-feat-a.md", "007-feat-b.md", "006-perf-solo.md")
+	list, _ := Scan([]string{dir})
+
+	tabs := Tabs(list, TabMinCount)
+	seen := 0
+	for _, t := range tabs {
+		if t.Name == OtherTab {
+			seen++
+		}
+	}
+	if seen != 1 {
+		t.Fatalf("other タブが %d 個ある: %+v", seen, tabs)
+	}
+	// other = 実カテゴリ other 2 件 + 少数派 perf 1 件
+	if i := indexOfTab(tabs, OtherTab); tabs[i].Count != 3 {
+		t.Fatalf("other の件数が合算されていない: %+v", tabs)
+	}
+	got := Filter(list, OtherTab, true)
+	if len(got) != 3 {
+		t.Fatalf("other タブの行数が件数と合わない: %d (%+v)", len(got), got)
+	}
+	// 全 issue がどこかのタブに出る (どこにも出ない行を作らない)
+	total := 0
+	for _, tb := range tabs {
+		total += len(Filter(list, tb.Name, true))
+	}
+	if total != len(list) {
+		t.Fatalf("タブの合計 %d が全件 %d と合わない", total, len(list))
+	}
+}
+
+func TestConflictsIgnoresNonStatusSubgroupDirs(t *testing.T) {
+	// 状態でないサブディレクトリ (プロダクト名・時間軸) は別の名前空間。同名ファイルがあっても
+	// 二重化ではないので警告しない (誤警告を出すと本物の警告が信じられなくなる)。
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	mkFiles(t, filepath.Join(dir, "ubipay"), "001-fix-a.md")
+	mkFiles(t, filepath.Join(dir, "ubiregi"), "001-fix-a.md")
+	if _, warns := Scan([]string{dir}); len(warns) != 0 {
+		t.Fatalf("サブグループ間の同名ファイルで警告が出た: %q", warns)
+	}
+}
+
+func TestIdentIncludesUpperIDPrefix(t *testing.T) {
+	// 番号だけをコピーすると 005-*.md とも読める曖昧な参照になる (両スキームが同居する repo)
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	mkFiles(t, dir, "UI-005-remove-memo.md", "030-feat-new.md", "resource-leaks.md")
+	list, _ := Scan([]string{dir})
+	got := make(map[string]string, len(list))
+	for _, iss := range list {
+		got[filepath.Base(iss.Rel)] = iss.Ident()
+	}
+	for name, want := range map[string]string{
+		"UI-005-remove-memo.md": "UI-005",
+		"030-feat-new.md":       "030",
+		"resource-leaks.md":     "",
+	} {
+		if got[name] != want {
+			t.Fatalf("%s の Ident が %q (want %q)", name, got[name], want)
+		}
+	}
+	// 数値ソートキーとしての Number は番号だけを保つ
+	for _, iss := range list {
+		if iss.Prefix != "" && iss.Number != "005" {
+			t.Fatalf("upperID の Number が番号だけになっていない: %q", iss.Number)
+		}
+	}
+}
+
 func TestConflictsDetectsSameNameInTwoStatusDirs(t *testing.T) {
 	// 並行セッションの git mv + pathspec commit で起きる二重化を検出できること
 	root := t.TempDir()

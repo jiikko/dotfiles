@@ -97,6 +97,7 @@ type Issue struct {
 	Dir      string // 属する issue ディレクトリ
 	Rel      string // Dir からの相対パス (表示・参照用)
 	Number   string // "028" (ゼロ埋めのまま保持。"" = 番号なし)
+	Prefix   string // CATEGORY-NNN 形式の大文字 ID 接頭辞 ("UI"。"" = NNN 形式)
 	Category string // ファイル名から取れたカテゴリトークン ("" = 無し)
 	Slug     string // カテゴリを除いた説明部分 (タイトル未読時の代替表示)
 	Status   Status
@@ -189,7 +190,7 @@ func newIssue(dir, rel string) *Issue {
 	case upperIDRe.MatchString(name):
 		m := upperIDRe.FindStringSubmatch(name)
 		iss.Category = strings.ToLower(m[1])
-		iss.Number = m[2]
+		iss.Prefix, iss.Number = m[1], m[2]
 		iss.Slug = m[3]
 	default:
 		// 番号を持たないファイル (README.md / 素のスラッグ) はカテゴリを取らない。
@@ -266,6 +267,12 @@ func numOf(iss *Issue) (int, bool) {
 func conflicts(issues []*Issue) []string {
 	byName := make(map[string][]*Issue, len(issues))
 	for _, iss := range issues {
+		// 状態でないサブディレクトリ (プロダクト名・時間軸。spec 3 節が正当と認める配置) は
+		// 別の名前空間なので、同名ファイルがあっても二重化ではない。状態を持つ配置 (直下 +
+		// 状態ディレクトリ) だけを比べる: ここを緩めると誤警告が出て、本物の警告が信じられなくなる
+		if iss.Status == StatusUnknown {
+			continue
+		}
 		key := iss.Dir + "\x00" + filepath.Base(iss.Rel)
 		byName[key] = append(byName[key], iss)
 	}
@@ -400,14 +407,26 @@ func NextNumber(list []*Issue) string {
 	return fmt.Sprintf("%0*d", width, maxNum+1)
 }
 
+// Ident は参照・コピーに使う完全な ID ("" = 番号なし)。
+//
+// CATEGORY-NNN 形式では接頭辞まで含める ("UI-005"): 番号だけをコピーすると 005-*.md とも読める
+// 曖昧な参照になり、両スキームが同居する repo (実測 25 件) では貼った先が別の issue を指す。
+// Number は数値ソートキーとして番号だけを保つので、表示・コピーはこちらを使う。
+func (iss *Issue) Ident() string {
+	if iss.Prefix == "" {
+		return iss.Number
+	}
+	return iss.Prefix + "-" + iss.Number
+}
+
 // Reference は他所へ貼るための 1 行参照。番号は rename も move も生き残る唯一安定した参照
 // 形式 (実測: repo 内 59 箇所・commit message 25 件がこの形) なので先頭に置き、パスは補助
 // として括弧に入れる。root が空ならパスはそのまま出す。
 func (iss *Issue) Reference(root string) string {
 	var b strings.Builder
-	if iss.Number != "" {
+	if id := iss.Ident(); id != "" {
 		b.WriteString("issue ")
-		b.WriteString(iss.Number)
+		b.WriteString(id)
 		b.WriteString(" ")
 	}
 	b.WriteString(iss.Display())
@@ -467,9 +486,26 @@ func Tabs(issues []*Issue, minCount int) []Tab {
 		return tabs[i].Name < tabs[j].Name
 	})
 	if other > 0 {
-		tabs = append(tabs, Tab{Name: OtherTab, Count: other})
+		// カテゴリ語は repo の運用しだいで任意なので、寄せ先と同綴りのカテゴリ (NNN-other-*.md)
+		// が実在しうる。同名のタブを 2 つ並べると tabIdx の指す先が曖昧になり、どちらのタブでも
+		// Filter が同じ判定を通るので片方が必ず空になる。既にあれば合算する。
+		if i := indexOfTab(tabs, OtherTab); i >= 0 {
+			tabs[i].Count += other
+		} else {
+			tabs = append(tabs, Tab{Name: OtherTab, Count: other})
+		}
 	}
 	return tabs
+}
+
+// indexOfTab は名前のタブ位置 (無ければ -1)。
+func indexOfTab(tabs []Tab, name string) int {
+	for i, t := range tabs {
+		if t.Name == name {
+			return i
+		}
+	}
+	return -1
 }
 
 // Filter はタブと状態フィルタで絞り込む。tab が "" なら全カテゴリ。
@@ -483,6 +519,9 @@ func Filter(issues []*Issue, tab string, showDone bool) []*Issue {
 		for _, t := range Tabs(issues, TabMinCount) {
 			own[t.Name] = true
 		}
+		// 寄せ先と同綴りのカテゴリは other タブの中身そのもの (Tabs が件数を合算している)。
+		// own に残すと、そのカテゴリの issue がどのタブにも出なくなる
+		delete(own, OtherTab)
 	}
 	out := make([]*Issue, 0, len(issues))
 	for _, iss := range issues {

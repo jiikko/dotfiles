@@ -480,11 +480,12 @@ func (v *issuesView) copyNumber() {
 	if iss == nil {
 		return
 	}
-	if iss.Number == "" {
+	id := iss.Ident() // CATEGORY-NNN 形式は接頭辞まで含む ("UI-005"。理由は Ident)
+	if id == "" {
 		v.copyText(filepath.Base(iss.Rel), "番号が無いのでファイル名をコピーしました: ")
 		return
 	}
-	v.copyText(iss.Number, "番号をコピーしました: ")
+	v.copyText(id, "番号をコピーしました: ")
 }
 
 // copyReference は貼り付け用の 1 行参照をコピーする (Y)。番号 + タイトル + repo 相対パス。
