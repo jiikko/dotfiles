@@ -80,15 +80,15 @@ func TestBrowseScrollAnim(t *testing.T) {
 		prev := m.offset
 		_, cmd := m.handleKey("j")
 		if m.offset == prev {
-			if m.scrollAnim {
-				t.Fatal("画面内のカーソル移動で scrollAnim が立った")
+			if m.glide.active {
+				t.Fatal("画面内のカーソル移動で glide が立った")
 			}
 			continue
 		}
 		// ビューポートが動いた最初の j: glide 開始
-		if !m.scrollAnim || m.offsetShown != prev || cmd == nil {
-			t.Fatalf("スクロール開始で glide が仕込まれない: scrollAnim=%v offsetShown=%d prev=%d cmd=%v",
-				m.scrollAnim, m.offsetShown, prev, cmd != nil)
+		if !m.glide.active || m.glide.offset(m.offset) != prev || cmd == nil {
+			t.Fatalf("スクロール開始で glide が仕込まれない: active=%v shown=%d prev=%d cmd=%v",
+				m.glide.active, m.glide.offset(m.offset), prev, cmd != nil)
 		}
 		scrolled = true
 		break
@@ -98,8 +98,8 @@ func TestBrowseScrollAnim(t *testing.T) {
 	}
 	// 連打: glide 中の次の j は積まず即スナップ (押した分だけ遅延する体感を避ける)
 	m.handleKey("j")
-	if m.scrollAnim {
-		t.Fatal("glide 中の j で scrollAnim が積まれた (即スナップのはず)")
+	if m.glide.active {
+		t.Fatal("glide 中の j で glide が積まれた (即スナップのはず)")
 	}
 }
 
@@ -110,49 +110,9 @@ func TestBrowseScrollAnimNoHeightCap(t *testing.T) {
 	m.statuses = statusesFor(m, StateSuccess)
 	m.offset = 40 // ensureCursorVisible が背高コミットで飛ばした後を想定した大ジャンプ
 	cmd := m.startScrollAnim(0)
-	if !m.scrollAnim || m.offsetShown != 0 || cmd == nil {
-		t.Fatalf("大ジャンプが animate されない: scrollAnim=%v offsetShown=%d cmd=%v",
-			m.scrollAnim, m.offsetShown, cmd != nil)
-	}
-}
-
-// advanceScroll は上下どちらの向きでも tick で表示 offset を論理 offset へ寄せ、
-// 有限フレームで着地して scrollAnim を下ろす (geometry 非依存に決定的検証)。
-func TestBrowseScrollAnimConverges(t *testing.T) {
-	for _, tc := range []struct{ from, to int }{
-		{from: 0, to: 7}, // 下スクロール (1 コミット ~7 行)
-		{from: 7, to: 0}, // 上スクロール
-		{from: 3, to: 4}, // 残り 1 行
-		{from: 5, to: 5}, // 動きなし → 即座に scrollAnim を下ろす
-	} {
-		m := newTestBrowse(t, 6, map[string]CIState{}, nil)
-		m.statuses = statusesFor(m, StateSuccess)
-		m.offsetShown = tc.from
-		m.scrollFrom = tc.from
-		m.scrollFrame = 0
-		m.offset = tc.to
-		m.scrollAnim = true
-		prevShown := m.offsetShown
-		frames := 0
-		for m.scrollAnim {
-			m.advanceScroll()
-			frames++
-			// ease-in: 表示 offset は目標を通り越さず単調に近づく
-			if (tc.to > tc.from && (m.offsetShown < prevShown || m.offsetShown > tc.to)) ||
-				(tc.to < tc.from && (m.offsetShown > prevShown || m.offsetShown < tc.to)) {
-				t.Fatalf("from=%d to=%d: 非単調/行き過ぎ (offsetShown=%d)", tc.from, tc.to, m.offsetShown)
-			}
-			prevShown = m.offsetShown
-			if frames > 20 {
-				t.Fatalf("from=%d to=%d: 収束しない (offsetShown=%d)", tc.from, tc.to, m.offsetShown)
-			}
-		}
-		if m.offsetShown != tc.to {
-			t.Errorf("from=%d to=%d: 着地 offsetShown=%d, want %d", tc.from, tc.to, m.offsetShown, tc.to)
-		}
-		if frames > scrollAnimFrames {
-			t.Errorf("from=%d to=%d: %d フレーム (scrollAnimFrames=%d 以内のはず)", tc.from, tc.to, frames, scrollAnimFrames)
-		}
+	if !m.glide.active || m.glide.offset(m.offset) != 0 || cmd == nil {
+		t.Fatalf("大ジャンプが animate されない: active=%v shown=%d cmd=%v",
+			m.glide.active, m.glide.offset(m.offset), cmd != nil)
 	}
 }
 
@@ -502,7 +462,7 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		{"pullAnimating", func(m *browseModel) { m.pullAnimating = true }},
 		{"pushAnimating", func(m *browseModel) { m.pushAnimating = true }},
 		{"pushSlides", func(m *browseModel) { m.pushSlides = map[string]time.Time{"a": time.Now()} }},
-		{"scrollAnim", func(m *browseModel) { m.scrollAnim = true }},
+		{"scrollAnim", func(m *browseModel) { m.glide.active = true }},
 		{"toast.animating", func(m *browseModel) { m.toast.phase = toastEntering }},
 		{"pushPoll", func(m *browseModel) { m.pushPoll = map[string]bool{"a": true} }},
 		{"detailsLoading", func(m *browseModel) { m.detailsLoading["a"] = true }},

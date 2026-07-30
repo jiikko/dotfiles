@@ -413,6 +413,14 @@ func TestBrowseDiffPagerKeysScrollNotClose(t *testing.T) {
 	if m.diffOv.offset != maxOffset {
 		t.Errorf("末尾で offset = %d; want %d (最終行を表示し続ける)", m.diffOv.offset, maxOffset)
 	}
+	// 半ページ移動は glide (scroll_glide.go) で数フレームかけて着地するため、描画の検証前に
+	// アニメを進める。tick は spinnerActive が回し続けるので実機では自動で着地する。
+	for range scrollAnimFrames {
+		m.diffOv.advanceGlide()
+	}
+	if m.diffOv.glide.active {
+		t.Errorf("%d フレームで glide が着地しない", scrollAnimFrames)
+	}
 	view := m.View().Content
 	if !strings.Contains(view, diffLines[len(diffLines)-1]) {
 		t.Error("末尾で最終行が描画されていない")

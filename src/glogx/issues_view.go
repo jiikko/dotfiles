@@ -49,12 +49,17 @@ type issuesView struct {
 
 	rows   []*issues.Issue // 現在のタブ・フィルタの表示対象
 	cursor int
-	offset int
+	offset int // 論理 = 着地点 (glide が表示位置を追いかける)
+	// listGlide / bodyGlide は半ページ移動のスクロールアニメ (scroll_glide.go の共有型。
+	// 一覧・diff pager と同じ手触りにする。ユーザー要望 2026-07-31)。一覧と本文は同時に
+	// 動かないが、状態を混ぜると閉じ忘れた glide が他方へ漏れるので別に持つ。
+	listGlide scrollGlide
 
 	// 本文 pager (open != nil のとき本文モード)
-	open    *issues.Issue
-	body    *issues.Body
-	bodyOff int
+	open      *issues.Issue
+	body      *issues.Body
+	bodyOff   int // 論理 = 着地点
+	bodyGlide scrollGlide
 
 	// 開くときのスライドイン演出の開始時刻 (ゼロ値 = 演出なし)。フレーム数ではなく壁時計で
 	// 進めるのは、tick 周期が変わっても所要時間が変わらないようにするため (push 演出の
@@ -104,7 +109,20 @@ func (v *issuesView) finishAnim() { v.animStart = time.Time{} }
 
 // animating は開く演出の途中か (tick を高 FPS に上げ、チェーンを回し続ける判定に使う)。
 func (v *issuesView) animating() bool {
+	if v.listGlide.active || v.bodyGlide.active {
+		return true // スクロール glide も tick で進むので「アニメ中」に含める
+	}
 	return v.shown && !v.animStart.IsZero() && time.Since(v.animStart) < issuesAnimDuration
+}
+
+// advanceGlide はスクロール glide を 1 フレーム進める (browseModel の tick から呼ばれる)。
+func (v *issuesView) advanceGlide() {
+	if v.listGlide.active {
+		v.listGlide.advance(v.offset)
+	}
+	if v.bodyGlide.active {
+		v.bodyGlide.advance(v.bodyOff)
+	}
 }
 
 // scanCmd は探索・メタデータ読み込みを 1 つのゴルーチンでまとめて行う。
@@ -149,6 +167,7 @@ func (v *issuesView) refresh() {
 	v.rows = issues.Filter(v.all, v.currentTab(), v.showDone)
 	v.cursor = clampIdx(v.cursor, len(v.rows))
 	v.offset = 0
+	v.listGlide.stop()
 }
 
 // currentTab は選択中のタブ名 ("" = All)。
@@ -162,6 +181,7 @@ func (v *issuesView) currentTab() string {
 // closeBody は本文モードを抜ける。
 func (v *issuesView) closeBody() {
 	v.open, v.body, v.bodyOff = nil, nil, 0
+	v.bodyGlide.stop()
 }
 
 // openBody はカーソル位置の issue の本文を読む。
@@ -179,6 +199,7 @@ func (v *issuesView) openBody() {
 		return
 	}
 	v.open, v.body, v.bodyOff = iss, body, 0
+	v.bodyGlide.stop()
 }
 
 // current はカーソル位置の issue (無ければ nil)。
@@ -213,12 +234,19 @@ func (v *issuesView) handleKey(key string, page int) tea.Cmd {
 		v.moveCursor(1, rows)
 	case "k", "up", "ctrl+p":
 		v.moveCursor(-1, rows)
+	// 半ページ移動は glide に載せる (Space / ctrl+d。ユーザー要望 2026-07-31)。1 行移動は
+	// 距離 1 行で滑らせる意味がなく、端ジャンプ (g/G) は距離が不定なので即時のまま。
 	case "ctrl+d", "pgdown", " ", "f":
+		prev := v.offset
 		v.moveCursor(max(rows/2, 1), rows)
+		v.listGlide.start(prev, v.offset)
 	case "ctrl+u", "pgup", "b":
+		prev := v.offset
 		v.moveCursor(-max(rows/2, 1), rows)
+		v.listGlide.start(prev, v.offset)
 	case "g", "home":
 		v.cursor, v.offset = 0, 0
+		v.listGlide.stop()
 	case "G", "end":
 		v.cursor = max(len(v.rows)-1, 0)
 		v.scrollToCursor(rows)
@@ -262,13 +290,19 @@ func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
 	case "k", "up", "ctrl+p":
 		v.bodyOff = max(v.bodyOff-1, 0)
 	case "ctrl+d", "pgdown", " ", "f":
+		prev := v.bodyOff
 		v.bodyOff = min(v.bodyOff+rows/2, maxOffset)
+		v.bodyGlide.start(prev, v.bodyOff)
 	case "ctrl+u", "pgup", "b":
+		prev := v.bodyOff
 		v.bodyOff = max(v.bodyOff-rows/2, 0)
+		v.bodyGlide.start(prev, v.bodyOff)
 	case "g", "home":
 		v.bodyOff = 0
+		v.bodyGlide.stop()
 	case "G", "end":
 		v.bodyOff = maxOffset
+		v.bodyGlide.stop()
 	case "v":
 		return v.editCmd()
 	case "y":
@@ -537,7 +571,7 @@ func (v *issuesView) listLines(o issuesRenderOpts) []string {
 		return append(head, paint(clipToWidth(msg, o.width), ansiDim, o.colored))
 	}
 	rows := max(o.page-len(head), 1)
-	offset := max(min(v.offset, max(len(v.rows)-rows, 0)), 0)
+	offset := max(min(v.listGlide.offset(v.offset), max(len(v.rows)-rows, 0)), 0)
 	end := min(offset+rows, len(v.rows))
 	out := make([]string, 0, rows)
 	for i := offset; i < end; i++ {
@@ -634,7 +668,7 @@ func (v *issuesView) bodyLines(o issuesRenderOpts) []string {
 	header := v.headLines(o.width, o.colored)
 	rows := max(o.page-len(header), 1)
 	lines := v.body.Lines(o.width-scrollbarReserve, o.colored)
-	offset := max(min(v.bodyOff, max(len(lines)-rows, 0)), 0)
+	offset := max(min(v.bodyGlide.offset(v.bodyOff), max(len(lines)-rows, 0)), 0)
 	end := min(offset+rows, len(lines))
 	out := make([]string, 0, rows)
 	for i := offset; i < end; i++ {

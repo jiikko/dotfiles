@@ -219,10 +219,6 @@ type browseModel struct {
 	height         int
 	cursor         int    // コミット index
 	offset         int    // ビューポート先頭の行 index (論理 = カーソル可視化の着地点)
-	offsetShown    int    // 描画に使う表示 offset (scrollAnim 中だけ offset と乖離し glide)
-	scrollAnim     bool   // j/k のコミット単位スクロールを表示 offset で滑らせている最中か
-	scrollFrom     int    // scroll glide 開始時の表示 offset (ease-in の進捗基点)
-	scrollFrame    int    // scroll glide の経過フレーム数 (ease-in の進捗)
 	panelSHA       string // job パネルを表示中のコミット SHA ("" = パネルなし)
 	panelCursor    int    // パネル内で選択中の job index (-1 = タイトル行にフォーカス)
 	panelPollSeq   int    // パネル開閉の世代 (panelPollMsg の有効性判定)
@@ -260,6 +256,10 @@ type browseModel struct {
 	// usage オーバーレイ (右上に Claude Code の /usage 残量を重ねる)。ユーザー要望 2026-07-21。
 	// 状態と描画は usageOverlay 型 (usage_overlay.go) に切り出し、ここは 1 フィールドだけ持つ。
 	usageOv usageOverlay
+
+	// コミット一覧のスクロール glide (表示 offset を論理 offset へ滑らせる)。実体は
+	// scroll_glide.go の共有型で、diff pager / issues viewer も同じ型を持つ (手触りを揃える)。
+	glide scrollGlide
 
 	// バックグラウンド再ビルド (bin/lib/go_autobuild.zsh --async) の決着監視。zero value は
 	// 「監視しない」で、shim が GO_AUTOBUILD_PENDING を立てた起動でだけ動く (autobuild.go)。
@@ -415,7 +415,7 @@ func (m *browseModel) maybeTick() tea.Cmd {
 // tickInterval は今のフレーム周期。横に動く演出 (scroll glide / toast スライド /
 // issues viewer の流し込み) の最中だけ ~30fps へ上げ、それ以外は 12.5fps に落とす。
 func (m *browseModel) tickInterval() time.Duration {
-	if m.scrollAnim || m.toast.animating() || m.issuesOv.animating() {
+	if m.glide.active || m.diffOv.glide.active || m.toast.animating() || m.issuesOv.animating() {
 		return scrollInterval // スライドを滑らかに (30fps)
 	}
 	return spinnerInterval
@@ -531,8 +531,8 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.invalidateLines()  // 幅で折り返し行数が変わる
-		m.scrollAnim = false // resize 中の glide は破棄して即時 (表示 offset が stale になるため)
+		m.invalidateLines() // 幅で折り返し行数が変わる
+		m.glide.stop()      // resize 中の glide は破棄して即時 (表示 offset が stale になるため)
 		m.ensureCursorVisible()
 		return m, nil
 	case tickMsg:
@@ -543,9 +543,13 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.pullAnimating {
 			m.advancePullAnim() // pull で増えた新規行を 1 行/フレームで上から降らせる
 		}
-		if m.scrollAnim {
-			m.advanceScroll() // j/k のコミット単位スクロールを表示 offset で滑らせる
+		if m.glide.active {
+			m.glide.advance(m.offset) // 一覧のスクロールを表示 offset で滑らせる
 		}
+		// pager 側 (diff / issues 一覧・本文) の glide も同じ tick で進める。共有型なので
+		// 手触り (カーブ・フレーム数) は自動的に一覧と揃う (scroll_glide.go)。
+		m.diffOv.advanceGlide()
+		m.issuesOv.advanceGlide()
 		var pushRefetchCmd tea.Cmd
 		if m.pushAnimating {
 			pushRefetchCmd = m.advancePushAnim() // push 境界の罫線を 1 コミット/フレームで上へ
@@ -1094,17 +1098,21 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	case "g", "home":
 		m.cursor = 0
 		m.offset = 0
-		m.scrollAnim = false // ジャンプは即時 (glide 対象外)
+		m.glide.stop() // 端へのジャンプは即時 (距離が不定で glide の意味が薄い)
 	case "G", "end":
 		m.cursor = clampIdx(len(m.commits)-1, len(m.commits))
 		m.ensureCursorVisible()
-		m.scrollAnim = false
+		m.glide.stop()
+	// 半ページ移動も glide に載せる (ユーザー要望 2026-07-31)。カーソルは動かさずビューポート
+	// だけが動くので、prev からの距離がそのまま glide の距離になる。
 	case "ctrl+d", "pgdown":
+		prev := m.offset
 		m.offset = m.clampOffset(m.offset + m.pageSize()/2)
-		m.scrollAnim = false
+		return m, m.startScrollAnim(prev)
 	case "ctrl+u", "pgup":
+		prev := m.offset
 		m.offset = m.clampOffset(m.offset - m.pageSize()/2)
-		m.scrollAnim = false
+		return m, m.startScrollAnim(prev)
 	case "enter", " ", "l", "right", "tab":
 		return m, m.openPanel()
 	case "y":
@@ -1164,7 +1172,7 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 	m.diffOv.reset()
 	m.closePanel()
 	m.pushPoll = nil
-	m.scrollAnim = false      // pull リロードは pull アニメ側が担うので j/k glide は破棄
+	m.glide.stop()            // pull リロードは pull アニメ側が担うので一覧の glide は破棄
 	m.cursor, m.offset = 0, 0 // カーソルは新規コミットの先頭へ (ユーザー要望 2026-07-20)
 	if !m.oneline {
 		m.verbatim = nil
@@ -1376,58 +1384,28 @@ func (m *browseModel) refetchAfterPush() tea.Cmd {
 	return m.startCIFetch(all)
 }
 
-// startScrollAnim は j/k でビューポートがコミット単位に動いたとき、表示 offset (offsetShown)
-// を旧位置 prev から論理 offset へ数フレームで滑らせる (ユーザー要望「にゅっと」)。
-// アニメの積み上げは「押した分だけ遅れて動く」最悪の体感を生むので、連打 (既に scrollAnim)・
-// pull アニメ中はアニメせず即時にする (render は m.offset に戻る)。呼び出しは j/k の 1 コミット
-// 移動だけ (g/G・PgDn は元々 snap 経路) なので offset ジャンプはコミット 1 個ぶんに収まり、
-// ease-out が距離でなく時間 (~2 フレーム) を抑えるため、背高コミット (長メッセージ・stat/patch)
-// でも即着地する。高さで animate/snap が変わる違和感を避けるため行数キャップは設けない
-// (ユーザー要望 2026-07-21)。論理 offset は ensureCursorVisible が既に動かしているので触らない。
+// startScrollAnim は一覧のビューポートが動いたとき、表示 offset を旧位置 prev から論理 offset へ
+// 数フレームで滑らせる (ユーザー要望「にゅっと」)。呼び出しは j/k の 1 コミット移動と半ページ
+// 移動 (ctrl+d/u・PgDn/PgUp。ユーザー要望 2026-07-31)。g/G の端ジャンプは距離が不定なので
+// 即時のまま。
+//
+// glide はフレーム数で終わる (距離では終わらない) ので、1 コミット移動でも半ページでも所要は
+// 一定 (~200ms) になり、背高コミット (長メッセージ・stat/patch) でも間延びしない。高さで
+// animate/snap が変わる違和感を避けるため行数キャップは設けない (ユーザー要望 2026-07-21)。
+// 連打の積み上げ (「押した分だけ遅れて動く」最悪の体感) の抑制は glide.start が持つ。
+// 論理 offset は呼び出し側 (ensureCursorVisible / clampOffset) が既に動かしているので触らない。
 func (m *browseModel) startScrollAnim(prev int) tea.Cmd {
 	if m.offset == prev {
-		return nil // カーソルが画面内: ビューポートは動いていない
+		return nil // ビューポートは動いていない (カーソルが画面内 / 端で clamp された)
 	}
-	if m.scrollAnim || m.pullAnimating {
-		m.scrollAnim = false // 連打/pull アニメ中は積まず即時
+	if m.pullAnimating {
+		m.glide.stop() // pull アニメ中は積まず即時 (連打の抑制は glide.start が持つ)
 		return nil
 	}
-	m.offsetShown = prev
-	m.scrollFrom = prev
-	m.scrollFrame = 0
-	m.scrollAnim = true
+	if !m.glide.start(prev, m.offset) {
+		return nil
+	}
 	return m.maybeTick()
-}
-
-// scrollAnimFrames は scroll glide の総フレーム数 (× scrollInterval 33ms ≒ 200ms)。
-// 少ないほど速い。30fps 化 (12.5→30fps) に合わせて 3→6 に増やし、同程度の duration で
-// ease-in カーブの刻みを細かく = 滑らかにした。
-const scrollAnimFrames = 6
-
-// advanceScroll は scroll glide を 1 フレーム進める。ease-in (二次 t^2) で「最初ゆっくり →
-// 終盤に加速」する (ユーザー要望 2026-07-21)。進捗は開始位置 scrollFrom からの経過フレーム
-// 割合 t=frame/scrollAnimFrames で測り、表示 offset = scrollFrom + dist*t^2。最終フレームで
-// 論理 offset へスナップして scrollAnim を下ろす。
-// カーブを変えるならここ: t*(2-t) にすると ease-out (最初速く減速)、t で等速。
-func (m *browseModel) advanceScroll() {
-	dist := m.offset - m.scrollFrom
-	m.scrollFrame++
-	if dist == 0 || m.scrollFrame >= scrollAnimFrames {
-		m.offsetShown = m.offset
-		m.scrollAnim = false
-		return
-	}
-	// prog = round(|dist| * frame^2 / scrollAnimFrames^2)。符号は dist に合わせる (上下対称)
-	mag := dist
-	if mag < 0 {
-		mag = -mag
-	}
-	f, total := m.scrollFrame, scrollAnimFrames
-	prog := (mag*f*f*2 + total*total) / (2 * total * total) // round-half-up
-	if dist < 0 {
-		prog = -prog
-	}
-	m.offsetShown = m.scrollFrom + prog
 }
 
 // unpushedCount は未 push コミット数 (push 確認モーダルと confirmPush が共用)。
@@ -2163,7 +2141,7 @@ func (m *browseModel) fillUnknown() {
 // 「今は不要」とのユーザー判断で見送っている (2026-07-25)。CPU が気になると言われたら再評価する。
 // 経緯と他の未採用 v2 機能は docs/glogx-bubbletea-v2.md。
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || m.scrollAnim || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.issuesOv.loading() || m.issuesOv.animating()
+	return m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || m.glide.active || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.diffOv.glide.active || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.issuesOv.loading() || m.issuesOv.animating()
 }
 
 // issuesOpts は issues viewer へ渡す描画情報。カーソル行の強調はコミット一覧と同じ
@@ -2320,11 +2298,8 @@ func (m *browseModel) viewLines() string {
 		return m.finishWindow(m.issuesOv.lines(m.issuesOpts()), page)
 	}
 	lines := m.lines()
-	// scrollAnim 中は表示 offset (glide 途中) で窓を切る。それ以外は論理 offset。
-	renderOffset := m.offset
-	if m.scrollAnim {
-		renderOffset = m.offsetShown
-	}
+	// glide 中は表示 offset (途中位置) で窓を切る。それ以外は論理 offset。
+	renderOffset := m.glide.offset(m.offset)
 	offset := min(max(renderOffset, 0), max(len(lines)-page, 0))
 	end := min(offset+page, len(lines))
 	window := make([]string, 0, page)
@@ -2350,7 +2325,7 @@ func (m *browseModel) viewLines() string {
 	}
 	// リストが 1 画面に収まらないときは右端にスクロールバー列を出す (diff/job overlay と同じ
 	// 見た目)。overlay 群の合成より先に足す = ポップアップ類はバーの上に浮く。offset は
-	// scrollAnim 中の表示 offset を使っているので thumb もグライドに追従する。
+	// glide 中の表示 offset を使っているので thumb もグライドに追従する。
 	window = scrollbarColumn(window, m.contentWidth(), len(lines), offset, m.colored)
 	// job パネルは対象コミットのヘッダー行直下へ「重ねる」(リスト行を置き換える)。
 	// リストの行構成自体は変えないので、開閉で後続行がずれない。

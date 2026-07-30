@@ -8,11 +8,14 @@ import "fmt"
 // (cursor / panelSHA)・パネル閉じ・URL コピーは境界をまたぐため browseModel 側に薄く残し、
 // この型は「どの SHA を、どの位置まで、どう描くか」という pager の内部状態機械だけを持つ。
 type diffOverlay struct {
-	sha    string              // 表示中の SHA ("" = 非表示)
-	offset int                 // スクロール位置 (行)
-	cache  map[string][]string // sha → 整形済み diff 行 (メモリ内キャッシュ)
-	order  []string            // cache への挿入順 (overlayCacheLimit 超過分の古い順 evict 用)
-	busy   map[string]bool     // 取得中の sha
+	sha    string // 表示中の SHA ("" = 非表示)
+	offset int    // スクロール位置 (行。論理 = 着地点)
+	// glide は表示位置を offset へ滑らせるスクロールアニメ (scroll_glide.go の共有型。
+	// 一覧と同じ手触りにする。ユーザー要望 2026-07-31)。
+	glide scrollGlide
+	cache map[string][]string // sha → 整形済み diff 行 (メモリ内キャッシュ)
+	order []string            // cache への挿入順 (overlayCacheLimit 超過分の古い順 evict 用)
+	busy  map[string]bool     // 取得中の sha
 }
 
 // newDiffOverlay は map を初期化した diffOverlay を返す。
@@ -30,6 +33,7 @@ func (o *diffOverlay) fetching() bool { return len(o.busy) > 0 }
 func (o *diffOverlay) close() {
 	o.sha = ""
 	o.offset = 0
+	o.glide.stop() // 閉じるときに glide を残すと、次に開いた瞬間だけ古い位置から滑る
 }
 
 // reset は pull 後の全面リロードでキャッシュごと破棄する (旧 SHA の残骸を持ち越さない)。
@@ -91,14 +95,22 @@ func (o *diffOverlay) scroll(key string, rows int) {
 		o.offset = min(o.offset+1, maxOffset)
 	case "k", "up", "ctrl+p":
 		o.offset = max(o.offset-1, 0)
+	// 半ページ移動は glide に載せる (Space / ctrl+d。ユーザー要望 2026-07-31)。1 行移動は
+	// 距離 1 行で滑らせる意味が無く、端ジャンプ (g/G) は距離が不定なので即時のまま。
 	case "ctrl+d", "pgdown", " ", "f":
+		prev := o.offset
 		o.offset = min(o.offset+rows/2, maxOffset)
+		o.glide.start(prev, o.offset)
 	case "ctrl+u", "pgup", "b":
+		prev := o.offset
 		o.offset = max(o.offset-rows/2, 0)
+		o.glide.start(prev, o.offset)
 	case "g", "home":
 		o.offset = 0
+		o.glide.stop()
 	case "G", "end":
 		o.offset = maxOffset
+		o.glide.stop()
 	}
 }
 
@@ -123,7 +135,7 @@ func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *
 			body = []string{paint("(diff はありません)", ansiDim, colored)}
 			break
 		}
-		start := min(o.offset, max(len(lines)-1, 0))
+		start := min(max(o.glide.offset(o.offset), 0), max(len(lines)-1, 0))
 		end := min(start+rows, len(lines))
 		body = append(body, lines[start:end]...)
 		title = fmt.Sprintf(" diff: %s [%d-%d/%d] %s ", commit.ShortSHA, start+1, end, len(lines), commit.Subject)
@@ -131,4 +143,11 @@ func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *
 		body = withScrollbar(body, width, len(lines), start, colored)
 	}
 	return buildShadowPanelBox(title, body, width, colored, ansiDim)
+}
+
+// advanceGlide はスクロール glide を 1 フレーム進める (browseModel の tick から呼ばれる)。
+func (o *diffOverlay) advanceGlide() {
+	if o.glide.active {
+		o.glide.advance(o.offset)
+	}
 }
