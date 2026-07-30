@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # glogx の描画ホットパス回帰ベンチ。go test -bench の ns/op を "metric=<name> ms=<value>"
-# 行へ変換して出力する (CI では tests/run_bench.sh が 3 回実行 → min 集約 →
-# tests/glogx/bench_budgets.ci でゲート)。
+# 行へ変換して出力する (CI では tests/run_bench.sh が複数回実行 → min 集約 →
+# tests/glogx/bench_budgets.ci でゲート。実行回数は run_bench.sh の BENCH_RUNS が出典)。
 #
 # 測るもの (回帰しがちなホットパス。いずれも chroma を含まない glogx 純粋コード):
 #   - view_steady        : 一覧ビュー 1 フレームの View() (fetch/アニメ中は 80ms ごとに走る恒常コスト)
@@ -22,8 +22,9 @@
 # 測る」と判断済み (highlight_test.go の同 benchmark 直上コメントが一次情報)。ここに足す前に
 # その判断を再評価すること。
 #
-# -benchtime は短め (200ms/本): run_bench.sh が 3 回走らせ、その min を採るため 1 回は軽くて
-# よい (ノイズ耐性は run 階層の min 集約が担う)。-run '^$' でユニットテストは走らせない。
+# -benchtime は短め (200ms/本): run_bench.sh が同じスクリプトを何度も走らせ、その min を採る
+# ため 1 回は軽くてよい (ノイズ耐性は run 階層の min 集約が担う)。-run '^$' でユニットテストは
+# 走らせない。回数を上げ下げしたいときは run_bench.sh の BENCH_RUNS を触る (ここは追従不要)。
 set -euo pipefail
 
 # checker の数値検証は dot 小数前提。カンマ小数ロケールで awk の printf %.3f が "1,234" を
