@@ -82,6 +82,11 @@ var statusDirs = map[string]Status{
 	"pending": StatusPending, "hold": StatusPending, "on-hold": StatusPending,
 }
 
+// metaFiles は issue ではない付随ファイル。この repo の issues/README.md は自ら
+// 「この README.md も issue ではない」と明記しており、実測でも README.md が 4 repo、
+// INDEX.md が 2 repo、TEMPLATE.md が 1 repo にある。一覧に混ぜると件数もタブも汚れる。
+var metaFiles = map[string]bool{"readme.md": true, "index.md": true, "template.md": true}
+
 // Issue は issue ファイル 1 件。
 //
 // 同一性キーは Path。番号や basename は一意ではない (実測: 同一ディレクトリ内の番号重複が
@@ -150,7 +155,7 @@ func scanDir(dir string) []*Issue {
 			}
 			status, known := statusDirs[strings.ToLower(e.Name())]
 			for _, se := range subEntries {
-				if se.IsDir() || !isMarkdown(se.Name()) {
+				if se.IsDir() || !isMarkdown(se.Name()) || metaFiles[strings.ToLower(se.Name())] {
 					continue
 				}
 				iss := newIssue(dir, filepath.Join(e.Name(), se.Name()))
@@ -163,7 +168,7 @@ func scanDir(dir string) []*Issue {
 			}
 			continue
 		}
-		if !isMarkdown(e.Name()) {
+		if !isMarkdown(e.Name()) || metaFiles[strings.ToLower(e.Name())] {
 			continue
 		}
 		out = append(out, newIssue(dir, e.Name()))
@@ -280,11 +285,18 @@ func conflicts(issues []*Issue) []string {
 }
 
 // Display は一覧に出すタイトル (本文の H1 があればそれ、無ければスラッグ)。
+//
+// H1 が issue 番号で始まる場合は番号を落とす: 一覧では番号を別の列に出しているので
+// 「028  028 refactor: ...」と二重になる (実測でこの repo の H1 は番号始まりが多数)。
 func (iss *Issue) Display() string {
-	if iss.Title != "" {
-		return iss.Title
+	if iss.Title == "" {
+		return strings.ReplaceAll(iss.Slug, "-", " ")
 	}
-	return strings.ReplaceAll(iss.Slug, "-", " ")
+	title := iss.Title
+	if iss.Number != "" && strings.HasPrefix(title, iss.Number) {
+		title = strings.TrimLeft(strings.TrimPrefix(title, iss.Number), " :-\t")
+	}
+	return title
 }
 
 // Progress はチェックボックスの生の事実 ("3/7")。チェックボックスが無ければ ""。

@@ -11,7 +11,9 @@ func fixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	dir := filepath.Join(root, "issues")
-	mkFiles(t, dir, "030-feat-new-thing.md", "028-refactor-box-args.md", "README.md")
+	mkFiles(t, dir, "030-feat-new-thing.md", "028-refactor-box-args.md",
+		"resource-leaks-2025-12-25.md", // 番号なしの issue (末尾に並ぶ)
+		"README.md")                    // issue ではない付随ファイル (除外される)
 	mkFiles(t, filepath.Join(dir, "pending"), "004-docs-later.md")
 	mkFiles(t, filepath.Join(dir, "done"), "001-feat-old.md", "002-bug-fixed.md")
 	mkFiles(t, filepath.Join(dir, "mid-long-term"), "003-research-horizon.md")
@@ -28,13 +30,16 @@ func TestScanReadsStatusFromDirectory(t *testing.T) {
 		got[filepath.Base(iss.Rel)] = iss.Status
 	}
 	want := map[string]Status{
-		"030-feat-new-thing.md":    StatusOpen,
-		"028-refactor-box-args.md": StatusOpen,
-		"README.md":                StatusOpen,
-		"004-docs-later.md":        StatusPending,
-		"001-feat-old.md":          StatusDone,
-		"002-bug-fixed.md":         StatusDone,
-		"003-research-horizon.md":  StatusUnknown, // 未知のサブディレクトリは状態へ写像しない
+		"030-feat-new-thing.md":        StatusOpen,
+		"028-refactor-box-args.md":     StatusOpen,
+		"resource-leaks-2025-12-25.md": StatusOpen,
+		"004-docs-later.md":            StatusPending,
+		"001-feat-old.md":              StatusDone,
+		"002-bug-fixed.md":             StatusDone,
+		"003-research-horizon.md":      StatusUnknown, // 未知のサブディレクトリは状態へ写像しない
+	}
+	if _, ok := got["README.md"]; ok {
+		t.Fatal("README.md を issue として拾ってしまった")
 	}
 	if len(got) != len(want) {
 		t.Fatalf("件数が違う: got %d want %d (%v)", len(got), len(want), got)
@@ -94,14 +99,14 @@ func TestSortIssuesNumberDescendingNumberlessLast(t *testing.T) {
 	if order[0] != "030-feat-new-thing.md" || order[1] != "028-refactor-box-args.md" {
 		t.Fatalf("番号の降順になっていない: %q", order)
 	}
-	if order[len(order)-1] != "README.md" {
+	if order[len(order)-1] != "resource-leaks-2025-12-25.md" {
 		t.Fatalf("番号なしが末尾でない: %q", order)
 	}
 }
 
 func TestTabsDerivedFromFilenamesAndMinorityMerged(t *testing.T) {
 	issues, _ := Scan([]string{fixture(t)})
-	// fixture のカテゴリ: feat 2, refactor 1, docs 1, bug 1, research 1, (なし) 1
+	// fixture のカテゴリ: feat 2, refactor 1, docs 1, bug 1, research 1, (なし) 1 = 番号なし
 	tabs := Tabs(issues, TabMinCount)
 	if len(tabs) != 2 || tabs[0].Name != "feat" || tabs[0].Count != 2 {
 		t.Fatalf("タブの組み立てが想定と違う: %+v", tabs)
@@ -215,9 +220,29 @@ func TestDisplayFallsBackToSlug(t *testing.T) {
 	if got := iss.Display(); got != "box args" {
 		t.Fatalf("スラッグ由来の表示が想定と違う: %q", got)
 	}
+	// H1 が番号で始まるときは番号を落とす (番号は一覧の別の列に出るため)
 	iss.Title = "028 refactor: 引数の整理"
-	if got := iss.Display(); got != iss.Title {
-		t.Fatalf("H1 があるのにスラッグを表示している: %q", got)
+	if got := iss.Display(); got != "refactor: 引数の整理" {
+		t.Fatalf("H1 の先頭番号が落ちていない: %q", got)
+	}
+	iss.Title = "引数の整理"
+	if got := iss.Display(); got != "引数の整理" {
+		t.Fatalf("番号で始まらない H1 を削ってしまった: %q", got)
+	}
+}
+
+func TestScanExcludesMetaFiles(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	mkFiles(t, dir, "README.md", "INDEX.md", "TEMPLATE.md", "001-feat-a.md")
+	mkFiles(t, filepath.Join(dir, "done"), "readme.md", "002-feat-b.md")
+	issues, _ := Scan([]string{dir})
+	if len(issues) != 2 {
+		names := make([]string, 0, len(issues))
+		for _, iss := range issues {
+			names = append(names, iss.Rel)
+		}
+		t.Fatalf("付随ファイルを除外できていない: %q", names)
 	}
 }
 

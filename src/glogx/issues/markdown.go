@@ -3,6 +3,8 @@ package issues
 import (
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 )
@@ -227,9 +229,14 @@ func parseParagraph(lines []string, i int) (block, int) {
 
 // reflowJoin は「ソース側で折り返された段落」を 1 本に戻す。
 //
-// 日本語は行末/行頭に空白を入れずに連結し、境界の両側が ASCII のときだけ空白を挟む。
-// この repo の issue 本文は 100 桁前後で手折り返しされているため、単純に空白で連結すると
-// 日本語の途中に隙間が入り、そのまま出すと popup 幅で二重に折り返されて行が短く割れる。
+// この repo の issue 本文は 100 桁前後で手折り返しされているので、popup 幅で折り返す前に
+// 段落を 1 本に戻す。連結時の空白の入れ方は「両側が日本語のときだけ空白を入れない」:
+//
+//   - 日本語どうし → 空白なし ("途中で" + "折り返される")。素朴に空白を入れると文の途中に
+//     隙間が空く
+//   - それ以外 (英字どうし / 日本語とラテン語の境界) → 空白を 1 つ。この repo の文章は
+//     "popup は pane ではなく" のようにラテン語の前後へ空白を置く書き方なので、境界で
+//     詰めると "popup はpane" になって元の文と食い違う
 func reflowJoin(prev, next string) string {
 	if prev == "" {
 		return next
@@ -237,12 +244,39 @@ func reflowJoin(prev, next string) string {
 	if next == "" {
 		return prev
 	}
-	last := prev[len(prev)-1]
-	first := next[0]
-	if last < 0x80 && first < 0x80 {
-		return prev + " " + next
+	last, _ := utf8.DecodeLastRuneInString(prev)
+	first, _ := utf8.DecodeRuneInString(next)
+	if isJapanesePunct(last) || isJapanesePunct(first) {
+		return prev + next // "。tmux" のように和文の句読点・括弧には空白を付けない
 	}
-	return prev + next
+	if isJapanese(last) && isJapanese(first) {
+		return prev + next
+	}
+	return prev + " " + next
+}
+
+// isJapanese は「連結時に空白を挟まない字」か (仮名・漢字・和文の記号と全角形)。
+//
+// ⚠️ 仮名は Script ではなく範囲で判定する: unicode.Katakana は Script=Katakana なので
+// 長音記号 ー (U+30FC) と中黒 ・ (U+30FB) を含まない (どちらも Script=Common)。
+// Script で判定すると "選択コピー" + "することは" の境界に空白が入る。
+func isJapanese(r rune) bool {
+	switch {
+	case r >= 0x3000 && r <= 0x30ff: // 和文記号 + ひらがな + カタカナ (ー ・ を含む)
+		return true
+	case unicode.Is(unicode.Han, r): // 漢字
+		return true
+	case r >= 0xff00 && r <= 0xffef: // 全角英数・全角記号・半角カナ
+		return true
+	default:
+		return false
+	}
+}
+
+// isJapanesePunct は前後に空白を置かない和文の記号 (句読点・括弧)。
+func isJapanesePunct(r rune) bool {
+	return strings.ContainsRune("、。，．・：；？！）」』】〉》〕｝〜～…‥", r) ||
+		strings.ContainsRune("（「『【〈《〔｛", r)
 }
 
 // renderBlocks はブロック列を width 桁の行へ変換する。

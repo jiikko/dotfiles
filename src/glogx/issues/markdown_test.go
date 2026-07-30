@@ -91,6 +91,24 @@ func TestParagraphReflowJoinsASCIIWithSpace(t *testing.T) {
 	}
 }
 
+func TestParagraphReflowSpacesJapaneseLatinBoundary(t *testing.T) {
+	// 日本語とラテン語の境界では空白を入れる (この repo の文章の書き方に合わせる)
+	cases := map[string]string{
+		"popup は\npane ではなく": "popup は pane ではなく",
+		"これは tmux\n非依存で":     "これは tmux 非依存で",
+		"日本語の行が途中で\n折り返される":  "日本語の行が途中で折り返される",  // 日本語どうしは詰める
+		"しまう。\ntmux 3.7 で検証": "しまう。tmux 3.7 で検証", // 和文の句読点の後は詰める
+		"選択コピー\nすることは":       "選択コピーすることは",       // 長音記号 ー の後も詰める
+		"中黒・\nnext":          "中黒・next",
+	}
+	for src, want := range cases {
+		blocks := parseBlocks(src)
+		if len(blocks) != 1 || blocks[0].text != want {
+			t.Fatalf("%q の reflow: want %q got %+v", src, want, blocks)
+		}
+	}
+}
+
 func TestHeadingLevelsGetDistinctMarkers(t *testing.T) {
 	lines := RenderBody("# h1\n\n## h2\n\n### h3\n\n#### h4\n", 40, false)
 	want := []string{"█ h1", "■ h2", "▸ h3", "· h4"}
