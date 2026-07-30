@@ -64,13 +64,16 @@ func renderOpts(page int) issuesRenderOpts {
 	return issuesRenderOpts{width: 80, page: page, colored: false}
 }
 
-func TestIssuesViewToggleScansOnlyOnce(t *testing.T) {
+func TestIssuesViewToggleRescansKeepingLastGood(t *testing.T) {
 	v := newIssuesView()
 	if cmd := v.toggle("/repo"); cmd == nil {
 		t.Fatal("初回の toggle でスキャンの Cmd が返らない")
 	}
 	if !v.visible() || !v.loading() {
 		t.Fatalf("表示・スキャン中になっていない: shown=%v scanning=%v", v.visible(), v.loading())
+	}
+	if cmd := v.scanCmd("/repo"); cmd != nil {
+		t.Fatal("スキャン中に 2 本目の探索を発行した (single-flight が効いていない)")
 	}
 	v.receive(issuesScanMsg{dirs: []string{"/repo/issues"}, issues: sampleIssues()})
 	if v.loading() {
@@ -80,8 +83,73 @@ func TestIssuesViewToggleScansOnlyOnce(t *testing.T) {
 	if v.visible() {
 		t.Fatal("2 回目の toggle で閉じない")
 	}
-	if cmd := v.toggle("/repo"); cmd != nil {
-		t.Fatal("再表示で再スキャンしてしまった (結果は保持しているはず)")
+	// ⚠️ 再表示では取り直す: 「初回だけ」にすると N (次の番号) が古い最大番号 + 1 を返し続け、
+	// 番号の再利用を招く。ただし取り直し中も前回の結果を出したままにする (スピナーで瞬かない)。
+	if cmd := v.toggle("/repo"); cmd == nil {
+		t.Fatal("再表示で取り直していない (N が古い番号を返し続ける)")
+	}
+	v.finishAnim() // 開く演出は別テストで見る (ここは取り直し中の中身を見たい)
+	out := strings.Join(v.lines(renderOpts(10)), "\n")
+	if strings.Contains(out, "探しています") || !strings.Contains(out, "030") {
+		t.Fatalf("取り直し中に前回の結果が消えた:\n%s", out)
+	}
+}
+
+func TestIssuesViewRescanReanchorsTabAndCursor(t *testing.T) {
+	// 再スキャンは新しい *Issue を作る。位置を安定キー (タブ名・パス) で引き直さないと、
+	// カーソルが別の issue へ滑り、タブが別カテゴリを指す (tabs は件数降順なので並びが変わる)。
+	first := []*issues.Issue{
+		fakeIssue("003", "feat", "c", issues.StatusOpen),
+		fakeIssue("002", "feat", "b", issues.StatusOpen),
+		fakeIssue("001", "feat", "a", issues.StatusOpen),
+		fakeIssue("012", "refactor", "y", issues.StatusOpen),
+		fakeIssue("011", "refactor", "x", issues.StatusOpen),
+	}
+	v := loadedView(first...)
+	v.handleKey("tab", 10) // feat (3 件で先頭)
+	v.handleKey("tab", 10) // refactor
+	if got := v.currentTab(); got != "refactor" {
+		t.Fatalf("前提が崩れた: 選択タブが refactor でない (%q)", got)
+	}
+	v.handleKey("j", 10) // 2 行目 (011)
+	want := v.current().Path
+
+	// refactor が 4 件になり、タブの並びが refactor → feat へ入れ替わる
+	second := append([]*issues.Issue{
+		fakeIssue("014", "refactor", "w", issues.StatusOpen),
+		fakeIssue("013", "refactor", "v", issues.StatusOpen),
+	}, first...)
+	v.receive(issuesScanMsg{dirs: []string{"/repo/issues"}, issues: second})
+
+	if got := v.currentTab(); got != "refactor" {
+		t.Fatalf("再スキャンで選択タブが別カテゴリへ滑った: %q", got)
+	}
+	if got := v.current().Path; got != want {
+		t.Fatalf("再スキャンでカーソルが別の issue へ滑った: want %q got %q", want, got)
+	}
+}
+
+func TestIssuesViewRescanRebindsOpenBody(t *testing.T) {
+	// 本文モードで開いている Issue を繋ぎ直さないと、ヘッダーの状態・進捗が編集前の値のまま
+	// 固まり、v.all から外れたポインタを掴み続ける。
+	dir := t.TempDir()
+	path := filepath.Join(dir, "001-feat-x.md")
+	if err := os.WriteFile(path, []byte("# 001 feat: x\n\n本文。\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"})
+	v.handleKey("enter", 10)
+
+	fresh := &issues.Issue{
+		Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat",
+		Status: issues.StatusPending,
+	}
+	v.receive(issuesScanMsg{dirs: []string{dir}, issues: []*issues.Issue{fresh}})
+	if v.open != fresh {
+		t.Fatal("再スキャン後も破棄済みの Issue ポインタを掴んでいる")
+	}
+	if out := strings.Join(v.lines(renderOpts(10)), "\n"); !strings.Contains(out, "pending") {
+		t.Fatalf("本文ヘッダーの状態が古いまま:\n%s", out)
 	}
 }
 

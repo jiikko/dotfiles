@@ -35,8 +35,8 @@ type issuesScanMsg struct {
 // issuesView は一覧 (タブ + リスト) と本文 pager の 2 モードを持つ全画面ビュー。
 type issuesView struct {
 	shown    bool
-	loaded   bool // 一度スキャン済みか (再表示で再スキャンしない)
-	scanning bool // スキャン中 (スピナーを回す)
+	loaded   bool // 一度スキャンを完了したか (取り直し中に前回の結果を出してよいかの判定)
+	scanning bool // スキャン中 (スピナーを回す。二重発行の防止も兼ねる)
 
 	cwd      string // スキャンの起点 (再読込で使い回す)
 	root     string // repo root
@@ -89,7 +89,13 @@ func (v *issuesView) visible() bool { return v.shown }
 // loading はスキャン中か (スピナー tick を回し続ける判定用)。
 func (v *issuesView) loading() bool { return v.scanning }
 
-// toggle は viewer の開閉。初回だけスキャンの tea.Cmd を返す。
+// toggle は viewer の開閉。開くたびにスキャンし直す tea.Cmd を返す。
+//
+// 「初回だけ」にしていた頃は N (次に採番すべき番号) が初回スキャン時点の最大番号 + 1 を返し
+// 続けていた。番号は viewer の外でも増える (別セッション・エディタ・他ブランチからの merge) ので、
+// 番号の鮮度がユーザーの「r を押したかどうか」の記憶に依存し、番号の再利用を招く (他 repo で
+// 実際に 37 件発生している事故)。スキャンは非同期かつ実測 2.5〜13.6ms なので、開くたびに
+// 取り直しても体感は変わらない: 取得中も前回の結果を出したまま差し替わる (emptyMessage)。
 func (v *issuesView) toggle(cwd string) tea.Cmd {
 	if v.shown {
 		v.close()
@@ -97,9 +103,6 @@ func (v *issuesView) toggle(cwd string) tea.Cmd {
 	}
 	v.shown = true
 	v.animStart = time.Now() // 右から左へ流し込む演出を開始 (lines が窓を変形する)
-	if v.loaded || v.scanning {
-		return nil
-	}
 	return v.scanCmd(cwd)
 }
 
@@ -139,6 +142,9 @@ func (v *issuesView) advanceGlide() {
 // コストは実測 2.5〜13.6ms (229 ファイルの repo) で、glogx の起動パスではなく i を
 // 押したときだけ通る (仕様書「本文を起動時に全件読まない」の担保)。
 func (v *issuesView) scanCmd(cwd string) tea.Cmd {
+	if v.scanning {
+		return nil // single-flight: i / r の連打で同じ探索のゴルーチンを積まない
+	}
 	v.cwd = cwd
 	v.scanning = true
 	return func() tea.Msg {
@@ -154,13 +160,68 @@ func (v *issuesView) scanCmd(cwd string) tea.Cmd {
 }
 
 // receive はスキャン結果を反映する。
+//
+// Scan は毎回新しい *Issue を作るので、見ている場所は安定キーで引き直す (仕様が定める同一性キーは
+// パス。番号も basename も一意でない)。引き直さないと、再スキャンのたびに (a) カーソルが別の
+// issue へ滑り、(b) タブが別カテゴリを指し (tabs は件数降順なので件数が変わると並びが変わる)、
+// (c) 本文モードが v.all から外れた古いポインタを掴んで状態・進捗が編集前のまま固まる。
 func (v *issuesView) receive(msg issuesScanMsg) {
-	v.scanning = false
-	v.loaded = true
+	v.scanning, v.loaded = false, true
+	tab, cursorPath, openPath := v.currentTab(), issuePath(v.current()), issuePath(v.open)
 	v.root, v.dirs, v.all, v.warnings = msg.root, msg.dirs, msg.issues, msg.warnings
 	v.tabs = issues.Tabs(v.all, issues.TabMinCount)
-	v.tabIdx = min(v.tabIdx, len(v.tabs))
+	v.tabIdx = tabIndexOf(v.tabs, tab)
 	v.refresh()
+	v.anchorCursor(cursorPath)
+	v.rebindOpen(openPath)
+}
+
+// issuePath は nil 安全なパス取得 (再スキャンをまたいで位置を引き継ぐキー)。
+func issuePath(iss *issues.Issue) string {
+	if iss == nil {
+		return ""
+	}
+	return iss.Path
+}
+
+// tabIndexOf は名前からタブ位置 (0 = All) を引く。消えたカテゴリは All に落ちる。
+func tabIndexOf(tabs []issues.Tab, name string) int {
+	if name == "" {
+		return 0
+	}
+	for i, t := range tabs {
+		if t.Name == name {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+// anchorCursor は再スキャン前と同じ issue にカーソルを戻す (消えていれば位置を維持)。
+func (v *issuesView) anchorCursor(path string) {
+	if path == "" {
+		return
+	}
+	for i, iss := range v.rows {
+		if iss.Path == path {
+			v.cursor = i
+			return
+		}
+	}
+}
+
+// rebindOpen は本文モードで開いている issue を新しいスキャン結果へ繋ぎ直す。パスが消えた
+// (rename / 状態ディレクトリへ移動) 場合は読み終えている本文をそのまま出し続ける。
+func (v *issuesView) rebindOpen(path string) {
+	if path == "" {
+		return
+	}
+	for _, iss := range v.all {
+		if iss.Path == path {
+			v.open = iss
+			return
+		}
+	}
 }
 
 // refresh は現在のタブ・フィルタで表示対象を作り直す。
@@ -276,8 +337,7 @@ func (v *issuesView) handleKey(key string, page int) tea.Cmd {
 		v.showDone = !v.showDone
 		v.refresh()
 	case "r":
-		v.loaded = false
-		return v.scanCmd(v.cwd)
+		return v.scanCmd(v.cwd) // loaded は落とさない (取り直し中も前回の結果を出したままにする)
 	case "v":
 		return v.editCmd()
 	case "y":
@@ -617,7 +677,10 @@ func (v *issuesView) listLines(o issuesRenderOpts) []string {
 // emptyMessage は「出すものが無い」状態の案内 ("" = リストを描く)。
 func (v *issuesView) emptyMessage(o issuesRenderOpts) string {
 	switch {
-	case v.scanning:
+	case v.scanning && !v.loaded:
+		// スピナーは初回だけ。取り直しの間は前回の結果を出したままにする (last-good)。開くたびに
+		// 再スキャンするので、ここでスピナーに落とすと開く瞬間に毎回一覧が消えて瞬く
+		// (usage overlay の「取得中も last-good を維持する」と同じ規律)。
 		return o.spinner + " issues を探しています..."
 	case len(v.dirs) == 0:
 		return "issues ディレクトリが見つかりません (repo root と root/*/issues を探しました)"
