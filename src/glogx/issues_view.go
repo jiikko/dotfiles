@@ -1,9 +1,12 @@
 package main
 
 import (
+	"math"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"glogx/issues"
@@ -19,6 +22,7 @@ import (
 
 // issuesScanMsg は issues の探索結果。
 type issuesScanMsg struct {
+	root     string // repo root (貼り付け用の repo 相対パスに使う)
 	dirs     []string
 	issues   []*issues.Issue
 	warnings []string
@@ -33,6 +37,7 @@ type issuesView struct {
 	err      error
 
 	cwd      string // スキャンの起点 (再読込で使い回す)
+	root     string // repo root
 	dirs     []string
 	all      []*issues.Issue
 	warnings []string
@@ -50,7 +55,20 @@ type issuesView struct {
 	open    *issues.Issue
 	body    *issues.Body
 	bodyOff int
+
+	// 開くときのスライドイン演出の開始時刻 (ゼロ値 = 演出なし)。フレーム数ではなく壁時計で
+	// 進めるのは、tick 周期が変わっても所要時間が変わらないようにするため (push 演出の
+	// pushSlides と同じ方式)。演出中は tick を scrollInterval (~30fps) に上げる。
+	animStart time.Time
 }
+
+const (
+	// issuesAnimDuration は開く演出の所要時間 (最後の行が着地するまで)。
+	issuesAnimDuration = 700 * time.Millisecond
+	// issuesAnimStagger は行ごとに開始をずらす割合。0 なら全行同時に動いて「板が 1 枚
+	// 滑り込む」見え方、大きいほど「上から順に流れ込む」見え方になる。
+	issuesAnimStagger = 0.35
+)
 
 func newIssuesView() issuesView { return issuesView{} }
 
@@ -67,6 +85,7 @@ func (v *issuesView) toggle(cwd string) tea.Cmd {
 		return nil
 	}
 	v.shown = true
+	v.animStart = time.Now() // 右から左へ流し込む演出を開始 (lines が窓を変形する)
 	if v.loaded || v.scanning {
 		return nil
 	}
@@ -76,7 +95,16 @@ func (v *issuesView) toggle(cwd string) tea.Cmd {
 // close は viewer を閉じる (スキャン結果は保持したまま。再表示は即座)。
 func (v *issuesView) close() {
 	v.shown = false
+	v.animStart = time.Time{}
 	v.closeBody()
+}
+
+// finishAnim は開く演出を即座に着地させる。
+func (v *issuesView) finishAnim() { v.animStart = time.Time{} }
+
+// animating は開く演出の途中か (tick を高 FPS に上げ、チェーンを回し続ける判定に使う)。
+func (v *issuesView) animating() bool {
+	return v.shown && !v.animStart.IsZero() && time.Since(v.animStart) < issuesAnimDuration
 }
 
 // scanCmd は探索・メタデータ読み込みを 1 つのゴルーチンでまとめて行う。
@@ -98,7 +126,7 @@ func (v *issuesView) scanCmd(cwd string) tea.Cmd {
 			// メタデータの読み取り失敗は無視する (タイトルがスラッグ表示に落ちるだけ)
 			_ = iss.LoadMeta()
 		}
-		return issuesScanMsg{dirs: dirs, issues: found, warnings: warnings}
+		return issuesScanMsg{root: root, dirs: dirs, issues: found, warnings: warnings}
 	}
 }
 
@@ -110,7 +138,7 @@ func (v *issuesView) receive(msg issuesScanMsg) {
 		v.err = msg.err
 		return
 	}
-	v.dirs, v.all, v.warnings = msg.dirs, msg.issues, msg.warnings
+	v.root, v.dirs, v.all, v.warnings = msg.root, msg.dirs, msg.issues, msg.warnings
 	v.tabs = issues.Tabs(v.all, issues.TabMinCount)
 	v.tabIdx = min(v.tabIdx, len(v.tabs))
 	v.refresh()
@@ -170,6 +198,10 @@ func (v *issuesView) current() *issues.Issue {
 // page は画面に使える行数 (hint 行を除く)。リスト/本文に実際に使える行数はヘッダーを
 // 差し引いた visibleRows で、描画と同じ値を使う (ずれると G が末尾に届かなくなる)。
 func (v *issuesView) handleKey(key string, page int) tea.Cmd {
+	// このビューは browseModel なしでも駆動できる契約なので、Space の正規化も自分で通す
+	// (呼び出し側の normalizeSpaceKey と同じ関数。理由はそちらのコメント)
+	key = normalizeSpaceKey(key)
+	v.finishAnim() // 演出中のキーは即着地させる (q が効かない時間を作らないため)
 	rows := v.visibleRows(page)
 	if v.open != nil {
 		return v.handleBodyKey(key, rows)
@@ -206,6 +238,12 @@ func (v *issuesView) handleKey(key string, page int) tea.Cmd {
 		return v.editCmd()
 	case "y":
 		v.copyPath()
+	case "p":
+		v.copyNumber()
+	case "Y":
+		v.copyReference()
+	case "N":
+		v.copyNextNumber()
 	}
 	return nil
 }
@@ -235,6 +273,12 @@ func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
 		return v.editCmd()
 	case "y":
 		v.copyPath()
+	case "p":
+		v.copyNumber()
+	case "Y":
+		v.copyReference()
+	case "N":
+		v.copyNextNumber()
 	}
 	return nil
 }
@@ -290,11 +334,100 @@ func (v *issuesView) copyPath() {
 	if iss == nil {
 		return
 	}
-	if err := copyToClipboard(iss.Path); err != nil {
+	v.copyText(iss.Path, "パスをコピーしました: ")
+}
+
+// copyNumber は issue 番号をコピーする (p)。番号は rename も move も生き残る唯一安定した
+// 参照形式で、実測でも repo 内 59 箇所・commit message 25 件がこの形。
+//
+// 番号を持たない issue (素スラッグ。実測で SnapTrim に 4 件) では黙って空をコピーせず、
+// ファイル名に落として「番号が無い」ことを通知する。
+func (v *issuesView) copyNumber() {
+	iss := v.target()
+	if iss == nil {
+		return
+	}
+	if iss.Number == "" {
+		v.copyText(filepath.Base(iss.Rel), "番号が無いのでファイル名をコピーしました: ")
+		return
+	}
+	v.copyText(iss.Number, "番号をコピーしました: ")
+}
+
+// copyReference は貼り付け用の 1 行参照をコピーする (Y)。番号 + タイトル + repo 相対パス。
+func (v *issuesView) copyReference() {
+	iss := v.target()
+	if iss == nil {
+		return
+	}
+	v.copyText(iss.Reference(v.root), "参照をコピーしました: ")
+}
+
+// copyNextNumber は次に採番すべき番号をコピーする (N)。走査済みの全ディレクトリから計算する
+// ので、状態ディレクトリを見落として番号を再利用する事故が起きない (issues.NextNumber)。
+func (v *issuesView) copyNextNumber() {
+	if len(v.all) == 0 {
+		return
+	}
+	v.copyText(issues.NextNumber(v.all), "次の番号をコピーしました: ")
+}
+
+// copyText はクリップボードへ入れて結果を通知する (コピー系アクションの共通処理)。
+func (v *issuesView) copyText(text, okPrefix string) {
+	if err := copyToClipboard(text); err != nil {
 		v.notice = "コピーに失敗しました: " + firstLine(err.Error())
 		return
 	}
-	v.notice = "パスをコピーしました: " + iss.Rel
+	v.notice = okPrefix + text
+}
+
+// カテゴリの色。意味が広く共有されている語には固定色を割り、表に無い語は語のハッシュで
+// 安定に (起動ごとに変わらないように) 割る。カテゴリ語彙は repo ごとに違い、実測で
+// 「変更種別 19 語 / サブシステム名体系 / トークンなし」が併存するので表だけでは足りない。
+//
+// 色番号は 256 色 (docs/theme-colors.md の 256 色主環境・gruvbox 基調に合わせた bright 系)。
+const (
+	catRed    = "\x1b[38;5;167m" // bug / fix / security — 失敗系の赤 (本体の ansiRed と同じ意味)
+	catGreen  = "\x1b[38;5;142m" // feat
+	catTeal   = "\x1b[38;5;73m"  // refactor / cleanup / chore (feat の緑と混ざらない青緑)
+	catYellow = "\x1b[38;5;214m" // perf
+	catBlue   = "\x1b[38;5;109m" // test / ci / lint / build
+	catPurple = "\x1b[38;5;175m" // research / design
+	catGold   = "\x1b[38;5;179m" // ux / ui (perf の橙と混ざらない金)
+	catGray   = "\x1b[38;5;245m" // docs / other
+)
+
+var categoryColors = map[string]string{
+	"bug": catRed, "fix": catRed, "security": catRed, "hotfix": catRed,
+	"feat": catGreen, "feature": catGreen,
+	"refactor": catTeal, "cleanup": catTeal, "chore": catTeal,
+	"perf": catYellow,
+	"test": catBlue, "ci": catBlue, "lint": catBlue, "build": catBlue, "e2e": catBlue,
+	"research": catPurple, "design": catPurple,
+	"ux": catGold, "ui": catGold,
+	"docs": catGray, "doc": catGray, issues.OtherTab: catGray,
+}
+
+// catHashPalette は表に無いカテゴリ語へ割る色。
+//
+// ⚠️ 赤を入れない: 意味を持たない語 (サブシステム名など) が「失敗」の色で出ると誤読される。
+// 赤は bug / fix / security に予約する。
+var catHashPalette = []string{catGreen, catTeal, catYellow, catBlue, catPurple, catGold, catGray}
+
+// categoryColor は語に対する色を返す (同じ語なら常に同じ色)。カテゴリ無しは dim。
+func categoryColor(name string) string {
+	if name == "" {
+		return ansiDim
+	}
+	if c, ok := categoryColors[name]; ok {
+		return c
+	}
+	// FNV-1a (32bit)。hash/fnv を持ち込まずに済む短さで、語 → 色を決定的に割るだけの用途
+	h := uint32(2166136261)
+	for i := range len(name) {
+		h = (h ^ uint32(name[i])) * 16777619
+	}
+	return catHashPalette[h%uint32(len(catHashPalette))]
 }
 
 // issuesRenderOpts は描画に必要な外側の情報。
@@ -320,7 +453,56 @@ func (v *issuesView) lines(o issuesRenderOpts) []string {
 	for len(body) < o.page {
 		body = append(body, "")
 	}
-	return body[:o.page]
+	body = body[:o.page]
+	if p := v.animProgress(); p < 1 {
+		body = slideInWindow(body, p, o.width)
+	}
+	return body
+}
+
+// animProgress は開く演出の進み (0..1)。演出していないときは 1 (= 変形しない)。
+func (v *issuesView) animProgress() float64 {
+	if !v.animating() {
+		return 1
+	}
+	return float64(time.Since(v.animStart)) / float64(issuesAnimDuration)
+}
+
+// slideInWindow は窓の各行を「右から左へ流し込む」途中の姿にする。
+//
+// 行ごとに開始をずらす (stagger) ので、板が 1 枚滑るのではなく上から順に流れ込んで見える。
+// 進みは easeOutCubic で終点付近で減速させる (線形だと着地が「カクッ」と止まる。toast の
+// easedShown と同じ理由)。まだ入ってきていない行は空にする = 右端から現れる。
+func slideInWindow(window []string, progress float64, width int) []string {
+	out := make([]string, 0, len(window))
+	last := max(len(window)-1, 1)
+	for i, ln := range window {
+		delay := issuesAnimStagger * float64(i) / float64(last)
+		local := (progress - delay) / (1 - issuesAnimStagger)
+		switch {
+		case local >= 1:
+			out = append(out, ln) // 着地済み
+			continue
+		case local <= 0 || ln == "":
+			out = append(out, "") // まだ画面外 (または元から空行)
+			continue
+		}
+		off := int(math.Round((1 - easeOutCubicFloat(local)) * float64(width)))
+		if off >= width {
+			out = append(out, "")
+			continue
+		}
+		out = append(out, padSpaces(off)+clipToWidth(ln, width-off))
+	}
+	return out
+}
+
+// easeOutCubicFloat は 0..1 の進みを easeOutCubic で写す (終点付近で減速)。
+// toast.go の easedShown はフレーム数ベースの同種の計算だが、あちらは箱幅への写像まで
+// 含むため共有していない (こちらは壁時計ベースの進みだけを扱う)。
+func easeOutCubicFloat(p float64) float64 {
+	q := 1 - p
+	return 1 - q*q*q
 }
 
 // headLines は現在のモードのヘッダー行 (一覧ならタブ行 + 通知、本文ならパス + 状態)。
@@ -400,13 +582,19 @@ func (v *issuesView) tabLine(o issuesRenderOpts) string {
 	return left + padSpaces(pad) + paint(filter, ansiDim, o.colored)
 }
 
-// tabChip は 1 個のタブ表示。選択中は太字 + シアン。
+// tabChip は 1 個のタブ表示。カテゴリ色を使い、選択中は太字・非選択は dim で落とす
+// (一覧のカテゴリ列と同じ色にすることで「タブの色 = その行の色」が対応する)。
+// All は特定のカテゴリではないのでシアン (本体の見出し色) を使う。
 func (v *issuesView) tabChip(name string, count int, active bool, colored bool) string {
 	text := "[" + name + " " + strconv.Itoa(count) + "]"
-	if active {
-		return paint(text, ansiBold+ansiCyan, colored)
+	color := ansiCyan
+	if name != "All" {
+		color = categoryColor(name)
 	}
-	return paint(text, ansiDim, colored)
+	if active {
+		return paint(text, ansiBold+color, colored)
+	}
+	return paint(text, ansiDim+color, colored)
 }
 
 // scrollbarReserve は scrollbarColumn がバー列 + 手前の空きに使う桁数。行の組み立てで
@@ -421,12 +609,13 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 	num := fillRight(iss.Number, 3)
 	badge := iss.Status.Badge()
 	cat := fillRight(clipToWidth(iss.Category, 9), 9)
+	catPainted := paint(cat, categoryColor(iss.Category), o.colored)
 	progress := iss.Progress()
 	// 溝 + "NNN " + バッジ + " " + カテゴリ + " " + タイトル (+ 右端に進捗)
 	fixed := cursorGutterWidth + dispWidth(num) + 1 + dispWidth(badge) + 1 + dispWidth(cat) + 1
 	titleW := max(width-fixed-dispWidth(progress)-1, 4)
 	title := clipToWidth(iss.Display(), titleW)
-	text := num + " " + badge + " " + cat + " " + title
+	text := num + " " + badge + " " + catPainted + " " + title
 	if progress != "" {
 		pad := max(width-cursorGutterWidth-dispWidth(text)-dispWidth(progress), 1)
 		text += padSpaces(pad) + paint(progress, ansiDim, o.colored)
@@ -457,12 +646,14 @@ func (v *issuesView) bodyLines(o issuesRenderOpts) []string {
 
 // hint は viewer 表示中の操作案内 (最下行)。
 func (v *issuesView) hint() string {
+	// ⚠️ hint は 1 行で、幅を超えた分は末尾から黙って切られる。popup の実幅 (84 桁) に
+	// 収まる範囲へ絞り、絞られたキー (y / Y / v / r) は --help と README を正本にする。
 	if v.open != nil {
-		return "j/k/Space: スクロール  g/G: 先頭/末尾  v: nvim  y: パス  h/q: 一覧へ"
+		return "j/k/Space: スクロール  g/G: 先頭/末尾  p: 番号  v: nvim  h/q: 一覧へ"
 	}
-	done := "a: done 表示"
+	done := "a: done"
 	if v.showDone {
-		done = "a: done を隠す"
+		done = "a: done 除外"
 	}
-	return "j/k: 移動  Tab/h/l: カテゴリ  Enter: 本文  " + done + "  v: nvim  y: パス  r: 再読込  q/i: 閉じる"
+	return "j/k: 移動  Tab: カテゴリ  Enter: 本文  p: 番号  N: 次番号  " + done + "  q: 閉じる"
 }

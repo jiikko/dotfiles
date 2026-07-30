@@ -2,6 +2,7 @@ package issues
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -375,6 +376,58 @@ func (iss *Issue) ReadBody() (*Body, error) {
 		return nil, err
 	}
 	return NewBody(string(b)), nil
+}
+
+// NextNumber は次に採番すべき番号 (最大番号 + 1) をゼロ埋めで返す。
+//
+// なぜ viewer がこれを持つか: issues/README.md の採番コマンドは対象ディレクトリを固定列挙
+// しているため、状態ディレクトリが増えると最大番号を見落として番号を再利用する。viewer は
+// 全ディレクトリを走査済みなので、ここが「全部を見て」計算できる唯一の場所。番号重複は
+// 他 repo で実際に 37 件発生している (dotfiles だけが重複ゼロ)。
+//
+// 桁数は観測した最大桁に合わせる (実測 405/405 が 3 桁ゼロ埋め)。番号付きが 1 つも無ければ
+// 3 桁の "001"。
+func NextNumber(list []*Issue) string {
+	maxNum, width := 0, 3
+	for _, iss := range list {
+		n, ok := numOf(iss)
+		if !ok {
+			continue
+		}
+		maxNum = max(maxNum, n)
+		width = max(width, len(iss.Number))
+	}
+	return fmt.Sprintf("%0*d", width, maxNum+1)
+}
+
+// Reference は他所へ貼るための 1 行参照。番号は rename も move も生き残る唯一安定した参照
+// 形式 (実測: repo 内 59 箇所・commit message 25 件がこの形) なので先頭に置き、パスは補助
+// として括弧に入れる。root が空ならパスはそのまま出す。
+func (iss *Issue) Reference(root string) string {
+	var b strings.Builder
+	if iss.Number != "" {
+		b.WriteString("issue ")
+		b.WriteString(iss.Number)
+		b.WriteString(" ")
+	}
+	b.WriteString(iss.Display())
+	b.WriteString(" (")
+	b.WriteString(iss.PathFrom(root))
+	b.WriteString(")")
+	return b.String()
+}
+
+// PathFrom は root からの相対パス (取れなければ絶対パス)。issues ディレクトリが複数ある
+// repo では Rel だけでは出自が分からないため、貼り付け用には repo 相対を使う。
+func (iss *Issue) PathFrom(root string) string {
+	if root == "" {
+		return iss.Path
+	}
+	rel, err := filepath.Rel(root, iss.Path)
+	if err != nil {
+		return iss.Path
+	}
+	return rel
 }
 
 // Tab はカテゴリタブ 1 個。

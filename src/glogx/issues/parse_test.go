@@ -275,3 +275,48 @@ func TestScanRealRepoIssuesDirIfPresent(t *testing.T) {
 	}
 	t.Logf("タブ: %+v", Tabs(issues, TabMinCount))
 }
+
+func TestNextNumberUsesMaxAcrossAllStatusDirs(t *testing.T) {
+	// 状態ディレクトリを見落とすと番号を再利用する (README の採番コマンドの失敗モード)。
+	// done/ や未知サブディレクトリに最大番号があっても拾うことを固定する。
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	mkFiles(t, dir, "003-feat-a.md")
+	mkFiles(t, filepath.Join(dir, "pending"), "015-feat-b.md")
+	mkFiles(t, filepath.Join(dir, "done"), "028-refactor-c.md")
+	mkFiles(t, filepath.Join(dir, "mid-long-term"), "031-research-d.md")
+	list, _ := Scan([]string{dir})
+	if got := NextNumber(list); got != "032" {
+		t.Fatalf("次番号が想定と違う: %q (want 032)", got)
+	}
+	// 番号付きが 1 つも無ければ 001
+	if got := NextNumber([]*Issue{{Slug: "no-number"}}); got != "001" {
+		t.Fatalf("番号なしのみのときの次番号: %q (want 001)", got)
+	}
+	// 桁数は観測した最大桁に合わせる
+	if got := NextNumber([]*Issue{{Number: "0042"}}); got != "0043" {
+		t.Fatalf("4 桁運用の次番号: %q (want 0043)", got)
+	}
+}
+
+func TestReferenceAndPathFrom(t *testing.T) {
+	iss := &Issue{
+		Path: "/repo/issues/pending/028-refactor-box.md", Dir: "/repo/issues",
+		Rel: "pending/028-refactor-box.md", Number: "028", Category: "refactor", Slug: "box",
+		Title: "028 refactor: 引数の整理",
+	}
+	// 番号が先頭 (rename も move も生き残る唯一安定した参照形式)、パスは repo 相対
+	want := "issue 028 refactor: 引数の整理 (issues/pending/028-refactor-box.md)"
+	if got := iss.Reference("/repo"); got != want {
+		t.Fatalf("参照が想定と違う:\n got  %q\n want %q", got, want)
+	}
+	// root 不明なら絶対パスのまま
+	if got := iss.PathFrom(""); got != iss.Path {
+		t.Fatalf("root 空のときのパス: %q", got)
+	}
+	// 番号なしは "issue " を付けない
+	noNum := &Issue{Path: "/repo/issues/x.md", Rel: "x.md", Slug: "resource-leaks"}
+	if got := noNum.Reference("/repo"); got != "resource leaks (issues/x.md)" {
+		t.Fatalf("番号なしの参照: %q", got)
+	}
+}

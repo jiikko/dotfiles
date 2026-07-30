@@ -3,9 +3,12 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"glogx/issues"
 )
 
@@ -851,6 +854,7 @@ func TestIssuesViewerReplacesWholeScreen(t *testing.T) {
 		dirs:   []string{"/repo/issues"},
 		issues: []*issues.Issue{fakeIssue("030", "feat", "new-thing", issues.StatusOpen)},
 	})
+	m.issuesOv.finishAnim() // 開く演出は別テストで見る (ここは着地後の画面を見たい)
 	out := m.viewLines()
 	if strings.Contains(out, "subject") {
 		t.Fatalf("コミット一覧が残っている:\n%s", out)
@@ -885,7 +889,77 @@ func TestIssuesViewerScanKeepsSpinnerAlive(t *testing.T) {
 		t.Fatal("スキャン中にスピナーの tick が回らない")
 	}
 	m.Update(issuesScanMsg{dirs: []string{"/repo/issues"}})
-	if m.spinnerActive() {
-		t.Fatal("スキャン完了後もスピナーが回り続けている")
+	if !m.spinnerActive() {
+		t.Fatal("開く演出中はチェーンを回し続ける必要がある")
 	}
+	if got := m.tickInterval(); got != scrollInterval {
+		t.Fatalf("演出中の tick 周期が高 FPS になっていない: %v", got)
+	}
+	m.issuesOv.finishAnim()
+	if m.spinnerActive() {
+		t.Fatal("スキャンも演出も終わったのにスピナーが回り続けている")
+	}
+	if got := m.tickInterval(); got != spinnerInterval {
+		t.Fatalf("演出後に tick 周期が戻っていない: %v", got)
+	}
+}
+
+func TestSpaceKeyScrollsEverywhere(t *testing.T) {
+	// bubbletea v2 の KeyPressMsg.String() は Space を "space" と綴る。v2 移行時にこの綴りを
+	// 拾い落として Space の割当が全経路で無反応になっていた (ユーザー報告 2026-07-31)。
+	// 主要 3 経路で「Space が効く」ことを固定する。
+	if got := (tea.KeyPressMsg{Code: ' ', Text: " "}).String(); got != "space" {
+		t.Fatalf("前提が変わった: v2 の Space の綴りが %q (このテストの根拠は \"space\")", got)
+	}
+
+	// 1. issues viewer の本文 pager
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.handleKey("i")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "001-feat-x.md")
+	var body strings.Builder
+	for i := range 80 {
+		fmt.Fprintf(&body, "段落 %d\n\n", i)
+	}
+	if err := os.WriteFile(path, []byte(body.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m.Update(issuesScanMsg{
+		dirs:   []string{dir},
+		issues: []*issues.Issue{{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"}},
+	})
+	m.handleKey("enter")
+	m.viewLines() // 幅ごとの整形を確定させる
+	m.handleKey("space")
+	if m.issuesOv.bodyOff == 0 {
+		t.Fatal("issues 本文で Space が半ページ送りしていない")
+	}
+	// 2. issues viewer の一覧 (カーソルの半ページ移動)
+	m.handleKey("h") // 一覧へ戻る
+	many := make([]*issues.Issue, 0, 30)
+	for i := 30; i > 0; i-- {
+		many = append(many, fakeIssue(fmt.Sprintf("%03d", i), "feat", "x", issues.StatusOpen))
+	}
+	m.Update(issuesScanMsg{dirs: []string{"/repo/issues"}, issues: many})
+	m.handleKey("space")
+	if m.issuesOv.cursor == 0 {
+		t.Fatal("issues 一覧で Space がカーソルを送っていない")
+	}
+	m.handleKey("i") // viewer を閉じる
+
+	// 3. diff pager (同じ綴り落ちで壊れていた既存経路)
+	m.diffOv.cache[m.commits[0].SHA] = manyLines(100)
+	m.diffOv.sha = m.commits[0].SHA
+	m.handleKey("space")
+	if m.diffOv.offset == 0 {
+		t.Fatal("diff pager で Space が半ページ送りしていない")
+	}
+}
+
+func manyLines(n int) []string {
+	out := make([]string, 0, n)
+	for i := range n {
+		out = append(out, fmt.Sprintf("line %d", i))
+	}
+	return out
 }

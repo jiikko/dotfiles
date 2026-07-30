@@ -368,6 +368,20 @@ func (m *browseModel) Init() tea.Cmd {
 	return tea.Batch(prefix, u, ver, m.maybeTick(), usageRefreshTick())
 }
 
+// normalizeSpaceKey は Space の表記ゆれを " " へ揃える。キー switch は " " だけを見ればよい。
+//
+// なぜ 2 表記あるか: bubbletea v2 の KeyPressMsg.String() は Space を "space" と綴る (v1 は
+// " ")。一方、複数ルーンが 1 イベントで届いたときの分解経路 (Update の KeyPressMsg 処理) は
+// 生のルーン文字列を渡すので " " が来る。v2 移行時にこの綴りの変化を拾い落として、Space の
+// 割当 5 箇所 (issues viewer の半ページ / diff pager / job 詳細を閉じる / パネルを開く) が
+// 全て無反応になっていた (ユーザー報告 2026-07-31)。入口で正規化して 1 箇所に閉じる。
+func normalizeSpaceKey(key string) string {
+	if key == "space" {
+		return " "
+	}
+	return key
+}
+
 func tickEvery(d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(time.Time) tea.Msg { return tickMsg{} })
 }
@@ -387,10 +401,16 @@ func (m *browseModel) maybeTick() tea.Cmd {
 		return nil
 	}
 	m.ticking = true
-	if m.scrollAnim || m.toast.animating() {
-		return tickEvery(scrollInterval) // スライドを滑らかに (30fps)
+	return tickEvery(m.tickInterval())
+}
+
+// tickInterval は今のフレーム周期。横に動く演出 (scroll glide / toast スライド /
+// issues viewer の流し込み) の最中だけ ~30fps へ上げ、それ以外は 12.5fps に落とす。
+func (m *browseModel) tickInterval() time.Duration {
+	if m.scrollAnim || m.toast.animating() || m.issuesOv.animating() {
+		return scrollInterval // スライドを滑らかに (30fps)
 	}
-	return tickEvery(spinnerInterval)
+	return spinnerInterval
 }
 
 // fetchCIStatusesCmd は targets の CI 状態取得を tea.Cmd にする。ctx/timeout/defer cancel の
@@ -957,6 +977,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if key == "ctrl+f" {
 		key = "right"
 	}
+	key = normalizeSpaceKey(key)
 	// issues viewer 表示中は全画面モーダル: キーは全部 viewer が飲む。⚠️ この判定を下の
 	// 裸の b / u (push / pull) より後ろに置くと、一覧を見ている最中の u が
 	// git pull --rebase の確認を開く footgun になる (U の判定順と同じ事故の型)。
@@ -2121,7 +2142,7 @@ func (m *browseModel) fillUnknown() {
 // 「今は不要」とのユーザー判断で見送っている (2026-07-25)。CPU が気になると言われたら再評価する。
 // 経緯と他の未採用 v2 機能は docs/glogx-bubbletea-v2.md。
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || m.scrollAnim || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.issuesOv.loading()
+	return m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || m.scrollAnim || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.issuesOv.loading() || m.issuesOv.animating()
 }
 
 // issuesOpts は issues viewer へ渡す描画情報。カーソル行の強調はコミット一覧と同じ

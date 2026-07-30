@@ -2,15 +2,24 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"time"
+
 	tea "charm.land/bubbletea/v2"
 	"glogx/issues"
 )
+
+// atProgress は演出の進みを p (0..1) に固定した viewer を返す (壁時計を巻き戻して作る)。
+func atProgress(v *issuesView, p float64) *issuesView {
+	v.animStart = time.Now().Add(-time.Duration(float64(issuesAnimDuration) * p))
+	return v
+}
 
 // issuesView は browseModel を参照しないので、モデルを組まずに直接駆動できる
 // (この独立性が「結合を最後にする」を成立させている。壊れたら結合コストが跳ね上がる)。
@@ -342,5 +351,155 @@ func TestIssuesViewHintChangesByMode(t *testing.T) {
 	v.open = v.rows[0]
 	if !strings.Contains(v.hint(), "一覧へ") {
 		t.Fatalf("本文の hint が想定と違う: %q", v.hint())
+	}
+}
+
+func TestIssuesViewCopyActions(t *testing.T) {
+	orig := copyToClipboard
+	t.Cleanup(func() { copyToClipboard = orig })
+	var copied string
+	copyToClipboard = func(text string) error { copied = text; return nil }
+
+	v := loadedView(sampleIssues()...)
+	v.root = "/repo"
+	v.all[0].Title = "030 feat: 新機能"
+
+	v.handleKey("p", 10)
+	if copied != "030" {
+		t.Fatalf("p が番号をコピーしていない: %q", copied)
+	}
+	if !strings.Contains(v.notice, "番号をコピーしました: 030") {
+		t.Fatalf("通知が出ていない: %q", v.notice)
+	}
+	// Y = 番号 + タイトル + repo 相対パス (H1 の先頭番号は Display が落とす)
+	v.handleKey("Y", 10)
+	if copied != "issue 030 feat: 新機能 (issues/030-feat-a.md)" {
+		t.Fatalf("Y の参照が想定と違う: %q", copied)
+	}
+	// N = 次に採番すべき番号 (fixture の最大は 030)
+	v.handleKey("N", 10)
+	if copied != "031" {
+		t.Fatalf("N が次番号をコピーしていない: %q", copied)
+	}
+	// 番号なし issue ではファイル名に落として理由を通知する
+	v2 := loadedView(&issues.Issue{Path: "/repo/issues/resource-leaks.md", Dir: "/repo/issues", Rel: "resource-leaks.md", Slug: "resource-leaks"})
+	v2.handleKey("p", 10)
+	if copied != "resource-leaks.md" || !strings.Contains(v2.notice, "番号が無い") {
+		t.Fatalf("番号なしの扱いが想定と違う: copied=%q notice=%q", copied, v2.notice)
+	}
+}
+
+func TestCategoryColorIsStableAndReservesRed(t *testing.T) {
+	if categoryColor("bug") != catRed || categoryColor("fix") != catRed {
+		t.Fatal("bug / fix が赤になっていない")
+	}
+	if categoryColor("feat") != catGreen {
+		t.Fatal("feat が緑になっていない")
+	}
+	if categoryColor("") != ansiDim {
+		t.Fatal("カテゴリ無しが dim になっていない")
+	}
+	// 表に無い語: 同じ語なら常に同じ色 (起動ごとに変わらない)
+	first := categoryColor("waveform")
+	for range 5 {
+		if categoryColor("waveform") != first {
+			t.Fatal("未知カテゴリの色が安定していない")
+		}
+	}
+	// ⚠️ 未知語に赤を割らない (意味の無い語が「失敗」の色で出ると誤読される)
+	for _, name := range []string{"waveform", "videoviewmodel", "dfs", "share", "auth", "acl", "codec", "thumbnail", "tabmanager"} {
+		if categoryColor(name) == catRed {
+			t.Fatalf("未知カテゴリ %q に赤を割った", name)
+		}
+	}
+}
+
+func TestIssuesViewRowPaintsCategoryColor(t *testing.T) {
+	v := loadedView(fakeIssue("001", "bug", "x", issues.StatusOpen))
+	o := renderOpts(80)
+	o.colored = true
+	joined := strings.Join(v.lines(o), "\n")
+	if !strings.Contains(joined, catRed+"bug") {
+		t.Fatalf("カテゴリ列に色が塗られていない:\n%q", joined)
+	}
+}
+
+func TestIssuesViewSlideInAnimation(t *testing.T) {
+	v := loadedView(sampleIssues()...)
+	v.shown = true
+
+	// 開始直後: まだほとんど画面外 (先頭行に右オフセットが入る)
+	atProgress(v, 0.05)
+	if !v.animating() {
+		t.Fatal("演出中と判定されない")
+	}
+	early := v.lines(renderOpts(12))
+	if len(early) != 12 {
+		t.Fatalf("演出中も page 行を返すべき: %d", len(early))
+	}
+	shifted := false
+	for _, ln := range early {
+		if w := dispWidth(ln); w > 80 {
+			t.Fatalf("演出中の行が幅を超えた (w=%d): %q", w, ln)
+		}
+		if strings.HasPrefix(ln, " ") && strings.TrimSpace(ln) != "" {
+			shifted = true
+		}
+	}
+	if !shifted {
+		t.Fatalf("右からのスライドになっていない (オフセットが無い):\n%q", early)
+	}
+
+	// 進みの途中: 行ごとに開始がずれる (stagger) ので、上の行の方が先に着地している
+	atProgress(v, 0.5)
+	mid := v.lines(renderOpts(12))
+	if offsetOf(mid[2]) > offsetOf(mid[len(mid)-1]) {
+		t.Fatalf("上の行が先に着地していない: %q", mid)
+	}
+
+	// 着地後: 演出なしの静的描画と一致する
+	v.finishAnim()
+	if v.animating() {
+		t.Fatal("finishAnim 後も演出中のまま")
+	}
+	want := v.lines(renderOpts(12))
+	atProgress(v, 1.2) // duration を超えた進み
+	if got := v.lines(renderOpts(12)); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("着地後の画面が静的描画と一致しない:\n%q\n%q", got, want)
+	}
+}
+
+// offsetOf は行頭の空白の数 (スライドの残りオフセット)。空行は最大扱い。
+func offsetOf(line string) int {
+	if strings.TrimSpace(line) == "" {
+		return math.MaxInt
+	}
+	return len(line) - len(strings.TrimLeft(line, " "))
+}
+
+func TestIssuesViewKeyLandsAnimationImmediately(t *testing.T) {
+	v := loadedView(sampleIssues()...)
+	v.shown = true
+	atProgress(v, 0.1)
+	v.handleKey("j", 12)
+	if v.animating() {
+		t.Fatal("キー入力で演出が着地していない (演出中は操作を待たせない契約)")
+	}
+}
+
+func TestIssuesViewHintFitsPopupWidth(t *testing.T) {
+	// hint は 1 行で、超過分は末尾から黙って切られる。popup の実幅 (84 桁) に収める
+	const popupWidth = 84
+	v := loadedView(sampleIssues()...)
+	if w := dispWidth(v.hint()); w > popupWidth {
+		t.Fatalf("一覧の hint が %d 桁に収まらない (w=%d): %q", popupWidth, w, v.hint())
+	}
+	v.showDone = true
+	if w := dispWidth(v.hint()); w > popupWidth {
+		t.Fatalf("done 表示中の hint が収まらない (w=%d): %q", w, v.hint())
+	}
+	v.open = v.rows[0]
+	if w := dispWidth(v.hint()); w > popupWidth {
+		t.Fatalf("本文の hint が収まらない (w=%d): %q", w, v.hint())
 	}
 }
