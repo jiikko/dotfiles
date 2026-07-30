@@ -173,6 +173,62 @@ func TestUnterminatedFenceStillRenders(t *testing.T) {
 	}
 }
 
+func TestIndentedFenceInsideListIsCode(t *testing.T) {
+	// ⚠️ 回帰防止: 箇条書きの中のコードブロックは 4 桁以上インデントされる。フェンスを 0-3 桁に
+	// 縛ると、中身が項目の継続行として散文に連結され (reflowJoin) コードが壊れて出る。
+	src := "1. 設定内容:\n" +
+		"     ```yaml\n" +
+		"     Token name: updater\n" +
+		"     Repository access: Selected\n" +
+		"       - jiikko/example\n" +
+		"     ```\n" +
+		"\n" +
+		"次の段落。\n"
+	lines := RenderBody(src, 60, false)
+	code := make([]string, 0, 3)
+	for _, ln := range lines {
+		if strings.HasPrefix(ln, "┃ ") {
+			code = append(code, ln)
+		}
+	}
+	if len(code) != 3 {
+		t.Fatalf("インデントされたフェンスがコードになっていない: %q", lines)
+	}
+	// 開きフェンスと同じ深さは落とし、相対インデントは保つ
+	if got := code[0]; got != "┃ Token name: updater" {
+		t.Fatalf("コード行が dedent されていない: %q", got)
+	}
+	if got := code[2]; got != "┃   - jiikko/example" {
+		t.Fatalf("相対インデントが失われた: %q", got)
+	}
+	// フェンス記号そのものは本文に出ない
+	if joined := strings.Join(lines, "\n"); strings.Contains(joined, "```") {
+		t.Fatalf("フェンス記号が本文に出た:\n%s", joined)
+	}
+}
+
+func TestTableSeparatorIsPositionalNotShape(t *testing.T) {
+	// 全セルがハイフンのデータ行 (空欄のプレースホルダ) を区切り行と誤判定すると、
+	// renderTable が内容を罫線へ置き換えて黙って消す。
+	lines := RenderBody("| a | b |\n|--|--|\n| - | - |\n| x | y |\n", 40, false)
+	rows := make([]string, 0, 4)
+	for _, ln := range lines {
+		if strings.TrimSpace(ln) != "" {
+			rows = append(rows, ln)
+		}
+	}
+	if len(rows) != 4 {
+		t.Fatalf("表の行数が想定と違う: %q", rows)
+	}
+	// 実データに存在する短い区切り行 (|--|--|) はヘッダー直下なので罫線になる
+	if !strings.Contains(rows[1], "┼") {
+		t.Fatalf("ヘッダー直下の短い区切り行が罫線になっていない: %q", rows[1])
+	}
+	if !strings.Contains(rows[2], "-") || strings.Contains(rows[2], "┼") {
+		t.Fatalf("データ行が罫線に置き換わって消えた: %q", rows[2])
+	}
+}
+
 func TestTableColumnsAlignAndFitWidth(t *testing.T) {
 	const width = 40
 	lines := RenderBody("| a | bbbb |\n|---|---|\n| cc | d |\n", width, false)

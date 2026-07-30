@@ -52,7 +52,11 @@ var (
 	headingRe = regexp.MustCompile(`^(#{1,6})\s+(.*?)\s*#*\s*$`)
 	ruleRe    = regexp.MustCompile(`^\s{0,3}(-{3,}|\*{3,}|_{3,})\s*$`)
 	listRe    = regexp.MustCompile(`^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$`)
-	fenceRe   = regexp.MustCompile("^\\s{0,3}(```+|~~~+)\\s*([^\\s`]*)")
+	// フェンスのインデントは任意にする: 箇条書きの中に置いたコードブロックは 4 桁以上
+	// インデントされ、0-3 桁に縛ると「フェンスとして認識されず、中身が箇条書きの継続行として
+	// 散文に連結される」= コードが壊れて出る (実測: 他 repo の issue 2 ファイルで発生)。
+	// 開き行のインデント幅は parseFence が記録して中身から落とす。
+	fenceRe   = regexp.MustCompile("^(\\s*)(```+|~~~+)\\s*([^\\s`]*)")
 	sepCellRe = regexp.MustCompile(`^:?-{1,}:?$`)
 )
 
@@ -127,18 +131,32 @@ func skipFrontMatter(lines []string) []string {
 }
 
 // parseFence はフェンスコードブロックを読む。閉じフェンスが無い場合は EOF までをコードにする。
+//
+// 中身は開きフェンスと同じ深さだけ dedent する: 箇条書きの中のコードブロックをそのまま出すと
+// 枠の右端へ押し出されて折り返し (実際は幅で切り落とし) が起きる。相対インデントは保つ。
 func parseFence(lines []string, i int) (block, int) {
 	m := fenceRe.FindStringSubmatch(lines[i])
-	open, lang := m[1], m[2]
+	indent, open, lang := dispWidth(m[1]), m[2], m[3]
 	raw := make([]string, 0, 8)
 	for j := i + 1; j < len(lines); j++ {
-		if c := fenceRe.FindStringSubmatch(lines[j]); c != nil && len(c[1]) >= len(open) &&
-			c[1][0] == open[0] && strings.TrimSpace(c[2]) == "" {
+		if c := fenceRe.FindStringSubmatch(lines[j]); c != nil && len(c[2]) >= len(open) &&
+			c[2][0] == open[0] && strings.TrimSpace(c[3]) == "" {
 			return block{kind: blkCode, lang: lang, raw: raw}, j + 1
 		}
-		raw = append(raw, lines[j])
+		raw = append(raw, dedentSpaces(lines[j], indent))
 	}
 	return block{kind: blkCode, lang: lang, raw: raw}, len(lines)
+}
+
+// dedentSpaces は先頭の空白を最大 n 桁だけ落とす (n 桁未満の行はそこまで)。
+func dedentSpaces(s string, n int) string {
+	for range n {
+		if !strings.HasPrefix(s, " ") {
+			break
+		}
+		s = s[1:]
+	}
+	return s
 }
 
 // isTableRow は表の行 (| で始まる) か。
@@ -432,10 +450,17 @@ func tableSep(isSeparator bool) string {
 func tableCells(raw []string) ([][][]span, []bool) {
 	rows := make([][][]span, 0, len(raw))
 	seps := make([]bool, 0, len(raw))
-	for _, ln := range raw {
+	for idx, ln := range raw {
 		texts := splitTableRow(ln)
-		sep := len(texts) > 0
+		// 区切り行はヘッダーの直下 (2 行目) だけ。形だけで判定すると、全セルがハイフンの
+		// データ行 (空欄のプレースホルダ) が罫線に置き換わって内容が黙って消える。
+		// なお実データには `|--|--|--|` という短い区切り行が実在するので、形の側は
+		// ハイフン 1 個から認める (桁数で締めると本物の区切り行が壊れる)。
+		sep := idx == 1 && len(texts) > 0
 		for _, t := range texts {
+			if !sep {
+				break
+			}
 			if !sepCellRe.MatchString(strings.TrimSpace(t)) {
 				sep = false
 				break
