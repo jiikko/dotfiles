@@ -894,11 +894,21 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.maybeTick()
 	case editorClosedMsg:
-		// nvim を閉じて復帰。stdin 渡しなのでファイルは残らず、バッファも破棄済み
+		// nvim を閉じて復帰。job ログは stdin 渡しなのでファイルは残らず、バッファも破棄済み。
+		// ⚠️ issues viewer の v だけは実ファイルを編集可能で開く (メモを足せるように readonly に
+		// していない) ので、復帰の境界で取り直す。取り直さないと編集結果 (H1・front matter の
+		// status・チェックボックス) が一覧にも本文にも出ず、viewer が古い内容を最新として表示する。
 		if msg.err != nil {
-			m.showWarning("nvim を開けませんでした: " + firstLine(msg.err.Error()))
+			// 全画面 viewer 表示中はトーストが描かれない (viewLines が早期 return する) ので、
+			// viewer 自身の通知行へ回す
+			if v := &m.issuesOv; v.visible() {
+				v.notice = "nvim を開けませんでした: " + firstLine(msg.err.Error())
+			} else {
+				m.showWarning("nvim を開けませんでした: " + firstLine(msg.err.Error()))
+			}
+			return m, m.maybeTick()
 		}
-		return m, m.maybeTick()
+		return m, tea.Batch(m.issuesOv.reloadAfterEdit(), m.maybeTick())
 	// KeyMsg (v2 では KeyPressMsg/KeyReleaseMsg を束ねる interface) ではなく押下だけを取る。
 	// 離鍵イベントは KeyboardEnhancements を要求していないので届かないが、interface で受けると
 	// 将来 enhancement を有効にした瞬間に 1 打が 2 回処理される。
@@ -982,6 +992,24 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.toast.show("tmux prefix は popup では効きません (C-g で閉じてから)", false)
 		return m, m.maybeTick()
 	}
+	// emacs 流の水平移動エイリアス (C-n/C-p = ↓/↑ は各ビューで対応済み)。ここで
+	// 正規化するので全ビュー (一覧/パネル/詳細/diff) に一括で効く。
+	// ⚠️ 本家 glog と異なり C-b は ← の別名ではない (push を C-b → b に変えた名残で未割当)
+	if key == "ctrl+f" {
+		key = "right"
+	}
+	key = normalizeSpaceKey(key)
+	// issues viewer 表示中は全画面モーダル: キーは全部 viewer が飲む。⚠️ この判定を下の
+	// 裸の b / u (push / pull) より後ろに置くと、一覧を見ている最中の u が
+	// git pull --rebase の確認を開く footgun になる (U の判定順と同じ事故の型)。
+	//
+	// ⚠️ 下の U (usage) より前に置く: viewer は全画面で viewLines が早期 return するため、
+	// viewer 表示中に usage を開いても描かれない。それでも取得 (subprocess) は走り、閉じた
+	// あとに突然 usage が出てくる = 見えない層へ状態を書く経路になっていた。actModal
+	// (push/pull 確認・実行中ガード) と tmux prefix より後ろに置くのは維持する。
+	if m.issuesOv.visible() {
+		return m, tea.Batch(m.issuesOv.handleKey(key, m.pageSize()), m.maybeTick())
+	}
 	// usage オーバーレイのトグル / dismiss。モーダル (push/pull 確認)・prefix・
 	// 実行中ガードを素通りしないよう必ずそれらの後に置く: 先頭に置くと U が push 確認を
 	// キャンセルし損ねて残った確認へ Enter で誤 push する footgun になる (レビュー指摘 2026-07-21)。
@@ -1001,19 +1029,6 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.usageOv.dismiss()
-	// emacs 流の水平移動エイリアス (C-n/C-p = ↓/↑ は各ビューで対応済み)。ここで
-	// 正規化するので全ビュー (一覧/パネル/詳細/diff) に一括で効く。
-	// ⚠️ 本家 glog と異なり C-b は ← の別名ではない (push を C-b → b に変えた名残で未割当)
-	if key == "ctrl+f" {
-		key = "right"
-	}
-	key = normalizeSpaceKey(key)
-	// issues viewer 表示中は全画面モーダル: キーは全部 viewer が飲む。⚠️ この判定を下の
-	// 裸の b / u (push / pull) より後ろに置くと、一覧を見ている最中の u が
-	// git pull --rebase の確認を開く footgun になる (U の判定順と同じ事故の型)。
-	if m.issuesOv.visible() {
-		return m, tea.Batch(m.issuesOv.handleKey(key, m.pageSize()), m.maybeTick())
-	}
 	// diff ポップアップ表示中はスクロール/閉じる操作だけを受ける (最前面のモーダル)
 	if m.diffOv.visible() {
 		return m.handleDiffKey(key)
@@ -2527,8 +2542,11 @@ func (m *browseModel) hintLine() string {
 	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  P: PR 状態  y: URL コピー  b: push  u: pull  i: issues  U: usage  C: update  w: 警告コピー  q: 終了"
 	switch {
 	case m.issuesOv.visible():
-		// issues viewer は全画面モーダルなので、ここが最優先 (下のパネル系より先に判定する)
-		hint = m.issuesOv.hint()
+		// issues viewer は全画面モーダルなので、ここが最優先 (下のパネル系より先に判定する)。
+		// CI 進捗・GH 警告の前置もしない: viewer の hint は popup の実幅ぴったりに詰めてあり
+		// (issues_view.go の hint)、前置すると末尾のキー案内が黙って切り落とされる。CI は
+		// viewer を閉じれば見えるので、全画面の間は viewer の語彙だけを出す。
+		return m.hintLineText(m.issuesOv.hint())
 	case m.actModal.pushConfirm:
 		hint = "push しますか? [Y/n] (Enter=y)"
 	case m.actModal.pullConfirm:
@@ -2560,6 +2578,11 @@ func (m *browseModel) hintLine() string {
 	if m.ghErr != nil {
 		hint = "⚠ " + firstLine(m.ghErr.Warning()) + "  " + hint
 	}
+	return m.hintLineText(hint)
+}
+
+// hintLineText は最下行の hint を塗って幅に収める (前置の有無で分かれる出口を 1 本にする)。
+func (m *browseModel) hintLineText(hint string) string {
 	painted := paint(hint, ansiDim, m.colored)
 	if m.frameActive() {
 		// hint は板の外 (最下行) だが、左余白 1 桁を付けて板の左端 (┌) と縦に揃える。素朴に

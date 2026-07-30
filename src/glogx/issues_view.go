@@ -278,6 +278,23 @@ func (v *issuesView) openBody() {
 	v.bodyGlide.stop()
 }
 
+// reloadAfterEdit は nvim で編集して戻ってきたときの取り直し (呼び出し側の editorClosedMsg)。
+//
+// 一覧のメタデータは Issue.LoadMeta が一度読んだら二度読まないので再スキャンで作り直し、開いて
+// いる本文は Body が読み込み時の内容を握っているので読み直す。どちらもしないと、編集した当人に
+// 対して viewer が編集前の内容を出し続ける (仕様が最も嫌う「viewer が確信を持って嘘をつく」型)。
+func (v *issuesView) reloadAfterEdit() tea.Cmd {
+	if !v.shown {
+		return nil
+	}
+	if v.open != nil {
+		if body, err := v.open.ReadBody(); err == nil {
+			v.body = body // bodyOff は保つ (描画側が新しい行数へ収束させる)
+		}
+	}
+	return v.scanCmd(v.cwd)
+}
+
 // current はカーソル位置の issue (無ければ nil)。
 func (v *issuesView) current() *issues.Issue {
 	if v.cursor < 0 || v.cursor >= len(v.rows) {

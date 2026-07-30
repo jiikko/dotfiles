@@ -855,6 +855,12 @@ func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
 	if m.actModal.updating {
 		t.Fatal("viewer 表示中の C が update を起動した")
 	}
+	// U (usage) も素通りしない。全画面 viewer の下では描かれないのに取得だけ走り、
+	// 閉じたあとに突然 usage が出てくる = 見えない層へ状態を書く経路だった
+	m.handleKey("U")
+	if m.usageOv.visible {
+		t.Fatal("viewer 表示中の U が (描かれない) usage オーバーレイを開いた")
+	}
 	m.handleKey("i") // トグルで閉じる
 	if m.issuesOv.visible() {
 		t.Fatal("i で閉じない")
@@ -883,6 +889,88 @@ func TestIssuesViewerReplacesWholeScreen(t *testing.T) {
 	if !strings.Contains(m.hintLine(), "カテゴリ") {
 		t.Fatalf("hint が viewer のものになっていない: %q", m.hintLine())
 	}
+}
+
+func TestIssuesViewerHintIsNotPrefixed(t *testing.T) {
+	// viewer の hint は popup の実幅ぴったりに詰めてある。CI 進捗や GH 警告を前置すると
+	// 末尾のキー案内が黙って切り落とされる (issues_view.go の hint の不変条件が結合点で壊れる)。
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.handleKey("i")
+	m.fetching = true
+	m.ghErr = &GHError{Kind: GHOther, Detail: "boom"}
+	hint := m.hintLine()
+	if strings.Contains(hint, "CI 状態を取得中") || strings.Contains(hint, "⚠") {
+		t.Fatalf("viewer の hint に前置が入った: %q", hint)
+	}
+	if !strings.Contains(hint, "q: 閉じる") {
+		t.Fatalf("viewer の hint の末尾が切れている: %q", hint)
+	}
+}
+
+func TestIssuesViewerReloadsAfterEditorCloses(t *testing.T) {
+	// v で nvim を開いて編集して戻ったとき、取り直さないと編集結果 (H1・status・チェックボックス)
+	// が一覧にも本文にも出ず、viewer が古い内容を最新として表示する。
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.handleKey("i")
+	// 取り直しは cwd から探索し直すので、issues ディレクトリを持つ木を作ってそこを起点にする
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "001-feat-x.md")
+	if err := os.WriteFile(path, []byte("# 001 feat: 編集前\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := &issues.Issue{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"}
+	if err := iss.LoadMeta(); err != nil {
+		t.Fatal(err)
+	}
+	m.issuesOv.cwd = root
+	m.Update(issuesScanMsg{root: root, dirs: []string{dir}, issues: []*issues.Issue{iss}})
+	m.issuesOv.finishAnim()
+	if out := m.viewLines(); !strings.Contains(out, "編集前") {
+		t.Fatalf("前提が崩れた: 編集前のタイトルが出ていない:\n%s", out)
+	}
+
+	// nvim が本文を書き換えて閉じた
+	if err := os.WriteFile(path, []byte("# 001 feat: 編集後\n\n- [x] やった\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, cmd := m.Update(editorClosedMsg{})
+	if cmd == nil {
+		t.Fatal("editorClosedMsg で取り直しの Cmd が返らない")
+	}
+	msg := drainScanMsg(t, cmd)
+	m.Update(msg)
+	m.issuesOv.finishAnim()
+	out := m.viewLines()
+	if !strings.Contains(out, "編集後") {
+		t.Fatalf("編集結果が一覧に反映されていない:\n%s", out)
+	}
+	if !strings.Contains(out, "1/1") {
+		t.Fatalf("編集で増えたチェックボックスの進捗が出ていない:\n%s", out)
+	}
+}
+
+// drainScanMsg は tea.Cmd (Batch を含む) から issuesScanMsg を取り出す。
+func drainScanMsg(t *testing.T, cmd tea.Cmd) issuesScanMsg {
+	t.Helper()
+	switch msg := cmd().(type) {
+	case issuesScanMsg:
+		return msg
+	case tea.BatchMsg:
+		for _, c := range msg {
+			if c == nil {
+				continue
+			}
+			if scan, ok := c().(issuesScanMsg); ok {
+				return scan
+			}
+		}
+	}
+	t.Fatal("Cmd から issuesScanMsg が取れない")
+	return issuesScanMsg{}
 }
 
 func TestIssuesViewerNotOpenedWhilePanelOpen(t *testing.T) {
