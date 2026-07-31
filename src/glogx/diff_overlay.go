@@ -101,7 +101,7 @@ func (o *diffOverlay) scroll(key string, rows int) {
 		prev := o.offset
 		o.offset = min(o.offset+rows/2, maxOffset)
 		o.glide.start(prev, o.offset)
-	case "ctrl+u", "pgup", "b":
+	case "ctrl+u", "pgup", "b", "shift+space":
 		prev := o.offset
 		o.offset = max(o.offset-rows/2, 0)
 		o.glide.start(prev, o.offset)

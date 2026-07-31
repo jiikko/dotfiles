@@ -1129,7 +1129,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		prev := m.offset
 		m.offset = m.clampOffset(m.offset + m.pageSize()/2)
 		return m, m.startScrollAnim(prev)
-	case "ctrl+u", "pgup":
+	case "ctrl+u", "pgup", "shift+space":
 		prev := m.offset
 		m.offset = m.clampOffset(m.offset - m.pageSize()/2)
 		return m, m.startScrollAnim(prev)

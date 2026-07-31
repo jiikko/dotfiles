@@ -110,7 +110,8 @@ func (v *issuesView) toggle(cwd string) tea.Cmd {
 func (v *issuesView) close() {
 	v.shown = false
 	v.animStart = time.Time{}
-	v.closeBody()
+	v.listGlide.stop() // 閉じた後も glide が残ると、再表示の一瞬だけ古い位置から滑る
+	v.closeBody()      // bodyGlide はこちらで止まる
 }
 
 // finishAnim は開く演出を即座に着地させる。
@@ -338,7 +339,7 @@ func (v *issuesView) handleKey(key string, page int) tea.Cmd {
 		prev := v.offset
 		v.moveCursor(max(rows/2, 1), rows)
 		v.listGlide.start(prev, v.offset)
-	case "ctrl+u", "pgup", "b":
+	case "ctrl+u", "pgup", "b", "shift+space":
 		prev := v.offset
 		v.moveCursor(-max(rows/2, 1), rows)
 		v.listGlide.start(prev, v.offset)
@@ -404,7 +405,7 @@ func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
 		prev := v.bodyOff
 		v.bodyOff = min(v.bodyOff+rows/2, maxOffset)
 		v.bodyGlide.start(prev, v.bodyOff)
-	case "ctrl+u", "pgup", "b":
+	case "ctrl+u", "pgup", "b", "shift+space":
 		prev := v.bodyOff
 		v.bodyOff = max(v.bodyOff-rows/2, 0)
 		v.bodyGlide.start(prev, v.bodyOff)
@@ -690,7 +691,14 @@ func (v *issuesView) listLines(o issuesRenderOpts) []string {
 	// 論理 offset を「描画時の行数でカーソルを含む窓」へ収束させてから、その着地点に対して
 	// glide の途中位置を出す (キー処理時の行数とずれていても窓とカーソルが食い違わない)
 	v.offset = v.windowOffset(rows)
-	offset := max(min(v.listGlide.offset(v.offset), max(len(v.rows)-rows, 0)), 0)
+	// ⚠️ glide の途中位置もカーソルを含む範囲へ寄せる。半ページ移動は cursor と offset を同時に
+	// 動かすので、素の途中位置 (旧窓) で切るとアニメ中だけカーソル行が 1 本も描かれず、
+	// 「見えない行が Enter・v・y の対象になる」窓が復活する (windowOffset を導出値にした狙いを
+	// glide が一時的に壊す。敵対的レビュー P2 2026-07-31)。滑らかさは残したまま、窓の端が
+	// カーソルに追いつくところで止める。
+	shown := v.listGlide.offset(v.offset)
+	shown = max(min(shown, v.cursor), v.cursor-rows+1)
+	offset := max(min(shown, max(len(v.rows)-rows, 0)), 0)
 	end := min(offset+rows, len(v.rows))
 	out := make([]string, 0, rows)
 	for i := offset; i < end; i++ {
