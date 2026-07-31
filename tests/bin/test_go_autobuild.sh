@@ -191,6 +191,30 @@ out="$(AUTOBUILD_ARGS=--async FAKE_GO_MARK="$PROBE" run_tool "$ROOT")"
 [[ "$out" == "pending=1" ]] || fail "async 再ビルド時に GO_AUTOBUILD_PENDING が立たない (got: $out)"
 ok "async 再ビルドを spawn した起動では GO_AUTOBUILD_PENDING=1 を渡す"
 
+printf '\n## 古い失敗記録は無視して再挑戦する (一時的な失敗で永久に止まらない)\n'
+# ⚠️ backoff の条件は「ソースが失敗記録より新しいか」だが、失敗記録は pull の後に書かれるので
+# その条件は二度と成立しない = 一度の一時的な失敗 (toolchain 取得の失敗等) で再ビルドが永久に
+# 止まる。実証 (2026-07-31): pull 相当の状態で 1 回失敗させると、要因を解消した後の 3 回の起動で
+# go build が 0 回しか呼ばれず古いバイナリに固定された。TTL で救済する。
+ROOT="$(new_project failttl)"
+FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
+freeze "$ROOT"
+bump "$ROOT/src/tool/main.go"
+AUTOBUILD_ARGS=--async FAKE_GO_FAIL=1 run_tool "$ROOT" >/dev/null
+wait_for "失敗記録が作られない" test -f "$ROOT/src/tool/.autobuild.failed"
+before="$(calls "$ROOT")"
+# TTL 内 (失敗記録は今) はソース未変更でも再挑戦しない = 従来の backoff
+AUTOBUILD_ARGS=--async FAKE_GO_MARK=fixed run_tool "$ROOT" >/dev/null
+sleep 0.5
+[[ "$(calls "$ROOT")" == "$before" ]] || fail "TTL 内なのに再挑戦した (落ちるビルドを撒く)"
+ok "TTL 内はソース未変更で再挑戦しない"
+# 失敗記録を TTL より古くすると、ソース未変更でも再挑戦する
+mtime_at 30 "$ROOT/src/tool/.autobuild.failed"
+AUTOBUILD_ARGS=--async GO_AUTOBUILD_FAILED_TTL=60 FAKE_GO_MARK=fixed run_tool "$ROOT" >/dev/null
+wait_for "TTL 超過後も再挑戦しない (一時的な失敗から復帰できない)" \
+  binary_is "$ROOT" fixed
+ok "TTL を超えた失敗記録は無視して再挑戦する"
+
 printf '\n## backoff 中は「失敗が残っている」ことを env で伝える\n'
 # 無言だと「新しいコードを書いたのに旧版が動き続ける」ことに誰も気づけない (実例 2026-07-31:
 # 失敗記録が残ったまま 13 分間 stale なバイナリで操作していた)。

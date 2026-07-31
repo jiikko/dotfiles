@@ -13,6 +13,7 @@
 #
 # GO_AUTOBUILD_SYNC=1 で --async を打ち消して同期ビルドにする (「今すぐ新版が欲しい」用)。
 # GO_AUTOBUILD_LOCK_TIMEOUT (秒, 既定 1800) を超えた lock は死んでいるものとして奪う。
+# GO_AUTOBUILD_FAILED_TTL (秒, 既定 600) を超えた失敗記録は無視して再挑戦する (下記)。
 
 zmodload zsh/datetime 2>/dev/null
 zmodload -F zsh/stat b:zstat 2>/dev/null
@@ -41,6 +42,23 @@ _go_autobuild_sources_newer_than() {  # 0 = 新しいソースがある (ref 不
     [[ "$f" -nt "$ref" ]] && return 0
   done
   return 1
+}
+
+# 失敗記録が古びていれば再挑戦を許す。
+#
+# ⚠️ これが無いと「一度の一時的な失敗で再ビルドが永久に止まる」: 失敗記録は pull の後に書かれる
+# ので、backoff の条件「ソースが失敗記録より新しいか」は二度と成立しない。実証 (2026-07-31):
+# pull 相当の状態で 1 回失敗させると、失敗要因を解消した後の 3 回の起動で go build が 0 回しか
+# 呼ばれず、古いバイナリのまま固定された。glogx は go.mod が要求する Go が手元より新しく
+# (1.26 vs 1.25)、初回ビルドが ~90MB の toolchain 取得に依存するため、この一時失敗が現実に起きる。
+#
+# 元の backoff の狙い (落ちるビルドを起動ごとに撒かない) は TTL で保つ: 最悪でも TTL ごとに 1 回。
+# age が取れない環境 (zstat 不在) では期限切れと判定しない = 従来どおり保守的に止める。
+_go_autobuild_failed_expired() {  # 0 = 記録が古い (再挑戦してよい)
+  local stamp="$1" ttl=${GO_AUTOBUILD_FAILED_TTL:-600}
+  [[ -e "$stamp" ]] || return 0
+  _go_autobuild_age "$stamp"
+  [[ -n "$REPLY" ]] && (( REPLY >= ttl ))
 }
 
 _go_autobuild_age() {  # REPLY = 経過秒 (取得不能なら空)
@@ -168,8 +186,10 @@ go_autobuild_exec() {
     _go_autobuild_build "$src_dir" "$name" 0 || exit 1
   elif _go_autobuild_sources_newer_than "$bin" "$src_dir"; then
     if (( async )); then
-      # 失敗記録より新しいソースが無ければ再挑戦しない (fail-open で旧版のまま進む)
-      if _go_autobuild_sources_newer_than "$src_dir/.autobuild.failed" "$src_dir"; then
+      # 失敗記録より新しいソースが無ければ再挑戦しない (fail-open で旧版のまま進む)。
+      # ただし記録が古びていれば一時的な失敗とみなして再挑戦する (_go_autobuild_failed_expired)。
+      if _go_autobuild_sources_newer_than "$src_dir/.autobuild.failed" "$src_dir" \
+        || _go_autobuild_failed_expired "$src_dir/.autobuild.failed"; then
         _go_autobuild_spawn "$src_dir" "$name"
         # 起動するツールへ「裏でビルド中」を伝える。旧版で exec するため、ツール側からは
         # 新版の完成もビルド失敗も観測できず無言だった (失敗すると気づかないまま旧版に固定
