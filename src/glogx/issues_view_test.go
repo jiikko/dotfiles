@@ -497,8 +497,9 @@ func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 	if copied != v.rows[0].Path {
 		t.Fatalf("カーソル行のパスがコピーされていない: %q", copied)
 	}
-	if !strings.Contains(strings.Join(v.lines(renderOpts(10)), "\n"), "コピーしました") {
-		t.Fatal("コピーの結果が画面に出ない")
+	// 結果はヘッダーに出さず、browseModel がトーストへ流すために取り出す (takeNotice)
+	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "コピーしました") {
+		t.Fatalf("コピーの結果が通知に載らない: %q ok=%v", text, ok)
 	}
 	if cmd := v.handleKey("v", 10); cmd == nil || !editorCalled {
 		t.Fatalf("v でエディタ起動の Cmd が返らない: cmd=%v called=%v", cmd != nil, editorCalled)
@@ -610,22 +611,24 @@ func TestIssuesViewNoticeIsTransientAndDoesNotHideWarning(t *testing.T) {
 		warnings: []string{"同じファイル名が複数の状態ディレクトリにあります: 028-x.md / done/028-x.md"},
 	})
 	v.handleKey("y", 10)
-	if !strings.Contains(strings.Join(v.lines(renderOpts(10)), "\n"), "コピーしました") {
-		t.Fatal("コピーの結果が出ていない")
+	text, ok := v.takeNotice()
+	if !ok || !strings.Contains(text, "コピーしました") {
+		t.Fatalf("コピーの結果が通知に載らない: %q ok=%v", text, ok)
 	}
-	v.handleKey("j", 10) // 次のキーで通知は寿命を終える
+	// ⚠️ 操作結果はヘッダーを占めない (トーストへ移した) ので、スキャン警告を一瞬も隠さない。
+	// 以前は通知が警告と同じ 1 行を奪い合っていた (同名ファイルの二重化 = 静かな内容喪失の警告)。
 	out := strings.Join(v.lines(renderOpts(10)), "\n")
 	if strings.Contains(out, "コピーしました") {
-		t.Fatalf("通知が次のキーでも残っている:\n%s", out)
+		t.Errorf("操作結果がヘッダーに出ている (トーストで出すべき):\n%s", out)
 	}
 	if !strings.Contains(out, "同じファイル名") {
-		t.Fatalf("通知が消えても警告が戻らない:\n%s", out)
+		t.Fatalf("スキャン警告が出ていない:\n%s", out)
 	}
 }
 
 func TestIssuesViewBodyModeShowsCopyResult(t *testing.T) {
-	// 本文モードのコピーは成功も失敗も画面に出ない (ヘッダーに通知の行が無い) 状態だった。
-	// 全画面差し替えのためトーストは見えないので、受け皿はこのヘッダーしかない。
+	// 本文モードのコピーの成否も通知に載る (browseModel がトーストへ流す)。以前はヘッダーの
+	// 行に出していたが、viewer の上にもトーストを合成するようにして共通の語彙へ寄せた。
 	orig := copyToClipboard
 	t.Cleanup(func() { copyToClipboard = orig })
 	copyToClipboard = func(string) error { return errors.New("pbcopy が見つかりません") }
@@ -638,8 +641,9 @@ func TestIssuesViewBodyModeShowsCopyResult(t *testing.T) {
 	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "028-refactor-x.md", Number: "028", Category: "refactor"})
 	v.handleKey("enter", 10)
 	v.handleKey("p", 10)
-	if out := strings.Join(v.lines(renderOpts(10)), "\n"); !strings.Contains(out, "コピーに失敗しました") {
-		t.Fatalf("本文モードでコピー失敗が画面に出ない:\n%s", out)
+	text, ok := v.takeNotice()
+	if ok || !strings.Contains(text, "コピーに失敗しました") {
+		t.Fatalf("本文モードのコピー失敗が通知に載らない: %q ok=%v", text, ok)
 	}
 }
 

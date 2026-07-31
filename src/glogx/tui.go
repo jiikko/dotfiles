@@ -1022,7 +1022,17 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// あとに突然 usage が出てくる = 見えない層へ状態を書く経路になっていた。actModal
 	// (push/pull 確認・実行中ガード) と tmux prefix より後ろに置くのは維持する。
 	if m.issuesOv.visible() {
-		return m, tea.Batch(m.issuesOv.handleKey(key, m.pageSize()), m.maybeTick())
+		cmd := m.issuesOv.handleKey(key, m.pageSize())
+		// viewer の操作結果 (コピー・URL 起動・読み込み失敗) は glogx 共通の右下トーストで出す
+		// (ユーザー要望 2026-07-31)。viewer が全画面でトーストが隠れていた時代はヘッダー行に
+		// 出していたが、下の viewLines でトーストを viewer の上にも合成するようにした。
+		if text, ok := m.issuesOv.takeNotice(); text != "" {
+			m.toast.show(text, ok)
+			if !ok {
+				m.lastWarning = text // w でコピーできるようにする (失敗の調べ方を持ち出せる)
+			}
+		}
+		return m, tea.Batch(cmd, m.maybeTick())
 	}
 	// usage オーバーレイのトグル / dismiss。モーダル (push/pull 確認)・prefix・
 	// 実行中ガードを素通りしないよう必ずそれらの後に置く: 先頭に置くと U が push 確認を
@@ -2335,8 +2345,14 @@ func (m *browseModel) viewLines() string {
 	page := m.pageSize()
 	// issues viewer は全画面: コミット一覧とオーバーレイ群を描かずに窓ごと差し替える。
 	// lines() がちょうど page 行返すので、枠と hint 行の経路は共通のまま (finishWindow)。
+	// ⚠️ トーストだけは載せる: viewer の操作結果 (コピー等) も glogx 共通の語彙で出すため
+	// (ユーザー要望 2026-07-31)。載せないと viewer 中の通知が画面に一切出ない。
 	if m.issuesOv.visible() {
-		return m.finishWindow(m.issuesOv.lines(m.issuesOpts()), page)
+		window := m.issuesOv.lines(m.issuesOpts())
+		if box := m.toast.boxLines(m.colored); len(box) > 0 {
+			window = overlayBoxBottomRight(window, box, m.contentWidth(), m.colored)
+		}
+		return m.finishWindow(window, page)
 	}
 	lines := m.lines()
 	// glide 中は表示 offset (途中位置) で窓を切る。それ以外は論理 offset。

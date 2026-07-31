@@ -43,7 +43,11 @@ type issuesView struct {
 	dirs     []string
 	all      []*issues.Issue
 	warnings []string
-	notice   string // 直近の操作結果 (コピー成功・読み込み失敗など)
+	// notice は直近の操作結果 (コピー成功・読み込み失敗など)。noticeOK は成功か。
+	// browseModel はこれを取り出してトーストにする (takeNotice)。⚠️ viewer 単体でも駆動できる
+	// 契約 (このファイル冒頭) を保つため、ここではトーストを知らず「結果」だけを置く。
+	notice   string
+	noticeOK bool
 
 	// tabsCanon は issues.Tabs が返す正規順序 (done 込みの件数降順 → 名前昇順、other は末尾)。
 	// tabs は「そこから 0 件を右へ寄せた表示・巡回順」。⚠️ 並べ替えを tabs へ破壊的に適用すると
@@ -292,6 +296,21 @@ func reorderTabsByCount(tabs []issues.Tab, counts []int) ([]issues.Tab, []int) {
 	return outTabs, outCounts
 }
 
+// setNotice は操作結果を置く (ok=false は失敗)。
+func (v *issuesView) setNotice(text string, ok bool) { v.notice, v.noticeOK = text, ok }
+
+// takeNotice は未表示の操作結果を取り出して消す。browseModel がトーストへ流すための口で、
+// 取り出された通知はヘッダーに出さない (トーストとヘッダーで二重に出さない)。
+//
+// なぜヘッダー行でなくトーストにするか: コピーや URL 起動の結果は glogx 全体で右下トーストに
+// 出す語彙で統一されている (ユーザー要望 2026-07-31)。viewer が全画面でトーストが隠れていた
+// 時代の名残でヘッダーに出していたが、トーストを viewer の上にも合成するようにしたので不要。
+func (v *issuesView) takeNotice() (string, bool) {
+	text, ok := v.notice, v.noticeOK
+	v.notice, v.noticeOK = "", false
+	return text, ok
+}
+
 // currentTab は選択中のタブ名 ("" = All)。
 func (v *issuesView) currentTab() string {
 	if v.tabIdx <= 0 || v.tabIdx > len(v.tabs) {
@@ -340,7 +359,7 @@ func (v *issuesView) openBody() {
 	}
 	body, err := iss.ReadBody()
 	if err != nil {
-		v.notice = "本文を読めませんでした: " + firstLine(err.Error())
+		v.setNotice("本文を読めませんでした: "+firstLine(err.Error()), false)
 		return
 	}
 	v.open, v.body, v.bodyOff = iss, body, 0
@@ -390,7 +409,8 @@ func (v *issuesView) handleKey(key string, page int) tea.Cmd {
 	if v.drawer.finish() {
 		v.discardBody() // 引き出しの逆再生中にキーが来たら即座に閉じ切る
 	}
-	v.notice = "" // 通知は直前の操作の結果なので、次のキーで消す (寿命の理由は headLines)
+	// 通知は takeNotice で取り出された時点で消えるので、ここでのクリアは不要 (取り出されない
+	// まま次のキーが来た場合だけ古い結果が残るが、browseModel は毎キーで取り出す)
 	rows := v.visibleRows(page)
 	// ⚠️ URL ピッカーは他のどの割当よりも先に飲む: インクリメンタルサーチでは印字文字がすべて
 	// 検索語なので、v (nvim) や y (コピー) を先に処理すると "v" や "y" を含む URL を検索できない。
@@ -559,7 +579,7 @@ func (v *issuesView) openURLPicker() {
 		return
 	}
 	if !v.urlPick.open(v.body.URLs()) {
-		v.notice = "この issue に URL はありません"
+		v.setNotice("この issue に URL はありません", false)
 	}
 }
 
@@ -572,7 +592,7 @@ func (v *issuesView) urlPickerKey(key string) tea.Cmd {
 	}
 	v.urlPick.close()
 	// 「開きました」と断定しない: 失敗は openURLMsg 経由でトースト警告になる (browseModel 側)。
-	v.notice = "URL を開きます: " + url
+	v.setNotice("URL を開きます: "+url, true)
 	return func() tea.Msg { return openURLMsg{err: openInBrowser(url)} }
 }
 
@@ -624,10 +644,10 @@ func (v *issuesView) copyNextNumber() {
 // copyText はクリップボードへ入れて結果を通知する (コピー系アクションの共通処理)。
 func (v *issuesView) copyText(text, okPrefix string) {
 	if err := copyToClipboard(text); err != nil {
-		v.notice = "コピーに失敗しました: " + firstLine(err.Error())
+		v.setNotice("コピーに失敗しました: "+firstLine(err.Error()), false)
 		return
 	}
-	v.notice = okPrefix + text
+	v.setNotice(okPrefix+text, true)
 }
 
 // カテゴリの色。意味が広く共有されている語には固定色を割り、表に無い語は語のハッシュで
@@ -785,40 +805,35 @@ func (v *issuesView) headLines(width int, colored bool) []string {
 	return v.listHeadLines(width, colored)
 }
 
-// bodyHeadLines は本文モードのヘッダー (ファイル名 + 状態 + 通知)。
+// bodyHeadLines は本文モードのヘッダー (ファイル名 + 状態)。
+//
+// 操作結果 (コピー・URL 起動) の行はここに持たない: browseModel が takeNotice で取り出して
+// 右下トーストに出す (ユーザー要望 2026-07-31)。以前は「トーストは全画面差し替えの下に隠れる」
+// ためここが唯一の受け皿だったが、viewer の上にもトーストを合成するようにして解消した。
 func (v *issuesView) bodyHeadLines(width int, colored bool) []string {
-	{
-		status := v.open.StatusLabel()
-		if p := v.open.Progress(); p != "" {
-			status += "  " + p
-		}
-		head := []string{
-			paint(clipToWidth(v.open.Rel, width), ansiBold, colored),
-			paint(clipToWidth(status, width), ansiDim, colored),
-		}
-		// 本文モードでも y / p / Y / N は効く。ここに通知の行が無いと、コピーの成功も失敗も
-		// 画面に一切出ない (トーストは全画面差し替えの下に隠れるので受け皿がここしかない)
-		if v.notice != "" {
-			head = append(head, paint(clipToWidth(v.notice, width), ansiDim, colored))
-		}
-		return append(head, "")
+	status := v.open.StatusLabel()
+	if p := v.open.Progress(); p != "" {
+		status += "  " + p
+	}
+	return []string{
+		paint(clipToWidth(v.open.Rel, width), ansiBold, colored),
+		paint(clipToWidth(status, width), ansiDim, colored),
+		"",
 	}
 }
 
-// listHeadLines は一覧のヘッダー (タブ + 通知/警告)。
+// listHeadLines は一覧のヘッダー (タブ + スキャン警告)。
 //
 // ⚠️ headLines と分けているのは引き出しのため: 本文を開いている間も下地の一覧はタブを出す
 // 必要があり、headLines をそのまま使うと下地にまで本文のヘッダーが出る (実測で「一覧の上に
 // 本文のファイル名が乗る」表示になった)。
+//
+// スキャン警告 (同名ファイルの二重化 = 静かな内容喪失) はここに残す: 操作結果と違って
+// 「今この repo が抱えている状態」なので、消えるトーストでなく画面に出続ける必要がある。
+// 操作結果はトーストへ移した (takeNotice)。
 func (v *issuesView) listHeadLines(width int, colored bool) []string {
 	head := []string{v.tabLine(issuesRenderOpts{width: width, colored: colored})}
-	// notice はキー 1 打分の寿命 (handleKey が入口で消す) なので、警告より優先しても恒久的に
-	// 隠すことはない。⚠️ 寿命を外すとスキャン警告 (同名ファイルの二重化 = 静かな内容喪失) が
-	// 二度と出なくなる。
-	switch {
-	case v.notice != "":
-		head = append(head, paint(clipToWidth(v.notice, width), ansiDim, colored))
-	case len(v.warnings) > 0:
+	if len(v.warnings) > 0 {
 		head = append(head, paint(clipToWidth("⚠ "+v.warnings[0], width), ansiYellow, colored))
 	}
 	return append(head, "")

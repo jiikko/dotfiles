@@ -1103,3 +1103,72 @@ func TestIssuesViewerCursorArrowNotDoubled(t *testing.T) {
 		}
 	}
 }
+
+// issues viewer の操作結果は glogx 共通の右下トーストに出る (ユーザー要望 2026-07-31)。
+//
+// ⚠️ viewer は全画面で viewLines が早期 return するため、トーストを合成し忘れると通知が
+// 画面に一切出ない (それが以前ヘッダー行に出していた理由)。ここは実 View の出力まで見る。
+func TestIssuesViewerNotifiesViaToast(t *testing.T) {
+	origCopy := copyToClipboard
+	copyToClipboard = func(string) error { return nil }
+	t.Cleanup(func() { copyToClipboard = origCopy })
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.width, m.height = 100, 16
+	m.handleKey("i")
+	m.issuesOv.receive(issuesScanMsg{
+		dirs:   []string{"/repo/issues"},
+		issues: []*issues.Issue{fakeIssue("030", "feat", "alpha", issues.StatusOpen)},
+	})
+	m.issuesOv.finishAnim()
+
+	m.handleKey("p") // 番号をコピー
+	if !m.toast.visible() {
+		t.Fatal("番号コピーでトーストが出ない")
+	}
+	if !m.toast.ok {
+		t.Errorf("成功なのに失敗色: %q", m.toast.text)
+	}
+	if !strings.Contains(m.toast.text, "コピーしました") {
+		t.Errorf("トーストの文面が想定と違う: %q", m.toast.text)
+	}
+	// トーストは右から滑り込むので、入場アニメを進めてから見る (通常経路と同じ)
+	for range 30 {
+		if !m.toast.animating() {
+			break
+		}
+		m.toast.advance(m.colored)
+	}
+	// viewer は全画面なので、トーストを合成しないと画面に出ない
+	if out := stripANSI(m.View().Content); !strings.Contains(out, "コピーしました") {
+		t.Errorf("viewer の上にトーストが載っていない:\n%s", out)
+	}
+	// ヘッダー行には出さない (トーストと二重に出さない)
+	if v := m.issuesOv; v.notice != "" {
+		t.Errorf("通知が viewer 側に残っている: %q", v.notice)
+	}
+}
+
+// 失敗は失敗色のトーストで出し、w でコピーできるよう lastWarning にも残す。
+func TestIssuesViewerCopyFailureToast(t *testing.T) {
+	origCopy := copyToClipboard
+	copyToClipboard = func(string) error { return errors.New("pbcopy が見つかりません") }
+	t.Cleanup(func() { copyToClipboard = origCopy })
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.width, m.height = 100, 16
+	m.handleKey("i")
+	m.issuesOv.receive(issuesScanMsg{
+		dirs:   []string{"/repo/issues"},
+		issues: []*issues.Issue{fakeIssue("030", "feat", "alpha", issues.StatusOpen)},
+	})
+	m.issuesOv.finishAnim()
+
+	m.handleKey("y")
+	if !m.toast.visible() || m.toast.ok {
+		t.Fatalf("失敗が失敗色のトーストになっていない: visible=%v ok=%v", m.toast.visible(), m.toast.ok)
+	}
+	if !strings.Contains(m.lastWarning, "コピーに失敗") {
+		t.Errorf("lastWarning に残っていない (w でコピーできない): %q", m.lastWarning)
+	}
+}
