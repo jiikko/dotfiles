@@ -207,16 +207,16 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 		}
 	})
 
-	t.Run("advanceGlide が両 pager を進める", func(t *testing.T) {
+	t.Run("advanceGlide が本文 pager を進める", func(t *testing.T) {
+		// ⚠️ 一覧は glide を持たない (幾何的にアニメしないため削除。issue 031)
 		v := newIssuesView()
-		v.offset, v.bodyOff = 10, 10
-		v.listGlide.start(0, 10)
+		v.bodyOff = 10
 		v.bodyGlide.start(0, 10)
 		for range scrollAnimFrames {
 			v.advanceGlide()
 		}
-		if v.listGlide.active || v.bodyGlide.active {
-			t.Errorf("advanceGlide で着地しない: list=%v body=%v", v.listGlide.active, v.bodyGlide.active)
+		if v.bodyGlide.active {
+			t.Error("advanceGlide で着地しない")
 		}
 	})
 }
@@ -257,26 +257,26 @@ func TestGlideKeyPathsScheduleTick(t *testing.T) {
 	})
 }
 
-// resize は 4 面すべての glide を捨てる (幅で行数が変わり着地点が古くなるため)。
+// resize は glide を持つ 3 面すべてで捨てる (幅で行数が変わり着地点が古くなるため)。
+// issues の一覧は glide を持たない (issue 031)。
 func TestResizeStopsAllGlides(t *testing.T) {
 	m := newTestBrowse(t, 10, map[string]CIState{}, nil)
 	m.glide.start(0, 10)
 	m.diffOv.glide.start(0, 10)
-	m.issuesOv.listGlide.start(0, 10)
 	m.issuesOv.bodyGlide.start(0, 10)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	if m.glide.active || m.diffOv.glide.active || m.issuesOv.listGlide.active || m.issuesOv.bodyGlide.active {
-		t.Errorf("resize で glide が残る: list=%v diff=%v issuesList=%v issuesBody=%v",
-			m.glide.active, m.diffOv.glide.active, m.issuesOv.listGlide.active, m.issuesOv.bodyGlide.active)
+	if m.glide.active || m.diffOv.glide.active || m.issuesOv.bodyGlide.active {
+		t.Errorf("resize で glide が残る: list=%v diff=%v issuesBody=%v",
+			m.glide.active, m.diffOv.glide.active, m.issuesOv.bodyGlide.active)
 	}
 }
 
-// 一覧の半ページ glide 中も、カーソル行は必ず描画窓の中にある。
+// 一覧の窓は必ずカーソル行を含む (どのスクロールキーの直後も)。
 //
-// 半ページ移動は cursor と offset を同時に動かすので、glide の途中位置 (旧窓) で素朴に切ると
-// アニメ中だけカーソル行が 1 本も描かれず、「見えない行が Enter・v・y の対象になる」窓が
-// 復活する (issues_view.go が windowOffset を導出値にして潰した状態。敵対的レビュー P2 の回帰)。
-func TestIssuesListGlideKeepsCursorVisible(t *testing.T) {
+// ⚠️ この不変条件のテストは glide を外した後も残す (issue 031 の決定)。半ページ移動は cursor と
+// offset を同時に動かすので、窓の導出を素朴に書き換えると「カーソル行が 1 本も描かれない =
+// 見えない行が Enter・v・y の対象になる」窓が復活する (敵対的レビュー P2 の回帰)。
+func TestIssuesListWindowAlwaysKeepsCursorVisible(t *testing.T) {
 	v := newIssuesView()
 	v.shown, v.loaded = true, true
 	all := make([]*issues.Issue, 60)
@@ -285,39 +285,28 @@ func TestIssuesListGlideKeepsCursorVisible(t *testing.T) {
 	}
 	v.all, v.rows = all, all
 	v.dirs = []string{"/x/issues"} // 空だと emptyMessage が早期 return して一覧を描かない
-	opts := issuesRenderOpts{width: 100, page: 20}
+	const page = 20
+	opts := issuesRenderOpts{width: 100, page: page}
+	v.lines(opts) // 初期描画で窓を確定させる
 
-	// 初期描画で窓を確定させてからカーソルを下へ送り、半ページ移動 → glide 開始。
-	v.cursor = 17
-	v.lines(opts)
-	prev := v.offset
-	rows := 18
-	v.moveCursor(max(rows/2, 1), rows)
-	if !v.listGlide.start(prev, v.offset) {
-		t.Skip("この geometry では半ページで窓が動かない (テスト前提の破れ)")
-	}
-
-	// glide の全フレームで、カーソル行が描かれ続けること。
-	want := fmt.Sprintf("TITLE%02d", v.cursor)
-	for f := 0; f <= scrollAnimFrames; f++ {
-		out := strings.Join(v.lines(opts), "\n")
-		if !strings.Contains(stripANSI(out), want) {
-			t.Fatalf("frame %d: カーソル行 %q が描かれていない (cursor=%d 論理offset=%d)\n%s",
-				f, want, v.cursor, v.offset, stripANSI(out))
+	for _, key := range []string{" ", "ctrl+d", "shift+space", "ctrl+u", "G", "g", "j", "k", "ctrl+d", "G"} {
+		v.handleKey(key, page)
+		out := stripANSI(strings.Join(v.lines(opts), "\n"))
+		if want := fmt.Sprintf("TITLE%02d", v.cursor); !strings.Contains(out, want) {
+			t.Fatalf("%q の後にカーソル行 %q が描かれていない (cursor=%d offset=%d)\n%s",
+				key, want, v.cursor, v.offset, out)
 		}
-		v.advanceGlide()
 	}
 }
 
-// 一覧を閉じたら glide を残さない (再表示の一瞬だけ古い位置から滑るのを防ぐ)。
-func TestIssuesCloseStopsBothGlides(t *testing.T) {
+// 閉じたら本文の glide を残さない (再表示の一瞬だけ古い位置から滑るのを防ぐ)。
+func TestIssuesCloseStopsBodyGlide(t *testing.T) {
 	v := newIssuesView()
 	v.shown = true
-	v.listGlide.start(0, 10)
 	v.bodyGlide.start(0, 10)
 	v.close()
-	if v.listGlide.active || v.bodyGlide.active {
-		t.Errorf("close で glide が残る: list=%v body=%v", v.listGlide.active, v.bodyGlide.active)
+	if v.bodyGlide.active {
+		t.Error("close で本文の glide が残る")
 	}
 }
 

@@ -580,7 +580,6 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// pager 側も止める: 幅で行数が変わり、glide の着地点が resize 前の行数基準で古くなる。
 		m.glide.stop()
 		m.diffOv.glide.stop()
-		m.issuesOv.listGlide.stop()
 		m.issuesOv.bodyGlide.stop()
 		m.ensureCursorVisible()
 		return m, nil

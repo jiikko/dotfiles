@@ -67,11 +67,12 @@ type issuesView struct {
 
 	rows   []*issues.Issue // 現在のタブ・フィルタの表示対象
 	cursor int
-	offset int // 論理 = 着地点 (glide が表示位置を追いかける)
-	// listGlide / bodyGlide は半ページ移動のスクロールアニメ (scroll_glide.go の共有型。
-	// 一覧・diff pager と同じ手触りにする。ユーザー要望 2026-07-31)。一覧と本文は同時に
-	// 動かないが、状態を混ぜると閉じ忘れた glide が他方へ漏れるので別に持つ。
-	listGlide scrollGlide
+	// offset は窓の先頭行。⚠️ 一覧に glide (スクロールアニメ) は載せない: 半ページ移動は
+	// cursor と窓を同時に動かし、windowOffset が「カーソルを含む最小の窓」を導出するので
+	// カーソルは必ず窓の端に来る = 窓を 1 行でも遅らせるとカーソルが画面から出る。遅らせる余地が
+	// 幾何的にゼロで、載せても瞬時に着地点へ張り付くだけだった (実測 issue 031)。窓が動かない
+	// ケース (カーソルが窓の途中) では glide 自体が始まらないので、条件が排他になっている。
+	offset int
 
 	// 本文 pager (open != nil のとき本文モード)
 	open *issues.Issue
@@ -202,8 +203,7 @@ func (v *issuesView) applyScreen(s issuesScreen) {
 func (v *issuesView) close() {
 	v.shown = false
 	v.animStart = time.Time{}
-	v.listGlide.stop() // 閉じた後も glide が残ると、再表示の一瞬だけ古い位置から滑る
-	v.discardBody()    // viewer ごと閉じるので引き出しの演出は持ち越さない
+	v.discardBody() // viewer ごと閉じるので引き出しの演出は持ち越さない
 }
 
 // finishAnim は開く演出を即座に着地させる。
@@ -211,8 +211,8 @@ func (v *issuesView) finishAnim() { v.animStart = time.Time{} }
 
 // animating は開く演出の途中か (tick を高 FPS に上げ、チェーンを回し続ける判定に使う)。
 func (v *issuesView) animating() bool {
-	if v.listGlide.active || v.bodyGlide.active {
-		return true // スクロール glide も tick で進むので「アニメ中」に含める
+	if v.bodyGlide.active {
+		return true // 本文 pager の glide は tick で進むので「アニメ中」に含める
 	}
 	if v.drawer.animating(timeNow()) {
 		return true // 本文の引き出しの開閉も tick で進む
@@ -222,9 +222,6 @@ func (v *issuesView) animating() bool {
 
 // advanceGlide はスクロール glide を 1 フレーム進める (browseModel の tick から呼ばれる)。
 func (v *issuesView) advanceGlide() {
-	if v.listGlide.active {
-		v.listGlide.advance(v.offset)
-	}
 	if v.bodyGlide.active {
 		v.bodyGlide.advance(v.bodyOff)
 	}
@@ -336,7 +333,6 @@ func (v *issuesView) rebindOpen(path string) {
 func (v *issuesView) refresh() {
 	v.rows = issues.Filter(v.all, v.currentTab(), v.filter)
 	v.cursor = clampIdx(v.cursor, len(v.rows))
-	v.listGlide.stop() // 行集合が変わったので、旧着地点へ向かう glide は捨てる
 	// チップの件数は「そのタブを選んだときに実際に並ぶ行数」と同じ Filter から出す。
 	// issues.Tab.Count は done を含む全件なので、そのまま出すと done を伏せた既定表示で
 	// 「カテゴリの合計 ≠ All ≠ 一覧の行数」になる。
@@ -518,19 +514,12 @@ func (v *issuesView) handleKey(key string, page int) tea.Cmd {
 		v.moveCursor(1, rows)
 	case "k", "up", "ctrl+p":
 		v.moveCursor(-1, rows)
-	// 半ページ移動は glide に載せる (Space / ctrl+d。ユーザー要望 2026-07-31)。1 行移動は
-	// 距離 1 行で滑らせる意味がなく、端ジャンプ (g/G) は距離が不定なので即時のまま。
 	case "ctrl+d", "pgdown", " ", "f":
-		prev := v.offset
 		v.moveCursor(max(rows/2, 1), rows)
-		v.listGlide.start(prev, v.offset)
 	case "ctrl+u", "pgup", "b", "shift+space":
-		prev := v.offset
 		v.moveCursor(-max(rows/2, 1), rows)
-		v.listGlide.start(prev, v.offset)
 	case "g", "home":
 		v.cursor, v.offset = 0, 0
-		v.listGlide.stop()
 	case "G", "end":
 		v.cursor = max(len(v.rows)-1, 0)
 		v.scrollToCursor(rows)
@@ -934,17 +923,11 @@ func (v *issuesView) listLines(o issuesRenderOpts) []string {
 		return append(head, paint(clipToWidth(msg, o.width), ansiDim, o.colored))
 	}
 	rows := max(o.page-len(head), 1)
-	// 論理 offset を「描画時の行数でカーソルを含む窓」へ収束させてから、その着地点に対して
-	// glide の途中位置を出す (キー処理時の行数とずれていても窓とカーソルが食い違わない)
+	// 論理 offset を「描画時の行数でカーソルを含む窓」へ収束させる (キー処理時の行数と
+	// ずれていても窓とカーソルが食い違わない)。窓はこの導出値そのままなので、カーソルは
+	// 定義上必ず含まれる。
 	v.offset = v.windowOffset(rows)
-	// ⚠️ glide の途中位置もカーソルを含む範囲へ寄せる。半ページ移動は cursor と offset を同時に
-	// 動かすので、素の途中位置 (旧窓) で切るとアニメ中だけカーソル行が 1 本も描かれず、
-	// 「見えない行が Enter・v・y の対象になる」窓が復活する (windowOffset を導出値にした狙いを
-	// glide が一時的に壊す。敵対的レビュー P2 2026-07-31)。滑らかさは残したまま、窓の端が
-	// カーソルに追いつくところで止める。
-	shown := v.listGlide.offset(v.offset)
-	shown = max(min(shown, v.cursor), v.cursor-rows+1)
-	offset := clampScrollOffset(shown, len(v.rows), rows)
+	offset := v.offset
 	end := min(offset+rows, len(v.rows))
 	out := make([]string, 0, rows)
 	for i := offset; i < end; i++ {
