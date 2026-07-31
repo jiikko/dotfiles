@@ -76,3 +76,14 @@ func (g *scrollGlide) offset(target int) int {
 
 // stop は glide を捨てて即時表示へ倒す (g/G のジャンプ・resize・pull リロード等)。
 func (g *scrollGlide) stop() { g.active = false }
+
+// clampScrollOffset は pager の offset を 0..max(total-rows, 0) へ収める。
+//
+// 「offset は独立した状態ではなく (カーソル・行数・表示行数) からの導出値」という規律を 1 箇所に
+// 置くための関数。この式は論理 offset の収束 (キー処理・描画で行数が食い違ってもカーソルを含む窓に
+// 落とす) と glide の途中位置の両方に効くため、手書きすると同じ面の中でも 2〜3 箇所に散る。
+// 散った状態で上限の決め方を変えると (例: 末尾に余白を許す)、片方だけ直して「G が末尾に届かない」
+// 「k を押しても動かない打鍵が生まれる」形で静かに壊れる。
+func clampScrollOffset(offset, total, rows int) int {
+	return max(min(offset, max(total-rows, 0)), 0)
+}

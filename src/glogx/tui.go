@@ -905,13 +905,10 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// していない) ので、復帰の境界で取り直す。取り直さないと編集結果 (H1・front matter の
 		// status・チェックボックス) が一覧にも本文にも出ず、viewer が古い内容を最新として表示する。
 		if msg.err != nil {
-			// 全画面 viewer 表示中はトーストが描かれない (viewLines が早期 return する) ので、
-			// viewer 自身の通知行へ回す
-			if v := &m.issuesOv; v.visible() {
-				v.notice = "nvim を開けませんでした: " + firstLine(msg.err.Error())
-			} else {
-				m.showWarning("nvim を開けませんでした: " + firstLine(msg.err.Error()))
-			}
+			// ⚠️ viewer 表示中でも issuesView.notice へ回さない: notice はどのヘッダーも描かず、
+			// 次の打鍵で takeNotice されるまで画面に出ない (キーを押すまで失敗が黙殺される)。
+			// viewLines が viewer の窓にもトーストを合成するので、ここは常にトーストでよい。
+			m.showWarning("nvim を開けませんでした: " + firstLine(msg.err.Error()))
 			return m, m.maybeTick()
 		}
 		return m, tea.Batch(m.issuesOv.reloadAfterEdit(), m.maybeTick())

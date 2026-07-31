@@ -119,7 +119,10 @@ func (v *issuesView) toggle(cwd string) tea.Cmd {
 		return nil
 	}
 	v.shown = true
-	v.animStart = time.Now() // 右から左へ流し込む演出を開始 (lines が窓を変形する)
+	// 右から左へ流し込む演出を開始 (lines が窓を変形する)。⚠️ 時計は timeNow で取る:
+	// 引き出し (drawer) と同じ差し替え点に揃えないと、この 1 つのビューの中で
+	// 「止められる時計」と「止められない時計」が混在する。
+	v.animStart = timeNow()
 	return v.scanCmd(cwd)
 }
 
@@ -142,7 +145,7 @@ func (v *issuesView) animating() bool {
 	if v.drawer.animating(timeNow()) {
 		return true // 本文の引き出しの開閉も tick で進む
 	}
-	return v.shown && !v.animStart.IsZero() && time.Since(v.animStart) < issuesAnimDuration
+	return v.shown && !v.animStart.IsZero() && timeNow().Sub(v.animStart) < issuesAnimDuration
 }
 
 // advanceGlide はスクロール glide を 1 フレーム進める (browseModel の tick から呼ばれる)。
@@ -542,7 +545,7 @@ func (v *issuesView) windowOffset(rows int) int {
 	}
 	offset := min(v.offset, v.cursor)     // カーソルが窓より上に出ない
 	offset = max(offset, v.cursor-rows+1) // カーソルが窓より下に出ない
-	return max(min(offset, max(len(v.rows)-rows, 0)), 0)
+	return clampScrollOffset(offset, len(v.rows), rows)
 }
 
 // moveTab はタブを切り替える (端で止まらず巡回する)。
@@ -726,15 +729,12 @@ func (v *issuesView) lines(o issuesRenderOpts) []string {
 		// 整形は最終幅で行い、演出中は切るだけにする (途中幅で整形し直すと毎フレーム折り返しが
 		// 変わって文字が踊る。詳細は composeDrawer の doc)
 		inner.width = max(v.drawer.targetWidth(o.width)-1, 1)
-		body = composeDrawer(v.padTo(v.listLines(o), o.page), v.padTo(v.bodyLines(inner), o.page),
+		body = composeDrawer(padTo(v.listLines(o), o.page), padTo(v.bodyLines(inner), o.page),
 			w, o.width, o.colored)
 	default:
 		body = v.listLines(o)
 	}
-	for len(body) < o.page {
-		body = append(body, "")
-	}
-	body = body[:o.page]
+	body = padTo(body, o.page)
 	if p := v.animProgress(); p < 1 {
 		body = slideInWindow(body, p, o.width)
 	}
@@ -746,12 +746,13 @@ func (v *issuesView) animProgress() float64 {
 	if !v.animating() {
 		return 1
 	}
-	return float64(time.Since(v.animStart)) / float64(issuesAnimDuration)
+	return float64(timeNow().Sub(v.animStart)) / float64(issuesAnimDuration)
 }
 
 // padTo は行数を n へ揃える (足りなければ空行、多ければ切る)。引き出しの合成では一覧と本文の
-// 行数が違う (ヘッダーの行数が異なる) ため、重ねる前に必ず揃える。
-func (v *issuesView) padTo(lines []string, n int) []string {
+// 行数が違う (ヘッダーの行数が異なる) ため、重ねる前に必ず揃える。窓を「ちょうど page 行」で
+// 返す契約 (lines の doc) もこれで満たす。
+func padTo(lines []string, n int) []string {
 	for len(lines) < n {
 		lines = append(lines, "")
 	}
@@ -856,11 +857,11 @@ func (v *issuesView) listLines(o issuesRenderOpts) []string {
 	// カーソルに追いつくところで止める。
 	shown := v.listGlide.offset(v.offset)
 	shown = max(min(shown, v.cursor), v.cursor-rows+1)
-	offset := max(min(shown, max(len(v.rows)-rows, 0)), 0)
+	offset := clampScrollOffset(shown, len(v.rows), rows)
 	end := min(offset+rows, len(v.rows))
 	out := make([]string, 0, rows)
 	for i := offset; i < end; i++ {
-		out = append(out, v.rowLine(i, o, o.width-scrollbarReserve))
+		out = append(out, v.rowLine(i, o, o.width-scrollbarColumnWidth))
 	}
 	out = scrollbarColumn(out, o.width, len(v.rows), offset, o.colored)
 	return append(head, out...)
@@ -922,10 +923,10 @@ func (v *issuesView) tabChip(name string, count int, active bool, colored bool) 
 	return paint(text, ansiDim+color, colored)
 }
 
-// scrollbarReserve は scrollbarColumn がバー列 + 手前の空きに使う桁数。行の組み立てで
-// 先に差し引いておく: 幅ぴったりに組んでから scrollbarColumn に渡すと、あちらのクリップで
-// 末尾 1 文字が省略記号に化ける (本文の 1 文字が消える)。
-const scrollbarReserve = 2
+// 一覧・本文は行を組む前に scrollbarColumnWidth (box.go) を差し引く: 幅ぴったりに組んでから
+// scrollbarColumn に渡すと、あちらのクリップで末尾 1 文字が省略記号に化ける (本文の 1 文字が
+// 消える)。⚠️ 桁数を自前の定数で持たない — バー列の内訳と等号で一致していなければならず、
+// 別々に持つと片方だけずれても既存テスト (幅の上限しか見ない) が緑のまま通る。
 
 // rowLine は一覧の 1 行 (番号・状態バッジ・カテゴリ・タイトル・進捗)。width は行が使える
 // 表示幅 (スクロールバー列を差し引いた後)。
@@ -960,12 +961,12 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 func (v *issuesView) bodyLines(o issuesRenderOpts) []string {
 	header := v.bodyHeadLines(o.width, o.colored)
 	rows := max(o.page-len(header), 1)
-	lines := v.body.Lines(o.width-scrollbarReserve, o.colored)
+	lines := v.body.Lines(o.width-scrollbarColumnWidth, o.colored)
 	// 行数は幅で変わる (Body は幅ごとに整形し直す)。幅が広がって行数が減ると論理 bodyOff が
 	// 上限を超えたまま残り、k / ctrl+u は max(bodyOff-n, 0) しか見ないので「何度押しても
 	// 画面が動かない」打鍵数が生まれる。描画で確定した行数で論理 offset を収束させて防ぐ。
-	v.bodyOff = max(min(v.bodyOff, max(len(lines)-rows, 0)), 0)
-	offset := max(min(v.bodyGlide.offset(v.bodyOff), max(len(lines)-rows, 0)), 0)
+	v.bodyOff = clampScrollOffset(v.bodyOff, len(lines), rows)
+	offset := clampScrollOffset(v.bodyGlide.offset(v.bodyOff), len(lines), rows)
 	end := min(offset+rows, len(lines))
 	out := make([]string, 0, rows)
 	for i := offset; i < end; i++ {
@@ -976,9 +977,18 @@ func (v *issuesView) bodyLines(o issuesRenderOpts) []string {
 }
 
 // hint は viewer 表示中の操作案内 (最下行)。
+//
+// ⚠️ モードの数は lines() の分岐と揃える (ピッカー / 本文 / 一覧の 3 つ)。揃っていないと、URL
+// ピッカー表示中に本文 pager の案内 (j/k/g/G/p/u/v/h/q) が出る — それらは全部 urlPicker が検索語
+// として飲むので、案内したキーが 1 つも案内どおりに動かない。
 func (v *issuesView) hint() string {
 	// ⚠️ hint は 1 行で、幅を超えた分は末尾から黙って切られる。popup の実幅 (84 桁) に
 	// 収まる範囲へ絞り、絞られたキー (y / Y / v / r) は --help と README を正本にする。
+	if v.urlPick.active {
+		// 件数と 1 字消し (ctrl+h) はピッカー自身のヘッダーが出すので繰り返さない。ここは
+		// 「打った文字がそのまま絞り込みになる」= 本文 pager のキーが効かないことだけを伝える。
+		return "文字入力で絞り込み  ctrl+n/p: 移動  Enter: 開く  Esc: 戻る"
+	}
 	if v.open != nil {
 		return "j/k/Space: スクロール  g/G: 先頭/末尾  p: 番号  u: URL  v: nvim  h/q: 一覧へ"
 	}

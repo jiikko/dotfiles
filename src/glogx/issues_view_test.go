@@ -19,7 +19,7 @@ import (
 
 // atProgress は演出の進みを p (0..1) に固定した viewer を返す (壁時計を巻き戻して作る)。
 func atProgress(v *issuesView, p float64) *issuesView {
-	v.animStart = time.Now().Add(-time.Duration(float64(issuesAnimDuration) * p))
+	v.animStart = timeNow().Add(-time.Duration(float64(issuesAnimDuration) * p))
 	return v
 }
 
@@ -656,6 +656,12 @@ func TestIssuesViewHintChangesByMode(t *testing.T) {
 	if !strings.Contains(v.hint(), "一覧へ") {
 		t.Fatalf("本文の hint が想定と違う: %q", v.hint())
 	}
+	// URL ピッカーは本文の上に重なる 3 つ目のモード。本文の案内を出したままにすると、案内した
+	// キー (j/k/g/G/p/u/v/h/q) が全部 urlPicker の検索語に化けて 1 つも案内どおりに動かない。
+	v.urlPick.open([]string{"https://example.com/"})
+	if h := v.hint(); !strings.Contains(h, "絞り込み") || strings.Contains(h, "一覧へ") {
+		t.Fatalf("URL ピッカーの hint が想定と違う: %q", h)
+	}
 }
 
 func TestIssuesViewCopyActions(t *testing.T) {
@@ -808,6 +814,10 @@ func TestIssuesViewHintFitsPopupWidth(t *testing.T) {
 	v.open = v.rows[0]
 	if w := dispWidth(v.hint()); w > popupWidth {
 		t.Fatalf("本文の hint が収まらない (w=%d): %q", w, v.hint())
+	}
+	v.urlPick.open([]string{"https://example.com/"})
+	if w := dispWidth(v.hint()); w > popupWidth {
+		t.Fatalf("URL ピッカーの hint が収まらない (w=%d): %q", w, v.hint())
 	}
 }
 

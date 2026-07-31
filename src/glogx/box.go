@@ -148,6 +148,14 @@ func withScrollbar(rows []string, boxWidth, total, offset int, colored bool) []s
 	return scrollbarColumn(rows, panelInnerWidth(max(boxWidth, minPanelWidth)-1), total, offset, colored)
 }
 
+// scrollbarColumnWidth はバー列がこの関数のクリップで消費する桁数 (バー 1 桁 + 手前の空き 1 桁)。
+//
+// ⚠️ 内訳を変えるならここ 1 箇所。事前に幅を差し引いてから行を組む呼び出し側 (issues viewer の
+// listLines / bodyLines) もこの定数を引く — 別々の数で持つと等号でずれ、小さければ全幅の行だけ
+// 末尾 1 文字が "…" に化け、大きければ 1 桁ぶん本文が痩せる。どちらも「幅を超えない」ので
+// テストの上限アサートを素通りする。
+const scrollbarColumnWidth = 2
+
 // scrollbarColumn は行列の右端に 1 桁のスクロールバー列を足す本体。innerWidth は行が使える
 // 表示幅そのもの (枠の内訳を差し引いた後の幅)。枠付きパネルは withScrollbar 経由で、
 // メインのリストビュー (viewLines) は contentWidth を直接渡してここを使う。
@@ -159,7 +167,7 @@ func scrollbarColumn(rows []string, innerWidth, total, offset int, colored bool)
 	if view == 0 || total <= view {
 		return rows
 	}
-	contentW := max(innerWidth-2, 1) // バー 1 桁 + 手前の空き 1 桁
+	contentW := max(innerWidth-scrollbarColumnWidth, 1)
 	// thumb 長は表示比率、位置は offset 比率。どちらも最低 1 行を確保し、末尾 (offset=maxOffset)
 	// では thumb が下端に接地する。
 	thumb := min(max(view*view/total, 1), view)
