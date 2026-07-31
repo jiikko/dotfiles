@@ -702,6 +702,7 @@ func TestBrowseClaudeUpdateToastStacksWithExisting(t *testing.T) {
 
 	// 先行 error トースト表示中 → 上に積まれ、先行も残る (どちらも読める)
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m2.height = 24 // ⚠️ 2 枚出すには窓の高さが要る (低い窓では行数上限で古い方を出さない。toast の doc)
 	m2.toast.show("macism 未導入: ...", false)
 	m2.Update(claudeUpdateAvailableMsg{latest: "9.9.9"})
 	if !strings.Contains(m2.toast.text, "9.9.9") {

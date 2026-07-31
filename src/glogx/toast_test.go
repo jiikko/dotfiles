@@ -91,7 +91,7 @@ func TestToastBoxLinesRevealsLeftColumns(t *testing.T) {
 	full := to.fullBox(false)
 	// 入場 1 フレーム: 全行が出るが、各行の可視幅は shown (<boxW) に切られている
 	to.advance(false)
-	got := to.boxLines(false)
+	got := to.toastItem.boxLines(false) // 1 枚分の描画を見る (スタックの行数上限とは別)
 	if len(got) != len(full) {
 		t.Errorf("スライド中も全行が出るべき: got=%d 行 want=%d 行", len(got), len(full))
 	}
@@ -101,7 +101,7 @@ func TestToastBoxLinesRevealsLeftColumns(t *testing.T) {
 	}
 	// holding まで進めると全幅 + ✓/text
 	advanceToHolding(&to)
-	lines := to.boxLines(false)
+	lines := to.toastItem.boxLines(false)
 	plain := stripANSI(strings.Join(lines, "\n"))
 	if dispWidth(lines[0]) != boxW || !strings.Contains(plain, "✓") || !strings.Contains(plain, "pushed") {
 		t.Errorf("全表示に ✓/pushed が無い / 全幅でない:\n%s", plain)
@@ -110,12 +110,12 @@ func TestToastBoxLinesRevealsLeftColumns(t *testing.T) {
 	var ng toast
 	ng.show("failed", false)
 	advanceToHolding(&ng)
-	if !strings.Contains(stripANSI(strings.Join(ng.boxLines(false), "\n")), "✗") {
+	if !strings.Contains(stripANSI(strings.Join(ng.toastItem.boxLines(false), "\n")), "✗") {
 		t.Error("失敗トーストに ✗ が無い")
 	}
 	// 非表示は nil
 	var empty toast
-	if empty.boxLines(false) != nil {
+	if empty.toastItem.boxLines(false) != nil {
 		t.Error("非表示で nil を返さない")
 	}
 }
@@ -226,12 +226,76 @@ func TestToastStackBoxLinesOrder(t *testing.T) {
 	for range toastSlideFrames + 2 {
 		s.advance(false)
 	}
-	out := strings.Join(s.boxLines(false), "\n")
+	out := strings.Join(s.boxLines(false, 100), "\n")
 	iNew, iOld := strings.Index(out, "新しい通知"), strings.Index(out, "古い通知")
 	if iNew < 0 || iOld < 0 {
 		t.Fatalf("両方描かれていない:\n%s", out)
 	}
 	if iNew > iOld {
 		t.Errorf("新しい通知が下に来ている (上に積むはず):\n%s", out)
+	}
+}
+
+// 進行中トースト (…シアン) は新しい通知が来たら退く。⚠️ 積んだままにすると「PR を検索中...」の
+// 下に結果が並び、終わったのに検索中と書いてある状態が数秒残る (実測 2026-07-31)。
+func TestToastInfoIsSupersededByResult(t *testing.T) {
+	var s toast
+	s.showInfo("PR を検索中...")
+	s.show("PR #123 を開きます", true)
+	items := s.items()
+	if len(items) != 1 {
+		t.Fatalf("枚数 = %d, want 1 (進行中は退く): %+v", len(items), items)
+	}
+	if items[0].text != "PR #123 を開きます" {
+		t.Errorf("残ったのが結果でない: %q", items[0].text)
+	}
+	// 下に積まれていた進行中も落ちる
+	var s2 toast
+	s2.show("先行の結果", true)
+	s2.showInfo("検索中...")
+	s2.show("新しい結果", true)
+	for _, it := range s2.items() {
+		if it.info {
+			t.Errorf("進行中が残っている: %q", it.text)
+		}
+	}
+	if len(s2.items()) != 2 {
+		t.Errorf("枚数 = %d, want 2 (結果 2 枚)", len(s2.items()))
+	}
+}
+
+// 箱の行数は一定 (上罫線 + 内容 + 下罫線 + 影)。行数上限の計算がこれに依存している。
+func TestToastBoxLineCount(t *testing.T) {
+	var s toast
+	s.show("x", true)
+	advanceToHolding(&s)
+	if got := len(s.toastItem.boxLines(false)); got != toastBoxLines {
+		t.Errorf("箱の行数 = %d, want %d (toastBoxLines を直すこと)", got, toastBoxLines)
+	}
+}
+
+// 行数上限を超える古い枚は出さない。箱の途中で切らない。最新は上限を超えても出す。
+func TestToastBoxLinesRespectsMaxLines(t *testing.T) {
+	var s toast
+	for _, txt := range []string{"1", "2", "3"} {
+		s.show(txt, true)
+	}
+	for range toastSlideFrames + 2 {
+		s.advance(false)
+	}
+	for _, c := range []struct {
+		maxLines  int
+		wantBoxes int
+	}{
+		{100, 3},
+		{toastBoxLines * 2, 2},
+		{toastBoxLines, 1},
+		{1, 1}, // 上限より箱が大きくても最新 1 枚は出す (見えない通知より覆う通知)
+	} {
+		got := len(s.boxLines(false, c.maxLines))
+		if want := c.wantBoxes * toastBoxLines; got != want {
+			t.Errorf("maxLines=%d: %d 行 (%d 箱), want %d 行 (%d 箱)",
+				c.maxLines, got, got/toastBoxLines, want, c.wantBoxes)
+		}
 	}
 }

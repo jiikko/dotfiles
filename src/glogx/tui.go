@@ -2342,7 +2342,7 @@ func (m *browseModel) viewLines() string {
 	// (ユーザー要望 2026-07-31)。載せないと viewer 中の通知が画面に一切出ない。
 	if m.issuesOv.visible() {
 		window := m.issuesOv.lines(m.issuesOpts())
-		if box := m.toast.boxLines(m.colored); len(box) > 0 {
+		if box := m.toast.boxLines(m.colored, max(page/2, toastBoxLines)); len(box) > 0 {
 			window = overlayBoxBottomRight(window, box, m.contentWidth(), m.colored)
 		}
 		return m.finishWindow(window, page)
@@ -2404,7 +2404,7 @@ func (m *browseModel) viewLines() string {
 		window = overlayBoxTopRight(window, box, m.contentWidth(), m.colored)
 	}
 	// トーストは右下 (hint 行の直上) に数秒だけ。push/pull 完了の結果フィードバック。
-	if box := m.toast.boxLines(m.colored); len(box) > 0 {
+	if box := m.toast.boxLines(m.colored, max(page/2, toastBoxLines)); len(box) > 0 {
 		window = overlayBoxBottomRight(window, box, m.contentWidth(), m.colored)
 	}
 	return m.finishWindow(window, page)

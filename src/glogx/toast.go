@@ -198,6 +198,10 @@ func (s *toast) showInfo(text string) { s.push(text, false, true) }
 
 func (s *toast) push(text string, ok, info bool) {
 	s.seqGen++
+	// 進行中トースト (…シアン) は「結果が出たら用済み」なので、新しい通知が来たら退かせる。
+	// ⚠️ 積んだままにすると「PR を検索中...」の下に「PR #123 を開きます」が並び、終わったのに
+	// 検索中と書いてある状態が数秒残る (実測 2026-07-31)。1 枠時代は上書きで自然に消えていた。
+	s.dropInfo()
 	if s.toastItem.visible() {
 		// 今の最新を 1 段下へ押し下げてから、新しいものを最上段に置く
 		s.older = append([]toastItem{s.toastItem}, s.older...)
@@ -210,7 +214,30 @@ func (s *toast) push(text string, ok, info bool) {
 	}
 }
 
+// dropInfo は進行中トースト (info) を取り除く (結果が出たら用済み)。
+func (s *toast) dropInfo() {
+	kept := s.older[:0]
+	for i := range s.older {
+		if !s.older[i].info {
+			kept = append(kept, s.older[i])
+		}
+	}
+	s.older = kept
+	// 最上段が info ならそこを空けて、下があれば繰り上げる
+	if s.info {
+		s.toastItem = toastItem{}
+		if len(s.older) > 0 {
+			s.toastItem, s.older = s.older[0], s.older[1:]
+		}
+	}
+}
+
 // items は上から下の順に、表示中の 1 枚ずつを返す。
+//
+// 毎フレーム経路 (spinnerActive → animating / visible) はこれを使わず直接判定にしている。
+// ⚠️ 「slice の alloc を避けるため」ではない — 実測では escape analysis が効いて items() 経由でも
+// 0 allocs だった (2.99ns vs 1.86ns/回)。1 フレームに複数回通る判定を単純に保つだけの意図で、
+// 性能上の効果はほぼ無い (フレームは ~200µs)。
 func (s *toast) items() []*toastItem {
 	out := make([]*toastItem, 0, len(s.older)+1)
 	if s.toastItem.visible() {
@@ -222,13 +249,17 @@ func (s *toast) items() []*toastItem {
 	return out
 }
 
-// visible は 1 枚でも出ているか。
-func (s *toast) visible() bool { return len(s.items()) > 0 }
+// visible は 1 枚でも出ているか (毎フレーム呼ばれるので slice を作らない)。
+func (s *toast) visible() bool { return s.toastItem.visible() || len(s.older) > 0 }
 
 // animating は 1 枚でもスライド中か (tick を回す必要がある + spinnerActive に含める)。
+// spinnerActive から毎フレーム呼ばれるので slice を作らない。
 func (s *toast) animating() bool {
-	for _, it := range s.items() {
-		if it.animating() {
+	if s.toastItem.animating() {
+		return true
+	}
+	for i := range s.older {
+		if s.older[i].animating() {
 			return true
 		}
 	}
@@ -268,11 +299,27 @@ func (s *toast) startLeaving(msg toastMsg) {
 	}
 }
 
-// boxLines はスタック全体の描画行 (上から下)。呼び出し側が右下へ重ねる。
-func (s *toast) boxLines(colored bool) []string {
+// toastBoxLines は 1 枚の箱の行数 (上罫線 + 内容 1 行 + 下罫線 + 落ち影)。fullBox が内容 1 行で
+// buildShadowPanelBox を呼ぶので一定。⚠️ 箱の形を変えたらここも直す (テストで pin してある)。
+const toastBoxLines = 4
+
+// boxLines はスタック全体の描画行 (上から下)。maxLines を超える古い枚は出さない。
+//
+// ⚠️ 行数の上限が要る: 低い端末では 3 枚 (12 行) が窓 (11 行) を超え、一番下の箱が途中で切れて
+// 壊れて見えた (実測 2026-07-31: 窓 11 行に対し 12 行)。枚数の上限 (toastStackMax) だけでは
+// 窓の高さに対する占有を抑えられない。最新の 1 枚は上限を超えても出す — 見えない通知より
+// 「窓を覆うが読める通知」を選ぶ。
+func (s *toast) boxLines(colored bool, maxLines int) []string {
 	var out []string
 	for _, it := range s.items() {
-		out = append(out, it.boxLines(colored)...)
+		box := it.boxLines(colored)
+		if len(box) == 0 {
+			continue // まだ滑り込み前 (幅 0)
+		}
+		if len(out) > 0 && len(out)+toastBoxLines > maxLines {
+			break // これ以上積むと窓を覆う。箱の途中で切らず、古い方を出さない
+		}
+		out = append(out, box...)
 	}
 	return out
 }
