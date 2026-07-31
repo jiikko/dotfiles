@@ -363,6 +363,25 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 		}
 	})
 
+	t.Run("issues 一覧 (handleKey 経由)", func(t *testing.T) {
+		v := newIssuesView()
+		v.shown, v.loaded = true, true
+		all := make([]*issues.Issue, 60)
+		for i := range all {
+			all[i] = &issues.Issue{Number: fmt.Sprintf("%03d", i), Title: "t", Path: "p"}
+		}
+		v.all, v.rows = all, all
+		v.dirs = []string{"/x"}
+		v.cursor = 40
+		page := 20
+		v.handleKey(" ", page) // 下へ (窓を進める)
+		down := v.cursor
+		v.handleKey("shift+space", page)
+		if v.cursor >= down {
+			t.Errorf("shift+space で上に戻らない: cursor %d -> %d", down, v.cursor)
+		}
+	})
+
 	t.Run("issues 本文 pager", func(t *testing.T) {
 		v := newIssuesView()
 		// handleBodyKey は body 前提 (本番でも open と同時にセットされる)。行数を稼ぐため
