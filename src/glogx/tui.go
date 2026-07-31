@@ -803,6 +803,11 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case usageMsg:
 		m.usageOv.handle(msg)
 		return m, nil
+	case issuesWatchMsg:
+		// viewer を開いている間だけ回る独立チェーン (issues_watch.go)。別プロセスの編集を
+		// その場で反映する。⚠️ maybeTick を束ねない: 反映は再スキャン (scanCmd) で、アニメは
+		// 動かないため。フレーム tick を足すとこのチェーンの意図 (1s 周期) が崩れる。
+		return m, m.issuesOv.handleWatch(msg)
 	case issuesScanMsg:
 		m.issuesOv.receive(msg)
 		return m, nil

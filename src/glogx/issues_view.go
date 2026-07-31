@@ -90,6 +90,9 @@ type issuesView struct {
 	// pushSlides と同じ方式)。演出中は tick を scrollInterval (~30fps) に上げる。
 	animStart time.Time
 
+	// watch は開いている間だけ回す「別プロセスの編集」の見張り (issues_watch.go)。
+	watch issuesWatch
+
 	// pending は前回終了時の画面の復元予約 (issues_state.go)。スキャン結果が要るので、
 	// 適用は最初の receive まで待つ (applyScreen が 1 度だけ消費する)。
 	pending *issuesScreen
@@ -128,7 +131,7 @@ func (v *issuesView) toggle(cwd string) tea.Cmd {
 	// 引き出し (drawer) と同じ差し替え点に揃えないと、この 1 つのビューの中で
 	// 「止められる時計」と「止められない時計」が混在する。
 	v.animStart = timeNow()
-	return v.scanCmd(cwd)
+	return tea.Batch(v.scanCmd(cwd), v.watchCmd())
 }
 
 // restore は前回終了時の画面を復元しながら viewer を開く (起動時。issues_state.go)。
@@ -145,7 +148,7 @@ func (v *issuesView) restore(cwd string, s issuesScreen) tea.Cmd {
 	v.shown = true
 	v.animStart = time.Time{}
 	v.pending = &s
-	return v.scanCmd(cwd)
+	return tea.Batch(v.scanCmd(cwd), v.watchCmd())
 }
 
 // screen は今の画面を保存用に書き出す (ok=false = 覚えるものが無い)。
@@ -260,6 +263,9 @@ func (v *issuesView) scanCmd(cwd string) tea.Cmd {
 // (c) 本文モードが v.all から外れた古いポインタを掴んで状態・進捗が編集前のまま固まる。
 func (v *issuesView) receive(msg issuesScanMsg) {
 	v.scanning, v.loaded = false, true
+	// 自分が取り直した結果を「外部の変化」と誤検出しないよう、見張りの基準を引き直す
+	// (次の観測が新しい基準になる。issues_watch.go)
+	v.watch.seen, v.watch.pending = "", ""
 	tab, cursorPath, openPath := v.currentTab(), issuePath(v.current()), issuePath(v.open)
 	v.root, v.dirs, v.all, v.warnings = msg.root, msg.dirs, msg.issues, msg.warnings
 	v.tabsCanon = issues.Tabs(v.all, issues.TabMinCount)
