@@ -56,6 +56,38 @@ func TestDrawerPhasesAndWidth(t *testing.T) {
 	}
 }
 
+// targetWidth は比率 + 固定の上乗せ。⚠️ 上乗せのための下限で「上乗せ前より狭くなる」ことは
+// 起きてはいけない (ユーザー要望で広げたのに狭くなる本末転倒)。
+func TestDrawerTargetWidth(t *testing.T) {
+	var d issuesDrawer
+	ratioOnly := func(total int) int { return int(float64(total)*issuesDrawerRatio + 0.5) }
+
+	// 余裕がある幅では上乗せがそのまま効く
+	for _, total := range []int{84, 100, 120} {
+		if got, want := d.targetWidth(total), ratioOnly(total)+issuesDrawerExtra; got != want {
+			t.Errorf("total=%d: %d, want %d (比率 + %d 桁)", total, got, want, issuesDrawerExtra)
+		}
+	}
+	// どの幅でも「比率ぶん」より狭くならない
+	for total := 1; total <= 200; total++ {
+		got := d.targetWidth(total)
+		if total > issuesDrawerMinList*2 && got < ratioOnly(total) {
+			t.Fatalf("total=%d: %d が比率ぶん %d より狭い", total, got, ratioOnly(total))
+		}
+		if got > total {
+			t.Fatalf("total=%d: %d が画面幅を超えた", total, got)
+		}
+	}
+	// 余裕があるときは一覧を最小幅ぶん残す
+	if total := 60; total-d.targetWidth(total) < issuesDrawerMinList {
+		t.Errorf("total=%d で一覧が %d 桁しか残らない (最小 %d)", total, total-d.targetWidth(total), issuesDrawerMinList)
+	}
+	// 覗き見の余地が無い狭さでは全幅
+	if got := d.targetWidth(issuesDrawerMinList); got != issuesDrawerMinList {
+		t.Errorf("狭い端末で全幅にならない: %d", got)
+	}
+}
+
 // 閉じるときは開くときの逆再生 (同じ進捗で同じ幅を通る)。
 func TestDrawerCloseIsReverseOfOpen(t *testing.T) {
 	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.Local)

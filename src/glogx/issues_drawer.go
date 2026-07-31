@@ -22,6 +22,13 @@ import (
 const (
 	// issuesDrawerRatio は開ききったときに本文が占める幅の割合 (残りに一覧が見える)。
 	issuesDrawerRatio = 0.8
+	// issuesDrawerExtra は比率に上乗せする桁数 (ユーザー要望 2026-07-31: 本文をもう 5 桁広げたい)。
+	// 比率を上げるのでなく固定の上乗せにするのは、狭い端末でも一覧側が同じ桁数だけ残るようにする
+	// ため (比率だと狭い画面ほど一覧が削られる)。
+	issuesDrawerExtra = 5
+	// issuesDrawerMinList は左に残す一覧の最小幅。上乗せで本文が画面を食い切って「どこから
+	// 開いたか」が消えるのを防ぐ (溝 + 番号 = "→ 014 " が見える程度)。
+	issuesDrawerMinList = 8
 	// issuesDrawerDuration は開閉の所要時間。開く演出 (issuesAnimDuration = 700ms) より速いのは、
 	// issue を次々に見るときに往復 1.4s は待たされる感じになるため。⚠️ 変えるならここ 1 箇所。
 	issuesDrawerDuration = 450 * time.Millisecond
@@ -123,7 +130,18 @@ func (d *issuesDrawer) finish() (closed bool) {
 // 開くときは easeOutCubic で終点に向けて減速し、閉じるときはその逆再生 (進捗を反転するだけ)
 // にする。別のカーブを使うと「開いた動きと閉じる動きが違う」ちぐはぐさが出る。
 func (d *issuesDrawer) targetWidth(total int) int {
-	return int(math.Round(float64(total) * issuesDrawerRatio))
+	if total <= issuesDrawerMinList*2 {
+		return total // 覗き見の余地が無い狭さでは全幅を本文に使う (中途半端に削らない)
+	}
+	ratioOnly := int(math.Round(float64(total) * issuesDrawerRatio))
+	w := ratioOnly + issuesDrawerExtra
+	// 一覧の最小幅を確保する。⚠️ ただし比率ぶんより狭くはしない — 上乗せのための下限が
+	// 効いて「上乗せ前より本文が狭くなる」のは本末転倒 (総幅 20 桁で 16 → 12 に縮む実測)。
+	// 上乗せは余裕があるときだけ効く。
+	if capped := total - issuesDrawerMinList; capped < w {
+		w = max(capped, ratioOnly)
+	}
+	return max(w, 0)
 }
 
 func (d *issuesDrawer) width(total int, now time.Time) int {
