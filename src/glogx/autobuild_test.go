@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestClassifyAutobuild(t *testing.T) {
@@ -221,6 +223,33 @@ func TestAutobuildMsgInstalledIsSilent(t *testing.T) {
 	}
 	if m.autobuild.active {
 		t.Error("完了後も監視が続いている (tick が残る)")
+	}
+}
+
+// notify と keep が同時に立ったとき、監視の再アームを落とさない (issue 032)。
+//
+// handle は「開始を伝えた後も失敗を拾うため監視を続ける」をこの組み合わせで表す。通知した側で
+// tickCmd を捨てると監視チェーンが切れ、その後のビルド失敗が二度と通知されない (監視は失敗を
+// 検出する唯一の経路)。Batch の要素数で「通知の tick と監視の tick が両方束ねられている」を見る。
+func TestAutobuildMsgKeepsWatchingWhileNotifying(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.toast.phase = toastHidden
+	m.ticking = false // single-flight で maybeTick が nil を返すと Batch の要素が減る
+	m.autobuild = autobuildWatch{
+		binPath: "/x/glogx", failedPath: "/x/" + autobuildFailedStamp,
+		active: true, until: timeNow().Add(autobuildWatchTimeout), pending: autobuildStarted,
+	}
+	_, cmd := m.Update(autobuildMsg{result: autobuildRunning})
+	if !strings.Contains(m.toast.text, "ビルド中") {
+		t.Fatalf("開始の通知が出ていない: %q", m.toast.text)
+	}
+	if !m.autobuild.active {
+		t.Fatal("開始を伝えただけで監視が止まった (失敗を拾えない)")
+	}
+	// maybeTick は 1 本なので、2 本以上あれば監視の再アームも入っている (Batch は nil を捨てる)
+	batch, ok := cmd().(tea.BatchMsg)
+	if !ok || len(batch) < 2 {
+		t.Fatalf("通知の tick と監視の再アームが両方束ねられていない: ok=%v len=%d", ok, len(batch))
 	}
 }
 

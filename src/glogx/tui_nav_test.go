@@ -215,6 +215,27 @@ func TestBrowseBatchedRunesKeyMsg(t *testing.T) {
 	}
 }
 
+// 複数 rune がまとまって届く経路でも tick チェーンを張る (issue 032)。
+//
+// ⚠️ 単キー経路のコメントは「ハンドラ内部で出したトーストが return m, nil されても tick が確実に
+// 回る」と不変条件を宣言しているのに、分解ループ側はそこから外れていた。トースト (コピー結果) や
+// glide が始まっても他に tick を回す理由が無ければ 1 フレームも進まず、shown=0 のまま凍る。
+// 判定は cmd != nil ではなく m.ticking で見る: single-flight なので、別経路が先に張っていると
+// cmd は nil になりうる (それでは不変条件を確かめられない)。
+func TestBrowseBatchedRunesArmsTick(t *testing.T) {
+	orig := copyToClipboard
+	copyToClipboard = func(string) error { return nil }
+	t.Cleanup(func() { copyToClipboard = orig })
+
+	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+	m.ticking = false
+	m.Update(tea.KeyPressMsg{Text: "yy"}) // y = コピー (結果トーストが出る)
+	if !m.ticking {
+		t.Fatal("複数 rune 経路で tick チェーンが張られない (トーストが凍って見えない)")
+	}
+}
+
 func TestBrowseQPopsViewStack(t *testing.T) {
 	// q はビューのスタックを 1 段戻る (詳細 → job 一覧 → コミット一覧 → 終了)。
 	// 即終了は Ctrl-C (ユーザー要望: tig 流)

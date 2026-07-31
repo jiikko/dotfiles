@@ -811,18 +811,22 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case claudeUpdateAvailableMsg:
 		return m, m.showClaudeUpdate(msg.latest)
 	case autobuildMsg:
-		// 裏のビルドが決着したらトーストで知らせる。他のトーストが出ている間は autobuild 側が
-		// 結果を保持して次の tick で出し直すので、ここでは受け取れたときだけ表示する。
+		// 裏のビルドが決着したらトーストで知らせる。
+		//
+		// ⚠️ notify と keep は同時に立つ (handle は「開始を伝えた後も失敗を拾うため監視を続ける」を
+		// この組み合わせで表す)。通知したときに tickCmd を張り直さないと監視チェーンが切れ、
+		// その後のビルド失敗が二度と通知されない (監視は失敗を検出する唯一の経路。issue 032)。
 		res, notify, keep := m.autobuild.handle(msg.result, timeNow())
+		var watch tea.Cmd
+		if keep {
+			watch = m.autobuild.tickCmd()
+		}
 		if notify {
 			text, ok := autobuildToast(res)
 			m.toast.show(text, ok)
-			return m, m.maybeTick() // トーストのスライドは tick で進む
+			return m, tea.Batch(m.maybeTick(), watch) // トーストのスライドは tick で進む
 		}
-		if keep {
-			return m, m.autobuild.tickCmd()
-		}
-		return m, nil
+		return m, watch
 	case toastMsg:
 		m.toast.startLeaving(msg) // 静止明け: 退場アニメへ (世代一致時のみ)。maybeTick で tick 再開
 		return m, m.maybeTick()
@@ -969,7 +973,11 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
-			return m, tea.Batch(cmds...)
+			// ⚠️ 単キー経路と同じく maybeTick を束ねる: 分解したキーが出したトースト・glide は
+			// 他に tick を回す理由が無ければ 1 フレームも進まず、shown=0 のまま凍って見えない。
+			// この経路は「普段は通らないが通ったときだけ壊れる」ので気づきにくい (issue 032)。
+			// maybeTick は single-flight なのでループ内の Cmd と重ねても二重には走らない。
+			return m, tea.Batch(append(cmds, m.maybeTick())...)
 		}
 		// handleKey はキー経路の唯一の入口。ここで maybeTick を必ず束ねることで、ハンドラや
 		// openX()/copyX() の内部で出したトースト (バリデーション失敗・コピー結果など) が
