@@ -536,7 +536,10 @@ func (v *issuesView) handleKey(key string, page int) tea.Cmd {
 		v.scrollToCursor(rows)
 	case "tab", "l", "right":
 		v.moveTab(1)
-	case "shift+tab", "h", "left":
+	// ctrl+b で左へ (ユーザー要望 2026-07-31)。右は tui.go が ctrl+f を "right" へ正規化するので
+	// 既に効いており、ここで足すのは対になる左だけ。C-b を「←の別名」として全ビューに広げないのは
+	// 一覧・パネル側の left に別の意味を与えないため (tui.go の C-f 正規化の注記を参照)。
+	case "shift+tab", "h", "left", "ctrl+b":
 		v.moveTab(-1)
 	case "enter", "o":
 		v.openBody()

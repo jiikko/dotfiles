@@ -130,6 +130,32 @@ func TestIssuesViewRescanReanchorsTabAndCursor(t *testing.T) {
 	}
 }
 
+// カテゴリ移動は左右対称に効く。右は tui.go が ctrl+f を "right" へ正規化するので、viewer が
+// 自分で持つのは左の ctrl+b だけ (ユーザー要望 2026-07-31)。右だけ効いて左が無い状態は
+// 「Tab で行き過ぎたら 1 周するしかない」体験になる。
+func TestIssuesViewTabMovesBothDirections(t *testing.T) {
+	v := loadedView(sampleIssues()...)
+	v.handleKey("tab", 10) // All → feat
+	if got := v.currentTab(); got != "feat" {
+		t.Fatalf("前提が崩れた: %q", got)
+	}
+	v.handleKey("ctrl+b", 10) // feat → All
+	if got := v.currentTab(); got != "" {
+		t.Fatalf("ctrl+b で左へ戻らない: %q", got)
+	}
+	// tui.go の正規化を経た右移動 (ctrl+f → "right") と同じ経路も対称に効く
+	v.handleKey("right", 10)
+	if got := v.currentTab(); got != "feat" {
+		t.Fatalf("right で右へ動かない: %q", got)
+	}
+	// 端で止まらず巡回する (moveTab の契約) 方向にも ctrl+b が乗る
+	v.handleKey("ctrl+b", 10) // All
+	v.handleKey("ctrl+b", 10) // 末尾へ回り込む
+	if got := v.currentTab(); got != v.tabs[len(v.tabs)-1].Name {
+		t.Fatalf("ctrl+b が末尾へ巡回しない: %q", got)
+	}
+}
+
 func TestIssuesViewRescanRebindsOpenBody(t *testing.T) {
 	// 本文モードで開いている Issue を繋ぎ直さないと、ヘッダーの状態・進捗が編集前の値のまま
 	// 固まり、v.all から外れたポインタを掴み続ける。
