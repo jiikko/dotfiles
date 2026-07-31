@@ -1027,9 +1027,10 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		// (ユーザー要望 2026-07-31)。viewer が全画面でトーストが隠れていた時代はヘッダー行に
 		// 出していたが、下の viewLines でトーストを viewer の上にも合成するようにした。
 		if text, ok := m.issuesOv.takeNotice(); text != "" {
-			m.toast.show(text, ok)
-			if !ok {
-				m.lastWarning = text // w でコピーできるようにする (失敗の調べ方を持ち出せる)
+			if ok {
+				m.toast.show(text, true)
+			} else {
+				m.showWarning(text) // 失敗は w でコピーできるよう lastWarning にも積む
 			}
 		}
 		return m, tea.Batch(cmd, m.maybeTick())
