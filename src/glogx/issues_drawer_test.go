@@ -62,10 +62,21 @@ func TestDrawerTargetWidth(t *testing.T) {
 	var d issuesDrawer
 	ratioOnly := func(total int) int { return int(float64(total)*issuesDrawerRatio + 0.5) }
 
-	// 余裕がある幅では上乗せがそのまま効く
-	for _, total := range []int{84, 100, 120} {
-		if got, want := d.targetWidth(total), ratioOnly(total)+issuesDrawerExtra; got != want {
-			t.Errorf("total=%d: %d, want %d (比率 + %d 桁)", total, got, want, issuesDrawerExtra)
+	// 広い端末では一覧の覗き見が上限で止まり、余りは全部本文へ回る (比率のままだと画面が
+	// 広いほど一覧が場所を食う。実測 2026-07-31: 端末 312 桁で一覧に 50 桁超)
+	for _, total := range []int{200, 280, 312} {
+		got := d.targetWidth(total)
+		if peek := total - got; peek != issuesDrawerMaxPeek {
+			t.Errorf("total=%d: 一覧の覗き見 %d 桁, want %d (上限で止まるはず)", total, peek, issuesDrawerMaxPeek)
+		}
+		if got <= ratioOnly(total) {
+			t.Errorf("total=%d: 本文 %d が比率ぶん %d を超えていない", total, got, ratioOnly(total))
+		}
+	}
+	// 覗き見は上限を超えない
+	for total := issuesDrawerMinList*2 + 1; total <= 400; total++ {
+		if peek := total - d.targetWidth(total); peek > issuesDrawerMaxPeek {
+			t.Fatalf("total=%d: 覗き見が %d 桁 (上限 %d を超えた)", total, peek, issuesDrawerMaxPeek)
 		}
 	}
 	// どの幅でも「比率ぶん」より狭くならない
@@ -78,9 +89,11 @@ func TestDrawerTargetWidth(t *testing.T) {
 			t.Fatalf("total=%d: %d が画面幅を超えた", total, got)
 		}
 	}
-	// 余裕があるときは一覧を最小幅ぶん残す
-	if total := 60; total-d.targetWidth(total) < issuesDrawerMinList {
-		t.Errorf("total=%d で一覧が %d 桁しか残らない (最小 %d)", total, total-d.targetWidth(total), issuesDrawerMinList)
+	// 余裕があるときは一覧を最小幅ぶん残す (狭すぎて比率ぶんと両立しない場合を除く)
+	for _, total := range []int{60, 84, 120, 280} {
+		if peek := total - d.targetWidth(total); peek < issuesDrawerMinList {
+			t.Errorf("total=%d で一覧が %d 桁しか残らない (最小 %d)", total, peek, issuesDrawerMinList)
+		}
 	}
 	// 覗き見の余地が無い狭さでは全幅
 	if got := d.targetWidth(issuesDrawerMinList); got != issuesDrawerMinList {

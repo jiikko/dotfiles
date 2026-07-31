@@ -22,13 +22,18 @@ import (
 const (
 	// issuesDrawerRatio は開ききったときに本文が占める幅の割合 (残りに一覧が見える)。
 	issuesDrawerRatio = 0.8
-	// issuesDrawerExtra は比率に上乗せする桁数 (ユーザー要望 2026-07-31: 本文をもう 5 桁広げたい)。
-	// 比率を上げるのでなく固定の上乗せにするのは、狭い端末でも一覧側が同じ桁数だけ残るようにする
-	// ため (比率だと狭い画面ほど一覧が削られる)。
-	issuesDrawerExtra = 5
-	// issuesDrawerMinList は左に残す一覧の最小幅。上乗せで本文が画面を食い切って「どこから
-	// 開いたか」が消えるのを防ぐ (溝 + 番号 = "→ 014 " が見える程度)。
+	// issuesDrawerExtra は比率に上乗せする桁数 (ユーザー要望 2026-07-31)。比率を上げるのでなく
+	// 固定の上乗せにするのは、狭い端末でも一覧側が同じ桁数だけ残るようにするため。
+	issuesDrawerExtra = 10
+	// issuesDrawerMinList は左に残す一覧の最小幅 (溝 + 番号 = "→ 014 " が見える程度)。本文が
+	// 画面を食い切って「どこから開いたか」が消えるのを防ぐ下限。
 	issuesDrawerMinList = 8
+	// issuesDrawerMaxPeek は左に残す一覧の最大幅。⚠️ 比率だけで決めると画面が広いほど一覧が
+	// 場所を食う: popup は端末幅の 90% (_tmux.conf) なので、312 桁の端末では一覧に 50 桁超を
+	// 割いていた (ユーザー報告 2026-07-31「まだ一覧が見えている」)。覗き見に要るのは「どの行から
+	// 開いたか」が分かる幅だけなので、番号・状態・カテゴリが見える 18 桁で止める
+	// ("→ 014 ○ research" = 18)。以降の幅は全部本文へ回す。
+	issuesDrawerMaxPeek = 18
 	// issuesDrawerDuration は開閉の所要時間。開く演出 (issuesAnimDuration = 700ms) より速いのは、
 	// issue を次々に見るときに往復 1.4s は待たされる感じになるため。⚠️ 変えるならここ 1 箇所。
 	issuesDrawerDuration = 450 * time.Millisecond
@@ -134,14 +139,13 @@ func (d *issuesDrawer) targetWidth(total int) int {
 		return total // 覗き見の余地が無い狭さでは全幅を本文に使う (中途半端に削らない)
 	}
 	ratioOnly := int(math.Round(float64(total) * issuesDrawerRatio))
-	w := ratioOnly + issuesDrawerExtra
-	// 一覧の最小幅を確保する。⚠️ ただし比率ぶんより狭くはしない — 上乗せのための下限が
-	// 効いて「上乗せ前より本文が狭くなる」のは本末転倒 (総幅 20 桁で 16 → 12 に縮む実測)。
-	// 上乗せは余裕があるときだけ効く。
-	if capped := total - issuesDrawerMinList; capped < w {
-		w = max(capped, ratioOnly)
-	}
-	return max(w, 0)
+	// 一覧の覗き見は minList..maxPeek に収める。上限があるので画面が広いほど本文が伸びる
+	// (比率のままだと一覧が伸びてしまう)。
+	peek := max(min(total-(ratioOnly+issuesDrawerExtra), issuesDrawerMaxPeek), issuesDrawerMinList)
+	w := total - peek
+	// ⚠️ 比率ぶんより狭くはしない — 覗き見の下限が効いて「広げたのに本文が狭くなる」のは本末転倒
+	// (総幅 20 桁で 16 → 12 に縮む実測)。狭い端末では覗き見が minList を下回る方を選ぶ。
+	return max(w, ratioOnly)
 }
 
 func (d *issuesDrawer) width(total int, now time.Time) int {
