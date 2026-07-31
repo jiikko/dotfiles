@@ -1,10 +1,15 @@
 package main
 
-// issue 本文の「引き出し (drawer)」演出。Notion の peek のように、issue を選ぶと本文が左から
-// にゅっと開いて画面の大半を占め、閉じるときは同じ動きを逆再生する (ユーザー要望 2026-07-31)。
+// issue 本文の「引き出し (drawer)」演出。issue を選ぶと本文が画面の右外から飛び出して左へ
+// 滑り込み、画面の 8 割を占めて止まる。閉じるときは同じ動きの逆再生 (ユーザー要望 2026-07-31)。
+//
+// ⚠️ 幅を 0 から伸ばす実装にしない: それは「ページが開く」動きであって「飛び出してくる」動きに
+// ならない (最初の実装がこれで、イメージと違うと指摘を受けた)。板は最終幅のまま位置だけを
+// 動かし、画面外から入ってくるように見せる。
 //
 // 以前は本文が一覧を全画面で置き換えていたため、「今どの一覧のどこから開いたか」が画面から
-// 消えていた。drawer なら右側に一覧が残り、開閉が位置関係として見える。
+// 消えていた。右寄せの drawer なら左に一覧の先頭 (番号・状態・カテゴリ) が残り、開閉が
+// 位置関係として見える。
 //
 // 演出はフレーム数でなく壁時計で進める (viewer の開く演出 animStart と同じ方式)。tick の周期が
 // 変わっても所要時間が変わらないため。
@@ -112,7 +117,8 @@ func (d *issuesDrawer) finish() (closed bool) {
 	return false
 }
 
-// width は今フレームの引き出しの幅 (区切り線を含む)。total は画面の内容幅。
+// width は今フレームで画面に見えている引き出しの幅 (区切り線を含む)。板は右外から入ってくるので
+// 「見えている幅」= 画面右端から板の左辺までの距離になる。total は画面の内容幅。
 //
 // 開くときは easeOutCubic で終点に向けて減速し、閉じるときはその逆再生 (進捗を反転するだけ)
 // にする。別のカーブを使うと「開いた動きと閉じる動きが違う」ちぐはぐさが出る。
@@ -135,14 +141,15 @@ func (d *issuesDrawer) width(total int, now time.Time) int {
 	return 0
 }
 
-// composeDrawer は「一覧 (base) の上に、左から幅 w の本文 (panel) を重ねた」窓を作る。
+// composeDrawer は「一覧 (base) の右側に、幅 w だけ見えている本文 (panel) を重ねた」窓を作る。
+// 板は右外から入ってくるので、w が増えるほど左辺 (total-w) が左へ動く。
 //
-// panel は最終幅で整形済みのものを渡し、ここでは幅 w に切るだけにする。演出の途中幅で整形し直すと
-// (a) 毎フレーム本文が折り返し直されて文字が踊り、(b) 幅ごとにキャッシュを持つ Body が毎フレーム
-// 再整形される (1 回数 ms × 開閉のフレーム数)。切るだけなら「板が開くと中身が見えてくる」動きになる。
+// panel は最終幅で整形済みのものを渡し、ここでは見えている幅へ切るだけにする。位置で動かすので
+// 折り返しは変わらない (板が動くのであって中身が組み直されるのではない)。幅ごとにキャッシュを
+// 持つ Body を毎フレーム再整形しない効果もある。
 //
-// 右端 1 桁は区切り線にして、本文と一覧の境界を示す (影を落とすと 1 桁ぶん本文が痩せるうえ、
-// 演出中に毎フレーム影の位置が動いて目が疲れる)。幅 0 のときは base をそのまま返す。
+// 板の左辺 1 桁は区切り線にして一覧との境界を示す (影を落とすと演出中に毎フレーム影の位置が
+// 動いて目が疲れる)。幅 0 のときは base をそのまま返す。
 func composeDrawer(base, panel []string, w, total int, colored bool) []string {
 	if w <= 0 {
 		return base
@@ -150,6 +157,7 @@ func composeDrawer(base, panel []string, w, total int, colored bool) []string {
 	if w > total {
 		w = total
 	}
+	left := total - w // 板の左辺 = 一覧が見えている幅
 	// ⚠️ 区切りに "│" を使わない: 本文の pager はスクロールバーを右端に "│" で描くので、
 	// 隣り合って "││" になり壊れて見える (実測)。細いブロックなら板の縁として区別できる。
 	sep := paint("▏", ansiDim, colored)
@@ -159,20 +167,25 @@ func composeDrawer(base, panel []string, w, total int, colored bool) []string {
 		if i < len(panel) {
 			p = panel[i]
 		}
-		// 本文は w-1 桁へ切る。⚠️ clipToWidth でなく truncateKeepANSI を使う: 前者は末尾に "…" を
-		// 付けるので、開く途中の全行に "…" が並んで「切れている」ように見える (板が開いて中身が
-		// 現れる動きにしたい)。どちらも SGR は保つ。
-		line := truncateKeepANSI(p, max(w-1, 0))
-		pad := max(w-1-dispWidth(line), 0)
-		// 切り口で開いたままの色が右の一覧へ滲まないよう reset を挟む (overlayBoxRight と同じ規律)。
+		// 左に見えている一覧。切り口で開いたままの色が板へ滲まないよう reset を挟む
+		// (overlayBoxRight と同じ規律)。
+		line := truncateKeepANSI(b, left)
 		if colored {
 			line += ansiReset
 		}
-		line += padSpaces(pad)
-		if w >= 1 {
+		line += padSpaces(max(left-dispWidth(line), 0))
+		if left < total {
 			line += sep
 		}
-		out[i] = line + dropToColumn(b, w)
+		// 板は左辺から見えていく = 本文の左側から現れる。⚠️ clipToWidth でなく truncateKeepANSI:
+		// 前者は末尾に "…" を付けるので、滑り込み中の全行に "…" が並んで「切れている」ように見える。
+		vis := truncateKeepANSI(p, max(w-1, 0))
+		if colored {
+			vis += ansiReset
+		}
+		// 本文が板幅より短い行 (空行・短い段落) でも板の幅ぶんは埋める。埋めないと合成後の行が
+		// 画面幅より短くなり、板の右側に下地が透けたように見える。
+		out[i] = line + vis + padSpaces(max(w-1-dispWidth(vis), 0))
 	}
 	return out
 }

@@ -138,15 +138,21 @@ func TestComposeDrawer(t *testing.T) {
 			t.Errorf("行 %d の幅 = %d, want 20 (合成で幅が変わってはいけない)", i, w)
 		}
 	}
-	// 左に本文、境界に区切り、右に下地の続き
-	if !strings.HasPrefix(out[0], "PPPPPPPP") {
-		t.Errorf("左に本文が来ていない: %q", out[0])
+	// 板は右から入るので、左に一覧の先頭・境界・右に本文の先頭が並ぶ
+	if !strings.HasPrefix(out[0], "LLLLLLLLLL") {
+		t.Errorf("左に一覧の先頭が残っていない: %q", out[0])
 	}
 	if !strings.Contains(out[0], "▏") {
 		t.Errorf("区切りが無い: %q", out[0])
 	}
-	if !strings.HasSuffix(out[0], "LLLLLLLLLL") {
-		t.Errorf("右に一覧の続きが出ていない: %q", out[0])
+	// 板の中身は区切りの直後から (短い行は板幅ぶん空白で埋める)
+	if !strings.Contains(out[0], "▏PPPPPPPP") {
+		t.Errorf("区切りの右に本文が来ていない: %q", out[0])
+	}
+	// 見えている幅が増えるほど板の左辺は左へ動く (幅が伸びるのではなく位置が動く)
+	narrow := composeDrawer(base, panel, 6, 20, false)
+	if a, b := strings.Index(narrow[0], "▏"), strings.Index(out[0], "▏"); a <= b {
+		t.Errorf("板が左へ動いていない: 幅 6 の左辺=%d, 幅 10 の左辺=%d", a, b)
 	}
 	// ⚠️ 区切りに "│" を使わない (本文のスクロールバーと隣り合って "││" に見える)
 	if strings.Contains(out[0], "│") {
@@ -266,30 +272,30 @@ func TestIssuesDrawerAnimatesThroughModelTicks(t *testing.T) {
 	}
 
 	// tick を送りながら時刻を進める。幅は単調に増えて着地する。
-	prev := edge()
-	grew := 0
+	prev := m.contentWidth() // 板が画面外にある = 左辺は右端
+	moved := 0
 	for range 20 {
 		now = now.Add(tickIntervalForTest)
 		m.Update(tickMsg{})
 		cur := edge()
-		if cur < prev {
-			t.Fatalf("幅が縮んだ: %d -> %d", prev, cur)
-		}
 		if cur > prev {
-			grew++
+			t.Fatalf("板が右へ戻った: %d -> %d (右から左へ入るはず)", prev, cur)
+		}
+		if cur < prev {
+			moved++
 		}
 		prev = cur
 		if !m.spinnerActive() {
 			break // 着地して tick が止まった
 		}
 	}
-	if grew < 3 {
-		t.Errorf("幅が増えたフレームが %d 回しかない (アニメになっていない)", grew)
+	if moved < 3 {
+		t.Errorf("板が動いたフレームが %d 回しかない (アニメになっていない)", moved)
 	}
-	// 境界 (▏) は引き出しの最終桁を占めるので、その開始桁は幅 -1
+	// 着地: 板の左辺 = 画面幅 - 引き出しの幅
 	target := m.issuesOv.drawer.targetWidth(m.contentWidth())
-	if prev != target-1 {
-		t.Errorf("着地した境界の桁 = %d, want %d (幅 %d の最終桁)", prev, target-1, target)
+	if want := m.contentWidth() - target; prev != want {
+		t.Errorf("着地した板の左辺 = %d, want %d", prev, want)
 	}
 	if m.spinnerActive() {
 		t.Error("着地後も spinnerActive=true (tick が残る)")
