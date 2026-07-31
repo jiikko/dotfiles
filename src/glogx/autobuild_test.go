@@ -286,7 +286,7 @@ func TestAutobuildStaleWarnsAtStartup(t *testing.T) {
 	macismInstalled = func() bool { return false }
 	t.Cleanup(func() { macismInstalled = origMacism })
 
-	t.Setenv(autobuildFailedEnv, "1")
+	stubSelfExe(t, staleWorkdir(t, true))
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.toast.phase = toastHidden
 	m.Init()
@@ -307,18 +307,114 @@ func TestAutobuildStaleWarnsAtStartup(t *testing.T) {
 	}
 }
 
-// env が無ければ何も出さない (通常起動にノイズを足さない)。
-func TestAutobuildStaleSilentWithoutEnv(t *testing.T) {
-	origMacism := macismInstalled // 未導入だと Init の警告が出て「無言」の検証にならない
+// 失敗記録が無い / 記録より新しいバイナリが動いている場合は何も出さない (通常起動にノイズを
+// 足さない)。後者は「失敗の後に手動 build で反映済み」の状態で、警告すると嘘になる。
+func TestAutobuildStaleSilentWhenNotStale(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		stale bool
+	}{
+		{"失敗記録が無い", false},
+		{"失敗記録より新しいバイナリが動いている", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			origMacism := macismInstalled // 未導入だと Init の警告が出て「無言」の検証にならない
+			macismInstalled = func() bool { return true }
+			t.Cleanup(func() { macismInstalled = origMacism })
+
+			dir := t.TempDir()
+			exe := filepath.Join(dir, "glogx")
+			if c.stale {
+				writeStamp(t, filepath.Join(dir, autobuildFailedStamp), time.Now().Add(-time.Hour))
+			}
+			writeStamp(t, exe, time.Now())
+			stubSelfExe(t, exe)
+
+			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m.toast.phase = toastHidden
+			m.autobuild = autobuildWatch{} // 監視もしていない通常起動
+			m.Init()
+			if m.toast.visible() {
+				t.Errorf("通常起動で警告が出た: %q", m.toast.text)
+			}
+		})
+	}
+}
+
+// ビルド中は「ビルド中」だけを出す (失敗記録が残っていても重ねない)。再挑戦の決着はこの
+// セッションの監視が伝えるので、1 つの出来事に 2 枚積まない。
+func TestAutobuildRunningWinsOverStaleStamp(t *testing.T) {
+	origMacism := macismInstalled
 	macismInstalled = func() bool { return true }
 	t.Cleanup(func() { macismInstalled = origMacism })
 
-	t.Setenv(autobuildFailedEnv, "")
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "glogx")
+	writeStamp(t, exe, time.Now().Add(-time.Hour))
+	writeStamp(t, filepath.Join(dir, autobuildFailedStamp), time.Now()) // 前回失敗が残っている
+	stubSelfExe(t, exe)
+
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.toast.phase = toastHidden
-	m.autobuild = autobuildWatch{} // 監視もしていない通常起動
+	m.autobuild = newAutobuildWatch(exe, true, timeNow()) // 再挑戦が走っている
 	m.Init()
-	if m.toast.visible() {
-		t.Errorf("通常起動で警告が出た: %q", m.toast.text)
+	if !strings.Contains(m.toast.text, "ビルド中") {
+		t.Fatalf("ビルド中が出ていない: %q", m.toast.text)
+	}
+	if len(m.toast.older) != 0 {
+		t.Errorf("失敗の警告が重ねて積まれた: %+v", m.toast.older)
+	}
+}
+
+// staleWorkdir は「失敗記録が自バイナリより新しい」(stale=true) / その逆 のディレクトリを作り、
+// 自バイナリのパスを返す。
+func staleWorkdir(t *testing.T, stale bool) string {
+	t.Helper()
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "glogx")
+	stamp := filepath.Join(dir, autobuildFailedStamp)
+	now := time.Now()
+	if stale {
+		writeStamp(t, exe, now.Add(-time.Hour))
+		writeStamp(t, stamp, now)
+	} else {
+		writeStamp(t, stamp, now.Add(-time.Hour))
+		writeStamp(t, exe, now)
+	}
+	return exe
+}
+
+// writeStamp は指定 mtime のファイルを作る (mtime 比較の基準を作るため)。
+func writeStamp(t *testing.T, path string, mtime time.Time) {
+	t.Helper()
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// stubSelfExe は selfExePath を差し替える (自バイナリの位置を偽装して失敗記録を読ませる)。
+func stubSelfExe(t *testing.T, exe string) {
+	t.Helper()
+	orig := selfExePath
+	selfExePath = func() string { return exe }
+	t.Cleanup(func() { selfExePath = orig })
+}
+
+// autobuildStaleBinary は失敗記録と自バイナリの前後関係だけで判定する (env に依存しない)。
+func TestAutobuildStaleBinary(t *testing.T) {
+	if !autobuildStaleBinary(staleWorkdir(t, true)) {
+		t.Error("記録が新しいのに stale と判定されない")
+	}
+	if autobuildStaleBinary(staleWorkdir(t, false)) {
+		t.Error("バイナリが新しいのに stale と判定された")
+	}
+	if autobuildStaleBinary(filepath.Join(t.TempDir(), "glogx")) {
+		t.Error("失敗記録が無いのに stale と判定された")
+	}
+	if autobuildStaleBinary("") {
+		t.Error("パス不明 (os.Executable 失敗) で stale と判定された")
 	}
 }

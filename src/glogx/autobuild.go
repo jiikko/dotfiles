@@ -25,10 +25,6 @@ const (
 	// autobuildPendingEnv は「裏でビルドを spawn した」ことを shim から受け取る env 名。
 	// 対になる export は bin/lib/go_autobuild.zsh。名前を変えるなら両方直すこと。
 	autobuildPendingEnv = "GO_AUTOBUILD_PENDING"
-	// autobuildFailedEnv は「前回のビルドが失敗したまま再挑戦を止めている」ことを shim から
-	// 受け取る env 名。ソースは新しいのにビルドされない = 旧版に固定された状態で、放置すると
-	// 「新しいコードを書いたのに動かない」ことに気づけない (実例 2026-07-31)。
-	autobuildFailedEnv = "GO_AUTOBUILD_FAILED"
 	// autobuildFailedStamp はビルド失敗の記録ファイル名 (go_autobuild.zsh が touch する)。
 	autobuildFailedStamp = ".autobuild.failed"
 	// autobuildPollInterval は決着を見に行く周期。ビルドは数秒で終わるので体感即時に寄せる。
@@ -89,13 +85,34 @@ func newAutobuildWatch(exePath string, pending bool, now time.Time) autobuildWat
 
 // selfExePath は自バイナリのパス。解決できなければ空 (= 監視しない) に落とす。go run や
 // テストバイナリから動かした場合も「その実行ファイル」を返すが、監視は env で gate されるので
-// 通常は shim 経由の起動でしか使われない。
-func selfExePath() string {
+// 通常は shim 経由の起動でしか使われない。テストが差し替えるため var。
+var selfExePath = func() string {
 	exe, err := os.Executable()
 	if err != nil {
 		return ""
 	}
 	return exe
+}
+
+// autobuildStaleBinary は「前回のビルドが失敗した記録が残っており、動いている自バイナリはその
+// 失敗より古い」= 書いたコードが反映されていない状態かを返す。
+//
+// 失敗記録は go_autobuild.zsh が成功時に消すので、残っていること自体が「最後の試行は失敗」を
+// 意味する。それが自バイナリより新しければ「その試行の内容は反映されていない」が導ける。
+//
+// ⚠️ shim の env で判定しない: env が立つのは「backoff が再挑戦を止めている瞬間」だけなので、
+// TTL 超過で再挑戦した経路・shim を経ずバイナリを直接起動した経路・別セッションが撒いた失敗を
+// 取りこぼす。失敗記録という事実そのものを見れば、どの経路でも同じ結論になる。
+func autobuildStaleBinary(exePath string) bool {
+	if exePath == "" {
+		return false
+	}
+	stamp := fileMtime(filepath.Join(filepath.Dir(exePath), autobuildFailedStamp))
+	if stamp.IsZero() {
+		return false // 失敗記録が無い = 直近の試行は成功しているか、そもそも試行がない
+	}
+	// 記録より新しいバイナリが置かれている = 失敗の後に (手動 build 等で) 反映済み。
+	return stamp.After(fileMtime(exePath))
 }
 
 // fileMtime は mtime を返す。不在・stat 失敗は zero (「無い」と同じ扱いで比較に使える)。

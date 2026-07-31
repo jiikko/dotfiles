@@ -215,19 +215,23 @@ wait_for "TTL 超過後も再挑戦しない (一時的な失敗から復帰で�
   binary_is "$ROOT" fixed
 ok "TTL を超えた失敗記録は無視して再挑戦する"
 
-printf '\n## backoff 中は「失敗が残っている」ことを env で伝える\n'
-# 無言だと「新しいコードを書いたのに旧版が動き続ける」ことに誰も気づけない (実例 2026-07-31:
-# 失敗記録が残ったまま 13 分間 stale なバイナリで操作していた)。
-ROOT="$(new_project failedenv)"
-PROBE2='pending=${GO_AUTOBUILD_PENDING-} failed=${GO_AUTOBUILD_FAILED-}'
+printf '\n## backoff 中の失敗の残り方 (ツール側が stale を判定できる形)\n'
+# 失敗が残っていることは env で渡さない: ツール側は「.autobuild.failed が自バイナリより新しいか」で
+# 判定する (glogx の autobuildStaleBinary)。ここで固定するのは shim 側の 2 つの前提 —
+# 記録が残り続けること・再挑戦していないのに「ビルド中」を名乗らないこと。
+ROOT="$(new_project failedstamp)"
+PROBE2='pending=${GO_AUTOBUILD_PENDING-}'
 FAKE_GO_MARK="$PROBE2" run_tool "$ROOT" >/dev/null   # 初回の同期ビルドで probe を焼き込む
 freeze "$ROOT"
 bump "$ROOT/src/tool/main.go"
 AUTOBUILD_ARGS=--async FAKE_GO_FAIL=1 run_tool "$ROOT" >/dev/null
 wait_for "失敗記録が作られない" test -f "$ROOT/src/tool/.autobuild.failed"
 out="$(AUTOBUILD_ARGS=--async run_tool "$ROOT")"
-[[ "$out" == "pending= failed=1" ]] || fail "backoff 中に GO_AUTOBUILD_FAILED が立たない (got: $out)"
-ok "失敗が残って再挑戦しない間は GO_AUTOBUILD_FAILED=1 を渡す"
+[[ "$out" == "pending=" ]] || fail "再挑戦していないのに PENDING が立った (got: $out)"
+ok "再挑戦しない間は「ビルド中」を名乗らない"
+[[ "$ROOT/src/tool/.autobuild.failed" -nt "$ROOT/src/tool/tool" ]] \
+  || fail "失敗記録が自バイナリより新しくない (ツール側が stale を判定できない)"
+ok "失敗記録が残り、自バイナリより新しい (stale の判定材料になる)"
 grep -q "build failed (exit " "$ROOT/src/tool/.autobuild.log" \
   || fail "ビルド失敗の exit code がログに残らない (シグナル死の原因を追えない)"
 ok "ビルド失敗は exit code つきでログに残る"

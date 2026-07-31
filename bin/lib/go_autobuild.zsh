@@ -196,12 +196,11 @@ go_autobuild_exec() {
         # される)。読む側は任意で、今は glogx がこれを見て決着をトースト通知する
         # (src/glogx/autobuild.go)。名前を変えるなら読む側も直すこと。
         export GO_AUTOBUILD_PENDING=1
-      else
-        # ソースは新しいのに再挑戦しない = 前回の失敗が backoff で効いている状態。ここを無言に
-        # すると「新しいコードを書いたのに旧版が動き続ける」ことに誰も気づけない (実例
-        # 2026-07-31: 失敗記録が残り 13 分間 stale なバイナリで操作していた)。
-        export GO_AUTOBUILD_FAILED=1
       fi
+      # 再挑戦しない場合 (前回の失敗が backoff で効いている) は何も渡さない。ツール側は
+      # 「.autobuild.failed が自バイナリより新しいか」で同じ結論に達せるため (glogx の
+      # autobuildStaleBinary)。env で伝えるとこの分岐を通った瞬間しか伝わらず、TTL 超過での
+      # 再挑戦・shim を経ない起動・別セッションの失敗を取りこぼす。
     else
       _go_autobuild_build "$src_dir" "$name" 0 || exit 1
     fi

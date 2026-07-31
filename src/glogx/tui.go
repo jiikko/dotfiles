@@ -374,14 +374,17 @@ func (m *browseModel) Init() tea.Cmd {
 	// いることを知らない (ユーザー要望 2026-07-31)。⚠️ macism 警告より後に置く — 先に出すと
 	// 直後の showWarning に上書きされて消える。塞がっていた場合は autobuild 側が結果を保持し、
 	// 最初の tick (2s) で出し直す。
-	if os.Getenv(autobuildFailedEnv) != "" {
-		// 前回のビルドが失敗したまま backoff で再挑戦も止まっている = 旧版に固定された状態。
-		// 「ビルド中」と違って自然には解消しないので、コピー可能な警告 (w) として出す。
-		text, _ := autobuildToast(autobuildStale)
-		m.showWarning(text)
-	} else if res, notify, _ := m.autobuild.handle(autobuildRunning, timeNow()); notify {
+	if res, notify, _ := m.autobuild.handle(autobuildRunning, timeNow()); notify {
 		text, ok := autobuildToast(res)
 		m.toast.show(text, ok)
+	} else if autobuildStaleBinary(selfExePath()) {
+		// ビルド中でもないのに失敗記録が残っている = 旧版に固定された状態。「ビルド中」と違って
+		// 自然には解消しないので、コピー可能な警告 (w) として出す。
+		//
+		// ビルド中を優先する理由: 再挑戦が走っているなら、その決着 (成功/失敗) はこのセッションの
+		// 監視が伝える。両方出すと 1 つの出来事に 2 枚のトーストが積まれる。
+		text, _ := autobuildToast(autobuildStale)
+		m.showWarning(text)
 	}
 	ab := m.autobuild.tickCmd()
 	if m.fetching {
