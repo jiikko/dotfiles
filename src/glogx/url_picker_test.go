@@ -117,6 +117,34 @@ func TestURLPickerEscCloses(t *testing.T) {
 	}
 }
 
+// ctrl+h は backspace の別名 (端末によっては backspace が 0x08 = ctrl+h として届く)。
+func TestURLPickerCtrlHDeletesChar(t *testing.T) {
+	var p urlPicker
+	p.open(pickerURLs())
+	p.handleKey("b")
+	p.handleKey("e")
+	if p.query != "be" {
+		t.Fatalf("前提が崩れている: query=%q", p.query)
+	}
+	p.handleKey("ctrl+h")
+	if p.query != "b" {
+		t.Errorf("ctrl+h で 1 字消えない: query=%q", p.query)
+	}
+	if len(p.match) != 1 || p.selected() != "https://example.com/beta" {
+		t.Errorf("消した後に絞り込みが追従しない: match=%d sel=%q", len(p.match), p.selected())
+	}
+	// 空でも落ちない
+	p.handleKey("ctrl+h")
+	p.handleKey("ctrl+h")
+	if p.query != "" || len(p.match) != 3 {
+		t.Errorf("空からさらに消して壊れた: query=%q match=%d", p.query, len(p.match))
+	}
+	// 案内にも出す
+	if out := stripANSI(strings.Join(p.lines(issuesRenderOpts{width: 84, page: 8}), "\n")); !strings.Contains(out, "ctrl+h") {
+		t.Errorf("ヘッダーに ctrl+h の案内が無い:\n%s", out)
+	}
+}
+
 // 名前付きキー・修飾キーは検索語にしない (pgdown で "pgdown" が入ると絞り込みが壊れる)。
 func TestURLPickerIgnoresNamedKeys(t *testing.T) {
 	var p urlPicker
@@ -134,7 +162,7 @@ func TestURLPickerLines(t *testing.T) {
 	var p urlPicker
 	p.open(pickerURLs())
 	p.handleKey("b")
-	o := issuesRenderOpts{width: 50, page: 8}
+	o := issuesRenderOpts{width: 84, page: 8} // popup の実幅
 	out := p.lines(o)
 	joined := stripANSI(strings.Join(out, "\n"))
 	if !strings.Contains(joined, "URL 検索: b") {
@@ -143,7 +171,10 @@ func TestURLPickerLines(t *testing.T) {
 	if !strings.Contains(joined, "1/3 件") {
 		t.Errorf("件数が出ない:\n%s", joined)
 	}
-	if n := strings.Count(joined, cursorGutterMark[:1]); n != 1 {
+	// ⚠️ cursorGutterMark[:1] で数えない: "→" は 3 バイトなので先頭バイトだけを数えることになり、
+	// 切り詰めの "…" など他のマルチバイト文字にも一致する (実際に誤検出した)
+	arrow := strings.TrimSuffix(cursorGutterMark, " ")
+	if n := strings.Count(joined, arrow); n != 1 {
 		t.Errorf("選択の矢印が %d 本 (want 1):\n%s", n, joined)
 	}
 	for i, ln := range out {

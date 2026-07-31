@@ -85,7 +85,9 @@ func (p *urlPicker) handleKey(key string) (open, closed bool) {
 		if len(p.match) > 0 {
 			p.cursor = (p.cursor - 1 + len(p.match)) % len(p.match)
 		}
-	case "backspace":
+	case "backspace", "ctrl+h":
+		// ctrl+h は backspace の別名 (readline の慣習。端末によっては backspace が 0x08 =
+		// ctrl+h として届くため、どちらの綴りで来ても 1 文字消せるようにする)
 		if r := []rune(p.query); len(r) > 0 {
 			p.query = string(r[:len(r)-1])
 			p.refilter()
@@ -117,7 +119,7 @@ func isPrintableKey(key string) bool {
 func (p *urlPicker) lines(o issuesRenderOpts) []string {
 	head := []string{
 		paint(clipToWidth(fmt.Sprintf("URL 検索: %s_", p.query), o.width), ansiBold, o.colored),
-		paint(clipToWidth(fmt.Sprintf("%d/%d 件  ctrl+n/p: 移動  Enter: 開く  Esc: 戻る",
+		paint(clipToWidth(fmt.Sprintf("%d/%d 件  ctrl+n/p: 移動  ctrl+h: 1 字消す  Enter: 開く  Esc: 戻る",
 			len(p.match), len(p.urls)), o.width), ansiDim, o.colored),
 		"",
 	}
