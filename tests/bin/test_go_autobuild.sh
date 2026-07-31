@@ -191,6 +191,23 @@ out="$(AUTOBUILD_ARGS=--async FAKE_GO_MARK="$PROBE" run_tool "$ROOT")"
 [[ "$out" == "pending=1" ]] || fail "async 再ビルド時に GO_AUTOBUILD_PENDING が立たない (got: $out)"
 ok "async 再ビルドを spawn した起動では GO_AUTOBUILD_PENDING=1 を渡す"
 
+printf '\n## backoff 中は「失敗が残っている」ことを env で伝える\n'
+# 無言だと「新しいコードを書いたのに旧版が動き続ける」ことに誰も気づけない (実例 2026-07-31:
+# 失敗記録が残ったまま 13 分間 stale なバイナリで操作していた)。
+ROOT="$(new_project failedenv)"
+PROBE2='pending=${GO_AUTOBUILD_PENDING-} failed=${GO_AUTOBUILD_FAILED-}'
+FAKE_GO_MARK="$PROBE2" run_tool "$ROOT" >/dev/null   # 初回の同期ビルドで probe を焼き込む
+freeze "$ROOT"
+bump "$ROOT/src/tool/main.go"
+AUTOBUILD_ARGS=--async FAKE_GO_FAIL=1 run_tool "$ROOT" >/dev/null
+wait_for "失敗記録が作られない" test -f "$ROOT/src/tool/.autobuild.failed"
+out="$(AUTOBUILD_ARGS=--async run_tool "$ROOT")"
+[[ "$out" == "pending= failed=1" ]] || fail "backoff 中に GO_AUTOBUILD_FAILED が立たない (got: $out)"
+ok "失敗が残って再挑戦しない間は GO_AUTOBUILD_FAILED=1 を渡す"
+grep -q "build failed (exit " "$ROOT/src/tool/.autobuild.log" \
+  || fail "ビルド失敗の exit code がログに残らない (シグナル死の原因を追えない)"
+ok "ビルド失敗は exit code つきでログに残る"
+
 printf '\n## --async のビルド失敗 (fail-open + backoff)\n'
 ROOT="$(new_project asyncfail)"
 FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null

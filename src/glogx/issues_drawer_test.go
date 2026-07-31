@@ -226,3 +226,75 @@ func TestIssuesViewDrawerKeepsTickAlive(t *testing.T) {
 		t.Error("着地後もアニメ扱い (tick が残る)")
 	}
 }
+
+// browseModel の tick チェーンで引き出しが実際に動くこと (end-to-end)。
+//
+// 型単体のテストは「幅の計算」しか見ておらず、tick が届かなければ画面は開きかけで固まる。
+// ここは View の実出力で境界 (▏) の位置が tick ごとに右へ動き、着地することを見る。
+func TestIssuesDrawerAnimatesThroughModelTicks(t *testing.T) {
+	origNow := timeNow
+	base := time.Date(2026, 7, 31, 12, 0, 0, 0, time.Local)
+	now := base
+	timeNow = func() time.Time { return now }
+	t.Cleanup(func() { timeNow = origNow })
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.width, m.height = 100, 20
+	m.usageOv.dismiss()
+	m.issuesOv = *realIssuesView(t)
+	m.issuesOv.finishAnim() // 開く演出は本題でないので着地させる
+
+	// 境界の桁位置 = 引き出しの幅。無ければ -1。
+	edge := func() int {
+		for _, ln := range strings.Split(stripANSI(m.View().Content), "\n") {
+			if i := strings.Index(ln, "▏"); i >= 0 {
+				return dispWidth(ln[:i])
+			}
+		}
+		return -1
+	}
+
+	if got := edge(); got != -1 {
+		t.Fatalf("本文を開く前から境界がある (col=%d)", got)
+	}
+	m.handleKey("enter")
+	if m.issuesOv.open == nil {
+		t.Fatal("Enter で本文が開かない")
+	}
+	if !m.spinnerActive() {
+		t.Fatal("開いた直後に spinnerActive=false (tick が回らず開きかけで固まる)")
+	}
+
+	// tick を送りながら時刻を進める。幅は単調に増えて着地する。
+	prev := edge()
+	grew := 0
+	for range 20 {
+		now = now.Add(tickIntervalForTest)
+		m.Update(tickMsg{})
+		cur := edge()
+		if cur < prev {
+			t.Fatalf("幅が縮んだ: %d -> %d", prev, cur)
+		}
+		if cur > prev {
+			grew++
+		}
+		prev = cur
+		if !m.spinnerActive() {
+			break // 着地して tick が止まった
+		}
+	}
+	if grew < 3 {
+		t.Errorf("幅が増えたフレームが %d 回しかない (アニメになっていない)", grew)
+	}
+	// 境界 (▏) は引き出しの最終桁を占めるので、その開始桁は幅 -1
+	target := m.issuesOv.drawer.targetWidth(m.contentWidth())
+	if prev != target-1 {
+		t.Errorf("着地した境界の桁 = %d, want %d (幅 %d の最終桁)", prev, target-1, target)
+	}
+	if m.spinnerActive() {
+		t.Error("着地後も spinnerActive=true (tick が残る)")
+	}
+}
+
+// tickIntervalForTest はアニメを進める 1 コマぶんの時間 (実機の tick 周期に相当)。
+const tickIntervalForTest = 33 * time.Millisecond

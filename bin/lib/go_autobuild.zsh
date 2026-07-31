@@ -100,9 +100,14 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
     && ! is-at-least "$required_go" "${local_go#go}"; then
     (( quiet )) || print -u2 -- "$name: 初回は Go $required_go の toolchain 取得で時間がかかることがあります"
   fi
-  if ! (cd "$src_dir" && go build -o "$tmp" .); then
+  local rc=0
+  (cd "$src_dir" && go build -o "$tmp" .) || rc=$?
+  if (( rc )); then
     command rm -f "$tmp" 2>/dev/null
-    print -u2 -- "$name: build failed"
+    # exit code を残す: コンパイルエラーなら go build 自身が理由を上に出すが、シグナルで
+    # 殺された場合 (OOM の SIGKILL = 137 等) は何も出ないため、code が唯一の手がかりになる
+    # (実例 2026-07-31: ログに "build failed" だけが残り原因を追えなかった)
+    print -u2 -- "$name: build failed (exit $rc)"
     return 1
   fi
   # lock を奪われていたら install しない。奪った側は自分より新しいソースでビルドしており、
@@ -171,6 +176,11 @@ go_autobuild_exec() {
         # される)。読む側は任意で、今は glogx がこれを見て決着をトースト通知する
         # (src/glogx/autobuild.go)。名前を変えるなら読む側も直すこと。
         export GO_AUTOBUILD_PENDING=1
+      else
+        # ソースは新しいのに再挑戦しない = 前回の失敗が backoff で効いている状態。ここを無言に
+        # すると「新しいコードを書いたのに旧版が動き続ける」ことに誰も気づけない (実例
+        # 2026-07-31: 失敗記録が残り 13 分間 stale なバイナリで操作していた)。
+        export GO_AUTOBUILD_FAILED=1
       fi
     else
       _go_autobuild_build "$src_dir" "$name" 0 || exit 1

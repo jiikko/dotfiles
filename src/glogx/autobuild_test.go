@@ -274,3 +274,42 @@ func TestAutobuildNotWatchedWithoutEnv(t *testing.T) {
 		t.Error("env 無しで autobuild の tick が張られている")
 	}
 }
+
+// 前回のビルドが失敗したまま再挑戦も止まっている状態は、起動時に警告として出す。
+//
+// ⚠️ この経路が無いと完全に無言になる: backoff が効いているので GO_AUTOBUILD_PENDING は
+// 立たず、ビルドも走らないので監視も何も検出しない。「新しいコードを書いたのに旧版が
+// 動き続ける」ことに誰も気づけない (実例 2026-07-31: 13 分間 stale なバイナリで操作していた)。
+func TestAutobuildStaleWarnsAtStartup(t *testing.T) {
+	t.Setenv(autobuildFailedEnv, "1")
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.toast.phase = toastHidden
+	m.Init()
+	if !m.toast.visible() {
+		t.Fatal("失敗が残っているのに起動時の警告が出ない")
+	}
+	if m.toast.ok {
+		t.Error("失敗の警告が成功色になっている")
+	}
+	for _, want := range []string{"失敗", "旧版", ".autobuild.log"} {
+		if !strings.Contains(m.toast.text, want) {
+			t.Errorf("文面に %q が無い: %q", want, m.toast.text)
+		}
+	}
+	// w でコピーできるよう lastWarning にも残す (調べ方をユーザーが持ち出せる)
+	if !strings.Contains(m.lastWarning, ".autobuild.log") {
+		t.Errorf("lastWarning に残っていない: %q", m.lastWarning)
+	}
+}
+
+// env が無ければ何も出さない (通常起動にノイズを足さない)。
+func TestAutobuildStaleSilentWithoutEnv(t *testing.T) {
+	t.Setenv(autobuildFailedEnv, "")
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.toast.phase = toastHidden
+	m.autobuild = autobuildWatch{} // 監視もしていない通常起動
+	m.Init()
+	if m.toast.visible() {
+		t.Errorf("通常起動で警告が出た: %q", m.toast.text)
+	}
+}

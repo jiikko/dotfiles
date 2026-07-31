@@ -374,7 +374,12 @@ func (m *browseModel) Init() tea.Cmd {
 	// いることを知らない (ユーザー要望 2026-07-31)。⚠️ macism 警告より後に置く — 先に出すと
 	// 直後の showWarning に上書きされて消える。塞がっていた場合は autobuild 側が結果を保持し、
 	// 最初の tick (2s) で出し直す。
-	if res, notify, _ := m.autobuild.handle(autobuildRunning, m.toast.visible(), timeNow()); notify {
+	if os.Getenv(autobuildFailedEnv) != "" {
+		// 前回のビルドが失敗したまま backoff で再挑戦も止まっている = 旧版に固定された状態。
+		// 「ビルド中」と違って自然には解消しないので、コピー可能な警告 (w) として出す。
+		text, _ := autobuildToast(autobuildStale)
+		m.showWarning(text)
+	} else if res, notify, _ := m.autobuild.handle(autobuildRunning, m.toast.visible(), timeNow()); notify {
 		text, ok := autobuildToast(res)
 		m.toast.show(text, ok)
 	}

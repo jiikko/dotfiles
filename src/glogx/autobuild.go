@@ -25,6 +25,10 @@ const (
 	// autobuildPendingEnv は「裏でビルドを spawn した」ことを shim から受け取る env 名。
 	// 対になる export は bin/lib/go_autobuild.zsh。名前を変えるなら両方直すこと。
 	autobuildPendingEnv = "GO_AUTOBUILD_PENDING"
+	// autobuildFailedEnv は「前回のビルドが失敗したまま再挑戦を止めている」ことを shim から
+	// 受け取る env 名。ソースは新しいのにビルドされない = 旧版に固定された状態で、放置すると
+	// 「新しいコードを書いたのに動かない」ことに気づけない (実例 2026-07-31)。
+	autobuildFailedEnv = "GO_AUTOBUILD_FAILED"
 	// autobuildFailedStamp はビルド失敗の記録ファイル名 (go_autobuild.zsh が touch する)。
 	autobuildFailedStamp = ".autobuild.failed"
 	// autobuildPollInterval は決着を見に行く周期。ビルドは数秒で終わるので体感即時に寄せる。
@@ -44,6 +48,7 @@ const (
 	autobuildStarted                          // 裏でビルドが始まった (起動直後に伝える)
 	autobuildInstalled                        // 新バイナリが入った (次回起動で反映)
 	autobuildFailed                           // ビルドが失敗した (旧版のまま固定)
+	autobuildStale                            // 前回の失敗が残り再挑戦もされない (起動時に判明)
 )
 
 // autobuildWatch はバックグラウンドビルドの決着監視。zero value は「監視しない」で、
@@ -178,6 +183,8 @@ func autobuildToast(res autobuildResult) (text string, ok bool) {
 		return "", false // 成功は無言 (開始時に伝えている)
 	case autobuildFailed:
 		return "glogx のバックグラウンドビルドが失敗 (旧版で継続。src/glogx/.autobuild.log)", false
+	case autobuildStale:
+		return "前回の glogx のビルドが失敗したままです (旧版で継続。src/glogx/.autobuild.log)", false
 	case autobuildRunning:
 		return "", false
 	}
