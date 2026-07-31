@@ -861,6 +861,8 @@ func (v *issuesView) listLines(o issuesRenderOpts) []string {
 	end := min(offset+rows, len(v.rows))
 	out := make([]string, 0, rows)
 	for i := offset; i < end; i++ {
+		// バー列ぶんを先に引く: 幅ぴったりに組むと scrollbarColumn のクリップで末尾 1 文字が
+		// "…" に化ける (box.go の scrollbarColumnWidth)
 		out = append(out, v.rowLine(i, o, o.width-scrollbarColumnWidth))
 	}
 	out = scrollbarColumn(out, o.width, len(v.rows), offset, o.colored)
@@ -923,11 +925,6 @@ func (v *issuesView) tabChip(name string, count int, active bool, colored bool) 
 	return paint(text, ansiDim+color, colored)
 }
 
-// 一覧・本文は行を組む前に scrollbarColumnWidth (box.go) を差し引く: 幅ぴったりに組んでから
-// scrollbarColumn に渡すと、あちらのクリップで末尾 1 文字が省略記号に化ける (本文の 1 文字が
-// 消える)。⚠️ 桁数を自前の定数で持たない — バー列の内訳と等号で一致していなければならず、
-// 別々に持つと片方だけずれても既存テスト (幅の上限しか見ない) が緑のまま通る。
-
 // rowLine は一覧の 1 行 (番号・状態バッジ・カテゴリ・タイトル・進捗)。width は行が使える
 // 表示幅 (スクロールバー列を差し引いた後)。
 func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
@@ -961,7 +958,7 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 func (v *issuesView) bodyLines(o issuesRenderOpts) []string {
 	header := v.bodyHeadLines(o.width, o.colored)
 	rows := max(o.page-len(header), 1)
-	lines := v.body.Lines(o.width-scrollbarColumnWidth, o.colored)
+	lines := v.body.Lines(o.width-scrollbarColumnWidth, o.colored) // バー列ぶんは整形前に引く
 	// 行数は幅で変わる (Body は幅ごとに整形し直す)。幅が広がって行数が減ると論理 bodyOff が
 	// 上限を超えたまま残り、k / ctrl+u は max(bodyOff-n, 0) しか見ないので「何度押しても
 	// 画面が動かない」打鍵数が生まれる。描画で確定した行数で論理 offset を収束させて防ぐ。
