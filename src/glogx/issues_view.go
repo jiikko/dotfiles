@@ -88,6 +88,10 @@ type issuesView struct {
 	// 進めるのは、tick 周期が変わっても所要時間が変わらないようにするため (push 演出の
 	// pushSlides と同じ方式)。演出中は tick を scrollInterval (~30fps) に上げる。
 	animStart time.Time
+
+	// pending は前回終了時の画面の復元予約 (issues_state.go)。スキャン結果が要るので、
+	// 適用は最初の receive まで待つ (applyScreen が 1 度だけ消費する)。
+	pending *issuesScreen
 }
 
 const (
@@ -124,6 +128,74 @@ func (v *issuesView) toggle(cwd string) tea.Cmd {
 	// 「止められる時計」と「止められない時計」が混在する。
 	v.animStart = timeNow()
 	return v.scanCmd(cwd)
+}
+
+// restore は前回終了時の画面を復元しながら viewer を開く (起動時。issues_state.go)。
+// 適用はスキャン結果が届く receive まで待つので、ここでは予約を置いてスキャンを始めるだけ。
+//
+// ⚠️ 開く演出は出さない: 復元は「閉じたところから再開」なので、起動のたびに 700ms 待たされる
+// のは筋が違う (ユーザー選定 2026-07-31)。
+// ⚠️ 既に開いているなら何もしない: 復元の git fork とスキャンの間に i が押された場合で、
+// 上書きするとユーザーの操作を奪う。
+func (v *issuesView) restore(cwd string, s issuesScreen) tea.Cmd {
+	if v.shown {
+		return nil
+	}
+	v.shown = true
+	v.animStart = time.Time{}
+	v.pending = &s
+	return v.scanCmd(cwd)
+}
+
+// screen は今の画面を保存用に書き出す (ok=false = 覚えるものが無い)。
+//
+// viewer を出していないときに false を返すのが「git log 一覧から終了したら記憶しない」の実体
+// (呼び出し側はそのとき記憶を消す)。スキャン前 (root 未確定) も覚えない: 照合キーが無い記憶は
+// 復元時に別 repo で当たってしまう。
+func (v *issuesView) screen(now time.Time) (issuesScreen, bool) {
+	if !v.shown || v.root == "" {
+		return issuesScreen{}, false
+	}
+	open := issuePath(v.open)
+	if v.drawer.phase == drawerClosing {
+		open = "" // 閉じる演出の途中 = ユーザーは既に閉じている。開いた状態で復元しない
+	}
+	return issuesScreen{
+		Root:    v.root,
+		SavedAt: now,
+		Tab:     v.currentTab(),
+		Filter:  uint8(v.filter),
+		Cursor:  issuePath(v.current()),
+		Open:    open,
+		BodyOff: v.bodyOff,
+	}, true
+}
+
+// applyScreen は復元予約を今のスキャン結果へ当てる。
+//
+// 消えた issue (rename / 状態ディレクトリへ移動) には黙って別物を当てない: カーソルは
+// anchorCursor が当たらなければ先頭のまま、本文はパスが見つからなければ一覧のままにする。
+func (v *issuesView) applyScreen(s issuesScreen) {
+	v.filter = issues.StatusFilter(s.Filter)
+	v.refresh() // フィルタを反映してタブの並びと件数を作る (tabIdx を引くのに要る)
+	v.tabIdx = tabIndexOf(v.tabs, s.Tab)
+	v.refresh() // 選んだタブで行集合を作り直す
+	// 窓 (offset) はここで動かさない: 描画が windowOffset でカーソルを含む位置へ収束させる
+	// (offset を状態でなく導出値として扱う規律。windowOffset の doc)
+	v.anchorCursor(s.Cursor)
+	if s.Open == "" {
+		return
+	}
+	for _, iss := range v.all {
+		if iss.Path != s.Open {
+			continue
+		}
+		if v.openIssue(iss) {
+			v.drawer.finish()     // 演出は出さず開き切った状態から始める
+			v.bodyOff = s.BodyOff // 行数を超えていれば bodyLines が収束させる
+		}
+		return
+	}
 }
 
 // close は viewer を閉じる (スキャン結果は保持する。再表示は前回の結果を出しながら取り直す)。
@@ -199,6 +271,13 @@ func (v *issuesView) receive(msg issuesScanMsg) {
 	v.refresh()
 	v.anchorCursor(cursorPath)
 	v.rebindOpen(openPath)
+	if v.pending != nil {
+		// 起動時の復元予約は最初のスキャン結果へ 1 度だけ当てる (以降の r / 編集後の取り直しは
+		// 通常どおり「今見ている場所」を引き継ぐ)
+		s := *v.pending
+		v.pending = nil
+		v.applyScreen(s)
+	}
 }
 
 // issuePath は nil 安全なパス取得 (再スキャンをまたいで位置を引き継ぐキー)。
@@ -356,19 +435,24 @@ func (v *issuesView) settleDrawer() {
 // 読み込みは同期で行う: 1 ファイルの読み込みは sub-ms で、非同期にすると「読み込み中に
 // カーソルが動いた」等の状態を増やすだけで得がない (スキャンと違い件数に比例しない)。
 func (v *issuesView) openBody() {
-	iss := v.current()
-	if iss == nil {
-		return
+	if iss := v.current(); iss != nil {
+		v.openIssue(iss)
 	}
+}
+
+// openIssue は指定した issue の本文を開く (読めたら true)。カーソル行を開く openBody と、
+// 前回終了時の画面をパスから開き直す applyScreen が共有する。
+func (v *issuesView) openIssue(iss *issues.Issue) bool {
 	body, err := iss.ReadBody()
 	if err != nil {
 		v.setNotice("本文を読めませんでした: "+firstLine(err.Error()), false)
-		return
+		return false
 	}
 	v.open, v.body, v.bodyOff = iss, body, 0
 	v.urlPick.close() // 別の issue を開いたら前の URL 一覧を持ち越さない
 	v.drawer.open(timeNow())
 	v.bodyGlide.stop()
+	return true
 }
 
 // reloadAfterEdit は nvim で編集して戻ってきたときの取り直し (呼び出し側の editorClosedMsg)。

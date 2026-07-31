@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/issues"
 )
 
 // Bubble Tea による less 風の対話ブラウズ (カーソル移動 + CI job 表示)。
@@ -88,6 +89,10 @@ type tickMsg struct{}
 
 // openURLMsg は job 詳細ページをブラウザで開いた結果。
 type openURLMsg struct{ err error }
+
+// issuesRestoreMsg は前回終了時の issues viewer の画面を復元する合図 (起動時。issues_state.go)。
+// repo の照合まで済んでいるので、受け取り側は開くだけ。
+type issuesRestoreMsg struct{ screen issuesScreen }
 
 // editorClosedMsg は job ログを開いた nvim を閉じた結果 (e キー)。
 type editorClosedMsg struct{ err error }
@@ -387,10 +392,38 @@ func (m *browseModel) Init() tea.Cmd {
 		m.showWarning(text)
 	}
 	ab := m.autobuild.tickCmd()
-	if m.fetching {
-		return tea.Batch(m.fetch, prefix, u, ver, ab, m.maybeTick(), usageRefreshTick())
+	// issues viewer を出したまま終了していたら、その画面を復元する (issues_state.go)。
+	// ファイル読みだけ同期で済ませ、repo の照合 (git fork) は記憶があるときだけ非同期で行う
+	// = 記憶が無い通常の起動では fork が増えない。
+	var restore tea.Cmd
+	if s, ok := loadIssuesScreen(timeNow()); ok {
+		restore = issuesRestoreCmd(s)
 	}
-	return tea.Batch(prefix, u, ver, ab, m.maybeTick(), usageRefreshTick())
+	if m.fetching {
+		return tea.Batch(m.fetch, prefix, u, ver, ab, restore, m.maybeTick(), usageRefreshTick())
+	}
+	return tea.Batch(prefix, u, ver, ab, restore, m.maybeTick(), usageRefreshTick())
+}
+
+// issuesRestoreCmd は記憶した画面が今の repo のものか確かめる (別 repo で開いた glogx に
+// 前の repo の issue を出さない)。一致しなければ nil Msg = 無音で通常起動。
+func issuesRestoreCmd(s issuesScreen) tea.Cmd {
+	return func() tea.Msg {
+		if issues.RepoRoot(currentDir()) != s.Root {
+			return nil
+		}
+		return issuesRestoreMsg{screen: s}
+	}
+}
+
+// currentDir は探索の起点にする cwd (取れなければカレント相対)。glogx は tmux popup から
+// -d '#{pane_current_path}' で起動されるので、cwd は repo のサブディレクトリになりうる。
+func currentDir() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "." // cwd が取れない環境でも repo 直下として探索を試みる
+	}
+	return cwd
 }
 
 // normalizeSpaceKey は Space の表記ゆれを " " へ揃える。キー switch は " " だけを見ればよい。
@@ -774,6 +807,8 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case issuesScanMsg:
 		m.issuesOv.receive(msg)
 		return m, nil
+	case issuesRestoreMsg:
+		return m, tea.Batch(m.issuesOv.restore(currentDir(), msg.screen), m.maybeTick())
 	case claudeUpdateAvailableMsg:
 		return m, m.showClaudeUpdate(msg.latest)
 	case autobuildMsg:
@@ -1058,11 +1093,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// だけ受ける: job パネル/詳細を開いているときはそちらの語彙を優先する。初回だけ非同期で
 	// スキャンし、以降は結果を保持したまま開閉する (再スキャンは viewer 内の r)。
 	if key == "i" && m.panelSHA == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			cwd = "." // cwd が取れない環境でも repo 直下として探索を試みる
-		}
-		return m, tea.Batch(m.issuesOv.toggle(cwd), m.maybeTick())
+		return m, tea.Batch(m.issuesOv.toggle(currentDir()), m.maybeTick())
 	}
 	// b = push / u = pull --rebase (どちらも y/N 確認へ)。glogx の独自機能。
 	// diff 表示中は b = 半ページ戻るなので、diff のディスパッチより後で拾う
@@ -1476,12 +1507,24 @@ func (m *browseModel) cancelAll() {
 
 // quit はアプリ全体を終了する (取得中断分は unknown へ落とす)。
 func (m *browseModel) quit() (tea.Model, tea.Cmd) {
+	m.rememberIssuesScreen()
 	m.cancelAll()
 	if m.fetching {
 		m.fillUnknown()
 	}
 	m.done = true
 	return m, tea.Quit
+}
+
+// rememberIssuesScreen は「issues viewer を出したまま終了したら次の起動で復元する」ための
+// 保存 (issues_state.go)。⚠️ 一覧から終了したときは消す — 残すと、一覧を見て閉じた次の起動で
+// 2 回前の viewer が蘇る (ユーザー指定: git log 一覧のときは復元しない)。
+func (m *browseModel) rememberIssuesScreen() {
+	if s, ok := m.issuesOv.screen(timeNow()); ok {
+		_ = saveIssuesScreen(s) // 保存できなくても終了は妨げない
+		return
+	}
+	removeIssuesScreen()
 }
 
 // handlePanelKey は job パネル表示中のキー操作。j/k はパネル内のフォーカス移動になる。

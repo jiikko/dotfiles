@@ -1,11 +1,32 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 )
+
+// TestMain はパッケージ全体のキャッシュ置き場を一時ディレクトリへ逃がす。
+//
+// ⚠️ 実ユーザーの ~/.cache/glog を触らせないため: quit() は「最後に見ていた画面」を保存/削除する
+// (issues_state.go) ので、隔離しないと make test が開発者の記憶を消す。CI キャッシュ
+// (cache.go) と claude バージョンキャッシュも同じ base を使う。個別テストの
+// t.Setenv("XDG_CACHE_HOME", ...) は従来どおり上書きできる。
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "glogx-test-cache")
+	if err == nil {
+		if err := os.Setenv("XDG_CACHE_HOME", dir); err != nil {
+			panic(err) // 隔離できないまま走らせると実ユーザーのキャッシュを触る
+		}
+	}
+	code := m.Run() // ⚠️ os.Exit は defer を走らせないので、片付けは Run の後に手で書く
+	if dir != "" {
+		_ = os.RemoveAll(dir)
+	}
+	os.Exit(code)
+}
 
 func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []string) *browseModel {
 	t.Helper()
