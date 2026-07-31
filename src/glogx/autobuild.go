@@ -14,8 +14,10 @@ package main
 // (spinnerActive / maybeTick) で、通常起動に恒久 wakeup を足さないため。
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -27,6 +29,9 @@ const (
 	autobuildPendingEnv = "GO_AUTOBUILD_PENDING"
 	// autobuildFailedStamp はビルド失敗の記録ファイル名 (go_autobuild.zsh が touch する)。
 	autobuildFailedStamp = ".autobuild.failed"
+	// autobuildLockDir はビルド中を示す lock ディレクトリ名 (go_autobuild.zsh が mkdir する)。
+	// autobuildFailedStamp と同じく shim との取り決めなので、名前を変えるなら両方直すこと。
+	autobuildLockDir = ".autobuild.lock"
 	// autobuildPollInterval は決着を見に行く周期。ビルドは数秒で終わるので体感即時に寄せる。
 	autobuildPollInterval = 2 * time.Second
 	// autobuildWatchTimeout は監視を諦める上限。ビルダーが SIGKILL 等で死ぬと新バイナリも
@@ -44,7 +49,7 @@ const (
 	autobuildStarted                          // 裏でビルドが始まった (起動直後に伝える)
 	autobuildInstalled                        // 新バイナリが入った (次回起動で反映)
 	autobuildFailed                           // ビルドが失敗した (旧版のまま固定)
-	autobuildStale                            // 前回の失敗が残り再挑戦もされない (起動時に判明)
+	autobuildStale                            // 自バイナリが今のソースを反映していない (起動時に判明)
 )
 
 // autobuildWatch はバックグラウンドビルドの決着監視。zero value は「監視しない」で、
@@ -94,25 +99,88 @@ var selfExePath = func() string {
 	return exe
 }
 
-// autobuildStaleBinary は「前回のビルドが失敗した記録が残っており、動いている自バイナリはその
-// 失敗より古い」= 書いたコードが反映されていない状態かを返す。
+// autobuildStaleBinary は「動いている自バイナリが今のソースを反映していない」かを返す。
 //
-// 失敗記録は go_autobuild.zsh が成功時に消すので、残っていること自体が「最後の試行は失敗」を
-// 意味する。それが自バイナリより新しければ「その試行の内容は反映されていない」が導ける。
+// 根拠は 2 つで、どちらも同じ事実 (書いたコードが動いていない) を立証する:
+//
+//  1. ビルド失敗の記録が自バイナリより新しい。失敗記録は go_autobuild.zsh が成功時に消すので、
+//     残っていること自体が「最後の試行は失敗」を意味する
+//  2. ソースが自バイナリより新しい (誰もビルドしていない)
+//
+// 2 を見るのは、shim が再ビルドを spawn しない経路が複数あるため: lock 残留で「他がビルド中」と
+// 誤認する / 同期ツール (rsync -a 等) でソースの mtime が巻き戻り shim の -nt が偽になる /
+// shim を経ずバイナリを直接起動する。原因を 1 つずつ塞ぐのではなく「ソースの方が新しい」という
+// 1 つの事実へ還元する (issue 033)。
 //
 // ⚠️ shim の env で判定しない: env が立つのは「backoff が再挑戦を止めている瞬間」だけなので、
 // TTL 超過で再挑戦した経路・shim を経ずバイナリを直接起動した経路・別セッションが撒いた失敗を
-// 取りこぼす。失敗記録という事実そのものを見れば、どの経路でも同じ結論になる。
+// 取りこぼす。ファイルという事実そのものを見れば、どの経路でも同じ結論になる。
 func autobuildStaleBinary(exePath string) bool {
 	if exePath == "" {
 		return false
 	}
-	stamp := fileMtime(filepath.Join(filepath.Dir(exePath), autobuildFailedStamp))
-	if stamp.IsZero() {
-		return false // 失敗記録が無い = 直近の試行は成功しているか、そもそも試行がない
+	dir := filepath.Dir(exePath)
+	// ビルド中は黙る: lock がある = shim が「他がビルド中」と判断しているのと同じ状態で、
+	// ここで警告すると走っているビルドを「していない」と嘘をつく (連続起動で実際に起きる:
+	// 1 本目が spawn したビルドの最中に 2 本目を起動すると、shim は lock を取れず env も立てない)。
+	// 死んだ lock の始末は shim 側が持つ (pid 生存 + timeout)。
+	if _, err := os.Stat(filepath.Join(dir, autobuildLockDir)); err == nil {
+		return false
+	}
+	binAt := fileMtime(exePath)
+	if binAt.IsZero() {
+		return false // 自バイナリが読めない = 比較の基準が無い
 	}
 	// 記録より新しいバイナリが置かれている = 失敗の後に (手動 build 等で) 反映済み。
-	return stamp.After(fileMtime(exePath))
+	if fileMtime(filepath.Join(dir, autobuildFailedStamp)).After(binAt) {
+		return true
+	}
+	return autobuildSourcesNewer(dir, binAt)
+}
+
+// autobuildSourcesNewer は dir 配下のソースが binAt (自バイナリ) より新しいかを返す。
+//
+// ⚠️ 「ソース」の定義は go_autobuild.zsh の再帰 glob と揃える (**/*.go から _test.go を除く +
+// 直下の go.mod / go.sum)。食い違うと「shim は再ビルドしないのに glogx は古いと言う」矛盾、
+// あるいはその逆 (黙って旧版に固定) が出る。片方を変えたら両方直すこと。
+func autobuildSourcesNewer(dir string, binAt time.Time) bool {
+	// ソース木の外では判定しない (配布・コピーされたバイナリ、テストバイナリの一時ディレクトリ)。
+	// go_autobuild.zsh はバイナリを src_dir 直下へ置くので、隣に go.mod があるのがソース木の印。
+	// shim はこのゲートを持たないが、go.mod が無ければ go build 自体が通らないので実質の
+	// 食い違いは起きない (不一致が起きるとしても「shim は再ビルドするが glogx は黙る」= 安全側)。
+	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err != nil {
+		return false
+	}
+	newer := false
+	// 起動パスに乗るが fork は無い。実測 169µs/回 (2026-07-31 の src/glogx = 90 ファイル /
+	// 6 ディレクトリ)。起動から外した macism fork (40-60ms) の 1/250 で、Bench の分解能以下。
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return nil // 読めないものは無視する (判定は best-effort。止める理由にはしない)
+		case d.IsDir():
+			if path != dir && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir // zsh の ** も dot ディレクトリを辿らない
+			}
+			return nil
+		case !autobuildSourceFile(dir, path, d.Name()):
+			return nil
+		case fileMtime(path).After(binAt):
+			newer = true
+			return filepath.SkipAll // 1 つ見つかれば結論は出る
+		}
+		return nil
+	})
+	return newer
+}
+
+// autobuildSourceFile は path が再ビルドの契機になるファイルか (go_autobuild.zsh と同じ定義)。
+func autobuildSourceFile(dir, path, name string) bool {
+	if strings.HasSuffix(name, ".go") {
+		return !strings.HasSuffix(name, "_test.go") // テストは go build の入力ではない
+	}
+	// go.mod / go.sum は直下だけ (shim も $src_dir 直下しか見ない。サブモジュールは対象外)
+	return (name == "go.mod" || name == "go.sum") && filepath.Dir(path) == dir
 }
 
 // fileMtime は mtime を返す。不在・stat 失敗は zero (「無い」と同じ扱いで比較に使える)。
@@ -202,7 +270,9 @@ func autobuildToast(res autobuildResult) (text string, ok bool) {
 	case autobuildFailed:
 		return "glogx のバックグラウンドビルドが失敗 (旧版で継続。src/glogx/.autobuild.log)", false
 	case autobuildStale:
-		return "前回の glogx のビルドが失敗したままです (旧版で継続。src/glogx/.autobuild.log)", false
+		// 原因 (失敗記録 / 誰もビルドしていない) ではなく次の行動を出す: どちらでも復旧手順は
+		// 同じで、理由はログにある。
+		return "glogx が古い版で動いています (GO_AUTOBUILD_SYNC=1 glogx で再ビルド。src/glogx/.autobuild.log)", false
 	case autobuildRunning:
 		return "", false
 	}

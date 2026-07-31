@@ -296,7 +296,9 @@ func TestAutobuildStaleWarnsAtStartup(t *testing.T) {
 	if m.toast.ok {
 		t.Error("失敗の警告が成功色になっている")
 	}
-	for _, want := range []string{"失敗", "旧版", ".autobuild.log"} {
+	// 文面は原因 (失敗記録 / 誰もビルドしていない) ではなく次の行動を出す。どちらの根拠でも
+	// 復旧手順は同じで、理由はログにある (issue 033)。
+	for _, want := range []string{"古い版", "GO_AUTOBUILD_SYNC=1", ".autobuild.log"} {
 		if !strings.Contains(m.toast.text, want) {
 			t.Errorf("文面に %q が無い: %q", want, m.toast.text)
 		}
@@ -416,5 +418,81 @@ func TestAutobuildStaleBinary(t *testing.T) {
 	}
 	if autobuildStaleBinary("") {
 		t.Error("パス不明 (os.Executable 失敗) で stale と判定された")
+	}
+}
+
+// ソースが自バイナリより新しい = 誰もビルドしていない、も stale の根拠にする。
+//
+// ⚠️ これが無いと無言で旧版に固定される経路が残る (issue 033): lock 残留で shim が
+// 「他がビルド中」と誤認する / 同期ツールでソースの mtime が巻き戻り shim の -nt が偽になる /
+// shim を経ずバイナリを直接起動する。失敗記録はどれでも作られない。
+func TestAutobuildStaleFromNewerSources(t *testing.T) {
+	old, now := time.Now().Add(-time.Hour), time.Now()
+	for _, c := range []struct {
+		name  string
+		setup func(t *testing.T, dir string)
+		want  bool
+	}{
+		{"直下の .go が新しい", func(t *testing.T, dir string) {
+			writeStamp(t, filepath.Join(dir, "main.go"), now)
+		}, true},
+		{"サブパッケージの .go が新しい", func(t *testing.T, dir string) {
+			mkdir(t, filepath.Join(dir, "issues"))
+			writeStamp(t, filepath.Join(dir, "issues", "parse.go"), now)
+		}, true},
+		{"go.sum が新しい", func(t *testing.T, dir string) {
+			writeStamp(t, filepath.Join(dir, "go.sum"), now)
+		}, true},
+		{"ソースが古い (通常の起動)", func(t *testing.T, dir string) {
+			writeStamp(t, filepath.Join(dir, "main.go"), old)
+		}, false},
+		{"新しいのはテストだけ (go build の入力ではない)", func(t *testing.T, dir string) {
+			writeStamp(t, filepath.Join(dir, "main_test.go"), now)
+		}, false},
+		{"新しいのは .go 以外", func(t *testing.T, dir string) {
+			writeStamp(t, filepath.Join(dir, "README.md"), now)
+		}, false},
+		{"サブモジュールの go.mod (shim も直下しか見ない)", func(t *testing.T, dir string) {
+			mkdir(t, filepath.Join(dir, "tools", "probe"))
+			writeStamp(t, filepath.Join(dir, "tools", "probe", "go.mod"), now)
+		}, false},
+		{"dot ディレクトリの中 (shim の ** も辿らない)", func(t *testing.T, dir string) {
+			mkdir(t, filepath.Join(dir, ".git"))
+			writeStamp(t, filepath.Join(dir, ".git", "hook.go"), now)
+		}, false},
+		{"ビルド中 (lock がある) は黙る", func(t *testing.T, dir string) {
+			writeStamp(t, filepath.Join(dir, "main.go"), now)
+			mkdir(t, filepath.Join(dir, autobuildLockDir))
+		}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			exe := filepath.Join(dir, "glogx")
+			writeStamp(t, filepath.Join(dir, "go.mod"), old) // ソース木の印
+			writeStamp(t, exe, old.Add(time.Minute))         // バイナリは go.mod より後・now より前
+			c.setup(t, dir)
+			if got := autobuildStaleBinary(exe); got != c.want {
+				t.Errorf("stale = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// ソース木の外 (go.mod が隣に無い) では判定しない。配布・コピーされたバイナリや、テストバイナリの
+// 一時ディレクトリで「古い」と言い出さないため。
+func TestAutobuildStaleSilentOutsideSourceTree(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "glogx")
+	writeStamp(t, exe, time.Now().Add(-time.Hour))
+	writeStamp(t, filepath.Join(dir, "main.go"), time.Now()) // go.mod は作らない
+	if autobuildStaleBinary(exe) {
+		t.Error("ソース木の外で stale と判定された")
+	}
+}
+
+func mkdir(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
 	}
 }
