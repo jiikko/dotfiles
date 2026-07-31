@@ -897,10 +897,9 @@ func TestReorderTabsByCount(t *testing.T) {
 	}
 }
 
-// u は本文中の URL を出現順に 1 つずつブラウザで開き、末尾まで行くと先頭へ戻る。
-// 通知行に「何番目/全体」と URL を出す (本文 pager に行カーソルが無く、番号を振って選ばせる
-// 場所が無いため。ユーザー要望 2026-07-31)。
-func TestIssuesViewOpenBodyURL(t *testing.T) {
+// u は URL ピッカーを開き、インクリメンタルサーチで絞って Enter で開く
+// (ユーザー要望 2026-07-31: 順送りだと 24 本の issue で目的の 1 本に辿り着けない)。
+func TestIssuesViewURLPicker(t *testing.T) {
 	var opened []string
 	orig := openInBrowser
 	openInBrowser = func(url string) error { opened = append(opened, url); return nil }
@@ -908,48 +907,84 @@ func TestIssuesViewOpenBodyURL(t *testing.T) {
 
 	v := newIssuesView()
 	v.shown, v.loaded = true, true
-	v.body = issues.NewBody("A https://example.com/1\nB https://example.com/2\n")
+	v.body = issues.NewBody("A https://example.com/alpha\nB https://example.com/beta\nC https://other.test/gamma\n")
 	v.open = fakeIssue("001", "feat", "a", issues.StatusOpen)
 
-	for i, want := range []string{"https://example.com/1", "https://example.com/2", "https://example.com/1"} {
-		cmd := v.handleKey("u", 20)
-		if cmd == nil {
-			t.Fatalf("%d 打目: u が Cmd を返さない", i)
-		}
-		if msg, ok := cmd().(openURLMsg); !ok || msg.err != nil {
-			t.Fatalf("%d 打目: openURLMsg でない/失敗: %#v", i, msg)
-		}
-		if len(opened) != i+1 || opened[i] != want {
-			t.Fatalf("%d 打目: 開いた URL = %q, want %q", i, opened, want)
-		}
-		if !strings.Contains(v.notice, want) {
-			t.Errorf("%d 打目: 通知に URL が無い: %q", i, v.notice)
-		}
+	if cmd := v.handleKey("u", 20); cmd != nil {
+		t.Fatal("u はピッカーを開くだけで Cmd を返さない")
 	}
-	// 通知は「何番目/全体」を示す (1 周した 3 打目は 1/2 に戻る)
-	if !strings.Contains(v.notice, "1/2") {
-		t.Errorf("巡回後の通知が 1/2 でない: %q", v.notice)
+	if !v.urlPick.active {
+		t.Fatal("u でピッカーが開かない")
+	}
+	// 絞り込み前は全件、先頭が選択されている
+	if got := v.urlPick.selected(); got != "https://example.com/alpha" {
+		t.Errorf("初期選択 = %q", got)
+	}
+	// インクリメンタルサーチ: "beta" で 1 件に絞れる
+	for _, k := range []string{"b", "e", "t", "a"} {
+		v.handleKey(k, 20)
+	}
+	if len(v.urlPick.match) != 1 || v.urlPick.selected() != "https://example.com/beta" {
+		t.Fatalf("検索で絞れない: match=%d selected=%q", len(v.urlPick.match), v.urlPick.selected())
+	}
+	cmd := v.handleKey("enter", 20)
+	if cmd == nil {
+		t.Fatal("Enter で開く Cmd が返らない")
+	}
+	if msg, ok := cmd().(openURLMsg); !ok || msg.err != nil {
+		t.Fatalf("openURLMsg でない/失敗: %#v", msg)
+	}
+	if len(opened) != 1 || opened[0] != "https://example.com/beta" {
+		t.Errorf("開いた URL = %q", opened)
+	}
+	if v.urlPick.active {
+		t.Error("確定後もピッカーが開いたまま")
+	}
+	if !strings.Contains(v.notice, "https://example.com/beta") {
+		t.Errorf("通知に URL が無い: %q", v.notice)
 	}
 }
 
-func TestIssuesViewOpenBodyURLNone(t *testing.T) {
-	orig := openInBrowser
-	openInBrowser = func(string) error { t.Fatal("URL が無いのにブラウザを開いた"); return nil }
-	t.Cleanup(func() { openInBrowser = orig })
+// ピッカーは他のどの割当よりも先にキーを飲む (印字文字は全部検索語)。
+// v (nvim) や y (コピー) が横取りすると、その文字を含む URL を検索できない。
+func TestIssuesViewURLPickerSwallowsActionKeys(t *testing.T) {
+	editorCalled := false
+	origEd := runEditorCmd
+	runEditorCmd = func(*exec.Cmd) tea.Cmd { editorCalled = true; return nil }
+	t.Cleanup(func() { runEditorCmd = origEd })
 
+	v := newIssuesView()
+	v.shown, v.loaded = true, true
+	v.body = issues.NewBody("https://example.com/very-vivid\nhttps://example.com/plain\n")
+	v.open = fakeIssue("001", "feat", "a", issues.StatusOpen)
+	v.handleKey("u", 20)
+	v.handleKey("v", 20) // 検索語になるべき (nvim を起動してはいけない)
+	if editorCalled {
+		t.Error("ピッカー中の v が nvim を起動した")
+	}
+	if v.urlPick.query != "v" {
+		t.Errorf("v が検索語にならない: query=%q", v.urlPick.query)
+	}
+	if len(v.urlPick.match) != 1 || v.urlPick.selected() != "https://example.com/very-vivid" {
+		t.Errorf("v で絞り込めない: %v", v.urlPick.match)
+	}
+}
+
+func TestIssuesViewURLPickerNone(t *testing.T) {
 	v := newIssuesView()
 	v.shown, v.loaded = true, true
 	v.body = issues.NewBody("URL の無い本文\n")
 	v.open = fakeIssue("001", "feat", "a", issues.StatusOpen)
-	if cmd := v.handleKey("u", 20); cmd != nil {
-		t.Error("URL が無いのに Cmd を返した")
+	v.handleKey("u", 20)
+	if v.urlPick.active {
+		t.Error("URL が無いのにピッカーが開いた")
 	}
 	if !strings.Contains(v.notice, "URL はありません") {
 		t.Errorf("URL 不在の案内が出ない: %q", v.notice)
 	}
 }
 
-// 一覧モードでは u は効かない (本文を読んでいないため)。誤ってブラウザを開かない。
+// 一覧モードでは u は効かない (本文を読んでいないため)。
 func TestIssuesViewOpenURLListModeIsNoop(t *testing.T) {
 	orig := openInBrowser
 	openInBrowser = func(string) error { t.Fatal("一覧モードでブラウザを開いた"); return nil }
@@ -959,20 +994,17 @@ func TestIssuesViewOpenURLListModeIsNoop(t *testing.T) {
 	if cmd := v.handleKey("u", 20); cmd != nil {
 		t.Error("一覧モードで u が Cmd を返した")
 	}
+	if v.urlPick.active {
+		t.Error("一覧モードでピッカーが開いた")
+	}
 }
 
-// 別の issue を開いたら URL の順送り位置が先頭へ戻る。
-func TestIssuesViewOpenBodyURLResetsOnNewIssue(t *testing.T) {
-	orig := openInBrowser
-	openInBrowser = func(string) error { return nil }
-	t.Cleanup(func() { openInBrowser = orig })
-
-	// 本文は実ファイルから読む (ReadBody が失敗する経路では前の本文を保つのが正しく、
-	// 位置も保たれるべきなので、初期化の検証には成功経路が要る)
+// 別の issue を開いたらピッカーの状態を持ち越さない。
+func TestIssuesViewURLPickerResetsOnNewIssue(t *testing.T) {
 	dir := t.TempDir()
 	p1 := filepath.Join(dir, "001-feat-a.md")
 	p2 := filepath.Join(dir, "002-feat-b.md")
-	if err := os.WriteFile(p1, []byte("# a\n\nA https://example.com/1\nB https://example.com/2\n"), 0o644); err != nil {
+	if err := os.WriteFile(p1, []byte("# a\n\nA https://example.com/1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(p2, []byte("# b\n\nC https://example.com/3\n"), 0o644); err != nil {
@@ -982,15 +1014,17 @@ func TestIssuesViewOpenBodyURLResetsOnNewIssue(t *testing.T) {
 		&issues.Issue{Path: p1, Dir: dir, Rel: "001-feat-a.md", Number: "001", Category: "feat"},
 		&issues.Issue{Path: p2, Dir: dir, Rel: "002-feat-b.md", Number: "002", Category: "feat"},
 	)
-	v.handleKey("enter", 20) // 1 件目を開く
-	v.handleKey("u", 20)
-	if v.urlIdx == 0 {
-		t.Fatal("u で位置が進んでいない")
-	}
-	v.handleKey("h", 20) // 一覧へ戻る
-	v.handleKey("j", 20) // 2 件目へ
 	v.handleKey("enter", 20)
-	if v.urlIdx != 0 {
-		t.Errorf("別の issue を開いても位置が残っている: %d", v.urlIdx)
+	v.handleKey("u", 20)
+	v.handleKey("1", 20) // 検索語を入れた状態で
+	if !v.urlPick.active || v.urlPick.query == "" {
+		t.Fatal("ピッカーの前提が崩れている")
+	}
+	v.handleKey("esc", 20) // 閉じて一覧へ
+	v.handleKey("h", 20)
+	v.handleKey("j", 20)
+	v.handleKey("enter", 20)
+	if v.urlPick.active || v.urlPick.query != "" {
+		t.Errorf("別の issue へ状態が持ち越された: active=%v query=%q", v.urlPick.active, v.urlPick.query)
 	}
 }

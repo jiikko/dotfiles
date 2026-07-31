@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"math"
 	"os/exec"
 	"path/filepath"
@@ -73,8 +72,8 @@ type issuesView struct {
 	// 本文 pager (open != nil のとき本文モード)
 	open *issues.Issue
 	body *issues.Body
-	// urlIdx は u キーで次に開く本文中 URL の位置 (出現順)。本文を開き直したら 0 に戻す。
-	urlIdx    int
+	// urlPick は本文中 URL のピッカー (u)。閉じているときは zero value。
+	urlPick   urlPicker
 	bodyOff   int // 論理 = 着地点
 	bodyGlide scrollGlide
 
@@ -315,7 +314,8 @@ func (v *issuesView) openBody() {
 		v.notice = "本文を読めませんでした: " + firstLine(err.Error())
 		return
 	}
-	v.open, v.body, v.bodyOff, v.urlIdx = iss, body, 0, 0
+	v.open, v.body, v.bodyOff = iss, body, 0
+	v.urlPick.close() // 別の issue を開いたら前の URL 一覧を持ち越さない
 	v.bodyGlide.stop()
 }
 
@@ -359,6 +359,11 @@ func (v *issuesView) handleKey(key string, page int) tea.Cmd {
 	v.finishAnim() // 演出中のキーは即着地させる (q が効かない時間を作らないため)
 	v.notice = ""  // 通知は直前の操作の結果なので、次のキーで消す (寿命の理由は headLines)
 	rows := v.visibleRows(page)
+	// ⚠️ URL ピッカーは他のどの割当よりも先に飲む: インクリメンタルサーチでは印字文字がすべて
+	// 検索語なので、v (nvim) や y (コピー) を先に処理すると "v" や "y" を含む URL を検索できない。
+	if v.urlPick.active {
+		return v.urlPickerKey(key)
+	}
 	// モードに依らないアクションキーは先に飲む (対象は target() が一覧/本文で切り替える)
 	if cmd, ok := v.actionKey(key); ok {
 		return cmd
@@ -450,7 +455,7 @@ func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
 		v.bodyOff = max(v.bodyOff-rows/2, 0)
 		v.bodyGlide.start(prev, v.bodyOff)
 	case "u":
-		return v.openBodyURL()
+		v.openURLPicker()
 	case "g", "home":
 		v.bodyOff = 0
 		v.bodyGlide.stop()
@@ -512,30 +517,29 @@ func (v *issuesView) editCmd() tea.Cmd {
 	return runEditorCmd(exec.Command("nvim", iss.Path))
 }
 
-// openBodyURL は本文中の URL を出現順に 1 つずつブラウザで開く (u キー)。押すたびに次へ進み、
-// 末尾まで行くと先頭へ戻る。
-//
-// 番号を振って選ばせる形にしないのは、本文 pager に行カーソルが無く、番号の対応を出す場所が
-// 通知行 1 行しかないため (URL は 1 issue に平均 5 本あり、幅に収まらない)。「順に開く」なら
-// 状態は位置 1 つで済み、今どれを開いたかは通知行が示せる。
+// openURLPicker は本文中の URL のピッカーを開く (u キー)。URL が無ければ開かずに通知する。
 //
 // 一覧モードでは効かない (本文を読んでいないため)。一覧で押せるようにするとキー 1 打ごとに
-// ファイルを読むことになり、しかも「その issue に URL があるか」は一覧に出ていないので当てに
-// ならない操作になる。
-func (v *issuesView) openBodyURL() tea.Cmd {
+// ファイルを読むことになり、しかも「その issue に URL があるか」は一覧に出ていない。
+func (v *issuesView) openURLPicker() {
 	if v.body == nil {
-		return nil
+		return
 	}
-	urls := v.body.URLs()
-	if len(urls) == 0 {
+	if !v.urlPick.open(v.body.URLs()) {
 		v.notice = "この issue に URL はありません"
+	}
+}
+
+// urlPickerKey はピッカー表示中のキーを捌く。確定 (Enter) でブラウザを開く Cmd を返す。
+func (v *issuesView) urlPickerKey(key string) tea.Cmd {
+	url := v.urlPick.selected() // 確定前に読む (close で状態が消えるため)
+	open, _ := v.urlPick.handleKey(key)
+	if !open || url == "" {
 		return nil
 	}
-	i := v.urlIdx % len(urls)
-	v.urlIdx = i + 1
-	url := urls[i]
+	v.urlPick.close()
 	// 「開きました」と断定しない: 失敗は openURLMsg 経由でトースト警告になる (browseModel 側)。
-	v.notice = fmt.Sprintf("URL %d/%d を開きます: %s", i+1, len(urls), url)
+	v.notice = "URL を開きます: " + url
 	return func() tea.Msg { return openURLMsg{err: openInBrowser(url)} }
 }
 
@@ -657,9 +661,12 @@ type issuesRenderOpts struct {
 // 変えずに差し替えられるようにするため)。
 func (v *issuesView) lines(o issuesRenderOpts) []string {
 	var body []string
-	if v.open != nil {
+	switch {
+	case v.urlPick.active:
+		body = v.urlPick.lines(o)
+	case v.open != nil:
 		body = v.bodyLines(o)
-	} else {
+	default:
 		body = v.listLines(o)
 	}
 	for len(body) < o.page {
