@@ -1065,3 +1065,41 @@ func manyLines(n int) []string {
 	}
 	return out
 }
+
+// issues viewer のカーソル行に矢印が 1 本だけ出る (二重矢印の回帰)。
+//
+// 溝の矢印は viewer が付け (rowLine)、browseModel から渡す cursorPaint は「強調だけ」を担う
+// 契約。ここに溝込みの cursorLine を渡すと "→ → 030 ..." になり、2 桁ぶん右へずれて末尾が切れる
+// (ユーザー報告 2026-07-31)。色あり/なしの両方で見る (cursorEmphasis が分岐するため)。
+func TestIssuesViewerCursorArrowNotDoubled(t *testing.T) {
+	for _, colored := range []bool{false, true} {
+		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m.width, m.height = 100, 16
+		m.colored = colored
+		m.handleKey("i")
+		m.issuesOv.receive(issuesScanMsg{
+			dirs: []string{"/repo/issues"},
+			issues: []*issues.Issue{
+				fakeIssue("030", "feat", "alpha", issues.StatusOpen),
+				fakeIssue("029", "feat", "beta", issues.StatusOpen),
+			},
+		})
+		m.issuesOv.finishAnim() // 開く演出中は行が流し込み途中で出ない
+		var cursorRow string
+		for _, ln := range strings.Split(stripANSI(m.View().Content), "\n") {
+			if strings.Contains(ln, "alpha") {
+				cursorRow = ln
+			}
+		}
+		if cursorRow == "" {
+			t.Fatalf("colored=%v: カーソル行が描かれていない", colored)
+		}
+		if n := strings.Count(cursorRow, cursorGutterMark[:len(cursorGutterMark)-1]); n != 1 {
+			t.Errorf("colored=%v: カーソル行の矢印が %d 本 (want 1): %q", colored, n, strings.TrimRight(cursorRow, " "))
+		}
+		// 溝は 2 桁ぶんだけ (矢印 + 空白)。番号がその直後から始まる
+		if !strings.HasPrefix(strings.TrimLeft(cursorRow, " "), cursorGutterMark+"030") {
+			t.Errorf("colored=%v: 溝の幅がずれている: %q", colored, strings.TrimRight(cursorRow, " "))
+		}
+	}
+}

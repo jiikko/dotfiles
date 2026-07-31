@@ -2179,7 +2179,7 @@ func (m *browseModel) issuesOpts() issuesRenderOpts {
 		page:        m.pageSize(),
 		colored:     m.colored,
 		spinner:     m.spinner(),
-		cursorPaint: m.cursorLine,
+		cursorPaint: m.cursorEmphasis, // 溝は viewer が持つので強調だけ渡す (二重矢印の防止)
 	}
 }
 
@@ -2528,6 +2528,20 @@ var ansiResetRe = regexp.MustCompile("\x1b\\[0?m")
 // NOTE: push 済みエリアの面塗りにも使っていたが、bg の面塗りは環境の配色次第で
 // 視認性を落とすためユーザー判断で撤去 (2026-07-19)。push 境界の可視化は境界線
 // (insertPushBoundary) に一本化。面塗りの再提案はしない。
+// cursorEmphasis はカーソル行の「強調だけ」を施す (溝の矢印は付けない)。issues viewer へ渡す
+// cursorPaint はこれ。
+//
+// ⚠️ cursorLine を渡してはいけない: あちらは溝の矢印を前置するため、溝を自分で持つ viewer
+// (行の幅計算が cursorGutterWidth 前提。issues_view.go の rowLine) では矢印が二重になる
+// (実測 2026-07-31: "→ → 030 ○ feat alpha")。cursorPaint の契約は issuesRenderOpts の doc
+// どおり「強調」だけで、溝の所有者は viewer 側。
+func (m *browseModel) cursorEmphasis(text string) string {
+	if !m.colored {
+		return text // 色なしでは矢印 (viewer 側の溝) だけが指標
+	}
+	return m.bgLine(text, ansiCursorBg)
+}
+
 func (m *browseModel) bgLine(text, bg string) string {
 	if !m.colored {
 		return clipToWidth(text, m.contentWidth())
