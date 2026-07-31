@@ -321,6 +321,9 @@ func TestIssuesViewBodyModeOpensAndCloses(t *testing.T) {
 	if v.open == nil || v.body == nil {
 		t.Fatal("Enter で本文モードに入らない")
 	}
+	// 本文は引き出しとして左から開く (issues_drawer.go)。開いた直後は幅 0 なので、中身の検証は
+	// 演出を着地させてから行う (実機では 450ms で着地する)。
+	v.drawer.finish()
 	out := strings.Join(v.lines(renderOpts(20)), "\n")
 	for _, want := range []string{"028-refactor-x.md", "タイトル", "本文の段落", "• 箇条書き"} {
 		if !strings.Contains(out, want) {
@@ -328,6 +331,14 @@ func TestIssuesViewBodyModeOpensAndCloses(t *testing.T) {
 		}
 	}
 	v.handleKey("h", 10)
+	// 閉じる演出のあいだ本文は生きている (逆再生に中身が映る必要がある)
+	if v.open == nil {
+		t.Fatal("h の直後に本文が消えた (閉じる演出に何も映らない)")
+	}
+	origNow := timeNow
+	timeNow = func() time.Time { return origNow().Add(issuesDrawerDuration + time.Millisecond) }
+	defer func() { timeNow = origNow }()
+	v.lines(renderOpts(20)) // 演出の着地を反映させる
 	if v.open != nil {
 		t.Fatal("h で一覧へ戻らない")
 	}
@@ -417,6 +428,7 @@ func TestIssuesViewBodyScrollRecoversAfterWidthGrows(t *testing.T) {
 	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "001-feat-long.md", Number: "001", Category: "feat"})
 	const page = 12
 	v.handleKey("enter", page)
+	v.drawer.finish() // 引き出しを開ききった状態で幅の検証をする
 
 	narrow := issuesRenderOpts{width: 40, page: page}
 	v.lines(narrow)

@@ -73,7 +73,10 @@ type issuesView struct {
 	open *issues.Issue
 	body *issues.Body
 	// urlPick は本文中 URL のピッカー (u)。閉じているときは zero value。
-	urlPick   urlPicker
+	urlPick urlPicker
+	// drawer は本文を左から開く引き出しの演出状態 (issues_drawer.go)。閉じる演出のあいだは
+	// open/body を生かしたまま逆再生するため、破棄は settleDrawer が担う。
+	drawer    issuesDrawer
 	bodyOff   int // 論理 = 着地点
 	bodyGlide scrollGlide
 
@@ -121,7 +124,7 @@ func (v *issuesView) close() {
 	v.shown = false
 	v.animStart = time.Time{}
 	v.listGlide.stop() // 閉じた後も glide が残ると、再表示の一瞬だけ古い位置から滑る
-	v.closeBody()      // bodyGlide はこちらで止まる
+	v.discardBody()    // viewer ごと閉じるので引き出しの演出は持ち越さない
 }
 
 // finishAnim は開く演出を即座に着地させる。
@@ -131,6 +134,9 @@ func (v *issuesView) finishAnim() { v.animStart = time.Time{} }
 func (v *issuesView) animating() bool {
 	if v.listGlide.active || v.bodyGlide.active {
 		return true // スクロール glide も tick で進むので「アニメ中」に含める
+	}
+	if v.drawer.animating(timeNow()) {
+		return true // 本文の引き出しの開閉も tick で進む
 	}
 	return v.shown && !v.animStart.IsZero() && time.Since(v.animStart) < issuesAnimDuration
 }
@@ -295,9 +301,32 @@ func (v *issuesView) currentTab() string {
 }
 
 // closeBody は本文モードを抜ける。
+// closeBody は本文を閉じる。⚠️ ここでは逆再生を始めるだけで中身は消さない — 消すと閉じる
+// 演出に何も映らない。実際の破棄は演出が着地したとき (settleDrawer)。
 func (v *issuesView) closeBody() {
+	// 後始末は本文の有無に依らず行う (呼ばれた時点で「本文モードではない」を満たすべき)。
+	v.bodyGlide.stop()
+	v.urlPick.close()
+	if v.open == nil {
+		return
+	}
+	v.drawer.startClose(timeNow())
+}
+
+// discardBody は本文の状態を実際に捨てる (演出の着地後・viewer を閉じるとき)。
+func (v *issuesView) discardBody() {
 	v.open, v.body, v.bodyOff = nil, nil, 0
 	v.bodyGlide.stop()
+	v.urlPick.close()
+	v.drawer = issuesDrawer{}
+}
+
+// settleDrawer は引き出しの演出が終わっていれば静止状態へ進め、閉じ切っていれば本文を捨てる。
+// 描画とキー処理の両方から呼ぶ (どちらが先に来ても状態が進む)。
+func (v *issuesView) settleDrawer() {
+	if v.drawer.settle(timeNow()) {
+		v.discardBody()
+	}
 }
 
 // openBody はカーソル位置の issue の本文を読む。
@@ -316,6 +345,7 @@ func (v *issuesView) openBody() {
 	}
 	v.open, v.body, v.bodyOff = iss, body, 0
 	v.urlPick.close() // 別の issue を開いたら前の URL 一覧を持ち越さない
+	v.drawer.open(timeNow())
 	v.bodyGlide.stop()
 }
 
@@ -357,7 +387,10 @@ func (v *issuesView) handleKey(key string, page int) tea.Cmd {
 	// (呼び出し側の normalizeSpaceKey と同じ関数。理由はそちらのコメント)
 	key = normalizeSpaceKey(key)
 	v.finishAnim() // 演出中のキーは即着地させる (q が効かない時間を作らないため)
-	v.notice = ""  // 通知は直前の操作の結果なので、次のキーで消す (寿命の理由は headLines)
+	if v.drawer.finish() {
+		v.discardBody() // 引き出しの逆再生中にキーが来たら即座に閉じ切る
+	}
+	v.notice = "" // 通知は直前の操作の結果なので、次のキーで消す (寿命の理由は headLines)
 	rows := v.visibleRows(page)
 	// ⚠️ URL ピッカーは他のどの割当よりも先に飲む: インクリメンタルサーチでは印字文字がすべて
 	// 検索語なので、v (nvim) や y (コピー) を先に処理すると "v" や "y" を含む URL を検索できない。
@@ -660,12 +693,21 @@ type issuesRenderOpts struct {
 // lines は全画面ビューの page 行を返す (常にちょうど page 行。呼び出し側の枠・hint 経路を
 // 変えずに差し替えられるようにするため)。
 func (v *issuesView) lines(o issuesRenderOpts) []string {
+	v.settleDrawer() // 閉じ切っていたら本文を捨ててから組む (描画とキーのどちらが先でも進む)
 	var body []string
 	switch {
 	case v.urlPick.active:
 		body = v.urlPick.lines(o)
 	case v.open != nil:
-		body = v.bodyLines(o)
+		// 本文は「一覧の上に左から開く引き出し」として重ねる。全画面で置き換えると、どの一覧の
+		// どこから開いたかが画面から消える (ユーザー要望 2026-07-31: Notion の peek のように)。
+		w := v.drawer.width(o.width, timeNow())
+		inner := o
+		// 整形は最終幅で行い、演出中は切るだけにする (途中幅で整形し直すと毎フレーム折り返しが
+		// 変わって文字が踊る。詳細は composeDrawer の doc)
+		inner.width = max(v.drawer.targetWidth(o.width)-1, 1)
+		body = composeDrawer(v.padTo(v.listLines(o), o.page), v.padTo(v.bodyLines(inner), o.page),
+			w, o.width, o.colored)
 	default:
 		body = v.listLines(o)
 	}
@@ -685,6 +727,15 @@ func (v *issuesView) animProgress() float64 {
 		return 1
 	}
 	return float64(time.Since(v.animStart)) / float64(issuesAnimDuration)
+}
+
+// padTo は行数を n へ揃える (足りなければ空行、多ければ切る)。引き出しの合成では一覧と本文の
+// 行数が違う (ヘッダーの行数が異なる) ため、重ねる前に必ず揃える。
+func (v *issuesView) padTo(lines []string, n int) []string {
+	for len(lines) < n {
+		lines = append(lines, "")
+	}
+	return lines[:n]
 }
 
 // slideInWindow は窓の各行を「右から左へ流し込む」途中の姿にする。
@@ -729,6 +780,14 @@ func easeOutCubicFloat(p float64) float64 {
 // 行数だけが必要な呼び出し (中身は使われない)。
 func (v *issuesView) headLines(width int, colored bool) []string {
 	if v.open != nil {
+		return v.bodyHeadLines(width, colored)
+	}
+	return v.listHeadLines(width, colored)
+}
+
+// bodyHeadLines は本文モードのヘッダー (ファイル名 + 状態 + 通知)。
+func (v *issuesView) bodyHeadLines(width int, colored bool) []string {
+	{
 		status := v.open.StatusLabel()
 		if p := v.open.Progress(); p != "" {
 			status += "  " + p
@@ -744,6 +803,14 @@ func (v *issuesView) headLines(width int, colored bool) []string {
 		}
 		return append(head, "")
 	}
+}
+
+// listHeadLines は一覧のヘッダー (タブ + 通知/警告)。
+//
+// ⚠️ headLines と分けているのは引き出しのため: 本文を開いている間も下地の一覧はタブを出す
+// 必要があり、headLines をそのまま使うと下地にまで本文のヘッダーが出る (実測で「一覧の上に
+// 本文のファイル名が乗る」表示になった)。
+func (v *issuesView) listHeadLines(width int, colored bool) []string {
 	head := []string{v.tabLine(issuesRenderOpts{width: width, colored: colored})}
 	// notice はキー 1 打分の寿命 (handleKey が入口で消す) なので、警告より優先しても恒久的に
 	// 隠すことはない。⚠️ 寿命を外すとスキャン警告 (同名ファイルの二重化 = 静かな内容喪失) が
@@ -759,7 +826,7 @@ func (v *issuesView) headLines(width int, colored bool) []string {
 
 // listLines はタブ + 警告 + リストを描く。
 func (v *issuesView) listLines(o issuesRenderOpts) []string {
-	head := v.headLines(o.width, o.colored)
+	head := v.listHeadLines(o.width, o.colored) // 引き出しの下地でも一覧のタブを出す
 	if msg := v.emptyMessage(o); msg != "" {
 		return append(head, paint(clipToWidth(msg, o.width), ansiDim, o.colored))
 	}
@@ -876,7 +943,7 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 
 // bodyLines は本文 pager (ヘッダー + 本文) を描く。
 func (v *issuesView) bodyLines(o issuesRenderOpts) []string {
-	header := v.headLines(o.width, o.colored)
+	header := v.bodyHeadLines(o.width, o.colored)
 	rows := max(o.page-len(header), 1)
 	lines := v.body.Lines(o.width-scrollbarReserve, o.colored)
 	// 行数は幅で変わる (Body は幅ごとに整形し直す)。幅が広がって行数が減ると論理 bodyOff が
