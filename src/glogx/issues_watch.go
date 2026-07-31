@@ -21,6 +21,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/issues"
 )
 
 // issuesWatchInterval は見張りの周期。人間が「即時」と感じる範囲で最も安いところ。
@@ -53,16 +54,24 @@ func (v *issuesView) watchCmd() tea.Cmd {
 
 // watchTargets は指紋の対象を値のコピーで返す (goroutine へ渡すため)。
 func (v *issuesView) watchTargets() (dirs, paths []string) {
-	dirs = append([]string(nil), v.dirs...)
-	paths = make([]string, 0, len(v.all)+1)
-	for _, iss := range v.all {
+	return append([]string(nil), v.dirs...), issuesWatchPaths(v.all)
+}
+
+// issuesWatchPaths は指紋の対象ファイルを組み立てる。
+//
+// ⚠️ スキャン側 (基準を取る scanIssues) と tick 側 (変化を見る watchTargets) で必ず同じ集合を
+// 作ること。食い違うと毎周期「変化した」と読めてしまい、何も変わっていないのに 1s ごとに
+// 取り直しが回り続ける。
+//
+// 開いている本文を個別に足さないのはそのため: パスは v.all に含まれており、二重に入れると
+// スキャン側 (v.open を知らない) と食い違う。ファイルごと消えた場合の再生成はディレクトリの
+// mtime で拾える。
+func issuesWatchPaths(all []*issues.Issue) []string {
+	paths := make([]string, 0, len(all))
+	for _, iss := range all {
 		paths = append(paths, iss.Path)
 	}
-	if p := issuePath(v.open); p != "" {
-		// 一覧の集合に含まれるが、本文だけ変わったケースを最短で拾うため個別にも見る
-		paths = append(paths, p)
-	}
-	return dirs, paths
+	return paths
 }
 
 // handleWatch は観測結果を受けて、必要なら取り直しの Cmd を返す (常に次の観測を予約する)。
@@ -77,7 +86,9 @@ func (v *issuesView) handleWatch(msg issuesWatchMsg) tea.Cmd {
 	}
 	switch {
 	case v.watch.seen == "":
-		v.watch.seen = msg.fp // 開いた直後・取り直し直後: この観測を基準にする (読み直さない)
+		// 基準がまだ無い = スキャン結果より先に観測が届いた (初回スキャン中) / スキャンが
+		// 失敗した。通常はスキャン自身が基準を持ってくる (receive) のでここは通らない。
+		v.watch.seen = msg.fp
 	case msg.fp == v.watch.seen:
 		v.watch.pending = "" // 変化なし (安定待ちだったものが元へ戻った場合も含む)
 	case msg.fp != v.watch.pending:

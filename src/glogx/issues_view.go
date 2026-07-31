@@ -30,6 +30,8 @@ type issuesScanMsg struct {
 	dirs     []string
 	issues   []*issues.Issue
 	warnings []string
+	// fp は読んだ時点のファイル群の指紋 (issues_watch.go)。見張りの基準に使う。
+	fp string
 }
 
 // issuesView は一覧 (タブ + リスト) と本文 pager の 2 モードを持つ全画面ビュー。
@@ -243,15 +245,24 @@ func (v *issuesView) scanCmd(cwd string) tea.Cmd {
 	}
 	v.cwd = cwd
 	v.scanning = true
-	return func() tea.Msg {
-		root := issues.RepoRoot(cwd)
-		dirs := issues.FindDirs(root)
-		found, warnings := issues.Scan(dirs)
-		for _, iss := range found {
-			// メタデータの読み取り失敗は無視する (タイトルがスラッグ表示に落ちるだけ)
-			_ = iss.LoadMeta()
-		}
-		return issuesScanMsg{root: root, dirs: dirs, issues: found, warnings: warnings}
+	return func() tea.Msg { return scanIssues(cwd) }
+}
+
+// scanIssues は探索・メタデータ読み込み・見張りの基準づくりを 1 回で行う (scanCmd の本体)。
+//
+// 指紋をここで取るのが要点: 「読んだ内容」と「基準」を同じ時点に揃えないと、その差の間に入った
+// 外部編集が基準に焼き込まれ、次の編集が来るまで永久に取りこぼす (issues_watch.go)。
+func scanIssues(cwd string) issuesScanMsg {
+	root := issues.RepoRoot(cwd)
+	dirs := issues.FindDirs(root)
+	found, warnings := issues.Scan(dirs)
+	for _, iss := range found {
+		// メタデータの読み取り失敗は無視する (タイトルがスラッグ表示に落ちるだけ)
+		_ = iss.LoadMeta()
+	}
+	return issuesScanMsg{
+		root: root, dirs: dirs, issues: found, warnings: warnings,
+		fp: issuesFingerprint(dirs, issuesWatchPaths(found)),
 	}
 }
 
@@ -263,9 +274,11 @@ func (v *issuesView) scanCmd(cwd string) tea.Cmd {
 // (c) 本文モードが v.all から外れた古いポインタを掴んで状態・進捗が編集前のまま固まる。
 func (v *issuesView) receive(msg issuesScanMsg) {
 	v.scanning, v.loaded = false, true
-	// 自分が取り直した結果を「外部の変化」と誤検出しないよう、見張りの基準を引き直す
-	// (次の観測が新しい基準になる。issues_watch.go)
-	v.watch.seen, v.watch.pending = "", ""
+	// 見張りの基準は「このスキャンが読んだ時点の指紋」に揃える (issues_watch.go)。最初の観測で
+	// 取ると、読んだ時刻と基準を取る時刻が最大 1 周期ずれ、その間の外部編集が基準へ焼き込まれて
+	// 次の編集が来るまで永久に取りこぼす。自分の取り直しを「外部の変化」と誤検出しないのも同じ式で
+	// 満たせる (スキャンは内容を変えないので指紋は動かない)。
+	v.watch.seen, v.watch.pending = msg.fp, ""
 	tab, cursorPath, openPath := v.currentTab(), issuePath(v.current()), issuePath(v.open)
 	v.root, v.dirs, v.all, v.warnings = msg.root, msg.dirs, msg.issues, msg.warnings
 	v.tabsCanon = issues.Tabs(v.all, issues.TabMinCount)

@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"glogx/issues"
 )
 
 // watchTree は issues ディレクトリを 1 つ持つ木を作り (root, issue のパス) を返す。
@@ -58,18 +56,15 @@ func (v *issuesView) observe() issuesWatchMsg {
 	return issuesWatchMsg{fp: issuesFingerprint(v.watchTargets())}
 }
 
-// scanOf は実ファイルを走査した結果 (scanCmd と同じ中身) を返す。
+// scanOf は実ファイルを走査した結果を返す。⚠️ 中身を再実装せず production の scanIssues を
+// 呼ぶ: 指紋の取り方がずれると「テストでは基準が揃うのに本番ではずれる」形で穴を見逃す。
 func scanOf(t *testing.T, root string) issuesScanMsg {
 	t.Helper()
-	dirs := issues.FindDirs(root)
-	if len(dirs) == 0 {
+	msg := scanIssues(root)
+	if len(msg.dirs) == 0 {
 		t.Fatalf("issues ディレクトリが見つからない: %s", root)
 	}
-	found, warnings := issues.Scan(dirs)
-	for _, iss := range found {
-		_ = iss.LoadMeta()
-	}
-	return issuesScanMsg{root: root, dirs: dirs, issues: found, warnings: warnings}
+	return msg
 }
 
 func TestIssuesWatchReloadsAfterExternalEdit(t *testing.T) {
@@ -100,9 +95,18 @@ func TestIssuesWatchReloadsAfterExternalEdit(t *testing.T) {
 	if got := v.rows[0].Progress(); got != "1/1" {
 		t.Fatalf("チェックボックスの進捗が追従していない: %q", got)
 	}
-	// 取り直した直後は基準を引き直す (自分の scan を外部の変化と誤検出しない)
-	if v.watch.seen != "" || v.watch.pending != "" {
-		t.Fatalf("取り直し後に見張りの基準が残っている: seen=%q pending=%q", v.watch.seen, v.watch.pending)
+	// 取り直した直後の基準は「スキャンが読んだ時点の指紋」= 次の観測と一致する。自分の取り直しを
+	// 外部の変化と誤検出しないことを、基準を空にする (= 次の観測を無条件に基準化する) のではなく
+	// 一致で示す。空にすると、読んだ時刻と基準を取る時刻の差に入った編集を取りこぼす。
+	if v.watch.pending != "" {
+		t.Fatalf("取り直し後に安定待ちが残っている: %q", v.watch.pending)
+	}
+	if v.watch.seen != v.observe().fp {
+		t.Fatal("取り直し後の基準がスキャン時点の指紋と一致しない")
+	}
+	v.handleWatch(v.observe())
+	if v.scanning {
+		t.Fatal("自分の取り直しを外部の変化と誤検出して再スキャンした")
 	}
 }
 
@@ -243,5 +247,31 @@ func TestIssuesViewerWatchWiredIntoUpdate(t *testing.T) {
 	m.handleKey("i") // 閉じる
 	if _, cmd := m.Update(m.issuesOv.observe()); cmd != nil {
 		t.Fatal("閉じた後も見張りが続いている")
+	}
+}
+
+// スキャンが読んだ内容と見張りの基準がずれると、その間に入った編集を永久に取りこぼす。
+//
+// 基準を「最初の観測」で取ると、スキャン (内容を読んだ時刻) と基準取り (最大 1 周期あと) の間の
+// 編集が基準に焼き込まれ、以降は「変化なし」に見える。取りこぼしは次の編集が来るまで解消せず、
+// viewer は編集前の内容を出し続ける = この機能が塞ぎに来た「viewer が確信を持って嘘をつく」状態。
+//
+// Claude Code のように数秒おきに書くツールでは、取り直し直後の書き込みが普通に起きる。
+func TestIssuesWatchCatchesEditRacingTheBaseline(t *testing.T) {
+	root, path := watchTree(t, "# 001 feat: 編集前\n")
+	v := newIssuesView()
+	if cmd := v.toggle(root); cmd == nil {
+		t.Fatal("toggle が Cmd を返さない")
+	}
+	v.receive(scanOf(t, root)) // スキャンはここまでの内容を読んだ
+
+	writeIssue(t, path, "# 001 feat: 編集後\n", time.Now()) // 基準取りより前に外部が書く
+
+	// 以降どれだけ観測しても指紋は「編集後」で一定なので、基準取りで吸収されると二度と気づけない。
+	for range 3 {
+		v.handleWatch(v.observe())
+	}
+	if !v.scanning {
+		t.Fatal("スキャンと基準取りの間に入った編集を取りこぼした (一覧が編集前のまま固まる)")
 	}
 }
