@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -155,18 +156,28 @@ func TestIssuesViewRescanRebindsOpenBody(t *testing.T) {
 
 func TestIssuesViewTabsAndDoneFilter(t *testing.T) {
 	v := loadedView(sampleIssues()...)
-	// 既定は done を伏せる: open 2 + pending 1 = 3 行
-	if len(v.rows) != 3 {
+	// 既定は open だけ: open 2 行 (pending / done は伏せる)
+	if len(v.rows) != 2 {
 		t.Fatalf("既定の行数が違う: %d", len(v.rows))
 	}
 	// タブは feat 2 / refactor 2 / (bug 1 は other へ)
 	if len(v.tabs) != 3 || v.tabs[0].Name != "feat" {
 		t.Fatalf("タブの組み立てが違う: %+v", v.tabs)
 	}
-	v.handleKey("a", 10)
-	if len(v.rows) != 5 {
-		t.Fatalf("a で done を含めていない: %d", len(v.rows))
+	v.handleKey("a", 10) // 1 段目: + pending
+	if len(v.rows) != 3 {
+		t.Fatalf("a 1 回で pending を含めていない: %d", len(v.rows))
 	}
+	v.handleKey("a", 10) // 2 段目: + done
+	if len(v.rows) != 5 {
+		t.Fatalf("a 2 回で done を含めていない: %d", len(v.rows))
+	}
+	v.handleKey("a", 10) // 3 段目で既定へ戻る
+	if len(v.rows) != 2 {
+		t.Fatalf("a 3 回で open のみへ戻らない: %d", len(v.rows))
+	}
+	v.handleKey("a", 10)
+	v.handleKey("a", 10) // 以降のタブ検証は全件表示で行う
 	// Tab 巡回: All → feat → refactor → other → All
 	names := []string{"feat", "refactor", "other", ""}
 	for _, want := range names {
@@ -192,7 +203,7 @@ func TestIssuesViewTabChipCountsMatchRows(t *testing.T) {
 	// 含む全件なので、そのまま出すと done を伏せた既定表示で合計が All と食い違う。
 	v := loadedView(sampleIssues()...)
 	line := v.tabLine(issuesRenderOpts{width: 120})
-	for _, want := range []string{"[All 3]", "[feat 2]", "[refactor 1]", "[other 0]"} {
+	for _, want := range []string{"[All 2]", "[feat 2]", "[refactor 0]", "[other 0]"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("チップの件数が状態フィルタと合っていない (%s が無い): %q", want, line)
 		}
@@ -205,7 +216,11 @@ func TestIssuesViewTabChipCountsMatchRows(t *testing.T) {
 		}
 	}
 	v.tabIdx = 0
-	v.handleKey("a", 10) // done を含めると件数も追従する
+	v.handleKey("a", 10) // + pending
+	if v.allCount != 3 {
+		t.Fatalf("pending 表示で All の件数が更新されない: %d", v.allCount)
+	}
+	v.handleKey("a", 10) // + done
 	if v.allCount != 5 {
 		t.Fatalf("done 表示で All の件数が更新されない: %d", v.allCount)
 	}
@@ -238,6 +253,8 @@ func TestIssuesViewLinesAlwaysExactlyPageRows(t *testing.T) {
 
 func TestIssuesViewRowShowsNumberBadgeCategoryTitle(t *testing.T) {
 	v := loadedView(sampleIssues()...)
+	v.filter = issues.FilterPending // pending のバッジ ⏸ も見たいので 1 段進める
+	v.refresh()
 	lines := v.lines(renderOpts(20))
 	joined := strings.Join(lines, "\n")
 	for _, want := range []string{"030", "○", "feat", "028", "⏸", "refactor"} {
@@ -540,10 +557,16 @@ func TestIssuesViewEmptyStates(t *testing.T) {
 	if !strings.Contains(strings.Join(v.lines(renderOpts(10)), "\n"), "見つかりません") {
 		t.Fatal("issues ディレクトリ不在の案内が出ない")
 	}
-	// タブに未完了が無い (done だけ)
+	// タブに open が無い (done だけ): 既定は open のみなので「pending も表示」を案内する
 	v2 := loadedView(fakeIssue("001", "feat", "a", issues.StatusDone))
+	if !strings.Contains(strings.Join(v2.lines(renderOpts(10)), "\n"), "a: pending も表示") {
+		t.Fatal("open が無いときの案内が出ない")
+	}
+	// 1 段進めても空なら done の案内へ進む
+	v2.filter = issues.FilterPending
+	v2.refresh()
 	if !strings.Contains(strings.Join(v2.lines(renderOpts(10)), "\n"), "a: done も表示") {
-		t.Fatal("done だけのときの案内が出ない")
+		t.Fatal("pending まで見ても空のときの案内が出ない")
 	}
 }
 
@@ -759,12 +782,117 @@ func TestIssuesViewHintFitsPopupWidth(t *testing.T) {
 	if w := dispWidth(v.hint()); w > popupWidth {
 		t.Fatalf("一覧の hint が %d 桁に収まらない (w=%d): %q", popupWidth, w, v.hint())
 	}
-	v.showDone = true
-	if w := dispWidth(v.hint()); w > popupWidth {
-		t.Fatalf("done 表示中の hint が収まらない (w=%d): %q", w, v.hint())
+	// a の巡回で文言が変わるので全段階を見る
+	for _, f := range []issues.StatusFilter{issues.FilterPending, issues.FilterAll} {
+		v.filter = f
+		if w := dispWidth(v.hint()); w > popupWidth {
+			t.Fatalf("filter=%d の hint が収まらない (w=%d): %q", f, w, v.hint())
+		}
 	}
 	v.open = v.rows[0]
 	if w := dispWidth(v.hint()); w > popupWidth {
 		t.Fatalf("本文の hint が収まらない (w=%d): %q", w, v.hint())
+	}
+}
+
+// a キーは 3 段の巡回 (open → +pending → +done → open)。既定は open だけ
+// (ユーザー要望 2026-07-31: 既定で pending を伏せる)。
+func TestIssuesStatusFilterCycle(t *testing.T) {
+	v := loadedView(sampleIssues()...)
+	want := []struct {
+		filter issues.StatusFilter
+		rows   int
+		badges string
+	}{
+		{issues.FilterOpen, 2, "○"},
+		{issues.FilterPending, 3, "○⏸"},
+		{issues.FilterAll, 5, "○⏸✓"},
+		{issues.FilterOpen, 2, "○"}, // 巡回して既定へ戻る
+	}
+	for i, w := range want {
+		if v.filter != w.filter {
+			t.Fatalf("%d 打目: filter=%d want %d", i, v.filter, w.filter)
+		}
+		if len(v.rows) != w.rows {
+			t.Errorf("%d 打目: 行数=%d want %d", i, len(v.rows), w.rows)
+		}
+		if got := v.filter.Badges(); got != w.badges {
+			t.Errorf("%d 打目: バッジ=%q want %q", i, got, w.badges)
+		}
+		// hint は「次に何が増えるか」を出し、現在地は出さない (幅が 1 行しかない)
+		if !strings.Contains(v.hint(), "a: ") {
+			t.Errorf("%d 打目: hint に a の案内が無い: %q", i, v.hint())
+		}
+		v.handleKey("a", 10)
+	}
+}
+
+// 0 件のカテゴリはタブ行の右へ寄る。件数 > 0 / 0 の各群の中では元の順序を保ち、
+// 選択中のタブは並べ替えを跨いでも同じカテゴリを指し続ける (位置で持つ tabIdx の張り替え)。
+func TestIssuesZeroCountTabsGoRight(t *testing.T) {
+	// feat: open 2 / refactor: done 2 / bug: done 2 → 既定 (open のみ) では feat だけ非 0。
+	// issues.Tabs は done 込みの件数降順なので、並べ替えが無いと bug/refactor が feat より左に来る。
+	v := loadedView(
+		fakeIssue("030", "feat", "a", issues.StatusOpen),
+		fakeIssue("029", "feat", "b", issues.StatusOpen),
+		fakeIssue("028", "refactor", "c", issues.StatusDone),
+		fakeIssue("027", "refactor", "d", issues.StatusDone),
+		fakeIssue("026", "bug", "e", issues.StatusDone),
+		fakeIssue("025", "bug", "f", issues.StatusDone),
+	)
+	if len(v.tabs) < 2 {
+		t.Fatalf("タブが揃っていない: %+v", v.tabs)
+	}
+	if v.tabs[0].Name != "feat" || v.tabCount[0] == 0 {
+		t.Errorf("0 件でないタブが左端に来ていない: tabs=%+v counts=%v", v.tabs, v.tabCount)
+	}
+	for i := 1; i < len(v.tabCount); i++ {
+		if v.tabCount[i] != 0 {
+			t.Errorf("0 件タブより右に非 0 のタブがある: counts=%v", v.tabCount)
+		}
+	}
+
+	// 選択を追従: refactor を選んでから全件表示へ切り替えても refactor のまま
+	idx := -1
+	for i, tb := range v.tabs {
+		if tb.Name == "refactor" {
+			idx = i + 1
+		}
+	}
+	if idx < 0 {
+		t.Fatalf("refactor タブが無い: %+v", v.tabs)
+	}
+	v.tabIdx = idx
+	v.refresh()
+	v.handleKey("a", 10) // + pending
+	v.handleKey("a", 10) // + done (件数が変わり並びも変わる)
+	if got := v.currentTab(); got != "refactor" {
+		t.Errorf("並べ替えで選択タブが滑った: %q (want refactor)", got)
+	}
+}
+
+// reorderTabsByCount の純粋な性質: 群内の順序保持と、数え漏れ時の no-op。
+func TestReorderTabsByCount(t *testing.T) {
+	tabs := []issues.Tab{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}}
+	counts := []int{0, 3, 0, 1}
+	gotTabs, gotCounts := reorderTabsByCount(tabs, counts)
+	names := []string{gotTabs[0].Name, gotTabs[1].Name, gotTabs[2].Name, gotTabs[3].Name}
+	if want := []string{"b", "d", "a", "c"}; !slices.Equal(names, want) {
+		t.Errorf("並び = %v, want %v (非 0 を元順で、次に 0 を元順で)", names, want)
+	}
+	if want := []int{3, 1, 0, 0}; !slices.Equal(gotCounts, want) {
+		t.Errorf("件数の並び = %v, want %v", gotCounts, want)
+	}
+	// 入力を破壊しない (正規順序は呼び出し側が保持し続ける)
+	if tabs[0].Name != "a" || counts[0] != 0 {
+		t.Error("入力を破壊している")
+	}
+	// tabIndexOf と組み合わせて選択を名前で張り替えられる
+	if idx := tabIndexOf(gotTabs, "c"); gotTabs[idx-1].Name != "c" {
+		t.Errorf("選択の張り替えが違う: idx=%d", idx)
+	}
+	// 数え漏れ (長さ不一致) では並べ替えない
+	if got, _ := reorderTabsByCount(tabs, []int{1}); got[0].Name != "a" {
+		t.Error("長さ不一致でも並べ替えてしまっている")
 	}
 }

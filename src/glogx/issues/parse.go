@@ -524,10 +524,59 @@ func indexOfTab(tabs []Tab, name string) int {
 	return -1
 }
 
+// StatusFilter は「どの状態まで見せるか」の段階。累積で、既定 (zero value) は open だけ。
+//
+// done を既定で伏せるのは実測で done が全体の 8 割を占める repo があり、既定で混ぜると open が
+// 埋もれるため。pending も伏せるのは「着手条件・trigger 待ち = 今は動かせない」ので、既定の
+// 一覧で open と混ぜると「今やれること」が読み取りづらいため (ユーザー要望 2026-07-31)。
+// bool 2 本でなく段階にしたのは、操作を 1 キーの巡回に収めてヒント行 (1 行しかない) を
+// 圧迫しないため。「pending は伏せて done だけ見る」は表現できない (需要が低いと判断)。
+type StatusFilter uint8
+
+const (
+	FilterOpen    StatusFilter = iota // open のみ (既定)
+	FilterPending                     // + pending
+	FilterAll                         // + done (= すべて)
+)
+
+// Next は巡回の次の段階 (FilterAll の次は FilterOpen へ戻る)。
+func (f StatusFilter) Next() StatusFilter {
+	if f >= FilterAll {
+		return FilterOpen
+	}
+	return f + 1
+}
+
+// shows はその状態を表示するか。
+//
+// StatusUnknown を常に見せるのは、未知のサブディレクトリを状態へ写像しない契約 (パッケージ冒頭の
+// 議論) の帰結: 状態でないサブグループをフィルタで伏せると「存在しない状態」を操作させてしまう。
+func (f StatusFilter) shows(s Status) bool {
+	switch s {
+	case StatusPending:
+		return f >= FilterPending
+	case StatusDone:
+		return f >= FilterAll
+	case StatusOpen, StatusUnknown:
+		return true
+	}
+	return true
+}
+
+// Badges は今見えている状態のバッジ列 (タブ行右端の「今どこまで見えているか」表示用)。
+func (f StatusFilter) Badges() string {
+	out := StatusOpen.Badge()
+	if f >= FilterPending {
+		out += StatusPending.Badge()
+	}
+	if f >= FilterAll {
+		out += StatusDone.Badge()
+	}
+	return out
+}
+
 // Filter はタブと状態フィルタで絞り込む。tab が "" なら全カテゴリ。
-// showDone=false のとき StatusDone を落とす (done は既定で伏せる: 実測で done が
-// 全体の 8 割を占める repo があり、既定で混ぜると open が埋もれる)。
-func Filter(issues []*Issue, tab string, showDone bool) []*Issue {
+func Filter(issues []*Issue, tab string, filter StatusFilter) []*Issue {
 	// OtherTab は「自前のタブを持たないカテゴリ」の寄せ先。タブ集合を 1 回だけ作って
 	// 判定に使う (要素ごとに Tabs を呼ぶと件数の 2 乗になる)
 	own := make(map[string]bool, 8)
@@ -541,7 +590,7 @@ func Filter(issues []*Issue, tab string, showDone bool) []*Issue {
 	}
 	out := make([]*Issue, 0, len(issues))
 	for _, iss := range issues {
-		if !showDone && iss.Status == StatusDone {
+		if !filter.shows(iss.Status) {
 			continue
 		}
 		switch {

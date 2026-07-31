@@ -123,22 +123,22 @@ func TestTabsDerivedFromFilenamesAndMinorityMerged(t *testing.T) {
 
 func TestFilterByTabAndDone(t *testing.T) {
 	issues, _ := Scan([]string{fixture(t)})
-	// 既定 (done を伏せる)
-	open := Filter(issues, "", false)
+	// 既定 (FilterOpen) は open だけ。pending / done は伏せる
+	open := Filter(issues, "", FilterOpen)
 	for _, iss := range open {
-		if iss.Status == StatusDone {
-			t.Fatalf("done が既定で混ざっている: %s", iss.Rel)
+		if iss.Status == StatusDone || iss.Status == StatusPending {
+			t.Fatalf("既定で %s が混ざっている: %s", iss.Status, iss.Rel)
 		}
 	}
-	if len(Filter(issues, "", true)) != len(issues) {
-		t.Fatal("showDone=true で全件出ていない")
+	if len(Filter(issues, "", FilterAll)) != len(issues) {
+		t.Fatal("FilterAll で全件出ていない")
 	}
 	// feat タブ (done を含めると 2 件)
-	if got := Filter(issues, "feat", true); len(got) != 2 {
+	if got := Filter(issues, "feat", FilterAll); len(got) != 2 {
 		t.Fatalf("feat タブの件数が違う: %d", len(got))
 	}
 	// other タブはカテゴリ無し + 独立タブを持たないカテゴリ
-	other := Filter(issues, OtherTab, true)
+	other := Filter(issues, OtherTab, FilterAll)
 	for _, iss := range other {
 		if iss.Category == "feat" {
 			t.Fatalf("独立タブを持つカテゴリが other に混ざった: %s", iss.Rel)
@@ -173,14 +173,14 @@ func TestTabsAndFilterKeepLiteralOtherCategoryInOneTab(t *testing.T) {
 	if i := indexOfTab(tabs, OtherTab); tabs[i].Count != 3 {
 		t.Fatalf("other の件数が合算されていない: %+v", tabs)
 	}
-	got := Filter(list, OtherTab, true)
+	got := Filter(list, OtherTab, FilterAll)
 	if len(got) != 3 {
 		t.Fatalf("other タブの行数が件数と合わない: %d (%+v)", len(got), got)
 	}
 	// 全 issue がどこかのタブに出る (どこにも出ない行を作らない)
 	total := 0
 	for _, tb := range tabs {
-		total += len(Filter(list, tb.Name, true))
+		total += len(Filter(list, tb.Name, FilterAll))
 	}
 	if total != len(list) {
 		t.Fatalf("タブの合計 %d が全件 %d と合わない", total, len(list))

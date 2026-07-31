@@ -45,9 +45,17 @@ type issuesView struct {
 	warnings []string
 	notice   string // 直近の操作結果 (コピー成功・読み込み失敗など)
 
-	tabs     []issues.Tab // All は含まない (表示時に先頭へ足す)
-	tabIdx   int          // 0 = All、1.. = tabs[tabIdx-1]
-	showDone bool
+	// tabsCanon は issues.Tabs が返す正規順序 (done 込みの件数降順 → 名前昇順、other は末尾)。
+	// tabs は「そこから 0 件を右へ寄せた表示・巡回順」。⚠️ 並べ替えを tabs へ破壊的に適用すると
+	// 順序が履歴依存になる (前回の並びを基準に再度寄せるため、全件表示に戻しても正規順序へ戻らず
+	// 「12, 6, 2, 6, 4」のような不規則な並びが残る。実測 2026-07-31)。正規順序を別に保ち、
+	// 表示順は (正規順序, 現在の件数) の純粋な写像として毎回作り直す。
+	tabsCanon []issues.Tab
+	tabs      []issues.Tab // All は含まない (表示時に先頭へ足す)
+	tabIdx    int          // 0 = All、1.. = tabs[tabIdx-1]
+	// filter は「どの状態まで見せるか」(a キーで巡回)。zero value = open のみが既定
+	// (issues.FilterOpen)。pending / done を既定で伏せる理由は issues.StatusFilter の doc。
+	filter issues.StatusFilter
 	// チップに出す件数。issues.Tab.Count は done を含む全件なので表示には使わない (理由は
 	// refresh)。tabCount は tabs と同じ並び、allCount は All チップ用。
 	tabCount []int
@@ -170,7 +178,8 @@ func (v *issuesView) receive(msg issuesScanMsg) {
 	v.scanning, v.loaded = false, true
 	tab, cursorPath, openPath := v.currentTab(), issuePath(v.current()), issuePath(v.open)
 	v.root, v.dirs, v.all, v.warnings = msg.root, msg.dirs, msg.issues, msg.warnings
-	v.tabs = issues.Tabs(v.all, issues.TabMinCount)
+	v.tabsCanon = issues.Tabs(v.all, issues.TabMinCount)
+	v.tabs = v.tabsCanon // refresh が件数を数えて表示順 (0 件を右) へ並べ替える
 	v.tabIdx = tabIndexOf(v.tabs, tab)
 	v.refresh()
 	v.anchorCursor(cursorPath)
@@ -231,7 +240,7 @@ func (v *issuesView) rebindOpen(path string) {
 // どの行にも描かれない」状態が残るため (a / Tab / 再スキャンで実際に起きていた)。窓は
 // windowOffset が cursor から導出するので、ここは行集合の作り直しだけを担う。
 func (v *issuesView) refresh() {
-	v.rows = issues.Filter(v.all, v.currentTab(), v.showDone)
+	v.rows = issues.Filter(v.all, v.currentTab(), v.filter)
 	v.cursor = clampIdx(v.cursor, len(v.rows))
 	v.listGlide.stop() // 行集合が変わったので、旧着地点へ向かう glide は捨てる
 	// チップの件数は「そのタブを選んだときに実際に並ぶ行数」と同じ Filter から出す。
@@ -240,11 +249,39 @@ func (v *issuesView) refresh() {
 	//
 	// ⚠️ タブ集合そのものは v.all から作る (receive)。Filter 後の集合から作り直すと done だけの
 	// カテゴリが消え、位置で持つ tabIdx が別カテゴリを指す。ここで数えるのは件数だけ。
-	v.allCount = len(issues.Filter(v.all, "", v.showDone))
-	v.tabCount = make([]int, len(v.tabs))
-	for i, t := range v.tabs {
-		v.tabCount[i] = len(issues.Filter(v.all, t.Name, v.showDone))
+	v.allCount = len(issues.Filter(v.all, "", v.filter))
+	sel := v.currentTab() // 並べ替えを跨いで選択を保つため名前で覚える (tabIdx は位置で持つ)
+	counts := make([]int, len(v.tabsCanon))
+	for i, t := range v.tabsCanon {
+		counts[i] = len(issues.Filter(v.all, t.Name, v.filter))
 	}
+	// 0 件のカテゴリは右へ寄せる (ユーザー要望 2026-07-31)。タブ集合の順序は done 込みの全件数で
+	// 決まる (issues.Tabs) ため、状態を伏せた表示では「0 件なのに左端」が構造的に起きていた。
+	v.tabs, v.tabCount = reorderTabsByCount(v.tabsCanon, counts)
+	v.tabIdx = tabIndexOf(v.tabs, sel)
+}
+
+// reorderTabsByCount は正規順序 tabs を「件数 0 を右へ寄せた」並びへ写す純関数 (件数も同じ並びで
+// 返す)。件数 > 0 / 0 の 2 群に分け、各群の中は正規順序を保つ。入力は破壊しない。
+//
+// ⚠️ 表示順だけ変えて巡回順を据え置くと、Tab キーの移動が画面の並びと食い違う (右端に見えるタブへ
+// 順番に辿り着けない)。呼び出し側は tabs (表示・巡回順) をこれで作り直し、位置で持つ選択 (tabIdx)
+// は名前から張り替える (tabIndexOf)。張り替えないと a で件数が変わった瞬間に選択が別カテゴリへ滑る。
+func reorderTabsByCount(tabs []issues.Tab, counts []int) ([]issues.Tab, []int) {
+	if len(tabs) != len(counts) {
+		return tabs, counts // 数え漏れ (呼び出し側のバグ) では並べ替えない
+	}
+	outTabs := make([]issues.Tab, 0, len(tabs))
+	outCounts := make([]int, 0, len(counts))
+	for _, nonZero := range []bool{true, false} {
+		for i, c := range counts {
+			if (c > 0) == nonZero {
+				outTabs = append(outTabs, tabs[i])
+				outCounts = append(outCounts, c)
+			}
+		}
+	}
+	return outTabs, outCounts
 }
 
 // currentTab は選択中のタブ名 ("" = All)。
@@ -356,7 +393,7 @@ func (v *issuesView) handleKey(key string, page int) tea.Cmd {
 	case "enter", "o":
 		v.openBody()
 	case "a":
-		v.showDone = !v.showDone
+		v.filter = v.filter.Next()
 		v.refresh()
 	case "r":
 		return v.scanCmd(v.cwd) // loaded は落とさない (取り直し中も前回の結果を出したままにする)
@@ -718,8 +755,10 @@ func (v *issuesView) emptyMessage(o issuesRenderOpts) string {
 		return o.spinner + " issues を探しています..."
 	case len(v.dirs) == 0:
 		return "issues ディレクトリが見つかりません (repo root と root/*/issues を探しました)"
-	case len(v.rows) == 0 && !v.showDone:
-		return "このタブに未完了の issue はありません (a: done も表示)"
+	case len(v.rows) == 0 && v.filter == issues.FilterOpen:
+		return "このタブに open の issue はありません (a: pending も表示)"
+	case len(v.rows) == 0 && v.filter == issues.FilterPending:
+		return "このタブに open / pending の issue はありません (a: done も表示)"
 	case len(v.rows) == 0:
 		return "このタブに issue はありません"
 	default:
@@ -741,10 +780,7 @@ func (v *issuesView) tabLine(o issuesRenderOpts) string {
 		}
 		b.WriteString(v.tabChip(t.Name, count, v.tabIdx == i+1, o.colored))
 	}
-	filter := issues.StatusOpen.Badge() + issues.StatusPending.Badge()
-	if v.showDone {
-		filter += issues.StatusDone.Badge()
-	}
+	filter := v.filter.Badges()
 	left := clipToWidth(b.String(), max(o.width-dispWidth(filter)-1, 1))
 	pad := max(o.width-dispWidth(left)-dispWidth(filter), 0)
 	return left + padSpaces(pad) + paint(filter, ansiDim, o.colored)
@@ -825,9 +861,17 @@ func (v *issuesView) hint() string {
 	if v.open != nil {
 		return "j/k/Space: スクロール  g/G: 先頭/末尾  p: 番号  v: nvim  h/q: 一覧へ"
 	}
-	done := "a: done"
-	if v.showDone {
-		done = "a: done 除外"
+	// a は 3 段の巡回なので「次に押すと何が増えるか」を出す (現在どこまで見えているかはタブ行
+	// 右端のバッジ ○/○⏸/○⏸✓ が示すので、ここで二重に説明しない)。
+	// ⚠️ 語でなくバッジで書くのは幅のため: hint は 1 行で popup 実幅に詰まっており、
+	// "a: pending も" (14 桁) では末尾の "q: 閉じる" が黙って切れる (実測)。
+	next := "a: +" + issues.StatusPending.Badge()
+	switch v.filter {
+	case issues.FilterPending:
+		next = "a: +" + issues.StatusDone.Badge()
+	case issues.FilterAll:
+		next = "a: " + issues.StatusOpen.Badge() + "のみ"
+	case issues.FilterOpen:
 	}
-	return "j/k: 移動  Tab: カテゴリ  Enter: 本文  p: 番号  N: 次番号  " + done + "  q: 閉じる"
+	return "j/k: 移動  Tab: カテゴリ  Enter: 本文  p: 番号  N: 次番号  " + next + "  q: 閉じる"
 }
