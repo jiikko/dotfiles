@@ -134,3 +134,104 @@ func TestOverlayBoxBottomRightKeepsLeftAndAnchorsBottom(t *testing.T) {
 		t.Errorf("box 対象外の行が変わった: %q", out[0])
 	}
 }
+
+// 新しい通知は上に積まれ、古い通知は下から抜けていく (ユーザー要望 2026-07-31)。
+func TestToastStacksNewestOnTop(t *testing.T) {
+	var s toast
+	s.show("1 番目", true)
+	s.show("2 番目", true)
+	s.show("3 番目", true)
+
+	items := s.items()
+	if len(items) != 3 {
+		t.Fatalf("枚数 = %d, want 3", len(items))
+	}
+	// items は上から下。最新が上、最古が下
+	for i, want := range []string{"3 番目", "2 番目", "1 番目"} {
+		if items[i].text != want {
+			t.Errorf("上から %d 枚目 = %q, want %q", i+1, items[i].text, want)
+		}
+	}
+	// 埋め込みは常に最新を指す (呼び出し側とテストが t.text で読む前提)
+	if s.text != "3 番目" {
+		t.Errorf("埋め込みが最新でない: %q", s.text)
+	}
+}
+
+// 上限を超えたら一番古い (一番下) を捨てる。画面を覆わないための guard。
+func TestToastStackCapsOldest(t *testing.T) {
+	var s toast
+	for _, txt := range []string{"1", "2", "3", "4", "5"} {
+		s.show(txt, true)
+	}
+	items := s.items()
+	if len(items) != toastStackMax {
+		t.Fatalf("枚数 = %d, want %d (上限)", len(items), toastStackMax)
+	}
+	if items[0].text != "5" {
+		t.Errorf("最上段 = %q, want 5 (最新)", items[0].text)
+	}
+	for _, it := range items {
+		if it.text == "1" || it.text == "2" {
+			t.Errorf("古い通知が残っている: %q", it.text)
+		}
+	}
+}
+
+// 抜けた枚は取り除かれ、残りが繰り上がる (下から抜けていく)。
+func TestToastStackRemovesFinishedFromBottom(t *testing.T) {
+	var s toast
+	s.show("古い", true)
+	s.show("新しい", true)
+	// 入場を終わらせる
+	for range toastSlideFrames + 2 {
+		s.advance(false)
+	}
+	// 古い方 (下) の静止が明けて退場 → 抜け切るまで進める
+	oldSeq := s.older[0].seq
+	s.startLeaving(toastMsg{seq: oldSeq})
+	for range toastSlideFrames + 2 {
+		s.advance(false)
+	}
+	if len(s.older) != 0 {
+		t.Errorf("抜けた枚が残っている: %+v", s.older)
+	}
+	if s.text != "新しい" || !s.visible() {
+		t.Errorf("残るべき枚が消えた: text=%q visible=%v", s.text, s.visible())
+	}
+}
+
+// 退場タイマーは枚ごとに独立 (seq が一致した枚だけ動く)。
+func TestToastStackLeavingIsPerItem(t *testing.T) {
+	var s toast
+	s.show("古い", true)
+	s.show("新しい", true)
+	for range toastSlideFrames + 2 {
+		s.advance(false)
+	}
+	s.startLeaving(toastMsg{seq: s.older[0].seq})
+	if s.older[0].phase != toastLeaving {
+		t.Errorf("下の枚が退場に入らない: %v", s.older[0].phase)
+	}
+	if s.phase == toastLeaving {
+		t.Error("関係ない上の枚まで退場に入った (seq の取り違え)")
+	}
+}
+
+// 描画は上から下に並ぶ (新しいものが上)。
+func TestToastStackBoxLinesOrder(t *testing.T) {
+	var s toast
+	s.show("古い通知", true)
+	s.show("新しい通知", true)
+	for range toastSlideFrames + 2 {
+		s.advance(false)
+	}
+	out := strings.Join(s.boxLines(false), "\n")
+	iNew, iOld := strings.Index(out, "新しい通知"), strings.Index(out, "古い通知")
+	if iNew < 0 || iOld < 0 {
+		t.Fatalf("両方描かれていない:\n%s", out)
+	}
+	if iNew > iOld {
+		t.Errorf("新しい通知が下に来ている (上に積むはず):\n%s", out)
+	}
+}

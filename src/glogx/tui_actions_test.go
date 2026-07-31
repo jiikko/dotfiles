@@ -689,39 +689,37 @@ func TestBrowseInitWarnsMissingMacism(t *testing.T) {
 	}
 }
 
-// version 通知トースト (issue 024) は単一スロット後勝ちの toast を歪めず「error > info」を守る:
-// 空いていれば表示、先行トースト表示中は上書きせず 1 度遅延再送、再送時も塞がっていれば諦める。
-func TestBrowseClaudeUpdateToastYieldsToVisible(t *testing.T) {
-	// 空きトースト → version 通知 (info=ok) を表示
+// version 通知 (issue 024) は先行トーストを潰さない。⚠️ 以前は「1 枠を譲り合う」ために専用
+// タイマーで遅延再送していたが、トーストが積めるようになったので両方が同時に出るのが正しい姿
+// (ユーザー要望 2026-07-31)。
+func TestBrowseClaudeUpdateToastStacksWithExisting(t *testing.T) {
+	// 空きトースト → version 通知 (成功色) を表示
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.Update(claudeUpdateAvailableMsg{latest: "9.9.9"})
 	if !m.toast.visible() || !m.toast.ok || !strings.Contains(m.toast.text, "9.9.9") {
 		t.Fatalf("空きトーストで version 通知が出ない: visible=%v ok=%v text=%q", m.toast.visible(), m.toast.ok, m.toast.text)
 	}
 
-	// 先行 error トースト表示中 → 上書きせず遅延再送 Cmd を返す (error が残る)
+	// 先行 error トースト表示中 → 上に積まれ、先行も残る (どちらも読める)
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m2.toast.show("macism 未導入: ...", false)
-	_, cmd := m2.Update(claudeUpdateAvailableMsg{latest: "9.9.9"})
-	if m2.toast.ok || !strings.Contains(m2.toast.text, "macism") {
-		t.Fatalf("先行 error が info で上書きされた: ok=%v text=%q", m2.toast.ok, m2.toast.text)
+	m2.Update(claudeUpdateAvailableMsg{latest: "9.9.9"})
+	if !strings.Contains(m2.toast.text, "9.9.9") {
+		t.Errorf("最上段が version 通知でない: %q", m2.toast.text)
 	}
-	if cmd == nil {
-		t.Fatal("先行トースト表示中に遅延再送 Cmd が返らない")
+	if len(m2.toast.older) != 1 || !strings.Contains(m2.toast.older[0].text, "macism") {
+		t.Errorf("先行 error が消えた (積まれていない): %+v", m2.toast.older)
 	}
-
-	// 再送 (retry) 時、空いていれば表示
-	m3 := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m3.Update(claudeUpdateRetryMsg{latest: "9.9.9"})
-	if !m3.toast.visible() || !strings.Contains(m3.toast.text, "9.9.9") {
-		t.Fatalf("再送 (空き) で version 通知が出ない: text=%q", m3.toast.text)
+	// 描画にも両方出る (上が新しい = version 通知)。滑り込みを進めてから見る
+	for range 40 {
+		if !m2.toast.animating() {
+			break
+		}
+		m2.toast.advance(m2.colored)
 	}
-	// 再送でもまだ塞がっていれば諦める (上書きしない)
-	m4 := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m4.toast.show("先行", false)
-	m4.Update(claudeUpdateRetryMsg{latest: "9.9.9"})
-	if strings.Contains(m4.toast.text, "9.9.9") {
-		t.Fatalf("再送でも塞がっているのに上書きした: text=%q", m4.toast.text)
+	out := stripANSI(m2.View().Content)
+	if !strings.Contains(out, "9.9.9") || !strings.Contains(out, "macism") {
+		t.Errorf("両方が画面に出ていない:\n%s", out)
 	}
 }
 

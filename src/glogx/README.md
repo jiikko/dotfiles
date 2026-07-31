@@ -325,7 +325,8 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   シンタックスハイライト) / `tui.go` (Bubble Tea ブラウズの中核・状態遷移) /
   `box.go` (browseModel 非依存の枠描画プリミティブ = panel/overlay/centerBox/shadow) /
   各種オーバーレイ・モーダル (`diff_overlay.go` / `job_detail_overlay.go` /
-  `usage_overlay.go` / `pr_status_overlay.go` / `action_modal.go` / `toast.go`) /
+  `usage_overlay.go` / `pr_status_overlay.go` / `action_modal.go` / `toast.go` = 右下の通知
+  スタック。新しい通知は上に積まれ古い通知は下から抜ける (最大 3 枚)) /
   `usage/` (Claude Code の /usage と codex rateLimits の取得・整形。単独コマンドへ切り出し可能) /
   `width.go` (表示幅の単一情報源 = ansi.StringWidth への一本化と絵文字正規化) / `main.go` (配線)
 - `tools/width-probe/`: 端末が各文字に何セル割り当てるかを CPR (CSI 6n) で端末自身に

@@ -110,7 +110,7 @@ func TestAutobuildWatchHandle(t *testing.T) {
 
 	t.Run("未決着なら監視継続・通知なし", func(t *testing.T) {
 		w := newWatch()
-		_, notify, keep := w.handle(autobuildRunning, false, now)
+		_, notify, keep := w.handle(autobuildRunning, now)
 		if notify || !keep {
 			t.Errorf("notify=%v keep=%v, want false/true", notify, keep)
 		}
@@ -118,7 +118,7 @@ func TestAutobuildWatchHandle(t *testing.T) {
 
 	t.Run("成功は無言で監視終了 (開始時に伝えているため)", func(t *testing.T) {
 		w := newWatch()
-		_, notify, keep := w.handle(autobuildInstalled, false, now)
+		_, notify, keep := w.handle(autobuildInstalled, now)
 		if notify || keep {
 			t.Errorf("notify=%v keep=%v, want false/false (二重通知はノイズ)", notify, keep)
 		}
@@ -129,7 +129,7 @@ func TestAutobuildWatchHandle(t *testing.T) {
 
 	t.Run("失敗は通知して監視終了", func(t *testing.T) {
 		w := newWatch()
-		res, notify, keep := w.handle(autobuildFailed, false, now)
+		res, notify, keep := w.handle(autobuildFailed, now)
 		if res != autobuildFailed || !notify || keep {
 			t.Errorf("res=%v notify=%v keep=%v, want failed/true/false", res, notify, keep)
 		}
@@ -138,7 +138,7 @@ func TestAutobuildWatchHandle(t *testing.T) {
 	t.Run("開始は通知した後も監視を続ける (失敗を拾うため)", func(t *testing.T) {
 		w := newWatch()
 		w.pending = autobuildStarted
-		res, notify, keep := w.handle(autobuildRunning, false, now)
+		res, notify, keep := w.handle(autobuildRunning, now)
 		if res != autobuildStarted || !notify || !keep {
 			t.Errorf("res=%v notify=%v keep=%v, want started/true/true", res, notify, keep)
 		}
@@ -146,38 +146,25 @@ func TestAutobuildWatchHandle(t *testing.T) {
 			t.Error("開始を伝えただけで監視を止めた (失敗を拾えない)")
 		}
 		// 続けて失敗したら、そちらも出す
-		res, notify, keep = w.handle(autobuildFailed, false, now)
+		res, notify, keep = w.handle(autobuildFailed, now)
 		if res != autobuildFailed || !notify || keep {
 			t.Errorf("開始通知後の失敗: res=%v notify=%v keep=%v", res, notify, keep)
 		}
 	})
 
 	t.Run("開始を出す前に失敗したら失敗を優先する", func(t *testing.T) {
+		// 「ビルド中」を出せていないうちに落ちたら、出すべきは失敗の方
 		w := newWatch()
 		w.pending = autobuildStarted
-		w.handle(autobuildFailed, true, now) // 塞がっていて出せない
-		res, notify, _ := w.handle(autobuildRunning, false, now)
+		res, notify, _ := w.handle(autobuildFailed, now)
 		if res != autobuildFailed || !notify {
 			t.Errorf("res=%v notify=%v, want failed/true", res, notify)
 		}
 	})
 
-	t.Run("トースト表示中は保持して次 tick で出し直す", func(t *testing.T) {
-		w := newWatch()
-		w.pending = autobuildRunning
-		if _, notify, keep := w.handle(autobuildFailed, true, now); notify || !keep {
-			t.Fatalf("塞がり中: notify=%v keep=%v, want false/true", notify, keep)
-		}
-		// 次の tick は未決着 (mtime はもう動かない) だが、保持した結果を出す。
-		res, notify, keep := w.handle(autobuildRunning, false, now.Add(autobuildPollInterval))
-		if res != autobuildFailed || !notify || keep {
-			t.Errorf("空いた後: res=%v notify=%v keep=%v, want failed/true/false", res, notify, keep)
-		}
-	})
-
 	t.Run("期限切れは無言で監視終了", func(t *testing.T) {
 		w := newWatch()
-		res, notify, keep := w.handle(autobuildRunning, false, now.Add(autobuildWatchTimeout))
+		res, notify, keep := w.handle(autobuildRunning, now.Add(autobuildWatchTimeout))
 		if notify || keep || res != autobuildRunning {
 			t.Errorf("res=%v notify=%v keep=%v, want running/false/false", res, notify, keep)
 		}
@@ -186,17 +173,22 @@ func TestAutobuildWatchHandle(t *testing.T) {
 		}
 	})
 
-	t.Run("塞がり続けても期限で打ち切る", func(t *testing.T) {
+	t.Run("決着しないまま期限が来たら打ち切る", func(t *testing.T) {
+		// ビルダーがシグナルで死ぬと新バイナリも失敗記録も現れない = 決着しない。
+		// tick が永久に残らないよう期限で諦める。
 		w := newWatch()
-		w.handle(autobuildInstalled, true, now)
-		if _, notify, keep := w.handle(autobuildRunning, true, now.Add(autobuildWatchTimeout)); notify || keep {
+		w.pending = autobuildRunning
+		if _, notify, keep := w.handle(autobuildRunning, now.Add(autobuildWatchTimeout)); notify || keep {
 			t.Errorf("notify=%v keep=%v, want false/false", notify, keep)
+		}
+		if w.active {
+			t.Error("期限後も active=true")
 		}
 	})
 
 	t.Run("監視していない zero value は何もしない", func(t *testing.T) {
 		var w autobuildWatch
-		if _, notify, keep := w.handle(autobuildInstalled, false, now); notify || keep {
+		if _, notify, keep := w.handle(autobuildInstalled, now); notify || keep {
 			t.Errorf("notify=%v keep=%v, want false/false", notify, keep)
 		}
 	})

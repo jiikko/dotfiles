@@ -48,12 +48,12 @@ const (
 	toastLeaving                    // 右画面外へ 滑り出し中 (shown boxWidth→0)
 )
 
-// toast は右下に出す結果フィードバック (push/pull 完了)。右の画面外から左へ「にゅっと」滑り込んで
-// 現れ、数秒静止し、また右へ「にゅっと」滑り出て消える横スライド (shown = 箱の左から見せている
-// カラム数を tick で増減させ、右端揃えで overlay すると箱が水平移動して見える)。行単位でなく
-// カラム単位で動かすため、箱が数行でも滑らかなアニメになる。glogx は tmux の display-popup 内で
-// 動くため tmux-toast (floating pane) は popup に隠れて出せず、glogx 自身の TUI 内に描く。
-type toast struct {
+// toastItem は右下に出す結果フィードバック 1 枚。右の画面外から左へ「にゅっと」滑り込んで現れ、
+// 数秒静止し、また右へ「にゅっと」滑り出て消える横スライド (shown = 箱の左から見せているカラム数を
+// tick で増減させ、右端揃えで overlay すると箱が水平移動して見える)。行単位でなくカラム単位で
+// 動かすため、箱が数行でも滑らかなアニメになる。glogx は tmux の display-popup 内で動くため
+// tmux-toast (floating pane) は popup に隠れて出せず、glogx 自身の TUI 内に描く。
+type toastItem struct {
 	text  string
 	ok    bool // true=成功 (✓緑) / false=失敗 (✗赤)。info=true のときは無視される
 	info  bool // true=進行中/中立 (…シアン)。ok より優先し、完了/失敗どちらでもない状態を表す
@@ -63,34 +63,25 @@ type toast struct {
 	frame int // スライドの進捗フレーム (入場 0→N / 退場 N→0)。shown = easedShown(frame)
 }
 
-// show は新しいトーストを右画面外からの滑り込みで出し始める。呼び出し側で maybeTick を Batch して
-// tick を回すこと (アニメは tickMsg で進む)。既存トーストは上書きし世代を進める。
-func (t *toast) show(text string, ok bool) {
-	t.seq++
-	t.text, t.ok, t.info = text, ok, false
-	t.phase = toastEntering
-	t.shown, t.frame = 0, 0
-}
-
-// showInfo は進行中/中立のトースト (…シアン) を出す。成功でも失敗でもない一時状態 (例:「検索中」)
-// 用で、直後に show(…) の結果トーストで上書きされることを前提とする。
-func (t *toast) showInfo(text string) {
-	t.seq++
-	t.text, t.info = text, true
+// reset は 1 枚を「これから滑り込む状態」に作り直す (スタックが積むときに使う)。seq は世代管理
+// (退場タイマーの有効性判定) に使うのでスタック側が採番して渡す。
+func (t *toastItem) reset(text string, ok, info bool, seq int) {
+	t.seq = seq
+	t.text, t.ok, t.info = text, ok, info
 	t.phase = toastEntering
 	t.shown, t.frame = 0, 0
 }
 
 // animating は入場/退場アニメ中か (tick を回す必要がある + spinnerActive に含める)。holding は
 // 全幅のまま静止 (tea.Tick の toastMsg 待ち) なので tick 不要。
-func (t *toast) animating() bool { return t.phase == toastEntering || t.phase == toastLeaving }
+func (t *toastItem) animating() bool { return t.phase == toastEntering || t.phase == toastLeaving }
 
 // visible は表示中か (holding 含む)。
-func (t *toast) visible() bool { return t.phase != toastHidden }
+func (t *toastItem) visible() bool { return t.phase != toastHidden }
 
 // boxWidth は箱の総カラム幅 (スライドの終点)。実描画幅と一致させるため fullBox の 1 行目の
 // 表示幅を使う (buildShadowPanelBox の最小幅クランプ込み)。色に依らず一定。
-func (t *toast) boxWidth(colored bool) int {
+func (t *toastItem) boxWidth(colored bool) int {
 	full := t.fullBox(colored)
 	if len(full) == 0 {
 		return 0
@@ -101,7 +92,7 @@ func (t *toast) boxWidth(colored bool) int {
 // advance はアニメを 1 フレーム進める。frame を入場で 0→N、退場で N→0 に動かし、表示カラムは
 // easedShown(frame) で求める (easeOutCubic)。入場完了で holding へ移り toastHold 後の退場
 // タイマーを予約して返す。退場完了で hidden。
-func (t *toast) advance(colored bool) (holdCmd tea.Cmd) {
+func (t *toastItem) advance(colored bool) (holdCmd tea.Cmd) {
 	w := t.boxWidth(colored)
 	switch t.phase {
 	case toastEntering:
@@ -128,14 +119,14 @@ func (t *toast) advance(colored bool) (holdCmd tea.Cmd) {
 }
 
 // startLeaving は holding の静止時間が明けたら (toastMsg) 退場アニメへ移す。世代一致時のみ。
-func (t *toast) startLeaving(msg toastMsg) {
+func (t *toastItem) startLeaving(msg toastMsg) {
 	if msg.seq == t.seq && t.phase == toastHolding {
 		t.phase = toastLeaving
 	}
 }
 
 // fullBox は内容幅にフィットした影付き小箱 (全行)。スライドの基準になる全幅・全行の算出にも使う。
-func (t *toast) fullBox(colored bool) []string {
+func (t *toastItem) fullBox(colored bool) []string {
 	mark, color := "✓", ansiGreen
 	switch {
 	case t.info:
@@ -152,7 +143,7 @@ func (t *toast) fullBox(colored bool) []string {
 // boxLines は現フレームで見せる箱行 (全行) を返す。各行を箱の左 shown カラムに切り、右端揃えで
 // overlay されると「右画面外から左へ滑り込む/右へ滑り出る」横スライドになる。左カラム切りで開いた
 // SGR は行末で閉じる (右端揃え合成の背景に色がにじまないように)。非表示なら nil。
-func (t *toast) boxLines(colored bool) []string {
+func (t *toastItem) boxLines(colored bool) []string {
 	if t.phase == toastHidden {
 		return nil
 	}
@@ -173,6 +164,115 @@ func (t *toast) boxLines(colored bool) []string {
 			clipped += ansiReset
 		}
 		out[i] = clipped
+	}
+	return out
+}
+
+// toastStackMax は同時に積む枚数の上限。⚠️ 上限が無いと通知が連続したとき画面を覆う (トーストは
+// 内容の上に重なるので、下の一覧・本文が読めなくなる)。溢れたら一番古い (一番下) を捨てる。
+const toastStackMax = 3
+
+// toast は右下の通知スタック。新しい通知は**上に積まれ**、古い通知は**下から抜けていく**
+// (ユーザー要望 2026-07-31)。
+//
+// 以前は 1 枠の後勝ちで、新しい通知が出るたび前の通知が消えていた。そのため「今それを消したくない」
+// 場面ごとに呼び出し側が調停する必要があり、同じ問題に 3 つの実装ができていた (claude version 通知の
+// 専用タイマー付き遅延再送 / autobuild の pending 保持 / 残り全部は調停なしの即上書き)。実測では
+// 「新しい glogx をビルド中」の通知がコピー操作 1 回で消えていた。積めるようにすればどの経路も
+// 素直に show() を呼ぶだけで済み、調停そのものが要らなくなる。
+//
+// ⚠️ 最新の 1 枚を埋め込みで持つ: 呼び出し側とテストが t.text / t.ok / t.phase を直接読む箇所が
+// 多数あり (テストだけで ~150 箇所)、埋め込みなら「最新の通知」を指す既存の読み方をそのまま
+// 保てる。older は上から 2 枚目以降 (index 0 が上寄り = 新しい側、末尾が一番下 = 最古)。
+type toast struct {
+	toastItem
+	older  []toastItem
+	seqGen int // 世代の採番 (退場タイマーの取り違え防止。枚数に依らず単調増加)
+}
+
+// show は新しい通知を最上段に積む。呼び出し側で maybeTick を Batch して tick を回すこと。
+func (s *toast) show(text string, ok bool) { s.push(text, ok, false) }
+
+// showInfo は進行中/中立の通知 (…シアン) を積む。
+func (s *toast) showInfo(text string) { s.push(text, false, true) }
+
+func (s *toast) push(text string, ok, info bool) {
+	s.seqGen++
+	if s.toastItem.visible() {
+		// 今の最新を 1 段下へ押し下げてから、新しいものを最上段に置く
+		s.older = append([]toastItem{s.toastItem}, s.older...)
+	}
+	var top toastItem
+	top.reset(text, ok, info, s.seqGen)
+	s.toastItem = top // 最上段を新しい 1 枚に差し替える
+	if len(s.older) > toastStackMax-1 {
+		s.older = s.older[:toastStackMax-1] // 溢れた分 (最古) を捨てる
+	}
+}
+
+// items は上から下の順に、表示中の 1 枚ずつを返す。
+func (s *toast) items() []*toastItem {
+	out := make([]*toastItem, 0, len(s.older)+1)
+	if s.toastItem.visible() {
+		out = append(out, &s.toastItem)
+	}
+	for i := range s.older {
+		out = append(out, &s.older[i])
+	}
+	return out
+}
+
+// visible は 1 枚でも出ているか。
+func (s *toast) visible() bool { return len(s.items()) > 0 }
+
+// animating は 1 枚でもスライド中か (tick を回す必要がある + spinnerActive に含める)。
+func (s *toast) animating() bool {
+	for _, it := range s.items() {
+		if it.animating() {
+			return true
+		}
+	}
+	return false
+}
+
+// advance は全ての枚を 1 フレーム進め、静止に入った枚の退場タイマーをまとめて返す。
+// 抜け切った (hidden) 枚はここで取り除く = 下から抜けていく。
+func (s *toast) advance(colored bool) tea.Cmd {
+	var cmds []tea.Cmd
+	if cmd := s.toastItem.advance(colored); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	kept := s.older[:0]
+	for i := range s.older {
+		if cmd := s.older[i].advance(colored); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		if s.older[i].visible() {
+			kept = append(kept, s.older[i])
+		}
+	}
+	s.older = kept
+	// 最新が抜け切ったのに下がまだ残っている場合 (下が先に抜ける通常順序の例外) は繰り上げる。
+	// 埋め込みが「最新の 1 枚」を指す不変条件を保つため。
+	if !s.toastItem.visible() && len(s.older) > 0 {
+		s.toastItem = s.older[0]
+		s.older = s.older[1:]
+	}
+	return tea.Batch(cmds...)
+}
+
+// startLeaving は静止時間が明けた枚を退場へ移す (seq で該当の枚を選ぶ)。
+func (s *toast) startLeaving(msg toastMsg) {
+	for _, it := range s.items() {
+		it.startLeaving(msg)
+	}
+}
+
+// boxLines はスタック全体の描画行 (上から下)。呼び出し側が右下へ重ねる。
+func (s *toast) boxLines(colored bool) []string {
+	var out []string
+	for _, it := range s.items() {
+		out = append(out, it.boxLines(colored)...)
 	}
 	return out
 }

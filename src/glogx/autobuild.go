@@ -60,8 +60,8 @@ type autobuildWatch struct {
 	failedMtime time.Time // 監視開始時の失敗記録 mtime (不在は zero)
 	until       time.Time // この時刻を過ぎたら諦める
 	active      bool      // 監視中 (tick を張り続けるか)
-	// pending は決着したがまだ通知できていない結果。トースト表示中に上書きで潰さないよう
-	// 保持し、空くまで tick を続けて出し直す (claude version 通知の遅延再送と同じ方針)。
+	// pending はまだ通知していない結果。起動直後に出す「ビルド中」を Init まで運ぶのに使う
+	// (構築時に seed し、Init が handle 経由で取り出す)。
 	pending autobuildResult
 }
 
@@ -137,12 +137,13 @@ func (w *autobuildWatch) tickCmd() tea.Cmd {
 	})
 }
 
-// handle は観測結果を状態へ反映し、「今トーストで出すべき結果」を返す。
+// handle は観測結果を状態へ反映し、「今トーストで出すべき結果」を返す。期限切れは無言で監視を
+// 終える。戻り値 keepWatching が true なら呼び出し側は tickCmd を張り直す。
 //
-// busy=true (他のトーストが出ている) のときは決着を pending に保持して notify=false を返し、
-// 監視を続ける (次の tick で出し直す)。期限切れは無言で監視を終える。
-// 戻り値 keepWatching が true なら呼び出し側は tickCmd を張り直す。
-func (w *autobuildWatch) handle(res autobuildResult, busy bool, now time.Time) (out autobuildResult, notify, keepWatching bool) {
+// ⚠️ 以前はトーストが塞がっているとき (busy) 結果を保持して次の tick で出し直していた。トーストが
+// 積めるようになった (toast の doc) ので、その調停は不要になり引数から落とした。pending は
+// 「起動直後に出す『ビルド中』を Init まで運ぶ」役だけを担う。
+func (w *autobuildWatch) handle(res autobuildResult, now time.Time) (out autobuildResult, notify, keepWatching bool) {
 	if !w.active {
 		return autobuildRunning, false, false
 	}
@@ -156,7 +157,7 @@ func (w *autobuildWatch) handle(res autobuildResult, busy bool, now time.Time) (
 	if res == autobuildFailed {
 		w.pending = autobuildFailed
 	}
-	if w.pending != autobuildRunning && !busy {
+	if w.pending != autobuildRunning {
 		out = w.pending
 		w.pending = autobuildRunning
 		if out == autobuildStarted {
@@ -165,8 +166,8 @@ func (w *autobuildWatch) handle(res autobuildResult, busy bool, now time.Time) (
 		w.active = false
 		return out, true, false
 	}
-	// 未決着 (または表示待ち) のまま期限を過ぎたら諦める。決着済みで待っている場合も、
-	// 塞がり続ける異常時に tick が永久に残らないよう同じ期限で打ち切る。
+	// 未決着のまま期限を過ぎたら諦める (ビルダーがシグナルで死ぬと決着しないため。tick を
+	// 永久に残さない安全弁)。
 	if !now.Before(w.until) {
 		w.active = false
 		return autobuildRunning, false, false

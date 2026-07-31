@@ -379,7 +379,7 @@ func (m *browseModel) Init() tea.Cmd {
 		// 「ビルド中」と違って自然には解消しないので、コピー可能な警告 (w) として出す。
 		text, _ := autobuildToast(autobuildStale)
 		m.showWarning(text)
-	} else if res, notify, _ := m.autobuild.handle(autobuildRunning, m.toast.visible(), timeNow()); notify {
+	} else if res, notify, _ := m.autobuild.handle(autobuildRunning, timeNow()); notify {
 		text, ok := autobuildToast(res)
 		m.toast.show(text, ok)
 	}
@@ -501,36 +501,30 @@ func (m *browseModel) mergeCIBatch(statuses map[string]CIState, details map[stri
 	maps.Copy(m.prCache, prs)
 }
 
-// claudeUpdateToastDefer は起動時の先行トースト (macism 未導入 error 警告など) が消えるのを
-// 待ってから version 通知を再送する間隔。toastHold (3s) + 出入りスライドより長めに取る。
-const claudeUpdateToastDefer = 4 * time.Second
-
-// claudeUpdateRetryMsg は先行トースト表示中に version 通知を 1 度だけ遅延再送する合図。
-type claudeUpdateRetryMsg struct{ latest string }
-
-// showOrDeferClaudeUpdate は「新バージョンあり」の info トーストを出す。ただし他のトースト
-// (起動時の macism error 警告など) が表示中なら上書きせず、消えた頃に 1 度だけ遅延再送する。
-// 単一スロット・後勝ちの toast 設計を歪めずに「重要度 error > info」を守るための調停:
-// info 側が visible な先行トーストへ道を譲る。retry=true はその 1 回きりの再送で、まだ塞がって
-// いれば諦める (macism 警告は毎起動出るので次回起動で version 通知を読める)。
 // showWarning は失敗/警告トーストを出しつつ lastWarning に残す (w で表示が消えた後もコピー
-// できるように。issue 026)。成功トースト (toast.show(…, true)) はこれを通さない — 成功文言で
-// lastWarning が上書きされると直前のエラーがコピー不能になるため。失敗トーストの発行は必ず
-// これを経由し、コピー対象を漏れなく捕捉する。
+// できるように。issue 026)。
+//
+// どの失敗をここへ通すかの基準 (⚠️ 以前は「失敗は必ずこれを経由」と書いてあったが、実際には
+// 素の toast.show(…, false) が 26 箇所あり doc の方が現実より強かった。正しくは 3 分類):
+//
+//   - エラー詳細を含み、後で見返す価値があるもの (「pull に失敗: …」) → showWarning
+//   - 操作を拒否した理由の案内 (「未 push のコミットはありません」) → 素の toast.show(…, false)。
+//     コピー対象でないうえ、lastWarning を上書きすると直前のエラーがコピー不能になる
+//   - クリップボード操作そのものの失敗 → 素の toast.show(…, false)。w (警告コピー) の対象を
+//     潰さないため。そもそもクリップボードが壊れているなら警告のコピーも失敗する
+//
+// 成功トースト (toast.show(…, true)) もこれを通さない (成功文言で lastWarning が上書きされると
+// 直前のエラーがコピー不能になる)。
 func (m *browseModel) showWarning(text string) {
 	m.lastWarning = text
 	m.toast.show(text, false)
 }
 
-func (m *browseModel) showOrDeferClaudeUpdate(latest string, retry bool) tea.Cmd {
-	if m.toast.visible() {
-		if retry {
-			return nil // 再送してもまだ塞がっている: 今回は諦める
-		}
-		return tea.Tick(claudeUpdateToastDefer, func(time.Time) tea.Msg {
-			return claudeUpdateRetryMsg{latest: latest}
-		})
-	}
+// showClaudeUpdate は「新バージョンあり」の通知を出す。
+//
+// 以前は先行トースト (起動時の macism 警告など) を潰さないよう専用タイマーで遅延再送していたが、
+// トーストが積めるようになったので調停は不要になった (toast の doc 参照)。
+func (m *browseModel) showClaudeUpdate(latest string) tea.Cmd {
 	m.toast.show("Claude Code v"+latest+" が公開されています (C で更新)", true)
 	return m.maybeTick()
 }
@@ -778,13 +772,11 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.issuesOv.receive(msg)
 		return m, nil
 	case claudeUpdateAvailableMsg:
-		return m, m.showOrDeferClaudeUpdate(msg.latest, false)
-	case claudeUpdateRetryMsg:
-		return m, m.showOrDeferClaudeUpdate(msg.latest, true)
+		return m, m.showClaudeUpdate(msg.latest)
 	case autobuildMsg:
 		// 裏のビルドが決着したらトーストで知らせる。他のトーストが出ている間は autobuild 側が
 		// 結果を保持して次の tick で出し直すので、ここでは受け取れたときだけ表示する。
-		res, notify, keep := m.autobuild.handle(msg.result, m.toast.visible(), timeNow())
+		res, notify, keep := m.autobuild.handle(msg.result, timeNow())
 		if notify {
 			text, ok := autobuildToast(res)
 			m.toast.show(text, ok)
