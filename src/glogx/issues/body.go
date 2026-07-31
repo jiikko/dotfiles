@@ -1,5 +1,10 @@
 package issues
 
+import (
+	"regexp"
+	"strings"
+)
+
 // Body は issue 1 件の本文と、整形結果の幅ごとのキャッシュ。
 //
 // なぜキャッシュするか: 整形は「ブロック分解 → インライン解析 → 折り返し」を通るので本文
@@ -30,3 +35,32 @@ func (b *Body) Lines(width int, colored bool) []string {
 
 // Len は最後に整形した行数 (未整形なら 0)。pager のスクロール上限に使う。
 func (b *Body) Len() int { return len(b.lines) }
+
+// urlRe は本文から拾う http(s) URL。終端は空白か、URL の外側に来やすい記号で切る。
+//
+// なぜ記号を除くか: issue 本文の URL は markdown リンク `[text](url)`、括弧書き `(url)`、
+// 文末の句点つき `url。` のいずれの形でも現れる。貪欲に拾うと `)` や `。` が URL に混ざり、
+// ブラウザが 404 を開く。逆に `?` `#` `=` `&` は query / fragment の一部なので残す。
+var urlRe = regexp.MustCompile(`https?://[^\s)\]>"'` + "`" + `]+`)
+
+// URLs は本文に現れる http(s) URL を出現順で返す (重複は最初の 1 つだけ)。
+//
+// 重複を落とすのは、同じ URL が「参考」節と本文の両方に出る issue が実在し、順に開く操作
+// (viewer の u キー) で同じページを 2 回開かされるのを避けるため。整形 (Lines) とは独立に
+// 生ソースから拾う: 折り返しで URL が行をまたいで割れても、元のソースには 1 本で入っている。
+func (b *Body) URLs() []string {
+	found := urlRe.FindAllString(b.src, -1)
+	seen := make(map[string]bool, len(found))
+	out := make([]string, 0, len(found))
+	for _, u := range found {
+		// 末尾の句読点は URL の一部でないことが多い (英文の "…/foo." と日本語の "…/foo。")。
+		// 記号だけを削り、パス区切りの / は残す。
+		u = strings.TrimRight(u, ".,;:。、")
+		if u == "" || seen[u] {
+			continue
+		}
+		seen[u] = true
+		out = append(out, u)
+	}
+	return out
+}

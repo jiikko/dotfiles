@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"math"
 	"os/exec"
 	"path/filepath"
@@ -70,8 +71,10 @@ type issuesView struct {
 	listGlide scrollGlide
 
 	// 本文 pager (open != nil のとき本文モード)
-	open      *issues.Issue
-	body      *issues.Body
+	open *issues.Issue
+	body *issues.Body
+	// urlIdx は u キーで次に開く本文中 URL の位置 (出現順)。本文を開き直したら 0 に戻す。
+	urlIdx    int
 	bodyOff   int // 論理 = 着地点
 	bodyGlide scrollGlide
 
@@ -312,7 +315,7 @@ func (v *issuesView) openBody() {
 		v.notice = "本文を読めませんでした: " + firstLine(err.Error())
 		return
 	}
-	v.open, v.body, v.bodyOff = iss, body, 0
+	v.open, v.body, v.bodyOff, v.urlIdx = iss, body, 0, 0
 	v.bodyGlide.stop()
 }
 
@@ -446,6 +449,8 @@ func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
 		prev := v.bodyOff
 		v.bodyOff = max(v.bodyOff-rows/2, 0)
 		v.bodyGlide.start(prev, v.bodyOff)
+	case "u":
+		return v.openBodyURL()
 	case "g", "home":
 		v.bodyOff = 0
 		v.bodyGlide.stop()
@@ -505,6 +510,33 @@ func (v *issuesView) editCmd() tea.Cmd {
 		return nil
 	}
 	return runEditorCmd(exec.Command("nvim", iss.Path))
+}
+
+// openBodyURL は本文中の URL を出現順に 1 つずつブラウザで開く (u キー)。押すたびに次へ進み、
+// 末尾まで行くと先頭へ戻る。
+//
+// 番号を振って選ばせる形にしないのは、本文 pager に行カーソルが無く、番号の対応を出す場所が
+// 通知行 1 行しかないため (URL は 1 issue に平均 5 本あり、幅に収まらない)。「順に開く」なら
+// 状態は位置 1 つで済み、今どれを開いたかは通知行が示せる。
+//
+// 一覧モードでは効かない (本文を読んでいないため)。一覧で押せるようにするとキー 1 打ごとに
+// ファイルを読むことになり、しかも「その issue に URL があるか」は一覧に出ていないので当てに
+// ならない操作になる。
+func (v *issuesView) openBodyURL() tea.Cmd {
+	if v.body == nil {
+		return nil
+	}
+	urls := v.body.URLs()
+	if len(urls) == 0 {
+		v.notice = "この issue に URL はありません"
+		return nil
+	}
+	i := v.urlIdx % len(urls)
+	v.urlIdx = i + 1
+	url := urls[i]
+	// 「開きました」と断定しない: 失敗は openURLMsg 経由でトースト警告になる (browseModel 側)。
+	v.notice = fmt.Sprintf("URL %d/%d を開きます: %s", i+1, len(urls), url)
+	return func() tea.Msg { return openURLMsg{err: openInBrowser(url)} }
 }
 
 // copyPath は対象の issue のパスをクリップボードへ入れる。
@@ -859,7 +891,7 @@ func (v *issuesView) hint() string {
 	// ⚠️ hint は 1 行で、幅を超えた分は末尾から黙って切られる。popup の実幅 (84 桁) に
 	// 収まる範囲へ絞り、絞られたキー (y / Y / v / r) は --help と README を正本にする。
 	if v.open != nil {
-		return "j/k/Space: スクロール  g/G: 先頭/末尾  p: 番号  v: nvim  h/q: 一覧へ"
+		return "j/k/Space: スクロール  g/G: 先頭/末尾  p: 番号  u: URL  v: nvim  h/q: 一覧へ"
 	}
 	// a は 3 段の巡回なので「次に押すと何が増えるか」を出す (現在どこまで見えているかはタブ行
 	// 右端のバッジ ○/○⏸/○⏸✓ が示すので、ここで二重に説明しない)。

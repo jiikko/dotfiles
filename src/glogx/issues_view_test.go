@@ -896,3 +896,101 @@ func TestReorderTabsByCount(t *testing.T) {
 		t.Error("長さ不一致でも並べ替えてしまっている")
 	}
 }
+
+// u は本文中の URL を出現順に 1 つずつブラウザで開き、末尾まで行くと先頭へ戻る。
+// 通知行に「何番目/全体」と URL を出す (本文 pager に行カーソルが無く、番号を振って選ばせる
+// 場所が無いため。ユーザー要望 2026-07-31)。
+func TestIssuesViewOpenBodyURL(t *testing.T) {
+	var opened []string
+	orig := openInBrowser
+	openInBrowser = func(url string) error { opened = append(opened, url); return nil }
+	t.Cleanup(func() { openInBrowser = orig })
+
+	v := newIssuesView()
+	v.shown, v.loaded = true, true
+	v.body = issues.NewBody("A https://example.com/1\nB https://example.com/2\n")
+	v.open = fakeIssue("001", "feat", "a", issues.StatusOpen)
+
+	for i, want := range []string{"https://example.com/1", "https://example.com/2", "https://example.com/1"} {
+		cmd := v.handleKey("u", 20)
+		if cmd == nil {
+			t.Fatalf("%d 打目: u が Cmd を返さない", i)
+		}
+		if msg, ok := cmd().(openURLMsg); !ok || msg.err != nil {
+			t.Fatalf("%d 打目: openURLMsg でない/失敗: %#v", i, msg)
+		}
+		if len(opened) != i+1 || opened[i] != want {
+			t.Fatalf("%d 打目: 開いた URL = %q, want %q", i, opened, want)
+		}
+		if !strings.Contains(v.notice, want) {
+			t.Errorf("%d 打目: 通知に URL が無い: %q", i, v.notice)
+		}
+	}
+	// 通知は「何番目/全体」を示す (1 周した 3 打目は 1/2 に戻る)
+	if !strings.Contains(v.notice, "1/2") {
+		t.Errorf("巡回後の通知が 1/2 でない: %q", v.notice)
+	}
+}
+
+func TestIssuesViewOpenBodyURLNone(t *testing.T) {
+	orig := openInBrowser
+	openInBrowser = func(string) error { t.Fatal("URL が無いのにブラウザを開いた"); return nil }
+	t.Cleanup(func() { openInBrowser = orig })
+
+	v := newIssuesView()
+	v.shown, v.loaded = true, true
+	v.body = issues.NewBody("URL の無い本文\n")
+	v.open = fakeIssue("001", "feat", "a", issues.StatusOpen)
+	if cmd := v.handleKey("u", 20); cmd != nil {
+		t.Error("URL が無いのに Cmd を返した")
+	}
+	if !strings.Contains(v.notice, "URL はありません") {
+		t.Errorf("URL 不在の案内が出ない: %q", v.notice)
+	}
+}
+
+// 一覧モードでは u は効かない (本文を読んでいないため)。誤ってブラウザを開かない。
+func TestIssuesViewOpenURLListModeIsNoop(t *testing.T) {
+	orig := openInBrowser
+	openInBrowser = func(string) error { t.Fatal("一覧モードでブラウザを開いた"); return nil }
+	t.Cleanup(func() { openInBrowser = orig })
+
+	v := loadedView(sampleIssues()...)
+	if cmd := v.handleKey("u", 20); cmd != nil {
+		t.Error("一覧モードで u が Cmd を返した")
+	}
+}
+
+// 別の issue を開いたら URL の順送り位置が先頭へ戻る。
+func TestIssuesViewOpenBodyURLResetsOnNewIssue(t *testing.T) {
+	orig := openInBrowser
+	openInBrowser = func(string) error { return nil }
+	t.Cleanup(func() { openInBrowser = orig })
+
+	// 本文は実ファイルから読む (ReadBody が失敗する経路では前の本文を保つのが正しく、
+	// 位置も保たれるべきなので、初期化の検証には成功経路が要る)
+	dir := t.TempDir()
+	p1 := filepath.Join(dir, "001-feat-a.md")
+	p2 := filepath.Join(dir, "002-feat-b.md")
+	if err := os.WriteFile(p1, []byte("# a\n\nA https://example.com/1\nB https://example.com/2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p2, []byte("# b\n\nC https://example.com/3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := loadedView(
+		&issues.Issue{Path: p1, Dir: dir, Rel: "001-feat-a.md", Number: "001", Category: "feat"},
+		&issues.Issue{Path: p2, Dir: dir, Rel: "002-feat-b.md", Number: "002", Category: "feat"},
+	)
+	v.handleKey("enter", 20) // 1 件目を開く
+	v.handleKey("u", 20)
+	if v.urlIdx == 0 {
+		t.Fatal("u で位置が進んでいない")
+	}
+	v.handleKey("h", 20) // 一覧へ戻る
+	v.handleKey("j", 20) // 2 件目へ
+	v.handleKey("enter", 20)
+	if v.urlIdx != 0 {
+		t.Errorf("別の issue を開いても位置が残っている: %d", v.urlIdx)
+	}
+}
