@@ -116,19 +116,55 @@ func TestAutobuildWatchHandle(t *testing.T) {
 		}
 	})
 
-	t.Run("決着かつトースト空きなら通知して監視終了", func(t *testing.T) {
+	t.Run("成功は無言で監視終了 (開始時に伝えているため)", func(t *testing.T) {
 		w := newWatch()
-		res, notify, keep := w.handle(autobuildInstalled, false, now)
-		if res != autobuildInstalled || !notify || keep {
-			t.Errorf("res=%v notify=%v keep=%v, want installed/true/false", res, notify, keep)
+		_, notify, keep := w.handle(autobuildInstalled, false, now)
+		if notify || keep {
+			t.Errorf("notify=%v keep=%v, want false/false (二重通知はノイズ)", notify, keep)
 		}
 		if w.active {
-			t.Error("通知後も active=true (tick が残る)")
+			t.Error("成功後も active=true (tick が残る)")
+		}
+	})
+
+	t.Run("失敗は通知して監視終了", func(t *testing.T) {
+		w := newWatch()
+		res, notify, keep := w.handle(autobuildFailed, false, now)
+		if res != autobuildFailed || !notify || keep {
+			t.Errorf("res=%v notify=%v keep=%v, want failed/true/false", res, notify, keep)
+		}
+	})
+
+	t.Run("開始は通知した後も監視を続ける (失敗を拾うため)", func(t *testing.T) {
+		w := newWatch()
+		w.pending = autobuildStarted
+		res, notify, keep := w.handle(autobuildRunning, false, now)
+		if res != autobuildStarted || !notify || !keep {
+			t.Errorf("res=%v notify=%v keep=%v, want started/true/true", res, notify, keep)
+		}
+		if !w.active {
+			t.Error("開始を伝えただけで監視を止めた (失敗を拾えない)")
+		}
+		// 続けて失敗したら、そちらも出す
+		res, notify, keep = w.handle(autobuildFailed, false, now)
+		if res != autobuildFailed || !notify || keep {
+			t.Errorf("開始通知後の失敗: res=%v notify=%v keep=%v", res, notify, keep)
+		}
+	})
+
+	t.Run("開始を出す前に失敗したら失敗を優先する", func(t *testing.T) {
+		w := newWatch()
+		w.pending = autobuildStarted
+		w.handle(autobuildFailed, true, now) // 塞がっていて出せない
+		res, notify, _ := w.handle(autobuildRunning, false, now)
+		if res != autobuildFailed || !notify {
+			t.Errorf("res=%v notify=%v, want failed/true", res, notify)
 		}
 	})
 
 	t.Run("トースト表示中は保持して次 tick で出し直す", func(t *testing.T) {
 		w := newWatch()
+		w.pending = autobuildRunning
 		if _, notify, keep := w.handle(autobuildFailed, true, now); notify || !keep {
 			t.Fatalf("塞がり中: notify=%v keep=%v, want false/true", notify, keep)
 		}
@@ -167,8 +203,11 @@ func TestAutobuildWatchHandle(t *testing.T) {
 }
 
 func TestAutobuildToast(t *testing.T) {
-	if text, ok := autobuildToast(autobuildInstalled); text == "" || !ok {
-		t.Errorf("installed = %q/%v (成功色で文面が要る)", text, ok)
+	if text, ok := autobuildToast(autobuildStarted); text == "" || !ok {
+		t.Errorf("started = %q/%v (成功色で文面が要る)", text, ok)
+	}
+	if text, _ := autobuildToast(autobuildInstalled); text != "" {
+		t.Errorf("installed = %q, want 空 (成功は無言)", text)
 	}
 	if text, ok := autobuildToast(autobuildFailed); text == "" || ok {
 		t.Errorf("failed = %q/%v (失敗色で文面が要る)", text, ok)
@@ -178,24 +217,35 @@ func TestAutobuildToast(t *testing.T) {
 	}
 }
 
-// Update 経路の結合: autobuildMsg を受けるとトーストが出て、監視 tick が止まる。
-func TestAutobuildMsgShowsToast(t *testing.T) {
+// Update 経路の結合: ビルド完了は無言で監視だけ止まる (開始時に伝えているため)。
+func TestAutobuildMsgInstalledIsSilent(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.toast.phase = toastHidden // 起動時の警告トーストが出ていても塞がり扱いにしない
+	m.toast.phase = toastHidden
 	m.autobuild = autobuildWatch{active: true, until: timeNow().Add(autobuildWatchTimeout)}
 
 	m.Update(autobuildMsg{result: autobuildInstalled})
-	if !m.toast.visible() {
-		t.Fatal("導入通知でトーストが出ていない")
-	}
-	if !strings.Contains(m.toast.text, "次回起動") {
-		t.Errorf("文面に「次回起動で反映」が無い: %q", m.toast.text)
-	}
-	if !m.toast.ok {
-		t.Error("導入通知が失敗色になっている")
+	if m.toast.visible() {
+		t.Errorf("完了で二重にトーストが出た: %q", m.toast.text)
 	}
 	if m.autobuild.active {
-		t.Error("通知後も監視が続いている (tick が残る)")
+		t.Error("完了後も監視が続いている (tick が残る)")
+	}
+}
+
+// 起動直後 (Init) に「ビルド中」を出す。完成を待たない (ユーザー要望 2026-07-31)。
+func TestAutobuildNotifiesAtStartup(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.toast.phase = toastHidden
+	m.autobuild = newAutobuildWatch("/some/dir/glogx", true, timeNow())
+	m.Init()
+	if !m.toast.visible() {
+		t.Fatal("起動直後に「ビルド中」トーストが出ていない")
+	}
+	if !strings.Contains(m.toast.text, "ビルド中") || !strings.Contains(m.toast.text, "次回起動") {
+		t.Errorf("文面が想定と違う: %q", m.toast.text)
+	}
+	if !m.autobuild.active {
+		t.Error("開始を伝えただけで監視を止めた (失敗を拾えない)")
 	}
 }
 

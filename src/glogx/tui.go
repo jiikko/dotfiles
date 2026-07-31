@@ -367,8 +367,17 @@ func (m *browseModel) Init() tea.Cmd {
 	// Claude Code の新バージョン検出 (claude_version.go)。バックグラウンド 1 回きりで、
 	// 結果は claudeUpdateAvailableMsg (更新なし/失敗は nil Msg で無音)。
 	ver := checkClaudeVersionCmd()
-	// バックグラウンド再ビルドの決着監視 (autobuild.go)。shim が GO_AUTOBUILD_PENDING を
+	// バックグラウンド再ビルドの監視 (autobuild.go)。shim が GO_AUTOBUILD_PENDING を
 	// 立てていない通常起動では nil = tick が増えない。
+	//
+	// 「ビルド中」はここで即出す: 完成を待つと数十秒遅れ、その間ユーザーは自分が旧版を触って
+	// いることを知らない (ユーザー要望 2026-07-31)。⚠️ macism 警告より後に置く — 先に出すと
+	// 直後の showWarning に上書きされて消える。塞がっていた場合は autobuild 側が結果を保持し、
+	// 最初の tick (2s) で出し直す。
+	if res, notify, _ := m.autobuild.handle(autobuildRunning, m.toast.visible(), timeNow()); notify {
+		text, ok := autobuildToast(res)
+		m.toast.show(text, ok)
+	}
 	ab := m.autobuild.tickCmd()
 	if m.fetching {
 		return tea.Batch(m.fetch, prefix, u, ver, ab, m.maybeTick(), usageRefreshTick())

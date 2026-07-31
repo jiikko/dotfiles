@@ -41,6 +41,7 @@ type autobuildResult int
 
 const (
 	autobuildRunning   autobuildResult = iota // まだ決着していない
+	autobuildStarted                          // 裏でビルドが始まった (起動直後に伝える)
 	autobuildInstalled                        // 新バイナリが入った (次回起動で反映)
 	autobuildFailed                           // ビルドが失敗した (旧版のまま固定)
 )
@@ -75,6 +76,9 @@ func newAutobuildWatch(exePath string, pending bool, now time.Time) autobuildWat
 		failedMtime: fileMtime(failed),
 		until:       now.Add(autobuildWatchTimeout),
 		active:      true,
+		// 「ビルド中」は起動直後に伝える。完成を待つと数十秒遅れ、その間ユーザーは自分が旧版を
+		// 使っていることを知らないまま操作する (ユーザー要望 2026-07-31: 必要と分かった時点で出す)。
+		pending: autobuildStarted,
 	}
 }
 
@@ -137,12 +141,23 @@ func (w *autobuildWatch) handle(res autobuildResult, busy bool, now time.Time) (
 	if !w.active {
 		return autobuildRunning, false, false
 	}
-	if res != autobuildRunning {
-		w.pending = res
+	// 成功は無言で終える: 開始時に「次回起動で反映」と伝えているので、完成の報せは同じことを
+	// 二度言うだけになる (トーストが 1 回の出来事で 2 回出るのはノイズ)。
+	if res == autobuildInstalled {
+		w.active = false
+		return autobuildRunning, false, false
+	}
+	// 失敗は開始の通知より優先する (「ビルド中」を出す前に落ちたら、出すべきは失敗の方)。
+	if res == autobuildFailed {
+		w.pending = autobuildFailed
 	}
 	if w.pending != autobuildRunning && !busy {
 		out = w.pending
-		w.pending, w.active = autobuildRunning, false
+		w.pending = autobuildRunning
+		if out == autobuildStarted {
+			return out, true, true // 開始を伝えた後も、失敗の可能性があるので監視は続ける
+		}
+		w.active = false
 		return out, true, false
 	}
 	// 未決着 (または表示待ち) のまま期限を過ぎたら諦める。決着済みで待っている場合も、
@@ -157,8 +172,10 @@ func (w *autobuildWatch) handle(res autobuildResult, busy bool, now time.Time) (
 // autobuildToast は決着に対応するトースト文面と成功色フラグを返す。
 func autobuildToast(res autobuildResult) (text string, ok bool) {
 	switch res {
+	case autobuildStarted:
+		return "新しい glogx をビルド中 (次回起動で反映)", true
 	case autobuildInstalled:
-		return "新しい glogx をビルドしました (次回起動で反映)", true
+		return "", false // 成功は無言 (開始時に伝えている)
 	case autobuildFailed:
 		return "glogx のバックグラウンドビルドが失敗 (旧版で継続。src/glogx/.autobuild.log)", false
 	case autobuildRunning:
