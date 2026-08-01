@@ -1457,15 +1457,26 @@ func (v *issuesView) hint() string {
 type issuesMarkConfirm struct {
 	active  bool
 	targets []*issues.Issue
+	// unmark は「目印を外す」向きか (next/ から issue ディレクトリ直下へ戻す)。
+	unmark bool
 }
 
-// askMarkNext は確認を開く (対象が無ければ何もしない)。
+// askMarkNext は確認を開く (対象が無ければ何もしない)。n は目印の toggle で、既に next の
+// issue に対しては「外す」向きになる (ユーザー要望 2026-08-01)。
+//
+// ⚠️ 向きはカーソル行で決めて選択範囲全体を揃える。1 件ずつ toggle にしない: 目印つきと無しが
+// 混ざった選択で「何が起きるか」を確認ダイアログの 1 文で言えなくなる (「3 件のうち 2 件を付けて
+// 1 件を外します」は読めない)。
 func (v *issuesView) askMarkNext() {
 	rows := v.selectedRows()
 	if len(rows) == 0 {
 		return
 	}
-	v.markNext = issuesMarkConfirm{active: true, targets: rows}
+	unmark := false
+	if cur := v.current(); cur != nil {
+		unmark = cur.Status == issues.StatusNext
+	}
+	v.markNext = issuesMarkConfirm{active: true, targets: rows, unmark: unmark}
 }
 
 // markNextKey は確認中のキーを捌く。y/Enter で実行、それ以外は取り消し。
@@ -1473,33 +1484,40 @@ func (v *issuesView) askMarkNext() {
 // ⚠️ 取り消しを n/Esc に限定しない: 実ファイルを動かす確認で「知らないキーを押したら実行された」
 // が起きてはいけないので、明示的な y/Enter 以外はすべて取り消しに倒す。
 func (v *issuesView) markNextKey(key string) tea.Cmd {
-	targets := v.markNext.targets
+	targets, unmark := v.markNext.targets, v.markNext.unmark
 	v.markNext = issuesMarkConfirm{}
 	if key != "y" && key != "enter" {
 		return nil
 	}
+	// 外すときは issue ディレクトリ直下へ戻す (= open)。⚠️ 元居た場所 (done/ 等) は覚えていない:
+	// 目印は「次にやる」ものに付けるので戻り先は open が自然で、履歴を持つと「どこへ戻るか
+	// 分からない」方が困る。
+	dest, verb := issues.NextDirName, "next へ移しました"
+	if unmark {
+		dest, verb = "", "の next を外しました"
+	}
 	moved, skipped := 0, 0
 	for _, iss := range targets {
-		if iss.Status == issues.StatusNext {
-			skipped++ // 既に目印つき (同じ場所への移動を「変化」と数えない)
+		if (iss.Status == issues.StatusNext) != unmark {
+			skipped++ // 既に目的の向き (同じ場所への移動を「変化」と数えない)
 			continue
 		}
-		if _, err := issues.MoveToSubdir(iss, issues.NextDirName); err != nil {
-			v.setNotice("next へ移動できませんでした: "+firstLine(err.Error()), false)
+		if _, err := issues.MoveToSubdir(iss, dest); err != nil {
+			v.setNotice("移動できませんでした: "+firstLine(err.Error()), false)
 			return v.scanCmd(v.cwd) // 途中まで動いた分を一覧へ反映する
 		}
 		moved++
 	}
 	v.clearMark()
-	switch {
-	case moved == 0:
-		v.setNotice("すべて既に next です", true)
+	if moved == 0 {
+		v.setNotice("対象がありません (すべて既にその状態)", true)
 		return nil
-	case skipped > 0:
-		v.setNotice(strconv.Itoa(moved)+" 件を next へ移しました ("+strconv.Itoa(skipped)+" 件は既に next)", true)
-	default:
-		v.setNotice(strconv.Itoa(moved)+" 件を next へ移しました", true)
 	}
+	notice := strconv.Itoa(moved) + " 件" + verb
+	if skipped > 0 {
+		notice += " (" + strconv.Itoa(skipped) + " 件は対象外)"
+	}
+	v.setNotice(notice, true)
 	return v.scanCmd(v.cwd) // 置き場所が変わったので一覧を取り直す
 }
 
@@ -1512,8 +1530,12 @@ func (v *issuesView) markNextBox(width int, colored bool) []string {
 	if len(v.markNext.targets) == 1 {
 		what = filepath.Base(v.markNext.targets[0].Rel)
 	}
-	return centerBox(" next へ移動 ", []string{
-		what + " を next/ へ移します",
+	title, line := " next へ移動 ", what+" を next/ へ移します"
+	if v.markNext.unmark {
+		title, line = " next を外す ", what+" を next/ から issues 直下へ戻します"
+	}
+	return centerBox(title, []string{
+		line,
 		paint("(次にやる目印。ファイルを移動します。commit はしません)", ansiDim, colored),
 		"",
 		paint("y/Enter: 実行   その他: キャンセル", ansiDim, colored),

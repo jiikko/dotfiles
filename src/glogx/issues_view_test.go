@@ -662,6 +662,81 @@ func TestIssuesViewNextTabSurvivesRestore(t *testing.T) {
 	}
 }
 
+// n は目印の toggle: 既に next の issue には「外す」向きになる (ユーザー要望 2026-08-01)。
+// ⚠️ 戻り先は issue ディレクトリ直下 (= open)。元居た場所は覚えていない。
+func TestIssuesViewMarkNextTogglesOff(t *testing.T) {
+	dir := t.TempDir()
+	nextDir := filepath.Join(dir, issues.NextDirName)
+	if err := os.MkdirAll(nextDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(nextDir, "001-feat-x.md")
+	if err := os.WriteFile(path, []byte("# 001 feat: x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := &issues.Issue{Path: path, Dir: dir, Rel: filepath.Join(issues.NextDirName, "001-feat-x.md"),
+		Number: "001", Category: "feat", Status: issues.StatusNext}
+	v := loadedView(iss)
+	v.cwd = dir
+
+	v.handleKey("n", vp(10))
+	if !v.markNext.active || !v.markNext.unmark {
+		t.Fatalf("目印つきの issue で「外す」向きになっていない: %+v", v.markNext)
+	}
+	if out := strings.Join(v.lines(renderOpts(20)), "\n"); !strings.Contains(out, "next を外す") {
+		t.Fatalf("外す向きの確認が出ない:\n%s", out)
+	}
+	v.handleKey("y", vp(10))
+	if _, err := os.Stat(filepath.Join(dir, "001-feat-x.md")); err != nil {
+		t.Fatalf("issues 直下へ戻っていない: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("next/ にファイルが残っている")
+	}
+	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "next を外しました") {
+		t.Fatalf("結果が通知に載らない: %q", text)
+	}
+}
+
+// 混在した選択では向きをカーソル行で決めて全体を揃える (1 件ずつ toggle にしない)。
+func TestIssuesViewMarkNextDirectionFollowsCursor(t *testing.T) {
+	dir := t.TempDir()
+	nextDir := filepath.Join(dir, issues.NextDirName)
+	if err := os.MkdirAll(nextDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marked := filepath.Join(nextDir, "002-feat-b.md")
+	plain := filepath.Join(dir, "001-feat-a.md")
+	for _, p := range []string{marked, plain} {
+		if err := os.WriteFile(p, []byte("# x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list := []*issues.Issue{
+		{Path: marked, Dir: dir, Rel: filepath.Join(issues.NextDirName, "002-feat-b.md"),
+			Number: "002", Category: "feat", Status: issues.StatusNext},
+		{Path: plain, Dir: dir, Rel: "001-feat-a.md", Number: "001", Category: "feat"},
+	}
+	v := loadedView(list...)
+	v.cwd = dir
+	// ⚠️ shift+↓ はカーソルを下へ動かすので、向きを決めるカーソル行も一緒に動く。
+	// 目印つき (rows[0]) にカーソルを置いた状態で選択を作るには上へ伸ばす
+	v.cursor = 1
+	v.handleKey("shift+up", vp(10)) // カーソルは rows[0] (目印つき) = 外す向き
+	v.handleKey("n", vp(10))
+	if !v.markNext.unmark || len(v.markNext.targets) != 2 {
+		t.Fatalf("カーソル行の向きで揃っていない: %+v", v.markNext)
+	}
+	v.handleKey("y", vp(10))
+	// 目印つきだけが動き、元から直下に居たものは対象外
+	if _, err := os.Stat(filepath.Join(dir, "002-feat-b.md")); err != nil {
+		t.Fatalf("目印つきが直下へ戻っていない: %v", err)
+	}
+	if _, err := os.Stat(plain); err != nil {
+		t.Fatal("対象外のファイルが動いた")
+	}
+}
+
 func TestIssuesViewTabChipCountsMatchRows(t *testing.T) {
 	// チップの件数は「そのタブを選んだときに並ぶ行数」と一致する。issues.Tab.Count は done を
 	// 含む全件なので、そのまま出すと done を伏せた既定表示で合計が All と食い違う。
