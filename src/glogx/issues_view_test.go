@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -221,6 +222,65 @@ func TestIssuesViewTabsAndDoneFilter(t *testing.T) {
 		if iss.Category != "feat" {
 			t.Fatalf("feat タブに %s が混ざった", iss.Rel)
 		}
+	}
+}
+
+// 画面幅よりカテゴリが多いとき、選択中のタブが必ず画面に出る (横スクロール。ユーザー要望
+// 2026-08-01)。⚠️ 幅で切って捨てるだけだと、端のカテゴリを選んでも画面に現れず「選んだはずの
+// タブがどこにも無い」状態になる (Tab で右へ進んでいるのに画面が動かない)。
+func TestIssuesViewTabLineFollowsSelection(t *testing.T) {
+	cats := []string{"alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel"}
+	list := make([]*issues.Issue, 0, len(cats)*2)
+	num := 200
+	for _, c := range cats {
+		for range 2 { // TabMinCount 未満だと other へ寄せられてタブにならない
+			num--
+			list = append(list, fakeIssue(fmt.Sprintf("%03d", num), c, "x", issues.StatusOpen))
+		}
+	}
+	v := loadedView(list...)
+	const width = 40 // 全チップ (8 カテゴリ + All) は到底収まらない幅
+	if len(v.tabs) < len(cats) {
+		t.Fatalf("前提が崩れた: タブが %d 個しかない", len(v.tabs))
+	}
+
+	for i := range len(v.tabs) + 1 { // 0 = All、以降は各カテゴリ
+		v.tabIdx = i
+		v.refresh()
+		line := v.tabLine(issuesRenderOpts{width: width})
+		if w := dispWidth(line); w > width {
+			t.Fatalf("tabIdx=%d でタブ行が幅 %d を超えた (w=%d): %q", i, width, w, line)
+		}
+		want := "[All " + strconv.Itoa(v.allCount) + "]"
+		if i > 0 {
+			want = "[" + v.tabs[i-1].Name + " " + strconv.Itoa(v.tabCount[i-1]) + "]"
+		}
+		if !strings.Contains(line, want) {
+			t.Fatalf("選択中のタブ %q が画面に出ていない: %q", want, line)
+		}
+	}
+
+	// 端が隠れている側にだけ印を出す (その先にタブがあると分かるように)
+	v.tabIdx = 0
+	v.refresh()
+	if head := v.tabLine(issuesRenderOpts{width: width}); !strings.Contains(head, tabScrollRight) ||
+		strings.Contains(head, tabScrollLeft) {
+		t.Fatalf("先頭では右にだけ続きの印が要る: %q", head)
+	}
+	v.tabIdx = len(v.tabs)
+	v.refresh()
+	if tail := v.tabLine(issuesRenderOpts{width: width}); !strings.Contains(tail, tabScrollLeft) ||
+		strings.Contains(tail, tabScrollRight) {
+		t.Fatalf("末尾では左にだけ続きの印が要る: %q", tail)
+	}
+}
+
+// 全部収まる幅では横スクロールの印を出さない (従来どおりの見た目)。
+func TestIssuesViewTabLineNoMarksWhenAllFit(t *testing.T) {
+	v := loadedView(sampleIssues()...)
+	line := v.tabLine(issuesRenderOpts{width: 120})
+	if strings.Contains(line, tabScrollLeft) || strings.Contains(line, tabScrollRight) {
+		t.Fatalf("収まっているのに続きの印が出た: %q", line)
 	}
 }
 

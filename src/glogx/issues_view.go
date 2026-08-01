@@ -983,22 +983,95 @@ func (v *issuesView) emptyMessage(o issuesRenderOpts) string {
 
 // tabLine はタブ行 (件数つき) と、右端に有効な状態フィルタを描く。
 func (v *issuesView) tabLine(o issuesRenderOpts) string {
-	var b strings.Builder
 	// 件数は refresh が数えた値を読む (毎フレーム・毎打鍵の Filter は全件分の slice を捨てる。
 	// visibleRows も行数を得るためにこの関数を通る)
-	b.WriteString(v.tabChip("All", v.allCount, v.tabIdx == 0, o.colored))
+	chips := make([]string, 0, len(v.tabs)+1)
+	chips = append(chips, v.tabChip("All", v.allCount, v.tabIdx == 0, o.colored))
 	for i, t := range v.tabs {
-		b.WriteString(" ")
 		count := 0
 		if i < len(v.tabCount) {
 			count = v.tabCount[i]
 		}
-		b.WriteString(v.tabChip(t.Name, count, v.tabIdx == i+1, o.colored))
+		chips = append(chips, v.tabChip(t.Name, count, v.tabIdx == i+1, o.colored))
 	}
 	filter := v.filter.Badges()
-	left := clipToWidth(b.String(), max(o.width-dispWidth(filter)-1, 1))
+	avail := max(o.width-dispWidth(filter)-1, 1)
+	left := scrollTabs(chips, v.tabIdx, avail, o.colored)
 	pad := max(o.width-dispWidth(left)-dispWidth(filter), 0)
 	return left + padSpaces(pad) + paint(filter, ansiDim, o.colored)
+}
+
+// tabScrollMark は「この向きにまだタブがある」ことを示す印 (幅 1 の bare 記号に限る。
+// 絵文字は層ごとに幅解釈が割れる。width.go の VS16 の議論と同じ理由)。
+const (
+	tabScrollLeft  = "‹"
+	tabScrollRight = "›"
+)
+
+// scrollTabs はタブ行を「選択中のチップが必ず見える窓」へ切り出す (横スクロール)。
+// 隠れている側には ‹ / › を出して、その先にタブがあることを示す。
+//
+// ⚠️ 窓を状態として持たない: (選択位置, チップ幅, 使える幅) からの導出値として毎回作り直す
+// (一覧の windowOffset と同じ規律。理由もそちら)。フィルタ切替やタブの並べ替えで幅も選択位置も
+// 変わるため、状態で持つと「選択中のタブが画面外なのに窓は動かない」ずれが残る。
+//
+// 窓の始点は「選択中のチップが収まる範囲でいちばん左」を選ぶ。こうすると選択が左寄りのうちは
+// 先頭 (All) から見え、右へ進んだぶんだけ最小限スクロールする = 1 タブずつ動かしたときに
+// 画面が飛ばない。
+func scrollTabs(chips []string, sel, avail int, colored bool) string {
+	if len(chips) == 0 || avail <= 0 {
+		return ""
+	}
+	sel = clampIdx(sel, len(chips))
+	mark := func(s string) string { return paint(s, ansiDim, colored) }
+	// 印のぶんを先に差し引いてから詰める (印を後付けすると幅を超える)
+	reserve := func(start, end int) int {
+		w := 0
+		if start > 0 {
+			w += dispWidth(tabScrollLeft) + 1 // "‹ "
+		}
+		if end < len(chips) {
+			w += 1 + dispWidth(tabScrollRight) // " ›"
+		}
+		return w
+	}
+	// 始点: 選択中のチップが収まる最左。末尾まで出せるとは限らないので、右の印は
+	// 「選択より後ろがある = 出うる」として保守的に見込む
+	start := 0
+	for ; start < sel; start++ {
+		if joinedWidth(chips[start:sel+1])+reserve(start, sel+1) <= avail {
+			break
+		}
+	}
+	// 終点: 入るところまで右へ伸ばす
+	end := sel + 1
+	for end < len(chips) && joinedWidth(chips[start:end+1])+reserve(start, end+1) <= avail {
+		end++
+	}
+	var b strings.Builder
+	if start > 0 {
+		b.WriteString(mark(tabScrollLeft))
+		b.WriteString(" ")
+	}
+	b.WriteString(strings.Join(chips[start:end], " "))
+	if end < len(chips) {
+		b.WriteString(" ")
+		b.WriteString(mark(tabScrollRight))
+	}
+	// ⚠️ 最後に必ず切る: 1 チップだけで avail を超える極端な狭さでは上のループが縮めきれない。
+	return clipToWidth(b.String(), avail)
+}
+
+// joinedWidth は空白 1 つで連結したときの表示幅。
+func joinedWidth(chips []string) int {
+	w := 0
+	for i, c := range chips {
+		if i > 0 {
+			w++
+		}
+		w += dispWidth(c)
+	}
+	return w
 }
 
 // tabChip は 1 個のタブ表示。カテゴリ色を使い、選択中は太字・非選択は dim で落とす
