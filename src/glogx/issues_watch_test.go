@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // watchTree は issues ディレクトリを 1 つ持つ木を作り (root, issue のパス) を返す。
@@ -207,8 +209,8 @@ func TestIssuesWatchStopsWhenClosed(t *testing.T) {
 	if cmd := v.handleWatch(v.observe()); cmd != nil {
 		t.Fatal("閉じた後も見張りのチェーンが続いている (tick が残る)")
 	}
-	if v.watch != (issuesWatch{}) {
-		t.Fatalf("閉じたのに見張りの状態が残っている: %+v", v.watch)
+	if v.watch.w != nil || v.watch.seen != "" || v.watch.evArmed || v.watch.pollArmed {
+		t.Fatalf("閉じたのに見張りの状態が残っている (watcher の fd も残る): %+v", v.watch)
 	}
 	// 閉じている間は張り直しもしない
 	if cmd := v.watchCmd(); cmd != nil {
@@ -224,7 +226,7 @@ func TestIssuesWatchIsSingleFlight(t *testing.T) {
 		t.Fatal("既に張っているのに 2 本目のチェーンを作った")
 	}
 	v.handleWatch(v.observe()) // 1 拍消費すれば張り直せる
-	if !v.watch.armed {
+	if !v.watch.pollArmed {
 		t.Fatal("消費後に張り直していない")
 	}
 }
@@ -237,7 +239,7 @@ func TestIssuesViewerWatchWiredIntoUpdate(t *testing.T) {
 	m.issuesOv.cwd = root
 	m.Update(scanOf(t, root))
 	m.issuesOv.finishAnim()
-	if !m.issuesOv.watch.armed {
+	if !m.issuesOv.watch.pollArmed {
 		t.Fatal("viewer を開いても見張りが張られていない")
 	}
 	_, cmd := m.Update(m.issuesOv.observe())
@@ -273,5 +275,123 @@ func TestIssuesWatchCatchesEditRacingTheBaseline(t *testing.T) {
 	}
 	if !v.scanning {
 		t.Fatal("スキャンと基準取りの間に入った編集を取りこぼした (一覧が編集前のまま固まる)")
+	}
+}
+
+func TestIssuesWatchReloadsFromRealEvent(t *testing.T) {
+	// イベント経路の結合: 実際に fsnotify のイベントで起こされ、指紋で判定して取り直しへ進む。
+	// ⚠️ 指紋が正本 (イベントは Create/Rename/Write と嘘をつくので、起こす役だけ)。
+	root, path := watchTree(t, "# 001 feat: 編集前\n")
+	v := openedWatchView(t, root, path)
+	if v.watch.w == nil {
+		t.Skip("この環境では fsnotify を作れない (ポーリングへ縮退する経路)")
+	}
+	v.watch.evArmed = false // 既に張られているチェーンをテストが引き取る
+	cmd := v.eventCmd()
+	if cmd == nil {
+		t.Fatal("イベント待ちの Cmd が作れない")
+	}
+	writeIssue(t, path, "# 001 feat: 編集後\n", time.Now())
+
+	msg, ok := waitMsg(t, cmd, 5*time.Second).(issuesWatchMsg)
+	if !ok || msg.closed {
+		t.Fatalf("イベントで観測が返らない: %+v", msg)
+	}
+	if msg.fp == v.watch.seen {
+		t.Fatal("イベント経路の指紋が変化を捉えていない")
+	}
+	v.handleWatch(msg)                                  // 1 回目: 安定待ち
+	reload := v.handleWatch(issuesWatchMsg{fp: msg.fp}) // 2 回目: 安定 → 取り直し
+	if reload == nil {
+		t.Fatal("イベント由来の変化で取り直しが走らない")
+	}
+	v.receive(drainScanMsg(t, reload))
+	if got := v.rows[0].Display(); got != "feat: 編集後" {
+		t.Fatalf("イベント経由の編集が反映されていない: %q", got)
+	}
+}
+
+func TestIssuesWatchClosingReleasesWatcher(t *testing.T) {
+	// 閉じたら watcher を Close する (fd を残さない)。ブロックしていたイベント待ちの Cmd は
+	// チャネルが閉じることで終わり、closed の観測として戻る。
+	root, path := watchTree(t, "# 001 feat: x\n")
+	v := openedWatchView(t, root, path)
+	if v.watch.w == nil {
+		t.Skip("この環境では fsnotify を作れない")
+	}
+	v.watch.evArmed = false // 既に張られているチェーンをテストが引き取る
+	cmd := v.eventCmd()
+	if cmd == nil {
+		t.Fatal("イベント待ちの Cmd が作れない")
+	}
+	v.close() // watcher を閉じる = ブロック中の Cmd が解ける
+
+	msg, ok := waitMsg(t, cmd, 5*time.Second).(issuesWatchMsg)
+	if !ok || !msg.closed {
+		t.Fatalf("閉じたのに closed の観測が返らない: %+v", msg)
+	}
+	if next := v.handleWatch(msg); next != nil {
+		t.Fatal("閉じた後もチェーンが続いている")
+	}
+}
+
+func TestIssuesWatchFallsBackToPollingWhenWatcherDies(t *testing.T) {
+	// watcher が死んでも (fd 回収・NFS 等) 無音にはしない: ポーリングだけで続ける。
+	root, path := watchTree(t, "# 001 feat: x\n")
+	v := openedWatchView(t, root, path)
+	if v.watch.w == nil {
+		t.Skip("この環境では fsnotify を作れない")
+	}
+	if got := v.pollInterval(); got != issuesWatchIdlePoll {
+		t.Fatalf("イベントがある間の保険は低頻度でよい: %v", got)
+	}
+	v.handleWatch(issuesWatchMsg{closed: true})
+	if v.watch.w != nil {
+		t.Fatal("死んだ watcher を掴んだままにしている")
+	}
+	if !v.watch.pollArmed {
+		t.Fatal("イベントが死んだのにポーリングも止まっている (無音になる)")
+	}
+	if got := v.pollInterval(); got != issuesWatchBlindPoll {
+		t.Fatalf("イベントが来ない状態の周期になっていない: %v", got)
+	}
+}
+
+// waitMsg は Cmd を goroutine で実行して結果を待つ (ブロックする Cmd をテストから駆動する)。
+func waitMsg(t *testing.T, cmd tea.Cmd, wait time.Duration) tea.Msg {
+	t.Helper()
+	ch := make(chan tea.Msg, 1)
+	go func() { ch <- cmd() }()
+	select {
+	case msg := <-ch:
+		return msg
+	case <-time.After(wait):
+		t.Fatal("Cmd が返らない (イベントを待ったまま固まっている)")
+		return nil
+	}
+}
+
+func TestIssuesWatchIgnoresStaleGeneration(t *testing.T) {
+	// ⚠️ 回帰防止: 閉じてすぐ開き直すと、閉じる前に張ったチェーンの closed が後から届く。世代で
+	// 弾かないと、それが開き直して作った新しい watcher を閉じてしまい、以降イベントが来なくなる
+	// (無音ではないがポーリングだけへ静かに縮退する)。
+	root, path := watchTree(t, "# 001 feat: x\n")
+	v := openedWatchView(t, root, path)
+	if v.watch.w == nil {
+		t.Skip("この環境では fsnotify を作れない")
+	}
+	stale := issuesWatchMsg{closed: true, gen: v.watch.gen} // 閉じる前のチェーンが持っている世代
+
+	v.close()
+	v.shown = true
+	v.receive(scanOf(t, root)) // 開き直し (新しい watcher)
+	if v.watch.w == nil {
+		t.Fatal("開き直しで watcher が作られていない")
+	}
+	if v.handleWatch(stale) != nil {
+		t.Fatal("古い世代の観測でチェーンを張り直した")
+	}
+	if v.watch.w == nil {
+		t.Fatal("古い世代の closed が新しい watcher を閉じた")
 	}
 }

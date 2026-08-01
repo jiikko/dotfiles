@@ -209,6 +209,7 @@ func (v *issuesView) close() {
 	v.shown = false
 	v.animStart = time.Time{}
 	v.discardBody() // viewer ごと閉じるので引き出しの演出は持ち越さない
+	v.stopWatch()   // 見張りの watcher を閉じる (fd を残さない。issues_watch.go)
 }
 
 // finishAnim は開く演出を即座に着地させる。
@@ -287,6 +288,7 @@ func (v *issuesView) receive(msg issuesScanMsg) {
 	v.refresh()
 	v.anchorCursor(cursorPath)
 	v.rebindOpen(openPath)
+	v.startWatch() // 監視対象のディレクトリはスキャン結果で決まる (issues_watch.go)
 	if v.pending != nil {
 		// 起動時の復元予約は最初のスキャン結果へ 1 度だけ当てる (以降の r / 編集後の取り直しは
 		// 通常どおり「今見ている場所」を引き継ぐ)

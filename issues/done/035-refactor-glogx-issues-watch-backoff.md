@@ -1,5 +1,24 @@
 # 035 refactor: issues viewer の見張りを無変化が続いたら間引く (trigger 待ち)
 
+## 決着 (2026-08-01): backoff ではなくイベント駆動にした
+
+ユーザー判断で「ポーリングを間引く」のではなく「そもそも定期ポーリングをやめる」方向を採った。
+fsnotify (Linux=inotify / macOS=kqueue) のイベントで起こし、**判定は既存の指紋のまま**にする形。
+下に書いた backoff は不要になったので実装しない (この issue は記録として done へ)。
+
+- 定期 wakeup は 1s → 30s (イベント取りこぼしの保険) になり、本題だった「放置中も 1 秒ごとに
+  起きる」は消えた。反応は逆に速くなった (イベント + debounce 200ms + 安定確認 300ms)
+- **イベントを真偽の正本にしない**のが要点: 1 回の保存で Create/Rename/Write が連続する・
+  エディタの tmp+rename で watch 対象の inode が入れ替わる・NFS で無音になる、と嘘をつく。
+  起こされたら必ず指紋を取り直し、本当に変わったときだけ読む
+- watcher を作れない / 死んだ環境では 1s ポーリングへ縮退する (無音にしない)
+- fsnotify は再帰しないので、issue ディレクトリとファイルが実際に居るサブディレクトリを
+  個別に Add し、取り直しのたびに追従する
+
+実装で見つけて塞いだ穴: 閉じてすぐ開き直すと、閉じる前に張ったチェーンの closed が後から届いて
+**開き直した新しい watcher を閉じてしまう**。見張りに世代を持たせて古い観測を弾く。
+
+
 issues viewer の live reload (issue 034) は、viewer を開いている間ずっと 1 秒周期の tick を回す
 (`src/glogx/issues_watch.go`)。glogx は「**動くものがある間だけ tick を回す**」を設計原則にしており
 (フレーム tick は `spinnerActive()` が false になれば再アームせず止まる。`tui.go` の `tickMsg`)、
