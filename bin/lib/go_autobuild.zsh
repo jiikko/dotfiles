@@ -122,13 +122,14 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
     (( quiet )) || print -u2 -- "$name: 初回は Go $required_go の toolchain 取得で時間がかかることがあります"
   fi
   local rc=0
-  # ⚠️ ここでサブシェルを掘らない (`(cd "$src_dir" && go build ...)` にしない)。zsh は fork した
-  # サブシェルで trap を既定へ戻すため、_go_autobuild_spawn が張った `trap '' HUP TERM INT` の
-  # ignore が内側で失われ、popup を閉じた瞬間に process group へ飛ぶ HUP で go build が
-  # exit 129 (=128+SIGHUP) で死ぬ。失敗記録が残るので、以後は TTL が切れるまで旧版に固定される
-  # (= 「古い版で動いています」が出続けてビルドされない)。-C なら cd 用の fork が要らず、
-  # ignore が go build までそのまま継承される (対照実験で確認 2026-08-01)。
-  # -C は go 1.20 以降・かつ最初の引数である必要がある。
+  # ⚠️ この go build を「サブシェルの中」や「バックグラウンドジョブ」にしない。zsh は fork した
+  # サブシェル `( ... )` と `&` のジョブで trap をリセットするので、_go_autobuild_spawn が張った
+  # `trap '' HUP TERM INT` の ignore がそこで失われる (bash は POSIX どおり ignore を継承するため
+  # この罠は zsh 固有)。失われると、popup を閉じた瞬間に process group へ飛ぶ HUP で go build が
+  # exit 129 (=128+SIGHUP) で死に、失敗記録が残って TTL が切れるまで旧版に固定される
+  # (= 「古い版で動いています」が出続けてビルドされない)。ignore が届くのは、trap を張ったシェル
+  # 自身が exec する foreground コマンドだけ。詳細と実測表: rules/zsh-trap-not-inherited.md
+  # -C なら cd 用の fork が要らないのでこの条件を満たす (go 1.20 以降・かつ最初の引数)。
   go build -C "$src_dir" -o "$tmp" . || rc=$?
   if (( rc )); then
     command rm -f "$tmp" 2>/dev/null
