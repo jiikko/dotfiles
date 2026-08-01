@@ -337,6 +337,9 @@ sleep 3
 binary_is "$ROOT" old || fail "lock を奪われた builder が古い成果物を install した (got: $(binary_mark "$ROOT"))"
 [[ -f "$ROOT/src/tool/.autobuild.failed" ]] && fail "install 中止を失敗として記録した (次回の再挑戦が止まる)"
 ok "lock を奪われた builder は install を中止し、失敗記録も残さない"
+# 奪った側 (このテスト自身) が持ち主として残るので自分で片付ける。builder は他人の lock を
+# 消さない (「lock を解放してよいのは持ち主だけ」) ため、放っておくと末尾の残骸チェックに出る。
+rm -rf "$ROOT/src/tool/.autobuild.lock"
 
 printf '\n## GO_AUTOBUILD_SYNC は --async を打ち消す\n'
 ROOT="$(new_project syncenv)"
@@ -378,6 +381,58 @@ out="$(AUTOBUILD_ARGS=--async FAKE_GO_MARK=v2 run_tool "$ROOT")"
 [[ "$out" == "v1" ]] || fail "zsh/system 不在で --async が旧版起動にならない (got: $out)"
 wait_for "zsh/system 不在でバックグラウンドビルドが完了しない" binary_is "$ROOT" v2
 ok 'zsh/system が無い zsh でも同期・async ともに動く ($$ への縮退)' 
+
+printf '\n## ビルド中に着地したソース更新を飲まない\n'
+# ⚠️ 成果物の mtime を install した時刻にすると、「ビルド中に入った編集」が永久に取り込まれない:
+# 編集の mtime < install の mtime になるので stale 判定が二度と成立しない。glogx を触りながら
+# popup で起動する = この repo の開発ループそのもので踏む。
+ROOT="$(new_project midedit)"
+FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
+freeze "$ROOT"
+bump "$ROOT/src/tool/main.go"
+AUTOBUILD_ARGS=--async FAKE_GO_SLEEP=2 FAKE_GO_MARK=mid run_tool "$ROOT" >/dev/null
+wait_for "builder が動き出さない" test -f "$ROOT/src/tool/.autobuild.lock/pid"
+sleep 0.3
+touch "$ROOT/src/tool/main.go"   # ← ビルド実行中に着地した編集
+wait_for "ビルドが完了しない" binary_is "$ROOT" mid
+AUTOBUILD_ARGS=--async FAKE_GO_MARK=after run_tool "$ROOT" >/dev/null
+wait_for "ビルド中の編集が拾われない (以後まったく再ビルドされない)" \
+  binary_is "$ROOT" after
+ok "ビルド中に着地したソース更新を次の起動で拾う"
+
+printf '\n## 走行中の builder は、あとから入った新しいバイナリを踏まない\n'
+# ⚠️ 同期ビルド (GO_AUTOBUILD_SYNC=1 =「今すぐ新版が欲しい」) は lock を取らないので、走行中の
+# async builder は「lock を奪われた」判定に引っかからない。時刻で見ないと、あとから入った
+# 新しいバイナリを古い成果物で踏み、ユーザーの復旧操作を黙って巻き戻す。
+ROOT="$(new_project revert)"
+FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
+freeze "$ROOT"
+bump "$ROOT/src/tool/main.go"
+AUTOBUILD_ARGS=--async FAKE_GO_SLEEP=3 FAKE_GO_MARK=slow run_tool "$ROOT" >/dev/null
+wait_for "builder が動き出さない" test -f "$ROOT/src/tool/.autobuild.lock/pid"
+sleep 0.5
+GO_AUTOBUILD_SYNC=1 FAKE_GO_MARK=now run_tool "$ROOT" >/dev/null
+binary_is "$ROOT" now || fail "前提が崩れた: 同期ビルドが入っていない (got: $(binary_mark "$ROOT"))"
+sleep 4
+binary_is "$ROOT" now \
+  || fail "走行中の builder が新しいバイナリを古い成果物で踏んだ (got: $(binary_mark "$ROOT"))"
+ok "走行中の builder は、あとから入った新しいバイナリを踏まない"
+
+printf '\n## lock を解放してよいのは持ち主だけ\n'
+# ⚠️ EXIT trap が所有権を見ずに rm -rf すると、timeout 超過で lock を奪われた builder が
+# 「奪った側の lock」まで消す。以後その src は無施錠になり多重ビルドが漏れる。
+ROOT="$(new_project lockown)"
+FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
+freeze "$ROOT"
+bump "$ROOT/src/tool/main.go"
+AUTOBUILD_ARGS=--async FAKE_GO_SLEEP=2 FAKE_GO_MARK=slow run_tool "$ROOT" >/dev/null
+wait_for "builder が lock を取らない" test -f "$ROOT/src/tool/.autobuild.lock/pid"
+printf '%s\n' "$$" > "$ROOT/src/tool/.autobuild.lock/pid"  # 別の builder に奪われた状態にする
+sleep 3
+[[ -f "$ROOT/src/tool/.autobuild.lock/pid" ]] \
+  || fail "lock を奪われた builder が、奪った側の lock まで消した (以後この src は無施錠)"
+ok "lock を奪われた builder は、奪った側の lock を消さない"
+rm -rf "$ROOT/src/tool/.autobuild.lock"  # 奪った状態を残さない (末尾の残骸チェック用)
 
 printf '\n## 相対パスで呼ばれても一時ファイルの置き場所がずれない\n'
 # ⚠️ -C はビルド前に chdir するので、src_dir が相対だと -o の出力先が「移動後の cwd 基準」に

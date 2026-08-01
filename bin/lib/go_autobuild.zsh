@@ -105,6 +105,13 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   # (別シェルからの stale takeover が実行中 builder の一時ファイルを消すのを避ける)
   _go_autobuild_self_pid
   local bin="$src_dir/$name" tmp="$src_dir/.autobuild.new.$REPLY"
+  # started は「このビルドが見たソースの時点」の目印。⚠️ 名前は .autobuild.new.* の掃除に載せる
+  # (途中死したときに残さないため)。成果物の mtime をこれに合わせるので、ビルド実行中に着地した
+  # 編集は次の stale 判定で拾われる。install した時刻にすると、その編集の mtime < 成果物の mtime に
+  # なり「ソースの方が新しい」が二度と成立しない = その編集は永久に取り込まれない。
+  # (この repo の開発ループ = glogx を触りながら popup で起動する、がまさにこれを踏む)
+  local started="$src_dir/.autobuild.new.$REPLY.at"
+  command touch "$started" 2>/dev/null
   local local_go required_go
   local_go=$(go env GOVERSION 2>/dev/null) || local_go=unknown
   required_go=$(awk '$1 == "go" {print $2; exit}' "$src_dir/go.mod" 2>/dev/null)
@@ -132,7 +139,7 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   # -C なら cd 用の fork が要らないのでこの条件を満たす (go 1.20 以降・かつ最初の引数)。
   go build -C "$src_dir" -o "$tmp" . || rc=$?
   if (( rc )); then
-    command rm -f "$tmp" 2>/dev/null
+    command rm -f "$tmp" "$started" 2>/dev/null
     # exit code を残す: コンパイルエラーなら go build 自身が理由を上に出すが、シグナルで
     # 殺された場合 (OOM の SIGKILL = 137 等) は何も出ないため、code が唯一の手がかりになる
     # (実例 2026-07-31: ログに "build failed" だけが残り原因を追えなかった)
@@ -143,15 +150,28 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   # ここで上書きすると古い成果物が「バイナリ mtime = 今」で入って stale 判定を欺く
   # (= 黙って古い版に固定される)。失敗ではないので .autobuild.failed も作らない。
   if [[ -n "$lock" && "$(<"$lock/pid" 2>/dev/null)" != "$lock_pid" ]]; then
-    command rm -f "$tmp" 2>/dev/null
+    command rm -f "$tmp" "$started" 2>/dev/null
     print -u2 -- "$name: lock を奪われたため install を中止 (別の builder が入れている)"
     return 0
   fi
+  # 走行中に、より新しいバイナリが入っていたら踏まない。上の lock 判定では足りない: 同期ビルド
+  # (GO_AUTOBUILD_SYNC=1 = 「今すぐ新版が欲しい」) は lock を取らないので、走行中の builder から
+  # 見て「lock は自分のまま」になり、ユーザーの復旧操作を古い成果物で黙って巻き戻す。
+  if [[ -e "$bin" && "$bin" -nt "$started" ]]; then
+    command rm -f "$tmp" "$started" 2>/dev/null
+    print -u2 -- "$name: 走行中に新しいバイナリが入ったため install を中止"
+    return 0
+  fi
   command mv -f "$tmp" "$bin" || {
-    command rm -f "$tmp" 2>/dev/null
+    command rm -f "$tmp" "$started" 2>/dev/null
     print -u2 -- "$name: install failed"
     return 1
   }
+  # 成果物の mtime を「ビルドが見たソースの時点」へ揃える (started の doc)。
+  # ⚠️ 巻き戻しても旧バイナリの mtime より必ず後なので、走っている glogx の「新版が入った」検知
+  # (src/glogx/autobuild.go の classifyAutobuild = バイナリ mtime が増えたか) は壊れない。
+  command touch -r "$started" "$bin" 2>/dev/null
+  command rm -f "$started" 2>/dev/null
   command rm -f "$src_dir/.autobuild.failed" 2>/dev/null
   return 0
 }
@@ -176,7 +196,9 @@ _go_autobuild_spawn() {  # $1=src_dir $2=name
     _go_autobuild_self_pid
     local pid=$REPLY
     _go_autobuild_take_lock "$lock" "$pid" || exit 0
-    trap 'command rm -rf "$lock" 2>/dev/null' EXIT
+    # ⚠️ 解放してよいのは自分が持ち主のときだけ。timeout 超過で奪われた後に無条件で rm -rf すると
+    # 「奪った側の lock」まで消し、以後その src は無施錠になって多重ビルドが漏れる。
+    trap '[[ "$(<"$lock/pid" 2>/dev/null)" == "$pid" ]] && command rm -rf "$lock" 2>/dev/null' EXIT
     # 前回の途中死が残した一時ファイルを掃除する
     command rm -f "$src_dir"/.autobuild.new.*(N) 2>/dev/null
     print -r -- "--- $(strftime '%Y-%m-%d %H:%M:%S' $EPOCHSECONDS) $name (pid=$pid)"
