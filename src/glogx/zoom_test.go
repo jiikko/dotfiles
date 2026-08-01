@@ -214,3 +214,60 @@ func TestZoomFrameRateDropsAfterSettle(t *testing.T) {
 		t.Fatal("演出が終わっても 60fps で回り続けている (CPU を無駄に食う)")
 	}
 }
+
+// 演出は所要いっぱいまで動く。⚠️ 素の easeOutCubic は進捗 69% で appZoomSnap に達してしまい、
+// 残り 31% は絵が変わらない (開くときは早々に静止、閉じるときは 68ms 何も起きてから縮み始める)。
+// scale が終点を snap 閾値に合わせているかを、値でなく「最後まで動くか」で縛る。
+func TestZoomMovesForWholeDuration(t *testing.T) {
+	var z appZoom
+	now := time.Unix(1000, 0)
+	z.start(now)
+
+	// 終端の直前でもまだ変形している (= 死に時間がない)
+	almost := now.Add(appZoomDuration - time.Millisecond)
+	if s := z.scale(almost); s >= appZoomSnap {
+		t.Fatalf("所要の終わり際に絵が止まっている (scale=%v ≥ snap=%v)", s, appZoomSnap)
+	}
+	// 閉じるときも同じ (開始直後に「何も起きない時間」を作らない)
+	var c appZoom
+	c.startClose(now)
+	justAfter := now.Add(appZoomDuration / 20) // 所要の 5% 経過
+	if s := c.scale(justAfter); s >= appZoomSnap {
+		t.Fatalf("閉じ始めに何も起きない時間がある (scale=%v ≥ snap=%v)", s, appZoomSnap)
+	}
+}
+
+// フレームあたりの跳びが小さいこと。⚠️ 端末は文字セル単位でしか動けないので、フレーム数だけ
+// 増やしても曲線が前のめりだと 1 フレームで何行も跳ぶ。40 行の画面を想定して平均の跳びを見る。
+func TestZoomStepsAreSmall(t *testing.T) {
+	orig := timeNow
+	t.Cleanup(func() { timeNow = orig })
+	now := time.Unix(1000, 0)
+	timeNow = func() time.Time { return now }
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.zoom.off = false
+	m.zoom.start(now)
+	interval := m.tickInterval()
+
+	const rows = 40
+	prev, total, steps := -1, 0, 0
+	for tt := time.Duration(0); tt <= appZoomDuration; tt += interval {
+		s := m.zoom.scale(now.Add(tt))
+		if s >= appZoomSnap {
+			break
+		}
+		h := max(int(float64(rows)*s+0.5), appZoomMinRows)
+		if prev >= 0 {
+			total += h - prev
+			steps++
+		}
+		prev = h
+	}
+	if steps == 0 {
+		t.Fatal("動くフレームが 1 枚も無い")
+	}
+	if avg := float64(total) / float64(steps); avg > 2.2 {
+		t.Fatalf("1 フレームで平均 %.1f 行も跳んでいる (カクついて見える。%d 枚)", avg, steps)
+	}
+}

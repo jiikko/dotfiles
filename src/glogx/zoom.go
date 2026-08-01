@@ -21,12 +21,20 @@ import (
 )
 
 const (
-	// appZoomDuration は片道の所要 (ユーザー選定 2026-08-01)。
-	appZoomDuration = 220 * time.Millisecond
+	// appZoomDuration は片道の所要。
+	//
+	// 端末の演出は文字セル単位でしか動けないので、所要がそのまま滑らかさになる: 40 行の画面が
+	// 開き切るまでに 36 行ぶん育つため、フレームが少ないと 1 フレームで何行も跳ぶ。60fps での実測
+	// (1 フレームあたりの平均) は 220ms = 2.7 行 / 320ms = 1.8 行 / 420ms = 1.3 行。
+	// ⚠️ 伸ばすほど滑らかになるが、起動と終了のたびに待たされる時間でもある。ここは体感の綱引きで
+	// 決める値なので、滑らかさが足りないと感じたらまずここを疑う (fps は既に上限近い)。
+	appZoomDuration = 320 * time.Millisecond
 	// appZoomMinRows は枠が枠として見える最小の高さ (上辺 + 中身 1 行 + 下辺 + 影)。
 	appZoomMinRows = 4
 	// appZoomSnap は「ほぼ開き切った」とみなす割合。ここを超えたら実画面をそのまま出す:
 	// 演出の枠が本物の枠とほぼ重なる領域では、切り出しの誤差が二重罫線に見える。
+	// ⚠️ scale の終点でもある (scale の doc)。閾値としてだけ読むと、曲線側の * appZoomSnap を
+	// 「なぜ掛けているのか分からない」と外され、所要の 31% が死んだ元の状態に戻る。
 	appZoomSnap = 0.97
 )
 
@@ -105,12 +113,18 @@ func (z *appZoom) finish() (closed bool) {
 //
 // 開くときは easeOutCubic で終点に向けて減速し、閉じるときはその逆再生 (進捗を反転するだけ)。
 // 別のカーブを使うと「開いた動きと閉じる動きが違う」ちぐはぐさが出る (引き出しと同じ規律)。
+//
+// ⚠️ 曲線の値をそのまま返さず appZoomSnap 倍して返す。素の easeOutCubic は進捗 69% で
+// appZoomSnap (0.97) に達してしまい、残り 31% (68ms) は絵が変わらない = 開くときは「早々に
+// 開き切って静止」、閉じるときは「68ms 何も起きてから縮み始める」ことになる (実測 2026-08-01)。
+// 終点を snap 閾値に合わせておけば、動きが所要いっぱいに広がってフレームあたりの跳びが小さくなる
+// (実測: 動くフレーム 10 → 14 枚、1 フレームの平均 3.8 行 → 2.7 行)。
 func (z *appZoom) scale(now time.Time) float64 {
 	switch z.phase {
 	case appZoomOpening:
-		return easeOutCubicFloat(z.rawProgress(now))
+		return easeOutCubicFloat(z.rawProgress(now)) * appZoomSnap
 	case appZoomClosing:
-		return easeOutCubicFloat(1 - z.rawProgress(now))
+		return easeOutCubicFloat(1-z.rawProgress(now)) * appZoomSnap
 	case appZoomShown, appZoomClosed:
 	}
 	return 1
