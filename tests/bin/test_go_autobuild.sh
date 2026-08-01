@@ -35,6 +35,7 @@ cat > "$TMP_DIR/bin/go" <<'EOS'
 #!/bin/sh
 if [ "$1" = "env" ]; then printf '%s\n' "${FAKE_GO_VERSION:-go1.99.0}"; exit 0; fi
 echo "build" >> "$FAKE_GO_CALLS"
+[ -n "${FAKE_GO_PIDFILE:-}" ] && echo $$ > "$FAKE_GO_PIDFILE"
 [ -n "${FAKE_GO_SLEEP:-}" ] && sleep "$FAKE_GO_SLEEP"
 if [ -n "${FAKE_GO_FAIL:-}" ]; then echo "fake build error" >&2; exit 1; fi
 out=""
@@ -90,6 +91,7 @@ run_tool() {  # $1=root, 残り=tool 引数
   PATH="$TMP_DIR/bin:$PATH" \
     FAKE_GO_CALLS="$root/calls" \
     FAKE_GO_MARK="${FAKE_GO_MARK:-v1}" \
+    FAKE_GO_PIDFILE="${FAKE_GO_PIDFILE:-}" \
     "$root/bin/tool" "$@" 2>>"$root/stderr"
 }
 
@@ -366,7 +368,30 @@ out="$(AUTOBUILD_ARGS=--async FAKE_GO_MARK=v2 run_tool "$ROOT")"
 wait_for "zsh/system 不在でバックグラウンドビルドが完了しない" binary_is "$ROOT" v2
 ok 'zsh/system が無い zsh でも同期・async ともに動く ($$ への縮退)' 
 
-printf '\n## 作業ファイル / lock を残さない\n'
+printf '\n## spawn したビルドは popup を閉じたときの HUP で死なない\n'
+# ⚠️ 実害 (2026-08-01): tmux popup を閉じると process group へ HUP が飛び、裏で走っている
+# go build が exit 129 (=128+SIGHUP) で死ぬ。失敗記録が残るので以後は TTL が切れるまで旧版に
+# 固定され、「古い版で動いています」が出続けてビルドされない状態になった。
+#
+# _go_autobuild_spawn は `trap '' HUP TERM INT` を張っているが、_go_autobuild_build が内側で
+# サブシェルを掘るとそこで ignore が失われる (zsh は fork したサブシェルで trap を既定へ戻す)。
+# ここで pin するのは「ignore が実際にビルドプロセスまで届いていること」。
+ROOT="$(new_project hup)"
+FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
+freeze "$ROOT"
+bump "$ROOT/src/tool/main.go"
+PIDFILE="$ROOT/go.pid"
+AUTOBUILD_ARGS=--async FAKE_GO_SLEEP=3 FAKE_GO_MARK=survived FAKE_GO_PIDFILE="$PIDFILE" \
+  run_tool "$ROOT" >/dev/null
+wait_for "ビルドプロセスが起動しない" test -s "$PIDFILE"
+kill -HUP "$(cat "$PIDFILE")" 2>/dev/null || fail "ビルドプロセスへ HUP を撃てない (既に死んでいる?)"
+wait_for "HUP でビルドが死んだ (popup を閉じるたびに再ビルドが失敗する)" \
+  binary_is "$ROOT" survived
+ok "走行中のビルドは HUP を無視して完走する"
+[[ -f "$ROOT/src/tool/.autobuild.failed" ]] && fail "HUP 死の失敗記録が残っている (TTL まで旧版に固定される)"
+ok "HUP で失敗記録を残さない"
+
+printf '\n## 作業ファイル / lock を残さない\n' 
 leftover="$(find "$TMP_DIR" \( -name '.autobuild.new.*' -o -name 'nohup.out' -o -name '.autobuild.lock' \) | head -5)"
 [[ -z "$leftover" ]] || fail "作業ファイル / lock が残っている: $leftover"
 ok "rename 前の一時ファイル・nohup.out・lock を残さない"

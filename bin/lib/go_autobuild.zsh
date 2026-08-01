@@ -97,7 +97,10 @@ _go_autobuild_take_lock() {  # $1=lock dir $2=自分の pid / 0 = 取得, 1 = �
 # 一時ファイルへビルドしてから rename する。実行中バイナリを直接上書きしないため、
 # ビルドが途中で死んでも旧版は壊れない (= 途中死が無害になる = async の前提)。
 _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自分の pid (省略可)
-  local src_dir="$1" name="$2" quiet="$3" lock="${4-}" lock_pid="${5-}"
+  local src_dir="${1:a}" name="$2" quiet="$3" lock="${4-}" lock_pid="${5-}"
+  # ⚠️ :a で絶対パスに正規化してから使う。下の go build は -C で src_dir へ移動するので、
+  # 相対パスのままだと -o の出力先が移動後の cwd 基準になり、意図しない場所へ書く。
+  # (現在の呼び出しは全て ${0:A:h} 由来で絶対だが、-C を使う限りこれは前提であって偶然ではない)
   # lock と同じ実 pid で一時ファイルを一意にする
   # (別シェルからの stale takeover が実行中 builder の一時ファイルを消すのを避ける)
   _go_autobuild_self_pid
@@ -119,7 +122,14 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
     (( quiet )) || print -u2 -- "$name: 初回は Go $required_go の toolchain 取得で時間がかかることがあります"
   fi
   local rc=0
-  (cd "$src_dir" && go build -o "$tmp" .) || rc=$?
+  # ⚠️ ここでサブシェルを掘らない (`(cd "$src_dir" && go build ...)` にしない)。zsh は fork した
+  # サブシェルで trap を既定へ戻すため、_go_autobuild_spawn が張った `trap '' HUP TERM INT` の
+  # ignore が内側で失われ、popup を閉じた瞬間に process group へ飛ぶ HUP で go build が
+  # exit 129 (=128+SIGHUP) で死ぬ。失敗記録が残るので、以後は TTL が切れるまで旧版に固定される
+  # (= 「古い版で動いています」が出続けてビルドされない)。-C なら cd 用の fork が要らず、
+  # ignore が go build までそのまま継承される (対照実験で確認 2026-08-01)。
+  # -C は go 1.20 以降・かつ最初の引数である必要がある。
+  go build -C "$src_dir" -o "$tmp" . || rc=$?
   if (( rc )); then
     command rm -f "$tmp" 2>/dev/null
     # exit code を残す: コンパイルエラーなら go build 自身が理由を上に出すが、シグナルで
@@ -151,6 +161,8 @@ _go_autobuild_spawn() {  # $1=src_dir $2=name
   (
     # ignore された disposition は fork/exec を越えて go build にも継承される。popup を閉じた
     # ときに process group へ飛ぶ TERM/HUP で巻き添えにされないため (nohup は HUP しか防がない)。
+    # ⚠️ ただし zsh はサブシェルで trap を既定へ戻すので、この下でサブシェルを掘ると ignore が
+    # そこで切れる (実害は _go_autobuild_build の go build 行のコメント)。
     trap '' HUP TERM INT
     _go_autobuild_self_pid
     local pid=$REPLY
