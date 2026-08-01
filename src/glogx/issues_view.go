@@ -69,6 +69,11 @@ type issuesView struct {
 
 	rows   []*issues.Issue // 現在のタブ・フィルタの表示対象
 	cursor int
+	// 複数選択 (shift+↑/↓)。範囲は錨 (markAt) と cursor から毎回導出する。⚠️ 選択集合を別に
+	// 持たない: 行集合はフィルタ・タブ・再スキャンで入れ替わるので、集合で持つと実体を失った
+	// 選択が残り「見えていない行がコピーされる」。錨だけなら行集合を作り直す refresh で畳める。
+	marked bool
+	markAt int
 	// offset は窓の先頭行。⚠️ 一覧に glide (スクロールアニメ) は載せない: 半ページ移動は
 	// cursor と窓を同時に動かし、windowOffset が「カーソルを含む最小の窓」を導出するので
 	// カーソルは必ず窓の端に来る = 窓を 1 行でも遅らせるとカーソルが画面から出る。遅らせる余地が
@@ -352,6 +357,8 @@ func (v *issuesView) rebindOpen(path string) {
 // どの行にも描かれない」状態が残るため (a / Tab / 再スキャンで実際に起きていた)。窓は
 // windowOffset が cursor から導出するので、ここは行集合の作り直しだけを担う。
 func (v *issuesView) refresh() {
+	// ⚠️ 行集合が変わるので選択は畳む。錨は位置で持つため、残すと別の issue を指す
+	v.clearMark()
 	v.rows = issues.Filter(v.all, v.currentTab(), v.filter)
 	v.cursor = clampIdx(v.cursor, len(v.rows))
 	// チップの件数は「そのタブを選んだときに実際に並ぶ行数」と同じ Filter から出す。
@@ -460,6 +467,7 @@ func (v *issuesView) openBody() {
 // openIssue は指定した issue の本文を開く (読めたら true)。カーソル行を開く openBody と、
 // 前回終了時の画面をパスから開き直す applyScreen が共有する。
 func (v *issuesView) openIssue(iss *issues.Issue) bool {
+	v.clearMark() // 本文は 1 件の操作。選択を残すと y が一覧の範囲へ効いて対象が食い違う
 	body, err := iss.ReadBody()
 	if err != nil {
 		v.setNotice("本文を読めませんでした: "+firstLine(err.Error()), false)
@@ -530,18 +538,31 @@ func (v *issuesView) handleKey(key string, page int) tea.Cmd {
 	}
 	switch key {
 	case "q", "esc", "i":
+		// 選択中は解除を優先する (tig 流に 1 段戻る)。選択したまま viewer が閉じると、
+		// 開き直したときに解除の手段が無い状態から始まる
+		if v.marked && key != "i" {
+			v.clearMark()
+			return nil
+		}
 		v.close()
 	case "j", "down", "ctrl+n":
 		v.moveCursor(1, rows)
 	case "k", "up", "ctrl+p":
 		v.moveCursor(-1, rows)
+	// shift+↑/↓ で範囲選択 (ユーザー要望 2026-08-01)。y / p / Y が選択範囲へ効く。
+	case "shift+up":
+		v.extendMark(-1, rows)
+	case "shift+down":
+		v.extendMark(1, rows)
 	case "ctrl+d", "pgdown", " ", "f":
 		v.moveCursor(max(rows/2, 1), rows)
 	case "ctrl+u", "pgup", "b", "shift+space":
 		v.moveCursor(-max(rows/2, 1), rows)
 	case "g", "home":
+		v.clearMark()
 		v.cursor, v.offset = 0, 0
 	case "G", "end":
+		v.clearMark()
 		v.cursor = max(len(v.rows)-1, 0)
 		v.scrollToCursor(rows)
 	case "tab", "l", "right":
@@ -619,10 +640,53 @@ func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
 	return nil
 }
 
-// moveCursor はカーソルを動かしてスクロール位置を追従させる。
+// moveCursor はカーソルを動かしてスクロール位置を追従させる。素の移動は選択を解除する
+// (選択したまま離れた場所へ動くと「見えていない範囲がコピー対象」になる)。
 func (v *issuesView) moveCursor(delta, rows int) {
-	v.cursor = clampIdx(v.cursor+delta, len(v.rows))
+	v.clearMark()
+	v.setCursor(v.cursor+delta, rows)
+}
+
+// setCursor はカーソルを位置 i へ置いて窓を追従させる (選択には触れない)。
+func (v *issuesView) setCursor(i, rows int) {
+	v.cursor = clampIdx(i, len(v.rows))
 	v.scrollToCursor(rows)
+}
+
+// extendMark は shift+↑/↓ の伸張。初回は今の行を錨にしてから動くので、1 回押すと
+// 「元の行 + 隣の行」の 2 行が選択される (エディタ・Finder と同じ)。
+func (v *issuesView) extendMark(delta, rows int) {
+	if len(v.rows) == 0 {
+		return
+	}
+	if !v.marked {
+		v.marked, v.markAt = true, v.cursor
+	}
+	v.setCursor(v.cursor+delta, rows)
+}
+
+// clearMark は選択を解除する。
+func (v *issuesView) clearMark() { v.marked, v.markAt = false, 0 }
+
+// selection は選択範囲 [lo, hi] (両端を含む)。選択していなければ ok=false。
+// ⚠️ 錨は行集合の入れ替えで無効になりうるので、範囲は必ず今の rows へ収めてから返す。
+func (v *issuesView) selection() (lo, hi int, ok bool) {
+	if !v.marked || len(v.rows) == 0 {
+		return 0, 0, false
+	}
+	lo, hi = min(v.markAt, v.cursor), max(v.markAt, v.cursor)
+	return max(lo, 0), min(hi, len(v.rows)-1), true
+}
+
+// selectedRows は操作の対象 (選択中ならその範囲、選択していなければ対象 1 件)。
+func (v *issuesView) selectedRows() []*issues.Issue {
+	if lo, hi, ok := v.selection(); ok {
+		return v.rows[lo : hi+1]
+	}
+	if iss := v.target(); iss != nil {
+		return []*issues.Issue{iss}
+	}
+	return nil
 }
 
 // scrollToCursor はカーソルが画面内に入るまで offset を寄せる。
@@ -696,13 +760,9 @@ func (v *issuesView) urlPickerKey(key string) tea.Cmd {
 	return func() tea.Msg { return openURLMsg{err: openInBrowser(url)} }
 }
 
-// copyPath は対象の issue のパスをクリップボードへ入れる。
+// copyPath は対象の issue のパスをクリップボードへ入れる (選択中は範囲ぶん)。
 func (v *issuesView) copyPath() {
-	iss := v.target()
-	if iss == nil {
-		return
-	}
-	v.copyText(iss.Path, "パスをコピーしました: ")
+	v.copyEach("パス", func(iss *issues.Issue) string { return iss.Path })
 }
 
 // copyNumber は issue 番号をコピーする (p)。番号は rename も move も生き残る唯一安定した
@@ -711,25 +771,63 @@ func (v *issuesView) copyPath() {
 // 番号を持たない issue (素スラッグ。実測で SnapTrim に 4 件) では黙って空をコピーせず、
 // ファイル名に落として「番号が無い」ことを通知する。
 func (v *issuesView) copyNumber() {
-	iss := v.target()
-	if iss == nil {
+	rows := v.selectedRows()
+	if len(rows) == 0 {
 		return
 	}
-	id := iss.Ident() // CATEGORY-NNN 形式は接頭辞まで含む ("UI-005"。理由は Ident)
-	if id == "" {
-		v.copyText(filepath.Base(iss.Rel), "番号が無いのでファイル名をコピーしました: ")
-		return
+	lines := make([]string, 0, len(rows))
+	fellBack := false
+	for _, iss := range rows {
+		id := iss.Ident() // CATEGORY-NNN 形式は接頭辞まで含む ("UI-005"。理由は Ident)
+		if id == "" {
+			fellBack = true
+			id = filepath.Base(iss.Rel)
+		}
+		lines = append(lines, id)
 	}
-	v.copyText(id, "番号をコピーしました: ")
+	label := "番号"
+	switch {
+	case fellBack && len(lines) == 1:
+		label = "番号が無いのでファイル名"
+	case fellBack:
+		label = "番号 (番号なしはファイル名)"
+	}
+	v.copyLines(lines, label)
 }
 
 // copyReference は貼り付け用の 1 行参照をコピーする (Y)。番号 + タイトル + repo 相対パス。
 func (v *issuesView) copyReference() {
-	iss := v.target()
-	if iss == nil {
+	v.copyEach("参照", func(iss *issues.Issue) string { return iss.Reference(v.root) })
+}
+
+// copyEach は対象 (選択中なら範囲、なければ 1 件) から text() を作ってコピーする。
+func (v *issuesView) copyEach(label string, text func(*issues.Issue) string) {
+	rows := v.selectedRows()
+	if len(rows) == 0 {
 		return
 	}
-	v.copyText(iss.Reference(v.root), "参照をコピーしました: ")
+	lines := make([]string, 0, len(rows))
+	for _, iss := range rows {
+		lines = append(lines, text(iss))
+	}
+	v.copyLines(lines, label)
+}
+
+// copyLines は複数行をまとめてコピーする。1 件のときの文言は単数のまま変えない
+// (複数選択を足したせいで、いつもの操作の見た目が変わらないように)。
+//
+// ⚠️ 通知には全文を載せない: トーストは 1 行で、改行を含む文字列を渡すと枠が壊れる。
+// クリップボードには全件を改行区切りで入れ、通知は件数 + 先頭だけにする。
+func (v *issuesView) copyLines(lines []string, label string) {
+	if len(lines) == 1 {
+		v.copyText(lines[0], label+"をコピーしました: ")
+		return
+	}
+	if err := copyToClipboard(strings.Join(lines, "\n")); err != nil {
+		v.setNotice("コピーに失敗しました: "+firstLine(err.Error()), false)
+		return
+	}
+	v.setNotice(strconv.Itoa(len(lines))+" 件の"+label+"をコピーしました: "+lines[0]+" ほか", true)
 }
 
 // copyNextNumber は次に採番すべき番号をコピーする (N)。走査済みの全ディレクトリから計算する
@@ -1089,6 +1187,10 @@ func (v *issuesView) tabChip(name string, count int, active bool, colored bool) 
 	return paint(text, ansiDim+color, colored)
 }
 
+// issuesSelGutter は選択範囲の行に出す溝。⚠️ 幅は cursorGutterWidth と同じ 2 桁にすること
+// (カーソル行の "→ " と混在するので、違う幅だと選択行だけ 1 桁ずれる)。
+const issuesSelGutter = "▌ "
+
 // rowLine は一覧の 1 行 (番号・状態バッジ・カテゴリ・タイトル・進捗)。width は行が使える
 // 表示幅 (スクロールバー列を差し引いた後)。
 func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
@@ -1110,7 +1212,12 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 	// ⚠️ どの経路も同じ幅に切る。titleW には下限 (4) があるので、極端に狭い幅では固定部分だけで
 	// width を超える。カーソル行だけ切っていたため、そこ以外の行が枠を突き破っていた。
 	if i != v.cursor {
-		return clipToWidth(cursorGutterBlank+text, width)
+		// 選択範囲の行は溝で示す (カーソル行は → が優先。範囲は必ずカーソルを含むので競合しない)
+		gutter := cursorGutterBlank
+		if lo, hi, ok := v.selection(); ok && i >= lo && i <= hi {
+			gutter = paint(issuesSelGutter, ansiCyan, o.colored)
+		}
+		return clipToWidth(gutter+text, width)
 	}
 	if o.cursorPaint != nil {
 		return o.cursorPaint(clipToWidth(cursorGutterMark+text, width))
@@ -1157,6 +1264,10 @@ func (v *issuesView) hint() string {
 	// 右端のバッジ ○/○⏸/○⏸✓ が示すので、ここで二重に説明しない)。
 	// ⚠️ 語でなくバッジで書くのは幅のため: hint は 1 行で popup 実幅に詰まっており、
 	// "a: pending も" (14 桁) では末尾の "q: 閉じる" が黙って切れる (実測)。
+	if lo, hi, ok := v.selection(); ok {
+		// 選択中は効くキーだけを出す (移動と Enter は選択を畳むので、並べると誤解を招く)
+		return strconv.Itoa(hi-lo+1) + " 件選択  shift+↑/↓: 増減  y: パス  p: 番号  Y: 参照  Esc: 解除"
+	}
 	next := "a: +" + issues.StatusPending.Badge()
 	switch v.filter {
 	case issues.FilterPending:

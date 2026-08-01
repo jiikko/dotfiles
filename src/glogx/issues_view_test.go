@@ -284,6 +284,127 @@ func TestIssuesViewTabLineNoMarksWhenAllFit(t *testing.T) {
 	}
 }
 
+// shift+↑/↓ で範囲を選び、y / p / Y がその範囲へ効く (ユーザー要望 2026-08-01)。
+func TestIssuesViewMultiSelectYank(t *testing.T) {
+	orig := copyToClipboard
+	t.Cleanup(func() { copyToClipboard = orig })
+	var copied string
+	copyToClipboard = func(text string) error { copied = text; return nil }
+
+	v := loadedView(sampleIssues()...)
+	v.filter = issues.FilterAll
+	v.refresh() // 5 件すべてを対象にする
+	v.handleKey("shift+up", 10)
+	// 1 回で「元の行 + 隣の行」= 2 行 (エディタ・Finder と同じ)。先頭行では動けないので
+	// 錨と同じ行に留まり 1 行選択のまま
+	v.cursor = 2
+	v.marked, v.markAt = true, 0 // 0..2 の 3 行を選んだ状態にする
+
+	v.handleKey("y", 10)
+	want := v.rows[0].Path + "\n" + v.rows[1].Path + "\n" + v.rows[2].Path
+	if copied != want {
+		t.Fatalf("選択範囲のパスがコピーされていない:\n got=%q\nwant=%q", copied, want)
+	}
+	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "3 件のパスをコピーしました") {
+		t.Fatalf("複数コピーの通知が想定と違う: %q", text)
+	}
+	// ⚠️ 通知に改行を含めない (トーストは 1 行。含めると枠が壊れる)
+	v.handleKey("Y", 10)
+	if text, _ := v.takeNotice(); strings.Contains(text, "\n") {
+		t.Fatalf("通知に改行が入った: %q", text)
+	}
+	v.handleKey("p", 10)
+	if copied != v.rows[0].Number+"\n"+v.rows[1].Number+"\n"+v.rows[2].Number {
+		t.Fatalf("選択範囲の番号がコピーされていない: %q", copied)
+	}
+	// 単数のときの文言は変えない (複数選択を足したせいで普段の見た目が変わらないように)
+	v.clearMark()
+	v.handleKey("y", 10)
+	if text, _ := v.takeNotice(); !strings.Contains(text, "パスをコピーしました: ") ||
+		strings.Contains(text, "件の") {
+		t.Fatalf("選択なしの通知が複数形になった: %q", text)
+	}
+}
+
+// shift+↑/↓ の伸張と、選択が畳まれる経路。畳み忘れると「見えていない行がコピー対象」になる。
+func TestIssuesViewMultiSelectExtendAndClear(t *testing.T) {
+	newView := func() *issuesView {
+		v := loadedView(sampleIssues()...)
+		v.filter = issues.FilterAll
+		v.refresh()
+		v.cursor = 2
+		v.handleKey("shift+up", 10) // 1..2 を選択 (カーソルは 1 へ)
+		return v
+	}
+	v := newView()
+	if lo, hi, ok := v.selection(); !ok || lo != 1 || hi != 2 || v.cursor != 1 {
+		t.Fatalf("shift+up の範囲が違う: lo=%d hi=%d ok=%v cursor=%d", lo, hi, ok, v.cursor)
+	}
+	v.handleKey("shift+down", 10) // 錨 (2) へ戻る = 1 行
+	if lo, hi, _ := v.selection(); lo != 2 || hi != 2 {
+		t.Fatalf("shift+down で錨へ戻らない: lo=%d hi=%d", lo, hi)
+	}
+	v.handleKey("shift+down", 10) // 錨より下へ = 2..3
+	if lo, hi, _ := v.selection(); lo != 2 || hi != 3 {
+		t.Fatalf("錨の下側へ伸ばせない: lo=%d hi=%d", lo, hi)
+	}
+
+	for _, tc := range []struct {
+		name string
+		do   func(v *issuesView)
+	}{
+		{"素の移動 (j)", func(v *issuesView) { v.handleKey("j", 10) }},
+		{"端へジャンプ (G)", func(v *issuesView) { v.handleKey("G", 10) }},
+		{"カテゴリ切替 (Tab)", func(v *issuesView) { v.handleKey("tab", 10) }},
+		{"状態フィルタ (a)", func(v *issuesView) { v.handleKey("a", 10) }},
+		{"本文を開く (Enter)", func(v *issuesView) { v.handleKey("enter", 10) }},
+		{"解除 (Esc)", func(v *issuesView) { v.handleKey("esc", 10) }},
+	} {
+		v := newView()
+		tc.do(v)
+		if _, _, ok := v.selection(); ok {
+			t.Fatalf("%s で選択が畳まれていない", tc.name)
+		}
+	}
+
+	// Esc は選択の解除が先で、viewer は閉じない (閉じると解除の手段が無い状態から再開する)
+	v = newView()
+	v.handleKey("esc", 10)
+	if !v.visible() {
+		t.Fatal("Esc 1 回で viewer まで閉じた (選択の解除が先のはず)")
+	}
+	v.handleKey("esc", 10)
+	if v.visible() {
+		t.Fatal("選択が無い状態の Esc で閉じない")
+	}
+}
+
+// 選択範囲は溝で見える (どこを選んでいるか画面から分かる)。幅も超えない。
+func TestIssuesViewMultiSelectIsVisible(t *testing.T) {
+	v := loadedView(sampleIssues()...)
+	v.filter = issues.FilterAll
+	v.refresh()
+	v.cursor = 2
+	v.handleKey("shift+up", 10)
+	out := v.lines(renderOpts(10))
+	marked := 0
+	for _, ln := range out {
+		if strings.HasPrefix(ln, issuesSelGutter) {
+			marked++
+		}
+		if w := dispWidth(ln); w > 80 {
+			t.Fatalf("選択表示で行が幅を超えた (w=%d): %q", w, ln)
+		}
+	}
+	// 2 行選択のうちカーソル行は → で示すので、選択の溝が付くのは 1 行
+	if marked != 1 {
+		t.Fatalf("選択範囲の溝が出ていない (marked=%d):\n%s", marked, strings.Join(out, "\n"))
+	}
+	if h := v.hint(); !strings.Contains(h, "2 件選択") {
+		t.Fatalf("選択中の hint に件数が出ない: %q", h)
+	}
+}
+
 func TestIssuesViewTabChipCountsMatchRows(t *testing.T) {
 	// チップの件数は「そのタブを選んだときに並ぶ行数」と一致する。issues.Tab.Count は done を
 	// 含む全件なので、そのまま出すと done を伏せた既定表示で合計が All と食い違う。
@@ -897,6 +1018,14 @@ func TestIssuesViewHintFitsPopupWidth(t *testing.T) {
 			t.Fatalf("filter=%d の hint が収まらない (w=%d): %q", f, w, v.hint())
 		}
 	}
+	// 複数選択の hint (件数が桁上がりしても収まるよう 3 桁で見る)
+	v.filter = issues.FilterAll
+	v.refresh()
+	v.marked, v.markAt, v.cursor = true, 0, len(v.rows)-1
+	if w := dispWidth(v.hint()); w > popupWidth {
+		t.Fatalf("選択中の hint が収まらない (w=%d): %q", w, v.hint())
+	}
+	v.clearMark()
 	v.open = v.rows[0]
 	if w := dispWidth(v.hint()); w > popupWidth {
 		t.Fatalf("本文の hint が収まらない (w=%d): %q", w, v.hint())
