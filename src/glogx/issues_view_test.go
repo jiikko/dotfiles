@@ -62,6 +62,10 @@ func sampleIssues() []*issues.Issue {
 	}
 }
 
+// vp は窓の寸法 (キー処理へ渡す)。幅は renderOpts と同じにする — テストだけ幅 0 で駆動すると、
+// 幅で行数が変わるヘッダーを足したときに本番でだけ page 分割がずれる。
+func vp(page int) issuesViewport { return renderOpts(page).viewport() }
+
 func renderOpts(page int) issuesRenderOpts {
 	return issuesRenderOpts{width: 80, page: page, colored: false}
 }
@@ -108,12 +112,12 @@ func TestIssuesViewRescanReanchorsTabAndCursor(t *testing.T) {
 		fakeIssue("011", "refactor", "x", issues.StatusOpen),
 	}
 	v := loadedView(first...)
-	v.handleKey("tab", 10) // feat (3 件で先頭)
-	v.handleKey("tab", 10) // refactor
+	v.handleKey("tab", vp(10)) // feat (3 件で先頭)
+	v.handleKey("tab", vp(10)) // refactor
 	if got := v.currentTab(); got != "refactor" {
 		t.Fatalf("前提が崩れた: 選択タブが refactor でない (%q)", got)
 	}
-	v.handleKey("j", 10) // 2 行目 (011)
+	v.handleKey("j", vp(10)) // 2 行目 (011)
 	want := v.current().Path
 
 	// refactor が 4 件になり、タブの並びが refactor → feat へ入れ替わる
@@ -136,22 +140,22 @@ func TestIssuesViewRescanReanchorsTabAndCursor(t *testing.T) {
 // 「Tab で行き過ぎたら 1 周するしかない」体験になる。
 func TestIssuesViewTabMovesBothDirections(t *testing.T) {
 	v := loadedView(sampleIssues()...)
-	v.handleKey("tab", 10) // All → feat
+	v.handleKey("tab", vp(10)) // All → feat
 	if got := v.currentTab(); got != "feat" {
 		t.Fatalf("前提が崩れた: %q", got)
 	}
-	v.handleKey("ctrl+b", 10) // feat → All
+	v.handleKey("ctrl+b", vp(10)) // feat → All
 	if got := v.currentTab(); got != "" {
 		t.Fatalf("ctrl+b で左へ戻らない: %q", got)
 	}
 	// tui.go の正規化を経た右移動 (ctrl+f → "right") と同じ経路も対称に効く
-	v.handleKey("right", 10)
+	v.handleKey("right", vp(10))
 	if got := v.currentTab(); got != "feat" {
 		t.Fatalf("right で右へ動かない: %q", got)
 	}
 	// 端で止まらず巡回する (moveTab の契約) 方向にも ctrl+b が乗る
-	v.handleKey("ctrl+b", 10) // All
-	v.handleKey("ctrl+b", 10) // 末尾へ回り込む
+	v.handleKey("ctrl+b", vp(10)) // All
+	v.handleKey("ctrl+b", vp(10)) // 末尾へ回り込む
 	if got := v.currentTab(); got != v.tabs[len(v.tabs)-1].Name {
 		t.Fatalf("ctrl+b が末尾へ巡回しない: %q", got)
 	}
@@ -166,7 +170,7 @@ func TestIssuesViewRescanRebindsOpenBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"})
-	v.handleKey("enter", 10)
+	v.handleKey("enter", vp(10))
 
 	fresh := &issues.Issue{
 		Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat",
@@ -191,30 +195,30 @@ func TestIssuesViewTabsAndDoneFilter(t *testing.T) {
 	if len(v.tabs) != 3 || v.tabs[0].Name != "feat" {
 		t.Fatalf("タブの組み立てが違う: %+v", v.tabs)
 	}
-	v.handleKey("a", 10) // 1 段目: + pending
+	v.handleKey("a", vp(10)) // 1 段目: + pending
 	if len(v.rows) != 3 {
 		t.Fatalf("a 1 回で pending を含めていない: %d", len(v.rows))
 	}
-	v.handleKey("a", 10) // 2 段目: + done
+	v.handleKey("a", vp(10)) // 2 段目: + done
 	if len(v.rows) != 5 {
 		t.Fatalf("a 2 回で done を含めていない: %d", len(v.rows))
 	}
-	v.handleKey("a", 10) // 3 段目で既定へ戻る
+	v.handleKey("a", vp(10)) // 3 段目で既定へ戻る
 	if len(v.rows) != 2 {
 		t.Fatalf("a 3 回で open のみへ戻らない: %d", len(v.rows))
 	}
-	v.handleKey("a", 10)
-	v.handleKey("a", 10) // 以降のタブ検証は全件表示で行う
+	v.handleKey("a", vp(10))
+	v.handleKey("a", vp(10)) // 以降のタブ検証は全件表示で行う
 	// Tab 巡回: All → feat → refactor → other → All
 	names := []string{"feat", "refactor", "other", ""}
 	for _, want := range names {
-		v.handleKey("tab", 10)
+		v.handleKey("tab", vp(10))
 		if got := v.currentTab(); got != want {
 			t.Fatalf("タブ巡回が想定と違う: want %q got %q", want, got)
 		}
 	}
 	// feat タブでは feat の 2 件だけ
-	v.handleKey("tab", 10)
+	v.handleKey("tab", vp(10))
 	if len(v.rows) != 2 {
 		t.Fatalf("feat タブの行数が違う: %d", len(v.rows))
 	}
@@ -294,13 +298,13 @@ func TestIssuesViewMultiSelectYank(t *testing.T) {
 	v := loadedView(sampleIssues()...)
 	v.filter = issues.FilterAll
 	v.refresh() // 5 件すべてを対象にする
-	v.handleKey("shift+up", 10)
+	v.handleKey("shift+up", vp(10))
 	// 1 回で「元の行 + 隣の行」= 2 行 (エディタ・Finder と同じ)。先頭行では動けないので
 	// 錨と同じ行に留まり 1 行選択のまま
 	v.cursor = 2
 	v.marked, v.markAt = true, 0 // 0..2 の 3 行を選んだ状態にする
 
-	v.handleKey("y", 10)
+	v.handleKey("y", vp(10))
 	want := v.rows[0].Path + "\n" + v.rows[1].Path + "\n" + v.rows[2].Path
 	if copied != want {
 		t.Fatalf("選択範囲のパスがコピーされていない:\n got=%q\nwant=%q", copied, want)
@@ -309,17 +313,17 @@ func TestIssuesViewMultiSelectYank(t *testing.T) {
 		t.Fatalf("複数コピーの通知が想定と違う: %q", text)
 	}
 	// ⚠️ 通知に改行を含めない (トーストは 1 行。含めると枠が壊れる)
-	v.handleKey("Y", 10)
+	v.handleKey("Y", vp(10))
 	if text, _ := v.takeNotice(); strings.Contains(text, "\n") {
 		t.Fatalf("通知に改行が入った: %q", text)
 	}
-	v.handleKey("p", 10)
+	v.handleKey("p", vp(10))
 	if copied != v.rows[0].Number+"\n"+v.rows[1].Number+"\n"+v.rows[2].Number {
 		t.Fatalf("選択範囲の番号がコピーされていない: %q", copied)
 	}
 	// 単数のときの文言は変えない (複数選択を足したせいで普段の見た目が変わらないように)
 	v.clearMark()
-	v.handleKey("y", 10)
+	v.handleKey("y", vp(10))
 	if text, _ := v.takeNotice(); !strings.Contains(text, "パスをコピーしました: ") ||
 		strings.Contains(text, "件の") {
 		t.Fatalf("選択なしの通知が複数形になった: %q", text)
@@ -333,18 +337,18 @@ func TestIssuesViewMultiSelectExtendAndClear(t *testing.T) {
 		v.filter = issues.FilterAll
 		v.refresh()
 		v.cursor = 2
-		v.handleKey("shift+up", 10) // 1..2 を選択 (カーソルは 1 へ)
+		v.handleKey("shift+up", vp(10)) // 1..2 を選択 (カーソルは 1 へ)
 		return v
 	}
 	v := newView()
 	if lo, hi, ok := v.selection(); !ok || lo != 1 || hi != 2 || v.cursor != 1 {
 		t.Fatalf("shift+up の範囲が違う: lo=%d hi=%d ok=%v cursor=%d", lo, hi, ok, v.cursor)
 	}
-	v.handleKey("shift+down", 10) // 錨 (2) へ戻る = 1 行
+	v.handleKey("shift+down", vp(10)) // 錨 (2) へ戻る = 1 行
 	if lo, hi, _ := v.selection(); lo != 2 || hi != 2 {
 		t.Fatalf("shift+down で錨へ戻らない: lo=%d hi=%d", lo, hi)
 	}
-	v.handleKey("shift+down", 10) // 錨より下へ = 2..3
+	v.handleKey("shift+down", vp(10)) // 錨より下へ = 2..3
 	if lo, hi, _ := v.selection(); lo != 2 || hi != 3 {
 		t.Fatalf("錨の下側へ伸ばせない: lo=%d hi=%d", lo, hi)
 	}
@@ -359,11 +363,11 @@ func TestIssuesViewMultiSelectExtendAndClear(t *testing.T) {
 		{"上へ縮める", "shift+up", "K", 2, 3},
 	} {
 		byArrow := newView()
-		byArrow.handleKey("shift+down", 10) // 2..3 まで揃えてから
-		byArrow.handleKey(tc.arrow, 10)
+		byArrow.handleKey("shift+down", vp(10)) // 2..3 まで揃えてから
+		byArrow.handleKey(tc.arrow, vp(10))
 		byVim := newView()
-		byVim.handleKey("J", 10)
-		byVim.handleKey(tc.vimKey, 10)
+		byVim.handleKey("J", vp(10))
+		byVim.handleKey(tc.vimKey, vp(10))
 		aLo, aHi, _ := byArrow.selection()
 		vLo, vHi, _ := byVim.selection()
 		if aLo != vLo || aHi != vHi {
@@ -376,12 +380,12 @@ func TestIssuesViewMultiSelectExtendAndClear(t *testing.T) {
 		name string
 		do   func(v *issuesView)
 	}{
-		{"素の移動 (j)", func(v *issuesView) { v.handleKey("j", 10) }},
-		{"端へジャンプ (G)", func(v *issuesView) { v.handleKey("G", 10) }},
-		{"カテゴリ切替 (Tab)", func(v *issuesView) { v.handleKey("tab", 10) }},
-		{"状態フィルタ (a)", func(v *issuesView) { v.handleKey("a", 10) }},
-		{"本文を開く (Enter)", func(v *issuesView) { v.handleKey("enter", 10) }},
-		{"解除 (Esc)", func(v *issuesView) { v.handleKey("esc", 10) }},
+		{"素の移動 (j)", func(v *issuesView) { v.handleKey("j", vp(10)) }},
+		{"端へジャンプ (G)", func(v *issuesView) { v.handleKey("G", vp(10)) }},
+		{"カテゴリ切替 (Tab)", func(v *issuesView) { v.handleKey("tab", vp(10)) }},
+		{"状態フィルタ (a)", func(v *issuesView) { v.handleKey("a", vp(10)) }},
+		{"本文を開く (Enter)", func(v *issuesView) { v.handleKey("enter", vp(10)) }},
+		{"解除 (Esc)", func(v *issuesView) { v.handleKey("esc", vp(10)) }},
 	} {
 		v := newView()
 		tc.do(v)
@@ -392,11 +396,11 @@ func TestIssuesViewMultiSelectExtendAndClear(t *testing.T) {
 
 	// Esc は選択の解除が先で、viewer は閉じない (閉じると解除の手段が無い状態から再開する)
 	v = newView()
-	v.handleKey("esc", 10)
+	v.handleKey("esc", vp(10))
 	if !v.visible() {
 		t.Fatal("Esc 1 回で viewer まで閉じた (選択の解除が先のはず)")
 	}
-	v.handleKey("esc", 10)
+	v.handleKey("esc", vp(10))
 	if v.visible() {
 		t.Fatal("選択が無い状態の Esc で閉じない")
 	}
@@ -408,7 +412,7 @@ func TestIssuesViewMultiSelectIsVisible(t *testing.T) {
 	v.filter = issues.FilterAll
 	v.refresh()
 	v.cursor = 2
-	v.handleKey("shift+up", 10)
+	v.handleKey("shift+up", vp(10))
 	out := v.lines(renderOpts(10))
 	marked := 0
 	for _, ln := range out {
@@ -438,7 +442,7 @@ func TestIssuesViewBodyShowsSrcLineNumbers(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "042-feat-x.md", Number: "042", Category: "feat"})
-	v.handleKey("enter", 20)
+	v.handleKey("enter", vp(20))
 	v.drawer.finish()
 	const width = 60
 	out := v.lines(issuesRenderOpts{width: width, page: 16})
@@ -467,18 +471,18 @@ func TestIssuesViewEnterTogglesBody(t *testing.T) {
 	}
 	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "028-refactor-x.md", Number: "028", Category: "refactor"})
 
-	v.handleKey("enter", 10) // 一覧の Enter = 開く
+	v.handleKey("enter", vp(10)) // 一覧の Enter = 開く
 	if v.open == nil {
 		t.Fatal("一覧の Enter で本文が開かない")
 	}
 	v.drawer.finish()
-	v.lines(renderOpts(20)) // 行数は描画で確定する (未描画だと Len()=0 でスクロール上限が 0)
-	v.handleKey("j", 10)    // 行送りは j/k のまま (Enter を奪ったので、こちらは残っていること)
+	v.lines(renderOpts(20))  // 行数は描画で確定する (未描画だと Len()=0 でスクロール上限が 0)
+	v.handleKey("j", vp(10)) // 行送りは j/k のまま (Enter を奪ったので、こちらは残っていること)
 	if v.bodyOff != 1 {
 		t.Fatalf("本文の j で 1 行送れていない: %d", v.bodyOff)
 	}
 
-	v.handleKey("enter", 10) // 本文の Enter = 閉じる
+	v.handleKey("enter", vp(10)) // 本文の Enter = 閉じる
 	if v.bodyOff != 1 {
 		t.Fatalf("本文の Enter が行送りとして効いた: bodyOff=%d", v.bodyOff)
 	}
@@ -509,11 +513,11 @@ func TestIssuesViewTabChipCountsMatchRows(t *testing.T) {
 		}
 	}
 	v.tabIdx = 0
-	v.handleKey("a", 10) // + pending
+	v.handleKey("a", vp(10)) // + pending
 	if v.allCount != 3 {
 		t.Fatalf("pending 表示で All の件数が更新されない: %d", v.allCount)
 	}
-	v.handleKey("a", 10) // + done
+	v.handleKey("a", vp(10)) // + done
 	if v.allCount != 5 {
 		t.Fatalf("done 表示で All の件数が更新されない: %d", v.allCount)
 	}
@@ -575,7 +579,7 @@ func TestIssuesViewCursorScrollsWithinWindow(t *testing.T) {
 	v := loadedView(many...)
 	const rows = 10
 	for range 20 {
-		v.handleKey("j", rows)
+		v.handleKey("j", vp(rows))
 	}
 	if v.cursor != 20 {
 		t.Fatalf("カーソルが動いていない: %d", v.cursor)
@@ -583,16 +587,16 @@ func TestIssuesViewCursorScrollsWithinWindow(t *testing.T) {
 	if v.offset == 0 || v.cursor < v.offset || v.cursor >= v.offset+rows {
 		t.Fatalf("カーソルが画面内に収まっていない: cursor=%d offset=%d", v.cursor, v.offset)
 	}
-	v.handleKey("G", rows)
+	v.handleKey("G", vp(rows))
 	if v.cursor != len(v.rows)-1 {
 		t.Fatalf("G で末尾へ行かない: %d", v.cursor)
 	}
-	v.handleKey("g", rows)
+	v.handleKey("g", vp(rows))
 	if v.cursor != 0 || v.offset != 0 {
 		t.Fatalf("g で先頭へ戻らない: cursor=%d offset=%d", v.cursor, v.offset)
 	}
 	// 端で止まる (負のインデックスにならない)
-	v.handleKey("k", rows)
+	v.handleKey("k", vp(rows))
 	if v.cursor != 0 {
 		t.Fatalf("先頭で k がはみ出した: %d", v.cursor)
 	}
@@ -610,7 +614,7 @@ func TestIssuesViewBodyModeOpensAndCloses(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := loadedView(iss)
-	v.handleKey("enter", 10)
+	v.handleKey("enter", vp(10))
 	if v.open == nil || v.body == nil {
 		t.Fatal("Enter で本文モードに入らない")
 	}
@@ -623,7 +627,7 @@ func TestIssuesViewBodyModeOpensAndCloses(t *testing.T) {
 			t.Fatalf("本文表示に %q が出ない:\n%s", want, out)
 		}
 	}
-	v.handleKey("h", 10)
+	v.handleKey("h", vp(10))
 	// 閉じる演出のあいだ本文は生きている (逆再生に中身が映る必要がある)
 	if v.open == nil {
 		t.Fatal("h の直後に本文が消えた (閉じる演出に何も映らない)")
@@ -648,19 +652,19 @@ func TestIssuesViewBodyScrollClampsToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "001-feat-long.md", Number: "001", Category: "feat"})
-	v.handleKey("enter", 10)
+	v.handleKey("enter", vp(10))
 	// 描画で行数が確定してからスクロールする (Body は幅ごとに整形結果をキャッシュする)
 	v.lines(renderOpts(20))
 	const page = 17
 	for range 100 {
-		v.handleKey("ctrl+d", page)
+		v.handleKey("ctrl+d", vp(page))
 	}
 	// handleKey に渡すのは画面行数 (page)。実際にスクロールに使える行数はヘッダーを
 	// 差し引いた visibleRows で、これが描画側とずれると末尾に届かなくなる
-	if v.bodyOff != max(v.body.Len()-v.visibleRows(page), 0) {
-		t.Fatalf("末尾を超えてスクロールした: off=%d len=%d rows=%d", v.bodyOff, v.body.Len(), v.visibleRows(page))
+	if v.bodyOff != max(v.body.Len()-v.visibleRows(vp(page)), 0) {
+		t.Fatalf("末尾を超えてスクロールした: off=%d len=%d rows=%d", v.bodyOff, v.body.Len(), v.visibleRows(vp(page)))
 	}
-	v.handleKey("g", page)
+	v.handleKey("g", vp(page))
 	if v.bodyOff != 0 {
 		t.Fatalf("g で先頭へ戻らない: %d", v.bodyOff)
 	}
@@ -695,11 +699,11 @@ func TestIssuesViewCursorStaysVisibleAfterRowSetChanges(t *testing.T) {
 	const page = 12
 	for _, key := range []string{"a", "tab", "y"} {
 		v := loadedView(list...)
-		v.handleKey("G", page) // カーソルを末尾へ (窓は下端に張り付く)
+		v.handleKey("G", vp(page)) // カーソルを末尾へ (窓は下端に張り付く)
 		if !hasCursorMark(v.lines(renderOpts(page))) {
 			t.Fatalf("前提が崩れた: G の直後にカーソル行が描かれていない (key=%q)", key)
 		}
-		v.handleKey(key, page)
+		v.handleKey(key, vp(page))
 		if !hasCursorMark(v.lines(renderOpts(page))) {
 			t.Fatalf("%q の後にカーソル行が窓の外へ出た:\n%s", key, strings.Join(v.lines(renderOpts(page)), "\n"))
 		}
@@ -720,12 +724,12 @@ func TestIssuesViewBodyScrollRecoversAfterWidthGrows(t *testing.T) {
 	}
 	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "001-feat-long.md", Number: "001", Category: "feat"})
 	const page = 12
-	v.handleKey("enter", page)
+	v.handleKey("enter", vp(page))
 	v.drawer.finish() // 引き出しを開ききった状態で幅の検証をする
 
 	narrow := issuesRenderOpts{width: 40, page: page}
 	v.lines(narrow)
-	v.handleKey("G", page) // 狭い幅での末尾へ
+	v.handleKey("G", vp(page)) // 狭い幅での末尾へ
 	v.lines(narrow)
 	tail := v.bodyOff
 
@@ -735,7 +739,7 @@ func TestIssuesViewBodyScrollRecoversAfterWidthGrows(t *testing.T) {
 		t.Fatalf("幅を広げても bodyOff が縮まっていない: %d -> %d", tail, v.bodyOff)
 	}
 	before := v.bodyOff
-	v.handleKey("k", page)
+	v.handleKey("k", vp(page))
 	if v.bodyOff != before-1 {
 		t.Fatalf("幅変更後の k が 1 行戻していない: %d -> %d", before, v.bodyOff)
 	}
@@ -750,7 +754,7 @@ func TestIssuesViewGReachesLastLine(t *testing.T) {
 	}
 	v := loadedView(many...)
 	const page = 12
-	v.handleKey("G", page)
+	v.handleKey("G", vp(page))
 	if out := strings.Join(v.lines(renderOpts(page)), "\n"); !strings.Contains(out, "001") {
 		t.Fatalf("一覧で G が末尾に届いていない:\n%s", out)
 	}
@@ -766,9 +770,9 @@ func TestIssuesViewGReachesLastLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	v2 := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "001-feat-long.md", Number: "001", Category: "feat"})
-	v2.handleKey("enter", page)
+	v2.handleKey("enter", vp(page))
 	v2.lines(renderOpts(page)) // 幅ごとの整形を確定させてから G
-	v2.handleKey("G", page)
+	v2.handleKey("G", vp(page))
 	if out := strings.Join(v2.lines(renderOpts(page)), "\n"); !strings.Contains(out, "最終行マーカー") {
 		t.Fatalf("本文で G が末尾に届いていない:\n%s", out)
 	}
@@ -786,7 +790,7 @@ func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 	}
 
 	v := loadedView(sampleIssues()...)
-	v.handleKey("y", 10)
+	v.handleKey("y", vp(10))
 	if copied != v.rows[0].Path {
 		t.Fatalf("カーソル行のパスがコピーされていない: %q", copied)
 	}
@@ -794,7 +798,7 @@ func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "コピーしました") {
 		t.Fatalf("コピーの結果が通知に載らない: %q ok=%v", text, ok)
 	}
-	if cmd := v.handleKey("v", 10); cmd == nil || !editorCalled {
+	if cmd := v.handleKey("v", vp(10)); cmd == nil || !editorCalled {
 		t.Fatalf("v でエディタ起動の Cmd が返らない: cmd=%v called=%v", cmd != nil, editorCalled)
 	}
 }
@@ -821,20 +825,20 @@ func TestIssuesViewActionKeysWorkInBothModes(t *testing.T) {
 	for _, mode := range []string{"一覧", "本文"} {
 		v := loadedView(iss)
 		if mode == "本文" {
-			v.handleKey("enter", 10)
+			v.handleKey("enter", vp(10))
 			if v.open == nil {
 				t.Fatal("本文モードに入れていない")
 			}
 		}
 		for _, key := range []string{"y", "p", "Y", "N"} {
 			copied = ""
-			v.handleKey(key, 10)
+			v.handleKey(key, vp(10))
 			if copied == "" {
 				t.Fatalf("%s モードで %q がコピーしていない", mode, key)
 			}
 		}
 		before := editorCalls
-		if cmd := v.handleKey("v", 10); cmd == nil || editorCalls != before+1 {
+		if cmd := v.handleKey("v", vp(10)); cmd == nil || editorCalls != before+1 {
 			t.Fatalf("%s モードで v が nvim を起動しない", mode)
 		}
 	}
@@ -842,7 +846,7 @@ func TestIssuesViewActionKeysWorkInBothModes(t *testing.T) {
 
 func TestIssuesViewRescanReturnsCmd(t *testing.T) {
 	v := loadedView(sampleIssues()...)
-	cmd := v.handleKey("r", 10)
+	cmd := v.handleKey("r", vp(10))
 	if cmd == nil {
 		t.Fatal("r で再スキャンの Cmd が返らない")
 	}
@@ -903,7 +907,7 @@ func TestIssuesViewNoticeIsTransientAndDoesNotHideWarning(t *testing.T) {
 		issues:   sampleIssues(),
 		warnings: []string{"同じファイル名が複数の状態ディレクトリにあります: 028-x.md / done/028-x.md"},
 	})
-	v.handleKey("y", 10)
+	v.handleKey("y", vp(10))
 	text, ok := v.takeNotice()
 	if !ok || !strings.Contains(text, "コピーしました") {
 		t.Fatalf("コピーの結果が通知に載らない: %q ok=%v", text, ok)
@@ -932,8 +936,8 @@ func TestIssuesViewBodyModeShowsCopyResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "028-refactor-x.md", Number: "028", Category: "refactor"})
-	v.handleKey("enter", 10)
-	v.handleKey("p", 10)
+	v.handleKey("enter", vp(10))
+	v.handleKey("p", vp(10))
 	text, ok := v.takeNotice()
 	if ok || !strings.Contains(text, "コピーに失敗しました") {
 		t.Fatalf("本文モードのコピー失敗が通知に載らない: %q ok=%v", text, ok)
@@ -967,7 +971,7 @@ func TestIssuesViewCopyActions(t *testing.T) {
 	v.root = "/repo"
 	v.all[0].Title = "030 feat: 新機能"
 
-	v.handleKey("p", 10)
+	v.handleKey("p", vp(10))
 	if copied != "030" {
 		t.Fatalf("p が番号をコピーしていない: %q", copied)
 	}
@@ -975,18 +979,18 @@ func TestIssuesViewCopyActions(t *testing.T) {
 		t.Fatalf("通知が出ていない: %q", v.notice)
 	}
 	// Y = 番号 + タイトル + repo 相対パス (H1 の先頭番号は Display が落とす)
-	v.handleKey("Y", 10)
+	v.handleKey("Y", vp(10))
 	if copied != "issue 030 feat: 新機能 (issues/030-feat-a.md)" {
 		t.Fatalf("Y の参照が想定と違う: %q", copied)
 	}
 	// N = 次に採番すべき番号 (fixture の最大は 030)
-	v.handleKey("N", 10)
+	v.handleKey("N", vp(10))
 	if copied != "031" {
 		t.Fatalf("N が次番号をコピーしていない: %q", copied)
 	}
 	// 番号なし issue ではファイル名に落として理由を通知する
 	v2 := loadedView(&issues.Issue{Path: "/repo/issues/resource-leaks.md", Dir: "/repo/issues", Rel: "resource-leaks.md", Slug: "resource-leaks"})
-	v2.handleKey("p", 10)
+	v2.handleKey("p", vp(10))
 	if copied != "resource-leaks.md" || !strings.Contains(v2.notice, "番号が無い") {
 		t.Fatalf("番号なしの扱いが想定と違う: copied=%q notice=%q", copied, v2.notice)
 	}
@@ -1084,7 +1088,7 @@ func TestIssuesViewKeyLandsAnimationImmediately(t *testing.T) {
 	v := loadedView(sampleIssues()...)
 	v.shown = true
 	atProgress(v, 0.1)
-	v.handleKey("j", 12)
+	v.handleKey("j", vp(12))
 	if v.animating() {
 		t.Fatal("キー入力で演出が着地していない (演出中は操作を待たせない契約)")
 	}
@@ -1150,7 +1154,7 @@ func TestIssuesStatusFilterCycle(t *testing.T) {
 		if !strings.Contains(v.hint(), "a: ") {
 			t.Errorf("%d 打目: hint に a の案内が無い: %q", i, v.hint())
 		}
-		v.handleKey("a", 10)
+		v.handleKey("a", vp(10))
 	}
 }
 
@@ -1191,8 +1195,8 @@ func TestIssuesZeroCountTabsGoRight(t *testing.T) {
 	}
 	v.tabIdx = idx
 	v.refresh()
-	v.handleKey("a", 10) // + pending
-	v.handleKey("a", 10) // + done (件数が変わり並びも変わる)
+	v.handleKey("a", vp(10)) // + pending
+	v.handleKey("a", vp(10)) // + done (件数が変わり並びも変わる)
 	if got := v.currentTab(); got != "refactor" {
 		t.Errorf("並べ替えで選択タブが滑った: %q (want refactor)", got)
 	}
@@ -1237,7 +1241,7 @@ func TestIssuesViewURLPicker(t *testing.T) {
 	v.body = issues.NewBody("A https://example.com/alpha\nB https://example.com/beta\nC https://other.test/gamma\n")
 	v.open = fakeIssue("001", "feat", "a", issues.StatusOpen)
 
-	if cmd := v.handleKey("u", 20); cmd != nil {
+	if cmd := v.handleKey("u", vp(20)); cmd != nil {
 		t.Fatal("u はピッカーを開くだけで Cmd を返さない")
 	}
 	if !v.urlPick.active {
@@ -1249,12 +1253,12 @@ func TestIssuesViewURLPicker(t *testing.T) {
 	}
 	// インクリメンタルサーチ: "beta" で 1 件に絞れる
 	for _, k := range []string{"b", "e", "t", "a"} {
-		v.handleKey(k, 20)
+		v.handleKey(k, vp(20))
 	}
 	if len(v.urlPick.match) != 1 || v.urlPick.selected() != "https://example.com/beta" {
 		t.Fatalf("検索で絞れない: match=%d selected=%q", len(v.urlPick.match), v.urlPick.selected())
 	}
-	cmd := v.handleKey("enter", 20)
+	cmd := v.handleKey("enter", vp(20))
 	if cmd == nil {
 		t.Fatal("Enter で開く Cmd が返らない")
 	}
@@ -1284,8 +1288,8 @@ func TestIssuesViewURLPickerSwallowsActionKeys(t *testing.T) {
 	v.shown, v.loaded = true, true
 	v.body = issues.NewBody("https://example.com/very-vivid\nhttps://example.com/plain\n")
 	v.open = fakeIssue("001", "feat", "a", issues.StatusOpen)
-	v.handleKey("u", 20)
-	v.handleKey("v", 20) // 検索語になるべき (nvim を起動してはいけない)
+	v.handleKey("u", vp(20))
+	v.handleKey("v", vp(20)) // 検索語になるべき (nvim を起動してはいけない)
 	if editorCalled {
 		t.Error("ピッカー中の v が nvim を起動した")
 	}
@@ -1302,7 +1306,7 @@ func TestIssuesViewURLPickerNone(t *testing.T) {
 	v.shown, v.loaded = true, true
 	v.body = issues.NewBody("URL の無い本文\n")
 	v.open = fakeIssue("001", "feat", "a", issues.StatusOpen)
-	v.handleKey("u", 20)
+	v.handleKey("u", vp(20))
 	if v.urlPick.active {
 		t.Error("URL が無いのにピッカーが開いた")
 	}
@@ -1318,7 +1322,7 @@ func TestIssuesViewOpenURLListModeIsNoop(t *testing.T) {
 	t.Cleanup(func() { openInBrowser = orig })
 
 	v := loadedView(sampleIssues()...)
-	if cmd := v.handleKey("u", 20); cmd != nil {
+	if cmd := v.handleKey("u", vp(20)); cmd != nil {
 		t.Error("一覧モードで u が Cmd を返した")
 	}
 	if v.urlPick.active {
@@ -1341,52 +1345,75 @@ func TestIssuesViewURLPickerResetsOnNewIssue(t *testing.T) {
 		&issues.Issue{Path: p1, Dir: dir, Rel: "001-feat-a.md", Number: "001", Category: "feat"},
 		&issues.Issue{Path: p2, Dir: dir, Rel: "002-feat-b.md", Number: "002", Category: "feat"},
 	)
-	v.handleKey("enter", 20)
-	v.handleKey("u", 20)
-	v.handleKey("1", 20) // 検索語を入れた状態で
+	v.handleKey("enter", vp(20))
+	v.handleKey("u", vp(20))
+	v.handleKey("1", vp(20)) // 検索語を入れた状態で
 	if !v.urlPick.active || v.urlPick.query == "" {
 		t.Fatal("ピッカーの前提が崩れている")
 	}
-	v.handleKey("esc", 20) // 閉じて一覧へ
-	v.handleKey("h", 20)
-	v.handleKey("j", 20)
-	v.handleKey("enter", 20)
+	v.handleKey("esc", vp(20)) // 閉じて一覧へ
+	v.handleKey("h", vp(20))
+	v.handleKey("j", vp(20))
+	v.handleKey("enter", vp(20))
 	if v.urlPick.active || v.urlPick.query != "" {
 		t.Errorf("別の issue へ状態が持ち越された: active=%v query=%q", v.urlPick.active, v.urlPick.query)
 	}
 }
 
-// ヘッダーの行数は幅に依らない (visibleRows が幅 0 で数えている前提)。
+// キー処理と描画は同じ幅・同じヘッダーから page を分割する。
 //
-// 破ると、キー処理が使う行数と描画が使う行数が食い違い、半ページ移動の距離やカーソルと窓の
-// 関係が静かにずれる。「幅で折り返すヘッダーを足した」ときにここで気づけるようにする。
-func TestIssuesHeadLinesCountIsWidthIndependent(t *testing.T) {
+// ずれると半ページ移動の距離やカーソルと窓の関係が静かに食い違う (描画側には収束処理があるので
+// 症状から原因へ辿り着けない)。以前はキー側が幅を知らず幅 0 で数えていたため「ヘッダーは折り返しては
+// いけない」という暗黙の前提を抱えていた。幅を渡すようにしたので、折り返すヘッダーを足しても
+// この一致さえ保てばよい — それをここで固定する。
+func TestIssuesLayoutAgreesBetweenKeysAndRender(t *testing.T) {
+	// 窓を必ず埋める件数にする (足りないと描画の行数が件数で決まり、分割の一致を測れない)
+	many := make([]*issues.Issue, 0, 40)
+	for i := range 40 {
+		many = append(many, fakeIssue(fmt.Sprintf("%03d", i+1), "feat", "x", issues.StatusOpen))
+	}
 	for _, c := range []struct {
-		name  string
-		build func() *issuesView
+		name     string
+		warnings []string
 	}{
-		{"一覧", func() *issuesView { return loadedView(sampleIssues()...) }},
-		{"一覧 + 警告", func() *issuesView {
-			v := loadedView(sampleIssues()...)
-			v.warnings = []string{strings.Repeat("同名ファイルが複数あります ", 12)}
-			return v
-		}},
-		{"本文", func() *issuesView {
-			v := loadedView(sampleIssues()...)
-			v.handleKey("enter", 20)
-			return v
-		}},
+		{"一覧", nil},
+		{"一覧 + 警告", []string{strings.Repeat("同名ファイルが複数あります ", 12)}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			v := c.build()
-			want := len(v.headLines(0, false))
-			for _, w := range []int{1, 8, 40, 84, 200} {
-				if got := len(v.headLines(w, false)); got != want {
-					t.Fatalf("幅 %d で行数が変わった: want %d got %d", w, want, got)
+			for _, w := range []int{24, 40, 84, 200} {
+				v := loadedView(many...)
+				v.warnings = c.warnings
+				o := issuesRenderOpts{width: w, page: 20}
+				// 描画が実際に出した行数 (ヘッダーを除く) とキー側の行数を突き合わせる
+				body := len(v.listLines(o)) - len(v.listHeadLines(w, false))
+				if got := v.visibleRows(o.viewport()); got != body {
+					t.Fatalf("幅 %d: キー側 %d 行 / 描画が出した %d 行", w, got, body)
 				}
 			}
 		})
 	}
+	// 本文は引き出しの内側幅で組む。全体幅で数えると引き出しを開いている間だけずれるので、
+	// 描画側が呼ぶ関数 (bodyHeadLines + bodyWidth) をそのまま並べて一致を見る。
+	t.Run("本文 (引き出し)", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "001-feat-x.md")
+		if err := os.WriteFile(path, []byte("# 001 feat: x\n\n"+strings.Repeat("本文。\n", 60)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		iss := &issues.Issue{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"}
+		for _, w := range []int{24, 40, 84, 200} {
+			v := loadedView(iss)
+			v.handleKey("enter", vp(20))
+			if v.open == nil {
+				t.Fatal("本文モードに入れていない")
+			}
+			o := issuesRenderOpts{width: w, page: 20}
+			want := max(o.page-len(v.bodyHeadLines(v.bodyWidth(w), false)), 1)
+			if got := v.visibleRows(o.viewport()); got != want {
+				t.Fatalf("幅 %d: キー側 %d 行 / 描画側 %d 行", w, got, want)
+			}
+		}
+	})
 }
 
 // 再スキャンをまたいで選択を保つ (錨をパスで張り替える)。
@@ -1395,8 +1422,8 @@ func TestIssuesHeadLinesCountIsWidthIndependent(t *testing.T) {
 // Claude Code が issue を書くたびに選択が消えて実用にならない。
 func TestIssuesViewKeepsSelectionAcrossRescan(t *testing.T) {
 	v := loadedView(sampleIssues()...)
-	v.handleKey("a", 20) // pending も出して行を増やす
-	v.handleKey("J", 20) // 2 行選択 (錨 = 先頭行)
+	v.handleKey("a", vp(20)) // pending も出して行を増やす
+	v.handleKey("J", vp(20)) // 2 行選択 (錨 = 先頭行)
 	lo, hi, ok := v.selection()
 	if !ok || hi-lo != 1 {
 		t.Fatalf("前提が崩れた: lo=%d hi=%d ok=%v", lo, hi, ok)
@@ -1413,7 +1440,7 @@ func TestIssuesViewKeepsSelectionAcrossRescan(t *testing.T) {
 		t.Fatalf("選択が別の issue を指した: %q..%q", v.rows[lo2].Path, v.rows[hi2].Path)
 	}
 	// タブ・フィルタの切り替えは行集合の意味が変わるので畳んだまま
-	v.handleKey("tab", 20)
+	v.handleKey("tab", vp(20))
 	if _, _, ok := v.selection(); ok {
 		t.Error("タブ切り替えで選択が残った (別の行集合へ範囲を持ち越している)")
 	}

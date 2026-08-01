@@ -543,7 +543,7 @@ func (v *issuesView) current() *issues.Issue {
 //
 // page は画面に使える行数 (hint 行を除く)。リスト/本文に実際に使える行数はヘッダーを
 // 差し引いた visibleRows で、描画と同じ値を使う (ずれると G が末尾に届かなくなる)。
-func (v *issuesView) handleKey(key string, page int) tea.Cmd {
+func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 	// このビューは browseModel なしでも駆動できる契約なので、Space の正規化も自分で通す
 	// (呼び出し側の normalizeSpaceKey と同じ関数。理由はそちらのコメント)
 	key = normalizeSpaceKey(key)
@@ -553,7 +553,7 @@ func (v *issuesView) handleKey(key string, page int) tea.Cmd {
 	}
 	// 通知は takeNotice で取り出された時点で消えるので、ここでのクリアは不要 (取り出されない
 	// まま次のキーが来た場合だけ古い結果が残るが、browseModel は毎キーで取り出す)
-	rows := v.visibleRows(page)
+	rows := v.visibleRows(vp)
 	// ⚠️ URL ピッカーは他のどの割当よりも先に飲む: インクリメンタルサーチでは印字文字がすべて
 	// 検索語なので、v (nvim) や y (コピー) を先に処理すると "v" や "y" を含む URL を検索できない。
 	if v.urlPick.active {
@@ -640,12 +640,27 @@ func (v *issuesView) actionKey(key string) (tea.Cmd, bool) {
 	return nil, true
 }
 
-// visibleRows は page 行のうちリスト/本文に使える行数 (ヘッダーを差し引く)。
+// visibleRows は窓のうちリスト/本文に使える行数 (ヘッダーを差し引く)。
 //
-// ⚠️ 幅 0 で数えられるのは「ヘッダーの行数が幅に依らない」から (headLines の契約)。キー処理は
-// 描画幅を知らないので、幅で行数が変わるヘッダーを足すとキー側と描画側で page 分割が食い違い、
-// 半ページ移動の距離やカーソルと窓の関係が静かにずれる。契約は headLines のテストで固定してある。
-func (v *issuesView) visibleRows(page int) int { return max(page-len(v.headLines(0, false)), 1) }
+// ⚠️ 描画側 (listLines / bodyLines) と同じ式・同じ幅で数えること。片方だけ幅が違うと、幅で
+// 折り返すヘッダーを足した瞬間にキー側と描画側の page 分割が食い違い、半ページ移動の距離や
+// カーソルと窓の関係が静かにずれる (描画側には収束処理があるので症状から原因へ辿り着けない)。
+// 一致は TestIssuesLayoutAgreesBetweenKeysAndRender が固定する。
+func (v *issuesView) visibleRows(vp issuesViewport) int {
+	return max(vp.page-len(v.headLines(v.headWidth(vp.width), false)), 1)
+}
+
+// headWidth はヘッダーを組む幅。本文は引き出しの内側に描くので、そちらの幅で数える。
+func (v *issuesView) headWidth(total int) int {
+	if v.open != nil {
+		return v.bodyWidth(total)
+	}
+	return total
+}
+
+// bodyWidth は本文を組む幅 (引き出しの内側)。⚠️ 演出中の途中幅ではなく着地後の幅で組む:
+// 途中幅で整形し直すと毎フレーム折り返しが変わって文字が踊る (composeDrawer の doc)。
+func (v *issuesView) bodyWidth(total int) int { return max(v.drawer.targetWidth(total)-1, 1) }
 
 // handleBodyKey は本文 pager のキー操作 (diffOverlay と同じ語彙)。
 func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
@@ -938,6 +953,16 @@ func categoryColor(name string) string {
 }
 
 // issuesRenderOpts は描画に必要な外側の情報。
+// issuesViewport は「今この窓は何桁 × 何行か」。キー処理と描画が同じ値から page を分割するための型。
+//
+// キー処理に描画の都合 (色・カーソル強調・スピナー) まで渡さないよう、issuesRenderOpts とは
+// 別の型にしてある。⚠️ 幅を落とさないこと: 幅を知らずに page を分割していた頃は、ヘッダーを
+// 幅 0 で数えるしかなく「ヘッダーは折り返してはいけない」という暗黙の前提を抱えていた。
+type issuesViewport struct {
+	width int
+	page  int
+}
+
 type issuesRenderOpts struct {
 	width   int
 	page    int
@@ -946,6 +971,11 @@ type issuesRenderOpts struct {
 	// cursorPaint はカーソル行の強調 (browseModel の bgLine を渡す)。nil なら太字だけで示す
 	// = テストと NO_COLOR 用。
 	cursorPaint func(string) string
+}
+
+// viewport は描画情報から窓の寸法だけを取り出す (キー処理へ渡す形)。
+func (o issuesRenderOpts) viewport() issuesViewport {
+	return issuesViewport{width: o.width, page: o.page}
 }
 
 // lines は全画面ビューの page 行を返す (常にちょうど page 行。呼び出し側の枠・hint 経路を
@@ -963,7 +993,7 @@ func (v *issuesView) lines(o issuesRenderOpts) []string {
 		inner := o
 		// 整形は最終幅で行い、演出中は切るだけにする (途中幅で整形し直すと毎フレーム折り返しが
 		// 変わって文字が踊る。詳細は composeDrawer の doc)
-		inner.width = max(v.drawer.targetWidth(o.width)-1, 1)
+		inner.width = v.bodyWidth(o.width)
 		body = composeDrawer(padTo(v.listLines(o), o.page), padTo(v.bodyLines(inner), o.page),
 			w, o.width, o.colored)
 	default:

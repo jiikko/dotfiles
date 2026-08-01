@@ -1066,7 +1066,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 			return m, m.toggleUsage()
 		}
 		m.usageOv.dismiss() // 他のキーで引っ込むのは一覧と同じ語彙 (U で出し、次のキーで消える)
-		cmd := m.issuesOv.handleKey(key, m.pageSize())
+		cmd := m.issuesOv.handleKey(key, m.issuesOpts().viewport())
 		// viewer の操作結果 (コピー・URL 起動・読み込み失敗) は glogx 共通の右下トーストで出す
 		// (ユーザー要望 2026-07-31)。viewer が全画面でトーストが隠れていた時代はヘッダー行に
 		// 出していたが、下の viewLines でトーストを viewer の上にも合成するようにした。

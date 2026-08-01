@@ -116,7 +116,7 @@ func TestIssuesWatchReloadsOpenBody(t *testing.T) {
 	// 本文を開いたまま書き換えられたら本文も差し替わり、スクロール位置は保つ。
 	root, path := watchTree(t, "# 001 feat: x\n\n本文の初版。\n")
 	v := openedWatchView(t, root, path)
-	v.handleKey("enter", 20)
+	v.handleKey("enter", vp(20))
 	v.drawer.finish() // 引き出しの演出は着地させる (アニメ中は反映を保留する = 別テストで見る)
 	v.lines(issuesRenderOpts{width: 80, page: 20})
 	if v.open == nil {
@@ -182,7 +182,7 @@ func TestIssuesWatchDefersWhileDrawerAnimating(t *testing.T) {
 	// 引き出しの開閉アニメ中は着地まで待つ (レイアウトが動いている最中に本文を差し替えない)。
 	root, path := watchTree(t, "# 001 feat: x\n\n初版。\n")
 	v := openedWatchView(t, root, path)
-	v.handleKey("enter", 20) // 引き出しが開くアニメが始まる
+	v.handleKey("enter", vp(20)) // 引き出しが開くアニメが始まる
 
 	writeIssue(t, path, "# 001 feat: x\n\n第 2 版。\n", time.Now())
 	changed := v.observe()

@@ -290,7 +290,7 @@ func TestIssuesListWindowAlwaysKeepsCursorVisible(t *testing.T) {
 	v.lines(opts) // 初期描画で窓を確定させる
 
 	for _, key := range []string{" ", "ctrl+d", "shift+space", "ctrl+u", "G", "g", "j", "k", "ctrl+d", "G"} {
-		v.handleKey(key, page)
+		v.handleKey(key, vp(page))
 		out := stripANSI(strings.Join(v.lines(opts), "\n"))
 		if want := fmt.Sprintf("TITLE%02d", v.cursor); !strings.Contains(out, want) {
 			t.Fatalf("%q の後にカーソル行 %q が描かれていない (cursor=%d offset=%d)\n%s",
@@ -363,9 +363,9 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 		v.dirs = []string{"/x"}
 		v.cursor = 40
 		page := 20
-		v.handleKey(" ", page) // 下へ (窓を進める)
+		v.handleKey(" ", vp(page)) // 下へ (窓を進める)
 		down := v.cursor
-		v.handleKey("shift+space", page)
+		v.handleKey("shift+space", vp(page))
 		if v.cursor >= down {
 			t.Errorf("shift+space で上に戻らない: cursor %d -> %d", down, v.cursor)
 		}

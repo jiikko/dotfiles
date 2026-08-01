@@ -220,7 +220,7 @@ func TestIssuesViewDrawerIntegration(t *testing.T) {
 	v := realIssuesView(t)
 	o := issuesRenderOpts{width: 80, page: 12}
 	v.lines(o)
-	v.handleKey("enter", o.page)
+	v.handleKey("enter", vp(o.page))
 	if v.open == nil {
 		t.Fatal("Enter で本文が開かない")
 	}
@@ -240,7 +240,7 @@ func TestIssuesViewDrawerIntegration(t *testing.T) {
 	}
 
 	// 閉じる: 演出のあいだ本文は生きていて、幅は縮んでいく
-	v.handleKey("h", o.page)
+	v.handleKey("h", vp(o.page))
 	if v.open == nil {
 		t.Fatal("h の直後に本文が消えた (逆再生に何も映らない)")
 	}
@@ -267,7 +267,7 @@ func TestIssuesViewDrawerKeepsTickAlive(t *testing.T) {
 
 	v := realIssuesView(t)
 	v.lines(issuesRenderOpts{width: 80, page: 12})
-	v.handleKey("enter", 12)
+	v.handleKey("enter", vp(12))
 	now = base.Add(issuesDrawerDuration / 2)
 	if !v.animating() {
 		t.Error("開く演出の途中でアニメ扱いになっていない (tick が止まる)")
