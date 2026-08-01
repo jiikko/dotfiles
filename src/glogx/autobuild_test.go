@@ -557,3 +557,36 @@ func mkdir(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 }
+
+// 「古い版で動いています」に、動いている版の手がかりを添える。
+// ⚠️ 判定には使わない (tree hash はコミット済みしか見ないので「今より古いか」は言えない)。
+// ここで言えるのは「どの版か」だけで、追う人が git show で辿れれば足りる。
+func TestAutobuildRunningRev(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "glogx")
+
+	if got := autobuildRunningRev(exe); got != "" {
+		t.Fatalf("記録が無いのに何か言った: %q", got)
+	}
+	write := func(s string) {
+		if err := os.WriteFile(filepath.Join(dir, autobuildRevStamp), []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("88a4e09ede06805e5cb6403eb2c17cee621b9edb\n")
+	if got := autobuildRunningRev(exe); !strings.Contains(got, "88a4e09ede06") {
+		t.Fatalf("tree hash が出ない: %q", got)
+	}
+	if got := autobuildRunningRev(exe); strings.Contains(got, "805e5cb6403") {
+		t.Fatalf("短縮していない (トーストが長くなる): %q", got)
+	}
+	// 未コミットから作った版はそう言う (同じ tree hash でも中身が違いうるため)
+	write("88a4e09ede06805e5cb6403eb2c17cee621b9edb +dirty\n")
+	if got := autobuildRunningRev(exe); !strings.Contains(got, "+dirty") {
+		t.Fatalf("+dirty が落ちている: %q", got)
+	}
+	write("   \n")
+	if got := autobuildRunningRev(exe); got != "" {
+		t.Fatalf("空の記録で何か言った: %q", got)
+	}
+}

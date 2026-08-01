@@ -27,8 +27,13 @@ const (
 	// autobuildPendingEnv は「裏でビルドを spawn した」ことを shim から受け取る env 名。
 	// 対になる export は bin/lib/go_autobuild.zsh。名前を変えるなら両方直すこと。
 	autobuildPendingEnv = "GO_AUTOBUILD_PENDING"
-	// autobuildFailedStamp はビルド失敗の記録ファイル名 (go_autobuild.zsh が touch する)。
+	// autobuildFailedStamp はビルド失敗の記録ファイル名 (go_autobuild.zsh が書く)。
+	// ⚠️ 中身 (失敗した入力の指紋) はここでは読まない。使うのは存在と mtime だけ。
 	autobuildFailedStamp = ".autobuild.failed"
+	// autobuildRevStamp はビルド元の tree hash の記録 (go_autobuild.zsh が書く。診断用)。
+	// これがあると「古い版で動いています」に「どの版が動いているか」を添えられる。
+	// ⚠️ stale の判定には使わない (判定は shim 側の指紋。理由は go_autobuild.zsh の doc)。
+	autobuildRevStamp = ".autobuild.rev"
 	// autobuildLockDir はビルド中を示す lock ディレクトリ名 (go_autobuild.zsh が mkdir する)。
 	// autobuildFailedStamp と同じく shim との取り決めなので、名前を変えるなら両方直すこと。
 	autobuildLockDir = ".autobuild.lock"
@@ -262,6 +267,34 @@ func (w *autobuildWatch) handle(res autobuildResult, now time.Time) (out autobui
 	return autobuildRunning, false, true
 }
 
+// autobuildRunningRev は「動いているバイナリがどこから作られたか」を短く返す (" (tree abc1234)")。
+// 記録が無ければ空文字 — shim を経ずに置かれたバイナリや、この記録が入る前のビルドで起きる。
+//
+// ⚠️ 判定には使わない。tree hash はコミット済みの内容しか見ないので「今より新しいか」は
+// 言えない (未コミットの編集が見えない)。ここで言えるのは「どの版か」だけで、それで十分:
+// 追う人が git show でその tree を辿れる。
+func autobuildRunningRev(exePath string) string {
+	if exePath == "" {
+		return ""
+	}
+	b, err := os.ReadFile(filepath.Join(filepath.Dir(exePath), autobuildRevStamp))
+	if err != nil {
+		return ""
+	}
+	rev := strings.TrimSpace(string(b))
+	if rev == "" {
+		return ""
+	}
+	short, dirty, _ := strings.Cut(rev, " ")
+	if len(short) > 12 {
+		short = short[:12]
+	}
+	if dirty != "" {
+		short += " " + dirty
+	}
+	return " (動いているのは tree " + short + ")"
+}
+
 // autobuildToast は決着に対応するトースト文面と成功色フラグを返す。
 func autobuildToast(res autobuildResult) (text string, ok bool) {
 	switch res {
@@ -273,8 +306,9 @@ func autobuildToast(res autobuildResult) (text string, ok bool) {
 		return "glogx のバックグラウンドビルドが失敗 (旧版で継続。src/glogx/.autobuild.log)", false
 	case autobuildStale:
 		// 原因 (失敗記録 / 誰もビルドしていない) ではなく次の行動を出す: どちらでも復旧手順は
-		// 同じで、理由はログにある。
-		return "glogx が古い版で動いています (GO_AUTOBUILD_SYNC=1 glogx で再ビルド。src/glogx/.autobuild.log)", false
+		// 同じで、理由はログにある。動いている版が分かるなら添える (どれだけ古いかの手がかり)。
+		return "glogx が古い版で動いています" + autobuildRunningRev(selfExePath()) +
+			" (GO_AUTOBUILD_SYNC=1 glogx で再ビルド。src/glogx/.autobuild.log)", false
 	case autobuildRunning:
 		return "", false
 	}
