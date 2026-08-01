@@ -36,8 +36,6 @@ cat > "$TMP_DIR/bin/go" <<'EOS'
 if [ "$1" = "env" ]; then printf '%s\n' "${FAKE_GO_VERSION:-go1.99.0}"; exit 0; fi
 echo "build" >> "$FAKE_GO_CALLS"
 [ -n "${FAKE_GO_PIDFILE:-}" ] && echo $$ > "$FAKE_GO_PIDFILE"
-[ -n "${FAKE_GO_SLEEP:-}" ] && sleep "$FAKE_GO_SLEEP"
-if [ -n "${FAKE_GO_FAIL:-}" ]; then echo "fake build error" >&2; exit 1; fi
 # 実 go と同じ -C の契約を守る: 最初のフラグでなければ使用法エラー (rc=2)、あれば chdir する。
 # ⚠️ これが無いと -C の意味論がテストの盲点になる: 引数順を崩す変更 (-trimpath 等を先頭に足す)
 # を入れても全テストが緑のまま通り、実環境だけラッパーが起動不能になる。
@@ -55,8 +53,13 @@ while [ $# -gt 0 ]; do
   shift
 done
 [ -n "$out" ] || exit 1
+# ⚠️ 出力を書いてから寝る。走行中に一時ファイルが存在する状態を作るため (掃除がそれを
+# 巻き込まないことを検査するテストがこの窓を要る)。install は shim の mv なので、
+# 先に書いても「ビルド中は旧版のまま」という他テストの前提は変わらない。
 printf '#!/bin/sh\necho %s\n' "$FAKE_GO_MARK" > "$out"
 chmod +x "$out"
+[ -n "${FAKE_GO_SLEEP:-}" ] && sleep "$FAKE_GO_SLEEP"
+if [ -n "${FAKE_GO_FAIL:-}" ]; then rm -f "$out"; echo "fake build error" >&2; exit 1; fi
 exit 0
 EOS
 chmod +x "$TMP_DIR/bin/go"
@@ -88,12 +91,24 @@ EOS
 
 # 全ソースを 60 分前・バイナリを 30 分前に置く = stale でない基準状態。
 # 以後 bump (10 分前) した file だけが「新しいソース」になる。
+#
+# ⚠️ 判定は指紋 (パス + mtime + サイズ) なので、mtime を動かした時点で指紋も変わる。
+# 「stale でない」を作るには、動かした後の状態を「ビルド済み」として記録し直す必要がある。
 freeze() {
   local root="$1"
   mtime_at 60 "$root/src/tool/main.go" "$root/src/tool/sub/sub.go" \
     "$root/src/tool/go.mod" "$root/src/tool/go.sum"
   [[ -e "$root/src/tool/sub/sub_test.go" ]] && mtime_at 60 "$root/src/tool/sub/sub_test.go"
   mtime_at 30 "$root/src/tool/tool"
+  record_built "$root"
+}
+
+# 今の内容を「このバイナリが作られた入力」として記録する (本番のビルド成功時と同じ形)。
+record_built() {
+  local root="$1"
+  zsh -c "source '$root/bin/lib/go_autobuild.zsh'
+_go_autobuild_fingerprint '$root/src/tool'
+print -rn -- \"\$REPLY\"" > "$root/src/tool/.autobuild.built"
 }
 bump() { mtime_at 10 "$1"; }
 
@@ -110,6 +125,13 @@ calls() { local f="$1/calls"; if [[ -f "$f" ]]; then wc -l < "$f" | tr -d ' '; e
 # 偽 go が書くバイナリは `echo <mark>` の shim。最終行の最後の語が mark。
 binary_mark() { tail -1 "$1/src/tool/tool" 2>/dev/null | awk '{print $NF}'; }
 binary_is() { [[ "$(binary_mark "$1")" == "$2" ]]; }
+
+# builder が完全に終わったか (lock を解放したか)。⚠️ 成果物の設置と指紋の記録は別の操作で、
+# 指紋は成果物の後に書かれる。「バイナリが変わった」だけを完了の合図にすると、その間に次の
+# 起動が挟まって「バイナリは新しいのに指紋は古い」を見てしまう (実測で flaky になった)。
+# 本番でこの窓に入ると余分なビルドが 1 本走るだけ (install ガードが中止する) だが、テストは
+# 決定的に書く。
+builder_done() { [[ ! -d "$1/src/tool/.autobuild.lock" ]]; }
 
 wait_for() {  # $1=説明, 残り=条件コマンド。10 秒まで待つ
   local msg="$1"; shift
@@ -227,6 +249,23 @@ AUTOBUILD_ARGS=--async GO_AUTOBUILD_FAILED_TTL=60 FAKE_GO_MARK=fixed run_tool "$
 wait_for "TTL 超過後も再挑戦しない (一時的な失敗から復帰できない)" \
   binary_is "$ROOT" fixed
 ok "TTL を超えた失敗記録は無視して再挑戦する"
+
+printf '\n## 入力を直したら TTL 内でも即座に再挑戦する\n'
+# ⚠️ 「同じ入力で落ちるビルドを撒かない」の裏返し。入力が変われば別の挑戦なので、TTL (既定
+# 600 秒) を待つ理由はない。ここが効かないと、コンパイルエラーを直して起動し直しても
+# 最大 10 分間ずっと旧版のままになる。既存の「ソースが更新されれば再挑戦する」テストは
+# 失敗記録を 30 分前に置いており TTL 経由でも通ってしまうので、この経路を別に縛る。
+ROOT="$(new_project fixnow)"
+FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
+freeze "$ROOT"
+bump "$ROOT/src/tool/main.go"
+AUTOBUILD_ARGS=--async FAKE_GO_FAIL=1 run_tool "$ROOT" >/dev/null
+wait_for "失敗記録が作られない" test -f "$ROOT/src/tool/.autobuild.failed"
+wait_for "builder が lock を解放しない" builder_done "$ROOT"
+printf 'package main\n\n// fixed\n' > "$ROOT/src/tool/main.go"   # 失敗記録は作りたて (TTL 内)
+AUTOBUILD_ARGS=--async FAKE_GO_MARK=fixed run_tool "$ROOT" >/dev/null
+wait_for "入力を直したのに TTL が切れるまで再挑戦しない" binary_is "$ROOT" fixed
+ok "入力が変われば TTL 内でも再挑戦する"
 
 printf '\n## backoff 中の失敗の残り方 (ツール側が stale を判定できる形)\n'
 # 失敗が残っていることは env で渡さない: ツール側は「.autobuild.failed が自バイナリより新しいか」で
@@ -395,6 +434,7 @@ wait_for "builder が動き出さない" test -f "$ROOT/src/tool/.autobuild.lock
 sleep 0.3
 touch "$ROOT/src/tool/main.go"   # ← ビルド実行中に着地した編集
 wait_for "ビルドが完了しない" binary_is "$ROOT" mid
+wait_for "builder が lock を解放しない" builder_done "$ROOT"
 AUTOBUILD_ARGS=--async FAKE_GO_MARK=after run_tool "$ROOT" >/dev/null
 wait_for "ビルド中の編集が拾われない (以後まったく再ビルドされない)" \
   binary_is "$ROOT" after
@@ -433,6 +473,31 @@ sleep 3
   || fail "lock を奪われた builder が、奪った側の lock まで消した (以後この src は無施錠)"
 ok "lock を奪われた builder は、奪った側の lock を消さない"
 rm -rf "$ROOT/src/tool/.autobuild.lock"  # 奪った状態を残さない (末尾の残骸チェック用)
+
+printf '\n## ビルド元の tree hash を記録する (診断用。判定には使わない)\n'
+# ⚠️ 判定に使わない理由: tree hash はコミット済みの内容しか見ないので、未コミットの編集を
+# 拾えない (= ソースを触りながら起動する開発ループが再ビルドされなくなる)。記録だけなら
+# 嘘をつかないので、「古い版で動いています」を「動いているのは tree X / 今は Y」と言える。
+ROOT="$(new_project rev)"
+( cd "$ROOT" && git init -q && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm init ) >/dev/null 2>&1
+FAKE_GO_MARK=v1 run_tool "$ROOT" >/dev/null
+want="$(cd "$ROOT" && git rev-parse HEAD:src/tool 2>/dev/null)"
+[[ -n "$want" ]] || fail "前提が崩れた: テスト用 repo の tree hash が取れない"
+[[ "$(cat "$ROOT/src/tool/.autobuild.rev" 2>/dev/null)" == "$want" ]] \
+  || fail "ビルド元の tree hash が記録されない (got: $(cat "$ROOT/src/tool/.autobuild.rev" 2>/dev/null))"
+ok "ビルド元の tree hash を記録する"
+
+printf 'package main\n' >> "$ROOT/src/tool/main.go"
+FAKE_GO_MARK=v2 run_tool "$ROOT" >/dev/null
+grep -q '+dirty' "$ROOT/src/tool/.autobuild.rev" \
+  || fail "未コミットの状態から作ったのに +dirty が付かない (記録が嘘をつく)"
+ok "未コミットの変更から作ったら +dirty を添える"
+# 判定に使っていないことの確認: tree hash は変わっていないが、編集は拾われている
+[[ "$(cd "$ROOT" && git rev-parse HEAD:src/tool)" == "$want" ]] \
+  || fail "前提が崩れた: コミットしていないのに tree hash が変わった"
+binary_is "$ROOT" v2 || fail "未コミットの編集で再ビルドされない (tree hash を判定に使ってしまっている)"
+ok "tree hash が同じでも未コミットの編集は拾う (判定は指紋)"
 
 printf '\n## 走行中の builder の作業ファイルを、あとから来た builder が消さない\n'
 # ⚠️ 同期ビルド (GO_AUTOBUILD_SYNC=1 / バイナリ不在の初回) は lock を取らないので、spawn が

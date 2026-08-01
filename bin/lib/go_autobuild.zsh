@@ -1,6 +1,16 @@
 #!/usr/bin/env zsh
-# go_autobuild.zsh — bin/<tool> ラッパー共通の「ソースが新しければ再ビルド」機構。
+# go_autobuild.zsh — bin/<tool> ラッパー共通の「ソースが変わっていれば再ビルド」機構。
 # bin/glogx, bin/git-popup, bin/parallel-each, bin/disassemble_excel が source する。
+#
+# 再ビルドするかは「ビルド入力の指紋」で決める (_go_autobuild_fingerprint / _go_autobuild_stale)。
+# 前回ビルドした指紋を .autobuild.built に残し、起動のたびに今の指紋と比べるだけ (実測 0.66ms)。
+# ⚠️ 「ソースの mtime > バイナリの mtime か」という順序比較には戻さない。順序で見ると、ビルド中に
+# 着地した編集を拾うために「成果物の mtime にソースの状態を代表させる」必要が生じ、目印ファイル・
+# touch -r・参照先不在時の -nt の挙動という壊れやすい仕掛けが芋づるで要る (2026-08-01 にそこから
+# 2 件のバグが出て、翌日この方式へ移行した)。
+# ⚠️ git の commit / tree hash を判定に使わない。コミット済みの内容しか見えないので、未コミットの
+# 編集 (= ソースを触りながら起動する開発ループ) を拾えない。tree hash は .autobuild.rev に
+# 「どこから作ったか」として記録するだけで、判定には使わない (_go_autobuild_record_rev)。
 #
 # 使い方:
 #   source "${0:A:h}/lib/go_autobuild.zsh"
@@ -14,6 +24,13 @@
 # GO_AUTOBUILD_SYNC=1 で --async を打ち消して同期ビルドにする (「今すぐ新版が欲しい」用)。
 # GO_AUTOBUILD_LOCK_TIMEOUT (秒, 既定 1800) を超えた lock は死んでいるものとして奪う。
 # GO_AUTOBUILD_FAILED_TTL (秒, 既定 600) を超えた失敗記録は無視して再挑戦する (下記)。
+#
+# src_dir に置く作業ファイル (いずれも .gitignore 済み):
+#   .autobuild.built  前回ビルドした入力の指紋 (再ビルド判定の基準)
+#   .autobuild.rev    そのビルド元の tree hash (診断用。判定には使わない)
+#   .autobuild.failed 失敗したときの入力の指紋 (同じ入力での再挑戦を抑える)
+#   .autobuild.lock   排他 (中に持ち主の pid) / .autobuild.log 進捗と失敗の記録
+#   .autobuild.new.<pid>  rename 前の一時バイナリ
 
 zmodload zsh/datetime 2>/dev/null
 zmodload -F zsh/stat b:zstat 2>/dev/null
@@ -69,20 +86,91 @@ _go_autobuild_age() {  # REPLY = 経過秒 (取得不能なら空)
   REPLY=$(( EPOCHSECONDS - st[1] ))
 }
 
-# lock の持ち主 pid を REPLY で返す ("" = lock が無い / pid 未記入)。
+# ファイル全体を REPLY へ読む ("" = 不在 / 空 / 読めない)。
 #
 # ⚠️ 存在確認してから読む。`$(<file)` は zsh の特殊形 (fork しない代わりに) 内側の 2>/dev/null が
-# 効かず、不在時に "no such file or directory" を漏らす (実測 2026-08-01)。この関数の出力先は
+# 効かず、不在時に "no such file or directory" を漏らす (実測 2026-08-01)。出力先は
 # .autobuild.log で、そこは不具合追跡の唯一の手がかりなので、意味のないエラーで汚さない。
 # ⚠️ 戻り値で成否を伝えない (常に 0)。呼び出し側は REPLY が空かどうかで判断する。
-# 非 0 を返す設計にすると、将来ラッパーが set -e を足した瞬間に「lock が読めないだけ」で
+# 非 0 を返す設計にすると、将来ラッパーが set -e を足した瞬間に「ファイルが読めないだけ」で
 # ビルドごと中断する地雷になる (現在の 4 つのラッパーはいずれも set -u のみ)。
-_go_autobuild_lock_owner() {  # $1=lock dir
+_go_autobuild_slurp() {  # $1=path
   REPLY=
-  [[ -f "$1/pid" ]] || return 0
-  REPLY=$(<"$1/pid")
+  [[ -f "$1" ]] || return 0
+  REPLY=$(<"$1")
+  return 0
+}
+
+# lock の持ち主 pid を REPLY で返す ("" = lock が無い / pid 未記入)。
+_go_autobuild_lock_owner() {  # $1=lock dir
+  _go_autobuild_slurp "$1/pid"
   REPLY=${REPLY%%$'\n'*}
   return 0
+}
+
+# ビルド入力の指紋を REPLY へ返す ("" = 取得不能)。各入力ファイルの パス + mtime + サイズ。
+#
+# ⚠️ 「ソースの mtime > バイナリの mtime か」という順序比較はしない。順序で見ると、ビルド中に
+# 着地した編集を拾うために「成果物の mtime にソースの状態を代表させる」必要が生じ、そこから
+# 目印ファイル・touch -r・参照先不在時の -nt の挙動、という壊れやすい仕掛けが芋づるで要る
+# (実際そこから 2 件のバグが出た 2026-08-01)。記録した指紋と今の指紋を比べるだけなら、その
+# 仕掛けが丸ごと不要になる。
+# ⚠️ 指紋は mtime を信じている点は順序比較と同じ (rsync -a 等で mtime ごと巻き戻されると
+# 騙される)。そこは glogx 側の stale 判定 (src/glogx/autobuild.go) が受け持つ。
+# zstat は +<field> を 1 つしか取れないので 2 回に分ける。どちらも全ファイル一括 (実測 0.75ms)。
+_go_autobuild_fingerprint() {  # $1=src_dir
+  local src_dir="$1" i
+  local -a files mt sz
+  REPLY=
+  # ⚠️ 入力集合はここが唯一の定義。`//go:embed` で .go 以外を焼き込むようになったら、その
+  # アセットもここへ足すこと (足さないと、テンプレや静的ファイルだけを直しても再ビルドされない)。
+  # 2026-08-02 時点では src/ 配下のどのツールも go:embed / go.work / vendor を使っていない。
+  files=("$src_dir"/**/*.go(N) "$src_dir"/go.mod(N) "$src_dir"/go.sum(N))
+  files=(${files:#*_test.go})   # go build の入力ではない (テスト編集で再ビルドを起こさない)
+  (( $#files )) || return 0
+  zstat -A mt +mtime -- "${files[@]}" 2>/dev/null || return 0
+  zstat -A sz +size  -- "${files[@]}" 2>/dev/null || return 0
+  local out=
+  for (( i = 1; i <= $#files; i++ )); do
+    out+="${files[i]#$src_dir/} $mt[i] $sz[i]"$'\n'
+  done
+  # ⚠️ 末尾に改行を残さない。読み出し側の `$(<file)` は末尾改行を落とすので、残すと
+  # 「書いた指紋」と「読んだ指紋」が毎回食い違い、常に stale = 起動ごとに再ビルドになる。
+  REPLY=${out%$'\n'}
+  return 0
+}
+
+# 再ビルドが要るか (0 = 要る)。⚠️ 「いつ再ビルドするか」の判定はこの関数だけが持つ。
+# 呼び出し側に条件を散らすと、片方だけ直したときに shim とツール側で結論が食い違う。
+_go_autobuild_stale() {  # $1=src_dir $2=bin $3=指紋
+  local src_dir="$1" bin="$2" fp="$3"
+  [[ -x "$bin" ]] || return 0            # 走らせるものが無い
+  if [[ -z "$fp" ]]; then
+    # 指紋が取れない環境 (zstat 不在) では順序比較へ縮退する
+    _go_autobuild_sources_newer_than "$bin" "$src_dir"
+    return $?
+  fi
+  _go_autobuild_slurp "$src_dir/.autobuild.built"
+  [[ "$REPLY" != "$fp" ]]
+}
+
+# 前回の失敗を踏まえて再挑戦してよいか (0 = よい)。
+#
+# 同じ入力で落ちるビルドを起動ごとに撒かないため、失敗した指紋と今の指紋が同じなら見送る。
+# ⚠️ ただし TTL を超えていれば挑戦する。これが無いと「一度の一時的な失敗で再ビルドが永久に
+# 止まる」: 失敗要因が repo の外 (toolchain 取得の失敗等) にあると入力は変わらないので、
+# 指紋の一致が永久に続く (実証 2026-07-31)。
+_go_autobuild_should_retry() {  # $1=src_dir $2=指紋
+  local stamp="$1/.autobuild.failed" fp="$2"
+  [[ -e "$stamp" ]] || return 0
+  if [[ -z "$fp" ]]; then
+    # 指紋が取れない環境: 従来どおりソースが記録より新しいかで見る
+    _go_autobuild_sources_newer_than "$stamp" "$1" && return 0
+  else
+    _go_autobuild_slurp "$stamp"
+    [[ "$REPLY" != "$fp" ]] && return 0   # 入力が変わった = 別の挑戦
+  fi
+  _go_autobuild_failed_expired "$stamp"
 }
 
 # mkdir の atomicity で排他する。lock 内の pid で「持ち主が生きているか」を判定し、
@@ -122,13 +210,13 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   # (別シェルからの stale takeover が実行中 builder の一時ファイルを消すのを避ける)
   _go_autobuild_self_pid
   local bin="$src_dir/$name" tmp="$src_dir/.autobuild.new.$REPLY"
-  # started は「このビルドが見たソースの時点」の目印。⚠️ 名前は .autobuild.new.* の掃除に載せる
-  # (途中死したときに残さないため)。成果物の mtime をこれに合わせるので、ビルド実行中に着地した
-  # 編集は次の stale 判定で拾われる。install した時刻にすると、その編集の mtime < 成果物の mtime に
-  # なり「ソースの方が新しい」が二度と成立しない = その編集は永久に取り込まれない。
-  # (この repo の開発ループ = glogx を触りながら popup で起動する、がまさにこれを踏む)
-  local started="$src_dir/.autobuild.new.$REPLY.at"
-  command touch "$started" 2>/dev/null
+  # このビルドが「何を入力にしたか」を開始時点で確定させる。成功時にこれを記録するので、
+  # ビルド実行中に着地した編集は次回の指紋比較で必ず差として出る (_go_autobuild_fingerprint の doc)。
+  local built_fp seen_stamp
+  _go_autobuild_fingerprint "$src_dir"; built_fp=$REPLY
+  # install 直前に「誰かが先に入れていないか」を見るための基準 (lock を取らない同期ビルドは
+  # lock 判定に掛からないため、記録そのものの変化で見る)
+  _go_autobuild_slurp "$src_dir/.autobuild.built"; seen_stamp=$REPLY
   local local_go required_go
   local_go=$(go env GOVERSION 2>/dev/null) || local_go=unknown
   required_go=$(awk '$1 == "go" {print $2; exit}' "$src_dir/go.mod" 2>/dev/null)
@@ -156,7 +244,7 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   # -C なら cd 用の fork が要らないのでこの条件を満たす (go 1.20 以降・かつ最初の引数)。
   go build -C "$src_dir" -o "$tmp" . || rc=$?
   if (( rc )); then
-    command rm -f "$tmp" "$started" 2>/dev/null
+    command rm -f "$tmp" 2>/dev/null
     # exit code を残す: コンパイルエラーなら go build 自身が理由を上に出すが、シグナルで
     # 殺された場合 (OOM の SIGKILL = 137 等) は何も出ないため、code が唯一の手がかりになる
     # (実例 2026-07-31: ログに "build failed" だけが残り原因を追えなかった)
@@ -168,29 +256,46 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   # (= 黙って古い版に固定される)。失敗ではないので .autobuild.failed も作らない。
   _go_autobuild_lock_owner "$lock"
   if [[ -n "$lock" && "$REPLY" != "$lock_pid" ]]; then
-    command rm -f "$tmp" "$started" 2>/dev/null
+    command rm -f "$tmp" 2>/dev/null
     print -u2 -- "$name: lock を奪われたため install を中止 (別の builder が入れている)"
     return 0
   fi
-  # 走行中に、より新しいバイナリが入っていたら踏まない。上の lock 判定では足りない: 同期ビルド
+  # 走行中に誰かが先に入れていたら踏まない。上の lock 判定では足りない: 同期ビルド
   # (GO_AUTOBUILD_SYNC=1 = 「今すぐ新版が欲しい」) は lock を取らないので、走行中の builder から
   # 見て「lock は自分のまま」になり、ユーザーの復旧操作を古い成果物で黙って巻き戻す。
-  if [[ -e "$bin" && "$bin" -nt "$started" ]]; then
-    command rm -f "$tmp" "$started" 2>/dev/null
-    print -u2 -- "$name: 走行中に新しいバイナリが入ったため install を中止"
+  _go_autobuild_slurp "$src_dir/.autobuild.built"
+  if [[ "$REPLY" != "$seen_stamp" ]]; then
+    command rm -f "$tmp" 2>/dev/null
+    print -u2 -- "$name: 走行中に別のビルドが入ったため install を中止"
     return 0
   fi
   command mv -f "$tmp" "$bin" || {
-    command rm -f "$tmp" "$started" 2>/dev/null
+    command rm -f "$tmp" 2>/dev/null
     print -u2 -- "$name: install failed"
     return 1
   }
-  # 成果物の mtime を「ビルドが見たソースの時点」へ揃える (started の doc)。
-  # ⚠️ 巻き戻しても旧バイナリの mtime より必ず後なので、走っている glogx の「新版が入った」検知
-  # (src/glogx/autobuild.go の classifyAutobuild = バイナリ mtime が増えたか) は壊れない。
-  command touch -r "$started" "$bin" 2>/dev/null
-  command rm -f "$started" 2>/dev/null
+  # 何を入力にして作ったかを記録する。次回の起動はこれと今の指紋を比べるだけで stale を判定する。
+  print -rn -- "$built_fp" >| "$src_dir/.autobuild.built" 2>/dev/null
+  _go_autobuild_record_rev "$src_dir"
   command rm -f "$src_dir/.autobuild.failed" 2>/dev/null
+  return 0
+}
+
+# ビルド元の tree hash を .autobuild.rev へ記録する (診断専用)。
+#
+# ⚠️ 再ビルドの判定には使わない。tree hash はコミット済みの内容しか見ないので、未コミットの
+# 編集を拾えない (= glogx を触りながら起動する開発ループが再ビルドされなくなる)。記録だけなら
+# 嘘をつかない: 未コミットの変更があれば +dirty を添える。
+# これがあると「古い版で動いています」を「動いているのは tree abc1234 / 今は def5678」と言える。
+# git を 3 回 fork するが、走るのはビルド成功時だけなので起動のホットパスには乗らない。
+_go_autobuild_record_rev() {  # $1=src_dir
+  local src_dir="$1" top rel rev
+  top=$(command git -C "$src_dir" rev-parse --show-toplevel 2>/dev/null) || return 0
+  rel=${src_dir#$top/}
+  [[ "$rel" == "$src_dir" ]] && rel=""   # src_dir が repo のルートそのもの
+  rev=$(command git -C "$src_dir" rev-parse "HEAD:$rel" 2>/dev/null) || return 0
+  command git -C "$src_dir" diff --quiet HEAD -- . 2>/dev/null || rev+=" +dirty"
+  print -r -- "$rev" >| "$src_dir/.autobuild.rev" 2>/dev/null
   return 0
 }
 
@@ -220,13 +325,9 @@ _go_autobuild_spawn() {  # $1=src_dir $2=name
     # 前回の途中死が残した作業ファイルを掃除する。
     #
     # ⚠️ 生きている builder のものは消さない。同期ビルド (GO_AUTOBUILD_SYNC=1 / バイナリ不在の
-    # 初回) は lock を取らないのでこの掃除と直列化されず、走行中の目印 (.autobuild.new.<pid>.at)
-    # を巻き込むと 2 つの仕掛けが同時に、ログにも痕跡を残さず無効化される:
-    #   - install ガードの `[[ "$bin" -nt "$started" ]]` は、zsh では参照先が不在だと FALSE に
-    #     倒れる (bash は TRUE。ここも zsh 固有) ので素通りする
-    #   - `touch -r "$started" "$bin"` は黙って失敗し、成果物の mtime が install 時刻のまま残る
-    # glogx の stale トーストは復旧手順として GO_AUTOBUILD_SYNC=1 を案内するので、「案内どおり
-    # 同期ビルドを走らせている最中に popup を開く」だけで踏む (自己レビューで検出 2026-08-01)。
+    # 初回) は lock を取らないのでこの掃除と直列化されず、走行中の一時ファイルを巻き込むと
+    # その builder は mv 先を失って "install failed" で落ちる。持ち主の pid が生きていない
+    # ものだけを消す (自己レビューで検出 2026-08-01)。
     local stale owner
     for stale in "$src_dir"/.autobuild.new.*(N); do
       owner=${${stale:t}#.autobuild.new.}
@@ -238,8 +339,9 @@ _go_autobuild_spawn() {  # $1=src_dir $2=name
     if ! _go_autobuild_build "$src_dir" "$name" 1 "$lock" "$pid"; then
       # 失敗を記録する。これが無いと stale が解消されないまま毎回起動ごとに
       # 落ちるビルドを撒き続ける (popup を開くたび go build が湧く)。
-      # ソースが更新されるまで再挑戦しない = mtime 比較を stamp にそのまま流用する。
-      command touch "$src_dir/.autobuild.failed" 2>/dev/null
+      # 何を入力にして落ちたかを残す。同じ入力なら再挑戦しない (_go_autobuild_should_retry)。
+      _go_autobuild_fingerprint "$src_dir"
+      print -rn -- "$REPLY" >| "$src_dir/.autobuild.failed" 2>/dev/null
     fi
   ) >>"$log" 2>&1 </dev/null &!
 }
@@ -257,15 +359,17 @@ go_autobuild_exec() {
   local bin="$src_dir/$name"
   [[ -n "${GO_AUTOBUILD_SYNC-}" ]] && async=0
 
+  local fp
+  _go_autobuild_fingerprint "$src_dir"
+  fp=$REPLY
+
   if [[ ! -x "$bin" ]]; then
     # 走らせるものが無い初回だけは同期でビルドする (async にできない)
     _go_autobuild_build "$src_dir" "$name" 0 || exit 1
-  elif _go_autobuild_sources_newer_than "$bin" "$src_dir"; then
+  elif _go_autobuild_stale "$src_dir" "$bin" "$fp"; then
     if (( async )); then
-      # 失敗記録より新しいソースが無ければ再挑戦しない (fail-open で旧版のまま進む)。
-      # ただし記録が古びていれば一時的な失敗とみなして再挑戦する (_go_autobuild_failed_expired)。
-      if _go_autobuild_sources_newer_than "$src_dir/.autobuild.failed" "$src_dir" \
-        || _go_autobuild_failed_expired "$src_dir/.autobuild.failed"; then
+      # 前回と同じ入力で落ちているなら再挑戦しない (fail-open で旧版のまま進む)
+      if _go_autobuild_should_retry "$src_dir" "$fp"; then
         _go_autobuild_spawn "$src_dir" "$name"
         # 起動するツールへ「裏でビルド中」を伝える。旧版で exec するため、ツール側からは
         # 新版の完成もビルド失敗も観測できず無言だった (失敗すると気づかないまま旧版に固定
