@@ -391,9 +391,18 @@ ok "走行中のビルドは HUP を無視して完走する"
 [[ -f "$ROOT/src/tool/.autobuild.failed" ]] && fail "HUP 死の失敗記録が残っている (TTL まで旧版に固定される)"
 ok "HUP で失敗記録を残さない"
 
-printf '\n## 作業ファイル / lock を残さない\n' 
-leftover="$(find "$TMP_DIR" \( -name '.autobuild.new.*' -o -name 'nohup.out' -o -name '.autobuild.lock' \) | head -5)"
-[[ -z "$leftover" ]] || fail "作業ファイル / lock が残っている: $leftover"
-ok "rename 前の一時ファイル・nohup.out・lock を残さない"
+printf '\n## 作業ファイル / lock を残さない\n'
+# ⚠️ 「いずれ消える」で判定する。builder は非同期なので、バイナリが入った瞬間にはまだ lock の
+# 解放 (spawn subshell の EXIT trap) が済んでいないことがある。即時判定にすると spawn を使う
+# テストの直後で偽陽性になる: 手元では 0ms で解放されるが CI の遅い runner で落ちた (2026-08-01)。
+# 「残さない」の意味は「builder が終われば消える」であって「バイナリと同時に消える」ではない。
+leftovers() { find "$TMP_DIR" \( -name '.autobuild.new.*' -o -name 'nohup.out' -o -name '.autobuild.lock' \) | head -5; }
+for ((i = 0; i < 100; i++)); do
+  leftover="$(leftovers)"
+  [[ -z "$leftover" ]] && break
+  sleep 0.1
+done
+[[ -z "$leftover" ]] || fail "10 秒経っても作業ファイル / lock が残っている: $leftover"
+ok "rename 前の一時ファイル・nohup.out・lock を残さない (builder 終了後に解放される)"
 
 printf '\nAll go_autobuild tests passed successfully!\n'
