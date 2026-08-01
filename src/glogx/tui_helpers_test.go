@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -45,6 +46,13 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 		&Options{NoFrame: true}, false, 80, 10)
 	t.Cleanup(m.cancel)
 	return m
+}
+
+// releaseKey は「指を離した」ことにする (キーリピート判定をリセットする。swallowKeyRepeat)。
+// ⚠️ テストは同じキーを瞬間的に 2 回押すが、実機ではありえない速さなので自動リピート扱いに
+// なる。意図的な 2 回目であることをテスト側で明示する (実機では 300ms 空ければ同じ)。
+func releaseKey(m *browseModel) {
+	m.lastKey, m.lastKeyAt = "", time.Time{}
 }
 
 func statusesFor(m *browseModel, state CIState) map[string]CIState {

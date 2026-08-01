@@ -331,10 +331,12 @@ func TestBrowseDiffToggleAndCache(t *testing.T) {
 	calls := stubDiff(t, []string{"x"}, nil)
 	_, cmd := m.handleKey("d")
 	deliverDiffMsg(t, m, cmd)
+	releaseKey(m)    // 指を離してから押し直す (キーリピート判定を跨ぐ)
 	m.handleKey("d") // toggle 閉
 	if m.diffOv.sha != "" {
 		t.Fatal("d の再押下で閉じていない")
 	}
+	releaseKey(m)
 	_, cmd2 := m.handleKey("d") // 再度開く → キャッシュヒットで再取得しない
 	if cmd2 != nil {
 		t.Error("キャッシュヒット時にも取得コマンドが返った")
@@ -696,6 +698,7 @@ func TestBrowsePRStatusFlow(t *testing.T) {
 	if !m.prStatusOv.visible() {
 		t.Fatal("開き直せない")
 	}
+	releaseKey(m) // 指を離してから押し直す
 	m.handleKey("P")
 	if m.prStatusOv.visible() {
 		t.Fatal("P の再押下で toggle 閉しない")
@@ -715,6 +718,7 @@ func TestBrowsePRStatusGuardsAndErrors(t *testing.T) {
 	}
 	// 取得エラーはキャッシュせず閉じ、失敗トーストを出す (次の P で再試行できる)
 	m.statuses = statusesFor(m, StateSuccess)
+	releaseKey(m) // 直前の P から続けて押すのは実機ではリピート扱い
 	m.handleKey("P")
 	sha := m.commits[0].SHA
 	m.Update(prStatusMsg{sha: sha, ghErr: &GHError{Kind: GHOther, Detail: "boom"}})
@@ -725,6 +729,7 @@ func TestBrowsePRStatusGuardsAndErrors(t *testing.T) {
 		t.Fatal("エラーがキャッシュされた (PR なし誤答が固定される)")
 	}
 	// PR なしは nil キャッシュ + その旨の表示
+	releaseKey(m)
 	m.handleKey("P")
 	m.Update(prStatusMsg{sha: sha, status: nil})
 	if !strings.Contains(stripANSI(m.View().Content), "紐づく PR はありません") {
@@ -815,8 +820,10 @@ func TestBrowsePRStatusStaleErrorNoToast(t *testing.T) {
 	shaA := m.commits[0].SHA
 	shaB := m.commits[1].SHA
 	m.handleKey("P") // A を開く (fetch A)
+	releaseKey(m)
 	m.handleKey("P") // A を閉じる (toggle)
 	m.cursor = 1
+	releaseKey(m)
 	m.handleKey("P") // B を開く (fetch B)
 	m.Update(prStatusMsg{sha: shaB, status: &PRStatus{PRRef: PRRef{Number: 2, State: "OPEN"}, Title: "b"}})
 	m.toast = toast{}

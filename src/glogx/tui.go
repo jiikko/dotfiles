@@ -278,6 +278,9 @@ type browseModel struct {
 	// restartRequested は「終了後に新しいバイナリで自分を置き換える」印 (main.go が exec する)。
 	restartPrompt    bool
 	restartRequested bool
+	// lastKey / lastKeyAt はキーリピート (押しっぱなし) の判定用 (swallowKeyRepeat)。
+	lastKey   string
+	lastKeyAt time.Time
 
 	// toast は右下に数秒だけ出す結果フィードバック (push/pull 完了)。自動消滅 (toast.go)。
 	toast toast
@@ -996,6 +999,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
+	if m.swallowKeyRepeat(key) {
+		return m, nil
+	}
 	// C-g は即終了: tmux の C-g popup (bind -n C-g) をトグル風に開閉するため
 	// (開くキーと同じキーで閉じる)。本家 glog には無い割当。
 	if key == "ctrl+c" || key == "ctrl+g" {
@@ -1560,6 +1566,46 @@ func (m *browseModel) restartPromptLines() []string {
 		"",
 		paint("r: 今すぐ再起動   その他: 後で", ansiDim, m.colored),
 	}, m.contentWidth(), m.colored)
+}
+
+// keyRepeatGuard は「押しっぱなし」を 1 回の入力として扱う判定窓。⚠️ 端末はキーを離した
+// ことを教えてくれない (離鍵イベントは kitty のキーボード拡張が要り、glogx は要求していない。
+// Update の KeyPressMsg の注記を参照) ので、離鍵の代わりに「同じキーが速く来続けたら
+// 自動リピート」と時間で判定する。窓は押されるたびに更新するので、押し続けている限り 1 回に
+// まとまり、指を離して窓が切れてから次の 1 回になる (ユーザー要望 2026-08-01)。
+//
+// 300ms の根拠 (このマシンの実測 2026-08-01): 最初のリピートまで 225ms・以降 30ms 間隔
+// (defaults read -g InitialKeyRepeat=15 / KeyRepeat=2)。1 回目のリピートも窓に収める必要が
+// あるので 225ms より長く取り、意識して 2 回押す間隔よりは短く保つ。⚠️ 代償として「素早く
+// 2 回叩いて開閉」はできない (300ms 空ける必要がある)。押しっぱなしで暴れない方を優先した。
+const keyRepeatGuard = 300 * time.Millisecond
+
+// repeatGuardedKeys は自動リピートを潰すキー。
+//
+// ⚠️ 移動系 (j/k/矢印/半ページ) は入れない: 押しっぱなしでスクロールし続けるのは期待される
+// 動作で、潰すと「押しても動かない」壊れ方になる。潰すのは「開いて閉じる」を繰り返してしまう
+// トグルと、押すたびに subprocess やファイル操作が走るキーだけ。
+var repeatGuardedKeys = map[string]bool{
+	"i": true, // issues viewer (押しっぱなしで高速に開閉する。ユーザー報告 2026-08-01)
+	"U": true, // usage オーバーレイ (開くたびに取り直しの判定が走る)
+	"d": true, // diff ポップアップ
+	"P": true, // PR 状態ポップアップ
+	"n": true, // next へ移動の確認 (開いた確認を次のリピートが閉じてしまう)
+	"a": true, // 状態フィルタの巡回 (3 段なので押しっぱなしだと今どこか分からなくなる)
+}
+
+// swallowKeyRepeat は自動リピートとみなしたキーを飲む (true = 何もしない)。
+func (m *browseModel) swallowKeyRepeat(key string) bool {
+	if !repeatGuardedKeys[key] {
+		m.lastKey, m.lastKeyAt = "", time.Time{} // 別のキーが来たら押しっぱなしは切れている
+		return false
+	}
+	now := timeNow()
+	repeat := key == m.lastKey && now.Sub(m.lastKeyAt) < keyRepeatGuard
+	// ⚠️ 飲んだときも基準を更新する: これが「離すまで 1 回扱い」の実体で、押し続けている限り
+	// 窓が伸び続ける。更新しないと keyRepeatGuard ごとに 1 回ずつ通ってしまう。
+	m.lastKey, m.lastKeyAt = key, now
+	return repeat
 }
 
 // toggleUsage は usage オーバーレイの開閉 (U)。コミット一覧と issues viewer の両方から呼ぶ

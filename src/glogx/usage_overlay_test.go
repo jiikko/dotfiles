@@ -136,6 +136,7 @@ func TestUsageOverlayDismiss(t *testing.T) {
 	if !m.usageOv.visible {
 		t.Error("U で再表示されない")
 	}
+	releaseKey(m)    // 指を離してから押し直す (キーリピート判定を跨ぐ)
 	m.handleKey("U") // U でまた非表示 (トグル)
 	if m.usageOv.visible {
 		t.Error("U トグルで非表示にならない")

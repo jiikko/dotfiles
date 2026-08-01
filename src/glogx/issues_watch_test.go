@@ -312,6 +312,7 @@ func TestIssuesViewerWatchWiredIntoUpdate(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("Update が見張りのチェーンを継続しない")
 	}
+	releaseKey(m)    // 指を離してから押し直す (キーリピート判定を跨ぐ)
 	m.handleKey("i") // 閉じる
 	if _, cmd := m.Update(m.issuesOv.observe()); cmd != nil {
 		t.Fatal("閉じた後も見張りが続いている")
