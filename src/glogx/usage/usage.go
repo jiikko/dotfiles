@@ -56,14 +56,17 @@ type claudeResult struct {
 	IsError bool   `json:"is_error"`
 }
 
-// subprocessWaitDelay は ctx キャンセル/プロセス終了後に子孫が I/O パイプを握り続けていても
+// SubprocessWaitDelay は ctx キャンセル/プロセス終了後に子孫が I/O パイプを握り続けていても
 // Wait() を確実に戻すための猶予 (Go 1.20+ の Cmd.WaitDelay)。exec.CommandContext は ctx
 // キャンセルで直接の子 (claude / codex) だけを kill するため、子が親 stdout の write 端を継承
 // した孫プロセスを残すと、直接の子を kill しても Wait() がその孫がパイプを閉じるまでブロック
 // しうる。WaitDelay を設けると、キャンセル/終了からこの時間でパイプを強制クローズして Wait を
 // 返す。プロセスが正常終了して自分でパイプを閉じる通常ケースには影響しない安全弁
 // (fetchTimeout=10s に対して十分小さく、かつ正当な出力の取りこぼしが起きない程度に確保)。
-const subprocessWaitDelay = 2 * time.Second
+//
+// claude を起動するのはこのパッケージだけではない (glogx 本体の claude update) ため公開する:
+// 値を各所で持つと、この安全弁を持つ経路と持たない経路が静かに分かれる。
+const SubprocessWaitDelay = 2 * time.Second
 
 // Fetch は `claude -p "/usage"` を実行して結果をパースする。
 //
@@ -77,7 +80,7 @@ func Fetch(ctx context.Context) (*Snapshot, error) {
 	go func() { verCh <- FetchVersion(ctx) }()
 
 	cmd := exec.CommandContext(ctx, "claude", "-p", "/usage", "--model", "haiku", "--output-format", "json")
-	cmd.WaitDelay = subprocessWaitDelay
+	cmd.WaitDelay = SubprocessWaitDelay
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("claude /usage 実行失敗: %w", err)
@@ -102,7 +105,7 @@ func Fetch(ctx context.Context) (*Snapshot, error) {
 // (バージョン表示は付加情報であり、欠けても呼び出し側の主処理は成立させる)。
 func FetchVersion(ctx context.Context) string {
 	cmd := exec.CommandContext(ctx, "claude", "--version")
-	cmd.WaitDelay = subprocessWaitDelay
+	cmd.WaitDelay = SubprocessWaitDelay
 	out, err := cmd.Output()
 	if err != nil {
 		return ""

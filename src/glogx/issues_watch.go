@@ -47,6 +47,11 @@ const (
 type issuesWatchMsg struct {
 	fp     string
 	closed bool
+	// fromEvent は発行元がイベント経路か (false = 保険のポーリング)。⚠️ 受け取り側は「届けた
+	// チェーンの札だけ」を降ろすのにこれを使う。両方降ろすと、まだ w.Events でブロックしている
+	// goroutine が居るのに evArmed が false になり、single-flight をすり抜けて 2 本目が張られる
+	// (観測 1 回につき goroutine が 1 本ずつ積み上がる)。
+	fromEvent bool
 	// gen は観測を発行した世代。閉じ → 開き直しで増える (stopWatch)。⚠️ これが無いと、閉じる前に
 	// 張った古いチェーンの closed が、開き直して作った**新しい** watcher を閉じてしまう
 	// (以降イベントが来ずポーリングだけに縮退する。無音ではないが即時性を静かに失う)。
@@ -147,16 +152,16 @@ func (v *issuesView) eventCmd() tea.Cmd {
 		select {
 		case _, ok := <-w.Events:
 			if !ok {
-				return issuesWatchMsg{closed: true, gen: gen}
+				return issuesWatchMsg{closed: true, fromEvent: true, gen: gen}
 			}
 		case _, ok := <-w.Errors:
 			if !ok {
-				return issuesWatchMsg{closed: true, gen: gen}
+				return issuesWatchMsg{closed: true, fromEvent: true, gen: gen}
 			}
 			// エラーは握って観測へ倒す (指紋が正本なので、測り直せば辻褄は合う)
 		}
 		drainWatchEvents(w, issuesWatchDebounce)
-		return issuesWatchMsg{fp: issuesFingerprint(dirs, paths), gen: gen}
+		return issuesWatchMsg{fp: issuesFingerprint(dirs, paths), fromEvent: true, gen: gen}
 	}
 }
 
@@ -250,9 +255,16 @@ func (v *issuesView) handleWatch(msg issuesWatchMsg) tea.Cmd {
 		}
 		return v.watchCmd()
 	}
-	// 指紋つきの観測はイベント経路とポーリング経路の両方から来る。どちらの札も降ろし、
-	// 張り直しは watchCmd の single-flight に任せる
-	v.watch.evArmed, v.watch.pollArmed = false, false
+	// 指紋つきの観測はイベント経路とポーリング経路の両方から来る。⚠️ 降ろすのは**届けた
+	// チェーンの札だけ**にする (closed 経路と同じ規律)。両方降ろすと、まだ w.Events で
+	// ブロックしている goroutine が生きているのに evArmed が false になり、watchCmd の
+	// single-flight をすり抜けて 2 本目が張られる = 観測 1 回ごとに goroutine が 1 本残る。
+	// 平常時のポーリングは 30s 周期なので、viewer を開きっぱなしにするだけで増え続ける。
+	if msg.fromEvent {
+		v.watch.evArmed = false
+	} else {
+		v.watch.pollArmed = false
+	}
 	if !v.shown {
 		v.stopWatch() // 閉じたら watcher ごと畳む (fd を残さない)
 		return nil

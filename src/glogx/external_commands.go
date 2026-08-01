@@ -111,7 +111,15 @@ var runClaudeUpdate = func() (before, after string, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
 	defer cancel()
 	before = usage.FetchVersion(ctx)
-	out, e := exec.CommandContext(ctx, "claude", "update").CombinedOutput()
+	cmd := exec.CommandContext(ctx, "claude", "update")
+	// ⚠️ WaitDelay を必ず張る。ctx の deadline が kill するのは直接の子 (claude) だけで、claude が
+	// 残した孫が親のパイプを握っていると CombinedOutput は孫が閉じるまで戻らない
+	// (理由は usage.SubprocessWaitDelay の doc)。戻らないと updateMsg が発行されず
+	// actModal.updating が立ったままになり、上の updateTimeout が約束している
+	// 「超過時は必ず解ける」が成立しない = updating 中は q も Ctrl-C も握り潰す設計なので
+	// TUI から二度と抜けられなくなる。
+	cmd.WaitDelay = usage.SubprocessWaitDelay
+	out, e := cmd.CombinedOutput()
 	if e != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return before, "", fmt.Errorf("claude update がタイムアウトしました (%s)", updateTimeout)

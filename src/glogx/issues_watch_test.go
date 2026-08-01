@@ -231,6 +231,72 @@ func TestIssuesWatchIsSingleFlight(t *testing.T) {
 	}
 }
 
+// ⚠️ 回帰防止 (リーク監査 2026-08-01): ポーリング由来の観測でイベント待ちの札まで降ろすと、
+// まだ w.Events でブロックしている goroutine が生きているのに 2 本目が張られ、観測 1 回につき
+// 1 本ずつ積み上がる。平常時のポーリングは 30s 周期なので、viewer を開きっぱなしにするだけで
+// 増え続ける (回収は viewer を閉じたときだけ)。
+//
+// 札の状態では検出できない: handleWatch は最後に watchCmd で張り直すので、両方降ろす実装でも
+// 事後の札は同じ true になる。実際に goroutine を走らせ、watcher を閉じたときに返ってくる
+// closed の数 = 生きているイベント待ちの本数を数える。
+func TestIssuesWatchPollDoesNotStackEventChains(t *testing.T) {
+	root, path := watchTree(t, "# 001 feat: x\n")
+	v := openedWatchView(t, root, path)
+	if v.watch.w == nil {
+		t.Skip("この環境では fsnotify を作れない (ポーリングへ縮退する経路)")
+	}
+	msgs := make(chan tea.Msg, 64)
+	v.watch.evArmed = false // 既に張られている札をテストが引き取り、実体の goroutine を作る
+	runWatchChains(t, v.eventCmd(), msgs)
+
+	for range 3 {
+		runWatchChains(t, v.handleWatch(v.observe()), msgs) // ポーリング由来 (fromEvent=false)
+	}
+	if n := liveEventChains(v, msgs); n != 1 {
+		t.Fatalf("イベント待ちの goroutine が %d 本生きている (1 本のはず): 観測のたびに積み上がっている", n)
+	}
+}
+
+// runWatchChains は watchCmd が返す Cmd を bubbletea と同じように走らせる (tea.Batch は
+// BatchMsg で複数の Cmd を返すので展開する)。結果の Msg は msgs へ流す。
+func runWatchChains(t *testing.T, cmd tea.Cmd, msgs chan<- tea.Msg) {
+	t.Helper()
+	if cmd == nil {
+		return
+	}
+	go func() {
+		msg := cmd()
+		batch, ok := msg.(tea.BatchMsg)
+		if !ok {
+			msgs <- msg // tea.Batch は 1 本だけなら畳んでそのまま返す
+			return
+		}
+		for _, c := range batch {
+			if c != nil {
+				go func(c tea.Cmd) { msgs <- c() }(c)
+			}
+		}
+	}()
+}
+
+// liveEventChains は生きているイベント待ちの本数を数える。watcher を閉じるとブロックしている
+// goroutine がそれぞれ closed をちょうど 1 通返すので、静まるまで数えれば本数が出る
+// (保険のポーリングは 30s 先の tea.Tick なのでこの窓には混ざらない)。
+func liveEventChains(v *issuesView, msgs <-chan tea.Msg) int {
+	v.stopWatch()
+	n := 0
+	for {
+		select {
+		case msg := <-msgs:
+			if m, ok := msg.(issuesWatchMsg); ok && m.closed {
+				n++
+			}
+		case <-time.After(300 * time.Millisecond):
+			return n
+		}
+	}
+}
+
 // 結合: viewer を開くと見張りのチェーンが張られ、閉じると止まる。
 func TestIssuesViewerWatchWiredIntoUpdate(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)

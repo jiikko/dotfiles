@@ -51,7 +51,7 @@ func FetchCodex(ctx context.Context) ([]Window, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "codex", "app-server")
-	cmd.WaitDelay = subprocessWaitDelay
+	cmd.WaitDelay = SubprocessWaitDelay
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("codex app-server stdin: %w", err)
