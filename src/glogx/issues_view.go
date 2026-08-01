@@ -617,9 +617,12 @@ func (v *issuesView) visibleRows(page int) int { return max(page-len(v.headLines
 func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
 	maxOffset := max(v.body.Len()-rows, 0)
 	switch key {
-	case "q", "esc", "h", "left":
+	// Enter は「TUI 内の開閉 toggle」(ユーザー要望 2026-08-01)。一覧の Enter で開き、本文の
+	// Enter で閉じる。glogx 本体の job パネル (tui.go の handlePanelKey) が既にこの語彙なので、
+	// viewer だけ Enter が行送りだと同じキーの意味が画面ごとに変わる。
+	case "q", "esc", "h", "left", "enter":
 		v.closeBody()
-	case "j", "down", "ctrl+n", "enter":
+	case "j", "down", "ctrl+n":
 		v.bodyOff = min(v.bodyOff+1, maxOffset)
 	case "k", "up", "ctrl+p":
 		v.bodyOff = max(v.bodyOff-1, 0)
@@ -1290,7 +1293,7 @@ func (v *issuesView) hint() string {
 		return "文字入力で絞り込み  ctrl+n/p: 移動  Enter: 開く  Esc: 戻る"
 	}
 	if v.open != nil {
-		return "j/k/Space: スクロール  g/G: 先頭/末尾  p: 番号  u: URL  v: nvim  h/q: 一覧へ"
+		return "j/k/Space: スクロール  g/G: 先頭/末尾  p: 番号  u: URL  v: nvim  Enter/h/q: 一覧へ"
 	}
 	// a は 3 段の巡回なので「次に押すと何が増えるか」を出す (現在どこまで見えているかはタブ行
 	// 右端のバッジ ○/○⏸/○⏸✓ が示すので、ここで二重に説明しない)。

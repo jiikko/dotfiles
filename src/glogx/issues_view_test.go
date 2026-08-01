@@ -455,6 +455,42 @@ func TestIssuesViewBodyShowsSrcLineNumbers(t *testing.T) {
 	}
 }
 
+// Enter は「TUI 内の開閉 toggle」(ユーザー要望 2026-08-01): 一覧で開き、本文で閉じる。
+// ⚠️ 本文の Enter は以前 1 行送りだった。glogx 本体の job パネルが既に Enter = 開閉 toggle
+// なので、viewer だけ意味が違うと同じキーが画面ごとに別物になる。
+func TestIssuesViewEnterTogglesBody(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "028-refactor-x.md")
+	body := "# 028 refactor: x\n\n" + strings.Repeat("段落。\n\n", 30)
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "028-refactor-x.md", Number: "028", Category: "refactor"})
+
+	v.handleKey("enter", 10) // 一覧の Enter = 開く
+	if v.open == nil {
+		t.Fatal("一覧の Enter で本文が開かない")
+	}
+	v.drawer.finish()
+	v.lines(renderOpts(20)) // 行数は描画で確定する (未描画だと Len()=0 でスクロール上限が 0)
+	v.handleKey("j", 10)    // 行送りは j/k のまま (Enter を奪ったので、こちらは残っていること)
+	if v.bodyOff != 1 {
+		t.Fatalf("本文の j で 1 行送れていない: %d", v.bodyOff)
+	}
+
+	v.handleKey("enter", 10) // 本文の Enter = 閉じる
+	if v.bodyOff != 1 {
+		t.Fatalf("本文の Enter が行送りとして効いた: bodyOff=%d", v.bodyOff)
+	}
+	origNow := timeNow
+	timeNow = func() time.Time { return origNow().Add(issuesDrawerDuration + time.Millisecond) }
+	defer func() { timeNow = origNow }()
+	v.lines(renderOpts(20)) // 閉じる演出を着地させる
+	if v.open != nil {
+		t.Fatal("本文の Enter で一覧へ戻らない")
+	}
+}
+
 func TestIssuesViewTabChipCountsMatchRows(t *testing.T) {
 	// チップの件数は「そのタブを選んだときに並ぶ行数」と一致する。issues.Tab.Count は done を
 	// 含む全件なので、そのまま出すと done を伏せた既定表示で合計が All と食い違う。
