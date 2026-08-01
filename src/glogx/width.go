@@ -88,6 +88,14 @@ func fillRight(s string, width int) string {
 	return s
 }
 
+// fillLeft は表示幅 width まで左を空白で詰める (行番号のような右揃えの数値に使う)。
+func fillLeft(s string, width int) string {
+	if pad := width - dispWidth(s); pad > 0 {
+		return padSpaces(pad) + s
+	}
+	return s
+}
+
 // clusterWidth は grapheme クラスタ 1 個分の表示幅を返す (dispWidth と同一の幅モデル)。
 // ⚠️ (U+26A0+U+FE0F) のような複数 rune のクラスタを rune 単位で数えて分断/誤幅にしない
 // ため、クラスタ単位で幅を計算する必要のある dropToColumn 等が使う。

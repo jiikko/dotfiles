@@ -35,13 +35,18 @@ var (
 
 // RenderBody は issue 本文 (markdown) を width 桁の端末行へ整形する。
 // colored=false なら ANSI を一切付けない (テストと非 TTY 出力のため)。
-func RenderBody(src string, width int, colored bool) []string {
+//
+// 第 2 戻り値は各行に対応するソース (.md) の行番号 (0 = 出さない。理由は line.src の doc)。
+// 呼び出し側が左の溝に出す。
+func RenderBody(src string, width int, colored bool) (out []string, srcLines []int) {
 	lines := renderMarkdown(src, width)
-	out := make([]string, 0, len(lines))
+	out = make([]string, 0, len(lines))
+	srcLines = make([]int, 0, len(lines))
 	for _, l := range lines {
 		out = append(out, paintLine(l, colored))
+		srcLines = append(srcLines, l.src)
 	}
-	return out
+	return out, srcLines
 }
 
 // paintLine は 1 行のスパン列を ANSI 付き文字列へ変換する。

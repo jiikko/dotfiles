@@ -39,9 +39,15 @@ const sample = "---\n" +
 	"\n" +
 	"snake_case の識別子 no_provider_specific_branch は斜体にしない。\n"
 
+// renderLines は RenderBody の行だけを取るテスト用ヘルパー (行番号は別テストで見る)。
+func renderLines(src string, width int, colored bool) []string {
+	lines, _ := RenderBody(src, width, colored)
+	return lines
+}
+
 func TestRenderBodyNeverExceedsWidth(t *testing.T) {
 	for _, width := range []int{20, 40, 60, 86, 120} {
-		for i, ln := range RenderBody(sample, width, false) {
+		for i, ln := range renderLines(sample, width, false) {
 			if w := dispWidth(ln); w > width {
 				t.Fatalf("width=%d: 行 %d が幅を超えた (w=%d): %q", width, i, w, ln)
 			}
@@ -50,7 +56,7 @@ func TestRenderBodyNeverExceedsWidth(t *testing.T) {
 }
 
 func TestRenderBodyPlainHasNoANSI(t *testing.T) {
-	for i, ln := range RenderBody(sample, 60, false) {
+	for i, ln := range renderLines(sample, 60, false) {
 		if strings.Contains(ln, "\x1b") {
 			t.Fatalf("colored=false なのに ANSI が出た (行 %d): %q", i, ln)
 		}
@@ -59,7 +65,7 @@ func TestRenderBodyPlainHasNoANSI(t *testing.T) {
 
 func TestRenderBodyColoredResetsEveryStyle(t *testing.T) {
 	// コードブロック以外の装飾は必ず reset で閉じる (色が次の行へ漏れない)
-	for i, ln := range RenderBody(sample, 60, true) {
+	for i, ln := range renderLines(sample, 60, true) {
 		if strings.Contains(ln, "\x1b[1m") && !strings.Contains(ln, cReset) {
 			t.Fatalf("装飾が閉じられていない (行 %d): %q", i, ln)
 		}
@@ -67,7 +73,7 @@ func TestRenderBodyColoredResetsEveryStyle(t *testing.T) {
 }
 
 func TestFrontMatterIsNotRendered(t *testing.T) {
-	body := strings.Join(RenderBody(sample, 60, false), "\n")
+	body := strings.Join(renderLines(sample, 60, false), "\n")
 	if strings.Contains(body, "status: ongoing") {
 		t.Fatalf("front matter が本文に出た:\n%s", body)
 	}
@@ -110,7 +116,7 @@ func TestParagraphReflowSpacesJapaneseLatinBoundary(t *testing.T) {
 }
 
 func TestHeadingLevelsGetDistinctMarkers(t *testing.T) {
-	lines := RenderBody("# h1\n\n## h2\n\n### h3\n\n#### h4\n", 40, false)
+	lines := renderLines("# h1\n\n## h2\n\n### h3\n\n#### h4\n", 40, false)
 	want := []string{"█ h1", "■ h2", "▸ h3", "· h4"}
 	got := make([]string, 0, len(want))
 	for _, ln := range lines {
@@ -129,7 +135,7 @@ func TestHeadingLevelsGetDistinctMarkers(t *testing.T) {
 }
 
 func TestListHangingIndentAlignsUnderMarker(t *testing.T) {
-	lines := RenderBody("- 日本語のとても長い項目のテキストが続く場合の折り返し\n", 20, false)
+	lines := renderLines("- 日本語のとても長い項目のテキストが続く場合の折り返し\n", 20, false)
 	if len(lines) < 2 {
 		t.Fatalf("折り返されていない: %q", lines)
 	}
@@ -142,7 +148,7 @@ func TestListHangingIndentAlignsUnderMarker(t *testing.T) {
 }
 
 func TestListNestingAndCheckboxes(t *testing.T) {
-	body := strings.Join(RenderBody(sample, 80, false), "\n")
+	body := strings.Join(renderLines(sample, 80, false), "\n")
 	for _, want := range []string{"• buildPanelBoxImpl", "  ◦ 入れ子の項目", "☐ 未着手のタスク", "☑ 済みのタスク", "1. 番号付きの項目"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("箇条書きの整形に %q が出ない:\n%s", want, body)
@@ -151,7 +157,7 @@ func TestListNestingAndCheckboxes(t *testing.T) {
 }
 
 func TestCodeBlockIsTruncatedNotWrapped(t *testing.T) {
-	lines := RenderBody("```go\n"+strings.Repeat("x", 200)+"\n```\n", 30, false)
+	lines := renderLines("```go\n"+strings.Repeat("x", 200)+"\n```\n", 30, false)
 	code := make([]string, 0, 2)
 	for _, ln := range lines {
 		if strings.HasPrefix(ln, "┃ ") {
@@ -167,7 +173,7 @@ func TestCodeBlockIsTruncatedNotWrapped(t *testing.T) {
 }
 
 func TestUnterminatedFenceStillRenders(t *testing.T) {
-	lines := RenderBody("```go\ncode line\n", 40, false)
+	lines := renderLines("```go\ncode line\n", 40, false)
 	if len(lines) != 1 || !strings.Contains(lines[0], "code line") {
 		t.Fatalf("閉じフェンス無しでコードが落ちた: %q", lines)
 	}
@@ -184,7 +190,7 @@ func TestIndentedFenceInsideListIsCode(t *testing.T) {
 		"     ```\n" +
 		"\n" +
 		"次の段落。\n"
-	lines := RenderBody(src, 60, false)
+	lines := renderLines(src, 60, false)
 	code := make([]string, 0, 3)
 	for _, ln := range lines {
 		if strings.HasPrefix(ln, "┃ ") {
@@ -210,7 +216,7 @@ func TestIndentedFenceInsideListIsCode(t *testing.T) {
 func TestTableSeparatorIsPositionalNotShape(t *testing.T) {
 	// 全セルがハイフンのデータ行 (空欄のプレースホルダ) を区切り行と誤判定すると、
 	// renderTable が内容を罫線へ置き換えて黙って消す。
-	lines := RenderBody("| a | b |\n|--|--|\n| - | - |\n| x | y |\n", 40, false)
+	lines := renderLines("| a | b |\n|--|--|\n| - | - |\n| x | y |\n", 40, false)
 	rows := make([]string, 0, 4)
 	for _, ln := range lines {
 		if strings.TrimSpace(ln) != "" {
@@ -231,7 +237,7 @@ func TestTableSeparatorIsPositionalNotShape(t *testing.T) {
 
 func TestTableColumnsAlignAndFitWidth(t *testing.T) {
 	const width = 40
-	lines := RenderBody("| a | bbbb |\n|---|---|\n| cc | d |\n", width, false)
+	lines := renderLines("| a | bbbb |\n|---|---|\n| cc | d |\n", width, false)
 	rows := make([]string, 0, 3)
 	for _, ln := range lines {
 		if strings.TrimSpace(ln) != "" {
@@ -256,7 +262,7 @@ func TestTableColumnsAlignAndFitWidth(t *testing.T) {
 
 func TestTableShrinksWidestColumnWhenNarrow(t *testing.T) {
 	const width = 24
-	for _, ln := range RenderBody("| short | "+strings.Repeat("long", 20)+" |\n|---|---|\n", width, false) {
+	for _, ln := range renderLines("| short | "+strings.Repeat("long", 20)+" |\n|---|---|\n", width, false) {
 		if dispWidth(ln) > width {
 			t.Fatalf("狭い幅で表が収まっていない (w=%d): %q", dispWidth(ln), ln)
 		}
@@ -349,7 +355,7 @@ func TestEscapedMarkerIsLiteral(t *testing.T) {
 
 func TestRenderBodyDropsVS16(t *testing.T) {
 	vs16 := string(rune(0xfe0f))
-	body := strings.Join(RenderBody("注意 ⚠"+vs16+" あり\n", 40, false), "\n")
+	body := strings.Join(renderLines("注意 ⚠"+vs16+" あり\n", 40, false), "\n")
 	if strings.Contains(body, vs16) {
 		t.Fatalf("VS16 が表示テキストに残った: %q", body)
 	}
@@ -358,21 +364,21 @@ func TestRenderBodyDropsVS16(t *testing.T) {
 func TestStaticGlyphsHaveNoVS16(t *testing.T) {
 	// 自前の静的記号 (箇条書き・チェックボックス・罫線) に VS16 付き絵文字を混ぜない
 	// (幅解釈が層ごとに割れる。glogx 本体の TestUsageHasNoVS16 と同じ趣旨)
-	body := strings.Join(RenderBody(sample, 80, false), "\n")
+	body := strings.Join(renderLines(sample, 80, false), "\n")
 	if strings.Contains(body, string(rune(0xfe0f))) {
 		t.Fatalf("静的記号に VS16 が混ざっている: %q", body)
 	}
 }
 
 func TestBlankLinesCollapse(t *testing.T) {
-	lines := RenderBody("a\n\n\n\n\nb\n", 40, false)
+	lines := renderLines("a\n\n\n\n\nb\n", 40, false)
 	if len(lines) != 3 || lines[0] != "a" || lines[1] != "" || lines[2] != "b" {
 		t.Fatalf("空行が畳まれていない: %q", lines)
 	}
 }
 
 func TestHorizontalRuleFillsWidth(t *testing.T) {
-	for _, ln := range RenderBody("a\n\n---\n\nb\n", 30, false) {
+	for _, ln := range renderLines("a\n\n---\n\nb\n", 30, false) {
 		if strings.HasPrefix(ln, "─") && dispWidth(ln) != 30 {
 			t.Fatalf("水平線が幅一杯でない (w=%d): %q", dispWidth(ln), ln)
 		}
@@ -380,7 +386,7 @@ func TestHorizontalRuleFillsWidth(t *testing.T) {
 }
 
 func TestQuoteIsPrefixedOnEveryLine(t *testing.T) {
-	lines := RenderBody("> 引用のとても長い日本語の行が折り返される場合の見え方\n", 20, false)
+	lines := renderLines("> 引用のとても長い日本語の行が折り返される場合の見え方\n", 20, false)
 	if len(lines) < 2 {
 		t.Fatalf("引用が折り返されていない: %q", lines)
 	}
@@ -388,5 +394,65 @@ func TestQuoteIsPrefixedOnEveryLine(t *testing.T) {
 		if !strings.HasPrefix(ln, "┃ ") {
 			t.Fatalf("引用の行 %d に縦線が無い: %q", i, ln)
 		}
+	}
+}
+
+// 本文の左に出す行番号は「ソース (.md) の行番号」で、表示行の連番ではない
+// (ユーザー選定 2026-08-01)。⚠️ 段落は複数のソース行を畳み、折り返しは 1 行を複数行に割るので、
+// 番号はブロックの先頭の表示行にだけ出す。同じ番号を続き行にも並べると「その番号の行がそこに
+// ある」と読めてしまい、外 (nvim / Claude Code) へ持ち出したとき指す先がずれる。
+func TestRenderBodySrcLineNumbers(t *testing.T) {
+	src := "# 見出し\n" + // 1
+		"\n" + // 2
+		"段落の 1 行目で、これは折り返すくらい十分に長い日本語の文章にしてある。\n" + // 3
+		"段落の 2 行目 (ソースでは別の行だが、整形では 1 段落に畳まれる)。\n" + // 4
+		"\n" + // 5
+		"```go\n" + // 6
+		"a := 1\n" + // 7
+		"b := 2\n" + // 8
+		"```\n" // 9
+	lines, nums := RenderBody(src, 30, false)
+	if len(lines) != len(nums) {
+		t.Fatalf("行と行番号の本数が違う: %d vs %d", len(lines), len(nums))
+	}
+	first := func(want string) int {
+		t.Helper()
+		for i, ln := range lines {
+			if strings.Contains(ln, want) {
+				return i
+			}
+		}
+		t.Fatalf("%q の行が無い:\n%s", want, strings.Join(lines, "\n"))
+		return -1
+	}
+	if got := nums[first("見出し")]; got != 1 {
+		t.Fatalf("見出しの行番号が違う: %d (1 のはず)", got)
+	}
+	// 段落は 3 行目から始まり、畳まれた 4 行目・折り返しの続き行には番号を出さない
+	para := first("段落の 1 行目")
+	if nums[para] != 3 {
+		t.Fatalf("段落の行番号が違う: %d (3 のはず)", nums[para])
+	}
+	if nums[para+1] != 0 {
+		t.Fatalf("折り返し/畳み込みの続き行に番号が出た: %d", nums[para+1])
+	}
+	// コードは折り返さないのでソース行と 1:1 (フェンスの次の行から)
+	if got := nums[first("a := 1")]; got != 7 {
+		t.Fatalf("コード 1 行目の行番号が違う: %d (7 のはず)", got)
+	}
+	if got := nums[first("b := 2")]; got != 8 {
+		t.Fatalf("コード 2 行目の行番号が違う: %d (8 のはず)", got)
+	}
+}
+
+// front matter は本文に出さないぶん、行番号がその行数だけずれてはいけない。
+func TestRenderBodySrcLineNumbersSkipFrontMatter(t *testing.T) {
+	src := "---\n" + // 1
+		"status: ongoing\n" + // 2
+		"---\n" + // 3
+		"# 見出し\n" // 4
+	_, nums := RenderBody(src, 40, false)
+	if len(nums) == 0 || nums[0] != 4 {
+		t.Fatalf("front matter のぶん行番号がずれている: %v (先頭は 4 のはず)", nums)
 	}
 }

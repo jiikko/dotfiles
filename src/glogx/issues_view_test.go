@@ -428,6 +428,33 @@ func TestIssuesViewMultiSelectIsVisible(t *testing.T) {
 	}
 }
 
+// 本文の左にソース (.md) の行番号を出す (ユーザー要望 2026-08-01)。⚠️ 溝は整形前に幅から
+// 引く: 後付けすると本文が枠を突き破る。
+func TestIssuesViewBodyShowsSrcLineNumbers(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "042-feat-x.md")
+	src := "# 042 feat: 行番号\n\n段落。\n\n```go\na := 1\n```\n"
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "042-feat-x.md", Number: "042", Category: "feat"})
+	v.handleKey("enter", 20)
+	v.drawer.finish()
+	const width = 60
+	out := v.lines(issuesRenderOpts{width: width, page: 16})
+	joined := strings.Join(out, "\n")
+	for _, want := range []string{" 1 █ 042 feat: 行番号", " 3 段落。", " 6 ┃ a := 1"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("行番号つきの行 %q が出ない:\n%s", want, joined)
+		}
+	}
+	for _, ln := range out {
+		if w := dispWidth(ln); w > width {
+			t.Fatalf("行番号の溝を足して幅を超えた (w=%d): %q", w, ln)
+		}
+	}
+}
+
 func TestIssuesViewTabChipCountsMatchRows(t *testing.T) {
 	// チップの件数は「そのタブを選んだときに並ぶ行数」と一致する。issues.Tab.Count は done を
 	// 含む全件なので、そのまま出すと done を伏せた既定表示で合計が All と食い違う。

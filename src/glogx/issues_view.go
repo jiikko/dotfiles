@@ -1232,19 +1232,48 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 func (v *issuesView) bodyLines(o issuesRenderOpts) []string {
 	header := v.bodyHeadLines(o.width, o.colored)
 	rows := max(o.page-len(header), 1)
-	lines := v.body.Lines(o.width-scrollbarColumnWidth, o.colored) // バー列ぶんは整形前に引く
+	// 左の行番号の溝ぶんも整形前に引く (溝を後付けすると幅を超える)。桁数はソース行数から
+	// 決める: 整形しないと行番号が分からず、行番号が分からないと溝幅が決まらない循環を切る
+	gutter := srcGutterWidth(v.body.SrcLineCount())
+	lines := v.body.Lines(o.width-scrollbarColumnWidth-gutter, o.colored) // バー列ぶんも引く
 	// 行数は幅で変わる (Body は幅ごとに整形し直す)。幅が広がって行数が減ると論理 bodyOff が
 	// 上限を超えたまま残り、k / ctrl+u は max(bodyOff-n, 0) しか見ないので「何度押しても
 	// 画面が動かない」打鍵数が生まれる。描画で確定した行数で論理 offset を収束させて防ぐ。
 	v.bodyOff = clampScrollOffset(v.bodyOff, len(lines), rows)
 	offset := clampScrollOffset(v.bodyGlide.offset(v.bodyOff), len(lines), rows)
 	end := min(offset+rows, len(lines))
+	nums := v.body.SrcLines()
 	out := make([]string, 0, rows)
 	for i := offset; i < end; i++ {
-		out = append(out, lines[i])
+		src := 0
+		if i < len(nums) {
+			src = nums[i]
+		}
+		out = append(out, srcGutter(src, gutter, o.colored)+lines[i])
 	}
 	out = scrollbarColumn(out, o.width, len(lines), offset, o.colored)
 	return append(header, out...)
+}
+
+// srcGutterWidth は行番号の溝の桁数 (番号 + 空白 1)。行数が増えても揃うよう桁数で決める。
+func srcGutterWidth(srcLines int) int {
+	digits := len(strconv.Itoa(max(srcLines, 1)))
+	return max(digits, 2) + 1 // 2 桁未満でも詰まって見えないよう最低 2 桁は取る
+}
+
+// srcGutter は 1 行ぶんの行番号の溝。src=0 (折り返しの続き行・畳まれた 2 行目以降) は空白。
+//
+// ⚠️ 番号は「ソース (.md) の行番号」であって表示行の連番ではない。同じ番号を続き行にも並べると
+// 「その行がそこにある」と読めてしまい、外 (nvim / Claude Code) へ持ち出したとき指す先がずれる。
+func srcGutter(src, width int, colored bool) string {
+	if width <= 0 {
+		return ""
+	}
+	if src <= 0 {
+		return padSpaces(width)
+	}
+	num := strconv.Itoa(src)
+	return paint(fillLeft(num, width-1), ansiDim, colored) + " "
 }
 
 // hint は viewer 表示中の操作案内 (最下行)。

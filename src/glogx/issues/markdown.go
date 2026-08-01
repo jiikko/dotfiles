@@ -40,7 +40,11 @@ const (
 // block は markdown の 1 ブロック。text は段落として連結済み (reflow 後)、raw は行のまま
 // 保持するもの (コード・表)。
 type block struct {
-	kind   blockKind
+	kind blockKind
+	// src はこのブロックが始まるソース (.md) の行番号 (1 起点、0 = 不明)。本文に行番号を出す
+	// ためだけに持つ。⚠️ 整形はソース行と 1:1 でない (段落は複数行を畳み、折り返しは 1 行を
+	// 複数行に割る) ので、表示側は「ブロックの先頭の表示行にだけ番号を出す」形にしている。
+	src    int
 	level  int      // heading: 1..6 / list: ネスト深さ (0 起点)
 	marker string   // list の行頭記号 ("•" / "1." / "☐" / "☑")
 	lang   string   // code フェンスの言語
@@ -73,10 +77,11 @@ func parseBlocks(src string) []block {
 	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
 		lines = lines[:len(lines)-1]
 	}
-	lines = skipFrontMatter(lines)
+	lines, dropped := skipFrontMatter(lines)
 	blocks := make([]block, 0, 32)
 	for i := 0; i < len(lines); {
 		ln := lines[i]
+		before, start := len(blocks), i
 		switch {
 		case strings.TrimSpace(ln) == "":
 			// 空行の連続は 1 行に畳む (ソースの段落間の空け方に表示を振り回されない)
@@ -112,22 +117,27 @@ func parseBlocks(src string) []block {
 			blocks = append(blocks, b)
 			i = next
 		}
+		// 空行の畳み込みは append しないことがあるので、増えたときだけ記録する
+		if len(blocks) > before {
+			blocks[len(blocks)-1].src = start + 1 + dropped
+		}
 	}
 	return blocks
 }
 
 // skipFrontMatter は先頭の YAML front matter (--- で囲まれた区間) を落とす。本文の描画では
 // 出さない: メタデータは parse.go がヘッダー/バッジとして扱うため、本文に二重に出さない。
-func skipFrontMatter(lines []string) []string {
+// 第 2 戻り値は落とした行数 (本文に出す行番号をソースへ合わせるオフセット)。
+func skipFrontMatter(lines []string) ([]string, int) {
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
-		return lines
+		return lines, 0
 	}
 	for i := 1; i < len(lines); i++ {
 		if s := strings.TrimSpace(lines[i]); s == "---" || s == "..." {
-			return lines[i+1:]
+			return lines[i+1:], i + 1
 		}
 	}
-	return lines // 閉じが無い = front matter ではなかった (水平線始まり) と解釈する
+	return lines, 0 // 閉じが無い = front matter ではなかった (水平線始まり) と解釈する
 }
 
 // parseFence はフェンスコードブロックを読む。閉じフェンスが無い場合は EOF までをコードにする。
@@ -301,25 +311,32 @@ func isJapanesePunct(r rune) bool {
 func renderBlocks(blocks []block, width int) []line {
 	out := make([]line, 0, len(blocks)*2)
 	for _, b := range blocks {
+		var ls []line
 		switch b.kind {
 		case blkBlank:
-			out = append(out, line{})
+			ls = []line{{}}
 		case blkHeading:
-			out = append(out, renderHeading(b, width)...)
+			ls = renderHeading(b, width)
 		case blkParagraph:
-			out = append(out, renderWrapped(parseInline(b.text), width, span{}, span{})...)
+			ls = renderWrapped(parseInline(b.text), width, span{}, span{})
 		case blkQuote:
 			mark := span{Text: "┃ ", Style: styleMarker}
-			out = append(out, renderWrapped(restyleText(parseInline(b.text), styleDim), width, mark, mark)...)
+			ls = renderWrapped(restyleText(parseInline(b.text), styleDim), width, mark, mark)
 		case blkList:
-			out = append(out, renderList(b, width)...)
+			ls = renderList(b, width)
 		case blkCode:
-			out = append(out, renderCode(b, width)...)
+			ls = renderCode(b, width)
 		case blkTable:
-			out = append(out, renderTable(b, width)...)
+			ls = renderTable(b, width)
 		case blkRule:
-			out = append(out, line{spans: []span{{Text: strings.Repeat("─", max(width, 1)), Style: styleMarker}}})
+			ls = []line{{spans: []span{{Text: strings.Repeat("─", max(width, 1)), Style: styleMarker}}}}
 		}
+		// 行番号はブロックの先頭の表示行にだけ載せる (続き行は 0 = 出さない)。コード・表は
+		// ソース行と 1:1 なので、自前で行ごとに番号を入れている (下の renderCode / renderTable)。
+		if len(ls) > 0 && ls[0].src == 0 {
+			ls[0].src = b.src
+		}
+		out = append(out, ls...)
 	}
 	return out
 }
@@ -391,12 +408,17 @@ func renderCode(b block, width int) []line {
 	pre := span{Text: "┃ ", Style: styleMarker}
 	avail := max(width-dispWidth(pre.Text), 1)
 	out := make([]line, 0, len(b.raw))
-	for _, raw := range b.raw {
+	for i, raw := range b.raw {
 		txt := expandTabs(raw)
 		if dispWidth(txt) > avail {
 			txt = ansi.Truncate(txt, avail, "…")
 		}
-		out = append(out, line{spans: []span{pre, {Text: txt, Style: styleCodeBlock}}, lang: b.lang})
+		// コードは折り返さないのでソース行と 1:1。b.src は開きフェンスの行なので中身は +1 から
+		src := 0
+		if b.src > 0 {
+			src = b.src + 1 + i
+		}
+		out = append(out, line{spans: []span{pre, {Text: txt, Style: styleCodeBlock}}, lang: b.lang, src: src})
 	}
 	return out
 }
@@ -415,6 +437,9 @@ func renderTable(b block, width int) []line {
 	out := make([]line, 0, len(rows))
 	for ri, row := range rows {
 		l := line{spans: make([]span, 0, cols*2)}
+		if b.src > 0 { // 表も折り返さないのでソース行と 1:1
+			l.src = b.src + ri
+		}
 		for ci := range cols {
 			if ci > 0 {
 				l.spans = append(l.spans, span{Text: tableSep(seps[ri]), Style: styleMarker})

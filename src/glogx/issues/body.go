@@ -12,11 +12,12 @@ import (
 // スクロールが重くなる。同じ (width, colored) なら結果は同じなので、幅が変わったときだけ
 // 作り直す (リサイズ 1 回につき 1 回)。
 type Body struct {
-	src     string
-	width   int
-	colored bool
-	lines   []string
-	renders int // 整形した回数 (キャッシュが効いているかのテスト用)
+	src      string
+	width    int
+	colored  bool
+	lines    []string
+	srcLines []int // lines と同じ並びのソース行番号 (0 = 出さない)
+	renders  int   // 整形した回数 (キャッシュが効いているかのテスト用)
 }
 
 // NewBody は本文から Body を作る。整形はまだ行わない (最初の Lines で遅延実行)。
@@ -28,10 +29,18 @@ func (b *Body) Lines(width int, colored bool) []string {
 		return b.lines
 	}
 	b.width, b.colored = width, colored
-	b.lines = RenderBody(b.src, width, colored)
+	b.lines, b.srcLines = RenderBody(b.src, width, colored)
 	b.renders++
 	return b.lines
 }
+
+// SrcLines は Lines と同じ並びのソース (.md) 行番号 (0 = その行には出さない)。
+// ⚠️ Lines を呼ぶ前は空。整形しないと行の対応が決まらないため。
+func (b *Body) SrcLines() []int { return b.srcLines }
+
+// SrcLineCount は本文のソース行数。行番号の溝を何桁取るかを整形前に決めるのに使う
+// (溝幅が決まらないと整形幅が決まらず、整形しないと行番号が決まらない循環を切る)。
+func (b *Body) SrcLineCount() int { return strings.Count(b.src, "\n") + 1 }
 
 // Len は最後に整形した行数 (未整形なら 0)。pager のスクロール上限に使う。
 func (b *Body) Len() int { return len(b.lines) }
