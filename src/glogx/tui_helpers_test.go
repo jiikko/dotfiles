@@ -45,6 +45,9 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 	m := newBrowseModel(commits, statuses, toFetch, Repo{Owner: "o", Name: "r"}, true,
 		&Options{NoFrame: true}, false, 80, 10)
 	t.Cleanup(m.cancel)
+	// ⚠️ 開閉の演出はテストでは切る (zoom.go)。View の期待値が「中央から開く途中の姿」に
+	// なると全テストが読めなくなるため。演出そのものは zoom_test.go が直接検査する。
+	m.zoom.off = true
 	return m
 }
 

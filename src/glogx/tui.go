@@ -281,6 +281,9 @@ type browseModel struct {
 	// lastKey / lastKeyAt はキーリピート (押しっぱなし) の判定用 (swallowKeyRepeat)。
 	lastKey   string
 	lastKeyAt time.Time
+	// zoom は画面全体の開閉演出 (zoom.go)。zero value = 演出なしなので、Init を通らない
+	// 経路 (テスト・静的出力) は今までどおり実画面がそのまま出る。
+	zoom appZoom
 
 	// toast は右下に数秒だけ出す結果フィードバック (push/pull 完了)。自動消滅 (toast.go)。
 	toast toast
@@ -390,6 +393,7 @@ func (m *browseModel) Init() tea.Cmd {
 		text, _ := autobuildToast(autobuildStale)
 		m.showWarning(text)
 	}
+	m.zoom.start(timeNow()) // 画面を中央から開く (zoom.go)。tick は下の maybeTick が回す
 	ab := m.autobuild.tickCmd()
 	// issues viewer を出したまま終了していたら、その画面を復元する (issues_state.go)。
 	// ファイル読みだけ同期で済ませ、repo の照合 (git fork) は記憶があるときだけ非同期で行う
@@ -584,6 +588,11 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tickMsg:
 		m.ticking = false // このチェーンが 1 拍消費した。継続は下の maybeTick で単一に保つ
+		// 閉じる演出が着地したらここで初めて終了する (演出の間はまだ描き続ける)
+		if m.zoom.settle(timeNow()) {
+			m.done = true
+			return m, tea.Quit
+		}
 		if !m.spinnerActive() {
 			return m, nil // アニメ対象なし: 再アームせずチェーンを終わらせる
 		}
@@ -1004,6 +1013,13 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	}
 	// C-g は即終了: tmux の C-g popup (bind -n C-g) をトグル風に開閉するため
 	// (開くキーと同じキーで閉じる)。本家 glog には無い割当。
+	// 閉じる演出の途中に来たキーは即着地させる (q を押してから消えるまでの間、入力が
+	// 効かない時間を作らない)
+	if m.zoom.closing() {
+		m.zoom.finish()
+		m.done = true
+		return m, tea.Quit
+	}
 	if key == "ctrl+c" || key == "ctrl+g" {
 		switch {
 		case m.actModal.updating:
@@ -1019,6 +1035,8 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 			}
 			m.actModal.forceQuitArmed = true
 			return m, nil
+		case key == "ctrl+c":
+			return m.quitNow() // 緊急脱出は演出なしで最短に抜ける
 		default:
 			return m.quit()
 		}
@@ -1533,11 +1551,24 @@ func (m *browseModel) cancelAll() {
 }
 
 // quit はアプリ全体を終了する (取得中断分は unknown へ落とす)。
-func (m *browseModel) quit() (tea.Model, tea.Cmd) {
+func (m *browseModel) quit() (tea.Model, tea.Cmd) { return m.quitWith(true) }
+
+// quitNow は演出なしで即終了する (Ctrl-C の緊急脱出。待たされないことが価値)。
+func (m *browseModel) quitNow() (tea.Model, tea.Cmd) { return m.quitWith(false) }
+
+// quitWith は後始末をしてから終了する。animate なら「中央へ吸い込まれる」演出を挟み、
+// 着地してから抜ける (tickMsg の settle が tea.Quit を出す)。
+//
+// ⚠️ 後始末 (走行中 subprocess の cancel・issues の画面記憶) は演出の前に済ませる: 演出中に
+// 端末を閉じられても、止めるべきものは止まっている状態にしておく。
+func (m *browseModel) quitWith(animate bool) (tea.Model, tea.Cmd) {
 	m.rememberIssuesScreen()
 	m.cancelAll()
 	if m.fetching {
 		m.fillUnknown()
+	}
+	if animate && m.zoom.startClose(timeNow()) {
+		return m, m.maybeTick()
 	}
 	m.done = true
 	return m, tea.Quit
@@ -2337,7 +2368,7 @@ func (m *browseModel) fillUnknown() {
 // 「今は不要」とのユーザー判断で見送っている (2026-07-25)。CPU が気になると言われたら再評価する。
 // 経緯と他の未採用 v2 機能は docs/glogx-bubbletea-v2.md。
 func (m *browseModel) spinnerActive() bool {
-	return m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || m.glide.active || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.diffOv.glide.active || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.issuesOv.loading() || m.issuesOv.animating()
+	return m.zoom.animating(timeNow()) || m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || m.glide.active || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.diffOv.glide.active || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.issuesOv.loading() || m.issuesOv.animating()
 }
 
 // issuesOpts は issues viewer へ渡す描画情報。カーソル行の強調はコミット一覧と同じ
@@ -2593,6 +2624,20 @@ func (m *browseModel) finishWindow(window []string, page int) string {
 	size := len(hint)
 	for _, w := range window {
 		size += len(w) + 1 // +1 = 行末の "\n"
+	}
+	// 開閉の演出中は画面全体 (枠 + hint) を中央から開く / 中央へ吸い込む姿へ変換する (zoom.go)。
+	// ⚠️ hint も含めて 1 枚として扱う: hint だけ最下行に残ると「板は縮んだのに文字が浮いている」
+	// 見え方になる。
+	if scale := m.zoom.scale(timeNow()); scale < appZoomSnap {
+		all := make([]string, 0, len(window)+1)
+		all = append(all, window...)
+		all = append(all, hint)
+		zoomed := zoomWindow(all, scale, m.width, m.colored, m.frameActive())
+		window, hint = zoomed[:len(zoomed)-1], zoomed[len(zoomed)-1]
+		size = len(hint)
+		for _, w := range window {
+			size += len(w) + 1
+		}
 	}
 	var b strings.Builder
 	b.Grow(size)
