@@ -153,8 +153,13 @@ func TestIssuesViewTabMovesBothDirections(t *testing.T) {
 	if got := v.currentTab(); got != "feat" {
 		t.Fatalf("right で右へ動かない: %q", got)
 	}
-	// 端で止まらず巡回する (moveTab の契約) 方向にも ctrl+b が乗る
+	// 端で止まらず巡回する (moveTab の契約) 方向にも ctrl+b が乗る。
+	// ⚠️ All の左には疑似カテゴリ [next] が居るので、そこを 1 段挟んでから末尾へ回り込む
 	v.handleKey("ctrl+b", vp(10)) // All
+	v.handleKey("ctrl+b", vp(10)) // [next] (All の左)
+	if got := v.currentTab(); got != tabNextName {
+		t.Fatalf("All の左が [next] になっていない: %q", got)
+	}
 	v.handleKey("ctrl+b", vp(10)) // 末尾へ回り込む
 	if got := v.currentTab(); got != v.tabs[len(v.tabs)-1].Name {
 		t.Fatalf("ctrl+b が末尾へ巡回しない: %q", got)
@@ -209,8 +214,9 @@ func TestIssuesViewTabsAndDoneFilter(t *testing.T) {
 	}
 	v.handleKey("a", vp(10))
 	v.handleKey("a", vp(10)) // 以降のタブ検証は全件表示で行う
-	// Tab 巡回: All → feat → refactor → other → All
-	names := []string{"feat", "refactor", "other", ""}
+	// Tab 巡回: All → feat → refactor → other → [next] → All
+	// ([next] は All の左に固定なので、右回りでは All の 1 つ手前に来る)
+	names := []string{"feat", "refactor", "other", tabNextName, ""}
 	for _, want := range names {
 		v.handleKey("tab", vp(10))
 		if got := v.currentTab(); got != want {
@@ -591,6 +597,68 @@ func TestIssuesViewMarkNextUsesSelection(t *testing.T) {
 	}
 	if _, _, ok := v.selection(); ok {
 		t.Fatal("実行後も選択が残っている")
+	}
+}
+
+// [next] は All の左に固定の疑似カテゴリ (ユーザー要望 2026-08-01)。ファイル名のカテゴリでは
+// なく「next/ に居るか」で選ぶので、状態フィルタの段階に関係なく目印つきが全部出る。
+func TestIssuesViewNextPseudoTab(t *testing.T) {
+	list := append(sampleIssues(),
+		fakeIssue("040", "feat", "next-a", issues.StatusNext),
+		fakeIssue("041", "docs", "next-b", issues.StatusNext),
+	)
+	v := loadedView(list...)
+
+	// 既定は All のまま (zero value を [next] にしない = 開いた瞬間に空の一覧を出さない)
+	if v.tabIdx != 0 || v.currentTab() != "" {
+		t.Fatalf("既定のタブが All でない: tabIdx=%d name=%q", v.tabIdx, v.currentTab())
+	}
+	// チップは左端が [next]
+	line := v.tabLine(issuesRenderOpts{width: 120})
+	if !strings.HasPrefix(strings.TrimSpace(line), "[next 2]") {
+		t.Fatalf("[next] が左端に出ていない: %q", line)
+	}
+	if !strings.Contains(line, "[All ") {
+		t.Fatalf("All のチップが消えた: %q", line)
+	}
+
+	// 選ぶと目印つきだけが並ぶ
+	v.tabIdx = tabIdxNext
+	v.refresh()
+	if len(v.rows) != 2 {
+		t.Fatalf("[next] の行数が違う: %d", len(v.rows))
+	}
+	for _, iss := range v.rows {
+		if iss.Status != issues.StatusNext {
+			t.Fatalf("[next] に目印なしが混ざった: %s", iss.Rel)
+		}
+	}
+	// 状態フィルタを動かしても [next] の中身は変わらない (目印が段階で消えない)
+	for _, f := range []issues.StatusFilter{issues.FilterPending, issues.FilterAll, issues.FilterOpen} {
+		v.filter = f
+		v.refresh()
+		if len(v.rows) != 2 {
+			t.Fatalf("filter=%v で [next] の中身が変わった: %d 件", f, len(v.rows))
+		}
+	}
+}
+
+// 疑似カテゴリの選択も保存・復元できる (名前で持つので位置がずれても追従する)。
+func TestIssuesViewNextTabSurvivesRestore(t *testing.T) {
+	v := loadedView(append(sampleIssues(), fakeIssue("040", "feat", "n", issues.StatusNext))...)
+	v.tabIdx = tabIdxNext
+	v.refresh()
+	v.root = "/repo"
+	s, ok := v.screen(timeNow())
+	if !ok || s.Tab != tabNextName {
+		t.Fatalf("[next] の選択が保存されない: %+v ok=%v", s, ok)
+	}
+	v2 := newIssuesView()
+	v2.restore("/repo", s)
+	v2.receive(issuesScanMsg{dirs: []string{"/repo/issues"},
+		issues: append(sampleIssues(), fakeIssue("040", "feat", "n", issues.StatusNext))})
+	if v2.currentTab() != tabNextName {
+		t.Fatalf("復元で [next] に戻らない: %q", v2.currentTab())
 	}
 }
 

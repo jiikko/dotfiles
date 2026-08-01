@@ -64,8 +64,9 @@ type issuesView struct {
 	filter issues.StatusFilter
 	// チップに出す件数。issues.Tab.Count は done を含む全件なので表示には使わない (理由は
 	// refresh)。tabCount は tabs と同じ並び、allCount は All チップ用。
-	tabCount []int
-	allCount int
+	tabCount  []int
+	allCount  int
+	nextCount int // 疑似カテゴリ [next] のチップに出す件数
 
 	rows   []*issues.Issue // 現在のタブ・フィルタの表示対象
 	cursor int
@@ -317,6 +318,9 @@ func issuePath(iss *issues.Issue) string {
 
 // tabIndexOf は名前からタブ位置 (0 = All) を引く。消えたカテゴリは All に落ちる。
 func tabIndexOf(tabs []issues.Tab, name string) int {
+	if name == tabNextName {
+		return tabIdxNext
+	}
 	if name == "" {
 		return 0
 	}
@@ -392,7 +396,7 @@ func (v *issuesView) rebindOpen(path string) {
 func (v *issuesView) refresh() {
 	// ⚠️ 行集合が変わるので選択は畳む。錨は位置で持つため、残すと別の issue を指す
 	v.clearMark()
-	v.rows = issues.Filter(v.all, v.currentTab(), v.filter)
+	v.rows = v.rowsForTab(v.currentTab())
 	v.cursor = clampIdx(v.cursor, len(v.rows))
 	// チップの件数は「そのタブを選んだときに実際に並ぶ行数」と同じ Filter から出す。
 	// issues.Tab.Count は done を含む全件なので、そのまま出すと done を伏せた既定表示で
@@ -401,6 +405,7 @@ func (v *issuesView) refresh() {
 	// ⚠️ タブ集合そのものは v.all から作る (receive)。Filter 後の集合から作り直すと done だけの
 	// カテゴリが消え、位置で持つ tabIdx が別カテゴリを指す。ここで数えるのは件数だけ。
 	v.allCount = len(issues.Filter(v.all, "", v.filter))
+	v.nextCount = len(v.rowsForTab(tabNextName))
 	sel := v.currentTab() // 並べ替えを跨いで選択を保つため名前で覚える (tabIdx は位置で持つ)
 	counts := make([]int, len(v.tabsCanon))
 	for i, t := range v.tabsCanon {
@@ -410,6 +415,25 @@ func (v *issuesView) refresh() {
 	// 決まる (issues.Tabs) ため、状態を伏せた表示では「0 件なのに左端」が構造的に起きていた。
 	v.tabs, v.tabCount = reorderTabsByCount(v.tabsCanon, counts)
 	v.tabIdx = tabIndexOf(v.tabs, sel)
+}
+
+// rowsForTab はタブ名に対応する行集合。⚠️ 疑似カテゴリ [next] はファイル名のカテゴリではなく
+// 状態 (next/ に居るか) で選ぶので、issues.Filter へ名前として渡さない (渡すと「@next という
+// カテゴリの issue」を探して常に 0 件になる)。
+//
+// [next] が状態フィルタ (a) を見ないのは、next が段階に関係なく常に見える状態だから
+// (issues.StatusFilter.shows)。目印を付けたものが「今の段階では見えない」のは逆の結果になる。
+func (v *issuesView) rowsForTab(tab string) []*issues.Issue {
+	if tab != tabNextName {
+		return issues.Filter(v.all, tab, v.filter)
+	}
+	out := make([]*issues.Issue, 0, 8)
+	for _, iss := range v.all {
+		if iss.Status == issues.StatusNext {
+			out = append(out, iss)
+		}
+	}
+	return out
 }
 
 // reorderTabsByCount は正規順序 tabs を「件数 0 を右へ寄せた」並びへ写す純関数 (件数も同じ並びで
@@ -450,8 +474,25 @@ func (v *issuesView) takeNotice() (string, bool) {
 	return text, ok
 }
 
-// currentTab は選択中のタブ名 ("" = All)。
+// tabNextName は疑似カテゴリ [next] の識別子 (保存・復元でもこの名前で持つ)。
+//
+// ⚠️ ファイル名のカテゴリトークンとして現れない綴りにする: 実在するカテゴリ語と同じ綴りだと
+// 同名のタブが 2 つ並び、位置で持つ選択 (tabIdx) の指す先が曖昧になる (issues.Tabs が other で
+// 同じ問題を合算で回避しているのと同型)。トークンは英数と - からしか作られないので @ を使う。
+const tabNextName = "@next"
+
+// tabIdx の規約: -1 = 疑似カテゴリ [next]、0 = All、1.. = v.tabs[tabIdx-1]。
+//
+// ⚠️ next を -1 にして All を 0 のままにするのは zero value のため。0 を next にすると、
+// 作りたてのビュー (newIssuesView / テストの zero value) が既定で [next] を選ぶことになり、
+// 「開いたら空の一覧が出る」挙動に変わる。
+const tabIdxNext = -1
+
+// currentTab は選択中のタブ名 ("" = All、tabNextName = 疑似カテゴリ [next])。
 func (v *issuesView) currentTab() string {
+	if v.tabIdx == tabIdxNext {
+		return tabNextName
+	}
 	if v.tabIdx <= 0 || v.tabIdx > len(v.tabs) {
 		return ""
 	}
@@ -775,8 +816,9 @@ func (v *issuesView) windowOffset(rows int) int {
 
 // moveTab はタブを切り替える (端で止まらず巡回する)。
 func (v *issuesView) moveTab(delta int) {
-	n := len(v.tabs) + 1 // All を含む
-	v.tabIdx = ((v.tabIdx+delta)%n + n) % n
+	// [next] (-1) と All (0) を含めた巡回。-1 起点なので +1 して 0 起点へ寄せてから回す
+	n := len(v.tabs) + 2
+	v.tabIdx = ((v.tabIdx+1+delta)%n+n)%n - 1
 	v.refresh()
 }
 
@@ -1172,7 +1214,10 @@ func (v *issuesView) emptyMessage(o issuesRenderOpts) string {
 func (v *issuesView) tabLine(o issuesRenderOpts) string {
 	// 件数は refresh が数えた値を読む (毎フレーム・毎打鍵の Filter は全件分の slice を捨てる。
 	// visibleRows も行数を得るためにこの関数を通る)
-	chips := make([]string, 0, len(v.tabs)+1)
+	chips := make([]string, 0, len(v.tabs)+2)
+	// [next] は All の左に固定 (ユーザー要望 2026-08-01)。カテゴリの 0 件寄せ (reorderTabsByCount)
+	// の対象にしない — 目印を付ける場所として常に同じ位置に居てほしいため、0 件でも左端に出す。
+	chips = append(chips, v.tabChip(tabNextName, v.nextCount, v.tabIdx == tabIdxNext, o.colored))
 	chips = append(chips, v.tabChip("All", v.allCount, v.tabIdx == 0, o.colored))
 	for i, t := range v.tabs {
 		count := 0
@@ -1183,7 +1228,7 @@ func (v *issuesView) tabLine(o issuesRenderOpts) string {
 	}
 	filter := v.filter.Badges()
 	avail := max(o.width-dispWidth(filter)-1, 1)
-	left := scrollTabs(chips, v.tabIdx, avail, o.colored)
+	left := scrollTabs(chips, v.tabIdx+1, avail, o.colored) // チップ配列は [next] が 0 番
 	pad := max(o.width-dispWidth(left)-dispWidth(filter), 0)
 	return left + padSpaces(pad) + paint(filter, ansiDim, o.colored)
 }
@@ -1265,11 +1310,16 @@ func joinedWidth(chips []string) int {
 // (一覧のカテゴリ列と同じ色にすることで「タブの色 = その行の色」が対応する)。
 // All は特定のカテゴリではないのでシアン (本体の見出し色) を使う。
 func (v *issuesView) tabChip(name string, count int, active bool, colored bool) string {
-	text := "[" + name + " " + strconv.Itoa(count) + "]"
-	color := ansiCyan
-	if name != "All" {
-		color = categoryColor(name)
+	label, color := name, categoryColor(name)
+	switch name {
+	case "All":
+		color = ansiCyan // 特定のカテゴリではないので本体の見出し色
+	case tabNextName:
+		// 疑似カテゴリは識別子 (@next) でなく見出しの綴りで出す。色は状態バッジ ▶ と同じ意味の
+		// 「これからやる」を示す固定色にする (語のハッシュだと repo ごとに色が変わる)
+		label, color = "next", catYellow
 	}
+	text := "[" + label + " " + strconv.Itoa(count) + "]"
 	if active {
 		return paint(text, ansiBold+color, colored)
 	}
