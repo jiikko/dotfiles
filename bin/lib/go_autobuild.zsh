@@ -69,6 +69,22 @@ _go_autobuild_age() {  # REPLY = 経過秒 (取得不能なら空)
   REPLY=$(( EPOCHSECONDS - st[1] ))
 }
 
+# lock の持ち主 pid を REPLY で返す ("" = lock が無い / pid 未記入)。
+#
+# ⚠️ 存在確認してから読む。`$(<file)` は zsh の特殊形 (fork しない代わりに) 内側の 2>/dev/null が
+# 効かず、不在時に "no such file or directory" を漏らす (実測 2026-08-01)。この関数の出力先は
+# .autobuild.log で、そこは不具合追跡の唯一の手がかりなので、意味のないエラーで汚さない。
+# ⚠️ 戻り値で成否を伝えない (常に 0)。呼び出し側は REPLY が空かどうかで判断する。
+# 非 0 を返す設計にすると、将来ラッパーが set -e を足した瞬間に「lock が読めないだけ」で
+# ビルドごと中断する地雷になる (現在の 4 つのラッパーはいずれも set -u のみ)。
+_go_autobuild_lock_owner() {  # $1=lock dir
+  REPLY=
+  [[ -f "$1/pid" ]] || return 0
+  REPLY=$(<"$1/pid")
+  REPLY=${REPLY%%$'\n'*}
+  return 0
+}
+
 # mkdir の atomicity で排他する。lock 内の pid で「持ち主が生きているか」を判定し、
 # 死んでいれば奪う。これが無いと kill された builder の lock が永久に残り、以後
 # 「stale だが誰かがビルド中」と誤認して黙って旧版に固定される (loud に落ちる今より悪化する)。
@@ -82,7 +98,8 @@ _go_autobuild_take_lock() {  # $1=lock dir $2=自分の pid / 0 = 取得, 1 = �
   # 「不明なら奪う」にすると zstat の無い環境で毎回 lock を奪い多重ビルドになる。
   _go_autobuild_age "$lock"
   if [[ -z "$REPLY" ]] || (( REPLY < timeout )); then
-    holder=$(<"$lock/pid") 2>/dev/null
+    _go_autobuild_lock_owner "$lock"
+    holder=$REPLY
     # pid 未記入は「mkdir 直後の別プロセス」= 生存扱い (取得直後の一瞬だけ起きる)
     [[ -z "$holder" ]] && return 1
     kill -0 "$holder" 2>/dev/null && return 1
@@ -149,7 +166,8 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   # lock を奪われていたら install しない。奪った側は自分より新しいソースでビルドしており、
   # ここで上書きすると古い成果物が「バイナリ mtime = 今」で入って stale 判定を欺く
   # (= 黙って古い版に固定される)。失敗ではないので .autobuild.failed も作らない。
-  if [[ -n "$lock" && "$(<"$lock/pid" 2>/dev/null)" != "$lock_pid" ]]; then
+  _go_autobuild_lock_owner "$lock"
+  if [[ -n "$lock" && "$REPLY" != "$lock_pid" ]]; then
     command rm -f "$tmp" "$started" 2>/dev/null
     print -u2 -- "$name: lock を奪われたため install を中止 (別の builder が入れている)"
     return 0
@@ -198,7 +216,7 @@ _go_autobuild_spawn() {  # $1=src_dir $2=name
     _go_autobuild_take_lock "$lock" "$pid" || exit 0
     # ⚠️ 解放してよいのは自分が持ち主のときだけ。timeout 超過で奪われた後に無条件で rm -rf すると
     # 「奪った側の lock」まで消し、以後その src は無施錠になって多重ビルドが漏れる。
-    trap '[[ "$(<"$lock/pid" 2>/dev/null)" == "$pid" ]] && command rm -rf "$lock" 2>/dev/null' EXIT
+    trap '_go_autobuild_lock_owner "$lock"; [[ "$REPLY" == "$pid" ]] && command rm -rf "$lock" 2>/dev/null' EXIT
     # 前回の途中死が残した一時ファイルを掃除する
     command rm -f "$src_dir"/.autobuild.new.*(N) 2>/dev/null
     print -r -- "--- $(strftime '%Y-%m-%d %H:%M:%S' $EPOCHSECONDS) $name (pid=$pid)"
