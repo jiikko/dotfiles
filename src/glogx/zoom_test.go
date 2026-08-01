@@ -169,3 +169,48 @@ func TestZoomWindowMatchesFrameState(t *testing.T) {
 		t.Fatalf("枠つきの画面で演出の枠が出ない:\n%s", out)
 	}
 }
+
+// 演出中はフレーム周期を上げる。⚠️ ここが効いていないと「チェーンは回るが 12.5fps」になり、
+// 220ms の演出に中間フレームが 2 枚しか出ず (4行 → 30行 → 実画面) 点滅に見える (実測 2026-08-01)。
+// 固定値でなく「何枚出るか」で縛るのは、所要 (appZoomDuration) を変えたときに一緒に守るため。
+func TestZoomRendersEnoughFrames(t *testing.T) {
+	orig := timeNow
+	t.Cleanup(func() { timeNow = orig })
+	now := time.Unix(1000, 0)
+	timeNow = func() time.Time { return now }
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.zoom.off = false
+	m.zoom.start(now)
+
+	interval := m.tickInterval()
+	if interval >= spinnerInterval {
+		t.Fatalf("演出中もスピナーと同じ周期 (%v): 中間フレームが消えて点滅に見える", interval)
+	}
+	// 実画面へ寄り切る (appZoomSnap) までに何フレーム出るかを数える
+	shown := 0
+	for tt := time.Duration(0); tt < appZoomDuration; tt += interval {
+		if m.zoom.scale(now.Add(tt)) < appZoomSnap {
+			shown++
+		}
+	}
+	if shown < 8 {
+		t.Fatalf("開く演出の中間フレームが %d 枚しかない (滑らかに見えない)", shown)
+	}
+}
+
+// 演出が終われば周期は元へ戻る (常時 60fps で回し続けない)。
+func TestZoomFrameRateDropsAfterSettle(t *testing.T) {
+	orig := timeNow
+	t.Cleanup(func() { timeNow = orig })
+	now := time.Unix(1000, 0)
+	timeNow = func() time.Time { return now }
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.zoom.off = false
+	m.zoom.start(now)
+	now = now.Add(appZoomDuration)
+	if got := m.tickInterval(); got == zoomInterval {
+		t.Fatal("演出が終わっても 60fps で回り続けている (CPU を無駄に食う)")
+	}
+}

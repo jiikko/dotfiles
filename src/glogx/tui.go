@@ -30,6 +30,12 @@ const (
 	fetchTimeout    = 10 * time.Second
 	spinnerInterval = 80 * time.Millisecond // スピナー等の通常 tick (12.5fps。CPU 節約)
 	scrollInterval  = 33 * time.Millisecond // scroll glide 中の高 FPS tick (~30fps。滑らかさ優先)
+	// zoomInterval は開閉演出中の tick (~60fps)。他より速いのは、この演出だけが「短い所要
+	// (appZoomDuration 220ms) を壁時計で刻む」ためで、周期がそのままフレーム数になる:
+	// 12.5fps だと中間フレームが 2 枚しか出ず (4行 → 30行 → 実画面)、演出でなく点滅に見える。
+	// ⚠️ 上げても遅くはならない: 進捗は壁時計なので、端末が追いつかなければフレームが間引かれる
+	// だけで所要は変わらない (フレーム数で進める glide とはここが違う)。
+	zoomInterval = 16 * time.Millisecond
 	// maxPanelJobs は job パネルに一度に表示する行数。超過分はパネル内でスクロールする。
 	maxPanelJobs = 10
 	// usageRefreshInterval は usage オーバーレイをバックグラウンド再取得する周期 (ユーザー要望
@@ -467,7 +473,14 @@ func (m *browseModel) maybeTick() tea.Cmd {
 
 // tickInterval は今のフレーム周期。横に動く演出 (scroll glide / toast スライド /
 // issues viewer の流し込み) の最中だけ ~30fps へ上げ、それ以外は 12.5fps に落とす。
+// アプリ全体の開閉演出だけはさらに上げる (理由は zoomInterval の doc)。
+//
+// ⚠️ 演出を足したらここにも足す。spinnerActive (チェーンを回すか) に足すだけでは「回るが
+// 12.5fps」になり、短い演出ほど中間フレームが消えて点滅に見える (開閉演出で実際に起きた)。
 func (m *browseModel) tickInterval() time.Duration {
+	if m.zoom.animating(timeNow()) {
+		return zoomInterval // 短い演出なので周期がそのままフレーム数になる (60fps)
+	}
 	if m.glide.active || m.diffOv.glide.active || m.toast.animating() || m.issuesOv.animating() {
 		return scrollInterval // スライドを滑らかに (30fps)
 	}
