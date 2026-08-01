@@ -2,7 +2,7 @@
 
 ## ルール
 
-- **`trap '' HUP TERM INT` でシグナルを無視させたシェルの下で、守りたいコマンドを `( ... )` のサブシェルや `&` のバックグラウンドジョブに入れない**。zsh はどちらにも trap をリセットするので、そこで ignore が失われる
+- **`trap '' HUP TERM INT` でシグナルを無視させたシェルの下で、守りたいコマンドを `( ... )` のサブシェルや `&` のバックグラウンドジョブに入れない**。zsh はどちらにも trap をリセットするので、そこで ignore が失われる (届いたとしても守れるとは限らない。下記の Go / SIGTERM を参照)
 - ignore が届くのは **trap を張ったシェル自身が exec する foreground のコマンドだけ**。`cd` したいなら、サブシェルを掘らずコマンド側のオプションで済ませる (`go build -C dir` / `make -C dir` / `git -C dir` / `tar -C dir`)
 - **bash では同じコードが動く**ので、bash の常識で書くと踏む。POSIX は「ignore に設定されたシグナルは fork/exec を越えて継承される」と定めており、bash はそのとおりに振る舞うが、**zsh は subshell / async job で trap を落とす**
 
@@ -45,6 +45,27 @@ tmux popup から起動した glogx が、裏で走らせた `go build` を **ex
   レビューでは防げない)
 - ✗ `trap ''` の下で `( ... )` / `&` を挟む
 - ✗ bash で動いたから zsh でも動く、と考える
+
+## ⚠️ 継承できても、受け取る側が張り直すことがある (Go の SIGTERM)
+
+trap が届いても守れるとは限らない。**プログラム側が自分でハンドラを張り直せば、継承した
+SIG_IGN は上書きされる**。Go がまさにこれで、継承した SIG_IGN を尊重するのは SIGHUP と SIGINT
+だけ、SIGTERM には自前のハンドラを張る:
+
+| `trap '' HUP TERM INT` の下で実 `go build` に | 結果 |
+|---|---|
+| SIGHUP | ✅ 生存 |
+| SIGINT | ✅ 生存 |
+| SIGTERM | ❌ 死亡 (exit 143 = 128+15) |
+
+つまり `trap '' HUP TERM INT` と書いても、Go の子に対して実効があるのは HUP と INT だけ。
+シェルスクリプトの子 (`/bin/sh` 等) は 3 つとも生き残るので、**テストのダミーをシェルスクリプトに
+すると、この差が観測できず「TERM も守れている」という偽の緑になる** (実際に dotfiles の
+`tests/bin/test_go_autobuild.sh` がその状態だった)。
+
+守れない相手に防御コードを足す前に、**その信号を送る主体が実在するか**を確かめること。
+pty を閉じる経路 (tmux の popup / pane 破棄、端末を閉じる) がカーネルに送らせるのは SIGHUP で、
+TERM ではない。
 
 ## 例外
 

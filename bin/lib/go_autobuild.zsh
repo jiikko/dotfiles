@@ -161,9 +161,17 @@ _go_autobuild_spawn() {  # $1=src_dir $2=name
   local lock="$src_dir/.autobuild.lock" log="$src_dir/.autobuild.log"
   (
     # ignore された disposition は fork/exec を越えて go build にも継承される。popup を閉じた
-    # ときに process group へ飛ぶ TERM/HUP で巻き添えにされないため (nohup は HUP しか防がない)。
-    # ⚠️ ただし zsh はサブシェルで trap を既定へ戻すので、この下でサブシェルを掘ると ignore が
-    # そこで切れる (実害は _go_autobuild_build の go build 行のコメント)。
+    # ときに process group へ飛ぶ HUP で巻き添えにされないため (これが実際に起きていた経路)。
+    #
+    # ⚠️ 守れるのは HUP と INT だけで、TERM は守れない。Go ランタイムは継承した SIG_IGN を
+    # HUP / INT については尊重するが、TERM には自前ハンドラを張り直すため、trap を張っていても
+    # go build は exit 143 (=128+SIGTERM) で死ぬ (実測 2026-08-01)。TERM を並べているのは
+    # builder シェル自身と、Go でない子 (将来足すかもしれない) を守るため。
+    # ⚠️ ここに TERM 対策を足さない: popup / pane を閉じる経路が送るのは pty 切断による HUP で、
+    # TERM を送る主体は現状いない。居ない相手向けの防御コードは、効くかどうかも確かめられない。
+    #
+    # ⚠️ zsh はサブシェルとバックグラウンドジョブで trap を既定へ戻すので、この下でどちらかを
+    # 掘ると ignore がそこで切れる (rules/zsh-trap-not-inherited.md)。
     trap '' HUP TERM INT
     _go_autobuild_self_pid
     local pid=$REPLY

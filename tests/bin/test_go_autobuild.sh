@@ -38,9 +38,20 @@ echo "build" >> "$FAKE_GO_CALLS"
 [ -n "${FAKE_GO_PIDFILE:-}" ] && echo $$ > "$FAKE_GO_PIDFILE"
 [ -n "${FAKE_GO_SLEEP:-}" ] && sleep "$FAKE_GO_SLEEP"
 if [ -n "${FAKE_GO_FAIL:-}" ]; then echo "fake build error" >&2; exit 1; fi
+# 実 go と同じ -C の契約を守る: 最初のフラグでなければ使用法エラー (rc=2)、あれば chdir する。
+# ⚠️ これが無いと -C の意味論がテストの盲点になる: 引数順を崩す変更 (-trimpath 等を先頭に足す)
+# を入れても全テストが緑のまま通り、実環境だけラッパーが起動不能になる。
+shift  # "build"
+if [ "$1" = "-C" ]; then
+  cd "$2" || exit 1
+  shift 2
+fi
 out=""
 while [ $# -gt 0 ]; do
-  if [ "$1" = "-o" ]; then out="$2"; shift; fi
+  case "$1" in
+    -C) echo "invalid value \"$2\" for flag -C: -C flag must be first flag on command line" >&2; exit 2 ;;
+    -o) out="$2"; shift ;;
+  esac
   shift
 done
 [ -n "$out" ] || exit 1
@@ -367,6 +378,22 @@ out="$(AUTOBUILD_ARGS=--async FAKE_GO_MARK=v2 run_tool "$ROOT")"
 [[ "$out" == "v1" ]] || fail "zsh/system 不在で --async が旧版起動にならない (got: $out)"
 wait_for "zsh/system 不在でバックグラウンドビルドが完了しない" binary_is "$ROOT" v2
 ok 'zsh/system が無い zsh でも同期・async ともに動く ($$ への縮退)' 
+
+printf '\n## 相対パスで呼ばれても一時ファイルの置き場所がずれない\n'
+# ⚠️ -C はビルド前に chdir するので、src_dir が相対だと -o の出力先が「移動後の cwd 基準」に
+# なり、意図しない場所へ書く。_go_autobuild_build の ${1:a} 正規化がそれを潰している。
+# 現在の呼び出しは全て ${0:A:h} 由来で絶対だが、-C を使う限りこれは前提であって偶然ではない。
+ROOT="$(new_project relpath)"
+FAKE_GO_MARK=v1 run_tool "$ROOT" >/dev/null
+freeze "$ROOT"
+bump "$ROOT/src/tool/main.go"
+( cd "$ROOT/bin" && PATH="$TMP_DIR/bin:$PATH" FAKE_GO_CALLS="$ROOT/calls" FAKE_GO_MARK=rel \
+    zsh -c 'source ./lib/go_autobuild.zsh; _go_autobuild_build ../src/tool tool 1' >/dev/null 2>&1 )
+binary_is "$ROOT" rel || fail "相対 src_dir で呼ぶと成果物が入らない (got: $(binary_mark "$ROOT"))"
+stray="$(find "$ROOT/bin" -name '.autobuild.new.*' | head -3)"
+[[ -z "$stray" ]] || fail "相対 src_dir で一時ファイルを cwd 側へ書いた: $stray"
+head -1 "$ROOT/bin/tool" | grep -q zsh || fail "相対 src_dir で cwd 側の別ファイル (ラッパー) を成果物で上書きした"
+ok "相対 src_dir でも成果物と一時ファイルが src 側に置かれる"
 
 printf '\n## spawn したビルドは popup を閉じたときの HUP で死なない\n'
 # ⚠️ 実害 (2026-08-01): tmux popup を閉じると process group へ HUP が飛び、裏で走っている
