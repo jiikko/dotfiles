@@ -104,11 +104,15 @@ freeze() {
 }
 
 # 今の内容を「このバイナリが作られた入力」として記録する (本番のビルド成功時と同じ形)。
+# ⚠️ 形式は「1 行目 = ビルド開始時刻 / 2 行目以降 = 指紋」。本番と同じ形で書かないと、
+# 読み出し側が「書きかけ」とみなして常に stale になる。開始時刻は過去に置く (このあと
+# 始まるビルドが「自分の方が後」と判断できるように)。
 record_built() {
   local root="$1"
   zsh -c "source '$root/bin/lib/go_autobuild.zsh'
+zmodload zsh/datetime 2>/dev/null
 _go_autobuild_fingerprint '$root/src/tool'
-print -rn -- \"\$REPLY\"" > "$root/src/tool/.autobuild.built"
+print -rn -- \"\$(( EPOCHREALTIME - 3600 ))\"\$'\\n'\"\$REPLY\"" > "$root/src/tool/.autobuild.built"
 }
 bump() { mtime_at 10 "$1"; }
 
@@ -493,11 +497,43 @@ FAKE_GO_MARK=v2 run_tool "$ROOT" >/dev/null
 grep -q '+dirty' "$ROOT/src/tool/.autobuild.rev" \
   || fail "未コミットの状態から作ったのに +dirty が付かない (記録が嘘をつく)"
 ok "未コミットの変更から作ったら +dirty を添える"
+
 # 判定に使っていないことの確認: tree hash は変わっていないが、編集は拾われている
 [[ "$(cd "$ROOT" && git rev-parse HEAD:src/tool)" == "$want" ]] \
   || fail "前提が崩れた: コミットしていないのに tree hash が変わった"
 binary_is "$ROOT" v2 || fail "未コミットの編集で再ビルドされない (tree hash を判定に使ってしまっている)"
 ok "tree hash が同じでも未コミットの編集は拾う (判定は指紋)"
+
+# ⚠️ まだ git add していない新規 .go も go build の入力に入る。追跡対象しか見ない判定だと
+# 「コミットに存在しないコードで動いているのに clean な tree hash」を記録してしまう。
+( cd "$ROOT" && git checkout -q -- src/tool/main.go )
+printf 'package main\n\nfunc helper() {}\n' > "$ROOT/src/tool/newfile.go"   # untracked
+FAKE_GO_MARK=v3 run_tool "$ROOT" >/dev/null
+grep -q '+dirty' "$ROOT/src/tool/.autobuild.rev" \
+  || fail "git add 前の新規 .go を含むのに clean な tree hash を記録した (診断が嘘をつく)"
+ok "git add していない新規 .go も +dirty として数える"
+rm -f "$ROOT/src/tool/newfile.go"
+
+printf '\n## あとから始まった新しいビルドが、先に終わった古いビルドに負けない\n'
+# ⚠️ install ガードは「順序」を見る必要がある。内容一致だけで見ると「あとから完走した方が
+# 無条件で降りる」になり、最新の入力でビルドした方が捨てられる。ここが効かないと、stale
+# トーストが案内する復旧手順 (GO_AUTOBUILD_SYNC=1) が先行 builder に負けて旧版のまま起動する。
+# 同期が既定の parallel-each / disassemble_excel では「旧版の結果を新コードの結果と誤認させない」
+# という設計意図そのものを破る。
+ROOT="$(new_project order)"
+FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
+freeze "$ROOT"
+printf 'package main\n\n// A\n' > "$ROOT/src/tool/main.go"
+( AUTOBUILD_ARGS=--async FAKE_GO_SLEEP=1 FAKE_GO_MARK=A run_tool "$ROOT" >/dev/null 2>&1 ) &
+A_PID=$!
+wait_for "先行ビルドが動き出さない" test -f "$ROOT/src/tool/.autobuild.lock/pid"
+sleep 0.3
+printf 'package main\n\n// B\n' > "$ROOT/src/tool/main.go"   # あとから始まる方が新しい入力
+GO_AUTOBUILD_SYNC=1 FAKE_GO_SLEEP=4 FAKE_GO_MARK=B run_tool "$ROOT" >/dev/null
+wait "$A_PID" 2>/dev/null || true
+binary_is "$ROOT" B \
+  || fail "あとから始まった新しい入力のビルドが捨てられた (got: $(binary_mark "$ROOT"))"
+ok "あとから始まったビルドが勝つ (完走の順ではなく開始の順で決まる)"
 
 printf '\n## 走行中の builder の作業ファイルを、あとから来た builder が消さない\n'
 # ⚠️ 同期ビルド (GO_AUTOBUILD_SYNC=1 / バイナリ不在の初回) は lock を取らないので、spawn が

@@ -140,6 +140,24 @@ _go_autobuild_fingerprint() {  # $1=src_dir
   return 0
 }
 
+# .autobuild.built を読み、reply=(ビルド開始時刻 指紋) を返す (不在なら (0 ""))。
+#
+# ⚠️ 指紋だけでなく開始時刻も持つ。install の可否は「順序」で決める必要があるため: 内容一致
+# だけで見ると「あとから完走した方が無条件で降りる」になり、最新の入力でビルドした方が捨て
+# られる (自己レビューで検出 2026-08-02)。旧実装は成果物の mtime を巻き戻すことで順序を
+# 表していたが、その仕掛けごと廃したのでここに持たせる。
+_go_autobuild_read_built() {  # $1=src_dir / reply=(開始時刻 指紋)
+  local raw
+  _go_autobuild_slurp "$1/.autobuild.built"; raw=$REPLY
+  if [[ "$raw" != *$'\n'* ]]; then
+    reply=(0 "")   # 1 行しか無い = 書きかけ / 旧形式。ビルド済みとみなさない
+    return 0
+  fi
+  reply=("${raw%%$'\n'*}" "${raw#*$'\n'}")
+  [[ "$reply[1]" == <->(.<->|) ]] || reply[1]=0
+  return 0
+}
+
 # 再ビルドが要るか (0 = 要る)。⚠️ 「いつ再ビルドするか」の判定はこの関数だけが持つ。
 # 呼び出し側に条件を散らすと、片方だけ直したときに shim とツール側で結論が食い違う。
 _go_autobuild_stale() {  # $1=src_dir $2=bin $3=指紋
@@ -150,8 +168,8 @@ _go_autobuild_stale() {  # $1=src_dir $2=bin $3=指紋
     _go_autobuild_sources_newer_than "$bin" "$src_dir"
     return $?
   fi
-  _go_autobuild_slurp "$src_dir/.autobuild.built"
-  [[ "$REPLY" != "$fp" ]]
+  _go_autobuild_read_built "$src_dir"
+  [[ "$reply[2]" != "$fp" ]]
 }
 
 # 前回の失敗を踏まえて再挑戦してよいか (0 = よい)。
@@ -212,11 +230,8 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   local bin="$src_dir/$name" tmp="$src_dir/.autobuild.new.$REPLY"
   # このビルドが「何を入力にしたか」を開始時点で確定させる。成功時にこれを記録するので、
   # ビルド実行中に着地した編集は次回の指紋比較で必ず差として出る (_go_autobuild_fingerprint の doc)。
-  local built_fp seen_stamp
+  local built_fp started_at=${EPOCHREALTIME-0}
   _go_autobuild_fingerprint "$src_dir"; built_fp=$REPLY
-  # install 直前に「誰かが先に入れていないか」を見るための基準 (lock を取らない同期ビルドは
-  # lock 判定に掛からないため、記録そのものの変化で見る)
-  _go_autobuild_slurp "$src_dir/.autobuild.built"; seen_stamp=$REPLY
   local local_go required_go
   local_go=$(go env GOVERSION 2>/dev/null) || local_go=unknown
   required_go=$(awk '$1 == "go" {print $2; exit}' "$src_dir/go.mod" 2>/dev/null)
@@ -260,13 +275,17 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
     print -u2 -- "$name: lock を奪われたため install を中止 (別の builder が入れている)"
     return 0
   fi
-  # 走行中に誰かが先に入れていたら踏まない。上の lock 判定では足りない: 同期ビルド
-  # (GO_AUTOBUILD_SYNC=1 = 「今すぐ新版が欲しい」) は lock を取らないので、走行中の builder から
-  # 見て「lock は自分のまま」になり、ユーザーの復旧操作を古い成果物で黙って巻き戻す。
-  _go_autobuild_slurp "$src_dir/.autobuild.built"
-  if [[ "$REPLY" != "$seen_stamp" ]]; then
+  # 自分より「あとに始まった」ビルドが既に入っていたら踏まない。上の lock 判定では足りない:
+  # 同期ビルド (GO_AUTOBUILD_SYNC=1 = 「今すぐ新版が欲しい」) は lock を取らないので、走行中の
+  # builder から見て「lock は自分のまま」になり、ユーザーの復旧操作を古い成果物で巻き戻す。
+  #
+  # ⚠️ 「入っているか」でなく「あとに始まったか」で見る。完走の順で決めると、先に終わった古い
+  # 入力のビルドが勝ってしまい、最新の入力でビルドした方が捨てられる。あとに始まった方が新しい
+  # 入力を見ているので、開始の順が入力の新しさの順になる。
+  _go_autobuild_read_built "$src_dir"
+  if (( reply[1] > started_at )); then
     command rm -f "$tmp" 2>/dev/null
-    print -u2 -- "$name: 走行中に別のビルドが入ったため install を中止"
+    print -u2 -- "$name: あとから始まったビルドが既に入っているため install を中止"
     return 0
   fi
   command mv -f "$tmp" "$bin" || {
@@ -274,8 +293,9 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
     print -u2 -- "$name: install failed"
     return 1
   }
-  # 何を入力にして作ったかを記録する。次回の起動はこれと今の指紋を比べるだけで stale を判定する。
-  print -rn -- "$built_fp" >| "$src_dir/.autobuild.built" 2>/dev/null
+  # 何を、いつ始めて作ったかを記録する。次回の起動は指紋を比べるだけで stale を判定し、
+  # 開始時刻は上の install ガード (順序判定) が使う。
+  print -rn -- "$started_at"$'\n'"$built_fp" >| "$src_dir/.autobuild.built" 2>/dev/null
   _go_autobuild_record_rev "$src_dir"
   command rm -f "$src_dir/.autobuild.failed" 2>/dev/null
   return 0
@@ -294,7 +314,13 @@ _go_autobuild_record_rev() {  # $1=src_dir
   rel=${src_dir#$top/}
   [[ "$rel" == "$src_dir" ]] && rel=""   # src_dir が repo のルートそのもの
   rev=$(command git -C "$src_dir" rev-parse "HEAD:$rel" 2>/dev/null) || return 0
-  command git -C "$src_dir" diff --quiet HEAD -- . 2>/dev/null || rev+=" +dirty"
+  # ⚠️ diff でなく status で見る。diff は追跡対象しか比較しないので、まだ git add していない
+  # 新規 .go を見落とす。それは go build の入力に入る (= その版はコミットに存在しないコードで
+  # 動いている) ので、記録が clean を名乗ると診断が嘘になる (自己レビューで検出 2026-08-02)。
+  # ⚠️ 対象を指紋と同じ入力集合に絞る。ディレクトリ全体を見ると、成果物や作業ファイルを
+  # .gitignore していない repo で常に +dirty になり、記録が何も言わなくなる。
+  [[ -n "$(command git -C "$src_dir" status --porcelain -- '*.go' go.mod go.sum 2>/dev/null)" ]] \
+    && rev+=" +dirty"
   print -r -- "$rev" >| "$src_dir/.autobuild.rev" 2>/dev/null
   return 0
 }
