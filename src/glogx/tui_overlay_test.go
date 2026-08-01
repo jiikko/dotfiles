@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"glogx/issues"
+	"glogx/usage"
 )
 
 func TestBrowseCopyURL(t *testing.T) {
@@ -855,11 +856,23 @@ func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
 	if m.actModal.updating {
 		t.Fatal("viewer 表示中の C が update を起動した")
 	}
-	// U (usage) も素通りしない。全画面 viewer の下では描かれないのに取得だけ走り、
-	// 閉じたあとに突然 usage が出てくる = 見えない層へ状態を書く経路だった
+	// ⚠️ U (usage) だけは素通りではなく viewer の上でも効く (ユーザー要望 2026-08-01)。
+	// 以前は「全画面 viewer の下では描かれないのに取得だけ走る」ため弾いていたので、
+	// 開けるようにした今は「本当に画面へ出ること」まで見る (出ないなら弾いていた頃と同じ、
+	// 見えない層へ状態を書く経路に戻る)。
+	m.usageOv.snap = &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 42}}}
+	m.usageOv.visible = false
 	m.handleKey("U")
+	if !m.usageOv.visible {
+		t.Fatal("viewer 表示中の U で usage が開かない")
+	}
+	if out := stripANSI(m.View().Content); !strings.Contains(out, "5h") {
+		t.Fatalf("usage が viewer の窓へ合成されていない:\n%s", out)
+	}
+	// 一覧と同じ語彙: 次のキーで引っ込む
+	m.handleKey("j")
 	if m.usageOv.visible {
-		t.Fatal("viewer 表示中の U が (描かれない) usage オーバーレイを開いた")
+		t.Fatal("viewer 表示中の他キーで usage が引っ込まない")
 	}
 	m.handleKey("i") // トグルで閉じる
 	if m.issuesOv.visible() {

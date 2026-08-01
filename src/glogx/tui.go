@@ -1056,11 +1056,16 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// 裸の b / u (push / pull) より後ろに置くと、一覧を見ている最中の u が
 	// git pull --rebase の確認を開く footgun になる (U の判定順と同じ事故の型)。
 	//
-	// ⚠️ 下の U (usage) より前に置く: viewer は全画面で viewLines が早期 return するため、
-	// viewer 表示中に usage を開いても描かれない。それでも取得 (subprocess) は走り、閉じた
-	// あとに突然 usage が出てくる = 見えない層へ状態を書く経路になっていた。actModal
-	// (push/pull 確認・実行中ガード) と tmux prefix より後ろに置くのは維持する。
+	// ⚠️ actModal (push/pull 確認・実行中ガード) と tmux prefix より後ろに置くのは維持する。
+	// U (usage) はこの分岐の中で受ける: 以前は「viewer が全画面で描かれないのに取得だけ走る」
+	// ため弾いていたが、viewLines が viewer の窓へ usage を合成するようになったので開けてよい。
 	if m.issuesOv.visible() {
+		// U は viewer の上でも効く (ユーザー要望 2026-08-01)。viewLines が usage を viewer の窓へ
+		// 合成するので「取得だけ走って画面に出ない」問題は起きない (トーストと同じ経路)。
+		if key == "U" {
+			return m, m.toggleUsage()
+		}
+		m.usageOv.dismiss() // 他のキーで引っ込むのは一覧と同じ語彙 (U で出し、次のキーで消える)
 		cmd := m.issuesOv.handleKey(key, m.pageSize())
 		// viewer の操作結果 (コピー・URL 起動・読み込み失敗) は glogx 共通の右下トーストで出す
 		// (ユーザー要望 2026-07-31)。viewer が全画面でトーストが隠れていた時代はヘッダー行に
@@ -1080,17 +1085,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// U は明示トグル (取得中なら spinner を回し直す)。それ以外のナビゲーションキーは「起動時
 	// グランス」を引っ込める副作用だけ持たせ、キー本来の動作は下の dispatch/switch で続行する。
 	if key == "U" {
-		m.usageOv.toggle()
-		if m.usageOv.visible {
-			// 非表示中は定期リフレッシュを止めているので、再表示のここで陳腐なら取り直す。
-			// 表示は last-good を出したまま静かに差し替わる (snap があれば loading() は false
-			// のままでスピナーに落ちない = 開いた瞬間に数字が消えない)。
-			if m.usageOv.stale() {
-				return m, tea.Batch(m.usageOv.fetchCmd(false), m.maybeTick())
-			}
-			return m, m.maybeTick()
-		}
-		return m, nil
+		return m, m.toggleUsage()
 	}
 	m.usageOv.dismiss()
 	// diff ポップアップ表示中はスクロール/閉じる操作だけを受ける (最前面のモーダル)
@@ -1526,6 +1521,23 @@ func (m *browseModel) quit() (tea.Model, tea.Cmd) {
 	}
 	m.done = true
 	return m, tea.Quit
+}
+
+// toggleUsage は usage オーバーレイの開閉 (U)。コミット一覧と issues viewer の両方から呼ぶ
+// (どちらの画面でも同じ意味にする。viewer 側の合成は viewLines)。
+//
+// 非表示中は定期リフレッシュを止めているので、再表示のここで陳腐なら取り直す。表示は last-good
+// を出したまま静かに差し替わる (snap があれば loading() は false のままでスピナーに落ちない =
+// 開いた瞬間に数字が消えない)。
+func (m *browseModel) toggleUsage() tea.Cmd {
+	m.usageOv.toggle()
+	if !m.usageOv.visible {
+		return nil
+	}
+	if m.usageOv.stale() {
+		return tea.Batch(m.usageOv.fetchCmd(false), m.maybeTick())
+	}
+	return m.maybeTick()
 }
 
 // rememberIssuesScreen は「issues viewer を出したまま終了したら次の起動で復元する」ための
@@ -2397,6 +2409,11 @@ func (m *browseModel) viewLines() string {
 	// (ユーザー要望 2026-07-31)。載せないと viewer 中の通知が画面に一切出ない。
 	if m.issuesOv.visible() {
 		window := m.issuesOv.lines(m.issuesOpts())
+		// usage も viewer の上に重ねる (U で開ける契約。合成しないと「取得だけ走って画面に
+		// 出ない」= 見えない層へ状態を書く経路に戻る)。前面順は一覧側と同じで usage → トースト
+		if box := m.usageOv.boxLines(m.contentWidth(), m.colored, m.spinner()); len(box) > 0 {
+			window = overlayBoxTopRight(window, box, m.contentWidth(), m.colored)
+		}
 		if box := m.toast.boxLines(m.colored, max(page/2, toastBoxLines)); len(box) > 0 {
 			window = overlayBoxBottomRight(window, box, m.contentWidth(), m.colored)
 		}
