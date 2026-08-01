@@ -175,7 +175,7 @@ func (v *issuesView) screen(now time.Time) (issuesScreen, bool) {
 		Root:    v.root,
 		SavedAt: now,
 		Tab:     v.currentTab(),
-		Filter:  uint8(v.filter),
+		Filter:  v.filter.String(),
 		Cursor:  issuePath(v.current()),
 		Open:    open,
 		BodyOff: v.bodyOff,
@@ -187,8 +187,8 @@ func (v *issuesView) screen(now time.Time) (issuesScreen, bool) {
 // 消えた issue (rename / 状態ディレクトリへ移動) には黙って別物を当てない: カーソルは
 // anchorCursor が当たらなければ先頭のまま、本文はパスが見つからなければ一覧のままにする。
 func (v *issuesView) applyScreen(s issuesScreen) {
-	v.filter = issues.StatusFilter(s.Filter)
-	v.refresh() // フィルタを反映してタブの並びと件数を作る (tabIdx を引くのに要る)
+	v.filter, _ = issues.ParseStatusFilter(s.Filter) // 未知の名前は既定へ (loadIssuesScreen で正規化済み)
+	v.refresh()                                      // フィルタを反映してタブの並びと件数を作る (tabIdx を引くのに要る)
 	v.tabIdx = tabIndexOf(v.tabs, s.Tab)
 	v.refresh() // 選んだタブで行集合を作り直す
 	// 窓 (offset) はここで動かさない: 描画が windowOffset でカーソルを含む位置へ収束させる
@@ -285,13 +285,14 @@ func (v *issuesView) receive(msg issuesScanMsg) {
 	// 次の編集が来るまで永久に取りこぼす。自分の取り直しを「外部の変化」と誤検出しないのも同じ式で
 	// 満たせる (スキャンは内容を変えないので指紋は動かない)。
 	v.watch.seen, v.watch.pending = msg.fp, ""
-	tab, cursorPath, openPath := v.currentTab(), issuePath(v.current()), issuePath(v.open)
+	tab, cursorPath, openPath, markPath := v.currentTab(), issuePath(v.current()), issuePath(v.open), v.markPath()
 	v.root, v.dirs, v.all, v.warnings = msg.root, msg.dirs, msg.issues, msg.warnings
 	v.tabsCanon = issues.Tabs(v.all, issues.TabMinCount)
 	v.tabs = v.tabsCanon // refresh が件数を数えて表示順 (0 件を右) へ並べ替える
 	v.tabIdx = tabIndexOf(v.tabs, tab)
 	v.refresh()
 	v.anchorCursor(cursorPath)
+	v.anchorMark(markPath)
 	v.rebindOpen(openPath)
 	v.startWatch() // 監視対象のディレクトリはスキャン結果で決まる (issues_watch.go)
 	if v.pending != nil {
@@ -332,6 +333,35 @@ func (v *issuesView) anchorCursor(path string) {
 	for i, iss := range v.rows {
 		if iss.Path == path {
 			v.cursor = i
+			return
+		}
+	}
+}
+
+// markPath は選択の錨が指す issue のパス ("" = 選択していない / 錨が範囲外)。
+func (v *issuesView) markPath() string {
+	if !v.marked || v.markAt < 0 || v.markAt >= len(v.rows) {
+		return ""
+	}
+	return v.rows[v.markAt].Path
+}
+
+// anchorMark は再スキャン前と同じ issue へ選択の錨を張り替える (消えていれば選択したままにしない)。
+//
+// このビューは「位置で持つものは安定キーで張り替える」で揃えている (カーソル=パス・タブ=名前・
+// 本文=パス)。選択の錨だけがその規律から外れており、行集合を作り直す refresh が畳んでいた。
+// 外部編集の即時反映 (issues_watch.go) が入ってからは、選択している最中に取り直しが走るのが
+// 普通になった (Claude Code が issue を書くたび) ため、畳むと選択が実用にならない。
+//
+// ⚠️ 張り替えるのは再スキャン (同じ集合の読み直し) だけ。タブ・フィルタの切り替えでは refresh が
+// 畳んだままにする — あちらは行集合の意味そのものが変わるので、範囲を持ち越すと別の対象を指す。
+func (v *issuesView) anchorMark(path string) {
+	if path == "" {
+		return
+	}
+	for i, iss := range v.rows {
+		if iss.Path == path {
+			v.marked, v.markAt = true, i
 			return
 		}
 	}
@@ -611,6 +641,10 @@ func (v *issuesView) actionKey(key string) (tea.Cmd, bool) {
 }
 
 // visibleRows は page 行のうちリスト/本文に使える行数 (ヘッダーを差し引く)。
+//
+// ⚠️ 幅 0 で数えられるのは「ヘッダーの行数が幅に依らない」から (headLines の契約)。キー処理は
+// 描画幅を知らないので、幅で行数が変わるヘッダーを足すとキー側と描画側で page 分割が食い違い、
+// 半ページ移動の距離やカーソルと窓の関係が静かにずれる。契約は headLines のテストで固定してある。
 func (v *issuesView) visibleRows(page int) int { return max(page-len(v.headLines(0, false)), 1) }
 
 // handleBodyKey は本文 pager のキー操作 (diffOverlay と同じ語彙)。
@@ -1000,6 +1034,12 @@ func easeOutCubicFloat(p float64) float64 {
 // headLines は現在のモードのヘッダー行 (一覧ならタブ行 + 通知、本文ならパス + 状態)。
 // キー操作側 (visibleRows) と描画側で同じ関数を通すことで行数のずれを防ぐ。width=0 は
 // 行数だけが必要な呼び出し (中身は使われない)。
+// headLines はモードに応じたヘッダー行。
+//
+// ⚠️ 返す行数は width に依らないこと (幅で折り返さず clipToWidth で切る)。キー処理は描画幅を
+// 知らないまま幅 0 で数えている (visibleRows) ため、幅で行数が変わるヘッダーを足すと page の
+// 分割がキー側と描画側で食い違う。折り返したいヘッダーが要るなら、まず visibleRows へ幅を
+// 通す経路を作ること (handleKey のシグネチャまで届く変更になる)。
 func (v *issuesView) headLines(width int, colored bool) []string {
 	if v.open != nil {
 		return v.bodyHeadLines(width, colored)

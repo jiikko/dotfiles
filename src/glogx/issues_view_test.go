@@ -1355,3 +1355,66 @@ func TestIssuesViewURLPickerResetsOnNewIssue(t *testing.T) {
 		t.Errorf("別の issue へ状態が持ち越された: active=%v query=%q", v.urlPick.active, v.urlPick.query)
 	}
 }
+
+// ヘッダーの行数は幅に依らない (visibleRows が幅 0 で数えている前提)。
+//
+// 破ると、キー処理が使う行数と描画が使う行数が食い違い、半ページ移動の距離やカーソルと窓の
+// 関係が静かにずれる。「幅で折り返すヘッダーを足した」ときにここで気づけるようにする。
+func TestIssuesHeadLinesCountIsWidthIndependent(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		build func() *issuesView
+	}{
+		{"一覧", func() *issuesView { return loadedView(sampleIssues()...) }},
+		{"一覧 + 警告", func() *issuesView {
+			v := loadedView(sampleIssues()...)
+			v.warnings = []string{strings.Repeat("同名ファイルが複数あります ", 12)}
+			return v
+		}},
+		{"本文", func() *issuesView {
+			v := loadedView(sampleIssues()...)
+			v.handleKey("enter", 20)
+			return v
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			v := c.build()
+			want := len(v.headLines(0, false))
+			for _, w := range []int{1, 8, 40, 84, 200} {
+				if got := len(v.headLines(w, false)); got != want {
+					t.Fatalf("幅 %d で行数が変わった: want %d got %d", w, want, got)
+				}
+			}
+		})
+	}
+}
+
+// 再スキャンをまたいで選択を保つ (錨をパスで張り替える)。
+//
+// 外部編集の即時反映が入って、選択している最中に取り直しが走るのが普通になった。畳むと
+// Claude Code が issue を書くたびに選択が消えて実用にならない。
+func TestIssuesViewKeepsSelectionAcrossRescan(t *testing.T) {
+	v := loadedView(sampleIssues()...)
+	v.handleKey("a", 20) // pending も出して行を増やす
+	v.handleKey("J", 20) // 2 行選択 (錨 = 先頭行)
+	lo, hi, ok := v.selection()
+	if !ok || hi-lo != 1 {
+		t.Fatalf("前提が崩れた: lo=%d hi=%d ok=%v", lo, hi, ok)
+	}
+	anchor, head := v.rows[lo].Path, v.rows[hi].Path
+
+	v.receive(issuesScanMsg{dirs: []string{"/repo/issues"}, issues: sampleIssues()})
+
+	lo2, hi2, ok2 := v.selection()
+	if !ok2 {
+		t.Fatal("再スキャンで選択が消えた")
+	}
+	if v.rows[lo2].Path != anchor || v.rows[hi2].Path != head {
+		t.Fatalf("選択が別の issue を指した: %q..%q", v.rows[lo2].Path, v.rows[hi2].Path)
+	}
+	// タブ・フィルタの切り替えは行集合の意味が変わるので畳んだまま
+	v.handleKey("tab", 20)
+	if _, _, ok := v.selection(); ok {
+		t.Error("タブ切り替えで選択が残った (別の行集合へ範囲を持ち越している)")
+	}
+}

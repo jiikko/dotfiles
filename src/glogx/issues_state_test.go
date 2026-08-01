@@ -15,7 +15,7 @@ func TestIssuesScreenRoundTrip(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	now := time.Unix(1000, 0)
 	want := issuesScreen{
-		Root: "/repo", SavedAt: now, Tab: "refactor", Filter: uint8(issues.FilterPending),
+		Root: "/repo", SavedAt: now, Tab: "refactor", Filter: issues.FilterPending.String(),
 		Cursor: "/repo/issues/028-refactor-c.md", Open: "/repo/issues/029-feat-b.md", BodyOff: 12,
 	}
 	if err := saveIssuesScreen(want); err != nil {
@@ -28,6 +28,20 @@ func TestIssuesScreenRoundTrip(t *testing.T) {
 	if got.Root != want.Root || got.Tab != want.Tab || got.Filter != want.Filter ||
 		got.Cursor != want.Cursor || got.Open != want.Open || got.BodyOff != want.BodyOff {
 		t.Fatalf("往復で内容が変わった:\n got=%+v\nwant=%+v", got, want)
+	}
+	// ⚠️ 段階は名前で保存する。序数に戻すと、段階を増減・並べ替えた瞬間に保存済みの画面が
+	// 黙って別の段階で復元される (issues.StatusFilter.String の注記)。往復テストだけでは
+	// 同じコードが書いて読むので気づけないため、ファイルの中身を直接見る。
+	path, err := issuesStatePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"filter":"pending"`) {
+		t.Fatalf("段階が名前で保存されていない: %s", data)
 	}
 }
 
@@ -86,15 +100,15 @@ func TestIssuesScreenIgnoresStaleAndBroken(t *testing.T) {
 func TestIssuesScreenClampsBrokenFilter(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	now := time.Unix(1000, 0)
-	if err := saveIssuesScreen(issuesScreen{Root: "/repo", SavedAt: now, Filter: 99, BodyOff: -5}); err != nil {
+	if err := saveIssuesScreen(issuesScreen{Root: "/repo", SavedAt: now, Filter: "そんな段階はない", BodyOff: -5}); err != nil {
 		t.Fatal(err)
 	}
 	got, ok := loadIssuesScreen(now)
 	if !ok {
 		t.Fatal("読めない")
 	}
-	if issues.StatusFilter(got.Filter) != issues.FilterOpen || got.BodyOff != 0 {
-		t.Fatalf("壊れた値が正規化されていない: filter=%d bodyOff=%d", got.Filter, got.BodyOff)
+	if got.Filter != issues.FilterOpen.String() || got.BodyOff != 0 {
+		t.Fatalf("壊れた値が正規化されていない: filter=%q bodyOff=%d", got.Filter, got.BodyOff)
 	}
 }
 
@@ -166,7 +180,7 @@ func TestIssuesViewRestoreAppliesScreen(t *testing.T) {
 
 	v := newIssuesView()
 	cmd := v.restore(dir, issuesScreen{
-		Root: dir, SavedAt: timeNow(), Tab: "feat", Filter: uint8(issues.FilterAll),
+		Root: dir, SavedAt: timeNow(), Tab: "feat", Filter: issues.FilterAll.String(),
 		Cursor: target.Path, Open: target.Path, BodyOff: 7,
 	})
 	if cmd == nil || !v.visible() {

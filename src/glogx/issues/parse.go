@@ -539,6 +539,35 @@ const (
 	FilterAll                         // + done (= すべて)
 )
 
+// String は保存・表示に使う名前。
+//
+// ⚠️ 段階を永続化するときは値 (iota の序数) でなくこの名前を使うこと。序数で保存すると、段階を
+// 増やす・並べ替えるだけで保存済みの値が黙って別の段階を指す (「開き直したら伏せていたはずの
+// done が出ている」形で現れ、原因が保存形式だと気づけない)。名前なら未知の段階は既定へ倒せる。
+func (f StatusFilter) String() string {
+	switch f {
+	case FilterOpen:
+		return "open"
+	case FilterPending:
+		return "pending"
+	case FilterAll:
+		return "all"
+	}
+	return "open" // 範囲外 (外部ファイル由来) は既定へ倒す
+}
+
+// ParseStatusFilter は名前から段階を引く。未知の名前は既定 (open のみ) + ok=false。
+//
+// 見えすぎるより見えなさすぎる方を選ぶ: a を 1 打すれば広げられるので、伏せ過ぎは回復できる。
+func ParseStatusFilter(name string) (StatusFilter, bool) {
+	for _, f := range []StatusFilter{FilterOpen, FilterPending, FilterAll} {
+		if f.String() == name {
+			return f, true
+		}
+	}
+	return FilterOpen, false
+}
+
 // Next は巡回の次の段階 (FilterAll の次は FilterOpen へ戻る)。
 func (f StatusFilter) Next() StatusFilter {
 	if f >= FilterAll {

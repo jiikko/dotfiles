@@ -37,10 +37,12 @@ type issuesScreen struct {
 	Root    string    `json:"root"`     // スキャンの起点 (別 repo の画面を復元しないための照合キー)
 	SavedAt time.Time `json:"saved_at"` // TTL 判定
 	Tab     string    `json:"tab"`      // カテゴリタブ名 ("" = All)
-	Filter  uint8     `json:"filter"`   // issues.StatusFilter
-	Cursor  string    `json:"cursor"`   // 一覧のカーソル行の issue パス
-	Open    string    `json:"open"`     // 本文を開いていた issue のパス ("" = 一覧のみ)
-	BodyOff int       `json:"body_off"` // 本文のスクロール位置
+	// Filter は表示段階の名前 ("open" / "pending" / "all")。⚠️ 序数で持たないこと: 段階を増減・
+	// 並べ替えると保存済みの値が別の段階を指す (issues.StatusFilter.String の注記)。
+	Filter  string `json:"filter"`
+	Cursor  string `json:"cursor"`   // 一覧のカーソル行の issue パス
+	Open    string `json:"open"`     // 本文を開いていた issue のパス ("" = 一覧のみ)
+	BodyOff int    `json:"body_off"` // 本文のスクロール位置
 }
 
 // issuesStatePath は保存先 ($XDG_CACHE_HOME/glog/issues-last-screen.json)。
@@ -97,10 +99,10 @@ func loadIssuesScreen(now time.Time) (issuesScreen, bool) {
 	if s.Root == "" || now.Sub(s.SavedAt) >= issuesStateTTL || s.SavedAt.After(now) {
 		return issuesScreen{}, false // 期限切れ / 未来の時刻 (時計のずれ) は使わない
 	}
-	// 外部ファイル由来の値はここで正規化する。壊れた段階値は「open のみ」に倒す
+	// 外部ファイル由来の値はここで正規化する。知らない段階名は「open のみ」に倒す
 	// (見えすぎるより見えなさすぎる方が、a を押せば戻せるぶん安全)
-	if issues.StatusFilter(s.Filter) > issues.FilterAll {
-		s.Filter = uint8(issues.FilterOpen)
+	if f, ok := issues.ParseStatusFilter(s.Filter); !ok {
+		s.Filter = f.String()
 	}
 	if s.BodyOff < 0 {
 		s.BodyOff = 0
