@@ -14,8 +14,22 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT="$ROOT_DIR/scripts/tmux_log_kill_command.sh"
 TMP_DIR="$(mktemp -d)"
 HELPER_PIDS=()
+# stop_helper は補助プロセスとその子を落とす。後始末は 1 箇所に閉じ込める。
+#
+# ⚠️ どの kill も失敗を握り潰すこと (set -e で走っている)。子 (sh 配下の sleep) を落とすと親の
+#    `sh -c 'sleep 300; :'` は : を実行して自分から終了し、bash に刈り取られる。その後の
+#    `kill $parent` は ESRCH で非 0 になり、set -e が「アサートは全部通ったのに何も出さずに
+#    失敗する」テストを作る (CI で実測 2026-08-01。負荷の高い runner ほど親が先に消えて踏む)。
+# ⚠️ 親だけでなく子も落とすこと。親だけ殺すと sleep が ppid=1 の孤児として 5 分残り、
+#    テスト実行ごとに 1 個ずつ蓄積する。
+stop_helper() {
+  local pid="$1" child
+  for child in $(pgrep -P "$pid" 2>/dev/null); do kill "$child" 2>/dev/null || true; done
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
 cleanup() {
-  for p in "${HELPER_PIDS[@]:-}"; do kill "$p" 2>/dev/null || true; done
+  for p in "${HELPER_PIDS[@]:-}"; do stop_helper "$p"; done
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
@@ -149,10 +163,7 @@ grep -q "^ *$FULLPATH_PID $FAKE_TMUX_PATH " <<<"$PS_SNAPSHOT" \
 TT_TRIGGER_LOG="$LOG" TT_KILL_SAVE_WAIT_SECONDS=2 STUB_SOCKET_PATH="$DEFAULT_SOCK" \
   STUB_SESSIONS='a: 1 windows\nb: 1 windows\n' STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run "$STUB_PATH" "$SCRIPT" kill-server
-# 子プロセス (sh 配下の sleep) も落とす。親だけ殺すと sleep が ppid=1 の孤児として 5 分残り、
-# テスト実行ごとに 1 個ずつ蓄積する (レビュー指摘 2026-07-30)
-for child in $(pgrep -P "$FULLPATH_PID" 2>/dev/null); do kill "$child" 2>/dev/null || true; done
-kill "$FULLPATH_PID" 2>/dev/null; wait "$FULLPATH_PID" 2>/dev/null || true
+stop_helper "$FULLPATH_PID"
 if grep -q "issuer=not-found" "$LOG"; then
   printf '✗ フルパス起動の発行元を取り逃した (issuer=not-found):\n'; cat "$LOG"; exit 1
 fi
@@ -171,8 +182,7 @@ sleep 0.3
 TT_TRIGGER_LOG="$LOG" STUB_SOCKET_PATH="$DEFAULT_SOCK" \
   STUB_SESSIONS='a: 1 windows\nb: 1 windows\n' STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run "$STUB_PATH" "$SCRIPT" kill-session
-for child in $(pgrep -P "$ABBREV_PID" 2>/dev/null); do kill "$child" 2>/dev/null || true; done
-kill "$ABBREV_PID" 2>/dev/null; wait "$ABBREV_PID" 2>/dev/null || true
+stop_helper "$ABBREV_PID"
 grep -q "issuer=${ABBREV_PID}:" "$LOG" \
   || { printf '✗ 略記 subcommand (kill-sessio) の発行元を取り逃した:\n'; cat "$LOG"; exit 1; }
 printf '✓ 略記 subcommand (kill-sessio) の発行元も捕まえる\n'
