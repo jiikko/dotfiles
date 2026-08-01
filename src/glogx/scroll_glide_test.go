@@ -187,7 +187,7 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 	})
 
 	t.Run("issues 本文 pager (Space)", func(t *testing.T) {
-		v := newIssuesView()
+		v := newTestIssuesView()
 		v.bodyOff = 0
 		v.body = nil
 		// body が nil でも maxOffset=0 になり動かないため、offset を直接動かす経路で検証する
@@ -209,7 +209,7 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 
 	t.Run("advanceGlide が本文 pager を進める", func(t *testing.T) {
 		// ⚠️ 一覧は glide を持たない (幾何的にアニメしないため削除。issue 031)
-		v := newIssuesView()
+		v := newTestIssuesView()
 		v.bodyOff = 10
 		v.bodyGlide.start(0, 10)
 		for range scrollAnimFrames {
@@ -277,7 +277,7 @@ func TestResizeStopsAllGlides(t *testing.T) {
 // offset を同時に動かすので、窓の導出を素朴に書き換えると「カーソル行が 1 本も描かれない =
 // 見えない行が Enter・v・y の対象になる」窓が復活する (敵対的レビュー P2 の回帰)。
 func TestIssuesListWindowAlwaysKeepsCursorVisible(t *testing.T) {
-	v := newIssuesView()
+	v := newTestIssuesView()
 	v.shown, v.loaded = true, true
 	all := make([]*issues.Issue, 60)
 	for i := range all {
@@ -301,7 +301,7 @@ func TestIssuesListWindowAlwaysKeepsCursorVisible(t *testing.T) {
 
 // 閉じたら本文の glide を残さない (再表示の一瞬だけ古い位置から滑るのを防ぐ)。
 func TestIssuesCloseStopsBodyGlide(t *testing.T) {
-	v := newIssuesView()
+	v := newTestIssuesView()
 	v.shown = true
 	v.bodyGlide.start(0, 10)
 	v.close()
@@ -353,7 +353,7 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 	})
 
 	t.Run("issues 一覧 (handleKey 経由)", func(t *testing.T) {
-		v := newIssuesView()
+		v := newTestIssuesView()
 		v.shown, v.loaded = true, true
 		all := make([]*issues.Issue, 60)
 		for i := range all {
@@ -372,7 +372,7 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 	})
 
 	t.Run("issues 本文 pager", func(t *testing.T) {
-		v := newIssuesView()
+		v := newTestIssuesView()
 		// handleBodyKey は body 前提 (本番でも open と同時にセットされる)。行数を稼ぐため
 		// 長めの本文を与える。
 		var src strings.Builder

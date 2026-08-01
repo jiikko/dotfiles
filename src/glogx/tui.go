@@ -593,6 +593,10 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.done = true
 			return m, tea.Quit
 		}
+		// issues viewer の閉じる演出が着地したらここで畳む。⚠️ 下の spinnerActive の早期 return
+		// より前に置く: animating() は closing のあいだ true を返し続け、この settleClose が
+		// 下ろして初めて false になる。後ろに置くと最後の 1 拍が届かず閉じかけの姿で固まる。
+		m.issuesOv.settleClose()
 		if !m.spinnerActive() {
 			return m, nil // アニメ対象なし: 再アームせずチェーンを終わらせる
 		}
@@ -1020,6 +1024,11 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.done = true
 		return m, tea.Quit
 	}
+	// issues viewer の閉じる演出中に来たキーも即着地させる。⚠️ ただしキーは飲み込まず、
+	// 畳んだあとの状態で通常どおり処理する: 飲むと「q で閉じた直後の q が効かない」時間が
+	// できる (アプリの終了演出はキーを飲んでも終わるだけなので失うものが無いが、こちらは違う)。
+	// i ならこのあと下の分岐で開き直しになる = 逆再生の途中で開き直せる。
+	m.issuesOv.finishClose()
 	if key == "ctrl+c" || key == "ctrl+g" {
 		switch {
 		case m.actModal.updating:

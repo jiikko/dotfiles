@@ -99,7 +99,19 @@ type issuesView struct {
 	// 開くときのスライドイン演出の開始時刻 (ゼロ値 = 演出なし)。フレーム数ではなく壁時計で
 	// 進めるのは、tick 周期が変わっても所要時間が変わらないようにするため (push 演出の
 	// pushSlides と同じ方式)。演出中は tick を scrollInterval (~30fps) に上げる。
+	// 閉じる演出 (closing) でも同じ時計を使う — 開く演出の逆再生なので所要も同じ。
 	animStart time.Time
+	// closing は閉じる演出 (開く演出の逆再生) の途中か (ユーザー要望 2026-08-01)。
+	//
+	// ⚠️ 演出のあいだ shown を false にしない: 逆再生で画面が見えている必要がある。実際の
+	// 片付け (本文の破棄・watcher の停止) は finishClose に一本化する。片付けを二箇所に書くと、
+	// 演出の着地とキーによる即着地のどちらかが stopWatch を通らず watcher が二重に走る。
+	closing bool
+	// closeAnimOff は閉じる演出を出さない (テスト用)。⚠️ zero value = 演出あり: 本番の既定を
+	// 「演出する」に置く。テストは「close したら即座に畳まれている」前提で書かれており、演出を
+	// 挟むと全てが 1 拍待ちになって読めなくなる (アプリ開閉演出の appZoom.off と同じ作法)。
+	// 演出そのものは issues_close_anim_test.go が明示的に on にして検査する。
+	closeAnimOff bool
 
 	// watch は開いている間だけ回す「別プロセスの編集」の見張り (issues_watch.go)。
 	watch issuesWatch
@@ -133,7 +145,9 @@ func (v *issuesView) loading() bool { return v.scanning }
 // 実際に 37 件発生している事故)。スキャンは非同期かつ実測 2.5〜13.6ms なので、開くたびに
 // 取り直しても体感は変わらない: 取得中も前回の結果を出したまま差し替わる (emptyMessage)。
 func (v *issuesView) toggle(cwd string) tea.Cmd {
-	if v.shown {
+	if v.closing {
+		v.finishClose() // 閉じる演出の途中の i は「閉じ切ってから開き直す」(watcher を二重に張らない)
+	} else if v.shown {
 		v.close()
 		return nil
 	}
@@ -168,7 +182,9 @@ func (v *issuesView) restore(cwd string, s issuesScreen) tea.Cmd {
 // (呼び出し側はそのとき記憶を消す)。スキャン前 (root 未確定) も覚えない: 照合キーが無い記憶は
 // 復元時に別 repo で当たってしまう。
 func (v *issuesView) screen(now time.Time) (issuesScreen, bool) {
-	if !v.shown || v.root == "" {
+	// ⚠️ 閉じる演出の途中 = ユーザーは既に閉じている。shown はまだ true だが覚えない
+	// (覚えると「q で閉じてすぐ終了した」次の起動で、閉じたはずの viewer が蘇る)。
+	if !v.shown || v.closing || v.root == "" {
 		return issuesScreen{}, false
 	}
 	open := issuePath(v.open)
@@ -214,15 +230,53 @@ func (v *issuesView) applyScreen(s issuesScreen) {
 }
 
 // close は viewer を閉じる (スキャン結果は保持する。再表示は前回の結果を出しながら取り直す)。
+//
+// 閉じる演出 (開く演出の逆再生) を挟んでから片付ける (ユーザー要望 2026-08-01)。ここで画面を
+// 落とさないのは、逆再生のあいだ一覧が見えている必要があるため (引き出しの startClose と同じ)。
 func (v *issuesView) close() {
+	if !v.shown || v.closing {
+		return
+	}
+	v.closing = true
+	v.animStart = timeNow()
+	if v.closeAnimOff {
+		v.finishClose() // 演出なしの設定では同じ出口を即座に通す (片付けの経路を分けない)
+	}
+}
+
+// settleClose は閉じる演出が着地していれば片付ける (browseModel の tick から毎拍呼ばれる)。
+func (v *issuesView) settleClose() {
+	if !v.closing || timeNow().Sub(v.animStart) < issuesAnimDuration {
+		return
+	}
+	v.finishClose()
+}
+
+// finishClose は閉じる演出を即座に着地させて片付ける。閉じていなければ何もしない。
+//
+// ⚠️ viewer を畳む唯一の出口にする。演出の着地 (settleClose) とキーによる即着地の両方が
+// ここを通ることで、片方が stopWatch を通らずに次の watchCmd が走る = watcher が二重に居座る、
+// という取りこぼしが構造的に起きない。
+func (v *issuesView) finishClose() {
+	if !v.closing {
+		return
+	}
+	v.closing = false
 	v.shown = false
 	v.animStart = time.Time{}
 	v.discardBody() // viewer ごと閉じるので引き出しの演出は持ち越さない
 	v.stopWatch()   // 見張りの watcher を閉じる (fd を残さない。issues_watch.go)
 }
 
-// finishAnim は開く演出を即座に着地させる。
-func (v *issuesView) finishAnim() { v.animStart = time.Time{} }
+// finishAnim は演出を即座に着地させる。閉じる演出のときは片付けまで進める
+// (ここで時計だけ止めると、閉じかけの姿のまま二度と畳まれない状態で固まる)。
+func (v *issuesView) finishAnim() {
+	if v.closing {
+		v.finishClose()
+		return
+	}
+	v.animStart = time.Time{}
+}
 
 // animating は開く演出の途中か (tick を高 FPS に上げ、チェーンを回し続ける判定に使う)。
 func (v *issuesView) animating() bool {
@@ -231,6 +285,12 @@ func (v *issuesView) animating() bool {
 	}
 	if v.drawer.animating(timeNow()) {
 		return true // 本文の引き出しの開閉も tick で進む
+	}
+	// ⚠️ 閉じる演出は「時間が過ぎたら false」にしない: tick は animating が false になった拍で
+	// 止まるので、時間で降ろすと片付けの settleClose が呼ばれる前にチェーンが切れ、閉じかけの姿で
+	// 固まる。settleClose が closing を下ろして初めて false になる (自分で終われる形にする)。
+	if v.closing {
+		return true
 	}
 	return v.shown && !v.animStart.IsZero() && timeNow().Sub(v.animStart) < issuesAnimDuration
 }
@@ -1062,7 +1122,13 @@ func (v *issuesView) lines(o issuesRenderOpts) []string {
 }
 
 // animProgress は開く演出の進み (0..1)。演出していないときは 1 (= 変形しない)。
+//
+// 閉じるときは進捗を反転するだけ = 開く動きの逆再生にする。別のカーブを使うと「開いた動きと
+// 閉じる動きが違う」ちぐはぐさが出る (引き出し・アプリの開閉演出と同じ規律)。
 func (v *issuesView) animProgress() float64 {
+	if v.closing {
+		return max(1-float64(timeNow().Sub(v.animStart))/float64(issuesAnimDuration), 0)
+	}
 	if !v.animating() {
 		return 1
 	}

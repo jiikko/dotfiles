@@ -139,7 +139,7 @@ func TestQuitRemembersOnlyWhenViewerVisible(t *testing.T) {
 
 // スキャン前 (root 未確定) は覚えない: 照合キーの無い記憶は別 repo で当たってしまう。
 func TestScreenNotSavedBeforeScan(t *testing.T) {
-	v := newIssuesView()
+	v := newTestIssuesView()
 	v.shown = true
 	if _, ok := v.screen(timeNow()); ok {
 		t.Fatal("スキャン前の viewer を覚えてしまった")
@@ -178,7 +178,7 @@ func TestIssuesViewRestoreAppliesScreen(t *testing.T) {
 	other := &issues.Issue{Path: filepath.Join(dir, "028-refactor-c.md"), Dir: dir,
 		Rel: "028-refactor-c.md", Number: "028", Category: "refactor", Slug: "c"}
 
-	v := newIssuesView()
+	v := newTestIssuesView()
 	cmd := v.restore(dir, issuesScreen{
 		Root: dir, SavedAt: timeNow(), Tab: "feat", Filter: issues.FilterAll.String(),
 		Cursor: target.Path, Open: target.Path, BodyOff: 7,
@@ -227,7 +227,7 @@ func TestIssuesViewRestoreMissingIssueFallsBack(t *testing.T) {
 	dir := t.TempDir()
 	alive := &issues.Issue{Path: filepath.Join(dir, "028-refactor-c.md"), Dir: dir,
 		Rel: "028-refactor-c.md", Number: "028", Category: "refactor", Slug: "c"}
-	v := newIssuesView()
+	v := newTestIssuesView()
 	v.restore(dir, issuesScreen{
 		Root: dir, SavedAt: timeNow(), Cursor: filepath.Join(dir, "消えた.md"),
 		Open: filepath.Join(dir, "消えた.md"),

@@ -46,7 +46,7 @@ func fakeIssue(number, category, slug string, st issues.Status) *issues.Issue {
 
 // loadedView は receive 済みの viewer を返す。
 func loadedView(list ...*issues.Issue) *issuesView {
-	v := newIssuesView()
+	v := newTestIssuesView()
 	v.shown = true
 	v.receive(issuesScanMsg{dirs: []string{"/repo/issues"}, issues: list})
 	return &v
@@ -71,7 +71,7 @@ func renderOpts(page int) issuesRenderOpts {
 }
 
 func TestIssuesViewToggleRescansKeepingLastGood(t *testing.T) {
-	v := newIssuesView()
+	v := newTestIssuesView()
 	if cmd := v.toggle("/repo"); cmd == nil {
 		t.Fatal("初回の toggle でスキャンの Cmd が返らない")
 	}
@@ -653,7 +653,7 @@ func TestIssuesViewNextTabSurvivesRestore(t *testing.T) {
 	if !ok || s.Tab != tabNextName {
 		t.Fatalf("[next] の選択が保存されない: %+v ok=%v", s, ok)
 	}
-	v2 := newIssuesView()
+	v2 := newTestIssuesView()
 	v2.restore("/repo", s)
 	v2.receive(issuesScanMsg{dirs: []string{"/repo/issues"},
 		issues: append(sampleIssues(), fakeIssue("040", "feat", "n", issues.StatusNext))})
@@ -1103,7 +1103,7 @@ func TestIssuesViewRescanReturnsCmd(t *testing.T) {
 
 func TestIssuesViewEmptyStates(t *testing.T) {
 	// ディレクトリが 1 つも無い
-	v := newIssuesView()
+	v := newTestIssuesView()
 	v.shown = true
 	v.receive(issuesScanMsg{})
 	if !strings.Contains(strings.Join(v.lines(renderOpts(10)), "\n"), "見つかりません") {
@@ -1123,7 +1123,7 @@ func TestIssuesViewEmptyStates(t *testing.T) {
 }
 
 func TestIssuesViewShowsScanWarning(t *testing.T) {
-	v := newIssuesView()
+	v := newTestIssuesView()
 	v.shown = true
 	v.receive(issuesScanMsg{
 		dirs:     []string{"/repo/issues"},
@@ -1142,7 +1142,7 @@ func TestIssuesViewNoticeIsTransientAndDoesNotHideWarning(t *testing.T) {
 	t.Cleanup(func() { copyToClipboard = orig })
 	copyToClipboard = func(string) error { return nil }
 
-	v := newIssuesView()
+	v := newTestIssuesView()
 	v.shown = true
 	v.receive(issuesScanMsg{
 		dirs:     []string{"/repo/issues"},
@@ -1478,7 +1478,7 @@ func TestIssuesViewURLPicker(t *testing.T) {
 	openInBrowser = func(url string) error { opened = append(opened, url); return nil }
 	t.Cleanup(func() { openInBrowser = orig })
 
-	v := newIssuesView()
+	v := newTestIssuesView()
 	v.shown, v.loaded = true, true
 	v.body = issues.NewBody("A https://example.com/alpha\nB https://example.com/beta\nC https://other.test/gamma\n")
 	v.open = fakeIssue("001", "feat", "a", issues.StatusOpen)
@@ -1526,7 +1526,7 @@ func TestIssuesViewURLPickerSwallowsActionKeys(t *testing.T) {
 	runEditorCmd = func(*exec.Cmd) tea.Cmd { editorCalled = true; return nil }
 	t.Cleanup(func() { runEditorCmd = origEd })
 
-	v := newIssuesView()
+	v := newTestIssuesView()
 	v.shown, v.loaded = true, true
 	v.body = issues.NewBody("https://example.com/very-vivid\nhttps://example.com/plain\n")
 	v.open = fakeIssue("001", "feat", "a", issues.StatusOpen)
@@ -1544,7 +1544,7 @@ func TestIssuesViewURLPickerSwallowsActionKeys(t *testing.T) {
 }
 
 func TestIssuesViewURLPickerNone(t *testing.T) {
-	v := newIssuesView()
+	v := newTestIssuesView()
 	v.shown, v.loaded = true, true
 	v.body = issues.NewBody("URL の無い本文\n")
 	v.open = fakeIssue("001", "feat", "a", issues.StatusOpen)
@@ -1686,4 +1686,13 @@ func TestIssuesViewKeepsSelectionAcrossRescan(t *testing.T) {
 	if _, _, ok := v.selection(); ok {
 		t.Error("タブ切り替えで選択が残った (別の行集合へ範囲を持ち越している)")
 	}
+}
+
+// newTestIssuesView は閉じる演出を切った viewer。⚠️ 既存テストは「close したら即座に畳まれて
+// いる」前提で書かれているので、演出を挟むと全て 1 拍待ちになって読めなくなる。演出そのものは
+// issues_close_anim_test.go が明示的に on にして検査する (newTestBrowse の zoom.off と同じ)。
+func newTestIssuesView() issuesView {
+	v := newIssuesView()
+	v.closeAnimOff = true
+	return v
 }

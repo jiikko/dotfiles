@@ -37,7 +37,7 @@ func writeIssue(t *testing.T, path, body string, mtime time.Time) {
 // openedWatchView は「viewer を開いてスキャン結果を受け取り、見張りの基準も取れた」状態を作る。
 func openedWatchView(t *testing.T, root, path string) *issuesView {
 	t.Helper()
-	v := newIssuesView()
+	v := newTestIssuesView()
 	if cmd := v.toggle(root); cmd == nil {
 		t.Fatal("toggle が Cmd を返さない")
 	}
@@ -328,7 +328,7 @@ func TestIssuesViewerWatchWiredIntoUpdate(t *testing.T) {
 // Claude Code のように数秒おきに書くツールでは、取り直し直後の書き込みが普通に起きる。
 func TestIssuesWatchCatchesEditRacingTheBaseline(t *testing.T) {
 	root, path := watchTree(t, "# 001 feat: 編集前\n")
-	v := newIssuesView()
+	v := newTestIssuesView()
 	if cmd := v.toggle(root); cmd == nil {
 		t.Fatal("toggle が Cmd を返さない")
 	}

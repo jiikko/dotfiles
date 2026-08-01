@@ -48,6 +48,9 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 	// ⚠️ 開閉の演出はテストでは切る (zoom.go)。View の期待値が「中央から開く途中の姿」に
 	// なると全テストが読めなくなるため。演出そのものは zoom_test.go が直接検査する。
 	m.zoom.off = true
+	// issues viewer の閉じる演出も同じ理由で切る (既存テストは i / q で即座に閉じる前提)。
+	// 演出そのものは issues_close_anim_test.go が明示的に on にして検査する。
+	m.issuesOv.closeAnimOff = true
 	return m
 }
 
