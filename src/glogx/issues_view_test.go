@@ -495,6 +495,105 @@ func TestIssuesViewEnterTogglesBody(t *testing.T) {
 	}
 }
 
+// n = 「次にやる」の目印 (ユーザー要望 2026-08-01)。確認を挟んでから next/ へ移す。
+// ⚠️ viewer で唯一、実ファイルを動かす操作なので、確認なしで動かないことも一緒に固定する。
+func TestIssuesViewMarkNextMovesAfterConfirm(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "001-feat-x.md")
+	if err := os.WriteFile(path, []byte("# 001 feat: x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := &issues.Issue{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"}
+	v := loadedView(iss)
+	v.cwd = dir
+
+	v.handleKey("n", vp(10))
+	if !v.markNext.active {
+		t.Fatal("n で確認が出ない")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("確認の段階でファイルが動いた")
+	}
+	// 確認は最前面に描く (裏の一覧に紛れない)
+	if out := strings.Join(v.lines(renderOpts(20)), "\n"); !strings.Contains(out, "next へ移動") {
+		t.Fatalf("確認モーダルが描かれない:\n%s", out)
+	}
+
+	if cmd := v.handleKey("y", vp(10)); cmd == nil {
+		t.Fatal("実行後に取り直しの Cmd が返らない (一覧が古いままになる)")
+	}
+	if v.markNext.active {
+		t.Fatal("実行後も確認が残っている")
+	}
+	dest := filepath.Join(dir, issues.NextDirName, "001-feat-x.md")
+	if _, err := os.Stat(dest); err != nil {
+		t.Fatalf("next/ へ移動していない (ディレクトリ作成も含む): %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("元の場所にファイルが残っている")
+	}
+	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "next へ移しました") {
+		t.Fatalf("結果が通知に載らない: %q ok=%v", text, ok)
+	}
+}
+
+// ⚠️ y / Enter 以外はすべて取り消し。「知らないキーを押したら実ファイルが動いた」を作らない。
+func TestIssuesViewMarkNextCancels(t *testing.T) {
+	for _, key := range []string{"n", "esc", "q", "j", "x"} {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "001-feat-x.md")
+		if err := os.WriteFile(path, []byte("# 001 feat: x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"})
+		v.cwd = dir
+		v.handleKey("n", vp(10))
+		if cmd := v.handleKey(key, vp(10)); cmd != nil {
+			t.Fatalf("%q で取り消したのに Cmd が返った", key)
+		}
+		if v.markNext.active {
+			t.Fatalf("%q で確認が閉じない", key)
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("%q で取り消したのにファイルが動いた", key)
+		}
+	}
+}
+
+// 複数選択していれば範囲ぶんまとめて目印を付ける (y/p/Y と同じ対象の決め方)。
+func TestIssuesViewMarkNextUsesSelection(t *testing.T) {
+	dir := t.TempDir()
+	list := make([]*issues.Issue, 0, 3)
+	for _, n := range []string{"001", "002", "003"} {
+		p := filepath.Join(dir, n+"-feat-x.md")
+		if err := os.WriteFile(p, []byte("# "+n+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		list = append(list, &issues.Issue{Path: p, Dir: dir, Rel: n + "-feat-x.md", Number: n, Category: "feat"})
+	}
+	v := loadedView(list...)
+	v.cwd = dir
+	v.cursor = 0
+	v.handleKey("shift+down", vp(10)) // 2 行選択
+	v.handleKey("n", vp(10))
+	if len(v.markNext.targets) != 2 {
+		t.Fatalf("選択範囲が対象になっていない: %d 件", len(v.markNext.targets))
+	}
+	v.handleKey("y", vp(10))
+	moved := 0
+	for _, iss := range list {
+		if _, err := os.Stat(filepath.Join(dir, issues.NextDirName, filepath.Base(iss.Rel))); err == nil {
+			moved++
+		}
+	}
+	if moved != 2 {
+		t.Fatalf("選択ぶんが移動していない: %d 件", moved)
+	}
+	if _, _, ok := v.selection(); ok {
+		t.Fatal("実行後も選択が残っている")
+	}
+}
+
 func TestIssuesViewTabChipCountsMatchRows(t *testing.T) {
 	// チップの件数は「そのタブを選んだときに並ぶ行数」と一致する。issues.Tab.Count は done を
 	// 含む全件なので、そのまま出すと done を伏せた既定表示で合計が All と食い違う。

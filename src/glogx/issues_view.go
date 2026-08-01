@@ -86,6 +86,9 @@ type issuesView struct {
 	body *issues.Body
 	// urlPick は本文中 URL のピッカー (u)。閉じているときは zero value。
 	urlPick urlPicker
+	// markNext は「次にやる」の目印を付ける確認 (n)。⚠️ 実ファイルを動かす唯一の操作なので、
+	// 他のキーと違って必ず確認を挟む (glogx の push/pull と同じ作法)。zero value = 確認なし。
+	markNext issuesMarkConfirm
 	// drawer は本文を左から開く引き出しの演出状態 (issues_drawer.go)。閉じる演出のあいだは
 	// open/body を生かしたまま逆再生するため、破棄は settleDrawer が担う。
 	drawer    issuesDrawer
@@ -554,6 +557,10 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 	// 通知は takeNotice で取り出された時点で消えるので、ここでのクリアは不要 (取り出されない
 	// まま次のキーが来た場合だけ古い結果が残るが、browseModel は毎キーで取り出す)
 	rows := v.visibleRows(vp)
+	// ⚠️ 確認モーダルは最優先で飲む (実ファイルを動かす操作なので、裏のキーを効かせない)
+	if v.markNext.active {
+		return v.markNextKey(key)
+	}
 	// ⚠️ URL ピッカーは他のどの割当よりも先に飲む: インクリメンタルサーチでは印字文字がすべて
 	// 検索語なので、v (nvim) や y (コピー) を先に処理すると "v" や "y" を含む URL を検索できない。
 	if v.urlPick.active {
@@ -607,6 +614,8 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 		v.moveTab(-1)
 	case "enter", "o":
 		v.openBody()
+	case "n":
+		v.askMarkNext()
 	case "a":
 		v.filter = v.filter.Next()
 		v.refresh()
@@ -1000,6 +1009,10 @@ func (v *issuesView) lines(o issuesRenderOpts) []string {
 		body = v.listLines(o)
 	}
 	body = padTo(body, o.page)
+	// 確認モーダルは最前面 (実ファイルを動かす操作なので、裏の一覧より確実に目に入る位置)
+	if box := v.markNextBox(o.width, o.colored); len(box) > 0 {
+		body = overlayCenteredBox(body, box, o.width, o.page, o.colored)
+	}
 	if p := v.animProgress(); p < 1 {
 		body = slideInWindow(body, p, o.width)
 	}
@@ -1381,5 +1394,78 @@ func (v *issuesView) hint() string {
 		next = "a: " + issues.StatusOpen.Badge() + "のみ"
 	case issues.FilterOpen:
 	}
-	return "j/k: 移動  Tab: カテゴリ  Enter: 本文  p: 番号  N: 次番号  " + next + "  q: 閉じる"
+	return "j/k: 移動  Tab: カテゴリ  Enter: 本文  p: 番号  n: next へ  " + next + "  q: 閉じる"
+}
+
+// 「次にやる」の目印 (n)。選択中の issue を <issue ディレクトリ>/next/ へ移す。
+//
+// ⚠️ viewer で唯一、実ファイルを動かす操作なので必ず確認を挟む (glogx の push/pull と同じ作法)。
+// 移動そのものは issues.MoveToSubdir で、git index には触れない (理由はそちらの doc)。
+//
+// 一覧モードだけで受ける: 本文を開いたまま動かすと、開いている Body のパスが実体から外れて
+// 「読んでいるファイルがもう無い」状態になる。目印は一覧を見ながら付けるものなので実害もない。
+type issuesMarkConfirm struct {
+	active  bool
+	targets []*issues.Issue
+}
+
+// askMarkNext は確認を開く (対象が無ければ何もしない)。
+func (v *issuesView) askMarkNext() {
+	rows := v.selectedRows()
+	if len(rows) == 0 {
+		return
+	}
+	v.markNext = issuesMarkConfirm{active: true, targets: rows}
+}
+
+// markNextKey は確認中のキーを捌く。y/Enter で実行、それ以外は取り消し。
+//
+// ⚠️ 取り消しを n/Esc に限定しない: 実ファイルを動かす確認で「知らないキーを押したら実行された」
+// が起きてはいけないので、明示的な y/Enter 以外はすべて取り消しに倒す。
+func (v *issuesView) markNextKey(key string) tea.Cmd {
+	targets := v.markNext.targets
+	v.markNext = issuesMarkConfirm{}
+	if key != "y" && key != "enter" {
+		return nil
+	}
+	moved, skipped := 0, 0
+	for _, iss := range targets {
+		if iss.Status == issues.StatusNext {
+			skipped++ // 既に目印つき (同じ場所への移動を「変化」と数えない)
+			continue
+		}
+		if _, err := issues.MoveToSubdir(iss, issues.NextDirName); err != nil {
+			v.setNotice("next へ移動できませんでした: "+firstLine(err.Error()), false)
+			return v.scanCmd(v.cwd) // 途中まで動いた分を一覧へ反映する
+		}
+		moved++
+	}
+	v.clearMark()
+	switch {
+	case moved == 0:
+		v.setNotice("すべて既に next です", true)
+		return nil
+	case skipped > 0:
+		v.setNotice(strconv.Itoa(moved)+" 件を next へ移しました ("+strconv.Itoa(skipped)+" 件は既に next)", true)
+	default:
+		v.setNotice(strconv.Itoa(moved)+" 件を next へ移しました", true)
+	}
+	return v.scanCmd(v.cwd) // 置き場所が変わったので一覧を取り直す
+}
+
+// markNextBox は確認モーダルの箱 (glogx の push/pull 確認と同じ見た目)。
+func (v *issuesView) markNextBox(width int, colored bool) []string {
+	if !v.markNext.active {
+		return nil
+	}
+	what := strconv.Itoa(len(v.markNext.targets)) + " 件"
+	if len(v.markNext.targets) == 1 {
+		what = filepath.Base(v.markNext.targets[0].Rel)
+	}
+	return centerBox(" next へ移動 ", []string{
+		what + " を next/ へ移します",
+		paint("(次にやる目印。ファイルを移動します。commit はしません)", ansiDim, colored),
+		"",
+		paint("y/Enter: 実行   その他: キャンセル", ansiDim, colored),
+	}, width, colored)
 }

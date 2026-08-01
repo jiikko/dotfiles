@@ -40,6 +40,9 @@ const (
 	StatusPending               // 保留 (着手条件・trigger 待ち)
 	StatusDone                  // 完了
 	StatusUnknown               // 未知のサブディレクトリ配下 (状態へ写像しない)
+	// StatusNext は「次にやる」の目印 (next/ ディレクトリ。ユーザー要望 2026-08-01)。
+	// ⚠️ 末尾に足す: 値は永続化していないが、途中に入れると既存の並びが動く。
+	StatusNext
 )
 
 // String は状態の表示名。
@@ -53,6 +56,8 @@ func (s Status) String() string {
 		return "done"
 	case StatusUnknown:
 		return "other"
+	case StatusNext:
+		return "next"
 	default:
 		return "other"
 	}
@@ -69,6 +74,8 @@ func (s Status) Badge() string {
 		return "✓"
 	case StatusUnknown:
 		return "?"
+	case StatusNext:
+		return "▶"
 	default:
 		return "?"
 	}
@@ -81,7 +88,13 @@ func (s Status) Badge() string {
 var statusDirs = map[string]Status{
 	"done": StatusDone, "closed": StatusDone, "completed": StatusDone, "resolved": StatusDone,
 	"pending": StatusPending, "hold": StatusPending, "on-hold": StatusPending,
+	// next は viewer 自身が作る「次にやる」の目印 (NextDirName)。他の状態語と違って repo 側の
+	// 運用でなく viewer の操作で付くので、綴りの揺れ (upcoming 等) は受けない
+	"next": StatusNext,
 }
+
+// NextDirName は「次にやる」の目印を置くサブディレクトリ名 (viewer の n が作る)。
+const NextDirName = "next"
 
 // metaFiles は issue ではない付随ファイル。この repo の issues/README.md は自ら
 // 「この README.md も issue ではない」と明記しており、実測でも README.md が 4 repo、
@@ -586,7 +599,9 @@ func (f StatusFilter) shows(s Status) bool {
 		return f >= FilterPending
 	case StatusDone:
 		return f >= FilterAll
-	case StatusOpen, StatusUnknown:
+	case StatusOpen, StatusUnknown, StatusNext:
+		// next は「次にやる」の目印なので open より前に出したいものであり、常に見せる
+		// (伏せると、目印を付けた issue が既定の一覧から消えるという逆の結果になる)
 		return true
 	}
 	return true
