@@ -348,6 +348,29 @@ func TestIssuesViewMultiSelectExtendAndClear(t *testing.T) {
 	if lo, hi, _ := v.selection(); lo != 2 || hi != 3 {
 		t.Fatalf("錨の下側へ伸ばせない: lo=%d hi=%d", lo, hi)
 	}
+	// 矢印と j/k の 2 系統あるので伸張も両方から効く (ユーザー要望 2026-08-01)。
+	// ⚠️ 矢印だけだと、shift+矢印を通さない端末・tmux 設定で機能ごと沈黙する。
+	for _, tc := range []struct {
+		name           string
+		arrow, vimKey  string
+		wantLo, wantHi int
+	}{
+		{"下へ伸ばす", "shift+down", "J", 2, 4},
+		{"上へ縮める", "shift+up", "K", 2, 3},
+	} {
+		byArrow := newView()
+		byArrow.handleKey("shift+down", 10) // 2..3 まで揃えてから
+		byArrow.handleKey(tc.arrow, 10)
+		byVim := newView()
+		byVim.handleKey("J", 10)
+		byVim.handleKey(tc.vimKey, 10)
+		aLo, aHi, _ := byArrow.selection()
+		vLo, vHi, _ := byVim.selection()
+		if aLo != vLo || aHi != vHi {
+			t.Fatalf("%s: 矢印と %s で範囲が違う (arrow=%d..%d vim=%d..%d)",
+				tc.name, tc.vimKey, aLo, aHi, vLo, vHi)
+		}
+	}
 
 	for _, tc := range []struct {
 		name string

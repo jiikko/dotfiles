@@ -549,10 +549,13 @@ func (v *issuesView) handleKey(key string, page int) tea.Cmd {
 		v.moveCursor(1, rows)
 	case "k", "up", "ctrl+p":
 		v.moveCursor(-1, rows)
-	// shift+↑/↓ で範囲選択 (ユーザー要望 2026-08-01)。y / p / Y が選択範囲へ効く。
-	case "shift+up":
+	// 範囲選択 (ユーザー要望 2026-08-01)。y / p / Y が選択範囲へ効く。
+	// 移動が矢印と j/k の 2 系統あるので、伸張も両方に付ける (K = shift+k、J = shift+j)。
+	// ⚠️ 矢印だけにしない: shift+矢印は端末・多重化 (tmux) の設定次第でアプリまで届かないことが
+	// あり、そのとき機能ごと沈黙する。素の大文字は必ず届くので、確実に動く経路を必ず 1 本持たせる。
+	case "shift+up", "K":
 		v.extendMark(-1, rows)
-	case "shift+down":
+	case "shift+down", "J":
 		v.extendMark(1, rows)
 	case "ctrl+d", "pgdown", " ", "f":
 		v.moveCursor(max(rows/2, 1), rows)
@@ -1266,7 +1269,7 @@ func (v *issuesView) hint() string {
 	// "a: pending も" (14 桁) では末尾の "q: 閉じる" が黙って切れる (実測)。
 	if lo, hi, ok := v.selection(); ok {
 		// 選択中は効くキーだけを出す (移動と Enter は選択を畳むので、並べると誤解を招く)
-		return strconv.Itoa(hi-lo+1) + " 件選択  shift+↑/↓: 増減  y: パス  p: 番号  Y: 参照  Esc: 解除"
+		return strconv.Itoa(hi-lo+1) + " 件選択  J/K・shift+↑↓: 増減  y: パス  p: 番号  Y: 参照  Esc: 解除"
 	}
 	next := "a: +" + issues.StatusPending.Badge()
 	switch v.filter {
