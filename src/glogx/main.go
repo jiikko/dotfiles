@@ -12,7 +12,9 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/term"
@@ -183,7 +185,41 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	if model.ghErr != nil {
 		fmt.Fprintln(os.Stderr, model.ghErr.Warning())
 	}
+	if model.restartRequested {
+		// ⚠️ exec はプロセスを置き換えるので、上に積んだ defer は 1 つも走らない。IME 復元と
+		// 走行中 subprocess の後始末をここで明示的に済ませてから渡す。特に IME を戻さないと、
+		// 次のプロセスが「英数」を元の入力ソースだと記憶し、最終的に英数へ置き去りにする。
+		restore()
+		browse.cancelAll()
+		if err := restartSelf(); err != nil {
+			fmt.Fprintln(os.Stderr, "glogx: 再起動できません:", err)
+			return 1
+		}
+	}
 	return 0
+}
+
+// restartSelf は新しいバイナリで自分を置き換える (再起動ダイアログの r)。
+//
+// spawn + 親の終了にしないのは端末の持ち主が変わらないようにするため: glogx は tmux popup の
+// 中で動いており、親が終わると popup ごと閉じて子だけが行き場を失う。exec なら pid も端末も
+// そのまま引き継がれる。
+//
+// ⚠️ GO_AUTOBUILD_PENDING は落とす。shim が「裏でビルドを spawn した」印として立てるもので、
+// 完成後の再起動へ引き継ぐと、新しいプロセスが終わったビルドを待ち続けて「ビルド中」を出す。
+func restartSelf() error {
+	exe := selfExePath()
+	if exe == "" {
+		return errors.New("自バイナリのパスが取れない")
+	}
+	env := os.Environ()
+	kept := env[:0]
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, autobuildPendingEnv+"=") {
+			kept = append(kept, kv)
+		}
+	}
+	return syscall.Exec(exe, os.Args, kept)
 }
 
 func runCached(opts *Options, colored bool) int {

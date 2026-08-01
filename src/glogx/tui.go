@@ -274,6 +274,10 @@ type browseModel struct {
 	// (issues_view.go) に切り出し、ここは 1 フィールドだけ持つ。読む規約の一次情報は
 	// docs/issues-viewer-spec.md。
 	issuesOv issuesView
+	// restartPrompt はバックグラウンドビルドの完成を伝えるダイアログ (r で再起動)。
+	// restartRequested は「終了後に新しいバイナリで自分を置き換える」印 (main.go が exec する)。
+	restartPrompt    bool
+	restartRequested bool
 
 	// toast は右下に数秒だけ出す結果フィードバック (push/pull 完了)。自動消滅 (toast.go)。
 	toast toast
@@ -826,6 +830,11 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if keep {
 			watch = m.autobuild.tickCmd()
 		}
+		if notify && res == autobuildInstalled {
+			// 完成はその場で再起動できる合図なので、消えるトーストでなくダイアログで出す
+			m.restartPrompt = true
+			return m, tea.Batch(m.maybeTick(), watch)
+		}
 		if notify {
 			text, ok := autobuildToast(res)
 			m.toast.show(text, ok)
@@ -1052,6 +1061,19 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		key = "right"
 	}
 	key = normalizeSpaceKey(key)
+	// バックグラウンドビルドの完成ダイアログ。r で確認なしに再起動する (ユーザー要望 2026-08-01)。
+	//
+	// ⚠️ 出ている間はキーを 1 つ飲んで必ず閉じる (r 以外は「今はしない」)。素通しにすると、
+	// r が issues viewer の再読込・job パネルの再実行にも割り当たっているので「再読込のつもりが
+	// 再起動」になる。⚠️ viewer の分岐より前に置く: viewer は全画面モーダルで全キーを飲むため、
+	// 後ろに置くと viewer を開いている間ダイアログに答えられない。
+	if m.restartPrompt {
+		m.restartPrompt = false
+		if key == "r" {
+			return m.restartForNewBinary()
+		}
+		return m, nil
+	}
 	// issues viewer 表示中は全画面モーダル: キーは全部 viewer が飲む。⚠️ この判定を下の
 	// 裸の b / u (push / pull) より後ろに置くと、一覧を見ている最中の u が
 	// git pull --rebase の確認を開く footgun になる (U の判定順と同じ事故の型)。
@@ -1521,6 +1543,31 @@ func (m *browseModel) quit() (tea.Model, tea.Cmd) {
 	}
 	m.done = true
 	return m, tea.Quit
+}
+
+// restartForNewBinary は「新しいバイナリで自分を置き換える」ことを予約して終了する。
+//
+// exec を Update の中でやらない: bubbletea が端末を raw mode + Alt Screen で握っている最中に
+// プロセスを置き換えると、復元されないまま次のプロセスが同じ端末を触ることになる。tea.Quit で
+// 抜けて bubbletea に端末を戻させてから、main.go が exec する。
+//
+// 後始末 (走行中 subprocess の cancel・issues の画面記憶) は quit と共有する。画面記憶が乗るので、
+// issues viewer を開いたまま再起動すると同じ画面から再開する (issues_state.go の TTL 内)。
+func (m *browseModel) restartForNewBinary() (tea.Model, tea.Cmd) {
+	m.restartRequested = true
+	return m.quit()
+}
+
+// restartPromptLines は完成ダイアログの箱 (push/pull 確認と同じ見た目)。
+func (m *browseModel) restartPromptLines() []string {
+	if !m.restartPrompt {
+		return nil
+	}
+	return centerBox(" 新しい glogx ", []string{
+		"新しいバージョンが利用可能です",
+		"",
+		paint("r: 今すぐ再起動   その他: 後で", ansiDim, m.colored),
+	}, m.contentWidth(), m.colored)
 }
 
 // toggleUsage は usage オーバーレイの開閉 (U)。コミット一覧と issues viewer の両方から呼ぶ
@@ -2409,6 +2456,10 @@ func (m *browseModel) viewLines() string {
 	// (ユーザー要望 2026-07-31)。載せないと viewer 中の通知が画面に一切出ない。
 	if m.issuesOv.visible() {
 		window := m.issuesOv.lines(m.issuesOpts())
+		// 再起動ダイアログも viewer の上に重ねる (viewer を開いている間にビルドが完成しうる)
+		if box := m.restartPromptLines(); len(box) > 0 {
+			window = overlayCenteredBox(window, box, m.contentWidth(), page, m.colored)
+		}
 		// usage も viewer の上に重ねる (U で開ける契約。合成しないと「取得だけ走って画面に
 		// 出ない」= 見えない層へ状態を書く経路に戻る)。前面順は一覧側と同じで usage → トースト
 		if box := m.usageOv.boxLines(m.contentWidth(), m.colored, m.spinner()); len(box) > 0 {
@@ -2469,6 +2520,10 @@ func (m *browseModel) viewLines() string {
 	// hint 行の [y/N] だけでは気づきにくい)。overlayCenteredBox は行を塗り潰さず左右の背景
 	// リストを残して合成する (モーダルの左側テキストが消えるのを解消・ユーザー要望 2026-07-22)。
 	if box := m.centerModalLines(); len(box) > 0 {
+		window = overlayCenteredBox(window, box, m.contentWidth(), page, m.colored)
+	}
+	// 再起動ダイアログは中央 (答えるまで残る。次の 1 キーで必ず閉じる)
+	if box := m.restartPromptLines(); len(box) > 0 {
 		window = overlayCenteredBox(window, box, m.contentWidth(), page, m.colored)
 	}
 	// usage オーバーレイは最前面 (上部右端の複数行モーダル)。U で再表示、任意キーで消える。

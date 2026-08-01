@@ -118,14 +118,17 @@ func TestAutobuildWatchHandle(t *testing.T) {
 		}
 	})
 
-	t.Run("成功は無言で監視終了 (開始時に伝えているため)", func(t *testing.T) {
+	// 完成は伝えて監視終了 (ユーザー要望 2026-08-01)。⚠️ 以前は無言だった — 開始時に
+	// 「次回起動で反映」と伝えているため二度言うことになるから。その場で再起動できるように
+	// なったので意味が変わった: 完成は「行動できる」合図で、呼び出し側が再起動ダイアログを出す。
+	t.Run("完成は通知して監視終了", func(t *testing.T) {
 		w := newWatch()
-		_, notify, keep := w.handle(autobuildInstalled, now)
-		if notify || keep {
-			t.Errorf("notify=%v keep=%v, want false/false (二重通知はノイズ)", notify, keep)
+		res, notify, keep := w.handle(autobuildInstalled, now)
+		if res != autobuildInstalled || !notify || keep {
+			t.Errorf("res=%v notify=%v keep=%v, want installed/true/false", res, notify, keep)
 		}
 		if w.active {
-			t.Error("成功後も active=true (tick が残る)")
+			t.Error("完成後も active=true (tick が残る)")
 		}
 	})
 
@@ -211,19 +214,69 @@ func TestAutobuildToast(t *testing.T) {
 	}
 }
 
-// Update 経路の結合: ビルド完了は無言で監視だけ止まる (開始時に伝えているため)。
-func TestAutobuildMsgInstalledIsSilent(t *testing.T) {
+// Update 経路の結合: ビルド完了は消えるトーストでなく再起動ダイアログで出す
+// (ユーザー要望 2026-08-01)。⚠️ トーストだと目を離している間に行動の機会だけが消える。
+func TestAutobuildMsgInstalledOpensRestartPrompt(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.toast.phase = toastHidden
 	m.autobuild = autobuildWatch{active: true, until: timeNow().Add(autobuildWatchTimeout)}
 
 	m.Update(autobuildMsg{result: autobuildInstalled})
+	if !m.restartPrompt {
+		t.Error("完成しても再起動ダイアログが出ない")
+	}
 	if m.toast.visible() {
-		t.Errorf("完了で二重にトーストが出た: %q", m.toast.text)
+		t.Errorf("ダイアログとトーストが二重に出た: %q", m.toast.text)
 	}
 	if m.autobuild.active {
 		t.Error("完了後も監視が続いている (tick が残る)")
 	}
+	if out := stripANSI(m.View().Content); !strings.Contains(out, "新しいバージョンが利用可能です") {
+		t.Fatalf("ダイアログが画面に出ていない:\n%s", out)
+	}
+}
+
+// r で確認なしに再起動 (ユーザー要望)。exec は main.go が行うので、ここでは印と終了を見る。
+func TestRestartPromptKeys(t *testing.T) {
+	t.Run("r で再起動を予約して終了", func(t *testing.T) {
+		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m.restartPrompt = true
+		m.handleKey("r")
+		if !m.restartRequested {
+			t.Error("r で再起動が予約されない")
+		}
+		if !m.done {
+			t.Error("r で終了していない (exec は終了後に main.go が行う)")
+		}
+		if m.restartPrompt {
+			t.Error("ダイアログが残っている")
+		}
+	})
+	// ⚠️ r は issues viewer の再読込・job パネルの再実行にも割り当たっている。ダイアログが
+	// 出ている間は 1 キーで必ず閉じ、r 以外では再起動しない ("再読込のつもりが再起動" を防ぐ)。
+	for _, key := range []string{"j", "q", "esc", "i", "R"} {
+		t.Run(key+" は再起動しない", func(t *testing.T) {
+			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m.restartPrompt = true
+			m.handleKey(key)
+			if m.restartRequested {
+				t.Errorf("%q で再起動してしまった", key)
+			}
+			if m.restartPrompt {
+				t.Errorf("%q でダイアログが閉じない", key)
+			}
+		})
+	}
+	// viewer は全画面で全キーを飲むが、ダイアログには答えられる (答えられないと再起動できない)
+	t.Run("issues viewer を開いていても r が届く", func(t *testing.T) {
+		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m.handleKey("i")
+		m.restartPrompt = true
+		m.handleKey("r")
+		if !m.restartRequested {
+			t.Error("viewer 表示中に r が viewer の再読込へ吸われた")
+		}
+	})
 }
 
 // notify と keep が同時に立ったとき、監視の再アームを落とさない (issue 032)。

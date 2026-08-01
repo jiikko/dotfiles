@@ -232,11 +232,13 @@ func (w *autobuildWatch) handle(res autobuildResult, now time.Time) (out autobui
 	if !w.active {
 		return autobuildRunning, false, false
 	}
-	// 成功は無言で終える: 開始時に「次回起動で反映」と伝えているので、完成の報せは同じことを
-	// 二度言うだけになる (トーストが 1 回の出来事で 2 回出るのはノイズ)。
+	// 完成は伝える。以前は無言だった (開始時に「次回起動で反映」と伝えているため二度言うことに
+	// なる) が、その場で再起動できるようになったので意味が変わった: 「次回起動で反映」は待ちの
+	// 案内、完成は行動できる合図。⚠️ 出し方はトーストでなく再起動を促すダイアログ (呼び出し側)。
+	// 数秒で消えるトーストだと、目を離している間に行動の機会だけが消える。
 	if res == autobuildInstalled {
 		w.active = false
-		return autobuildRunning, false, false
+		return autobuildInstalled, true, false
 	}
 	// 失敗は開始の通知より優先する (「ビルド中」を出す前に落ちたら、出すべきは失敗の方)。
 	if res == autobuildFailed {
@@ -266,7 +268,7 @@ func autobuildToast(res autobuildResult) (text string, ok bool) {
 	case autobuildStarted:
 		return "新しい glogx をビルド中 (次回起動で反映)", true
 	case autobuildInstalled:
-		return "", false // 成功は無言 (開始時に伝えている)
+		return "", false // 完成はトーストにしない (再起動ダイアログで出す。handle の doc)
 	case autobuildFailed:
 		return "glogx のバックグラウンドビルドが失敗 (旧版で継続。src/glogx/.autobuild.log)", false
 	case autobuildStale:
