@@ -245,29 +245,47 @@ func TestZoomStepsAreSmall(t *testing.T) {
 	now := time.Unix(1000, 0)
 	timeNow = func() time.Time { return now }
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.zoom.off = false
-	m.zoom.start(now)
-	interval := m.tickInterval()
+	// ⚠️ 開くときと閉じるときを同じ基準で見る。片方だけ直すと「開くのは滑らかなのに終了だけ
+	// カクつく」ずれが入る (周期・所要・曲線の 3 つとも両方向へ効いている必要がある)。
+	for _, tc := range []struct {
+		name  string
+		begin func(*appZoom)
+	}{
+		{"開く", func(z *appZoom) { z.start(now) }},
+		{"閉じる", func(z *appZoom) { z.startClose(now) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m.zoom.off = false
+			tc.begin(&m.zoom)
+			interval := m.tickInterval()
+			if interval >= spinnerInterval {
+				t.Fatalf("周期が上がっていない (%v): 中間フレームが消える", interval)
+			}
 
-	const rows = 40
-	prev, total, steps := -1, 0, 0
-	for tt := time.Duration(0); tt <= appZoomDuration; tt += interval {
-		s := m.zoom.scale(now.Add(tt))
-		if s >= appZoomSnap {
-			break
-		}
-		h := max(int(float64(rows)*s+0.5), appZoomMinRows)
-		if prev >= 0 {
-			total += h - prev
-			steps++
-		}
-		prev = h
-	}
-	if steps == 0 {
-		t.Fatal("動くフレームが 1 枚も無い")
-	}
-	if avg := float64(total) / float64(steps); avg > 2.2 {
-		t.Fatalf("1 フレームで平均 %.1f 行も跳んでいる (カクついて見える。%d 枚)", avg, steps)
+			const rows = 40
+			prev, total, steps := -1, 0, 0
+			for tt := time.Duration(0); tt <= appZoomDuration; tt += interval {
+				s := m.zoom.scale(now.Add(tt))
+				if s >= appZoomSnap {
+					if prev < 0 {
+						continue // 閉じ始めの 1 フレームは実画面 (ここが起点)
+					}
+					break
+				}
+				h := max(int(float64(rows)*s+0.5), appZoomMinRows)
+				if prev >= 0 {
+					total += max(h-prev, prev-h)
+					steps++
+				}
+				prev = h
+			}
+			if steps == 0 {
+				t.Fatal("動くフレームが 1 枚も無い")
+			}
+			if avg := float64(total) / float64(steps); avg > 2.2 {
+				t.Fatalf("1 フレームで平均 %.1f 行も跳んでいる (カクついて見える。%d 枚)", avg, steps)
+			}
+		})
 	}
 }
