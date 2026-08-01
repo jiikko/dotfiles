@@ -663,32 +663,6 @@ func TestBrowseRerunFailureShowsToast(t *testing.T) {
 	}
 }
 
-// 起動時 (Init) に macism 未導入なら error トーストで brew 導入を案内する (ime.go の IME 自動
-// 切替に使う。未導入でも機能自体は no-op で壊れないが能動的に案内。ユーザー要望 2026-07-23)。
-func TestBrowseInitWarnsMissingMacism(t *testing.T) {
-	orig := macismInstalled
-	t.Cleanup(func() { macismInstalled = orig })
-
-	// 未導入 → error トースト (ok=false) に brew コマンドを含む
-	macismInstalled = func() bool { return false }
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.Init()
-	if !m.toast.visible() || m.toast.ok {
-		t.Fatalf("macism 未導入で error トーストが出ない: visible=%v ok=%v", m.toast.visible(), m.toast.ok)
-	}
-	if !strings.Contains(m.toast.text, "brew install") || !strings.Contains(m.toast.text, "macism") {
-		t.Fatalf("brew 導入案内が含まれない: %q", m.toast.text)
-	}
-
-	// 導入済み → トーストは出ない
-	macismInstalled = func() bool { return true }
-	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m2.Init()
-	if m2.toast.visible() {
-		t.Fatalf("macism 導入済みなのに起動トーストが出た: %q", m2.toast.text)
-	}
-}
-
 // version 通知 (issue 024) は先行トーストを潰さない。⚠️ 以前は「1 枠を譲り合う」ために専用
 // タイマーで遅延再送していたが、トーストが積めるようになったので両方が同時に出るのが正しい姿
 // (ユーザー要望 2026-07-31)。
@@ -703,12 +677,12 @@ func TestBrowseClaudeUpdateToastStacksWithExisting(t *testing.T) {
 	// 先行 error トースト表示中 → 上に積まれ、先行も残る (どちらも読める)
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m2.height = 24 // ⚠️ 2 枚出すには窓の高さが要る (低い窓では行数上限で古い方を出さない。toast の doc)
-	m2.toast.show("macism 未導入: ...", false)
+	m2.toast.show("先行警告: ...", false)
 	m2.Update(claudeUpdateAvailableMsg{latest: "9.9.9"})
 	if !strings.Contains(m2.toast.text, "9.9.9") {
 		t.Errorf("最上段が version 通知でない: %q", m2.toast.text)
 	}
-	if len(m2.toast.older) != 1 || !strings.Contains(m2.toast.older[0].text, "macism") {
+	if len(m2.toast.older) != 1 || !strings.Contains(m2.toast.older[0].text, "先行警告") {
 		t.Errorf("先行 error が消えた (積まれていない): %+v", m2.toast.older)
 	}
 	// 描画にも両方出る (上が新しい = version 通知)。滑り込みを進めてから見る
@@ -719,7 +693,7 @@ func TestBrowseClaudeUpdateToastStacksWithExisting(t *testing.T) {
 		m2.toast.advance(m2.colored)
 	}
 	out := stripANSI(m2.View().Content)
-	if !strings.Contains(out, "9.9.9") || !strings.Contains(out, "macism") {
+	if !strings.Contains(out, "9.9.9") || !strings.Contains(out, "先行警告") {
 		t.Errorf("両方が画面に出ていない:\n%s", out)
 	}
 }
@@ -784,25 +758,6 @@ func TestBrowseSuccessToastDoesNotClobberLastWarning(t *testing.T) {
 	m.toast.show("push しました", true) // 成功トースト (showWarning 非経由)
 	if m.lastWarning != "失敗A" {
 		t.Fatalf("成功トーストで lastWarning が上書きされた: %q", m.lastWarning)
-	}
-}
-
-// 直接の動機の回帰: macism 未導入トーストの brew コマンドが、消えた後も w でコピーできる。
-func TestBrowseMacismWarningCopyableAfterDismiss(t *testing.T) {
-	origM := macismInstalled
-	macismInstalled = func() bool { return false }
-	t.Cleanup(func() { macismInstalled = origM })
-	var copied string
-	origC := copyToClipboard
-	copyToClipboard = func(text string) error { copied = text; return nil }
-	t.Cleanup(func() { copyToClipboard = origC })
-
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.Init()          // macism 未導入 → showWarning で lastWarning にも残る
-	m.toast = toast{} // トースト消滅をシミュレート
-	m.handleKey("w")
-	if !strings.Contains(copied, "brew install") || !strings.Contains(copied, "macism") {
-		t.Fatalf("macism 案内が w でコピーされない: %q", copied)
 	}
 }
 

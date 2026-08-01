@@ -62,9 +62,8 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	// git 実行のみで、エラーで先に return してもプロセス終了で無害に片付く
 	planCh := make(chan repoPlan, 1)
 	go func() { planCh <- gatherRepoPlan(opts) }()
-	// IME の問い合わせもここで先出しし、切替は TUI 開始直前の finish() で払う。取得・切替とも
-	// TIS 直接呼び出し (fork なし ~µs) が主経路で、macism fork (1 本 ≈ 40-60ms、perf 監査
-	// 2026-07-25/2026-07-29) は fallback と終了時の復元だけに残る (ime.go)。
+	// IME の現在ソースもここで先に取得し、切替は TUI 開始直前の finish() で行う。取得・切替・
+	// 終了時の復元はすべて TIS 直接呼び出しで、外部プロセスは起動しない (ime.go)。
 	// 対話ブラウズにならない経路 (非 TTY / --no-pager) では IME を触らないので開始もしない。
 	// ⚠️ 「1 画面に収まるので静的出力」のショートカット (下の interactive 再判定) に落ちる場合は
 	// 問い合わせが空振りするが、read-only で副作用は無い。
@@ -160,15 +159,13 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	browse.decor = decor
 	// TUI はキー操作が主なので IME を英数へ。切替そのものは TUI 開始前に完了させる必要がある
 	// (未完了だと打鍵が日本語 IME の composition に吸われる) ので、先出しした問い合わせをここで
-	// join して 2 本目だけ払う。エラー救済経路 (showStatic) を含め runLog を抜けるときに元へ戻す。
-	// macism の未導入/エラーは warn で受け取り、起動時に toast で通知する
-	// (finish が失敗を封じ込めるので glogx はクラッシュしない)。
+	// 切り替える。エラー救済経路 (showStatic) を含め runLog を抜けるときに元へ戻す。
+	// TIS の取得・切替エラーは warn で受け取り、起動時に toast で通知する。
 	restore, imeWarn := ime.finish()
 	defer restore()
 	if imeWarn != "" {
-		// macism が導入済みなのにエラーになった場合のみ通知 (未導入は Init の macismInstalled
-		// チェックが brew 導入を案内する)。RunBrowse (Init) 前に仕込めば起動時トーストで出る。
-		// showWarning 経由で lastWarning にも残し、消えた後も w でコピーできるようにする (issue 026)。
+		// RunBrowse (Init) 前に仕込めば起動時トーストで出る。showWarning 経由で
+		// lastWarning にも残し、消えた後も w でコピーできるようにする (issue 026)。
 		browse.showWarning(imeWarn)
 	}
 	model, err := RunBrowse(browse)

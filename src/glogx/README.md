@@ -354,14 +354,14 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   ユーザー指示で解禁。さらに元 issue の「Alt Screen 不使用・最終表示を履歴に残す」
   も 2026-07-17 のユーザー指示で上書きし、git log の pager と同じ
   「Alt Screen 上でブラウズ・終了時に表示は消える」へ変更した
-- **起動は fork の並列化で律速を潰している**: 1 fork ≈ 6ms (git) / 40-60ms (macism) で、
-  直列に積むと初回描画が数十 ms 遅れる。`git log` (表示用と解析用の 2 本) / repo 解決 +
-  未 push 判定 / IME 問い合わせ を同時に走らせ、最長チェーンまで縮める
+- **起動は fork の並列化で律速を潰している**: git の 1 fork ≈ 6ms で、直列に積むと初回描画が
+  数十 ms 遅れる。`git log` (表示用と解析用の 2 本) / repo 解決 + 未 push 判定を同時に走らせ、
+  最長チェーンまで縮める。IME 操作は TIS を直接呼ぶため fork しない
 - **対話ブラウズ中は IME を英数へ切り替える** (キー操作が主なため。終了時に元へ戻す)。
-  切替は macism CLI (`brew tap laishulu/homebrew && brew install macism`) へ委譲し、
-  未導入なら起動時にトーストで案内するだけで機能は壊さない (オプトイン)。
+  現在ソースの取得・英数への切替・終了時の復元はすべて macOS の TIS を直接呼び出し、
+  TIS が返す現在ソース ID で反映を確認する。外部 CLI への依存はない。
   ⚠️ 切替の「実行」は TUI 開始前に完了させる必要がある — raw mode でも IME は OS の入力ソース層で
   効くため、未完了だと打鍵が日本語 IME の composition に吸われる。よって問い合わせ (1 本目) だけを
-  先出しし、切替 (2 本目) は TUI 開始直前に払う
+  先に取得し、切替は TUI 開始直前に行う
 - 未対応 (必要になったら issue 化): `--watch` / 失敗 workflow への URL 表示 /
   `--json` / GitHub Enterprise Server / GitHub 以外のホスティング

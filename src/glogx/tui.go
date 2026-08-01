@@ -364,12 +364,6 @@ func (m *browseModel) Init() tea.Cmd {
 	prefix := func() tea.Msg { return prefixMsg{key: loadTmuxPrefix()} }
 	// 起動時はディスクキャッシュ可 (連続起動のたびに claude subprocess を起こさない)
 	u := m.usageOv.fetchCmd(true)
-	// IME 自動切替 (ime.go) に使う macism が未導入なら、起動時に error トーストで brew 導入を
-	// 案内する (数秒で自動消滅)。ime.go 側は未導入でも no-op なので機能自体は壊れないが、IME が
-	// 英数へ切り替わらない事実に気づけるよう能動的に案内する (ユーザー要望 2026-07-23)。
-	if !macismInstalled() {
-		m.showWarning("macism 未導入: brew tap laishulu/homebrew && brew install macism")
-	}
 	// usage を起動時に取得するため tick を常に起動する (取得中スピナーを回す。取得完了で
 	// spinnerActive が false になり tick は自然に止まる)。CI fetch の有無に依らず起動する。
 	// usageRefreshTick で 1 分ごとのバックグラウンド再取得チェーンも起動する (ユーザー要望)。
@@ -380,9 +374,7 @@ func (m *browseModel) Init() tea.Cmd {
 	// 立てていない通常起動では nil = tick が増えない。
 	//
 	// 「ビルド中」はここで即出す: 完成を待つと数十秒遅れ、その間ユーザーは自分が旧版を触って
-	// いることを知らない (ユーザー要望 2026-07-31)。⚠️ macism 警告より後に置く — 先に出すと
-	// 直後の showWarning に上書きされて消える。塞がっていた場合は autobuild 側が結果を保持し、
-	// 最初の tick (2s) で出し直す。
+	// いることを知らない (ユーザー要望 2026-07-31)。
 	if res, notify, _ := m.autobuild.handle(autobuildRunning, timeNow()); notify {
 		text, ok := autobuildToast(res)
 		m.toast.show(text, ok)
@@ -562,7 +554,7 @@ func (m *browseModel) showWarning(text string) {
 
 // showClaudeUpdate は「新バージョンあり」の通知を出す。
 //
-// 以前は先行トースト (起動時の macism 警告など) を潰さないよう専用タイマーで遅延再送していたが、
+// 以前は先行トーストを潰さないよう専用タイマーで遅延再送していたが、
 // トーストが積めるようになったので調停は不要になった (toast の doc 参照)。
 func (m *browseModel) showClaudeUpdate(latest string) tea.Cmd {
 	m.toast.show("Claude Code v"+latest+" が公開されています (C で更新)", true)

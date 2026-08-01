@@ -308,13 +308,6 @@ func TestAutobuildMsgKeepsWatchingWhileNotifying(t *testing.T) {
 
 // 起動直後 (Init) に「ビルド中」を出す。完成を待たない (ユーザー要望 2026-07-31)。
 func TestAutobuildNotifiesAtStartup(t *testing.T) {
-	// ⚠️ macism を「導入済み」に固定する: 未導入だと Init が先に警告トーストを出し、こちらの
-	// 通知は塞がって次の tick へ回る (仕様どおりだがこのテストの検証対象ではない)。手元は
-	// 導入済み・CI は未導入なので、固定しないと CI でだけ落ちる (実際に落ちた)。
-	origMacism := macismInstalled
-	macismInstalled = func() bool { return true }
-	t.Cleanup(func() { macismInstalled = origMacism })
-
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.toast.phase = toastHidden
 	m.autobuild = newAutobuildWatch("/some/dir/glogx", true, timeNow())
@@ -362,12 +355,6 @@ func TestAutobuildNotWatchedWithoutEnv(t *testing.T) {
 // 立たず、ビルドも走らないので監視も何も検出しない。「新しいコードを書いたのに旧版が
 // 動き続ける」ことに誰も気づけない (実例 2026-07-31: 13 分間 stale なバイナリで操作していた)。
 func TestAutobuildStaleWarnsAtStartup(t *testing.T) {
-	// macism 未導入 (= CI と同条件) に固定し、その警告より失敗の警告が勝つことまで見る。
-	// 自然に解消しない方を優先する、という Init の並び順の意図をここで固定する。
-	origMacism := macismInstalled
-	macismInstalled = func() bool { return false }
-	t.Cleanup(func() { macismInstalled = origMacism })
-
 	stubSelfExe(t, staleWorkdir(t, true))
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.toast.phase = toastHidden
@@ -402,10 +389,6 @@ func TestAutobuildStaleSilentWhenNotStale(t *testing.T) {
 		{"失敗記録より新しいバイナリが動いている", true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			origMacism := macismInstalled // 未導入だと Init の警告が出て「無言」の検証にならない
-			macismInstalled = func() bool { return true }
-			t.Cleanup(func() { macismInstalled = origMacism })
-
 			dir := t.TempDir()
 			exe := filepath.Join(dir, "glogx")
 			if c.stale {
@@ -428,10 +411,6 @@ func TestAutobuildStaleSilentWhenNotStale(t *testing.T) {
 // ビルド中は「ビルド中」だけを出す (失敗記録が残っていても重ねない)。再挑戦の決着はこの
 // セッションの監視が伝えるので、1 つの出来事に 2 枚積まない。
 func TestAutobuildRunningWinsOverStaleStamp(t *testing.T) {
-	origMacism := macismInstalled
-	macismInstalled = func() bool { return true }
-	t.Cleanup(func() { macismInstalled = origMacism })
-
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "glogx")
 	writeStamp(t, exe, time.Now().Add(-time.Hour))

@@ -153,7 +153,7 @@ func autobuildSourcesNewer(dir string, binAt time.Time) bool {
 	}
 	newer := false
 	// 起動パスに乗るが fork は無い。実測 169µs/回 (2026-07-31 の src/glogx = 90 ファイル /
-	// 6 ディレクトリ)。起動から外した macism fork (40-60ms) の 1/250 で、Bench の分解能以下。
+	// 6 ディレクトリ)。外部プロセス起動と比べても十分小さく、Bench の分解能以下。
 	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		switch {
 		case err != nil:
