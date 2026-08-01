@@ -434,6 +434,31 @@ sleep 3
 ok "lock を奪われた builder は、奪った側の lock を消さない"
 rm -rf "$ROOT/src/tool/.autobuild.lock"  # 奪った状態を残さない (末尾の残骸チェック用)
 
+printf '\n## 走行中の builder の作業ファイルを、あとから来た builder が消さない\n'
+# ⚠️ 同期ビルド (GO_AUTOBUILD_SYNC=1 / バイナリ不在の初回) は lock を取らないので、spawn が
+# lock 取得直後に走らせる .autobuild.new.* の掃除と直列化されない。掃除が走行中の目印を消すと:
+#   - install ガード [[ "$bin" -nt "$started" ]] は zsh の -nt が「参照先不在 = FALSE」に倒れて素通り
+#   - touch -r "$started" も黙って失敗し、成果物の mtime が install 時刻のまま残る
+# = 2 つの修正が同時に、ログにも痕跡を残さず OFF になる。glogx の stale トーストは復旧手順として
+# GO_AUTOBUILD_SYNC=1 を案内するので「案内どおり同期ビルド中に popup を開く」だけで踏む。
+ROOT="$(new_project sweep)"
+FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
+freeze "$ROOT"
+bump "$ROOT/src/tool/main.go"
+( GO_AUTOBUILD_SYNC=1 FAKE_GO_SLEEP=4 FAKE_GO_MARK=sync run_tool "$ROOT" >/dev/null 2>&1 ) &
+SYNC_PID=$!
+# ⚠️ wait_for に渡すのは関数にする。`test -n "$(...)"` だと置換が呼び出し時に 1 度だけ展開され、
+# 同じ結果を 10 秒ポーリングし続けて「観測しているつもり」になる。
+has_workfile() { [[ -n "$(find "$1/src/tool" -name '.autobuild.new.*' -print -quit)" ]]; }
+wait_for "同期ビルドが始まらない" has_workfile "$ROOT"
+marker="$(find "$ROOT/src/tool" -name '.autobuild.new.*' -print -quit)"
+AUTOBUILD_ARGS=--async FAKE_GO_MARK=other run_tool "$ROOT" >/dev/null   # ← spawn の掃除が走る
+sleep 0.6
+[[ -e "$marker" ]] \
+  || fail "走行中の builder の作業ファイルを、あとから来た builder が消した: ${marker##*/}"
+ok "走行中の builder の作業ファイルを、あとから来た builder が消さない"
+wait "$SYNC_PID" 2>/dev/null || true
+
 printf '\n## 相対パスで呼ばれても一時ファイルの置き場所がずれない\n'
 # ⚠️ -C はビルド前に chdir するので、src_dir が相対だと -o の出力先が「移動後の cwd 基準」に
 # なり、意図しない場所へ書く。_go_autobuild_build の ${1:a} 正規化がそれを潰している。

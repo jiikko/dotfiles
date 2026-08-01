@@ -217,8 +217,23 @@ _go_autobuild_spawn() {  # $1=src_dir $2=name
     # ⚠️ 解放してよいのは自分が持ち主のときだけ。timeout 超過で奪われた後に無条件で rm -rf すると
     # 「奪った側の lock」まで消し、以後その src は無施錠になって多重ビルドが漏れる。
     trap '_go_autobuild_lock_owner "$lock"; [[ "$REPLY" == "$pid" ]] && command rm -rf "$lock" 2>/dev/null' EXIT
-    # 前回の途中死が残した一時ファイルを掃除する
-    command rm -f "$src_dir"/.autobuild.new.*(N) 2>/dev/null
+    # 前回の途中死が残した作業ファイルを掃除する。
+    #
+    # ⚠️ 生きている builder のものは消さない。同期ビルド (GO_AUTOBUILD_SYNC=1 / バイナリ不在の
+    # 初回) は lock を取らないのでこの掃除と直列化されず、走行中の目印 (.autobuild.new.<pid>.at)
+    # を巻き込むと 2 つの仕掛けが同時に、ログにも痕跡を残さず無効化される:
+    #   - install ガードの `[[ "$bin" -nt "$started" ]]` は、zsh では参照先が不在だと FALSE に
+    #     倒れる (bash は TRUE。ここも zsh 固有) ので素通りする
+    #   - `touch -r "$started" "$bin"` は黙って失敗し、成果物の mtime が install 時刻のまま残る
+    # glogx の stale トーストは復旧手順として GO_AUTOBUILD_SYNC=1 を案内するので、「案内どおり
+    # 同期ビルドを走らせている最中に popup を開く」だけで踏む (自己レビューで検出 2026-08-01)。
+    local stale owner
+    for stale in "$src_dir"/.autobuild.new.*(N); do
+      owner=${${stale:t}#.autobuild.new.}
+      owner=${owner%%.*}
+      [[ "$owner" == <-> ]] && kill -0 "$owner" 2>/dev/null && continue
+      command rm -f "$stale" 2>/dev/null
+    done
     print -r -- "--- $(strftime '%Y-%m-%d %H:%M:%S' $EPOCHSECONDS) $name (pid=$pid)"
     if ! _go_autobuild_build "$src_dir" "$name" 1 "$lock" "$pid"; then
       # 失敗を記録する。これが無いと stale が解消されないまま毎回起動ごとに
