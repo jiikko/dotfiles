@@ -27,6 +27,14 @@
 # cur 環境へ換算してからプールする (run ごとに環境が違うため一律スケールは誤り。無変更 push が
 # 軒並み悪化表示になった実例 run 30453173113 への対処)。絶対予算の metric (RSS 等) は素のまま。
 #
+# 判定保留 (⚠, 2026-08-01 導入): 較正は「混雑が全 metric へ一様に乗る」前提だが、環境差が大きい
+# run では一様でなくなる。実例 run 30683781313 は較正器 +50% の混雑下で render_large_patch が
+# +88% (換算後も +25% 残る) となり、コードに機構が無いのに 🔺 悪化 と表示された (同じコミットの
+# 再実行で 0.940 に戻り flake と確定)。⚠️ この状況で 悪化/改善/誤差圏 のどれを出しても嘘になる
+# ため、環境差が CALIB_TRUST_BAND を超えたら rel metric の判定を出さず「保留」にする。
+# 切り分けは同じコミットで Bench を再実行する (rules/bench-watch-after-push.md)。
+# 予算ゲート側は独自の CALIB_MAX_SCALE を持つので触らない (桁級の回帰は保留中も捕まえる)。
+#
 # python3 不在時は (b)(c) を落として (a) だけ出す (予算ゲートは常に生きる縮退)。
 set -uo pipefail
 
@@ -64,6 +72,10 @@ import sys
 name, budget_file, prev_tsv, cur_tsv, data_file = sys.argv[1:6]
 
 BASELINE_RUNS = 5  # プールする直近 run 数 (今回のブロックを含む台帳の保持数)
+# CALIB_TRUST_BAND は「較正して比較してよい」環境差の幅 (較正器の cur/baseline 比が 1±これ)。
+# 実測: ×1.5 の混雑では換算後も +25% の偽悪化が残った (run 30683781313)。±25% は
+# 平常の run 間ばらつき (実測 ×0.94〜×1.07) には余裕で収まり、偽悪化が出た倍率は拾える幅。
+CALIB_TRUST_BAND = 0.25
 
 # --- 今回のサンプル収集 (出現順を保持) --------------------------------------
 order: list[str] = []
@@ -163,6 +175,17 @@ for b in blocks:
             scale = cur_calib_p50 / b_cal
     block_scales.append(scale)
 
+# --- 環境差が大きすぎて比較が意味を持たない run の検出 --------------------------
+# 較正器の cur/baseline 比 (= この run がどれだけ別環境か)。1 から離れるほど「混雑が全 metric へ
+# 一様に乗る」前提が崩れ、換算しても偽の悪化/改善が残る (ファイル冒頭の実例)。
+env_shift = statistics.median([s for s in block_scales if s > 0]) if any(s > 0 for s in block_scales) else 0.0
+calib_trusted = env_shift <= 0 or abs(env_shift - 1) <= CALIB_TRUST_BAND
+# ⚠️ ジョブログにも出す: Step Summary は API 非公開なので、CLI で数値を追う経路
+# (rules/bench-watch-after-push.md) からは stdout しか見えない。check_bench_budgets.sh は
+# metric= 以外の行を素通しするので、この行を足しても予算ゲートには影響しない。
+if env_shift > 0:
+    print(f"bench_env_shift={env_shift:.2f} trusted={'yes' if calib_trusted else 'no'}")
+
 # --- Mann-Whitney U (正規近似・同順位は平均ランク) ------------------------------
 def mwu_z(a: list[float], b: list[float]) -> float:
     combined = sorted((v, 0) for v in a) + sorted((v, 1) for v in b)
@@ -223,6 +246,10 @@ if summary:
                         " 各 baseline run を cur 環境へ換算して判定")
         elif blocks:
             rows.append(f"較正器 {calib_name} の baseline 値が無いため正規化なし (環境差がそのまま出る)")
+    if not calib_trusted:
+        rows.append(f"⚠ この run は baseline と環境が違いすぎる (較正器 ×{env_shift:.2f})。"
+                    "換算しても偽の悪化/改善が残るため rel metric の判定は出さない — "
+                    "**同じコミットで Bench を再実行**すると切り分けられる")
     rows += ["",
             "| metric | budget (ms) | base p50 | cur p50 | Δ | 判定 | cur min |",
             "|---|---:|---:|---:|---:|:---|---:|"]
@@ -236,12 +263,17 @@ if summary:
         b_p50 = statistics.median(pool)
         delta = (c_p50 - b_p50) / b_p50 * 100 if b_p50 else 0.0
         z = mwu_z(pool, c)
-        if abs(z) >= 1.96 and abs(delta) >= 5:
-            verdict = f"🔺 悪化 (|z|={abs(z):.1f})" if delta > 0 else f"✅ 改善 (|z|={abs(z):.1f})"
+        if normalized and not calib_trusted:
+            # 換算しても偽の悪化/改善が残る環境差。悪化・改善・誤差圏のどれを出しても嘘になるので
+            # 判定しない (Δ は残すので人が見られる)。切り分けは同じコミットでの Bench 再実行。
+            verdict = f"⚠ 判定保留 (環境差 ×{env_shift:.2f})"
         else:
-            verdict = "➖ 誤差圏"
-        if normalized:
-            verdict += " ⚖"
+            if abs(z) >= 1.96 and abs(delta) >= 5:
+                verdict = f"🔺 悪化 (|z|={abs(z):.1f})" if delta > 0 else f"✅ 改善 (|z|={abs(z):.1f})"
+            else:
+                verdict = "➖ 誤差圏"
+            if normalized:
+                verdict += " ⚖"
         rows.append(f"| {m} | {budgets.get(m, '-')} | {b_p50:.1f} | {c_p50:.1f} | "
                     f"{delta:+.1f}% | {verdict} | {c_min:.1f} |")
     with open(summary, "a") as f:
