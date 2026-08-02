@@ -124,6 +124,11 @@ type issuesView struct {
 const (
 	// issuesAnimDuration は開く演出の所要時間 (最後の行が着地するまで)。
 	issuesAnimDuration = 700 * time.Millisecond
+	// issuesCloseDuration は閉じる演出の所要時間 (板が画面外へ抜け切るまで)。開くより速いのは、
+	// 開くときは中身を読み始められる一方、閉じるときは「もう用が済んだ画面」を見せ続けるため
+	// (引き出しの issuesDrawerDuration と同じ値・同じ理由)。⚠️ 畳む時刻でもある: この時間が
+	// 板の実際の滞在時間より長いと、抜けた後の空舞台を見せてから git log へ戻ることになる。
+	issuesCloseDuration = 450 * time.Millisecond
 	// issuesAnimStagger は開く演出で行ごとに開始をずらす割合。0 なら全行同時に動いて「板が 1 枚
 	// 滑り込む」見え方、大きいほど「上から順に流れ込む」見え方になる。閉じる演出では使わない
 	// (rowOffsetRatio の doc)。
@@ -247,7 +252,7 @@ func (v *issuesView) close() {
 
 // settleClose は閉じる演出が着地していれば片付ける (browseModel の tick から毎拍呼ばれる)。
 func (v *issuesView) settleClose() {
-	if !v.closing || timeNow().Sub(v.animStart) < issuesAnimDuration {
+	if !v.closing || timeNow().Sub(v.animStart) < issuesCloseDuration {
 		return
 	}
 	v.finishClose()
@@ -1124,11 +1129,12 @@ func (v *issuesView) lines(o issuesRenderOpts) []string {
 
 // animProgress は開く演出の進み (0..1)。演出していないときは 1 (= 変形しない)。
 //
-// 閉じるときは進捗を 1 → 0 へ落とす。⚠️ 反転するのは進捗だけで、見え方 (緩急・行ごとのずらし)
-// まで開く演出の逆再生にはしない (理由は rowOffsetRatio の doc)。
+// 閉じるときは進捗を 1 → 0 へ落とす (所要も別で、issuesCloseDuration の方が短い)。⚠️ 反転する
+// のは進捗の向きだけで、見え方 (緩急・行ごとのずらし) まで開く演出の逆再生にはしない
+// (理由は rowOffsetRatio の doc)。
 func (v *issuesView) animProgress() float64 {
 	if v.closing {
-		return max(1-float64(timeNow().Sub(v.animStart))/float64(issuesAnimDuration), 0)
+		return max(1-float64(timeNow().Sub(v.animStart))/float64(issuesCloseDuration), 0)
 	}
 	if !v.animating() {
 		return 1
@@ -1171,16 +1177,17 @@ func slideInWindow(window []string, progress float64, width int, closing bool) [
 	return out
 }
 
-// rowOffsetRatio は行 i の横ずれを幅に対する割合で返す (0 = 着地、1 = 画面外)。進みは
-// easeOutCubic で終端付近を減速させる (線形だと「カクッ」と止まる。toast の easedShown と同じ)。
+// rowOffsetRatio は行 i の横ずれを幅に対する割合で返す (0 = 着地、1 = 画面外)。
 //
-// ⚠️ 閉じる向きは「開く動きの逆再生」にしないこと。逆再生は 2 つの意味で動き出しを遅くする:
-// easeOutCubic の緩やかな尾が立ち上がりの平坦部になり、行ごとのずらし (stagger) は視線のある
-// 最上行を最後に回す。両方入っていた頃は最上行が幅の 5% ずれるまで 0.4 秒かかっていた
-// (esc の反応が鈍く見える正体)。閉じるときは全行同時に、離脱の進みへ減速を掛ける。
+// 入ってくる向きだけ easeOutCubic で終端を減速させ、行ごとに開始をずらす (stagger)。着地する
+// ものは減速しないと「カクッ」と止まって見え、ずらしがあると上から順に流れ込んで見える。
+//
+// ⚠️ 出ていく向きにこの作法を流用しないこと。板には着地点が無いので、終端の減速は「もう画面から
+// 消えているのに畳まれない時間」に化ける (easeOutCubic だと 280 桁端末で残り 100ms が真っ白)。
+// ずらしも視線のある最上行を最後に回して動き出しを遅らせる。出ていくときは全行同時・等速。
 func rowOffsetRatio(progress float64, i, last int, closing bool) float64 {
 	if closing {
-		return easeOutCubicFloat(1 - progress) // 板が 1 枚まるごと右へ抜ける
+		return 1 - progress // 板が 1 枚まるごと等速で右へ抜ける
 	}
 	delay := issuesAnimStagger * float64(i) / float64(last)
 	return 1 - easeOutCubicFloat((progress-delay)/(1-issuesAnimStagger))

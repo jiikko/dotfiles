@@ -1,6 +1,6 @@
 package main
 
-// issues viewer の「閉じる演出」(開く演出の逆再生) の検査。ユーザー要望 2026-08-01。
+// issues viewer の「閉じる演出」(板が 1 枚まるごと等速で右へ抜ける) の検査。
 //
 // ⚠️ 他のテストは newTestIssuesView / newTestBrowse で演出を切っている (close したら即座に
 // 畳まれている前提で書かれているため)。ここだけ明示的に on にして演出そのものを見る。
@@ -21,8 +21,8 @@ func openAnimView(t *testing.T) *issuesView {
 	return &v
 }
 
-// 閉じるときは開く動きの逆再生になる (進捗が 1 から 0 へ落ちる)。
-func TestIssuesCloseIsReversedOpen(t *testing.T) {
+// 閉じるときは進捗が 1 から 0 へ落ち、0 で止まる。
+func TestIssuesCloseProgressFallsToZero(t *testing.T) {
 	orig := timeNow
 	t.Cleanup(func() { timeNow = orig })
 	now := time.Unix(1000, 0)
@@ -35,22 +35,22 @@ func TestIssuesCloseIsReversedOpen(t *testing.T) {
 
 	v.close()
 	if !v.visible() {
-		t.Fatal("閉じる演出の前に画面が消えた (逆再生する中身が無い)")
+		t.Fatal("閉じる演出の前に画面が消えた (抜けていく中身が無い)")
 	}
 	if p := v.animProgress(); p != 1 {
 		t.Fatalf("閉じ始めが開き切った姿から始まっていない: %v", p)
 	}
-	now = now.Add(issuesAnimDuration / 2)
+	now = now.Add(issuesCloseDuration / 2)
 	mid := v.animProgress()
 	if mid <= 0 || mid >= 1 {
 		t.Fatalf("途中の進捗が 0..1 でない: %v", mid)
 	}
-	now = now.Add(issuesAnimDuration / 2)
+	now = now.Add(issuesCloseDuration / 2)
 	if p := v.animProgress(); p != 0 {
 		t.Fatalf("所要を過ぎても画面外まで抜けていない: %v", p)
 	}
 	// ⚠️ 進捗は 0 で止まる (負に走らない)。負になると slideInWindow の局所進捗が壊れる。
-	now = now.Add(issuesAnimDuration)
+	now = now.Add(issuesCloseDuration)
 	if p := v.animProgress(); p != 0 {
 		t.Fatalf("進捗が 0 を下回った: %v", p)
 	}
@@ -59,6 +59,7 @@ func TestIssuesCloseIsReversedOpen(t *testing.T) {
 // 閉じ始めの 1 フレームで目に見えて動く。開く動きをそのまま逆再生すると easeOutCubic の緩やかな
 // 尾が立ち上がりの平坦部になり、最初のフレームでは 1 桁も動かない (esc の反応が鈍く見える)。
 // 「動いたか」ではなく「1 フレームでどれだけ動いたか」を縛らないとこの平坦さを検出できない。
+// 境は幅の 5%: 等速なら 1 拍で 7 桁 (33ms / 450ms) 動き、逆再生なら 0 桁で止まる。
 func TestIssuesCloseMovesOnFirstFrame(t *testing.T) {
 	const width = 100
 	window := make([]string, 20)
@@ -66,10 +67,10 @@ func TestIssuesCloseMovesOnFirstFrame(t *testing.T) {
 		window[i] = strings.Repeat("x", width)
 	}
 	// tick 1 拍 (scrollInterval) ぶん進んだ時点の進捗。閉じるので 1 から落ちる
-	p := 1 - float64(scrollInterval)/float64(issuesAnimDuration)
+	p := 1 - float64(scrollInterval)/float64(issuesCloseDuration)
 
 	closing := maxRowShift(slideInWindow(window, p, width, true))
-	if closing < width/10 {
+	if closing < width/20 {
 		t.Fatalf("閉じ始めの 1 フレームで %d 桁しか動いていない (立ち上がりが潰れている)", closing)
 	}
 	// 開く側は右外から入ってくる = 1 フレーム目はまだ大きくずれている (逆向きの回帰よけ)
@@ -89,18 +90,18 @@ func TestIssuesCloseCurveReachesRender(t *testing.T) {
 	v := loadedView(sampleIssues()...)
 	v.closeAnimOff = false
 	v.close()
-	// 折り返し地点で見る: 1 フレーム目は stagger で最下行しか動かず、そこが空行だと
-	// 「渡し忘れ」と区別がつかない。中間なら中身のある行が大きくずれている
-	now = now.Add(issuesAnimDuration / 2)
+	// 折り返し地点で見る: 閉じる向きなら中身のある行が幅の半分ずれ、開く向き (渡し忘れ) なら
+	// stagger で最下行しか動かない。そこは一覧の外なので空行 = ずれは数桁で止まる
+	now = now.Add(issuesCloseDuration / 2)
 
 	shift := maxRowShift(v.lines(renderOpts(12)))
-	if shift < 80/4 {
+	if shift < renderOpts(12).width/4 {
 		t.Fatalf("閉じる向きが描画へ届いていない (中間フレームのずれが %d 桁。開く向きの式なら数桁で止まる)", shift)
 	}
 }
 
 // 閉じるときは全行が同時に抜ける (板が 1 枚右へ出ていく)。行ごとにずらすと視線のある最上行が
-// 最後に回され、0.25 秒静止してから動き出す。
+// 最後に回され、静止してから動き出す。
 func TestIssuesCloseMovesAllRowsTogether(t *testing.T) {
 	const width = 100
 	window := make([]string, 20)
@@ -115,6 +116,33 @@ func TestIssuesCloseMovesAllRowsTogether(t *testing.T) {
 			t.Fatalf("行 %d のずれが %d 桁で最上行 (%d 桁) と違う (行ごとにずれている)", i, shift, head)
 		}
 	}
+}
+
+// 板が画面外へ出る時刻と viewer を畳む時刻が揃っている。ずれると「もう何も無い画面」を見せてから
+// git log へ戻ることになる。⚠️ 終端で減速するカーブを使うと必ずこれが起きる (残り数 % の距離に
+// 時間の後半を使うため。easeOutCubic + 700ms のとき 280 桁端末で 100ms の白画面が出ていた)。
+func TestIssuesCloseLeavesNoBlankFrame(t *testing.T) {
+	orig := timeNow
+	t.Cleanup(func() { timeNow = orig })
+	start := time.Unix(1000, 0)
+	now := start
+	timeNow = func() time.Time { return now }
+
+	v := loadedView(sampleIssues()...)
+	v.closeAnimOff = false
+	v.close()
+
+	for elapsed := time.Duration(0); elapsed < 5*issuesCloseDuration; elapsed += scrollInterval {
+		now = start.Add(elapsed)
+		v.settleClose() // browseModel の tick と同じ順 (畳んでから描く)
+		if !v.visible() {
+			return
+		}
+		if strings.TrimSpace(strings.Join(v.lines(renderOpts(12)), "")) == "" {
+			t.Fatalf("%v 時点で画面が空なのに viewer が畳まれていない (ここが白画面になる)", elapsed)
+		}
+	}
+	t.Fatal("演出が終わらない")
 }
 
 // maxRowShift は窓の各行の右へのずれ (先頭の空白幅) の最大値。空行は演出で消えた行なので除く。
@@ -138,7 +166,7 @@ func TestIssuesCloseKeepsTickingUntilSettled(t *testing.T) {
 
 	v := openAnimView(t)
 	v.close()
-	now = now.Add(issuesAnimDuration * 3) // とっくに時間は過ぎている
+	now = now.Add(issuesCloseDuration * 3) // とっくに時間は過ぎている
 	if !v.animating() {
 		t.Fatal("片付け前に animating が false になった (最後の 1 拍が届かず閉じかけで固まる)")
 	}
@@ -167,7 +195,7 @@ func TestIssuesCloseDefersTeardownUntilSettled(t *testing.T) {
 	if v.watch.gen != gen {
 		t.Fatal("演出中に見張りを畳んだ (逆再生の途中で中身が死ぬ)")
 	}
-	now = now.Add(issuesAnimDuration)
+	now = now.Add(issuesCloseDuration)
 	v.settleClose()
 	if v.watch.gen == gen {
 		t.Fatal("着地しても見張りが畳まれていない (watcher が残る)")
