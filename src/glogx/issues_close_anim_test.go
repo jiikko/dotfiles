@@ -250,6 +250,39 @@ func TestIssuesCloseLandsOnKeyWithoutSwallowing(t *testing.T) {
 	}
 }
 
+// 閉じる演出の途中に来たキーは、viewer を畳んでから通常のキーとして処理される。
+//
+// ⚠️ viewer へ回してはいけない: 畳んだ後の view にモードを持つキーの状態 (/ の絞り込み・n の
+// 確認モーダル) が残り、次に i で開いた瞬間に蘇る。絞り込みが蘇ると全キーが検索語として飲まれて
+// q でも閉じられなくなり、確認モーダルが蘇ると y/Enter で実ファイルが動く。
+// 実体は browseModel が routing 前に finishClose すること (tui.go)。
+func TestIssuesCloseLandsBeforeKeyReachesViewer(t *testing.T) {
+	orig := timeNow
+	t.Cleanup(func() { timeNow = orig })
+	now := time.Unix(1000, 0)
+	timeNow = func() time.Time { return now }
+
+	for _, key := range []string{"/", "n"} {
+		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m.issuesOv.closeAnimOff = false
+		m.issuesOv.toggle(t.TempDir())
+		m.issuesOv.finishAnim()
+		m.issuesOv.close()
+		now = now.Add(issuesCloseDuration / 4) // まだ演出の途中
+
+		releaseKey(m)
+		m.handleKey(key)
+
+		if m.issuesOv.visible() {
+			t.Fatalf("%q で演出が着地していない", key)
+		}
+		if m.issuesOv.numFilter.active || m.issuesOv.markNext.active {
+			t.Fatalf("%q が畳んだ後の viewer に状態を残した (絞り込み=%v 確認=%v)",
+				key, m.issuesOv.numFilter.active, m.issuesOv.markNext.active)
+		}
+	}
+}
+
 // 演出中の i は「閉じ切ってから開き直す」= 見張りを二重に張らない。
 func TestIssuesReopenDuringCloseDoesNotDoubleWatch(t *testing.T) {
 	orig := timeNow
