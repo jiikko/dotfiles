@@ -230,8 +230,10 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   local bin="$src_dir/$name" tmp="$src_dir/.autobuild.new.$REPLY"
   # このビルドが「何を入力にしたか」を開始時点で確定させる。成功時にこれを記録するので、
   # ビルド実行中に着地した編集は次回の指紋比較で必ず差として出る (_go_autobuild_fingerprint の doc)。
-  local built_fp started_at=${EPOCHREALTIME-0}
+  local built_fp started_at=${EPOCHREALTIME-0} seen_at seen_fp
   _go_autobuild_fingerprint "$src_dir"; built_fp=$REPLY
+  # install の可否を決めるための基準 (下の guard の doc)。開始時点の記録を控える。
+  _go_autobuild_read_built "$src_dir"; seen_at=$reply[1]; seen_fp=$reply[2]
   local local_go required_go
   local_go=$(go env GOVERSION 2>/dev/null) || local_go=unknown
   required_go=$(awk '$1 == "go" {print $2; exit}' "$src_dir/go.mod" 2>/dev/null)
@@ -275,15 +277,21 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
     print -u2 -- "$name: lock を奪われたため install を中止 (別の builder が入れている)"
     return 0
   fi
-  # 自分より「あとに始まった」ビルドが既に入っていたら踏まない。上の lock 判定では足りない:
-  # 同期ビルド (GO_AUTOBUILD_SYNC=1 = 「今すぐ新版が欲しい」) は lock を取らないので、走行中の
-  # builder から見て「lock は自分のまま」になり、ユーザーの復旧操作を古い成果物で巻き戻す。
+  # install を見送ってよいのは「自分のビルド中に別のビルドが実際に記録を書き換え、かつその相手が
+  # 自分より後に始まった」ときだけ。上の lock 判定では足りない: 同期ビルド
+  # (GO_AUTOBUILD_SYNC=1 = 「今すぐ新版が欲しい」) は lock を取らないので、走行中の builder から
+  # 見て「lock は自分のまま」になり、ユーザーの復旧操作を古い成果物で巻き戻す。
   #
-  # ⚠️ 「入っているか」でなく「あとに始まったか」で見る。完走の順で決めると、先に終わった古い
-  # 入力のビルドが勝ってしまい、最新の入力でビルドした方が捨てられる。あとに始まった方が新しい
-  # 入力を見ているので、開始の順が入力の新しさの順になる。
+  # ⚠️ 2 つの条件は両方要る。片方ずつで実装して 2 回とも壊した (2026-08-01 / 08-02):
+  #   「書き換わったか」だけ → 順序が無く、先に終わった古い入力のビルドが勝つ。最新の入力で
+  #     ビルドした方が捨てられる
+  #   「後に始まったか」だけ → 記録の絶対時刻を今の時計と無条件に比べるので、時計が巻き戻ると
+  #     (NTP の step / スリープ復帰 / 進んだ時計のホストからの復元) 他に 1 本も走っていなくても
+  #     install を捨てる。失敗ではないので backoff も効かず毎起動フルビルド + 全捨てになり、
+  #     バイナリ不在の初回経路では exec が rc=127 で死ぬ (ツールが起動しない)
+  # 両方を要求すれば、時計が壊れていても・時計が無くても、単独のビルドは必ず install される。
   _go_autobuild_read_built "$src_dir"
-  if (( reply[1] > started_at )); then
+  if [[ "$reply[1]" != "$seen_at" || "$reply[2]" != "$seen_fp" ]] && (( reply[1] > started_at )); then
     command rm -f "$tmp" 2>/dev/null
     print -u2 -- "$name: あとから始まったビルドが既に入っているため install を中止"
     return 0

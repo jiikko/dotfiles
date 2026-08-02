@@ -547,6 +547,39 @@ binary_is "$ROOT" B \
   || fail "あとから始まった新しい入力のビルドが捨てられた (got: $(binary_mark "$ROOT"))"
 ok "あとから始まったビルドが勝つ (完走の順ではなく開始の順で決まる)"
 
+printf '\n## 記録の時刻が未来でも、単独のビルドは捨てられない\n'
+# ⚠️ install ガードは「記録された絶対時刻」を今の時計と比べる。時計が巻き戻る (NTP の step /
+# スリープ復帰 / 進んだ時計のホストで書かれた src_dir を rsync・バックアップ復元で持ってくる) と、
+# 他に走っているビルドが 1 本も無くても「あとから始まったビルドが既に入っている」と誤判定する。
+# しかも失敗ではないので .autobuild.failed を書かず backoff も効かない = 時計が追いつくまで
+# 毎起動フルビルドして毎回捨てる。単独のビルドは時計に関係なく install できなければならない。
+ROOT="$(new_project skew)"
+FAKE_GO_MARK=v1 run_tool "$ROOT" >/dev/null
+freeze "$ROOT"
+skew_stamp() {  # 記録の 1 行目 (開始時刻) だけを未来へ差し替える
+  local f="$1/src/tool/.autobuild.built" body
+  body="$(tail -n +2 "$f")"
+  { printf '%s\n' "99999999999.0"; printf '%s' "$body"; } > "$f"
+}
+skew_stamp "$ROOT"
+bump "$ROOT/src/tool/main.go"
+out="$(FAKE_GO_MARK=v2 run_tool "$ROOT")"
+[[ "$out" == "v2" ]] \
+  || fail "記録の時刻が未来だと、他に走っていなくても install が捨てられる (got: $out)"
+ok "記録の時刻が未来でも、単独のビルドは install される"
+
+# ⚠️ さらに悪い派生: バイナリ不在の初回経路でも同じガードが発火する。install 中止は失敗では
+# ない (return 0) ので go_autobuild_exec の `|| exit 1` が効かず、存在しないバイナリを exec して
+# rc=127 で死ぬ。「旧版が動く」ですらなくツールが起動しない。stale トーストを見た人が
+# 「バイナリを消して作り直させる」をやると踏む。
+skew_stamp "$ROOT"
+rm -f "$ROOT/src/tool/tool"
+if ! out="$(FAKE_GO_MARK=v3 run_tool "$ROOT")"; then
+  fail "記録の時刻が未来だとバイナリ不在から復旧できない (ツールが起動しない)"
+fi
+[[ "$out" == "v3" ]] || fail "バイナリを作り直したのに別の版が動いた (got: $out)"
+ok "記録の時刻が未来でも、バイナリ不在なら必ず作り直す"
+
 printf '\n## 走行中の builder の作業ファイルを、あとから来た builder が消さない\n'
 # ⚠️ 同期ビルド (GO_AUTOBUILD_SYNC=1 / バイナリ不在の初回) は lock を取らないので、spawn が
 # lock 取得直後に走らせる .autobuild.new.* の掃除と直列化されない。掃除が走行中の目印を消すと:
