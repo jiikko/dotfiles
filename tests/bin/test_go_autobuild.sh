@@ -514,6 +514,18 @@ grep -q '+dirty' "$ROOT/src/tool/.autobuild.rev" \
 ok "git add していない新規 .go も +dirty として数える"
 rm -f "$ROOT/src/tool/newfile.go"
 
+# ⚠️ dirty の範囲は指紋の入力集合と揃える。*_test.go は go build の入力ではない (指紋も無視する)
+# ので、それだけが変わっていても成果物はコミットの内容そのもの = clean。ここがズレると、
+# テストを常時いじるこの repo では +dirty が出っぱなしになり、記録が何も言わなくなる。
+( cd "$ROOT" && git add -A && git -c user.email=t@t -c user.name=t commit -qm addtest ) >/dev/null 2>&1
+printf 'package sub\n\n// touched\n' > "$ROOT/src/tool/sub/sub_test.go"
+freeze "$ROOT"
+bump "$ROOT/src/tool/main.go"   # 再ビルドを起こす (指紋を変えるのは本体側)
+FAKE_GO_MARK=v4 run_tool "$ROOT" >/dev/null
+grep -q '+dirty' "$ROOT/src/tool/.autobuild.rev" \
+  && fail "*_test.go の変更だけで +dirty が付いた (指紋は無視するのに記録は dirty と言う)"
+ok "*_test.go の変更は +dirty に数えない (指紋の入力集合と揃える)"
+
 printf '\n## あとから始まった新しいビルドが、先に終わった古いビルドに負けない\n'
 # ⚠️ install ガードは「順序」を見る必要がある。内容一致だけで見ると「あとから完走した方が
 # 無条件で降りる」になり、最新の入力でビルドした方が捨てられる。ここが効かないと、stale

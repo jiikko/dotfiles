@@ -317,9 +317,13 @@ _go_autobuild_record_rev() {  # $1=src_dir
   # ⚠️ diff でなく status で見る。diff は追跡対象しか比較しないので、まだ git add していない
   # 新規 .go を見落とす。それは go build の入力に入る (= その版はコミットに存在しないコードで
   # 動いている) ので、記録が clean を名乗ると診断が嘘になる (自己レビューで検出 2026-08-02)。
-  # ⚠️ 対象を指紋と同じ入力集合に絞る。ディレクトリ全体を見ると、成果物や作業ファイルを
-  # .gitignore していない repo で常に +dirty になり、記録が何も言わなくなる。
-  [[ -n "$(command git -C "$src_dir" status --porcelain -- '*.go' go.mod go.sum 2>/dev/null)" ]] \
+  # ⚠️ 対象を指紋と同じ入力集合に絞る (*_test.go を除く .go + go.mod + go.sum)。
+  # ディレクトリ全体を見ると、成果物や作業ファイルを .gitignore していない repo で常に
+  # +dirty になる。*_test.go を含めても同じことが起きる: テストは go build の入力ではないので
+  # 成果物はコミットの内容そのものなのに、テストを常時いじるこの repo では +dirty が
+  # 出っぱなしになり記録が何も言わなくなる (自己レビューで検出 2026-08-02)。
+  [[ -n "$(command git -C "$src_dir" status --porcelain \
+      -- '*.go' go.mod go.sum ':(exclude)*_test.go' 2>/dev/null)" ]] \
     && rev+=" +dirty"
   print -r -- "$rev" >| "$src_dir/.autobuild.rev" 2>/dev/null
   return 0
