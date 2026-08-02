@@ -6,6 +6,7 @@ package main
 // 畳まれている前提で書かれているため)。ここだけ明示的に on にして演出そのものを見る。
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -53,6 +54,61 @@ func TestIssuesCloseIsReversedOpen(t *testing.T) {
 	if p := v.animProgress(); p != 0 {
 		t.Fatalf("進捗が 0 を下回った: %v", p)
 	}
+}
+
+// 閉じ始めの 1 フレームで目に見えて動く。開く動きをそのまま逆再生すると easeOutCubic の緩やかな
+// 尾が立ち上がりの平坦部になり、最初のフレームでは 1 桁も動かない (esc の反応が鈍く見える)。
+// 「動いたか」ではなく「1 フレームでどれだけ動いたか」を縛らないとこの平坦さを検出できない。
+func TestIssuesCloseMovesOnFirstFrame(t *testing.T) {
+	const width = 100
+	window := make([]string, 20)
+	for i := range window {
+		window[i] = strings.Repeat("x", width)
+	}
+	// tick 1 拍 (scrollInterval) ぶん進んだ時点の進捗。閉じるので 1 から落ちる
+	p := 1 - float64(scrollInterval)/float64(issuesAnimDuration)
+
+	closing := maxRowShift(slideInWindow(window, p, width, true))
+	if closing < width/10 {
+		t.Fatalf("閉じ始めの 1 フレームで %d 桁しか動いていない (立ち上がりが潰れている)", closing)
+	}
+	// 開く側は右外から入ってくる = 1 フレーム目はまだ大きくずれている (逆向きの回帰よけ)
+	if opening := maxRowShift(slideInWindow(window, 1-p, width, false)); opening <= closing {
+		t.Fatalf("開き始めが右外から入ってきていない (ずれ %d 桁)", opening)
+	}
+}
+
+// 閉じる向きが描画まで届いている。⚠️ 上の検査は slideInWindow を直接叩くので、lines() が
+// closing を渡し忘れても気づかない (開く向きの平坦な立ち上がりへ黙って戻る)。
+func TestIssuesCloseCurveReachesRender(t *testing.T) {
+	orig := timeNow
+	t.Cleanup(func() { timeNow = orig })
+	now := time.Unix(1000, 0)
+	timeNow = func() time.Time { return now }
+
+	v := loadedView(sampleIssues()...)
+	v.closeAnimOff = false
+	v.close()
+	// 折り返し地点で見る: 1 フレーム目は stagger で最下行しか動かず、そこが空行だと
+	// 「渡し忘れ」と区別がつかない。中間なら中身のある行が大きくずれている
+	now = now.Add(issuesAnimDuration / 2)
+
+	shift := maxRowShift(v.lines(renderOpts(12)))
+	if shift < 80/4 {
+		t.Fatalf("閉じる向きが描画へ届いていない (中間フレームのずれが %d 桁。開く向きの式なら数桁で止まる)", shift)
+	}
+}
+
+// maxRowShift は窓の各行の右へのずれ (先頭の空白幅) の最大値。空行は演出で消えた行なので除く。
+func maxRowShift(window []string) int {
+	shift := 0
+	for _, ln := range window {
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+		shift = max(shift, len(ln)-len(strings.TrimLeft(ln, " ")))
+	}
+	return shift
 }
 
 // 演出が着地するまで tick を止めない (時間で降ろすと片付け前にチェーンが切れて固まる)。

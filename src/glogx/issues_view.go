@@ -1116,15 +1116,16 @@ func (v *issuesView) lines(o issuesRenderOpts) []string {
 		body = overlayCenteredBox(body, box, o.width, o.page, o.colored)
 	}
 	if p := v.animProgress(); p < 1 {
-		body = slideInWindow(body, p, o.width)
+		body = slideInWindow(body, p, o.width, v.closing)
 	}
 	return body
 }
 
 // animProgress は開く演出の進み (0..1)。演出していないときは 1 (= 変形しない)。
 //
-// 閉じるときは進捗を反転するだけ = 開く動きの逆再生にする。別のカーブを使うと「開いた動きと
-// 閉じる動きが違う」ちぐはぐさが出る (引き出し・アプリの開閉演出と同じ規律)。
+// 閉じるときは進捗を 1 → 0 へ落とす。行ごとの開始をずらす stagger は進捗しか見ないので、これで
+// 「開いた順の逆で抜ける」並びが開く演出と共有される。⚠️ 反転するのは進捗だけで、動きの緩急まで
+// 逆再生にはしない (理由は slideInWindow の doc)。
 func (v *issuesView) animProgress() float64 {
 	if v.closing {
 		return max(1-float64(timeNow().Sub(v.animStart))/float64(issuesAnimDuration), 0)
@@ -1150,7 +1151,12 @@ func padTo(lines []string, n int) []string {
 // 行ごとに開始をずらす (stagger) ので、板が 1 枚滑るのではなく上から順に流れ込んで見える。
 // 進みは easeOutCubic で終点付近で減速させる (線形だと着地が「カクッ」と止まる。toast の
 // easedShown と同じ理由)。まだ入ってきていない行は空にする = 右端から現れる。
-func slideInWindow(window []string, progress float64, width int) []string {
+//
+// closing は右へ抜けていく向き。⚠️ 入ってくる式をそのまま逆再生 ((1-local)³) にしないこと:
+// easeOutCubic の緩やかな尾が立ち上がりの平坦部になり、最上行が幅の 5% ずれるまで 0.4 秒かかる
+// (esc の反応が鈍く見える正体)。行ごとの開始時刻は共有したまま、離脱の進みへ改めて減速を掛けて
+// 「速く抜けて端で減速」にする。開閉で緩急を揃えたくなっても逆再生には戻さない。
+func slideInWindow(window []string, progress float64, width int, closing bool) []string {
 	out := make([]string, 0, len(window))
 	last := max(len(window)-1, 1)
 	for i, ln := range window {
@@ -1164,7 +1170,11 @@ func slideInWindow(window []string, progress float64, width int) []string {
 			out = append(out, "") // まだ画面外 (または元から空行)
 			continue
 		}
-		off := int(math.Round((1 - easeOutCubicFloat(local)) * float64(width)))
+		ratio := 1 - easeOutCubicFloat(local) // 入ってくる: 右外から着地へ、終点で減速
+		if closing {
+			ratio = easeOutCubicFloat(1 - local) // 抜けていく: 離脱の進みへ減速を掛け直す
+		}
+		off := int(math.Round(ratio * float64(width)))
 		if off >= width {
 			out = append(out, "")
 			continue
