@@ -62,6 +62,9 @@ type issuesView struct {
 	// filter は「どの状態まで見せるか」(a キーで巡回)。zero value = open のみが既定
 	// (issues.FilterOpen)。pending / done を既定で伏せる理由は issues.StatusFilter の doc。
 	filter issues.StatusFilter
+	// numFilter は番号のインクリメンタルフィルタ (/)。zero value = 絞り込みなし。効いている
+	// あいだはタブと filter の両方を無視した全 issue が対象になる (issuesNumberFilter の doc)。
+	numFilter issuesNumberFilter
 	// チップに出す件数。issues.Tab.Count は done を含む全件なので表示には使わない (理由は
 	// refresh)。tabCount は tabs と同じ並び、allCount は All チップ用。
 	tabCount  []int
@@ -462,7 +465,7 @@ func (v *issuesView) rebindOpen(path string) {
 func (v *issuesView) refresh() {
 	// ⚠️ 行集合が変わるので選択は畳む。錨は位置で持つため、残すと別の issue を指す
 	v.clearMark()
-	v.rows = v.rowsForTab(v.currentTab())
+	v.rows = v.visibleIssues()
 	v.cursor = clampIdx(v.cursor, len(v.rows))
 	// チップの件数は「そのタブを選んだときに実際に並ぶ行数」と同じ Filter から出す。
 	// issues.Tab.Count は done を含む全件なので、そのまま出すと done を伏せた既定表示で
@@ -481,6 +484,18 @@ func (v *issuesView) refresh() {
 	// 決まる (issues.Tabs) ため、状態を伏せた表示では「0 件なのに左端」が構造的に起きていた。
 	v.tabs, v.tabCount = reorderTabsByCount(v.tabsCanon, counts)
 	v.tabIdx = tabIndexOf(v.tabs, sel)
+}
+
+// visibleIssues は今の条件で一覧に並べる行集合。
+//
+// ⚠️ 行集合を作るのはここ 1 箇所にする。番号フィルタは再スキャン (r / 見張り) や a を跨いで
+// 残るので、/ の処理側で v.rows を差し替える形にすると、refresh を通る経路 (receive /
+// applyScreen / a) が絞り込みヘッダーを出したままタブの行へ黙って戻してしまう。
+func (v *issuesView) visibleIssues() []*issues.Issue {
+	if v.numFilter.active {
+		return v.numFilter.rows(v.all)
+	}
+	return v.rowsForTab(v.currentTab())
 }
 
 // rowsForTab はタブ名に対応する行集合。⚠️ 疑似カテゴリ [next] はファイル名のカテゴリではなく
@@ -673,6 +688,11 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 	if v.urlPick.active {
 		return v.urlPickerKey(key)
 	}
+	// 番号入力中も同じ理由で先に飲む: 打った数字が検索語なので、一覧のキーへ素通りさせると
+	// 数字キーに割当を足した瞬間に「検索語を打つと画面が動く」ことになる
+	if v.numFilter.typing {
+		return v.numberFilterKey(key, rows)
+	}
 	// モードに依らないアクションキーは先に飲む (対象は target() が一覧/本文で切り替える)
 	if cmd, ok := v.actionKey(key); ok {
 		return cmd
@@ -688,7 +708,16 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 			v.clearMark()
 			return nil
 		}
+		// 絞り込みも同じく 1 段戻る (絞り込んだまま閉じると、次に開いたとき「なぜか件数が
+		// 少ない一覧」から始まる。⚠️ i は閉じる意図が明確なので 1 段戻さない)
+		if v.numFilter.active && key != "i" {
+			v.numFilter.clear()
+			v.refresh()
+			return nil
+		}
 		v.close()
+	case "/":
+		v.numFilter.start() // 絞り込み中なら続きから打てる (行集合は変わらないので refresh 不要)
 	case "j", "down", "ctrl+n":
 		v.moveCursor(1, rows)
 	case "k", "up", "ctrl+p":
@@ -713,21 +742,55 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 		v.cursor = max(len(v.rows)-1, 0)
 		v.scrollToCursor(rows)
 	case "tab", "l", "right":
+		if v.numFilter.active {
+			break // 絞り込み中はカテゴリの概念が無い (ヘッダーもタブ行を出していない)
+		}
 		v.moveTab(1)
 	// ctrl+b で左へ (ユーザー要望 2026-07-31)。右は tui.go が ctrl+f を "right" へ正規化するので
 	// 既に効いており、ここで足すのは対になる左だけ。C-b を「←の別名」として全ビューに広げないのは
 	// 一覧・パネル側の left に別の意味を与えないため (tui.go の C-f 正規化の注記を参照)。
 	case "shift+tab", "h", "left", "ctrl+b":
+		if v.numFilter.active {
+			break
+		}
 		v.moveTab(-1)
 	case "enter", "o":
 		v.openBody()
 	case "n":
 		v.askMarkNext()
 	case "a":
+		if v.numFilter.active {
+			break // 番号検索は状態を無視するので、押しても画面が変わらない (裏で状態だけ変える方が悪い)
+		}
 		v.filter = v.filter.Next()
 		v.refresh()
 	case "r":
 		return v.scanCmd(v.cwd) // loaded は落とさない (取り直し中も前回の結果を出したままにする)
+	}
+	return nil
+}
+
+// numberFilterKey は番号を入力しているあいだのキー。
+//
+// ⚠️ 数字と編集キー以外の印字文字は捨てる (無視して入力を続ける)。一覧のキーとして実行しない
+// のは issuesNumberFilter の doc の理由による。
+func (v *issuesView) numberFilterKey(key string, rows int) tea.Cmd {
+	switch key {
+	case "esc", "ctrl+g":
+		v.numFilter.clear()
+		v.refresh()
+	case "enter":
+		v.numFilter.confirm()
+		v.refresh() // 空入力の確定では絞り込みが消えるので、行集合を作り直す
+	case "down", "ctrl+n":
+		v.moveCursor(1, rows)
+	case "up", "ctrl+p":
+		v.moveCursor(-1, rows)
+	default:
+		if v.numFilter.edit(key) {
+			v.cursor = 0 // 絞り込み直後は先頭を見せる (urlPicker と同じ)
+			v.refresh()
+		}
 	}
 	return nil
 }
@@ -1244,7 +1307,14 @@ func (v *issuesView) bodyHeadLines(width int, colored bool) []string {
 // 「今この repo が抱えている状態」なので、消えるトーストでなく画面に出続ける必要がある。
 // 操作結果はトーストへ移した (takeNotice)。
 func (v *issuesView) listHeadLines(width int, colored bool) []string {
-	head := []string{v.tabLine(issuesRenderOpts{width: width, colored: colored})}
+	// 絞り込み中はタブ行を検索行に差し替える (両方出さない: タブは無視される概念なので、
+	// 並べると「どのタブの中を検索しているのか」という無い関係を読ませてしまう)
+	head := make([]string, 0, 3)
+	if v.numFilter.active {
+		head = append(head, v.numberFilterLine(width, colored))
+	} else {
+		head = append(head, v.tabLine(issuesRenderOpts{width: width, colored: colored}))
+	}
 	if len(v.warnings) > 0 {
 		head = append(head, paint(clipToWidth("⚠ "+v.warnings[0], width), ansiYellow, colored))
 	}
@@ -1284,6 +1354,10 @@ func (v *issuesView) emptyMessage(o issuesRenderOpts) string {
 		return o.spinner + " issues を探しています..."
 	case len(v.dirs) == 0:
 		return "issues ディレクトリが見つかりません (repo root と root/*/issues を探しました)"
+	case len(v.rows) == 0 && v.numFilter.active && v.numFilter.query != "":
+		// ⚠️ 状態フィルタの案内 (a: pending も表示) を出さない。番号検索は状態を無視しているので、
+		// a を押しても結果は 1 件も増えない
+		return "番号に「" + v.numFilter.query + "」を含む issue はありません (Esc: 解除)"
 	case len(v.rows) == 0 && v.filter == issues.FilterOpen:
 		return "このタブに open の issue はありません (a: pending も表示)"
 	case len(v.rows) == 0 && v.filter == issues.FilterPending:
@@ -1293,6 +1367,21 @@ func (v *issuesView) emptyMessage(o issuesRenderOpts) string {
 	default:
 		return ""
 	}
+}
+
+// numberFilterLine は番号で絞り込み中のヘッダー (タブ行の代わり)。
+//
+// 「全カテゴリ・全状態」を必ず出す: 番号検索はタブと状態フィルタの両方を無視するので、書かないと
+// 「今 open だけを見ているはず」という直前までの文脈のまま done の issue が並ぶことになる。
+// 入力中だけ末尾に "_" を出して、打鍵を待っているのか確定済みなのかを区別できるようにする。
+func (v *issuesView) numberFilterLine(width int, colored bool) string {
+	caret := ""
+	if v.numFilter.typing {
+		caret = "_"
+	}
+	line := "番号: " + v.numFilter.query + caret +
+		"  " + strconv.Itoa(len(v.rows)) + " 件 (全カテゴリ・全状態)"
+	return paint(clipToWidth(line, width), ansiBold, colored)
 }
 
 // tabLine はタブ行 (件数つき) と、右端に有効な状態フィルタを描く。
@@ -1504,11 +1593,15 @@ func srcGutter(src, width int, colored bool) string {
 // として飲むので、案内したキーが 1 つも案内どおりに動かない。
 func (v *issuesView) hint() string {
 	// ⚠️ hint は 1 行で、幅を超えた分は末尾から黙って切られる。popup の実幅 (84 桁) に
-	// 収まる範囲へ絞り、絞られたキー (y / Y / v / r) は --help と README を正本にする。
+	// 収まる範囲へ絞り、絞られたキー (y / Y / v / r / 一覧の p) は --help と README を正本にする。
 	if v.urlPick.active {
 		// 件数と 1 字消し (ctrl+h) はピッカー自身のヘッダーが出すので繰り返さない。ここは
 		// 「打った文字がそのまま絞り込みになる」= 本文 pager のキーが効かないことだけを伝える。
 		return "文字入力で絞り込み  ctrl+n/p: 移動  Enter: 開く  Esc: 戻る"
+	}
+	if v.numFilter.typing {
+		// 打鍵がすべて検索語になる = 一覧のキーが効かないことを伝える (urlPick と同じ理由)
+		return "数字で絞り込み  ctrl+n/p: 移動  Enter: 確定  Esc: 解除"
 	}
 	if v.open != nil {
 		return "j/k/Space: スクロール  g/G: 先頭/末尾  p: 番号  u: URL  v: nvim  Enter/h/q: 一覧へ"
@@ -1521,6 +1614,10 @@ func (v *issuesView) hint() string {
 		// 選択中は効くキーだけを出す (移動と Enter は選択を畳むので、並べると誤解を招く)
 		return strconv.Itoa(hi-lo+1) + " 件選択  J/K・shift+↑↓: 増減  y: パス  p: 番号  Y: 参照  Esc: 解除"
 	}
+	if v.numFilter.active {
+		// Tab と a は絞り込み中の no-op なので案内しない (押しても何も起きないキーを出さない)
+		return "j/k: 移動  Enter: 本文  p: 番号  n: next  /: 絞り込み直す  Esc: 解除"
+	}
 	next := "a: +" + issues.StatusPending.Badge()
 	switch v.filter {
 	case issues.FilterPending:
@@ -1529,7 +1626,7 @@ func (v *issuesView) hint() string {
 		next = "a: " + issues.StatusOpen.Badge() + "のみ"
 	case issues.FilterOpen:
 	}
-	return "j/k: 移動  Tab: カテゴリ  Enter: 本文  p: 番号  n: next へ  " + next + "  q: 閉じる"
+	return "j/k: 移動  Tab: カテゴリ  /: 検索  Enter: 本文  n: next  " + next + "  q: 閉じる"
 }
 
 // 「次にやる」の目印 (n)。選択中の issue を <issue ディレクトリ>/next/ へ移す。

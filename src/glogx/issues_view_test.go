@@ -1617,14 +1617,26 @@ func TestIssuesLayoutAgreesBetweenKeysAndRender(t *testing.T) {
 	for _, c := range []struct {
 		name     string
 		warnings []string
+		query    string // 番号フィルタの検索語 ("" = 絞り込みなし)
 	}{
-		{"一覧", nil},
-		{"一覧 + 警告", []string{strings.Repeat("同名ファイルが複数あります ", 12)}},
+		{"一覧", nil, ""},
+		{"一覧 + 警告", []string{strings.Repeat("同名ファイルが複数あります ", 12)}, ""},
+		// 絞り込み中はタブ行がヘッダーごと差し替わる。行数が変わるとキー側と描画側の page 分割が
+		// ずれるので、置き換え先も同じ高さであることをここで縛る。検索語 "0" は全件に一致する
+		// (番号は 001..040) — 窓を埋めないと分割の一致を測れないため
+		{"番号で絞り込み中", nil, "0"},
+		{"番号で絞り込み中 + 警告", []string{strings.Repeat("同名ファイルが複数あります ", 12)}, "0"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			for _, w := range []int{24, 40, 84, 200} {
 				v := loadedView(many...)
 				v.warnings = c.warnings
+				if c.query != "" {
+					v.handleKey("/", vp(20))
+					for _, r := range c.query {
+						v.handleKey(string(r), vp(20))
+					}
+				}
 				o := issuesRenderOpts{width: w, page: 20}
 				// 描画が実際に出した行数 (ヘッダーを除く) とキー側の行数を突き合わせる
 				body := len(v.listLines(o)) - len(v.listHeadLines(w, false))
