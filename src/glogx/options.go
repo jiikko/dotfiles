@@ -204,9 +204,11 @@ func Usage() string {
   i                         issues viewer を全画面で開く (toggle。右から左へ流し込む演出)。
                             repo 直下と <sub>/issues の *.md をカテゴリ別タブ (カテゴリごとに
                             色。bug は赤) で一覧し、Enter で本文を表示する。viewer 内のキーは
+                            / 番号で絞り込み (部分一致。タブと状態を無視して全 issue から探す) /
                             p 番号コピー / y パスコピー / Y 参照 (番号+タイトル+パス) コピー /
-                            N 次に採番すべき番号コピー / a done も表示 / v nvim で開く /
-                            r 再読込 / Tab・h・l タブ移動 / q・i 閉じる。
+                            N 次に採番すべき番号コピー / n 次にやる目印 (next/ へ移動) /
+                            a done も表示 / v nvim で開く / r 再読込 /
+                            Tab・h・l タブ移動 / q・i 閉じる。
                             読む規約は docs/issues-viewer-spec.md
   U                         Claude Code の /usage 残量を右上モーダルで表示 (toggle)
   C                         claude update を実行する (確認なし即実行。結果は下部に表示)
