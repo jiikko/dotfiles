@@ -126,6 +126,24 @@ func TestIssuesNumberFilterEscUnfiltersBeforeClosing(t *testing.T) {
 	}
 }
 
+// viewer を閉じ切ったら絞り込みは捨てる。⚠️ q / Esc は 1 段戻るだけ (絞り込みを解いて viewer は
+// 残る) だが、i は 1 段戻さず閉じる。ここで捨てないと次に開いた viewer が絞り込まれたまま始まる。
+func TestIssuesNumberFilterIsDroppedWhenViewerCloses(t *testing.T) {
+	v := filteringView(t, "41", numbered()...)
+	v.handleKey("enter", vp(20))
+
+	v.handleKey("i", vp(20))
+	if v.visible() {
+		t.Fatal("前提が崩れた: i で閉じていない")
+	}
+	if v.numFilter.active {
+		t.Fatal("閉じても絞り込みが残った (次に開くと理由の分からない絞り込み一覧から始まる)")
+	}
+	if got := numbersOf(v.rows); got != "415,500" {
+		t.Fatalf("行集合が絞り込まれたまま残った: %q (open のみ = 415,500)", got)
+	}
+}
+
 // ⚠️ 再スキャン (r / 見張り) を跨いでも絞り込みが残る。行集合を作るのが refresh の 1 箇所で
 // ないと、絞り込みヘッダーを出したままタブの行へ黙って戻る。
 func TestIssuesNumberFilterSurvivesRescan(t *testing.T) {

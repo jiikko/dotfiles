@@ -275,6 +275,14 @@ func (v *issuesView) finishClose() {
 	v.animStart = time.Time{}
 	v.discardBody() // viewer ごと閉じるので引き出しの演出は持ち越さない
 	v.stopWatch()   // 見張りの watcher を閉じる (fd を残さない。issues_watch.go)
+	// 番号の絞り込みは持ち越さない。⚠️ q / Esc は絞り込みを解くだけで閉じない (1 段戻る) が、
+	// i は 1 段戻さず閉じるので、ここで捨てないと次に開いた viewer が「なぜか件数が少ない一覧」
+	// から始まる。行集合も作り直す — rows は常に visibleIssues() と一致させる (残すと、開いた
+	// 直後の 1 フレームだけタブ行の下に絞り込まれた行が並ぶ)。
+	if v.numFilter.active {
+		v.numFilter.clear()
+		v.refresh()
+	}
 }
 
 // finishAnim は演出を即座に着地させる。閉じる演出のときは片付けまで進める
