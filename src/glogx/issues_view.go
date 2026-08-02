@@ -124,8 +124,9 @@ type issuesView struct {
 const (
 	// issuesAnimDuration は開く演出の所要時間 (最後の行が着地するまで)。
 	issuesAnimDuration = 700 * time.Millisecond
-	// issuesAnimStagger は行ごとに開始をずらす割合。0 なら全行同時に動いて「板が 1 枚
-	// 滑り込む」見え方、大きいほど「上から順に流れ込む」見え方になる。
+	// issuesAnimStagger は開く演出で行ごとに開始をずらす割合。0 なら全行同時に動いて「板が 1 枚
+	// 滑り込む」見え方、大きいほど「上から順に流れ込む」見え方になる。閉じる演出では使わない
+	// (rowOffsetRatio の doc)。
 	issuesAnimStagger = 0.35
 )
 
@@ -1123,9 +1124,8 @@ func (v *issuesView) lines(o issuesRenderOpts) []string {
 
 // animProgress は開く演出の進み (0..1)。演出していないときは 1 (= 変形しない)。
 //
-// 閉じるときは進捗を 1 → 0 へ落とす。行ごとの開始をずらす stagger は進捗しか見ないので、これで
-// 「開いた順の逆で抜ける」並びが開く演出と共有される。⚠️ 反転するのは進捗だけで、動きの緩急まで
-// 逆再生にはしない (理由は slideInWindow の doc)。
+// 閉じるときは進捗を 1 → 0 へ落とす。⚠️ 反転するのは進捗だけで、見え方 (緩急・行ごとのずらし)
+// まで開く演出の逆再生にはしない (理由は rowOffsetRatio の doc)。
 func (v *issuesView) animProgress() float64 {
 	if v.closing {
 		return max(1-float64(timeNow().Sub(v.animStart))/float64(issuesAnimDuration), 0)
@@ -1146,42 +1146,44 @@ func padTo(lines []string, n int) []string {
 	return lines[:n]
 }
 
-// slideInWindow は窓の各行を「右から左へ流し込む」途中の姿にする。
-//
-// 行ごとに開始をずらす (stagger) ので、板が 1 枚滑るのではなく上から順に流れ込んで見える。
-// 進みは easeOutCubic で終点付近で減速させる (線形だと着地が「カクッ」と止まる。toast の
-// easedShown と同じ理由)。まだ入ってきていない行は空にする = 右端から現れる。
-//
-// closing は右へ抜けていく向き。⚠️ 入ってくる式をそのまま逆再生 ((1-local)³) にしないこと:
-// easeOutCubic の緩やかな尾が立ち上がりの平坦部になり、最上行が幅の 5% ずれるまで 0.4 秒かかる
-// (esc の反応が鈍く見える正体)。行ごとの開始時刻は共有したまま、離脱の進みへ改めて減速を掛けて
-// 「速く抜けて端で減速」にする。開閉で緩急を揃えたくなっても逆再生には戻さない。
+// slideInWindow は窓の各行を「右から左へ流し込む」途中の姿にする (closing なら右へ抜ける途中)。
+// 画面の外に居る行は空にする = 右端から現れ、右端へ消える。
 func slideInWindow(window []string, progress float64, width int, closing bool) []string {
 	out := make([]string, 0, len(window))
 	last := max(len(window)-1, 1)
 	for i, ln := range window {
-		delay := issuesAnimStagger * float64(i) / float64(last)
-		local := (progress - delay) / (1 - issuesAnimStagger)
+		ratio := rowOffsetRatio(progress, i, last, closing)
 		switch {
-		case local >= 1:
+		case ratio <= 0:
 			out = append(out, ln) // 着地済み
 			continue
-		case local <= 0 || ln == "":
+		case ratio >= 1 || ln == "":
 			out = append(out, "") // まだ画面外 (または元から空行)
 			continue
 		}
-		ratio := 1 - easeOutCubicFloat(local) // 入ってくる: 右外から着地へ、終点で減速
-		if closing {
-			ratio = easeOutCubicFloat(1 - local) // 抜けていく: 離脱の進みへ減速を掛け直す
-		}
 		off := int(math.Round(ratio * float64(width)))
 		if off >= width {
-			out = append(out, "")
+			out = append(out, "") // 端数で幅ぴったりまで押し出された (空白だけの行を残さない)
 			continue
 		}
 		out = append(out, padSpaces(off)+clipToWidth(ln, width-off))
 	}
 	return out
+}
+
+// rowOffsetRatio は行 i の横ずれを幅に対する割合で返す (0 = 着地、1 = 画面外)。進みは
+// easeOutCubic で終端付近を減速させる (線形だと「カクッ」と止まる。toast の easedShown と同じ)。
+//
+// ⚠️ 閉じる向きは「開く動きの逆再生」にしないこと。逆再生は 2 つの意味で動き出しを遅くする:
+// easeOutCubic の緩やかな尾が立ち上がりの平坦部になり、行ごとのずらし (stagger) は視線のある
+// 最上行を最後に回す。両方入っていた頃は最上行が幅の 5% ずれるまで 0.4 秒かかっていた
+// (esc の反応が鈍く見える正体)。閉じるときは全行同時に、離脱の進みへ減速を掛ける。
+func rowOffsetRatio(progress float64, i, last int, closing bool) float64 {
+	if closing {
+		return easeOutCubicFloat(1 - progress) // 板が 1 枚まるごと右へ抜ける
+	}
+	delay := issuesAnimStagger * float64(i) / float64(last)
+	return 1 - easeOutCubicFloat((progress-delay)/(1-issuesAnimStagger))
 }
 
 // easeOutCubicFloat は 0..1 の進みを easeOutCubic で写す (終点付近で減速)。

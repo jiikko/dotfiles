@@ -99,6 +99,24 @@ func TestIssuesCloseCurveReachesRender(t *testing.T) {
 	}
 }
 
+// 閉じるときは全行が同時に抜ける (板が 1 枚右へ出ていく)。行ごとにずらすと視線のある最上行が
+// 最後に回され、0.25 秒静止してから動き出す。
+func TestIssuesCloseMovesAllRowsTogether(t *testing.T) {
+	const width = 100
+	window := make([]string, 20)
+	for i := range window {
+		window[i] = strings.Repeat("x", width)
+	}
+
+	out := slideInWindow(window, 0.5, width, true)
+	head := maxRowShift(out[:1])
+	for i, ln := range out {
+		if shift := maxRowShift([]string{ln}); shift != head {
+			t.Fatalf("行 %d のずれが %d 桁で最上行 (%d 桁) と違う (行ごとにずれている)", i, shift, head)
+		}
+	}
+}
+
 // maxRowShift は窓の各行の右へのずれ (先頭の空白幅) の最大値。空行は演出で消えた行なので除く。
 func maxRowShift(window []string) int {
 	shift := 0
