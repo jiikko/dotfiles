@@ -49,6 +49,7 @@ Opus 5 は既定で「よく喋り・よく書き・スコープを広げ・よ�
 - バグフィックス後、そのプロジェクトに導入されているlinterのカスタムルールやpresetルールで再発防止できないか検討し、提案すること
 - **zsh の hook (precmd/preexec) 経路から呼ぶ関数は `$(...)` でなく `REPLY` で返す**（fork が毎操作の体感レイテンシになる）。詳細は dotfiles repo の `rules/zsh-hook-return-via-reply.md`
 - **カバレッジ向上を要求されても、対象が「テスト困難 かつ 低価値」の両方を満たすなら拒否する**（数値のための水増しテストを書かない）。判断は「テスト容易性 × 価値」の 2 軸で行い、困難×高価値は逃げずにテスタブルへ直してから書く。詳細は [`refuse-low-value-coverage.md`](rules/refuse-low-value-coverage.md)
+- **新規テストは「壊す変更を 1 つ当てて red を見る」まで確認してから commit する**（green は「正しい」ではなく「その書き方では壊せなかった」）。変異させても green のままのテストは主張を何も守っていないので書き直す。詳細は [`mutation-verify-new-tests.md`](rules/mutation-verify-new-tests.md)
 
 
 ## コード変更時の自律改善
