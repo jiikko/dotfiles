@@ -10,17 +10,26 @@
 # 落ちない理由は checker のヘッダ参照。基準 240 = 静穏 run の rtt 実測 (223.3 / 253.8,
 # run 29547499619 attempt2 / 29537867664)。
 # ⚠️ 較正器の tmux_rtt_x100 自身は絶対予算のまま rel を付けないこと (checker も拒否する)。
+#
+# ⚠️ churn 系 (new/kill window, split/kill pane) の混雑補正は較正器で足りない: 較正器は
+# 既存サーバへの round-trip で fork しないため、fork/hook 生成に効く混雑を拾えない
+# (実測 run 30790932059: rtt min ×1.04 で静穏に見えるのに split/new/kill は ×1.32〜1.41)。
+# churn の予算は rel のスケールに頼らず、CI 実測 (min-of-20) の中央値に対して余裕を持たせる。
 calibrate tmux_rtt_x100 240
 server_boot 3000
 conf_reload 3000
 tmux_rtt_x100 1200
 status_render_x200 2500 rel
-new_window_x20 600 rel
+# window churn: CI 実測 (min-of-20) 中央値 new ~313 / kill ~253 → 冒頭の ~2.2 倍規約に合わせる
+# (旧 new 600 は 1.9 倍で規約下限を割っていた)。kill は 600 のままで 2.4 倍。
+new_window_x20 700 rel
 kill_window_x20 600 rel
 # pane churn (2026-07-29 導入): after-split-window (toast+debounce) / pane-exited /
-# after-kill-pane hook 込み。導入時ローカル実測 split 131ms / kill 93ms。window churn と
-# 同値の暫定予算で導入し、CI 実測で締める
-split_pane_x20 600 rel
+# after-kill-pane hook 込み。CI 実測 (min-of-20) 中央値は split ~490 / kill ~262 で、split は
+# window churn の ~1.5 倍かかる。導入時のローカル実測 (split 131ms) 基準で window churn と
+# 同値に置いた 600 は CI 中央値の 1.25 倍しか余裕が無く、tmux 無関係な commit で 2 度
+# flake した (run 30703246020 / 30790932059) ので CI 実測 × ~2.2 に置き換える。
+split_pane_x20 1100 rel
 kill_pane_x20 600 rel
 # 起動フットプリント (2026-07-29 導入)。単位は metric 名が持つ (_mb=MB / _cpu_ms=CPU ms)。
 # RSS は混雑ノイズが乗らないため絶対予算 (導入時ローカル実測 3.9MB)。
