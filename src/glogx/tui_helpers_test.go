@@ -51,6 +51,9 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 	// issues viewer の閉じる演出も同じ理由で切る (既存テストは i / q で即座に閉じる前提)。
 	// 演出そのものは issues_close_anim_test.go が明示的に on にして検査する。
 	m.issuesOv.closeAnimOff = true
+	// status viewer の閉じる演出も同じ理由で切る (s の toggle が「即座に閉じている」前提で読める
+	// ように)。演出そのものは status_view_test.go の TestSlideUpWindow 等が直接検査する。
+	m.statusOv.closeAnimOff = true
 	return m
 }
 

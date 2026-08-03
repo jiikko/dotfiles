@@ -87,31 +87,14 @@ func (o *diffOverlay) receive(msg diffMsg) error {
 // 最終行を表示したまま止まる (自動で閉じない)。⚠️ y (URL コピー) は境界をまたぐため
 // 呼び出し側が handleDiffKey で処理し、ここには渡さない。
 func (o *diffOverlay) scroll(key string, rows int) {
-	maxOffset := max(len(o.cache[o.sha])-rows, 0)
 	switch key {
 	case "q", "esc", "h", "left", "d":
 		o.close()
-	case "j", "down", "ctrl+n", "enter":
-		o.offset = min(o.offset+1, maxOffset)
-	case "k", "up", "ctrl+p":
-		o.offset = max(o.offset-1, 0)
-	// 半ページ移動は glide に載せる (Space / ctrl+d。ユーザー要望 2026-07-31)。1 行移動は
-	// 距離 1 行で滑らせる意味が無く、端ジャンプ (g/G) は距離が不定なので即時のまま。
-	case "ctrl+d", "pgdown", " ", "f":
-		prev := o.offset
-		o.offset = min(o.offset+rows/2, maxOffset)
-		o.glide.start(prev, o.offset)
-	case "ctrl+u", "pgup", "b", "shift+space":
-		prev := o.offset
-		o.offset = max(o.offset-rows/2, 0)
-		o.glide.start(prev, o.offset)
-	case "g", "home":
-		o.offset = 0
-		o.glide.stop()
-	case "G", "end":
-		o.offset = maxOffset
-		o.glide.stop()
+		return
 	}
+	// スクロールの語彙 (1 行 / 半ページ + glide / 端ジャンプ) は status viewer の全画面 diff と
+	// 共有する (scroll_glide.go の pagerScrollKey)。手触りを 1 箇所に集約するため。
+	o.offset = pagerScrollKey(key, o.offset, rows, len(o.cache[o.sha]), &o.glide)
 }
 
 // boxLines は diff ポップアップの描画行 (枠付き)。非表示・コミット解決不能なら nil。

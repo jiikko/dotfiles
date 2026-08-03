@@ -81,6 +81,38 @@ func (g *scrollGlide) offset(target int) int {
 // stop は glide を捨てて即時表示へ倒す (g/G のジャンプ・resize・pull リロード等)。
 func (g *scrollGlide) stop() { g.active = false }
 
+// pagerScrollKey は less 流儀のスクロールキーを offset へ写す共有ロジック。diff pager (d) と
+// status viewer の全画面 diff が同じ手触りを持つための 1 箇所。⚠️ 「閉じる」キーはここで扱わない:
+// 面ごとに閉じる語彙が違う (diff は d / status は d と q) ため、呼び出し側で判定してから渡す。
+//
+// 半ページ移動だけ glide に載せるのは diffOverlay.scroll から引き継いだ判断: 1 行移動は距離 1 行で
+// 滑らせる意味が無く、端ジャンプ (g/G) は距離が不定なので即時のまま。
+// スクロールキーでなければ offset をそのまま返す (呼び出し側は自分の語彙のキーを先に捌く)。
+func pagerScrollKey(key string, offset, rows, total int, glide *scrollGlide) (newOffset int) {
+	maxOffset := max(total-rows, 0)
+	switch key {
+	case "j", "down", "ctrl+n", "enter":
+		return min(offset+1, maxOffset)
+	case "k", "up", "ctrl+p":
+		return max(offset-1, 0)
+	case "ctrl+d", "pgdown", " ", "f":
+		next := min(offset+rows/2, maxOffset)
+		glide.start(offset, next)
+		return next
+	case "ctrl+u", "pgup", "b", "shift+space":
+		next := max(offset-rows/2, 0)
+		glide.start(offset, next)
+		return next
+	case "g", "home":
+		glide.stop()
+		return 0
+	case "G", "end":
+		glide.stop()
+		return maxOffset
+	}
+	return offset
+}
+
 // clampScrollOffset は pager の offset を 0..max(total-rows, 0) へ収める。
 //
 // 「offset は独立した状態ではなく (カーソル・行数・表示行数) からの導出値」という規律を 1 箇所に

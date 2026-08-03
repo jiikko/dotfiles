@@ -96,6 +96,37 @@ func pullBlockedByDirtyTree(porcelain string) bool {
 	return false
 }
 
+// status viewer (s キー) の write 操作。いずれもローカルの index / 作業ツリーだけを触るので
+// noPromptGitCmd (remote 用) ではなく runGitTimeout を使う。テストで実 git を叩かないための
+// 差し替え点として var にしてある。
+//
+// ⚠️ 呼び出しは status viewer のキー処理から同期で行う (issues viewer の MoveToSubdir と同じ作法)。
+// index への 1 回の書き込みは十分速く、非同期にすると「実行中に外部編集が入る」窓が開いて
+// 「確認に出した状態と実行時の状態が一致すること」(docs/status-viewer-spec.md 4 節) を守りにくい。
+var (
+	// runGitAdd は stage する (untracked の追加・削除の記録もこれで足りる)。
+	runGitAdd = func(paths []string) error {
+		_, err := runGitTimeout(append([]string{"add", "--"}, paths...)...)
+		return err
+	}
+	// runGitRestoreStaged は index から降ろす (作業ツリーは触らない)。
+	runGitRestoreStaged = func(paths []string) error {
+		_, err := runGitTimeout(append([]string{"restore", "--staged", "--"}, paths...)...)
+		return err
+	}
+	// runGitRestoreWorktree は作業ツリーの変更を捨てる (index の内容へ戻す)。復元手段は無い。
+	runGitRestoreWorktree = func(paths []string) error {
+		_, err := runGitTimeout(append([]string{"restore", "--"}, paths...)...)
+		return err
+	}
+	// runGitCleanUntracked は untracked を削除する。-d はディレクトリ行 ("dir/" に畳まれた
+	// エントリ) のために必要で、-f は clean の既定が「何もしない」ため必要。
+	runGitCleanUntracked = func(paths []string) error {
+		_, err := runGitTimeout(append([]string{"clean", "-fd", "--"}, paths...)...)
+		return err
+	}
+)
+
 // updateTimeout は claude update の上限。通常の自己更新 (npm/ダウンロード) はこれより十分速く
 // 完了するため、到達したら更新が本当にハングしている合図。この上限が無いと updating 中は
 // q/Ctrl-C を握りつぶす (handleKey の updating ガード) 設計上、無限ハング時に端末を外部から

@@ -63,6 +63,17 @@ func dispWidth(s string) int {
 // truncateDisp は表示幅 width まで切り詰め末尾に tail を付す。SGR は保持する。
 func truncateDisp(s string, width int, tail string) string { return ansi.Truncate(s, width, tail) }
 
+// truncateDispLeft は表示幅 width になるよう**先頭**を削り、頭に head (… 等) を付す。
+// 末尾を残したいもの (ファイルパスの basename) に使う: 末尾から切ると「どのファイルか」が
+// 分からなくなるため。幅計算は dispWidth と同じモデルを通す (この層に一本化する規律)。
+func truncateDispLeft(s string, width int, head string) string {
+	drop := dispWidth(s) - width + dispWidth(head)
+	if drop <= 0 {
+		return s
+	}
+	return ansi.TruncateLeft(s, drop, head)
+}
+
 // padSpaces は n 個の空白を返す。毎フレーム全行で呼ばれるため、事前確保した定数文字列の
 // スライス (バッキング共有 = 無 alloc) で返し、超過分だけ strings.Repeat に落ちる。
 const padSpacesBuf = "                                                                " +

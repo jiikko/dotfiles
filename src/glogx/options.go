@@ -210,6 +210,14 @@ func Usage() string {
                             a done も表示 / v nvim で開く / r 再読込 /
                             Tab・h・l タブ移動 / q・i 閉じる。
                             読む規約は docs/issues-viewer-spec.md
+  s                         status viewer を全画面で開く (toggle。下からせり上がる演出)。
+                            未コミットの変更を Staged / Unstaged / Untracked の 3 区画で一覧し
+                            (幅が足りれば右にカーソル行の diff をプレビュー)、viewer 内のキーは
+                            Space stage/unstage (セクションが向きを決める) / a 全 stage /
+                            X 変更を捨てる (y/N 確認。untracked は削除) / d 全画面 diff /
+                            Tab セクション移動 / r 再読込 / q・s 閉じる。
+                            開いている間は別プロセスの編集を自動で反映する。
+                            規約は docs/status-viewer-spec.md
   U                         Claude Code の /usage 残量を右上モーダルで表示 (toggle)
   C                         claude update を実行する (確認なし即実行。結果は下部に表示)
   w                         直近の警告/エラーをクリップボードへコピー (トーストが消えた後も可。

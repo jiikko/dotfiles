@@ -280,6 +280,10 @@ type browseModel struct {
 	// (issues_view.go) に切り出し、ここは 1 フィールドだけ持つ。読む規約の一次情報は
 	// docs/issues-viewer-spec.md。
 	issuesOv issuesView
+	// status viewer (s キーで開く全画面の作業ツリービュー)。stage / unstage / 変更を捨てる を
+	// 行う write 側の画面で、状態と描画は statusView 型 (status_view.go) に切り出す。
+	// 読み書きの規約の一次情報は docs/status-viewer-spec.md。
+	statusOv statusView
 	// restartPrompt はバックグラウンドビルドの完成を伝えるダイアログ (r で再起動)。
 	// restartRequested は「終了後に新しいバイナリで自分を置き換える」印 (main.go が exec する)。
 	restartPrompt    bool
@@ -346,6 +350,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		cancel:         cancel,
 		usageOv:        usageOverlay{visible: true},
 		issuesOv:       newIssuesView(),
+		statusOv:       newStatusView(),
 		autobuild:      newAutobuildWatch(selfExePath(), os.Getenv(autobuildPendingEnv) != "", timeNow()),
 	}
 	if m.fetching {
@@ -597,6 +602,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.glide.stop()
 		m.diffOv.glide.stop()
 		m.issuesOv.bodyGlide.stop()
+		m.statusOv.pagerGlide.stop()
 		m.ensureCursorVisible()
 		return m, nil
 	case tickMsg:
@@ -610,6 +616,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// より前に置く: animating() は closing のあいだ true を返し続け、この settleClose が
 		// 下ろして初めて false になる。後ろに置くと最後の 1 拍が届かず閉じかけの姿で固まる。
 		m.issuesOv.settleClose()
+		m.statusOv.settleClose() // status viewer も同じ理由で spinnerActive の判定より前に畳む
 		if !m.spinnerActive() {
 			return m, nil // アニメ対象なし: 再アームせずチェーンを終わらせる
 		}
@@ -623,6 +630,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 手触り (カーブ・フレーム数) は自動的に一覧と揃う (scroll_glide.go)。
 		m.diffOv.advanceGlide()
 		m.issuesOv.advanceGlide()
+		m.statusOv.advanceGlide()
 		var pushRefetchCmd tea.Cmd
 		if m.pushAnimating {
 			pushRefetchCmd = m.advancePushAnim() // push 境界の罫線を 1 コミット/フレームで上へ
@@ -836,6 +844,20 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case issuesScanMsg:
 		m.issuesOv.receive(msg)
 		return m, nil
+	case statusLoadMsg:
+		// git status の結果 (status viewer)。返り値はプレビューの取り直し予約 (内容が変わった
+		// ときだけ)。⚠️ maybeTick も束ねる: 取得中スピナーを回していた場合、結果到着でそれを
+		// 下ろすフレームが要る (下ろさないと最後のスピナー姿で固まる)。
+		return m, tea.Batch(m.statusOv.receive(msg), m.maybeTick())
+	case statusPollMsg:
+		// viewer を開いている間だけ回る自動更新チェーン (spec 5 節)。⚠️ maybeTick を束ねない:
+		// 反映は読み直しだけでアニメは動かないため (issuesWatchMsg と同じ理由)。
+		return m, m.statusOv.receivePoll(msg)
+	case statusPreviewTickMsg:
+		return m, tea.Batch(m.statusOv.receivePreviewTick(msg, m.colored), m.maybeTick())
+	case statusPreviewMsg:
+		m.statusOv.receivePreview(msg)
+		return m, m.maybeTick()
 	case issuesRestoreMsg:
 		return m, tea.Batch(m.issuesOv.restore(currentDir(), msg.screen), m.maybeTick())
 	case claudeUpdateAvailableMsg:
@@ -1046,6 +1068,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// 演出中のキーが viewer 側で処理され、モードを持つキー (/ の絞り込み・n の確認) が
 	// 「畳んだ後の view」に状態を残す = 次に i で開いた瞬間に蘇る。
 	m.issuesOv.finishClose()
+	m.statusOv.finishClose() // status viewer も同じ契約 (閉じ演出中のキーは viewer に届かない)
 	if key == "ctrl+c" || key == "ctrl+g" {
 		switch {
 		case m.actModal.updating:
@@ -1143,6 +1166,29 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmd, m.maybeTick())
 	}
+	// status viewer も全画面なので issues と同じ形で routing する (裸の b / u より前に置く:
+	// staging の途中で u が pull --rebase の確認を開く footgun を防ぐ。spec 3 節)。
+	if m.statusOv.visible() {
+		if key == "U" {
+			return m, m.toggleUsage() // viewer の上でも usage は出せる (issues と同じ契約)
+		}
+		m.usageOv.dismiss()
+		if key == "b" || key == "u" {
+			// remote 操作へ滑る導線を staging の画面から断つ (spec 3 節)。黙って無視すると
+			// 「押したのに何も起きない」になるので理由を返す
+			m.toast.show("status viewer 中は無効です (q で閉じてから)", false)
+			return m, m.maybeTick()
+		}
+		cmd := m.statusOv.handleKey(key, m.statusOpts().viewport())
+		if text, ok := m.statusOv.takeNotice(); text != "" {
+			if ok {
+				m.toast.show(text, true)
+			} else {
+				m.showWarning(text) // 失敗は w でコピーできるよう lastWarning にも積む
+			}
+		}
+		return m, tea.Batch(cmd, m.maybeTick())
+	}
 	// usage オーバーレイのトグル / dismiss。モーダル (push/pull 確認)・prefix・
 	// 実行中ガードを素通りしないよう必ずそれらの後に置く: 先頭に置くと U が push 確認を
 	// キャンセルし損ねて残った確認へ Enter で誤 push する footgun になる (レビュー指摘 2026-07-21)。
@@ -1165,6 +1211,11 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// スキャンし、以降は結果を保持したまま開閉する (再スキャンは viewer 内の r)。
 	if key == "i" && m.panelSHA == "" {
 		return m, tea.Batch(m.issuesOv.toggle(currentDir()), m.maybeTick())
+	}
+	// s = status viewer を開く (全画面。規約は docs/status-viewer-spec.md)。i と同じく一覧表示中
+	// だけ受ける: job パネル/詳細を開いているときはそちらの語彙を優先する。
+	if key == "s" && m.panelSHA == "" {
+		return m, tea.Batch(m.statusOv.toggle(), m.maybeTick())
 	}
 	// b = push / u = pull --rebase (どちらも y/N 確認へ)。glogx の独自機能。
 	// diff 表示中は b = 半ページ戻るなので、diff のディスパッチより後で拾う
@@ -2394,11 +2445,28 @@ func (m *browseModel) fillUnknown() {
 // 「今は不要」とのユーザー判断で見送っている (2026-07-25)。CPU が気になると言われたら再評価する。
 // 経緯と他の未採用 v2 機能は docs/glogx-bubbletea-v2.md。
 func (m *browseModel) spinnerActive() bool {
-	return m.zoom.animating(timeNow()) || m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || m.glide.active || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.diffOv.glide.active || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.issuesOv.loading() || m.issuesOv.animating()
+	return m.zoom.animating(timeNow()) || m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || m.glide.active || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.diffOv.glide.active || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.issuesOv.loading() || m.issuesOv.animating() ||
+		m.statusOv.fetching() || m.statusOv.animating() || m.statusOv.pagerGlide.active
 }
 
 // issuesOpts は issues viewer へ渡す描画情報。カーソル行の強調はコミット一覧と同じ
 // cursorLine (溝の矢印 + 暗青 bg) を貸すことで、見た目の語彙を 1 つに保つ。
+// statusOpts は status viewer の描画情報。⚠️ cursorPaint は渡さない (contentWidth まで塗る
+// bgLine では 2 カラムのプレビュー側まで背景が伸びる。statusRenderOpts の doc 参照)。
+func (m *browseModel) statusOpts() statusRenderOpts {
+	return statusRenderOpts{
+		width:   m.contentWidth(),
+		page:    m.pageSize(),
+		colored: m.colored,
+		spinner: m.spinner(),
+	}
+}
+
+// viewport は描画情報から「窓の寸法 + 色」を取り出す (キー処理へ渡す形)。
+func (o statusRenderOpts) viewport() statusViewport {
+	return statusViewport{width: o.width, page: o.page, colored: o.colored}
+}
+
 func (m *browseModel) issuesOpts() issuesRenderOpts {
 	return issuesRenderOpts{
 		width:       m.contentWidth(),
@@ -2538,6 +2606,24 @@ func (m *browseModel) View() tea.View {
 	return v
 }
 
+// finishViewerWindow は全画面ビュー (issues / status) の窓に共通のオーバーレイを重ねて仕上げる。
+//
+// 再起動ダイアログ・usage・トーストは「どの画面を出していても出るべきもの」なので、ビューごとに
+// 書くと片方で載せ忘れる (viewer が全画面だった頃、issues 中の通知が画面に一切出ない時期があった)。
+// 前面順もここで一本化する (usage → トースト。一覧側と同じ)。
+func (m *browseModel) finishViewerWindow(window []string, page int) string {
+	if box := m.restartPromptLines(); len(box) > 0 {
+		window = overlayCenteredBox(window, box, m.contentWidth(), page, m.colored)
+	}
+	if box := m.usageOv.boxLines(m.contentWidth(), m.colored, m.spinner()); len(box) > 0 {
+		window = overlayBoxTopRight(window, box, m.contentWidth(), m.colored)
+	}
+	if box := m.toast.boxLines(m.colored, max(page/2, toastBoxLines)); len(box) > 0 {
+		window = overlayBoxBottomRight(window, box, m.contentWidth(), m.colored)
+	}
+	return m.finishWindow(window, page)
+}
+
 // viewLines は画面content を組む本体 (旧 View)。テストはここではなく View().Content を見る。
 func (m *browseModel) viewLines() string {
 	if m.done {
@@ -2549,21 +2635,14 @@ func (m *browseModel) viewLines() string {
 	// lines() がちょうど page 行返すので、枠と hint 行の経路は共通のまま (finishWindow)。
 	// ⚠️ トーストだけは載せる: viewer の操作結果 (コピー等) も glogx 共通の語彙で出すため
 	// (ユーザー要望 2026-07-31)。載せないと viewer 中の通知が画面に一切出ない。
+	// status viewer も全画面: 一覧とオーバーレイ群を描かず窓ごと差し替える (issues と同じ経路)。
+	// ⚠️ issues より前に判定する必要はない (同時には開かない: どちらも一覧からしか開けず、
+	// 開いている間は互いのキーを受けない) が、トースト/usage の合成は同じ前面順に揃える。
+	if m.statusOv.visible() {
+		return m.finishViewerWindow(m.statusOv.lines(m.statusOpts()), page)
+	}
 	if m.issuesOv.visible() {
-		window := m.issuesOv.lines(m.issuesOpts())
-		// 再起動ダイアログも viewer の上に重ねる (viewer を開いている間にビルドが完成しうる)
-		if box := m.restartPromptLines(); len(box) > 0 {
-			window = overlayCenteredBox(window, box, m.contentWidth(), page, m.colored)
-		}
-		// usage も viewer の上に重ねる (U で開ける契約。合成しないと「取得だけ走って画面に
-		// 出ない」= 見えない層へ状態を書く経路に戻る)。前面順は一覧側と同じで usage → トースト
-		if box := m.usageOv.boxLines(m.contentWidth(), m.colored, m.spinner()); len(box) > 0 {
-			window = overlayBoxTopRight(window, box, m.contentWidth(), m.colored)
-		}
-		if box := m.toast.boxLines(m.colored, max(page/2, toastBoxLines)); len(box) > 0 {
-			window = overlayBoxBottomRight(window, box, m.contentWidth(), m.colored)
-		}
-		return m.finishWindow(window, page)
+		return m.finishViewerWindow(m.issuesOv.lines(m.issuesOpts()), page)
 	}
 	lines := m.lines()
 	// glide 中は表示 offset (途中位置) で窓を切る。それ以外は論理 offset。
@@ -2814,6 +2893,9 @@ func (m *browseModel) bgLine(text, bg string) string {
 func (m *browseModel) hintLine() string {
 	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  P: PR 状態  y: URL コピー  b: push  u: pull  i: issues  U: usage  C: update  w: 警告コピー  q: 終了"
 	switch {
+	case m.statusOv.visible():
+		// status viewer も全画面なので issues と同じ扱い (CI 進捗・警告の前置をしない)。
+		return m.hintLineText(m.statusOv.hint())
 	case m.issuesOv.visible():
 		// issues viewer は全画面モーダルなので、ここが最優先 (下のパネル系より先に判定する)。
 		// CI 進捗・GH 警告の前置もしない: viewer の hint は popup の実幅ぴったりに詰めてあり
