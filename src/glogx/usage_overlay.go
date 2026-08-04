@@ -29,6 +29,12 @@ type usageOverlay struct {
 	// CI fetch 用 cancel とは別立て: 共有すると CI fetch 完了時の defer cancel() が走行中の
 	// usage fetch を巻き添えキャンセルして "取得失敗" に落ちる (レビュー指摘 2026-07-21)。
 	cancel context.CancelFunc
+	// inFlight は fetch の single-flight ガード (fetchCmd で立て、結果の handle で降ろす)。
+	// cancel が単一スロットのため、fetch を overlap させると先行分の cancel を上書きで取りこぼし、
+	// quit 後も先行 subprocess が fetchTimeout まで残る。定期リフレッシュ同士は
+	// usageRefreshInterval > fetchTimeout で overlap しない (tui.go の定数コメント) が、
+	// U 再表示 (toggleUsage の stale 経路) との重なりはこのガードでしか防げない。
+	inFlight bool
 	// fetchedAt は snap を取得した時刻 (zero = 未取得)。非表示中はリフレッシュを止めるので、
 	// 再表示時に「今の表示が古いか」を判断する出典として要る (stale 参照)。
 	fetchedAt time.Time
@@ -48,6 +54,10 @@ type usageOverlay struct {
 // のは無意味 (TTL == 周期なので必ず miss する) 。取得成功はどちらの経路でもキャッシュへ書き、
 // 次回起動を即時化する。
 func (o *usageOverlay) fetchCmd(useCache bool) tea.Cmd {
+	if o.inFlight {
+		return nil // 走行中の fetch がある: overlap させない (inFlight フィールドの doc)
+	}
+	o.inFlight = true
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	o.cancel = cancel
 	// last-good 補完用の前回結果。closure の生成は UI スレッドなのでここで束縛する
@@ -87,6 +97,7 @@ func (o *usageOverlay) fetchCmd(useCache bool) tea.Cmd {
 // 片側 (claude / codex) だけの失敗は err=nil で来るためこのガードでは受けられず、fetchCmd 側の
 // MergeLastGood が出所単位で同じ不変条件を守る (二層で一対)。
 func (o *usageOverlay) handle(msg usageMsg) {
+	o.inFlight = false // fetchCmd の closure は成否によらず必ず usageMsg を返す (ここで対に降ろす)
 	if msg.err != nil && o.snap != nil {
 		return // 定期リフレッシュの一時失敗: last-good を保持し表示を崩さない
 	}

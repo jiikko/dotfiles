@@ -1615,16 +1615,23 @@ func (m *browseModel) centerModalLines() []string {
 	return m.actModal.boxLines(m.contentWidth(), m.colored, m.spinner(), m.unpushedCount())
 }
 
-// cancelAll は走行中の全非同期 subprocess (CI fetch の ctx / usage fetch / push・pull の git)
-// を止める後始末の単一ファネル。冪等。quit() (キー操作の終了) と main.go の defer の両方が
-// 呼ぶ: bubbletea v2 は SIGINT/SIGTERM を InterruptMsg/QuitMsg に変換するが、この 2 つだけは
-// model.Update を経由せず eventLoop が直接 return するため (tea.go の handleSignals/eventLoop)、
-// シグナル終了では quit() が走らない。defer 側が無いと push/pull 中の SIGTERM (tmux
-// kill-window 等) で deadline なしの git 子プロセスが孤児化する (issue 029 P1)。
+// cancelAll は走行中の全非同期リソース (CI fetch の ctx / usage fetch / push・pull の git /
+// issues の fsnotify watcher) を止める後始末の単一ファネル。冪等。quit() (キー操作の終了) と
+// main.go の defer の両方が呼ぶ: bubbletea v2 は SIGINT/SIGTERM を InterruptMsg/QuitMsg に
+// 変換するが、この 2 つだけは model.Update を経由せず eventLoop が直接 return するため
+// (tea.go の handleSignals/eventLoop)、シグナル終了では quit() が走らない。defer 側が無いと
+// push/pull 中の SIGTERM (tmux kill-window 等) で deadline なしの git 子プロセスが孤児化する
+// (issue 029 P1)。
 func (m *browseModel) cancelAll() {
 	m.cancel()
 	m.usageOv.stop()  // 走行中の usage fetch subprocess を中断 (オーファン化防止)
 	m.actModal.stop() // 走行中の push/pull git subprocess を中断 (stall 中の孤児化防止)
+	// issues viewer の fsnotify watcher を閉じる。通常終了ではプロセス終了が fd を回収するが、
+	// 再起動 (restartSelf の syscall.Exec) は fd テーブルを引き継ぐため明示的に閉じないと漏れる:
+	// fsnotify v1.9.0 の darwin backend は監視対象 fd に O_CLOEXEC を付ける一方、kqueue fd 本体
+	// (backend_kqueue.go newKqueue) には CloseOnExec を呼ばず、viewer を開いたまま r で再起動する
+	// たびに kqueue fd が新プロセスへ 1 本ずつ継承され続ける。
+	m.issuesOv.stopWatch()
 }
 
 // quit はアプリ全体を終了する (取得中断分は unknown へ落とす)。

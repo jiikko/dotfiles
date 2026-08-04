@@ -59,9 +59,13 @@ var runGitPullRebase = func(ctx context.Context) error {
 	if err == nil {
 		return nil
 	}
-	gitDir, dirErr := exec.Command("git", "rev-parse", "--git-dir").Output()
+	// ⚠️ 以降の rev-parse / abortRebase は pull の ctx を使わない (runGitTimeout の独立 timeout):
+	// quit で pull が cancel された場合こそ rebase 途中状態の後始末が要るのに、cancel 済み ctx を
+	// 渡すと abort が実行されないまま repo に rebase-merge が残る。独立 timeout なら quit 後も
+	// 後始末が走り、かつハング (.git ロック競合等) しても有限で終わる。
+	gitDir, dirErr := runGitTimeout("rev-parse", "--git-dir")
 	if dirErr == nil {
-		dir := strings.TrimSpace(string(gitDir))
+		dir := strings.TrimSpace(gitDir)
 		if _, statErr := os.Stat(dir + "/rebase-merge"); statErr == nil {
 			return abortRebase(out)
 		}
@@ -77,7 +81,7 @@ var runGitPullRebase = func(ctx context.Context) error {
 // 手動復旧を促す。out は pull --rebase の出力 (conflict 内容の提示用)。
 func abortRebase(out []byte) error {
 	conflict := firstLine(strings.TrimSpace(string(out)))
-	if err := exec.Command("git", "rebase", "--abort").Run(); err != nil {
+	if _, err := runGitTimeout("rebase", "--abort"); err != nil {
 		return fmt.Errorf("conflict のため rebase 中断を試みましたが失敗しました。手動で `git rebase --abort` してください: %s", conflict)
 	}
 	return fmt.Errorf("conflict のため rebase を中断して元に戻しました: %s", conflict)
@@ -182,6 +186,13 @@ func jobRerun(ctx context.Context, run CommandRunner, repo Repo, jobID int64) er
 	return nil
 }
 
+// localCmdTimeout は tmux / クリップボードなどローカルの補助コマンドの実行上限。
+// ハングしても機能が 1 つ欠ける (prefix ガード無効・コピー失敗) だけで済む操作なので、
+// gitOpTimeout (30s) より短く切る。tea.Cmd の goroutine や Update の同期経路から呼ばれる
+// ため、上限が無いと応答しないサーバ (tmux デッドロック・X 無応答) で goroutine と
+// 子プロセスが glogx 終了まで残る (issue 029 P2/P3 と同じ規律)。
+const localCmdTimeout = 5 * time.Second
+
 // loadTmuxPrefix は tmux サーバの現在の prefix を bubbletea キー表記で返す
 // ("" = tmux 外 / 取得失敗 / 未対応表記)。tmux.conf のパースはしない: conf は分割・
 // ライブ変更されうるため、サーバの現在値だけが真実 (show-options で聞く)。
@@ -189,7 +200,13 @@ var loadTmuxPrefix = func() string {
 	if os.Getenv("TMUX") == "" {
 		return ""
 	}
-	out, err := exec.Command("tmux", "show-options", "-g", "prefix").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), localCmdTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "tmux", "show-options", "-g", "prefix")
+	// ctx の kill は直接の子にしか効かず、tmux サーバ側が I/O fd を握ると Wait が戻らない
+	// (理由は usage.SubprocessWaitDelay の doc。以降のクリップボード系も同じ)
+	cmd.WaitDelay = usage.SubprocessWaitDelay
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
@@ -229,19 +246,32 @@ var openInBrowser = func(url string) error {
 // 積む (tmux paste 用のおまけ・best effort)。本家 glog は load-buffer -w の成功 (exit 0)
 // を「システム側にも届いた」とみなすが、-w の実体は OSC52 転送で、外側端末が OSC52 を
 // 解釈しなければ exit 0 のままクリップボードに入らない (glogx で実測 2026-07-19)。
+// Update ハンドラから同期で呼ばれるため localCmdTimeout で区切る: xclip は X サーバ無応答で
+// 戻らないことがある既知挙動で、上限が無いと TUI ごと固まったうえ強制終了後に子プロセスが残る
+// (xdg-open へ issue 029 P3 で入れたのと同じ手当て)。
 var copyToClipboard = func(text string) error {
 	if os.Getenv("TMUX") != "" {
-		cmd := exec.Command("tmux", "load-buffer", "-w", "-")
+		// おまけ側は timeout を本命と分ける (tmux のハングが OS クリップボードを巻き添えにしない)
+		tmuxCtx, tmuxCancel := context.WithTimeout(context.Background(), localCmdTimeout)
+		cmd := exec.CommandContext(tmuxCtx, "tmux", "load-buffer", "-w", "-")
+		// WaitDelay が無いと ctx の kill 後も stdin の copy goroutine の write ブロックを
+		// Wait が待ち続け、timeout が効かない (tmux は stdin fd をサーバへ渡すため、payload が
+		// パイプバッファを超えるとハング中のサーバが read 側を握ったままになる)
+		cmd.WaitDelay = usage.SubprocessWaitDelay
 		cmd.Stdin = strings.NewReader(text)
 		_ = cmd.Run() // 失敗しても OS クリップボードが本命なので無視
+		tmuxCancel()
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), localCmdTimeout)
+	defer cancel()
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("pbcopy")
+		cmd = exec.CommandContext(ctx, "pbcopy")
 	default:
-		cmd = exec.Command("xclip", "-selection", "clipboard")
+		cmd = exec.CommandContext(ctx, "xclip", "-selection", "clipboard")
 	}
+	cmd.WaitDelay = usage.SubprocessWaitDelay
 	cmd.Stdin = strings.NewReader(text)
 	return cmd.Run()
 }

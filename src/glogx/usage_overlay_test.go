@@ -311,6 +311,29 @@ func TestUsageHandleRefreshSuccessReplaces(t *testing.T) {
 	}
 }
 
+// fetch は single-flight: 走行中にもう 1 本発行しない。cancel が単一スロットのため、overlap
+// させると先行 fetch の cancel を上書きで取りこぼし、quit 後も subprocess が fetchTimeout まで
+// 残る (シナリオ: 起動時 fetch の完了前に U を 2 回 = 非表示 → stale 再表示で 2 本目)。
+func TestUsageFetchCmdIsSingleFlight(t *testing.T) {
+	o := &usageOverlay{visible: true}
+	if o.fetchCmd(false) == nil {
+		t.Fatal("最初の fetchCmd が nil (fetch が始まらない)")
+	}
+	// closure は実行しない (実 subprocess を起こさない) ので defer cancel() が走らない。
+	// ctx タイマーを残さないよう、上書きされる前の cancel をテスト側で退避して呼ぶ
+	firstCancel := o.cancel
+	defer firstCancel()
+	if o.fetchCmd(false) != nil {
+		t.Fatal("走行中なのに 2 本目の fetchCmd が発行された (先行分の cancel を取りこぼす)")
+	}
+	// 結果が届けば (成否によらず) 次の fetch を発行できる
+	o.handle(usageMsg{err: errors.New("boom")})
+	if o.fetchCmd(false) == nil {
+		t.Fatal("結果を受け取った後も fetch が発行できない (inFlight が降りていない)")
+	}
+	o.stop() // 3 本目の ctx の後始末
+}
+
 // 初回失敗 → リフレッシュ成功 で回復する (err クリア + snap セット)。
 func TestUsageHandleRecoversFromInitialError(t *testing.T) {
 	o := &usageOverlay{visible: true}

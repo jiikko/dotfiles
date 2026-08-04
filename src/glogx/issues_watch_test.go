@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/fsnotify/fsnotify"
 )
 
 // watchTree は issues ディレクトリを 1 つ持つ木を作り (root, issue のパス) を返す。
@@ -215,6 +217,30 @@ func TestIssuesWatchStopsWhenClosed(t *testing.T) {
 	// 閉じている間は張り直しもしない
 	if cmd := v.watchCmd(); cmd != nil {
 		t.Fatal("閉じている viewer で watchCmd が Cmd を返した")
+	}
+}
+
+// cancelAll (quit / restart 前の後始末ファネル) は issues viewer の watcher も閉じる。
+// 通常終了はプロセス終了が fd を回収するが、restartSelf の syscall.Exec は fd テーブルを
+// 引き継ぐため、閉じ忘れると viewer を開いたまま r 再起動するたびに fsnotify の kqueue fd が
+// 新プロセスへ漏れ続ける (fsnotify v1.9.0 darwin は kqueue fd に CLOEXEC を付けない)。
+func TestCancelAllClosesIssuesWatcher(t *testing.T) {
+	root, _ := watchTree(t, "# 001 feat: x\n")
+	m := newTestBrowse(t, 1, nil, nil)
+	m.issuesOv.toggle(root)
+	m.issuesOv.receive(scanOf(t, root))
+	w := m.issuesOv.watch.w
+	if w == nil {
+		t.Skip("この環境では fsnotify を作れない (ポーリングへ縮退する経路)")
+	}
+	m.cancelAll()
+	if m.issuesOv.watch.w != nil {
+		t.Fatal("cancelAll 後も fsnotify watcher が開いたまま (restart の exec で fd が漏れる)")
+	}
+	// スロットの nil 化だけでなく実体が Close されたことを直接固定する (Close を消して
+	// nil 代入だけにする変異 = fd 漏れの再発をすり抜けさせない)
+	if err := w.Add(root); !errors.Is(err, fsnotify.ErrClosed) {
+		t.Fatalf("cancelAll 後の watcher が Close されていない (Add err=%v)", err)
 	}
 }
 
