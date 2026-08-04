@@ -49,6 +49,13 @@ type worktreeRow struct {
 // なぜ無害化が要るか: POSIX のファイル名は / と NUL 以外の任意バイトを許し、-z の git status は
 // クォートせず生のまま返す。第三者ブランチに ESC 入りの名前のファイルが 1 つあるだけで、
 // status viewer を開いた瞬間に端末のタイトル書き換え・画面破壊・OSC52 が発火しうる。
+//
+// ⚠️ 既知の限界: 無害化は「落とす」方式なので単射でない。制御文字だけが違う 2 ファイル
+// (notes.txt と notes<0x01>.txt) は同じ行に見え、この画面は破壊的操作 (X で変更を捨てる /
+// untracked の削除) を持つため「区別できないまま捨てる」余地が残る。エスケープシーケンスに
+// よる衝突は導入子だけ落とす形にして解消済み (termsafe.skipEscape) で、残るのは単独の制御
+// 文字だけ。直すなら削除でなく可視のプレースホルダ (␛ 等) への置換に変える。実害の報告が
+// 出たか、ファイル名に制御文字を使う運用を実際に見たら着手する (敵対的レビュー 2026-08-05)。
 func (r worktreeRow) dispPath() string {
 	if r.orig != "" {
 		return sanitizePlainLine(r.orig) + " → " + sanitizePlainLine(r.path)
