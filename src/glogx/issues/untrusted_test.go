@@ -59,6 +59,22 @@ func TestIssueBodyAndTitleAreSanitized(t *testing.T) {
 	}
 }
 
+// ⚠️ 回帰防止: 無害化はタブの桁揃えを壊してはいけない。
+//
+// 本文のタブは expandTabs が「タブストップ揃え」(4 の倍数の桁へ送る) で展開する。無害化の側で
+// タブを一律 4 スペースへ潰すと、行頭以外のタブで桁がずれる (`ab<TAB>c` が `ab  c` ではなく
+// `ab    c` になる)。実際にこの実装を最初に入れたとき壊した箇所なので、経路ごと固定する。
+func TestBodyKeepsTabStopAlignment(t *testing.T) {
+	got := renderLines("```\nab\tc\n```\n", 40, false)
+	joined := strings.Join(got, "\n")
+	if !strings.Contains(joined, "ab  c") {
+		t.Errorf("タブストップ揃えが崩れた (一律展開になっている): %q", joined)
+	}
+	if strings.Contains(joined, "\t") {
+		t.Errorf("タブが展開されずに残った (幅計算とずれる): %q", joined)
+	}
+}
+
 // ファイル名の制御シーケンスも一覧の表示文字列には出ない。ファイル名は POSIX が / と NUL 以外の
 // 任意バイトを許すので、ESC 入りの名前で PR を出せる。⚠️ 同一性 (Path) は実物のまま残す
 // (無害化した名前で開こうとするとファイルを見失う)。

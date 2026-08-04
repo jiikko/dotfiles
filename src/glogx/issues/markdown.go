@@ -75,10 +75,15 @@ func renderMarkdown(src string, width int) []line {
 func parseBlocks(src string) []block {
 	lines := strings.Split(strings.ReplaceAll(src, "\r\n", "\n"), "\n")
 	// issue 本文は第三者が書いたファイル (PR 経由で入りうる) なので、ここが端末制御シーケンスの
-	// 単一の関門になる。⚠️ 分割の「後」に 1 行ずつ通すこと: termsafe は改行も制御文字として
-	// 落とすため、分割前の全文に掛けると本文が 1 行に潰れる。
+	// 単一の関門になる。
+	//
+	// ⚠️ 2 点、掛け方に条件がある:
+	//   - 分割の「後」に 1 行ずつ通す。termsafe は改行も制御文字として落とすため、分割前の
+	//     全文に掛けると本文が 1 行に潰れる
+	//   - タブは残す版を使う。タブの展開はこの層の expandTabs がタブストップ揃えで行うので、
+	//     ここで一律 4 スペースに潰すと桁が崩れる (`ab<TAB>c` が `ab  c` → `ab    c`)
 	for i, ln := range lines {
-		lines[i] = termsafe.PlainLine(ln)
+		lines[i] = termsafe.PlainLineKeepTabs(ln)
 	}
 	// 末尾の改行・空行は落とす (pager の末尾に空行がぶら下がると「まだ続きがある」ように見える)
 	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {

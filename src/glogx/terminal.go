@@ -10,9 +10,11 @@ import "glogx/termsafe"
 //
 // ここに別名を置いているのは callsite の量が多い (git / CI / diff の各入口) ためで、
 // 意味は完全に同一。新しい呼び出しはどちらの名前で書いてもよい。
-var (
-	sanitizeDetailLine   = termsafe.DetailLine
-	sanitizeLineKeepTabs = termsafe.LineKeepTabs
-	sanitizePlainLine    = termsafe.PlainLine
-	dropEmojiVS16        = termsafe.DropEmojiVS16
-)
+//
+// ⚠️ var でなく func で持つ: sanitizePlainLine は毎フレーム全行から呼ばれる経路
+// (worktreeRow.dispPath) にあり、変数だと間接呼び出しになって「制御文字なしなら素通り」の
+// fast path がインライン化されない。差し替え点にする意図も無い。
+func sanitizeDetailLine(s string) string   { return termsafe.DetailLine(s) }
+func sanitizeLineKeepTabs(s string) string { return termsafe.LineKeepTabs(s) }
+func sanitizePlainLine(s string) string    { return termsafe.PlainLine(s) }
+func dropEmojiVS16(s string) string        { return termsafe.DropEmojiVS16(s) }

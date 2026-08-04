@@ -41,6 +41,14 @@ func LineKeepTabs(s string) string { return sanitize(s, true, true) }
 // 表示する契約があるので DetailLine 側 (SGR 許可) を使う。
 func PlainLine(s string) string { return sanitize(s, false, false) }
 
+// PlainLineKeepTabs は PlainLine のタブ非展開版。タブを「自前のタブストップ揃え」で展開する
+// 整形層 (issues の expandTabs) の入口で使う。
+//
+// ⚠️ ここでタブを潰すと、桁揃えが「タブストップ」から「一律 4 スペース」に変わって崩れる
+// (`ab<TAB>c` が `ab  c` でなく `ab    c` になる)。無害化はタブの有無に関係なく成立するので、
+// タブの解釈は後段の整形層に任せる。無害化だけを掛けたいがタブ展開はしたくない、が使い分けの軸。
+func PlainLineKeepTabs(s string) string { return sanitize(s, true, false) }
+
 // DropEmojiVS16 は絵文字異体字セレクタ VS16 (U+FE0F) を除去して、⚠️❤️✔️ 等の
 // 「記号 + VS16」を bare な text presentation (⚠❤✔) へ倒す。
 //
