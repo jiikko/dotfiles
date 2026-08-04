@@ -573,7 +573,10 @@ func (m *browseModel) mergeCIBatch(statuses map[string]CIState, details map[stri
 // 成功トースト (toast.show(…, true)) もこれを通さない (成功文言で lastWarning が上書きされると
 // 直前のエラーがコピー不能になる)。
 func (m *browseModel) showWarning(text string) {
-	m.lastWarning = text
+	// lastWarning は w でクリップボードへコピーされる = 端末の外へ出る値なので、
+	// 表示 (toast 側で無害化) とは別にここでも無害化する。制御文字入りの文字列を
+	// 貼り付け先へ持ち出さない
+	m.lastWarning = sanitizePlainLine(text)
 	m.toast.show(text, false)
 }
 

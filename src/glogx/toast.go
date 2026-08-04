@@ -197,6 +197,10 @@ func (s *toast) show(text string, ok bool) { s.push(text, ok, false) }
 func (s *toast) showInfo(text string) { s.push(text, false, true) }
 
 func (s *toast) push(text string, ok, info bool) {
+	// ⚠️ ここで無害化する: 通知文は gh / git のエラー出力・claude のバージョン文字列といった
+	// 外部由来をそのまま埋め込む呼び出しが多く (showWarning 経由だけで 10 箇所以上)、
+	// 呼び出しごとに包むと必ずどこかが漏れる。status_view / issues_view の setNotice と同じ規律。
+	text = sanitizePlainLine(text)
 	s.seqGen++
 	// 進行中トースト (…シアン) は「結果が出たら用済み」なので、新しい通知が来たら退かせる。
 	// ⚠️ 積んだままにすると「PR を検索中...」の下に「PR #123 を開きます」が並び、終わったのに

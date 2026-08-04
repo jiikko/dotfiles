@@ -55,6 +55,23 @@ func TestUsageBoxSanitizesVersion(t *testing.T) {
 	}
 }
 
+// トーストの文言も表示 sink。gh / git のエラー出力や claude のバージョン文字列を素で
+// 埋め込む呼び出しが多いので、setNotice と同じく show 自体を関門にする。
+// lastWarning は w でクリップボードへ出るため、そちらも無害化する。
+func TestToastAndWarningAreSanitized(t *testing.T) {
+	m := newTestBrowse(t, 1, nil, nil)
+	m.showWarning("push に失敗: fatal" + osc8 + "0;PWNED" + st8 + " remote rejected")
+	if hasTerminalControl(m.toast.text) {
+		t.Errorf("トーストに制御シーケンスが残った: %q", m.toast.text)
+	}
+	if hasTerminalControl(m.lastWarning) {
+		t.Errorf("コピー対象の警告に制御シーケンスが残った: %q", m.lastWarning)
+	}
+	if strings.Contains(m.lastWarning, "PWNED") {
+		t.Errorf("OSC の中身が残った: %q", m.lastWarning)
+	}
+}
+
 // 色なしモードでは外部由来の SGR も枠へ通さない。
 //
 // paint も scrollbarColumn も colored=false のとき reset を出さないので、閉じていない SGR が
