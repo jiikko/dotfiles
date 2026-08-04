@@ -130,7 +130,10 @@ func (o *prStatusOverlay) boxLines(width int, colored bool, spinner, ciLine stri
 	}
 	title := fmt.Sprintf(" PR #%d: %s ", pr.Number, sanitizeDetailLine(pr.Title))
 	rows := []string{
-		prStateLabel(pr, colored) + "  " + paint(pr.HeadRefName+" → "+pr.BaseRefName, ansiDim, colored),
+		// ブランチ名も外部由来 (直上の Title と同じ扱いにする)。git は ASCII 制御文字を ref に
+		// 許さないが C1 は許すので、無害化しないと 8bit の OSC/CSI がそのまま流れる
+		prStateLabel(pr, colored) + "  " +
+			paint(sanitizeDetailLine(pr.HeadRefName)+" → "+sanitizeDetailLine(pr.BaseRefName), ansiDim, colored),
 		"レビュー: " + reviewRow(pr.ReviewDecision, colored),
 		"conflict: " + mergeableRow(pr.Mergeable, colored),
 	}

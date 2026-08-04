@@ -614,8 +614,13 @@ func TestSanitizeDetailLineDropsNonSGREscapes(t *testing.T) {
 		{"DCS", "a\x1bPq#0\x1b\\b", "ab"},
 		{"2 文字エスケープ", "a\x1b7b", "ab"},
 		{"末尾の裸 ESC", "ab\x1b", "ab"},
-		{"途切れた CSI", "ab\x1b[12", "ab"},
-		{"途切れた OSC", "ab\x1b]0;title", "ab"},
+		// ⚠️ 途切れたシーケンスは「導入子 (ESC) だけ落として残りは本文として出す」。
+		// 行末まで捨てる実装にしていたが、それだと `BUILD <ESC>]FAILED: 12 tests failed` の
+		// ような入力で失敗の記録が黙って消える = 制御シーケンスを使わずに文字を隠せる
+		// (敵対的レビュー 2026-08-05 の指摘)。ESC さえ落とせば残りはただの文字列で端末は
+		// 何も解釈しないので、安全性を落とさずに情報を保てる。
+		{"途切れた CSI", "ab\x1b[12", "ab[12"},
+		{"途切れた OSC", "ab\x1b]0;title", "ab]0;title"},
 		{"SGR は残る (混在)", "\x1b[31mred\x1b[0m \x1b[2Jx", "\x1b[31mred\x1b[0m x"},
 	}
 	for _, tt := range tests {

@@ -12,8 +12,11 @@ import "glogx/termsafe"
 // 意味は完全に同一。新しい呼び出しはどちらの名前で書いてもよい。
 //
 // ⚠️ var でなく func で持つ: sanitizePlainLine は毎フレーム全行から呼ばれる経路
-// (worktreeRow.dispPath) にあり、変数だと間接呼び出しになって「制御文字なしなら素通り」の
-// fast path がインライン化されない。差し替え点にする意図も無い。
+// (worktreeRow.dispPath) にあり、変数だと間接呼び出しが 1 段挟まる。差し替え点にする意図も無い。
+// (訂正: 7d60537 のコミットメッセージは「fast path がインライン化されない」と書いたが誤り。
+// fast path は termsafe.sanitize の中にあり、sanitize はループを持つため var / func どちらでも
+// インライン化されない — `go build -gcflags=-m ./termsafe/` の can inline 一覧に載らない。
+// var → func で消えるのは間接呼び出しだけで、効果自体は実在するが理由が違っていた)
 func sanitizeDetailLine(s string) string   { return termsafe.DetailLine(s) }
 func sanitizeLineKeepTabs(s string) string { return termsafe.LineKeepTabs(s) }
 func sanitizePlainLine(s string) string    { return termsafe.PlainLine(s) }

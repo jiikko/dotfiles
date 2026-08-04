@@ -312,6 +312,21 @@ func TestStatusLoadErrorAfterLoadedKeepsLastGood(t *testing.T) {
 	}
 }
 
+// hasTerminalControl は「端末が制御として解釈しうる文字が残っているか」。
+//
+// ⚠️ ESC と BEL だけを見る判定にしないこと: それだと 8bit の CSI (U+009B) / OSC (U+009D) を
+// 原理的に見逃し、「ESC と BEL だけ落とす」実装がテストを全部 green で通ってしまう
+// (敵対的レビュー 2026-08-05 が実際にこの盲点を突いた)。許可した文字だけが残っているか、の
+// allowlist 側で判定する。
+func hasTerminalControl(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return true
+		}
+	}
+	return false
+}
+
 // ファイル名の端末制御シーケンスは画面へ出さない。POSIX のファイル名は / と NUL 以外の任意
 // バイトを許し、-z の git status はクォートせず生で返すので、第三者ブランチに ESC 入りの名前の
 // untracked が 1 つあるだけで status viewer を開いた瞬間に端末が乗っ取られる。
@@ -322,7 +337,7 @@ func TestStatusPathIsSanitizedForDisplayOnly(t *testing.T) {
 	row := worktreeRow{section: sectionUntracked, code: '?', x: '?', y: '?', path: evil}
 
 	shown := stripANSI(statusPathText(row, 60, false))
-	if strings.ContainsAny(shown, esc+bel) {
+	if hasTerminalControl(shown) {
 		t.Errorf("一覧のパスに制御シーケンスが残った: %q", shown)
 	}
 	if strings.Contains(shown, "pwned") {
@@ -336,7 +351,7 @@ func TestStatusPathIsSanitizedForDisplayOnly(t *testing.T) {
 	}
 	// rename 行は "元 → 先" の両方が対象
 	rn := worktreeRow{section: sectionStaged, code: 'R', path: "new.txt", orig: evil}
-	if got := stripANSI(statusPathText(rn, 60, false)); strings.ContainsAny(got, esc+bel) {
+	if got := stripANSI(statusPathText(rn, 60, false)); hasTerminalControl(got) {
 		t.Errorf("rename 元に制御シーケンスが残った: %q", got)
 	}
 }
@@ -347,7 +362,7 @@ func TestStatusNoticeIsSanitized(t *testing.T) {
 	const esc, bel = "\x1b", "\a"
 	v := newTestStatusView(t, statusRec("## master", "?? a.txt"))
 	v.setNotice("evil"+esc+"]0;pwned"+bel+".txt の変更を捨てました", true)
-	if strings.ContainsAny(v.notice, esc+bel) {
+	if hasTerminalControl(v.notice) {
 		t.Errorf("通知に制御シーケンスが残った: %q", v.notice)
 	}
 }

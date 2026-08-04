@@ -94,6 +94,14 @@ func FindDirs(root string) []string {
 // .md が 1 つでもあるか) を返す。全 issue が done/ に片付いた状態でも拾えるようサブ
 // ディレクトリまで見る。
 func hasMarkdown(dir string) bool {
+	// ⚠️ ディレクトリ自体が symlink なら対象外にする。ここは FindDirs が候補を採用するかの
+	// 唯一のゲートなので、ファイル単位の symlink 拒否 (isIssueFile) だけでは塞げない穴を
+	// ここで閉じる: `issues -> /Users/victim/Documents` を 1 本足した PR を checkout すると、
+	// repo 外の .md が一覧・本文として読めてしまう (実機で再現確認済み)。
+	// git は mode 120000 でディレクトリ symlink を表現できるので PR 経由で入ってくる。
+	if fi, err := os.Lstat(dir); err != nil || fi.Mode()&os.ModeSymlink != 0 {
+		return false
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return false

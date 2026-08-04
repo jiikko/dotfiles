@@ -295,7 +295,9 @@ func conflicts(issues []*Issue) []string {
 		}
 		places := make([]string, 0, len(group))
 		for _, iss := range group {
-			places = append(places, iss.Rel)
+			// ⚠️ Rel は同一性 (生のまま保持) なので、表示に混ぜるここで無害化する。
+			// この警告は issue 一覧のヘッダーへそのまま描かれる = 表示 sink である。
+			places = append(places, termsafe.PlainLine(iss.Rel))
 		}
 		sort.Strings(places)
 		warns = append(warns, "同じファイル名が複数の状態ディレクトリにあります: "+strings.Join(places, " / "))

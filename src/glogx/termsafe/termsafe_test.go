@@ -106,3 +106,76 @@ func TestTruncatedSequences(t *testing.T) {
 		}
 	}
 }
+
+// 8bit の C1 制御文字 (U+009B CSI / U+009D OSC / U+009C ST) も落とす。
+//
+// ⚠️ 最初の実装はここが素通しだった。fast path の述語と本体の drop 条件を別々に書いていて
+// 片方にしか C1 が無かった (= 判定の二重実装) のが原因なので、needsSanitize / mustStrip を
+// 共有する形に直した。テスト側も「ESC と BEL が無いこと」でなく「許可した文字だけが残ること」
+// で判定する (前者だと C1 を原理的に見逃す)。
+func TestDropsC1ControlChars(t *testing.T) {
+	const (
+		csi8 = "\u009b"
+		osc8 = "\u009d"
+		st8  = "\u009c"
+	)
+	cases := map[string]string{
+		"8bit OSC":    "a" + osc8 + "0;PWNED" + st8 + "b",
+		"8bit CSI":    "a" + csi8 + "2Jb",
+		"C1 単体 (NEL)": "a\u0085b",
+		"8bit DCS":    "a\u0090q#0" + st8 + "b",
+	}
+	for name, in := range cases {
+		for _, f := range []func(string) string{DetailLine, LineKeepTabs, PlainLine, PlainLineKeepTabs} {
+			got := f(in)
+			if hasControl(got) {
+				t.Errorf("%s: 制御文字が残った: %q", name, got)
+			}
+			if got != "ab" {
+				t.Errorf("%s: シーケンスが丸ごと落ちていない: %q", name, got)
+			}
+		}
+	}
+}
+
+// 終端の無いシーケンスは導入子だけ落として本文を残す (行末まで捨てると「文字を隠す」手段になる)。
+func TestTruncatedSequenceKeepsPayloadAsText(t *testing.T) {
+	cases := map[string]string{
+		"BUILD " + esc + "]FAILED: 12 tests failed": "BUILD ]FAILED: 12 tests failed",
+		"prefix " + esc + "[0123456789;:":           "prefix [0123456789;:",
+		"prefix " + esc + "PBUILD FAILED":           "prefix PBUILD FAILED",
+	}
+	for in, want := range cases {
+		if got := DetailLine(in); got != want {
+			t.Errorf("DetailLine(%q) = %q; want %q", in, got, want)
+		}
+	}
+}
+
+// 制御文字だけが違う 2 つの入力が同じ表示に潰れない (status viewer は破壊的操作を持つので、
+// ユーザーが行を区別できないまま捨てるキーを押せる状態を作らない)。
+func TestSanitizeDoesNotCollapseDistinctInputs(t *testing.T) {
+	a := PlainLine("keep" + esc + "]DELETE-ME.txt")
+	b := PlainLine("keep" + esc + "]KEEP-ME.txt")
+	if a == b {
+		t.Errorf("別の入力が同じ表示に潰れた: %q", a)
+	}
+}
+
+// 不正な UTF-8 は fast path / 本体で結果が割れない (どちらも U+FFFD へ正規化される)。
+func TestInvalidUTF8IsNormalizedConsistently(t *testing.T) {
+	if got := PlainLine("a\xffb"); got != "a\ufffdb" {
+		t.Errorf("不正 UTF-8 の正規化 = %q, want a\\ufffdb", got)
+	}
+}
+
+// hasControl は「端末が制御として解釈しうる文字が残っているか」(C0 / DEL / C1)。
+// ⚠️ ESC と BEL だけを見る判定にすると 8bit の C1 を原理的に見逃す。
+func hasControl(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return true
+		}
+	}
+	return false
+}

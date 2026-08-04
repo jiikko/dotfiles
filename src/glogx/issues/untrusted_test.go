@@ -12,9 +12,26 @@ import (
 // (無害化そのものの仕様は termsafe のテストが持つ)。
 
 const (
-	esc = "\x1b"
-	bel = "\a"
+	esc  = "\x1b"
+	bel  = "\a"
+	osc8 = "\u009d" // 8bit OSC (C1)。7bit の ESC] と同じ制御機能
+	st8  = "\u009c" // 8bit ST (C1)
 )
+
+// hasTerminalControl は「端末が制御として解釈しうる文字が残っているか」。
+//
+// ⚠️ ESC と BEL だけを見る判定にしないこと: それだと 8bit の CSI (U+009B) / OSC (U+009D) を
+// 原理的に見逃し、「ESC と BEL だけ落とす」実装がテストを全部 green で通ってしまう
+// (敵対的レビュー 2026-08-05 が実際にこの盲点を突いた)。許可した文字だけが残っているか、の
+// allowlist 側で判定する。
+func hasTerminalControl(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return true
+		}
+	}
+	return false
+}
 
 // 本文・H1 の端末制御シーケンスは表示に出る前に落ちる。
 // 落ちないと、issue 一覧を開いただけで端末のタイトル書き換え・画面消去・OSC52 による
@@ -39,7 +56,7 @@ func TestIssueBodyAndTitleAreSanitized(t *testing.T) {
 	if err := iss.LoadMeta(); err != nil {
 		t.Fatal(err)
 	}
-	if strings.ContainsAny(iss.Title, esc+bel) {
+	if hasTerminalControl(iss.Title) {
 		t.Errorf("H1 に制御シーケンスが残った: %q", iss.Title)
 	}
 	if strings.Contains(iss.Display(), "pwned") {
@@ -49,13 +66,55 @@ func TestIssueBodyAndTitleAreSanitized(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rendered := strings.Join(b.Lines(60, false), "\n")
-	if strings.ContainsAny(rendered, esc+bel) {
-		t.Errorf("本文に制御シーケンスが残った: %q", rendered)
+	lines := b.Lines(60, false)
+	// ⚠️ 行ごとに見る: 連結してから検査すると区切りの改行自体を制御文字として拾ってしまう
+	for i, ln := range lines {
+		if hasTerminalControl(ln) {
+			t.Errorf("本文 %d 行目に制御シーケンスが残った: %q", i, ln)
+		}
 	}
 	// 無害化しても本文が 1 行に潰れない (termsafe は改行も落とすので、分割の後に掛ける契約)
-	if len(b.Lines(60, false)) < 2 {
-		t.Errorf("本文が 1 行に潰れた: %q", rendered)
+	if len(lines) < 2 {
+		t.Errorf("本文が 1 行に潰れた: %q", lines)
+	}
+}
+
+// 8bit の C1 制御文字 (U+009B = CSI / U+009D = OSC) も落ちる。
+//
+// ⚠️ 最初の実装はここが素通しだった。ESC と BEL しか見ない実装・テストの組み合わせだと
+// 「無害化している」ように見えて 8bit 版が丸ごと通る (敵対的レビュー 2026-08-05)。
+// git のブランチ名は ASCII 制御文字しか禁じられていないので、C1 は実際に外部から入ってくる。
+func TestIssueC1ControlCharsAreDropped(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "issues")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "# 001 " + osc8 + "0;pwned" + st8 + "innocent title\n\n本文に " + osc8 + "52;c;aGVsbG8=" + st8 + " 8bit OSC52\n"
+	if err := os.WriteFile(filepath.Join(dir, "001-feat-x.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := Scan([]string{dir})
+	if len(list) != 1 {
+		t.Fatalf("issue が拾えていない: %d 件", len(list))
+	}
+	iss := list[0]
+	if err := iss.LoadMeta(); err != nil {
+		t.Fatal(err)
+	}
+	if hasTerminalControl(iss.Title) {
+		t.Errorf("H1 に 8bit 制御シーケンスが残った: %q", iss.Title)
+	}
+	if strings.Contains(iss.Title, "pwned") {
+		t.Errorf("8bit OSC の中身が残った: %q", iss.Title)
+	}
+	b, err := iss.ReadBody()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, ln := range b.Lines(60, false) {
+		if hasTerminalControl(ln) {
+			t.Errorf("本文 %d 行目に 8bit 制御シーケンスが残った: %q", i, ln)
+		}
 	}
 }
 
@@ -93,7 +152,7 @@ func TestIssueFilenameIsSanitizedForDisplayOnly(t *testing.T) {
 		t.Fatalf("issue が拾えていない: %d 件", len(list))
 	}
 	iss := list[0]
-	if strings.ContainsAny(iss.Display(), esc+bel) {
+	if hasTerminalControl(iss.Display()) {
 		t.Errorf("一覧の表示文字列に制御シーケンスが残った: %q", iss.Display())
 	}
 	if iss.Path != path {
@@ -148,6 +207,73 @@ func TestScanIgnoresSymlinks(t *testing.T) {
 	}
 }
 
+// 「同じ basename が複数の状態ディレクトリにある」警告は一覧のヘッダーへそのまま描かれる
+// 表示 sink。警告文へ埋める Rel は同一性用の生パスなので、ここで無害化しないと漏れる
+// (無害化した本文・ファイル名の隣で、警告だけが素通しだった)。
+func TestScanWarningsAreSanitized(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	done := filepath.Join(dir, "done")
+	if err := os.MkdirAll(done, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	name := "001-feat-" + esc + "]0;pwned" + bel + "x.md"
+	for _, p := range []string{filepath.Join(dir, name), filepath.Join(done, name)} {
+		if err := os.WriteFile(p, []byte("# 001 x\n"), 0o644); err != nil {
+			t.Skipf("この環境では制御文字入りのファイル名を作れない: %v", err)
+		}
+	}
+	_, warns := Scan([]string{dir})
+	if len(warns) == 0 {
+		t.Fatal("重複の警告が出ていない (前提が崩れた)")
+	}
+	for _, w := range warns {
+		if hasTerminalControl(w) {
+			t.Errorf("警告文に制御シーケンスが残った: %q", w)
+		}
+		if strings.Contains(w, "pwned") {
+			t.Errorf("OSC の中身が警告文に残った: %q", w)
+		}
+	}
+}
+
+// issues ディレクトリ「自体」が symlink なら走査対象にしない。
+//
+// ファイル単位の symlink 拒否 (isIssueFile) だけでは塞げない: git は mode 120000 で
+// ディレクトリ symlink を表現できるので、`issues -> /Users/victim/Documents` を 1 本足した
+// PR を checkout すると repo 外の .md が一覧・本文として読める (実機で再現した経路)。
+func TestFindDirsIgnoresSymlinkedIssuesDir(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(root, "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "001-private.md"), []byte("# 秘密\n\nSECRET\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(root, "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(repo, "issues")); err != nil {
+		t.Skipf("この環境では symlink を作れない: %v", err)
+	}
+	if dirs := FindDirs(repo); len(dirs) != 0 {
+		t.Fatalf("symlink の issues ディレクトリを拾った (repo 外が読める): %q", dirs)
+	}
+	// サブディレクトリ経由 (root/<sub>/issues) も同じ
+	sub := filepath.Join(root, "repo2", "app")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(sub, "issues")); err != nil {
+		t.Fatal(err)
+	}
+	if dirs := FindDirs(filepath.Join(root, "repo2")); len(dirs) != 0 {
+		t.Fatalf("サブディレクトリ経由で symlink の issues を拾った: %q", dirs)
+	}
+}
+
 // 本文から拾う URL に制御シーケンスを混ぜられない (URLs は整形経路を通らず生ソースを見るので、
 // 本文側の無害化では守れない)。
 func TestURLsStopAtControlChars(t *testing.T) {
@@ -156,7 +282,7 @@ func TestURLsStopAtControlChars(t *testing.T) {
 	if len(urls) != 1 {
 		t.Fatalf("URL の数が想定外: %q", urls)
 	}
-	if strings.ContainsAny(urls[0], esc+bel) {
+	if hasTerminalControl(urls[0]) {
 		t.Errorf("URL に制御シーケンスが混ざった: %q", urls[0])
 	}
 	if urls[0] != "https://example.com/ok" {

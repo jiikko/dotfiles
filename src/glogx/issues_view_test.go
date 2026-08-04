@@ -1706,7 +1706,7 @@ func TestIssuesNoticeIsSanitized(t *testing.T) {
 	const esc, bel = "\x1b", "\a"
 	v := newTestIssuesView()
 	v.setNotice("URL を開きます: https://example.com/"+esc+"]0;pwned"+bel+"x", true)
-	if strings.ContainsAny(v.notice, esc+bel) {
+	if hasTerminalControl(v.notice) {
 		t.Errorf("通知に制御シーケンスが残った: %q", v.notice)
 	}
 	if strings.Contains(v.notice, "pwned") {

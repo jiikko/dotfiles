@@ -10,7 +10,10 @@
 // 呼べず、コピーすると二重管理になる)。bubbletea にも幅計算にも依存しない純粋な文字列処理。
 package termsafe
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // DetailLine は CI 由来の表示文字列 (ログ・annotations・job 名) を無害化する。
 //
@@ -113,11 +116,12 @@ func DropEmojiVS16(s string) string {
 // 1 行ずつ通すこと。
 func sanitize(s string, keepTabs, keepSGR bool) string {
 	s = DropEmojiVS16(s)
-	if !strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f || r == '\ufeff' }) {
+	if !needsSanitize(s) {
 		return s
 	}
 	rs := []rune(s)
 	var b strings.Builder
+	b.Grow(len(s))
 	for i := 0; i < len(rs); i++ {
 		r := rs[i]
 		switch {
@@ -126,8 +130,10 @@ func sanitize(s string, keepTabs, keepSGR bool) string {
 		case r == '\t':
 			b.WriteString("    ")
 		case r == '\x1b':
-			i = keepOnlySGR(&b, rs, i, keepSGR)
-		case r < 0x20 || r == 0x7f || r == '\ufeff':
+			i = skipEscape(&b, rs, i, keepSGR)
+		case isC1(r):
+			i = skipC1(rs, i)
+		case mustStrip(r):
 			// drop
 		default:
 			b.WriteRune(r)
@@ -136,10 +142,37 @@ func sanitize(s string, keepTabs, keepSGR bool) string {
 	return b.String()
 }
 
-// keepOnlySGR は rs[i] の ESC から始まるシーケンスを解釈し、SGR (色/装飾) だけを b へ
+// needsSanitize は「そのまま返してよいか」の判定 (fast path のゲート)。
+//
+// ⚠️ mustStrip と同じ述語を使うこと。ここと本体で判定を別々に書くと、片方だけ更新して
+// 静かに素通しする穴が空く (実際 C1 制御文字がこの乖離で丸ごと素通ししていた)。
+// 不正な UTF-8 も対象にする: []rune 変換で U+FFFD に化けるため、fast path で素通しすると
+// 「同じ入力なのに他の文字の有無で結果が変わる」不一致になる。
+func needsSanitize(s string) bool {
+	return !utf8.ValidString(s) || strings.ContainsFunc(s, mustStrip)
+}
+
+// mustStrip はそのままでは端末へ出せない rune。C0 制御文字 / DEL / C1 制御文字 / BOM。
+//
+// C1 (U+0080-U+009F) を含めるのは、8bit 版の CSI (U+009B) / OSC (U+009D) が 7bit の
+// ESC[ / ESC] と同じ制御機能を持つため。UTF-8 の端末が解釈するかは実装依存だが、
+// 「解釈しない端末が多い」は安全の根拠にならないので出さない。git のブランチ名は ASCII 制御
+// 文字しか禁じておらず、C1 入りの ref は正当に作れる (= 外部から実際に入ってくる)。
+func mustStrip(r rune) bool {
+	return r < 0x20 || r == 0x7f || isC1(r) || r == '\ufeff'
+}
+
+func isC1(r rune) bool { return r >= 0x80 && r <= 0x9f }
+
+// skipEscape は rs[i] の ESC から始まるシーケンスを解釈し、SGR (色/装飾) だけを b へ
 // 書き出してそれ以外は捨てる。keepSGR=false なら SGR も捨てる。
 // 戻り値は消費したシーケンスの最終 index。
-func keepOnlySGR(b *strings.Builder, rs []rune, i int, keepSGR bool) int {
+//
+// ⚠️ 終端が見つからないときは導入子 (ESC) だけを消費して残りを本文として扱う。行末まで
+// 捨てると、`BUILD <ESC>]FAILED: 12 tests failed` のような入力で「失敗の記録が黙って
+// 消える」= 制御シーケンスを使わずに文字を隠せてしまう。ESC さえ落とせば残りはただの文字列
+// なので端末は何も解釈しない (安全性を落とさずに情報を保てる)。
+func skipEscape(b *strings.Builder, rs []rune, i int, keepSGR bool) int {
 	if i+1 >= len(rs) {
 		return i // 末尾の裸 ESC は捨てる
 	}
@@ -149,26 +182,66 @@ func keepOnlySGR(b *strings.Builder, rs []rune, i int, keepSGR bool) int {
 		for j < len(rs) && rs[j] >= 0x20 && rs[j] <= 0x3f {
 			j++
 		}
-		if j >= len(rs) {
-			return len(rs) - 1 // 途切れた CSI は捨てる
+		if j >= len(rs) || rs[j] < 0x40 || rs[j] > 0x7e {
+			return i // 終端の無い CSI: 導入子だけ落とす
 		}
 		if keepSGR && rs[j] == 'm' && runesOnly(rs[i+2:j], "0123456789;:") {
 			b.WriteString(string(rs[i : j+1])) // SGR のみ通す
 		}
 		return j
-	case ']', 'P', '_', '^', 'X': // OSC / DCS / APC / PM / SOS: ST (ESC \) か BEL まで捨てる
-		for j := i + 2; j < len(rs); j++ {
-			if rs[j] == '\a' {
-				return j
-			}
-			if rs[j] == '\x1b' && j+1 < len(rs) && rs[j+1] == '\\' {
-				return j + 1
-			}
+	case ']', 'P', '_', '^', 'X': // OSC / DCS / APC / PM / SOS: ST か BEL まで捨てる
+		if end := stringTerminator(rs, i+2); end >= 0 {
+			return end
 		}
-		return len(rs) - 1
+		return i // 終端の無い OSC/DCS 等: 導入子だけ落とす
 	default:
 		return i + 1 // その他の 2 文字エスケープ (ESC 7 等) は捨てる
 	}
+}
+
+// skipC1 は 8bit 版の制御機能 (U+0080-U+009F) を、対応する 7bit 版と同じ範囲だけ消費する。
+// 戻り値は消費した最終 index。
+//
+// ⚠️ 8bit CSI の SGR は通さない (7bit と違って allowlist を作らない)。色を 8bit CSI で送って
+// くる正当な出所が無い一方、通すと「解釈する端末では色以外も効く」余地を残すため。
+func skipC1(rs []rune, i int) int {
+	switch rs[i] {
+	case 0x9b: // CSI
+		j := i + 1
+		for j < len(rs) && rs[j] >= 0x20 && rs[j] <= 0x3f {
+			j++
+		}
+		if j >= len(rs) || rs[j] < 0x40 || rs[j] > 0x7e {
+			return i
+		}
+		return j
+	case 0x90, 0x98, 0x9d, 0x9e, 0x9f: // DCS / SOS / OSC / PM / APC
+		if end := stringTerminator(rs, i+1); end >= 0 {
+			return end
+		}
+		return i
+	case 0x8e, 0x8f: // SS2 / SS3 は次の 1 文字が対象
+		if i+1 < len(rs) {
+			return i + 1
+		}
+		return i
+	default:
+		return i // 制御機能を導入しない C1 は単体で落とす
+	}
+}
+
+// stringTerminator は from から探した ST (7bit の ESC \ / 8bit の U+009C) か BEL の index を
+// 返す (-1 = 見つからない)。OSC / DCS / PM / APC / SOS が共有する終端規則。
+func stringTerminator(rs []rune, from int) int {
+	for j := from; j < len(rs); j++ {
+		if rs[j] == '\a' || rs[j] == 0x9c {
+			return j
+		}
+		if rs[j] == '\x1b' && j+1 < len(rs) && rs[j+1] == '\\' {
+			return j + 1
+		}
+	}
+	return -1
 }
 
 func runesOnly(rs []rune, allowed string) bool {

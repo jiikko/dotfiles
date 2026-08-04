@@ -153,7 +153,8 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 		rows = []string{paint(spinner+" 取得中...", ansiDim, colored)}
 	default:
 		// CLI バージョンが取れていればタイトルに添える (取得失敗時は空で従来どおり)。
-		if v := o.snap.Version; v != "" {
+		// バージョン文字列は外部バイナリの出力なので無害化して枠へ載せる
+		if v := sanitizePlainLine(o.snap.Version); v != "" {
 			title = " Claude Code v" + v + " · usage "
 		}
 		// codex の枠が取れているときだけ "+ codex" を添える (codex 未導入環境や取得失敗時に

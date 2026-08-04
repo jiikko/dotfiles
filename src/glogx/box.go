@@ -267,6 +267,14 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, st 
 	leftEdge, rightEdge := paint(b.v+" ", border, colored), paint(" "+b.v, border, colored)
 	shadeFirst, shadeRest := shadowFeather(colored), shadowRun(1, colored)
 	for i, row := range rows {
+		// ⚠️ 色なしモードでは外部由来の SGR を落とす。paint も scrollbarColumn も
+		// colored=false のとき reset を一切出さないため、CI ログ 1 行に閉じていない SGR が
+		// あると padding・枠・スクロールバー列・後続行まで属性が続く (NO_COLOR 起動時に
+		// 「以降が全部消える」形の画面破壊になる)。色を出さないモードなのだから、
+		// 自分で塗らない = 外から来た色も通さない、で不変条件を揃える。
+		if !colored {
+			row = stripANSI(row)
+		}
 		content, cw := clipMeasure(row, inner)
 		pad := max(inner-cw, 0)
 		shade := shadeRest
