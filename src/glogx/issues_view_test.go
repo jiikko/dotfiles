@@ -1700,6 +1700,20 @@ func TestIssuesViewKeepsSelectionAcrossRescan(t *testing.T) {
 	}
 }
 
+// 通知文は issue のファイル名・本文由来の URL を素で埋め込むので、setNotice 自体を関門にする
+// (呼び出しごとに包む方式だと必ずどこかが漏れる)。status viewer 側と対の規律。
+func TestIssuesNoticeIsSanitized(t *testing.T) {
+	const esc, bel = "\x1b", "\a"
+	v := newTestIssuesView()
+	v.setNotice("URL を開きます: https://example.com/"+esc+"]0;pwned"+bel+"x", true)
+	if strings.ContainsAny(v.notice, esc+bel) {
+		t.Errorf("通知に制御シーケンスが残った: %q", v.notice)
+	}
+	if strings.Contains(v.notice, "pwned") {
+		t.Errorf("OSC の中身が通知に残った: %q", v.notice)
+	}
+}
+
 // newTestIssuesView は閉じる演出を切った viewer。⚠️ 既存テストは「close したら即座に畳まれて
 // いる」前提で書かれているので、演出を挟むと全て 1 拍待ちになって読めなくなる。演出そのものは
 // issues_close_anim_test.go が明示的に on にして検査する (newTestBrowse の zoom.off と同じ)。

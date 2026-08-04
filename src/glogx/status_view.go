@@ -230,7 +230,11 @@ func (v *statusView) advanceGlide() {
 }
 
 // setNotice / takeNotice は操作結果の受け渡し (browseModel がトーストにする)。
-func (v *statusView) setNotice(text string, ok bool) { v.notice, v.noticeOK = text, ok }
+// ⚠️ ここで無害化する: 通知文はパス・git のエラー出力を素で埋め込む呼び出しが多く、
+// 呼び出しごとに包むと必ずどこかが漏れる (自前の静的文だけの通知は無害化しても変わらない)。
+func (v *statusView) setNotice(text string, ok bool) {
+	v.notice, v.noticeOK = sanitizePlainLine(text), ok
+}
 
 func (v *statusView) takeNotice() (string, bool) {
 	text, ok := v.notice, v.noticeOK
@@ -456,6 +460,12 @@ func (v *statusView) fetchDiff(row worktreeRow, colored bool) tea.Cmd {
 func untrackedPreview(path string, isDir bool) ([]string, error) {
 	if isDir {
 		return []string{"(未追跡のディレクトリ)"}, nil
+	}
+	// ⚠️ symlink は中身を出さない: untracked のリンクを辿ると、カーソルを合わせただけで
+	// リンク先 (~/.ssh/id_rsa 等) の中身が画面に出る。第三者ブランチに 1 本仕込むだけで成立する
+	// ので、リンクであること自体を表示して読まない (issues の isIssueFile と同じ判断)。
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return []string{"(シンボリックリンク。リンク先の中身は表示しません)"}, nil
 	}
 	// ⚠️ ファイル全体を読まない: untracked には巨大な生成物 (動画・アーカイブ) が混ざりうるので、
 	// カーソルを合わせただけで数百 MB を掴むことになる。プレビューに必要な先頭だけ読む。
@@ -736,7 +746,7 @@ func (v *statusView) openPager(vp statusViewport) tea.Cmd {
 		return nil
 	}
 	v.pagerKey = previewKey(row)
-	v.pagerTitle = row.path
+	v.pagerTitle = row.dispPath() // 画面に出す文字列なので表示用 (dispPath の doc)
 	v.pagerOffset = 0
 	v.pagerGlide.stop()
 	return v.fetchDiff(row, vp.colored)
@@ -966,10 +976,7 @@ func (v *statusView) rowLine(i int, o statusRenderOpts, width int) string {
 // statusPathText はパスを「ディレクトリ部分を dim、basename を明るく」描く (幅を超える場合は
 // 先頭を削って basename を残す: 末尾から切ると「どのファイルか」が分からなくなる)。
 func statusPathText(r worktreeRow, width int, colored bool) string {
-	path := r.path
-	if r.orig != "" {
-		path = r.orig + " → " + r.path
-	}
+	path := r.dispPath()
 	if dispWidth(path) > width {
 		// ⚠️ 先頭を削る (末尾を残す)。末尾から切ると basename が消えて「どのファイルか」が
 		// 分からなくなる = 一覧として役に立たなくなる
@@ -1007,7 +1014,7 @@ func (v *statusView) previewPane(o statusRenderOpts, width int) []string {
 		sectionStaged: "staged", sectionUnstaged: "unstaged",
 		sectionUntracked: "untracked", sectionConflicted: "conflict",
 	}[row.section]
-	head := clipToWidth(row.path+"  ("+kind+")", width)
+	head := clipToWidth(row.dispPath()+"  ("+kind+")", width)
 	out := []string{paint(head, ansiBold, o.colored), ""}
 	key := previewKey(row)
 	body, ok := v.preview[key]

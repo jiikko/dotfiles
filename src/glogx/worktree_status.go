@@ -41,6 +41,21 @@ type worktreeRow struct {
 	partial bool
 }
 
+// dispPath は画面・通知に出す用のパス (rename は "元 → 先")。
+//
+// ⚠️ git へ渡すのは必ず path / orig / pathspecs() の生の方。表示用と同一性を分けているのは、
+// 無害化した文字列で git を叩くとファイルを見失う (最悪、別のファイルを操作する) ため。
+//
+// なぜ無害化が要るか: POSIX のファイル名は / と NUL 以外の任意バイトを許し、-z の git status は
+// クォートせず生のまま返す。第三者ブランチに ESC 入りの名前のファイルが 1 つあるだけで、
+// status viewer を開いた瞬間に端末のタイトル書き換え・画面破壊・OSC52 が発火しうる。
+func (r worktreeRow) dispPath() string {
+	if r.orig != "" {
+		return sanitizePlainLine(r.orig) + " → " + sanitizePlainLine(r.path)
+	}
+	return sanitizePlainLine(r.path)
+}
+
 // worktreeStatus は git status 1 回分の読み取り結果 (画面が毎回作り直す派生ビューの素)。
 type worktreeStatus struct {
 	rows []worktreeRow

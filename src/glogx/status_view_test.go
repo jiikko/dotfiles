@@ -312,6 +312,46 @@ func TestStatusLoadErrorAfterLoadedKeepsLastGood(t *testing.T) {
 	}
 }
 
+// ファイル名の端末制御シーケンスは画面へ出さない。POSIX のファイル名は / と NUL 以外の任意
+// バイトを許し、-z の git status はクォートせず生で返すので、第三者ブランチに ESC 入りの名前の
+// untracked が 1 つあるだけで status viewer を開いた瞬間に端末が乗っ取られる。
+// ⚠️ git へ渡す側 (path / pathspecs) は実物のまま — 無害化するとファイルを見失う。
+func TestStatusPathIsSanitizedForDisplayOnly(t *testing.T) {
+	const esc, bel = "\x1b", "\a"
+	evil := "evil" + esc + "]0;pwned" + bel + ".txt"
+	row := worktreeRow{section: sectionUntracked, code: '?', x: '?', y: '?', path: evil}
+
+	shown := stripANSI(statusPathText(row, 60, false))
+	if strings.ContainsAny(shown, esc+bel) {
+		t.Errorf("一覧のパスに制御シーケンスが残った: %q", shown)
+	}
+	if strings.Contains(shown, "pwned") {
+		t.Errorf("OSC の中身が一覧に残った: %q", shown)
+	}
+	if row.path != evil {
+		t.Errorf("同一性のパスが書き換わった (git へ渡す値が実物とずれる): %q", row.path)
+	}
+	if got := row.pathspecs(); len(got) == 0 || !strings.Contains(got[0], evil) {
+		t.Errorf("pathspec が実物のパスを保っていない: %q", got)
+	}
+	// rename 行は "元 → 先" の両方が対象
+	rn := worktreeRow{section: sectionStaged, code: 'R', path: "new.txt", orig: evil}
+	if got := stripANSI(statusPathText(rn, 60, false)); strings.ContainsAny(got, esc+bel) {
+		t.Errorf("rename 元に制御シーケンスが残った: %q", got)
+	}
+}
+
+// 通知文はパスや git のエラー出力を素で埋め込むので、setNotice 自体を関門にする
+// (呼び出しごとに包む方式だと必ずどこかが漏れる)。
+func TestStatusNoticeIsSanitized(t *testing.T) {
+	const esc, bel = "\x1b", "\a"
+	v := newTestStatusView(t, statusRec("## master", "?? a.txt"))
+	v.setNotice("evil"+esc+"]0;pwned"+bel+".txt の変更を捨てました", true)
+	if strings.ContainsAny(v.notice, esc+bel) {
+		t.Errorf("通知に制御シーケンスが残った: %q", v.notice)
+	}
+}
+
 // パスが幅を超えるときは basename を残す (末尾から切ると「どのファイルか」が分からない)。
 func TestStatusPathTextKeepsBasename(t *testing.T) {
 	row := worktreeRow{section: sectionUnstaged, path: "src/glogx/deeply/nested/dir/render.go"}
@@ -773,6 +813,30 @@ func TestUntrackedPreviewReadsOnlyHead(t *testing.T) {
 	}
 	if len(lines[0]) > statusPreviewMaxBytes {
 		t.Fatalf("読んだ長さ = %d bytes, want <= %d (全体を読んでいる)", len(lines[0]), statusPreviewMaxBytes)
+	}
+}
+
+// untracked の symlink はリンク先を読まない。読むと、カーソルを合わせただけで
+// リンク先 (~/.ssh/id_rsa 等) の中身がプレビューに出る。
+func TestUntrackedPreviewDoesNotFollowSymlink(t *testing.T) {
+	dir := t.TempDir()
+	secret := dir + "/secret.txt"
+	if err := os.WriteFile(secret, []byte("SECRET-CONTENT\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := dir + "/innocent.txt"
+	if err := os.Symlink(secret, link); err != nil {
+		t.Skipf("この環境では symlink を作れない: %v", err)
+	}
+	lines, err := untrackedPreview(link, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(lines, "\n"), "SECRET-CONTENT") {
+		t.Fatalf("symlink 先の中身がプレビューに出た: %v", lines)
+	}
+	if len(lines) != 1 || !strings.Contains(lines[0], "リンク") {
+		t.Fatalf("lines = %v, want シンボリックリンクの案内 1 行", lines)
 	}
 }
 

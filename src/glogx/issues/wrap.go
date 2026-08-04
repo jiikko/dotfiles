@@ -15,18 +15,6 @@ import (
 // dispWidth は文字列の端末表示幅を返す (ANSI エスケープは幅 0)。
 func dispWidth(s string) int { return ansi.StringWidth(s) }
 
-// dropVS16 は絵文字異体字セレクタ VS16 (U+FE0F) を除去して ⚠️ を bare な ⚠ へ倒す。
-// issue 本文は「表示に出る外部由来テキスト」なので、glogx の他の入口 (git 由来・CI ログ) と
-// 同じくここで正規化し、層ごとに幅解釈が割れる字を表示に出さない。一次情報は
-// width.go の dropEmojiVS16 (色が落ちるトレードオフの経緯もそこ)。
-func dropVS16(s string) string {
-	const vs16 = "\xef\xb8\x8f" // U+FE0F の UTF-8 バイト列 (直接書くと不可視文字になる)
-	if !strings.Contains(s, vs16) {
-		return s
-	}
-	return strings.ReplaceAll(s, vs16, "")
-}
-
 // style は 1 スパンの意味。ANSI への変換は render.go が担う。
 //
 // 意味と ANSI を分けるのは wrap のため: ANSI 混じりの文字列を grapheme 単位で折り返すと

@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"glogx/termsafe"
 )
 
 // ファイル名とパスから issue のメタデータを組み立てる層。
@@ -170,7 +172,7 @@ func scanDir(dir string) []*Issue {
 			}
 			status, known := statusDirs[strings.ToLower(e.Name())]
 			for _, se := range subEntries {
-				if se.IsDir() || !isMarkdown(se.Name()) || metaFiles[strings.ToLower(se.Name())] {
+				if !isIssueFile(se) || metaFiles[strings.ToLower(se.Name())] {
 					continue
 				}
 				iss := newIssue(dir, filepath.Join(e.Name(), se.Name()))
@@ -183,7 +185,7 @@ func scanDir(dir string) []*Issue {
 			}
 			continue
 		}
-		if !isMarkdown(e.Name()) || metaFiles[strings.ToLower(e.Name())] {
+		if !isIssueFile(e) || metaFiles[strings.ToLower(e.Name())] {
 			continue
 		}
 		out = append(out, newIssue(dir, e.Name()))
@@ -194,7 +196,10 @@ func scanDir(dir string) []*Issue {
 // newIssue はファイル名から番号・カテゴリ・スラッグを取り出す。
 func newIssue(dir, rel string) *Issue {
 	iss := &Issue{Path: filepath.Join(dir, rel), Dir: dir, Rel: rel, Status: StatusOpen}
-	name := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
+	// ⚠️ 無害化するのは表示に使う派生 (Number/Category/Slug) だけ。Path/Dir/Rel はファイルを
+	// 開く・git へ渡す「同一性」なので実物のまま残す (無害化するとファイルを見失う)。
+	// ファイル名にも制御文字は入りうる (POSIX は / と NUL 以外を許す)。
+	name := termsafe.PlainLine(strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel)))
 	switch {
 	case numberedRe.MatchString(name):
 		m := numberedRe.FindStringSubmatch(name)
@@ -377,7 +382,9 @@ func (iss *Issue) LoadMeta() error {
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024) // 実測の最大 issue は 43KB。長い 1 行にも耐える
 	inFront, firstLine := false, true
 	for sc.Scan() {
-		lineText := strings.TrimRight(sc.Text(), "\r")
+		// 読んだ直後に無害化する (この関数が拾う Title / Declared の共通の入口)。
+		// 一覧に出る文字列なので、renderMarkdown 側と同じ関門を通す。
+		lineText := termsafe.PlainLine(strings.TrimRight(sc.Text(), "\r"))
 		switch {
 		case firstLine && strings.TrimSpace(lineText) == "---":
 			inFront = true
@@ -390,7 +397,7 @@ func (iss *Issue) LoadMeta() error {
 		default:
 			if iss.Title == "" {
 				if m := h1Re.FindStringSubmatch(lineText); m != nil {
-					iss.Title = dropVS16(m[1])
+					iss.Title = m[1] // lineText の時点で無害化済み
 				}
 			}
 			if m := checkboxRe.FindStringSubmatch(lineText); m != nil {

@@ -6,6 +6,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"glogx/termsafe"
+
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -71,8 +73,13 @@ func renderMarkdown(src string, width int) []line {
 
 // parseBlocks は本文をブロックへ分解する。
 func parseBlocks(src string) []block {
-	src = dropVS16(strings.ReplaceAll(src, "\r\n", "\n"))
-	lines := strings.Split(src, "\n")
+	lines := strings.Split(strings.ReplaceAll(src, "\r\n", "\n"), "\n")
+	// issue 本文は第三者が書いたファイル (PR 経由で入りうる) なので、ここが端末制御シーケンスの
+	// 単一の関門になる。⚠️ 分割の「後」に 1 行ずつ通すこと: termsafe は改行も制御文字として
+	// 落とすため、分割前の全文に掛けると本文が 1 行に潰れる。
+	for i, ln := range lines {
+		lines[i] = termsafe.PlainLine(ln)
+	}
 	// 末尾の改行・空行は落とす (pager の末尾に空行がぶら下がると「まだ続きがある」ように見える)
 	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
 		lines = lines[:len(lines)-1]

@@ -106,7 +106,7 @@ func hasMarkdown(dir string) bool {
 			}
 			continue
 		}
-		if isMarkdown(e.Name()) {
+		if isIssueFile(e) {
 			return true
 		}
 	}
@@ -116,7 +116,7 @@ func hasMarkdown(dir string) bool {
 			continue
 		}
 		for _, e := range subEntries {
-			if !e.IsDir() && isMarkdown(e.Name()) {
+			if isIssueFile(e) {
 				return true
 			}
 		}
@@ -124,8 +124,22 @@ func hasMarkdown(dir string) bool {
 	return false
 }
 
-// isMarkdown は表示対象のファイルか。実測では issue ファイルは 405/405 が .md で、
+// isMarkdown は表示対象のファイル名か。実測では issue ファイルは 405/405 が .md で、
 // .md 以外は audit-log (拡張子なし TSV) と .gitkeep だけだった。
+//
+// ⚠️ 走査で拾うかの判定には isIssueFile を使うこと (名前だけでは symlink を弾けない)。
 func isMarkdown(name string) bool {
 	return strings.EqualFold(filepath.Ext(name), ".md")
+}
+
+// isIssueFile は走査で issue として拾うエントリか。判定を DirEntry 受け取りに揃えてあるのは、
+// 名前だけの判定 (isMarkdown) を直接使うと symlink チェックを書き忘れられるため。
+//
+// ⚠️ symlink は必ず弾く: os.DirEntry.IsDir() は symlink に false を返すので、拡張子だけ見ると
+// 通常ファイルとして通り、ReadBody の os.ReadFile がリンク先を辿って中身を本文として表示する。
+// つまり PR に `issues/999-innocuous.md -> ~/.ssh/id_rsa` を 1 本入れておくだけで、その
+// ブランチを checkout した人の画面にリンク先の中身が出る (実機で再現確認済み)。
+// symlink 先を追う正当な用途は今のところ無いので、静かに無視する。
+func isIssueFile(e os.DirEntry) bool {
+	return !e.IsDir() && e.Type()&os.ModeSymlink == 0 && isMarkdown(e.Name())
 }

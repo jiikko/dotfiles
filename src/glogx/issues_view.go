@@ -549,7 +549,11 @@ func reorderTabsByCount(tabs []issues.Tab, counts []int) ([]issues.Tab, []int) {
 }
 
 // setNotice は操作結果を置く (ok=false は失敗)。
-func (v *issuesView) setNotice(text string, ok bool) { v.notice, v.noticeOK = text, ok }
+// ⚠️ ここで無害化する: 通知文は issue のファイル名・本文由来の URL を素で埋め込む呼び出しが
+// 多く、呼び出しごとに包むと必ずどこかが漏れる (status_view.go の setNotice と同じ規律)。
+func (v *issuesView) setNotice(text string, ok bool) {
+	v.notice, v.noticeOK = sanitizePlainLine(text), ok
+}
 
 // takeNotice は未表示の操作結果を取り出して消す。browseModel がトーストへ流すための口で、
 // 取り出された通知はヘッダーに出さない (トーストとヘッダーで二重に出さない)。
@@ -1299,7 +1303,9 @@ func (v *issuesView) bodyHeadLines(width int, colored bool) []string {
 		status += "  " + p
 	}
 	return []string{
-		paint(clipToWidth(v.open.Rel, width), ansiBold, colored),
+		// Rel はファイル名 = 外部由来。ファイルを開く同一性は v.open.Path 側が持つので、
+		// 画面に出すこちらだけ無害化する (worktreeRow.dispPath と同じ分け方)。
+		paint(clipToWidth(sanitizePlainLine(v.open.Rel), width), ansiBold, colored),
 		paint(clipToWidth(status, width), ansiDim, colored),
 		"",
 	}

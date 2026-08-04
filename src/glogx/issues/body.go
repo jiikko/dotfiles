@@ -50,7 +50,12 @@ func (b *Body) Len() int { return len(b.lines) }
 // なぜ記号を除くか: issue 本文の URL は markdown リンク `[text](url)`、括弧書き `(url)`、
 // 文末の句点つき `url。` のいずれの形でも現れる。貪欲に拾うと `)` や `。` が URL に混ざり、
 // ブラウザが 404 を開く。逆に `?` `#` `=` `&` は query / fragment の一部なので残す。
-var urlRe = regexp.MustCompile(`https?://[^\s)\]>"'` + "`" + `]+`)
+//
+// ⚠️ 制御文字 (\x00-\x1f\x7f) も終端に含める。URL に生の制御文字は入らないので実用上の損失は
+// 無く、含めないと `https://example.com/<ESC>]0;…<BEL>` が 1 本の URL として抽出され、URL
+// ピッカーの一覧描画で端末へ素通りする (URLs は整形経路を通らず生ソースから拾うため、
+// renderMarkdown 側の無害化では守れない)。\s は \t\n\r\f\v しか外さない。
+var urlRe = regexp.MustCompile(`https?://[^\s)\]>"'` + "`" + `\x00-\x1f\x7f]+`)
 
 // URLs は本文に現れる http(s) URL を出現順で返す (重複は最初の 1 つだけ)。
 //

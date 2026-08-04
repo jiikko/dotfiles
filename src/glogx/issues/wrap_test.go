@@ -123,20 +123,6 @@ func TestTruncSpans(t *testing.T) {
 	}
 }
 
-func TestDropVS16(t *testing.T) {
-	vs16 := string(rune(0xfe0f)) // 直接書くと不可視文字になるのでコードで組む
-	got := dropVS16("警告 ⚠" + vs16 + " あり")
-	if strings.Contains(got, vs16) {
-		t.Fatalf("VS16 が残っている: %q", got)
-	}
-	if !strings.ContainsRune(got, '⚠') {
-		t.Fatalf("bare 記号が消えた: %q", got)
-	}
-	if dropVS16("VS16 なし") != "VS16 なし" {
-		t.Fatal("VS16 を含まない文字列を変えてしまった")
-	}
-}
-
 func TestExpandTabs(t *testing.T) {
 	if got := expandTabs("a\tb"); got != "a   b" {
 		t.Fatalf("タブ展開が想定と違う: %q", got)
