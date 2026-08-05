@@ -284,9 +284,11 @@ type browseModel struct {
 	// 行う write 側の画面で、状態と描画は statusView 型 (status_view.go) に切り出す。
 	// 読み書きの規約の一次情報は docs/status-viewer-spec.md。
 	statusOv statusView
-	// restartPrompt はバックグラウンドビルドの完成を伝えるダイアログ (r で再起動)。
+	// restartPending は「裏ビルドが完成したので再起動を提案したい」= 保留中の印。
+	// ⚠️ これは「出したい」であって「出ている」ではない。実際に出すかは restartPromptVisible()
+	// が決める (中断できない処理の最中は出さない)。表示と入力の両方が同じ述語を見る契約。
 	// restartRequested は「終了後に新しいバイナリで自分を置き換える」印 (main.go が exec する)。
-	restartPrompt    bool
+	restartPending   bool
 	restartRequested bool
 	// lastKey / lastKeyAt はキーリピート (押しっぱなし) の判定用 (swallowKeyRepeat)。
 	lastKey   string
@@ -877,8 +879,10 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			watch = m.autobuild.tickCmd()
 		}
 		if notify && res == autobuildInstalled {
-			// 完成はその場で再起動できる合図なので、消えるトーストでなくダイアログで出す
-			m.restartPrompt = true
+			// 完成はその場で再起動できる合図なので、消えるトーストでなくダイアログで出す。
+			// ⚠️ ここでは「出したい」を立てるだけ。実際に出るのは中断できない処理 (claude update /
+			// push / pull) が走っていないときで、判断は restartPromptVisible() が持つ
+			m.restartPending = true
 			return m, tea.Batch(m.maybeTick(), watch)
 		}
 		if notify {
@@ -1135,8 +1139,17 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// r が issues viewer の再読込・job パネルの再実行にも割り当たっているので「再読込のつもりが
 	// 再起動」になる。⚠️ viewer の分岐より前に置く: viewer は全画面モーダルで全キーを飲むため、
 	// 後ろに置くと viewer を開いている間ダイアログに答えられない。
-	if m.restartPrompt {
-		m.restartPrompt = false
+	//
+	// ⚠️ 描画と同じ restartPromptVisible() で判定する (フラグを直接見ない)。出ていないダイアログに
+	// キーを吸わせない・出ているのに届かない、の両方をこの一致で防ぐ。
+	//
+	// ⚠️ ここに限っては restartPending を直接見ても今は同じ結果になる: 上の actModal.handleKey が
+	// ownsKeys() のとき必ず consumed で return するので、この行に来た時点で ownsKeys() は false =
+	// 2 つの述語は構造的に等価。つまりこの選択を守るテストは書けない (変異させても green)。
+	// それでも述語を揃えておくのは、その等価性が「actModal を先に捌く」という並び順に依存して
+	// いて、並び替えた瞬間に黙って壊れるため。テストで守られていない箇所だと分かるように明記する。
+	if m.restartPromptVisible() {
+		m.restartPending = false // 答えた = 保留を解除する (次のビルド完成まで出ない)
 		if key == "r" {
 			return m.restartForNewBinary()
 		}
@@ -1674,9 +1687,32 @@ func (m *browseModel) restartForNewBinary() (tea.Model, tea.Cmd) {
 	return m.quit()
 }
 
+// restartPromptVisible は再起動ダイアログを今出してよいか。表示 (restartPromptLines) と
+// 入力 (handleKey) の両方がこの 1 つの述語を見る。
+//
+// ⚠️ 順序を 2 箇所に書かないための関数。以前は「キーは actModal が先に飲む」「描画は
+// restartPrompt を後に重ねる」と別々に書いていたため、claude update 中に裏ビルドが完成すると
+// 「最前面のダイアログにどのキーも届かない」状態になった (実測: r/j/q/esc/enter/ctrl+g の
+// すべてが無反応。しかも更新中モーダルの『完了まで終了できません』をダイアログが覆うので、
+// 効かない理由すら画面から消えていた)。
+//
+// actModal がキーを持っている間は出さない (running() ではなく ownsKeys())。理由は 2 つあり、
+// どちらか片方だけ見ると事故る:
+//
+//   - 実行中 (running): このダイアログの r は restartForNewBinary → cancelAll で走行中の
+//     claude update / git を殺す。Ctrl-C をブロックしてまで防いでいる当のものなので、
+//     押させてはいけない選択肢を提示しない
+//   - 確認待ち (y/N): キーは actModal が持っているのに最前面はこちらになる。画面の
+//     「その他のキー: 後で」に従って押した y が push を実行した (実測。無反応より危険)
+//
+// 完成の事実は restartPending が保持しているので、actModal が手を離せば自然に出る。
+func (m *browseModel) restartPromptVisible() bool {
+	return m.restartPending && !m.actModal.ownsKeys()
+}
+
 // restartPromptLines は完成ダイアログの箱 (push/pull 確認と同じ見た目)。
 func (m *browseModel) restartPromptLines() []string {
-	if !m.restartPrompt {
+	if !m.restartPromptVisible() {
 		return nil
 	}
 	return centerBox(" 新しい glogx ", []string{

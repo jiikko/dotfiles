@@ -222,7 +222,7 @@ func TestAutobuildMsgInstalledOpensRestartPrompt(t *testing.T) {
 	m.autobuild = autobuildWatch{active: true, until: timeNow().Add(autobuildWatchTimeout)}
 
 	m.Update(autobuildMsg{result: autobuildInstalled})
-	if !m.restartPrompt {
+	if !m.restartPending {
 		t.Error("完成しても再起動ダイアログが出ない")
 	}
 	if m.toast.visible() {
@@ -236,11 +236,97 @@ func TestAutobuildMsgInstalledOpensRestartPrompt(t *testing.T) {
 	}
 }
 
+// 中断できない処理 (claude update / push / pull) の最中は再起動ダイアログを出さない。
+//
+// ⚠️ 実際に起きた不具合の回帰防止: 以前は「キーは actModal が先に飲む」「描画は再起動ダイアログを
+// 後に重ねる」と順序を 2 箇所へ別々に書いていたため、update 中に裏ビルドが完成すると
+// 「最前面のダイアログにどのキーも届かない」= 操作不能になった (実測: r/j/q/esc/enter/ctrl+g の
+// すべてが無反応)。しかもダイアログが更新中モーダルを覆うので、効かない理由も画面から消えていた。
+//
+// 出さないのは届かないからだけではない: このダイアログの r は cancelAll で走行中の
+// claude update / git を殺す = Ctrl-C をブロックしてまで防いでいる当のものなので、
+// 押させてはいけない選択肢を提示しないのが正しい。完成の事実は restartPending が保持する。
+func TestRestartPromptDefersWhileBlockingOperation(t *testing.T) {
+	// running() の各状態で同じ規律にする (どれも走行中の subprocess を殺す点で同じ)
+	for _, tc := range []struct {
+		name  string
+		apply func(*browseModel)
+	}{
+		{"claude update 中", func(m *browseModel) { m.actModal.updating = true }},
+		{"push 中", func(m *browseModel) { m.actModal.pushing = true }},
+		{"pull 中", func(m *browseModel) { m.actModal.pulling = true }},
+		// ⚠️ 確認待ち (y/N) も同じ。むしろこちらが危険だった: キーは確認モーダルが持つのに
+		// 最前面が再起動ダイアログになり、「その他のキー: 後で」に従って押した y が push を
+		// 実行した (実測)。無反応より悪い = 画面の指示どおりに押すと破壊的操作が走る。
+		{"push 確認中", func(m *browseModel) { m.actModal.pushConfirm = true }},
+		{"pull 確認中", func(m *browseModel) { m.actModal.pullConfirm = true }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			tc.apply(m)
+			m.restartPending = true
+
+			if out := stripANSI(m.View().Content); strings.Contains(out, "新しいバージョンが利用可能です") {
+				t.Errorf("actModal がキーを持っているのに再起動ダイアログを出した:\n%s", out)
+			}
+			// ⚠️ 1 キーだけ押して見る: 確認待ちは 1 キーで解けるので、続けて押すと「解けた後の
+			// ダイアログに答えた」ことになり、この分岐の主張と混ざる。
+			// r はこのダイアログの実行キー = 一番危険なキーなので、これで代表させる。
+			m.handleKey("r")
+			if m.restartRequested {
+				t.Errorf("actModal がキーを持っている間の r で再起動してしまった (走行中の処理を殺す)")
+			}
+			if !m.restartPending {
+				t.Error("actModal へ行ったキーで保留が消えた (完成を伝える機会が失われる)")
+			}
+		})
+	}
+}
+
+// ⚠️ 実際に起きた事故そのものの回帰防止。push 確認 (y/N) 中に裏ビルドが完成すると、以前は
+// 再起動ダイアログが最前面へ重なった。キーの持ち主は確認モーダルのままなので、画面の
+// 「その他のキー: 後で」に従って押した y が push を実行した (無反応より悪い: 画面の指示に
+// 従うと破壊的操作が走る)。ダイアログを出さないことで「見えている選択肢 = 効く選択肢」を保つ。
+func TestRestartPromptDoesNotShadowPushConfirm(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.actModal.pushConfirm = true
+	m.restartPending = true
+
+	out := stripANSI(m.View().Content)
+	if strings.Contains(out, "r: 今すぐ再起動") {
+		t.Fatalf("push 確認中に再起動ダイアログを重ねた (押したキーの行き先と表示が食い違う):\n%s", out)
+	}
+	if !strings.Contains(out, "push") {
+		t.Fatalf("push 確認が見えていない (前提が崩れた):\n%s", out)
+	}
+}
+
+// 走行中の処理が終われば、保留していたダイアログが出て答えられる。
+func TestRestartPromptAppearsAfterOperationFinishes(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.actModal.updating = true
+	m.restartPending = true
+
+	// 更新中は更新中モーダルが見えている (ダイアログに覆われない = 効かない理由が画面にある)
+	if out := stripANSI(m.View().Content); !strings.Contains(out, "完了まで終了できません") {
+		t.Fatalf("更新中モーダルが見えない (ダイアログが覆っている):\n%s", out)
+	}
+
+	m.Update(updateMsg{}) // 更新が決着
+	if out := stripANSI(m.View().Content); !strings.Contains(out, "新しいバージョンが利用可能です") {
+		t.Fatalf("走行中の処理が終わっても保留していたダイアログが出ない:\n%s", out)
+	}
+	m.handleKey("r")
+	if !m.restartRequested || !m.done {
+		t.Errorf("出た後の r が効かない: restartRequested=%v done=%v", m.restartRequested, m.done)
+	}
+}
+
 // r で確認なしに再起動 (ユーザー要望)。exec は main.go が行うので、ここでは印と終了を見る。
 func TestRestartPromptKeys(t *testing.T) {
 	t.Run("r で再起動を予約して終了", func(t *testing.T) {
 		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-		m.restartPrompt = true
+		m.restartPending = true
 		m.handleKey("r")
 		if !m.restartRequested {
 			t.Error("r で再起動が予約されない")
@@ -248,7 +334,7 @@ func TestRestartPromptKeys(t *testing.T) {
 		if !m.done {
 			t.Error("r で終了していない (exec は終了後に main.go が行う)")
 		}
-		if m.restartPrompt {
+		if m.restartPending {
 			t.Error("ダイアログが残っている")
 		}
 	})
@@ -257,12 +343,12 @@ func TestRestartPromptKeys(t *testing.T) {
 	for _, key := range []string{"j", "q", "esc", "i", "R"} {
 		t.Run(key+" は再起動しない", func(t *testing.T) {
 			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-			m.restartPrompt = true
+			m.restartPending = true
 			m.handleKey(key)
 			if m.restartRequested {
 				t.Errorf("%q で再起動してしまった", key)
 			}
-			if m.restartPrompt {
+			if m.restartPending {
 				t.Errorf("%q でダイアログが閉じない", key)
 			}
 		})
@@ -271,7 +357,7 @@ func TestRestartPromptKeys(t *testing.T) {
 	t.Run("issues viewer を開いていても r が届く", func(t *testing.T) {
 		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 		m.handleKey("i")
-		m.restartPrompt = true
+		m.restartPending = true
 		m.handleKey("r")
 		if !m.restartRequested {
 			t.Error("viewer 表示中に r が viewer の再読込へ吸われた")

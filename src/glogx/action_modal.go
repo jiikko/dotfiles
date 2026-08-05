@@ -47,6 +47,20 @@ func (a *actionModal) active() bool {
 // 不整合 (mid-rebase のような) を残さないため即終了を許す。
 func (a *actionModal) running() bool { return a.pushing || a.pulling || a.rerunning || a.updating }
 
+// ownsKeys は「このモーダルがキーの所有者か」= handleKey が consumed=true を返す条件。
+//
+// ⚠️ handleKey と一致させること (TestActionModalOwnsKeysMatchesHandleKey が固定している)。
+// 他のモーダルは「自分を出してよいか」をこれで判断するので、ずれると「最前面に出ているのに
+// キーが別のモーダルへ行く」状態が生まれる。実際に起きた事故: 再起動ダイアログが running()
+// だけを見ていたため、push 確認 (y/N) 中に完成ダイアログが最前面へ重なり、画面の
+// 「その他のキー: 後で」に従って押した y が push を実行した。
+//
+// running() との違いは確認待ち (y/N) を含むこと。running() は「中断すると壊れる処理が動いて
+// いるか」= 終了ガードの判断で、用途が別 (混同しないこと)。
+func (a *actionModal) ownsKeys() bool {
+	return a.pushConfirm || a.pullConfirm || a.rerunConfirm || a.running()
+}
+
 // runningQuitHint は実行中モーダルに出す終了ガードの案内。1 回目の Ctrl-C で forceQuitArmed が
 // 立った後は強制終了を促す (progressive disclosure)。
 func (a *actionModal) runningQuitHint() string {
