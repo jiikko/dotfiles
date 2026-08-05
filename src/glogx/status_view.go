@@ -34,13 +34,10 @@ type statusView struct {
 	cursor int
 	offset int // 窓の先頭 (表示行 index。セクション見出しを含む数え方)
 
-	// preview はプレビュー / 全画面 diff が共有する取得結果。キーは previewKey (パス + XY) なので、
-	// 外部編集で内容が変わると自然にキャッシュミスになる (古い diff を出し続けない)。
-	// order は挿入順で、overlayCacheLimit を超えたぶんを古い順に落とす (diffOverlay と同じ
-	// evictOverlayCache を共有。長時間セッションで閲覧したファイルのぶんだけ無制限に育つのを防ぐ)。
-	preview map[string][]string
-	order   []string
-	busy    map[string]bool
+	// preview はプレビュー / 全画面 diff が共有する取得結果 (line_cache.go)。キーは previewKey
+	// (パス + XY) なので、外部編集で内容が変わると自然にキャッシュミスになる (古い diff を
+	// 出し続けない)。上限超過分の evict と取得の単発化は lineCache が持つ。
+	preview lineCache
 	// previewSeq はカーソル移動のデバウンス世代。キーリピート中に 1 行ごとに git を起動しない
 	// ため、止まってから statusPreviewDebounce 後の tick だけが取得を発行する。
 	previewSeq int
@@ -143,14 +140,14 @@ type statusViewport struct {
 }
 
 func newStatusView() statusView {
-	return statusView{preview: map[string][]string{}, busy: map[string]bool{}}
+	return statusView{preview: newLineCache()}
 }
 
 // visible は viewer を表示中か (閉じる演出のあいだも true)。
 func (v *statusView) visible() bool { return v.shown }
 
 // loading は git status / diff の取得中か (スピナー tick を回し続ける判定用)。
-func (v *statusView) fetching() bool { return v.loading || len(v.busy) > 0 }
+func (v *statusView) fetching() bool { return v.loading || v.preview.fetching() }
 
 // animating は開閉の演出中か。
 func (v *statusView) animating() bool {
@@ -211,7 +208,7 @@ func (v *statusView) finishClose() {
 	// 「取得中」と判断して二度と読み直さない = 古い一覧が永久に居座る。busy も同様に、走行中の
 	// diff 取得が返らない限り fetching() が true のままフレーム tick を回し続ける。
 	v.loading = false
-	v.busy = map[string]bool{}
+	v.preview.clearBusy()
 	v.gen++
 }
 
@@ -312,7 +309,7 @@ func (v *statusView) receive(msg statusLoadMsg) tea.Cmd {
 	}
 	// 内容が変わったら古い diff は捨てる (キーに XY を含めているので大半は当たらないが、
 	// 同じ XY のまま中身だけ変わる編集 = 保存し直しでは当たってしまう)。
-	v.preview, v.order = map[string][]string{}, nil
+	v.preview.reset()
 	// ⚠️ 捨てたら取り直しも予約する。捨てるだけだと、外部編集のたびにプレビュー欄が空になり
 	// 「カーソルを動かすまで戻らない」= 別プロセスに作業させながら眺める用途で画面が死ぬ。
 	return v.previewTickCmd()
@@ -428,13 +425,9 @@ func (v *statusView) receivePreviewTick(msg statusPreviewTickMsg, colored bool) 
 // fetchDiff はカーソル行の diff を取る (キャッシュヒット / 取得中なら nil)。
 func (v *statusView) fetchDiff(row worktreeRow, colored bool) tea.Cmd {
 	key := previewKey(row)
-	if _, ok := v.preview[key]; ok {
-		return nil
+	if !v.preview.begin(key) {
+		return nil // キャッシュ済み / 取得中
 	}
-	if v.busy[key] {
-		return nil
-	}
-	v.busy[key] = true
 	paths := row.pathspecs()
 	staged := row.section == sectionStaged
 	untracked := row.section == sectionUntracked
@@ -497,7 +490,6 @@ func untrackedPreview(path string, isDir bool) ([]string, error) {
 // receivePreview は diff 取得の結果を反映する。失敗は「取れなかった」ことをプレビュー欄に
 // 出すだけで、トーストにはしない (カーソルを動かすたびに出ると騒がしい)。
 func (v *statusView) receivePreview(msg statusPreviewMsg) {
-	delete(v.busy, msg.key)
 	if msg.err != nil {
 		v.storePreview(msg.key, []string{"(diff を取得できませんでした: " + firstLine(msg.err.Error()) + ")"})
 		return
@@ -511,17 +503,25 @@ func (v *statusView) receivePreview(msg statusPreviewMsg) {
 
 // storePreview はキャッシュへ入れて上限を超えたぶんを落とす (表示中のキーは残す)。
 func (v *statusView) storePreview(key string, lines []string) {
-	if _, ok := v.preview[key]; !ok {
-		v.order = append(v.order, key)
+	v.preview.store(key, lines, v.visibleKey())
+}
+
+// pagerLines は全画面 diff に出す行 (未取得なら nil)。
+func (v *statusView) pagerLines() []string {
+	lines, _ := v.preview.get(v.pagerKey)
+	return lines
+}
+
+// visibleKey は今画面に出ているプレビューのキー (evict から守る対象)。全画面 diff を開いて
+// いればそちら、無ければカーソル行。
+func (v *statusView) visibleKey() string {
+	if v.pagerKey != "" {
+		return v.pagerKey
 	}
-	v.preview[key] = lines
-	keep := v.pagerKey
-	if keep == "" {
-		if row, ok := v.current(); ok {
-			keep = previewKey(row)
-		}
+	if row, ok := v.current(); ok {
+		return previewKey(row)
 	}
-	v.order = evictOverlayCache(v.preview, v.order, keep)
+	return ""
 }
 
 // handleKey は viewer 内のキーを捌く。返り値の tea.Cmd は取得・自動更新の予約
@@ -583,7 +583,7 @@ func (v *statusView) applyFresh(st worktreeStatus) {
 	sec, path, idx := v.anchor()
 	v.st, v.rows, v.loaded, v.err = st, st.ordered(), true, ""
 	v.restoreCursor(sec, path, idx)
-	v.preview, v.order = map[string][]string{}, nil
+	v.preview.reset()
 }
 
 // pagerKeyPress は全画面 diff のキー (スクロールは共有ロジック、閉じるはここ)。
@@ -594,7 +594,7 @@ func (v *statusView) pagerKeyPress(key string, vp statusViewport) tea.Cmd {
 		v.pagerGlide.stop()
 		return nil
 	}
-	total := len(v.preview[v.pagerKey])
+	total := len(v.pagerLines())
 	v.pagerOffset = pagerScrollKey(key, v.pagerOffset, v.pagerRows(vp.page), total, &v.pagerGlide)
 	return nil
 }
@@ -1049,9 +1049,9 @@ func (v *statusView) previewPane(o statusRenderOpts, width int) []string {
 	head := clipToWidth(row.dispPath()+"  ("+kind+")", width)
 	out := []string{paint(head, ansiBold, o.colored), ""}
 	key := previewKey(row)
-	body, ok := v.preview[key]
+	body, ok := v.preview.get(key)
 	switch {
-	case !ok && v.busy[key]:
+	case !ok && v.preview.loading(key):
 		out = append(out, paint(o.spinner+" diff を取得中...", ansiDim, o.colored))
 	case !ok:
 		out = append(out, paint("(d で全文)", ansiDim, o.colored))
@@ -1100,11 +1100,11 @@ func (v *statusView) pagerBox(o statusRenderOpts) []string {
 	// (ミューテーション検証 2026-08-03: ガードを外しても TestStatusLinesSurvivesExtremeSizes は green)。
 	width := o.width
 	rows := v.pagerRows(o.page)
-	lines, ok := v.preview[v.pagerKey]
+	lines, ok := v.preview.get(v.pagerKey)
 	var body []string
 	title := " diff: " + v.pagerTitle + " "
 	switch {
-	case !ok && v.busy[v.pagerKey]:
+	case !ok && v.preview.loading(v.pagerKey):
 		body = []string{paint(o.spinner+" diff を取得中...", ansiDim, o.colored)}
 	case !ok:
 		body = []string{paint("(diff はありません)", ansiDim, o.colored)}

@@ -13,21 +13,20 @@ type diffOverlay struct {
 	// glide は表示位置を offset へ滑らせるスクロールアニメ (scroll_glide.go の共有型。
 	// 一覧と同じ手触りにする。ユーザー要望 2026-07-31)。
 	glide scrollGlide
-	cache map[string][]string // sha → 整形済み diff 行 (メモリ内キャッシュ)
-	order []string            // cache への挿入順 (overlayCacheLimit 超過分の古い順 evict 用)
-	busy  map[string]bool     // 取得中の sha
+	// lines は sha → 整形済み diff 行のキャッシュと取得の単発化 (line_cache.go)。
+	lines lineCache
 }
 
 // newDiffOverlay は map を初期化した diffOverlay を返す。
 func newDiffOverlay() diffOverlay {
-	return diffOverlay{cache: map[string][]string{}, busy: map[string]bool{}}
+	return diffOverlay{lines: newLineCache()}
 }
 
 // visible は diff ポップアップを表示中か。
 func (o *diffOverlay) visible() bool { return o.sha != "" }
 
 // fetching は diff 取得中の SHA が 1 つでもあるか (スピナー tick を回し続ける判定用)。
-func (o *diffOverlay) fetching() bool { return len(o.busy) > 0 }
+func (o *diffOverlay) fetching() bool { return o.lines.fetching() }
 
 // close はポップアップを閉じてスクロール位置を戻す。
 func (o *diffOverlay) close() {
@@ -38,9 +37,7 @@ func (o *diffOverlay) close() {
 
 // reset は pull 後の全面リロードでキャッシュごと破棄する (旧 SHA の残骸を持ち越さない)。
 func (o *diffOverlay) reset() {
-	o.cache = map[string][]string{}
-	o.order = nil
-	o.busy = map[string]bool{}
+	o.lines.reset()
 	o.close()
 }
 
@@ -54,32 +51,27 @@ func (o *diffOverlay) open(sha string) (needFetch bool) {
 	}
 	o.sha = sha
 	o.offset = 0
-	if _, ok := o.cache[sha]; ok {
-		return false
-	}
-	if o.busy[sha] {
-		return false
-	}
-	o.busy[sha] = true
-	return true
+	return o.lines.begin(sha)
 }
 
 // receive は取得結果 (diffMsg) を反映する。取得失敗は err を返し (呼び出し側が notice を出す)、
 // その SHA が今表示中なら閉じる。古い別 SHA のエラーは表示中の diff を閉じない。
 func (o *diffOverlay) receive(msg diffMsg) error {
-	delete(o.busy, msg.sha)
 	if msg.err != nil {
+		o.lines.abort(msg.sha)
 		if o.sha == msg.sha {
 			o.close()
 		}
 		return msg.err
 	}
-	if _, ok := o.cache[msg.sha]; !ok {
-		o.order = append(o.order, msg.sha)
-	}
-	o.cache[msg.sha] = msg.lines
-	o.order = evictOverlayCache(o.cache, o.order, o.sha)
+	o.lines.store(msg.sha, msg.lines, o.sha)
 	return nil
+}
+
+// visibleLines は表示中 SHA のキャッシュ行 (未取得なら nil)。
+func (o *diffOverlay) visibleLines() []string {
+	lines, _ := o.lines.get(o.sha)
+	return lines
 }
 
 // scroll は pager 流儀のキー操作を反映する。rows は表示可能行数 (レイアウト依存なので
@@ -94,7 +86,7 @@ func (o *diffOverlay) scroll(key string, rows int) {
 	}
 	// スクロールの語彙 (1 行 / 半ページ + glide / 端ジャンプ) は status viewer の全画面 diff と
 	// 共有する (scroll_glide.go の pagerScrollKey)。手触りを 1 箇所に集約するため。
-	o.offset = pagerScrollKey(key, o.offset, rows, len(o.cache[o.sha]), &o.glide)
+	o.offset = pagerScrollKey(key, o.offset, rows, len(o.visibleLines()), &o.glide)
 }
 
 // boxLines は diff ポップアップの描画行 (枠付き)。非表示・コミット解決不能なら nil。
@@ -110,10 +102,10 @@ func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *
 	var body []string
 	title := fmt.Sprintf(" diff: %s %s ", commit.ShortSHA, commit.Subject)
 	switch {
-	case o.busy[o.sha]:
+	case o.lines.loading(o.sha):
 		body = []string{paint(spinner+" diff を取得中...", ansiDim, colored)}
 	default:
-		lines := o.cache[o.sha]
+		lines := o.visibleLines()
 		if len(lines) == 0 {
 			body = []string{paint("(diff はありません)", ansiDim, colored)}
 			break

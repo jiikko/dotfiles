@@ -164,7 +164,7 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 		for i := range lines {
 			lines[i] = "line"
 		}
-		o.cache["abc"] = lines
+		o.lines.store("abc", lines, "abc")
 		o.scroll(" ", 20)
 		if !o.glide.active {
 			t.Error("Space の半ページが glide に載っていない")
@@ -233,7 +233,7 @@ func TestGlideKeyPathsScheduleTick(t *testing.T) {
 		}
 		sha := m.commits[0].SHA
 		m.diffOv.sha = sha
-		m.diffOv.cache[sha] = lines
+		m.diffOv.lines.store(sha, lines, sha)
 		m.ticking = false
 		m.handleKey(" ")
 		if !m.diffOv.glide.active {
@@ -340,7 +340,7 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 		for i := range lines {
 			lines[i] = "line"
 		}
-		o.cache["abc"] = lines
+		o.lines.store("abc", lines, "abc")
 		o.scroll(" ", 20)
 		down := o.offset
 		if down == 0 {

@@ -640,8 +640,8 @@ func TestStatusPagerOpensAndScrolls(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
 	row, _ := v.current()
 	key := previewKey(row)
-	v.preview[key] = []string{"l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9", "l10",
-		"l11", "l12", "l13", "l14", "l15", "l16", "l17", "l18", "l19", "l20"}
+	v.preview.store(key, []string{"l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9", "l10",
+		"l11", "l12", "l13", "l14", "l15", "l16", "l17", "l18", "l19", "l20"}, key)
 	v.handleKey("d", testViewport())
 	if v.pagerKey != key {
 		t.Fatalf("pagerKey = %q, want %q", v.pagerKey, key)
@@ -659,7 +659,7 @@ func TestStatusPagerOpensAndScrolls(t *testing.T) {
 func TestStatusPagerKeysDoNotMoveList(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go", " M b.go"))
 	row, _ := v.current()
-	v.preview[previewKey(row)] = []string{"x"}
+	v.preview.store(previewKey(row), []string{"x"}, previewKey(row))
 	v.handleKey("d", testViewport())
 	v.handleKey("j", testViewport())
 	if _, path := cursorPathAt(t, v); path != "a.go" {
@@ -865,14 +865,14 @@ func TestStatusLinesSurvivesExtremeSizes(t *testing.T) {
 // プレビューのキャッシュは無制限に育たない (長時間セッションでファイルを見た数だけ溜まる)。
 func TestStatusPreviewCacheIsBounded(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
-	for i := range overlayCacheLimit + 20 {
+	for i := range lineCacheLimit + 20 {
 		v.receivePreview(statusPreviewMsg{key: "k" + strconv.Itoa(i), lines: []string{"x"}})
 	}
-	if len(v.preview) > overlayCacheLimit+1 { // +1 = 表示中のキー (keep) の分
-		t.Fatalf("キャッシュ数 = %d, want <= %d", len(v.preview), overlayCacheLimit+1)
+	if len(v.preview.entries) > lineCacheLimit+1 { // +1 = 表示中のキー (keep) の分
+		t.Fatalf("キャッシュ数 = %d, want <= %d", len(v.preview.entries), lineCacheLimit+1)
 	}
-	if len(v.order) != len(v.preview) {
-		t.Fatalf("order = %d, cache = %d (捨て漏れ)", len(v.order), len(v.preview))
+	if len(v.preview.order) != len(v.preview.entries) {
+		t.Fatalf("order = %d, cache = %d (捨て漏れ)", len(v.preview.order), len(v.preview.entries))
 	}
 }
 
@@ -886,14 +886,14 @@ func TestStatusReceiveSchedulesPreviewRefetchOnChange(t *testing.T) {
 	if same != nil {
 		t.Error("内容が変わっていないのに取り直しを予約した (毎 1.5 秒 git diff が走る)")
 	}
-	if len(v.preview) == 0 {
+	if len(v.preview.entries) == 0 {
 		t.Error("内容が変わっていないのにキャッシュを捨てた")
 	}
 	changed := v.receive(statusLoadMsg{st: parseWorktreeStatus(statusRec("MM a.go")), gen: v.gen})
 	if changed == nil {
 		t.Fatal("内容が変わったのに取り直しを予約していない")
 	}
-	if len(v.preview) != 0 {
+	if len(v.preview.entries) != 0 {
 		t.Errorf("古いプレビューが残っている: %v", v.preview)
 	}
 }

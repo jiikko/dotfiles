@@ -244,7 +244,7 @@ func TestBrowseQPopsViewStack(t *testing.T) {
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
-	m.detailOv.cache[m.detailKey()] = []string{"line"}
+	m.detailOv.logs.store(m.detailKey(), []string{"line"}, m.detailKey())
 	m.openJobDetail()
 	m.handleKey("q")
 	if m.detailOv.open || m.panelSHA == "" || m.done {
@@ -267,7 +267,7 @@ func TestBrowseCtrlCQuitsAnywhere(t *testing.T) {
 	withJobs(m, 0)
 	m.openPanel()
 	m.handleKey("j")
-	m.detailOv.cache[m.detailKey()] = []string{"line"}
+	m.detailOv.logs.store(m.detailKey(), []string{"line"}, m.detailKey())
 	m.openJobDetail()
 	_, cmd := m.handleKey("ctrl+c")
 	if cmd == nil || !m.done {
@@ -323,10 +323,10 @@ func TestJapaneseFullViewStaysInWidth(t *testing.T) {
 	}
 	m.openPanel()
 	m.handleKey("j")
-	m.detailOv.cache[m.detailKey()] = []string{
+	m.detailOv.logs.store(m.detailKey(), []string{
 		strings.Repeat("日本語のログ行です。", 12),
 		"##[error]日本語のエラーメッセージ",
-	}
+	}, m.detailKey())
 	m.openJobDetail()
 	for line := range strings.SplitSeq(m.View().Content, "\n") {
 		if w := dispWidth(line); w > m.width {
@@ -487,8 +487,8 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		{"toast.animating", func(m *browseModel) { m.toast.phase = toastEntering }},
 		{"pushPoll", func(m *browseModel) { m.pushPoll = map[string]bool{"a": true} }},
 		{"detailsLoading", func(m *browseModel) { m.detailsLoading["a"] = true }},
-		{"detailOv.fetching", func(m *browseModel) { m.detailOv.busy["a"] = true }},
-		{"diffOv.fetching", func(m *browseModel) { m.diffOv.busy["a"] = true }},
+		{"detailOv.fetching", func(m *browseModel) { m.detailOv.logs.begin("a") }},
+		{"diffOv.fetching", func(m *browseModel) { m.diffOv.lines.begin("a") }},
 		{"prStatusOv.fetching", func(m *browseModel) { m.prStatusOv.busy["a"] = true }},
 		{"panelHasRunningJob", func(m *browseModel) {
 			m.panelSHA = m.commits[0].SHA

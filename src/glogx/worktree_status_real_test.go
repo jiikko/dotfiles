@@ -158,7 +158,7 @@ func TestRealOpsFromSubdirectory(t *testing.T) {
 		t.Fatalf("diff: %v", msg.err)
 	}
 	v.receivePreview(msg)
-	if got := v.preview[previewKey(row)]; len(got) == 0 || strings.Contains(got[0], "差分はありません") {
+	if got, _ := v.preview.get(previewKey(row)); len(got) == 0 || strings.Contains(got[0], "差分はありません") {
 		t.Fatalf("サブディレクトリから diff が取れていない: %v", got)
 	}
 

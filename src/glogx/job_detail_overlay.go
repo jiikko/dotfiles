@@ -17,23 +17,22 @@ import "fmt"
 // から呼ばれる)。(4) ghErr (共有 sticky 警告) は触らない — browseModel の jobDetailMsg ハンドラが
 // 無条件代入して C4 契約 (成功時 nil クリア) を維持する。
 type jobDetailOverlay struct {
-	open   bool                // 詳細ポップアップ表示中か
-	offset int                 // スクロール位置 (行)
-	cache  map[string][]string // key (detailKey) → ログ行 (メモリ内キャッシュ)
-	order  []string            // cache への挿入順 (overlayCacheLimit 超過分の古い順 evict 用)
-	busy   map[string]bool     // 取得中の key
+	open   bool // 詳細ポップアップ表示中か
+	offset int  // スクロール位置 (行)
+	// logs は key (detailKey) → ログ行のキャッシュと取得の単発化 (line_cache.go)。
+	logs lineCache
 }
 
 // newJobDetailOverlay は map を初期化した jobDetailOverlay を返す。
 func newJobDetailOverlay() jobDetailOverlay {
-	return jobDetailOverlay{cache: map[string][]string{}, busy: map[string]bool{}}
+	return jobDetailOverlay{logs: newLineCache()}
 }
 
 // visible は詳細ポップアップを表示中か。
 func (o *jobDetailOverlay) visible() bool { return o.open }
 
 // fetching は詳細取得中の key が 1 つでもあるか (スピナー tick を回し続ける判定用)。
-func (o *jobDetailOverlay) fetching() bool { return len(o.busy) > 0 }
+func (o *jobDetailOverlay) fetching() bool { return o.logs.fetching() }
 
 // close は詳細ポップアップを閉じてスクロール位置を戻す。cache は保持する (閉じ直しで再取得
 // しないため)。全パネル退出経路 (handleKey q / closePanel) と handleDetailKey の閉じキーが呼ぶ。
@@ -44,9 +43,7 @@ func (o *jobDetailOverlay) close() {
 
 // reset は pull 後の全面リロードで cache ごと破棄する (旧 SHA のログ残骸を持ち越さない)。
 func (o *jobDetailOverlay) reset() {
-	o.cache = map[string][]string{}
-	o.order = nil
-	o.busy = map[string]bool{}
+	o.logs.reset()
 	o.close()
 }
 
@@ -56,15 +53,11 @@ func (o *jobDetailOverlay) reset() {
 func (o *jobDetailOverlay) startOpen(key string, rows int) (needFetch bool) {
 	o.open = true
 	o.offset = 0
-	if lines, ok := o.cache[key]; ok {
+	if lines, ok := o.logs.get(key); ok {
 		o.offset = max(len(lines)-rows, 0) // ログ末尾 (直近出力) を表示
 		return false
 	}
-	if o.busy[key] {
-		return false
-	}
-	o.busy[key] = true
-	return true
+	return o.logs.begin(key)
 }
 
 // receive は取得結果 (jobDetailMsg) を反映する。busy を落とし lines を cache へ格納し、今まさに
@@ -72,13 +65,12 @@ func (o *jobDetailOverlay) startOpen(key string, rows int) (needFetch bool) {
 // 呼び出し時に detailKey() から取り直した live な値を渡すこと (snapshot 禁止: リフレッシュで
 // job 数が縮み panelCursor がクランプされ key が変わる経路に追従するため)。
 func (o *jobDetailOverlay) receive(msg jobDetailMsg, currentKey string, rows int) {
-	delete(o.busy, msg.key)
-	if msg.lines != nil {
-		if _, ok := o.cache[msg.key]; !ok {
-			o.order = append(o.order, msg.key)
-		}
-		o.cache[msg.key] = msg.lines
-		o.order = evictOverlayCache(o.cache, o.order, currentKey)
+	if msg.lines == nil {
+		o.logs.abort(msg.key)
+		return
+	}
+	{
+		o.logs.store(msg.key, msg.lines, currentKey)
 		if o.open && currentKey == msg.key {
 			o.offset = max(len(msg.lines)-rows, 0)
 		}
@@ -90,7 +82,7 @@ func (o *jobDetailOverlay) receive(msg jobDetailMsg, currentKey string, rows int
 // ⚠️ 閉じキーは enter/space/esc/h/left (diffOverlay と異なる)。o/v/y の越境キーは呼び出し側
 // (handleDetailKey) が処理し、ここには渡らない。
 func (o *jobDetailOverlay) scroll(key, contentKey string, rows int) {
-	maxOffset := max(len(o.cache[contentKey])-rows, 0)
+	maxOffset := max(len(o.lines(contentKey))-rows, 0)
 	switch key {
 	case "enter", " ", "esc", "h", "left":
 		o.close()
@@ -110,7 +102,10 @@ func (o *jobDetailOverlay) scroll(key, contentKey string, rows int) {
 }
 
 // lines は key の cache 済みログ行を返す (nvim で開く v キー用の getter)。
-func (o *jobDetailOverlay) lines(key string) []string { return o.cache[key] }
+func (o *jobDetailOverlay) lines(key string) []string {
+	lines, _ := o.logs.get(key)
+	return lines
+}
 
 // boxLines は詳細ポップアップの描画行 (枠付き)。name は job 名 (title 用)、key は cache キー、
 // rows は本文の表示行数。spinner / width / colored は browseModel の状態を受け取る。
@@ -118,10 +113,10 @@ func (o *jobDetailOverlay) boxLines(width int, colored bool, spinner, name, key 
 	var body []string
 	title := " " + name + " "
 	switch {
-	case o.busy[key]:
+	case o.logs.loading(key):
 		body = []string{paint(spinner+" 詳細を取得中...", ansiDim, colored)}
 	default:
-		lines := o.cache[key]
+		lines := o.lines(key)
 		if len(lines) == 0 {
 			body = []string{paint("(詳細なし)", ansiDim, colored)}
 			break

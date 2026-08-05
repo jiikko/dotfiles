@@ -236,14 +236,14 @@ func TestBrowseDiffOpenScrollClose(t *testing.T) {
 	if m.diffOv.sha != m.commits[0].SHA {
 		t.Fatalf("diffSHA = %q; want カーソル位置のコミット", m.diffOv.sha)
 	}
-	if !m.diffOv.busy[m.diffOv.sha] {
+	if !m.diffOv.lines.loading(m.diffOv.sha) {
 		t.Error("取得中フラグが立っていない")
 	}
 	deliverDiffMsg(t, m, cmd)
 	if len(*calls) != 1 || (*calls)[0] != m.commits[0].SHA {
 		t.Fatalf("loadCommitDiff の呼び出し = %v", *calls)
 	}
-	if m.diffOv.busy[m.diffOv.sha] {
+	if m.diffOv.lines.loading(m.diffOv.sha) {
 		t.Error("取得完了後も busy のまま")
 	}
 	view := m.View().Content
@@ -283,7 +283,7 @@ func TestDiffBoxLinesScrollbar(t *testing.T) {
 
 	// 溢れる: バー列あり + 幅は均一 + thumb は比率
 	o.sha = commit.SHA
-	o.cache[commit.SHA] = diffLines(50)
+	o.lines.store(commit.SHA, diffLines(50), commit.SHA)
 	o.offset = 20
 	box := o.boxLines(width, false, "", commit, rows)
 	uniformWidth(t, box)
@@ -313,7 +313,7 @@ func TestDiffBoxLinesScrollbar(t *testing.T) {
 	uniformWidth(t, o.boxLines(width, true, "", commit, rows))
 
 	// 収まる: バー列なし (本文幅が戻る)。枠幅は溢れる場合と同じ
-	o.cache[commit.SHA] = diffLines(rows - 2)
+	o.lines.store(commit.SHA, diffLines(rows-2), commit.SHA)
 	o.offset = 0
 	fit := o.boxLines(width, false, "", commit, rows)
 	if w := uniformWidth(t, fit); w != dispWidth(stripANSI(box[0])) {
@@ -589,7 +589,7 @@ func TestBrowseCopyJobContextCached(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	// 詳細キャッシュ済み → 即コピー (追加 fetch なし)
-	m.detailOv.cache[m.detailKey()] = []string{"✗ lint (13s)", "", "[failure] a.go:1", "  boom"}
+	m.detailOv.logs.store(m.detailKey(), []string{"✗ lint (13s)", "", "[failure] a.go:1", "  boom"}, m.detailKey())
 	if _, cmd := m.handleKey("Y"); cmd != nil {
 		t.Fatal("キャッシュ済みなのに fetch が走った")
 	}
@@ -785,7 +785,7 @@ func TestBrowseCopyJobContextSanitizesHeader(t *testing.T) {
 	t.Cleanup(func() { copyToClipboard = orig })
 	m.openPanel()
 	m.handleKey("j")
-	m.detailOv.cache[m.detailKey()] = []string{"log"}
+	m.detailOv.logs.store(m.detailKey(), []string{"log"}, m.detailKey())
 	m.handleKey("Y")
 	if strings.ContainsRune(copied, '\x1b') || strings.ContainsRune(copied, '\x07') {
 		t.Fatalf("コピー内容に端末制御シーケンスが残った: %q", copied)
@@ -1070,7 +1070,7 @@ func TestSpaceKeyScrollsEverywhere(t *testing.T) {
 	m.handleKey("i") // viewer を閉じる
 
 	// 3. diff pager (同じ綴り落ちで壊れていた既存経路)
-	m.diffOv.cache[m.commits[0].SHA] = manyLines(100)
+	m.diffOv.lines.store(m.commits[0].SHA, manyLines(100), "")
 	m.diffOv.sha = m.commits[0].SHA
 	m.handleKey("space")
 	if m.diffOv.offset == 0 {
