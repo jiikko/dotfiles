@@ -963,7 +963,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 成功トーストを右下にせり上げつつ全面リロード (アニメで画面が動いてもトーストは数秒残る)。
 		m.toast.show("pull --rebase しました", true)
 		// pull で自分のソースが更新されたなら、その場で裏ビルドを始める (autobuildAfterPull)。
-		return m, tea.Batch(m.reloadAfterPull(), m.maybeTick(), m.autobuildAfterPull())
+		// status viewer を開いたまま p で pull した場合は、その場で読み直す: 自動更新は 1.5 秒
+		// 周期なので、待たせるとヘッダーの ahead/behind が古いまま残って「効いていない」に見える。
+		return m, tea.Batch(m.reloadAfterPull(), m.maybeTick(), m.autobuildAfterPull(), m.statusOv.loadCmd())
 	case rerunMsg:
 		m.actModal.rerunning = false
 		if msg.err != nil {
@@ -1203,10 +1205,22 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 			return m, m.toggleUsage() // viewer の上でも usage は出せる (issues と同じ契約)
 		}
 		m.usageOv.dismiss()
+		if key == "p" {
+			// pull は viewer の中からも打てる (ユーザー要望 2026-08-05)。⚠️ 一覧の u とキーを
+			// 分けているのは spec 3 節の判断を残すため: staging 中に「隣のキー」で remote 操作へ
+			// 滑るのを防ぎつつ、明示的に p を押したときだけ通す。確認 (y/N) は actModal が出す。
+			m.actModal.askPull()
+			return m, m.maybeTick()
+		}
 		if key == "b" || key == "u" {
-			// remote 操作へ滑る導線を staging の画面から断つ (spec 3 節)。黙って無視すると
+			// push は staging の画面から断つ (spec 3 節)。u は一覧の pull キーだが、ここでは
+			// p を使う (誤爆しやすい隣接キーで remote を叩かせない)。黙って無視すると
 			// 「押したのに何も起きない」になるので理由を返す
-			m.toast.show("status viewer 中は無効です (q で閉じてから)", false)
+			if key == "u" {
+				m.toast.show("pull は p です (status viewer では u を使いません)", false)
+			} else {
+				m.toast.show("push は status viewer 中は無効です (q で閉じてから)", false)
+			}
 			return m, m.maybeTick()
 		}
 		cmd := m.statusOv.handleKey(key, m.statusOpts().viewport())
@@ -2692,6 +2706,13 @@ func (m *browseModel) View() tea.View {
 // 書くと片方で載せ忘れる (viewer が全画面だった頃、issues 中の通知が画面に一切出ない時期があった)。
 // 前面順もここで一本化する (usage → トースト。一覧側と同じ)。
 func (m *browseModel) finishViewerWindow(window []string, page int) string {
+	// ⚠️ action モーダル (pull 確認・実行中) は viewer の上にも必ず描く。キーは viewer より先に
+	// actModal が捌く (handleKey の判定順) ので、ここで描かないと「見えないモーダルがキーを
+	// 持つ」= y/N の行き先が画面から分からない状態になる。status viewer の p (pull) で
+	// 実際にこの経路へ来る。前面順は一覧側 (viewLines) と同じ: action → 再起動 → usage → toast。
+	if box := m.centerModalLines(); len(box) > 0 {
+		window = overlayCenteredBox(window, box, m.contentWidth(), page, m.colored)
+	}
 	if box := m.restartPromptLines(); len(box) > 0 {
 		window = overlayCenteredBox(window, box, m.contentWidth(), page, m.colored)
 	}

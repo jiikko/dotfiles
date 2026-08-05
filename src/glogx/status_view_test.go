@@ -726,6 +726,64 @@ func TestStatusViewerBlocksPushAndPullKeys(t *testing.T) {
 	}
 }
 
+// p で pull --rebase の確認を開く (ユーザー要望 2026-08-05)。
+//
+// ⚠️ spec 3 節は「staging の途中から remote 操作へ滑る導線を作らない」として b/u を遮断して
+// いた。p を通すのはその判断の一部を覆すもので、キーを一覧の u と分けているのが折衷点:
+// 誤爆しやすい隣接キーではなく、明示的に p を押したときだけ remote に触る。
+func TestStatusViewerPullKeyOpensConfirm(t *testing.T) {
+	m := newTestBrowse(t, 3, nil, nil)
+	m.statusOv.shown = true
+	m.Update(tea.KeyPressMsg{Code: 'p', Text: "p"})
+	if !m.actModal.pullConfirm {
+		t.Fatal("p で pull --rebase の確認が開かない")
+	}
+	if !m.statusOv.visible() {
+		t.Error("p で viewer が閉じた (確認は viewer の上に重ねる)")
+	}
+	// ⚠️ 確認モーダルが viewer の上に描かれること。キーは viewer より先に actModal が捌くので、
+	// 描かれないと「見えないモーダルが y/N を持つ」= 画面の指示と行き先が食い違う。
+	out := stripANSI(m.View().Content)
+	if !strings.Contains(out, "pull") {
+		t.Fatalf("pull 確認が viewer の上に出ていない:\n%s", out)
+	}
+	// y は viewer でなく確認モーダルへ届く (actModal が先に捌く契約)
+	m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	if m.actModal.pullConfirm {
+		t.Error("y が確認モーダルに届いていない")
+	}
+}
+
+// pull の成功で status viewer をその場で読み直す。自動更新は 1.5 秒周期なので、待たせると
+// ヘッダーの ahead/behind が古いまま残り「p が効いていない」ように見える。
+func TestPullReloadsOpenStatusViewer(t *testing.T) {
+	m := newTestBrowse(t, 3, nil, nil)
+	stubWorktreeStatus(t, statusRec("## master...origin/master [behind 1]", " M a.go"), nil)
+	m.statusOv.shown = true
+	m.Update(pullMsg{})
+	if !m.statusOv.loading {
+		t.Error("pull 後に status viewer を読み直していない (1.5 秒間ヘッダーが古いまま残る)")
+	}
+}
+
+// push は従来どおり遮断し、u は「pull は p」と案内する (押しても無言にしない)。
+func TestStatusViewerPushStaysBlockedAndUGuides(t *testing.T) {
+	for _, tc := range []struct{ key, want string }{
+		{"b", "push"},
+		{"u", "p"},
+	} {
+		m := newTestBrowse(t, 3, nil, nil)
+		m.statusOv.shown = true
+		m.Update(tea.KeyPressMsg{Code: rune(tc.key[0]), Text: tc.key})
+		if m.actModal.pushConfirm || m.actModal.pullConfirm {
+			t.Fatalf("%s が status viewer 中に確認を開いた", tc.key)
+		}
+		if !m.toast.visible() || !strings.Contains(m.toast.text, tc.want) {
+			t.Fatalf("%s の案内が出ていない: %q", tc.key, m.toast.text)
+		}
+	}
+}
+
 func TestStatusViewerRendersFullScreenAndHint(t *testing.T) {
 	m := newTestBrowse(t, 3, nil, nil)
 	stubWorktreeStatus(t, statusRec(" M a.go"), nil)

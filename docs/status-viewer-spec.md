@@ -68,14 +68,23 @@ git の XY は **X = index 側 / Y = 作業ツリー側**。この画面は 1 �
 | `X` | **作業ツリーの変更を捨てる** (y/N 確認。4 節。Staged 行では受けない) | `restore` / `clean -fd` |
 | `Enter` `l` `→` `d` | そのファイルの diff を全画面 pager で開く | `diff` / `diff --cached` |
 | `r` | 手動で読み直す | `status` |
+| `p` | **pull --rebase** (y/N 確認。確認モーダルは viewer の上に重なる) | `pull --rebase` |
 | `U` | usage モーダル (viewer の上に重なる既存挙動) | — |
 | `q` `Esc` `s` | 閉じる | — |
 | `C-g` `C-c` | glogx 終了 | — |
 
 - **`u` を unstage に割り当てない。** glogx の `u` は `git pull --rebase` で、remote に触るキーを
   画面ごとに別の意味へ再利用すると誤爆の被害が大きい (tig は `u` だが、ここでは踏襲しない)
-- **`b` (push) / `u` (pull) は viewer 内では効かない。** staging の途中から remote 操作へ滑る
-  導線を作らない。押したら「status viewer 中は無効」を 1 回トーストで返す
+- **`b` (push) は viewer 内では効かない。** staging の途中から remote 操作へ滑る導線を作らない。
+  押したら無効である旨を 1 回トーストで返す
+- **pull は `p`** (ユーザー要望 2026-08-05)。当初は `b`/`u` をまとめて遮断していたが、
+  「status を見て遅れに気づいたのに閉じてから pull し直す」手間の方が大きいと判断して開けた。
+  一覧の `u` と別のキーにしているのが折衷点で、誤爆しやすい隣接キーではなく明示的な `p` の
+  ときだけ remote に触る。viewer 内の `u` は「pull は `p`」と案内するだけで何もしない
+- pull の確認モーダルは **viewer の上に重ねて描く**。キーは viewer より先に action モーダルが
+  捌くので、描かないと「見えないモーダルが y/N を持つ」状態になる (押した先が画面と食い違う)
+- pull の成功後は viewer をその場で読み直す (自動更新の 1.5 秒を待たせるとヘッダーの
+  ahead/behind が古いまま残り「効いていない」ように見える)
 - Conflicted 行では `Space` / `a` / `X` を受けない (`d` で差分を見るだけ)。conflict の解決は
   シェルの仕事という `git pull --rebase` の自動 abort と同じ方針
 - **`X` は Staged 行では受けない** (「先に `Space` で unstage してください」と返す)。staged の変更を

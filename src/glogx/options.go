@@ -215,7 +215,8 @@ func Usage() string {
                             (幅が足りれば右にカーソル行の diff をプレビュー)、viewer 内のキーは
                             Space stage/unstage (セクションが向きを決める) / a 全 stage /
                             X 変更を捨てる (y/N 確認。untracked は削除) / d 全画面 diff /
-                            Tab セクション移動 / r 再読込 / q・s 閉じる。
+                            Tab セクション移動 / r 再読込 / p pull --rebase (y/N 確認) /
+                            q・s 閉じる。push (b) は viewer 内では無効。
                             開いている間は別プロセスの編集を自動で反映する。
                             規約は docs/status-viewer-spec.md
   U                         Claude Code の /usage 残量を右上モーダルで表示 (toggle)
