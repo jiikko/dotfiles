@@ -864,7 +864,11 @@ func TestBrowseReloadAfterPullResetsJobDetailCache(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.opts = &Options{MaxCount: 20}
 	m.detailOv.logs.store("stale/0", []string{"old log"}, "stale/0")
-	m.detailOv.logs.begin("stale/0")
+	// ⚠️ 札は未キャッシュのキーで立てる: begin はキャッシュ済みなら何もしないので、
+	// 上と同じキーに対して呼ぶと busy が空のまま = 下の busy 検査が空振りになる
+	if !m.detailOv.logs.begin("inflight/1") {
+		t.Fatal("走行中の札を立てられない (前提が崩れた)")
+	}
 	m.reloadAfterPull()
 	if len(m.detailOv.logs.entries) != 0 || len(m.detailOv.logs.busy) != 0 {
 		t.Errorf("reloadAfterPull で job 詳細キャッシュが残った: cache=%d busy=%d",

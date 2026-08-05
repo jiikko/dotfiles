@@ -69,11 +69,9 @@ func (o *jobDetailOverlay) receive(msg jobDetailMsg, currentKey string, rows int
 		o.logs.abort(msg.key)
 		return
 	}
-	{
-		o.logs.store(msg.key, msg.lines, currentKey)
-		if o.open && currentKey == msg.key {
-			o.offset = max(len(msg.lines)-rows, 0)
-		}
+	o.logs.store(msg.key, msg.lines, currentKey)
+	if o.open && currentKey == msg.key {
+		o.offset = max(len(msg.lines)-rows, 0)
 	}
 }
 
