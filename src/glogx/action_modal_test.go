@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"reflect"
 	"testing"
+	"time"
 )
 
 // modalStates は actionModal の「モーダルとしての状態」を 1 つずつ立てたもの。
@@ -46,6 +48,40 @@ func TestActionModalActiveMatchesHandleKey(t *testing.T) {
 					st.name, key, consumed, want)
 			}
 		}
+	}
+}
+
+// waitPullCleanup は走行中の pull (conflict 時は rebase --abort の後始末を含む) が終わるまで
+// 戻らないこと。これが破れると、quit 直後の os.Exit が abort を走り切る前にプロセスごと消し、
+// repo に rebase-merge が残る (bubbletea は tea.Cmd の goroutine を待たない)。
+func TestWaitPullCleanupOutlivesQuit(t *testing.T) {
+	release := make(chan struct{})
+	started := make(chan struct{})
+	orig := runGitPullRebase
+	runGitPullRebase = func(context.Context) error { close(started); <-release; return nil }
+	t.Cleanup(func() { runGitPullRebase = orig })
+
+	var a actionModal
+	a.askPull()
+	_, cmd := a.handleKey("y")
+	if cmd == nil {
+		t.Fatal("pull 確認の y が実行 Cmd を返していない")
+	}
+	go cmd()
+	<-started // latch (pullCleanup.Add) は closure 側なので、開始を見届けてから Wait する
+
+	waited := make(chan struct{})
+	go func() { waitPullCleanup(); close(waited) }()
+	select {
+	case <-waited:
+		t.Fatal("pull (後始末) が走行中なのに waitPullCleanup が戻った")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-waited:
+	case <-time.After(time.Second):
+		t.Fatal("pull 完了後も waitPullCleanup が戻らない")
 	}
 }
 

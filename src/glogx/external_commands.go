@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"glogx/usage"
@@ -44,6 +45,28 @@ var runGitPush = func(ctx context.Context) error {
 		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// pullCleanup は走行中の pull (と conflict 時の rebase --abort 後始末) の完了 latch。
+// bubbletea は tea.Cmd の goroutine を待たずに Run を抜けるため、quit で pull が cancel
+// された直後に main が os.Exit すると、「quit で cancel された場合こそ後始末が要る」はずの
+// abort (runGitPullRebase 内) が走り切る前にプロセスごと消え、repo に rebase-merge が残る。
+// Add は tea.Cmd の closure 側 (actionModal.handleKey)、Wait は main.go の waitPullCleanup。
+var pullCleanup sync.WaitGroup
+
+// waitPullCleanup は走行中の pull 後始末を看取ってから戻る (main の終了直前用)。
+// 待ちは runGitTimeout (gitOpTimeout) と WaitDelay で構造的に有限。すぐ終わらないときだけ
+// 理由を出す (無言で固まったように見せない)。
+func waitPullCleanup() {
+	done := make(chan struct{})
+	go func() { pullCleanup.Wait(); close(done) }()
+	select {
+	case <-done:
+		return
+	case <-time.After(200 * time.Millisecond):
+		fmt.Fprintln(os.Stderr, "glogx: pull の後始末 (git rebase --abort) を待っています...")
+	}
+	<-done
 }
 
 // runGitPullRebase はテストで実 pull しないための差し替え点。conflict で rebase が

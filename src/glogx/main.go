@@ -154,7 +154,10 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	// quit 経路 (q/Ctrl-C) 以外でも後始末を保証する多重防御 (cancelAll は冪等):
 	// RunBrowse のエラー・fetch 無しの即終了に加え、SIGINT/SIGTERM 経由の終了は bubbletea が
 	// model.Update を呼ばずに Run を抜けるため quit() が走らない (詳細は cancelAll の doc)。
-	// この defer が無いと push/pull 中のシグナル終了で git 子プロセスが孤児化する
+	// この defer が無いと push/pull 中のシグナル終了で git 子プロセスが孤児化する。
+	// waitPullCleanup を先に積む (LIFO): cancelAll が pull を中断した後に、その後始末
+	// (rebase --abort) を看取ってから戻る。看取らないと os.Exit が abort ごと消す
+	defer waitPullCleanup()
 	defer browse.cancelAll()
 	browse.decor = decor
 	// TUI はキー操作が主なので IME を英数へ。切替そのものは TUI 開始前に完了させる必要がある
