@@ -39,7 +39,7 @@ func BenchmarkViewWithDiff(b *testing.B) {
 		lines[i] = fmt.Sprintf("+ added line %d with some diff content", i)
 	}
 	m.diffOv.sha = sha
-	m.diffOv.lines.store(sha, lines, sha)
+	m.diffOv.cache.store(sha, lines, sha)
 	m.diffOv.offset = 50
 	b.ReportAllocs()
 	for b.Loop() {

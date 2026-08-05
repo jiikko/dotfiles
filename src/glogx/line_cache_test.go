@@ -12,20 +12,20 @@ func TestOverlayCacheEvictsOldestKeepingCurrent(t *testing.T) {
 	for i := 0; i <= lineCacheLimit+1; i++ {
 		_ = o.receive(diffMsg{sha: fmt.Sprintf("sha-%d", i), lines: []string{"x"}})
 	}
-	if len(o.lines.entries) != lineCacheLimit {
-		t.Fatalf("cache エントリ数 = %d; want 上限 %d", len(o.lines.entries), lineCacheLimit)
+	if len(o.cache.entries) != lineCacheLimit {
+		t.Fatalf("cache エントリ数 = %d; want 上限 %d", len(o.cache.entries), lineCacheLimit)
 	}
-	if _, ok := o.lines.entries["sha-0"]; !ok {
+	if _, ok := o.cache.entries["sha-0"]; !ok {
 		t.Error("表示中の sha-0 が evict された (画面が突然「diff はありません」になる)")
 	}
 	// 表示中でない最古 (sha-1, sha-2) が落ち、新しいものは残る
 	for _, gone := range []string{"sha-1", "sha-2"} {
-		if _, ok := o.lines.entries[gone]; ok {
+		if _, ok := o.cache.entries[gone]; ok {
 			t.Errorf("%s が evict されていない", gone)
 		}
 	}
 	last := fmt.Sprintf("sha-%d", lineCacheLimit+1)
-	if _, ok := o.lines.entries[last]; !ok {
+	if _, ok := o.cache.entries[last]; !ok {
 		t.Errorf("最新の %s が消えた", last)
 	}
 }
@@ -37,13 +37,13 @@ func TestJobDetailCacheEvicts(t *testing.T) {
 		key := fmt.Sprintf("sha/%d", i)
 		o.receive(jobDetailMsg{key: key, lines: []string{"log"}}, "sha/0", 10)
 	}
-	if len(o.logs.entries) != lineCacheLimit {
-		t.Fatalf("cache エントリ数 = %d; want 上限 %d", len(o.logs.entries), lineCacheLimit)
+	if len(o.cache.entries) != lineCacheLimit {
+		t.Fatalf("cache エントリ数 = %d; want 上限 %d", len(o.cache.entries), lineCacheLimit)
 	}
-	if _, ok := o.logs.entries["sha/0"]; !ok {
+	if _, ok := o.cache.entries["sha/0"]; !ok {
 		t.Error("表示中 (currentKey) の sha/0 が evict された")
 	}
-	if _, ok := o.logs.entries["sha/1"]; ok {
+	if _, ok := o.cache.entries["sha/1"]; ok {
 		t.Error("表示中でない最古 sha/1 が evict されていない")
 	}
 }

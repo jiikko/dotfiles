@@ -14,19 +14,19 @@ type diffOverlay struct {
 	// 一覧と同じ手触りにする。ユーザー要望 2026-07-31)。
 	glide scrollGlide
 	// lines は sha → 整形済み diff 行のキャッシュと取得の単発化 (line_cache.go)。
-	lines lineCache
+	cache lineCache
 }
 
 // newDiffOverlay は map を初期化した diffOverlay を返す。
 func newDiffOverlay() diffOverlay {
-	return diffOverlay{lines: newLineCache()}
+	return diffOverlay{cache: newLineCache()}
 }
 
 // visible は diff ポップアップを表示中か。
 func (o *diffOverlay) visible() bool { return o.sha != "" }
 
 // fetching は diff 取得中の SHA が 1 つでもあるか (スピナー tick を回し続ける判定用)。
-func (o *diffOverlay) fetching() bool { return o.lines.fetching() }
+func (o *diffOverlay) fetching() bool { return o.cache.fetching() }
 
 // close はポップアップを閉じてスクロール位置を戻す。
 func (o *diffOverlay) close() {
@@ -37,7 +37,7 @@ func (o *diffOverlay) close() {
 
 // reset は pull 後の全面リロードでキャッシュごと破棄する (旧 SHA の残骸を持ち越さない)。
 func (o *diffOverlay) reset() {
-	o.lines.reset()
+	o.cache.reset()
 	o.close()
 }
 
@@ -51,26 +51,26 @@ func (o *diffOverlay) open(sha string) (needFetch bool) {
 	}
 	o.sha = sha
 	o.offset = 0
-	return o.lines.begin(sha)
+	return o.cache.begin(sha)
 }
 
 // receive は取得結果 (diffMsg) を反映する。取得失敗は err を返し (呼び出し側が notice を出す)、
 // その SHA が今表示中なら閉じる。古い別 SHA のエラーは表示中の diff を閉じない。
 func (o *diffOverlay) receive(msg diffMsg) error {
 	if msg.err != nil {
-		o.lines.abort(msg.sha)
+		o.cache.abort(msg.sha)
 		if o.sha == msg.sha {
 			o.close()
 		}
 		return msg.err
 	}
-	o.lines.store(msg.sha, msg.lines, o.sha)
+	o.cache.store(msg.sha, msg.lines, o.sha)
 	return nil
 }
 
 // visibleLines は表示中 SHA のキャッシュ行 (未取得なら nil)。
 func (o *diffOverlay) visibleLines() []string {
-	lines, _ := o.lines.get(o.sha)
+	lines, _ := o.cache.get(o.sha)
 	return lines
 }
 
@@ -102,7 +102,7 @@ func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *
 	var body []string
 	title := fmt.Sprintf(" diff: %s %s ", commit.ShortSHA, commit.Subject)
 	switch {
-	case o.lines.loading(o.sha):
+	case o.cache.loading(o.sha):
 		body = []string{paint(spinner+" diff を取得中...", ansiDim, colored)}
 	default:
 		lines := o.visibleLines()

@@ -20,19 +20,19 @@ type jobDetailOverlay struct {
 	open   bool // 詳細ポップアップ表示中か
 	offset int  // スクロール位置 (行)
 	// logs は key (detailKey) → ログ行のキャッシュと取得の単発化 (line_cache.go)。
-	logs lineCache
+	cache lineCache
 }
 
 // newJobDetailOverlay は map を初期化した jobDetailOverlay を返す。
 func newJobDetailOverlay() jobDetailOverlay {
-	return jobDetailOverlay{logs: newLineCache()}
+	return jobDetailOverlay{cache: newLineCache()}
 }
 
 // visible は詳細ポップアップを表示中か。
 func (o *jobDetailOverlay) visible() bool { return o.open }
 
 // fetching は詳細取得中の key が 1 つでもあるか (スピナー tick を回し続ける判定用)。
-func (o *jobDetailOverlay) fetching() bool { return o.logs.fetching() }
+func (o *jobDetailOverlay) fetching() bool { return o.cache.fetching() }
 
 // close は詳細ポップアップを閉じてスクロール位置を戻す。cache は保持する (閉じ直しで再取得
 // しないため)。全パネル退出経路 (handleKey q / closePanel) と handleDetailKey の閉じキーが呼ぶ。
@@ -43,7 +43,7 @@ func (o *jobDetailOverlay) close() {
 
 // reset は pull 後の全面リロードで cache ごと破棄する (旧 SHA のログ残骸を持ち越さない)。
 func (o *jobDetailOverlay) reset() {
-	o.logs.reset()
+	o.cache.reset()
 	o.close()
 }
 
@@ -53,11 +53,11 @@ func (o *jobDetailOverlay) reset() {
 func (o *jobDetailOverlay) startOpen(key string, rows int) (needFetch bool) {
 	o.open = true
 	o.offset = 0
-	if lines, ok := o.logs.get(key); ok {
+	if lines, ok := o.cache.get(key); ok {
 		o.offset = max(len(lines)-rows, 0) // ログ末尾 (直近出力) を表示
 		return false
 	}
-	return o.logs.begin(key)
+	return o.cache.begin(key)
 }
 
 // receive は取得結果 (jobDetailMsg) を反映する。busy を落とし lines を cache へ格納し、今まさに
@@ -66,10 +66,10 @@ func (o *jobDetailOverlay) startOpen(key string, rows int) (needFetch bool) {
 // job 数が縮み panelCursor がクランプされ key が変わる経路に追従するため)。
 func (o *jobDetailOverlay) receive(msg jobDetailMsg, currentKey string, rows int) {
 	if msg.lines == nil {
-		o.logs.abort(msg.key)
+		o.cache.abort(msg.key)
 		return
 	}
-	o.logs.store(msg.key, msg.lines, currentKey)
+	o.cache.store(msg.key, msg.lines, currentKey)
 	if o.open && currentKey == msg.key {
 		o.offset = max(len(msg.lines)-rows, 0)
 	}
@@ -101,7 +101,7 @@ func (o *jobDetailOverlay) scroll(key, contentKey string, rows int) {
 
 // lines は key の cache 済みログ行を返す (nvim で開く v キー用の getter)。
 func (o *jobDetailOverlay) lines(key string) []string {
-	lines, _ := o.logs.get(key)
+	lines, _ := o.cache.get(key)
 	return lines
 }
 
@@ -111,7 +111,7 @@ func (o *jobDetailOverlay) boxLines(width int, colored bool, spinner, name, key 
 	var body []string
 	title := " " + name + " "
 	switch {
-	case o.logs.loading(key):
+	case o.cache.loading(key):
 		body = []string{paint(spinner+" 詳細を取得中...", ansiDim, colored)}
 	default:
 		lines := o.lines(key)
