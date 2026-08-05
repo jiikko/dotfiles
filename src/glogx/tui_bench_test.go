@@ -83,3 +83,51 @@ func BenchmarkViewWithPanel(b *testing.B) {
 		_ = m.View().Content
 	}
 }
+
+// status viewer の 1 フレーム。⚠️ 一覧と別に測る理由: この画面だけ「毎フレーム・全行」で
+// worktreeRow.dispPath() を通る (パスは git へ渡す生の値と表示用を分けているため、表示側は
+// 呼ぶたびに無害化を通す)。一覧側の無害化は取り込み時に 1 回で済むので、ここが唯一
+// 「無害化がフレーム予算に乗る」経路になる。
+//
+//	go test -run '^$' -bench BenchmarkStatusView -benchmem .
+func benchStatusBrowse(tb testing.TB, files, w, h int) *browseModel {
+	tb.Helper()
+	m := benchBrowse(tb, 20, w, h)
+	recs := make([]string, 0, files+1)
+	recs = append(recs, "## master...origin/master [ahead 2]")
+	for i := range files {
+		// 実際に見る形に寄せる: 深いパス + 半分は staged / 半分は unstaged
+		p := "src/glogx/internal/deeply/nested/module" + strconv.Itoa(i) + "/handler.go"
+		if i%2 == 0 {
+			recs = append(recs, "M  "+p)
+		} else {
+			recs = append(recs, " M "+p)
+		}
+	}
+	var b strings.Builder
+	for _, r := range recs {
+		b.WriteString(r)
+		b.WriteByte(0)
+	}
+	m.statusOv.shown = true
+	m.statusOv.receive(statusLoadMsg{st: parseWorktreeStatus(b.String()), gen: m.statusOv.gen})
+	return m
+}
+
+func BenchmarkStatusViewFrame(b *testing.B) {
+	m := benchStatusBrowse(b, 40, 120, 40)
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = m.View().Content
+	}
+}
+
+// 変更ファイルが多い repo (大きな merge / 大量の untracked) でのスケール確認。
+// 可視は 40 行程度なので、ここが件数に比例するなら「見えない行のために毎フレーム働いている」。
+func BenchmarkStatusViewFrame2000(b *testing.B) {
+	m := benchStatusBrowse(b, 2000, 120, 40)
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = m.View().Content
+	}
+}

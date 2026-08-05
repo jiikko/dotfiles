@@ -39,7 +39,7 @@ cd "$GLOGX_DIR"
 # 対象 benchmark を改名/削除したら、この一覧と下の awk・bench_budgets.ci を同時に更新する
 # こと (漏れは checker の「予算にある metric が出力に無い」検出で CI が fail する)
 go test -run '^$' \
-  -bench '^(BenchmarkViewSteady|BenchmarkViewWithPanel|BenchmarkRenderLinesLargePatch|BenchmarkCursorMoveView|BenchmarkViewWithDiff|BenchmarkModelInit200|BenchmarkCalibrate)$' \
+  -bench '^(BenchmarkViewSteady|BenchmarkViewWithPanel|BenchmarkRenderLinesLargePatch|BenchmarkCursorMoveView|BenchmarkViewWithDiff|BenchmarkModelInit200|BenchmarkStatusViewFrame|BenchmarkStatusViewFrame2000|BenchmarkCalibrate)$' \
   -benchtime=200ms . |
   awk '
     /^BenchmarkViewSteady/            { printf "metric=view_steady ms=%.3f\n", $3 / 1000000 }
@@ -48,5 +48,7 @@ go test -run '^$' \
     /^BenchmarkCursorMoveView/        { printf "metric=cursor_move_view ms=%.3f\n", $3 / 1000000 }
     /^BenchmarkViewWithDiff/          { printf "metric=view_diff ms=%.3f\n", $3 / 1000000 }
     /^BenchmarkModelInit200/          { printf "metric=model_init_200 ms=%.3f\n", $3 / 1000000 }
+    /^BenchmarkStatusViewFrame2000/   { printf "metric=status_view_2000 ms=%.3f\n", $3 / 1000000; next }
+    /^BenchmarkStatusViewFrame/       { printf "metric=status_view_frame ms=%.3f\n", $3 / 1000000 }
     /^BenchmarkCalibrate/             { printf "metric=glogx_calib ms=%.3f\n", $3 / 1000000 }
   '

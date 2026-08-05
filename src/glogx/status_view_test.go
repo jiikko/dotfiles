@@ -754,6 +754,35 @@ func TestStatusViewerPullKeyOpensConfirm(t *testing.T) {
 	}
 }
 
+// ⚠️ 回帰防止 (perf): 整形するのは可視の窓の分だけ。全行を整形してから切ると、画面に出る
+// 行数と無関係に変更ファイル数へ比例したコストになる (実測 40 件 103µs / 2000 件 1.65ms)。
+//
+// ⚠️ 出力では検出できない: 全行を整形しても「返す」のは窓の分だけなので、返り値は同じになる
+// (最初この形で書いて変異が green のまま通った)。違うのは行った仕事量なので、alloc 数が
+// 件数に比例しないことを見る。時間は CI のノイズで flake するため、そちらの番人は
+// tests/glogx/bench_budgets.ci の status_view_2000 に置く。
+func TestStatusListFormatsOnlyVisibleWindow(t *testing.T) {
+	listAllocs := func(files int) float64 {
+		recs := []string{"## master"}
+		for i := range files {
+			recs = append(recs, " M file"+strconv.Itoa(i)+".go")
+		}
+		v := newTestStatusView(t, statusRec(recs...))
+		o := testStatusOpts(120, 10) // 10 行ぶんの窓
+		if out := strings.Join(v.listLines(o, 120), "\n"); !strings.Contains(out, "file0.go") {
+			t.Fatalf("窓の先頭が出ていない (前提が崩れた):\n%s", out)
+		}
+		return testing.AllocsPerRun(20, func() { v.listLines(o, 120) })
+	}
+	small, large := listAllocs(20), listAllocs(2000)
+	// 件数が 100 倍でも alloc は数倍に収まること (行数え上げの index だけが伸びる)。
+	// 全行整形だと 1 行 1 文字列で線形に増えるので、この上限を軽く超える。
+	if large > small*3 {
+		t.Errorf("alloc が件数に比例している (窓の外まで整形している): 20 件 %.0f / 2000 件 %.0f",
+			small, large)
+	}
+}
+
 // pull の成功で status viewer をその場で読み直す。自動更新は 1.5 秒周期なので、待たせると
 // ヘッダーの ahead/behind が古いまま残り「p が効いていない」ように見える。
 func TestPullReloadsOpenStatusViewer(t *testing.T) {

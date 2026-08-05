@@ -847,12 +847,16 @@ func (v *statusView) listLines(o statusRenderOpts, width int) []string {
 		return []string{paint(clipToWidth(msg, width), ansiDim, o.colored)}
 	}
 	rows := max(o.page, 1)
-	display, cursorAt := v.displayLines(o, width-scrollbarColumnWidth)
-	v.offset = windowOffsetFor(v.offset, cursorAt, len(display), rows)
-	end := min(v.offset+rows, len(display))
+	// ⚠️ 整形するのは窓の中だけ (displayIndex の doc)。全行を整形してから切ると、画面に出る
+	// 行数と無関係に変更ファイル数へ比例したコストになる。
+	index, cursorAt := v.displayIndex()
+	v.offset = windowOffsetFor(v.offset, cursorAt, len(index), rows)
+	end := min(v.offset+rows, len(index))
 	out := make([]string, 0, rows)
-	out = append(out, display[v.offset:end]...)
-	return scrollbarColumn(out, width, len(display), v.offset, o.colored)
+	for _, dl := range index[v.offset:end] {
+		out = append(out, v.displayLine(dl, o, width-scrollbarColumnWidth))
+	}
+	return scrollbarColumn(out, width, len(index), v.offset, o.colored)
 }
 
 // windowOffsetFor は「カーソルを含む窓」へ offset を収束させる (キー処理と描画で行数が
@@ -917,29 +921,57 @@ func (v *statusView) emptyMessage(o statusRenderOpts) string {
 }
 
 // displayLines はセクション見出しを挟んだ表示行と、カーソル行の表示 index を返す。
-func (v *statusView) displayLines(o statusRenderOpts, width int) (lines []string, cursorAt int) {
-	lines = make([]string, 0, len(v.rows)+4)
-	cursorAt = 0
+// statusDisplayLine は一覧の 1 行が「何を描くか」だけを持つ (文字列にはしない)。
+// row < 0 = セクション見出し (件数は n)。
+type statusDisplayLine struct {
+	sec worktreeSection
+	row int
+	n   int // 見出しの件数 (row < 0 のときだけ意味を持つ)
+}
+
+// displayIndex は一覧の行構成 (見出し + 行) と、カーソルが何行目かを返す。
+//
+// ⚠️ ここで文字列を作らない。整形 (rowLine → パスの切り詰め → 幅計算) は可視の窓の分だけに
+// 掛ける (listLines)。以前は全行を整形してから窓で切っていたため、画面に 40 行しか出ないのに
+// 変更ファイル数に比例して働いていた: 実測で 40 件 103µs / 2000 件 1.65ms (16 倍・627KB/frame)。
+// 大きな merge や大量の untracked を抱えた repo で status viewer を開くと、見えない行のために
+// 毎フレーム捨てる文字列を作り続けることになる。
+//
+// 行の数え上げ自体は件数に比例したままだが、これは int の比較だけで文字列も幅計算も伴わない
+// (窓の位置を決めるには全体の行数とカーソルの行番号が要るので、ここは削れない)。
+func (v *statusView) displayIndex() (index []statusDisplayLine, cursorAt int) {
+	index = make([]statusDisplayLine, 0, len(v.rows)+4)
 	for _, sec := range []worktreeSection{sectionStaged, sectionUnstaged, sectionUntracked, sectionConflicted} {
-		var idxs []int
-		for i, r := range v.rows {
+		n := 0
+		for _, r := range v.rows {
 			if r.section == sec {
-				idxs = append(idxs, i)
+				n++
 			}
 		}
-		if len(idxs) == 0 {
+		if n == 0 {
 			continue
 		}
-		label := fmt.Sprintf("%s (%d)", sec.label(), len(idxs))
-		lines = append(lines, paint(clipToWidth(label, width), sectionColor(sec)+ansiBold, o.colored))
-		for _, i := range idxs {
-			if i == v.cursor {
-				cursorAt = len(lines)
+		index = append(index, statusDisplayLine{sec: sec, row: -1, n: n})
+		for i, r := range v.rows {
+			if r.section != sec {
+				continue
 			}
-			lines = append(lines, v.rowLine(i, o, width))
+			if i == v.cursor {
+				cursorAt = len(index)
+			}
+			index = append(index, statusDisplayLine{sec: sec, row: i})
 		}
 	}
-	return lines, cursorAt
+	return index, cursorAt
+}
+
+// displayLine は index の 1 行を実際の文字列へ整形する (可視の窓の分だけ呼ぶ)。
+func (v *statusView) displayLine(dl statusDisplayLine, o statusRenderOpts, width int) string {
+	if dl.row < 0 {
+		label := fmt.Sprintf("%s (%d)", dl.sec.label(), dl.n)
+		return paint(clipToWidth(label, width), sectionColor(dl.sec)+ansiBold, o.colored)
+	}
+	return v.rowLine(dl.row, o, width)
 }
 
 // sectionColor はセクション (と行) の色。git 標準の語彙に寄せる: staged = 緑 / unstaged = 赤 /

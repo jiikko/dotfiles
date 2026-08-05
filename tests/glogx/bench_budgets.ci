@@ -17,6 +17,12 @@ render_large_patch 10 rel
 # 体感系 (2026-07-29 追加)。導入時ローカル実測 (M3 Max): cursor_move_view 0.265 /
 # view_diff 0.224 / model_init_200 0.407。既存と同じ ~20 倍の粗い上限で導入し、
 # CI 実測が溜まったら ~4 倍を目安に締める
+# status viewer のフレーム (2026-08-05 追加)。2000 は「変更ファイル数に比例して働いていないか」の
+# ゲート: 以前は全行を整形してから窓で切っており 40 件 0.103 / 2000 件 1.65ms だった (16 倍)。
+# 可視の窓だけ整形する形へ直して 0.128ms になったので、桁が戻ったら気づけるようにする。
+# 導入時ローカル実測 (M3 Max): status_view_frame 0.099 / status_view_2000 0.128
+status_view_frame 2 rel
+status_view_2000 3 rel
 cursor_move_view 5 rel
 view_diff 5 rel
 model_init_200 10 rel
