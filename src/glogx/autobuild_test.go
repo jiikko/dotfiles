@@ -393,6 +393,78 @@ func TestAutobuildMsgKeepsWatchingWhileNotifying(t *testing.T) {
 }
 
 // 起動直後 (Init) に「ビルド中」を出す。完成を待たない (ユーザー要望 2026-07-31)。
+// pull で自分のソースが更新されたら、その場で裏ビルドを始めて完成したら再起動を案内する
+// (ユーザー要望 2026-08-05: glogx を手で起動し直す手間をなくす)。
+//
+// ⚠️ 「pull した repo が dotfiles か」は判定しない。shim の指紋比較は自分のソースディレクトリ
+// だけを見るので、無関係な repo の pull では stale にならず何も起きない (判定を写経しない)。
+func TestPullStartsAutobuildAndOffersRestart(t *testing.T) {
+	var asked []string
+	orig := spawnAutobuild
+	spawnAutobuild = func(exe string) bool { asked = append(asked, exe); return true }
+	t.Cleanup(func() { spawnAutobuild = orig })
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.toast.phase = toastHidden
+	m.actModal.pulling = true
+	// ⚠️ pullMsg の Batch をそのまま走らせる (配線ごと固定する)。deliverMsgs は Batch を
+	// 再帰展開して match したものだけ Update へ渡すので、tick が状態を進めてしまうことはない。
+	_, cmd := m.Update(pullMsg{})
+	if cmd == nil {
+		t.Fatal("pull 成功で Cmd が返らない")
+	}
+	deliverMsgs(m, cmd(), func(msg tea.Msg) bool {
+		_, ok := msg.(autobuildSpawnMsg)
+		return ok
+	})
+
+	if len(asked) != 1 {
+		t.Fatalf("pull 成功で shim へ問い合わせていない (呼び出し %d 回)", len(asked))
+	}
+	if !m.autobuild.active {
+		t.Fatal("ビルドを起動したのに監視を張っていない (完成を検出できない)")
+	}
+	if !strings.Contains(m.toast.text, "ビルド中") {
+		t.Errorf("「ビルド中」を伝えていない: %q", m.toast.text)
+	}
+	// 完成すれば通常の autobuildMsg 経路が再起動ダイアログを出す
+	m.Update(autobuildMsg{result: autobuildInstalled})
+	if !m.restartPending {
+		t.Fatal("完成しても再起動を案内しない")
+	}
+	if out := stripANSI(m.View().Content); !strings.Contains(out, "新しいバージョンが利用可能です") {
+		t.Fatalf("再起動ダイアログが画面に出ていない:\n%s", out)
+	}
+}
+
+// ビルドが不要 (最新) なら何も起きない。shim が「起動しなかった」と答えた場合、監視も
+// トーストも増やさない (無関係な repo を pull したときにここへ来る)。
+func TestPullWithoutSourceChangeIsQuiet(t *testing.T) {
+	orig := spawnAutobuild
+	spawnAutobuild = func(string) bool { return false }
+	t.Cleanup(func() { spawnAutobuild = orig })
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.toast.phase = toastHidden
+	m.Update(autobuildSpawnMsg{spawned: false})
+	if m.autobuild.active {
+		t.Error("ビルドを起動していないのに監視を張った (tick が増える)")
+	}
+	if m.toast.visible() {
+		t.Errorf("何も起きていないのにトーストを出した: %q", m.toast.text)
+	}
+}
+
+// 起動時に spawn された分をまだ監視中なら、pull で二重に問い合わせない
+// (shim の lock で二重ビルドは起きないが、トーストが重複する)。
+func TestPullDoesNotStackAutobuildWatch(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.autobuild = newAutobuildWatch("/some/dir/glogx", true, timeNow())
+	if cmd := m.autobuildAfterPull(); cmd != nil {
+		t.Error("監視中なのに 2 本目の問い合わせを出した")
+	}
+}
+
 func TestAutobuildNotifiesAtStartup(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.toast.phase = toastHidden
@@ -401,7 +473,9 @@ func TestAutobuildNotifiesAtStartup(t *testing.T) {
 	if !m.toast.visible() {
 		t.Fatal("起動直後に「ビルド中」トーストが出ていない")
 	}
-	if !strings.Contains(m.toast.text, "ビルド中") || !strings.Contains(m.toast.text, "次回起動") {
+	// ⚠️ 「次回起動で反映」とは書かない: 完成したら再起動ダイアログを出すので、その場で反映できる。
+	// ビルド中であることと、完成後に行動できることの両方が伝わっているか。
+	if !strings.Contains(m.toast.text, "ビルド中") || !strings.Contains(m.toast.text, "再起動") {
 		t.Errorf("文面が想定と違う: %q", m.toast.text)
 	}
 	if !m.autobuild.active {

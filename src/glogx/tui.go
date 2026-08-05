@@ -891,6 +891,19 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.maybeTick(), watch) // トーストのスライドは tick で進む
 		}
 		return m, watch
+	case autobuildSpawnMsg:
+		// pull 後の裏ビルドが始まった。⚠️ 起動時とまったく同じ形で監視を張る (newAutobuildWatch →
+		// handle で「ビルド中」を即出す → tickCmd)。完成すれば通常の autobuildMsg 経路が
+		// 再起動ダイアログを出すので、ここで完成側の面倒を見る必要はない。
+		if !msg.spawned || m.autobuild.active {
+			return m, nil
+		}
+		m.autobuild = newAutobuildWatch(selfExePath(), true, timeNow())
+		if res, notify, _ := m.autobuild.handle(autobuildRunning, timeNow()); notify {
+			text, ok := autobuildToast(res)
+			m.toast.show(text, ok)
+		}
+		return m, tea.Batch(m.autobuild.tickCmd(), m.maybeTick())
 	case toastMsg:
 		m.toast.startLeaving(msg) // 静止明け: 退場アニメへ (世代一致時のみ)。maybeTick で tick 再開
 		return m, m.maybeTick()
@@ -949,7 +962,8 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// 成功トーストを右下にせり上げつつ全面リロード (アニメで画面が動いてもトーストは数秒残る)。
 		m.toast.show("pull --rebase しました", true)
-		return m, tea.Batch(m.reloadAfterPull(), m.maybeTick())
+		// pull で自分のソースが更新されたなら、その場で裏ビルドを始める (autobuildAfterPull)。
+		return m, tea.Batch(m.reloadAfterPull(), m.maybeTick(), m.autobuildAfterPull())
 	case rerunMsg:
 		m.actModal.rerunning = false
 		if msg.err != nil {
@@ -1685,6 +1699,25 @@ func (m *browseModel) quitWith(animate bool) (tea.Model, tea.Cmd) {
 func (m *browseModel) restartForNewBinary() (tea.Model, tea.Cmd) {
 	m.restartRequested = true
 	return m.quit()
+}
+
+// autobuildAfterPull は pull で自分のソースが更新されていたら、その場で裏ビルドを起動する。
+//
+// 狙いは「glogx を手で起動し直す手間をなくす」(ユーザー要望 2026-08-05): 以前は pull で新しい
+// glogx が降ってきても、popup を閉じて開き直すまで再ビルドが始まらなかった。
+//
+// ⚠️ 「pull が glogx のソースを含んでいたか」は自分で判定しない。glogx はどの repo でも動くので
+// 「今 pull した repo が dotfiles か」の判定が要るように見えるが、shim の指紋比較は自分のソース
+// ディレクトリだけを見るので、無関係な repo を pull しても stale にならない = 何も起きない。
+// 判定を写経せず shim へ委ねることで、この分岐そのものが不要になる。
+//
+// 監視中 (起動時に spawn された分がまだ決着していない) なら何もしない: 同じビルドを二重に
+// 数えないため。shim の lock があるので二重起動そのものは起きないが、トーストは重複しうる。
+func (m *browseModel) autobuildAfterPull() tea.Cmd {
+	if m.autobuild.active {
+		return nil
+	}
+	return spawnAutobuildCmd()
 }
 
 // restartPromptVisible は再起動ダイアログを今出してよいか。表示 (restartPromptLines) と

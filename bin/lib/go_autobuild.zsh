@@ -384,6 +384,28 @@ _go_autobuild_spawn() {  # $1=src_dir $2=name
   ) >>"$log" 2>&1 </dev/null &!
 }
 
+# go_autobuild_spawn_if_stale <src_dir> <name>
+#
+# 「今この瞬間、再ビルドが要るか」を判定して、要るなら裏ビルドを起動する。
+# 0 = 起動した / 1 = 不要 (最新) か見送り (backoff・バイナリ不在)。
+#
+# 起動時の判定 (go_autobuild_exec) と同じ規準を、走行中のツールから使うための入口。
+# glogx が pull 後に呼ぶ: pull で自分のソースが更新されたら、その場でビルドを始めて完成したら
+# 再起動を提案する (ツールを手で起動し直す手間をなくすため。ユーザー要望 2026-08-05)。
+#
+# ⚠️ 判定をツール側に写経させない。stale の規準 (指紋) と backoff (同じ入力での再挑戦抑制) は
+# ここが正本で、二重に実装すると必ずずれる。多重起動は _go_autobuild_spawn の lock が防ぐ。
+go_autobuild_spawn_if_stale() {
+  local src_dir="$1" name="$2" bin="$src_dir/$name" fp
+  [[ -x "$bin" ]] || return 1   # 走らせるものが無い = この入口の前提外 (exec 側の同期ビルドの領分)
+  _go_autobuild_fingerprint "$src_dir"
+  fp=$REPLY
+  _go_autobuild_stale "$src_dir" "$bin" "$fp" || return 1
+  # 前回と同じ入力で落ちているなら再挑戦しない (fail-open で旧版のまま進む)
+  _go_autobuild_should_retry "$src_dir" "$fp" || return 1
+  _go_autobuild_spawn "$src_dir" "$name"
+}
+
 go_autobuild_exec() {
   local async=0
   while (( $# )); do
@@ -404,24 +426,21 @@ go_autobuild_exec() {
   if [[ ! -x "$bin" ]]; then
     # 走らせるものが無い初回だけは同期でビルドする (async にできない)
     _go_autobuild_build "$src_dir" "$name" 0 || exit 1
-  elif _go_autobuild_stale "$src_dir" "$bin" "$fp"; then
-    if (( async )); then
-      # 前回と同じ入力で落ちているなら再挑戦しない (fail-open で旧版のまま進む)
-      if _go_autobuild_should_retry "$src_dir" "$fp"; then
-        _go_autobuild_spawn "$src_dir" "$name"
-        # 起動するツールへ「裏でビルド中」を伝える。旧版で exec するため、ツール側からは
-        # 新版の完成もビルド失敗も観測できず無言だった (失敗すると気づかないまま旧版に固定
-        # される)。読む側は任意で、今は glogx がこれを見て決着をトースト通知する
-        # (src/glogx/autobuild.go)。名前を変えるなら読む側も直すこと。
-        export GO_AUTOBUILD_PENDING=1
-      fi
-      # 再挑戦しない場合 (前回の失敗が backoff で効いている) は何も渡さない。ツール側は
-      # 「.autobuild.failed が自バイナリより新しいか」で同じ結論に達せるため (glogx の
-      # autobuildStaleBinary)。env で伝えるとこの分岐を通った瞬間しか伝わらず、TTL 超過での
-      # 再挑戦・shim を経ない起動・別セッションの失敗を取りこぼす。
-    else
-      _go_autobuild_build "$src_dir" "$name" 0 || exit 1
+  elif (( async )); then
+    # 判定と spawn は go_autobuild_spawn_if_stale が持つ (走行中のツールからも同じ入口を使う)。
+    if go_autobuild_spawn_if_stale "$src_dir" "$name"; then
+      # 起動するツールへ「裏でビルド中」を伝える。旧版で exec するため、ツール側からは
+      # 新版の完成もビルド失敗も観測できず無言だった (失敗すると気づかないまま旧版に固定
+      # される)。読む側は任意で、今は glogx がこれを見て決着をトースト通知する
+      # (src/glogx/autobuild.go)。名前を変えるなら読む側も直すこと。
+      export GO_AUTOBUILD_PENDING=1
     fi
+    # 起動しなかった場合 (最新 / 前回の失敗が backoff で効いている) は何も渡さない。ツール側は
+    # 「.autobuild.failed が自バイナリより新しいか」で同じ結論に達せるため (glogx の
+    # autobuildStaleBinary)。env で伝えるとこの分岐を通った瞬間しか伝わらず、TTL 超過での
+    # 再挑戦・shim を経ない起動・別セッションの失敗を取りこぼす。
+  elif _go_autobuild_stale "$src_dir" "$bin" "$fp"; then
+    _go_autobuild_build "$src_dir" "$name" 0 || exit 1
   fi
 
   exec "$bin" "$@"

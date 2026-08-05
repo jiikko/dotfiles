@@ -320,6 +320,44 @@ wait_for "ソース更新後も backoff が解除されない (再挑戦しな�
 [[ -f "$ROOT/src/tool/.autobuild.failed" ]] && fail "成功後も失敗記録が残っている"
 ok "ソースが更新されれば再挑戦し、成功で失敗記録が消える"
 
+printf '\n## go_autobuild_spawn_if_stale: 走行中のツールから再ビルドを起動する\n'
+# glogx が pull 後に呼ぶ入口。判定 (指紋 stale + backoff) は起動時と同じ規準を共有し、
+# ツール側へ写経させない。走行中のプロセスを exec で置き換えないのが exec 版との違い。
+spawn_if_stale() {  # $1=root → 0 = ビルドを起動した
+  PATH="$TMP_DIR/bin:$PATH" FAKE_GO_CALLS="$1/calls" FAKE_GO_MARK="${FAKE_GO_MARK:-v1}" \
+    zsh -c 'source "$1"; go_autobuild_spawn_if_stale "$2" tool' zsh \
+    "$1/bin/lib/go_autobuild.zsh" "$1/src/tool" 2>>"$1/stderr"
+}
+
+ROOT="$(new_project spawnif)"
+FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
+freeze "$ROOT"
+before="$(calls "$ROOT")"
+spawn_if_stale "$ROOT" && fail "最新なのにビルドを起動した"
+[[ "$(calls "$ROOT")" == "$before" ]] || fail "最新なのに go build が走った"
+ok "最新なら起動しない (rc=1)"
+
+# pull でソースが降ってきた状況 = 指紋が変わる
+bump "$ROOT/src/tool/main.go"
+FAKE_GO_MARK=pulled spawn_if_stale "$ROOT" || fail "stale なのにビルドを起動しない"
+# ⚠️ builder_done (lock 不在) を完了の合図にしない: spawn は即戻るので lock 作成前に真になる。
+# 成果物の差し替えを待ってから、lock の解放を待つ (既存の async テストと同じ順序)。
+wait_for "起動したビルドの成果物が設置されない" binary_is "$ROOT" pulled
+wait_for "builder が lock を解放しない" builder_done "$ROOT"
+ok "stale なら裏ビルドを起動し、成果物が設置される"
+
+# backoff: 同じ入力で失敗した直後は再挑戦しない (起動時と同じ規準)
+ROOT="$(new_project spawnifbackoff)"
+FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
+freeze "$ROOT"
+bump "$ROOT/src/tool/main.go"
+FAKE_GO_FAIL=1 spawn_if_stale "$ROOT" || fail "stale なのにビルドを起動しない"
+wait_for "失敗記録が現れない" test -f "$ROOT/src/tool/.autobuild.failed"
+before="$(calls "$ROOT")"
+spawn_if_stale "$ROOT" && fail "同じ入力で落ちた直後に再挑戦した (毎回ビルドを撒く)"
+[[ "$(calls "$ROOT")" == "$before" ]] || fail "backoff 中に go build が走った"
+ok "同じ入力での失敗直後は再挑戦しない (backoff を共有する)"
+
 printf '\n## lock\n'
 ROOT="$(new_project lock)"
 FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null

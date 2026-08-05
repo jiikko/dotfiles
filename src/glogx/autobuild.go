@@ -14,11 +14,15 @@ package main
 // (spinnerActive / maybeTick) で、通常起動に恒久 wakeup を足さないため。
 
 import (
+	"context"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"glogx/usage"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -295,11 +299,60 @@ func autobuildRunningRev(exePath string) string {
 	return " (動いているのは tree " + short + ")"
 }
 
+// autobuildSpawnMsg は「走行中に再ビルドを起動できたか」の結果 (pull 後の問い合わせ)。
+type autobuildSpawnMsg struct{ spawned bool }
+
+// spawnAutobuildCmd は shim へ「今この瞬間ビルドが要るか」を尋ね、要るなら裏ビルドを起動させる。
+// 判定も起動も shim (go_autobuild_spawn_if_stale) の側に置く = 起動時とまったく同じ規準になる。
+func spawnAutobuildCmd() tea.Cmd {
+	exe := selfExePath() // closure は別 goroutine で走るので値で捕捉する
+	return func() tea.Msg { return autobuildSpawnMsg{spawned: spawnAutobuild(exe)} }
+}
+
+// autobuildShimPath は go_autobuild.zsh のパス ("" = 使えない)。
+//
+// バイナリは shim が src_dir 直下へ置く取り決め (autobuildFailedStamp の在り処と同じ前提) なので、
+// そこから repo 内の既知の位置を辿る。⚠️ 見つからなければこの機能ごと黙って諦める: shim を経ない
+// 起動や別レイアウトへコピーされたバイナリでも glogx 本体は動き続けるべきで、再ビルドの自動化は
+// あくまで付加価値 (fail-open)。
+func autobuildShimPath(exePath string) string {
+	if exePath == "" {
+		return ""
+	}
+	shim := filepath.Join(filepath.Dir(exePath), "..", "..", "bin", "lib", "go_autobuild.zsh")
+	if _, err := os.Stat(shim); err != nil {
+		return ""
+	}
+	return shim
+}
+
+// spawnAutobuild は shim の go_autobuild_spawn_if_stale を呼び、裏ビルドが起動したかを返す。
+//
+// ⚠️ stale の判定 (指紋) と backoff (同じ入力での再挑戦抑制) を Go 側へ写経しない。shim が正本で、
+// 二重に実装すると必ずずれる。多重起動は shim の lock が防ぐので、走行中に呼んでも安全。
+// テストで実 zsh を叩かないための差し替え点として var。
+var spawnAutobuild = func(exePath string) bool {
+	shim := autobuildShimPath(exePath)
+	if shim == "" {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), localCmdTimeout)
+	defer cancel()
+	// パスは位置引数で渡す (スクリプトへ文字列連結しない)。$0 に "zsh" を置くので $1 以降が引数。
+	cmd := exec.CommandContext(ctx, "zsh", "-c",
+		`source "$1"; go_autobuild_spawn_if_stale "$2" "$3"`,
+		"zsh", shim, filepath.Dir(exePath), filepath.Base(exePath))
+	cmd.WaitDelay = usage.SubprocessWaitDelay // ctx の kill は直接の子にしか効かない
+	return cmd.Run() == nil
+}
+
 // autobuildToast は決着に対応するトースト文面と成功色フラグを返す。
 func autobuildToast(res autobuildResult) (text string, ok bool) {
 	switch res {
 	case autobuildStarted:
-		return "新しい glogx をビルド中 (次回起動で反映)", true
+		// ⚠️ 「次回起動で反映」とは書かない: 完成したら再起動ダイアログを出すので、その場で
+		// 反映できる (起動時に spawn された分も pull 後に spawn した分も同じ)。
+		return "新しい glogx をビルド中 (完成したら再起動を案内します)", true
 	case autobuildInstalled:
 		return "", false // 完成はトーストにしない (再起動ダイアログで出す。handle の doc)
 	case autobuildFailed:
