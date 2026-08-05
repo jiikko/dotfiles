@@ -119,7 +119,7 @@ func (o *jobDetailOverlay) boxLines(width int, colored bool, spinner, name, key 
 			body = []string{paint("(詳細なし)", ansiDim, colored)}
 			break
 		}
-		start := min(o.offset, max(len(lines)-1, 0))
+		start := clampScrollOffset(o.offset, len(lines), rows)
 		end := min(start+rows, len(lines))
 		body = make([]string, 0, end-start)
 		for _, l := range lines[start:end] {

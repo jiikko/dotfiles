@@ -110,7 +110,7 @@ func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *
 			body = []string{paint("(diff はありません)", ansiDim, colored)}
 			break
 		}
-		start := min(max(o.glide.offset(o.offset), 0), max(len(lines)-1, 0))
+		start := clampScrollOffset(o.glide.offset(o.offset), len(lines), rows)
 		end := min(start+rows, len(lines))
 		body = append(body, lines[start:end]...)
 		title = fmt.Sprintf(" diff: %s [%d-%d/%d] %s ", commit.ShortSHA, start+1, end, len(lines), commit.Subject)

@@ -326,6 +326,35 @@ func TestDiffBoxLinesScrollbar(t *testing.T) {
 	}
 }
 
+// pager overlay の描画は offset を「窓 (total-rows)」へ再クランプすること。offset はキー処理側
+// (pagerScrollKey 等) がその時点の rows でクランプするが、G で末尾へ行った後にリサイズで rows が
+// 増えると保存済み offset が窓の上限を越えたまま残る。描画側で clampScrollOffset を通さないと、
+// 広がった分の行を使わず末尾数行だけの箱になる (status viewer の pagerBox と同じ規律)。
+func TestPagerOverlayReclampsOffsetOnRedraw(t *testing.T) {
+	lines := make([]string, 50)
+	for i := range lines {
+		lines[i] = "line"
+	}
+	const width, rows = 50, 8 // 期待窓: start=42 → タイトル [43-50/50]
+
+	commit := &Commit{SHA: "a", ShortSHA: "abc1234", Subject: "subject"}
+	d := newDiffOverlay()
+	d.sha = commit.SHA
+	d.cache.store(commit.SHA, lines, commit.SHA)
+	d.offset = 49 // 旧 rows で G → リサイズで rows が増えた後を想定 (窓上限 42 を越えている)
+	if title := d.boxLines(width, false, "", commit, rows)[0]; !strings.Contains(title, "[43-50/50]") {
+		t.Errorf("diff overlay が offset を窓へ再クランプしていない: title=%q, want [43-50/50]", title)
+	}
+
+	j := newJobDetailOverlay()
+	j.open = true
+	j.cache.store("key", lines, "key")
+	j.offset = 49
+	if title := j.boxLines(width, false, "", "job", "key", rows)[0]; !strings.Contains(title, "[43-50/50]") {
+		t.Errorf("job 詳細 overlay が offset を窓へ再クランプしていない: title=%q, want [43-50/50]", title)
+	}
+}
+
 func TestBrowseDiffToggleAndCache(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
 	calls := stubDiff(t, []string{"x"}, nil)
