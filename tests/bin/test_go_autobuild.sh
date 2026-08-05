@@ -317,7 +317,9 @@ bump "$ROOT/src/tool/main.go"
 AUTOBUILD_ARGS=--async FAKE_GO_MARK=fixed run_tool "$ROOT" >/dev/null
 wait_for "ソース更新後も backoff が解除されない (再挑戦しない)" \
   binary_is "$ROOT" fixed
-[[ -f "$ROOT/src/tool/.autobuild.failed" ]] && fail "成功後も失敗記録が残っている"
+# 失敗記録の削除は install (mv) の後 (_go_autobuild_build_install の末尾)。バイナリの更新を
+# 見てから即時に不在を assert すると、その隙間を踏んで空振りする (CI で実際に踏んだ flake)
+wait_for "成功後も失敗記録が残っている" test '!' -f "$ROOT/src/tool/.autobuild.failed"
 ok "ソースが更新されれば再挑戦し、成功で失敗記録が消える"
 
 printf '\n## go_autobuild_spawn_if_stale: 走行中のツールから再ビルドを起動する\n'
