@@ -309,7 +309,9 @@ func (v *statusView) receive(msg statusLoadMsg) tea.Cmd {
 	}
 	// 内容が変わったら古い diff は捨てる (キーに XY を含めているので大半は当たらないが、
 	// 同じ XY のまま中身だけ変わる編集 = 保存し直しでは当たってしまう)。
-	v.preview.reset()
+	// ⚠️ 走行中の札は残す (clearEntries): 下で取り直しを予約するので、札まで降ろすと
+	// 走行中の取得と予約が同じキーを二重に取りに行く。
+	v.preview.clearEntries()
 	// ⚠️ 捨てたら取り直しも予約する。捨てるだけだと、外部編集のたびにプレビュー欄が空になり
 	// 「カーソルを動かすまで戻らない」= 別プロセスに作業させながら眺める用途で画面が死ぬ。
 	return v.previewTickCmd()
@@ -583,7 +585,7 @@ func (v *statusView) applyFresh(st worktreeStatus) {
 	sec, path, idx := v.anchor()
 	v.st, v.rows, v.loaded, v.err = st, st.ordered(), true, ""
 	v.restoreCursor(sec, path, idx)
-	v.preview.reset()
+	v.preview.clearEntries() // 走行中の取得は走行中のまま (clearEntries の doc)
 }
 
 // pagerKeyPress は全画面 diff のキー (スクロールは共有ロジック、閉じるはここ)。

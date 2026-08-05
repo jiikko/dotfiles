@@ -878,6 +878,56 @@ func TestStatusPreviewCacheIsBounded(t *testing.T) {
 
 // 外部編集で内容が変わったら、プレビューは捨てたうえで取り直しを予約する
 // (捨てるだけだとカーソルを動かすまでプレビュー欄が空のまま = 眺める用途で死ぬ)。
+// 外部編集で古い diff を捨てても、走行中の取得は二重発行にならない。
+//
+// ⚠️ 回帰防止 (セルフレビュー 2026-08-05): キャッシュを lineCache へ集約したとき、この経路を
+// reset() にして走行中の札まで降ろしてしまった。この経路は直後に取り直しを予約する
+// (previewTickCmd) ので、札が無いと同じキーへ git diff が 2 本走る。移行前は cache と order
+// だけを捨てていたので、移行で入れた挙動変化だった。
+func TestStatusExternalEditKeepsInFlightPreview(t *testing.T) {
+	v := newTestStatusView(t, statusRec(" M a.go"))
+	row, _ := v.current()
+	key := previewKey(row)
+	if cmd := v.fetchDiff(row, false); cmd == nil {
+		t.Fatal("最初の fetchDiff が nil (前提が崩れた)")
+	}
+
+	// 外部編集で行集合が変わった = 古い diff を捨てる経路 (changed が true になる入力にする)
+	v.receive(statusLoadMsg{st: parseWorktreeStatus(statusRec(" M a.go", " M b.go")), gen: v.gen})
+	if v.preview.has(key) {
+		t.Fatal("前提が崩れた: 古い diff が捨てられていない (この経路を通っていない)")
+	}
+
+	if !v.preview.loading(key) {
+		t.Fatal("走行中の取得の札が降りた (直後の取り直し予約と二重に git diff が走る)")
+	}
+	if cmd := v.fetchDiff(row, false); cmd != nil {
+		t.Error("走行中なのに 2 本目の fetchDiff が発行された")
+	}
+}
+
+// applyFresh (X の実行時検証で「変わっていた」と分かった直後の反映) も同じ契約。
+// 走行中の取得の札を降ろさない — プレビューの tick チェーンは張られたままなので、降ろすと
+// 次の満了で同じキーを二重に取りに行く。
+func TestStatusApplyFreshKeepsInFlightPreview(t *testing.T) {
+	v := newTestStatusView(t, statusRec(" M a.go"))
+	row, _ := v.current()
+	key := previewKey(row)
+	if cmd := v.fetchDiff(row, false); cmd == nil {
+		t.Fatal("最初の fetchDiff が nil (前提が崩れた)")
+	}
+	v.preview.store("other", []string{"stale"}, "")
+
+	v.applyFresh(parseWorktreeStatus(statusRec(" M a.go", " M b.go")))
+
+	if v.preview.has("other") {
+		t.Error("古いキャッシュが残った (取り直しの契機が無いまま古い diff を出す)")
+	}
+	if !v.preview.loading(key) {
+		t.Fatal("走行中の取得の札が降りた (次の tick 満了で二重に git diff が走る)")
+	}
+}
+
 func TestStatusReceiveSchedulesPreviewRefetchOnChange(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
 	row, _ := v.current()

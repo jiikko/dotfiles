@@ -75,6 +75,17 @@ func (c *lineCache) store(key string, lines []string, keep string) {
 // abort は結果を格納せずに取得中だけを解除する (取得が失敗した経路)。
 func (c *lineCache) abort(key string) { delete(c.busy, key) }
 
+// clearEntries は中身だけを捨てる (取得中の札は残す)。
+//
+// ⚠️ reset と使い分けること。「キャッシュした内容はもう当てにならないが、走行中の取得は
+// 走行中のまま」という状況で使う (外部編集で作業ツリーが変わった等)。ここで札まで降ろすと、
+// 直後に張り直した取得予約が「誰も取っていない」と判断して同じキーを二重に取りに行く
+// (statusView の外部編集検知で実際に起きた)。
+func (c *lineCache) clearEntries() {
+	c.entries = map[string][]string{}
+	c.order = nil
+}
+
 // clearBusy は取得中の札だけを全部降ろす (キャッシュは残す)。
 // viewer を閉じたときに使う: 走行中の取得が返らない限り fetching() が true のままになり、
 // フレーム tick が回り続けるため。

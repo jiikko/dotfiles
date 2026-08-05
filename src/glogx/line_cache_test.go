@@ -107,3 +107,29 @@ func TestLineCacheRestoreDoesNotDuplicateOrder(t *testing.T) {
 		t.Fatalf("entries = %d, order = %d (ずれると evict が捨て漏れる)", len(c.entries), len(c.order))
 	}
 }
+
+// clearEntries は中身だけ捨てて取得中の札を残す。
+//
+// ⚠️ 回帰防止 (セルフレビュー 2026-08-05): lineCache へ集約したとき、statusView の
+// 「外部編集で古い diff を捨てる」経路を reset() にしてしまい、走行中の取得の札まで降ろしていた。
+// あの経路は直後に取り直しを予約するので、札が無いと同じキーを二重に取りに行く (git diff が
+// 2 本走る)。移行前は cache と order だけを捨てていたので、これは移行で入れた挙動変化だった。
+func TestLineCacheClearEntriesKeepsBusy(t *testing.T) {
+	c := newLineCache()
+	c.store("cached", []string{"x"}, "")
+	c.begin("inflight")
+
+	c.clearEntries()
+	if c.has("cached") {
+		t.Error("clearEntries が中身を捨てていない")
+	}
+	if len(c.order) != 0 {
+		t.Errorf("order が残った (%d) — evict の数え方がずれる", len(c.order))
+	}
+	if !c.loading("inflight") {
+		t.Fatal("走行中の札まで降ろした (直後の取り直し予約と二重に取りに行く)")
+	}
+	if c.begin("inflight") {
+		t.Error("走行中なのに begin が通った (二重発行になる)")
+	}
+}
