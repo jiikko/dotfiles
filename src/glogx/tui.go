@@ -1696,8 +1696,9 @@ func (m *browseModel) restartForNewBinary() (tea.Model, tea.Cmd) {
 // すべてが無反応。しかも更新中モーダルの『完了まで終了できません』をダイアログが覆うので、
 // 効かない理由すら画面から消えていた)。
 //
-// actModal がキーを持っている間は出さない (running() ではなく ownsKeys())。理由は 2 つあり、
-// どちらか片方だけ見ると事故る:
+// actModal が出ている間は出さない (running() ではなく active())。active() は「描かれる」と
+// 「キーを消費する」を兼ねる 1 つの述語で、running() は実行中だけを指すので足りない。
+// 理由は 2 つあり、どちらか片方だけ見ると事故る:
 //
 //   - 実行中 (running): このダイアログの r は restartForNewBinary → cancelAll で走行中の
 //     claude update / git を殺す。Ctrl-C をブロックしてまで防いでいる当のものなので、
@@ -1707,7 +1708,7 @@ func (m *browseModel) restartForNewBinary() (tea.Model, tea.Cmd) {
 //
 // 完成の事実は restartPending が保持しているので、actModal が手を離せば自然に出る。
 func (m *browseModel) restartPromptVisible() bool {
-	return m.restartPending && !m.actModal.ownsKeys()
+	return m.restartPending && !m.actModal.active()
 }
 
 // restartPromptLines は完成ダイアログの箱 (push/pull 確認と同じ見た目)。

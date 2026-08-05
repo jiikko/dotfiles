@@ -35,7 +35,17 @@ type actionModal struct {
 	forceQuitArmed bool
 }
 
-// active はいずれかのモーダル/トーストが表示中か (描画とセンタリングの要否判定)。
+// active はいずれかのモーダルが表示中か。「描かれる」と「キーを消費する」は同じ条件で、
+// この 1 つの述語が両方を表す (boxLines の描画条件であり、handleKey が consumed を返す条件)。
+//
+// ⚠️ 2 つに分けないこと。「最前面に描かれるモーダル」と「キーを受け取るモーダル」がずれると、
+// 画面の選択肢が効かない/別の操作が走る、という形の事故になる。実際に起きた例: 再起動ダイアログが
+// running() だけを見ていたため push 確認 (y/N) 中に最前面へ重なり、画面の「その他のキー: 後で」に
+// 従って押した y が push を実行した。他のモーダルは「自分を出してよいか」をこれで判断する。
+// 一致は TestActionModalActiveMatchesHandleKey が固定している。
+//
+// running() との違いは確認待ち (y/N) を含むこと。running() は「中断すると壊れる処理が動いて
+// いるか」= 終了ガードとスピナーの判断で、用途が別 (混同しないこと)。
 func (a *actionModal) active() bool {
 	return a.pushConfirm || a.pushing || a.pullConfirm || a.pulling || a.rerunConfirm ||
 		a.rerunning || a.updating
@@ -46,20 +56,6 @@ func (a *actionModal) active() bool {
 // push/pull のみ: rerun は fetchTimeout 付きの短い API 呼び出しで、中断しても
 // 不整合 (mid-rebase のような) を残さないため即終了を許す。
 func (a *actionModal) running() bool { return a.pushing || a.pulling || a.rerunning || a.updating }
-
-// ownsKeys は「このモーダルがキーの所有者か」= handleKey が consumed=true を返す条件。
-//
-// ⚠️ handleKey と一致させること (TestActionModalOwnsKeysMatchesHandleKey が固定している)。
-// 他のモーダルは「自分を出してよいか」をこれで判断するので、ずれると「最前面に出ているのに
-// キーが別のモーダルへ行く」状態が生まれる。実際に起きた事故: 再起動ダイアログが running()
-// だけを見ていたため、push 確認 (y/N) 中に完成ダイアログが最前面へ重なり、画面の
-// 「その他のキー: 後で」に従って押した y が push を実行した。
-//
-// running() との違いは確認待ち (y/N) を含むこと。running() は「中断すると壊れる処理が動いて
-// いるか」= 終了ガードの判断で、用途が別 (混同しないこと)。
-func (a *actionModal) ownsKeys() bool {
-	return a.pushConfirm || a.pullConfirm || a.rerunConfirm || a.running()
-}
 
 // runningQuitHint は実行中モーダルに出す終了ガードの案内。1 回目の Ctrl-C で forceQuitArmed が
 // 立った後は強制終了を促す (progressive disclosure)。

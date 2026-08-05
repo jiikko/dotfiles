@@ -267,14 +267,14 @@ func TestRestartPromptDefersWhileBlockingOperation(t *testing.T) {
 			m.restartPending = true
 
 			if out := stripANSI(m.View().Content); strings.Contains(out, "新しいバージョンが利用可能です") {
-				t.Errorf("actModal がキーを持っているのに再起動ダイアログを出した:\n%s", out)
+				t.Errorf("actModal が出ているのに再起動ダイアログを重ねた:\n%s", out)
 			}
 			// ⚠️ 1 キーだけ押して見る: 確認待ちは 1 キーで解けるので、続けて押すと「解けた後の
 			// ダイアログに答えた」ことになり、この分岐の主張と混ざる。
 			// r はこのダイアログの実行キー = 一番危険なキーなので、これで代表させる。
 			m.handleKey("r")
 			if m.restartRequested {
-				t.Errorf("actModal がキーを持っている間の r で再起動してしまった (走行中の処理を殺す)")
+				t.Errorf("actModal が出ている間の r で再起動してしまった (走行中の処理を殺す)")
 			}
 			if !m.restartPending {
 				t.Error("actModal へ行ったキーで保留が消えた (完成を伝える機会が失われる)")
