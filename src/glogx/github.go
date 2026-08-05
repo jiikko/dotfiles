@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"glogx/usage"
 )
 
 // CIState はコミット単位に集約した CI 状態。
@@ -160,6 +162,9 @@ func ExecRunner(ctx context.Context, name string, args ...string) ([]byte, []byt
 	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
+	// ctx の kill は直接の子にしか効かず、gh の孫が pipe を握ると Wait が戻らない
+	// (理由は usage.SubprocessWaitDelay の doc)
+	cmd.WaitDelay = usage.SubprocessWaitDelay
 	err := cmd.Run()
 	return out.Bytes(), errBuf.Bytes(), err
 }

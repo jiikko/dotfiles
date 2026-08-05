@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"glogx/usage"
 )
 
 // コミット境界の識別は人間向け出力の正規表現ではなく制御文字レコードで行う (issue の設計)。
@@ -82,6 +84,9 @@ func runGitCmd(cmd *exec.Cmd) (string, error) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	// ctx の kill は直接の子にしか効かず、hook の孫が pipe を握ると Wait が戻らない
+	// (理由は usage.SubprocessWaitDelay の doc)
+	cmd.WaitDelay = usage.SubprocessWaitDelay
 	if err := cmd.Run(); err != nil {
 		var exitErr *exec.ExitError
 		code := 1
