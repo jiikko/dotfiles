@@ -2679,14 +2679,7 @@ func (m *browseModel) ensureCursorVisible() {
 			break
 		}
 	}
-	page := m.pageSize()
-	if header < m.offset {
-		m.offset = header
-	}
-	if header >= m.offset+page {
-		m.offset = header - page + 1
-	}
-	m.offset = min(max(m.offset, 0), max(len(lines)-page, 0))
+	m.offset = windowOffsetFor(m.offset, header, len(lines), m.pageSize())
 }
 
 // View は画面内容に加えて端末モード (Alt Screen) も宣言する。bubbletea v2 では
