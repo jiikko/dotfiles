@@ -5,6 +5,10 @@ import (
 	"testing"
 )
 
+// visible は「1 枚でも出ているか」のテスト用ショートハンド。本番の描画は boxLines、フレーム
+// 判定は animating を使うので、この畳んだ判定はテストの assert からしか要らない。
+func (s *toast) visible() bool { return s.toastItem.visible() || len(s.older) > 0 }
+
 // show → entering、tick で右画面外から左へ滑り込み (shown 0→boxWidth)、入場完了で holding +
 // 退場タイマー、startLeaving → leaving、tick で右へ滑り出て hidden、という一連の状態遷移。
 func TestToastLifecycle(t *testing.T) {

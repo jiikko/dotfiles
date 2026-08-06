@@ -962,11 +962,11 @@ func (v *statusView) emptyMessage(o statusRenderOpts) string {
 		return "git status に失敗しました: " + v.err
 	case v.loading && !v.loaded:
 		return o.spinner + " git status を読んでいます..."
-	case len(v.rows) == 0 && v.st.skipped > 0:
+	case v.st.clean() && v.st.skipped > 0:
 		// ⚠️ 「読めなかった」を「クリーン」と同じ絵にしない (沈黙を成功にしない)。git の出力形式が
 		// 想定と違うとき、変更を見せるための画面が「変更なし」と嘘をつくことになる
 		return fmt.Sprintf("git status の出力を解釈できませんでした (%d レコード)", v.st.skipped)
-	case len(v.rows) == 0:
+	case v.st.clean():
 		// クリーンでも画面は閉じない (自動更新があるのでライブモニタとして置ける。spec 6 節)
 		return "作業ツリーはクリーンです (別プロセスの編集を検知したら自動で表示します)"
 	default:

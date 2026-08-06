@@ -253,9 +253,6 @@ func (s *toast) items() []*toastItem {
 	return out
 }
 
-// visible は 1 枚でも出ているか (毎フレーム呼ばれるので slice を作らない)。
-func (s *toast) visible() bool { return s.toastItem.visible() || len(s.older) > 0 }
-
 // animating は 1 枚でもスライド中か (tick を回す必要がある + spinnerActive に含める)。
 // spinnerActive から毎フレーム呼ばれるので slice を作らない。
 func (s *toast) animating() bool {
