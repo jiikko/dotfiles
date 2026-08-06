@@ -123,3 +123,16 @@ func pagerScrollKey(key string, offset, rows, total int, glide *scrollGlide) (ne
 func clampScrollOffset(offset, total, rows int) int {
 	return max(min(offset, max(total-rows, 0)), 0)
 }
+
+// windowOffsetFor は「カーソルを含む窓」へ offset を収束させる (キー処理と描画で行数が
+// 食い違っても、カーソルが画面外に出ない)。clampScrollOffset と同じく「offset は導出値」の
+// 規律の一部で、status viewer・issues viewer・commit 一覧が同じ式を通る。
+func windowOffsetFor(offset, cursor, total, rows int) int {
+	if cursor < offset {
+		offset = cursor
+	}
+	if cursor >= offset+rows {
+		offset = cursor - rows + 1
+	}
+	return clampScrollOffset(offset, total, rows)
+}

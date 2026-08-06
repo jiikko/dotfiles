@@ -925,18 +925,6 @@ func (v *statusView) listLines(o statusRenderOpts, width int) []string {
 	return scrollbarColumn(out, width, len(index), v.offset, o.colored)
 }
 
-// windowOffsetFor は「カーソルを含む窓」へ offset を収束させる (キー処理と描画で行数が
-// 食い違っても、カーソルが画面外に出ない)。
-func windowOffsetFor(offset, cursor, total, rows int) int {
-	if cursor < offset {
-		offset = cursor
-	}
-	if cursor >= offset+rows {
-		offset = cursor - rows + 1
-	}
-	return clampScrollOffset(offset, total, rows)
-}
-
 // headerLine は最上段 (ブランチ + 件数)。
 func (v *statusView) headerLine(o statusRenderOpts, width int) string {
 	left := "status"

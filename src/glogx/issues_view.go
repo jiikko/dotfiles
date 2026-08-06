@@ -992,9 +992,7 @@ func (v *issuesView) windowOffset(rows int) int {
 	if rows <= 0 {
 		return 0
 	}
-	offset := min(v.offset, v.cursor)     // カーソルが窓より上に出ない
-	offset = max(offset, v.cursor-rows+1) // カーソルが窓より下に出ない
-	return clampScrollOffset(offset, len(v.rows), rows)
+	return windowOffsetFor(v.offset, v.cursor, len(v.rows), rows)
 }
 
 // moveTab はタブを切り替える (端で止まらず巡回する)。
