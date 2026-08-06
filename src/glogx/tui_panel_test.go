@@ -269,13 +269,7 @@ func TestBrowsePanelJobCursorAndOpen(t *testing.T) {
 	if m.panelCursor != -1 {
 		t.Fatalf("開いた直後のフォーカスはタイトル行 (-1) のはず: %d", m.panelCursor)
 	}
-	var opened string
-	orig := openInBrowser
-	openInBrowser = func(url string) error {
-		opened = url
-		return nil
-	}
-	t.Cleanup(func() { openInBrowser = orig })
+	opened := stubBrowser(t)
 	// j で job0 にフォーカスして o → ブラウザで開く (Enter は TUI 内の詳細に使う)
 	m.handleKey("j")
 	if m.panelCursor != 0 {
@@ -288,8 +282,8 @@ func TestBrowsePanelJobCursorAndOpen(t *testing.T) {
 	if msg := cmd(); msg.(openURLMsg).err != nil {
 		t.Fatalf("openURLMsg.err = %v", msg.(openURLMsg).err)
 	}
-	if opened != "https://github.com/o/r/runs/1" {
-		t.Errorf("開いた URL = %q", opened)
+	if *opened != "https://github.com/o/r/runs/1" {
+		t.Errorf("開いた URL = %q", *opened)
 	}
 	// j で job1 へ (末尾で止まる)。URL なし job は notice を出して開かない
 	m.handleKey("j")
@@ -598,12 +592,7 @@ func TestBrowseOpenJobRejectsNonHTTP(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	called := false
-	orig := openInBrowser
-	openInBrowser = func(string) error {
-		called = true
-		return nil
-	}
-	t.Cleanup(func() { openInBrowser = orig })
+	stubBrowserFunc(t, func(string) error { called = true; return nil })
 	if _, cmd := m.handleKey("o"); cmd != nil {
 		t.Errorf("file:// URL で Cmd が返った")
 	}

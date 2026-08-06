@@ -223,9 +223,7 @@ func TestBrowseBatchedRunesKeyMsg(t *testing.T) {
 // 判定は cmd != nil ではなく m.ticking で見る: single-flight なので、別経路が先に張っていると
 // cmd は nil になりうる (それでは不変条件を確かめられない)。
 func TestBrowseBatchedRunesArmsTick(t *testing.T) {
-	orig := copyToClipboard
-	copyToClipboard = func(string) error { return nil }
-	t.Cleanup(func() { copyToClipboard = orig })
+	stubClipboardFunc(t, func(string) error { return nil })
 
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateSuccess)

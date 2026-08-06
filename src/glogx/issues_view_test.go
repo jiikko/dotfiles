@@ -296,10 +296,7 @@ func TestIssuesViewTabLineNoMarksWhenAllFit(t *testing.T) {
 
 // shift+↑/↓ で範囲を選び、y / p / Y がその範囲へ効く (ユーザー要望 2026-08-01)。
 func TestIssuesViewMultiSelectYank(t *testing.T) {
-	orig := copyToClipboard
-	t.Cleanup(func() { copyToClipboard = orig })
-	var copied string
-	copyToClipboard = func(text string) error { copied = text; return nil }
+	copied := stubClipboard(t)
 
 	v := loadedView(sampleIssues()...)
 	v.filter = issues.FilterAll
@@ -312,8 +309,8 @@ func TestIssuesViewMultiSelectYank(t *testing.T) {
 
 	v.handleKey("y", vp(10))
 	want := v.rows[0].Path + "\n" + v.rows[1].Path + "\n" + v.rows[2].Path
-	if copied != want {
-		t.Fatalf("選択範囲のパスがコピーされていない:\n got=%q\nwant=%q", copied, want)
+	if *copied != want {
+		t.Fatalf("選択範囲のパスがコピーされていない:\n got=%q\nwant=%q", *copied, want)
 	}
 	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "3 件のパスをコピーしました") {
 		t.Fatalf("複数コピーの通知が想定と違う: %q", text)
@@ -324,8 +321,8 @@ func TestIssuesViewMultiSelectYank(t *testing.T) {
 		t.Fatalf("通知に改行が入った: %q", text)
 	}
 	v.handleKey("p", vp(10))
-	if copied != v.rows[0].Number+"\n"+v.rows[1].Number+"\n"+v.rows[2].Number {
-		t.Fatalf("選択範囲の番号がコピーされていない: %q", copied)
+	if *copied != v.rows[0].Number+"\n"+v.rows[1].Number+"\n"+v.rows[2].Number {
+		t.Fatalf("選択範囲の番号がコピーされていない: %q", *copied)
 	}
 	// 単数のときの文言は変えない (複数選択を足したせいで普段の見た目が変わらないように)
 	v.clearMark()
@@ -926,9 +923,7 @@ func TestIssuesViewCursorStaysVisibleAfterRowSetChanges(t *testing.T) {
 	// ⚠️ 回帰防止: カーソルは常に窓の中にいる。行数やヘッダー高が変わる経路 (a / Tab /
 	// 通知行の増加) で窓だけ先頭へ飛ぶと、カーソル行がどこにも描かれないまま
 	// current() が見えない行を返し、Enter / v (nvim) / y が別の issue を対象にする。
-	orig := copyToClipboard
-	t.Cleanup(func() { copyToClipboard = orig })
-	copyToClipboard = func(string) error { return nil }
+	stubClipboardFunc(t, func(string) error { return nil })
 
 	list := make([]*issues.Issue, 0, 50)
 	for i := 50; i > 0; i-- {
@@ -1021,10 +1016,9 @@ func TestIssuesViewGReachesLastLine(t *testing.T) {
 }
 
 func TestIssuesViewCopyPathAndEditor(t *testing.T) {
-	origCopy, origEditor := copyToClipboard, runEditorCmd
-	t.Cleanup(func() { copyToClipboard, runEditorCmd = origCopy, origEditor })
-	var copied string
-	copyToClipboard = func(text string) error { copied = text; return nil }
+	copied := stubClipboard(t)
+	origEditor := runEditorCmd
+	t.Cleanup(func() { runEditorCmd = origEditor })
 	editorCalled := false
 	runEditorCmd = func(cmd *exec.Cmd) tea.Cmd {
 		editorCalled = true
@@ -1033,8 +1027,8 @@ func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 
 	v := loadedView(sampleIssues()...)
 	v.handleKey("y", vp(10))
-	if copied != v.rows[0].Path {
-		t.Fatalf("カーソル行のパスがコピーされていない: %q", copied)
+	if *copied != v.rows[0].Path {
+		t.Fatalf("カーソル行のパスがコピーされていない: %q", *copied)
 	}
 	// 結果はヘッダーに出さず、browseModel がトーストへ流すために取り出す (takeNotice)
 	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "コピーしました") {
@@ -1048,10 +1042,9 @@ func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 func TestIssuesViewActionKeysWorkInBothModes(t *testing.T) {
 	// v / y / p / Y / N は一覧でも本文でも同じ対象 (target) に効く。モードごとの switch へ
 	// 写すと、追加時に片方へ入れ忘れても「そのモードでだけ効かない」形で静かに壊れる。
-	origCopy, origEditor := copyToClipboard, runEditorCmd
-	t.Cleanup(func() { copyToClipboard, runEditorCmd = origCopy, origEditor })
-	var copied string
-	copyToClipboard = func(text string) error { copied = text; return nil }
+	copied := stubClipboard(t)
+	origEditor := runEditorCmd
+	t.Cleanup(func() { runEditorCmd = origEditor })
 	editorCalls := 0
 	runEditorCmd = func(*exec.Cmd) tea.Cmd {
 		editorCalls++
@@ -1073,9 +1066,9 @@ func TestIssuesViewActionKeysWorkInBothModes(t *testing.T) {
 			}
 		}
 		for _, key := range []string{"y", "p", "Y", "N"} {
-			copied = ""
+			*copied = ""
 			v.handleKey(key, vp(10))
-			if copied == "" {
+			if *copied == "" {
 				t.Fatalf("%s モードで %q がコピーしていない", mode, key)
 			}
 		}
@@ -1138,9 +1131,7 @@ func TestIssuesViewShowsScanWarning(t *testing.T) {
 func TestIssuesViewNoticeIsTransientAndDoesNotHideWarning(t *testing.T) {
 	// ⚠️ 回帰防止: notice に寿命が無いと、コピーを 1 回した時点でスキャン警告
 	// (同名ファイルの二重化 = conflict も error も出ない静かな内容喪失) が二度と出なくなる。
-	orig := copyToClipboard
-	t.Cleanup(func() { copyToClipboard = orig })
-	copyToClipboard = func(string) error { return nil }
+	stubClipboardFunc(t, func(string) error { return nil })
 
 	v := newTestIssuesView()
 	v.shown = true
@@ -1168,9 +1159,7 @@ func TestIssuesViewNoticeIsTransientAndDoesNotHideWarning(t *testing.T) {
 func TestIssuesViewBodyModeShowsCopyResult(t *testing.T) {
 	// 本文モードのコピーの成否も通知に載る (browseModel がトーストへ流す)。以前はヘッダーの
 	// 行に出していたが、viewer の上にもトーストを合成するようにして共通の語彙へ寄せた。
-	orig := copyToClipboard
-	t.Cleanup(func() { copyToClipboard = orig })
-	copyToClipboard = func(string) error { return errors.New("pbcopy が見つかりません") }
+	stubClipboardFunc(t, func(string) error { return errors.New("pbcopy が見つかりません") })
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "028-refactor-x.md")
@@ -1204,37 +1193,34 @@ func TestIssuesViewHintChangesByMode(t *testing.T) {
 }
 
 func TestIssuesViewCopyActions(t *testing.T) {
-	orig := copyToClipboard
-	t.Cleanup(func() { copyToClipboard = orig })
-	var copied string
-	copyToClipboard = func(text string) error { copied = text; return nil }
+	copied := stubClipboard(t)
 
 	v := loadedView(sampleIssues()...)
 	v.root = "/repo"
 	v.all[0].Title = "030 feat: 新機能"
 
 	v.handleKey("p", vp(10))
-	if copied != "030" {
-		t.Fatalf("p が番号をコピーしていない: %q", copied)
+	if *copied != "030" {
+		t.Fatalf("p が番号をコピーしていない: %q", *copied)
 	}
 	if !strings.Contains(v.notice, "番号をコピーしました: 030") {
 		t.Fatalf("通知が出ていない: %q", v.notice)
 	}
 	// Y = 番号 + タイトル + repo 相対パス (H1 の先頭番号は Display が落とす)
 	v.handleKey("Y", vp(10))
-	if copied != "issue 030 feat: 新機能 (issues/030-feat-a.md)" {
-		t.Fatalf("Y の参照が想定と違う: %q", copied)
+	if *copied != "issue 030 feat: 新機能 (issues/030-feat-a.md)" {
+		t.Fatalf("Y の参照が想定と違う: %q", *copied)
 	}
 	// N = 次に採番すべき番号 (fixture の最大は 030)
 	v.handleKey("N", vp(10))
-	if copied != "031" {
-		t.Fatalf("N が次番号をコピーしていない: %q", copied)
+	if *copied != "031" {
+		t.Fatalf("N が次番号をコピーしていない: %q", *copied)
 	}
 	// 番号なし issue ではファイル名に落として理由を通知する
 	v2 := loadedView(&issues.Issue{Path: "/repo/issues/resource-leaks.md", Dir: "/repo/issues", Rel: "resource-leaks.md", Slug: "resource-leaks"})
 	v2.handleKey("p", vp(10))
-	if copied != "resource-leaks.md" || !strings.Contains(v2.notice, "番号が無い") {
-		t.Fatalf("番号なしの扱いが想定と違う: copied=%q notice=%q", copied, v2.notice)
+	if *copied != "resource-leaks.md" || !strings.Contains(v2.notice, "番号が無い") {
+		t.Fatalf("番号なしの扱いが想定と違う: copied=%q notice=%q", *copied, v2.notice)
 	}
 }
 
@@ -1474,9 +1460,7 @@ func TestReorderTabsByCount(t *testing.T) {
 // (ユーザー要望 2026-07-31: 順送りだと 24 本の issue で目的の 1 本に辿り着けない)。
 func TestIssuesViewURLPicker(t *testing.T) {
 	var opened []string
-	orig := openInBrowser
-	openInBrowser = func(url string) error { opened = append(opened, url); return nil }
-	t.Cleanup(func() { openInBrowser = orig })
+	stubBrowserFunc(t, func(url string) error { opened = append(opened, url); return nil })
 
 	v := newTestIssuesView()
 	v.shown, v.loaded = true, true
@@ -1559,9 +1543,7 @@ func TestIssuesViewURLPickerNone(t *testing.T) {
 
 // 一覧モードでは u は効かない (本文を読んでいないため)。
 func TestIssuesViewOpenURLListModeIsNoop(t *testing.T) {
-	orig := openInBrowser
-	openInBrowser = func(string) error { t.Fatal("一覧モードでブラウザを開いた"); return nil }
-	t.Cleanup(func() { openInBrowser = orig })
+	stubBrowserFunc(t, func(string) error { t.Fatal("一覧モードでブラウザを開いた"); return nil })
 
 	v := loadedView(sampleIssues()...)
 	if cmd := v.handleKey("u", vp(20)); cmd != nil {

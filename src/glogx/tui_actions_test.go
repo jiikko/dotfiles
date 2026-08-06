@@ -703,9 +703,7 @@ func TestBrowseClaudeUpdateToastStacksWithExisting(t *testing.T) {
 func TestBrowseCopyLastWarning(t *testing.T) {
 	var copied string
 	stubbed := false
-	orig := copyToClipboard
-	copyToClipboard = func(text string) error { copied = text; stubbed = true; return nil }
-	t.Cleanup(func() { copyToClipboard = orig })
+	stubClipboardFunc(t, func(text string) error { copied = text; stubbed = true; return nil })
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 
@@ -737,9 +735,7 @@ func TestBrowseCopyLastWarning(t *testing.T) {
 
 // コピー失敗時は理由を error トーストに出す。lastWarning は汚さない (コピー対象の警告を保持)。
 func TestBrowseCopyLastWarningError(t *testing.T) {
-	orig := copyToClipboard
-	copyToClipboard = func(string) error { return errors.New("clipboard down") }
-	t.Cleanup(func() { copyToClipboard = orig })
+	stubClipboardFunc(t, func(string) error { return errors.New("clipboard down") })
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.showWarning("なにか失敗")
 	m.handleKey("w")
@@ -763,24 +759,18 @@ func TestBrowseSuccessToastDoesNotClobberLastWarning(t *testing.T) {
 
 // ghErr (CI 取得失敗の sticky 警告) は lastWarning に無くても w で fallback コピーできる (issue 026 #1)。
 func TestBrowseCopyWarningGhErrFallback(t *testing.T) {
-	var copied string
-	orig := copyToClipboard
-	copyToClipboard = func(text string) error { copied = text; return nil }
-	t.Cleanup(func() { copyToClipboard = orig })
+	copied := stubClipboard(t)
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.ghErr = &GHError{Kind: GHOther, Detail: "boom detail"}
 	m.handleKey("w")
-	if !strings.Contains(copied, "取得に失敗") {
-		t.Fatalf("ghErr fallback で w がコピーしない: copied=%q", copied)
+	if !strings.Contains(*copied, "取得に失敗") {
+		t.Fatalf("ghErr fallback で w がコピーしない: copied=%q", *copied)
 	}
 }
 
 // 取得失敗系エラー (showWarning 経由) は表示トーストが消えても w でコピーできる (issue 026 #1)。
 func TestBrowseCopyWarningFromShowWarning(t *testing.T) {
-	var copied string
-	orig := copyToClipboard
-	copyToClipboard = func(text string) error { copied = text; return nil }
-	t.Cleanup(func() { copyToClipboard = orig })
+	copied := stubClipboard(t)
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.showWarning("diff の取得に失敗しました: boom")
 	if m.lastWarning != "diff の取得に失敗しました: boom" {
@@ -788,8 +778,8 @@ func TestBrowseCopyWarningFromShowWarning(t *testing.T) {
 	}
 	m.toast = toast{} // トースト消滅をシミュレート
 	m.handleKey("w")  // トーストが消えても lastWarning は残る
-	if !strings.Contains(copied, "diff の取得に失敗") {
-		t.Fatalf("showWarning が w でコピーされない: copied=%q", copied)
+	if !strings.Contains(*copied, "diff の取得に失敗") {
+		t.Fatalf("showWarning が w でコピーされない: copied=%q", *copied)
 	}
 }
 

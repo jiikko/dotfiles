@@ -15,28 +15,22 @@ import (
 )
 
 func TestBrowseCopyURL(t *testing.T) {
-	var copied string
-	orig := copyToClipboard
-	copyToClipboard = func(text string) error {
-		copied = text
-		return nil
-	}
-	t.Cleanup(func() { copyToClipboard = orig })
+	copied := stubClipboard(t)
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateFailure)
 	withJobs(m, 0)
 	// コミット一覧では commit URL
 	m.handleKey("y")
 	wantCommit := "https://github.com/o/r/commit/" + m.commits[0].SHA
-	if copied != wantCommit {
-		t.Errorf("commit URL = %q; want %q", copied, wantCommit)
+	if *copied != wantCommit {
+		t.Errorf("commit URL = %q; want %q", *copied, wantCommit)
 	}
 	// job フォーカス中はその job の URL
 	m.openPanel()
 	m.handleKey("j")
 	m.handleKey("y")
-	if copied != "https://github.com/o/r/runs/1" {
-		t.Errorf("job URL = %q", copied)
+	if *copied != "https://github.com/o/r/runs/1" {
+		t.Errorf("job URL = %q", *copied)
 	}
 	if !m.toast.ok || !strings.Contains(m.toast.text, "コピーしました") {
 		t.Errorf("コピー成功トーストが出ていない: %q ok=%v", m.toast.text, m.toast.ok)
@@ -58,21 +52,15 @@ func TestBrowseBatchPRsFeedPCache(t *testing.T) {
 		Details:  map[string][]CheckDetail{},
 		PRs:      map[string]*PRRef{shas[0]: {Number: 7, URL: "https://github.com/o/r/pull/7", State: "MERGED"}},
 	}})
-	var opened string
-	orig := openInBrowser
-	openInBrowser = func(u string) error {
-		opened = u
-		return nil
-	}
-	t.Cleanup(func() { openInBrowser = orig })
+	opened := stubBrowser(t)
 	// 再取得なしで即 open
 	_, cmd := m.handleKey("p")
 	if cmd == nil || m.prBusy[shas[0]] {
 		t.Fatalf("バッチ由来の PR キャッシュで即 open にならない")
 	}
 	cmd()
-	if opened != "https://github.com/o/r/pull/7" {
-		t.Errorf("URL = %q", opened)
+	if *opened != "https://github.com/o/r/pull/7" {
+		t.Errorf("URL = %q", *opened)
 	}
 	// バッジも View に出る
 	if !strings.Contains(m.View().Content, "#7") {
@@ -81,13 +69,7 @@ func TestBrowseBatchPRsFeedPCache(t *testing.T) {
 }
 
 func TestBrowseOpenPR(t *testing.T) {
-	var opened string
-	orig := openInBrowser
-	openInBrowser = func(url string) error {
-		opened = url
-		return nil
-	}
-	t.Cleanup(func() { openInBrowser = orig })
+	opened := stubBrowser(t)
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StateSuccess
@@ -102,8 +84,8 @@ func TestBrowseOpenPR(t *testing.T) {
 		t.Fatalf("prMsg (PR あり) で open Cmd が返らない")
 	}
 	runCmdTree(cmd) // open Cmd は maybeTick と Batch されるので再帰実行する
-	if opened != "https://github.com/o/r/pull/12" {
-		t.Errorf("開いた URL = %q", opened)
+	if *opened != "https://github.com/o/r/pull/12" {
+		t.Errorf("開いた URL = %q", *opened)
 	}
 	if !m.toast.ok || !strings.Contains(m.toast.text, "PR #12") {
 		t.Errorf("PR を開く成功トーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
@@ -118,13 +100,7 @@ func TestBrowseOpenPR(t *testing.T) {
 // 取得中にカーソルが動いたら、届いた PR は反映 (キャッシュ・バッジ) だけして自動オープン
 // しない。離れたコミットの PR がいきなりブラウザで開く回帰の防止 (2026-07-29)。
 func TestBrowsePRResultAfterCursorMoveDoesNotOpen(t *testing.T) {
-	var opened string
-	orig := openInBrowser
-	openInBrowser = func(url string) error {
-		opened = url
-		return nil
-	}
-	t.Cleanup(func() { openInBrowser = orig })
+	opened := stubBrowser(t)
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StateSuccess
@@ -134,8 +110,8 @@ func TestBrowsePRResultAfterCursorMoveDoesNotOpen(t *testing.T) {
 	m.handleKey("j") // 取得中にカーソル移動
 	_, cmd := m.Update(prMsg{sha: sha, pr: &PRRef{Number: 7, URL: "https://github.com/o/r/pull/7", State: "OPEN"}})
 	runCmdTree(cmd)
-	if opened != "" {
-		t.Errorf("カーソル移動後の遅延 PR がブラウザで開いた: %q", opened)
+	if *opened != "" {
+		t.Errorf("カーソル移動後の遅延 PR がブラウザで開いた: %q", *opened)
 	}
 	if strings.Contains(m.toast.text, "開きます") {
 		t.Errorf("stale な結果のトーストが出た: %q", m.toast.text)
@@ -487,18 +463,15 @@ func TestBrowseDiffEmptyShowsMessage(t *testing.T) {
 
 // diff ポップアップ表示中の y はカーソル位置コミットの URL をコピーする。
 func TestBrowseDiffCopyURLWhileOpen(t *testing.T) {
-	var copied string
-	orig := copyToClipboard
-	copyToClipboard = func(text string) error { copied = text; return nil }
-	t.Cleanup(func() { copyToClipboard = orig })
+	copied := stubClipboard(t)
 	m := newTestBrowse(t, 1, nil, nil)
 	stubDiff(t, []string{"x"}, nil)
 	_, cmd := m.handleKey("d")
 	deliverDiffMsg(t, m, cmd)
 	m.handleKey("y")
 	want := "https://github.com/o/r/commit/" + m.commits[0].SHA
-	if copied != want {
-		t.Errorf("diff 表示中の y でコピーされた URL = %q; want %q", copied, want)
+	if *copied != want {
+		t.Errorf("diff 表示中の y でコピーされた URL = %q; want %q", *copied, want)
 	}
 	if m.diffOv.sha == "" {
 		t.Error("y でポップアップが閉じた (コピーのみが仕様)")
@@ -577,12 +550,7 @@ func TestBrowseDiffStaleErrorDoesNotCloseCurrent(t *testing.T) {
 func TestBrowseListOpenCommitURL(t *testing.T) {
 	m := newTestBrowse(t, 2, nil, nil)
 	var opened []string
-	orig := openInBrowser
-	openInBrowser = func(url string) error {
-		opened = append(opened, url)
-		return nil
-	}
-	t.Cleanup(func() { openInBrowser = orig })
+	stubBrowserFunc(t, func(url string) error { opened = append(opened, url); return nil })
 
 	m.handleKey("j") // 2 番目のコミットへ
 	_, cmd := m.handleKey("o")
@@ -612,10 +580,7 @@ func TestBrowseCopyJobContextCached(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateFailure)
 	withFailedJob(m, 0, 7, StateFailure)
-	var copied string
-	orig := copyToClipboard
-	copyToClipboard = func(text string) error { copied = text; return nil }
-	t.Cleanup(func() { copyToClipboard = orig })
+	copied := stubClipboard(t)
 	m.openPanel()
 	m.handleKey("j")
 	// 詳細キャッシュ済み → 即コピー (追加 fetch なし)
@@ -624,11 +589,11 @@ func TestBrowseCopyJobContextCached(t *testing.T) {
 		t.Fatal("キャッシュ済みなのに fetch が走った")
 	}
 	for _, want := range []string{"## CI job: lint", "o/r@aaaaaaa", "https://github.com/o/r/runs/9", "[failure] a.go:1"} {
-		if !strings.Contains(copied, want) {
-			t.Fatalf("コピー内容に %q が無い:\n%s", want, copied)
+		if !strings.Contains(*copied, want) {
+			t.Fatalf("コピー内容に %q が無い:\n%s", want, *copied)
 		}
 	}
-	if strings.Contains(copied, "\x1b[") {
+	if strings.Contains(*copied, "\x1b[") {
 		t.Fatal("コピー内容に ANSI が残っている")
 	}
 	if !m.toast.ok || !strings.Contains(m.toast.text, "コピーしました") {
@@ -640,10 +605,7 @@ func TestBrowseCopyJobContextFetchesThenCopies(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateFailure)
 	withFailedJob(m, 0, 7, StateFailure)
-	var copied string
-	orig := copyToClipboard
-	copyToClipboard = func(text string) error { copied = text; return nil }
-	t.Cleanup(func() { copyToClipboard = orig })
+	copied := stubClipboard(t)
 	m.openPanel()
 	m.handleKey("j")
 	// 未取得 → 詳細ポップアップを開いて取得し、到着時にコピーされる
@@ -653,21 +615,21 @@ func TestBrowseCopyJobContextFetchesThenCopies(t *testing.T) {
 			cmd != nil, m.detailOv.visible(), m.copyOnDetail)
 	}
 	m.Update(jobDetailMsg{key: m.detailKey(), lines: []string{"✗ step", "log line"}})
-	if !strings.Contains(copied, "log line") || !strings.Contains(copied, "## CI job: lint") {
-		t.Fatalf("到着時にコピーされない:\n%s", copied)
+	if !strings.Contains(*copied, "log line") || !strings.Contains(*copied, "## CI job: lint") {
+		t.Fatalf("到着時にコピーされない:\n%s", *copied)
 	}
 	if m.copyOnDetail != "" {
 		t.Fatal("コピー予約が消えない")
 	}
 	// 取得失敗 (ghErr) では予約破棄のみでコピーされない
-	copied = ""
+	*copied = ""
 	m.detailOv.reset()
 	m.openPanel()
 	m.handleKey("j")
 	m.handleKey("Y")
 	m.Update(jobDetailMsg{key: m.detailKey(), ghErr: &GHError{Kind: GHOther, Detail: "boom"}})
-	if copied != "" || m.copyOnDetail != "" {
-		t.Fatalf("取得失敗でコピーされた / 予約が残った: copied=%q pending=%q", copied, m.copyOnDetail)
+	if *copied != "" || m.copyOnDetail != "" {
+		t.Fatalf("取得失敗でコピーされた / 予約が残った: copied=%q pending=%q", *copied, m.copyOnDetail)
 	}
 	// closePanel で予約破棄 (閉じた後の到着でコピーしない)
 	m.detailOv.reset()
@@ -677,7 +639,7 @@ func TestBrowseCopyJobContextFetchesThenCopies(t *testing.T) {
 	key := m.detailKey()
 	m.closePanel()
 	m.Update(jobDetailMsg{key: key, lines: []string{"late"}})
-	if copied != "" {
+	if *copied != "" {
 		t.Fatal("パネルを閉じた後の到着でコピーされた")
 	}
 }
@@ -705,17 +667,14 @@ func TestBrowsePRStatusFlow(t *testing.T) {
 		}
 	}
 	// 表示中はモーダル: o でブラウザ、q で閉じる
-	var opened string
-	origOpen := openInBrowser
-	openInBrowser = func(url string) error { opened = url; return nil }
-	t.Cleanup(func() { openInBrowser = origOpen })
+	opened := stubBrowser(t)
 	_, cmd = m.handleKey("o")
 	if cmd == nil {
 		t.Fatal("o でブラウザ Cmd が返らない")
 	}
 	cmd()
-	if opened != "https://github.com/o/r/pull/12" {
-		t.Fatalf("開いた URL が違う: %q", opened)
+	if *opened != "https://github.com/o/r/pull/12" {
+		t.Fatalf("開いた URL が違う: %q", *opened)
 	}
 	m.handleKey("q")
 	if m.prStatusOv.visible() {
@@ -776,10 +735,7 @@ func TestBrowseCopyJobContextFocusMovedDropsCopy(t *testing.T) {
 		{Name: "build", State: StateSuccess, CheckID: 1},
 		{Name: "lint", State: StateFailure, CheckID: 7},
 	}
-	var copied string
-	orig := copyToClipboard
-	copyToClipboard = func(text string) error { copied = text; return nil }
-	t.Cleanup(func() { copyToClipboard = orig })
+	copied := stubClipboard(t)
 	m.openPanel()
 	m.handleKey("j") // job0 (build) にフォーカス
 	key0 := m.detailKey()
@@ -793,8 +749,8 @@ func TestBrowseCopyJobContextFocusMovedDropsCopy(t *testing.T) {
 	}
 	m.handleKey("j") // job1 (lint) へフォーカス移動
 	m.Update(jobDetailMsg{key: key0, lines: []string{"build log line"}})
-	if copied != "" {
-		t.Fatalf("フォーカス移動後に旧 job をコピーした: %q", copied)
+	if *copied != "" {
+		t.Fatalf("フォーカス移動後に旧 job をコピーした: %q", *copied)
 	}
 	if m.copyOnDetail != "" {
 		t.Fatal("到着で予約が破棄されていない")
@@ -809,19 +765,16 @@ func TestBrowseCopyJobContextSanitizesHeader(t *testing.T) {
 	m.details[m.commits[0].SHA] = []CheckDetail{
 		{Name: "li\x1b[31mnt", State: StateFailure, CheckID: 7, URL: "https://x/\x1b]0;pwn\x07ok"},
 	}
-	var copied string
-	orig := copyToClipboard
-	copyToClipboard = func(text string) error { copied = text; return nil }
-	t.Cleanup(func() { copyToClipboard = orig })
+	copied := stubClipboard(t)
 	m.openPanel()
 	m.handleKey("j")
 	m.detailOv.cache.store(m.detailKey(), []string{"log"}, m.detailKey())
 	m.handleKey("Y")
-	if strings.ContainsRune(copied, '\x1b') || strings.ContainsRune(copied, '\x07') {
-		t.Fatalf("コピー内容に端末制御シーケンスが残った: %q", copied)
+	if strings.ContainsRune(*copied, '\x1b') || strings.ContainsRune(*copied, '\x07') {
+		t.Fatalf("コピー内容に端末制御シーケンスが残った: %q", *copied)
 	}
-	if !strings.Contains(copied, "lint") || !strings.Contains(copied, "https://x/ok") {
-		t.Fatalf("無害化で本来の文字まで欠けた: %q", copied)
+	if !strings.Contains(*copied, "lint") || !strings.Contains(*copied, "https://x/ok") {
+		t.Fatalf("無害化で本来の文字まで欠けた: %q", *copied)
 	}
 }
 
@@ -1187,9 +1140,7 @@ func TestIssuesViewerCursorArrowNotDoubled(t *testing.T) {
 // ⚠️ viewer は全画面で viewLines が早期 return するため、トーストを合成し忘れると通知が
 // 画面に一切出ない (それが以前ヘッダー行に出していた理由)。ここは実 View の出力まで見る。
 func TestIssuesViewerNotifiesViaToast(t *testing.T) {
-	origCopy := copyToClipboard
-	copyToClipboard = func(string) error { return nil }
-	t.Cleanup(func() { copyToClipboard = origCopy })
+	stubClipboardFunc(t, func(string) error { return nil })
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.width, m.height = 100, 16
@@ -1229,9 +1180,7 @@ func TestIssuesViewerNotifiesViaToast(t *testing.T) {
 
 // 失敗は失敗色のトーストで出し、w でコピーできるよう lastWarning にも残す。
 func TestIssuesViewerCopyFailureToast(t *testing.T) {
-	origCopy := copyToClipboard
-	copyToClipboard = func(string) error { return errors.New("pbcopy が見つかりません") }
-	t.Cleanup(func() { copyToClipboard = origCopy })
+	stubClipboardFunc(t, func(string) error { return errors.New("pbcopy が見つかりません") })
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.width, m.height = 100, 16

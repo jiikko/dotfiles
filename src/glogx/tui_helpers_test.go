@@ -107,6 +107,38 @@ func withJobs(m *browseModel, idx int) {
 	}
 }
 
+// stubClipboardFunc は copyToClipboard を fn に差し替え、テスト終了時に戻す (失敗系・独自記録用)。
+func stubClipboardFunc(t *testing.T, fn func(string) error) {
+	t.Helper()
+	orig := copyToClipboard
+	copyToClipboard = fn
+	t.Cleanup(func() { copyToClipboard = orig })
+}
+
+// stubClipboard は copyToClipboard を「記録して成功する」実装に差し替え、記録先を返す (多数派の形)。
+func stubClipboard(t *testing.T) *string {
+	t.Helper()
+	var copied string
+	stubClipboardFunc(t, func(text string) error { copied = text; return nil })
+	return &copied
+}
+
+// stubBrowserFunc は openInBrowser を fn に差し替え、テスト終了時に戻す (ガード・複数記録用)。
+func stubBrowserFunc(t *testing.T, fn func(string) error) {
+	t.Helper()
+	orig := openInBrowser
+	openInBrowser = fn
+	t.Cleanup(func() { openInBrowser = orig })
+}
+
+// stubBrowser は openInBrowser を「最後に開いた URL を記録して成功する」実装に差し替え、記録先を返す。
+func stubBrowser(t *testing.T) *string {
+	t.Helper()
+	var opened string
+	stubBrowserFunc(t, func(url string) error { opened = url; return nil })
+	return &opened
+}
+
 // stubDiff は loadCommitDiff を差し替え、呼び出し記録と固定行を返す。
 func stubDiff(t *testing.T, lines []string, err error) *[]string {
 	t.Helper()
