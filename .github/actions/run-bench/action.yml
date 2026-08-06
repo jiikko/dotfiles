@@ -1,0 +1,45 @@
+---
+name: Run bench with stats pool
+description: >-
+  レイテンシベンチ 1 系統の「前回 stats 復元 → 計測 (予算ゲート) → green なら保存」を
+  一元化する共有 step 列。bench.yml の 4 job (nvim / zsh / tmux / glogx) が同じ 3 ステップを
+  コメントごとコピーしていたのを畳んだ (setup-nvim と同じ動機の composite 化)。
+  計測・統計集約・Step Summary の本体は tests/run_bench.sh (実行回数 BENCH_RUNS も同スクリプトが出典)。
+
+inputs:
+  name:
+    description: ベンチ系統名 (cache key と tsv ファイル名に使う。例 nvim)
+    required: true
+  script:
+    description: ベンチスクリプトのパス (例 tests/nvim/bench_nvim.sh)
+    required: true
+  budgets:
+    description: 予算ファイルのパス (例 tests/nvim/bench_budgets.ci)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # baseline のサンプル台帳 (Step Summary 比較テーブルの before 側)。直前 1 run でなく
+    # 直近数 run をプールして比較する (保持 run 数は bench_stats.sh の BASELINE_RUNS が出典)。
+    # save は green run のみ (composite は途中 step の失敗で残りを実行しない) なので、
+    # 赤 run が比較基準を汚さない
+    - name: Restore previous bench stats
+      uses: actions/cache/restore@v6
+      with:
+        path: .bench-prev
+        key: bench-prev-${{ inputs.name }}-${{ github.run_id }}
+        restore-keys: bench-prev-${{ inputs.name }}-
+
+    - name: Bench ${{ inputs.name }} (budget check)
+      shell: bash
+      env:
+        BENCH_PREV_FILE: .bench-prev/${{ inputs.name }}.tsv
+        BENCH_STATS_OUT: .bench-prev/${{ inputs.name }}.tsv
+      run: mkdir -p .bench-prev && tests/run_bench.sh ${{ inputs.name }} ${{ inputs.script }} ${{ inputs.budgets }}
+
+    - name: Save bench stats for next run
+      uses: actions/cache/save@v6
+      with:
+        path: .bench-prev
+        key: bench-prev-${{ inputs.name }}-${{ github.run_id }}

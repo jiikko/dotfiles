@@ -61,29 +61,15 @@ jobs:
       # 例外: startup は min-of-5 集約 + CI 実測ベースの「現在速度」ゲート (bench_budgets.ci 参照)。
       # 注: CI は treesitter parser 未導入 (DOTFILES_TS_SKIP_ENSURE=1) のため fold/highlight の
       # コストは載らない。それらを含む実測はローカルで tests/nvim/bench_nvim.sh を叩く。
-      # baseline のサンプル台帳 (Step Summary 比較テーブルの before 側)。直前 1 run でなく
-      # 直近数 run をプールして比較する (保持 run 数は bench_stats.sh の BASELINE_RUNS が出典)。
-      # save は green run のみ (下の Save step の if) なので、赤 run が比較基準を汚さない
-      - name: Restore previous bench stats
-        uses: actions/cache/restore@v6
-        with:
-          path: .bench-prev
-          key: bench-prev-nvim-${{ github.run_id }}
-          restore-keys: bench-prev-nvim-
-
-      - name: Bench nvim latency (budget check)
+      # stats 復元 → 計測 → green なら保存の 3 ステップは共有 composite に一元化
+      # (.github/actions/run-bench。baseline プールの説明もそちら)
+      - uses: ./.github/actions/run-bench
         env:
           DOTFILES_TS_SKIP_ENSURE: "1"
-          BENCH_PREV_FILE: .bench-prev/nvim.tsv
-          BENCH_STATS_OUT: .bench-prev/nvim.tsv
-        run: mkdir -p .bench-prev && tests/run_bench.sh nvim tests/nvim/bench_nvim.sh tests/nvim/bench_budgets.ci
-
-      - name: Save bench stats for next run
-        if: success()
-        uses: actions/cache/save@v6
         with:
-          path: .bench-prev
-          key: bench-prev-nvim-${{ github.run_id }}
+          name: nvim
+          script: tests/nvim/bench_nvim.sh
+          budgets: tests/nvim/bench_budgets.ci
 
   bench-zsh:
     runs-on: ubuntu-slim
@@ -112,28 +98,11 @@ jobs:
       # zshenv→zshrc→zlogin の全ロードコスト (startup) と、対話シェルが入力を受け付けて
       # 最初のコマンドが返るまで (first_command、zpty 計測) をゲートする。
       # 詳細は tests/zshrc/bench_zsh.sh のヘッダ参照
-      # baseline のサンプル台帳 (Step Summary 比較テーブルの before 側)。直前 1 run でなく
-      # 直近数 run をプールして比較する (保持 run 数は bench_stats.sh の BASELINE_RUNS が出典)。
-      # save は green run のみ (下の Save step の if) なので、赤 run が比較基準を汚さない
-      - name: Restore previous bench stats
-        uses: actions/cache/restore@v6
+      - uses: ./.github/actions/run-bench
         with:
-          path: .bench-prev
-          key: bench-prev-zsh-${{ github.run_id }}
-          restore-keys: bench-prev-zsh-
-
-      - name: Bench zsh startup (budget check)
-        env:
-          BENCH_PREV_FILE: .bench-prev/zsh.tsv
-          BENCH_STATS_OUT: .bench-prev/zsh.tsv
-        run: mkdir -p .bench-prev && tests/run_bench.sh zsh tests/zshrc/bench_zsh.sh tests/zshrc/bench_budgets.ci
-
-      - name: Save bench stats for next run
-        if: success()
-        uses: actions/cache/save@v6
-        with:
-          path: .bench-prev
-          key: bench-prev-zsh-${{ github.run_id }}
+          name: zsh
+          script: tests/zshrc/bench_zsh.sh
+          budgets: tests/zshrc/bench_budgets.ci
 
   bench-tmux:
     runs-on: ubuntu-slim
@@ -153,28 +122,11 @@ jobs:
       # hook (debounced_save, mark-seen) 込みの window 操作を計測する。display -p 系は
       # クライアント fork+往復 (tmux_rtt) が支配的なので、format 自体のコストは
       # status_render - tmux_rtt の差分で読む。
-      # baseline のサンプル台帳 (Step Summary 比較テーブルの before 側)。直前 1 run でなく
-      # 直近数 run をプールして比較する (保持 run 数は bench_stats.sh の BASELINE_RUNS が出典)。
-      # save は green run のみ (下の Save step の if) なので、赤 run が比較基準を汚さない
-      - name: Restore previous bench stats
-        uses: actions/cache/restore@v6
+      - uses: ./.github/actions/run-bench
         with:
-          path: .bench-prev
-          key: bench-prev-tmux-${{ github.run_id }}
-          restore-keys: bench-prev-tmux-
-
-      - name: Bench tmux latency (budget check)
-        env:
-          BENCH_PREV_FILE: .bench-prev/tmux.tsv
-          BENCH_STATS_OUT: .bench-prev/tmux.tsv
-        run: mkdir -p .bench-prev && tests/run_bench.sh tmux tests/tmux/bench_tmux.sh tests/tmux/bench_budgets.ci
-
-      - name: Save bench stats for next run
-        if: success()
-        uses: actions/cache/save@v6
-        with:
-          path: .bench-prev
-          key: bench-prev-tmux-${{ github.run_id }}
+          name: tmux
+          script: tests/tmux/bench_tmux.sh
+          budgets: tests/tmux/bench_budgets.ci
 
   bench-glogx:
     runs-on: ubuntu-slim
@@ -192,25 +144,8 @@ jobs:
       # 回帰ゲート。chroma のハイライトは共有 runner で桁膨れした flake 実績があり対象外
       # (bench_glogx.sh のヘッダ参照)。予算は導入時ローカル実測ベースの緩い上限で、
       # CI 実測が Step Summary に溜まったら締める (bench_budgets.ci 参照)
-      # baseline のサンプル台帳 (Step Summary 比較テーブルの before 側)。直前 1 run でなく
-      # 直近数 run をプールして比較する (保持 run 数は bench_stats.sh の BASELINE_RUNS が出典)。
-      # save は green run のみ (下の Save step の if) なので、赤 run が比較基準を汚さない
-      - name: Restore previous bench stats
-        uses: actions/cache/restore@v6
+      - uses: ./.github/actions/run-bench
         with:
-          path: .bench-prev
-          key: bench-prev-glogx-${{ github.run_id }}
-          restore-keys: bench-prev-glogx-
-
-      - name: Bench glogx render hot paths (budget check)
-        env:
-          BENCH_PREV_FILE: .bench-prev/glogx.tsv
-          BENCH_STATS_OUT: .bench-prev/glogx.tsv
-        run: mkdir -p .bench-prev && tests/run_bench.sh glogx tests/glogx/bench_glogx.sh tests/glogx/bench_budgets.ci
-
-      - name: Save bench stats for next run
-        if: success()
-        uses: actions/cache/save@v6
-        with:
-          path: .bench-prev
-          key: bench-prev-glogx-${{ github.run_id }}
+          name: glogx
+          script: tests/glogx/bench_glogx.sh
+          budgets: tests/glogx/bench_budgets.ci
