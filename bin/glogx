@@ -1,5 +1,5 @@
 #!/usr/bin/env zsh
-# glogx — glog (read-only) に push 機能 (C-b) を足した派生版。Go implementation at:
+# glogx — glog (read-only) に push 機能 (b) を足した派生版。Go implementation at:
 #   ~/dotfiles/src/glogx/
 # tmux popup (C-g) から起動するため再ビルドは --async: 旧版で即起動し、新版は次回起動から
 # 反映する (ビルド待ちを popup 内に見せない)。今すぐ新版が欲しいときは

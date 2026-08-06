@@ -69,6 +69,7 @@ git の XY は **X = index 側 / Y = 作業ツリー側**。この画面は 1 �
 | `Enter` `l` `→` `d` | そのファイルの diff を全画面 pager で開く | `diff` / `diff --cached` |
 | `r` | 手動で読み直す | `status` |
 | `p` | **pull --rebase** (y/N 確認。確認モーダルは viewer の上に重なる) | `pull --rebase` |
+| `i` | **issues viewer へ切り替え** (status を閉じてから開く。issues 側の `s` と対) | — |
 | `U` | usage モーダル (viewer の上に重なる既存挙動) | — |
 | `q` `Esc` `s` | 閉じる | — |
 | `C-g` `C-c` | glogx 終了 | — |

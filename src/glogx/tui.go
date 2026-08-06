@@ -1197,6 +1197,12 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 				m.showWarning(text) // 失敗は w でコピーできるよう lastWarning にも積む
 			}
 		}
+		// s = status viewer へ横断 (ユーザー要望 2026-08-06)。閉じる演出は待たず即着地させる:
+		// 全画面 viewer は同時に 1 枚の前提で、閉じ演出と次の開き演出を重ねない
+		if m.issuesOv.takeWantStatus() {
+			m.issuesOv.finishClose()
+			return m, tea.Batch(cmd, m.statusOv.toggle(), m.maybeTick())
+		}
 		return m, tea.Batch(cmd, m.maybeTick())
 	}
 	// status viewer も全画面なので issues と同じ形で routing する (裸の b / u より前に置く:
@@ -1231,6 +1237,11 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 			} else {
 				m.showWarning(text) // 失敗は w でコピーできるよう lastWarning にも積む
 			}
+		}
+		// i = issues viewer へ横断 (ユーザー要望 2026-08-06)。issues 側の s と対 (即着地も同じ理由)
+		if m.statusOv.takeWantIssues() {
+			m.statusOv.finishClose()
+			return m, tea.Batch(cmd, m.issuesOv.toggle(currentDir()), m.maybeTick())
 		}
 		return m, tea.Batch(cmd, m.maybeTick())
 	}

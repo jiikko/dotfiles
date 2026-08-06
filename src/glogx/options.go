@@ -208,15 +208,15 @@ func Usage() string {
                             p 番号コピー / y パスコピー / Y 参照 (番号+タイトル+パス) コピー /
                             N 次に採番すべき番号コピー / n 次にやる目印 (next/ へ移動) /
                             a done も表示 / v nvim で開く / r 再読込 /
-                            Tab・h・l タブ移動 / q・i 閉じる。
+                            Tab・h・l タブ移動 / s status viewer へ切り替え / q・i 閉じる。
                             読む規約は docs/issues-viewer-spec.md
-  s                         status viewer を全画面で開く (toggle。下からせり上がる演出)。
+  s                         status viewer を全画面で開く (toggle。板が左端から生えてくる演出)。
                             未コミットの変更を Staged / Unstaged / Untracked の 3 区画で一覧し
                             (幅が足りれば右にカーソル行の diff をプレビュー)、viewer 内のキーは
                             Space stage/unstage (セクションが向きを決める) / a 全 stage /
                             X 変更を捨てる (y/N 確認。untracked は削除) / d 全画面 diff /
                             Tab セクション移動 / r 再読込 / p pull --rebase (y/N 確認) /
-                            q・s 閉じる。push (b) は viewer 内では無効。
+                            i issues viewer へ切り替え / q・s 閉じる。push (b) は viewer 内では無効。
                             開いている間は別プロセスの編集を自動で反映する。
                             規約は docs/status-viewer-spec.md
   U                         Claude Code の /usage 残量を右上モーダルで表示 (toggle)

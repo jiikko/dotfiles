@@ -101,9 +101,12 @@ type issuesView struct {
 
 	// 開くときのスライドイン演出の開始時刻 (ゼロ値 = 演出なし)。フレーム数ではなく壁時計で
 	// 進めるのは、tick 周期が変わっても所要時間が変わらないようにするため (push 演出の
-	// pushSlides と同じ方式)。演出中は tick を scrollInterval (~30fps) に上げる。
+	// pushSlides と同じ方式)。演出中の tick 周期は tickInterval が上げる (slideAnimating)。
 	// 閉じる演出 (closing) でも同じ時計を使う — 開く演出の逆再生なので所要も同じ。
 	animStart time.Time
+	// wantStatus は「s で status viewer へ切り替えたい」の一度きりの信号 (browseModel が
+	// takeWantStatus で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。
+	wantStatus bool
 	// closing は閉じる演出 (開く演出の逆再生) の途中か (ユーザー要望 2026-08-01)。
 	//
 	// ⚠️ 演出のあいだ shown を false にしない: 逆再生で画面が見えている必要がある。実際の
@@ -316,6 +319,13 @@ func (v *issuesView) animating() bool {
 		return true // 本文の引き出しの開閉も tick で進む
 	}
 	return v.slideAnimating()
+}
+
+// takeWantStatus は「s で status viewer へ切り替えたい」を一度だけ取り出す (takeNotice と同じ語彙)。
+func (v *issuesView) takeWantStatus() bool {
+	want := v.wantStatus
+	v.wantStatus = false
+	return want
 }
 
 // advanceGlide はスクロール glide を 1 フレーム進める (browseModel の tick から呼ばれる)。
@@ -734,6 +744,12 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 			return nil
 		}
 		v.close()
+	case "s":
+		// status viewer への横断 (ユーザー要望 2026-08-06)。q/esc と違い選択・絞り込みの
+		// 1 段戻りはしない (「status を見たい」意図が明確なため)。確認モーダル・URL ピッカー・
+		// 番号入力中はここまで届かないので誤爆しない。閉じ→開きは browseModel (takeWantStatus)
+		v.close()
+		v.wantStatus = true
 	case "/":
 		v.numFilter.start() // 絞り込み中なら続きから打てる (行集合は変わらないので refresh 不要)
 	case "j", "down", "ctrl+n":

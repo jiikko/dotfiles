@@ -1037,6 +1037,45 @@ func TestStatusViewerSlideTicksAt60FPS(t *testing.T) {
 	}
 }
 
+// status ⇔ issues の相互切り替え (i / s の横断キー。ユーザー要望 2026-08-06)。
+func TestViewerCrossSwitching(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.handleKey("s")
+	if !m.statusOv.visible() {
+		t.Fatal("前提が崩れた: s で status viewer が開かない")
+	}
+	releaseKey(m)
+	m.handleKey("i")
+	if m.statusOv.visible() {
+		t.Fatal("status viewer の i で status が閉じない")
+	}
+	if !m.issuesOv.visible() {
+		t.Fatal("status viewer の i で issues viewer が開かない")
+	}
+	releaseKey(m)
+	m.handleKey("s")
+	if m.issuesOv.visible() {
+		t.Fatal("issues viewer の s で issues が閉じない")
+	}
+	if !m.statusOv.visible() {
+		t.Fatal("issues viewer の s で status viewer が開かない")
+	}
+}
+
+// 番号入力中 (/) の s は検索語の入力へ飲まれ、viewer を切り替えない。
+func TestIssuesViewerFilterSwallowsSwitchKey(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.handleKey("i")
+	releaseKey(m)
+	m.handleKey("/")
+	releaseKey(m)
+	m.handleKey("s")
+	if !m.issuesOv.visible() || m.statusOv.visible() {
+		t.Fatalf("番号入力中の s が viewer を切り替えた (issues=%v status=%v)",
+			m.issuesOv.visible(), m.statusOv.visible())
+	}
+}
+
 func TestSpaceKeyScrollsEverywhere(t *testing.T) {
 	// bubbletea v2 の KeyPressMsg.String() は Space を "space" と綴る。v2 移行時にこの綴りを
 	// 拾い落として Space の割当が全経路で無反応になっていた (ユーザー報告 2026-07-31)。

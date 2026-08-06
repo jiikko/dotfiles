@@ -57,6 +57,10 @@ type statusView struct {
 	notice   string
 	noticeOK bool
 
+	// wantIssues は「i で issues viewer へ切り替えたい」の一度きりの信号 (browseModel が
+	// takeWantIssues で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。
+	wantIssues bool
+
 	// 開閉の演出 (下からせり上がる / 下へ沈む)。issuesView と同じく closing 中も shown を
 	// 立てたままにして、片付けは finishClose に一本化する。
 	animStart    time.Time
@@ -648,8 +652,21 @@ func (v *statusView) listKey(key string, vp statusViewport) tea.Cmd {
 		// s が閉じるのは toggle の語彙 (i = issues viewer と同じ)。
 		v.close()
 		return nil
+	case "i":
+		// issues viewer への横断 (ユーザー要望 2026-08-06)。閉じてから開くのは browseModel の
+		// 仕事 (takeWantIssues)。確認中 (X) や pager 中はこの switch まで届かないので誤爆しない
+		v.close()
+		v.wantIssues = true
+		return nil
 	}
 	return nil
+}
+
+// takeWantIssues は「i で issues viewer へ切り替えたい」を一度だけ取り出す (takeNotice と同じ語彙)。
+func (v *statusView) takeWantIssues() bool {
+	want := v.wantIssues
+	v.wantIssues = false
+	return want
 }
 
 // moveCursor / setCursor はカーソル移動 (移動後はプレビューのデバウンスを張り直す)。
