@@ -110,7 +110,7 @@ v1 では pty スモークで実測した回帰 (`TestBrowseBatchedRunesKeyMsg`)
 
 ## 他の Go プロジェクトはまだ v1
 
-`src/git-popup` / `src/parallel-each` は `github.com/charmbracelet/bubbletea v1.3.10` + `lipgloss v1.1.0` のまま (v1 系では最新)。
+`src/parallel-each` は `github.com/charmbracelet/bubbletea v1.3.10` + `lipgloss v1.1.0` のまま (v1 系では最新)。
 glogx より移行コストが高い: `tea.KeyMsg` / `tea.KeyRunes` の参照が桁違いに多く、`key.Type`/`Runes` → `Code`/`Text`/`Mod` の書き換えに加えて
 **space が `" "` → `"space"` になる変化はコンパイルエラーにならない** (静かに壊れる)。上げるなら 1 モジュールずつ、キー操作の目視確認つきで。
 

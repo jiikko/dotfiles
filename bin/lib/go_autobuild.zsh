@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 # go_autobuild.zsh — bin/<tool> ラッパー共通の「ソースが変わっていれば再ビルド」機構。
-# bin/glogx, bin/git-popup, bin/parallel-each, bin/disassemble_excel が source する。
+# bin/glogx, bin/parallel-each, bin/disassemble_excel が source する。
 #
 # 再ビルドするかは「ビルド入力の指紋」で決める (_go_autobuild_fingerprint / _go_autobuild_stale)。
 # 前回ビルドした指紋を .autobuild.built に残し、起動のたびに今の指紋と比べるだけ (実測 0.66ms)。
@@ -17,7 +17,7 @@
 #   go_autobuild_exec [--async] <src_dir> <name> -- "$@"
 #
 # --async: 既存バイナリで即 exec し、再ビルドはバックグラウンドで走らせる (次回起動から反映)。
-#   tmux popup から起動するツール (glogx / git-popup) 向け。ビルド出力を人に見せないため。
+#   tmux popup から起動するツール (glogx) 向け。ビルド出力を人に見せないため。
 #   出力を人/スクリプトが消費するツールでは使わない (古い結果を新コードの結果と誤認させる)。
 # --async なしは同期ビルド (従来どおり stderr に進捗を出す)。
 #

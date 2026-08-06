@@ -175,8 +175,8 @@ func TestWithScrollbar(t *testing.T) {
 // なぜテストで守るか: この色は dotfiles のテーマ意味マップ (docs/theme-colors.md) の
 // 「点滅/scratch アイデンティティ」で、tmux の scratch popup 枠と同じ色であることに意味がある
 // (glogx も「ふだんの pane とは別の一時的な板」だと色で示す)。単一ソースは theme/colors.yml だが、
-// 生成器 (scripts/gen_theme_colors.sh) の Go 出力先は src/git-popup 固定なので glogx は
-// 手書きコピーになる。放置すると yml を変えたときに無言でずれるため、ここで突き合わせる。
+// 生成器 (scripts/gen_theme_colors.sh) に Go 出力は無い (かつての出力先 git-popup が 2026-08-06 に
+// 退役) ので glogx は手書きコピーになる。放置すると yml を変えたときに無言でずれるため、ここで突き合わせる。
 func TestFrameBorderMatchesThemeYML(t *testing.T) {
 	const role = "blink_magenta"
 	data, err := os.ReadFile(filepath.Join("..", "..", "theme", "colors.yml"))

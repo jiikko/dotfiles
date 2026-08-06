@@ -1,11 +1,11 @@
 #!/bin/sh
-# theme/colors.yml (色カタログの単一ソース) から 2 つの成果物を生成する:
+# theme/colors.yml (色カタログの単一ソース) から成果物を生成する:
 #   - scripts/lib/theme_colors.sh : shell 定数 (sh スクリプトが source)
-#   - src/git-popup/theme_gen.go  : Go の cterm マップ (git-popup TUI が参照)
+# (かつては src/git-popup/theme_gen.go も生成していたが、git-popup の退役
+#  2026-08-06 で Go の消費者が消えたため生成ごと畳んだ)
 # 使い方:
-#   scripts/gen_theme_colors.sh              # 両方を生成して上書き
-#   scripts/gen_theme_colors.sh --stdout     # shell 版を stdout へ (テストの drift 検査用)
-#   scripts/gen_theme_colors.sh --go-stdout  # Go 版を stdout へ (テストの drift 検査用)
+#   scripts/gen_theme_colors.sh              # 生成して上書き
+#   scripts/gen_theme_colors.sh --stdout     # stdout へ (テストの drift 検査用)
 # yml のパースは「role: / 2 スペース indent の cterm:/hex:」という本 repo の固定書式にのみ
 # 対応する意図的に薄い awk (yq 等の依存を増やさない)。書式を崩すとテストが落ちて気づける。
 set -eu
@@ -13,7 +13,6 @@ set -eu
 root_dir=$(cd "$(dirname "$0")/.." && pwd)
 yml="$root_dir/theme/colors.yml"
 out="$root_dir/scripts/lib/theme_colors.sh"
-out_go="$root_dir/src/git-popup/theme_gen.go"
 
 generate() {
   printf '# shellcheck shell=sh\n'
@@ -34,44 +33,10 @@ generate() {
   ' "$yml"
 }
 
-# git-popup (Go TUI) 用の cterm マップ。全 role を map リテラルに入れるので Go の
-# unused (staticcheck U1000) には当たらない。TUI は themeCterm[role] で必要な色を引く。
-generate_go() {
-  # map リテラルの桁揃え (golangci-lint の gofmt 検査対策) は awk で gofmt と同じ形に
-  # 整形する。gofmt をパイプする案は不採用: CI の Tests workflow (dotfiles-tests) には
-  # Go toolchain が無く、`gofmt: command not found` で生成が空になり drift 検査が
-  # 全滅する (2026-07-19 に実際に CI が落ちた)。gofmt の整形規則が変わって出力が
-  # ずれた場合は src_git-popup workflow の lint (gofmt 検査) が検出する
-  {
-    printf '// Code generated from theme/colors.yml by scripts/gen_theme_colors.sh; DO NOT EDIT.\n'
-    printf 'package main\n\n'
-    printf '// themeCterm は theme role → 256 色番号。単一ソースは theme/colors.yml。\n'
-    printf '// 色を変えたら colors.yml を編集して scripts/gen_theme_colors.sh を実行する。\n'
-    printf 'var themeCterm = map[string]int{\n'
-    awk '
-      /^[a-z_]+:/ { role = $1; sub(/:.*/, "", role); next }
-      /^  cterm:/ {
-        n++
-        keys[n] = "\"" role "\":"
-        vals[n] = $2
-        if (length(keys[n]) > maxlen) maxlen = length(keys[n])
-      }
-      END {
-        for (i = 1; i <= n; i++)
-          printf "\t%-*s %s,\n", maxlen, keys[i], vals[i]
-      }
-    ' "$yml"
-    printf '}\n'
-  }
-}
-
 case "${1:-}" in
 --stdout) generate ;;
---go-stdout) generate_go ;;
 *)
   generate > "$out"
   printf 'generated: %s\n' "$out"
-  generate_go > "$out_go"
-  printf 'generated: %s\n' "$out_go"
   ;;
 esac
