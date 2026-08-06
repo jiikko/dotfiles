@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -137,6 +138,20 @@ func stubBrowser(t *testing.T) *string {
 	var opened string
 	stubBrowserFunc(t, func(url string) error { opened = url; return nil })
 	return &opened
+}
+
+// stubEditor は runEditorCmd を「起動せず閉じたことにする」実装へ差し替え、呼び出し回数の
+// 記録先を返す (エディタ連携キーの検査用)。
+func stubEditor(t *testing.T) *int {
+	t.Helper()
+	var calls int
+	orig := runEditorCmd
+	runEditorCmd = func(*exec.Cmd) tea.Cmd {
+		calls++
+		return func() tea.Msg { return editorClosedMsg{} }
+	}
+	t.Cleanup(func() { runEditorCmd = orig })
+	return &calls
 }
 
 // stubDiff は loadCommitDiff を差し替え、呼び出し記録と固定行を返す。

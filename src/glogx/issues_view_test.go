@@ -1017,13 +1017,7 @@ func TestIssuesViewGReachesLastLine(t *testing.T) {
 
 func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 	copied := stubClipboard(t)
-	origEditor := runEditorCmd
-	t.Cleanup(func() { runEditorCmd = origEditor })
-	editorCalled := false
-	runEditorCmd = func(cmd *exec.Cmd) tea.Cmd {
-		editorCalled = true
-		return func() tea.Msg { return editorClosedMsg{} }
-	}
+	editorCalls := stubEditor(t)
 
 	v := loadedView(sampleIssues()...)
 	v.handleKey("y", vp(10))
@@ -1034,8 +1028,8 @@ func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "コピーしました") {
 		t.Fatalf("コピーの結果が通知に載らない: %q ok=%v", text, ok)
 	}
-	if cmd := v.handleKey("v", vp(10)); cmd == nil || !editorCalled {
-		t.Fatalf("v でエディタ起動の Cmd が返らない: cmd=%v called=%v", cmd != nil, editorCalled)
+	if cmd := v.handleKey("v", vp(10)); cmd == nil || *editorCalls != 1 {
+		t.Fatalf("v でエディタ起動の Cmd が返らない: cmd=%v calls=%d", cmd != nil, *editorCalls)
 	}
 }
 
@@ -1043,13 +1037,7 @@ func TestIssuesViewActionKeysWorkInBothModes(t *testing.T) {
 	// v / y / p / Y / N は一覧でも本文でも同じ対象 (target) に効く。モードごとの switch へ
 	// 写すと、追加時に片方へ入れ忘れても「そのモードでだけ効かない」形で静かに壊れる。
 	copied := stubClipboard(t)
-	origEditor := runEditorCmd
-	t.Cleanup(func() { runEditorCmd = origEditor })
-	editorCalls := 0
-	runEditorCmd = func(*exec.Cmd) tea.Cmd {
-		editorCalls++
-		return func() tea.Msg { return editorClosedMsg{} }
-	}
+	editorCalls := stubEditor(t)
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "028-refactor-x.md")
@@ -1072,8 +1060,8 @@ func TestIssuesViewActionKeysWorkInBothModes(t *testing.T) {
 				t.Fatalf("%s モードで %q がコピーしていない", mode, key)
 			}
 		}
-		before := editorCalls
-		if cmd := v.handleKey("v", vp(10)); cmd == nil || editorCalls != before+1 {
+		before := *editorCalls
+		if cmd := v.handleKey("v", vp(10)); cmd == nil || *editorCalls != before+1 {
 			t.Fatalf("%s モードで v が nvim を起動しない", mode)
 		}
 	}
