@@ -107,6 +107,9 @@ type issuesView struct {
 	// wantStatus は「s で status viewer へ切り替えたい」の一度きりの信号 (browseModel が
 	// takeWantStatus で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。
 	wantStatus bool
+	// wantQuit は「q/esc で glogx ごと終了したい」の一度きりの信号 (同上。quit は browseModel の
+	// 仕事で、viewer は bubbletea を知らない)。
+	wantQuit bool
 	// closing は閉じる演出 (開く演出の逆再生) の途中か (ユーザー要望 2026-08-01)。
 	//
 	// ⚠️ 演出のあいだ shown を false にしない: 逆再生で画面が見えている必要がある。実際の
@@ -325,6 +328,13 @@ func (v *issuesView) animating() bool {
 func (v *issuesView) takeWantStatus() bool {
 	want := v.wantStatus
 	v.wantStatus = false
+	return want
+}
+
+// takeWantQuit は「q/esc で glogx ごと終了したい」を一度だけ取り出す (takeNotice と同じ語彙)。
+func (v *issuesView) takeWantQuit() bool {
+	want := v.wantQuit
+	v.wantQuit = false
 	return want
 }
 
@@ -729,20 +739,25 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 		return v.handleBodyKey(key, rows)
 	}
 	switch key {
-	case "q", "esc", "i":
-		// 選択中は解除を優先する (tig 流に 1 段戻る)。選択したまま viewer が閉じると、
-		// 開き直したときに解除の手段が無い状態から始まる
-		if v.marked && key != "i" {
+	case "q", "esc":
+		// 選択中は解除を優先する (tig 流に 1 段戻る)。選択したまま終了すると、再開記憶で
+		// 次に開いたとき解除の手段が無い状態から始まる
+		if v.marked {
 			v.clearMark()
 			return nil
 		}
-		// 絞り込みも同じく 1 段戻る (絞り込んだまま閉じると、次に開いたとき「なぜか件数が
-		// 少ない一覧」から始まる。⚠️ i は閉じる意図が明確なので 1 段戻さない)
-		if v.numFilter.active && key != "i" {
+		// 絞り込みも同じく 1 段戻る (絞り込んだまま終了すると、次に開いたとき「なぜか件数が
+		// 少ない一覧」から始まる)
+		if v.numFilter.active {
 			v.numFilter.clear()
 			v.refresh()
 			return nil
 		}
+		// 戻る段が無ければ glogx ごと終了する (ユーザー要望 2026-08-06: git log 一覧へは
+		// 戻らない。一覧へ戻りたいときは i の toggle)。quit は browseModel が行う (takeWantQuit)
+		v.wantQuit = true
+	case "i":
+		// i は toggle で一覧へ戻る (閉じる意図が明確なので 1 段戻りはしない)
 		v.close()
 	case "s":
 		// status viewer への横断 (ユーザー要望 2026-08-06)。q/esc と違い選択・絞り込みの

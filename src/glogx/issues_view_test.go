@@ -403,9 +403,14 @@ func TestIssuesViewMultiSelectExtendAndClear(t *testing.T) {
 	if !v.visible() {
 		t.Fatal("Esc 1 回で viewer まで閉じた (選択の解除が先のはず)")
 	}
+	// 選択が無い状態の Esc は glogx ごと終了の信号 (ユーザー要望 2026-08-06。viewer は
+	// 開いたまま = 再開記憶に残る)
 	v.handleKey("esc", vp(10))
-	if v.visible() {
-		t.Fatal("選択が無い状態の Esc で閉じない")
+	if !v.takeWantQuit() {
+		t.Fatal("選択が無い状態の Esc が終了の信号を立てない")
+	}
+	if !v.visible() {
+		t.Fatal("終了の信号で viewer を閉じた (開いたまま終了して再開記憶に残すはず)")
 	}
 }
 

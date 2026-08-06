@@ -1062,6 +1062,30 @@ func TestViewerCrossSwitching(t *testing.T) {
 	}
 }
 
+// viewer からの q/esc は git log 一覧へ戻らず glogx ごと終了する (ユーザー要望 2026-08-06)。
+// 一覧へ戻るのは toggle キー (s / i) だけ。
+func TestViewerQuitKeysQuitApp(t *testing.T) {
+	for _, tc := range []struct{ open, quit string }{
+		{"s", "q"}, {"s", "esc"}, {"i", "q"}, {"i", "esc"},
+	} {
+		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m.handleKey(tc.open)
+		releaseKey(m)
+		m.handleKey(tc.quit)
+		if !m.done {
+			t.Fatalf("%s viewer の %s で glogx が終了しない", tc.open, tc.quit)
+		}
+	}
+	// toggle キーは従来どおり一覧へ戻る (終了しない)
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.handleKey("s")
+	releaseKey(m)
+	m.handleKey("s")
+	if m.done || m.statusOv.visible() {
+		t.Fatalf("s の toggle が壊れた (done=%v visible=%v)", m.done, m.statusOv.visible())
+	}
+}
+
 // 番号入力中 (/) の s は検索語の入力へ飲まれ、viewer を切り替えない。
 func TestIssuesViewerFilterSwallowsSwitchKey(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)

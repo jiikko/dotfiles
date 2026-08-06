@@ -1197,6 +1197,11 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 				m.showWarning(text) // 失敗は w でコピーできるよう lastWarning にも積む
 			}
 		}
+		// q/esc = glogx ごと終了 (ユーザー要望 2026-08-06: git log 一覧へは戻らない)。viewer を
+		// 出したまま終了するので、次回起動は再開記憶で同じ画面から始まる (C-g と同じ経路)
+		if m.issuesOv.takeWantQuit() {
+			return m.quit()
+		}
 		// s = status viewer へ横断 (ユーザー要望 2026-08-06)。閉じる演出は待たず即着地させる:
 		// 全画面 viewer は同時に 1 枚の前提で、閉じ演出と次の開き演出を重ねない
 		if m.issuesOv.takeWantStatus() {
@@ -1237,6 +1242,10 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 			} else {
 				m.showWarning(text) // 失敗は w でコピーできるよう lastWarning にも積む
 			}
+		}
+		// q/esc = glogx ごと終了 (issues 側と同じ契約。ユーザー要望 2026-08-06)
+		if m.statusOv.takeWantQuit() {
+			return m.quit()
 		}
 		// i = issues viewer へ横断 (ユーザー要望 2026-08-06)。issues 側の s と対 (即着地も同じ理由)
 		if m.statusOv.takeWantIssues() {

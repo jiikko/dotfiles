@@ -71,7 +71,8 @@ git の XY は **X = index 側 / Y = 作業ツリー側**。この画面は 1 �
 | `p` | **pull --rebase** (y/N 確認。確認モーダルは viewer の上に重なる) | `pull --rebase` |
 | `i` | **issues viewer へ切り替え** (status を閉じてから開く。issues 側の `s` と対) | — |
 | `U` | usage モーダル (viewer の上に重なる既存挙動) | — |
-| `q` `Esc` `s` | 閉じる | — |
+| `s` | 閉じる (git log 一覧へ戻る toggle) | — |
+| `q` `Esc` | **glogx ごと終了** (一覧へは戻らない。ユーザー選定 2026-08-06) | — |
 | `C-g` `C-c` | glogx 終了 | — |
 
 - **`u` を unstage に割り当てない。** glogx の `u` は `git pull --rebase` で、remote に触るキーを

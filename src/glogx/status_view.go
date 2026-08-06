@@ -60,6 +60,9 @@ type statusView struct {
 	// wantIssues は「i で issues viewer へ切り替えたい」の一度きりの信号 (browseModel が
 	// takeWantIssues で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。
 	wantIssues bool
+	// wantQuit は「q/esc で glogx ごと終了したい」の一度きりの信号 (同上。quit は browseModel の
+	// 仕事で、viewer は bubbletea を知らない)。
+	wantQuit bool
 
 	// 開閉の演出 (下からせり上がる / 下へ沈む)。issuesView と同じく closing 中も shown を
 	// 立てたままにして、片付けは finishClose に一本化する。
@@ -646,7 +649,13 @@ func (v *statusView) listKey(key string, vp statusViewport) tea.Cmd {
 		return v.openPager(vp)
 	case "r":
 		return v.loadCmd()
-	case "q", "esc", "s":
+	case "q", "esc":
+		// viewer からの q/esc は glogx ごと終了する (ユーザー要望 2026-08-06: git log 一覧へは
+		// 戻らない)。実際の quit は browseModel が行う (takeWantQuit)。一覧へ戻りたいときは
+		// s (toggle) を使う
+		v.wantQuit = true
+		return nil
+	case "s":
 		// ⚠️ 閉じるキーはこの型が持つ (browseModel 側で拾わない): 全画面ビューのキーは
 		// すべて handleKey を通る契約なので、ここに無いと「押しても閉じない」になる。
 		// s が閉じるのは toggle の語彙 (i = issues viewer と同じ)。
@@ -666,6 +675,13 @@ func (v *statusView) listKey(key string, vp statusViewport) tea.Cmd {
 func (v *statusView) takeWantIssues() bool {
 	want := v.wantIssues
 	v.wantIssues = false
+	return want
+}
+
+// takeWantQuit は「q/esc で glogx ごと終了したい」を一度だけ取り出す (takeNotice と同じ語彙)。
+func (v *statusView) takeWantQuit() bool {
+	want := v.wantQuit
+	v.wantQuit = false
 	return want
 }
 
