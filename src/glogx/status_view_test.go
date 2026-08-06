@@ -639,13 +639,16 @@ func TestStatusOpenAnimationThenSettles(t *testing.T) {
 	v := newStatusView()
 	v.shown = true
 	v.animStart = timeNow()
+	// 経過 0 だけでなく「開いて僅かに経った」正の経過でも見る (0 は境界の退化ケースで、
+	// 「経過 > 0 で即 1 に跳ぶ」型のミスを素通りさせる)
+	advance(time.Millisecond)
 	if !v.animating() {
 		t.Fatal("開いた直後に animating() = false")
 	}
-	if p := v.animProgress(); p >= 1 {
-		t.Fatalf("開いた直後の進捗 = %v, want < 1", p)
+	if p := v.animProgress(); p <= 0 || p >= 1 {
+		t.Fatalf("開いた直後の進捗 = %v, want 0 < p < 1", p)
 	}
-	advance(statusOpenDuration + time.Millisecond)
+	advance(statusOpenDuration)
 	if v.animating() {
 		t.Error("所要を過ぎても animating() = true")
 	}
