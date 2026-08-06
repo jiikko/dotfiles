@@ -899,6 +899,11 @@ func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
 	// viewer だけ Enter が行送りだと同じキーの意味が画面ごとに変わる。
 	case "q", "esc", "h", "left", "enter":
 		v.closeBody()
+	case "s":
+		// status viewer への横断は本文からも効く (一覧の s と同じ。--help が「viewer 内のキー」
+		// として案内しており、本文だけ沈黙すると案内が嘘になる)
+		v.close()
+		v.wantStatus = true
 	case "j", "down", "ctrl+n":
 		v.bodyOff = min(v.bodyOff+1, maxOffset)
 	case "k", "up", "ctrl+p":

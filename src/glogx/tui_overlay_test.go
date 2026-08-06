@@ -1062,6 +1062,21 @@ func TestViewerCrossSwitching(t *testing.T) {
 	}
 }
 
+// 起動時 restore が返る前に type-ahead で status viewer が開いていたら復元を捨てる
+// (両 viewer 同時 shown だと「見えている status」と「キーを受ける issues」が食い違う。
+// 敵対レビューで再現 2026-08-06)。
+func TestIssuesRestoreDroppedWhenStatusOpen(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.handleKey("s")
+	m.Update(issuesRestoreMsg{})
+	if m.issuesOv.visible() {
+		t.Fatal("status viewer 表示中の遅延 restore で issues viewer が開いた")
+	}
+	if !m.statusOv.visible() {
+		t.Fatal("前提が崩れた: status viewer が開いていない")
+	}
+}
+
 // viewer からの q/esc は git log 一覧へ戻らず glogx ごと終了する (ユーザー要望 2026-08-06)。
 // 一覧へ戻るのは toggle キー (s / i) だけ。
 func TestViewerQuitKeysQuitApp(t *testing.T) {

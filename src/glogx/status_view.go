@@ -551,6 +551,11 @@ func (v *statusView) visibleKey() string {
 // ⚠️ 判定順を変えないこと: 確認モーダル (X) が最優先で、次に全画面 diff (pager)、最後に一覧。
 // 逆にすると確認中の j が一覧を動かして「確認に出した行」と「カーソル行」が食い違う。
 func (v *statusView) handleKey(key string, vp statusViewport) tea.Cmd {
+	// 開く演出中のキーは即着地させる (issues viewer の finishAnim と同じ契約。spec 7 節)。
+	// 閉じ演出中のキーはここへ届かない (browseModel が finishClose してから routing する)
+	if !v.closing {
+		v.animStart = time.Time{}
+	}
 	if v.discarding {
 		return v.discardKey(key)
 	}

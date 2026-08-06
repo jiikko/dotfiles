@@ -865,6 +865,13 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusOv.receivePreview(msg)
 		return m, m.maybeTick()
 	case issuesRestoreMsg:
+		// ⚠️ 復元の repo 照合 (git fork) が返る前に type-ahead の s で status viewer が開いて
+		// いたら復元を捨てる。restore は自分の shown しか見ないため、ここで弾かないと両 viewer
+		// 同時 shown になり「見えている status」と「キーを受ける issues」が食い違う
+		// (敵対レビューで再現 2026-08-06)
+		if m.statusOv.visible() {
+			return m, m.maybeTick()
+		}
 		return m, tea.Batch(m.issuesOv.restore(currentDir(), msg.screen), m.maybeTick())
 	case claudeUpdateAvailableMsg:
 		return m, m.showClaudeUpdate(msg.latest)
@@ -2753,8 +2760,9 @@ func (m *browseModel) viewLines() string {
 	// ⚠️ トーストだけは載せる: viewer の操作結果 (コピー等) も glogx 共通の語彙で出すため
 	// (ユーザー要望 2026-07-31)。載せないと viewer 中の通知が画面に一切出ない。
 	// status viewer も全画面: 一覧とオーバーレイ群を描かず窓ごと差し替える (issues と同じ経路)。
-	// ⚠️ issues より前に判定する必要はない (同時には開かない: どちらも一覧からしか開けず、
-	// 開いている間は互いのキーを受けない) が、トースト/usage の合成は同じ前面順に揃える。
+	// ⚠️ issues より前に判定する必要はない (同時には開かない: i/s の横断は閉じてから開き、
+	// 起動時 restore も status が開いていれば捨てる — issuesRestoreMsg の注記) が、
+	// トースト/usage の合成は同じ前面順に揃える。
 	if m.statusOv.visible() {
 		return m.finishViewerWindow(m.statusOv.lines(m.statusOpts()), page)
 	}
