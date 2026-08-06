@@ -888,9 +888,7 @@ func TestBrowsePanelShowsJobDuration(t *testing.T) {
 }
 
 func TestBrowsePanelShowsRunningElapsed(t *testing.T) {
-	orig := timeNow
-	timeNow = func() time.Time { return time.Unix(1000, 0) }
-	t.Cleanup(func() { timeNow = orig })
+	stubClock(t)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.usageOv.visible = false // 右上 usage モーダルの "残り / リセット" 見出しが「残り」不在アサートに紛れるのを避ける
@@ -912,9 +910,7 @@ func TestBrowsePanelShowsRunningElapsed(t *testing.T) {
 }
 
 func TestBrowsePanelShowsRunningETA(t *testing.T) {
-	orig := timeNow
-	timeNow = func() time.Time { return time.Unix(1000, 0) }
-	t.Cleanup(func() { timeNow = orig })
+	stubClock(t)
 
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	running, prev := m.commits[0].SHA, m.commits[1].SHA
@@ -934,9 +930,7 @@ func TestBrowsePanelShowsRunningETA(t *testing.T) {
 }
 
 func TestBrowsePanelRunningETAOverrun(t *testing.T) {
-	orig := timeNow
-	timeNow = func() time.Time { return time.Unix(1000, 0) }
-	t.Cleanup(func() { timeNow = orig })
+	stubClock(t)
 
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	running, prev := m.commits[0].SHA, m.commits[1].SHA
@@ -951,9 +945,7 @@ func TestBrowsePanelRunningETAOverrun(t *testing.T) {
 }
 
 func TestBrowseRunningETASkipsCancelled(t *testing.T) {
-	orig := timeNow
-	timeNow = func() time.Time { return time.Unix(1000, 0) }
-	t.Cleanup(func() { timeNow = orig })
+	stubClock(t)
 
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	running := m.commits[0].SHA
@@ -975,9 +967,7 @@ func TestBrowseRunningETASkipsCancelled(t *testing.T) {
 }
 
 func TestBrowseRunningETAFetchesMissingBasis(t *testing.T) {
-	orig := timeNow
-	timeNow = func() time.Time { return time.Unix(1000, 0) }
-	t.Cleanup(func() { timeNow = orig })
+	stubClock(t)
 
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.usageOv.visible = false // 右上 usage モーダルの "残り / リセット" 見出しが「残り」不在アサートに紛れるのを避ける

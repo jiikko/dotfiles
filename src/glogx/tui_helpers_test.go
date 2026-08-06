@@ -52,9 +52,20 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 	// 演出そのものは issues_close_anim_test.go が明示的に on にして検査する。
 	m.issuesOv.closeAnimOff = true
 	// status viewer の閉じる演出も同じ理由で切る (s の toggle が「即座に閉じている」前提で読める
-	// ように)。演出そのものは status_view_test.go の TestSlideUpWindow 等が直接検査する。
+	// ように)。演出そのものは status_view_test.go の TestSlideLeftWindow 等が直接検査する。
 	m.statusOv.closeAnimOff = true
 	return m
+}
+
+// stubClock は timeNow を固定時刻に差し替え、テスト終了時に戻す。返す advance で時計を進める
+// (演出の進捗・経過時間の判定を決定的にする)。実時間に戻したいテストは従来どおり自前で退避する。
+func stubClock(t *testing.T) (advance func(time.Duration)) {
+	t.Helper()
+	orig := timeNow
+	t.Cleanup(func() { timeNow = orig })
+	now := time.Unix(1000, 0)
+	timeNow = func() time.Time { return now }
+	return func(d time.Duration) { now = now.Add(d) }
 }
 
 // releaseKey は「指を離した」ことにする (キーリピート判定をリセットする。swallowKeyRepeat)。

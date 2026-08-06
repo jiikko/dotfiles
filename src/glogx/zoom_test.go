@@ -91,10 +91,7 @@ func TestAppZoomOpensAndSettles(t *testing.T) {
 
 // 終了は演出を挟んでから抜ける。⚠️ キーが来たら即着地させる (q が効かない時間を作らない)。
 func TestAppZoomCloseThenQuit(t *testing.T) {
-	orig := timeNow
-	t.Cleanup(func() { timeNow = orig })
-	now := time.Unix(1000, 0)
-	timeNow = func() time.Time { return now }
+	advance := stubClock(t)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.zoom.off = false // このテストだけ演出を有効にする (ヘルパーは既定で切る)
@@ -116,7 +113,7 @@ func TestAppZoomCloseThenQuit(t *testing.T) {
 	_ = model
 
 	// 着地したら終了する
-	now = now.Add(appZoomDuration)
+	advance(appZoomDuration)
 	m.Update(tickMsg{})
 	if !m.done {
 		t.Fatal("演出が着地しても終了しない")
@@ -125,10 +122,7 @@ func TestAppZoomCloseThenQuit(t *testing.T) {
 
 // キーで即着地 (待たされない)。
 func TestAppZoomCloseFinishesOnKey(t *testing.T) {
-	orig := timeNow
-	t.Cleanup(func() { timeNow = orig })
-	now := time.Unix(1000, 0)
-	timeNow = func() time.Time { return now }
+	stubClock(t)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.zoom.off = false
@@ -174,14 +168,11 @@ func TestZoomWindowMatchesFrameState(t *testing.T) {
 // 220ms の演出に中間フレームが 2 枚しか出ず (4行 → 30行 → 実画面) 点滅に見える (実測 2026-08-01)。
 // 固定値でなく「何枚出るか」で縛るのは、所要 (appZoomDuration) を変えたときに一緒に守るため。
 func TestZoomRendersEnoughFrames(t *testing.T) {
-	orig := timeNow
-	t.Cleanup(func() { timeNow = orig })
-	now := time.Unix(1000, 0)
-	timeNow = func() time.Time { return now }
+	stubClock(t)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.zoom.off = false
-	m.zoom.start(now)
+	m.zoom.start(timeNow())
 
 	interval := m.tickInterval()
 	if interval >= spinnerInterval {
@@ -190,7 +181,7 @@ func TestZoomRendersEnoughFrames(t *testing.T) {
 	// 実画面へ寄り切る (appZoomSnap) までに何フレーム出るかを数える
 	shown := 0
 	for tt := time.Duration(0); tt < appZoomDuration; tt += interval {
-		if m.zoom.scale(now.Add(tt)) < appZoomSnap {
+		if m.zoom.scale(timeNow().Add(tt)) < appZoomSnap {
 			shown++
 		}
 	}
@@ -201,15 +192,12 @@ func TestZoomRendersEnoughFrames(t *testing.T) {
 
 // 演出が終われば周期は元へ戻る (常時 60fps で回し続けない)。
 func TestZoomFrameRateDropsAfterSettle(t *testing.T) {
-	orig := timeNow
-	t.Cleanup(func() { timeNow = orig })
-	now := time.Unix(1000, 0)
-	timeNow = func() time.Time { return now }
+	advance := stubClock(t)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.zoom.off = false
-	m.zoom.start(now)
-	now = now.Add(appZoomDuration)
+	m.zoom.start(timeNow())
+	advance(appZoomDuration)
 	if got := m.tickInterval(); got == zoomInterval {
 		t.Fatal("演出が終わっても 60fps で回り続けている (CPU を無駄に食う)")
 	}
@@ -240,10 +228,7 @@ func TestZoomMovesForWholeDuration(t *testing.T) {
 // フレームあたりの跳びが小さいこと。⚠️ 端末は文字セル単位でしか動けないので、フレーム数だけ
 // 増やしても曲線が前のめりだと 1 フレームで何行も跳ぶ。40 行の画面を想定して平均の跳びを見る。
 func TestZoomStepsAreSmall(t *testing.T) {
-	orig := timeNow
-	t.Cleanup(func() { timeNow = orig })
-	now := time.Unix(1000, 0)
-	timeNow = func() time.Time { return now }
+	stubClock(t)
 
 	// ⚠️ 開くときと閉じるときを同じ基準で見る。片方だけ直すと「開くのは滑らかなのに終了だけ
 	// カクつく」ずれが入る (周期・所要・曲線の 3 つとも両方向へ効いている必要がある)。
@@ -251,8 +236,8 @@ func TestZoomStepsAreSmall(t *testing.T) {
 		name  string
 		begin func(*appZoom)
 	}{
-		{"開く", func(z *appZoom) { z.start(now) }},
-		{"閉じる", func(z *appZoom) { z.startClose(now) }},
+		{"開く", func(z *appZoom) { z.start(timeNow()) }},
+		{"閉じる", func(z *appZoom) { z.startClose(timeNow()) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
@@ -266,7 +251,7 @@ func TestZoomStepsAreSmall(t *testing.T) {
 			const rows = 40
 			prev, total, steps := -1, 0, 0
 			for tt := time.Duration(0); tt <= appZoomDuration; tt += interval {
-				s := m.zoom.scale(now.Add(tt))
+				s := m.zoom.scale(timeNow().Add(tt))
 				if s >= appZoomSnap {
 					if prev < 0 {
 						continue // 閉じ始めの 1 フレームは実画面 (ここが起点)

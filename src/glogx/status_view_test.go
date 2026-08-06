@@ -631,6 +631,7 @@ func TestSlideLeftWindow(t *testing.T) {
 }
 
 func TestStatusOpenAnimationThenSettles(t *testing.T) {
+	advance := stubClock(t)
 	v := newStatusView()
 	v.shown = true
 	v.animStart = timeNow()
@@ -640,9 +641,7 @@ func TestStatusOpenAnimationThenSettles(t *testing.T) {
 	if p := v.animProgress(); p >= 1 {
 		t.Fatalf("開いた直後の進捗 = %v, want < 1", p)
 	}
-	restore := timeNow
-	timeNow = func() time.Time { return restore().Add(statusOpenDuration + time.Millisecond) }
-	defer func() { timeNow = restore }()
+	advance(statusOpenDuration + time.Millisecond)
 	if v.animating() {
 		t.Error("所要を過ぎても animating() = true")
 	}

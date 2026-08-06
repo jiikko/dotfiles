@@ -23,10 +23,7 @@ func openAnimView(t *testing.T) *issuesView {
 
 // 閉じるときは進捗が 1 から 0 へ落ち、0 で止まる。
 func TestIssuesCloseProgressFallsToZero(t *testing.T) {
-	orig := timeNow
-	t.Cleanup(func() { timeNow = orig })
-	now := time.Unix(1000, 0)
-	timeNow = func() time.Time { return now }
+	advance := stubClock(t)
 
 	v := openAnimView(t)
 	if p := v.animProgress(); p != 1 {
@@ -40,17 +37,17 @@ func TestIssuesCloseProgressFallsToZero(t *testing.T) {
 	if p := v.animProgress(); p != 1 {
 		t.Fatalf("閉じ始めが開き切った姿から始まっていない: %v", p)
 	}
-	now = now.Add(issuesCloseDuration / 2)
+	advance(issuesCloseDuration / 2)
 	mid := v.animProgress()
 	if mid <= 0 || mid >= 1 {
 		t.Fatalf("途中の進捗が 0..1 でない: %v", mid)
 	}
-	now = now.Add(issuesCloseDuration / 2)
+	advance(issuesCloseDuration / 2)
 	if p := v.animProgress(); p != 0 {
 		t.Fatalf("所要を過ぎても画面外まで抜けていない: %v", p)
 	}
 	// ⚠️ 進捗は 0 で止まる (負に走らない)。負になると slideInWindow の局所進捗が壊れる。
-	now = now.Add(issuesCloseDuration)
+	advance(issuesCloseDuration)
 	if p := v.animProgress(); p != 0 {
 		t.Fatalf("進捗が 0 を下回った: %v", p)
 	}
@@ -82,17 +79,14 @@ func TestIssuesCloseMovesOnFirstFrame(t *testing.T) {
 // 閉じる向きが描画まで届いている。⚠️ 上の検査は slideInWindow を直接叩くので、lines() が
 // closing を渡し忘れても気づかない (開く向きの平坦な立ち上がりへ黙って戻る)。
 func TestIssuesCloseCurveReachesRender(t *testing.T) {
-	orig := timeNow
-	t.Cleanup(func() { timeNow = orig })
-	now := time.Unix(1000, 0)
-	timeNow = func() time.Time { return now }
+	advance := stubClock(t)
 
 	v := loadedView(sampleIssues()...)
 	v.closeAnimOff = false
 	v.close()
 	// 折り返し地点で見る: 閉じる向きなら中身のある行が幅の半分ずれ、開く向き (渡し忘れ) なら
 	// stagger で最下行しか動かない。そこは一覧の外なので空行 = ずれは数桁で止まる
-	now = now.Add(issuesCloseDuration / 2)
+	advance(issuesCloseDuration / 2)
 
 	shift := maxRowShift(v.lines(renderOpts(12)))
 	if shift < renderOpts(12).width/4 {
@@ -122,18 +116,13 @@ func TestIssuesCloseMovesAllRowsTogether(t *testing.T) {
 // git log へ戻ることになる。⚠️ 終端で減速するカーブを使うと必ずこれが起きる (残り数 % の距離に
 // 時間の後半を使うため。easeOutCubic + 700ms のとき 280 桁端末で 100ms の白画面が出ていた)。
 func TestIssuesCloseLeavesNoBlankFrame(t *testing.T) {
-	orig := timeNow
-	t.Cleanup(func() { timeNow = orig })
-	start := time.Unix(1000, 0)
-	now := start
-	timeNow = func() time.Time { return now }
+	advance := stubClock(t)
 
 	v := loadedView(sampleIssues()...)
 	v.closeAnimOff = false
 	v.close()
 
 	for elapsed := time.Duration(0); elapsed < 5*issuesCloseDuration; elapsed += scrollInterval {
-		now = start.Add(elapsed)
 		v.settleClose() // browseModel の tick と同じ順 (畳んでから描く)
 		if !v.visible() {
 			return
@@ -141,6 +130,7 @@ func TestIssuesCloseLeavesNoBlankFrame(t *testing.T) {
 		if strings.TrimSpace(strings.Join(v.lines(renderOpts(12)), "")) == "" {
 			t.Fatalf("%v 時点で画面が空なのに viewer が畳まれていない (ここが白画面になる)", elapsed)
 		}
+		advance(scrollInterval)
 	}
 	t.Fatal("演出が終わらない")
 }
@@ -159,14 +149,11 @@ func maxRowShift(window []string) int {
 
 // 演出が着地するまで tick を止めない (時間で降ろすと片付け前にチェーンが切れて固まる)。
 func TestIssuesCloseKeepsTickingUntilSettled(t *testing.T) {
-	orig := timeNow
-	t.Cleanup(func() { timeNow = orig })
-	now := time.Unix(1000, 0)
-	timeNow = func() time.Time { return now }
+	advance := stubClock(t)
 
 	v := openAnimView(t)
 	v.close()
-	now = now.Add(issuesCloseDuration * 3) // とっくに時間は過ぎている
+	advance(issuesCloseDuration * 3) // とっくに時間は過ぎている
 	if !v.animating() {
 		t.Fatal("片付け前に animating が false になった (最後の 1 拍が届かず閉じかけで固まる)")
 	}
@@ -181,10 +168,7 @@ func TestIssuesCloseKeepsTickingUntilSettled(t *testing.T) {
 
 // 着地するまで片付けない = 逆再生の間は見張りも本文も生きている。
 func TestIssuesCloseDefersTeardownUntilSettled(t *testing.T) {
-	orig := timeNow
-	t.Cleanup(func() { timeNow = orig })
-	now := time.Unix(1000, 0)
-	timeNow = func() time.Time { return now }
+	advance := stubClock(t)
 
 	root, path := watchTree(t, "# a\n")
 	v := openedWatchView(t, root, path)
@@ -195,7 +179,7 @@ func TestIssuesCloseDefersTeardownUntilSettled(t *testing.T) {
 	if v.watch.gen != gen {
 		t.Fatal("演出中に見張りを畳んだ (逆再生の途中で中身が死ぬ)")
 	}
-	now = now.Add(issuesCloseDuration)
+	advance(issuesCloseDuration)
 	v.settleClose()
 	if v.watch.gen == gen {
 		t.Fatal("着地しても見張りが畳まれていない (watcher が残る)")
@@ -204,27 +188,21 @@ func TestIssuesCloseDefersTeardownUntilSettled(t *testing.T) {
 
 // 演出の途中で終了しても画面を覚えない (閉じたはずの viewer が次の起動で蘇らない)。
 func TestIssuesClosingIsNotRemembered(t *testing.T) {
-	orig := timeNow
-	t.Cleanup(func() { timeNow = orig })
-	now := time.Unix(1000, 0)
-	timeNow = func() time.Time { return now }
+	stubClock(t)
 
 	v := openAnimView(t)
-	if _, ok := v.screen(now); !ok {
+	if _, ok := v.screen(timeNow()); !ok {
 		t.Fatal("前提が崩れた: 開いているのに覚えない")
 	}
 	v.close()
-	if _, ok := v.screen(now); ok {
+	if _, ok := v.screen(timeNow()); ok {
 		t.Fatal("閉じる演出の途中を「開いている」として覚えた (次の起動で蘇る)")
 	}
 }
 
 // キーは演出を即着地させ、かつ飲み込まれない (q で閉じた直後の q が効かない時間を作らない)。
 func TestIssuesCloseLandsOnKeyWithoutSwallowing(t *testing.T) {
-	orig := timeNow
-	t.Cleanup(func() { timeNow = orig })
-	now := time.Unix(1000, 0)
-	timeNow = func() time.Time { return now }
+	stubClock(t)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.issuesOv.closeAnimOff = false
@@ -257,10 +235,7 @@ func TestIssuesCloseLandsOnKeyWithoutSwallowing(t *testing.T) {
 // q でも閉じられなくなり、確認モーダルが蘇ると y/Enter で実ファイルが動く。
 // 実体は browseModel が routing 前に finishClose すること (tui.go)。
 func TestIssuesCloseLandsBeforeKeyReachesViewer(t *testing.T) {
-	orig := timeNow
-	t.Cleanup(func() { timeNow = orig })
-	now := time.Unix(1000, 0)
-	timeNow = func() time.Time { return now }
+	advance := stubClock(t)
 
 	for _, key := range []string{"/", "n"} {
 		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
@@ -268,7 +243,7 @@ func TestIssuesCloseLandsBeforeKeyReachesViewer(t *testing.T) {
 		m.issuesOv.toggle(t.TempDir())
 		m.issuesOv.finishAnim()
 		m.issuesOv.close()
-		now = now.Add(issuesCloseDuration / 4) // まだ演出の途中
+		advance(issuesCloseDuration / 4) // まだ演出の途中
 
 		releaseKey(m)
 		m.handleKey(key)
@@ -285,10 +260,7 @@ func TestIssuesCloseLandsBeforeKeyReachesViewer(t *testing.T) {
 
 // 演出中の i は「閉じ切ってから開き直す」= 見張りを二重に張らない。
 func TestIssuesReopenDuringCloseDoesNotDoubleWatch(t *testing.T) {
-	orig := timeNow
-	t.Cleanup(func() { timeNow = orig })
-	now := time.Unix(1000, 0)
-	timeNow = func() time.Time { return now }
+	stubClock(t)
 
 	root, path := watchTree(t, "# a\n")
 	v := openedWatchView(t, root, path)

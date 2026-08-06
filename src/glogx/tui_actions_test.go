@@ -860,10 +860,7 @@ func TestBrowseFrameAutoOffAndNoFrame(t *testing.T) {
 // ⚠️ 端末はキーを離したことを教えてくれないので、離鍵の代わりに時間で判定する。窓は押される
 // たびに更新するので、押し続けている限り 1 回にまとまり、指を離して窓が切れてから次の 1 回になる。
 func TestKeyRepeatIsOneInput(t *testing.T) {
-	orig := timeNow
-	t.Cleanup(func() { timeNow = orig })
-	now := time.Unix(1000, 0)
-	timeNow = func() time.Time { return now }
+	advance := stubClock(t)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.handleKey("i")
@@ -871,17 +868,17 @@ func TestKeyRepeatIsOneInput(t *testing.T) {
 		t.Fatal("前提が崩れた: i で viewer が開かない")
 	}
 	// 実機の自動リピート (最初 225ms → 以降 30ms。実測) を模して押しっぱなしにする
-	now = now.Add(225 * time.Millisecond)
+	advance(225 * time.Millisecond)
 	m.handleKey("i")
 	for range 20 {
-		now = now.Add(30 * time.Millisecond)
+		advance(30 * time.Millisecond)
 		m.handleKey("i")
 	}
 	if !m.issuesOv.visible() {
 		t.Fatal("押しっぱなしで viewer が開閉を繰り返した (1 回の入力として扱われていない)")
 	}
 	// 指を離す = 窓が切れる。次の 1 回は効く
-	now = now.Add(keyRepeatGuard + time.Millisecond)
+	advance(keyRepeatGuard + time.Millisecond)
 	m.handleKey("i")
 	if m.issuesOv.visible() {
 		t.Fatal("押し直しが効かない (離しても 1 回扱いのまま)")
@@ -891,14 +888,11 @@ func TestKeyRepeatIsOneInput(t *testing.T) {
 // ⚠️ 移動系は潰さない: 押しっぱなしでスクロールし続けるのは期待される動作で、潰すと
 // 「押しても動かない」壊れ方になる。
 func TestKeyRepeatDoesNotBlockMovement(t *testing.T) {
-	orig := timeNow
-	t.Cleanup(func() { timeNow = orig })
-	now := time.Unix(1000, 0)
-	timeNow = func() time.Time { return now }
+	advance := stubClock(t)
 
 	m := newTestBrowse(t, 5, map[string]CIState{}, nil)
 	for range 3 {
-		now = now.Add(30 * time.Millisecond) // 自動リピートの間隔
+		advance(30 * time.Millisecond) // 自動リピートの間隔
 		m.handleKey("j")
 	}
 	if m.cursor != 3 {
