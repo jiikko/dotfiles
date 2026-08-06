@@ -21,3 +21,10 @@
 
 - 2026-08-06 時点で `status_view.go` に並行セッションの未コミット変更あり。着手前に該当関数が現状のままか要確認
 - codex レビューはユーザー方針 (codex 不使用, 2026-07-17〜) により省略
+
+## 対応結果 (2026-08-07, 4a995c8)
+
+- windowOffsetFor を scroll_glide.go (clampScrollOffset の隣) へ移動し、issuesView.windowOffset を
+  ラッパー化。着手時点で tui.go の commit 一覧も windowOffsetFor を使っており、3 面が同じ式を通る
+- 敵対的レビュー: [-6,12]^4 の総当たり (約 13 万組) + 代数的証明で min/max 版と if 版の
+  全整数等価を確認。P1/P2 なし

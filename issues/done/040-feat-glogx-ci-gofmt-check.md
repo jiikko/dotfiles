@@ -25,3 +25,10 @@ golangci-lint v2 の `run` は formatters の差分を issue として報告す�
 ## 注意
 
 - codex レビューはユーザー方針 (codex 不使用) により省略
+
+## 対応結果 (2026-08-07, b4338e3)
+
+- glogx / parallel-each に formatters を追加。敵対的レビューの P1 (disassemble_excel が
+  ゲート外のまま。既定 linter 構成では gofmt を検出しないことを実証) を採用し、
+  disassemble_excel にも最小 .golangci.yml を新設して 3 プロジェクトで統一
+- 各プロジェクトで整形崩れ probe → red / 除去 → green を確認済み

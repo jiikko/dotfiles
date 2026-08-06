@@ -38,3 +38,9 @@ go mod tidy && make lint test
 ## 注意
 
 - codex レビューはユーザー方針 (codex 不使用) により省略
+
+## 対応結果 (2026-08-07, 843df31)
+
+- fsnotify v1.10.1 / ultraviolet 20260803 / go-colorful v1.4.1 に更新。全テスト green
+- Go toolchain の 1.26 引き上げは見送り (go.mod の go directive は最小要求であり、CI は
+  go-version-file 経由で追随する。1.26 化は bubbletea 系の互換確認とセットで別途判断)

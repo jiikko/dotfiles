@@ -14,3 +14,10 @@
 
 - `status_view.go` は並行編集中の可能性あり。着手前に該当行を再確認
 - codex レビューはユーザー方針 (codex 不使用) により省略
+
+## 対応結果 (2026-08-07, d289604)
+
+- clean() への置き換えは emptyMessage の 2 箇所のみ実施。restoreCursor / setCursor の
+  `len(v.rows) == 0` は「表示行の有無」という別概念のため据え置き (スコープ縮小)
+- 敵対的レビュー: rows/st の書き込み 3 箇所の全列挙により `len(v.rows)==0 ⟺ st.clean()` が
+  emptyMessage 到達時に恒真であることを確認。P1/P2 なし
