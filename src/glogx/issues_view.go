@@ -295,14 +295,9 @@ func (v *issuesView) finishAnim() {
 	v.animStart = time.Time{}
 }
 
-// animating は開く演出の途中か (tick を高 FPS に上げ、チェーンを回し続ける判定に使う)。
-func (v *issuesView) animating() bool {
-	if v.bodyGlide.active {
-		return true // 本文 pager の glide は tick で進むので「アニメ中」に含める
-	}
-	if v.drawer.animating(timeNow()) {
-		return true // 本文の引き出しの開閉も tick で進む
-	}
+// slideAnimating は viewer 全体の開閉スライド中か。tickInterval が 60fps へ上げる判定に使う
+// (引き出しと pager glide は含めない: あちらは他の glide と同じ 30fps で足りる)。
+func (v *issuesView) slideAnimating() bool {
 	// ⚠️ 閉じる演出は「時間が過ぎたら false」にしない: tick は animating が false になった拍で
 	// 止まるので、時間で降ろすと片付けの settleClose が呼ばれる前にチェーンが切れ、閉じかけの姿で
 	// 固まる。settleClose が closing を下ろして初めて false になる (自分で終われる形にする)。
@@ -310,6 +305,17 @@ func (v *issuesView) animating() bool {
 		return true
 	}
 	return v.shown && !v.animStart.IsZero() && timeNow().Sub(v.animStart) < issuesAnimDuration
+}
+
+// animating は演出の途中か (tick チェーンを回し続ける spinnerActive の判定に使う)。
+func (v *issuesView) animating() bool {
+	if v.bodyGlide.active {
+		return true // 本文 pager の glide は tick で進むので「アニメ中」に含める
+	}
+	if v.drawer.animating(timeNow()) {
+		return true // 本文の引き出しの開閉も tick で進む
+	}
+	return v.slideAnimating()
 }
 
 // advanceGlide はスクロール glide を 1 フレーム進める (browseModel の tick から呼ばれる)。

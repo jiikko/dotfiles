@@ -478,15 +478,15 @@ func (m *browseModel) maybeTick() tea.Cmd {
 	return tickEvery(m.tickInterval())
 }
 
-// tickInterval は今のフレーム周期。横に動く演出 (scroll glide / toast スライド /
-// issues viewer の流し込み) の最中だけ ~30fps へ上げ、それ以外は 12.5fps に落とす。
-// アプリ全体の開閉演出と status viewer の開閉スライドはさらに上げる (理由は zoomInterval の doc)。
+// tickInterval は今のフレーム周期。横に動く演出 (scroll glide / toast スライド / 引き出し) の
+// 最中だけ ~30fps へ上げ、それ以外は 12.5fps に落とす。アプリ全体の開閉演出と
+// issues / status viewer の開閉スライドはさらに上げる (理由は zoomInterval の doc)。
 //
 // ⚠️ 演出を足したらここにも足す。spinnerActive (チェーンを回すか) に足すだけでは「回るが
 // 12.5fps」になり、短い演出ほど中間フレームが消えて点滅に見える (開閉演出で実際に起きた。
 // status viewer の開閉スライドでも再発した 2026-08-06)。
 func (m *browseModel) tickInterval() time.Duration {
-	if m.zoom.animating(timeNow()) || m.statusOv.slideAnimating() {
+	if m.zoom.animating(timeNow()) || m.issuesOv.slideAnimating() || m.statusOv.slideAnimating() {
 		return zoomInterval // 短い演出なので周期がそのままフレーム数になる (60fps)
 	}
 	if m.glide.active || m.diffOv.glide.active || m.toast.animating() || m.issuesOv.animating() || m.statusOv.animating() {

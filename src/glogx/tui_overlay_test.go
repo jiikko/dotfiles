@@ -1044,8 +1044,8 @@ func TestIssuesViewerScanKeepsSpinnerAlive(t *testing.T) {
 	if !m.spinnerActive() {
 		t.Fatal("開く演出中はチェーンを回し続ける必要がある")
 	}
-	if got := m.tickInterval(); got != scrollInterval {
-		t.Fatalf("演出中の tick 周期が高 FPS になっていない: %v", got)
+	if got := m.tickInterval(); got != zoomInterval {
+		t.Fatalf("開閉スライド中の tick 周期 = %v, want zoomInterval (60fps)", got)
 	}
 	m.issuesOv.finishAnim()
 	if m.spinnerActive() {

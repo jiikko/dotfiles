@@ -594,21 +594,39 @@ func TestStatusCursorPaintStaysInListColumn(t *testing.T) {
 	}
 }
 
-// 下からせり上がる演出: 途中では上側が空で、下側に窓の先頭が出る。
-func TestSlideUpWindow(t *testing.T) {
-	window := []string{"1", "2", "3", "4"}
-	got := slideUpWindow(window, 0.5)
+// 左端から拭き出す演出: 途中では各行の左側だけが出ていて、stagger で上の行ほど先に進む。
+func TestSlideLeftWindow(t *testing.T) {
+	window := []string{"0123456789", "0123456789", "0123456789", "0123456789"}
+	got := slideLeftWindow(window, 0.5, 10, false)
 	if len(got) != 4 {
 		t.Fatalf("行数 = %d, want 4", len(got))
 	}
-	if got[0] != "" || got[1] != "" {
-		t.Errorf("上側が埋まっている: %q", got)
+	for i, ln := range got {
+		if !strings.HasPrefix(window[i], ln) {
+			t.Errorf("行 %d が左端アンカーの prefix になっていない: %q", i, ln)
+		}
 	}
-	if got[2] != "1" || got[3] != "2" {
-		t.Errorf("下側 = %q, want 窓の先頭 2 行", got[2:])
+	if len(got[0]) <= len(got[3]) {
+		t.Errorf("stagger が効いていない (先頭行 %q が最終行 %q より進んでいない)", got[0], got[3])
 	}
-	if full := slideUpWindow(window, 1); full[0] != "1" || full[3] != "4" {
+	if full := slideLeftWindow(window, 1, 10, false); full[0] != "0123456789" || full[3] != "0123456789" {
 		t.Errorf("進捗 1 で変形している: %q", full)
+	}
+	if none := slideLeftWindow(window, 0, 10, false); none[0] != "" || none[3] != "" {
+		t.Errorf("進捗 0 で描かれている: %q", none)
+	}
+	// 閉じは全行同時・等速 (rowOffsetRatio の closing 分岐)
+	closing := slideLeftWindow(window, 0.5, 10, true)
+	if closing[0] != closing[3] {
+		t.Errorf("閉じで行ごとに差が出ている: %q vs %q", closing[0], closing[3])
+	}
+	if closing[0] != "01234" {
+		t.Errorf("閉じ 0.5 の残り = %q, want %q", closing[0], "01234")
+	}
+	// 全角の境界をまたぐ切りは文字を割らず幅内に収める (幅 5 に 3 文字目の「う」は入らない)
+	jp := slideLeftWindow([]string{"あいうえお"}, 0.5, 10, true)
+	if jp[0] != "あい" {
+		t.Errorf("全角境界の切り = %q, want %q", jp[0], "あい")
 	}
 }
 

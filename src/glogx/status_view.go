@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -68,9 +69,10 @@ type statusView struct {
 }
 
 const (
-	// statusOpenDuration / statusCloseDuration は開閉の所要。issues viewer の引き出し
-	// (issuesDrawerDuration) と同じ値: 「板が 1 枚動く」演出は同じ速さに揃える。
-	statusOpenDuration  = 450 * time.Millisecond
+	// statusOpenDuration / statusCloseDuration は開閉の所要。issues viewer の流し込み
+	// (issuesAnimDuration / issuesCloseDuration) と同じ値: 同じ質感 (行ごとの stagger +
+	// easeOutCubic) の演出は同じ速さに揃える。
+	statusOpenDuration  = 700 * time.Millisecond
 	statusCloseDuration = 450 * time.Millisecond
 	// statusPollInterval は自動更新の周期。fsnotify を張らない理由は spec 5 節
 	// (作業ツリー全体の再帰 watch は対象数が読めない一方、git status はシェルの prompt が
@@ -812,13 +814,7 @@ func (v *statusView) lines(o statusRenderOpts) []string {
 		body = overlayCenteredBox(body, box, o.width, o.page, o.colored)
 	}
 	if p := v.animProgress(); p < 1 {
-		// 入ってくる向きだけ easeOutCubic で終端を減速させる (issues viewer の rowOffsetRatio と
-		// 同じ作法。等速のままだと着地が「カクッ」と止まって見える)。出ていく向きは等速: 板には
-		// 着地点が無く、終端の減速は「もう消えかけなのに沈み切らない時間」に化ける
-		if !v.closing {
-			p = easeOutCubicFloat(p)
-		}
-		body = slideUpWindow(body, p)
+		body = slideLeftWindow(body, p, o.width, v.closing)
 	}
 	return body
 }
@@ -842,20 +838,36 @@ func (v *statusView) animProgress() float64 {
 	return min(float64(timeNow().Sub(v.animStart))/float64(statusOpenDuration), 1)
 }
 
-// slideUpWindow は窓を「下からせり上がる」途中の姿にする (closing なら下へ沈む途中)。
-// 板の上端が画面の下から上がってくる = 上側に空行が残り、はみ出した下端は捨てる。
-// issues viewer が横 (右から左) なのに対しこちらは縦: 方向でどちらの画面が出たか判別できる。
-func slideUpWindow(window []string, progress float64) []string {
-	page := len(window)
-	if page == 0 {
-		return window
+// slideLeftWindow は窓の各行を「左端から拭き出す」途中の姿にする (closing なら左へ拭き取られる
+// 途中)。stagger + easeOutCubic は issues viewer の rowOffsetRatio を共用し、方向でどちらの画面が
+// 出たか判別できる (issues = 右から、status = 左から)。
+//
+// 当初の「下からせり上がる」縦スライドをやめたのは解像度の問題: 縦は行数 (~40 ステップ) しか
+// なく 60fps でも 1 コマの移動が粗い。横は桁数 (数百ステップ) で滑らか (ユーザー要望 2026-08-06)。
+// 行が左から滑り込む真の平行移動 (truncateDispLeft) にしないのも意図的: 頭が画面外に出て
+// 尻尾の桁から現れる見た目になる。左端アンカーの reveal なら行頭から読める形で現れる。
+func slideLeftWindow(window []string, progress float64, width int, closing bool) []string {
+	out := make([]string, 0, len(window))
+	last := max(len(window)-1, 1)
+	for i, ln := range window {
+		ratio := rowOffsetRatio(progress, i, last, closing)
+		switch {
+		case ratio <= 0:
+			out = append(out, ln) // 全桁出た
+			continue
+		case ratio >= 1 || ln == "":
+			out = append(out, "") // まだ 1 桁も出ていない (または元から空行)
+			continue
+		}
+		cols := width - int(math.Round(ratio*float64(width)))
+		if cols <= 0 {
+			out = append(out, "")
+			continue
+		}
+		// clipToWidth でなく tail 無しの truncateDisp: 動く右端に「…」を走らせない
+		out = append(out, truncateDisp(ln, cols, ""))
 	}
-	shown := max(min(int(float64(page)*progress+0.5), page), 0)
-	out := make([]string, 0, page)
-	for range page - shown {
-		out = append(out, "")
-	}
-	return append(out, window[:shown]...)
+	return out
 }
 
 // listLines は一覧カラム (セクション見出し + 行) を組む。ヘッダーは lines が全幅で描くので
