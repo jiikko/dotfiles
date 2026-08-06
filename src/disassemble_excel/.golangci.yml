@@ -1,0 +1,8 @@
+# golangci-lint v2 config for disassemble_excel。linter は既定セットのまま (カスタム lint が
+# 必要になったら glogx の .golangci.yml を参照)。
+version: "2"
+
+# gofmt を CI ゲートにする (v2 では formatter は linters と別枠。ここに無いと run が整形差分を見ない)
+formatters:
+  enable:
+    - gofmt

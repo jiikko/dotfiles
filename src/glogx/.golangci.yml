@@ -87,3 +87,8 @@ linters:
           - dupl
           - forbidigo
           - unparam
+
+# gofmt を CI ゲートにする (v2 では formatter は linters と別枠。ここに無いと run が整形差分を見ない)
+formatters:
+  enable:
+    - gofmt

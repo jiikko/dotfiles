@@ -26,3 +26,8 @@ linters:
         - (*os.File).Close
         - (*os.File).Truncate
         - (*os.File).Seek
+
+# gofmt を CI ゲートにする (v2 では formatter は linters と別枠。ここに無いと run が整形差分を見ない)
+formatters:
+  enable:
+    - gofmt
