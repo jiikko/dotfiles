@@ -199,6 +199,38 @@ func TestActionModalStopCancelsRunningPush(t *testing.T) {
 	}
 }
 
+// push 演出の時間経過が timeNow シームを通ることを固定時計で pin する (issue 038)。上の
+// TestBrowsePushFlow は pushAnimNext のゼロ値書き換えで段を進めるため、実装が time.Now 直呼びに
+// 退行しても green のままになる。こちらは時計を凍結し「実時間がいくら経っても、凍結時計が
+// pushAnimStep 進むまでは段が進まない」ことでシーム経由を守る。
+func TestPushAnimUsesClockSeam(t *testing.T) {
+	advance := stubClock(t)
+	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m.statuses[m.commits[0].SHA] = StateUnpushed
+	m.statuses[m.commits[1].SHA] = StateUnpushed
+	if !m.startPushAnim() {
+		t.Fatal("未 push が 2 件あるのに startPushAnim が始まらない")
+	}
+	m.Update(tickMsg{})
+	if _, ok := m.statuses[m.commits[1].SHA]; !ok {
+		t.Fatal("凍結時計で pushAnimStep 経過前なのに演出が進んだ (time.Now 直呼びの疑い)")
+	}
+	advance(pushAnimStep)
+	m.Update(tickMsg{})
+	if _, ok := m.statuses[m.commits[1].SHA]; ok {
+		t.Fatal("凍結時計を pushAnimStep 進めても最古の unpushed が消えない")
+	}
+	if _, ok := m.pushSlides[m.commits[1].SHA]; !ok {
+		t.Fatal("境界通過した区画の沈み込み開始時刻が記録されない")
+	}
+	// 沈み込みの掃除も凍結時計基準: pushSlideDuration 経過で区画が通常表示へ戻る
+	advance(pushSlideDuration)
+	m.Update(tickMsg{})
+	if _, ok := m.pushSlides[m.commits[1].SHA]; ok {
+		t.Fatal("pushSlideDuration 経過後も沈み込みが掃除されない")
+	}
+}
+
 func TestBrowsePushFlow(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.statuses[m.commits[0].SHA] = StateUnpushed

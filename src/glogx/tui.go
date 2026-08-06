@@ -642,7 +642,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			pushRefetchCmd = m.advancePushAnim() // push 境界の罫線を 1 コミット/フレームで上へ
 		}
 		for sha, start := range m.pushSlides {
-			if time.Since(start) >= pushSlideDuration {
+			if timeNow().Sub(start) >= pushSlideDuration {
 				delete(m.pushSlides, sha) // 沈み込みが終わった区画は通常表示へ戻す
 			}
 		}
@@ -1546,7 +1546,7 @@ func (m *browseModel) startPushAnim() bool {
 	}
 	m.invalidateLines()
 	m.pushAnimating = true
-	m.pushAnimNext = time.Now().Add(pushAnimStep)
+	m.pushAnimNext = timeNow().Add(pushAnimStep)
 	return true
 }
 
@@ -1554,17 +1554,17 @@ func (m *browseModel) startPushAnim() bool {
 // 最も古い StateUnpushed を消すと境界が 1 コミット上がる。全部消えたら演出終了で、
 // 本来の後処理 (CI 全件再取得) へ進む cmd を返す。
 func (m *browseModel) advancePushAnim() tea.Cmd {
-	if time.Now().Before(m.pushAnimNext) {
+	if timeNow().Before(m.pushAnimNext) {
 		return nil
 	}
-	m.pushAnimNext = time.Now().Add(pushAnimStep)
+	m.pushAnimNext = timeNow().Add(pushAnimStep)
 	for i := len(m.commits) - 1; i >= 0; i-- {
 		if m.statuses[m.commits[i].SHA] == StateUnpushed {
 			delete(m.statuses, m.commits[i].SHA)
 			if m.pushSlides == nil {
 				m.pushSlides = map[string]time.Time{}
 			}
-			m.pushSlides[m.commits[i].SHA] = time.Now() // 通過した区画の沈み込みを開始
+			m.pushSlides[m.commits[i].SHA] = timeNow() // 通過した区画の沈み込みを開始
 			m.invalidateLines()
 			return nil
 		}
@@ -1589,7 +1589,7 @@ func (m *browseModel) slideColumns(lines []Line) map[int]int {
 		if !ok {
 			continue
 		}
-		p := float64(time.Since(start)) / float64(pushSlideDuration)
+		p := float64(timeNow().Sub(start)) / float64(pushSlideDuration)
 		if p < 0 || p >= 1 {
 			continue
 		}
