@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"glogx/issues"
@@ -1052,6 +1053,34 @@ func TestIssuesViewerScanKeepsSpinnerAlive(t *testing.T) {
 	}
 	if got := m.tickInterval(); got != spinnerInterval {
 		t.Fatalf("演出後に tick 周期が戻っていない: %v", got)
+	}
+}
+
+// status viewer の開閉スライドは 60fps、pager glide は 30fps で tick する
+// (spinnerActive に足すだけでは 12.5fps で点滅して見える回帰の防止)。
+func TestStatusViewerSlideTicksAt60FPS(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statusOv.closeAnimOff = false // newTestBrowse は演出を切っているので戻す (演出そのものの検査)
+	m.handleKey("s")
+	if !m.statusOv.visible() {
+		t.Fatal("s で status viewer が開かない")
+	}
+	if !m.spinnerActive() {
+		t.Fatal("開く演出中はチェーンを回し続ける必要がある")
+	}
+	if got := m.tickInterval(); got != zoomInterval {
+		t.Fatalf("開閉スライド中の tick 周期 = %v, want zoomInterval (60fps)", got)
+	}
+	m.statusOv.animStart = time.Time{} // スライド着地後
+	if got := m.tickInterval(); got != spinnerInterval {
+		t.Fatalf("スライド後に tick 周期が戻っていない: %v", got)
+	}
+	m.statusOv.pagerGlide.active = true
+	if !m.spinnerActive() {
+		t.Fatal("pager glide 中にスピナーの tick が回らない")
+	}
+	if got := m.tickInterval(); got != scrollInterval {
+		t.Fatalf("pager glide 中の tick 周期 = %v, want scrollInterval (30fps)", got)
 	}
 }
 

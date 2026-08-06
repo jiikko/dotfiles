@@ -149,12 +149,22 @@ func (v *statusView) visible() bool { return v.shown }
 // loading は git status / diff の取得中か (スピナー tick を回し続ける判定用)。
 func (v *statusView) fetching() bool { return v.loading || v.preview.fetching() }
 
-// animating は開閉の演出中か。
-func (v *statusView) animating() bool {
+// slideAnimating は開閉のスライド演出中か。tickInterval が 60fps へ上げる判定に使う
+// (pager glide は含めない: あちらは他の glide と同じ 30fps で足りる)。
+func (v *statusView) slideAnimating() bool {
 	if v.closing {
 		return true
 	}
 	return v.shown && !v.animStart.IsZero() && timeNow().Sub(v.animStart) < statusOpenDuration
+}
+
+// animating は開閉の演出中か。spinnerActive (tick チェーンを回すか) がこれを見る
+// (issuesView.animating と同じ契約)。
+func (v *statusView) animating() bool {
+	if v.pagerGlide.active {
+		return true // 本文 pager の glide は tick で進むので「アニメ中」に含める
+	}
+	return v.slideAnimating()
 }
 
 // toggle は viewer の開閉。開くときは status を読み直し、自動更新チェーンを張る。
@@ -802,6 +812,12 @@ func (v *statusView) lines(o statusRenderOpts) []string {
 		body = overlayCenteredBox(body, box, o.width, o.page, o.colored)
 	}
 	if p := v.animProgress(); p < 1 {
+		// 入ってくる向きだけ easeOutCubic で終端を減速させる (issues viewer の rowOffsetRatio と
+		// 同じ作法。等速のままだと着地が「カクッ」と止まって見える)。出ていく向きは等速: 板には
+		// 着地点が無く、終端の減速は「もう消えかけなのに沈み切らない時間」に化ける
+		if !v.closing {
+			p = easeOutCubicFloat(p)
+		}
 		body = slideUpWindow(body, p)
 	}
 	return body

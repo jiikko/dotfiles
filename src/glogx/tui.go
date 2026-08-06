@@ -480,15 +480,16 @@ func (m *browseModel) maybeTick() tea.Cmd {
 
 // tickInterval は今のフレーム周期。横に動く演出 (scroll glide / toast スライド /
 // issues viewer の流し込み) の最中だけ ~30fps へ上げ、それ以外は 12.5fps に落とす。
-// アプリ全体の開閉演出だけはさらに上げる (理由は zoomInterval の doc)。
+// アプリ全体の開閉演出と status viewer の開閉スライドはさらに上げる (理由は zoomInterval の doc)。
 //
 // ⚠️ 演出を足したらここにも足す。spinnerActive (チェーンを回すか) に足すだけでは「回るが
-// 12.5fps」になり、短い演出ほど中間フレームが消えて点滅に見える (開閉演出で実際に起きた)。
+// 12.5fps」になり、短い演出ほど中間フレームが消えて点滅に見える (開閉演出で実際に起きた。
+// status viewer の開閉スライドでも再発した 2026-08-06)。
 func (m *browseModel) tickInterval() time.Duration {
-	if m.zoom.animating(timeNow()) {
+	if m.zoom.animating(timeNow()) || m.statusOv.slideAnimating() {
 		return zoomInterval // 短い演出なので周期がそのままフレーム数になる (60fps)
 	}
-	if m.glide.active || m.diffOv.glide.active || m.toast.animating() || m.issuesOv.animating() {
+	if m.glide.active || m.diffOv.glide.active || m.toast.animating() || m.issuesOv.animating() || m.statusOv.animating() {
 		return scrollInterval // スライドを滑らかに (30fps)
 	}
 	return spinnerInterval
@@ -2540,7 +2541,7 @@ func (m *browseModel) fillUnknown() {
 // 経緯と他の未採用 v2 機能は docs/glogx-bubbletea-v2.md。
 func (m *browseModel) spinnerActive() bool {
 	return m.zoom.animating(timeNow()) || m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || m.glide.active || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.diffOv.glide.active || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.issuesOv.loading() || m.issuesOv.animating() ||
-		m.statusOv.fetching() || m.statusOv.animating() || m.statusOv.pagerGlide.active
+		m.statusOv.fetching() || m.statusOv.animating()
 }
 
 // issuesOpts は issues viewer へ渡す描画情報。カーソル行の強調はコミット一覧と同じ
