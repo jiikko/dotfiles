@@ -852,19 +852,14 @@ func slideLeftWindow(window []string, progress float64, width int, closing bool)
 	if closing {
 		ratio = 1 - progress
 	}
+	if ratio <= 0 {
+		return window // 全桁出た
+	}
+	cols := width - int(math.Round(ratio*float64(width)))
 	out := make([]string, 0, len(window))
 	for _, ln := range window {
-		switch {
-		case ratio <= 0:
-			out = append(out, ln) // 全桁出た
-			continue
-		case ratio >= 1 || ln == "":
+		if cols <= 0 || ln == "" {
 			out = append(out, "") // まだ 1 桁も出ていない (または元から空行)
-			continue
-		}
-		cols := width - int(math.Round(ratio*float64(width)))
-		if cols <= 0 {
-			out = append(out, "")
 			continue
 		}
 		// clipToWidth でなく tail 無しの truncateDisp: 動く右端に「…」を走らせない

@@ -482,9 +482,9 @@ func (m *browseModel) maybeTick() tea.Cmd {
 // 最中だけ ~30fps へ上げ、それ以外は 12.5fps に落とす。アプリ全体の開閉演出と
 // issues / status viewer の開閉スライドはさらに上げる (理由は zoomInterval の doc)。
 //
-// ⚠️ 演出を足したらここにも足す。spinnerActive (チェーンを回すか) に足すだけでは「回るが
-// 12.5fps」になり、短い演出ほど中間フレームが消えて点滅に見える (開閉演出で実際に起きた。
-// status viewer の開閉スライドでも再発した 2026-08-06)。
+// ⚠️ 高 FPS が要る演出の登録先はここだけ。spinnerActive は「tickInterval が周期を上げているか」で
+// 演出の有無を導出するので、ここに足せばチェーン維持にも効く。かつては両方へ手で足す規約で、
+// 足し忘れると「回るが 12.5fps」になり点滅に見える再発が実際に 2 回起きた (2026-08-06 まで)。
 func (m *browseModel) tickInterval() time.Duration {
 	if m.zoom.animating(timeNow()) || m.issuesOv.slideAnimating() || m.statusOv.slideAnimating() {
 		return zoomInterval // 短い演出なので周期がそのままフレーム数になる (60fps)
@@ -2540,8 +2540,10 @@ func (m *browseModel) fillUnknown() {
 // 「今は不要」とのユーザー判断で見送っている (2026-07-25)。CPU が気になると言われたら再評価する。
 // 経緯と他の未採用 v2 機能は docs/glogx-bubbletea-v2.md。
 func (m *browseModel) spinnerActive() bool {
-	return m.zoom.animating(timeNow()) || m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || m.glide.active || m.toast.animating() || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.diffOv.glide.active || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.issuesOv.loading() || m.issuesOv.animating() ||
-		m.statusOv.fetching() || m.statusOv.animating()
+	// 演出 (glide / toast / 開閉スライド / zoom) は列挙しない: tickInterval が周期を上げている =
+	// 何かの演出中、で導出する。演出の登録先を tickInterval の 1 箇所に保つ (同期漏れの再発防止)
+	return m.tickInterval() != spinnerInterval || m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.issuesOv.loading() ||
+		m.statusOv.fetching()
 }
 
 // issuesOpts は issues viewer へ渡す描画情報。カーソル行の強調はコミット一覧と同じ
