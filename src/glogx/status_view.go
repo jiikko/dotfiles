@@ -69,10 +69,10 @@ type statusView struct {
 }
 
 const (
-	// statusOpenDuration / statusCloseDuration は開閉の所要。issues viewer の流し込み
-	// (issuesAnimDuration / issuesCloseDuration) と同じ値: 同じ質感 (行ごとの stagger +
-	// easeOutCubic) の演出は同じ速さに揃える。
-	statusOpenDuration  = 700 * time.Millisecond
+	// statusOpenDuration / statusCloseDuration は開閉の所要。issues viewer の引き出し
+	// (issuesDrawerDuration) と同じ値: 「板が 1 枚成長する / 縮む」演出は同じ速さに揃える
+	// (行ごとに流し込む issues の 700ms とは質感が違うので合わせない)。
+	statusOpenDuration  = 450 * time.Millisecond
 	statusCloseDuration = 450 * time.Millisecond
 	// statusPollInterval は自動更新の周期。fsnotify を張らない理由は spec 5 節
 	// (作業ツリー全体の再帰 watch は対象数が読めない一方、git status はシェルの prompt が
@@ -838,19 +838,22 @@ func (v *statusView) animProgress() float64 {
 	return min(float64(timeNow().Sub(v.animStart))/float64(statusOpenDuration), 1)
 }
 
-// slideLeftWindow は窓の各行を「左端から拭き出す」途中の姿にする (closing なら左へ拭き取られる
-// 途中)。stagger + easeOutCubic は issues viewer の rowOffsetRatio を共用し、方向でどちらの画面が
-// 出たか判別できる (issues = 右から、status = 左から)。
+// slideLeftWindow は窓を「板が左端から生えてくる」途中の姿にする (closing なら左へ縮んで消える
+// 途中)。全行同時に幅が伸び、方向でどちらの画面が出たか判別できる (issues = 右から、status = 左から)。
+// 行ごとの stagger を入れない: 斜めのウェーブに見えて板の成長に見えない (ユーザー選定 2026-08-06。
+// 開きは easeOutCubic で着地を減速、閉じは等速で最後まで縮み切る)。
 //
 // 当初の「下からせり上がる」縦スライドをやめたのは解像度の問題: 縦は行数 (~40 ステップ) しか
 // なく 60fps でも 1 コマの移動が粗い。横は桁数 (数百ステップ) で滑らか (ユーザー要望 2026-08-06)。
 // 行が左から滑り込む真の平行移動 (truncateDispLeft) にしないのも意図的: 頭が画面外に出て
-// 尻尾の桁から現れる見た目になる。左端アンカーの reveal なら行頭から読める形で現れる。
+// 尻尾の桁から現れる見た目になる。左端アンカーの成長なら行頭から読める形で現れる。
 func slideLeftWindow(window []string, progress float64, width int, closing bool) []string {
+	ratio := 1 - easeOutCubicFloat(progress)
+	if closing {
+		ratio = 1 - progress
+	}
 	out := make([]string, 0, len(window))
-	last := max(len(window)-1, 1)
-	for i, ln := range window {
-		ratio := rowOffsetRatio(progress, i, last, closing)
+	for _, ln := range window {
 		switch {
 		case ratio <= 0:
 			out = append(out, ln) // 全桁出た

@@ -594,7 +594,7 @@ func TestStatusCursorPaintStaysInListColumn(t *testing.T) {
 	}
 }
 
-// 左端から拭き出す演出: 途中では各行の左側だけが出ていて、stagger で上の行ほど先に進む。
+// 板が左端から生えてくる演出: 途中では各行の左側だけが出ていて、全行が同じ幅 (板が 1 枚)。
 func TestSlideLeftWindow(t *testing.T) {
 	window := []string{"0123456789", "0123456789", "0123456789", "0123456789"}
 	got := slideLeftWindow(window, 0.5, 10, false)
@@ -605,9 +605,13 @@ func TestSlideLeftWindow(t *testing.T) {
 		if !strings.HasPrefix(window[i], ln) {
 			t.Errorf("行 %d が左端アンカーの prefix になっていない: %q", i, ln)
 		}
+		if ln != got[0] {
+			t.Errorf("行 %d の幅が先頭行と違う (板が 1 枚になっていない): %q vs %q", i, ln, got[0])
+		}
 	}
-	if len(got[0]) <= len(got[3]) {
-		t.Errorf("stagger が効いていない (先頭行 %q が最終行 %q より進んでいない)", got[0], got[3])
+	// 開きは easeOutCubic: 折り返し地点で半分 (等速の 5 桁) より先へ進んでいる
+	if len(got[0]) <= 5 {
+		t.Errorf("終端減速が効いていない (0.5 時点で %q = %d 桁。等速なら 5 桁)", got[0], len(got[0]))
 	}
 	if full := slideLeftWindow(window, 1, 10, false); full[0] != "0123456789" || full[3] != "0123456789" {
 		t.Errorf("進捗 1 で変形している: %q", full)
