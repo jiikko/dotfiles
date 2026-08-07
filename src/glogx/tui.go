@@ -1811,11 +1811,13 @@ func (m *browseModel) restartPromptLines() []string {
 // 自動リピート」と時間で判定する。窓は押されるたびに更新するので、押し続けている限り 1 回に
 // まとまり、指を離して窓が切れてから次の 1 回になる (ユーザー要望 2026-08-01)。
 //
-// 300ms の根拠 (このマシンの実測 2026-08-01): 最初のリピートまで 225ms・以降 30ms 間隔
-// (defaults read -g InitialKeyRepeat=15 / KeyRepeat=2)。1 回目のリピートも窓に収める必要が
-// あるので 225ms より長く取り、意識して 2 回押す間隔よりは短く保つ。⚠️ 代償として「素早く
-// 2 回叩いて開閉」はできない (300ms 空ける必要がある)。押しっぱなしで暴れない方を優先した。
-const keyRepeatGuard = 300 * time.Millisecond
+// 250ms の根拠 (このマシンの実測 2026-08-01/2026-08-07): 最初のリピートまで 225ms・以降 30ms
+// 間隔 (defaults read -g InitialKeyRepeat=15 / KeyRepeat=2)。1 回目のリピートも窓に収める必要が
+// あるので 225ms より長く取り、意識して 2 回押す間隔よりは短く保つ。当初 300ms だったが再打鍵の
+// 待ちを縮めたいとの要望 (2026-08-07。200ms 希望だったが 225ms を覆えないため 225ms を超える
+// 最小刻みの 250ms で合意)。⚠️ InitialKeyRepeat を 16 (240ms) 以上へ変えるとこの窓を素通りして
+// 長押しが 2 回 toggle に戻る。その時はここも追従させること。
+const keyRepeatGuard = 250 * time.Millisecond
 
 // repeatGuardedKeys は自動リピートを潰すキー。
 //
