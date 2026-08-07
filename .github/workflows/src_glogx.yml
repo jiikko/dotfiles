@@ -34,3 +34,26 @@ jobs:
     uses: ./.github/workflows/_go-project.yml
     with:
       dir: src/glogx
+
+  # darwin ビルド確認。ime_tis_darwin.go は `darwin && cgo` + Carbon framework 依存で、
+  # ubuntu の lint/test では一度もコンパイルされない (build tag で除外)。cgo なので
+  # ubuntu からのクロスコンパイルでも検証できず、macOS runner での実ビルドが唯一の
+  # 検証手段 (public repo のため macOS runner も無課金)。test は走らせない — ロジックの
+  # 検証は ubuntu 側の -race テストが担い、ここは「darwin でコンパイルが通る」だけを守る
+  darwin-build:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: src/glogx/go.mod
+          cache-dependency-path: src/glogx/go.sum
+
+      - name: Build (darwin, cgo)
+        working-directory: src/glogx
+        env:
+          CGO_ENABLED: "1"
+        run: go build ./...
