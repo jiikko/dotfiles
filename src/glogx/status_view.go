@@ -812,7 +812,7 @@ func (v *statusView) hint() string {
 	case v.pagerKey != "":
 		return "j/k: スクロール  Space/C-d: 半ページ  g/G: 先頭/末尾  d/q: 閉じる"
 	default:
-		return "j/k: 移動  Tab: セクション  Space: stage/unstage  a: 全 stage  X: 変更を捨てる  d: diff  r: 再読込  U: usage  q: 閉じる"
+		return "j/k: 移動  Tab: セクション  Space: stage/unstage  a: 全 stage  X: 変更を捨てる  d: diff  r: 再読込  b: push  p: pull  U: usage  q: 閉じる"
 	}
 }
 

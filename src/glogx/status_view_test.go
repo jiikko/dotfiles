@@ -882,6 +882,13 @@ func TestStatusViewerRendersFullScreenAndHint(t *testing.T) {
 	if !strings.Contains(view, "stage/unstage") {
 		t.Fatalf("hint 行が status viewer のものになっていない:\n%s", view)
 	}
+	// remote 操作キー (b/p) は hint に出す (発見性。ユーザー要望 2026-08-07)。
+	// ⚠️ view でなく hint() を直接見る: hint 行は端末幅でクリップされ、テストの 80 桁では
+	// 末尾が「…」に落ちるため view の Contains では検査できない
+	hint := m.statusOv.hint()
+	if !strings.Contains(hint, "b: push") || !strings.Contains(hint, "p: pull") {
+		t.Fatalf("hint に remote 操作キー (b: push / p: pull) が出ていない: %q", hint)
+	}
 }
 
 func TestStatusViewerNoticeBecomesToast(t *testing.T) {
