@@ -37,6 +37,12 @@ linters:
       forbid:
         - pattern: ^fmt\.Print(f|ln)?$
           msg: stdout への直接出力は main.go に限定する (TUI 層は tea.Msg 経由で描画)
+        # tui.go の時刻はテスト差し替え用シーム (var timeNow) 経由で取る規律。push 演出 6 箇所が
+        # これを迂回して time.Now/Since を直呼びしていた退行 (issue 038) の再発防止。シーム定義
+        # 自体 (var timeNow = time.Now) は呼び出し式でないので引っかからない。tui.go 以外の
+        # 正当な time.Now は下の exclusions (path-except) で許可する。
+        - pattern: ^time\.(Now|Since)$
+          msg: tui.go の時刻は timeNow シーム経由で取る (テストで固定するため。issue 038)
     depguard:
       rules:
         width-single-source:
@@ -77,6 +83,11 @@ linters:
         - (*os.File).Close
   exclusions:
     rules:
+      # timeNow シームの規律は tui.go だけのもの (他ファイルは素の time.Now でよい)
+      - path-except: tui\.go
+        text: timeNow シーム経由
+        linters:
+          - forbidigo
       # main.go は静的出力の出口なので stdout 書き込みを許可
       - path: main\.go
         linters:

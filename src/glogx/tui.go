@@ -2111,7 +2111,7 @@ func (m *browseModel) jobTimeSuffix(job CheckDetail) string {
 }
 
 // timeNow は経過時間・ETA 算出の現在時刻。テストで固定するため差し替え可能にしている。
-var timeNow = time.Now
+var timeNow = time.Now //nolint:forbidigo // シームの定義点そのもの (ここ以外の time.Now を lint が禁止する)
 
 // jobDetailRows は詳細ポップアップに一度に表示する行数の上限。実際の行数は
 // 端末の高さに合わせて visibleDetailRows が縮める。
