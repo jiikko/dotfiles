@@ -113,7 +113,7 @@
   },
   "language": "日本語",
   "alwaysThinkingEnabled": true,
-  "effortLevel": "high",
+  "effortLevel": "low",
   "advisorModel": "opus",
   "skipWorkflowUsageWarning": true,
   "skipAutoPermissionPrompt": true
