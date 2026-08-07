@@ -597,40 +597,58 @@ func TestStatusCursorPaintStaysInListColumn(t *testing.T) {
 // 板が左端から生えてくる演出: 途中では各行の左側だけが出ていて、全行が同じ幅 (板が 1 枚)。
 func TestSlideLeftWindow(t *testing.T) {
 	window := []string{"0123456789", "0123456789", "0123456789", "0123456789"}
-	got := slideLeftWindow(window, 0.5, 10, false)
+	// colored=false: 動く右端のボーダーは ▒ (NO_COLOR の影と同じ語彙)
+	got := slideLeftWindow(window, 0.5, 10, false, false)
 	if len(got) != 4 {
 		t.Fatalf("行数 = %d, want 4", len(got))
 	}
 	for i, ln := range got {
-		if !strings.HasPrefix(window[i], ln) {
-			t.Errorf("行 %d が左端アンカーの prefix になっていない: %q", i, ln)
+		// 右端 1 桁は動く端のボーダー (透明だと板の終端が見えない。ユーザー要望 2026-08-07)
+		body, hasEdge := strings.CutSuffix(ln, "▒")
+		if !hasEdge {
+			t.Errorf("行 %d の右端にボーダーが無い: %q", i, ln)
+		}
+		if !strings.HasPrefix(window[i], body) {
+			t.Errorf("行 %d が左端アンカーの prefix になっていない: %q", i, body)
 		}
 		if ln != got[0] {
 			t.Errorf("行 %d の幅が先頭行と違う (板が 1 枚になっていない): %q vs %q", i, ln, got[0])
 		}
 	}
 	// 開きは easeOutCubic: 折り返し地点で半分 (等速の 5 桁) より先へ進んでいる
-	if len(got[0]) <= 5 {
-		t.Errorf("終端減速が効いていない (0.5 時点で %q = %d 桁。等速なら 5 桁)", got[0], len(got[0]))
+	if dispWidth(got[0]) <= 5 {
+		t.Errorf("終端減速が効いていない (0.5 時点で %q = %d 桁。等速なら 5 桁)", got[0], dispWidth(got[0]))
 	}
-	if full := slideLeftWindow(window, 1, 10, false); full[0] != "0123456789" || full[3] != "0123456789" {
+	// 着地 (進捗 1) ではボーダーごと消えて元の行に戻る
+	if full := slideLeftWindow(window, 1, 10, false, false); full[0] != "0123456789" || full[3] != "0123456789" {
 		t.Errorf("進捗 1 で変形している: %q", full)
 	}
-	if none := slideLeftWindow(window, 0, 10, false); none[0] != "" || none[3] != "" {
-		t.Errorf("進捗 0 で描かれている: %q", none)
+	// 進捗 0 は中身 0 桁 + 左端のボーダーだけ (動き出しから端が見える)
+	if none := slideLeftWindow(window, 0, 10, false, false); none[0] != "▒" || none[3] != "▒" {
+		t.Errorf("進捗 0 がボーダー 1 桁になっていない: %q", none)
 	}
-	// 閉じは全行同時・等速 (rowOffsetRatio の closing 分岐)
-	closing := slideLeftWindow(window, 0.5, 10, true)
+	// 閉じは全行同時・等速 (rowOffsetRatio の closing 分岐)。5 桁 = 中身 4 + ボーダー 1
+	closing := slideLeftWindow(window, 0.5, 10, true, false)
 	if closing[0] != closing[3] {
 		t.Errorf("閉じで行ごとに差が出ている: %q vs %q", closing[0], closing[3])
 	}
-	if closing[0] != "01234" {
-		t.Errorf("閉じ 0.5 の残り = %q, want %q", closing[0], "01234")
+	if closing[0] != "0123▒" {
+		t.Errorf("閉じ 0.5 の残り = %q, want %q", closing[0], "0123▒")
 	}
-	// 全角の境界をまたぐ切りは文字を割らず幅内に収める (幅 5 に 3 文字目の「う」は入らない)
-	jp := slideLeftWindow([]string{"あいうえお"}, 0.5, 10, true)
-	if jp[0] != "あい" {
-		t.Errorf("全角境界の切り = %q, want %q", jp[0], "あい")
+	// 全角の境界をまたぐ切りは文字を割らず幅内に収める (中身 4 桁に 3 文字目の「う」は入らない)
+	jp := slideLeftWindow([]string{"あいうえお"}, 0.5, 10, true, false)
+	if jp[0] != "あい▒" {
+		t.Errorf("全角境界の切り = %q, want %q", jp[0], "あい▒")
+	}
+	// 空行にもボーダーを立てる (行ごとに欠けると縦 1 本の端に見えない)
+	blank := slideLeftWindow([]string{"", "0123456789"}, 0.5, 10, true, false)
+	if dispWidth(blank[0]) != dispWidth(blank[1]) || !strings.HasSuffix(blank[0], "▒") {
+		t.Errorf("空行のボーダーが欠けている: %q vs %q", blank[0], blank[1])
+	}
+	// colored=true は近黒の █ (ドロップシャドウと同じ色)
+	col := slideLeftWindow(window, 0.5, 10, true, true)
+	if !strings.HasSuffix(col[0], ansiShadowFg+"█"+ansiReset) {
+		t.Errorf("colored のボーダーが近黒 █ になっていない: %q", col[0])
 	}
 }
 

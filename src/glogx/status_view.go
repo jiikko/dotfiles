@@ -852,7 +852,7 @@ func (v *statusView) lines(o statusRenderOpts) []string {
 		body = overlayCenteredBox(body, box, o.width, o.page, o.colored)
 	}
 	if p := v.animProgress(); p < 1 {
-		body = slideLeftWindow(body, p, o.width, v.closing)
+		body = slideLeftWindow(body, p, o.width, v.closing, o.colored)
 	}
 	return body
 }
@@ -885,23 +885,29 @@ func (v *statusView) animProgress() float64 {
 // なく 60fps でも 1 コマの移動が粗い。横は桁数 (数百ステップ) で滑らか (ユーザー要望 2026-08-06)。
 // 行が左から滑り込む真の平行移動 (truncateDispLeft) にしないのも意図的: 頭が画面外に出て
 // 尻尾の桁から現れる見た目になる。左端アンカーの成長なら行頭から読める形で現れる。
-func slideLeftWindow(window []string, progress float64, width int, closing bool) []string {
+func slideLeftWindow(window []string, progress float64, width int, closing, colored bool) []string {
 	ratio := 1 - easeOutCubicFloat(progress)
 	if closing {
 		ratio = 1 - progress
 	}
 	if ratio <= 0 {
-		return window // 全桁出た
+		return window // 全桁出た (着地したらボーダーも消える)
 	}
 	cols := width - int(math.Round(ratio*float64(width)))
+	// 動く右端は全行に 1 桁の縦ボーダーを立てて可視化する (ユーザー要望 2026-08-07)。板の中身も
+	// 画面の地も既定色のため、端を描かないと空白部分で「板がどこまで来ているか」が透明になる。
+	// 色はドロップシャドウと同じ語彙 (近黒 █ / NO_COLOR は ▒)。ボーダーは板の幅の内側 1 桁を
+	// 使う (外側に足すと終端間際で画面幅からはみ出す)
+	edge := ansiShadowFg + shadowGlyphFull + ansiReset
+	if !colored {
+		edge = shadowGlyphMono
+	}
+	inner := max(cols-1, 0)
 	out := make([]string, 0, len(window))
 	for _, ln := range window {
-		if cols <= 0 || ln == "" {
-			out = append(out, "") // まだ 1 桁も出ていない (または元から空行)
-			continue
-		}
-		// clipToWidth でなく tail 無しの truncateDisp: 動く右端に「…」を走らせない
-		out = append(out, truncateDisp(ln, cols, ""))
+		// clipToWidth でなく tail 無しの truncateDisp: 動く右端に「…」を走らせない。
+		// 短い行・空行も fillRight でボーダー位置まで詰める (縦に切れ目のない 1 本の端にする)
+		out = append(out, fillRight(truncateDisp(ln, inner, ""), inner)+edge)
 	}
 	return out
 }
