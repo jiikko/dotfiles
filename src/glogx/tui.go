@@ -1824,6 +1824,7 @@ const keyRepeatGuard = 300 * time.Millisecond
 // トグルと、押すたびに subprocess やファイル操作が走るキーだけ。
 var repeatGuardedKeys = map[string]bool{
 	"i": true, // issues viewer (押しっぱなしで高速に開閉する。ユーザー報告 2026-08-01)
+	"s": true, // status viewer (i と同じ toggle。ユーザー報告 2026-08-07)
 	"U": true, // usage オーバーレイ (開くたびに取り直しの判定が走る)
 	"d": true, // diff ポップアップ
 	"P": true, // PR 状態ポップアップ

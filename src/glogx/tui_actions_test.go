@@ -907,6 +907,32 @@ func TestKeyRepeatIsOneInput(t *testing.T) {
 	}
 }
 
+// s (status viewer) も i と同じ toggle なので押しっぱなしを 1 回に丸める (ユーザー報告 2026-08-07)。
+func TestKeyRepeatIsOneInputStatusViewer(t *testing.T) {
+	advance := stubClock(t)
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	stubWorktreeStatus(t, statusRec(" M a.go"), nil)
+	m.handleKey("s")
+	if !m.statusOv.visible() {
+		t.Fatal("前提が崩れた: s で viewer が開かない")
+	}
+	advance(225 * time.Millisecond)
+	m.handleKey("s")
+	for range 20 {
+		advance(30 * time.Millisecond)
+		m.handleKey("s")
+	}
+	if !m.statusOv.visible() {
+		t.Fatal("押しっぱなしで viewer が開閉を繰り返した (1 回の入力として扱われていない)")
+	}
+	advance(keyRepeatGuard + time.Millisecond)
+	m.handleKey("s")
+	if m.statusOv.visible() {
+		t.Fatal("押し直しが効かない (離しても 1 回扱いのまま)")
+	}
+}
+
 // ⚠️ 移動系は潰さない: 押しっぱなしでスクロールし続けるのは期待される動作で、潰すと
 // 「押しても動かない」壊れ方になる。
 func TestKeyRepeatDoesNotBlockMovement(t *testing.T) {
