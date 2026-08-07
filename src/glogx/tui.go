@@ -1019,6 +1019,12 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.hasRepo || len(m.commits) == 0 {
 			return m, m.maybeTick() // 再取得先が無くてもトーストは出す (アニメ tick を回す)
 		}
+		// status viewer 表示中は演出を出さない (対象のコミット一覧が画面に無く、演出分だけ
+		// 再取得が遅れるだけ)。代わりに viewer を読み直してヘッダーの ahead を即消す
+		// (pull 成功時の statusOv.loadCmd と同じ理由)
+		if m.statusOv.visible() {
+			return m, tea.Batch(m.refetchAfterPush(), m.maybeTick(), m.statusOv.loadCmd())
+		}
 		if m.startPushAnim() {
 			return m, m.maybeTick() // 演出完了後 (advancePushAnim) に refetchAfterPush へ進む
 		}
@@ -1231,15 +1237,16 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 			m.actModal.askPull()
 			return m, m.maybeTick()
 		}
-		if key == "b" || key == "u" {
-			// push は staging の画面から断つ (spec 3 節)。u は一覧の pull キーだが、ここでは
-			// p を使う (誤爆しやすい隣接キーで remote を叩かせない)。黙って無視すると
-			// 「押したのに何も起きない」になるので理由を返す
-			if key == "u" {
-				m.toast.show("pull は p です (status viewer では u を使いません)", false)
-			} else {
-				m.toast.show("push は status viewer 中は無効です (q で閉じてから)", false)
-			}
+		if key == "b" {
+			// push も viewer の中から打てる (ユーザー要望 2026-08-07)。p (pull) と同じく
+			// 確認 (y/N) は actModal が viewer の上に重ねて出す。b は一覧と同じキーで、
+			// staging の語彙 (j/k/Space/a/X/d…) と衝突しない
+			return m, m.confirmPush()
+		}
+		if key == "u" {
+			// u は一覧の pull キーだが、ここでは p を使う (誤爆しやすい隣接キーで remote を
+			// 叩かせない。spec 3 節)。黙って無視すると「押したのに何も起きない」になるので理由を返す
+			m.toast.show("pull は p です (status viewer では u を使いません)", false)
 			return m, m.maybeTick()
 		}
 		cmd := m.statusOv.handleKey(key, m.statusOpts().viewport())

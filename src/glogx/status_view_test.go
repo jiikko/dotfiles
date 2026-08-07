@@ -728,25 +728,21 @@ func TestStatusViewerNotOpenedWhileJobPanelOpen(t *testing.T) {
 	}
 }
 
-// staging の画面から remote 操作へ滑る導線を作らない (spec 3 節)。
-func TestStatusViewerBlocksPushAndPullKeys(t *testing.T) {
-	for _, key := range []string{"b", "u"} {
-		m := newTestBrowse(t, 3, nil, nil)
-		m.statusOv.shown = true
-		m.Update(tea.KeyPressMsg{Code: rune(key[0]), Text: key})
-		if m.actModal.pushConfirm || m.actModal.pullConfirm {
-			t.Fatalf("%s が status viewer 中に push/pull 確認を開いた", key)
-		}
-		if !m.statusOv.visible() {
-			t.Fatalf("%s で viewer が閉じた", key)
-		}
-		// ⚠️ 「確認が開かない」だけでは不十分: ガードを外しても viewer のキーに無い b/u は
-		// 素通りして何も起きないため、この assertion だけではガードの有無を区別できない
-		// (ミューテーション検証 2026-08-03 で green のままだった)。契約は「無効である理由を
-		// 返す」なので、トーストが出ることまで固定する。
-		if !m.toast.visible() {
-			t.Fatalf("%s が黙って無視された (無効である旨のトーストが出ていない)", key)
-		}
+// u は viewer 内では pull を開かず「pull は p」と案内する (spec 3 節。押しても無言にしない)。
+// ⚠️ 「確認が開かない」だけでは不十分: ガードを外しても viewer のキーに無い u は素通りして
+// 何も起きないため、トーストが出ることまで固定する (ミューテーション検証 2026-08-03)。
+func TestStatusViewerUKeyGuidesToP(t *testing.T) {
+	m := newTestBrowse(t, 3, nil, nil)
+	m.statusOv.shown = true
+	m.Update(tea.KeyPressMsg{Code: 'u', Text: "u"})
+	if m.actModal.pullConfirm {
+		t.Fatal("u が status viewer 中に pull 確認を開いた (pull は p の契約)")
+	}
+	if !m.statusOv.visible() {
+		t.Fatal("u で viewer が閉じた")
+	}
+	if !m.toast.visible() || !strings.Contains(m.toast.text, "p") {
+		t.Fatalf("u の案内が出ていない: %q", m.toast.text)
 	}
 }
 
@@ -819,21 +815,55 @@ func TestPullReloadsOpenStatusViewer(t *testing.T) {
 	}
 }
 
-// push は従来どおり遮断し、u は「pull は p」と案内する (押しても無言にしない)。
-func TestStatusViewerPushStaysBlockedAndUGuides(t *testing.T) {
-	for _, tc := range []struct{ key, want string }{
-		{"b", "push"},
-		{"u", "p"},
-	} {
-		m := newTestBrowse(t, 3, nil, nil)
-		m.statusOv.shown = true
-		m.Update(tea.KeyPressMsg{Code: rune(tc.key[0]), Text: tc.key})
-		if m.actModal.pushConfirm || m.actModal.pullConfirm {
-			t.Fatalf("%s が status viewer 中に確認を開いた", tc.key)
-		}
-		if !m.toast.visible() || !strings.Contains(m.toast.text, tc.want) {
-			t.Fatalf("%s の案内が出ていない: %q", tc.key, m.toast.text)
-		}
+// b で push の確認を開く (ユーザー要望 2026-08-07。pull の p と同じく確認は viewer の上に重ねる)。
+func TestStatusViewerPushKeyOpensConfirm(t *testing.T) {
+	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m.statuses[m.commits[0].SHA] = StateUnpushed
+	m.statusOv.shown = true
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	if !m.actModal.pushConfirm {
+		t.Fatal("b で push の確認が開かない")
+	}
+	if !m.statusOv.visible() {
+		t.Error("b で viewer が閉じた (確認は viewer の上に重ねる)")
+	}
+	out := stripANSI(m.View().Content)
+	if !strings.Contains(out, "push") {
+		t.Fatalf("push 確認が viewer の上に出ていない:\n%s", out)
+	}
+	// y は viewer でなく確認モーダルへ届く (actModal が先に捌く契約)
+	m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	if m.actModal.pushConfirm {
+		t.Error("y が確認モーダルに届いていない")
+	}
+}
+
+// 未 push が無いときの b は確認を開かず、理由をトーストで返す (一覧側と同じ no-op 通知)。
+func TestStatusViewerPushKeyNoUnpushedShowsToast(t *testing.T) {
+	m := newTestBrowse(t, 3, nil, nil)
+	m.statusOv.shown = true
+	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	if m.actModal.pushConfirm {
+		t.Fatal("未 push なしで push 確認が開いた")
+	}
+	if !m.toast.visible() {
+		t.Fatal("未 push なしの理由がトーストで出ていない")
+	}
+}
+
+// push の成功で status viewer をその場で読み直し、push 演出は出さない (viewer が全画面で
+// コミット一覧が見えないため。ヘッダーの ahead を即消すのは pull と同じ理由)。
+func TestPushReloadsOpenStatusViewerWithoutAnim(t *testing.T) {
+	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m.statuses[m.commits[0].SHA] = StateUnpushed
+	stubWorktreeStatus(t, statusRec("## master...origin/master [ahead 1]", " M a.go"), nil)
+	m.statusOv.shown = true
+	m.Update(pushMsg{})
+	if !m.statusOv.loading {
+		t.Error("push 後に status viewer を読み直していない (ヘッダーの ahead が古いまま残る)")
+	}
+	if m.pushAnimating {
+		t.Error("viewer 表示中に push 演出が始まった (画面に無い一覧を演出しても再取得が遅れるだけ)")
 	}
 }
 
