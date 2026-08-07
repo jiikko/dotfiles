@@ -108,7 +108,7 @@ type issuesView struct {
 	// takeWantStatus で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。
 	wantStatus bool
 	// wantQuit は「q/esc で glogx ごと終了したい」の一度きりの信号 (同上。quit は browseModel の
-	// 仕事で、viewer は bubbletea を知らない)。
+	// 仕事で、viewer は tea.Quit を出さない)。
 	wantQuit bool
 	// closing は閉じる演出 (開く演出の逆再生) の途中か (ユーザー要望 2026-08-01)。
 	//
@@ -1764,7 +1764,9 @@ func (v *issuesView) markNextBox(width int, colored bool) []string {
 	}
 	what := strconv.Itoa(len(v.markNext.targets)) + " 件"
 	if len(v.markNext.targets) == 1 {
-		what = filepath.Base(v.markNext.targets[0].Rel)
+		// Rel は同一性のため無害化しない実物 (issues/parse.go newIssue の doc)。画面へ出す
+		// ここで sanitize する (制御文字入りのファイル名で確認モーダルを細工させない)
+		what = sanitizePlainLine(filepath.Base(v.markNext.targets[0].Rel))
 	}
 	title, line := " next へ移動 ", what+" を next/ へ移します"
 	if v.markNext.unmark {

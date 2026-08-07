@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"glogx/issues"
 	"glogx/usage"
 )
 
@@ -29,6 +30,43 @@ func TestPRStatusBoxSanitizesBranchNames(t *testing.T) {
 	for _, line := range o.boxLines(80, false, "⠋", "") {
 		if hasTerminalControl(line) {
 			t.Errorf("PR の枠に制御シーケンスが残った: %q", line)
+		}
+		if strings.Contains(line, "PWNED") {
+			t.Errorf("OSC の中身が残った: %q", line)
+		}
+	}
+}
+
+// X の確認モーダルに載るパスは git status 由来 (POSIX ファイル名は制御文字を許す)。一覧行と
+// pager タイトルは dispPath で無害化していたのに、破壊操作の確認画面だけが raw だった回帰テスト。
+func TestDiscardBoxSanitizesPath(t *testing.T) {
+	v := newStatusView()
+	v.discarding = true
+	v.discard = worktreeRow{
+		section: sectionUnstaged, code: 'M', x: ' ', y: 'M',
+		path: "notes" + osc8 + "0;PWNED" + st8 + ".txt",
+		orig: "old" + csi8 + "2J.txt",
+	}
+	for _, line := range v.discardBox(statusRenderOpts{width: 80, page: 20}) {
+		if hasTerminalControl(line) {
+			t.Errorf("discard 確認モーダルに制御シーケンスが残った: %q", line)
+		}
+		if strings.Contains(line, "PWNED") {
+			t.Errorf("OSC の中身が残った: %q", line)
+		}
+	}
+}
+
+// n の確認モーダルに載る issue ファイル名は issues/ 直下の実ファイル名 (Rel は同一性のため
+// 生のまま保持される契約)。表示に出すここで無害化する回帰テスト。
+func TestMarkNextBoxSanitizesFilename(t *testing.T) {
+	v := &issuesView{}
+	v.markNext = issuesMarkConfirm{active: true, targets: []*issues.Issue{
+		{Rel: "036-bug-" + osc8 + "0;PWNED" + st8 + csi8 + "2J.md"},
+	}}
+	for _, line := range v.markNextBox(80, false) {
+		if hasTerminalControl(line) {
+			t.Errorf("markNext 確認モーダルに制御シーケンスが残った: %q", line)
 		}
 		if strings.Contains(line, "PWNED") {
 			t.Errorf("OSC の中身が残った: %q", line)

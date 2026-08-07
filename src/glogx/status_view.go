@@ -61,7 +61,7 @@ type statusView struct {
 	// takeWantIssues で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。
 	wantIssues bool
 	// wantQuit は「q/esc で glogx ごと終了したい」の一度きりの信号 (同上。quit は browseModel の
-	// 仕事で、viewer は bubbletea を知らない)。
+	// 仕事で、viewer は tea.Quit を出さない)。
 	wantQuit bool
 
 	// 開閉の演出 (下からせり上がる / 下へ沈む)。issuesView と同じく closing 中も shown を
@@ -1197,7 +1197,7 @@ func (v *statusView) discardBox(o statusRenderOpts) []string {
 	}
 	rows := []string{
 		head,
-		"  " + string(v.discard.code) + " " + v.discard.path,
+		"  " + string(v.discard.code) + " " + v.discard.dispPath(),
 		"",
 		paint("y/Enter: 実行   n/Esc: キャンセル", ansiDim, o.colored),
 	}
