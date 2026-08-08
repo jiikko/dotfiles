@@ -130,6 +130,20 @@ tt_debounced_save_main() {
     return 0
   fi
 
+  # agent panel (scripts/tmux_agent_panel.sh) の kill/create 由来のイベントは保存契機に
+  # しない。panel は window 切替のたびに pane を作り直すため、これが無いと切替のたびに
+  # debounce 保存 (1 回 ~20MB のダンプ) が走り、周期保存を 60 分に延ばした I/O 削減
+  # (@continuum-save-interval のコメント) が台無しになる。panel が直前に
+  # @agent_panel_busy へ epoch を書く。窓内 (3 秒) の実イベントも落ちるが、保存はフル
+  # スナップショットなので次のイベントが取り返す (損失は「窓内イベントが最後 + その後
+  # クラッシュ」のときだけ。周期保存と kill shim がカバー)
+  local panel_busy
+  panel_busy="$(tmux show -gqv @agent_panel_busy 2>/dev/null)"
+  case "$panel_busy" in
+    ''|*[!0-9]*) ;;
+    *) [ $(( $(date +%s) - panel_busy )) -lt "${AGENT_PANEL_QUIET_SECS:-3}" ] && return 0 ;;
+  esac
+
   mkdir -p "$TT_DEBOUNCE_STATE_DIR" 2>/dev/null
 
   local token tmp

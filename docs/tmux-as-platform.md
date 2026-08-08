@@ -402,6 +402,7 @@ set -g status-right ""   # continuum autosave 用に最小長は残す
 | scratch / prefix 点滅 | scratch 表示時・prefix 押下時 | #{T:@secfmt} + #{e|m:} 剰余の format 算術（fork ゼロ） | `_tmux.conf` status-left |
 | セッション bootstrap / 復元待ち | `t` / `tt` コマンド | new-session / has-session / @tt-restore-complete 待ち | `zshlib/_tmux_session.zsh` |
 | window 名 = コマンド名追従 | preexec/precmd | automatic-rename-format '#{pane_title}' + OSC 2 | `zshlib/_tmux_window_name.zsh` |
+| エージェント常駐パネル (herdr 風) | `prefix + a`（トグル）+ window 切替追従 | floating pane (new-pane -X/-Y -d, 3.7+) / after-select-window hook で kill+create 追従 / @claude_state 集約 | `scripts/tmux_agent_panel.sh` |
 
 ---
 

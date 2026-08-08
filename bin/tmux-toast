@@ -57,6 +57,17 @@ last=$(tmux show-option -gqv @tmux_toast_last_epoch)
 if [ -n "$last" ] && [ $((now - last)) -lt 2 ]; then
   exit 0
 fi
+
+# agent panel (scripts/tmux_agent_panel.sh) の kill/create 由来のイベントは通知しない。
+# panel は window 切替のたびに pane を作り直すため、これが無いと切替ごとに
+# 「分割/閉じました」toast が出る。panel が直前に @agent_panel_busy へ epoch を書く。
+# 窓内 (3 秒) の実イベント toast も落ちるが装飾通知なので許容
+AGENT_PANEL_QUIET_SECS=3
+panel_busy=$(tmux show-option -gqv @agent_panel_busy)
+case "$panel_busy" in
+  ''|*[!0-9]*) ;;
+  *) [ $((now - panel_busy)) -lt "$AGENT_PANEL_QUIET_SECS" ] && exit 0 ;;
+esac
 tmux set-option -g @tmux_toast_last_epoch "$now"
 
 # 表示セル幅 (東アジア文字=2セル)。bash の ${#msg} は文字数でありセル幅ではない。
