@@ -201,6 +201,9 @@ func Usage() string {
   o                         コミットの GitHub ページをブラウザで開く
   p                         コミットに紐づく PR をブラウザで開く
                             (associatedPullRequests。複数あれば OPEN > MERGED 優先)
+  e                         nvim を repo root で開く (nvim . — 閉じると glogx へ復帰)
+  E                         ファイラーを repo root で開く (yazi/ranger/lf/nnn/vifm の
+                            先勝ち。無ければトーストで案内)
   i                         issues viewer を全画面で開く (toggle。右から左へ流し込む演出)。
                             repo 直下と <sub>/issues の *.md をカテゴリ別タブ (カテゴリごとに
                             色。bug は赤) で一覧し、Enter で本文を表示する。viewer 内のキーは

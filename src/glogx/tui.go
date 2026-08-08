@@ -1394,6 +1394,10 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.openDiff()
 	case "o":
 		return m, m.openCommitURL()
+	case "e":
+		return m, m.openEditorAtRoot()
+	case "E":
+		return m, m.openFilerAtRoot()
 	}
 	return m, nil
 }

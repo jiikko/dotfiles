@@ -150,6 +150,8 @@ glogx --help              # ヘルプ (キー操作・記号・終了コード�
 | `Enter` / `Space` / `l` / `→` / `Tab` | CI job 一覧のポップアップを開く |
 | `d` | **コミットの diff をポップアップ表示** (`git show --stat --patch`。コード部分は chroma で拡張子ベースのシンタックスハイライト。ほぼ全画面のモーダルで less 流儀にスクロール: `j`/`k`/`Enter` 行送り・`Space`/`f`/`b`/`C-d`/`C-u` 半ページ・`g`/`G`。末尾では最終行を表示したまま止まる。閉じるのは `q`/`h`/`Esc`/`d`。SHA ごとにセッション内キャッシュ) |
 | `o` | **コミットの GitHub ページをブラウザで開く** |
+| `e` | **nvim を repo root で開く** (`nvim .` なので oil/netrw がそのまま入口になる。閉じると glogx へ復帰。C-g の tmux popup 内でもその popup の中で開く) |
+| `E` | **ファイラーを repo root で開く** (yazi → ranger → lf → nnn → vifm の先勝ち。1 つも無ければトーストで案内) |
 | `p` | **コミットに紐づく PR をブラウザで開く** (`associatedPullRequests` で解決。ブランチ指定は不要。複数あれば OPEN > MERGED 優先。無ければヒント行に通知) |
 | `P` | **PR の状態ポップアップ** (state / draft / レビュー承認 / conflict / CI をブラウザなしで確認。`o` でブラウザ・`y` で URL コピー・`P`/`q`/`h` で閉じる。mergeable は GitHub 側の遅延計算中は「計算中」表示) |
 | `b` | **git push** (y/N 確認。未 push が無ければ警告のみ。diff 表示中の `b` はスクロール) |
