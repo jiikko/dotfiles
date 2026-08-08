@@ -265,11 +265,16 @@ state_color() {
 }
 
 draw_once() {
-  local rows h body_max shown=0 total=0 n_input=0 n_working=0
+  local rows h body_max shown=0 total=0 n_input=0 n_working=0 n_all=0
   rows="$(list_agents)"
   h="$(tmux display-message -p '#{pane_height}' 2>/dev/null)"
   case "$h" in ''|*[!0-9]*) h=$PANEL_MAX_H ;; esac
+  # body はヘッダー 1 行を除いた残り。全件が収まらないときは「+N more」行の分を
+  # さらに 1 行予約する (予約しないと合計が pane 高さを 1 行超過してスクロールし、
+  # ヘッダーが欠ける off-by-one。セルフレビューで検出 2026-08-08)
   body_max=$((h - 1))
+  n_all="$(printf '%s\n' "$rows" | awk 'NF' | wc -l | tr -d ' ')"
+  [ "$n_all" -gt "$body_max" ] && body_max=$((h - 2))
 
   local out line state loc name since _rank color
   out=""
