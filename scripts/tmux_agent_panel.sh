@@ -40,6 +40,13 @@ unset CDPATH
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 
+# 復元中 / bootstrap 判定 (tt_restore_in_progress / tt_only_hold_sessions)。
+# デフォルト表示 (@agent_panel_on を conf が立てる) のため、サーバ起動直後の hook でも
+# follow が走る。復元前に panel pane を作ると「総 pane 数 = 1」を破って resurrect の
+# restore_from_scratch (スクロールバック復元) を不発にするため、guards で抑止する
+# shellcheck source=scripts/lib/tmux_resurrect_guards.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmux_resurrect_guards.sh"
+
 PANEL_W=38          # パネル幅 (セル)。行の組み立て (build_lines) はこの幅に収まる前提
 PANEL_MAX_H=14      # 高さ上限 (超過分は +N more に畳む)
 REFRESH_SECS=2      # 描画ループの更新間隔
@@ -109,6 +116,11 @@ cmd_toggle() {
 cmd_follow() {
   local win="${1:-}" p
   panel_on || exit 0
+  # 復元中 / bootstrap (hold のみ) は作らない (冒頭の guards コメント参照)。
+  # 復元完了後の最初の window 切替 / attach で作られる
+  if tt_restore_in_progress || tt_only_hold_sessions; then
+    exit 0
+  fi
   [ -n "$win" ] || win="$(tmux display-message -p '#{window_id}')"
   p="$(panel_pane)"
   if pane_alive "$p" && [ "$(pane_window "$p")" = "$win" ]; then

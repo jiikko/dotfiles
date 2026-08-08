@@ -35,11 +35,13 @@ cat > "$TMP_DIR/bin/tmux" <<'EOS'
 #!/bin/sh
 echo "tmux $*" >> "$CALLS"
 case "$1" in
-  show-option)
+  show-option|show)
     case "$*" in
       *@agent_panel_on*)   echo "${STUB_PANEL_ON:-}" ;;
       *@agent_panel_pane*) echo "${STUB_PANEL_PANE:-}" ;;
+      *@tt-restore-in-progress*) echo "${STUB_RESTORING:-}" ;;
     esac ;;
+  list-sessions) printf '%s\n' "${STUB_SESSIONS:-main}" ;;
   display-message)
     case "$*" in
       *window_width*) echo '200' ;;
@@ -106,6 +108,24 @@ if grep -Eq 'new-pane|kill-pane' "$CALLS"; then
   ng "follow (off): pane 操作をしている (即 exit の軽量パスが壊れた)"
 else
   ok "follow (off): 即 exit で pane 操作なし"
+fi
+
+# --- follow (復元中 / bootstrap): panel を作らない --------------------------------
+# 復元前に panel pane を作ると resurrect の restore_from_scratch (総 pane 数=1 条件) を
+# 破ってスクロールバック復元が不発になる。デフォルト表示化で必須になったガード
+: > "$CALLS"
+STUB_PANEL_ON=1 STUB_PANEL_PANE='' STUB_RESTORING="$(date +%s)" "$SCRIPT" follow '@2' || ng "follow (復元中) が非 0"
+if grep -Eq 'new-pane|kill-pane' "$CALLS"; then
+  ng "follow (復元中): pane 操作をしている (restore_from_scratch を壊す)"
+else
+  ok "follow (復元中): pane 操作なし"
+fi
+: > "$CALLS"
+STUB_PANEL_ON=1 STUB_PANEL_PANE='' STUB_SESSIONS='__tt_hold_123' "$SCRIPT" follow '@2' || ng "follow (hold のみ) が非 0"
+if grep -Eq 'new-pane|kill-pane' "$CALLS"; then
+  ng "follow (hold のみ): pane 操作をしている (bootstrap を壊す)"
+else
+  ok "follow (bootstrap: hold のみ): pane 操作なし"
 fi
 
 # --- follow (同一 window) -------------------------------------------------------
