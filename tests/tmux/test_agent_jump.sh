@@ -34,7 +34,7 @@ EOS
 # stub fzf: 渡された候補と引数を記録し、STUB_FZF_PICK 行目を選択として返す (0 = キャンセル)
 cat > "$TMP_DIR/bin/fzf" <<'EOS'
 #!/bin/sh
-echo "fzf $*" >> "$CALLS"
+echo "fzf env-default-opts=[${FZF_DEFAULT_OPTS-UNSET}] $*" >> "$CALLS"
 cat > "$FZF_INPUT"
 [ "${STUB_FZF_PICK:-1}" = 0 ] && exit 130
 sed -n "${STUB_FZF_PICK:-1}p" "$FZF_INPUT"
@@ -88,9 +88,12 @@ ok "選択 → switch-client + select-window + select-pane (上の ✗ が無け
 grep -q 'fzf .*--disabled' "$CALLS" || ng "fzf: --disabled (絞り込み無効) が無い"
 grep -q 'j:down,k:up' "$CALLS" || ng "fzf: j/k のカーソル移動 bind が無い"
 grep -q 'preview-half-page' "$CALLS" || ng "fzf: J/K のプレビュースクロール bind が無い"
-grep -q 'preview-window=down,80%,follow' "$CALLS" || ng "fzf: プレビューの末尾追従 (follow) が無い"
+grep -Eq 'preview-window=down,[0-9]+,follow' "$CALLS" || ng "fzf: 絶対行数 + follow のプレビュー指定が無い"
 grep -q -- '--header=.*スクロール' "$CALLS" || ng "fzf: 操作ヒントのヘッダーが無い"
 grep -q '+999999' "$CALLS" && ng "fzf: +999999 に退行 (最終行が先頭に来て空白に見える)"
+# zshrc の FZF_DEFAULT_OPTS ('--height 80% --border') が継承されると上下 2 割の余白と
+# 二重枠になる (実測 2026-08-08)。スクリプトが必ず空で上書きしていること
+grep -q 'env-default-opts=\[\]' "$CALLS" || ng "fzf: FZF_DEFAULT_OPTS を空にしていない (--height 80% が継承される)"
 ok "fzf: --disabled + j/k + プレビュースクロール (上の ✗ が無ければ)"
 
 # --- fzf キャンセル: 何も切り替えない --------------------------------------------

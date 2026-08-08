@@ -55,9 +55,26 @@ fi
 # 先頭に来る」位置で止まり、以降が全て空白 = 何も表示されないように見える (実測
 # 2026-08-08。follow は最終行が最下部に来る)
 # --border なし: display-popup の枠と二重になり上下 2 行を無駄にするため (bind A 側コメント
-# とセット)。プレビューは 80% (候補は少数なので一覧は上 20% で足りる)
+# とセット)。
+# プレビューの高さは % でなく絶対行数で「画面 - (候補数 + ヘッダー類)」を指定する:
+# % 指定だと候補リスト領域の余り (数候補しか無いのに 2 割) が空白のままプレビューの上に
+# 残る (ユーザー指摘 2026-08-08)。overhead 5 = prompt 1 + separator 1 + header 1 +
+# プレビュー枠 2 (fzf のプレビューは自前の枠を描く。3 だと候補リストが押し出される実測)。
+# ⚠️ 高さは tput lines でなく stty size で取る: popup/floating pane の tty では tput が
+# 実サイズでなく terminfo 既定の 24 を返す (実測 2026-08-08。stty は ioctl なので正しい)
+n_rows=$(printf '%s\n' "$rows" | wc -l | tr -d ' ')
+# { } でくるむのは /dev/tty が開けない環境 (テスト / 非対話) でリダイレクト失敗の
+# エラーも握り潰すため。|| true は set -e/pipefail 下での即死防止 (fallback 40 に倒す)
+term_h=$({ stty size </dev/tty; } 2>/dev/null | awk '{print $1}' || true)
+case "$term_h" in ''|*[!0-9]*) term_h=40 ;; esac
+pv_h=$(( term_h - n_rows - 5 ))
+[ "$pv_h" -lt 10 ] && pv_h=10   # 極端に狭い端末 / 大量候補では最低 10 行を確保
+# ⚠️ FZF_DEFAULT_OPTS を必ず空にする: zshrc の '--height 80% --reverse --border' が
+# tmux 経由で popup にも継承され、--height 80% が「上下 2 割の余白」・--border が
+# 「popup 枠との二重枠」になっていた (実測 2026-08-08。上下マージンの正体はこれ)。
+# ここで使うオプションは全て明示引数で渡す
 selected=$(printf '%s\n' "$rows" | cut -f2- \
-  | fzf --ansi --reverse --disabled --no-info \
+  | FZF_DEFAULT_OPTS='' fzf --ansi --reverse --disabled --no-info \
         --prompt='agent> ' \
         --header='j/k: 移動   Shift+J/K: プレビューをスクロール   Enter: ジャンプ   q: 閉じる' \
         --preview-label=' 出力プレビュー (Shift+J: 下 / Shift+K: 上) ' \
@@ -65,7 +82,7 @@ selected=$(printf '%s\n' "$rows" | cut -f2- \
         --bind 'j:down,k:up,q:abort' \
         --bind 'J:preview-half-page-down,K:preview-half-page-up' \
         --preview 'tmux capture-pane -ep -t {1} -S -300' \
-        --preview-window=down,80%,follow) || exit 0
+        --preview-window="down,${pv_h},follow") || exit 0
 
 target=$(printf '%s\n' "$selected" | cut -f1)
 [ -n "$target" ] || exit 0
