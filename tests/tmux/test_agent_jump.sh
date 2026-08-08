@@ -89,6 +89,7 @@ grep -q 'fzf .*--disabled' "$CALLS" || ng "fzf: --disabled (絞り込み無効) 
 grep -q 'j:down,k:up' "$CALLS" || ng "fzf: j/k のカーソル移動 bind が無い"
 grep -q 'preview-half-page' "$CALLS" || ng "fzf: J/K のプレビュースクロール bind が無い"
 grep -q 'preview-window=down,60%,follow' "$CALLS" || ng "fzf: プレビューの末尾追従 (follow) が無い"
+grep -q -- '--header=.*スクロール' "$CALLS" || ng "fzf: 操作ヒントのヘッダーが無い"
 grep -q '+999999' "$CALLS" && ng "fzf: +999999 に退行 (最終行が先頭に来て空白に見える)"
 ok "fzf: --disabled + j/k + プレビュースクロール (上の ✗ が無ければ)"
 

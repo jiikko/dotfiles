@@ -56,7 +56,9 @@ fi
 # 2026-08-08。follow は最終行が最下部に来る)
 selected=$(printf '%s\n' "$rows" | cut -f2- \
   | fzf --ansi --reverse --border --disabled --no-info \
-        --prompt='agent (j/k: 移動, J/K: プレビュー, q: 閉じる)> ' \
+        --prompt='agent> ' \
+        --header='j/k: 移動   Shift+J/K: プレビューをスクロール   Enter: ジャンプ   q: 閉じる' \
+        --preview-label=' 出力プレビュー (Shift+J: 下 / Shift+K: 上) ' \
         --delimiter=$'\t' --with-nth=2.. \
         --bind 'j:down,k:up,q:abort' \
         --bind 'J:preview-half-page-down,K:preview-half-page-up' \
