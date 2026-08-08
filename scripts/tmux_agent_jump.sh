@@ -54,8 +54,10 @@ fi
 # ⚠️ 末尾表示に +999999 オフセットを使わないこと: clamp は「最終行がプレビューの
 # 先頭に来る」位置で止まり、以降が全て空白 = 何も表示されないように見える (実測
 # 2026-08-08。follow は最終行が最下部に来る)
+# --border なし: display-popup の枠と二重になり上下 2 行を無駄にするため (bind A 側コメント
+# とセット)。プレビューは 80% (候補は少数なので一覧は上 20% で足りる)
 selected=$(printf '%s\n' "$rows" | cut -f2- \
-  | fzf --ansi --reverse --border --disabled --no-info \
+  | fzf --ansi --reverse --disabled --no-info \
         --prompt='agent> ' \
         --header='j/k: 移動   Shift+J/K: プレビューをスクロール   Enter: ジャンプ   q: 閉じる' \
         --preview-label=' 出力プレビュー (Shift+J: 下 / Shift+K: 上) ' \
@@ -63,7 +65,7 @@ selected=$(printf '%s\n' "$rows" | cut -f2- \
         --bind 'j:down,k:up,q:abort' \
         --bind 'J:preview-half-page-down,K:preview-half-page-up' \
         --preview 'tmux capture-pane -ep -t {1} -S -300' \
-        --preview-window=down,60%,follow) || exit 0
+        --preview-window=down,80%,follow) || exit 0
 
 target=$(printf '%s\n' "$selected" | cut -f1)
 [ -n "$target" ] || exit 0
