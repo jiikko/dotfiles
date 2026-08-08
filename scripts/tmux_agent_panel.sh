@@ -212,7 +212,7 @@ draw_once() {
       total=$((total + 1))
       case "$state" in *input*) n_input=$((n_input + 1)) ;; *working*) n_working=$((n_working + 1)) ;; esac
     done <<< "$rows"
-    out+="$(printf '\e[1m 🤖 AGENTS %d  ⚙%d 🔔%d\e[0m' "$total" "$n_working" "$n_input")"$'\n'
+    out+="$(printf '\e[1m 🤖 AGENTS %d  ⚙%d 🔔%d\e[0m\e[38;5;240m   C-t a: 非表示 / C-t A: ジャンプ\e[0m' "$total" "$n_working" "$n_input")"$'\n'
     while IFS=$'\t' read -r _rank state loc name; do
       [ "$shown" -ge "$body_max" ] && break
       color="$(state_color "$state")"
@@ -228,7 +228,7 @@ draw_once() {
       out+="$(printf '\e[38;5;240m  +%d more\e[0m' $((total - shown)))"$'\n'
     fi
   else
-    out+=$'\e[1m 🤖 AGENTS 0\e[0m\n'
+    out+=$'\e[1m 🤖 AGENTS 0\e[0m\e[38;5;240m   C-t a: 非表示 / C-t A: ジャンプ\e[0m\n'
     out+=$'\e[38;5;240m  (no agents)\e[0m\n'
   fi
 
