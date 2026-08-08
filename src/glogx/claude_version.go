@@ -41,23 +41,15 @@ type claudeVersionCache struct {
 	FetchedAt time.Time `json:"fetchedAt"`
 }
 
-func claudeVersionCachePath() (string, error) {
-	base, err := cacheBaseDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(base, claudeVersionCacheFile), nil
-}
-
 // npmLatestURL は最新公開バージョンの照会先。npm registry の dist-tags は native installer
 // 配布と同一バージョン系列なので比較指標として有効 (issue 024)。`npm view` の exec より依存
 // (npm の有無) が少なく、stdlib だけで足りる。
 const npmLatestURL = "https://registry.npmjs.org/@anthropic-ai/claude-code/latest"
 
-// fetchLatestClaudeVersion はテストで実ネットワークに触れないための差し替え点。
-// 失敗はすべて空文字 (無通知に落とす)。
-var fetchLatestClaudeVersion = func(ctx context.Context) string {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, npmLatestURL, nil)
+// fetchNpmLatestVersion は npm registry の /latest manifest から version を読む共通実装
+// (claude / codex の新バージョン検出で共用)。失敗はすべて空文字 (無通知に落とす)。
+func fetchNpmLatestVersion(ctx context.Context, url string) string {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return ""
 	}
@@ -81,6 +73,11 @@ var fetchLatestClaudeVersion = func(ctx context.Context) string {
 		return ""
 	}
 	return strings.TrimSpace(manifest.Version)
+}
+
+// fetchLatestClaudeVersion はテストで実ネットワークに触れないための差し替え点。
+var fetchLatestClaudeVersion = func(ctx context.Context) string {
+	return fetchNpmLatestVersion(ctx, npmLatestURL)
 }
 
 // fetchInstalledClaudeVersion はテストで claude CLI を起動しないための差し替え点。
@@ -146,32 +143,40 @@ func saveClaudeVersionCache(path, latest string, now time.Time) error {
 	return writeAtomic(path, data)
 }
 
-// checkClaudeVersionCmd は起動時のバージョン確認 1 回分。キャッシュが fresh なら registry へ
-// 出ない。インストール済みの取得 (claude --version の exec) は「比較対象の latest が手に
-// 入った後」だけ実行する — latest が取れない状況 (オフライン等) で無駄に node プロセスを
+// checkCLIVersionCmd は「latest 照会 (TTL キャッシュ) → インストール済みと比較 → 新しければ
+// mk(latest) を返す」の共通フロー (claude / codex で共用)。キャッシュが fresh なら registry へ
+// 出ない。インストール済みの取得 (CLI --version の exec) は「比較対象の latest が手に
+// 入った後」だけ実行する — latest が取れない状況 (オフライン等) で無駄にプロセスを
 // 起動しないため。全体がバックグラウンドの tea.Cmd (goroutine) で走り、初期描画の
 // クリティカルパスには乗らない。通知不要ならば nil Msg (bubbletea が無視する)。
-func checkClaudeVersionCmd() tea.Cmd {
+func checkCLIVersionCmd(cacheFile string, fetchLatest, fetchInstalled func(context.Context) string, mk func(latest string) tea.Msg) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), claudeVersionFetchTimeout)
 		defer cancel()
 		now := time.Now()
-		path, err := claudeVersionCachePath()
+		base, err := cacheBaseDir()
 		if err != nil {
 			return nil
 		}
+		path := filepath.Join(base, cacheFile)
 		latest, cached := loadClaudeVersionCache(path, now)
 		if !cached {
-			latest = fetchLatestClaudeVersion(ctx)
+			latest = fetchLatest(ctx)
 			if latest == "" {
 				return nil // 取得失敗はキャッシュも更新しない (次回起動で再試行)
 			}
 			_ = saveClaudeVersionCache(path, latest, now) // 保存失敗しても通知自体は成立させる
 		}
-		installed := fetchInstalledClaudeVersion(ctx)
+		installed := fetchInstalled(ctx)
 		if installed == "" || !versionLess(installed, latest) {
 			return nil
 		}
-		return claudeUpdateAvailableMsg{latest: latest}
+		return mk(latest)
 	}
+}
+
+// checkClaudeVersionCmd は起動時の Claude Code バージョン確認 1 回分。
+func checkClaudeVersionCmd() tea.Cmd {
+	return checkCLIVersionCmd(claudeVersionCacheFile, fetchLatestClaudeVersion, fetchInstalledClaudeVersion,
+		func(latest string) tea.Msg { return claudeUpdateAvailableMsg{latest: latest} })
 }

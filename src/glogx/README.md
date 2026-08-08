@@ -55,7 +55,9 @@ Date:   Thu Jul 16 14:03:21 2026 +0900
 - **Claude Code 連携**: `U` で `/usage` の残量を右上モーダルに表示 (codex CLI があれば
   その残量も区切り罫線付きで併記。表示中は 1 分ごとに自動更新。
   非表示のあいだは更新を止め、再表示時に古ければ取り直す)、`C` で `claude update` を実行
-  (結果を下部モーダルに表示)
+  (結果を下部モーダルに表示)。**codex も同様に扱う**: 起動時に npm registry と `codex --version`
+  を比較して新バージョンがあればトーストで知らせ、`X` で `codex update` を実行する
+  (claude の新バージョン検出 / `C` と完全な鏡像)
 - **tmux popup 対応**: ctrl+g の popup 内では tmux prefix が window 操作に効かないため、
   押すとその旨を案内し、続く 1 キーを無視する (誤爆でコミットを選ばない)
 

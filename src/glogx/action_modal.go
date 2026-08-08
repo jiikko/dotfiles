@@ -23,9 +23,10 @@ type actionModal struct {
 	rerunJobName string // 再実行対象の job 名 (確認モーダルの文言用)
 	// rerunAction は確認 y で実行する tea.Cmd。job id / repo / SHA は browseModel 側の関心事
 	// なので、askRerun 時に closure として注入する (この型は CI 状態を知らない)
-	rerunAction tea.Cmd
-	rerunning   bool // gh run rerun 実行中 (終了以外のキーを無視)
-	updating    bool // claude update 実行中 (終了以外のキーを無視)
+	rerunAction  tea.Cmd
+	rerunning    bool   // gh run rerun 実行中 (終了以外のキーを無視)
+	updating     bool   // claude / codex update 実行中 (終了以外のキーを無視)
+	updateTarget string // updating 中の対象 CLI 名 ("claude" / "codex"。モーダルの題字用)
 	// cancel は走行中の push/pull を quit から中断するための cancel (deadline 無し)。running な
 	// git 子プロセスが Ctrl-C 中断時に孤児化するのを防ぐ (leak 監査 2026-07-23)。stop() で呼ぶ。
 	cancel context.CancelFunc
@@ -153,9 +154,21 @@ func (a *actionModal) askPull() { a.pullConfirm = true }
 // 立て、実行結果を updateMsg で返す tea.Cmd を返す (呼び出し側が maybeTick と束ねる)。
 func (a *actionModal) startUpdate() tea.Cmd {
 	a.updating = true
+	a.updateTarget = "claude"
 	return func() tea.Msg {
 		before, after, err := runClaudeUpdate()
-		return updateMsg{before: before, after: after, err: err}
+		return updateMsg{target: "claude", before: before, after: after, err: err}
+	}
+}
+
+// startCodexUpdate は X で codex update を確認なし即実行する (startUpdate の codex 版。
+// モーダル表示と結果トーストは updateTarget / updateMsg.target で claude と出し分ける)。
+func (a *actionModal) startCodexUpdate() tea.Cmd {
+	a.updating = true
+	a.updateTarget = "codex"
+	return func() tea.Msg {
+		before, after, err := runCodexUpdate()
+		return updateMsg{target: "codex", before: before, after: after, err: err}
 	}
 }
 
@@ -179,6 +192,9 @@ func (a *actionModal) boxLines(width int, colored bool, spinner string, unpushed
 		rows = []string{spinner + " 再実行を要求中..."}
 	case a.updating:
 		title = " claude update "
+		if a.updateTarget == "codex" {
+			title = " codex update "
+		}
 		rows = []string{
 			spinner + " updating...",
 			"",

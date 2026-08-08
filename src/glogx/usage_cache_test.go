@@ -32,7 +32,10 @@ Last 24h · 875 requests · 7 sessions`
 }
 
 // 保存 → TTL 内は読める / TTL 到達で切れる (境界は「以上で切れる」)。
+// fixture は codex 枠を含まないため、実行マシンの codex 有無で結果が揺れないよう
+// lookPath を「codex なし」に固定する (codex 欠損 miss 規則は専用テストが担う)。
 func TestUsageCacheRoundTripAndTTL(t *testing.T) {
+	stubLookPath(t, nil)
 	path := filepath.Join(t.TempDir(), usageCacheFile)
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.Local)
 	if err := saveUsageCache(path, usageSnapFixture(t), now); err != nil {
@@ -90,8 +93,9 @@ func TestUsageCacheFallsBackToMiss(t *testing.T) {
 	}
 }
 
-// キャッシュ契約は Claude 枠が必須、codex 枠は best-effort。
+// キャッシュ契約は Claude 枠が必須、codex 枠は best-effort (codex 未インストール環境)。
 func TestUsageCacheRequiresClaude(t *testing.T) {
+	stubLookPath(t, nil) // codex 未インストールの環境として評価する
 	dir := t.TempDir()
 	now := time.Now()
 
@@ -113,6 +117,37 @@ func TestUsageCacheRequiresClaude(t *testing.T) {
 	}
 	if _, ok := loadUsageCache(claudeOnly, now); !ok {
 		t.Error("fresh な Claude 枠ありキャッシュが miss になった")
+	}
+}
+
+// codex CLI が入っている環境では codex 欠損の部分スナップショットを採用しない: codex の
+// 一時失敗 (app-server 起動失敗等) が TTL の間キャッシュされ、U を押しても codex 行が
+// 出ない「失敗の固定化」になる (ユーザー報告 2026-08-09)。codex 枠を含むスナップショットは
+// 従来どおり hit する。
+func TestUsageCacheRequiresCodexWhenInstalled(t *testing.T) {
+	stubLookPath(t, map[string]string{"codex": "/opt/bin/codex"})
+	dir := t.TempDir()
+	now := time.Now()
+
+	claudeOnly := filepath.Join(dir, "claude-only.json")
+	if err := saveUsageCache(claudeOnly, &usage.Snapshot{Windows: []usage.Window{
+		{Label: "5h"},
+	}}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := loadUsageCache(claudeOnly, now); ok {
+		t.Error("codex 入りの環境で codex 欠損キャッシュが hit した (失敗の固定化)")
+	}
+
+	both := filepath.Join(dir, "both.json")
+	if err := saveUsageCache(both, &usage.Snapshot{Windows: []usage.Window{
+		{Label: "5h"},
+		{Label: "cx7d", Source: usage.SourceCodex},
+	}}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := loadUsageCache(both, now); !ok {
+		t.Error("claude + codex 両枠ありの fresh キャッシュが miss になった")
 	}
 }
 

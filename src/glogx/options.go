@@ -226,6 +226,8 @@ func Usage() string {
                             規約は docs/status-viewer-spec.md
   U                         Claude Code の /usage 残量を右上モーダルで表示 (toggle)
   C                         claude update を実行する (確認なし即実行。結果は下部に表示)
+  X                         codex update を実行する (C の codex 版。起動時に新バージョンを
+                            検出するとトーストで X を案内する)
   w                         直近の警告/エラーをクリップボードへコピー (トーストが消えた後も可。
                             tmux popup 内では copy-mode に入れないため pbcopy 直書きで取り出す)
   P                         コミットに紐づく PR の状態ポップアップ (state / draft /

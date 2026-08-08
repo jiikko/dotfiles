@@ -191,6 +191,26 @@ var runClaudeUpdate = func() (before, after string, err error) {
 	return before, after, nil
 }
 
+// runCodexUpdate はテストで実 update しないための差し替え点 (runClaudeUpdate の codex 版)。
+// `codex update` は codex CLI の自己更新サブコマンド (0.144 で実在確認 2026-08-09)。
+// タイムアウト・WaitDelay の理由は runClaudeUpdate のコメント参照 (同じ罠が同じように効く)。
+var runCodexUpdate = func() (before, after string, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
+	defer cancel()
+	before = fetchInstalledCodexVersion(ctx)
+	cmd := exec.CommandContext(ctx, "codex", "update")
+	cmd.WaitDelay = usage.SubprocessWaitDelay
+	out, e := cmd.CombinedOutput()
+	if e != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return before, "", fmt.Errorf("codex update がタイムアウトしました (%s)", updateTimeout)
+		}
+		return before, "", fmt.Errorf("%s", lastLine(strings.TrimSpace(string(out))))
+	}
+	after = fetchInstalledCodexVersion(ctx)
+	return before, after, nil
+}
+
 // runJobRerun はテストで実 rerun しないための差し替え点 (本体は jobRerun)。
 var runJobRerun = func(ctx context.Context, repo Repo, jobID int64) error {
 	return jobRerun(ctx, ExecRunner, repo, jobID)

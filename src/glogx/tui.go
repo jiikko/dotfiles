@@ -164,9 +164,10 @@ type pullMsg struct{ err error }
 // before/after は update 前後の CLI バージョン (取得失敗時は空)。両方取れて差があれば
 // "vX → vY"、同じなら「変更なし」を notice に出す。
 type updateMsg struct {
+	target string // "claude" / "codex" (結果トーストの出し分け用)
 	before string
 	after  string
-	err    error // 失敗時のみ。Error() は claude 出力の末尾行を含む
+	err    error // 失敗時のみ。Error() は CLI 出力の末尾行を含む
 }
 
 // prefixMsg は tmux prefix の取得結果 (起動時に 1 回、非同期)。
@@ -386,9 +387,10 @@ func (m *browseModel) Init() tea.Cmd {
 	// usage を起動時に取得するため tick を常に起動する (取得中スピナーを回す。取得完了で
 	// spinnerActive が false になり tick は自然に止まる)。CI fetch の有無に依らず起動する。
 	// usageRefreshTick で 1 分ごとのバックグラウンド再取得チェーンも起動する (ユーザー要望)。
-	// Claude Code の新バージョン検出 (claude_version.go)。バックグラウンド 1 回きりで、
-	// 結果は claudeUpdateAvailableMsg (更新なし/失敗は nil Msg で無音)。
-	ver := checkClaudeVersionCmd()
+	// Claude Code / codex の新バージョン検出 (claude_version.go / codex_version.go)。
+	// どちらもバックグラウンド 1 回きりで、結果は *UpdateAvailableMsg (更新なし/失敗は
+	// nil Msg で無音)。
+	ver := tea.Batch(checkClaudeVersionCmd(), checkCodexVersionCmd())
 	// バックグラウンド再ビルドの監視 (autobuild.go)。shim が GO_AUTOBUILD_PENDING を
 	// 立てていない通常起動では nil = tick が増えない。
 	//
@@ -875,6 +877,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.issuesOv.restore(currentDir(), msg.screen), m.maybeTick())
 	case claudeUpdateAvailableMsg:
 		return m, m.showClaudeUpdate(msg.latest)
+	case codexUpdateAvailableMsg:
+		m.toast.show("codex v"+msg.latest+" が公開されています (X で更新)", true)
+		return m, m.maybeTick()
 	case autobuildMsg:
 		// 裏のビルドが決着したらトーストで知らせる。
 		//
@@ -994,19 +999,24 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.actModal.updating = false
 		// 結果は右下トーストで出す (旧: 何かキーで閉じるダイアログ。ユーザー要望 2026-07-25)。
 		// バージョンが上がったのか latest だったのかは 1 行に畳んで一目で分かる形にする。
-		// 「新バージョンあり」の通知 (showOrDeferClaudeUpdate) と違って調停は挟まない:
-		// こちらは C を押した本人への結果なので、先行トーストを上書きする後勝ちが正しい。
+		// 「新バージョンあり」の通知 (showClaudeUpdate) と違って調停は挟まない:
+		// こちらは C / X を押した本人への結果なので、先行トーストを上書きする後勝ちが正しい。
+		// codex は claude と同文面だと区別できないので CLI 名を前置する (claude は従来表記)。
+		name := ""
+		if msg.target == "codex" {
+			name = "codex "
+		}
 		switch {
 		case msg.err != nil:
-			m.showWarning("更新に失敗: " + firstLine(msg.err.Error()))
+			m.showWarning(name + "更新に失敗: " + firstLine(msg.err.Error()))
 		case msg.before != "" && msg.after != "" && msg.before != msg.after:
-			m.toast.show("v"+msg.before+" → v"+msg.after+" に更新しました", true)
+			m.toast.show(name+"v"+msg.before+" → v"+msg.after+" に更新しました", true)
 		case msg.before != "" && msg.before == msg.after:
-			m.toast.show("すでに最新版です (v"+msg.before+")", true)
+			m.toast.show(name+"すでに最新版です (v"+msg.before+")", true)
 		case msg.after != "":
-			m.toast.show("現在のバージョン: v"+msg.after, true) // before 不明で比較できず
+			m.toast.show(name+"現在のバージョン: v"+msg.after, true) // before 不明で比較できず
 		default:
-			m.toast.show("update を実行しました", true) // 前後とも取得できず
+			m.toast.show(name+"update を実行しました", true) // 前後とも取得できず
 		}
 		return m, m.maybeTick()
 	case pushMsg:
@@ -1310,6 +1320,10 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// U=usage と並ぶ大文字の「Claude Code メタ操作」。実行中は spinner モーダルを出す。
 	if key == "C" {
 		return m, tea.Batch(m.actModal.startUpdate(), m.maybeTick())
+	}
+	// X = codex update (C の codex 版。新バージョン通知 codexUpdateAvailableMsg と対)
+	if key == "X" {
+		return m, tea.Batch(m.actModal.startCodexUpdate(), m.maybeTick())
 	}
 	// w = 直近の警告/エラーをクリップボードへコピー (issue 026)。トーストは数秒で消えるが
 	// lastWarning は保持しているので消えた後でもコピーできる。ghErr (CI 取得失敗の sticky

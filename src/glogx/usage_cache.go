@@ -60,6 +60,18 @@ func loadUsageCache(path string, now time.Time) (*usage.Snapshot, bool) {
 	if entry.Snapshot == nil || !entry.Snapshot.HasClaude() {
 		return nil, false
 	}
+	// 逆側の部分スナップショット (Claude 成功 + codex 失敗) も、codex CLI が入っている環境
+	// では miss にする: codex app-server の一時失敗 (起動失敗等) が TTL の間キャッシュされ、
+	// U を押しても codex 行が出ない「失敗の固定化」になっていた (ユーザー報告 2026-08-09)。
+	// codex 未インストールの環境は codex 欠損が定常なので miss にしない (キャッシュの意味が
+	// 消えて毎起動 claude subprocess ~2s を払うことになる)。codex が入っているのに常時失敗
+	// する環境 (未ログイン等) では同じ理由でキャッシュが効かなくなるが、取得は起動の
+	// クリティカルパス外の background なので、失敗の固定化より安い方を取る
+	if !entry.Snapshot.HasCodex() {
+		if _, err := lookPathFn("codex"); err == nil {
+			return nil, false
+		}
+	}
 	if now.Sub(entry.FetchedAt) >= usageCacheTTL {
 		return nil, false
 	}
