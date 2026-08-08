@@ -17,8 +17,10 @@ _dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/tmux_popup_sessions.sh
 . "$_dir/lib/tmux_popup_sessions.sh"       # TT_POPUP_SESSION_RE
 
+# 場所は pane 番号まで (同一 window の複数エージェントを特定できるように)。
+# タイトルは切り詰めない (popup は幅 85% あり、fzf は長い行を自前で丸める)
 rows=$(tmux list-panes -a \
-  -F $'#{?@claude_state,#{@claude_state}\t#{pane_id}\t#{session_name}:#{window_index}\t#{=24:pane_title},}' \
+  -F $'#{?@claude_state,#{@claude_state}\t#{pane_id}\t#{session_name}:#{window_index}.#{pane_index}\t#{pane_title},}' \
   | awk -F'\t' -v re="$TT_POPUP_SESSION_RE" 'NF && $3 !~ re' \
   | awk -F'\t' '{
       r = 4; c = 244                               # 既定 (seen ほか): 灰
