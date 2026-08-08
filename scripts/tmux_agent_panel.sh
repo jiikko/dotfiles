@@ -75,9 +75,11 @@ pane_window() { tmux display-message -p -t "$1" '#{window_id}' 2>/dev/null; }
 # 全行が同じ名前になる (全部 "Auth0" 表示になった実発 2026-08-08)。pane_title は
 # pane 単位 (claude が ✳ 付きで自セッション名をセットする) なので区別できる
 list_agents() {
-  # 切り詰め幅はセルでなく文字数 (CJK は 1 文字 2 セル)。タイトルが全部 CJK でも
-  # state(~10) + loc(~26) + title(30×2=60) ≈ 96 < PANEL_W で折り返さない上界にしてある
-  tmux list-panes -a -F $'#{?@claude_state,#{@claude_state}\t#{=24:session_name}:#{window_index}\t#{=30:pane_title},}' 2>/dev/null |
+  # 場所は session:window.pane まで出す (同一 window に複数エージェントが居るため
+  # pane まで無いと特定できない)。切り詰め幅はセルでなく文字数 (CJK は 1 文字 2 セル)。
+  # タイトルが全部 CJK でも loc(27) + state(~10) + title(30×2=60) ≈ 99 < PANEL_W で
+  # 折り返さない上界にしてある
+  tmux list-panes -a -F $'#{?@claude_state,#{@claude_state}\t#{=20:session_name}:#{window_index}.#{pane_index}\t#{=30:pane_title},}' 2>/dev/null |
     awk 'NF'
 }
 
@@ -214,7 +216,9 @@ draw_once() {
     while IFS=$'\t' read -r _rank state loc name; do
       [ "$shown" -ge "$body_max" ] && break
       color="$(state_color "$state")"
-      line="$(printf ' \e[38;5;%sm%s\e[0m %s %s' "$color" "$state" "$loc" "$name")"
+      # 場所を行頭・固定幅・シアンに置く (「どこに居るエージェントか」が縦に揃って
+      # 一目で読めるように。loc は ASCII 前提なので printf の桁揃えがセル幅と一致する)
+      line="$(printf ' \e[38;5;51m%-27s\e[0m \e[38;5;%sm%s\e[0m %s' "$loc" "$color" "$state" "$name")"
       out+="$line"$'\n'
       shown=$((shown + 1))
     done < <(while IFS=$'\t' read -r state loc name; do
