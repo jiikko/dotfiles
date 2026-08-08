@@ -359,11 +359,21 @@ tt_save_main() {
   # TT_SAVE_ALLOW_REGRESSION=1 でも last の健全性は守るべきなので Fix B の外に置く。
   tt_save_avoid_same_second_target
 
+  # agent panel (scripts/tmux_agent_panel.sh) を保存の間だけ退避する: panel pane が
+  # スナップショットに写り込むと復元後に残骸 shell pane が残るため (save-guard 節参照)。
+  # choke point の本 wrapper で挟むことで全保存経路 (debounce / continuum 周期 / 手動 C-s /
+  # kill shim) に一度で効く。スクリプト不在 / 失敗でも保存自体は止めない
+  local tt_panel="$SCRIPT_DIR/tmux_agent_panel.sh"
+  [ -x "$tt_panel" ] && "$tt_panel" save-hide >/dev/null 2>&1 || true
+
   # lock を保持したまま upstream save.sh を foreground 同期実行する。
   # continuum が本 wrapper を `&` で background 起動しても、wrapper プロセスは
   # save.sh 完了まで生きるため、保存期間中ずっと lock が保持される。
   "$REAL_SAVE" "$@"
   local tt_rc=$?
+
+  # panel を復帰させる (退避していなかった / panel off なら no-op)。rc は保存の結果を保つ
+  [ -x "$tt_panel" ] && "$tt_panel" save-show >/dev/null 2>&1 || true
 
   # Fix B: 壊滅的な退行なら last を完全状態へ戻す（新ファイルは archive として残す）。
   # 判定は 3 条件 (いずれかに該当で退行扱い):

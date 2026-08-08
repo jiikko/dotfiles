@@ -39,6 +39,8 @@ case "$1" in
     case "$*" in
       *@agent_panel_on*)   echo "${STUB_PANEL_ON:-}" ;;
       *@agent_panel_pane*) echo "${STUB_PANEL_PANE:-}" ;;
+      *@agent_panel_saving*) echo "${STUB_SAVING:-}" ;;
+      *@agent_panel_saved_window*) echo "${STUB_SAVED_WINDOW:-}" ;;
       *@tt-restore-in-progress*) echo "${STUB_RESTORING:-}" ;;
     esac ;;
   list-sessions) printf '%s\n' "${STUB_SESSIONS:-main}" ;;
@@ -93,6 +95,7 @@ grep -q 'set-option -g @agent_panel_on 1' "$CALLS" || ng "toggle on: @agent_pane
 grep -q 'new-pane -d' "$CALLS" || ng "toggle on: new-pane -d (フォーカス非奪取) でない"
 grep -q -- '-X 50' "$CALLS" || ng "toggle on: 右上座標 -X (200-150) が渡らない"
 grep -q 'set-option -g @agent_panel_pane %42' "$CALLS" || ng "toggle on: pane id が記録されない"
+grep -q 'select-pane -d -t %42' "$CALLS" || ng "toggle on: 入力無効化 (select-pane -d) が無い"
 grep -Eq 'set-option -g @agent_panel_busy [0-9]+' "$CALLS" || ng "toggle on: busy epoch が書かれない"
 # busy は new-pane より前に書く (hook は new-pane 実行中に発火するため後書きでは間に合わない)
 busy_line=$(grep -n '@agent_panel_busy' "$CALLS" | head -1 | cut -d: -f1)
@@ -182,6 +185,51 @@ STUB_PANEL_ON=1 STUB_PANEL_PANE='%9' STUB_ALIVE=0 "$SCRIPT" follow '@2' || ng "f
 grep -q 'kill-pane' "$CALLS" && ng "follow (pane 消滅): 死んだ pane を kill しようとする"
 grep -q 'new-pane -d' "$CALLS" || ng "follow (pane 消滅): 作り直さない"
 ok "follow (pane 消滅): kill せず作り直す (上の ✗ が無ければ)"
+
+# --- save-hide / save-show (resurrect 保存中の退避。呼び手は tmux_resurrect_save.sh) ----
+: > "$CALLS"
+STUB_PANEL_PANE='%9' STUB_RENDER_PANES='%9' STUB_PANE_WINDOW='@3' "$SCRIPT" save-hide || ng "save-hide が非 0"
+grep -Eq 'set-option -g @agent_panel_saving [0-9]+' "$CALLS" || ng "save-hide: saving epoch を立てない"
+grep -q 'set-option -g @agent_panel_saved_window @3' "$CALLS" || ng "save-hide: 退避元 window を記録しない"
+grep -q 'kill-pane -t %9' "$CALLS" || ng "save-hide: panel を kill しない"
+ok "save-hide: epoch + 退避元記録 + kill (上の ✗ が無ければ)"
+
+: > "$CALLS"
+# 退避窓の間に toggle 連打等で panel が生えていても、save-show は掃討してから作る
+# (作る前に必ず kill_panel の規律。敵対レビュー指摘 2026-08-08)
+STUB_PANEL_ON=1 STUB_SAVED_WINDOW='@3' STUB_RENDER_PANES='%88' "$SCRIPT" save-show || ng "save-show が非 0"
+grep -q 'set-option -gu @agent_panel_saving' "$CALLS" || ng "save-show: saving を降ろさない"
+grep -q 'kill-pane -t %88' "$CALLS" || ng "save-show: 既存 panel を掃討しない (二重化)"
+grep -q 'new-pane -d' "$CALLS" || ng "save-show: panel を復帰させない"
+grep -q -- '-t @3' "$CALLS" || ng "save-show: 退避元 window に戻さない"
+ok "save-show: saving 解除 + 掃討 + 退避元へ復帰 (上の ✗ が無ければ)"
+
+# --- toggle on (resurrect 保存中): 状態だけ立てて作らない (敵対レビュー指摘 2026-08-08) ---
+# 保存中に作ると実行中の save.sh のダンプに写り込み、退避の意味が無くなる
+: > "$CALLS"
+STUB_PANEL_ON='' STUB_SAVING="$(date +%s)" "$SCRIPT" toggle '@1' || ng "toggle on (保存中) が非 0"
+grep -q 'set-option -g @agent_panel_on 1' "$CALLS" || ng "toggle on (保存中): on 状態を立てない"
+grep -q 'new-pane' "$CALLS" && ng "toggle on (保存中): 保存中なのに panel を作っている" \
+  || ok "toggle on (保存中): 状態のみ立てて作成しない"
+
+: > "$CALLS"
+STUB_PANEL_ON='' STUB_SAVED_WINDOW='@3' "$SCRIPT" save-show || ng "save-show (panel off) が非 0"
+grep -q 'new-pane' "$CALLS" && ng "save-show (panel off): off なのに作っている" \
+  || ok "save-show (panel off): 作らない (saving 解除のみ)"
+
+# --- follow (resurrect 保存中): 作らない (save-hide の退避を follow が壊さない) ---------
+: > "$CALLS"
+STUB_PANEL_ON=1 STUB_SAVING="$(date +%s)" "$SCRIPT" follow '@2' || ng "follow (保存中) が非 0"
+if grep -Eq 'new-pane|kill-pane' "$CALLS"; then
+  ng "follow (保存中): 退避中に panel を作り直している (写り込みが復活する)"
+else
+  ok "follow (保存中): pane 操作なし"
+fi
+# stale な saving epoch (crash 残置) では follow が止まり続けない (TTL 120s)
+: > "$CALLS"
+STUB_PANEL_ON=1 STUB_SAVING="$(( $(date +%s) - 600 ))" "$SCRIPT" follow '@2' || ng "follow (stale saving) が非 0"
+grep -q 'new-pane -d' "$CALLS" || ng "follow (stale saving): TTL 超過なのに作らない (永久停止)"
+ok "follow (stale saving): TTL 超過は無視して作る"
 
 if [ "$fail" -eq 0 ]; then
   echo "test_agent_panel: all ok"

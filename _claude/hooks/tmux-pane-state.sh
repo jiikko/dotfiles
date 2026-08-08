@@ -27,7 +27,14 @@ unset CDPATH
 [ -n "${TMUX_PANE:-}" ] || exit 0
 command -v tmux >/dev/null 2>&1 || exit 0
 
-set_state() { tmux set -p -t "$TMUX_PANE" @claude_state "$1" 2>/dev/null; }
+# @claude_state_since は「claude hook が状態を書いた時刻」(epoch)。agent パネル /
+# ジャンプ (scripts/tmux_agent_panel.sh / tmux_agent_jump.sh) が経過時間表示に使う。
+# mark-seen の input→seen 降格では更新しない (「🔕 seen 12m = 12 分前に入力待ちに
+# なった (見たが未応答)」の方が放置時間として有用なため。意図的)
+set_state() {
+  tmux set -p -t "$TMUX_PANE" @claude_state "$1" 2>/dev/null
+  tmux set -p -t "$TMUX_PANE" @claude_state_since "$(date +%s)" 2>/dev/null
+}
 
 notify_if_hidden() {
   local message="$1" sound="${2:-}"
@@ -48,7 +55,8 @@ case "${1:-}" in
   input)   set_state "🔔 input"; notify_if_hidden "🔔 入力待ち (承認 or 回答が必要)" "default" ;;
   idle)    set_state "✓ idle";  notify_if_hidden "✓ 応答完了" ;;
   start)   set_state "✓ idle" ;;
-  clear)   tmux set -p -u -t "$TMUX_PANE" @claude_state 2>/dev/null ;;
+  clear)   tmux set -p -u -t "$TMUX_PANE" @claude_state 2>/dev/null
+           tmux set -p -u -t "$TMUX_PANE" @claude_state_since 2>/dev/null ;;
 esac
 
 # hook が状態を返さないよう常に成功で抜ける (Stop/UserPromptSubmit を block しない)

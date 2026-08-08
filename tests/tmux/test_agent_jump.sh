@@ -46,11 +46,12 @@ ok() { printf '✓ %s\n' "$1"; }
 ng() { printf '✗ %s\n' "$1"; fail=1; }
 
 T=$(printf '\t')
-# 実データ形: state \t pane_id \t session:index \t pane_title
-ROWS="✓ idle${T}%1${T}dev:2${T}claude A\n"
-ROWS+="🔔 input${T}%2${T}web:1${T}claude B\n"
-ROWS+="🔕 seen${T}%3${T}scratch:5${T}claude C\n"     # popup 専用セッション → 除外対象
-ROWS+="⚙ working${T}%4${T}api:3${T}claude D\n"
+# 実データ形: state \t pane_id \t session:index.pane \t since(epoch。空も可) \t pane_title
+now=$(date +%s)
+ROWS="✓ idle${T}%1${T}dev:2.1${T}$((now - 90))${T}claude A\n"
+ROWS+="🔔 input${T}%2${T}web:1.1${T}$((now - 30))${T}claude B\n"
+ROWS+="🔕 seen${T}%3${T}scratch:5.1${T}${T}claude C\n"     # popup 専用セッション → 除外対象
+ROWS+="⚙ working${T}%4${T}api:3.2${T}${T}claude D\n"       # since 未設定 (旧 hook の状態) も壊れない
 
 # --- 0 件: fzf を呼ばず exit 0 ---------------------------------------------------
 : > "$CALLS"; : > "$FZF_INPUT"

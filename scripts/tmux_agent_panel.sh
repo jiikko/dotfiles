@@ -33,8 +33,9 @@
 #     「render コマンドが復元されない素の shell の floating pane」として 1 個残る
 #     ことがある (toggle か kill-pane で消す。復元は稀なので許容)。
 #   - panel が居る window の pane 数バッジ [N] は +1 される (実 pane なので仕様)。
-#   - select-pane の方向移動でパネルにフォーカスが当たりうる (q や C-d で誤って
-#     消さない限り実害なし。当たったら別 pane へ移動すればよい)。
+#   - select-pane の方向移動でパネルにフォーカスが当たりうるが、入力は無効化してある
+#     (create_panel の select-pane -d)。素のキーは落ち、bind (M-hjkl / prefix) は
+#     key table 解決なので効く = 移動で抜けられる。
 set -uo pipefail
 unset CDPATH
 
@@ -77,10 +78,24 @@ pane_window() { tmux display-message -p -t "$1" '#{window_id}' 2>/dev/null; }
 list_agents() {
   # 場所は session:window.pane まで出す (同一 window に複数エージェントが居るため
   # pane まで無いと特定できない)。切り詰め幅はセルでなく文字数 (CJK は 1 文字 2 セル)。
-  # タイトルが全部 CJK でも loc(27) + state(~10) + title(54×2=108) ≈ 147 ≤ PANEL_W で
-  # 折り返さない上界にしてある (これ以上増やすなら PANEL_W と対で)
-  tmux list-panes -a -F $'#{?@claude_state,#{@claude_state}\t#{=20:session_name}:#{window_index}.#{pane_index}\t#{=54:pane_title},}' 2>/dev/null |
-    awk 'NF'
+  # タイトルが全部 CJK でも loc(27) + state(~10) + since(~5) + title(50×2=100) ≈ 144
+  # ≤ PANEL_W で折り返さない上界にしてある (これ以上増やすなら PANEL_W と対で)。
+  # 第 4 フィールド @claude_state_since (epoch。_claude/hooks/tmux-pane-state.sh が書く)
+  # は経過時間表示用。未設定 (旧 hook が書いた状態が残っている間) は空
+  tmux list-panes -a -F $'#{?@claude_state,#{@claude_state}\t#{=20:session_name}:#{window_index}.#{pane_index}\t#{=50:pane_title}\t#{@claude_state_since},}' 2>/dev/null |
+    awk -F'\t' 'NF >= 3'
+}
+
+# epoch → 短い相対時間 ("45s"/"12m"/"3h"。不正/未設定は空)
+rel_time() {
+  local since="$1" d
+  case "$since" in ''|*[!0-9]*) return 0 ;; esac
+  d=$(( $(date +%s) - since ))
+  [ "$d" -lt 0 ] && d=0
+  if   [ "$d" -lt 60 ];    then printf '%ds' "$d"
+  elif [ "$d" -lt 3600 ];  then printf '%dm' $((d / 60))
+  else                          printf '%dh' $((d / 3600))
+  fi
 }
 
 # panel の一意性は @agent_panel_pane の記録でなく「render を実行中の pane を全部消す」
@@ -117,6 +132,9 @@ create_panel() {
     -s 'fg=colour252,bg=colour233' -R 'fg=colour240' \
     -- "$SELF" render)" || return 1
   tmux set-option -g @agent_panel_pane "$pid"
+  # 入力を無効化 (select-pane -d = input off)。M-hjkl の方向移動でパネルに乗っても
+  # 誤タイプ・C-d での誤 kill が起きない置物にする (表示は render プロセスが続ける)
+  tmux select-pane -d -t "$pid" 2>/dev/null || true
 }
 
 cmd_toggle() {
@@ -127,6 +145,10 @@ cmd_toggle() {
     kill_panel
   else
     tmux set-option -g @agent_panel_on 1
+    # resurrect 保存中 (save-hide が退避した窓) は状態だけ立てて作成しない: ここで作ると
+    # 実行中の save.sh のダンプに写り込み、D 節が防いだ残骸バグが再発する (敵対レビュー
+    # 指摘 2026-08-08)。保存後の save-show / 次の follow が panel_on を見て作る
+    panel_saving && return 0
     kill_panel   # 迷子の旧パネルがあれば掃除してから作る
     # popup 専用セッション (scratch 等) の中で on にした場合は作成だけ遅延する
     # (popup 内に作ると覆い被さり + 取り残しの温床。次の window 切替の follow が作る)
@@ -137,6 +159,15 @@ cmd_toggle() {
   fi
 }
 
+# resurrect 保存中か (@agent_panel_saving に save-hide が epoch を書く)。TTL 120s は
+# save wrapper の lock TTL 系と同じ思想 (途中クラッシュで永久に follow が止まらないように)
+panel_saving() {
+  local v
+  v="$(tmux show-option -gqv @agent_panel_saving 2>/dev/null)"
+  case "$v" in ''|*[!0-9]*) return 1 ;; esac
+  [ $(( $(date +%s) - v )) -lt 120 ]
+}
+
 cmd_follow() {
   local win="${1:-}" p sess
   panel_on || exit 0
@@ -145,6 +176,9 @@ cmd_follow() {
   if tt_restore_in_progress || tt_only_hold_sessions; then
     exit 0
   fi
+  # resurrect 保存中は作らない (save-hide がスナップショットから panel を退避している間に
+  # follow が作り直すと写り込みが復活する。save-show が保存後に復帰させる)
+  panel_saving && exit 0
   [ -n "$win" ] || win="$(tmux display-message -p '#{window_id}')"
   # popup 専用セッション (scratch 等) へは追従しない: popup 開閉は client-attached /
   # client-session-changed を発火させるが、そこへ panel を作ると popup の小画面に
@@ -176,6 +210,39 @@ cmd_follow() {
   exit 0
 }
 
+# ---- save-guard (scripts/tmux_resurrect_save.sh から保存の前後に呼ばれる) ----
+# resurrect のスナップショットに panel pane が写り込むと、復元後に「render が復元されない
+# 素の shell の floating pane」が残骸として残る (実測: pane 行 + layout の floating 節
+# <150x5,...> が保存されていた 2026-08-08)。保存の choke point wrapper が保存直前に
+# save-hide (退避) / 直後に save-show (復帰) を呼び、スナップショットを panel 無しに保つ。
+# 周期保存 (60 分) のたびにパネルが一瞬消えて戻るのは仕様。
+
+cmd_save_hide() {
+  local p w
+  p="$(panel_pane)"
+  tmux set-option -g @agent_panel_saving "$(now_epoch)" 2>/dev/null || true
+  if pane_alive "$p"; then
+    w="$(pane_window "$p")"
+    [ -n "$w" ] && tmux set-option -g @agent_panel_saved_window "$w" 2>/dev/null
+  fi
+  kill_panel
+  exit 0
+}
+
+cmd_save_show() {
+  local w
+  w="$(tmux show-option -gqv @agent_panel_saved_window 2>/dev/null)"
+  tmux set-option -gu @agent_panel_saving 2>/dev/null || true
+  tmux set-option -gu @agent_panel_saved_window 2>/dev/null || true
+  panel_on || exit 0
+  [ -n "$w" ] || exit 0
+  # 作る前に必ず kill_panel (toggle/follow と同じ規律): 退避窓の間にユーザーの toggle 連打
+  # 等で panel が既に存在していると二重になる (敵対レビュー指摘 2026-08-08)
+  kill_panel
+  create_panel "$w" >/dev/null 2>&1 || true   # window が消えていたら次の follow に任せる
+  exit 0
+}
+
 # ---- render (パネル pane 内で走る) -----------------------------------------
 
 # state 文字列 → ソート優先度 / 256 色。色は _tmux.conf の @claude-state-fg と
@@ -204,25 +271,27 @@ draw_once() {
   case "$h" in ''|*[!0-9]*) h=$PANEL_MAX_H ;; esac
   body_max=$((h - 1))
 
-  local out line state loc name _rank color
+  local out line state loc name since _rank color
   out=""
   if [ -n "$rows" ]; then
     # rank を先頭に付けて安定ソート → 表示行を組み立て
-    while IFS=$'\t' read -r state loc name; do
+    while IFS=$'\t' read -r state loc name since; do
       total=$((total + 1))
       case "$state" in *input*) n_input=$((n_input + 1)) ;; *working*) n_working=$((n_working + 1)) ;; esac
     done <<< "$rows"
     out+="$(printf '\e[1m 🤖 AGENTS %d  ⚙%d 🔔%d\e[0m\e[38;5;240m   C-t a: 非表示 / C-t A: ジャンプ\e[0m' "$total" "$n_working" "$n_input")"$'\n'
-    while IFS=$'\t' read -r _rank state loc name; do
+    while IFS=$'\t' read -r _rank state loc name since; do
       [ "$shown" -ge "$body_max" ] && break
       color="$(state_color "$state")"
       # 場所を行頭・固定幅・シアンに置く (「どこに居るエージェントか」が縦に揃って
-      # 一目で読めるように。loc は ASCII 前提なので printf の桁揃えがセル幅と一致する)
-      line="$(printf ' \e[38;5;51m%-27s\e[0m \e[38;5;%sm%s\e[0m %s' "$loc" "$color" "$state" "$name")"
+      # 一目で読めるように。loc は ASCII 前提なので printf の桁揃えがセル幅と一致する)。
+      # 経過時間 (状態が claude hook に書かれてからの時間) は %-4s で state の直後
+      line="$(printf ' \e[38;5;51m%-27s\e[0m \e[38;5;%sm%s\e[0m \e[38;5;240m%-4s\e[0m %s' \
+        "$loc" "$color" "$state" "$(rel_time "$since")" "$name")"
       out+="$line"$'\n'
       shown=$((shown + 1))
-    done < <(while IFS=$'\t' read -r state loc name; do
-               printf '%s\t%s\t%s\t%s\n' "$(state_rank "$state")" "$state" "$loc" "$name"
+    done < <(while IFS=$'\t' read -r state loc name since; do
+               printf '%s\t%s\t%s\t%s\t%s\n' "$(state_rank "$state")" "$state" "$loc" "$name" "$since"
              done <<< "$rows" | sort -t $'\t' -k1,1 -k3,3)
     if [ "$total" -gt "$shown" ]; then
       out+="$(printf '\e[38;5;240m  +%d more\e[0m' $((total - shown)))"$'\n'
@@ -238,9 +307,20 @@ draw_once() {
     printf '%s\e[K\n' "$line"
   done
   printf '\e[J'
+
+  # 🔔 input が 1 件でもあればパネル自体の背景を暗赤にして周辺視で気づけるようにする
+  # (bell シアン反転 / zoom 暗赤と同じ「色面で知らせる」思想)。select-pane -P は
+  # fork+tmux 呼び出しなので毎 tick ではなく変化したときだけ叩く
+  local want_bg='colour233'
+  [ "$n_input" -gt 0 ] && want_bg='colour52'
+  if [ "$want_bg" != "$PANEL_BG_CURRENT" ] && [ -n "${TMUX_PANE:-}" ]; then
+    tmux select-pane -t "$TMUX_PANE" -P "fg=colour252,bg=$want_bg" 2>/dev/null || true
+    PANEL_BG_CURRENT="$want_bg"
+  fi
 }
 
 cmd_render() {
+  PANEL_BG_CURRENT='colour233'   # 作成時スタイル (create_panel の -s) と揃えた初期値
   printf '\e[?25l'   # カーソル非表示
   trap 'printf "\e[?25h"' EXIT
   while :; do
@@ -254,8 +334,10 @@ cmd_render() {
 [ -n "${TMUX:-}" ] || { echo "tmux_agent_panel.sh: not inside tmux" >&2; exit 1; }
 
 case "${1:-}" in
-  toggle) cmd_toggle "${2:-}" ;;
-  follow) cmd_follow "${2:-}" ;;
-  render) cmd_render ;;
-  *) echo "usage: tmux_agent_panel.sh toggle|follow [window_id] | render" >&2; exit 2 ;;
+  toggle)    cmd_toggle "${2:-}" ;;
+  follow)    cmd_follow "${2:-}" ;;
+  render)    cmd_render ;;
+  save-hide) cmd_save_hide ;;
+  save-show) cmd_save_show ;;
+  *) echo "usage: tmux_agent_panel.sh toggle|follow [window_id] | render | save-hide | save-show" >&2; exit 2 ;;
 esac

@@ -18,18 +18,27 @@ _dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_dir/lib/tmux_popup_sessions.sh"       # TT_POPUP_SESSION_RE
 
 # 場所は pane 番号まで (同一 window の複数エージェントを特定できるように)。
-# タイトルは切り詰めない (popup は幅 85% あり、fzf は長い行を自前で丸める)
+# タイトルは切り詰めない (popup は幅 85% あり、fzf は長い行を自前で丸める)。
+# 経過時間は @claude_state_since (epoch。_claude/hooks/tmux-pane-state.sh が書く。
+# 未設定なら空欄) から算出
 rows=$(tmux list-panes -a \
-  -F $'#{?@claude_state,#{@claude_state}\t#{pane_id}\t#{session_name}:#{window_index}.#{pane_index}\t#{pane_title},}' \
+  -F $'#{?@claude_state,#{@claude_state}\t#{pane_id}\t#{session_name}:#{window_index}.#{pane_index}\t#{@claude_state_since}\t#{pane_title},}' \
   | awk -F'\t' -v re="$TT_POPUP_SESSION_RE" 'NF && $3 !~ re' \
-  | awk -F'\t' '{
+  | awk -F'\t' -v now="$(date +%s)" '{
       r = 4; c = 244                               # 既定 (seen ほか): 灰
       if      ($1 ~ /input/)   { r = 1; c = 203 }  # 入力待ち: 赤
       else if ($1 ~ /working/) { r = 2; c = 220 }  # 作業中: 黄
       else if ($1 ~ /idle/)    { r = 3; c = 10 }   # 完了: 緑
-      printf "%d\t%s\t\033[38;5;%dm%s\033[0m\t%s\t%s\n", r, $2, c, $1, $3, $4
+      rel = ""
+      if ($4 ~ /^[0-9]+$/) {
+        d = now - $4; if (d < 0) d = 0
+        if      (d < 60)   rel = d "s"
+        else if (d < 3600) rel = int(d/60) "m"
+        else               rel = int(d/3600) "h"
+      }
+      printf "%d\t%s\t\033[38;5;%dm%s\033[0m\t\033[33m%s\033[0m\t%s\t%s\n", r, $2, c, $1, rel, $3, $5
     }' \
-  | sort -t$'\t' -k1,1n -k5,5)
+  | sort -t$'\t' -k1,1n -k6,6)
 
 if [ -z "$rows" ]; then
   # popup 内表示。すぐ閉じると読めないので一拍置く
