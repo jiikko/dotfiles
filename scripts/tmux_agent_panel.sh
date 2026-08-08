@@ -66,9 +66,13 @@ pane_alive() { [ -n "${1:-}" ] && [ -n "$(tmux display-message -p -t "$1" '#{pan
 
 pane_window() { tmux display-message -p -t "$1" '#{window_id}' 2>/dev/null; }
 
-# @claude_state 持ち pane の一覧 (tab 区切り: state, session:index, window_name)
+# @claude_state 持ち pane の一覧 (tab 区切り: state, session:index, pane_title)。
+# ⚠️ 名前は window_name でなく pane_title を使う: window_name は「その window の
+# アクティブ pane のタイトル」なので、同一 window に複数エージェントが居ると
+# 全行が同じ名前になる (全部 "Auth0" 表示になった実発 2026-08-08)。pane_title は
+# pane 単位 (claude が ✳ 付きで自セッション名をセットする) なので区別できる
 list_agents() {
-  tmux list-panes -a -F $'#{?@claude_state,#{@claude_state}\t#{=12:session_name}:#{window_index}\t#{=8:window_name},}' 2>/dev/null |
+  tmux list-panes -a -F $'#{?@claude_state,#{@claude_state}\t#{=12:session_name}:#{window_index}\t#{=10:pane_title},}' 2>/dev/null |
     awk 'NF'
 }
 
