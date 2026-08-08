@@ -50,7 +50,7 @@ SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]
 # shellcheck source=scripts/lib/tmux_popup_sessions.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmux_popup_sessions.sh"
 
-PANEL_W=114         # パネル幅 (セル)。行の組み立て (list_agents の切り詰め幅) はこの幅に収まる前提
+PANEL_W=150         # パネル幅 (セル)。行の組み立て (list_agents の切り詰め幅) はこの幅に収まる前提
 PANEL_MAX_H=14      # 高さ上限 (超過分は +N more に畳む)
 REFRESH_SECS=2      # 描画ループの更新間隔
 # busy 窓の秒数 (3 秒) は読み手側 (bin/tmux-toast / tmux_resurrect_debounced_save.sh の
@@ -77,9 +77,9 @@ pane_window() { tmux display-message -p -t "$1" '#{window_id}' 2>/dev/null; }
 list_agents() {
   # 場所は session:window.pane まで出す (同一 window に複数エージェントが居るため
   # pane まで無いと特定できない)。切り詰め幅はセルでなく文字数 (CJK は 1 文字 2 セル)。
-  # タイトルが全部 CJK でも loc(27) + state(~10) + title(36×2=72) ≈ 111 ≤ PANEL_W で
+  # タイトルが全部 CJK でも loc(27) + state(~10) + title(54×2=108) ≈ 147 ≤ PANEL_W で
   # 折り返さない上界にしてある (これ以上増やすなら PANEL_W と対で)
-  tmux list-panes -a -F $'#{?@claude_state,#{@claude_state}\t#{=20:session_name}:#{window_index}.#{pane_index}\t#{=36:pane_title},}' 2>/dev/null |
+  tmux list-panes -a -F $'#{?@claude_state,#{@claude_state}\t#{=20:session_name}:#{window_index}.#{pane_index}\t#{=54:pane_title},}' 2>/dev/null |
     awk 'NF'
 }
 
