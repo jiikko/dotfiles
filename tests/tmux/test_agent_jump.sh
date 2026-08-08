@@ -82,6 +82,9 @@ ok "選択 → switch-client + select-window + select-pane (上の ✗ が無け
 # (インクリメンタルサーチ不要・j/k カーソル移動のユーザー要望 2026-08-08。
 #  末尾表示は follow を使う。+999999 の clamp は「最終行が先頭」で以降が空白になり
 #  何も表示されないように見える実測バグがあった)
+# ⚠️ この節は「意図した flag/bind を fzf に渡したか」の grep までしか守れない (stub 方式の
+# 構造的限界)。bind 名の実在・follow の実挙動は fzf 0.54.0 + tmux 3.7b の実表示で確認済み
+# (2026-08-08 敵対レビュー)。fzf を major 更新したら bind 名と follow を実機で再確認すること
 grep -q 'fzf .*--disabled' "$CALLS" || ng "fzf: --disabled (絞り込み無効) が無い"
 grep -q 'j:down,k:up' "$CALLS" || ng "fzf: j/k のカーソル移動 bind が無い"
 grep -q 'preview-half-page' "$CALLS" || ng "fzf: J/K のプレビュースクロール bind が無い"
