@@ -80,11 +80,13 @@ ok "選択 → switch-client + select-window + select-pane (上の ✗ が無け
 
 # --- fzf の操作モード: 絞り込み無効 + j/k 移動 + プレビュー末尾スクロール ------------
 # (インクリメンタルサーチ不要・j/k カーソル移動のユーザー要望 2026-08-08。
-#  +999999 は「プレビューを末尾 (最新出力) に clamp」の実測済みイディオム)
+#  末尾表示は follow を使う。+999999 の clamp は「最終行が先頭」で以降が空白になり
+#  何も表示されないように見える実測バグがあった)
 grep -q 'fzf .*--disabled' "$CALLS" || ng "fzf: --disabled (絞り込み無効) が無い"
 grep -q 'j:down,k:up' "$CALLS" || ng "fzf: j/k のカーソル移動 bind が無い"
 grep -q 'preview-half-page' "$CALLS" || ng "fzf: J/K のプレビュースクロール bind が無い"
-grep -q '+999999' "$CALLS" || ng "fzf: プレビューの末尾 clamp オフセットが無い"
+grep -q 'preview-window=down,60%,follow' "$CALLS" || ng "fzf: プレビューの末尾追従 (follow) が無い"
+grep -q '+999999' "$CALLS" && ng "fzf: +999999 に退行 (最終行が先頭に来て空白に見える)"
 ok "fzf: --disabled + j/k + プレビュースクロール (上の ✗ が無ければ)"
 
 # --- fzf キャンセル: 何も切り替えない --------------------------------------------

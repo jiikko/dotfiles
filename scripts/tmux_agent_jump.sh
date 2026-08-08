@@ -50,7 +50,10 @@ fi
 # rank 列は並び替え専用なので落とし、pane_id を先頭キーにして fzf へ。
 # 候補は少数 (エージェント数) なのでインクリメンタルサーチは不要 → --disabled で
 # 絞り込みを切り、j/k をカーソル移動に割り当てる (vi 風。矢印キーも従来どおり効く)。
-# プレビューは 300 行取得し +999999 (末尾に clamp) で最新行から表示、J/K で遡れる
+# プレビューは 300 行取得し follow で末尾 (最新出力) を表示、J/K で遡れる。
+# ⚠️ 末尾表示に +999999 オフセットを使わないこと: clamp は「最終行がプレビューの
+# 先頭に来る」位置で止まり、以降が全て空白 = 何も表示されないように見える (実測
+# 2026-08-08。follow は最終行が最下部に来る)
 selected=$(printf '%s\n' "$rows" | cut -f2- \
   | fzf --ansi --reverse --border --disabled --no-info \
         --prompt='agent (j/k: 移動, J/K: プレビュー, q: 閉じる)> ' \
@@ -58,7 +61,7 @@ selected=$(printf '%s\n' "$rows" | cut -f2- \
         --bind 'j:down,k:up,q:abort' \
         --bind 'J:preview-half-page-down,K:preview-half-page-up' \
         --preview 'tmux capture-pane -ep -t {1} -S -300' \
-        --preview-window=down,60%,+999999) || exit 0
+        --preview-window=down,60%,follow) || exit 0
 
 target=$(printf '%s\n' "$selected" | cut -f1)
 [ -n "$target" ] || exit 0
