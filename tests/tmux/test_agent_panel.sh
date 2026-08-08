@@ -79,7 +79,7 @@ fi
 STUB_PANEL_ON='' STUB_PANEL_PANE='' "$SCRIPT" toggle '@1' || ng "toggle on が失敗"
 grep -q 'set-option -g @agent_panel_on 1' "$CALLS" || ng "toggle on: @agent_panel_on=1 が立たない"
 grep -q 'new-pane -d' "$CALLS" || ng "toggle on: new-pane -d (フォーカス非奪取) でない"
-grep -q -- '-X 162' "$CALLS" || ng "toggle on: 右上座標 -X (200-38) が渡らない"
+grep -q -- '-X 86' "$CALLS" || ng "toggle on: 右上座標 -X (200-114) が渡らない"
 grep -q 'set-option -g @agent_panel_pane %42' "$CALLS" || ng "toggle on: pane id が記録されない"
 grep -Eq 'set-option -g @agent_panel_busy [0-9]+' "$CALLS" || ng "toggle on: busy epoch が書かれない"
 # busy は new-pane より前に書く (hook は new-pane 実行中に発火するため後書きでは間に合わない)

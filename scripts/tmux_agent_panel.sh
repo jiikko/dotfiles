@@ -47,7 +47,7 @@ SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]
 # shellcheck source=scripts/lib/tmux_resurrect_guards.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmux_resurrect_guards.sh"
 
-PANEL_W=38          # パネル幅 (セル)。行の組み立て (build_lines) はこの幅に収まる前提
+PANEL_W=114         # パネル幅 (セル)。行の組み立て (list_agents の切り詰め幅) はこの幅に収まる前提
 PANEL_MAX_H=14      # 高さ上限 (超過分は +N more に畳む)
 REFRESH_SECS=2      # 描画ループの更新間隔
 # busy 窓の秒数 (3 秒) は読み手側 (bin/tmux-toast / tmux_resurrect_debounced_save.sh の
@@ -72,7 +72,9 @@ pane_window() { tmux display-message -p -t "$1" '#{window_id}' 2>/dev/null; }
 # 全行が同じ名前になる (全部 "Auth0" 表示になった実発 2026-08-08)。pane_title は
 # pane 単位 (claude が ✳ 付きで自セッション名をセットする) なので区別できる
 list_agents() {
-  tmux list-panes -a -F $'#{?@claude_state,#{@claude_state}\t#{=12:session_name}:#{window_index}\t#{=10:pane_title},}' 2>/dev/null |
+  # 切り詰め幅はセルでなく文字数 (CJK は 1 文字 2 セル)。タイトルが全部 CJK でも
+  # state(~10) + loc(~26) + title(30×2=60) ≈ 96 < PANEL_W で折り返さない上界にしてある
+  tmux list-panes -a -F $'#{?@claude_state,#{@claude_state}\t#{=24:session_name}:#{window_index}\t#{=30:pane_title},}' 2>/dev/null |
     awk 'NF'
 }
 
@@ -87,18 +89,20 @@ kill_panel() {
 }
 
 create_panel() {
-  local win="$1" n h win_w x pid
+  local win="$1" n h w win_w x pid
   n="$(list_agents | wc -l | tr -d ' ')"
   h=$((n + 2))
   [ "$h" -lt 3 ] && h=3
   [ "$h" -gt "$PANEL_MAX_H" ] && h=$PANEL_MAX_H
   win_w="$(tmux display-message -p -t "$win" '#{window_width}' 2>/dev/null)" || return 1
   case "$win_w" in ''|*[!0-9]*) return 1 ;; esac
-  x=$((win_w - PANEL_W))
+  w=$PANEL_W
+  [ "$w" -gt "$win_w" ] && w=$win_w   # 狭い window では window 幅に clamp (行は折り返る)
+  x=$((win_w - w))
   [ "$x" -lt 0 ] && x=0
   mark_busy
   pid="$(tmux new-pane -d -P -F '#{pane_id}' -t "$win" \
-    -x "$PANEL_W" -y "$h" -X "$x" -Y 0 \
+    -x "$w" -y "$h" -X "$x" -Y 0 \
     -s 'fg=colour252,bg=colour233' -R 'fg=colour240' \
     -- "$SELF" render)" || return 1
   tmux set-option -g @agent_panel_pane "$pid"
