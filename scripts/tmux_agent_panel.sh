@@ -77,9 +77,9 @@ pane_window() { tmux display-message -p -t "$1" '#{window_id}' 2>/dev/null; }
 list_agents() {
   # 場所は session:window.pane まで出す (同一 window に複数エージェントが居るため
   # pane まで無いと特定できない)。切り詰め幅はセルでなく文字数 (CJK は 1 文字 2 セル)。
-  # タイトルが全部 CJK でも loc(27) + state(~10) + title(30×2=60) ≈ 99 < PANEL_W で
-  # 折り返さない上界にしてある
-  tmux list-panes -a -F $'#{?@claude_state,#{@claude_state}\t#{=20:session_name}:#{window_index}.#{pane_index}\t#{=30:pane_title},}' 2>/dev/null |
+  # タイトルが全部 CJK でも loc(27) + state(~10) + title(36×2=72) ≈ 111 ≤ PANEL_W で
+  # 折り返さない上界にしてある (これ以上増やすなら PANEL_W と対で)
+  tmux list-panes -a -F $'#{?@claude_state,#{@claude_state}\t#{=20:session_name}:#{window_index}.#{pane_index}\t#{=36:pane_title},}' 2>/dev/null |
     awk 'NF'
 }
 
