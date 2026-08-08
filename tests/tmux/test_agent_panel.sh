@@ -45,6 +45,7 @@ case "$1" in
   display-message)
     case "$*" in
       *window_width*) echo '200' ;;
+      *session_name*) echo "${STUB_SESSION:-main}:" ;;
       *window_id*)
         # -t %N (pane 指定) は所属 window、無指定はカレント window
         case "$*" in
@@ -54,7 +55,16 @@ case "$1" in
       *pane_id*)
         [ "${STUB_ALIVE:-1}" = 1 ] && echo "${STUB_PANEL_PANE:-%9}" ;;
     esac ;;
-  list-panes) : ;;   # agent 0 件 (高さは下限 3 に clamp される)
+  list-panes)
+    # kill_panel の掃討クエリ (pane_start_command) には「render 実行中の panel pane」を
+    # 返す (STUB_RENDER_PANES: 空白区切りの pane id 列。STUB_SELF = 実スクリプトのパス)。
+    # list_agents のクエリ (@claude_state) には何も返さない = agent 0 件 (高さ下限 3)
+    case "$*" in
+      *pane_start_command*)
+        for rp in ${STUB_RENDER_PANES:-}; do
+          echo "$rp ${STUB_SELF:-/x/tmux_agent_panel.sh} render"
+        done ;;
+    esac ;;
   new-pane) echo '%42' ;;
 esac
 exit 0
@@ -62,6 +72,8 @@ EOS
 chmod +x "$TMP_DIR/bin/tmux"
 export PATH="$TMP_DIR/bin:$PATH"
 export TMUX="stub,1,0"
+export STUB_SELF="$SCRIPT"                            # kill_panel 掃討の自己一致用
+export TT_AGENT_PANEL_LOCK="$TMP_DIR/panel.lock"      # follow の直列化 lock をテスト内に隔離
 
 fail=0
 ok()   { printf '✓ %s\n' "$1"; }
@@ -94,7 +106,7 @@ ok "toggle on: 一式 (上の ✗ が無ければ)"
 
 # --- toggle off -----------------------------------------------------------------
 : > "$CALLS"
-STUB_PANEL_ON=1 STUB_PANEL_PANE='%9' "$SCRIPT" toggle '@1' || ng "toggle off が失敗"
+STUB_PANEL_ON=1 STUB_PANEL_PANE='%9' STUB_RENDER_PANES='%9' "$SCRIPT" toggle '@1' || ng "toggle off が失敗"
 grep -q 'kill-pane -t %9' "$CALLS" || ng "toggle off: panel pane を kill しない"
 grep -q 'set-option -gu @agent_panel_on' "$CALLS" || ng "toggle off: @agent_panel_on を unset しない"
 grep -q 'set-option -gu @agent_panel_pane' "$CALLS" || ng "toggle off: @agent_panel_pane を unset しない"
@@ -139,11 +151,30 @@ fi
 
 # --- follow (別 window へ移動) ---------------------------------------------------
 : > "$CALLS"
-STUB_PANEL_ON=1 STUB_PANEL_PANE='%9' STUB_PANE_WINDOW='@1' "$SCRIPT" follow '@2' || ng "follow (別 window) が失敗"
+STUB_PANEL_ON=1 STUB_PANEL_PANE='%9' STUB_RENDER_PANES='%9' STUB_PANE_WINDOW='@1' "$SCRIPT" follow '@2' || ng "follow (別 window) が失敗"
 grep -q 'kill-pane -t %9' "$CALLS" || ng "follow (別 window): 旧 panel を kill しない"
 grep -q 'new-pane -d' "$CALLS" || ng "follow (別 window): 新 window に作らない"
 grep -q -- '-t @2' "$CALLS" || ng "follow (別 window): 移動先 window を target にしない"
 ok "follow (別 window): kill + create (上の ✗ が無ければ)"
+
+# --- follow (popup 専用セッションへは追従しない) ----------------------------------
+# scratch popup の開閉は client-attached / session-changed を発火させるが、そこへ panel を
+# 作ると popup を覆う + 閉じた後にセッションへ取り残される (孤児の温床。2026-08-08 実発)
+: > "$CALLS"
+STUB_PANEL_ON=1 STUB_PANEL_PANE='' STUB_SESSION='scratch' "$SCRIPT" follow '@9' || ng "follow (scratch) が非 0"
+if grep -Eq 'new-pane|kill-pane' "$CALLS"; then
+  ng "follow (scratch): popup 専用セッションに panel を作っている"
+else
+  ok "follow (popup 専用セッション): 追従しない"
+fi
+
+# --- kill の掃討: 記録に無い孤児 panel も消す --------------------------------------
+# 並走 follow の二重作成で記録から漏れた render pane が残っても、toggle off が全部消す
+: > "$CALLS"
+STUB_PANEL_ON=1 STUB_PANEL_PANE='%9' STUB_RENDER_PANES='%9 %77' "$SCRIPT" toggle '@1' || ng "toggle off (孤児あり) が失敗"
+grep -q 'kill-pane -t %9'  "$CALLS" || ng "掃討: 記録 pane %9 を kill しない"
+grep -q 'kill-pane -t %77' "$CALLS" || ng "掃討: 孤児 %77 を kill しない"
+ok "掃討: 記録外の孤児 render pane も kill (上の ✗ が無ければ)"
 
 # --- follow (panel pane が消滅済み: q 巻き添え等) ---------------------------------
 : > "$CALLS"

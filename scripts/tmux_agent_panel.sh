@@ -46,6 +46,9 @@ SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]
 # restore_from_scratch (スクロールバック復元) を不発にするため、guards で抑止する
 # shellcheck source=scripts/lib/tmux_resurrect_guards.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmux_resurrect_guards.sh"
+# popup 専用セッション (scratch 等) の除外パターン TT_POPUP_SESSION_RE
+# shellcheck source=scripts/lib/tmux_popup_sessions.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmux_popup_sessions.sh"
 
 PANEL_W=114         # パネル幅 (セル)。行の組み立て (list_agents の切り詰め幅) はこの幅に収まる前提
 PANEL_MAX_H=14      # 高さ上限 (超過分は +N more に畳む)
@@ -78,13 +81,19 @@ list_agents() {
     awk 'NF'
 }
 
+# panel の一意性は @agent_panel_pane の記録でなく「render を実行中の pane を全部消す」
+# 掃討で強制する。⚠️ 記録だけを kill する実装に戻さないこと: 並走した follow
+# (client-attached / client-session-changed / after-select-window は popup 開閉で同時に
+# 発火する) が panel を二重作成すると、記録から漏れた孤児が prefix+a で消せず残る
+# (scratch:5 に孤児が残った実発 2026-08-08)
 kill_panel() {
-  local p
-  p="$(panel_pane)"
-  if pane_alive "$p"; then
-    mark_busy
+  local p killed=0
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    [ "$killed" = 0 ] && { mark_busy; killed=1; }
     tmux kill-pane -t "$p" 2>/dev/null || true
-  fi
+  done < <(tmux list-panes -a -F '#{pane_id} #{pane_start_command}' 2>/dev/null |
+             awk -v self="$SELF" '$2 == self && $3 == "render" {print $1}')
   tmux set-option -gu @agent_panel_pane 2>/dev/null || true
 }
 
@@ -117,12 +126,17 @@ cmd_toggle() {
   else
     tmux set-option -g @agent_panel_on 1
     kill_panel   # 迷子の旧パネルがあれば掃除してから作る
-    create_panel "$win"
+    # popup 専用セッション (scratch 等) の中で on にした場合は作成だけ遅延する
+    # (popup 内に作ると覆い被さり + 取り残しの温床。次の window 切替の follow が作る)
+    if ! tmux display-message -p -t "$win" '#{session_name}:' 2>/dev/null |
+         grep -Eq "$TT_POPUP_SESSION_RE"; then
+      create_panel "$win"
+    fi
   fi
 }
 
 cmd_follow() {
-  local win="${1:-}" p
+  local win="${1:-}" p sess
   panel_on || exit 0
   # 復元中 / bootstrap (hold のみ) は作らない (冒頭の guards コメント参照)。
   # 復元完了後の最初の window 切替 / attach で作られる
@@ -130,14 +144,33 @@ cmd_follow() {
     exit 0
   fi
   [ -n "$win" ] || win="$(tmux display-message -p '#{window_id}')"
+  # popup 専用セッション (scratch 等) へは追従しない: popup 開閉は client-attached /
+  # client-session-changed を発火させるが、そこへ panel を作ると popup の小画面に
+  # 覆い被さる上、popup を閉じた後も panel がそのセッションに取り残される
+  sess="$(tmux display-message -p -t "$win" '#{session_name}:' 2>/dev/null)"
+  if printf '%s' "$sess" | grep -Eq "$TT_POPUP_SESSION_RE"; then
+    exit 0
+  fi
   p="$(panel_pane)"
   if pane_alive "$p" && [ "$(pane_window "$p")" = "$win" ]; then
     exit 0   # すでに今の window に居る (同一 window 内の pane 移動等)
+  fi
+  # 並走する follow (popup 開閉で attached / session-changed / select-window が同時発火)
+  # の kill+create を lock で直列化する。取れなければ何もしない (勝者が正しい位置に作る。
+  # 位置がずれても次の window 切替で追従する)。stale lock は TTL で奪う
+  local lock="${TT_AGENT_PANEL_LOCK:-$HOME/.cache/tt-agent-panel.lock}"
+  mkdir -p "$(dirname "$lock")" 2>/dev/null
+  if ! mkdir "$lock" 2>/dev/null; then
+    local age
+    age=$(( $(date +%s) - $(stat -f %m "$lock" 2>/dev/null || echo 0) ))
+    [ "$age" -lt 5 ] && exit 0
+    rmdir "$lock" 2>/dev/null; mkdir "$lock" 2>/dev/null || exit 0
   fi
   kill_panel
   # hook (run-shell -b) 経由のため無音契約 (scripts/CLAUDE.md): 作成失敗 (window が
   # 狭すぎる等) でも stderr / 非 0 を返さない。失敗しても次の window 切替で再試行される
   create_panel "$win" >/dev/null 2>&1 || true
+  rmdir "$lock" 2>/dev/null
   exit 0
 }
 
