@@ -54,6 +54,8 @@ case "$1" in
           *-t\ %*) [ "${STUB_ALIVE:-1}" = 1 ] && echo "${STUB_PANE_WINDOW:-@1}" ;;
           *) echo '@1' ;;
         esac ;;
+      *pane_active*)
+        echo "${STUB_PANEL_ACTIVE:-0}" ;;
       *pane_id*)
         [ "${STUB_ALIVE:-1}" = 1 ] && echo "${STUB_PANEL_PANE:-%9}" ;;
     esac ;;
@@ -66,6 +68,10 @@ case "$1" in
         for rp in ${STUB_RENDER_PANES:-}; do
           echo "$rp ${STUB_SELF:-/x/tmux_agent_panel.sh} render"
         done ;;
+      *-F\ x*)   # unfocus の pane 数カウント (STUB_WIN_PANES 個の x を返す)
+        i=0; while [ "$i" -lt "${STUB_WIN_PANES:-2}" ]; do echo x; i=$((i+1)); done ;;
+      *pane_id*) # unfocus の弾き先候補列挙
+        printf '%s\n' "${STUB_PANEL_PANE:-%9}" '%50' ;;
     esac ;;
   new-pane) echo '%42' ;;
 esac
@@ -230,6 +236,23 @@ fi
 STUB_PANEL_ON=1 STUB_SAVING="$(( $(date +%s) - 600 ))" "$SCRIPT" follow '@2' || ng "follow (stale saving) が非 0"
 grep -q 'new-pane -d' "$CALLS" || ng "follow (stale saving): TTL 超過なのに作らない (永久停止)"
 ok "follow (stale saving): TTL 超過は無視して作る"
+
+# --- unfocus: パネルにフォーカスが乗ったら弾き返す (別マシンで dim 実発 2026-08-09) ----
+: > "$CALLS"
+STUB_PANEL_PANE='%9' STUB_PANEL_ACTIVE=1 STUB_PANE_WINDOW='@1' STUB_WIN_PANES=2 "$SCRIPT" unfocus || ng "unfocus が非 0"
+grep -q 'select-pane -t @1.!' "$CALLS" || ng "unfocus: 直前アクティブ (!) へ弾き返さない"
+grep -q 'kill-pane' "$CALLS" && ng "unfocus: 他 pane が居るのに panel を殺している"
+ok "unfocus: アクティブなら弾き返す (上の ✗ が無ければ)"
+
+: > "$CALLS"
+STUB_PANEL_PANE='%9' STUB_PANEL_ACTIVE=0 "$SCRIPT" unfocus || ng "unfocus (非アクティブ) が非 0"
+grep -Eq 'select-pane|kill-pane' "$CALLS" && ng "unfocus (非アクティブ): 何かしてしまう" \
+  || ok "unfocus (非アクティブ): no-op"
+
+: > "$CALLS"
+STUB_PANEL_PANE='%9' STUB_PANEL_ACTIVE=1 STUB_PANE_WINDOW='@1' STUB_WIN_PANES=1 "$SCRIPT" unfocus || ng "unfocus (独りぼっち) が非 0"
+grep -q 'kill-pane -t %9' "$CALLS" || ng "unfocus (独りぼっち): 最後の window に取り残された panel を畳まない"
+ok "unfocus (panel だけの window): panel を畳んで window を閉じさせる"
 
 if [ "$fail" -eq 0 ]; then
   echo "test_agent_panel: all ok"

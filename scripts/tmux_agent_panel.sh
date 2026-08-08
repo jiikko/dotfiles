@@ -210,6 +210,38 @@ cmd_follow() {
   exit 0
 }
 
+# パネルにフォーカスが乗っていたら別 pane へ弾き返す (乗れない pane 化)。
+# アクティブ pane が閉じると tmux が次のアクティブとしてパネルを選ぶことがあり、
+# その瞬間に他の全 pane が非アクティブ dim (window-style bg=colour234) に沈んで
+# 「メイン画面が暗い」状態になる (別マシンで実発 2026-08-09)。
+# 弾き先は直前のアクティブ (!) を優先し、それが死んでいれば window 内の別 pane。
+# パネルしか残っていない window (最後の実 pane が死んだ) はパネルごと畳む
+# (次の window 選択の follow が作り直す)
+ensure_unfocused() {
+  local p="$1" win n
+  [ "$(tmux display-message -p -t "$p" '#{pane_active}' 2>/dev/null)" = "1" ] || return 0
+  win="$(pane_window "$p")"
+  [ -n "$win" ] || return 0
+  n="$(tmux list-panes -t "$win" -F 'x' 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "$n" -le 1 ]; then
+    mark_busy
+    tmux kill-pane -t "$p" 2>/dev/null || true
+    tmux set-option -gu @agent_panel_pane 2>/dev/null || true
+    return 0
+  fi
+  tmux select-pane -t "${win}.!" 2>/dev/null ||
+    tmux select-pane -t "$(tmux list-panes -t "$win" -F '#{pane_id}' | grep -v "^${p}\$" | head -1)" 2>/dev/null || true
+}
+
+# pane-exited hook から呼ばれる (無音契約)。render の 2 秒 tick も同じ関数で自衛するが、
+# hook 経由は「pane が閉じた直後」に即発火するので dim の見えている時間を最小化できる
+cmd_unfocus() {
+  local p
+  p="$(panel_pane)"
+  [ -n "$p" ] && ensure_unfocused "$p" >/dev/null 2>&1
+  exit 0
+}
+
 # ---- save-guard (scripts/tmux_resurrect_save.sh から保存の前後に呼ばれる) ----
 # resurrect のスナップショットに panel pane が写り込むと、復元後に「render が復元されない
 # 素の shell の floating pane」が残骸として残る (実測: pane 行 + layout の floating 節
@@ -265,10 +297,12 @@ state_color() {
 }
 
 draw_once() {
-  local rows h body_max shown=0 total=0 n_input=0 n_working=0 n_all=0
+  local rows h active body_max shown=0 total=0 n_input=0 n_working=0 n_all=0
   rows="$(list_agents)"
-  h="$(tmux display-message -p '#{pane_height}' 2>/dev/null)"
+  read -r h active < <(tmux display-message -p '#{pane_height} #{pane_active}' 2>/dev/null)
   case "$h" in ''|*[!0-9]*) h=$PANEL_MAX_H ;; esac
+  # フォーカス自衛 (hook 経由の即時版が取りこぼした経路の保険。ensure_unfocused 参照)
+  [ "${active:-0}" = "1" ] && [ -n "${TMUX_PANE:-}" ] && ensure_unfocused "$TMUX_PANE"
   # body はヘッダー 1 行を除いた残り。全件が収まらないときは「+N more」行の分を
   # さらに 1 行予約する (予約しないと合計が pane 高さを 1 行超過してスクロールし、
   # ヘッダーが欠ける off-by-one。セルフレビューで検出 2026-08-08)
@@ -344,5 +378,6 @@ case "${1:-}" in
   render)    cmd_render ;;
   save-hide) cmd_save_hide ;;
   save-show) cmd_save_show ;;
-  *) echo "usage: tmux_agent_panel.sh toggle|follow [window_id] | render | save-hide | save-show" >&2; exit 2 ;;
+  unfocus)   cmd_unfocus ;;
+  *) echo "usage: tmux_agent_panel.sh toggle|follow [window_id] | render | save-hide | save-show | unfocus" >&2; exit 2 ;;
 esac
