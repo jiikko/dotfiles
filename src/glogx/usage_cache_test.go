@@ -90,6 +90,32 @@ func TestUsageCacheFallsBackToMiss(t *testing.T) {
 	}
 }
 
+// キャッシュ契約は Claude 枠が必須、codex 枠は best-effort。
+func TestUsageCacheRequiresClaude(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+
+	codexOnly := filepath.Join(dir, "codex-only.json")
+	if err := saveUsageCache(codexOnly, &usage.Snapshot{Windows: []usage.Window{
+		{Label: "cx7d", Source: usage.SourceCodex},
+	}}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := loadUsageCache(codexOnly, now); ok {
+		t.Error("fresh な codex-only キャッシュで hit した")
+	}
+
+	claudeOnly := filepath.Join(dir, "claude-only.json")
+	if err := saveUsageCache(claudeOnly, &usage.Snapshot{Windows: []usage.Window{
+		{Label: "5h"},
+	}}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := loadUsageCache(claudeOnly, now); !ok {
+		t.Error("fresh な Claude 枠ありキャッシュが miss になった")
+	}
+}
+
 // 起動時 fetchCmd はキャッシュが fresh なら claude を起こさず即答する。
 // (subprocess を起こさないことは「claude が PATH に無い環境でも snap が返る」で担保する)
 func TestFetchCmdUsesCacheOnStartup(t *testing.T) {

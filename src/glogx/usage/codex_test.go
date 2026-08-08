@@ -239,6 +239,26 @@ func TestFetchAllBothFail(t *testing.T) {
 	}
 }
 
+func TestSnapshotHasClaude(t *testing.T) {
+	tests := []struct {
+		name string
+		snap *Snapshot
+		want bool
+	}{
+		{name: "claude-only", snap: &Snapshot{Windows: []Window{{Label: "5h"}}}, want: true},
+		{name: "codex-only", snap: &Snapshot{Windows: []Window{{Label: "cx7d", Source: SourceCodex}}}, want: false},
+		{name: "mixed", snap: &Snapshot{Windows: []Window{{Label: "5h"}, {Label: "cx7d", Source: SourceCodex}}}, want: true},
+		{name: "empty", snap: &Snapshot{}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.snap.HasClaude(); got != tt.want {
+				t.Errorf("HasClaude() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestMergeLastGood(t *testing.T) {
 	prev := &Snapshot{Version: "2.1.216", Windows: []Window{
 		{Label: "5h", Percent: 4},

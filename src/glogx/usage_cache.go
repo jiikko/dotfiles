@@ -43,7 +43,8 @@ func usageCachePath() (string, error) {
 	return filepath.Join(base, usageCacheFile), nil
 }
 
-// loadUsageCache は fresh なスナップショットを返す。欠損・破損・TTL 切れ・枠 0 件は
+// loadUsageCache は fresh かつキャッシュ契約を満たすスナップショットを返す。契約は
+// Claude 枠が必須、codex 枠は best-effort。欠損・破損・TTL 切れ・Claude 枠なしは
 // 「キャッシュなし」に落とす (キャッシュ都合で表示を壊さない)。
 func loadUsageCache(path string, now time.Time) (*usage.Snapshot, bool) {
 	data, err := os.ReadFile(path)
@@ -54,9 +55,9 @@ func loadUsageCache(path string, now time.Time) (*usage.Snapshot, bool) {
 	if err := json.Unmarshal(data, &entry); err != nil {
 		return nil, false
 	}
-	// Windows 0 件は Fetch が error にする状態なので、キャッシュ経由でも表示に載せない
-	// (usage.Snapshot の JSON 形が将来変わって黙って空デコードされた場合の受けも兼ねる)。
-	if entry.Snapshot == nil || len(entry.Snapshot.Windows) == 0 {
+	// FetchAll は Claude 失敗 + codex 成功を err=nil の部分スナップショットとして返し得る。
+	// それを起動時キャッシュとして採用せず、Claude 枠を取り直せるよう miss にする。
+	if entry.Snapshot == nil || !entry.Snapshot.HasClaude() {
 		return nil, false
 	}
 	if now.Sub(entry.FetchedAt) >= usageCacheTTL {

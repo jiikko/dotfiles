@@ -179,6 +179,17 @@ func codexLabel(mins *int64) string {
 	}
 }
 
+// HasClaude は Snapshot が Claude Code 由来の枠を含むか。usage キャッシュは Claude 枠を
+// 必須、codex 枠を best-effort とするため、保存・読み込み時の完全性判定に使う。
+func (s *Snapshot) HasClaude() bool {
+	for _, w := range s.Windows {
+		if w.Source == "" {
+			return true
+		}
+	}
+	return false
+}
+
 // HasCodex は Snapshot が codex 由来の枠を含むか (タイトル表記の出し分け用)。
 func (s *Snapshot) HasCodex() bool {
 	for _, w := range s.Windows {

@@ -51,8 +51,9 @@ type usageOverlay struct {
 //
 // useCache=true (起動時) は fresh なディスクキャッシュがあれば subprocess を起こさず即答する。
 // 定期リフレッシュ側は false — 鮮度を作るのがその役目なので、自分が書いたキャッシュを読み返す
-// のは無意味 (TTL == 周期なので必ず miss する) 。取得成功はどちらの経路でもキャッシュへ書き、
-// 次回起動を即時化する。
+// のは無意味 (TTL == 周期なので必ず miss する) 。取得結果は Claude 枠を含む場合だけキャッシュへ
+// 書く (Claude 必須・codex best-effort)。片側失敗の last-good 補完前に保存し、古い枠の TTL を
+// 新しい取得時刻で延命しない。
 func (o *usageOverlay) fetchCmd(useCache bool) tea.Cmd {
 	if o.inFlight {
 		return nil // 走行中の fetch がある: overlap させない (inFlight フィールドの doc)
@@ -76,12 +77,12 @@ func (o *usageOverlay) fetchCmd(useCache bool) tea.Cmd {
 		snap, err := usage.FetchAll(ctx)
 		if err == nil {
 			// FetchAll は片側 (claude / codex) の一時失敗を err=nil で返すため、欠けた出所の
-			// 枠を前回結果から補完してから表示・キャッシュへ流す (補完しないと handle の
-			// last-good ガードを素通りして、取れていた枠が黙って消える)。
-			snap.MergeLastGood(prev)
-			if pathErr == nil {
+			// 枠を前回結果から補完する。ただしキャッシュは今回取得できた Claude 枠だけを完全性の
+			// 必須条件とし、補完前に保存する。補完後に保存すると古い片側の枠が延命され続ける。
+			if pathErr == nil && snap.HasClaude() {
 				_ = saveUsageCache(path, snap, time.Now()) // best-effort: 保存失敗でも表示は成立させる
 			}
+			snap.MergeLastGood(prev)
 		}
 		return usageMsg{snap: snap, err: err}
 	}

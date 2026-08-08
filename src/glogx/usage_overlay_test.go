@@ -497,6 +497,10 @@ printf '%s\n' '{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":69,"wind
 `)
 	t.Setenv("PATH", dir)
 	t.Setenv("XDG_CACHE_HOME", t.TempDir()) // キャッシュ書き込みを隔離
+	cachePath, err := usageCachePath()
+	if err != nil {
+		t.Fatal(err)
+	}
 	prev := &usage.Snapshot{Version: "9.9.9", Windows: []usage.Window{
 		{Label: "5h", Percent: 4},
 		{Label: "7d", Percent: 29},
@@ -515,5 +519,10 @@ printf '%s\n' '{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":69,"wind
 	}
 	if msg.snap.Version != "9.9.9" {
 		t.Errorf("Version の last-good が効いていない: %q", msg.snap.Version)
+	}
+	// 表示用 snap は last-good で Claude 枠を補完するが、今回取得できたのは codex だけ。
+	// キャッシュ契約を満たさないため、補完済み snap を保存してはならない。
+	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
+		t.Errorf("claude 失敗 + codex 成功でキャッシュが作られた: err=%v", err)
 	}
 }
