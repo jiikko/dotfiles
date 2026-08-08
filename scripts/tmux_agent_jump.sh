@@ -47,12 +47,18 @@ if [ -z "$rows" ]; then
   exit 0
 fi
 
-# rank 列は並び替え専用なので落とし、pane_id を先頭キーにして fzf へ
+# rank 列は並び替え専用なので落とし、pane_id を先頭キーにして fzf へ。
+# 候補は少数 (エージェント数) なのでインクリメンタルサーチは不要 → --disabled で
+# 絞り込みを切り、j/k をカーソル移動に割り当てる (vi 風。矢印キーも従来どおり効く)。
+# プレビューは 300 行取得し +999999 (末尾に clamp) で最新行から表示、J/K で遡れる
 selected=$(printf '%s\n' "$rows" | cut -f2- \
-  | fzf --ansi --reverse --border --prompt='agent> ' \
+  | fzf --ansi --reverse --border --disabled --no-info \
+        --prompt='agent (j/k: 移動, J/K: プレビュー, q: 閉じる)> ' \
         --delimiter=$'\t' --with-nth=2.. \
-        --preview 'tmux capture-pane -ep -t {1} | tail -40' \
-        --preview-window=down,60%) || exit 0
+        --bind 'j:down,k:up,q:abort' \
+        --bind 'J:preview-half-page-down,K:preview-half-page-up' \
+        --preview 'tmux capture-pane -ep -t {1} -S -300' \
+        --preview-window=down,60%,+999999) || exit 0
 
 target=$(printf '%s\n' "$selected" | cut -f1)
 [ -n "$target" ] || exit 0

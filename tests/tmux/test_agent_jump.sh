@@ -31,9 +31,10 @@ case "$1" in
 esac
 exit 0
 EOS
-# stub fzf: 渡された候補を記録し、STUB_FZF_PICK 行目を選択として返す (0 = キャンセル)
+# stub fzf: 渡された候補と引数を記録し、STUB_FZF_PICK 行目を選択として返す (0 = キャンセル)
 cat > "$TMP_DIR/bin/fzf" <<'EOS'
 #!/bin/sh
+echo "fzf $*" >> "$CALLS"
 cat > "$FZF_INPUT"
 [ "${STUB_FZF_PICK:-1}" = 0 ] && exit 130
 sed -n "${STUB_FZF_PICK:-1}p" "$FZF_INPUT"
@@ -76,6 +77,15 @@ grep -q 'switch-client -t %2' "$CALLS" || ng "switch-client が pane_id で呼�
 grep -q 'select-window -t %2' "$CALLS" || ng "select-window が呼ばれない"
 grep -q 'select-pane -t %2'   "$CALLS" || ng "select-pane が呼ばれない"
 ok "選択 → switch-client + select-window + select-pane (上の ✗ が無ければ)"
+
+# --- fzf の操作モード: 絞り込み無効 + j/k 移動 + プレビュー末尾スクロール ------------
+# (インクリメンタルサーチ不要・j/k カーソル移動のユーザー要望 2026-08-08。
+#  +999999 は「プレビューを末尾 (最新出力) に clamp」の実測済みイディオム)
+grep -q 'fzf .*--disabled' "$CALLS" || ng "fzf: --disabled (絞り込み無効) が無い"
+grep -q 'j:down,k:up' "$CALLS" || ng "fzf: j/k のカーソル移動 bind が無い"
+grep -q 'preview-half-page' "$CALLS" || ng "fzf: J/K のプレビュースクロール bind が無い"
+grep -q '+999999' "$CALLS" || ng "fzf: プレビューの末尾 clamp オフセットが無い"
+ok "fzf: --disabled + j/k + プレビュースクロール (上の ✗ が無ければ)"
 
 # --- fzf キャンセル: 何も切り替えない --------------------------------------------
 : > "$CALLS"; : > "$FZF_INPUT"
