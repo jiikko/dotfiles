@@ -116,5 +116,6 @@
   "effortLevel": "low",
   "advisorModel": "opus",
   "skipWorkflowUsageWarning": true,
+  "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true
 }
