@@ -29,9 +29,10 @@ if hover.extract_image_url("https://example.com/b.JPG", 3) ~= "https://example.c
 end
 
 -- stub: 起動されたコマンドを記録し、curl は成功を即コールバック、qlmanage は kill 可能な
--- 偽ハンドルを返す
+-- 偽ハンドル、osascript の位置取得は STUB_POS (nil = アクセシビリティ権限なし) を返す
 local calls = {}
 local alive = {}
+local STUB_POS = nil -- "x, y, w, h" 形式の文字列を入れると位置取得が成功する
 hover._system = function(cmd, _, on_exit)
   table.insert(calls, cmd)
   if cmd[1] == "curl" then
@@ -40,6 +41,16 @@ hover._system = function(cmd, _, on_exit)
     f:write("x")
     f:close()
     if on_exit then on_exit({ code = 0 }) end
+    return nil
+  end
+  if cmd[1] == "osascript" then
+    if on_exit then
+      if STUB_POS then
+        on_exit({ code = 0, stdout = STUB_POS })
+      else
+        on_exit({ code = 1 }) -- 権限なし相当 (プレビュー自体は成立する契約)
+      end
+    end
     return nil
   end
   local handle = { closed = false }
@@ -95,4 +106,50 @@ hover._on_hover()
 vim.wait(100)
 if ql_calls() ~= 2 or alive_count() ~= 1 then fail("画像以外のホバーで窓が閉じた/増えた") end
 
-print("OK image_hover: extract/1-window/no-op/keep の全検査を通過")
+-- 6. ローカルパス: 抽出 + 実在ファイルのホバーでプレビューが開く --------------------
+local base = "/tmp/x"
+if hover.extract_image_file("see ./shots/a.png here", 6, base) ~= base .. "/./shots/a.png" then
+  fail("相対パスがバッファ基準で解決されない")
+end
+if hover.extract_image_file("abs /var/img/b.jpg end", 6, base) ~= "/var/img/b.jpg" then
+  fail("絶対パスが抽出されない")
+end
+if hover.extract_image_file("not an image ./a.txt", 15, base) ~= nil then
+  fail("非画像パスが画像扱いされた")
+end
+if hover.extract_image_file("url https://x/a.png", 6, base) ~= nil then
+  fail("URL がローカルパス扱いされた (URL 側の経路と二重処理になる)")
+end
+local tmpimg = vim.fn.tempname() .. ".png"
+do
+  local f = assert(io.open(tmpimg, "w"))
+  f:write("x")
+  f:close()
+end
+vim.api.nvim_buf_set_lines(0, 0, -1, false, { "local " .. tmpimg .. " end" })
+vim.api.nvim_win_set_cursor(0, { 1, 8 })
+hover._on_hover()
+vim.wait(200, function() return ql_calls() >= 3 end)
+if ql_calls() ~= 3 or alive_count() ~= 1 then
+  fail(("実在ローカルパスのホバーでプレビューが開かない (ql=%d alive=%d)"):format(ql_calls(), alive_count()))
+end
+
+-- 7. 窓位置の復元 (best-effort): 位置取得が成功する環境では、開き直し後に set position が飛ぶ
+STUB_POS = "100, 200, 800, 600"
+vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one https://example.com/a.png end" })
+vim.api.nvim_win_set_cursor(0, { 1, 10 })
+hover._on_hover() -- 表示中 (ローカルパスの窓) → a.png へ開き直し
+vim.wait(1500, function()
+  for _, c in ipairs(calls) do
+    if c[1] == "osascript" and tostring(c[3] or ""):match("set position.*{100, 200}") then return true end
+  end
+  return false
+end)
+local restored = false
+for _, c in ipairs(calls) do
+  if c[1] == "osascript" and tostring(c[3] or ""):match("set position.*{100, 200}") then restored = true end
+end
+if not restored then fail("開き直し後に元の座標へ set position されない") end
+if alive_count() ~= 1 then fail("位置復元経路で窓が 1 枚に保たれていない") end
+
+print("OK image_hover: extract/1-window/no-op/keep/local-path/position の全検査を通過")
