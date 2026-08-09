@@ -62,6 +62,10 @@ end
 
 require("dotfiles.basic").setup()
 
+-- カーソルホバーした画像 URL を Quick Look でプレビュー (macOS 専用・1 window 契約。
+-- なぜインライン表示でないかはモジュール冒頭コメント)
+require("dotfiles.image_hover").setup()
+
 -- gruvbox 色の hex↔cterm ペアは palette が唯一の出典 (下の plugin spec 群の closure が参照)。
 local pal = require("dotfiles.palette")
 
