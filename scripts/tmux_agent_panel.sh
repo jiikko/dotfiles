@@ -239,9 +239,15 @@ ensure_unfocused() {
 # ⚠️ 弾き返しの select-pane が after-select-pane を再発火させるが、2 回目はパネルが
 # 非アクティブで ensure_unfocused が即 return するため 1 段で収束する
 cmd_unfocus() {
+  # ⚠️ @agent_panel_pane の記録だけを見ない (kill_panel と同じ掃討方式で render 実行中の
+  # pane を全列挙する)。記録依存だと、follow の並走で記録から漏れた孤児 panel に
+  # フォーカスが乗ったとき誰も弾かない (敵対レビュー指摘 2026-08-11)。
+  # なお resurrect 復元後の「render 無しの素 shell 残骸」はここでも対象外 (KNOWN LIMITATION)
   local p
-  p="$(panel_pane)"
-  [ -n "$p" ] && ensure_unfocused "$p" >/dev/null 2>&1
+  while IFS= read -r p; do
+    [ -n "$p" ] && ensure_unfocused "$p" >/dev/null 2>&1
+  done < <(tmux list-panes -a -F '#{pane_id} #{pane_start_command}' 2>/dev/null |
+             awk -v self="$SELF" '$2 == self && $3 == "render" {print $1}')
   exit 0
 }
 
@@ -351,12 +357,16 @@ draw_once() {
   printf '\e[J'
 
   # 🔔 input が 1 件でもあればパネル自体の背景を暗赤にして周辺視で気づけるようにする
-  # (bell シアン反転 / zoom 暗赤と同じ「色面で知らせる」思想)。select-pane -P は
-  # fork+tmux 呼び出しなので毎 tick ではなく変化したときだけ叩く
+  # (bell シアン反転 / zoom 暗赤と同じ「色面で知らせる」思想)。fork+tmux 呼び出しなので
+  # 毎 tick ではなく変化したときだけ叩く。
+  # ⚠️ select-pane -P で書かないこと: select-pane はたとえ -P 目的でも対象 pane を
+  # アクティブにする (3.7b 実測 2026-08-11)。input 遷移のたびにパネルがフォーカスを
+  # 奪い全 pane が dim する実発バグの原因だった。set-option -p window-style は
+  # フォーカスに一切触れない (同実測で style 適用とアクティブ不変を確認済み)
   local want_bg='colour233'
   [ "$n_input" -gt 0 ] && want_bg='colour52'
   if [ "$want_bg" != "$PANEL_BG_CURRENT" ] && [ -n "${TMUX_PANE:-}" ]; then
-    tmux select-pane -t "$TMUX_PANE" -P "fg=colour252,bg=$want_bg" 2>/dev/null || true
+    tmux set-option -p -t "$TMUX_PANE" window-style "fg=colour252,bg=$want_bg" 2>/dev/null || true
     PANEL_BG_CURRENT="$want_bg"
   fi
 }

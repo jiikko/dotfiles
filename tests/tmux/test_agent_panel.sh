@@ -238,21 +238,29 @@ grep -q 'new-pane -d' "$CALLS" || ng "follow (stale saving): TTL 超過なのに
 ok "follow (stale saving): TTL 超過は無視して作る"
 
 # --- unfocus: パネルにフォーカスが乗ったら弾き返す (別マシンで dim 実発 2026-08-09) ----
+# unfocus は @agent_panel_pane の記録でなく kill_panel と同じ掃討方式 (render 実行中の
+# pane を全列挙) で対象を決める (記録漏れの孤児が弾かれない穴の修正 2026-08-11)
 : > "$CALLS"
-STUB_PANEL_PANE='%9' STUB_PANEL_ACTIVE=1 STUB_PANE_WINDOW='@1' STUB_WIN_PANES=2 "$SCRIPT" unfocus || ng "unfocus が非 0"
+STUB_RENDER_PANES='%9' STUB_PANEL_ACTIVE=1 STUB_PANE_WINDOW='@1' STUB_WIN_PANES=2 "$SCRIPT" unfocus || ng "unfocus が非 0"
 grep -q 'select-pane -t @1.!' "$CALLS" || ng "unfocus: 直前アクティブ (!) へ弾き返さない"
 grep -q 'kill-pane' "$CALLS" && ng "unfocus: 他 pane が居るのに panel を殺している"
 ok "unfocus: アクティブなら弾き返す (上の ✗ が無ければ)"
 
 : > "$CALLS"
-STUB_PANEL_PANE='%9' STUB_PANEL_ACTIVE=0 "$SCRIPT" unfocus || ng "unfocus (非アクティブ) が非 0"
+STUB_RENDER_PANES='%9' STUB_PANEL_ACTIVE=0 "$SCRIPT" unfocus || ng "unfocus (非アクティブ) が非 0"
 grep -Eq 'select-pane|kill-pane' "$CALLS" && ng "unfocus (非アクティブ): 何かしてしまう" \
   || ok "unfocus (非アクティブ): no-op"
 
 : > "$CALLS"
-STUB_PANEL_PANE='%9' STUB_PANEL_ACTIVE=1 STUB_PANE_WINDOW='@1' STUB_WIN_PANES=1 "$SCRIPT" unfocus || ng "unfocus (独りぼっち) が非 0"
+STUB_RENDER_PANES='%9' STUB_PANEL_ACTIVE=1 STUB_PANE_WINDOW='@1' STUB_WIN_PANES=1 "$SCRIPT" unfocus || ng "unfocus (独りぼっち) が非 0"
 grep -q 'kill-pane -t %9' "$CALLS" || ng "unfocus (独りぼっち): 最後の window に取り残された panel を畳まない"
 ok "unfocus (panel だけの window): panel を畳んで window を閉じさせる"
+
+# 記録 (@agent_panel_pane) に無い render 孤児にもフォーカス防御が効くこと
+: > "$CALLS"
+STUB_PANEL_PANE='' STUB_RENDER_PANES='%77' STUB_PANEL_ACTIVE=1 STUB_PANE_WINDOW='@1' STUB_WIN_PANES=2 "$SCRIPT" unfocus || ng "unfocus (孤児) が非 0"
+grep -q 'select-pane -t @1.!' "$CALLS" || ng "unfocus (孤児): 記録に無い render pane を弾き返さない"
+ok "unfocus (孤児): 記録に無い render pane も弾き返す (上の ✗ が無ければ)"
 
 if [ "$fail" -eq 0 ]; then
   echo "test_agent_panel: all ok"
