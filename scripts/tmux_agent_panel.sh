@@ -33,9 +33,9 @@
 #     「render コマンドが復元されない素の shell の floating pane」として 1 個残る
 #     ことがある (toggle か kill-pane で消す。復元は稀なので許容)。
 #   - panel が居る window の pane 数バッジ [N] は +1 される (実 pane なので仕様)。
-#   - select-pane の方向移動でパネルにフォーカスが当たりうるが、入力は無効化してある
-#     (create_panel の select-pane -d)。素のキーは落ち、bind (M-hjkl / prefix) は
-#     key table 解決なので効く = 移動で抜けられる。
+#   - select-pane の方向移動でパネルにフォーカスが当たった場合は after-select-pane
+#     hook (_tmux.conf) の unfocus が即座に弾き返す。入力も無効化してある
+#     (create_panel の select-pane -d)。
 set -uo pipefail
 unset CDPATH
 
@@ -233,8 +233,11 @@ ensure_unfocused() {
     tmux select-pane -t "$(tmux list-panes -t "$win" -F '#{pane_id}' | grep -v "^${p}\$" | head -1)" 2>/dev/null || true
 }
 
-# pane-exited hook から呼ばれる (無音契約)。render の 2 秒 tick も同じ関数で自衛するが、
-# hook 経由は「pane が閉じた直後」に即発火するので dim の見えている時間を最小化できる
+# pane-exited / after-select-pane hook から呼ばれる (無音契約)。render の 2 秒 tick も
+# 同じ関数で自衛するが、hook 経由は「pane が閉じた / 移動で乗った直後」に即発火するので
+# フォーカスがパネルに居る時間を最小化できる。
+# ⚠️ 弾き返しの select-pane が after-select-pane を再発火させるが、2 回目はパネルが
+# 非アクティブで ensure_unfocused が即 return するため 1 段で収束する
 cmd_unfocus() {
   local p
   p="$(panel_pane)"
