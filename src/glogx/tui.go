@@ -160,6 +160,11 @@ const rerunPollGrace = 10
 // pullMsg は git pull --rebase の実行結果 (u → y 確認後)。glogx の独自機能。
 type pullMsg struct{ err error }
 
+// updateBeginMsg は「早期リターン判定 (installedIsLatest) を通過した = 実際に自己更新を
+// 走らせる」合図。C/X 押下 → startUpdate (判定。モーダルなし) → updateBeginMsg →
+// actModal.runUpdate (spinner モーダルあり) の 2 段構え。
+type updateBeginMsg struct{ target string }
+
 // updateMsg は `claude update` の実行結果 (C キー、確認なし即実行)。glogx の独自機能。
 // before/after は update 前後の CLI バージョン (取得失敗時は空)。両方取れて差があれば
 // "vX → vY"、同じなら「変更なし」を notice に出す。
@@ -995,17 +1000,22 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			poll = m.ensurePanelPoll() // 既にチェーンが生きていれば nil (二重化しない)
 		}
 		return m, tea.Batch(poll, m.maybeTick())
+	case updateBeginMsg:
+		// C 連打等で先行の update が走行中なら二重実行しない (updating モーダル中はキーを
+		// 無視するが、判定 Cmd が並走した場合の保険)
+		if m.actModal.updating {
+			return m, m.maybeTick()
+		}
+		return m, tea.Batch(m.actModal.runUpdate(msg.target), m.maybeTick())
 	case updateMsg:
 		m.actModal.updating = false
 		// 結果は右下トーストで出す (旧: 何かキーで閉じるダイアログ。ユーザー要望 2026-07-25)。
 		// バージョンが上がったのか latest だったのかは 1 行に畳んで一目で分かる形にする。
 		// 「新バージョンあり」の通知 (showClaudeUpdate) と違って調停は挟まない:
 		// こちらは C / X を押した本人への結果なので、先行トーストを上書きする後勝ちが正しい。
-		// codex は claude と同文面だと区別できないので CLI 名を前置する (claude は従来表記)。
-		name := ""
-		if msg.target == "codex" {
-			name = "codex "
-		}
+		// どちらの CLI の結果かが一目で分かるよう、主語として CLI 名を常に前置する
+		// (ユーザー要望 2026-08-12。旧: codex のみ前置)。
+		name := msg.target + " "
 		switch {
 		case msg.err != nil:
 			m.showWarning(name + "更新に失敗: " + firstLine(msg.err.Error()))

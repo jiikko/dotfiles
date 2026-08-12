@@ -43,10 +43,17 @@ func TestBrowseCodexUpdateFlow(t *testing.T) {
 	runCodexUpdate = func() (string, string, error) { calls++; return "0.144.6", "0.150.0", nil }
 	t.Cleanup(func() { runCodexUpdate = orig })
 
+	// X 直後は「既に latest か」の判定中でモーダルはまだ出ない (2 段構え。tui_actions_test.go
+	// の TestBrowseUpdateFlow と同じ)。updateBeginMsg を配送して実更新の開始を確認する
 	_, cmd := m.handleKey("X")
-	if cmd == nil || !m.actModal.updating || m.actModal.updateTarget != "codex" {
-		t.Fatalf("X で codex update が始まらない: cmd=%v updating=%v target=%q",
-			cmd != nil, m.actModal.updating, m.actModal.updateTarget)
+	if cmd == nil || m.actModal.updating {
+		t.Fatalf("X 直後にモーダルが立っている: cmd=%v updating=%v", cmd != nil, m.actModal.updating)
+	}
+	mm, _ := m.Update(updateBeginMsg{target: "codex"})
+	m = mm.(*browseModel)
+	if !m.actModal.updating || m.actModal.updateTarget != "codex" {
+		t.Fatalf("updateBeginMsg で codex update が始まらない: updating=%v target=%q",
+			m.actModal.updating, m.actModal.updateTarget)
 	}
 	m.width, m.height = 80, 20
 	if v := stripANSI(m.View().Content); !strings.Contains(v, "codex update") {

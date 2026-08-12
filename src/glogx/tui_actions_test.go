@@ -50,11 +50,36 @@ func TestBrowseUpdateFlow(t *testing.T) {
 	runClaudeUpdate = func() (string, string, error) { calls++; return "2.1.216", "2.2.0", nil }
 	t.Cleanup(func() { runClaudeUpdate = orig })
 
-	// C で確認を挟まず即実行 (updating=true & cmd 返却)
+	// C 直後は「既に latest か」の判定中で、モーダルはまだ出ない (早期リターン時に
+	// 一瞬モーダルが光るのを防ぐ 2 段構え。ユーザー指摘 2026-08-12)
 	_, cmd := m.handleKey("C")
-	if cmd == nil || !m.actModal.updating {
-		t.Fatalf("C で claude update が始まらない: cmd=%v updating=%v", cmd != nil, m.actModal.updating)
+	if cmd == nil || m.actModal.updating {
+		t.Fatalf("C 直後にモーダルが立っている (判定前に updating が立つと早期リターンで光る): cmd=%v updating=%v", cmd != nil, m.actModal.updating)
 	}
+	// 判定 Cmd を実行 → テスト環境はキャッシュ無しなので updateBeginMsg → 実更新開始
+	var begin tea.Msg
+	var walk func(tea.Msg)
+	walk = func(msg tea.Msg) {
+		switch v := msg.(type) {
+		case tea.BatchMsg:
+			for _, c := range v {
+				if c != nil {
+					walk(c())
+				}
+			}
+		case updateBeginMsg:
+			begin = v
+		}
+	}
+	walk(cmd())
+	if begin == nil {
+		t.Fatal("判定 Cmd が updateBeginMsg を返さない")
+	}
+	_, runCmd := m.Update(begin)
+	if runCmd == nil || !m.actModal.updating {
+		t.Fatalf("updateBeginMsg で claude update が始まらない: cmd=%v updating=%v", runCmd != nil, m.actModal.updating)
+	}
+	cmd = runCmd
 	// 実行中は spinner モーダルが出て、終了できない旨も表示する
 	m.width, m.height = 80, 20
 	if v := stripANSI(m.View().Content); !strings.Contains(v, "claude update") || !strings.Contains(v, "updating") ||
@@ -99,23 +124,7 @@ func TestBrowseUpdateFlow(t *testing.T) {
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	runClaudeUpdate = func() (string, string, error) { return "2.2.0", "2.2.0", nil }
 	_, cmd2 := m2.handleKey("C")
-	deliverTo := func(model *browseModel, c tea.Cmd) {
-		var dl func(tea.Msg)
-		dl = func(msg tea.Msg) {
-			switch v := msg.(type) {
-			case tea.BatchMsg:
-				for _, cc := range v {
-					if cc != nil {
-						dl(cc())
-					}
-				}
-			case updateMsg:
-				model.Update(v)
-			}
-		}
-		dl(c())
-	}
-	deliverTo(m2, cmd2)
+	deliverUpdateMsg(m2, cmd2)
 	if !m2.toast.visible() || !strings.Contains(m2.toast.text, "最新版") || !strings.Contains(m2.toast.text, "v2.2.0") {
 		t.Fatalf("最新版がトーストに出ない: visible=%v text=%q", m2.toast.visible(), m2.toast.text)
 	}
@@ -133,23 +142,7 @@ func TestBrowseUpdateFailureShowsDialogAndClearsUpdating(t *testing.T) {
 	t.Cleanup(func() { runClaudeUpdate = orig })
 
 	_, cmd := m.handleKey("C")
-	if !m.actModal.updating {
-		t.Fatal("C で updating に入らない")
-	}
-	var dl func(tea.Msg)
-	dl = func(msg tea.Msg) {
-		switch v := msg.(type) {
-		case tea.BatchMsg:
-			for _, cc := range v {
-				if cc != nil {
-					dl(cc())
-				}
-			}
-		case updateMsg:
-			m.Update(v)
-		}
-	}
-	dl(cmd())
+	deliverUpdateMsg(m, cmd)
 
 	if m.actModal.updating {
 		t.Fatal("更新失敗後も updating のまま (無限ブロックから復帰できない)")
@@ -949,8 +942,9 @@ func TestKeyRepeatDoesNotBlockMovement(t *testing.T) {
 	}
 }
 
-// deliverUpdateMsg は startUpdate 系 tea.Cmd の返す Batch を展開して updateMsg だけ配送する
-// (TestBrowseUpdateFlow のローカル deliver と同型。skip テスト群で共用するため関数化)。
+// deliverUpdateMsg は startUpdate 系 tea.Cmd の返す Batch を展開し、updateBeginMsg /
+// updateMsg を Update へ配送してチェーンを完走させる (判定 → 実更新 → 結果の 2 段構えを
+// テストから 1 呼び出しで進める)。
 func deliverUpdateMsg(m *browseModel, cmd tea.Cmd) {
 	var dl func(tea.Msg)
 	dl = func(msg tea.Msg) {
@@ -961,8 +955,11 @@ func deliverUpdateMsg(m *browseModel, cmd tea.Cmd) {
 					dl(c())
 				}
 			}
-		case updateMsg:
-			m.Update(v)
+		case updateBeginMsg, updateMsg:
+			_, next := m.Update(v)
+			if next != nil {
+				dl(next())
+			}
 		}
 	}
 	dl(cmd())
@@ -998,6 +995,10 @@ func TestBrowseUpdateSkipsWhenAlreadyLatest(t *testing.T) {
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	_, cmd := m.handleKey("C")
+	// C 直後にモーダルが立たない (判定前に立てると早期リターン時に一瞬光る。ユーザー指摘 2026-08-12)
+	if m.actModal.updating {
+		t.Fatal("C 直後 (判定前) に updating モーダルが立っている")
+	}
 	deliverUpdateMsg(m, cmd)
 	if runCalls != 0 {
 		t.Fatalf("latest 一致でも claude update が実行された (calls=%d)", runCalls)
@@ -1005,8 +1006,9 @@ func TestBrowseUpdateSkipsWhenAlreadyLatest(t *testing.T) {
 	if m.actModal.updating {
 		t.Fatal("早期リターン後も updating のまま")
 	}
-	if !m.toast.visible() || !strings.Contains(m.toast.text, "最新版") || !strings.Contains(m.toast.text, "v2.2.0") {
-		t.Fatalf("最新版トーストが出ない: visible=%v text=%q", m.toast.visible(), m.toast.text)
+	// トーストは主語 (CLI 名) 付き (ユーザー要望 2026-08-12)
+	if !m.toast.visible() || !strings.Contains(m.toast.text, "claude") || !strings.Contains(m.toast.text, "最新版") || !strings.Contains(m.toast.text, "v2.2.0") {
+		t.Fatalf("主語付きの最新版トーストが出ない: visible=%v text=%q", m.toast.visible(), m.toast.text)
 	}
 
 	// codex 側も同じ早期リターン (鏡像)

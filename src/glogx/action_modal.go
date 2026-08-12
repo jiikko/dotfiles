@@ -150,34 +150,44 @@ func (a *actionModal) stop() {
 // askPull は u で pull --rebase の確認へ入る。
 func (a *actionModal) askPull() { a.pullConfirm = true }
 
-// startUpdate は C で claude update を確認なし即実行する (ユーザー選定 2026-07-22)。updating を
-// 立て、実行結果を updateMsg で返す tea.Cmd を返す (呼び出し側が maybeTick と束ねる)。
+// startUpdate は C で claude update を確認なし即実行する (ユーザー選定 2026-07-22)。
+// まず「既に latest か」をバックグラウンドで判定し、latest なら updateMsg{before==after}
+// (=「すでに最新版です」トースト) で早期リターン、実際に更新するときだけ updateBeginMsg を
+// 返す。⚠️ ここでは updating を立てない: 判定前に立てると早期リターン時にも spinner
+// モーダルが一瞬光る (ユーザー指摘 2026-08-12)。モーダルは updateBeginMsg を受けた
+// runUpdate が立てる。
 func (a *actionModal) startUpdate() tea.Cmd {
-	a.updating = true
-	a.updateTarget = "claude"
 	return func() tea.Msg {
-		// 起動時チェックのキャッシュで既に latest と分かるなら自己更新を起動しない (早期リターン)。
-		// before==after の updateMsg は既存ハンドラが「すでに最新版です」トーストにする。
 		if v, latest := installedIsLatest(claudeVersionCacheFile, fetchInstalledClaudeVersion); latest {
 			return updateMsg{target: "claude", before: v, after: v}
 		}
-		before, after, err := runClaudeUpdate()
-		return updateMsg{target: "claude", before: before, after: after, err: err}
+		return updateBeginMsg{target: "claude"}
 	}
 }
 
 // startCodexUpdate は X で codex update を確認なし即実行する (startUpdate の codex 版。
 // モーダル表示と結果トーストは updateTarget / updateMsg.target で claude と出し分ける)。
 func (a *actionModal) startCodexUpdate() tea.Cmd {
-	a.updating = true
-	a.updateTarget = "codex"
 	return func() tea.Msg {
-		// 早期リターンの理由は startUpdate (claude 側) のコメント参照。
 		if v, latest := installedIsLatest(codexVersionCacheFile, fetchInstalledCodexVersion); latest {
 			return updateMsg{target: "codex", before: v, after: v}
 		}
-		before, after, err := runCodexUpdate()
-		return updateMsg{target: "codex", before: before, after: after, err: err}
+		return updateBeginMsg{target: "codex"}
+	}
+}
+
+// runUpdate は updateBeginMsg (早期リターン判定の通過) を受けて実際の自己更新を開始する。
+// ここで初めて updating (spinner モーダル + 終了ブロック) を立てる。
+func (a *actionModal) runUpdate(target string) tea.Cmd {
+	a.updating = true
+	a.updateTarget = target
+	return func() tea.Msg {
+		run := runClaudeUpdate
+		if target == "codex" {
+			run = runCodexUpdate
+		}
+		before, after, err := run()
+		return updateMsg{target: target, before: before, after: after, err: err}
 	}
 }
 
