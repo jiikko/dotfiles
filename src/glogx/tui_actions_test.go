@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -945,5 +946,127 @@ func TestKeyRepeatDoesNotBlockMovement(t *testing.T) {
 	}
 	if m.cursor != 3 {
 		t.Fatalf("j の押しっぱなしでスクロールが止まった: cursor=%d (3 のはず)", m.cursor)
+	}
+}
+
+// deliverUpdateMsg は startUpdate 系 tea.Cmd の返す Batch を展開して updateMsg だけ配送する
+// (TestBrowseUpdateFlow のローカル deliver と同型。skip テスト群で共用するため関数化)。
+func deliverUpdateMsg(m *browseModel, cmd tea.Cmd) {
+	var dl func(tea.Msg)
+	dl = func(msg tea.Msg) {
+		switch v := msg.(type) {
+		case tea.BatchMsg:
+			for _, c := range v {
+				if c != nil {
+					dl(c())
+				}
+			}
+		case updateMsg:
+			m.Update(v)
+		}
+	}
+	dl(cmd())
+}
+
+// writeVersionCache は latest キャッシュを fetchedAt 時点の取得としてテスト用に書く。
+func writeVersionCache(t *testing.T, cacheFile, latest string, fetchedAt time.Time) {
+	t.Helper()
+	base, err := cacheBaseDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveClaudeVersionCache(filepath.Join(base, cacheFile), latest, fetchedAt); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// C / X: 起動時チェックのキャッシュで既に latest と分かるときは自己更新プロセスを起動せず
+// 「すでに最新版です」で早期リターンする (ユーザー要望 2026-08-12。従来は毎回 update が走り
+// モーダルにロックされた)。
+func TestBrowseUpdateSkipsWhenAlreadyLatest(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	// claude 側: installed == cached latest → runClaudeUpdate は呼ばれない
+	writeVersionCache(t, claudeVersionCacheFile, "2.2.0", time.Now())
+	origFetch := fetchInstalledClaudeVersion
+	fetchInstalledClaudeVersion = func(context.Context) string { return "2.2.0" }
+	t.Cleanup(func() { fetchInstalledClaudeVersion = origFetch })
+	origRun := runClaudeUpdate
+	var runCalls int
+	runClaudeUpdate = func() (string, string, error) { runCalls++; return "2.2.0", "2.2.0", nil }
+	t.Cleanup(func() { runClaudeUpdate = origRun })
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	_, cmd := m.handleKey("C")
+	deliverUpdateMsg(m, cmd)
+	if runCalls != 0 {
+		t.Fatalf("latest 一致でも claude update が実行された (calls=%d)", runCalls)
+	}
+	if m.actModal.updating {
+		t.Fatal("早期リターン後も updating のまま")
+	}
+	if !m.toast.visible() || !strings.Contains(m.toast.text, "最新版") || !strings.Contains(m.toast.text, "v2.2.0") {
+		t.Fatalf("最新版トーストが出ない: visible=%v text=%q", m.toast.visible(), m.toast.text)
+	}
+
+	// codex 側も同じ早期リターン (鏡像)
+	writeVersionCache(t, codexVersionCacheFile, "0.144.6", time.Now())
+	origCodexFetch := fetchInstalledCodexVersion
+	fetchInstalledCodexVersion = func(context.Context) string { return "0.144.6" }
+	t.Cleanup(func() { fetchInstalledCodexVersion = origCodexFetch })
+	origCodexRun := runCodexUpdate
+	var codexCalls int
+	runCodexUpdate = func() (string, string, error) { codexCalls++; return "0.144.6", "0.144.6", nil }
+	t.Cleanup(func() { runCodexUpdate = origCodexRun })
+
+	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	_, cmd2 := m2.handleKey("X")
+	deliverUpdateMsg(m2, cmd2)
+	if codexCalls != 0 {
+		t.Fatalf("latest 一致でも codex update が実行された (calls=%d)", codexCalls)
+	}
+	if !m2.toast.visible() || !strings.Contains(m2.toast.text, "codex") || !strings.Contains(m2.toast.text, "最新版") {
+		t.Fatalf("codex 最新版トーストが出ない: visible=%v text=%q", m2.toast.visible(), m2.toast.text)
+	}
+}
+
+// 早期リターンしない側の保証: キャッシュが stale / installed が古い場合は従来どおり update を実行する。
+func TestBrowseUpdateRunsWhenNotConfirmedLatest(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	origFetch := fetchInstalledClaudeVersion
+	t.Cleanup(func() { fetchInstalledClaudeVersion = origFetch })
+	origRun := runClaudeUpdate
+	var runCalls int
+	runClaudeUpdate = func() (string, string, error) { runCalls++; return "2.1.0", "2.2.0", nil }
+	t.Cleanup(func() { runClaudeUpdate = origRun })
+
+	// installed が cached latest より古い → 実行される
+	writeVersionCache(t, claudeVersionCacheFile, "2.2.0", time.Now())
+	fetchInstalledClaudeVersion = func(context.Context) string { return "2.1.0" }
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	_, cmd := m.handleKey("C")
+	deliverUpdateMsg(m, cmd)
+	if runCalls != 1 {
+		t.Fatalf("installed が古いのに update が実行されない (calls=%d)", runCalls)
+	}
+
+	// キャッシュが stale (TTL 切れ) → latest 不明扱いで実行される (オフライン等で塞がない)
+	writeVersionCache(t, claudeVersionCacheFile, "2.2.0", time.Now().Add(-2*claudeVersionTTL))
+	fetchInstalledClaudeVersion = func(context.Context) string { return "2.2.0" }
+	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	_, cmd2 := m2.handleKey("C")
+	deliverUpdateMsg(m2, cmd2)
+	if runCalls != 2 {
+		t.Fatalf("stale キャッシュなのに update が実行されない (calls=%d)", runCalls)
+	}
+
+	// installed 取得失敗 ("") → 実行される
+	writeVersionCache(t, claudeVersionCacheFile, "2.2.0", time.Now())
+	fetchInstalledClaudeVersion = func(context.Context) string { return "" }
+	m3 := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	_, cmd3 := m3.handleKey("C")
+	deliverUpdateMsg(m3, cmd3)
+	if runCalls != 3 {
+		t.Fatalf("installed 不明なのに update が実行されない (calls=%d)", runCalls)
 	}
 }

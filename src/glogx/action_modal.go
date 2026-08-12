@@ -156,6 +156,11 @@ func (a *actionModal) startUpdate() tea.Cmd {
 	a.updating = true
 	a.updateTarget = "claude"
 	return func() tea.Msg {
+		// 起動時チェックのキャッシュで既に latest と分かるなら自己更新を起動しない (早期リターン)。
+		// before==after の updateMsg は既存ハンドラが「すでに最新版です」トーストにする。
+		if v, latest := installedIsLatest(claudeVersionCacheFile, fetchInstalledClaudeVersion); latest {
+			return updateMsg{target: "claude", before: v, after: v}
+		}
 		before, after, err := runClaudeUpdate()
 		return updateMsg{target: "claude", before: before, after: after, err: err}
 	}
@@ -167,6 +172,10 @@ func (a *actionModal) startCodexUpdate() tea.Cmd {
 	a.updating = true
 	a.updateTarget = "codex"
 	return func() tea.Msg {
+		// 早期リターンの理由は startUpdate (claude 側) のコメント参照。
+		if v, latest := installedIsLatest(codexVersionCacheFile, fetchInstalledCodexVersion); latest {
+			return updateMsg{target: "codex", before: v, after: v}
+		}
 		before, after, err := runCodexUpdate()
 		return updateMsg{target: "codex", before: before, after: after, err: err}
 	}

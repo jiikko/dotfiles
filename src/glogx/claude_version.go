@@ -175,6 +175,29 @@ func checkCLIVersionCmd(cacheFile string, fetchLatest, fetchInstalled func(conte
 	}
 }
 
+// installedIsLatest は「起動時チェックが保存した latest キャッシュ (TTL 内) とインストール済みの
+// バージョンが一致 (以上) か」を返す。C / X の update 実行前の早期リターン判定 (2026-08-12):
+// 既に latest と分かっているのに自己更新プロセス (npm 取得) を起動してモーダルでロックしない。
+// latest 不明 (キャッシュ欠損・stale) や installed 取得失敗は false (= 従来どおり update を
+// 実行) に倒す — オフラインや出力形式変更で手動 update を塞がないため。
+func installedIsLatest(cacheFile string, fetchInstalled func(context.Context) string) (installed string, already bool) {
+	base, err := cacheBaseDir()
+	if err != nil {
+		return "", false
+	}
+	latest, ok := loadClaudeVersionCache(filepath.Join(base, cacheFile), time.Now())
+	if !ok {
+		return "", false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), claudeVersionFetchTimeout)
+	defer cancel()
+	installed = fetchInstalled(ctx)
+	if installed == "" {
+		return "", false
+	}
+	return installed, !versionLess(installed, latest)
+}
+
 // checkClaudeVersionCmd は起動時の Claude Code バージョン確認 1 回分。
 func checkClaudeVersionCmd() tea.Cmd {
 	return checkCLIVersionCmd(claudeVersionCacheFile, fetchLatestClaudeVersion, fetchInstalledClaudeVersion,
