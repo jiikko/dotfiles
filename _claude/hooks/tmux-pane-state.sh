@@ -7,6 +7,12 @@
 #             + ペインが画面に見えていなければ macOS 通知 (音あり)
 #   idle    : "✓ idle" を表示     (Stop = 応答完了)
 #             + ペインが画面に見えていなければ macOS 通知 (音なし)
+#             ただし stdin (hook JSON) の pending_tasks に未完了タスクが残っている
+#             場合 (バックグラウンド Bash / subagent / codex レビュー待ち等) は、
+#             入力待ちではないので "⚙ working (bg)" を表示して通知もしない。
+#             タスク完了で再開すると PostToolUse / 次の Stop が状態を上書きする。
+#             表示側 (_tmux.conf / tmux_agent_panel.sh / tmux_agent_jump.sh) は
+#             "*working*" の部分一致で色分けするため、このラベルも working 色になる
 #   start   : "✓ idle" を表示     (SessionStart — 起動直後なので通知しない)
 #   clear   : 状態を消す          (SessionEnd — Claude 終了後は通常シェルへ戻す)
 #
@@ -53,7 +59,21 @@ notify_if_hidden() {
 case "${1:-}" in
   working) set_state "⚙ working" ;;
   input)   set_state "🔔 input"; notify_if_hidden "🔔 入力待ち (承認 or 回答が必要)" "default" ;;
-  idle)    set_state "✓ idle";  notify_if_hidden "✓ 応答完了" ;;
+  idle)
+    # Stop hook の stdin JSON から未完了バックグラウンドタスクを数える。
+    # jq 不在 / stdin が JSON でない / フィールド不在は 0 扱い (= 従来どおり idle)
+    pending=0
+    if command -v jq >/dev/null 2>&1 && [ ! -t 0 ]; then
+      pending=$(jq -r '[.pending_tasks[]? | select(.status != "completed")] | length' 2>/dev/null) || pending=0
+      case "$pending" in ''|*[!0-9]*) pending=0 ;; esac
+    fi
+    if [ "$pending" -gt 0 ]; then
+      set_state "⚙ working (bg:$pending)"
+    else
+      set_state "✓ idle"
+      notify_if_hidden "✓ 応答完了"
+    fi
+    ;;
   start)   set_state "✓ idle" ;;
   clear)   tmux set -p -u -t "$TMUX_PANE" @claude_state 2>/dev/null
            tmux set -p -u -t "$TMUX_PANE" @claude_state_since 2>/dev/null ;;
