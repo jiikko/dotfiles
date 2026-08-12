@@ -1070,3 +1070,25 @@ func TestBrowseUpdateRunsWhenNotConfirmedLatest(t *testing.T) {
 		t.Fatalf("installed 不明なのに update が実行されない (calls=%d)", runCalls)
 	}
 }
+
+// 比較不能なバージョン形式 (pre-release 等) が latest キャッシュに入っても「最新扱い」で
+// update を塞がない (敵対レビュー指摘 2026-08-12: versionLess の比較不能=false を否定すると
+// 「比較できない = skip」に反転する罠の回帰テスト)。
+func TestBrowseUpdateRunsWhenVersionsIncomparable(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	writeVersionCache(t, claudeVersionCacheFile, "2.2.0-beta.1", time.Now())
+	origFetch := fetchInstalledClaudeVersion
+	fetchInstalledClaudeVersion = func(context.Context) string { return "2.1.0" }
+	t.Cleanup(func() { fetchInstalledClaudeVersion = origFetch })
+	origRun := runClaudeUpdate
+	var runCalls int
+	runClaudeUpdate = func() (string, string, error) { runCalls++; return "2.1.0", "2.2.0", nil }
+	t.Cleanup(func() { runClaudeUpdate = origRun })
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	_, cmd := m.handleKey("C")
+	deliverUpdateMsg(m, cmd)
+	if runCalls != 1 {
+		t.Fatalf("比較不能な latest 形式で update が塞がれた (calls=%d)", runCalls)
+	}
+}

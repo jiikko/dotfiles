@@ -195,7 +195,11 @@ func installedIsLatest(cacheFile string, fetchInstalled func(context.Context) st
 	if installed == "" {
 		return "", false
 	}
-	return installed, !versionLess(installed, latest)
+	// ⚠️ !versionLess(installed, latest) にしない: versionLess は比較不能 (セグメント数
+	// 不一致・数値でない) を false に倒すため、否定すると「比較できない = 最新扱い」に
+	// 反転し、形式変更のたび update が無音で塞がる (敵対レビュー指摘 2026-08-12)。
+	// 「文字列一致 or latest < installed が証明できた」ときだけ skip する。
+	return installed, installed == latest || versionLess(latest, installed)
 }
 
 // checkClaudeVersionCmd は起動時の Claude Code バージョン確認 1 回分。
