@@ -81,8 +81,12 @@ list_agents() {
   # タイトルが全部 CJK でも loc(27) + state(~10) + since(~5) + title(50×2=100) ≈ 144
   # ≤ PANEL_W で折り返さない上界にしてある (これ以上増やすなら PANEL_W と対で)。
   # 第 4 フィールド @claude_state_since (epoch。_claude/hooks/tmux-pane-state.sh が書く)
-  # は経過時間表示用。未設定 (旧 hook が書いた状態が残っている間) は空
-  tmux list-panes -a -F $'#{?@claude_state,#{@claude_state}\t#{=20:session_name}:#{window_index}.#{pane_index}\t#{=50:pane_title}\t#{@claude_state_since},}' 2>/dev/null |
+  # は経過時間表示用。未設定 (旧 hook が書いた状態が残っている間) は空。
+  # 第 5 フィールドは「その pane を今まさに表示中か」(pane_active かつ window_active かつ
+  # attach 中のセッション)。draw_once が該当行をハイライトする (どの行が「いま見ている
+  # エージェント」かを一目にする。複数 client attach 時は client ごとの表示 pane が
+  # それぞれ 1 になる = 複数行ハイライトされ得るが、どれも実際に表示中なので正)
+  tmux list-panes -a -F $'#{?@claude_state,#{@claude_state}\t#{=20:session_name}:#{window_index}.#{pane_index}\t#{=50:pane_title}\t#{@claude_state_since}\t#{?#{&&:#{pane_active},#{&&:#{window_active},#{session_attached}}},1,0},}' 2>/dev/null |
     awk -F'\t' 'NF >= 3'
 }
 
@@ -319,27 +323,36 @@ draw_once() {
   n_all="$(printf '%s\n' "$rows" | awk 'NF' | wc -l | tr -d ' ')"
   [ "$n_all" -gt "$body_max" ] && body_max=$((h - 2))
 
-  local out line state loc name since _rank color
+  local out line state loc name since cur _rank color
   out=""
   if [ -n "$rows" ]; then
     # rank を先頭に付けて安定ソート → 表示行を組み立て
-    while IFS=$'\t' read -r state loc name since; do
+    while IFS=$'\t' read -r state loc name since cur; do
       total=$((total + 1))
       case "$state" in *input*) n_input=$((n_input + 1)) ;; *working*) n_working=$((n_working + 1)) ;; esac
     done <<< "$rows"
     out+="$(printf '\e[1m 🤖 AGENTS %d  ⚙%d 🔔%d\e[0m\e[38;5;240m   C-t a: 非表示 / C-t A: ジャンプ\e[0m' "$total" "$n_working" "$n_input")"$'\n'
-    while IFS=$'\t' read -r _rank state loc name since; do
+    while IFS=$'\t' read -r _rank state loc name since cur; do
       [ "$shown" -ge "$body_max" ] && break
       color="$(state_color "$state")"
       # 場所を行頭・固定幅・シアンに置く (「どこに居るエージェントか」が縦に揃って
       # 一目で読めるように。loc は ASCII 前提なので printf の桁揃えがセル幅と一致する)。
-      # 経過時間 (状態が claude hook に書かれてからの時間) は %-4s で state の直後
-      line="$(printf ' \e[38;5;51m%-27s\e[0m \e[38;5;%sm%s\e[0m \e[38;5;240m%-4s\e[0m %s' \
-        "$loc" "$color" "$state" "$(rel_time "$since")" "$name")"
+      # 経過時間 (状態が claude hook に書かれてからの時間) は %-4s で state の直後。
+      # 今表示中の pane (cur=1) は行全体に背景を敷いて強調する。⚠️ この行は途中で
+      # \e[0m を使わない (フル reset は背景も消す。\e[22m/\e[39m で bold/fg だけ戻す)。
+      # 行末も reset しない: 出力ループの \e[K が背景色のまま行末まで塗ってから
+      # \e[0m する (reset を先にすると強調がテキスト幅で切れる)
+      if [ "${cur:-0}" = "1" ]; then
+        line="$(printf '\e[48;5;237m \e[1;38;5;51m%-27s\e[22m \e[38;5;%sm%s \e[38;5;240m%-4s\e[39m %s' \
+          "$loc" "$color" "$state" "$(rel_time "$since")" "$name")"
+      else
+        line="$(printf ' \e[38;5;51m%-27s\e[0m \e[38;5;%sm%s\e[0m \e[38;5;240m%-4s\e[0m %s' \
+          "$loc" "$color" "$state" "$(rel_time "$since")" "$name")"
+      fi
       out+="$line"$'\n'
       shown=$((shown + 1))
-    done < <(while IFS=$'\t' read -r state loc name since; do
-               printf '%s\t%s\t%s\t%s\t%s\n' "$(state_rank "$state")" "$state" "$loc" "$name" "$since"
+    done < <(while IFS=$'\t' read -r state loc name since cur; do
+               printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(state_rank "$state")" "$state" "$loc" "$name" "$since" "$cur"
              done <<< "$rows" | sort -t $'\t' -k1,1 -k3,3)
     if [ "$total" -gt "$shown" ]; then
       out+="$(printf '\e[38;5;240m  +%d more\e[0m' $((total - shown)))"$'\n'
@@ -349,10 +362,12 @@ draw_once() {
     out+=$'\e[38;5;240m  (no agents)\e[0m\n'
   fi
 
-  # \e[H で先頭へ、各行 \e[K で残骸消去、末尾 \e[J で下を掃除 (全消し clear より無点滅)
+  # \e[H で先頭へ、各行 \e[K で残骸消去、末尾 \e[J で下を掃除 (全消し clear より無点滅)。
+  # \e[K → \e[0m の順が重要: ハイライト行 (cur=1) は行末に背景色を残したまま来るので、
+  # \e[K が背景色で行末まで塗った後に reset して次行へ漏らさない
   printf '\e[H'
   printf '%s' "$out" | while IFS= read -r line; do
-    printf '%s\e[K\n' "$line"
+    printf '%s\e[K\e[0m\n' "$line"
   done
   printf '\e[J'
 
