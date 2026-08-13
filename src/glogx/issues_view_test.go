@@ -1647,6 +1647,14 @@ func TestIssuesViewEditSkipsMissingFile(t *testing.T) {
 	if cmd == nil {
 		t.Error("取り直しの Cmd を返していない (古い一覧が残り続ける)")
 	}
+	// ⚠️ スキャン飛行中でも取りこぼさない (一覧が古いと分かっている経路なので予約に回す)
+	v.scanning, v.rescanPending = true, false
+	if cmd := v.handleKey("e", vp(10)); cmd != nil {
+		t.Error("飛行中に 2 本目の探索を発行した (single-flight が効いていない)")
+	}
+	if !v.rescanPending {
+		t.Error("飛行中の取り直しが予約されていない (実体なしのまま古い一覧が残る)")
+	}
 	if text, ok := v.takeNotice(); text == "" || ok {
 		t.Errorf("理由を通知していない: text=%q ok=%v", text, ok)
 	}
@@ -1736,6 +1744,109 @@ func TestIssuesViewRebindOpenKeepsOpenOnAmbiguousBase(t *testing.T) {
 	}
 	if v.open.Path != iss.Path {
 		t.Errorf("曖昧なのに繋ぎ替えた: open=%q", v.open.Path)
+	}
+}
+
+// n の next/ 移動は、別のスキャンが飛行中でも一覧へ反映されなければならない。
+// ⚠️ scanCmd は single-flight で飛行中は nil を返す。markNextKey がそれをそのまま返すと、
+// 実ファイルは動いたのに一覧は旧位置を出し続ける (しかも飛行中のスキャンは移動より前に
+// 開始されているので、その結果が届いても移動は映らない)。
+func TestIssuesViewMarkNextReflectsWhileScanning(t *testing.T) {
+	iss := realIssue(t)
+	v := loadedView(iss)
+
+	// 別経路のスキャンを飛ばした状態にする (r 連打・外部編集の自動反映などで普通に起きる)
+	if cmd := v.scanCmd(v.cwd); cmd == nil {
+		t.Fatal("前提が崩れた: 1 本目のスキャンが張れない")
+	}
+	if !v.scanning {
+		t.Fatal("前提が崩れた: scanning が立っていない")
+	}
+
+	v.handleKey("n", vp(10)) // 確認モーダル
+	if !v.markNext.active {
+		t.Fatal("n で確認モーダルが出ない")
+	}
+	v.handleKey("y", vp(10)) // 実行 (実ファイルが next/ へ動く)
+
+	if _, err := os.Stat(filepath.Join(iss.Dir, issues.NextDirName, iss.Rel)); err != nil {
+		t.Fatalf("実ファイルが next/ へ動いていない: %v", err)
+	}
+
+	// 飛行中スキャンの結果が届く。⚠️ これは移動より前に始まったので旧位置しか含まない
+	stale := issuesScanMsg{dirs: []string{iss.Dir}, issues: []*issues.Issue{iss}}
+	cmd := v.receive(stale)
+	if cmd == nil {
+		t.Fatal("移動を反映する取り直しが張られない (一覧が旧位置のまま残る)")
+	}
+	// ⚠️ 張り直しは 1 回だけ。予約を消さないと receive ごとに scan を張り続け、loading() が
+	// 永久 true になってスピナーも止まらない (無限スキャン)。
+	if v.rescanPending {
+		t.Error("予約が消費されていない (次の receive でも張り直して無限に続く)")
+	}
+	v.receive(stale) // 1 本目の張り直しの結果が届いた形。ここで scanning は落ちる
+	if again := v.receive(stale); again != nil {
+		t.Error("2 回目以降の receive でも取り直しが張られる (予約が sticky)")
+	}
+}
+
+// エディタ復帰後の取り直しも同じ保証が要る。⚠️ 落とすと「保存したのに一覧・本文が古い」に
+// なり、しかも飛行中のスキャンは編集より前に始まっているのでその結果でも直らない。
+func TestIssuesViewReloadAfterEditReflectsWhileScanning(t *testing.T) {
+	iss := realIssue(t)
+	v := loadedView(iss)
+	if cmd := v.scanCmd(v.cwd); cmd == nil || !v.scanning {
+		t.Fatal("前提が崩れた: 1 本目のスキャンが張れない")
+	}
+
+	if cmd := v.reloadAfterEdit(); cmd != nil {
+		t.Fatal("飛行中なのに 2 本目の探索を発行した (single-flight が効いていない)")
+	}
+	cmd := v.receive(issuesScanMsg{dirs: []string{iss.Dir}, issues: []*issues.Issue{iss}})
+	if cmd == nil {
+		t.Fatal("編集を反映する取り直しが張られない (保存したのに古い内容が残る)")
+	}
+}
+
+// 閉じたら取り直しの予約も捨てる (片付けは finishClose に一本化されている)。
+// ⚠️ 残すと非表示の viewer のためにスキャンが 1 回走り、その間スピナーの tick が昂進する。
+func TestIssuesViewCloseDropsRescanReservation(t *testing.T) {
+	iss := realIssue(t)
+	v := loadedView(iss)
+	if cmd := v.scanCmd(v.cwd); cmd == nil {
+		t.Fatal("前提が崩れた: 1 本目のスキャンが張れない")
+	}
+	if cmd := v.reloadAfterEdit(); cmd != nil || !v.rescanPending {
+		t.Fatalf("前提が崩れた: 予約が立っていない (cmd=%v pending=%v)", cmd != nil, v.rescanPending)
+	}
+
+	v.close() // closeAnimOff なので即座に finishClose まで通る
+	if v.rescanPending {
+		t.Error("閉じたのに取り直しの予約が残っている")
+	}
+	if cmd := v.receive(issuesScanMsg{dirs: []string{iss.Dir}, issues: []*issues.Issue{iss}}); cmd != nil {
+		t.Error("閉じた viewer のためにスキャンを張り直した")
+	}
+}
+
+// browseModel の配線: issuesScanMsg の case が receive の戻り値 (取り直しの予約) を返すこと。
+// ⚠️ ここを捨てても issuesView 単体のテストは全部通り、lint も通らない (errcheck 系は error 以外の
+// 戻り値放棄を見ない)。予約機構の可視効果はこの 1 行に乗っているので model 層で固定する。
+func TestBrowseIssuesScanMsgPropagatesRescanCmd(t *testing.T) {
+	iss := realIssue(t)
+	m := newTestBrowse(t, 1, nil, nil)
+	m.issuesOv = *loadedView(iss)
+
+	if cmd := m.issuesOv.scanCmd(m.issuesOv.cwd); cmd == nil {
+		t.Fatal("前提が崩れた: 1 本目のスキャンが張れない")
+	}
+	if cmd := m.issuesOv.reloadAfterEdit(); cmd != nil || !m.issuesOv.rescanPending {
+		t.Fatalf("前提が崩れた: 予約が立っていない (cmd=%v pending=%v)", cmd != nil, m.issuesOv.rescanPending)
+	}
+
+	_, cmd := m.Update(issuesScanMsg{dirs: []string{iss.Dir}, issues: []*issues.Issue{iss}})
+	if cmd == nil {
+		t.Error("issuesScanMsg の case が取り直しの Cmd を捨てている (予約が失われる)")
 	}
 }
 

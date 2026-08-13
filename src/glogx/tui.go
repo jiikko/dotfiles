@@ -856,8 +856,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 動かないため。フレーム tick を足すとこのチェーンの意図 (1s 周期) が崩れる。
 		return m, m.issuesOv.handleWatch(msg)
 	case issuesScanMsg:
-		m.issuesOv.receive(msg)
-		return m, nil
+		// 戻り値は畳まれていた取り直しの予約 (issuesView.receive の doc)。捨てると
+		// 「自分がファイルを動かしたのに一覧が古いまま」が残る
+		return m, m.issuesOv.receive(msg)
 	case statusLoadMsg:
 		// git status の結果 (status viewer)。返り値はプレビューの取り直し予約 (内容が変わった
 		// ときだけ)。⚠️ maybeTick も束ねる: 取得中スピナーを回していた場合、結果到着でそれを

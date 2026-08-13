@@ -39,6 +39,13 @@ type issuesView struct {
 	shown    bool
 	loaded   bool // 一度スキャンを完了したか (取り直し中に前回の結果を出してよいかの判定)
 	scanning bool // スキャン中 (スピナーを回す。二重発行の防止も兼ねる)
+	// rescanPending は「飛行中のスキャンが終わったら、もう 1 回取り直す」予約。
+	// ⚠️ single-flight (scanCmd) は連打でゴルーチンを積まないための仕組みだが、自分がファイルを
+	// 動かした後 (n の next/ 移動) の取り直しまで落とすと、実ファイルは動いたのに一覧が旧位置を
+	// 出し続ける。しかも飛行中のスキャンは移動より前に始まっているので、その結果が届いても
+	// 移動は映らない。要求を 1 つに畳んで receive の出口で張り直すことで、貫通の穴を増やさずに
+	// 「最後の要求は必ず反映される」を満たす。
+	rescanPending bool
 
 	cwd      string // スキャンの起点 (再読込で使い回す)
 	root     string // repo root
@@ -283,6 +290,9 @@ func (v *issuesView) finishClose() bool {
 	v.animStart = time.Time{}
 	v.discardBody() // viewer ごと閉じるので引き出しの演出は持ち越さない
 	v.stopWatch()   // 見張りの watcher を閉じる (fd を残さない。issues_watch.go)
+	// ⚠️ 取り直しの予約も捨てる。残すと閉じた後に「非表示の viewer のための」スキャンが 1 回走り、
+	// その間 loading() が true になって tick が昂進する (自己終息はするが無駄な仕事)。
+	v.rescanPending = false
 	// 番号の絞り込みは持ち越さない。⚠️ q / Esc は絞り込みを解くだけで閉じない (1 段戻る) が、
 	// i は 1 段戻さず閉じるので、ここで捨てないと次に開いた viewer が「なぜか件数が少ない一覧」
 	// から始まる。行集合も作り直す — rows は常に visibleIssues() と一致させる (残すと、開いた
@@ -364,6 +374,23 @@ func (v *issuesView) scanCmd(cwd string) tea.Cmd {
 	return func() tea.Msg { return scanIssues(cwd) }
 }
 
+// scanAfterChangeCmd は「自分が (または開いていたエディタが) ファイルを変えた後」の取り直し。
+// 飛行中なら予約して receive の出口で張り直すので、single-flight に落とされない。
+//
+// ⚠️ これが必要なのは、飛行中のスキャンが**変更より前に始まっている**ため。その結果が届いても
+// 変更は映らないので、単に落とすと「実ファイルは動いたのに一覧は旧位置を出し続ける」状態が
+// fsnotify の次周期まで残る (fsnotify が無音な FS では保険のポーリングまで)。
+//
+// ⚠️ 読み直しだけの経路 (toggle / restore / r) には使わない。あちらは連打を畳むのが正しく、
+// 予約すると 1 打ごとに追加のスキャンが後から積まれる (single-flight の目的そのものを損なう)。
+func (v *issuesView) scanAfterChangeCmd() tea.Cmd {
+	if v.scanning {
+		v.rescanPending = true
+		return nil
+	}
+	return v.scanCmd(v.cwd)
+}
+
 // scanIssues は探索・メタデータ読み込み・見張りの基準づくりを 1 回で行う (scanCmd の本体)。
 //
 // 指紋をここで取るのが要点: 「読んだ内容」と「基準」を同じ時点に揃えないと、その差の間に入った
@@ -388,7 +415,9 @@ func scanIssues(cwd string) issuesScanMsg {
 // パス。番号も basename も一意でない)。引き直さないと、再スキャンのたびに (a) カーソルが別の
 // issue へ滑り、(b) タブが別カテゴリを指し (tabs は件数降順なので件数が変わると並びが変わる)、
 // (c) 本文モードが v.all から外れた古いポインタを掴んで状態・進捗が編集前のまま固まる。
-func (v *issuesView) receive(msg issuesScanMsg) {
+// 戻り値は「この結果を受けて追加で走らせる Cmd」(予約されていた取り直し。無ければ nil)。
+// restore / reloadAfterEdit と同じく Cmd を返す作法に揃えている。
+func (v *issuesView) receive(msg issuesScanMsg) tea.Cmd {
 	v.scanning, v.loaded = false, true
 	// 見張りの基準は「このスキャンが読んだ時点の指紋」に揃える (issues_watch.go)。最初の観測で
 	// 取ると、読んだ時刻と基準を取る時刻が最大 1 周期ずれ、その間の外部編集が基準へ焼き込まれて
@@ -412,6 +441,11 @@ func (v *issuesView) receive(msg issuesScanMsg) {
 		v.pending = nil
 		v.applyScreen(s)
 	}
+	if v.rescanPending {
+		v.rescanPending = false
+		return v.scanCmd(v.cwd) // 畳んでおいた要求を 1 回だけ張り直す (ここでは scanning=false)
+	}
+	return nil
 }
 
 // issuePath は nil 安全なパス取得 (再スキャンをまたいで位置を引き継ぐキー)。
@@ -732,7 +766,7 @@ func (v *issuesView) reloadAfterEdit() tea.Cmd {
 			v.body = body // bodyOff は保つ (描画側が新しい行数へ収束させる)
 		}
 	}
-	return v.scanCmd(v.cwd)
+	return v.scanAfterChangeCmd()
 }
 
 // current はカーソル位置の issue (無ければ nil)。
@@ -1084,7 +1118,7 @@ func (v *issuesView) editCmd() tea.Cmd {
 	}
 	if _, err := os.Stat(iss.Path); err != nil {
 		v.setNotice("実体が見つかりません (一覧を取り直します): "+iss.Rel, false)
-		return v.scanCmd(v.cwd)
+		return v.scanAfterChangeCmd()
 	}
 	return runEditorCmd(editorCommand(iss.Path))
 }
@@ -1812,7 +1846,7 @@ func (v *issuesView) markNextKey(key string) tea.Cmd {
 		}
 		if _, err := issues.MoveToSubdir(iss, dest); err != nil {
 			v.setNotice("移動できませんでした: "+firstLine(err.Error()), false)
-			return v.scanCmd(v.cwd) // 途中まで動いた分を一覧へ反映する
+			return v.scanAfterChangeCmd() // 途中まで動いた分を一覧へ反映する
 		}
 		moved++
 	}
@@ -1826,7 +1860,7 @@ func (v *issuesView) markNextKey(key string) tea.Cmd {
 		notice += " (" + strconv.Itoa(skipped) + " 件は対象外)"
 	}
 	v.setNotice(notice, true)
-	return v.scanCmd(v.cwd) // 置き場所が変わったので一覧を取り直す
+	return v.scanAfterChangeCmd() // 置き場所が変わったので一覧を取り直す
 }
 
 // markNextBox は確認モーダルの箱 (glogx の push/pull 確認と同じ見た目)。
