@@ -138,13 +138,15 @@ type issuesView struct {
 }
 
 const (
-	// issuesAnimDuration は開く演出の所要時間 (最後の行が着地するまで)。
-	issuesAnimDuration = 700 * time.Millisecond
+	// issuesAnimDuration は開く演出の所要時間 (最後の行が着地するまで)。当初 700ms、
+	// 2 倍速の 350ms へ短縮 (ユーザー要望 2026-08-13。閉じ・引き出し・status viewer も
+	// 速度関係を保ったまま一律 1/2)。
+	issuesAnimDuration = 350 * time.Millisecond
 	// issuesCloseDuration は閉じる演出の所要時間 (板が画面外へ抜け切るまで)。開くより速いのは、
 	// 開くときは中身を読み始められる一方、閉じるときは「もう用が済んだ画面」を見せ続けるため
 	// (引き出しの issuesDrawerDuration と同じ値・同じ理由)。⚠️ 畳む時刻でもある: この時間が
 	// 板の実際の滞在時間より長いと、抜けた後の空舞台を見せてから git log へ戻ることになる。
-	issuesCloseDuration = 450 * time.Millisecond
+	issuesCloseDuration = 225 * time.Millisecond
 	// issuesAnimStagger は開く演出で行ごとに開始をずらす割合。0 なら全行同時に動いて「板が 1 枚
 	// 滑り込む」見え方、大きいほど「上から順に流れ込む」見え方になる。閉じる演出では使わない
 	// (rowOffsetRatio の doc)。
@@ -184,7 +186,7 @@ func (v *issuesView) toggle(cwd string) tea.Cmd {
 // restore は前回終了時の画面を復元しながら viewer を開く (起動時。issues_state.go)。
 // 適用はスキャン結果が届く receive まで待つので、ここでは予約を置いてスキャンを始めるだけ。
 //
-// ⚠️ 開く演出は出さない: 復元は「閉じたところから再開」なので、起動のたびに 700ms 待たされる
+// ⚠️ 開く演出は出さない: 復元は「閉じたところから再開」なので、起動のたびに issuesAnimDuration 待たされる
 // のは筋が違う (ユーザー選定 2026-07-31)。
 // ⚠️ 既に開いているなら何もしない: 復元の git fork とスキャンの間に i が押された場合で、
 // 上書きするとユーザーの操作を奪う。
@@ -936,7 +938,7 @@ func (v *issuesView) actionKey(key string) (tea.Cmd, bool) {
 		// e は git log 一覧の e (nvim を repo root で開く) と語彙を揃えたもの。v は先にあった
 		// 割当で、打ち慣れを壊さないため残す (本文モードの hint が案内するのは e だけ)。
 		//
-		// ⚠️ 閉じる演出中 (issuesCloseDuration = 450ms) の e はここへ来ない: tui.go が
+		// ⚠️ 閉じる演出中 (issuesCloseDuration) の e はここへ来ない: tui.go が
 		// finishClose で viewer を畳んでから通常のキー処理へ素通しするため、git log 一覧側の
 		// e (openEditorAtRoot = `nvim .`) に着弾する。板がまだ見えているのに repo root が
 		// 全画面で開くので誤爆の体感は軽くない。それでも素通しから e を外していないのは、

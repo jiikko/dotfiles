@@ -78,9 +78,9 @@ type statusView struct {
 const (
 	// statusOpenDuration / statusCloseDuration は開閉の所要。issues viewer の引き出し
 	// (issuesDrawerDuration) と同じ値: 「板が 1 枚成長する / 縮む」演出は同じ速さに揃える
-	// (行ごとに流し込む issues の 700ms とは質感が違うので合わせない)。
-	statusOpenDuration  = 450 * time.Millisecond
-	statusCloseDuration = 450 * time.Millisecond
+	// (行ごとに流し込む issues の issuesAnimDuration とは質感が違うので合わせない)。
+	statusOpenDuration  = 225 * time.Millisecond
+	statusCloseDuration = 225 * time.Millisecond
 	// statusPollInterval は自動更新の周期。fsnotify を張らない理由は spec 5 節
 	// (作業ツリー全体の再帰 watch は対象数が読めない一方、git status はシェルの prompt が
 	// 毎コマンド叩いている程度のコストしかない)。

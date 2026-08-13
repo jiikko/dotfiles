@@ -34,9 +34,9 @@ const (
 	// 開いたか」が分かる幅だけなので、番号・状態・カテゴリが見える 18 桁で止める
 	// ("→ 014 ○ research" = 18)。以降の幅は全部本文へ回す。
 	issuesDrawerMaxPeek = 18
-	// issuesDrawerDuration は開閉の所要時間。開く演出 (issuesAnimDuration = 700ms) より速いのは、
+	// issuesDrawerDuration は開閉の所要時間。開く演出 (issuesAnimDuration) より速いのは、
 	// issue を次々に見るときに往復 1.4s は待たされる感じになるため。⚠️ 変えるならここ 1 箇所。
-	issuesDrawerDuration = 450 * time.Millisecond
+	issuesDrawerDuration = 225 * time.Millisecond
 )
 
 // drawerPhase は引き出しの状態。
