@@ -3,3 +3,7 @@
 
 # bin/lib/go_autobuild.zsh の作業ファイル (log / lock / 失敗記録 / rename 前の一時バイナリ)
 /.autobuild.*
+
+# go test -c / go test -o が置くテストバイナリ (17MB 級)。`go test` 単体では作られないが、
+# ベンチや個別実行で -c を使うと untracked で現れる (実際に glogx.test が残った 2026-08-13)。
+/*.test
