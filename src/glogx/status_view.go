@@ -35,6 +35,27 @@ type statusView struct {
 	cursor int
 	offset int // 窓の先頭 (表示行 index。セクション見出しを含む数え方)
 
+	// displayIndex のメモ (issue 048)。行構成は rows だけで決まり、cursor は
+	// 「index 内のどこを指すか」にしか影響しないので、両者を分けて持つ
+	// (カーソル移動で行構成を作り直さない)。
+	//
+	// ⚠️ 有効性の判定は **rows の裏の配列が同じか** で行う (idxRows)。世代カウンタに
+	// しないのは、rows への代入箇所が増えたときに「カウンタを上げ忘れる」経路を作らない
+	// ため — 新しいスライスを代入すれば裏の配列が変わり、メモは自動的に無効になる。
+	// この設計が依存する不変条件は 1 つ: **v.rows へは常に新しいスライスを代入する**
+	// (同じ配列を in-place で書き換えない)。現状の代入は receive と applyFresh にあり、
+	// どちらも ordered() が make した新しい配列を入れるので満たしている。
+	//
+	// ⚠️ 箇所数をここに書かない (すぐ嘘になる)。数え直すときは `grep 'v\.rows ='` では
+	// 足りない — applyFresh は `v.st, v.rows, ... = st, st.ordered(), ...` の**タプル代入**で、
+	// このパターンに当たらない (実際に 2 箇所と数え落とした。2026-08-14 の R1 レビューと
+	// 並行セッションの双方が独立に指摘)。`grep 'rows[ ,]'` 等で広めに拾うこと。
+	// in-place で書き換える経路を足すならここも直す —
+	// TestDisplayIndexCacheStaleOnInPlaceMutation がその穴を明示している。
+	idxCache []statusDisplayLine
+	idxRows  []worktreeRow // メモを作ったときの rows (裏の配列の同一性で有効性を見る)
+	idxAt    []int         // rows の添字 -> idxCache 内の位置 (cursorAt を O(1) で出す)
+
 	// preview はプレビュー / 全画面 diff が共有する取得結果 (line_cache.go)。キーは previewKey
 	// (パス + XY) なので、外部編集で内容が変わると自然にキャッシュミスになる (古い diff を
 	// 出し続けない)。上限超過分の evict と取得の単発化は lineCache が持つ。
@@ -999,10 +1020,24 @@ type statusDisplayLine struct {
 // 大きな merge や大量の untracked を抱えた repo で status viewer を開くと、見えない行のために
 // 毎フレーム捨てる文字列を作り続けることになる。
 //
-// 行の数え上げ自体は件数に比例したままだが、これは int の比較だけで文字列も幅計算も伴わない
-// (窓の位置を決めるには全体の行数とカーソルの行番号が要るので、ここは削れない)。
+// 行の数え上げ自体は件数に比例するが、**rows が変わらない間はメモを返す**ので毎フレーム
+// 走らせない (issue 048)。カーソル移動でも作り直さない (cursorAt は idxAt から O(1))。
 func (v *statusView) displayIndex() (index []statusDisplayLine, cursorAt int) {
-	index = make([]statusDisplayLine, 0, len(v.rows)+4)
+	if !sameRowsBacking(v.idxRows, v.rows) {
+		v.rebuildDisplayIndex()
+	}
+	// cursorAt は cursor だけで決まるので行構成は作り直さない。範囲外の cursor では 0
+	// (メモ化前と同じ挙動: 一致する行が無ければ 0 のまま)
+	if v.cursor >= 0 && v.cursor < len(v.idxAt) {
+		cursorAt = v.idxAt[v.cursor]
+	}
+	return v.idxCache, cursorAt
+}
+
+// rebuildDisplayIndex は行構成のメモを作り直す (rows が差し替わったときだけ)。
+func (v *statusView) rebuildDisplayIndex() {
+	index := make([]statusDisplayLine, 0, len(v.rows)+4)
+	at := make([]int, len(v.rows))
 	for _, sec := range []worktreeSection{sectionStaged, sectionUnstaged, sectionUntracked, sectionConflicted} {
 		n := 0
 		for _, r := range v.rows {
@@ -1018,13 +1053,23 @@ func (v *statusView) displayIndex() (index []statusDisplayLine, cursorAt int) {
 			if r.section != sec {
 				continue
 			}
-			if i == v.cursor {
-				cursorAt = len(index)
-			}
+			at[i] = len(index)
 			index = append(index, statusDisplayLine{sec: sec, row: i})
 		}
 	}
-	return index, cursorAt
+	v.idxCache, v.idxAt, v.idxRows = index, at, v.rows
+}
+
+// sameRowsBacking は 2 つの rows が同じ裏の配列を指しているか (長さも同じか)。
+// スライスの同一性を O(1) で見るために先頭要素のアドレスを比べる。
+func sameRowsBacking(a, b []worktreeRow) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	if len(a) == 0 {
+		return true
+	}
+	return &a[0] == &b[0]
 }
 
 // displayLine は index の 1 行を実際の文字列へ整形する (可視の窓の分だけ呼ぶ)。

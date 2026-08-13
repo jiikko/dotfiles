@@ -33,6 +33,26 @@
   (2026-08-14 の push では通ったが、余裕は list で 3)
 - ベンチ側 (`bench_glogx.sh`) と test 側 (`*_test.go`) で確保のゲートが二重管理になっている
 
+## 追記 (2026-08-14): `AllocsPerRun` は「回数」しか見ない — 047 のガードにも同じ穴
+
+048 の敵対的レビュー R1/R2 が実証した罠。`testing.AllocsPerRun` は確保の**回数**を数えるので、
+**「1 回の確保が大きくなる」形の退行を捕まえられない**。
+
+- 048 の当初のガードは回数ベースで、**メモ化を丸ごと revert しても PASS** した
+  (40 件と 2000 件の回数の差は最適化の前後どちらも +5 で動かない)。
+  `testing.Benchmark(...).AllocedBytesPerOp()` に変えたら差が 48,745 B → 682 B と
+  71 倍分離し、変異で確実に red になった
+- **`src/glogx/frame_alloc_test.go` の `TestFrameAllocBudget` (047 で新設) も回数ベース**。
+  あちらが削ったのは「行ごとの確保 = 回数」なので回数で正しく効くが、
+  **バイトだけ増える退行は素通りする** (実際 046 で allocs 完全一致のまま B/op が
+  +0.8〜1.0% 増えたが、機構は特定できていない)
+- 併せて `TestFrameAllocBudget` は `RUNEWIDTH_EASTASIAN=1` で落ちる (issue 054)。
+  **安全機構が 2 つの穴を持っている**ことになる
+
+→ 本 issue の対応時に「CI の予算」だけでなく **`frame_alloc_test.go` にバイトの
+ゲートを足す**ことも同時に扱うこと (048 の
+`TestStatusFrameAllocBytesDoNotScaleWithFileCount` が書き方の見本)。
+
 ## 対応方針 (案)
 
 `bench_glogx.sh` に `-benchmem` を足し、`allocs=<name> n=<value>` のような行を出して
