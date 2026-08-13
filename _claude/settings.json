@@ -12,7 +12,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh working"
+            "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh working",
+            "timeout": 10
           }
         ]
       }
@@ -22,7 +23,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh input"
+            "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh input",
+            "timeout": 10
           }
         ]
       }
@@ -44,7 +46,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh working"
+            "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh working",
+            "timeout": 10
           }
         ]
       },
@@ -74,7 +77,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh idle"
+            "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh idle",
+            "timeout": 10
           }
         ]
       }
@@ -84,7 +88,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh start"
+            "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh start",
+            "timeout": 10
           }
         ]
       }
@@ -94,7 +99,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh clear"
+            "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh clear",
+            "timeout": 10
           }
         ]
       }

@@ -64,23 +64,26 @@ case "${1:-}" in
     # Notification hook は入力待ち以外の種別 (auth_success / agent_completed /
     # elicitation_complete 等) でも発火する。stdin JSON の notification_type
     # (実測 2026-08-13: {"hook_event_name":"Notification","notification_type":"idle_prompt",...})
-    # が「ユーザーの入力を要する」種別のときだけ 🔔 input にする。
-    # jq 不在 / フィールド不在 (旧バージョン) は従来どおり input 扱いに倒す
+    # を見て「入力不要と分かっている種別」だけ状態を変えない (denylist)。
+    # 未知の種別・jq 不在・フィールド不在は 🔔 input に倒す — このインジケータの
+    # 危険な失敗方向は「入力待ちなのに気づけない」なので、判定不能は過検知側に落とす
     ntype=""
     if command -v jq >/dev/null 2>&1 && [ ! -t 0 ]; then
       ntype=$(jq -r '.notification_type // ""' 2>/dev/null) || ntype=""
     fi
     case "$ntype" in
-      ""|permission_prompt|idle_prompt|agent_needs_input|elicitation_dialog|elicitation_url_dialog)
-        set_state "🔔 input"; notify_if_hidden "🔔 入力待ち (承認 or 回答が必要)" "default" ;;
-      *) : ;;  # 入力不要の通知では状態を変えない
+      auth_success|elicitation_complete|elicitation_response|agent_completed) : ;;
+      *) set_state "🔔 input"; notify_if_hidden "🔔 入力待ち (承認 or 回答が必要)" "default" ;;
     esac
     ;;
   idle)
     # Stop hook の stdin JSON から実行中バックグラウンドタスクを数える。
     # フィールド名は background_tasks (実測 2026-08-13:
     # {"hook_event_name":"Stop","background_tasks":[{"id":...,"status":"running",...}]})。
-    # jq 不在 / stdin が JSON でない / フィールド不在は 0 扱い (= 従来どおり idle)
+    # jq 不在 / stdin が JSON でない / フィールド不在は 0 扱い (= 従来どおり idle)。
+    # input 分岐と fail 方向が非対称なのは意図的: bg タスクは完了すればハーネスが
+    # セッションを再起動して次の Stop が状態を上書きする (実測 2026-08-13) ため
+    # 誤 idle は自己回復するが、input の見逃しは人が来るまで誰も直せない
     pending=0
     if command -v jq >/dev/null 2>&1 && [ ! -t 0 ]; then
       pending=$(jq -r '[.background_tasks[]? | select(.status == "running")] | length' 2>/dev/null) || pending=0
