@@ -1652,6 +1652,93 @@ func TestIssuesViewEditSkipsMissingFile(t *testing.T) {
 	}
 }
 
+// 本文モードで開いている issue が再スキャンで移動していたら、新しい場所へ繋ぎ直す。
+// ⚠️ 追わないと、読んでいる最中に n / 別プロセスで done/ へ移された issue が「実体から外れた本文」
+// になり、y が消えたパスをコピーし e は実体確認で弾かれる (編集も取り直しもできない)。
+func TestIssuesViewRebindOpenFollowsMove(t *testing.T) {
+	dir := t.TempDir()
+	rel := "001-feat-x.md"
+	before := &issues.Issue{Path: filepath.Join(dir, rel), Dir: dir, Rel: rel, Number: "001", Category: "feat"}
+	if err := os.WriteFile(before.Path, []byte("# 001 feat: x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := loadedView(before)
+	v.handleKey("enter", vp(10))
+	if v.open == nil {
+		t.Fatal("本文モードに入れていない")
+	}
+
+	// done/ へ移動した状態のスキャン結果が届く (パスが変わる = 旧パスは見つからない)
+	doneDir := filepath.Join(dir, "done")
+	if err := os.MkdirAll(doneDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	after := &issues.Issue{Path: filepath.Join(doneDir, rel), Dir: dir, Rel: "done/" + rel, Number: "001", Category: "feat"}
+	v.receive(issuesScanMsg{dirs: []string{dir}, issues: []*issues.Issue{after}})
+
+	if v.open == nil {
+		t.Fatal("移動しただけで本文モードが畳まれた (一覧へ引き戻している)")
+	}
+	if v.open.Path != after.Path {
+		t.Errorf("移動先へ繋ぎ直していない: open=%q want=%q", v.open.Path, after.Path)
+	}
+}
+
+// どこにも無くなったら本文モードを畳んで理由を通知する (消えたファイルの内容を最新として
+// 見せ続けない)。
+func TestIssuesViewRebindOpenDiscardsWhenGone(t *testing.T) {
+	dir := t.TempDir()
+	rel := "001-feat-x.md"
+	iss := &issues.Issue{Path: filepath.Join(dir, rel), Dir: dir, Rel: rel, Number: "001", Category: "feat"}
+	if err := os.WriteFile(iss.Path, []byte("# 001 feat: x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := loadedView(iss)
+	v.handleKey("enter", vp(10))
+	if v.open == nil {
+		t.Fatal("本文モードに入れていない")
+	}
+
+	v.receive(issuesScanMsg{dirs: []string{dir}}) // 1 件も無い = 消えた
+
+	if v.open != nil {
+		t.Errorf("消えた issue の本文モードに留まっている: open=%q", v.open.Path)
+	}
+	if v.body != nil {
+		t.Error("消えた issue の本文を保持し続けている")
+	}
+	if text, ok := v.takeNotice(); text == "" || ok {
+		t.Errorf("理由を通知していない: text=%q ok=%v", text, ok)
+	}
+}
+
+// 同名が複数ある異常 (spec 3 節が警告する状態) では、どれが本人か決められないので繋ぎ直さない。
+// ⚠️ 畳むのは「どこにも無い」ときだけなので、ここでは本文モードを維持する。
+func TestIssuesViewRebindOpenKeepsOpenOnAmbiguousBase(t *testing.T) {
+	dir := t.TempDir()
+	rel := "001-feat-x.md"
+	iss := &issues.Issue{Path: filepath.Join(dir, rel), Dir: dir, Rel: rel, Number: "001", Category: "feat"}
+	if err := os.WriteFile(iss.Path, []byte("# 001 feat: x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := loadedView(iss)
+	v.handleKey("enter", vp(10))
+
+	// 同名が 2 箇所 (done/ と next/) にある結果が届く
+	dup := []*issues.Issue{
+		{Path: filepath.Join(dir, "done", rel), Dir: dir, Rel: "done/" + rel, Number: "001", Category: "feat"},
+		{Path: filepath.Join(dir, "next", rel), Dir: dir, Rel: "next/" + rel, Number: "001", Category: "feat"},
+	}
+	v.receive(issuesScanMsg{dirs: []string{dir}, issues: dup})
+
+	if v.open == nil {
+		t.Fatal("同名が複数あるだけで本文モードを畳んだ (どれが本人か決められないだけで実体はある)")
+	}
+	if v.open.Path != iss.Path {
+		t.Errorf("曖昧なのに繋ぎ替えた: open=%q", v.open.Path)
+	}
+}
+
 func TestIssuesViewURLPickerNone(t *testing.T) {
 	v := newTestIssuesView()
 	v.shown, v.loaded = true, true

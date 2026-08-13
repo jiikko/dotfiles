@@ -480,8 +480,23 @@ func (v *issuesView) anchorMark(path string) {
 	}
 }
 
-// rebindOpen は本文モードで開いている issue を新しいスキャン結果へ繋ぎ直す。パスが消えた
-// (rename / 状態ディレクトリへ移動) 場合は読み終えている本文をそのまま出し続ける。
+// rebindOpen は本文モードで開いている issue を新しいスキャン結果へ繋ぎ直す。
+//
+// 同一性キーはパス (spec 2 節: 番号は一意でない) だが、パスは `n` の next/ 移動や別プロセスの
+// 状態ディレクトリ移動で変わる。そこで 3 段で解決する:
+//
+//  1. 同じパスがあれば繋ぎ直す (通常の再スキャン)
+//  2. 無ければ **同じ basename が 1 件だけ**ある場所へ繋ぎ直す (= 移動を追う)。追わないと、読んでいる
+//     最中に done/ へ移された issue が「実体から外れた本文」になり、以降の y が消えたパスをコピーし、
+//     e は実体確認 (editCmd) で弾かれて編集もできない。複数一致は spec 3 節が警告する異常
+//     (同名が複数の状態ディレクトリにある) で、どれが本人か決められないので繋ぎ直さない
+//  3. どこにも無ければ本文モードを畳んで理由を通知する。⚠️ 消えた本文を出し続けると、viewer が
+//     「もう無いファイルの内容」を最新として見せ続ける (このモードでは実体が無いので編集も
+//     取り直しもできず、読み続ける対象がそもそも無い)
+//
+// ⚠️ 畳むのは 3 の「どこにも無い」ときだけ。移動を 2 で吸収してから判定するので、done/ へ移された
+// だけで一覧へ引き戻すことはない (カーソル・選択の錨が「消えていれば現状維持」なのと同じ精神で、
+// ユーザーの居場所を理由なく奪わない)。
 func (v *issuesView) rebindOpen(path string) {
 	if path == "" {
 		return
@@ -492,6 +507,33 @@ func (v *issuesView) rebindOpen(path string) {
 			return
 		}
 	}
+	base := filepath.Base(path)
+	moved, ambiguous := v.matchByBase(base)
+	switch {
+	case moved != nil:
+		v.open = moved
+	case ambiguous:
+		// 実体はあるが本人を決められない。畳むのは「どこにも無い」ときだけなので現状維持
+	default:
+		v.discardBody() // 演出は挟まない (抜けていく板に映す中身がもう無い)
+		v.setNotice("開いていた issue が見つかりません (一覧へ戻ります): "+base, false)
+	}
+}
+
+// matchByBase は同じファイル名の issue を探す。ちょうど 1 件なら (それ, false)、複数なら
+// (nil, true)、無ければ (nil, false)。⚠️ 「複数」と「無い」を呼び出し側で分ける必要がある
+// (複数は実体があるので畳んではいけない)。
+func (v *issuesView) matchByBase(base string) (found *issues.Issue, ambiguous bool) {
+	for _, iss := range v.all {
+		if filepath.Base(iss.Path) != base {
+			continue
+		}
+		if found != nil {
+			return nil, true // 同名が複数 = どれが本人か決められない
+		}
+		found = iss
+	}
+	return found, false
 }
 
 // refresh は現在のタブ・フィルタで表示対象を作り直す。
