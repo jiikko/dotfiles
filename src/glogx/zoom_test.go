@@ -6,16 +6,15 @@ import (
 	"time"
 )
 
-// 演出の中間フレームは「中央に置かれた小さい枠 + 実画面の左上部分」になる
-// (左上アンカーの理由は zoomWindow の doc。最初のフレームから 1 行目の文字が見える)。
+// 演出の中間フレームは「中央に置かれた小さい枠」になる (枠のジオメトリのテスト。
+// 中身のアンカーは wrapWindowFrame 済みの実入力を使う TestZoomWindowFramedInputNoNestedBorder
+// が守る — framed=true の中身切り出しはクロームスキップ込みで、生テキスト入力では検証できない)。
 func TestZoomWindowShrinksToCenter(t *testing.T) {
 	const w, h = 60, 12
 	lines := make([]string, h)
 	for i := range lines {
 		lines[i] = strings.Repeat("x", w)
 	}
-	lines[0] = "TOPLEFT" + strings.Repeat("x", w-7)
-	lines[h/2] = strings.Repeat("x", w/2-3) + "MIDDLE" + strings.Repeat("x", w/2-3)
 
 	small := zoomWindow(lines, 0.4, w, false, true)
 	if len(small) != h {
@@ -29,10 +28,6 @@ func TestZoomWindowShrinksToCenter(t *testing.T) {
 	joined := strings.Join(small, "\n")
 	if !strings.Contains(joined, "╔") || !strings.Contains(joined, "║") {
 		t.Fatalf("枠が描かれていない:\n%s", joined)
-	}
-	// 中身は実画面の左上から切り出す (1 行目の文字が最初のフレームから見える)
-	if !strings.Contains(joined, "TOPLEFT") {
-		t.Fatalf("左上の中身が切り出されていない:\n%s", joined)
 	}
 	// 上下の端は空く (中央に寄っている)
 	if strings.TrimSpace(small[0]) != "" || strings.TrimSpace(small[h-1]) != "" {
@@ -274,5 +269,28 @@ func TestZoomStepsAreSmall(t *testing.T) {
 				t.Fatalf("1 フレームで平均 %.1f 行も跳んでいる (カクついて見える。%d 枚)", avg, steps)
 			}
 		})
+	}
+}
+
+// framed の実入力 (wrapWindowFrame 適用後の画面) での回帰ガード: 演出枠の内側に実画面自身の
+// 枠 (上辺の角・左の縦罫線列) が入れ子で映らないこと + 1 行目の中身が最初から見えること
+// (左上アンカー導入時、クロームをスキップせず素朴に lines[0] から切り出して二重罫線になった。
+// 敵対的レビュー + ユーザー報告 2026-08-13)。
+func TestZoomWindowFramedInputNoNestedBorder(t *testing.T) {
+	const termW = 60
+	content := make([]string, 10)
+	for i := range content {
+		content[i] = "line" + strings.Repeat("x", 20)
+	}
+	content[0] = "FIRSTCOMMIT" + strings.Repeat("x", 9)
+	framedLines := wrapWindowFrame(content, termW, false)
+
+	out := zoomWindow(framedLines, 0.5, termW, false, true)
+	joined := strings.Join(out, "\n")
+	if got := strings.Count(joined, "╔"); got != 1 {
+		t.Errorf("演出枠以外に枠の角が映っている (╔ が %d 個。実画面の枠が入れ子):\n%s", got, joined)
+	}
+	if !strings.Contains(joined, "FIRSTCOMMIT") {
+		t.Errorf("1 行目の中身が最初から見えていない:\n%s", joined)
 	}
 }

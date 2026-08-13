@@ -4,7 +4,7 @@ package main
 // 縮んで消える。枠の中身は常に実画面の**左上**から映す (中央アンカーに戻さないこと。
 // 理由は zoomWindow の doc: 左上寄せのテキスト画面では中央切り出しが最初白く見える)。
 //
-// 端末では文字を縮小できないので、「枠を中央から広げ、その中に実画面の中央部分を切り出して
+// 端末では文字を縮小できないので、「枠を中央から広げ、その中に実画面の左上部分を切り出して
 // 入れる」形にする。⚠️ 枠だけを開いて最後に中身を出す形にしない: 最後のフレームだけ中身が
 // パッと現れる段差が出る (実装前に両方の中間フレームを描いて選定した 2026-08-01)。
 //
@@ -134,7 +134,7 @@ func (z *appZoom) scale(now time.Time) float64 {
 // zoomWindow は画面 lines を割合 scale の姿へ変換する (1 = そのまま)。
 //
 // 中身は実画面の**左上**から切り出して枠へ入れる (枠自体は中央から開く)。切り出しは表示幅で
-// 行う (ANSI を壊さないよう truncateKeepANSI を通す)。
+// 行う (ANSI を壊さないよう dropToColumn / truncateKeepANSI を通す)。
 //
 // 左上アンカーにしている理由 (ユーザー要望 2026-08-13): 当初は縦横とも中央アンカーだったが、
 // コミット一覧のテキストは左上寄せなので、小さい枠のうちは「画面中央の空白 (行の右半分)」を
@@ -144,6 +144,11 @@ func (z *appZoom) scale(now time.Time) float64 {
 //
 // ⚠️ framed は「実画面が最外周フレームを持つか」。持たない画面 (--no-frame / 小さい端末) で
 // 演出だけ枠を描くと、開き切った瞬間に枠が消える段差が出る。実画面に合わせて枠の有無を決める。
+//
+// ⚠️ framed のとき lines は wrapWindowFrame 適用**後**の画面 (finishWindow の呼び出し順)。
+// 素朴に lines[0] から切り出すと「上余白 + 実画面自身の枠の角 + 左の ║ 列」が演出枠の内側に
+// 入れ子で映る (二重罫線。敵対的レビューで実フレーム描画により検出 2026-08-13)。演出枠が
+// 実枠の代役なので、実枠のクローム分をスキップして中身だけを映す。
 func zoomWindow(lines []string, scale float64, width int, colored, framed bool) []string {
 	h := len(lines)
 	if h == 0 || width <= 0 || scale >= appZoomSnap {
@@ -156,11 +161,18 @@ func zoomWindow(lines []string, scale float64, width int, colored, framed bool) 
 	if framed {
 		inner, innerH = panelInnerWidth(boxW-1), max(boxH-3, 1)
 	}
+	// framed の実画面クローム: 上 = 上余白 1 + 枠上辺 1、左 = 左余白 1 + "║ " 2
+	// (内訳の一次情報は tui.go の frameHOverhead / frameVOverhead)。これをスキップして
+	// 実画面の中身の左上から映す。枠なし画面はクロームが無いので 0。
+	srcTop, srcLeft := 0, 0
+	if framed {
+		srcTop, srcLeft = 2, 3
+	}
 	rows := make([]string, 0, innerH)
 	for i := range innerH {
 		src := ""
-		if i < h {
-			src = truncateKeepANSI(lines[i], inner)
+		if j := srcTop + i; j < h {
+			src = truncateKeepANSI(dropToColumn(lines[j], srcLeft), inner)
 		}
 		rows = append(rows, src)
 	}
