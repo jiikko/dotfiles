@@ -465,10 +465,10 @@ func nodeState(node rollupContext) CIState {
 		if node.Status != "COMPLETED" {
 			return StatePending
 		}
-		switch node.Conclusion {
-		case "SUCCESS":
+		switch {
+		case node.Conclusion == "SUCCESS":
 			return StateSuccess
-		case "FAILURE", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE":
+		case isFailureConclusion(node.Conclusion):
 			return StateFailure
 		default: // NEUTRAL / CANCELLED / SKIPPED / STALE
 			return StateNeutral
@@ -712,15 +712,26 @@ func fetchJobSteps(ctx context.Context, run CommandRunner, repo Repo, jobID stri
 	return lines
 }
 
+// isFailureConclusion は「失敗扱いの conclusion か」の単一の出典。GraphQL (nodeState、
+// 大文字) と REST (stepGlyph、小文字) の両方が使うため大文字化して比較する (別々の
+// case 列で二重管理すると、片方だけ値を足して食い違う)。
+func isFailureConclusion(conclusion string) bool {
+	switch strings.ToUpper(conclusion) {
+	case "FAILURE", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE":
+		return true
+	}
+	return false
+}
+
 // stepGlyph は step の状態記号 (コミット/job と同じ語彙)。
 func stepGlyph(status, conclusion string) string {
 	if status != "completed" {
 		return "●"
 	}
-	switch conclusion {
-	case "success":
+	switch {
+	case conclusion == "success":
 		return "✓"
-	case "failure", "timed_out", "action_required", "startup_failure":
+	case isFailureConclusion(conclusion):
 		return "✗"
 	default: // skipped / cancelled / neutral
 		return "⊘"

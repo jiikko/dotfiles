@@ -193,9 +193,15 @@ func capGitBody(body, shortSHA string) string {
 	if len(lines) <= maxDiffLines {
 		return body
 	}
-	lines = append(lines[:maxDiffLines],
-		fmt.Sprintf("... (%d 行を超えるため省略。全文: git show %s)", maxDiffLines, shortSHA))
+	lines = append(lines[:maxDiffLines], truncatedNotice(shortSHA))
 	return strings.Join(lines, "\n")
+}
+
+// truncatedNotice は maxDiffLines 打ち切りの案内行 (capGitBody と LoadCommitDiff で文言まで
+// 同一だったのを一本化)。sha は呼び出し側の手元にある形 (short / full) をそのまま受ける
+// (git show はどちらでも解決できる)。
+func truncatedNotice(sha string) string {
+	return fmt.Sprintf("... (%d 行を超えるため省略。全文: git show %s)", maxDiffLines, sha)
 }
 
 // sanitizeGitText は複数行の git 由来テキストを行ごとに sanitizeLineKeepTabs へ通す
@@ -368,7 +374,7 @@ func LoadCommitDiff(sha string, colored bool) ([]string, error) {
 	lines := make([]string, 0, min(strings.Count(out, "\n")+1, maxDiffLines+1))
 	for line := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
 		if len(lines) >= maxDiffLines {
-			lines = append(lines, fmt.Sprintf("... (%d 行を超えるため省略。全文: git show %s)", maxDiffLines, sha))
+			lines = append(lines, truncatedNotice(sha))
 			break
 		}
 		lines = append(lines, sanitizeDetailLine(line))

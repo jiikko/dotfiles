@@ -141,7 +141,7 @@ func highlightCode(lex chroma.Lexer, code string) string {
 		if esc := hlEscapeFor(token.Type); esc != "" {
 			b.WriteString(esc)
 			b.WriteString(v)
-			b.WriteString("\x1b[0m")
+			b.WriteString(ansiReset)
 			continue
 		}
 		b.WriteString(v)

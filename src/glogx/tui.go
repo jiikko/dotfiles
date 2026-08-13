@@ -1373,13 +1373,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 			m.toast.show("コピーできる警告はありません", false)
 			return m, m.maybeTick()
 		}
-		if err := copyToClipboard(warn); err != nil {
-			// コピー失敗は error トーストで出すが lastWarning は汚さない (コピー対象の警告を
-			// 上書きして w の再試行を潰さないため。848 と同じ理由で showWarning は通さない)。
-			m.toast.show("コピーに失敗しました: "+firstLine(err.Error()), false)
-			return m, m.maybeTick()
-		}
-		m.toast.show("警告をコピーしました", true)
+		m.copyWithToast(warn, "警告をコピーしました")
 		return m, m.maybeTick()
 	}
 	// q はビューのスタックを 1 段戻る (tig 流。ユーザー要望): 詳細 → job 一覧 →
@@ -2053,11 +2047,7 @@ func (m *browseModel) copyJobContextLines(job CheckDetail, lines []string) {
 	}
 	b.WriteString("\n")
 	b.WriteString(jobLogText(lines))
-	if err := copyToClipboard(b.String()); err != nil {
-		m.toast.show("コピーに失敗しました: "+firstLine(err.Error()), false)
-		return
-	}
-	m.toast.show(fmt.Sprintf("job 詳細をコピーしました (%d 行)", len(lines)), true)
+	m.copyWithToast(b.String(), fmt.Sprintf("job 詳細をコピーしました (%d 行)", len(lines)))
 }
 
 // askRerun はフォーカス中 job の CI 再実行確認 (y/N) に入る (job パネル / job 詳細の r キー)。
@@ -2216,6 +2206,17 @@ func (m *browseModel) openCommitURL() tea.Cmd {
 	return m.openURLCmd(url)
 }
 
+// copyWithToast はクリップボードへコピーし、結果をトーストで通知する共有経路 (失敗文言が
+// 4 箇所で複製されていたのを一本化)。失敗トーストは lastWarning を汚さない (コピー対象の
+// 警告を上書きして w の再試行を潰さないため、showWarning は通さない)。
+func (m *browseModel) copyWithToast(text, successMsg string) {
+	if err := copyToClipboard(text); err != nil {
+		m.toast.show("コピーに失敗しました: "+firstLine(err.Error()), false)
+		return
+	}
+	m.toast.show(successMsg, true)
+}
+
 func (m *browseModel) copyFocusURL() {
 	var url string
 	if job, ok := m.focusedJob(); ok {
@@ -2227,11 +2228,7 @@ func (m *browseModel) copyFocusURL() {
 		m.toast.show("コピーできる URL がありません", false)
 		return
 	}
-	if err := copyToClipboard(url); err != nil {
-		m.toast.show("コピーに失敗しました: "+firstLine(err.Error()), false)
-		return
-	}
-	m.toast.show("コピーしました: "+url, true)
+	m.copyWithToast(url, "コピーしました: "+url)
 }
 
 // openPanel はカーソル位置のコミットの CI job パネルを開く。詳細が未取得
@@ -2443,19 +2440,30 @@ func (m *browseModel) openJob() tea.Cmd {
 	return m.openURLCmd(job.URL)
 }
 
-// openPR はカーソル位置のコミットに紐づく PR をブラウザで開く (p キー)。
-// commit → PR の関連は GitHub (associatedPullRequests) から取得し、結果はキャッシュする。
-func (m *browseModel) openPR() tea.Cmd {
+// prTargetSHA は PR 系操作 (p/P) の対象 SHA を返す。取得できない状態 (コミットなし /
+// remote なし / 未 push) は理由をトーストで出して ok=false (openPR / openPRStatus で
+// 文言まで同一だったガード 3 連の一本化)。
+func (m *browseModel) prTargetSHA() (sha string, ok bool) {
 	if len(m.commits) == 0 {
-		return nil
+		return "", false
 	}
 	if !m.hasRepo {
 		m.toast.show("GitHub の remote が無いため PR を取得できません", false)
-		return nil
+		return "", false
 	}
-	sha := m.commits[m.cursor].SHA
+	sha = m.commits[m.cursor].SHA
 	if m.statuses[sha] == StateUnpushed {
 		m.toast.show("未 push のコミットに PR はありません", false)
+		return "", false
+	}
+	return sha, true
+}
+
+// openPR はカーソル位置のコミットに紐づく PR をブラウザで開く (p キー)。
+// commit → PR の関連は GitHub (associatedPullRequests) から取得し、結果はキャッシュする。
+func (m *browseModel) openPR() tea.Cmd {
+	sha, ok := m.prTargetSHA()
+	if !ok {
 		return nil
 	}
 	if pr, ok := m.prCache[sha]; ok {
@@ -2485,16 +2493,8 @@ func (m *browseModel) openPR() tea.Cmd {
 // 同じコミットで再度 P を押すと閉じる (toggle)。取得はオンデマンド単発 GraphQL
 // (一括クエリと prCache は number/url/state のまま変えない。理由は PRStatus のコメント)。
 func (m *browseModel) openPRStatus() tea.Cmd {
-	if len(m.commits) == 0 {
-		return nil
-	}
-	if !m.hasRepo {
-		m.toast.show("GitHub の remote が無いため PR を取得できません", false)
-		return nil
-	}
-	sha := m.commits[m.cursor].SHA
-	if m.statuses[sha] == StateUnpushed {
-		m.toast.show("未 push のコミットに PR はありません", false)
+	sha, ok := m.prTargetSHA()
+	if !ok {
 		return nil
 	}
 	if !m.prStatusOv.open(sha) {
@@ -2525,11 +2525,7 @@ func (m *browseModel) handlePRStatusKey(key string) (tea.Model, tea.Cmd) {
 		}
 	case "y":
 		if pr := m.prStatusOv.current(); pr != nil {
-			if err := copyToClipboard(pr.URL); err != nil {
-				m.toast.show("コピーに失敗しました: "+firstLine(err.Error()), false)
-			} else {
-				m.toast.show("コピーしました: "+pr.URL, true)
-			}
+			m.copyWithToast(pr.URL, "コピーしました: "+pr.URL)
 		}
 	}
 	return m, nil

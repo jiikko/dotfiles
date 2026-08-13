@@ -228,14 +228,22 @@ func parseListItem(lines []string, i int) (block, int) {
 	j := i + 1
 	for ; j < len(lines); j++ {
 		ln := lines[j]
-		if strings.TrimSpace(ln) == "" || listRe.MatchString(ln) || headingRe.MatchString(ln) ||
-			ruleRe.MatchString(ln) || fenceRe.MatchString(ln) || isTableRow(ln) ||
-			strings.HasPrefix(strings.TrimSpace(ln), ">") {
+		if startsNewBlock(ln) {
 			break
 		}
 		b.text = reflowJoin(b.text, strings.TrimSpace(ln))
 	}
 	return b, j
+}
+
+// startsNewBlock は「継続行の連結をここで打ち切る = 新しいブロックの先頭」の判定。
+// リスト項目と段落の両方がこの境界で継続を止める (parseListItem / parseParagraph に条件の
+// 順序だけ違う同一 7 条件が複製されていて、8 種類目のブロックを足すとき片方だけ更新して
+// 取りこぼす構造だったのを一本化)。
+func startsNewBlock(ln string) bool {
+	return strings.TrimSpace(ln) == "" || listRe.MatchString(ln) || headingRe.MatchString(ln) ||
+		ruleRe.MatchString(ln) || fenceRe.MatchString(ln) || isTableRow(ln) ||
+		strings.HasPrefix(strings.TrimSpace(ln), ">")
 }
 
 // bulletFor はネスト深さごとの行頭記号 (幅 1 の bare 記号に限る: 絵文字は層ごとに幅解釈が
@@ -257,9 +265,7 @@ func parseParagraph(lines []string, i int) (block, int) {
 	j := i
 	for ; j < len(lines); j++ {
 		ln := lines[j]
-		if strings.TrimSpace(ln) == "" || headingRe.MatchString(ln) || ruleRe.MatchString(ln) ||
-			fenceRe.MatchString(ln) || isTableRow(ln) || listRe.MatchString(ln) ||
-			strings.HasPrefix(strings.TrimSpace(ln), ">") {
+		if startsNewBlock(ln) {
 			break
 		}
 		text = reflowJoin(text, strings.TrimSpace(ln))

@@ -111,20 +111,16 @@ func ParseArgs(argv []string) (*Options, error) {
 	return opts, nil
 }
 
-// setMaxCount は -n <N> / -n<N> / --max-count=<N> の共通処理 (parseCount → エラー整形 →
+// setMaxCount は -n <N> / -n<N> / --max-count=<N> の共通処理 (件数パース → エラー整形 →
 // MaxCount/HasCount 代入が 3 分岐へオプション名だけ変えて反復していた。issue 030)。
 func (o *Options) setMaxCount(raw, flag string) error {
-	n, err := parseCount(raw)
+	n, err := strconv.Atoi(raw)
 	if err != nil {
 		return fmt.Errorf("glogx: %s の件数を解釈できません: %s", flag, raw)
 	}
 	o.MaxCount = n
 	o.HasCount = true
 	return nil
-}
-
-func parseCount(s string) (int, error) {
-	return strconv.Atoi(s)
 }
 
 func usageShort() string {

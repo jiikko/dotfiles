@@ -182,7 +182,7 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 		// 自動更新の明示フッターを content 幅に右寄せで添える (ユーザー要望)。値の取得は静かに
 		// 差し替わるので、更新中であることは出さない。
 		footer := "1分ごとに更新"
-		rows = append(rows, strings.Repeat(" ", max(w-dispWidth(footer), 0))+paint(footer, ansiDim, colored))
+		rows = append(rows, padSpaces(max(w-dispWidth(footer), 0))+paint(footer, ansiDim, colored))
 	}
 	// 枠幅 = 内容の最大表示幅 + 罫線・影の余白。ただし title を切り詰めない幅 (title 幅 + 3。
 	// buildShadowPanelBox が title を fw-2=boxWidth-3 に truncate するため) を最低確保する。
@@ -221,7 +221,7 @@ func overlayBoxRight(window, box []string, width int, colored bool, base int) []
 		}
 		leftWidth := width - bw
 		left := truncateKeepANSI(window[pos], leftWidth)
-		pad := strings.Repeat(" ", max(leftWidth-dispWidth(left), 0))
+		pad := padSpaces(max(leftWidth-dispWidth(left), 0))
 		window[pos] = left + reset + pad + row
 	}
 	return window

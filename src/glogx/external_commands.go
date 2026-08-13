@@ -42,7 +42,7 @@ func noPromptGitCmd(ctx context.Context, args ...string) *exec.Cmd {
 var runGitPush = func(ctx context.Context) error {
 	out, err := noPromptGitCmd(ctx, "push").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+		return errors.New(strings.TrimSpace(string(out)))
 	}
 	return nil
 }
@@ -99,7 +99,7 @@ var runGitPullRebase = func(ctx context.Context) error {
 			return abortRebase(out)
 		}
 	}
-	return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+	return errors.New(strings.TrimSpace(string(out)))
 }
 
 // abortRebase は途中停止した rebase を中断し、結果に応じたメッセージを返す。
@@ -164,17 +164,18 @@ var (
 // ない」意図を保ちつつ、病的なハングだけを断ち切る。
 const updateTimeout = 5 * time.Minute
 
-// runClaudeUpdate はテストで実 update しないための差し替え点。update 前後の CLI バージョンを
-// 挟んで取得し (何→何に変わったか表示するため)、CLI を自己更新する。remote に触るが git では
-// ないので noPromptGitCmd は使わない (対話プロンプトは claude 側の責務)。updateTimeout で
-// context を張り、無期限ブロックを防ぐ (超過時は updateMsg{err} 経由で updating が必ず解ける)。
-var runClaudeUpdate = func() (before, after string, err error) {
+// runCLIUpdate は CLI 自己更新の共通実装 (claude / codex で 1 行単位に同一だった鏡像 2 本を
+// 一本化。差はコマンド名とバージョン取得関数だけ)。update 前後の CLI バージョンを挟んで取得し
+// (何→何に変わったか表示するため)、CLI を自己更新する。remote に触るが git ではないので
+// noPromptGitCmd は使わない (対話プロンプトは CLI 側の責務)。updateTimeout で context を張り、
+// 無期限ブロックを防ぐ (超過時は updateMsg{err} 経由で updating が必ず解ける)。
+func runCLIUpdate(name string, fetchVersion func(context.Context) string) (before, after string, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
 	defer cancel()
-	before = usage.FetchVersion(ctx)
-	cmd := exec.CommandContext(ctx, "claude", "update")
-	// ⚠️ WaitDelay を必ず張る。ctx の deadline が kill するのは直接の子 (claude) だけで、claude が
-	// 残した孫が親のパイプを握っていると CombinedOutput は孫が閉じるまで戻らない
+	before = fetchVersion(ctx)
+	cmd := exec.CommandContext(ctx, name, "update")
+	// ⚠️ WaitDelay を必ず張る。ctx の deadline が kill するのは直接の子だけで、子が残した孫が
+	// 親のパイプを握っていると CombinedOutput は孫が閉じるまで戻らない
 	// (理由は usage.SubprocessWaitDelay の doc)。戻らないと updateMsg が発行されず
 	// actModal.updating が立ったままになり、上の updateTimeout が約束している
 	// 「超過時は必ず解ける」が成立しない = updating 中は q も Ctrl-C も握り潰す設計なので
@@ -183,32 +184,23 @@ var runClaudeUpdate = func() (before, after string, err error) {
 	out, e := cmd.CombinedOutput()
 	if e != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return before, "", fmt.Errorf("claude update がタイムアウトしました (%s)", updateTimeout)
+			return before, "", fmt.Errorf("%s update がタイムアウトしました (%s)", name, updateTimeout)
 		}
-		return before, "", fmt.Errorf("%s", lastLine(strings.TrimSpace(string(out))))
+		return before, "", errors.New(lastLine(strings.TrimSpace(string(out))))
 	}
-	after = usage.FetchVersion(ctx)
+	after = fetchVersion(ctx)
 	return before, after, nil
+}
+
+// runClaudeUpdate はテストで実 update しないための差し替え点。
+var runClaudeUpdate = func() (before, after string, err error) {
+	return runCLIUpdate("claude", usage.FetchVersion)
 }
 
 // runCodexUpdate はテストで実 update しないための差し替え点 (runClaudeUpdate の codex 版)。
 // `codex update` は codex CLI の自己更新サブコマンド (0.144 で実在確認 2026-08-09)。
-// タイムアウト・WaitDelay の理由は runClaudeUpdate のコメント参照 (同じ罠が同じように効く)。
 var runCodexUpdate = func() (before, after string, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
-	defer cancel()
-	before = fetchInstalledCodexVersion(ctx)
-	cmd := exec.CommandContext(ctx, "codex", "update")
-	cmd.WaitDelay = usage.SubprocessWaitDelay
-	out, e := cmd.CombinedOutput()
-	if e != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return before, "", fmt.Errorf("codex update がタイムアウトしました (%s)", updateTimeout)
-		}
-		return before, "", fmt.Errorf("%s", lastLine(strings.TrimSpace(string(out))))
-	}
-	after = fetchInstalledCodexVersion(ctx)
-	return before, after, nil
+	return runCLIUpdate("codex", fetchInstalledCodexVersion)
 }
 
 // runJobRerun はテストで実 rerun しないための差し替え点 (本体は jobRerun)。
