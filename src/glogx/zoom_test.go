@@ -6,13 +6,15 @@ import (
 	"time"
 )
 
-// 演出の中間フレームは「中央に置かれた小さい枠 + 実画面の中央部分」になる。
+// 演出の中間フレームは「中央に置かれた小さい枠 + 実画面の左上部分」になる
+// (左上アンカーの理由は zoomWindow の doc。最初のフレームから 1 行目の文字が見える)。
 func TestZoomWindowShrinksToCenter(t *testing.T) {
 	const w, h = 60, 12
 	lines := make([]string, h)
 	for i := range lines {
 		lines[i] = strings.Repeat("x", w)
 	}
+	lines[0] = "TOPLEFT" + strings.Repeat("x", w-7)
 	lines[h/2] = strings.Repeat("x", w/2-3) + "MIDDLE" + strings.Repeat("x", w/2-3)
 
 	small := zoomWindow(lines, 0.4, w, false, true)
@@ -28,9 +30,9 @@ func TestZoomWindowShrinksToCenter(t *testing.T) {
 	if !strings.Contains(joined, "╔") || !strings.Contains(joined, "║") {
 		t.Fatalf("枠が描かれていない:\n%s", joined)
 	}
-	// 中身は実画面の中央から切り出す (真ん中の行が入る)
-	if !strings.Contains(joined, "MIDDLE") {
-		t.Fatalf("中央の中身が切り出されていない:\n%s", joined)
+	// 中身は実画面の左上から切り出す (1 行目の文字が最初のフレームから見える)
+	if !strings.Contains(joined, "TOPLEFT") {
+		t.Fatalf("左上の中身が切り出されていない:\n%s", joined)
 	}
 	// 上下の端は空く (中央に寄っている)
 	if strings.TrimSpace(small[0]) != "" || strings.TrimSpace(small[h-1]) != "" {

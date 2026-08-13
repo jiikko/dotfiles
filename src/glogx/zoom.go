@@ -1,7 +1,8 @@
 package main
 
-// アプリ全体の開閉演出 (ユーザー要望 2026-08-01)。起動で画面が中央から開き、終了で中央へ
-// 吸い込まれる。
+// アプリ全体の開閉演出 (ユーザー要望 2026-08-01)。起動で枠が中央から開き、終了で中央へ
+// 縮んで消える。枠の中身は常に実画面の**左上**から映す (中央アンカーに戻さないこと。
+// 理由は zoomWindow の doc: 左上寄せのテキスト画面では中央切り出しが最初白く見える)。
 //
 // 端末では文字を縮小できないので、「枠を中央から広げ、その中に実画面の中央部分を切り出して
 // 入れる」形にする。⚠️ 枠だけを開いて最後に中身を出す形にしない: 最後のフレームだけ中身が
@@ -132,8 +133,14 @@ func (z *appZoom) scale(now time.Time) float64 {
 
 // zoomWindow は画面 lines を割合 scale の姿へ変換する (1 = そのまま)。
 //
-// 中身は実画面の中央から切り出して枠へ入れる。切り出しは表示幅で行う (ANSI を壊さないよう
-// dropToColumn / truncateKeepANSI を通す)。
+// 中身は実画面の**左上**から切り出して枠へ入れる (枠自体は中央から開く)。切り出しは表示幅で
+// 行う (ANSI を壊さないよう truncateKeepANSI を通す)。
+//
+// 左上アンカーにしている理由 (ユーザー要望 2026-08-13): 当初は縦横とも中央アンカーだったが、
+// コミット一覧のテキストは左上寄せなので、小さい枠のうちは「画面中央の空白 (行の右半分)」を
+// 映して最初のフレームが白く見え、文字が後から枠に入ってくる見え方になっていた。左上なら
+// 最初のフレームから 1 行目のコミットが見え、起動時に最初に映るもの = 最終的に読む位置になる。
+// 開き切る瞬間に実画面と一致する性質は変わらない (scale→1 で切り出しが全画面になる)。
 //
 // ⚠️ framed は「実画面が最外周フレームを持つか」。持たない画面 (--no-frame / 小さい端末) で
 // 演出だけ枠を描くと、開き切った瞬間に枠が消える段差が出る。実画面に合わせて枠の有無を決める。
@@ -149,13 +156,11 @@ func zoomWindow(lines []string, scale float64, width int, colored, framed bool) 
 	if framed {
 		inner, innerH = panelInnerWidth(boxW-1), max(boxH-3, 1)
 	}
-	srcTop := max((h-innerH)/2, 0)
-	srcLeft := max((width-inner)/2, 0)
 	rows := make([]string, 0, innerH)
 	for i := range innerH {
 		src := ""
-		if j := srcTop + i; j < h {
-			src = truncateKeepANSI(dropToColumn(lines[j], srcLeft), inner)
+		if i < h {
+			src = truncateKeepANSI(lines[i], inner)
 		}
 		rows = append(rows, src)
 	}
