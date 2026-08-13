@@ -496,7 +496,7 @@ func (m *browseModel) tickInterval() time.Duration {
 	if m.zoom.animating(timeNow()) || m.issuesOv.slideAnimating() || m.statusOv.slideAnimating() {
 		return zoomInterval // 短い演出なので周期がそのままフレーム数になる (60fps)
 	}
-	if m.glide.active || m.diffOv.glide.active || m.toast.animating() || m.issuesOv.animating() || m.statusOv.animating() {
+	if m.glide.active || m.diffOv.animating() || m.toast.animating() || m.issuesOv.animating() || m.statusOv.animating() {
 		return scrollInterval // スライドを滑らかに (30fps)
 	}
 	return spinnerInterval

@@ -120,6 +120,10 @@ func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *
 	return buildShadowPanelBox(title, body, width, colored, ansiDim)
 }
 
+// animating は演出の途中か (tick チェーンを回すか の判定に使う。issuesView.animating /
+// statusView.animating と同じ契約)。diff は本文 pager の glide だけがアニメ源。
+func (o *diffOverlay) animating() bool { return o.glide.active }
+
 // advanceGlide はスクロール glide を 1 フレーム進める (browseModel の tick から呼ばれる)。
 func (o *diffOverlay) advanceGlide() {
 	if o.glide.active {
