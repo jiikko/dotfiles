@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"math"
@@ -1059,13 +1060,23 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// ⚠️ issues viewer の e (別名 v) だけは実ファイルを編集可能で開く (メモを足せるように
 		// readonly にしていない) ので、復帰の境界で取り直す。取り直さないと編集結果 (H1・front matter の
 		// status・チェックボックス) が一覧にも本文にも出ず、viewer が古い内容を最新として表示する。
-		if msg.err != nil {
-			// ⚠️ viewer 表示中でも issuesView.notice へ回さない: notice はどのヘッダーも描かず、
-			// 次の打鍵で takeNotice されるまで画面に出ない (キーを押すまで失敗が黙殺される)。
-			// viewLines が viewer の窓にもトーストを合成するので、ここは常にトーストでよい。
-			// ⚠️ 起動対象は $VISUAL/$EDITOR で変わる (editorCommand) ので、ここでツール名を
-			// 名指ししない。job ログ・repo root だけは nvim 固定だが、失敗の主因は可変側
-			// (typo した $EDITOR・PATH に無いエディタ) なので総称で出す。
+		// ⚠️ viewer 表示中でも issuesView.notice へ回さない: notice はどのヘッダーも描かず、
+		// 次の打鍵で takeNotice されるまで画面に出ない (キーを押すまで失敗が黙殺される)。
+		// viewLines が viewer の窓にもトーストを合成するので、ここは常にトーストでよい。
+		// ⚠️ 起動対象は $VISUAL/$EDITOR で変わる (editorCommand) ので、文言でツール名を名指し
+		// しない。job ログ・repo root だけは nvim 固定だが、失敗の主因は可変側 (typo した
+		// $EDITOR・PATH に無いエディタ) なので総称で出す。
+		//
+		// ⚠️ 「起動できなかった」と「起動できたが 0 以外で終了した」を分ける。後者 (nvim の :cq 等)
+		// はエディタが実際に開いてファイルを保存できているので、reload を飛ばすと上の不変条件
+		// (復帰の境界で取り直す) が破れ、保存済みの編集が出ないまま古い内容を最新として表示する。
+		var exitErr *exec.ExitError
+		switch {
+		case msg.err == nil:
+		case errors.As(msg.err, &exitErr):
+			m.showWarning("エディタが異常終了しました: " + firstLine(msg.err.Error()))
+		default:
+			// 起動失敗はファイルが変わっていないので取り直さない
 			m.showWarning("エディタを開けませんでした: " + firstLine(msg.err.Error()))
 			return m, m.maybeTick()
 		}
@@ -1127,8 +1138,17 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// ⚠️ viewer へ routing する分岐 (下の issuesOv.visible()) より前に置くこと。後ろに置くと
 	// 演出中のキーが viewer 側で処理され、モードを持つキー (/ の絞り込み・n の確認) が
 	// 「畳んだ後の view」に状態を残す = 次に i で開いた瞬間に蘇る。
-	m.issuesOv.finishClose()
-	m.statusOv.finishClose() // status viewer も同じ契約 (閉じ演出中のキーは viewer に届かない)
+	//
+	// ⚠️ 例外は e (エディタ) の 1 キーだけ。ここを素通ると、板がまだ見えているのに git log 一覧側の
+	// e (openEditorAtRoot = `nvim .`) が全画面で起動し、「見ている issue を開いたつもりが repo root」
+	// になる。上の「飲むと q が効かない窓ができる」は q/Esc の応答性の話で、e を 1 キーだけ捨てても
+	// q は素通しのまま成立するので、両立させる (issues viewer の e が案内キーになった 2026-08-13
+	// 以降、踏む確率が上がった)。
+	closedIssues := m.issuesOv.finishClose()
+	closedStatus := m.statusOv.finishClose() // status viewer も同じ契約 (閉じ演出中のキーは viewer に届かない)
+	if (closedIssues || closedStatus) && key == "e" {
+		return m, m.maybeTick()
+	}
 	if key == "ctrl+c" || key == "ctrl+g" {
 		switch {
 		case m.actModal.updating:

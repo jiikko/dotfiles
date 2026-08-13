@@ -2,6 +2,7 @@ package main
 
 import (
 	"math"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -271,9 +272,11 @@ func (v *issuesView) settleClose() {
 // ⚠️ viewer を畳む唯一の出口にする。演出の着地 (settleClose) とキーによる即着地の両方が
 // ここを通ることで、片方が stopWatch を通らずに次の watchCmd が走る = watcher が二重に居座る、
 // という取りこぼしが構造的に起きない。
-func (v *issuesView) finishClose() {
+// 戻り値は「この呼び出しで実際に畳んだか」。⚠️ tui.go が演出中のキーを 1 つだけ捨てる判定に使う
+// (素通しで別ターゲットを開いてしまう e。理由はそちらのコメント)。
+func (v *issuesView) finishClose() bool {
 	if !v.closing {
-		return
+		return false
 	}
 	v.closing = false
 	v.shown = false
@@ -288,6 +291,7 @@ func (v *issuesView) finishClose() {
 		v.numFilter.clear()
 		v.refresh()
 	}
+	return true
 }
 
 // finishAnim は演出を即座に着地させる。閉じる演出のときは片付けまで進める
@@ -1026,10 +1030,19 @@ func (v *issuesView) target() *issues.Issue {
 //
 // エディタの解決を editorCommand に寄せているのは、これが glogx で唯一「実ファイルを 1 つ開く」
 // 経路で、任意の $EDITOR で成立するため (据え置いた 2 箇所の理由は editorCommand の doc)。
+// ⚠️ 起動前に実体を確かめる。一覧が握る Issue.Path は n (next/ へ移動) や別プロセスの
+// rename/削除で stale になり、そのパスを渡すとエディタは黙って**新規バッファ**として開く
+// (nvim はエラーにしない)。そこで保存すると旧位置にファイルが復活し、issues/move.go が
+// 「同じ basename を 2 箇所に作らない」と宣言している不変条件を viewer 自身が破る。
+// 開かずに取り直す方に倒す (古い一覧のまま編集させない)。
 func (v *issuesView) editCmd() tea.Cmd {
 	iss := v.target()
 	if iss == nil {
 		return nil
+	}
+	if _, err := os.Stat(iss.Path); err != nil {
+		v.setNotice("実体が見つかりません (一覧を取り直します): "+iss.Rel, false)
+		return v.scanCmd(v.cwd)
 	}
 	return runEditorCmd(editorCommand(iss.Path))
 }

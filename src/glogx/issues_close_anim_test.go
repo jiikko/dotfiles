@@ -279,3 +279,44 @@ func TestIssuesReopenDuringCloseDoesNotDoubleWatch(t *testing.T) {
 		t.Fatal("前の見張りを畳まずに開き直した (watcher が二重に居座る)")
 	}
 }
+
+// 閉じる演出中の e は捨てる。⚠️ 素通しさせると板がまだ見えているのに git log 一覧側の e
+// (openEditorAtRoot = `nvim .`) が全画面で起動し、「見ている issue を開いたつもりが repo root」に
+// なる。q/Esc は素通しのまま (飲むと「閉じた直後の q が効かない」窓ができる) なので、
+// e を捨てても q が死なないことまで見る。
+func TestBrowseCloseAnimSwallowsEditorKeyOnly(t *testing.T) {
+	cmds := stubEditorCapture(t)
+
+	m := newTestBrowse(t, 1, nil, nil)
+	m.issuesOv.closeAnimOff = false // 本番の既定 (演出あり) に戻す
+	m.issuesOv.toggle(t.TempDir())
+	m.issuesOv.finishAnim() // 開く演出は着地させる
+	if !m.issuesOv.visible() {
+		t.Fatal("前提が崩れた: viewer が開いていない")
+	}
+
+	m.handleKey("i") // 閉じ始める (演出中は visible のまま)
+	if !m.issuesOv.closing || !m.issuesOv.visible() {
+		t.Fatalf("閉じる演出に入っていない: closing=%v visible=%v", m.issuesOv.closing, m.issuesOv.visible())
+	}
+
+	m.handleKey("e")
+	if len(*cmds) != 0 {
+		t.Errorf("閉じる演出中の e がエディタを起動した: %v", (*cmds)[0].Args)
+	}
+}
+
+// 上の例外で q が死んでいないこと (演出中の q は素通しして通常処理へ届く)。
+func TestBrowseCloseAnimStillPassesQuitKey(t *testing.T) {
+	m := newTestBrowse(t, 1, nil, nil)
+	m.issuesOv.closeAnimOff = false
+	m.issuesOv.toggle(t.TempDir())
+	m.issuesOv.finishAnim()
+	m.handleKey("i") // 閉じ始める
+	if !m.issuesOv.closing {
+		t.Fatal("閉じる演出に入っていない")
+	}
+	if _, cmd := m.handleKey("q"); cmd == nil {
+		t.Error("閉じる演出中の q が素通しされず終了しない (飲む対象を広げすぎている)")
+	}
+}

@@ -1125,8 +1125,11 @@ func TestEditorCommand(t *testing.T) {
 			wantPath: "vim", wantArgsTail: []string{"/tmp/a.md"},
 		},
 		{
-			name: "絶対パス + 引数", editor: "/opt/homebrew/bin/nvim -p",
-			wantPath: "/opt/homebrew/bin/nvim", wantArgsTail: []string{"-p", "/tmp/a.md"},
+			// ⚠️ PATH で解決できない絶対パスにする。実在するエディタの絶対パスを使うと
+			// 「指定を捨てて PATH 上の同名を起動する」実装でも Path が偶然一致して assert が
+			// 空振りする (実測: /opt/homebrew/bin/nvim だと変異が通った)。
+			name: "絶対パス + 引数", editor: "/opt/glogx-test/bin/myeditor -p",
+			wantPath: "/opt/glogx-test/bin/myeditor", wantArgsTail: []string{"-p", "/tmp/a.md"},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1137,6 +1140,11 @@ func TestEditorCommand(t *testing.T) {
 			// want="vim" が ".../bin/nvim" にも一致して別物を通すので、Base の完全一致で見る。
 			if got, want := filepath.Base(cmd.Path), filepath.Base(tt.wantPath); got != want {
 				t.Errorf("実行ファイル名が違う: got=%q want=%q (Path=%q)", got, want, cmd.Path)
+			}
+			// ⚠️ 絶対パス指定は Path そのものを見る。Base 一致だけだと「指定を捨てて PATH 上の
+			// 同名を起動する」実装 (= ユーザーが指定した実体が無視される) を通してしまう。
+			if filepath.IsAbs(tt.wantPath) && cmd.Path != tt.wantPath {
+				t.Errorf("絶対パス指定の実体が起動されない: Path=%q want=%q", cmd.Path, tt.wantPath)
 			}
 			if got := cmd.Args[1:]; !slices.Equal(got, tt.wantArgsTail) {
 				t.Errorf("引数が違う: got=%v want=%v", got, tt.wantArgsTail)

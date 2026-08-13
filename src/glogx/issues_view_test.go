@@ -1020,11 +1020,26 @@ func TestIssuesViewGReachesLastLine(t *testing.T) {
 	}
 }
 
+// realIssue はディスク上に実体を持つ issue を 1 件作る。editCmd は起動前に実体を確認するので、
+// エディタ起動が絡むテストは合成パスの Issue では「起動しない」側に倒れてしまう。
+func realIssue(t *testing.T) *issues.Issue {
+	t.Helper()
+	dir := t.TempDir()
+	rel := "001-feat-real.md"
+	path := filepath.Join(dir, rel)
+	if err := os.WriteFile(path, []byte("# 001 feat: real\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return &issues.Issue{Path: path, Dir: dir, Rel: rel, Number: "001", Category: "feat"}
+}
+
 func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 	copied := stubClipboard(t)
 	editorCalls := stubEditor(t)
 
-	v := loadedView(sampleIssues()...)
+	// ⚠️ 実ファイルを置く: editCmd は起動前に実体を確認するので、合成パスだと起動しない
+	// (stale なパスでエディタを開かせない guard。editCmd の doc 参照)
+	v := loadedView(realIssue(t))
 	v.handleKey("y", vp(10))
 	if *copied != v.rows[0].Path {
 		t.Fatalf("カーソル行のパスがコピーされていない: %q", *copied)
@@ -1515,7 +1530,8 @@ func TestIssuesViewURLPickerSwallowsActionKeys(t *testing.T) {
 		p := newTestIssuesView()
 		p.shown, p.loaded = true, true
 		p.body = issues.NewBody("https://example.com/very-vivid\nhttps://example.com/plain\n")
-		p.open = fakeIssue("001", "feat", "a", issues.StatusOpen)
+		// ⚠️ 実ファイル: 実体が無いと editCmd の guard で止まり、飲み込みの検証が空振りする
+		p.open = realIssue(t)
 		p.handleKey("u", vp(20))
 		p.handleKey(key, vp(20)) // 検索語になるべき (エディタを起動してはいけない)
 		if editorCalled {
@@ -1547,7 +1563,9 @@ func TestIssuesViewNumberFilterSwallowsActionKeys(t *testing.T) {
 	runEditorCmd = func(*exec.Cmd) tea.Cmd { editorCalled = true; return nil }
 	t.Cleanup(func() { runEditorCmd = origEd })
 
-	v := loadedView(sampleIssues()...)
+	// ⚠️ 実ファイルを置く: 実体が無いと editCmd の guard だけで起動が止まり、
+	// 「順序が守られているから起動しない」を検証できない (空振りする)
+	v := loadedView(realIssue(t))
 	v.handleKey("/", vp(10))
 	if !v.numFilter.typing {
 		t.Fatal("/ で番号入力に入れていない")
@@ -1569,15 +1587,9 @@ func TestIssuesViewNumberFilterSwallowsActionKeys(t *testing.T) {
 // spec 5 節が既知の事故として挙げる「案内どおりに動かないキー」が静かに生まれる。
 // ⚠️ 幅は TestIssuesViewHintFitsPopupWidth が別に見る (ここは対応だけを見る)。
 func TestIssuesViewBodyHintAdvertisedEditorKeyWorks(t *testing.T) {
-	// ⚠️ stubEditor は *exec.Cmd を捨てるので「エディタが呼ばれた」しか見えない。それだけだと
-	// 渡す対象を取り違えても (iss.Path → iss.Dir 等) テストが通るため、ここでは Args を捕まえる。
-	var gotArgs []string
-	origEd := runEditorCmd
-	runEditorCmd = func(cmd *exec.Cmd) tea.Cmd {
-		gotArgs = cmd.Args
-		return func() tea.Msg { return editorClosedMsg{} }
-	}
-	t.Cleanup(func() { runEditorCmd = origEd })
+	// ⚠️ 回数だけ数える stubEditor では「渡す対象の取り違え」(iss.Path → iss.Dir 等) が通るので、
+	// Args を捕まえる stubEditorCapture を使う。
+	cmds := stubEditorCapture(t)
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "028-refactor-x.md")
@@ -1597,8 +1609,46 @@ func TestIssuesViewBodyHintAdvertisedEditorKeyWorks(t *testing.T) {
 		t.Fatal("hint が案内した e でエディタが開かない (cmd == nil)")
 	}
 	// 開く対象は「その issue の実ファイル」。末尾引数がパスであることまで見る
-	if len(gotArgs) == 0 || gotArgs[len(gotArgs)-1] != path {
-		t.Errorf("e が開いた対象が issue の実ファイルでない: args=%v want末尾=%q", gotArgs, path)
+	if len(*cmds) != 1 {
+		t.Fatalf("エディタの起動回数が 1 でない: %d", len(*cmds))
+	}
+	if args := (*cmds)[0].Args; len(args) == 0 || args[len(args)-1] != path {
+		t.Errorf("e が開いた対象が issue の実ファイルでない: args=%v want末尾=%q", args, path)
+	}
+}
+
+// e は実体が無いパスではエディタを起動しない。⚠️ 一覧が握る Path は n (next/ へ移動) や
+// 別プロセスの rename/削除で stale になる。stale なまま渡すと nvim は黙って新規バッファを開き、
+// 保存すると旧位置にファイルが復活して「同じ basename が 2 箇所」を viewer 自身が作る
+// (issues/move.go が宣言している不変条件の違反)。
+func TestIssuesViewEditSkipsMissingFile(t *testing.T) {
+	cmds := stubEditorCapture(t)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "001-feat-x.md")
+	if err := os.WriteFile(path, []byte("# 001 feat: x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"})
+
+	// 前提: 実体があるうちは開く
+	if cmd := v.handleKey("e", vp(10)); cmd == nil || len(*cmds) != 1 {
+		t.Fatalf("実体があるのに開かない (cmd==nil: %v, 起動数=%d)", cmd == nil, len(*cmds))
+	}
+
+	// 実体が動いた (n の next/ 移動・別プロセスの rename と同じ状態) 後は開かず取り直す
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	cmd := v.handleKey("e", vp(10))
+	if len(*cmds) != 1 {
+		t.Errorf("実体が無いのにエディタを起動した: %v", (*cmds)[len(*cmds)-1].Args)
+	}
+	if cmd == nil {
+		t.Error("取り直しの Cmd を返していない (古い一覧が残り続ける)")
+	}
+	if text, ok := v.takeNotice(); text == "" || ok {
+		t.Errorf("理由を通知していない: text=%q ok=%v", text, ok)
 	}
 }
 

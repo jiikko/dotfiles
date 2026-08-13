@@ -212,9 +212,10 @@ func (v *statusView) settleClose() {
 // でなければ何もしない — ⚠️ この guard は必須: handleKey は毎打鍵でこれを呼ぶ (閉じ演出中のキーを
 // viewer に届かせないため) ので、guard が無いと最初のキーで開いている viewer が畳まれる。
 // ⚠️ gen を進めるのは、閉じる前に張った自動更新チェーンが開き直した後の状態へ効かないため。
-func (v *statusView) finishClose() {
+// 戻り値の意味は issuesView.finishClose と同じ契約 (実際に畳んだか)。
+func (v *statusView) finishClose() bool {
 	if !v.closing {
-		return
+		return false
 	}
 	v.shown, v.closing = false, false
 	v.animStart = time.Time{}
@@ -229,6 +230,7 @@ func (v *statusView) finishClose() {
 	v.loading = false
 	v.preview.clearBusy()
 	v.gen++
+	return true
 }
 
 // settleAnim は開く演出が終わっていたら時計を捨てる (animating の判定を軽くする)。
