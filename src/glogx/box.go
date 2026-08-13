@@ -68,7 +68,7 @@ func overlayCenteredBox(window, box []string, width, page int, colored bool) []s
 		bg := window[pos]
 		// 左背景: 先頭 leftGap 桁を保持し、足りなければ空白で leftGap ちょうどに詰める
 		left := truncateKeepANSI(bg, leftGap)
-		left += strings.Repeat(" ", max(leftGap-dispWidth(left), 0))
+		left += padSpaces(max(leftGap-dispWidth(left), 0))
 		// 右背景: box 行の右端 (leftGap + この行の表示幅) 以降を復元して継ぐ
 		rowW := dispWidth(boxRow)
 		right := dropToColumn(bg, leftGap+rowW)
@@ -82,6 +82,13 @@ func overlayCenteredBox(window, box []string, width, page int, colored bool) []s
 type panelBoxStyle struct {
 	glyphs boxBorder // 罫線の字形 (borderLight / borderDouble)
 	color  string    // 枠線の SGR 色 (通常 ansiDim。toast だけ種別色)
+	// indent は全行の頭に付ける空白の桁数 (0 = 付けない)。
+	//
+	// ⚠️ 見た目の都合ではなく確保を削るために持っている。呼び出し側で
+	// `" " + line` を全行に掛けると**可視行ぶんの文字列を丸ごともう 1 部作る**ことになり、
+	// 実測で 8.3 KB/frame (1 フレーム 40 KB のうち約 20%) を捨てていた。ここで組み立てに
+	// 織り込めば、既にある連結の一部になるので追加の確保が要らない。
+	indent int
 }
 
 // buildShadowPanelBox は右下ドロップシャドウ付きの枠パネルを組み立てる (行の実効幅は ANSI を
@@ -108,14 +115,13 @@ func buildShadowPanelBox(title string, rows []string, width int, colored bool, b
 // 罫線は ansiFrameBorder (scratch と同じマゼンタ) で染める。落ち影は中立 dim のまま
 // (buildShadowPanelBox の方針と同じ。トーストが枠だけ種別色にして影を据え置いたのと同型)。
 func wrapWindowFrame(content []string, termW int, colored bool) []string {
-	// -2 = 左右余白 1 桁ずつ。二重罫線 (ユーザー要望)
-	box := buildPanelBoxImpl("", content, termW-2, colored, panelBoxStyle{glyphs: borderDouble, color: ansiFrameBorder})
+	// -2 = 左右余白 1 桁ずつ。二重罫線 (ユーザー要望)。左余白 1 桁は indent で組み立てに
+	// 織り込む (全行を " "+l で作り直すと 8.3 KB/frame を捨てる。panelBoxStyle.indent の doc)
+	box := buildPanelBoxImpl("", content, termW-2, colored,
+		panelBoxStyle{glyphs: borderDouble, color: ansiFrameBorder, indent: 1})
 	out := make([]string, 0, len(box)+1)
 	out = append(out, "") // 上余白 1 行 (端末地色)
-	for _, l := range box {
-		out = append(out, " "+l) // 左余白 1 桁
-	}
-	return out
+	return append(out, box...)
 }
 
 // shadowBoxChrome は影付き枠 (buildShadowPanelBox) が内容幅に加える固定分
@@ -258,8 +264,10 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, st 
 	// 途中でリセットされるため、タイトルに限っては ANSI を落とす
 	title = truncateDisp(stripANSI(title), fw-2, "…")
 	top := b.tl + title + strings.Repeat(b.h, max(fw-2-dispWidth(title), 0)) + b.tr
+	// 行頭の余白は各行の連結に織り込む (panelBoxStyle.indent の doc)
+	pre := padSpaces(st.indent)
 	// 最上段だけ影なし (影は右上角の 1 つ下から始まるのが自然な落ち影)
-	lines = append(lines, paint(top, border, colored)+" ")
+	lines = append(lines, pre+paint(top, border, colored)+" ")
 	// 行ごとに変わらない断片はループの外で 1 度だけ組む。最外周フレーム (wrapWindowFrame) は
 	// 毎フレーム全可視行をここへ通すので、行数 × フレームレートぶんの alloc になっていた。
 	// 右影の上端 (最初の content 行) だけ ▓ フェザーで ease-in し、以降は █ 本体にする
@@ -281,7 +289,7 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, st 
 		if i == 0 {
 			shade = shadeFirst
 		}
-		lines = append(lines, leftEdge+content+padSpaces(pad)+rightEdge+shade)
+		lines = append(lines, pre+leftEdge+content+padSpaces(pad)+rightEdge+shade)
 	}
 	// 下辺は最下段に寄せた低い横線 ▁ + 左右の角も最下段の低ブロック ▖ ▗ 。─ 中央高だと
 	// 下の落ち影との間に半セルの余白ができ、└┘ の角だけ中央高だと横線 ▁ との間に段差が出る。
@@ -292,11 +300,11 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, st 
 	// 染める。落ち影本体 (この行末の shadowRun や次のオフセット行) は中立 dim のまま描く。
 	bottom := paint("▖"+strings.Repeat("▁", fw-2)+"▗", border, colored)
 	// 右下角の影は最も深いので █ 本体。
-	lines = append(lines, bottom+shadowRun(1, colored))
+	lines = append(lines, pre+bottom+shadowRun(1, colored))
 	// 下端の影: 左端を shadowBottomOffset 桁だけ右へずらして右下方向に落とす (古典的な
 	// ドロップシャドウ)。左端を ▓ フェザーで ease-in してから █ 本体を敷く。右端は箱の右影列と
 	// 揃える (影全体の幅 = shadowBottomOffset + フェザー1 + 本体 = width)。
-	lines = append(lines, strings.Repeat(" ", shadowBottomOffset)+shadowFeather(colored)+shadowRun(width-1-shadowBottomOffset, colored))
+	lines = append(lines, pre+padSpaces(shadowBottomOffset)+shadowFeather(colored)+shadowRun(width-1-shadowBottomOffset, colored))
 	return lines
 }
 

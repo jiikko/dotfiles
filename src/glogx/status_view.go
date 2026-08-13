@@ -1093,8 +1093,7 @@ func statusCursorPaint(text string, width int, colored bool) string {
 		return text
 	}
 	pad := max(width-dispWidth(text), 0)
-	return ansiCursorBg + ansiResetRe.ReplaceAllString(text, "$0"+ansiCursorBg) +
-		padSpaces(pad) + ansiReset
+	return ansiCursorBg + reapplyAfterReset(text, ansiCursorBg) + padSpaces(pad) + ansiReset
 }
 
 // previewPane はプレビューカラム (カーソル行の diff の先頭部分)。スクロールは持たない
