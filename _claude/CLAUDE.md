@@ -18,6 +18,7 @@
 - **作業開始時点から存在する** dirty / untracked はこの条件に含めない（過去の作業の残骸かもしれず「今まさに並行作業中」の証拠ではない）。それらは従来どおり「触らない・巻き込まない」で共有 working tree のまま続行してよい
 - worktree で作った**コミットを master ブランチへ移動できた時点で、作成した worktree は必ず削除する**（`git worktree remove`）。worktree を残したまま作業を終えない（放置 worktree は「どこに何があるか分からない」状態と stale ブランチを量産する）
 - worktree を使わず共有 working tree に留まる場合は、pathspec 明示 commit の規律に従う（[`commit-with-pathspec.md`](rules/commit-with-pathspec.md)）
+- **自分が書き込み権限のエージェント（`-s workspace-write` の codex 等）を 2 体以上並行させるときも worktree を分ける**。「担当ディレクトリが重ならない」を理由に同一 working tree で走らせない（想定外のファイルに手が伸びる / 並行中の build・test が何を検証したのか分からなくなる）。詳細は [`parallel-write-agents-need-worktree-isolation.md`](rules/parallel-write-agents-need-worktree-isolation.md)
 
 ## 応答・成果物の長さとスコープ
 

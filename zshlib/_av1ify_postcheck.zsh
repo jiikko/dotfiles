@@ -82,37 +82,75 @@ __av1ify_is_nonneg_num() {
 # + 「末尾 60s 区間の packet 走査」 (= 5GB クラス MKV で数秒オーダー)。最後の手段
 # として全走査もある (区間スキャンで packet が拾えない超変則ケース用)。
 __av1ify_get_stream_end() {
-  local file="$1" spec="$2" val fmt_dur start
+  local file="$1" spec="$2" val
   # 安価パス: stream=duration
   val=$(__ff_stream_field "$file" "$spec" stream=duration)
   if __av1ify_is_num "$val"; then
     REPLY="$val"
     return 0
   fi
-  # フォールバック 1: 末尾 60s 区間の packet PTS を走査する (MKV など stream=duration N/A 対応)
+  # 宣言 duration が無い (MKV 等) → packet 実測にフォールバック
+  __av1ify_packet_end "$file" "$spec"
+}
+
+# 内部補助: packet PTS 走査でストリームの「実測」末尾時刻を取得
+# 宣言 duration (mp4 の mdhd/tkhd 等) を一切信じず、実際の packet 列から測る。
+# __av1ify_get_stream_end のフォールバックと、avsync 判定の再検証で共用する。
+#
+# 引数: $1 = ファイルパス, $2 = stream specifier (例: v:0, a:0)
+# 出力: REPLY = 表示終端 max(pts_time + duration_time) [秒] (取得不能なら空)
+# 戻り値: 0=取得成功, 1=取得不能
+__av1ify_packet_end() {
+  local file="$1" spec="$2" val fmt_dur start
+  # ⚠️ 「packet 列の最後の行の pts_time」を終端に使わないこと。
+  # packet はデコード順で出るため、B-frame の表示順入れ替えで最終行が最大 PTS に
+  # ならない (実測: 1fps / x264 bframes=16 の 20s ソースで最終行 18.0s に対し実際の
+  # 表示終端は 20.0s)。過小評価は drift を縮める方向に働き、本物の音ズレを見逃す。
+  # 表示終端 = max(pts_time + duration_time) で測る (duration_time が N/A の行は pts のみ)。
+  # shellcheck disable=SC2016  # $1/$2 は awk のフィールド (シェル変数ではない)
+  local prog='/^[0-9]/ {
+    e = $1 + 0
+    if (NF > 1 && $2 ~ /^[0-9]/) e += $2
+    if (!seen || e > max) { max = e; seen = 1 }
+  }
+  END { if (seen) printf "%.6f", max }'
+  # 末尾 60s 区間だけ走査する (5GB クラスでも数秒オーダー)。
   # ffprobe -read_intervals "START%" で START 秒から末尾までを読む。
   fmt_dur=$(__ff_format_field "$file" format=duration)
   if __av1ify_is_num "$fmt_dur"; then
     start=$(LC_ALL=C awk -v d="$fmt_dur" 'BEGIN { s = d - 60; if (s < 0) s = 0; printf "%.0f", s }')
-    # awk で N/A 行を弾きつつ最終数値行だけ拾う (tail -n1 だと N/A を拾いうる)
     val=$(ffprobe -v error -read_intervals "${start}%" -select_streams "$spec" \
-          -show_entries packet=pts_time -of csv=p=0 -- "$file" 2>/dev/null \
-          | awk '/^[0-9]/ { last = $0 } END { print last }')
+          -show_entries packet=pts_time,duration_time -of csv=p=0 -- "$file" 2>/dev/null \
+          | LC_ALL=C awk -F, "$prog")
     if __av1ify_is_num "$val"; then
       REPLY="$val"
       return 0
     fi
   fi
-  # フォールバック 2: 全 packet 走査 (区間スキャンで packet が無い超変則ケースの最後の手段)
-  val=$(ffprobe -v error -select_streams "$spec" -show_entries packet=pts_time \
+  # 最後の手段: 全 packet 走査 (区間スキャンで packet が拾えない超変則ケース用)
+  val=$(ffprobe -v error -select_streams "$spec" -show_entries packet=pts_time,duration_time \
         -of csv=p=0 -- "$file" 2>/dev/null \
-        | awk '/^[0-9]/ { last = $0 } END { print last }')
+        | LC_ALL=C awk -F, "$prog")
   if __av1ify_is_num "$val"; then
     REPLY="$val"
     return 0
   fi
   REPLY=""
   return 1
+}
+
+# 内部補助: A/V drift の計算
+# 引数: src_v src_a out_v out_a threshold
+# 出力: REPLY = "<src_delta> <out_delta> <drift> <bad>" (bad: 1=閾値超過)
+# 戻り値: 0=計算成功, 1=失敗
+__av1ify_calc_drift() {
+  REPLY=$(LC_ALL=C awk -v sv="$1" -v sa="$2" -v ov="$3" -v oa="$4" -v t="$5" 'BEGIN{
+    sd = sa - sv
+    od = oa - ov
+    drift = od - sd; if (drift < 0) drift = -drift
+    printf "%.6f %.6f %.6f %d", sd, od, drift, (drift > t) ? 1 : 0
+  }') || REPLY=""
+  [[ -n "$REPLY" ]]
 }
 
 # 内部補助: 出力ファイルの簡易チェック（音声有無と音ズレ）
@@ -176,18 +214,36 @@ __av1ify_postcheck() {
 
     if __av1ify_is_num "$src_v" && __av1ify_is_num "$src_a"; then
       # 符号付きで関係差を見る (方向反転も検出)
-      local result
-      result=$(LC_ALL=C awk -v sv="$src_v" -v sa="$src_a" -v ov="$out_v" -v oa="$out_a" -v t="$threshold" 'BEGIN{
-        sd = sa - sv
-        od = oa - ov
-        drift = od - sd; if (drift < 0) drift = -drift
-        printf "%.6f %.6f %.6f %d", sd, od, drift, (drift > t) ? 1 : 0
-      }') || result=""
-      if [[ -n "$result" ]]; then
-        local sd_v="${result%% *}"; result="${result#* }"
-        local od_v="${result%% *}"; result="${result#* }"
-        local drift_v="${result%% *}"; result="${result#* }"
-        local drift_bad="$result"
+      if __av1ify_calc_drift "$src_v" "$src_a" "$out_v" "$out_a" "$threshold"; then
+        local sd_v od_v drift_v drift_bad
+        read -r sd_v od_v drift_v drift_bad <<< "$REPLY"
+
+        if [[ "$drift_bad" == "1" ]]; then
+          # 宣言 duration (mp4 の mdhd/tkhd) が自分のサンプルテーブルと食い違う壊れた
+          # ソースが実在する (実例: 宣言 8270.84s / 実測 8287.48s = 500 フレーム
+          # 分の嘘)。この手のソースでは encode が正しい値を書き直すため、その
+          # 「メタデータの修復」がそのまま drift として計上され誤検知になる
+          # (実測 Δ=0.013s に対し宣言ベースだと Δ=16.68s)。
+          #
+          # 閾値を超えたときだけ、4 値すべてを packet 実測で測り直して再判定する。
+          # ・通常時の ffprobe コストは増えない (超過時のみ走る)
+          # ・src/out を同じ測り方 (packet 実測の表示終端) に揃えるので量が混ざらない
+          # ・false negative は増えない: 本物の encode 起因ズレは出力の packet 列に必ず出る
+          local m_sv m_sa m_ov m_oa
+          if __av1ify_packet_end "$src_path" "v:0" && m_sv="$REPLY" \
+            && __av1ify_packet_end "$src_path" "a:0" && m_sa="$REPLY" \
+            && __av1ify_packet_end "$filepath" "v:0" && m_ov="$REPLY" \
+            && __av1ify_packet_end "$filepath" "a:0" && m_oa="$REPLY" \
+            && __av1ify_calc_drift "$m_sv" "$m_sa" "$m_ov" "$m_oa" "$threshold"; then
+            local m_sd m_od m_drift m_bad
+            read -r m_sd m_od m_drift m_bad <<< "$REPLY"
+            if [[ "$m_bad" != "1" ]]; then
+              print -r -- ">> 音ズレ判定: 宣言 duration ベースでは Δ=${drift_v}s だが packet 実測では Δ=${m_drift}s のため正常と判定 (ソースの宣言 duration が不正確)"
+            fi
+            sd_v="$m_sd"; od_v="$m_od"; drift_v="$m_drift"; drift_bad="$m_bad"
+          fi
+        fi
+
         if [[ "$drift_bad" == "1" ]]; then
           issues+=("音ズレ疑い (src_delta=${sd_v}s out_delta=${od_v}s Δ=${drift_v}s threshold=${threshold}s)")
           suffixes+=("avsync")
