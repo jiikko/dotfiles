@@ -142,6 +142,12 @@ func stubBrowser(t *testing.T) *string {
 	return &opened
 }
 
+// testPopupWidth は tmux popup で glogx が実際に使う幅の代表値。⚠️ production はこの値を持たない
+// (幅は m.contentWidth() = 端末幅から決まる)。tmux 側が端末幅の 90% を popup に割り当てる運用
+// (_tmux.conf) での実測値で、「1 行に収まるか」を見るテストの基準として共有する。
+// ここを変えると hint の長さの許容量が変わるので、変えたら実機で末尾が切れないか確認すること。
+const testPopupWidth = 84
+
 // stubEditorCapture は runEditorCmd を「起動せず *exec.Cmd を記録する」実装へ差し替える。
 //
 // ⚠️ エディタ連携のテストは全部これを使う。回数だけ数える stub も昔あったが、それだと

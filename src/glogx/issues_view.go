@@ -1748,7 +1748,9 @@ func srcGutter(src, width int, colored bool) string {
 // ピッカー表示中に本文 pager の案内 (j/k/g/G/p/u/e/h/q) が出る — それらは全部 urlPicker が検索語
 // として飲むので、案内したキーが 1 つも案内どおりに動かない。
 func (v *issuesView) hint() string {
-	// ⚠️ hint は 1 行で、幅を超えた分は末尾から黙って切られる。popup の実幅 (84 桁) に
+	// ⚠️ hint は 1 行で、幅を超えた分は末尾から黙って切られる。上限は tmux popup の実幅で、
+	// 数値は testPopupWidth (テスト側の代表値) に置き TestIssuesViewHintFitsPopupWidth が固定する
+	// — production はこの値を持たない (幅は端末から決まる) ので、ここに数字を書くと乖離する。
 	// 収まる範囲へ絞り、絞られたキー (y / Y / r / 一覧の p) は --help と README を正本にする。
 	// nvim を開くキーは e と v の 2 本あるが、案内するのは e だけ (v は打ち慣れのための別名で、
 	// 幅で絞ったのではなく意図的に出さない)。一覧モードは幅の都合でどちらも案内しない。

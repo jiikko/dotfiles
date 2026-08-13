@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -1343,8 +1344,8 @@ func TestIssuesViewKeyLandsAnimationImmediately(t *testing.T) {
 }
 
 func TestIssuesViewHintFitsPopupWidth(t *testing.T) {
-	// hint は 1 行で、超過分は末尾から黙って切られる。popup の実幅 (84 桁) に収める
-	const popupWidth = 84
+	// hint は 1 行で、超過分は末尾から黙って切られる。popup の実幅 (testPopupWidth) に収める
+	const popupWidth = testPopupWidth
 	v := loadedView(sampleIssues()...)
 	if w := dispWidth(v.hint()); w > popupWidth {
 		t.Fatalf("一覧の hint が %d 桁に収まらない (w=%d): %q", popupWidth, w, v.hint())
@@ -2028,4 +2029,168 @@ func newTestIssuesView() issuesView {
 	v := newIssuesView()
 	v.closeAnimOff = true
 	return v
+}
+
+// hint が案内する本文モードのキーは、全部が実際に効かなければならない。
+//
+// ⚠️ spec 5 節が「hint が案内するキーが 1 つも案内どおりに動かない」を既知の事故として挙げて
+// いるのに、これまでその不変条件はテストで固定されていなかった (案内キーを未割当の z に
+// 書き換えても全テストが green だった)。ここで hint 側から駆動して閉じる。
+//
+// ⚠️ 「案内された集合」と「効果を検証している表」の一致まで見る。片方だけ増やせないので、
+// hint にキーを足したら効果の検証も必ず書くことになる。
+func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
+	// 案内キーごとの「押したら何が変わるか」。⚠️ 効果を観測できる状態を各自で作る
+	// (本文の途中まで送ってから k を押す等。端で押して「変わらない」を通すと空振りする)
+	probes := map[string]func(t *testing.T, e *bodyKeyEnv){
+		"j": func(t *testing.T, e *bodyKeyEnv) {
+			before := e.v.bodyOff
+			e.press("j")
+			if e.v.bodyOff <= before {
+				t.Errorf("j で本文が下へ進まない: %d → %d", before, e.v.bodyOff)
+			}
+		},
+		"k": func(t *testing.T, e *bodyKeyEnv) {
+			e.press("G") // 末尾へ送ってから戻せる状態を作る
+			before := e.v.bodyOff
+			e.press("k")
+			if e.v.bodyOff >= before {
+				t.Errorf("k で本文が上へ戻らない: %d → %d", before, e.v.bodyOff)
+			}
+		},
+		"Space": func(t *testing.T, e *bodyKeyEnv) {
+			before := e.v.bodyOff
+			e.press(" ")
+			if e.v.bodyOff <= before {
+				t.Errorf("Space で半ページ送られない: %d → %d", before, e.v.bodyOff)
+			}
+		},
+		"g": func(t *testing.T, e *bodyKeyEnv) {
+			e.press("G")
+			e.press("g")
+			if e.v.bodyOff != 0 {
+				t.Errorf("g で先頭へ戻らない: bodyOff=%d", e.v.bodyOff)
+			}
+		},
+		"G": func(t *testing.T, e *bodyKeyEnv) {
+			e.press("G")
+			if e.v.bodyOff == 0 {
+				t.Error("G で末尾へ飛ばない")
+			}
+		},
+		"p": func(t *testing.T, e *bodyKeyEnv) {
+			*e.copied = ""
+			e.press("p")
+			if *e.copied == "" {
+				t.Error("p で番号がコピーされない")
+			}
+		},
+		"u": func(t *testing.T, e *bodyKeyEnv) {
+			e.press("u")
+			if !e.v.urlPick.active {
+				t.Error("u で URL ピッカーが開かない")
+			}
+		},
+		"e": func(t *testing.T, e *bodyKeyEnv) {
+			before := len(*e.cmds)
+			e.press("e")
+			if len(*e.cmds) != before+1 {
+				t.Error("e でエディタが起動しない")
+			}
+		},
+		"Enter": func(t *testing.T, e *bodyKeyEnv) { e.assertClosesBody(t, "enter") },
+		"h":     func(t *testing.T, e *bodyKeyEnv) { e.assertClosesBody(t, "h") },
+		"q":     func(t *testing.T, e *bodyKeyEnv) { e.assertClosesBody(t, "q") },
+	}
+
+	advertised := advertisedHintKeys(t)
+	if len(advertised) == 0 {
+		t.Fatal("本文モードの hint から案内キーを取り出せていない (パースが壊れている)")
+	}
+	for _, name := range advertised {
+		run, ok := probes[name]
+		if !ok {
+			t.Errorf("hint が案内している %q の効果を誰も検証していない (probes に足すこと)", name)
+			continue
+		}
+		t.Run(name, func(t *testing.T) {
+			run(t, newBodyKeyEnv(t))
+		})
+	}
+	for name := range probes {
+		if !slices.Contains(advertised, name) {
+			t.Errorf("hint が案内していない %q を検証している (hint から消えたなら probes も消す)", name)
+		}
+	}
+}
+
+// advertisedHintKeys は本文モードの hint から案内キーを取り出す ("j/k/Space: 説明" → j, k, Space)。
+func advertisedHintKeys(t *testing.T) []string {
+	t.Helper()
+	e := newBodyKeyEnv(t)
+	var keys []string
+	for _, tok := range strings.Split(e.v.hint(), "  ") {
+		label, _, ok := strings.Cut(strings.TrimSpace(tok), ": ")
+		if !ok {
+			continue
+		}
+		keys = append(keys, strings.Split(label, "/")...)
+	}
+	return keys
+}
+
+// bodyKeyEnv は本文モードのキーを押せる状態 (長い本文 + URL + 実ファイル + 各種スタブ)。
+type bodyKeyEnv struct {
+	v      *issuesView
+	cmds   *[]*exec.Cmd
+	copied *string
+	rows   int
+}
+
+func newBodyKeyEnv(t *testing.T) *bodyKeyEnv {
+	t.Helper()
+	cmds := stubEditorCapture(t)
+	copied := stubClipboard(t)
+
+	dir := t.TempDir()
+	rel := "001-feat-hintkeys.md"
+	path := filepath.Join(dir, rel)
+	// ⚠️ 本文は窓より十分長くする (短いと j / Space / G が「動かない」ので効果を観測できない)。
+	// URL を 1 つ入れるのは u (ピッカー) の観測のため。
+	// ⚠️ 空行で区切る。連続行は markdown で 1 段落に畳まれ、body.Len() が窓より短くなって
+	// j / Space / G の効果が観測できない (実測: 80 行が 1 段落になり bodyOff が 0 のまま)
+	body := "# 001 feat: hint keys\n\nhttps://example.com/x\n\n" + strings.Repeat("本文の行。\n\n", 60)
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: rel, Number: "001", Category: "feat"})
+	v.handleKey("enter", vp(10)) // 本文モードへ
+	if v.open == nil {
+		t.Fatal("本文モードに入れていない")
+	}
+	v.drawer.finish()
+	// ⚠️ 行数は描画で確定する (未描画だと body.Len() = 0 でスクロール上限が 0 になり、
+	// j / Space / G が「動かない」ので効果を観測できない)
+	v.lines(renderOpts(20))
+	if v.body.Len() <= 10 {
+		t.Fatalf("前提が崩れた: 本文が窓より短くスクロールできない (Len=%d)", v.body.Len())
+	}
+	return &bodyKeyEnv{v: v, cmds: cmds, copied: copied, rows: 10}
+}
+
+func (e *bodyKeyEnv) press(key string) { e.v.handleKey(key, vp(e.rows)) }
+
+func (e *bodyKeyEnv) assertClosesBody(t *testing.T, key string) {
+	t.Helper()
+	e.press(key)
+	// ⚠️ 本文は「閉じる演出の着地後」に捨てられるので、open == nil を待つと時刻の進め方に
+	// 依存する。キーの直接の効果である「閉じる演出に入ったか」を見る。
+	if e.v.drawer.phase != drawerClosing {
+		t.Errorf("%q で本文が閉じ始めない: phase=%v", key, e.v.drawer.phase)
+	}
+	// 次の打鍵で実際に畳まれる (handleKey 冒頭の drawer.finish → discardBody)
+	e.press("j")
+	if e.v.open != nil {
+		t.Errorf("%q の後に本文が捨てられない", key)
+	}
 }
