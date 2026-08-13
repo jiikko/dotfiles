@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -14,7 +13,6 @@ import (
 
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"glogx/issues"
 )
 
@@ -1035,11 +1033,12 @@ func realIssue(t *testing.T) *issues.Issue {
 
 func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 	copied := stubClipboard(t)
-	editorCalls := stubEditor(t)
+	cmds := stubEditorCapture(t)
 
 	// ⚠️ 実ファイルを置く: editCmd は起動前に実体を確認するので、合成パスだと起動しない
 	// (stale なパスでエディタを開かせない guard。editCmd の doc 参照)
-	v := loadedView(realIssue(t))
+	iss := realIssue(t)
+	v := loadedView(iss)
 	v.handleKey("y", vp(10))
 	if *copied != v.rows[0].Path {
 		t.Fatalf("カーソル行のパスがコピーされていない: %q", *copied)
@@ -1048,8 +1047,12 @@ func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "コピーしました") {
 		t.Fatalf("コピーの結果が通知に載らない: %q ok=%v", text, ok)
 	}
-	if cmd := v.handleKey("v", vp(10)); cmd == nil || *editorCalls != 1 {
-		t.Fatalf("v でエディタ起動の Cmd が返らない: cmd=%v calls=%d", cmd != nil, *editorCalls)
+	if cmd := v.handleKey("v", vp(10)); cmd == nil || len(*cmds) != 1 {
+		t.Fatalf("v でエディタ起動の Cmd が返らない: cmd=%v 起動数=%d", cmd != nil, len(*cmds))
+	}
+	// ⚠️ 「開いた」だけでなく「何を開いたか」まで見る (対象の取り違えを通さない)
+	if args := (*cmds)[0].Args; args[len(args)-1] != iss.Path {
+		t.Errorf("v が開いた対象が issue の実ファイルでない: args=%v want末尾=%q", args, iss.Path)
 	}
 }
 
@@ -1057,7 +1060,7 @@ func TestIssuesViewActionKeysWorkInBothModes(t *testing.T) {
 	// v / y / p / Y / N は一覧でも本文でも同じ対象 (target) に効く。モードごとの switch へ
 	// 写すと、追加時に片方へ入れ忘れても「そのモードでだけ効かない」形で静かに壊れる。
 	copied := stubClipboard(t)
-	editorCalls := stubEditor(t)
+	cmds := stubEditorCapture(t)
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "028-refactor-x.md")
@@ -1083,9 +1086,14 @@ func TestIssuesViewActionKeysWorkInBothModes(t *testing.T) {
 		// v は先にあった割当、e は git log 一覧の e と語彙を揃えた別名。どちらのモードでも
 		// 両方が nvim を起動する (hint が案内するのは e だけ)。
 		for _, key := range []string{"v", "e"} {
-			before := *editorCalls
-			if cmd := v.handleKey(key, vp(10)); cmd == nil || *editorCalls != before+1 {
-				t.Fatalf("%s モードで %q が nvim を起動しない", mode, key)
+			before := len(*cmds)
+			if cmd := v.handleKey(key, vp(10)); cmd == nil || len(*cmds) != before+1 {
+				t.Fatalf("%s モードで %q がエディタを起動しない", mode, key)
+			}
+			// 対象は「その issue の実ファイル」。一覧モードと本文モードで target() が
+			// 切り替わるので、どちらでも同じファイルを指すことまで見る
+			if args := (*cmds)[before].Args; args[len(args)-1] != path {
+				t.Errorf("%s モードの %q が別の対象を開いた: args=%v want末尾=%q", mode, key, args, path)
 			}
 		}
 	}
@@ -1517,16 +1525,13 @@ func TestIssuesViewURLPicker(t *testing.T) {
 // ピッカーは他のどの割当よりも先にキーを飲む (印字文字は全部検索語)。
 // e/v (エディタ) や y (コピー) が横取りすると、その文字を含む URL を検索できない。
 func TestIssuesViewURLPickerSwallowsActionKeys(t *testing.T) {
-	editorCalled := false
-	origEd := runEditorCmd
-	runEditorCmd = func(*exec.Cmd) tea.Cmd { editorCalled = true; return nil }
-	t.Cleanup(func() { runEditorCmd = origEd })
+	cmds := stubEditorCapture(t)
 
 	// ⚠️ エディタを開くキーは e と v の 2 本あるので両方回す。現行コードでは飲み込みを早期
 	// return 1 箇所が支配していて片方で足りるが、キー別の分岐を作る変異には 1 キーだと効かない
 	// (実際に番号入力側は v の 1 マスだけ穴が空いていた)。
 	for _, key := range []string{"e", "v"} {
-		editorCalled = false
+		before := len(*cmds)
 		p := newTestIssuesView()
 		p.shown, p.loaded = true, true
 		p.body = issues.NewBody("https://example.com/very-vivid\nhttps://example.com/plain\n")
@@ -1534,8 +1539,8 @@ func TestIssuesViewURLPickerSwallowsActionKeys(t *testing.T) {
 		p.open = realIssue(t)
 		p.handleKey("u", vp(20))
 		p.handleKey(key, vp(20)) // 検索語になるべき (エディタを起動してはいけない)
-		if editorCalled {
-			t.Errorf("ピッカー中の %q がエディタを起動した", key)
+		if len(*cmds) != before {
+			t.Errorf("ピッカー中の %q がエディタを起動した: %v", key, (*cmds)[before].Args)
 		}
 		if p.urlPick.query != key {
 			t.Errorf("%q が検索語にならない: query=%q", key, p.urlPick.query)
@@ -1558,10 +1563,7 @@ func TestIssuesViewURLPickerSwallowsActionKeys(t *testing.T) {
 // 順序を守るものをここで作る。キーは e と v の両方を回す — 「支配しているのは早期 return 1 箇所
 // だから 1 キーで足りる」は現行コードの記述であって、キー別の分岐を作る変異には効かない。
 func TestIssuesViewNumberFilterSwallowsActionKeys(t *testing.T) {
-	editorCalled := false
-	origEd := runEditorCmd
-	runEditorCmd = func(*exec.Cmd) tea.Cmd { editorCalled = true; return nil }
-	t.Cleanup(func() { runEditorCmd = origEd })
+	cmds := stubEditorCapture(t)
 
 	// ⚠️ 実ファイルを置く: 実体が無いと editCmd の guard だけで起動が止まり、
 	// 「順序が守られているから起動しない」を検証できない (空振りする)
@@ -1572,10 +1574,10 @@ func TestIssuesViewNumberFilterSwallowsActionKeys(t *testing.T) {
 	}
 	// e/v はエディタを開くキーだが、入力中は数字以外として捨てられるだけ (画面を動かさない)
 	for _, key := range []string{"e", "v"} {
-		editorCalled = false
+		before := len(*cmds)
 		v.handleKey(key, vp(10))
-		if editorCalled {
-			t.Errorf("番号入力中の %q がエディタを起動した", key)
+		if len(*cmds) != before {
+			t.Errorf("番号入力中の %q がエディタを起動した: %v", key, (*cmds)[before].Args)
 		}
 		if !v.numFilter.typing {
 			t.Errorf("番号入力中の %q が入力モードを抜けさせた", key)

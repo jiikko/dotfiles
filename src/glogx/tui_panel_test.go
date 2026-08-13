@@ -4,13 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"slices"
 	"strings"
 	"testing"
 	"time"
-
-	tea "charm.land/bubbletea/v2"
 )
 
 // job パネル表示中は 3 秒間隔で状態を取り直す (経過時間のライブ監視。ユーザー要望)。
@@ -613,13 +610,7 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	}
 
 	// v キー: 詳細表示中に nvim 起動コマンドを組む (実起動はスタブで捕捉)
-	var captured *exec.Cmd
-	orig := runEditorCmd
-	runEditorCmd = func(cmd *exec.Cmd) tea.Cmd {
-		captured = cmd
-		return func() tea.Msg { return editorClosedMsg{} }
-	}
-	t.Cleanup(func() { runEditorCmd = orig })
+	cmds := stubEditorCapture(t)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateFailure)
@@ -631,18 +622,18 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	m.detailOv.cache.store(m.detailKey(), []string{ansiRed + "boom" + ansiReset, "at foo.go:10"}, m.detailKey())
 
 	_, cmd := m.handleKey("v")
-	if cmd == nil || captured == nil {
+	if cmd == nil || len(*cmds) != 1 {
 		t.Fatal("v で nvim 起動コマンドが組まれない")
 	}
 	// nvim -R ... - (readonly、stdin から読む)
-	if captured.Args[0] != "nvim" || captured.Args[len(captured.Args)-1] != "-" {
-		t.Fatalf("nvim ... - で起動していない: %v", captured.Args)
+	if (*cmds)[0].Args[0] != "nvim" || (*cmds)[0].Args[len((*cmds)[0].Args)-1] != "-" {
+		t.Fatalf("nvim ... - で起動していない: %v", (*cmds)[0].Args)
 	}
-	if !slices.Contains(captured.Args, "-R") {
-		t.Fatalf("readonly (-R) で開いていない: %v", captured.Args)
+	if !slices.Contains((*cmds)[0].Args, "-R") {
+		t.Fatalf("readonly (-R) で開いていない: %v", (*cmds)[0].Args)
 	}
 	// stdin に ANSI 除去済みログが載っている (ファイルは作らない)
-	buf, _ := io.ReadAll(captured.Stdin)
+	buf, _ := io.ReadAll((*cmds)[0].Stdin)
 	if string(buf) != "boom\nat foo.go:10\n" {
 		t.Fatalf("stdin の中身 = %q", string(buf))
 	}

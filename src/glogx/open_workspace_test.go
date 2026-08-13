@@ -2,26 +2,9 @@ package main
 
 import (
 	"errors"
-	"os/exec"
 	"strings"
 	"testing"
-
-	tea "charm.land/bubbletea/v2"
 )
-
-// stubEditorCapture は runEditorCmd を「起動せず *exec.Cmd を記録する」実装へ差し替える
-// (stubEditor は回数しか見えず、起動コマンド・cwd の検査ができないためこちらを使う)。
-func stubEditorCapture(t *testing.T) *[]*exec.Cmd {
-	t.Helper()
-	var cmds []*exec.Cmd
-	orig := runEditorCmd
-	runEditorCmd = func(c *exec.Cmd) tea.Cmd {
-		cmds = append(cmds, c)
-		return func() tea.Msg { return editorClosedMsg{} }
-	}
-	t.Cleanup(func() { runEditorCmd = orig })
-	return &cmds
-}
 
 func stubLookPath(t *testing.T, available map[string]string) {
 	t.Helper()

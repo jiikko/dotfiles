@@ -142,18 +142,25 @@ func stubBrowser(t *testing.T) *string {
 	return &opened
 }
 
-// stubEditor は runEditorCmd を「起動せず閉じたことにする」実装へ差し替え、呼び出し回数の
-// 記録先を返す (エディタ連携キーの検査用)。
-func stubEditor(t *testing.T) *int {
+// stubEditorCapture は runEditorCmd を「起動せず *exec.Cmd を記録する」実装へ差し替える。
+//
+// ⚠️ エディタ連携のテストは全部これを使う。回数だけ数える stub も昔あったが、それだと
+// 「何を開いたか」が見えず、渡す対象を取り違えた実装 (iss.Path → iss.Dir 等) を通してしまう。
+// 差し替え点を 1 つに保つのは、runEditorCmd の契約 (非 nil な Cmd を返す) が変わったときに
+// 直す箇所を 1 箇所にするため。
+//
+// エディタを起動するキーは 3 系統ある: issues viewer の e (別名 v) = その issue の実ファイル /
+// git log 一覧の e = repo root を `nvim .` / job パネルの v = 標準入力の scratch。
+func stubEditorCapture(t *testing.T) *[]*exec.Cmd {
 	t.Helper()
-	var calls int
+	var cmds []*exec.Cmd
 	orig := runEditorCmd
-	runEditorCmd = func(*exec.Cmd) tea.Cmd {
-		calls++
+	runEditorCmd = func(c *exec.Cmd) tea.Cmd {
+		cmds = append(cmds, c)
 		return func() tea.Msg { return editorClosedMsg{} }
 	}
 	t.Cleanup(func() { runEditorCmd = orig })
-	return &calls
+	return &cmds
 }
 
 // stubDiff は loadCommitDiff を差し替え、呼び出し記録と固定行を返す。
