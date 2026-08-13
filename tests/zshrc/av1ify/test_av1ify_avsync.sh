@@ -20,7 +20,7 @@ printf '\n=== av1ify A/V Sync Postcheck Tests ===\n\n'
 
 # ----------------------------------------------------------------------
 # Test 1: ソース由来 A/V mismatch + encode が忠実に保存 → avsync 警告は出ない
-# (本件の動機ケース: MDUD-051 のように元 MKV で音声が映像より 17.85s 短く、
+# (本件の動機ケース: 元 MKV で音声が映像より 17.85s 短く、
 # encode 出力でも 17.83s ずれてるが drift は 0.02s で実害なし)
 # ----------------------------------------------------------------------
 printf '## Test 1: source-induced A/V mismatch faithfully preserved -> no avsync\n'
@@ -211,7 +211,8 @@ REPLY=""
 MOCK_VIDEO_DURATION="N/A" MOCK_FORMAT_DURATION=100.0 MOCK_VIDEO_LAST_PTS=99.85 \
   __av1ify_get_stream_end "$TEST_DIR/x.avi" "v:0"
 rc=$?
-if (( rc == 0 )) && [[ "$REPLY" == "99.85" ]]; then
+# 実装は presentation end を %.6f で整形して返すため値の一致で比較する (書式では比較しない)
+if (( rc == 0 )) && (( REPLY == 99.85 )); then
   printf '✓ fallback path returns packet PTS value (REPLY=%s)\n' "$REPLY"
 else
   printf '✗ fallback path failed (rc=%d, REPLY=%q)\n' "$rc" "$REPLY"
@@ -254,5 +255,92 @@ output=$(AV1IFY_SYNC_TOLERANCE="bogus" \
          av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_not_contains "$output" "avsync" "invalid threshold falls back to 2.0 (1.5s drift passes)"
+
+# ----------------------------------------------------------------------
+# Test 14: ソースの宣言 duration が嘘 (mdhd/tkhd がサンプルテーブルと不一致)
+# → packet 実測での再判定により誤検知しない
+#
+# 実例: ソース mp4 の video stream=duration が 8270.837s と宣言されているが、
+# 実際の packet 末尾は 8287.479s (500 フレーム分の嘘)。encode 出力は正しい値を書くため、
+# 宣言ベースだと Δ=16.68s の「音ズレ」に見える。実測ベースでは Δ=0.013s で正常。
+# ----------------------------------------------------------------------
+printf '\n## Test 14: lying source stream=duration -> re-measured by packet PTS, no false avsync\n'
+TEST_DIR="$TEST_TMP/avs_t14"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_VIDEO_DURATION=8270.837 MOCK_AUDIO_DURATION=8287.552 \
+         MOCK_VIDEO_LAST_PTS=8287.479 MOCK_AUDIO_LAST_PTS=8287.531 \
+         MOCK_OUTPUT_VIDEO_DURATION=8287.513 MOCK_OUTPUT_AUDIO_DURATION=8287.552 \
+         MOCK_OUTPUT_VIDEO_LAST_PTS=8287.479 MOCK_OUTPUT_AUDIO_LAST_PTS=8287.531 \
+         MOCK_FORMAT_DURATION=8287.552 MOCK_OUTPUT_FORMAT_DURATION=8287.552 \
+         MOCK_NB_FRAMES=248377 MOCK_OUTPUT_NB_FRAMES=248377 \
+         av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_not_contains "$output" "avsync" "lying declared duration does not trigger avsync"
+assert_contains "$output" "packet 実測" "re-measurement is reported to the user"
+assert_file_exists "$TEST_DIR/input-enc.mp4" "Output renamed cleanly (no check_ng)"
+
+# ----------------------------------------------------------------------
+# Test 15: 宣言・実測とも drift を示す本物のズレは再判定後も検出される
+# (Test 14 の緩和が false negative を作っていないことの確認)
+# ----------------------------------------------------------------------
+printf '\n## Test 15: genuine drift survives packet re-measurement\n'
+TEST_DIR="$TEST_TMP/avs_t15"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# src: gap=0 (宣言も実測も) / out: audio が 3s 長い (宣言も実測も) → 再判定しても drift=3
+output=$(MOCK_VIDEO_DURATION=100.0 MOCK_AUDIO_DURATION=100.0 \
+         MOCK_VIDEO_LAST_PTS=100.0 MOCK_AUDIO_LAST_PTS=100.0 \
+         MOCK_OUTPUT_VIDEO_DURATION=100.0 MOCK_OUTPUT_AUDIO_DURATION=103.0 \
+         MOCK_OUTPUT_VIDEO_LAST_PTS=100.0 MOCK_OUTPUT_AUDIO_LAST_PTS=103.0 \
+         MOCK_FORMAT_DURATION=100.0 MOCK_OUTPUT_FORMAT_DURATION=100.0 \
+         av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "avsync" "genuine 3s drift still flagged after re-measurement"
+
+# ----------------------------------------------------------------------
+# Test 16: __av1ify_packet_end は B-frame の reorder に耐える
+# packet はデコード順で出るため最終行が最大 PTS とは限らない。表示終端は
+# max(pts_time + duration_time) で測る必要がある (最終行を使うと過小評価し、
+# drift を縮めて本物の音ズレを見逃す)。
+# 実測の裏付け: x264 bframes=16 / 1fps の 20s ソースで最終行 18.0s / 実際 20.0s。
+# ----------------------------------------------------------------------
+printf '\n## Test 16: __av1ify_packet_end uses presentation end, not last packet line\n'
+TEST_DIR="$TEST_TMP/avs_t16"
+mkdir -p "$TEST_DIR"
+echo "dummy" > "$TEST_DIR/x.avi"
+REPLY=""
+# デコード順: 17,19,18 (reorder)。表示終端は 19+1=20.0
+MOCK_FORMAT_DURATION=20.0 MOCK_PACKET_LINES='17.000000,1.000000\n19.000000,1.000000\n18.000000,1.000000' \
+  __av1ify_packet_end "$TEST_DIR/x.avi" "v:0"
+rc=$?
+if (( rc == 0 )) && [[ "$REPLY" == "20.000000" ]]; then
+  printf '✓ presentation end from reordered packets (REPLY=%s)\n' "$REPLY"
+else
+  printf '✗ Expected 20.000000, got rc=%d REPLY=%q\n' "$rc" "$REPLY"
+  exit 1
+fi
+
+# ----------------------------------------------------------------------
+# Test 17: duration_time が N/A の行でも pts だけで最大値を取る
+# ----------------------------------------------------------------------
+printf '\n## Test 17: __av1ify_packet_end tolerates N/A duration_time\n'
+TEST_DIR="$TEST_TMP/avs_t17"
+mkdir -p "$TEST_DIR"
+echo "dummy" > "$TEST_DIR/x.avi"
+REPLY=""
+MOCK_FORMAT_DURATION=20.0 MOCK_PACKET_LINES='17.000000,N/A\n19.500000,N/A\nN/A,N/A' \
+  __av1ify_packet_end "$TEST_DIR/x.avi" "v:0"
+rc=$?
+if (( rc == 0 )) && [[ "$REPLY" == "19.500000" ]]; then
+  printf '✓ falls back to pts when duration_time is N/A (REPLY=%s)\n' "$REPLY"
+else
+  printf '✗ Expected 19.500000, got rc=%d REPLY=%q\n' "$rc" "$REPLY"
+  exit 1
+fi
 
 printf '\n=== A/V Sync Postcheck Tests Completed ===\n'

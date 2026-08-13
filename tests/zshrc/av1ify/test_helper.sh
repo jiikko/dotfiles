@@ -91,7 +91,7 @@ elif echo "$*" | grep -q "format=duration"; then
     *-enc*|*check_ng*) echo "${MOCK_OUTPUT_FORMAT_DURATION-${MOCK_FORMAT_DURATION-10.0}}" ;;
     *) echo "${MOCK_FORMAT_DURATION-10.0}" ;;
   esac
-elif echo "$*" | grep -q "select_streams v:0" && echo "$*" | grep -q "duration"; then
+elif echo "$*" | grep -q "select_streams v:0" && echo "$*" | grep -q "stream=duration"; then
   # ソース vs 出力で別の値を返せるよう -enc を含むファイルは出力扱い
   last_arg=""
   for arg in "$@"; do last_arg="$arg"; done
@@ -99,7 +99,7 @@ elif echo "$*" | grep -q "select_streams v:0" && echo "$*" | grep -q "duration";
     *-enc*|*check_ng*) echo "${MOCK_OUTPUT_VIDEO_DURATION-${MOCK_VIDEO_DURATION-10.0}}" ;;
     *) echo "${MOCK_VIDEO_DURATION-10.0}" ;;
   esac
-elif echo "$*" | grep -q "select_streams a:0" && echo "$*" | grep -q "duration"; then
+elif echo "$*" | grep -q "select_streams a:0" && echo "$*" | grep -q "stream=duration"; then
   last_arg=""
   for arg in "$@"; do last_arg="$arg"; done
   case "$last_arg" in
@@ -107,18 +107,26 @@ elif echo "$*" | grep -q "select_streams a:0" && echo "$*" | grep -q "duration";
     *) echo "${MOCK_AUDIO_DURATION-10.0}" ;;
   esac
 elif echo "$*" | grep -q "packet=pts_time"; then
-  # __av1ify_get_stream_end フォールバック用: 末尾 PTS だけ返す
-  # 本物の ffprobe は何百万行も出すが、テストでは tail 相当の最後 1 行で十分
+  # __av1ify_packet_end 用。
+  # MOCK_PACKET_LINES を設定すると "pts,duration" の生の packet 列をそのまま返す
+  # (B-frame reorder のようにデコード順と表示順が食い違うケースの検証用)。
+  if [ -n "${MOCK_PACKET_LINES-}" ]; then
+    printf '%b\n' "$MOCK_PACKET_LINES"
+    exit 0
+  fi
+  # 既定は 1 行だけ返す簡易モック。本物の ffprobe が返す packet 列と違い
+  # 「表示終端そのもの」を返す = MOCK_*_DURATION と同値になる。実装側は
+  # max(pts+duration) を取るので、単一行モックでも表示終端の意味は一致する。
   last_arg=""
   for arg in "$@"; do last_arg="$arg"; done
   if echo "$*" | grep -q "select_streams v"; then
     case "$last_arg" in
-      *-enc*|*check_ng*) echo "${MOCK_OUTPUT_VIDEO_LAST_PTS-${MOCK_VIDEO_LAST_PTS-${MOCK_VIDEO_DURATION-10.0}}}" ;;
+      *-enc*|*check_ng*) echo "${MOCK_OUTPUT_VIDEO_LAST_PTS-${MOCK_OUTPUT_VIDEO_DURATION-${MOCK_VIDEO_LAST_PTS-${MOCK_VIDEO_DURATION-10.0}}}}" ;;
       *) echo "${MOCK_VIDEO_LAST_PTS-${MOCK_VIDEO_DURATION-10.0}}" ;;
     esac
   elif echo "$*" | grep -q "select_streams a"; then
     case "$last_arg" in
-      *-enc*|*check_ng*) echo "${MOCK_OUTPUT_AUDIO_LAST_PTS-${MOCK_AUDIO_LAST_PTS-${MOCK_AUDIO_DURATION-10.0}}}" ;;
+      *-enc*|*check_ng*) echo "${MOCK_OUTPUT_AUDIO_LAST_PTS-${MOCK_OUTPUT_AUDIO_DURATION-${MOCK_AUDIO_LAST_PTS-${MOCK_AUDIO_DURATION-10.0}}}}" ;;
       *) echo "${MOCK_AUDIO_LAST_PTS-${MOCK_AUDIO_DURATION-10.0}}" ;;
     esac
   fi
