@@ -124,6 +124,13 @@ linters:
           - forbidigo
           - unparam
 
+issues:
+  # 既定 (true) は 1 行 1 issue に重複除去するため、同一行に別 linter の指摘があると
+  # ruleguard のカスタム不変条件 (toastEncapsulation 等) が無言で隠れる (導入時の変異検証で
+  # 実際に踏んだ: unused と同居した行で ruleguard の指摘が消えた)。せっかくの強制が
+  # 別 linter の陰で false green になるのを防ぐため、行内の全指摘を出す。
+  uniq-by-line: false
+
 # gofmt を CI ゲートにする (v2 では formatter は linters と別枠。ここに無いと run が整形差分を見ない)
 formatters:
   enable:
