@@ -78,6 +78,14 @@ linters:
               desc: render.go は純粋描画層 (プロセス起動禁止)
             - pkg: context
               desc: render.go は純粋描画層 (非同期処理は tui.go へ)
+    gocritic:
+      # ruleguard: 単一 checker では書けない構文パターンの不変条件 (ルール本文と理由は
+      # ruleguard.rules.go が正本)。enabled-checks は既定の stable セットへの追加。
+      enabled-checks:
+        - ruleguard
+      settings:
+        ruleguard:
+          rules: ruleguard.rules.go
     nolintlint:
       require-explanation: true
       require-specific: true
@@ -103,6 +111,12 @@ linters:
       - path: main\.go
         linters:
           - forbidigo
+      # toast の内部フィールドは toast.go 自身と、埋め込みを直接読む設計のテストだけが触れる
+      # (ruleguard.rules.go の toastEncapsulation 参照)
+      - path: (toast\.go|_test\.go)
+        text: toast の内部状態
+        linters:
+          - gocritic
       # テストのテーブル/フローの相似は仕様 (dupl の対象にしない)
       - path: _test\.go
         linters:
