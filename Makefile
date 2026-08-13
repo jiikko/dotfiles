@@ -40,7 +40,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: pull test test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-go-lint test-go test-src
+.PHONY: pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-go-lint test-go test-src
 
 # settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
 # pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、
@@ -51,6 +51,13 @@ pull:
 	@git pull --rebase
 
 test: test-lint test-runtime test-go
+
+# 変更したパスだけ検証する (CI の paths filter のローカル対応物)。写像とヘルプの
+# 正本は scripts/test_changed.sh (--help)。共有 working tree では dirty に並行
+# セッションの変更が混ざるため、PATHS は自動推定せず必ず明示で渡す。
+# 例: make test-changed PATHS="_claude/settings.json src/glogx/tui.go"
+test-changed:
+	@./scripts/test_changed.sh $(if $(DRY_RUN),--dry-run) $(PATHS)
 
 test-runtime: test-syntax test-discovered test-bats
 
