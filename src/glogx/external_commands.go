@@ -331,6 +331,20 @@ const editorFallback = "nvim"
 // ⚠️ この経路は「実ファイルを 1 つ開く」ものにだけ使う。nvim を直に呼んでいる他の 2 箇所
 // (tui.go の job ログ = 標準入力 + -c の scratch バッファ / open_workspace.go の `nvim .` =
 // ディレクトリを開く) は nvim 固有の機能に依存しており、任意の $EDITOR では成立しない。
+//
+// ⚠️ **前提: 起動したプロセスの終了 = 編集の完了**。glogx は tea.ExecProcess で TUI を中断して
+// 子プロセスを待ち、戻った境界で一覧と本文を取り直す (tui.go の editorClosedMsg)。GUI エディタを
+// `-w` / `--wait` なしで指定すると即座に戻るので、この前提が破れる。git の GIT_EDITOR と同じ要求で、
+// 直し方も同じ (EDITOR="code -w" のように待たせる)。
+//
+// 破れたときの劣化は「壊れる」ではなく「反映が遅れる」に留まる — issues viewer を開いている間は
+// issues_watch.go が別プロセスの編集も拾うため。遅れの上限はその経路で決まる:
+//   - fsnotify が動く: イベントで即時 (取りこぼしの保険が issuesWatchIdlePoll = 30s)
+//   - fsnotify を作れない: issuesWatchBlindPoll = 1s のポーリングが唯一の経路になる
+//   - fsnotify は作れるがイベントが無音 (NFS 等): 保険の 30s が唯一の経路 = ここが最悪ケース
+//
+// ⚠️ 検出して警告する案は採らない。「子プロセスが早く終わった」の閾値がマジックナンバーになり、
+// 正当に速いケース (既に開いているウィンドウへ渡すだけ) を誤検知する。
 func editorCommand(path string) *exec.Cmd {
 	editor := firstNonEmptyEnv("VISUAL", "EDITOR")
 	fields := strings.Fields(editor)

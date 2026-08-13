@@ -128,11 +128,33 @@ file:line と実コードで自己検証済みだが、対応方針の妥当性�
 - `issues/done/025-feat-glogx-window-drop-shadow.md` — box.go の影実装の経緯 (P1 で触る範囲)
 - `issues/done/026-feat-glogx-copy-last-warning.md` — toast と lastWarning の関係 (P2 の前提)
 
-## 対応状況 (2026-07-25)
+## 対応状況
 
-**着手条件 (この issue が pending にある理由)**: 残っているのは P2 のみで、trigger は
-「3 つ目以降の遅延通知源が増えたとき」または「`toastHold` を変更したくなったとき」。
-それまでは現状の 1 対 1 調停で足りているため触らない。
+### 2026-08-13: P2 が別ルートで解消し、P3 の追記漏れを補充してクローズ
+
+**P2 は「対応不要」ではなく「済み」**。issue が指す `claudeUpdateToastDefer` /
+`claudeUpdateRetryMsg` / `showOrDeferClaudeUpdate` は**現在のコードに存在しない**。
+`aea166a` (refactor(glogx): トーストを通知スタックにし、塞がり時の調停 2 実装を捨てる) が
+単一スロットを最大 3 枚のスタック (`toastStackMax`) に置き換え、調停そのものを不要にした。
+
+`toast.go` の doc がその判断を記録している: 「1 枠の後勝ちだと『今それを消したくない』場面ごとに
+呼び出し側が調停する必要があり、同じ問題に 3 つの実装ができていた (claude version 通知の専用
+タイマー付き遅延再送 / autobuild の pending 保持 / 調停なしの即上書き)。積めるようにすれば
+どの経路も素直に show() を呼ぶだけで済み、調停そのものが要らなくなる」。
+
+この issue が P2 の対応案として挙げていた「優先度付き単一スロット (error > info)」よりも、
+スタック + `dropInfo` (進行中トーストは結果が出たら退場) の方が要件を満たしている。
+懸念の本体だった **`toastHold` への時間的結合も消えた** — `toastHold` に結合した定数は
+現在 1 つも無い (grep で確認済み)。
+
+**P3 の追記漏れが実際に起きていたので補充した**。`spinnerActive` はその後
+「演出は列挙せず `tickInterval` から導出する」形へ変わり (演出の登録先を 1 箇所に集約)、
+非同期源として `issuesOv.loading()` / `statusOv.fetching()` が後から加わっていた。
+`TestBrowseSpinnerActiveSources` のテーブルにはこの 2 つが無く、issue 本文が
+「捕まえられない」と書いていたケースがそのまま実現していた。2 行足し、それぞれを
+常に false にする変異で red を確認した。
+
+**以下は 2026-07-25 時点の記録 (P1 / P3 / P4 の完了内容)。**
 
 - **P1 完了**: `buildPanelBoxImpl` の `shadow bool` / `b boxBorder` / `border string` を
   `panelBoxStyle{shadow, glyphs, color}` に畳んだ。呼び出しは内部 3 箇所のみで公開ラッパー

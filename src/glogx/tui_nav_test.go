@@ -471,6 +471,13 @@ func TestAdvancePullAnimTerminates(t *testing.T) {
 // ⚠️ このテストは「既存の項を消した/条件を反転した」回帰は捕まえるが、**新しい非同期源を
 // 足して spinnerActive への追記を忘れた** ケースは捕まえない (テーブルへの追記も同時に
 // 忘れるため)。新しい源を足すときはここにも 1 行足すこと。
+// 実際に漏れた: issuesOv.loading / statusOv.fetching は spinnerActive にだけ入り、ここへの
+// 追記が抜けていた (2026-08-13 に補充)。
+//
+// ⚠️ 演出 (glide / toast / 開閉スライド / zoom) は spinnerActive が列挙せず tickInterval から
+// 導出する形に変わっている。テーブルの scrollAnim / toast.animating はその経路 (周期が上がるか)
+// を通って true になるので、ここに残しておく意味がある — 演出の登録先が tickInterval 1 箇所に
+// 集約されている前提そのものを検査していることになる。
 func TestBrowseSpinnerActiveSources(t *testing.T) {
 	sources := []struct {
 		name string
@@ -493,6 +500,10 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 			m.details[m.panelSHA] = []CheckDetail{{Name: "job", State: StatePending, StartedAt: time.Now()}}
 		}},
 		{"usageOv.loading", func(m *browseModel) { m.usageOv.visible = true; m.usageOv.snap = nil; m.usageOv.err = nil }},
+		// ⚠️ 以下 2 つは spinnerActive へ後から入った源で、テーブルへの追記が漏れていた
+		// (issue 028 P3 が予測した「追記漏れ」が実際に起きていた形)。
+		{"issuesOv.loading", func(m *browseModel) { m.issuesOv.scanning = true }},
+		{"statusOv.fetching", func(m *browseModel) { m.statusOv.loading = true }},
 	}
 	// 前提: 何も動いていない model は false (これが false でないと以下の検証が無意味になる)
 	base := newTestBrowse(t, 1, map[string]CIState{}, nil)
