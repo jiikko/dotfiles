@@ -55,9 +55,17 @@ test: test-lint test-runtime test-go
 # 変更したパスだけ検証する (CI の paths filter のローカル対応物)。写像とヘルプの
 # 正本は scripts/test_changed.sh (--help)。共有 working tree では dirty に並行
 # セッションの変更が混ざるため、PATHS は自動推定せず必ず明示で渡す。
+# DRY_RUN は 1 のときだけ有効 (非空 truthy にすると DRY_RUN=0 が「無効の
+# つもりでテスト未実行のまま green」になるため filter で厳密一致させる)。
 # 例: make test-changed PATHS="_claude/settings.json src/glogx/tui.go"
 test-changed:
-	@./scripts/test_changed.sh $(if $(DRY_RUN),--dry-run) $(PATHS)
+	@./scripts/test_changed.sh $(if $(filter 1,$(DRY_RUN)),--dry-run) $(PATHS)
+
+# tests/ 配下の任意ディレクトリを単体実行する汎用入口 (test-changed の写像先)。
+# test-nvim 等の名前付きターゲットと同じ run_tests を使うため挙動は等価
+test-dir:
+	@[ -n "$(DIR)" ] || { echo "✗ DIR を指定してください (例: make test-dir DIR=tests/claude)" >&2; exit 1; }
+	@$(call run_tests,$(DIR))
 
 test-runtime: test-syntax test-discovered test-bats
 

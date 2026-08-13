@@ -18,24 +18,27 @@ usage: test_changed.sh [--dry-run] <path>...
        make test-changed PATHS="<path> <path>..." [DRY_RUN=1]
 
 変更したファイルのパスから、回すべきテストターゲットを導出して実行する。
-パスは repo root からの相対 (git status が出す形)。存在しないパス (削除した
-ファイル) も写像対象になる。
+パスは repo root からの相対 (git status が出す形。先頭の ./ は付いていても
+剥がして扱う)。存在しないパス (削除したファイル) も写像対象になる。
+空白・改行を含むファイル名は非対応 (make の $(PATHS) 展開で分割される。
+tests/ の run_tests と同じ repo 既存の前提)。
 
   --dry-run   実行せず、選ばれたターゲットだけを表示する
+              (make 経由は DRY_RUN=1。1 との厳密一致のみ有効で、DRY_RUN=0 は無効)
   --help      このヘルプを表示する
 
 写像 (前方一致・上から先勝ち):
-  src/<proj>/...              → make -C src/<proj> test   (Go プロジェクト単位)
+  src/<proj>/...              → make -C src/<proj> lint test  (CI の _go-project.yml と同等)
   .github/...                 → test-actionlint test-yaml
-  tests/nvim/ _nviminit.lua   → test-nvim
-  tests/tmux/ _tmux.conf      → test-tmux (+ shell 系 lint)
-  tests/setup/...             → test-setup
+  nvim/ _nviminit.lua         → test-nvim
+  _tmux.conf                  → test-tmux (+ shell 系 lint)
+  tests/<dir>/...             → make test-dir DIR=tests/<dir>  (そのディレクトリのテストを直接実行)
   mac/karabiner.json          → test-json test-karabiner
   *.json                      → test-json
   *.yml / *.yaml              → test-yaml
   _gitconfig                  → test-gitconfig
   Brewfile _pryrc _gemrc      → test-ruby-syntax
-  bin/ scripts/ zshlib/ tests/ _claude/hooks/ と、場所を問わない *.sh / _z*
+  bin/ scripts/ zshlib/ _claude/hooks/ と、場所を問わない *.sh / _z*
                               → test-syntax test-shellcheck test-zsh-syntax test-zshrc
   *.md *.txt LICENSE issues/ docs/ vendor/ _claude/(agents|rules|skills|references|commands)/
                               → テスト対象なし (何も回さず、その旨を報告して成功)
@@ -63,8 +66,9 @@ if [ $# -eq 0 ]; then
   exit 1
 fi
 
-targets=""   # make ターゲット (スペース区切り、重複は add_target が除去)
-go_dirs=""   # make -C で回す Go プロジェクトディレクトリ
+targets=""    # make ターゲット (スペース区切り、重複は add_target が除去)
+go_dirs=""    # make -C で回す Go プロジェクトディレクトリ
+test_dirs=""  # make test-dir DIR=... で回す tests/ 配下ディレクトリ
 
 add_target() {
   case " $targets " in *" $1 "*) ;; *) targets="$targets $1" ;; esac
@@ -72,6 +76,10 @@ add_target() {
 
 add_go_dir() {
   case " $go_dirs " in *" $1 "*) ;; *) go_dirs="$go_dirs $1" ;; esac
+}
+
+add_test_dir() {
+  case " $test_dirs " in *" $1 "*) ;; *) test_dirs="$test_dirs $1" ;; esac
 }
 
 # shell/zsh ソースに対する共通セット。lint (sh 系 + zsh 系の両方; どちらの構文かは
@@ -86,17 +94,30 @@ add_shell_targets() {
 fail=0
 notest=""
 for p in "$@"; do
+  p="${p#./}"  # git status は ./ を付けないが、人が付けても同じ写像に落とす
   case "$p" in
     src/*/*)
-      add_go_dir "src/$(echo "$p" | cut -d/ -f2)" ;;
+      # 2 番目のセグメントをプロジェクト名として取り出す。`src/../x` のような
+      # トラバーサルは make -C src/.. (= repo root 全体) に化けるため弾く
+      proj=$(echo "$p" | cut -d/ -f2)
+      case "$proj" in
+        ''|.|..|-*)
+          echo "✗ 不正な src プロジェクト名: $p" >&2; fail=1 ;;
+        *) add_go_dir "src/$proj" ;;
+      esac ;;
     .github/*)
       add_target test-actionlint; add_target test-yaml ;;
-    tests/nvim/*|_nviminit.lua|nvim/*)
+    _nviminit.lua|nvim/*)
       add_target test-nvim ;;
-    tests/tmux/*|_tmux.conf)
+    _tmux.conf)
       add_target test-tmux; add_shell_targets ;;
-    tests/setup/*)
-      add_target test-setup ;;
+    # tests/<dir>/ 配下はそのディレクトリのテストを直接回す (make test-dir)。
+    # 名前付きターゲット (test-nvim 等) が無い tests/claude, tests/bin 等も
+    # 取りこぼさない。tests/ 直下のファイルは tests 全体
+    tests/*/*)
+      add_test_dir "tests/$(echo "$p" | cut -d/ -f2)" ;;
+    tests/*)
+      add_test_dir "tests" ;;
     mac/karabiner.json)
       add_target test-json; add_target test-karabiner ;;
     *.json)
@@ -110,7 +131,7 @@ for p in "$@"; do
     # shell/zsh ソース。ディレクトリ前方一致に加え、置き場所を問わない *.sh /
     # zsh dotfile (_z*) も拾う (shellcheck/zsh -n の対象は discover_shell_scripts が
     # repo 全体から発見するため、ここも場所で絞らない)
-    bin/*|scripts/*|zshlib/*|tests/*|_claude/hooks/*|*.sh|_z*)
+    bin/*|scripts/*|zshlib/*|_claude/hooks/*|*.sh|_z*)
       add_shell_targets ;;
     # テスト対象なし (明示写像)。ドキュメント・vendor・データファイルは対応する
     # テストが存在しないので何も回さないが、黙って落とすのではなく報告する
@@ -121,15 +142,24 @@ for p in "$@"; do
       fail=1 ;;
   esac
 done
-[ "$fail" -eq 0 ] || exit 1
+# notest の報告は fail 判定より先に出す (fail と混在しても「テスト対象なしと
+# 判定された」事実が読めるように)
 [ -z "$notest" ] || echo "[test-changed] テスト対象なし (ドキュメント等):$notest"
+[ "$fail" -eq 0 ] || exit 1
 
-echo "[test-changed] targets:${targets:-" (なし)"}${go_dirs:+ / go:$go_dirs}"
-[ "$dry_run" -eq 1 ] && exit 0
+echo "[test-changed] targets:${targets:-" (なし)"}${test_dirs:+ / tests:$test_dirs}${go_dirs:+ / go:$go_dirs}"
+if [ "$dry_run" -eq 1 ]; then
+  echo "[test-changed] dry-run: テストは実行していません"
+  exit 0
+fi
 
 for t in $targets; do
   make "$t" || exit 1
 done
+for d in $test_dirs; do
+  make test-dir DIR="$d" || exit 1
+done
 for d in $go_dirs; do
-  make -C "$d" test || exit 1
+  # CI (_go-project.yml) は lint と test の両方を回すため、ここも揃える
+  make -C "$d" lint test || exit 1
 done
