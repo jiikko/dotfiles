@@ -36,6 +36,21 @@ x/ansi は `method.go` の `init` でこの env を読み、East Asian Ambiguous
 `RUNEWIDTH_EASTASIAN=1` の子プロセスを起こす回帰テストを置いてある)。
 残っているのは**テストの期待値だけ**。
 
+## 実測の裏取り (並行セッションの独立確認、2026-08-14)
+
+base `997d078` の worktree で `RUNEWIDTH_EASTASIAN=1 go test ./...` の FAIL 行を
+突き合わせた結果、失敗集合は **base 26 件 / HEAD 27 件**で、差分は次の 3 つだけだった:
+
+- HEAD にだけ出る 2 件 = 2026-08-14 に新設したテスト (`TestFrameAllocBudget` /
+  `TestWrapWindowFrameGeometry`)
+- 修正済み 1 件 (`TestIssuesViewerReloadsAfterEditorCloses`)
+
+既存分は同一集合 = 「046 の前から同じ」は裏が取れている。
+
+⚠️ **新しく落ちる 2 件のうち `TestFrameAllocBudget` は 047 で新設した「確保の予算」ガード**
+= **安全機構そのものがこの env で落ちる**。この env を支持する判断をするなら、
+安全機構が先に動かなくなる点を織り込むこと (issue 051 の確保ゲートとも絡む)。
+
 ## なぜ今決めないか
 
 この env を使う人が現れていない (再現条件を実験で作れていない)。
