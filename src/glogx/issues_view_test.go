@@ -2051,7 +2051,9 @@ func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 			}
 		},
 		"k": func(t *testing.T, e *bodyKeyEnv) {
-			e.press("G") // 末尾へ送ってから戻せる状態を作る
+			// ⚠️ G を押して状態を作らない。G が壊れると k の probe も red になり、
+			// 壊れていないキーを名指しして原因追跡を遅らせる
+			e.v.bodyOff = 5
 			before := e.v.bodyOff
 			e.press("k")
 			if e.v.bodyOff >= before {
@@ -2061,8 +2063,9 @@ func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 		"Space": func(t *testing.T, e *bodyKeyEnv) {
 			before := e.v.bodyOff
 			e.press(" ")
-			if e.v.bodyOff <= before {
-				t.Errorf("Space で半ページ送られない: %d → %d", before, e.v.bodyOff)
+			// ⚠️ 方向だけでなく「半ページ」まで見る (1 行送りの実装を通さない)
+			if want := before + e.rows()/2; e.v.bodyOff != want {
+				t.Errorf("Space が半ページ送りでない: %d → %d (want %d)", before, e.v.bodyOff, want)
 			}
 		},
 		"g": func(t *testing.T, e *bodyKeyEnv) {
@@ -2074,8 +2077,9 @@ func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 		},
 		"G": func(t *testing.T, e *bodyKeyEnv) {
 			e.press("G")
-			if e.v.bodyOff == 0 {
-				t.Error("G で末尾へ飛ばない")
+			// ⚠️ 「0 でない」ではなく末尾そのものを見る (途中で止まる実装を通さない)
+			if want := e.v.body.Len() - e.rows(); e.v.bodyOff != want {
+				t.Errorf("G が末尾へ飛ばない: bodyOff=%d want %d", e.v.bodyOff, want)
 			}
 		},
 		"p": func(t *testing.T, e *bodyKeyEnv) {
@@ -2095,7 +2099,12 @@ func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 			before := len(*e.cmds)
 			e.press("e")
 			if len(*e.cmds) != before+1 {
-				t.Error("e でエディタが起動しない")
+				t.Fatal("e でエディタが起動しない")
+			}
+			// ⚠️ 起動しただけでなく対象まで見る (専用テストと同じ強さに揃える。方向だけの
+			// 弱い二重化にすると「壊れても片方しか落ちない」状態になる)
+			if args := (*e.cmds)[before].Args; args[len(args)-1] != e.v.open.Path {
+				t.Errorf("e が開いた対象が違う: args=%v want末尾=%q", args, e.v.open.Path)
 			}
 		},
 		"Enter": func(t *testing.T, e *bodyKeyEnv) { e.assertClosesBody(t, "enter") },
@@ -2130,8 +2139,16 @@ func advertisedHintKeys(t *testing.T) []string {
 	e := newBodyKeyEnv(t)
 	var keys []string
 	for _, tok := range strings.Split(e.v.hint(), "  ") {
-		label, _, ok := strings.Cut(strings.TrimSpace(tok), ": ")
+		tok = strings.TrimSpace(tok)
+		if tok == "" {
+			continue
+		}
+		label, _, ok := strings.Cut(tok, ": ")
 		if !ok {
+			// ⚠️ 捨てずに落とす。黙って continue すると「コロン無しトークンでキーを案内する」
+			// 書き方 (他モードの hint に "文字入力で絞り込み" 等が実在する) を body に持ち込んだ
+			// 瞬間に、そのキーが検証から漏れて集合一致もすり抜ける。
+			t.Errorf("hint のトークン %q を \"キー: 説明\" として読めない (案内キーが検証から漏れる)", tok)
 			continue
 		}
 		keys = append(keys, strings.Split(label, "/")...)
@@ -2144,7 +2161,7 @@ type bodyKeyEnv struct {
 	v      *issuesView
 	cmds   *[]*exec.Cmd
 	copied *string
-	rows   int
+	page   int // キー処理へ渡す窓の高さ (実際の pager 行数は rows())
 }
 
 func newBodyKeyEnv(t *testing.T) *bodyKeyEnv {
@@ -2175,10 +2192,14 @@ func newBodyKeyEnv(t *testing.T) *bodyKeyEnv {
 	if v.body.Len() <= 10 {
 		t.Fatalf("前提が崩れた: 本文が窓より短くスクロールできない (Len=%d)", v.body.Len())
 	}
-	return &bodyKeyEnv{v: v, cmds: cmds, copied: copied, rows: 10}
+	return &bodyKeyEnv{v: v, cmds: cmds, copied: copied, page: 10}
 }
 
-func (e *bodyKeyEnv) press(key string) { e.v.handleKey(key, vp(e.rows)) }
+func (e *bodyKeyEnv) press(key string) { e.v.handleKey(key, vp(e.page)) }
+
+// rows は本文 pager の実際の行数 (ヘッダー行数を引いた値)。⚠️ page とは違うので、
+// 「半ページ」「末尾」を語義で検証する probe はこちらを使う。
+func (e *bodyKeyEnv) rows() int { return e.v.visibleRows(vp(e.page)) }
 
 func (e *bodyKeyEnv) assertClosesBody(t *testing.T, key string) {
 	t.Helper()
