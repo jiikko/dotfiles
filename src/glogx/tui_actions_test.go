@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1092,5 +1093,57 @@ func TestBrowseUpdateRunsWhenVersionsIncomparable(t *testing.T) {
 	deliverUpdateMsg(m, cmd)
 	if runCalls != 1 {
 		t.Fatalf("比較不能な latest 形式で update が塞がれた (calls=%d)", runCalls)
+	}
+}
+
+// editorCommand は $VISUAL → $EDITOR → nvim の順に解決し、値の引数部分を保つ。
+// issue を開く経路 (issuesView.editCmd) だけがこれを使う。
+func TestEditorCommand(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		visual       string
+		editor       string
+		wantPath     string   // 実行ファイル (末尾一致で見る: 絶対パス指定も許す)
+		wantArgsTail []string // path を含む引数列 (Args[1:])
+	}{
+		{name: "どちらも未設定なら nvim", wantPath: "nvim", wantArgsTail: []string{"/tmp/a.md"}},
+		{name: "EDITOR を使う", editor: "vim", wantPath: "vim", wantArgsTail: []string{"/tmp/a.md"}},
+		{
+			name: "VISUAL が EDITOR より優先", visual: "hx", editor: "vim",
+			wantPath: "hx", wantArgsTail: []string{"/tmp/a.md"},
+		},
+		{
+			name: "引数つきの指定を語分割して保つ", editor: "code -w",
+			wantPath: "code", wantArgsTail: []string{"-w", "/tmp/a.md"},
+		},
+		{
+			name: "空白だけの指定は未設定と同じ", editor: "   ",
+			wantPath: "nvim", wantArgsTail: []string{"/tmp/a.md"},
+		},
+		{
+			name: "VISUAL が空白なら EDITOR に落ちる", visual: " ", editor: "vim",
+			wantPath: "vim", wantArgsTail: []string{"/tmp/a.md"},
+		},
+		{
+			name: "絶対パス + 引数", editor: "/opt/homebrew/bin/nvim -p",
+			wantPath: "/opt/homebrew/bin/nvim", wantArgsTail: []string{"-p", "/tmp/a.md"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("VISUAL", tt.visual)
+			t.Setenv("EDITOR", tt.editor)
+			cmd := editorCommand("/tmp/a.md")
+			// exec.Command は PATH 解決するので Path は絶対パスになりうる。⚠️ HasSuffix で見ると
+			// want="vim" が ".../bin/nvim" にも一致して別物を通すので、Base の完全一致で見る。
+			if got, want := filepath.Base(cmd.Path), filepath.Base(tt.wantPath); got != want {
+				t.Errorf("実行ファイル名が違う: got=%q want=%q (Path=%q)", got, want, cmd.Path)
+			}
+			if got := cmd.Args[1:]; !slices.Equal(got, tt.wantArgsTail) {
+				t.Errorf("引数が違う: got=%v want=%v", got, tt.wantArgsTail)
+			}
+			if cmd.Args[0] != tt.wantPath {
+				t.Errorf("Args[0] が指定どおりでない: got=%q want=%q", cmd.Args[0], tt.wantPath)
+			}
+		})
 	}
 }

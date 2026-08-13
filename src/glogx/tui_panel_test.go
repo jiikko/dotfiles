@@ -646,10 +646,13 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	if string(buf) != "boom\nat foo.go:10\n" {
 		t.Fatalf("stdin の中身 = %q", string(buf))
 	}
-	// エラーで閉じたら失敗トースト、成功なら無し
+	// エラーで閉じたら失敗トースト、成功なら無し。⚠️ 文言はツール名を名指ししない
+	// (起動対象は $VISUAL/$EDITOR で変わる。ここの job ログ経路だけは nvim 固定だが、
+	// トーストは editorClosedMsg で共通なので総称になる)。原因は err がそのまま載る
 	m.Update(editorClosedMsg{err: errors.New("nvim: not found")})
-	if m.toast.ok || !strings.Contains(m.toast.text, "nvim を開けません") {
-		t.Errorf("nvim 起動失敗の失敗トーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
+	if m.toast.ok || !strings.Contains(m.toast.text, "エディタを開けません") ||
+		!strings.Contains(m.toast.text, "nvim: not found") {
+		t.Errorf("起動失敗の失敗トーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
 	}
 
 	// ログが空なら起動しない

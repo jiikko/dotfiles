@@ -2,7 +2,6 @@ package main
 
 import (
 	"math"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -722,7 +721,8 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 		return v.markNextKey(key)
 	}
 	// ⚠️ URL ピッカーは他のどの割当よりも先に飲む: インクリメンタルサーチでは印字文字がすべて
-	// 検索語なので、v (nvim) や y (コピー) を先に処理すると "v" や "y" を含む URL を検索できない。
+	// 検索語なので、e/v (エディタ) や y (コピー) を先に処理すると "e" や "y" を含む URL を
+	// 検索できない (e は example / .dev / developer に頻出するので実害が大きい)。
 	if v.urlPick.active {
 		return v.urlPickerKey(key)
 	}
@@ -852,7 +852,17 @@ func (v *issuesView) numberFilterKey(key string, rows int) tea.Cmd {
 // テストは緑のまま通る (実際に本文モードのコピーが無通知だったのもこの二重化の側で起きた)。
 func (v *issuesView) actionKey(key string) (tea.Cmd, bool) {
 	switch key {
-	case "v":
+	case "v", "e":
+		// e は git log 一覧の e (nvim を repo root で開く) と語彙を揃えたもの。v は先にあった
+		// 割当で、打ち慣れを壊さないため残す (本文モードの hint が案内するのは e だけ)。
+		//
+		// ⚠️ 閉じる演出中 (issuesCloseDuration = 450ms) の e はここへ来ない: tui.go が
+		// finishClose で viewer を畳んでから通常のキー処理へ素通しするため、git log 一覧側の
+		// e (openEditorAtRoot = `nvim .`) に着弾する。板がまだ見えているのに repo root が
+		// 全画面で開くので誤爆の体感は軽くない。それでも素通しから e を外していないのは、
+		// tui.go が「演出中のキーを飲まない」を明記した設計判断として持っているため
+		// (飲むと q で閉じた直後の q が効かない窓ができる)。窓を閉じたくなったら、
+		// この case ではなく tui.go の素通し側の判断を変えること。
 		return v.editCmd(), true
 	case "y":
 		v.copyPath()
@@ -1011,14 +1021,17 @@ func (v *issuesView) target() *issues.Issue {
 	return v.current()
 }
 
-// editCmd は対象の issue を nvim で開く。job ログ (scratch バッファ) と違い実ファイルなので
-// readonly にしない: viewer から直接メモを足したくなるため。
+// editCmd は対象の issue を $VISUAL / $EDITOR (未設定なら nvim) で開く。job ログ (scratch
+// バッファ) と違い実ファイルなので readonly にしない: viewer から直接メモを足したくなるため。
+//
+// エディタの解決を editorCommand に寄せているのは、これが glogx で唯一「実ファイルを 1 つ開く」
+// 経路で、任意の $EDITOR で成立するため (据え置いた 2 箇所の理由は editorCommand の doc)。
 func (v *issuesView) editCmd() tea.Cmd {
 	iss := v.target()
 	if iss == nil {
 		return nil
 	}
-	return runEditorCmd(exec.Command("nvim", iss.Path))
+	return runEditorCmd(editorCommand(iss.Path))
 }
 
 // openURLPicker は本文中の URL のピッカーを開く (u キー)。URL が無ければ開かずに通知する。
@@ -1643,11 +1656,13 @@ func srcGutter(src, width int, colored bool) string {
 // hint は viewer 表示中の操作案内 (最下行)。
 //
 // ⚠️ モードの数は lines() の分岐と揃える (ピッカー / 本文 / 一覧の 3 つ)。揃っていないと、URL
-// ピッカー表示中に本文 pager の案内 (j/k/g/G/p/u/v/h/q) が出る — それらは全部 urlPicker が検索語
+// ピッカー表示中に本文 pager の案内 (j/k/g/G/p/u/e/h/q) が出る — それらは全部 urlPicker が検索語
 // として飲むので、案内したキーが 1 つも案内どおりに動かない。
 func (v *issuesView) hint() string {
 	// ⚠️ hint は 1 行で、幅を超えた分は末尾から黙って切られる。popup の実幅 (84 桁) に
-	// 収まる範囲へ絞り、絞られたキー (y / Y / v / r / 一覧の p) は --help と README を正本にする。
+	// 収まる範囲へ絞り、絞られたキー (y / Y / r / 一覧の p) は --help と README を正本にする。
+	// nvim を開くキーは e と v の 2 本あるが、案内するのは e だけ (v は打ち慣れのための別名で、
+	// 幅で絞ったのではなく意図的に出さない)。一覧モードは幅の都合でどちらも案内しない。
 	if v.urlPick.active {
 		// 件数と 1 字消し (ctrl+h) はピッカー自身のヘッダーが出すので繰り返さない。ここは
 		// 「打った文字がそのまま絞り込みになる」= 本文 pager のキーが効かないことだけを伝える。
@@ -1658,7 +1673,9 @@ func (v *issuesView) hint() string {
 		return "数字で絞り込み  ctrl+n/p: 移動  Enter: 確定  Esc: 解除"
 	}
 	if v.open != nil {
-		return "j/k/Space: スクロール  g/G: 先頭/末尾  p: 番号  u: URL  v: nvim  Enter/h/q: 一覧へ"
+		// エディタ名を書かないのは editCmd が $VISUAL/$EDITOR を見るため ($EDITOR=code の人に
+		// "nvim" と案内しない)。幅は TestIssuesViewHintFitsPopupWidth が固定する。
+		return "j/k/Space: スクロール  g/G: 先頭/末尾  p: 番号  u: URL  e: 編集  Enter/h/q: 一覧へ"
 	}
 	// a は 3 段の巡回なので「次に押すと何が増えるか」を出す (現在どこまで見えているかはタブ行
 	// 右端のバッジ ○/○⏸/○⏸✓ が示すので、ここで二重に説明しない)。

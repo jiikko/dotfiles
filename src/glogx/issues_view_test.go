@@ -1065,9 +1065,13 @@ func TestIssuesViewActionKeysWorkInBothModes(t *testing.T) {
 				t.Fatalf("%s モードで %q がコピーしていない", mode, key)
 			}
 		}
-		before := *editorCalls
-		if cmd := v.handleKey("v", vp(10)); cmd == nil || *editorCalls != before+1 {
-			t.Fatalf("%s モードで v が nvim を起動しない", mode)
+		// v は先にあった割当、e は git log 一覧の e と語彙を揃えた別名。どちらのモードでも
+		// 両方が nvim を起動する (hint が案内するのは e だけ)。
+		for _, key := range []string{"v", "e"} {
+			before := *editorCalls
+			if cmd := v.handleKey(key, vp(10)); cmd == nil || *editorCalls != before+1 {
+				t.Fatalf("%s モードで %q が nvim を起動しない", mode, key)
+			}
 		}
 	}
 }
@@ -1496,27 +1500,105 @@ func TestIssuesViewURLPicker(t *testing.T) {
 }
 
 // ピッカーは他のどの割当よりも先にキーを飲む (印字文字は全部検索語)。
-// v (nvim) や y (コピー) が横取りすると、その文字を含む URL を検索できない。
+// e/v (エディタ) や y (コピー) が横取りすると、その文字を含む URL を検索できない。
 func TestIssuesViewURLPickerSwallowsActionKeys(t *testing.T) {
 	editorCalled := false
 	origEd := runEditorCmd
 	runEditorCmd = func(*exec.Cmd) tea.Cmd { editorCalled = true; return nil }
 	t.Cleanup(func() { runEditorCmd = origEd })
 
+	// ⚠️ エディタを開くキーは e と v の 2 本あるので両方回す。現行コードでは飲み込みを早期
+	// return 1 箇所が支配していて片方で足りるが、キー別の分岐を作る変異には 1 キーだと効かない
+	// (実際に番号入力側は v の 1 マスだけ穴が空いていた)。
+	for _, key := range []string{"e", "v"} {
+		editorCalled = false
+		p := newTestIssuesView()
+		p.shown, p.loaded = true, true
+		p.body = issues.NewBody("https://example.com/very-vivid\nhttps://example.com/plain\n")
+		p.open = fakeIssue("001", "feat", "a", issues.StatusOpen)
+		p.handleKey("u", vp(20))
+		p.handleKey(key, vp(20)) // 検索語になるべき (エディタを起動してはいけない)
+		if editorCalled {
+			t.Errorf("ピッカー中の %q がエディタを起動した", key)
+		}
+		if p.urlPick.query != key {
+			t.Errorf("%q が検索語にならない: query=%q", key, p.urlPick.query)
+		}
+	}
+
 	v := newTestIssuesView()
 	v.shown, v.loaded = true, true
 	v.body = issues.NewBody("https://example.com/very-vivid\nhttps://example.com/plain\n")
 	v.open = fakeIssue("001", "feat", "a", issues.StatusOpen)
 	v.handleKey("u", vp(20))
-	v.handleKey("v", vp(20)) // 検索語になるべき (nvim を起動してはいけない)
-	if editorCalled {
-		t.Error("ピッカー中の v が nvim を起動した")
-	}
-	if v.urlPick.query != "v" {
-		t.Errorf("v が検索語にならない: query=%q", v.urlPick.query)
-	}
+	v.handleKey("v", vp(20))
 	if len(v.urlPick.match) != 1 || v.urlPick.selected() != "https://example.com/very-vivid" {
 		t.Errorf("v で絞り込めない: %v", v.urlPick.match)
+	}
+}
+
+// 番号入力中も URL ピッカーと同じ理由でアクションキーより先に飲む (打った文字が検索語)。
+// ⚠️ URL ピッカー側にしかテストが無いと、actionKey を numFilter より前に動かしても何も落ちない。
+// 順序を守るものをここで作る。キーは e と v の両方を回す — 「支配しているのは早期 return 1 箇所
+// だから 1 キーで足りる」は現行コードの記述であって、キー別の分岐を作る変異には効かない。
+func TestIssuesViewNumberFilterSwallowsActionKeys(t *testing.T) {
+	editorCalled := false
+	origEd := runEditorCmd
+	runEditorCmd = func(*exec.Cmd) tea.Cmd { editorCalled = true; return nil }
+	t.Cleanup(func() { runEditorCmd = origEd })
+
+	v := loadedView(sampleIssues()...)
+	v.handleKey("/", vp(10))
+	if !v.numFilter.typing {
+		t.Fatal("/ で番号入力に入れていない")
+	}
+	// e/v はエディタを開くキーだが、入力中は数字以外として捨てられるだけ (画面を動かさない)
+	for _, key := range []string{"e", "v"} {
+		editorCalled = false
+		v.handleKey(key, vp(10))
+		if editorCalled {
+			t.Errorf("番号入力中の %q がエディタを起動した", key)
+		}
+		if !v.numFilter.typing {
+			t.Errorf("番号入力中の %q が入力モードを抜けさせた", key)
+		}
+	}
+}
+
+// hint が案内するキーと実際の割当を繋ぐ。案内だけ書き換えて割当を忘れる (逆も) と、
+// spec 5 節が既知の事故として挙げる「案内どおりに動かないキー」が静かに生まれる。
+// ⚠️ 幅は TestIssuesViewHintFitsPopupWidth が別に見る (ここは対応だけを見る)。
+func TestIssuesViewBodyHintAdvertisedEditorKeyWorks(t *testing.T) {
+	// ⚠️ stubEditor は *exec.Cmd を捨てるので「エディタが呼ばれた」しか見えない。それだけだと
+	// 渡す対象を取り違えても (iss.Path → iss.Dir 等) テストが通るため、ここでは Args を捕まえる。
+	var gotArgs []string
+	origEd := runEditorCmd
+	runEditorCmd = func(cmd *exec.Cmd) tea.Cmd {
+		gotArgs = cmd.Args
+		return func() tea.Msg { return editorClosedMsg{} }
+	}
+	t.Cleanup(func() { runEditorCmd = origEd })
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "028-refactor-x.md")
+	if err := os.WriteFile(path, []byte("# 028 refactor: x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "028-refactor-x.md", Number: "028", Category: "refactor"})
+	v.handleKey("enter", vp(10)) // 本文モードへ
+	if v.open == nil {
+		t.Fatal("本文モードに入れていない")
+	}
+	const advertised = "e: 編集"
+	if h := v.hint(); !strings.Contains(h, advertised) {
+		t.Fatalf("本文の hint が %q を案内していない: %q", advertised, h)
+	}
+	if cmd := v.handleKey("e", vp(10)); cmd == nil {
+		t.Fatal("hint が案内した e でエディタが開かない (cmd == nil)")
+	}
+	// 開く対象は「その issue の実ファイル」。末尾引数がパスであることまで見る
+	if len(gotArgs) == 0 || gotArgs[len(gotArgs)-1] != path {
+		t.Errorf("e が開いた対象が issue の実ファイルでない: args=%v want末尾=%q", gotArgs, path)
 	}
 }
 

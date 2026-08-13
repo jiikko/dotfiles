@@ -32,6 +32,11 @@ func repoRoot() string {
 
 // openEditorAtRoot は nvim を repo root で開く (e)。`nvim .` なのでファイラー系
 // プラグイン (oil / netrw) がそのまま入口になる。
+//
+// ⚠️ ここは $EDITOR を見ずに nvim 固定にする: 引数がファイルでなくディレクトリで、
+// 「ディレクトリを開くとファイラーになる」のは nvim/vim 固有の機能 (nano . 等は失敗する)。
+// 任意のエディタで開きたくなったら、それは editorCommand ではなく隣の openFilerAtRoot
+// (filerCandidates) の系統。実ファイルを開く経路の $EDITOR 対応は editorCommand の doc を参照。
 func (m *browseModel) openEditorAtRoot() tea.Cmd {
 	cmd := exec.Command("nvim", ".")
 	cmd.Dir = repoRoot()

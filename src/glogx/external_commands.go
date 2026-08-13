@@ -321,3 +321,40 @@ var copyToClipboard = func(text string) error {
 	cmd.Stdin = strings.NewReader(text)
 	return cmd.Run()
 }
+
+// editorFallback は $VISUAL / $EDITOR がどちらも空のときに使うエディタ。
+const editorFallback = "nvim"
+
+// editorCommand は実ファイルを開くエディタのコマンドを組む。$VISUAL → $EDITOR → nvim の順に
+// 見る (VISUAL を先に見るのは「全画面エディタは VISUAL」という POSIX の慣習)。
+//
+// ⚠️ 値は空白で語分割する。EDITOR="code -w" のように引数つきの指定が慣習的に使われるため、
+// 文字列全体を実行ファイル名として扱うと起動できない。分割は quote を解釈しない意図的な
+// 単純化で、**空白を含むパスの指定 (EDITOR='"/My Apps/ed" -w') は非対応** — 起動に失敗し、
+// tui.go の editorClosedMsg がトーストで理由を出す。quote まで解釈するなら git の GIT_EDITOR と
+// 同じく sh -c へ渡す形になるが、path 側のクォートを自分で組む責任が増えるので採らない。
+//
+// ⚠️ この経路は「実ファイルを 1 つ開く」ものにだけ使う。nvim を直に呼んでいる他の 2 箇所
+// (tui.go の job ログ = 標準入力 + -c の scratch バッファ / open_workspace.go の `nvim .` =
+// ディレクトリを開く) は nvim 固有の機能に依存しており、任意の $EDITOR では成立しない。
+func editorCommand(path string) *exec.Cmd {
+	editor := firstNonEmptyEnv("VISUAL", "EDITOR")
+	fields := strings.Fields(editor)
+	if len(fields) == 0 { // 未設定・空白だけなら fallback
+		return exec.Command(editorFallback, path)
+	}
+	args := make([]string, 0, len(fields))
+	args = append(args, fields[1:]...) // EDITOR に含まれていた引数 (例: code -w)
+	args = append(args, path)
+	return exec.Command(fields[0], args...)
+}
+
+// firstNonEmptyEnv は最初に空でない値を持つ環境変数の値を返す。
+func firstNonEmptyEnv(names ...string) string {
+	for _, name := range names {
+		if v := strings.TrimSpace(os.Getenv(name)); v != "" {
+			return v
+		}
+	}
+	return ""
+}

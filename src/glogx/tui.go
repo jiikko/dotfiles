@@ -1055,15 +1055,18 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.maybeTick()
 	case editorClosedMsg:
-		// nvim を閉じて復帰。job ログは stdin 渡しなのでファイルは残らず、バッファも破棄済み。
-		// ⚠️ issues viewer の v だけは実ファイルを編集可能で開く (メモを足せるように readonly に
-		// していない) ので、復帰の境界で取り直す。取り直さないと編集結果 (H1・front matter の
+		// エディタを閉じて復帰。job ログは stdin 渡しなのでファイルは残らず、バッファも破棄済み。
+		// ⚠️ issues viewer の e (別名 v) だけは実ファイルを編集可能で開く (メモを足せるように
+		// readonly にしていない) ので、復帰の境界で取り直す。取り直さないと編集結果 (H1・front matter の
 		// status・チェックボックス) が一覧にも本文にも出ず、viewer が古い内容を最新として表示する。
 		if msg.err != nil {
 			// ⚠️ viewer 表示中でも issuesView.notice へ回さない: notice はどのヘッダーも描かず、
 			// 次の打鍵で takeNotice されるまで画面に出ない (キーを押すまで失敗が黙殺される)。
 			// viewLines が viewer の窓にもトーストを合成するので、ここは常にトーストでよい。
-			m.showWarning("nvim を開けませんでした: " + firstLine(msg.err.Error()))
+			// ⚠️ 起動対象は $VISUAL/$EDITOR で変わる (editorCommand) ので、ここでツール名を
+			// 名指ししない。job ログ・repo root だけは nvim 固定だが、失敗の主因は可変側
+			// (typo した $EDITOR・PATH に無いエディタ) なので総称で出す。
+			m.showWarning("エディタを開けませんでした: " + firstLine(msg.err.Error()))
 			return m, m.maybeTick()
 		}
 		return m, tea.Batch(m.issuesOv.reloadAfterEdit(), m.maybeTick())
@@ -2395,6 +2398,10 @@ func (m *browseModel) openJobLogInEditor() tea.Cmd {
 	// -R (readonly) + nomodifiable + buftype=nofile で「閲覧してコピーするだけ」の scratch に
 	// する: 誤編集できず :q が常にクリーンに閉じる (素の nvim - だと変更扱い等で :q がエラーに
 	// なる・ユーザー報告 2026-07-21)。yank は nomodifiable でも可能。noswapfile で swap も残さない。
+	//
+	// ⚠️ ここは $EDITOR を見ずに nvim 固定にする: 開くのが実ファイルでなく標準入力 (`-`) で、
+	// scratch 化も vim 系の -c/-R に依存しているため、任意のエディタでは成立しない
+	// (code - / nano - は不可)。実ファイルを開く経路の $EDITOR 対応は editorCommand の doc を参照。
 	cmd := exec.Command("nvim", "-R", "-c", "setlocal buftype=nofile noswapfile nomodifiable", "-")
 	cmd.Stdin = strings.NewReader(jobLogText(lines))
 	return runEditorCmd(cmd)
