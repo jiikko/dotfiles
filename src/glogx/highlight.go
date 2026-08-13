@@ -14,6 +14,7 @@ package main
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/formatters"
@@ -88,8 +89,40 @@ func lexerForDiffPath(path string) chroma.Lexer {
 	return lexers.Match(path)
 }
 
+// hlEscCache はトークン種別 → ANSI エスケープ列 ("" = 装飾なし) のメモ。
+//
+// chroma の Format はスタイル→エスケープ表 (256 色の Lab 距離最近傍探索込み) を **呼び出しの
+// たびに** 丸ごと再計算する。glogx は行単位で Format していたため 5000 行の diff で同じ表を
+// 5000 回作り直し、プロファイルで CPU の ~3 割が findClosest に落ちていた (実測 2026-08-13)。
+// スタイル (gruvbox) と formatter (terminal256) は固定なので、種別ごとの結果は不変 = メモ化
+// できる。取り出しは Format をトークン 1 個で呼んで前置エスケープを切り出す形にし、fallback
+// 連鎖 (SubCategory → Category → Text) や色写像のロジックを chroma 側と二重実装しない。
+var hlEscCache sync.Map // chroma.TokenType -> string
+
+// hlEscapeFor は種別 t の前置エスケープを返す。sentinel の \x01 は ANSI エスケープ列
+// (ESC・数字・';'・'['・'m') に決して現れないため、出力の切り出しが誤爆しない。
+func hlEscapeFor(t chroma.TokenType) string {
+	if v, ok := hlEscCache.Load(t); ok {
+		return v.(string)
+	}
+	esc := ""
+	var b strings.Builder
+	if err := hlFormatter.Format(&b, hlStyle, chroma.Literator(chroma.Token{Type: t, Value: "\x01"})); err == nil {
+		if i := strings.IndexByte(b.String(), '\x01'); i > 0 {
+			esc = b.String()[:i]
+		}
+	}
+	hlEscCache.Store(t, esc)
+	return esc
+}
+
 // highlightCode はコード 1 行を chroma でハイライトする。lexer 不明・トークナイズ
 // 失敗時は素のまま返す。
+//
+// トークンの整形は Format を使わず自前で行う (hlEscCache の doc)。出力形式は Format
+// (terminal256) と同一: 装飾ありトークンは esc + 本文 + リセット、なしは素のまま。
+// 入力は 1 行 (改行を含まない) なので、chroma が補う改行はトークン末尾にしか現れない。
+// Format は改行の手前でリセットするため、末尾で改行を落としてから閉じれば等価になる。
 func highlightCode(lex chroma.Lexer, code string) string {
 	if lex == nil || code == "" {
 		return code
@@ -99,9 +132,19 @@ func highlightCode(lex chroma.Lexer, code string) string {
 		return code
 	}
 	var b strings.Builder
-	if err := hlFormatter.Format(&b, hlStyle, it); err != nil {
-		return code
+	b.Grow(len(code) * 2)
+	for token := it(); token != chroma.EOF; token = it() {
+		v := strings.TrimRight(token.Value, "\n")
+		if v == "" {
+			continue
+		}
+		if esc := hlEscapeFor(token.Type); esc != "" {
+			b.WriteString(esc)
+			b.WriteString(v)
+			b.WriteString("\x1b[0m")
+			continue
+		}
+		b.WriteString(v)
 	}
-	// chroma は行末に改行を足すことがあるため落とす (呼び出し側は行単位で管理)
-	return strings.TrimRight(b.String(), "\n")
+	return b.String()
 }
