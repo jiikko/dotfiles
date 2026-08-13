@@ -351,3 +351,40 @@ func TestToastEvictionFallsBackToAgeWhenAllWarnings(t *testing.T) {
 		t.Errorf("最新の警告が残っていない: %v", texts)
 	}
 }
+
+// 描画予算に入らないときも、落とす順は追い出しと同じ規則にする。
+// ⚠️ 保持と表示で規則が違うと「保持はしているのに重要な通知だけ画面に出ない」状態になる
+// (実測 2026-08-13: 警告の後に成功通知が来た狭い端末で、警告が 1 行も描かれなかった)。
+func TestToastBoxLinesKeepsWarningWithinBudget(t *testing.T) {
+	var s toast
+	s.show("警告: 未 push があります", false) // 最古 = 予算で最初に落ちる位置
+	s.show("ok1", true)
+	s.show("ok2", true)
+	for range toastSlideFrames + 2 {
+		s.advance(false)
+	}
+	if len(s.items()) != 3 {
+		t.Fatalf("前提が崩れた: 3 枚保持していない (%d)", len(s.items()))
+	}
+
+	// 2 枚ぶんの予算しかない = 1 枚落とす。落ちるのは重要でない最古 (ok1) で、警告は残る
+	out := strings.Join(s.boxLines(false, toastBoxLines*2), "\n")
+	if !strings.Contains(out, "未 push") {
+		t.Errorf("予算内に警告が描かれない (保持しているのに見えない):\n%s", out)
+	}
+	if strings.Contains(out, "ok1") {
+		t.Errorf("重要でない最古 (ok1) が残っている = 落とす順が追い出しと違う:\n%s", out)
+	}
+	if !strings.Contains(out, "ok2") {
+		t.Errorf("最新が描かれない:\n%s", out)
+	}
+	// ⚠️ 残す枚の並びは元のまま (上が新しい)。重要な枚を上へ繰り上げない
+	if strings.Index(out, "ok2") > strings.Index(out, "未 push") {
+		t.Errorf("並び順が入れ替わっている (上が新しいという読み方が崩れる):\n%s", out)
+	}
+
+	// 1 枚ぶんの予算では最新 1 枚だけ (既存の不変条件: 見えない通知より覆う通知)
+	if got := len(s.boxLines(false, toastBoxLines)); got != toastBoxLines {
+		t.Errorf("予算 1 枚のとき %d 行 (want %d)", got, toastBoxLines)
+	}
+}

@@ -218,6 +218,12 @@ func (s *toast) push(text string, ok, info bool) {
 	}
 }
 
+// important は「落とすなら最後にすべき通知」か。失敗・拒否理由 (ok も info も立っていない) を
+// 重要とみなす。⚠️ **追い出し (evictOne) と描画予算の選別 (boxLines) がこの 1 箇所を共有する** —
+// 保持の規則と表示の規則が別々だと「保持しているのに重要な通知だけ画面に出ない」状態ができる
+// (実測 2026-08-13: 狭い端末で最古の警告が描かれなかった)。
+func (t *toastItem) important() bool { return !t.ok && !t.info }
+
 // evictOne は溢れた 1 枚を捨てる。⚠️ 年齢だけで捨てると重要な通知が消える: 起動時の警告
 // (ok=false) の後に成功通知が 3 回来ると警告が落ちていた (実測 2026-08-13)。
 // issue 028 P2 が要求していた「重要度 error > info の逆転を防ぐ」を、スタックの追い出し規則として
@@ -230,7 +236,7 @@ func (s *toast) push(text string, ok, info bool) {
 func evictOne(older []toastItem) []toastItem {
 	drop := len(older) - 1 // 既定は最古
 	for i := len(older) - 1; i >= 0; i-- {
-		if older[i].ok || older[i].info {
+		if !older[i].important() {
 			drop = i // 重要でない最古を優先して捨てる
 			break
 		}
@@ -324,22 +330,42 @@ func (s *toast) startLeaving(msg toastMsg) {
 // buildShadowPanelBox を呼ぶので一定。⚠️ 箱の形を変えたらここも直す (テストで pin してある)。
 const toastBoxLines = 4
 
-// boxLines はスタック全体の描画行 (上から下)。maxLines を超える古い枚は出さない。
+// boxLines はスタック全体の描画行 (上から下)。maxLines に入らない枚は出さない。
 //
 // ⚠️ 行数の上限が要る: 低い端末では 3 枚 (12 行) が窓 (11 行) を超え、一番下の箱が途中で切れて
 // 壊れて見えた (実測 2026-07-31: 窓 11 行に対し 12 行)。枚数の上限 (toastStackMax) だけでは
 // 窓の高さに対する占有を抑えられない。最新の 1 枚は上限を超えても出す — 見えない通知より
 // 「窓を覆うが読める通知」を選ぶ。
+//
+// ⚠️ **落とす順は追い出し (evictOne) と同じ規則**にする: 重要でない (成功/進行中) 枚を先に落とし、
+// 同じ重要度なら古い方から。保持と表示で規則が違うと「保持はしているのに重要な通知だけ画面に
+// 出ない」状態ができる (実測 2026-08-13: 警告の後に成功通知が来た狭い端末で、警告が 1 行も
+// 描かれなかった)。⚠️ 残す枚の並び順は元のまま (上が新しい) — 重要な枚を上へ繰り上げると、
+// スタックの「新しいものが上」という読み方が崩れる。
 func (s *toast) boxLines(colored bool, maxLines int) []string {
-	var out []string
-	for _, it := range s.items() {
+	items := s.items()
+	boxes := make([][]string, 0, len(items))
+	shown := make([]*toastItem, 0, len(items))
+	for _, it := range items {
 		box := it.boxLines(colored)
 		if len(box) == 0 {
-			continue // まだ滑り込み前 (幅 0)
+			continue // まだ滑り込み前 (幅 0) は予算を食わない
 		}
-		if len(out) > 0 && len(out)+toastBoxLines > maxLines {
-			break // これ以上積むと窓を覆う。箱の途中で切らず、古い方を出さない
+		boxes = append(boxes, box)
+		shown = append(shown, it)
+	}
+	fit := max(maxLines/toastBoxLines, 1) // 最新の 1 枚は上限を超えても出す
+	for i := len(boxes) - 1; i >= 0 && len(boxes) > fit; i-- {
+		if !shown[i].important() {
+			boxes = append(boxes[:i], boxes[i+1:]...)
+			shown = append(shown[:i], shown[i+1:]...)
 		}
+	}
+	if len(boxes) > fit {
+		boxes = boxes[:fit] // 全部重要なら古い方から落とす
+	}
+	var out []string
+	for _, box := range boxes {
 		out = append(out, box...)
 	}
 	return out
