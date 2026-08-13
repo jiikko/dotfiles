@@ -272,10 +272,13 @@ func TestZoomStepsAreSmall(t *testing.T) {
 	}
 }
 
-// framed の実入力 (wrapWindowFrame 適用後の画面) での回帰ガード: 演出枠の内側に実画面自身の
-// 枠 (上辺の角・左の縦罫線列) が入れ子で映らないこと + 1 行目の中身が最初から見えること
-// (左上アンカー導入時、クロームをスキップせず素朴に lines[0] から切り出して二重罫線になった。
-// 敵対的レビュー + ユーザー報告 2026-08-13)。
+// framed の実入力 (wrapWindowFrame 適用後の画面 + hint 行) での回帰ガード: 演出枠の内側に
+// 実画面自身の枠 (上辺の角・左の ║ 列・下辺の接地行 ▁・hint) が入れ子で映らないこと +
+// 1 行目の中身が最初から見えること。
+// 経緯 (2026-08-13): 左上アンカー導入時、(1) クロームをスキップせず lines[0] から切り出して
+// 上辺が二重罫線に (ユーザー報告)、(2) 上・左のスキップだけでは snap 直前 (scale ~0.95) に
+// 下辺・影へ切り出しが届いて下側で再発 (実フレーム描画の red team 検証)。scale を舐めるのは
+// (2) が特定 scale 帯でしか発火しないため。
 func TestZoomWindowFramedInputNoNestedBorder(t *testing.T) {
 	const termW = 60
 	content := make([]string, 10)
@@ -283,14 +286,26 @@ func TestZoomWindowFramedInputNoNestedBorder(t *testing.T) {
 		content[i] = "line" + strings.Repeat("x", 20)
 	}
 	content[0] = "FIRSTCOMMIT" + strings.Repeat("x", 9)
-	framedLines := wrapWindowFrame(content, termW, false)
+	all := append(wrapWindowFrame(content, termW, false), "hint: q quit")
 
-	out := zoomWindow(framedLines, 0.5, termW, false, true)
-	joined := strings.Join(out, "\n")
-	if got := strings.Count(joined, "╔"); got != 1 {
-		t.Errorf("演出枠以外に枠の角が映っている (╔ が %d 個。実画面の枠が入れ子):\n%s", got, joined)
-	}
-	if !strings.Contains(joined, "FIRSTCOMMIT") {
-		t.Errorf("1 行目の中身が最初から見えていない:\n%s", joined)
+	for _, scale := range []float64{0.2, 0.5, 0.8, 0.95} {
+		out := zoomWindow(all, scale, termW, false, true)
+		joined := strings.Join(out, "\n")
+		if got := strings.Count(joined, "╔"); got != 1 {
+			t.Errorf("scale %.2f: 演出枠以外に枠の角が映っている (╔ が %d 個):\n%s", scale, got, joined)
+		}
+		for _, ln := range out {
+			// 実枠の接地行は行頭が ▖▁、切り出されると演出枠の中身 (║ の右) に ▁ の並びで現れる
+			if strings.Contains(ln, "║ ▁▁▁") {
+				t.Errorf("scale %.2f: 実枠の下辺が入れ子:\n%q", scale, ln)
+			}
+		}
+		if strings.Contains(joined, "hint:") {
+			t.Errorf("scale %.2f: hint 行が演出枠内に混入:\n%s", scale, joined)
+		}
+		// 最小の枠 (minPanelWidth) では中身が幅で切り詰められるため、接頭辞で見る
+		if !strings.Contains(joined, "FIRSTC") {
+			t.Errorf("scale %.2f: 1 行目の中身が見えていない:\n%s", scale, joined)
+		}
 	}
 }

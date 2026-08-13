@@ -164,15 +164,21 @@ func zoomWindow(lines []string, scale float64, width int, colored, framed bool) 
 	// framed の実画面クローム: 上 = 上余白 1 + 枠上辺 1、左 = 左余白 1 + "║ " 2
 	// (内訳の一次情報は tui.go の frameHOverhead / frameVOverhead)。これをスキップして
 	// 実画面の中身の左上から映す。枠なし画面はクロームが無いので 0。
-	srcTop, srcLeft := 0, 0
+	//
+	// ⚠️ 下と右もクランプする: snap 直前 (scale ~0.95) は切り出しが実枠の下辺 (▁ の接地行)・
+	// 影・右の ║ 列まで届き、演出枠の内側に入れ子で映る (上・左のスキップだけでは snap 直前の
+	// 数フレームで再発する。実フレーム描画の red team 検証で検出 2026-08-13)。
+	srcTop, srcLeft, maxRow, maxCols := 0, 0, h, inner
 	if framed {
 		srcTop, srcLeft = 2, 3
+		maxRow = srcTop + max(h-frameVOverhead, 0)
+		maxCols = min(inner, max(width-frameHOverhead, 0))
 	}
 	rows := make([]string, 0, innerH)
 	for i := range innerH {
 		src := ""
-		if j := srcTop + i; j < h {
-			src = truncateKeepANSI(dropToColumn(lines[j], srcLeft), inner)
+		if j := srcTop + i; j < min(h, maxRow) {
+			src = truncateKeepANSI(dropToColumn(lines[j], srcLeft), maxCols)
 		}
 		rows = append(rows, src)
 	}
