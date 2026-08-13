@@ -466,7 +466,7 @@ func nodeState(node rollupContext) CIState {
 			return StatePending
 		}
 		switch {
-		case node.Conclusion == "SUCCESS":
+		case strings.EqualFold(node.Conclusion, "SUCCESS"):
 			return StateSuccess
 		case isFailureConclusion(node.Conclusion):
 			return StateFailure
@@ -714,7 +714,9 @@ func fetchJobSteps(ctx context.Context, run CommandRunner, repo Repo, jobID stri
 
 // isFailureConclusion は「失敗扱いの conclusion か」の単一の出典。GraphQL (nodeState、
 // 大文字) と REST (stepGlyph、小文字) の両方が使うため大文字化して比較する (別々の
-// case 列で二重管理すると、片方だけ値を足して食い違う)。
+// case 列で二重管理すると、片方だけ値を足して食い違う)。API 仕様外の非カノニカル case が
+// 来た場合も判定が成立する堅牢化を含む。success 判定 (EqualFold) も同じ規約で、
+// failure 側だけ case-insensitive という非対称契約にしない (敵対的レビュー 2026-08-13)。
 func isFailureConclusion(conclusion string) bool {
 	switch strings.ToUpper(conclusion) {
 	case "FAILURE", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE":
@@ -729,7 +731,7 @@ func stepGlyph(status, conclusion string) string {
 		return "●"
 	}
 	switch {
-	case conclusion == "success":
+	case strings.EqualFold(conclusion, "success"):
 		return "✓"
 	case isFailureConclusion(conclusion):
 		return "✗"

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -532,5 +533,8 @@ func TestCapGitBody(t *testing.T) {
 	last := got[len(got)-1]
 	if !strings.Contains(last, "省略") || !strings.Contains(last, "git show abc1234") {
 		t.Errorf("案内行に省略の説明と全文の見方が無い: %q", last)
+	}
+	if !strings.Contains(last, fmt.Sprintf("%d 行", maxDiffLines)) {
+		t.Errorf("案内行に打ち切り行数が無い: %q", last)
 	}
 }

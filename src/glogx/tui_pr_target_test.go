@@ -15,6 +15,9 @@ func TestPRTargetSHAEmptyCommits(t *testing.T) {
 	if sha, ok := m.prTargetSHA(); ok || sha != "" {
 		t.Errorf("コミット 0 件で ok=true: sha=%q", sha)
 	}
+	if m.toast.visible() {
+		t.Errorf("コミット 0 件は無言で nil の契約なのにトーストが出た: %q", m.toast.text)
+	}
 }
 
 func TestPRTargetSHANoRepo(t *testing.T) {
@@ -46,5 +49,8 @@ func TestPRTargetSHAOK(t *testing.T) {
 	sha, ok := m.prTargetSHA()
 	if !ok || sha != m.commits[1].SHA {
 		t.Errorf("カーソル位置の SHA が返らない: sha=%q ok=%v", sha, ok)
+	}
+	if m.toast.visible() {
+		t.Errorf("成功経路でトーストが出た: %q", m.toast.text)
 	}
 }
