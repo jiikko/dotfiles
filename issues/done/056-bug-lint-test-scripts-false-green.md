@@ -157,3 +157,11 @@ CI では発火しないが、手元やコンテナで shellcheck が無いと `
 - `_claude/rules/mutation-verify-new-tests.md` — 「green は『正しい』ではなく
   『その書き方では壊せなかった』」。変異先の選び方まで含めて規約化する必要がある
 - issue 052 — 同じ「不変条件を守るテストが無い」系 (あちらは scan の I/O、こちらは lint の網羅)
+
+## 対応 (2026-08-14)
+
+- `zsh -n` を 1 ファイルずつのループに変更し、件数は検査したカウンタで報告するようにした
+- shellcheck 不在時も zsh -n は実施し、「sh 系 N 本は未検査」と明示して返す (無言の skipping 廃止)
+- 変異検証は issue の再発防止案どおり **sort 順最後の 1 本** (tests/zshrc/validate-mp4/...) に
+  構文エラーを注入して red を確認 (修正前の同変異は green だった = false green の再現)
+- 横展開 grep: 多引数 `zsh -n $var` の同型は他に無し (test-zsh-syntax / check_syntax.zsh はループ済み)

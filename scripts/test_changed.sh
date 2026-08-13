@@ -38,9 +38,12 @@ tests/ の run_tests と同じ repo 既存の前提)。
   *.yml / *.yaml              → test-yaml
   _gitconfig                  → test-gitconfig
   Brewfile _pryrc _gemrc      → test-ruby-syntax
-  bin/ scripts/ zshlib/ _claude/hooks/ と、場所を問わない *.sh / _z*
+  _claude/hooks/ _claude/**.sh → shell 系 lint + make test-dir DIR=tests/claude
+  _claude/CLAUDE.md _claude/(agents|rules|skills|references|commands)/
+                              → make test-dir DIR=tests/claude (skill 参照表・symlink 健全性)
+  bin/ scripts/ zshlib/ と、場所を問わない *.sh / _z*
                               → test-syntax test-shellcheck test-zsh-syntax test-zshrc
-  *.md *.txt LICENSE issues/ docs/ vendor/ _claude/(agents|rules|skills|references|commands)/
+  *.md *.txt LICENSE issues/ docs/ vendor/
                               → テスト対象なし (何も回さず、その旨を報告して成功)
 
 どれにも該当しないパスはエラーで止まる (黙って skip しない)。その変更は
@@ -128,14 +131,24 @@ for p in "$@"; do
       add_target test-gitconfig ;;
     Brewfile|_pryrc|_gemrc)
       add_target test-ruby-syntax ;;
+    # _claude 配下の shell は lint に加えて tests/claude も回す (issue 060):
+    # test_deny_bare_tmux_kill.sh が hooks を、test_statusline.sh が
+    # statusline-command.sh を実テストしている
+    _claude/hooks/*|_claude/*.sh)
+      add_shell_targets; add_test_dir "tests/claude" ;;
     # shell/zsh ソース。ディレクトリ前方一致に加え、置き場所を問わない *.sh /
     # zsh dotfile (_z*) も拾う (shellcheck/zsh -n の対象は discover_shell_scripts が
     # repo 全体から発見するため、ここも場所で絞らない)
-    bin/*|scripts/*|zshlib/*|_claude/hooks/*|*.sh|_z*)
+    bin/*|scripts/*|zshlib/*|*.sh|_z*)
       add_shell_targets ;;
+    # _claude の設定群は「テスト対象なし」ではない (issue 060): tests/claude が
+    # skill 参照表 (CLAUDE.md ↔ skills の相互整合) と ~/.claude 側 symlink の
+    # dangling (rename/削除の置き去り) を検証している
+    _claude/CLAUDE.md|_claude/agents/*|_claude/rules/*|_claude/skills/*|_claude/references/*|_claude/commands/*)
+      add_test_dir "tests/claude" ;;
     # テスト対象なし (明示写像)。ドキュメント・vendor・データファイルは対応する
     # テストが存在しないので何も回さないが、黙って落とすのではなく報告する
-    *.md|*.txt|LICENSE|issues/*|docs/*|vendor/*|kinesis*|_claude/agents/*|_claude/rules/*|_claude/skills/*|_claude/references/*|_claude/commands/*)
+    *.md|*.txt|LICENSE|issues/*|docs/*|vendor/*|kinesis*)
       notest="$notest $p" ;;
     *)
       echo "✗ 写像に無いパス: $p (make test で全体を回すか、scripts/test_changed.sh に写像を足すこと)" >&2

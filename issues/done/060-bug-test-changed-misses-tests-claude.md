@@ -92,3 +92,13 @@ make: *** [test-dir] Error 1
   こちらは報告する「対象なし」が嘘)
 - `_claude/rules/adversarial-review-own-safeguards.md` — 「沈黙 = 成功になっていないか」。
   本件は沈黙ではなく**誤った報告**だが、利用者に与える誤解は同じ
+
+## 対応 (2026-08-14)
+
+- 対応方針 1-4 を実施: `_claude/CLAUDE.md` / `_claude/(agents|rules|skills|references|commands)/*`
+  → tests/claude 腕へ、`_claude/hooks/*` と `_claude/**.sh` (statusline 含む) → shell lint +
+  tests/claude へ写像。notest 腕から _claude 系を除去しコメントの断定を実態に合わせた
+- dry-run で issue の表の全ケースが tests/claude に写像されること、実走で 4 テストが
+  回ることを確認
+- 方針 5 (写像の正しさ自体のテスト) は「テストが検証する対象パスの機械的抽出」が必要で
+  今回は見送り (コストが未検討のため。必要になったら別 issue で)
