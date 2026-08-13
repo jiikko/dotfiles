@@ -44,8 +44,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh working",
-            "async": true
+            "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh working"
           }
         ]
       },

@@ -5,9 +5,11 @@
 #   working : "⚙ working" を表示 (UserPromptSubmit / PostToolUse=承認後の自動復帰)
 #   input   : "🔔 input" を表示   (Notification — permission 承認待ち・質問への回答待ち)
 #             + ペインが画面に見えていなければ macOS 通知 (音あり)
+#             ただし stdin (hook JSON) の notification_type が入力不要の種別
+#             (auth_success / agent_completed 等) のときは状態を変えない
 #   idle    : "✓ idle" を表示     (Stop = 応答完了)
 #             + ペインが画面に見えていなければ macOS 通知 (音なし)
-#             ただし stdin (hook JSON) の pending_tasks に未完了タスクが残っている
+#             ただし stdin (hook JSON) の background_tasks に実行中タスクが残っている
 #             場合 (バックグラウンド Bash / subagent / codex レビュー待ち等) は、
 #             入力待ちではないので "⚙ working (bg)" を表示して通知もしない。
 #             タスク完了で再開すると PostToolUse / 次の Stop が状態を上書きする。
@@ -58,13 +60,30 @@ notify_if_hidden() {
 
 case "${1:-}" in
   working) set_state "⚙ working" ;;
-  input)   set_state "🔔 input"; notify_if_hidden "🔔 入力待ち (承認 or 回答が必要)" "default" ;;
+  input)
+    # Notification hook は入力待ち以外の種別 (auth_success / agent_completed /
+    # elicitation_complete 等) でも発火する。stdin JSON の notification_type
+    # (実測 2026-08-13: {"hook_event_name":"Notification","notification_type":"idle_prompt",...})
+    # が「ユーザーの入力を要する」種別のときだけ 🔔 input にする。
+    # jq 不在 / フィールド不在 (旧バージョン) は従来どおり input 扱いに倒す
+    ntype=""
+    if command -v jq >/dev/null 2>&1 && [ ! -t 0 ]; then
+      ntype=$(jq -r '.notification_type // ""' 2>/dev/null) || ntype=""
+    fi
+    case "$ntype" in
+      ""|permission_prompt|idle_prompt|agent_needs_input|elicitation_dialog|elicitation_url_dialog)
+        set_state "🔔 input"; notify_if_hidden "🔔 入力待ち (承認 or 回答が必要)" "default" ;;
+      *) : ;;  # 入力不要の通知では状態を変えない
+    esac
+    ;;
   idle)
-    # Stop hook の stdin JSON から未完了バックグラウンドタスクを数える。
+    # Stop hook の stdin JSON から実行中バックグラウンドタスクを数える。
+    # フィールド名は background_tasks (実測 2026-08-13:
+    # {"hook_event_name":"Stop","background_tasks":[{"id":...,"status":"running",...}]})。
     # jq 不在 / stdin が JSON でない / フィールド不在は 0 扱い (= 従来どおり idle)
     pending=0
     if command -v jq >/dev/null 2>&1 && [ ! -t 0 ]; then
-      pending=$(jq -r '[.pending_tasks[]? | select(.status != "completed")] | length' 2>/dev/null) || pending=0
+      pending=$(jq -r '[.background_tasks[]? | select(.status == "running")] | length' 2>/dev/null) || pending=0
       case "$pending" in ''|*[!0-9]*) pending=0 ;; esac
     fi
     if [ "$pending" -gt 0 ]; then
