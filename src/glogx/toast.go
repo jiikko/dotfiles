@@ -214,8 +214,28 @@ func (s *toast) push(text string, ok, info bool) {
 	top.reset(text, ok, info, s.seqGen)
 	s.toastItem = top // 最上段を新しい 1 枚に差し替える
 	if len(s.older) > toastStackMax-1 {
-		s.older = s.older[:toastStackMax-1] // 溢れた分 (最古) を捨てる
+		s.older = evictOne(s.older)
 	}
+}
+
+// evictOne は溢れた 1 枚を捨てる。⚠️ 年齢だけで捨てると重要な通知が消える: 起動時の警告
+// (ok=false) の後に成功通知が 3 回来ると警告が落ちていた (実測 2026-08-13)。
+// issue 028 P2 が要求していた「重要度 error > info の逆転を防ぐ」を、スタックの追い出し規則として
+// 満たす — **成功/進行中 (ok または info) の最古を先に捨て、全部が警告なら最古を捨てる**。
+// 同じ重要度どうしは従来どおり年齢順 (後勝ち) で、その性質は変えない。
+//
+// ⚠️ これは「保持」の規則。実際に描かれる枚数は別に描画予算 (boxLines の maxLines) が握るので、
+// 保持していても画面に出ないことはある (狭い端末での既知の穴。toastStackMax は保持数であって
+// 表示数ではない)。
+func evictOne(older []toastItem) []toastItem {
+	drop := len(older) - 1 // 既定は最古
+	for i := len(older) - 1; i >= 0; i-- {
+		if older[i].ok || older[i].info {
+			drop = i // 重要でない最古を優先して捨てる
+			break
+		}
+	}
+	return append(older[:drop], older[drop+1:]...)
 }
 
 // dropInfo は進行中トースト (info) を取り除く (結果が出たら用済み)。

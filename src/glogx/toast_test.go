@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -301,5 +303,51 @@ func TestToastBoxLinesRespectsMaxLines(t *testing.T) {
 			t.Errorf("maxLines=%d: %d 行 (%d 箱), want %d 行 (%d 箱)",
 				c.maxLines, got, got/toastBoxLines, want, c.wantBoxes)
 		}
+	}
+}
+
+// 溢れたときの追い出しは重要度を見る。⚠️ 年齢だけで捨てると、起動時の警告の後に成功通知が
+// 3 回来ただけで警告が消える (実測 2026-08-13。issue 028 P2 が要求していた
+// 「重要度 error > info の逆転を防ぐ」が、スタック化後は満たされていなかった)。
+func TestToastEvictionKeepsWarningOverSuccess(t *testing.T) {
+	var s toast
+	s.show("警告: 未 push があります", false) // ok=false = 警告/拒否理由
+	for i := 1; i <= 3; i++ {
+		s.show(fmt.Sprintf("ok%d", i), true) // 成功通知で埋める
+	}
+
+	items := s.items()
+	texts := make([]string, 0, len(items))
+	for _, it := range items {
+		texts = append(texts, it.text)
+	}
+	if !slices.Contains(texts, "警告: 未 push があります") {
+		t.Errorf("成功通知に押し出されて警告が消えた: %v", texts)
+	}
+	// 同じ重要度どうしは従来どおり年齢順 (後勝ち) — 最古の成功が捨てられる
+	if slices.Contains(texts, "ok1") {
+		t.Errorf("最古の成功通知が残っている (重要でない最古を捨てていない): %v", texts)
+	}
+	if len(s.items()) != toastStackMax {
+		t.Errorf("保持枚数が上限と違う: %d want %d", len(s.items()), toastStackMax)
+	}
+}
+
+// 全部が警告なら従来どおり最古を捨てる (重要度が同じなら年齢順)。
+func TestToastEvictionFallsBackToAgeWhenAllWarnings(t *testing.T) {
+	var s toast
+	for i := 1; i <= toastStackMax+1; i++ {
+		s.show(fmt.Sprintf("warn%d", i), false)
+	}
+	items := s.items()
+	texts := make([]string, 0, len(items))
+	for _, it := range items {
+		texts = append(texts, it.text)
+	}
+	if slices.Contains(texts, "warn1") {
+		t.Errorf("全部警告のとき最古が捨てられていない: %v", texts)
+	}
+	if !slices.Contains(texts, fmt.Sprintf("warn%d", toastStackMax+1)) {
+		t.Errorf("最新の警告が残っていない: %v", texts)
 	}
 }

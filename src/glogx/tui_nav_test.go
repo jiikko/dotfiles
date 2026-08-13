@@ -464,20 +464,25 @@ func TestAdvancePullAnimTerminates(t *testing.T) {
 	}
 }
 
-// spinnerActive() は 14 個の非同期/アニメ源の OR で、tick チェーンの生存条件そのもの。
-// どれか 1 項を落とすと該当中だけスピナー/経過秒が固まる (静的には検出されない) ため、
-// 「源を 1 つだけ立てたら true」を table で網羅して回帰を検出する (issue 028 P3 案 B)。
+// spinnerActive() は tick チェーンの生存条件そのもの。どれか 1 項を落とすと該当中だけ
+// スピナー/経過秒が固まる (静的には検出されない) ため、「源を 1 つだけ立てたら true」を
+// table で検査して回帰を検出する (issue 028 P3 案 B)。
 //
 // ⚠️ このテストは「既存の項を消した/条件を反転した」回帰は捕まえるが、**新しい非同期源を
 // 足して spinnerActive への追記を忘れた** ケースは捕まえない (テーブルへの追記も同時に
 // 忘れるため)。新しい源を足すときはここにも 1 行足すこと。
-// 実際に漏れた: issuesOv.loading / statusOv.fetching は spinnerActive にだけ入り、ここへの
-// 追記が抜けていた (2026-08-13 に補充)。
+// 実際に漏れた 2 例 (どちらも 2026-08-13 に補充):
+//   - issuesOv.loading / statusOv.fetching が spinnerActive にだけ入っていた
+//   - statusOv.fetching は `v.loading || v.preview.fetching()` の 2 項で、テーブルは前者だけを
+//     立てていた (「補充した」対象の内側に穴が残っていた)
 //
 // ⚠️ 演出 (glide / toast / 開閉スライド / zoom) は spinnerActive が列挙せず tickInterval から
-// 導出する形に変わっている。テーブルの scrollAnim / toast.animating はその経路 (周期が上がるか)
-// を通って true になるので、ここに残しておく意味がある — 演出の登録先が tickInterval 1 箇所に
-// 集約されている前提そのものを検査していることになる。
+// 導出する形に変わっている。テーブルはその**一部**を通って true になるだけで、
+// tickInterval の全項を網羅してはいない (未カバー: zoom.animating / issuesOv.slideAnimating /
+// statusOv.slideAnimating / statusOv.animating — これらは他のテストが個別に押さえている)。
+// 「演出の登録先が tickInterval 1 箇所に集約されている」ことをこのテーブルが検査している
+// わけではない。カバーしている演出経路は scrollAnim / toast.animating / diffOv.animating /
+// issuesOv.bodyGlide の 4 つ。
 func TestBrowseSpinnerActiveSources(t *testing.T) {
 	sources := []struct {
 		name string
@@ -504,6 +509,12 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		// (issue 028 P3 が予測した「追記漏れ」が実際に起きていた形)。
 		{"issuesOv.loading", func(m *browseModel) { m.issuesOv.scanning = true }},
 		{"statusOv.fetching", func(m *browseModel) { m.statusOv.loading = true }},
+		// ⚠️ 以下 3 つは「全テストスイートを生き残る」ことを変異で実測した無防備な源
+		// (2026-08-13 の敵対的レビュー)。前 2 つは tickInterval 経由、3 つ目は上の
+		// statusOv.fetching の第 2 disjunct で、そこだけ覆えていなかった。
+		{"diffOv.animating", func(m *browseModel) { m.diffOv.glide.active = true }},
+		{"issuesOv.bodyGlide", func(m *browseModel) { m.issuesOv.bodyGlide.active = true }},
+		{"statusOv.preview.fetching", func(m *browseModel) { m.statusOv.preview.begin("k") }},
 	}
 	// 前提: 何も動いていない model は false (これが false でないと以下の検証が無意味になる)
 	base := newTestBrowse(t, 1, map[string]CIState{}, nil)

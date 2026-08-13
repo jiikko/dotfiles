@@ -338,10 +338,19 @@ const editorFallback = "nvim"
 // 直し方も同じ (EDITOR="code -w" のように待たせる)。
 //
 // 破れたときの劣化は「壊れる」ではなく「反映が遅れる」に留まる — issues viewer を開いている間は
-// issues_watch.go が別プロセスの編集も拾うため。遅れの上限はその経路で決まる:
-//   - fsnotify が動く: イベントで即時 (取りこぼしの保険が issuesWatchIdlePoll = 30s)
-//   - fsnotify を作れない: issuesWatchBlindPoll = 1s のポーリングが唯一の経路になる
-//   - fsnotify は作れるがイベントが無音 (NFS 等): 保険の 30s が唯一の経路 = ここが最悪ケース
+// issues_watch.go が別プロセスの編集も拾うため (閉じている間は次に開いた時点で必ず読み直す)。
+//
+// ⚠️ 遅れは「気づくまで」+「確かめるまで」の 2 段でできている。handleWatch は変化を見つけた
+// 1 回目では pending に置くだけで読まず (書きかけを読まないため)、次の観測で安定を確かめてから
+// 反映する。2 回目の周期は issuesWatchVerifyPoll = 300ms なので、どの経路でも +300ms 乗る:
+//   - fsnotify が動く: イベント (issuesWatchDebounce = 200ms でバーストを畳む) + 300ms ≒ 0.5s。
+//     取りこぼしの保険が issuesWatchIdlePoll = 30s
+//   - watcher を作れない (fsnotify.NewWatcher 失敗 / 死んで閉じた後): issuesWatchBlindPoll = 1s
+//     が唯一の経路 → ≒ 1.3s
+//   - watcher はあるがイベントが届かない (FS が無音 / 監視ディレクトリの Add が全滅): 保険の
+//     30s が唯一の経路 ≒ 30.3s = 最悪ケース。⚠️ Add 失敗でも watcher は nil にならないので
+//     「生きているが聾」になる。ただし 30s の観測が変化を拾えば取り直し → startWatch が Add を
+//     再試行するので、露出は永久ではなく「≤30s 聾、その後回復」
 //
 // ⚠️ 検出して警告する案は採らない。「子プロセスが早く終わった」の閾値がマジックナンバーになり、
 // 正当に速いケース (既に開いているウィンドウへ渡すだけ) を誤検知する。
