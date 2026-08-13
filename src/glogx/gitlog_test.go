@@ -516,3 +516,21 @@ func TestParseLogFieldSepInMessageTruncates(t *testing.T) {
 		t.Errorf("メッセージが最初の \\x1f で切り詰められていない: %#v", commits)
 	}
 }
+
+// capGitBody / truncatedNotice の回帰ガード (打ち切り文言は capGitBody と LoadCommitDiff で
+// 共有される truncatedNotice が単一の出典。文言が壊れると「全文を見る手段」の案内が消える)。
+func TestCapGitBody(t *testing.T) {
+	short := "a\nb\nc"
+	if got := capGitBody(short, "abc1234"); got != short {
+		t.Errorf("上限内の本文が変更された: %q", got)
+	}
+	long := strings.TrimRight(strings.Repeat("x\n", maxDiffLines+10), "\n")
+	got := strings.Split(capGitBody(long, "abc1234"), "\n")
+	if len(got) != maxDiffLines+1 {
+		t.Fatalf("打ち切り後の行数 = %d; want %d (本文 maxDiffLines + 案内 1 行)", len(got), maxDiffLines+1)
+	}
+	last := got[len(got)-1]
+	if !strings.Contains(last, "省略") || !strings.Contains(last, "git show abc1234") {
+		t.Errorf("案内行に省略の説明と全文の見方が無い: %q", last)
+	}
+}
