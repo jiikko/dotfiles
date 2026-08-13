@@ -115,9 +115,9 @@ for p in "$@"; do
     # 名前付きターゲット (test-nvim 等) が無い tests/claude, tests/bin 等も
     # 取りこぼさない。tests/ 直下のファイルは tests 全体
     tests/*/*)
-      add_test_dir "tests/$(echo "$p" | cut -d/ -f2)" ;;
+      add_test_dir "tests/$(echo "$p" | cut -d/ -f2)"; add_target test-lint-tests ;;
     tests/*)
-      add_test_dir "tests" ;;
+      add_test_dir "tests"; add_target test-lint-tests ;;
     mac/karabiner.json)
       add_target test-json; add_target test-karabiner ;;
     *.json)

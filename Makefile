@@ -40,7 +40,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-go-lint test-go test-src
+.PHONY: pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-go-lint test-go test-src
 
 # settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
 # pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、
@@ -50,7 +50,11 @@ pull:
 	@_claude/hooks/normalize-settings.sh
 	@git pull --rebase
 
-test: test-lint test-runtime test-go
+# test-src (= go lint + test) を含める。かつては test-go (テストのみ) だったが、
+# CI (_go-project.yml) と test-changed の src 腕は lint + test を回すため、部分実行の
+# 方が全体実行より厳しいねじれがあった。golangci-lint は各 src Makefile が go run 経由・
+# バージョン固定で自己完結しており、追加のツールインストールは不要
+test: test-lint test-runtime test-src
 
 # 変更したパスだけ検証する (CI の paths filter のローカル対応物)。写像とヘルプの
 # 正本は scripts/test_changed.sh (--help)。共有 working tree では dirty に並行
@@ -118,19 +122,19 @@ test-discovered-rest:
 # CI の rest ジョブ入口 (test-runtime から test-discovered を rest に差し替えたもの)
 test-runtime-rest: test-syntax test-discovered-rest test-bats
 
-# 以下の test-<領域> は人間の選択実行用の便宜フィルタ。test-runtime の実行経路は
-# test-discovered に一本化されているため、新領域をここに足し忘れても死蔵は生まない。
+# 以下の test-<領域> は人間の選択実行用の便宜フィルタ (test-dir の別名)。test-runtime の
+# 実行経路は test-discovered に一本化されているため、新領域をここに足し忘れても死蔵は生まない。
 test-nvim:
-	@$(call run_tests,tests/nvim)
+	@$(MAKE) test-dir DIR=tests/nvim
 
 test-tmux:
-	@$(call run_tests,tests/tmux)
+	@$(MAKE) test-dir DIR=tests/tmux
 
 test-setup:
-	@$(call run_tests,tests/setup)
+	@$(MAKE) test-dir DIR=tests/setup
 
 test-zshrc:
-	@$(call run_tests,tests/zshrc)
+	@$(MAKE) test-dir DIR=tests/zshrc
 
 # .bats も同じ規約で自動発見する (発見 0 件なら何もせず成功)。bats 未インストール環境では skip。
 test-bats:
@@ -218,7 +222,13 @@ test-ruby-syntax:
 		echo "[ruby-syntax] ruby not found; skipping"; \
 	fi
 
-test-lint: test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax
+# tests/ 配下のテストスクリプト lint。本体スクリプトの発見 (discover_shell_scripts.sh)
+# が tests/ を対象外にしているのを補完する (shebang 機械分類なので例外リスト不要)。
+# 方言判定・severity の理由はスクリプト冒頭コメントが正本
+test-lint-tests:
+	@./scripts/lint_test_scripts.sh
+
+test-lint: test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax
 
 # Go プロジェクトの静的解析とテスト。実体は各ディレクトリの Makefile の lint / test
 # ターゲットに閉じており、ここはそれへ委譲するだけ (ローカルのコミット前検証用。root の

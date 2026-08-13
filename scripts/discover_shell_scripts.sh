@@ -12,7 +12,10 @@ set -eu
 unset CDPATH
 cd "$(dirname "$0")/.."
 
-# lint 対象を持つディレクトリ。tests/ と vendor/ は対象外 (テストは test-* ターゲット側の管轄)。
+# lint 対象を持つディレクトリ。vendor/ は対象外。tests/ もここでは対象外だが、
+# 無 lint ではない: 約半数が zsh スクリプトで ZSH_SYNTAX_FILES 方式だと 40 本超の
+# 手動例外リストになるため、shebang 機械分類で lint する scripts/lint_test_scripts.sh
+# (make test-lint-tests) が別途カバーする。
 # _claude は hooks だけでなく直下も含める (statusline-command.sh が漏れていた。shellcheck の
 # dialect 判定に載らないため #!/bin/sh のまま bash 専用置換を書いても静かに通り、Linux (dash)
 # 実行で初めて Bad substitution になった。2026-07-25)

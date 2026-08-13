@@ -88,6 +88,7 @@ health() {  # 共通 env で実行。追加 env は呼び出し側が前置き�
 }
 
 DEF_SESSIONS='sess1\nsess2\nsess3\n'
+# shellcheck disable=SC2034 # RUN_ERR は source する stub_assert_helper.sh の run() が参照する
 RUN_OUT="$TMP_DIR/out"; RUN_ERR="$TMP_DIR/err"
 
 # 常駐プロセス 2 つを「生きている」状態にする

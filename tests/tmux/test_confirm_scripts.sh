@@ -77,6 +77,7 @@ export CALLS
 STUB_PATH="$TMP_DIR/bin:/usr/bin:/bin"
 NOGUM_PATH="$TMP_DIR/bin_nogum:/usr/bin:/bin"
 
+# shellcheck disable=SC2034 # source する stub_assert_helper.sh の run() が参照する
 RUN_OUT="$TMP_DIR/out.log"; RUN_ERR="$TMP_DIR/err.log"
 # shellcheck source=tests/tmux/lib/stub_assert_helper.sh
 . "$ROOT_DIR/tests/tmux/lib/stub_assert_helper.sh"

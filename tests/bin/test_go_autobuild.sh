@@ -72,7 +72,7 @@ mtime_at() {  # $1=何分前, 残り=対象ファイル
 }
 
 new_project() {  # $1=プロジェクト名 → $TMP_DIR/$1 に src と wrapper を作る (bin/glogx と同じ形)
-  local name="$1" root="$TMP_DIR/$1"
+  local root="$TMP_DIR/$1"
   mkdir -p "$root/bin/lib" "$root/src/tool/sub"
   cp "$LIB" "$root/bin/lib/go_autobuild.zsh"
   printf 'module tool\n\ngo 1.99\n' > "$root/src/tool/go.mod"

@@ -36,6 +36,7 @@ printf '✓ %s exists\n' "${ZSH_LIB#$ROOT_DIR/}"
 # Part 1: 実体ロジック（tmux/sleep をスタブし、実体を直接呼ぶ）
 # 各ケースは "CASE:<id> ..." を1行で出力し、bash 側で検証する。
 # ============================================================================
+# shellcheck disable=SC2034 # source する case_assert.sh の case_line() が参照する
 OUT="$(HOME="$TMP_HOME" zsh -c '
   sleep() { : }   # 待機を潰してタイムアウト経路も即時化する
 

@@ -25,6 +25,7 @@ EXEMPT_SKILLS=""
 fail=0
 
 # テーブルが参照するスキル名を抽出 (~/.claude/skills/<name>/SKILL.md 形式)
+# shellcheck disable=SC2088 # チルダは展開させない: CLAUDE.md 内のリテラル文字列を grep するパターン
 referenced=$(grep -o '~/\.claude/skills/[A-Za-z0-9_-]*/SKILL\.md' "$CLAUDE_MD" \
   | sed 's|.*/skills/||; s|/SKILL\.md||' | sort -u)
 

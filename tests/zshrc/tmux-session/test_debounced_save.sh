@@ -28,6 +28,7 @@ fi
 printf '✓ %s exists (executable)\n' "${SCRIPT#$ROOT_DIR/}"
 
 # 全ケースを 1 つの bash サブシェルで走らせ、"CASE:<id> ..." を 1 行ずつ出力する。
+# shellcheck disable=SC2034 # source する case_assert.sh の case_line() が参照する
 OUT="$(
   HOME="$TMP_HOME" \
   TT_DEBOUNCE_STATE_DIR="$TMP_HOME/state" \
