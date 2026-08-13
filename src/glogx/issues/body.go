@@ -2,7 +2,10 @@ package issues
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
+
+	"glogx/termsafe"
 )
 
 // Body は issue 1 件の本文と、整形結果の幅ごとのキャッシュ。
@@ -18,6 +21,60 @@ type Body struct {
 	lines    []string
 	srcLines []int // lines と同じ並びのソース行番号 (0 = 出さない)
 	renders  int   // 整形した回数 (キャッシュが効いているかのテスト用)
+
+	progress     string // Progress() の結果キャッシュ ("" も有効な値なので下のフラグと対で持つ)
+	progressDone bool
+}
+
+// checkboxRe はチェックボックス行。parse.go の LoadMeta から Body へ移した
+// (一覧のために全 issue の全文を読むのを止めるため。下の Progress の doc)。
+var checkboxRe = regexp.MustCompile(`^\s*[-*+]\s+\[([ xX])\]`)
+
+// Progress はチェックボックスの生の事実 ("3/7")。チェックボックスが無ければ ""。
+//
+// ⚠️ ここから「着手中」を導出しない。実測でパスと真逆になる: done/ にあるのに 0/N の
+// ファイルが 36 件 (dropbox 16 / DualNote 13 / SnapTrim 7)、逆に全チェック済みでも
+// 本文が未完を明記している open ファイルがある。チェックボックスは「作業項目の進捗」
+// ではなく「将来の実装計画」や「Phase 追跡」に使われていて、意味が repo・ファイルごとに違う。
+//
+// なぜ Issue ではなく Body が持つか: 数えるには本文を最後まで読む必要があり、Issue 側で
+// 持つと**一覧を出すたびに全 issue の全文を読む**ことになっていた (LoadMeta の doc)。
+// Body は issue を開いたときだけ作られ、その時点で全文がメモリにあるので追加の I/O が要らない。
+//
+// ⚠️ 数える範囲が旧 Issue.Progress と 1 点だけ違う: **front matter 内の行も数える**。
+// 旧実装は front matter を別分岐で処理していたため数えなかった (実測差分: 先頭が `---` で
+// 始まり front matter 内に `- [x]` がある入力で旧 1/1 に対し新 2/3 等。2026-08-14 の R1
+// レビューが 426 件の差分入力を提示)。front matter に checkbox を書く issue は
+// この repo に存在しない (51 件すべて front matter 無し) ため実害は無いと判断して
+// この差を受け入れる。「先頭 `---` ブロック」の規則を Body 側にも複製すると
+// 同じ規則が 2 箇所になるので、そちらは採らない。
+//
+// ⚠️ コードフェンス内の `- [ ]` も数える (checkboxRe はフェンス非対応)。これは旧と同じ挙動。
+// フェンス対応が要るなら別 issue で。
+func (b *Body) Progress() string {
+	if b.progressDone {
+		return b.progress
+	}
+	b.progressDone = true
+	boxes, checked := 0, 0
+	for line := range strings.Lines(b.src) {
+		// LoadMeta が無害化した行に対して数えていたので、移設後も同じ関門を通す
+		// (無害化で行頭が変わると一致が変わりうるため、挙動を揃える)
+		m := checkboxRe.FindStringSubmatch(
+			termsafe.PlainLine(strings.TrimRight(strings.TrimRight(line, "\n"), "\r")))
+		if m == nil {
+			continue
+		}
+		boxes++
+		if m[1] != " " {
+			checked++
+		}
+	}
+	if boxes == 0 {
+		return ""
+	}
+	b.progress = strconv.Itoa(checked) + "/" + strconv.Itoa(boxes)
+	return b.progress
 }
 
 // NewBody は本文から Body を作る。整形はまだ行わない (最初の Lines で遅延実行)。

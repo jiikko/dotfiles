@@ -1443,8 +1443,17 @@ func (v *issuesView) headLines(width int, colored bool) []string {
 // ためここが唯一の受け皿だったが、viewer の上にもトーストを合成するようにして解消した。
 func (v *issuesView) bodyHeadLines(width int, colored bool) []string {
 	status := v.open.StatusLabel()
-	if p := v.open.Progress(); p != "" {
-		status += "  " + p
+	// 進捗は開いている本文から数える (Issue 側で持つと一覧を出すたびに全 issue の全文を
+	// 読むことになる。issues/body.go の Body.Progress の doc)。
+	//
+	// ⚠️ 鮮度は v.body と同じで、それ以上ではない: 取り直しが失敗したとき
+	// (reloadAfterEdit は err == nil のときだけ v.body を差し替える) は本文も進捗も
+	// 古いまま残る。本文テキストの stale は以前からある性質で、進捗をここへ移したことで
+	// **本文と進捗の鮮度が揃った** (以前は Issue 側の進捗だけ別経路で更新されていた)
+	if v.body != nil {
+		if p := v.body.Progress(); p != "" {
+			status += "  " + p
+		}
 	}
 	return []string{
 		// Rel はファイル名 = 外部由来。ファイルを開く同一性は v.open.Path 側が持つので、
@@ -1662,7 +1671,7 @@ func (v *issuesView) tabChip(name string, count int, active bool, colored bool) 
 // (カーソル行の "→ " と混在するので、違う幅だと選択行だけ 1 桁ずれる)。
 const issuesSelGutter = "▌ "
 
-// rowLine は一覧の 1 行 (番号・状態バッジ・カテゴリ・タイトル・進捗)。width は行が使える
+// rowLine は一覧の 1 行 (番号・状態バッジ・カテゴリ・タイトル)。width は行が使える
 // 表示幅 (スクロールバー列を差し引いた後)。
 func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 	iss := v.rows[i]
@@ -1670,16 +1679,17 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 	badge := iss.Status.Badge()
 	cat := fillRight(clipToWidth(iss.Category, 9), 9)
 	catPainted := paint(cat, categoryColor(iss.Category), o.colored)
-	progress := iss.Progress()
-	// 溝 + "NNN " + バッジ + " " + カテゴリ + " " + タイトル (+ 右端に進捗)
+	// ⚠️ 一覧に進捗 (チェックボックスの n/N) は出さない。数えるには本文を最後まで読む必要が
+	// あり、一覧を出すたびに全 issue の全文を読んでいた (起動と外部編集後の再スキャンで毎回)。
+	// 進捗は「あると便利」程度で、そのために全件の全文を読むのは釣り合わないと判断した。
+	// 詳細を開いたときは Body が全文を持っているので、そこでは追加の I/O なしに出せる
+	// (bodyHeadLines)。空いた幅はタイトルへ回る。
+	// 一次情報: issues/done/050-perf-glogx-issue-list-reads-full-body.md
+	// 溝 + "NNN " + バッジ + " " + カテゴリ + " " + タイトル
 	fixed := cursorGutterWidth + dispWidth(num) + 1 + dispWidth(badge) + 1 + dispWidth(cat) + 1
-	titleW := max(width-fixed-dispWidth(progress)-1, 4)
+	titleW := max(width-fixed, 4)
 	title := clipToWidth(iss.Display(), titleW)
 	text := num + " " + badge + " " + catPainted + " " + title
-	if progress != "" {
-		pad := max(width-cursorGutterWidth-dispWidth(text)-dispWidth(progress), 1)
-		text += padSpaces(pad) + paint(progress, ansiDim, o.colored)
-	}
 	// ⚠️ どの経路も同じ幅に切る。titleW には下限 (4) があるので、極端に狭い幅では固定部分だけで
 	// width を超える。カーソル行だけ切っていたため、そこ以外の行が枠を突き破っていた。
 	if i != v.cursor {

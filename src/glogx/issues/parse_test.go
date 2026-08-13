@@ -271,7 +271,7 @@ func indexOf(s, sub string) int {
 	return -1
 }
 
-func TestLoadMetaReadsTitleFrontMatterAndCheckboxes(t *testing.T) {
+func TestLoadMetaReadsTitleAndFrontMatter(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "005-feat-x.md")
 	body := "---\nstatus: ongoing\n---\n# 005 feat: タイトル\n\n- [x] 済み\n- [ ] 未\n- [ ] 未\n"
@@ -288,12 +288,91 @@ func TestLoadMetaReadsTitleFrontMatterAndCheckboxes(t *testing.T) {
 	if iss.Declared != "ongoing" {
 		t.Fatalf("front matter の status が取れていない: %q", iss.Declared)
 	}
-	if iss.Checked != 1 || iss.Boxes != 3 || iss.Progress() != "1/3" {
-		t.Fatalf("チェックボックスの計数が違う: %d/%d (%q)", iss.Checked, iss.Boxes, iss.Progress())
-	}
 	// 2 回目は読み直さない (状態が壊れない)
-	if err := iss.LoadMeta(); err != nil || iss.Boxes != 3 {
-		t.Fatalf("再呼び出しで壊れた: err=%v boxes=%d", err, iss.Boxes)
+	if err := iss.LoadMeta(); err != nil || iss.Title != "005 feat: タイトル" {
+		t.Fatalf("再呼び出しで壊れた: err=%v title=%q", err, iss.Title)
+	}
+}
+
+// LoadMeta が H1 で**読むのをやめている**ことを主張する。
+//
+// なぜ scanner のトークン上限を観測点にするか: 「H1 の後ろに壊れた内容を置いて読まずに
+// 済んでいることを見る」だけでは vacuous になる — h1Re はゴミバイトでエラーにならないので、
+// EOF まで読んでも外から見える差が出ず、打ち切りを外しても green のままになる。時間で
+// 測るのは flaky。LoadMeta は sc.Buffer(64KB, 1MB) を張って sc.Err() を返すので、
+// **H1 の後ろに改行なしの 2MB の 1 行**を置けば「EOF まで読む実装は
+// bufio.Scanner: token too long を返す / 打ち切る実装はその行に到達しない」で決定論的に分かれる。
+func TestLoadMetaStopsAtH1(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "099-feat-probe.md")
+	// ⚠️ 上限は loadMetaMaxLine から組む。リテラル (2MB 等) で書くと、上限を上げた変更で
+	// このテストが無言で恒真になる (R3 レビューで実証済み)
+	huge := strings.Repeat("x", loadMetaMaxLine+1)
+	body := "---\nstatus: open\n---\n# 099 feat: probe\n" + huge
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := newIssue(dir, "099-feat-probe.md")
+	err := iss.LoadMeta()
+	if err != nil {
+		t.Fatalf("H1 の先を読んでいる (打ち切りが効いていない): %v", err)
+	}
+	if iss.Title != "099 feat: probe" {
+		t.Fatalf("H1 が取れていない: %q", iss.Title)
+	}
+	if iss.Declared != "open" {
+		t.Fatalf("front matter の status を取り落とした: %q", iss.Declared)
+	}
+}
+
+// H1 がファイルの深い位置にあっても取れること (打ち切りに行数上限を設けていないこと)。
+//
+// ⚠️ 「行数上限は設けない」は issue 050 の明示的な決定。実データに H1 が 239 行目にある
+// issue が存在し (別 repo の 559 行のファイル)、上限を入れるとそのタイトルが無言で消える。
+// 決定を守るテストが無いと、後から「先頭 N 行だけ読む」最適化で静かに壊れる
+// (R3 レビューで上限 5 行の変異が全 green だったため追加)。
+func TestLoadMetaFindsH1DeepInFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "097-feat-deep.md")
+	var b strings.Builder
+	b.WriteString("---\nstatus: open\n---\n")
+	for range 300 {
+		b.WriteString("前置きの本文行\n")
+	}
+	b.WriteString("# 097 feat: 深い位置の H1\n")
+	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := newIssue(dir, "097-feat-deep.md")
+	if err := iss.LoadMeta(); err != nil {
+		t.Fatal(err)
+	}
+	if iss.Title != "097 feat: 深い位置の H1" {
+		t.Fatalf("深い位置の H1 を取れていない (行数上限が入った?): %q", iss.Title)
+	}
+	if iss.Declared != "open" {
+		t.Fatalf("front matter の status を取り落とした: %q", iss.Declared)
+	}
+}
+
+// H1 が無いファイルは打ち切り条件が成立しないので EOF まで読む (意図した挙動)。
+// front matter だけは取れること。
+func TestLoadMetaWithoutH1StillReadsFrontMatter(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "098-feat-noh1.md")
+	body := "---\nstatus: pending\n---\n本文だけで H1 が無い\n\n## 見出し 2 は H1 ではない\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := newIssue(dir, "098-feat-noh1.md")
+	if err := iss.LoadMeta(); err != nil {
+		t.Fatal(err)
+	}
+	if iss.Title != "" {
+		t.Fatalf("H1 が無いのにタイトルが付いた: %q", iss.Title)
+	}
+	if iss.Declared != "pending" {
+		t.Fatalf("front matter の status が取れていない: %q", iss.Declared)
 	}
 }
 
@@ -340,12 +419,6 @@ func TestScanExcludesMetaFiles(t *testing.T) {
 			names = append(names, iss.Rel)
 		}
 		t.Fatalf("付随ファイルを除外できていない: %q", names)
-	}
-}
-
-func TestProgressEmptyWithoutCheckboxes(t *testing.T) {
-	if got := (&Issue{}).Progress(); got != "" {
-		t.Fatalf("チェックボックス無しで進捗を出した: %q", got)
 	}
 }
 

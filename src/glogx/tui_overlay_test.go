@@ -937,7 +937,7 @@ func TestIssuesViewerReloadsAfterEditorCloses(t *testing.T) {
 	}
 
 	// nvim が本文を書き換えて閉じた
-	if err := os.WriteFile(path, []byte("# 001 feat: 編集後\n\n- [x] やった\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("# 001 feat: 編集後\n\n- [x] やった\n- [ ] まだ\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_, cmd := m.Update(editorClosedMsg{})
@@ -951,8 +951,21 @@ func TestIssuesViewerReloadsAfterEditorCloses(t *testing.T) {
 	if !strings.Contains(out, "編集後") {
 		t.Fatalf("編集結果が一覧に反映されていない:\n%s", out)
 	}
-	if !strings.Contains(out, "1/1") {
-		t.Fatalf("編集で増えたチェックボックスの進捗が出ていない:\n%s", out)
+	// ⚠️ フィクスチャに checkbox を残しているのは意図。これが無いと下の
+	// 「一覧に進捗が出ない」は**どんな退行でも赤にならない** (チェックボックスが無ければ
+	// 進捗を出す実装でも "1/1" は生成されない)。差が出る状況を作ってから主張する
+	// (2026-08-14 の R1 レビューで、フィクスチャを削ったせいでこの assert が
+	// 空回りしていたのを検出された)。済み/未を 1 個ずつにして期待値を "1/2" にするのは
+	// operand を入れ違えた実装 ("2/1") を捕まえるため — "1/1" では対称で通ってしまう (R3 の指摘)
+	if strings.Contains(out, "1/2") {
+		t.Errorf("一覧に進捗が出ている (全 issue の全文読みを止めた前提が崩れている):\n%s", out)
+	}
+	// 進捗は詳細を開いたときだけ出る (そこでは Body が全文を持っているので追加の I/O が無い)。
+	// 一覧から消したぶんの表示カバレッジをここで持つ
+	m.issuesOv.handleKey("enter", issuesViewport{width: 120, page: 20})
+	m.issuesOv.drawer.finish()
+	if body := m.viewLines(); !strings.Contains(body, "1/2") {
+		t.Errorf("詳細ヘッダに進捗が出ていない:\n%s", body)
 	}
 }
 

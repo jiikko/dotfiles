@@ -80,7 +80,7 @@ func TestIssuesWatchReloadsAfterExternalEdit(t *testing.T) {
 		t.Fatalf("前提が崩れた: 一覧のタイトルが %q", got)
 	}
 
-	writeIssue(t, path, "# 001 feat: 編集後\n\n- [x] やった\n", time.Now())
+	writeIssue(t, path, "# 001 feat: 編集後\n", time.Now())
 	changed := v.observe()
 	if cmd := v.handleWatch(changed); cmd == nil {
 		t.Fatal("変化を見つけた周期でも次の観測は予約する")
@@ -96,9 +96,9 @@ func TestIssuesWatchReloadsAfterExternalEdit(t *testing.T) {
 	if got := v.rows[0].Display(); got != "feat: 編集後" {
 		t.Fatalf("外部の編集が一覧に反映されていない: %q", got)
 	}
-	if got := v.rows[0].Progress(); got != "1/1" {
-		t.Fatalf("チェックボックスの進捗が追従していない: %q", got)
-	}
+	// ⚠️ 以前はチェックボックスの進捗も観測点にしていたが、一覧は進捗を出さなくなった
+	// (Issue は本文を最後まで読まない。issues/parse.go の LoadMeta の doc)。
+	// タイトルの差し替えで「メタデータが取り直された」は示せている
 	// 取り直した直後の基準は「スキャンが読んだ時点の指紋」= 次の観測と一致する。自分の取り直しを
 	// 外部の変化と誤検出しないことを、基準を空にする (= 次の観測を無条件に基準化する) のではなく
 	// 一致で示す。空にすると、読んだ時刻と基準を取る時刻の差に入った編集を取りこぼす。

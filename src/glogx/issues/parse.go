@@ -123,8 +123,6 @@ type Issue struct {
 	// (dropbox 229 ファイルで 0.23ms → 13.6ms。glogx の起動は Bench の監視対象)。
 	Title    string // 本文の H1
 	Declared string // front matter の status: の生値 ("" = 宣言なし)
-	Checked  int    // チェック済みチェックボックス数
-	Boxes    int    // チェックボックス総数 (0 = チェックボックスを使っていない)
 	loaded   bool
 }
 
@@ -135,8 +133,6 @@ var (
 	upperIDRe = regexp.MustCompile(`^([A-Z][A-Z0-9]*)-(\d+)-(.*)$`)
 	// front matter の status: 行
 	frontStatusRe = regexp.MustCompile(`(?i)^status\s*:\s*(.+?)\s*$`)
-	// チェックボックス
-	checkboxRe = regexp.MustCompile(`^\s*[-*+]\s+\[([ xX])\]`)
 	// 本文の H1
 	h1Re = regexp.MustCompile(`^#\s+(.+?)\s*$`)
 )
@@ -343,19 +339,6 @@ func (iss *Issue) Display() string {
 	return title
 }
 
-// Progress はチェックボックスの生の事実 ("3/7")。チェックボックスが無ければ ""。
-//
-// ⚠️ ここから「着手中」を導出しない。実測でパスと真逆になる: done/ にあるのに 0/N の
-// ファイルが 36 件 (dropbox 16 / DualNote 13 / SnapTrim 7)、逆に全チェック済みでも
-// 本文が未完を明記している open ファイルがある。チェックボックスは「作業項目の進捗」
-// ではなく「将来の実装計画」や「Phase 追跡」に使われていて、意味が repo・ファイルごとに違う。
-func (iss *Issue) Progress() string {
-	if iss.Boxes == 0 {
-		return ""
-	}
-	return strconv.Itoa(iss.Checked) + "/" + strconv.Itoa(iss.Boxes)
-}
-
 // StatusLabel は状態の表示。front matter の status: 宣言がパスと食い違う場合は融合せず
 // 両方出す (どちらかを黙って採用すると viewer が確信を持って嘘をつく)。
 func (iss *Issue) StatusLabel() string {
@@ -368,8 +351,34 @@ func (iss *Issue) StatusLabel() string {
 	return iss.Status.String() + " ⚠ status:" + iss.Declared
 }
 
-// LoadMeta は本文から H1・front matter の status:・チェックボックス数を読む。
-// 一覧の表示に必要な行だけ遅延で呼ぶ (Scan は本文を読まない)。二度目は何もしない。
+// loadMetaMaxLine は LoadMeta が受ける 1 行の最大長 (実測の最大 issue は 43KB だが、
+// 長い 1 行にも耐えるため広く採る)。
+//
+// ⚠️ const に出しているのは TestLoadMetaStopsAtH1 がこの値からフィクスチャを組むため。
+// リテラルで持つと、この上限を上げた瞬間に「打ち切りが効いていること」のテストが
+// 無言で恒真になる (2026-08-14 の R3 レビューが実証: 上限を 4MB にすると 2MB の
+// フィクスチャが上限に当たらず、打ち切りを外しても green になった)。
+const loadMetaMaxLine = 1024 * 1024
+
+// LoadMeta は本文から H1 と front matter の status: を読む。二度目は何もしない。
+//
+// ⚠️ scanIssues が**見つかった全 issue に対して**呼ぶ (可視行だけの遅延ではない)。
+// なので「先頭数行で確定するものだけ読み、H1 を取れたら打ち切る」形を守ること。
+// 以前はチェックボックスの数も数えていて、そのために bufio.Scanner が必ず EOF まで走り、
+// 一覧を出すたび (起動・外部編集の検知後の再スキャン) に issue 件数 x 行数ぶんの
+// 走査・無害化・正規表現マッチが走っていた。チェックボックスの計数は Body.Progress
+// (issues/body.go) へ移した — issue を開いたときだけ、既にメモリにある全文から数える。
+//
+// ⚠️ 削れるのは **CPU** で read 量ではない。sc.Buffer(64KB, 1MB) を張っているので
+// 64KB 以下のファイルは初回 Read で全体がバッファに載る = 打ち切っても読むバイト数は同じ
+// (実測: 43KB のファイルで旧 2 read / 新 1 read、どちらも 44,042 バイト)。効いているのは
+// Scan ループ + PlainLine + 正規表現 2 本を全行に掛けるのをやめた分で、実 repo の
+// issues/ (50 件 395KB) で 1,546,027ns/4,155 allocs → 753,285ns/310 allocs。
+// 64KB を超えるファイルでは read も実際に減る。
+//
+// H1 が無いファイルは打ち切り条件が成立せず EOF まで読む (行数上限は設けない。実測の
+// 最大 issue は 43KB で、素朴な実装を保つ方を採る)。
+// 一次情報: issues/done/050-perf-glogx-issue-list-reads-full-body.md
 func (iss *Issue) LoadMeta() error {
 	if iss.loaded {
 		return nil
@@ -381,7 +390,7 @@ func (iss *Issue) LoadMeta() error {
 	defer f.Close()
 	iss.loaded = true
 	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024) // 実測の最大 issue は 43KB。長い 1 行にも耐える
+	sc.Buffer(make([]byte, 0, 64*1024), loadMetaMaxLine)
 	inFront, firstLine := false, true
 	for sc.Scan() {
 		// 読んだ直後に無害化する (この関数が拾う Title / Declared の共通の入口)。
@@ -397,16 +406,12 @@ func (iss *Issue) LoadMeta() error {
 				iss.Declared = strings.Trim(m[1], `"'`)
 			}
 		default:
-			if iss.Title == "" {
-				if m := h1Re.FindStringSubmatch(lineText); m != nil {
-					iss.Title = m[1] // lineText の時点で無害化済み
-				}
-			}
-			if m := checkboxRe.FindStringSubmatch(lineText); m != nil {
-				iss.Boxes++
-				if m[1] != " " {
-					iss.Checked++
-				}
+			if m := h1Re.FindStringSubmatch(lineText); m != nil {
+				iss.Title = m[1] // lineText の時点で無害化済み
+				// 取りたいものが揃ったので読むのをやめる。⚠️ front matter は必ずファイル
+				// 先頭ブロックとして閉じてから default 分岐に入る (inFront が true になるのは
+				// firstLine ゲートの下だけ) ので、ここで打ち切っても status: を取り落とさない
+				return sc.Err()
 			}
 		}
 		firstLine = false
