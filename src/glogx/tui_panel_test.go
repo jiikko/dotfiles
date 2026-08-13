@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os/exec"
 	"slices"
 	"strings"
 	"testing"
@@ -632,6 +633,21 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	if !slices.Contains((*cmds)[0].Args, "-R") {
 		t.Fatalf("readonly (-R) で開いていない: %v", (*cmds)[0].Args)
 	}
+	// ⚠️ -c の scratch 設定まで見る。-R だけ守っても、buftype=nofile / noswapfile /
+	// nomodifiable が落ちると「誤編集できず :q が常にクリーンに閉じる」(openJobLogInEditor の
+	// doc。素の nvim - で :q がエラーになるというユーザー報告 2026-07-21 由来) が破れる。
+	// 実測: nomodifiable を落としても -c を丸ごと消しても全テストが green だった。
+	var scratch string
+	for i, a := range (*cmds)[0].Args {
+		if a == "-c" && i+1 < len((*cmds)[0].Args) {
+			scratch = (*cmds)[0].Args[i+1]
+		}
+	}
+	for _, want := range []string{"buftype=nofile", "noswapfile", "nomodifiable"} {
+		if !strings.Contains(scratch, want) {
+			t.Errorf("scratch 設定に %q が無い: -c %q", want, scratch)
+		}
+	}
 	// stdin に ANSI 除去済みログが載っている (ファイルは作らない)
 	buf, _ := io.ReadAll((*cmds)[0].Stdin)
 	if string(buf) != "boom\nat foo.go:10\n" {
@@ -1170,5 +1186,39 @@ func TestJobDetailBoxLinesScrollbar(t *testing.T) {
 		if strings.Contains(l, scrollbarThumbGlyph) {
 			t.Fatalf("収まるのに thumb が出ている (行 %d): %q", i, l)
 		}
+	}
+}
+
+// エディタが 0 以外で終了したとき (nvim の :cq 等) は、ファイルが保存済みなので取り直す。
+// ⚠️ 起動失敗 (PATH に無い等) と分けるのが要点。混ぜて「エラーなら reload しない」にすると、
+// 保存済みの編集が出ないまま古い内容を最新として表示する (editorClosedMsg の doc)。
+func TestBrowseEditorExitErrorStillReloads(t *testing.T) {
+	m := newTestBrowse(t, 1, nil, nil)
+	m.issuesOv = *loadedView(realIssue(t))
+
+	// 実物の *exec.ExitError を作る (errors.As の分岐を本物で通す)
+	exitErr := exec.Command("sh", "-c", "exit 1").Run()
+	if exitErr == nil {
+		t.Fatal("前提が崩れた: exit 1 がエラーにならない")
+	}
+	// ⚠️ 戻り値の cmd != nil では検証にならない (maybeTick も Cmd を返すので、reload を
+	// 飛ばす変異が通ってしまった)。取り直しが実際に走ったか = scanning が立ったかを見る。
+	m.Update(editorClosedMsg{err: exitErr})
+	if !m.issuesOv.scanning {
+		t.Error("異常終了で取り直しが走らない (保存済みの編集が反映されない)")
+	}
+	if m.toast.ok || !strings.Contains(m.toast.text, "異常終了") {
+		t.Errorf("異常終了の通知が出ない: %q ok=%v", m.toast.text, m.toast.ok)
+	}
+
+	// 起動失敗はファイルが変わっていないので取り直さない (分岐が効いていること)
+	m2 := newTestBrowse(t, 1, nil, nil)
+	m2.issuesOv = *loadedView(realIssue(t))
+	m2.Update(editorClosedMsg{err: errors.New("exec: \"zz\": executable file not found in $PATH")})
+	if m2.issuesOv.scanning {
+		t.Error("起動失敗で取り直しが走った (ファイルは変わっていないので不要)")
+	}
+	if !strings.Contains(m2.toast.text, "開けませんでした") {
+		t.Errorf("起動失敗の通知が出ない: %q", m2.toast.text)
 	}
 }

@@ -33,8 +33,12 @@ func TestOpenEditorAtRoot(t *testing.T) {
 	if len(c.Args) < 2 || !strings.HasSuffix(c.Args[0], "nvim") || c.Args[1] != "." {
 		t.Fatalf("起動コマンドが nvim . でない: %v", c.Args)
 	}
-	if c.Dir == "" {
-		t.Fatalf("cwd (repo root) が設定されていない")
+	// ⚠️ `nvim .` は引数でなく **cwd が開く対象**なので、非空チェックでは対象の取り違えを
+	// 通してしまう (実測: cmd.Dir を "/" にしても全テストが green だった)。実際の repo root と
+	// 一致することを見る。⚠️ 同じ repoRoot() を呼ぶので repoRoot() 自身の誤りは捕まえない
+	// (それは repoRoot の単体テストの担当)。
+	if want := repoRoot(); c.Dir != want {
+		t.Fatalf("cwd が repo root でない: %q want %q", c.Dir, want)
 	}
 }
 
@@ -55,8 +59,8 @@ func TestOpenFilerAtRootPicksFirstCandidate(t *testing.T) {
 	if c.Args[0] != "/opt/bin/ranger" {
 		t.Fatalf("探索順の先頭 (ranger) でない: %v", c.Args)
 	}
-	if c.Dir == "" {
-		t.Fatalf("cwd (repo root) が設定されていない")
+	if want := repoRoot(); c.Dir != want { // 対象は cwd (上の e と同じ理由)
+		t.Fatalf("ファイラーの cwd が repo root でない: %q want %q", c.Dir, want)
 	}
 }
 
