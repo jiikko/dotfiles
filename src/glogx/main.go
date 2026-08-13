@@ -34,6 +34,7 @@ func run(argv []string) int {
 		fmt.Println(Usage())
 		return 0
 	}
+	startProbe() // GLOGX_PROBE_DIR があるときだけ動く計測フック (probe.go)
 
 	isTTY := term.IsTerminal(int(os.Stdout.Fd()))
 	colored := isTTY && os.Getenv("NO_COLOR") == ""

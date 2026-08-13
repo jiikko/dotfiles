@@ -19,12 +19,29 @@ import (
 // newTestBrowse は 80×10 + NoFrame:true でフレームを踏まないので、ここでは別に組む
 // (最外周フレームが有効な既定の見た目を測りたい)。
 func benchBrowse(tb testing.TB, n, w, h int) *browseModel {
+	return benchBrowseSubjects(tb, n, w, h, false)
+}
+
+// benchBrowseSubjects は benchBrowse の本体。ja=true で commit subject を日本語混在にする。
+//
+// ⚠️ 日本語を別に測る理由: 幅計算の fast-path (width.go の fastDispWidth) は CJK を
+// 受理せず ansi へ委ねるので、**日本語の subject を含む行はフレームの中で唯一 fast-path を
+// 通れない行**になる。ASCII 固定のフィクスチャだけで測ると fast-path の効果を過大評価する
+// (この repo 自身の commit message は日本語なので、実運用は ja=true 側に近い)。
+// 2026-08-14 の敵対的レビュー R2 の指摘で追加。
+func benchBrowseSubjects(tb testing.TB, n, w, h int, ja bool) *browseModel {
 	tb.Helper()
 	commits := make([]Commit, n)
 	raw := make([]string, 0, n*6)
 	for i := range commits {
 		sha := strings.Repeat(strconv.Itoa(i%10), 40)
 		subject := "Fix invoice calculation for edge case " + strconv.Itoa(i)
+		if ja {
+			// 表示幅を実物に寄せる: この repo の直近 300 commit の subject は 98.0% が CJK を
+			// 含み、表示幅の中位は 75 セル。短い subject にすると fast-path を外す行の割合が
+			// 小さくなり、効果を過大評価する (2026-08-14 の R3 レビューで実測差 4〜5%)
+			subject = "fix(glogx): 請求計算の境界条件を是正し、回帰を実測で固定する (レビュー反映) " + strconv.Itoa(i)
+		}
 		commits[i] = Commit{
 			SHA: sha, ShortSHA: sha[:7], Subject: subject, Author: "koji",
 			AuthorEmail: "k@example.com", Date: "Thu Jul 16 19:12:47 2026 +0900",
@@ -126,6 +143,17 @@ func BenchmarkStatusViewFrame(b *testing.B) {
 // 可視は 40 行程度なので、ここが件数に比例するなら「見えない行のために毎フレーム働いている」。
 func BenchmarkStatusViewFrame2000(b *testing.B) {
 	m := benchStatusBrowse(b, 2000, 120, 40)
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = m.View().Content
+	}
+}
+
+// 日本語の commit subject を含む一覧フレーム。BenchmarkViewSteady (ASCII 固定) と対で見る:
+// 差が fast-path を通れない行のコストになる。CI の予算 (tests/glogx/bench_budgets.ci) には
+// 入れていない (対照用のローカル指標。入れるなら budgets と bench_glogx.sh の両方を触ること)。
+func BenchmarkViewSteadyJA(b *testing.B) {
+	m := benchBrowseSubjects(b, 20, 120, 40, true)
 	b.ReportAllocs()
 	for b.Loop() {
 		_ = m.View().Content
