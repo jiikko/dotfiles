@@ -148,6 +148,18 @@ func stubBrowser(t *testing.T) *string {
 // ここを変えると hint の長さの許容量が変わるので、変えたら実機で末尾が切れないか確認すること。
 const testPopupWidth = 84
 
+// pinFallbackEditor は $VISUAL / $EDITOR を空にして editorCommand の fallback (nvim) を固定する。
+//
+// ⚠️ 起動コマンドを**完全一致**で検証するテストはこれを呼ぶ。editorCommand は環境変数を読むので、
+// 開発者の環境 (EDITOR="code -w" 等) がそのまま期待値に混ざる。末尾引数だけ見る形にすれば環境に
+// 強いが、それだと前に引数を挿し込む変異 (例: -R を足して実ファイルを readonly で開く =
+// editCmd の doc が禁じている) を通してしまうので、環境を固定して完全一致で見る方を選ぶ。
+func pinFallbackEditor(t *testing.T) {
+	t.Helper()
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "")
+}
+
 // stubEditorCapture は runEditorCmd を「起動せず *exec.Cmd を記録する」実装へ差し替える。
 //
 // ⚠️ エディタ連携のテストは全部これを使う。回数だけ数える stub も昔あったが、それだと

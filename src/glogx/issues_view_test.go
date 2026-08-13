@@ -1035,6 +1035,7 @@ func realIssue(t *testing.T) *issues.Issue {
 func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 	copied := stubClipboard(t)
 	cmds := stubEditorCapture(t)
+	pinFallbackEditor(t)
 
 	// ⚠️ 実ファイルを置く: editCmd は起動前に実体を確認するので、合成パスだと起動しない
 	// (stale なパスでエディタを開かせない guard。editCmd の doc 参照)
@@ -1052,8 +1053,8 @@ func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 		t.Fatalf("v でエディタ起動の Cmd が返らない: cmd=%v 起動数=%d", cmd != nil, len(*cmds))
 	}
 	// ⚠️ 「開いた」だけでなく「何を開いたか」まで見る (対象の取り違えを通さない)
-	if args := (*cmds)[0].Args; args[len(args)-1] != iss.Path {
-		t.Errorf("v が開いた対象が issue の実ファイルでない: args=%v want末尾=%q", args, iss.Path)
+	if args, want := (*cmds)[0].Args, []string{editorFallback, iss.Path}; !slices.Equal(args, want) {
+		t.Errorf("v の起動コマンドが違う: args=%v want=%v", args, want)
 	}
 }
 
@@ -1062,6 +1063,7 @@ func TestIssuesViewActionKeysWorkInBothModes(t *testing.T) {
 	// 写すと、追加時に片方へ入れ忘れても「そのモードでだけ効かない」形で静かに壊れる。
 	copied := stubClipboard(t)
 	cmds := stubEditorCapture(t)
+	pinFallbackEditor(t)
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "028-refactor-x.md")
@@ -1093,8 +1095,8 @@ func TestIssuesViewActionKeysWorkInBothModes(t *testing.T) {
 			}
 			// 対象は「その issue の実ファイル」。一覧モードと本文モードで target() が
 			// 切り替わるので、どちらでも同じファイルを指すことまで見る
-			if args := (*cmds)[before].Args; args[len(args)-1] != path {
-				t.Errorf("%s モードの %q が別の対象を開いた: args=%v want末尾=%q", mode, key, args, path)
+			if args, want := (*cmds)[before].Args, []string{editorFallback, path}; !slices.Equal(args, want) {
+				t.Errorf("%s モードの %q の起動コマンドが違う: args=%v want=%v", mode, key, args, want)
 			}
 		}
 	}
@@ -1593,6 +1595,7 @@ func TestIssuesViewBodyHintAdvertisedEditorKeyWorks(t *testing.T) {
 	// ⚠️ 回数だけ数える stubEditor では「渡す対象の取り違え」(iss.Path → iss.Dir 等) が通るので、
 	// Args を捕まえる stubEditorCapture を使う。
 	cmds := stubEditorCapture(t)
+	pinFallbackEditor(t)
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "028-refactor-x.md")
@@ -1615,8 +1618,8 @@ func TestIssuesViewBodyHintAdvertisedEditorKeyWorks(t *testing.T) {
 	if len(*cmds) != 1 {
 		t.Fatalf("エディタの起動回数が 1 でない: %d", len(*cmds))
 	}
-	if args := (*cmds)[0].Args; len(args) == 0 || args[len(args)-1] != path {
-		t.Errorf("e が開いた対象が issue の実ファイルでない: args=%v want末尾=%q", args, path)
+	if args, want := (*cmds)[0].Args, []string{editorFallback, path}; !slices.Equal(args, want) {
+		t.Errorf("e の起動コマンドが違う: args=%v want=%v", args, want)
 	}
 }
 
@@ -2103,8 +2106,8 @@ func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 			}
 			// ⚠️ 起動しただけでなく対象まで見る (専用テストと同じ強さに揃える。方向だけの
 			// 弱い二重化にすると「壊れても片方しか落ちない」状態になる)
-			if args := (*e.cmds)[before].Args; args[len(args)-1] != e.v.open.Path {
-				t.Errorf("e が開いた対象が違う: args=%v want末尾=%q", args, e.v.open.Path)
+			if args, want := (*e.cmds)[before].Args, []string{editorFallback, e.v.open.Path}; !slices.Equal(args, want) {
+				t.Errorf("e の起動コマンドが違う: args=%v want=%v", args, want)
 			}
 		},
 		"Enter": func(t *testing.T, e *bodyKeyEnv) { e.assertClosesBody(t, "enter") },
@@ -2168,6 +2171,7 @@ func newBodyKeyEnv(t *testing.T) *bodyKeyEnv {
 	t.Helper()
 	cmds := stubEditorCapture(t)
 	copied := stubClipboard(t)
+	pinFallbackEditor(t)
 
 	dir := t.TempDir()
 	rel := "001-feat-hintkeys.md"
