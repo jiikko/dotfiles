@@ -129,14 +129,7 @@ func TestBuildLogArgs(t *testing.T) {
 func newTempRepo(t *testing.T, subjects []string) string {
 	t.Helper()
 	dir := t.TempDir()
-	prev, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.Chdir(prev) })
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir(dir)
 	git := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", args...)
@@ -342,11 +335,7 @@ func TestIntegrationUnpushedSHAs(t *testing.T) {
 // 未 push が集合から欠けない (C12 の回帰: 欠けると ↑ が – と誤表示される)。
 func TestIntegrationUnpushedSHAsPathspec(t *testing.T) {
 	dir := t.TempDir()
-	prev, _ := os.Getwd()
-	t.Cleanup(func() { os.Chdir(prev) })
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir(dir)
 	git := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", args...)
@@ -408,16 +397,9 @@ func headSHA(t *testing.T) string {
 
 func TestIntegrationOutsideRepo(t *testing.T) {
 	dir := t.TempDir()
-	prev, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.Chdir(prev) })
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir(dir)
 	t.Setenv("GIT_CEILING_DIRECTORIES", dir)
-	_, err = LoadCommits(&Options{MaxCount: 1}, false)
+	_, err := LoadCommits(&Options{MaxCount: 1}, false)
 	if err == nil {
 		t.Fatal("リポジトリ外でエラーになっていない")
 	}

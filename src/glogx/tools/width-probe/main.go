@@ -15,6 +15,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"strconv"
@@ -206,7 +207,7 @@ func cursorCol() (int, error) {
 		buf = append(buf, b[0])
 	}
 	// buf = "\x1b[<row>;<col>"
-	i := strings.LastIndexByte(string(buf), ';')
+	i := bytes.LastIndexByte(buf, ';')
 	if i < 0 {
 		return 0, fmt.Errorf("CPR 応答を解析できません: %q", buf)
 	}

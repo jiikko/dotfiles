@@ -6,20 +6,31 @@ version: "2"
 
 linters:
   enable:
+    - asasalint      # []any を ...any にそのまま渡す誤り
+    - bidichk        # 危険な Unicode 双方向制御文字 (コピペ由来の混入対策)
     - contextcheck   # ctx の非伝播・context.Background の握り込み検出 (issue 029 の cancel 系の再発防止)
     - copyloopvar    # loop variables needlessly copied (Go 1.22+)
+    - durationcheck  # Duration 同士の乗算バグ (アニメ周期・タイムアウト計算が多い repo なので相性が良い)
     - depguard       # アーキテクチャ不変条件: render.go は純粋描画層 (下の rules)
     - dupl           # コピペ重複の検出 (runLog の 4 行 ×2 コピペを見逃した反省。閾値は下)
+    - errname        # sentinel error は Err 接頭辞・error 型は Error 接尾辞
     - errorlint      # errors.Is/As を使わない比較・%w 漏れの検出
     - exhaustive     # default なし switch の enum 網羅を強制 (settings 参照。網羅性の機械化)
+    - exptostd       # x/exp で書いたものの stdlib 昇格済み検出
+    - fatcontext     # ループ内で context を積み重ねるパターンの検出
     - forbidigo      # stdout 直接出力の禁止 (下の forbid。main.go だけ除外)
     - gocritic       # unlambda / singleCaseSwitch 等の診断 (試走 2 件のみ = 低ノイズを確認済み)
     - intrange       # for i := 0; i < n; i++  ->  for i := range n
+    - makezero       # make([]T, n) への append で先頭にゼロ値が残るバグ
+    - mirror         # bytes/strings の鏡写し API の取り違え (無駄な変換 alloc。perf 文化と一致)
     - misspell       # common English misspellings in comments/strings
+    - nilnesserr     # err != nil を確認したのに別の nil error を返すバグ
     - nolintlint     # 説明なし nolint コメントの禁止
     - perfsprint     # fmt.Sprintf that a faster stdlib call can replace
     - prealloc       # 事前確保できる append ループの検出 (View/整形ホットパスの alloc 削減文化と一致)
+    - recvcheck      # value / pointer receiver の混在検出
     - unconvert      # redundant type conversions
+    - usetesting     # テストの os.Chdir/MkdirTemp 等を t.Chdir/t.TempDir へ (cleanup 漏れの構造的防止)
     - unparam        # 常に同値の引数・未使用戻り値 (テストは除外 = ヘルパーの汎用引数を許す)
     - usestdlibvars  # hand-written constants that exist in the stdlib
     - wastedassign   # assignments whose value is never read
