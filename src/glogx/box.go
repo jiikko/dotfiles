@@ -173,7 +173,16 @@ func scrollbarColumn(rows []string, innerWidth, total, offset int, colored bool)
 	if view == 0 || total <= view {
 		return rows
 	}
-	contentW := max(innerWidth-scrollbarColumnWidth, 1)
+	contentW := innerWidth - scrollbarColumnWidth
+	if contentW < 1 {
+		// バー列 (空白 + 記号) すら入らない極小幅ではバーを描かない。以前は contentW を 1 に
+		// 床上げしており、幅 1-2 で「本文 + バー」が必ず枠を破っていた (issue 053)
+		out := make([]string, len(rows))
+		for i, r := range rows {
+			out[i] = clipToWidth(r, innerWidth)
+		}
+		return out
+	}
 	// thumb 長は表示比率、位置は offset 比率。どちらも最低 1 行を確保し、末尾 (offset=maxOffset)
 	// では thumb が下端に接地する。
 	thumb := min(max(view*view/total, 1), view)

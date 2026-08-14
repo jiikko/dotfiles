@@ -1571,7 +1571,10 @@ func (v *issuesView) tabLine(o issuesRenderOpts) string {
 	avail := max(o.width-dispWidth(filter)-1, 1)
 	left := scrollTabs(chips, v.tabIdx+1, avail, o.colored) // チップ配列は [next] が 0 番
 	pad := max(o.width-dispWidth(left)-dispWidth(filter), 0)
-	return left + padSpaces(pad) + paint(filter, ansiDim, o.colored)
+	// ⚠️ 組んだ後に必ず切る (scrollTabs 末尾と同じ規律): avail には下限 1 があるので、
+	// バッジ + 印すら入らない極小幅 (o.width ≤ dispWidth(filter)) では合成が幅を超える
+	// (issue 053: 幅 1 で「…○」= 2 セルが出ていた。収まる幅では clip は素通りで無 alloc)
+	return clipToWidth(left+padSpaces(pad)+paint(filter, ansiDim, o.colored), o.width)
 }
 
 // tabScrollMark は「この向きにまだタブがある」ことを示す印 (幅 1 の bare 記号に限る。

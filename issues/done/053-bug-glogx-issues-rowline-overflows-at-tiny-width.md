@@ -41,3 +41,30 @@
 ## 関連
 
 - `issues/done/050-perf-glogx-issue-list-reads-full-body.md` (この観測が出た経緯)
+
+## 対応記録 (2026-08-15)
+
+真因は issue の推測 (titleW の下限 4) では**なく**、`clipToWidth` の契約だった。全経路が
+最後に clipToWidth を通しているのに溢れたのは、`width <= 0` で素通し (そのまま返す) して
+いたため。`rowLine` は `o.width - scrollbarColumnWidth` を受けるので、幅 1-2 では負になり
+最終 clip が無効化されていた (tui.go の `max(w-固定, 0)` ガードも同じ理由で無意味だった)。
+
+修正 (3 点。いずれも「組んだ後に必ず切る / 入らないものは描かない」の構造側):
+
+- `clipToWidth` / `clipMeasure`: width <= 0 は空を返す契約に変更 (0 = 無制限として使う
+  呼び出しは repo に無いことを 33 箇所の列挙で確認)
+- `tabLine`: フィルタバッジを clip 後に後置していたので、合成後に最終 clip を通す
+- `scrollbarColumn`: contentW を 1 に床上げしていたのをやめ、バー列が入らない幅では
+  バーを描かず本文だけを clip する
+
+テスト:
+
+- `TestIssuesViewLinesAlwaysExactlyPageRows` の幅掃きを {20,40,80} → **1..80 全数**へ
+  (広げた時点で scrollbarColumn の床上げが 3 件目の漏れとして検出された)
+- status viewer 側にも同型 sweep を新設 (`TestStatusViewLinesFitWidthDownToOne`)。
+  status / 本文モードは幅 1..120 の probe で溢れ 0 (共有関数の修正で同時に閉じた)
+- 変異検証: clipToWidth を素通しに戻すと width=1 で「→ 030 ○ feat      a」(19 セル) が
+  枠を破り red になることを実測
+
+「未確認」のうち status / 一覧側の同型: status は上記 sweep で固定。幅 1-2 の実機再現は
+していない (修正が全数掃きで機械的に検証できたため不要と判断)。

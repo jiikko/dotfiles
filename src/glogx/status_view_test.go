@@ -1162,3 +1162,29 @@ func TestStatusTrailingNulIsNotCountedAsSkipped(t *testing.T) {
 		t.Fatalf("skipped = %d, want 0 (末尾の空要素を数えている)", st.skipped)
 	}
 }
+
+// 全行が幅に収まる不変条件を width 1 から全数で掃く (issues 側の
+// TestIssuesViewLinesAlwaysExactlyPageRows と対。issue 053: 掃き始めが広い幅だけだと、
+// 極小幅でしか出ない枠越え (clipToWidth の width<=0 素通し・scrollbarColumn の床上げ) が
+// 眠る)。
+func TestStatusViewLinesFitWidthDownToOne(t *testing.T) {
+	recs := make([]string, 0, 30)
+	for i := range 30 {
+		p := "src/deeply/nested/module" + strconv.Itoa(i) + "/handler.go"
+		if i%2 == 0 {
+			recs = append(recs, "M  "+p)
+		} else {
+			recs = append(recs, " M "+p)
+		}
+	}
+	v := newTestStatusView(t, statusRec(recs...))
+	for width := 1; width <= 80; width++ {
+		for _, page := range []int{3, 12} {
+			for _, ln := range v.lines(testStatusOpts(width, page)) {
+				if w := dispWidth(ln); w > width {
+					t.Fatalf("width=%d page=%d の行が幅を超えた (w=%d): %q", width, page, w, ln)
+				}
+			}
+		}
+	}
+}

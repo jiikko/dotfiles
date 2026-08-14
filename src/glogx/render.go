@@ -498,7 +498,10 @@ func paint(s, color string, colored bool) string {
 // 切り詰める (色コードを保ったままの部分切りは複雑さに見合わない)。静的出力では使わない。
 func clipToWidth(line string, width int) string {
 	if width <= 0 {
-		return line
+		// 幅 0 以下に収まる表示は空しかない。以前はそのまま返しており、呼び出し側の
+		// 「width - 固定列」が極小幅で負になると行が枠を突き破っていた (issue 053:
+		// issues viewer の幅 1-2。max(w-固定, 0) のガードも素通しでは意味を成さない)
+		return ""
 	}
 	// fast-path: ANSI 無しなら整形式 UTF-8 で表示幅 ≤ byte 長が成り立つので、byte 長が
 	// width 以内なら確実に幅内 = stripANSI の alloc も StringWidth 走査も省ける
@@ -522,7 +525,7 @@ func clipToWidth(line string, width int) string {
 // ここは推定でなく実測を維持する)。
 func clipMeasure(line string, width int) (string, int) {
 	if width <= 0 {
-		return line, dispWidth(line)
+		return "", 0 // clipToWidth と同じ契約 (幅 0 以下に収まる表示は空だけ。issue 053)
 	}
 	w := dispWidth(line)
 	if w <= width {

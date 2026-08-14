@@ -770,9 +770,11 @@ func TestIssuesViewTabChipCountsMatchRows(t *testing.T) {
 }
 
 func TestIssuesViewLinesAlwaysExactlyPageRows(t *testing.T) {
-	// 幅も振る: 狭い幅では固定部分 (溝・番号・バッジ・カテゴリ) だけで幅を超えるため、
-	// 行のクリップが 1 経路でも抜けていると枠を突き破る。
-	for _, width := range []int{20, 40, 80} {
+	// 幅は 1 から全数で振る: 狭い幅では固定部分 (溝・番号・バッジ・カテゴリ) だけで幅を
+	// 超えるため、行のクリップが 1 経路でも抜けていると枠を突き破る。掃き始めが 20 だった
+	// 頃は幅 1-2 の取りこぼしが眠っていた (issue 053: clipToWidth の width<=0 素通しと
+	// tabLine のフィルタバッジ後置)。
+	for width := 1; width <= 80; width++ {
 		for _, page := range []int{3, 5, 20, 40} {
 			for _, v := range []*issuesView{loadedView(sampleIssues()...), loadedView(), {shown: true, scanning: true}} {
 				o := renderOpts(page)
