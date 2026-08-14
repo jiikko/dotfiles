@@ -6,11 +6,16 @@
 
 ## 何が起きるか
 
-`check_bench_budgets.sh:123` は単位を固定文字列で書いている:
+`check_bench_budgets.sh` は単位を固定文字列で書いている。**同じ形が 2 箇所ある**
+(121 行の警告経路と 123 行のエラー経路):
 
 ```sh
-printf '::error::bench regression: %s %sms > budget %sms (%s)\n' ...
+121:  printf '::warning::bench over budget (極端な混雑 run のため警告のみ): %s %sms > %sms (%s)\n' ...
+123:  printf '::error::bench regression: %s %sms > budget %sms (%s)\n' ...
 ```
+
+⚠️ 121 行 (`rel` metric が極端な混雑 run で警告のみに落ちる経路) を忘れないこと。
+エラー側だけ直すと、そちらに KB/MB の誤表示が残る。
 
 この repo の metric は**単位を名前が持つ**流儀 (`server_rss_mb` = MB / `startup_cpu_ms` =
 CPU ms / 051 で追加した `*_alloc_kb` = KB)。そのため CI ログにこう出る:
@@ -41,6 +46,7 @@ unit_of() { case "$1" in *_kb) printf 'KB';; *_mb) printf 'MB';; *_cpu_ms|*) pri
 ```
 
 共有 checker なので nvim / tmux / zsh / glogx の全 metric に同時に効く。
+**呼び出しは 121 / 123 の両方**に入れること (片方だけ直すのが典型的な取りこぼし)。
 
 ⚠️ **予算ファイルに単位トークンを持たせる案 (`view_steady_alloc_kb 31.0 kb`) は採らない**。
 051 で「行の書式は増やさず、単位は metric 名が持つ」と決めた判断と衝突する

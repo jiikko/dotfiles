@@ -7,14 +7,17 @@
 ## 何が起きるか
 
 `tests/glogx/` 配下のファイルを触って CLAUDE.md 記載の手順を踏むと、**変更内容に関係なく
-必ず rc=1 で落ちる**:
+必ず失敗する** (実行して採取):
 
 ```
 $ make test-changed PATHS="tests/glogx/bench_glogx.sh tests/glogx/bench_budgets.ci"
-[test-changed] targets: test-lint-tests / tests: tests/glogx / go: src/glogx
+[test-changed] targets: test-lint-tests / tests: tests/glogx
 [lint-tests] zsh -n 44 本 + shellcheck 40 本 OK
 ✗ tests/glogx 配下にテストが見つかりません (find 失敗 or 0 件)
 make[1]: *** [test-dir] Error 1
+make: *** [test-changed] Error 1
+$ echo $?
+2
 ```
 
 機構:
