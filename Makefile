@@ -81,7 +81,7 @@ test-runtime: test-syntax test-discovered test-bats
 # 改名/不在や find の失敗がパイプに隠れて「未実行なのに成功」する状態。それを弾く)。
 define run_tests
 tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); \
-[ -n "$$tests" ] || { echo "✗ $(1) 配下にテストが見つかりません (find 失敗 or 0 件)" >&2; exit 1; }; \
+[ -n "$$tests" ] || { echo "✗ $(1) 配下にテストが見つかりません (find 失敗 or 0 件)。本当に test_*.sh が無いディレクトリなら、テストを足すか scripts/test_changed.sh の写像の振り先を直す (issue 063 の同型)" >&2; exit 1; }; \
 printf '%s\n' "$$tests" | while IFS= read -r t; do echo "[run] $$t"; "$$t" || exit 1; done
 endef
 
@@ -94,7 +94,7 @@ endef
 NPROC := $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 define run_tests_parallel
 tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); \
-[ -n "$$tests" ] || { echo "✗ $(1) 配下にテストが見つかりません (find 失敗 or 0 件)" >&2; exit 1; }; \
+[ -n "$$tests" ] || { echo "✗ $(1) 配下にテストが見つかりません (find 失敗 or 0 件)。本当に test_*.sh が無いディレクトリなら、テストを足すか scripts/test_changed.sh の写像の振り先を直す (issue 063 の同型)" >&2; exit 1; }; \
 printf '%s\n' "$$tests" | xargs -P $(NPROC) -n 1 sh -c \
 	'out=$$(mktemp); if "$$0" >"$$out" 2>&1; then echo "[ok] $$0"; rm -f "$$out"; else echo "[FAIL] $$0"; cat "$$out"; rm -f "$$out"; exit 1; fi'
 endef
