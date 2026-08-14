@@ -86,15 +86,33 @@ func BenchmarkViewSteady(b *testing.B) {
 	}
 }
 
-// job パネルを重ねた状態のフレーム (buildPanelBox がもう 1 段走る)
-func BenchmarkViewWithPanel(b *testing.B) {
-	m := benchBrowse(b, 20, 120, 40)
+// benchPanelBrowse は job パネルを重ねた状態のモデル (ASCII/JA 対照の共有 fixture)。
+func benchPanelBrowse(tb testing.TB, ja bool) *browseModel {
+	tb.Helper()
+	m := benchBrowseSubjects(tb, 20, 120, 40, ja)
 	m.panelSHA = m.commits[3].SHA
 	m.details[m.panelSHA] = []CheckDetail{
 		{Name: "build", State: StateSuccess, URL: "https://github.com/o/r/runs/1"},
 		{Name: "lint", State: StateFailure, URL: "https://github.com/o/r/runs/2"},
 		{Name: "test", State: StatePending, URL: "https://github.com/o/r/runs/3"},
 	}
+	return m
+}
+
+// job パネルを重ねた状態のフレーム (buildPanelBox がもう 1 段走る)
+func BenchmarkViewWithPanel(b *testing.B) {
+	m := benchPanelBrowse(b, false)
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = m.View().Content
+	}
+}
+
+// BenchmarkViewWithPanel の日本語 subject 対照 (issue 055)。CI の予算には入れない
+// (回帰検出は ASCII 側で足り、対照はローカルで「効果が内容に依存するか」を見る用)。
+// 入れるなら budgets と bench_glogx.sh の両方を触ること。
+func BenchmarkViewWithPanelJA(b *testing.B) {
+	m := benchPanelBrowse(b, true)
 	b.ReportAllocs()
 	for b.Loop() {
 		_ = m.View().Content

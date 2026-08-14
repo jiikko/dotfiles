@@ -30,9 +30,25 @@ func BenchmarkCursorMoveView(b *testing.B) {
 	}
 }
 
-// diff オーバーレイ表示中のフレーム (withShadowScrollbar + buildShadowPanelBox が毎フレーム走る)。
-func BenchmarkViewWithDiff(b *testing.B) {
-	m := benchBrowse(b, 20, 120, 40)
+// BenchmarkCursorMoveView の日本語 subject 対照 (issue 055)。CI の予算には入れない
+// (BenchmarkViewSteadyJA と同じ位置づけ。入れるなら budgets と bench_glogx.sh の両方を触ること)。
+func BenchmarkCursorMoveViewJA(b *testing.B) {
+	m := benchBrowseSubjects(b, 20, 120, 40, true)
+	b.ReportAllocs()
+	for b.Loop() {
+		m.handleKey("j")
+		_ = m.View().Content
+		m.handleKey("k")
+		_ = m.View().Content
+	}
+}
+
+// benchDiffBrowse は diff オーバーレイ表示中のモデル (ASCII/JA 対照の共有 fixture)。
+// diff 本文は ASCII のまま (実運用でも diff 本文は ASCII が多い。issue 055)。
+// ja が変えるのはオーバーレイの下に見えている一覧行の subject。
+func benchDiffBrowse(tb testing.TB, ja bool) *browseModel {
+	tb.Helper()
+	m := benchBrowseSubjects(tb, 20, 120, 40, ja)
 	sha := m.commits[0].SHA
 	lines := make([]string, 200)
 	for i := range lines {
@@ -41,6 +57,21 @@ func BenchmarkViewWithDiff(b *testing.B) {
 	m.diffOv.sha = sha
 	m.diffOv.cache.store(sha, lines, sha)
 	m.diffOv.offset = 50
+	return m
+}
+
+// diff オーバーレイ表示中のフレーム (withShadowScrollbar + buildShadowPanelBox が毎フレーム走る)。
+func BenchmarkViewWithDiff(b *testing.B) {
+	m := benchDiffBrowse(b, false)
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = m.View().Content
+	}
+}
+
+// BenchmarkViewWithDiff の日本語 subject 対照 (issue 055)。CI の予算には入れない (同上)。
+func BenchmarkViewWithDiffJA(b *testing.B) {
+	m := benchDiffBrowse(b, true)
 	b.ReportAllocs()
 	for b.Loop() {
 		_ = m.View().Content

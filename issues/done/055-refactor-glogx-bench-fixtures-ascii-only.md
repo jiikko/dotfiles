@@ -58,3 +58,27 @@ $ git log --format='%s' -100 | grep -cP '[^\x00-\x7f]'
 
 - `issues/done/046-perf-glogx-dispwidth-fastpath-dead.md` (代表性の実測が一次情報)
 - `src/glogx/tui_bench_test.go` の `benchBrowseSubjects` の doc
+
+## 対応記録 (2026-08-15)
+
+方針どおり「幅計算が効く View 系」だけに JA 対照版を追加 (CI の予算には足していない):
+
+- `BenchmarkViewWithPanelJA` / `BenchmarkCursorMoveViewJA` / `BenchmarkViewWithDiffJA`
+  (fixture の重複を避けるため `benchPanelBrowse` / `benchDiffBrowse` を ja 引数の共有
+  ヘルパーに抽出)
+- 対象外にしたもの (issue の判断どおり): `ModelInit200` (行構築が主で幅計算が効かない) /
+  `StatusViewFrame` 系 (全画面 status viewer は subject を描かず、パスの日本語は稀) /
+  `RenderLinesLargePatch` (diff 本文は ASCII が普通)
+
+導入時ローカル実測 (M3 Max, -benchtime=200ms)。JA は時間 +27〜49% で、ASCII 固定だけでは
+このぶん過小に測っていたことを対照として固定できた (確保はほぼ不変 = 差は幅計算の CPU):
+
+| bench | ASCII | JA | 差 |
+|---|---|---|---|
+| view_steady | 27.4µs | 39.6µs | +45% |
+| view_panel | 29.3µs | 42.7µs | +46% |
+| cursor_move_view | 53.5µs | 79.7µs | +49% |
+| view_diff | 33.7µs | 43.0µs | +27% |
+
+「未確認」2 点 (status パス・diff 本文の日本語頻度) は、対象外の判断根拠が「描かれない /
+稀」で足りているため追加調査しない。頻度が問題になったらそのとき対で足す。
