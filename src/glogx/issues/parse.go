@@ -3,15 +3,38 @@ package issues
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"glogx/termsafe"
 )
+
+// bytesRead は issue ファイルから実際に読んだ累計バイト数 (プロセス全体・テスト観測用)。
+// LoadMeta / ReadBody の読み取りだけがここを増やす (観測点をこのファイルに閉じる)。
+var bytesRead atomic.Int64
+
+// BytesReadForTest は issue ファイルから読んだ累計バイト数を返す (テスト専用の観測点)。
+//
+// 「一覧の生成 (Scan + 全件 LoadMeta) は全文を読まない」(issue 050) は表示に差が出ない
+// 不変条件で、時間で測ると flaky、内容で測ると vacuous になる (issue 052)。読んだバイト数
+// だけが安定した外部観測点なので、テストは前後の差分で「全文より小さい」を assert する。
+// production からは読まないこと (数える以外の責務を足さない)。
+func BytesReadForTest() int64 { return bytesRead.Load() }
+
+// countingReader は読んだバイト数を bytesRead へ積む (LoadMeta 用)。
+type countingReader struct{ r io.Reader }
+
+func (c countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	bytesRead.Add(int64(n))
+	return n, err
+}
 
 // ファイル名とパスから issue のメタデータを組み立てる層。
 //
@@ -389,7 +412,7 @@ func (iss *Issue) LoadMeta() error {
 	}
 	defer f.Close()
 	iss.loaded = true
-	sc := bufio.NewScanner(f)
+	sc := bufio.NewScanner(countingReader{f})
 	sc.Buffer(make([]byte, 0, 64*1024), loadMetaMaxLine)
 	inFront, firstLine := false, true
 	for sc.Scan() {
@@ -425,6 +448,7 @@ func (iss *Issue) ReadBody() (*Body, error) {
 	if err != nil {
 		return nil, err
 	}
+	bytesRead.Add(int64(len(b))) // LoadMeta と同じ観測点に積む (BytesReadForTest の doc)
 	return NewBody(string(b)), nil
 }
 

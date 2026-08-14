@@ -1726,6 +1726,39 @@ func TestIssuesViewRebindOpenDiscardsWhenGone(t *testing.T) {
 	}
 }
 
+// 「一覧の生成 (scanIssues = Scan + 全件 LoadMeta) は issue の全文を読まない」(issue 050) の
+// 回帰テスト (issue 052)。観測点は issues.BytesReadForTest (読んだ累計バイト数の差分)。
+// LoadMeta は 64KB バッファの初回 Read で頭だけ読んで H1 で打ち切るため、それより十分
+// 大きい本文を用意し「読んだ量 < ファイルサイズ」を assert する。scanIssues に全文読み
+// (iss.ReadBody() 等) が紛れると読んだ量がサイズを超えて red になる (050 の敵対的レビュー
+// R3 が実証した「表示が変わらないのに全 green」の変異を、この観測点は検出できる)。
+func TestScanIssuesDoesNotReadFullBody(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "# 001 feat: x\n\n" + strings.Repeat("本文の行 (LoadMeta はここまで来ない)\n", 5000) // ~250KB
+	if err := os.WriteFile(filepath.Join(dir, "001-feat-x.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	size := int64(len(content))
+
+	before := issues.BytesReadForTest()
+	msg := scanOf(t, root)
+	read := issues.BytesReadForTest() - before
+
+	if len(msg.issues) != 1 {
+		t.Fatalf("issue が 1 件見つかるはず: %d 件", len(msg.issues))
+	}
+	if read == 0 {
+		t.Fatal("読んだバイト数が観測できていない (LoadMeta が観測点を通っていない)")
+	}
+	if read >= size {
+		t.Errorf("scan 経路が全文を読んでいる: read=%d size=%d", read, size)
+	}
+}
+
 // Msg 経路 (issuesScanMsg) からの notice 配達の回帰テスト (issue 059)。
 // rebindOpen が置く「開いていた issue が見つかりません」は、打鍵を待たずスキャン結果を
 // 受けたフレームで配達される (トースト + w でコピーできる lastWarning)。

@@ -61,3 +61,19 @@ _, _ = iss.ReadBody()
 ## 関連
 
 - `issues/done/050-perf-glogx-issue-list-reads-full-body.md` (「残した穴」節が一次情報)
+
+## 対応記録 (2026-08-15)
+
+案 1 を「常時オンの累計 read バイトカウンタ + テスト専用アクセサ」に落として解決:
+
+- `issues/parse.go` に `bytesRead` (atomic.Int64) と `BytesReadForTest()` を追加。
+  LoadMeta は `countingReader` 経由、ReadBody は読了後に加算。観測点は parse.go に閉じ、
+  production 側のコストは Read ごとの atomic add のみ (差し替え可能な関数変数は不採用:
+  swap し忘れ・並行 swap の面倒に対し、常時カウントの方が単純)
+- 回帰テスト `TestScanIssuesDoesNotReadFullBody` (glogx 側): H1 + ~250KB の issue を 1 件
+  置き、scanIssues 前後の差分で「読んだ量 < ファイルサイズ」を assert
+- 変異検証: 050 の R3 変異そのもの (`scanIssues` に `_, _ = iss.ReadBody()`) を当てて
+  `read=310551 size=245015` で red を実測してから revert
+
+「関連する穴」の bench_budgets.ci に issue scan の metric が無い件は本 issue では扱わない
+(CI ゲートの新設は別作業。必要なら別 issue に起こす)。
