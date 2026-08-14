@@ -46,8 +46,13 @@ model_init_200 10 rel
 #   render_large_patch      2024403    2024342
 #
 # 加えて view_steady は go1.25.0 (CI が go.mod から選ぶ版) / GOMAXPROCS=2 / TERM・LANG 未設定 /
-# linux/arm64 でも 30744〜30745 B。CI (ubuntu-slim) の実測はまだ無いので、初回 run は
-# Step Summary の 🆕 初計測 の値を確認すること (rules/bench-watch-after-push.md)。
+# linux/arm64 でも 30744〜30745 B。
+#
+# CI (ubuntu-slim) の初回実測も一致した (2026-08-14, run 31760687777、min-of-20、KB):
+#   view_steady 30.023 / view_panel 35.525 / status_view_frame 41.557 / status_view_2000 42.232 /
+#   cursor_move_view 60.047 / view_diff 46.299 / model_init_200 142.656 / render_large_patch 1976.877
+# ローカル実測との差は最大 0.12% (view_panel) で、全 metric が +3% の余裕を丸ごと残して green。
+# = この予算は「桁級だけ」ではなく実際に数 % の退行を捕まえる位置にある。
 # もし CI で超えたら、上限を上げる前に「なぜ環境で変わったか」を書き足すこと (黙って緩めない)。
 # 値を上げる正当な理由は「確保が増える機能追加を意図して入れた」だけで、そのときは
 # src/glogx/frame_alloc_test.go のバイト上限と同じ commit で更新する。
