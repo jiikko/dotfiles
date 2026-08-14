@@ -222,6 +222,10 @@ func (s *toast) push(text string, ok, info bool) {
 // 重要とみなす。⚠️ **追い出し (evictOne) と描画予算の選別 (boxLines) がこの 1 箇所を共有する** —
 // 保持の規則と表示の規則が別々だと「保持しているのに重要な通知だけ画面に出ない」状態ができる
 // (実測 2026-08-13: 狭い端末で最古の警告が描かれなかった)。
+// ⚠️ ただし**この判定は「最新は落とさない」を含まない**。最新の保護は呼び出し側の責務:
+// evictOne は対象 (s.older) が構造的に最新を含まないので不要だが、boxLines は最新を含む列を
+// 回すため index 0 を選別から外す必要がある。共有するのは重要度の判定だけで、保護の半分まで
+// 共有された気にならないこと (issue 057: ここを見落として最新の成功/進行中が描かれなくなった)。
 func (t *toastItem) important() bool { return !t.ok && !t.info }
 
 // evictOne は溢れた 1 枚を捨てる。⚠️ 年齢だけで捨てると重要な通知が消える: 起動時の警告
@@ -355,7 +359,12 @@ func (s *toast) boxLines(colored bool, maxLines int) []string {
 		shown = append(shown, it)
 	}
 	fit := max(maxLines/toastBoxLines, 1) // 最新の 1 枚は上限を超えても出す
-	for i := len(boxes) - 1; i >= 0 && len(boxes) > fit; i-- {
+	// ⚠️ i >= 1 で止めて最新 (index 0) を重要度選別から外す。「最新の 1 枚は出す」は
+	// この保護 + 最終段の先頭切りの 2 つで成る: fit の下限 1 だけでは「残る 1 枚が最新」を
+	// 保証しない (実測 2026-08-14: 最新が成功/進行中だとここで落ち、押したキーの
+	// フィードバックが古い警告に覆い隠された。issue 057)。evictOne はこの保護を持たなくて
+	// よい — あちらの対象 s.older は構造的に最新を含まない (important() の doc)
+	for i := len(boxes) - 1; i >= 1 && len(boxes) > fit; i-- {
 		if !shown[i].important() {
 			boxes = append(boxes[:i], boxes[i+1:]...)
 			shown = append(shown[:i], shown[i+1:]...)

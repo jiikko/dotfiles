@@ -383,8 +383,53 @@ func TestToastBoxLinesKeepsWarningWithinBudget(t *testing.T) {
 		t.Errorf("並び順が入れ替わっている (上が新しいという読み方が崩れる):\n%s", out)
 	}
 
-	// 1 枚ぶんの予算では最新 1 枚だけ (既存の不変条件: 見えない通知より覆う通知)
+	// 1 枚ぶんの予算では最新 1 枚だけ (既存の不変条件: 見えない通知より覆う通知)。
+	// ⚠️ 行数だけの assert にしない: 最新が落ちて古い警告が残っても行数は同じ 4 行で通る。
+	// 実際この fixture は issue 057 のバグ (最新 ok2 が消え「未 push」だけが描かれる) を
+	// 再現していたのに、行数 assert だったため green を返し続けていた
+	one := strings.Join(s.boxLines(false, toastBoxLines), "\n")
 	if got := len(s.boxLines(false, toastBoxLines)); got != toastBoxLines {
 		t.Errorf("予算 1 枚のとき %d 行 (want %d)", got, toastBoxLines)
+	}
+	if !strings.Contains(one, "ok2") {
+		t.Errorf("予算 1 枚のとき最新 (ok2) が描かれない (issue 057):\n%s", one)
+	}
+}
+
+// 最新のトーストは重要度に関係なく必ず描かれる (issue 057 の回帰テスト)。
+// 「最新が成功/進行中・残りが警告」の組み合わせで、狭い端末の予算 (fit=1 / fit=2) でも
+// 最新のテキストが出力に含まれることを**中身で** assert する (行数 assert はこの穴を通す)。
+func TestToastBoxLinesAlwaysDrawsNewest(t *testing.T) {
+	cases := []struct {
+		name     string
+		maxLines int
+		build    func(*toast)
+		want     string
+	}{
+		{"fit=1: 警告 1 枚 + 成功", toastBoxLines*2 - 1, func(s *toast) {
+			s.show("git push に失敗しました", false)
+			s.show("コピーしました", true)
+		}, "コピーしました"},
+		{"fit=2: 警告 2 枚 + 成功", toastBoxLines*3 - 2, func(s *toast) {
+			s.show("警告A", false)
+			s.show("警告B", false)
+			s.show("コピーしました", true)
+		}, "コピーしました"},
+		{"fit=2: 警告 2 枚 + 進行中 (info)", toastBoxLines*3 - 2, func(s *toast) {
+			s.show("警告A", false)
+			s.show("警告B", false)
+			s.showInfo("PR を検索中...")
+		}, "PR を検索中"},
+	}
+	for _, c := range cases {
+		var s toast
+		c.build(&s)
+		for range toastSlideFrames + 2 {
+			s.advance(false)
+		}
+		got := strings.Join(s.boxLines(false, c.maxLines), "\n")
+		if !strings.Contains(got, c.want) {
+			t.Errorf("%s: 最新のトースト %q が 1 行も描かれない:\n%s", c.name, c.want, got)
+		}
 	}
 }
