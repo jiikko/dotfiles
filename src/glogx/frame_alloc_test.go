@@ -151,6 +151,14 @@ func TestFrameAllocBudget(t *testing.T) {
 		{"status-40", func(tb testing.TB) *browseModel { return benchStatusBrowse(tb, 40, 120, 40) }, 322, 44400},
 		{"diff-overlay", budgetDiffModel, 217, 49100},
 		{"job-panel", budgetPanelModel, 162, 37500},
+		// issues viewer / usage グランス / toast (issue 062)。それまで viewLines の全画面ビュー
+		// 2 つのうち issues 側と、起動直後の実フレーム (usage グランス表示) がどのゲートの
+		// 視界にも入っていなかった。実測 (darwin/arm64・GOMAXPROCS=14・-race・-count=10):
+		// issues-40 209 (10/10) 33848〜33849 B / usage-glance 176 (10/10) 35624 B /
+		// toast-holding 182 (10/10) 36864 B。回数の余裕は既存ケースと同じ +4、バイトは +3%
+		{"issues-40", func(tb testing.TB) *browseModel { return benchIssuesBrowse(tb, 40, 120, 40) }, 213, 34900},
+		{"usage-glance", budgetUsageGlanceModel, 180, 36700},
+		{"toast-holding", budgetToastModel, 186, 38000},
 	}
 	for _, c := range cases {
 		m := c.build(t)
@@ -194,6 +202,28 @@ func frameAllocBytes(t *testing.T, build func(testing.TB) *browseModel) int64 {
 			"test を回していないか (既定の 1s なら数千回回る)", r.N, minIters)
 	}
 	return r.AllocedBytesPerOp()
+}
+
+// budgetUsageGlanceModel は起動直後の実フレーム: newBrowseModel は usage グランスを
+// visible で起動する (tui.go の usageOverlay{visible: true}) のに、bench fixture は
+// それを消していた = アプリ起動直後のフレームがどのゲートの外だった (issue 062)。
+// データ未着 (loading) の箱を重ねた状態で測る。
+func budgetUsageGlanceModel(tb testing.TB) *browseModel {
+	m := benchBrowseSubjects(tb, 20, 120, 40, false)
+	m.usageOv.visible = true
+	return m
+}
+
+// budgetToastModel はトースト全幅表示 (holding) 中のフレーム (issue 062)。
+// entering/leaving はアニメの一過性フレームなので測らず (issue 062 の方針)、静止する
+// holding を advance で作ってから測る。
+func budgetToastModel(tb testing.TB) *browseModel {
+	m := benchBrowseSubjects(tb, 20, 120, 40, false)
+	m.toast.show("3 件の警告をコピーしました: ほか", true)
+	for m.toast.animating() {
+		m.toast.advance(m.colored)
+	}
+	return m
 }
 
 func budgetDiffModel(tb testing.TB) *browseModel {

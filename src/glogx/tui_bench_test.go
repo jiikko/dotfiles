@@ -1,9 +1,14 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	"glogx/issues"
 )
 
 // View 1 フレーム分のコスト観測用ベンチ (CI では回さない。BenchmarkRenderLinesLargePatch と
@@ -147,6 +152,54 @@ func benchStatusBrowse(tb testing.TB, files, w, h int) *browseModel {
 	m.statusOv.shown = true
 	m.statusOv.receive(statusLoadMsg{st: parseWorktreeStatus(b.String()), gen: m.statusOv.gen})
 	return m
+}
+
+// benchIssuesBrowse は issues viewer を開いた定常状態のモデル (issue 062)。
+// viewLines が窓ごと差し替える全画面ビューは status と issues の 2 つで、issues 側は
+// これまでどのベンチ・確保ゲートの視界にも入っていなかった。fixture は実ファイルを
+// 一度だけ scan して組む (View 中はファイルを読まない。issue 052 のテストがその不変条件を守る)。
+func benchIssuesBrowse(tb testing.TB, files, w, h int) *browseModel {
+	tb.Helper()
+	m := benchBrowse(tb, 20, w, h)
+	root := tb.TempDir()
+	dir := filepath.Join(root, "issues")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		tb.Fatal(err)
+	}
+	for i := range files {
+		name := fmt.Sprintf("%03d-feat-bench-issue.md", i+1)
+		body := fmt.Sprintf("# %03d feat: bench issue fixture %d\n\nbody line\n", i+1, i)
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	found, warnings := issues.Scan([]string{dir})
+	for _, iss := range found {
+		_ = iss.LoadMeta()
+	}
+	m.handleKey("i")
+	m.issuesOv.cwd = root
+	m.Update(issuesScanMsg{root: root, dirs: []string{dir}, issues: found, warnings: warnings})
+	m.issuesOv.finishAnim() // 開きドロワーの演出後 = 定常フレームを測る
+	return m
+}
+
+func BenchmarkIssuesViewFrame(b *testing.B) {
+	m := benchIssuesBrowse(b, 40, 120, 40)
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = m.View().Content
+	}
+}
+
+// issue 件数が多い repo でのスケール確認 (BenchmarkStatusViewFrame2000 と同じ意図)。
+// 可視は 40 行程度なので、ここが件数に比例するなら「見えない行のために毎フレーム働いている」。
+func BenchmarkIssuesViewFrame2000(b *testing.B) {
+	m := benchIssuesBrowse(b, 2000, 120, 40)
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = m.View().Content
+	}
 }
 
 func BenchmarkStatusViewFrame(b *testing.B) {

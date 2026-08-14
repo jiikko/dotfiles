@@ -23,6 +23,10 @@ render_large_patch 10 rel
 # 導入時ローカル実測 (M3 Max): status_view_frame 0.099 / status_view_2000 0.128
 status_view_frame 2 rel
 status_view_2000 3 rel
+# issues viewer のフレーム (issue 062, 2026-08-15 追加)。導入時ローカル実測 (M3 Max):
+# issues_view_frame 0.022 / issues_view_2000 0.024 (件数比例なし)。status と同じ水準の粗い上限
+issues_view_frame 2 rel
+issues_view_2000 3 rel
 cursor_move_view 5 rel
 view_diff 5 rel
 model_init_200 10 rel
@@ -76,6 +80,11 @@ cursor_move_view_alloc_kb 61.9
 view_diff_alloc_kb 47.8
 model_init_200_alloc_kb 147.0
 render_large_patch_alloc_kb 2037
+# issues viewer の確保 (issue 062)。導入時ローカル実測 (M3 Max): 33.03 KB / 34.82 KB。
+# issue_scan と同じく CI 実測待ちの +5% で入れる (実測が出たら +3% へ締める)。
+# src/glogx/frame_alloc_test.go の issues-40 ケース (-race 側の門番) と対
+issues_view_frame_alloc_kb 34.7
+issues_view_2000_alloc_kb 36.6
 # issue_scan の確保 (issue 065)。導入時ローカル実測 (M3 Max, darwin/arm64): 3320.7〜3321.4 KB
 # (3 run。±0.04% のブレは tempdir パス長の run 間差)。CI (linux) の実測はまだ無いため、
 # 上の 8 metric と違い環境差の突き合わせをしていない。+3% でなく +5% で入れて初回 CI 実測を

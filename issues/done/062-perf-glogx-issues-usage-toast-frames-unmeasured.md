@@ -72,3 +72,28 @@ issues ドロワーは開閉アニメを持つので、発生するとしたら 
 - `issues/done/048-perf-glogx-status-displayindex-per-frame.md` (status viewer で潰した同型の退行)
 - `issues/055-refactor-glogx-bench-fixtures-ascii-only.md` (フィクスチャの代表性。あちらは
   「同じ画面を何で測るか」、本 issue は「そもそも測っていない画面がある」)
+
+## 対応記録 (2026-08-15)
+
+方針 1〜4 を実装 (+ toast も holding 固定で追加):
+
+- `benchIssuesBrowse` fixture 新設 (実ファイルを一度だけ scan して組む。View 中は読まない)
+- `BenchmarkIssuesViewFrame` / `...2000` を bench_glogx.sh と bench_budgets.ci に配線
+  (issues_view_frame 2 rel / issues_view_2000 3 rel / alloc は CI 実測待ちの +5% =
+  34.7 / 36.6 KB)。CI 実測が出たら 065 と同様 +3% へ締める
+- `TestFrameAllocBudget` に 3 ケース追加 (-race・-count=10 の実測から。全て 10/10 で安定):
+  issues-40 209 回 33,849B → 上限 213 / 34,900、usage-glance 176 / 35,624B → 180 / 36,700、
+  toast-holding 182 / 36,864B → 186 / 38,000
+- usage グランスは fixture で消さない版 (`budgetUsageGlanceModel`) = 起動直後の実フレーム。
+  toast は entering/leaving でなく holding を advance で作って固定 (方針の⚠️どおり
+  一過性フレームは測らない)
+- 変異検証: issuesView.lines に 4KB の確保水増しを入れると issues-40 のバイト側が
+  37,944B > 34,900B で red (回数は 210 ≤ 213 で素通り = バイトゲートの存在意義も同時に実証)
+
+「未確認」の解消:
+
+- issues viewer はスケールしない: 40 件 22.4µs/33,826B ↔ 2000 件 23.6µs/35,657B
+  (+5%/+2 allocs)。048 同型の穴は**無かった** (可視窓だけ整形できている)
+- metric は 19 → 23 本。Step Summary の可読性は現状観察 (問題になったら別途)
+
+zoom / glide / action モーダルは方針の⚠️どおり対象外のまま (一過性フレーム)。
