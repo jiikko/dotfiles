@@ -51,3 +51,19 @@ scan は起動時と外部編集の見張り (issues_watch) のたびに走る�
 - `issues/done/051-perf-glogx-bench-gates-time-only.md` — 確保ゲートの導入判断 (2 本立ての先例)
 - `issues/done/050-perf-glogx-issue-list-reads-full-body.md` — scan がホットパスである実測の一次情報
 - `tests/glogx/bench_glogx.sh` / `tests/glogx/bench_budgets.ci`
+
+## 対応記録 (2026-08-15)
+
+- `src/glogx/issues_scan_bench_test.go` に `BenchmarkIssueScan` を新設 (issues.Scan + 全件
+  LoadMeta。RepoRoot の git fork は既存 bench の flake 枠判断に合わせて除外。fixture は
+  合成 50 件・平均 ~8KB・ASCII のみ)
+- `bench_glogx.sh` (対象一覧 + awk) と `bench_budgets.ci` に配線。導入時ローカル実測 (M3 Max):
+  時間 1.10ms → 予算 25 rel (~20 倍 + I/O 揺れの注記) / 確保 3320.7〜3321.4 KB → 予算 3488
+  (CI 実測が無いため +5%。実測が出たら +3% へ締める注記を budgets 側に残した)
+- 変異検証: bench の対象一覧から BenchmarkIssueScan を外すと checker が
+  「bench metric missing: issue_scan / issue_scan_alloc_kb」で rc=1 になることを実測
+- 未確認だった 2 点は実測で解消: B/op のブレは 3 run で ±0.04% (tempdir パス長由来) /
+  -benchtime=200ms で 180〜220 iterations 完走
+
+CI (ubuntu-slim) の初回実測はまだ無い。Bench workflow が数 run 溜まったら、時間予算の締めと
+alloc の +3% 化を行うこと (051 と同じ運用)。

@@ -19,6 +19,8 @@
 #   - cursor_move_view   : j/k 1 打あたりの Update + View (最頻操作の入力→描画。2026-07-29 追加)
 #   - view_diff          : diff オーバーレイ (スクロールバー込み) 表示中の 1 フレーム (同上)
 #   - model_init_200     : 起動時の Go 側コスト (モデル構築 + 200 コミットの行構築。同上)
+#   - issue_scan         : issue 一覧生成 (Scan + 全件 LoadMeta、合成 50 件。git fork は
+#                          含まない。ファイル I/O を含むため時間予算は他より粗め。2026-08-15)
 #   - glogx_calib        : runner 速度の較正器 (repo コード非依存の固定ワークロード。
 #                          比較テーブルの rel 正規化と budgets の rel スケールに使う。2026-07-30)
 #
@@ -59,7 +61,7 @@ run_bench() {
     return
   fi
   go test -run '^$' \
-    -bench '^(BenchmarkViewSteady|BenchmarkViewWithPanel|BenchmarkRenderLinesLargePatch|BenchmarkCursorMoveView|BenchmarkViewWithDiff|BenchmarkModelInit200|BenchmarkStatusViewFrame|BenchmarkStatusViewFrame2000|BenchmarkCalibrate)$' \
+    -bench '^(BenchmarkViewSteady|BenchmarkViewWithPanel|BenchmarkRenderLinesLargePatch|BenchmarkCursorMoveView|BenchmarkViewWithDiff|BenchmarkModelInit200|BenchmarkStatusViewFrame|BenchmarkStatusViewFrame2000|BenchmarkIssueScan|BenchmarkCalibrate)$' \
     -benchtime="${GLOGX_BENCHTIME:-200ms}" -benchmem .
 }
 run_bench |
@@ -98,5 +100,6 @@ run_bench |
     bench == "BenchmarkModelInit200"          { emit("model_init_200") }
     bench == "BenchmarkStatusViewFrame2000"   { emit("status_view_2000") }
     bench == "BenchmarkStatusViewFrame"       { emit("status_view_frame") }
+    bench == "BenchmarkIssueScan"             { emit("issue_scan") }
     bench == "BenchmarkCalibrate"             { emit_time_only("glogx_calib") }
   '

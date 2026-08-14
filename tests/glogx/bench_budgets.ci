@@ -26,6 +26,11 @@ status_view_2000 3 rel
 cursor_move_view 5 rel
 view_diff 5 rel
 model_init_200 10 rel
+# issue scan (issue 065, 2026-08-15 追加)。導入時ローカル実測 (M3 Max): 1.10ms。既存と同じ
+# ~20 倍の粗い上限。⚠️ ファイル I/O (合成 50 件の open + 先頭 read) を含み、共有 runner の
+# ディスク揺れは CPU 系の較正器では吸えないため、rel でも他 metric より flake しやすい。
+# 超えたら較正器の値と見比べて、ディスク由来なら上限側を緩める (黙って緩めず理由をここへ)
+issue_scan 25 rel
 
 # --- 確保バイト (issue 051, 2026-08-14 追加) -------------------------------------
 # 単位は metric 名が持つ (_alloc_kb = B/op ÷ 1024)。値の出処は bench_glogx.sh の -benchmem。
@@ -71,3 +76,8 @@ cursor_move_view_alloc_kb 61.9
 view_diff_alloc_kb 47.8
 model_init_200_alloc_kb 147.0
 render_large_patch_alloc_kb 2037
+# issue_scan の確保 (issue 065)。導入時ローカル実測 (M3 Max, darwin/arm64): 3320.7〜3321.4 KB
+# (3 run。±0.04% のブレは tempdir パス長の run 間差)。CI (linux) の実測はまだ無いため、
+# 上の 8 metric と違い環境差の突き合わせをしていない。+3% でなく +5% で入れて初回 CI 実測を
+# 待つ (実測が出たらその +3% へ締めること)
+issue_scan_alloc_kb 3488
