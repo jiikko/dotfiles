@@ -71,9 +71,22 @@ bench の**配管**を回帰テストにする。051 では手で確認しただ
 
 ## 未確認
 
-- (b) の所要時間 (`-benchtime=1x` + build cache 温かい状態での実測)
+- ~~(b) の所要時間~~ → 実測 2.6 秒 (build cache 温、`GLOGX_BENCHTIME=1x`)
 - 他に「tests/ 配下だがテストを持たないディレクトリ」を将来足す運用があるか
   (あるなら (a) の一般形 = 写像に「テストを持たない tests/ 配下」の概念を入れる)
+
+## 対応記録 (2026-08-14)
+
+案 (b) で解決:
+
+- `bench_glogx.sh` にテスト用 seam を追加 (`GLOGX_BENCHTIME` = benchtime 上書き /
+  `GLOGX_BENCH_INPUT` = go test を走らせず合成入力を awk に流す)。既定値は従来どおりで
+  CI/運用経路は無改変
+- `tests/glogx/test_bench_glogx_metrics.sh` 新設 (4 assertions):
+  予算の全 17 metric が数値付きで emit される / 想定列の ms・alloc_kb 換算 /
+  列ずれ入力 (`$4=ms/op`) は emit しない + stderr 警告 / 較正器は時間のみ
+- 変異検証: 列ずれガードを `if (0)` に潰すと「列ずれ入力なのに emit された」で red を実測
+- `make test-changed PATHS="tests/glogx/..."` が green (issue の再現手順が解消)
 
 ## 関連
 

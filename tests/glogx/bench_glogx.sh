@@ -47,9 +47,22 @@ cd "$GLOGX_DIR"
 
 # 対象 benchmark を改名/削除したら、この一覧と下の awk・bench_budgets.ci を同時に更新する
 # こと (漏れは checker の「予算にある metric が出力に無い」検出で CI が fail する)
-go test -run '^$' \
-  -bench '^(BenchmarkViewSteady|BenchmarkViewWithPanel|BenchmarkRenderLinesLargePatch|BenchmarkCursorMoveView|BenchmarkViewWithDiff|BenchmarkModelInit200|BenchmarkStatusViewFrame|BenchmarkStatusViewFrame2000|BenchmarkCalibrate)$' \
-  -benchtime=200ms -benchmem . |
+#
+# テスト用 seam (tests/glogx/test_bench_glogx_metrics.sh が使う。CI/運用では未設定のまま):
+#   GLOGX_BENCH_INPUT : go test を走らせず、このファイルの内容を awk に流す (列ずれガードの検証用)
+#   GLOGX_BENCHTIME   : -benchtime の上書き (テストは 1x で配管だけ速く回す)。
+#                       ⚠️ -run '^$' を外して短い benchtime と併用すると、testing.Benchmark を
+#                       使う TestFrameAllocBudget が反復不足で Fatal する (issue 063 / 051 実測)
+run_bench() {
+  if [ -n "${GLOGX_BENCH_INPUT:-}" ]; then
+    cat "$GLOGX_BENCH_INPUT"
+    return
+  fi
+  go test -run '^$' \
+    -bench '^(BenchmarkViewSteady|BenchmarkViewWithPanel|BenchmarkRenderLinesLargePatch|BenchmarkCursorMoveView|BenchmarkViewWithDiff|BenchmarkModelInit200|BenchmarkStatusViewFrame|BenchmarkStatusViewFrame2000|BenchmarkCalibrate)$' \
+    -benchtime="${GLOGX_BENCHTIME:-200ms}" -benchmem .
+}
+run_bench |
   awk '
     # ⚠️ 列位置 ($3=ns/op の値・$5=B/op の値) を項目名で検証してから読む。b.ReportMetric を
     # 足した benchmark が混ざると列がずれ、検証が無いと**別の数値を予算照合して黙って
