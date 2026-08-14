@@ -22,25 +22,32 @@ pass=0
 ok() { echo "✓ $1"; pass=$((pass + 1)); }
 
 # --- 1. 実 bench (1x) で、予算の全 metric が数値付きで出ること ---
-GLOGX_BENCHTIME=1x "$BENCH" > "$TMP/real.out"
+# Tests workflow の CI runner には Go が無い (Makefile の run_tests_parallel 直上コメントが
+# 一次情報。glogx の Go テストは src_glogx.yml、bench 本番は bench.yml が Go 入りで回す) ため、
+# go 不在ならこの節だけ明示 skip する (列ずれガードの節 2 は合成入力なので常に走る)
+if command -v go >/dev/null 2>&1; then
+  GLOGX_BENCHTIME=1x "$BENCH" > "$TMP/real.out"
 
-# 予算ファイルから metric 名を抽出 (コメント・空行・calibrate 宣言行を除く 1 列目)
-awk '!/^[ \t]*(#|$)/ && $1 != "calibrate" { print $1 }' "$BUDGETS" > "$TMP/metrics"
-[ -s "$TMP/metrics" ] || { echo "✗ $BUDGETS から metric を 1 件も抽出できない" >&2; exit 1; }
+  # 予算ファイルから metric 名を抽出 (コメント・空行・calibrate 宣言行を除く 1 列目)
+  awk '!/^[ \t]*(#|$)/ && $1 != "calibrate" { print $1 }' "$BUDGETS" > "$TMP/metrics"
+  [ -s "$TMP/metrics" ] || { echo "✗ $BUDGETS から metric を 1 件も抽出できない" >&2; exit 1; }
 
-while IFS= read -r m; do
-  line=$(grep "^metric=$m ms=" "$TMP/real.out" || true)
-  if [ -z "$line" ]; then
-    echo "✗ 予算にある metric が bench 出力に無い: $m" >&2
-    sed 's/^/    /' "$TMP/real.out" >&2
-    exit 1
-  fi
-  val=${line#metric="$m" ms=}
-  case "$val" in
-    ''|*[!0-9.]*) echo "✗ $m の ms が数値でない: $line" >&2; exit 1 ;;
-  esac
-done < "$TMP/metrics"
-ok "予算の全 $(wc -l < "$TMP/metrics" | tr -d ' ') metric が数値付きで emit される"
+  while IFS= read -r m; do
+    line=$(grep "^metric=$m ms=" "$TMP/real.out" || true)
+    if [ -z "$line" ]; then
+      echo "✗ 予算にある metric が bench 出力に無い: $m" >&2
+      sed 's/^/    /' "$TMP/real.out" >&2
+      exit 1
+    fi
+    val=${line#metric="$m" ms=}
+    case "$val" in
+      ''|*[!0-9.]*) echo "✗ $m の ms が数値でない: $line" >&2; exit 1 ;;
+    esac
+  done < "$TMP/metrics"
+  ok "予算の全 $(wc -l < "$TMP/metrics" | tr -d ' ') metric が数値付きで emit される"
+else
+  echo "- go 不在のため実 bench の emit 検査を skip (列ずれガード検査は続行)"
+fi
 
 # --- 2. 列ずれガード: 想定列なら emit / ずれたら emit しない ---
 run_awk() { # <合成 go test 出力> → stdout に metric 行
