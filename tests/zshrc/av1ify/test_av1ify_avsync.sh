@@ -343,4 +343,30 @@ else
   exit 1
 fi
 
+# ----------------------------------------------------------------------
+# Test 18: 時間シフト型の音ズレ (終端は揃うが先頭がずれる) は再判定で降格されない
+#
+# issue 058 の再現 (値は -itsoffset 5 で作った実ファイルの ffprobe 実測):
+# 音声の先頭 ~5s が落ちて edit-list 遅延 (start_time=4.976) が書かれ、表示終端は
+# 映像と揃っている。宣言 duration ベースでは Δ=4.98s だが packet 実測の「終端」では
+# Δ≈0 になるため、開始オフセットを見ない再判定はこれを正常へ降格していた
+# (997d078 が NG にしていた実害級の出力が ✅ 完了で素通りするデグレ)。
+# ----------------------------------------------------------------------
+printf '\n## Test 18: time-shifted audio (aligned tail, shifted head) stays flagged\n'
+TEST_DIR="$TEST_TMP/avs_t18"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_VIDEO_DURATION=20.0 MOCK_AUDIO_DURATION=20.0 \
+         MOCK_VIDEO_LAST_PTS=20.0 MOCK_AUDIO_LAST_PTS=20.0 \
+         MOCK_OUTPUT_VIDEO_DURATION=20.0 MOCK_OUTPUT_AUDIO_DURATION=15.023311 \
+         MOCK_OUTPUT_VIDEO_LAST_PTS=20.0 MOCK_OUTPUT_AUDIO_LAST_PTS=19.999320 \
+         MOCK_OUTPUT_AUDIO_START=4.976009 \
+         MOCK_FORMAT_DURATION=20.0 MOCK_OUTPUT_FORMAT_DURATION=20.0 \
+         av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "avsync" "time-shifted audio is still flagged (not downgraded by tail re-measurement)"
+assert_contains "$output" "時間シフト型" "the reason (start-offset shift) is reported to the user"
+
 printf '\n=== A/V Sync Postcheck Tests Completed ===\n'

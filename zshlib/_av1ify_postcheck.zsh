@@ -139,6 +139,21 @@ __av1ify_packet_end() {
   return 1
 }
 
+# 内部補助: ストリームの宣言 start_time [秒] を取得 (取れなければ 0 とみなす)
+# 引数: $1 = ファイルパス, $2 = stream specifier (例: v:0, a:0)
+# 出力: REPLY = start_time (欠落/N/A は "0"。コンテナの慣行どおり先頭 0 と解釈する。
+#        mp4 出力の時間シフトは edit list として必ずここに書かれるため、出力側で
+#        欠落 = 0 とみなしてもシフトを取りこぼさない)
+__av1ify_start_time() {
+  local val
+  val=$(__ff_stream_field "$1" "$2" stream=start_time)
+  if __av1ify_is_num "$val"; then
+    REPLY="$val"
+  else
+    REPLY="0"
+  fi
+}
+
 # 内部補助: A/V drift の計算
 # 引数: src_v src_a out_v out_a threshold
 # 出力: REPLY = "<src_delta> <out_delta> <drift> <bad>" (bad: 1=閾値超過)
@@ -229,6 +244,15 @@ __av1ify_postcheck() {
           # ・通常時の ffprobe コストは増えない (超過時のみ走る)
           # ・src/out を同じ測り方 (packet 実測の表示終端) に揃えるので量が混ざらない
           # ・false negative は増えない: 本物の encode 起因ズレは出力の packet 列に必ず出る
+          # ⚠️ packet 実測が測るのは「表示終端」で、ストリームの「長さ」ではない。
+          # 音声の先頭が落ちて edit-list 遅延が書かれ、終端は映像と揃っている
+          # 時間シフト型のズレは終端 Δ に出ない (実測 issue 058: 宣言 Δ=4.98s の
+          # 本物のシフトを終端 Δ=0.0007s で正常と誤判定していた)。シフトは開始
+          # オフセットに必ず出るので、FLAG→ok の降格は「終端が揃っている」かつ
+          # 「音声開始の関係差も閾値内」の 2 条件で行う。
+          # なお ok→FLAG 方向の再判定 (双方向化) は入れない: 全件で packet 走査
+          # 4 本のコストが常時掛かる上、宣言ベースの初回判定を素通りするズレは
+          # 変更前 (997d078) も検知しておらず、ここで守るのは降格の正しさだけ。
           local m_sv m_sa m_ov m_oa
           if __av1ify_packet_end "$src_path" "v:0" && m_sv="$REPLY" \
             && __av1ify_packet_end "$src_path" "a:0" && m_sa="$REPLY" \
@@ -238,9 +262,26 @@ __av1ify_postcheck() {
             local m_sd m_od m_drift m_bad
             read -r m_sd m_od m_drift m_bad <<< "$REPLY"
             if [[ "$m_bad" != "1" ]]; then
-              print -r -- ">> 音ズレ判定: 宣言 duration ベースでは Δ=${drift_v}s だが packet 実測では Δ=${m_drift}s のため正常と判定 (ソースの宣言 duration が不正確)"
+              # 開始オフセットの関係差 (calc_drift と同じ式を start に適用)。
+              # 計算に失敗したら降格しない (検査できなかったときに ok へ倒さない)
+              local s_sv s_sa s_ov s_oa s_drift="" s_bad=1
+              __av1ify_start_time "$src_path" "v:0"; s_sv="$REPLY"
+              __av1ify_start_time "$src_path" "a:0"; s_sa="$REPLY"
+              __av1ify_start_time "$filepath" "v:0"; s_ov="$REPLY"
+              __av1ify_start_time "$filepath" "a:0"; s_oa="$REPLY"
+              if __av1ify_calc_drift "$s_sv" "$s_sa" "$s_ov" "$s_oa" "$threshold"; then
+                read -r _ _ s_drift s_bad <<< "$REPLY"
+              fi
+              if [[ "$s_bad" == "1" ]]; then
+                # 終端は揃っているが開始がずれている = 時間シフト型の本物。降格しない
+                print -r -- ">> 音ズレ判定: packet 実測の終端は Δ=${m_drift}s だが音声開始のシフト Δ=${s_drift:-?}s が閾値超過のため音ズレと判定 (時間シフト型)"
+              else
+                print -r -- ">> 音ズレ判定: 宣言 duration ベースでは Δ=${drift_v}s だが packet 実測では Δ=${m_drift}s のため正常と判定 (ソースの宣言 duration が不正確)"
+                sd_v="$m_sd"; od_v="$m_od"; drift_v="$m_drift"; drift_bad="$m_bad"
+              fi
+            else
+              sd_v="$m_sd"; od_v="$m_od"; drift_v="$m_drift"; drift_bad="$m_bad"
             fi
-            sd_v="$m_sd"; od_v="$m_od"; drift_v="$m_drift"; drift_bad="$m_bad"
           fi
         fi
 

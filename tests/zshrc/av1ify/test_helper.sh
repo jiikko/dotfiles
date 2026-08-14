@@ -106,6 +106,23 @@ elif echo "$*" | grep -q "select_streams a:0" && echo "$*" | grep -q "stream=dur
     *-enc*|*check_ng*) echo "${MOCK_OUTPUT_AUDIO_DURATION-${MOCK_AUDIO_DURATION-10.0}}" ;;
     *) echo "${MOCK_AUDIO_DURATION-10.0}" ;;
   esac
+elif echo "$*" | grep -q "stream=start_time"; then
+  # __av1ify_start_time 用 (issue 058)。時間シフト型の音ズレ (終端は揃うが先頭がずれる)
+  # は start_time にしか出ないため、この口が無いとそのクラスの回帰テストが書けない。
+  # 未設定は本物のコンテナの慣行どおり 0.0
+  last_arg=""
+  for arg in "$@"; do last_arg="$arg"; done
+  if echo "$*" | grep -q "select_streams v"; then
+    case "$last_arg" in
+      *-enc*|*check_ng*) echo "${MOCK_OUTPUT_VIDEO_START-${MOCK_VIDEO_START-0.0}}" ;;
+      *) echo "${MOCK_VIDEO_START-0.0}" ;;
+    esac
+  else
+    case "$last_arg" in
+      *-enc*|*check_ng*) echo "${MOCK_OUTPUT_AUDIO_START-${MOCK_AUDIO_START-0.0}}" ;;
+      *) echo "${MOCK_AUDIO_START-0.0}" ;;
+    esac
+  fi
 elif echo "$*" | grep -q "packet=pts_time"; then
   # __av1ify_packet_end 用。
   # MOCK_PACKET_LINES を設定すると "pts,duration" の生の packet 列をそのまま返す
