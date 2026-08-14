@@ -1726,6 +1726,52 @@ func TestIssuesViewRebindOpenDiscardsWhenGone(t *testing.T) {
 	}
 }
 
+// Msg 経路 (issuesScanMsg) からの notice 配達の回帰テスト (issue 059)。
+// rebindOpen が置く「開いていた issue が見つかりません」は、打鍵を待たずスキャン結果を
+// 受けたフレームで配達される (トースト + w でコピーできる lastWarning)。
+// 以前は takeNotice が打鍵経路にしか無く、本文が無言で畳まれて見え、直後に q を押すと
+// 理由が 1 度も描かれないままプロセスが終わった。
+// ⚠️ v.takeNotice() を直接 assert しない: それは配達経路 (browseModel の Update) を通らず、
+// 配達ブロックを丸ごと削っても green のままになる (この issue 自身が見つけた false green)。
+func TestIssuesScanMsgDeliversRebindNotice(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.handleKey("i")
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "001-feat-x.md")
+	if err := os.WriteFile(path, []byte("# 001 feat: x\n\n本文の行\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := &issues.Issue{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"}
+	if err := iss.LoadMeta(); err != nil {
+		t.Fatal(err)
+	}
+	m.issuesOv.cwd = root
+	m.Update(issuesScanMsg{root: root, dirs: []string{dir}, issues: []*issues.Issue{iss}})
+	m.issuesOv.finishAnim()
+	m.handleKey("enter")
+	m.issuesOv.drawer.finish() // 本文モードへ
+
+	// 別プロセスがファイルを消したスキャン結果が Msg 経路で届く (キーは押さない)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	m.Update(issuesScanMsg{root: root, dirs: []string{dir}})
+
+	if !strings.Contains(m.lastWarning, "見つかりません") {
+		t.Errorf("畳んだ理由が lastWarning に届いていない (q で恒久喪失する): %q", m.lastWarning)
+	}
+	if !m.toast.visible() {
+		t.Error("畳んだ理由のトーストが積まれていない")
+	}
+	if text, _ := m.issuesOv.takeNotice(); text != "" {
+		t.Errorf("notice が取り出されずに残っている (配達漏れ): %q", text)
+	}
+}
+
 // 同名が複数ある異常 (spec 3 節が警告する状態) では、どれが本人か決められないので繋ぎ直さない。
 // ⚠️ 畳むのは「どこにも無い」ときだけなので、ここでは本文モードを維持する。
 func TestIssuesViewRebindOpenKeepsOpenOnAmbiguousBase(t *testing.T) {

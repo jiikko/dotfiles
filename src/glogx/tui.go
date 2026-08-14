@@ -590,6 +590,24 @@ func (m *browseModel) showWarning(text string) {
 	m.toast.show(text, false)
 }
 
+// deliverNotice は viewer の操作結果 (takeNotice の戻り) をトーストへ流す。成功はトースト、
+// 失敗は w でコピーできるよう lastWarning にも積む (showWarning)。戻り値は「流したか」で、
+// 呼び出し側がトーストを動かす tick を束ねるかの判断に使う。
+// ⚠️ setNotice は打鍵経路 (handleKey 直後) だけでなく Msg 経路 (issuesScanMsg → rebindOpen)
+// からも置かれる。Msg 経路の呼び出し側でもこれを通すこと。通さないと「置いたが誰も取り出さず、
+// 次の打鍵まで画面に出ない」黙殺になる (issue 059: 本文が無言で畳まれた)。
+func (m *browseModel) deliverNotice(text string, ok bool) bool {
+	if text == "" {
+		return false
+	}
+	if ok {
+		m.toast.show(text, true)
+	} else {
+		m.showWarning(text)
+	}
+	return true
+}
+
 // showClaudeUpdate は「新バージョンあり」の通知を出す。
 //
 // 以前は先行トーストを潰さないよう専用タイマーで遅延再送していたが、
@@ -857,7 +875,15 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case issuesScanMsg:
 		// 戻り値は畳まれていた取り直しの予約 (issuesView.receive の doc)。捨てると
 		// 「自分がファイルを動かしたのに一覧が古いまま」が残る
-		return m, m.issuesOv.receive(msg)
+		cmd := m.issuesOv.receive(msg)
+		// receive → rebindOpen が置く notice (開いていた issue の消失) をこのフレームで配達する。
+		// 打鍵経路の takeNotice に任せると、次のキーまで「本文が無言で畳まれた」に見え、
+		// その次のキーが q だと理由が 1 度も描かれずに終了する (issue 059)。
+		// maybeTick はトーストを出したときだけ束ねる (issuesWatchMsg の 1s チェーンの意図を崩さない)
+		if m.deliverNotice(m.issuesOv.takeNotice()) {
+			return m, tea.Batch(cmd, m.maybeTick())
+		}
+		return m, cmd
 	case statusLoadMsg:
 		// git status の結果 (status viewer)。返り値はプレビューの取り直し予約 (内容が変わった
 		// ときだけ)。⚠️ maybeTick も束ねる: 取得中スピナーを回していた場合、結果到着でそれを
@@ -1246,13 +1272,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		// viewer の操作結果 (コピー・URL 起動・読み込み失敗) は glogx 共通の右下トーストで出す
 		// (ユーザー要望 2026-07-31)。viewer が全画面でトーストが隠れていた時代はヘッダー行に
 		// 出していたが、下の viewLines でトーストを viewer の上にも合成するようにした。
-		if text, ok := m.issuesOv.takeNotice(); text != "" {
-			if ok {
-				m.toast.show(text, true)
-			} else {
-				m.showWarning(text) // 失敗は w でコピーできるよう lastWarning にも積む
-			}
-		}
+		m.deliverNotice(m.issuesOv.takeNotice())
 		// q/esc = glogx ごと終了 (ユーザー要望 2026-08-06: git log 一覧へは戻らない)。viewer を
 		// 出したまま終了するので、次回起動は再開記憶で同じ画面から始まる (C-g と同じ経路)
 		if m.issuesOv.takeWantQuit() {
@@ -1293,13 +1313,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 			return m, m.maybeTick()
 		}
 		cmd := m.statusOv.handleKey(key, m.statusOpts().viewport())
-		if text, ok := m.statusOv.takeNotice(); text != "" {
-			if ok {
-				m.toast.show(text, true)
-			} else {
-				m.showWarning(text) // 失敗は w でコピーできるよう lastWarning にも積む
-			}
-		}
+		m.deliverNotice(m.statusOv.takeNotice())
 		// q/esc = glogx ごと終了 (issues 側と同じ契約。ユーザー要望 2026-08-06)
 		if m.statusOv.takeWantQuit() {
 			return m.quit()

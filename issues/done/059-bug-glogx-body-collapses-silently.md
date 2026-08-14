@@ -135,3 +135,19 @@ q が返した Msg: tea.QuitMsg → 以降フレームは描かれない
   (closure / 環境変数ゲートの内側は走らない)」。本件は**配達経路の外側で assert していた**形
 - `_claude/rules/pending-issue-rationale-in-code.md` — `132cc81` が罠をコメントで残したのは
   正しいが、**実装で強制できていない**ため 20 分前の commit が既に踏んでいた
+
+## 対応記録 (2026-08-14)
+
+案 1 + 3 で解決 (案 2 の型レベル強制は receive が tea.Cmd を返す既存契約を崩すため見送り。
+代わりに deliverNotice の doc コメントに Msg 経路の罠を明記):
+
+- `tui.go` の `case issuesScanMsg` で `receive` の直後に `takeNotice` → トースト配達を追加。
+  配達したときだけ `maybeTick` を束ねる (issuesWatchMsg の 1s チェーンの意図を崩さない)。
+  これで畳んだフレームでトーストが積まれ、`q`/`esc` 即押しでも `lastWarning` に届いている
+  (打鍵待ちが消えたので「恒久喪失」の条件自体が消滅)
+- 打鍵経路 2 箇所 (issues/status) の同型配達ブロックを `deliverNotice` ヘルパーに抽出 (重複除去)
+- 回帰テスト `TestIssuesScanMsgDeliversRebindNotice` を新設: `m.Update(issuesScanMsg{...})` の
+  配達経路ごと assert する (v.takeNotice() 直叩きの false green を踏まない形)。
+  変異検証: 配達ブロックを削ると 3 assert すべて red になることを実測
+- 横展開 grep: status viewer の setNotice は全て打鍵経路 (runDiscard も確認モーダル経由) で、
+  Msg 経路から置くのは issues の rebindOpen だけと確認
