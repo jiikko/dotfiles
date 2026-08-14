@@ -19,6 +19,7 @@ issues/NNN-<カテゴリ>-<スラッグ>.md
 | `refactor` | 挙動を変えない構造改善・複雑性削減 |
 | `perf` | 速度・メモリ・リソースの改善（実測の裏付けを本文に置く） |
 | `docs` | ドキュメント・ルール・コメント整備 |
+| `chore` | 雑務（依存更新・メッセージ/表示の手直し・テストの前提整理など、機能でも不具合でもないもの） |
 | `research` | 調査・設計検討（成果物がコードでないもの） |
 
 例: `issues/001-refactor-makefile-test-autodiscovery.md` / `issues/002-bug-nvim-cterm-drift-2026-07-16.md`
