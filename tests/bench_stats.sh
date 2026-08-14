@@ -251,7 +251,9 @@ if summary:
                     "換算しても偽の悪化/改善が残るため rel metric の判定は出さない — "
                     "**同じコミットで Bench を再実行**すると切り分けられる")
     rows += ["",
-            "| metric | budget (ms) | base p50 | cur p50 | Δ | 判定 | cur min |",
+            # 単位は metric 名が持つ (glogx の *_alloc_kb / tmux の server_rss_mb /
+            # nvim の *_cpu_ms)。ヘッダに ms と書くとそれらの行が時間に見える
+            "| metric | budget | base p50 | cur p50 | Δ | 判定 | cur min |",
             "|---|---:|---:|---:|---:|:---|---:|"]
     for m in order:
         c = cur[m]

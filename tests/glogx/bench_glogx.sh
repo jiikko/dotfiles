@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
-# glogx の描画ホットパス回帰ベンチ。go test -bench の ns/op を "metric=<name> ms=<value>"
-# 行へ変換して出力する (CI では tests/run_bench.sh が複数回実行 → min 集約 →
-# tests/glogx/bench_budgets.ci でゲート。実行回数は run_bench.sh の BENCH_RUNS が出典)。
+# glogx の描画ホットパス回帰ベンチ。go test -bench の ns/op と B/op を
+# "metric=<name> ms=<value>" 行へ変換して出力する (CI では tests/run_bench.sh が複数回実行 →
+# min 集約 → tests/glogx/bench_budgets.ci でゲート。実行回数は run_bench.sh の BENCH_RUNS が出典)。
+#
+# 時間 (<name>) と確保バイト (<name>_alloc_kb) の 2 本立て。⚠️ 単位は metric 名が持ち、
+# 行の項目名は常に ms= (tmux の server_rss_mb / nvim の startup_cpu_ms と同じ流儀。
+# checker と bench_stats を 1 書式のまま保つため)。_alloc_kb は B/op ÷ 1024。
+#
+# 確保も測る理由 (issue 051): フレームのコストの本体は確保で、時間だけ見ていると
+# 「確保が 2 倍でも時間が予算内なら通る」。047/048 の実測では時間 −10〜34% に対し
+# 確保はバイトで −23〜53% 動いた (GC の回転数に直結する。047 で runtime.kevent の 42% が
+# gcStart 由来だった)。回数の退行は src/glogx/frame_alloc_test.go 側が -race 付きで見る。
 #
 # 測るもの (回帰しがちなホットパス。いずれも chroma を含まない glogx 純粋コード):
 #   - view_steady        : 一覧ビュー 1 フレームの View() (fetch/アニメ中は 80ms ごとに走る恒常コスト)
@@ -40,15 +49,41 @@ cd "$GLOGX_DIR"
 # こと (漏れは checker の「予算にある metric が出力に無い」検出で CI が fail する)
 go test -run '^$' \
   -bench '^(BenchmarkViewSteady|BenchmarkViewWithPanel|BenchmarkRenderLinesLargePatch|BenchmarkCursorMoveView|BenchmarkViewWithDiff|BenchmarkModelInit200|BenchmarkStatusViewFrame|BenchmarkStatusViewFrame2000|BenchmarkCalibrate)$' \
-  -benchtime=200ms . |
+  -benchtime=200ms -benchmem . |
   awk '
-    /^BenchmarkViewSteady/            { printf "metric=view_steady ms=%.3f\n", $3 / 1000000 }
-    /^BenchmarkViewWithPanel/         { printf "metric=view_panel ms=%.3f\n", $3 / 1000000 }
-    /^BenchmarkRenderLinesLargePatch/ { printf "metric=render_large_patch ms=%.3f\n", $3 / 1000000 }
-    /^BenchmarkCursorMoveView/        { printf "metric=cursor_move_view ms=%.3f\n", $3 / 1000000 }
-    /^BenchmarkViewWithDiff/          { printf "metric=view_diff ms=%.3f\n", $3 / 1000000 }
-    /^BenchmarkModelInit200/          { printf "metric=model_init_200 ms=%.3f\n", $3 / 1000000 }
-    /^BenchmarkStatusViewFrame2000/   { printf "metric=status_view_2000 ms=%.3f\n", $3 / 1000000; next }
-    /^BenchmarkStatusViewFrame/       { printf "metric=status_view_frame ms=%.3f\n", $3 / 1000000 }
-    /^BenchmarkCalibrate/             { printf "metric=glogx_calib ms=%.3f\n", $3 / 1000000 }
+    # ⚠️ 列位置 ($3=ns/op の値・$5=B/op の値) を項目名で検証してから読む。b.ReportMetric を
+    # 足した benchmark が混ざると列がずれ、検証が無いと**別の数値を予算照合して黙って
+    # pass する**。ずれたら emit しない = checker の「予算にある metric が出力に無い」で
+    # loud に落ちる (-benchmem を付けているので、ReportAllocs の有無には依存しない)。
+    function emit(name) {
+      if ($4 != "ns/op" || $6 != "B/op") {
+        printf "bench: %s の列が想定と違うため metric を出さない: %s\n", name, $0 > "/dev/stderr"
+        return
+      }
+      printf "metric=%s ms=%.3f\n", name, $3 / 1000000
+      printf "metric=%s_alloc_kb ms=%.3f\n", name, $5 / 1024
+    }
+    # 較正器は「runner がどれだけ遅いか」を測る道具で、確保 (8 B/op) はゲートする意味が
+    # 無いため時間だけ出す
+    function emit_time_only(name) {
+      if ($4 != "ns/op") {
+        printf "bench: %s の列が想定と違うため metric を出さない: %s\n", name, $0 > "/dev/stderr"
+        return
+      }
+      printf "metric=%s ms=%.3f\n", name, $3 / 1000000
+    }
+    # ⚠️ 前方一致で振り分けない。benchmark 名は他の benchmark の接頭辞になりうるので
+    # (BenchmarkViewSteady ⊂ BenchmarkViewSteadyJA)、前方一致だと **兄弟 benchmark の
+    # 数値が既存 metric を黙って上書きする** (実測: JA の行が view_steady として出た)。
+    # 末尾の -<GOMAXPROCS> を落として完全一致で振り分ける
+    { bench = $1; sub(/-[0-9]+$/, "", bench) }
+    bench == "BenchmarkViewSteady"            { emit("view_steady") }
+    bench == "BenchmarkViewWithPanel"         { emit("view_panel") }
+    bench == "BenchmarkRenderLinesLargePatch" { emit("render_large_patch") }
+    bench == "BenchmarkCursorMoveView"        { emit("cursor_move_view") }
+    bench == "BenchmarkViewWithDiff"          { emit("view_diff") }
+    bench == "BenchmarkModelInit200"          { emit("model_init_200") }
+    bench == "BenchmarkStatusViewFrame2000"   { emit("status_view_2000") }
+    bench == "BenchmarkStatusViewFrame"       { emit("status_view_frame") }
+    bench == "BenchmarkCalibrate"             { emit_time_only("glogx_calib") }
   '

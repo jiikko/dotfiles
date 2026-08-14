@@ -109,8 +109,32 @@ func FuzzReapplyAfterReset(f *testing.F) {
 //
 // overlay 系は -race で ±2 揺れるので余裕を少し広く採っている (素の実測は
 // diff-overlay 211 / job-panel 153)。`make test` は -race 付きなのでそちらが本番のゲート。
-// **CI (Linux) の -race の水増し量は未確認**で、そこで超えるようなら上限を上げてよいが、
-// そのときは「実測がいくらだったか」を必ずここに書き足すこと (黙って緩めない)。
+// CI (linux/amd64) の -race も 2026-08-14 に docker (golang:1.25) で実測し、darwin と
+// 同じ水準だった (list/list-ja 135 / status-40 317 / diff-overlay 213 / job-panel 157)。
+// 上限を上げるときは「実測がいくらだったか」を必ずここに書き足すこと (黙って緩めない)。
+//
+// バイト側の上限を回数と**別に**持つ理由 (issue 051): `AllocsPerRun` は確保の回数しか
+// 数えないので、「1 回の確保が大きくなる」形の退行を捕まえられない。実際 046 では allocs が
+// 完全一致のまま B/op だけ +0.8〜1.0% 増えており、048 では回数版のガードが
+// **メモ化を丸ごと revert しても PASS** した (R1 レビューが実証)。
+//
+// ⚠️ バイトの上限も -race 側の実測から採る (`make test` は -race 付き)。実測
+// (darwin/arm64・GOMAXPROCS=14・-race・4 回の最大値):
+//
+//	list 30776 / list-ja 31488 / status-40 43047 / diff-overlay 47654 / job-panel 36366 B
+//
+// 回数と違い、バイトは -race でほぼ水増しされない (素の list は 30744 B = +0.1%)。上限は
+// 実測の +3%: 4 回のばらつきは 0.03%、環境 (OS/arch/Go patch/GOMAXPROCS) を跨いでも 0.15%
+// 以内だったため (測定条件は tests/glogx/bench_budgets.ci に記載)。
+//
+// CI 側の同じ主張は tests/glogx/bench_budgets.ci の *_alloc_kb が -race 無しで持つ
+// (二重管理だが役割が違う: ここは `make test` 一発で回る -race 付きの門番、あちらは
+// 経時比較つきで render_large_patch / model_init_200 など本テストが持たない経路も見る)。
+// 確保が増える変更を意図して入れるときは**両方**を同じ commit で更新すること。
+//
+// ⚠️ 回数と同じく、この上限は `RUNEWIDTH_EASTASIAN=1` の環境では落ちる (issue 054)。実測で
+// list が 135 回 30776 B → 322 回 41139 B になる (幅計算が変わり行の作り直しが増えるため)。
+// その環境で赤くなったら、退行ではなく env 前提の方を疑うこと。
 func TestFrameAllocBudget(t *testing.T) {
 	// diff overlay / job パネルを含める理由: これらは buildShadowPanelBox を通る経路で、
 	// 一覧と status だけでは **その経路がテストの視界に入らない**。実際「buildShadowPanelBox の
@@ -120,12 +144,13 @@ func TestFrameAllocBudget(t *testing.T) {
 		name   string
 		build  func(testing.TB) *browseModel
 		allocs int
+		bytes  int64
 	}{
-		{"list", func(tb testing.TB) *browseModel { return benchBrowseSubjects(tb, 20, 120, 40, false) }, 138},
-		{"list-ja", func(tb testing.TB) *browseModel { return benchBrowseSubjects(tb, 20, 120, 40, true) }, 138},
-		{"status-40", func(tb testing.TB) *browseModel { return benchStatusBrowse(tb, 40, 120, 40) }, 322},
-		{"diff-overlay", budgetDiffModel, 217},
-		{"job-panel", budgetPanelModel, 162},
+		{"list", func(tb testing.TB) *browseModel { return benchBrowseSubjects(tb, 20, 120, 40, false) }, 138, 31700},
+		{"list-ja", func(tb testing.TB) *browseModel { return benchBrowseSubjects(tb, 20, 120, 40, true) }, 138, 32500},
+		{"status-40", func(tb testing.TB) *browseModel { return benchStatusBrowse(tb, 40, 120, 40) }, 322, 44400},
+		{"diff-overlay", budgetDiffModel, 217, 49100},
+		{"job-panel", budgetPanelModel, 162, 37500},
 	}
 	for _, c := range cases {
 		m := c.build(t)
@@ -135,8 +160,40 @@ func TestFrameAllocBudget(t *testing.T) {
 			t.Errorf("%s: 1 フレームの確保が %d 回 (上限 %d)。行の作り直しが増えていないか",
 				c.name, got, c.allocs)
 		}
-		t.Logf("%s: %d allocs/frame (上限 %d)", c.name, got, c.allocs)
+		gotBytes := frameAllocBytes(t, c.build)
+		if gotBytes > c.bytes {
+			t.Errorf("%s: 1 フレームの確保が %d B (上限 %d B)。回数は同じでも 1 本あたりが"+
+				"太っていないか (バッファの作り直し・過大な pre-grow)", c.name, gotBytes, c.bytes)
+		}
+		t.Logf("%s: %d allocs/frame (上限 %d) / %d B/frame (上限 %d)",
+			c.name, got, c.allocs, gotBytes, c.bytes)
 	}
+}
+
+// frameAllocBytes は 1 フレームの確保バイト数を測る。`testing.AllocsPerRun` には B/op に
+// 相当する API が無いので `testing.Benchmark` の AllocedBytesPerOp を使う (issue 048 の
+// TestStatusFrameAllocBytesDoNotScaleWithFileCount と同じ形)。
+//
+// ⚠️ `testing.Benchmark` は同じプロセスの `-benchtime` を拾う。`go test -bench=. -benchtime=1x`
+// のように短く回すと b.N=1 の測定 (= 遅延初期化込みの 1 発目) が返り、絶対値の予算と
+// 比べる意味が無くなる。**測れなかったときに緑を返さない**ため、反復が足りなければ落とす。
+func frameAllocBytes(t *testing.T, build func(testing.TB) *browseModel) int64 {
+	t.Helper()
+	const minIters = 100
+	r := testing.Benchmark(func(b *testing.B) {
+		m := build(b)
+		_ = m.View().Content // 遅延初期化を計測から外す
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			_ = m.View().Content
+		}
+	})
+	if r.N < minIters {
+		t.Fatalf("フレームの確保バイトを測れていない (反復 %d 回 < %d)。-benchtime を短くしたまま"+
+			"test を回していないか (既定の 1s なら数千回回る)", r.N, minIters)
+	}
+	return r.AllocedBytesPerOp()
 }
 
 func budgetDiffModel(tb testing.TB) *browseModel {

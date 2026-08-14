@@ -26,3 +26,43 @@ status_view_2000 3 rel
 cursor_move_view 5 rel
 view_diff 5 rel
 model_init_200 10 rel
+
+# --- 確保バイト (issue 051, 2026-08-14 追加) -------------------------------------
+# 単位は metric 名が持つ (_alloc_kb = B/op ÷ 1024)。値の出処は bench_glogx.sh の -benchmem。
+#
+# ⚠️ rel を付けない: 確保はマシン非依存なので較正スケールの対象外。時間の予算が「桁級の
+# 回帰だけ捕まえる粗い上限」なのに対し、ここは**実測 +3%** で締める。根拠 (2026-08-14 実測):
+# darwin/arm64 (M3 Max, go1.25.4) と CI と同じ linux/amd64 (docker golang:1.25) を全 8 metric で
+# 突き合わせて **差は最大 0.09%** だった (B/op):
+#
+#   metric              darwin/arm64  linux/amd64
+#   view_steady               30744      30744
+#   view_panel                36424      36392
+#   status_view_frame         42602      42570
+#   status_view_2000          43294      43270
+#   cursor_move_view          61488      61489
+#   view_diff                 47467      47425
+#   model_init_200           146081     146081
+#   render_large_patch      2024403    2024342
+#
+# 加えて view_steady は go1.25.0 (CI が go.mod から選ぶ版) / GOMAXPROCS=2 / TERM・LANG 未設定 /
+# linux/arm64 でも 30744〜30745 B。CI (ubuntu-slim) の実測はまだ無いので、初回 run は
+# Step Summary の 🆕 初計測 の値を確認すること (rules/bench-watch-after-push.md)。
+# もし CI で超えたら、上限を上げる前に「なぜ環境で変わったか」を書き足すこと (黙って緩めない)。
+# 値を上げる正当な理由は「確保が増える機能追加を意図して入れた」だけで、そのときは
+# src/glogx/frame_alloc_test.go のバイト上限と同じ commit で更新する。
+#
+# ⚠️ 集約は時間と同じ min のまま (bench_stats.sh)。確保では「ノイズは遅くなる方にしか出ない」
+# という min の前提が成り立たないが、(a) このベンチの B/op は実測で決定的 (20 run どころか
+# 環境を跨いでも 0.1% 内)、(b) B/op = 総バイト ÷ N なので、遅い runner ほど N が小さく
+# 初期化の残差が乗る = min の方が安定、の 2 点で min を選んでいる。残る穴は「実行ごとに
+# 揺れる形の確保退行は 20 run 中 1 run が静かなだけで沈黙する」こと (2026-08-14 の敵対的
+# レビュー R4 の指摘。現に揺れる機構は見つかっていないため対処は入れていない)。
+view_steady_alloc_kb 31.0
+view_panel_alloc_kb 36.7
+status_view_frame_alloc_kb 42.9
+status_view_2000_alloc_kb 43.6
+cursor_move_view_alloc_kb 61.9
+view_diff_alloc_kb 47.8
+model_init_200_alloc_kb 147.0
+render_large_patch_alloc_kb 2037
