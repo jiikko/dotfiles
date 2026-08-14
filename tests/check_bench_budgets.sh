@@ -38,6 +38,18 @@ budget_file="${1:?usage: bench.sh | check_bench_budgets.sh <budget-file>}"
 
 CALIB_MAX_SCALE=4
 
+# 表示単位は metric 名の接尾辞が持つ (051 の判断: 予算ファイルの行書式に単位トークンを
+# 増やさない。行の項目名は常に ms= のまま、意味の単位だけ名前から引く)。
+# server_rss_mb は MB、*_alloc_kb は KB で、超過文言を常に ms と書くと時間の回帰に見え、
+# 対処 (確保 = 絶対値 +3% / 時間 = 較正つき rel) の入口を誤らせる (issue 064)
+unit_of() {
+  case "$1" in
+    *_kb) printf 'KB' ;;
+    *_mb) printf 'MB' ;;
+    *) printf 'ms' ;;
+  esac
+}
+
 declare -A budget rel seen value
 calib_metric="" calib_ref=""
 while read -r name limit extra _; do
@@ -118,9 +130,9 @@ for name in "${!value[@]}"; do
   fi
   if awk -v v="${value[$name]}" -v l="$eff" 'BEGIN { exit !(v + 0 > l + 0) }'; then
     if [[ -n "${rel[$name]:-}" && "$skip_rel" == 1 ]]; then
-      printf '::warning::bench over budget (極端な混雑 run のため警告のみ): %s %sms > %sms (%s)\n' "$name" "${value[$name]}" "$eff" "$budget_file"
+      printf '::warning::bench over budget (極端な混雑 run のため警告のみ): %s %s%s > %s%s (%s)\n' "$name" "${value[$name]}" "$(unit_of "$name")" "$eff" "$(unit_of "$name")" "$budget_file"
     else
-      printf '::error::bench regression: %s %sms > budget %sms (%s)\n' "$name" "${value[$name]}" "$eff" "$budget_file"
+      printf '::error::bench regression: %s %s%s > budget %s%s (%s)\n' "$name" "${value[$name]}" "$(unit_of "$name")" "$eff" "$(unit_of "$name")" "$budget_file"
       fail=1
     fi
   fi

@@ -65,3 +65,15 @@ unit_of() { case "$1" in *_kb) printf 'KB';; *_mb) printf 'MB';; *_cpu_ms|*) pri
 - `issues/done/051-perf-glogx-bench-gates-time-only.md` (`*_alloc_kb` の追加と、書式を
   増やさない判断の一次情報)
 - `tests/check_bench_budgets.sh` / `tests/bench_stats.sh`
+
+## 対応記録 (2026-08-15)
+
+- `check_bench_budgets.sh` に `unit_of()` (metric 名の接尾辞 → 表示単位) を追加し、
+  超過文言の警告経路 (極端混雑) とエラー経路の**両方**に適用 (issue の⚠️どおり)
+- 予算ファイルの書式は増やしていない (051 の判断を維持。表示だけを表示側で解いた)
+- `test_check_bench_budgets.sh` に文言の単位 assert 4 本を追加 (KB / MB / 従来 ms /
+  警告経路の KB)。変異検証: unit_of の kb/mb 分岐を消すと
+  「x_alloc_kb 50ms > budget 40ms」に戻り red になることを実測
+- 未確認 2 点の解消: `::error::` 行を grep する消費者は無し (repo 横断 grep。
+  bench-watch-after-push は metric= 行のみ) / `_ms` 系は既定分岐 (ms) に落ちるので
+  接尾辞の追加は不要

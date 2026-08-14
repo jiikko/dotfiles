@@ -105,4 +105,41 @@ assert_rc 1 "較正器 metric が出力に無いと fail" \
 new_window_x20 600 rel" \
 "metric=new_window_x20 ms=100"
 
+# --- 超過文言の表示単位 (issue 064): 単位は metric 名の接尾辞から引く ---
+# *_kb / *_mb の超過が「〜ms」と出ると時間の回帰に見え、対処 (確保 = 絶対値 / 時間 = rel)
+# の入口を誤らせる。エラー経路と警告経路 (極端混雑) の両方を見る (片方だけ直すのが典型的な
+# 取りこぼし、と issue が警告している形)
+assert_msg() { # <期待部分文字列> <説明> <budget内容> <bench出力>
+  want="$1"; desc="$2"
+  printf '%s\n' "$3" > "$TMP/budget.ci"
+  printf '%s\n' "$4" | "$CHECKER" "$TMP/budget.ci" > "$TMP/out.log" 2>&1 || true
+  if ! grep -qF "$want" "$TMP/out.log"; then
+    echo "✗ $desc (期待部分文字列: $want)" >&2
+    sed 's/^/    /' "$TMP/out.log" >&2
+    exit 1
+  fi
+  echo "✓ $desc"
+  pass=$((pass + 1))
+}
+
+assert_msg "x_alloc_kb 50KB > budget 40KB" "エラー経路: *_kb の超過は KB で出る" \
+"x_alloc_kb 40" \
+"metric=x_alloc_kb ms=50"
+
+assert_msg "server_rss_mb 42MB > budget 30MB" "エラー経路: *_mb の超過は MB で出る" \
+"server_rss_mb 30" \
+"metric=server_rss_mb ms=42"
+
+assert_msg "startup 400ms > budget 300ms" "エラー経路: 時間 metric は従来どおり ms" \
+"startup 300" \
+"metric=startup ms=400"
+
+# 警告経路 (較正 > CALIB_MAX_SCALE=4 で rel の gating が警告に落ちる) でも単位が引かれる
+assert_msg "leak_alloc_kb 90KB > 50.0KB" "警告経路 (極端混雑): *_kb の超過も KB で出る" \
+"calibrate tmux_rtt_x100 240
+tmux_rtt_x100 3000
+leak_alloc_kb 10 rel" \
+"metric=tmux_rtt_x100 ms=1200
+metric=leak_alloc_kb ms=90"
+
 echo "[check-bench-budgets] $pass 件すべて pass"
