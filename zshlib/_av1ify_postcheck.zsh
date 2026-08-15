@@ -227,10 +227,34 @@ __av1ify_postcheck() {
       src_a="$REPLY"
     fi
 
+    # 開始オフセットの関係差 (calc_drift と同じ式を start_time に適用)。
+    # 宣言/終端の drift とは**独立した第 2 の avsync 信号**で、duration が測れたかに
+    # 関わらず常時走らせる: 音声を後ろへシフトしつつ長さを映像に近づけると宣言 drift が
+    # 閾値未満に収まり初回ゲートを潜るが、開始オフセットには必ず出る
+    # (issue 066: 3.8s シフト + 音声長≒映像 で宣言 drift 1.88s < 2.0)。
+    # __av1ify_start_time は N/A を 0 に正規化するので calc_drift 入力は常に数値。
+    # 計算失敗 (awk 破損等) は s_bad=0 = 「開始のズレは判定不能、宣言/終端に委ねる」とする
+    # (常時チェックなので、失敗を FLAG に倒すと全ファイルが誤検知になる)。
+    # ただし「測れなかった (s_measured=0)」と「測って閾値内だった (s_bad=0)」は別物なので
+    # 分けて持つ。降格ゲート (下の再判定) は後者でしか降格してはならない。1 変数で兼ねると
+    # 常時判定の fail-open が降格ゲートの fail-closed を黙って壊す (058 の不変条件が消える)。
+    # ⚠️ 関係差 (a_start − v_start の src/out 差分) で見ること。絶対 start では TS の
+    # PCR 由来ベースオフセット (実測: video 1.423 / audio 1.400 が mp4 出力で 0 付近へ
+    # 正規化される) や AAC priming をまるごと音ズレと誤検知する。関係差なら実測 0.0098s。
+    local s_sv s_sa s_ov s_oa s_drift="" s_bad=0 s_measured=0
+    __av1ify_start_time "$src_path" "v:0"; s_sv="$REPLY"
+    __av1ify_start_time "$src_path" "a:0"; s_sa="$REPLY"
+    __av1ify_start_time "$filepath" "v:0"; s_ov="$REPLY"
+    __av1ify_start_time "$filepath" "a:0"; s_oa="$REPLY"
+    if __av1ify_calc_drift "$s_sv" "$s_sa" "$s_ov" "$s_oa" "$threshold"; then
+      read -r _ _ s_drift s_bad <<< "$REPLY"
+      s_measured=1
+    fi
+
+    local sd_v="" od_v="" drift_v="" drift_bad=0
     if __av1ify_is_num "$src_v" && __av1ify_is_num "$src_a"; then
       # 符号付きで関係差を見る (方向反転も検出)
       if __av1ify_calc_drift "$src_v" "$src_a" "$out_v" "$out_a" "$threshold"; then
-        local sd_v od_v drift_v drift_bad
         read -r sd_v od_v drift_v drift_bad <<< "$REPLY"
 
         if [[ "$drift_bad" == "1" ]]; then
@@ -243,16 +267,13 @@ __av1ify_postcheck() {
           # 閾値を超えたときだけ、4 値すべてを packet 実測で測り直して再判定する。
           # ・通常時の ffprobe コストは増えない (超過時のみ走る)
           # ・src/out を同じ測り方 (packet 実測の表示終端) に揃えるので量が混ざらない
-          # ・false negative は増えない: 本物の encode 起因ズレは出力の packet 列に必ず出る
           # ⚠️ packet 実測が測るのは「表示終端」で、ストリームの「長さ」ではない。
-          # 音声の先頭が落ちて edit-list 遅延が書かれ、終端は映像と揃っている
-          # 時間シフト型のズレは終端 Δ に出ない (実測 issue 058: 宣言 Δ=4.98s の
-          # 本物のシフトを終端 Δ=0.0007s で正常と誤判定していた)。シフトは開始
-          # オフセットに必ず出るので、FLAG→ok の降格は「終端が揃っている」かつ
-          # 「音声開始の関係差も閾値内」の 2 条件で行う。
-          # なお ok→FLAG 方向の再判定 (双方向化) は入れない: 全件で packet 走査
-          # 4 本のコストが常時掛かる上、宣言ベースの初回判定を素通りするズレは
-          # 変更前 (997d078) も検知しておらず、ここで守るのは降格の正しさだけ。
+          # 音声の先頭が落ちて edit-list 遅延が書かれ終端は映像と揃っている時間シフト型は
+          # 終端 Δ に出ない (実測 issue 058)。そのため降格 (FLAG→ok) は「終端が揃っている」
+          # かつ「開始の関係差を実際に測れて (s_measured) 閾値内だった (s_bad != 1)」の
+          # 2 条件で行う。測れなかったときは降格しない (検査できなかったときに ok へ倒さない)。
+          # 開始のズレ自体は上の常時チェックが最終判定でも拾うが、ここで見ないと
+          # 「正常と判定」と報告した直後に avsync で NG にする矛盾した出力になる。
           local m_sv m_sa m_ov m_oa
           if __av1ify_packet_end "$src_path" "v:0" && m_sv="$REPLY" \
             && __av1ify_packet_end "$src_path" "a:0" && m_sa="$REPLY" \
@@ -261,33 +282,17 @@ __av1ify_postcheck() {
             && __av1ify_calc_drift "$m_sv" "$m_sa" "$m_ov" "$m_oa" "$threshold"; then
             local m_sd m_od m_drift m_bad
             read -r m_sd m_od m_drift m_bad <<< "$REPLY"
-            if [[ "$m_bad" != "1" ]]; then
-              # 開始オフセットの関係差 (calc_drift と同じ式を start に適用)。
-              # 計算に失敗したら降格しない (検査できなかったときに ok へ倒さない)
-              local s_sv s_sa s_ov s_oa s_drift="" s_bad=1
-              __av1ify_start_time "$src_path" "v:0"; s_sv="$REPLY"
-              __av1ify_start_time "$src_path" "a:0"; s_sa="$REPLY"
-              __av1ify_start_time "$filepath" "v:0"; s_ov="$REPLY"
-              __av1ify_start_time "$filepath" "a:0"; s_oa="$REPLY"
-              if __av1ify_calc_drift "$s_sv" "$s_sa" "$s_ov" "$s_oa" "$threshold"; then
-                read -r _ _ s_drift s_bad <<< "$REPLY"
-              fi
-              if [[ "$s_bad" == "1" ]]; then
-                # 終端は揃っているが開始がずれている = 時間シフト型の本物。降格しない
-                print -r -- ">> 音ズレ判定: packet 実測の終端は Δ=${m_drift}s だが音声開始のシフト Δ=${s_drift:-?}s が閾値超過のため音ズレと判定 (時間シフト型)"
-              else
-                print -r -- ">> 音ズレ判定: 宣言 duration ベースでは Δ=${drift_v}s だが packet 実測では Δ=${m_drift}s のため正常と判定 (ソースの宣言 duration が不正確)"
-                sd_v="$m_sd"; od_v="$m_od"; drift_v="$m_drift"; drift_bad="$m_bad"
-              fi
-            else
+            if [[ "$m_bad" != "1" && "$s_measured" == "1" && "$s_bad" != "1" ]]; then
+              # 終端も開始も揃っている = 宣言 duration が不正確だっただけ。降格する
+              print -r -- ">> 音ズレ判定: 宣言 duration ベースでは Δ=${drift_v}s だが packet 実測では Δ=${m_drift}s のため正常と判定 (ソースの宣言 duration が不正確)"
+              sd_v="$m_sd"; od_v="$m_od"; drift_v="$m_drift"; drift_bad="$m_bad"
+            elif [[ "$m_bad" == "1" ]]; then
+              # packet 実測でもズレが残る = 本物。実測値へ更新して FLAG 維持
               sd_v="$m_sd"; od_v="$m_od"; drift_v="$m_drift"; drift_bad="$m_bad"
             fi
+            # 残り (m_bad!=1 かつ 開始がズレている / 測れなかった) = 時間シフト型もしくは
+            # 判定不能: 降格せず drift_bad=1 のまま (下で FLAG)
           fi
-        fi
-
-        if [[ "$drift_bad" == "1" ]]; then
-          issues+=("音ズレ疑い (src_delta=${sd_v}s out_delta=${od_v}s Δ=${drift_v}s threshold=${threshold}s)")
-          suffixes+=("avsync")
         fi
       else
         # awk 失敗時は無言スキップ (他のチェックに委ねる)
@@ -295,7 +300,24 @@ __av1ify_postcheck() {
       fi
     fi
     # ソース duration が両方とも取得不能 (= 安価パスも packet 走査も失敗) の超レアケースは
-    # 判定スキップ。絶対値 fallback を入れるとソース音ズレ素材で誤検出が再発するため敢えて入れない。
+    # duration 側の判定をスキップ (drift_bad=0 のまま)。絶対値 fallback を入れるとソース
+    # 音ズレ素材で誤検出が再発するため敢えて入れない。開始シフトの判定は duration を必要と
+    # しないので、このケースでも上の常時チェックが生きている。
+
+    # 最終判定: 宣言/終端の drift か、開始オフセットのシフトのどちらかで音ズレ
+    # (issue 066: drift_bad==0 でも s_bad==1 ならここで拾う)
+    if [[ "$drift_bad" == "1" || "$s_bad" == "1" ]]; then
+      local reason
+      if [[ "$drift_bad" == "1" && "$s_bad" == "1" ]]; then
+        reason="src_delta=${sd_v}s out_delta=${od_v}s Δ=${drift_v}s + 開始シフト Δ=${s_drift}s"
+      elif [[ "$s_bad" == "1" ]]; then
+        reason="開始シフト Δ=${s_drift}s (音声が ${s_drift}s ずれて始まる)"
+      else
+        reason="src_delta=${sd_v}s out_delta=${od_v}s Δ=${drift_v}s"
+      fi
+      issues+=("音ズレ疑い (${reason} threshold=${threshold}s)")
+      suffixes+=("avsync")
+    fi
   fi
 
   # ソースとの再生時間比較

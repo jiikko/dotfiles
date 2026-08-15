@@ -367,6 +367,64 @@ output=$(MOCK_VIDEO_DURATION=20.0 MOCK_AUDIO_DURATION=20.0 \
          av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "avsync" "time-shifted audio is still flagged (not downgraded by tail re-measurement)"
-assert_contains "$output" "時間シフト型" "the reason (start-offset shift) is reported to the user"
+assert_contains "$output" "開始シフト" "the reason (start-offset shift) is reported to the user"
+# 最終判定 (drift_bad || s_bad) は降格ゲートが開始を見なくても avsync に落ち着くため、
+# verdict だけでは降格ゲートの条件を検証できない。降格したときにだけ出る「正常と判定」の
+# 不在で、ゲートが開始シフトを見ていること (= 矛盾した報告をしないこと) を独立に固定する。
+assert_not_contains "$output" "正常と判定" "the downgrade path is not taken (no self-contradicting report)"
+
+# ----------------------------------------------------------------------
+# Test 19: 開始シフトが宣言 duration の初回ゲートを潜る形でも検知する (issue 066)
+#
+# 音声を後ろへシフトしつつ長さを映像に近づけると、宣言 duration ベースの drift が
+# 閾値未満 (ここでは 0) になり初回 FLAG しない。だが開始オフセットには出るので、
+# 常時走る開始シフトチェックが拾う。Test 18 (宣言 drift も出る形) と違い、これは
+# 「初回ゲートを潜る」= drift_bad==0 のまま s_bad==1 で FLAG する経路を守る。
+# ----------------------------------------------------------------------
+printf '\n## Test 19: start shift under the initial declared-duration gate is still flagged\n'
+TEST_DIR="$TEST_TMP/avs_t19"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# 宣言 duration は src/out で完全一致 (drift=0 → 初回 FLAG しない)。開始だけ 3.8s ずれる
+output=$(MOCK_VIDEO_DURATION=30.0 MOCK_AUDIO_DURATION=30.0 \
+         MOCK_VIDEO_LAST_PTS=30.0 MOCK_AUDIO_LAST_PTS=30.0 \
+         MOCK_OUTPUT_VIDEO_DURATION=30.0 MOCK_OUTPUT_AUDIO_DURATION=30.0 \
+         MOCK_OUTPUT_VIDEO_LAST_PTS=30.0 MOCK_OUTPUT_AUDIO_LAST_PTS=30.0 \
+         MOCK_OUTPUT_AUDIO_START=3.8 \
+         MOCK_FORMAT_DURATION=30.0 MOCK_OUTPUT_FORMAT_DURATION=30.0 \
+         av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "avsync" "start shift under the initial gate is flagged (drift_bad=0, s_bad=1)"
+assert_contains "$output" "開始シフト" "the reason names the start shift"
+
+# ----------------------------------------------------------------------
+# Test 20: 全体ベースオフセットを持つソース (TS 等) を常時 start チェックが誤検知しない
+#
+# 常時化 (issue 066) で新たに生まれる誤検知リスクの検証。TS は PCR 由来の大きな
+# start_time を両ストリームに持ち (実測: video 1.423 / audio 1.400。PCR は ~26.5h で
+# 巻くため捕捉開始位置次第で数万秒にもなる)、mp4 出力ではそれが 0 付近へ正規化される。
+# 絶対 start で見るとこのベース差がまるごと「音ズレ」になるため、関係差
+# (a_start − v_start の src/out 差分) で見る必要がある (実測の関係差は 0.0098s)。
+# 壊れた宣言 duration (Test 14 の値) と重ねて、降格経路も塞がないことを同時に確認する。
+# ----------------------------------------------------------------------
+printf '\n## Test 20: container base offset (TS) does not false-positive the always-on start check\n'
+TEST_DIR="$TEST_TMP/avs_t20"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_VIDEO_DURATION=8270.837 MOCK_AUDIO_DURATION=8287.552 \
+         MOCK_VIDEO_LAST_PTS=8287.479 MOCK_AUDIO_LAST_PTS=8287.531 \
+         MOCK_VIDEO_START=41231.423222 MOCK_AUDIO_START=41231.400000 \
+         MOCK_OUTPUT_VIDEO_DURATION=8287.513 MOCK_OUTPUT_AUDIO_DURATION=8287.552 \
+         MOCK_OUTPUT_VIDEO_LAST_PTS=8287.479 MOCK_OUTPUT_AUDIO_LAST_PTS=8287.531 \
+         MOCK_OUTPUT_VIDEO_START=0.033008 MOCK_OUTPUT_AUDIO_START=0.000000 \
+         MOCK_FORMAT_DURATION=8287.552 MOCK_OUTPUT_FORMAT_DURATION=8287.552 \
+         MOCK_NB_FRAMES=248377 MOCK_OUTPUT_NB_FRAMES=248377 \
+         av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_not_contains "$output" "avsync" "base offset cancels in the relational diff (no FP, downgrade still works)"
 
 printf '\n=== A/V Sync Postcheck Tests Completed ===\n'
