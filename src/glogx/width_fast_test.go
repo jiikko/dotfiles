@@ -91,6 +91,12 @@ func TestAcceptedSymbolsNeverCombineWithEachOther(t *testing.T) {
 //
 // ⚠️ env は x/ansi の init が読むので、同一プロセス内で os.Setenv しても効かない。
 // 子プロセスを起こして確かめるしかない (この形でしか退行を捕まえられない)。
+//
+// ⚠️ これは「glogx がこの env を支持する」という主張ではない。支持しないと決めてあり
+// (issue 054)、TestMain は env が真なら止まる — この子プロセスだけが GLOGX_EAW_CHILD=1 で
+// 除外される。ここが守るのは狭く「**幅計算の層**が env に追従してライブラリと一致し続ける」
+// ことだけ (fast-path が幅を決め打ちすると fillRight / truncateDispLeft の算術が破れる。
+// 046 の退行)。描画がこの env で正しいかは別問題で、実測では正しくない (widthenv 参照)。
 func TestDispWidthAgreesUnderEastAsianEnv(t *testing.T) {
 	if os.Getenv("GLOGX_EAW_CHILD") == "1" {
 		// ⚠️ まず env が実際に効いていることを止まる形で確かめる。これが無いと、x/ansi が

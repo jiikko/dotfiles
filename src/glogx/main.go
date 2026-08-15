@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"golang.org/x/term"
+
+	"glogx/widthenv"
 )
 
 func main() {
@@ -33,6 +35,12 @@ func run(argv []string) int {
 	if opts.Help {
 		fmt.Println(Usage())
 		return 0
+	}
+	// 支持しない幅 env は黙って壊れさせず、起動時に一度警告する (issue 054)。
+	// ⚠️ TUI は alt screen へ入るので、対話モードではこの行は終了後に見えることになる。
+	// 主な発火先である CI / 非 TTY 実行では stderr にそのまま残る。
+	if widthenv.EastAsianAmbiguous() {
+		fmt.Fprintln(os.Stderr, "⚠️ "+widthenv.Message)
 	}
 	startProbe() // GLOGX_PROBE_DIR があるときだけ動く計測フック (probe.go)
 

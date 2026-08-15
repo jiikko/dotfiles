@@ -42,8 +42,12 @@ import (
 // v2 化で悪化はしていない。ただし前提が「エンジンが WcWidth である」ことに乗っているので、
 // bubbletea を上げたら Method の既定と切替条件を読み直すこと (ここが桁ズレ再発の経路)。
 //
-// East Asian Ambiguous (罫線・✓・● 等) は ansi では幅 1 で、locale に依存しない
+// East Asian Ambiguous (罫線・✓・● 等) は ansi では既定で幅 1 で、**locale には依存しない**
 // (旧 runewidth は LANG=ja_JP.* 等で幅 2 に切り替わりパネル枠計算が実行環境依存でずれた)。
+// ⚠️ ただし env `RUNEWIDTH_EASTASIAN` が真だと ansi は幅 2 に切り替わる。この層 (dispWidth /
+// symWidthTable) は幅をライブラリから引くので追従するが、**glogx の描画はこの env を支持しない**
+// (枠・影・区切り線を strings.Repeat でグリフ数ぶん埋めている箇所があり、幅 2 になると要求の
+// 2 倍近くまで膨らむ。実測 issue 054)。検出と扱いは widthenv パッケージが一次情報。
 
 // dispWidth は文字列の端末表示幅を返す。ANSI エスケープは幅 0 として無視するので
 // stripANSI 前処理は不要。
