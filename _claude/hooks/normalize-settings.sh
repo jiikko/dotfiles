@@ -18,7 +18,7 @@ SETTINGS="${CLAUDE_DIR}/settings.json"
 LOCAL="${CLAUDE_DIR}/settings.local.json"
 
 # 退避対象の揮発キー。共有したくない・CLI が勝手に書き換えるものだけ。
-VOLATILE='["model","effortLevel","advisorModel","voice"]'
+VOLATILE='["model","effortLevel","advisorModel","voice","autoMode"]'
 
 [ -f "$SETTINGS" ] || exit 0
 command -v jq >/dev/null 2>&1 || { echo "normalize-settings: jq not found; skip" >&2; exit 0; }
