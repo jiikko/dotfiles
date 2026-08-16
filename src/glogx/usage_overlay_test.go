@@ -157,17 +157,6 @@ func TestUsageToggleDoesNotBypassConfirmModal(t *testing.T) {
 	}
 }
 
-// U は tmux prefix pending を素通りせず、通常キーとして pending を消費する (次キー誤飲み込み回帰)。
-func TestUsageToggleDoesNotBypassPrefixPending(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.tmuxPrefix = "ctrl+t"
-	m.prefixPending = true
-	m.handleKey("U")
-	if m.prefixPending {
-		t.Error("U が prefixPending を消費していない (次キーが誤って飲み込まれる残留)")
-	}
-}
-
 // 取得待ち = spinnerActive で tick が回る (スピナーが animate する前提)。取得完了で止まる。
 func TestUsageLoadingDrivesSpinner(t *testing.T) {
 	m := newTestBrowse(t, 5, nil, nil) // toFetch なし = CI fetch は動かない

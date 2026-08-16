@@ -267,7 +267,6 @@ type browseModel struct {
 	pollAttempts  int             // push 直後ポーリングの試行回数 (上限で諦める)
 	lastWarning   string          // w でコピーする直近の警告/エラー文字列 (トーストが消えても保持。issue 026)
 	tmuxPrefix    string          // tmux prefix の bubbletea 表記 (例 "ctrl+t")。"" = tmux 外/不明で機能オフ
-	prefixPending bool            // 直前のキーが tmux prefix。次の 1 キーを飲み込む
 	verbatim      []Line          // git log 実出力の取り込み行 (nil = 自前レンダリング)
 
 	// usage オーバーレイ (右上に Claude Code の /usage 残量を重ねる)。ユーザー要望 2026-07-21。
@@ -1206,22 +1205,20 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	// tmux prefix の誤爆フィードバック: popup 表示中は tmux がキーを処理しない
-	// (display-popup はモーダル) ため、window 移動しようとした prefix+n/p はここへ
-	// 素通りしてくる。無言だと「効かない」だけで理由が分からないので案内を出し、
-	// prefix に続く 1 キーは飲み込む (C-t p が PR オープン等に化ける誤爆の防止)。
-	// prefix 連打 (tmux のリテラル送信の癖) は pending を張り直して同じ案内を出す。
+	// (display-popup はモーダル) ため、window 移動しようとした prefix はここへ素通りしてくる。
+	// 無言だと「効かない」だけで理由が分からないので、prefix キー自体を飲んで案内を出す。
+	//
+	// ⚠️ 続くキーは飲み込まない (ユーザー要望 2026-08-16)。以前は prefix+p が PR オープンに
+	// 化ける誤爆を嫌って次の 1 キーも飲んでいたが、prefix は押し間違いであることが多く、
+	// 「続く入力まで失敗扱い」は解釈違い。prefix の後に打ち直したキーはそのまま glogx の
+	// 操作として処理する (p でブラウザが開く程度の副作用は許容。破壊的な b/u は y/N 確認つき)。
+	//
 	// 確認モーダル (y/N) 中はここへ来ない (上のモーダル処理が先): モーダル内では
 	// 「y 以外の任意キー = キャンセル」というモーダルの語彙を優先する (セルフレビュー指摘)。
 	// 対象キーはハードコードせず起動時に tmux サーバへ聞いた現在値 (prefixMsg)。
 	// tmux 外や取得失敗では tmuxPrefix="" のままこの機能ごと無効になる。ユーザー要望。
-	if m.prefixPending && key != m.tmuxPrefix {
-		m.prefixPending = false
-		// 右下トーストで通知する (中央ダイアログだと操作を遮って重い、とのユーザー要望 2026-07-24)
-		m.toast.show("window 操作は C-g で popup を閉じてから prefix+"+key, false)
-		return m, m.maybeTick()
-	}
 	if m.tmuxPrefix != "" && key == m.tmuxPrefix {
-		m.prefixPending = true
+		// 右下トーストで通知する (中央ダイアログだと操作を遮って重い、とのユーザー要望 2026-07-24)
 		m.toast.show("tmux prefix は popup では効きません (C-g で閉じてから)", false)
 		return m, m.maybeTick()
 	}

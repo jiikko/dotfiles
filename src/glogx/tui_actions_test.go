@@ -409,7 +409,7 @@ func TestBrowsePullFlow(t *testing.T) {
 }
 
 // tmux prefix (popup 内では tmux に届かない) の誤爆フィードバック。
-// 右下 toast で通知し、prefix に続く 1 キーは飲み込む。
+// prefix キー自体だけを飲んで右下 toast で通知し、続くキーは通常操作として処理する。
 func TestBrowseTmuxPrefixFeedback(t *testing.T) {
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.width, m.height = 80, 20
@@ -419,26 +419,24 @@ func TestBrowseTmuxPrefixFeedback(t *testing.T) {
 	if !strings.Contains(m.toast.text, "効きません") || m.toast.info || m.toast.ok {
 		t.Fatalf("prefix の失敗 toast が出ない: text=%q info=%v ok=%v", m.toast.text, m.toast.info, m.toast.ok)
 	}
-	// prefix に続く 1 キーは飲み込む (p が PR オープンに化けない・j でカーソルも動かない)
-	m.handleKey("j")
 	if m.cursor != 0 {
-		t.Fatal("prefix 直後のキーが飲み込まれずカーソルが動いた")
+		t.Fatal("prefix 単体でカーソルが動いた")
 	}
-	if !strings.Contains(m.toast.text, "prefix+j") {
-		t.Fatalf("押したキー名入りの toast が出ない: %q", m.toast.text)
-	}
-	// 飲み込みは 1 キーだけ (次の j は通常動作)
+	// prefix に続くキーは飲み込まない = 押し間違い後の打ち直しがそのまま効く
+	// (ユーザー要望 2026-08-16。以前は 1 キー飲んで「prefix+j」の 2 枚目 toast を出していた)
 	m.handleKey("j")
 	if m.cursor != 1 {
-		t.Fatal("prefix の 2 キー後まで飲み込まれた")
+		t.Fatal("prefix 直後のキーが飲み込まれてカーソルが動かない")
 	}
-	// prefix 連打 (tmux のリテラル送信の癖) は pending を張り直して同じ案内
+	if strings.Contains(m.toast.text, "prefix+j") {
+		t.Fatalf("prefix に続くキーで失敗 toast が出た: %q", m.toast.text)
+	}
+	// prefix 連打 (tmux のリテラル送信の癖) は毎回同じ案内を出すだけ
 	m.handleKey("ctrl+t")
 	m.handleKey("ctrl+t")
-	if !m.prefixPending || !strings.Contains(m.toast.text, "効きません") {
-		t.Fatalf("prefix 連打で pending が張り直されない: pending=%v text=%q", m.prefixPending, m.toast.text)
+	if !strings.Contains(m.toast.text, "効きません") || m.cursor != 1 {
+		t.Fatalf("prefix 連打の案内が出ない: text=%q cursor=%d", m.toast.text, m.cursor)
 	}
-	m.handleKey("esc") // pending を消化して以降のテストに影響させない
 	// y/N 確認モーダル中はモーダルの語彙を優先: C-t は「任意キー = キャンセル」で
 	// prefix 検知は発動しない (続く y が飲み込まれる事故の防止)
 	m.statuses[m.commits[0].SHA] = StateUnpushed
@@ -447,14 +445,14 @@ func TestBrowseTmuxPrefixFeedback(t *testing.T) {
 		t.Fatal("b で push 確認に入らない")
 	}
 	m.handleKey("ctrl+t")
-	if m.actModal.pushConfirm || m.prefixPending {
-		t.Fatalf("確認モーダル中の C-t がキャンセルにならない: confirm=%v pending=%v", m.actModal.pushConfirm, m.prefixPending)
+	if m.actModal.pushConfirm {
+		t.Fatalf("確認モーダル中の C-t がキャンセルにならない: confirm=%v", m.actModal.pushConfirm)
 	}
 	// tmux 外 (prefix 不明) では機能オフ = ctrl+t は何もしない
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m2.Update(prefixMsg{key: ""})
 	m2.handleKey("ctrl+t")
-	if m2.toast.visible() || m2.prefixPending {
+	if m2.toast.visible() {
 		t.Fatalf("tmux 外で prefix 案内が出た: %q", m2.toast.text)
 	}
 }
