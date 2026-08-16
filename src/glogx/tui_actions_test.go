@@ -408,53 +408,73 @@ func TestBrowsePullFlow(t *testing.T) {
 	}
 }
 
+// newTestBrowseWithPrefix は tmux prefix を認識済みの一覧モデルを返す
+// (prefixMsg の配達まで済ませる。prefix="" を渡せば tmux 外 = 機能オフの状態)。
+func newTestBrowseWithPrefix(t *testing.T, prefix string) *browseModel {
+	t.Helper()
+	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m.width, m.height = 80, 20
+	m.Update(prefixMsg{key: prefix})
+	return m
+}
+
 // tmux prefix (popup 内では tmux に届かない) の誤爆フィードバック。
 // prefix キー自体だけを飲んで右下 toast で通知し、続くキーは通常操作として処理する。
 func TestBrowseTmuxPrefixFeedback(t *testing.T) {
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
-	m.width, m.height = 80, 20
-	m.Update(prefixMsg{key: "ctrl+t"})
-	// prefix 単体: toast を出す (カーソルは動かない)
-	m.handleKey("ctrl+t")
-	if !strings.Contains(m.toast.text, "効きません") || m.toast.info || m.toast.ok {
-		t.Fatalf("prefix の失敗 toast が出ない: text=%q info=%v ok=%v", m.toast.text, m.toast.info, m.toast.ok)
-	}
-	if m.cursor != 0 {
-		t.Fatal("prefix 単体でカーソルが動いた")
-	}
-	// prefix に続くキーは飲み込まない = 押し間違い後の打ち直しがそのまま効く
-	// (ユーザー要望 2026-08-16。以前は 1 キー飲んで「prefix+j」の 2 枚目 toast を出していた)
-	m.handleKey("j")
-	if m.cursor != 1 {
-		t.Fatal("prefix 直後のキーが飲み込まれてカーソルが動かない")
-	}
-	if strings.Contains(m.toast.text, "prefix+j") {
-		t.Fatalf("prefix に続くキーで失敗 toast が出た: %q", m.toast.text)
-	}
+	// prefix 単体: 飲んで案内を出す (カーソルは動かない)
+	t.Run("prefix は飲んで案内", func(t *testing.T) {
+		m := newTestBrowseWithPrefix(t, "ctrl+t")
+		m.handleKey("ctrl+t")
+		if !strings.Contains(m.toast.text, "効きません") || m.toast.info || m.toast.ok {
+			t.Fatalf("prefix の失敗 toast が出ない: text=%q info=%v ok=%v", m.toast.text, m.toast.info, m.toast.ok)
+		}
+		if m.cursor != 0 {
+			t.Fatal("prefix 単体でカーソルが動いた")
+		}
+	})
+	// 押し間違い後の打ち直しがそのまま効く (続くキーを飲まない・2 枚目の toast も出さない)
+	t.Run("続くキーは通常操作", func(t *testing.T) {
+		m := newTestBrowseWithPrefix(t, "ctrl+t")
+		m.handleKey("ctrl+t")
+		m.handleKey("j")
+		if m.cursor != 1 {
+			t.Fatal("prefix 直後のキーが飲み込まれてカーソルが動かない")
+		}
+		if strings.Contains(m.toast.text, "prefix+j") {
+			t.Fatalf("prefix に続くキーで失敗 toast が出た: %q", m.toast.text)
+		}
+	})
 	// prefix 連打 (tmux のリテラル送信の癖) は毎回同じ案内を出すだけ
-	m.handleKey("ctrl+t")
-	m.handleKey("ctrl+t")
-	if !strings.Contains(m.toast.text, "効きません") || m.cursor != 1 {
-		t.Fatalf("prefix 連打の案内が出ない: text=%q cursor=%d", m.toast.text, m.cursor)
-	}
+	t.Run("prefix 連打も案内のまま", func(t *testing.T) {
+		m := newTestBrowseWithPrefix(t, "ctrl+t")
+		m.handleKey("ctrl+t")
+		m.handleKey("ctrl+t")
+		if !strings.Contains(m.toast.text, "効きません") || m.cursor != 0 {
+			t.Fatalf("prefix 連打の案内が出ない: text=%q cursor=%d", m.toast.text, m.cursor)
+		}
+	})
 	// y/N 確認モーダル中はモーダルの語彙を優先: C-t は「任意キー = キャンセル」で
 	// prefix 検知は発動しない (続く y が飲み込まれる事故の防止)
-	m.statuses[m.commits[0].SHA] = StateUnpushed
-	m.handleKey("b")
-	if !m.actModal.pushConfirm {
-		t.Fatal("b で push 確認に入らない")
-	}
-	m.handleKey("ctrl+t")
-	if m.actModal.pushConfirm {
-		t.Fatalf("確認モーダル中の C-t がキャンセルにならない: confirm=%v", m.actModal.pushConfirm)
-	}
+	t.Run("確認モーダル中はキャンセル語彙が優先", func(t *testing.T) {
+		m := newTestBrowseWithPrefix(t, "ctrl+t")
+		m.statuses[m.commits[0].SHA] = StateUnpushed
+		m.handleKey("b")
+		if !m.actModal.pushConfirm {
+			t.Fatal("b で push 確認に入らない")
+		}
+		m.handleKey("ctrl+t")
+		if m.actModal.pushConfirm {
+			t.Fatalf("確認モーダル中の C-t がキャンセルにならない: confirm=%v", m.actModal.pushConfirm)
+		}
+	})
 	// tmux 外 (prefix 不明) では機能オフ = ctrl+t は何もしない
-	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m2.Update(prefixMsg{key: ""})
-	m2.handleKey("ctrl+t")
-	if m2.toast.visible() {
-		t.Fatalf("tmux 外で prefix 案内が出た: %q", m2.toast.text)
-	}
+	t.Run("tmux 外では機能オフ", func(t *testing.T) {
+		m := newTestBrowseWithPrefix(t, "")
+		m.handleKey("ctrl+t")
+		if m.toast.visible() {
+			t.Fatalf("tmux 外で prefix 案内が出た: %q", m.toast.text)
+		}
+	})
 }
 
 // parseTmuxPrefix: show-options 出力 → bubbletea キー表記。
