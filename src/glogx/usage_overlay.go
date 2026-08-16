@@ -160,8 +160,13 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 		}
 		// codex の枠が取れているときだけ "+ codex" を添える (codex 未導入環境や取得失敗時に
 		// 名前だけ出さない。行側の cx ラベルと対で、この箱が両 CLI の残量であることを示す)。
+		// バージョンは Claude 側と同じく取れていれば添える (取得失敗時は名前だけで従来どおり)。
 		if o.snap.HasCodex() {
-			title = strings.Replace(title, " · usage ", " + codex · usage ", 1)
+			cx := " + codex"
+			if v := sanitizePlainLine(o.snap.CodexVersion); v != "" {
+				cx += " v" + v
+			}
+			title = strings.Replace(title, " · usage ", cx+" · usage ", 1)
 		}
 		// ヘッダー (列見出し) は自明なので表示しない (ユーザー要望 2026-07-23)。data 行のみ。
 		// Claude と codex の境目には content 幅の区切り罫線を挟む (ユーザー要望 2026-07-31)。

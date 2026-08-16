@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"os/exec"
-	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -28,27 +26,10 @@ var fetchLatestCodexVersion = func(ctx context.Context) string {
 	return fetchNpmLatestVersion(ctx, npmCodexLatestURL)
 }
 
-// parseCodexVersionOutput は `codex --version` の出力 ("codex-cli 0.144.6" 形式) から
-// バージョンを取り出す。形式が変わって取れなくても空文字 = 無通知に落ちるだけ。
-func parseCodexVersionOutput(out string) string {
-	fields := strings.Fields(strings.TrimSpace(out))
-	if len(fields) == 0 {
-		return ""
-	}
-	return fields[len(fields)-1]
-}
-
-// fetchInstalledCodexVersion はテストで codex CLI を起動しないための差し替え点。
-var fetchInstalledCodexVersion = func(ctx context.Context) string {
-	cmd := exec.CommandContext(ctx, "codex", "--version")
-	// ctx の kill は直接の子にしか効かない (usage.SubprocessWaitDelay の doc)
-	cmd.WaitDelay = usage.SubprocessWaitDelay
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return parseCodexVersionOutput(string(out))
-}
+// fetchInstalledCodexVersion はテストで codex CLI を起動しないための差し替え点
+// (claude 側 fetchInstalledClaudeVersion と同じく実体は usage パッケージ。usage オーバーレイの
+// タイトル表示でも同じ取得が要るため、exec とパースを二重に持たない)。
+var fetchInstalledCodexVersion = usage.FetchCodexVersion
 
 // checkCodexVersionCmd は起動時の codex バージョン確認 1 回分 (claude 側と並ぶ)。
 func checkCodexVersionCmd() tea.Cmd {

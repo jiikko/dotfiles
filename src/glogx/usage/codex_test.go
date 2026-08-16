@@ -379,3 +379,18 @@ func TestRenderLineWithCodex(t *testing.T) {
 		t.Errorf("RenderLine:\n got=%q\nwant=%q", got, want)
 	}
 }
+
+func TestParseCodexVersion(t *testing.T) {
+	cases := map[string]string{
+		"codex-cli 0.144.6":   "0.144.6",
+		"codex-cli 0.144.6\n": "0.144.6",
+		"0.144.6":             "0.144.6", // 素の semver だけになっても拾える
+		"":                    "",
+		"   \n":               "",
+	}
+	for in, want := range cases {
+		if got := parseCodexVersion(in); got != want {
+			t.Errorf("parseCodexVersion(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

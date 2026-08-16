@@ -526,3 +526,26 @@ printf '%s\n' '{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":69,"wind
 		t.Errorf("claude 失敗 + codex 成功でキャッシュが作られた: err=%v", err)
 	}
 }
+
+// 箱のタイトルは codex 側もバージョンを添える (Claude 側と対。ユーザー要望 2026-08-16)。
+// 取得できていないとき (未導入 / --version 失敗) は名前だけの従来表記へ落ちる。
+func TestUsageBoxLinesTitleShowsCodexVersion(t *testing.T) {
+	snap := &usage.Snapshot{
+		Version:      "2.1.216",
+		CodexVersion: "0.144.6",
+		Windows: []usage.Window{
+			{Label: "5h", Percent: 20, ResetAt: time.Now().Add(4 * time.Hour)},
+			{Label: "cx7d", Source: usage.SourceCodex, Percent: 69, ResetAt: time.Now().Add(48 * time.Hour)},
+		},
+	}
+	ov := usageOverlay{visible: true, snap: snap}
+	plain := stripANSI(strings.Join(ov.boxLines(120, false, ""), "\n"))
+	if !strings.Contains(plain, "Claude Code v2.1.216 + codex v0.144.6 · usage") {
+		t.Errorf("タイトルに codex バージョンが無い:\n%s", plain)
+	}
+	snap.CodexVersion = ""
+	plain = stripANSI(strings.Join(ov.boxLines(120, false, ""), "\n"))
+	if !strings.Contains(plain, "Claude Code v2.1.216 + codex · usage") {
+		t.Errorf("codex バージョン欠損時に名前だけの表記へ落ちない:\n%s", plain)
+	}
+}

@@ -6,22 +6,7 @@ import (
 	"testing"
 )
 
-func TestParseCodexVersionOutput(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"codex-cli 0.144.6", "0.144.6"},
-		{"codex-cli 0.144.6\n", "0.144.6"},
-		{"0.144.6", "0.144.6"}, // 素の semver だけになっても拾える
-		{"", ""},
-		{"   \n", ""},
-	}
-	for _, c := range cases {
-		if got := parseCodexVersionOutput(c.in); got != c.want {
-			t.Errorf("parseCodexVersionOutput(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
+// バージョン出力のパースは usage パッケージ側 (TestParseCodexVersion) でカバーする。
 
 // swapCodexVersionFetchers は差し替え点 2 つを一時的に固定値へ差し替える
 // (claude 側 swapClaudeVersionFetchers の鏡像)。

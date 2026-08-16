@@ -38,6 +38,9 @@ type Window struct {
 type Snapshot struct {
 	Windows []Window
 	Version string // Claude Code の CLI バージョン ("2.1.216" 等)。取得失敗時は空
+	// CodexVersion は codex CLI のバージョン ("0.144.6" 等)。未導入・取得失敗時は空
+	// (omitempty により codex バージョン対応前のディスクキャッシュも欠損として読める)。
+	CodexVersion string `json:",omitempty"`
 }
 
 // Find は label ("5h" / "7d" 等) に一致する Window を返す。

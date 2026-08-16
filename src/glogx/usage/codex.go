@@ -24,6 +24,7 @@ import (
 	"io"
 	"math"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -85,6 +86,30 @@ func FetchCodex(ctx context.Context) ([]Window, error) {
 		return nil, fmt.Errorf("codex app-server 出力の読み取り失敗: %w", err)
 	}
 	return nil, errors.New("codex app-server が rateLimits 応答を返さず終了した")
+}
+
+// FetchCodexVersion は `codex --version` から CLI バージョン番号だけを取り出す
+// (Claude 側 FetchVersion の codex 版)。取得・パース失敗はすべて空文字を返す
+// (バージョン表示は付加情報であり、欠けても呼び出し側の主処理は成立させる)。
+func FetchCodexVersion(ctx context.Context) string {
+	cmd := exec.CommandContext(ctx, "codex", "--version")
+	cmd.WaitDelay = SubprocessWaitDelay
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return parseCodexVersion(string(out))
+}
+
+// parseCodexVersion は `codex --version` の出力末尾トークンを返す純関数。
+// "codex-cli 0.144.6" → "0.144.6" (Claude 側 parseVersion が先頭トークンなのは
+// "2.1.216 (Claude Code)" と並びが逆のため)。空・空白のみは空文字。
+func parseCodexVersion(out string) string {
+	fields := strings.Fields(out)
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[len(fields)-1]
 }
 
 // codexRPCLine は app-server が返す JSON-RPC 行の必要フィールドだけ。id は応答・server 発の
@@ -212,20 +237,26 @@ func FetchAll(ctx context.Context) (*Snapshot, error) {
 	type codexRes struct {
 		ws  []Window
 		err error
+		ver string
 	}
 	ch := make(chan codexRes, 1)
 	go func() {
+		// バージョンは rateLimits と独立なので並列取得する (Claude 側 Fetch と同じ理由)。
+		// 取得失敗は空文字 = バージョン表示が消えるだけで、枠の取得には影響しない。
+		verCh := make(chan string, 1)
+		go func() { verCh <- FetchCodexVersion(ctx) }()
 		ws, err := FetchCodex(ctx)
-		ch <- codexRes{ws, err}
+		ch <- codexRes{ws, err, <-verCh}
 	}()
 	snap, err := Fetch(ctx)
 	cx := <-ch
 	switch {
 	case err == nil:
 		snap.Windows = append(snap.Windows, cx.ws...) // codex 失敗時 ws は nil で no-op
+		snap.CodexVersion = cx.ver
 		return snap, nil
 	case cx.err == nil:
-		return &Snapshot{Windows: cx.ws}, nil
+		return &Snapshot{Windows: cx.ws, CodexVersion: cx.ver}, nil
 	default:
 		return nil, errors.Join(err, cx.err)
 	}
@@ -251,9 +282,12 @@ func (s *Snapshot) MergeLastGood(prev *Snapshot) {
 			s.Windows = append(s.Windows, w)
 		}
 	}
-	// バージョン表示も last-good: claude 失敗時の FetchAll (または --version だけの失敗) は
-	// Version 空で返るため、前回値があれば保つ。
+	// バージョン表示も last-good: claude / codex 失敗時の FetchAll (または --version だけの
+	// 失敗) は Version / CodexVersion 空で返るため、前回値があれば保つ。
 	if s.Version == "" {
 		s.Version = prev.Version
+	}
+	if s.CodexVersion == "" {
+		s.CodexVersion = prev.CodexVersion
 	}
 }
