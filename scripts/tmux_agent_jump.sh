@@ -6,7 +6,7 @@
 # - 並び順は注意が必要な順: 🔔 input → ⚙ working → ✓ idle → 🔕 seen (同順位は場所順)
 # - 名前は pane_title を使う (window_name だと同一 window の複数エージェントが
 #   全行同じ名前になる。tmux_agent_panel.sh の list_agents コメント参照)
-# - popup 専用セッション (scratch / claude-fork / launcher) は候補から除外する
+# - popup 専用セッション (scratch / claude-fork) は候補から除外する
 #   (switch-client で飛ぶと popup 前提のセッションへ full attach してしまうため。
 #   fzf_jump と同じ判断。scratch のエージェントへは prefix+t で入る)
 # - 選択キーは空白を含まない安定キー pane_id (fzf_window_picker と同じ流儀)

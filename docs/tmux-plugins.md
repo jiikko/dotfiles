@@ -322,14 +322,14 @@ window 名の追従は `automatic-rename-format '#{pane_title}'`（\_tmux.conf�
 off の window は pane_title が更新されても名前が固まり、**resurrect が per-window の
 automatic-rename を save/restore するため off がサーバ再起動を跨いで永続化する**。
 
-診断と修復（launcher セッションは `new-window -n` の意図的命名なので除外）:
+診断と修復（意図的に `new-window -n` で命名している window があるなら awk 側で除外する）:
 
 ```sh
 # off の window を列挙
 tmux list-windows -a -F '#{session_name}:#{window_index} auto=#{automatic-rename}' | grep 'auto=0'
 # per-window option を unset して global の automatic-rename on に戻す
 tmux list-windows -a -F '#{session_name}:#{window_index} #{automatic-rename}' \
-  | awk '$2==0 && $1 !~ /^launcher:/ {print $1}' \
+  | awk '$2==0 {print $1}' \
   | while read -r w; do tmux set-option -w -u -t "$w" automatic-rename; done
 ```
 

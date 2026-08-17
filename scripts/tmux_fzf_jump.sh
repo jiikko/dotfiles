@@ -5,7 +5,7 @@
 # 効くことを確認済み)。
 # - 最終アクティビティの新しい順に並べる (現在地が先頭、直前に居た場所が 2 番目)
 # - 現在地に「← いまここ」マーク、各行に相対時刻 (◯分前) を表示
-# - popup 専用セッション (scratch / claude-fork / launcher) は候補から除外する
+# - popup 専用セッション (scratch / claude-fork) は候補から除外する
 # 一覧構築 → 相対時刻 → fzf 選択の骨格は lib/tmux_fzf_window_picker.sh に集約 (pane_move と共通)。
 set -euo pipefail
 unset CDPATH

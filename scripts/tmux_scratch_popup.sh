@@ -3,15 +3,12 @@
 # で呼ばれる)。開閉判定ごとここに集約する (旧実装は if-shell -F 込みの 200 文字超の bind
 # 文字列が t / C-t に複製されており、二重エスケープで壊れやすかった)。
 # 引数: $1 = client_name / $2 = session_name (いずれも run-shell の format 展開で渡る。
-#   #{q:} でシェル特殊文字をエスケープ済み。旧 "#{...}" 埋めは値の " で sh 構文エラーに
-#   なる穴があった — _tmux.conf の launcher menu コメント参照)
+#   ⚠️ #{q:} でシェル特殊文字をエスケープすること。素の "#{...}" 埋めは値に " が入ると
+#   sh 構文エラーになる)
 #
-# - session_name が popup 系セッション (scratch / launcher) = popup 内で押された
+# - session_name が scratch = popup 内で押された
 #   → detach で popup を閉じ、全クライアントを再描画。refresh は旧 bind の run-shell -b と
 #   同じくバックグラウンドで走らせ、tmux サーバをブロックしない。
-#   launcher (tmux_launcher_run.sh が作る実行結果置き場) も閉じ対象に含めることで、
-#   C-t t を「popup を閉じる」の共通キーにしている (launcher popup 内で C-t t が
-#   scratch popup をネストで開いてしまうスタック事故の防止を兼ねる)
 # - それ以外 → scratch popup を開く
 #
 # ここに集約した演出:
@@ -42,7 +39,7 @@
 client="$1"
 session="${2:-}"
 
-if [ "$session" = "scratch" ] || [ "$session" = "launcher" ]; then
+if [ "$session" = "scratch" ]; then
   # shellcheck disable=SC2086 # ${client:+...} は client 空のとき引数ごと消す意図の word splitting
   tmux detach-client ${client:+-t "$client"}
   # 以前あった close 後の refresh 強制 (tmux 3.5a の popup 再描画同期バグ #4920 対策) は、

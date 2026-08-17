@@ -9,7 +9,7 @@
 #
 # - 一覧構築 → 相対時刻 → fzf 選択の骨格は lib/tmux_fzf_window_picker.sh に集約 (jump と共通)
 # - 自分自身の window は join できない (can't join its own window) ため候補から除外 (exclude-current)
-# - popup 専用セッション (scratch / claude-fork / launcher) も除外 (TT_POPUP_SESSION_RE)
+# - popup 専用セッション (scratch / claude-fork) も除外 (TT_POPUP_SESSION_RE)
 set -euo pipefail
 unset CDPATH
 

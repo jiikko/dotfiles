@@ -84,9 +84,6 @@ fzf window picker の column 不在劣化 (1a6a80d) は、コメントが「失�
 - **resurrect 旧世代の automatic-rename 除染** は 424 世代へ適用済み。除染前の
   バックアップは `~/.local/share/tmux/resurrect/backup-before-autorename-scrub-20260727.tar.gz`
   (不要になったら消してよい)。
-- **launcher セッションの named window** (`new-window -n`) は意図的な命名で、
-  automatic-rename off が正しい状態。window 名固着の調査で「off = 異常」と一律に
-  扱わないこと。
 
 ## 実測値の記録 (2026-07-29 ローカル、比較の基準用)
 
