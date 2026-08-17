@@ -26,7 +26,10 @@ if [[ "$prompt" == *FAIL_MARKER* ]]; then
   exit 1
 fi
 if [[ "$prompt" == *SLEEP_MARKER* ]]; then
-  sleep 60
+  # 孫プロセスを立てる: driver の kill が「codex 本体だけ」でなくグループごと殺すことの検証用
+  sleep 60 &
+  echo $! >"${out}.grandchild"
+  wait
 fi
 if [[ "$prompt" == *EMPTY_OUT_MARKER* ]]; then
   : >"$out"
@@ -131,12 +134,17 @@ EOS
   [ ! -e "$WORK/out_tv/a.rc" ]
 }
 
-@test "timeout: hang した codex を kill して失敗扱いにする" {
+@test "timeout: hang した codex をグループごと kill して失敗扱いにする (孫も残さない)" {
   printf 'hang\tro\tm1\thigh\t%s\n' "$WORK/brief_sleep.md" >"$WORK/m.tsv"
   CODEX_FANOUT_TIMEOUT=2 run "$DRIVER" -M "$WORK/m.tsv" "$WORK/out6"
   [ "$status" -eq 1 ]
   # SIGTERM で殺された run は rc 非0 (143) で台帳に残る
   grep -q "^hang	143	" "$WORK/out6/runs.tsv"
+  # codex (stub) が立てた孫プロセスも死んでいる (process group kill)
+  gpid="$(cat "$WORK/out6/hang.out.md.grandchild")"
+  sleep 0.5
+  run kill -0 "$gpid"
+  [ "$status" -ne 0 ]
 }
 
 @test "SIGTERM 中断: 走行中の codex を kill してから死ぬ (孤児化させない)" {
@@ -153,11 +161,23 @@ EOS
     sleep 0.1
   done
   [ -n "$cpid" ]
+  # 孫プロセスの pid が出るまで待つ (stub が書く)
+  gpid=""
+  for _ in $(seq 1 50); do
+    if [ -f "$WORK/out7/hang.out.md.grandchild" ]; then
+      gpid="$(cat "$WORK/out7/hang.out.md.grandchild")"
+      break
+    fi
+    sleep 0.1
+  done
+  [ -n "$gpid" ]
   kill -TERM "$dpid"
   wait "$dpid" || true
   sleep 0.5
-  # driver の死後に codex が生き残っていないこと
+  # driver の死後に codex もその孫も生き残っていないこと (process group kill)
   run kill -0 "$cpid"
+  [ "$status" -ne 0 ]
+  run kill -0 "$gpid"
   [ "$status" -ne 0 ]
 }
 

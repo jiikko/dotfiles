@@ -34,7 +34,9 @@
 #   1 = 全滅 / merger 失敗 / 中断 (SIGINT/SIGTERM) / 引数・manifest エラー
 #
 # 中断 (SIGINT/SIGTERM) は trap で受け、走行中の codex を kill してから exit 1 する
-# (driver だけ死んで codex が裏で API を消費し続ける孤児化を防ぐ)。
+# (driver だけ死んで codex が裏で API を消費し続ける孤児化を防ぐ)。codex は専用の
+# process group で起動し (perl setpgrp。macOS に setsid が無い)、timeout・中断の kill は
+# グループごと行う — codex が子プロセス (node 等) を持っていても取り残さない。
 # 安全域: 起動するのは read-only / review のみ。workspace-write の並列は worktree 分離が必要で
 # この driver の守備範囲外 (codex-drive [2p] の手順に従う)。
 set -u
@@ -93,7 +95,8 @@ on_interrupt() {
   trap - INT TERM
   for f in "$outdir"/*.pid; do
     [ -f "$f" ] || continue
-    kill "$(cat "$f")" 2>/dev/null
+    # 負の pid = process group ごと kill (codex の子プロセスも道連れにする)
+    kill -- "-$(cat "$f")" 2>/dev/null
   done
   # run_one サブシェル・watchdog は codex の死を見て自然に終わる (poll 間隔以内)
   printf 'codex-fanout: 中断 — 走行中の codex を kill した\n' >&2
@@ -133,13 +136,16 @@ dup="$(printf '%s\n' "${labels[@]}" | sort | uniq -d | head -1)"
 
 # --- 起動と watchdog (fan-out 本体と merger で共用) ---
 # launch_with_watchdog <rcfile> <pidfile> <cmd...>
-# cmd を bg 起動し、timeout_s 超過で kill する (hang した codex を wait で待ち続けない。
-# kill された run は rc=143 で失敗扱い)。リダイレクトは呼び出し側で関数ごと付ける。
+# cmd を専用 process group で bg 起動し (perl setpgrp → exec。macOS に setsid が無いための代替。
+# exec は PATH を直接引くので shell 関数/エイリアスを経由しない = `command` プレフィックスと同等)、
+# timeout_s 超過でグループごと kill する (hang した codex を wait で待ち続けない・codex の
+# 子プロセスを取り残さない。kill された run は rc=143 で失敗扱い)。
+# リダイレクトは呼び出し側で関数ごと付ける。
 launch_with_watchdog() {
   local rcfile="$1" pidfile="$2"
   shift 2
-  "$@" &
-  local cpid=$!
+  perl -e 'setpgrp(0, 0); exec @ARGV or die "exec: $!"' -- "$@" &
+  local cpid=$! # = setpgrp した process group の leader
   printf '%s\n' "$cpid" >"$pidfile" # 中断時の後始末 (on_interrupt) が読む
   local poll=5
   [ "$timeout_s" -lt 30 ] && poll=1
@@ -147,7 +153,7 @@ launch_with_watchdog() {
     slept=0
     while kill -0 "$cpid" 2>/dev/null; do
       if [ "$slept" -ge "$timeout_s" ]; then
-        kill "$cpid" 2>/dev/null
+        kill -- "-$cpid" 2>/dev/null # 負の pid = グループごと (子プロセス含む)
         exit 0
       fi
       sleep "$poll"
@@ -158,6 +164,7 @@ launch_with_watchdog() {
   wait "$cpid"
   local rc=$?
   kill "$wpid" 2>/dev/null
+  rm -f "$pidfile" # 完走した run の pid を on_interrupt が再利用 pid に誤爆させない
   printf '%s\n' "$rc" >"$rcfile"
   return "$rc"
 }
@@ -174,7 +181,7 @@ run_one() { # $1=label $2=mode $3=model $4=effort $5=part_list
     review) cmd=(codex exec review) ;;
   esac
   launch_with_watchdog "$outdir/$label.rc" "$outdir/$label.pid" \
-    command "${cmd[@]}" -m "$model" -c model_reasoning_effort="$effort" \
+    "${cmd[@]}" -m "$model" -c model_reasoning_effort="$effort" \
     --ephemeral -o "$out" "$prompt" </dev/null >"$log" 2>&1
 }
 
@@ -216,7 +223,7 @@ if [ "$do_merge" -eq 1 ]; then
     fi
   } >"$merger_prompt"
   if ! launch_with_watchdog "$outdir/merger.rc" "$outdir/merger.pid" \
-    command codex exec -s read-only -m "${CODEX_FANOUT_MERGER_MODEL:-gpt-5.6-sol}" \
+    codex exec -s read-only -m "${CODEX_FANOUT_MERGER_MODEL:-gpt-5.6-sol}" \
     -c model_reasoning_effort="${CODEX_FANOUT_MERGER_EFFORT:-high}" \
     --ephemeral -o "$outdir/digest.md" "$(cat "$merger_prompt")" \
     </dev/null >"$outdir/merger.log" 2>&1; then
