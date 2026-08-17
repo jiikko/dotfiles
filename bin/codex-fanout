@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+# codex-fanout — codex 並列 fan-out + merger digest の driver。
+#
+# codex-drive skill (並列起動の作法) の既定起動手段。Claude が 1 回の起動で N 本の codex を
+# 並列実行し、merger digest 1 枚だけを受け取る。per-run の Bash 往復 (起動 N 回 + tail N 回 +
+# merger 起動) を 1 往復に畳み、orchestrator 側のトークン消費を抑える。
+#
+# 使い方:
+#   codex-fanout [-m merger_prompt_file] [-M] <manifest.tsv> <outdir>
+#     -m FILE   merger プロンプトの指示部を差し替える (既定: skill の templates/merger.md)
+#     -M        merger を回さない (2 本以下で呼び出し側が直接読むとき)
+#   outdir は新規 (空) であること。使い回しは拒否する — 前回世代の残骸 (.rc / .out.md) が
+#   新しい実行結果に混ざるのを構造的に防ぐ。
+#   環境変数:
+#     CODEX_FANOUT_TIMEOUT        1 本あたりの秒数上限 (既定 1200。merger にも適用)。超えたら kill して失敗扱い
+#     CODEX_FANOUT_MERGER_MODEL   merger のモデル (既定 gpt-5.6-sol)
+#     CODEX_FANOUT_MERGER_EFFORT  merger の effort (既定 high)
+#
+# manifest (TSV・1 行 1 本。空行と # 始まりは無視。CRLF は末尾 \r を剥がして受ける):
+#   label <TAB> mode <TAB> model <TAB> effort <TAB> prompt_part1[,part2,...]
+#   mode: ro (codex exec -s read-only) | review (codex exec review)
+#   prompt_part: ファイルパス。複数はカンマ区切りで順に連結する (共通テンプレート + タスク固有 brief)。
+#                パスにカンマは使えない (区切りと衝突する)
+#
+# 出力 (outdir):
+#   <label>.out.md  codex の最終応答 (-o)
+#   <label>.log     stdout+stderr 全文 (本文が -o に出ないことがあるため merger は両方読む)
+#   runs.tsv        label / exit code / out / log の台帳
+#   digest.md       merger の出力 (呼び出し側が読むのは原則これ 1 枚)
+#
+# exit code:
+#   0 = 全 run + merger 成功
+#   2 = 一部の run が失敗 (digest はあり。欠けた観点が digest に明記される)。成功扱いにしないこと
+#   1 = 全滅 / merger 失敗 / 中断 (SIGINT/SIGTERM) / 引数・manifest エラー
+#
+# 中断 (SIGINT/SIGTERM) は trap で受け、走行中の codex を kill してから exit 1 する
+# (driver だけ死んで codex が裏で API を消費し続ける孤児化を防ぐ)。
+# 安全域: 起動するのは read-only / review のみ。workspace-write の並列は worktree 分離が必要で
+# この driver の守備範囲外 (codex-drive [2p] の手順に従う)。
+set -u
+
+usage() {
+  sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+die() {
+  printf 'codex-fanout: %s\n' "$*" >&2
+  exit 1
+}
+
+merge_prompt_file=""
+do_merge=1
+while getopts 'm:Mh' opt; do
+  case "$opt" in
+    m) merge_prompt_file="$OPTARG" ;;
+    M) do_merge=0 ;;
+    h) usage; exit 0 ;;
+    *) usage >&2; exit 1 ;;
+  esac
+done
+shift $((OPTIND - 1))
+[ $# -eq 2 ] || { usage >&2; exit 1; }
+manifest="$1"
+outdir="$2"
+
+[ -f "$manifest" ] || die "manifest が無い: $manifest"
+command -v codex >/dev/null 2>&1 || die "codex が PATH に無い"
+mkdir -p "$outdir" || die "outdir を作れない: $outdir"
+[ -z "$(ls -A "$outdir")" ] || die "outdir が空でない (使い回し禁止 — 前回世代の残骸が結果に混ざる): $outdir"
+timeout_s="${CODEX_FANOUT_TIMEOUT:-1200}"
+case "$timeout_s" in
+  '' | *[!0-9]*) die "CODEX_FANOUT_TIMEOUT は秒数の整数 (got: $timeout_s)。非数値だと watchdog が無効化される" ;;
+esac
+
+# merger プロンプトの既定は skill 側テンプレート。$0 が symlink でも実体側から辿る
+if [ "$do_merge" -eq 1 ]; then
+  if [ -z "$merge_prompt_file" ]; then
+    src="$0"
+    while [ -L "$src" ]; do
+      src_dir="$(cd "$(dirname "$src")" && pwd)"
+      src="$(readlink "$src")"
+      case "$src" in /*) ;; *) src="$src_dir/$src" ;; esac
+    done
+    script_dir="$(cd "$(dirname "$src")" && pwd)"
+    merge_prompt_file="$script_dir/../_claude/skills/codex-drive/templates/merger.md"
+  fi
+  [ -f "$merge_prompt_file" ] || die "merger プロンプトが無い: $merge_prompt_file"
+fi
+
+# --- 中断時の後始末: 走行中の codex を kill してから死ぬ (孤児化・裏での API 消費を防ぐ) ---
+# shellcheck disable=SC2329 # trap 経由の間接呼び出し (SC2329 は直接呼び出ししか見ない)
+on_interrupt() {
+  trap - INT TERM
+  for f in "$outdir"/*.pid; do
+    [ -f "$f" ] || continue
+    kill "$(cat "$f")" 2>/dev/null
+  done
+  # run_one サブシェル・watchdog は codex の死を見て自然に終わる (poll 間隔以内)
+  printf 'codex-fanout: 中断 — 走行中の codex を kill した\n' >&2
+  exit 1
+}
+trap on_interrupt INT TERM
+
+# --- manifest を全行検証してから起動する (途中で死んで一部だけ走った、を作らない) ---
+labels=()
+modes=()
+models=()
+efforts=()
+parts=()
+lineno=0
+while IFS=$'\t' read -r label mode model effort part_list || [ -n "${label:-}" ]; do
+  lineno=$((lineno + 1))
+  case "${label:-}" in '' | '#'*) continue ;; esac
+  part_list="${part_list%$'\r'}" # CRLF manifest の末尾 \r で実在ファイルを「無い」と誤検出しない
+  { [ -n "${mode:-}" ] && [ -n "${model:-}" ] && [ -n "${effort:-}" ] && [ -n "${part_list:-}" ]; } ||
+    die "manifest ${lineno} 行目: 列が足りない (label/mode/model/effort/prompt_parts の TSV)"
+  case "$mode" in ro | review) ;; *) die "manifest ${lineno} 行目: mode は ro|review (got: $mode)" ;; esac
+  # label は出力ファイル名になるためパス区切り等を弾く
+  case "$label" in *[!A-Za-z0-9._-]*) die "manifest ${lineno} 行目: label は英数と ._- のみ (got: $label)" ;; esac
+  IFS=',' read -ra pf <<<"$part_list"
+  for f in "${pf[@]}"; do
+    [ -f "$f" ] || die "manifest ${lineno} 行目: prompt part が無い: $f (カンマ区切りのため、パスにカンマが混ざるとここで割れる)"
+  done
+  labels+=("$label")
+  modes+=("$mode")
+  models+=("$model")
+  efforts+=("$effort")
+  parts+=("$part_list")
+done <"$manifest"
+[ "${#labels[@]}" -ge 1 ] || die "manifest に実行行が無い"
+dup="$(printf '%s\n' "${labels[@]}" | sort | uniq -d | head -1)"
+[ -z "$dup" ] || die "label が重複している (出力パスが衝突する): $dup"
+
+# --- 起動と watchdog (fan-out 本体と merger で共用) ---
+# launch_with_watchdog <rcfile> <pidfile> <cmd...>
+# cmd を bg 起動し、timeout_s 超過で kill する (hang した codex を wait で待ち続けない。
+# kill された run は rc=143 で失敗扱い)。リダイレクトは呼び出し側で関数ごと付ける。
+launch_with_watchdog() {
+  local rcfile="$1" pidfile="$2"
+  shift 2
+  "$@" &
+  local cpid=$!
+  printf '%s\n' "$cpid" >"$pidfile" # 中断時の後始末 (on_interrupt) が読む
+  local poll=5
+  [ "$timeout_s" -lt 30 ] && poll=1
+  (
+    slept=0
+    while kill -0 "$cpid" 2>/dev/null; do
+      if [ "$slept" -ge "$timeout_s" ]; then
+        kill "$cpid" 2>/dev/null
+        exit 0
+      fi
+      sleep "$poll"
+      slept=$((slept + poll))
+    done
+  ) &
+  local wpid=$!
+  wait "$cpid"
+  local rc=$?
+  kill "$wpid" 2>/dev/null
+  printf '%s\n' "$rc" >"$rcfile"
+  return "$rc"
+}
+
+run_one() { # $1=label $2=mode $3=model $4=effort $5=part_list
+  local label="$1" mode="$2" model="$3" effort="$4" part_list="$5"
+  local out="$outdir/$label.out.md" log="$outdir/$label.log"
+  local prompt pf
+  IFS=',' read -ra pf <<<"$part_list"
+  prompt="$(cat "${pf[@]}")"
+  local -a cmd
+  case "$mode" in
+    ro) cmd=(codex exec -s read-only) ;;
+    review) cmd=(codex exec review) ;;
+  esac
+  launch_with_watchdog "$outdir/$label.rc" "$outdir/$label.pid" \
+    command "${cmd[@]}" -m "$model" -c model_reasoning_effort="$effort" \
+    --ephemeral -o "$out" "$prompt" </dev/null >"$log" 2>&1
+}
+
+for i in "${!labels[@]}"; do
+  run_one "${labels[$i]}" "${modes[$i]}" "${models[$i]}" "${efforts[$i]}" "${parts[$i]}" &
+done
+wait
+
+# --- 台帳 (runs.tsv) と成否の集計。rc ファイル欠損は「静かな成功」ではなく失敗 (127) に倒す ---
+failed=()
+ok=()
+{
+  printf 'label\trc\tout\tlog\n'
+  for i in "${!labels[@]}"; do
+    label="${labels[$i]}"
+    rc="$(cat "$outdir/$label.rc" 2>/dev/null || echo 127)"
+    printf '%s\t%s\t%s\t%s\n' "$label" "$rc" "$outdir/$label.out.md" "$outdir/$label.log"
+    if [ "$rc" -eq 0 ]; then ok+=("$label"); else failed+=("$label:rc=$rc"); fi
+  done
+} >"$outdir/runs.tsv"
+
+if [ "${#ok[@]}" -eq 0 ]; then
+  printf 'codex-fanout: 全 %d 本が失敗。merger は回さない (runs: %s)\n' "${#labels[@]}" "$outdir/runs.tsv" >&2
+  exit 1
+fi
+
+# --- merger: 成功 run の出力ファイル群を読ませて digest 1 枚に集約する (watchdog は fan-out と共通) ---
+if [ "$do_merge" -eq 1 ]; then
+  merger_prompt="$outdir/merger.prompt.md"
+  {
+    cat "$merge_prompt_file"
+    printf '\n## 読むファイル (成功 %d 本。out は最終応答、log は stdout 全文 — 本文が out に無ければ log から拾う)\n\n' "${#ok[@]}"
+    for label in "${ok[@]}"; do
+      printf -- '- %s: %s と %s\n' "$label" "$outdir/$label.out.md" "$outdir/$label.log"
+    done
+    if [ "${#failed[@]}" -gt 0 ]; then
+      printf '\n## 失敗した run (%d 本) — digest の冒頭に「この観点は未実施」と明記すること\n\n' "${#failed[@]}"
+      printf -- '- %s\n' "${failed[@]}"
+    fi
+  } >"$merger_prompt"
+  if ! launch_with_watchdog "$outdir/merger.rc" "$outdir/merger.pid" \
+    command codex exec -s read-only -m "${CODEX_FANOUT_MERGER_MODEL:-gpt-5.6-sol}" \
+    -c model_reasoning_effort="${CODEX_FANOUT_MERGER_EFFORT:-high}" \
+    --ephemeral -o "$outdir/digest.md" "$(cat "$merger_prompt")" \
+    </dev/null >"$outdir/merger.log" 2>&1; then
+    printf 'codex-fanout: merger が失敗 (log: %s)\n' "$outdir/merger.log" >&2
+    exit 1
+  fi
+  [ -s "$outdir/digest.md" ] || { printf 'codex-fanout: digest が空 (log: %s)\n' "$outdir/merger.log" >&2; exit 1; }
+fi
+
+printf 'runs: %d ok, %d failed\n' "${#ok[@]}" "${#failed[@]}"
+if [ "${#failed[@]}" -gt 0 ]; then
+  printf 'failed: %s\n' "${failed[*]}"
+fi
+printf 'runs.tsv: %s\n' "$outdir/runs.tsv"
+if [ "$do_merge" -eq 1 ]; then
+  printf 'digest: %s\n' "$outdir/digest.md"
+fi
+if [ "${#failed[@]}" -gt 0 ]; then
+  exit 2
+fi
+exit 0

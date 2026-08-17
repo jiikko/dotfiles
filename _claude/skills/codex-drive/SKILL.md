@@ -1,6 +1,6 @@
 ---
 name: codex-drive
-version: 3.0.0
+version: 3.1.0
 description: codex を設計の壁打ちからメイン実装者まで主役にし (設計 read-only → 実装 codex exec -s workspace-write)、Claude はオーケストレーション (要件確定・spec 多重読解・スコープ分割・設計/成果物の検閲・敵対的レビュー・ミューテーション検証・観測駆動デバッグ・commit/push・反復・要件照合) に徹するワークフロー。codex トークンは厚く消費し、Claude トークンは節約する (並列出力は codex 集約 digest 経由で検閲・長文は貼らずファイル参照で読ませる・機械ループは codex に回させる)。大きめの実装/移植/プロトコル実装で、余っている codex トークンを使い切りたい時に使う。「codex に書かせて」「codex メインで実装」「codex に作らせて」「codex-drive」「/codex-drive」で発火。typo・数行修正には使わない (それは Claude が直接やる)。
 ---
 
@@ -20,10 +20,12 @@ codex トークンを積極消費したいタスク向け。
 1. **生出力を読まない — digest 経由の検閲**: 並列フェーズ (3 本以上) の出力は必ず codex 集約 (merger) を
    挟んで 1 枚の digest にしてから Claude が読む。原文 (保存ログ全文) へ跳ぶのは「採用判定する指摘・
    digest が曖昧/矛盾する箇所」だけ。merger の追加起動は codex 消費であり方針と整合する
-   (作法は「並列起動の作法」の集約規約)。
+   (作法は「並列起動の作法」の集約規約)。**起動〜merger は driver (`codex-fanout`) で 1 往復に畳む**
+   (per-run の起動・tail の Bash 往復自体が Claude の消費源。同節参照)。
 2. **貼らずに参照させる**: codex は repo 内のファイルを自分で読める (read-only sandbox も読み取りは可)。
    設計スライス・spec・要件はプロンプトに長文で貼らず、`./tmp/codex-drive-design.*.md` 等の
    **ファイルパス + セクション名を指示して読ませる** (Claude の出力トークンを長文 heredoc に使わない)。
+   定型部分は `templates/` のテンプレートとの**ファイル連結**で組み、Claude が書くのは brief 数行だけ。
 3. **機械ループは codex に回させる**: ミューテーション適用×テスト実行 (`[3.8]`) のような機械実行は
    codex に worktree 内で回させ、Claude は結果表 + 抜き取り 1 件の追試で監査する。
 
@@ -104,10 +106,30 @@ codex 往復より速いので Claude が直接やってよい (`subagent-model-
 
 本 skill の並列フェーズはすべてこの作法に従う。各フェーズで再定義しない。
 
+### 既定: driver (`codex-fanout`) で 1 往復に畳む
+
+dotfiles の `bin/codex-fanout` (PATH に載っている)。read-only / review の並列 fan-out + merger を
+driver 内で完結させ、Claude の Bash 往復を「起動 1 回 + digest 読み 1 回」にする。Claude がやるのは:
+
+1. プロンプト部品を scratchpad に書く — 定型は `~/.claude/skills/codex-drive/templates/`
+   (`review-lens-header.md` = lens 共通ヘッダ、`merger.md` = merger の既定指示) を使い、
+   **Claude が書くのは lens の攻め口 + タスク固有の的の brief 数行だけ** (トークン経済 2)
+2. manifest (TSV: `label \t mode \t model \t effort \t 部品1,部品2,...`。部品は順に連結) を書く
+3. `codex-fanout <manifest> <outdir>` を **1 回だけ `run_in_background` で起動** (2 本以下で merger 不要なら `-M`)
+4. 完了通知後に `<outdir>/digest.md` を読む (原文へは digest の出典パスで跳ぶ)
+
+- **exit code を成功判定に使う**: 0 = 全本 + merger 成功 / 2 = 一部失敗 (digest はあるが観点が欠けている —
+  **成功扱いしない**。欠けた観点を再実行するか「未実施」を Claude が明示的に引き継ぐ) / 1 = 全滅・merger 失敗
+- driver は read-only / review 専用。**workspace-write の並列 (`[2p]`) は対象外** (worktree 分離が必要。[2p] の手順に従う)
+- manifest 形式・タイムアウト (`CODEX_FANOUT_TIMEOUT`)・出力レイアウトの正本は `bin/codex-fanout` 冒頭の usage
+
+### fallback: per-call 方式 (driver が使えない環境のみ)
+
 - **1 本 = 1 つの Bash 呼び出し (`run_in_background: true`)**。1 つのシェルに複数行並べると直列実行になる。
 - **シェル変数は Bash 呼び出しをまたいで保持されない**。`stamp="$(date ...)"` を先の呼び出しで作って後続で
   `$stamp` を参照すると**空文字に化ける** (worktree のパスに使っていると存在しないディレクトリを掴んで即死する)。
   最初の呼び出しでパスを確定したら、**以降の呼び出しにはリテラルの絶対パスを書く** (値を会話に控えてから使う)。
+  この罠は [2p] の worktree 準備 (driver 対象外) でも踏むので、driver 有無に関わらず覚えておく。
 - **出力は 1 本ごとに一意パス**。並列で同じパスに書かせない。
 - **stdout/stderr も一意ファイルに保存してから末尾を見る**。`codex exec review` はレビュー本文を `-o` に書かず
   stdout にだけ出すことがある (正本: codex-review スキル「手順 4」)。`| tail -40` だけで受けると本文前半を捨てるため、
@@ -116,9 +138,11 @@ codex 往復より速いので Claude が直接やってよい (`subagent-model-
 - **集約 (merger) 規約 — 並列 3 本以上のフェーズは digest 化してから Claude が読む**:
   全本の完了後、merger codex (`codex exec -s read-only`・`gpt-5.6-sol`・high) に**保存ログのファイルパス群を
   渡して読ませ**、1 枚の digest を作らせる — 指摘/案ごとに「出典ログパス・file:line・根本原因・発火条件・
-  重複マージの結果・severity」を構造化。**merger に tail や抜粋を渡さない** (本文が `-o` に出ない罠は、
-  merger が保存ファイル全文を読むことで塞ぐ)。Claude は digest を読んで採否し、**採用する指摘・digest が
-  曖昧/矛盾する項目だけ**出典ログの原文へ跳ぶ。merger 自体の起動は codex 消費 (経済 1)。
+  重複マージの結果・severity」を構造化し、**全数勘定を必須にする** (「run X: N 件中 M 件採用、落とした分は
+  各 1 行の理由」+ 指摘ゼロの run の明記。merger の黙った取りこぼしを構造的に見えるようにする)。
+  **merger に tail や抜粋を渡さない** (本文が `-o` に出ない罠は、merger が保存ファイル全文を読むことで塞ぐ)。
+  Claude は digest を読んで採否し、**採用する指摘・digest が曖昧/矛盾する項目だけ**出典ログの原文へ跳ぶ。
+  merger 自体の起動は codex 消費 (経済 1)。driver 経由ならこの規約は `templates/merger.md` が実装済み。
   2 本以下のフェーズは merger を挟まず Claude が直接読んでよい (集約のオーバーヘッドが逆転する)。
 - **本数の上限は「merger digest + spot check を Claude が精読できるか」で決める**。最終判断は委譲できず律速になる。
 
@@ -260,6 +284,8 @@ spec の読み違いは最も高くつく失敗 (実装・テスト・レビュ�
 残さずリテラルで書く**・stdout もファイルに保存)。
 
 ```bash
+# 起動は codex-fanout driver が既定 (プロンプト部品を 4 案分書き、manifest で 1 回起動)。
+# 以下は fallback の per-call 形。プロンプト内容の見本としてはどちらでも同じ。
 # --- 案A (Bash 呼び出し 1・run_in_background)。案B〜案D も同形で別呼び出し・別パス ---
 out="<scratchpad>/codex-drive.<literal-stamp>.designA.md"; log="$out.log"
 command codex exec -s read-only -m gpt-5.6-sol -c model_reasoning_effort="high" \
@@ -482,6 +508,12 @@ git worktree list   # 消えたことを確認する
   指示外ファイルへの変更・半端な編集を弾く。**構造方針との乖離も弾く**: 長期運用判定のタスクに
   症状パッチ・特例 if 分岐・「このケースだけ救う」ワークアラウンドが入っていないか / 逆に最小変更判定の
   タスクに頼んでいない抽象化・機構の新設が入っていないか (どちらの方向の逸脱も差し戻す)。
+- **大きい diff (目安 200 行超) は「変更マップ」をナビに 1 回で精読する**: codex (read-only・sol・high) に
+  「ファイル × 変更意図 × リスク順の hunk ランキング + 各 hunk の機械的/判断の分類 (根拠つき)」を
+  作らせ、Claude はマップの順に diff を 1 回だけ読む (行き来と再読を消す — 精読を安くするのであって
+  減らすのではない: **全 hunk に目は通す**)。斜め読みしてよいのは「機械的」と分類された hunk だけで、
+  **そのうち最低 1 割は精読して分類を監査する**。分類誤りを 1 件でも見つけたらマップを信用せず
+  全 hunk 精読に戻す。小さい diff はマップを作らず直接読む (前処理のオーバーヘッドが逆転する)。
 - 軽微な確定的問題 (typo・命名) は Claude が直接直してよい。設計に関わる修正は codex に戻す。
 
 ### 3.5. codex 3並列レビュー（直交する3観点・発見型）
@@ -507,9 +539,9 @@ git worktree list   # 消えたことを確認する
 - **3 本を background で並列起動**する。出力は各々ユニークな別パスにし、ぶつけない。
 
 ```bash
-# 各観点を「別々の Bash 呼び出し」で run_in_background: true にして同時起動する (これが並列の実体)。
-# パスはリテラルで書く ($stamp は次の呼び出しに残らない)。stdout も保存する ($log 群は merger に全文読ませる)。
-# selector 併用時は codex exec -s read-only を使う。詳細は「並列起動の作法」。
+# 起動は codex-fanout driver が既定 (mode=review の 3 行 manifest で 1 回起動 → digest を読む)。
+# 以下は fallback の per-call 形。パスはリテラルで書く ($stamp は次の呼び出しに残らない)。
+# stdout も保存する ($log 群は merger に全文読ませる)。詳細は「並列起動の作法」。
 # --- 観点A (Bash 呼び出し 1・run_in_background)。観点B・C も同形で別呼び出し・別パス ---
 out="<scratchpad>/codex-drive.<literal-stamp>.reviewA.md"; log="$out.log"
 command codex exec review -m gpt-5.6-sol -c model_reasoning_effort="high" \
@@ -569,7 +601,8 @@ command codex exec review -m gpt-5.6-sol -c model_reasoning_effort="high" \
 - `[3.5]` の 2 本と**同時に走らせない** (3.5 の指摘を直した後のコードを攻めるため)。
 
 ```bash
-# --- lens ごとに別 Bash 呼び出し・run_in_background。パスは round と lens で一意にする ---
+# 起動は codex-fanout driver が既定 (lens ごとの brief + review-lens-header.md を連結する manifest)。
+# --- fallback の per-call 形: lens ごとに別 Bash 呼び出し・run_in_background。パスは round と lens で一意にする ---
 out="<scratchpad>/codex-drive.<literal-stamp>.r<N>-adv-<lens>.md"; log="$out.log"
 command codex exec review -m gpt-5.6-sol -c model_reasoning_effort="high" \
   --ephemeral -o "$out" </dev/null \
@@ -781,8 +814,10 @@ EOF
 
 ## やること / やらないこと
 
-- ✓ 並列フェーズ (3 本以上) の出力は merger codex で 1 枚の digest に集約し、Claude は digest + 出典 spot check で検閲する (merger には保存ログのファイルパス群を渡して全文を読ませる)
-- ✓ 設計・spec・要件は貼らずにファイルパス + セクション名で codex に読ませる (Claude の出力を長文 heredoc に使わない)
+- ✓ 並列起動は codex-fanout driver (manifest + 1 回の background 起動) に畳み、Claude は digest 1 枚 + 出典 spot check で検閲する (driver の exit 2 = 観点が欠けた digest。成功扱いしない)
+- ✓ 並列フェーズ (3 本以上) の出力は merger codex で 1 枚の digest に集約する (merger には保存ログのファイルパス群を渡して全文を読ませ、全数勘定 — 落とした件数と理由 — を必須にする)
+- ✓ 設計・spec・要件は貼らずにファイルパス + セクション名で codex に読ませ、定型は templates/ との連結で組む (Claude の出力を長文 heredoc に使わない)
+- ✓ 大きい diff は codex の変更マップをナビに全 hunk を 1 回で精読し、機械的分類の hunk も最低 1 割は精読して分類を監査する (分類誤り 1 件で全 hunk 精読に戻す)
 - ✓ [3.8] の変異適用×テスト実行ループは codex に回させ、Claude は結果表 + 抜き取り 1 件の追試で監査する
 - ✓ 着手前に codex 適性を評価し、苦手領域 (UI/実機/主観判断) なら一度ユーザーに確認する
 - ✓ 丸投げ依頼は [R] で「要件 + 受け入れ条件」に言語化してから着手し、[7] でそのリストと照合して締める
@@ -827,6 +862,7 @@ EOF
 
 ## 関連
 
+- `~/dotfiles/bin/codex-fanout` — 並列起動 driver の実体 (manifest 形式・exit code・出力レイアウトの正本は冒頭 usage)。テンプレートは本 skill の `templates/` (merger.md / review-lens-header.md)
 - `~/.claude/skills/codex-review/SKILL.md` — `command codex` / `</dev/null` / `--full-auto` 禁止などコマンド作法の正本。**敵対的レビュー (`[3.6]` / D3 の敵対観点) のテンプレートと指摘採否ルールもここが正本**。検証フェーズのレビュー委譲先
 - `~/.claude/skills/codex-lead/SKILL.md` — 設計は codex・実装は Claude の分担 (本 skill は設計も実装も codex)。D2 の設計コントラクト形式の正本 (1-5)
 - `~/dotfiles/_claude/rules/subagent-model-tiering.md` — 下位主体の出力は main が必ず検閲
