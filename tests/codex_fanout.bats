@@ -46,6 +46,7 @@ EOS
   printf 'SLEEP_MARKER\n' >"$WORK/brief_sleep.md"
   printf 'merge instructions\n' >"$WORK/merger.md"
   printf 'EMPTY_OUT_MARKER\n' >"$WORK/merger_empty.md"
+  printf 'EMPTY_OUT_MARKER\n' >"$WORK/brief_empty_out.md"
 }
 
 @test "全 run 成功: digest が出て exit 0、プロンプト連結と mode→サブコマンド写像が正しい" {
@@ -65,6 +66,37 @@ EOS
   # merger プロンプトは指示部 + ファイル一覧で組まれ、merger は read-only で起動される
   grep -q "merge instructions" "$WORK/out1/merger.prompt.md"
   grep -q "a.out.md" "$WORK/out1/merger.prompt.md"
+  # ro run は out.md だけ渡す (log は思考ストリーム込みで merger 入力を無駄に倍加させる)。
+  # review run は本文が -o に出ないことがあるため out と log の両方を渡す
+  ! grep -q "a\.log" "$WORK/out1/merger.prompt.md"
+  grep -q "b\.out\.md" "$WORK/out1/merger.prompt.md"
+  grep -q "b\.log" "$WORK/out1/merger.prompt.md"
+}
+
+@test "ro run の out が空のときだけ log を merger に渡す (本文の取りこぼし防止)" {
+  printf 'empty\tro\tm1\thigh\t%s\nfull\tro\tm1\thigh\t%s\n' \
+    "$WORK/brief_empty_out.md" "$WORK/brief_ok.md" >"$WORK/m.tsv"
+  run "$DRIVER" -m "$WORK/merger.md" "$WORK/m.tsv" "$WORK/out_eo"
+  [ "$status" -eq 0 ]
+  grep -q "empty\.log" "$WORK/out_eo/merger.prompt.md"
+  ! grep -q "full\.log" "$WORK/out_eo/merger.prompt.md"
+}
+
+@test "1 本だけの manifest は merger を自動スキップする (1 出力の digest は言い換えでしかない)" {
+  printf 'solo\tro\tm1\thigh\t%s\n' "$WORK/brief_ok.md" >"$WORK/m.tsv"
+  run "$DRIVER" "$WORK/m.tsv" "$WORK/out_solo"
+  [ "$status" -eq 0 ]
+  [ ! -e "$WORK/out_solo/digest.md" ]
+  [[ "$output" == *"自動スキップ"* ]]
+  # codex は fan-out の 1 回だけ (merger 分が起動されていない)
+  [ "$(wc -l <"$CODEX_STUB_CALLS")" -eq 1 ]
+}
+
+@test "1 本でも -m 明示なら merger を回す (1 出力の後処理という別意図を尊重)" {
+  printf 'solo\tro\tm1\thigh\t%s\n' "$WORK/brief_ok.md" >"$WORK/m.tsv"
+  run "$DRIVER" -m "$WORK/merger.md" "$WORK/m.tsv" "$WORK/out_solo_m"
+  [ "$status" -eq 0 ]
+  [ -s "$WORK/out_solo_m/digest.md" ]
 }
 
 @test "一部失敗: exit 2、runs.tsv に非0、digest は出て未実施が merger に伝わる" {

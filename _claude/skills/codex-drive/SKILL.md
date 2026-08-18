@@ -115,7 +115,8 @@ driver 内で完結させ、Claude の Bash 往復を「起動 1 回 + digest �
    (`review-lens-header.md` = lens 共通ヘッダ、`merger.md` = merger の既定指示) を使い、
    **Claude が書くのは lens の攻め口 + タスク固有の的の brief 数行だけ** (トークン経済 2)
 2. manifest (TSV: `label \t mode \t model \t effort \t 部品1,部品2,...`。部品は順に連結) を書く
-3. `codex-fanout <manifest> <outdir>` を **1 回だけ `run_in_background` で起動** (2 本以下で merger 不要なら `-M`)
+3. `codex-fanout <manifest> <outdir>` を **1 回だけ `run_in_background` で起動** (2 本以下で merger 不要なら `-M`。
+   1 本だけの manifest は `-m` 明示が無い限り driver が merger を自動スキップする — 1 出力の digest は言い換えでしかない)
 4. 完了通知後に `<outdir>/digest.md` を読む (原文へは digest の出典パスで跳ぶ)
 
 - **exit code を成功判定に使う**: 0 = 全本 + merger 成功 / 2 = 一部失敗 (digest はあるが観点が欠けている —
@@ -378,6 +379,8 @@ EOF
 
 ```bash
 # 最終応答の保存先は ./tmp ではなくセッション scratchpad 等の一意パスに。`</dev/null` 必須 (codex-review ルール)。
+# ⚠️ この例の luna+medium は「機械的移植・boilerplate」の場合。判断を含む実装は sol+high が既定
+# (下のモデル振り分け)。例を逆に写すと弱いモデルで判断実装が走り、失敗 → 再レビューの形で無駄が増える。
 last_message="<scratchpad>/codex-drive.$(date +%Y%m%d-%H%M%S).$$.last-message.txt"
 command codex exec -s workspace-write -m gpt-5.6-luna -c model_reasoning_effort="medium" \
   --ephemeral -o "$last_message" </dev/null "$(cat <<'EOF'

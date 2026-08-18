@@ -9,6 +9,9 @@
 #   codex-fanout [-m merger_prompt_file] [-M] <manifest.tsv> <outdir>
 #     -m FILE   merger プロンプトの指示部を差し替える (既定: skill の templates/merger.md)
 #     -M        merger を回さない (2 本以下で呼び出し側が直接読むとき)
+#   実行行が 1 本の manifest では、-m 指定が無い限り merger を自動スキップする
+#   (1 出力の digest は原文の言い換えにしかならず、merger 1 run 分がまるごと無駄になる。
+#   -m 明示は「1 出力の後処理」という別意図なので尊重して回す)
 #   outdir は新規 (空) であること。使い回しは拒否する — 前回世代の残骸 (.rc / .out.md) が
 #   新しい実行結果に混ざるのを構造的に防ぐ。
 #   環境変数:
@@ -24,7 +27,10 @@
 #
 # 出力 (outdir):
 #   <label>.out.md  codex の最終応答 (-o)
-#   <label>.log     stdout+stderr 全文 (本文が -o に出ないことがあるため merger は両方読む)
+#   <label>.log     stdout+stderr 全文。merger に読ませるのは review run のみ両方
+#                   (本文が -o に出ないことがあるのは review 固有 — codex-review スキル手順 4)。
+#                   ro run は out.md だけ渡し、out が空のときに限り log を渡す
+#                   (ro の log は思考ストリーム込みで、merger 入力を倍加させるが情報は増えない)
 #   runs.tsv        label / exit code / out / log の台帳
 #   digest.md       merger の出力 (呼び出し側が読むのは原則これ 1 枚)
 #
@@ -42,7 +48,9 @@
 set -u
 
 usage() {
-  sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
+  # 2 行目から最初の非コメント行 (set -u) の手前まで = ヘッダ全文。行数を固定しない
+  # (ヘッダを編集するたびに範囲がずれて末尾が欠けるため)
+  awk 'NR >= 2 { if (!/^#/) exit; sub(/^# ?/, ""); print }' "$0"
 }
 
 die() {
@@ -51,10 +59,11 @@ die() {
 }
 
 merge_prompt_file=""
+merge_prompt_file_explicit=""
 do_merge=1
 while getopts 'm:Mh' opt; do
   case "$opt" in
-    m) merge_prompt_file="$OPTARG" ;;
+    m) merge_prompt_file="$OPTARG"; merge_prompt_file_explicit=1 ;;
     M) do_merge=0 ;;
     h) usage; exit 0 ;;
     *) usage >&2; exit 1 ;;
@@ -73,21 +82,6 @@ timeout_s="${CODEX_FANOUT_TIMEOUT:-1200}"
 case "$timeout_s" in
   '' | *[!0-9]*) die "CODEX_FANOUT_TIMEOUT は秒数の整数 (got: $timeout_s)。非数値だと watchdog が無効化される" ;;
 esac
-
-# merger プロンプトの既定は skill 側テンプレート。$0 が symlink でも実体側から辿る
-if [ "$do_merge" -eq 1 ]; then
-  if [ -z "$merge_prompt_file" ]; then
-    src="$0"
-    while [ -L "$src" ]; do
-      src_dir="$(cd "$(dirname "$src")" && pwd)"
-      src="$(readlink "$src")"
-      case "$src" in /*) ;; *) src="$src_dir/$src" ;; esac
-    done
-    script_dir="$(cd "$(dirname "$src")" && pwd)"
-    merge_prompt_file="$script_dir/../_claude/skills/codex-drive/templates/merger.md"
-  fi
-  [ -f "$merge_prompt_file" ] || die "merger プロンプトが無い: $merge_prompt_file"
-fi
 
 # --- 中断時の後始末: 走行中の codex を kill してから死ぬ (孤児化・裏での API 消費を防ぐ) ---
 # shellcheck disable=SC2329 # trap 経由の間接呼び出し (SC2329 は直接呼び出ししか見ない)
@@ -133,6 +127,29 @@ done <"$manifest"
 [ "${#labels[@]}" -ge 1 ] || die "manifest に実行行が無い"
 dup="$(printf '%s\n' "${labels[@]}" | sort | uniq -d | head -1)"
 [ -z "$dup" ] || die "label が重複している (出力パスが衝突する): $dup"
+
+# 1 本だけの manifest は merger を自動スキップ (ヘッダの説明どおり。-m 明示のときは尊重して回す)
+merge_skipped_single=0
+if [ "$do_merge" -eq 1 ] && [ "${#labels[@]}" -eq 1 ] && [ -z "$merge_prompt_file_explicit" ]; then
+  do_merge=0
+  merge_skipped_single=1
+fi
+
+# merger プロンプトの既定は skill 側テンプレート。$0 が symlink でも実体側から辿る。
+# 解決はスキップ判定の後 (スキップ時にテンプレート不在で die しない)
+if [ "$do_merge" -eq 1 ]; then
+  if [ -z "$merge_prompt_file" ]; then
+    src="$0"
+    while [ -L "$src" ]; do
+      src_dir="$(cd "$(dirname "$src")" && pwd)"
+      src="$(readlink "$src")"
+      case "$src" in /*) ;; *) src="$src_dir/$src" ;; esac
+    done
+    script_dir="$(cd "$(dirname "$src")" && pwd)"
+    merge_prompt_file="$script_dir/../_claude/skills/codex-drive/templates/merger.md"
+  fi
+  [ -f "$merge_prompt_file" ] || die "merger プロンプトが無い: $merge_prompt_file"
+fi
 
 # --- 起動と watchdog (fan-out 本体と merger で共用) ---
 # launch_with_watchdog <rcfile> <pidfile> <cmd...>
@@ -193,13 +210,19 @@ wait
 # --- 台帳 (runs.tsv) と成否の集計。rc ファイル欠損は「静かな成功」ではなく失敗 (127) に倒す ---
 failed=()
 ok=()
+ok_idx=()
 {
   printf 'label\trc\tout\tlog\n'
   for i in "${!labels[@]}"; do
     label="${labels[$i]}"
     rc="$(cat "$outdir/$label.rc" 2>/dev/null || echo 127)"
     printf '%s\t%s\t%s\t%s\n' "$label" "$rc" "$outdir/$label.out.md" "$outdir/$label.log"
-    if [ "$rc" -eq 0 ]; then ok+=("$label"); else failed+=("$label:rc=$rc"); fi
+    if [ "$rc" -eq 0 ]; then
+      ok+=("$label")
+      ok_idx+=("$i")
+    else
+      failed+=("$label:rc=$rc")
+    fi
   done
 } >"$outdir/runs.tsv"
 
@@ -213,9 +236,21 @@ if [ "$do_merge" -eq 1 ]; then
   merger_prompt="$outdir/merger.prompt.md"
   {
     cat "$merge_prompt_file"
-    printf '\n## 読むファイル (成功 %d 本。out は最終応答、log は stdout 全文 — 本文が out に無ければ log から拾う)\n\n' "${#ok[@]}"
-    for label in "${ok[@]}"; do
-      printf -- '- %s: %s と %s\n' "$label" "$outdir/$label.out.md" "$outdir/$label.log"
+    printf '\n## 読むファイル (成功 %d 本。out と log の両方がある run は、out に本文が無ければ log から拾う)\n\n' "${#ok[@]}"
+    # review run は out + log の両方 (本文が -o に出ないことがあるのは review 固有)。
+    # ro run は out のみ、out が空のときだけ log (ro の log は思考ストリーム込みで merger 入力を
+    # 倍加させるが情報は増えない — ヘッダの出力説明が正本)
+    for i in "${ok_idx[@]}"; do
+      label="${labels[$i]}"
+      out="$outdir/$label.out.md"
+      log="$outdir/$label.log"
+      if [ "${modes[$i]}" = review ]; then
+        printf -- '- %s: %s と %s\n' "$label" "$out" "$log"
+      elif [ -s "$out" ]; then
+        printf -- '- %s: %s\n' "$label" "$out"
+      else
+        printf -- '- %s: %s (最終応答が空だったため stdout 全文)\n' "$label" "$log"
+      fi
     done
     if [ "${#failed[@]}" -gt 0 ]; then
       printf '\n## 失敗した run (%d 本) — digest の冒頭に「この観点は未実施」と明記すること\n\n' "${#failed[@]}"
@@ -240,6 +275,8 @@ fi
 printf 'runs.tsv: %s\n' "$outdir/runs.tsv"
 if [ "$do_merge" -eq 1 ]; then
   printf 'digest: %s\n' "$outdir/digest.md"
+elif [ "$merge_skipped_single" -eq 1 ]; then
+  printf 'merger 自動スキップ (1 本のみ — 原文を直接読む): %s\n' "$outdir/${labels[0]}.out.md"
 fi
 if [ "${#failed[@]}" -gt 0 ]; then
   exit 2
