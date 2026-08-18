@@ -2123,6 +2123,27 @@ func newTestIssuesView() issuesView {
 //
 // ⚠️ 「案内された集合」と「効果を検証している表」の一致まで見る。片方だけ増やせないので、
 // hint にキーを足したら効果の検証も必ず書くことになる。
+// 本文 pager の半ページ送り・端ジャンプが glide の配線ごと効くことを**キー経路**で固定する。
+//
+// ⚠️ TestHalfPageScrollGlidesOnAllSurfaces の本文サブテストは bodyGlide.start を直接呼ぶ
+// (body が nil の workaround) ため、handleBodyKey が glide を配線し忘れても green のままだった。
+// pagerScrollKey への委譲 (2026-08-19) で glide を落とす退行はこのテストだけが検出する。
+func TestIssuesViewBodyHalfPageGlidesViaKeyPath(t *testing.T) {
+	e := newBodyKeyEnv(t)
+	before := e.v.bodyOff
+	e.press(" ")
+	if !e.v.bodyGlide.active {
+		t.Fatal("Space の半ページ送りが glide に載っていない (キー経路)")
+	}
+	if got := e.v.bodyGlide.offset(e.v.bodyOff); got != before {
+		t.Errorf("glide 開始位置 = %d, want %d (移動前の offset)", got, before)
+	}
+	e.press("G")
+	if e.v.bodyGlide.active {
+		t.Error("G の端ジャンプで glide が残っている (端ジャンプは即時)")
+	}
+}
+
 func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 	// 案内キーごとの「押したら何が変わるか」。⚠️ 効果を観測できる状態を各自で作る
 	// (本文の途中まで送ってから k を押す等。端で押して「変わらない」を通すと空振りする)
