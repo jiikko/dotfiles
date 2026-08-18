@@ -984,11 +984,11 @@ func (v *issuesView) bodyWidth(total int) int { return max(v.drawer.targetWidth(
 
 // handleBodyKey は本文 pager のキー操作 (diffOverlay と同じ語彙)。
 func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
-	maxOffset := max(v.body.Len()-rows, 0)
 	switch key {
 	// Enter は「TUI 内の開閉 toggle」(ユーザー要望 2026-08-01)。一覧の Enter で開き、本文の
 	// Enter で閉じる。glogx 本体の job パネル (tui.go の handlePanelKey) が既にこの語彙なので、
 	// viewer だけ Enter が行送りだと同じキーの意味が画面ごとに変わる。
+	// ⚠️ pagerScrollKey へ渡す前に捌くこと: あちらは enter を 1 行送りに写す。
 	case "q", "esc", "h", "left", "enter":
 		v.closeBody()
 	case "s":
@@ -996,26 +996,12 @@ func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
 		// として案内しており、本文だけ沈黙すると案内が嘘になる)
 		v.close()
 		v.wantStatus = true
-	case "j", "down", "ctrl+n":
-		v.bodyOff = min(v.bodyOff+1, maxOffset)
-	case "k", "up", "ctrl+p":
-		v.bodyOff = max(v.bodyOff-1, 0)
-	case "ctrl+d", "pgdown", " ", "f":
-		prev := v.bodyOff
-		v.bodyOff = min(v.bodyOff+rows/2, maxOffset)
-		v.bodyGlide.start(prev, v.bodyOff)
-	case "ctrl+u", "pgup", "b", "shift+space":
-		prev := v.bodyOff
-		v.bodyOff = max(v.bodyOff-rows/2, 0)
-		v.bodyGlide.start(prev, v.bodyOff)
 	case "u":
 		v.openURLPicker()
-	case "g", "home":
-		v.bodyOff = 0
-		v.bodyGlide.stop()
-	case "G", "end":
-		v.bodyOff = maxOffset
-		v.bodyGlide.stop()
+	default:
+		// スクロールの語彙 (1 行 / 半ページ + glide / 端ジャンプ) は diffOverlay・status viewer の
+		// 全画面 diff と共有する (scroll_glide.go の pagerScrollKey)。手触りを 1 箇所に集約するため。
+		v.bodyOff = pagerScrollKey(key, v.bodyOff, rows, v.body.Len(), &v.bodyGlide)
 	}
 	return nil
 }
