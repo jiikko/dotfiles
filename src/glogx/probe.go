@@ -16,6 +16,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -65,15 +66,7 @@ func startProbe() {
 func probeHeap(dir string, n int64) error {
 	runtime.GC()
 	name := filepath.Join(dir, fmt.Sprintf("heap_%03d.prof", n))
-	f, err := os.Create(name)
-	if err != nil {
-		return err
-	}
-	if err := pprof.WriteHeapProfile(f); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
+	if err := writeProbeFile(name, pprof.WriteHeapProfile); err != nil {
 		return err
 	}
 	var ms runtime.MemStats
@@ -90,19 +83,29 @@ func probeHeap(dir string, n int64) error {
 // SIGQUIT と違ってプロセスを落とさないので、シナリオの前後で撃って比較できる。
 func probeGoroutine(dir string, n int64) error {
 	name := filepath.Join(dir, fmt.Sprintf("goroutine_%03d.txt", n))
-	f, err := os.Create(name)
+	err := writeProbeFile(name, func(w io.Writer) error {
+		return pprof.Lookup("goroutine").WriteTo(w, 1)
+	})
 	if err != nil {
-		return err
-	}
-	if err := pprof.Lookup("goroutine").WriteTo(f, 1); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
 		return err
 	}
 	return probeAppend(dir, "memstats.log", fmt.Sprintf("seq=%d t=%s goroutines=%d file=%s\n",
 		n, time.Now().Format(time.RFC3339), runtime.NumGoroutine(), filepath.Base(name)))
+}
+
+// writeProbeFile は profile を name へ書く。write 失敗時の Close は結果を握る
+// (報告すべきは write の失敗) が、成功時の Close エラーは返す (flush 失敗 = 不完全な
+// profile を「採れた」と誤認しないため)。
+func writeProbeFile(name string, write func(io.Writer) error) error {
+	f, err := os.Create(name)
+	if err != nil {
+		return err
+	}
+	if err := write(f); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func probeAppend(dir, base, line string) error {
@@ -119,12 +122,8 @@ func probeAppend(dir, base, line string) error {
 
 // probeLogError は計測側の失敗を記録する。ここで失敗を握り潰すと「撃ったのに
 // ファイルが無い」を「変化が無かった」と読み違えるため、痕跡は必ず残す。
+// 記録自体の失敗は無視する (これ以上落とす先が無い。stdout/stderr は TUI が占有中)。
 func probeLogError(dir string, cause error) {
-	f, err := os.OpenFile(filepath.Join(dir, "probe_error.log"),
-		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	fmt.Fprintf(f, "t=%s err=%v\n", time.Now().Format(time.RFC3339), cause)
-	f.Close()
+	_ = probeAppend(dir, "probe_error.log",
+		fmt.Sprintf("t=%s err=%v\n", time.Now().Format(time.RFC3339), cause))
 }
