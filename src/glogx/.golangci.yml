@@ -8,6 +8,8 @@ linters:
   enable:
     - asasalint      # []any を ...any にそのまま渡す誤り
     - bidichk        # 危険な Unicode 双方向制御文字 (コピペ由来の混入対策)
+    - bodyclose      # HTTP response body の close 漏れ (fd リーク。claude_version の registry 照会経路の退行防止)
+    - containedctx   # struct フィールドへの ctx 格納の検出 (ctx は関数引数で渡し、struct には cancel を持つ規律。issue 029 と同族)
     - contextcheck   # ctx の非伝播・context.Background の握り込み検出 (issue 029 の cancel 系の再発防止)
     - copyloopvar    # loop variables needlessly copied (Go 1.22+)
     - durationcheck  # Duration 同士の乗算バグ (アニメ周期・タイムアウト計算が多い repo なので相性が良い)
