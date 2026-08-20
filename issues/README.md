@@ -41,7 +41,11 @@ ls issues issues/pending issues/done | grep -E '^[0-9]{3}-' | sort | tail -1
 - 期限は「読んで確認する期限」であって「直す期限」ではない
 - **既読の唯一の出典はファイルの位置**（`issues/` にある = 未読、`issues/done/` にある = 確認済み）。
   既読ヘッダー・チェックボックスは使わない（本文を書き換え忘れると嘘が残るため、移動で表す）
-- 未読の一覧は glogx の issues viewer（`i` キー）が見せる。期限切れは `issue-sync` skill が最初に報告する
+- 未読の一覧は glogx の issues viewer（`i` キー）が見せる（ただし viewer は期限を表示しない）
+- **未読と期限切れはセッション開始時に自動で出る**: `_claude/hooks/verify-issues-due.sh`（SessionStart
+  hook。配線は `_claude/settings.json`）が未確認の `verify` issue と期限切れ／期限間近を Claude の
+  コンテキストへ注入する。読み取れなかったもの（期限なし・書式不正・読み取り不可・抽出失敗）も
+  黙って捨てず列挙する。`issue-sync` skill でも同じ点検を最初に行う
 
 ## ディレクトリ構成
 

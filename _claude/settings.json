@@ -89,6 +89,11 @@
             "type": "command",
             "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh start",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/dotfiles/_claude/hooks/verify-issues-due.sh",
+            "timeout": 10
           }
         ]
       }
