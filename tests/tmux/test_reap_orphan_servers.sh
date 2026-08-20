@@ -67,7 +67,43 @@ trap 'exit 130' INT TERM
 
 command -v "$TMUX_BIN_PATH" >/dev/null 2>&1 || { print -u2 "tmux not found (set \$TMUX_BIN)"; exit 1; }
 [[ -x "$REAP" ]] || fail "reap script not found/executable: $REAP"
-command -v lsof >/dev/null 2>&1 || { print -u2 "[test-reap:zsh] skipped: lsof not available"; exit 0; }
+# ---- 静的検査 (実 tmux / lsof を要さないので gate より前に置く) ----------------------------
+# ⚠️ この位置を gate の下へ動かさないこと。lsof が無い CI では gate で exit 0 するため、
+# 下に置いた検査は**一度も走らない**。実測 2026-08-21: 保護の実装を revert しても CI は緑で、
+# 退行を止める力が 0 だった (規範: _claude/rules/adversarial-review-own-safeguards.md の
+# 「その機構が CI で実際に走るか、同じ commit で確認する」)。
+# E-2) 既定の保護リストが本番の default socket を含むこと。
+# 上の E は seam (TT_REAP_PROTECT_SOCKS) 経由なので「既定値が空になる退行」を検出できない
+# (実測: 既定値を壊す変異で E は緑のまま通った)。既定値そのものを検査して閉じる。
+grep -q 'TT_REAP_PROTECT_SOCKS' "$REAP" \
+  || fail "E-2: 保護リストの seam (TT_REAP_PROTECT_SOCKS) が無い"
+# ⚠️ '/tmp/tmux-$uid/default' で grep すると '/private/tmp/...' に部分一致して、/tmp 版が
+# 消えても緑になる (実測)。引用符直後の形で厳密に見る。
+grep -q '"/tmp/tmux-\$uid/default' "$REAP" \
+  || fail "E-2: 既定の保護リストに本番の default socket (/tmp 表記) が含まれていない"
+grep -q '/private/tmp/tmux-\$uid/default' "$REAP" \
+  || fail "E-2: 既定の保護リストに /private/tmp 版が無い (macOS で lsof の表記と一致しない)"
+ok "E-2: 既定の保護リストが本番の default socket (/tmp と /private/tmp 両表記) を含む"
+
+# F-1) 相対パスの socket は [ -S ] で確認できないので alive 側 (= 停止しない) へ倒すこと。
+# lsof が返すパスは対象プロセスの cwd 基準なので、reaper 自身の cwd で解決すると生きている
+# socket を「無い」と読む。tmux は -S の相対パスを絶対化しないため live サーバが実在しうる
+# (実測 2026-08-21: cwd を変えるだけで同じ生存サーバが would reap に入った / 消えた)。
+grep -q 'case "\$s" in' "$REAP" \
+  || fail "F-1: socket パスの絶対/相対を分けていない (相対パスの live サーバを誤殺する)"
+awk '/case "\$s" in/,/esac/' "$REAP" | grep -qE '^\s*\*\)\s*alive=1' \
+  || fail "F-1: 相対パスを alive 側へ倒していない (確認できないものを孤児と読む)"
+ok "F-1: 相対パス socket は確認不能として保護側へ倒す"
+
+# F-2) seam は「追加」であって「置換」ではないこと。置換形 (:-) だと空白 1 個や末尾スラッシュの
+# ような空でない無意味な値で既定の本番保護が黙って全消えする (実測 2026-08-21)。
+grep -q 'protect_socks=\${TT_REAP_PROTECT_SOCKS' "$REAP" \
+  && fail "F-2: seam が置換形 (:-) のまま = 無意味な値で既定の保護が消える"
+grep -q 'protect_socks="\$protect_socks' "$REAP" \
+  || fail "F-2: seam の値を既定へ追加する形になっていない"
+ok "F-2: 保護リストの seam は既定への追加 (置換ではない)"
+
+command -v lsof >/dev/null 2>&1 || { print -u2 "[test-reap:zsh] skipped: lsof not available (静的検査は上で実施済み)"; exit 0; }
 
 # ---- 生存役・孤児役のサーバを起こす ----
 start_log="$ORPHAN_DIR/start.log"
@@ -174,18 +210,5 @@ while kill -0 "$prot_pid" 2>/dev/null && [ "$i" -lt 30 ]; do sleep 0.1; i=$((i+1
 kill -0 "$prot_pid" 2>/dev/null \
   && fail "E(対照): 保護を外しても kill されない (= E は reap 対象外を見ていただけ)"
 ok "E(対照): 保護を外すと同じプロセスが reap される (保護が実際に効いている)"
-
-# E-2) 既定の保護リストが本番の default socket を含むこと。
-# 上の E は seam (TT_REAP_PROTECT_SOCKS) 経由なので「既定値が空になる退行」を検出できない
-# (実測: 既定値を壊す変異で E は緑のまま通った)。既定値そのものを検査して閉じる。
-grep -q 'TT_REAP_PROTECT_SOCKS' "$REAP" \
-  || fail "E-2: 保護リストの seam (TT_REAP_PROTECT_SOCKS) が無い"
-# ⚠️ '/tmp/tmux-$uid/default' で grep すると '/private/tmp/...' に部分一致して、/tmp 版が
-# 消えても緑になる (実測)。引用符直後の形で厳密に見る。
-grep -q '"/tmp/tmux-\$uid/default' "$REAP" \
-  || fail "E-2: 既定の保護リストに本番の default socket (/tmp 表記) が含まれていない"
-grep -q '/private/tmp/tmux-\$uid/default' "$REAP" \
-  || fail "E-2: 既定の保護リストに /private/tmp 版が無い (macOS で lsof の表記と一致しない)"
-ok "E-2: 既定の保護リストが本番の default socket (/tmp と /private/tmp 両表記) を含む"
 
 print "[test-reap:zsh] done"

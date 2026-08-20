@@ -57,9 +57,14 @@ uid=$(id -u)
 # probe 側の責務という既存の不変条件を維持する)。macOS では /tmp が /private/tmp の symlink で
 # lsof がどちらを返すか環境依存なので両方を候補に持つ。
 # TT_REAP_PROTECT_SOCKS はテスト用の seam (実 default socket を使うテストは本番と衝突する)。
-# 空を渡しても既定へ落ちる (:-) = 誤って空にしても本番保護は外れない。
-protect_socks=${TT_REAP_PROTECT_SOCKS:-"/tmp/tmux-$uid/default
-/private/tmp/tmux-$uid/default"}
+# ⚠️ seam は「追加」であって「置換」ではない。`:-` の置換形にすると、空白 1 個や末尾スラッシュ
+# のような**空でないが無意味な値**を渡したときに既定の本番保護が黙って全消えする (実測
+# 2026-08-21: `TT_REAP_PROTECT_SOCKS=" "` で default socket が保護対象から外れた)。
+# 既定は常に含め、seam の値はそこへ足すだけにする。
+protect_socks="/tmp/tmux-$uid/default
+/private/tmp/tmux-$uid/default"
+[ -n "${TT_REAP_PROTECT_SOCKS:-}" ] && protect_socks="$protect_socks
+$TT_REAP_PROTECT_SOCKS"
 
 # `^tmux` にマッチするプロセス（サーバも client も含む）を列挙。
 # pgrep -x はプロセス名 == "tmux" の厳密一致（argv 全体ではない）。
@@ -85,7 +90,16 @@ for pid in $pids; do
   while IFS= read -r s; do
     [ -n "$s" ] || continue
     npaths=$((npaths + 1))
-    [ -S "$s" ] && alive=1
+    # ⚠️ 相対パスの socket は **[ -S ] で確認できない**。lsof が返すパスは対象プロセスの cwd
+    # 基準なので、reaper 自身の cwd で解決すると生きている socket を「無い」と読む。tmux は
+    # `-S ./rel/...` の相対パスを絶対化しないため、この形の live サーバが実在しうる
+    # (実測 2026-08-21: cwd を変えるだけで同じ生存サーバが would reap に入った / 消えた。
+    # 冒頭の不変条件「生存 socket を 1 つでも持つプロセスは絶対に停止しない」に反していた)。
+    # 確認できないものは alive 側へ倒す = 停止しない (fail-safe)。
+    case "$s" in
+      /*) [ -S "$s" ] && alive=1 ;;
+      *)  alive=1 ;;
+    esac
     # 保護対象 (default socket) を開いているプロセスは、socket が消えていても触らない。
     # ⚠️ lsof のパス表記は環境依存。macOS は /tmp が /private/tmp の symlink なので
     # /private/tmp/... を返す (実測 2026-08-21)。素の文字列比較だと保護が黙って外れるため、

@@ -27,15 +27,31 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # bin/ や zshlib/ に置くだけで素通りした)。除外するのは実行されない場所だけ
 # (テスト自身・文書・生成物・vendor)。バイナリは awk が LANG 依存で落ちる (実測: .DS_Store と
 # ファームウェア .upd で rc=2) ため、confirm を含むテキストファイルだけに絞る。
+# ⚠️ grep の rc は 3 分岐する: 0 = 一致、1 = 不一致、**2 以上 = 検査できなかった** (読めない
+# ファイル・I/O エラー)。`&& targets+=(…)` だと 1 と 2 が同じ扱いになり、**読めなかった違反
+# ファイルを黙って対象から外して緑を返す** (実測 2026-08-21: 違反ファイルを chmod 000 にすると
+# 「✓ すべてが --default=false を持つ」rc=0)。除外されると下の awk の fail-closed も発動しない。
+# 冒頭が「検査できなかったときに緑を返さないこと」と宣言している以上、rc>=2 は失敗にする。
 targets=()
+unreadable=()
 while IFS= read -r f; do
-  LC_ALL=C grep -Iq 'confirm' "$f" 2>/dev/null && targets+=("$f")
+  LC_ALL=C grep -Iq 'confirm' "$f" 2>/dev/null
+  case "$?" in
+    0) targets+=("$f") ;;
+    1) : ;;                      # 一致なし = 検査済みで対象外
+    *) unreadable+=("$f") ;;     # 検査できなかった = 緑にしない
+  esac
 done < <(
   find "$ROOT_DIR" \
     \( -name .git -o -name tmp -o -name tests -o -name docs -o -name issues \
        -o -name node_modules -o -name vendor -o -name src -o -name .venv \) -prune -o \
     -type f ! -name '*.md' ! -name '*.json' ! -name '*.lock' -print 2>/dev/null
 )
+if [ "${#unreadable[@]}" -gt 0 ]; then
+  printf '✗ 検査できなかったファイルがある (%d 件)。緑にしない:\n' "${#unreadable[@]}"
+  printf '  %s\n' "${unreadable[@]}"
+  exit 1
+fi
 if [ "${#targets[@]}" -lt 1 ]; then
   printf '✗ confirm を含むファイルを 1 件も列挙できなかった (find / grep の失敗、または全廃)\n'
   printf '  検査できていない可能性があるので緑にしない\n'
