@@ -517,6 +517,19 @@ func TestIssuesWatchReAddsRecreatedDir(t *testing.T) {
 	}
 	v.startWatch() // 戻った後の取り直し: ここで再び Add されなければならない
 
+	// ⚠️ watcher が無い環境と、配線が壊れた場合を区別する。CI (ubuntu-slim) では
+	// fsnotify.NewWatcher が通らず watch.w が nil になり、既存の watch テストは指紋ポーリング
+	// 経路だけで通っていた (この検査を素で書くと nil 参照で panic する。2026-08-21 に CI で踏んだ)。
+	// 「環境が対応していない」は SKIP として**出力に見えるように**落とし、「作れるのに張って
+	// いない」は配線の退行なので FAIL にする (検査できなかったことを緑にしない)。
+	if v.watch.w == nil {
+		probe, err := fsnotify.NewWatcher()
+		if err != nil {
+			t.Skipf("この環境では fsnotify watcher を作れない (%v)。再 Add の検証は未カバー", err)
+		}
+		_ = probe.Close()
+		t.Fatal("watcher は作れるのに startWatch が張っていない (配線の退行)")
+	}
 	// 再 Add されたかを watcher の登録一覧で直接見る (イベント配送のタイミングに依存させない)
 	if !slices.Contains(v.watch.w.WatchList(), done) {
 		t.Fatalf("消えて戻った done/ が再 Add されていない: %v", v.watch.w.WatchList())
