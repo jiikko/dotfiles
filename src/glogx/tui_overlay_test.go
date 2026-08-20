@@ -843,7 +843,7 @@ func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
 	}
 	// C (claude update) や w (警告コピー) も素通りしない
 	m.handleKey("C")
-	if m.actModal.updating {
+	if m.actModal.anyUpdating() {
 		t.Fatal("viewer 表示中の C が update を起動した")
 	}
 	// ⚠️ U (usage) だけは素通りではなく viewer の上でも効く (ユーザー要望 2026-08-01)。

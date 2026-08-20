@@ -31,14 +31,13 @@ func TestBrowseCodexUpdateFlow(t *testing.T) {
 	// X 直後は「既に latest か」の判定中でモーダルはまだ出ない (2 段構え。tui_actions_test.go
 	// の TestBrowseUpdateFlow と同じ)。updateBeginMsg を配送して実更新の開始を確認する
 	_, cmd := m.handleKey("X")
-	if cmd == nil || m.actModal.updating {
-		t.Fatalf("X 直後にモーダルが立っている: cmd=%v updating=%v", cmd != nil, m.actModal.updating)
+	if cmd == nil || m.actModal.anyUpdating() {
+		t.Fatalf("X 直後にモーダルが立っている: cmd=%v updating=%v", cmd != nil, m.actModal.updatingTargets())
 	}
 	mm, _ := m.Update(updateBeginMsg{target: "codex"})
 	m = mm.(*browseModel)
-	if !m.actModal.updating || m.actModal.updateTarget != "codex" {
-		t.Fatalf("updateBeginMsg で codex update が始まらない: updating=%v target=%q",
-			m.actModal.updating, m.actModal.updateTarget)
+	if !m.actModal.isUpdating("codex") {
+		t.Fatalf("updateBeginMsg で codex update が始まらない: updating=%v", m.actModal.updatingTargets())
 	}
 	m.width, m.height = 80, 20
 	if v := stripANSI(m.View().Content); !strings.Contains(v, "codex update") {
@@ -47,7 +46,7 @@ func TestBrowseCodexUpdateFlow(t *testing.T) {
 	// updateMsg (codex) の結果トーストは CLI 名を前置して claude と区別できる
 	m2, _ := m.Update(updateMsg{target: "codex", before: "0.144.6", after: "0.150.0"})
 	bm := m2.(*browseModel)
-	if bm.actModal.updating {
+	if bm.actModal.anyUpdating() {
 		t.Fatal("updateMsg 後も updating が立ったまま")
 	}
 	if !strings.Contains(bm.toast.text, "codex ") || !strings.Contains(bm.toast.text, "0.150.0") {

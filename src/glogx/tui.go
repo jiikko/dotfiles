@@ -180,6 +180,9 @@ type updateMsg struct {
 	before string
 	after  string
 	err    error // 失敗時のみ。Error() は CLI 出力の末尾行を含む
+	// early は「すでに latest」の判定による早期リターン (runUpdate の実行結果ではない)。
+	// 実行結果と区別できないと、C 連打で並走した判定の結果が走行中の update を降ろす。
+	early bool
 }
 
 // prefixMsg は tmux prefix の取得結果 (起動時に 1 回、非同期)。
@@ -1030,14 +1033,36 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(poll, m.maybeTick())
 	case updateBeginMsg:
-		// C 連打等で先行の update が走行中なら二重実行しない (updating モーダル中はキーを
-		// 無視するが、判定 Cmd が並走した場合の保険)
-		if m.actModal.updating {
+		// C / X 連打で「同じ CLI」の update が走行中なら二重実行しない (自己更新が競合する)。
+		// ⚠️ 別の CLI は弾かない: claude と codex は独立に走らせる (ユーザー要望 2026-08-21)。
+		// ここを anyUpdating() に戻すと片方の実行中にもう片方が始められず直列に戻る。
+		if m.actModal.isUpdating(msg.target) {
+			return m, m.maybeTick()
+		}
+		// ⚠️ 判定 Cmd の走行中 (実測 40-80ms) は update モーダルが出ていないため、その窓で
+		// b / u / r を押すと確認モーダルが立つ。そこへ update を重ねると、描かれるのは update
+		// (boxLines の switch 順) なのにキーを受け取るのは確認 (handleKey の判定順) になり、
+		// 「完了まで終了できません」の画面で Enter が git push を起動する (audit 2026-08-20 で
+		// runGitPush 1 回を実測)。確認・git 実行中は update を譲り、理由をトーストで伝える。
+		// ⚠️ ここに anyUpdating() を足さないこと: 別 CLI の update とは並走させる (issue 074 の主旨)。
+		// 本来の直し方は「描画とキー判定を同一の状態値から導出する」(issue 071 に残置)。
+		if m.actModal.pushConfirm || m.actModal.pullConfirm || m.actModal.rerunConfirm ||
+			m.actModal.pushing || m.actModal.pulling || m.actModal.rerunning {
+			m.toast.show(msg.target+" update は確認/実行が終わってから実行してください", true)
 			return m, m.maybeTick()
 		}
 		return m, tea.Batch(m.actModal.runUpdate(msg.target), m.maybeTick())
 	case updateMsg:
-		m.actModal.updating = false
+		// ⚠️ 早期リターン (「すでに latest」の判定結果) で走行中の update を降ろさないこと。
+		// C の判定 Cmd が並走したとき、その結果が走っている自己更新の追跡を消し、モーダルが
+		// 閉じて終了ガードが解ける (自己更新が孤児化 / 二重起動する。red team 2026-08-21 が
+		// npm 2 本同時と Ctrl-C 脱出を実測)。走行中なら判定結果は捨てる。
+		if msg.early && m.actModal.isUpdating(msg.target) {
+			return m, m.maybeTick()
+		}
+		// 該当 CLI だけ走行中から外す。もう片方が走っていればモーダルは残る
+		// (両方終わるまで「完了まで終了できません」を維持する)
+		m.actModal.finishUpdate(msg.target)
 		// 結果は右下トーストで出す (旧: 何かキーで閉じるダイアログ。ユーザー要望 2026-07-25)。
 		// バージョンが上がったのか latest だったのかは 1 行に畳んで一目で分かる形にする。
 		// 「新バージョンあり」の通知 (showClaudeUpdate) と違って調停は挟まない:
@@ -1179,8 +1204,13 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	}
 	if key == "ctrl+c" || key == "ctrl+g" {
 		switch {
-		case m.actModal.updating:
+		// ⚠️ push / pull と共存したときは下の 2 段ガードへ落とす。ここで常時ブロックすると
+		// stall した push の唯一の脱出口 (Ctrl-C 2 回) が消える (現状は updateBeginMsg の
+		// 譲りで共存しないが、if 1 つに依存させない)。
+		case m.actModal.anyUpdating() && !m.actModal.pushing && !m.actModal.pulling:
 			// 自己バイナリ更新の中断は CLI を壊しうるので常にブロック (ユーザー選定 2026-07-22)。
+			// 並走中はどちらか 1 つでも走っていればブロックする (片方だけ生き残った状態で
+			// 終了すると、残った自己更新が孤児のまま進む)。
 			// escape は updateTimeout のみ。モーダルに「完了まで終了できません」を出す。
 			return m, nil
 		case m.actModal.pushing || m.actModal.pulling:
@@ -3157,8 +3187,8 @@ func (m *browseModel) hintLine() string {
 		hint = "job を再実行しますか? [Y/n] (Enter=y)"
 	case m.actModal.rerunning:
 		hint = m.spinner() + " rerunning..."
-	case m.actModal.updating:
-		hint = m.spinner() + " claude update..."
+	case m.actModal.anyUpdating():
+		hint = m.spinner() + " " + strings.Join(m.actModal.updatingTargets(), " + ") + " update..."
 	case m.diffOv.visible():
 		hint = "j/k/Space: スクロール  g/G: 先頭/末尾  y: URL コピー  q/h: 閉じる"
 	case m.prStatusOv.visible():

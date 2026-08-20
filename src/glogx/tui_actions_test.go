@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -54,8 +55,8 @@ func TestBrowseUpdateFlow(t *testing.T) {
 	// C 直後は「既に latest か」の判定中で、モーダルはまだ出ない (早期リターン時に
 	// 一瞬モーダルが光るのを防ぐ 2 段構え。ユーザー指摘 2026-08-12)
 	_, cmd := m.handleKey("C")
-	if cmd == nil || m.actModal.updating {
-		t.Fatalf("C 直後にモーダルが立っている (判定前に updating が立つと早期リターンで光る): cmd=%v updating=%v", cmd != nil, m.actModal.updating)
+	if cmd == nil || m.actModal.anyUpdating() {
+		t.Fatalf("C 直後にモーダルが立っている (判定前に updating が立つと早期リターンで光る): cmd=%v updating=%v", cmd != nil, m.actModal.updatingTargets())
 	}
 	// 判定 Cmd を実行 → テスト環境はキャッシュ無しなので updateBeginMsg → 実更新開始
 	var begin tea.Msg
@@ -77,8 +78,8 @@ func TestBrowseUpdateFlow(t *testing.T) {
 		t.Fatal("判定 Cmd が updateBeginMsg を返さない")
 	}
 	_, runCmd := m.Update(begin)
-	if runCmd == nil || !m.actModal.updating {
-		t.Fatalf("updateBeginMsg で claude update が始まらない: cmd=%v updating=%v", runCmd != nil, m.actModal.updating)
+	if runCmd == nil || !m.actModal.isUpdating("claude") {
+		t.Fatalf("updateBeginMsg で claude update が始まらない: cmd=%v updating=%v", runCmd != nil, m.actModal.updatingTargets())
 	}
 	cmd = runCmd
 	// 実行中は spinner モーダルが出て、終了できない旨も表示する
@@ -88,7 +89,7 @@ func TestBrowseUpdateFlow(t *testing.T) {
 		t.Fatal("claude update 実行中モーダルが描画されない")
 	}
 	// update 中は Ctrl-G/Ctrl-C で終了できない (自己更新の途中 kill を防ぐ)
-	if _, qcmd := m.handleKey("ctrl+g"); qcmd != nil || m.done || !m.actModal.updating {
+	if _, qcmd := m.handleKey("ctrl+g"); qcmd != nil || m.done || !m.actModal.anyUpdating() {
 		t.Fatalf("update 中に Ctrl-G で終了してしまう: cmd=%v done=%v", qcmd != nil, m.done)
 	}
 	// cmd を実行して updateMsg を配送
@@ -109,7 +110,7 @@ func TestBrowseUpdateFlow(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("claude update 実行回数 = %d, want 1", calls)
 	}
-	if m.actModal.updating {
+	if m.actModal.anyUpdating() {
 		t.Fatal("updateMsg 後も updating のまま")
 	}
 	// 変わった場合は成功トーストに "vX → vY" が出る (旧: キー待ちの結果ダイアログ)
@@ -145,7 +146,7 @@ func TestBrowseUpdateFailureShowsDialogAndClearsUpdating(t *testing.T) {
 	_, cmd := m.handleKey("C")
 	deliverUpdateMsg(m, cmd)
 
-	if m.actModal.updating {
+	if m.actModal.anyUpdating() {
 		t.Fatal("更新失敗後も updating のまま (無限ブロックから復帰できない)")
 	}
 	if !m.toast.visible() || m.toast.ok || !strings.Contains(m.toast.text, "更新に失敗") || !strings.Contains(m.toast.text, "タイムアウト") {
@@ -567,7 +568,7 @@ func TestBrowseRunningQuitGuard(t *testing.T) {
 
 	// updating 中: Ctrl-C は何回押しても終了しない (自己更新中断が危険。escape は updateTimeout のみ)
 	m3 := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m3.actModal.updating = true
+	m3.actModal.beginUpdate("claude")
 	m3.handleKey("ctrl+c")
 	if _, _ = m3.handleKey("ctrl+c"); m3.done {
 		t.Error("updating 中は Ctrl-C 2 回でも終了してはいけない (常にブロック)")
@@ -971,6 +972,33 @@ func TestKeyRepeatDoesNotBlockMovement(t *testing.T) {
 // deliverUpdateMsg は startUpdate 系 tea.Cmd の返す Batch を展開し、updateBeginMsg /
 // updateMsg を Update へ配送してチェーンを完走させる (判定 → 実更新 → 結果の 2 段構えを
 // テストから 1 呼び出しで進める)。
+// collectUpdateMsg は cmd (tea.Batch を含む) を辿って最初の updateMsg を取り出す。
+// deliverUpdateMsg は model へ配送してしまうため、メッセージの中身自体を検査したいときに使う。
+func collectUpdateMsg(t *testing.T, cmd tea.Cmd) updateMsg {
+	t.Helper()
+	var found *updateMsg
+	var walk func(tea.Cmd)
+	walk = func(c tea.Cmd) {
+		if c == nil || found != nil {
+			return
+		}
+		switch v := c().(type) {
+		case tea.BatchMsg:
+			for _, inner := range v {
+				walk(inner)
+			}
+		case updateMsg:
+			m := v
+			found = &m
+		}
+	}
+	walk(cmd)
+	if found == nil {
+		t.Fatal("cmd から updateMsg を取り出せなかった (早期リターンになっていない可能性)")
+	}
+	return *found
+}
+
 func deliverUpdateMsg(m *browseModel, cmd tea.Cmd) {
 	var dl func(tea.Msg)
 	dl = func(msg tea.Msg) {
@@ -1022,14 +1050,14 @@ func TestBrowseUpdateSkipsWhenAlreadyLatest(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	_, cmd := m.handleKey("C")
 	// C 直後にモーダルが立たない (判定前に立てると早期リターン時に一瞬光る。ユーザー指摘 2026-08-12)
-	if m.actModal.updating {
+	if m.actModal.anyUpdating() {
 		t.Fatal("C 直後 (判定前) に updating モーダルが立っている")
 	}
 	deliverUpdateMsg(m, cmd)
 	if runCalls != 0 {
 		t.Fatalf("latest 一致でも claude update が実行された (calls=%d)", runCalls)
 	}
-	if m.actModal.updating {
+	if m.actModal.anyUpdating() {
 		t.Fatal("早期リターン後も updating のまま")
 	}
 	// トーストは主語 (CLI 名) 付き (ユーザー要望 2026-08-12)
@@ -1235,5 +1263,261 @@ func TestStatusViewerOwnsKeysBlocksRemoteHijack(t *testing.T) {
 	m.handleKey("p")
 	if m.actModal.pullConfirm {
 		t.Error("破棄確認中の p が pull 確認を重ねた (y → y で作業ツリー破棄へ到達する)")
+	}
+}
+
+// C の判定 Cmd が走っている窓 (実測 40-80ms) で b を押すと push 確認が立つ。そこへ update
+// モーダルを重ねると、描かれるのは update なのにキーを受け取るのは確認になり、
+// 「完了まで終了できません」の画面で Enter が git push を起動した (audit 2026-08-20 で実測)。
+// update を譲る形で塞いだので、その不変条件を固定する。
+// 本来の直し方は「描画とキー判定を同一の状態値から導出する」(issue 071 に残置)。
+func TestUpdateDoesNotOverlapConfirmModal(t *testing.T) {
+	for _, st := range []struct {
+		name  string
+		apply func(*browseModel)
+		want  string // モーダルに出ているべき語
+	}{
+		{"push 確認中", func(m *browseModel) { m.actModal.pushConfirm = true }, "push"},
+		{"pull 確認中", func(m *browseModel) { m.actModal.pullConfirm = true }, "pull"},
+		{"rerun 確認中", func(m *browseModel) { m.actModal.rerunConfirm = true }, "再実行"},
+	} {
+		t.Run(st.name, func(t *testing.T) {
+			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			var pushed int
+			origPush := runGitPush
+			runGitPush = func(context.Context) error { pushed++; return nil }
+			t.Cleanup(func() { runGitPush = origPush })
+			st.apply(m)
+
+			// 判定を通過した update 開始要求が届く
+			mm, _ := m.Update(updateBeginMsg{target: "claude"})
+			m = mm.(*browseModel)
+			if m.actModal.anyUpdating() {
+				t.Fatalf("確認モーダル中に update を重ねた (画面と操作がずれる): updating=%v",
+					m.actModal.updatingTargets())
+			}
+			out := stripANSI(m.View().Content)
+			if strings.Contains(out, "完了まで終了できません") {
+				t.Errorf("update モーダルが確認モーダルを覆っている:\n%s", out)
+			}
+			if !strings.Contains(out, st.want) {
+				t.Errorf("確認モーダルが消えた (期待する語 %q が無い):\n%s", st.want, out)
+			}
+			// 譲ったことを伝えるトーストが唯一のフィードバック。消えると「C が効かない」だけに
+			// なる。⚠️ View() には入場アニメーションの途中なので出ない。状態で検査する。
+			if !strings.Contains(m.toast.text, "claude update は確認") {
+				t.Errorf("update を譲った理由のトーストが無い: text=%q", m.toast.text)
+			}
+
+			// この状態の Enter は「確認への応答」として働く (update 画面での誤爆ではない)。
+			// 実行 Cmd は返るだけでここでは走らせないので、遷移した状態で判定する
+			// (既存 TestBrowseActionModalKeys と同じ流儀)。
+			m.handleKey("enter")
+			if st.name == "push 確認中" && !m.actModal.pushing {
+				t.Error("push 確認中の Enter が確認への応答になっていない (実行へ進まない)")
+			}
+			if st.name != "push 確認中" && m.actModal.pushing {
+				t.Errorf("%s の Enter で push が始まった (キーが別のモーダルへ流れた)", st.name)
+			}
+			if pushed != 0 {
+				t.Errorf("Cmd を実行していないのに runGitPush が %d 回走った", pushed)
+			}
+		})
+	}
+}
+
+// 並走中の Ctrl-C は「どちらか 1 つでも走っていればブロック」。片方だけ終わった状態で
+// 終了できてしまうと、残った自己更新が孤児のまま進む。
+func TestQuitBlockedWhileAnyUpdateRuns(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.actModal.beginUpdate("claude")
+	m.actModal.beginUpdate("codex")
+	for _, key := range []string{"ctrl+c", "ctrl+g"} {
+		if _, cmd := m.handleKey(key); cmd != nil || m.done {
+			t.Fatalf("並走中の %q で終了できた (自己更新が孤児になる): done=%v", key, m.done)
+		}
+	}
+	m.Update(updateMsg{target: "claude"}) // 片方だけ決着
+	if _, cmd := m.handleKey("ctrl+c"); cmd != nil || m.done {
+		t.Fatalf("片方が残っているのに終了できた: updating=%v", m.actModal.updatingTargets())
+	}
+	m.Update(updateMsg{target: "codex"}) // 両方決着
+	if _, cmd := m.handleKey("ctrl+c"); cmd == nil && !m.done {
+		t.Error("両方終わったのに終了できない")
+	}
+}
+
+// update 走行中の C / X が全画面 viewer のキー語彙へ漏れないこと。
+// red team 2026-08-21 の実測: C の判定窓で s を押して status viewer を開き、その上に update
+// モーダルが乗った状態で X を押すと statusView の「変更の破棄」確認が立ち、update 完了後の
+// y で git restore が着弾した (作業ツリーの喪失)。TestStatusViewerOwnsKeysBlocksRemoteHijack
+// の鏡像 (方向が「外→viewer」ではなく「actModal→viewer」)。
+func TestUpdateKeysDoNotLeakIntoStatusViewer(t *testing.T) {
+	restores := 0
+	origRestore := runGitRestoreWorktree
+	runGitRestoreWorktree = func([]string) error { restores++; return nil }
+	t.Cleanup(func() { runGitRestoreWorktree = origRestore })
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statusOv = *newTestStatusView(t, statusRec(" M a.go"))
+	if !m.statusOv.visible() {
+		t.Fatal("前提: status viewer が開いていない")
+	}
+	// 陽性対照: update が走っていなければ X は viewer の破棄確認を出す (ガードが広すぎないこと)
+	m.handleKey("X")
+	if !m.statusOv.discarding {
+		t.Fatal("通常状態で X が破棄確認を出さない (対照が無意味 = ガードが viewer の外まで殺した)")
+	}
+	m.statusOv.discarding = false
+
+	// update 走行中は X を actionModal が消費する = viewer へ届かない
+	m.actModal.beginUpdate("claude")
+	for _, key := range []string{"X", "C"} {
+		m.handleKey(key)
+		if m.statusOv.discarding {
+			t.Fatalf("update 中の %q が viewer の破棄確認を立てた (git restore が着弾する経路)", key)
+		}
+	}
+	if restores != 0 {
+		t.Errorf("git restore が %d 回走った (0 であるべき)", restores)
+	}
+	// 並列化そのものは効いていること (X が codex の判定を始める)
+	if !m.actModal.isUpdating("claude") {
+		t.Error("claude の走行中フラグが消えた")
+	}
+}
+
+// 「すでに latest」の早期リターンが、走行中の update を降ろさないこと。
+// red team 2026-08-21 の実測: C 連打で判定 Cmd が並走すると、その早期リターンが走行中の
+// claude を集合から外し、モーダルが閉じて Ctrl-C が通り、runClaudeUpdate が 2 本走った。
+func TestEarlyLatestJudgmentDoesNotDropRunningUpdate(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.actModal.beginUpdate("claude")
+	m.actModal.beginUpdate("codex")
+
+	// 走行中の target に早期リターンが届いても降ろさない (トーストも出さない = 嘘を言わない)
+	for _, target := range []string{"claude", "codex"} {
+		mm, _ := m.Update(updateMsg{target: target, before: "1.0", after: "1.0", early: true})
+		m = mm.(*browseModel)
+		if !m.actModal.isUpdating(target) {
+			t.Fatalf("%s の早期リターンで走行中の update が降りた (終了ガードが解ける)", target)
+		}
+	}
+	if _, cmd := m.handleKey("ctrl+c"); cmd != nil || m.done {
+		t.Fatalf("早期リターン後に終了できた (自己更新が孤児になる): updating=%v",
+			m.actModal.updatingTargets())
+	}
+
+	// 実行結果 (early でない) は正しく降ろす
+	m.Update(updateMsg{target: "claude", before: "1.0", after: "2.0"})
+	if m.actModal.isUpdating("claude") {
+		t.Error("実行結果で claude が降りない (モーダルが閉じられなくなる)")
+	}
+	// 走っていない target への早期リターンは通常どおり扱う (「すでに最新版です」の通知)
+	m.Update(updateMsg{target: "claude", before: "2.0", after: "2.0", early: true})
+	if m.actModal.isUpdating("claude") {
+		t.Error("走っていない target の早期リターンで走行中フラグが立った")
+	}
+}
+
+// 「すでに latest」の判定が返す updateMsg に early 印が付くこと。
+// ⚠️ 印が付かないと、走行中の update を降ろさないためのガード (early && isUpdating) が
+// 常に偽になり、red team 2026-08-21 が実測した「走行中の自己更新が孤児化 / 二重起動」が
+// 黙って復活する (ガード側のテストだけでは印の脱落を検出できなかった)。
+func TestLatestJudgmentMarksMsgEarly(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	for _, tc := range []struct {
+		name       string
+		cacheFile  string
+		setFetch   func(func(context.Context) string) func()
+		startKey   string
+		wantTarget string
+	}{
+		{
+			name: "claude", cacheFile: claudeVersionCacheFile, startKey: "C", wantTarget: "claude",
+			setFetch: func(f func(context.Context) string) func() {
+				orig := fetchInstalledClaudeVersion
+				fetchInstalledClaudeVersion = f
+				return func() { fetchInstalledClaudeVersion = orig }
+			},
+		},
+		{
+			name: "codex", cacheFile: codexVersionCacheFile, startKey: "X", wantTarget: "codex",
+			setFetch: func(f func(context.Context) string) func() {
+				orig := fetchInstalledCodexVersion
+				fetchInstalledCodexVersion = f
+				return func() { fetchInstalledCodexVersion = orig }
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			writeVersionCache(t, tc.cacheFile, "9.9.9", time.Now())
+			t.Cleanup(tc.setFetch(func(context.Context) string { return "9.9.9" }))
+
+			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			_, cmd := m.handleKey(tc.startKey)
+			if cmd == nil {
+				t.Fatalf("%s の判定 Cmd が返らない", tc.startKey)
+			}
+			msg := collectUpdateMsg(t, cmd)
+			if msg.target != tc.wantTarget {
+				t.Fatalf("target=%q (期待 %q)", msg.target, tc.wantTarget)
+			}
+			if !msg.early {
+				t.Errorf("latest 判定の updateMsg に early 印が無い (走行中を降ろすガードが無効化される)")
+			}
+			if msg.before != msg.after {
+				t.Errorf("latest 判定なのに before(%q) != after(%q)", msg.before, msg.after)
+			}
+		})
+	}
+}
+
+// browseModel のキー経路でも並走できること (actionModal 単体の検査だけでは、tui.go の C / X
+// 分岐に 1 行足すだけで機能が無音で死ぬ。red team 2026-08-21 が実測)。
+// ヒント行が走行中の CLI 名を出すことも併せて固定する (codex 単独更新中に「claude update...」と
+// 嘘をつく退行を捕まえる)。
+func TestBrowseParallelUpdateThroughKeys(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.actModal.beginUpdate("claude")
+
+	// codex 単独ではないので、まずは claude だけの表示を確認
+	if hint := stripANSI(m.View().Content); !strings.Contains(hint, "claude update...") {
+		t.Errorf("ヒント行に走行中の claude が出ていない:\n%s", hint)
+	}
+
+	// update 走行中の X が codex の判定を始める (キー経路)
+	_, cmd := m.handleKey("X")
+	if cmd == nil {
+		t.Fatal("update 走行中の X が何も返さない (並列化がキー経路で死んでいる)")
+	}
+	mm, _ := m.Update(updateBeginMsg{target: "codex"})
+	m = mm.(*browseModel)
+	if got := m.actModal.updatingTargets(); !reflect.DeepEqual(got, []string{"claude", "codex"}) {
+		t.Fatalf("並走していない: %v", got)
+	}
+	if hint := stripANSI(m.View().Content); !strings.Contains(hint, "claude + codex update...") {
+		t.Errorf("ヒント行が並走を示していない:\n%s", hint)
+	}
+}
+
+// push が stall したときの脱出口 (Ctrl-C 2 回) が、update と共存しても消えないこと。
+// ⚠️ 現状は updateBeginMsg の譲りで共存しないが、その if 1 つに依存させない。
+// red team 2026-08-21 が「共存させると anyUpdating 分岐が常時ブロックに化け、push の
+// 強制終了が不可能になる」ことを状態直組みで実測した。
+func TestForceQuitSurvivesUpdateCoexistence(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.actModal.pushing = true
+	m.actModal.beginUpdate("claude") // 共存 (通常は起きないが構造として許してはいけない)
+
+	if _, cmd := m.handleKey("ctrl+c"); cmd != nil || m.done {
+		t.Fatal("1 回目の Ctrl-C で終了した (push 中断の 2 段ガードが効いていない)")
+	}
+	if !m.actModal.forceQuitArmed {
+		t.Fatal("1 回目の Ctrl-C で強制終了がアームされない (2 回目の脱出口が無い)")
+	}
+	if _, cmd := m.handleKey("ctrl+c"); cmd == nil && !m.done {
+		t.Error("2 回目の Ctrl-C で強制終了できない (stall した push から抜けられない)")
 	}
 }

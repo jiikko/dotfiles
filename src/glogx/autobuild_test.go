@@ -252,7 +252,7 @@ func TestRestartPromptDefersWhileBlockingOperation(t *testing.T) {
 		name  string
 		apply func(*browseModel)
 	}{
-		{"claude update 中", func(m *browseModel) { m.actModal.updating = true }},
+		{"claude update 中", func(m *browseModel) { m.actModal.beginUpdate("claude") }},
 		{"push 中", func(m *browseModel) { m.actModal.pushing = true }},
 		{"pull 中", func(m *browseModel) { m.actModal.pulling = true }},
 		// ⚠️ 確認待ち (y/N) も同じ。むしろこちらが危険だった: キーは確認モーダルが持つのに
@@ -304,7 +304,7 @@ func TestRestartPromptDoesNotShadowPushConfirm(t *testing.T) {
 // 走行中の処理が終われば、保留していたダイアログが出て答えられる。
 func TestRestartPromptAppearsAfterOperationFinishes(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.actModal.updating = true
+	m.actModal.beginUpdate("claude")
 	m.restartPending = true
 
 	// 更新中は更新中モーダルが見えている (ダイアログに覆われない = 効かない理由が画面にある)
@@ -312,7 +312,7 @@ func TestRestartPromptAppearsAfterOperationFinishes(t *testing.T) {
 		t.Fatalf("更新中モーダルが見えない (ダイアログが覆っている):\n%s", out)
 	}
 
-	m.Update(updateMsg{}) // 更新が決着
+	m.Update(updateMsg{target: "claude"}) // 更新が決着
 	if out := stripANSI(m.View().Content); !strings.Contains(out, "新しいバージョンが利用可能です") {
 		t.Fatalf("走行中の処理が終わっても保留していたダイアログが出ない:\n%s", out)
 	}
