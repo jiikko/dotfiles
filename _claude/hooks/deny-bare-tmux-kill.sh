@@ -33,6 +33,23 @@ input=$(cat)
 command -v jq >/dev/null 2>&1 || exit 0
 
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""')
+
+# ⚠️ 性能ガード (これが無いとゲートが黙って消える)。以降の検査は unquote の 1 文字ループと
+# セグメントごとの fork を通るため、コストが入力長に効く。実測 2026-08-21: 90KB / 2000 セグメントで
+# **37 秒**。_claude/settings.json は PreToolUse に `timeout: 10` を明示しているので、大きな
+# heredoc (コミットメッセージ等) を含む Bash 呼び出しでは hook が rc=124 で殺され、
+# **stdout 0 byte = deny が 1 byte も出ない** (= ソケット未指定の kill が素通りする) 状態を実測した。
+# deny の対象は必ず kill 系トークンを含むので、含まないものはここで即通して重い経路に入れない
+# (KILL_RE の全略形は `kill-s` 始まり / pkill・killall はそのまま)。
+# ⚠️ この前置きフィルタは **遅延だけの fast path** で、判定は変えない (下のセグメント単位の
+# 同じ絞りが正しさの側を担う)。したがって「これを外す」変異ではテストが red にならない
+# (実測 2026-08-21)。テストは判定を pin するもので時間は pin しないため、ここは意図的に
+# 未 pin にしてある — 消しても判定は同じだが、sed とセグメント走査の fork を丸ごと省ける。
+case "$cmd" in
+  *kill-s* | *pkill* | *killall*) ;;
+  *) exit 0 ;;
+esac
+
 [ -n "$cmd" ] || exit 0
 
 deny() {
@@ -52,6 +69,20 @@ REASON_PKILL="pkill/killall で tmux を狙うのは全サーバ無差別 kill �
 # tmux が受理する kill-server / kill-session の前方一致形 (曖昧でない範囲)。
 # `kill-s` / `kill-se` は両者で曖昧なため tmux 自身が拒否する = 検出不要。
 KILL_RE='kill-s(er(v(er?)?)?|es(s(i(on?)?)?)?)'
+# unquote (1 文字ループ = 実質 O(n²)) を回す上限。これを超えるセグメントは引用符処理を諦めて
+# 生のまま走査する (判定は deny 側へ倒す)。8KB は「実測で 100ms 未満に収まる」ことから決めた。
+MAX_UNQUOTE_BYTES=8192
+# 静的検査そのものを諦めて deny に倒す上限。timeout に殺されて素通りするより前に判断する。
+MAX_SCAN_BYTES=131072
+
+# ⚠️ ここから先は入力長にコストが乗る。極端に大きい入力は timeout (settings.json: 10) に
+# 殺されて **無出力 = 素通り**になるため、判定を諦める代わりに **deny 側へ倒す** (fail-closed)。
+# 実測 2026-08-21: 360KB で rc=124 / stdout 0 byte。90KB は下の MAX_UNQUOTE_BYTES 経路で 1.4s。
+# 偽陽性 (正当な隔離コマンドが巨大な入力に含まれる) は理屈上ありうるが、そのときは
+# コマンドを分割すれば通る。「検査できなかったので素通り」だけは選ばない。
+if [ "${#cmd}" -gt "$MAX_SCAN_BYTES" ]; then
+  deny "入力が大きすぎて (${#cmd} byte > $MAX_SCAN_BYTES) 静的検査を完了できない。kill 系トークンを含むため保守的に拒否した。コマンドを分割するか、破壊的操作を別呼び出しに分けること"
+fi
 
 # 行継続 (`\` + 改行) を空白に畳む。畳まないと `tmux \`+改行+`kill-server` が別セグメントに
 # 割れて tmux トークンを見失う (レビューで実証されたバイパス)。
@@ -162,13 +193,34 @@ while IFS= read -r seg; do
   seg="${seg%% #*}"
   case "${seg#"${seg%%[![:space:]]*}"}" in '#'*) continue ;; esac
 
+  # ⚠️ 重い解析はトークンを含むセグメントだけに入れる。unquote は 1 文字ループ + $(...) の
+  # fork なので、セグメント数に比例してコストが乗る。この絞りが無いと 2000 セグメントの入力で
+  # 37 秒かかり、settings.json の timeout: 10 に殺されて **deny が 1 byte も出ない**
+  # (= ゲートが黙って消える。rc=124 を実測 2026-08-21)。
+  # unquote は引用符を外す/Q に潰すだけで `kill-s` を新たに作らないので、生セグメントでの
+  # 前方絞りは判定を変えない (bash -c '...' の中身も生文字列として一致する)。
+  case "$seg" in
+    *kill-s* | *pkill* | *killall*) ;;
+    *) continue ;;
+  esac
+
   # pkill / killall で tmux を狙う形は全サーバ無差別なので常に deny
   if [[ "$seg" =~ (^|[[:space:]\;\&\|])(pkill|killall)[[:space:]] ]] \
      && [[ "$seg" =~ [[:space:]][\"\']?tmux[\"\']?([[:space:]]|$) ]]; then
     deny "$REASON_PKILL"
   fi
 
-  scan_segment "$(unquote "$seg")" || deny "$REASON_KILL"
+  # ⚠️ 大入力では unquote を諦めて生セグメントを走査する。unquote は 1 文字ループで、bash の
+  # 部分文字列展開 (${s:i:1}) が O(n) なので実質 O(n²) — 90KB で 37 秒かかり、
+  # settings.json の timeout: 10 に殺されて **deny が 1 byte も出ない** (rc=124 を実測 2026-08-21)。
+  # 諦め方は deny 側へ倒す: 引用符の中の kill も検査対象になるので偽陽性 deny は増えるが、
+  # 「検査できなかったので素通り」より安全 (adversarial-review-own-safeguards.md の
+  # 「検査できなかったときに緑を返さない」)。偽陽性は言い換えで回避できる (規範 md の強制手段節)。
+  if [ "${#seg}" -gt "$MAX_UNQUOTE_BYTES" ]; then
+    scan_segment "$seg" || deny "$REASON_KILL"
+  else
+    scan_segment "$(unquote "$seg")" || deny "$REASON_KILL"
+  fi
 done <<EOF
 $segments
 EOF

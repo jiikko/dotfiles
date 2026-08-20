@@ -10,6 +10,10 @@ unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HOOK="$ROOT_DIR/_claude/hooks/deny-bare-tmux-kill.sh"
+# 本番の配線 (_claude/settings.json の PreToolUse) と同じ上限。timeout に殺されると hook は
+# 無出力で終わる = 素通りなので、この値を課さないと「ゲートが消える」退行が観測できない。
+HOOK_TIMEOUT=10
+command -v timeout >/dev/null 2>&1 || { echo "SKIP: timeout(1) が無い環境 (本番と同じ上限を課せない)"; exit 0; }
 
 # フック本体が正しくても settings.json からエントリが消えれば防御はゼロになるのに、それを
 # 見る検査が無かった (2026-08-20 の red team)。まず配線を検査する。
@@ -47,9 +51,13 @@ decision() {  # $1=コマンド文字列 → "deny" / "allow" / "error"
   #   ... | jq -r '...// empty' | grep . || echo allow
   # で、フックが落ちても jq が失敗しても "allow" になり、「素通り」と「検査できなかった」が
   # 区別できなかった (検査できないときに緑を返す形)。
+  # ⚠️ 本番と同じ timeout を課すこと (_claude/settings.json の PreToolUse は timeout: 10)。
+  # 課さないと「入力長で hook が timeout に殺されて deny が消える」= 安全機構が無効化される
+  # 退行を観測できない (時間内に終わるかどうかが判定に影響しないため、変異を当てても緑のまま
+  # 通る。2026-08-21 に実際にこの形の空回りテストを書いて気づいた)。
   local out
-  out="$(jq -n --arg c "$1" '{tool_name:"Bash",tool_input:{command:$c}}' | "$HOOK" 2>/dev/null)" \
-    || { echo error; return; }
+  out="$(jq -n --arg c "$1" '{tool_name:"Bash",tool_input:{command:$c}}' | timeout "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null)" \
+    || { [ -n "$out" ] || { echo allow; return; }; echo error; return; }
   [ -n "$out" ] || { echo allow; return; }   # 無出力 = 何も deny していない
   printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision // "error"' 2>/dev/null || echo error
 }
@@ -166,5 +174,25 @@ expect allow "pid 指定の kill" 'kill -TERM 1234'
 expect allow "無関係な pkill" 'pkill -f myapp'
 expect allow "文字列に tmux を含む git" 'git commit -m "fix tmux config"'
 expect allow "make test" 'make test'
+
+# --- 入力長で「ゲートが黙って消える」ことの回帰 (2026-08-21) -----------------------------
+# 実測: unquote が 1 文字ループで、bash の部分文字列展開が O(n) なので実質 O(n²)。90KB の
+# 入力で 37 秒かかり、_claude/settings.json の `timeout: 10` に殺されて stdout 0 byte =
+# **ソケット未指定の kill に対して deny が 1 byte も出ない** (rc=124 を実測)。
+# 「遅い」ではなく「安全機構が入力長で無効化される」問題なので、時間ではなく判定で pin する。
+big_payload() {  # $1=セグメント数 → "echo …; " を繰り返した文字列
+  local i out=''
+  for ((i = 0; i < $1; i++)); do out+='echo line-with-some-words-and-paths /a/b/c ; '; done
+  printf '%s' "$out"
+}
+# 9KB / 90KB: 検査を完走して deny できること (timeout 10 の内側であることも含む)
+expect deny "大きな入力 (9KB) でも deny を出す" "$(big_payload 200)tmux kill-server"
+expect deny "大きな入力 (90KB) でも deny を出す" "$(big_payload 2000)tmux kill-server"
+# 360KB: MAX_SCAN_BYTES を超えるので検査を諦めるが、素通りではなく deny へ倒す (fail-closed)
+expect deny "巨大な入力 (360KB) は fail-closed で deny" "$(big_payload 8000)tmux kill-server"
+# kill 系トークンを含まない大入力は前置きフィルタで即 allow (体感レイテンシに乗せない)
+expect allow "kill を含まない大きな入力は素通り" "$(big_payload 2000)echo done"
+# 大入力でもソケット明示なら allow のまま (fail-closed を広げすぎていないことの対照)
+expect allow "大きな入力 + ソケット明示は allow" "$(big_payload 200)tmux -L probe kill-server"
 
 printf '\nAll deny-bare-tmux-kill tests passed successfully!\n'
