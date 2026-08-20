@@ -220,3 +220,29 @@ EOS
   [ ! -e "$WORK/out8/digest.md" ]
   [ -s "$WORK/out8/solo.out.md" ]
 }
+
+# 既定の merger モデル / effort を pin する。回帰 (2026-08-20): 既定を書き換えても、manifest が
+# 常に model/effort を明示する fixture だけでは誰も気づけなかった (呼び出し側 skill が既定を
+# 下げても merger だけ上位モデルで走る、という食い違いが無検出で通る)。
+@test "merger の既定モデル/effort と env 上書きが効く" {
+  printf 'a\tro\tm1\tlow\t%s\nb\tro\tm1\tlow\t%s\n' \
+    "$WORK/brief_ok.md" "$WORK/brief_ok.md" >"$WORK/m.tsv"
+  run "$DRIVER" "$WORK/m.tsv" "$WORK/out_def"
+  [ "$status" -eq 0 ]
+  # merger の起動行 (digest.md を -o に取る行) だけを見る
+  merger_call="$(grep "digest.md" "$CODEX_STUB_CALLS")"
+  [ -n "$merger_call" ]
+  printf '%s' "$merger_call" | grep -q -- "-m gpt-5.6-luna"
+  printf '%s' "$merger_call" | grep -q -- "model_reasoning_effort=low"
+  # run 側の指定は merger に漏れない (manifest の model/effort と混ざらない)
+  printf '%s' "$merger_call" | grep -qv -- "-m m1"
+
+  # env で上書きできる (呼び出し側 skill が方針を変えたときの逃げ道)
+  : >"$CODEX_STUB_CALLS"
+  CODEX_FANOUT_MERGER_MODEL=gpt-5.6-sol CODEX_FANOUT_MERGER_EFFORT=high \
+    run "$DRIVER" "$WORK/m.tsv" "$WORK/out_env"
+  [ "$status" -eq 0 ]
+  merger_call="$(grep "digest.md" "$CODEX_STUB_CALLS")"
+  printf '%s' "$merger_call" | grep -q -- "-m gpt-5.6-sol"
+  printf '%s' "$merger_call" | grep -q -- "model_reasoning_effort=high"
+}
