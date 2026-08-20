@@ -1,6 +1,6 @@
 ---
 name: issue-sync
-version: 2.1.0
+version: 2.2.0
 description: Open Issues のうち実は完了済みのものを検出し、done/ への移動と readme.md の更新を行う。「issueを整理して」「issue-sync」「完了issueを片付けて」「done漏れを直して」で発火。
 ---
 
@@ -11,6 +11,25 @@ Open Issues の中から、実際にはコードベース上で対応済み（do
 **前提**: プロジェクトが `issues/readme.md` + `issues/done/` 運用であること。ディレクトリ名が `issue/` のプロジェクトでは読み替える。`issues/readme.md` が無い場合は、その旨を報告して終了する（勝手に作らない）。
 
 ## 手順
+
+### Step 0: 期限つき issue の点検（最初に報告する）
+
+`issues/*.md` の本文メタ行 `期限: YYYY-MM-DD` を拾い、**期限切れ / 3 日以内**のものを
+**この skill の出力の冒頭で報告する**（done 判定より先。動作確認 issue = `NNN-verify-*.md`
+は放置すると価値が腐るため、埋もれさせない）。
+
+```sh
+grep -l '^期限:' issues/*.md 2>/dev/null | while read -r f; do
+  printf '%s\t%s\n' "$(grep -m1 '^期限:' "$f" | sed 's/^期限:[[:space:]]*//')" "$f"
+done | sort
+```
+
+- **`issues/` にある = 未読**、`issues/done/` にある = 確認済み（既読の唯一の出典はファイルの位置。
+  本文の既読ヘッダーは見ない）
+- 期限切れが 1 件でもあれば「期限切れ N 件」を見出しで出す。0 件なら「期限切れなし」と 1 行書く
+  （黙って省略しない — 報告が無いのは「点検していない」と区別できないため）
+- **`verify` issue を Phase B（コードベース実装検証）の対象にしない**。人が目で確認するまで
+  open が正しい状態であり、実装の有無では done を判定できない（自動 done 化は誤検出になる）
 
 ### Step 1: issues/readme.md を読み取る
 
