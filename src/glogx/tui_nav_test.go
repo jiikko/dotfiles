@@ -154,7 +154,7 @@ func TestBrowseTickPullAnimOncePerTick(t *testing.T) {
 	}
 }
 
-// tickMsg の list 無効化は fetch/pushPoll のときだけ (レビュー C7)。
+// tickMsg の list 無効化は fetch/awaitCI のときだけ (レビュー C7)。
 func TestBrowseTickInvalidateGate(t *testing.T) {
 	// fetching 中はリストの loading スピナーが動くので無効化する
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
@@ -164,7 +164,7 @@ func TestBrowseTickInvalidateGate(t *testing.T) {
 	if m.linesValid {
 		t.Error("fetching 中の tickMsg でリストが無効化されない")
 	}
-	// pullAnimating だけ (fetch/pushPoll 無し) では list 内容は不変なので無効化しない
+	// pullAnimating だけ (fetch/awaitCI 無し) では list 内容は不変なので無効化しない
 	m2 := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	m2.height = 6
 	m2.pullAnimating = true
@@ -495,7 +495,7 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		{"pushSlides", func(m *browseModel) { m.pushSlides = map[string]time.Time{"a": time.Now()} }},
 		{"scrollAnim", func(m *browseModel) { m.glide.active = true }},
 		{"toast.animating", func(m *browseModel) { m.toast.phase = toastEntering }},
-		{"pushPoll", func(m *browseModel) { m.pushPoll = map[string]bool{"a": true} }},
+		{"awaitCI", func(m *browseModel) { m.awaitCI = map[string]bool{"a": true} }},
 		{"detailsLoading", func(m *browseModel) { m.detailsLoading["a"] = true }},
 		{"detailOv.fetching", func(m *browseModel) { m.detailOv.cache.begin("a") }},
 		{"diffOv.fetching", func(m *browseModel) { m.diffOv.cache.begin("a") }},

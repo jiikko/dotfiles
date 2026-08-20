@@ -10,7 +10,7 @@ import (
 
 // actionModal は glogx 独自の「実行を伴う操作」= git push / git pull --rebase / claude update の
 // 中央モーダル状態機械。確認 (y/N) → 実行中スピナー → 結果/警告ダイアログという一連の UI 状態を
-// browseModel から切り出す。実行そのもの (runGitPush → pushPoll 編成 / runGitPullRebase →
+// browseModel から切り出す。実行そのもの (runGitPush → awaitCI 編成 / runGitPullRebase →
 // reloadAfterPull / runClaudeUpdate の結果整形) は CI・コミット状態と密結合なので browseModel に
 // 残し、この型は「どのモーダルが出ているか」「キーをどう捌くか」「どう描くか」だけを持つ。
 // tmux prefix 誤爆のフィードバックは右下 toast で出す (browseModel が持つ)。ここには同居させない。

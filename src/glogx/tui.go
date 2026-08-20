@@ -121,23 +121,27 @@ type jobDetailMsg struct {
 // 本家 glog (read-only) には無い。
 type pushMsg struct{ err error }
 
-// pushPollMsg は push 直後ポーリングの周期タイマー。push した新規コミットは CI job が
-// 走り出すまでタイムラグがあり、即 fetch すると「checks なし (StateNone, TTL 5分)」を
-// 拾ってネガティブキャッシュ化するため、CI が見えるまで一定間隔で取り直す (ユーザー要望)。
-type pushPollMsg struct{}
+// ciPollMsg は CI 追従ポーリングの周期タイマー。追従対象 (ciPollTargets) が 1 つでもある間、
+// glogx を開いているあいだずっと回る — パネルの開閉・push からの経過時間・起動からの経過に
+// 依存しない (「pending なら常に追う」の単一の出典)。gen は reloadAfterPull の世代で、
+// リロード後に古いタイマーが二重チェーンとして復活するのを防ぐ。
+type ciPollMsg struct{ gen int }
+
+// ciPollResultMsg は ciPoll が投げた再取得の結果。一括取得 (ciResultMsg) と分けているのは、
+// fetching / detailsLoading を立てず表示を「取得中」に落とさないため (チラつき防止)。
+type ciPollResultMsg struct {
+	targets []string
+	batch   CIBatch
+	ghErr   *GHError
+}
 
 const (
-	pushPollInterval    = 5 * time.Second
-	pushPollMaxAttempts = 24 // 5s × 24 = 最長 2 分で諦める (その回の結果は保存しない)
+	ciPollInterval = 3 * time.Second
+	// ciAwaitMaxAttempts は「push したのに CI が 1 つも現れない」ケースを諦めるまでの回数
+	// (3s × 40 = 最長 2 分)。workflow を持たない repo で永久にポーリングしないための上限で、
+	// pending が一度見えたら対象は awaitCI を卒業するのでこの上限は掛からない (完了まで追う)。
+	ciAwaitMaxAttempts = 40
 )
-
-// panelPollMsg は job パネル表示中の定期リフレッシュ (経過時間をライブで見ている
-// ユーザー向けに job の状態・所要時間も追従させる。ユーザー要望 2026-07-20)。
-// seq はパネルの開閉世代: 開き直しで古いタイマーが二重ポーリングにならないよう、
-// 世代が一致するときだけ有効。
-type panelPollMsg struct{ seq int }
-
-const panelPollInterval = 3 * time.Second
 
 // rerunMsg は CI job 再実行要求 (r → y 確認後の gh run rerun --job) の結果。glogx の独自機能。
 // sha は対象コミット (パネルリフレッシュの照合用)。
@@ -146,10 +150,10 @@ type rerunMsg struct {
 	err error
 }
 
-// rerunPollGrace は rerun 直後にパネルへ与える猶予ポーリング回数 (panelPollInterval × 10 = ~30s)。
-// rerun を要求してから GraphQL に queued/in_progress が映るまでラグがあり、その間は
-// panelHasRunningJob が false でポーリングが止まってしまう (パネルの ✗ が固まったままになる)
-// ため、実行中 job が見えるまでの間だけ空振りを許す。上限到達で諦める (反映は次の開き直しで)。
+// rerunPollGrace は rerun 直後にパネル SHA を追従対象へ留める周期回数 (ciPollInterval × 10 = ~30s)。
+// rerun を要求してから GraphQL に queued/in_progress が映るまでラグがあり、その間は状態が
+// success/failure のままで追従対象にならない (パネルの ✗ が固まったままになる) ため、
+// pending が見えるまでの間だけ空振りを許す。上限到達で諦める (反映は次の開き直しで)。
 const rerunPollGrace = 10
 
 // noPromptGitCmd は remote に触る git (push/pull) 用のコマンドを組む。GIT_TERMINAL_PROMPT=0
@@ -230,21 +234,18 @@ type browseModel struct {
 	// showFrame は最外周フレーム (板 + ドロップシャドウ) 描画の有効フラグ (issue 025)。起動時固定
 	// (!opts.NoFrame)。⚠️ 下の frame (int) はスピナーのフレームカウンタで別物 (名前衝突回避のため
 	// bool 側を showFrame とした)。実際に描くかは frameActive() が端末サイズ下限も見て判定する。
-	showFrame      bool
-	frame          int
-	width          int
-	height         int
-	cursor         int    // コミット index
-	offset         int    // ビューポート先頭の行 index (論理 = カーソル可視化の着地点)
-	panelSHA       string // job パネルを表示中のコミット SHA ("" = パネルなし)
-	panelCursor    int    // パネル内で選択中の job index (-1 = タイトル行にフォーカス)
-	panelPollSeq   int    // パネル開閉の世代 (panelPollMsg の有効性判定)
-	panelRefresh   bool   // パネルの定期リフレッシュ実行中 (detailsLoading と別: 表示を「取得中」に落とさない)
-	panelPollGrace int    // 実行中 job が見えなくてもポーリングを続ける残回数 (rerun 直後の反映ラグ吸収)
-	panelPolling   bool   // panelPollMsg の自己更新チェーンが 1 本生きているか (maybeTick と同型の single-flight)
-	copyOnDetail   string // Y で詳細未取得だった detailKey。jobDetailMsg 到着時にコピーして消す ("" = 予約なし)
+	showFrame    bool
+	frame        int
+	width        int
+	height       int
+	cursor       int    // コミット index
+	offset       int    // ビューポート先頭の行 index (論理 = カーソル可視化の着地点)
+	panelSHA     string // job パネルを表示中のコミット SHA ("" = パネルなし)
+	panelCursor  int    // パネル内で選択中の job index (-1 = タイトル行にフォーカス)
+	panelGrace   int    // rerun 直後、pending が見えなくてもパネル SHA を追従対象に留める残回数
+	copyOnDetail string // Y で詳細未取得だった detailKey。jobDetailMsg 到着時にコピーして消す ("" = 予約なし)
 	// job 詳細ポップアップ (annotations / ログ tail) の pager 状態と描画は jobDetailOverlay 型
-	// (job_detail_overlay.go) に切り出す。panel-frame (panelSHA/panelCursor/poll/refresh) と ETA・
+	// (job_detail_overlay.go) に切り出す。panel-frame (panelSHA/panelCursor/panelGrace) と ETA・
 	// CI 取得は details/statuses/commits と構造的に結合するため browseModel に残す (詳細は同ファイル)。
 	// cache キー (detailKey) はパネルのカーソル座標から借りる (identity 非所有) ので呼び出し側で注入。
 	detailOv jobDetailOverlay
@@ -258,16 +259,19 @@ type browseModel struct {
 	// openDiff / handleDiffKey に薄く残す。
 	diffOv diffOverlay
 	// git push / pull --rebase / claude update の確認〜実行〜結果モーダルの状態機械は
-	// actionModal 型 (action_modal.go) に切り出す。実行の orchestration (pushPoll 編成・
+	// actionModal 型 (action_modal.go) に切り出す。実行の orchestration (awaitCI 編成・
 	// reloadAfterPull・結果整形) は CI/コミット状態と密結合なので browseModel 側に残す。
-	actModal      actionModal
-	pullAnimating bool            // pull 後に先頭へ増えた新規コミット行を上から降らせる演出中 (offset が進行度)
-	opts          *Options        // pull 後のコミット再読込に使う (revs / max-count)
-	pushPoll      map[string]bool // push 直後ポーリング対象の SHA (CI が見えたら外れる)
-	pollAttempts  int             // push 直後ポーリングの試行回数 (上限で諦める)
-	lastWarning   string          // w でコピーする直近の警告/エラー文字列 (トーストが消えても保持。issue 026)
-	tmuxPrefix    string          // tmux prefix の bubbletea 表記 (例 "ctrl+t")。"" = tmux 外/不明で機能オフ
-	verbatim      []Line          // git log 実出力の取り込み行 (nil = 自前レンダリング)
+	actModal       actionModal
+	pullAnimating  bool            // pull 後に先頭へ増えた新規コミット行を上から降らせる演出中 (offset が進行度)
+	opts           *Options        // pull 後のコミット再読込に使う (revs / max-count)
+	awaitCI        map[string]bool // push 直後で CI がまだ 1 つも見えない SHA (見えたら外れる。上限は ciAwaitMaxAttempts)
+	awaitAttempts  int             // awaitCI の試行回数 (上限で諦める)
+	ciPolling      bool            // ciPollMsg の自己更新チェーンが 1 本生きているか (single-flight)
+	ciPollInFlight bool            // ciPoll の再取得が in-flight (同一 SHA への GraphQL 並行を避ける)
+	ciPollGen      int             // ciPollMsg の世代 (reloadAfterPull で進めて残タイマーを無効化)
+	lastWarning    string          // w でコピーする直近の警告/エラー文字列 (トーストが消えても保持。issue 026)
+	tmuxPrefix     string          // tmux prefix の bubbletea 表記 (例 "ctrl+t")。"" = tmux 外/不明で機能オフ
+	verbatim       []Line          // git log 実出力の取り込み行 (nil = 自前レンダリング)
 
 	// usage オーバーレイ (右上に Claude Code の /usage 残量を重ねる)。ユーザー要望 2026-07-21。
 	// 状態と描画は usageOverlay 型 (usage_overlay.go) に切り出し、ここは 1 フィールドだけ持つ。
@@ -421,10 +425,14 @@ func (m *browseModel) Init() tea.Cmd {
 	if s, ok := loadIssuesScreen(timeNow()); ok {
 		restore = issuesRestoreCmd(s)
 	}
+	// ⚠️ 起動時にも追従チェーンを張る: ディスクキャッシュに pending が残っていると初回 fetch が
+	// 走らず (m.fetching == false)、ciResultMsg 起点の開始点をどれも踏まないまま
+	// 「pending なのに追わない」状態になる (キャッシュの pending TTL 内に再起動した場合)。
+	poll := m.ensureCIPoll()
 	if m.fetching {
-		return tea.Batch(m.fetch, prefix, u, ver, ab, restore, m.maybeTick(), usageRefreshTick())
+		return tea.Batch(m.fetch, prefix, u, ver, ab, restore, poll, m.maybeTick(), usageRefreshTick())
 	}
-	return tea.Batch(prefix, u, ver, ab, restore, m.maybeTick(), usageRefreshTick())
+	return tea.Batch(prefix, u, ver, ab, restore, poll, m.maybeTick(), usageRefreshTick())
 }
 
 // issuesRestoreCmd は記憶した画面が今の repo のものか確かめる (別 repo で開いた glogx に
@@ -470,7 +478,7 @@ func tickEvery(d time.Duration) tea.Cmd {
 // 二重チェーンを作らない。tea.Batch(cmd, maybeTick()) は Init・各 fetch 経路など多数に散らばり、
 // 非同期処理が重なるたびに独立した自己増殖チェーンが恒久追加されて (push 直後ポーリングでは
 // 最長 2 分間に ~48 本まで) 再描画/アニメが N 倍化していた (レビュー C1)。この single-flight で
-// 全 tick 発行を 1 本に束ねる。⚠️ pushPoll/panelPoll の tea.Tick は別周期の独立タイマーなので
+// 全 tick 発行を 1 本に束ねる。⚠️ ciPoll の tea.Tick は別周期の独立タイマーなので
 // maybeTick を通さない (それぞれ seq/guard で管理)。
 //
 // 周期は scroll glide 中だけ scrollInterval (~30fps) に上げて滑らかにし、それ以外は
@@ -503,7 +511,7 @@ func (m *browseModel) tickInterval() time.Duration {
 
 // fetchCIStatusesCmd は targets の CI 状態取得を tea.Cmd にする。ctx/timeout/defer cancel の
 // ボイラープレートを 1 箇所へ集約し、wrap で結果を各 msg (ciResult/detail/basis) に包む
-// (レビュー U1)。同一 SHA 並行取得を避ける注意 (panelPollMsg / fetchPanelDetails のコメント)
+// (レビュー U1)。同一 SHA 並行取得を避ける注意 (ciPollMsg / fetchPanelDetails のコメント)
 // は呼び出し側のガードが担う。newBrowseModel の初期 fetch だけは m.cancel と ctx を共有して
 // q 中断に使う意図的例外なので、この helper を通さず据え置く。
 func fetchCIStatusesCmd(repo Repo, targets []string, wrap func(CIBatch, *GHError) tea.Msg) tea.Cmd {
@@ -516,7 +524,7 @@ func fetchCIStatusesCmd(repo Repo, targets []string, wrap func(CIBatch, *GHError
 }
 
 // startCIFetch は一括取得を chunkSHAs のチャンクへ割り、チャンクごとに ciResultMsg を返す Cmd を
-// 束ねて返す。取得の「開始点」は 4 箇所 (起動 / pushPollMsg / reloadAfterPull / refetchAfterPush)
+// 束ねて返す。取得の「開始点」は 3 箇所 (起動 / reloadAfterPull / refetchAfterPush)
 // あるので、状態 (toFetch / pendingFetches / fetching / ghErr) の立て方をここへ集約する。
 //
 // チャンク 1 が commits の表示順先頭なので、画面に映っているコミットの CI が最初に埋まる
@@ -559,7 +567,7 @@ func fetchCIChunkCmd(repo Repo, chunk []string, epoch int) tea.Cmd {
 // 更新される — この「4 キャッシュを 1 単位で co-update する」不変条件を ciResult/detail/basis の
 // 3 ハンドラから 1 箇所へ局所化する (第 5 の co-update map が増えても touch は 1 箇所)。PR は
 // コミット行のバッジ表示と p キーの両方で使う。site 固有の invalidateLines / ghErr クリア /
-// detailsLoading 解除 / panelCursor クランプ / pushPoll 掃除は各ハンドラに残す (吸収の関心事ではない)。
+// detailsLoading 解除 / panelCursor クランプ / awaitCI 掃除は各ハンドラに残す (吸収の関心事ではない)。
 func (m *browseModel) mergeCIBatch(statuses map[string]CIState, details map[string][]CheckDetail, prs map[string]*PRRef) {
 	maps.Copy(m.fetched, statuses)
 	maps.Copy(m.statuses, statuses)
@@ -677,7 +685,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			toastHoldCmd = m.toast.advance(m.colored)
 		}
 		m.frame++
-		// list に毎フレーム変化する内容 (loading スピナー) が乗るのは fetch/pushPoll の 2 状態
+		// list に毎フレーム変化する内容 (loading スピナー) が乗るのは fetch/awaitCI の 2 状態
 		// だけ。他の spinnerActive 条件 (panelHasRunningJob/pullAnimating/detailsLoading/
 		// jobDetailBusy/diffBusy) のスピナー・経過時間は panelLines/diffBoxLines 側 (lines() の
 		// 外) で毎フレーム描かれるので、ここで list を無効化すると -p 巨大 patch を含む全行を
@@ -693,7 +701,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 複製する必要があり、表示バグの危険が利得に見合わない。
 		// -p を常用して fetch 中の描画が重いと体感したら再評価する (その時は Line にスピナー
 		// 位置を持たせて View 側で差し替えるのが筋)。
-		if m.fetching || len(m.pushPoll) > 0 {
+		if m.fetching || len(m.awaitCI) > 0 {
 			m.invalidateLines()
 		}
 		return m, tea.Batch(m.maybeTick(), toastHoldCmd, pushRefetchCmd)
@@ -737,52 +745,24 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, sha := range msg.shas {
 			delete(m.detailsLoading, sha)
 		}
-		// push 直後ポーリング: CI がまだ見えない (none/unknown) SHA は結果を捨てて
-		// (statuses から消してスピナーに戻し、fetched からも外してファイルキャッシュへの
-		// ネガティブキャッシュ保存を防ぐ) 次の周期で取り直す。CI が見えたら対象から外す
-		if len(m.pushPoll) > 0 {
-			for sha := range m.pushPoll {
-				switch m.statuses[sha] {
-				case StatePending, StateSuccess, StateFailure, StateNeutral:
-					delete(m.pushPoll, sha) // CI が見えた: 以降は通常のキャッシュ運用
-				default:
-					delete(m.statuses, sha)
-					delete(m.fetched, sha)
-				}
-			}
-			m.invalidateLines()
-			if len(m.pushPoll) > 0 && m.pollAttempts < pushPollMaxAttempts {
-				return m, tea.Batch(
-					tea.Tick(pushPollInterval, func(time.Time) tea.Msg { return pushPollMsg{} }),
-					m.maybeTick())
-			}
-			m.pushPoll = nil // 上限到達: スピナーは spinnerActive から外れて止まる
-		}
+		m.settleAwaitCI()
 		// 一括取得で実行中コミットの Details が入った場合も ETA basis を補充する
-		// (パネルを取得中に開いていたケース)。
-		return m, m.maybeFetchETABasis()
+		// (パネルを取得中に開いていたケース)。pending が見えたらここで追従チェーンが張られる
+		// (起動直後に既に pending なコミットがある場合の開始点でもある)。
+		return m, tea.Batch(m.maybeFetchETABasis(), m.ensureCIPoll())
 	case detailMsg:
 		m.invalidateLines()
 		delete(m.detailsLoading, msg.sha)
-		wasRefresh := msg.sha == m.panelSHA && m.panelRefresh
-		if msg.sha == m.panelSHA {
-			m.panelRefresh = false
-		}
 		m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (sticky 警告の防止・レビュー C4)
 		m.mergeCIBatch(msg.batch.Statuses, msg.batch.Details, msg.batch.PRs)
 		// リフレッシュで job 数が縮んだ場合にフォーカスを範囲内へ戻す
 		if msg.sha == m.panelSHA && m.panelCursor >= len(m.details[m.panelSHA]) {
 			m.panelCursor = len(m.details[m.panelSHA]) - 1
 		}
-		// パネルを開いたコミットの Details が今届いた場合、実行中 job があれば ETA basis
-		// (同名完了 job) の補充と定期リフレッシュの開始をここで行う (openPanel 時点では
-		// details 未取得で判定できない)。リフレッシュ結果の到着では開始しない
-		// (次回は panelPollMsg ハンドラ側が予約済み。二重 timer で加速するのを防ぐ)
-		var poll tea.Cmd
-		if msg.sha == m.panelSHA && !wasRefresh && m.panelHasRunningJob() {
-			poll = m.ensurePanelPoll()
-		}
-		return m, tea.Batch(m.maybeFetchETABasis(), poll)
+		// ETA basis (同名完了 job) の補充と追従チェーンの開始をここで行う (openPanel 時点では
+		// details 未取得で pending かどうか判定できない)。ensureCIPoll は single-flight なので
+		// 既にチェーンが生きていれば nil を返す (二重 timer で加速しない)。
+		return m, tea.Batch(m.maybeFetchETABasis(), m.ensureCIPoll())
 	case basisMsg:
 		m.invalidateLines()
 		m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (レビュー C4)
@@ -966,38 +946,49 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, usageRefreshTick() // チェーンは維持 (再表示後に周期取得が復活する)
 		}
 		return m, tea.Batch(m.usageOv.fetchCmd(false), usageRefreshTick())
-	case panelPollMsg:
-		if msg.seq != m.panelPollSeq || m.panelSHA == "" {
-			return m, nil // パネルが閉じた/開き直された後の残タイマーは破棄
+	case ciPollMsg:
+		if msg.gen != m.ciPollGen {
+			return m, nil // reloadAfterPull で世代が進んだ後の残タイマーは破棄
 		}
-		if m.panelHasRunningJob() {
-			m.panelPollGrace = 0 // 実行中 job が見えた: 猶予は役目を終え、以降は通常の追従
-		} else {
-			if m.panelPollGrace <= 0 {
-				m.panelPolling = false // このチェーンは停止する (開き直し/次の開始点で再アーム)
-				return m, nil          // 全 job 完了: 追従の必要が無いのでポーリング終了
+		targets := m.ciPollTargets()
+		if len(targets) == 0 {
+			m.ciPolling = false // 追従対象なし: チェーンを止める (次の開始点で再アーム)
+			return m, nil
+		}
+		if m.panelGrace > 0 {
+			m.panelGrace-- // rerun 直後: 新しい実行が GraphQL に映るまで空振りを許す
+		}
+		// 「CI が 1 つも現れない」の打ち切りは周期の側で数える。結果着弾の側で数えると、
+		// 一括取得が複数チャンクへ割れた回に awaitAttempts が余分に進み、意図した
+		// ciPollInterval × ciAwaitMaxAttempts (= 2 分) より早く諦めてしまう
+		if len(m.awaitCI) > 0 {
+			m.awaitAttempts++
+			if m.awaitAttempts >= ciAwaitMaxAttempts {
+				m.awaitCI = nil // 諦める: workflow を持たない repo で永久にポーリングしない
 			}
-			m.panelPollGrace-- // rerun 直後: 実行中 job が GraphQL に映るまで空振りを許す
 		}
-		next := m.schedulePanelPoll()
-		// 実行中の一括取得/リフレッシュと重ねない (同一 SHA への GraphQL 並行は
-		// 完了順で statuses/details が上書きされる。fetchPanelDetails と同じ注意)
-		if m.panelRefresh || m.detailsLoading[m.panelSHA] || (m.fetching && slices.Contains(m.toFetch, m.panelSHA)) {
+		next := m.scheduleCIPoll()
+		// 別経路の取得と重ねない (同一 SHA への GraphQL 並行は完了順で statuses/details が
+		// 上書きされる。fetchPanelDetails と同じ注意)。タイマーだけ繋いで次の周期に回す
+		if m.ciPollInFlight || m.fetching {
 			return m, next
 		}
-		m.panelRefresh = true // detailsLoading と違い表示は「取得中」に落とさない (チラつき防止)
-		sha := m.panelSHA
-		refresh := fetchCIStatusesCmd(m.repo, []string{sha}, func(b CIBatch, e *GHError) tea.Msg {
-			return detailMsg{sha: sha, batch: b, ghErr: e}
+		m.ciPollInFlight = true
+		fetch := ciPollFetch(m.repo, targets, func(b CIBatch, e *GHError) tea.Msg {
+			return ciPollResultMsg{targets: targets, batch: b, ghErr: e}
 		})
-		return m, tea.Batch(refresh, next)
-	case pushPollMsg:
-		if len(m.pushPoll) == 0 || m.fetching {
-			return m, nil // fetching 中 (別経路の取得が進行) は次の ciResultMsg 側で判定する
+		return m, tea.Batch(fetch, next, m.maybeTick())
+	case ciPollResultMsg:
+		m.ciPollInFlight = false
+		m.invalidateLines()
+		m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (sticky 警告の防止)
+		m.mergeCIBatch(msg.batch.Statuses, msg.batch.Details, msg.batch.PRs)
+		m.settleAwaitCI()
+		// リフレッシュで job 数が縮んだ場合にフォーカスを範囲内へ戻す
+		if m.panelSHA != "" && m.panelCursor >= len(m.details[m.panelSHA]) {
+			m.panelCursor = max(len(m.details[m.panelSHA])-1, -1)
 		}
-		m.pollAttempts++
-		targets := slices.Collect(maps.Keys(m.pushPoll))
-		return m, tea.Batch(m.startCIFetch(targets), m.maybeTick())
+		return m, tea.Batch(m.maybeFetchETABasis(), m.ensureCIPoll())
 	case pullMsg:
 		m.actModal.pulling = false
 		if msg.err != nil {
@@ -1017,13 +1008,13 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.maybeTick()
 		}
 		m.toast.show("CI を再実行します", true)
-		// パネルを開いたままなら猶予ポーリングで追従する (rerun が GraphQL に映るまでのラグは
-		// rerunPollGrace のコメント参照)。映れば panelHasRunningJob → 既存の定期リフレッシュへ
+		// パネルを開いたままなら猶予つきで追従対象に留める (rerun が GraphQL に映るまでのラグは
+		// rerunPollGrace のコメント参照)。映れば StatePending になり、以降は通常の追従へ
 		// 自然に引き継がれる。パネルが閉じられていれば何もしない (次の開き直しで最新を取る)
 		var poll tea.Cmd
 		if msg.sha == m.panelSHA && m.panelSHA != "" {
-			m.panelPollGrace = rerunPollGrace
-			poll = m.ensurePanelPoll() // 既にチェーンが生きていれば nil (二重化しない)
+			m.panelGrace = rerunPollGrace
+			poll = m.ensureCIPoll() // 既にチェーンが生きていれば nil (二重化しない)
 		}
 		return m, tea.Batch(poll, m.maybeTick())
 	case updateBeginMsg:
@@ -1496,7 +1487,12 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 	m.prStatusOv.reset() // 旧 SHA の PR 詳細キャッシュも破棄
 	m.diffOv.reset()
 	m.closePanel()
-	m.pushPoll = nil
+	m.awaitCI, m.awaitAttempts = nil, 0
+	m.ciPollGen++       // 旧世代の残タイマーを無効化する (リロードで対象そのものが入れ替わる)
+	m.ciPolling = false // 次の ciResultMsg 着弾で張り直す
+	// ⚠️ ciPollInFlight はここで false に戻さない: pull で SHA 集合が入れ替わっても既存 SHA は
+	// 残るので、飛んでいる旧 poll と新 poll が同一 SHA を並行取得し、完了順で古い結果が勝ちうる。
+	// 旧 poll の結果が着弾した時点で false に戻る (数周期 fetch を見送るだけで追従は途切れない)。
 	m.glide.stop()            // pull リロードは pull アニメ側が担うので一覧の glide は破棄
 	m.cursor, m.offset = 0, 0 // カーソルは新規コミットの先頭へ (ユーザー要望 2026-07-20)
 	if !m.oneline {
@@ -1690,16 +1686,16 @@ func (m *browseModel) slideColumns(lines []Line) map[int]int {
 // は本物なので通常どおり取得・キャッシュする。tip は演出が statuses を先に消すため
 // pushAnimTip (startPushAnim が捕捉) を優先する。
 func (m *browseModel) refetchAfterPush() tea.Cmd {
-	m.pushPoll = map[string]bool{}
-	m.pollAttempts = 0
+	m.awaitCI = map[string]bool{}
+	m.awaitAttempts = 0
 	if m.pushAnimTip != "" {
-		m.pushPoll[m.pushAnimTip] = true
+		m.awaitCI[m.pushAnimTip] = true
 		m.pushAnimTip = ""
 	}
 	all := make([]string, 0, len(m.commits))
 	for _, c := range m.commits {
-		if len(m.pushPoll) == 0 && m.statuses[c.SHA] == StateUnpushed {
-			m.pushPoll[c.SHA] = true // commits は新しい順なので最初の unpushed = tip
+		if len(m.awaitCI) == 0 && m.statuses[c.SHA] == StateUnpushed {
+			m.awaitCI[c.SHA] = true // commits は新しい順なので最初の unpushed = tip
 		}
 		all = append(all, c.SHA)
 		delete(m.statuses, c.SHA)
@@ -2251,40 +2247,79 @@ func (m *browseModel) openPanel() tea.Cmd {
 	sha := m.commits[m.cursor].SHA
 	m.panelSHA = sha
 	m.panelCursor = -1 // タイトル行フォーカスから開始 (この状態の Enter = 閉じる)
-	m.panelPollSeq++   // 前のパネルの残タイマーを世代で無効化する
-	// パネルコミットの Details 取得と、実行中 job があれば ETA basis の補充を両方仕掛ける。
-	// details 既取得なら basis 補充だけ即走る (basis 判定に details が要るため)。
-	// 定期リフレッシュは「実行中 job がある」と分かっているときだけ開始する
-	// (details 未取得ならその到着時 = detailMsg 側で開始する。常時 timer を返すと
-	// 「fetch 不要なら Cmd は nil」というパネル系テストの契約も壊れる)。
-	var poll tea.Cmd
-	if m.panelHasRunningJob() {
-		poll = m.ensurePanelPoll()
+	// パネルコミットの Details 取得と ETA basis の補充を仕掛ける。details 既取得なら basis 補充
+	// だけ即走る (basis 判定に details が要るため)。追従チェーンはパネルとは独立して pending で
+	// 回っているので、ここでは single-flight の ensureCIPoll を通すだけ (未取得なら detailMsg 側)。
+	return tea.Batch(m.fetchPanelDetails(sha), m.maybeFetchETABasis(), m.ensureCIPoll())
+}
+
+// ciPollTargets は「まだ決着していないので取り直す」SHA。追従の条件はこの 1 箇所だけが決める:
+//
+//   - StatePending のコミット: 完了 (success/failure/neutral) まで無条件に追う。パネルを開いて
+//     いるかどうか・push からどれだけ経ったかは問わない
+//   - awaitCI: push 直後で CI がまだ 1 つも見えない SHA (ciAwaitMaxAttempts で打ち切る)
+//   - panelGrace 中のパネル SHA: rerun 要求が GraphQL に映るまでのラグ吸収
+func (m *browseModel) ciPollTargets() []string {
+	seen := make(map[string]bool, len(m.commits))
+	targets := make([]string, 0, len(m.commits))
+	add := func(sha string) {
+		if sha == "" || seen[sha] {
+			return
+		}
+		seen[sha] = true
+		targets = append(targets, sha)
 	}
-	return tea.Batch(m.fetchPanelDetails(sha), m.maybeFetchETABasis(), poll)
+	for _, c := range m.commits {
+		if m.statuses[c.SHA] == StatePending || m.awaitCI[c.SHA] {
+			add(c.SHA)
+		}
+	}
+	if m.panelGrace > 0 {
+		add(m.panelSHA)
+	}
+	return capFetchSHAs(targets)
 }
 
-// schedulePanelPoll は現世代の panelPollMsg を panelPollInterval 後に発火させる。
-// ⚠️ これはチェーンの「継続」用 (panelPollMsg ハンドラ内の再アーム)。チェーンの「開始」は
-// 必ず ensurePanelPoll を通し、複数の開始点 (openPanel / detailMsg / rerunMsg) が独立した
-// チェーンを二重に張らないようにする。
-func (m *browseModel) schedulePanelPoll() tea.Cmd {
-	seq := m.panelPollSeq
-	return tea.Tick(panelPollInterval, func(time.Time) tea.Msg { return panelPollMsg{seq: seq} })
+// ciPollFetch は ciPoll の再取得を張る差し替え点 (本体は fetchCIStatusesCmd)。並行取得を
+// 弾くガードをテストが回数で観測するために変数にしている (runJobRerun と同じ理由)。
+var ciPollFetch = fetchCIStatusesCmd
+
+// scheduleCIPoll は現世代の ciPollMsg を ciPollInterval 後に発火させる (チェーンの「継続」用)。
+// チェーンの「開始」は必ず ensureCIPoll を通す。
+func (m *browseModel) scheduleCIPoll() tea.Cmd {
+	gen := m.ciPollGen
+	return tea.Tick(ciPollInterval, func(time.Time) tea.Msg { return ciPollMsg{gen: gen} })
 }
 
-// ensurePanelPoll は panelPollMsg の自己更新チェーンを single-flight で 1 本だけ張る
-// (maybeTick と同型)。既に生きていれば nil を返して二重チェーンを作らない。全ての「開始点」
-// (openPanel / detailMsg 初到着 / rerunMsg) がこれを通ることで、例えば実行中 job があるパネルで
-// rerun したときに openPanel が張った chain と rerunMsg が張る chain が二重化して GraphQL
-// ポーリング頻度が倍になる不具合を防ぐ (レビュー確定)。チェーンの停止点 (grace 尽き / closePanel)
-// で panelPolling=false に戻す。
-func (m *browseModel) ensurePanelPoll() tea.Cmd {
-	if m.panelPolling {
+// ensureCIPoll は ciPollMsg の自己更新チェーンを single-flight で 1 本だけ張る (maybeTick と
+// 同型)。既に生きている / 追従対象が無いときは nil を返す。開始点が複数あっても
+// (起動時の ciResultMsg / detailMsg / refetchAfterPush / rerunMsg / openPanel) チェーンが
+// 二重化してポーリング頻度が倍にならないのはこのガードによる。
+func (m *browseModel) ensureCIPoll() tea.Cmd {
+	if m.ciPolling || len(m.ciPollTargets()) == 0 {
 		return nil
 	}
-	m.panelPolling = true
-	return m.schedulePanelPoll()
+	m.ciPolling = true
+	return m.scheduleCIPoll()
+}
+
+// settleAwaitCI は「push したが CI がまだ見えない」SHA の後始末。CI が見えたら awaitCI を
+// 卒業させ、見えていない SHA は結果を捨てる (statuses から消してスピナーに戻し、fetched からも
+// 外してファイルキャッシュへ「checks なし」を負キャッシュとして残さない)。上限に達したら諦める。
+func (m *browseModel) settleAwaitCI() {
+	if len(m.awaitCI) == 0 {
+		return
+	}
+	for sha := range m.awaitCI {
+		switch m.statuses[sha] {
+		case StatePending, StateSuccess, StateFailure, StateNeutral:
+			delete(m.awaitCI, sha) // CI が見えた: 以降は statuses 起点の通常の追従へ
+		default:
+			delete(m.statuses, sha)
+			delete(m.fetched, sha)
+		}
+	}
+	m.invalidateLines()
 }
 
 // fetchPanelDetails はパネルコミット sha の Details をオンデマンド取得する Cmd
@@ -2372,21 +2407,11 @@ func (m *browseModel) maybeFetchETABasis() tea.Cmd {
 func (m *browseModel) closePanel() {
 	m.panelSHA = ""
 	m.panelCursor = -1
-	m.panelPollSeq++ // 定期リフレッシュの残タイマーを世代で無効化する
-	// panelRefresh も必ず下ろす: 不変条件は「現在開いているパネル向けの refresh が
-	// in-flight」なので、パネルが無ければ false でなければならない。これを怠ると、in-flight
-	// refresh 中にパネルを閉じたとき、遅延到着する detailMsg{旧SHA} が
-	// `msg.sha == m.panelSHA("")` に一致せず panelRefresh を戻せず true に固着し、以降
-	// panelPollMsg が毎回 refresh をスキップしてパネルのライブ更新が恒久停止する
-	// (かつ実行中 job のパネルでは spinnerActive が真のまま tick/poll が空回りし続ける。
-	// レビュー C2/C3/K1)。closePanel は全パネル退出経路 (q/h/esc/left・reloadAfterPull)
-	// の choke point なのでここ 1 箇所で覆える。閉じた後に届く旧 refresh の detailMsg は
-	// panelSHA と不一致で無害 (maps.Copy はキャッシュ更新のみ・poll は再開しない)。
-	m.panelRefresh = false
-	m.panelPollGrace = 0   // rerun 直後の猶予ポーリングもパネルと一緒に終える
-	m.panelPolling = false // ポーリングチェーンの single-flight フラグを戻す (次の開き直しで再アーム可能に)
-	m.copyOnDetail = ""    // Y のコピー予約も破棄 (閉じた後の到着で意図しないコピーをしない)
-	m.detailOv.close()     // 詳細ポップアップも閉じる (panel/detail 両クラスタの choke point)
+	// パネルを閉じても CI 追従ポーリングは止めない (pending なら追い続けるのが不変条件)。
+	// 閉じるのはパネル固有の状態だけ。
+	m.panelGrace = 0    // rerun 直後の猶予はパネルと一緒に終える (パネル SHA を狙う猶予なので)
+	m.copyOnDetail = "" // Y のコピー予約も破棄 (閉じた後の到着で意図しないコピーをしない)
+	m.detailOv.close()  // 詳細ポップアップも閉じる (panel/detail 両クラスタの choke point)
 }
 
 // openURLCmd は URL をブラウザで開く Cmd。StatusContext の targetUrl 等、外部が任意に
@@ -2641,7 +2666,7 @@ func (m *browseModel) fillUnknown() {
 func (m *browseModel) spinnerActive() bool {
 	// 演出 (glide / toast / 開閉スライド / zoom) は列挙しない: tickInterval が周期を上げている =
 	// 何かの演出中、で導出する。演出の登録先を tickInterval の 1 箇所に保つ (同期漏れの再発防止)
-	return m.tickInterval() != spinnerInterval || m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.pushPoll) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.issuesOv.loading() ||
+	return m.tickInterval() != spinnerInterval || m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.awaitCI) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.issuesOv.loading() ||
 		m.statusOv.fetching()
 }
 

@@ -296,13 +296,13 @@ func TestBrowsePushFlow(t *testing.T) {
 	if !m.fetching || len(m.toFetch) != len(m.commits) {
 		t.Fatalf("push 成功で全件再取得に入らない: fetching=%v toFetch=%d", m.fetching, len(m.toFetch))
 	}
-	// ポーリング対象は tip (最新の unpushed) だけ。途中のコミットには CI が走らないため
+	// CI 出現待ち (awaitCI) の対象は tip (最新の unpushed) だけ。途中のコミットには CI が走らないため
 	newSHA := m.commits[0].SHA
-	if !m.pushPoll[newSHA] {
-		t.Fatal("push の tip がポーリング対象にならない")
+	if !m.awaitCI[newSHA] {
+		t.Fatal("push の tip が CI 出現待ちにならない")
 	}
-	if m.pushPoll[m.commits[1].SHA] || len(m.pushPoll) != 1 {
-		t.Fatalf("tip 以外までポーリング対象になった: %v", m.pushPoll)
+	if m.awaitCI[m.commits[1].SHA] || len(m.awaitCI) != 1 {
+		t.Fatalf("tip 以外まで CI 出現待ちになった: %v", m.awaitCI)
 	}
 	// tip の「CI がまだ見えない (none)」応答は捨てられ、ネガティブキャッシュに乗らず
 	// 再ポーリング。途中コミットの none は本物なので通常どおり残る
@@ -315,21 +315,28 @@ func TestBrowsePushFlow(t *testing.T) {
 	if _, ok := m.fetched[newSHA]; ok {
 		t.Fatal("CI が見えない応答が fetched に残った (ネガティブキャッシュされる)")
 	}
-	if !m.pushPoll[newSHA] {
-		t.Fatal("CI が見えないのにポーリングが止まった")
+	if !m.awaitCI[newSHA] {
+		t.Fatal("CI が見えないのに出現待ちが止まった")
 	}
 	if m.statuses[m.commits[1].SHA] != StateNone || m.fetched[m.commits[1].SHA] != StateNone {
 		t.Fatal("途中コミットの none (本物) まで捨てられた")
 	}
-	// pushPollMsg で再取得が走る
+	// ciPollMsg で再取得が走る (CI 未出現の SHA は追従対象)
 	m.fetching = false
-	if _, cmd := m.Update(pushPollMsg{}); cmd == nil || !m.fetching {
-		t.Fatal("pushPollMsg で再取得が始まらない")
+	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd == nil || !m.ciPollInFlight {
+		t.Fatal("ciPollMsg で再取得が始まらない")
 	}
-	// CI が見えたら (pending) ポーリング対象から外れ、通常のキャッシュ運用に戻る
+	m.Update(ciPollResultMsg{targets: []string{newSHA}, batch: CIBatch{Statuses: map[string]CIState{newSHA: StateNone}}})
+	if !m.awaitCI[newSHA] || m.ciPollInFlight {
+		t.Fatalf("ciPollResultMsg の後始末が効いていない: awaitCI=%v inFlight=%v", m.awaitCI, m.ciPollInFlight)
+	}
+	// CI が見えたら (pending) 出現待ちを卒業し、以降は statuses 起点で完了まで追う
 	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: []string{newSHA}, batch: CIBatch{Statuses: map[string]CIState{newSHA: StatePending}}})
-	if m.pushPoll[newSHA] {
-		t.Fatal("CI が見えてもポーリングが止まらない")
+	if m.awaitCI[newSHA] {
+		t.Fatal("CI が見えても出現待ちから外れない")
+	}
+	if !m.ciPolling {
+		t.Fatal("pending が見えたのに追従チェーンが張られていない")
 	}
 	if m.statuses[newSHA] != StatePending {
 		t.Fatalf("pending が反映されない: %v", m.statuses[newSHA])
@@ -630,8 +637,8 @@ func TestBrowseRerunFlow(t *testing.T) {
 	if !m.toast.visible() || !strings.Contains(m.toast.text, "再実行") {
 		t.Fatalf("成功トーストが出ない: %q", m.toast.text)
 	}
-	if m.panelPollGrace != rerunPollGrace {
-		t.Fatalf("猶予ポーリングが張られない: grace=%d want %d", m.panelPollGrace, rerunPollGrace)
+	if m.panelGrace != rerunPollGrace {
+		t.Fatalf("猶予ポーリングが張られない: grace=%d want %d", m.panelGrace, rerunPollGrace)
 	}
 }
 
@@ -703,7 +710,7 @@ func TestBrowseRerunFailureShowsToast(t *testing.T) {
 	if !m.toast.visible() || m.toast.ok || !strings.Contains(m.toast.text, "失敗") {
 		t.Fatalf("失敗トーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
 	}
-	if m.panelPollGrace != 0 {
+	if m.panelGrace != 0 {
 		t.Fatal("失敗なのに猶予ポーリングが張られた")
 	}
 }

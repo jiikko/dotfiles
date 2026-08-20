@@ -9,153 +9,131 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 )
 
-// job パネル表示中は 3 秒間隔で状態を取り直す (経過時間のライブ監視。ユーザー要望)。
-// in-flight refresh 中にパネルを閉じても panelRefresh が stuck true にならず、以降の
-// パネルのライブ更新が止まらない (レビュー C2/C3/K1 の回帰)。
-func TestBrowsePanelRefreshLatchClearedOnClose(t *testing.T) {
+// pending なコミットは「どんな状況でも」追い続ける: パネルを閉じても、そもそも一度も開いて
+// いなくても、glogx が開いている間はポーリングが続く (追従条件は statuses だけが決める)。
+func TestCIPollFollowsPendingWithoutPanel(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StatePending
-	running := []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Now().Add(-time.Minute)}}
-	m.details[sha] = running
-	// パネルを開く (details キャッシュ済み → fetch 無し・running job なので poll 予約)
-	m.openPanel()
-	// poll 発火 → refresh 起動 (panelRefresh=true, refresh Cmd が in-flight)
-	if _, cmd := m.Update(panelPollMsg{seq: m.panelPollSeq}); cmd == nil || !m.panelRefresh {
-		t.Fatal("poll で refresh が起動しない")
+	// パネルを一度も開かずに追従チェーンが張れる
+	if cmd := m.ensureCIPoll(); cmd == nil || !m.ciPolling {
+		t.Fatal("pending なのにパネル無しで追従チェーンが張られない")
 	}
-	// refresh 完了前にパネルを閉じる → latch は必ず下りる
+	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd == nil || !m.ciPollInFlight {
+		t.Fatal("pending の周期で再取得が走らない")
+	}
+	// パネルを開いて閉じても追従は途切れない (旧実装はパネル依存で止まっていた)
+	m.ciPollInFlight = false
+	m.openPanel()
 	m.closePanel()
-	if m.panelRefresh {
-		t.Fatal("closePanel で panelRefresh が下りない (stuck-latch)")
-	}
-	// 遅延到着した旧 refresh の detailMsg (sha != panelSHA) は panelRefresh を触らない
-	m.Update(detailMsg{sha: sha, batch: CIBatch{Details: map[string][]CheckDetail{sha: running}}})
-	if m.panelRefresh {
-		t.Fatal("閉じた後の遅延 detailMsg で panelRefresh が復活した")
-	}
-	// 同じ (キャッシュ済み) コミットを開き直すと poll が実際に refresh を起動できる
-	m.openPanel()
-	if _, cmd := m.Update(panelPollMsg{seq: m.panelPollSeq}); cmd == nil || !m.panelRefresh {
-		t.Fatal("再オープン後の poll で refresh が起動しない (latch stuck の疑い)")
+	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd == nil || !m.ciPollInFlight {
+		t.Fatal("パネルを閉じたら追従が止まった (pending の間は続く契約)")
 	}
 }
 
-// 二重 timer 防止: refresh in-flight (panelRefresh=true) 中に到着した detailMsg は、実行中 job が
-// まだ居ても新しい poll を張らない (panelPollMsg 側が既に次を予約済み)。wasRefresh を panelRefresh
-// クリア前に捕捉する順序が「1 open 世代につきポーリング鎖 1 本」の核。n=1 で maybeFetchETABasis を
-// nil に隔離し、返り Cmd が poll 決定だけを反映するようにする。
-func TestBrowsePanelRefreshArrivalDoesNotDoubleSchedulePoll(t *testing.T) {
+// 追従結果 (ciPollResultMsg) の着地では、生きているチェーンに 2 本目を張らない (ポーリング倍化の防止)。
+// n=1 で maybeFetchETABasis を nil に隔離し、返り Cmd が poll 決定だけを反映するようにする。
+func TestCIPollResultDoesNotDoubleSchedule(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StatePending
-	running := []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Now().Add(-time.Minute)}}
-	m.details[sha] = running
-	m.openPanel() // running job 付き → poll 予約
-	if _, cmd := m.Update(panelPollMsg{seq: m.panelPollSeq}); cmd == nil || !m.panelRefresh {
-		t.Fatal("poll で refresh が起動しない")
+	if cmd := m.ensureCIPoll(); cmd == nil {
+		t.Fatal("前提: チェーンが張れない")
 	}
-	// refresh 結果 (detailMsg) が到着。wasRefresh=true なので新しい poll は張らない。n=1 で
-	// maybeFetchETABasis=nil のため、返り Cmd が nil であることが「poll を張っていない」の証跡。
-	_, cmd := m.Update(detailMsg{sha: sha, batch: CIBatch{Details: map[string][]CheckDetail{sha: running}}})
+	// pending のままの結果が着地。チェーンは生きているので新しい timer は張らない
+	_, cmd := m.Update(ciPollResultMsg{targets: []string{sha}, batch: CIBatch{Statuses: map[string]CIState{sha: StatePending}}})
 	if cmd != nil {
-		t.Error("refresh 着地で二重に poll を張った (wasRefresh のとき poll は張らない契約)")
+		t.Error("結果着地で二重に poll を張った (single-flight の契約)")
 	}
-	if m.panelRefresh {
-		t.Error("refresh 着地で panelRefresh が下りていない")
+	if m.ciPollInFlight {
+		t.Error("結果着地で in-flight が下りていない")
 	}
 }
 
-// 遅延 poll 開始: openPanel 時に details 未取得だった実行中コミットは、detailMsg 初到着
-// (wasRefresh=false) かつ実行中 job があるとき初めて poll を張る (openPanel 時点では details 未取得で
-// 判定できないため)。上のテストと対で「初回到着で張る／refresh 着地では張らない」を固定する。
-func TestBrowsePanelStartsPollOnFirstDetailArrival(t *testing.T) {
+// 追従は details の到着を待たない: openPanel 時点で details が未取得でも、statuses が pending なら
+// その場でチェーンが張られる (追従条件は statuses だけが決める)。details が後から届いても
+// single-flight で 2 本目は張らない。
+func TestCIPollStartsAtOpenPanelWithoutDetails(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StatePending
-	m.openPanel() // details 未取得 → poll はまだ張られない
+	m.openPanel()
 	if m.panelHasRunningJob() {
 		t.Fatal("前提: details 未取得なので running 判定は false のはず")
 	}
+	if !m.ciPolling {
+		t.Error("details 未取得の pending でチェーンが張られない (details 到着を待ってしまっている)")
+	}
 	running := []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Now().Add(-time.Minute)}}
-	_, cmd := m.Update(detailMsg{sha: sha, batch: CIBatch{Details: map[string][]CheckDetail{sha: running}}})
-	// n=1 で maybeFetchETABasis=nil。返り Cmd が非 nil なのは poll (schedulePanelPoll) が張られた証跡。
-	if cmd == nil {
-		t.Error("初回 detailMsg 到着で poll が張られない (openPanel 時は details 未取得で判定できないため遅延)")
+	// n=1 で maybeFetchETABasis=nil。details 到着で返る Cmd が nil = 2 本目を張っていない証跡。
+	if _, cmd := m.Update(detailMsg{sha: sha, batch: CIBatch{Details: map[string][]CheckDetail{sha: running}}}); cmd != nil {
+		t.Error("details 到着で 2 本目のチェーンを張った (single-flight の契約)")
 	}
 }
 
-// panelPollSeq 世代ガード (パネルが開いている状態): 開き直しで世代が進んだ後、旧世代の
-// panelPollMsg{seq:旧} は panelSHA が非空でも seq 不一致で破棄される (開き直しで残タイマーが
-// 二重ポーリングにならないための不変条件の直接検証)。
-func TestBrowsePanelPollSeqGuardDiscardsStaleGenerationWhileOpen(t *testing.T) {
-	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+// 世代ガード: リロード (ciPollGen が進む) 後に届いた旧世代の ciPollMsg は、追従対象があっても
+// 破棄される (リロードで対象そのものが入れ替わるため、旧タイマーが 2 本目のチェーンにならない)。
+// ⚠️ 追従対象 (pending) を残しておくのが要: 対象が無いと世代比較の後の「対象なしで停止」経路で
+// 先に return し、世代ガードを消しても PASS してしまう。
+func TestCIPollGenGuardDiscardsStaleGeneration(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StatePending)
-	// ⚠️ commit1 に実行中 job を持たせるのが要: これが無いと panelPollMsg ハンドラが seq 比較の
-	// 直後の `if !panelHasRunningJob()` で先に return し、seq ガードを踏まずにテストが通って
-	// しまう (seq ガードを削除しても PASS = 何も pin しない)。running job で panelHasRunningJob()==true
-	// にして初めて「seq 不一致だから破棄」経路を実際に検証できる。
-	running := []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Now().Add(-time.Minute)}}
-	m.openPanel() // commit0
-	oldSeq := m.panelPollSeq
-	m.closePanel()
-	m.cursor = 1
-	m.details[m.commits[1].SHA] = running
-	m.openPanel() // commit1: 世代が進む・panelSHA 非空・実行中 job あり
-	if m.panelPollSeq == oldSeq {
-		t.Fatal("前提: 開き直しで世代が進んでいない")
+	oldGen := m.ciPollGen
+	m.ciPollGen++ // reloadAfterPull 相当
+	if len(m.ciPollTargets()) == 0 {
+		t.Fatal("前提: 追従対象が無い (世代ガードに到達できずテストが無意味化する)")
 	}
-	if !m.panelHasRunningJob() {
-		t.Fatal("前提: commit1 に実行中 job がない (seq ガードに到達できずテストが無意味化する)")
+	if _, cmd := m.Update(ciPollMsg{gen: oldGen}); cmd != nil {
+		t.Error("旧世代の ciPollMsg が破棄されず新しい poll を発行した (二重ポーリングの温床)")
 	}
-	// 旧世代の panelPollMsg: 実行中 job があっても seq 不一致で破棄される (cmd==nil)。
-	if _, cmd := m.Update(panelPollMsg{seq: oldSeq}); cmd != nil {
-		t.Error("旧世代の panelPollMsg が破棄されず新しい poll を発行した (二重ポーリングの温床)")
+	if m.ciPollInFlight {
+		t.Error("旧世代の ciPollMsg で再取得が走った")
 	}
 }
 
-func TestBrowsePanelPolling(t *testing.T) {
+func TestBrowseCIPolling(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StatePending
 	running := []CheckDetail{{Name: "build", State: StatePending, StartedAt: time.Now().Add(-time.Minute)}}
 	m.details[sha] = running
-	// 実行中 job があるパネルを開く → ポーリング timer が仕掛かる
+	// pending のコミットがあるパネルを開く → ポーリング timer が仕掛かる
 	if cmd := m.openPanel(); cmd == nil {
-		t.Fatal("実行中 job ありでポーリング timer が仕掛からない")
+		t.Fatal("pending ありでポーリング timer が仕掛からない")
 	}
-	seq := m.panelPollSeq
-	// 世代一致の poll → リフレッシュ (panelRefresh) + 次回予約
-	_, cmd := m.Update(panelPollMsg{seq: seq})
-	if cmd == nil || !m.panelRefresh {
-		t.Fatalf("poll でリフレッシュが走らない: cmd=%v refresh=%v", cmd != nil, m.panelRefresh)
+	// 周期発火 → 再取得 (in-flight) + 次回予約
+	_, cmd := m.Update(ciPollMsg{gen: m.ciPollGen})
+	if cmd == nil || !m.ciPollInFlight {
+		t.Fatalf("poll で再取得が走らない: cmd=%v inFlight=%v", cmd != nil, m.ciPollInFlight)
 	}
-	// リフレッシュ中の poll は fetch を重ねない (timer 予約のみ = panelRefresh のまま)
-	m.Update(panelPollMsg{seq: seq})
-	if !m.panelRefresh {
-		t.Fatal("リフレッシュ中の poll で状態が壊れた")
+	// in-flight 中の poll は fetch を重ねない (timer 予約のみ)
+	m.Update(ciPollMsg{gen: m.ciPollGen})
+	if !m.ciPollInFlight {
+		t.Fatal("in-flight 中の poll で状態が壊れた")
 	}
-	// リフレッシュ結果の到着: panelRefresh が解除され、job 縮小でカーソルがクランプされる
+	// 結果の到着: in-flight が解除され、job 縮小でカーソルがクランプされる
 	m.panelCursor = 0
-	m.Update(detailMsg{sha: sha, batch: CIBatch{Details: map[string][]CheckDetail{sha: {}}}})
-	if m.panelRefresh {
-		t.Fatal("detailMsg で panelRefresh が解除されない")
+	m.Update(ciPollResultMsg{targets: []string{sha}, batch: CIBatch{
+		Statuses: map[string]CIState{sha: StatePending},
+		Details:  map[string][]CheckDetail{sha: {}},
+	}})
+	if m.ciPollInFlight {
+		t.Fatal("ciPollResultMsg で in-flight が解除されない")
 	}
 	if m.panelCursor != -1 {
 		t.Fatalf("job 0 件への縮小でカーソルがクランプされない: %d", m.panelCursor)
 	}
-	// 全 job 完了 (実行中なし) の poll はポーリングを止める
-	m.details[sha] = []CheckDetail{{Name: "build", State: StateSuccess}}
-	if _, cmd := m.Update(panelPollMsg{seq: m.panelPollSeq}); cmd != nil {
-		t.Fatal("全 job 完了後も poll が続く")
+	// 決着 (success) の poll はポーリングを止める
+	m.statuses[sha] = StateSuccess
+	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd != nil {
+		t.Fatal("CI 決着後も poll が続く")
 	}
-	// パネルを閉じた後の残タイマー (旧世代) は無視される
-	m.details[sha] = running
-	m.closePanel()
-	if _, cmd := m.Update(panelPollMsg{seq: seq}); cmd != nil {
-		t.Fatal("閉じた後の残タイマーが有効になっている")
+	if m.ciPolling {
+		t.Fatal("決着後もチェーンが生きたままになっている")
 	}
 }
 
@@ -1049,62 +1027,65 @@ func TestBrowsePanelHomeKeyOnEmptyJobs(t *testing.T) {
 	}
 }
 
-// 猶予ポーリング: 実行中 job がまだ見えなくても panelPollGrace の残回数だけリフレッシュを続け、
-// 実行中 job が見えたら猶予を終えて通常追従へ、尽きたら止まる。
-func TestPanelPollGrace(t *testing.T) {
+// 猶予ポーリング: rerun 直後は状態がまだ pending に映らないので、panelGrace の残回数だけ
+// パネル SHA を追従対象に留め、尽きたら止まる。pending が映れば通常追従へ引き継がれる。
+func TestCIPollRerunGrace(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.statuses = statusesFor(m, StateFailure)
-	withFailedJob(m, 0, 7, StateFailure) // 実行中 job なし
+	sha := m.commits[0].SHA
+	m.statuses = statusesFor(m, StateFailure) // pending でない = 通常は追従対象外
+	withFailedJob(m, 0, 7, StateFailure)
 	m.openPanel()
-	m.panelPollGrace = 2
-	if _, cmd := m.Update(panelPollMsg{seq: m.panelPollSeq}); cmd == nil {
+	m.panelGrace = 2
+	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd == nil {
 		t.Fatal("猶予中なのにポーリングが止まった")
 	}
-	if m.panelPollGrace != 1 || !m.panelRefresh {
-		t.Fatalf("猶予が減らない / リフレッシュが走らない: grace=%d refresh=%v", m.panelPollGrace, m.panelRefresh)
+	if m.panelGrace != 1 || !m.ciPollInFlight {
+		t.Fatalf("猶予が減らない / 再取得が走らない: grace=%d inFlight=%v", m.panelGrace, m.ciPollInFlight)
 	}
-	// 実行中 job が見えたら猶予は 0 に戻り、通常の追従が続く
-	m.panelRefresh = false
-	m.details[m.commits[0].SHA] = []CheckDetail{
-		{Name: "lint", State: StatePending, CheckID: 7, StartedAt: timeNow()},
-	}
-	if _, cmd := m.Update(panelPollMsg{seq: m.panelPollSeq}); cmd == nil {
-		t.Fatal("実行中 job があるのにポーリングが止まった")
-	}
-	if m.panelPollGrace != 0 {
-		t.Fatalf("実行中 job が見えても猶予が残っている: %d", m.panelPollGrace)
-	}
-	// 猶予 0 + 実行中 job なしで停止
-	m.panelRefresh = false
-	withFailedJob(m, 0, 7, StateFailure)
-	if _, cmd := m.Update(panelPollMsg{seq: m.panelPollSeq}); cmd != nil {
+	// 猶予が尽きたら (pending も見えないままなら) 停止する
+	m.ciPollInFlight, m.panelGrace = false, 0
+	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd != nil {
 		t.Fatal("猶予が尽きたのにポーリングが続いた")
 	}
-	// closePanel で猶予も破棄される
-	m.panelPollGrace = 5
+	// rerun が GraphQL に映った (pending) 後は猶予に依らず追従が続く
+	m.statuses[sha] = StatePending
+	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd == nil || !m.ciPollInFlight {
+		t.Fatal("pending が見えたのに追従されない")
+	}
+	// closePanel で猶予は破棄される (パネル SHA を狙う猶予なので)
+	m.panelGrace = 5
 	m.closePanel()
-	if m.panelPollGrace != 0 {
-		t.Fatal("closePanel で猶予ポーリングが破棄されない")
+	if m.panelGrace != 0 {
+		t.Fatal("closePanel で猶予が破棄されない")
 	}
 }
 
-// 回帰 (レビュー確定 medium): panelPollMsg の自己更新チェーンは single-flight。開始点が複数
-// (openPanel / detailMsg / rerunMsg) あっても二重チェーンを張らない (GraphQL ポーリング倍化の防止)。
-func TestEnsurePanelPollSingleFlight(t *testing.T) {
+// 回帰 (レビュー確定 medium): ciPollMsg の自己更新チェーンは single-flight。開始点が複数
+// (起動時の ciResultMsg / detailMsg / refetchAfterPush / rerunMsg / openPanel) あっても
+// 二重チェーンを張らない (GraphQL ポーリング倍化の防止)。追従対象が無いときは張らない。
+func TestEnsureCIPollSingleFlight(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.panelSHA = m.commits[0].SHA
-	if cmd := m.ensurePanelPoll(); cmd == nil || !m.panelPolling {
-		t.Fatal("初回 ensurePanelPoll がチェーンを張らない")
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StateSuccess
+	if cmd := m.ensureCIPoll(); cmd != nil || m.ciPolling {
+		t.Fatal("追従対象が無いのにチェーンを張った")
 	}
-	if cmd := m.ensurePanelPoll(); cmd != nil {
+	m.statuses[sha] = StatePending
+	if cmd := m.ensureCIPoll(); cmd == nil || !m.ciPolling {
+		t.Fatal("初回 ensureCIPoll がチェーンを張らない")
+	}
+	if cmd := m.ensureCIPoll(); cmd != nil {
 		t.Fatal("チェーンが生きているのに 2 本目を張った (二重化)")
 	}
-	m.closePanel()
-	if m.panelPolling {
-		t.Fatal("closePanel で panelPolling が戻らない")
+	// 決着でチェーンが止まった後は再アームできる
+	m.statuses[sha] = StateSuccess
+	m.Update(ciPollMsg{gen: m.ciPollGen})
+	if m.ciPolling {
+		t.Fatal("決着後もチェーンが生きている")
 	}
-	if cmd := m.ensurePanelPoll(); cmd == nil {
-		t.Fatal("closePanel 後に再アームできない")
+	m.statuses[sha] = StatePending
+	if cmd := m.ensureCIPoll(); cmd == nil {
+		t.Fatal("停止後に再アームできない")
 	}
 }
 
@@ -1117,15 +1098,16 @@ func TestBrowseRerunNoDoublePoll(t *testing.T) {
 		{Name: "test", State: StatePending, CheckID: 1, StartedAt: timeNow()},
 		{Name: "lint", State: StateFailure, CheckID: 7},
 	}
-	m.openPanel() // 実行中 job あり → chain #1 が張られる
-	if !m.panelPolling {
-		t.Fatal("実行中 job で openPanel がチェーンを張らない")
+	m.statuses[m.commits[0].SHA] = StatePending // 実行中 = 追従対象
+	m.openPanel()                               // chain #1 が張られる
+	if !m.ciPolling {
+		t.Fatal("pending で openPanel がチェーンを張らない")
 	}
 	m.Update(rerunMsg{sha: m.commits[0].SHA}) // rerun 成功
-	if !m.panelPolling {
-		t.Fatal("rerun 後に panelPolling が落ちた")
+	if !m.ciPolling {
+		t.Fatal("rerun 後に ciPolling が落ちた")
 	}
-	if m.ensurePanelPoll() != nil {
+	if m.ensureCIPoll() != nil {
 		t.Fatal("rerun 後もチェーンは 1 本のはず (二重化した)")
 	}
 }
@@ -1220,5 +1202,89 @@ func TestBrowseEditorExitErrorStillReloads(t *testing.T) {
 	}
 	if !strings.Contains(m2.toast.text, "開けませんでした") {
 		t.Errorf("起動失敗の通知が出ない: %q", m2.toast.text)
+	}
+}
+
+// 並行取得ガード: in-flight 中 / 一括取得中の周期発火は timer だけ繋いで fetch を重ねない
+// (同一 SHA への GraphQL 並行は完了順で statuses/details が上書きされるため)。
+func TestCIPollSkipsFetchWhileBusy(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StatePending
+	calls := 0
+	orig := ciPollFetch
+	ciPollFetch = func(Repo, []string, func(CIBatch, *GHError) tea.Msg) tea.Cmd {
+		calls++
+		return nil
+	}
+	t.Cleanup(func() { ciPollFetch = orig })
+
+	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd == nil {
+		t.Fatal("周期発火で timer が繋がらない")
+	}
+	if calls != 1 {
+		t.Fatalf("1 回目で fetch が走らない: calls=%d", calls)
+	}
+	// in-flight のまま次の周期が来ても fetch は増えない
+	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd == nil {
+		t.Fatal("in-flight 中に timer が切れた (追従が止まる)")
+	}
+	if calls != 1 {
+		t.Fatalf("in-flight 中に fetch を重ねた: calls=%d", calls)
+	}
+	// 一括取得 (fetching) 中も重ねない
+	m.ciPollInFlight, m.fetching = false, true
+	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd == nil {
+		t.Fatal("一括取得中に timer が切れた")
+	}
+	if calls != 1 {
+		t.Fatalf("一括取得と fetch を重ねた: calls=%d", calls)
+	}
+}
+
+// CI が 1 つも現れない (workflow を持たない repo で push した) ケースは ciAwaitMaxAttempts で
+// 諦める。諦めた後は追従対象が無くなるのでチェーンも止まる (永久ポーリングしない)。
+func TestCIPollAwaitCapGivesUp(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.awaitCI = map[string]bool{sha: true}
+	none := CIBatch{Statuses: map[string]CIState{sha: StateNone}}
+	orig := ciPollFetch
+	ciPollFetch = func(Repo, []string, func(CIBatch, *GHError) tea.Msg) tea.Cmd { return nil }
+	t.Cleanup(func() { ciPollFetch = orig })
+
+	// 打ち切りは周期 (ciPollMsg) で数える = ciPollInterval × ciAwaitMaxAttempts の時間予算。
+	// 結果着弾では数えない (一括取得が複数チャンクに割れた回で余分に進まないこと)。
+	m.Update(ciPollResultMsg{targets: []string{sha}, batch: none})
+	if m.awaitAttempts != 0 {
+		t.Fatalf("結果着弾で試行回数が進んだ: %d", m.awaitAttempts)
+	}
+	for i := range ciAwaitMaxAttempts - 1 {
+		m.Update(ciPollMsg{gen: m.ciPollGen})
+		m.ciPollInFlight = false // 結果が着弾した相当 (CI はまだ現れない)
+		m.Update(ciPollResultMsg{targets: []string{sha}, batch: none})
+		if !m.awaitCI[sha] {
+			t.Fatalf("%d 周期目で諦めた (上限は %d)", i+1, ciAwaitMaxAttempts)
+		}
+	}
+	m.Update(ciPollMsg{gen: m.ciPollGen})
+	if len(m.awaitCI) != 0 {
+		t.Fatalf("上限に達しても諦めない: awaitCI=%v attempts=%d", m.awaitCI, m.awaitAttempts)
+	}
+	if len(m.ciPollTargets()) != 0 {
+		t.Fatal("諦めた後も追従対象が残っている (永久ポーリング)")
+	}
+}
+
+// 起動時にキャッシュ済みの pending がある (= 初回 fetch が走らない) ケースでも追従を始める。
+// ciResultMsg 起点の開始点をどれも踏まないため、Init 自身が張らないと「pending なのに追わない」
+// 状態になる (pending の cache TTL 内に再起動した場合に踏む)。
+func TestCIPollArmedAtInitFromCachedPending(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses[m.commits[0].SHA] = StatePending
+	m.fetching = false // キャッシュヒットで取得なし
+	m.Init()
+	if !m.ciPolling {
+		t.Error("キャッシュ済み pending で起動したのに追従チェーンが張られない")
 	}
 }

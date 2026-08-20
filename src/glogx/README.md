@@ -49,9 +49,12 @@ Date:   Thu Jul 16 14:03:21 2026 +0900
   静的な最終結果を 1 回だけ出力する (`glogx --no-pager -n 50 | grep '✗'` が機能する)
 - **write 操作 (glog に無い独自機能)**: `s` で status viewer (未コミットの変更を一覧して
   stage / unstage / 変更を捨てる)、`b` で push (y/N 確認)、`u` で pull --rebase
-  (conflict は自動 abort で元に戻す。未コミット変更があるときは案内して中止)。push/pull 後は
-  実行中の CI をポーリングして結果を反映する。job パネル / job 詳細の `r` で失敗 job を
-  再実行 (y/N 確認。`gh run rerun --job`。反映されるまでパネルをポーリングして追従)
+  (conflict は自動 abort で元に戻す。未コミット変更があるときは案内して中止)。job パネル /
+  job 詳細の `r` で失敗 job を再実行 (y/N 確認。`gh run rerun --job`)
+- **実行中の CI を追う**: 一覧に **pending (queued / in_progress) のコミットが 1 つでもあれば
+  3 秒周期で状態を取り直す**。パネルを開いているか・push からどれだけ経ったかは問わず、
+  決着 (success / failure / neutral) するまで追い、決着したら止まる。push 直後に CI がまだ
+  1 つも現れないケースだけは 2 分で打ち切る (workflow を持たない repo で回り続けないため)
 - **Claude Code 連携**: `U` で `/usage` の残量を右上モーダルに表示 (codex CLI があれば
   その残量も区切り罫線付きで併記。表示中は 1 分ごとに自動更新。
   非表示のあいだは更新を止め、再表示時に古ければ取り直す)、`C` で `claude update` を実行
