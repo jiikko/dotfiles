@@ -1,6 +1,6 @@
 ---
 name: audit
-version: 1.1.0
+version: 1.2.0
 description: プロジェクト監査。「監査して」「audit」「/audit」で発火。設計/UX/品質/テストなどの観点でコードベース全体を監査し、課題をissuesディレクトリに書き出す。実行ログで重複実行を防止。特定の差分・コミットのレビューには使わない（codex-review / cross-review を使う）。
 disable-model-invocation: true
 ---
@@ -37,6 +37,7 @@ disable-model-invocation: true
 | responsibility | 設計 | 責務集中 | 責務が集中しているクラス/モジュールを探す（行数でなく多角的に判定）|
 | duplication | 設計 | コード重複 | コピペされたロジック、抽出すべき類似実装を探す |
 | polymorphism | 設計 | ポリモーフィズム置換 | 条件分岐（if/switch）をポリモーフィズムで置き換えられる箇所を探す |
+| leaky-abstraction | 設計 | 抽象境界の具象漏れ | 抽象（protocol/基底クラス/レイヤー境界）に具象の知識が漏れている箇所を探す |
 | ui-components | 設計 | UIコンポーネント共通化 | 共通化できるビュー・UIパターンを探す |
 | ux | UX | UX改善 | UX的に劣っている箇所を探す |
 | security | 品質 | セキュリティ | ハードコードされた秘密情報、インジェクション脆弱性、安全でない依存関係などOWASP観点の問題を探す |
@@ -57,7 +58,7 @@ disable-model-invocation: true
 AskUserQuestion は最大4選択肢のため、カテゴリ別に2段階で選択させてください。
 
 **1問目**: カテゴリを選択（multiSelect: true）
-- 設計 (design, responsibility, duplication, polymorphism, ui-components)
+- 設計 (design, responsibility, duplication, polymorphism, leaky-abstraction, ui-components)
 - 品質 (security, resource-leaks, broken-code, dead-code, error-handling, performance)
 - テスト (test-cleanup, test-helpers)
 - その他 (ux, dependency, issues-done, lint-from-done, general)
@@ -98,6 +99,7 @@ AskUserQuestion は最大4選択肢のため、カテゴリ別に2段階で選�
 - **duplication**: `[モード名]モードで実行して。コピペされたロジックや類似実装を探して、共通化すべき箇所をissuesディレクトリに書き出して`
 - **polymorphism**: `[モード名]モードで実行して。条件分岐（if/else チェーンや switch 文）でタイプや種別に応じた振り分けをしている箇所を探し、ポリモーフィズム（プロトコル/インターフェース/サブクラス）で置き換え可能な候補をissuesディレクトリに書き出して。特に同じ条件が複数箇所に散在しているケースを優先して`
 - **ui-components**: `[モード名]モードで実行して。UIコンポーネント（モーダル、リスト、ボタン、フォーム等）の中で共通化・抽出できるビューパターンを探してissuesディレクトリに書き出して`
+- **leaky-abstraction**: `[モード名]モードで実行して。抽象（protocol / 基底クラス / レイヤー境界）に具象の知識が漏れている箇所を探してissuesディレクトリに書き出して。発見は L1 依存方向の漏れ / L2 語彙の漏れ / L3 識別子分岐 / L4 capability の嘘 / L5 暗黙契約 / L6 痩せすぎ抽象 / L7 投機的抽象 のどれかに必ず分類し、分類できない印象論は報告しないこと。lint・型・exhaustive switch が既に機械的に止めている違反は「発見」に数えない。各件に発火条件と「silent に壊れるか compile error で止まるか」を必ず書き、意図的設計の証拠（rules / コメント / 既存 issue / test）を一度探して反証を試みてから報告して`
 - **ux**: `[モード名]モードで実行して。UX的に劣っている箇所を探してissuesディレクトリに書き出して`
 - **security**: `[モード名]モードで実行して。ハードコードされた秘密情報、インジェクション脆弱性、安全でない依存関係などセキュリティ上の問題を探してissuesディレクトリに書き出して`
 - **resource-leaks**: `[モード名]モードで実行して。リソースリークしている可能性の高いコードを探してissuesディレクトリに書き出して`
@@ -123,6 +125,17 @@ Explore エージェントでコードベースを調査し、発見事項を is
 - **design**: アーキテクチャ全体を俯瞰し、密結合・循環依存・レイヤー違反・拡張困難な箇所を探す
 - **polymorphism**: 条件分岐（if/else チェーン・switch/case）でタイプや種別ごとに処理を分けている箇所を探し、ポリモーフィズム（プロトコル準拠・サブクラス・ストラテジーパターン等）で置き換え可能な候補を特定する。特に、同じ条件が複数箇所に散在しているケースを優先する
 - **ui-components**: モーダル・リスト・ボタン・フォーム等のUIパターンを横断的に比較し、共通コンポーネントとして抽出できる類似実装を探す
+- **leaky-abstraction**: 抽象に具象が漏れている箇所を探す。**発見は必ず下記 7 型のどれかに分類し、分類できないものは報告しない**（型を明示しないと「なんとなく複雑」の印象論に流れる）
+  - **L1 依存方向の漏れ**: 抽象側の module/target が具象 SDK・framework・永続化層を import している。import 文を全部列挙して洗う
+  - **L2 語彙の漏れ**: protocol の method 名 / 引数名 / 戻り型 / エラー型に特定実装の語彙が出ている（bucket, uploadId, statusCode, Database, SDK の DTO 等）。signature だけを読み「実装を知らない人が意味を取れるか」で判定する
+  - **L3 識別子分岐**: `kind == .<具象>` / `is XxxImpl` / `as? XxxConcrete` で**振る舞い**を出し分けている。表示の出し分けは対象外（下記）
+  - **L4 capability の嘘**: capability flag / optional protocol 適合の宣言と実態のズレ。(a) 宣言 true だが実装が満たさない (b) 宣言はあるが caller が誰も見ていない (c) caller が適合チェックせず全実装にその能力を仮定している。**compile error にならず silent に壊れるため最優先**
+  - **L5 暗黙契約**: 一部の実装だけが満たす前提（順序・冪等性・戻り値の identity・エラー種別・null の意味・上限）を契約に書かず caller が当てにしている。「実装 A では成り立つが実装 B では成り立たない」を実際の 2 実装で示す
+  - **L6 痩せすぎ抽象**: 抽象が足りず caller 側が具象知識を再実装している（呼び出し側での正規化・retry・pagination・エラー分類）。L2 の逆方向
+  - **L7 投機的抽象**: 実装が 1 つしかない / 全実装が同一挙動の抽象。間接層を足しただけで何も分離していない（削除候補）。ただしテスト seam・依存方向を切るための 1 実装 protocol は除外する
+  - **各件に必須**: 該当（`file:symbol`。行番号で pin しない）/ 発火条件（新実装を追加したときを含む）/ **silent に壊れるか compile error で止まるか** / 反証の試み（rules・コメント・既存 issue・test に「意図的」と書かれていないか探した結果）/ 最小の修正方向
+  - **偽陽性として報告しない**: lint・型・exhaustive switch が既に止めている違反（壊せば CI が落ちるものは発見ではない）/ 具象 case ごとの表示名・フォームを `default` なし switch で列挙するもの（新 case で compile error になり追従が強制されるので**正当**。違反は `==` で振る舞いを分ける方だけ）/ 行数やメソッド数の多さ / 薄い委譲 / 理由コメントがあり今も成立している例外
+  - 0 件なら 0 件と報告し、「攻めたが見つからなかった範囲」を残す（次の監査の起点になる）
 - **ux**: ユーザー操作フロー・エラーメッセージ・レスポンス速度・一貫性の観点で劣っている箇所を探す
 - **issues-done**: 未完了の issue ファイルを読み、実装済みかどうかをコードベースと照合し、完了済みなら issues/done へ移動する
 - **resource-leaks**: ファイルハンドル・DB接続・イベントリスナー・タイマーなど、解放漏れの可能性がある箇所を探す
