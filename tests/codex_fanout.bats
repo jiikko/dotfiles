@@ -133,14 +133,21 @@ EOS
   [ ! -e "$WORK/out4/a.rc" ]
 }
 
+# ⚠️ status だけを見ないこと: die() はどの起動前検証でも 1 を返すので、「mode を見なくなった」
+# 「重複検出を消した」という退行でも別の理由で 1 になり、テストは緑のまま通る (2026-08-21 の
+# テスト監査 issue 072)。落ちた理由をメッセージで固定する。
 @test "mode 不正と label 重複は manifest エラー" {
   printf 'a\twrite\tm1\thigh\t%s\n' "$WORK/brief_ok.md" >"$WORK/m.tsv"
   run "$DRIVER" -M "$WORK/m.tsv" "$WORK/out5"
   [ "$status" -eq 1 ]
+  [[ "$output" == *"mode は ro|review"* ]]
   printf 'a\tro\tm1\thigh\t%s\na\tro\tm1\thigh\t%s\n' \
     "$WORK/brief_ok.md" "$WORK/brief_ok.md" >"$WORK/m2.tsv"
   run "$DRIVER" -M "$WORK/m2.tsv" "$WORK/out5b"
   [ "$status" -eq 1 ]
+  [[ "$output" == *"label が重複している"* ]]
+  # 起動前に落ちる = 1 本も codex を起こしていない (部分起動を作らない契約)
+  [ ! -e "$WORK/out5/a.rc" ] && [ ! -e "$WORK/out5b/a.rc" ]
 }
 
 @test "CRLF manifest: 末尾 \\r を剥がして正常に走る" {
