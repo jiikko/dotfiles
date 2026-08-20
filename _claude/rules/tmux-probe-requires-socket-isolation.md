@@ -41,7 +41,7 @@ tmux kill-server 2>/dev/null; rm -rf $TMUX_TMPDIR
 - hook が強制するのは上記パターンだけ。**隔離の実証・依頼外の破壊的操作を足さない・`2>/dev/null` 禁止は hook では強制できない**ため、本 md が正本のまま残る（[`comment-no-restate-enforced.md`](comment-no-restate-enforced.md) の区分）
 - hook は Bash ツールのコマンド文字列を静的検査するため、**引用符に入っていない散文**に「tmux → kill-server/kill-session」の並びや「pkill と tmux の同居」があると偽陽性 deny になる。[`no-comment-line-starting-with-shellcheck.md`](no-comment-line-starting-with-shellcheck.md) と同族の罠
   - 実測 2026-08-21（issue 069 でトークン走査へ作り替えた後）: **引用符で囲んだ文字列**（`echo "tmux の kill-server を deny"` / `cases=("tmux kill-server" ...)`）と**コメント**（行頭 `#` / 行内 ` #`）は検査対象から外れて **通る**。deny になるのは引用符に入っていない散文だけ
-  - 実務で踏むのはほぼ **heredoc 本文**。`git commit -F - <<'"'"'EOF'"'"'` のコミットメッセージ本文は引用符に入らないので、説明文がそのまま検査対象になる（このルール自体の commit で踏んだ）
+  - 実務で踏むのはほぼ **heredoc 本文**。`git commit -F -` の heredoc のコミットメッセージ本文は引用符に入らないので、説明文がそのまま検査対象になる（このルール自体の commit で踏んだ）
   - 回避の優先順: ①引用符で囲む ②言い換える（「ソケット未指定の kill-server」等、小文字 `tmux` を同じ行に置かない）③パターン自体を書く必要がある場面（テストケース・攻撃ハーネス）では**シェル変数でトークンを分割して組む**（`K="kill-ser""ver"` として `"tmux $K"` を作る）。`tests/claude/test_deny_bare_tmux_kill.sh` は①で足りているため分割していない
 
 ## やること / やらないこと
