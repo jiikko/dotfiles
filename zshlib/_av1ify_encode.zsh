@@ -200,6 +200,35 @@ __av1ify_decide_denoise() {
   print -P -- "%F{cyan}>> ノイズ除去: $1 (${__AV1IFY_R_DENOISE_VF})%f"
 }
 
+# 内部補助: 色空間タグ (colorspace/color_primaries/color_trc) の上書き要否を判定する
+# 背景: h264_nvenc 等の一部エンコーダは、実体が yuv420p (4:2:0) であるにもかかわらず
+# matrix_coefficient=0 (Identity, ffprobe 表記では "gbr") を誤って埋め込むことがある。
+# SVT-AV1 は "Identity matrix may be used only with 4:4:4 color format" として
+# このタグを検出するとエンコーダ初期化自体を拒否するため、auto モードでは
+# このケースのみ bt709 (最も一般的な HD 用色空間) へ補正する。
+# 引数: $1 = mode (auto/bt709/off), $2 = in
+# 出力: REPLY = 上書き先タグ (例: "bt709")。上書き不要なら空文字列
+__av1ify_decide_color_tags() {
+  local mode="$1" in="$2"
+  REPLY=""
+  [[ "$mode" == "off" ]] && return 0
+
+  if [[ "$mode" == "bt709" ]]; then
+    REPLY="bt709"
+    print -P -- "%F{cyan}>> 色空間: bt709 へ強制上書き (--color-tags bt709)%f"
+    return 0
+  fi
+
+  # auto: ソースの matrix_coefficient を調べ、Identity (gbr) のときだけ補正する
+  local src_matrix
+  src_matrix=$(__ff_stream_field "$in" v:0 stream=color_space)
+  if [[ "${src_matrix:l}" == "gbr" ]]; then
+    REPLY="bt709"
+    print -P -- "%F{yellow}>> 色空間: ソースの matrix_coefficient が Identity (gbr) のため bt709 へ補正 (出力は yuv420p のため Identity は不正)%f"
+  fi
+  return 0
+}
+
 # 内部補助: 出力解像度に応じた CRF を自動選択 (AV1_CRF 環境変数があれば優先)
 # 引数: $1 = target_height (空可), $2 = source_short_side (空可), $3 = in (ffprobe フォールバック)
 # 出力: REPLY = crf 値
@@ -441,9 +470,10 @@ __av1ify_one() {
     local res_plan="${validated_resolution:-auto}"
     local fps_plan="${validated_fps:-auto}"
     local denoise_plan="${validated_denoise:-off}"
+    local color_tags_plan="${__AV1IFY_COLOR_TAGS:-auto}"
     print -r -- "[DRY-RUN] 変換予定: $in"
     print -r -- "[DRY-RUN] 出力候補: $out (音声/解像度は実行時判定: ファイル未参照)"
-    print -r -- "[DRY-RUN] 映像: libsvtav1 (crf=${crf_plan}, preset=${preset_plan}, resolution=${res_plan}, fps=${fps_plan}, denoise=${denoise_plan})"
+    print -r -- "[DRY-RUN] 映像: libsvtav1 (crf=${crf_plan}, preset=${preset_plan}, resolution=${res_plan}, fps=${fps_plan}, denoise=${denoise_plan}, color-tags=${color_tags_plan})"
     if (( __AV1IFY_COMPACT )); then
       print -r -- "[DRY-RUN] 音声: compact (130kbps超はaac 96kへ再エンコード)"
     else
@@ -627,6 +657,10 @@ __av1ify_one() {
     vf_option=$(IFS=','; echo "${vf_parts[*]}")
   fi
 
+  # 色空間タグの上書き要否判定 (--color-tags / AV1_COLOR_TAGS)
+  __av1ify_decide_color_tags "${__AV1IFY_COLOR_TAGS:-auto}" "$in"
+  local color_tag_override="$REPLY"
+
   # ffmpeg 共通引数
   local -a args_common args_audio
   args_common=(
@@ -640,6 +674,9 @@ __av1ify_one() {
   fi
   if [[ -n "$target_fps" ]]; then
     args_common+=(-r "$target_fps")
+  fi
+  if [[ -n "$color_tag_override" ]]; then
+    args_common+=(-colorspace "$color_tag_override" -color_primaries "$color_tag_override" -color_trc "$color_tag_override")
   fi
   args_common+=(
     -movflags +faststart -tag:v av01

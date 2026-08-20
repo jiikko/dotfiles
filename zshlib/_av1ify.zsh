@@ -16,6 +16,7 @@ typeset -gi __AV1IFY_DRY_RUN=0
 typeset -g  __AV1IFY_RESOLUTION=""
 typeset -g  __AV1IFY_FPS=""
 typeset -g  __AV1IFY_DENOISE=""
+typeset -g  __AV1IFY_COLOR_TAGS=""
 typeset -gi __AV1IFY_COMPACT=0
 typeset -gi __AV1IFY_FORCE=0
 typeset -gi __AV1IFY_DELETE_ORIGIN=0
@@ -235,6 +236,7 @@ av1ify() {
   local opt_resolution=""
   local opt_fps=""
   local opt_denoise=""
+  local opt_color_tags=""
   local opt_compact=0
   local opt_force=0
   local opt_delete_origin=0
@@ -284,6 +286,14 @@ av1ify() {
         fi
         opt_denoise="$1"
         ;;
+      --color-tags)
+        shift
+        if (( $# == 0 )); then
+          print -r -- "エラー: --color-tags には値が必要です" >&2
+          return 1
+        fi
+        opt_color_tags="$1"
+        ;;
       -f)
         # -f は他のオプションと同様に位置非依存でパースする（引数のどの位置でも指定可）。
         shift
@@ -322,6 +332,10 @@ av1ify() {
     __AV1IFY_RESOLUTION="${opt_resolution:-${AV1_RESOLUTION:-}}"
     __AV1IFY_FPS="${opt_fps:-${AV1_FPS:-}}"
     __AV1IFY_DENOISE="${opt_denoise:-${AV1_DENOISE:-}}"
+    # デフォルト "auto": h264_nvenc 等が誤って埋め込む matrix_coefficient=0 (Identity) +
+    # yuv420p の組み合わせ (SVT-AV1 が拒否する不正タグ) を検出時のみ bt709 に補正する。
+    # 常に上書きしたくない/一切触りたくない場合は bt709/off を明示指定する。
+    __AV1IFY_COLOR_TAGS="${opt_color_tags:-${AV1_COLOR_TAGS:-auto}}"
     __AV1IFY_COMPACT=$opt_compact
     __AV1IFY_FORCE=$opt_force
     __AV1IFY_DELETE_ORIGIN=$opt_delete_origin
@@ -360,6 +374,15 @@ av1ify() {
         return 1
       fi
     fi
+    case "${__AV1IFY_COLOR_TAGS:l}" in
+      auto|bt709|off)
+        __AV1IFY_COLOR_TAGS="${__AV1IFY_COLOR_TAGS:l}"
+        ;;
+      *)
+        print -r -- "エラー: 無効なcolor-tags指定: ${__AV1IFY_COLOR_TAGS}（auto/bt709/off から選択してください）" >&2
+        return 1
+        ;;
+    esac
   fi
 
   if (( ! __av1ify_internal )) && (( ! show_help )) && (( have_targets )); then
@@ -422,6 +445,9 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
     # 720p + ノイズ除去の組み合わせ
     av1ify -r 720p --denoise light "/path/to/movie.mp4"
 
+    # ソースの色空間タグ (matrix_coefficient) を常に bt709 へ強制上書き
+    av1ify --color-tags bt709 "/path/to/movie.mp4"
+
     # 保存用プリセット（720p + 30fps）
     av1ify --compact "/path/to/movie.mp4"
 
@@ -441,6 +467,13 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
       light: 軽度（hqdn3d=2:2:3:3）
       medium: 中程度（hqdn3d=4:4:6:6）
       strong: 強め（hqdn3d=6:6:9:9）
+  --color-tags <値>: 出力の色空間タグ (colorspace/color_primaries/color_trc) の扱いを指定します。
+      auto (デフォルト): ソースの matrix_coefficient が Identity (gbr) の場合のみ bt709 に補正します。
+        (h264_nvenc 等が yuv420p と非互換な Identity タグを埋め込むケースで、
+         SVT-AV1 が "Identity matrix may be used only with 4:4:4" エラーで
+         エンコード自体を拒否するのを防ぐための自動補正です)
+      bt709: ソースの値によらず常に bt709 へ上書きします。
+      off: 一切上書きしません（ソースのタグをそのままコピー）。
   --force: 入力ファイルの健全性チェックに失敗してもエンコードを続行します。
       軽微なA/V音ズレなど、許容できる問題がある場合に使用してください。
   --delete-origin-if-success-and-no-ng: 変換成功かつpostcheckでNG無しの場合、元ファイルを削除します。
@@ -480,6 +513,10 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
   AV1_DENOISE (デフォルト: なし)
     ノイズ除去レベルを指定します。--denoise オプションと同等です。
     light / medium / strong から選択。CLIオプションが優先されます。
+
+  AV1_COLOR_TAGS (デフォルト: auto)
+    色空間タグの上書き方法を指定します。--color-tags オプションと同等です。
+    auto / bt709 / off から選択。CLIオプションが優先されます。
 
   AV1IFY_FRAME_TOLERANCE (デフォルト: 24)
     変換前後のフレーム数差がこの値以下であれば警告しません。
