@@ -4,6 +4,10 @@
 # concat helpers — concat コマンドの内部補助関数群
 # ------------------------------------------------------------------------------
 
+# ネットワークボリューム判定 (av1ify と共有。テストが本ファイルを単体 source するため自己 source)
+# shellcheck disable=SC1091,SC2296,SC2298  # zsh 固有の自ファイルパス展開 (shellcheck は解析不可)
+source "${${(%):-%x}:A:h}/_fs_helpers.zsh"
+
 __concat_allowed_extensions=(mp4 avi mov mkv webm flv wmv m4v mpg mpeg 3gp ts m2ts)
 
 __concat_is_allowed_ext() {
@@ -654,6 +658,14 @@ __concat_verify_frame_order() {
 __concat_trash() {
   local file="$1"
   local _abs="${file:A}"
+  # ネットワーク FS (smbfs/afpfs/nfs/webdav/cifs) はゴミ箱を持たないため
+  # trash / Finder delete が必ず失敗する。物理削除 (rm) へ倒す。
+  if __fs_is_network_volume "$_abs"; then
+    local _fs="$REPLY"
+    rm -f -- "$_abs" || return 1
+    print -r -- "   (network volume [$_fs] のため物理削除)"
+    return 0
+  fi
   if command -v trash >/dev/null 2>&1; then
     # /usr/bin/trash は "--" をファイル名として誤解するため付けない（絶対パス渡しで保護）
     trash "$_abs" >/dev/null 2>&1

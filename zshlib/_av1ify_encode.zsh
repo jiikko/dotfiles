@@ -3,6 +3,7 @@
 # ffprobe 単一フィールド取得は共通ヘルパーを使う (テストが本ファイルを単体 source するため自己 source)
 # shellcheck disable=SC1091,SC2296,SC2298  # zsh 固有の自ファイルパス展開 (shellcheck は解析不可)
 source "${${(%):-%x}:A:h}/_ffprobe_helpers.zsh"
+source "${${(%):-%x}:A:h}/_fs_helpers.zsh"
 
 # __av1ify_decide_* / __av1ify_auto_crf / __av1ify_build_final_out から
 # 結果を返却するためのグローバル。__av1ify_one が各反復で初期化する。
@@ -18,40 +19,9 @@ typeset -g __AV1IFY_R_AAC_BITRATE=""
 typeset -g __AV1IFY_R_AAC_SRC_BPS=""
 typeset -gi __AV1IFY_R_AAC_CAPPED=0
 
-# 内部補助: 与えられたパスが属するマウントポイントの filesystem type を返す
-# 例: /Volumes/koji (smbfs マウント) -> "smbfs"
-# 取得できない場合は空文字列
-# macOS の `stat -f "%T"` は file type (ls -F 形式) を返すため使えない。
-# `mount` 出力をパースしてパスにマッチする最長 mount point を選ぶ。
-# ⚠️ macOS の mount 出力形式 "device on /mp (fstype, opts)" 前提。Linux の
-# "device on /mp type ext4 (opts)" 形式はパースできない (空文字列 fallback になり
-# 呼び出し側は trash 経路へ倒れる)。Linux 対応が必要になったら type 形式の分岐を追加すること。
+# 内部補助: __fs_type_for の薄いラッパ (実体は _fs_helpers.zsh。concat と共有)
 __av1ify_fs_type_for() {
-  # 注意: zsh では `path` (小文字) は `PATH` (大文字) の配列形 tied parameter なので
-  # `local path=...` で書くと関数内 PATH を引数値で上書きしてしまい、
-  # `command -v` や process substitution での `mount` lookup が壊れる。
-  # 必ず別名 (target_path) を使う。
-  local target_path="$1"
-  [[ -z "$target_path" ]] && return 0
-  local mount_bin="mount"
-  command -v "$mount_bin" >/dev/null 2>&1 || mount_bin="/sbin/mount"
-  local line best="" best_len=0 mp
-  while IFS= read -r line; do
-    # フォーマット: "device on /mount/point (fstype, opts...)"
-    mp="${line#* on }"
-    mp="${mp%% \(*}"
-    [[ -z "$mp" ]] && continue
-    if [[ "$target_path" == "$mp" || "$target_path" == "$mp/"* || "$mp" == "/" ]]; then
-      if (( ${#mp} > best_len )); then
-        best_len=${#mp}
-        best="$line"
-      fi
-    fi
-  done < <("$mount_bin" 2>/dev/null)
-  local fs="${best##*\(}"
-  fs="${fs%%,*}"
-  fs="${fs%%\)*}"
-  print -r -- "$fs"
+  __fs_type_for "$1"
 }
 
 # 内部補助: ファイルサイズ(バイト)を返す。取得失敗時は空文字。
@@ -110,26 +80,23 @@ __av1ify_finalize() {
       # /usr/bin/trash は -- を end-of-options として扱わないため絶対パスで渡す
       local in_abs="${in:A}"
       # ネットワーク FS（smbfs/afpfs/nfs/webdav 等）はゴミ箱を持たないため rm を使う
-      local fs_type
-      fs_type=$(__av1ify_fs_type_for "$in_abs")
+      local fs_type=""
+      local is_network=0
+      __fs_is_network_volume "$in_abs" && is_network=1
+      fs_type="$REPLY"
       # trash/rm は Spotlight・Time Machine・iCloud 同期と競合すると
       # 大きなファイルで数十秒〜分単位ブロックすることがあり「最後でスタック」に見える。
       # 予告 1 行を出して原因切り分けを容易にする。
-      case "$fs_type" in
-        smbfs|afpfs|nfs|webdav|cifs)
-          print -r -- ">> 元ファイル削除中 (rm, ${fs_type}): $in"
-          rm -f -- "$in_abs" && print -P -- "%F{green}🗑️ 元ファイル削除 (network volume [$fs_type] のため rm): $in%f"
-          ;;
-        *)
-          if command -v trash >/dev/null 2>&1; then
-            print -r -- ">> 元ファイルをゴミ箱へ移動中: $in"
-            trash "$in_abs" && print -P -- "%F{green}🗑️ 元ファイルをゴミ箱へ移動: $in%f"
-          else
-            print -r -- ">> 元ファイル削除中 (rm, trash 未導入): $in"
-            rm -f -- "$in_abs" && print -P -- "%F{green}🗑️ 元ファイル削除 (trash 未導入のため rm): $in%f"
-          fi
-          ;;
-      esac
+      if (( is_network )); then
+        print -r -- ">> 元ファイル削除中 (rm, ${fs_type}): $in"
+        rm -f -- "$in_abs" && print -P -- "%F{green}🗑️ 元ファイル削除 (network volume [$fs_type] のため rm): $in%f"
+      elif command -v trash >/dev/null 2>&1; then
+        print -r -- ">> 元ファイルをゴミ箱へ移動中: $in"
+        trash "$in_abs" && print -P -- "%F{green}🗑️ 元ファイルをゴミ箱へ移動: $in%f"
+      else
+        print -r -- ">> 元ファイル削除中 (rm, trash 未導入): $in"
+        rm -f -- "$in_abs" && print -P -- "%F{green}🗑️ 元ファイル削除 (trash 未導入のため rm): $in%f"
+      fi
     fi
     REPLY="$final_out"; return 0
   else
