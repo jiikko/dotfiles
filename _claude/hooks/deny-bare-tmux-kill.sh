@@ -121,12 +121,20 @@ scan_segment() {
   for ((i = 0; i < n; i++)); do
     t="${toks[i]}"
     if [ "$skip_val" = 1 ]; then skip_val=0; continue; fi
-    case "$t" in
+    # 先頭のバックスラッシュ (alias 回避の `\tmux`) を剥がしてから実行ファイルを照合する
+    bare="$t"
+    while [ "${bare#\\}" != "$bare" ]; do bare="${bare#\\}"; done
+    case "$bare" in
       tmux | */tmux) in_tmux=1; in_global=1; sock=0; continue ;;
     esac
     [ "$in_tmux" = 1 ] || continue
     case "$t" in
       -L | -S) [ "$in_global" = 1 ] && sock=1; skip_val=1 ;;
+      # 値を取る他のグローバルオプション (-c/-f/-T) も値を 1 トークン消費する。消費しないと
+      # 値がサブコマンドと誤認されてグローバル区間が閉じ、後続の -L が免除に数えられない。
+      # `tmux -f /dev/null -L probe <kill>` = 規範 md が推奨する隔離の形を deny していた
+      # (2026-08-21 に別セッションの red team が実証)。免除に数えるのは -L/-S だけ。
+      -c | -f | -T) skip_val=1 ;;
       -L* | -S*) [ "$in_global" = 1 ] && sock=1 ;;
       "$SEP_TOKEN" | ';') in_global=0 ;;
       -*) : ;;

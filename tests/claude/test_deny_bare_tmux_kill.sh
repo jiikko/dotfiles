@@ -119,6 +119,23 @@ expect allow "run-shell の引数に tmux コマンド文字列" \
   'tmux -L probe run-shell "tmux ls" \; kill-server'
 expect allow "grep -c の引数に文字列として含む" \
   'grep -c "tmux kill-server" file'
+# 値を取るグローバルオプション (-c/-f/-T) の値を消費しないと、値がサブコマンドと誤認されて
+# グローバル区間が閉じ、後続の -L が免除に数えられない。規範 md が推奨する隔離の形
+# (-f /dev/null で素の設定のサーバを立てる) を deny していた退行のガード。
+expect allow "-f <値> の後に -L (隔離の推奨形)" \
+  'tmux -f /dev/null -L probe kill-server'
+expect allow "-c <値> の後に -L" \
+  'tmux -c /bin/sh -L probe kill-server'
+expect allow "-T <値> の後に -L" \
+  'tmux -T RGB -L probe kill-server'
+expect allow "値なしフラグ (-u) の後に -L" \
+  'tmux -u -L probe kill-server'
+
+# alias 回避の `\\tmux` も実行ファイルとして拾う (剥がさないと素通りする)
+expect deny  "先頭バックスラッシュで alias 回避" \
+  '\\tmux kill-server'
+expect deny  "フルパス + 先頭バックスラッシュ" \
+  '\\/opt/homebrew/bin/tmux kill-server'
 expect deny  "tmux 内コマンド連結 \\; 経由の bare" 'tmux new-session -d \; kill-server'
 expect deny  "pkill -f tmux (全サーバ無差別)" 'pkill -f tmux'
 expect deny  "pkill -x tmux" 'pkill -x tmux'
