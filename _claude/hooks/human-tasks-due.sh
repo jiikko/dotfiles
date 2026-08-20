@@ -9,8 +9,10 @@
 # 依存する = 起動しなければ永久に気づかない。セッション開始という必ず通る場所で催促する。
 # 出典: ~/.claude/CLAUDE.md「Issue管理」/ issues/README.md。
 #
-# 状態の正本はファイルの位置: issues/ 直下にある = 未完了、issues/done/ にある = 完了。
-# 本文の既読ヘッダーは見ない (書き換え忘れで嘘が残るため)。
+# 状態の正本はファイルの位置: issues/ 直下 = 未完了、issues/pending/ = 着手保留 (期限は追う)、
+# issues/done/ = 完了 (対象外)。本文の既読ヘッダーは見ない (書き換え忘れで嘘が残るため)。
+# ⚠️ pending も走査する: 「保留」に置いた人間タスクの期限切れを黙らせると、期限を書いた本人
+# だけが忘れる形になる (issue-sync の Step 0 も pending を見る。片方だけ黙ると検査が食い違う)。
 #
 # 入力: SessionStart の hook JSON (stdin)。`.cwd` があれば使い、無ければ $PWD。
 # 出力: 報告することがあるときだけ additionalContext を emit (jq が無ければ素の stdout)。
@@ -52,24 +54,33 @@ fi
 
 overdue="" ; upcoming="" ; broken="" ; later=0 ; unread=0
 
-for f in "$dir"/*.md; do
+for f in "$dir"/*.md "$dir"/pending/*.md; do
   [ -e "$f" ] || continue
   base=${f##*/}
   case "$base" in
     README.md | readme.md) continue ;;
   esac
   rel="${f#"$root"/}"
+  # 保留は未完了件数には数えない (着手条件待ちなので「今やる」対象ではない) が、
+  # 期限は同じ基準で追う。ラベルで区別する
+  held=""
+  case "$f" in
+    "$dir"/pending/*) held=" [保留]" ;;
+  esac
   # ⚠️ カテゴリはファイル名 position 2 (NNN-<カテゴリ>-<スラッグ>) を丸ごと照合する。
   # `*-human-*` のような部分一致で見ると、スラッグ側に同じ語を含む別カテゴリの issue
   # (例 061-docs-mutation-verify-fake-mutations.md) を誤って拾う
   is_human=0
   case "$base" in
-    [0-9][0-9][0-9]-human-*.md) is_human=1 ; unread=$((unread + 1)) ;;
+    [0-9][0-9][0-9]-human-*.md)
+      is_human=1
+      [ -z "$held" ] && unread=$((unread + 1))
+      ;;
   esac
 
   # 読めないファイルは「期限なし」と混ぜない (誤ラベルより「読めなかった」と言う方が正確)
   if [ ! -r "$f" ]; then
-    broken="${broken}  読み取り不可 ${rel}"$'\n'
+    broken="${broken}  読み取り不可 ${rel}${held}"$'\n'
     continue
   fi
 
@@ -79,25 +90,25 @@ for f in "$dir"/*.md; do
   line=$(grep -m1 -E '^期限[:：]' "$f" 2>/dev/null)
   case "$?" in
     0 | 1) ;;
-    *) broken="${broken}  抽出失敗     ${rel} (grep が失敗)"$'\n' ; continue ;;
+    *) broken="${broken}  抽出失敗     ${rel}${held} (grep が失敗)"$'\n' ; continue ;;
   esac
   due=$(printf '%s' "$line" | tr -d '\r' | sed -E 's/^期限[:：][[:space:]]*//' | awk '{print $1}')
   if [ -z "$due" ]; then
     # human は期限必須。他カテゴリは任意なので黙って飛ばす
-    [ "$is_human" -eq 1 ] && broken="${broken}  期限なし     ${rel}"$'\n'
+    [ "$is_human" -eq 1 ] && broken="${broken}  期限なし     ${rel}${held}"$'\n'
     continue
   fi
   case "$due" in
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
-    *) broken="${broken}  書式不正     ${rel} (期限: ${due})"$'\n' ; continue ;;
+    *) broken="${broken}  書式不正     ${rel}${held} (期限: ${due})"$'\n' ; continue ;;
   esac
 
   if [ "$due" \< "$today" ]; then
-    overdue="${overdue}  期限切れ ${due}  ${rel}"$'\n'
+    overdue="${overdue}  期限切れ ${due}  ${rel}${held}"$'\n'
   elif [ "$due" \> "$soon" ]; then
     later=$((later + 1))
   else
-    upcoming="${upcoming}  期限間近 ${due}  ${rel}"$'\n'
+    upcoming="${upcoming}  期限間近 ${due}  ${rel}${held}"$'\n'
   fi
 done
 

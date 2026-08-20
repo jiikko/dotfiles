@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# _claude/hooks/human-tasks-due.sh (SessionStart で人間タスクの未完了・期限を注入する hook) の
+# unit テスト。合成した hook JSON を stdin で流し、報告内容を pin する。
+#
+# なぜ: このフックは「人間しかできない作業が忘れられる」を止めるための検査で、壊れても
+# 静かに黙るだけなので気づけない (= 期限切れが誰にも見えない状態に戻る)。実測で見つかった
+# 欠陥を回帰として固定する: カテゴリの部分一致誤検出 / 依存コマンド失敗を「期限なし」と誤報 /
+# pending の取りこぼし / 「検査できなかった」の沈黙。
+# 規範: issues/README.md「`期限:`」、~/.claude/CLAUDE.md「Issue管理」
+set -euo pipefail
+unset CDPATH
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+HOOK="$ROOT_DIR/_claude/hooks/human-tasks-due.sh"
+fails=0
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "SKIP: jq が無い環境 (hook 自体は素の stdout へフォールバックする)"
+  exit 0
+fi
+
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/human-tasks-due.XXXXXX")"
+trap 'rm -rf "$WORK"' EXIT
+
+repo="$WORK/repo"
+mkdir -p "$repo/issues/pending" "$repo/issues/done"
+git -C "$repo" init -q .
+
+mkissue() { # $1=相対パス $2=メタ行 (空可)
+  printf '# t\n\n起票日: 2026-08-01\n%s\n' "$2" >"$repo/issues/$1"
+}
+
+# 出力本文 (additionalContext) を取り出す。hook が黙ったときは空文字。
+report() { # 追加の env は呼び出し側で env ... を前置する
+  local out
+  out="$(printf '{"cwd":"%s"}' "$repo" | "$@" "$HOOK" 2>/dev/null)" || { echo "__ERROR__"; return; }
+  [ -n "$out" ] || return 0
+  printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext // "__NOJSON__"'
+}
+
+check() { # $1=説明 $2=期待パターン (grep -E) $3=本文。空パターンは「無出力」を期待
+  local desc="$1" want="$2" got="$3"
+  if [ -z "$want" ]; then
+    [ -z "$got" ] && return 0
+    echo "NG: $desc — 何も出さないはずが出力された:"; printf '%s\n' "$got"; fails=$((fails + 1)); return
+  fi
+  printf '%s' "$got" | grep -Eq "$want" && return 0
+  echo "NG: $desc — /$want/ が出力に無い:"; printf '%s\n' "${got:-(無出力)}"; fails=$((fails + 1))
+}
+
+# --- 1. 対象なし: human も期限も無ければ黙る (毎セッションのノイズにしない) ---
+mkissue "010-docs-something.md" ""
+check "対象なしで黙る" "" "$(report env)"
+
+# --- 2. カテゴリはファイル名 position 2 で判定する (部分一致で誤検出しない) ---
+# 実測 2026-08-20: `*-human-*` だとスラッグ側に同語を含む別カテゴリを拾っていた
+mkissue "011-docs-mutation-human-review-notes.md" ""
+check "スラッグ側の human を誤検出しない" "" "$(report env)"
+
+# --- 3. 期限切れ / 期限間近 / 期限なし / 書式不正 を分類する ---
+mkissue "012-human-old.md" "期限: 2026-08-01"
+mkissue "013-human-nodate.md" ""
+mkissue "014-human-broken.md" "期限: 8/25"
+got="$(report env)"
+check "期限切れを出す" '期限切れ 2026-08-01.*012-human-old' "$got"
+check "期限なしを出す (human は期限必須)" '期限なし.*013-human-nodate' "$got"
+check "書式不正を出す (黙って捨てない)" '書式不正.*014-human-broken' "$got"
+check "未完了件数を数える" '未完了の human タスク issue: 3 件' "$got"
+
+# --- 4. done/ は拾わない。pending/ は拾うが件数には数えない ---
+mkissue "015-human-finished.md" "期限: 2026-08-02"
+mv "$repo/issues/015-human-finished.md" "$repo/issues/done/"
+printf '# t\n\n期限: 2026-08-01\n' >"$repo/issues/pending/016-human-blocked.md"
+got="$(report env)"
+check "done/ は対象外" "" "$(printf '%s' "$got" | grep -E '015-human-finished' || true)"
+check "pending/ の期限切れは出す" '期限切れ 2026-08-01.*016-human-blocked.*\[保留\]' "$got"
+check "pending は未完了件数に入れない" '未完了の human タスク issue: 3 件' "$got"
+
+# --- 5. 依存コマンドが壊れたら「期限なし」と誤報せず「抽出失敗」と言う ---
+mkdir -p "$WORK/badgrep"
+printf '#!/bin/sh\nexit 2\n' >"$WORK/badgrep/grep"
+chmod +x "$WORK/badgrep/grep"
+check "grep 失敗を抽出失敗として出す" '抽出失敗' "$(report env PATH="$WORK/badgrep:$PATH")"
+
+# --- 6. date が +3 日を計算できないときは「判定を省略した」と明記する ---
+mkdir -p "$WORK/baddate"
+cat >"$WORK/baddate/date" <<'EOF'
+#!/bin/sh
+case "$1" in -v* | -d) exit 1 ;; esac
+exec /bin/date "$@"
+EOF
+chmod +x "$WORK/baddate/date"
+check "date 非対応を明記する" '「期限間近」の判定は省略' "$(report env PATH="$WORK/baddate:$PATH")"
+
+# --- 7. git 管理外では何もしない ---
+out="$(printf '{"cwd":"/"}' | "$HOOK" 2>/dev/null || true)"
+check "git 管理外で黙る" "" "$out"
+
+if [ "$fails" -gt 0 ]; then
+  echo "FAIL: human-tasks-due.sh のテストが $fails 件失敗"
+  exit 1
+fi
+echo "OK: human-tasks-due.sh (7 観点)"

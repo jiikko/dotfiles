@@ -26,10 +26,13 @@ Open Issues の中から、実際にはコードベース上で対応済み（do
 は放置すると価値が腐るため、埋もれさせない）。
 
 ```sh
-# コロンは全角も拾う (`期限：` と書かれた 1 件を黙って取りこぼすのが最悪の失敗)
-grep -lE '^期限[:：]' issues/*.md issues/pending/*.md 2>/dev/null | while read -r f; do
-  printf '%s\t%s\n' "$(grep -m1 -E '^期限[:：]' "$f" | sed -E 's/^期限[:：][[:space:]]*//')" "$f"
-done | sort
+# コロンは全角も拾う (`期限：` と書かれた 1 件を黙って取りこぼすのが最悪の失敗)。
+# ⚠️ glob を直接渡さない: zsh は `issues/*.md` が 0 件だと nomatch でコマンド全体を失敗させ、
+# pending 側に期限切れがあっても「0 件」と黙る (2026-08-20 実測)。find で列挙する
+find issues issues/pending -maxdepth 1 -name '*.md' 2>/dev/null \
+  | xargs grep -lE '^期限[:：]' 2>/dev/null | while read -r f; do
+      printf '%s\t%s\n' "$(grep -m1 -E '^期限[:：]' "$f" | sed -E 's/^期限[:：][[:space:]]*//')" "$f"
+    done | sort
 ```
 
 - **`期限:` 行が 1 件も無い repo と、書式が違って拾えなかった repo を混同しない**。human issue
