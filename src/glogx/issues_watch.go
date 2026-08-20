@@ -60,9 +60,14 @@ type issuesWatchMsg struct {
 
 // issuesWatch は見張りの状態。zero value は「見張っていない」。
 type issuesWatch struct {
-	w       *fsnotify.Watcher
-	watched map[string]bool // Add 済みのディレクトリ (fsnotify は再帰しないので自前で持つ)
-	gen     int             // 見張りの世代 (閉じるたびに増える。古いチェーンの観測を弾く)
+	w *fsnotify.Watcher
+	// ⚠️ 「Add 済み」を自前で覚えて skip しないこと。fsnotify の watch は**ディレクトリが
+	// 消えると黙って失われる**ので、印だけが残って二度と Add されない状態になる (実測
+	// 2026-08-21: 実 repo で git switch により issues/done が消えて戻ると、同一 viewer
+	// セッション中は done/ 内の変更が恒久的に無音。手動の取り直し 3 回でも復帰せず、
+	// 指紋ポーリング 30s も done/ の未知の新規ファイルは見ないので代替にならない)。
+	// Add は冪等 (同一パスの重複配送は起きないことを実測) なので、毎回無条件に Add する。
+	gen int // 見張りの世代 (閉じるたびに増える。古いチェーンの観測を弾く)
 
 	seen    string // 反映済みの指紋 ("" = 次の観測を基準にする)
 	pending string // 変化を検出したが、書きかけを避けるため安定を待っている指紋
@@ -95,16 +100,12 @@ func (v *issuesView) startWatch() {
 		if err != nil {
 			return
 		}
-		v.watch.w, v.watch.watched = w, map[string]bool{}
+		v.watch.w = w
 	}
 	for _, dir := range v.watchDirs() {
-		if v.watch.watched[dir] {
-			continue
-		}
-		if err := v.watch.w.Add(dir); err != nil {
-			continue // 消えたディレクトリ等。次の取り直しで再挑戦する
-		}
-		v.watch.watched[dir] = true
+		// 失敗は無視して次の取り直しで再挑戦する (消えたディレクトリ等)。成功しても印を
+		// 残さない = 消えて戻ったディレクトリが再び watch される (上のフィールドコメント参照)。
+		_ = v.watch.w.Add(dir)
 	}
 }
 
@@ -251,7 +252,7 @@ func (v *issuesView) handleWatch(msg issuesWatchMsg) tea.Cmd {
 		// watcher が死んだ (fd 回収・NFS 等)。閉じてポーリングだけで続ける (無音にはしない)
 		if v.watch.w != nil {
 			_ = v.watch.w.Close()
-			v.watch.w, v.watch.watched = nil, nil
+			v.watch.w = nil
 		}
 		return v.watchCmd()
 	}

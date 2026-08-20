@@ -41,15 +41,21 @@ case "$1" in
     # tty を単独で読む契約。空 tty のフィールド collapse 対策、2026-07-29)
     case "$*" in
       *client_tty*) echo "${STUB_TTY-}" ;;   # 空 = クライアント不在 (headless) の再現
-      *client_width*) echo "200 50" ;;
-      *window_width*) echo "200 50" ;;
+      *client_width*) echo "${STUB_WIN:-200 50}" ;;
+      *window_width*) echo "${STUB_WIN:-200 50}" ;;
     esac ;;
   show-option)
     case "$*" in
       *@tmux_toast_last_epoch*) echo "${STUB_LAST:-}" ;;
       *@tmux_toast_pane*) echo "${STUB_TOAST_PANE:-}" ;;
     esac ;;
-  new-pane) echo '%42' ;;
+  new-pane)
+    # STUB_NEWPANE_FAIL=1 で「ジオメトリが収まらず失敗」を再現する (rc=1 + stderr)
+    if [ "${STUB_NEWPANE_FAIL:-0}" = 1 ]; then
+      echo "create pane failed: pane too small" >&2
+      exit 1
+    fi
+    echo '%42' ;;
 esac
 exit 0
 EOS
@@ -175,5 +181,30 @@ if [ "$rc" -eq 0 ] && [ -z "$out" ]; then
 else
   ng "fallback: クライアント不在で rc=$rc 出力='$out' (無音 exit 0 の契約違反)"
 fi
+
+# --- 回帰: 狭い window でも toast が表示される (clamp の境界) ---------------
+# 2026-08-21 実測: clamp が `-gt win_w` で box_w == win_w を許していたため、tmux が
+# 受理せず new-pane が失敗し **長い toast が一度も表示されなかった** (呼び出し元は || true
+# なので完全に無音)。box_w は win_w - 1 以下に収まらなければならない。
+reset_calls
+STUB_WIN="20 6" run_toast "これはとても長い警告メッセージで箱が window に収まらない"
+if grep -qE -- 'new-pane .* -x (19|1?[0-9]) ' "$CALLS"; then
+  ok "clamp: 狭い window でも box_w <= win_w - 1 に収める"
+else
+  ng "clamp: box_w が window 幅を超えた (長い toast が表示されない再発)"
+  grep -m1 -- 'new-pane' "$CALLS" || true
+fi
+
+# --- 回帰: new-pane が失敗しても無音 exit 0 (hook を汚さない) --------------
+# 2026-08-21 実測: 無ガードだったため set -euo pipefail で rc=1 になり、hook
+# (after-split-window / pane-exited) 経由の呼び出しでアクティブ pane に view-mode が積まれた。
+# fallback 経路は「非 0 や stderr を返さない」と自ら明記しており、ここだけ非対称だった。
+reset_calls
+if STUB_NEWPANE_FAIL=1 run_toast "🪟 失敗する toast" 2>/dev/null; then
+  ok "new-pane 失敗でも無音 exit 0 (hook にエラーを積まない)"
+else
+  ng "new-pane 失敗で非 0 を返した (hook がアクティブ pane を汚す再発)"
+fi
+
 
 exit "$fail"

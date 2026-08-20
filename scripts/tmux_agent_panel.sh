@@ -41,6 +41,18 @@ unset CDPATH
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 
+# render pane の pane_id を列挙する。⚠️ 同一性は**スクリプト名**で見る (絶対パス完全一致に
+# しないこと)。worktree や tmp のコピーから起動した panel はパスが違うため、完全一致では
+# 自分のものと認識できず掃討も save-hide も掴めない。実測 2026-08-21: 本番 window に孤児
+# panel が 6 枚・6〜7 日累積し、最新スナップショットに pane 行 6 本 + floating layout が
+# 写り込んでいた (worktree 分離は repo の規約自体が要求しているので、必ず踏む形だった)。
+# 判定の出典をここ 1 箇所に集約する (以前は同じ awk が 2 箇所へ逐語コピーされていた)。
+render_panes() {
+  tmux list-panes -a -F '#{pane_id} #{pane_start_command}' 2>/dev/null |
+    awk '$2 ~ /\/tmux_agent_panel\.sh$/ && $3 == "render" {print $1}'
+}
+
+
 # 復元中 / bootstrap 判定 (tt_restore_in_progress / tt_only_hold_sessions)。
 # デフォルト表示 (@agent_panel_on を conf が立てる) のため、サーバ起動直後の hook でも
 # follow が走る。復元前に panel pane を作ると「総 pane 数 = 1」を破って resurrect の
@@ -113,8 +125,7 @@ kill_panel() {
     [ -n "$p" ] || continue
     [ "$killed" = 0 ] && { mark_busy; killed=1; }
     tmux kill-pane -t "$p" 2>/dev/null || true
-  done < <(tmux list-panes -a -F '#{pane_id} #{pane_start_command}' 2>/dev/null |
-             awk -v self="$SELF" '$2 == self && $3 == "render" {print $1}')
+  done < <(render_panes)
   tmux set-option -gu @agent_panel_pane 2>/dev/null || true
 }
 
@@ -254,8 +265,7 @@ cmd_unfocus() {
   local p
   while IFS= read -r p; do
     [ -n "$p" ] && ensure_unfocused "$p" >/dev/null 2>&1
-  done < <(tmux list-panes -a -F '#{pane_id} #{pane_start_command}' 2>/dev/null |
-             awk -v self="$SELF" '$2 == self && $3 == "render" {print $1}')
+  done < <(render_panes)
   exit 0
 }
 

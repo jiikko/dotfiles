@@ -35,9 +35,17 @@ if pgrep -xq Terminal; then
   # ヘッダ参照) が意図的な deprecated API 使用のため、setup.sh 実行のたびに数十行の
   # deprecation warning が出るのを抑止する
   colors=$(swift -suppress-warnings "$SCRIPT_DIR/lib/terminal_profile_colors.swift" "$FILE")
-  as_lines="tell application \"Terminal\"
-  if not (exists settings set \"$NAME\") then
-    make new settings set with properties {name:\"$NAME\"}
+  # ⚠️ プロファイル名を AppleScript のソース文字列へ埋めないこと。`name` は .terminal ファイル
+  # (= 第 1 引数で任意に差し替えられる外部入力) 由来なので、`"` を含む名前で文字列を脱出でき
+  # **`do shell script` に到達する**。実在形式の細工ファイルで marker 生成に成功した
+  # (実測 2026-08-21。60 行目の「✗ 構築に失敗」表示より前に payload が走っていた)。
+  # 名前は `on run argv` の argv で**データとして**渡す (色の数値だけは case で語彙を固定した
+  # プロパティ名と数値なので、そのまま埋めても外部入力にならない)。
+  as_lines="on run argv
+  set profileName to item 1 of argv
+  tell application \"Terminal\"
+  if not (exists settings set profileName) then
+    make new settings set with properties {name:profileName}
   end if"
   while IFS=' ' read -r key r g b; do
     case "$key" in
@@ -47,16 +55,20 @@ if pgrep -xq Terminal; then
       CursorColor)     prop="cursor color" ;;
       *) continue ;;
     esac
+    # r/g/b は swift 側が数値で出す。念のため数字とカンマ以外を弾く (壊れた出力で AppleScript を
+    # 組み立てないため。ここが数値でなければその行は捨てる = 色が 1 つ落ちるだけで済む)
+    case "$r$g$b" in *[!0-9.]*) continue ;; esac
     as_lines="$as_lines
-  set $prop of settings set \"$NAME\" to {$r, $g, $b}"
+  set $prop of settings set profileName to {$r, $g, $b}"
   done <<EOF
 $colors
 EOF
   as_lines="$as_lines
-  set default settings to settings set \"$NAME\"
-  set startup settings to settings set \"$NAME\"
-end tell"
-  osascript -e "$as_lines" >/dev/null || {
+  set default settings to settings set profileName
+  set startup settings to settings set profileName
+end tell
+end run"
+  osascript -e "$as_lines" "$NAME" >/dev/null || {
     echo "✗ AppleScript での構築に失敗 (オートメーション許可が未付与の可能性)。" >&2
     echo "  Terminal を終了した状態で再実行すれば defaults 経路で設定できる。" >&2
     exit 1

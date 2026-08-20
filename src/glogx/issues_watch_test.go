@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -486,5 +487,38 @@ func TestIssuesWatchIgnoresStaleGeneration(t *testing.T) {
 	}
 	if v.watch.w == nil {
 		t.Fatal("古い世代の closed が新しい watcher を閉じた")
+	}
+}
+
+// 回帰 (2026-08-21 実測): 消えて戻ったディレクトリを再び watch する。以前は「Add 済み」を
+// watched マップで覚えて skip していたため、fsnotify の watch がディレクトリ削除で失われた後も
+// 印だけが残り、**同一 viewer セッション中は二度と Add されなかった** (実 repo の git switch で
+// issues/done が消えて戻ると、以後 done/ 内の変更が恒久的に無音。手動の取り直し 3 回でも復帰せず)。
+func TestIssuesWatchReAddsRecreatedDir(t *testing.T) {
+	root, path := watchTree(t, "# 001 feat: x\n")
+	done := filepath.Join(root, "issues", "done")
+	if err := os.MkdirAll(done, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// ⚠️ 空ディレクトリは watch 対象にならない (FindDirs は markdown を含むものだけ拾う)
+	writeIssue(t, filepath.Join(done, "000-feat-old.md"), "# 000 feat: old\n", time.Now().Add(-time.Hour))
+	v := openedWatchView(t, root, path)
+	if !slices.Contains(v.watchDirs(), done) {
+		t.Fatalf("前提: done/ が watch 対象に入っていない: %v", v.watchDirs())
+	}
+
+	// ディレクトリが消えて戻る (git switch 相当)。watch は失われる
+	if err := os.RemoveAll(done); err != nil {
+		t.Fatal(err)
+	}
+	v.startWatch() // 消えている間の取り直し (Add は失敗する)
+	if err := os.MkdirAll(done, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	v.startWatch() // 戻った後の取り直し: ここで再び Add されなければならない
+
+	// 再 Add されたかを watcher の登録一覧で直接見る (イベント配送のタイミングに依存させない)
+	if !slices.Contains(v.watch.w.WatchList(), done) {
+		t.Fatalf("消えて戻った done/ が再 Add されていない: %v", v.watch.w.WatchList())
 	}
 }

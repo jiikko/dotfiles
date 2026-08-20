@@ -185,6 +185,18 @@ grep -q 'kill-pane -t %9'  "$CALLS" || ng "掃討: 記録 pane %9 を kill し�
 grep -q 'kill-pane -t %77' "$CALLS" || ng "掃討: 孤児 %77 を kill しない"
 ok "掃討: 記録外の孤児 render pane も kill (上の ✗ が無ければ)"
 
+# --- 掃討: 別パス (worktree / tmp コピー) から起動した panel も自分のものとして掴む -------
+# 回帰 2026-08-21: 同一性を $SELF の絶対パス完全一致で見ていたため、worktree から起動した
+# panel を掃討できず、本番 window に孤児 panel が 6 枚・6〜7 日累積した (スナップショットにも
+# pane 行 6 本 + floating layout が写り込んだ)。repo の規約自体が worktree 分離を要求するので
+# 必ず踏む形だった。判定はスクリプト名で行う。
+: > "$CALLS"
+STUB_PANEL_ON=1 STUB_PANEL_PANE='%9' STUB_RENDER_PANES='%9 %78' \
+  STUB_SELF='/other/worktree/scripts/tmux_agent_panel.sh' "$SCRIPT" toggle '@1' \
+  || ng "toggle off (別パスの孤児あり) が失敗"
+grep -q 'kill-pane -t %78' "$CALLS" || ng "掃討: 別パスから起動した孤児 %78 を kill しない"
+ok "掃討: 別パス (worktree) の render pane も掴む (上の ✗ が無ければ)"
+
 # --- follow (panel pane が消滅済み: q 巻き添え等) ---------------------------------
 : > "$CALLS"
 STUB_PANEL_ON=1 STUB_PANEL_PANE='%9' STUB_ALIVE=0 "$SCRIPT" follow '@2' || ng "follow (pane 消滅) が失敗"
