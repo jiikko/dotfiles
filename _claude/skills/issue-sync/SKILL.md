@@ -22,7 +22,7 @@ Open Issues の中から、実際にはコードベース上で対応済み（do
 ### Step 0: 期限つき issue の点検（最初に報告する）
 
 `issues/*.md` の本文メタ行 `期限: YYYY-MM-DD` を拾い、**期限切れ / 3 日以内**のものを
-**この skill の出力の冒頭で報告する**（done 判定より先。動作確認 issue = `NNN-verify-*.md`
+**この skill の出力の冒頭で報告する**（done 判定より先。人間待ちの issue = `NNN-human-*.md`
 は放置すると価値が腐るため、埋もれさせない）。
 
 ```sh
@@ -32,11 +32,11 @@ grep -lE '^期限[:：]' issues/*.md issues/pending/*.md 2>/dev/null | while rea
 done | sort
 ```
 
-- **`期限:` 行が 1 件も無い repo と、書式が違って拾えなかった repo を混同しない**。verify issue
-  (`*-verify-*.md`) が存在するのに期限が 0 件なら、書式ミス (全角コロン以外の表記ゆれ・行頭でない)
+- **`期限:` 行が 1 件も無い repo と、書式が違って拾えなかった repo を混同しない**。human issue
+  (`NNN-human-*.md`) が存在するのに期限が 0 件なら、書式ミス (全角コロン以外の表記ゆれ・行頭でない)
   を疑って当該ファイルを直接開く
 
-- **`issues/` にある = 未読**、`issues/done/` にある = 確認済み（既読の唯一の出典はファイルの位置。
+- **`issues/` にある = 未完了**、`issues/done/` にある = 完了（状態の唯一の出典はファイルの位置。
   本文の既読ヘッダーは見ない）
 - 期限切れが 1 件でもあれば「期限切れ N 件」を見出しで出す。0 件なら「期限切れなし」と 1 行書く
   （黙って省略しない — 報告が無いのは「点検していない」と区別できないため）
@@ -55,8 +55,8 @@ ls issues/done/*.md 2>/dev/null | wc -l          # 完了済み (対象外)
 - **`issues/done/` = 完了**（対象外）
 - **issue でないファイルを除外する**: `README.md` / `readme.md` / `audit-log` などの管理ファイル。
   番号規約のある repo では `^[0-9]{3}-` に一致するものだけを issue とみなすのが安全
-- **`NNN-verify-*.md` は Phase B の検証対象から外す**。人が目で確認するまで open が正しい状態で、
-  実装の有無では done を判定できない（自動 done 化は誤検出になる）。verify の扱いは Step 0 の
+- **`NNN-human-*.md` は Phase B の検証対象から外す**。人がやるまで open が正しい状態で、
+  実装の有無では done を判定できない（自動 done 化は誤検出になる）。human の扱いは Step 0 の
   期限報告だけで完結する
 
 ### Step 2: Phase A — readme 一覧テーブルとの照合（テーブルを持つ repo のみ）
@@ -73,7 +73,7 @@ readme（`issues/readme.md` / `issues/README.md`）に issue 一覧テーブル�
 
 ### Step 3: Phase B — コードベース実装検証（**必須**）
 
-**Step 1 で列挙した issue 全件**（`verify` を除く）について、Agent（Explore サブエージェント）を使って以下を実行する:
+**Step 1 で列挙した issue 全件**（`human` を除く）について、Agent（Explore サブエージェント）を使って以下を実行する:
 
 1. issue ファイルを読み取り、要求される機能・修正内容を理解する
 2. issue に記載された**キーとなるクラス名・関数名・型名・UIコンポーネント名**を抽出する

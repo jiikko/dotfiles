@@ -635,6 +635,9 @@ func (v *issuesView) rowsForTab(tab string) []*issues.Issue {
 // reorderTabsByCount は正規順序 tabs を「件数 0 を右へ寄せた」並びへ写す純関数 (件数も同じ並びで
 // 返す)。件数 > 0 / 0 の 2 群に分け、各群の中は正規順序を保つ。入力は破壊しない。
 //
+// ⚠️ human タブは 0 件でも右へ寄せない (All の直後に固定する)。人間待ちのタスクは件数が
+// 少ないときこそ見落とすので、席を動かさないことが目的 ([next] を左端に固定するのと同じ規律)。
+//
 // ⚠️ 表示順だけ変えて巡回順を据え置くと、Tab キーの移動が画面の並びと食い違う (右端に見えるタブへ
 // 順番に辿り着けない)。呼び出し側は tabs (表示・巡回順) をこれで作り直し、位置で持つ選択 (tabIdx)
 // は名前から張り替える (tabIndexOf)。張り替えないと a で件数が変わった瞬間に選択が別カテゴリへ滑る。
@@ -644,8 +647,17 @@ func reorderTabsByCount(tabs []issues.Tab, counts []int) ([]issues.Tab, []int) {
 	}
 	outTabs := make([]issues.Tab, 0, len(tabs))
 	outCounts := make([]int, 0, len(counts))
+	for i, t := range tabs {
+		if t.Name == issues.HumanTab {
+			outTabs = append(outTabs, t)
+			outCounts = append(outCounts, counts[i])
+		}
+	}
 	for _, nonZero := range []bool{true, false} {
 		for i, c := range counts {
+			if tabs[i].Name == issues.HumanTab {
+				continue // 上で固定済み
+			}
 			if (c > 0) == nonZero {
 				outTabs = append(outTabs, tabs[i])
 				outCounts = append(outCounts, c)

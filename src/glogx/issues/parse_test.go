@@ -108,15 +108,19 @@ func TestSortIssuesNumberDescendingNumberlessLast(t *testing.T) {
 func TestTabsDerivedFromFilenamesAndMinorityMerged(t *testing.T) {
 	issues, _ := Scan([]string{fixture(t)})
 	// fixture のカテゴリ: feat 2, refactor 1, docs 1, bug 1, research 1, (なし) 1 = 番号なし
+	// human は fixture に無いが、0 件でも先頭に席がある (HumanTab の契約)
 	tabs := Tabs(issues, TabMinCount)
-	if len(tabs) != 2 || tabs[0].Name != "feat" || tabs[0].Count != 2 {
+	if len(tabs) != 3 || tabs[0].Name != HumanTab || tabs[0].Count != 0 {
+		t.Fatalf("human タブが先頭に無い: %+v", tabs)
+	}
+	if tabs[1].Name != "feat" || tabs[1].Count != 2 {
 		t.Fatalf("タブの組み立てが想定と違う: %+v", tabs)
 	}
-	if tabs[1].Name != OtherTab || tabs[1].Count != 5 {
+	if tabs[2].Name != OtherTab || tabs[2].Count != 5 {
 		t.Fatalf("少数派が other に寄っていない: %+v", tabs)
 	}
-	// minCount=1 なら全カテゴリが独立タブになる
-	if all := Tabs(issues, 1); len(all) != 6 {
+	// minCount=1 なら全カテゴリが独立タブになる (+ human の席)
+	if all := Tabs(issues, 1); len(all) != 7 {
 		t.Fatalf("minCount=1 でタブ数が想定と違う: %+v", all)
 	}
 }
@@ -488,5 +492,41 @@ func TestReferenceAndPathFrom(t *testing.T) {
 	noNum := &Issue{Path: "/repo/issues/x.md", Rel: "x.md", Slug: "resource-leaks"}
 	if got := noNum.Reference("/repo"); got != "resource leaks (issues/x.md)" {
 		t.Fatalf("番号なしの参照: %q", got)
+	}
+}
+
+// human タブは件数に依らず常に先頭に居る。人間待ちのタスクは件数が少ないうちに minCount で
+// other へ沈むと見落とすため (見落とすのは、まさに件数が少ない = 忘れやすい局面)。
+func TestTabsPinHumanFirstRegardlessOfCount(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	// human は 1 件だけ = TabMinCount(2) 未満。feat は 2 件で独立タブになる
+	mkFiles(t, dir, "010-human-verify-thing.md", "009-feat-a.md", "008-feat-b.md", "007-docs-solo.md")
+	list, _ := Scan([]string{dir})
+
+	tabs := Tabs(list, TabMinCount)
+	if tabs[0].Name != HumanTab || tabs[0].Count != 1 {
+		t.Fatalf("1 件の human が other へ沈んだ / 先頭でない: %+v", tabs)
+	}
+	// other に二重計上されていない (human は count から抜いてから寄せ集めを数える)
+	for _, tb := range tabs[1:] {
+		if tb.Name == HumanTab {
+			t.Fatalf("human タブが 2 つある: %+v", tabs)
+		}
+		if tb.Name == OtherTab && tb.Count != 1 { // docs 1 件だけが other へ
+			t.Fatalf("other の件数に human が混ざっている: %+v", tabs)
+		}
+	}
+	// human タブを選ぶと human の issue だけが出る (other へ落ちていない証跡)
+	if got := Filter(list, HumanTab, FilterAll); len(got) != 1 || got[0].Category != HumanTab {
+		t.Fatalf("human タブの中身が違う: %+v", got)
+	}
+	// 0 件でも席は残る
+	root2 := t.TempDir()
+	dir2 := filepath.Join(root2, "issues")
+	mkFiles(t, dir2, "001-feat-a.md", "002-feat-b.md")
+	only, _ := Scan([]string{dir2})
+	if t2 := Tabs(only, TabMinCount); t2[0].Name != HumanTab || t2[0].Count != 0 {
+		t.Fatalf("human 0 件で席が消えた: %+v", t2)
 	}
 }

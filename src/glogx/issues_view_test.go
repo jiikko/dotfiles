@@ -111,6 +111,7 @@ func TestIssuesViewRescanReanchorsTabAndCursor(t *testing.T) {
 		fakeIssue("011", "refactor", "x", issues.StatusOpen),
 	}
 	v := loadedView(first...)
+	v.handleKey("tab", vp(10)) // human (All の右に常設。0 件でも席がある)
 	v.handleKey("tab", vp(10)) // feat (3 件で先頭)
 	v.handleKey("tab", vp(10)) // refactor
 	if got := v.currentTab(); got != "refactor" {
@@ -139,17 +140,19 @@ func TestIssuesViewRescanReanchorsTabAndCursor(t *testing.T) {
 // 「Tab で行き過ぎたら 1 周するしかない」体験になる。
 func TestIssuesViewTabMovesBothDirections(t *testing.T) {
 	v := loadedView(sampleIssues()...)
-	v.handleKey("tab", vp(10)) // All → feat
+	v.handleKey("tab", vp(10)) // All → human (常設タブ)
+	v.handleKey("tab", vp(10)) // human → feat
 	if got := v.currentTab(); got != "feat" {
 		t.Fatalf("前提が崩れた: %q", got)
 	}
-	v.handleKey("ctrl+b", vp(10)) // feat → All
+	v.handleKey("ctrl+b", vp(10)) // feat → human
+	v.handleKey("ctrl+b", vp(10)) // human → All
 	if got := v.currentTab(); got != "" {
 		t.Fatalf("ctrl+b で左へ戻らない: %q", got)
 	}
 	// tui.go の正規化を経た右移動 (ctrl+f → "right") と同じ経路も対称に効く
-	v.handleKey("right", vp(10))
-	if got := v.currentTab(); got != "feat" {
+	v.handleKey("right", vp(10)) // All → human
+	if got := v.currentTab(); got != issues.HumanTab {
 		t.Fatalf("right で右へ動かない: %q", got)
 	}
 	// 端で止まらず巡回する (moveTab の契約) 方向にも ctrl+b が乗る。
@@ -195,8 +198,8 @@ func TestIssuesViewTabsAndDoneFilter(t *testing.T) {
 	if len(v.rows) != 2 {
 		t.Fatalf("既定の行数が違う: %d", len(v.rows))
 	}
-	// タブは feat 2 / refactor 2 / (bug 1 は other へ)
-	if len(v.tabs) != 3 || v.tabs[0].Name != "feat" {
+	// タブは human 0 (常設) / feat 2 / refactor 2 / (bug 1 は other へ)
+	if len(v.tabs) != 4 || v.tabs[0].Name != issues.HumanTab || v.tabs[1].Name != "feat" {
 		t.Fatalf("タブの組み立てが違う: %+v", v.tabs)
 	}
 	v.handleKey("a", vp(10)) // 1 段目: + pending
@@ -213,16 +216,17 @@ func TestIssuesViewTabsAndDoneFilter(t *testing.T) {
 	}
 	v.handleKey("a", vp(10))
 	v.handleKey("a", vp(10)) // 以降のタブ検証は全件表示で行う
-	// Tab 巡回: All → feat → refactor → other → [next] → All
-	// ([next] は All の左に固定なので、右回りでは All の 1 つ手前に来る)
-	names := []string{"feat", "refactor", "other", tabNextName, ""}
+	// Tab 巡回: All → human → feat → refactor → other → [next] → All
+	// (human は All の右に固定、[next] は All の左に固定なので右回りでは All の 1 つ手前)
+	names := []string{issues.HumanTab, "feat", "refactor", "other", tabNextName, ""}
 	for _, want := range names {
 		v.handleKey("tab", vp(10))
 		if got := v.currentTab(); got != want {
 			t.Fatalf("タブ巡回が想定と違う: want %q got %q", want, got)
 		}
 	}
-	// feat タブでは feat の 2 件だけ
+	// feat タブでは feat の 2 件だけ (All → human → feat)
+	v.handleKey("tab", vp(10))
 	v.handleKey("tab", vp(10))
 	if len(v.rows) != 2 {
 		t.Fatalf("feat タブの行数が違う: %d", len(v.rows))
@@ -940,15 +944,19 @@ func TestIssuesViewCursorStaysVisibleAfterRowSetChanges(t *testing.T) {
 		list = append(list, fakeIssue(fmt.Sprintf("%03d", i), "feat", "x", st))
 	}
 	const page = 12
-	for _, key := range []string{"a", "tab", "y"} {
+	// ⚠️ tab は 2 回押す: All の右には常設の human タブ (この fixture では 0 件) が居るので、
+	// 1 回だけだと「行が無いタブ」に入ってカーソル行そのものが存在しなくなる
+	for _, keys := range [][]string{{"a"}, {"tab", "tab"}, {"y"}} {
 		v := loadedView(list...)
 		v.handleKey("G", vp(page)) // カーソルを末尾へ (窓は下端に張り付く)
 		if !hasCursorMark(v.lines(renderOpts(page))) {
-			t.Fatalf("前提が崩れた: G の直後にカーソル行が描かれていない (key=%q)", key)
+			t.Fatalf("前提が崩れた: G の直後にカーソル行が描かれていない (keys=%v)", keys)
 		}
-		v.handleKey(key, vp(page))
+		for _, key := range keys {
+			v.handleKey(key, vp(page))
+		}
 		if !hasCursorMark(v.lines(renderOpts(page))) {
-			t.Fatalf("%q の後にカーソル行が窓の外へ出た:\n%s", key, strings.Join(v.lines(renderOpts(page)), "\n"))
+			t.Fatalf("%v の後にカーソル行が窓の外へ出た:\n%s", keys, strings.Join(v.lines(renderOpts(page)), "\n"))
 		}
 	}
 }
@@ -1427,10 +1435,14 @@ func TestIssuesZeroCountTabsGoRight(t *testing.T) {
 	if len(v.tabs) < 2 {
 		t.Fatalf("タブが揃っていない: %+v", v.tabs)
 	}
-	if v.tabs[0].Name != "feat" || v.tabCount[0] == 0 {
-		t.Errorf("0 件でないタブが左端に来ていない: tabs=%+v counts=%v", v.tabs, v.tabCount)
+	// 先頭は常設の human (0 件でも固定)。その次から「非 0 → 0」の並べ替えが効く
+	if v.tabs[0].Name != issues.HumanTab {
+		t.Errorf("human タブが先頭に固定されていない: tabs=%+v", v.tabs)
 	}
-	for i := 1; i < len(v.tabCount); i++ {
+	if v.tabs[1].Name != "feat" || v.tabCount[1] == 0 {
+		t.Errorf("0 件でないタブが human の右に来ていない: tabs=%+v counts=%v", v.tabs, v.tabCount)
+	}
+	for i := 2; i < len(v.tabCount); i++ {
 		if v.tabCount[i] != 0 {
 			t.Errorf("0 件タブより右に非 0 のタブがある: counts=%v", v.tabCount)
 		}
@@ -2319,5 +2331,19 @@ func (e *bodyKeyEnv) assertClosesBody(t *testing.T, key string) {
 	e.press("j")
 	if e.v.open != nil {
 		t.Errorf("%q の後に本文が捨てられない", key)
+	}
+}
+
+// 表示順の並べ替えは human を右へ寄せない (0 件でも All の直後に固定する)。
+func TestReorderTabsKeepsHumanPinnedAtZero(t *testing.T) {
+	tabs := []issues.Tab{{Name: issues.HumanTab}, {Name: "a"}, {Name: "b"}}
+	counts := []int{0, 0, 4} // human 0 件・a 0 件・b 4 件
+	gotTabs, gotCounts := reorderTabsByCount(tabs, counts)
+	names := []string{gotTabs[0].Name, gotTabs[1].Name, gotTabs[2].Name}
+	if want := []string{issues.HumanTab, "b", "a"}; !slices.Equal(names, want) {
+		t.Errorf("並び = %v, want %v (human は 0 件でも先頭)", names, want)
+	}
+	if want := []int{0, 4, 0}; !slices.Equal(gotCounts, want) {
+		t.Errorf("件数の並び = %v, want %v", gotCounts, want)
 	}
 }

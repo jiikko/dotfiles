@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 #
-# SessionStart フック: 未確認の動作確認 issue (`NNN-verify-*.md`) と、期限 (`期限:`) が
-# 切れた/迫っている issue をセッション開始時にモデルのコンテキストへ注入する。
+# SessionStart フック: 未完了の human タスク issue (`NNN-human-*.md` = 人間しかできない作業:
+# 動作確認・目視レビュー・外部サービスの操作・判断待ち) と、期限 (`期限:`) が切れた/迫っている
+# issue をセッション開始時にモデルのコンテキストへ注入する。
 #
 # なぜ: 動作確認を応答本文に書くと chat に流れて存在自体が忘れられる。issue に起こす運用
 # (issues/README.md) にしても、「読む契機」が glogx の viewer を開くか issue-sync を叩くかに
 # 依存する = 起動しなければ永久に気づかない。セッション開始という必ず通る場所で催促する。
 # 出典: ~/.claude/CLAUDE.md「Issue管理」/ issues/README.md。
 #
-# 状態の正本はファイルの位置: issues/ 直下にある = 未確認、issues/done/ にある = 確認済み。
+# 状態の正本はファイルの位置: issues/ 直下にある = 未完了、issues/done/ にある = 完了。
 # 本文の既読ヘッダーは見ない (書き換え忘れで嘘が残るため)。
 #
 # 入力: SessionStart の hook JSON (stdin)。`.cwd` があれば使い、無ければ $PWD。
@@ -58,11 +59,12 @@ for f in "$dir"/*.md; do
     README.md | readme.md) continue ;;
   esac
   rel="${f#"$root"/}"
-  # ⚠️ カテゴリはファイル名 position 2 (NNN-<カテゴリ>-<スラッグ>)。`*-verify-*` で見ると
-  # スラッグ側の "verify" (例 061-docs-mutation-verify-fake-mutations.md) を誤って拾う
-  is_verify=0
+  # ⚠️ カテゴリはファイル名 position 2 (NNN-<カテゴリ>-<スラッグ>) を丸ごと照合する。
+  # `*-human-*` のような部分一致で見ると、スラッグ側に同じ語を含む別カテゴリの issue
+  # (例 061-docs-mutation-verify-fake-mutations.md) を誤って拾う
+  is_human=0
   case "$base" in
-    [0-9][0-9][0-9]-verify-*.md) is_verify=1 ; unread=$((unread + 1)) ;;
+    [0-9][0-9][0-9]-human-*.md) is_human=1 ; unread=$((unread + 1)) ;;
   esac
 
   # 読めないファイルは「期限なし」と混ぜない (誤ラベルより「読めなかった」と言う方が正確)
@@ -81,8 +83,8 @@ for f in "$dir"/*.md; do
   esac
   due=$(printf '%s' "$line" | tr -d '\r' | sed -E 's/^期限[:：][[:space:]]*//' | awk '{print $1}')
   if [ -z "$due" ]; then
-    # verify は期限必須。他カテゴリは任意なので黙って飛ばす
-    [ "$is_verify" -eq 1 ] && broken="${broken}  期限なし     ${rel}"$'\n'
+    # human は期限必須。他カテゴリは任意なので黙って飛ばす
+    [ "$is_human" -eq 1 ] && broken="${broken}  期限なし     ${rel}"$'\n'
     continue
   fi
   case "$due" in
@@ -103,7 +105,7 @@ done
 [ -n "$overdue$upcoming$broken" ] || [ "$unread" -gt 0 ] || exit 0
 
 report=$(
-  printf '未確認の動作確認 issue: %d 件' "$unread"
+  printf '未完了の human タスク issue: %d 件' "$unread"
   [ "$later" -gt 0 ] && printf ' (うち期限に余裕あり %d 件)' "$later"
   printf '\n'
   [ -n "$overdue" ] && printf '%s' "$overdue"
@@ -117,12 +119,12 @@ if command -v jq >/dev/null 2>&1; then
   jq -n --arg ctx "$report" '{
     hookSpecificOutput: {
       hookEventName: "SessionStart",
-      additionalContext: ("未確認の動作確認 issue がある。期限切れがあれば最初に一言で伝えること:\n" + $ctx)
+      additionalContext: ("未完了の human タスク issue (人間しかできない作業) がある。期限切れがあれば最初に一言で伝えること:\n" + $ctx)
     },
     suppressOutput: true
   }'
 else
   # jq が無い環境でも黙らない (SessionStart の stdout はコンテキストに入る)
-  printf '未確認の動作確認 issue がある。期限切れがあれば最初に一言で伝えること:\n%s' "$report"
+  printf '未完了の human タスク issue がある。期限切れがあれば最初に一言で伝えること:\n%s' "$report"
 fi
 exit 0

@@ -21,7 +21,7 @@ issues/NNN-<カテゴリ>-<スラッグ>.md
 | `docs` | ドキュメント・ルール・コメント整備 |
 | `chore` | 雑務（依存更新・メッセージ/表示の手直し・テストの前提整理など、機能でも不具合でもないもの） |
 | `research` | 調査・設計検討（成果物がコードでないもの） |
-| `verify` | **人にやってほしい動作確認**（Claude が書いた確認手順。人が確認するまで open。`期限:` 必須） |
+| `human` | **人間しかできない作業**（動作確認・目視レビュー・外部サービスの操作・判断待ち。人がやるまで open。`期限:` 必須）。何をしてほしいかはスラッグに書く（例 `068-human-verify-ci-poll.md`） |
 
 例: `issues/001-refactor-makefile-test-autodiscovery.md` / `issues/002-bug-nvim-cterm-drift-2026-07-16.md`
 
@@ -35,15 +35,17 @@ ls issues issues/pending issues/done | grep -E '^[0-9]{3}-' | sort | tail -1
 
 本文冒頭のメタ行（`起票日:` の隣）に `期限: YYYY-MM-DD` を書ける。
 
-- **`verify` は必須**（動作確認は放置すると価値が腐るため）。他カテゴリは任意
+- **`human` は必須**（人間待ちの作業は放置すると価値が腐るため）。他カテゴリは任意
 - 書式は**行頭 `期限:` + 半角コロン + `YYYY-MM-DD`**。全角コロンでも `issue-sync` は拾うが、
   表記は半角に揃える（拾えなかった期限は「期限なし」と区別できず黙って埋もれる）
 - 期限は「読んで確認する期限」であって「直す期限」ではない
 - **既読の唯一の出典はファイルの位置**（`issues/` にある = 未読、`issues/done/` にある = 確認済み）。
   既読ヘッダー・チェックボックスは使わない（本文を書き換え忘れると嘘が残るため、移動で表す）
-- 未読の一覧は glogx の issues viewer（`i` キー）が見せる（ただし viewer は期限を表示しない）
-- **未読と期限切れはセッション開始時に自動で出る**: `_claude/hooks/verify-issues-due.sh`（SessionStart
-  hook。配線は `_claude/settings.json`）が未確認の `verify` issue と期限切れ／期限間近を Claude の
+- 未完了の一覧は glogx の issues viewer（`i` キー）の **`human` タブ**が見せる。このタブは
+  **件数 0 でも All の右に固定**で出る（少数のうちに `other` へ沈んで見落とすのを防ぐため）。
+  ただし viewer は期限を表示しないので、期限は下の hook / skill が受け持つ
+- **未完了と期限切れはセッション開始時に自動で出る**: `_claude/hooks/human-tasks-due.sh`（SessionStart
+  hook。配線は `_claude/settings.json`）が未完了の `human` issue と期限切れ／期限間近を Claude の
   コンテキストへ注入する。読み取れなかったもの（期限なし・書式不正・読み取り不可・抽出失敗）も
   黙って捨てず列挙する。`issue-sync` skill でも同じ点検を最初に行う
 

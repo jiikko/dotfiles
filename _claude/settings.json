@@ -92,7 +92,7 @@
           },
           {
             "type": "command",
-            "command": "~/dotfiles/_claude/hooks/verify-issues-due.sh",
+            "command": "~/dotfiles/_claude/hooks/human-tasks-due.sh",
             "timeout": 10
           }
         ]

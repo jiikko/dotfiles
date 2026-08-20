@@ -525,6 +525,16 @@ type Tab struct {
 // OtherTab はカテゴリを持たないファイルと、少数派カテゴリの寄せ先の名前。
 const OtherTab = "other"
 
+// HumanTab は「人間しかできない作業」カテゴリ (NNN-human-*.md: 動作確認・目視レビュー・
+// 外部サービスの操作・判断待ち) のタブ名。
+//
+// このタブだけは **件数に依らず常に存在し、正規順序の先頭に固定する**。理由: 人間待ちの
+// タスクは放置すると価値が腐るのに、件数が少ないうちは minCount で other に沈んで見えなく
+// なる (= 見落としが起きるのは、まさに件数が少ない = 忘れやすい局面)。0 件でも席を残すのは
+// 「今は無い」を読めるようにするため。位置の固定は [next] チップが All の左に固定されて
+// いるのと同じ規律 (目印の場所は動かさない)。
+const HumanTab = "human"
+
 // Tabs はカテゴリタブを件数の多い順に返す (同数は名前順)。issues に含まれるトークンから
 // 組み立てる: カテゴリ語彙は repo ごとに違い (実測 19 語 + サブシステム名体系)、
 // ハードコードすると別 repo で空タブと欠落が出る。
@@ -538,7 +548,11 @@ func Tabs(issues []*Issue, minCount int) []Tab {
 	}
 	other := count[""]
 	delete(count, "")
-	tabs := make([]Tab, 0, len(count))
+	// human は minCount を免除し、0 件でも席を残す (HumanTab のコメント参照)。
+	// count から抜いて下のループの対象外にし、並べ替えの後に先頭へ差し込む
+	humanCount := count[HumanTab]
+	delete(count, HumanTab)
+	tabs := make([]Tab, 0, len(count)+1)
 	for name, n := range count {
 		if n < minCount {
 			other += n
@@ -562,7 +576,7 @@ func Tabs(issues []*Issue, minCount int) []Tab {
 			tabs = append(tabs, Tab{Name: OtherTab, Count: other})
 		}
 	}
-	return tabs
+	return append([]Tab{{Name: HumanTab, Count: humanCount}}, tabs...)
 }
 
 // indexOfTab は名前のタブ位置 (無ければ -1)。
