@@ -26,10 +26,15 @@ Open Issues の中から、実際にはコードベース上で対応済み（do
 は放置すると価値が腐るため、埋もれさせない）。
 
 ```sh
-grep -l '^期限:' issues/*.md issues/pending/*.md 2>/dev/null | while read -r f; do
-  printf '%s\t%s\n' "$(grep -m1 '^期限:' "$f" | sed 's/^期限:[[:space:]]*//')" "$f"
+# コロンは全角も拾う (`期限：` と書かれた 1 件を黙って取りこぼすのが最悪の失敗)
+grep -lE '^期限[:：]' issues/*.md issues/pending/*.md 2>/dev/null | while read -r f; do
+  printf '%s\t%s\n' "$(grep -m1 -E '^期限[:：]' "$f" | sed -E 's/^期限[:：][[:space:]]*//')" "$f"
 done | sort
 ```
+
+- **`期限:` 行が 1 件も無い repo と、書式が違って拾えなかった repo を混同しない**。verify issue
+  (`*-verify-*.md`) が存在するのに期限が 0 件なら、書式ミス (全角コロン以外の表記ゆれ・行頭でない)
+  を疑って当該ファイルを直接開く
 
 - **`issues/` にある = 未読**、`issues/done/` にある = 確認済み（既読の唯一の出典はファイルの位置。
   本文の既読ヘッダーは見ない）

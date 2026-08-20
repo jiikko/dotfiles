@@ -129,7 +129,10 @@ type ciPollMsg struct{ gen int }
 
 // ciPollResultMsg は ciPoll が投げた再取得の結果。一括取得 (ciResultMsg) と分けているのは、
 // fetching / detailsLoading を立てず表示を「取得中」に落とさないため (チラつき防止)。
+// gen は投げた時点の世代で、リロードを跨いで着弾した結果を捨てるために持つ
+// (ciResultMsg の epoch と同じ役目)。
 type ciPollResultMsg struct {
+	gen     int
 	targets []string
 	batch   CIBatch
 	ghErr   *GHError
@@ -974,12 +977,21 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, next
 		}
 		m.ciPollInFlight = true
+		gen := m.ciPollGen
 		fetch := ciPollFetch(m.repo, targets, func(b CIBatch, e *GHError) tea.Msg {
-			return ciPollResultMsg{targets: targets, batch: b, ghErr: e}
+			return ciPollResultMsg{gen: gen, targets: targets, batch: b, ghErr: e}
 		})
 		return m, tea.Batch(fetch, next, m.maybeTick())
 	case ciPollResultMsg:
+		// ⚠️ in-flight は世代不一致でも必ず下ろす: リロード側は「飛んでいる poll の結果が
+		// 着弾するまで in-flight を維持する」前提 (reloadAfterPull のコメント) なので、
+		// ここで下ろさないと以降の周期が永久に fetch を見送る
 		m.ciPollInFlight = false
+		if msg.gen != m.ciPollGen {
+			// リロード前に投げた結果。マージすると入れ替わった statuses を古い観測で
+			// 巻き戻す (決着済みの SHA が pending に戻り、表示と追従が 1 周期ぶれる)
+			return m, m.ensureCIPoll()
+		}
 		m.invalidateLines()
 		m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (sticky 警告の防止)
 		m.mergeCIBatch(msg.batch.Statuses, msg.batch.Details, msg.batch.PRs)
@@ -2257,6 +2269,9 @@ func (m *browseModel) openPanel() tea.Cmd {
 //
 //   - StatePending のコミット: 完了 (success/failure/neutral) まで無条件に追う。パネルを開いて
 //     いるかどうか・push からどれだけ経ったかは問わない
+//   - 取得済み Details に実行中 job がある SHA: ロールアップが pending にならない組み合わせ
+//     (「1 件失敗 + 1 件実行中」は aggregateRollup が失敗優先で StateFailure) を拾うため。
+//     これが無いと、失敗を含むコミットの残り job や rerun した job の経過時間が固まる
 //   - awaitCI: push 直後で CI がまだ 1 つも見えない SHA (ciAwaitMaxAttempts で打ち切る)
 //   - panelGrace 中のパネル SHA: rerun 要求が GraphQL に映るまでのラグ吸収
 func (m *browseModel) ciPollTargets() []string {
@@ -2270,7 +2285,7 @@ func (m *browseModel) ciPollTargets() []string {
 		targets = append(targets, sha)
 	}
 	for _, c := range m.commits {
-		if m.statuses[c.SHA] == StatePending || m.awaitCI[c.SHA] {
+		if m.statuses[c.SHA] == StatePending || m.awaitCI[c.SHA] || m.hasRunningJob(c.SHA) {
 			add(c.SHA)
 		}
 	}
@@ -2701,11 +2716,16 @@ func (m *browseModel) issuesOpts() issuesRenderOpts {
 // panelHasRunningJob は表示中の job パネルに実行中 (経過時間が増える) job があるか。
 // tick を回し続けて「N 経過 / 残り ~M」をライブ更新するため (spinnerActive が false だと
 // tick が止まり、パネルを開いたまま経過秒が固まる)。
-func (m *browseModel) panelHasRunningJob() bool {
-	if m.panelSHA == "" {
+func (m *browseModel) panelHasRunningJob() bool { return m.hasRunningJob(m.panelSHA) }
+
+// hasRunningJob は sha の取得済み Details に実行中 job があるか。
+// ⚠️ statuses (ロールアップ) では代用できない: aggregateRollup は失敗を最優先するので
+// 「1 件失敗 + 1 件実行中」は StateFailure になり、pending 判定では実行中を取りこぼす。
+func (m *browseModel) hasRunningJob(sha string) bool {
+	if sha == "" {
 		return false
 	}
-	for _, job := range m.details[m.panelSHA] {
+	for _, job := range m.details[sha] {
 		if job.running() {
 			return true
 		}

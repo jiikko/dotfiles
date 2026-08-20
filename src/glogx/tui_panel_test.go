@@ -1288,3 +1288,57 @@ func TestCIPollArmedAtInitFromCachedPending(t *testing.T) {
 		t.Error("キャッシュ済み pending で起動したのに追従チェーンが張られない")
 	}
 }
+
+// 回帰: 「1 件失敗 + 1 件実行中」のコミットは aggregateRollup が失敗を優先するため statuses が
+// StateFailure になり、pending 判定だけでは追従から漏れる (パネルの経過時間・job 状態が固まる)。
+// 複数失敗のうち 1 つを rerun した直後もこの形になるので、猶予 (panelGrace) では代替できない。
+func TestCIPollFollowsRunningJobUnderFailureRollup(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StateFailure
+	m.details[sha] = []CheckDetail{
+		{Name: "lint", State: StateFailure, CheckID: 7},
+		{Name: "test", State: StatePending, CheckID: 8, StartedAt: time.Now().Add(-time.Minute)},
+	}
+	if !m.hasRunningJob(sha) {
+		t.Fatal("前提: 実行中 job が居ない (この形を作れていないとテストが無意味化する)")
+	}
+	if got := m.ciPollTargets(); len(got) != 1 || got[0] != sha {
+		t.Fatalf("実行中 job があるのに追従対象にならない: %v", got)
+	}
+	// 猶予 0 (rerun 直後ではない) でも周期で追い続ける
+	m.panelGrace = 0
+	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd == nil || !m.ciPollInFlight {
+		t.Fatal("実行中 job があるのに周期で再取得されない")
+	}
+	// 全 job が決着したら対象から外れる (永久ポーリングしない)
+	m.details[sha] = []CheckDetail{
+		{Name: "lint", State: StateFailure, CheckID: 7},
+		{Name: "test", State: StateSuccess, CheckID: 8},
+	}
+	if got := m.ciPollTargets(); len(got) != 0 {
+		t.Fatalf("決着後も追従対象に残っている: %v", got)
+	}
+}
+
+// 回帰: リロード (ciPollGen が進む) を跨いで着弾した古い poll 結果は捨てる。マージすると
+// 入れ替わった statuses を古い観測で巻き戻す。ただし in-flight は必ず下ろす — 下ろさないと
+// 以降の周期が永久に fetch を見送る (reloadAfterPull は「結果着弾まで in-flight 維持」が前提)。
+func TestCIPollResultFromStaleGenerationDropped(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	m.statuses[sha] = StateSuccess // リロード後に取り直した新しい観測
+	m.ciPollInFlight = true
+	staleGen := m.ciPollGen
+	m.ciPollGen++ // reloadAfterPull 相当
+
+	m.Update(ciPollResultMsg{gen: staleGen, targets: []string{sha}, batch: CIBatch{
+		Statuses: map[string]CIState{sha: StatePending}, // 古い観測
+	}})
+	if m.statuses[sha] != StateSuccess {
+		t.Fatalf("古い結果で statuses が巻き戻った: %v", m.statuses[sha])
+	}
+	if m.ciPollInFlight {
+		t.Fatal("世代不一致で in-flight が下りない (以降の周期が永久に fetch を見送る)")
+	}
+}
