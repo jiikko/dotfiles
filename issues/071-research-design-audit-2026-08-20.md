@@ -37,7 +37,7 @@ diffOverlay/jobDetailOverlay 統合・toast キュー化などは既決事項と
 source 済みの `scripts/lib/tmux_resurrect_guards.sh` (自身のヘッダで「二重定義を避ける集約点」
 と役割宣言済み) なので**新しい依存辺は増えない**。
 
-## gum confirm の `--default=false` が実装強制されていない (High 相当)
+## [済 7c064e6] gum confirm の `--default=false` が実装強制されていない (High 相当)
 
 `scripts/CLAUDE.md` が「gum confirm は `--default=false` に統一する (Enter 素通しでは
 実行されない)」を規約として定めているが、これを守らせる仕組みがどこにもない。
@@ -56,6 +56,15 @@ source 済みの `scripts/lib/tmux_resurrect_guards.sh` (自身のヘッダで�
 fail にする (発見 0 件も fail)。これで `_tmux.conf:407` のインライン confirm も対象に入る。
 (3) M-c のインライン confirm を `scripts/` へ寄せると、confirm ファミリーの fail-safe 契約と
 テスト資産 (nogum スタブ) を再利用できる
+
+**対応 (7c064e6)**: (1)(2) を実装。個別 assert を 2 本足し (引数順に依存しない形)、
+`tests/tmux/test_confirm_default_gate.sh` を新設して `make test-lint` に組み込んだ。
+ゲートは呼び出し単位で検査し、検査対象は実行されるコード全体を発見式に列挙する
+(`scripts/lib` / `bin` / `zshlib` / `_claude/hooks` も含む)。敵対的レビューで 8 件の
+素通り経路が出たため全部塞いだ (同一行のコメントに文字列だけ置く / 1 行に 2 つ目の confirm /
+検査対象外ディレクトリへ移す / `"$GUM" confirm` と行継続分割 / 偽 grep で false green ほか)。
+**(3) の M-c 移設は未着手** (ゲートが `_tmux.conf` のインライン呼び出しも検査対象に含むため
+緊急度が下がった。trigger: M-c の confirm を次に触るとき)
 
 ## 状態 → 表示の写像が 3〜5 箇所に独立実装
 

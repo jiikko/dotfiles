@@ -13,6 +13,19 @@ High 2 件は単独 issue に分離済み: [068](068-bug-snapshot-health-lock-ow
 以下は Medium。**main agent がコードで存在確認した項目には ✓ を付ける。それ以外は
 未裏取りの候補**で、着手前にコード再確認が必要。
 
+## 対応状況 (2026-08-21 時点)
+
+この issue の項目は 2 セッションで分担して着手した。**下の各項目に `[済 <commit>]` が付いて
+いるものは対応済み**。付いていないものは未着手 (または別セッションが進行中)。
+
+- 本セッションが対応: 孤児サーバ回収の default socket 除外 / mtime の stat 方言差
+- 別セッション (dotfiles-95) が対応: archive 完全性ガードと bypass 経路 / bin/ci-log の
+  false green / URL の C1 漏れ / bin/tmux-toast 系 / terminal_profile の AppleScript ほか。
+  裏取りの一次情報は `./tmp/audit-triage.md` (72 指摘の CONFIRMED / FALSE_POSITIVE 判定つき。
+  tmp なので消えうる)
+- **反証で却下された項目もある** (例: `_tmux.conf:551` の `#{socket_path}` 未 q: 化 /
+  `bin/tmux-toast` の python3 fallback)。着手前にトリアージ表を確認すること
+
 ## 保存・復元まわり (resurrect)
 
 - **archive 完全性ガードがコメントの主張より弱い** — `scripts/tmux_resurrect_save.sh:230`
@@ -33,11 +46,15 @@ High 2 件は単独 issue に分離済み: [068](068-bug-snapshot-health-lock-ow
 
 ## tmux サーバ状態
 
-- **孤児サーバ回収が「生きている本番サーバ」も対象にしうる** —
+- **[済 61e9c49] 孤児サーバ回収が「生きている本番サーバ」も対象にしうる** —
   `scripts/tmux_reap_orphan_servers.sh:77`。孤児判定に canonical な default socket の
   除外がない。発火条件: 何かが default socket ファイルを削除し、かつ client が全 detach
   している瞬間に `tt` が reap を呼ぶ。スクリプト自身のコメントが「mktemp socket 上の
-  孤児の衛生役」と役割を限定しているので、default socket 除外で目的は達成できる
+  孤児の衛生役」と役割を限定しているので、default socket 除外で目的は達成できる。
+  **対応**: OS 既定の default socket (/tmp と /private/tmp の両表記) を保護リストに置いた。
+  lsof のパス表記が環境依存 (macOS は /private/tmp を返す) で素の文字列比較では保護が
+  黙って外れたため、先頭 /private を剥がして正規化している。テストは保護 + 陽性対照
+  (保護を外すと同じプロセスが reap される) + 既定リストの中身を pin。変異 4 種で red 確認
 - **watchdog の死因分類が貪欲マッチで別の pid を拾う** —
   `scripts/tmux_server_watchdog.sh:154` の `sed -n 's/.*[^a-z]pid=\([0-9]*\).*/\1/p'`
 - **`#{socket_path}` が q: 展開されずに watchdog へ渡る** — `_tmux.conf:551`
@@ -53,9 +70,11 @@ High 2 件は単独 issue に分離済み: [068](068-bug-snapshot-health-lock-ow
 - **panel pane の同一性判定がスクリプト絶対パス完全一致** — 同 `:117` / `:254`。
   worktree 並行作業ではパスが違うため、別 worktree の panel を自分のものと認識しない /
   掃討できない
-- ✓ **`stat -f %m` が BSD 前提** — 同 `:205`。GNU stat では `-f` が別意味で算術エラーになり、
+- ✓ **[済 7c064e6] `stat -f %m` が BSD 前提** — 同 `:205`。GNU stat では `-f` が別意味で算術エラーになり、
   hook 経由なので無音契約に反して pane にエラーが積まれる。同 repo の
-  `tmux_snapshot_health.sh:49-53` は「GNU を先に試す」で既に回避済み (追随漏れ)
+  `tmux_snapshot_health.sh:49-53` は「GNU を先に試す」で既に回避済み (追随漏れ)。
+  **対応**: guards.sh に `tt_mtime_of` (GNU-first) を集約し、snapshot_health のローカル定義も
+  統合 (重複 2→1)。偽 GNU stat 環境で旧形が算術構文エラー・現行が正常を実測
 
 ## hook の無音契約
 
