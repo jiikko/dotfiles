@@ -46,6 +46,21 @@ fi
 
 uid=$(id -u)
 
+# 本番 (OS 既定の default socket) のサーバは、socket ファイルが消えていても絶対に reap しない。
+# 発火条件: 何か (掃除スクリプト・tmp cleaner・並行セッション) が default socket ファイルを
+# 削除し、その瞬間に client が全 detach していると、下の判定は「socket 全消滅 + 接続なし」=
+# 孤児と結論して生きている本番サーバを TERM→KILL する。tmux は exit 時保存をしないため、
+# 直前の resurrect 保存 (周期 15 分) 以降が失われる。
+# 本スクリプトの目的は冒頭の現況コメントのとおり「mktemp socket 上の孤児の掃除」なので、
+# default socket を除外しても目的は達成できる。
+# ⚠️ TMUX_TMPDIR で隔離された socket は保護しない (テスト・probe の孤児は掃除対象。後片付けは
+# probe 側の責務という既存の不変条件を維持する)。macOS では /tmp が /private/tmp の symlink で
+# lsof がどちらを返すか環境依存なので両方を候補に持つ。
+# TT_REAP_PROTECT_SOCKS はテスト用の seam (実 default socket を使うテストは本番と衝突する)。
+# 空を渡しても既定へ落ちる (:-) = 誤って空にしても本番保護は外れない。
+protect_socks=${TT_REAP_PROTECT_SOCKS:-"/tmp/tmux-$uid/default
+/private/tmp/tmux-$uid/default"}
+
 # `^tmux` にマッチするプロセス（サーバも client も含む）を列挙。
 # pgrep -x はプロセス名 == "tmux" の厳密一致（argv 全体ではない）。
 pids=$(pgrep -U "$uid" -x tmux 2>/dev/null || true)
@@ -66,13 +81,30 @@ for pid in $pids; do
   [ -n "$socks" ] || continue
   alive=0
   npaths=0
+  protected=0
   while IFS= read -r s; do
     [ -n "$s" ] || continue
     npaths=$((npaths + 1))
     [ -S "$s" ] && alive=1
+    # 保護対象 (default socket) を開いているプロセスは、socket が消えていても触らない。
+    # ⚠️ lsof のパス表記は環境依存。macOS は /tmp が /private/tmp の symlink なので
+    # /private/tmp/... を返す (実測 2026-08-21)。素の文字列比較だと保護が黙って外れるため、
+    # 先頭 /private を剥がして正規化してから比べる。
+    ns="$s"; case "$ns" in /private/*) ns="${ns#/private}" ;; esac
+    while IFS= read -r pguard; do
+      [ -n "$pguard" ] || continue
+      np="$pguard"; case "$np" in /private/*) np="${np#/private}" ;; esac
+      [ "$ns" = "$np" ] && protected=1
+    done <<PROTEOF
+$protect_socks
+PROTEOF
   done <<EOF
 $socks
 EOF
+  if [ "$protected" -eq 1 ]; then
+    [ "${DRY_RUN:-0}" = "1" ] && printf 'protected (default socket) pid=%s\n' "$pid"
+    continue
+  fi
   # 生存 socket を 1 つでも持つ = 実サーバ or 接続中 client。絶対に保護する。
   [ "$alive" -eq 1 ] && continue
   # socket ファイルは全て消滅している。ただしパス付き fd が 2 行以上 = listening fd に加えて

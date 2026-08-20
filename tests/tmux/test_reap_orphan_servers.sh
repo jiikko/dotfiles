@@ -38,6 +38,7 @@ orphan_pid=""
 live_pid=""
 space_pid=""
 att_pid=""
+prot_pid=""
 # reap は実プロセステーブルを pgrep で走査する設計のため、このテストの reap 実行は「自分が作った
 # 孤児」だけでなく、実環境に偶々存在する他の dead-socket 孤児も回収しうる（reap は生存 socket を
 # 持つプロセスには絶対触れないので副作用は常に良性=ゴミ掃除）。ただし reap のログ書き込みは
@@ -54,6 +55,7 @@ cleanup() {
   [[ -n "$orphan_pid" ]] && kill -KILL "$orphan_pid" 2>/dev/null || true
   [[ -n "$space_pid" ]]  && kill -KILL "$space_pid"  2>/dev/null || true
   [[ -n "$att_pid" ]]    && kill -KILL "$att_pid"    2>/dev/null || true
+  [[ -n "${prot_pid:-}" ]] && kill -KILL "$prot_pid" 2>/dev/null || true
   env TMUX_TMPDIR="$LIVE_DIR"   "$TMUX_BIN_PATH" -L "$LIVE_SOCK"   kill-server >/dev/null 2>&1 || true
   env TMUX_TMPDIR="$ORPHAN_DIR" "$TMUX_BIN_PATH" -L "$ORPHAN_SOCK" kill-server >/dev/null 2>&1 || true
   env TMUX_TMPDIR="$SPACE_DIR"  "$TMUX_BIN_PATH" -L "$SPACE_SOCK"  kill-server >/dev/null 2>&1 || true
@@ -140,5 +142,50 @@ rm -f "$ATT_DIR/tmux-$UID_NUM/$ATT_SOCK"
 "$REAP" >/dev/null 2>&1 || true
 kill -0 "$att_pid" 2>/dev/null || fail "D: attach 中 (socket 消滅) のサーバ (pid=$att_pid) を reap が誤殺した"
 ok "D: socket 消滅でも attach 中のサーバは保護された"
+
+# ---- E) 保護対象 socket (本番の default socket 相当) は socket 消滅でも保護 ----
+# 実 default socket (/tmp/tmux-$uid/default) でサーバを起こすと本番と衝突するため、
+# 保護リストの seam に「孤児役の socket パス」を渡して判定だけを検証する。
+# なぜこの保護が必要か: 何かが default socket ファイルを削除し、その瞬間 client が全 detach
+# していると、reap は「socket 全消滅 + 接続なし」= 孤児と結論して生きている本番サーバを
+# TERM→KILL する (tmux は exit 時保存をしないため直前の保存以降が失われる)。
+PROT_DIR=$(mktemp -d /tmp/reapp.XXXXXX)
+PROT_SOCK="rp$$"
+env TMUX_TMPDIR="$PROT_DIR" "$TMUX_BIN_PATH" -L "$PROT_SOCK" \
+  new-session -d -s prot "tail -f /dev/null" >>"$start_log" 2>&1 \
+  || { cat "$start_log" >&2; fail "failed to start protected-role server" }
+prot_pid=$(env TMUX_TMPDIR="$PROT_DIR" "$TMUX_BIN_PATH" -L "$PROT_SOCK" display-message -p '#{pid}')
+[[ -n "$prot_pid" ]] || fail "E: protected-role server の PID を取得できなかった"
+prot_socket_path="$PROT_DIR/tmux-$UID_NUM/$PROT_SOCK"
+rm -f "$prot_socket_path"
+[[ -S "$prot_socket_path" ]] && fail "E: protected-role socket を消せていない"
+
+# 保護リストに入れて実行 → kill されない
+TT_REAP_PROTECT_SOCKS="$prot_socket_path" "$REAP" >/dev/null 2>&1 || true
+kill -0 "$prot_pid" 2>/dev/null \
+  || fail "E: 保護対象 socket のサーバ (pid=$prot_pid) を reap が kill した"
+ok "E: 保護対象 socket は socket 消滅 + 接続なしでも kill されない"
+
+# 対照: 保護リストから外すと同じプロセスが reap される (保護が効いていることの陽性対照。
+# これが無いと「そもそも reap 対象になっていなかった」だけで緑になる)
+TT_REAP_PROTECT_SOCKS="/nowhere/does-not-exist" "$REAP" >/dev/null 2>&1 || true
+i=0
+while kill -0 "$prot_pid" 2>/dev/null && [ "$i" -lt 30 ]; do sleep 0.1; i=$((i+1)); done
+kill -0 "$prot_pid" 2>/dev/null \
+  && fail "E(対照): 保護を外しても kill されない (= E は reap 対象外を見ていただけ)"
+ok "E(対照): 保護を外すと同じプロセスが reap される (保護が実際に効いている)"
+
+# E-2) 既定の保護リストが本番の default socket を含むこと。
+# 上の E は seam (TT_REAP_PROTECT_SOCKS) 経由なので「既定値が空になる退行」を検出できない
+# (実測: 既定値を壊す変異で E は緑のまま通った)。既定値そのものを検査して閉じる。
+grep -q 'TT_REAP_PROTECT_SOCKS' "$REAP" \
+  || fail "E-2: 保護リストの seam (TT_REAP_PROTECT_SOCKS) が無い"
+# ⚠️ '/tmp/tmux-$uid/default' で grep すると '/private/tmp/...' に部分一致して、/tmp 版が
+# 消えても緑になる (実測)。引用符直後の形で厳密に見る。
+grep -q '"/tmp/tmux-\$uid/default' "$REAP" \
+  || fail "E-2: 既定の保護リストに本番の default socket (/tmp 表記) が含まれていない"
+grep -q '/private/tmp/tmux-\$uid/default' "$REAP" \
+  || fail "E-2: 既定の保護リストに /private/tmp 版が無い (macOS で lsof の表記と一致しない)"
+ok "E-2: 既定の保護リストが本番の default socket (/tmp と /private/tmp 両表記) を含む"
 
 print "[test-reap:zsh] done"
