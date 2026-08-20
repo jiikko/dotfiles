@@ -46,7 +46,7 @@ jq -e '[.hooks.PreToolUse[]? | select((.matcher // "") | test("Bash")) | .hooks[
   || { printf '✗ PreToolUse(Bash) の配下にフックが配線されていない\n'; exit 1; }
 printf '✓ settings.json の PreToolUse(Bash) に配線されている\n'
 
-decision() {  # $1=コマンド文字列 → "deny" / "allow" / "error"
+decision() {  # $1=コマンド文字列 → "deny" / "allow" / "error" / "harness-error"
   # ⚠️ フックの異常終了・壊れた出力を allow に畳まないこと。旧実装は
   #   ... | jq -r '...// empty' | grep . || echo allow
   # で、フックが落ちても jq が失敗しても "allow" になり、「素通り」と「検査できなかった」が
@@ -55,11 +55,33 @@ decision() {  # $1=コマンド文字列 → "deny" / "allow" / "error"
   # 課さないと「入力長で hook が timeout に殺されて deny が消える」= 安全機構が無効化される
   # 退行を観測できない (時間内に終わるかどうかが判定に影響しないため、変異を当てても緑のまま
   # 通る。2026-08-21 に実際にこの形の空回りテストを書いて気づいた)。
-  local out
-  out="$(jq -n --arg c "$1" '{tool_name:"Bash",tool_input:{command:$c}}' | timeout "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null)" \
-    || { [ -n "$out" ] || { echo allow; return; }; echo error; return; }
-  [ -n "$out" ] || { echo allow; return; }   # 無出力 = 何も deny していない
-  printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision // "error"' 2>/dev/null || echo error
+  # ⚠️ コマンド文字列は **argv でなくファイル経由** で jq に渡すこと。--arg に数百 KB を渡すと
+  # Linux では ARG_MAX を超えて `jq: Argument list too long` になり、しかも失敗を allow に
+  # 畳むと「ハーネスが動かなかった」が「素通り」に化ける (CI で実際に踏んだ 2026-08-21。
+  # macOS の ARG_MAX は 1MB 級なので手元では再現しなかった = 環境差の罠)。
+  local out rc payload json
+  payload="$(mktemp)"
+  json="$(mktemp)"
+  printf '%s' "$1" >"$payload"
+  if ! jq -n --rawfile c "$payload" '{tool_name:"Bash",tool_input:{command:$c}}' >"$json" 2>/dev/null; then
+    rm -f "$payload" "$json"
+    echo harness-error   # 入力を組めなかった = 判定していない (allow に畳まない)
+    return
+  fi
+  out="$(timeout "$HOOK_TIMEOUT" "$HOOK" <"$json" 2>/dev/null)"
+  rc=$?
+  rm -f "$payload" "$json"
+  if [ -n "$out" ]; then
+    printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision // "error"' 2>/dev/null || echo error
+    return
+  fi
+  # 無出力の内訳を区別する: rc=0 は「何も deny しなかった」= 本番でも素通り。rc=124 は
+  # timeout に殺された = 本番でも stdout 0 byte で素通り (これがゲート消失の観測点)。
+  # それ以外の非 0 は hook 自身の異常終了なので error に倒す。
+  case "$rc" in
+    0 | 124) echo allow ;;
+    *) echo error ;;
+  esac
 }
 
 expect() {  # $1=期待(deny/allow) $2=説明 $3=コマンド
