@@ -289,3 +289,30 @@ func TestURLsStopAtControlChars(t *testing.T) {
 		t.Errorf("URL が制御文字の手前で切れていない: %q", urls[0])
 	}
 }
+
+// C1 (U+009B CSI / U+009D OSC) も終端にする。端末によっては ESC[ / ESC] と同義に解釈されるので、
+// 負クラスから漏れると URL ピッカーの行描画 (url_picker.go) まで生で到達する。
+// hasTerminalControl は C1 を制御文字と定義しているので、漏れは自己矛盾でもある (実測 2026-08-21)。
+func TestURLsStopAtC1ControlChars(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		c1   string
+	}{
+		{"CSI (U+009B)", "\u009b"},
+		{"OSC (U+009D)", "\u009d"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := NewBody("参考: https://example.com/ok" + tc.c1 + "0;pwned" + bel + "tail\n")
+			urls := b.URLs()
+			if len(urls) != 1 {
+				t.Fatalf("URL の数が想定外: %q", urls)
+			}
+			if hasTerminalControl(urls[0]) {
+				t.Errorf("URL に C1 が混ざった: %q", urls[0])
+			}
+			if urls[0] != "https://example.com/ok" {
+				t.Errorf("URL が C1 の手前で切れていない: %q", urls[0])
+			}
+		})
+	}
+}

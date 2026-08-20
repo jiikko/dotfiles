@@ -147,7 +147,12 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 		prev := m.offset
 		_, cmd := m.handleKey("ctrl+d")
 		if m.offset == prev {
-			t.Skip("この geometry では半ページで動かない (テスト前提の破れ)")
+			// ⚠️ Skip にしないこと: geometry は上の newTestBrowse + m.height で決定論的に
+			// 組んでいるので、offset が動かないのは環境要因ではなく **実装の退行だけ**。
+			// Skip にすると「browse の半ページ下スクロールが完全に死んでも ok glogx」になる
+			// (実測 2026-08-21: pageSize()/2 を潰す変異で 2 箇所とも SKIP に化けた)。
+			// 同ファイル :240 / :347 は同じ「前提の破れ」を既に Fatal で扱っている。
+			t.Fatalf("半ページで offset が動かない (実装の退行): offset=%d", m.offset)
 		}
 		if !m.glide.active || cmd == nil {
 			t.Errorf("半ページ移動が glide に載っていない: active=%v cmd=%v", m.glide.active, cmd != nil)
@@ -325,7 +330,9 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 		}
 		down := m.offset
 		if down == 0 {
-			t.Skip("この geometry では半ページで動かない (テスト前提の破れ)")
+			// 上と同じ理由で Fatal (ここは前提として先に ctrl+d を打つので、Skip にすると
+			// 二重にマスクされる)
+			t.Fatal("前提の ctrl+d で offset が動かない (実装の退行)")
 		}
 		m.handleKey("shift+space")
 		if m.offset >= down {

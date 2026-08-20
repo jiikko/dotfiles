@@ -108,11 +108,15 @@ func (b *Body) Len() int { return len(b.lines) }
 // 文末の句点つき `url。` のいずれの形でも現れる。貪欲に拾うと `)` や `。` が URL に混ざり、
 // ブラウザが 404 を開く。逆に `?` `#` `=` `&` は query / fragment の一部なので残す。
 //
-// ⚠️ 制御文字 (\x00-\x1f\x7f) も終端に含める。URL に生の制御文字は入らないので実用上の損失は
+// ⚠️ 制御文字 (C0 \x00-\x1f / DEL \x7f / C1 \u0080-\u009f) も終端に含める。URL に生の制御文字は
+// 入らないので実用上の損失は
 // 無く、含めないと `https://example.com/<ESC>]0;…<BEL>` が 1 本の URL として抽出され、URL
 // ピッカーの一覧描画で端末へ素通りする (URLs は整形経路を通らず生ソースから拾うため、
 // renderMarkdown 側の無害化では守れない)。\s は \t\n\r\f\v しか外さない。
-var urlRe = regexp.MustCompile(`https?://[^\s)\]>"'` + "`" + `\x00-\x1f\x7f]+`)
+// C1 を落とすのは hasTerminalControl (同パッケージ) が C1 を制御文字と定義しているのと揃えるため。
+// U+009B (CSI) / U+009D (OSC) は端末によっては ESC[ / ESC] と同義に解釈されるので、負クラスから
+// 漏れると URL ピッカーの行 (url_picker.go) まで到達する。
+var urlRe = regexp.MustCompile(`https?://[^\s)\]>"'` + "`" + `\x00-\x1f\x7f\x{80}-\x{9f}]+`)
 
 // URLs は本文に現れる http(s) URL を出現順で返す (重複は最初の 1 つだけ)。
 //
