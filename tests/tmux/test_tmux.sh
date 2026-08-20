@@ -246,4 +246,28 @@ assert_guard_branch "repo 外" "toast:$nogit_dir" "$REPLY"
 run_guard_branch glogx_guard_repo "$repo_dir"
 assert_guard_branch "repo 内" "popup:$repo_dir" "$REPLY"
 
+# terminal-features が conf の reload で膨張しないこと。
+# ⚠️ `set -as` は追記なので、-u で既定へ戻さないと reload ごとに同じエントリが積まれる。
+# 実測 (2026-08-21): 稼働サーバが 38 エントリまで膨張していた (下の 2 行 × reload 17 回 +
+# conf 外の手動 set 1 件)。件数を pin するのではなく「reload しても増えない」を pin する
+# (tmux の既定エントリ数は版で変わりうるため)。
+print "[test-tmux:zsh] checking terminal-features does not grow on conf reload"
+tf_count() { "${TMUX_CMD[@]}" show -s terminal-features 2>/dev/null | grep -c . }
+tf_before=$(tf_count)
+if (( tf_before < 1 )); then
+  print -u2 "[test-tmux:zsh] terminal-features を読めない (前提が崩れた)"
+  exit 1
+fi
+"${TMUX_CMD[@]}" source-file "$CONF_FILE" >/dev/null 2>&1
+tf_after1=$(tf_count)
+"${TMUX_CMD[@]}" source-file "$CONF_FILE" >/dev/null 2>&1
+tf_after2=$(tf_count)
+if (( tf_after1 != tf_before || tf_after2 != tf_before )); then
+  print -u2 "[test-tmux:zsh] terminal-features が reload で増えた: ${tf_before} → ${tf_after1} → ${tf_after2}"
+  print -u2 "  set -as の前に `set -u terminal-features` が必要 (_tmux.conf の該当コメント参照)"
+  "${TMUX_CMD[@]}" show -s terminal-features >&2
+  exit 1
+fi
+print "[test-tmux:zsh] ok: terminal-features は reload 2 回でも ${tf_before} 件のまま"
+
 print "[test-tmux:zsh] done"
