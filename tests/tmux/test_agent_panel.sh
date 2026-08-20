@@ -163,7 +163,12 @@ fi
 STUB_PANEL_ON=1 STUB_PANEL_PANE='%9' STUB_RENDER_PANES='%9' STUB_PANE_WINDOW='@1' "$SCRIPT" follow '@2' || ng "follow (別 window) が失敗"
 grep -q 'kill-pane -t %9' "$CALLS" || ng "follow (別 window): 旧 panel を kill しない"
 grep -q 'new-pane -d' "$CALLS" || ng "follow (別 window): 新 window に作らない"
-grep -q -- '-t @2' "$CALLS" || ng "follow (別 window): 移動先 window を target にしない"
+# ⚠️ CALLS 全体への部分一致で `-t @2` を探さないこと。production は new-pane より前に
+# `display-message -p -t "$win"` を 2 箇所 (cmd_follow / create_panel) で呼び、同じ文字列を
+# CALLS に書くため、**new-pane の target と無関係に必ずマッチする** (監査 072 / 反証で生存)。
+# new-pane の行に限って見る。
+grep -E '^tmux new-pane .*-t @2( |$)' "$CALLS" >/dev/null \
+  || ng "follow (別 window): new-pane が移動先 window を target にしない"
 ok "follow (別 window): kill + create (上の ✗ が無ければ)"
 
 # --- follow (popup 専用セッションへは追従しない) ----------------------------------

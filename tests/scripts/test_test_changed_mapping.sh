@@ -37,6 +37,17 @@ expect "_claude/statusline-command.sh -> shell lint + tests/claude" 'test-shellc
 
 # 主要な腕の代表 1 例ずつ
 expect "src/<proj> -> go lint+test" 'go: .*src/glogx' src/glogx/tui.go
+
+# shell スクリプトは「名前で参照しているテストディレクトリ」まで届くこと (監査 071)。
+# 以前は lint 4 種 (test-syntax/shellcheck/zsh-syntax/zshrc) へ潰れ、tests/tmux などに
+# 一度も到達していなかった (issues/done/060 が「未網羅」と残していた穴)。
+# ⚠️ ここで「どのディレクトリを期待するか」を列挙し過ぎないこと。発見式なので、テスト側の
+# 参照が増減すれば期待も変わる。壊れたら「参照が消えたのか、発見が壊れたのか」を見る。
+expect "scripts/tmux_agent_panel.sh -> tests/tmux (参照からの発見)" 'tests: .*tests/tmux' scripts/tmux_agent_panel.sh
+expect "bin/tmux-toast -> tests/tmux (bin も同じ扱い)" 'tests: .*tests/tmux' bin/tmux-toast
+expect "zshlib/_fs_helpers.zsh -> tests/zshrc" 'tests: .*tests/zshrc' zshlib/_fs_helpers.zsh
+# 参照されていないスクリプトは lint だけ (発見が過剰に広がっていないことの対照)
+expect "参照の無い新規スクリプトは lint だけ" 'test-shellcheck' scripts/__no_such_test_refs__.sh
 expect "tests/<dir> -> test-dir + lint-tests" 'test-lint-tests.*tests: .*tests/claude' tests/claude/test_statusline.sh
 expect "zshlib -> shell 系" 'test-zshrc' zshlib/_concat.zsh
 expect "json -> test-json" 'test-json' _claude/settings.json

@@ -94,6 +94,37 @@ add_shell_targets() {
   add_target test-zshrc
 }
 
+# 変更されたスクリプトを **名前で参照しているテストディレクトリ**も回す。
+# ⚠️ ここを「どのディレクトリを回すか」の登録表にしないこと。この repo は「登録なしで対象に
+# なる」を全域で徹底しており (SHELLCHECK_FILES は discover_shell_scripts、テストは test-dir の
+# 自動発見)、写像を手で列挙すると必ず腐る。実際 issues/done/060 は tests/claude の写像漏れを
+# 直したが「tests/tmux / tests/bin にも同種の漏れがあるかは未網羅」と開いたまま残しており、
+# その穴を監査 071 が指摘して反証にも耐えた (shell 系のどのパスも lint 4 種へ潰れ、
+# tests/tmux 等に一度も到達していなかった)。
+#
+# ⚠️ grep の rc は 3 分岐する: 0 = 参照あり / 1 = 参照なし / >=2 = 検査できなかった。
+# 「検査できなかった」を「参照なし」に畳むと、テストを回さない方向へ倒れる (= 未検証なのに
+# green)。ここでは安全側 = **回す方**へ倒す (余分なテストが走るだけで害がない)。
+# ⚠️ POSIX sh なので local は使えない (SC3043)。変数名を _ref_ 接頭辞で衝突回避する。
+add_test_dirs_referencing() {  # $1=変更されたパス
+  _ref_base="${1##*/}"
+  [ -n "$_ref_base" ] || return 0
+  for _ref_d in tests/*/; do
+    _ref_d="${_ref_d%/}"
+    [ -d "$_ref_d" ] || continue
+    grep -rqlF -- "$_ref_base" "$_ref_d" 2>/dev/null
+    _ref_rc=$?
+    case "$_ref_rc" in
+      0) add_test_dir "$_ref_d" ;;
+      1) : ;;
+      # ⚠️ この分岐はテストで pin できていない (grep を確実に rc>=2 にする状況を写像テストの
+      # 中で作れないため。変異させても緑のまま = 守られていない)。消すと「検査できなかった」が
+      # 「参照なし」に畳まれ、未検証なのにテストを回さない方向へ倒れるので、意図をここに残す。
+      *) add_test_dir "$_ref_d" ;;   # 検査できなかった = 回す方へ倒す
+    esac
+  done
+}
+
 fail=0
 notest=""
 for p in "$@"; do
@@ -135,12 +166,14 @@ for p in "$@"; do
     # test_deny_bare_tmux_kill.sh が hooks を、test_statusline.sh が
     # statusline-command.sh を実テストしている
     _claude/hooks/*|_claude/*.sh)
-      add_shell_targets; add_test_dir "tests/claude" ;;
+      add_shell_targets; add_test_dir "tests/claude"
+      add_test_dirs_referencing "$p" ;;
     # shell/zsh ソース。ディレクトリ前方一致に加え、置き場所を問わない *.sh /
     # zsh dotfile (_z*) も拾う (shellcheck/zsh -n の対象は discover_shell_scripts が
     # repo 全体から発見するため、ここも場所で絞らない)
     bin/*|scripts/*|zshlib/*|*.sh|_z*)
-      add_shell_targets ;;
+      add_shell_targets
+      add_test_dirs_referencing "$p" ;;
     # _claude の設定群は「テスト対象なし」ではない (issue 060): tests/claude が
     # skill 参照表 (CLAUDE.md ↔ skills の相互整合) と ~/.claude 側 symlink の
     # dangling (rename/削除の置き去り) を検証している
