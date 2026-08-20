@@ -35,6 +35,13 @@ local delta = after - before
 if delta > 2 then
   fail(("debounce の撃ち直しで uv timer が漏れている: 増分 %d 本 (期待 <=2)"):format(delta))
 end
+-- ⚠️ 上界だけでは守れない: debounce が丸ごと死んで timer を 1 本も張らなくなった状態が
+-- delta=0 で「最も good」に見える (この検査の全 assert が同時に vacuous になる)。実測
+-- 2026-08-21: 2 種の変異で rc=0 の緑になった。**下界 (少なくとも 1 本張った) も見る**。
+if delta < 1 then
+  fail(("debounce が timer を 1 本も張っていない: 増分 %d 本 (期待 >=1)。"):format(delta)
+    .. "上界だけの検査は「機能が死んだ状態」を最良と読むので、この下界を消さないこと")
+end
 
 -- timer が発火した後も handle が残らない (自然 close される) ことを見る
 vim.wait(800, function() return false end)

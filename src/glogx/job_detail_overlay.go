@@ -119,6 +119,13 @@ func (o *jobDetailOverlay) boxLines(width int, colored bool, spinner, name, key 
 			body = []string{paint("(詳細なし)", ansiDim, colored)}
 			break
 		}
+		// 行数と窓 (rows) は端末サイズで変わる。rows が増えると maxOffset が下がるのに論理
+		// offset は据え置かれ、k / up / ctrl+p は max(offset-n, 0) しか見ないので
+		// **(rows_new - rows_old) 打鍵だけ上スクロールが死ぬ** (実測 2026-08-21: diff 33 打鍵 /
+		// job 詳細 11 打鍵)。描画で確定した行数・窓で論理 offset を収束させて防ぐ
+		// (issues_view.go の bodyOff が同じ規律。⚠️ pagerScrollKey の k 腕に clamp を足す形は
+		// 不可: job 詳細のスクロールは pagerScrollKey を通らない手書きなので片面しか直らない)。
+		o.offset = clampScrollOffset(o.offset, len(lines), rows)
 		start := clampScrollOffset(o.offset, len(lines), rows)
 		end := min(start+rows, len(lines))
 		body = make([]string, 0, end-start)

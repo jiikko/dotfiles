@@ -224,7 +224,10 @@ STUB_PANEL_ON=1 STUB_SAVED_WINDOW='@3' STUB_RENDER_PANES='%88' "$SCRIPT" save-sh
 grep -q 'set-option -gu @agent_panel_saving' "$CALLS" || ng "save-show: saving を降ろさない"
 grep -q 'kill-pane -t %88' "$CALLS" || ng "save-show: 既存 panel を掃討しない (二重化)"
 grep -q 'new-pane -d' "$CALLS" || ng "save-show: panel を復帰させない"
-grep -q -- '-t @3' "$CALLS" || ng "save-show: 退避元 window に戻さない"
+# ⚠️ follow 側 (:170) と同じ理由で CALLS 全体への部分一致にしないこと。display-message が
+# 同じ文字列を先に書くため、new-pane の target 退行を捕まえられない (監査 072 / 反証で生存)。
+grep -E '^tmux new-pane .*-t @3( |$)' "$CALLS" >/dev/null \
+  || ng "save-show: new-pane が退避元 window を target にしない"
 ok "save-show: saving 解除 + 掃討 + 退避元へ復帰 (上の ✗ が無ければ)"
 
 # --- toggle on (resurrect 保存中): 状態だけ立てて作らない (敵対レビュー指摘 2026-08-08) ---

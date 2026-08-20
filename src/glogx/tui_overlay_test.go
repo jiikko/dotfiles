@@ -323,12 +323,23 @@ func TestPagerOverlayReclampsOffsetOnRedraw(t *testing.T) {
 		t.Errorf("diff overlay が offset を窓へ再クランプしていない: title=%q, want [43-50/50]", title)
 	}
 
+	// ⚠️ 描画 (title) だけでなく **論理 offset フィールドが収束したか**も見る。描画は毎回
+	// clamp するので title は書き戻しが無くても正しく、上スクロールだけが死ぬ (k / up /
+	// ctrl+p は max(offset-n, 0) しか見ないため rows_new - rows_old 打鍵ぶん無反応。
+	// 実測 2026-08-21: diff 33 打鍵 / job 詳細 11 打鍵)。title だけの検査ではこの退行が緑になる。
+	if d.offset != 42 {
+		t.Errorf("diff overlay が論理 offset を書き戻していない: offset=%d, want 42 (上スクロールが死ぬ)", d.offset)
+	}
+
 	j := newJobDetailOverlay()
 	j.open = true
 	j.cache.store("key", lines, "key")
 	j.offset = 49
 	if title := j.boxLines(width, false, "", "job", "key", rows)[0]; !strings.Contains(title, "[43-50/50]") {
 		t.Errorf("job 詳細 overlay が offset を窓へ再クランプしていない: title=%q, want [43-50/50]", title)
+	}
+	if j.offset != 42 {
+		t.Errorf("job 詳細 overlay が論理 offset を書き戻していない: offset=%d, want 42", j.offset)
 	}
 }
 
