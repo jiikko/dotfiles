@@ -1,6 +1,6 @@
 ---
 name: codex-review
-version: 2.3.0
+version: 2.4.0
 description: codex exec review を基本に、必要なら codex exec を使ってコード変更のレビューを依頼し、指摘事項を報告する。通常 / 厳しめ (--strict) / 敵対的 (--adversarial、実装を壊しにいく red team) の 3 モードを持つ。「codexでレビューして」「codex-review」「/codex-review」「敵対的にレビューして」で発火。Codex 単体での単独レビュー用途。複数エージェント並行レビューは cross-review、差分ではなくコードベース全体の監査は audit を使う。
 ---
 
@@ -92,6 +92,8 @@ review_out="./tmp/codex-review.$stamp.md"
 カスタム指示がある場合は、テンプレートの末尾に追記する。
 
 敵対的モードは **effort を通常より一段上げて明示する**（`-c model_reasoning_effort="medium"` 以上）。反証はパターンマッチではなく「壊す条件を構築する」作業で、低い effort だと表層の指摘で止まるため。
+
+**例外**: 呼び出し側の skill が effort を固定している場合はそちらに従う（現状 `codex-drive` だけが該当し、全フェーズ `low` 固定）。その skill は「低い effort で表層に止まる分を、攻め口 (lens) の本数で補い、枯れなければ forge / cross-review へ escalate する」形で埋め合わせる責任を負う。**単に低い effort で 1 本回して「指摘なし」と結論するのは、どちらの skill でも禁止**（`~/.claude/CLAUDE.md`「レビュー方針」の「指摘なしは正しいではない」）。
 
 #### 実行モード
 

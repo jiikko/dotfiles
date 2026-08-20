@@ -1,6 +1,6 @@
 ---
 name: codex-drive
-version: 4.0.0
+version: 4.1.0
 description: codex を設計の壁打ちからメイン実装者まで主役にし (設計 read-only → 実装 codex exec -s workspace-write)、Claude はオーケストレーション (要件確定・spec 多重読解・スコープ分割・設計/成果物の検閲・敵対的レビュー・ミューテーション検証・観測駆動デバッグ・commit/push・反復・要件照合) に徹するワークフロー。codex トークンは厚く消費し、Claude トークンは節約する (並列出力は codex 集約 digest 経由で検閲・長文は貼らずファイル参照で読ませる・機械ループは codex に回させる)。大きめの実装/移植/プロトコル実装で、余っている codex トークンを使い切りたい時に使う。「codex に書かせて」「codex メインで実装」「codex に作らせて」「codex-drive」「/codex-drive」で発火。typo・数行修正には使わない (それは Claude が直接やる)。
 ---
 
@@ -596,6 +596,11 @@ command codex exec review -m gpt-5.6-luna -c model_reasoning_effort="low" \
 - effort は **`low`** (全フェーズ一律。大原則の effort 表)。反証はパターンマッチでなく構築作業なので
   low では表層で止まりやすい — 攻め口 (lens) の本数を増やして補い、それでも枯れないなら
   forge / cross-review へ escalate する。モデルは `gpt-5.6-luna` (大原則のモデル振り分け)。
+  - ⚠️ **codex-review の「敵対的モードは effort を一段上げる (medium 以上)」規約はこの skill では
+    適用しない**（テンプレート本文だけを借りる）。あちらの正本にも例外として明記済み。この skill は
+    effort でなく **lens の本数と攻め口の多様性**で反証力を作る方針なので、テンプレートに引かれて
+    medium へ上げないこと（上げると「codex トークンを本数に使う」設計と衝突する）。ただし
+    **low で 1 本回して「指摘なし」で閉じるのは禁止** — 枯れるまで lens を足すか escalate する。
 - 各 lens は **別々の Bash 呼び出しで `run_in_background: true`**・出力は別パス (`[3.5]` と同じ並列作法)。
 - `[3.5]` の 2 本と**同時に走らせない** (3.5 の指摘を直した後のコードを攻めるため)。
 
