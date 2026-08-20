@@ -202,7 +202,11 @@ cmd_follow() {
   mkdir -p "$(dirname "$lock")" 2>/dev/null
   if ! mkdir "$lock" 2>/dev/null; then
     local age
-    age=$(( $(date +%s) - $(stat -f %m "$lock" 2>/dev/null || echo 0) ))
+    # mtime は tt_mtime_of (guards.sh。GNU/BSD 方言差を吸収) 経由。素の `stat -f %m` は
+    # GNU stat では mount point を返し、算術式が構文エラーになって hook 経由の無音契約を破る
+    local lock_mtime; lock_mtime="$(tt_mtime_of "$lock")"
+    case "${lock_mtime:-}" in ''|*[!0-9]*) lock_mtime=0 ;; esac
+    age=$(( $(date +%s) - lock_mtime ))
     [ "$age" -lt 5 ] && exit 0
     rmdir "$lock" 2>/dev/null; mkdir "$lock" 2>/dev/null || exit 0
   fi

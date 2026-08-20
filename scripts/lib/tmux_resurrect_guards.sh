@@ -62,6 +62,13 @@ tt_only_hold_sessions() {
 # ループ脱出条件と restore_runner の単一実行 lock にもある。3 箇所で同じ判定が要るのでここに集約する。
 tt_proc_starttime() { ps -o lstart= -p "$1" 2>/dev/null; }
 
+# ファイルの mtime (epoch)。取れなければ空を返す。
+# ⚠️ GNU を先に試すこと。`stat -f` は macOS では「書式指定」だが GNU ではファイルシステム情報の
+# 表示で、Linux では成功して別物 (mount point 等) を返すため `||` のフォールバックが発動しない。
+# GNU に無い `-c` を先に試せば macOS では invalid option で失敗して `-f` へ落ちる。
+# (実測 2026-07: Ubuntu 24.04 で `[: File: ... integer expression expected` で死んだ)
+tt_mtime_of() { stat -c '%Y' "$1" 2>/dev/null || stat -f '%m' "$1" 2>/dev/null; }
+
 # $1=pid $2=記録した起動時刻 (空なら pid 生存のみで判定)
 tt_same_proc() {
   local pid="$1" want="${2:-}" cur
@@ -75,10 +82,14 @@ tt_same_proc() {
   [ "$cur" = "$want" ]
 }
 
-# lock ディレクトリに自分を owner として記録する ($1=lock dir)。
+# lock ディレクトリに owner を記録する ($1=lock dir, $2=pid。省略時は自分)。
 # 形式: "<pid>\t<lstart>"。旧形式 (pid のみ) も読み手が受け付ける。
+# ⚠️ $2 はテストが「他プロセスを owner にした lock」を production と同じ書式で作るための seam。
+# 書式をテスト側へ写すと書式変更に追従できず、実物とずれた fixture で常に緑になる
+# (実例 2026-08-20: 読み手が cat|kill -0 で書式を無視しており誤報していたのに気づけなかった)
 tt_lock_write_owner() {
-  printf '%s\t%s\n' "$$" "$(tt_proc_starttime $$)" > "$1/pid" 2>/dev/null || true
+  local dir="$1" pid="${2:-$$}"
+  printf '%s\t%s\n' "$pid" "$(tt_proc_starttime "$pid")" > "$dir/pid" 2>/dev/null || true
 }
 
 # lock の owner が「記録時と同一のプロセスとして」生きているか ($1=lock dir)

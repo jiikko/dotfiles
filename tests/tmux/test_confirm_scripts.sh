@@ -86,6 +86,11 @@ printf '## kill_confirm: 対象の固定と fail-safe\n'
 reset_calls
 STUB_GUM_EXIT=0 run "$STUB_PATH" "$KILL" window
 assert_called "tmux kill-window -t @7" "window 承認 → 冒頭で固定した window_id へ kill-window"
+# ⚠️ "gum confirm --default=false" の連結で assert しないこと。引数順に結合してしまい、
+# 不変条件が守られたまま並べ替えただけで red になる (= assert を緩める圧力になる)。
+grep -E '^gum .*--default=false' "$CALLS" >/dev/null \
+  || { printf '✗ 確認が --default=false でない (Enter 素通しで実行される):\n'; cat "$CALLS"; exit 1; }
+printf '✓ 確認は --default=false (Enter 素通しでは実行されない。scripts/CLAUDE.md の規約)\n'
 reset_calls
 STUB_GUM_EXIT=1 run "$STUB_PATH" "$KILL" window
 assert_not_called "kill-window" "window 拒否 → kill されない"
@@ -129,6 +134,9 @@ reset_calls
 STUB_RESTORE_PATH="$TMP_DIR/fake_restore.sh" STUB_GUM_EXIT=1 run "$STUB_PATH" "$RESTORE"
 [[ ! -f "$MARKER" ]] || { printf '✗ 拒否したのに復元が走った\n'; exit 1; }
 assert_not_called "run-shell" "拒否 → 復元 (runner 委譲) は実行されない"
+grep -E '^gum .*--default=false' "$CALLS" >/dev/null \
+  || { printf '✗ 復元確認が --default=false でない:\n'; cat "$CALLS"; exit 1; }
+printf '✓ 復元確認も --default=false\n'
 reset_calls
 STUB_RESTORE_PATH="$TMP_DIR/fake_restore.sh" STUB_GUM_EXIT=0 run "$STUB_PATH" "$RESTORE"
 # 復元は popup 内で同期実行せず runner に detach 委譲する (popup close = 復元 kill の途中死

@@ -46,11 +46,7 @@ tt_on_default_server || exit 0
 problems=()
 lines=()
 
-# ⚠️ GNU を先に試すこと。`stat -f` は macOS では「書式指定」だが GNU では「ファイルシステム情報の
-# 表示」で、Linux では成功して複数行のゴミを返す (= `||` のフォールバックが発動しない)。
-# 実測 (Ubuntu 24.04): `[: File: ... integer expression expected` で死んだ。
-# GNU に無い `-c` を先に試せば、macOS では invalid option で失敗して `-f` に落ちる。
-mtime_of() { stat -c '%Y' "$1" 2>/dev/null || stat -f '%m' "$1" 2>/dev/null; }
+# mtime 取得は guards.sh の tt_mtime_of に集約 (GNU / BSD の stat 方言差の罠はあちらに記録)
 
 rdir="$(tt_resurrect_dir 2>/dev/null)"
 [ -n "$rdir" ] || rdir="${XDG_DATA_HOME:-$HOME/.local/share}/tmux/resurrect"
@@ -70,7 +66,7 @@ if [ -z "$last_target" ] || [ ! -f "$rdir/$last_target" ]; then
   lines+=("last: なし")
   last_age=-1
 else
-  last_mtime="$(mtime_of "$rdir/$last_target")"
+  last_mtime="$(tt_mtime_of "$rdir/$last_target")"
   # ⚠️ 鮮度の入力は「last の mtime」だけにしないこと。upstream は状態無変化のとき新 layout を
   #   捨てて last を据え置く (dedup) ため、保存が成功していても last の mtime は前進しない。
   #   構成変化のない夜間・週末に「保存経路が止まっている」と誤検知する (レビュー指摘 2026-07-30)。
@@ -78,7 +74,7 @@ else
   #   時刻」として使う。
   fresh_mtime="${last_mtime:-0}"
   if [ -f "$archive" ]; then
-    a_m="$(mtime_of "$archive")"
+    a_m="$(tt_mtime_of "$archive")"
     [ "${a_m:-0}" -gt "$fresh_mtime" ] && fresh_mtime="$a_m"
   fi
   last_age=$(( now - fresh_mtime ))
@@ -90,11 +86,14 @@ fi
 
 # --- 2. 常駐プロセスの生存 --------------------------------------------------------------
 daemon_alive() {  # $1=state dir, $2=表示名
-  local d owner found=0
+  local d found=0
   for d in "$1"/*.lock; do
     [ -d "$d" ] || continue
-    owner="$(cat "$d/pid" 2>/dev/null)"
-    if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then found=1; fi
+    # ⚠️ owner ファイルを自分で読んで kill -0 に渡さないこと。書式 ("pid<TAB>lstart") を
+    # 知っているのは guards.sh 側だけで、tab 以降が混ざると kill が illegal pid で必ず失敗し、
+    # 常駐プロセスが生きていても「不在」と誤報する (実測 2026-08-20)。判定は書き手と対の
+    # tt_lock_owner_alive に委ねる (pid 再利用の照合もそちらが持つ)。
+    if tt_lock_owner_alive "$d"; then found=1; fi
   done
   if [ "$found" -eq 1 ]; then
     lines+=("$2: 稼働中")
