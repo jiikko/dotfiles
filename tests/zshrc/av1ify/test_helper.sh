@@ -28,6 +28,19 @@ for arg in "$@"; do
   case "$arg" in -h) exit 0 ;; esac
 done
 
+# argv キャプチャ: TEST_FFMPEG_ARGS_LOG が設定されていれば実際の引数列を 1 行で記録する。
+# これが無いと「オプションを決定するロジック」しか検証できず、決定を ffmpeg へ渡す
+# 配線が消えてもテストが緑のままになる (実際に -colorspace の配線を丸ごと削除しても
+# 全テストが通る false green が発生していた)。encoder チェックの -h は上で除外済み。
+if [ -n "${TEST_FFMPEG_ARGS_LOG-}" ]; then
+  printf '%s\n' "$*" >> "$TEST_FFMPEG_ARGS_LOG"
+fi
+
+# 失敗注入: MOCK_FFMPEG_FAIL=1 でエンコード失敗を再現する（失敗経路の分岐検証用）
+if [ -n "${MOCK_FFMPEG_FAIL-}" ]; then
+  exit 1
+fi
+
 # 最後の引数を出力ファイルとして扱う
 for arg in "$@"; do
   last_arg="$arg"

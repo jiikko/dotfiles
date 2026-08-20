@@ -467,13 +467,17 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
       light: 軽度（hqdn3d=2:2:3:3）
       medium: 中程度（hqdn3d=4:4:6:6）
       strong: 強め（hqdn3d=6:6:9:9）
-  --color-tags <値>: 出力の色空間タグ (colorspace/color_primaries/color_trc) の扱いを指定します。
+  --color-tags <値>: 出力の色空間 matrix (ffmpeg の -colorspace) の扱いを指定します。
       auto (デフォルト): ソースの matrix_coefficient が Identity (gbr) の場合のみ bt709 に補正します。
         (h264_nvenc 等が yuv420p と非互換な Identity タグを埋め込むケースで、
          SVT-AV1 が "Identity matrix may be used only with 4:4:4" エラーで
          エンコード自体を拒否するのを防ぐための自動補正です)
       bt709: ソースの値によらず常に bt709 へ上書きします。
       off: 一切上書きしません（ソースのタグをそのままコピー）。
+      補正するのは matrix だけで、color_primaries / color_trc は変更しません。
+      また補正値は解像度によらず bt709 固定です。SD (480p/576p 等) 素材では
+      bt601 相当で解釈した場合と色が変わりますが、元タグが壊れている時点で
+      真の色空間は失われているため、どちらを選んでも復元の保証はありません。
   --force: 入力ファイルの健全性チェックに失敗してもエンコードを続行します。
       軽微なA/V音ズレなど、許容できる問題がある場合に使用してください。
   --delete-origin-if-success-and-no-ng: 変換成功かつpostcheckでNG無しの場合、元ファイルを削除します。

@@ -200,14 +200,29 @@ __av1ify_decide_denoise() {
   print -P -- "%F{cyan}>> ノイズ除去: $1 (${__AV1IFY_R_DENOISE_VF})%f"
 }
 
-# 内部補助: 色空間タグ (colorspace/color_primaries/color_trc) の上書き要否を判定する
+# 内部補助: ソースの matrix_coefficient が Identity (ffprobe 表記 "gbr") かを判定する
 # 背景: h264_nvenc 等の一部エンコーダは、実体が yuv420p (4:2:0) であるにもかかわらず
-# matrix_coefficient=0 (Identity, ffprobe 表記では "gbr") を誤って埋め込むことがある。
-# SVT-AV1 は "Identity matrix may be used only with 4:4:4 color format" として
-# このタグを検出するとエンコーダ初期化自体を拒否するため、auto モードでは
-# このケースのみ bt709 (最も一般的な HD 用色空間) へ補正する。
+# matrix_coefficient=0 (Identity) を誤って埋め込むことがある。SVT-AV1 は
+# "Identity matrix may be used only with 4:4:4 color format" としてエンコーダ初期化
+# 自体を拒否するため、av1ify は常に yuv420p 出力である以上この組み合わせを必ず補正する。
+# 引数: $1 = in
+# 戻り値: 0 = Identity (要補正), 1 = それ以外 / 取得失敗
+__av1ify_source_has_identity_matrix() {
+  local src_matrix
+  src_matrix=$(__ff_stream_field "$1" v:0 stream=color_space)
+  [[ "${src_matrix:l}" == "gbr" ]]
+}
+
+# 内部補助: 出力の色空間 matrix (colorspace) を上書きすべきかを判定する
 # 引数: $1 = mode (auto/bt709/off), $2 = in
-# 出力: REPLY = 上書き先タグ (例: "bt709")。上書き不要なら空文字列
+# 出力: REPLY = 上書き先の matrix 名 (例: "bt709")。上書き不要なら空文字列
+#
+# ⚠️ 上書きするのは matrix (colorspace) だけで、color_primaries / color_trc は触らない。
+# ffmpeg 8.0 実測で `-color_primaries` / `-color_trc` は出力に反映されず (libsvtav1 /
+# libx264 いずれでも Unspecified のまま。オプション自体は認識され不正値ではエラーになる)、
+# 渡しても無言で捨てられるため。またソースのタグが壊れている以上 primaries/trc の
+# 真値は失われており、効かせる手段 (-vf setparams) があっても根拠のない値を刻むことになる。
+# エンコーダの拒否条件は matrix_coefficient のみなので、補正も matrix に限定する。
 __av1ify_decide_color_tags() {
   local mode="$1" in="$2"
   REPLY=""
@@ -215,14 +230,12 @@ __av1ify_decide_color_tags() {
 
   if [[ "$mode" == "bt709" ]]; then
     REPLY="bt709"
-    print -P -- "%F{cyan}>> 色空間: bt709 へ強制上書き (--color-tags bt709)%f"
+    print -P -- "%F{cyan}>> 色空間: matrix を bt709 へ強制上書き (--color-tags bt709)%f"
     return 0
   fi
 
-  # auto: ソースの matrix_coefficient を調べ、Identity (gbr) のときだけ補正する
-  local src_matrix
-  src_matrix=$(__ff_stream_field "$in" v:0 stream=color_space)
-  if [[ "${src_matrix:l}" == "gbr" ]]; then
+  # auto: Identity (gbr) のときだけ補正する
+  if __av1ify_source_has_identity_matrix "$in"; then
     REPLY="bt709"
     print -P -- "%F{yellow}>> 色空間: ソースの matrix_coefficient が Identity (gbr) のため bt709 へ補正 (出力は yuv420p のため Identity は不正)%f"
   fi
@@ -676,7 +689,8 @@ __av1ify_one() {
     args_common+=(-r "$target_fps")
   fi
   if [[ -n "$color_tag_override" ]]; then
-    args_common+=(-colorspace "$color_tag_override" -color_primaries "$color_tag_override" -color_trc "$color_tag_override")
+    # matrix のみ。primaries/trc を渡さない理由は __av1ify_decide_color_tags の注記を参照
+    args_common+=(-colorspace "$color_tag_override")
   fi
   args_common+=(
     -movflags +faststart -tag:v av01
@@ -767,6 +781,20 @@ __av1ify_one() {
       __AV1IFY_CURRENT_TMP=""
       print -r -- "✋ 中断: $in"
       return 130
+    fi
+
+    # 映像側の Identity matrix 拒否を「音声copy失敗」と誤診断しない。
+    # 下の retry は「失敗 = 音声 copy が原因」と決め打つため、matrix を補正しないまま
+    # Identity ソースを投げると、映像エンコーダの初期化失敗に対して音声を疑う
+    # 誤ったメッセージが出た上、同じ理由で必ず落ちる 2 回目を空振りさせる。
+    # 補正済み ($color_tag_override が非空) の失敗は別要因なので通常フローへ流す。
+    if [[ -z "$color_tag_override" ]] && __av1ify_source_has_identity_matrix "$in"; then
+      __AV1IFY_CURRENT_TMP=""
+      print -r -- "❌ 失敗: $in"
+      print -P -- "%F{yellow}   ソースの色空間 matrix が Identity (gbr) のため、エンコーダが初期化を拒否した可能性が高いです%f"
+      print -P -- "%F{yellow}   → --color-tags bt709 を付けて再実行してください%f"
+      __AV1IFY_LAST_NG_REASON="色空間 matrix が Identity (gbr) でエンコーダが拒否 (--color-tags bt709 で回避可能)"
+      return 1
     fi
 
     # 失敗時: copy 選択だった場合は AAC で再試行（命名もAACタグへ）
