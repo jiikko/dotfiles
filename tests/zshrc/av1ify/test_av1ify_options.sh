@@ -660,7 +660,11 @@ assert_contains "_${non_absolute}_" "__" "No relative path passed to trash"
 # Test 72: __av1ify_fs_type_for — mount 出力からマッチする最長 mount point を選ぶ
 # 回帰防止: commit adc7823 で導入された fs type 判定ヘルパーのユニットテスト
 printf '\n## Test 72: __av1ify_fs_type_for resolves filesystem type from mount\n'
-unsetopt err_exit
+# ⚠️ ここに `unsetopt err_exit` を置かないこと (2026-08-21 に削除)。この窓の中では
+# assert_contains の `return 1` が rc に反映されず、5 本の assert が全部無効になっていた。
+# 実測: 最長一致 (multi-mount) を壊す変異を当てると「SMB 上の元ファイルに trash が呼ばれる」
+# = _fs_helpers.zsh が防ぐと明記した実データ削除の経路が完全に緑になった。
+# 下の代入はすべて $(...) で rc を吸うので、そもそも err_exit で死ぬ余地が無い。
 # 単一マウントポイントのケース
 fs=$(MOCK_MOUNT_OUTPUT="//user@host/share on /tmp/share (smbfs, nodev, nosuid)" \
   __av1ify_fs_type_for "/tmp/share/sub/file.mp4" 2>&1)
@@ -687,7 +691,6 @@ assert_contains "_${fs}_" "_smbfs_" "Longest mount-point match wins (smbfs over 
 fs=$(MOCK_MOUNT_OUTPUT="/dev/disk1 on /tmp (apfs, local)" \
   __av1ify_fs_type_for "/tmp/foo/bar.mp4" 2>&1)
 assert_contains "_${fs}_" "_apfs_" "Local apfs detected (will fall through to trash branch)"
-setopt err_exit
 
 # Test 73: SMB マウント上の元ファイルは trash でなく rm で削除される
 # 回帰防止: ネットワーク FS では `trash` が "volume doesn't have one" で失敗する
