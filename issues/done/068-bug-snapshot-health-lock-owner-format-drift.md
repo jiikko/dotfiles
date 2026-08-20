@@ -50,3 +50,19 @@ production の書き手を呼ばずに書式をテストへコピペしている
 2. テスト fixture も `tt_lock_write_owner` を呼んで書く（書式の出典をテストへコピペしない）
 3. 「生存プロセスの lock → 稼働中」「その pid を kill → 不在」の 2 方向で red/green を見る
 4. owner の read/write を guards.sh の 2 関数に集約し、シリアライズ形式の出典を 1 つにする
+
+## 対応 (2026-08-21)
+
+`7c064e6` で解消。`daemon_alive()` の判定を `tt_lock_owner_alive "$d"` へ委譲し、書式を知る側
+(guards.sh) に判定を寄せた。`tt_lock_write_owner` に pid 引数の seam を追加 (production の
+1 引数呼び出しは不変) し、テスト fixture が production の書き手を呼んで owner を書くようにした
+= 書式の出典をテストへコピペしない形。owner の書式と lstart 不一致 (pid 再利用) も pin 済み。
+変異 4 種で red を確認済み。
+
+副産物として `mtime_of` のローカル定義が guards.sh の `tt_mtime_of` (GNU-first) へ集約され、
+070 の「`stat -f %m` が BSD 前提」も同時に閉じた。
+
+**別セッションによる裏取り**: `tests/tmux/test_snapshot_health.sh` が green、
+`scripts/lib/tmux_resurrect_guards.sh` に `tt_mtime_of` が実在し、`scripts/` 直下に
+BSD 専用 `stat -f '%m'` の残りが無いことを確認した。
+
