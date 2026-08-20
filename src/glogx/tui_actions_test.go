@@ -1180,3 +1180,60 @@ func TestEditorCommand(t *testing.T) {
 		})
 	}
 }
+
+// 回帰 (2026-08-21 実測): status viewer が自分でキーを解釈し切る状態 (全画面 pager / 破棄確認) では
+// browseModel の p / b / u / U 横取りを止める。止めないと viewer のキー語彙を外側が奪い、
+// 全画面 diff の `b` (半ページ戻り) が push 確認に化けて、続く Enter (pager を閉じるつもり) で
+// **実 git push が走る**。破棄確認中の `p` も同様に pull 確認を重ね、y → y で作業ツリー破棄へ到達する。
+func TestStatusViewerOwnsKeysBlocksRemoteHijack(t *testing.T) {
+	pushes := 0
+	origPush := runGitPush
+	runGitPush = func(context.Context) error { pushes++; return nil }
+	t.Cleanup(func() { runGitPush = origPush })
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statusOv = *newTestStatusView(t, statusRec(" M a.go"))
+	if !m.statusOv.visible() {
+		t.Fatal("前提: status viewer が開いていない")
+	}
+
+	// --- 陽性対照: 通常状態 (ownsKeys=false) では b が push 確認を出す ---
+	// confirmPush は未 push が 0 件だとトーストで断るので、1 件だけ未 push を作る
+	m.statuses[m.commits[0].SHA] = StateUnpushed
+	if m.unpushedCount() == 0 {
+		t.Fatal("前提: 未 push を作れていない (対照が無意味化する)")
+	}
+	m.handleKey("b")
+	if !m.actModal.pushConfirm {
+		t.Fatal("通常状態で b が push 確認を出さない (ガードが広すぎる = viewer の外まで殺した)")
+	}
+	m.handleKey("n") // 確認を畳む
+	if m.actModal.pushConfirm {
+		t.Fatal("前提: n で確認が畳めていない")
+	}
+
+	// --- 全画面 pager 表示中: b は viewer のスクロールへ届き、push 確認は出ない ---
+	m.statusOv.openPager(m.statusOpts().viewport())
+	if !m.statusOv.ownsKeys() {
+		t.Fatal("前提: pager を開いても ownsKeys が false")
+	}
+	m.handleKey("b")
+	if m.actModal.pushConfirm {
+		t.Error("pager 中の b が push 確認を出した (Enter で実 push に化ける経路)")
+	}
+	m.handleKey("enter") // pager を閉じるつもりの Enter
+	if pushes != 0 {
+		t.Fatalf("pager 中の b → Enter で実 push が走った: %d 回", pushes)
+	}
+
+	// --- 破棄確認中: p が pull 確認を重ねない ---
+	m.statusOv.pagerKey = ""
+	m.statusOv.askDiscard()
+	if !m.statusOv.discarding {
+		t.Fatal("前提: 破棄確認に入れていない")
+	}
+	m.handleKey("p")
+	if m.actModal.pullConfirm {
+		t.Error("破棄確認中の p が pull 確認を重ねた (y → y で作業ツリー破棄へ到達する)")
+	}
+}

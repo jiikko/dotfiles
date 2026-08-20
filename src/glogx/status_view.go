@@ -176,6 +176,19 @@ func newStatusView() statusView {
 // visible は viewer を表示中か (閉じる演出のあいだも true)。
 func (v *statusView) visible() bool { return v.shown }
 
+// ownsKeys は viewer 自身がキーを解釈し切る状態か (全画面 pager 表示中 / 破棄の y/N 確認中)。
+//
+// ⚠️ browseModel 側の p / b / u / U 横取り (tui.go の statusOv.visible() ブロック) は、この状態では
+// 止めなければならない。止めないと viewer が持つキー語彙を外側が奪う:
+//   - 全画面 diff の `b` (半ページ戻り) が push 確認に化け、続く Enter (pager を閉じるつもり) で
+//     実 push が走る (実測 2026-08-21)
+//   - X の破棄確認中の `p` が pull 確認を重ね、hint 行と中央モーダルが逆を指したまま
+//     y → y で作業ツリー破棄まで到達する
+//
+// 「どのキーを奪うか」を外側に列挙する形にすると、viewer 側でキーを増やすたびに同じ穴が空くので、
+// 述語 1 つで「今は viewer のもの」を表す (キー名の二重管理を作らない)。
+func (v *statusView) ownsKeys() bool { return v.pagerKey != "" || v.discarding }
+
 // loading は git status / diff の取得中か (スピナー tick を回し続ける判定用)。
 func (v *statusView) fetching() bool { return v.loading || v.preview.fetching() }
 

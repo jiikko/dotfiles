@@ -1289,28 +1289,35 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// status viewer も全画面なので issues と同じ形で routing する (裸の b / u より前に置く:
 	// staging の途中で u が pull --rebase の確認を開く footgun を防ぐ。spec 3 節)。
 	if m.statusOv.visible() {
-		if key == "U" {
-			return m, m.toggleUsage() // viewer の上でも usage は出せる (issues と同じ契約)
-		}
-		m.usageOv.dismiss()
-		if key == "p" {
-			// pull は viewer の中からも打てる (ユーザー要望 2026-08-05)。⚠️ 一覧の u とキーを
-			// 分けているのは spec 3 節の判断を残すため: staging 中に「隣のキー」で remote 操作へ
-			// 滑るのを防ぎつつ、明示的に p を押したときだけ通す。確認 (y/N) は actModal が出す。
-			m.actModal.askPull()
-			return m, m.maybeTick()
-		}
-		if key == "b" {
-			// push も viewer の中から打てる (ユーザー要望 2026-08-07)。p (pull) と同じく
-			// 確認 (y/N) は actModal が viewer の上に重ねて出す。b は一覧と同じキーで、
-			// staging の語彙 (j/k/Space/a/X/d…) と衝突しない
-			return m, m.confirmPush()
-		}
-		if key == "u" {
-			// u は一覧の pull キーだが、ここでは p を使う (誤爆しやすい隣接キーで remote を
-			// 叩かせない。spec 3 節)。黙って無視すると「押したのに何も起きない」になるので理由を返す
-			m.toast.show("pull は p です (status viewer では u を使いません)", false)
-			return m, m.maybeTick()
+		// ⚠️ viewer が自分でキーを解釈し切る状態 (全画面 pager / 破棄確認) では、この横取りを
+		// まるごと飛ばして下の委譲へ落とす。飛ばさないと viewer のキー語彙を外側が奪い、
+		// `b` (半ページ戻り) が push 確認に化けて続く Enter で実 push が走る (実測 2026-08-21)。
+		// ⚠️ ガードは横取りだけに掛けること: この if 自体に付けると委譲も飛んで pager が
+		// キーを受け取れなくなる (実装中に踏んだ)。
+		if !m.statusOv.ownsKeys() {
+			if key == "U" {
+				return m, m.toggleUsage() // viewer の上でも usage は出せる (issues と同じ契約)
+			}
+			m.usageOv.dismiss()
+			if key == "p" {
+				// pull は viewer の中からも打てる (ユーザー要望 2026-08-05)。⚠️ 一覧の u とキーを
+				// 分けているのは spec 3 節の判断を残すため: staging 中に「隣のキー」で remote 操作へ
+				// 滑るのを防ぎつつ、明示的に p を押したときだけ通す。確認 (y/N) は actModal が出す。
+				m.actModal.askPull()
+				return m, m.maybeTick()
+			}
+			if key == "b" {
+				// push も viewer の中から打てる (ユーザー要望 2026-08-07)。p (pull) と同じく
+				// 確認 (y/N) は actModal が viewer の上に重ねて出す。b は一覧と同じキーで、
+				// staging の語彙 (j/k/Space/a/X/d…) と衝突しない
+				return m, m.confirmPush()
+			}
+			if key == "u" {
+				// u は一覧の pull キーだが、ここでは p を使う (誤爆しやすい隣接キーで remote を
+				// 叩かせない。spec 3 節)。黙って無視すると「押したのに何も起きない」になるので理由を返す
+				m.toast.show("pull は p です (status viewer では u を使いません)", false)
+				return m, m.maybeTick()
+			}
 		}
 		cmd := m.statusOv.handleKey(key, m.statusOpts().viewport())
 		m.deliverNotice(m.statusOv.takeNotice())
