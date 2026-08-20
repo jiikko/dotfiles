@@ -25,6 +25,19 @@
 - 対策: **commit 後に `git show --stat HEAD` を読み、想定したファイルが全部入っているか目視する**。
   ファイル削除・追加を伴う変更では特に。`git status` に生成物が残っていたらそれが漏れのサイン
 
+## rename (`git mv`) は旧パスも pathspec に書く
+
+- **`git mv` は「旧パスの削除」と「新パスの追加」の 2 つの変更**なので、pathspec に**両方**
+  列挙しないと片方だけがコミットされる。新パスだけ書くと、旧パスの削除がステージに残ったまま
+  commit が成功する
+- 実例 (2026-08-21): issue を `issues/done/` へ移す commit で新パスだけを指定し、旧パスの削除が
+  取り残された。commit は成功し、`git show --stat` にも新パスの追加だけが載るため、
+  **成功した commit の stat を見ても漏れに気づけない** (「無いもの」は stat に出ない)
+- 検出は `git status`: commit 後に `D  <旧パス>` が残っていたらそれが漏れ。上の「生成物」節が
+  「`git status` に残っていたらサイン」と言っているのはこの形も含む
+- 予防: rename を含む commit では `git status --short` で `R`/`D` の行を数え、pathspec が
+  その両側を覆っているか確認する。あるいは rename だけを独立した commit にする
+
 ## commit message は `-m "..."` で書かない (シェル展開で壊れる)
 
 - **`git commit -m "...メッセージ..."` の二重引用符内では、バッククォートが command substitution として
