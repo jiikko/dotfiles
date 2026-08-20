@@ -142,9 +142,11 @@ cat > "$FAKE_REALSAVE" <<'FS'
 # 共有 pane_contents.tar.gz を退行後の内容 (DEGRADED) で上書きする。
 # .fake_fail があれば「archive 生成中の死」を模す: archive を truncate 相当の
 # 中途半端な内容にしてから rc≠0 で死ぬ (last は前進済みでも未でもよいので触らない)。
-# ⚠️ 健全な archive は実 gzip で書き、TRUNCATED だけ非 gzip にする。wrapper の復旧判定は
-#   サイズや mtime ではなく「gzip として読めるか」なので、fixture もその区別を持つ必要がある
-#   (2026-07-30: rc=0 でも archive が壊れる経路が実証され、判定を rc から中身へ移した)。
+# ⚠️ 健全な archive は **実物と同じ tar.gz** で書き、TRUNCATED だけ非 gzip にする。wrapper の
+#   復旧判定はサイズや mtime ではなく「gzip として読めて entry が 1 つ以上あるか」なので、
+#   fixture もその区別を持つ必要がある (2026-07-30: rc=0 でも archive が壊れる経路が実証され
+#   判定を rc から中身へ移した / 2026-08-21: entry 0 の判定を実装したので gzip 単体の fixture は
+#   「壊れ」に分類される。マーカーは entry 名で持たせる)。
 if [ -f "$RDIR/.fake_fail" ]; then
   printf 'TRUNCATED' > "$RDIR/pane_contents.tar.gz"
   exit 1
@@ -154,7 +156,7 @@ n=$(cat "$RDIR/.fake_n" 2>/dev/null || echo 0)
 i=1
 while [ "$i" -le "$n" ]; do printf 'window\tn%s\tx\n' "$i" >> "$RDIR/new.txt"; i=$((i+1)); done
 ln -sf new.txt "$RDIR/last"
-printf 'DEGRADED' | gzip > "$RDIR/pane_contents.tar.gz"
+: > "$RDIR/DEGRADED"; tar -czf "$RDIR/pane_contents.tar.gz" -C "$RDIR" DEGRADED
 FS
 chmod +x "$FAKE_REALSAVE"
 
@@ -175,7 +177,7 @@ FIXB_OUT="$(
       : > "$RDIR/prev.txt"
       for ss in s1 s2 s3 s4 s5 s6 s7; do printf "window\t%s\tx\n" "$ss" >> "$RDIR/prev.txt"; done
       ln -sf prev.txt "$RDIR/last"
-      printf "ORIGINAL" | gzip > "$RDIR/pane_contents.tar.gz"
+      : > "$RDIR/ORIGINAL"; tar -czf "$RDIR/pane_contents.tar.gz" -C "$RDIR" ORIGINAL
     }
     bakcount() { ls "$RDIR"/.pane_contents.ttguard.* 2>/dev/null | wc -l | tr -d " "; }
 
@@ -184,7 +186,7 @@ FIXB_OUT="$(
     # 「保存成功」を記録していた (periodic-save rc=0 / kill-cmd save=ok / 手動 C-s の
     # 「Tmux environment saved!」)。rc=0 は「保存した」を意味しなければならない (2026-07-30)
     make_prev; printf 2 > "$RDIR/.fake_n"; ( tt_save_main quiet ); rrc=$?
-    printf "CASE:fixb_regress last=%s archive=%s bak=%s rc=%s\n" "$(readlink "$RDIR/last")" "$(gunzip -c "$RDIR/pane_contents.tar.gz" 2>/dev/null || cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)" "$rrc"
+    printf "CASE:fixb_regress last=%s archive=%s bak=%s rc=%s\n" "$(readlink "$RDIR/last")" "$(tar -tzf "$RDIR/pane_contents.tar.gz" 2>/dev/null | head -1 || cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)" "$rrc"
 
     # 連続 reject の escape hatch: 同じ縮小を繰り返し保存すると、N 回目で 1 回通して
     # last を前進させる。これが無いと「正当にセッションを畳んだ」だけで機構が恒久停止する
@@ -202,7 +204,7 @@ FIXB_OUT="$(
 
     # 非退行 (5→4): last も archive も新しいまま、退避ファイルは掃除される
     make_prev; printf 4 > "$RDIR/.fake_n"; ( tt_save_main quiet )
-    printf "CASE:fixb_ok last=%s archive=%s bak=%s\n" "$(readlink "$RDIR/last")" "$(gunzip -c "$RDIR/pane_contents.tar.gz" 2>/dev/null || cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
+    printf "CASE:fixb_ok last=%s archive=%s bak=%s\n" "$(readlink "$RDIR/last")" "$(tar -tzf "$RDIR/pane_contents.tar.gz" 2>/dev/null | head -1 || cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
 
     # 全喪失 (2→0): prev がしきい値未満 (セッション 4 未満 / window 8 未満) でも、
     # window 0 件の保存は無条件で退行扱いにして last も archive も戻す
@@ -211,17 +213,17 @@ FIXB_OUT="$(
       : > "$RDIR/prev.txt"
       for ss in s1 s2; do printf "window\t%s\tx\n" "$ss" >> "$RDIR/prev.txt"; done
       ln -sf prev.txt "$RDIR/last"
-      printf "ORIGINAL" | gzip > "$RDIR/pane_contents.tar.gz"
+      : > "$RDIR/ORIGINAL"; tar -czf "$RDIR/pane_contents.tar.gz" -C "$RDIR" ORIGINAL
     }
     make_prev_small; printf 0 > "$RDIR/.fake_n"; ( tt_save_main quiet )
-    printf "CASE:fixb_zero_small last=%s archive=%s bak=%s\n" "$(readlink "$RDIR/last")" "$(gunzip -c "$RDIR/pane_contents.tar.gz" 2>/dev/null || cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
+    printf "CASE:fixb_zero_small last=%s archive=%s bak=%s\n" "$(readlink "$RDIR/last")" "$(tar -tzf "$RDIR/pane_contents.tar.gz" 2>/dev/null | head -1 || cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
 
     # save 失敗 (rc≠0): archive 生成中の死で truncate された共有 archive をバックアップから
     # 書き戻す (旧実装は rc≠0 だと Fix B 復元ブロックを丸ごと skip して無傷の退避を捨てて
     # いた)。rc は上流の失敗をそのまま呼び出し側へ返す。
     make_prev; : > "$RDIR/.fake_fail"; ( tt_save_main quiet ); frc=$?
     rm -f "$RDIR/.fake_fail"
-    printf "CASE:fixb_fail rc=%s archive=%s bak=%s\n" "$frc" "$(gunzip -c "$RDIR/pane_contents.tar.gz" 2>/dev/null || cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
+    printf "CASE:fixb_fail rc=%s archive=%s bak=%s\n" "$frc" "$(tar -tzf "$RDIR/pane_contents.tar.gz" 2>/dev/null | head -1 || cat "$RDIR/pane_contents.tar.gz")" "$(bakcount)"
   ' 2>/dev/null
 )"
 OUT="$OUT

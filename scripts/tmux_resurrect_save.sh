@@ -229,7 +229,16 @@ tt_capture_contents_on() {
 # 深い検査は scripts/tmux_snapshot_health.sh の担当。毎保存で tar を展開するのは重い)。
 tt_archive_ok() {
   [ -s "$1" ] || return 1
-  gzip -t "$1" 2>/dev/null
+  gzip -t "$1" 2>/dev/null || return 1
+  # entry が 1 つ以上あるか。⚠️ この検査を省くと「中身が空の archive」を健全と誤判定する:
+  # 全 pane の capture が失敗しても tar/gzip 自体は成功するため、entry 0 の tar.gz は
+  # 非空で gzip -t も通る。その状態を healthy と読むと、下の掃除が唯一の良い退避コピーを
+  # 消してしまう (実測 2026-08-21: 0 entry の tar.gz が [ -s ] と gzip -t を素通り)。
+  # 展開はしない (header の走査だけ)。深い検査 (last の pane 集合との突合) は
+  # scripts/tmux_snapshot_health.sh の担当という分担は変えない。
+  local tt_entries=''
+  tt_entries="$(tar -tzf "$1" 2>/dev/null || true)"   # head -1 で打ち切らない: SIGPIPE + pipefail で健全な archive を壊れ判定にしてしまう
+  [ -n "$tt_entries" ]
 }
 
 # 連続 reject 回数の状態ファイル。恒久 freeze を構造的に不可能にするために使う
@@ -330,15 +339,19 @@ tt_save_main() {
   # (実測 ~1MB の cp。upstream 自身が毎保存で全 archive を再生成するのに比べ十分軽い)。
   # upstream は `gzip > file` で同一 inode を truncate 上書きするため hardlink 退避は不可＝実コピーする。
   local tt_archive='' tt_archive_bak='' tt_bak_old='' tt_bak_pid=''
+  # ⚠️ archive の在処は退行ガードの有無に関わらず決めること。旧実装はこの 2 行がガードの
+  # 内側にあり、正当な bypass (TT_SAVE_ALLOW_REGRESSION=1) では tt_archive が空のままで
+  # archive 検証・修復・archive-broken ログがまるごと skip されていた。bypass を使う場面
+  # (状態が大きく動いた直後) は archive が壊れやすい局面と重なるので、逆を向いていた。
+  tt_rdir="$(tt_resurrect_dir)"
+  tt_archive="$tt_rdir/pane_contents.tar.gz"
   if [ "${TT_SAVE_ALLOW_REGRESSION:-}" != "1" ]; then
-    tt_rdir="$(tt_resurrect_dir)"
     tt_last_link="$tt_rdir/last"
     tt_prev_target="$(readlink "$tt_last_link" 2>/dev/null || true)"
     if [ -n "$tt_prev_target" ]; then
       tt_prev_n="$(tt_count_sessions_in_file "$tt_rdir/$tt_prev_target")"
       tt_prev_w="$(tt_count_windows_in_file "$tt_rdir/$tt_prev_target")"
     fi
-    tt_archive="$tt_rdir/pane_contents.tar.gz"
     # 異常終了 (kill / crash は EXIT trap が走らない) で残置された過去の退避コピーを掃除する。
     # 生成主 pid が死んでいるものだけ消す (lock 保持中なので進行中の正当な保存は存在しないが、
     # 万一の lock 強制解除経路と競合しないよう kill -0 で保守的に判定する)。
@@ -408,8 +421,11 @@ tt_save_main() {
         if [ "$tt_new_w" -gt 0 ] && [ "$tt_streak" -ge "$TT_SAVE_REJECT_STREAK_MAX" ]; then
           tt_reject_streak_set 0
           tt_save_log "regression-stuck-override prev_sessions=$tt_prev_n new_sessions=$tt_new_n prev_windows=$tt_prev_w new_windows=$tt_new_w streak=$tt_streak accepted=$tt_new_target"
-          # last は前進させたまま (= 縮小を受け入れる)。archive も新しいものを残す
-          [ -n "$tt_archive_bak" ] && [ -f "$tt_archive_bak" ] && rm -f "$tt_archive_bak" 2>/dev/null
+          # last は前進させたまま (= 縮小を受け入れる)。archive も新しいものを残す。
+          # ⚠️ 退避コピーを消す前に検証を通すこと: この経路は「縮小を受け入れる」ので新 archive が
+          # 正になるが、その新 archive が壊れていた場合の復旧手段は退避コピーだけ。旧実装は
+          # 検証せずに消して return していた (finalize が掃除まで面倒を見る)。
+          tt_archive_finalize "$tt_archive" "$tt_archive_bak" 0
           return 0
         fi
         tt_reject_streak_set "$(( tt_streak + 1 ))"
@@ -435,7 +451,16 @@ tt_save_main() {
       tt_save_log "save-advanced prev_sessions=${tt_prev_n:-0} new_sessions=$tt_new_n prev_windows=${tt_prev_w:-0} new_windows=$tt_new_w target=$tt_new_target"
     fi
   fi
-  # Fix B3: archive の完全性を rc に依らず検証し、壊れていれば退避コピーから復旧する。
+  tt_archive_finalize "$tt_archive" "$tt_archive_bak" "$tt_rc"
+  return "$tt_rc"
+}
+
+# archive の完全性検証と退避コピーの掃除。⚠️ tt_save_main の**全 return 経路**から呼ぶこと。
+# 旧実装はこのブロックが関数末尾にインラインで置かれていたため、reject streak の escape hatch が
+# `return 0` する経路でまるごと飛ばされていた (しかもその経路は唯一の復旧手段である退避コピーを
+# 先に消してから返っていた)。
+#
+# Fix B3: archive の完全性を rc に依らず検証し、壊れていれば退避コピーから復旧する。
   # ⚠️ rc≠0 だけを見ていた旧実装には穴があった (レビューで実証 2026-07-30):
   #   upstream の save_all は pane_contents の生成失敗を戻り値に反映しない。gzip が失敗しても
   #   save.sh は rc=0 を返すため、「last は健全な layout・archive は 0 byte のゴミ」という
@@ -443,8 +468,15 @@ tt_save_main() {
   #   しかも復元側は rc=0 / restore-end 成功を記録するので完全に silent なデータ喪失だった。
   #   さらに旧実装は下の掃除で退避コピーを無条件削除しており、唯一の良い archive を捨てていた。
   # よって判定は「gzip として読めて entry が 1 つ以上あるか」に変え、rc は見ない。
+tt_archive_finalize() {
+  local tt_archive="$1" tt_archive_bak="$2" tt_rc="$3"
+  [ -n "$tt_archive" ] || return 0
   if [ -f "$tt_archive" ] && ! tt_archive_ok "$tt_archive"; then
-    if [ -n "$tt_archive_bak" ] && [ -s "$tt_archive_bak" ]; then
+    # ⚠️ 退避コピーは「非空」ではなく **現 archive と同じ基準 (tt_archive_ok)** で検査する。
+    # [ -s ] だけだと、壊れた退避 (0 entry / truncate) から「復旧した」と偽のログを出して
+    # 退避を消費し、壊れた archive を壊れた archive で置き換えて終わる (実測 2026-08-21:
+    # 現 archive と退避の両方が 0 entry のとき archive-repaired が出ていた)。
+    if [ -n "$tt_archive_bak" ] && tt_archive_ok "$tt_archive_bak"; then
       mv -f "$tt_archive_bak" "$tt_archive" 2>/dev/null || true
       tt_save_log "archive-repaired from=backup rc=$tt_rc epoch=$(date +%s)"
     else
@@ -459,7 +491,7 @@ tt_save_main() {
       rm -f "$tt_archive_bak" 2>/dev/null
     fi
   fi
-  return "$tt_rc"
+  return 0
 }
 
 # 直接実行時のみ本体を走らせる。source（テスト）時は関数定義だけ読み込む。
