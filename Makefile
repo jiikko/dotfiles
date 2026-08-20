@@ -41,7 +41,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-go-lint test-go test-src
+.PHONY: ci-packages-heavy ci-packages-rest pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-go-lint test-go test-src
 
 # settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
 # pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、
@@ -111,6 +111,33 @@ test-discovered:
 # 移動/改名した場合は run_tests の 0 件検知が heavy 側を fail させるのでここを更新する。
 CI_HEAVY_TEST_DIRS := tests/zshrc/av1ify tests/zshrc/concat
 CI_HEAVY_PRUNE := \( $(foreach d,$(CI_HEAVY_TEST_DIRS),-path $(d) -o) -false \) -prune -o
+
+# CI (tests.yml) が各グループで apt install するランタイム依存。グループ定義 (上の
+# CI_HEAVY_TEST_DIRS) と同じ場所に置く: workflow 側にハードコードすると、heavy に bats/tmux
+# 依存のテストを足したとき「Makefile だけ直して CI が command not found で落ちる」まで
+# 気づけない (どのディレクトリが heavy かの出典はここ、依存の出典は workflow、の二重管理)。
+# heavy は zsh テストのみなので tmux/bats を省いて ~60s 節約している。
+CI_PACKAGES_HEAVY := zsh make
+CI_PACKAGES_REST  := tmux zsh make bats
+# rest にはあるが heavy には無い = heavy で使うと CI が落ちるコマンド (乖離検査の対象)
+CI_PACKAGES_ONLY_REST := $(filter-out $(CI_PACKAGES_HEAVY),$(CI_PACKAGES_REST))
+
+# 値の確認用 (人間と test-ci-group-deps の照合対象)。
+# ⚠️ workflow はこのターゲットを呼べない: make 自体が apt install の対象なので、依存を解決する
+# 時点では make が無い可能性がある。workflow は Makefile の生の行を sed で読む = 実際の契約は
+# 「1 行の `:=` で書くこと」で、make の意味論 (+= / 行継続 / $(OTHER)) は通らない。
+# その食い違いは test-ci-group-deps が make の値と sed の結果を突き合わせて検出する。
+ci-packages-heavy:
+	@echo '$(CI_PACKAGES_HEAVY)'
+ci-packages-rest:
+	@echo '$(CI_PACKAGES_REST)'
+
+# heavy グループのテストが「heavy に入れていないコマンド」へ依存していないか検査する。
+# 依存の決定は人間が行う (= 二重管理そのものは残る) ので、乖離だけを機械的に落とす。
+test-ci-group-deps:
+	@CI_HEAVY_TEST_DIRS='$(CI_HEAVY_TEST_DIRS)' CI_PACKAGES_ONLY_REST='$(CI_PACKAGES_ONLY_REST)' \
+		CI_PACKAGES_HEAVY='$(CI_PACKAGES_HEAVY)' CI_PACKAGES_REST='$(CI_PACKAGES_REST)' \
+		scripts/check_ci_group_deps.sh
 
 # heavy は 21 本 × ~16s (CI 実測) の直列で 5.6 分に育ったため並列実行する
 # (av1ify/concat は tempdir 独立で並列安全。2026-07-20 に 338s → 数十秒へ)
@@ -229,7 +256,7 @@ test-ruby-syntax:
 test-lint-tests:
 	@./scripts/lint_test_scripts.sh
 
-test-lint: test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax
+test-lint: test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps
 
 # Go プロジェクトの静的解析とテスト。実体は各ディレクトリの Makefile の lint / test
 # ターゲットに閉じており、ここはそれへ委譲するだけ (ローカルのコミット前検証用。root の

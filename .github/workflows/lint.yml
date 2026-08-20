@@ -54,27 +54,27 @@ jobs:
           "$RUNNER_TEMP/bin/shellcheck" --version
 
       # actionlint は apt に無いため公式リリースバイナリを取得する (test-actionlint が使う。
-      # shellcheck が PATH にあると run: ブロックのシェル検査も有効になる)
-      - name: Install actionlint
+      # shellcheck が PATH にあると run: ブロックのシェル検査も有効になる)。
+      # ⚠️ バージョンは固定する。latest 追従だと上流が検査を追加/厳格化した日に、手元では通るのに
+      # CI だけ赤くなる (shellcheck で実際に起きた食い違いと同型。上の pin のコメント参照)。
+      # 固定したので gh api による version 解決 (HTML エラーページ対策の 3 回リトライと空 ver
+      # ガード) も不要になった。API 依存が消えた分、レート制限や障害でも落ちない。
+      # ⚠️ 手元の actionlint を上げたらここも同じ版へ更新すること (差が戻ると同じ罠が再発する)。
+      # tag は v 付き / 配布ファイル名は v なしなので、変数は v なしで持ち URL 側で付ける。
+      - name: Install actionlint (pinned)
+        env:
+          ACTIONLINT_VERSION: 1.7.12
         run: |
-          # gh api は一時的に HTML エラーページを返すことがある (実例: run 29542275908 の
-          # "invalid character '<'")。version 解決は再試行し、空の ver のまま壊れた URL を
-          # 組み立てるのを防ぐ。curl の -f は HTTP エラー時に 404 ページを tarball として
-          # 保存して後段の tar が「not in gzip format」で死ぬ分かりにくい失敗を防ぐ。
-          for i in 1 2 3; do
-            ver=$(gh api repos/rhysd/actionlint/releases/latest --jq '.tag_name' | sed 's/^v//') \
-              && [ -n "$ver" ] && break
-            echo "actionlint version 解決に失敗 (attempt $i)。再試行..." >&2
-            sleep 5
-          done
-          [ -n "$ver" ] || { echo "::error::actionlint の最新バージョン解決に失敗 (gh api が JSON を返さない)"; exit 1; }
           curl -fsSL --retry 3 --retry-all-errors -o "$RUNNER_TEMP/actionlint.tar.gz" \
-            "https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_linux_amd64.tar.gz"
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
           mkdir -p "$RUNNER_TEMP/actionlint"
           tar xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP/actionlint" actionlint
           echo "$RUNNER_TEMP/actionlint" >> "$GITHUB_PATH"
-        env:
-          GH_TOKEN: ${{ github.token }}
+          # ⚠️ --version を出すだけでは pin の証拠にならない。値を突き合わせる
+          # (取得したバイナリが別版だった / PATH 解決が効いていない、を同時に捕まえる)。
+          got=$("$RUNNER_TEMP/actionlint/actionlint" --version | head -1)
+          [ "$got" = "$ACTIONLINT_VERSION" ] \
+            || { echo "::error::actionlint の版が pin と違う (取得=$got 期待=$ACTIONLINT_VERSION)"; exit 1; }
 
       - name: Run lint suite
         run: make test-lint

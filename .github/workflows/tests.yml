@@ -33,27 +33,55 @@ jobs:
       matrix:
         include:
           # heavy (av1ify/concat) は nvim テストを含まない (setup-nvim 省略)。
-          # zsh テストのみなので apt も zsh/make だけに絞る (tmux/bats の ~60s を節約)
+          # ⚠️ apt パッケージをここに書かないこと: グループ定義 (CI_HEAVY_TEST_DIRS) の出典が
+          # Makefile なのに依存だけ workflow にあると、heavy に bats/tmux 依存のテストを足した
+          # とき「Makefile だけ直して CI が command not found で落ちる」まで気づけない
+          # (issue 073)。依存も Makefile の CI_PACKAGES_* が出典で、下の step が読む。
           - group: heavy
             make-target: test-discovered-heavy
             needs-nvim: false
-            packages: zsh make
           - group: rest
             make-target: test-runtime-rest
             needs-nvim: true
-            packages: tmux zsh make bats
     name: dotfiles-tests (${{ matrix.group }})
     runs-on: ubuntu-slim
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install runtime dependencies (${{ matrix.packages }})
+      # 依存の出典は Makefile の CI_PACKAGES_<GROUP>。⚠️ make 自体が apt の対象なので
+      # `make -s ci-packages-*` はここでは使えない (この時点で未インストールの可能性)。sed で読む。
+      # 空を install に流すと「何も入らないまま成功」になるため、読めなければ明示的に落とす。
+      - name: Resolve runtime dependencies from Makefile (${{ matrix.group }})
+        id: deps
+        run: |
+          var="CI_PACKAGES_$(printf '%s' '${{ matrix.group }}' | tr '[:lower:]' '[:upper:]')"
+          pkgs=$(sed -n "s/^${var}[[:space:]]*:=[[:space:]]*//p" Makefile)
+          if [ -z "$pkgs" ]; then
+            echo "::error::Makefile から $var を読めなかった (変数名の変更 / 書式変更)"
+            exit 1
+          fi
+          echo "packages=$pkgs" >> "$GITHUB_OUTPUT"
+          echo "$var = $pkgs"
+
+      # ⚠️ ${{ }} を run: の中に直接埋めないこと。Makefile 由来の値がシェルとして評価される
+      # (実測: CI_PACKAGES_HEAVY := $(OTHER) と書くと sed が生テキストを掴み、run: 側で
+      # コマンド置換として実行されてパッケージ 0 個になる)。env 経由で受け、許可文字だけを通す。
+      # $PKGS は複数パッケージへ分割させるため意図的に無引用。文字種の検証がその安全弁。
+      - name: Install runtime dependencies (${{ steps.deps.outputs.packages }})
         env:
           DEBIAN_FRONTEND: noninteractive
+          PKGS: ${{ steps.deps.outputs.packages }}
         run: |
+          case "$PKGS" in
+            *[!a-z0-9.+_\ -]*)
+              echo "::error::パッケージ名に想定外の文字がある: [$PKGS]"
+              exit 1
+              ;;
+          esac
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ${{ matrix.packages }}
+          # shellcheck disable=SC2086 # 複数パッケージへ分割させる意図 (文字種は上で検証済み)
+          sudo apt-get install -y --no-install-recommends $PKGS
 
       # Neovim 0.12 pin + plugin cache + lazy restore。pin の理由・cache key の世代管理は
       # action 側に集約 (bench.yml と共有。二重管理を防ぐため詳細はそちらだけに書く)
