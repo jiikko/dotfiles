@@ -39,7 +39,7 @@ Opus 5 は既定で「よく喋り・よく書き・スコープを広げ・よ�
 
 ## Issue管理
 
-- `issue/*.md` の内容に対応した後、作業が完了したら対応するissueファイルを `issue/done/` ディレクトリに移動すること
+- `issues/*.md` の内容に対応した後、作業が完了したら対応する issue ファイルを `issues/done/` ディレクトリに移動すること（ディレクトリ名が `issue/` 単数のプロジェクトでは読み替える）
 - **issue の記述を鵜呑みにしない**。実際のコードと git 履歴に照らして検証してから着手する（既に修正済み・false positive を着手前に弾く）。関連: [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md)（refactor 提案の事前確認）/ [`issue-creation-codex-review.md`](rules/issue-creation-codex-review.md)（issue 作成時の codex レビュー）
 - **人にやってほしい動作確認は応答本文に書いて流さず、issue に起こす**（chat は流れて存在自体が忘れられる）。`NNN-verify-<スラッグ>.md` で起票し、本文に `期限: YYYY-MM-DD` を書く。**既読はファイルの位置で表す**（未読 = `issues/`、確認済み = `issues/done/`。既読ヘッダーは本文の書き換え忘れで嘘が残るので使わない）。期限切れは `issue-sync` skill が最初に報告する
 
