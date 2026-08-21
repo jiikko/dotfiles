@@ -51,3 +51,8 @@ mark_seen_direct_x20 1500 rel
 # なるため、+2 の余裕でも構造的な回帰は必ず捕まる。計測失敗時は bench が 999 を出す。
 agent_panel_tick_forks_rows10 6
 mark_seen_tmux_calls 3
+# ⚠️ fork 数だけでは行ごとの fork をパイプの中に隠されると素通りする (SIGCHLD は直接の子しか
+# 数えない)。裏付けとして「行数 10 倍で 1 tick の時間が何倍になるか」(×100) を持つ。比なので
+# runner の速度差・混雑が打ち消え、rel も不要。ローカル実測 (min-of-3) は 150〜255 で、
+# 行ごとの $( ) を復活させると 650 / パイプに隠す変異で 760。400 はその間。
+agent_panel_tick_scale_x100 400

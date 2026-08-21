@@ -47,9 +47,10 @@ esac
 
 # --- 準備: 4 pane (input / working / idle / input) + 別 window の input --------------
 win="$("${T[@]}" new-session -d -s ms -x 80 -y 24 -P -F '#{window_id}')" || { ng "セッションを作れない"; exit 1; }
-panes=("$("${T[@]}" list-panes -t "$win" -F '#{pane_id}')")
 for _ in 1 2 3; do "${T[@]}" split-window -d -t "$win" -l 3; done
-mapfile -t panes < <("${T[@]}" list-panes -t "$win" -F '#{pane_id}')
+# ⚠️ mapfile は bash 4+ 専用 (macOS 素の /bin/bash 3.2 に無い)。while read で組む
+panes=()
+while IFS= read -r p; do panes+=("$p"); done < <("${T[@]}" list-panes -t "$win" -F '#{pane_id}')
 [ "${#panes[@]}" -eq 4 ] || { ng "pane が 4 枚にならない (${#panes[@]} 枚)"; exit 1; }
 states=('🔔 input' '⚙ working' '✓ idle' '🔔 input')
 for i in 0 1 2 3; do "${T[@]}" set -p -t "${panes[$i]}" @claude_state "${states[$i]}"; done
@@ -98,11 +99,13 @@ fi
 
 # ⚠️ ここが issue 083 の本体。pane 数 (4) に比例して起動すると 1 + 4 = 5 回になる。
 # 期待は「list-panes 1 回 + まとめた if-shell 1 回」= 2 回。
+# ⚠️ 上界 (-le 2) で見ないこと: hook が何もしない (0〜1 回) でもこの検査だけは緑になり、
+# 「まとめられている」と「壊れている」を区別できない (red team 実測 2026-08-21)。厳密一致で見る。
 calls="$(wc -l < "$CALLS" | tr -d ' ')"
-if [ "$calls" -le 2 ]; then
-  ok "tmux クライアントの起動が pane 数に比例しない ($calls 回 / pane 4 枚)"
+if [ "$calls" -eq 2 ]; then
+  ok "tmux クライアントの起動は 2 回 (list-panes 1 + まとめた if-shell 1。pane 4 枚でも増えない)"
 else
-  ng "tmux を $calls 回起動している (pane 数に比例している。期待 2 回)"
+  ng "tmux の起動回数が 2 回でない (実際 $calls 回。pane 数に比例 = 畳めていない / 0〜1 = 書き込みが飛んでいない)"
   cat "$CALLS"
 fi
 
