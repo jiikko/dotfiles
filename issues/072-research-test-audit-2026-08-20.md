@@ -104,3 +104,54 @@ test-coverage-advisor。統合フェーズは session limit で落ちたため m
 - tmux stub 方式テスト 11 本の stub は production の呼び出し形と一致していた
   (実物とずれた stub は `test_snapshot_health.sh` の lock fixture のみ → 068)
 - glogx の Go テストは自己言及 2 件を除き、期待値を独立に構成していた
+
+---
+
+## 反証・対応の結果 (2026-08-21)
+
+⚠️ **この節が唯一の durable な記録**。裏取り/反証のレポートは `./tmp/` に出したが `tmp/` は
+gitignore 対象なので残らない。以降の audit はこの節を先に読むこと (却下済みの指摘を再生成しない)。
+「反証できなかった」は「正しいと証明された」ではない。
+
+### 対応済み
+
+| 指摘 | 対応 |
+|---|---|
+| `scroll_glide_test.go:150,:328` の `t.Skip` 逃げ | `d5e16d4`(=`9e78c43`) で `t.Fatal` へ。変異 (`pageSize()/2` を 0 に) で 2 テストが red = **修正前は browse の半ページスクロールが完全に死んでも `ok glogx`** だった |
+| `test_av1ify_options.sh:663-691` の `err_exit` 窓 | `0a863db` で窓を削除。変異 (最長一致を壊す) で red。この変異は **SMB 上の元ファイルに `trash` が呼ばれる**実データ削除経路そのもので、窓があった間は完全に緑だった |
+| `codex_fanout.bats:136` が status 1 の理由を区別しない | `09de900` で落ちた理由をメッセージで pin。変異 2 種で red |
+| `test_deny_bare_tmux_kill.sh:19-22` の decision 抽出 | 並行セッションが `7c064e6` で error と allow を分離。さらに**入力長で hook が timeout に殺され deny が消える**穴を私が実測し `0ceb0f8` で修正 (テスト側が本番と同じ `timeout: 10` を課していなかったため 4 ケース書いても全部緑だった) |
+| `test_agent_panel.sh:166` の `grep -q -- '-t @2'` が常にマッチ | `7f83abb` (follow 側) + `512b490` (save-show 側)。new-pane 行限定へ。変異 (new-pane から target を落とす) で red |
+| `folds_timer_check.lua:35` の上界のみ | `512b490` で下界を追加。変異 (debounce を殺す) で red = **修正前は機能が丸ごと死んだ状態が「最も good」に見えていた** |
+| `test_dangling_symlinks.sh` の 0 件緑 | **却下** (下記) |
+| `concat/test_helper.sh:194` の tolerance 上書き | **半分却下**。生き残った部分を issue 076 として分離 (素朴に tolerance を戻すと false failure になる) |
+
+### 反証で崩れた (却下) — 再提案しないこと
+
+| 指摘 | 崩れた理由 (要点) |
+|---|---|
+| `test_dangling_symlinks.sh` が対象 0 件で緑 | 0 件素通しはヘッダ (`:13`) と導入 commit (`baa98c5`) が**宣言済みの性質**。守る対象があるマシンでは母集団が空にならず rc=1 で検出される (実測 90 本)。0 件になる環境では不変条件が「未検証」ではなく**真**。引用も現物 (「OK: dotfiles 由来の dangling symlink なし」) と不一致で過大主張だった |
+| `assert_contains` の 8 コピーが fail-fast を壊す | 5 本すべて `setopt err_exit` を立てており `return 1` で後続未実行・rc=1 を実測 (裏取り側の `grep '^\s*set -[eu]'` が zsh の `setopt` を拾えなかった誤認)。引数順の誤りは**赤で loud** に落ちる。live な誤 callsite 0 件 |
+| `_ensure_cli_with_brew.bats:60` に陽性対照が無い | 主張 (早期 return が効く) を壊す変異では `not ok 2` で red。残るのは `$status` 未検査の 1 行ぶんのみ。FALSE_POSITIVE |
+| `issues_view_test.go:2057` の自己言及 | 指摘行は無関係な行。該当式はキー側/描画側の 2 経路一致検査で、分岐を壊す変異では FAIL する。FALSE_POSITIVE |
+
+### 未着手 (発火条件を示せない / trigger 待ち)
+
+`072-lazy-body-untested` (trigger: fixture の unquoted heredoc 修正と同時。単独で assert を足すと
+誤った期待値を固定する) / `072-nvim-wrapper-dup` (trigger: 4 本目の nvim テストを足すとき) /
+`072-ftplugin-ts-silent-skip` / `072-pyenv-always-skip` / `072-open-workspace-selfref` /
+`072-result-log-no-assert` / `072-brew-bats-dead-export` / `072-fork-scratch-perma-skip` /
+`072-tmux-spawn-helper-dup` / `072-default-sock-dup` / `072-assert-file-exists-dup` /
+`072-three-own-ok-ng` / `072-toast-set-e-rc` / `072-nvim-ok-anchor-drift`。
+
+### この監査で得た一般則 (ルールへ反映済み)
+
+今回の修正過程で**同型の失敗を私自身が 3 回踏んだ**ため、規範に落とした:
+
+- `adversarial-review-own-safeguards.md`: 新設した検査が **CI で実際に走るか**を同じ commit で
+  確認する (孤児回収の静的検査が `lsof` gate の下で一度も走っていなかった実例) /
+  **テストハーネス自身の失敗も緑に畳まない** (jq が ARG_MAX で落ちたのを allow に畳み、CI ログが
+  「判定の誤り」に見えた実例)
+- `mutation-verify-new-tests.md`: **本番と同じ制約 (timeout 等) の下で観測する** (hook のテストが
+  `timeout: 10` を課さず、4 ケース書いても変異で緑だった実例)
+

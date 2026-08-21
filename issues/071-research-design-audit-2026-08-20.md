@@ -122,3 +122,48 @@ polymorphism 候補)。状態を 1 つ増やす / 色を変えるときの touch
   (`streamtyped` の truncate 済み blob → SIGABRT)。その結果 :30-35 の診断メッセージ経路が
   デッドパスになっている。フォールバック自体が救う対象 (repo 外の旧ファイル) が
   ほぼ無いので削除が第一候補
+
+---
+
+## 反証・対応の結果 (2026-08-21)
+
+⚠️ **この節が唯一の durable な記録**。裏取り/反証のレポートは `./tmp/` に出したが `tmp/` は
+gitignore 対象なので残らない。以降の audit はこの節を先に読むこと (却下済みの指摘を再生成しない)。
+「反証できなかった」は「正しいと証明された」ではない。
+
+### 対応済み
+
+| 指摘 | 対応 |
+|---|---|
+| gum confirm の `--default=false` が実装強制されていない (High 相当) | 並行セッションが `7c064e6` で `tests/tmux/test_confirm_default_gate.sh` を新設。**その新ゲート自身に穴**があり (`grep` rc=2 を無マッチと同一視して読めない違反ファイルを黙って除外) `52f62ec` で 3 分岐へ修正 |
+| status viewer routing が pager/破棄確認中もキーを横取り (`tui.go:1296`) | `a9f3fa5`。**全画面 diff の `b` → `Enter` で実 `git push` が走る** / X の破棄確認中に `p`→`y`→`y` で作業ツリー破棄、の 2 経路を実測。`statusView.ownsKeys()` で横取りだけをガード |
+| `Makefile` の `GO_PROJECT_DIRS` 手動列挙 → 方針との不整合 | 未着手 (下記の trigger 待ち) |
+| `test_changed.sh:142-143` の写像が shell 系を一部にしか写さない | `7f83abb`。登録表を作らず**参照からの発見** (basename を `tests/*/` から grep) へ。`tmux_agent_panel.sh → tests/tmux` 等が届くようになった |
+| pager 3 面の重複のうち **offset の書き戻し非対称** | `512b490`。rows 増加後に上スクロールが (rows 差) 打鍵死ぬ (diff 33 / job 詳細 11 を実測)。描画で論理 offset を収束させる形へ。**論理 offset を直接見る assert** も追加 (既存テストは title しか見ておらず退行を捕まえなかった) |
+| `actionModal` の 7 bool 排他崩れ | **未着手**。issue 074 (claude/codex update の並列化) が同じ `action_modal.go` を map 化する予定で、そちらで設計ごと解消できる可能性がある。単独で応急処置 (`tui.go:1035` を `active()` に広げる) を当てると 074 と衝突する |
+| 共有観測ログの 8〜9 箇所分裂 | **未着手**。ただし根拠の 1 本 (`071-triglog-seam-bypass` = seam 迂回が false green の温床) は反証で崩れた (下記)。集約そのものの価値は残るが優先度は下がる |
+
+### 反証で崩れた (却下) — 再提案しないこと
+
+| 指摘 | 崩れた理由 (要点) |
+|---|---|
+| 観測ログの seam 迂回が「vacuous に緑」の温床 (`071-triglog-seam-bypass`) | seam 不在・`$HOME` 直書きは事実だが、repo の assert は全て positive grep なので `TT_TRIGGER_LOG` で書くと**即 false red**。誤緑になるのは否定 assert のときだけで、それは変異検証規約が潰す形。census も不完全 (`_tmux.conf:475,478` を落としており「3 箇所」でない) |
+| `check_syntax.zsh:53` が警告付きロードを pass にする | conf 警告検査の責務は `tests/tmux/test_tmux.sh:100-114` に**意図的に置かれており**、`make test` と CI の rest 腕で実際に走る。主張の 3 クラス全部で suite が赤になることを実測。`make test-syntax` 単体が緑なのは分業どおり |
+| `job_detail_overlay` が `pagerScrollKey` に委譲していない | 骨だった「共有関数の doc が『pager 面共通』と宣言」の引用が**現物に存在しない** (grep 0 件) ため破られる契約が無い。ドリフト実績 0。委譲すると既知 P1 (tick が返らず表示が固まる) を再生産する |
+| y/N の「実行キー」述語の 3 箇所独立 (大文字 Y の扱い差) | 厳格側の `Y` は「安全側で閉じる」、寛容側は「意図どおり実行」で失敗シナリオが作れない。厳格側は doc + テストで pin 済みの契約で、**揃える方が不変条件を壊す** |
+| `_zshrc:696-733` の適用漏れ通知が結果ファイルを共有 | 通知は消えず、最初に prompt へ到達したシェルが 1 回表示し、state 非更新により後続シェルが**再通知**する (実測)。hook 居残りは宣言済み設計の縮退形で拾い手として機能 = **実害の向きが逆** |
+| 色キーの 2 言語二重定義 | 070 側の同項目参照 (sdef が単一ソース。5 つ目の arm は書けない) |
+
+### 未着手 (trigger 待ち)
+
+`071-lock-acquire-verbatim-dup` / `071-chrome-composition-dup` / `071-two-slide-state-machines` /
+`071-pager-empty-branch-divergence` / `071-triglog-writer-count` / `071-triglog-rotation` /
+`071-go-project-dirs` / `071-nsunarchiver-uncatchable-abort` / `@claude_state` 写像の集約 /
+observation log の集約。いずれも裏取り側が「発火条件を示せない」または反証未実施。
+
+### 指摘の文言の訂正 (offset の項)
+
+- trigger は「**幅**を広げる」ではなく **高さ (rows) の増加**。幅だけ 40→200 では dead k = 0
+  (幅由来なのは既修正の issues 本文 pager だけ)
+- 「32 打鍵」は固定値ではなく `rows_new - rows_old`
+

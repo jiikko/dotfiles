@@ -126,3 +126,59 @@ High 2 件は単独 issue に分離済み: [068](068-bug-snapshot-health-lock-ow
   分離が効いている)
 - confirm 系スクリプトの fail-safe (`&&` 短絡): 変異実験で red になることを確認済み
   = 実装強制されている。一方 `--default=false` は未強制 (→ 071)
+
+---
+
+## 反証・対応の結果 (2026-08-21)
+
+⚠️ **この節が唯一の durable な記録**。裏取り/反証のレポートは `./tmp/` に出したが `tmp/` は
+gitignore 対象なので残らない。以降の audit はこの節を先に読むこと (却下済みの指摘を再生成しない)。
+
+工程: 全指摘を実コードで裏取り (verdict 付け) → CONFIRMED のうち重いものを**独立の懐疑者が
+反証** → 生き残ったものだけ着手。「反証できなかった」は「正しいと証明された」ではない。
+
+### 対応済み
+
+| 指摘 | 対応 |
+|---|---|
+| `_tmux.conf:346,353` の `git -C '#{pane_current_path}'` 素埋め | `a9f3fa5` で `#{q:}` 化。**cwd 名由来の任意コマンド実行**を実証。`'#{q:}'` と囲むのは誤り (ELSE に落ちる) |
+| `tmux_agent_panel.sh:117,:258` の同一性がパス完全一致 | `f6c5efd` で判定をスクリプト名へ。2 箇所の awk を `render_panes()` に集約 |
+| `bin/tmux-toast:93` の clamp / `:100` の無ガード `new-pane` | `f6c5efd` で `-ge` + `win_w-1` / `2>/dev/null \|\| exit 0`。長い toast が一度も表示されない + hook に view-mode が積まる、の 2 件 |
+| `terminal_profile_restore.sh` の AppleScript 素埋め | `f6c5efd` で `on run argv` + argv 渡しへ。テストを新設 (この 2 ファイルはテスト 0 本だった) |
+| `issues_watch.go:101` の `watched` マップ | `f6c5efd` で撤去 (Add は冪等)。消えて戻ったディレクトリの再 Add を pin |
+| `issues/body.go:115` の URL 正規表現に C1 が無い | `d5e16d4`(=`9e78c43`) で `\x{80}-\x{9f}` を追加 + C1 の回帰テスト |
+| `tt_archive_ok` の entry>=1 未実装 / bypass で検証 skip / escape hatch が退避を消して return | `bd8e5a7` で 3 件 + **テストで見つけた 4 件目** (壊れた退避から「repaired」と偽ログ) を修正 |
+| 孤児回収の default socket 除外 | 並行セッションが `61e9c49`。その後の敵対レビューで残った 2 件を `52f62ec` で修正 (下記) |
+| `stat -f %m` が BSD 前提 | 並行セッションが `7c064e6` で `tt_mtime_of` (GNU 先) へ集約 |
+| `check_syntax.zsh` / `test_changed.sh` / `_zshrc` の 3 件 | それぞれ却下 / `7f83abb` で修正 / 却下 (下記) |
+
+### 反証で崩れた (却下) — 再提案しないこと
+
+| 指摘 | 崩れた理由 (要点) |
+|---|---|
+| `_tmux.conf:551` の `#{socket_path}` 未 `q:` 化 | 実 watchdog は `tt_on_default_server` が socket path を自分で再解決して比較するため、空白/メタ文字を含む socket では必ず先に exit 0。sh レベルの引数ずれは再現するが「死亡記録が壊れる」は起こらない。残るのは `#{q:}` の一貫性のみ |
+| `bin/tmux-toast:147` の python3 無ガード | `( … ) &` の背景サブシェルなので親 rc は常に 0。「view-mode を積むのは非 0 終了であり stderr ではない」を隔離 tmux で実測。到達条件 (tmux < 3.7 かつ python3 不在かつ client あり) も作れない |
+| `tmux_extract_popup.sh:78` の send-keys | 全 3 箇所が `-l --` (リテラル) で Enter を送らない。marker が作られないことを実測。FALSE_POSITIVE |
+| `job_detail_overlay.go:122` の幅の契約 | 4 面すべてが描画時に `clampScrollOffset` を呼び「statusView だけ」が不成立。width 1..160 の総なめで枠超過 0 行。実在する非対称は**向きが逆**で 071 側へ分離 |
+| `terminal_profile_colors.swift:29` の色キー二重定義 | shell の 4 arm は Swift 配列の複製ではなく **Terminal.app の sdef が持つ `type="color"` の全列挙** (実測 4 件)。5 つ目は Apple が sdef を拡張するまで書けないので発火条件が構成できない |
+
+### 未着手 (発火条件を示せない / trigger 待ち)
+
+`070-render-fork` (agent panel の 2s tick で 42〜82 fork。detached pane 内で対話レイテンシ経路の外。
+trigger: worktree 同一性の修正後 = 済んだので次に触るとき) / `070-watchdog-greedy-pid` (実ログに該当
+トークン 0 件) / `070-two-owner-impls` / `070-guards-empty-owner-steal` / `070-mark-seen-forks` /
+`070-resurrect-inline-log` / `070-extra-shared-log-gate-failopen` / `070-git-prompt-percent`。
+
+### 追記: 「`stat -f%z` も同型」は誤り (2026-08-21 実測)
+
+裏取りの横断 grep が `bin/concat_movies:197` 等の `stat -f%z … || stat -c%s …` を
+「`070-stat-f-bsd` と完全同型」としていたが、**空白の有無で挙動が違う**。
+
+- `gstat -f '%m' file` (空白あり) = 危険: `%m` を**ファイル名として扱い**、rc≠0 でも
+  **stdout に FS 情報のゴミを出す**。`$( … || … )` の capture がゴミ + 正常値になり算術エラー
+- `gstat -f%z file` (空白なし) = 安全: `invalid option -- '%'` で **stdout に何も出さず** rc≠0。
+  `||` のフォールバックが正しく効く
+
+repo 内で空白ありは `scripts/lib/tmux_resurrect_guards.sh:70` の 1 箇所だけで、そこは既に
+GNU 先 (`stat -c '%Y'` が先) なので安全。**concat 系 6 箇所は修正不要**。
+
