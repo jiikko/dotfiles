@@ -54,6 +54,7 @@ Opus 5 は既定で「よく喋り・よく書き・スコープを広げ・よ�
 - **zsh の hook (precmd/preexec) 経路から呼ぶ関数は `$(...)` でなく `REPLY` で返す**（fork が毎操作の体感レイテンシになる）。詳細は dotfiles repo の `rules/zsh-hook-return-via-reply.md`
 - **カバレッジ向上を要求されても、対象が「テスト困難 かつ 低価値」の両方を満たすなら拒否する**（数値のための水増しテストを書かない）。判断は「テスト容易性 × 価値」の 2 軸で行い、困難×高価値は逃げずにテスタブルへ直してから書く。詳細は [`refuse-low-value-coverage.md`](rules/refuse-low-value-coverage.md)
 - **新規テストは「壊す変更を 1 つ当てて red を見る」まで確認してから commit する**（green は「正しい」ではなく「その書き方では壊せなかった」）。変異させても green のままのテストは主張を何も守っていないので書き直す。詳細は [`mutation-verify-new-tests.md`](rules/mutation-verify-new-tests.md)
+- **計測・テスト用の shim / wrapper を PATH 先頭に置くときは、実体を絶対パスで解決してから exec する**（相対名だと PATH 先頭の自分自身に解決して無限再帰し、しかも無音で回り続ける）。解決結果が shim 自身の配下でないことを起動時に確認する。詳細は [`path-shim-must-resolve-real-binary.md`](rules/path-shim-must-resolve-real-binary.md)
 - **再利用される道具（スクリプト / CLI / Makefile target / lint ルール / ヘルパー）を新設したら、同じ変更で「入口のドキュメント」を更新する**（その作業手順を持つ skill・領域の CLAUDE.md / README・既存ツールの一覧表）。**ツールのヘッダコメントは入口に数えない**（そのファイルを開く動機は存在を知っている人にしかない）。既存ツールと使い分けが要るなら判断基準を 1 行で書く。詳細は [`new-tool-requires-entrypoint-docs.md`](rules/new-tool-requires-entrypoint-docs.md)
 
 
@@ -90,7 +91,7 @@ Opus 5 は既定で「よく喋り・よく書き・スコープを広げ・よ�
 - **「この if 文を足せば直る」と思ったら立ち止まる** — その条件分岐が必要になった設計上の前提を疑うこと
 - **既存の呼び出しに新しい値・フラグ・経路を通す修正では、受け側のガード (preflight / reject) を先に grep で洗う** — 新しい呼ばれ方で初めて発火する既存ガードとの相互作用が悪化を作る。fake にも受け側の reject を模させる。詳細は [`survey-receiver-guards-before-passing-new-values.md`](rules/survey-receiver-guards-before-passing-new-values.md)
 - 修正が「症状への対処」ではなく「前提の是正」になっているかを必ず確認する。場当たり的な条件分岐の追加や、特定ケースだけを救うワークアラウンドは原則禁止
-- **直したバグは「同じ間違いが別の場所にもある」前提で grep する** — 同じ API・同じイディオムの使用箇所を横断確認する。特にテスト側で見つけた不具合は production 側を、production で見つけたらテスト・別モジュール側を必ず見る（実例: `SecItemDelete` の単発呼び出しを test helper で直した後、production の同一バグが残っていた）
+- **直したバグは「同じ間違いが別の場所にもある」前提で grep する** — 同じ API・同じイディオムの使用箇所を横断確認する。特にテスト側で見つけた不具合は production 側を、production で見つけたらテスト・別モジュール側を必ず見る（実例: `SecItemDelete` の単発呼び出しを test helper で直した後、production の同一バグが残っていた）。**関数の契約変更（返し方・シグネチャ）も同じ扱いにする** — `echo` 返しを `REPLY` 返しへ変えたとき `$(...)` の呼び残しが 1 件出た（既存テストが検出。無ければ follow 抑止が静かに壊れていた）
 - **効果がなかった修正は必ず revert する** — バグ修正を入れて検証した結果、効果がなかった（的外れだった）場合、その修正をコードに残さず元に戻すこと。効果のない変更が積み重なるとコードの意図が不明瞭になり、将来の改修を妨げる
 - **UI / デバイス / 環境に関わる問題は、修正を提案する前に実際の環境制約（入力手段・ツールのバージョン・他 platform の参照実装）を確認する**。詳細は [`check-other-platform-reference.md`](rules/check-other-platform-reference.md) / [`no-osascript-for-ui-verification.md`](rules/no-osascript-for-ui-verification.md) / [`no-ios-simulator-verification.md`](rules/no-ios-simulator-verification.md)
 
