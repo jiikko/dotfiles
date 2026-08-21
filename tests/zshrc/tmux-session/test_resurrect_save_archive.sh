@@ -87,6 +87,18 @@ else
   ng "tt_archive の代入がガードの内側 (行 $assign_line / ガード $guard_line) = bypass で検証が skip される"
 fi
 
+# --- 5b. reject 経路も finalize を通る (archive-broken の観測を落とさない) -------------------
+# 回帰 2026-08-21: finalize のコメントは「全 return 経路から呼ぶ」と宣言していたのに reject 経路
+# (退行を検知して last を戻す経路) だけ呼んでいなかった。上の mv で退避は消費済みなので修復は
+# できないが、戻した archive 自体が壊れていたときに archive-broken を残せないと「退行を戻したので
+# 安全」と読めてしまう。構造で pin する (実行系は tmux を要するため)。
+reject_line="$(grep -n 'reject したら非 0 を返す' "$SCRIPT" | head -1 | cut -d: -f1)"
+if [ -n "$reject_line" ] && sed -n "$((reject_line - 8)),${reject_line}p" "$SCRIPT" | grep -q 'tt_archive_finalize'; then
+  ok "reject 経路も return 前に archive 検証を通す"
+else
+  ng "reject 経路が finalize を飛ばして return している (archive-broken の観測が落ちる)"
+fi
+
 # --- 6. escape hatch が退避を消す前に検証を通す --------------------------------------------
 # 構造で pin する: regression-stuck-override のログ行の直後、return 0 より前に finalize がある
 hatch="$(grep -n 'regression-stuck-override' "$SCRIPT" | head -1 | cut -d: -f1)"

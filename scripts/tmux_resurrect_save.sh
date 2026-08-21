@@ -436,6 +436,12 @@ tt_save_main() {
           mv -f "$tt_archive_bak" "$tt_archive" 2>/dev/null || true
         fi
         tt_save_log_guard "$tt_prev_n" "$tt_new_n" "$tt_prev_w" "$tt_new_w" "$tt_prev_target" "$tt_new_target"
+        # ⚠️ この経路でも archive の検証を通す。上の mv で退避コピーは消費済みなので**修復は
+        # できない**が、戻した archive 自体が壊れていた場合に `archive-broken` を残せる
+        # (残さないと「退行を戻したので安全」と読めてしまい、scrollback が失われた事実が
+        # 観測から消える)。finalize は「全 return 経路から呼ぶ」と宣言しており、ここを
+        # 呼んでいなかったのがコメントと実装の食い違いだった (2026-08-21 の敵対レビュー)。
+        tt_archive_finalize "$tt_archive" "" 1
         # ⚠️ reject したら非 0 を返す。rc=0 は「保存した」を意味しなければならない。
         #   旧実装は rc=0 を返しており、全呼び出し側が虚偽の成功を記録していた
         #   (periodic-save rc=0 / kill-cmd save=ok / 手動 C-s の「Tmux environment saved!」)。
@@ -455,7 +461,9 @@ tt_save_main() {
   return "$tt_rc"
 }
 
-# archive の完全性検証と退避コピーの掃除。⚠️ tt_save_main の**全 return 経路**から呼ぶこと。
+# archive の完全性検証と退避コピーの掃除。⚠️ tt_save_main の**全 return 経路**から呼ぶこと
+# (tt_archive を解決した後の return は通常経路・escape hatch・reject の 3 つ。それより手前の
+# return は tt_archive が空なので finalize は no-op で通る = 呼ばなくても差は出ない)。
 # 旧実装はこのブロックが関数末尾にインラインで置かれていたため、reject streak の escape hatch が
 # `return 0` する経路でまるごと飛ばされていた (しかもその経路は唯一の復旧手段である退避コピーを
 # 先に消してから返っていた)。
