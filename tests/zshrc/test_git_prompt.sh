@@ -90,6 +90,66 @@ else
   print "✓ 装飾文字列 (黒字/緑地)"
 fi
 
+# ブランチ名は攻撃者が選べる文字列 (clone してきた repo / PR ブランチ) なので、prompt
+# エスケープとして解釈させない。⚠️ 本番と同じ条件で観測する: PROMPT は prompt_subst の下で
+# 'シングルクォート内の ${_DOTFILES_GIT_PROMPT}' として展開されるため、テストも同じ形で描く
+# (値を先に展開して print -P へ渡す形にすると、それ自体が下の「コマンド実行しない」検査を壊す)。
+setopt prompt_subst
+render_prompt() { print -P -- 'X${_DOTFILES_GIT_PROMPT}Y' }
+# ESC の本数だけ数える (fork なし。ESC 以外を消して長さを見る)
+esc_count() { local s=${1//[^$'\e']/}; print -r -- "${#s}" }
+
+_dotfiles_git_prompt
+base_esc=$(esc_count "$(render_prompt)")   # 通常ブランチ (main) の ESC 本数が基準
+
+git checkout -q -b 'x%F{red}%#%B'
+_dotfiles_git_prompt
+out=$(render_prompt)
+# 解釈されていれば ESC 列になって字は残らない = 字が残っていることが「解釈されなかった」証拠
+if [[ "$out" != *'[x%F{red}%#%B]'* ]]; then
+  print -u2 "✗ % を含むブランチ名が字として出ていない: $(print -r -- "$out" | cat -v)"
+  fails=$(( fails + 1 ))
+else
+  print "✓ ブランチ名の % は字として描かれる (エスケープとして解釈されない)"
+fi
+if [[ "$(esc_count "$out")" != "$base_esc" ]]; then
+  print -u2 "✗ ブランチ名から ESC シーケンスが増えた (色が注入されている): 基準 $base_esc → $(esc_count "$out")"
+  fails=$(( fails + 1 ))
+else
+  print "✓ ブランチ名で ESC シーケンスが増えない (色漏れなし)"
+fi
+
+# コマンド実行までは至らないこと。prompt 展開は 1 パスなので、値に含まれる $(...) は再走査
+# されない。この配線 (PROMPT にシングルクォートで埋める) が唯一の防波堤なので固定する。
+git checkout -q -b 'v$(id)w'
+_dotfiles_git_prompt
+out=$(render_prompt)
+if [[ "$out" != *'v$(id)w'* || "$out" == *uid=* ]]; then
+  print -u2 "✗ ブランチ名の \$(...) が実行された (または字として出ていない): $(print -r -- "$out" | cat -v)"
+  fails=$(( fails + 1 ))
+else
+  print "✓ ブランチ名の \$(...) は実行されない (字として出る)"
+fi
+# 陽性対照: 危険な形 (値を**先に**展開して print -P へ渡す) では実際に実行される。これが無いと
+# 上の検査は「そもそも検出できないから緑」= 空の主張になりうる (実測 2026-08-21: この形だと
+# ブランチ名の $(id) が展開されて uid=... がプロンプトに出る)。
+if [[ "$(print -P -- "$_DOTFILES_GIT_PROMPT")" != *uid=* ]]; then
+  print -u2 "✗ 陽性対照が効いていない (危険な形でも実行されない = 上の検査が空回りしている)"
+  fails=$(( fails + 1 ))
+else
+  print "✓ 陽性対照: 値を先に展開する形なら実行される (検出器は生きている)"
+fi
+git checkout -q main
+
+# 配線の pin: PROMPT は値を**先に展開せず**シングルクォートの中で参照する。二重引用符や
+# print -P -- "$_DOTFILES_GIT_PROMPT" 形へ変えると上の $(...) が実行される。
+if ! grep -qF "PROMPT='%B%50<..<%~ %b\${_DOTFILES_GIT_PROMPT}'" "$ROOT_DIR/_zshrc"; then
+  print -u2 "✗ _zshrc の PROMPT が「シングルクォート内で \${_DOTFILES_GIT_PROMPT} を参照」の形でない (値を先に展開すると $(...) が実行される)"
+  fails=$(( fails + 1 ))
+else
+  print "✓ PROMPT はブランチ名を先に展開せず prompt 展開に任せている"
+fi
+
 # fork ゼロであること: サブプロセスを起動していたら 1 呼び出しで 1ms は下らない
 zmodload zsh/datetime
 s=$EPOCHREALTIME

@@ -95,7 +95,15 @@ _dotfiles_git_prompt() {
   # precmd hook なので、グローバル REPLY を書き換えて他の hook / widget を壊さないため。
   local REPLY
   if _dotfiles_git_branch; then
-    _DOTFILES_GIT_PROMPT="%F{black}%K{green}[${REPLY}]%f%k"
+    # ⚠️ ブランチ名の % は %% へ畳んでから埋める。ブランチ名は .git/HEAD 由来 = 攻撃者が選べる
+    # 文字列で (clone してきた repo / PR ブランチ)、prompt_subst 下ではそのまま prompt エスケープ
+    # として解釈される。実測 2026-08-21: 名前 `x%F{red}%#%B` で色と bold が変わり、%f%k が
+    # 打ち消しきれず ] の後まで赤が漏れ、%# で root 表示を偽装できた。
+    # 任意コマンド実行は起きない (PROMPT 側が '...${_DOTFILES_GIT_PROMPT}...' とシングルクォートで
+    # 埋めており、prompt 展開は 1 パスなので値の中の $(...) は再走査されない)。この配線が唯一の
+    # 防波堤なので、値を先に展開して print -P へ渡す形へ変えないこと (tests/zshrc/test_git_prompt.sh
+    # が両方を pin している)。
+    _DOTFILES_GIT_PROMPT="%F{black}%K{green}[${REPLY//\%/%%}]%f%k"
   else
     _DOTFILES_GIT_PROMPT=""
   fi
