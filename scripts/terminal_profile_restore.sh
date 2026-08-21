@@ -31,10 +31,10 @@ if pgrep -xq Terminal; then
     echo "✗ swift が無い (色デコードに必要)。Terminal を終了してから再実行すれば defaults 経路で設定できる。" >&2
     exit 1
   }
-  # -suppress-warnings: 旧 streamtyped blob 用の NSUnarchiver フォールバック (swift 側の
-  # ヘッダ参照) が意図的な deprecated API 使用のため、setup.sh 実行のたびに数十行の
-  # deprecation warning が出るのを抑止する
-  colors=$(swift -suppress-warnings "$SCRIPT_DIR/lib/terminal_profile_colors.swift" "$FILE")
+  # ⚠️ -suppress-warnings は付けない: 抑止していた deprecation warning の出元 (旧 streamtyped
+  # blob 用の NSUnarchiver フォールバック) を削除したので、今は 0 件 (実測 2026-08-21)。
+  # 付け直すと将来の実 warning も一緒に隠れる。
+  colors=$(swift "$SCRIPT_DIR/lib/terminal_profile_colors.swift" "$FILE")
   # ⚠️ プロファイル名を AppleScript のソース文字列へ埋めないこと。`name` は .terminal ファイル
   # (= 第 1 引数で任意に差し替えられる外部入力) 由来なので、`"` を含む名前で文字列を脱出でき
   # **`do shell script` に到達する**。実在形式の細工ファイルで marker 生成に成功した
