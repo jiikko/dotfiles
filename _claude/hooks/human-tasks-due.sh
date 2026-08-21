@@ -22,24 +22,17 @@
 
 set -u
 
-input=""
-[ -t 0 ] || input=$(cat 2>/dev/null || true)
-
-cwd="$PWD"
-if [ -n "$input" ] && command -v jq >/dev/null 2>&1; then
-  from_json=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null || true)
-  [ -n "$from_json" ] && [ -d "$from_json" ] && cwd="$from_json"
+lib="$(dirname "$0")/lib/issue-hooks.sh"
+# ⚠️ source の失敗を黙らせない: set -e が無いので `.` が失敗しても次行へ進み、関数未定義の
+# 非 0 が `|| exit 0` に吸われて「点検して報告なし」と区別できなくなる (実測 2026-08-21)
+# shellcheck source=_claude/hooks/lib/issue-hooks.sh
+if ! . "$lib" || ! command -v issue_hook_resolve_dir >/dev/null 2>&1; then
+  printf '%s を読めないためhuman タスク issue の点検を省略した (hook の配線を確認する)\n' "$lib"
+  exit 0
 fi
-
-root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)
-[ -n "$root" ] || exit 0
-
-# issues/ と issue/ (単数) の両方を受ける。無ければ何もしない
-dir=""
-for cand in "$root/issues" "$root/issue"; do
-  [ -d "$cand" ] && { dir="$cand"; break; }
-done
-[ -n "$dir" ] || exit 0
+issue_hook_resolve_dir || exit 0
+root="$ISSUE_HOOK_ROOT"
+dir="$ISSUE_HOOK_DIR"
 
 today=$(date +%F)
 # +3 日は BSD date (-v) と GNU date (-d) の両方を試す。どちらも無ければ「期限間近」の
@@ -67,16 +60,12 @@ for f in "$dir"/*.md "$dir"/pending/*.md; do
   case "$f" in
     "$dir"/pending/*) held=" [保留]" ;;
   esac
-  # ⚠️ カテゴリはファイル名 position 2 (NNN-<カテゴリ>-<スラッグ>) を丸ごと照合する。
-  # `*-human-*` のような部分一致で見ると、スラッグ側に同じ語を含む別カテゴリの issue
-  # (例 061-docs-mutation-verify-fake-mutations.md) を誤って拾う
+  # カテゴリ判定は lib の共通実装に任せる (部分一致の誤検出を防ぐ。理由はそちらのコメント)
   is_human=0
-  case "$base" in
-    [0-9][0-9][0-9]-human-*.md)
-      is_human=1
-      [ -z "$held" ] && unread=$((unread + 1))
-      ;;
-  esac
+  if [ "$(issue_hook_category "$base" || true)" = "human" ]; then
+    is_human=1
+    [ -z "$held" ] && unread=$((unread + 1))
+  fi
 
   # 読めないファイルは「期限なし」と混ぜない (誤ラベルより「読めなかった」と言う方が正確)
   if [ ! -r "$f" ]; then
@@ -126,16 +115,5 @@ report=$(
   printf '確認できたものは %s/done/ へ移動する (既読の出典はファイルの位置)。\n' "${dir#"$root"/}"
 )
 
-if command -v jq >/dev/null 2>&1; then
-  jq -n --arg ctx "$report" '{
-    hookSpecificOutput: {
-      hookEventName: "SessionStart",
-      additionalContext: ("未完了の human タスク issue (人間しかできない作業) がある。期限切れがあれば最初に一言で伝えること:\n" + $ctx)
-    },
-    suppressOutput: true
-  }'
-else
-  # jq が無い環境でも黙らない (SessionStart の stdout はコンテキストに入る)
-  printf '未完了の human タスク issue がある。期限切れがあれば最初に一言で伝えること:\n%s' "$report"
-fi
+issue_hook_emit '未完了の human タスク issue (人間しかできない作業) がある。期限切れがあれば最初に一言で伝えること:' "$report"
 exit 0

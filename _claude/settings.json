@@ -94,6 +94,11 @@
             "type": "command",
             "command": "~/dotfiles/_claude/hooks/human-tasks-due.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/dotfiles/_claude/hooks/retro-open.sh",
+            "timeout": 10
           }
         ]
       }
