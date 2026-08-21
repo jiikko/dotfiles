@@ -5,20 +5,20 @@ allowed-tools: Bash(tmux:*)
 
 今の Claude 会話を `--fork-session` でフォークし、detached な tmux セッション `claude-fork` として起動する。元の会話（このセッション）はそのまま継続でき、フォークは新しいセッション ID に枝分かれするので競合しない。
 
-> ⚠️ **2026-06-28 一時無効化中（tmux クラッシュ切り分け）**
-> 2026-06-27〜28 に追加した tmux popup 機構（`bind t` scratch / `bind b` fork、どちらも
-> `display-popup -E` 内で同一サーバへ nested `tmux attach` する）を境に、tmux サーバが
-> `[server exited]`（全セッション消滅 + exit-empty による graceful shutdown）で頻発して落ちる
-> 症状が出始めた。fork/popup 経路が原因かを A/B 切り分けるため、本コマンドと `~/dotfiles/_tmux.conf`
-> の `bind t` / `bind b` を一時的に止めている。下のコード冒頭に早期 exit ガードを入れてある。
-> popup なしで数日再発しなければ popup 機構が原因と確定 → 真因修正後にガードと bind を同時復活、
-> 再発するなら popup は無罪 → revert して別経路調査。
+> ⚠️ **休眠中（復活させない判断済み）**
+> 発端は 2026-06-28 の tmux クラッシュ切り分け（popup 機構の A/B）だが、その観測は
+> 2026-07-04 に終わっている。現在このコマンドが止まっている理由は「便利そうだが使いたいという
+> 気持ちにならなかった」という同日のユーザー判断で、**復活させないことが決まっている**。
+> 下のコード冒頭に早期 exit ガードが入っている。
+> 復活させる場合は popup のまま戻さず通常 window 化を検討すること（popup はクライアント単位で
+> モーダルなためスタック問題が残る）。判断の正本・復活手順・設計上の注意は
+> `docs/claude-fork-popup.md`。
 
 次を **そのまま** 実行すること（コマンドを改変・分割・説明追記しない）:
 
 ```bash
-# 一時無効化ガード (2026-06-28 クラッシュ切り分け中)。原因確定後に上のコメントごと削除して復活する。
-echo "/fork-scratch は一時無効化中です (tmux クラッシュ切り分けのため。fork-scratch.md 冒頭コメント参照)。"; exit 0
+# 一時無効化ガード。休眠の理由と復活手順は上のコメントと docs/claude-fork-popup.md。
+echo "/fork-scratch は一時無効化中です (休眠。理由と復活手順は docs/claude-fork-popup.md)。"; exit 0
 if [ -z "$CLAUDE_CODE_SESSION_ID" ]; then
   echo "CLAUDE_CODE_SESSION_ID 未設定: fork 不可 (Claude Code の Bash tool 内で実行すること)"
 else

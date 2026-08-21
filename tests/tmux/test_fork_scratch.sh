@@ -104,8 +104,12 @@ fi
 
 keys=$("$TMUX_BIN_PATH" -L "$SOCKET_NAME" list-keys -T prefix)
 
-# fork popup (bind b) は 2026-06-28 に A/B 観測のため _tmux.conf で一時無効化されている
-# （コメントアウト）。無効中は bind b が登録されないため、bind b 依存の検査 (A) だけ skip する。
+# fork popup (bind b) は _tmux.conf でコメントアウトされ**休眠中**。無効中は bind b が
+# 登録されないため、bind b 依存の検査 (A) だけ skip する。
+# ⚠️ 理由は「A/B 観測期間」ではない (その観測は 2026-06-28〜07-04 で終わっている)。現在の理由は
+# 「便利そうだが使いたい気持ちにならなかった」という 2026-07-04 のユーザー判断で、復活させない
+# ことが決まっている (正本: docs/claude-fork-popup.md の冒頭 + 復活手順)。したがってこの skip は
+# 期限つきの一時措置ではなく、**bind を復活させたときに自動で再検査が始まる**形の休眠。
 # scratch (bind t) は同日にユーザ判断で先行復活済みのため、B は fork の無効状態と独立して
 # 常時検査する（かつては A/B とも bind b の有効判定に相乗りしており、scratch 復活後も
 # その回帰ガードが一度も走らない false-skip になっていた）。C〜F はスクリプト/コマンド
@@ -115,7 +119,7 @@ keys=$("$TMUX_BIN_PATH" -L "$SOCKET_NAME" list-keys -T prefix)
 #   「bind が対応スクリプトを参照しているか」で判定する。
 bind_b=$(print -r -- "$keys" | grep -E '^bind-key +-T prefix +b ' || true)
 if ! print -r -- "$bind_b" | grep -q 'tmux_fork_popup.sh'; then
-  print "[test-fork-scratch:zsh] skip A: fork popup (bind b) は現在無効 (A/B 観測期間)。B〜F を検査する。"
+  print "[test-fork-scratch:zsh] skip A: fork popup (bind b) は休眠中 (2026-07-04 のユーザー判断。docs/claude-fork-popup.md)。B〜F を検査する。"
 else
   # A) bind b が claude-fork と tmux_fork_popup.sh を参照し、new-session -A を使わない
   print -r -- "$bind_b" | grep -q 'claude-fork'         || fail "bind b が claude-fork を参照していない"
@@ -191,11 +195,12 @@ block_file="$TMUX_TMPDIR/fork_cmd.sh"
 awk '/^```bash$/{f=1;next} /^```/{if(f){f=0}} f' "$CMD_FILE" > "$block_file"
 [[ -s "$block_file" ]] || fail "fork-scratch.md から bash ブロックを抽出できなかった"
 
-# /fork-scratch コマンドも 2026-06-28 に A/B 観測のため早期 exit ガードで無効化されている
-# (block 冒頭に `echo "...一時無効化中です"; exit 0`)。無効スタブのときは本物の fork ロジックを
-# 検査できないので F-1/F-2 を skip して正常終了する。bind/コマンドを復活させたら自動的に再検査される。
+# /fork-scratch コマンドも早期 exit ガードで無効化されている (block 冒頭に
+# `echo "...一時無効化中です"; exit 0`)。無効スタブのときは本物の fork ロジックを検査できないので
+# F-1/F-2 を skip して正常終了する。コマンドを復活させたら自動的に再検査される。
+# ⚠️ 休眠の理由は上の bind b と同じ (A/B 観測ではなくユーザー判断。docs/claude-fork-popup.md)。
 if grep -q '一時無効化' "$block_file"; then
-  print "[test-fork-scratch:zsh] skip F: /fork-scratch コマンドは現在無効 (A/B 観測期間)。C〜E のみ検査した。"
+  print "[test-fork-scratch:zsh] skip F: /fork-scratch コマンドは休眠中 (2026-07-04 のユーザー判断。docs/claude-fork-popup.md)。C〜E のみ検査した。"
   print "[test-fork-scratch:zsh] done"
   exit 0
 fi

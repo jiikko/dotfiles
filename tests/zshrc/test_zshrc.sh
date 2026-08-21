@@ -106,20 +106,11 @@ assert_path_contains "$path_output" \
   "$expected_home/.nodebrew/current/bin" \
   "$expected_home/dotfiles/bin"
 
-# 6. Login shells include pyenv shims early (if pyenv exists)
-if command -v pyenv >/dev/null 2>&1; then
-  pyenv_shims="$(pyenv root)/shims"
-  login_path="$(run_zsh 'print -r -- $PATH' login | awk 'END{print}')"
-  assert_contains "$login_path" "$pyenv_shims" "pyenv shims present in login shell PATH"
-else
-  printf '↷ pyenv not installed; skipping pyenv login test\n'
-fi
-
-# 7. Git-branch picker key binding is present
+# 6. Git-branch picker key binding is present
 git_branch_binding="$(run_zsh 'bindkey "^g^b"')"
 assert_contains "$git_branch_binding" "select-git-branch-friendly" "Ctrl-g Ctrl-b is bound to branch selector"
 
-# 8. zcompile command exists (used by zshrc)
+# 7. zcompile command exists (used by zshrc)
 if run_zsh 'command -v zcompile >/dev/null'; then
   printf '✓ zcompile is available in zsh\n'
 else

@@ -39,10 +39,10 @@ type() {
 }
 
 @test "PATHに存在しないコマンドはbrew installを呼び出す" {
-  # brewとtypeをモック関数としてエクスポート
-  export -f brew
-  export -f type
-
+  # ⚠️ モックの注入は下の `$(declare -f ...)` による**テキスト展開**が唯一の経路。
+  # `export -f brew` は書いても効かない (bash の関数 export は `zsh -c` の子へ継承されない)
+  # ので置かないこと。以前は置いてあり「これで注入されている」と読める死んだコードだった
+  # (issue 082)。
   # 存在しないコマンドで_ensure_cli_with_brewを実行
   run zsh -c "
     source $BATS_TEST_DIRNAME/../zshlib/_ensure_cli_with_brew.zsh
