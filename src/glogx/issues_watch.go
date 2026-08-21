@@ -19,6 +19,7 @@ package main
 // 同じく、自分の周期で自己再アームする独立チェーンにして viewer を閉じたら止める。
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -58,9 +59,55 @@ type issuesWatchMsg struct {
 	gen int
 }
 
+// issuesWatcher は fsnotify.Watcher のうち見張りが使う面だけを切った seam。
+//
+// ⚠️ 実装を差し替えるためではなく、**CI で不変条件を観測できるようにするため**にある。
+// CI (ubuntu-slim) では fsnotify.NewWatcher が通らず watch.w が nil になるので、実 watcher を
+// 前提にしたテストはすべて skip され、「消えて戻ったディレクトリを再 Add する」のような配線の
+// 退行が CI では一度も検査されない (issue 087)。フェイクを差せば実 fsnotify 無しで startWatch /
+// eventCmd の本体をそのまま走らせられる。
+// Events/Errors をメソッドにしているのは fsnotify.Watcher がチャネルを**フィールド**で公開して
+// いてインタフェースに乗らないため (fsWatcher が薄く包む)。
+type issuesWatcher interface {
+	Add(string) error
+	Close() error
+	WatchList() []string
+	Events() <-chan fsnotify.Event
+	Errors() <-chan error
+}
+
+// fsWatcher は *fsnotify.Watcher を issuesWatcher へ合わせるだけのアダプタ (ロジックを持たない)。
+type fsWatcher struct{ w *fsnotify.Watcher }
+
+func (f fsWatcher) Add(dir string) error          { return f.w.Add(dir) }
+func (f fsWatcher) Close() error                  { return f.w.Close() }
+func (f fsWatcher) WatchList() []string           { return f.w.WatchList() }
+func (f fsWatcher) Events() <-chan fsnotify.Event { return f.w.Events }
+func (f fsWatcher) Errors() <-chan error          { return f.w.Errors }
+
+// newIssuesWatcher は watcher を作る唯一の経路 (テストがフェイクへ差し替える口)。
+//
+// ⚠️ production ではここを分岐させない。差し替えはテストだけの都合。
+// ⚠️ 差し替えは package 変数の書き換えなので、この seam を使うテストで t.Parallel() を呼ばないこと
+// (-race が「テスト基盤のデータレース」として落ち、検証対象と無関係な形で失敗する)。
+// ⚠️ 包む前に nil を弾く: interface に nil ポインタを入れると `w == nil` が false になり
+// (typed nil)、「watcher を作れない環境ではポーリングへ縮退する」という startWatch / eventCmd /
+// pollInterval / handleWatch の nil ガード全部が panic に変わる。fsnotify v1.10.1 は成功時に
+// 必ず非 nil を返すので今は起きないが、その契約 1 つに縮退の正しさを乗せない。
+var newIssuesWatcher = func() (issuesWatcher, error) {
+	w, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, err
+	}
+	if w == nil {
+		return nil, errors.New("fsnotify.NewWatcher が nil を返した")
+	}
+	return fsWatcher{w: w}, nil
+}
+
 // issuesWatch は見張りの状態。zero value は「見張っていない」。
 type issuesWatch struct {
-	w *fsnotify.Watcher
+	w issuesWatcher
 	// ⚠️ 「Add 済み」を自前で覚えて skip しないこと。fsnotify の watch は**ディレクトリが
 	// 消えると黙って失われる**ので、印だけが残って二度と Add されない状態になる (実測
 	// 2026-08-21: 実 repo で git switch により issues/done が消えて戻ると、同一 viewer
@@ -96,7 +143,7 @@ func (v *issuesView) startWatch() {
 		return
 	}
 	if v.watch.w == nil {
-		w, err := fsnotify.NewWatcher()
+		w, err := newIssuesWatcher()
 		if err != nil {
 			return
 		}
@@ -151,11 +198,11 @@ func (v *issuesView) eventCmd() tea.Cmd {
 	dirs, paths := v.watchTargets()
 	return func() tea.Msg {
 		select {
-		case _, ok := <-w.Events:
+		case _, ok := <-w.Events():
 			if !ok {
 				return issuesWatchMsg{closed: true, fromEvent: true, gen: gen}
 			}
-		case _, ok := <-w.Errors:
+		case _, ok := <-w.Errors():
 			if !ok {
 				return issuesWatchMsg{closed: true, fromEvent: true, gen: gen}
 			}
@@ -167,12 +214,12 @@ func (v *issuesView) eventCmd() tea.Cmd {
 }
 
 // drainWatchEvents は quiet の間イベントが来なくなるまで吸う (バーストの畳み込み)。
-func drainWatchEvents(w *fsnotify.Watcher, quiet time.Duration) {
+func drainWatchEvents(w issuesWatcher, quiet time.Duration) {
 	timer := time.NewTimer(quiet)
 	defer timer.Stop()
 	for {
 		select {
-		case _, ok := <-w.Events:
+		case _, ok := <-w.Events():
 			if !ok {
 				return
 			}
@@ -180,7 +227,7 @@ func drainWatchEvents(w *fsnotify.Watcher, quiet time.Duration) {
 				<-timer.C
 			}
 			timer.Reset(quiet) // まだ書いている: 静まるまで待つ
-		case <-w.Errors:
+		case <-w.Errors():
 		case <-timer.C:
 			return
 		}

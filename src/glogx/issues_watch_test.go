@@ -13,6 +13,12 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+// ⚠️ このファイルの検査のうち `v.watch.w == nil` で skip するものは**実 fsnotify との結合**を
+// 見ている (CI = ubuntu-slim では NewWatcher が通らないので走らない。issue 087)。不変条件そのものは
+// issues_watch_seam_test.go がフェイクを差して環境非依存に固定しているので、そちらを消さないこと。
+// CI でも走る組: 再 Add / イベント経路 / チェーンの積み上がり / cancelAll の Close。
+// CI では未カバーのまま (受け入れ済み): 閉じたときの closed 観測・死んだ後のポーリング縮退・世代の弾き。
+
 // watchTree は issues ディレクトリを 1 つ持つ木を作り (root, issue のパス) を返す。
 func watchTree(t *testing.T, body string) (root, path string) {
 	t.Helper()
@@ -494,6 +500,12 @@ func TestIssuesWatchIgnoresStaleGeneration(t *testing.T) {
 // watched マップで覚えて skip していたため、fsnotify の watch がディレクトリ削除で失われた後も
 // 印だけが残り、**同一 viewer セッション中は二度と Add されなかった** (実 repo の git switch で
 // issues/done が消えて戻ると、以後 done/ 内の変更が恒久的に無音。手動の取り直し 3 回でも復帰せず)。
+//
+// ⚠️ この実 fsnotify 版は**再発の検出力が弱い**: ディレクトリを消しても fsnotify が watch を
+// 落とすまでに間があり、WatchList() が消えた done/ をまだ載せている状態で assert が通りうる
+// (タイミング依存。red team 実測 2026-08-21)。再 Add の不変条件の正本は issues_watch_seam_test.go
+// の TestIssuesWatchReAddsRecreatedDirWithoutFsnotify で、こちらは「実 fsnotify と結合しても
+// 落ちない」ことの確認として残している。
 func TestIssuesWatchReAddsRecreatedDir(t *testing.T) {
 	root, path := watchTree(t, "# 001 feat: x\n")
 	done := filepath.Join(root, "issues", "done")
@@ -525,7 +537,7 @@ func TestIssuesWatchReAddsRecreatedDir(t *testing.T) {
 	if v.watch.w == nil {
 		probe, err := fsnotify.NewWatcher()
 		if err != nil {
-			t.Skipf("この環境では fsnotify watcher を作れない (%v)。再 Add の検証は未カバー", err)
+			t.Skipf("この環境では fsnotify watcher を作れない (%v)。実 fsnotify との結合は未検証 (不変条件は issues_watch_seam_test.go が固定)", err)
 		}
 		_ = probe.Close()
 		t.Fatal("watcher は作れるのに startWatch が張っていない (配線の退行)")
