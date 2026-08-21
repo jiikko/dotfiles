@@ -44,3 +44,10 @@ server_boot_cpu_ms 2000
 # したらこの値も再実測で絞り直すこと。
 select_window_x100 16000 rel
 mark_seen_direct_x20 1500 rel
+# プロセス数の予算 (2026-08-21 導入 / issue 083)。単位は metric 名が持つ (_forks / _calls = 個数)。
+# ⚠️ rel を付けない: プロセス数は混雑で増えないので較正スケールは無意味 (かつ回帰を隠す)。
+# 実測は panel 4 個 / mark-seen 2 個で、どちらも表示行数・pane 数に依存しない。改修で
+# 行ごと・pane ごとの fork が戻ると panel は 10 行で 28 個 / mark-seen は pane 4 枚で 5 個に
+# なるため、+2 の余裕でも構造的な回帰は必ず捕まる。計測失敗時は bench が 999 を出す。
+agent_panel_tick_forks_rows10 6
+mark_seen_tmux_calls 3

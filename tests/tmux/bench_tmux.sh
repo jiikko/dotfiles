@@ -14,6 +14,9 @@
 #                        アニメーターのフレーム refresh がサーバで直列化するため連打時は
 #                        1 切替あたり数十 ms 相当になる = 意図したコスト。budget 参照)
 #   - mark_seen_direct : tmux-mark-seen.sh の同期実行 1 回あたり (hook の実コスト)
+#   - agent_panel_tick_forks / mark_seen_tmux_calls : **時間でなくプロセス数**の予算
+#                        (常駐 panel の 1 tick / window 切替 hook 1 回。表示行数・pane 数に
+#                         比例した fork の再発を捕まえる。issue 083。単位は metric 名が持つ)
 #
 # 出力: "metric=<name> ms=<value>" 行の列挙。CI では tests/check_bench_budgets.sh が
 # tests/tmux/bench_budgets.ci の予算と突き合わせ、超過で fail する (デグレ検出ゲート)。
@@ -157,5 +160,84 @@ for _ in {1..20}; do
   TMUX= "$ROOT_DIR/_claude/hooks/tmux-mark-seen.sh" > /dev/null 2>&1 || true
 done
 report mark_seen_direct_x20 $(( $(now_ms) - t0 ))
+
+# --- agent_panel_tick_forks: パネル描画 1 tick が作る子プロセス数 -------------------
+# 時間ではなく**プロセス数**を測る (issue 083)。この panel は 2 秒ごとに常駐で回るため、
+# 表示行数に比例した fork を持つと「tmux-continuum の status interpolation を 5〜10 fork/秒
+# だからと捨てた」この repo の基準に自分が抵触する。時間だけ見ていると気づけない
+# (1 tick 数十 ms は体感に出ない) ので、予算はプロセス数で持つ。
+#
+# 測り方: tmux をスタブに差し替え、draw_once を**同じプロセスで** source して呼び、SIGCHLD を
+# 数える。⚠️ 数えるのは直接の子プロセスだけ (サブシェルの中で exec された孫は数に入らない)
+# ので、この値は下限。行数に比例する fork はすべて直接の子なので回帰検知には十分。
+# 行数は 10 固定 (実運用のパネル高さ 14 に収まる典型)。
+panel_stub_dir="$TMUX_TMPDIR/panel-stub"
+mkdir -p "$panel_stub_dir"
+cat > "$panel_stub_dir/tmux" <<'STUBEOF'
+#!/bin/sh
+# 決定論的な tmux スタブ: エージェント行を PANEL_STUB_ROWS 行返す (実サーバに触らない)
+case "$*" in
+  *"list-panes -a -F"*)
+    i=1
+    while [ "$i" -le "${PANEL_STUB_ROWS:-10}" ]; do
+      printf '🔔 input\tsess:%d.0\tagent-%d\t1787280000\t0\n' "$i" "$i"
+      i=$((i + 1))
+    done
+    ;;
+  *"display-message -p"*) echo "14 0" ;;
+  *) : ;;
+esac
+exit 0
+STUBEOF
+chmod +x "$panel_stub_dir/tmux"
+cat > "$TMUX_TMPDIR/panel-forks.sh" <<'COUNTEOF'
+#!/usr/bin/env bash
+set -uo pipefail
+export TMUX=fake TMUX_PANE=%0
+PATH="$1:$PATH"; export PATH
+# shellcheck disable=SC1090
+source "$2"          # dispatch はしない (source 時は関数定義だけ。panel 側の main のガード)
+PANEL_BG_CURRENT=colour233
+n=0
+trap 'n=$((n+1))' SIGCHLD
+draw_once >/dev/null 2>&1
+wait
+trap - SIGCHLD
+printf '%s\n' "$n"
+COUNTEOF
+panel_forks=$(PANEL_STUB_ROWS=10 bash "$TMUX_TMPDIR/panel-forks.sh" "$panel_stub_dir" "$ROOT_DIR/scripts/tmux_agent_panel.sh")
+case "$panel_forks" in
+  # ⚠️ 計測失敗を「0 = 予算内」に見せない。予算より大きい番兵を出して loud に落とす
+  ''|*[!0-9]*) panel_forks=999 ;;
+esac
+report agent_panel_tick_forks_rows10 "$panel_forks"
+
+# --- mark_seen_tmux_calls: window 切替 hook が起動する tmux クライアント数 ------------
+# 同じ思想でプロセス数を予算化する。pane ごとに tmux を起動していた頃は pane 数 + 1 回で、
+# window 切替のたびに pane 数ぶんの fork が乗っていた (issue 083)。
+# 期待は「list-panes 1 回 + まとめた if-shell 1 回」= 2 回 (pane 数に依存しない)。
+ms_stub_dir="$TMUX_TMPDIR/ms-stub"
+mkdir -p "$ms_stub_dir"
+ms_calls_file="$TMUX_TMPDIR/ms-calls"
+: > "$ms_calls_file"
+# ⚠️ shim は tmux を**絶対パス**で呼ぶこと。$TMUX_BIN_PATH は既定が素の "tmux" なので、
+# PATH 先頭に置いた shim 自身へ解決し直して無限再帰する (実測 2026-08-21: -L が延々と
+# 積み重なった /bin/sh が CPU を焼き続けた)。
+ms_real_tmux=$(command -v "$TMUX_BIN_PATH")
+case "$ms_real_tmux" in
+  "$ms_stub_dir"/*|'') print -u2 "Error: tmux の絶対パスを解決できない ($ms_real_tmux)"; exit 1 ;;
+esac
+cat > "$ms_stub_dir/tmux" <<EOS
+#!/bin/sh
+echo x >> "$ms_calls_file"
+exec "$ms_real_tmux" -L "$SOCKET_NAME" "\$@"
+EOS
+chmod +x "$ms_stub_dir/tmux"
+ms_win=$("${TMUX_CMD[@]}" new-window -d -t bench -P -F '#{window_id}')
+for _ in {1..3}; do "${TMUX_CMD[@]}" split-window -d -t "$ms_win" -l 3; done
+PATH="$ms_stub_dir:$PATH" "$ROOT_DIR/_claude/hooks/tmux-mark-seen.sh" "$ms_win" >/dev/null 2>&1 || true
+ms_calls=$(wc -l < "$ms_calls_file" | tr -d ' ')
+case "$ms_calls" in ''|*[!0-9]*) ms_calls=999 ;; esac   # 計測失敗は番兵で落とす (上と同じ規律)
+report mark_seen_tmux_calls "$ms_calls"
 
 print -r -- "bench done"

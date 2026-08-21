@@ -69,9 +69,17 @@ REFRESH_SECS=2      # 描画ループの更新間隔
 # busy 窓の秒数 (3 秒) は読み手側 (bin/tmux-toast / tmux_resurrect_debounced_save.sh の
 # AGENT_PANEL_QUIET_SECS) が持つ。ここは書くだけ (epoch)
 
-now_epoch() { date +%s; }
+# now_epoch は現在の epoch を REPLY へ入れる。⚠️ echo で返さない / date を呼ばない:
+# `$(date +%s)` は 1 回ごとに fork+exec になり、描画 tick (行数に比例) と window 切替 hook の
+# 両方に乗る (rules/zsh-hook-return-via-reply.md と同思想)。bash 5+ の $EPOCHSECONDS は
+# 組み込みなので 0 fork。素の macOS /bin/bash (3.2) だけ date へ落ちる。
+if [ -n "${EPOCHSECONDS+x}" ]; then
+  now_epoch() { REPLY=$EPOCHSECONDS; }
+else
+  now_epoch() { REPLY="$(date +%s)"; }
+fi
 
-mark_busy() { tmux set-option -g @agent_panel_busy "$(now_epoch)" 2>/dev/null || true; }
+mark_busy() { now_epoch; tmux set-option -g @agent_panel_busy "$REPLY" 2>/dev/null || true; }
 
 panel_pane() { tmux show-option -gqv @agent_panel_pane 2>/dev/null; }
 panel_on()   { [ "$(tmux show-option -gqv @agent_panel_on 2>/dev/null)" = "1" ]; }
@@ -102,15 +110,18 @@ list_agents() {
     awk -F'\t' 'NF >= 3'
 }
 
-# epoch → 短い相対時間 ("45s"/"12m"/"3h"。不正/未設定は空)
+# epoch → 短い相対時間 ("45s"/"12m"/"3h"。不正/未設定は空) を REPLY へ。
+# ⚠️ 出力で返さない (呼び出しごとに $( ) = fork。行数に比例して増える)。現在時刻も引数で
+# 受ける: tick あたり 1 回だけ取れば済むものを行ごとに測り直さない。
 rel_time() {
-  local since="$1" d
+  local since="$1" now="$2" d
+  REPLY=""
   case "$since" in ''|*[!0-9]*) return 0 ;; esac
-  d=$(( $(date +%s) - since ))
+  d=$(( now - since ))
   [ "$d" -lt 0 ] && d=0
-  if   [ "$d" -lt 60 ];    then printf '%ds' "$d"
-  elif [ "$d" -lt 3600 ];  then printf '%dm' $((d / 60))
-  else                          printf '%dh' $((d / 3600))
+  if   [ "$d" -lt 60 ];    then REPLY="${d}s"
+  elif [ "$d" -lt 3600 ];  then REPLY="$((d / 60))m"
+  else                          REPLY="$((d / 3600))h"
   fi
 }
 
@@ -180,7 +191,8 @@ panel_saving() {
   local v
   v="$(tmux show-option -gqv @agent_panel_saving 2>/dev/null)"
   case "$v" in ''|*[!0-9]*) return 1 ;; esac
-  [ $(( $(date +%s) - v )) -lt 120 ]
+  now_epoch
+  [ $(( REPLY - v )) -lt 120 ]
 }
 
 cmd_follow() {
@@ -217,7 +229,8 @@ cmd_follow() {
     # GNU stat では mount point を返し、算術式が構文エラーになって hook 経由の無音契約を破る
     local lock_mtime; lock_mtime="$(tt_mtime_of "$lock")"
     case "${lock_mtime:-}" in ''|*[!0-9]*) lock_mtime=0 ;; esac
-    age=$(( $(date +%s) - lock_mtime ))
+    now_epoch
+    age=$(( REPLY - lock_mtime ))
     [ "$age" -lt 5 ] && exit 0
     rmdir "$lock" 2>/dev/null; mkdir "$lock" 2>/dev/null || exit 0
   fi
@@ -279,7 +292,8 @@ cmd_unfocus() {
 cmd_save_hide() {
   local p w
   p="$(panel_pane)"
-  tmux set-option -g @agent_panel_saving "$(now_epoch)" 2>/dev/null || true
+  now_epoch
+  tmux set-option -g @agent_panel_saving "$REPLY" 2>/dev/null || true
   if pane_alive "$p"; then
     w="$(pane_window "$p")"
     [ -n "$w" ] && tmux set-option -g @agent_panel_saved_window "$w" 2>/dev/null
@@ -304,51 +318,65 @@ cmd_save_show() {
 
 # ---- render (パネル pane 内で走る) -----------------------------------------
 
-# state 文字列 → ソート優先度 / 256 色。色は _tmux.conf の @claude-state-fg と
-# 同じ意味の対応 (input=203 / working=220 / seen=244 / idle=10)
+# state 文字列 → ソート優先度 / 256 色を REPLY へ。色は _tmux.conf の @claude-state-fg と
+# 同じ意味の対応 (input=203 / working=220 / seen=244 / idle=10)。
+# ⚠️ echo で返さない: 行ごとに $( ) = fork になり、表示行数に比例して積み上がる
+# (この repo は tmux-continuum の status interpolation を「5〜10 fork/秒は基準に合わない」と
+# して捨てているので、自分の常駐 panel が同じ形をしていてはいけない)。
 state_rank() {
   case "$1" in
-    *input*)   echo 1 ;;
-    *working*) echo 2 ;;
-    *idle*)    echo 3 ;;
-    *)         echo 4 ;;   # seen ほか
+    *input*)   REPLY=1 ;;
+    *working*) REPLY=2 ;;
+    *idle*)    REPLY=3 ;;
+    *)         REPLY=4 ;;   # seen ほか
   esac
 }
 state_color() {
   case "$1" in
-    *input*)   echo 203 ;;
-    *working*) echo 220 ;;
-    *idle*)    echo 10 ;;
-    *)         echo 244 ;;
+    *input*)   REPLY=203 ;;
+    *working*) REPLY=220 ;;
+    *idle*)    REPLY=10 ;;
+    *)         REPLY=244 ;;
   esac
 }
 
 draw_once() {
-  local rows h active body_max shown=0 total=0 n_input=0 n_working=0 n_all=0
+  local rows now h active body_max shown=0 total=0 n_input=0 n_working=0
   rows="$(list_agents)"
   read -r h active < <(tmux display-message -p '#{pane_height} #{pane_active}' 2>/dev/null)
   case "$h" in ''|*[!0-9]*) h=$PANEL_MAX_H ;; esac
+  now_epoch; now=$REPLY   # tick あたり 1 回だけ (行ごとに測らない)
   # フォーカス自衛 (hook 経由の即時版が取りこぼした経路の保険。ensure_unfocused 参照)
   [ "${active:-0}" = "1" ] && [ -n "${TMUX_PANE:-}" ] && ensure_unfocused "$TMUX_PANE"
+
+  # ⚠️ この関数は 2 秒ごとに回る常駐ループなので、行ごとに $( ) を作らない (fork が表示行数に
+  # 比例して積み上がる。issue 083)。件数の集計・ソート用の feed 作り・行の組み立ては
+  # 1 パスの bash 組み込み (printf -v / REPLY 返しのヘルパー) だけで済ませる。
+  local feed="" state loc name since cur
+  if [ -n "$rows" ]; then
+    while IFS=$'\t' read -r state loc name since cur; do
+      [ -n "$state$loc$name" ] || continue   # 空行は数えない (旧 awk 'NF' 相当)
+      total=$((total + 1))
+      case "$state" in *input*) n_input=$((n_input + 1)) ;; *working*) n_working=$((n_working + 1)) ;; esac
+      state_rank "$state"
+      feed+="$REPLY"$'\t'"$state"$'\t'"$loc"$'\t'"$name"$'\t'"$since"$'\t'"$cur"$'\n'
+    done <<< "$rows"
+  fi
   # body はヘッダー 1 行を除いた残り。全件が収まらないときは「+N more」行の分を
   # さらに 1 行予約する (予約しないと合計が pane 高さを 1 行超過してスクロールし、
   # ヘッダーが欠ける off-by-one。セルフレビューで検出 2026-08-08)
   body_max=$((h - 1))
-  n_all="$(printf '%s\n' "$rows" | awk 'NF' | wc -l | tr -d ' ')"
-  [ "$n_all" -gt "$body_max" ] && body_max=$((h - 2))
+  [ "$total" -gt "$body_max" ] && body_max=$((h - 2))
 
-  local out line state loc name since cur _rank color
+  local out line color rel _rank
   out=""
-  if [ -n "$rows" ]; then
-    # rank を先頭に付けて安定ソート → 表示行を組み立て
-    while IFS=$'\t' read -r state loc name since cur; do
-      total=$((total + 1))
-      case "$state" in *input*) n_input=$((n_input + 1)) ;; *working*) n_working=$((n_working + 1)) ;; esac
-    done <<< "$rows"
-    out+="$(printf '\e[1m 🤖 AGENTS %d  ⚙%d 🔔%d\e[0m\e[38;5;240m   C-t a: 非表示 / C-t A: ジャンプ\e[0m' "$total" "$n_working" "$n_input")"$'\n'
+  if [ "$total" -gt 0 ]; then
+    printf -v line '\e[1m 🤖 AGENTS %d  ⚙%d 🔔%d\e[0m\e[38;5;240m   C-t a: 非表示 / C-t A: ジャンプ\e[0m' "$total" "$n_working" "$n_input"
+    out+="$line"$'\n'
     while IFS=$'\t' read -r _rank state loc name since cur; do
       [ "$shown" -ge "$body_max" ] && break
-      color="$(state_color "$state")"
+      state_color "$state"; color=$REPLY
+      rel_time "$since" "$now"; rel=$REPLY
       # 場所を行頭・固定幅・シアンに置く (「どこに居るエージェントか」が縦に揃って
       # 一目で読めるように。loc は ASCII 前提なので printf の桁揃えがセル幅と一致する)。
       # 経過時間 (状態が claude hook に書かれてからの時間) は %-4s で state の直後。
@@ -357,19 +385,18 @@ draw_once() {
       # 行末も reset しない: 出力ループの \e[K が背景色のまま行末まで塗ってから
       # \e[0m する (reset を先にすると強調がテキスト幅で切れる)
       if [ "${cur:-0}" = "1" ]; then
-        line="$(printf '\e[48;5;237m \e[1;38;5;51m%-27s\e[22m \e[38;5;%sm%s \e[38;5;240m%-4s\e[39m %s' \
-          "$loc" "$color" "$state" "$(rel_time "$since")" "$name")"
+        printf -v line '\e[48;5;237m \e[1;38;5;51m%-27s\e[22m \e[38;5;%sm%s \e[38;5;240m%-4s\e[39m %s' \
+          "$loc" "$color" "$state" "$rel" "$name"
       else
-        line="$(printf ' \e[38;5;51m%-27s\e[0m \e[38;5;%sm%s\e[0m \e[38;5;240m%-4s\e[0m %s' \
-          "$loc" "$color" "$state" "$(rel_time "$since")" "$name")"
+        printf -v line ' \e[38;5;51m%-27s\e[0m \e[38;5;%sm%s\e[0m \e[38;5;240m%-4s\e[0m %s' \
+          "$loc" "$color" "$state" "$rel" "$name"
       fi
       out+="$line"$'\n'
       shown=$((shown + 1))
-    done < <(while IFS=$'\t' read -r state loc name since cur; do
-               printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(state_rank "$state")" "$state" "$loc" "$name" "$since" "$cur"
-             done <<< "$rows" | sort -t $'\t' -k1,1 -k3,3)
+    done < <(sort -t $'\t' -k1,1 -k3,3 <<< "${feed%$'\n'}")
     if [ "$total" -gt "$shown" ]; then
-      out+="$(printf '\e[38;5;240m  +%d more\e[0m' $((total - shown)))"$'\n'
+      printf -v line '\e[38;5;240m  +%d more\e[0m' $((total - shown))
+      out+="$line"$'\n'
     fi
   else
     out+=$'\e[1m 🤖 AGENTS 0\e[0m\e[38;5;240m   C-t a: 非表示 / C-t A: ジャンプ\e[0m\n'
@@ -380,9 +407,11 @@ draw_once() {
   # \e[K → \e[0m の順が重要: ハイライト行 (cur=1) は行末に背景色を残したまま来るので、
   # \e[K が背景色で行末まで塗った後に reset して次行へ漏らさない
   printf '\e[H'
-  printf '%s' "$out" | while IFS= read -r line; do
+  # ⚠️ `printf '%s' "$out" | while read` にしないこと (パイプがサブシェル = 1 fork)。
+  # here-string はこのシェル内で回る。末尾改行は落とす (残すと空行を 1 本余計に描く)
+  while IFS= read -r line; do
     printf '%s\e[K\e[0m\n' "$line"
-  done
+  done <<< "${out%$'\n'}"
   printf '\e[J'
 
   # 🔔 input が 1 件でもあればパネル自体の背景を暗赤にして周辺視で気づけるようにする
@@ -412,14 +441,19 @@ cmd_render() {
 
 # ---- main -------------------------------------------------------------------
 
-[ -n "${TMUX:-}" ] || { echo "tmux_agent_panel.sh: not inside tmux" >&2; exit 1; }
+# ⚠️ source されたときは関数を定義するだけで dispatch しない。tests/tmux/bench_tmux.sh の
+# agent_panel_tick_forks が draw_once を**同じプロセスで**呼んで子プロセス数 (fork) を数えるため
+# (別プロセスで実行すると親からは子 1 個にしか見えず、tick 内の fork が観測できない)。
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  [ -n "${TMUX:-}" ] || { echo "tmux_agent_panel.sh: not inside tmux" >&2; exit 1; }
 
-case "${1:-}" in
-  toggle)    cmd_toggle "${2:-}" ;;
-  follow)    cmd_follow "${2:-}" ;;
-  render)    cmd_render ;;
-  save-hide) cmd_save_hide ;;
-  save-show) cmd_save_show ;;
-  unfocus)   cmd_unfocus ;;
-  *) echo "usage: tmux_agent_panel.sh toggle|follow [window_id] | render | save-hide | save-show | unfocus" >&2; exit 2 ;;
-esac
+  case "${1:-}" in
+    toggle)    cmd_toggle "${2:-}" ;;
+    follow)    cmd_follow "${2:-}" ;;
+    render)    cmd_render ;;
+    save-hide) cmd_save_hide ;;
+    save-show) cmd_save_show ;;
+    unfocus)   cmd_unfocus ;;
+    *) echo "usage: tmux_agent_panel.sh toggle|follow [window_id] | render | save-hide | save-show | unfocus" >&2; exit 2 ;;
+  esac
+fi
