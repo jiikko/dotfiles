@@ -2877,16 +2877,24 @@ func (m *browseModel) View() tea.View {
 	return v
 }
 
-// finishViewerWindow は全画面ビュー (issues / status) の窓に共通のオーバーレイを重ねて仕上げる。
+// finishWithGlobalChrome はどの画面 (コミット一覧 / issues / status viewer) でも出るべき
+// オーバーレイを重ねて窓を仕上げる。全ビューの唯一の出口。
 //
-// 再起動ダイアログ・usage・トーストは「どの画面を出していても出るべきもの」なので、ビューごとに
-// 書くと片方で載せ忘れる (viewer が全画面だった頃、issues 中の通知が画面に一切出ない時期があった)。
-// 前面順もここで一本化する (usage → トースト。一覧側と同じ)。
-func (m *browseModel) finishViewerWindow(window []string, page int) string {
-	// ⚠️ action モーダル (pull 確認・実行中) は viewer の上にも必ず描く。キーは viewer より先に
-	// actModal が捌く (handleKey の判定順) ので、ここで描かないと「見えないモーダルがキーを
-	// 持つ」= y/N の行き先が画面から分からない状態になる。status viewer の p (pull) で
-	// 実際にこの経路へ来る。前面順は一覧側 (viewLines) と同じ: action → 再起動 → usage → toast。
+// ⚠️ ここに書く 4 つ (action モーダル → 再起動 → usage → トースト) はビューごとに書かないこと。
+// 過去に viewer が全画面だった頃、この合成を一覧側にしか書いておらず「issues を開いている間は
+// 通知が画面に一切出ない」時期があった。前面順も含めてこの 1 箇所が契約の出典
+// (issue 085: 以前は viewer 用と一覧用に逐語 2 コピーあった)。
+//
+// 各オーバーレイの理由:
+//   - action モーダル (pull 確認・実行中): キーは viewer より先に actModal が捌く (handleKey の
+//     判定順) ので、描かないと「見えないモーダルがキーを持つ」= y/N の行き先が画面から分からない
+//     状態になる。status viewer の p (pull) で実際にこの経路へ来る。overlayCenteredBox は行を
+//     塗り潰さず左右の背景を残して合成する (モーダルの左側テキストが消えるのを解消)
+//   - 再起動ダイアログ: 中央。答えるまで残る (次の 1 キーで必ず閉じる)
+//   - usage: 上部右端の複数行モーダル。U で再表示、任意キーで消える
+//   - トースト: 右下 (hint 行の直上) に数秒。push/pull 完了や viewer の操作結果 (コピー等) を
+//     glogx 共通の語彙で出す
+func (m *browseModel) finishWithGlobalChrome(window []string, page int) string {
 	if box := m.centerModalLines(); len(box) > 0 {
 		window = overlayCenteredBox(window, box, m.contentWidth(), page, m.colored)
 	}
@@ -2911,17 +2919,15 @@ func (m *browseModel) viewLines() string {
 	page := m.pageSize()
 	// issues viewer は全画面: コミット一覧とオーバーレイ群を描かずに窓ごと差し替える。
 	// lines() がちょうど page 行返すので、枠と hint 行の経路は共通のまま (finishWindow)。
-	// ⚠️ トーストだけは載せる: viewer の操作結果 (コピー等) も glogx 共通の語彙で出すため
-	// (ユーザー要望 2026-07-31)。載せないと viewer 中の通知が画面に一切出ない。
 	// status viewer も全画面: 一覧とオーバーレイ群を描かず窓ごと差し替える (issues と同じ経路)。
 	// ⚠️ issues より前に判定する必要はない (同時には開かない: i/s の横断は閉じてから開き、
 	// 起動時 restore も status が開いていれば捨てる — issuesRestoreMsg の注記) が、
-	// トースト/usage の合成は同じ前面順に揃える。
+	// 共通 chrome (トースト / usage 等) は finishWithGlobalChrome が同じ前面順で載せる。
 	if m.statusOv.visible() {
-		return m.finishViewerWindow(m.statusOv.lines(m.statusOpts()), page)
+		return m.finishWithGlobalChrome(m.statusOv.lines(m.statusOpts()), page)
 	}
 	if m.issuesOv.visible() {
-		return m.finishViewerWindow(m.issuesOv.lines(m.issuesOpts()), page)
+		return m.finishWithGlobalChrome(m.issuesOv.lines(m.issuesOpts()), page)
 	}
 	lines := m.lines()
 	// glide 中は表示 offset (途中位置) で窓を切る。それ以外は論理 offset。
@@ -2969,25 +2975,10 @@ func (m *browseModel) viewLines() string {
 	if prBox := m.prStatusOv.boxLines(m.contentWidth(), m.colored, m.spinner(), m.prStatusCILine()); len(prBox) > 0 {
 		window = overlayBox(window, prBox, m.boxAnchor(lines, offset, m.prStatusOv.sha)+1, page)
 	}
-	// push 確認/実行中は画面中央のモーダルを最前面に重ねる (ユーザー要望 2026-07-19:
-	// hint 行の [y/N] だけでは気づきにくい)。overlayCenteredBox は行を塗り潰さず左右の背景
-	// リストを残して合成する (モーダルの左側テキストが消えるのを解消・ユーザー要望 2026-07-22)。
-	if box := m.centerModalLines(); len(box) > 0 {
-		window = overlayCenteredBox(window, box, m.contentWidth(), page, m.colored)
-	}
-	// 再起動ダイアログは中央 (答えるまで残る。次の 1 キーで必ず閉じる)
-	if box := m.restartPromptLines(); len(box) > 0 {
-		window = overlayCenteredBox(window, box, m.contentWidth(), page, m.colored)
-	}
-	// usage オーバーレイは最前面 (上部右端の複数行モーダル)。U で再表示、任意キーで消える。
-	if box := m.usageOv.boxLines(m.contentWidth(), m.colored, m.spinner()); len(box) > 0 {
-		window = overlayBoxTopRight(window, box, m.contentWidth(), m.colored)
-	}
-	// トーストは右下 (hint 行の直上) に数秒だけ。push/pull 完了の結果フィードバック。
-	if box := m.toast.boxLines(m.colored, max(page/2, toastBoxLines)); len(box) > 0 {
-		window = overlayBoxBottomRight(window, box, m.contentWidth(), m.colored)
-	}
-	return m.finishWindow(window, page)
+	// ここから先 (action モーダル → 再起動 → usage → トースト) は全ビュー共通なので
+	// finishWithGlobalChrome が持つ。一覧固有のオーバーレイ (スクロールバー / job パネル /
+	// diff / PR 状態) より後面に来ない = 共通 chrome が常に最前面。
+	return m.finishWithGlobalChrome(window, page)
 }
 
 // finishWindow は組み終わった窓をフレームで包み hint 行を足して 1 フレームの文字列にする。
