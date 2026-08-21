@@ -42,6 +42,7 @@ Opus 5 は既定で「よく喋り・よく書き・スコープを広げ・よ�
 - `issues/*.md` の内容に対応した後、作業が完了したら対応する issue ファイルを `issues/done/` ディレクトリに移動すること（ディレクトリ名が `issue/` 単数のプロジェクトでは読み替える）
 - **issue の記述を鵜呑みにしない**。実際のコードと git 履歴に照らして検証してから着手する（既に修正済み・false positive を着手前に弾く）。関連: [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md)（refactor 提案の事前確認）/ [`issue-creation-codex-review.md`](rules/issue-creation-codex-review.md)（issue 作成時の codex レビュー）
 - **人にやってほしい動作確認は応答本文に書いて流さず、issue に起こす**（chat は流れて存在自体が忘れられる）。`NNN-human-<スラッグ>.md`（人間しかできない作業のカテゴリ。動作確認・目視レビュー・外部サービスの操作・判断待ち）で起票し、本文に `期限: YYYY-MM-DD` を書く。**既読はファイルの位置で表す**（未読 = `issues/`、確認済み = `issues/done/`。既読ヘッダーは本文の書き換え忘れで嘘が残るので使わない）。期限切れはセッション開始時に hook（`_claude/hooks/human-tasks-due.sh`）が注入し、`issue-sync` skill でも最初に報告する。**hook が期限切れを出したらセッション冒頭で一言伝える**
+- **実質的な作業をやり切ったら、セッションの振り返りを `NNN-retro-<スラッグ>-YYYY-MM-DD.md` に起票する**（chat の反省は流れて消える）。反省・気づき・改善案を書き、各項目に切り出し先（新規 issue / `_claude/rules/` / 却下）を提案するが、切り出しの実行はユーザーの判断を待つ。typo・数行の chore・調査だけのセッションは対象外。**done は「本文の残課題が空になったとき」**（実装の有無では判定しない）。未決着の retro はセッション開始時に hook（`_claude/hooks/retro-open.sh`）が注入するので、**古いものが溜まっていたらセッション冒頭で一言伝える**。書式の正本は `issues/README.md`
 
 ## 設計方針
 

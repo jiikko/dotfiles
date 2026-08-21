@@ -1259,7 +1259,7 @@ var categoryColors = map[string]string{
 	"refactor": catTeal, "cleanup": catTeal, "chore": catTeal,
 	"perf": catYellow,
 	"test": catBlue, "ci": catBlue, "lint": catBlue, "build": catBlue, "e2e": catBlue,
-	"research": catPurple, "design": catPurple,
+	"research": catPurple, "design": catPurple, "retro": catPurple,
 	"ux": catGold, "ui": catGold,
 	"docs": catGray, "doc": catGray, issues.OtherTab: catGray,
 }
