@@ -27,6 +27,21 @@ fi
 
 - **TTL 切れの lock は自動で引き継いでよい** (人手の `break` を待たない)
 - **TTL の既定は 30 分**。下限 30 秒は据え置き (SMB のキャッシュ遅延より十分大きくするため)
+- **対象環境は macOS のみ**: クライアント = macOS の SMB クライアント (smbfs)、
+  公開ホスト = macOS のファイル共有。**Windows は非対応**、Linux / Samba も想定しない。
+  → 実装は darwin だけ考えればよく、Windows 由来のファイル名制約も考えなくてよい。
+  代わりに **macOS 固有の実測項目**が残る (下の「実測が要る前提」)
+
+### 実測が要る前提 (macOS 特有。推論で決めない)
+
+| 確かめること | 外れたときの落とし先 |
+|---|---|
+| `link(2)` が smbfs 越しに使えるか (**ENOTSUP の可能性が高い**) | `O_CREAT` + `O_EXCL` 経路が本線になる (設計はどちらでも成立する) |
+| 書き込み後の mtime を打刻するのは公開ホストか、クライアントか | renew の検算で検出する。クライアント打刻だったら **renew を「上書き」から「`beat/<seq>` の新規作成」へ切り替える** (probe と同じ原理で、作成時の打刻はホスト側になる) |
+| smbfs が `fcntl` byte-range lock をサーバへ送るか | 送らないなら「二重の壁」は無いものとして扱う (単独の根拠ではないので設計は崩れない) |
+| 属性・ディレクトリキャッシュの実際の遅れ | TTL 下限 30 秒を見直す材料にする |
+
+**この 4 つは実装の最初に測る**。測る前に「たぶん動く」で先へ進めない。
 
 ## 不変条件 (これを壊す実装は不可)
 
@@ -103,7 +118,8 @@ A. tmp/<token>.json に中身を書ききって fsync
 B. link(tmp/<token>.json, lock)          ← 存在すれば失敗する原子操作。勝者は 1 人
    ・SMB2 の FILE_LINK_INFORMATION (ReplaceIfExists=false) に対応する
    ・利点: lock は「最初から中身が入った状態」で現れる (途中経過が他者に見えない)
-   ・EOPNOTSUPP / EPERM / ENOSYS で落ちる実装があるので下の C へフォールバック
+   ・⚠️ **macOS の smbfs では ENOTSUP になる可能性が高い**。使えたら儲けもの、程度に
+     考えて C を本線と見なす (実測してから決める)
 C. (フォールバック) open("lock", O_CREAT|O_EXCL) → 中身を書く → fsync → close
 D. lock を開き直して読み、token が自分か確認する (write-then-verify)
    → 違えば「負けた」として exit 3。自分は何も消さない
@@ -150,9 +166,10 @@ server_now() := probe/<uuid> を作る → その mtime を読む → 消す
 
 ### クライアントキャッシュへの対処
 
-SMB クライアントは属性とディレクトリ一覧をキャッシュする (Linux cifs の `actimeo` 既定
-1 秒、macOS smbfs も同程度)。つまり「他マシンが 1 秒前に作った lock がまだ見えない」
-ことがある。マウントオプションは lockman からは制御できないので、次で吸収する:
+macOS の smbfs は属性とディレクトリ一覧をキャッシュする (数秒程度。`nsmb.conf` /
+`mount_smbfs` の設定で変わる)。つまり「他マシンが 1 秒前に作った lock がまだ見えない」
+ことがある。マウントオプション (`~/Library/Preferences/nsmb.conf` 等) は lockman からは制御できない
+ので、次で吸収する:
 
 - **判定は必ず `lock` を直接 open して行う**。ディレクトリ一覧 (readdir) に依存しない
   (一覧のキャッシュのほうが遅れが大きい)
@@ -191,21 +208,23 @@ lockman を叩いても同じ排他が効かなければならない。
   flush していない書き込みはローカルから見えないことがある
 - **「サーバ時刻」= 公開ホストの時計**。ローカル経路の書き込みも同じホストの kernel が
   mtime を打刻するので、probe 方式は混在環境でも 1 つの時計に揃う
-- **同一マシン判定は machine-id + boot-id で行う** (hostname を当てにしない)。公開ホスト
+- **同一マシン判定は IOPlatformUUID + 起動時刻 (`kern.boottime`) で行う** (hostname を
+  当てにしない。macOS 固定なのでこの 2 つで足りる)。公開ホスト
   自身が自分の共有をループバックマウントして両経路から来ることがある。この判定に勝てば
   pid 生存で即 stale と分かる (別マシンでは pid は意味を持たない)
-- **名前は大文字小文字だけで区別しない集合**にする (小文字 hex / Crockford base32)。
-  SMB 共有は case-insensitive のことがあり、`AB` と `ab` が衝突する。Windows で禁止の
-  文字 (`: * ? " < > |`)・末尾のドット/空白も使わない
+- **名前は大文字小文字だけで区別しない集合**にする (小文字 hex)。**APFS の既定は
+  case-insensitive** なので `AB` と `ab` が衝突する。`:` も使わない (macOS では Finder 上
+  `/` に化け、SMB でも扱いが特殊)
 
-**副次の利点**: Samba は既定 (`posix locking = yes`) で SMB の byte-range lock を配下の
-POSIX fcntl lock に写すため、下の「二重の壁」がローカル経路のプロセスにも効くことがある。
-ただし設定次第なので**当てにはしない**。
+⚠️ **macOS のファイル共有が SMB の byte-range lock を配下の POSIX ロックへ写すかは未確認**。
+写すならローカル経路のプロセスにも「二重の壁」が効くが、**当てにしない** (実測項目)。
+写さないなら壁は SMB クライアント同士にしか効かず、混在経路の保証は `O_EXCL` の側だけが担う。
 
 ### 「強参照でロックを取る」(SELECT FOR UPDATE 相当) はあるか
 
 無い。**読み込みにサーバ側ロックを掛けて直列化する API は POSIX の `open(2)` からは
-使えない** (SMB2 の share mode = deny open は Windows の流儀で、POSIX からは指定できない)。
+使えない** (SMB2 の share mode = deny open は Windows 由来の機能で、macOS の POSIX
+`open(2)` からは指定できない)。
 `fcntl` byte-range lock がそれに一番近いが、`nobrl` マウントで黙って無効化されるので
 単独の根拠にはできない。
 
@@ -388,7 +407,7 @@ lockman cleanup <dir> [--force]         # 残骸掃除だけを明示的に走�
 
 ## 正直に書いておく限界
 
-- SMB で使える最強の原語は Windows の **share mode (deny) open** だが、POSIX の
+- SMB で使える最強の原語は **share mode (deny) open** だが、macOS の POSIX の
   `open(2)` からは指定できず、Go からも届かない。よって lockman は **advisory lease**
   であり、`.lockman/lock` を無視して直接ディレクトリを触るプロセスは止められない
 - サーバ・クライアントの実装差 (キャッシュ、再送、`nobrl`) を完全には潰せない。
