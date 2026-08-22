@@ -45,6 +45,29 @@ $(printf '%s' "$input" | jq -r '
 ' 2>/dev/null)
 JSON_FIELDS
 
+# 数値フィールドは「整数化できなければ空」に正規化してから使う。
+# ⚠️ bash の $(( )) は "08" (8 進数として解釈され失敗) / "5E+1" / 全角数字で **fatal**
+#   になり、その時点で囲みブロックの残りが丸ごとスキップされる (実測: 3 行目が無言で
+#   消え、2 行目のバーが空になる)。数値でない値を数値として扱わないのが前提の是正で、
+#   空にしておけば下流の [ -n "$x" ] ガードが「そのセグメントを出さない」に落とす。
+#   小数は切り捨てる (API は 62.7 のような値を返す)。
+to_int() {  # 結果は REPLY (整数化できなければ空)。$(...) を使わないため出力しない
+  REPLY=${1%%.*}
+  # ⚠️ 数字の判定に範囲 [!0-9] を使わないこと。locale の照合順では全角数字が 0-9 の
+  #   範囲に入り、"６２" が素通りする (実測: そのまま $(( )) へ流れて fatal)。列挙で書く。
+  case "$REPLY" in
+    ''|*[!0123456789]*) REPLY=""; return ;;   # 空 / 数字以外 (符号・小数点以外の記号・指数・全角)
+  esac
+  # 先頭ゼロを落とす ("08" は $(( )) で 8 進数扱いになり失敗する)。ここでも算術は
+  # 使わない: 桁あふれや想定外の値で fatal になる経路をこの関数に残さないため。
+  while [ "${#REPLY}" -gt 1 ] && [ "${REPLY#0}" != "$REPLY" ]; do REPLY=${REPLY#0}; done
+}
+to_int "$five_pct";  five_pct=$REPLY
+to_int "$seven_pct"; seven_pct=$REPLY
+to_int "$ctx_used";  ctx_used=$REPLY
+to_int "$ctx_size";  ctx_size=$REPLY
+to_int "$ctx_pct";   ctx_pct=${REPLY:-0}
+
 # Shorten the path: replace $HOME with ~, truncate to 50 chars with leading ..
 # (置換文字列の ~ は変数経由で渡す。リテラル \~ だとバックスラッシュごと表示される)
 home="$HOME"
@@ -78,6 +101,8 @@ green_bg="\033[42m"
 cyan_fg="\033[36m"
 magenta_fg="\033[35m"
 red_fg="\033[31m"
+green_fg="\033[32m"
+yellow_fg="\033[33m"
 
 # Directory segment (bold path).
 dir_part="${bold}${short_cwd}${reset}"
@@ -117,7 +142,9 @@ rate_bar() {
   printf "%s" "$bar"
 }
 
-# Remaining-time label until a reset epoch: "3日2時間" / "1時間23分" / "45分".
+# Remaining-time label until a reset epoch: "3日2時間" / "1時間23分" / "45分"。
+# ⚠️ 結果は stdout でなく REPLY で返す。statusline は再描画ごとに走るため、$(...) は
+# 1 呼び出しごとに subshell を fork する (ファイル冒頭の jq 一括化と同じ理由)。
 fmt_remaining() {
   secs=$1
   [ "$secs" -lt 0 ] && secs=0
@@ -125,11 +152,11 @@ fmt_remaining() {
   h=$(( (secs % 86400) / 3600 ))
   m=$(( (secs % 3600) / 60 ))
   if [ "$d" -gt 0 ]; then
-    printf "%d日%d時間" "$d" "$h"
+    printf -v REPLY "%d日%d時間" "$d" "$h"
   elif [ "$h" -gt 0 ]; then
-    printf "%d時間%d分" "$h" "$m"
+    printf -v REPLY "%d時間%d分" "$h" "$m"
   else
-    printf "%d分" "$m"
+    printf -v REPLY "%d分" "$m"
   fi
 }
 
@@ -169,11 +196,12 @@ blink_color() {
 # resets_at を過ぎてもデータが更新されるまでは消さず、"(リセット!)" を点滅表示する。
 rate_segment() {
   seg_label=$1; seg_pct=$2; seg_reset_at=$3
-  p=${seg_pct%.*}
+  p=$seg_pct
   printf "%s%s:[%s]%s%%%s" "$(rate_color "$p")" "$seg_label" "$(rate_bar "$p")" "$p" "$reset"
   if [ -n "$seg_reset_at" ] && [ "$seg_reset_at" -gt "$now" ] 2>/dev/null; then
     # date -r は BSD (macOS) 形式。%-m / %-d はゼロ埋めなし
-    printf "%s(残:%s / %s)%s" "$gray_fg" "$(fmt_remaining $(( seg_reset_at - now )))" "$(date -r "$seg_reset_at" "+%-m月%-d日%H:%M")" "$reset"
+    fmt_remaining $(( seg_reset_at - now ))
+    printf "%s(残:%s / %s)%s" "$gray_fg" "$REPLY" "$(date -r "$seg_reset_at" "+%-m月%-d日%H:%M")" "$reset"
   elif [ -n "$seg_reset_at" ] && [ "$seg_reset_at" -gt 0 ] 2>/dev/null; then
     printf "%s(リセット!)%s" "$(blink_color)" "$reset"
   fi
@@ -189,6 +217,83 @@ if [ -n "$five_pct" ] || [ -n "$seven_pct" ]; then
     parts="${parts}$(rate_segment 7d "$seven_pct" "$seven_reset")"
   fi
   rate_part=" ${parts}"
+fi
+
+# 3 行目: weekly (7d) ウィンドウの消化ペース。
+# weekly の窓幅は 7 日固定なので、resets_at から「窓のどこまで来たか」= 想定消化率
+# (経過割合) を出し、実績 (used_percentage) との差 pt で先行/余裕を表す。
+# 「残り 1 日で 50% 余っている」= 余らせ過ぎ、「残り 5 日で 80% 使った」= 超過、を
+# 一目で判定するための行 (残量% だけでは窓のどこにいるか分からない)。
+# ⚠️ 窓幅 7 日は API から取れないため定数。resets_at - now が 7 日を超える形で
+#   返ってきたら経過 0 に clamp する (負の経過で想定率がマイナスになるのを防ぐ)。
+pace_part=""
+week_secs=604800
+# ⚠️ 条件は `-gt "$now"` (「窓の中にいる」)。リセット済み / 未更新のデータを弾く役目と、
+#   下の 1 日予算が pace_rem で割るための「残り >= 1 秒」保証を兼ねている。緩めると
+#   0 除算で 3 行目が無言で消える (tests/claude/test_statusline.sh が境界の両側を固定)。
+if [ -n "$seven_pct" ] && [ -n "$seven_reset" ] && [ "$seven_reset" -gt "$now" ] 2>/dev/null; then
+  pace_used=$seven_pct
+  pace_rem=$(( seven_reset - now ))
+  [ "$pace_rem" -gt "$week_secs" ] && pace_rem=$week_secs
+  pace_exp=$(( (week_secs - pace_rem) * 100 / week_secs ))
+  pace_delta=$(( pace_used - pace_exp ))
+
+  # 乖離 pt を「何日分か」に換算する: 1 日分 = 100/7 = 14.29pt なので 日 = pt * 7 / 100。
+  # 小数第 1 位まで見せたいので 100 倍のまま持ち、表示時に整数部/小数部へ割る。
+  pace_abs=$pace_delta
+  [ "$pace_abs" -lt 0 ] && pace_abs=$(( -pace_abs ))
+  pace_days100=$(( pace_abs * 7 ))
+  pace_days="$(( pace_days100 / 100 )).$(( (pace_days100 % 100) / 10 ))"
+
+  # 想定線からの乖離 pt で 5 段階。±10pt (≒0.7 日分のズレ) を「想定通り」の帯とし、
+  # 超過側/余裕側に 2 段ずつ。余らせ過ぎは異常ではなく「使えるのに使っていない」信号
+  # なので警告色 (赤/黄) を使わず magenta にする。
+  if [ "$pace_delta" -ge 20 ]; then
+    pace_color="$red_fg";     pace_label="超過";       pace_advice="${pace_days}日分の前借り・使うのを絞る"
+  elif [ "$pace_delta" -ge 10 ]; then
+    pace_color="$yellow_fg";  pace_label="先行";       pace_advice="${pace_days}日分の前借り・やや速い"
+  elif [ "$pace_delta" -ge -10 ]; then
+    pace_color="$green_fg";   pace_label="想定通り";   pace_advice="このままでちょうど"
+  elif [ "$pace_delta" -ge -25 ]; then
+    pace_color="$cyan_fg";    pace_label="余裕";       pace_advice="${pace_days}日分の余り・もう少し使える"
+  else
+    pace_color="$magenta_fg"; pace_label="余らせ過ぎ"; pace_advice="${pace_days}日分の使い残し・かなり余る"
+  fi
+
+  # 10 スロットのバーに想定位置を | で刻む: [███|█████░░] なら想定線を 5 スロット
+  # 追い越している = 使い過ぎ。バー長 (10) が刻みの分解能でもある。
+  # ⚠️ 実績が 100% を超え、かつ窓の終盤 (想定 >= 95%) では塗りと想定線がどちらも
+  #   右端に飽和し、バーだけでは先行が見えなくなる。バーを歪めて表現するより
+  #   「(+12pt 先行)」の数値ラベルに任せる (バーは概観、符号は数値が持つ)。
+  pace_fill=$(( (pace_used * 10 + 50) / 100 ))
+  [ "$pace_fill" -gt 10 ] && pace_fill=10
+  pace_mark=$(( (pace_exp * 10 + 50) / 100 ))
+  [ "$pace_mark" -gt 10 ] && pace_mark=10
+  pace_bar=""
+  i=0
+  while [ $i -lt 10 ]; do
+    [ $i -eq "$pace_mark" ] && pace_bar="${pace_bar}|"
+    if [ $i -lt "$pace_fill" ]; then pace_bar="${pace_bar}█"; else pace_bar="${pace_bar}░"; fi
+    i=$((i+1))
+  done
+  [ "$pace_mark" -eq 10 ] && pace_bar="${pace_bar}|"
+
+  # 残り時間と、それで割った 1 日あたり予算。窓終端 (残 0) では除算できないので省く。
+  # 残り時間の表記は 2 行目 (rate limit の "残:") と同じ fmt_remaining を使う
+  # (「残5.4日」のような小数表記より「残5日9時間」の方が体感に直結する。表記を
+  # 2 か所に持たないことで、片方だけ書式が変わる乖離も起きない)。
+  pace_burn10=$(( (100 - pace_used) * 864000 / pace_rem ))
+  [ "$pace_burn10" -lt 0 ] && pace_burn10=0
+  [ "$pace_burn10" -gt 9999 ] && pace_burn10=9999
+  fmt_remaining "$pace_rem"
+  printf -v pace_budget " / 残%s %d.%d%%/日" "$REPLY" \
+    $(( pace_burn10 / 10 )) $(( pace_burn10 % 10 ))
+
+  # 状態色は「バー〜ラベル」まで。アドバイスと 1 日予算はグレーで従属させる
+  # (2 行目の rate limit 行が同じ配色規則なので視線の流れが揃う)。
+  printf -v pace_part "%b7dペース:[%s] 実績%d%% 想定%d%% (%+dpt %s)%b %s%s%s%b" \
+    "$pace_color" "$pace_bar" "$pace_used" "$pace_exp" "$pace_delta" "$pace_label" \
+    "$reset" "$gray_fg" "$pace_advice" "$pace_budget" "$reset"
 fi
 
 # Model segment (leading space, empty when not provided).
@@ -210,7 +315,7 @@ if [ -n "$ctx_used" ] && [ "$ctx_used" -gt 0 ] 2>/dev/null; then
   else
     ctx_disp="$used_label"
   fi
-  cc=$(rate_color "${ctx_pct%.*}")
+  cc=$(rate_color "$ctx_pct")
   ctx_part=" ${cc}[ctx:${ctx_disp}]${reset}"
 fi
 
@@ -281,13 +386,18 @@ if [ -n "$transcript" ] && [ -f "$transcript" ]; then
 fi
 advisor_part=" ${advisor_color}[advisor:${advisor_label}]${reset}"
 
-# 1 行目: directory, branch, model, context, effort, advisor / 2 行目: rate limits。
+# 1 行目: directory, branch, model, context, effort, advisor / 2 行目: rate limits /
+# 3 行目: weekly の消化ペース。
 # statusline は複数行出力をサポートする (公式 docs の Display multiple lines)。
-# rate limit が無いとき (Free tier 等) は 2 行目自体を出さない。
+# rate limit が無いとき (Free tier 等) は 2 行目自体を出さない。3 行目は 7d の
+# used_percentage と resets_at が両方揃ったときだけ出す。
 # Each non-first segment carries its own leading space. (No right-alignment:
 # the statusLine command runs without a controlling TTY so `tput cols` reports
 # the wrong width and the line would overflow past the right edge.)
 printf "%b%b%b%b%b%b" "$dir_part" "$branch_part" "$model_part" "$ctx_part" "$effort_part" "$advisor_part"
 if [ -n "$rate_part" ]; then
   printf "\n%b" "${rate_part# }"
+fi
+if [ -n "$pace_part" ]; then
+  printf "\n%b" "$pace_part"
 fi
