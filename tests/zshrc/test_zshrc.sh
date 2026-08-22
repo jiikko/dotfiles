@@ -118,4 +118,17 @@ else
   exit 1
 fi
 
+# 8. av1c は対話シェルでは「関数」として解決する (PATH の bin/av1c より優先される)
+# 引数なし av1c のクリップボード入力は __av1ify_clipboard_mode_available が -o interactive を
+# 要求するため、ここが bin/av1c (非対話のサブプロセス) に落ちると機能が黙って死ぬ。
+# stdin は /dev/null に落とす: 端末のまま走らせると本物のクリップボードを読んで入力待ちになる。
+av1c_kind="$(run_zsh 'whence -w av1c' </dev/null | awk 'END{print}')"
+assert_contains "$av1c_kind" "function" "av1c is a shell function in interactive shells"
+
+# 9. av1c を呼んだ後も av1ify の lazy-reload ラッパーが残る
+# 同じ lib (_av1ify.zsh) が av1ify も再定義するので、_reload_then_call の復元対象から
+# 漏らすと av1ify が実体で固定され、lib を編集しても反映されなくなる (無音の劣化)。
+av1ify_body="$(run_zsh 'av1c >/dev/null 2>&1; functions av1ify' </dev/null)"
+assert_contains "$av1ify_body" "_reload_then_call" "av1ify keeps its lazy-reload wrapper after av1c runs"
+
 printf 'All zshrc tests passed.\n'

@@ -12,12 +12,13 @@
 # 元ファイルを残したい場合は bin/av1ify (または av1ify -c) を使うこと。
 #
 # 引数なしのクリップボード入力はこのスクリプト経由では発火しない (対話シェル限定)。
-# 対話シェルで av1c 相当を打つ場合、確認プロンプトは元ファイル削除の警告を出す。
+# 対話シェルの av1c は _zshrc のラッパー経由で関数として動くので発火する。
 #
-# 実装: ~/dotfiles/zshlib/_av1ify.zsh
+# プリセットの実体は zshlib/_av1ify.zsh の av1c()（フラグをここに書き写さない）
 #
 # 関連:
 #   - ~/dotfiles/bin/av1ify  フルオプション版 (元ファイルは残す)
+#   - ~/dotfiles/_zshrc      av1c() 遅延ローディングラッパー (対話シェル用)
 
 source "${0:A:h}/../zshlib/_av1ify.zsh"
-av1ify --compact --delete-origin-if-success-and-no-ng "$@"
+av1c "$@"

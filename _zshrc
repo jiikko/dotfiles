@@ -584,23 +584,31 @@ bdr() {
 # 動画系コマンドの lazy-reload ラッパー: 呼び出しごとに lib を source し直し、シェル再起動なしで
 # lib の編集を反映する。lib は公開名と同名の関数を再定義してこのラッパー自身を上書きするため、
 # 実行後に save/restore で復元が必須 (t/tt は公開名≠実体名で復元不要な別 idiom。ここに統合しないこと)。
-# 引数: $1=公開関数名 $2=lib パス $3=lib 内の実体関数名 (以降が実引数)
+# 引数: $1=復元する公開関数名 (空白区切りで複数可: 1 つの lib が複数のラッパーを上書きする場合、
+#          挙げ漏らした名前は実体で固定されて lazy-reload が黙って死ぬ)
+#       $2=lib パス $3=lib 内の実体関数名 (以降が実引数)
 _reload_then_call() {
-  local _fname="$1" _lib="$2" _impl="$3"
+  local _fnames="$1" _lib="$2" _impl="$3"
   shift 3
-  local _saved="${functions[$_fname]}"
+  local -A _saved
+  local _f
+  for _f in ${=_fnames}; do _saved[$_f]="${functions[$_f]}"; done
   source "$_lib"
   "$_impl" "$@"
   local _ret=$?
-  functions[$_fname]="$_saved"
+  for _f in ${=_fnames}; do functions[$_f]="${_saved[$_f]}"; done
   return $_ret
 }
 av1ify()       { _reload_then_call av1ify       "$HOME/dotfiles/zshlib/_av1ify.zsh"       av1ify       "$@" }
+# av1c は av1ify --compact + 成功時の元ファイル削除。実体は zshlib/_av1ify.zsh の av1c()。
+# 対話シェルで関数として動かすのは、引数なし呼び出しでクリップボード入力を発火させるため
+# (発火ゲートが -o interactive を要求する。bin/av1c 経由では非対話なので発火しない)。
+av1c()         { _reload_then_call "av1c av1ify" "$HOME/dotfiles/zshlib/_av1ify.zsh"     av1c         "$@" }
 concat()       { _reload_then_call concat       "$HOME/dotfiles/zshlib/_concat.zsh"       concat       "$@" }
-repair()       { _reload_then_call repair       "$HOME/dotfiles/zshlib/_repair.zsh"       repair       "$@" }
+repair()       { _reload_then_call "repair repair_mp4" "$HOME/dotfiles/zshlib/_repair.zsh" repair     "$@" }
 # repair_mp4 は _repair.zsh 経由で定義される直接呼び出し可能なコマンド (旧 eager source で
 # シェル起動時から使えていた互換を維持する)
-repair_mp4()   { _reload_then_call repair_mp4   "$HOME/dotfiles/zshlib/_repair.zsh"       repair_mp4   "$@" }
+repair_mp4()   { _reload_then_call "repair_mp4 repair" "$HOME/dotfiles/zshlib/_repair.zsh" repair_mp4 "$@" }
 # validate-mp4 の実体は validate_mp4() (対話シェルではハイフン名でも呼べるようにする)
 validate-mp4() { _reload_then_call validate-mp4 "$HOME/dotfiles/zshlib/_validate_mp4.zsh" validate_mp4 "$@" }
 
