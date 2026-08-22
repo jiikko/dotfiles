@@ -15,6 +15,7 @@ ZSH_SYNTAX_FILES := \
   bin/disassemble_excel \
   bin/glogx \
   bin/lib/go_autobuild.zsh \
+  bin/lockman \
   bin/parallel-each \
   bin/repair-mp4-timebase \
   bin/validate-mp4 \
@@ -33,7 +34,7 @@ ZSH_SYNTAX_FILES := \
 # zsh 例外を除いた補集合。手書き列挙しない (発見された script は登録なしで自動的に lint 対象)。
 SHELLCHECK_FILES := $(filter-out $(ZSH_SYNTAX_FILES),$(shell scripts/discover_shell_scripts.sh))
 
-YAML_FILES := theme/colors.yml pre-commit-config.yml .github/dependabot.yml .github/workflows/tests.yml .github/workflows/lint.yml .github/workflows/karabiner.yml .github/workflows/bench.yml .github/workflows/src_glogx.yml .github/workflows/src_parallel-each.yml .github/workflows/src_disassemble_excel.yml .github/actions/setup-nvim/action.yml .github/actions/run-bench/action.yml
+YAML_FILES := theme/colors.yml pre-commit-config.yml .github/dependabot.yml .github/workflows/tests.yml .github/workflows/lint.yml .github/workflows/karabiner.yml .github/workflows/bench.yml .github/workflows/src_glogx.yml .github/workflows/src_parallel-each.yml .github/workflows/src_disassemble_excel.yml .github/workflows/src_lockman.yml .github/actions/setup-nvim/action.yml .github/actions/run-bench/action.yml
 JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 # ruby -c で構文チェックする ruby ファイル (Brewfile は brew の ruby DSL)。
 # _gemrc は YAML だが yamllint default (document-start 必須等) に通らない形式のため
@@ -41,7 +42,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-packages-heavy ci-packages-rest pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-go-lint test-go test-src
+.PHONY: ci-packages-heavy ci-packages-rest pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-go-lint test-go test-src
 
 # settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
 # pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、
@@ -138,6 +139,11 @@ test-ci-group-deps:
 	@CI_HEAVY_TEST_DIRS='$(CI_HEAVY_TEST_DIRS)' CI_PACKAGES_ONLY_REST='$(CI_PACKAGES_ONLY_REST)' \
 		CI_PACKAGES_HEAVY='$(CI_PACKAGES_HEAVY)' CI_PACKAGES_REST='$(CI_PACKAGES_REST)' \
 		scripts/check_ci_group_deps.sh
+
+# `… | grep -q` が pipefail 下で判定を反転させる形を落とす (issue 096)。
+# 正本は scripts/check_pipefail_grep_q.sh (なぜ危険か・直し方・例外マーカーはそこに書いてある)。
+test-pipefail-grep-q:
+	@scripts/check_pipefail_grep_q.sh
 
 # heavy は 21 本 × ~16s (CI 実測) の直列で 5.6 分に育ったため並列実行する
 # (av1ify/concat は tempdir 独立で並列安全。2026-07-20 に 338s → 数十秒へ)
@@ -256,7 +262,7 @@ test-ruby-syntax:
 test-lint-tests:
 	@./scripts/lint_test_scripts.sh
 
-test-lint: test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps
+test-lint: test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q
 
 # Go プロジェクトの静的解析とテスト。実体は各ディレクトリの Makefile の lint / test
 # ターゲットに閉じており、ここはそれへ委譲するだけ (ローカルのコミット前検証用。root の
@@ -265,7 +271,7 @@ test-lint: test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json t
 # 各 src_*.yml は再利用 workflow _go-project.yml を呼ぶだけの薄い caller。
 # どちらも Go 未インストール環境では skip する。Go プロジェクトを追加したら
 # ①各プロジェクトに Makefile (lint/test) ②ここへ列挙 ③src_<project>.yml (caller) を作る、の 3 点セット。
-GO_PROJECT_DIRS := src/parallel-each src/glogx src/disassemble_excel
+GO_PROJECT_DIRS := src/parallel-each src/glogx src/disassemble_excel src/lockman
 
 test-go-lint:
 	@if command -v go >/dev/null 2>&1; then \

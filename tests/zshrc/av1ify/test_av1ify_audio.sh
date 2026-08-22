@@ -8,21 +8,21 @@ source "${0:A:h}/test_helper.sh"
 
 printf '\n=== av1ify Audio Tests (50-53, 65-72) ===\n\n'
 
-# Test 50: compact モードで音声が96kbps超ならAAC再エンコード
-printf '## Test 50: Compact re-encodes audio when bitrate > 96kbps\n'
+# Test 50: 閾値 (96k x 1.15 = 110400bps) 超なら AAC 再エンコード (compact でも通常と同じ判定)
+printf '## Test 50: Compact re-encodes audio above the reencode threshold\n'
 TEST_DIR="$TEST_TMP/test50"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
-# デフォルトの MOCK_AUDIO_BITRATE=248000 (248kbps > 96kbps)
-output=$(MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
+# 248000bps > 閾値 110400bps
+output=$(MOCK_AUDIO_BITRATE=248000 MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "aac 96k へ再エンコード" "Compact re-encodes audio to 96k"
 assert_file_exists "$TEST_DIR/input-720p-30fps-aac96k-enc.mp4" "Compact output has aac96k tag"
 
-# Test 51: compact モードで音声が96kbps以下ならcopy
-printf '\n## Test 51: Compact copies audio when bitrate <= 96kbps\n'
+# Test 51: 閾値以下なら copy (再エンコードしても削減が小さいため)
+printf '\n## Test 51: Compact copies audio at or below the reencode threshold\n'
 TEST_DIR="$TEST_TMP/test51"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
@@ -30,19 +30,89 @@ cd "$TEST_DIR"
 unsetopt err_exit
 output=$(MOCK_AUDIO_BITRATE=96000 MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
-assert_contains "$output" "copy" "Compact copies audio when <= 96kbps"
+assert_contains "$output" "音声: copy" "Compact copies audio at/below threshold"
+assert_not_contains "$output" "へ再エンコード" "Compact does not re-encode at/below threshold"
 assert_file_exists "$TEST_DIR/input-720p-30fps-enc.mp4" "Compact output has no aac tag when copying"
 
-# Test 52: 非compact モードでは音声は常にcopy（許可コーデックの場合）
-printf '\n## Test 52: Non-compact always copies audio for allowed codecs\n'
+# Test 52: 通常モードでも閾値超の copy 可能コーデックは再エンコードする
+# (以前は「copy 可能なら無条件 copy」だったため、圧縮したい高ビットレート AAC が素通りしていた)
+printf '\n## Test 52: Non-compact re-encodes allowed codec above threshold\n'
 TEST_DIR="$TEST_TMP/test52"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
-output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+# aac 248000bps > 閾値 110400bps
+output=$(MOCK_AUDIO_BITRATE=248000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
-assert_contains "$output" "音声: copy" "Non-compact copies audio regardless of bitrate"
+assert_contains "$output" "aac 96k へ再エンコード" "Non-compact re-encodes aac above threshold"
+assert_file_exists "$TEST_DIR/input-aac96k-enc.mp4" "Non-compact output has aac96k tag"
+
+# Test 52b: 通常モードで閾値以下の copy 可能コーデックは copy のまま
+printf '\n## Test 52b: Non-compact copies allowed codec at/below threshold\n'
+TEST_DIR="$TEST_TMP/test52b"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_AUDIO_BITRATE=100000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "音声: copy" "Non-compact copies aac at/below threshold"
+assert_not_contains "$output" "へ再エンコード" "Non-compact does not re-encode at/below threshold"
+assert_file_exists "$TEST_DIR/input-enc.mp4" "Non-compact copy output has no aac tag"
+
+# Test 52c: 境界値 — 閾値ちょうど (110400bps) は copy、1bps 超えたら再エンコード
+printf '\n## Test 52c: Threshold boundary is exclusive\n'
+TEST_DIR="$TEST_TMP/test52c"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_AUDIO_BITRATE=110400 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "音声: copy" "Exactly at threshold copies"
+
+TEST_DIR="$TEST_TMP/test52c2"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_AUDIO_BITRATE=110401 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "へ再エンコード" "One bps above threshold re-encodes"
+
+# Test 52d: AV1_AUDIO_REENCODE_MARGIN で閾値を動かせる
+printf '\n## Test 52d: AV1_AUDIO_REENCODE_MARGIN shifts the threshold\n'
+TEST_DIR="$TEST_TMP/test52d"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# margin=3.0 → 閾値 288000bps。248000 は下回るので copy になる (既定 1.15 なら再エンコード)
+output=$(AV1_AUDIO_REENCODE_MARGIN=3.0 MOCK_AUDIO_BITRATE=248000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "音声: copy" "Large margin keeps copy"
+
+TEST_DIR="$TEST_TMP/test52d2"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+# margin=1.0 → 閾値 96000bps。100000 は上回るので再エンコード (既定 1.15 なら copy)
+output=$(AV1_AUDIO_REENCODE_MARGIN=1.0 MOCK_AUDIO_BITRATE=100000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "へ再エンコード" "Small margin forces re-encode"
+
+# Test 52e: ソースビットレート不明の copy 可能コーデックは copy (安全側)
+printf '\n## Test 52e: Unknown bitrate on copyable codec falls back to copy\n'
+TEST_DIR="$TEST_TMP/test52e"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(MOCK_AUDIO_BITRATE="" av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "音声: copy" "Unknown bitrate on copyable codec copies"
 
 # Test 53: compact dry-runで音声再エンコードが表示される
 printf '\n## Test 53: Compact dry-run shows audio re-encode plan\n'
@@ -197,5 +267,77 @@ output=$(MOCK_ACODEC=vorbis MOCK_CHANNELS="" MOCK_SAMPLE_RATE=22050 MOCK_AUDIO_B
 setopt err_exit
 assert_contains "$output" "パラメータ取得失敗" "Channels-only error: shows fallback message"
 assert_file_exists "$TEST_DIR/input-auderr-enc.mp4" "Channels-only error: output has auderr tag"
+
+# Test 52f: 不正な AV1_AUDIO_REENCODE_MARGIN は fail-fast する
+# 背景: awk は非数値を数値文脈で 0 と解釈するため ("abc" * 96000 = 0)、検証しないと
+# typo が閾値 0 = 全ソース再エンコードに化ける。しかも閾値 0 は数値として妥当なので
+# 算出後の検査では検出できない。入力側で弾く必要がある。
+printf '\n## Test 52f: Invalid AV1_AUDIO_REENCODE_MARGIN fails fast\n'
+TEST_DIR="$TEST_TMP/test52f"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+for bad in "abc" "1,15" "0" "-1"; do
+  unsetopt err_exit
+  output=$(AV1_AUDIO_REENCODE_MARGIN="$bad" av1ify "$TEST_DIR/input.avi" 2>&1)
+  rc=$?
+  setopt err_exit
+  if [[ "$rc" != "0" ]] && [[ "$output" == *"無効なAV1_AUDIO_REENCODE_MARGIN指定"* ]]; then
+    printf '✓ Rejects invalid margin %s\n' "$bad"
+  else
+    printf '✗ Did not reject invalid margin %s (rc=%s)\n' "$bad" "$rc"
+  fi
+  assert_file_not_exists "$TEST_DIR/input-enc.mp4" "No output for invalid margin $bad"
+  assert_file_not_exists "$TEST_DIR/input-aac96k-enc.mp4" "No aac output for invalid margin $bad"
+done
+
+# 正常値は通ること (上の拒否が過剰適用でないことの確認)
+unsetopt err_exit
+output=$(AV1_AUDIO_REENCODE_MARGIN=1.15 MOCK_AUDIO_BITRATE=96000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "音声: copy" "Valid margin still works"
+
+# Test 77: AAC を選んでいた場合、失敗しても AAC で再試行しない (空振り防止)
+# 背景: 失敗時 retry は「失敗 = 音声 copy が原因」という前提の救済策。既に AAC を
+# 選んでいたなら 2 回目は同じ引数の空振りにしかならない。ゲートは「コーデックが copy
+# 可能か」ではなく「実際に copy を選んだか」で判定する必要がある。
+printf '\n## Test 77: No pointless AAC retry when AAC was already chosen\n'
+TEST_DIR="$TEST_TMP/test77"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+ARGS_LOG="$TEST_DIR/ffmpeg_args"
+unsetopt err_exit
+# 248000bps > 閾値 → AAC を選ぶ。その状態で ffmpeg が失敗する
+output=$(MOCK_AUDIO_BITRATE=248000 MOCK_FFMPEG_FAIL=1 TEST_FFMPEG_ARGS_LOG="$ARGS_LOG" \
+  av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_not_contains "$output" "音声copy失敗" "Does not blame audio copy when AAC was used"
+attempts=$(grep -c . "$ARGS_LOG" 2>/dev/null || echo 0)
+if [[ "$attempts" == "1" ]]; then
+  printf '✓ No second doomed ffmpeg attempt when AAC was already chosen (attempts=%s)\n' "$attempts"
+else
+  printf '✗ Expected exactly 1 ffmpeg attempt when AAC was chosen, got %s\n' "$attempts"
+fi
+
+# Test 78: copy を選んでいた場合は従来どおり AAC で再試行する (Test 77 の過剰適用防止)
+printf '\n## Test 78: Copy path still retries with AAC on failure\n'
+TEST_DIR="$TEST_TMP/test78"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+ARGS_LOG="$TEST_DIR/ffmpeg_args"
+unsetopt err_exit
+# 96000bps <= 閾値 → copy を選ぶ。失敗したら AAC で 2 回目を試すのが正しい
+output=$(MOCK_AUDIO_BITRATE=96000 MOCK_FFMPEG_FAIL=1 TEST_FFMPEG_ARGS_LOG="$ARGS_LOG" \
+  av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "音声copy失敗" "Copy path still reports audio-copy failure"
+attempts=$(grep -c . "$ARGS_LOG" 2>/dev/null || echo 0)
+if [[ "$attempts" == "2" ]]; then
+  printf '✓ Retries exactly once with AAC after a copy failure (attempts=%s)\n' "$attempts"
+else
+  printf '✗ Expected exactly 2 ffmpeg attempts on the copy path, got %s\n' "$attempts"
+fi
 
 printf '\n=== Audio Tests Completed ===\n'

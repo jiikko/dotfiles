@@ -30,10 +30,17 @@ case "$win" in
   ""|'#{'*) win=$(tmux display -p '#{window_id}' 2>/dev/null) || exit 0 ;;
 esac
 
+# pane ごとに tmux を起動しない: window 切替のたびに走る hook なので、pane 数に比例した
+# fork がそのまま切替の裏側のコストになる (issue 083)。if-shell は pane ごとに必要 (上の
+# 競合対策) だが、`;` 区切りで 1 回のクライアント起動にまとめられる。
+cmds=()
 while IFS= read -r pid; do
   [ -n "$pid" ] || continue
-  tmux if-shell -F -t "$pid" '#{==:#{@claude_state},🔔 input}' \
-    "set -p -t '$pid' @claude_state '🔕 seen'" 2>/dev/null
+  [ "${#cmds[@]}" -gt 0 ] && cmds+=(';')
+  cmds+=(if-shell -F -t "$pid" '#{==:#{@claude_state},🔔 input}' "set -p -t '$pid' @claude_state '🔕 seen'")
 done < <(tmux list-panes -t "$win" -F '#{pane_id}' 2>/dev/null)
+
+# 無音契約 (scripts/CLAUDE.md): 失敗しても pane へ出力を積まない
+[ "${#cmds[@]}" -gt 0 ] && tmux "${cmds[@]}" 2>/dev/null
 
 exit 0

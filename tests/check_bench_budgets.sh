@@ -46,6 +46,12 @@ unit_of() {
   case "$1" in
     *_kb) printf 'KB' ;;
     *_mb) printf 'MB' ;;
+    # プロセス数・呼び出し回数の metric (issue 083)。ms= はハーネスのパース契約なので
+    # 出力欄名は変えず、表示単位だけ名前から決める (でないと「7ms > budget 6ms」と出て
+    # fork 数の回帰をレイテンシの回帰と読み違える)
+    *_forks|*_forks_rows[0-9]*|*_calls) printf '個' ;;
+    # 伸び率 (×100 の比) は単位を持たない。ms を付けると時間と読み違える
+    *_scale_x100) printf '' ;;
     *) printf 'ms' ;;
   esac
 }

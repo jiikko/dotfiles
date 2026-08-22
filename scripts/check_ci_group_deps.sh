@@ -35,8 +35,8 @@ fail() { printf '✗ %s\n' "$1"; exit 1; }
 for c in grep head find sed make sort; do
   command -v "$c" >/dev/null 2>&1 || fail "$c が無い。検査できないので緑にしない"
 done
-printf 'probe\n' | grep -q probe || fail "grep が正常に動作しない"
-printf 'probe\n' | grep -vE '^#' | grep -q probe || fail "grep -vE が正常に動作しない"
+grep -q probe <<< 'probe' || fail "grep が正常に動作しない"
+grep -q probe <<< "$(grep -vE '^#' <<< 'probe')" || fail "grep -vE が正常に動作しない"
 [ "$(printf 'first\nsecond\n' | head -1)" = "first" ] || fail "head が正常に動作しない"
 
 [ -n "$dirs" ] || fail "CI_HEAVY_TEST_DIRS が空 (Makefile から渡されていない)"
@@ -108,7 +108,7 @@ for d in $dirs; do
     for cmd in $only_rest; do
       q="$(quotemeta "$cmd")"
       # shebang での使用 (bats 等)。行頭アンカーを付ける (1 行目の散文で誤検出しない)
-      if head -1 "$f" | grep -qE "^#!.*(^|[^A-Za-z0-9_.-])${q}([^A-Za-z0-9_.-]|\$)"; then
+      if grep -qE "^#!.*(^|[^A-Za-z0-9_.-])${q}([^A-Za-z0-9_.-]|\$)" <<< "$(head -1 "$f")"; then
         printf '✗ heavy のテストが %s に依存 (shebang): %s\n' "$cmd" "$f"
         bad=1
         continue
@@ -124,7 +124,7 @@ for d in $dirs; do
       body="$(grep -va '^[[:space:]]*#' "$f" 2>/dev/null \
         | grep -va 'ci-group-deps: allow' \
         | sed 's/[[:space:]]#[[:space:]].*$//')"
-      printf '%s' "$body" | grep -qaE "(^|[^A-Za-z0-9_.-])/?${q}([^A-Za-z0-9_.=-]|\$)|[=:][-]?${q}([^A-Za-z0-9_.-]|\$)"
+      grep -qaE "(^|[^A-Za-z0-9_.-])/?${q}([^A-Za-z0-9_.=-]|\$)|[=:][-]?${q}([^A-Za-z0-9_.-]|\$)" <<< "$body"
       rc=$?
       case "$rc" in
         0)

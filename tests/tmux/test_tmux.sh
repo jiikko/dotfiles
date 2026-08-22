@@ -134,7 +134,7 @@ run_with_check "$log_file" "list-keys failed" "fail" \
 assert_no_style_leak() {
   local label="$1" expanded="$2" residual
   residual=$(print -r -- "$expanded" | sed -E 's/#\[[^]]*\]//g')
-  if print -r -- "$residual" | grep -qE 'fg=|bg=|colour[0-9]'; then
+  if grep -qE 'fg=|bg=|colour[0-9]' <<< "$residual"; then
     print -u2 "[test-tmux:zsh] window-status format leaked a style literal ($label):"
     print -u2 "  expanded: $expanded"
     print -u2 "  residual: $residual"

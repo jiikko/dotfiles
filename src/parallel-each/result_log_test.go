@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -98,10 +99,44 @@ func TestResultLogRewriteMissingFileIsNoError(t *testing.T) {
 	}
 }
 
+// close must actually release the fd, be idempotent, and silence later appends.
+// ⚠️ Assert the observable effects, not just "does not panic": the previous version of
+// this test had no assertions at all, so dropping the whole close body still passed it
+// (issue 082). The doc above close() claims a double close and a later append are both
+// harmless — pin exactly that.
 func TestResultLogCloseIdempotent(t *testing.T) {
-	w, _ := newTestResultLog(t)
+	w, path := newTestResultLog(t)
+	handle := w.file // keep the real handle so "nil the slot without closing" cannot pass
+	w.append("tag", 0, "before-close", "/log/a")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(before), "before-close") {
+		t.Fatalf("precondition: append before close did not reach the file:\n%s", before)
+	}
+
 	w.close()
-	w.close() // must not panic / must be harmless
+	if err := handle.Close(); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("close() did not close the underlying fd (second Close err=%v)", err)
+	}
+	if w.file != nil {
+		t.Fatal("close() left the handle in place (a racing reopen would write to a closed fd)")
+	}
+
+	w.close() // second close: must stay harmless
+	if w.file != nil {
+		t.Fatal("second close() resurrected the handle")
+	}
+
+	w.append("tag", 0, "after-close", "/log/b") // must be a silent no-op
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("append after close changed the file:\nbefore=%q\nafter=%q", before, after)
+	}
 }
 
 // Serialization smoke test: concurrent appends and rewrites must not corrupt

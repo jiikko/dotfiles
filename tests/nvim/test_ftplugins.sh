@@ -144,9 +144,15 @@ guard("go ftplugin check", function()
   assert_buflocal("<leader>gD", "n") -- GoDeclsDir 置換 (workspace symbols)
 
   -- (3) capture が実解決し ]] が実際にカーソルを次関数へ動かすか (非破壊)。
-  --     parser 未 install の環境 (auto_install=false の fresh 環境) では flaky を避けて skip。
+  --     parser 未 install の環境では flaky を避けて skip する。
+  --     ⚠️ CI は**構造的に常にこちら**: .github/actions/setup-nvim が DOTFILES_TS_SKIP_ENSURE=1 で
+  --     parser を入れない (コンパイラ不在の runner で 31 個の DL+ビルドを撒かないため)。つまり
+  --     この assert は手元 (parser を入れた環境) でしか走らない。走ったか否かを呼び出し側が
+  --     判定できるよう、どちらの経路でもマーカーを出す (nvim のログは失敗時しか表示されない
+  --     ため、print だけでは「無音 skip」が「走った」に見える。issue 082)。
   local buf = vim.api.nvim_get_current_buf()
   if vim.treesitter.highlighter.active[buf] ~= nil then
+    print("TS_BEHAVIOR_ASSERT=ran")
     vim.api.nvim_win_set_cursor(0, { 1, 0 })
     vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("]]", true, false, true), "x", false)
     local row = vim.api.nvim_win_get_cursor(0)[1]
@@ -158,12 +164,24 @@ guard("go ftplugin check", function()
       error(string.format("]] landed on a non-func line %d: %q", row, line))
     end
   else
-    print("[skip] go treesitter parser not active; ]] behavior assert skipped")
+    print("TS_BEHAVIOR_ASSERT=skipped")
   end
 end)
 EOF
 
   _run_headless_lua "$lua_file" "$log_file"
+  # ⚠️ 走行の有無をテスト自身の出力に出す。nvim のログは失敗時しか表示されないので、
+  # 「skip したこと」がどこにも出ないと未検証を検証済みと読み違える (issue 082)。
+  # マーカーが無い = ハーネスが壊れた (判定不能) なので、pass にも skip にも丸めず落とす。
+  if grep -q 'TS_BEHAVIOR_ASSERT=ran' "$log_file"; then
+    print "[test-nvim:zsh]   ]] の実挙動 assert: 実行した (treesitter parser あり)"
+  elif grep -q 'TS_BEHAVIOR_ASSERT=skipped' "$log_file"; then
+    print "[test-nvim:zsh]   ]] の実挙動 assert: SKIP (parser 未 install。CI は常にこちら)"
+  else
+    print -u2 "✗ ]] の実挙動 assert が走ったか判定できない (マーカー無し = ハーネスの故障)"
+    cat "$log_file" >&2
+    exit 1
+  fi
 }
 
 print "[test-nvim:zsh] go ftplugin (vim-go 廃止 parity)"

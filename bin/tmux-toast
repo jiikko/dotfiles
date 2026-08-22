@@ -87,7 +87,7 @@ fi
 
 # --- 本命: floating pane (tmux 3.7+) ---------------------------------------
 # new-pane の -X/-Y は floating panes 対応ビルドにのみ存在する
-if tmux list-commands new-pane 2>/dev/null | grep -q -- '-X x-position'; then
+if grep -q -- '-X x-position' <<< "$(tmux list-commands new-pane 2>/dev/null)"; then
   read -r win_w win_h < <(tmux display-message -p '#{window_width} #{window_height}')
   box_w=$((width + 4))
   # ⚠️ clamp は `-ge` で、上限は win_w ではなく win_w - 1。box_w == win_w は tmux が受理せず

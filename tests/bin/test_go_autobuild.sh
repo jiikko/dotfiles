@@ -658,7 +658,7 @@ bump "$ROOT/src/tool/main.go"
 binary_is "$ROOT" rel || fail "相対 src_dir で呼ぶと成果物が入らない (got: $(binary_mark "$ROOT"))"
 stray="$(find "$ROOT/bin" -name '.autobuild.new.*' | head -3)"
 [[ -z "$stray" ]] || fail "相対 src_dir で一時ファイルを cwd 側へ書いた: $stray"
-head -1 "$ROOT/bin/tool" | grep -q zsh || fail "相対 src_dir で cwd 側の別ファイル (ラッパー) を成果物で上書きした"
+grep -q zsh <<< "$(head -1 "$ROOT/bin/tool")" || fail "相対 src_dir で cwd 側の別ファイル (ラッパー) を成果物で上書きした"
 ok "相対 src_dir でも成果物と一時ファイルが src 側に置かれる"
 
 printf '\n## spawn したビルドは popup を閉じたときの HUP で死なない\n'

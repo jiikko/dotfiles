@@ -29,7 +29,7 @@ ng() { printf '✗ %s\n' "$1"; fails=$((fails + 1)); }
 block="$(awk '/as_lines="on run argv/{f=1} /osascript -e "\$as_lines"/{f=0} f' "$SCRIPT")"
 if [ -z "$block" ]; then
   ng "as_lines の組み立て区間が見つからない (argv 方式が壊れた / 書き換えられた)"
-elif printf '%s' "$block" | grep -q '\$NAME'; then
+elif grep -q '\$NAME' <<< "$block"; then
   ng "AppleScript の組み立てに \$NAME を埋めている (文字列脱出でコード実行に到達する)"
   printf '%s\n' "$block" | grep -n '\$NAME' | head -3
 else
@@ -56,7 +56,7 @@ if command -v osascript >/dev/null 2>&1; then
 end run' "$evil" 2>&1 || true)"
   if [ -e "$marker" ]; then
     ng "argv 経由でも payload が実行された (marker が作られた): $got"
-  elif printf '%s' "$got" | grep -q '^len:'; then
+  elif grep -q '^len:' <<< "$got"; then
     ok "細工した名前は argv でデータとして扱われる ($got)"
   else
     ng "osascript が想定外の応答: $got"

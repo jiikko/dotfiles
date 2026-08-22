@@ -4,6 +4,10 @@
 # repair-mp4-timebase — 動画ファイルのtime_baseを指定値に修正する
 # ------------------------------------------------------------------------------
 
+# ${${(%):-%x}} は「今 source されているファイル自身のパス」を取る zsh のイディオム。
+# shellcheck disable=SC1091,SC2298
+source "${${(%):-%x}:A:h}/_ansi_colors.zsh"
+
 repair-mp4-timebase() {
   if [[ "$1" == "-h" || "$1" == "--help" || $# -lt 2 ]]; then
     cat <<'EOF'
@@ -47,7 +51,7 @@ EOF
       -show_entries stream=time_base -of csv=p=0 -- "$file" 2>/dev/null | head -n1)
 
     if [[ "$current_tb" == "1/${timescale}" ]]; then
-      print -P -- "→ %F{green}スキップ: ${file:t} (既に 1/${timescale})%f"
+      print -r -- "→ ${_C_GREEN}スキップ: ${file:t} (既に 1/${timescale})${_C_OFF}"
       continue
     fi
 
@@ -62,7 +66,7 @@ EOF
       return 1
     fi
 
-    print -P -- ">> %F{cyan}${file:t}%f: ${current_tb} → 1/${timescale}"
+    print -r -- ">> ${_C_CYAN}${file:t}${_C_OFF}: ${current_tb} → 1/${timescale}"
 
     # 修正実行（一時ファイルに出力）
     if ! ffmpeg -hide_banner -nostdin -loglevel error \
@@ -88,6 +92,6 @@ EOF
     mv -f -- "$file" "$origin" || { rm -f -- "$tmp"; return 1; }
     mv -f -- "$tmp" "$file" || { mv -f -- "$origin" "$file"; return 1; }
 
-    print -P -- "✅ %F{green}${file:t}%f (元ファイル → ${origin:t})"
+    print -r -- "✅ ${_C_GREEN}${file:t}${_C_OFF} (元ファイル → ${origin:t})"
   done
 }

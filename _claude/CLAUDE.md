@@ -43,6 +43,7 @@ Opus 5 は既定で「よく喋り・よく書き・スコープを広げ・よ�
 - **issue の記述を鵜呑みにしない**。実際のコードと git 履歴に照らして検証してから着手する（既に修正済み・false positive を着手前に弾く）。関連: [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md)（refactor 提案の事前確認）/ [`issue-creation-codex-review.md`](rules/issue-creation-codex-review.md)（issue 作成時の codex レビュー）
 - **人にやってほしい動作確認は応答本文に書いて流さず、issue に起こす**（chat は流れて存在自体が忘れられる）。`NNN-human-<スラッグ>.md`（人間しかできない作業のカテゴリ。動作確認・目視レビュー・外部サービスの操作・判断待ち）で起票し、本文に `期限: YYYY-MM-DD` を書く。**既読はファイルの位置で表す**（未読 = `issues/`、確認済み = `issues/done/`。既読ヘッダーは本文の書き換え忘れで嘘が残るので使わない）。期限切れはセッション開始時に hook（`_claude/hooks/human-tasks-due.sh`）が注入し、`issue-sync` skill でも最初に報告する。**hook が期限切れを出したらセッション冒頭で一言伝える**
 - **実質的な作業をやり切ったら、セッションの振り返りを `NNN-retro-<スラッグ>-YYYY-MM-DD.md` に起票する**（chat の反省は流れて消える）。反省・気づき・改善案を書き、各項目に切り出し先（新規 issue / `_claude/rules/` / 却下）を提案するが、切り出しの実行はユーザーの判断を待つ。typo・数行の chore・調査だけのセッションは対象外。**done は「本文の残課題が空になったとき」**（実装の有無では判定しない）。未決着の retro はセッション開始時に hook（`_claude/hooks/retro-open.sh`）が注入するので、**古いものが溜まっていたらセッション冒頭で一言伝える**。書式の正本は `issues/README.md`
+- **検証・監査・レビューのレポートを `./tmp` に出したら、結論・全数勘定・却下理由を issue （または対象コードのコメント）へ移すまでが 1 セット**。`tmp/` は gitignore なのでレポート本体は消える。特に「却下した指摘とその理由」は残さないと次の audit が同じ指摘を再生成する。詳細は [`move-report-conclusions-to-issues.md`](rules/move-report-conclusions-to-issues.md)
 
 ## 設計方針
 
@@ -54,6 +55,7 @@ Opus 5 は既定で「よく喋り・よく書き・スコープを広げ・よ�
 - **カバレッジ向上を要求されても、対象が「テスト困難 かつ 低価値」の両方を満たすなら拒否する**（数値のための水増しテストを書かない）。判断は「テスト容易性 × 価値」の 2 軸で行い、困難×高価値は逃げずにテスタブルへ直してから書く。詳細は [`refuse-low-value-coverage.md`](rules/refuse-low-value-coverage.md)
 - **検証は exit code ではなく「実行された証拠」で判定する**（exit 0 は「失敗しなかった」であり「そもそも走らなかった」を含む）。新設した検査は集約経路から実行して**その検査の出力が出ることを確認**する。`cmd | tail` の `$?` はパイプ終端の status。詳細は [`verify-execution-not-just-exit-code.md`](rules/verify-execution-not-just-exit-code.md)
 - **新規テストは「壊す変更を 1 つ当てて red を見る」まで確認してから commit する**（green は「正しい」ではなく「その書き方では壊せなかった」）。変異させても green のままのテストは主張を何も守っていないので書き直す。詳細は [`mutation-verify-new-tests.md`](rules/mutation-verify-new-tests.md)
+- **計測・テスト用の shim / wrapper を PATH 先頭に置くときは、実体を絶対パスで解決してから exec する**（相対名だと PATH 先頭の自分自身に解決して無限再帰し、しかも無音で回り続ける）。解決結果が shim 自身の配下でないことを起動時に確認する。詳細は [`path-shim-must-resolve-real-binary.md`](rules/path-shim-must-resolve-real-binary.md)
 - **再利用される道具（スクリプト / CLI / Makefile target / lint ルール / ヘルパー）を新設したら、同じ変更で「入口のドキュメント」を更新する**（その作業手順を持つ skill・領域の CLAUDE.md / README・既存ツールの一覧表）。**ツールのヘッダコメントは入口に数えない**（そのファイルを開く動機は存在を知っている人にしかない）。既存ツールと使い分けが要るなら判断基準を 1 行で書く。詳細は [`new-tool-requires-entrypoint-docs.md`](rules/new-tool-requires-entrypoint-docs.md)
 
 
@@ -90,7 +92,7 @@ Opus 5 は既定で「よく喋り・よく書き・スコープを広げ・よ�
 - **「この if 文を足せば直る」と思ったら立ち止まる** — その条件分岐が必要になった設計上の前提を疑うこと
 - **既存の呼び出しに新しい値・フラグ・経路を通す修正では、受け側のガード (preflight / reject) を先に grep で洗う** — 新しい呼ばれ方で初めて発火する既存ガードとの相互作用が悪化を作る。fake にも受け側の reject を模させる。詳細は [`survey-receiver-guards-before-passing-new-values.md`](rules/survey-receiver-guards-before-passing-new-values.md)
 - 修正が「症状への対処」ではなく「前提の是正」になっているかを必ず確認する。場当たり的な条件分岐の追加や、特定ケースだけを救うワークアラウンドは原則禁止
-- **直したバグは「同じ間違いが別の場所にもある」前提で grep する** — 同じ API・同じイディオムの使用箇所を横断確認する。特にテスト側で見つけた不具合は production 側を、production で見つけたらテスト・別モジュール側を必ず見る（実例: `SecItemDelete` の単発呼び出しを test helper で直した後、production の同一バグが残っていた）
+- **直したバグは「同じ間違いが別の場所にもある」前提で grep する** — 同じ API・同じイディオムの使用箇所を横断確認する。特にテスト側で見つけた不具合は production 側を、production で見つけたらテスト・別モジュール側を必ず見る（実例: `SecItemDelete` の単発呼び出しを test helper で直した後、production の同一バグが残っていた）。**関数の契約変更（返し方・シグネチャ）も同じ扱いにする** — `echo` 返しを `REPLY` 返しへ変えたとき `$(...)` の呼び残しが 1 件出た（既存テストが検出。無ければ follow 抑止が静かに壊れていた）
 - **効果がなかった修正は必ず revert する** — バグ修正を入れて検証した結果、効果がなかった（的外れだった）場合、その修正をコードに残さず元に戻すこと。効果のない変更が積み重なるとコードの意図が不明瞭になり、将来の改修を妨げる
 - **UI / デバイス / 環境に関わる問題は、修正を提案する前に実際の環境制約（入力手段・ツールのバージョン・他 platform の参照実装）を確認する**。詳細は [`check-other-platform-reference.md`](rules/check-other-platform-reference.md) / [`no-osascript-for-ui-verification.md`](rules/no-osascript-for-ui-verification.md) / [`no-ios-simulator-verification.md`](rules/no-ios-simulator-verification.md)
 

@@ -89,6 +89,15 @@ assert_contains "$output" "無効なfps指定" "Reports invalid FPS for 300"
 output=$(av1ify --dry-run --fps abc "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "無効なfps指定" "Reports invalid FPS for non-numeric"
 
+# 小数点以外の区切り文字を弾く (回帰防止)。
+# 未クォートの =~ パターンでは zsh がバックスラッシュを剥がすため、\. と書くと
+# 「任意の 1 文字」に化けて "1,15" や "1x5" が有効な fps として通っていた。
+# awk は "1,15" を 1 と解釈するので、typo が無警告で「1fps 指定」になる事故だった。
+for bad_fps in "1,15" "1x5" "3 0"; do
+  output=$(av1ify --dry-run --fps "$bad_fps" "$TEST_DIR/input.avi" 2>&1 || true)
+  assert_contains "$output" "無効なfps指定" "Reports invalid FPS for '$bad_fps'"
+done
+
 # Test 20b: 無効な AV1_* 環境変数があっても --help は読める (codex P2 回帰防止)
 printf '\n## Test 20b: --help works even with invalid AV1_* env vars\n'
 unsetopt err_exit
@@ -366,8 +375,9 @@ mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
-# mock を 60fps にして両方のタグが付くことを確認
-MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
+# mock を 60fps にして両方のタグが付くことを確認。
+# 音声は再エンコード閾値 (110400bps) 超を明示し、aac タグが付く側に倒す。
+MOCK_AUDIO_BITRATE=248000 MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
 assert_file_exists "$TEST_DIR/input-720p-30fps-aac96k-enc.mp4" "Compact creates file with 720p, 30fps and aac96k tags"
 
@@ -398,8 +408,9 @@ mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR"
 unsetopt err_exit
-# mock は 480x854（短辺=480）、60fps。--compact → 720p 指定だが 480 < 720 なのでスキップ、fps は適用
-output=$(MOCK_WIDTH=480 MOCK_HEIGHT=854 MOCK_FPS="60/1" av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
+# mock は 480x854（短辺=480）、60fps。--compact → 720p 指定だが 480 < 720 なのでスキップ、fps は適用。
+# 音声は再エンコード閾値 (110400bps) 超を明示し、aac タグが付く側に倒す。
+output=$(MOCK_AUDIO_BITRATE=248000 MOCK_WIDTH=480 MOCK_HEIGHT=854 MOCK_FPS="60/1" av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "解像度変更をスキップ" "Compact skips upscale for low-res source"
 assert_file_exists "$TEST_DIR/input-30fps-aac96k-enc.mp4" "Compact low-res: fps and aac96k tags, no resolution tag"

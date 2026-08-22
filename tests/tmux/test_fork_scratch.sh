@@ -104,8 +104,12 @@ fi
 
 keys=$("$TMUX_BIN_PATH" -L "$SOCKET_NAME" list-keys -T prefix)
 
-# fork popup (bind b) は 2026-06-28 に A/B 観測のため _tmux.conf で一時無効化されている
-# （コメントアウト）。無効中は bind b が登録されないため、bind b 依存の検査 (A) だけ skip する。
+# fork popup (bind b) は _tmux.conf でコメントアウトされ**休眠中**。無効中は bind b が
+# 登録されないため、bind b 依存の検査 (A) だけ skip する。
+# ⚠️ 理由は「A/B 観測期間」ではない (その観測は 2026-06-28〜07-04 で終わっている)。現在の理由は
+# 「便利そうだが使いたい気持ちにならなかった」という 2026-07-04 のユーザー判断で、復活させない
+# ことが決まっている (正本: docs/claude-fork-popup.md の冒頭 + 復活手順)。したがってこの skip は
+# 期限つきの一時措置ではなく、**bind を復活させたときに自動で再検査が始まる**形の休眠。
 # scratch (bind t) は同日にユーザ判断で先行復活済みのため、B は fork の無効状態と独立して
 # 常時検査する（かつては A/B とも bind b の有効判定に相乗りしており、scratch 復活後も
 # その回帰ガードが一度も走らない false-skip になっていた）。C〜F はスクリプト/コマンド
@@ -114,13 +118,13 @@ keys=$("$TMUX_BIN_PATH" -L "$SOCKET_NAME" list-keys -T prefix)
 #   bind 済みのため、popup 無効でも bind t は list-keys に現れる（誤検知の元）。有効か否かは
 #   「bind が対応スクリプトを参照しているか」で判定する。
 bind_b=$(print -r -- "$keys" | grep -E '^bind-key +-T prefix +b ' || true)
-if ! print -r -- "$bind_b" | grep -q 'tmux_fork_popup.sh'; then
-  print "[test-fork-scratch:zsh] skip A: fork popup (bind b) は現在無効 (A/B 観測期間)。B〜F を検査する。"
+if ! grep -q 'tmux_fork_popup.sh' <<< "$bind_b"; then
+  print "[test-fork-scratch:zsh] skip A: fork popup (bind b) は休眠中 (2026-07-04 のユーザー判断。docs/claude-fork-popup.md)。B〜F を検査する。"
 else
   # A) bind b が claude-fork と tmux_fork_popup.sh を参照し、new-session -A を使わない
-  print -r -- "$bind_b" | grep -q 'claude-fork'         || fail "bind b が claude-fork を参照していない"
-  print -r -- "$bind_b" | grep -q 'tmux_fork_popup.sh'  || fail "bind b が tmux_fork_popup.sh を参照していない"
-  if print -r -- "$bind_b" | grep -qE 'new-session[^|]*-A'; then
+  grep -q 'claude-fork' <<< "$bind_b"         || fail "bind b が claude-fork を参照していない"
+  grep -q 'tmux_fork_popup.sh' <<< "$bind_b"  || fail "bind b が tmux_fork_popup.sh を参照していない"
+  if grep -qE 'new-session[^|]*-A' <<< "$bind_b"; then
     fail "bind b が new-session -A を使用 (popup を閉じるのに 2 回押す回帰の恐れ)"
   fi
   ok "A: bind b が claude-fork popup (tmux_fork_popup.sh) を参照 + new-session -A 不使用"
@@ -130,15 +134,15 @@ fi
 for k in t C-t; do
   body=$(print -r -- "$keys" | grep -E "^bind-key +-T prefix +$k " || true)
   [[ -n "$body" ]] || fail "bind $k が見つからない (scratch 復活状態の前提が変わった可能性)"
-  print -r -- "$body" | grep -q 'tmux_scratch_popup.sh' \
+  grep -q 'tmux_scratch_popup.sh' <<< "$body" \
     || fail "bind $k が tmux_scratch_popup.sh を参照していない (開閉判定の集約が壊れた可能性)"
-  if print -r -- "$body" | grep -qE 'new-session[^|]*-A'; then
+  if grep -qE 'new-session[^|]*-A' <<< "$body"; then
     fail "bind $k が new-session -A を使用 (popup を閉じるのに 2 回押す回帰の恐れ)"
   fi
 done
 # bind 本体は run-shell でスクリプトを呼ぶだけなので、実体の new-session が -A を
 # 使っていないこともコード行 (コメント除外) で検査する (check C と同型)。
-if grep -vE '^[[:space:]]*#' "$SCRATCH_SCRIPT" | grep -qE 'new-session[^|]*-A'; then
+if grep -qE 'new-session[^|]*-A' <<< "$(grep -vE '^[[:space:]]*#' "$SCRATCH_SCRIPT")"; then
   fail "tmux_scratch_popup.sh のコード行が new-session -A を使用 (2 回押し回帰の恐れ)"
 fi
 ok "B: bind t / C-t が scratch script を参照 + bind/実体とも new-session -A 不使用"
@@ -147,7 +151,7 @@ ok "B: bind t / C-t が scratch script を参照 + bind/実体とも new-session
 # 検査対象は「実コード」であって説明コメントではない。tmux_fork_popup.sh は「なぜ new-session を
 # 使わないか」をコメントで明記しているため、コメント行を除外してから検査する（さもないと説明文の
 # "new-session" に grep が誤反応して false positive になる）。
-if grep -vE '^[[:space:]]*#' "$POPUP_SCRIPT" | grep -q 'new-session'; then
+if grep -q 'new-session' <<< "$(grep -vE '^[[:space:]]*#' "$POPUP_SCRIPT")"; then
   fail "tmux_fork_popup.sh のコード行が new-session を含む (空セッション非生成の不変条件に違反)"
 fi
 grep -q 'has-session' "$POPUP_SCRIPT" || fail "tmux_fork_popup.sh に has-session ガードがない"
@@ -163,7 +167,7 @@ PANE_MOVE_SCRIPT="$ROOT_DIR/scripts/tmux_fzf_pane_move.sh"
 [[ -f "$POPUP_SESSIONS_LIB" ]] || fail "popup sessions lib not found: $POPUP_SESSIONS_LIB"
 [[ -f "$PANE_MOVE_SCRIPT" ]]   || fail "pane_move script not found: $PANE_MOVE_SCRIPT"
 for _name in scratch claude-fork; do
-  grep -E '^TT_POPUP_SESSION_RE=' "$POPUP_SESSIONS_LIB" | grep -q "$_name" \
+  grep -q "$_name" <<< "$(grep -E '^TT_POPUP_SESSION_RE=' "$POPUP_SESSIONS_LIB")" \
     || fail "除外 lib のパターンに $_name が含まれていない"
 done
 for _s in "$JUMP_SCRIPT" "$PANE_MOVE_SCRIPT"; do
@@ -179,7 +183,7 @@ ok "D: 除外 lib が scratch/claude-fork を含み、jump / pane_move とも li
 # E) claude-fork 不在時: popup script は案内を出すだけでセッションを作らない
 "$TMUX_BIN_PATH" kill-server >/dev/null 2>&1 || true
 e_out=$( (unset TMUX; sh "$POPUP_SCRIPT" </dev/null) 2>&1 || true )
-print -r -- "$e_out" | grep -q 'フォーク未作成' \
+grep -q 'フォーク未作成' <<< "$e_out" \
   || fail "popup script else 分岐の案内が出ない (出力: $e_out)"
 if "$TMUX_BIN_PATH" has-session -t claude-fork 2>/dev/null; then
   fail "else 分岐で claude-fork セッションが作られてしまった"
@@ -191,11 +195,12 @@ block_file="$TMUX_TMPDIR/fork_cmd.sh"
 awk '/^```bash$/{f=1;next} /^```/{if(f){f=0}} f' "$CMD_FILE" > "$block_file"
 [[ -s "$block_file" ]] || fail "fork-scratch.md から bash ブロックを抽出できなかった"
 
-# /fork-scratch コマンドも 2026-06-28 に A/B 観測のため早期 exit ガードで無効化されている
-# (block 冒頭に `echo "...一時無効化中です"; exit 0`)。無効スタブのときは本物の fork ロジックを
-# 検査できないので F-1/F-2 を skip して正常終了する。bind/コマンドを復活させたら自動的に再検査される。
+# /fork-scratch コマンドも早期 exit ガードで無効化されている (block 冒頭に
+# `echo "...一時無効化中です"; exit 0`)。無効スタブのときは本物の fork ロジックを検査できないので
+# F-1/F-2 を skip して正常終了する。コマンドを復活させたら自動的に再検査される。
+# ⚠️ 休眠の理由は上の bind b と同じ (A/B 観測ではなくユーザー判断。docs/claude-fork-popup.md)。
 if grep -q '一時無効化' "$block_file"; then
-  print "[test-fork-scratch:zsh] skip F: /fork-scratch コマンドは現在無効 (A/B 観測期間)。C〜E のみ検査した。"
+  print "[test-fork-scratch:zsh] skip F: /fork-scratch コマンドは休眠中 (2026-07-04 のユーザー判断。docs/claude-fork-popup.md)。C〜E のみ検査した。"
   print "[test-fork-scratch:zsh] done"
   exit 0
 fi
@@ -203,7 +208,7 @@ fi
 # F-1) env 未設定: guard で中断し claude-fork を作らない
 "$TMUX_BIN_PATH" kill-server >/dev/null 2>&1 || true
 f1_out=$(env -u CLAUDE_CODE_SESSION_ID PWD="$ROOT_DIR" sh "$block_file" 2>&1 || true)
-print -r -- "$f1_out" | grep -q '未設定' \
+grep -q '未設定' <<< "$f1_out" \
   || fail "空 env で未設定ガードのメッセージが出ない (出力: $f1_out)"
 if "$TMUX_BIN_PATH" has-session -t claude-fork 2>/dev/null; then
   fail "空 env で claude-fork が作られてしまった (guard すり抜け)"
@@ -225,7 +230,7 @@ chmod +x "$stub_bin/claude"
 fake_id="testsess-0000-1111-2222"
 "$TMUX_BIN_PATH" kill-server >/dev/null 2>&1 || true
 f2_out=$(env CLAUDE_CODE_SESSION_ID="$fake_id" PWD="$ROOT_DIR" PATH="$stub_bin:$PATH" sh "$block_file" 2>&1 || true)
-print -r -- "$f2_out" | grep -q 'fork OK' || fail "stub env で 'fork OK' が出ない (出力: $f2_out)"
+grep -q 'fork OK' <<< "$f2_out" || fail "stub env で 'fork OK' が出ない (出力: $f2_out)"
 "$TMUX_BIN_PATH" has-session -t claude-fork 2>/dev/null || fail "claude-fork セッションが作られていない"
 
 # stub が引数を書き出すのを待つ (detached 起動直後は未書き込みのことがある)
@@ -233,9 +238,9 @@ i=0
 while [[ ! -s "$args_file" && $i -lt 60 ]]; do sleep 0.05; i=$((i+1)); done
 [[ -s "$args_file" ]] || fail "stub claude が引数を記録しなかった (起動失敗の可能性)"
 recorded=$(cat "$args_file")
-print -r -- "$recorded" | grep -q -- '--resume'       || fail "claude 引数に --resume がない (実際: $recorded)"
-print -r -- "$recorded" | grep -q -- "$fake_id"        || fail "claude 引数に session id がない (実際: $recorded)"
-print -r -- "$recorded" | grep -q -- '--fork-session'  || fail "claude 引数に --fork-session がない (実際: $recorded)"
+grep -q -- '--resume' <<< "$recorded"       || fail "claude 引数に --resume がない (実際: $recorded)"
+grep -q -- "$fake_id" <<< "$recorded"        || fail "claude 引数に session id がない (実際: $recorded)"
+grep -q -- '--fork-session' <<< "$recorded"  || fail "claude 引数に --fork-session がない (実際: $recorded)"
 ok "F-2: stub で claude-fork 作成 + 引数 (--resume <id> --fork-session) を検証"
 "$TMUX_BIN_PATH" kill-server >/dev/null 2>&1 || true
 

@@ -7,10 +7,13 @@
 #
 # av1ify — 動画ファイルをAV1形式のMP4に変換
 #
+# 引数なしのクリップボード入力は「対話シェルで人が打ったとき」だけ発火する。
+# このスクリプト経由 (= 非対話) では発火せずヘルプを表示する。詳細は av1ify --help
+#
 # 実装: ~/dotfiles/zshlib/_av1ify.zsh
 #
 # 同じ機能が以下にも定義されています（呼び出し元）:
-#   - ~/dotfiles/_zshrc      av1ify() 遅延ローディングラッパー
+#   - ~/dotfiles/_zshrc      av1ify() / av1c() 遅延ローディングラッパー (対話シェルではこれが優先)
 #   - ~/dotfiles/bin/av1c    av1ify --compact + 成功時に元ファイル削除のショートハンド
 
 source "${0:A:h}/../zshlib/_av1ify.zsh"

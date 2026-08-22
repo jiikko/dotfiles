@@ -27,11 +27,11 @@ out=$("$NVIM_BIN" --headless -u "$CONFIG_FILE" \
 }
 # FAIL: は check スクリプトの assert 失敗。Error executing / stack traceback は
 # scheduled callback 内の lua 例外 (assert を通り抜けて OK が出てしまうため個別に検査する)
-if print -r -- "$out" | grep -qE "FAIL:|Error executing|stack traceback"; then
+if grep -qE "FAIL:|Error executing|stack traceback" <<< "$out"; then
   print -u2 "$out"
   exit 1
 fi
-if ! print -r -- "$out" | grep -q "^OK"; then
+if ! grep -q "^OK" <<< "$out"; then
   print -u2 "[test-smooth-scroll] expected OK marker, got:"
   print -u2 "$out"
   exit 1

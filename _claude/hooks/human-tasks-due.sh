@@ -95,7 +95,13 @@ for f in "$dir"/*.md "$dir"/pending/*.md; do
   if [ "$due" \< "$today" ]; then
     overdue="${overdue}  期限切れ ${due}  ${rel}${held}"$'\n'
   elif [ "$due" \> "$soon" ]; then
-    later=$((later + 1))
+    # ⚠️ later は「未完了 N 件の**うち**」として印字するので、母集団を unread と揃えること
+    # (human かつ pending 以外)。揃えないと規約準拠のデータだけで
+    # 「未完了 1 件 (うち期限に余裕あり 2 件)」のような部分集合でない表示が出る
+    # (実測 2026-08-21: pending を走査へ加えたときに later 側だけ母集団が広がった)。
+    if [ "$is_human" -eq 1 ] && [ -z "$held" ]; then
+      later=$((later + 1))
+    fi
   else
     upcoming="${upcoming}  期限間近 ${due}  ${rel}${held}"$'\n'
   fi
