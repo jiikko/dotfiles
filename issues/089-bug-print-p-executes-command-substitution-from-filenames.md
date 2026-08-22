@@ -117,3 +117,27 @@ print -r -- "${_C_GREEN}✅ 完了: ${final_out}${_C_OFF}"
 - [086](done/086-bug-git-prompt-percent-injection.md) — 兄弟 issue。あちらは「値を prompt 展開に
   **参照として**渡す安全な形」で、コマンド実行は反証済み。本 issue はその危険形の横断調査
 - `_claude/rules/mutation-verify-new-tests.md` — 陽性対照の要求
+
+## 後日追記 (2026-08-22): クリップボード入力が新しいトリガになった
+
+`av1ify` に「引数なしならクリップボードを 1 行 1 パスとして読み、一覧を出して `[y/N]` で
+確認してから処理する」経路が入った (6973d99)。この経路は**貼り付け由来の信頼できない
+文字列を本 issue の `print -P` 群へ新たに流し込む**。
+
+- 確認画面の一覧そのものは `print -r --` 固定で安全 (`zshlib/_av1ify.zsh`
+  `__av1ify_targets_from_clipboard`。回帰テストは `tests/zshrc/av1ify/test_av1ify_clipboard.sh`
+  の Test 7 が pin。`print -P` へ変異させると `pwned` 生成で red になることを実測)
+- **承認 (y) した後は実行される**。敵対的レビュー (2026-08-22) が
+  `zshlib/_av1ify_encode.zsh:68` の
+  `final_out="$REPLY"; print -P -- "%F{green}✅ 完了: $final_out%f"`
+  を執行者として特定し、その 1 行だけを `print -r --` に替えると `pwned` が作られなくなる
+  ことまで確認している (単独 attribution 済み)
+- 表示は置換後 (`evilfile-enc.mp4`) になるため、画面からは何も起きていないように読める
+
+つまり本 issue が open の間は、**「一覧を目で確認して y を押す」という動作自体が実行の
+トリガ**になる。Test 7 の assert 名は「一覧表示では実行しない」に狭めてあり、承認後の
+経路は本 issue の管轄であることをテスト内コメントに明記した (誤読防止)。
+
+修正時の注意: 対策は「色を先に解決し、データは `print -r` で出す」形。`_av1ify_encode.zsh`
+に 24 件、`zshlib` 全体で 37 件ある。クリップボード経路の完了ログ (`:68`) は untrusted 入力が
+最短で届く場所なので、部分修正するならここが最優先。
