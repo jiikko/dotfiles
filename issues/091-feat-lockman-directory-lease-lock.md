@@ -47,8 +47,9 @@ fi
 ```
 <dir>/.lockman/
 ├── lock                     # ★ これの存在 = ロック中。存在そのものが排他の本体
-├── tmp/<token>.json         # 書きかけの置き場 (acquire 中のみ。原子的に消える)
-└── probe/<token>            # サーバ時刻を得るための使い捨て (作って stat して即消す)
+├── tmp/<token>.json         # 書きかけの置き場 (acquire 中のみ)
+├── probe/<token>            # サーバ時刻を得るための使い捨て (作って stat して即消す)
+└── graveyard/<token>        # 引き継ぎ・break で退けた旧 lock (誰が握っていたかの記録)
 ```
 
 **`lock` の中身 (JSON、取得時に 1 度書いたら二度と書き換えない)**:
@@ -250,6 +251,60 @@ lease である以上、TTL 切れで他者に引き継がれることがある�
   stderr へ 1 行だけ「30 分を超えるなら with か renew を使え」と出すことを検討する
   (無音契約を壊さない範囲で)
 
+## 起動時の cleanup (残骸の掃除)
+
+クラッシュした acquire は `tmp/` に、中断した probe は `probe/` に、引き継ぎ・break で
+退けた旧 lock は `graveyard/` に残骸を残す。放置すると SMB 越しの readdir が重くなり、
+`.lockman/` を覗いた人間が混乱する。**lockman の起動時に best-effort で掃除する。**
+
+### 絶対の境界: `lock` 本体は cleanup で消さない
+
+**期限切れの `lock` を cleanup が消してはならない。** 「消してから作る」は二重取得が最も
+出る経路であり、これを cleanup という別経路から持ち込むと、せっかく rename 引き継ぎで
+1 人に絞った意味が消える。期限切れの回収は **acquire の rename 引き継ぎだけが行う**。
+
+「古い lock で永久に詰まる」ことは TTL 30 分の自動引き継ぎが防いでいるので、cleanup が
+`lock` を消す必要はそもそも無い。人が今すぐ剥がしたいときは `lockman break` を使う
+(これも unlink ではなく `graveyard/` への rename で行う。単一勝者と記録の両方を保つ)。
+
+### 何を、いつ消すか
+
+| 対象 | 消す条件 |
+|---|---|
+| `tmp/<token>.json` | 自分の token でない **かつ** mtime が **1 時間**より古い |
+| `probe/<token>` | 自分の token でない **かつ** mtime が **1 時間**より古い |
+| `graveyard/<token>` | mtime が **7 日**より古い (直近は「誰が握っていたか」の記録として残す) |
+| `lock` | **消さない** (上記の境界) |
+| `.lockman/` 自体 | **消さない** (空でも残す。再作成の churn と rmdir の競合を避ける) |
+
+- 判定に使う「今」は **`server_now()` (probe の mtime)**。ローカル時計を使わない
+- 閾値 1 時間は「進行中の acquire を巻き込まない」ための余裕。acquire は数百 ms で終わる
+  ので 3 桁の余裕がある。**短くしない** (縮めるほど走行中の他者を巻き込む確率が上がる)
+- **自分の token の残骸は消さない** (自分の acquire が進行中かもしれない)
+
+### 走らせるタイミングと非機能要件
+
+- **`acquire` / `with` / `break` のときだけ走らせる**。`check` / `status` では走らせない
+  (読み取り専用コマンドはループの中から何度も呼ばれる。SMB の readdir は重い)
+- **レート制限**: `.lockman/.cleanup_at` の mtime が **10 分**より新しければ丸ごとスキップ。
+  読めなければスキップする (掃除は正しさに一切関与しないので、疑わしいときは何もしない)
+- **失敗は絶対に致命にしない**。cleanup の I/O エラー・権限エラーで `acquire` を失敗させない。
+  掃除できなかったことは `status --json` の件数と `--verbose` にだけ出す
+- **cleanup は readdir に依存する** (= 古い一覧を見ることがある) が、掃除が遅れても
+  正しさに影響しない設計なのでこれでよい。**逆に言えば、cleanup の結果を判定に使わない**
+
+### 検証 (cleanup は「安全機構を壊しうる掃除」なので敵対的に見る)
+
+- **生きている `lock` を消さない**: 有効な lock がある状態で cleanup を何度走らせても
+  `lock` が残ること。**変異検証**: cleanup の対象に `lock` を含める変異を当てて、
+  このテストが赤になることを確認する
+- **走行中の他者を巻き込まない**: 別プロセスが acquire 中 (tmp を書いている最中) に
+  cleanup を走らせても、その tmp が消えないこと
+- **自分の残骸を消さない**: 自分の token の tmp/probe が残ること
+- **失敗が致命にならない**: `.lockman/tmp` を読めない権限にしても `acquire` が成功すること
+- **`check` / `status` では走らない**: それらを 100 回呼んでも readdir が増えないこと
+- レート制限が効く (2 回目以降はスキップされる)
+
 ## CLI インターフェース案
 
 ```
@@ -259,6 +314,8 @@ lockman renew   <dir> --token-file F | --token T [--ttl 30m]
 lockman check   <dir> [--json]          # 参考値。これで分岐しても排他にはならない
 lockman status  <dir> [--json]          # 誰が・いつから・あと何秒
 lockman with    <dir> [--ttl 30m] [--on-lost kill] -- <cmd> [args...]
+lockman break   <dir> [--force]         # 人が今すぐ剥がす (graveyard へ rename。unlink しない)
+lockman cleanup <dir> [--force]         # 残骸掃除だけを明示的に走らせる (レート制限を無視)
 ```
 
 **exit code が実質的な API** (shell から `if` / `case` で分岐するため):
