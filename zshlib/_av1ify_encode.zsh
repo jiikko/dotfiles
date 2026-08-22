@@ -4,6 +4,7 @@
 # shellcheck disable=SC1091,SC2296,SC2298  # zsh 固有の自ファイルパス展開 (shellcheck は解析不可)
 source "${${(%):-%x}:A:h}/_ffprobe_helpers.zsh"
 source "${${(%):-%x}:A:h}/_fs_helpers.zsh"
+source "${${(%):-%x}:A:h}/_ansi_colors.zsh"
 
 # __av1ify_decide_* / __av1ify_auto_crf / __av1ify_build_final_out から
 # 結果を返却するためのグローバル。__av1ify_one が各反復で初期化する。
@@ -64,7 +65,7 @@ __av1ify_finalize() {
     REPLY="$final_out"; return 1
   fi
   if __av1ify_postcheck "$final_out" "$in" "$( [[ -n "$target_fps" ]] && echo 1 || echo 0 )" "$target_height"; then
-    final_out="$REPLY"; print -P -- "%F{green}✅ 完了: $final_out%f"
+    final_out="$REPLY"; print -r -- "${_C_GREEN}✅ 完了: $final_out${_C_OFF}"
     # サイズ削減サマリ (元→出力)。元ファイル ($in) は削除前なのでサイズ取得可能。
     local _src_size _out_size
     _src_size=$(__av1ify_file_size "$in")
@@ -76,7 +77,7 @@ __av1ify_finalize() {
       # %+.0f で符号付き (削減=負, 増加=正)。削減率 = (out - src) / src * 100
       _pct=$(awk -v s="$_src_size" -v o="$_out_size" 'BEGIN{ printf "%+.0f", (o - s) / s * 100 }')
       _icon="📉"; (( _out_size > _src_size )) && _icon="📈"
-      print -P -- "%F{green}   ${_icon} ${_src_h} → ${_out_h} (${_pct}%%)%f"
+      print -r -- "${_C_GREEN}   ${_icon} ${_src_h} → ${_out_h} (${_pct}%)${_C_OFF}"
     fi
     if (( __AV1IFY_DELETE_ORIGIN )) && [[ -f "$in" ]]; then
       # /usr/bin/trash は -- を end-of-options として扱わないため絶対パスで渡す
@@ -91,13 +92,13 @@ __av1ify_finalize() {
       # 予告 1 行を出して原因切り分けを容易にする。
       if (( is_network )); then
         print -r -- ">> 元ファイル削除中 (rm, ${fs_type}): $in"
-        rm -f -- "$in_abs" && print -P -- "%F{green}🗑️ 元ファイル削除 (network volume [$fs_type] のため rm): $in%f"
+        rm -f -- "$in_abs" && print -r -- "${_C_GREEN}🗑️ 元ファイル削除 (network volume [$fs_type] のため rm): $in${_C_OFF}"
       elif command -v trash >/dev/null 2>&1; then
         print -r -- ">> 元ファイルをゴミ箱へ移動中: $in"
-        trash "$in_abs" && print -P -- "%F{green}🗑️ 元ファイルをゴミ箱へ移動: $in%f"
+        trash "$in_abs" && print -r -- "${_C_GREEN}🗑️ 元ファイルをゴミ箱へ移動: $in${_C_OFF}"
       else
         print -r -- ">> 元ファイル削除中 (rm, trash 未導入): $in"
-        rm -f -- "$in_abs" && print -P -- "%F{green}🗑️ 元ファイル削除 (trash 未導入のため rm): $in%f"
+        rm -f -- "$in_abs" && print -r -- "${_C_GREEN}🗑️ 元ファイル削除 (trash 未導入のため rm): $in${_C_OFF}"
       fi
     fi
     REPLY="$final_out"; return 0
@@ -128,7 +129,7 @@ __av1ify_decide_resolution() {
       __AV1IFY_R_RES_TAG="${validated}p"
       ;;
   esac
-  print -P -- "%F{cyan}>> 出力解像度: ${__AV1IFY_R_RES_TAG} (height=${__AV1IFY_R_HEIGHT})%f"
+  print -r -- "${_C_CYAN}>> 出力解像度: ${__AV1IFY_R_RES_TAG} (height=${__AV1IFY_R_HEIGHT})${_C_OFF}"
 
   # アップスケール防止: ソース解像度が必須
   if [[ -z "$short_side" ]]; then
@@ -136,7 +137,7 @@ __av1ify_decide_resolution() {
     return 1
   fi
   if (( short_side <= __AV1IFY_R_HEIGHT )); then
-    print -P -- "%F{yellow}>> 元の短辺 (${short_side}px) が指定解像度 (${__AV1IFY_R_RES_TAG}) 以下のため、解像度変更をスキップします%f"
+    print -r -- "${_C_YELLOW}>> 元の短辺 (${short_side}px) が指定解像度 (${__AV1IFY_R_RES_TAG}) 以下のため、解像度変更をスキップします${_C_OFF}"
     __AV1IFY_R_HEIGHT=""
     __AV1IFY_R_RES_TAG=""
   fi
@@ -166,16 +167,16 @@ __av1ify_decide_fps() {
     local fps_skip
     fps_skip=$(awk -v src="$source_fps_val" -v tgt="$validated" 'BEGIN { print (src <= tgt) ? 1 : 0 }')
     if (( fps_skip )); then
-      print -P -- "%F{yellow}>> ソースfps (${source_fps_val}) が ${validated}fps 以下のため、fps変更をスキップ%f"
+      print -r -- "${_C_YELLOW}>> ソースfps (${source_fps_val}) が ${validated}fps 以下のため、fps変更をスキップ${_C_OFF}"
       return 0
     fi
     __AV1IFY_R_FPS="$validated"
     __AV1IFY_R_FPS_TAG="${validated}fps"
-    print -P -- "%F{cyan}>> 出力フレームレート: ${source_fps_val}fps → ${validated}fps%f"
+    print -r -- "${_C_CYAN}>> 出力フレームレート: ${source_fps_val}fps → ${validated}fps${_C_OFF}"
   else
     __AV1IFY_R_FPS="$validated"
     __AV1IFY_R_FPS_TAG="${validated}fps"
-    print -P -- "%F{cyan}>> 出力フレームレート: ${validated}fps (ソースfps取得失敗)%f"
+    print -r -- "${_C_CYAN}>> 出力フレームレート: ${validated}fps (ソースfps取得失敗)${_C_OFF}"
   fi
   return 0
 }
@@ -199,7 +200,7 @@ __av1ify_decide_denoise() {
   [[ -n "$preset" ]] || return 0
   __AV1IFY_R_DENOISE_VF="${preset%% *}"
   __AV1IFY_R_DENOISE_TAG="${preset##* }"
-  print -P -- "%F{cyan}>> ノイズ除去: $1 (${__AV1IFY_R_DENOISE_VF})%f"
+  print -r -- "${_C_CYAN}>> ノイズ除去: $1 (${__AV1IFY_R_DENOISE_VF})${_C_OFF}"
 }
 
 # 内部補助: ソースの matrix_coefficient が Identity (ffprobe 表記 "gbr") かを判定する
@@ -232,14 +233,14 @@ __av1ify_decide_color_tags() {
 
   if [[ "$mode" == "bt709" ]]; then
     REPLY="bt709"
-    print -P -- "%F{cyan}>> 色空間: matrix を bt709 へ強制上書き (--color-tags bt709)%f"
+    print -r -- "${_C_CYAN}>> 色空間: matrix を bt709 へ強制上書き (--color-tags bt709)${_C_OFF}"
     return 0
   fi
 
   # auto: Identity (gbr) のときだけ補正する
   if __av1ify_source_has_identity_matrix "$in"; then
     REPLY="bt709"
-    print -P -- "%F{yellow}>> 色空間: ソースの matrix_coefficient が Identity (gbr) のため bt709 へ補正 (出力は yuv420p のため Identity は不正)%f"
+    print -r -- "${_C_YELLOW}>> 色空間: ソースの matrix_coefficient が Identity (gbr) のため bt709 へ補正 (出力は yuv420p のため Identity は不正)${_C_OFF}"
   fi
   return 0
 }
@@ -275,7 +276,7 @@ __av1ify_auto_crf() {
     else
       crf=54   # 4K以上
     fi
-    print -P -- "%F{cyan}>> 解像度: ${height_for_crf}p → CRF=$crf を自動設定%f"
+    print -r -- "${_C_CYAN}>> 解像度: ${height_for_crf}p → CRF=$crf を自動設定${_C_OFF}"
     REPLY="$crf"
   else
     REPLY=40   # デフォルト
@@ -685,11 +686,11 @@ __av1ify_one() {
   local _health_rc=$?
   if (( _health_rc == 1 )); then
     if (( __AV1IFY_FORCE )); then
-      print -P -- "⚠️ %F{yellow}%B健全性チェック警告（--force で続行）%b%f: ${in:t}" >&2
-      print -P -- "   %F{yellow}$REPLY%f" >&2
+      print -r -- "⚠️ ${_C_YELLOW}${_C_BOLD}健全性チェック警告（--force で続行）${_C_NOBOLD}${_C_OFF}: ${in:t}" >&2
+      print -r -- "   ${_C_YELLOW}$REPLY${_C_OFF}" >&2
     else
-      print -P -- "❌ %F{red}%B入力ファイルが破損しています%b%f: ${in:t}" >&2
-      print -P -- "   %F{red}$REPLY%f" >&2
+      print -r -- "❌ ${_C_RED}${_C_BOLD}入力ファイルが破損しています${_C_NOBOLD}${_C_OFF}: ${in:t}" >&2
+      print -r -- "   ${_C_RED}$REPLY${_C_OFF}" >&2
       print -r -- "   → エンコードをスキップします（--force で強制続行可能）" >&2
       __AV1IFY_LAST_NG_REASON="入力ファイル破損: $REPLY"
       return 1
@@ -732,13 +733,13 @@ __av1ify_one() {
       aac_params_available=0
     elif (( src_sample_rate < aac_max_ar )); then
       aac_ar="$src_sample_rate"
-      print -P -- "%F{yellow}>> 音声: ソースが ${src_sample_rate}Hz のため ${aac_max_ar}Hz へのアップスケールをスキップ%f"
+      print -r -- "${_C_YELLOW}>> 音声: ソースが ${src_sample_rate}Hz のため ${aac_max_ar}Hz へのアップスケールをスキップ${_C_OFF}"
     fi
     if [[ -z "$src_channels" || ! "$src_channels" =~ ^[0-9]+$ ]]; then
       aac_params_available=0
     elif (( src_channels < aac_max_ac )); then
       aac_ac="$src_channels"
-      print -P -- "%F{yellow}>> 音声: ソースが mono のためステレオへのアップスケールをスキップ%f"
+      print -r -- "${_C_YELLOW}>> 音声: ソースが mono のためステレオへのアップスケールをスキップ${_C_OFF}"
     fi
   fi
 
@@ -811,7 +812,7 @@ __av1ify_one() {
 
   if [[ -z "$acodec" ]]; then
     args_audio=(-an)
-    print -P -- "%F{cyan}>> 音声: なし（-an）%f"
+    print -r -- "${_C_CYAN}>> 音声: なし（-an）${_C_OFF}"
   else
     local desired_abitrate="${AV1_AAC_BITRATE:-96k}"
     __av1ify_decide_audio_action "$in" "$use_copy" "$desired_abitrate"
@@ -820,7 +821,7 @@ __av1ify_one() {
     if (( ! __AV1IFY_R_AUDIO_REENCODE )); then
       args_audio=(-map "0:a:0?" -c:a copy)
       audio_used_copy=1
-      print -P -- "%F{cyan}>> 音声: copy (codec=$acodec, ${audio_reason})%f"
+      print -r -- "${_C_CYAN}>> 音声: copy (codec=$acodec, ${audio_reason})${_C_OFF}"
     elif (( ! aac_params_available )); then
       # 再エンコードしたいがサンプルレート/チャンネル数が取れない。copy へ退避し、
       # 出力名に auderr タグを付けて「判定できなかった」ことを残す。
@@ -834,12 +835,12 @@ __av1ify_one() {
       local src_abitrate_raw="$__AV1IFY_R_AAC_SRC_BPS"
       if [[ -n "$src_abitrate_raw" ]]; then
         if (( __AV1IFY_R_AAC_CAPPED )); then
-          print -P -- "%F{cyan}>> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps, アップスケール防止)%f"
+          print -r -- "${_C_CYAN}>> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps, アップスケール防止)${_C_OFF}"
         else
-          print -P -- "%F{cyan}>> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps, ${audio_reason})%f"
+          print -r -- "${_C_CYAN}>> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps, ${audio_reason})${_C_OFF}"
         fi
       else
-        print -P -- "%F{cyan}>> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec, ビットレート不明)%f"
+        print -r -- "${_C_CYAN}>> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec, ビットレート不明)${_C_OFF}"
       fi
       args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac "$aac_ac" -ar "$aac_ar")
       did_aac=1
@@ -855,7 +856,7 @@ __av1ify_one() {
     "$did_aac" "$aac_bitrate_resolved" "$audio_param_error"
   local final_out="$REPLY"
 
-  print -P -- "%F{cyan}>> 映像: $vcodec (crf=$crf, preset=$preset)%f"
+  print -r -- "${_C_CYAN}>> 映像: $vcodec (crf=$crf, preset=$preset)${_C_OFF}"
   print -r -- ">> 出力(処理中マーカー): $tmp"
   __AV1IFY_CURRENT_TMP="$tmp"
 
@@ -883,8 +884,8 @@ __av1ify_one() {
     if [[ -z "$color_tag_override" ]] && __av1ify_source_has_identity_matrix "$in"; then
       __AV1IFY_CURRENT_TMP=""
       print -r -- "❌ 失敗: $in"
-      print -P -- "%F{yellow}   ソースの色空間 matrix が Identity (gbr) のため、エンコーダが初期化を拒否した可能性が高いです%f"
-      print -P -- "%F{yellow}   → --color-tags bt709 を付けて再実行してください%f"
+      print -r -- "${_C_YELLOW}   ソースの色空間 matrix が Identity (gbr) のため、エンコーダが初期化を拒否した可能性が高いです${_C_OFF}"
+      print -r -- "${_C_YELLOW}   → --color-tags bt709 を付けて再実行してください${_C_OFF}"
       __AV1IFY_LAST_NG_REASON="色空間 matrix が Identity (gbr) でエンコーダが拒否 (--color-tags bt709 で回避可能)"
       return 1
     fi

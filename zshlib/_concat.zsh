@@ -8,6 +8,8 @@
 #   _concat.zsh (本ファイル) — concat() エントリポイント
 # shellcheck disable=SC1091
 source "${0:A:h}/_concat_helpers.zsh"
+# shellcheck disable=SC1091
+source "${${(%):-%x}:A:h}/_ansi_colors.zsh"
 
 concat() {
   if [[ "$1" == "-h" || "$1" == "--help" ]]; then
@@ -347,17 +349,19 @@ EOF
     fi
 
     if (( ${#mismatched_files[@]} > 0 )); then
-      print -P -- "\n%F{red}%B❌ エラー: time_base不一致%b%f" >&2
-      print -P -- "%F{red}無劣化結合すると再生が破損します%f\n" >&2
+      print -ru2 -- ""
+      print -r -- "${_C_RED}${_C_BOLD}❌ エラー: time_base不一致${_C_NOBOLD}${_C_OFF}" >&2
+      print -r -- "${_C_RED}無劣化結合すると再生が破損します${_C_OFF}" >&2
+      print -ru2 -- ""
       for ((i=1; i<=${#input_files[@]}; i++)); do
         if [[ "${tb_list[$i]}" == "$target_tb" ]]; then
-          print -P -- "  %F{cyan}${input_files[$i]:t}%f: %F{green}${tb_list[$i]}%f" >&2
+          print -r -- "  ${_C_CYAN}${input_files[$i]:t}${_C_OFF}: ${_C_GREEN}${tb_list[$i]}${_C_OFF}" >&2
         else
-          print -P -- "  %F{cyan}${input_files[$i]:t}%f: %F{yellow}${tb_list[$i]}%f" >&2
+          print -r -- "  ${_C_CYAN}${input_files[$i]:t}${_C_OFF}: ${_C_YELLOW}${tb_list[$i]}${_C_OFF}" >&2
         fi
       done
       print "" >&2
-      print -P -- "%F{white}%B修復方法 (高分解能側 ${target_tb} に揃える):%b%f" >&2
+      print -r -- "${_C_WHITE}${_C_BOLD}修復方法 (高分解能側 ${target_tb} に揃える):${_C_NOBOLD}${_C_OFF}" >&2
       for file in "${mismatched_files[@]}"; do
         print -r -- "  repair-mp4-timebase ${target_timescale} \"${file}\"" >&2
       done

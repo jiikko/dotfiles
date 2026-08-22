@@ -134,10 +134,54 @@ print -r -- "${_C_GREEN}✅ 完了: ${final_out}${_C_OFF}"
   ことまで確認している (単独 attribution 済み)
 - 表示は置換後 (`evilfile-enc.mp4`) になるため、画面からは何も起きていないように読める
 
-つまり本 issue が open の間は、**「一覧を目で確認して y を押す」という動作自体が実行の
-トリガ**になる。Test 7 の assert 名は「一覧表示では実行しない」に狭めてあり、承認後の
+この経路は本 issue の対応 (下記) で閉じた。対応前は**「一覧を目で確認して y を押す」
+という動作自体が実行のトリガ**だった。Test 7 の assert 名は「一覧表示では実行しない」に狭めてあり、承認後の
 経路は本 issue の管轄であることをテスト内コメントに明記した (誤読防止)。
 
 修正時の注意: 対策は「色を先に解決し、データは `print -r` で出す」形。`_av1ify_encode.zsh`
 に 24 件、`zshlib` 全体で 37 件ある。クリップボード経路の完了ログ (`:68`) は untrusted 入力が
 最短で届く場所なので、部分修正するならここが最優先。
+
+## 対応 (2026-08-22 完了)
+
+**構造で潰した**: 色を 1 度だけ ANSI へ解決する共通パレット `zshlib/_ansi_colors.zsh` を作り、
+データは `print -r --` で出す形に全件移した。`print -P` にデータを埋めた行は production から
+消えた (残っているのはテストの陽性対照のみ)。
+
+| ファイル | 変換した行 |
+|---|---|
+| `zshlib/_av1ify_encode.zsh` | 22 |
+| `zshlib/_av1ify.zsh` | 6 (うち 3 はクリップボード確認の追加分) |
+| `zshlib/_concat.zsh` | 3 |
+| `zshlib/_repair_mp4_timebase.zsh` | 3 |
+| `zshlib/_video_health.zsh` | 3 |
+
+副産物:
+- `_video_health.zsh` の `${line//\%/%%}` (% 畳み) が不要になった。prompt 展開を通さないので
+  畳む理由が消えた
+- `print -P` の展開器呼び出しが production から消えた (37 回分)
+- `%F{${sum_color}}` のように実行時に色を選ぶ箇所は `${_C[$sum_color]}` (色名引き) にした
+
+### 検証
+
+- パレットの各値が `print -P` の出力バイトと一致することを pin
+  (`tests/zshrc/test_print_p_injection.sh`)。`%b` は全属性リセット `ESC[0m` で、従来の
+  `print -P` と同じ挙動
+- 実際の出力バイトが変換前と一致することを確認 (`print -r -- "${_C_GREEN}...${_C_OFF}"` と
+  `print -P -- "%F{green}...%f"` を cat -v で突き合わせ)
+- 実経路テスト `tests/zshrc/av1ify/test_av1ify_injection.sh`: 名前に `$(touch pwned)` を含む
+  ファイルを変換 / 元ファイル削除 / 健全性チェック警告 (--force) の 3 経路に通し、
+  `pwned` が作られないこと・名前が字のまま出ることを assert。**陽性対照**として
+  「`print -P` にデータを埋めれば実際に作られる」も同じテスト内で確認 (検出器が生きている証拠)
+- 静的検査: `zshlib/*.zsh` に「変数を埋めた `print -P`」が残っていないことを検査
+  (コメント行は除外)。実行時テストは経路ごとにしか書けないので、再発の入口を塞ぐ側も置いた
+- 変異 5 本で red を確認: 完了ログ / 削除ログ / 警告ログを `print -P` へ戻す (実経路テストが
+  pwned 生成で検出) / 任意の 1 行を戻す (静的検査が検出) / パレットの色をずらす (pin が検出)
+- `make test` 全 green (shellcheck・zsh -n 含む)
+
+### 残した判断
+
+- `zshlib/_git_prompt.zsh` の `print -P` は**変更しない**。あちらは値を先に展開せず
+  prompt 展開に参照として渡す安全形 (issue 086 で反証済み) で、`tests/zshrc/test_git_prompt.sh`
+  がその配線を pin している
+- クリップボード経路 (issue 094 / 095) からの実行トリガも同時に閉じた

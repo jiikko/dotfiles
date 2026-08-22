@@ -90,6 +90,6 @@ drain を `read -t 0` で実装し、パイプで「溜めた入力が捨てら�
 
 ## 残課題
 
-- issue 089（`print -P` の 37 行）は open のまま。クリップボード経路は untrusted 入力が
-  最短で届くので、部分修正するなら `_av1ify_encode.zsh:68` が最優先（089 に記載済み）
+- ~~issue 089（`print -P` の 37 行）~~ → 2026-08-22 に全件対応して done へ移した
+  （共通パレット `zshlib/_ansi_colors.zsh` + `print -r`。承認後の実行トリガも閉じた）
 - 094 の人手確認（実運用での貼り付け確認）は open

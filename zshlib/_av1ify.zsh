@@ -96,6 +96,8 @@ __av1ify_on_interrupt() {
 # shellcheck disable=SC1091
 source "${0:A:h}/_video_health.zsh"
 # shellcheck disable=SC1091
+source "${0:A:h}/_ansi_colors.zsh"
+# shellcheck disable=SC1091
 source "${0:A:h}/_av1ify_postcheck.zsh"
 # shellcheck disable=SC1091
 source "${0:A:h}/_av1ify_encode.zsh"
@@ -133,14 +135,14 @@ __av1ify_resolve_resolution() {
   done
 
   if (( ${#matches[@]} == 1 )); then
-    print -P -- "%F{cyan}>> 解像度 '${input}' → ${matches[1]} に解決しました%f"
+    print -r -- "${_C_CYAN}>> 解像度 '${input}' → ${matches[1]} に解決しました${_C_OFF}"
     REPLY="${matches[1]}"
     return 0
   fi
 
   if (( ${#matches[@]} > 1 )); then
     # shellcheck disable=SC2296
-    print -P -- "%F{cyan}>> 解像度 '${input}' → ${matches[1]} に解決しました (候補: ${(j:, :)matches})%f"
+    print -r -- "${_C_CYAN}>> 解像度 '${input}' → ${matches[1]} に解決しました (候補: ${(j:, :)matches})${_C_OFF}"
     REPLY="${matches[1]}"
     return 0
   fi
@@ -292,7 +294,7 @@ __av1ify_targets_from_clipboard() {
 
   # ⚠️ 一覧と確認プロンプトは stderr へ出す。stdout だと `av1c > log` で
   # 「端末には何も出ないまま入力待ち」になる (バナーも stderr で統一されている)。
-  print -Pu2 -- "%F{cyan}>> 引数がないためクリップボードから読み取りました (${#lines[@]} 行)%f"
+  print -ru2 -- "${_C_CYAN}>> 引数がないためクリップボードから読み取りました (${#lines[@]} 行)${_C_OFF}"
   # ⚠️ パスの表示に print -P を使わないこと。prompt 展開はファイル名に含まれる $(...) を
   # 実行する (issue 089)。クリップボードは貼り付けミス由来の信頼できない文字列なので、
   # ここは常に print -r -- で出す。
@@ -334,12 +336,12 @@ __av1ify_targets_from_clipboard() {
   (( ${#missing[@]} > 0 )) && sum_color="yellow"
   local total=$(( file_count + expanded ))
   if (( dir_count > 0 )); then
-    print -Pu2 -- "%F{${sum_color}}== 対象 ${#__AV1IFY_CLIP_TARGETS[@]}行 → 処理するファイル ${total}件 (ファイル ${file_count} + ディレクトリ ${dir_count}行の配下 ${expanded}) / 除外 ${#missing[@]}行%f"
+    print -ru2 -- "${_C[$sum_color]}== 対象 ${#__AV1IFY_CLIP_TARGETS[@]}行 → 処理するファイル ${total}件 (ファイル ${file_count} + ディレクトリ ${dir_count}行の配下 ${expanded}) / 除外 ${#missing[@]}行${_C_OFF}"
   else
-    print -Pu2 -- "%F{${sum_color}}== 対象 ${total}件 / 除外 ${#missing[@]}件%f"
+    print -ru2 -- "${_C[$sum_color]}== 対象 ${total}件 / 除外 ${#missing[@]}件${_C_OFF}"
   fi
   if (( __AV1IFY_DELETE_ORIGIN )); then
-    print -Pu2 -- "%F{red}⚠️ 変換に成功したファイルは元ファイルをゴミ箱へ移します (av1c / --delete-origin-if-success-and-no-ng)%f"
+    print -ru2 -- "${_C_RED}⚠️ 変換に成功したファイルは元ファイルをゴミ箱へ移します (av1c / --delete-origin-if-success-and-no-ng)${_C_OFF}"
   fi
 
   # 破壊的な確認の前に先行入力を捨てる。stdin が端末でないとき (テスト等) は
@@ -402,7 +404,7 @@ __av1ify_run_batch() {
   # 視認性: NG が無ければ緑 (= 全部 OK で安心), NG があれば黄 (= 下の一覧確認)
   local sum_color="green"
   (( ng > 0 )) && sum_color="yellow"
-  print -P -- "%F{${sum_color}}== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))%f"
+  print -r -- "${_C[$sum_color]}== サマリ: OK=$ok / NG=$ng / ALL=$((ok+ng))${_C_OFF}"
   if (( ng > 0 )); then
     print -r -- "── NG 一覧 (${ng}件) ──"
     local entry f r
@@ -604,7 +606,7 @@ av1ify() {
 
   if (( ! __av1ify_internal )) && (( ! show_help )) && (( have_targets || use_clipboard )); then
     if (( opt_compact )); then
-      print -P -- "%F{cyan}>> compact モード: -r ${opt_resolution} --fps ${opt_fps}%f"
+      print -r -- "${_C_CYAN}>> compact モード: -r ${opt_resolution} --fps ${opt_fps}${_C_OFF}"
     fi
   fi
 

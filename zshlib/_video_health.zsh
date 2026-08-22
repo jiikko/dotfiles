@@ -4,6 +4,8 @@
 # ffprobe 単一フィールド取得は共通ヘルパーを使う (テストが本ファイルを単体 source するため自己 source)
 # shellcheck disable=SC1091,SC2296,SC2298  # zsh 固有の自ファイルパス展開 (shellcheck は解析不可)
 source "${${(%):-%x}:A:h}/_ffprobe_helpers.zsh"
+# shellcheck disable=SC1091
+source "${${(%):-%x}:A:h}/_ansi_colors.zsh"
 # ------------------------------------------------------------------------------
 # video_health — 動画ファイルの健全性チェック（time_base破損検出など）
 # ------------------------------------------------------------------------------
@@ -186,13 +188,13 @@ EOF
     __video_health_check "$f"
     local rc=$?
     if (( rc == 0 )); then
-      print -P -- "✅ %F{green}正常: ${f:t}%f"
+      print -r -- "✅ ${_C_GREEN}正常: ${f:t}${_C_OFF}"
       ((ok++))
     elif (( rc == 1 )); then
-      print -P -- "❌ %F{red}%B${f:t}%b%f" >&2
+      print -r -- "❌ ${_C_RED}${_C_BOLD}${f:t}${_C_NOBOLD}${_C_OFF}" >&2
       local line
       while IFS= read -r line; do
-        print -P -- "   %F{red}${line//\%/%%}%f" >&2
+        print -r -- "   ${_C_RED}${line}${_C_OFF}" >&2
       done <<< "$REPLY"
       ((ng++))
     else
