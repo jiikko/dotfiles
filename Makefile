@@ -265,7 +265,7 @@ test-lint: test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json t
 # 各 src_*.yml は再利用 workflow _go-project.yml を呼ぶだけの薄い caller。
 # どちらも Go 未インストール環境では skip する。Go プロジェクトを追加したら
 # ①各プロジェクトに Makefile (lint/test) ②ここへ列挙 ③src_<project>.yml (caller) を作る、の 3 点セット。
-GO_PROJECT_DIRS := src/parallel-each src/glogx src/disassemble_excel
+GO_PROJECT_DIRS := src/parallel-each src/glogx src/disassemble_excel src/lockman
 
 test-go-lint:
 	@if command -v go >/dev/null 2>&1; then \
