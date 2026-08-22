@@ -10,120 +10,240 @@
 そのディレクトリは **SMB 経由で複数マシンから参照する**ため、マシンローカルの排他
 (pid ベースの生存判定・`flock`) では届かない。
 
-shell スクリプトの中から
+shell スクリプトの中から呼んで「取るか / スキップするか」を判断したい:
 
 ```sh
-if ! lockman check "$dir"; then
-  echo "他のプロセスが使用中なのでスキップ" >&2
-  exit 0
+if lockman acquire "$dir" --ttl 5m --token-file "$tok"; then
+  trap 'lockman release "$dir" --token-file "$tok"' EXIT
+  ...                       # 排他区間
+else
+  [ $? -eq 3 ] && { echo "他が使用中なのでスキップ" >&2; exit 0; }
+  exit 1
 fi
 ```
 
-のように呼んで、**取るか / スキップするか**を判断したい。lock のメタデータは対象
-ディレクトリ自身に置けば、SMB 越しに全マシンから同じものが見える。
-
 ## 不変条件 (これを壊す実装は不可)
 
-1. **排他区間は同時に 1 つ** — `acquire` が成功した holder が 2 つ同時に存在しない
+1. **排他区間は同時に 1 つ** — `acquire` が成功した holder が 2 つ同時に存在しない。
+   **同時に叩いたら必ず片方が落ちる** (exit 3)
 2. **持ち主だけが解放できる** — 他プロセス／他マシンの lock を消さない (トークン照合)
 3. **holder が死んでもいずれ解放される** — クラッシュ・電源断・ネットワーク断で永久
    wedge しない (TTL + 更新)
-4. **判定不能を「空いている」に倒さない** — メタが壊れている・読めない・時刻が取れない
-   ときは busy 側 (fail-closed) に倒し、理由を stderr に出す
-5. **副作用は対象ディレクトリのメタだけ** — 中身のファイルには触らない
+4. **判定不能を「空いている」に倒さない** — メタが壊れている・読めない・サーバ時刻が
+   取れないときは busy 側 (fail-closed) に倒し、理由を stderr に出す
+5. **副作用は `.lockman/` 配下だけ** — 対象ディレクトリの中身には触らない
 
-## SMB という前提が課す制約 (設計の中心)
+## ロックの実体 — どこに何を置くか
 
-**厳密な相互排除は約束できない。lockman は advisory lease として設計する。**
-これを CLI の `--help` と README に明記し、過度な期待を持たせないこと。
+対象ディレクトリ直下の `.lockman/` に置く (SMB 越しに全マシンから同じものが見えるため。
+`--meta-dir` で外へ逃がせるようにする: 対象を rsync / バックアップする用途だと混ざる)。
 
-- `flock(2)` / `fcntl` byte-range lock は SMB マウントでは実装依存 (macOS smbfs と
-  Linux cifs で挙動が違う。マウントオプションで無効化されることもある) → **使わない**
-- 排他の原語には `O_CREAT|O_EXCL` でのファイル作成、または `mkdir` を使う (SMB2 の
-  create disposition にマップされ、実用上は原子的)。ただし再送・クライアントキャッシュ
-  由来の「成功したのに失敗が返る」ケースが理論上ある → **取得後に読み直して自分の
-  トークンが入っていることを確認する** (write-then-verify)
-- 上書き `rename` の原子性は期待しない
-- **時計ずれ**: TTL 判定を各マシンのローカル時計で行うと、ずれた分だけ「まだ生きている
-  lock を stale と誤判定」する。対策は共有ストレージ側の時刻を基準にすること
-  (メタディレクトリに一時ファイルを作って mtime を読み、サーバ時刻を得る)。
-  この補正が入っているかを必ずテストで固定する
-- **pid による生存判定は使えない** (別マシンの pid は意味がない)。生存は「TTL 内に
-  更新されているか」だけで判断する
+```
+<dir>/.lockman/
+├── lock                     # ★ これの存在 = ロック中。存在そのものが排他の本体
+├── tmp/<token>.json         # 書きかけの置き場 (acquire 中のみ。原子的に消える)
+└── probe/<token>            # サーバ時刻を得るための使い捨て (作って stat して即消す)
+```
+
+**`lock` の中身 (JSON、取得時に 1 度書いたら二度と書き換えない)**:
+
+```json
+{
+  "token":       "01J...ULID",        // 持ち主の証明。release/renew はこれで照合
+  "host":        "mba.local",
+  "boot_id":     "…",                  // 同一マシン判定に使う (pid の再利用よけ)
+  "pid":         12345,                // 同一マシンのときだけ生存判定に使う
+  "user":        "koji",
+  "label":       "import",             // 人間が原因を追うため
+  "ttl_seconds": 300,
+  "acquired_at": "2026-08-22T05:40:00Z", // サーバ時刻。診断用
+  "version":     "lockman/1"
+}
+```
+
+**判定に使うものを 1 つに絞る (二重管理を作らない)**:
+
+| 知りたいこと | 唯一の出典 |
+|---|---|
+| ロック中か | `lock` が存在するか |
+| 持ち主か | `lock` の `token` |
+| 生きているか | **`lock` の mtime** (サーバが打刻) と `ttl_seconds` |
+
+- 中身に `expires_at` を**持たせない**。「中身の期限」と「mtime」の 2 出典があると、
+  片方だけ更新する実装が生まれて無音で drift する
+  ([068](done/068-bug-snapshot-health-lock-owner-format-drift.md) がまさにこれ)
+- **`renew` は `utimes` を使わない**。`utimes` はクライアントの時計を書き込むので、
+  時計ずれがそのまま混入する。**同じ内容を書き直してサーバに mtime を打刻させる**
+- ⚠️ 打刻したのが本当にサーバかを **renew のたびに検算する**: 書き直した後の mtime と
+  `server_now()` の差が許容 (数秒) を超えていたら、クライアント側が時刻を書いている
+  証拠なのでエラーにする。黙って時計ずれを飲むと、TTL 判定が静かに壊れる
+
+## 排他の強度をどう上げるか (ここが設計の中心)
+
+### 使える原語 / 使えない原語
+
+- ❌ `flock(2)` / `fcntl` byte-range lock を**単独の根拠にしない**。SMB マウントでは
+  実装依存で、`nobrl` でマウントされると黙って無効化される
+- ❌ **上書き `rename`** (ReplaceIfExists=true) は原子性を期待しない
+- ✅ **`O_CREAT|O_EXCL` のファイル作成**。SMB2 の create disposition `FILE_CREATE` に
+  対応し、**判定はサーバが行う**。これが唯一まともに信頼できる原語
+- ✅ **存在しない名前への `rename`** (ReplaceIfExists=false)。勝つのは 1 つだけ
+
+### acquire (新規取得) — 単一の原子操作で勝敗を決める
+
+```
+A. tmp/<token>.json に中身を書ききって fsync
+B. link(tmp/<token>.json, lock)          ← 存在すれば失敗する原子操作。勝者は 1 人
+   ・SMB2 の FILE_LINK_INFORMATION (ReplaceIfExists=false) に対応する
+   ・利点: lock は「最初から中身が入った状態」で現れる (途中経過が他者に見えない)
+   ・EOPNOTSUPP / EPERM / ENOSYS で落ちる実装があるので下の C へフォールバック
+C. (フォールバック) open("lock", O_CREAT|O_EXCL) → 中身を書く → fsync → close
+D. lock を開き直して読み、token が自分か確認する (write-then-verify)
+   → 違えば「負けた」として exit 3。自分は何も消さない
+E. tmp/<token>.json を消す
+```
+
+C のフォールバックでは「作られたが中身がまだ空」の瞬間が他者から見えうる。**読み手は
+空・壊れた lock を「壊れているから無視してよい」と解釈してはならない**。短い間隔で数回
+読み直し、それでも読めなければ **busy として扱う** (fail-closed)。
+
+**「読んでから書く」を絶対に作らない**。`check` して空いていたから `acquire`、は 2 操作
+なので必ず割り込まれる。勝敗は手順 B (無理なら C) の 1 回のシステムコールだけで決まる。
+
+再送で「作れたのに衝突が返る」ことは理論上あるが、その向きは**自分が負けたと誤認する**
+(= スキップする) 側なので安全。逆向き (二重成功) はサーバが許さない。
+
+### stale の引き継ぎ — ここが一番壊れやすい
+
+期限切れを見つけた 2 者が「消して作り直す」と**両方が勝つ**。消してから作るのは禁止。
+
+```
+1. server_now() - mtime(lock) > ttl_seconds なら期限切れ候補
+2. rename(lock, graveyard/<自分の token>) を試す   ← 存在しない名前へ。勝者は 1 人
+   - 失敗 (source が無い) = 他者が先に引き継いだ → exit 3
+3. rename に勝った者だけが acquire の手順を最初からやる (O_EXCL で作る)
+4. graveyard/<token> は勝者が消す。残っても次回の acquire の判定に影響しない
+```
+
+引き継ぎ判定の**手前で mtime を読み直す** (rename の直前にもう一度確認する) ことで、
+「読んだ後に holder が renew した」窓を縮める。それでも残る窓は手順 2 の rename が
+1 人しか勝てないことで吸収される。
+
+### 時計ずれを排除する
+
+TTL 判定に**ローカルの時計を使わない**。マシン間で数十秒ずれると、生きている lock を
+stale と誤判定して二重実行に直結する。
+
+```
+server_now() := probe/<uuid> を作る → その mtime を読む → 消す
+```
+
+サーバが打刻した時刻同士 (probe の mtime と lock の mtime) を比べるので、どのマシンから
+見ても同じ判定になる。**probe が作れない / mtime が取れないときは判定不能 = busy に倒す**。
+
+### クライアントキャッシュへの対処
+
+SMB クライアントは属性とディレクトリ一覧をキャッシュする (Linux cifs の `actimeo` 既定
+1 秒、macOS smbfs も同程度)。つまり「他マシンが 1 秒前に作った lock がまだ見えない」
+ことがある。マウントオプションは lockman からは制御できないので、次で吸収する:
+
+- **判定は必ず `lock` を直接 open して行う**。ディレクトリ一覧 (readdir) に依存しない
+  (一覧のキャッシュのほうが遅れが大きい)
+- **TTL に下限を設ける**。キャッシュの遅れより十分大きくないと stale 判定が事故になる。
+  既定 5 分・**下限 30 秒**とし、それ未満は警告ではなく**エラーで拒否**する
+- 逆に「取得できたか」はキャッシュの影響を受けない (サーバが判定するため)
+
+### 二重の壁 (`with` のときだけ)
+
+`lockman with` は自分がプロセスとして生き続けるので、`lock` のファイルハンドルを開いた
+まま保持し、**追加で** `fcntl` write lock を試みる。効く環境ではもう 1 枚壁が増え、
+効かない環境では黙って無視する。**単独の根拠にはしない**ので、無効化されていても
+安全性は O_EXCL の側で担保される。
+
+### holder 自身が「失った」ことに気づけるようにする
+
+lease である以上、TTL 切れで他者に引き継がれることがある。`renew` は自分の token が
+まだ `lock` にあるか照合し、無ければ **exit 4** を返す。`with` は
+`--on-lost=kill|warn` (既定 `kill`) で子プロセスを止められるようにする。
 
 ## CLI インターフェース案
 
 ```
-lockman acquire <dir> [--ttl 10m] [--wait 30s] [--label "backup"] [--json]
-lockman release <dir> [--token <t>]
-lockman renew   <dir> [--token <t>] [--ttl 10m]
-lockman check   <dir> [--json]          # 取得せずに空きかどうかだけ見る
-lockman status  <dir> [--json]          # 誰が・いつから・いつ切れるか
-lockman with    <dir> [--ttl] -- <cmd> [args...]   # 取得 → 実行 → 確実に解放
+lockman acquire <dir> [--ttl 5m] [--wait 0s] [--label ...] [--token-file F] [--json]
+lockman release <dir> --token-file F | --token T
+lockman renew   <dir> --token-file F | --token T [--ttl 5m]
+lockman check   <dir> [--json]          # 参考値。これで分岐しても排他にはならない
+lockman status  <dir> [--json]          # 誰が・いつから・あと何秒
+lockman with    <dir> [--ttl 5m] [--on-lost kill] -- <cmd> [args...]
 ```
 
 **exit code が実質的な API** (shell から `if` / `case` で分岐するため):
 
 | code | 意味 |
 |---|---|
-| 0 | 成功 (acquire: 取得できた / check: 空いている) |
-| 3 | **他者が保持中** (これは「異常」ではない。スキップの合図) |
-| 4 | 保持者が自分ではない (release/renew の対象違い) |
-| 1 | エラー (I/O・権限・メタ破損・判定不能) |
+| 0 | 成功 (acquire: 取得できた / check: 空いていた) |
+| 3 | **他者が保持中** (異常ではない。スキップの合図) |
+| 4 | 持ち主ではない (release/renew の対象違い / lease を失った) |
+| 1 | エラー (I/O・権限・メタ破損・サーバ時刻が取れない = 判定不能) |
 
-- `acquire` は成功時に **トークンを stdout に 1 行**出す。`--json` で機械可読
-- 人間向けメッセージは stderr。stdout は機械が読む面に保つ
-- **`with` を主用途として推し、`acquire` + 手書き `trap` は逃げ道に留める**
-  (shell の `trap` は `set -e` / サブシェル / kill -9 で簡単に漏れる。解放漏れは
-  「TTL 切れまで全マシンが止まる」形で効くので、構造で防ぐ)
-
-## メタデータ
-
-- 置き場所: `<dir>/.lockman/` (既定)。`--meta-dir` で対象外へ逃がせるようにする
-  (対象ディレクトリを rsync / バックアップする用途だと lock ファイルが混ざるため。
-  除外パターンを README に書く)
-- 内容 (JSON): `token` (UUID) / `host` / `user` / `pid` (診断用。判定には使わない) /
-  `acquired_at` / `expires_at` / `ttl` / `label` / `lockman_version`
-- 判定に使うのは **token と expires_at だけ**。他は人間が原因を追うための情報
+- `--token-file` を主に使う (トークンを stdout 経由で受け渡すと、shell の変数展開や
+  ログ出力に混ざって漏れる)。`acquire` は成功時にトークンをこのファイルへ書く
+- 人間向けメッセージは stderr、機械が読む面は stdout / `--json` に保つ
+- **`with` を主用途として推す**。`acquire` + `trap` は `set -e`・サブシェル・`kill -9` で
+  簡単に漏れ、漏れると TTL 切れまで全マシンが止まる
+- **`check` は排他の根拠にならない**ことを `--help` に明記する。`check` → `acquire` は
+  2 操作なので必ず割り込まれる。保証があるのは `acquire` / `with` だけ
 
 ## 実装場所 — Go で `src/lockman` + `bin/lockman` ラッパを推す
 
-理由:
-
-- **複数 OS で同じ挙動が要る** (macOS と Linux の両方から同じ SMB 共有を触る)。
-  shell だと `stat` / `date` / `mktemp` の BSD・GNU 差を全部踏む
-  (このリポジトリで実際に何度も踏んでいる)
-- `O_CREAT|O_EXCL` / `fsync` / 書き込み後の読み直し検証を素直に書けるのは Go
+- **複数 OS で同じ挙動が要る** (macOS と Linux の両方から同じ共有を触る)。shell だと
+  `stat` / `date` / `mktemp` の BSD・GNU 差を全部踏む (このリポジトリで実際に何度も踏んだ)
+- `O_CREAT|O_EXCL` / `fsync` / 書き込み後の読み直し / 存在しない名前への rename を
+  素直に書けるのは Go
 - **shell で書くと race を作り込む**。既存の mkdir ベース lock は
   [078](078-refactor-resurrect-lock-owner-two-impls.md) のとおり owner 判定が 2 実装に
-  分裂しており、その drift が [068](done/068-bug-snapshot-health-lock-owner-format-drift.md)
-  の実バグになった。同じ轍を踏まない
-- `src/` に新規プロジェクトの規約 (Makefile の `lint`/`test` + root の `GO_PROJECT_DIRS`
-  登録 + `.github/workflows/src_lockman.yml` の 3 点セット) が既にある → [src/README.md](../src/README.md)
+  分裂し、その drift が [068](done/068-bug-snapshot-health-lock-owner-format-drift.md) の
+  実バグになった
+- `src/` に新規プロジェクトの 3 点セット規約がある → [src/README.md](../src/README.md)
 
-既存の tmux resurrect 系 lock との関係: **初版では統合しない**。あちらは
-「単一マシン・pid 生存ベース」で、lockman は「複数マシン・TTL ベース」と前提が違う。
-078 の重複解消は別軸として進め、lockman が実運用に耐えてから統合を検討する。
+既存の tmux resurrect 系 lock とは**初版では統合しない**。あちらは「単一マシン・pid 生存
+ベース」で前提が違う。lockman が実運用に耐えてから検討する。
 
 ## 検証計画
 
-ローカルで必ずやること:
+ローカル (同一マシン) で必ずやること:
 
-- N プロセス (16 並列程度) が同時に `acquire` → **成功したのはちょうど 1 つ**を固定
-- holder を `kill -9` → TTL 経過後に他プロセスが取れる / TTL 前は取れない
-- **時計ずれ**: 判定側の時計を前後にずらして、誤って stale 判定しないこと
-- メタが壊れている / 空 / 権限なし / ディスクフル → busy 側に倒れ、理由が stderr に出る
-- `release` に他者のトークンを渡す → 消さずに exit 4
-- `with` の子プロセスが異常終了・シグナル死しても解放される
+- **二重取得の検出**: 16 プロセスが同時に `acquire` → 成功はちょうど 1。さらに排他区間で
+  witness ファイルへ `開始/終了` を追記させ、**区間が重なっていないこと**を検査する
+  (「成功が 1 件」だけだと、引き継ぎ経路の二重取得を見逃す)
+- **stale 引き継ぎの競争**: 期限切れ lock を 16 プロセスが同時に見つける → 引き継ぎに
+  成功するのは 1 つだけ
+- **時計ずれ**: 判定側のローカル時計を前後にずらしても判定が変わらないこと
+  (ずらして結果が変われば、どこかでローカル時計を見ている証拠)
+- holder を `kill -9` → TTL 前は取れない / TTL 後は取れる
+- メタ破損・空ファイル・権限なし・`.lockman` 作成不可 → busy 側に倒れ理由が stderr に出る
+- `release` / `renew` に他者のトークン → 消さずに exit 4
+- `with` の子が異常終了・シグナル死しても解放される
+- **変異検証**: 「引き継ぎを rename でなく unlink → create に書き換える」変異を当てて、
+  上の競争テストが赤になることを確認する (赤にならないならテストが主張を守っていない)
 
-**実 SMB 越しの複数マシン検証は人間しかできない** → 実装後に `human` issue を切って
-「2 台から同時に叩いて片方だけが取れること」を確認してもらう。ローカル検証だけで
-「SMB でも安全」と書かないこと。
+**実 SMB 越しの複数マシン検証は人間しかできない** → 実装後に `human` issue を切り、
+2 台から同時に叩いて片方だけが取れること・キャッシュ遅延下でも二重取得が出ないことを
+確認してもらう。**ローカル検証だけで「SMB でも安全」と書かない**。
+
+## 正直に書いておく限界
+
+- SMB で使える最強の原語は Windows の **share mode (deny) open** だが、POSIX の
+  `open(2)` からは指定できず、Go からも届かない。よって lockman は **advisory lease**
+  であり、`.lockman/lock` を無視して直接ディレクトリを触るプロセスは止められない
+- サーバ・クライアントの実装差 (キャッシュ、再送、`nobrl`) を完全には潰せない。
+  TTL 下限と fail-closed は「潰しきれない分を安全側に倒す」ための設計
 
 ## 未決 (着手前にユーザー判断が要る)
 
-1. **shared (read) lock を持つか**。「参照中のマーク」を複数プロセスが同時に付けたい
-   のなら shared/exclusive の 2 種類が要る。初版は排他のみで足りるか
-2. メタの既定の置き場所は対象ディレクトリ直下 (`.lockman/`) でよいか
-3. `--wait` の既定 (待たずに即 exit 3 / 既定で少し待つ)
-4. 1 ディレクトリ 1 lock でよいか、サブキー (`lockman acquire <dir> --key import`) が要るか
+1. **shared (read) lock を持つか**。「参照中のマーク」を複数プロセスが同時に付けたいなら
+   排他/共有の 2 種類が要る (実装が一段複雑になる)。初版は排他のみで足りるか
+2. TTL の既定 5 分 / 下限 30 秒でよいか (下限は SMB のキャッシュ遅延より十分大きい必要がある)
+3. `--wait` の既定は「待たずに即 exit 3」でよいか
+4. 1 ディレクトリ 1 lock でよいか、サブキー (`--key import`) が要るか
+5. 対象が SMB 以外 (ローカル FS のみ) のときに速い経路へ落とす価値があるか
