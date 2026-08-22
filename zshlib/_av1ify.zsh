@@ -3,8 +3,8 @@
 # av1ify — 入力された動画ファイル、またはディレクトリ内の動画ファイルをAV1形式のMP4に一括変換します。
 # ------------------------------------------------------------------------------
 
-__AV1IFY_VERSION="1.8.0"
-__AV1IFY_SPEC_VERSION="1.8.0"
+__AV1IFY_VERSION="1.9.0"
+__AV1IFY_SPEC_VERSION="1.9.0"
 
 __av1ify_banner() {
   print -ru2 -- "av1ify v${__AV1IFY_VERSION} (spec: v${__AV1IFY_SPEC_VERSION})"
@@ -25,6 +25,8 @@ typeset -gi __AV1IFY_DELETE_ORIGIN=0
 typeset -g  __AV1IFY_LAST_NG_REASON=""
 # 走行中の prefetch (バックグラウンド先読み) の PID。中断時に __av1ify_kill_prefetches でまとめて掃除する。
 typeset -ga __AV1IFY_PREFETCH_PIDS=()
+# 引数なし呼び出しでクリップボードから読み取った処理対象 (__av1ify_targets_from_clipboard)
+typeset -ga __AV1IFY_CLIP_TARGETS=()
 
 # 内部補助: 次に処理予定のファイルを background で先読みし、
 # Dropbox / iCloud の File Provider materialize を現エンコード中に進めておく。
@@ -159,6 +161,98 @@ __av1ify_validate_fps() {
   local ok
   ok=$(awk -v fps="$fps" 'BEGIN { print (fps > 0 && fps <= 240) ? 1 : 0 }')
   (( ok ))
+}
+
+# 内部補助: stdin が TTY か (クリップボード読取りの発火ゲート)
+# 関数に切り出しているのはテストから差し替えるため。production 側に
+# 「テスト用の環境変数」を持ち込まずに seam を作る。
+__av1ify_stdin_is_tty() {
+  [[ -t 0 ]]
+}
+
+# 内部補助: 貼り付けられた 1 行を実パスへ解決する
+# 引数: $1 = クリップボードの 1 行
+# 出力: REPLY = 解決したパス (存在しない場合は整形だけした文字列)
+# 戻り値: 0=存在する, 1=存在しない/空行
+__av1ify_resolve_pasted_path() {
+  setopt LOCAL_OPTIONS extended_glob
+  local line="$1"
+  # 前後の空白 (CRLF の \r・タブを含む) を除去
+  line="${line##[[:space:]]##}"
+  line="${line%%[[:space:]]##}"
+  REPLY="$line"
+  [[ -z "$line" ]] && return 1
+  [[ -e "$line" ]] && return 0
+  # ターミナルへのドラッグ (`\ ` エスケープ) や引用符付きコピーを剥がして再試行する。
+  # (Q) は zsh のクォート 1 段を外すフラグで '...' / "..." / \x の全形に効き、
+  # 対応の取れないクォート (it's.mp4 等) は原文のまま返す (実測: rc=0)。
+  # shellcheck disable=SC2296
+  local unquoted="${(Q)line}"
+  if [[ -n "$unquoted" && "$unquoted" != "$line" && -e "$unquoted" ]]; then
+    REPLY="$unquoted"
+    return 0
+  fi
+  return 1
+}
+
+# 内部補助: クリップボードから処理対象を読み取り、内容を見せて確認を取る
+# 出力: __AV1IFY_CLIP_TARGETS に存在するパスを格納
+# 戻り値: 0=続行, 1=読み取り失敗/有効なパス 0 件, 130=ユーザーが中止
+__av1ify_targets_from_clipboard() {
+  __AV1IFY_CLIP_TARGETS=()
+  local clip
+  if ! clip="$(pbpaste 2>/dev/null)"; then
+    print -r -- "エラー: クリップボードの読み取りに失敗しました (pbpaste)" >&2
+    return 1
+  fi
+
+  # 1 行 1 パスとして扱う (-f リストと同じ規則)。ただし `#` 始まりはコメント扱いにしない:
+  # 貼り付け内容は「パスの列」であって注釈付きリストではなく、黙って消えるより
+  # 下の一覧に ✗ で出て気づける方が安全 (文字抜けの検出がこの機能の目的)。
+  local -a lines=() missing=()
+  local line
+  while IFS= read -r line; do
+    [[ -z "${line//[[:space:]]/}" ]] && continue
+    lines+=("$line")
+  done <<< "$clip"
+
+  if (( ${#lines[@]} == 0 )); then
+    print -r -- "エラー: クリップボードが空です (使い方は av1ify --help)" >&2
+    return 1
+  fi
+
+  print -P -- "%F{cyan}>> 引数がないためクリップボードから読み取りました (${#lines[@]} 行)%f"
+  # ⚠️ パスの表示に print -P を使わないこと。prompt 展開はファイル名に含まれる $(...) を
+  # 実行する (issue 089)。クリップボードは貼り付けミス由来の信頼できない文字列なので、
+  # ここは常に print -r -- で出す。
+  for line in "${lines[@]}"; do
+    if __av1ify_resolve_pasted_path "$line"; then
+      __AV1IFY_CLIP_TARGETS+=("$REPLY")
+      print -r -- "  ✓ $REPLY"
+    else
+      missing+=("$REPLY")
+      print -r -- "  ✗ $REPLY  (見つかりません → 除外)"
+    fi
+  done
+
+  if (( ${#__AV1IFY_CLIP_TARGETS[@]} == 0 )); then
+    print -r -- "エラー: クリップボードから有効なパスを読み取れませんでした (使い方は av1ify --help)" >&2
+    return 1
+  fi
+
+  local sum_color="green"
+  (( ${#missing[@]} > 0 )) && sum_color="yellow"
+  print -P -- "%F{${sum_color}}== 対象 ${#__AV1IFY_CLIP_TARGETS[@]}件 / 除外 ${#missing[@]}件%f"
+  print -n -- "これを入力にしますか? [y/N]: "
+  local ans=""
+  read -r ans || ans=""
+  case "${ans:l}" in
+    y|yes) return 0 ;;
+    *)
+      print -r -- "✋ 中止しました (クリップボードを直して再実行してください)"
+      return 130
+      ;;
+  esac
 }
 
 # 内部補助: バッチ処理ループ + 末尾 NG 一覧の出力
@@ -322,6 +416,18 @@ av1ify() {
   local have_targets=0
   { (( $# > 0 )) || [[ -n "$opt_listfile" ]]; } && have_targets=1
 
+  # 引数がなければクリップボードから処理対象を読み取る (対話シェル限定)。
+  # 大量のパスをターミナルへ貼り付けると行編集を通る途中で文字が落ちることがあるため、
+  # シェルを経由せず pbpaste から直接読む。読んだ内容は必ず一覧表示して確認を取る。
+  # 非対話 (CI / スクリプト / Finder アクション) と pbpaste が無い環境では発火せず、
+  # 従来どおりヘルプを表示する。
+  if (( ! __av1ify_internal )) && (( ! show_help )) && (( ! have_targets )) \
+    && command -v pbpaste >/dev/null 2>&1 && __av1ify_stdin_is_tty; then
+    __av1ify_targets_from_clipboard || return $?
+    set -- "${__AV1IFY_CLIP_TARGETS[@]}"
+    have_targets=1
+  fi
+
   # --compact: 720p + 30fps プリセット（明示的な -r/--fps が優先）
   if (( opt_compact )); then
     [[ -z "$opt_resolution" ]] && opt_resolution="720p"
@@ -409,6 +515,8 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
 
 機能:
   - 指定されたファイルまたはディレクトリを対象に処理を実行します。
+  - 引数を省略すると、クリップボードの内容を「1行1パス」として読み取り、内容を表示して
+    確認を取ってから処理します（大量のパスをターミナルへ貼り付けると文字が落ちることがあるため）。
   - 出力ファイル名は `<元のファイル名>-enc.mp4` となります。
   - 既に変換済みのファイルが存在する場合は、処理をスキップします。
   - 処理中には `<出力ファイル名>.in_progress` という一時ファイルを作成し、変換成功後にリネームします。
@@ -427,6 +535,7 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
 使い方:
   av1ify [オプション] <ファイルパス または ディレクトリパス> [<ファイルパス2> ...]
   av1ify -f <ファイルリスト>
+  av1ify                       # 引数なし: クリップボードから読み取り（確認あり）
 
   例:
     # 単一のファイルを変換
@@ -437,6 +546,13 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
 
     # ファイルリストから変換（改行区切り）
     av1ify -f list.txt
+
+    # クリップボードにコピーしたパス（改行区切り）を入力にする
+    #   1行1パスとして読み取り、内容を一覧表示して [y/N] の確認を取ります。
+    #   前後の空白・引用符・`\ ` エスケープは自動で剥がし、見つからないパスは
+    #   ✗ 表示のうえ対象から除外します（1件も見つからなければエラー）。
+    #   対話シェルでのみ有効（非対話・pbpaste 不在ではこのヘルプを表示します）。
+    av1ify
 
     # ディレクトリ内のすべての動画ファイルを変換
     av1ify "/path/to/dir"
