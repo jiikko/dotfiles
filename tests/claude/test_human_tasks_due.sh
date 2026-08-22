@@ -44,7 +44,11 @@ check() { # $1=説明 $2=期待パターン (grep -E) $3=本文。空パター�
     [ -z "$got" ] && return 0
     echo "NG: $desc — 何も出さないはずが出力された:"; printf '%s\n' "$got"; fails=$((fails + 1)); return
   fi
-  printf '%s' "$got" | grep -Eq "$want" && return 0
+  # ⚠️ `printf … | grep -q` のパイプに戻さないこと。grep -q は一致した瞬間に exit するため
+  # 書き手が SIGPIPE/EPIPE を受け、`set -o pipefail` 下では**一致していてもパイプライン全体が
+  # 非 0** になる。判定が反転し、正しい実装に対してランダムに NG を出す (CI 実測 2026-08-22:
+  # run 32570242557。出力に期待パターンが載っているのに NG + "printf: write error: Broken pipe")。
+  grep -Eq "$want" <<<"$got" && return 0
   echo "NG: $desc — /$want/ が出力に無い:"; printf '%s\n' "${got:-(無出力)}"; fails=$((fails + 1))
 }
 
@@ -107,7 +111,7 @@ printf '# t\n\n期限: %s\n' "$far" >"$pop/issues/pending/095-human-far.md"
 pop_out="$(printf '{"cwd":"%s"}' "$pop" | "$HOOK" 2>/dev/null || true)"
 pop_ctx="$(printf '%s' "$pop_out" | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null || true)"
 check "未完了件数は human かつ pending 以外だけ" '未完了の human タスク issue: 1 件' "$pop_ctx"
-if printf '%s' "$pop_ctx" | grep -q '余裕あり'; then
+if grep -q '余裕あり' <<<"$pop_ctx"; then
   echo "NG: later が unread と別母集団 (非 human / pending を数えている):"
   printf '%s\n' "$pop_ctx"
   fails=$((fails + 1))

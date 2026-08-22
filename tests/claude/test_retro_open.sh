@@ -47,7 +47,9 @@ check() { # $1=説明 $2=期待パターン (grep -E、空なら無出力を期�
     [ -z "$got" ] && return 0
     echo "NG: $desc — 何も出さないはずが出力された:"; printf '%s\n' "$got"; fails=$((fails + 1)); return
   fi
-  printf '%s' "$got" | grep -Eq "$want" && return 0
+  # ⚠️ パイプに戻さないこと (pipefail + grep -q の EPIPE で判定が反転する)。
+  # 経緯は tests/claude/test_human_tasks_due.sh の同じ箇所のコメント。
+  grep -Eq "$want" <<<"$got" && return 0
   echo "NG: $desc — /$want/ が出力に無い:"; printf '%s\n' "${got:-(無出力)}"; fails=$((fails + 1))
 }
 
@@ -109,7 +111,7 @@ out="$(report env)"
 check "未来日付をラベルする" "起票日が未来.*016-retro-future" "$out"
 if [ "$(printf '%s' "$out" | sed -n '3p')" != "${out#*$'\n'}" ]; then :; fi
 head_line="$(printf '%s' "$out" | sed -n '3p')"
-printf '%s' "$head_line" | grep -q '016-retro-future' && {
+grep -q '016-retro-future' <<<"$head_line" && {
   echo "NG: 未来日付が先頭に居座る: $head_line"; fails=$((fails + 1))
 }
 rm -f "$repo/issues/016-retro-future-2099-01-01.md"
@@ -203,7 +205,7 @@ done
 other="$WORK/other"; mkdir -p "$other/issues"; git -C "$other" init -q .
 printf '# t\n' >"$other/issues/030-retro-elsewhere-2026-08-01.md"
 plain="$(cd "$other" && printf '{"cwd":"%s"}' "$repo" | env -i "PATH=$nojq" HOME="$HOME" "$HOOK" 2>/dev/null)"
-if command -v jq >/dev/null 2>&1 && printf '%s' "$plain" | grep -q '"hookSpecificOutput"'; then
+if command -v jq >/dev/null 2>&1 && grep -q '"hookSpecificOutput"' <<<"$plain"; then
   echo "NG: jq を PATH から除いたつもりが JSON が出た (スタブ不備):"; printf '%s\n' "$plain"
   fails=$((fails + 1))
 fi
