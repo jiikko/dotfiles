@@ -20,7 +20,6 @@ typeset -g __AV1IFY_R_AAC_SRC_BPS=""
 typeset -gi __AV1IFY_R_AAC_CAPPED=0
 typeset -gi __AV1IFY_R_AUDIO_REENCODE=0
 typeset -g  __AV1IFY_R_AUDIO_REASON=""
-typeset -ga __AV1IFY_R_AUDIO_ARGS=()
 
 # 内部補助: __fs_type_for の薄いラッパ (実体は _fs_helpers.zsh。concat と共有)
 __av1ify_fs_type_for() {
@@ -384,43 +383,6 @@ __av1ify_decide_audio_action() {
   else
     __AV1IFY_R_AUDIO_REASON="${src_abitrate}bps ≤ 閾値 ${threshold}bps のため削減効果が小さい"
   fi
-  return 0
-}
-
-# 音声再エンコードの末尾パディングは「切らない」と判断した (2026-08-22)。
-#
-# AAC-LC のフレームは 1024 サンプル固定なので、エンコーダは最後の端数フレームを無音で
-# 埋める。MP4 の edit list が削るのは先頭の priming だけで、末尾を削る muxer フラグは
-# 存在しない (ffmpeg 8.0 で `-h muxer=mp4` を確認)。
-#
-# 一度 atrim=end_sample で切る実装を入れて revert した (6cbee23 の atrim 部分)。実測で
-# 完全一致にはできたが、規模が実害に届かないため:
-#   - 伸びは単発で +5〜16ms、上限は 1 フレーム = 48kHz で 21.3ms。世代でも蓄積しない
-#   - 位相反転で打ち消すと残留 RMS -103dB (元の音声は Peak -16dB) = 時間軸のずれは無し。
-#     伸びた区間の中身は Peak -50dB の無音で、A/V 同期には影響しない
-#   - postcheck の AV1IFY_DURATION_TOLERANCE (2.0s) の内側なので警告も出ない
-#
-# 再提案する場合の注意 (実装時に踏んだ罠):
-#   - 基準にできるのは音声ストリームの duration_ts で、time_base が 1/sample_rate の
-#     ときだけ (format=duration の宣言値は無検証で信じない: 3640291)。webm/opus は
-#     time_base=1/1000 かつ duration_ts=N/A なので基準が取れない
-#   - atrim に渡すのは「ソースの」サンプル数。-af のフィルタは -ar の自動リサンプルより
-#     前で走るため、出力レート換算の値を渡すと音声が短く切られる (96kHz→48kHz のソースで
-#     ちょうど半分になる実測)
-#
-# concat での累積 (3 本で映像 +32ms) は atrim で消せるが、これも ms 規模。concat 側で
-# 扱うほうが筋が良い (copy した出力を連結しても音声 +21ms は出るため)。
-
-# 内部補助: AAC 再エンコード時の ffmpeg 音声引数を組む
-#
-# 通常経路と「copy 失敗後の AAC 再試行」経路の 2 箇所から呼ぶ。同じ配列を 2 箇所で
-# 手書きすると、後付けの引数が片方の経路だけに入る (実際に atrim を足したときに踏んだ)。
-#
-# 引数: $1=ビットレート, $2=チャンネル数, $3=サンプルレート
-# 出力: __AV1IFY_R_AUDIO_ARGS 配列
-__av1ify_build_aac_args() {
-  local bitrate="$1" ac="$2" ar="$3"
-  __AV1IFY_R_AUDIO_ARGS=(-map "0:a:0?" -c:a aac -b:a "$bitrate" -ac "$ac" -ar "$ar")
   return 0
 }
 
@@ -879,8 +841,7 @@ __av1ify_one() {
       else
         print -P -- "%F{cyan}>> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec, ビットレート不明)%f"
       fi
-      __av1ify_build_aac_args "$aac_bitrate_resolved" "$aac_ac" "$aac_ar"
-      args_audio=("${__AV1IFY_R_AUDIO_ARGS[@]}")
+      args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac "$aac_ac" -ar "$aac_ar")
       did_aac=1
     fi
   fi
@@ -939,8 +900,7 @@ __av1ify_one() {
       print -r -- "⚠️ 音声copy失敗 → AAC再エンコードで再試行"
       __av1ify_cap_aac_bitrate "$in" "${AV1_AAC_BITRATE:-96k}"
       aac_bitrate_resolved="$__AV1IFY_R_AAC_BITRATE"
-      __av1ify_build_aac_args "$aac_bitrate_resolved" "$aac_ac" "$aac_ar"
-      args_audio=("${__AV1IFY_R_AUDIO_ARGS[@]}")
+      args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac "$aac_ac" -ar "$aac_ar")
       did_aac=1
       # 再計算: 最終出力名（解像度/fpsタグを維持しつつ aac ビットレート反映）
       __av1ify_build_final_out "$stem" "$resolution_tag" "$fps_tag" "$denoise_tag" \
