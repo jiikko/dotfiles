@@ -1,0 +1,18 @@
+#!/usr/bin/env zsh
+# lockman — ディレクトリ単位の排他を取る CLI (SMB 越しの複数マシン + 公開ホストの
+# ローカル経路が混在する前提)。Go implementation at:
+#   ~/dotfiles/src/lockman/
+# 再ビルドは同期 (--async にしない): 排他の判定を出す道具なので、旧版のバイナリが
+# 「取れた / 空いている」を返すと誤った前提で処理が走り出す。機構は bin/lib/go_autobuild.zsh。
+#
+# 使い方の要点 (詳細は `lockman --help` / issues/091):
+#   長い処理は with を使う。acquire を素で使って renew を呼ばないと、TTL (既定 30 分) を
+#   超えた時点で他者に引き継がれ、二重に書き込むことになる。
+#     lockman with "$dir" -- ./job.sh
+#   スキップ判断は acquire の終了コードで行う (check は参考値で、排他の根拠にならない)。
+#     lockman acquire "$dir" --token-file "$tok" || { [ $? -eq 3 ] && exit 0; exit 1; }
+
+set -u
+
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec "${0:A:h}/../src/lockman" lockman -- "$@"

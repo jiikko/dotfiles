@@ -21,12 +21,14 @@
   公開ホストの時計を出典にする
 - 判定不能 (壊れた lock・時刻が取れない・I/O が返らない) は **busy / エラー側へ倒す**
 
+入口は **`bin/lockman`** (自動ビルドつきラッパ)。`--async` は使わない — 排他の判定を出す
+道具なので、旧版のバイナリが「取れた」を返すと誤った前提で処理が走り出す。
+
 v1 で**あえて入れていない**もの:
 
 - **同一マシンの pid 生存による即時 stale 判定**。`IOPlatformUUID` / `kern.boottime` の
   取得に外部依存が要り、効果は「回収が TTL より早くなる」だけ。安全側 (常に TTL を待つ)
   なので後回しにした
-- **`bin/lockman` ラッパ**。まだ入れていない (下の「開発」参照)
 
 実機で測っていない前提 (issue 091 の「実測が要る前提」):
 
@@ -57,6 +59,6 @@ root の `make test` にも含まれる (`GO_PROJECT_DIRS`)。
 - **`go.sum` は空だが消さないこと**。依存は今のところ標準ライブラリだけだが、CI の
   `actions/setup-go` が `cache-dependency-path: src/lockman/go.sum` を解決できないと
   ジョブごと失敗する。依存を足せば中身が入る
-- `bin/lockman` ラッパを作るときは `bin/lib/go_autobuild.zsh` 方式に合わせる。ただし
+- `bin/lockman` は `bin/lib/go_autobuild.zsh` 方式 (ソース更新時に自動再ビルド)。
   **`--async` は使わない** — glogx は popup の体感速度のため「旧版で即起動」を選んで
   いるが、排他の道具で古いバイナリが動くのは危険なので同期ビルドにする
