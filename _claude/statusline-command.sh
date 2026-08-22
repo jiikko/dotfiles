@@ -160,6 +160,18 @@ fmt_remaining() {
   fi
 }
 
+# epoch を "8月24日21:31" のような表示に整形する。結果は REPLY (整形できなければ空)。
+# ⚠️ epoch から日時への変換はプラットフォームで別物: BSD (macOS) は `date -r <epoch>`、
+#   GNU (Linux/CI) の -r は「参照ファイルの時刻」なので epoch をファイル名として探し、
+#   `date: 1787410219: No such file or directory` を stderr へ吐いて何も出さない
+#   (CI で実測: 2 行目のリセット日時が Linux では前からずっと空だった)。
+#   両方試して先に成功した方を採る。stderr は捨てる (statusline に出す先が無く、
+#   出しても "沈黙" と区別できないため。整形できなければ REPLY が空になり、
+#   呼び出し側が日時部分を落とす = 表示の劣化だけで済む)。
+fmt_epoch() {
+  REPLY=$(date -r "$1" "$2" 2>/dev/null || date -d "@$1" "$2" 2>/dev/null)
+}
+
 # Short human label for a token count: <1M -> "269k", >=1M -> "1M" / "1.5M".
 human_tokens() {
   n=$1
@@ -199,9 +211,15 @@ rate_segment() {
   p=$seg_pct
   printf "%s%s:[%s]%s%%%s" "$(rate_color "$p")" "$seg_label" "$(rate_bar "$p")" "$p" "$reset"
   if [ -n "$seg_reset_at" ] && [ "$seg_reset_at" -gt "$now" ] 2>/dev/null; then
-    # date -r は BSD (macOS) 形式。%-m / %-d はゼロ埋めなし
+    # %-m / %-d はゼロ埋めなし (BSD/GNU の差は fmt_epoch が吸収する)
     fmt_remaining $(( seg_reset_at - now ))
-    printf "%s(残:%s / %s)%s" "$gray_fg" "$REPLY" "$(date -r "$seg_reset_at" "+%-m月%-d日%H:%M")" "$reset"
+    seg_remaining=$REPLY
+    fmt_epoch "$seg_reset_at" "+%-m月%-d日%H:%M"
+    if [ -n "$REPLY" ]; then
+      printf "%s(残:%s / %s)%s" "$gray_fg" "$seg_remaining" "$REPLY" "$reset"
+    else
+      printf "%s(残:%s)%s" "$gray_fg" "$seg_remaining" "$reset"
+    fi
   elif [ -n "$seg_reset_at" ] && [ "$seg_reset_at" -gt 0 ] 2>/dev/null; then
     printf "%s(リセット!)%s" "$(blink_color)" "$reset"
   fi

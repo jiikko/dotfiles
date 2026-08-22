@@ -55,6 +55,13 @@ assert_contains "$out" "42%"             "5h の残量% (seven_day の 93% と�
 assert_contains "$out" "7d:"             "7 日ウィンドウのラベル"
 assert_contains "$out" "93%"             "7d の残量%"
 assert_contains "$out" "残:"             "resets_at から残り時間ラベルが出る"
+# 残り時間の後ろにリセット日時が続く形まで見る (ここを緩くしておくと、epoch → 日時の
+# 変換が丸ごと落ちても "残:2日0時間" だけで green になる。実際 GNU date では長く空だった)
+case "$out" in
+  *"残:"*" / "*月*日*) printf '✓ %s\n' "残り時間の後ろにリセット日時が続く" ;;
+  *) printf '✗ %s\n  実際: %s\n' "残り時間の後ろにリセット日時が続く" "$out" >&2
+     fails=$(( fails + 1 )) ;;
+esac
 
 # workspace.current_dir が無いときは .cwd にフォールバックする
 assert_contains "$(render '{"cwd":"/tmp"}')" "/tmp" "current_dir 不在で cwd へフォールバック"
@@ -120,6 +127,64 @@ printf 'new\n' > "$repo/untracked"      # untracked 1
 dirty="$(render "{\"cwd\":\"$repo\"}")"
 assert_contains "$dirty" "[main ~1 ?1]" "変更数と untracked 数 (awk の 1 パス集計)"
 
+# --- epoch → 日時の変換 (BSD / GNU 両対応) ----------------------------------
+# `date -r <epoch>` は BSD (macOS) 専用。GNU (Linux = CI) の -r は「参照ファイルの
+# 時刻」なので epoch をファイル名として探し、`date: 178...: No such file or directory`
+# を stderr へ吐いて何も出さない。CI では 2 行目のリセット日時が長く空だった
+# (2026-08-22、下の stderr assert が検出)。macOS 上でも踏めるように、GNU date を模す
+# shim を PATH 先頭に置いて再現させる (この形は macOS では絶対に自然発生しない)。
+gnu_dir="$TMP_DIR/gnu-date"
+mkdir -p "$gnu_dir"
+real_date="$(command -v date)"   # ⚠️ PATH を汚す前に実体を絶対パスで解決する
+case "$real_date" in
+  ""|"$gnu_dir"/*)
+    printf '✗ date の実体を解決できない (%s) — shim が自分自身に解決する\n' "$real_date" >&2
+    fails=$(( fails + 1 )) ;;
+esac
+cat > "$gnu_dir/date" <<SHIM
+#!/bin/sh
+# GNU date の模擬。-r は epoch でなく参照ファイルを取るので失敗させ、-d "@epoch" を通す
+case "\$1" in
+  -r) printf 'date: %s: No such file or directory\n' "\$2" >&2; exit 1 ;;
+  # -d の中身は実 date へ委譲する。委譲先が GNU (-d) か BSD (-r) かは環境で違うので
+  # 両方試す (ここを BSD 決め打ちにすると、この shim 自体が Linux で壊れる。実測済み)
+  -d) spec=\${2#@}; { "$real_date" -d "@\$spec" "\$3" || "$real_date" -r "\$spec" "\$3"; } 2>/dev/null; exit \$? ;;
+esac
+exec "$real_date" "\$@"
+SHIM
+chmod +x "$gnu_dir/date"
+gnu_json_body() {
+  local now; now="$(date +%s)"
+  printf '%s' "{\"cwd\":\"/tmp\",\"rate_limits\":{\"seven_day\":{\"used_percentage\":62,\"resets_at\":$(( now + 172800 ))}}}"
+}
+gnu_json() { gnu_json_body; }
+# epoch → 日時の変換手段がどちらも無い環境では、日時を落として残り時間だけ出す
+# (中身の無い " / " をぶら下げない)。BSD 形式も GNU 形式も失敗する date を模す
+nodate_dir="$TMP_DIR/no-date"
+mkdir -p "$nodate_dir"
+cat > "$nodate_dir/date" <<SHIM
+#!/bin/sh
+case "\$1" in
+  -r|-d) printf 'date: unsupported\n' >&2; exit 1 ;;
+esac
+exec "$real_date" "\$@"
+SHIM
+chmod +x "$nodate_dir/date"
+nodate_out="$(gnu_json_body | PATH="$nodate_dir:$PATH" "$SL" 2>/dev/null | sed $'s/\033\[[0-9;]*m//g')"
+assert_contains "$nodate_out" "(残:" "変換手段が無くても残り時間は出す"
+assert_lacks "$nodate_out" " / )"    "日時が取れないとき空の \" / \" をぶら下げない"
+
+gnu_out="$(gnu_json | PATH="$gnu_dir:$PATH" "$SL" 2>/dev/null | sed $'s/\033\[[0-9;]*h//g;s/\033\[[0-9;]*m//g')"
+gnu_err="$(gnu_json | PATH="$gnu_dir:$PATH" "$SL" 2>"$TMP_DIR/gnu_err" >/dev/null; cat "$TMP_DIR/gnu_err")"
+assert_contains "$gnu_out" "月"     "GNU date でもリセット日時を出す (date -d @epoch へフォールバック)"
+assert_contains "$gnu_out" "7dペース" "GNU date でも 3 行目は出る"
+if [[ -z "$gnu_err" ]]; then
+  printf '✓ %s\n' "GNU date でも stderr を出さない"
+else
+  printf '✗ %s\n  stderr: %s\n' "GNU date でも stderr を出さない" "$gnu_err" >&2
+  fails=$(( fails + 1 ))
+fi
+
 # --- 数値フィールドの正規化 -------------------------------------------------
 # bash の $(( )) は "08" (8 進数) / "5E+1" / 全角数字で **fatal** になり、囲みブロックの
 # 残りが丸ごとスキップされる。以前はこれで 3 行目が無言で消え、2 行目のバーも空になって
@@ -137,7 +202,9 @@ num_stderr() { num_json "$1" | "$SL" 2>"$TMP_DIR/stderr" >/dev/null; cat "$TMP_D
 
 assert_contains "$(num_render 62.7)"     "実績62%" "小数の used% は切り捨てて読む"
 assert_contains "$(num_render '"08.5"')" "実績8%"  "先頭ゼロ付き (08.5) を 8 進数エラーにせず 8% と読む"
-for bad in 5e1 '"6２.7"' -5 '"N/A"' '"１００"'; do
+# ⚠️ JSON の数値リテラル (5e1 等) は使わない: jq 1.6 は 50 に正規化し、jq 1.7 は
+#   5E+1 のまま出すため、どちらの経路を試しているのか環境で変わる (実測)。文字列で渡す。
+for bad in '"5E+1"' '"6２.7"' '"-5"' '"N/A"' '"１００"'; do
   out="$(num_render "$bad")"
   assert_lacks "$out" "7dペース" "整数化できない used% ($bad) ではペース行を出さない"
   assert_lacks "$out" "7d:"      "整数化できない used% ($bad) では 7d セグメントも出さない"
@@ -155,6 +222,10 @@ done
 # 「残量% だけでは窓のどこにいるか分からない」を埋める行なので、想定消化率 (経過割合)・
 # 乖離 pt・ラベル・日数換算のアドバイス・1 日予算が数値として正しいことを固定する。
 # resets_at は「今から N 日後」で作る (窓幅 7 日固定という前提もここで pin される)。
+# ⚠️ 残り時間ラベル (残N日N時間 / 残N時間N分) を assert する fixture は、表示される
+#   最小単位の中に 30 秒以上の余白を持たせること。now はテスト側と statusline 側で
+#   別々に取るため 1〜2 秒ずれ、`86400` のような境界値だと "1日0時間" が
+#   "23時間59分" に化けて flaky になる (実測 2026-08-22)。
 pace_render() {  # pace_render <used%> <残り秒>
   local used="$1" rem_secs="$2" now
   now="$(date +%s)"
@@ -162,12 +233,12 @@ pace_render() {  # pace_render <used%> <残り秒>
 }
 day() { printf '%d' $(( $1 * 86400 )); }
 
-# 5 日経過 (残 2 日) で 62% → 想定 71% を 9pt 下回る。±10pt 帯なので「想定通り」
-out="$(pace_render 62 "$(day 2)")"
+# 残り 2 日 1 時間半で 62% → 想定 70% を 8pt 下回る。±10pt 帯なので「想定通り」
+out="$(pace_render 62 178200)"
 assert_contains "$out" "7dペース:"                          "7d が揃えば 3 行目が出る"
-assert_contains "$out" "実績62% 想定71% (-9pt 想定通り)"     "想定消化率と乖離 pt"
+assert_contains "$out" "実績62% 想定70% (-8pt 想定通り)"     "想定消化率と乖離 pt"
 assert_contains "$out" "このままでちょうど"                  "想定通りのアドバイス"
-assert_contains "$out" "/ 残2日0時間 19.0%/日"               "残り時間と 1 日予算 (残り時間の書式は 2 行目と共通)"
+assert_contains "$out" "/ 残2日1時間 18.4%/日"               "残り時間と 1 日予算 (残り時間の書式は 2 行目と共通)"
 # 残り 1 日で 50% 残 = 余らせ過ぎ。乖離 35pt は 7 日窓で 2.4 日分 (= 35 * 7 / 100)
 overspare="$(pace_render 50 "$(day 1)")"
 assert_contains "$overspare" "実績50% 想定85% (-35pt 余らせ過ぎ)" "余らせ過ぎの判定"
@@ -223,13 +294,13 @@ assert_contains "$frac" "実績33% 想定63% (-30pt 余らせ過ぎ)" "日境界
 assert_contains "$frac" "/ 残2日13時間 25.9%/日" "日境界でない残りは日+時間で出し、1 日予算は小数部まで一致する"
 assert_contains "$frac" "2.1日分の使い残し" "乖離 pt の日換算も小数部まで一致する"
 # 窓終端が近く残量が多い = 1 日予算が発散する。999.9%/日 に丸めて桁あふれを防ぐ
-assert_contains "$(pace_render 0 3600)" "/ 残1時間0分 999.9%/日" "1 日未満は時間+分で出し、1 日予算は 999.9%/日 で上限クランプ"
+assert_contains "$(pace_render 0 3690)" "/ 残1時間1分 999.9%/日" "1 日未満は時間+分で出し、1 日予算は 999.9%/日 で上限クランプ"
 # used% が 100 を超える値で返ってきても 1 日予算をマイナスにしない
-assert_contains "$(pace_render 120 "$(day 1)")" "/ 残1日0時間 0.0%/日" "used% > 100 でも 1 日予算は 0 止まり"
+assert_contains "$(pace_render 120 87000)" "/ 残1日0時間 0.0%/日" "used% > 100 でも 1 日予算は 0 止まり"
 # バーの塗りは四捨五入 (45% → 5 スロット)。切り捨て実装だと 4 スロットになる
 assert_contains "$(pace_render 45 "$(day 5)")" "[███|██░░░░░]" "バーの塗りは四捨五入 (45% は 5 スロット)"
 # 窓の最後 (残 1 時間 = 想定 99%) では想定線が右端に来るので | は末尾に付く
-assert_contains "$(pace_render 62 3600)" "[██████░░░░|]" "想定線が右端なら | は末尾に付く"
+assert_contains "$(pace_render 62 3690)" "[██████░░░░|]" "想定線が右端なら | は末尾に付く"
 
 # アドバイスと 1 日予算はグレーで従属させ、行末で必ず色を戻す (戻さないと
 # statusline の次の描画まで色が残る)
