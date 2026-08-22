@@ -14,7 +14,7 @@
 shell スクリプトの中から呼んで「取るか / スキップするか」を判断したい:
 
 ```sh
-if lockman acquire "$dir" --ttl 5m --token-file "$tok"; then
+if lockman acquire "$dir" --ttl 30m --token-file "$tok"; then
   trap 'lockman release "$dir" --token-file "$tok"' EXIT
   ...                       # 排他区間
 else
@@ -22,6 +22,11 @@ else
   exit 1
 fi
 ```
+
+## 決定済み (2026-08-22 ユーザー判断)
+
+- **TTL 切れの lock は自動で引き継いでよい** (人手の `break` を待たない)
+- **TTL の既定は 30 分**。下限 30 秒は据え置き (SMB のキャッシュ遅延より十分大きくするため)
 
 ## 不変条件 (これを壊す実装は不可)
 
@@ -151,7 +156,7 @@ SMB クライアントは属性とディレクトリ一覧をキャッシュす�
 - **判定は必ず `lock` を直接 open して行う**。ディレクトリ一覧 (readdir) に依存しない
   (一覧のキャッシュのほうが遅れが大きい)
 - **TTL に下限を設ける**。キャッシュの遅れより十分大きくないと stale 判定が事故になる。
-  既定 5 分・**下限 30 秒**とし、それ未満は警告ではなく**エラーで拒否**する
+  既定 **30 分**・下限 30 秒とし、それ未満は警告ではなく**エラーで拒否**する
 - 逆に「取得できたか」はキャッシュの影響を受けない (サーバが判定するため)
 
 ### アクセス経路が混在しても透過に効くこと
@@ -209,15 +214,27 @@ lease である以上、TTL 切れで他者に引き継がれることがある�
 まだ `lock` にあるか照合し、無ければ **exit 4** を返す。`with` は
 `--on-lost=kill|warn` (既定 `kill`) で子プロセスを止められるようにする。
 
+**TTL 30 分の落とし穴**: 30 分を超える処理を `acquire` 単発で回し、`renew` を呼ばないと
+**走行中に他者へ引き継がれ、二重に書く**。これが本設計で最も現実的な事故経路。
+
+- **`with` は自動で `renew` する** (間隔は TTL の 1/3 = 既定 10 分)。長い処理は `with` を使う。
+  これを「推奨」ではなく `--help` の最初に書く
+- `acquire` を素で使う場合の保険として、**`release` は「解放した」以外に「もう持ち主では
+  なかった」を exit 4 で返す**。スクリプトはこれを検出したら「この実行は他者と重なって
+  いた可能性がある」と警告を出せる (事後でも気づけるようにする)
+- `acquire` は `--ttl` が既定のままで、かつ TTY でない (= スクリプト経由) 場合に
+  stderr へ 1 行だけ「30 分を超えるなら with か renew を使え」と出すことを検討する
+  (無音契約を壊さない範囲で)
+
 ## CLI インターフェース案
 
 ```
-lockman acquire <dir> [--ttl 5m] [--wait 0s] [--label ...] [--token-file F] [--json]
+lockman acquire <dir> [--ttl 30m] [--wait 0s] [--label ...] [--token-file F] [--json]
 lockman release <dir> --token-file F | --token T
-lockman renew   <dir> --token-file F | --token T [--ttl 5m]
+lockman renew   <dir> --token-file F | --token T [--ttl 30m]
 lockman check   <dir> [--json]          # 参考値。これで分岐しても排他にはならない
 lockman status  <dir> [--json]          # 誰が・いつから・あと何秒
-lockman with    <dir> [--ttl 5m] [--on-lost kill] -- <cmd> [args...]
+lockman with    <dir> [--ttl 30m] [--on-lost kill] -- <cmd> [args...]
 ```
 
 **exit code が実質的な API** (shell から `if` / `case` で分岐するため):
@@ -264,6 +281,10 @@ lockman with    <dir> [--ttl 5m] [--on-lost kill] -- <cmd> [args...]
 - **時計ずれ**: 判定側のローカル時計を前後にずらしても判定が変わらないこと
   (ずらして結果が変われば、どこかでローカル時計を見ている証拠)
 - holder を `kill -9` → TTL 前は取れない / TTL 後は取れる
+- **走行中に奪われたことを holder が検出できる**: TTL を短くして holder を走らせ続け、
+  他者に引き継がせた後で `release` / `renew` が exit 4 を返すことを固定する
+- **`with` の自動 renew が効いている**: TTL より長く子を走らせても引き継がれないこと
+  (renew を止める変異を当てて、このテストが赤になることを確認する)
 - メタ破損・空ファイル・権限なし・`.lockman` 作成不可 → busy 側に倒れ理由が stderr に出る
 - `release` / `renew` に他者のトークン → 消さずに exit 4
 - `with` の子が異常終了・シグナル死しても解放される
@@ -296,10 +317,9 @@ lockman with    <dir> [--ttl 5m] [--on-lost kill] -- <cmd> [args...]
 
 1. **shared (read) lock を持つか**。「参照中のマーク」を複数プロセスが同時に付けたいなら
    排他/共有の 2 種類が要る (実装が一段複雑になる)。初版は排他のみで足りるか
-2. TTL の既定 5 分 / 下限 30 秒でよいか (下限は SMB のキャッシュ遅延より十分大きい必要がある)
-3. `--wait` の既定は「待たずに即 exit 3」でよいか
-4. 1 ディレクトリ 1 lock でよいか、サブキー (`--key import`) が要るか
-5. 対象が SMB 以外 (ローカル FS のみ) のときに速い経路へ落とす価値があるか
-6. **`--meta-dir` をそもそも用意するか**。共有でない場所を指されると排他が黙って消える
+2. `--wait` の既定は「待たずに即 exit 3」でよいか
+3. 1 ディレクトリ 1 lock でよいか、サブキー (`--key import`) が要るか
+4. 対象が SMB 以外 (ローカル FS のみ) のときに速い経路へ落とす価値があるか
+5. **`--meta-dir` をそもそも用意するか**。共有でない場所を指されると排他が黙って消える
    ため、footgun としては重い。「`.lockman/` 固定 + バックアップ側で除外パターンを書く」
    に倒す選択肢もある (そのほうが壊れ方が無い)
