@@ -387,53 +387,40 @@ __av1ify_decide_audio_action() {
   return 0
 }
 
-# 内部補助: 音声再エンコードの末尾パディングを切るための「ソースの実サンプル数」を求める
+# 音声再エンコードの末尾パディングは「切らない」と判断した (2026-08-22)。
 #
 # AAC-LC のフレームは 1024 サンプル固定なので、エンコーダは最後の端数フレームを無音で
 # 埋める。MP4 の edit list が削るのは先頭の priming だけで、末尾を削る muxer フラグは
-# 存在しない (ffmpeg 8.0 で `-h muxer=mp4` を確認。use_editlist / negative_cts_offsets
-# のみ) ため、フィルタ側で切るしかない。切らないと出力の音声が 1 フレーム未満だけ長く
-# なり、concat で本数分だけ蓄積する (実測: 3 本連結で音声 +52ms / 映像 +20ms。
-# copy なら映像は完全一致)。
+# 存在しない (ffmpeg 8.0 で `-h muxer=mp4` を確認)。
 #
-# 権威にするのは音声ストリームの duration_ts で、time_base が 1/sample_rate のときだけ
-# 採用する (このとき duration_ts = サンプル数そのもの)。これは sample table と edit list
-# から導かれる値で、format=duration の宣言値 (無検証で信じない: 3640291) とは出自が違う。
-# 条件を満たさないコンテナ (webm/opus は time_base=1/1000 かつ duration_ts=N/A の実測)
-# では空を返し、trim しない = 従来の挙動に倒す。
+# 一度 atrim=end_sample で切る実装を入れて revert した (6cbee23 の atrim 部分)。実測で
+# 完全一致にはできたが、規模が実害に届かないため:
+#   - 伸びは単発で +5〜16ms、上限は 1 フレーム = 48kHz で 21.3ms。世代でも蓄積しない
+#   - 位相反転で打ち消すと残留 RMS -103dB (元の音声は Peak -16dB) = 時間軸のずれは無し。
+#     伸びた区間の中身は Peak -50dB の無音で、A/V 同期には影響しない
+#   - postcheck の AV1IFY_DURATION_TOLERANCE (2.0s) の内側なので警告も出ない
 #
-# 引数: $1 = 入力ファイル
-# 出力: REPLY = ソースのサンプル数 (求められなければ空)
-__av1ify_audio_exact_samples() {
-  local in="$1"
-  REPLY=""
-  local sr tb ts
-  sr=$(__ff_stream_field "$in" a:0 stream=sample_rate)
-  [[ "$sr" =~ ^[0-9]+$ ]] && (( sr > 0 )) || return 0
-  tb=$(__ff_stream_field "$in" a:0 stream=time_base)
-  [[ "$tb" == "1/$sr" ]] || return 0
-  ts=$(__ff_stream_field "$in" a:0 stream=duration_ts)
-  [[ "$ts" =~ ^[0-9]+$ ]] && (( ts > 0 )) || return 0
-  REPLY="$ts"
-}
+# 再提案する場合の注意 (実装時に踏んだ罠):
+#   - 基準にできるのは音声ストリームの duration_ts で、time_base が 1/sample_rate の
+#     ときだけ (format=duration の宣言値は無検証で信じない: 3640291)。webm/opus は
+#     time_base=1/1000 かつ duration_ts=N/A なので基準が取れない
+#   - atrim に渡すのは「ソースの」サンプル数。-af のフィルタは -ar の自動リサンプルより
+#     前で走るため、出力レート換算の値を渡すと音声が短く切られる (96kHz→48kHz のソースで
+#     ちょうど半分になる実測)
+#
+# concat での累積 (3 本で映像 +32ms) は atrim で消せるが、これも ms 規模。concat 側で
+# 扱うほうが筋が良い (copy した出力を連結しても音声 +21ms は出るため)。
 
 # 内部補助: AAC 再エンコード時の ffmpeg 音声引数を組む
 #
 # 通常経路と「copy 失敗後の AAC 再試行」経路の 2 箇所から呼ぶ。同じ配列を 2 箇所で
-# 手書きすると、末尾 trim のような後付けの引数が片方だけに入る。
+# 手書きすると、後付けの引数が片方の経路だけに入る (実際に atrim を足したときに踏んだ)。
 #
-# ⚠️ atrim に渡すのは「ソースの」サンプル数。-af のフィルタは -ar による自動
-# リサンプルより前で走るため、出力レート換算の値を渡すと音声が短く切られる
-# (96kHz→48kHz のソースに出力側の値を渡すと、実測でちょうど半分になった)。
-# このため音声フィルタを足すときは atrim との順序に注意する。
-#
-# 引数: $1=in, $2=ビットレート, $3=チャンネル数, $4=サンプルレート
+# 引数: $1=ビットレート, $2=チャンネル数, $3=サンプルレート
 # 出力: __AV1IFY_R_AUDIO_ARGS 配列
 __av1ify_build_aac_args() {
-  local in="$1" bitrate="$2" ac="$3" ar="$4"
+  local bitrate="$1" ac="$2" ar="$3"
   __AV1IFY_R_AUDIO_ARGS=(-map "0:a:0?" -c:a aac -b:a "$bitrate" -ac "$ac" -ar "$ar")
-  __av1ify_audio_exact_samples "$in"
-  [[ -n "$REPLY" ]] && __AV1IFY_R_AUDIO_ARGS+=(-af "atrim=end_sample=$REPLY")
   return 0
 }
 
@@ -892,7 +879,7 @@ __av1ify_one() {
       else
         print -P -- "%F{cyan}>> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec, ビットレート不明)%f"
       fi
-      __av1ify_build_aac_args "$in" "$aac_bitrate_resolved" "$aac_ac" "$aac_ar"
+      __av1ify_build_aac_args "$aac_bitrate_resolved" "$aac_ac" "$aac_ar"
       args_audio=("${__AV1IFY_R_AUDIO_ARGS[@]}")
       did_aac=1
     fi
@@ -952,7 +939,7 @@ __av1ify_one() {
       print -r -- "⚠️ 音声copy失敗 → AAC再エンコードで再試行"
       __av1ify_cap_aac_bitrate "$in" "${AV1_AAC_BITRATE:-96k}"
       aac_bitrate_resolved="$__AV1IFY_R_AAC_BITRATE"
-      __av1ify_build_aac_args "$in" "$aac_bitrate_resolved" "$aac_ac" "$aac_ar"
+      __av1ify_build_aac_args "$aac_bitrate_resolved" "$aac_ac" "$aac_ar"
       args_audio=("${__AV1IFY_R_AUDIO_ARGS[@]}")
       did_aac=1
       # 再計算: 最終出力名（解像度/fpsタグを維持しつつ aac ビットレート反映）
