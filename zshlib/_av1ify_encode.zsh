@@ -18,6 +18,8 @@ typeset -g __AV1IFY_R_DENOISE_TAG=""
 typeset -g __AV1IFY_R_AAC_BITRATE=""
 typeset -g __AV1IFY_R_AAC_SRC_BPS=""
 typeset -gi __AV1IFY_R_AAC_CAPPED=0
+typeset -gi __AV1IFY_R_AUDIO_REENCODE=0
+typeset -g  __AV1IFY_R_AUDIO_REASON=""
 
 # 内部補助: __fs_type_for の薄いラッパ (実体は _fs_helpers.zsh。concat と共有)
 __av1ify_fs_type_for() {
@@ -281,6 +283,109 @@ __av1ify_auto_crf() {
   fi
 }
 
+# 内部補助: "96k" / "96000" 形式のビットレート指定を bps 整数へ正規化する
+# 引数: $1 = ビットレート指定
+# 出力: REPLY = bps (数値として解釈できなければ空)
+__av1ify_bitrate_to_bps() {
+  local spec="$1"
+  REPLY=""
+  if [[ "$spec" =~ ^[0-9]+[kK]$ ]]; then
+    # zsh の $match は shellcheck(bash 解析) が知らず SC2154 になるため、
+    # 既存コードと同じ ${var%[kK]} のサフィックス除去で取り出す。
+    REPLY=$(( ${spec%[kK]} * 1000 ))
+  elif [[ "$spec" =~ ^[0-9]+$ ]]; then
+    REPLY="$spec"
+  fi
+  return 0
+}
+
+# 内部補助: 再エンコード閾値マージン (AV1_AUDIO_REENCODE_MARGIN) の妥当性検証
+# 正の 10 進数のみ許可する。
+# awk は非数値を数値文脈で 0 と解釈する ("abc" * 96000 = 0、"1,15" * 96000 = 96000) ため、
+# 算出後の閾値だけを見ても「typo による 0」と「意図した小さい値」を区別できない。
+# 入力そのものを検証しないと、typo が無警告で「全ソース再エンコード」に化ける。
+# 引数: $1 = マージン文字列
+# 戻り値: 0=有効, 1=無効
+__av1ify_validate_reencode_margin() {
+  local m="$1"
+  # 小数点は [.] で書く (未クォートの =~ では \. のバックスラッシュが剥がれて
+  # 「任意の 1 文字」に化け、"1,15" を通してしまう)。__av1ify_validate_fps と同じ罠。
+  [[ "$m" =~ ^[0-9]+([.][0-9]+)?$ ]] || return 1
+  local ok
+  ok=$(awk -v m="$m" 'BEGIN { print (m > 0) ? 1 : 0 }')
+  (( ok ))
+}
+
+# 内部補助: 音声を copy するか AAC 再エンコードするかを決める (2 段判定)
+#
+#   段 1 (互換性): MP4 コンテナへ copy できるコーデックか (AV1_COPY_OK)。
+#     opus / vorbis / ac3 / dts / pcm 等は copy できないので、ビットレートに関わらず
+#     再エンコードするしかない。
+#   段 2 (削減効果): copy できるコーデックでも、ソースビットレートが
+#     「ターゲット × AV1_AUDIO_REENCODE_MARGIN」を超えるなら再エンコードして圧縮する。
+#     超えない場合は再エンコードしても削減がほぼ無く、世代劣化と CPU を払うだけなので copy。
+#
+# 判定は compact / 通常モードで共通。compact は解像度と fps のプリセットであって、
+# 音声の扱いを変える理由が無いため (かつては compact だけが 130kbps 固定閾値を持ち、
+# 通常モードは copy 可能コーデックを無条件 copy していた。この非対称のせいで、
+# 圧縮したい高ビットレート AAC が通常モードでは素通りしていた)。
+#
+# 引数: $1=in, $2=use_copy (0/1: コーデックが MP4 へ copy 可能か), $3=desired (例 "96k")
+# 出力: __AV1IFY_R_AUDIO_REENCODE = 1 なら再エンコード / 0 なら copy
+#       __AV1IFY_R_AUDIO_REASON   = 判定理由 (ログ用)
+__av1ify_decide_audio_action() {
+  local in="$1" use_copy="$2" desired="$3"
+  __AV1IFY_R_AUDIO_REENCODE=0
+  __AV1IFY_R_AUDIO_REASON=""
+
+  # 段 1: MP4 へ copy できないコーデックは、ビットレートに関わらず再エンコード必須
+  if (( ! use_copy )); then
+    __AV1IFY_R_AUDIO_REENCODE=1
+    __AV1IFY_R_AUDIO_REASON="MP4 非対応コーデック"
+    return 0
+  fi
+
+  # 段 2: copy できるので、削減効果が見込めるときだけ再エンコードする
+  local src_abitrate
+  src_abitrate=$(__ff_stream_field "$in" a:0 stream=bit_rate)
+  if [[ -z "$src_abitrate" || ! "$src_abitrate" =~ ^[0-9]+$ ]]; then
+    # ビットレート不明では削減効果を判断できない。copy は無劣化なので安全側に倒す
+    __AV1IFY_R_AUDIO_REASON="ソースビットレート不明のため copy"
+    return 0
+  fi
+
+  __av1ify_bitrate_to_bps "$desired"
+  local target_bps="$REPLY"
+  if [[ -z "$target_bps" ]]; then
+    __AV1IFY_R_AUDIO_REASON="ターゲットビットレート不正のため copy"
+    return 0
+  fi
+
+  local margin="${AV1_AUDIO_REENCODE_MARGIN:-1.15}"
+  if ! __av1ify_validate_reencode_margin "$margin"; then
+    # 不正値のまま awk に渡すと "abc" も "" も 0 と解釈され、閾値 0 = 全ソース再エンコードに
+    # 化ける (しかも閾値 0 は数値として妥当なので、算出後の検査では検出できない)。
+    # av1ify() root でも fail-fast するが、内部から直接呼ばれた場合の保険として copy に倒す。
+    __AV1IFY_R_AUDIO_REASON="AV1_AUDIO_REENCODE_MARGIN が不正 (${margin}) のため copy"
+    return 0
+  fi
+  local threshold
+  # %d ではなく %.0f (四捨五入) を使う。二進浮動小数では 96000*1.15 が 110399.999... に
+  # なるため、%d の切り捨てだと「ちょうど閾値」のソースが閾値超と判定されてしまう。
+  threshold=$(awk -v t="$target_bps" -v m="$margin" 'BEGIN { printf "%.0f", t * m }')
+  if [[ ! "$threshold" =~ ^[0-9]+$ ]]; then
+    __AV1IFY_R_AUDIO_REASON="閾値算出に失敗したため copy"
+    return 0
+  fi
+  if (( src_abitrate > threshold )); then
+    __AV1IFY_R_AUDIO_REENCODE=1
+    __AV1IFY_R_AUDIO_REASON="${src_abitrate}bps > 閾値 ${threshold}bps"
+  else
+    __AV1IFY_R_AUDIO_REASON="${src_abitrate}bps ≤ 閾値 ${threshold}bps のため削減効果が小さい"
+  fi
+  return 0
+}
+
 # 内部補助: AAC ターゲットビットレートをソースビットレートでキャップする
 # (ソース < target なら最低 32k 〜 ソース値、ソース ≥ target もしくは取得不能なら desired のまま)
 # 引数: $1=in (ffprobe 用), $2=desired (例: "96k")
@@ -298,11 +403,9 @@ __av1ify_cap_aac_bitrate() {
   [[ -z "$src_abitrate" || ! "$src_abitrate" =~ ^[0-9]+$ ]] && return 0
   __AV1IFY_R_AAC_SRC_BPS="$src_abitrate"
 
-  local target_bps
-  case "$desired" in
-    *[kK]) target_bps=$(( ${desired%[kK]} * 1000 )) ;;
-    *) target_bps="$desired" ;;
-  esac
+  __av1ify_bitrate_to_bps "$desired"
+  local target_bps="$REPLY"
+  [[ -z "$target_bps" ]] && return 0
   if (( src_abitrate < target_bps )); then
     local capped_kbps=$(( src_abitrate / 1000 ))
     (( capped_kbps < 32 )) && capped_kbps=32
@@ -359,7 +462,8 @@ __av1ify_is_valid_variant_tag() {
   local seg="$1"
   [[ "$seg" =~ ^[0-9]+p$ ]] && return 0              # NNNp (resolution)
   [[ "$seg" == "4k" ]] && return 0                   # 4k (resolution)
-  [[ "$seg" =~ ^[0-9]+(\.[0-9]+)?fps$ ]] && return 0 # NN[.N]fps (frame rate)
+  # [.] で書く理由は __av1ify_validate_reencode_margin の注記を参照 (未クォート =~ の \. 剥がれ)
+  [[ "$seg" =~ ^[0-9]+([.][0-9]+)?fps$ ]] && return 0 # NN[.N]fps (frame rate)
   [[ "$seg" =~ ^aac[0-9]+k$ ]] && return 0           # aacNk (audio bitrate)
   [[ "$seg" =~ ^dn[0-9]+$ ]] && return 0             # dnN (denoise level)
   [[ "$seg" == "auderr" ]] && return 0               # auderr (audio param error)
@@ -487,11 +591,9 @@ __av1ify_one() {
     print -r -- "[DRY-RUN] 変換予定: $in"
     print -r -- "[DRY-RUN] 出力候補: $out (音声/解像度は実行時判定: ファイル未参照)"
     print -r -- "[DRY-RUN] 映像: libsvtav1 (crf=${crf_plan}, preset=${preset_plan}, resolution=${res_plan}, fps=${fps_plan}, denoise=${denoise_plan}, color-tags=${color_tags_plan})"
-    if (( __AV1IFY_COMPACT )); then
-      print -r -- "[DRY-RUN] 音声: compact (130kbps超はaac 96kへ再エンコード)"
-    else
-      print -r -- "[DRY-RUN] 音声: 実行時に判定"
-    fi
+    local audio_target_plan="${AV1_AAC_BITRATE:-96k}"
+    local audio_margin_plan="${AV1_AUDIO_REENCODE_MARGIN:-1.15}"
+    print -r -- "[DRY-RUN] 音声: 実行時に判定 (MP4非対応コーデック、またはソースが ${audio_target_plan}×${audio_margin_plan} 超なら aac ${audio_target_plan} へ再エンコード。それ以外は copy)"
     return 0
   fi
 
@@ -702,49 +804,39 @@ __av1ify_one() {
   local audio_param_error=0
   local aac_bitrate_resolved=""
 
+  # 実際に copy を選んだか (= ffmpeg 失敗時に「音声 copy が原因」として AAC 再試行する価値が
+  # あるか)。コーデックが copy 可能かを表す use_copy とは別物にする: copy 可能でも段 2 の
+  # 判定で AAC を選ぶ場合があり、そのとき AAC で再試行しても同じ引数の空振りにしかならない。
+  local audio_used_copy=0
+
   if [[ -z "$acodec" ]]; then
     args_audio=(-an)
     print -P -- "%F{cyan}>> 音声: なし（-an）%f"
-  elif (( use_copy )); then
-    # compact モード: 音声ビットレートが96kbps超ならAAC 96kに再エンコード
-    if (( __AV1IFY_COMPACT )); then
-      local src_abitrate
-      src_abitrate=$(__ff_stream_field "$in" a:0 stream=bit_rate)
-      if [[ -n "$src_abitrate" && "$src_abitrate" =~ ^[0-9]+$ ]] && (( src_abitrate > 130000 )); then
-        if (( ! aac_params_available )); then
-          args_audio=(-map "0:a:0?" -c:a copy)
-          audio_param_error=1
-          print -r -- "⚠️ 音声パラメータ取得失敗のため copy にフォールバック (codec=$acodec)"
-        else
-          aac_bitrate_resolved="96k"
-          args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac "$aac_ac" -ar "$aac_ar")
-          did_aac=1
-          print -P -- "%F{cyan}>> 音声: aac 96k へ再エンコード (compact, 元=$acodec ${src_abitrate}bps)%f"
-        fi
-      else
-        args_audio=(-map "0:a:0?" -c:a copy)
-        print -P -- "%F{cyan}>> 音声: copy (codec=$acodec, compact だが130kbps以下)%f"
-      fi
-    else
-      args_audio=(-map "0:a:0?" -c:a copy)
-      print -P -- "%F{cyan}>> 音声: copy (codec=$acodec)%f"
-    fi
   else
-    if (( ! aac_params_available )); then
+    local desired_abitrate="${AV1_AAC_BITRATE:-96k}"
+    __av1ify_decide_audio_action "$in" "$use_copy" "$desired_abitrate"
+    local audio_reason="$__AV1IFY_R_AUDIO_REASON"
+
+    if (( ! __AV1IFY_R_AUDIO_REENCODE )); then
       args_audio=(-map "0:a:0?" -c:a copy)
+      audio_used_copy=1
+      print -P -- "%F{cyan}>> 音声: copy (codec=$acodec, ${audio_reason})%f"
+    elif (( ! aac_params_available )); then
+      # 再エンコードしたいがサンプルレート/チャンネル数が取れない。copy へ退避し、
+      # 出力名に auderr タグを付けて「判定できなかった」ことを残す。
+      args_audio=(-map "0:a:0?" -c:a copy)
+      audio_used_copy=1
       audio_param_error=1
-      use_copy=1  # retry パスを有効化
       print -r -- "⚠️ 音声パラメータ取得失敗のため copy にフォールバック (codec=$acodec)"
-    fi
-    if (( ! audio_param_error )); then
-      __av1ify_cap_aac_bitrate "$in" "${AV1_AAC_BITRATE:-96k}"
+    else
+      __av1ify_cap_aac_bitrate "$in" "$desired_abitrate"
       aac_bitrate_resolved="$__AV1IFY_R_AAC_BITRATE"
       local src_abitrate_raw="$__AV1IFY_R_AAC_SRC_BPS"
       if [[ -n "$src_abitrate_raw" ]]; then
         if (( __AV1IFY_R_AAC_CAPPED )); then
           print -P -- "%F{cyan}>> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps, アップスケール防止)%f"
         else
-          print -P -- "%F{cyan}>> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps)%f"
+          print -P -- "%F{cyan}>> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec ${src_abitrate_raw}bps, ${audio_reason})%f"
         fi
       else
         print -P -- "%F{cyan}>> 音声: aac ${aac_bitrate_resolved} へ再エンコード (元=$acodec, ビットレート不明)%f"
@@ -797,8 +889,9 @@ __av1ify_one() {
       return 1
     fi
 
-    # 失敗時: copy 選択だった場合は AAC で再試行（命名もAACタグへ）
-    if (( use_copy )); then
+    # 失敗時: 実際に copy を選んでいた場合だけ AAC で再試行（命名もAACタグへ）。
+    # 既に AAC を選んでいた場合は同じ引数の空振りになるので再試行しない。
+    if (( audio_used_copy )); then
       if (( audio_param_error )); then
         print -r -- "❌ 音声copy失敗 & パラメータ不明のため再試行不可: $in"
         __AV1IFY_LAST_NG_REASON="音声copy失敗 (音声パラメータ取得不能で AAC 再試行も不可)"

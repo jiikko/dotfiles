@@ -88,7 +88,12 @@ elif echo "$*" | grep -q "sample_rate"; then
 elif echo "$*" | grep -q "stream=channels"; then
   echo "${MOCK_CHANNELS-2}"
 elif echo "$*" | grep -q "stream=bit_rate"; then
-  echo "${MOCK_AUDIO_BITRATE-248000}"
+  # 既定は再エンコード閾値 (AV1_AAC_BITRATE 96k x AV1_AUDIO_REENCODE_MARGIN 1.15 = 110400bps)
+  # を下回る値にして「音声は copy = 出力名に aac タグが付かない」を既定状態にする。
+  # こうしないと音声と無関係なテスト (解像度タグ / 色空間 / avsync 等) の期待ファイル名が、
+  # 音声ポリシーを変えるたびに巻き添えで壊れる。再エンコード側を検証したいテストは
+  # MOCK_AUDIO_BITRATE を閾値超へ明示設定すること。
+  echo "${MOCK_AUDIO_BITRATE-96000}"
 elif echo "$*" | grep -q "nb_frames"; then
   last_arg=""
   for arg in "$@"; do last_arg="$arg"; done
