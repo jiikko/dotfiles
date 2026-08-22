@@ -340,4 +340,75 @@ else
   printf '✗ Expected exactly 2 ffmpeg attempts on the copy path, got %s\n' "$attempts"
 fi
 
+# Test 79: AAC 再エンコード時は末尾パディングを atrim で切る
+# 背景: AAC-LC は 1024 サンプル固定フレームなので、エンコーダは最後の端数フレームを
+# 無音で埋める。edit list は先頭の priming しか削らないため、切らないと出力の音声が
+# 1 フレーム未満だけ長くなり、concat で本数分だけ蓄積する (実測: 3 本で音声 +52ms)。
+printf '\n## Test 79: AAC re-encode trims trailing padding\n'
+TEST_DIR="$TEST_TMP/test79"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+ARGS_LOG="$TEST_DIR/ffmpeg_args"
+unsetopt err_exit
+output=$(MOCK_AUDIO_BITRATE=248000 MOCK_SAMPLE_RATE=48000 MOCK_AUDIO_DURATION_TS=960000 \
+  TEST_FFMPEG_ARGS_LOG="$ARGS_LOG" av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "へ再エンコード" "Re-encodes audio above threshold"
+assert_contains "$(cat "$ARGS_LOG")" "atrim=end_sample=960000" "Passes source sample count to atrim"
+
+# Test 80: 渡すのは「ソースの」サンプル数 (出力レート換算ではない)
+# -af のフィルタは -ar の自動リサンプルより前で走るため、出力側の値を渡すと音声が
+# 短く切られる (96kHz→48kHz のソースで実測ちょうど半分)。ソースが 96kHz でも
+# duration_ts (= ソースのサンプル数) がそのまま渡ることを固定する。
+printf '\n## Test 80: atrim uses source-rate sample count, not output-rate\n'
+TEST_DIR="$TEST_TMP/test80"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+ARGS_LOG="$TEST_DIR/ffmpeg_args"
+unsetopt err_exit
+# 96kHz ソース: 出力は 48kHz へ落ちるが、atrim には 960000 (ソース) が渡るべき
+output=$(MOCK_AUDIO_BITRATE=248000 MOCK_SAMPLE_RATE=96000 MOCK_AUDIO_TIME_BASE=1/96000 \
+  MOCK_AUDIO_DURATION_TS=960000 TEST_FFMPEG_ARGS_LOG="$ARGS_LOG" \
+  av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+args=$(cat "$ARGS_LOG")
+assert_contains "$args" "-ar 48000" "Downsamples 96kHz source to 48kHz"
+assert_contains "$args" "atrim=end_sample=960000" "Trims at source-rate sample count"
+assert_not_contains "$args" "atrim=end_sample=480000" "Does not use output-rate sample count"
+
+# Test 81: サンプル数を権威づけできないコンテナでは trim しない (現状維持へ倒す)
+# webm/opus は time_base=1/1000 かつ duration_ts=N/A の実測。ここで ms 値を
+# サンプル数として渡すと音声を大量に切り落とす。
+printf '\n## Test 81: No trim when the sample count is not authoritative\n'
+TEST_DIR="$TEST_TMP/test81"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+ARGS_LOG="$TEST_DIR/ffmpeg_args"
+unsetopt err_exit
+output=$(MOCK_AUDIO_BITRATE=248000 MOCK_SAMPLE_RATE=48000 MOCK_AUDIO_TIME_BASE=1/1000 \
+  MOCK_AUDIO_DURATION_TS=20000 TEST_FFMPEG_ARGS_LOG="$ARGS_LOG" \
+  av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "へ再エンコード" "Still re-encodes above threshold"
+assert_not_contains "$(cat "$ARGS_LOG")" "atrim" "Omits atrim when time_base is not 1/sample_rate"
+
+# Test 82: copy 失敗後の AAC 再試行にも trim が入る (2 経路の片方だけに入る事故の防止)
+printf '\n## Test 82: Retry path also gets the trim\n'
+TEST_DIR="$TEST_TMP/test82"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR"
+ARGS_LOG="$TEST_DIR/ffmpeg_args"
+unsetopt err_exit
+# 96000bps <= 閾値 → copy を選ぶ。ffmpeg 失敗で AAC 再試行に入る
+output=$(MOCK_AUDIO_BITRATE=96000 MOCK_FFMPEG_FAIL=1 MOCK_AUDIO_DURATION_TS=960000 \
+  TEST_FFMPEG_ARGS_LOG="$ARGS_LOG" av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "音声copy失敗" "Enters the AAC retry path"
+retry_args=$(sed -n '2p' "$ARGS_LOG")
+assert_contains "$retry_args" "atrim=end_sample=960000" "Retry attempt carries the trim"
+
 printf '\n=== Audio Tests Completed ===\n'

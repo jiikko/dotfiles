@@ -83,6 +83,15 @@ elif echo "$*" | grep -q "stream=index"; then
     *-enc*|*check_ng*) echo "${MOCK_OUTPUT_AUDIO_INDEX-0}" ;;
     *) echo "${MOCK_AUDIO_INDEX-0}" ;;
   esac
+elif echo "$*" | grep -q "stream=duration_ts"; then
+  # 音声の末尾パディング trim (atrim=end_sample) の基準値。
+  # ⚠️ この分岐は "stream=duration" の分岐より前に置くこと (grep の部分一致で
+  # duration_ts が duration 側に吸われる)。
+  echo "${MOCK_AUDIO_DURATION_TS-480000}"
+elif echo "$*" | grep -q "stream=time_base"; then
+  # 既定は 1/sample_rate = duration_ts をサンプル数として採用できる形 (mp4 の慣行)。
+  # webm/opus のように 1/1000 のコンテナを再現するなら MOCK_AUDIO_TIME_BASE=1/1000。
+  echo "${MOCK_AUDIO_TIME_BASE-1/48000}"
 elif echo "$*" | grep -q "sample_rate"; then
   echo "${MOCK_SAMPLE_RATE-48000}"
 elif echo "$*" | grep -q "stream=channels"; then
