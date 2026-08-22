@@ -134,7 +134,14 @@ cat >"$stub/date" <<'STUB'
 # BSD 形式 (-j -f) を拒否し、GNU 形式 (-d) だけを受ける date。中身は host の date で実装する
 case "$1" in
   -j) exit 1 ;;
-  -d) exec /bin/date -j -f '%Y-%m-%d' "$2" +%s 2>/dev/null || exec /bin/date -d "$2" +%s ;;
+  # exec で呼ぶと最初の /bin/date にプロセスが置き換わり、失敗しても || の後段が走らない
+  # (host が GNU date の Linux では -j が非 0 で終わり、スタブが常に失敗していた)
+  -d)
+    out=$(/bin/date -j -f '%Y-%m-%d' "$2" +%s 2>/dev/null) \
+      || out=$(/bin/date -d "$2" +%s 2>/dev/null) || exit 1
+    printf '%s\n' "$out"
+    exit 0
+    ;;
 esac
 exec /bin/date "$@"
 STUB
