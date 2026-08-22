@@ -27,7 +27,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 		return exitWithInvalid
 	}
 	defer func() {
-		if err := l.Release(meta.Token, ttl); err != nil && !errors.Is(err, errNotOwner) {
+		if err := l.Release(meta.Token); err != nil && !errors.Is(err, errNotOwner) {
 			warnf("解放に失敗: %v", err)
 		}
 	}()

@@ -42,12 +42,14 @@ var (
 // 生存判定は lock の mtime が唯一の出典で、ここには期限を持たせない
 // (2 出典にすると片方だけ更新する実装が生まれ、無音で drift する)。
 type Meta struct {
-	Token      string `json:"token"`
-	Host       string `json:"host"`
-	User       string `json:"user"`
-	PID        int    `json:"pid"`
-	Label      string `json:"label,omitempty"`
-	TTLSeconds int    `json:"ttl_seconds"`
+	Token string `json:"token"`
+	Host  string `json:"host"`
+	User  string `json:"user"`
+	PID   int    `json:"pid"`
+	Label string `json:"label,omitempty"`
+	// ⚠️ 秒の整数で持たない: 1 秒未満が 0 に丸められ、下の fallback で「既定 30 分」に
+	// 化ける (テストが短い TTL を使えないだけでなく、丸めが黙って効くのが危ない)。
+	TTLMillis  int64  `json:"ttl_ms"`
 	AcquiredAt string `json:"acquired_at"`
 	Version    string `json:"version"`
 }
@@ -149,6 +151,21 @@ func expired(now, mtime time.Time, ttl time.Duration) bool {
 	return now.Sub(mtime) > ttl
 }
 
+// holderTTL は「その lock の生死を決める TTL」を返す。
+//
+// ⚠️ 判定には**保持者が宣言した TTL** (lock の中身) を使う。奪いにきた側が渡す --ttl を
+// 使ってはいけない: 短い --ttl を指定するだけで、他人の生きている lease を早期に
+// 奪えてしまう (実測 2026-08-22。macOS では速すぎて出ず、CI の Linux で露見した)。
+// 呼び出し側の --ttl は「自分が新しく作る lock の TTL」にだけ効く。
+func holderTTL(m *Meta) time.Duration {
+	if m == nil || m.TTLMillis <= 0 {
+		// 壊れた・古い形式で TTL を読めないときは既定へ倒す。0 にすると即座に
+		// 奪える (危険)、無限にすると永久 wedge になるため。
+		return defaultTTL
+	}
+	return time.Duration(m.TTLMillis) * time.Millisecond
+}
+
 // Acquire はロックを取る。取れなければ errBusy を返す。
 //
 // 勝敗は「存在すれば失敗する 1 回の原子操作」だけで決める。事前に存在チェックをしない
@@ -168,7 +185,7 @@ func (l *Locker) Acquire(ttl time.Duration, label string) (*Meta, error) {
 		User:       username(),
 		PID:        os.Getpid(),
 		Label:      label,
-		TTLSeconds: int(ttl.Seconds()),
+		TTLMillis:  ttl.Milliseconds(),
 		AcquiredAt: now.UTC().Format(time.RFC3339),
 		Version:    "lockman/1",
 	}
@@ -181,7 +198,7 @@ func (l *Locker) Acquire(ttl time.Duration, label string) (*Meta, error) {
 		return nil, err
 	}
 	// 2 回目: 相手が stale なら引き継ぎを試みる
-	took, err := l.tryTakeover(ttl)
+	took, err := l.tryTakeover()
 	if err != nil {
 		return nil, err
 	}
@@ -248,19 +265,19 @@ func (l *Locker) tryPlace(meta *Meta) error {
 //
 // ⚠️ ここを unlink → create に書き換えてはいけない。期限切れを見つけた 2 者が
 // 「消して作り直す」と両方が勝つ。rename なら勝者は 1 人に絞られる。
-func (l *Locker) tryTakeover(ttl time.Duration) (bool, error) {
+func (l *Locker) tryTakeover() (bool, error) {
 	now, err := l.serverNow()
 	if err != nil {
 		return false, err
 	}
-	_, mtime, err := l.readLock()
+	m, mtime, err := l.readLock()
 	if err != nil && !errors.Is(err, errBusy) {
 		return false, err
 	}
 	if mtime.IsZero() {
 		return true, nil // 既に誰かが退けた後。作りにいってよい
 	}
-	if !expired(now, mtime, ttl) {
+	if !expired(now, mtime, holderTTL(m)) {
 		return false, nil
 	}
 	grave := filepath.Join(l.metaDir, graveyardDirName, mustToken())
@@ -278,7 +295,7 @@ func (l *Locker) tryTakeover(ttl time.Duration) (bool, error) {
 // 期限切れの自分の lock は消さない: その時点で他者が引き継いでいる可能性があり、
 // 消すと他者の lock を消すことになる。呼び出し側には errNotOwner を返して
 // 「走行中に奪われていた」ことを知らせる。
-func (l *Locker) Release(token string, ttl time.Duration) error {
+func (l *Locker) Release(token string) error {
 	m, mtime, err := l.readLock()
 	if err != nil {
 		return err
@@ -290,7 +307,7 @@ func (l *Locker) Release(token string, ttl time.Duration) error {
 	if err != nil {
 		return err
 	}
-	if expired(now, mtime, ttl) {
+	if expired(now, mtime, holderTTL(m)) {
 		return fmt.Errorf("%w: lease が切れている (走行中に引き継がれた可能性)", errNotOwner)
 	}
 	return os.Remove(l.lockPath())
@@ -352,7 +369,7 @@ type State struct {
 }
 
 // Inspect は現在の状態を返す。**排他の根拠には使えない** (読んだ次の瞬間に変わる)。
-func (l *Locker) Inspect(ttl time.Duration) (*State, error) {
+func (l *Locker) Inspect() (*State, error) {
 	m, mtime, err := l.readLock()
 	if err != nil {
 		return nil, err
@@ -364,14 +381,15 @@ func (l *Locker) Inspect(ttl time.Duration) (*State, error) {
 	if err != nil {
 		return nil, err
 	}
-	if expired(now, mtime, time.Duration(m.TTLSeconds)*time.Second) {
+	if expired(now, mtime, holderTTL(m)) {
 		return &State{Held: false}, nil
 	}
 	age := now.Sub(mtime)
+	ttl := holderTTL(m)
 	return &State{
 		Held: true, Token: m.Token, Host: m.Host, User: m.User, Label: m.Label,
 		AgeSec:    int(age.Seconds()),
-		ExpiresIn: int((time.Duration(m.TTLSeconds)*time.Second - age).Seconds()),
+		ExpiresIn: int((ttl - age).Seconds()),
 	}, nil
 }
 

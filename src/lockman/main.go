@@ -219,11 +219,11 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 	case "acquire":
 		return cmdAcquire(l, o)
 	case "release":
-		return cmdTokenOp(l, o, func(token string) error { return l.Release(token, o.ttl) })
+		return cmdTokenOp(l, o, l.Release)
 	case "renew":
 		return cmdTokenOp(l, o, l.Renew)
 	case "check":
-		st, err := timed(l, func() (*State, error) { return l.Inspect(o.ttl) })
+		st, err := timed(l, func() (*State, error) { return l.Inspect() })
 		if err != nil {
 			warnf("%v", err)
 			return exitBusy // 判定不能は busy 側へ倒す (空いているとは言わない)
@@ -236,7 +236,7 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 		}
 		return exitOK
 	case "status":
-		st, err := timed(l, func() (*State, error) { return l.Inspect(o.ttl) })
+		st, err := timed(l, func() (*State, error) { return l.Inspect() })
 		if err != nil {
 			warnf("%v", err)
 			return exitError
@@ -274,7 +274,7 @@ func cmdAcquire(l *Locker, o *opts) int {
 			if o.tokenFile != "" {
 				if werr := os.WriteFile(o.tokenFile, []byte(meta.Token+"\n"), 0o600); werr != nil {
 					// トークンを渡せないと解放できなくなる。取ったロックを戻してから失敗する。
-					_ = l.Release(meta.Token, o.ttl)
+					_ = l.Release(meta.Token)
 					warnf("トークンを書けない: %v", werr)
 					return exitError
 				}

@@ -67,7 +67,7 @@ func TestCriticalSectionsNeverOverlap(t *testing.T) {
 				mu.Lock()
 				events = append(events, "leave")
 				mu.Unlock()
-				if err := l.Release(m.Token, time.Minute); err != nil {
+				if err := l.Release(m.Token); err != nil {
 					t.Errorf("Release: %v", err)
 				}
 			}
@@ -97,6 +97,9 @@ func TestStaleTakeoverHasExactlyOneWinner(t *testing.T) {
 	}
 	time.Sleep(3 * ttl)
 
+	// ⚠️ 引き継ぐ側は長い TTL で取る。短い TTL のまま競わせると、勝者の新しい lock も
+	// すぐ期限切れになり、後続が「正当に」引き継いで勝者が増える (仕様どおりの挙動)。
+	// それでは「同じ 1 回の引き継ぎ競争で勝者は 1 人」という主張を測れない。
 	const n = 16
 	var wg sync.WaitGroup
 	wins := make(chan string, n)
@@ -104,7 +107,7 @@ func TestStaleTakeoverHasExactlyOneWinner(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if m, err := l.Acquire(ttl, "takeover"); err == nil {
+			if m, err := l.Acquire(time.Minute, "takeover"); err == nil {
 				wins <- m.Token
 			}
 		}()
@@ -113,6 +116,26 @@ func TestStaleTakeoverHasExactlyOneWinner(t *testing.T) {
 	close(wins)
 	if got := len(wins); got != 1 {
 		t.Fatalf("引き継ぎの勝者が %d 人 (期待 1)", got)
+	}
+}
+
+// ★ 回帰テスト: 生きている他人の lock を「短い TTL を渡す」だけで早期に奪えないこと。
+//
+// 生死の判定に**保持者が宣言した TTL** ではなく**奪いに来た側の --ttl** を使っていると、
+// `lockman acquire "$dir" --ttl 30s` と打つだけで、30 分の lease を持つ相手を 30 秒で
+// 追い出せてしまう。macOS では速すぎて出ず、CI (Linux) が「勝者が 4 人」で露見させた。
+func TestShortTTLCannotStealLiveLock(t *testing.T) {
+	l := newTestLocker(t)
+	if _, err := l.Acquire(time.Hour, "long-lease"); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	if _, err := l.Acquire(time.Millisecond, "thief"); !errors.Is(err, errBusy) {
+		t.Fatalf("短い TTL を渡して他人の lease を奪えた (err=%v)", err)
+	}
+	// 解放も同じ: 奪いに来た側の TTL では「期限切れ」と判定させない
+	if err := l.Release("deadbeef"); !errors.Is(err, errNotOwner) {
+		t.Fatalf("Release: %v (期待 errNotOwner)", err)
 	}
 }
 
@@ -139,7 +162,7 @@ func TestCorruptLockIsTreatedAsBusy(t *testing.T) {
 	if _, err := l.Acquire(time.Minute, ""); !errors.Is(err, errBusy) {
 		t.Fatalf("壊れた lock で busy にならない (err=%v)", err)
 	}
-	if _, err := l.Inspect(time.Minute); err == nil {
+	if _, err := l.Inspect(); err == nil {
 		t.Fatal("壊れた lock を Inspect がエラーにしない")
 	}
 }
@@ -150,7 +173,7 @@ func TestReleaseRejectsForeignToken(t *testing.T) {
 	if _, err := l.Acquire(time.Minute, ""); err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
-	if err := l.Release("deadbeef", time.Minute); !errors.Is(err, errNotOwner) {
+	if err := l.Release("deadbeef"); !errors.Is(err, errNotOwner) {
 		t.Fatalf("他人のトークンで解放できた (err=%v)", err)
 	}
 	if _, _, err := l.readLock(); err != nil {
@@ -168,7 +191,7 @@ func TestReleaseRefusesExpiredLease(t *testing.T) {
 		t.Fatalf("Acquire: %v", err)
 	}
 	time.Sleep(3 * ttl)
-	if err := l.Release(m.Token, ttl); !errors.Is(err, errNotOwner) {
+	if err := l.Release(m.Token); !errors.Is(err, errNotOwner) {
 		t.Fatalf("期限切れの lease で解放できた (err=%v)", err)
 	}
 }
