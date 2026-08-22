@@ -76,8 +76,8 @@ printf '✓ 候補が非空 (誤検知ガード)\n'
 printf '✓ 選択結果は先頭候補の window_id (@10)\n'
 grep -q '@13' "$FZF_IN" && { printf '✗ popup 専用セッション scratch:0 が候補に混入\n'; exit 1; }
 printf '✓ popup 専用セッション (scratch) は候補から除外\n'
-grep 'いまここ' "$FZF_IN" | grep -q '@10' || { printf '✗ 現在 window に「いまここ」マークが無い\n'; exit 1; }
-grep 'いまここ' "$FZF_IN" | grep -q '@11' && { printf '✗ 現在以外に「いまここ」マークが付いた\n'; exit 1; }
+grep -q '@10' <<< "$(grep 'いまここ' "$FZF_IN")" || { printf '✗ 現在 window に「いまここ」マークが無い\n'; exit 1; }
+grep -q '@11' <<< "$(grep 'いまここ' "$FZF_IN")" && { printf '✗ 現在以外に「いまここ」マークが付いた\n'; exit 1; }
 printf '✓ 「いまここ」マークは現在 window の行だけ\n'
 ids=$(cut -f1 "$FZF_IN" | tr '\n' ' ')
 [[ "$ids" == "@10 @11 @12 " ]] || { printf '✗ activity 降順になっていない: %s\n' "$ids"; exit 1; }
@@ -126,7 +126,7 @@ grep -q -- '--with-nth=2\.\.' "$CALLS" || { printf '✗ fzf に --with-nth=2.. �
 printf '✓ fzf の表示指定は --with-nth=2.. (column 不在フォールバックの表示契約)\n'
 disp=$(grep '@10' "$FZF_IN" | cut -f2-)
 for want in '秒前' 'vim' 'いまここ'; do
-  printf '%s' "$disp" | grep -q "$want" || { printf '✗ column 不在の表示フィールド (2..) に %s が無い: %s\n' "$want" "$disp"; exit 1; }
+  grep -q "$want" <<< "$disp" || { printf '✗ column 不在の表示フィールド (2..) に %s が無い: %s\n' "$want" "$disp"; exit 1; }
 done
 printf '✓ 表示フィールド (2..) に 相対時刻/名前/いまここ が揃っている\n'
 

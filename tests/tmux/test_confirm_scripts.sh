@@ -183,7 +183,7 @@ assert_not_called "source-file" "--confirm 拒否 → リロードしない"
 printf '\n## _tmux.conf の配線 (bind がガード経由になっていること)\n'
 CONF="$ROOT_DIR/_tmux.conf"
 assert_bind() {  # $1=キー $2=必須文字列 $3=説明
-  grep -E "^bind(-key)? +$1 " "$CONF" | grep -qF "$2" \
+  grep -qF "$2" <<< "$(grep -E "^bind(-key)? +$1 " "$CONF")" \
     || { printf '✗ %s\n  (bind %s が %s を参照していない)\n' "$3" "$1" "$2"; exit 1; }
   printf '✓ %s\n' "$3"
 }

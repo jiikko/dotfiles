@@ -84,7 +84,7 @@ echo "==> ${count} 件のサービスを処理します"
 
 # 1. 既存の [RateLimit] イベントを削除
 echo "==> 既存の ${PREFIX} イベントを削除中..."
-if gcalcli search "$PREFIX" 2>/dev/null | grep -q "$PREFIX"; then
+if grep -q "$PREFIX" <<< "$(gcalcli search "$PREFIX" 2>/dev/null)"; then
   gcalcli delete --iamaexpert "$PREFIX" 2>/dev/null || true
   echo "    削除完了"
 else

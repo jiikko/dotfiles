@@ -211,7 +211,7 @@ cmd_follow() {
   # client-session-changed を発火させるが、そこへ panel を作ると popup の小画面に
   # 覆い被さる上、popup を閉じた後も panel がそのセッションに取り残される
   sess="$(tmux display-message -p -t "$win" '#{session_name}:' 2>/dev/null)"
-  if printf '%s' "$sess" | grep -Eq "$TT_POPUP_SESSION_RE"; then
+  if grep -Eq "$TT_POPUP_SESSION_RE" <<< "$sess"; then
     exit 0
   fi
   p="$(panel_pane)"

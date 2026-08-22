@@ -93,7 +93,7 @@ fi
 # できないが、戻した archive 自体が壊れていたときに archive-broken を残せないと「退行を戻したので
 # 安全」と読めてしまう。構造で pin する (実行系は tmux を要するため)。
 reject_line="$(grep -n 'reject したら非 0 を返す' "$SCRIPT" | head -1 | cut -d: -f1)"
-if [ -n "$reject_line" ] && sed -n "$((reject_line - 8)),${reject_line}p" "$SCRIPT" | grep -q 'tt_archive_finalize'; then
+if [ -n "$reject_line" ] && grep -q 'tt_archive_finalize' <<< "$(sed -n "$((reject_line - 8)),${reject_line}p" "$SCRIPT")"; then
   ok "reject 経路も return 前に archive 検証を通す"
 else
   ng "reject 経路が finalize を飛ばして return している (archive-broken の観測が落ちる)"
@@ -102,7 +102,7 @@ fi
 # --- 6. escape hatch が退避を消す前に検証を通す --------------------------------------------
 # 構造で pin する: regression-stuck-override のログ行の直後、return 0 より前に finalize がある
 hatch="$(grep -n 'regression-stuck-override' "$SCRIPT" | head -1 | cut -d: -f1)"
-if [ -n "$hatch" ] && sed -n "${hatch},$((hatch + 8))p" "$SCRIPT" | grep -q 'tt_archive_finalize'; then
+if [ -n "$hatch" ] && grep -q 'tt_archive_finalize' <<< "$(sed -n "${hatch},$((hatch + 8))p" "$SCRIPT")"; then
   ok "escape hatch が return する前に archive 検証を通す"
 else
   ng "escape hatch が検証を飛ばして return している (唯一の復旧手段を消してから返る)"

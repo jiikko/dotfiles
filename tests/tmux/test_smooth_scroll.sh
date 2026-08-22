@@ -84,11 +84,11 @@ for _ in {1..50}; do
   sleep 0.1
 done
 [[ -n "$bound" ]] || fail "scroll keys were not rebound to scroll.sh"
-print -r -- "$bound" | grep -q "C-u" || fail "C-u not rebound to scroll.sh"
-print -r -- "$bound" | grep -q "C-d" || fail "C-d not rebound to scroll.sh"
-print -r -- "$bound" | grep -q "Wheel" && fail "Wheel bindings were rebound despite @smooth-scroll-mouse=false"
+grep -q "C-u" <<< "$bound" || fail "C-u not rebound to scroll.sh"
+grep -q "C-d" <<< "$bound" || fail "C-d not rebound to scroll.sh"
+grep -q "Wheel" <<< "$bound" && fail "Wheel bindings were rebound despite @smooth-scroll-mouse=false"
 # @smooth-scroll-scopes='halfpage fullpage' なので normal (C-e/C-y) は native のまま
-print -r -- "$bound" | grep -qE "C-e|C-y" && fail "normal scope keys were rebound despite scopes"
+grep -qE "C-e|C-y" <<< "$bound" && fail "normal scope keys were rebound despite scopes"
 
 # スクロールバック素材 (起動コマンドの seq 出力) が溜まるのを待って copy-mode に入る
 for _ in {1..50}; do
@@ -177,7 +177,7 @@ fi
 sleep 0.5
 cu_count=$("${TMUX_CMD[@]}" list-keys -T copy-mode-vi | grep -c "C-u" || true)
 [[ "$cu_count" -eq 1 ]] || fail "after re-source: C-u bound $cu_count times (expected 1)"
-"${TMUX_CMD[@]}" list-keys -T copy-mode-vi | grep "C-u" | grep -q "scroll.sh" \
+grep -q "scroll.sh" <<< "$("${TMUX_CMD[@]}" list-keys -T copy-mode-vi | grep "C-u")" \
   || fail "after re-source: C-u no longer bound to scroll.sh"
 sleep 0.3
 gen2=$(read_gen "$pane_id")

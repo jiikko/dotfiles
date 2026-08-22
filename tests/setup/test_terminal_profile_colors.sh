@@ -31,7 +31,7 @@ ng() { printf '✗ %s\n' "$1"; fails=$((fails + 1)); }
 # 旧形式を読む必要が出たら ObjC 側で例外を捕まえるラッパを噛ませる (ヘッダのコメント参照)。
 # コメントは落としてから見る (ヘッダが「なぜ持たないか」の説明で NSUnarchiver に言及するため)。
 code_only="$(sed 's|//.*||' "$SWIFT_SRC")"
-if printf '%s' "$code_only" | grep -q 'NSUnarchiver'; then
+if grep -q 'NSUnarchiver' <<< "$code_only"; then
   ng "NSUnarchiver が復活している (ObjC 例外は Swift で捕捉できず SIGABRT になる)"
   printf '%s\n' "$code_only" | grep -n 'NSUnarchiver' | head -3
 else

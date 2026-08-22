@@ -91,7 +91,7 @@ ok "E-2: 既定の保護リストが本番の default socket (/tmp と /private/
 # (実測 2026-08-21: cwd を変えるだけで同じ生存サーバが would reap に入った / 消えた)。
 grep -q 'case "\$s" in' "$REAP" \
   || fail "F-1: socket パスの絶対/相対を分けていない (相対パスの live サーバを誤殺する)"
-awk '/case "\$s" in/,/esac/' "$REAP" | grep -qE '^\s*\*\)\s*alive=1' \
+grep -qE '^\s*\*\)\s*alive=1' <<< "$(awk '/case "\$s" in/,/esac/' "$REAP")" \
   || fail "F-1: 相対パスを alive 側へ倒していない (確認できないものを孤児と読む)"
 ok "F-1: 相対パス socket は確認不能として保護側へ倒す"
 
