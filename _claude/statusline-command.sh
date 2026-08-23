@@ -130,18 +130,6 @@ rate_color() {
   fi
 }
 
-# Build a 4-slot bar: e.g. [||..] for 50%
-rate_bar() {
-  pct=$1
-  filled=$(( (pct + 12) / 25 ))  # nearest-quarter rounding: 0-12%->0, 13-37%->1, 38-62%->2, 63-87%->3, 88-100%->4
-  [ "$filled" -gt 4 ] && filled=4
-  empty=$(( 4 - filled ))
-  bar=""
-  i=0; while [ $i -lt $filled ]; do bar="${bar}█"; i=$((i+1)); done
-  i=0; while [ $i -lt $empty ];  do bar="${bar}░"; i=$((i+1)); done
-  printf "%s" "$bar"
-}
-
 # Remaining-time label until a reset epoch: "3日2時間" / "1時間23分" / "45分"。
 # ⚠️ 結果は stdout でなく REPLY で返す。statusline は再描画ごとに走るため、$(...) は
 # 1 呼び出しごとに subshell を fork する (ファイル冒頭の jq 一括化と同じ理由)。
@@ -186,10 +174,9 @@ human_tokens() {
   fi
 }
 
-rate_part=""
 # five_pct / seven_pct / five_reset / seven_reset は冒頭の一括 jq で読んでいる
 # (resets_at = 各ウィンドウがリセットされる時刻 (Unix epoch 秒)。残り時間表示に使う)
-# 残り時間ラベルの色。90 (dark gray) は暗すぎたので 37 (light gray) にしている
+# 目盛り (想定%) の色。90 (dark gray) は暗すぎたので 37 (light gray) にしている
 gray_fg="\033[37m"
 dim_fg="\033[90m"        # ペース行の「まだ来ていない未来」だけに使う (地の色として沈ませたい)
 bg_in="\033[42;30m"      # ペース行: 想定内の消化 (緑背景 + 黒文字。1 行目の branch と同配色)
@@ -211,28 +198,6 @@ blink_color() {
     printf "\033[5;1;33m"  # blink bold yellow
   fi
 }
-
-# 1 ウィンドウ分のセグメント: "5h:[████]87%(残:1時間23分)"。
-# resets_at を過ぎてもデータが更新されるまでは消さず、"(リセット!)" を点滅表示する。
-rate_segment() {
-  seg_label=$1; seg_pct=$2; seg_reset_at=$3
-  p=$seg_pct
-  printf "%s%s:[%s]%s%%%s" "$(rate_color "$p")" "$seg_label" "$(rate_bar "$p")" "$p" "$reset"
-  if [ -n "$seg_reset_at" ] && [ "$seg_reset_at" -gt "$now" ] 2>/dev/null; then
-    # %-m / %-d はゼロ埋めなし (BSD/GNU の差は fmt_epoch が吸収する)
-    fmt_remaining $(( seg_reset_at - now ))
-    seg_remaining=$REPLY
-    fmt_epoch "$seg_reset_at" "+%-m月%-d日%H:%M"
-    if [ -n "$REPLY" ]; then
-      printf "%s(残:%s / %s)%s" "$gray_fg" "$seg_remaining" "$REPLY" "$reset"
-    else
-      printf "%s(残:%s)%s" "$gray_fg" "$seg_remaining" "$reset"
-    fi
-  elif [ -n "$seg_reset_at" ] && [ "$seg_reset_at" -gt 0 ] 2>/dev/null; then
-    printf "%s(リセット!)%s" "$(blink_color)" "$reset"
-  fi
-}
-
 
 # ペース行: 各ウィンドウの消化ペースを 1 行で出す。
 # 窓を等分したスロット (時 / 日) を「番号 + 空白」の 2 カラムとして並べ、その「背景」で
@@ -260,17 +225,29 @@ pace_row() {
     *) return ;;
   esac
   [ -n "$pr_used" ] || return
-  [ -n "$pr_reset" ] || return
-  # ⚠️ 条件は `-gt "$now"` (「窓の中にいる」)。リセット済み / 未更新のデータを弾く役目と、
-  #   下の予算が pr_rem で割るための「残り >= 1 秒」保証を兼ねている。緩めると 0 除算で
-  #   ペース行が無言で消える (tests/claude/test_statusline.sh が境界の両側を固定)。
-  [ "$pr_reset" -gt "$now" ] 2>/dev/null || return
+  # resets_at が無い / 数値でない = 窓のどこにいるか分からない。ゲージも想定も出せないので
+  # 残量% だけを出す (残量% はどの経路でも必ずどこかに出る、が不変条件)。
+  if [ -z "$pr_reset" ] || ! [ "$pr_reset" -ge 0 ] 2>/dev/null; then
+    printf -v PACE_ROW "%s %b%d%%%b" "$pr_label" "$(rate_color "$pr_used")" "$pr_used" "$reset"
+    return
+  fi
+  # リセット時刻を過ぎている = 窓は終わったのにデータが更新されていない。窓の中の
+  # 「想定ペース」に意味が無くなる (想定 100% との比較は「余らせ過ぎ」という逆向きの助言に
+  # なる) ので、ゲージは「使った分 (緑) と使い残し (シアン)」だけにして、点滅する
+  # (リセット!) を出す。以前は 2 行目の旧セグメント形式へフォールバックしていたが、
+  # 同じウィンドウが 2 つの見た目を持つのをやめた。
+  local pr_stale=0
+  if [ "$pr_reset" -le "$now" ]; then
+    pr_stale=1
+  fi
 
   local pr_rem=$(( pr_reset - now ))
+  [ "$pr_stale" -eq 1 ] && pr_rem=0
   [ "$pr_rem" -gt "$pr_window" ] && pr_rem=$pr_window
   local pr_elapsed=$(( pr_window - pr_rem ))
   local pr_exp=$(( pr_elapsed * 100 / pr_window ))
   local pr_delta=$(( pr_used - pr_exp ))
+  # ⚠️ stale では pr_rem が 0 なので、以降で pr_rem を割ってはいけない (予算は出さない)。
   local pr_ncells=$(( pr_window / pr_cell ))          # 窓が名目上いくつのセルか (5 / 7)
 
   # 格子は「窓を ncells 等分したスロット」。位置は「1 セル = 20」の固定小数で持ち、
@@ -299,7 +276,9 @@ pace_row() {
   #   1 マスも出なくなる (実績 115% / 想定 99%)。そのときは想定線を 1 カラム戻す。
   #   余り側に同じ補正は要らない: 塗りは clamp されないので、帯の外なら乖離が
   #   1 カラム (= 50/ncells pt) を必ず超え、切り上げ後も必ず差が出る。
-  if [ "$pr_delta" -le "$pr_band" ] && [ "$pr_delta" -ge $(( -pr_band )) ]; then
+  if [ "$pr_stale" -eq 1 ]; then
+    :   # 窓は終わっている: 塗った先は全部「使い残し」= シアン (帯の判定はしない)
+  elif [ "$pr_delta" -le "$pr_band" ] && [ "$pr_delta" -ge $(( -pr_band )) ]; then
     pr_nmark=$pr_nfill
   elif [ "$pr_delta" -gt "$pr_band" ] && [ "$pr_nfill" -le "$pr_nmark" ]; then
     pr_nmark=$(( pr_nfill - 1 )); [ "$pr_nmark" -lt 0 ] && pr_nmark=0
@@ -318,7 +297,9 @@ pace_row() {
   # ⚠️ 100% 到達は乖離に関わらず赤 + 「上限超過」にする。乖離が +18pt でも「先行 (黄)」で
   #   済ませない (上限に届いている事実の方が重い)。
   local pr_color pr_word pr_advice pr_advice_sgr=""
-  if [ "$pr_used" -ge 100 ]; then
+  if [ "$pr_stale" -eq 1 ]; then
+    pr_color="$(rate_color "$pr_used")"; pr_word=""; pr_advice=""
+  elif [ "$pr_used" -ge 100 ]; then
     pr_color="$red_fg";     pr_word=" 上限超過"; pr_advice="残枠なし・リセットまで待つ"
     pr_advice_sgr="$bg_over"     # 行動が強制される唯一の状態なので背景で強調する
   elif [ "$pr_delta" -ge $(( pr_band * 2 )) ]; then
@@ -353,6 +334,8 @@ pace_row() {
     fi
     [ "$pr_c" -eq 0 ] && pr_cells="${pr_cells} "   # 左端の余白 (1 カラム目と同じ塗り)
     if [ $(( pr_c % 2 )) -eq 0 ]; then
+      # 下線は「いま居るスロット」。stale (窓が終わっている) では pr_elapsed が窓幅ちょうどに
+      # なり pr_at_col が範囲外 (= ncols) になるので、ここは自然に一致しない
       [ "$pr_c" -eq "$pr_at_col" ] && pr_cells="${pr_cells}${under_sgr}"
       pr_cells="${pr_cells}$(( pr_c / 2 + 1 ))"
     else
@@ -361,6 +344,20 @@ pace_row() {
     pr_cells="${pr_cells}${reset}"
     pr_c=$(( pr_c + 1 ))
   done
+
+  # 5h (5 スロット) と 7d (7 スロット) で数値の縦を揃えるため、狭い方の後ろを空白で埋める。
+  # ⚠️ 空白は括弧の**外**に置く。括弧の中に入れると「空のスロット」に見えて、その窓が
+  #   5 スロットであること自体が読めなくなる。
+  local pr_pad="" pr_padn=$(( (PACE_MAX_CELLS - pr_ncells) * 2 ))
+  while [ "$pr_padn" -gt 0 ]; do pr_pad="${pr_pad} "; pr_padn=$(( pr_padn - 1 )); done
+
+  # stale はここで終わり: 残り時間も予算もアドバイスも無く、点滅する (リセット!) を出す。
+  if [ "$pr_stale" -eq 1 ]; then
+    printf -v PACE_ROW "%s [%b]%s %b%d%%%b %b(リセット!)%b" \
+      "$pr_label" "$pr_cells" "$pr_pad" "$pr_color" "$pr_used" "$reset" \
+      "$(blink_color)" "$reset"
+    return
+  fi
 
   # 1 セルあたり予算。残りが 1 セル未満のときは %/セル を出さない: 「残 12 時間で
   # 110.0%/日」はその 1 日が来ないので実行不能な数字になる。残枠をそのまま出す。
@@ -372,12 +369,6 @@ pace_row() {
   else
     printf -v pr_budget "残枠%d%%" "$pr_left"
   fi
-
-  # 5h (5 スロット) と 7d (7 スロット) で数値の縦を揃えるため、狭い方の後ろを空白で埋める。
-  # ⚠️ 空白は括弧の**外**に置く。括弧の中に入れると「空のスロット」に見えて、その窓が
-  #   5 スロットであること自体が読めなくなる。
-  local pr_pad="" pr_padn=$(( (PACE_MAX_CELLS - pr_ncells) * 2 ))
-  while [ "$pr_padn" -gt 0 ]; do pr_pad="${pr_pad} "; pr_padn=$(( pr_padn - 1 )); done
 
   # 残り時間 + リセットの絶対時刻。絶対時刻が取れない環境 (fmt_epoch 失敗) では括弧を
   # 落とす (中身の無い "()" をぶら下げない)。
@@ -397,22 +388,6 @@ pace_row() {
 
 pace_row 5h hour "$five_pct"  "$five_reset";  pace_five=$PACE_ROW
 pace_row 7d day  "$seven_pct" "$seven_reset"; pace_seven=$PACE_ROW
-
-# 2 行目: rate limit。各ウィンドウはペース行が持つので、ペース行が出たものはここから
-# 外す (同じ量を 2 か所に描かない)。ペース行が出せない場合 (resets_at 不在 / リセット
-# 済みで未更新) は従来どおりここに出す — **残量% はどの経路でも必ずどこかに出る**、が
-# 不変条件。両方ペース行に出れば 2 行目そのものを出さない。
-if [ -n "$five_pct" ] || [ -n "$seven_pct" ]; then
-  parts=""
-  if [ -n "$five_pct" ] && [ -z "$pace_five" ]; then
-    parts="$(rate_segment 5h "$five_pct" "$five_reset")"
-  fi
-  if [ -n "$seven_pct" ] && [ -z "$pace_seven" ]; then
-    if [ -n "$parts" ]; then parts="$parts "; fi   # 5h の後ろに区切りの空白
-    parts="${parts}$(rate_segment 7d "$seven_pct" "$seven_reset")"
-  fi
-  [ -n "$parts" ] && rate_part=" ${parts}"
-fi
 
 # Model segment (leading space, empty when not provided).
 model_part=""
@@ -504,18 +479,16 @@ if [ -n "$transcript" ] && [ -f "$transcript" ]; then
 fi
 advisor_part=" ${advisor_color}[advisor:${advisor_label}]${reset}"
 
-# 1 行目: directory, branch, model, context, effort, advisor / 2 行目: ペース行に
-# できなかった rate limit / 3 行目以降: 各ウィンドウの消化ペース (5h → 7d)。
+# 1 行目: directory, branch, model, context, effort, advisor / 2 行目以降: 各ウィンドウの
+# 消化ペース (5h → 7d)。
 # statusline は複数行出力をサポートする (公式 docs の Display multiple lines)。
 # rate limit が無いとき (Free tier 等) は 2 行目以降を出さない。ペース行は
-# used_percentage と resets_at が両方揃い、まだ窓の中にいるときだけ出す。
+# used_percentage があれば必ず出す (resets_at が無い / リセット済みのときは、出せる範囲に
+# 縮めて出す — 残量% がどの経路でも必ずどこかに出る、が不変条件)。
 # Each non-first segment carries its own leading space. (No right-alignment:
 # the statusLine command runs without a controlling TTY so `tput cols` reports
 # the wrong width and the line would overflow past the right edge.)
 printf "%b%b%b%b%b%b" "$dir_part" "$branch_part" "$model_part" "$ctx_part" "$effort_part" "$advisor_part"
-if [ -n "$rate_part" ]; then
-  printf "\n%b" "${rate_part# }"
-fi
 if [ -n "$pace_five" ]; then
   printf "\n%b" "$pace_five"
 fi

@@ -52,8 +52,8 @@ assert_contains "$out" "[effort:high]"   "effort が effort 欄に出る"
 assert_contains "$out" "[ctx:269k/1M]"   "context の used/size が ctx 欄に出る"
 assert_contains "$out" "5h ["            "5 時間ウィンドウのラベル"
 assert_contains "$out" "42%"             "5h の残量% (seven_day の 93% と入れ替わらない)"
-# 7d はペース行 (3 行目) が持つので、2 行目には出さない (同じ量を 2 か所に描かない)
-assert_lacks    "$out" "7d:"             "ペース行が出るなら 2 行目に 7d セグメントを出さない"
+# 5h / 7d は同じ形 (ペース行) で出す。旧セグメント形式 ("7d:[██░░]93%(残:…)") は廃止した
+assert_lacks    "$out" "7d:"             "旧セグメント形式は使わない"
 assert_contains "$out" "7d ["            "7 日ウィンドウはペース行が持つ"
 assert_contains "$out" "93%"             "7d の残量%"
 assert_contains "$out" "残"              "resets_at から残り時間ラベルが出る"
@@ -161,7 +161,10 @@ chmod +x "$gnu_dir/date"
 #   1 度も通らない (テストが空振りする)。
 gnu_json_body() {
   local now; now="$(date +%s)"
-  printf '%s' "{\"cwd\":\"/tmp\",\"rate_limits\":{\"five_hour\":{\"used_percentage\":42,\"resets_at\":$(( now + 172800 ))},\"seven_day\":{\"used_percentage\":62,\"resets_at\":$(( now + 172800 ))}}}"
+  # ⚠️ 境界値を使わない。now をテスト側と statusline 側で別々に取るため 1〜2 秒ずれる。
+  #   表示は「日+時間」なので **時間の境界**に余白が要る (180000 = ちょうど 2 日 2 時間 は
+  #   1 秒ずれると "2日1時間" に化けて flaky。実測 2026-08-23)
+  printf '%s' "{\"cwd\":\"/tmp\",\"rate_limits\":{\"five_hour\":{\"used_percentage\":42,\"resets_at\":$(( now + 181800 ))},\"seven_day\":{\"used_percentage\":62,\"resets_at\":$(( now + 181800 ))}}}"
 }
 gnu_json() { gnu_json_body; }
 # epoch → 日時の変換手段がどちらも無い環境では、日時を落として残り時間だけ出す
@@ -177,7 +180,7 @@ exec "$real_date" "\$@"
 SHIM
 chmod +x "$nodate_dir/date"
 nodate_out="$(gnu_json_body | PATH="$nodate_dir:$PATH" "$SL" 2>/dev/null | sed $'s/\033\[[0-9;]*m//g')"
-assert_contains "$nodate_out" "残2日0時間" "変換手段が無くても残り時間は出す"
+assert_contains "$nodate_out" "残2日2時間" "変換手段が無くても残り時間は出す"
 assert_lacks "$nodate_out" "()"            "日時が取れないとき空の \"()\" をぶら下げない"
 
 gnu_out="$(gnu_json | PATH="$gnu_dir:$PATH" "$SL" 2>/dev/null | sed $'s/\033\[[0-9;]*h//g;s/\033\[[0-9;]*m//g')"
@@ -238,6 +241,11 @@ pace_render() {  # pace_render <used%> <残り秒>
   render "{\"cwd\":\"/tmp\",\"rate_limits\":{\"seven_day\":{\"used_percentage\":$used,\"resets_at\":$(( now + rem_secs ))}}}"
 }
 day() { printf '%d' $(( $1 * 86400 )); }
+pace_raw() { # pace_raw <used%> <残り秒> → ペース行 (ANSI つき)
+  local now; now="$(date +%s)"
+  printf '%s' "{\"cwd\":\"/tmp\",\"rate_limits\":{\"seven_day\":{\"used_percentage\":$1,\"resets_at\":$(( now + $2 ))}}}" \
+    | "$SL" | tail -1
+}
 
 # 残り 2 日 1 時間半で 62% → 想定 70% を 8pt 下回る。±10pt 帯なので語を出さない
 out="$(pace_render 62 178200)"
@@ -274,29 +282,35 @@ assert_contains "$capped" "残枠なし・リセットまで待つ" "上限超�
 assert_lacks    "$capped" "このままでちょうど"         "上限超過を想定通りと呼ばない"
 # resets_at が窓幅 (7 日) を超えて返っても、経過をマイナスにしない (0 に clamp)
 assert_contains "$(pace_render 3 "$(day 10)")" "想定0%" "残りが 7 日超なら経過 0% に clamp"
-# リセット済み (resets_at が現在以下) ではペース行を出さない。窓の外なので
-# 「想定 100% との比較」に意味がなく、放っておくと実績 62% が "-38pt 余らせ過ぎ・
-# もっと使える" という逆向きの助言になる。このときは 2 行目の 7d セグメントが復活し、
-# "(リセット!)" を出す (7d の残量% はどの経路でも必ずどこかに出る、が不変条件)。
+# リセット済み (resets_at が現在以下) = 窓は終わったのにデータが更新されていない。
+# 窓の中の「想定ペース」に意味が無くなる (想定 100% との比較は実績 62% を "-38pt
+# 余らせ過ぎ・もっと使える" という逆向きの助言にしてしまう) ので、想定・乖離・残り時間・
+# 予算・アドバイスを落として、点滅する (リセット!) だけを出す。
+# ⚠️ ゲージ自体は出し続ける。以前は 2 行目の旧セグメント形式へフォールバックしていたが、
+#   同じウィンドウが 2 つの見た目を持つのをやめた (表示が突然「前の実装」に戻って見える)。
 edge="$(pace_render 62 0)"
-assert_contains "$edge" "(リセット!)" "リセット済みは 2 行目が知らせる"
-assert_contains "$edge" "7d:"         "ペース行が出ないときは 2 行目に 7d が戻る"
-assert_lacks "$edge" "7d ["           "リセット済みならペース行を出さない (逆向きの助言を出さない)"
+assert_contains "$edge" "7d ["        "リセット済みでもゲージは出す (見た目を切り替えない)"
+assert_contains "$edge" "62%"         "リセット済みでも残量% は出す"
+assert_contains "$edge" "(リセット!)" "リセット済みは (リセット!) で知らせる"
+assert_lacks "$edge" "想定"           "リセット済みに想定ペースを出さない"
 assert_lacks "$edge" "余らせ過ぎ"     "リセット済みを余らせ過ぎと呼ばない"
-# resets_at が過去 (データが更新される前) も同じ扱い。`-gt "$now"` ガードが
-# 1 日予算の 0 除算も同時に防いでいるので、境界の両側を固定する
+assert_lacks "$edge" "残枠"           "リセット済みに予算を出さない"
+# 窓が終わっているので、塗った先は全部「使い残し」= シアン。実績 62% は 9 カラム目まで
+# なので 6 番はシアンになる
+assert_contains "$(pace_raw 62 0)" $'\033[36m'"6" "リセット済みの未使用分は使い残し (シアン)"
+assert_lacks "$(pace_raw 62 0)" $'\033[4;1m' "リセット済みには現在位置の下線を引かない"
+# ⚠️ 窓が終わっているので、乖離が想定帯の中に入っていても使い残しは出す。実績 91% は
+#   13 カラム目まで塗られ、最後の 1 カラムが使い残しになる (帯の判定をすると消える)
+assert_contains "$(pace_raw 91 0)" $'\033[36m'" " "リセット済みは帯に関係なく使い残しを出す"
+# resets_at が過去 (データが更新される前) も同じ扱い。ここが「窓の中」に紛れると
+# 予算計算が 0 除算になるので、境界の両側を固定する
 stale="$(pace_render 62 -3600)"
-assert_lacks    "$stale" "7d [" "resets_at が過去でもペース行を出さない"
-assert_contains "$stale" "7d:"  "resets_at が過去でも 7d セグメントは 2 行目に出る"
+assert_contains "$stale" "(リセット!)" "resets_at が過去でも (リセット!) を出す"
+assert_lacks    "$stale" "想定"        "resets_at が過去でも想定ペースを出さない"
 
 # 色: 状態ごとに色が変わること (想定通り=緑 / 先行=黄 / 超過=赤 / 余裕=シアン /
 # 余らせ過ぎ=マゼンタ)。ANSI を残した生出力で見る (render は色を落とすので使わない)。
 # 状態色が乗るのは残量% なので、"<色>NN%" の形で見る。
-pace_raw() { # pace_raw <used%> <残り秒> → ペース行 (ANSI つき)
-  local now; now="$(date +%s)"
-  printf '%s' "{\"cwd\":\"/tmp\",\"rate_limits\":{\"seven_day\":{\"used_percentage\":$1,\"resets_at\":$(( now + $2 ))}}}" \
-    | "$SL" | tail -1
-}
 assert_contains "$(pace_raw 28 "$(day 5)")" $'\033[32m28%' "想定通りは緑"
 assert_contains "$(pace_raw 38 "$(day 5)")" $'\033[33m38%' "先行は黄"
 assert_contains "$(pace_raw 80 "$(day 5)")" $'\033[31m80%' "超過は赤"
@@ -422,12 +436,13 @@ pace5_raw() {
   printf '%s' "{\"cwd\":\"/tmp\",\"rate_limits\":{\"five_hour\":{\"used_percentage\":$1,\"resets_at\":$(( now + $2 ))}}}" \
     | "$SL" | tail -1
 }
-five_out="$(pace5_render 34 7200)"     # 経過 3 時間 → 想定 60%
+# ⚠️ 7200 (= ちょうど 2 時間) は境界値なので使わない (1 秒ずれると "1時間59分" になる)
+five_out="$(pace5_render 34 7130)"     # 残 1 時間 58 分 50 秒 → 想定 60%
 assert_contains "$five_out" "5h ["                 "5h もペース行で出る"
 assert_contains "$five_out" "34% 想定60% -26pt"    "5h の想定率は 5 時間窓で計算する"
-assert_contains "$five_out" "· 33.0%/時"           "5h の予算は %/時"
+assert_contains "$five_out" "· 33.3%/時"           "5h の予算は %/時"
 assert_contains "$five_out" "1.3時間分の余り"       "5h の乖離換算は時間分"
-assert_contains "$five_out" "残2時間0分 ("          "5h も残り時間の後ろに絶対時刻が付く"
+assert_contains "$five_out" "残1時間58分 ("         "5h も残り時間の後ろに絶対時刻が付く"
 five_bar="$(bar_of "$(printf '%s\n' "$five_out" | tail -1)")"
 if [[ "$five_bar" == " 1 2 3 4 5 " ]]; then
   printf '✓ %s\n' "5h のバーは常に 5 スロット"
@@ -457,9 +472,11 @@ assert_contains "$(pace_render 68 "$(day 5)")" "+40pt 超過" "7d の +40pt は�
 assert_contains "$(pace5_render 60 1800)" "· 残枠40%" "5h も残り 1 セル未満は残枠% で出す"
 # 5h がリセット済みなら 2 行目にフォールバックする (残量% はどこかに必ず出る)
 five_edge="$(pace5_render 80 0)"
-assert_contains "$five_edge" "5h:"        "5h リセット済みは 2 行目が知らせる"
-assert_contains "$five_edge" "(リセット!)" "5h リセット済みは点滅表示"
-assert_lacks    "$five_edge" "5h ["       "5h リセット済みならペース行を出さない"
+assert_contains "$five_edge" "5h ["       "5h リセット済みでもゲージは出す"
+assert_contains "$five_edge" "(リセット!)" "5h リセット済みは (リセット!) で知らせる"
+assert_lacks    "$five_edge" "想定"       "5h リセット済みに想定ペースを出さない"
+# 縦揃えのパディングはリセット済みでも効く (5h だけリセットされた行が横にずれない)
+assert_contains "$five_edge" "5 ]     80%" "5h リセット済みでも桁位置を揃える"
 
 # 行末で必ず色を戻す (戻さないと statusline の次の描画まで色が残る)
 pace_line="$(pace_raw 62 178200)"
@@ -475,9 +492,12 @@ esac
 five_only='{"cwd":"/tmp","rate_limits":{"five_hour":{"used_percentage":42,"resets_at":9999999999}}}'
 assert_contains "$(render "$five_only")" "5h [" "5h だけでもペース行は出る"
 assert_lacks "$(render "$five_only")" "7d [" "7d 不在ならペース行を出さない"
-# used_percentage はあるが resets_at が無い (= 窓の位置が分からない) 場合も出さない
-assert_lacks "$(render '{"cwd":"/tmp","rate_limits":{"seven_day":{"used_percentage":50}}}')" \
-  "7d [" "resets_at 不在ならペース行を出さない"
+# used_percentage はあるが resets_at が無い = 窓のどこにいるか分からない。ゲージも想定も
+# 出せないので残量% だけを出す (残量% はどの経路でも必ずどこかに出る、が不変条件)
+noreset="$(render '{"cwd":"/tmp","rate_limits":{"seven_day":{"used_percentage":50}}}')"
+assert_contains "$noreset" "7d 50%" "resets_at 不在なら残量% だけを出す"
+assert_lacks    "$noreset" "7d ["   "resets_at 不在ならゲージは出さない (窓の位置が不明)"
+assert_lacks    "$noreset" "想定"   "resets_at 不在なら想定ペースを出さない"
 # 行数: 5h + 7d が揃えば 3 行 (末尾改行なしなので wc -l は 2)
 lines="$(printf '%s' "{\"cwd\":\"/tmp\",\"rate_limits\":{\"five_hour\":{\"used_percentage\":42,\"resets_at\":$(( $(date +%s) + 3600 ))},\"seven_day\":{\"used_percentage\":62,\"resets_at\":$(( $(date +%s) + 172800 ))}}}" | "$SL" | wc -l | tr -d ' ')"
 if [[ "$lines" == "2" ]]; then
