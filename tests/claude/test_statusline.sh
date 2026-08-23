@@ -250,18 +250,18 @@ pace_raw() { # pace_raw <used%> <残り秒> → ペース行 (ANSI つき)
 # 残り 2 日 1 時間半で 62% → 想定 70% を 8pt 下回る。±10pt 帯なので語を出さない
 out="$(pace_render 62 178200)"
 assert_contains "$out" "7d ["                        "7d が揃えばペース行が出る"
-assert_contains "$out" "62% 想定70% -8pt"            "想定消化率と乖離 pt"
+assert_contains "$out" " 62% 想定 70%   -8pt"            "想定消化率と乖離 pt"
 assert_lacks    "$out" "-8pt 先行"                   "帯の中では状態の語を出さない"
 assert_contains "$out" "残2日1時間 (" "残り時間の後ろにリセットの絶対時刻が続く"
 assert_contains "$out" "· 18.4%/日 · このままでちょうど" \
   "1 日予算とひとことアドバイスが数値の後ろに出る"
 # 残り 1 日で 50% 残 = 余らせ過ぎ。乖離 35pt は 7 日窓で 2.4 日分 (= 35 * 7 / 100)
 overspare="$(pace_render 50 "$(day 1)")"
-assert_contains "$overspare" "50% 想定85% -35pt 余らせ過ぎ" "余らせ過ぎの判定"
+assert_contains "$overspare" " 50% 想定 85%  -35pt 余らせ過ぎ" "余らせ過ぎの判定"
 assert_contains "$overspare" "2.4日分の使い残し"            "乖離 pt を日数へ換算したアドバイス"
 # 残り 5 日で 80% 使用 = 超過
 over="$(pace_render 80 "$(day 5)")"
-assert_contains "$over" "80% 想定28% +52pt 超過" "超過の判定"
+assert_contains "$over" " 80% 想定 28%  +52pt 超過" "超過の判定"
 assert_contains "$over" "3.6日分の前借り"        "超過側も日数換算する"
 # 帯の境界 (±10pt = 想定通り / +20pt から超過 / -25pt から余らせ過ぎ)。残 5 日 = 想定 28%
 assert_contains "$(pace_render 38 "$(day 5)")" "+10pt 先行"        "+10pt で先行に切り替わる"
@@ -277,11 +277,11 @@ assert_contains "$(pace_render 2 "$(day 5)")"  "-26pt 余らせ過ぎ"  "-26pt �
 # 100% 到達は乖離に関わらず「上限超過」。残 1 時間で 100% は乖離 +1pt しかないので、
 # 帯だけで判定すると「想定通り (緑)」になってしまう (上限に届いた事実の方が重い)
 capped="$(pace_render 100 3690)"
-assert_contains "$capped" "100% 想定99% +1pt 上限超過" "100% 到達は乖離に関わらず上限超過"
+assert_contains "$capped" "100% 想定 99%   +1pt 上限超過" "100% 到達は乖離に関わらず上限超過"
 assert_contains "$capped" "残枠なし・リセットまで待つ" "上限超過のアドバイスは残枠を待つ側"
 assert_lacks    "$capped" "このままでちょうど"         "上限超過を想定通りと呼ばない"
 # resets_at が窓幅 (7 日) を超えて返っても、経過をマイナスにしない (0 に clamp)
-assert_contains "$(pace_render 3 "$(day 10)")" "想定0%" "残りが 7 日超なら経過 0% に clamp"
+assert_contains "$(pace_render 3 "$(day 10)")" "想定  0%" "残りが 7 日超なら経過 0% に clamp"
 # リセット済み (resets_at が現在以下) = 窓は終わったのにデータが更新されていない。
 # 窓の中の「想定ペース」に意味が無くなる (想定 100% との比較は実績 62% を "-38pt
 # 余らせ過ぎ・もっと使える" という逆向きの助言にしてしまう) ので、想定・乖離・残り時間・
@@ -311,11 +311,11 @@ assert_lacks    "$stale" "想定"        "resets_at が過去でも想定ペー�
 # 色: 状態ごとに色が変わること (想定通り=緑 / 先行=黄 / 超過=赤 / 余裕=シアン /
 # 余らせ過ぎ=マゼンタ)。ANSI を残した生出力で見る (render は色を落とすので使わない)。
 # 状態色が乗るのは残量% なので、"<色>NN%" の形で見る。
-assert_contains "$(pace_raw 28 "$(day 5)")" $'\033[32m28%' "想定通りは緑"
-assert_contains "$(pace_raw 38 "$(day 5)")" $'\033[33m38%' "先行は黄"
-assert_contains "$(pace_raw 80 "$(day 5)")" $'\033[31m80%' "超過は赤"
-assert_contains "$(pace_raw 17 "$(day 5)")" $'\033[36m17%' "余裕はシアン"
-assert_contains "$(pace_raw 2 "$(day 5)")"  $'\033[35m2%'  "余らせ過ぎはマゼンタ"
+assert_contains "$(pace_raw 28 "$(day 5)")" $'\033[32m 28%' "想定通りは緑"
+assert_contains "$(pace_raw 38 "$(day 5)")" $'\033[33m 38%' "先行は黄"
+assert_contains "$(pace_raw 80 "$(day 5)")" $'\033[31m 80%' "超過は赤"
+assert_contains "$(pace_raw 17 "$(day 5)")" $'\033[36m 17%' "余裕はシアン"
+assert_contains "$(pace_raw 2 "$(day 5)")"  $'\033[35m  2%'  "余らせ過ぎはマゼンタ"
 assert_contains "$(pace_raw 100 3690)"      $'\033[31m100%' "上限超過は赤"
 # 残り時間・予算・アドバイスも状態色で出す (足りないのか余っているのかを行のどこを読んでも
 # 同じ色で言う)。従来はグレーで従属させていた
@@ -332,10 +332,10 @@ assert_contains "$(pace_raw 80 "$(day 5)")" $'\033[37m'"想定" "想定% はグ�
 # 小数の used_percentage (API は 62.7 のような値を返しうる) と、日境界でない resets_at。
 # ここを丸い値だけで固めると小数部の抽出・切り捨て/四捨五入の違いがテストから
 # 構造的に見えなくなる。
-assert_contains "$(pace_render 62.7 "$(day 2)")" "62% 想定71%" "小数の used% は切り捨てて整数で出す"
+assert_contains "$(pace_render 62.7 "$(day 2)")" " 62% 想定 71%" "小数の used% は切り捨てて整数で出す"
 # 残 2.58 日 (= 222912 秒): 残日数・1 日予算のどちらも小数部が 0 でない値になる
 frac="$(pace_render 33 222912)"
-assert_contains "$frac" "33% 想定63% -30pt 余らせ過ぎ" "日境界でない resets_at でも想定率が合う"
+assert_contains "$frac" " 33% 想定 63%  -30pt 余らせ過ぎ" "日境界でない resets_at でも想定率が合う"
 assert_contains "$frac" "残2日13時間 ("  "日境界でない残りは日+時間で出す"
 assert_contains "$frac" "· 25.9%/日"     "1 日予算は小数部まで一致する"
 assert_contains "$frac" "2.1日分の使い残し" "乖離 pt の日換算も小数部まで一致する"
@@ -394,7 +394,7 @@ assert_lacks "$(pace_raw 100 3690)" $'\033[41;30m'" " "帯の中 (実績 100% / 
 # 数 pt でもカラム境界を跨げば半日分の赤が出て「想定通り」のラベルと矛盾する。
 # 実績 30% / 想定 28% (+2pt) は塗り 5 カラム・想定線 4 カラムで、帯の規則が無いと
 # 5 カラム目 (3 番) が赤くなる
-assert_contains "$(pace_render 30 "$(day 5)")" "30% 想定28% +2pt" "帯の中の fixture が意図した位置になっている"
+assert_contains "$(pace_render 30 "$(day 5)")" " 30% 想定 28%   +2pt" "帯の中の fixture が意図した位置になっている"
 assert_lacks    "$(pace_raw 30 "$(day 5)")" $'\033[41;30m' "帯の中では前借りの赤を出さない"
 assert_lacks    "$(pace_raw 30 "$(day 5)")" $'\033[36m'"3" "帯の中では使い残しのシアンを出さない"
 # 塗りのカラム数は切り上げ (少しでも掛かったカラムは塗る)。実績 15% は 2.1 カラム分なので
@@ -421,7 +421,7 @@ else
     "${#align_five_col}" "${#align_seven_col}" >&2
   fails=$(( fails + 1 ))
 fi
-assert_contains "$align_five" "5 ]     34%" "5h の空白は括弧の外に置く (括弧内に空スロットを作らない)"
+assert_contains "$align_five" "5 ]      34%" "5h の空白は括弧の外に置く (括弧内に空スロットを作らない)"
 
 # --- 5h ウィンドウ ----------------------------------------------------------
 # 5h も同じ関数で描く (1 セル = 1 時間、窓 5 時間 = 5 スロット)。
@@ -439,7 +439,7 @@ pace5_raw() {
 # ⚠️ 7200 (= ちょうど 2 時間) は境界値なので使わない (1 秒ずれると "1時間59分" になる)
 five_out="$(pace5_render 34 7130)"     # 残 1 時間 58 分 50 秒 → 想定 60%
 assert_contains "$five_out" "5h ["                 "5h もペース行で出る"
-assert_contains "$five_out" "34% 想定60% -26pt"    "5h の想定率は 5 時間窓で計算する"
+assert_contains "$five_out" " 34% 想定 60%  -26pt"    "5h の想定率は 5 時間窓で計算する"
 assert_contains "$five_out" "· 33.3%/時"           "5h の予算は %/時"
 assert_contains "$five_out" "1.3時間分の余り"       "5h の乖離換算は時間分"
 assert_contains "$five_out" "残1時間58分 ("         "5h も残り時間の後ろに絶対時刻が付く"
@@ -476,7 +476,7 @@ assert_contains "$five_edge" "5h ["       "5h リセット済みでもゲージ�
 assert_contains "$five_edge" "(リセット!)" "5h リセット済みは (リセット!) で知らせる"
 assert_lacks    "$five_edge" "想定"       "5h リセット済みに想定ペースを出さない"
 # 縦揃えのパディングはリセット済みでも効く (5h だけリセットされた行が横にずれない)
-assert_contains "$five_edge" "5 ]     80%" "5h リセット済みでも桁位置を揃える"
+assert_contains "$five_edge" "5 ]      80%" "5h リセット済みでも桁位置を揃える"
 
 # 行末で必ず色を戻す (戻さないと statusline の次の描画まで色が残る)
 pace_line="$(pace_raw 62 178200)"
@@ -495,7 +495,7 @@ assert_lacks "$(render "$five_only")" "7d [" "7d 不在ならペース行を出�
 # used_percentage はあるが resets_at が無い = 窓のどこにいるか分からない。ゲージも想定も
 # 出せないので残量% だけを出す (残量% はどの経路でも必ずどこかに出る、が不変条件)
 noreset="$(render '{"cwd":"/tmp","rate_limits":{"seven_day":{"used_percentage":50}}}')"
-assert_contains "$noreset" "7d 50%" "resets_at 不在なら残量% だけを出す"
+assert_contains "$noreset" "7d  50%" "resets_at 不在なら残量% だけを出す"
 assert_lacks    "$noreset" "7d ["   "resets_at 不在ならゲージは出さない (窓の位置が不明)"
 assert_lacks    "$noreset" "想定"   "resets_at 不在なら想定ペースを出さない"
 # 行数: 5h + 7d が揃えば 3 行 (末尾改行なしなので wc -l は 2)

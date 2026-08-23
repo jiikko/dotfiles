@@ -228,7 +228,7 @@ pace_row() {
   # resets_at が無い / 数値でない = 窓のどこにいるか分からない。ゲージも想定も出せないので
   # 残量% だけを出す (残量% はどの経路でも必ずどこかに出る、が不変条件)。
   if [ -z "$pr_reset" ] || ! [ "$pr_reset" -ge 0 ] 2>/dev/null; then
-    printf -v PACE_ROW "%s %b%d%%%b" "$pr_label" "$(rate_color "$pr_used")" "$pr_used" "$reset"
+    printf -v PACE_ROW "%s %b%3d%%%b" "$pr_label" "$(rate_color "$pr_used")" "$pr_used" "$reset"
     return
   fi
   # リセット時刻を過ぎている = 窓は終わったのにデータが更新されていない。窓の中の
@@ -353,7 +353,7 @@ pace_row() {
 
   # stale はここで終わり: 残り時間も予算もアドバイスも無く、点滅する (リセット!) を出す。
   if [ "$pr_stale" -eq 1 ]; then
-    printf -v PACE_ROW "%s [%b]%s %b%d%%%b %b(リセット!)%b" \
+    printf -v PACE_ROW "%s [%b]%s %b%3d%%%b %b(リセット!)%b" \
       "$pr_label" "$pr_cells" "$pr_pad" "$pr_color" "$pr_used" "$reset" \
       "$(blink_color)" "$reset"
     return
@@ -380,7 +380,9 @@ pace_row() {
   # 残り時間・予算・アドバイスも状態色で出す (足りていないのか余っているのかを、行の
   # どこを読んでも同じ色で言う)。想定% だけはグレーのままにする — これは状態ではなく
   # 「比較対象の目盛り」なので、状態色に混ぜると読み手が符号を取り違える。
-  printf -v PACE_ROW "%s [%b]%s %b%d%%%b %b想定%d%%%b %b%+dpt%s %b残%s%s · %s · %b%s%b" \
+  # ⚠️ 数値は桁を固定して右詰めにする (使用率・想定率は 3 桁、乖離 pt は符号込み 4 桁)。
+  #   桁数で後ろがずれると、5h と 7d の行で同じ項目が縦に揃わない。
+  printf -v PACE_ROW "%s [%b]%s %b%3d%%%b %b想定%3d%%%b %b%+4dpt%s %b残%s%s · %s · %b%s%b" \
     "$pr_label" "$pr_cells" "$pr_pad" "$pr_color" "$pr_used" "$reset" \
     "$gray_fg" "$pr_exp" "$reset" "$pr_color" "$pr_delta" "$pr_word" \
     "$pr_color" "$pr_remlab" "$pr_at" "$pr_budget" "$pr_advice_sgr" "$pr_advice" "$reset"
