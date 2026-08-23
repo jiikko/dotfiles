@@ -251,7 +251,8 @@ pace_raw() { # pace_raw <used%> <残り秒> → ペース行 (ANSI つき)
 out="$(pace_render 62 178200)"
 assert_contains "$out" "7d ["                        "7d が揃えばペース行が出る"
 assert_contains "$out" " 62% 想定 70%   -8pt"            "想定消化率と乖離 pt"
-assert_lacks    "$out" "-8pt 先行"                   "帯の中では状態の語を出さない"
+assert_contains "$out" "-8pt 想定通り"               "帯の中も状態の語を出す (行ごとに位置が変わらない)"
+assert_lacks    "$out" "-8pt 先行"                   "帯の中を先行と呼ばない"
 assert_contains "$out" "残2日1時間 (" "残り時間の後ろにリセットの絶対時刻が続く"
 assert_contains "$out" "· 18.4%/日 · このままでちょうど" \
   "1 日予算とひとことアドバイスが数値の後ろに出る"
@@ -265,11 +266,11 @@ assert_contains "$over" " 80% 想定 28%  +52pt 超過" "超過の判定"
 assert_contains "$over" "3.6日分の前借り"        "超過側も日数換算する"
 # 帯の境界 (±10pt = 想定通り / +20pt から超過 / -25pt から余らせ過ぎ)。残 5 日 = 想定 28%
 assert_contains "$(pace_render 38 "$(day 5)")" "+10pt 先行"        "+10pt で先行に切り替わる"
-assert_contains "$(pace_render 37 "$(day 5)")" "+9pt"              "+9pt はまだ想定通り"
+assert_contains "$(pace_render 37 "$(day 5)")" "+9pt 想定通り"     "+9pt はまだ想定通り"
 assert_lacks    "$(pace_render 37 "$(day 5)")" "先行"              "+9pt に先行の語を付けない"
 assert_contains "$(pace_render 48 "$(day 5)")" "+20pt 超過"        "+20pt で超過に切り替わる"
 assert_contains "$(pace_render 47 "$(day 5)")" "+19pt 先行"        "+19pt はまだ先行"
-assert_contains "$(pace_render 18 "$(day 5)")" "-10pt"             "-10pt はまだ想定通り"
+assert_contains "$(pace_render 18 "$(day 5)")" "-10pt 想定通り"    "-10pt はまだ想定通り"
 assert_lacks    "$(pace_render 18 "$(day 5)")" "余裕"              "-10pt に余裕の語を付けない"
 assert_contains "$(pace_render 17 "$(day 5)")" "-11pt 余裕"        "-11pt で余裕に切り替わる"
 assert_contains "$(pace_render 3 "$(day 5)")"  "-25pt 余裕"        "-25pt はまだ余裕"
@@ -458,11 +459,11 @@ case "$five_out" in
 esac
 # 帯の境界: 5h は ±25pt。経過 2 時間 (残 3 時間) → 想定 40%
 assert_contains "$(pace5_render 65 10800)" "+25pt 先行" "5h は +25pt で先行に切り替わる"
-assert_contains "$(pace5_render 64 10800)" "+24pt" "5h は +24pt までは想定通り"
+assert_contains "$(pace5_render 64 10800)" "+24pt 想定通り" "5h は +24pt までは想定通り"
 assert_lacks    "$(pace5_render 64 10800)" "先行"  "5h の +24pt に先行の語を付けない"
 assert_contains "$(pace5_render 90 10800)" "+50pt 超過"  "5h は +50pt で超過に切り替わる"
 assert_contains "$(pace5_render 89 10800)" "+49pt 先行"  "5h は +49pt までは先行"
-assert_contains "$(pace5_render 15 10800)" "-25pt" "5h は -25pt までは想定通り"
+assert_contains "$(pace5_render 15 10800)" "-25pt 想定通り" "5h は -25pt までは想定通り"
 assert_lacks    "$(pace5_render 15 10800)" "余裕"  "5h の -25pt に余裕の語を付けない"
 assert_contains "$(pace5_render 14 10800)" "-26pt 余裕"  "5h は -26pt で余裕に切り替わる"
 # 7d と同じ delta でもラベルが違う (帯が別であることの直接確認)

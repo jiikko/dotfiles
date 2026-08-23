@@ -292,6 +292,8 @@ pace_row() {
   local pr_amt="$(( pr_amt100 / 100 )).$(( (pr_amt100 % 100) / 10 ))"
 
   # 状態色とラベルと、ひとことアドバイス。帯の外に 2 段ずつ置く (先行/超過・余裕/余らせ過ぎ)。
+  # ⚠️ 帯の中 (想定通り) も語を出す。空にすると乖離 pt の直後がその行だけ残り時間になり、
+  #   他の状態の行と縦が揃わない (実測: 5h に「余裕」があるのに 7d には何も無い、と読めた)。
   # 余らせ過ぎは異常ではなく「使えるのに使っていない」信号なので警告色 (赤/黄) を使わず
   # magenta にする。
   # ⚠️ 100% 到達は乖離に関わらず赤 + 「上限超過」にする。乖離が +18pt でも「先行 (黄)」で
@@ -307,7 +309,7 @@ pace_row() {
   elif [ "$pr_delta" -ge "$pr_band" ]; then
     pr_color="$yellow_fg";  pr_word=" 先行";     pr_advice="${pr_amt}${pr_aunit}分の前借り・やや速い"
   elif [ "$pr_delta" -ge $(( -pr_band )) ]; then
-    pr_color="$green_fg";   pr_word="";          pr_advice="このままでちょうど"
+    pr_color="$green_fg";   pr_word=" 想定通り"; pr_advice="このままでちょうど"
   elif [ "$pr_delta" -ge $(( -pr_band * 5 / 2 )) ]; then
     pr_color="$cyan_fg";    pr_word=" 余裕";     pr_advice="${pr_amt}${pr_aunit}分の余り・もう少し使える"
   else
