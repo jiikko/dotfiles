@@ -602,7 +602,10 @@ _reload_then_call() {
 av1ify()       { _reload_then_call av1ify       "$HOME/dotfiles/zshlib/_av1ify.zsh"       av1ify       "$@" }
 # av1c は av1ify --compact + 成功時の元ファイル削除。実体は zshlib/_av1ify.zsh の av1c()。
 # 対話シェルで関数として動かすのは、引数なし呼び出しでクリップボード入力を発火させるため
-# (発火ゲートが -o interactive を要求する。bin/av1c 経由では非対話なので発火しない)。
+# (発火ゲートが -o interactive を要求する。非対話版 bin/binav1c 経由では発火しない)。
+# ⚠️ 非対話版を av1c でなく binav1c という名前にしているのは、PATH 上に av1c があると
+# この行を読み込んでいないシェルで `av1c` が黙ってそちらへ落ち、クリップボード入力が
+# ヘルプ表示に化けるため (2026-08-23 実測)。bin/ に av1c を復活させないこと。
 av1c()         { _reload_then_call "av1c av1ify" "$HOME/dotfiles/zshlib/_av1ify.zsh"     av1c         "$@" }
 concat()       { _reload_then_call concat       "$HOME/dotfiles/zshlib/_concat.zsh"       concat       "$@" }
 repair()       { _reload_then_call "repair repair_mp4" "$HOME/dotfiles/zshlib/_repair.zsh" repair     "$@" }

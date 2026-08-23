@@ -5,14 +5,19 @@
 # @DotfilesSyncer:description av1c（720p+30fps）で変換
 # @DotfilesSyncer:submenu resolution --resolution:720p,1080p
 #
-# av1c — av1ify --compact のショートハンド（720p + 30fps プリセット）
+# binav1c — av1ify --compact のショートハンド（720p + 30fps プリセット）の非対話版
+#
+# ⚠️ ファイル名が av1c でないのは意図的: PATH 上に av1c という実行ファイルがあると、
+# _zshrc を読み直していないシェル（= av1c() ラッパー未定義）で `av1c` が黙ってこちらに
+# 落ち、引数なしのクリップボード入力がヘルプ表示に化ける（2026-08-23 実測）。名前を
+# 分ければ同じ状況で command not found になり、source ~/.zshrc が必要だと気づける。
+# 対話シェル用の名前は av1c のまま（_zshrc のラッパー関数）。
 #
 # ⚠️ 単なる --compact ではない: --delete-origin-if-success-and-no-ng を併用するため、
 # 変換成功 + postcheck NG なしの場合に元ファイルをゴミ箱へ移動する。
 # 元ファイルを残したい場合は bin/av1ify (または av1ify -c) を使うこと。
 #
 # 引数なしのクリップボード入力はこのスクリプト経由では発火しない (対話シェル限定)。
-# 対話シェルの av1c は _zshrc のラッパー経由で関数として動くので発火する。
 #
 # プリセットの実体は zshlib/_av1ify.zsh の av1c()（フラグをここに書き写さない）
 #

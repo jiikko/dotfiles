@@ -336,7 +336,7 @@ assert_contains "$drain_src" "-t 0" "Drain uses a non-blocking read"
 
 # Test 22: av1c (引数なし) もクリップボードを読み、compact プリセット + 元ファイル削除で処理する
 # 対話シェルの av1c は _zshrc のラッパー経由で「関数」として動くのでゲートを通る
-# (bin/av1c 経由は非対話なので通らない = Test 10 と同じ理屈)。
+# (bin/binav1c 経由は非対話なので通らない = Test 10 と同じ理屈)。
 printf '\n## Test 22: av1c reads the clipboard with the compact preset and trashes originals\n'
 TEST_DIR="$TEST_TMP/clip22"
 mkdir -p "$TEST_DIR"
@@ -392,12 +392,12 @@ assert_file_not_exists "$PBPASTE_LOG" "Does not call pbpaste when av1c gets argu
 assert_file_exists "$TEST_DIR/clip.avi" "Clipboard path is untouched when av1c gets arguments"
 unset PBPASTE_LOG
 
-# Test 25: プリセットのフラグは zshlib/_av1ify.zsh の av1c() だけに書く (bin/av1c は呼ぶだけ)
-# 書き写すと片方だけ変わる。bin/av1c 側の実行行がフラグを持たないことを静的に pin する。
-printf '\n## Test 25: bin/av1c delegates to av1c() instead of copying the flags (static pin)\n'
-av1c_script_code=$(grep -v '^[[:space:]]*#' "$ROOT_DIR/bin/av1c" | grep -v '^[[:space:]]*$')
-assert_contains "$av1c_script_code" 'av1c "$@"' "bin/av1c calls av1c()"
-assert_not_contains "$av1c_script_code" "--compact" "bin/av1c does not restate the preset flags"
+# Test 25: プリセットのフラグは zshlib/_av1ify.zsh の av1c() だけに書く (bin/binav1c は呼ぶだけ)
+# 書き写すと片方だけ変わる。bin/binav1c 側の実行行がフラグを持たないことを静的に pin する。
+printf '\n## Test 25: bin/binav1c delegates to av1c() instead of copying the flags (static pin)\n'
+av1c_script_code=$(grep -v '^[[:space:]]*#' "$ROOT_DIR/bin/binav1c" | grep -v '^[[:space:]]*$')
+assert_contains "$av1c_script_code" 'av1c "$@"' "bin/binav1c calls av1c()"
+assert_not_contains "$av1c_script_code" "--compact" "bin/binav1c does not restate the preset flags"
 av1c_src=$(functions av1c)
 assert_contains "$av1c_src" "--compact" "av1c() holds the compact flag"
 assert_contains "$av1c_src" "--delete-origin-if-success-and-no-ng" "av1c() holds the delete-origin flag"
