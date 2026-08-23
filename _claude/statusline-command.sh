@@ -290,8 +290,10 @@ if [ -n "$seven_pct" ] && [ -n "$seven_reset" ] && [ "$seven_reset" -gt "$now" ]
   # 信号なので警告色 (赤/黄) を使わず magenta にする。
   # ⚠️ 100% 到達は乖離に関わらず赤 + 「上限超過」にする。乖離が +18pt でも「先行 (黄)」で
   #   済ませない (上限に届いている事実の方が重い)。
+  pace_advice_sgr=""     # 通常は状態色のまま。行動が強制される状態だけ背景で強調する
   if [ "$pace_used" -ge 100 ]; then
     pace_color="$red_fg";     pace_label=" 上限超過"; pace_advice="残枠なし・リセットまで待つ"
+    pace_advice_sgr="$bg_over"
   elif [ "$pace_delta" -ge 20 ]; then
     pace_color="$red_fg";     pace_label=" 超過";     pace_advice="${pace_daysfrac}日分の前借り・使うのを絞る"
   elif [ "$pace_delta" -ge 10 ]; then
@@ -373,11 +375,13 @@ if [ -n "$seven_pct" ] && [ -n "$seven_reset" ] && [ "$seven_reset" -gt "$now" ]
   # 残り時間の表記は 2 行目 (rate limit の "残:") と同じ fmt_remaining を使う
   # (表記を 2 か所に持たないことで、片方だけ書式が変わる乖離も起きない)。
   fmt_remaining "$pace_rem"
-  # 残り時間・予算・アドバイスは数値の後ろに続けてグレーで従属させる。
-  printf -v pace_line1 "7d [%b] %b%d%%%b %b想定%d%%%b %b%+dpt%s%b %b残%s · %s · %s%b" \
+  # 残り時間・予算・アドバイスも状態色で出す (足りていないのか余っているのかを、行の
+  # どこを読んでも同じ色で言う)。想定% だけはグレーのままにする — これは状態ではなく
+  # 「比較対象の目盛り」なので、状態色に混ぜると読み手が符号を取り違える。
+  printf -v pace_line1 "7d [%b] %b%d%%%b %b想定%d%%%b %b%+dpt%s %b残%s · %s · %b%s%b" \
     "$pace_cells" "$pace_color" "$pace_used" "$reset" \
-    "$gray_fg" "$pace_exp" "$reset" "$pace_color" "$pace_delta" "$pace_label" "$reset" \
-    "$gray_fg" "$REPLY" "$pace_budget" "$pace_advice" "$reset"
+    "$gray_fg" "$pace_exp" "$reset" "$pace_color" "$pace_delta" "$pace_label" \
+    "$pace_color" "$REPLY" "$pace_budget" "$pace_advice_sgr" "$pace_advice" "$reset"
 fi
 
 # 2 行目: rate limit。7d はペース行 (3〜4 行目) が曜日つきのバーで持つので、
