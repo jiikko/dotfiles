@@ -268,6 +268,86 @@ __av1ify_shorten_for_display() {
   fi
 }
 
+# 内部補助: 解決できなかった 1 行が「空白区切りで並んだ複数パス」かを判定する
+# 引数: $1 = 解決に失敗した行 (前後の空白を落とした原文)
+# 出力: REPLY = 分割後に実在を確認できた件数
+# 戻り値: 0=空白区切りの複数パスとみなせる (実在 2 件以上), 1=該当しない
+#
+# ⚠️ (z) は zsh の字句解析だけを行い、コマンド置換・チルダ展開はしない
+#    (実測 2026-08-23: `$(touch x)` を含む行を通してもファイルは作られない)。
+#    クリップボードは貼り付けミス由来の信頼できない文字列なので、ここを eval や
+#    print -P に書き換えないこと (issue 089 と同じ穴になる)。
+#
+# 直さないと決めた取りこぼし (どちらも「案内しない」側に倒れるだけで、誤って処理する
+# 方向には倒れないため許容する。2026-08-23 の敵対的レビューで実測):
+#   - 対応の取れないクォートを含む行 (`it's a clip.avi ...` 等) は (z) が 1 トークンに
+#     畳むのでヒントが出ない。直すには (z) 以外の分割規則が必要で、それは「クォート付きで
+#     貼られた行」の解釈と矛盾する
+#   - パス区切りを含まない相対パスだけを並べた行 (`a.avi b.avi`) もヒントが出ない。
+#     下の */* ガードの代償で、cwd との偶然の一致で誤判定するより安全側
+__av1ify_count_space_separated_paths() {
+  # 呼び出し元のオプション状態に関わらず「判定では展開しない」を実装で固定する。
+  # GLOB_SUBST が立っていると ${(z)line} の結果までグロブ展開され、`*.mp4` を貼った
+  # 行が cwd のファイル数ぶんに化ける。さらに NOMATCH と重なると未捕捉エラーになり、
+  # 呼び出し元のループごと落ちる (実測 2026-08-23)。
+  setopt LOCAL_OPTIONS no_glob_subst
+  local line="$1"
+  REPLY=0
+  local -a words
+  # (z) はクォートを剥がさずに単語へ切る。剥がすのは実在確認をする
+  # __av1ify_resolve_pasted_path 側の (Q) に任せる (剥がし方の規則を二重に持たない)。
+  # shellcheck disable=SC2206,SC2296
+  words=(${(z)line})
+  (( ${#words[@]} < 2 )) && return 1
+
+  # 呼び出し元は失敗行の原文を __AV1IFY_PASTED_TRIMMED から読むため、resolve を
+  # 回す前に退避して戻す (この関数は判定専用で、呼び出し元の状態を壊さない契約)。
+  local saved_trimmed="$__AV1IFY_PASTED_TRIMMED"
+  local w unq
+  local -i n=0
+  for w in "${words[@]}"; do
+    [[ -z "$w" ]] && continue
+    # shellcheck disable=SC2296
+    unq="${(Q)w}"
+    # パス区切りを含む語だけを数える。これが無いと、cwd にたまたま `src` と `test` が
+    # あるだけで「src test 用の資料.mp4」という 1 個のファイル名が「複数パス」に化ける
+    # (実測 2026-08-23)。案内するコマンドは位置引数で渡す形で、位置引数の経路には
+    # 確認プロンプトが無い (av1ify() の `(( $# > 1 ))` 分岐) ため、誤判定のコストが高い。
+    [[ "$unq" != */* ]] && continue
+    # 先頭 ~ は __av1ify_resolve_pasted_path が展開するが、案内するコマンドの
+    # ${(Q)${(z)...}} は展開しない (zsh のチルダ展開はソース上のリテラルにしか効かない)。
+    # 数えると「実在する」と言いながら、案内どおり打つと解決できないパスを勧めることになる。
+    [[ "$unq" == '~'* ]] && continue
+    __av1ify_resolve_pasted_path "$w" && (( n++ ))
+  done
+  __AV1IFY_PASTED_TRIMMED="$saved_trimmed"
+  REPLY=$n
+  (( n >= 2 ))
+}
+
+# 内部補助: ユーザーが実際に打ったコマンド名を返す
+# 出力: REPLY = av1ify または av1c (推定できなければ av1ify)
+#
+# av1c は av1ify を呼ぶラッパーで、成功時に元ファイルをゴミ箱へ移す点が違う。
+# 案内するコマンドを固定名にすると「av1c を打った人に av1ify を案内する」= 削除の
+# 有無が変わった別物を勧めることになる。
+__av1ify_invocation_name() {
+  REPLY="av1ify"
+  local f
+  # funcstack は内側→外側の順なので、最後にマッチしたものが最も外側になる。
+  # ⚠️ av1* の前方一致にしないこと。ユーザーが作った無関係な av1_foo ラッパーを
+  #    「打たれたコマンド」として案内してしまう (実測 2026-08-23)。エントリポイントは
+  #    av1ify() と av1c() の 2 つだけなので、増えたらここに足す。
+  # ⚠️ 添字 (funcstack[i]) で走査しないこと。KSH_ARRAYS (0-based) 下で範囲外アクセスの
+  #    未捕捉エラーになり、ヒント出力ごと落ちる (実測 2026-08-23)。
+  # shellcheck disable=SC2154 # funcstack は zsh の組み込み変数
+  for f in "${funcstack[@]}"; do
+    case "$f" in
+      av1ify|av1c) REPLY="$f" ;;
+    esac
+  done
+}
+
 # 内部補助: クリップボードから処理対象を読み取り、内容を見せて確認を取る
 # 出力: __AV1IFY_CLIP_TARGETS に存在するパスを格納
 # 戻り値: 0=続行, 1=読み取り失敗/有効なパス 0 件, 130=ユーザーが中止
@@ -301,6 +381,7 @@ __av1ify_targets_from_clipboard() {
   # 実行する (issue 089)。クリップボードは貼り付けミス由来の信頼できない文字列なので、
   # ここは常に print -r -- で出す。
   local file_count=0 dir_count=0 expanded=0 shown
+  local -i hint_lines=0 hint_total=0
   for line in "${lines[@]}"; do
     if __av1ify_resolve_pasted_path "$line"; then
       __AV1IFY_CLIP_TARGETS+=("$REPLY")
@@ -323,11 +404,39 @@ __av1ify_targets_from_clipboard() {
         print -ru2 -- "      (貼付: $REPLY)"
       fi
     else
-      missing+=("$__AV1IFY_PASTED_TRIMMED")
-      __av1ify_shorten_for_display "$__AV1IFY_PASTED_TRIMMED"
+      local missed="$__AV1IFY_PASTED_TRIMMED"
+      missing+=("$missed")
+      __av1ify_shorten_for_display "$missed"
       print -ru2 -- "  ✗ $REPLY  (見つかりません → 除外)"
+      # この行が「空白区切りで並んだ複数パス」でないか調べる (シェルのコマンドラインを
+      # そのままコピーすると起きる)。分割して実在を確認できた行だけ数え、後でまとめて
+      # 回避方法を案内する。
+      if __av1ify_count_space_separated_paths "$missed"; then
+        (( hint_lines++ )); (( hint_total += REPLY ))
+      fi
     fi
   done
+
+  # 1 行 1 パスの契約は変えずに、踏みやすい貼り付けミスだけ具体的に案内する。
+  # ここに出すのは「分割したら実在した」ことを確認できた行だけなので、空白入りの
+  # ファイル名で誤って出ることはない。
+  if (( hint_lines > 0 )); then
+    local hint_cmd
+    __av1ify_invocation_name; hint_cmd="$REPLY"
+    print -ru2 -- "${_C_YELLOW}💡 空白区切りで複数のパスが並んだ行があります (${hint_lines}行 / 分割すると ${hint_total}件が実在)${_C_OFF}"
+    print -ru2 -- "   1行1パスに直すか、次のように引数として渡してください:"
+    # (z) で単語へ切り、(Q) でクォートを 1 段剥がす。改行は (z) が `;` トークンに
+    # するので :#\; で落とす (空白区切りと改行区切りが混在していても通る)。
+    # 副作用として `;` という名前のファイルだけは落ちるが、`;` 単体のファイル名を
+    # クォート無しで貼るケースより、改行混在で壊れるケースの方が現実的。
+    # shellcheck disable=SC2016 # 展開させずに、打つべきコマンドをそのまま見せる
+    print -ru2 -- '     '"${hint_cmd}"' ${(Q)${(z)"$(pbpaste)"}:#\;}'
+    if (( __AV1IFY_DELETE_ORIGIN )); then
+      # 引数で渡す経路 (av1ify() の `(( $# > 1 ))` 分岐) には、この一覧と [y/N] が無い。
+      # av1c は成功したファイルをゴミ箱へ移すので、その差は事前に言っておく。
+      print -ru2 -- "${_C_RED}   ⚠️ 引数で渡した場合はこの確認が出ず、そのままゴミ箱移動まで走ります${_C_OFF}"
+    fi
+  fi
 
   if (( ${#__AV1IFY_CLIP_TARGETS[@]} == 0 )); then
     print -r -- "エラー: クリップボードから有効なパスを読み取れませんでした (使い方は av1ify --help)" >&2
@@ -660,6 +769,10 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
     #   表示は「実際に読み書き・削除されるパス」に揃えます（絶対パス化 + symlink 解決。
     #   貼った文字列と違う場合は (貼付: ...) を併記）。ディレクトリ行は配下の動画の件数を
     #   出します（1行が N 件に展開されるため）。
+    #   1行に空白区切りで複数パスを貼った場合（シェルのコマンドラインからそのまま
+    #   コピーすると起きます）は、その行全体が 1 個のパス名として ✗ になります。
+    #   分割して実在を確認できたときだけ、引数として渡す形
+    #   （av1ify ${(Q)${(z)"$(pbpaste)"}:#\;}）を案内します。
     #   ⚠️ 発火するのは「対話シェルで人が打ったとき」だけです。Finder アクション・CI・
     #   bin/av1ify や bin/binav1c の直叩き（= 非対話）では発火せず、このヘルプを表示します。
     #   対話シェルの av1c は関数なので発火します（成功時に元ファイルをゴミ箱へ移すため、
