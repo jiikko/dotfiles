@@ -197,9 +197,6 @@ bg_over="\033[41;30m"    # ペース行: 前借り (赤背景 + 黒文字)
 under_sgr="\033[4;1m"    # ペース行の当日 (背景色と反転は競合するので下線を使う)
 
 now=$(date +%s)
-# スロット番号は全角で出す (1 セル = 2 カラム)。半角 1 桁 + 空白にすると数字がセルの左に
-# 寄り、格子として読みにくい。
-pace_fw=(１ ２ ３ ４ ５ ６ ７)
 # 最も広い窓のスロット数 (7d = 7)。狭い窓は括弧の後ろをこの幅まで空白で埋めて、
 # 行をまたいだ数値の縦を揃える
 PACE_MAX_CELLS=7
@@ -238,8 +235,8 @@ rate_segment() {
 
 
 # ペース行: 各ウィンドウの消化ペースを 1 行で出す。
-# 窓を等分したスロット (時 / 日) を 1 セル (全角 1 文字 = 2 カラム) として並べ、その
-# 「背景」で消化量を描く。セルの文字は窓の何スロット目か (1..7)。
+# 窓を等分したスロット (時 / 日) を「番号 + 空白」の 2 カラムとして並べ、その「背景」で
+# 消化量を描く。カラム単位に塗るので 0.5 スロット (半日 / 半時間) の端数まで見える。
 #   背景緑 = 想定内の消化 / 背景赤 = 前借り / シアン = 使えるのに使っていない過去 /
 #   暗灰 = まだ来ていない未来。いま居るスロットは下線。
 # 「残り 1 日で 50% 余っている」= 余らせ過ぎ、「残り 5 日で 80% 使った」= 超過、を
@@ -287,23 +284,25 @@ pace_row() {
   local pr_fill=$(( pr_used * pr_ncells * 20 / 100 ))
   [ "$pr_fill" -gt $(( pr_ncells * 20 )) ] && pr_fill=$(( pr_ncells * 20 ))
   local pr_mark=$(( pr_elapsed * 20 / pr_cell ))
-  # セル数に落とす。切り上げ (少しでも掛かったセルは掛かっている扱い) を塗りと想定線の
-  # 両方に同じ規則で使う。四捨五入にすると、窓の終端がセルの手前に落ちたときに
-  # **今いるセルが塗られない** (実測: 残 4 時間で当日のセルが暗いまま)。
-  local pr_nfill=$(( (pr_fill + 19) / 20 ))
-  local pr_nmark=$(( (pr_mark + 19) / 20 ))
+  # カラム数に落とす。1 スロットは 2 カラム (「半角数字 + 空白」) で、カラム単位に塗るので
+  # 0.5 スロット (半日 / 半時間) の端数まで見える。
+  # 切り上げ (少しでも掛かったカラムは掛かっている扱い) を塗りと想定線の両方に同じ規則で
+  # 使う。四捨五入にすると、窓の終端がカラムの手前に落ちたときに **今いるカラムが
+  # 塗られない** (実測: 残 4 時間で当日のセルが暗いまま)。
+  local pr_nfill=$(( (pr_fill + 9) / 10 ))
+  local pr_nmark=$(( (pr_mark + 9) / 10 ))
   # 塗りの色は数値ラベルと同じ想定帯に従わせる。
-  # ⚠️ 帯の中では前借り (赤) / 使い残し (シアン) を出さない。1 セル = 100/ncells pt なので、
-  #   乖離が数 pt でもセル境界を跨げば 1 セル分の赤が出てしまい、「想定通り」のラベルと
+  # ⚠️ 帯の中では前借り (赤) / 使い残し (シアン) を出さない。1 カラム = 50/ncells pt なので、
+  #   乖離が数 pt でもカラム境界を跨げば半日分の赤が出てしまい、「想定通り」のラベルと
   #   矛盾して見える (実測 2026-08-23)。
-  # ⚠️ 逆に帯の外では、丸めで両者が同じセルに入ると符号が 1 マスも出ないので、
-  #   最低 1 セルは色を出す。
+  # ⚠️ 逆に帯の外では、塗りが窓の右端に clamp されると想定線と同じカラムに入り、超過が
+  #   1 マスも出なくなる (実績 115% / 想定 99%)。そのときは想定線を 1 カラム戻す。
+  #   余り側に同じ補正は要らない: 塗りは clamp されないので、帯の外なら乖離が
+  #   1 カラム (= 50/ncells pt) を必ず超え、切り上げ後も必ず差が出る。
   if [ "$pr_delta" -le "$pr_band" ] && [ "$pr_delta" -ge $(( -pr_band )) ]; then
     pr_nmark=$pr_nfill
   elif [ "$pr_delta" -gt "$pr_band" ] && [ "$pr_nfill" -le "$pr_nmark" ]; then
     pr_nmark=$(( pr_nfill - 1 )); [ "$pr_nmark" -lt 0 ] && pr_nmark=0
-  elif [ "$pr_delta" -lt $(( -pr_band )) ] && [ "$pr_nmark" -le "$pr_nfill" ]; then
-    pr_nfill=$(( pr_nmark - 1 )); [ "$pr_nfill" -lt 0 ] && pr_nfill=0
   fi
 
   # 乖離 pt を「何セル分か」に換算する (1 セル = 100/ncells pt)。小数第 1 位まで見せたいので
@@ -334,21 +333,33 @@ pace_row() {
     pr_color="$magenta_fg"; pr_word=" 余らせ過ぎ"; pr_advice="${pr_amt}${pr_aunit}分の使い残し・かなり余る"
   fi
 
-  # セルを組む。現在いるスロット (経過を 1 セルで割った位置) に下線を引く。
-  local pr_cells="" pr_i=0 pr_at_cell=$(( pr_elapsed / pr_cell ))
-  while [ "$pr_i" -lt "$pr_ncells" ]; do
-    if [ "$pr_i" -lt "$pr_nfill" ] && [ "$pr_i" -lt "$pr_nmark" ]; then
+  # カラムを組む。1 スロット = 「スロット番号 (半角 1 桁) + 空白」の 2 カラムで、偶数
+  # カラムに番号、奇数カラムは空白。塗りはカラムごとなので、番号と空白で色が違えば
+  # そのスロットが半分だけ消化されていることを表す。
+  # 下線は現在いるスロットの番号に引く (経過を 1 セルで割った位置)。
+  # ⚠️ 先頭に空白を 1 つ置く (末尾は最終スロットの空白カラムが担うので、括弧の中が
+  #   " 1 2 3 4 5 " になって左右の余白が揃い、数字が括弧に貼り付かない)。この空白も
+  #   1 カラム目と同じ塗りにする — 塗らないとゲージの左端に穴が空いて見える。
+  local pr_cells="" pr_c=0 pr_ncols=$(( pr_ncells * 2 )) pr_at_col=$(( (pr_elapsed / pr_cell) * 2 ))
+  while [ "$pr_c" -lt "$pr_ncols" ]; do
+    if [ "$pr_c" -lt "$pr_nfill" ] && [ "$pr_c" -lt "$pr_nmark" ]; then
       pr_cells="${pr_cells}${bg_in}"
-    elif [ "$pr_i" -lt "$pr_nfill" ]; then
+    elif [ "$pr_c" -lt "$pr_nfill" ]; then
       pr_cells="${pr_cells}${bg_over}"
-    elif [ "$pr_i" -lt "$pr_nmark" ]; then
+    elif [ "$pr_c" -lt "$pr_nmark" ]; then
       pr_cells="${pr_cells}${cyan_fg}"
     else
       pr_cells="${pr_cells}${dim_fg}"
     fi
-    [ "$pr_i" -eq "$pr_at_cell" ] && pr_cells="${pr_cells}${under_sgr}"
-    pr_cells="${pr_cells}${pace_fw[$pr_i]}${reset}"
-    pr_i=$(( pr_i + 1 ))
+    [ "$pr_c" -eq 0 ] && pr_cells="${pr_cells} "   # 左端の余白 (1 カラム目と同じ塗り)
+    if [ $(( pr_c % 2 )) -eq 0 ]; then
+      [ "$pr_c" -eq "$pr_at_col" ] && pr_cells="${pr_cells}${under_sgr}"
+      pr_cells="${pr_cells}$(( pr_c / 2 + 1 ))"
+    else
+      pr_cells="${pr_cells} "
+    fi
+    pr_cells="${pr_cells}${reset}"
+    pr_c=$(( pr_c + 1 ))
   done
 
   # 1 セルあたり予算。残りが 1 セル未満のときは %/セル を出さない: 「残 12 時間で
