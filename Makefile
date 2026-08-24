@@ -270,10 +270,21 @@ test-lint: test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json t
 # workflow (.github/workflows/src_*.yml、paths filter 付き) が同じ lint / test を回す。
 # 各 src_*.yml は再利用 workflow _go-project.yml を呼ぶだけの薄い caller。
 # どちらも Go 未インストール環境では skip する。Go プロジェクトを追加したら
-# ①各プロジェクトに Makefile (lint/test) ②ここへ列挙 ③src_<project>.yml (caller) を作る、の 3 点セット。
-GO_PROJECT_DIRS := src/parallel-each src/glogx src/disassemble_excel src/lockman
+# ①各プロジェクトに Makefile (lint/test) ②src_<project>.yml (caller) を作る、の 2 点セット。
+#
+# ⚠️ 対象は **`src/*/go.mod` の存在で発見する**。手で列挙すると、新しく src/foo を切ったときに
+#   lint / test から**無音で外れる** (make は緑のまま通り「lint も test も通っている」と読める)。
+#   この repo は他の全域で「登録なしで対象になる」を徹底しており (shellcheck は
+#   scripts/discover_shell_scripts.sh の発見、テストは test-dir の自動発見)、Go だけ手動なのは
+#   非対称だった (issue 080)。
+# ⚠️ 発見 0 件は**失敗させる** (下の recipe のガード)。発見式のゲートが 0 件で緑になるのは
+#   `_claude/rules/adversarial-review-own-safeguards.md` が禁じる false green そのもの。
+GO_PROJECT_DIRS := $(patsubst %/,%,$(dir $(wildcard src/*/go.mod)))
 
 test-go-lint:
+	@if [ -z "$(strip $(GO_PROJECT_DIRS))" ]; then \
+		echo "[go-lint] src/*/go.mod が 1 つも見つからない (発見の仕方が壊れている)" >&2; exit 1; \
+	fi
 	@if command -v go >/dev/null 2>&1; then \
 		for dir in $(GO_PROJECT_DIRS); do $(MAKE) -C $$dir lint || exit 1; done; \
 	else \
@@ -281,6 +292,9 @@ test-go-lint:
 	fi
 
 test-go:
+	@if [ -z "$(strip $(GO_PROJECT_DIRS))" ]; then \
+		echo "[go-test] src/*/go.mod が 1 つも見つからない (発見の仕方が壊れている)" >&2; exit 1; \
+	fi
 	@if command -v go >/dev/null 2>&1; then \
 		for dir in $(GO_PROJECT_DIRS); do $(MAKE) -C $$dir test || exit 1; done; \
 	else \
