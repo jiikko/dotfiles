@@ -93,7 +93,7 @@ review_out="./tmp/codex-review.$stamp.md"
 
 敵対的モードは **effort を通常より一段上げて明示する**（`-c model_reasoning_effort="medium"` 以上）。反証はパターンマッチではなく「壊す条件を構築する」作業で、低い effort だと表層の指摘で止まるため。
 
-**例外**: 呼び出し側の skill が effort を固定している場合はそちらに従う。`codex-drive` は 2026-08-24 に**この規約へ合流**した（敵対フェーズは `medium`。発散系だけ `low` に据え置く 2 段構成）。低い effort で回す skill は「表層に止まる分を攻め口 (lens) の本数で補い、枯れなければ forge / cross-review へ escalate する」形で埋め合わせる責任を負う。**単に 1 本回して「指摘なし」と結論するのは、effort に関わらずどの skill でも禁止**（`~/.claude/CLAUDE.md`「レビュー方針」の「指摘なしは正しいではない」）。
+**例外**: 呼び出し側の skill が effort を固定している場合はそちらに従う。`codex-drive` は 2026-08-24 に**この規約へ合流**した（既定 `medium`、難しいタスクは `xhigh`。`low` は使わない）。低い effort で回す skill は「表層に止まる分を攻め口 (lens) の本数で補い、枯れなければ forge / cross-review へ escalate する」形で埋め合わせる責任を負う。**単に 1 本回して「指摘なし」と結論するのは、effort に関わらずどの skill でも禁止**（`~/.claude/CLAUDE.md`「レビュー方針」の「指摘なしは正しいではない」）。
 
 #### 実行モード
 
