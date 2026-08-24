@@ -371,35 +371,11 @@ func TestBrowseInitWiresCLIHealth(t *testing.T) {
 	m.usageOv.inFlight = true
 	m.ticking = true
 
-	cmd := m.Init()
-	batch, ok := cmd().(tea.BatchMsg)
-	if !ok {
-		t.Fatalf("Init result = %T, want tea.BatchMsg", cmd())
-	}
-	var got cliHealthMsg
-	found := false
-	for _, child := range batch {
-		if child == nil {
-			continue
-		}
-		result := make(chan tea.Msg, 1)
-		go func(cmd tea.Cmd) { result <- cmd() }(child)
-		select {
-		case msg := <-result:
-			if health, ok := msg.(cliHealthMsg); ok {
-				got = health
-				found = true
-				m.Update(health)
-			}
-		case <-time.After(250 * time.Millisecond):
-		}
-		if found {
-			break
-		}
-	}
+	got, found := initCLIHealthMsg(t, m)
 	if !found {
 		t.Fatal("Init Cmd tree did not deliver cliHealthMsg")
 	}
+	m.Update(got)
 	want := []cliHealthIssue{{cli: "claude", state: cliLoggedOut}}
 	if !reflect.DeepEqual(got.issues, want) {
 		t.Fatalf("issues = %#v, want %#v", got.issues, want)
@@ -423,5 +399,94 @@ func TestCLIHealthWarningTexts(t *testing.T) {
 				t.Fatalf("warning = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// initCLIHealthMsg は Init が積んだ Cmd ツリーを辿って cliHealthMsg を取り出す。
+// 起動配線 (Init に検査が乗っているか) を見るテストが共有する。
+func initCLIHealthMsg(t *testing.T, m *browseModel) (cliHealthMsg, bool) {
+	t.Helper()
+	cmd := m.Init()
+	batch, ok := cmd().(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("Init result = %T, want tea.BatchMsg", cmd())
+	}
+	for _, child := range batch {
+		if child == nil {
+			continue
+		}
+		result := make(chan tea.Msg, 1)
+		go func(cmd tea.Cmd) { result <- cmd() }(child)
+		select {
+		case msg := <-result:
+			if health, ok := msg.(cliHealthMsg); ok {
+				return health, true
+			}
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+	return cliHealthMsg{}, false
+}
+
+// 依頼文「glogx 起動時に、claude / codex がインストールされていない・logout 状態なら
+// その旨をエラートーストで表示して」を 1 本で通す受け入れテスト。
+// Init が検査を積む → 検査が issue を返す → Update が警告を積む → View に文言が出る、
+// の全リンクを繋ぐ (個別に pin してあっても、繋がっていることは別に確かめる必要がある)。
+func TestBrowseStartupShowsCLIHealthWarningsInView(t *testing.T) {
+	origLookPath, origRunner := lookPathFn, cliHealthRunner
+	origLatestClaude, origLatestCodex := fetchLatestClaudeVersion, fetchLatestCodexVersion
+	origTmuxPrefix := loadTmuxPrefix
+	t.Cleanup(func() {
+		lookPathFn, cliHealthRunner = origLookPath, origRunner
+		fetchLatestClaudeVersion, fetchLatestCodexVersion = origLatestClaude, origLatestCodex
+		loadTmuxPrefix = origTmuxPrefix
+	})
+	// claude は未インストール (LookPath が ErrNotFound)、codex はログアウト。
+	lookPathFn = func(name string) (string, error) {
+		if name == "claude" {
+			return "", exec.ErrNotFound
+		}
+		return "/fake/" + name, nil
+	}
+	codexErr := exitOneError(t)
+	cliHealthRunner = func(_ context.Context, _ string, _ ...string) ([]byte, []byte, error) {
+		return nil, []byte("Not logged in\n"), codexErr
+	}
+	fetchLatestClaudeVersion = func(context.Context) string { return "" }
+	fetchLatestCodexVersion = func(context.Context) string { return "" }
+	loadTmuxPrefix = func() string { return "" }
+
+	m := newTestBrowse(t, 3, nil, nil)
+	// usage と通常 tick はこのテストの対象外なので長時間 Cmd を作らせない。
+	m.usageOv.inFlight = true
+	m.ticking = true
+	// newTestBrowse は NoFrame なので page = height-1。height=10 (page=9) は
+	// toastDrawBudget が重要警告 2 枚分を確保する帯 (これを外すと 1 枚しか描かれない)。
+	m.width, m.height = 120, 10
+	if got := m.pageSize(); got != 9 {
+		t.Fatalf("height=10 の page = %d, want 9 (前提が崩れた)", got)
+	}
+
+	msg, ok := initCLIHealthMsg(t, m)
+	if !ok {
+		t.Fatal("Init が積んだ Cmd から cliHealthMsg が届かない (起動配線が切れている)")
+	}
+	m.Update(msg)
+	for i := 0; m.toast.animating() && i < 100; i++ {
+		m.toast.advance(m.colored)
+	}
+
+	out := stripANSI(m.View().Content)
+	for _, want := range []string{
+		"claude が見つかりません (Claude Code をインストールしてください)",
+		"codex がログアウト状態です (codex login で再ログイン)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("起動後の View に %q が出ない:\n%s", want, out)
+		}
+	}
+	// 表示が消えた後も w でコピーできること (showWarning 経由である保証)。
+	if !strings.Contains(m.lastWarning, "codex がログアウト状態です") {
+		t.Fatalf("lastWarning = %q", m.lastWarning)
 	}
 }
