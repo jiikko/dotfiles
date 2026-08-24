@@ -16,24 +16,10 @@ if ! command -v "$NVIM_BIN" >/dev/null 2>&1; then
 fi
 
 print "[test-smooth-scroll] verifying single-press animation and key-repeat passthrough"
-# qa! 必須: check スクリプトが無名バッファへ書き込み modified になるため、qa (! なし) だと
-# 未保存拒否で headless nvim が終了せず永久にハングする (2026-07-12 実測)
-out=$("$NVIM_BIN" --headless -u "$CONFIG_FILE" \
-  "+lua vim.wait(300)" \
-  "+lua dofile('$SCRIPT_DIR/smooth_scroll_check.lua')" \
-  "+lua vim.cmd('qa!')" 2>&1) || {
-  print -u2 "$out"
-  exit 1
-}
-# FAIL: は check スクリプトの assert 失敗。Error executing / stack traceback は
-# scheduled callback 内の lua 例外 (assert を通り抜けて OK が出てしまうため個別に検査する)
-if grep -qE "FAIL:|Error executing|stack traceback" <<< "$out"; then
-  print -u2 "$out"
-  exit 1
-fi
-if ! grep -q "^OK" <<< "$out"; then
-  print -u2 "[test-smooth-scroll] expected OK marker, got:"
-  print -u2 "$out"
-  exit 1
-fi
-print "[test-smooth-scroll] $out"
+
+# headless nvim の実行と 3 つの検査 (異常終了 / FAIL・lua 例外 / 行頭の OK) は
+# tests/nvim/lib/check_log.sh に一元化してある。個別に grep を手書きしないこと —
+# 3 本へコピペしていた結果、うち 1 本が `grep -q "OK"` (アンカー無し) へ drift して
+# いた (issue 081)。
+source "$SCRIPT_DIR/lib/check_log.sh"
+tt_nvim_run_check "test-smooth-scroll" "smooth_scroll_check.lua"

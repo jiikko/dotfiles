@@ -23,3 +23,41 @@ tt_nvim_log_backstop() {
     exit 1
   fi
 }
+
+# tt_nvim_run_check <label> <check.lua のファイル名>
+#   headless nvim で check スクリプトを 1 本走らせ、3 つの検査を **1 か所で**行う:
+#     ① nvim 自体が異常終了していないか
+#     ② FAIL: / Error executing / stack traceback — check の assert 失敗と、assert を通り抜けて
+#        しまう scheduled callback 内の lua 例外 (これを見ないと OK が出て緑になる)
+#     ③ **行頭の** OK マーカー (`^OK`)
+#
+#   ⚠️ ③ のアンカーを外さないこと。`grep -q "OK"` だと "not OK" のような出力でも通る。
+#     実際 test_image_hover.sh だけアンカー無しに drift していた (issue 081)。この関数は
+#     その drift を「1 か所しか無い」状態にするために作った。
+#   ⚠️ `qa!` は必須。check スクリプトが無名バッファへ書き込んで modified になると、未保存拒否で
+#     headless nvim が終了せず**永久にハングする** (2026-07-12 実測)。
+#
+#   要求する変数 (呼び出し側が設定済みであること): NVIM_BIN / SCRIPT_DIR / CONFIG_FILE
+tt_nvim_run_check() {
+  local label="$1" check_lua="$2" out
+  : "${NVIM_BIN:?tt_nvim_run_check: NVIM_BIN が未設定}"
+  : "${SCRIPT_DIR:?tt_nvim_run_check: SCRIPT_DIR が未設定}"
+  : "${CONFIG_FILE:?tt_nvim_run_check: CONFIG_FILE が未設定}"
+  out=$("$NVIM_BIN" --headless -u "$CONFIG_FILE" \
+    "+lua vim.wait(300)" \
+    "+lua dofile('$SCRIPT_DIR/$check_lua')" \
+    "+lua vim.cmd('qa!')" 2>&1) || {
+    printf '%s\n' "$out" >&2
+    exit 1
+  }
+  if grep -qE "FAIL:|Error executing|stack traceback" <<< "$out"; then
+    printf '%s\n' "$out" >&2
+    exit 1
+  fi
+  if ! grep -q "^OK" <<< "$out"; then
+    printf '%s\n' "[$label] expected OK marker (行頭), got:" >&2
+    printf '%s\n' "$out" >&2
+    exit 1
+  fi
+  printf '%s\n' "[$label] $out"
+}
