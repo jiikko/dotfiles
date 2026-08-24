@@ -280,6 +280,78 @@ func TestToastBoxLineCount(t *testing.T) {
 	}
 }
 
+func TestToastDrawBudget(t *testing.T) {
+	for _, c := range []struct {
+		page int
+		want int
+	}{
+		{4, 4},
+		{8, 7},
+		{9, 8},
+		{11, 8},
+		{15, 8},
+		{16, 8},
+		{24, 12},
+	} {
+		if got := toastDrawBudget(c.page); got != c.want {
+			t.Errorf("page=%d: 予算=%d, want %d", c.page, got, c.want)
+		}
+	}
+}
+
+func TestToastBoxLinesShowsTwoWarningsWithEightLineBudget(t *testing.T) {
+	var s toast
+	s.show("警告A", false)
+	s.show("警告B", false)
+	for range toastSlideFrames + 2 {
+		s.advance(false)
+	}
+
+	out := strings.Join(s.boxLines(false, toastBoxLines*2), "\n")
+	if !strings.Contains(out, "警告A") || !strings.Contains(out, "警告B") {
+		t.Fatalf("予算 8 行で重要警告 2 枚が描かれない:\n%s", out)
+	}
+}
+
+func TestToastBoxLinesDropsOldestWarningWhenThreeDoNotFit(t *testing.T) {
+	var s toast
+	for _, text := range []string{"警告A", "警告B", "警告C"} {
+		s.show(text, false)
+	}
+	for range toastSlideFrames + 2 {
+		s.advance(false)
+	}
+
+	out := strings.Join(s.boxLines(false, toastBoxLines*2), "\n")
+	if strings.Contains(out, "警告A") {
+		t.Fatalf("警告 3 枚で最古が表示対象に残っている:\n%s", out)
+	}
+	if !strings.Contains(out, "警告B") || !strings.Contains(out, "警告C") {
+		t.Fatalf("新しい警告 2 枚が表示されていない:\n%s", out)
+	}
+}
+
+func TestToastBoxLinesDoesNotCutSecondBoxAtPageEightBudget(t *testing.T) {
+	var s toast
+	s.show("警告A", false)
+	s.show("警告B", false)
+	for range toastSlideFrames + 2 {
+		s.advance(false)
+	}
+
+	budget := toastDrawBudget(8)
+	got := s.boxLines(false, budget)
+	if len(got) > budget {
+		t.Fatalf("page=8 の予算 %d 行を超えた: %d 行", budget, len(got))
+	}
+	if len(got)%toastBoxLines != 0 {
+		t.Fatalf("箱が途中で切れている: %d 行", len(got))
+	}
+	if strings.Contains(strings.Join(got, "\n"), "警告A") {
+		t.Fatalf("page=8 相当では 2 枚目の警告まで描かれた:\n%s", strings.Join(got, "\n"))
+	}
+}
+
 // 行数上限を超える古い枚は出さない。箱の途中で切らない。最新は上限を超えても出す。
 func TestToastBoxLinesRespectsMaxLines(t *testing.T) {
 	var s toast

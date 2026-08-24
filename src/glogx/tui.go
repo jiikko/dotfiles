@@ -2912,10 +2912,16 @@ func (m *browseModel) finishWithGlobalChrome(window []string, page int) string {
 	if box := m.usageOv.boxLines(m.contentWidth(), m.colored, m.spinner()); len(box) > 0 {
 		window = overlayBoxTopRight(window, box, m.contentWidth(), m.colored)
 	}
-	if box := m.toast.boxLines(m.colored, max(page/2, toastBoxLines)); len(box) > 0 {
+	if box := m.toast.boxLines(m.colored, toastDrawBudget(page)); len(box) > 0 {
 		window = overlayBoxBottomRight(window, box, m.contentWidth(), m.colored)
 	}
 	return m.finishWindow(window, page)
+}
+
+// toastDrawBudget は、通常の半ページ予算を保ちつつ重要警告 2 枚ぶんを確保する。
+// 下限がないと狭い窓で重要警告が 1 枚に減り、上限がないと 2 箱が窓を覆うため、両方が要る。
+func toastDrawBudget(page int) int {
+	return min(max(page/2, toastBoxLines*2), max(page-1, toastBoxLines))
 }
 
 // viewLines は画面content を組む本体 (旧 View)。テストはここではなく View().Content を見る。

@@ -335,6 +335,7 @@ func (s *toast) startLeaving(msg toastMsg) {
 const toastBoxLines = 4
 
 // boxLines はスタック全体の描画行 (上から下)。maxLines に入らない枚は出さない。
+// 予算の下限は呼び出し側 (toastDrawBudget) が窓の高さに応じて確保する。
 //
 // ⚠️ 行数の上限が要る: 低い端末では 3 枚 (12 行) が窓 (11 行) を超え、一番下の箱が途中で切れて
 // 壊れて見えた (実測 2026-07-31: 窓 11 行に対し 12 行)。枚数の上限 (toastStackMax) だけでは
