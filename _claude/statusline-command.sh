@@ -298,22 +298,26 @@ pace_row() {
   # magenta にする。
   # ⚠️ 100% 到達は乖離に関わらず赤 + 「上限超過」にする。乖離が +18pt でも「先行 (黄)」で
   #   済ませない (上限に届いている事実の方が重い)。
+  # ⚠️ 状態の語は全て 2 文字 (4 カラム) に揃える。語の幅が変わると、その後ろの残り時間・
+  #   予算が行ごとに横へずれる (実測: 余裕 4 カラム / 想定通り 8 / 余らせ過ぎ 10)。
+  # ⚠️ アドバイスは「語で言えないこと」だけを持つ: 帯の中は語 (適正) で足りるので出さない。
+  #   命令句 (使うのを絞る / もう少し使える) も語と色が既に言っているので持たない。
   local pr_color pr_word pr_advice pr_advice_sgr=""
   if [ "$pr_stale" -eq 1 ]; then
     pr_color="$(rate_color "$pr_used")"; pr_word=""; pr_advice=""
   elif [ "$pr_used" -ge 100 ]; then
-    pr_color="$red_fg";     pr_word=" 上限超過"; pr_advice="残枠なし・リセットまで待つ"
+    pr_color="$red_fg";     pr_word=" 上限"; pr_advice="リセット待ち"
     pr_advice_sgr="$bg_over"     # 行動が強制される唯一の状態なので背景で強調する
   elif [ "$pr_delta" -ge $(( pr_band * 2 )) ]; then
-    pr_color="$red_fg";     pr_word=" 超過";     pr_advice="${pr_amt}${pr_aunit}分の前借り・使うのを絞る"
+    pr_color="$red_fg";     pr_word=" 超過"; pr_advice="${pr_amt}${pr_aunit}分の前借り"
   elif [ "$pr_delta" -ge "$pr_band" ]; then
-    pr_color="$yellow_fg";  pr_word=" 先行";     pr_advice="${pr_amt}${pr_aunit}分の前借り・やや速い"
+    pr_color="$yellow_fg";  pr_word=" 先行"; pr_advice="${pr_amt}${pr_aunit}分の前借り"
   elif [ "$pr_delta" -ge $(( -pr_band )) ]; then
-    pr_color="$green_fg";   pr_word=" 想定通り"; pr_advice="このままでちょうど"
+    pr_color="$green_fg";   pr_word=" 適正"; pr_advice=""
   elif [ "$pr_delta" -ge $(( -pr_band * 5 / 2 )) ]; then
-    pr_color="$cyan_fg";    pr_word=" 余裕";     pr_advice="${pr_amt}${pr_aunit}分の余り・もう少し使える"
+    pr_color="$cyan_fg";    pr_word=" 余裕"; pr_advice="${pr_amt}${pr_aunit}分の余り"
   else
-    pr_color="$magenta_fg"; pr_word=" 余らせ過ぎ"; pr_advice="${pr_amt}${pr_aunit}分の使い残し・かなり余る"
+    pr_color="$magenta_fg"; pr_word=" 余剰"; pr_advice="${pr_amt}${pr_aunit}分の余り"
   fi
 
   # カラムを組む。1 スロット = 「スロット番号 (半角 1 桁) + 空白」の 2 カラムで、偶数
@@ -379,15 +383,19 @@ pace_row() {
   fmt_epoch "$pr_reset" "$pr_efmt"
   [ -n "$REPLY" ] && pr_at=" ($REPLY)"
 
+  # アドバイスが無い状態 (適正) では区切りごと落とす (末尾に " · " をぶら下げない)
+  local pr_tail_advice=""
+  [ -n "$pr_advice" ] && printf -v pr_tail_advice " · %b%s" "$pr_advice_sgr" "$pr_advice"
+
   # 残り時間・予算・アドバイスも状態色で出す (足りていないのか余っているのかを、行の
   # どこを読んでも同じ色で言う)。想定% だけはグレーのままにする — これは状態ではなく
   # 「比較対象の目盛り」なので、状態色に混ぜると読み手が符号を取り違える。
   # ⚠️ 数値は桁を固定して右詰めにする (使用率・想定率は 3 桁、乖離 pt は符号込み 4 桁)。
   #   桁数で後ろがずれると、5h と 7d の行で同じ項目が縦に揃わない。
-  printf -v PACE_ROW "%s [%b]%s %b%3d%%%b %b想定%3d%%%b %b%+4dpt%s %b残%s%s · %s · %b%s%b" \
+  printf -v PACE_ROW "%s [%b]%s %b%3d%%%b %b想定%3d%%%b %b%+4dpt%s %b残%s%s · %s%b%b" \
     "$pr_label" "$pr_cells" "$pr_pad" "$pr_color" "$pr_used" "$reset" \
     "$gray_fg" "$pr_exp" "$reset" "$pr_color" "$pr_delta" "$pr_word" \
-    "$pr_color" "$pr_remlab" "$pr_at" "$pr_budget" "$pr_advice_sgr" "$pr_advice" "$reset"
+    "$pr_color" "$pr_remlab" "$pr_at" "$pr_budget" "$pr_tail_advice" "$reset"
 }
 
 pace_row 5h hour "$five_pct"  "$five_reset";  pace_five=$PACE_ROW

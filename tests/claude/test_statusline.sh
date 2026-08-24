@@ -251,36 +251,40 @@ pace_raw() { # pace_raw <used%> <残り秒> → ペース行 (ANSI つき)
 out="$(pace_render 62 178200)"
 assert_contains "$out" "7d ["                        "7d が揃えばペース行が出る"
 assert_contains "$out" " 62% 想定 70%   -8pt"            "想定消化率と乖離 pt"
-assert_contains "$out" "-8pt 想定通り"               "帯の中も状態の語を出す (行ごとに位置が変わらない)"
+assert_contains "$out" "-8pt 適正"               "帯の中も状態の語を出す (行ごとに位置が変わらない)"
 assert_lacks    "$out" "-8pt 先行"                   "帯の中を先行と呼ばない"
 assert_contains "$out" "残2日1時間 (" "残り時間の後ろにリセットの絶対時刻が続く"
-assert_contains "$out" "· 18.4%/日 · このままでちょうど" \
-  "1 日予算とひとことアドバイスが数値の後ろに出る"
+assert_contains "$out" "· 18.4%/日" "1 日予算が残り時間の後ろに出る"
+# 帯の中 (適正) は語で足りるのでアドバイスを出さない。末尾に空の区切り " · " を
+# ぶら下げないことまで見る (区切りだけ残すと行末がゴミに見える)
+assert_lacks "$out" "· 18.4%/日 ·" "帯の中はアドバイスを出さない (区切りもぶら下げない)"
+# 帯の外は「語で言えないこと」= 乖離の量をアドバイスが持つ
+assert_contains "$(pace_render 80 "$(day 5)")" "· 3.6日分の前借り" "帯の外はアドバイスで乖離の量を出す"
 # 残り 1 日で 50% 残 = 余らせ過ぎ。乖離 35pt は 7 日窓で 2.4 日分 (= 35 * 7 / 100)
 overspare="$(pace_render 50 "$(day 1)")"
-assert_contains "$overspare" " 50% 想定 85%  -35pt 余らせ過ぎ" "余らせ過ぎの判定"
-assert_contains "$overspare" "2.4日分の使い残し"            "乖離 pt を日数へ換算したアドバイス"
+assert_contains "$overspare" " 50% 想定 85%  -35pt 余剰" "余らせ過ぎの判定"
+assert_contains "$overspare" "2.4日分の余り"            "乖離 pt を日数へ換算したアドバイス"
 # 残り 5 日で 80% 使用 = 超過
 over="$(pace_render 80 "$(day 5)")"
 assert_contains "$over" " 80% 想定 28%  +52pt 超過" "超過の判定"
 assert_contains "$over" "3.6日分の前借り"        "超過側も日数換算する"
 # 帯の境界 (±10pt = 想定通り / +20pt から超過 / -25pt から余らせ過ぎ)。残 5 日 = 想定 28%
 assert_contains "$(pace_render 38 "$(day 5)")" "+10pt 先行"        "+10pt で先行に切り替わる"
-assert_contains "$(pace_render 37 "$(day 5)")" "+9pt 想定通り"     "+9pt はまだ想定通り"
+assert_contains "$(pace_render 37 "$(day 5)")" "+9pt 適正"     "+9pt はまだ想定通り"
 assert_lacks    "$(pace_render 37 "$(day 5)")" "先行"              "+9pt に先行の語を付けない"
 assert_contains "$(pace_render 48 "$(day 5)")" "+20pt 超過"        "+20pt で超過に切り替わる"
 assert_contains "$(pace_render 47 "$(day 5)")" "+19pt 先行"        "+19pt はまだ先行"
-assert_contains "$(pace_render 18 "$(day 5)")" "-10pt 想定通り"    "-10pt はまだ想定通り"
+assert_contains "$(pace_render 18 "$(day 5)")" "-10pt 適正"    "-10pt はまだ想定通り"
 assert_lacks    "$(pace_render 18 "$(day 5)")" "余裕"              "-10pt に余裕の語を付けない"
 assert_contains "$(pace_render 17 "$(day 5)")" "-11pt 余裕"        "-11pt で余裕に切り替わる"
 assert_contains "$(pace_render 3 "$(day 5)")"  "-25pt 余裕"        "-25pt はまだ余裕"
-assert_contains "$(pace_render 2 "$(day 5)")"  "-26pt 余らせ過ぎ"  "-26pt で余らせ過ぎに切り替わる"
+assert_contains "$(pace_render 2 "$(day 5)")"  "-26pt 余剰"  "-26pt で余剰に切り替わる"
 # 100% 到達は乖離に関わらず「上限超過」。残 1 時間で 100% は乖離 +1pt しかないので、
 # 帯だけで判定すると「想定通り (緑)」になってしまう (上限に届いた事実の方が重い)
 capped="$(pace_render 100 3690)"
-assert_contains "$capped" "100% 想定 99%   +1pt 上限超過" "100% 到達は乖離に関わらず上限超過"
-assert_contains "$capped" "残枠なし・リセットまで待つ" "上限超過のアドバイスは残枠を待つ側"
-assert_lacks    "$capped" "このままでちょうど"         "上限超過を想定通りと呼ばない"
+assert_contains "$capped" "100% 想定 99%   +1pt 上限" "100% 到達は乖離に関わらず上限超過"
+assert_contains "$capped" "リセット待ち" "上限超過のアドバイスは待ちを促す"
+assert_lacks    "$capped" "適正"                     "上限超過を適正と呼ばない"
 # resets_at が窓幅 (7 日) を超えて返っても、経過をマイナスにしない (0 に clamp)
 assert_contains "$(pace_render 3 "$(day 10)")" "想定  0%" "残りが 7 日超なら経過 0% に clamp"
 # リセット済み (resets_at が現在以下) = 窓は終わったのにデータが更新されていない。
@@ -294,7 +298,7 @@ assert_contains "$edge" "7d ["        "リセット済みでもゲージは出�
 assert_contains "$edge" "62%"         "リセット済みでも残量% は出す"
 assert_contains "$edge" "(リセット!)" "リセット済みは (リセット!) で知らせる"
 assert_lacks "$edge" "想定"           "リセット済みに想定ペースを出さない"
-assert_lacks "$edge" "余らせ過ぎ"     "リセット済みを余らせ過ぎと呼ばない"
+assert_lacks "$edge" "余剰"           "リセット済みを余剰と呼ばない"
 assert_lacks "$edge" "残枠"           "リセット済みに予算を出さない"
 # 窓が終わっているので、塗った先は全部「使い残し」= シアン。実績 62% は 9 カラム目まで
 # なので 6 番はシアンになる
@@ -316,7 +320,7 @@ assert_contains "$(pace_raw 28 "$(day 5)")" $'\033[32m 28%' "想定通りは緑"
 assert_contains "$(pace_raw 38 "$(day 5)")" $'\033[33m 38%' "先行は黄"
 assert_contains "$(pace_raw 80 "$(day 5)")" $'\033[31m 80%' "超過は赤"
 assert_contains "$(pace_raw 17 "$(day 5)")" $'\033[36m 17%' "余裕はシアン"
-assert_contains "$(pace_raw 2 "$(day 5)")"  $'\033[35m  2%'  "余らせ過ぎはマゼンタ"
+assert_contains "$(pace_raw 2 "$(day 5)")"  $'\033[35m  2%'  "余剰はマゼンタ"
 assert_contains "$(pace_raw 100 3690)"      $'\033[31m100%' "上限超過は赤"
 # 残り時間・予算・アドバイスも状態色で出す (足りないのか余っているのかを行のどこを読んでも
 # 同じ色で言う)。従来はグレーで従属させていた
@@ -326,7 +330,7 @@ assert_contains "$(pace_raw 80 "$(day 5)")" $'\033[31m'"残" "超過の残り時
 assert_contains "$(pace_raw 17 "$(day 5)")" $'\033[36m'"残" "余裕の残り時間・アドバイスはシアン"
 assert_contains "$(pace_raw 2 "$(day 5)")"  $'\033[35m'"残" "余らせ過ぎの残り時間・アドバイスはマゼンタ"
 # 上限超過だけアドバイスを背景で強調する (行動が強制される唯一の状態)
-assert_contains "$(pace_raw 100 3690)" $'\033[41;30m'"残枠なし" "上限超過のアドバイスは赤背景"
+assert_contains "$(pace_raw 100 3690)" $'\033[41;30m'"リセット待ち" "上限超過のアドバイスは赤背景"
 # 想定% は「比較対象の目盛り」なので状態色に混ぜない (混ぜると符号を取り違える)
 assert_contains "$(pace_raw 80 "$(day 5)")" $'\033[37m'"想定" "想定% はグレーのまま"
 
@@ -336,10 +340,10 @@ assert_contains "$(pace_raw 80 "$(day 5)")" $'\033[37m'"想定" "想定% はグ�
 assert_contains "$(pace_render 62.7 "$(day 2)")" " 62% 想定 71%" "小数の used% は切り捨てて整数で出す"
 # 残 2.58 日 (= 222912 秒): 残日数・1 日予算のどちらも小数部が 0 でない値になる
 frac="$(pace_render 33 222912)"
-assert_contains "$frac" " 33% 想定 63%  -30pt 余らせ過ぎ" "日境界でない resets_at でも想定率が合う"
+assert_contains "$frac" " 33% 想定 63%  -30pt 余剰" "日境界でない resets_at でも想定率が合う"
 assert_contains "$frac" "残2日13時間 ("  "日境界でない残りは日+時間で出す"
 assert_contains "$frac" "· 25.9%/日"     "1 日予算は小数部まで一致する"
-assert_contains "$frac" "2.1日分の使い残し" "乖離 pt の日換算も小数部まで一致する"
+assert_contains "$frac" "2.1日分の余り" "乖離 pt の日換算も小数部まで一致する"
 # 予算の表記: 残りが 1 日未満なら %/日 を出さない (「その 1 日」が来ないので実行不能な
 # 数字になる。残 12 時間で 110.0%/日 のような表示を作らない)
 assert_contains "$(pace_render 45 43200)"      "· 残枠55%" "残り 1 日未満は残枠% で出す"
@@ -459,11 +463,11 @@ case "$five_out" in
 esac
 # 帯の境界: 5h は ±25pt。経過 2 時間 (残 3 時間) → 想定 40%
 assert_contains "$(pace5_render 65 10800)" "+25pt 先行" "5h は +25pt で先行に切り替わる"
-assert_contains "$(pace5_render 64 10800)" "+24pt 想定通り" "5h は +24pt までは想定通り"
+assert_contains "$(pace5_render 64 10800)" "+24pt 適正" "5h は +24pt までは想定通り"
 assert_lacks    "$(pace5_render 64 10800)" "先行"  "5h の +24pt に先行の語を付けない"
 assert_contains "$(pace5_render 90 10800)" "+50pt 超過"  "5h は +50pt で超過に切り替わる"
 assert_contains "$(pace5_render 89 10800)" "+49pt 先行"  "5h は +49pt までは先行"
-assert_contains "$(pace5_render 15 10800)" "-25pt 想定通り" "5h は -25pt までは想定通り"
+assert_contains "$(pace5_render 15 10800)" "-25pt 適正" "5h は -25pt までは想定通り"
 assert_lacks    "$(pace5_render 15 10800)" "余裕"  "5h の -25pt に余裕の語を付けない"
 assert_contains "$(pace5_render 14 10800)" "-26pt 余裕"  "5h は -26pt で余裕に切り替わる"
 # 7d と同じ delta でもラベルが違う (帯が別であることの直接確認)
