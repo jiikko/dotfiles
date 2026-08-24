@@ -405,6 +405,7 @@ func (m *browseModel) Init() tea.Cmd {
 	// どちらもバックグラウンド 1 回きりで、結果は *UpdateAvailableMsg (更新なし/失敗は
 	// nil Msg で無音)。
 	ver := tea.Batch(checkClaudeVersionCmd(), checkCodexVersionCmd())
+	cliHealth := checkCLIHealthCmd()
 	// バックグラウンド再ビルドの監視 (autobuild.go)。shim が GO_AUTOBUILD_PENDING を
 	// 立てていない通常起動では nil = tick が増えない。
 	//
@@ -436,9 +437,9 @@ func (m *browseModel) Init() tea.Cmd {
 	// 「pending なのに追わない」状態になる (キャッシュの pending TTL 内に再起動した場合)。
 	poll := m.ensureCIPoll()
 	if m.fetching {
-		return tea.Batch(m.fetch, prefix, u, ver, ab, restore, poll, m.maybeTick(), usageRefreshTick())
+		return tea.Batch(m.fetch, prefix, u, ver, cliHealth, ab, restore, poll, m.maybeTick(), usageRefreshTick())
 	}
-	return tea.Batch(prefix, u, ver, ab, restore, poll, m.maybeTick(), usageRefreshTick())
+	return tea.Batch(prefix, u, ver, cliHealth, ab, restore, poll, m.maybeTick(), usageRefreshTick())
 }
 
 // issuesRestoreCmd は記憶した画面が今の repo のものか確かめる (別 repo で開いた glogx に
@@ -896,6 +897,13 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.showClaudeUpdate(msg.latest)
 	case codexUpdateAvailableMsg:
 		m.toast.show("codex v"+msg.latest+" が公開されています (X で更新)", true)
+		return m, m.maybeTick()
+	case cliHealthMsg:
+		for _, issue := range msg.issues {
+			if text := cliHealthWarning(issue); text != "" {
+				m.showWarning(text)
+			}
+		}
 		return m, m.maybeTick()
 	case autobuildMsg:
 		// 裏のビルドが決着したらトーストで知らせる。
