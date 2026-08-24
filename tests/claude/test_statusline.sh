@@ -241,17 +241,19 @@ done
 #   最小単位の中に 30 秒以上の余白を持たせること。now はテスト側と statusline 側で
 #   別々に取るため 1〜2 秒ずれ、`86400` のような境界値だと "1日0時間" が
 #   "23時間59分" に化けて flaky になる (実測 2026-08-22)。
-pace_render() {  # pace_render <used%> <残り秒>
-  local used="$1" rem_secs="$2" now
-  now="$(date +%s)"
-  render "{\"cwd\":\"/tmp\",\"rate_limits\":{\"seven_day\":{\"used_percentage\":$used,\"resets_at\":$(( now + rem_secs ))}}}"
-}
-day() { printf '%d' $(( $1 * 86400 )); }
-pace_raw() { # pace_raw <used%> <残り秒> → ペース行 (ANSI つき)
+# 1 ウィンドウだけを与える stdin JSON。窓の種別・使用率・残り秒だけが違うので、
+# 組み立てはここ 1 か所に置く (以前は 7d/5h × 平文/ANSI の 4 か所に同型のコピーがあった)
+win_json() {  # win_json <five_hour|seven_day> <used%> <残り秒>
   local now; now="$(date +%s)"
-  printf '%s' "{\"cwd\":\"/tmp\",\"rate_limits\":{\"seven_day\":{\"used_percentage\":$1,\"resets_at\":$(( now + $2 ))}}}" \
-    | "$SL" | tail -1
+  printf '%s' "{\"cwd\":\"/tmp\",\"rate_limits\":{\"$1\":{\"used_percentage\":$2,\"resets_at\":$(( now + $3 ))}}}"
 }
+win_render() { render "$(win_json "$@")"; }             # 全行 (ANSI 除去)
+win_raw()    { win_json "$@" | "$SL" | tail -1; }        # ペース行だけ (ANSI つき)
+pace_render()  { win_render seven_day "$@"; }
+pace_raw()     { win_raw    seven_day "$@"; }
+pace5_render() { win_render five_hour "$@"; }
+pace5_raw()    { win_raw    five_hour "$@"; }
+day() { printf '%d' $(( $1 * 86400 )); }
 
 # 残り 2 日 1 時間半で 62% → 想定 70% を 8pt 下回る。±10pt 帯なので語を出さない
 out="$(pace_render 62 178200)"
@@ -444,15 +446,6 @@ assert_contains "$align_five" "5 ]      34%" "5h の空白は括弧の外に置�
 # 5h も同じ関数で描く (1 セル = 1 時間、窓 5 時間 = 5 スロット)。
 # ⚠️ 想定帯は 7d と別で ±25pt。5 時間窓は本質的にバースト的で「1 時間目に 40% 使った」
 #   = +20pt が常態になるため、±10pt では赤が出続けて信号にならない。
-pace5_render() {  # pace5_render <used%> <残り秒>
-  local now; now="$(date +%s)"
-  render "{\"cwd\":\"/tmp\",\"rate_limits\":{\"five_hour\":{\"used_percentage\":$1,\"resets_at\":$(( now + $2 ))}}}"
-}
-pace5_raw() {
-  local now; now="$(date +%s)"
-  printf '%s' "{\"cwd\":\"/tmp\",\"rate_limits\":{\"five_hour\":{\"used_percentage\":$1,\"resets_at\":$(( now + $2 ))}}}" \
-    | "$SL" | tail -1
-}
 # ⚠️ 7200 (= ちょうど 2 時間) は境界値なので使わない (1 秒ずれると "1時間59分" になる)
 five_out="$(pace5_render 34 7130)"     # 残 1 時間 58 分 50 秒 → 想定 60%
 assert_contains "$five_out" "5h ["                 "5h もペース行で出る"

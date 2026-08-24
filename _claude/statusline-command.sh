@@ -199,6 +199,40 @@ blink_color() {
   fi
 }
 
+# ゲージ本体を組む。結果は GAUGE。
+# $1 = 塗るカラム数 / $2 = 経過済みのカラム数 / $3 = 全カラム数 / $4 = 下線を引くカラム (無ければ -1)
+#   $1 と $2 の両方未満 = 想定内の消化 (緑背景) / $1 のみ = 前借り (赤背景) /
+#   $2 のみ = 使えるのに使っていない過去 (シアン) / どちらでもない = 未来 (暗灰)
+# 1 スロット = 「番号 (半角 1 桁) + 空白」の 2 カラムで、偶数カラムに番号、奇数は空白。
+# 塗りはカラムごとなので、番号と空白で色が違えばそのスロットが半分だけ消化されている。
+# ⚠️ 先頭に空白を 1 つ置く (末尾は最終スロットの空白カラムが担うので、括弧の中が
+#   " 1 2 3 4 5 " になって左右の余白が揃い、数字が括弧に貼り付かない)。この空白も
+#   1 カラム目と同じ塗りにする — 塗らないとゲージの左端に穴が空いて見える。
+pace_gauge() {
+  local g_fill=$1 g_mark=$2 g_cols=$3 g_at=$4 g_c=0
+  GAUGE=""
+  while [ "$g_c" -lt "$g_cols" ]; do
+    if [ "$g_c" -lt "$g_fill" ] && [ "$g_c" -lt "$g_mark" ]; then
+      GAUGE="${GAUGE}${bg_in}"
+    elif [ "$g_c" -lt "$g_fill" ]; then
+      GAUGE="${GAUGE}${bg_over}"
+    elif [ "$g_c" -lt "$g_mark" ]; then
+      GAUGE="${GAUGE}${cyan_fg}"
+    else
+      GAUGE="${GAUGE}${dim_fg}"
+    fi
+    [ "$g_c" -eq 0 ] && GAUGE="${GAUGE} "   # 左端の余白 (1 カラム目と同じ塗り)
+    if [ $(( g_c % 2 )) -eq 0 ]; then
+      [ "$g_c" -eq "$g_at" ] && GAUGE="${GAUGE}${under_sgr}"
+      GAUGE="${GAUGE}$(( g_c / 2 + 1 ))"
+    else
+      GAUGE="${GAUGE} "
+    fi
+    GAUGE="${GAUGE}${reset}"
+    g_c=$(( g_c + 1 ))
+  done
+}
+
 # ペース行: 各ウィンドウの消化ペースを 1 行で出す。
 # 窓を等分したスロット (時 / 日) を「番号 + 空白」の 2 カラムとして並べ、その「背景」で
 # 消化量を描く。カラム単位に塗るので 0.5 スロット (半日 / 半時間) の端数まで見える。
@@ -233,43 +267,50 @@ pace_row() {
     printf -v PACE_ROW "%s %b%3d%%%b" "$pr_label" "$(rate_color "$pr_used")" "$pr_used" "$reset"
     return
   fi
-  # リセット時刻を過ぎている = 窓は終わったのにデータが更新されていない。窓の中の
-  # 「想定ペース」に意味が無くなる (想定 100% との比較は「余らせ過ぎ」という逆向きの助言に
-  # なる) ので、ゲージは「使った分 (緑) と使い残し (シアン)」だけにして、点滅する
-  # (リセット!) を出す。以前は 2 行目の旧セグメント形式へフォールバックしていたが、
-  # 同じウィンドウが 2 つの見た目を持つのをやめた。
-  local pr_stale=0
-  if [ "$pr_reset" -le "$now" ]; then
-    pr_stale=1
-  fi
 
-  local pr_rem=$(( pr_reset - now ))
-  [ "$pr_stale" -eq 1 ] && pr_rem=0
-  [ "$pr_rem" -gt "$pr_window" ] && pr_rem=$pr_window
-  local pr_elapsed=$(( pr_window - pr_rem ))
-  local pr_exp=$(( pr_elapsed * 100 / pr_window ))
-  local pr_delta=$(( pr_used - pr_exp ))
-  # ⚠️ stale では pr_rem が 0 なので、以降で pr_rem を割ってはいけない (予算は出さない)。
-  local pr_ncells=$(( pr_window / pr_cell ))          # 窓が名目上いくつのセルか (5 / 7)
-
-  # 格子は「窓を ncells 等分したスロット」。位置は「1 セル = 20」の固定小数で持ち、
-  # 整数演算だけで済ませる。
+  # --- 窓の位置に依らない部分 (塗る量と幅) ---------------------------------
+  # 格子は「窓を ncells 等分したスロット」。位置は「1 セル = 20 / 1 カラム = 10」の固定小数で
+  # 持ち、整数演算だけで済ませる。
   # ⚠️ カレンダー基準 (ローカルの 0 時 / 毎時 00 分に揃えた格子) にはしない。以前は
   #   曜日ラベルを出していたため必要だったが (窓の区切りが reset 時刻なので、窓を等分した
   #   セルの開始日は実際の今日と最大 12 時間ずれる)、**曜日を出さなくなった時点でカレンダー
   #   基準は何も買わず、端に半端なセルを 1 つ増やすだけ**になった (5 時間窓が 6 セル、
   #   7 日窓が 8 セルになり、両端が窓に少ししか掛からないセルになる)。
   #   曜日・日付をバーに戻すときはカレンダー基準に戻す必要がある。
+  # ⚠️ 切り上げ (少しでも掛かったカラムは掛かっている扱い) を塗りと想定線の両方に同じ規則で
+  #   使う。四捨五入にすると、窓の終端がカラムの手前に落ちたときに **今いるカラムが
+  #   塗られない** (実測: 残 4 時間で当日のセルが暗いまま)。
+  local pr_ncells=$(( pr_window / pr_cell )) pr_ncols=$(( (pr_window / pr_cell) * 2 ))
   local pr_fill=$(( pr_used * pr_ncells * 20 / 100 ))
   [ "$pr_fill" -gt $(( pr_ncells * 20 )) ] && pr_fill=$(( pr_ncells * 20 ))
-  local pr_mark=$(( pr_elapsed * 20 / pr_cell ))
-  # カラム数に落とす。1 スロットは 2 カラム (「半角数字 + 空白」) で、カラム単位に塗るので
-  # 0.5 スロット (半日 / 半時間) の端数まで見える。
-  # 切り上げ (少しでも掛かったカラムは掛かっている扱い) を塗りと想定線の両方に同じ規則で
-  # 使う。四捨五入にすると、窓の終端がカラムの手前に落ちたときに **今いるカラムが
-  # 塗られない** (実測: 残 4 時間で当日のセルが暗いまま)。
   local pr_nfill=$(( (pr_fill + 9) / 10 ))
-  local pr_nmark=$(( (pr_mark + 9) / 10 ))
+  # 5h (5 スロット) と 7d (7 スロット) で数値の縦を揃えるため、狭い方の後ろを空白で埋める。
+  # ⚠️ 空白は括弧の**外**に置く。括弧の中に入れると「空のスロット」に見えて、その窓が
+  #   5 スロットであること自体が読めなくなる。
+  local pr_pad="" pr_padn=$(( (PACE_MAX_CELLS - pr_ncells) * 2 ))
+  while [ "$pr_padn" -gt 0 ]; do pr_pad="${pr_pad} "; pr_padn=$(( pr_padn - 1 )); done
+
+  # --- リセット済み: 窓の外なので「使った分と使い残し」だけ ------------------
+  # リセット時刻を過ぎている = 窓は終わったのにデータが更新されていない。窓の中の
+  # 「想定ペース」に意味が無くなる (想定 100% との比較は「余らせ過ぎ」という逆向きの助言に
+  # なる) ので、想定・乖離・残り時間・予算・アドバイスを落として (リセット!) を点滅させる。
+  # 経過は窓幅ちょうど = 全カラムが「過去」なので、塗った先は全部シアン (使い残し) になる。
+  # 現在位置は無いので下線も引かない (-1)。
+  if [ "$pr_reset" -le "$now" ]; then
+    pace_gauge "$pr_nfill" "$pr_ncols" "$pr_ncols" -1
+    printf -v PACE_ROW "%s [%b]%s %b%3d%%%b %b(リセット!)%b" \
+      "$pr_label" "$GAUGE" "$pr_pad" "$(rate_color "$pr_used")" "$pr_used" "$reset" \
+      "$(blink_color)" "$reset"
+    return
+  fi
+
+  # --- 窓の中: 想定ペースとの比較 -------------------------------------------
+  local pr_rem=$(( pr_reset - now ))
+  [ "$pr_rem" -gt "$pr_window" ] && pr_rem=$pr_window
+  local pr_elapsed=$(( pr_window - pr_rem ))
+  local pr_exp=$(( pr_elapsed * 100 / pr_window ))
+  local pr_delta=$(( pr_used - pr_exp ))
+  local pr_nmark=$(( (pr_elapsed * 20 / pr_cell + 9) / 10 ))
   # 塗りの色は数値ラベルと同じ想定帯に従わせる。
   # ⚠️ 帯の中では前借り (赤) / 使い残し (シアン) を出さない。1 カラム = 50/ncells pt なので、
   #   乖離が数 pt でもカラム境界を跨げば半日分の赤が出てしまい、「想定通り」のラベルと
@@ -278,9 +319,7 @@ pace_row() {
   #   1 マスも出なくなる (実績 115% / 想定 99%)。そのときは想定線を 1 カラム戻す。
   #   余り側に同じ補正は要らない: 塗りは clamp されないので、帯の外なら乖離が
   #   1 カラム (= 50/ncells pt) を必ず超え、切り上げ後も必ず差が出る。
-  if [ "$pr_stale" -eq 1 ]; then
-    :   # 窓は終わっている: 塗った先は全部「使い残し」= シアン (帯の判定はしない)
-  elif [ "$pr_delta" -le "$pr_band" ] && [ "$pr_delta" -ge $(( -pr_band )) ]; then
+  if [ "$pr_delta" -le "$pr_band" ] && [ "$pr_delta" -ge $(( -pr_band )) ]; then
     pr_nmark=$pr_nfill
   elif [ "$pr_delta" -gt "$pr_band" ] && [ "$pr_nfill" -le "$pr_nmark" ]; then
     pr_nmark=$(( pr_nfill - 1 )); [ "$pr_nmark" -lt 0 ] && pr_nmark=0
@@ -293,21 +332,19 @@ pace_row() {
   local pr_amt100=$(( pr_abs * pr_ncells ))
   local pr_amt="$(( pr_amt100 / 100 )).$(( (pr_amt100 % 100) / 10 ))"
 
-  # 状態色とラベルと、ひとことアドバイス。帯の外に 2 段ずつ置く (先行/超過・余裕/余らせ過ぎ)。
-  # ⚠️ 帯の中 (想定通り) も語を出す。空にすると乖離 pt の直後がその行だけ残り時間になり、
-  #   他の状態の行と縦が揃わない (実測: 5h に「余裕」があるのに 7d には何も無い、と読めた)。
-  # 余らせ過ぎは異常ではなく「使えるのに使っていない」信号なので警告色 (赤/黄) を使わず
+  # 状態色とラベルと、ひとことアドバイス。帯の外に 2 段ずつ置く (先行/超過・余裕/余剰)。
+  # 余剰は異常ではなく「使えるのに使っていない」信号なので警告色 (赤/黄) を使わず
   # magenta にする。
-  # ⚠️ 100% 到達は乖離に関わらず赤 + 「上限超過」にする。乖離が +18pt でも「先行 (黄)」で
+  # ⚠️ 100% 到達は乖離に関わらず赤 + 「上限」にする。乖離が +18pt でも「先行 (黄)」で
   #   済ませない (上限に届いている事実の方が重い)。
   # ⚠️ 状態の語は全て 2 文字 (4 カラム) に揃える。語の幅が変わると、その後ろの残り時間・
   #   予算が行ごとに横へずれる (実測: 余裕 4 カラム / 想定通り 8 / 余らせ過ぎ 10)。
+  # ⚠️ 帯の中 (適正) も語を出す。空にすると乖離 pt の直後がその行だけ残り時間になり、
+  #   他の状態の行と縦が揃わない (実測: 5h に「余裕」があるのに 7d には何も無い、と読めた)。
   # ⚠️ アドバイスは「語で言えないこと」だけを持つ: 帯の中は語 (適正) で足りるので出さない。
   #   命令句 (使うのを絞る / もう少し使える) も語と色が既に言っているので持たない。
   local pr_color pr_word pr_advice pr_advice_sgr=""
-  if [ "$pr_stale" -eq 1 ]; then
-    pr_color="$(rate_color "$pr_used")"; pr_word=""; pr_advice=""
-  elif [ "$pr_used" -ge 100 ]; then
+  if [ "$pr_used" -ge 100 ]; then
     pr_color="$red_fg";     pr_word=" 上限"; pr_advice="リセット待ち"
     pr_advice_sgr="$bg_over"     # 行動が強制される唯一の状態なので背景で強調する
   elif [ "$pr_delta" -ge $(( pr_band * 2 )) ]; then
@@ -322,50 +359,9 @@ pace_row() {
     pr_color="$magenta_fg"; pr_word=" 余剰"; pr_advice="${pr_amt}${pr_aunit}分の余り"
   fi
 
-  # カラムを組む。1 スロット = 「スロット番号 (半角 1 桁) + 空白」の 2 カラムで、偶数
-  # カラムに番号、奇数カラムは空白。塗りはカラムごとなので、番号と空白で色が違えば
-  # そのスロットが半分だけ消化されていることを表す。
-  # 下線は現在いるスロットの番号に引く (経過を 1 セルで割った位置)。
-  # ⚠️ 先頭に空白を 1 つ置く (末尾は最終スロットの空白カラムが担うので、括弧の中が
-  #   " 1 2 3 4 5 " になって左右の余白が揃い、数字が括弧に貼り付かない)。この空白も
-  #   1 カラム目と同じ塗りにする — 塗らないとゲージの左端に穴が空いて見える。
-  local pr_cells="" pr_c=0 pr_ncols=$(( pr_ncells * 2 )) pr_at_col=$(( (pr_elapsed / pr_cell) * 2 ))
-  while [ "$pr_c" -lt "$pr_ncols" ]; do
-    if [ "$pr_c" -lt "$pr_nfill" ] && [ "$pr_c" -lt "$pr_nmark" ]; then
-      pr_cells="${pr_cells}${bg_in}"
-    elif [ "$pr_c" -lt "$pr_nfill" ]; then
-      pr_cells="${pr_cells}${bg_over}"
-    elif [ "$pr_c" -lt "$pr_nmark" ]; then
-      pr_cells="${pr_cells}${cyan_fg}"
-    else
-      pr_cells="${pr_cells}${dim_fg}"
-    fi
-    [ "$pr_c" -eq 0 ] && pr_cells="${pr_cells} "   # 左端の余白 (1 カラム目と同じ塗り)
-    if [ $(( pr_c % 2 )) -eq 0 ]; then
-      # 下線は「いま居るスロット」。stale (窓が終わっている) では pr_elapsed が窓幅ちょうどに
-      # なり pr_at_col が範囲外 (= ncols) になるので、ここは自然に一致しない
-      [ "$pr_c" -eq "$pr_at_col" ] && pr_cells="${pr_cells}${under_sgr}"
-      pr_cells="${pr_cells}$(( pr_c / 2 + 1 ))"
-    else
-      pr_cells="${pr_cells} "
-    fi
-    pr_cells="${pr_cells}${reset}"
-    pr_c=$(( pr_c + 1 ))
-  done
-
-  # 5h (5 スロット) と 7d (7 スロット) で数値の縦を揃えるため、狭い方の後ろを空白で埋める。
-  # ⚠️ 空白は括弧の**外**に置く。括弧の中に入れると「空のスロット」に見えて、その窓が
-  #   5 スロットであること自体が読めなくなる。
-  local pr_pad="" pr_padn=$(( (PACE_MAX_CELLS - pr_ncells) * 2 ))
-  while [ "$pr_padn" -gt 0 ]; do pr_pad="${pr_pad} "; pr_padn=$(( pr_padn - 1 )); done
-
-  # stale はここで終わり: 残り時間も予算もアドバイスも無く、点滅する (リセット!) を出す。
-  if [ "$pr_stale" -eq 1 ]; then
-    printf -v PACE_ROW "%s [%b]%s %b%3d%%%b %b(リセット!)%b" \
-      "$pr_label" "$pr_cells" "$pr_pad" "$pr_color" "$pr_used" "$reset" \
-      "$(blink_color)" "$reset"
-    return
-  fi
+  # 下線は「いま居るスロット」の番号に引く (経過を 1 セルで割った位置)
+  pace_gauge "$pr_nfill" "$pr_nmark" "$pr_ncols" $(( (pr_elapsed / pr_cell) * 2 ))
+  local pr_cells=$GAUGE
 
   # 1 セルあたり予算。残りが 1 セル未満のときは %/セル を出さない: 「残 12 時間で
   # 110.0%/日」はその 1 日が来ないので実行不能な数字になる。残枠をそのまま出す。
@@ -450,55 +446,59 @@ fi
 # 取りこぼす上、運用によっては頻繁にリセットされ (dotfiles では make pull) 「実際に
 # 効いている advisor」を transcript ほど正確に反映しないため。代償は設定直後〜次の
 # assistant ターンまで赤い「未設定」が出る 1 ターンのラグ (自己修復する)。
-advisor_label="未設定"
-advisor_color="$red_fg"
-if [ -n "$transcript" ] && [ -f "$transcript" ]; then
-  # 末尾から辿り、最初に見つかった advisorModel 行 = 最新。行を逆順に流すコマンドは
-  # 環境で違う (GNU: tac / BSD・macOS: tail -r) ので、OS 名ではなく tac の有無で選ぶ
-  # (Darwin + coreutils・FreeBSD・GNU をどれも取り違えない)。`command -v` は bash の
-  # builtin でフォークは増えない。tac も tail -r も無い環境 (applet を削った busybox 等)
-  # では advisor が黙って「未設定」に劣化する — 表示の劣化だけで他への影響はない。
-  # 全行 grep して tail -1 を採る方式にはしない: advisor 設定済みなら該当行は末尾付近に
-  # あり、逆順 + grep -m1 は巨大な transcript でも最初の一致で打ち切れる (該当行が 1 つも
-  # 無いときだけは、どちらの方式でも全走査になる)。
-  if command -v tac >/dev/null 2>&1; then
-    advisor_rev_cat="tac"
-  else
-    advisor_rev_cat="tail -r"
-  fi
-  advisor_model=$($advisor_rev_cat "$transcript" 2>/dev/null | grep -m1 '"advisorModel"' | jq -r '.advisorModel // empty' 2>/dev/null)
-  if [ -n "$advisor_model" ]; then
-    # 表示名は id の構造から導出する (model.display_name のような整形名は stdin に無い)。
-    # `claude-<family>-<major>[-<minor>]` の family を頭大文字にし、続く 1〜2 桁の数値
-    # フィールドを "." で繋ぐ: claude-opus-4-8 → Opus 4.8 / claude-haiku-4-5-20251001 →
-    # Haiku 4.5 (数値でないフィールドで打ち切るので末尾の日付は落ちる)。version に食い込む
-    # 修飾子は先に切る: Vertex の `@YYYYMMDD` と Bedrock の `:0` を残すと、minor が
-    # 「数値でない」と判定されて claude-sonnet-4-5@20250929 が "Sonnet 4" になる (誤表示は
-    # 生 id 表示より悪い)。
-    # id → 表示名のハードコード表は持たない: 新モデルが出るたび追加漏れでドリフトする
-    # (claude-opus-5 が未登録で生の id を出していた実例あり、2026-07-27 に発覚)。
-    # 導出できない形 (旧 `claude-3-5-sonnet-*` のような version 先行 id、version を持たない
-    # id、provider 修飾付きの `us.anthropic.claude-*`) は従来どおり生の id をそのまま出す。
-    advisor_label="$advisor_model"
-    if [ "${advisor_model#claude-}" != "$advisor_model" ]; then
-      advisor_rest="${advisor_model#claude-}"
-      advisor_rest="${advisor_rest%%@*}"
-      advisor_rest="${advisor_rest%%:*}"
-      advisor_family="${advisor_rest%%-*}"
-      advisor_ver=""
-      if [[ "$advisor_family" =~ ^[a-z]+$ && "$advisor_rest" == *-* ]]; then
-        IFS='-' read -r -a advisor_ver_fields <<< "${advisor_rest#*-}"
-        for advisor_field in "${advisor_ver_fields[@]}"; do
-          [[ "$advisor_field" =~ ^[0-9]{1,2}$ ]] || break
-          advisor_ver="${advisor_ver:+$advisor_ver.}$advisor_field"
-        done
-      fi
-      [ -n "$advisor_ver" ] && advisor_label="${advisor_family^} $advisor_ver"
+# 結果は ADVISOR_LABEL / ADVISOR_COLOR。
+resolve_advisor() {
+  ADVISOR_LABEL="未設定"
+  ADVISOR_COLOR="$red_fg"
+  if [ -n "$transcript" ] && [ -f "$transcript" ]; then
+    # 末尾から辿り、最初に見つかった advisorModel 行 = 最新。行を逆順に流すコマンドは
+    # 環境で違う (GNU: tac / BSD・macOS: tail -r) ので、OS 名ではなく tac の有無で選ぶ
+    # (Darwin + coreutils・FreeBSD・GNU をどれも取り違えない)。`command -v` は bash の
+    # builtin でフォークは増えない。tac も tail -r も無い環境 (applet を削った busybox 等)
+    # では advisor が黙って「未設定」に劣化する — 表示の劣化だけで他への影響はない。
+    # 全行 grep して tail -1 を採る方式にはしない: advisor 設定済みなら該当行は末尾付近に
+    # あり、逆順 + grep -m1 は巨大な transcript でも最初の一致で打ち切れる (該当行が 1 つも
+    # 無いときだけは、どちらの方式でも全走査になる)。
+    if command -v tac >/dev/null 2>&1; then
+      advisor_rev_cat="tac"
+    else
+      advisor_rev_cat="tail -r"
     fi
-    advisor_color="$cyan_fg"
+    advisor_model=$($advisor_rev_cat "$transcript" 2>/dev/null | grep -m1 '"advisorModel"' | jq -r '.advisorModel // empty' 2>/dev/null)
+    if [ -n "$advisor_model" ]; then
+      # 表示名は id の構造から導出する (model.display_name のような整形名は stdin に無い)。
+      # `claude-<family>-<major>[-<minor>]` の family を頭大文字にし、続く 1〜2 桁の数値
+      # フィールドを "." で繋ぐ: claude-opus-4-8 → Opus 4.8 / claude-haiku-4-5-20251001 →
+      # Haiku 4.5 (数値でないフィールドで打ち切るので末尾の日付は落ちる)。version に食い込む
+      # 修飾子は先に切る: Vertex の `@YYYYMMDD` と Bedrock の `:0` を残すと、minor が
+      # 「数値でない」と判定されて claude-sonnet-4-5@20250929 が "Sonnet 4" になる (誤表示は
+      # 生 id 表示より悪い)。
+      # id → 表示名のハードコード表は持たない: 新モデルが出るたび追加漏れでドリフトする
+      # (claude-opus-5 が未登録で生の id を出していた実例あり、2026-07-27 に発覚)。
+      # 導出できない形 (旧 `claude-3-5-sonnet-*` のような version 先行 id、version を持たない
+      # id、provider 修飾付きの `us.anthropic.claude-*`) は従来どおり生の id をそのまま出す。
+      ADVISOR_LABEL="$advisor_model"
+      if [ "${advisor_model#claude-}" != "$advisor_model" ]; then
+        advisor_rest="${advisor_model#claude-}"
+        advisor_rest="${advisor_rest%%@*}"
+        advisor_rest="${advisor_rest%%:*}"
+        advisor_family="${advisor_rest%%-*}"
+        advisor_ver=""
+        if [[ "$advisor_family" =~ ^[a-z]+$ && "$advisor_rest" == *-* ]]; then
+          IFS='-' read -r -a advisor_ver_fields <<< "${advisor_rest#*-}"
+          for advisor_field in "${advisor_ver_fields[@]}"; do
+            [[ "$advisor_field" =~ ^[0-9]{1,2}$ ]] || break
+            advisor_ver="${advisor_ver:+$advisor_ver.}$advisor_field"
+          done
+        fi
+        [ -n "$advisor_ver" ] && ADVISOR_LABEL="${advisor_family^} $advisor_ver"
+      fi
+      ADVISOR_COLOR="$cyan_fg"
+    fi
   fi
-fi
-advisor_part=" ${advisor_color}[advisor:${advisor_label}]${reset}"
+}
+resolve_advisor
+advisor_part=" ${ADVISOR_COLOR}[advisor:${ADVISOR_LABEL}]${reset}"
 
 # 1 行目: directory, branch, model, context, effort, advisor / 2 行目以降: 各ウィンドウの
 # 消化ペース (5h → 7d)。
