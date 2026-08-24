@@ -9,8 +9,8 @@ SHELL := /bin/sh
 # 新規スクリプトは既定で shellcheck 側に入る: zsh 専用構文なら test-shellcheck が SC1071 で
 # 落ちるので、そのときここへ移す。
 ZSH_SYNTAX_FILES := \
-  bin/av1c \
   bin/av1ify \
+  bin/binav1c \
   bin/concat \
   bin/disassemble_excel \
   bin/glogx \

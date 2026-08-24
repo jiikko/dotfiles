@@ -118,12 +118,23 @@ else
   exit 1
 fi
 
-# 8. av1c は対話シェルでは「関数」として解決する (PATH の bin/av1c より優先される)
+# 8. av1c は対話シェルでは「関数」として解決する (PATH の bin/binav1c より優先される)
 # 引数なし av1c のクリップボード入力は __av1ify_clipboard_mode_available が -o interactive を
-# 要求するため、ここが bin/av1c (非対話のサブプロセス) に落ちると機能が黙って死ぬ。
+# 要求するため、ここが bin/binav1c (非対話のサブプロセス) に落ちると機能が黙って死ぬ。
 # stdin は /dev/null に落とす: 端末のまま走らせると本物のクリップボードを読んで入力待ちになる。
 av1c_kind="$(run_zsh 'whence -w av1c' </dev/null | awk 'END{print}')"
 assert_contains "$av1c_kind" "function" "av1c is a shell function in interactive shells"
+
+# 8b. bin/ に av1c という実行ファイルを置かない (シェル関数と PATH の名前衝突を防ぐ)
+# 衝突していると、_zshrc を読み直していないシェル (= av1c() 未定義) で `av1c` が黙って
+# スクリプトへ落ち、引数なしのクリップボード入力がヘルプ表示に化ける (2026-08-23 実測)。
+# 名前を分けてあれば同じ状況は command not found になり、リロードが要ると気づける。
+# 非対話版は bin/binav1c。
+if [ -e "$ROOT_DIR/bin/av1c" ]; then
+  printf '✗ bin/av1c exists; it shadows the av1c shell function in stale shells (use bin/binav1c)\n'
+  exit 1
+fi
+printf '✓ bin/ has no av1c executable shadowing the shell function\n'
 
 # 9. av1c を呼んだ後も av1ify の lazy-reload ラッパーが残る
 # 同じ lib (_av1ify.zsh) が av1ify も再定義するので、_reload_then_call の復元対象から
