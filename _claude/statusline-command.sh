@@ -221,7 +221,9 @@ pace_row() {
   local pr_window pr_cell pr_band pr_bunit pr_aunit pr_efmt
   case $pr_kind in
     hour) pr_window=18000;  pr_cell=3600;  pr_band=25; pr_bunit="時"; pr_aunit="時間"; pr_efmt="+%H:%M" ;;
-    day)  pr_window=604800; pr_cell=86400; pr_band=10; pr_bunit="日"; pr_aunit="日";   pr_efmt="+%-m月%-d日%H:%M" ;;
+    # ⚠️ 7d は絶対時刻を出さない (pr_efmt が空)。残り日数で十分で、"8月26日19:18" は
+    #   14 カラム使う割に読まれない。5h は「何時に戻るか」が効くので時刻だけ出す。
+    day)  pr_window=604800; pr_cell=86400; pr_band=10; pr_bunit="日"; pr_aunit="日";   pr_efmt="" ;;
     *) return ;;
   esac
   [ -n "$pr_used" ] || return
@@ -380,19 +382,26 @@ pace_row() {
   # 落とす (中身の無い "()" をぶら下げない)。
   fmt_remaining "$pr_rem"
   local pr_remlab=$REPLY pr_at=""
-  fmt_epoch "$pr_reset" "$pr_efmt"
-  [ -n "$REPLY" ] && pr_at=" ($REPLY)"
+  # ⚠️ このガードは出力を変えない (空の書式で呼んでも fmt_epoch は空を返す) が、外すと
+  #   7d の描画ごとに date が 1〜2 回 fork される。統合テストからは見えないので、
+  #   「冗長だから」と外さないこと (冒頭の jq 一括化と同じ理由)。
+  if [ -n "$pr_efmt" ]; then
+    fmt_epoch "$pr_reset" "$pr_efmt"
+    [ -n "$REPLY" ] && pr_at=" ($REPLY)"
+  fi
 
-  # アドバイスが無い状態 (適正) では区切りごと落とす (末尾に " · " をぶら下げない)
+  # アドバイスが無い状態 (適正) では区切りごと落とす (末尾に空白をぶら下げない)。
+  # ⚠️ 区切りは中黒でなく空白 1 つ。項目 (残N / N%/日 / N日分の…) は形が違うので
+  #   中黒が無くても切れ目が読め、1 行あたり 4 カラム縮む。
   local pr_tail_advice=""
-  [ -n "$pr_advice" ] && printf -v pr_tail_advice " · %b%s" "$pr_advice_sgr" "$pr_advice"
+  [ -n "$pr_advice" ] && printf -v pr_tail_advice " %b%s" "$pr_advice_sgr" "$pr_advice"
 
   # 残り時間・予算・アドバイスも状態色で出す (足りていないのか余っているのかを、行の
   # どこを読んでも同じ色で言う)。想定% だけはグレーのままにする — これは状態ではなく
   # 「比較対象の目盛り」なので、状態色に混ぜると読み手が符号を取り違える。
   # ⚠️ 数値は桁を固定して右詰めにする (使用率・想定率は 3 桁、乖離 pt は符号込み 4 桁)。
   #   桁数で後ろがずれると、5h と 7d の行で同じ項目が縦に揃わない。
-  printf -v PACE_ROW "%s [%b]%s %b%3d%%%b %b想定%3d%%%b %b%+4dpt%s %b残%s%s · %s%b%b" \
+  printf -v PACE_ROW "%s [%b]%s %b%3d%%%b %b想定%3d%%%b %b%+4dpt%s %b残%s%s %s%b%b" \
     "$pr_label" "$pr_cells" "$pr_pad" "$pr_color" "$pr_used" "$reset" \
     "$gray_fg" "$pr_exp" "$reset" "$pr_color" "$pr_delta" "$pr_word" \
     "$pr_color" "$pr_remlab" "$pr_at" "$pr_budget" "$pr_tail_advice" "$reset"

@@ -58,11 +58,11 @@ assert_contains "$out" "7d ["            "7 日ウィンドウはペース行が
 assert_contains "$out" "93%"             "7d の残量%"
 assert_contains "$out" "残"              "resets_at から残り時間ラベルが出る"
 # 残り時間の後ろにリセットの絶対時刻が括弧で続く形まで見る (ここを緩くしておくと、
-# epoch → 日時の変換が丸ごと落ちても "残2日0時間" だけで green になる。実際 GNU date では
-# 長く空だった)。7d は "(8月25日13:56)" の形
+# epoch → 日時の変換が丸ごと落ちても "残5時間0分" だけで green になる。実際 GNU date では
+# 長く空だった)。絶対時刻を出すのは 5h だけで "(02:00)" の形
 case "$out" in
-  *"("*月*日*")"*) printf '✓ %s\n' "残り時間の後ろにリセット日時が続く" ;;
-  *) printf '✗ %s\n  実際: %s\n' "残り時間の後ろにリセット日時が続く" "$out" >&2
+  *"("[0-9][0-9]:[0-9][0-9]")"*) printf '✓ %s\n' "残り時間の後ろにリセット時刻が続く" ;;
+  *) printf '✗ %s\n  実際: %s\n' "残り時間の後ろにリセット時刻が続く" "$out" >&2
      fails=$(( fails + 1 )) ;;
 esac
 
@@ -185,7 +185,13 @@ assert_lacks "$nodate_out" "()"            "日時が取れないとき空の \"
 
 gnu_out="$(gnu_json | PATH="$gnu_dir:$PATH" "$SL" 2>/dev/null | sed $'s/\033\[[0-9;]*h//g;s/\033\[[0-9;]*m//g')"
 gnu_err="$(gnu_json | PATH="$gnu_dir:$PATH" "$SL" 2>"$TMP_DIR/gnu_err" >/dev/null; cat "$TMP_DIR/gnu_err")"
-assert_contains "$gnu_out" "月"     "GNU date でもリセット日時を出す (date -d @epoch へフォールバック)"
+# GNU date では `-r <epoch>` が「参照ファイルの時刻」なので失敗し、`-d @epoch` へ落ちる。
+# 絶対時刻を出すのは 5h だけなので、そこで括弧つきの時刻が出ることで確認する
+case "$gnu_out" in
+  *"("[0-9][0-9]:[0-9][0-9]")"*) printf '✓ %s\n' "GNU date でもリセット時刻を出す (date -d @epoch へフォールバック)" ;;
+  *) printf '✗ %s\n  実際: %s\n' "GNU date でもリセット時刻を出す (date -d @epoch へフォールバック)" "$gnu_out" >&2
+     fails=$(( fails + 1 )) ;;
+esac
 assert_contains "$gnu_out" "7d ["     "GNU date でもペース行は出る"
 if [[ -z "$gnu_err" ]]; then
   printf '✓ %s\n' "GNU date でも stderr を出さない"
@@ -253,13 +259,19 @@ assert_contains "$out" "7d ["                        "7d が揃えばペース�
 assert_contains "$out" " 62% 想定 70%   -8pt"            "想定消化率と乖離 pt"
 assert_contains "$out" "-8pt 適正"               "帯の中も状態の語を出す (行ごとに位置が変わらない)"
 assert_lacks    "$out" "-8pt 先行"                   "帯の中を先行と呼ばない"
-assert_contains "$out" "残2日1時間 (" "残り時間の後ろにリセットの絶対時刻が続く"
-assert_contains "$out" "· 18.4%/日" "1 日予算が残り時間の後ろに出る"
+assert_contains "$out" "残2日1時間" "残り時間ラベルが出る"
+assert_lacks    "$out" "残2日1時間 (" "7d は絶対時刻を出さない (残り日数で足りる)"
+assert_contains "$out" "残2日1時間 18.4%/日" "1 日予算が残り時間の後ろに出る"
 # 帯の中 (適正) は語で足りるのでアドバイスを出さない。末尾に空の区切り " · " を
 # ぶら下げないことまで見る (区切りだけ残すと行末がゴミに見える)
-assert_lacks "$out" "· 18.4%/日 ·" "帯の中はアドバイスを出さない (区切りもぶら下げない)"
+# 末尾に空の区切り (行末の空白) をぶら下げないことまで見る
+case "$out" in
+  *" ") printf '✗ %s\n' "帯の中はアドバイスを出さない (行末に空白を残さない)" >&2; fails=$(( fails + 1 )) ;;
+  *)    printf '✓ %s\n' "帯の中はアドバイスを出さない (行末に空白を残さない)" ;;
+esac
+assert_lacks "$out" "このままでちょうど" "帯の中はアドバイスを出さない"
 # 帯の外は「語で言えないこと」= 乖離の量をアドバイスが持つ
-assert_contains "$(pace_render 80 "$(day 5)")" "· 3.6日分の前借り" "帯の外はアドバイスで乖離の量を出す"
+assert_contains "$(pace_render 80 "$(day 5)")" "3.6日分の前借り" "帯の外はアドバイスで乖離の量を出す"
 # 残り 1 日で 50% 残 = 余らせ過ぎ。乖離 35pt は 7 日窓で 2.4 日分 (= 35 * 7 / 100)
 overspare="$(pace_render 50 "$(day 1)")"
 assert_contains "$overspare" " 50% 想定 85%  -35pt 余剰" "余らせ過ぎの判定"
@@ -341,16 +353,16 @@ assert_contains "$(pace_render 62.7 "$(day 2)")" " 62% 想定 71%" "小数の us
 # 残 2.58 日 (= 222912 秒): 残日数・1 日予算のどちらも小数部が 0 でない値になる
 frac="$(pace_render 33 222912)"
 assert_contains "$frac" " 33% 想定 63%  -30pt 余剰" "日境界でない resets_at でも想定率が合う"
-assert_contains "$frac" "残2日13時間 ("  "日境界でない残りは日+時間で出す"
-assert_contains "$frac" "· 25.9%/日"     "1 日予算は小数部まで一致する"
+assert_contains "$frac" "残2日13時間"  "日境界でない残りは日+時間で出す"
+assert_contains "$frac" "25.9%/日"     "1 日予算は小数部まで一致する"
 assert_contains "$frac" "2.1日分の余り" "乖離 pt の日換算も小数部まで一致する"
 # 予算の表記: 残りが 1 日未満なら %/日 を出さない (「その 1 日」が来ないので実行不能な
 # 数字になる。残 12 時間で 110.0%/日 のような表示を作らない)
-assert_contains "$(pace_render 45 43200)"      "· 残枠55%" "残り 1 日未満は残枠% で出す"
-assert_contains "$(pace_render 0 3690)"        "残1時間1分 ("  "残り 1 時間でも残り時間ラベルは出る"
-assert_contains "$(pace_render 0 3690)"        "· 残枠100%"    "残り 1 時間でも残枠% で出す"
-assert_contains "$(pace_render 120 87000)"     "· 0.0%/日"  "used% > 100 でも 1 日予算はマイナスにしない"
-assert_contains "$(pace_render 0 87000)"       "· 99.3%/日"            "残り 1 日強で残枠 100% なら 1 日予算は 100% 近傍"
+assert_contains "$(pace_render 45 43200)"      "残枠55%" "残り 1 日未満は残枠% で出す"
+assert_contains "$(pace_render 0 3690)"        "残1時間1分"  "残り 1 時間でも残り時間ラベルは出る"
+assert_contains "$(pace_render 0 3690)"        "残枠100%"    "残り 1 時間でも残枠% で出す"
+assert_contains "$(pace_render 120 87000)"     "0.0%/日"  "used% > 100 でも 1 日予算はマイナスにしない"
+assert_contains "$(pace_render 0 87000)"       "99.3%/日"            "残り 1 日強で残枠 100% なら 1 日予算は 100% 近傍"
 
 # --- 窓を等分したスロットの格子 ---------------------------------------------
 # ペース行は「窓を ncells 等分したスロット」を描く。1 スロット = 「番号 (半角 1 桁) +
@@ -445,7 +457,7 @@ pace5_raw() {
 five_out="$(pace5_render 34 7130)"     # 残 1 時間 58 分 50 秒 → 想定 60%
 assert_contains "$five_out" "5h ["                 "5h もペース行で出る"
 assert_contains "$five_out" " 34% 想定 60%  -26pt"    "5h の想定率は 5 時間窓で計算する"
-assert_contains "$five_out" "· 33.3%/時"           "5h の予算は %/時"
+assert_contains "$five_out" "33.3%/時"           "5h の予算は %/時"
 assert_contains "$five_out" "1.3時間分の余り"       "5h の乖離換算は時間分"
 assert_contains "$five_out" "残1時間58分 ("         "5h も残り時間の後ろに絶対時刻が付く"
 five_bar="$(bar_of "$(printf '%s\n' "$five_out" | tail -1)")"
@@ -474,7 +486,7 @@ assert_contains "$(pace5_render 14 10800)" "-26pt 余裕"  "5h は -26pt で余�
 assert_contains "$(pace5_render 80 10800)" "+40pt 先行"  "5h の +40pt は先行 (7d なら超過)"
 assert_contains "$(pace_render 68 "$(day 5)")" "+40pt 超過" "7d の +40pt は超過"
 # 5h の残り 1 時間未満は残枠% (「その 1 時間」が来ないので %/時 を出さない)
-assert_contains "$(pace5_render 60 1800)" "· 残枠40%" "5h も残り 1 セル未満は残枠% で出す"
+assert_contains "$(pace5_render 60 1800)" "残枠40%" "5h も残り 1 セル未満は残枠% で出す"
 # 5h がリセット済みなら 2 行目にフォールバックする (残量% はどこかに必ず出る)
 five_edge="$(pace5_render 80 0)"
 assert_contains "$five_edge" "5h ["       "5h リセット済みでもゲージは出す"
