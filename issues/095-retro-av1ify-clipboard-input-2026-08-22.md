@@ -92,4 +92,9 @@ drain を `read -t 0` で実装し、パイプで「溜めた入力が捨てら�
 
 - ~~issue 089（`print -P` の 37 行）~~ → 2026-08-22 に全件対応して done へ移した
   （共通パレット `zshlib/_ansi_colors.zsh` + `print -r`。承認後の実行トリガも閉じた）
-- 094 の人手確認（実運用での貼り付け確認）は open
+- ~~項目 1（対話プロンプトの検証を pty driver で行う）の切り出し~~ → 2026-08-24 に実施。
+  **新規** [`_claude/rules/verify-interactive-prompt-with-pty-driver.md`](../_claude/rules/verify-interactive-prompt-with-pty-driver.md)（commit `e2448f5`）。
+  retro 本文は「`adversarial-review-own-safeguards.md` 節 2 への 1 段落追記でも足りる」と
+  していたが、あちらは「検査できなかったのに**緑**」、こちらは「検証できなかったのに**赤**
+  （しかも赤の原因がハーネス側）」と向きが逆なので、トリガー別に新規ルールへ分けた
+- 094 の人手確認（実運用での貼り付け確認）は **open**。この retro はそれが済むまで done にしない
