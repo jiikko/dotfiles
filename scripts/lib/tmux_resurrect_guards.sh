@@ -112,7 +112,10 @@ tt_same_proc() {
 # (実例 2026-08-20: 読み手が cat|kill -0 で書式を無視しており誤報していたのに気づけなかった)
 tt_lock_write_owner() {
   local dir="$1" pid="${2:-$$}"
-  printf '%s\t%s\n' "$pid" "$(tt_proc_starttime "$pid")" > "$dir/pid" 2>/dev/null || true
+  # ⚠️ `{ ...; } 2>/dev/null` で括ること。`printf ... > "$dir/pid" 2>/dev/null` の形だと、
+  #   **リダイレクト先を open できない失敗はシェル自身が報告する**ので抑止できない
+  #   (lock dir が競合で消えている間に stderr が漏れる。実測 2026-08-25)。
+  { printf '%s\t%s\n' "$pid" "$(tt_proc_starttime "$pid")" > "$dir/pid"; } 2>/dev/null || true
 }
 
 # lock の owner が「記録時と同一のプロセスとして」生きているか ($1=lock dir)
@@ -163,6 +166,57 @@ tt_on_default_server() {
   [ -n "$actual" ] || return 0
   expected="$(realpath /tmp 2>/dev/null || echo /tmp)/tmux-$(id -u)/default"
   [ "$actual" = "$expected" ]
+}
+
+# ── lock の取得 ──────────────────────────────────────────────────────────────
+# 死んだサーバ/watcher の stale lock を掃除する (`<dir>/<pid>.lock` の形を前提)。
+# ⚠️ owner の判定を pid だけで行わないこと。pid 再利用で「先任が生きている」と誤認すると、
+#   新世代が無音で退いて **装置が 1 つも張られない** (サーバが死んでも死亡記録が残らない。
+#   2026-07-30 の監査で実証済み。実害は「二重起動」ではなく「装置不在」側に倒れる)。
+# ⚠️ この掃除は **lock 名に pid を持つ経路専用**。単一 lock (`<dir>/lock`) の経路
+#   (tmux_restore_runner.sh) では呼ばないこと。掃除を後付けすると「今まで掃除しなかった
+#   経路が掃除を始める」= 挙動変更で、誤奪の新しい窓を開ける (issue 078 で意図的に分けた)。
+tt_lock_sweep_stale() {
+  local base="$1" d spid
+  for d in "$base"/*.lock; do
+    [ -d "$d" ] || continue
+    spid="$(basename "$d" .lock)"
+    # 掃除するのは **サーバも owner も死んでいる**ときだけ (どちらか生きていれば残す)
+    if ! kill -0 "$spid" 2>/dev/null && ! tt_lock_owner_alive "$d"; then
+      rm -rf "$d" 2>/dev/null
+    fi
+  done
+  # ⚠️ 掃除は best-effort。必ず 0 を返すこと。ループ末尾の `rm -rf` の rc がそのまま漏れると、
+  #   呼び出し側に `set -e` が入った瞬間に「掃除に失敗したら装置を張らずに死ぬ」へ化ける
+  #   (掃除できない = 装置を張らない理由にはならない)。
+  return 0
+}
+
+# lock ディレクトリを取り、成功したら owner (pid + 起動時刻) を記録する。
+#   戻り値: 0 = 取得した / 1 = 先任が同一プロセスとして生きている / 2 = 取得に失敗した
+#
+# ⚠️ **政策は呼び出し側に残す**。「先任が生きていたら何をログに出してどう終わるか」は経路ごとに
+#   違う (periodic_save / watchdog は無音で exit 0、restore_runner は理由を観測ログへ残す)。
+#   ここが返すのは「取れたか / なぜ取れなかったか」だけで、判断は呼び出し側が持つ。
+#   同じ理由で `tmux_resurrect_save.sh` の stale 判定 (mtime hard TTL backstop を持つ) は
+#   この関数へ寄せていない — 政策が違うものを 1 つにすると保存停止か誤奪を作る (issue 078)。
+# ⚠️ 戻り値を読む側は `rc=0; tt_lock_acquire "$d" || rc=$?` の形にすること。素の `rc=$?` は
+#   後から `set -e` が入った瞬間に「rc を読む前にスクリプトごと死ぬ」へ変わる (無音で機能停止)。
+tt_lock_acquire() {
+  local dir="$1"
+  if ! mkdir "$dir" 2>/dev/null; then
+    tt_lock_owner_alive "$dir" && return 1
+    # owner 不在 = 前回の取り残し。奪って続行する
+    # ⚠️ 既知のレース (issue 103): 「owner の生存確認 → 奪う」が非アトミックなので、取り残しの
+    #   lock を 2 プロセスが 1〜5ms 差で掴むと**両方が取得に成功する**。実測で restore.sh が
+    #   40/40 二重実行された。これは統合前 (3 本にコピーされていた頃) から同じ穴で、統合で
+    #   新たに開いたものではない。閉じるには acquire/release を対で作り替える必要があり、
+    #   単純な `mv` への差し替えでは窓が残る (issue 103 に反証つきで記録)。
+    rm -rf "$dir" 2>/dev/null
+    mkdir "$dir" 2>/dev/null || return 2
+  fi
+  tt_lock_write_owner "$dir"
+  return 0
 }
 
 # ── 共有観測ログ (tt-restore-trigger.log) ────────────────────────────────────

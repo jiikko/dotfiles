@@ -37,18 +37,21 @@ TT_RESTORE_STATE_DIR="${TT_RESTORE_STATE_DIR:-$HOME/.cache/tt-restore-run}"
 # 復元中フラグ (@tt-restore-*) と pane 生成が競合する (2026-07-30 セルフレビューで検出)。
 mkdir -p "$TT_RESTORE_STATE_DIR" 2>/dev/null || true
 LOCK_DIR="$TT_RESTORE_STATE_DIR/lock"
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  # owner 判定は pid だけで行わない (pid 再利用で「実行中」と誤認すると手動復元が永久に拒否
-  # される)。起動時刻まで含む同一性判定は guards.sh に集約 (watchdog / periodic_save と共有)
-  if tt_lock_owner_alive "$LOCK_DIR"; then
-    tt_trigger_log "restore-skipped reason=already-running owner=$(cat "$LOCK_DIR/pid" 2>/dev/null | cut -f1) epoch=$(date +%s)"
-    exit 0
-  fi
-  # owner 不在 = 前回の取り残し。奪って続行する (復元が二度と走らない方が害が大きい)
-  rm -rf "$LOCK_DIR" 2>/dev/null
-  mkdir "$LOCK_DIR" 2>/dev/null || { tt_trigger_log "restore-aborted reason=lock-failed epoch=$(date +%s)"; exit 0; }
+# ⚠️ ここでは tt_lock_sweep_stale を呼ばない。この経路の lock は `<dir>/lock` の 1 個だけで
+#   pid を名前に持たず、掃除を後付けすると「今まで掃除しなかった経路が掃除を始める」= 挙動変更に
+#   なる (issue 078 で意図的に分けた)。取り残しは下の「owner 不在なら奪う」で回収される。
+# `|| tt_lock_rc=$?` の形にしておく (素の `rc=$?` は後から `set -e` が入ると、rc を読む前に
+# スクリプトごと死ぬ = 復元が無音で止まる)。
+tt_lock_rc=0
+tt_lock_acquire "$LOCK_DIR" || tt_lock_rc=$?
+if [ "$tt_lock_rc" -eq 1 ]; then
+  # owner 判定は pid だけで行わない (pid 再利用で「実行中」と誤認すると手動復元が永久に拒否される)
+  tt_trigger_log "restore-skipped reason=already-running owner=$(cat "$LOCK_DIR/pid" 2>/dev/null | cut -f1) epoch=$(date +%s)"
+  exit 0
+elif [ "$tt_lock_rc" -ne 0 ]; then
+  tt_trigger_log "restore-aborted reason=lock-failed epoch=$(date +%s)"
+  exit 0
 fi
-tt_lock_write_owner "$LOCK_DIR"
 # shellcheck disable=SC2329 # trap 経由の間接呼び出し
 release_lock() { rm -rf "$LOCK_DIR" 2>/dev/null; }
 trap release_lock EXIT

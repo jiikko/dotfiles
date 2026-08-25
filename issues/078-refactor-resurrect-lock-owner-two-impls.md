@@ -142,4 +142,48 @@ platform 非依存にした。
 
 ## 残課題
 
-- [ ] lock 取得手順の逐語重複の統合 (restore_runner の掃除ループ有無をどう扱うか決めてから)
+- [x] lock 取得手順の逐語重複の統合 (2026-08-25 完了)
+
+## 統合の結果 (2026-08-25)
+
+`scripts/lib/tmux_resurrect_guards.sh` に 2 関数を新設し、3 本を移行した:
+
+- `tt_lock_sweep_stale <dir>` — `<pid>.lock` 形式の stale 掃除。**サーバも owner も死んでいる**
+  ときだけ消す (連言)。best-effort なので必ず 0 を返す
+- `tt_lock_acquire <dir>` — 0=取得 / 1=先任が同一プロセスとして生存 / 2=取得に失敗
+
+### 意図的に寄せなかったもの (誤指摘の再生成を防ぐため記録)
+
+| 対象 | 寄せない理由 |
+|---|---|
+| `tmux_restore_runner.sh` の掃除 | あの経路の lock は `<dir>/lock` の 1 個で pid を名前に持たない。掃除を後付けすると「今まで掃除しなかった経路が掃除を始める」= 挙動変更。取り残しは acquire の奪取で回収される |
+| `tmux_resurrect_save.sh` の `tt_save_owner_is_stale` | mtime hard TTL backstop を持つ**別政策**。`tt_lock_owner_alive` (fail-open) に置き換えると保存が永久に止まる |
+| 「先任生存時に何をログへ出すか」 | 政策は呼び出し側に残す (periodic/watchdog は無音、restore は理由を記録) |
+
+### 敵対的レビューで直したもの
+
+- **rc=2 (取得不能) を rc=1 と畳んで無音にしていた** — `periodic_save` / `watchdog` で
+  状態ディレクトリが書けないと「装置が二度と張られない」のに 0 byte・0 行だった (chmod 500 で実測)。
+  `periodic-save-aborted` / `watchdog-aborted` (`reason=lock-failed`) を出すよう分離。
+  行種は `docs/tmux-plugins.md`「観測ログの読み方」の表にも追加した
+- **`tt_lock_write_owner` の `2>/dev/null` がリダイレクト失敗を抑止していなかった** —
+  open 失敗はシェル自身が報告するため `{ ...; } 2>/dev/null` で括る形に直した
+- **`tt_lock_sweep_stale` が最後の `rm -rf` の rc を漏らしていた** — 呼び出し側に `set -e` が
+  入った瞬間「掃除に失敗したら装置を張らずに死ぬ」に化けるので `return 0` を明示
+
+### 変異検証 (14/14 red。baseline が green であることを先に測ってから実施)
+
+owner を記録しない / rc2→0 / rc1→0 / 取り残しを回収しない / 掃除条件からサーバ生存を落とす /
+ディレクトリ判定を落とす / 掃除を no-op (periodic・watchdog) / watchdog の掃除呼び出しを消す /
+`|| tt_lock_rc=$?` を `&&` に (periodic・restore) / rc=2 を無音に戻す (periodic・watchdog) /
+restore の rc=1 分岐を死なせる。
+
+途中で **fixture が vacuous** だったことも判明した: `tt_free_pid` が決定的なため「動いている
+サーバ」と「死んだサーバ」に同じ pid が割り当たり、掃除ではなく**通常の lock 解放**で消えて
+いたのを「掃除された」と誤読していた (掃除を no-op にする変異が green のまま通って発覚)。
+`tt_free_pid` に開始値の引数を足して塞いだ。
+
+### 積み残し
+
+- レースは**閉じていない** → [issue 103](103-bug-lock-steal-race-double-restore.md)。
+  統合が持ち込んだ退行ではなく (旧実装でも 20/20 再現)、直す場所が 1 箇所になっただけ

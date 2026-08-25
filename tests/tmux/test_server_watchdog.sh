@@ -147,4 +147,43 @@ TT_TRIGGER_LOG="$LOG" TT_WATCHDOG_DIR="$TMP_DIR/wd" TT_PSLOG_DIR="$TMP_DIR/pslog
 kill "$FAKE" 2>/dev/null
 printf '✓ 非 default socket (テストサーバ) は看取らない\n'
 
+# --- (5) lock を作れないときは無音で消えない -------------------------------------------
+# ⚠️ rc=2 (取得不能) を rc=1 (先任生存) と畳むと **watchdog が張られない = 死因が二度と
+#   記録されない**のに 1 行も残らない (敵対レビューが chmod 500 で実測)。
+if [ "$(id -u)" = 0 ]; then
+  printf '⚠ root では書き込み不可ディレクトリを作れないため lock 取得失敗のテストを skip した\n'
+else
+  : > "$LOG"
+  RO_WD="$TMP_DIR/wd_ro"; rm -rf "$RO_WD"; mkdir -p "$RO_WD"; chmod 500 "$RO_WD"
+  tt_spawn_fake_proc; FAKE="$REPLY_PID"
+  TT_TRIGGER_LOG="$LOG" TT_WATCHDOG_DIR="$RO_WD" TT_PSLOG_DIR="$TMP_DIR/pslogs" \
+    TT_WATCHDOG_INTERVAL=0.05 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" \
+    PATH="$STUB_PATH" "$SCRIPT" "$FAKE" "/fake/socket" "1"
+  chmod 700 "$RO_WD"
+  kill "$FAKE" 2>/dev/null
+  grep -qE '\twatchdog-aborted reason=lock-failed server=[0-9]+ epoch=[0-9]+' "$LOG" \
+    || { printf '✗ lock 取得失敗が観測ログに残っていない (装置不在が無音):\n'; cat "$LOG"; exit 1; }
+  printf '✓ lock を取れないときは理由を観測ログに残す\n'
+fi
+
+# --- (6) 死んだサーバの stale lock を掃除してから張る -----------------------------------
+# ⚠️ 掃除の呼び出し**そのもの**を pin する。関数の中身は guards.sh の unit テストが見ているが、
+#   watchdog 側の呼び出し行を消しても他のテストは全部 green だった (敵対レビューの指摘)。
+: > "$LOG"
+tt_free_pid; DEADSRV="$REPLY_PID"
+mkdir -p "$TMP_DIR/wd/$DEADSRV.lock"
+tt_free_pid $(( DEADSRV - 1 )); printf '%s\n' "$REPLY_PID" > "$TMP_DIR/wd/$DEADSRV.lock/pid"
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
+wd_env "$FAKE" & WD=$!
+i=0
+while [ "$i" -lt 100 ]; do
+  [ -d "$TMP_DIR/wd/$DEADSRV.lock" ] || break
+  sleep 0.1; i=$((i + 1))
+done
+[ ! -d "$TMP_DIR/wd/$DEADSRV.lock" ] \
+  || { printf '✗ 死んだサーバの stale lock を掃除していない (watchdog 側の呼び出しが死んでいる)\n'; exit 1; }
+kill "$FAKE" 2>/dev/null
+wait "$WD" 2>/dev/null || true
+printf '✓ 死んだサーバの stale lock を掃除してから監視を張る\n'
+
 printf '\nAll server-watchdog tests passed successfully!\n'

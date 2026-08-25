@@ -129,6 +129,65 @@ assert_not_called "save quiet" "先任が生きている間は後発が保存し
 printf '✓ 二重起動は先任の lock を奪わず退く\n'
 kill "$HOLDER" 2>/dev/null; rm -rf "$TMP_DIR/state/$FAKE.lock"
 
+# --- (6b) 死んだサーバの stale lock を掃除する ------------------------------------------
+# ⚠️ この観点は refactor で guards.sh の tt_lock_sweep_stale へ寄せるまで **テストが 1 本も
+#   無かった** (変異検証で「掃除を no-op にしても全部 green」で発覚。issue 078)。
+#   掃除が止まると、死んだサーバの <pid>.lock が状態ディレクトリに溜まり続ける。
+reset_calls; : > "$LOG"
+# ⚠️ 「動いているサーバ」と「死んだサーバ」に**別々の pid** を割り当てること。tt_free_pid は
+#   決定的なので、2 回呼んで同じ値を使うと lock の通常解放で消えたものを「掃除された」と
+#   誤読する (実測: 掃除を no-op にする変異が green のまま通った)。
+tt_free_pid; RUNSRV="$REPLY_PID"                       # 動いている側 (pid は消滅済みでよい)
+tt_free_pid $(( RUNSRV - 1 )); DEADSRV="$REPLY_PID"    # 掃除対象。RUNSRV と必ず別の pid
+mkdir -p "$TMP_DIR/state/$DEADSRV.lock"
+tt_free_pid $(( DEADSRV - 1 )); DEADOWNER="$REPLY_PID"
+printf '%s\n' "$DEADOWNER" > "$TMP_DIR/state/$DEADSRV.lock/pid"   # owner も死んでいる
+# 生存 owner を持つ別サーバの lock は残らなければならない (掃除しすぎを検出する)
+mkdir -p "$TMP_DIR/state/$FAKE.lock"
+tt_spawn_fake_proc; LIVEOWNER="$REPLY_PID"
+printf '%s\n' "$LIVEOWNER" > "$TMP_DIR/state/$FAKE.lock/pid"
+# ⚠️ サーバ pid が死んでいても **owner がまだ生きている** lock は残す (保存の実行中に tmux
+#   サーバだけが落ちた形)。ここを掃除すると、走っている保存の lock を別インスタンスが取れて
+#   二重保存になる。掃除の条件は「サーバ pid が死んでいる」だけでは足りない、を固定する。
+tt_free_pid $(( DEADOWNER - 1 )); DEADSRV_LIVEOWNER="$REPLY_PID"
+mkdir -p "$TMP_DIR/state/$DEADSRV_LIVEOWNER.lock"
+tt_spawn_fake_proc; LIVEOWNER2="$REPLY_PID"
+printf '%s\n' "$LIVEOWNER2" > "$TMP_DIR/state/$DEADSRV_LIVEOWNER.lock/pid"
+STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
+  run_periodic "$RUNSRV"
+[[ -d "$TMP_DIR/state/$DEADSRV.lock" ]] \
+  && { printf '✗ 死んだサーバの stale lock が掃除されていない\n'; exit 1; }
+printf '✓ 死んだサーバの stale lock を掃除する\n'
+[[ -d "$TMP_DIR/state/$FAKE.lock" ]] \
+  || { printf '✗ 生存 owner の lock まで消した (掃除しすぎ)\n'; exit 1; }
+printf '✓ 生存 owner の lock は残す (掃除しすぎない)\n'
+[[ -d "$TMP_DIR/state/$DEADSRV_LIVEOWNER.lock" ]] \
+  || { printf '✗ サーバ pid だけ見て、生存 owner が保持中の lock を消した\n'; exit 1; }
+printf '✓ サーバ pid が死んでいても owner 生存中の lock は残す\n'
+kill "$LIVEOWNER" "$LIVEOWNER2" 2>/dev/null
+rm -rf "$TMP_DIR/state/$FAKE.lock" "$TMP_DIR/state/$DEADSRV_LIVEOWNER.lock"
+
+# --- (6c) lock を作れないときは無音で消えない ------------------------------------------
+# ⚠️ rc=2 (取得不能) を rc=1 (先任生存) と畳んで `|| exit 0` にすると、**周期保存が二度と
+#   張られない**のに stdout も観測ログも 0 byte になる (敵対レビューが chmod 500 で実測)。
+#   「装置が不在になった」は必ず 1 行残す、を pin する。
+if [ "$(id -u)" = 0 ]; then
+  printf '⚠ root では書き込み不可ディレクトリを作れないため lock 取得失敗のテストを skip した\n'
+else
+  reset_calls; : > "$LOG"
+  RO_STATE="$TMP_DIR/state_ro"; rm -rf "$RO_STATE"; mkdir -p "$RO_STATE"; chmod 500 "$RO_STATE"
+  tt_spawn_fake_proc; ROSRV="$REPLY_PID"
+  TT_TRIGGER_LOG="$LOG" TT_PERIODIC_STATE_DIR="$RO_STATE" TT_PERIODIC_ONESHOT=1 \
+    STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
+    run "$STUB_PATH" "$SCRIPT" "$ROSRV"
+  chmod 700 "$RO_STATE"
+  assert_not_called "save ran" "lock を取れないなら保存しない"
+  grep -qE '\tperiodic-save-aborted reason=lock-failed server=[0-9]+ epoch=[0-9]+' "$LOG" \
+    || { printf '✗ lock 取得失敗が観測ログに残っていない (装置不在が無音):\n'; cat "$LOG"; exit 1; }
+  printf '✓ lock を取れないときは理由を観測ログに残す\n'
+  kill "$ROSRV" 2>/dev/null
+fi
+
 # --- (7) 保存スクリプト未解決 ----------------------------------------------------------
 reset_calls; : > "$LOG"
 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_SAVE_SCRIPT="" run_periodic "$FAKE"
