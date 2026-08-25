@@ -60,22 +60,17 @@ mkdir -p "$TT_WATCHDOG_DIR" 2>/dev/null || exit 0
 # 残らず観測装置が丸ごと不発になる。2026-07-30 の監査で実証済み。以前ここには「実害は二重
 # watchdog 側に倒れるので許容」と書いていたが実測と逆で、装置不在側に倒れる)。
 # 起動時刻まで含めた同一性判定は guards.sh の tt_lock_owner_alive / tt_same_proc に集約。
-for d in "$TT_WATCHDOG_DIR"/*.lock; do
-  [ -d "$d" ] || continue
-  spid="$(basename "$d" .lock)"
-  if ! kill -0 "$spid" 2>/dev/null && ! tt_lock_owner_alive "$d"; then
-    rm -rf "$d" 2>/dev/null
-  fi
-done
+tt_lock_sweep_stale "$TT_WATCHDOG_DIR"
 LOCK_DIR="$TT_WATCHDOG_DIR/$SERVER_PID.lock"
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  if tt_lock_owner_alive "$LOCK_DIR"; then
-    exit 0   # 先任の watchdog が (同一プロセスとして) 生きている
-  fi
-  rm -rf "$LOCK_DIR" 2>/dev/null
-  mkdir "$LOCK_DIR" 2>/dev/null || exit 0
+tt_lock_rc=0
+tt_lock_acquire "$LOCK_DIR" || tt_lock_rc=$?
+if [ "$tt_lock_rc" -eq 1 ]; then
+  exit 0   # 先任の watchdog が (同一プロセスとして) 生きている = 正常。無音で退く
+elif [ "$tt_lock_rc" -ne 0 ]; then
+  # ⚠️ 上と同じ理由で、取得不能を無音にしない (watchdog 不在 = 死因が二度と記録されない)
+  tt_trigger_log "watchdog-aborted reason=lock-failed server=$SERVER_PID epoch=$(date +%s)"
+  exit 0
 fi
-tt_lock_write_owner "$LOCK_DIR"
 # 異常終了 (TERM は無視するが INT / エラー / 正常終了) でも lock を残さない。残すと次世代の
 # 起動が上の stale 判定に頼ることになり、pid 再利用の窓を無駄に開ける
 # shellcheck disable=SC2329 # trap 経由の間接呼び出し
@@ -108,13 +103,11 @@ check_health() {
   [ "$state" = "$health_last_state" ] && return 0
   health_last_state="$state"
   if [ "$state" = ng ]; then
-    { mkdir -p "$(dirname "$TT_TRIGGER_LOG")" && printf '%s\tsnapshot-health ng epoch=%s detail=%s\n' \
-        "$(date +%FT%T)" "$now" "$out" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
+    tt_trigger_log "snapshot-health ng epoch=$now detail=$out"
     # 見える通知 (フォーカスを奪わない toast)。落ちても監視は続ける
     [ -x "$TT_TOAST" ] && "$TT_TOAST" -d 8 -b 52 "⚠️ スナップショット異常: ${out#スナップショット異常: }" 2>/dev/null || true
   else
-    { mkdir -p "$(dirname "$TT_TRIGGER_LOG")" && printf '%s\tsnapshot-health ok epoch=%s\n' \
-        "$(date +%FT%T)" "$now" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
+    tt_trigger_log "snapshot-health ok epoch=$now"
   fi
 }
 
@@ -169,8 +162,8 @@ else
   verdict=external-signal-or-crash
 fi
 
-{ mkdir -p "$(dirname "$TT_TRIGGER_LOG")" && printf '%s\tserver-death pid=%s start=%s socket=%s verdict=%s pslog=%s\n' \
-    "$ts" "$SERVER_PID" "$SERVER_START" "$SOCKET_PATH" "$verdict" "$pslog" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
+# 打刻は死亡を検知した時刻 ($ts)。verdict の計算はこの後なので、書く時刻ではずれる
+tt_trigger_log "server-death pid=$SERVER_PID start=$SERVER_START socket=$SOCKET_PATH verdict=$verdict pslog=$pslog" "$ts"
 
 # pslog の世代管理 (直近 TT_PSLOG_KEEP 件だけ残す)
 # shellcheck disable=SC2012 # mtime 降順が要件で、対象は自前命名 (空白なし) のファイルのみ

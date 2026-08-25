@@ -30,15 +30,11 @@ TT_VERIFY_NAME_LIMIT="${TT_VERIFY_NAME_LIMIT:-8}"
 
 tt_on_default_server || exit 0
 
-log_line() {
-  { mkdir -p "$(dirname "$TT_TRIGGER_LOG")" \
-      && printf '%s\t%s\n' "$(date +%FT%T)" "$1" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
-}
 
 rdir="$(tt_resurrect_dir)"
 last_target="$(readlink "$rdir/last" 2>/dev/null || true)"
 if [ -z "$last_target" ] || [ ! -f "$rdir/$last_target" ]; then
-  log_line "restore-verify skipped=no-last epoch=$(date +%s)"
+  tt_trigger_log "restore-verify skipped=no-last epoch=$(date +%s)"
   exit 0
 fi
 
@@ -55,13 +51,13 @@ missing_names="$(comm -23 <(printf '%s\n' "$saved_names") <(printf '%s\n' "$live
 missing="$(printf '%s\n' "$missing_names" | grep -c . || true)"
 
 if [ "${missing:-0}" -eq 0 ]; then
-  log_line "restore-verify saved=$saved live=$live missing=0 epoch=$(date +%s)"
+  tt_trigger_log "restore-verify saved=$saved live=$live missing=0 epoch=$(date +%s)"
   exit 0
 fi
 
 names="$(printf '%s\n' "$missing_names" | head -"$TT_VERIFY_NAME_LIMIT" | paste -sd, - 2>/dev/null)"
 [ "$missing" -gt "$TT_VERIFY_NAME_LIMIT" ] && names="$names,…"
-log_line "restore-verify saved=$saved live=$live missing=$missing missing_names=$names epoch=$(date +%s)"
+tt_trigger_log "restore-verify saved=$saved live=$live missing=$missing missing_names=$names epoch=$(date +%s)"
 
 # 人にも見せる (これが無いと「完走したのに部分復元」に気づけない = 今日の 22/29)
 [ -x "$TT_TOAST" ] && "$TT_TOAST" -d 8 -b 52 \

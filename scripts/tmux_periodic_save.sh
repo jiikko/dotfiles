@@ -50,31 +50,24 @@ tt_on_default_server || exit 0
 
 exec </dev/null >/dev/null 2>&1
 
-log_line() {
-  { mkdir -p "$(dirname "$TT_TRIGGER_LOG")" \
-      && printf '%s\t%s\n' "$(date +%FT%T)" "$1" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
-}
 
 # ---- 二重起動ガード (conf 再 source で run-shell が毎回走るため) ----------------------
 mkdir -p "$TT_PERIODIC_STATE_DIR" 2>/dev/null || exit 0
-# owner 判定は pid だけで行わない (pid 再利用で先任と誤認すると保存が張られない)。
-# 起動時刻まで含む同一性判定は guards.sh に集約 (watchdog / restore_runner と共有)
-for d in "$TT_PERIODIC_STATE_DIR"/*.lock; do
-  [ -d "$d" ] || continue
-  spid="$(basename "$d" .lock)"
-  if ! kill -0 "$spid" 2>/dev/null && ! tt_lock_owner_alive "$d"; then
-    rm -rf "$d" 2>/dev/null
-  fi
-done
+# stale 掃除と lock 取得は guards.sh に集約 (watchdog と逐語同一だった)。owner 判定を pid だけで
+# 行わない理由 (pid 再利用で先任と誤認すると保存が張られない) は guards.sh 側に書いてある。
+tt_lock_sweep_stale "$TT_PERIODIC_STATE_DIR"
 LOCK_DIR="$TT_PERIODIC_STATE_DIR/$SERVER_PID.lock"
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  if tt_lock_owner_alive "$LOCK_DIR"; then
-    exit 0   # 先任が (同一プロセスとして) 生きている
-  fi
-  rm -rf "$LOCK_DIR" 2>/dev/null
-  mkdir "$LOCK_DIR" 2>/dev/null || exit 0
+tt_lock_rc=0
+tt_lock_acquire "$LOCK_DIR" || tt_lock_rc=$?
+if [ "$tt_lock_rc" -eq 1 ]; then
+  exit 0   # 先任が (同一プロセスとして) 生きている = 正常。無音で退く
+elif [ "$tt_lock_rc" -ne 0 ]; then
+  # ⚠️ 「lock を作れなかった」を rc=1 と畳んで無音にしないこと。状態ディレクトリが書けない等で
+  #   ここに落ちると **周期保存が二度と張られない**のに、stdout も観測ログも 0 byte になる
+  #   (実測 2026-08-25: chmod 500 で再現。装置不在が完全に無音だった)。
+  tt_trigger_log "periodic-save-aborted reason=lock-failed server=$SERVER_PID epoch=$(date +%s)"
+  exit 0
 fi
-tt_lock_write_owner "$LOCK_DIR"
 # shellcheck disable=SC2329 # trap 経由の間接呼び出し
 cleanup() { rm -rf "$LOCK_DIR" 2>/dev/null; }
 trap cleanup EXIT
@@ -105,7 +98,7 @@ interval_seconds() {
   printf '%s' "$((v * 60))"
 }
 
-log_line "periodic-save-begin server=$SERVER_PID interval=$(interval_seconds)s epoch=$(date +%s)"
+tt_trigger_log "periodic-save-begin server=$SERVER_PID interval=$(interval_seconds)s epoch=$(date +%s)"
 
 # pid 再利用の誤認防止に起動時刻も同一性キーに含める (watchdog と同方針)。サーバ死亡から
 # 次の周期までは最大 interval 秒あり、その間に pid が再利用されると「別サーバに対して保存を
@@ -127,7 +120,7 @@ while :; do
 
   save_script="$(tmux show -gqv @resurrect-save-script-path 2>/dev/null)"
   if [ -z "$save_script" ] || [ ! -x "$save_script" ]; then
-    log_line "periodic-save skipped=no-save-script epoch=$(date +%s)"
+    tt_trigger_log "periodic-save skipped=no-save-script epoch=$(date +%s)"
   else
     # 実際の保存可否 (復元中 / hold のみ / 退行) は wrapper 側ガードが判断する。
     # lock も wrapper の bounded-wait が持つので、ここでは同期実行して結果だけ記録する。
@@ -135,14 +128,14 @@ while :; do
       # continuum の最終保存時刻を進める (debounce 経路と同じ簿記。interpolation を止めた後も
       # continuum_save.sh を手動で叩く経路が残るため、意味論を揃えておく)
       tmux set-option -g @continuum-save-last-timestamp "$(date +%s)" 2>/dev/null || true
-      log_line "periodic-save rc=0 epoch=$(date +%s)"
+      tt_trigger_log "periodic-save rc=0 epoch=$(date +%s)"
     else
-      log_line "periodic-save rc=1 epoch=$(date +%s)"
+      tt_trigger_log "periodic-save rc=1 epoch=$(date +%s)"
     fi
   fi
 
   [ -n "$TT_PERIODIC_ONESHOT" ] && break
 done
 
-log_line "periodic-save-end server=$SERVER_PID epoch=$(date +%s)"
+tt_trigger_log "periodic-save-end server=$SERVER_PID epoch=$(date +%s)"
 exit 0

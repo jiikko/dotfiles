@@ -291,6 +291,7 @@ boot と reload を区別できない）は upstream 側に残る
 | `restore-start` / `restore-end` / `restore-aborted` | pre/post-restore-all hook・`tmux_restore_runner.sh` | 復元の開始 / 完了 / 途中死（reason 付き）。自動・手動の両経路が書く |
 | `restore-manual-begin` / `restore-skipped reason=...` | `tmux_restore_runner.sh` | 手動復元の起動と、単一実行ガードによる skip |
 | `periodic-save-begin` / `periodic-save rc=...` | `tmux_periodic_save.sh` | 周期スナップショットの駆動開始と各回の結果 |
+| `periodic-save-aborted` / `watchdog-aborted`（`reason=lock-failed`） | `tmux_periodic_save.sh` / `tmux_server_watchdog.sh` | 状態ディレクトリに lock を作れず装置を張れなかった。**この行が出た後、その装置は不在**（先任が生きているだけの正常な退避は無音なので、この行とは別物） |
 | `regression-blocked prev_sessions=...` | 保存 wrapper の退行ガード | 貧弱な保存による last 上書きを拒否した |
 
 `pid=` と `epoch=` は watchdog の死因分類が読む唯一のキー（サーバ世代の同定と時間窓判定）。

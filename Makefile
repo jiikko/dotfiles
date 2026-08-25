@@ -42,7 +42,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-packages-heavy ci-packages-rest pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-go-lint test-go test-src
+.PHONY: ci-packages-heavy ci-packages-rest pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-go-lint test-go test-src
 
 # settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
 # pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、
@@ -144,6 +144,11 @@ test-ci-group-deps:
 # 正本は scripts/check_pipefail_grep_q.sh (なぜ危険か・直し方・例外マーカーはそこに書いてある)。
 test-pipefail-grep-q:
 	@scripts/check_pipefail_grep_q.sh
+
+# 共有観測ログ (tt-restore-trigger.log) の書き手が guards.sh の tt_trigger_log 以外に増えるのを落とす。
+# 正本は scripts/check_trigger_log_writers.sh (なぜ危険か・例外マーカーはそこに書いてある)。
+test-trigger-log-writers:
+	@scripts/check_trigger_log_writers.sh
 
 # heavy は 21 本 × ~16s (CI 実測) の直列で 5.6 分に育ったため並列実行する
 # (av1ify/concat は tempdir 独立で並列安全。2026-07-20 に 338s → 数十秒へ)
@@ -262,7 +267,7 @@ test-ruby-syntax:
 test-lint-tests:
 	@./scripts/lint_test_scripts.sh
 
-test-lint: test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q
+test-lint: test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers
 
 # Go プロジェクトの静的解析とテスト。実体は各ディレクトリの Makefile の lint / test
 # ターゲットに閉じており、ここはそれへ委譲するだけ (ローカルのコミット前検証用。root の
@@ -270,10 +275,21 @@ test-lint: test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json t
 # workflow (.github/workflows/src_*.yml、paths filter 付き) が同じ lint / test を回す。
 # 各 src_*.yml は再利用 workflow _go-project.yml を呼ぶだけの薄い caller。
 # どちらも Go 未インストール環境では skip する。Go プロジェクトを追加したら
-# ①各プロジェクトに Makefile (lint/test) ②ここへ列挙 ③src_<project>.yml (caller) を作る、の 3 点セット。
-GO_PROJECT_DIRS := src/parallel-each src/glogx src/disassemble_excel src/lockman
+# ①各プロジェクトに Makefile (lint/test) ②src_<project>.yml (caller) を作る、の 2 点セット。
+#
+# ⚠️ 対象は **`src/*/go.mod` の存在で発見する**。手で列挙すると、新しく src/foo を切ったときに
+#   lint / test から**無音で外れる** (make は緑のまま通り「lint も test も通っている」と読める)。
+#   この repo は他の全域で「登録なしで対象になる」を徹底しており (shellcheck は
+#   scripts/discover_shell_scripts.sh の発見、テストは test-dir の自動発見)、Go だけ手動なのは
+#   非対称だった (issue 080)。
+# ⚠️ 発見 0 件は**失敗させる** (下の recipe のガード)。発見式のゲートが 0 件で緑になるのは
+#   `_claude/rules/adversarial-review-own-safeguards.md` が禁じる false green そのもの。
+GO_PROJECT_DIRS := $(patsubst %/,%,$(dir $(wildcard src/*/go.mod)))
 
 test-go-lint:
+	@if [ -z "$(strip $(GO_PROJECT_DIRS))" ]; then \
+		echo "[go-lint] src/*/go.mod が 1 つも見つからない (発見の仕方が壊れている)" >&2; exit 1; \
+	fi
 	@if command -v go >/dev/null 2>&1; then \
 		for dir in $(GO_PROJECT_DIRS); do $(MAKE) -C $$dir lint || exit 1; done; \
 	else \
@@ -281,6 +297,9 @@ test-go-lint:
 	fi
 
 test-go:
+	@if [ -z "$(strip $(GO_PROJECT_DIRS))" ]; then \
+		echo "[go-test] src/*/go.mod が 1 つも見つからない (発見の仕方が壊れている)" >&2; exit 1; \
+	fi
 	@if command -v go >/dev/null 2>&1; then \
 		for dir in $(GO_PROJECT_DIRS); do $(MAKE) -C $$dir test || exit 1; done; \
 	else \

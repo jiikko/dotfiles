@@ -42,4 +42,11 @@ description: このセッションで行った変更をコミットする。「�
 - **`git stash` 禁止**: 退避が必要になっても stash は使わない（共通ルール）。別ブランチにコミットするかユーザーに確認する。
 - **既存のステージ済み変更**: 自分が意図していないファイルが既に `git add` 済みのことがある — **並行して動いている別の Claude セッションの作業中データかもしれない**。pathspec commit なら混入しないので、unstage / reset せずそのまま放置する（勝手に片付けない）。
 - **heredoc 本文が静的検査に引っかかる**: commit メッセージ本文はシェルの引用符の保護が効かない素のテキストとして扱われるため、リポジトリ側の PreToolUse フックがコマンド文字列を静的検査していると、**メッセージに書いた語だけで deny されることがある**。実例（dotfiles 2026-08-21）: ソケット未指定の破壊的 tmux コマンドを止めるフックが、commit メッセージ本文の説明文に反応して commit を 3 回拒否した。回避はシェル変数でトークンを割って組み立てる（`T="tm""ux"`）か、その語を同じ行に置かない言い換え。**フック自身の修正を commit するときに最も踏みやすい**（規範: `_claude/rules/tmux-probe-requires-socket-isolation.md` の「強制手段」節）
+- **テストの exit code を見ないまま commit する**: `make test` と `git commit` を**同じコマンド
+  呼び出しに並べない**。テストの結果を読む前に commit が走り、赤いまま履歴に入る。実例
+  (dotfiles 2026-08-25): `make test >log 2>&1; echo $?` と commit を 1 つの Bash 呼び出しに
+  入れたため、exit 2 (shellcheck エラー) を見ないまま commit した。**「テストを回した」と
+  「テストが通った」は別の手**にして、exit code を確認してから commit する
+  (関連: `_claude/rules/verify-execution-not-just-exit-code.md` は「exit 0 は実行された証拠に
+  ならない」側で、こちらは「exit code をそもそも見ない」側)。
 - **並行セッションとの index 共有**: 同一 repo で複数セッションが動くことがある。index は 1 つしかないため、pathspec なしの commit は他セッションの add 済み変更を混入させる。手順3の pathspec commit が構造的な防止策（詳細: `_claude/rules/commit-with-pathspec.md`）。

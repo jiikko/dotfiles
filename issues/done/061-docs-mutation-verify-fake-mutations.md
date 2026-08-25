@@ -68,3 +68,22 @@ red になったので「テストは効いている」と判断した。**し�
 - `_claude/rules/mutation-verify-new-tests.md` (追記先)
 - `issues/done/050-perf-glogx-issue-list-reads-full-body.md` (偽変異の実例)
 - `issues/done/048-perf-glogx-status-displayindex-per-frame.md` (AllocsPerRun が回数しか見ない例)
+
+## 対応 (2026-08-25)
+
+`_claude/rules/mutation-verify-new-tests.md` に **「変異は『production の機構を戻す』形にする」**
+の節を新設した。issue の追記案をほぼそのまま採り、判定基準 (「この変異は実際に起こりうる退行の
+形か?」) と「その assert が見ている量は壊れたときに動くのか」の一行、起源 (issue 050 の実例と
+1 セッションで 3 回踏んだ表) を入れた。
+
+**別ルールには切り出さず既存ルールへの追記にした** (issue の「未確認」で書き手判断に委ねられて
+いた部分)。理由: この内容は `mutation-verify-new-tests.md` の手順 (変異を当てて red を見る) が
+**前提にしている品質**であって、独立したトリガーを持たない。別ファイルにすると「変異検証を
+やろう」と思った人が両方を読む保証が無くなる。
+
+同じ commit で、変異検証の周辺で今日踏んだ 2 件も同じファイルへ足した (retro 102 の項目 2・3):
+
+- **手順 0**: 変異を当てる前に baseline が green であることを測る (red の baseline で当てた
+  変異は、red の増減が変異由来か区別できない)
+- **よくある形**: 環境で値が変わるコマンド出力 (`ps` / `date` / `stat` の書式・パディング) を
+  そのまま比較に使わない。**手元 1 platform の緑は「その platform では壊せなかった」でしかない**

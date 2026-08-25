@@ -18,32 +18,17 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT="$ROOT_DIR/scripts/tmux_periodic_save.sh"
 TMP_DIR="$(mktemp -d)"
 FAKE_PIDS=()
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/stub_env.sh"
 cleanup() {
   for p in "${FAKE_PIDS[@]:-}"; do kill "$p" 2>/dev/null || true; done
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
 
-# ⚠️ 補助プロセスは必ず `( trap - EXIT; exec ... ) &` で起こすこと。素の `cmd &` は fork 直後
-#    (exec 前) に kill されると子が EXIT trap を継承したまま走り、cleanup の rm -rf が
-#    テスト途中で TMP_DIR を消す → 以降 stub が消えて実 sleep に落ちてハングする
-#    (2026-07-30 に本ファイルで実際に踏み、bash -x で観測して特定)。
-spawn_helper() {  # 使い捨ての長寿命プロセスを安全に起こし、pid を REPLY_PID に返す
-  ( trap - EXIT; exec sleep 300 ) &
-  REPLY_PID=$!
-  FAKE_PIDS+=("$REPLY_PID")
-}
 
-# 存在しない pid を「作らずに」得る (プロセスを起こして kill する方式は上記レースを踏む)
-free_pid() {
-  local p=999999
-  while kill -0 "$p" 2>/dev/null; do p=$((p - 1)); done
-  REPLY_PID="$p"
-}
 
 CALLS="$TMP_DIR/calls.log"; : > "$CALLS"; export CALLS
 mkdir -p "$TMP_DIR/bin" "$TMP_DIR/state"
-DEFAULT_SOCK="$(realpath /tmp 2>/dev/null || echo /tmp)/tmux-$(id -u)/default"
 
 cat > "$TMP_DIR/bin/tmux" <<'EOS'
 #!/bin/sh
@@ -88,8 +73,8 @@ run_periodic() {  # $1=fake server pid, 以降は env で制御
 
 # --- (1) 正常系: 保存が走り timestamp が進み記録される --------------------------------
 reset_calls; : > "$LOG"
-spawn_helper; FAKE="$REPLY_PID"
-STUB_SOCKET_PATH="$DEFAULT_SOCK" STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
+STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run_periodic "$FAKE"
 [[ "$RC" -eq 0 ]] || { printf '✗ 正常系で exit %s\n' "$RC"; exit 1; }
 assert_called "save quiet" "保存 wrapper が quiet で起動される"
@@ -101,13 +86,13 @@ printf '✓ 1 周で保存 + timestamp 更新 + begin/save の記録\n'
 
 # --- (2) @continuum-save-interval が間隔の出典になっている ----------------------------
 reset_calls; : > "$LOG"
-STUB_SOCKET_PATH="$DEFAULT_SOCK" STUB_INTERVAL=5 STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
+STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_INTERVAL=5 STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run_periodic "$FAKE"
 assert_called "sleep 300" "@continuum-save-interval=5 分 → sleep 300 秒"
 
 # --- (3) 保存失敗は rc=1 として記録される (無音で成功扱いにしない) --------------------
 reset_calls; : > "$LOG"
-STUB_SOCKET_PATH="$DEFAULT_SOCK" STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" STUB_SAVE_FAIL=1 \
+STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" STUB_SAVE_FAIL=1 \
   run_periodic "$FAKE"
 grep -q 'periodic-save rc=1' "$LOG" || { printf '✗ 保存失敗が rc=1 で記録されない:\n'; cat "$LOG"; exit 1; }
 assert_not_called "set-option -g @continuum-save-last-timestamp" "保存失敗時は timestamp を進めない"
@@ -123,8 +108,8 @@ printf '✓ 非 default socket (テストサーバ) では完全 no-op\n'
 
 # --- (5) サーバ pid 消滅 → 保存せず終了 ------------------------------------------------
 reset_calls; : > "$LOG"
-free_pid; DEAD="$REPLY_PID"
-STUB_SOCKET_PATH="$DEFAULT_SOCK" STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
+tt_free_pid; DEAD="$REPLY_PID"
+STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run_periodic "$DEAD"
 assert_not_called "save quiet" "サーバ消滅時は保存しない (取り残しが本番を触らない)"
 grep -q 'periodic-save-end' "$LOG" || { printf '✗ 終了が記録されない:\n'; cat "$LOG"; exit 1; }
@@ -133,9 +118,9 @@ printf '✓ サーバ pid 消滅で保存せず終了\n'
 # --- (6) 二重起動ガード ----------------------------------------------------------------
 reset_calls; : > "$LOG"
 mkdir -p "$TMP_DIR/state/$FAKE.lock"
-spawn_helper; HOLDER="$REPLY_PID"
+tt_spawn_fake_proc; HOLDER="$REPLY_PID"
 printf '%s\n' "$HOLDER" > "$TMP_DIR/state/$FAKE.lock/pid"
-STUB_SOCKET_PATH="$DEFAULT_SOCK" STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
+STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run_periodic "$FAKE"
 [[ "$RC" -eq 0 ]] || { printf '✗ 二重起動で exit %s (0 のはず)\n' "$RC"; exit 1; }
 assert_not_called "save quiet" "先任が生きている間は後発が保存しない"
@@ -144,9 +129,68 @@ assert_not_called "save quiet" "先任が生きている間は後発が保存し
 printf '✓ 二重起動は先任の lock を奪わず退く\n'
 kill "$HOLDER" 2>/dev/null; rm -rf "$TMP_DIR/state/$FAKE.lock"
 
+# --- (6b) 死んだサーバの stale lock を掃除する ------------------------------------------
+# ⚠️ この観点は refactor で guards.sh の tt_lock_sweep_stale へ寄せるまで **テストが 1 本も
+#   無かった** (変異検証で「掃除を no-op にしても全部 green」で発覚。issue 078)。
+#   掃除が止まると、死んだサーバの <pid>.lock が状態ディレクトリに溜まり続ける。
+reset_calls; : > "$LOG"
+# ⚠️ 「動いているサーバ」と「死んだサーバ」に**別々の pid** を割り当てること。tt_free_pid は
+#   決定的なので、2 回呼んで同じ値を使うと lock の通常解放で消えたものを「掃除された」と
+#   誤読する (実測: 掃除を no-op にする変異が green のまま通った)。
+tt_free_pid; RUNSRV="$REPLY_PID"                       # 動いている側 (pid は消滅済みでよい)
+tt_free_pid $(( RUNSRV - 1 )); DEADSRV="$REPLY_PID"    # 掃除対象。RUNSRV と必ず別の pid
+mkdir -p "$TMP_DIR/state/$DEADSRV.lock"
+tt_free_pid $(( DEADSRV - 1 )); DEADOWNER="$REPLY_PID"
+printf '%s\n' "$DEADOWNER" > "$TMP_DIR/state/$DEADSRV.lock/pid"   # owner も死んでいる
+# 生存 owner を持つ別サーバの lock は残らなければならない (掃除しすぎを検出する)
+mkdir -p "$TMP_DIR/state/$FAKE.lock"
+tt_spawn_fake_proc; LIVEOWNER="$REPLY_PID"
+printf '%s\n' "$LIVEOWNER" > "$TMP_DIR/state/$FAKE.lock/pid"
+# ⚠️ サーバ pid が死んでいても **owner がまだ生きている** lock は残す (保存の実行中に tmux
+#   サーバだけが落ちた形)。ここを掃除すると、走っている保存の lock を別インスタンスが取れて
+#   二重保存になる。掃除の条件は「サーバ pid が死んでいる」だけでは足りない、を固定する。
+tt_free_pid $(( DEADOWNER - 1 )); DEADSRV_LIVEOWNER="$REPLY_PID"
+mkdir -p "$TMP_DIR/state/$DEADSRV_LIVEOWNER.lock"
+tt_spawn_fake_proc; LIVEOWNER2="$REPLY_PID"
+printf '%s\n' "$LIVEOWNER2" > "$TMP_DIR/state/$DEADSRV_LIVEOWNER.lock/pid"
+STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
+  run_periodic "$RUNSRV"
+[[ -d "$TMP_DIR/state/$DEADSRV.lock" ]] \
+  && { printf '✗ 死んだサーバの stale lock が掃除されていない\n'; exit 1; }
+printf '✓ 死んだサーバの stale lock を掃除する\n'
+[[ -d "$TMP_DIR/state/$FAKE.lock" ]] \
+  || { printf '✗ 生存 owner の lock まで消した (掃除しすぎ)\n'; exit 1; }
+printf '✓ 生存 owner の lock は残す (掃除しすぎない)\n'
+[[ -d "$TMP_DIR/state/$DEADSRV_LIVEOWNER.lock" ]] \
+  || { printf '✗ サーバ pid だけ見て、生存 owner が保持中の lock を消した\n'; exit 1; }
+printf '✓ サーバ pid が死んでいても owner 生存中の lock は残す\n'
+kill "$LIVEOWNER" "$LIVEOWNER2" 2>/dev/null
+rm -rf "$TMP_DIR/state/$FAKE.lock" "$TMP_DIR/state/$DEADSRV_LIVEOWNER.lock"
+
+# --- (6c) lock を作れないときは無音で消えない ------------------------------------------
+# ⚠️ rc=2 (取得不能) を rc=1 (先任生存) と畳んで `|| exit 0` にすると、**周期保存が二度と
+#   張られない**のに stdout も観測ログも 0 byte になる (敵対レビューが chmod 500 で実測)。
+#   「装置が不在になった」は必ず 1 行残す、を pin する。
+if [ "$(id -u)" = 0 ]; then
+  printf '⚠ root では書き込み不可ディレクトリを作れないため lock 取得失敗のテストを skip した\n'
+else
+  reset_calls; : > "$LOG"
+  RO_STATE="$TMP_DIR/state_ro"; rm -rf "$RO_STATE"; mkdir -p "$RO_STATE"; chmod 500 "$RO_STATE"
+  tt_spawn_fake_proc; ROSRV="$REPLY_PID"
+  TT_TRIGGER_LOG="$LOG" TT_PERIODIC_STATE_DIR="$RO_STATE" TT_PERIODIC_ONESHOT=1 \
+    STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
+    run "$STUB_PATH" "$SCRIPT" "$ROSRV"
+  chmod 700 "$RO_STATE"
+  assert_not_called "save ran" "lock を取れないなら保存しない"
+  grep -qE '\tperiodic-save-aborted reason=lock-failed server=[0-9]+ epoch=[0-9]+' "$LOG" \
+    || { printf '✗ lock 取得失敗が観測ログに残っていない (装置不在が無音):\n'; cat "$LOG"; exit 1; }
+  printf '✓ lock を取れないときは理由を観測ログに残す\n'
+  kill "$ROSRV" 2>/dev/null
+fi
+
 # --- (7) 保存スクリプト未解決 ----------------------------------------------------------
 reset_calls; : > "$LOG"
-STUB_SOCKET_PATH="$DEFAULT_SOCK" STUB_SAVE_SCRIPT="" run_periodic "$FAKE"
+STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_SAVE_SCRIPT="" run_periodic "$FAKE"
 [[ "$RC" -eq 0 ]] || { printf '✗ 未解決で exit %s\n' "$RC"; exit 1; }
 grep -q 'periodic-save skipped=no-save-script' "$LOG" \
   || { printf '✗ skipped=no-save-script が記録されない:\n'; cat "$LOG"; exit 1; }
@@ -158,7 +202,7 @@ reset_calls
 for i in $(seq 1 40); do printf 'line-%s\n' "$i" >> "$LOG"; done
 TT_TRIGGER_LOG="$LOG" TT_PERIODIC_STATE_DIR="$TMP_DIR/state" TT_PERIODIC_ONESHOT=1 \
   TT_TRIGGER_LOG_MAX_LINES=10 \
-  STUB_SOCKET_PATH="$DEFAULT_SOCK" STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
+  STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run "$STUB_PATH" "$SCRIPT" "$FAKE"
 n="$(wc -l < "$LOG" | tr -d ' ')"
 # 刈った 10 行 + その後に自分が書く periodic-save / periodic-save-end の 2 行

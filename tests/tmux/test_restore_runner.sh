@@ -39,6 +39,14 @@ STUB_PATH="$TMP_DIR/bin:/usr/bin:/bin"
 LOG="$TMP_DIR/trigger.log"
 
 . "$ROOT_DIR/tests/tmux/lib/stub_assert_helper.sh"
+# owner は production と同じ書式で作る (書式をテスト側へ写すと、書式変更に追従できない fixture になる)
+# shellcheck source=scripts/lib/tmux_resurrect_guards.sh
+. "$ROOT_DIR/scripts/lib/tmux_resurrect_guards.sh"
+
+LIVE_PIDS=()
+spawn_live() { ( trap - EXIT; exec sleep 300 ) & LIVE_PIDS+=("$!"); REPLY_PID="$!"; }
+cleanup_all() { local p; for p in ${LIVE_PIDS+"${LIVE_PIDS[@]}"}; do kill "$p" 2>/dev/null || true; done; rm -rf "$TMP_DIR"; }
+trap cleanup_all EXIT
 
 # --- (1) 正常完了 -----------------------------------------------------------------------
 reset_calls; : > "$LOG"
@@ -69,5 +77,38 @@ grep -q 'restore-aborted reason=no-restore-script' "$LOG" \
   || { printf '✗ no-restore-script が記録されない:\n'; cat "$LOG"; exit 1; }
 assert_not_called "restore ran" "未解決時は何も実行しない"
 printf '✓ restore.sh 未解決: 記録のみで無害終了\n'
+
+# --- (4) 先任が実行中なら復元しない (tt_lock_acquire rc=1) -------------------------------
+# ⚠️ この rc 分岐は issue 078 の統合で新設したもので、**どのテストからも踏まれていなかった**
+#   (敵対レビューの指摘)。`|| tt_lock_rc=$?` を `&& ...` に変える 1 文字のタイポで lock を
+#   取らないまま restore.sh を走らせる = 二重復元になるが、旧 3 ケースは全部 green のまま通る。
+reset_calls; : > "$LOG"
+STATE="$TMP_DIR/rstate"; rm -rf "$STATE"; mkdir -p "$STATE/lock"
+spawn_live; tt_lock_write_owner "$STATE/lock" "$REPLY_PID"
+TT_TRIGGER_LOG="$LOG" TT_RESTORE_STATE_DIR="$STATE" \
+  STUB_RESTORE="$TMP_DIR/bin/fake_restore.sh" STUB_COMPLETE=1 \
+  run "$STUB_PATH" "$SCRIPT"
+[[ "$RC" -eq 0 ]] || { printf '✗ 先任生存時に exit %s\n' "$RC"; exit 1; }
+assert_not_called "restore ran" "先任が実行中なら restore.sh を走らせない"
+grep -q 'restore-skipped reason=already-running' "$LOG" \
+  || { printf '✗ restore-skipped reason=already-running が無い:\n'; cat "$LOG"; exit 1; }
+printf '✓ 先任が実行中: 復元せず skip を記録\n'
+
+# --- (5) lock を取れないなら復元しない (tt_lock_acquire rc=2) ----------------------------
+if [ "$(id -u)" = 0 ]; then
+  printf '⚠ root では書き込み不可ディレクトリを作れないため lock 取得失敗のテストを skip した\n'
+else
+  reset_calls; : > "$LOG"
+  RO_STATE="$TMP_DIR/rstate_ro"; rm -rf "$RO_STATE"; mkdir -p "$RO_STATE"; chmod 500 "$RO_STATE"
+  TT_TRIGGER_LOG="$LOG" TT_RESTORE_STATE_DIR="$RO_STATE" \
+    STUB_RESTORE="$TMP_DIR/bin/fake_restore.sh" STUB_COMPLETE=1 \
+    run "$STUB_PATH" "$SCRIPT"
+  chmod 700 "$RO_STATE"
+  [[ "$RC" -eq 0 ]] || { printf '✗ lock 取得失敗時に exit %s\n' "$RC"; exit 1; }
+  assert_not_called "restore ran" "lock を取れないなら restore.sh を走らせない"
+  grep -q 'restore-aborted reason=lock-failed' "$LOG" \
+    || { printf '✗ restore-aborted reason=lock-failed が無い:\n'; cat "$LOG"; exit 1; }
+  printf '✓ lock を取れない: 復元せず理由を記録\n'
+fi
 
 printf '\nAll restore-runner tests passed successfully!\n'

@@ -20,19 +20,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# ⚠️ 補助プロセス (サーバ役) は必ず `( trap - EXIT; exec ... ) &` で起こすこと。素の `cmd &` は
-#    fork 直後 (exec 前) に kill されると子が EXIT trap を継承したまま走り、cleanup の rm -rf が
-#    テスト途中で TMP_DIR を消す (test_periodic_save.sh で実際に踏み bash -x で特定 2026-07-30)。
-#    本テストは「サーバ役を kill して死亡検知させる」のが本質なので、このレースを最も踏みやすい。
-spawn_fake_server() {  # pid を REPLY_PID に返す
-  ( trap - EXIT; exec sleep 300 ) &
-  REPLY_PID=$!
-  FAKE_PIDS+=("$REPLY_PID")
-}
 
 CALLS="$TMP_DIR/calls.log"; : > "$CALLS"; export CALLS
 mkdir -p "$TMP_DIR/bin" "$TMP_DIR/pslogs" "$TMP_DIR/wd"
-DEFAULT_SOCK="$(realpath /tmp 2>/dev/null || echo /tmp)/tmux-$(id -u)/default"
+. "$ROOT_DIR/tests/tmux/lib/stub_env.sh"
 
 cat > "$TMP_DIR/bin/tmux" <<'EOS'
 #!/bin/sh
@@ -45,7 +36,7 @@ LOG="$TMP_DIR/trigger.log"
 
 wd_env() {  # 共通 env で watchdog を起動する ($1=fake pid)
   TT_TRIGGER_LOG="$LOG" TT_WATCHDOG_DIR="$TMP_DIR/wd" TT_PSLOG_DIR="$TMP_DIR/pslogs" \
-  TT_WATCHDOG_INTERVAL=0.05 TT_VERDICT_WINDOW=120 STUB_SOCKET_PATH="$DEFAULT_SOCK" \
+  TT_WATCHDOG_INTERVAL=0.05 TT_VERDICT_WINDOW=120 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" \
   PATH="$STUB_PATH" "$SCRIPT" "$1" "/fake/socket" "1234567890"
 }
 
@@ -61,7 +52,7 @@ wait_for_death_line() {  # $1=pid $2=説明。bounded-wait で server-death 行�
 
 # --- (1) 外因死: 空ログ状態でサーバ kill → external-signal-or-crash + pslog ------------
 : > "$LOG"
-spawn_fake_server; FAKE="$REPLY_PID"
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
 wd_env "$FAKE" &
 WD=$!
 sleep 0.5
@@ -79,7 +70,7 @@ printf '✓ 外因死: verdict=external-signal-or-crash + ps スナップショ�
 
 # --- (2) 同一サーバ pid の kill-cmd が直近にある → verdict=kill-server-command ---------
 : > "$LOG"
-spawn_fake_server; FAKE="$REPLY_PID"
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
 printf '%s\tkill-cmd cmd=kill-server pid=%s sessions=9 save=ok epoch=%s issuer=test\n' \
   "$(date +%FT%T)" "$FAKE" "$(date +%s)" >> "$LOG"
 wd_env "$FAKE" &
@@ -96,7 +87,7 @@ printf '✓ 同一サーバ pid の kill-cmd と相関して verdict=kill-server
 # レビューで実証された欠陥: 時間窓だけで相関していたため、前世代を kill-server で落とした後に
 # 新サーバが外因死すると verdict=kill-server-command になり、捜査方向が反転していた。
 : > "$LOG"
-spawn_fake_server; FAKE="$REPLY_PID"
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
 printf '%s\tkill-cmd cmd=kill-server pid=%s sessions=9 save=ok epoch=%s issuer=other-generation\n' \
   "$(date +%FT%T)" "$((FAKE + 100000))" "$(date +%s)" >> "$LOG"
 wd_env "$FAKE" &
@@ -111,7 +102,7 @@ printf '✓ 別サーバ世代の kill-cmd では誤分類せず external-signal
 
 # --- (3) 二重起動ガード: 先任が生きている間、後発は即退く ------------------------------
 : > "$LOG"
-spawn_fake_server; FAKE="$REPLY_PID"
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
 wd_env "$FAKE" &
 WD=$!
 sleep 0.5
@@ -128,10 +119,10 @@ wait "$WD" 2>/dev/null || true
 # 残骸 lock の watcher pid が別プロセスに再利用されると新世代の watchdog が無音で退き、
 # サーバが死んでも死亡記録が残らなかった (観測装置が丸ごと不発)。
 : > "$LOG"
-spawn_fake_server; FAKE="$REPLY_PID"
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
 # 「生きているが watchdog ではない別プロセス」を owner に持つ残骸 lock を作る。
 # 起動時刻を偽の値にしておくと、同一性判定が pid 再利用を見抜けるはず。
-spawn_fake_server; IMPOSTOR="$REPLY_PID"
+tt_spawn_fake_proc; IMPOSTOR="$REPLY_PID"
 mkdir -p "$TMP_DIR/wd/$FAKE.lock"
 printf '%s\t%s\n' "$IMPOSTOR" "Mon Jan  1 00:00:00 2000" > "$TMP_DIR/wd/$FAKE.lock/pid"
 wd_env "$FAKE" &
@@ -148,12 +139,89 @@ printf '✓ pid 再利用の残骸 lock を見抜いて看取りを開始する 
 
 # --- (4) 非 default socket → 監視しない (lock も作らない) ------------------------------
 : > "$LOG"
-spawn_fake_server; FAKE="$REPLY_PID"
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
 TT_TRIGGER_LOG="$LOG" TT_WATCHDOG_DIR="$TMP_DIR/wd" TT_PSLOG_DIR="$TMP_DIR/pslogs" \
   TT_WATCHDOG_INTERVAL=0.05 STUB_SOCKET_PATH="/nowhere/tmux-501/lab" \
   PATH="$STUB_PATH" "$SCRIPT" "$FAKE" "/fake/socket" "1"
 [ ! -d "$TMP_DIR/wd/$FAKE.lock" ] || { printf '✗ 非 default socket なのに監視を始めた\n'; exit 1; }
 kill "$FAKE" 2>/dev/null
 printf '✓ 非 default socket (テストサーバ) は看取らない\n'
+
+# --- (5) lock を作れないときは無音で消えない -------------------------------------------
+# ⚠️ rc=2 (取得不能) を rc=1 (先任生存) と畳むと **watchdog が張られない = 死因が二度と
+#   記録されない**のに 1 行も残らない (敵対レビューが chmod 500 で実測)。
+if [ "$(id -u)" = 0 ]; then
+  printf '⚠ root では書き込み不可ディレクトリを作れないため lock 取得失敗のテストを skip した\n'
+else
+  : > "$LOG"
+  RO_WD="$TMP_DIR/wd_ro"; rm -rf "$RO_WD"; mkdir -p "$RO_WD"; chmod 500 "$RO_WD"
+  tt_spawn_fake_proc; FAKE="$REPLY_PID"
+  TT_TRIGGER_LOG="$LOG" TT_WATCHDOG_DIR="$RO_WD" TT_PSLOG_DIR="$TMP_DIR/pslogs" \
+    TT_WATCHDOG_INTERVAL=0.05 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" \
+    PATH="$STUB_PATH" "$SCRIPT" "$FAKE" "/fake/socket" "1"
+  chmod 700 "$RO_WD"
+  kill "$FAKE" 2>/dev/null
+  grep -qE '\twatchdog-aborted reason=lock-failed server=[0-9]+ epoch=[0-9]+' "$LOG" \
+    || { printf '✗ lock 取得失敗が観測ログに残っていない (装置不在が無音):\n'; cat "$LOG"; exit 1; }
+  printf '✓ lock を取れないときは理由を観測ログに残す\n'
+fi
+
+# --- (6) 死んだサーバの stale lock を掃除してから張る -----------------------------------
+# ⚠️ 掃除の呼び出し**そのもの**を pin する。関数の中身は guards.sh の unit テストが見ているが、
+#   watchdog 側の呼び出し行を消しても他のテストは全部 green だった (敵対レビューの指摘)。
+: > "$LOG"
+tt_free_pid; DEADSRV="$REPLY_PID"
+mkdir -p "$TMP_DIR/wd/$DEADSRV.lock"
+tt_free_pid $(( DEADSRV - 1 )); printf '%s\n' "$REPLY_PID" > "$TMP_DIR/wd/$DEADSRV.lock/pid"
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
+wd_env "$FAKE" & WD=$!
+i=0
+while [ "$i" -lt 100 ]; do
+  [ -d "$TMP_DIR/wd/$DEADSRV.lock" ] || break
+  sleep 0.1; i=$((i + 1))
+done
+[ ! -d "$TMP_DIR/wd/$DEADSRV.lock" ] \
+  || { printf '✗ 死んだサーバの stale lock を掃除していない (watchdog 側の呼び出しが死んでいる)\n'; exit 1; }
+kill "$FAKE" 2>/dev/null
+wait "$WD" 2>/dev/null || true
+printf '✓ 死んだサーバの stale lock を掃除してから監視を張る\n'
+
+# --- (7) スナップショット健全性の状態遷移を観測ログに残す -------------------------------
+# ⚠️ この 2 行 (snapshot-health ng / ok) は **どのテストも見ていなかった**ため、issue 079 で
+#   共有 seam (tt_trigger_log) へ寄せても移行が無検証だった。状態が変わったときだけ書く、
+#   という契約ごとここで固定する (毎回書くと toast も観測ログも騒がしくなる)。
+: > "$LOG"
+rm -f "$TMP_DIR/health_ok"
+cat > "$TMP_DIR/bin/fake_health.sh" <<'EOS'
+#!/bin/sh
+[ -f "$HEALTH_OK_FLAG" ] && exit 0
+echo "スナップショット異常: セッション 0 件"
+exit 1
+EOS
+chmod +x "$TMP_DIR/bin/fake_health.sh"
+
+wait_for_line() {  # $1=grep パターン $2=説明
+  local i=0
+  while [ "$i" -lt 100 ]; do
+    grep -qE "$1" "$LOG" 2>/dev/null && return 0
+    sleep 0.1; i=$((i + 1))
+  done
+  printf '✗ %s: 10s 待っても出ない (パターン: %s)\n--- log ---\n' "$2" "$1"; cat "$LOG" 2>/dev/null
+  exit 1
+}
+
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
+TT_TRIGGER_LOG="$LOG" TT_WATCHDOG_DIR="$TMP_DIR/wd" TT_PSLOG_DIR="$TMP_DIR/pslogs" \
+  TT_WATCHDOG_INTERVAL=0.05 TT_VERDICT_WINDOW=120 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" \
+  TT_HEALTH_CHECK_INTERVAL=1 TT_HEALTH_SCRIPT="$TMP_DIR/bin/fake_health.sh" \
+  TT_TOAST="$TMP_DIR/bin/nonexistent-toast" HEALTH_OK_FLAG="$TMP_DIR/health_ok" \
+  PATH="$STUB_PATH" "$SCRIPT" "$FAKE" "/fake/socket" "1234567890" & WD=$!
+wait_for_line '\tsnapshot-health ng epoch=[0-9]+ detail=.+' "異常を検知したら記録する"
+printf '✓ スナップショット異常を観測ログに記録する\n'
+: > "$TMP_DIR/health_ok"
+wait_for_line '\tsnapshot-health ok epoch=[0-9]+' "回復も記録する"
+printf '✓ 回復したときも観測ログに記録する (状態遷移だけ書く)\n'
+kill "$FAKE" 2>/dev/null
+wait "$WD" 2>/dev/null || true
 
 printf '\nAll server-watchdog tests passed successfully!\n'

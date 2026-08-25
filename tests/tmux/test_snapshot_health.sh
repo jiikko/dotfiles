@@ -24,17 +24,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# 補助プロセスは fork/exec レースで EXIT trap が子で発火するのを避ける形で起こす
-# (理由は tests/tmux/test_periodic_save.sh 冒頭の注記と同じ)
-spawn_helper() {
-  ( trap - EXIT; exec sleep 300 ) >/dev/null 2>&1 &
-  REPLY_PID=$!
-  HELPER_PIDS+=("$REPLY_PID")
-}
 
 CALLS="$TMP_DIR/calls.log"; : > "$CALLS"; export CALLS
 mkdir -p "$TMP_DIR/bin" "$TMP_DIR/rdir" "$TMP_DIR/wd" "$TMP_DIR/ps"
-DEFAULT_SOCK="$(realpath /tmp 2>/dev/null || echo /tmp)/tmux-$(id -u)/default"
+. "$ROOT_DIR/tests/tmux/lib/stub_env.sh"
 
 cat > "$TMP_DIR/bin/tmux" <<'EOS'
 #!/bin/sh
@@ -81,7 +74,7 @@ mk_archive() {
 health() {  # 共通 env で実行。追加 env は呼び出し側が前置きする
   run "$STUB_PATH" env \
     TT_WATCHDOG_DIR="$TMP_DIR/wd" TT_PERIODIC_STATE_DIR="$TMP_DIR/ps" \
-    STUB_SOCKET_PATH="${SOCK_OVERRIDE:-$DEFAULT_SOCK}" STUB_RDIR="$RDIR" \
+    STUB_SOCKET_PATH="${SOCK_OVERRIDE:-$TT_DEFAULT_SOCK}" STUB_RDIR="$RDIR" \
     STUB_INTERVAL="${INTERVAL_OVERRIDE:-15}" STUB_SESSIONS="${SESSIONS_OVERRIDE:-$DEF_SESSIONS}" \
     STUB_CAPTURE="${CAPTURE_OVERRIDE:-on}" \
     bash "$SCRIPT" "$@"
@@ -96,8 +89,8 @@ RUN_OUT="$TMP_DIR/out"; RUN_ERR="$TMP_DIR/err"
 # コピペすると書式変更に追従できず、実物とずれた fixture で常に緑になる (2026-08-20 の誤報を
 # このテストが通してしまった原因)。書き手 tt_lock_write_owner を呼ぶ。
 . "$ROOT_DIR/scripts/lib/tmux_resurrect_guards.sh"
-spawn_helper; PERIODIC="$REPLY_PID"; mkdir -p "$TMP_DIR/ps/1.lock"; tt_lock_write_owner "$TMP_DIR/ps/1.lock" "$PERIODIC"
-spawn_helper; WATCH="$REPLY_PID";    mkdir -p "$TMP_DIR/wd/1.lock"; tt_lock_write_owner "$TMP_DIR/wd/1.lock" "$WATCH"
+tt_spawn_fake_proc; PERIODIC="$REPLY_PID"; mkdir -p "$TMP_DIR/ps/1.lock"; tt_lock_write_owner "$TMP_DIR/ps/1.lock" "$PERIODIC"
+tt_spawn_fake_proc; WATCH="$REPLY_PID";    mkdir -p "$TMP_DIR/wd/1.lock"; tt_lock_write_owner "$TMP_DIR/wd/1.lock" "$WATCH"
 
 # 書き手が「pid<TAB>lstart」形式で書いていること。pid のみの旧形式へ退行すると、読み手は
 # 旧形式フォールバック (pid 生存のみ) に落ちて pid 再利用の照合が黙って無効化される

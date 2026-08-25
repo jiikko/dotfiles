@@ -17,21 +17,10 @@ if ! command -v "$NVIM_BIN" >/dev/null 2>&1; then
 fi
 
 print "[test-image-hover] verifying url extraction and single-window quick look contract"
-# qa! 必須: check スクリプトが無名バッファへ書き込み modified になる (test_smooth_scroll.sh と同じ罠)
-out=$("$NVIM_BIN" --headless -u "$CONFIG_FILE" \
-  "+lua vim.wait(300)" \
-  "+lua dofile('$SCRIPT_DIR/image_hover_check.lua')" \
-  "+lua vim.cmd('qa!')" 2>&1) || {
-  print -u2 "$out"
-  exit 1
-}
-if grep -qE "FAIL:|Error executing|stack traceback" <<< "$out"; then
-  print -u2 "$out"
-  exit 1
-fi
-if ! grep -q "OK" <<< "$out"; then
-  print -u2 "[test-image-hover] expected OK marker, got:"
-  print -u2 "$out"
-  exit 1
-fi
-print "[test-image-hover] $out"
+
+# headless nvim の実行と 3 つの検査 (異常終了 / FAIL・lua 例外 / 行頭の OK) は
+# tests/nvim/lib/check_log.sh に一元化してある。個別に grep を手書きしないこと —
+# 3 本へコピペしていた結果、うち 1 本が `grep -q "OK"` (アンカー無し) へ drift して
+# いた (issue 081)。
+source "$SCRIPT_DIR/lib/check_log.sh"
+tt_nvim_run_check "test-image-hover" "image_hover_check.lua"
