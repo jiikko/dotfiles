@@ -161,7 +161,7 @@ else
     PATH="$STUB_PATH" "$SCRIPT" "$FAKE" "/fake/socket" "1"
   chmod 700 "$RO_WD"
   kill "$FAKE" 2>/dev/null
-  grep -qE '\twatchdog-aborted reason=lock-failed server=[0-9]+ epoch=[0-9]+' "$LOG" \
+  grep -qE "${TT_TAB}watchdog-aborted reason=lock-failed server=[0-9]+ epoch=[0-9]+" "$LOG" \
     || { printf '✗ lock 取得失敗が観測ログに残っていない (装置不在が無音):\n'; cat "$LOG"; exit 1; }
   printf '✓ lock を取れないときは理由を観測ログに残す\n'
 fi
@@ -216,10 +216,10 @@ TT_TRIGGER_LOG="$LOG" TT_WATCHDOG_DIR="$TMP_DIR/wd" TT_PSLOG_DIR="$TMP_DIR/pslog
   TT_HEALTH_CHECK_INTERVAL=1 TT_HEALTH_SCRIPT="$TMP_DIR/bin/fake_health.sh" \
   TT_TOAST="$TMP_DIR/bin/nonexistent-toast" HEALTH_OK_FLAG="$TMP_DIR/health_ok" \
   PATH="$STUB_PATH" "$SCRIPT" "$FAKE" "/fake/socket" "1234567890" & WD=$!
-wait_for_line '\tsnapshot-health ng epoch=[0-9]+ detail=.+' "異常を検知したら記録する"
+wait_for_line "${TT_TAB}snapshot-health ng epoch=[0-9]+ detail=.+" "異常を検知したら記録する"
 printf '✓ スナップショット異常を観測ログに記録する\n'
 : > "$TMP_DIR/health_ok"
-wait_for_line '\tsnapshot-health ok epoch=[0-9]+' "回復も記録する"
+wait_for_line "${TT_TAB}snapshot-health ok epoch=[0-9]+" "回復も記録する"
 printf '✓ 回復したときも観測ログに記録する (状態遷移だけ書く)\n'
 kill "$FAKE" 2>/dev/null
 wait "$WD" 2>/dev/null || true

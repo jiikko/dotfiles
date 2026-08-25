@@ -8,6 +8,14 @@
 #   コピーされた結果、名前 (spawn_helper / spawn_fake_server) とコメントの精度が既に
 #   3 者で乖離していた (issue 081)。
 
+# 観測ログはタブ区切りなので、その位置を assert する正規表現が要る。**`\t` を正規表現に
+# 直接書かないこと**: POSIX ERE にタブの escape は無く、BSD grep (macOS) はタブとして解釈するが
+# GNU grep (Linux CI) は `stray \ before t` と警告してリテラル `t` として扱う = **行中の実タブに
+# マッチしない**。手元だけ緑で CI だけ赤になる (実測 2026-08-25、6 箇所が一度に落ちた)。
+# `\s` は両方が受けるので使えるが、タブだけを狙いたいときは足りない。
+# shellcheck disable=SC2034 # source した側のテストが参照する (lib 内では未使用に見える)
+TT_TAB="$(printf '\t')"
+
 # tmux が既定で使う socket のパス。テストは実サーバに触らないため「この形の socket は
 # 本番」と判定する側の分岐を踏ませるのに使う (5 ファイルで逐語同一だったので一本化)。
 # shellcheck disable=SC2034 # source した側のテストが参照する (lib 内では未使用に見える)

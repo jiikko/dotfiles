@@ -182,7 +182,7 @@ else
     run "$STUB_PATH" "$SCRIPT" "$ROSRV"
   chmod 700 "$RO_STATE"
   assert_not_called "save ran" "lock を取れないなら保存しない"
-  grep -qE '\tperiodic-save-aborted reason=lock-failed server=[0-9]+ epoch=[0-9]+' "$LOG" \
+  grep -qE "${TT_TAB}periodic-save-aborted reason=lock-failed server=[0-9]+ epoch=[0-9]+" "$LOG" \
     || { printf '✗ lock 取得失敗が観測ログに残っていない (装置不在が無音):\n'; cat "$LOG"; exit 1; }
   printf '✓ lock を取れないときは理由を観測ログに残す\n'
   kill "$ROSRV" 2>/dev/null

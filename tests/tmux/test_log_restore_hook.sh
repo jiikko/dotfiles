@@ -41,15 +41,15 @@ printf '\n=== restore hook の観測ログ ===\n\n'
 
 # --- (1) default socket: pre が restore-start を書く ------------------------------------
 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" hook pre
-grep -qE '\trestore-start epoch=[0-9]+$' "$LOG" \
+grep -qE "${TT_TAB}restore-start epoch=[0-9]+$" "$LOG" \
   || { printf '✗ restore-start が無い:\n'; cat "$LOG"; exit 1; }
 printf '✓ pre: restore-start を記録する\n'
 
 # --- (2) default socket: post が duration と restore-end を書く -------------------------
 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_DURATION=42 hook post
-grep -qE '\trestore-end rc=0 epoch=[0-9]+$' "$LOG" \
+grep -qE "${TT_TAB}restore-end rc=0 epoch=[0-9]+$" "$LOG" \
   || { printf '✗ restore-end が無い:\n'; cat "$LOG"; exit 1; }
-grep -qE '\trestore=42s$' "$DLOG" \
+grep -qE "${TT_TAB}restore=42s$" "$DLOG" \
   || { printf '✗ duration ログが無い:\n'; cat "$DLOG"; exit 1; }
 printf '✓ post: restore-end と所要時間を記録する\n'
 
@@ -64,7 +64,7 @@ printf '✓ 非 default socket (テストサーバ) では 1 行も書かない\
 
 # --- (4) duration が数値でなければ 0 に落とす ------------------------------------------
 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_DURATION="" hook post
-grep -qE '\trestore=0s$' "$DLOG" \
+grep -qE "${TT_TAB}restore=0s$" "$DLOG" \
   || { printf '✗ duration 未設定時に 0 へ落ちていない:\n'; cat "$DLOG"; exit 1; }
 printf '✓ duration が読めないときは 0 として記録する\n'
 
