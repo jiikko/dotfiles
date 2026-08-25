@@ -30,6 +30,7 @@
 | トリガー | やること |
 |---|---|
 | ディレクトリ X 配下を touch | `X/CLAUDE.md` を読み、乖離していれば直す |
+| **共通 helper / 共通層を X に新設・抽出する** | **実装前に** `X/CLAUDE.md` を読む。抽出元のコードだけ見て書くと、その領域が既に潰した divergence を再輸入する (実例 2026-08-21 obaket 537: `Storage/HTTP/CLAUDE.md` が「5xx 判定は `HTTP5xxErrorClassifier` に委譲」と明文化していたのに、2 provider の共通部だけ見て 5xx 分岐を再実装した)。共通化は既存規約が最も効く場面なのに、規約の参照が最も抜けやすい |
 | ファイル rename / 削除 | 旧名を `grep -r "<old-name>" **/CLAUDE.md` で点検して更新 |
 | バグの root cause を修正 | 該当 workaround の警告が CLAUDE.md に残っていないか確認、直っていたら削除 |
 | レビューで「CLAUDE.md と実装が食い違う」と指摘 | 即時修正 (rationale comment だけで閉じない) |

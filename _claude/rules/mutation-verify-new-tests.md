@@ -52,6 +52,10 @@ red を見る手順は形に依存せず、上記 4 例すべてを検出でき�
   作業**) をまとめて消す。commit 済みを確認しても、確認から実行までの間に他セッションが書けば同じこと
 - **最も安全なのは使い捨て worktree で変異させること** (正本は
   `~/.claude/skills/codex-drive/SKILL.md` の `[3.8]`)。復元事故が構造的に起きない
+- **新規 (untracked) ファイルは `git checkout --` で戻せない**
+  (`did not match any file(s) known to git`。worktree にも乗らない)。変異前に `cp` で
+  1 世代だけバックアップし、復元後に `grep -c MUTANT` 等でマーカー残骸ゼロを確認する
+  (実例 2026-08-21 obaket 536: 手動復元で凌いだが、復元し忘れれば変異がそのまま commit される)
 
 ## 適用範囲
 
