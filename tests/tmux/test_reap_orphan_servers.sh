@@ -39,11 +39,13 @@ live_pid=""
 space_pid=""
 att_pid=""
 prot_pid=""
+reap_log_probe_dir=""
 # reap は実プロセステーブルを pgrep で走査する設計のため、このテストの reap 実行は「自分が作った
 # 孤児」だけでなく、実環境に偶々存在する他の dead-socket 孤児も回収しうる（reap は生存 socket を
 # 持つプロセスには絶対触れないので副作用は常に良性=ゴミ掃除）。ただし reap のログ書き込みは
 # 実 ~/.cache を汚さないよう temp HOME に隔離する。
 export HOME="$ORPHAN_DIR/home"
+export TT_TRIGGER_LOG="$ORPHAN_DIR/trigger.log"
 mkdir -p "$HOME"
 
 fail() { print -u2 "[test-reap:zsh] FAIL: $1"; exit 1; }
@@ -103,6 +105,53 @@ grep -q 'protect_socks="\$protect_socks' "$REAP" \
   || fail "F-2: seam の値を既定へ追加する形になっていない"
 ok "F-2: 保護リストの seam は既定への追加 (置換ではない)"
 
+# R1/R2) tmux 起動可否に左右されず、reap 本体の観測 writer を実行する。pgrep/lsof の観測結果
+# だけをこのケース内で stub し、TERM 対象には現在生きていない PID を使う。writer 自体は
+# scripts/tmux_reap_orphan_servers.sh の実装をそのまま通るため、属性だけの静的検査にはしない。
+reap_log_probe_dir=$(mktemp -d /tmp/reaplog.XXXXXX)
+reap_log_probe_home="$reap_log_probe_dir/home"
+reap_log_probe_bin="$reap_log_probe_dir/bin"
+reap_log_probe_seam="$reap_log_probe_dir/seam.log"
+mkdir -p "$reap_log_probe_home" "$reap_log_probe_bin"
+reap_log_probe_target=999999
+while kill -0 "$reap_log_probe_target" 2>/dev/null; do
+  reap_log_probe_target=$((reap_log_probe_target + 1))
+done
+cat >"$reap_log_probe_bin/pgrep" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$REAP_LOG_PROBE_PID"
+EOF
+cat >"$reap_log_probe_bin/lsof" <<'EOF'
+#!/bin/sh
+printf 'n%s/tmux-%s/orphan\n' "$REAP_LOG_PROBE_ROOT" "$REAP_LOG_PROBE_UID"
+EOF
+chmod +x "$reap_log_probe_bin/pgrep" "$reap_log_probe_bin/lsof"
+PATH="$reap_log_probe_bin:$PATH" \
+  HOME="$reap_log_probe_home" \
+  TT_TRIGGER_LOG="$reap_log_probe_seam" \
+  REAP_LOG_PROBE_PID="$reap_log_probe_target" \
+  REAP_LOG_PROBE_ROOT="$reap_log_probe_dir" \
+  REAP_LOG_PROBE_UID="$UID_NUM" \
+  "$REAP" >/dev/null 2>&1 || fail "R1: writer probe の reap 実行に失敗した"
+probe_tab="$(printf '\t')"
+if [[ -f "$reap_log_probe_seam" ]]; then
+  probe_lines="$(wc -l <"$reap_log_probe_seam" | tr -d '[:space:]')"
+else
+  probe_lines=0
+fi
+if [[ -f "$reap_log_probe_seam" && "$probe_lines" == 1 ]] \
+   && grep -Eq "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}${probe_tab}reaped-orphan-servers n=[1-9][0-9]* escalated=[0-9]+$" "$reap_log_probe_seam"; then
+  ok "R1: reap writer probe が seam へ識別子付きの1行を書く"
+else
+  fail "R1: reap writer probe のログが ISO8601<TAB>本文の1行ではない"
+fi
+probe_default_log="$reap_log_probe_home/.cache/tt-restore-trigger.log"
+[[ ! -e "$probe_default_log" ]] \
+  || fail "R2: reap writer probe が HOME の既定ログを書いた: $probe_default_log"
+ok "R2: reap writer probe は HOME の既定ログを汚さない"
+rm -rf "$reap_log_probe_dir"
+reap_log_probe_dir=""
+
 command -v lsof >/dev/null 2>&1 || { print -u2 "[test-reap:zsh] skipped: lsof not available (静的検査は上で実施済み)"; exit 0; }
 
 # ---- 生存役・孤児役のサーバを起こす ----
@@ -140,6 +189,25 @@ i=0
 while kill -0 "$orphan_pid" 2>/dev/null && [ "$i" -lt 30 ]; do sleep 0.1; i=$((i+1)); done
 kill -0 "$orphan_pid" 2>/dev/null && fail "A: 孤児サーバ (pid=$orphan_pid) が reap 後も生存している"
 ok "A: socket 消滅の孤児サーバを reap が回収した"
+
+# R1/R2) reap の実 writer が seam へ、識別子付きの正しい1行を書くこと。HOME 側を同時に
+# 見ることで、属性（ログファイルがどこかに存在するだけ）ではなく seam 経由を pin する。
+reap_tab="$(printf '\t')"
+if [[ -f "$TT_TRIGGER_LOG" ]]; then
+  reap_lines="$(wc -l <"$TT_TRIGGER_LOG" | tr -d '[:space:]')"
+else
+  reap_lines=0
+fi
+if [[ -f "$TT_TRIGGER_LOG" && "$reap_lines" == 1 ]] \
+   && grep -Eq "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}${reap_tab}reaped-orphan-servers n=[1-9][0-9]* escalated=[0-9]+$" "$TT_TRIGGER_LOG"; then
+  ok "R1: reap の writer が seam へ reaped-orphan-servers を1行記録した"
+else
+  fail "R1: reap の seam ログが ISO8601<TAB>本文の1行ではない"
+fi
+default_reap_log="$HOME/.cache/tt-restore-trigger.log"
+[[ ! -e "$default_reap_log" ]] \
+  || fail "R2: reap が seam を迂回して HOME の既定ログを書いた: $default_reap_log"
+ok "R2: reap は TT_TRIGGER_LOG を使い、HOME の既定ログを汚さない"
 
 # B) 生存 socket のサーバは保護されること
 kill -0 "$live_pid" 2>/dev/null || fail "B: 生存 socket のサーバ (pid=$live_pid) を reap が誤って kill した"

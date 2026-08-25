@@ -74,6 +74,123 @@ else
   ng "finalize: 健全なのに退避が残った (毎保存でゴミが積む)"
 fi
 
+# --- 4b. tt_save_main の観測 writer (実際の呼び出し経路) -------------------------------
+# writer 関数を直に呼ぶだけでは呼び出し行の削除を検出できないため、upstream save.sh だけを
+# fake に差し替えて tt_save_main の reject / advance の2経路を通す。tmux の判定と resurrect
+# dir は関数 seam でこのテスト専用の temp へ向ける。
+FAKE_SAVE="$WORK/fake-save.sh"
+cat >"$FAKE_SAVE" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+rdir="${TT_TEST_RESURRECT_DIR:?}"
+case "${TT_TEST_SAVE_MODE:?}" in
+  regression)
+    target="$rdir/tmux_resurrect_regression.txt"
+    printf 'window\tnew-session\t0\n' >"$target"
+    ;;
+  advance)
+    target="$rdir/tmux_resurrect_advanced.txt"
+    printf 'window\tnew-a\t0\nwindow\tnew-b\t0\n' >"$target"
+    ;;
+  *)
+    printf 'unknown TT_TEST_SAVE_MODE\n' >&2
+    exit 2
+    ;;
+esac
+rm -f "$rdir/last"
+ln -s "$(basename "$target")" "$rdir/last"
+EOF
+chmod +x "$FAKE_SAVE"
+
+prepare_save_fixture() {
+  local mode="$1" rdir="$2"
+  mkdir -p "$rdir"
+  case "$mode" in
+    regression)
+      printf 'window\told-a\t0\nwindow\told-b\t0\nwindow\told-c\t0\nwindow\told-d\t0\n' \
+        >"$rdir/tmux_resurrect_previous.txt"
+      ln -s tmux_resurrect_previous.txt "$rdir/last"
+      ;;
+    advance)
+      printf 'window\told-a\t0\n' >"$rdir/tmux_resurrect_previous.txt"
+      ln -s tmux_resurrect_previous.txt "$rdir/last"
+      ;;
+  esac
+}
+
+run_save_writer_case() {
+  local mode="$1"
+  local case_home="$WORK/home-$mode" state="$WORK/state-$mode"
+  local rdir="$WORK/resurrect-$mode" seam="$WORK/trigger-$mode.log"
+  local default_log="$case_home/.cache/tt-restore-trigger.log" rc want_rc pattern tab
+
+  rm -rf "$case_home" "$state" "$rdir" "$seam"
+  mkdir -p "$case_home"
+  prepare_save_fixture "$mode" "$rdir"
+
+  case "$mode" in
+    regression)
+      want_rc=1
+      pattern='regression-blocked prev_sessions=4 new_sessions=1 prev_windows=4 new_windows=1 kept=tmux_resurrect_previous.txt rejected=tmux_resurrect_regression.txt'
+      ;;
+    advance)
+      want_rc=0
+      pattern='save-advanced prev_sessions=1 new_sessions=2 prev_windows=1 new_windows=2 target=tmux_resurrect_advanced.txt'
+      ;;
+  esac
+  tab="$(printf '\t')"
+
+  if TT_SAVE_SOURCE_ONLY=1 \
+     HOME="$case_home" \
+     TMUX=dummy \
+     TT_SAVE_STATE_DIR="$state" \
+     TT_REAL_SAVE_SCRIPT="$FAKE_SAVE" \
+     TT_TRIGGER_LOG="$seam" \
+     TT_SAVE_ALLOW_REGRESSION=0 \
+     TT_TEST_RESURRECT_DIR="$rdir" \
+     TT_TEST_SAVE_MODE="$mode" \
+     bash -c '
+       source "$1"
+       SCRIPT_DIR="$2"                  # panel hook を実環境へ出さない
+       tt_save_restore_in_progress() { return 1; }
+       tt_only_hold_sessions() { return 1; }
+       tt_on_default_server() { return 0; }
+       tt_save_avoid_same_second_target() { :; }
+       tt_resurrect_dir() { printf "%s\\n" "$TT_TEST_RESURRECT_DIR"; }
+       tt_save_main
+     ' _ "$SCRIPT" "$WORK/no-panel-dir"; then
+    rc=0
+  else
+    rc=$?
+  fi
+
+  if [ "$rc" -eq "$want_rc" ]; then
+    ok "tt_save_main $mode 経路の戻り値が想定どおり (rc=$rc)"
+  else
+    ng "tt_save_main $mode 経路の戻り値が rc=$rc (want $want_rc)"
+  fi
+
+  if [ -f "$seam" ] \
+     && [ "$(wc -l <"$seam" | tr -d '[:space:]')" -eq 1 ] \
+     && grep -Eq "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}${tab}${pattern}$" "$seam"; then
+    ok "tt_save_main $mode 経路が seam へ識別子付きの1行を書く"
+  else
+    ng "tt_save_main $mode 経路の seam ログが不正 (want: $pattern)"
+    cat "$seam" 2>/dev/null || true
+  fi
+
+  if [ ! -e "$default_log" ]; then
+    ok "tt_save_main $mode 経路が HOME の既定ログを汚さない"
+  else
+    ng "tt_save_main $mode 経路が seam を迂回して HOME の既定ログを書いた"
+    cat "$default_log" 2>/dev/null || true
+  fi
+}
+
+run_save_writer_case regression
+run_save_writer_case advance
+
 # --- 5. archive の在処が退行ガードの外で決まる --------------------------------------------
 # bypass 実行 (TT_SAVE_ALLOW_REGRESSION=1) でも tt_archive が空にならないこと。ソースを読んで
 # 「tt_archive= の代入がガードの外側にある」ことを構造で pin する (本体実行は tmux が要るため)。
