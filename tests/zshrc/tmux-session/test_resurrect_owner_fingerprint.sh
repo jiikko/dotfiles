@@ -62,6 +62,21 @@ else
   fi
 fi
 
+# --- 4b. 指紋は ps の末尾パディングに依存しない (platform 非依存) --------------
+# ⚠️ ここが本テストで最も重要。`ps -o lstart=` は **macOS が末尾を空白で埋め、Linux は埋めない**。
+#   正規化が末尾空白に依存していると、同じプロセスの指紋が OS によって別物になり、
+#   移行ガードが **Linux でだけ破れて生存 owner を奪う**。
+#   実測 2026-08-25: 手元 (macOS) は緑のまま CI (Linux) だけ赤で発覚した。手元の 1 platform で
+#   緑を見ても platform 依存は捕まらないので、**両方の形状をここで作って**固定する。
+if [ -n "$raw" ]; then
+  padded="$raw   "                                  # macOS 形状 (末尾パディングあり)
+  trimmed="$(printf '%s' "$raw" | sed 's/[[:space:]]*$//')"   # Linux 形状 (パディング無し)
+  if tt_same_proc "$$" "$padded"; then ok "末尾パディングあり (macOS 形状) の記録で同一"; else ng "末尾パディングありで不一致"; fi
+  if tt_same_proc "$$" "$trimmed"; then ok "末尾パディング無し (Linux 形状) の記録で同一"; else ng "末尾パディング無しで不一致 = platform 依存が復活している"; fi
+  # 先頭の空白でも同じこと (念のため両端を見る)
+  if tt_same_proc "$$" "   $raw"; then ok "先頭に空白があっても同一"; else ng "先頭空白で不一致"; fi
+fi
+
 # --- 5. 死んだ pid は同一でない ------------------------------------------------
 sleep 100 & dead=$!; kill "$dead" 2>/dev/null || true; wait "$dead" 2>/dev/null || true
 if tt_same_proc "$dead" "$fp"; then ng "死んだ pid を生存扱いした"; else ok "死んだ pid は同一でない (解除可)"; fi

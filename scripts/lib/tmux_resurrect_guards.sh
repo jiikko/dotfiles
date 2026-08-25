@@ -69,7 +69,18 @@ tt_only_hold_sessions() {
 #   比較が壊れる。ここが**指紋の唯一の出典**で、`scripts/tmux_resurrect_save.sh` にあった
 #   独立実装 (同じ処理を別書式で持っていた) は削除済み (issue 078。二重化は issue 068 の
 #   drift の直接原因だった)。
-tt_proc_starttime() { ps -o lstart= -p "$1" 2>/dev/null | tr -s '[:space:]' '_'; }
+# 起動時刻トークンの正規化: 空白を `_` に潰し、**前後の `_` を落とす**。
+# ⚠️ 前後を落とすのは必須。`ps -o lstart=` の末尾パディングは platform 依存で、macOS は
+#   空白で埋めるが Linux は埋めない。落とさないと同じプロセスの指紋が OS によって別物になり、
+#   下の移行ガード (記録側の正規化) が Linux でだけ破れて**生存 owner を奪う**。
+#   実測 2026-08-25: macOS 手元は緑・Linux CI だけ赤、で発覚した。
+tt_norm_fp() {
+  local s
+  s="$(printf '%s' "$1" | tr -s '[:space:]' '_')"
+  s="${s#_}"; s="${s%_}"
+  printf '%s' "$s"
+}
+tt_proc_starttime() { tt_norm_fp "$(ps -o lstart= -p "$1" 2>/dev/null)"; }
 
 # ファイルの mtime (epoch)。取れなければ空を返す。
 # ⚠️ GNU を先に試すこと。`stat -f` は macOS では「書式指定」だが GNU ではファイルシステム情報の
@@ -90,7 +101,7 @@ tt_same_proc() {
   [ -n "$cur" ] || return 0
   # ⚠️ 記録側も同じ正規化を通してから比較する。指紋の書式を変えた移行期に、旧書式で書かれた
   #   lock を「別プロセス」と誤判定して**生存 owner を奪う**のを防ぐ (issue 078)。
-  want="$(printf '%s' "$want" | tr -s '[:space:]' '_')"
+  want="$(tt_norm_fp "$want")"
   [ "$cur" = "$want" ]
 }
 
