@@ -35,3 +35,25 @@
 
 新しい Go プロジェクトを `src/` に足すとき、または Makefile の lint / test ターゲットを
 次に触るとき。単独でも 30 分程度で閉じられる。
+
+## 対応 (2026-08-25)
+
+`GO_PROJECT_DIRS` を `src/*/go.mod` の発見 (`$(patsubst %/,%,$(dir $(wildcard src/*/go.mod)))`) へ
+変え、`test-go-lint` / `test-go` の先頭に**発見 0 件で失敗する**ガードを置いた。発見結果は
+従来の手動列挙と一致 (4 プロジェクト)。
+
+### 変異検証 (issue の指示どおり実施)
+
+`src/zz-mutation-probe/` に「lint が必ず exit 1 するダミー Go プロジェクト」を一時的に置いて確認した:
+
+| 形 | 結果 |
+|---|---|
+| 新形式 (発見) | ダミーを検知して **失敗** ✓ |
+| 旧形式 (手動列挙を `make GO_PROJECT_DIRS=...` で模す) | **exit 0 で無音の見逃し** = 欠陥が実在した証拠 |
+| 発見 0 件 (`GO_PROJECT_DIRS=""`) | ガードが **失敗させる** ✓ |
+
+ダミーは確認後に削除済み (`src/` は 4 プロジェクトのまま)。
+
+⚠️ **CI 側の非対称は残っている**: `.github/workflows/src_<project>.yml` (caller) は今も手動作成で、
+新しい `src/foo` を切って yml を作り忘れると **CI では回らない** (ローカルの `make test` では
+回るようになった)。この issue の範囲外なので別途。

@@ -39,6 +39,9 @@
 
 set -u
 
+# 共有観測ログ。seam は他の書き手と同じ (テストが差し替える)
+TT_TRIGGER_LOG="${TT_TRIGGER_LOG:-$HOME/.cache/tt-restore-trigger.log}"
+
 # lsof が無い環境では socket 生存を判定できない。誤って実サーバを kill しないため何もしない。
 if ! command -v lsof >/dev/null 2>&1; then
   exit 0
@@ -169,8 +172,14 @@ fi
 
 # 観測ログに残す（_tmux.conf Fix C / tmux_resurrect_save.sh Fix B と同じファイル）。
 if [ "$reaped" -gt 0 ] && [ "${DRY_RUN:-0}" != "1" ]; then
-  { mkdir -p "$HOME/.cache" && printf '%s\treaped-orphan-servers n=%s escalated=%s\n' \
-      "$(date +%FT%T)" "$reaped" "$escalated" >> "$HOME/.cache/tt-restore-trigger.log"; } 2>/dev/null || true
+  # ⚠️ ここだけ共有の tt_trigger_log (lib/tmux_resurrect_guards.sh) を使わない。本ファイルは
+  #    #!/bin/sh で、guards.sh は herestring (<<<) を使う **bash 専用**のため source すると
+  #    /bin/sh が dash の環境 (Linux CI) で構文エラーになる。代わりに seam (TT_TRIGGER_LOG) は
+  #    尊重する — issue 079 が問題にしていたのは「seam を迂回してテストから観測できない」ことで、
+  #    共有関数を通ること自体ではない。guards.sh が POSIX 化されたらここも寄せる。
+  { mkdir -p "$(dirname "$TT_TRIGGER_LOG")" \
+      && printf '%s\treaped-orphan-servers n=%s escalated=%s\n' \
+         "$(date +%FT%T)" "$reaped" "$escalated" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
 fi
 
 exit 0

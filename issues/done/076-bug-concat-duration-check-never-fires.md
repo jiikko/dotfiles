@@ -44,3 +44,31 @@ concat の duration 検査そのものを触るとき、またはモック ffpro
 - `_claude/rules/mutation-verify-new-tests.md` — 「差が出ない状況しか作っていないか」の実例。
   モックが 1 つの値しか返さないと、その値に依存する分岐は永久に片側だけが走る
 - issues/072 (テストコード監査) の該当項目。反証の結論はこの issue が正本
+
+## 対応 (2026-08-25)
+
+`tests/zshrc/concat/test_concat_duration_drift.sh` を新設し、乖離検査の 2 方向を pin した。
+
+**tolerance (100) は触っていない** — issue の「崩れた側」のとおり、あれはモック環境で実時間の
+duration を作れないための意図的な test seam であり、5 へ戻すと他の 14 ファイルが false failure に
+なる。代わりに **`__concat_get_duration` を上書きする関数 seam** を使い、出力側の duration だけを
+制御した (この repo の既存パターン。`test_concat_verify_order.sh` が同じ形)。tolerance の上書きも
+新テストの中だけに閉じている。
+
+### pin した契約 (9 + 2 観点)
+
+- 乖離なし (20.0/20) は通る / 短い側 (25%) と長い側 (30%) は発火し、理由と割合が REPLY に入る
+- 帯の境界: ratio がちょうど下限 (0.95) なら通る / 1 つ割る (0.945) と発火する
+- 入力合計が 10 秒以下なら検査そのものをスキップする
+- **production の既定 tolerance (5%) が生きていること** (6% で発火 / 2.5% は通る)
+
+### 変異検証 (6 本すべて red)
+
+短い側の検査を潰す / 長い側の検査を潰す / 10 秒スキップの閾値を外す / **tolerance の既定を
+`:-100` にする** / 境界を `lt` → `le` にする / ratio の分母子を入れ替える。
+
+⚠️ **最初は「tolerance の既定を 100 にする」変異が green のまま通った**。テストが毎回
+`CONCAT_DURATION_TOLERANCE` を明示していたため、production の既定 (`:-5`) が一度も評価されて
+いなかった。`test_helper.sh` が 100 を export している以上、既定を見るテストは自分で `unset`
+する必要がある — **seam が本番の既定を隠す**形で、これも issue が指摘した構図と同じ。観点を
+足して red 化した。

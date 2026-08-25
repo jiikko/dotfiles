@@ -95,7 +95,7 @@ tt_save_release_lock_if_owner() {
 # 自分が現 owner のときだけ lock を解放する（EXIT trap 用）。横取り誤検知などで別プロセスが
 # 再取得した lock を、後から終了した自分の trap が消す連鎖を防ぐ。
 tt_save_release_own_lock() {
-  tt_save_release_lock_if_owner "$$ $(tt_save_proc_starttime "$$")"
+  tt_save_release_lock_if_owner "$$ $(tt_proc_starttime "$$")"
 }
 
 # lock dir の mtime が指定秒数より「古い」とき真（stale 判定の共通部品）。
@@ -106,12 +106,8 @@ tt_save_lock_older_than() {
   [ -z "$(find "$TT_SAVE_LOCK_DIR" -maxdepth 0 -mmin "-$(( secs / 60 + 1 ))" 2>/dev/null)" ]
 }
 
-# プロセス PID の起動時刻を空白無しの単一トークンに正規化して返す（存在しなければ空）。
-# PID だけでは再起動跨ぎ / PID 再利用で「別プロセスを同一 owner と誤認」するため、起動時刻を
-# 指紋として併用する。ps -o lstart= は BSD(macOS)/GNU(Linux) 双方で同一プロセスに安定な文字列を返す。
-tt_save_proc_starttime() {
-  ps -o lstart= -p "$1" 2>/dev/null | tr -s '[:space:]' '_'
-}
+# ⚠️ 起動時刻の指紋は **guards.sh の tt_proc_starttime が唯一の出典**。ここに独立実装を置くと、
+#   片方の書式を変えたときに無音で drift する (issue 068 の直接原因。issue 078 で統合した)。
 
 # 渡された owner 行（"PID 起動時刻トークン"）が「取り残し」かを判定する。owner 行は呼び出し側が
 # lock の pid から一度だけ読んで渡す。判定と解除で別々に pid を読むと、判定後に別プロセスが取得した
@@ -131,7 +127,12 @@ tt_save_owner_is_stale() {
   if [ -n "$owner_pid" ]; then
     # 生死は kill -0 が主判定。死亡していれば取り残し（解除可）。
     kill -0 "$owner_pid" 2>/dev/null || return 0
-    cur_start="$(tt_save_proc_starttime "$owner_pid")"
+    cur_start="$(tt_proc_starttime "$owner_pid")"
+    # ⚠️ 旧書式の owner 行 (正規化前の生 ps 出力) は上の `read -r` が空白で切るため、
+    #   owner_start に先頭語だけが入る。それを新書式と比べると必ず不一致になり、
+    #   **生存 owner を奪う**。正規化済みトークンは必ず `_` を含むので、含まないものは
+    #   「同定不能」に落として下の TTL backstop に委ねる (issue 078 の移行ガード)。
+    case "$owner_start" in *_*) : ;; *) owner_start='' ;; esac
     if [ -n "$cur_start" ] && [ -n "$owner_start" ]; then
       # 起動時刻が両方取れた: 一致 = 同一プロセスが進行中（どれだけ長くても奪わない）。
       # 不一致 = 別プロセスが同 PID を再利用（再起動跨ぎ等）→ 取り残し（解除可）。
@@ -206,15 +207,12 @@ tt_save_avoid_same_second_target() {
 
 # Fix C: 退行ガードが last 前進を抑止したことを観測ログに残す（_tmux.conf の startup 観測と同じファイル）。
 tt_save_log_guard() {
-  { mkdir -p "$HOME/.cache" && printf '%s\tregression-blocked prev_sessions=%s new_sessions=%s prev_windows=%s new_windows=%s kept=%s rejected=%s\n' \
-      "$(date +%FT%T)" "$1" "$2" "$3" "$4" "$5" "$6" >> "$HOME/.cache/tt-restore-trigger.log"; } 2>/dev/null || true
+  tt_trigger_log "$(printf 'regression-blocked prev_sessions=%s new_sessions=%s prev_windows=%s new_windows=%s kept=%s rejected=%s' \
+    "$1" "$2" "$3" "$4" "$5" "$6")"
 }
 
 # 観測ログへの汎用 1 行追記 (書式は docs/tmux-plugins.md「観測ログの読み方」の表が読者側の正本)
-tt_save_log() {
-  { mkdir -p "$HOME/.cache" && printf '%s\t%s\n' "$(date +%FT%T)" "$1" \
-      >> "$HOME/.cache/tt-restore-trigger.log"; } 2>/dev/null || true
-}
+tt_save_log() { tt_trigger_log "$1"; }
 
 # pane 内容の保存が有効か
 tt_capture_contents_on() {
@@ -274,7 +272,7 @@ tt_save_main() {
     fi
     if mkdir "$TT_SAVE_LOCK_DIR" 2>/dev/null; then
       # owner 同定用に PID と起動時刻を記録する（tt_save_owner_is_stale 参照）。
-      printf '%s %s\n' "$$" "$(tt_save_proc_starttime "$$")" > "$TT_SAVE_LOCK_DIR/pid" 2>/dev/null || true
+      printf '%s %s\n' "$$" "$(tt_proc_starttime "$$")" > "$TT_SAVE_LOCK_DIR/pid" 2>/dev/null || true
       acquired=1
       break
     fi

@@ -46,7 +46,7 @@ OUT="$(
 
     # 生存 PID: 自分自身 (このサブシェル) を使う。kill -0 が必ず真。
     ALIVE=$$
-    ALIVE_START="$(tt_save_proc_starttime "$ALIVE")"   # 記録と一致させる正しい起動時刻
+    ALIVE_START="$(tt_proc_starttime "$ALIVE")"   # 記録と一致させる正しい起動時刻
     # ps -o lstart= が使えるか（PID 再利用検出はこれに依存。使えない環境は fail-safe に縮退）。
     if [ -n "$ALIVE_START" ]; then printf "CASE:lstart val=yes\n"; else printf "CASE:lstart val=no\n"; fi
     # 死亡 PID: 起動直後に終了させた子の PID。テストは <1s で終わるため再利用はまず起きない。
@@ -401,7 +401,7 @@ WRAP_OUT="$(
     reset; _T_SESSIONS="proj"; _T_SOCKET=""
     TT_SAVE_LOCK_WAIT_SECONDS=0
     mkdir -p "$TT_SAVE_LOCK_DIR"
-    printf "%s %s\n" "$$" "$(tt_save_proc_starttime "$$")" > "$TT_SAVE_LOCK_DIR/pid"
+    printf "%s %s\n" "$$" "$(tt_proc_starttime "$$")" > "$TT_SAVE_LOCK_DIR/pid"
     ( tt_save_main quiet ); rc=$?
     lock=absent; [ -d "$TT_SAVE_LOCK_DIR" ] && lock=present
     printf "CASE:w_lock_busy rc=%s runs=%s lock=%s\n" "$rc" "$(runs)" "$lock"

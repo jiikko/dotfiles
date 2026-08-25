@@ -163,7 +163,8 @@ fi
 reset_calls
 NOPY="$TMP_DIR/nopy"; mkdir -p "$NOPY"
 for _t in grep date; do ln -sf "$(command -v "$_t")" "$NOPY/$_t"; done
-out=$(PATH="$TMP_DIR/bin:$NOPY" TMUX=stub STUB_FLOATING=1 "$SCRIPT" "no python msg" 2>&1); rc=$?
+rc=0
+out=$(PATH="$TMP_DIR/bin:$NOPY" TMUX=stub STUB_FLOATING=1 "$SCRIPT" "no python msg" 2>&1) || rc=$?
 if [ "$rc" -eq 0 ] && [ -z "$out" ] && grep -q '^tmux new-pane' "$CALLS"; then
   ok "python3 不在でも無音 exit 0 + 表示続行 (幅は全角=2 セルの上界概算)"
 else
@@ -175,7 +176,8 @@ fi
 # tmux 3.4 では copy-mode スクロールが無反応になる (CI test_smooth_scroll step5 の
 # 実障害 2026-07-29)。「表示先が無い = 何もしないで成功」の契約を固定する
 reset_calls
-out=$(STUB_TTY="" STUB_FLOATING=0 run_toast "headless msg" 2>&1); rc=$?
+rc=0
+out=$(STUB_TTY="" STUB_FLOATING=0 run_toast "headless msg" 2>&1) || rc=$?
 if [ "$rc" -eq 0 ] && [ -z "$out" ]; then
   ok "fallback: クライアント不在は無音で exit 0 (hook を汚さない)"
 else

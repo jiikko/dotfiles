@@ -18,7 +18,7 @@ trap cleanup EXIT
 
 CALLS="$TMP_DIR/calls.log"; : > "$CALLS"; export CALLS
 mkdir -p "$TMP_DIR/bin" "$TMP_DIR/home"
-DEFAULT_SOCK="$(realpath /tmp 2>/dev/null || echo /tmp)/tmux-$(id -u)/default"
+. "$ROOT_DIR/tests/tmux/lib/stub_env.sh"
 
 # display-message (socket gate) と list-sessions で応答を分ける stub
 cat > "$TMP_DIR/bin/tmux" <<'EOS'
@@ -41,14 +41,14 @@ LOG="$TMP_DIR/home/.cache/tt-restore-trigger.log"
 
 . "$ROOT_DIR/tests/tmux/lib/stub_assert_helper.sh"
 
-HOME="$TMP_DIR/home" STUB_SOCKET_PATH="$DEFAULT_SOCK" \
+HOME="$TMP_DIR/home" STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" \
   STUB_SESSIONS='a: 1 windows\nb: 2 windows\nc: 1 windows\n' run "$STUB_PATH" "$SCRIPT"
 [[ "$RC" -eq 0 ]] || { printf '✗ 正常系で exit %s (hook 用に常時 0 のはず)\n' "$RC"; exit 1; }
 grep -qE '^[0-9T:-]+	session-closed pid=[0-9]+ remaining=3 epoch=[0-9]+$' "$LOG" \
   || { printf '✗ ログ書式が想定と違う:\n'; cat "$LOG" 2>/dev/null; exit 1; }
 printf '✓ サーバ pid + 残セッション数 + epoch がタブ区切り書式で追記される (remaining=3)\n'
 
-HOME="$TMP_DIR/home" STUB_SOCKET_PATH="$DEFAULT_SOCK" STUB_LS_EXIT=1 run "$STUB_PATH" "$SCRIPT"
+HOME="$TMP_DIR/home" STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_LS_EXIT=1 run "$STUB_PATH" "$SCRIPT"
 [[ "$RC" -eq 0 ]] || { printf '✗ list-sessions 失敗で exit %s (0 のはず)\n' "$RC"; exit 1; }
 grep -qE 'session-closed pid=[0-9]+ remaining=0' "$LOG" \
   || { printf '✗ list-sessions 失敗時に remaining=0 が記録されない:\n'; cat "$LOG"; exit 1; }
@@ -62,7 +62,7 @@ HOME="$TMP_DIR/home" STUB_SOCKET_PATH="/nowhere/tmux-501/lab" \
 printf '✓ 非 default socket (テストサーバ) ではログを書かない\n'
 
 mkdir -p "$TMP_DIR/ro"; chmod 555 "$TMP_DIR/ro"
-HOME="$TMP_DIR/ro/home" STUB_SOCKET_PATH="$DEFAULT_SOCK" STUB_SESSIONS='a: 1 windows\n' run "$STUB_PATH" "$SCRIPT"
+HOME="$TMP_DIR/ro/home" STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_SESSIONS='a: 1 windows\n' run "$STUB_PATH" "$SCRIPT"
 chmod 755 "$TMP_DIR/ro"
 [[ "$RC" -eq 0 ]] || { printf '✗ ログ書き込み不能でも exit 0 のはず (RC=%s)\n' "$RC"; exit 1; }
 printf '✓ ログ書き込み失敗 (HOME 作成不能) でも exit 0 (hook を汚さない || true ガード)\n'

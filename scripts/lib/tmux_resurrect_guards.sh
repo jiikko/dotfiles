@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # tmux-resurrect 保存ガードの共有ライブラリ (source して使う。実行ファイルではないので shebang なし)。
-# 利用者: scripts/tmux_resurrect_debounced_save.sh (イベント駆動 debounce 経路) /
-#         scripts/tmux_resurrect_save.sh (全保存経路の choke point wrapper)。
+# 利用者: resurrect 系スクリプト全般 (保存経路の choke point / 観測ログの書き手など。
+#         `grep -rl tmux_resurrect_guards.sh scripts/` が実際の一覧)。
 # かつて両スクリプトに同じ判定式と TTL が二重定義され「変えるなら両方揃えること」
 # 運用だったのを、ここに一本化した (2026-07-05)。
 #
@@ -60,7 +60,27 @@ tt_only_hold_sessions() {
 # 新世代の watchdog が「先任が生きている」と誤認して無音で退き、**watchdog が 1 つも張られない**
 # (サーバが死んでも死亡記録が残らない = 観測装置が丸ごと不発)。同型の穴が periodic_save の
 # ループ脱出条件と restore_runner の単一実行 lock にもある。3 箇所で同じ判定が要るのでここに集約する。
-tt_proc_starttime() { ps -o lstart= -p "$1" 2>/dev/null; }
+# プロセスの起動時刻を「空白を含まない単一トークン」に正規化して返す (存在しなければ空)。
+# PID だけでは再起動跨ぎ / PID 再利用で別プロセスを同一 owner と誤認するため、指紋として併用する。
+# `ps -o lstart=` は BSD(macOS)/GNU(Linux) 双方で同一プロセスに安定な文字列を返す。
+#
+# ⚠️ **空白を潰すのは必須**。owner 行を `read -r pid start` のように空白分割で読む書き手が
+#   いるため、生の `ps` 出力 (例 "火  8/25 17:09:37 2026") を入れると先頭語だけが記録され、
+#   比較が壊れる。ここが**指紋の唯一の出典**で、`scripts/tmux_resurrect_save.sh` にあった
+#   独立実装 (同じ処理を別書式で持っていた) は削除済み (issue 078。二重化は issue 068 の
+#   drift の直接原因だった)。
+# 起動時刻トークンの正規化: 空白を `_` に潰し、**前後の `_` を落とす**。
+# ⚠️ 前後を落とすのは必須。`ps -o lstart=` の末尾パディングは platform 依存で、macOS は
+#   空白で埋めるが Linux は埋めない。落とさないと同じプロセスの指紋が OS によって別物になり、
+#   下の移行ガード (記録側の正規化) が Linux でだけ破れて**生存 owner を奪う**。
+#   実測 2026-08-25: macOS 手元は緑・Linux CI だけ赤、で発覚した。
+tt_norm_fp() {
+  local s
+  s="$(printf '%s' "$1" | tr -s '[:space:]' '_')"
+  s="${s#_}"; s="${s%_}"
+  printf '%s' "$s"
+}
+tt_proc_starttime() { tt_norm_fp "$(ps -o lstart= -p "$1" 2>/dev/null)"; }
 
 # ファイルの mtime (epoch)。取れなければ空を返す。
 # ⚠️ GNU を先に試すこと。`stat -f` は macOS では「書式指定」だが GNU ではファイルシステム情報の
@@ -79,6 +99,9 @@ tt_same_proc() {
   cur="$(tt_proc_starttime "$pid")"
   # 起動時刻が取れない環境 (ps 制限等) は pid 生存のみで判定する (fail-open)
   [ -n "$cur" ] || return 0
+  # ⚠️ 記録側も同じ正規化を通してから比較する。指紋の書式を変えた移行期に、旧書式で書かれた
+  #   lock を「別プロセス」と誤判定して**生存 owner を奪う**のを防ぐ (issue 078)。
+  want="$(tt_norm_fp "$want")"
   [ "$cur" = "$want" ]
 }
 
@@ -140,4 +163,27 @@ tt_on_default_server() {
   [ -n "$actual" ] || return 0
   expected="$(realpath /tmp 2>/dev/null || echo /tmp)/tmux-$(id -u)/default"
   [ "$actual" = "$expected" ]
+}
+
+# ── 共有観測ログ (tt-restore-trigger.log) ────────────────────────────────────
+# 復元・保存・kill の因果を 1 本の時系列で読むための共有ログ。**書き手はこの関数だけ**にする。
+#
+# ⚠️ 直接 `>> "$HOME/.cache/tt-restore-trigger.log"` と書かないこと。seam
+#   (`TT_TRIGGER_LOG`) を迂回した経路はテストから観測できず、テストが緑でも実際には
+#   書けていない/別の場所に書いている状態を作れてしまう (issue 079。実際に
+#   tmux_resurrect_save.sh と tmux_reap_orphan_servers.sh が迂回していた)。
+# ⚠️ 行書式は「ISO8601 <TAB> 本文」。読み手 (tmux_server_watchdog.sh の verdict 判定など) が
+#   この形に依存しているので、変えるならこの 1 箇所を変えて読み手も同時に直す。
+#
+# rotation はここでは**やらない**。上限 (TT_TRIGGER_LOG_MAX_LINES) の適用は
+# scripts/tmux_periodic_save.sh の prune_trigger_log が担当する。
+#   理由: 書き込みのたびに刈ると 1 行ごとに `wc -l` の fork が乗る。periodic_save は元々
+#   周期実行されていて追加 fork ゼロで刈れる。増加は実測 96 行/日 ≒ 8KB/日で、上限は
+#   forensics の保持期間を決めるものであって安全機構ではないため、periodic_save が
+#   止まっている間に上限を超えても実害は無い (ディスクを食う速度が 8KB/日)。
+#   ⚠️ この「暗黙の依存」を明示にするのがこのコメントの役目。prune を別の場所へ移すなら
+#   ここも直すこと。
+tt_trigger_log() {
+  { mkdir -p "$(dirname "$TT_TRIGGER_LOG")" \
+      && printf '%s\t%s\n' "$(date +%FT%T)" "$1" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
 }

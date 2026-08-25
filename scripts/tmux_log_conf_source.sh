@@ -33,9 +33,7 @@ tt_on_default_server || exit 0
 procs="$(ps -u "$(id -u)" -o command= 2>/dev/null | grep '^tmux' | grep -cv '^tmux source')" || procs=0
 last="$(readlink "$(tt_resurrect_dir)/last" 2>/dev/null || true)"
 
-{ mkdir -p "$(dirname "$TT_TRIGGER_LOG")" \
-    && printf '%s\tconf-source pid=%s tmux_procs=%s last=%s epoch=%s\n' \
-       "$(date +%FT%T)" "$(tmux display-message -p '#{pid}' 2>/dev/null)" \
-       "$procs" "$last" "$(date +%s)" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
+tt_trigger_log "$(printf 'conf-source pid=%s tmux_procs=%s last=%s epoch=%s' \
+  "$(tmux display-message -p '#{pid}' 2>/dev/null)" "$procs" "$last" "$(date +%s)")"
 
 exit 0

@@ -20,19 +20,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# ⚠️ 補助プロセス (サーバ役) は必ず `( trap - EXIT; exec ... ) &` で起こすこと。素の `cmd &` は
-#    fork 直後 (exec 前) に kill されると子が EXIT trap を継承したまま走り、cleanup の rm -rf が
-#    テスト途中で TMP_DIR を消す (test_periodic_save.sh で実際に踏み bash -x で特定 2026-07-30)。
-#    本テストは「サーバ役を kill して死亡検知させる」のが本質なので、このレースを最も踏みやすい。
-spawn_fake_server() {  # pid を REPLY_PID に返す
-  ( trap - EXIT; exec sleep 300 ) &
-  REPLY_PID=$!
-  FAKE_PIDS+=("$REPLY_PID")
-}
 
 CALLS="$TMP_DIR/calls.log"; : > "$CALLS"; export CALLS
 mkdir -p "$TMP_DIR/bin" "$TMP_DIR/pslogs" "$TMP_DIR/wd"
-DEFAULT_SOCK="$(realpath /tmp 2>/dev/null || echo /tmp)/tmux-$(id -u)/default"
+. "$ROOT_DIR/tests/tmux/lib/stub_env.sh"
 
 cat > "$TMP_DIR/bin/tmux" <<'EOS'
 #!/bin/sh
@@ -45,7 +36,7 @@ LOG="$TMP_DIR/trigger.log"
 
 wd_env() {  # 共通 env で watchdog を起動する ($1=fake pid)
   TT_TRIGGER_LOG="$LOG" TT_WATCHDOG_DIR="$TMP_DIR/wd" TT_PSLOG_DIR="$TMP_DIR/pslogs" \
-  TT_WATCHDOG_INTERVAL=0.05 TT_VERDICT_WINDOW=120 STUB_SOCKET_PATH="$DEFAULT_SOCK" \
+  TT_WATCHDOG_INTERVAL=0.05 TT_VERDICT_WINDOW=120 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" \
   PATH="$STUB_PATH" "$SCRIPT" "$1" "/fake/socket" "1234567890"
 }
 
@@ -61,7 +52,7 @@ wait_for_death_line() {  # $1=pid $2=説明。bounded-wait で server-death 行�
 
 # --- (1) 外因死: 空ログ状態でサーバ kill → external-signal-or-crash + pslog ------------
 : > "$LOG"
-spawn_fake_server; FAKE="$REPLY_PID"
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
 wd_env "$FAKE" &
 WD=$!
 sleep 0.5
@@ -79,7 +70,7 @@ printf '✓ 外因死: verdict=external-signal-or-crash + ps スナップショ�
 
 # --- (2) 同一サーバ pid の kill-cmd が直近にある → verdict=kill-server-command ---------
 : > "$LOG"
-spawn_fake_server; FAKE="$REPLY_PID"
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
 printf '%s\tkill-cmd cmd=kill-server pid=%s sessions=9 save=ok epoch=%s issuer=test\n' \
   "$(date +%FT%T)" "$FAKE" "$(date +%s)" >> "$LOG"
 wd_env "$FAKE" &
@@ -96,7 +87,7 @@ printf '✓ 同一サーバ pid の kill-cmd と相関して verdict=kill-server
 # レビューで実証された欠陥: 時間窓だけで相関していたため、前世代を kill-server で落とした後に
 # 新サーバが外因死すると verdict=kill-server-command になり、捜査方向が反転していた。
 : > "$LOG"
-spawn_fake_server; FAKE="$REPLY_PID"
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
 printf '%s\tkill-cmd cmd=kill-server pid=%s sessions=9 save=ok epoch=%s issuer=other-generation\n' \
   "$(date +%FT%T)" "$((FAKE + 100000))" "$(date +%s)" >> "$LOG"
 wd_env "$FAKE" &
@@ -111,7 +102,7 @@ printf '✓ 別サーバ世代の kill-cmd では誤分類せず external-signal
 
 # --- (3) 二重起動ガード: 先任が生きている間、後発は即退く ------------------------------
 : > "$LOG"
-spawn_fake_server; FAKE="$REPLY_PID"
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
 wd_env "$FAKE" &
 WD=$!
 sleep 0.5
@@ -128,10 +119,10 @@ wait "$WD" 2>/dev/null || true
 # 残骸 lock の watcher pid が別プロセスに再利用されると新世代の watchdog が無音で退き、
 # サーバが死んでも死亡記録が残らなかった (観測装置が丸ごと不発)。
 : > "$LOG"
-spawn_fake_server; FAKE="$REPLY_PID"
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
 # 「生きているが watchdog ではない別プロセス」を owner に持つ残骸 lock を作る。
 # 起動時刻を偽の値にしておくと、同一性判定が pid 再利用を見抜けるはず。
-spawn_fake_server; IMPOSTOR="$REPLY_PID"
+tt_spawn_fake_proc; IMPOSTOR="$REPLY_PID"
 mkdir -p "$TMP_DIR/wd/$FAKE.lock"
 printf '%s\t%s\n' "$IMPOSTOR" "Mon Jan  1 00:00:00 2000" > "$TMP_DIR/wd/$FAKE.lock/pid"
 wd_env "$FAKE" &
@@ -148,7 +139,7 @@ printf '✓ pid 再利用の残骸 lock を見抜いて看取りを開始する 
 
 # --- (4) 非 default socket → 監視しない (lock も作らない) ------------------------------
 : > "$LOG"
-spawn_fake_server; FAKE="$REPLY_PID"
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
 TT_TRIGGER_LOG="$LOG" TT_WATCHDOG_DIR="$TMP_DIR/wd" TT_PSLOG_DIR="$TMP_DIR/pslogs" \
   TT_WATCHDOG_INTERVAL=0.05 STUB_SOCKET_PATH="/nowhere/tmux-501/lab" \
   PATH="$STUB_PATH" "$SCRIPT" "$FAKE" "/fake/socket" "1"
