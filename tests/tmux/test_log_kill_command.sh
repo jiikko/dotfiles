@@ -36,7 +36,7 @@ trap cleanup EXIT
 
 CALLS="$TMP_DIR/calls.log"; : > "$CALLS"; export CALLS
 mkdir -p "$TMP_DIR/bin"
-DEFAULT_SOCK="$(realpath /tmp 2>/dev/null || echo /tmp)/tmux-$(id -u)/default"
+. "$ROOT_DIR/tests/tmux/lib/stub_env.sh"
 
 # subcommand を見て応答を変える stub tmux (display-message は socket_path / pid、
 # list-sessions はセッション一覧、show は保存スクリプトパス)
@@ -71,7 +71,7 @@ LOG="$TMP_DIR/trigger.log"
 # --- (a) default socket で kill-server → 保存が走り kill-cmd 行が書かれる -------------
 reset_calls; : > "$LOG"
 TT_TRIGGER_LOG="$LOG" TT_KILL_SAVE_WAIT_SECONDS=2 \
-  STUB_SOCKET_PATH="$DEFAULT_SOCK" STUB_SESSIONS='a: 1 windows\nb: 2 windows\n' \
+  STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_SESSIONS='a: 1 windows\nb: 2 windows\n' \
   STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run "$STUB_PATH" "$SCRIPT" kill-server
 [[ "$RC" -eq 0 ]] || { printf '✗ kill-server 正常系で exit %s (0 のはず)\n' "$RC"; exit 1; }
@@ -85,7 +85,7 @@ printf '✓ kill-cmd 行 (cmd/pid/sessions/save/epoch/issuer) がタブ区切り
 # 何も保存されていないのに save=ok と記録していた ("損失窓ゼロ" の主張がログ上見えなくなる)。
 reset_calls; : > "$LOG"
 TT_TRIGGER_LOG="$LOG" TT_KILL_SAVE_WAIT_SECONDS=2 \
-  STUB_SOCKET_PATH="$DEFAULT_SOCK" STUB_SESSIONS='a: 1 windows\nb: 1 windows\n' \
+  STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_SESSIONS='a: 1 windows\nb: 1 windows\n' \
   STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" STUB_SAVE_RC=1 \
   run "$STUB_PATH" "$SCRIPT" kill-server
 [[ "$RC" -eq 0 ]] || { printf '✗ 保存拒否時に exit %s (kill を阻害してはいけない)\n' "$RC"; exit 1; }
@@ -96,7 +96,7 @@ printf '✓ wrapper が拒否した保存は save=rejected-rc<N> として記録
 
 # --- (a3) hold セッションのみなら保存を発火させない (tt bootstrap を待たせない) -------
 reset_calls; : > "$LOG"
-TT_TRIGGER_LOG="$LOG" STUB_SOCKET_PATH="$DEFAULT_SOCK" \
+TT_TRIGGER_LOG="$LOG" STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" \
   STUB_SESSIONS='__tt_hold_1234: 1 windows\n' STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run "$STUB_PATH" "$SCRIPT" kill-session
 assert_not_called "save quiet" "hold のみの状態では保存を発火しない (lock 待ちで tt を遅らせない)"
@@ -106,7 +106,7 @@ printf '✓ hold のみの kill-session は保存せず skipped-hold-only を記
 
 # --- (b) 残り 3 セッションへの kill-session → 保存しない (サーバは存続するため) --------
 reset_calls; : > "$LOG"
-TT_TRIGGER_LOG="$LOG" STUB_SOCKET_PATH="$DEFAULT_SOCK" \
+TT_TRIGGER_LOG="$LOG" STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" \
   STUB_SESSIONS='a: 1 windows\nb: 2 windows\nc: 1 windows\n' \
   STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run "$STUB_PATH" "$SCRIPT" kill-session
@@ -118,7 +118,7 @@ printf '✓ kill-session (残 3) は記録のみで保存 skip\n'
 
 # --- (c) 最後の 1 セッションへの kill-session → exit-empty でサーバごと死ぬので保存 ----
 reset_calls; : > "$LOG"
-TT_TRIGGER_LOG="$LOG" TT_KILL_SAVE_WAIT_SECONDS=2 STUB_SOCKET_PATH="$DEFAULT_SOCK" \
+TT_TRIGGER_LOG="$LOG" TT_KILL_SAVE_WAIT_SECONDS=2 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" \
   STUB_SESSIONS='solo: 1 windows\n' \
   STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run "$STUB_PATH" "$SCRIPT" kill-session
@@ -160,7 +160,7 @@ sleep 0.3
 PS_SNAPSHOT="$(ps -axo pid=,command=)"
 grep -q "^ *$FULLPATH_PID $FAKE_TMUX_PATH " <<<"$PS_SNAPSHOT" \
   || { printf '✗ テスト前提が崩れている (フルパス argv[0] のプロセスを作れていない):\n'; grep "$FULLPATH_PID" <<<"$PS_SNAPSHOT" | head -2; exit 1; }
-TT_TRIGGER_LOG="$LOG" TT_KILL_SAVE_WAIT_SECONDS=2 STUB_SOCKET_PATH="$DEFAULT_SOCK" \
+TT_TRIGGER_LOG="$LOG" TT_KILL_SAVE_WAIT_SECONDS=2 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" \
   STUB_SESSIONS='a: 1 windows\nb: 1 windows\n' STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run "$STUB_PATH" "$SCRIPT" kill-server
 stop_helper "$FULLPATH_PID"
@@ -179,7 +179,7 @@ reset_calls; : > "$LOG"
 ABBREV_PID=$!
 HELPER_PIDS+=("$ABBREV_PID")
 sleep 0.3
-TT_TRIGGER_LOG="$LOG" STUB_SOCKET_PATH="$DEFAULT_SOCK" \
+TT_TRIGGER_LOG="$LOG" STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" \
   STUB_SESSIONS='a: 1 windows\nb: 1 windows\n' STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run "$STUB_PATH" "$SCRIPT" kill-session
 stop_helper "$ABBREV_PID"
@@ -189,7 +189,7 @@ printf '✓ 略記 subcommand (kill-sessio) の発行元も捕まえる\n'
 
 # --- (e) 保存スクリプト未解決でも kill を阻害しない ------------------------------------
 reset_calls; : > "$LOG"
-TT_TRIGGER_LOG="$LOG" STUB_SOCKET_PATH="$DEFAULT_SOCK" \
+TT_TRIGGER_LOG="$LOG" STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" \
   STUB_SESSIONS='a: 1 windows\n' STUB_SAVE_SCRIPT="" \
   run "$STUB_PATH" "$SCRIPT" kill-server
 [[ "$RC" -eq 0 ]] || { printf '✗ 保存スクリプト不在で exit %s (0 のはず)\n' "$RC"; exit 1; }
