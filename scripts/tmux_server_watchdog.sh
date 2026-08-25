@@ -103,13 +103,11 @@ check_health() {
   [ "$state" = "$health_last_state" ] && return 0
   health_last_state="$state"
   if [ "$state" = ng ]; then
-    { mkdir -p "$(dirname "$TT_TRIGGER_LOG")" && printf '%s\tsnapshot-health ng epoch=%s detail=%s\n' \
-        "$(date +%FT%T)" "$now" "$out" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
+    tt_trigger_log "snapshot-health ng epoch=$now detail=$out"
     # 見える通知 (フォーカスを奪わない toast)。落ちても監視は続ける
     [ -x "$TT_TOAST" ] && "$TT_TOAST" -d 8 -b 52 "⚠️ スナップショット異常: ${out#スナップショット異常: }" 2>/dev/null || true
   else
-    { mkdir -p "$(dirname "$TT_TRIGGER_LOG")" && printf '%s\tsnapshot-health ok epoch=%s\n' \
-        "$(date +%FT%T)" "$now" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
+    tt_trigger_log "snapshot-health ok epoch=$now"
   fi
 }
 
@@ -164,8 +162,8 @@ else
   verdict=external-signal-or-crash
 fi
 
-{ mkdir -p "$(dirname "$TT_TRIGGER_LOG")" && printf '%s\tserver-death pid=%s start=%s socket=%s verdict=%s pslog=%s\n' \
-    "$ts" "$SERVER_PID" "$SERVER_START" "$SOCKET_PATH" "$verdict" "$pslog" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
+# 打刻は死亡を検知した時刻 ($ts)。verdict の計算はこの後なので、書く時刻ではずれる
+tt_trigger_log "server-death pid=$SERVER_PID start=$SERVER_START socket=$SOCKET_PATH verdict=$verdict pslog=$pslog" "$ts"
 
 # pslog の世代管理 (直近 TT_PSLOG_KEEP 件だけ残す)
 # shellcheck disable=SC2012 # mtime 降順が要件で、対象は自前命名 (空白なし) のファイルのみ

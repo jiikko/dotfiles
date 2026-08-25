@@ -179,7 +179,7 @@ if [ "$reaped" -gt 0 ] && [ "${DRY_RUN:-0}" != "1" ]; then
   #    共有関数を通ること自体ではない。guards.sh が POSIX 化されたらここも寄せる。
   { mkdir -p "$(dirname "$TT_TRIGGER_LOG")" \
       && printf '%s\treaped-orphan-servers n=%s escalated=%s\n' \
-         "$(date +%FT%T)" "$reaped" "$escalated" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
+         "$(date +%FT%T)" "$reaped" "$escalated" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true  # trigger-log-writer: allow (#!/bin/sh なので bash 専用の guards.sh を source できない。上の注記が理由の正本)
 fi
 
 exit 0

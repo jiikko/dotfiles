@@ -107,5 +107,46 @@ run-shell 文脈で評価される。スクリプトへ寄せるには実際の�
 
 ## 残課題
 
-- [ ] `_tmux.conf` のインライン hook をスクリプトへ寄せる (復元経路を触るときの trigger 待ち)
-- [ ] seam へ寄せた 3 経路 (resurrect_save の 2 つ / reap_orphan) 専用の assert を足す
+- [x] `_tmux.conf` のインライン hook をスクリプトへ寄せる (2026-08-25 完了)
+- [x] seam へ寄せた 3 経路 (resurrect_save × 2 / reap_orphan) 専用の assert (`292f5e8`、並行セッション)
+- [x] `tmux_server_watchdog.sh` の 3 箇所のインライン書き手 (2026-08-25 完了)
+
+## 完了の内容 (2026-08-25)
+
+### これは refactor ではなく不変条件違反だった
+
+`scripts/CLAUDE.md`「共有の観測ログに書くスクリプトは default socket ゲート
+(`tt_on_default_server`) を通す」に対し、**`_tmux.conf` の 2 つの復元 hook だけが唯一の例外**で、
+`restore-start` / `restore-end` を無ゲートで本番ログへ書いていた。この 2 行はまさに watchdog の
+verdict が相関を取る行なので、`-L` の隔離テストサーバが復元すると**本番の死因分類が汚れる**。
+前例として `scripts/tmux_log_conf_source.sh` が同じ理由で先に抽出されている。
+
+### やったこと
+
+- `scripts/tmux_log_restore_hook.sh` を新設 (`pre` / `post`)。ゲートを通し `tt_trigger_log` で書く
+- **tmux オプションの設定は conf のインラインに残した**。`@tt-restore-complete` は
+  「復元が最後まで到達した」の唯一の証拠で `tmux_restore_runner.sh` の途中死判定の入力。
+  スクリプトへ寄せるとパス解決の失敗が「復元は成功したのに途中死と記録される」に化ける。
+  ログはゲートしたい / オプションは絶対に落としたくない、で要求が逆なので分けてある
+- `tmux_server_watchdog.sh` の 3 箇所 (`snapshot-health ng` / `ok` / `server-death`) を
+  `tt_trigger_log` へ。`server-death` は**死亡検知時の時刻**で打刻する必要があるため
+  (verdict の計算はその後)、`tt_trigger_log` に打刻の任意引数を足した
+- **再発を静的検査で止める**: `scripts/check_trigger_log_writers.sh` (`make test-trigger-log-writers`、
+  `test-lint` に配線)。書き手は guards.sh のみ。`#!/bin/sh` で guards.sh を source できない
+  `tmux_reap_orphan_servers.sh` は行内 `trigger-log-writer: allow` で明示的な例外
+
+### 検証
+
+- `snapshot-health ng` / `ok` は**どのテストも見ていなかった**ので `tests/tmux/test_server_watchdog.sh`
+  に状態遷移 (異常→回復) の assert を追加。新設スクリプトは `tests/tmux/test_log_restore_hook.sh` (5 観点)
+- 変異 6/7 red: ゲートを外す / restore-start を書かない / restore-end を書かない /
+  duration の数値検証を外す / 異常を記録しない / 回復を記録しない
+- 静的検査は**守っている修正を revert して赤くなることを集約経路 (`make test-lint`) で確認**した
+  (conf に生の書き手を戻すと `test-trigger-log-writers` が該当行を指して落ちる)
+
+### 固定できなかったもの (記録)
+
+- `server-death` の打刻が「死亡検知時」であること。`tt_trigger_log` の打刻引数を無視する変異は
+  **green のまま通る**。`%FT%T` は 1 秒解像度で、検知から書き込みまでの verdict 計算は
+  サブ秒なので実測上ほぼ同値になるため。観測可能にするには production 側に遅延の seam を
+  入れる必要があり、テストの都合で本番を歪めるので採らなかった

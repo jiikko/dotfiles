@@ -237,7 +237,10 @@ tt_lock_acquire() {
 #   止まっている間に上限を超えても実害は無い (ディスクを食う速度が 8KB/日)。
 #   ⚠️ この「暗黙の依存」を明示にするのがこのコメントの役目。prune を別の場所へ移すなら
 #   ここも直すこと。
+# $1=本文 / $2=打刻 (省略時は「今」)。$2 は「イベントの発生時刻と、それを書ける状態になる時刻が
+# ずれる」書き手のためにある (watchdog の server-death は死亡検知時の時刻で打刻し、その後に
+# verdict を計算してから書く)。ここを省略形に丸めると打刻の意味が静かに変わる。
 tt_trigger_log() {
   { mkdir -p "$(dirname "$TT_TRIGGER_LOG")" \
-      && printf '%s\t%s\n' "$(date +%FT%T)" "$1" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
+      && printf '%s\t%s\n' "${2:-$(date +%FT%T)}" "$1" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
 }

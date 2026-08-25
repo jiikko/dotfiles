@@ -42,7 +42,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-packages-heavy ci-packages-rest pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-go-lint test-go test-src
+.PHONY: ci-packages-heavy ci-packages-rest pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-go-lint test-go test-src
 
 # settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
 # pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、
@@ -144,6 +144,11 @@ test-ci-group-deps:
 # 正本は scripts/check_pipefail_grep_q.sh (なぜ危険か・直し方・例外マーカーはそこに書いてある)。
 test-pipefail-grep-q:
 	@scripts/check_pipefail_grep_q.sh
+
+# 共有観測ログ (tt-restore-trigger.log) の書き手が guards.sh の tt_trigger_log 以外に増えるのを落とす。
+# 正本は scripts/check_trigger_log_writers.sh (なぜ危険か・例外マーカーはそこに書いてある)。
+test-trigger-log-writers:
+	@scripts/check_trigger_log_writers.sh
 
 # heavy は 21 本 × ~16s (CI 実測) の直列で 5.6 分に育ったため並列実行する
 # (av1ify/concat は tempdir 独立で並列安全。2026-07-20 に 338s → 数十秒へ)
@@ -262,7 +267,7 @@ test-ruby-syntax:
 test-lint-tests:
 	@./scripts/lint_test_scripts.sh
 
-test-lint: test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q
+test-lint: test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers
 
 # Go プロジェクトの静的解析とテスト。実体は各ディレクトリの Makefile の lint / test
 # ターゲットに閉じており、ここはそれへ委譲するだけ (ローカルのコミット前検証用。root の

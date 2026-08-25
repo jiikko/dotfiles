@@ -186,4 +186,42 @@ kill "$FAKE" 2>/dev/null
 wait "$WD" 2>/dev/null || true
 printf '✓ 死んだサーバの stale lock を掃除してから監視を張る\n'
 
+# --- (7) スナップショット健全性の状態遷移を観測ログに残す -------------------------------
+# ⚠️ この 2 行 (snapshot-health ng / ok) は **どのテストも見ていなかった**ため、issue 079 で
+#   共有 seam (tt_trigger_log) へ寄せても移行が無検証だった。状態が変わったときだけ書く、
+#   という契約ごとここで固定する (毎回書くと toast も観測ログも騒がしくなる)。
+: > "$LOG"
+rm -f "$TMP_DIR/health_ok"
+cat > "$TMP_DIR/bin/fake_health.sh" <<'EOS'
+#!/bin/sh
+[ -f "$HEALTH_OK_FLAG" ] && exit 0
+echo "スナップショット異常: セッション 0 件"
+exit 1
+EOS
+chmod +x "$TMP_DIR/bin/fake_health.sh"
+
+wait_for_line() {  # $1=grep パターン $2=説明
+  local i=0
+  while [ "$i" -lt 100 ]; do
+    grep -qE "$1" "$LOG" 2>/dev/null && return 0
+    sleep 0.1; i=$((i + 1))
+  done
+  printf '✗ %s: 10s 待っても出ない (パターン: %s)\n--- log ---\n' "$2" "$1"; cat "$LOG" 2>/dev/null
+  exit 1
+}
+
+tt_spawn_fake_proc; FAKE="$REPLY_PID"
+TT_TRIGGER_LOG="$LOG" TT_WATCHDOG_DIR="$TMP_DIR/wd" TT_PSLOG_DIR="$TMP_DIR/pslogs" \
+  TT_WATCHDOG_INTERVAL=0.05 TT_VERDICT_WINDOW=120 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" \
+  TT_HEALTH_CHECK_INTERVAL=1 TT_HEALTH_SCRIPT="$TMP_DIR/bin/fake_health.sh" \
+  TT_TOAST="$TMP_DIR/bin/nonexistent-toast" HEALTH_OK_FLAG="$TMP_DIR/health_ok" \
+  PATH="$STUB_PATH" "$SCRIPT" "$FAKE" "/fake/socket" "1234567890" & WD=$!
+wait_for_line '\tsnapshot-health ng epoch=[0-9]+ detail=.+' "異常を検知したら記録する"
+printf '✓ スナップショット異常を観測ログに記録する\n'
+: > "$TMP_DIR/health_ok"
+wait_for_line '\tsnapshot-health ok epoch=[0-9]+' "回復も記録する"
+printf '✓ 回復したときも観測ログに記録する (状態遷移だけ書く)\n'
+kill "$FAKE" 2>/dev/null
+wait "$WD" 2>/dev/null || true
+
 printf '\nAll server-watchdog tests passed successfully!\n'
