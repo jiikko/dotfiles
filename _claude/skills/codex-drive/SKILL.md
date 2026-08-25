@@ -34,8 +34,8 @@ codex トークンを積極消費したいタスク向け。
 (`subagent-model-tiering.md`) が破れる。節約するのは検閲の**入力の形** (生出力 → digest) であって、
 検閲そのものではない。
 
-**モデルは全フェーズ `gpt-5.6-luna` 固定**、**effort は既定 `medium`・難しいタスクは `xhigh`**
-(下の effort 表が正本)。まず本数と観点の数で品質を作り、それでも足りない難所だけ effort を上げる。
+**モデルは全フェーズ `gpt-5.6-luna` 固定**、**effort も全フェーズ `max` 固定** (= luna-max)
+(下の effort 表が正本)。effort は常に上限に置き、品質の上積みは本数と観点の数で作る。
 ユーザーが「品質全開で」と明示したときだけ v2 運用 (merger を挟まず Claude が生出力を全文精読) に切り替える。
 
 ## 役割分担（崩さない）
@@ -90,28 +90,25 @@ codex 往復より速いので Claude が直接やってよい (`subagent-model-
     ミューテーション注入 (`[3.8]`)・要件照合 (`[7]`)。判断を含むフェーズでもモデルは上げない。
   - **`gpt-5.6-sol` (上位) には上げない**。上位モデルが要ると感じたら、モデルを上げる代わりに
     forge / cross-review へ escalate する ([`escalate-to-forge-after-failed-tries.md`](../../rules/escalate-to-forge-after-failed-tries.md))。
-- **effort は既定 `medium`。難しいタスクだけ `xhigh`。`low` / `high` は使わない**
-  (ユーザー決定 2026-08-24):
-  - **`medium` = 既定**。フェーズを問わず、指定が無ければこれ。
-  - **`xhigh` = 難しいタスク**。「難しい」は主観で決めず、下記のいずれかに当てはまるときとする:
-    - **spec が正解を決める実装**で、読み違えると実装・テスト・レビューが全部同じ誤読の上に建つ
-      (プロトコル / codec / 暗号 / wire フォーマット)。`[S]` と `[2]` が該当
-    - **並行・順序・ライフタイムが絡む実装** (actor / Task の寿命 / 再入 / 部分失敗)
-    - **敵対レビュー `[3.6]` が 1 ラウンド回して新規反証ゼロだったが、まだ枯れたと思えないとき**
-      (lens を足す前に、まず同じ lens を xhigh で回し直す)
-    - **同じ指摘・同じ失敗で 2 往復した後**。3 往復目を medium で投げ直さない
-      (それでも収束しないなら forge / cross-review へ escalate する)
-  - **上げる前に「本数と観点」を先に使う**。観点を増やせば質が上がる種類の仕事
-    (案出し・批評・発見型レビュー・要件照合) は、effort より本数が効く。
+- **effort は全フェーズ `max` 固定** (= `gpt-5.6-luna` の最大 effort。ユーザー決定 2026-08-25):
+  - **`max` = 唯一の設定値**。フェーズ・難易度で振り分けない。`low` / `medium` / `high` / `xhigh` は使わない
+    (難易度の自己判定がブレて難所を低い effort で踏む事故を、固定で構造的に潰す)。
+  - **effort が常に上限なので、詰まったときの手は effort ではなく「本数と観点」**。観点を増やせば質が
+    上がる種類の仕事 (案出し・批評・発見型レビュー・要件照合) は本数が効く。
+    - 敵対レビュー `[3.6]` が 1 ラウンド回して新規反証ゼロだが枯れたと思えないときは、**lens を足す**
+      (同じ lens を上げ直す先はもう無い)。
+    - **同じ指摘・同じ失敗で 2 往復したら 3 往復目を投げ直さず** forge / cross-review へ escalate する
+      ([`escalate-to-forge-after-failed-tries.md`](../../rules/escalate-to-forge-after-failed-tries.md))。
   - **実測根拠 (obaket issue 541、2026-08-24)**: 全フェーズ low で 1 機能を完走したところ、
     発散系 (独立 4 案・敵対レビュー) は low でも実害を掘れたが、
     **実装とテスト強化は low だと「動くが筋が通っていない」ものを繰り返し出した** —
     常時 1 秒ポーリング / Task を止めない / listing 不在を確認せずに「不在」と警告 /
     実機で踏んだ警告コメントの削除 / 落ちないテスト。
-    その後 medium にした回は、計画レビューで「2 ラウンドの定義が緩い」等の**誤運用経路**を
-    具体的に構築してきており、low の回では出ていなかった質の指摘だった。
-  → **effort を上げても検閲は省略しない** (`[3]` の build/test/diff 精読、
-    `[3.8]` のミューテーション検証は必須)。上げてよいのは codex 側の思考量だけで、
+    その後 effort を上げた回は、計画レビューで「2 ラウンドの定義が緩い」等の**誤運用経路**を
+    具体的に構築してきており、low の回では出ていなかった質の指摘だった
+    (= effort を落とすと実装系の質が落ちる。上限固定はこの実測の延長にある)。
+  → **effort が max でも検閲は省略しない** (`[3]` の build/test/diff 精読、
+    `[3.8]` のミューテーション検証は必須)。上限なのは codex 側の思考量だけで、
     Claude 側の検証は減らさない。
 
 ## 並列起動の作法（`[S]` / `[D1]` / `[D1.5]` / `[2p]` / `[3.5]` / `[3.55]` / `[3.6]` 共通）
@@ -156,7 +153,7 @@ driver 内で完結させ、Claude の Bash 往復を「起動 1 回 + digest �
   **重要な反証を読み落としたまま「指摘なし」と誤判定する**。形は `... > "$log" 2>&1; tail -40 "$log"` にし、
   判断の入力は必ず保存したファイル (下記 merger 経由なら merger がその全文) にする。
 - **集約 (merger) 規約 — 並列 3 本以上のフェーズは digest 化してから Claude が読む**:
-  全本の完了後、merger codex (`codex exec -s read-only`・`gpt-5.6-luna`・medium) に**保存ログのファイルパス群を
+  全本の完了後、merger codex (`codex exec -s read-only`・`gpt-5.6-luna`・max) に**保存ログのファイルパス群を
   渡して読ませ**、1 枚の digest を作らせる — 指摘/案ごとに「出典ログパス・file:line・根本原因・発火条件・
   重複マージの結果・severity」を構造化し、**全数勘定を必須にする** (「run X: N 件中 M 件採用、落とした分は
   各 1 行の理由」+ 指摘ゼロの run の明記。merger の黙った取りこぼしを構造的に見えるようにする)。
@@ -270,10 +267,10 @@ RFC / MS-* / API 仕様が正解を決めるタスクでは、**設計より前�
 spec の読み違いは最も高くつく失敗 (実装・テスト・レビューが全部同じ誤読の上に建つ) で、読解を 1 本に
 しておくと `[3.6]` の循環テスト lens でも捕まらないことがある。独立読解 2 本の**相違 = 読み違いの検出器**。
 
-- **独立 2 本** (`codex exec -s read-only`・`gpt-5.6-luna`・medium・並列作法どおり) に、実装の存在を前提にせず
+- **独立 2 本** (`codex exec -s read-only`・`gpt-5.6-luna`・max・並列作法どおり) に、実装の存在を前提にせず
   spec 該当節から抽出させる: **要件 (MUST/SHOULD の別)・不変条件・バイトレイアウト/状態機械・公式 test vector・
   spec が曖昧な箇所 (解釈が割れる文)**。2 本には互いの存在を伝えない。
-- **第 3 の codex** (read-only・luna・medium) に 2 本の digest を突き合わせさせ、**相違点と「どちらが spec に
+- **第 3 の codex** (read-only・luna・max) に 2 本の digest を突き合わせさせ、**相違点と「どちらが spec に
   忠実か」の判定案だけ**を出させる。一致部分は「独立 2 本が一致した」という証拠つきで合意 digest になる。
 - **Claude は相違点だけ spec 原文で裁定する** (全文を 2 回読むのではなく、割れた箇所に精読を集中させる —
   これが「検閲の前処理」パターンの原型)。裁定済みの合意 digest を要件ファイル
@@ -286,7 +283,7 @@ spec の読み違いは最も高くつく失敗 (実装・テスト・レビュ�
 
 - **低い** (spec/RFC が設計をほぼ決める・既存設計 doc がある・大量移植で構造が既定) → **軽量パス**:
   D1 を「設計方針の確認 1 回」に短縮し、Claude が検閲してユーザーに一言確認したら D2 を省略して `[1]` へ。
-  ただし **D3 の敵対観点 1 本 (read-only・`gpt-5.6-luna`・medium) だけは省略せず回す**
+  ただし **D3 の敵対観点 1 本 (read-only・`gpt-5.6-luna`・max) だけは省略せず回す**
   (「設計をほぼ決める spec」の読み違い・前提崩れは軽量パスでこそ実装後に高くつく)。
   「設計自由度が低いので軽量パス (+ 敵対 1 本) で進める」と明示する。
 - **ある** (新規ライブラリ・API 境界の新設・複数の実現方式がある) → D1→D2→D3 をフルで回す。
@@ -308,7 +305,7 @@ spec の読み違いは最も高くつく失敗 (実装・テスト・レビュ�
 # 以下は fallback の per-call 形。プロンプト内容の見本としてはどちらでも同じ。
 # --- 案A (Bash 呼び出し 1・run_in_background)。案B〜案D も同形で別呼び出し・別パス ---
 out="<scratchpad>/codex-drive.<literal-stamp>.designA.md"; log="$out.log"
-command codex exec -s read-only -m gpt-5.6-luna -c model_reasoning_effort="medium" \
+command codex exec -s read-only -m gpt-5.6-luna -c model_reasoning_effort="max" \
   --ephemeral -o "$out" </dev/null "$(cat <<'EOF'
 <タスク>の設計壁打ち。コードは書かない (設計検討のみ)。
 
@@ -329,7 +326,7 @@ EOF
 
 - **他案の存在を各本に伝えない**。「他案と差別化して」と書くと、独立性を保つためにやっている分割が
   「相手を意識した案」に崩れる。
-- 4 本揃ったら **[D1.5] クロス批評**を挟む: **批評者 codex 4 本** (read-only・luna・medium・並列作法どおり) に、
+- 4 本揃ったら **[D1.5] クロス批評**を挟む: **批評者 codex 4 本** (read-only・luna・max・並列作法どおり) に、
   各々「自分が書いていない 1 案 + [R] の要件」だけを渡し、**その案の破綻シナリオ・隠れコスト・要件との乖離**を
   批評させる (案 A の批評者には案 B〜D を見せない — 相互汚染で独立性が崩れるのを防ぐ)。
   作者へ返して改訂させる往復はしない (重い割に、改訂は統合時に Claude が判断できる)。
@@ -339,7 +336,7 @@ EOF
   まとめさせる。**Claude はその 1 枚を検閲して統合を確定する** — 推奨案の原文と、批評が「破綻」と
   言った案の該当箇所だけ spot check する (8 ファイル全文は読まない)。批評で initial 案が全滅したら、
   その批評内容を出発点制約に足して D1 をもう 1 巡する (最大 2 巡)。
-- 設計フェーズの effort は既定の **`medium`** (effort 表)。モデルは `gpt-5.6-luna`。
+- 設計フェーズの effort も **`max`** (effort 表。全フェーズ固定)。モデルは `gpt-5.6-luna`。
 - Claude が検閲し、**ユーザーと方針を選ぶ**。壁打ちの相手は codex だけでなく人間も含む (方針候補と推奨理由を
   要約して提示し、採用方針の合意を取ってから D2 へ)。
 - **丸投げ運用ではタッチポイントを集約してよい**: [R] で曖昧点を潰してあることを前提に、Claude が推奨案を
@@ -354,7 +351,7 @@ EOF
   失敗モードと吸収方法の表 / 責務分担** (+ データ構造・テスト戦略・マイルストーン分割案)。不変条件と失敗モードは
   必須項目 (CLAUDE.md「不具合対応の原則」を設計フェーズに接続する)。自由記述にせず、`[3]` の乖離チェックが
   「コントラクト項目ごとの検証」として機械的に回る形にする。
-- コマンドは D1 と同形 (`-s read-only`・effort medium)。出力先は別の一意パスに。
+- コマンドは D1 と同形 (`-s read-only`・effort max)。出力先は別の一意パスに。
 - Claude が検閲する。**設計段階でも「実在しない API/設定キーの捏造」は起きる** (既知の弱点表)。設計が参照する
   API・設定キー・ライブラリ機能は実環境・実ドキュメントで存在確認してから採用する。
 
@@ -377,8 +374,7 @@ EOF
 - **Claude 自身も 1 視点として設計をレビューする**。codex の設計を codex だけでレビューすると同一モデルの
   相関盲点が残る (「循環テスト」問題の設計版)。実装レビューと違い設計は正解が客観確定しにくいため、
   別モデル視点を必ず 1 本混ぜる。
-- effort はどちらも既定の **`medium`** (effort 表)。設計の前提が spec 由来で読み違えが高くつくときは、
-  敵対観点だけ `xhigh` に上げてよい。モデルはどちらも `gpt-5.6-luna`。
+- effort はどちらも **`max`** (effort 表。全フェーズ固定)。モデルはどちらも `gpt-5.6-luna`。
 - 敵対側の指摘は **発火条件 (どんな前提・入力・運用で破綻するか) が具体的なものだけ設計変更に反映する**。
   「起こりえないが念のため」の防御を設計に足すと over-engineering になる。示せないものは
   **残リスクとして承認ゲートの提示物に含め**、観測ポイントの候補にする (`[6]` で拾う)。
@@ -411,9 +407,9 @@ EOF
 
 ```bash
 # 最終応答の保存先は ./tmp ではなくセッション scratchpad 等の一意パスに。`</dev/null` 必須 (codex-review ルール)。
-# 実装は既定の **medium** (effort 表)。spec 由来 / 並行・順序が絡むなら xhigh。モデルは luna 固定。
+# 実装も effort **max** (effort 表。全フェーズ固定)。モデルは luna 固定。
 last_message="<scratchpad>/codex-drive.$(date +%Y%m%d-%H%M%S).$$.last-message.txt"
-command codex exec -s workspace-write -m gpt-5.6-luna -c model_reasoning_effort="medium" \
+command codex exec -s workspace-write -m gpt-5.6-luna -c model_reasoning_effort="max" \
   --ephemeral -o "$last_message" </dev/null "$(cat <<'EOF'
 <タスク>。git commit はしない (人間が検証して commit する)。ファイルを書き、プロジェクト標準の build/test が green に
 なるまで自分で反復すること。Swift プロジェクトなら swift build / swift test を使う。
@@ -441,7 +437,7 @@ EOF
 
 - **モデルはマイルストーンの性質で振らない** (大原則のモデル振り分け): 機械的移植・boilerplate でも、
   判断を含む実装・非自明な wire/protocol でも、一律 `gpt-5.6-luna`。
-  effort は effort 表に従い既定 `medium`、難しいタスクだけ `xhigh`。
+  effort は effort 表どおり全フェーズ `max` 固定。
 - `command codex` プレフィックス / `</dev/null` / `--ephemeral -o` は **codex-review スキルのルールが正本**（理由・実測根拠はそちら）。
   `-o` は実行ログ全体ではなく最終応答 (`--output-last-message`) の保存先。標準出力/標準エラーは必要に応じて呼び出し側で保存する。
 - **`--full-auto` は使わない**。実装は `-s workspace-write` を明示 (review の `-s read-only` とは別)。
@@ -492,7 +488,7 @@ echo "A=$root/../wt-$stamp-a"; echo "B=$root/../wt-$stamp-b"   # ← この 2 �
 # --- 案a (Bash 呼び出し 2・run_in_background)。案b も同形で別呼び出し・別 worktree ---
 wt="/<控えた A の絶対パス>"; out="<scratchpad>/codex-drive.<literal-stamp>.implA.md"; log="$out.log"
 command codex exec -s workspace-write -C "$wt" -m gpt-5.6-luna \
-  -c model_reasoning_effort="medium" --ephemeral -o "$out" </dev/null \
+  -c model_reasoning_effort="max" --ephemeral -o "$out" </dev/null \
   "<[2] と同じプロンプト>" > "$log" 2>&1; tail -40 "$log"
 ```
 
@@ -503,7 +499,7 @@ command codex exec -s workspace-write -C "$wt" -m gpt-5.6-luna \
   馴染むか → ④ テストが循環していないか。**「codex のサマリがよく書けている方」で選ばない** (overclaim は既知の弱点)。
 - **敗者剖検は codex にやらせる (検閲の前処理)**: 勝者と敗者の diff を渡し、「**敗者にだけある良い判断**
   (見落としていた異常系・簡潔な書き方・追加テスト・片方だけが踏んだ落とし穴) を列挙して、勝者へ移植する
-  最小 patch 案を出せ」と read-only (luna・medium) で 1 本回す。Claude は剖検結果を検閲して移植を判断する
+  最小 patch 案を出せ」と read-only (luna・max) で 1 本回す。Claude は剖検結果を検閲して移植を判断する
   (2 本の diff 全文を並べて読む作業を digest 化する — 競作の主目的である「比較で見える落とし穴」を
   取りこぼさずに検閲単価を下げる)。移植の実施は `[2]` (codex) か trivial なら Claude 直接。
 - **勝者を本流に持ち込む (patch 経由・codex には commit させない)**: 勝者 worktree には commit が無く、
@@ -550,7 +546,7 @@ git worktree list   # 消えたことを確認する
   指示外ファイルへの変更・半端な編集を弾く。**構造方針との乖離も弾く**: 長期運用判定のタスクに
   症状パッチ・特例 if 分岐・「このケースだけ救う」ワークアラウンドが入っていないか / 逆に最小変更判定の
   タスクに頼んでいない抽象化・機構の新設が入っていないか (どちらの方向の逸脱も差し戻す)。
-- **大きい diff (目安 200 行超) は「変更マップ」をナビに 1 回で精読する**: codex (read-only・luna・medium) に
+- **大きい diff (目安 200 行超) は「変更マップ」をナビに 1 回で精読する**: codex (read-only・luna・max) に
   「ファイル × 変更意図 × リスク順の hunk ランキング + 各 hunk の機械的/判断の分類 (根拠つき)」を
   作らせ、Claude はマップの順に diff を 1 回だけ読む (行き来と再読を消す — 精読を安くするのであって
   減らすのではない: **全 hunk に目は通す**)。斜め読みしてよいのは「機械的」と分類された hunk だけで、
@@ -586,7 +582,7 @@ git worktree list   # 消えたことを確認する
 # stdout も保存する ($log 群は merger に全文読ませる)。詳細は「並列起動の作法」。
 # --- 観点A (Bash 呼び出し 1・run_in_background)。観点B・C も同形で別呼び出し・別パス ---
 out="<scratchpad>/codex-drive.<literal-stamp>.reviewA.md"; log="$out.log"
-command codex exec review -m gpt-5.6-luna -c model_reasoning_effort="medium" \
+command codex exec review -m gpt-5.6-luna -c model_reasoning_effort="max" \
   --ephemeral -o "$out" </dev/null \
   "<観点A の指示。file:line・理由・最小修正案を。要約/称賛不要>" > "$log" 2>&1; tail -40 "$log"
 ```
@@ -603,7 +599,7 @@ command codex exec review -m gpt-5.6-luna -c model_reasoning_effort="medium" \
 丸ごと Claude の精読に乗っており、ここが本数を増やせない律速だった。裏取りを前置することで、Claude の検閲は
 「指摘を一から検証する」から「**構築済みの再現手順をなぞって確定する**」に軽量化される。
 
-- **裏取り codex** (read-only・`gpt-5.6-luna`・medium) に指摘リストを渡し、各指摘について:
+- **裏取り codex** (read-only・`gpt-5.6-luna`・max) に指摘リストを渡し、各指摘について:
   - **再現手順を構築させる** (どの入力・順序・環境で発火するか。可能なら最小の再現コード/コマンド)
   - 構築できなければ **「再現不能」と明記**させる (「たぶん正しい」と書かせない)
   - 指摘同士の重複 (同一根本原因) をマージさせる
@@ -637,11 +633,11 @@ command codex exec review -m gpt-5.6-luna -c model_reasoning_effort="medium" \
   箇所はないか / 別モジュールに割った責務がこの実装で漏れ出していて、次の変更が 2 箇所同時修正を強制されないか /
   境界を跨いで内部表現 (型・生データ・状態) が露出していて、片側の変更が他方を黙って壊せないか
 
-- effort は既定の **`medium`** (effort 表)。反証はパターンマッチでなく構築作業なので、
-  codex-review 正本の「敵対的モードは一段上げる」と整合する。
-  **1 ラウンド回して新規反証ゼロだが枯れたと思えないときは、lens を足す前に同じ lens を `xhigh` で回し直す**。
+- effort は **`max`** (effort 表。全フェーズ固定)。反証はパターンマッチでなく構築作業なので、
+  codex-review 正本の「敵対的モードは一段上げる」の上限側に常に置く。
+  **1 ラウンド回して新規反証ゼロだが枯れたと思えないときは、lens を足す** (effort の上げ代は無い)。
   モデルは `gpt-5.6-luna`。
-  - **effort を上げても本数は削らない**。攻め口 (lens) の多様性が反証力の主軸なのは変わらない。
+  - **effort が上限でも本数は削らない**。攻め口 (lens) の多様性が反証力の主軸なのは変わらない。
     枯れないなら forge / cross-review へ escalate する。
   - **1 本回して「指摘なし」で閉じるのは禁止** — 枯れるまで lens を足すか escalate する。
 - 各 lens は **別々の Bash 呼び出しで `run_in_background: true`**・出力は別パス (`[3.5]` と同じ並列作法)。
@@ -651,7 +647,7 @@ command codex exec review -m gpt-5.6-luna -c model_reasoning_effort="medium" \
 # 起動は codex-fanout driver が既定 (lens ごとの brief + review-lens-header.md を連結する manifest)。
 # --- fallback の per-call 形: lens ごとに別 Bash 呼び出し・run_in_background。パスは round と lens で一意にする ---
 out="<scratchpad>/codex-drive.<literal-stamp>.r<N>-adv-<lens>.md"; log="$out.log"
-command codex exec review -m gpt-5.6-luna -c model_reasoning_effort="medium" \
+command codex exec review -m gpt-5.6-luna -c model_reasoning_effort="max" \
   --ephemeral -o "$out" </dev/null \
   "<codex-review「敵対的モード」テンプレート全文 + この lens の攻め口だけを指定>" > "$log" 2>&1; tail -40 "$log"
 ```
@@ -750,14 +746,14 @@ diff -u "<...>.pre.status" "<...>.post.status"             # ← 新規ファイ
   (実測ではこれを書いた回だけ本数が揃った)。ただし**これは要求本数の取りこぼし検出であって、検知力の証明ではない**
   — parameterized test / 1 宣言に複数ケース / コメント内の文字列も数に入る。**実装を落とせるかは `[3.8]` の
   ミューテーションで別に確認する**。本数と検知力を同じ指標として扱わない。
-- effort は既定の **`medium`** (effort 表)。「実装を落とす入力」を組み立てるのは構築作業で、
+- effort は **`max`** (effort 表。全フェーズ固定)。「実装を落とす入力」を組み立てるのは構築作業で、
   effort を落とすと常に真になる assert や壊せないヘルパーが出やすい (実測)。
   モデルは `gpt-5.6-luna`。書き込みが必要なので `-s workspace-write`。
 
 ```bash
 # 起動前スナップショット (上の pre.patch / pre.status) をこの呼び出しの冒頭で採る
 out="<scratchpad>/codex-drive.<literal-stamp>.harden.md"; log="$out.log"
-command codex exec -s workspace-write -m gpt-5.6-luna -c model_reasoning_effort="medium" \
+command codex exec -s workspace-write -m gpt-5.6-luna -c model_reasoning_effort="max" \
   --ephemeral -o "$out" </dev/null "$(cat <<'EOF'
 このマイルストーンの実装を「落とす」テストを書く。git commit はしない。
 
@@ -809,7 +805,7 @@ EOF
 - **使い捨て worktree で行う** (`git worktree add <path> HEAD` + 未コミット実装を patch で持ち込む)。
   **本流でミューテーションしない**: 変異の復元に `git checkout` を使うと未コミットの実装/修正ごと巻き戻す
   (2026-07-29 に実際に起きた事故。worktree なら丸ごと捨てられるので復元事故が構造的に消える)。
-- **codex に注入から実行ループまで回させる** (workspace-write・`-C <worktree>`・`gpt-5.6-luna`・medium —
+- **codex に注入から実行ループまで回させる** (workspace-write・`-C <worktree>`・`gpt-5.6-luna`・max —
   機械作業。トークン経済 3): 「このマイルストーンの実装に、**現実的なバグを 3〜5 個、1 個ずつ独立の
   patch として**作れ (境界の off-by-one・条件の反転・エラー処理の握りつぶし・early return の欠落など、
   レビューで見逃しやすい類)。各 patch は `git diff` 形式で別ファイルに保存し、**1 個ずつ適用 → テスト実行 →
@@ -858,7 +854,7 @@ EOF
   受け入れ条件を満たす証拠 (テスト・実行ログ・CI・実機) を示せない要件は **充足ではなく「未検証」**に落とす。
 - **未充足・部分充足・未検証・意図的にスコープ外にした項目を明示して報告する** (黙って「完了」にしない)。
   未充足が残るなら `[1]` に戻して追加マイルストーンを切るか、ユーザーに判断を仰ぐ。
-- **codex 敵対照合 1 本を必須で先行させる** (read-only・`gpt-5.6-luna`・medium)。「充足を確認して」ではなく
+- **codex 敵対照合 1 本を必須で先行させる** (read-only・`gpt-5.6-luna`・max)。「充足を確認して」ではなく
   **「未充足の要件を探して。充足の主張を反証して。証拠 (テスト・実行ログ・CI) の無い『充足』を列挙して」**と
   敵対側で投げる (肯定形で聞くと追認が返ってくる)。その出力を材料に Claude が要件ごとの最終判定を行う
   (v2.0.0 で任意→必須化。照合は本 skill の出口ゲートで、ここの見落としだけは後工程が無い)。
