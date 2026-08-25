@@ -60,7 +60,16 @@ tt_only_hold_sessions() {
 # 新世代の watchdog が「先任が生きている」と誤認して無音で退き、**watchdog が 1 つも張られない**
 # (サーバが死んでも死亡記録が残らない = 観測装置が丸ごと不発)。同型の穴が periodic_save の
 # ループ脱出条件と restore_runner の単一実行 lock にもある。3 箇所で同じ判定が要るのでここに集約する。
-tt_proc_starttime() { ps -o lstart= -p "$1" 2>/dev/null; }
+# プロセスの起動時刻を「空白を含まない単一トークン」に正規化して返す (存在しなければ空)。
+# PID だけでは再起動跨ぎ / PID 再利用で別プロセスを同一 owner と誤認するため、指紋として併用する。
+# `ps -o lstart=` は BSD(macOS)/GNU(Linux) 双方で同一プロセスに安定な文字列を返す。
+#
+# ⚠️ **空白を潰すのは必須**。owner 行を `read -r pid start` のように空白分割で読む書き手が
+#   いるため、生の `ps` 出力 (例 "火  8/25 17:09:37 2026") を入れると先頭語だけが記録され、
+#   比較が壊れる。ここが**指紋の唯一の出典**で、`scripts/tmux_resurrect_save.sh` にあった
+#   独立実装 (同じ処理を別書式で持っていた) は削除済み (issue 078。二重化は issue 068 の
+#   drift の直接原因だった)。
+tt_proc_starttime() { ps -o lstart= -p "$1" 2>/dev/null | tr -s '[:space:]' '_'; }
 
 # ファイルの mtime (epoch)。取れなければ空を返す。
 # ⚠️ GNU を先に試すこと。`stat -f` は macOS では「書式指定」だが GNU ではファイルシステム情報の
@@ -79,6 +88,9 @@ tt_same_proc() {
   cur="$(tt_proc_starttime "$pid")"
   # 起動時刻が取れない環境 (ps 制限等) は pid 生存のみで判定する (fail-open)
   [ -n "$cur" ] || return 0
+  # ⚠️ 記録側も同じ正規化を通してから比較する。指紋の書式を変えた移行期に、旧書式で書かれた
+  #   lock を「別プロセス」と誤判定して**生存 owner を奪う**のを防ぐ (issue 078)。
+  want="$(printf '%s' "$want" | tr -s '[:space:]' '_')"
   [ "$cur" = "$want" ]
 }
 
