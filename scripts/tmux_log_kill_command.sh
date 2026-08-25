@@ -43,10 +43,6 @@ kind="${1:-unknown}"
 # どのみち落ちる。静かに素通しして本物の kill-* だけ実行させる。
 tt_on_default_server || exit 0
 
-log_line() {
-  { mkdir -p "$(dirname "$TT_TRIGGER_LOG")" \
-      && printf '%s\t%s\n' "$(date +%FT%T)" "$1" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
-}
 
 # 発行元の同定: argv に「tmux ... kill-server/kill-session」を持つプロセスを ps から探す。
 # 自分のプロセスツリーとサーバ本体は除外する。複数 (稀) は先頭 3 件まで。
@@ -147,6 +143,6 @@ done
 # server pid を必ず刻む。watchdog の死因分類は共有ログを時間窓だけで相関するため、pid が無いと
 # 「前世代のサーバへの kill-cmd」が新サーバの外因死に誤って結び付く (レビューで実証: 外因死が
 # verdict=kill-server-command になった)。
-log_line "kill-cmd cmd=$kind pid=$(tmux display-message -p '#{pid}' 2>/dev/null) sessions=$sessions save=$save_result epoch=$(date +%s) issuer=${issuer_info:-not-found}"
+tt_trigger_log "kill-cmd cmd=$kind pid=$(tmux display-message -p '#{pid}' 2>/dev/null) sessions=$sessions save=$save_result epoch=$(date +%s) issuer=${issuer_info:-not-found}"
 
 exit 0

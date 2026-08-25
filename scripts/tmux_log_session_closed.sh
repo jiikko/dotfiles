@@ -36,8 +36,7 @@ TT_TRIGGER_LOG="${TT_TRIGGER_LOG:-$HOME/.cache/tt-restore-trigger.log}"
 
 # pid は watchdog が「どのサーバ世代のイベントか」を判定するのに使う (kill-cmd 行と同じ理由)
 remaining=$(tmux list-sessions 2>/dev/null | grep -c .)
-{ mkdir -p "$(dirname "$TT_TRIGGER_LOG")" && printf '%s\tsession-closed pid=%s remaining=%s epoch=%s\n' \
-    "$(date +%FT%T)" "$(tmux display-message -p '#{pid}' 2>/dev/null)" "$remaining" "$(date +%s)" \
-    >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
+tt_trigger_log "$(printf 'session-closed pid=%s remaining=%s epoch=%s' \
+  "$(tmux display-message -p '#{pid}' 2>/dev/null)" "$remaining" "$(date +%s)")"
 
 exit 0

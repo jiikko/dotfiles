@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # tmux-resurrect 保存ガードの共有ライブラリ (source して使う。実行ファイルではないので shebang なし)。
-# 利用者: scripts/tmux_resurrect_debounced_save.sh (イベント駆動 debounce 経路) /
-#         scripts/tmux_resurrect_save.sh (全保存経路の choke point wrapper)。
+# 利用者: resurrect 系スクリプト全般 (保存経路の choke point / 観測ログの書き手など。
+#         `grep -rl tmux_resurrect_guards.sh scripts/` が実際の一覧)。
 # かつて両スクリプトに同じ判定式と TTL が二重定義され「変えるなら両方揃えること」
 # 運用だったのを、ここに一本化した (2026-07-05)。
 #
@@ -140,4 +140,27 @@ tt_on_default_server() {
   [ -n "$actual" ] || return 0
   expected="$(realpath /tmp 2>/dev/null || echo /tmp)/tmux-$(id -u)/default"
   [ "$actual" = "$expected" ]
+}
+
+# ── 共有観測ログ (tt-restore-trigger.log) ────────────────────────────────────
+# 復元・保存・kill の因果を 1 本の時系列で読むための共有ログ。**書き手はこの関数だけ**にする。
+#
+# ⚠️ 直接 `>> "$HOME/.cache/tt-restore-trigger.log"` と書かないこと。seam
+#   (`TT_TRIGGER_LOG`) を迂回した経路はテストから観測できず、テストが緑でも実際には
+#   書けていない/別の場所に書いている状態を作れてしまう (issue 079。実際に
+#   tmux_resurrect_save.sh と tmux_reap_orphan_servers.sh が迂回していた)。
+# ⚠️ 行書式は「ISO8601 <TAB> 本文」。読み手 (tmux_server_watchdog.sh の verdict 判定など) が
+#   この形に依存しているので、変えるならこの 1 箇所を変えて読み手も同時に直す。
+#
+# rotation はここでは**やらない**。上限 (TT_TRIGGER_LOG_MAX_LINES) の適用は
+# scripts/tmux_periodic_save.sh の prune_trigger_log が担当する。
+#   理由: 書き込みのたびに刈ると 1 行ごとに `wc -l` の fork が乗る。periodic_save は元々
+#   周期実行されていて追加 fork ゼロで刈れる。増加は実測 96 行/日 ≒ 8KB/日で、上限は
+#   forensics の保持期間を決めるものであって安全機構ではないため、periodic_save が
+#   止まっている間に上限を超えても実害は無い (ディスクを食う速度が 8KB/日)。
+#   ⚠️ この「暗黙の依存」を明示にするのがこのコメントの役目。prune を別の場所へ移すなら
+#   ここも直すこと。
+tt_trigger_log() {
+  { mkdir -p "$(dirname "$TT_TRIGGER_LOG")" \
+      && printf '%s\t%s\n' "$(date +%FT%T)" "$1" >> "$TT_TRIGGER_LOG"; } 2>/dev/null || true
 }

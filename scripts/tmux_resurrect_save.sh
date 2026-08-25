@@ -206,15 +206,12 @@ tt_save_avoid_same_second_target() {
 
 # Fix C: 退行ガードが last 前進を抑止したことを観測ログに残す（_tmux.conf の startup 観測と同じファイル）。
 tt_save_log_guard() {
-  { mkdir -p "$HOME/.cache" && printf '%s\tregression-blocked prev_sessions=%s new_sessions=%s prev_windows=%s new_windows=%s kept=%s rejected=%s\n' \
-      "$(date +%FT%T)" "$1" "$2" "$3" "$4" "$5" "$6" >> "$HOME/.cache/tt-restore-trigger.log"; } 2>/dev/null || true
+  tt_trigger_log "$(printf 'regression-blocked prev_sessions=%s new_sessions=%s prev_windows=%s new_windows=%s kept=%s rejected=%s' \
+    "$1" "$2" "$3" "$4" "$5" "$6")"
 }
 
 # 観測ログへの汎用 1 行追記 (書式は docs/tmux-plugins.md「観測ログの読み方」の表が読者側の正本)
-tt_save_log() {
-  { mkdir -p "$HOME/.cache" && printf '%s\t%s\n' "$(date +%FT%T)" "$1" \
-      >> "$HOME/.cache/tt-restore-trigger.log"; } 2>/dev/null || true
-}
+tt_save_log() { tt_trigger_log "$1"; }
 
 # pane 内容の保存が有効か
 tt_capture_contents_on() {
