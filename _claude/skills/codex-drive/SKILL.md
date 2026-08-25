@@ -123,7 +123,9 @@ driver 内で完結させ、Claude の Bash 往復を「起動 1 回 + digest �
 1. プロンプト部品を scratchpad に書く — 定型は `~/.claude/skills/codex-drive/templates/`
    (`review-lens-header.md` = lens 共通ヘッダ、`merger.md` = merger の既定指示) を使い、
    **Claude が書くのは lens の攻め口 + タスク固有の的の brief 数行だけ** (トークン経済 2)
-2. manifest (TSV: `label \t mode \t model \t effort \t 部品1,部品2,...`。部品は順に連結) を書く
+2. manifest (TSV: `label \t mode \t model \t effort \t 部品1,部品2,...`。部品は順に連結) を書く。
+   **`mode` は `ro` | `review` の 2 値** (それぞれ `codex exec -s read-only` / `codex exec review`)。
+   下の例はコマンド形で書いてあるので、manifest には略号の方を書くこと
 3. **manifest・prompt 部品・merger prompt (`-m`)・outdir はすべて cwd 依存**なので、各 Bash 呼び出しで
    値を再計算するか、前回出力のリテラル絶対パスを使う。prompt part のパスにはカンマを入れない
    (manifest は単純なカンマ分割)。`codex-fanout <絶対パスの manifest> <絶対パスの outdir>` を、
