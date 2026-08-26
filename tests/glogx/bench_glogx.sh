@@ -41,6 +41,8 @@
 # ため 1 回は軽くてよい (ノイズ耐性は run 階層の min 集約が担う)。-run '^$' でユニットテストは
 # 走らせない。回数を上げ下げしたいときは run_bench.sh の BENCH_RUNS を触る (ここは追従不要)。
 set -euo pipefail
+unset CDPATH  # CDPATH が export されていると `cd foo` が解決先を stdout に出し、
+              # SCRIPT_DIR=$(cd ... && pwd) が 2 行に化ける (rules/shell-script-cdpath.md)
 
 # checker の数値検証は dot 小数前提。カンマ小数ロケールで awk の printf %.3f が "1,234" を
 # 出さないよう数値カテゴリを C に固定する (bench_tmux.sh と同じ理由)

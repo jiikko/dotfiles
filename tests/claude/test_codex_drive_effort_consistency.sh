@@ -29,6 +29,8 @@
 # 宣言行が消えたら例外も消える (= 無断で sol を使い始めると落ちる)。
 
 set -euo pipefail
+unset CDPATH  # CDPATH が export されていると `cd foo` が解決先を stdout に出し、
+              # SCRIPT_DIR=$(cd ... && pwd) が 2 行に化ける (rules/shell-script-cdpath.md)
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
