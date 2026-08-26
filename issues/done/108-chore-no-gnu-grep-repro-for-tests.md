@@ -66,3 +66,35 @@ PATH="$shim:$PATH" ./tests/...
 - `_claude/rules/mutation-verify-new-tests.md` — 「環境で値が変わるコマンド出力を比較に使わない」
   (今回の兄弟。あちらは測られる側、こちらは測る側 = 正規表現の方言)
 - `_claude/rules/path-shim-must-resolve-real-binary.md` — shim の作法の正本
+
+## 対応 (2026-08-26)
+
+`scripts/with_gnu_grep.sh` と `make test-gnu` を新設した。
+
+### 決めたこと (issue 本文の「決めるべきこと」への回答)
+
+- **対象は grep 系のみ** (`grep` / `egrep` / `fgrep`)。`sed` / `date` / `ps` / `stat` も割れるが、
+  そこまで shim すると「Linux エミュレータ」の自作になり保守が本体を超える。grep だけで
+  今回の 8 箇所は捕まっているので、必要になった時点で足す
+- **opt-in の別ターゲット** (`make test-gnu`)。`make test` に混ぜると手元の所要時間が倍になる。
+  grep のパターンや観測ログ系の assert を触ったときに回す運用にした
+- **GNU grep が無い環境では失敗させる** (skip して緑を返さない)。ただしシステムの grep が
+  既に GNU (Linux/CI) なら shim 不要なのでそのまま実行する。「判定不能」を緑に畳まない
+
+### 退行を実際に捕まえることの確認
+
+worktree で assert を `${TT_TAB}` から `'\t'` へ戻す変異 (= issue 108 の退行そのもの) を当てた:
+
+| 条件 | 結果 |
+|---|---|
+| 通常の実行 (BSD grep) | **exit 0** = 手元では気づけない |
+| `with_gnu_grep.sh` 経由 | **exit 1** = 退行を捕まえた |
+
+shim 自身も「貼れた」で終わらせず、実行前に `grep --version` が GNU になっていることを
+確認してから使う (貼れた ≠ 効いている)。実体は絶対パスで解決し、解決先が shim 自身の配下なら
+即座に落とす (`path-shim-must-resolve-real-binary.md`)。
+
+### 入口ドキュメント
+
+`_claude/rules/mutation-verify-new-tests.md` の「比較に使う正規表現の方言」の項から
+`make test-gnu` を指すようにした (この罠を踏む人が読む場所)。

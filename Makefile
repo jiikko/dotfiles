@@ -42,7 +42,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-packages-heavy ci-packages-rest pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-go-lint test-go test-src
+.PHONY: ci-packages-heavy ci-packages-rest pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-gnu test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-go-lint test-go test-src
 
 # settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
 # pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、
@@ -105,6 +105,15 @@ endef
 # 自動で拾われる (ディレクトリ単位の死蔵も発生しない)。
 test-discovered:
 	@$(call run_tests,tests)
+
+# tests/ 全体を「GNU grep が grep として見える」環境で回す (issue 108)。
+# BSD grep (macOS) と GNU grep (Linux CI) は正規表現の方言が違うため、テストが手元だけ
+# 緑・CI だけ赤になる。観測ログ系の assert や grep のパターンを触ったら、push 前にこれを
+# 回すと CI の往復が減る。opt-in なのは `make test` の所要時間を倍にしないため。
+# GNU grep が無い macOS では **失敗する** (skip して緑を返さない)。詳細は
+# scripts/with_gnu_grep.sh の冒頭コメント。
+test-gnu:
+	@scripts/with_gnu_grep.sh $(MAKE) test-discovered test-bats
 
 # CI (tests.yml) の並列分割用。実行時間の大きい ffmpeg 系 (av1ify/concat) を heavy として
 # 分離し、rest は「tests/ 全体から heavy を除外」の除外方式にする。新ディレクトリは自動で
