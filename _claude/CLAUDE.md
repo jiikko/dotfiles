@@ -55,6 +55,7 @@ Opus 5 は既定で「よく喋り・よく書き・スコープを広げ・よ�
 - **カバレッジ向上を要求されても、対象が「テスト困難 かつ 低価値」の両方を満たすなら拒否する**（数値のための水増しテストを書かない）。判断は「テスト容易性 × 価値」の 2 軸で行い、困難×高価値は逃げずにテスタブルへ直してから書く。詳細は [`refuse-low-value-coverage.md`](rules/refuse-low-value-coverage.md)
 - **検証は exit code ではなく「実行された証拠」で判定する**（exit 0 は「失敗しなかった」であり「そもそも走らなかった」を含む）。新設した検査は集約経路から実行して**その検査の出力が出ることを確認**する。`cmd | tail` の `$?` はパイプ終端の status。詳細は [`verify-execution-not-just-exit-code.md`](rules/verify-execution-not-just-exit-code.md)
 - **新規テストは「壊す変更を 1 つ当てて red を見る」まで確認してから commit する**（green は「正しい」ではなく「その書き方では壊せなかった」）。変異させても green のままのテストは主張を何も守っていないので書き直す。詳細は [`mutation-verify-new-tests.md`](rules/mutation-verify-new-tests.md)
+- **性能を主張するなら、実測値か「未実測である事実 + 実測の trigger」を残す**。数字なしで「削減した」と書かない（機能の issue で「動くはず」と書くのと同じ）。詳細は [`perf-claims-need-measurement.md`](rules/perf-claims-need-measurement.md)
 - **計測・テスト用の shim / wrapper を PATH 先頭に置くときは、実体を絶対パスで解決してから exec する**（相対名だと PATH 先頭の自分自身に解決して無限再帰し、しかも無音で回り続ける）。解決結果が shim 自身の配下でないことを起動時に確認する。詳細は [`path-shim-must-resolve-real-binary.md`](rules/path-shim-must-resolve-real-binary.md)
 - **外部コマンドの出力・終了コードを判定材料にするときは、stdout / stderr / exit code を最初から分離して測る**（`2>&1` や `| head` を通した観測を「実測事実」として設計に書かない。個別 CLI の仕様はルールでなく実装側のコメントを正本にする）。詳細は [`measure-external-cli-streams-separately.md`](rules/measure-external-cli-streams-separately.md)
 - **再利用される道具（スクリプト / CLI / Makefile target / lint ルール / ヘルパー）を新設したら、同じ変更で「入口のドキュメント」を更新する**（その作業手順を持つ skill・領域の CLAUDE.md / README・既存ツールの一覧表）。**ツールのヘッダコメントは入口に数えない**（そのファイルを開く動機は存在を知っている人にしかない）。既存ツールと使い分けが要るなら判断基準を 1 行で書く。詳細は [`new-tool-requires-entrypoint-docs.md`](rules/new-tool-requires-entrypoint-docs.md)
@@ -108,6 +109,7 @@ Opus 5 は既定で「よく喋り・よく書き・スコープを広げ・よ�
 - **「指摘なし」は「正しい」ではなく「その探し方では壊せなかった」**として扱う。不変条件は「壊す方法が見つからなかった」ではなく、テスト・型・設計で固定して初めて閉じる
 - **主張は証拠ではない**。自分/codex/エージェントの「対応済み」「検証済み」「テスト green」は、diff・実行結果・外部基準（spec の test vector / 実サーバ / CI）で裏を取ってから受け入れる。裏の取れない主張は「未検証」として報告に残す
 - **自分で新設した「安全機構」(破壊的操作・後始末・検査/ゲート) は自己レビューで閉じない**。異常系 (対象 0 件 / 依存コマンド失敗 / 権限なし / 並行) を実験で作り、観点を分けた敵対的レビューを最終ゲートにする。詳細は [`adversarial-review-own-safeguards.md`](rules/adversarial-review-own-safeguards.md)
+- **「冗長だから外す」と判断した防御は、外す前に「それがマスクしていた failure mode」を列挙する**。本来の目的に対して冗長なことと、他に何も守っていないことは別。残る防御が単一障害点なら、壊す変異が検出されるか確かめてから外す。詳細は [`list-masked-failure-modes-before-removing-guard.md`](rules/list-masked-failure-modes-before-removing-guard.md)
 - **敵対レビューの出力こそ無検閲で採用しない**。発火条件（入力・順序・環境）が具体的で再現できたものだけ修正し、再現しないものは記録、示せないものは「未確認リスク」として issue / 観測ポイントに落とす。推測に基づく防御コードを足さない（作法の正本は `~/.claude/skills/codex-review/SKILL.md` の「敵対的レビューの作法」）
 
 ## スキルファイル参照

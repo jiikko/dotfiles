@@ -124,6 +124,10 @@ CI 環境で実際に実行されているか**を、同じ commit の中で確�
 ## 関連
 
 - `~/.claude/CLAUDE.md`「レビュー方針」— 敵対的レビューを通す範囲と、出力の検閲作法 (本ルールはその発動条件を「自分が作った安全機構」に拡張したもの)
+- [`list-masked-failure-modes-before-removing-guard.md`](list-masked-failure-modes-before-removing-guard.md) —
+  **姉妹ルール。本ルールは安全機構を「作った」とき、あちらは「外した」とき**が発動条件。
+  「冗長だから外す」で単一障害点を作る形は、本ルールの規律を全部守っていても防げない
+  (実例 2026-08-26 obaket 544)
 - [`mutation-verify-new-tests.md`](mutation-verify-new-tests.md) — 「green は正しさの証明ではない」同思想 (あちらはテスト、こちらは安全機構全般)
 - [`instrument-before-second-fix.md`](instrument-before-second-fix.md) — 推測でなく観測に寄せる同思想
 - [`path-shim-must-resolve-real-binary.md`](path-shim-must-resolve-real-binary.md) — 自作の計測装置そのものが暴走する形 (節 6 の計測が「見えない」に対して、こちらは計測が「壊す」)

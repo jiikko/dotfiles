@@ -72,6 +72,9 @@ git worktree add --detach "$root/../wt-taskB" <base-commit>
 - [`commit-with-pathspec.md`](commit-with-pathspec.md) — 同一 index を複数主体が触る問題。
   本ルールは「同一 working tree を複数主体が書く」版
 - [`mutation-verify-new-tests.md`](mutation-verify-new-tests.md) — 変異検証の手順そのもの。
-  レビュー中に回さない（本ルール）と併せて読む
+  レビュー中に回さない（本ルール）と併せて読む。**本ルールは「自分が並行させるとき」を
+  対象にしているが、同じ checkout を使うのは自分が起こした並行だけではない** —
+  別セッション (別の人・別の Claude) が同じ repo を触っていて自分からは見えない場合の
+  規律は、あちらの「復元の作法」に置いた (既定は worktree)
 - `~/.claude/skills/codex-drive/SKILL.md` の `[2p]` 競作 — 競作では worktree 分離を必須にしている。
   本ルールはそれを**競作以外の並行実装にも広げる**もの
