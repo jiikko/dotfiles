@@ -483,6 +483,14 @@ EOF
   (581 で実際に残らなかった。上の起動例が `./tmp/<タスク>/` を使うのはこのため)。一般則は
   [`verify-execution-not-just-exit-code.md`](../../rules/verify-execution-not-just-exit-code.md) の
   「非同期・background の完了も『成果物』で判定する」節。
+- **異常終了 (capacity 死・timeout・中断) も「全ロス」と決めつけない**。`-s workspace-write` の run は
+  死ぬ前に**編集が途中まで、ときには全部残っている**。実例 (2026-08-25 obaket 571): 632k tokens 消費後に
+  「Selected model is at capacity」で死んだ run は、突き合わせたら**要求項目が全部完了していた**。
+  再投げの前に `git status --short` と要求項目を突き合わせる (全ロス前提の再投げは**二重編集**を作る)。
+  上の空振り判定と同じ形で、違うのは向きだけ — あちらは「まだ走っている」を「壊れた」と読む誤り、
+  こちらは「異常終了した」を「何もしなかった」と読む誤り。
+  なお capacity で codex が使えない状態が続くなら、独立視点の agent で代替してよい
+  (2026-08-25 の実績: 敵対 round と `[7]` 検収を agent で代替し、どちらも実害を検出した)。
 - コマンド実行ツールの timeout は 900000ms。
 
 ### 2p. 実装の競作（N-of-M・方針が割れるマイルストーンのみ）
