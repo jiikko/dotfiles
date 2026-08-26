@@ -45,3 +45,29 @@ out, err := cmd.Output()      // ← cmd.WaitDelay が未設定
 **実害を実測で再現できてはいない**。それでも直す価値があるのは、
 規律 (「`.Output()` には必ず WaitDelay」) が 9 箇所中 8 箇所で守られていて、
 1 箇所だけ黙って外れている状態そのものが次の複製元になるため。
+
+---
+
+## 対応 (2026-08-26)
+
+「1 行足す」ではなく**忘れられない形**にした:
+
+- `src/glogx/subproc/` を新設し、`WaitDelay` と `GitOpTimeout` の正本をそこへ置いた。
+  README の基準「サブパッケージを切るのは実在する第二消費者があるとき」に合致する
+  (`issues` が実際に消費者で、消費できないから値を写していた)
+- `subproc.CommandContext(ctx, name, args...)` を用意し、`issues/discover.go` はこれを使う。
+  WaitDelay を張るのが「書く人が覚えているか」に依存しない
+- `issues/discover.go` の `repoRootTimeout = 30s` の写しは削除し、`subproc.GitOpTimeout` を参照
+- `usage.SubprocessWaitDelay` / `gitlog.go` の `gitOpTimeout` は別名として残した
+  (既存の 12 箇所と、値を参照している既存コメントをそのまま保つため)
+
+### 再発を止める
+
+`src/glogx/waitdelay_discipline_test.go` を新設。ソースを走査して
+「`exec.CommandContext` を呼んだら 8 行以内に `WaitDelay` が要る」を強制する。
+例外は行内に `subproc: no-waitdelay` と理由を書く (現在 1 件: `xdg-open` の `Run()` は
+stdout/stderr が /dev/null 直結でパイプを作らないため不要)。
+
+**この検査が本当に効くことを、修正を revert して確認した**: `issues/discover.go` を素の
+`exec.CommandContext` に戻すと、その行を名指しで落ちる。走査対象 0 件も fail にしてある
+(パス変更や WalkDir 失敗で検査が静かに消えるのを防ぐ)。

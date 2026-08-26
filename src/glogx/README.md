@@ -12,7 +12,7 @@ src/glog の完全コピーから出発しており、当時 github.go / render.
 一本化 (分離不要のまま終わり) / 同じ修正を両方へ入れる事態が 2 回起きたら core を抽出」の
 二択で再評価すると決めていた。結果は前者: **glog は 2026-07-22 に退役済み (`40d4a28`) で、
 重複問題ごと消滅した**。glogx は flat な package main を維持する (サブパッケージを切る基準は
-「実在する第二消費者」か「明示的な分離要望」— issues/ termsafe/ usage/ の前例)。
+「実在する第二消費者」か「明示的な分離要望」— issues/ termsafe/ usage/ subproc/ の前例)。
 
 GitHub Actions / GitHub Checks の結果をコミットごとに添える `git log` ラッパー。
 
@@ -355,7 +355,7 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   `_go-project.yml` を呼び、lint と test を回す (src/glogx を触った push/PR のときだけ起動)
 - Bubble Tea は v2 (`charm.land/bubbletea/v2`)。移行で変えた点・採らなかった v2 機能・上げるときに
   測り直すこと (幅モデルの一致) は [`docs/glogx-bubbletea-v2.md`](../../docs/glogx-bubbletea-v2.md)
-- 実装は flat な `package main` (+ bubbletea 非依存の `usage/` サブパッケージ)。主な境界:
+- 実装は flat な `package main` (+ bubbletea 非依存の `usage/` / `subproc/` サブパッケージ)。主な境界:
   `options.go` (引数 allowlist) / `gitlog.go` (git 実行と %x1e/%x1f レコード解析) /
   `github.go` (repo 解決・GraphQL・集約) / `cache.go` (XDG キャッシュ) /
   `external_commands.go` (git/tmux/claude/browser/clipboard の外部プロセスラッパー) /
@@ -366,6 +366,10 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   `usage_overlay.go` / `pr_status_overlay.go` / `action_modal.go` / `toast.go` = 右下の通知
   スタック。新しい通知は上に積まれ古い通知は下から抜ける (最大 3 枚)) /
   `usage/` (Claude Code の /usage と codex rateLimits の取得・整形。単独コマンドへ切り出し可能) /
+  `subproc/` (外部プロセス実行の安全弁 = WaitDelay と git の timeout。main / issues / usage の
+  3 つが外部コマンドを起動するので、値を main に置くと下位から呼べず写しになる。
+  **新しい外部コマンド実行は `subproc.CommandContext` を使う** — 素の `exec.CommandContext` は
+  `waitdelay_discipline_test.go` が落とす) /
   `width.go` (表示幅の単一情報源 = ansi.StringWidth への一本化と絵文字正規化) / `main.go` (配線)
 - `tools/width-probe/`: 端末が各文字に何セル割り当てるかを CPR (CSI 6n) で端末自身に
   問い合わせる調査ツール。幅ズレの原因層 (glogx / 描画エンジン / tmux / 端末) を推測でなく

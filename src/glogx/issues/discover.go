@@ -2,12 +2,11 @@ package issues
 
 import (
 	"context"
+	"glogx/subproc"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 )
 
 // issue ディレクトリの探索。
@@ -33,20 +32,15 @@ var skipDirs = map[string]bool{
 	"tmp": true, ".venv": true, ".next": true, "coverage": true, ".terraform": true,
 }
 
-// repoRootTimeout は起点を解決する git の上限。
-//
-// TUI の tea.Cmd (goroutine) から呼ぶ git には timeout を付ける、が glogx の規律
-// (gitlog.go の runGitTimeout / gitOpTimeout。ネットワークマウント・.git ロック競合・hook の
-// stdin 待ちでハングした git が goroutine ごと残り続けるのを防ぐ)。このパッケージは glogx 本体を
-// import できないので値だけ揃える。
-const repoRootTimeout = 30 * time.Second
-
 // RepoRoot は探索の起点を返す。git repo の toplevel を優先し、取れなければ cwd をそのまま
 // 使う (git 管理外のディレクトリでも issues/ があれば見えるように)。
 func RepoRoot(cwd string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), repoRootTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), subproc.GitOpTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
+	// ⚠️ subproc.CommandContext を使うこと (素の exec.CommandContext だと WaitDelay が抜ける)。
+	// 下の Output() は os.Pipe と copy goroutine を作るので、ctx の deadline だけでは
+	// 「子が残した孫がパイプを握って Wait が戻らない」形を防げない (issue 105)。
+	cmd := subproc.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
 	cmd.Dir = cwd
 	out, err := cmd.Output()
 	if err != nil {

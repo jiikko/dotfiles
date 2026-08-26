@@ -275,7 +275,9 @@ var openInBrowser = func(url string) error {
 		// ある (既知挙動)。tea.Cmd の goroutine で同期 Run するため時間で区切る (issue 029 P3)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		return exec.CommandContext(ctx, "xdg-open", url).Run()
+		// subproc: no-waitdelay — Run() は stdout/stderr が /dev/null 直結でパイプを作らないため、
+		// 「孫がパイプを握って Wait が戻らない」形が起きない (ctx の kill だけで足りる)。
+		return exec.CommandContext(ctx, "xdg-open", url).Run() // subproc: no-waitdelay
 	}
 }
 

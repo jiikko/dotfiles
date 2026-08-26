@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"glogx/subproc"
 )
 
 // Window は 1 つの利用枠 (5h セッション / weekly) の残量とリセット時刻。
@@ -59,17 +61,9 @@ type claudeResult struct {
 	IsError bool   `json:"is_error"`
 }
 
-// SubprocessWaitDelay は ctx キャンセル/プロセス終了後に子孫が I/O パイプを握り続けていても
-// Wait() を確実に戻すための猶予 (Go 1.20+ の Cmd.WaitDelay)。exec.CommandContext は ctx
-// キャンセルで直接の子 (claude / codex) だけを kill するため、子が親 stdout の write 端を継承
-// した孫プロセスを残すと、直接の子を kill しても Wait() がその孫がパイプを閉じるまでブロック
-// しうる。WaitDelay を設けると、キャンセル/終了からこの時間でパイプを強制クローズして Wait を
-// 返す。プロセスが正常終了して自分でパイプを閉じる通常ケースには影響しない安全弁
-// (fetchTimeout=10s に対して十分小さく、かつ正当な出力の取りこぼしが起きない程度に確保)。
-//
-// claude を起動するのはこのパッケージだけではない (glogx 本体の claude update) ため公開する:
-// 値を各所で持つと、この安全弁を持つ経路と持たない経路が静かに分かれる。
-const SubprocessWaitDelay = 2 * time.Second
+// SubprocessWaitDelay は subproc.WaitDelay の別名 (このパッケージの外からも参照されている)。
+// 値と理由の正本は glogx/subproc。
+const SubprocessWaitDelay = subproc.WaitDelay
 
 // Fetch は `claude -p "/usage"` を実行して結果をパースする。
 //

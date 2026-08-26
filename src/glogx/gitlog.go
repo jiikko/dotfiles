@@ -8,9 +8,10 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"time"
 
 	"glogx/usage"
+
+	"glogx/subproc"
 )
 
 // コミット境界の識別は人間向け出力の正規表現ではなく制御文字レコードで行う (issue の設計)。
@@ -66,11 +67,9 @@ func runGit(args ...string) (string, error) {
 	return runGitCmd(exec.Command("git", args...))
 }
 
-// gitOpTimeout は対話中に非同期発行されるローカル git 実行の上限。ローカル操作としては
-// 十分寛大な値で、ネットワークマウント・.git ロック競合・hook の stdin 待ちでハングした
-// git が goroutine ごと残り続けるのを防ぐ (issue 029 P2。ネットワーク経路が全て
-// context.WithTimeout で守られているのと同じ規律)。
-const gitOpTimeout = 30 * time.Second
+// gitOpTimeout は subproc.GitOpTimeout の別名 (値と理由の正本はそちら)。issues パッケージも
+// 同じ上限で git を起動するため、値は共有の leaf パッケージに置いてある。
+const gitOpTimeout = subproc.GitOpTimeout
 
 // runGitTimeout は runGit の timeout 付き版。TUI の tea.Cmd (goroutine) から呼ぶ git は
 // こちらを使う: ハングしても q で抜けた後に子プロセスが残らない。
