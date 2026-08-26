@@ -426,9 +426,11 @@ EOF
 ### 2. codex に実装させる（write 権限）
 
 ```bash
-# 最終応答の保存先は ./tmp ではなくセッション scratchpad 等の一意パスに。`</dev/null` 必須 (codex-review ルール)。
+# 最終応答・stdout・rc は **run 固有の永続パス** (repo の ./tmp/<タスク>/ 等) に保存する。
+# セッション scratchpad はセッション終了で消えるため、後から「空振りだったのか遅れて完了したのか」を
+# 診断できない (2026-08-25 obaket 581 で実際に証拠が残らなかった)。`</dev/null` 必須 (codex-review ルール)。
 # 実装も effort **max** (effort 表。全フェーズ固定)。モデルは luna 固定。
-last_message="<scratchpad>/codex-drive.$(date +%Y%m%d-%H%M%S).$$.last-message.txt"
+last_message="./tmp/<タスク>/impl.out.md"; log="./tmp/<タスク>/impl.log"
 command codex exec -s workspace-write -m gpt-5.6-luna -c model_reasoning_effort="max" \
   --ephemeral -o "$last_message" </dev/null "$(cat <<'EOF'
 <タスク>。git commit はしない (人間が検証して commit する)。ファイルを書き、プロジェクト標準の build/test が green に
@@ -452,7 +454,7 @@ command codex exec -s workspace-write -m gpt-5.6-luna -c model_reasoning_effort=
 - 確証が持てない点は決め打ちせず ⓥ コメントを残し保守的に実装する。
 終わったら、変更点・検証結果・未完部分を要約。
 EOF
-)" 2>&1 | tail -40
+)" > "$log" 2>&1; rc=$?; echo "rc=$rc" | tee "$log.rc"; tail -40 "$log"
 ```
 
 - **モデルはマイルストーンの性質で振らない** (大原則のモデル振り分け): 機械的移植・boilerplate でも、
@@ -475,7 +477,10 @@ EOF
   実害 (2026-08-25 obaket 581): 4 本を空振りと報告したが**少なくとも 2 本は遅れて完了**していた。
   さらに、空振り判定後に Claude が書き直したテストを、遅れて完了した codex の出力が同じパスに
   上書きし、**commit されたのは codex 版だった** (テスト名が同じで取り違えた)。誤判定のコストは
-  待ち直しではなく「**codex が壊れている**」という誤った因果を作ること。一般則は
+  待ち直しではなく「**codex が壊れている**」という誤った因果を作ること。
+  ⚠️ **判定できるように、出力先は run 固有の永続パスにする**。`-o` と stdout をセッション
+  scratchpad に出すと、セッション終了で消えて「空振りだったのか」を後から一切検証できない
+  (581 で実際に残らなかった。上の起動例が `./tmp/<タスク>/` を使うのはこのため)。一般則は
   [`verify-execution-not-just-exit-code.md`](../../rules/verify-execution-not-just-exit-code.md) の
   「非同期・background の完了も『成果物』で判定する」節。
 - コマンド実行ツールの timeout は 900000ms。
