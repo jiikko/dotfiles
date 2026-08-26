@@ -44,3 +44,19 @@ glogx は `main` / `issues` / `usage` / `termsafe` / `widthenv` に分かれて�
 `fastDispWidth` の受理集合を守っている総当たりテスト
 (`TestAcceptedSymbolsNeverCombineWithEachOther` 等) も一緒に移すこと。
 移し忘れると「fast-path はあるが誰も検証していない」状態になり、今より悪化する。
+
+---
+
+## 進捗 (2026-08-26)
+
+[issue 105](105-bug-glogx-discover-missing-waitdelay.md) の対応で **3 つのうち 1 つが解決した**。
+
+- ✅ **子プロセスの猶予**: `src/glogx/subproc/` を新設し `WaitDelay` / `GitOpTimeout` を集約。
+  `issues/discover.go` の値の写し (`repoRootTimeout`) は削除済み。
+  この issue が言っていた「`termsafe` と同じ形の leaf パッケージ」が実在するようになったので、
+  **残り 2 つの受け皿はもうある** (新規にパッケージを作る判断は不要)
+- ⬜ **表示幅 `dispWidth`**: 3 定義のまま。`main` だけが fast-path を持つ。
+  移すなら `fastDispWidth` の受理集合を守っている総当たりテストも一緒に移すこと
+- ⬜ **基本 ANSI 色**: 3 定義のまま (`ansiRed` / `cRed` / `cGreen`)
+
+trigger は据え置き (「幅か色で実際に drift が出たとき」または「4 箇所目の写しを足したくなったとき」)。

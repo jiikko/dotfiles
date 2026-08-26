@@ -494,8 +494,11 @@ func paint(s, color string, colored bool) string {
 }
 
 // clipToWidth は端末幅を超える行を切り詰める (インライン TUI で折り返しが再描画範囲を
-// ずらすのを防ぐ: issue の懸念点)。ANSI を除いた実効幅で判定し、超過時は色を落として
-// 切り詰める (色コードを保ったままの部分切りは複雑さに見合わない)。静的出力では使わない。
+// ずらすのを防ぐ: issue の懸念点)。ANSI を除いた実効幅で判定し、超過時は末尾に `…` を付けて
+// 切り詰める。**SGR は保持する**。静的出力では使わない。
+//
+// truncateKeepANSI との違いは `…` を付けるかどうかだけ (どちらも色は残る)。切り詰めた行の
+// 表示幅も要る hot path では clipMeasure を使う (幅の二度測りを避けるため)。
 func clipToWidth(line string, width int) string {
 	if width <= 0 {
 		// 幅 0 以下に収まる表示は空しかない。以前はそのまま返しており、呼び出し側の
@@ -512,8 +515,6 @@ func clipToWidth(line string, width int) string {
 	if dispWidth(line) <= width {
 		return line
 	}
-	// ansi.Truncate は ANSI を解しつつ幅で切り、SGR を保持する (旧実装は色を落として
-	// いたが、色を残す方が望ましく複雑さも増えない)。
 	return truncateDisp(line, width, "…")
 }
 
@@ -579,23 +580,23 @@ func reapplyAfterReset(text, bg string) string {
 }
 
 // isANSITerminator は ESC シーケンス中の rune r がシーケンスを終端する最終バイトか
-// を返す (CSI の最終バイトは英字)。truncateKeepANSI / dropToColumn / stripANSI が
+// を返す (CSI の最終バイトは英字)。自前で ESC 列を走査する dropToColumn / stripANSI が
 // 同じ終端判定を共有し、OSC 等への対応拡張時に 1 箇所だけ直せばよいようにする。
 func isANSITerminator(r rune) bool {
 	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
 }
 
-// truncateKeepANSI は s を表示幅 width まで切り詰めるが SGR エスケープは保持する
-// (可視文字だけを幅に数える)。clipToWidth が切り詰め時に色を捨てるのと対照的に、
-// overlay で覆う行の「見えている左側」を色付きのまま残すために使う。末尾に reset は
-// 付けない (開いたままの色は呼び出し側が境界で閉じる)。
+// truncateKeepANSI は s を表示幅 width まで切り詰める (可視文字だけを幅に数え、SGR は保持)。
+// clipToWidth との違いは **末尾に `…` を付けないこと**だけ: overlay で覆う行の「見えている
+// 左側」をそのまま残す用途なので、切れたことを示す記号を足すと覆い先とつながって見える。
+//
+// 末尾に reset は付かない。ansi.Truncate は**自分で reset を足さず、入力にあった SGR を
+// 持ち越すだけ**なので、色を開いたままの入力は開いたまま返る (実測 2026-08-26)。
+// 開いた色は呼び出し側 (overlay/toast) が境界で閉じる。
 func truncateKeepANSI(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	// ansi.Truncate は SGR を保持したまま表示幅で切る。切り詰め位置で開いていた色は
-	// 末尾に reset が付いて閉じられるが、呼び出し側 (overlay/toast) はいずれも直後に
-	// 自前の reset か box を挟むため無害。
 	return truncateDisp(s, width, "")
 }
 

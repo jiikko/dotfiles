@@ -607,3 +607,46 @@ func TestRenderLinesVerbatimDecoratesHeaderOnly(t *testing.T) {
 		t.Errorf("折り返しで文字が欠けた: あ %d 文字 (want 60)", count)
 	}
 }
+
+// clipToWidth と truncateKeepANSI の**実際の差**を固定する。
+//
+// なぜ必要か (issue 107): 両者の doc は長らく「clipToWidth は色を落とす / truncateKeepANSI は
+// 保持する」と対比していたが、clipToWidth が ansi.Truncate へ移った時点で**どちらも色を保持
+// する**ようになり、記述だけが旧実装のまま残った。読んだ人が「色を残したいから」という理由で
+// 誤った方を選ぶ状態だったので、差 (= `…` の有無) を実行で pin する。
+func TestClipVsTruncateKeepANSIDifference(t *testing.T) {
+	const colored = "\x1b[31mABCDEF\x1b[0m"
+
+	clipped := clipToWidth(colored, 3)
+	kept := truncateKeepANSI(colored, 3)
+
+	// 1. どちらも SGR を保持する (ここが緩むと「色を落とす」時代へ逆戻り)
+	if !strings.Contains(clipped, "\x1b[31m") {
+		t.Errorf("clipToWidth が色を落とした: %q", clipped)
+	}
+	if !strings.Contains(kept, "\x1b[31m") {
+		t.Errorf("truncateKeepANSI が色を落とした: %q", kept)
+	}
+
+	// 2. 差は `…` の有無だけ
+	if !strings.Contains(clipped, "…") {
+		t.Errorf("clipToWidth は切り詰めを `…` で示すはず: %q", clipped)
+	}
+	if strings.Contains(kept, "…") {
+		t.Errorf("truncateKeepANSI は `…` を付けないはず (覆い先とつながって見える): %q", kept)
+	}
+}
+
+// ansi.Truncate は自分で reset を足さない (入力にあった SGR を持ち越すだけ) ことを固定する。
+// truncateKeepANSI の doc 「末尾に reset は付かない。開いた色は呼び出し側が閉じる」の根拠。
+func TestTruncateKeepANSIDoesNotCloseOpenStyle(t *testing.T) {
+	open := "\x1b[31mABCDEF" // 色を開いたまま閉じない入力
+	got := truncateKeepANSI(open, 3)
+	if strings.Contains(got, "\x1b[0m") {
+		t.Fatalf("開いた色を勝手に閉じている (呼び出し側の境界処理と二重になる): %q", got)
+	}
+	closed := truncateKeepANSI("\x1b[31mABCDEF\x1b[0m", 3)
+	if !strings.Contains(closed, "\x1b[0m") {
+		t.Fatalf("入力にあった reset が持ち越されていない: %q", closed)
+	}
+}
