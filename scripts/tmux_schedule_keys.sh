@@ -31,8 +31,12 @@ STATE_DIR="${TMUX_SCHEDULE_KEYS_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/tmux-
 LOG="${XDG_CACHE_HOME:-$HOME/.cache}/tt-schedule-keys.log"
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 TOAST="$(dirname "$SELF")/../bin/tmux-toast"
-# 時間・分の上限 (桁数)。無制限だと 64bit の掛け算があふれて別の (短い) 時刻に予約される
+# 自由入力の数値の上限 (桁数)。無制限だと 64bit の掛け算があふれて別の (短い) 時刻に予約される
 MAX_DIGITS=5
+# 「いつ送る？」のプリセット。値は秒。末尾 2 つは逃げ道 (時刻指定 / 自由入力)
+PRESETS=("5 分後:300" "10 分後:600" "15 分後:900" "30 分後:1800" "1 時間後:3600" "2 時間後:7200" "4 時間後:14400" "8 時間後:28800")
+CHOICE_CLOCK="時刻を指定… (HH:MM)"
+CHOICE_FREE="自由入力… (90 / 1h30m / 1:30)"
 # fire が .pid を書くまでの猶予。これより古い .pid 無し .job だけを stale 候補にする
 PID_GRACE_SECS=60
 
@@ -95,29 +99,73 @@ prune_stale() {
   done
 }
 
+# 自由入力の相対時間 → 秒。受ける形: "90" (分) / "1h30m" / "1h" / "30m" / "1h30" / "1:30" (h:mm)。
+# 各数値は MAX_DIGITS 桁以内。0 秒・不正は 1
+parse_duration_secs() {
+  local in="${1// /}" h=0 m=0 d="[0-9]{1,$MAX_DIGITS}"
+  if [[ "$in" =~ ^($d)$ ]]; then m=${BASH_REMATCH[1]}
+  elif [[ "$in" =~ ^($d)[hH]($d)[mM]?$ ]]; then h=${BASH_REMATCH[1]}; m=${BASH_REMATCH[2]}
+  elif [[ "$in" =~ ^($d)[hH]$ ]]; then h=${BASH_REMATCH[1]}
+  elif [[ "$in" =~ ^($d)[mM]$ ]]; then m=${BASH_REMATCH[1]}
+  elif [[ "$in" =~ ^($d):([0-9]{1,2})$ ]]; then h=${BASH_REMATCH[1]}; m=${BASH_REMATCH[2]}; (( 10#$m <= 59 )) || return 1
+  else return 1; fi
+  local total=$(( 10#$h * 3600 + 10#$m * 60 ))
+  (( total > 0 )) || return 1
+  printf '%s\n' "$total"
+}
+
+# 時刻 "HH:MM" → 発火 epoch。今日のその時刻が過ぎていれば翌日。$2=now epoch, $3=now の "HH:MM"
+# (date に依存させず算術だけで出す。DST 切替日の 1 時間ズレは許容)
+parse_clock_epoch() {
+  local hm=$1 now=$2 now_hm=$3
+  [[ "$hm" =~ ^([0-9]{1,2}):([0-9]{2})$ ]] || return 1
+  local h=$(( 10#${BASH_REMATCH[1]} )) m=$(( 10#${BASH_REMATCH[2]} ))
+  (( h <= 23 && m <= 59 )) || return 1
+  [[ "$now_hm" =~ ^([0-9]{2}):([0-9]{2})$ ]] || return 1
+  local nh=$(( 10#${BASH_REMATCH[1]} )) nm=$(( 10#${BASH_REMATCH[2]} ))
+  local midnight=$(( now - nh * 3600 - nm * 60 )) target
+  target=$(( midnight + h * 3600 + m * 60 ))
+  (( target > now )) || target=$(( target + 86400 ))
+  printf '%s\n' "$target"
+}
+
+# 「いつ送る？」の対話。発火 epoch を stdout に返す。キャンセル・不正は 1
+ask_when() {
+  local label=$1 now=$2 choice preset in secs
+  choice="$({ for preset in "${PRESETS[@]}"; do printf '%s\n' "${preset%%:*}"; done; printf '%s\n%s\n' "$CHOICE_CLOCK" "$CHOICE_FREE"; } \
+    | gum choose --header "⏰ いつ送る？ (対象: $label)" --height 12)" || return 1
+  case "$choice" in
+    "$CHOICE_CLOCK")
+      in="$(gum input --header "🕒 何時に送る？ (HH:MM。過ぎていれば明日)" --placeholder "15:30")" || return 1
+      parse_clock_epoch "$in" "$now" "$(date +%H:%M)" \
+        || { gum style --foreground 1 "✗ HH:MM で入力 (例 15:30)"; sleep 1.2; return 1; } ;;
+    "$CHOICE_FREE")
+      in="$(gum input --header "⏱  どれくらい後？ (90 = 90分 / 1h30m / 1:30)" --placeholder "1h30m")" || return 1
+      secs="$(parse_duration_secs "$in")" \
+        || { gum style --foreground 1 "✗ 90 / 1h30m / 1:30 の形で (0 と ${MAX_DIGITS} 桁超は不可)"; sleep 1.2; return 1; }
+      printf '%s\n' $(( now + secs )) ;;
+    *)
+      for preset in "${PRESETS[@]}"; do
+        [[ "${preset%%:*}" == "$choice" ]] && { printf '%s\n' $(( now + ${preset##*:} )); return 0; }
+      done
+      return 1 ;;
+  esac
+}
+
 cmd_new() {
-  local pane label sock h m text total at id
+  local pane label sock now text total at id
   pane="$(tmux display-message -p '#{pane_id}')" || return 1
   label="$(pane_label "$pane")"
   # fire は run-shell -b の子 (サーバ環境を継承) なので、bare tmux がどの socket へ行くか保証が無い。
   # 予約時の socket を job に残し、fire 側で $TMUX にして同じサーバへ向ける
   sock="$(tmux display-message -p '#{socket_path}' 2>/dev/null || true)"
 
-  h="$(gum input --header "⏰ 何時間後？ (対象: $label)" --placeholder "0" --value "0")" || return 1
-  m="$(gum input --header "⏰ 何分後？ (対象: $label)" --placeholder "0" --value "0")" || return 1
-  h="${h:-0}"; m="${m:-0}"
-  local re="^[0-9]{1,$MAX_DIGITS}\$"
-  if ! [[ "$h" =~ $re && "$m" =~ $re ]]; then
-    gum style --foreground 1 "✗ 時間・分は 0 以上 ${MAX_DIGITS} 桁以内の整数で" ; sleep 1.2; return 1
-  fi
-  total=$(( h * 3600 + m * 60 ))
-  if (( total <= 0 )); then
-    gum style --foreground 1 "✗ 0 時間 0 分は予約できない" ; sleep 1.2; return 1
-  fi
+  now=$(date +%s)
+  at="$(ask_when "$label" "$now")" || return 1
+  total=$(( at - now ))
   text="$(gum input --header "⌨️  入力する文字列 (末尾に Enter を送る)" --placeholder "make test" --width 60)" || return 1
   [[ -n "$text" ]] || { gum style --foreground 1 "✗ 空文字は予約できない"; sleep 1.2; return 1; }
 
-  at=$(( $(date +%s) + total ))
   gum confirm --default=false --affirmative "予約する" --negative "やめる" \
     "$(printf '%s に %s後 (%s) に送る:\n  %s' "$label" "$(fmt_remaining "$total")" "$(date -r "$at" '+%H:%M' 2>/dev/null || date -d "@$at" '+%H:%M')" "$text")" \
     || return 1

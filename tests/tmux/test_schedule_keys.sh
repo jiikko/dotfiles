@@ -4,12 +4,13 @@
 #
 # 固定する不変条件:
 #   - 対象の固定: 冒頭で解決した pane_id がそのまま job に書かれ、fire の send-keys -t に渡ること
-#   - 入力検証: 0h0m / 非数値 / 空文字 / confirm 拒否 / gum 未導入 では job も run-shell も生まれない
+#   - いつ送るか: プリセット (choose の行) / 自由入力 (90・1h30m・1:30 → 秒) / 時刻指定 (HH:MM、過去なら翌日)
+#     が正しい発火 epoch になる。0・非数値・桁超・不正な時刻・choose キャンセル・空文字・confirm 拒否・
+#     gum 未導入 では job も run-shell も生まれない
 #   - fire はリテラル送信 (send-keys -l) + 別呼び出しの Enter。"Enter" という文字列がキー名に化けない
 #   - fire は発火時刻まで送らない (早すぎる送信 = 予約の意味が無い)
 #   - 送り先 pane が消えていたら (send-keys が失敗したら) Enter を送らず、無音 (stdout/stderr 空・
 #     exit 0) で job を掃き、成功ログを書かない
-#   - 入力の桁数上限 (64bit の掛け算あふれで別の時刻に予約されるのを防ぐ)
 #   - .pid の数字だけで kill しない: 無関係なプロセスが同じ pid を持っていても kill せず、stale として掃く
 #   - 一覧の取消は表示文字列の逆引きでなく行頭の連番で選ぶ (表示が一致する 2 件で先頭に化けない)
 #   - list からの取消は sleeper を kill し job/pid を消す。pid が死んだ stale job は list が掃く
@@ -54,8 +55,9 @@ exit 0
 EOS2
 chmod +x "$TMP_DIR/bin/tmux"; cp "$TMP_DIR/bin/tmux" "$TMP_DIR/bin_nogum/tmux"
 
-# stub gum: input は STUB_GUM_INPUTS (改行区切り) を先頭から 1 つずつ返す / confirm は STUB_GUM_EXIT /
-# choose は stdin の STUB_GUM_CHOOSE_INDEX 行目 (1 始まり) を返す / style は素通し
+# stub gum: input は STUB_GUM_QUEUE のファイルから先頭 1 行ずつ返す / confirm は STUB_GUM_EXIT /
+# choose は stdin の STUB_GUM_CHOOSE_INDEX 行目 (1 始まり) を返す (STUB_GUM_CHOOSE_EXIT でキャンセル) /
+# style は素通し
 cat > "$TMP_DIR/bin/gum" <<'EOS2'
 #!/bin/sh
 echo "gum $*" >> "$CALLS"
@@ -65,17 +67,18 @@ case "$1" in
     [ -s "$q" ] || exit 1
     head -n1 "$q"; tail -n +2 "$q" > "$q.tmp"; mv "$q.tmp" "$q"; exit 0 ;;
   confirm) exit "${STUB_GUM_EXIT:-1}" ;;
-  choose)  sed -n "${STUB_GUM_CHOOSE_INDEX:-1}p"; exit 0 ;;
+  choose)  [ -n "${STUB_GUM_CHOOSE_EXIT:-}" ] && exit "$STUB_GUM_CHOOSE_EXIT"; sed -n "${STUB_GUM_CHOOSE_INDEX:-1}p"; exit 0 ;;
   style)   shift; while [ $# -gt 0 ] && [ "${1#-}" != "$1" ]; do shift 2; done; printf '%s\n' "$*"; exit 0 ;;
 esac
 exit 0
 EOS2
 chmod +x "$TMP_DIR/bin/gum"
 
-# stub date: `date +%s` だけ STUB_NOW で固定 (予約時刻の算術を決定論化)。他は実 date へ
+# stub date: `date +%s` を STUB_NOW、`date +%H:%M` を STUB_NOW_HM で固定 (予約時刻の算術を決定論化)。他は実 date へ
 cat > "$TMP_DIR/bin/date" <<'EOS2'
 #!/bin/sh
 [ -n "${STUB_NOW:-}" ] && [ "$*" = "+%s" ] && { printf '%s\n' "$STUB_NOW"; exit 0; }
+[ -n "${STUB_NOW_HM:-}" ] && [ "$*" = "+%H:%M" ] && { printf '%s\n' "$STUB_NOW_HM"; exit 0; }
 exec /bin/date "$@"
 EOS2
 chmod +x "$TMP_DIR/bin/date"; cp "$TMP_DIR/bin/date" "$TMP_DIR/bin_nogum/date"
@@ -100,38 +103,77 @@ RUN_OUT="$TMP_DIR/out.log"; RUN_ERR="$TMP_DIR/err.log"
 jobs_count() { find "$TMUX_SCHEDULE_KEYS_DIR" -name '*.job' 2>/dev/null | wc -l | tr -d ' '; }
 reset_state() { rm -rf "$TMUX_SCHEDULE_KEYS_DIR"; reset_calls; }
 
-printf '## new: 予約の生成\n'
-reset_state; queue 1 30 "make test"
-STUB_NOW=1000 STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" new
+# choose の行: 1..8 = プリセット (5m 10m 15m 30m 1h 2h 4h 8h) / 9 = 時刻指定 / 10 = 自由入力
+IDX_CLOCK=9; IDX_FREE=10
+
+printf '## new: 予約の生成 (プリセット)\n'
+reset_state; queue "make test"
+STUB_NOW=1000 STUB_GUM_EXIT=0 STUB_GUM_CHOOSE_INDEX=5 run "$STUB_PATH" "$SCRIPT" new
 [[ "$RC" -eq 0 ]] || { printf '✗ new が exit %s\n' "$RC"; cat "$RUN_ERR"; exit 1; }
 [[ "$(jobs_count)" == 1 ]] || { printf '✗ job が 1 件でない (%s)\n' "$(jobs_count)"; exit 1; }
 job="$(ls "$TMUX_SCHEDULE_KEYS_DIR"/*.job)"; id="$(basename "$job" .job)"
 [[ "$(sed -n 1p "$job")" == "%5" ]] || { printf '✗ job の pane が固定した %%5 でない: %s\n' "$(sed -n 1p "$job")"; exit 1; }
-[[ "$(sed -n 2p "$job")" == "6400" ]] || { printf '✗ 発火 epoch が now+1h30m (6400) でない: %s\n' "$(sed -n 2p "$job")"; exit 1; }
+[[ "$(sed -n 2p "$job")" == "4600" ]] || { printf '✗ 「1 時間後」の発火 epoch が now+3600 (4600) でない: %s\n' "$(sed -n 2p "$job")"; exit 1; }
 [[ "$(sed -n 3p "$job")" == "make test" ]] || { printf '✗ 文字列が保存されていない: %s\n' "$(sed -n 3p "$job")"; exit 1; }
-printf '✓ job = 固定 pane / now+1h30m / 文字列 (空白保持)\n'
+printf '✓ job = 固定 pane / プリセット 5 行目 (1 時間後) = now+3600 / 文字列 (空白保持)\n'
 assert_called "tmux run-shell -b '$SCRIPT' fire '$id'" "sleeper を run-shell -b (サーバの子) として起動"
 grep -E '^gum confirm .*--default=false' "$CALLS" >/dev/null || { printf '✗ 確認が --default=false でない\n'; exit 1; }
 printf '✓ 確認は --default=false\n'
-
-printf '\n## new: 弾かれる入力\n'
-for bad in "0 0 make" "x 5 make" "1 -5 make" "5124095576030432 0 make" "0 123456 make"; do
-  reset_state
-  # shellcheck disable=SC2086 # 意図的に単語分割して 3 入力にする
-  queue $bad
-  STUB_NOW=1000 STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" new
-  [[ "$RC" -ne 0 && "$(jobs_count)" == 0 ]] || { printf '✗ 入力 [%s] が予約された (RC=%s)\n' "$bad" "$RC"; exit 1; }
-  assert_not_called "run-shell" "入力 [$bad] → run-shell も呼ばれない"
+# プリセットの両端も pin (行と値の対応が崩れると別の時刻に予約される)
+for pair in "1:1300" "8:29800"; do
+  reset_state; queue "x"
+  STUB_NOW=1000 STUB_GUM_EXIT=0 STUB_GUM_CHOOSE_INDEX="${pair%%:*}" run "$STUB_PATH" "$SCRIPT" new
+  [[ "$(sed -n 2p "$TMUX_SCHEDULE_KEYS_DIR"/*.job 2>/dev/null)" == "${pair##*:}" ]] \
+    || { printf '✗ プリセット %s 行目の発火 epoch が %s でない\n' "${pair%%:*}" "${pair##*:}"; exit 1; }
 done
-reset_state; queue 0 5 ""
-STUB_NOW=1000 STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" new
+printf '✓ プリセット 1 行目 = 5 分後 / 8 行目 = 8 時間後\n'
+
+printf '\n## new: 自由入力 (相対時間の書式)\n'
+for pair in "1h30m:6400" "90:6400" "1:30:6400" "45m:3700" "2h:8200" "1H30:6400" "1:05:4900"; do
+  in="${pair%:*}"; want="${pair##*:}"
+  reset_state; queue "$in" "make test"
+  STUB_NOW=1000 STUB_GUM_EXIT=0 STUB_GUM_CHOOSE_INDEX=$IDX_FREE run "$STUB_PATH" "$SCRIPT" new
+  got="$(sed -n 2p "$TMUX_SCHEDULE_KEYS_DIR"/*.job 2>/dev/null)"
+  [[ "$RC" -eq 0 && "$got" == "$want" ]] || { printf '✗ 自由入力 [%s] → epoch %s (期待 %s, RC=%s)\n' "$in" "$got" "$want" "$RC"; exit 1; }
+done
+printf '✓ 90 (分) / 1h30m / 1:30 / 45m / 2h / 1H30 / 1:05 が正しい秒になる\n'
+for bad in "0" "0h0m" "abc" "123456" "1h30x" "-5" "" "1:60"; do
+  reset_state; queue "$bad" "make test"
+  STUB_NOW=1000 STUB_GUM_EXIT=0 STUB_GUM_CHOOSE_INDEX=$IDX_FREE run "$STUB_PATH" "$SCRIPT" new
+  [[ "$RC" -ne 0 && "$(jobs_count)" == 0 ]] || { printf '✗ 自由入力 [%s] が予約された (RC=%s)\n' "$bad" "$RC"; exit 1; }
+  assert_not_called "run-shell" "自由入力 [$bad] → 予約されない"
+done
+
+printf '\n## new: 時刻指定 (HH:MM。過去なら翌日)\n'
+for pair in "10:30:2800" "09:00:83800" "10:00:87400" "23:59:51340" "0:00:51400"; do
+  in="${pair%:*}"; want="${pair##*:}"
+  reset_state; queue "$in" "make test"
+  STUB_NOW=1000 STUB_NOW_HM=10:00 STUB_GUM_EXIT=0 STUB_GUM_CHOOSE_INDEX=$IDX_CLOCK run "$STUB_PATH" "$SCRIPT" new
+  got="$(sed -n 2p "$TMUX_SCHEDULE_KEYS_DIR"/*.job 2>/dev/null)"
+  [[ "$RC" -eq 0 && "$got" == "$want" ]] || { printf '✗ 時刻 [%s] (now 10:00) → epoch %s (期待 %s, RC=%s)\n' "$in" "$got" "$want" "$RC"; exit 1; }
+done
+printf '✓ 10:30 → +30m / 09:00・10:00 (過去・同時刻) → 翌日 / 23:59 / 0:00\n'
+for bad in "25:00" "10:60" "1030" "10:5" "abc"; do
+  reset_state; queue "$bad" "make test"
+  STUB_NOW=1000 STUB_NOW_HM=10:00 STUB_GUM_EXIT=0 STUB_GUM_CHOOSE_INDEX=$IDX_CLOCK run "$STUB_PATH" "$SCRIPT" new
+  [[ "$RC" -ne 0 && "$(jobs_count)" == 0 ]] || { printf '✗ 時刻 [%s] が予約された (RC=%s)\n' "$bad" "$RC"; exit 1; }
+done
+printf '✓ 25:00 / 10:60 / 1030 / 10:5 / abc は弾く\n'
+
+printf '\n## new: 中断・拒否・未導入\n'
+reset_state; queue "make test"
+STUB_NOW=1000 STUB_GUM_EXIT=0 STUB_GUM_CHOOSE_EXIT=1 run "$STUB_PATH" "$SCRIPT" new
+[[ "$RC" -ne 0 && "$(jobs_count)" == 0 ]] || { printf '✗ choose キャンセルで予約された\n'; exit 1; }
+assert_not_called "gum input" "choose キャンセル → 以降の入力に進まない"
+reset_state; queue ""
+STUB_NOW=1000 STUB_GUM_EXIT=0 STUB_GUM_CHOOSE_INDEX=4 run "$STUB_PATH" "$SCRIPT" new
 [[ "$RC" -ne 0 && "$(jobs_count)" == 0 ]] || { printf '✗ 空文字が予約された\n'; exit 1; }
 printf '✓ 空文字は予約されない\n'
-reset_state; queue 0 5 "make test"
-STUB_NOW=1000 STUB_GUM_EXIT=1 run "$STUB_PATH" "$SCRIPT" new
+reset_state; queue "make test"
+STUB_NOW=1000 STUB_GUM_EXIT=1 STUB_GUM_CHOOSE_INDEX=4 run "$STUB_PATH" "$SCRIPT" new
 [[ "$(jobs_count)" == 0 ]] || { printf '✗ confirm 拒否なのに job ができた\n'; exit 1; }
 assert_not_called "run-shell" "confirm 拒否 → 予約されない"
-reset_state; queue 0 5 "make test"
+reset_state; queue "make test"
 run "$NOGUM_PATH" "$SCRIPT" new
 [[ "$RC" -ne 0 && "$(jobs_count)" == 0 ]] || { printf '✗ gum 未導入で予約された\n'; exit 1; }
 assert_not_called "run-shell" "gum 未導入 (exit 127) → 予約されない"
