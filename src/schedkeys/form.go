@@ -198,66 +198,52 @@ const labelCol = 9
 // view はフォームを描き、フォーカス中の入力欄に置く本物のカーソルを返す
 // (bubbletea v2 の View.Cursor。これが無いと IME の未確定文字が別の場所に出る)。
 func (f *formState) view(label string, now time.Time, width, height int) (string, *tea.Cursor) {
-	var b strings.Builder
-	var cur *tea.Cursor
-	// ⚠️ どの行も最後に幅で切る。見出しの列 (labelCol) は固定なので、幅がそれ未満の端末では
-	//    見出しだけで溢れる (幅 8 で 9 桁。ラウンド 3 の指摘)
-	line := func(s string) { b.WriteString(truncateSGR(s, width) + "\n") }
-	curY := func() int { return strings.Count(b.String(), "\n") }
+	fr := newFrame(width, height)
+	fr.add(sgr(fgDim, "新規予約") + "  " + sgr(fgAccent, truncate(label, maxInt(width-10, 0))))
+	fr.add("")
 
-	line(sgr(fgDim, "新規予約") + "  " + sgr(fgAccent, truncate(label, maxInt(width-10, 0))))
-	line("")
-
-	// 「いつ」: 見出し + 候補。選択中は色付きの [ ] で囲む (太字だけだと分からない、の指摘 2026-08-28)
-	// ⚠️ 最後に必ず幅で切る: 候補の詰め方をいくら精密にしても、端の省略記号や切り詰めた候補で
-	//    数桁はみ出しうる。行が幅を超えると端末が折り返し、行数が増えてカーソルがずれる
-	line(fieldLabel("いつ", f.focus == focusWhen) +
-		truncate(chips(f.whenIdx, f.focus == focusWhen, maxInt(width-labelCol, 0)), maxInt(width-labelCol, 0)))
+	// 「いつ」: 見出し + 候補。選択中は色付きの [ ] で囲む (太字だけだと分からない、の指摘 2026-08-28)。
+	// ⚠️ 候補は折り返さず左右にずらす (折り返すと行数が増えて popup から溢れる)
+	fr.add(fieldLabel("いつ", f.focus == focusWhen) + chips(f.whenIdx, f.focus == focusWhen, maxInt(width-labelCol, 0)))
 
 	// 入力欄 (時刻 / 自由) は選んだときだけ出す
 	if f.needsSpec() {
-		focused := f.focus == focusSpec
-		prefix := fieldLabel(specLabel(f.current().kind), focused)
-		val, col := f.spec.viewport(width-ansi.StringWidth(stripSGR(prefix))-1, focused)
-		if focused {
-			cur = tea.NewCursor(ansi.StringWidth(stripSGR(prefix))+col, curY())
-		}
-		line(prefix + val)
+		f.addField(fr, specLabel(f.current().kind), &f.spec, f.focus == focusSpec, width)
 	}
 
-	line("")
-	focused := f.focus == focusText
-	prefix := fieldLabel("文字列", focused)
-	val, col := f.text.viewport(width-labelCol-1, focused)
-	if focused {
-		cur = tea.NewCursor(labelCol+col, curY())
-	}
-	line(prefix + val)
-	line("")
+	fr.add("")
+	f.addField(fr, "文字列", &f.text, f.focus == focusText, width)
+	fr.add("")
 
 	// 結果 (発火時刻) かエラーを 1 行だけ出す。両方出すと同じ文言が二重に並ぶ
 	if msg := f.err; msg != "" {
-		line(sgr(fgErr, truncate("  "+msg, width)))
+		fr.add(sgr(fgErr, "  "+msg))
 	} else if at, err := f.resolve(now); err != "" {
-		line(sgr(fgErr, truncate("  "+err, width)))
+		fr.add(sgr(fgErr, "  "+err))
 	} else {
 		ok := fmt.Sprintf("  %s に送る", at.Format("15:04"))
-		rest := fmt.Sprintf("  (%s後)", formatRemaining(at.Sub(now)))
-		line(sgr(fgOK, truncate(ok, width)) + sgr(fgDim, truncate(rest, maxInt(width-ansi.StringWidth(ok), 0))))
+		fr.add(sgr(fgOK, ok) + sgr(fgDim, fmt.Sprintf("  (%s後)", formatRemaining(at.Sub(now)))))
 	}
 
 	enterHelp := "Enter 次へ"
 	if f.focus == focusText {
 		enterHelp = "Enter 予約"
 	}
-	b.WriteString(sgr(fgDim, help(width, "Tab/C-n 欄移動", "h/l C-f/C-b 候補", enterHelp, "Esc 戻る")))
-	// カーソルも枠の中に収める (溢れた行を切った結果、カーソルだけが外に残らないように)
-	if cur != nil && cur.X > width {
-		c := *cur
-		c.X = width
-		cur = &c
+	fr.add(sgr(fgDim, help(width, "Tab/C-n 欄移動", "h/l C-f/C-b 候補", enterHelp, "Esc 戻る")))
+	return fr.render()
+}
+
+// addField は「見出し + 入力欄」の 1 行を足す。フォーカス中なら本物のカーソルもその行に置く
+// (bubbletea v2 の View.Cursor。これが無いと IME の未確定文字が別の場所に出る)。
+func (f *formState) addField(fr *frame, name string, ed *editor, focused bool, width int) {
+	prefix := fieldLabel(name, focused)
+	col := ansi.StringWidth(stripSGR(prefix))
+	val, cur := ed.viewport(maxInt(width-col-1, 1), focused)
+	if focused {
+		fr.addAt(prefix+val, col+cur)
+		return
 	}
-	return fitHeight(b.String(), height, cur)
+	fr.add(prefix + val)
 }
 
 // fieldLabel は見出しを labelCol 幅に揃える。フォーカス中は色を変え、行頭に > を置く
@@ -365,70 +351,4 @@ func specLabel(k presetKind) string {
 		return "時刻"
 	}
 	return "あと"
-}
-
-// help はキー説明を幅に収める (入らないものから落とす。折り返して行数を増やさない)。
-func help(width int, items ...string) string {
-	out := ""
-	for _, it := range items {
-		cand := out
-		if cand != "" {
-			cand += "   "
-		}
-		cand += it
-		if ansi.StringWidth(cand) > width {
-			break
-		}
-		out = cand
-	}
-	return out
-}
-
-// clampHeight は画面の高さを超えないよう末尾から削る (カーソルを持たない画面用)。
-func clampHeight(s string, height int) string {
-	if height <= 0 {
-		return s
-	}
-	lines := strings.Split(s, "\n")
-	if len(lines) <= height {
-		return s
-	}
-	return strings.Join(lines[:height], "\n")
-}
-
-// fitHeight は画面の高さに収め、フォーカス中の欄 (カーソル行) が必ず窓の中に残るようにする。
-// ⚠️ 末尾から削るだけだと、popup が低いときに入力欄ごと切り落とされ、カーソルだけが
-//
-//	空行の上に残る (= 入力が見えないのに IME の未確定文字はそこに出る)。
-//	敵対的レビュー 2026-08-28 で 70x5 で再現した。
-func fitHeight(s string, height int, cur *tea.Cursor) (string, *tea.Cursor) {
-	if height <= 0 {
-		return s, cur
-	}
-	lines := strings.Split(s, "\n")
-	if len(lines) <= height {
-		return s, cur
-	}
-	start := 0
-	if cur != nil && cur.Y >= height {
-		start = cur.Y - height + 1 // カーソル行が最下行に来る位置まで上を捨てる
-	}
-	end := start + height
-	if end > len(lines) {
-		end = len(lines)
-		start = end - height
-	}
-	if cur != nil {
-		c := *cur
-		c.Y -= start
-		cur = &c
-	}
-	return strings.Join(lines[start:end], "\n"), cur
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

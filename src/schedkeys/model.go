@@ -261,42 +261,43 @@ func (m *model) View() tea.View {
 }
 
 func (m *model) viewMenu() string {
-	var b strings.Builder
-	b.WriteString(sgr(fgDim, "予約入力") + "  " + sgr(fgAccent, truncate(m.label, maxInt(m.width-10, 0))) + "\n\n")
+	f := newFrame(m.width, m.height)
+	f.add(sgr(fgDim, "予約入力") + "  " + sgr(fgAccent, truncate(m.label, maxInt(m.width-10, 0))))
+	f.add("")
 	for i, it := range m.menuItems() {
 		disabled := i == 1 && len(m.jobs) == 0
-		b.WriteString(row(i == m.menuIdx, disabled, truncate(it, m.width-2)) + "\n")
+		f.add(row(i == m.menuIdx, disabled, it))
 	}
-	b.WriteString("\n" + sgr(fgDim, help(m.width, "j/k C-n/C-p 移動", "Enter 決定", "Esc 閉じる")))
-	return clampHeight(b.String(), m.height)
+	f.add("")
+	f.add(sgr(fgDim, help(m.width, "j/k C-n/C-p 移動", "Enter 決定", "Esc 閉じる")))
+	body, _ := f.render()
+	return body
 }
 
 func (m *model) viewPick() string {
-	var b strings.Builder
-	b.WriteString(sgr(fgDim, "予約一覧") + "\n\n")
+	f := newFrame(m.width, m.height)
+	f.add(sgr(fgDim, "予約一覧"))
+	f.add("")
 	remW, labelW := 0, 0
 	for _, j := range m.jobs {
 		remW = max(remW, ansi.StringWidth(formatRemaining(j.at.Sub(m.now))))
 		labelW = max(labelW, ansi.StringWidth(j.label))
 	}
 	// ⚠️ 送り先の表示名は #{window_name} で、長さに上限が無い。桁揃えに使うと 1 件の長い名前が
-	//    全行を押し出し、文字列の列が画面外へ消える (= 何を取り消すか読めないまま確認へ進む)。
-	//    敵対的レビュー 2026-08-28 で再現。名前は幅の 1/3 までに抑え、残りを文字列に配る
+	//    全行を押し出し、文字列の列が画面外へ消える (= 何を取り消すか読めないまま確認へ進む)
 	labelW = min(labelW, maxInt(m.width/3, 8))
-	// 行が幅を超えると折り返して行数が増え、選択の反転も崩れる
-	textW := m.width - 2 - remW - labelW - 4
-	if textW < 4 {
-		textW = 4
-	}
+	textW := maxInt(m.width-2-remW-labelW-4, 4)
 	for i, j := range m.jobs {
 		line := fmt.Sprintf("%s  %s  %s",
 			pad(formatRemaining(j.at.Sub(m.now)), remW),
 			pad(truncate(j.label, labelW), labelW),
 			truncate(j.text, textW))
-		b.WriteString(row(i == m.pickIdx, false, truncate(line, maxInt(m.width-2, 0))) + "\n")
+		f.add(row(i == m.pickIdx, false, line))
 	}
-	b.WriteString("\n" + sgr(fgDim, help(m.width, "j/k C-n/C-p 移動", "Enter 取消", "Esc 戻る")))
-	return clampHeight(b.String(), m.height)
+	f.add("")
+	f.add(sgr(fgDim, help(m.width, "j/k C-n/C-p 移動", "Enter 取消", "Esc 戻る")))
+	body, _ := f.render()
+	return body
 }
 
 // row は一覧の 1 行。選択中は行頭の > と色で示す (太字だけでは分かりにくい、の指摘 2026-08-28)。
@@ -309,12 +310,4 @@ func row(selected, disabled bool, s string) string {
 	default:
 		return "  " + s
 	}
-}
-
-// pad は表示幅 (東アジア文字 = 2 セル) で右詰めする。byte 数で詰めると日本語で崩れる。
-func pad(s string, w int) string {
-	if d := w - ansi.StringWidth(s); d > 0 {
-		return s + strings.Repeat(" ", d)
-	}
-	return s
 }

@@ -140,14 +140,6 @@ func (e *editor) boundaries() []int {
 	return out
 }
 
-// truncateSGR は装飾を含む文字列を表示幅で切る (装飾は幅に数えない)。
-func truncateSGR(s string, width int) string {
-	if ansi.StringWidth(s) <= width {
-		return s
-	}
-	return ansi.Truncate(s, width, "") + "\x1b[0m"
-}
-
 // handle は編集キーを処理する。扱ったら true (呼び出し側は他の解釈をしない)。
 func (e *editor) handle(key string, text string) bool {
 	switch key {
