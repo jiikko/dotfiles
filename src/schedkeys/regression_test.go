@@ -455,3 +455,50 @@ func TestNoToastForCancel(t *testing.T) {
 		t.Errorf("取消が返らない (quit=%v res=%+v)", m.quit, m.res)
 	}
 }
+
+// 発火時刻は「Enter を押した瞬間」を基準にすること。popup を開いた時刻で固定すると、
+// 入力に迷った時間だけ予約が前倒しになり、放置すれば過去になって即送信される
+// (敵対的レビュー 2026-08-28)。
+func TestReservationUsesClockAtSubmit(t *testing.T) {
+	m := newTestModel()
+	press(m, "enter", "")
+	typeText(m, "make test")
+	// popup を開いてから 25 分経ってから確定した
+	late := now.Add(25 * time.Minute)
+	m.nowFn = func() time.Time { return late }
+	press(m, "enter", "")
+	finishToast(m)
+	if want := late.Add(5 * time.Minute); !m.res.at.Equal(want) {
+		t.Errorf("at = %v; want %v (押した瞬間から 5 分後)", m.res.at, want)
+	}
+	if !m.res.at.After(late) {
+		t.Errorf("発火時刻が過去になった (at=%v now=%v) — 即座に送信されてしまう", m.res.at, late)
+	}
+	// トーストの残り時間も同じ時計で計算していること (嘘を出さない)
+	if body := stripSGR(m.View().Content); !strings.Contains(body, "(5m後)") {
+		t.Errorf("トーストの残り時間が確定時の時計で計算されていない:\n%s", body)
+	}
+}
+
+// 時刻指定も同じ: 15:29 に開いて 15:31 に 15:30 を入れたら「明日」になること。
+func TestClockSpecUsesClockAtSubmit(t *testing.T) {
+	m := newTestModel()
+	press(m, "enter", "")
+	press(m, "tab", "")
+	press(m, "left", "")
+	press(m, "left", "") // 時刻
+	press(m, "enter", "")
+	typeText(m, "10:20") // now は 10:00
+	late := now.Add(25 * time.Minute)
+	m.nowFn = func() time.Time { return late } // 10:25 に確定
+	press(m, "enter", "")
+	typeText(m, "x")
+	press(m, "enter", "")
+	finishToast(m)
+	if !m.res.at.After(late) {
+		t.Errorf("過去の時刻で予約された (at=%v now=%v)", m.res.at, late)
+	}
+	if want := time.Date(2026, 8, 28, 10, 20, 0, 0, time.UTC); !m.res.at.Equal(want) {
+		t.Errorf("at = %v; want %v (過ぎていれば翌日)", m.res.at, want)
+	}
+}

@@ -239,7 +239,12 @@ cmd_fire() {
   fi
   # send-keys の stderr は捨てる (pane が直前に消えた場合の "can't find pane" が run-shell 経由で
   # アクティブ pane の view-mode に積まれる)。成否は rc で分ける
-  if tmux send-keys -t "$REPLY_PANE" -l -- "$REPLY_TEXT" 2>/dev/null; then
+  # ⚠️ 末尾の ; は tmux のコマンド区切りとして食われる (`--` では守れない。実測 2026-08-28:
+  #    "echo a ;" は "echo a" として届く)。最後の 1 個だけ \; にすると通る (途中の ; は素通しで、
+  #    そこを escape すると逆にバックスラッシュが残る)
+  local send_text="$REPLY_TEXT"
+  case "$send_text" in *\;) send_text="${send_text%;}\\;" ;; esac
+  if tmux send-keys -t "$REPLY_PANE" -l -- "$send_text" 2>/dev/null; then
     tmux send-keys -t "$REPLY_PANE" Enter 2>/dev/null || true
     log "fire $id: sent to $REPLY_PANE text=$REPLY_TEXT"
     toast "予約入力を送信: $(pane_label "$REPLY_PANE") <- $REPLY_TEXT"

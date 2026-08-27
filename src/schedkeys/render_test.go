@@ -86,6 +86,7 @@ func TestFrameFitsEverySize(t *testing.T) {
 				{"長い文字列", func(m *model) { typeText(m, strings.Repeat("あ", 100)) }},
 			} {
 				m := newModel(label, now, nil)
+				m.nowFn = func() time.Time { return now }
 				m.width, m.height = w, h
 				press(m, "enter", "")
 				tc.setup(m)
@@ -150,6 +151,7 @@ func TestPickKeepsTextColumnVisible(t *testing.T) {
 	}
 	for _, w := range []int{40, 70, 120} {
 		m := newModel("main:3 claude", now, jobs)
+		m.nowFn = func() time.Time { return now }
 		m.width, m.height = w, 14
 		press(m, "j", "")
 		press(m, "enter", "")

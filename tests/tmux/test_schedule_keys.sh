@@ -261,6 +261,17 @@ assert_called "tmux send-keys -t %5 -l -- make test" "同じサーバなら送�
 grep -q 'env TMUX=/tmp/sk-sock,0,0' "$CALLS" || { printf '✗ 予約時の socket を $TMUX に載せていない\n'; cat "$CALLS"; exit 1; }
 printf '✓ 予約時の socket へ向ける ($TMUX)\n'
 
+printf '\n## fire: 末尾の ; が食われない\n'
+# tmux は引数の末尾の ; をコマンド区切りとして食う (-- では守れない)。最後の 1 個だけ \; にする
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+printf '%%5\n900\necho hello ;\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/semi.job"
+run "$STUB_PATH" "$SCRIPT" fire semi
+assert_called 'tmux send-keys -t %5 -l -- echo hello \;' "末尾の ; をエスケープして送る"
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+printf '%%5\n900\necho a ; echo b\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/semi2.job"
+run "$STUB_PATH" "$SCRIPT" fire semi2
+assert_called 'tmux send-keys -t %5 -l -- echo a ; echo b' "途中の ; は素通し (escape するとバックスラッシュが残る)"
+
 printf '\n## fire: mode 中の pane は抜けてから送る\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 printf '%%5\n900\nmake test\n' > "$TMUX_SCHEDULE_KEYS_DIR/j5.job"

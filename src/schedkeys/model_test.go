@@ -63,7 +63,12 @@ func typeText(m *model, s string) {
 	}
 }
 
-func newTestModel(jobs ...job) *model { return newModel("main:3 claude", now, jobs) }
+// テストでは「今」を固定する (確定の時計を差し替えられるのが本番との唯一の違い)。
+func newTestModel(jobs ...job) *model {
+	m := newModel("main:3 claude", now, jobs)
+	m.nowFn = func() time.Time { return now }
+	return m
+}
 
 func TestMenuToFormAndPresetReservation(t *testing.T) {
 	m := newTestModel()

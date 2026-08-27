@@ -38,6 +38,10 @@ type model struct {
 	pickIdx int
 	res     result
 	quit    bool
+	// nowFn は「今」を返す。起動時に凍結した now で確定すると、popup に留まった時間だけ
+	// 予約が前倒しになる (60 秒迷えば 5 分後が 4 分後に、放置すれば過去になって即送信される。
+	// 敵対的レビュー 2026-08-28)。表示は起動時の now、確定は押した瞬間の now を使う
+	nowFn func() time.Time
 	// togglePrefix は tmux の prefix キー (例 "ctrl+t")。popup が開いている間 prefix は tmux の
 	// キーテーブルへ届かず、そのままこの UI に入ってくる (隔離サーバで実測 2026-08-28)。
 	// prefix に続けて m / Enter / C-m を受けたら閉じる = 起動キーの再入力でトグルになる
@@ -50,7 +54,7 @@ type model struct {
 
 func newModel(label string, now time.Time, jobs []job) *model {
 	// popup の既定 (72x16) の内側。WindowSizeMsg が来る前の 1 フレームだけこの値で描く
-	return &model{label: label, now: now, jobs: jobs, form: newForm(), width: 70, height: 14}
+	return &model{label: label, now: now, jobs: jobs, form: newForm(), width: 70, height: 14, nowFn: time.Now}
 }
 
 func (m *model) Init() tea.Cmd { return nil }
@@ -141,6 +145,14 @@ func (m *model) menuItems() []string {
 	return []string{"新規予約", fmt.Sprintf("予約一覧・取消 (%d 件)", len(m.jobs))}
 }
 
+// submitNow は確定に使う「今」。テストでは nowFn を差し替えて固定する。
+func (m *model) submitNow() time.Time {
+	if m.nowFn == nil {
+		return m.now
+	}
+	return m.nowFn()
+}
+
 func (m *model) keyForm(key, text string) tea.Cmd {
 	switch key {
 	case "esc":
@@ -150,19 +162,20 @@ func (m *model) keyForm(key, text string) tea.Cmd {
 		// 「いつ」と入力欄では Enter は次の欄へ進む。予約が確定するのは最後の欄 (文字列) だけ:
 		// 候補を選んだ流れのまま Enter を押して、意図せず予約されるのを避ける (ユーザー要望 2026-08-28)
 		if m.form.focus != focusText {
-			if err := m.form.advance(m.now); err != "" {
+			if err := m.form.advance(m.submitNow()); err != "" {
 				m.form.err = err
 			}
 			return nil
 		}
-		at, txt, err := m.form.submit(m.now)
+		// ⚠️ 確定は「押した瞬間の今」で計算する (起動時の now で計算すると前倒しになる)
+		at, txt, err := m.form.submit(m.submitNow())
 		if err != "" {
 			m.form.err = err
 			return nil
 		}
 		m.res = result{action: "new", at: at, text: txt}
 		// 結果はもう決まっている。トーストを見せてから閉じる (キーは以降受け付けない)
-		return m.toast.start(fmt.Sprintf("予約しました  %s に送る (%s後)", at.Format("15:04"), formatRemaining(at.Sub(m.now))))
+		return m.toast.start(fmt.Sprintf("予約しました  %s に送る (%s後)", at.Format("15:04"), formatRemaining(at.Sub(m.submitNow()))))
 	}
 	m.form.handleKey(key, text, m.now)
 	return nil
