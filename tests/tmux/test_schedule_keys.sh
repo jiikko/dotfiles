@@ -59,11 +59,13 @@ case "$*" in
     exit "${STUB_RUNSHELL_EXIT:-0}" ;;
   "display-message -p #{pane_id}") printf '%%5\n' ;;
   "display-message -p -t %5 "*)
-    [ "${STUB_PANE_GONE:-0}" = 1 ] && exit 1
+    # ⚠️ 実 tmux は消えた pane への問い合わせでも rc=0 を返し、window 名の部分が空の ": " になる
+    #    (実測 2026-08-28)。rc=1 を返す stub は実物より厳しく、pane_label の縮退分岐を隠していた
     case "$*" in
-      *pane_id*)     printf '%%5\n' ;;
+      *pane_id*)      [ "${STUB_PANE_GONE:-0}" = 1 ] && { printf '\n'; exit 0; }; printf '%%5\n' ;;
       *pane_in_mode*) printf '%s\n' "${STUB_PANE_IN_MODE:-0}" ;;
-      *)             printf 'main:3 claude\n' ;;
+      *)              [ "${STUB_PANE_GONE:-0}" = 1 ] && { printf ': \n'; exit 0; }
+                      printf '%s\n' "${STUB_WINDOW_LABEL:-main:3 claude}" ;;
     esac ;;
   "show-options -gv prefix") printf 'C-t\n' ;;
   "send-keys -t %5 -l"*)
@@ -96,7 +98,7 @@ EOS2
 chmod +x "$TMP_DIR/bin/gum"
 
 # stub schedkeys (対話 UI): 渡された --jobs を控え、STUB_UI_RESULT を --out へ書く。
-# STUB_UI_EXIT=1 で「中止」を模す (out には中身が残る = 終了コードで判断させる)
+# 中止は out に "abort" (STUB_UI_RESULT=abort)、UI が動かない場合は STUB_UI_EXIT で 0 以外を返す
 cat > "$TMP_DIR/bin/schedkeys" <<'EOS2'
 #!/bin/sh
 echo "schedkeys $*" >> "$CALLS"
@@ -117,14 +119,9 @@ EOS2
 chmod +x "$TMP_DIR/bin/schedkeys"
 cp "$TMP_DIR/bin/schedkeys" "$TMP_DIR/bin_nogum/schedkeys"
 
-# stub date: `date +%s` を STUB_NOW、`date +%H:%M` を STUB_NOW_HM で固定 (予約時刻の算術を決定論化)。他は実 date へ
-cat > "$TMP_DIR/bin/date" <<'EOS2'
-#!/bin/sh
-[ -n "${STUB_NOW:-}" ] && [ "$*" = "+%s" ] && { printf '%s\n' "$STUB_NOW"; exit 0; }
-[ -n "${STUB_NOW_HM:-}" ] && [ "$*" = "+%H:%M" ] && { printf '%s\n' "$STUB_NOW_HM"; exit 0; }
-exec /bin/date "$@"
-EOS2
-chmod +x "$TMP_DIR/bin/date"; cp "$TMP_DIR/bin/date" "$TMP_DIR/bin_nogum/date"
+# ⚠️ date は stub しない。以前 STUB_NOW / STUB_NOW_HM で固定する stub があったが、どこからも
+# 設定されておらず (監査 2026-08-28)、「決定論化している」というコメントだけが残っていた。
+# 時刻に依存する fixture は実時刻からの相対 (+3600 等) と touch による back-date で作る。
 
 # sleep も stub: fire の待機は STUB_SLEEP_LOG に記録するだけ (実時間を待たない)。
 # 「発火時刻まで送らない」は実 sleep で別に 1 回だけ測る (下の F2)
@@ -150,8 +147,16 @@ reset_state() { rm -rf "$TMUX_SCHEDULE_KEYS_DIR"; reset_calls; }
 . "$ROOT_DIR/tests/tmux/lib/stub_env.sh"
 # 本物の sleeper を起こす (pid_is_sleeper は ps の command line で「自分の fire <id>」を確かめるため、
 # 偽 pid では代用できない)。at は十分先、sleep は実物
+# write_job は job の書式を 1 箇所に集約する。⚠️ socket と サーバ pid は **stub が返す既定値から
+# 導く**: ここに直値を書くと、stub 側の既定を変えたときに fire_claim が全 fixture を fail-closed で
+# 弾き、assert_not_called だけのブロックが「別の理由で緑」になる (監査 2026-08-28)
+write_job() {  # $1=id $2=発火 epoch $3=文字列 [$4=socket] [$5=server pid]
+  printf '%%5\n%s\n%s\n%s\n%s\n' "$2" "$3" "${4-${STUB_SOCK:-/tmp/sk-sock}}" "${5-${STUB_SRVPID:-4242}}" \
+    > "$TMUX_SCHEDULE_KEYS_DIR/$1.job"
+}
+
 spawn_sleeper() {  # $1=id  → SLEEPER_PID
-  printf '%%5\n%s\nmake test\n%s\n%s\n' "$(( $(/bin/date +%s) + 3600 ))" "/tmp/sk-sock" "4242" > "$TMUX_SCHEDULE_KEYS_DIR/$1.job"
+  write_job "$1" "$(( $(/bin/date +%s) + 3600 ))" "make test"
   # sleeper 自身の stub 呼び出しは別ログへ。共有の $CALLS へ書かせると、起動が遅れたときに
   # 次のブロックの reset_calls の後から "sleep 3600" が現れ、無関係な assert を落とす
   # (make test の負荷下で実発生 2026-08-27)
@@ -192,11 +197,28 @@ chmod 700 "$TMUX_SCHEDULE_KEYS_DIR"
 assert_called "display-message 予約に失敗しました" "job を作れなかったら失敗を知らせる"
 assert_not_called "run-shell" "作れなかったら sleeper も起こさない"
 
+printf '\n## wizard: 中止と「UI が動かない」を分ける\n'
+# ⚠️ 中止は out の "abort"、異常は 0 以外の rc。一緒くたにすると、ビルド失敗やバイナリ不在が
+# 「ユーザーが閉じた」と同じ扱いになり、押しても何も起きないキーになる (監査 2026-08-28)
+reset_state
+STUB_UI_RESULT="abort" run "$STUB_PATH" "$SCRIPT" wizard
+[[ "$(jobs_count)" == 0 ]] || { printf '✗ 中止で job が出来た\n'; exit 1; }
+# 通知は「-p の無い display-message」。-p は問い合わせ (pane 名の取得) なので数えない
+if grep -E '^tmux display-message [^-]' "$CALLS" >/dev/null; then
+  printf '✗ 中止なのに通知を出した:\n%s\n' "$(grep -E '^tmux display-message [^-]' "$CALLS")"; exit 1
+fi
+printf '✓ 中止は黙って閉じる\n'
+reset_state
+STUB_UI_EXIT=127 STUB_UI_RESULT="" run "$STUB_PATH" "$SCRIPT" wizard
+assert_called "display-message 予約入力の画面を開けませんでした" "UI が動かないときは理由を知らせる"
+grep -q 'ui: 起動できない (rc=127)' "$XDG_CACHE_HOME/tt-schedule-keys.log" || { printf '✗ UI の失敗がログに残らない\n'; exit 1; }
+printf '✓ UI の起動失敗はログと通知の両方に残る\n'
+
 printf '\n## wizard: 中止・壊れた結果では何も作らない\n'
-for tc in "exit:UI が中止 (Esc)" "empty:結果が空" "garbage:未知の action" "badepoch:epoch が数値でない" "notext:文字列が空"; do
+for tc in "exit:UI が中止 (abort)" "empty:結果が空" "garbage:未知の action" "badepoch:epoch が数値でない" "notext:文字列が空"; do
   reset_state
   case "${tc%%:*}" in
-    exit)     STUB_UI_EXIT=1 STUB_UI_RESULT="new	4600	make test" run "$STUB_PATH" "$SCRIPT" wizard ;;
+    exit)     STUB_UI_RESULT="abort" run "$STUB_PATH" "$SCRIPT" wizard ;;
     empty)    STUB_UI_RESULT="" run "$STUB_PATH" "$SCRIPT" wizard ;;
     garbage)  STUB_UI_RESULT="destroy	all" run "$STUB_PATH" "$SCRIPT" wizard ;;
     badepoch) STUB_UI_RESULT="new	soon	make test" run "$STUB_PATH" "$SCRIPT" wizard ;;
@@ -223,18 +245,18 @@ reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 printf '%%5\n900\nEnter C-c \\ "q"\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/j1.job"   # 発火時刻は過去
 run "$STUB_PATH" "$SCRIPT" fire j1
 [[ "$RC" -eq 0 ]] || { printf '✗ fire が exit %s\n' "$RC"; exit 1; }
-assert_called 'tmux send-keys -t %5 -l -- Enter C-c \ "q"' "リテラル送信 (-l): \"Enter\" がキー名に化けない"
-assert_called 'tmux send-keys -t %5 Enter' "末尾の Enter は別呼び出し"
-first_sk="$(grep 'send-keys' "$CALLS" | head -n1)"
-[[ "$first_sk" == *' -l -- '* ]] || { printf '✗ -l 送信が Enter より先でない: %s\n' "$first_sk"; exit 1; }
-printf '✓ 文字列 → Enter の順\n'
+# ⚠️ 本文と Enter は 1 回の呼び出しで送る。分けると、同時刻に発火した別の予約が割り込んで
+# pane で 2 つの文字列が 1 行に連結される (実測 2026-08-28)
+assert_called 'tmux send-keys -t %5 -l -- Enter C-c \ "q" ; send-keys -t %5 Enter' "本文と Enter を 1 回の tmux 呼び出しで送る (割り込ませない)"
+[[ "$(grep -c 'send-keys' "$CALLS")" == 1 ]] || { printf '✗ send-keys が 2 回に分かれている:\n%s\n' "$(grep 'send-keys' "$CALLS")"; exit 1; }
+printf '✓ 送信は 1 回の呼び出し\n'
 [[ "$(jobs_count)" == 0 && ! -f "$TMUX_SCHEDULE_KEYS_DIR/j1.pid" ]] || { printf '✗ 送信後に job/pid が残っている\n'; exit 1; }
 printf '✓ 送信後は job/pid を掃く\n'
 assert_not_called "sleep" "発火時刻を過ぎていれば待たない"
 
 printf '\n## fire: 発火時刻まで送らない (実 sleep)\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n%s\nls\n/tmp/sk-sock\n4242\n' "$(( $(/bin/date +%s) + 2 ))" > "$TMUX_SCHEDULE_KEYS_DIR/j2.job"
+write_job j2 "$(( $(/bin/date +%s) + 2 ))" "ls"
 ( trap - EXIT; PATH="$STUB_PATH" STUB_REAL_SLEEP=1 exec "$SCRIPT" fire j2 ) >/dev/null 2>&1 &
 fire_pid=$!
 /bin/sleep 0.5
@@ -248,7 +270,7 @@ printf '\n## fire: 予約したサーバでなければ送らない\n'
 # サーバが異常終了すると sleeper だけ生き残り、同じ socket に立った別サーバの pane へ届く
 # (pane id は振り直されるので「存在しない」に逃げられない)
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n900\nmake test\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/j7.job"
+write_job j7 900 "make test"
 STUB_SRVPID=9999 run "$STUB_PATH" "$SCRIPT" fire j7   # 別サーバが立っている
 [[ "$RC" -eq 0 && ! -s "$RUN_OUT" && ! -s "$RUN_ERR" ]] || { printf '✗ 無音 exit 0 でない (RC=%s)\n' "$RC"; exit 1; }
 assert_not_called "send-keys" "予約したサーバが居なければ送らない (別サーバの pane を叩かない)"
@@ -259,7 +281,7 @@ printf '✓ サーバが入れ替わっていたら破棄する\n'
 #    (眠っている間にサーバが死んで別のサーバが立つ) を検出できない (実機で確認 2026-08-28)
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 export STUB_SRVPID_FILE="$TMP_DIR/srvpid"; echo 4242 > "$STUB_SRVPID_FILE"
-printf '%%5\n%s\nmake test\n/tmp/sk-sock\n4242\n' "$(( $(/bin/date +%s) + 2 ))" > "$TMUX_SCHEDULE_KEYS_DIR/j9.job"
+write_job j9 "$(( $(/bin/date +%s) + 2 ))" "make test"
 ( trap - EXIT; CALLS="$CALLS" PATH="$STUB_PATH" STUB_REAL_SLEEP=1 STUB_SRVPID_FILE="$STUB_SRVPID_FILE" exec "$SCRIPT" fire j9 ) >/dev/null 2>&1 &
 j9pid=$!; FAKE_PIDS+=("$j9pid")
 /bin/sleep 0.5; echo 9999 > "$STUB_SRVPID_FILE"   # 眠っている間にサーバが入れ替わった
@@ -273,9 +295,9 @@ printf '%%5\n900\nmake test\n/tmp/sk-sock\n' > "$TMUX_SCHEDULE_KEYS_DIR/legacy.j
 run "$STUB_PATH" "$SCRIPT" fire legacy
 assert_not_called "send-keys" "サーバ pid を持たない job は送らない (確かめられないものを送らない)"
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n900\nmake test\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/j8.job"
+write_job j8 900 "make test"
 STUB_SRVPID=4242 run "$STUB_PATH" "$SCRIPT" fire j8   # 同じサーバ
-assert_called "tmux send-keys -t %5 -l -- make test" "同じサーバなら送る"
+assert_called "tmux send-keys -t %5 -l -- make test ; send-keys -t %5 Enter" "同じサーバなら送る"
 grep -q 'env TMUX=/tmp/sk-sock,0,0' "$CALLS" || { printf '✗ 予約時の socket を $TMUX に載せていない\n'; cat "$CALLS"; exit 1; }
 printf '✓ 予約時の socket へ向ける ($TMUX)\n'
 
@@ -283,17 +305,16 @@ printf '\n## fire: 送信の途中で TERM が来ても両方送る\n'
 # 文字列だけ打たれて Enter が届かないと、pane に中途半端なコマンドが残る。送信直前に TERM/INT/HUP を
 # 無視するのはそのため (取消が間に合わなかったときの半端送信を防ぐ)
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n900\nmake test\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/trapped.job"
+write_job trapped 900 "make test"
 ( trap - EXIT; CALLS="$CALLS" PATH="$STUB_PATH" STUB_SEND_DELAY=1 exec "$SCRIPT" fire trapped ) >/dev/null 2>&1 &
 trap_pid=$!; FAKE_PIDS+=("$trap_pid")
 /bin/sleep 0.5; kill -TERM "$trap_pid" 2>/dev/null   # 1 回目の送信中に割り込む
 wait "$trap_pid" 2>/dev/null || true
-assert_called "tmux send-keys -t %5 -l -- make test" "TERM が来ても本文は送られる"
-assert_called "tmux send-keys -t %5 Enter" "TERM が来ても Enter まで送り切る (半端な入力を残さない)"
+assert_called "tmux send-keys -t %5 -l -- make test ; send-keys -t %5 Enter" "TERM が来ても本文と Enter を送り切る (半端な入力を残さない)"
 
 printf '\n## fire: 眠っている間に取り消されたら送らない\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n%s\nmake test\n/tmp/sk-sock\n4242\n' "$(( $(/bin/date +%s) + 2 ))" > "$TMUX_SCHEDULE_KEYS_DIR/canc.job"
+write_job canc "$(( $(/bin/date +%s) + 2 ))" "make test"
 ( trap - EXIT; CALLS="$CALLS" PATH="$STUB_PATH" STUB_REAL_SLEEP=1 exec "$SCRIPT" fire canc ) >/dev/null 2>&1 &
 canc_pid=$!; FAKE_PIDS+=("$canc_pid")
 /bin/sleep 0.5; rm -f "$TMUX_SCHEDULE_KEYS_DIR/canc.job"   # 眠っている間に取り消された
@@ -306,7 +327,7 @@ printf '✓ 送らずに抜けても後片付けする\n'
 printf '\n## fire: 時刻が取れなくても無音で終わる (無音契約)\n'
 # date が壊れている環境でも stdout/stderr へ出さない (run-shell の子の出力は view-mode に積まれる)
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n900\nmake test\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/nodate.job"
+write_job nodate 900 "make test"
 cat > "$TMP_DIR/bin_nodate_date" <<'EOS2'
 #!/bin/sh
 exit 0
@@ -323,17 +344,17 @@ printf '✓ 時刻が取れなくても無音で破棄する\n'
 printf '\n## fire: 末尾の ; が食われない\n'
 # tmux は引数の末尾の ; をコマンド区切りとして食う (-- では守れない)。最後の 1 個だけ \; にする
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n900\necho hello ;\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/semi.job"
+write_job semi 900 "echo hello ;"
 run "$STUB_PATH" "$SCRIPT" fire semi
-assert_called 'tmux send-keys -t %5 -l -- echo hello \;' "末尾の ; をエスケープして送る"
+assert_called 'tmux send-keys -t %5 -l -- echo hello \; ; send-keys -t %5 Enter' "末尾の ; をエスケープして送る"
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n900\necho a ; echo b\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/semi2.job"
+write_job semi2 900 "echo a ; echo b"
 run "$STUB_PATH" "$SCRIPT" fire semi2
-assert_called 'tmux send-keys -t %5 -l -- echo a ; echo b' "途中の ; は素通し (escape するとバックスラッシュが残る)"
+assert_called 'tmux send-keys -t %5 -l -- echo a ; echo b ; send-keys -t %5 Enter' "途中の ; は素通し (escape するとバックスラッシュが残る)"
 
 printf '\n## fire: mode 中の pane は抜けてから送る\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n900\nmake test\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/j5.job"
+write_job j5 900 "make test"
 STUB_PANE_IN_MODE=1 run "$STUB_PATH" "$SCRIPT" fire j5
 assert_called "tmux send-keys -t %5 -X cancel" "copy-mode 等に入っていたら抜けてから送る (mode 中はキーが届かない)"
 # 順序: cancel が literal 送信より先
@@ -342,13 +363,13 @@ first_sk="$(grep 'send-keys' "$CALLS" | head -n1)"
 printf '✓ mode を抜けてから送る\n'
 assert_called "tmux send-keys -t %5 -l -- make test" "抜けたあと本文を送る"
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n900\nmake test\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/j6.job"
+write_job j6 900 "make test"
 STUB_PANE_IN_MODE=0 run "$STUB_PATH" "$SCRIPT" fire j6
 assert_not_called "-X cancel" "mode に入っていなければ余計な cancel を送らない"
 
 printf '\n## fire: 壊れた job (文字列行なし) は送らず掃く\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n900\n\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/j4.job"
+write_job j4 900 ""
 run "$STUB_PATH" "$SCRIPT" fire j4
 [[ "$RC" -eq 0 && ! -s "$RUN_OUT" && ! -s "$RUN_ERR" ]] || { printf '✗ 壊れた job で無音 exit 0 でない (RC=%s)\n' "$RC"; exit 1; }
 assert_not_called "send-keys" "文字列行の無い job → 素の Enter を送らない"
@@ -357,16 +378,18 @@ printf '✓ 壊れた job は掃く\n'
 
 printf '\n## fire: 送り先 pane 消滅 → 無音で破棄\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n900\nmake test\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/j3.job"
+write_job j3 900 "make test"
 rm -f "$XDG_CACHE_HOME/tt-schedule-keys.log"   # 前ブロックの成功ログを持ち越さない
 STUB_PANE_GONE=1 run "$STUB_PATH" "$SCRIPT" fire j3
 [[ "$RC" -eq 0 ]] || { printf '✗ pane 消滅で exit %s (run-shell 経由なら view-mode が積まれる)\n' "$RC"; exit 1; }
 [[ ! -s "$RUN_OUT" && ! -s "$RUN_ERR" ]] || { printf '✗ pane 消滅で stdout/stderr に出力 (無音契約違反)\n'; cat "$RUN_OUT" "$RUN_ERR"; exit 1; }
-assert_called 'tmux send-keys -t %5 -l -- make test' "pane 消滅は send-keys の失敗で検知する (事前チェックとの TOCTOU を作らない)"
+assert_called 'tmux send-keys -t %5 -l -- make test ; send-keys -t %5 Enter' "pane 消滅は send-keys の失敗で検知する (事前チェックとの TOCTOU を作らない)"
 [[ "$(jobs_count)" == 0 ]] || { printf '✗ pane 消滅の job が残っている\n'; exit 1; }
 grep -q 'へ送れず破棄' "$XDG_CACHE_HOME/tt-schedule-keys.log" || { printf '✗ 破棄がログに残らない\n'; exit 1; }
 ! grep -q 'sent to' "$XDG_CACHE_HOME/tt-schedule-keys.log" || { printf '✗ 送れていないのに成功ログ\n'; exit 1; }
-assert_not_called "send-keys -t %5 Enter" "文字列の送信に失敗したら Enter も送らない"
+# 本文と Enter は 1 呼び出しなので、失敗しても「本文だけ入った」状態は構造的に起きない
+[[ "$(grep -c 'send-keys' "$CALLS")" == 1 ]] || { printf '✗ 送信が 2 回に分かれている\n'; exit 1; }
+printf '✓ 送信に失敗しても半端な入力を残さない (1 呼び出し)\n'
 printf '✓ 無音 exit 0 + job 掃除 + ログ記録 (成功ログ無し)\n'
 
 printf '\n## wizard: sleeper を起こせなかったら job を残さない\n'
@@ -405,22 +428,24 @@ assert_called "display-message 取り消せませんでした" "確認中に発�
 assert_not_called "display-message 予約を取り消した" "止めていないのに「取り消した」と言わない"
 kill "$racy_pid" 2>/dev/null || true
 
-printf '\n## cancel: 止められなかったら「取り消した」と言わない\n'
-# fire は送信直前に TERM を無視する (半端送信を防ぐため)。つまり kill が届いても送信は完走しうる。
-# 「止められた」と言えるのは、生きている sleeper を実際に kill できたときだけ。
-# ここでは「確認を読んでいる間に sleeper が後始末をせず死んだ」(crash) を作る
+printf '\n## cancel: 成否は「job を先に取れたか」で決まる\n'
+# ⚠️ kill の成否では決めない。fire は送信直前に TERM を無視するので、kill が exit 0 でも送信は
+# 完走しうる (監査 2026-08-28)。逆に sleeper が既に死んでいても、job を取れたなら送られないので
+# 「取り消した」は嘘ではない。判定は rename (原子的な claim) の成否
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 spawn_sleeper crashed; crashed_pid=$SLEEPER_PID
 STUB_GUM_EXIT=0 STUB_GUM_KILL_PID="$crashed_pid" STUB_UI_RESULT="cancel	crashed" run "$STUB_PATH" "$SCRIPT" wizard
-assert_not_called "display-message 予約を取り消した" "止められていないのに「取り消した」と言わない"
-assert_called "display-message 取り消せませんでした" "止められなかったことを伝える"
-[[ "$(jobs_count)" == 0 ]] || { printf '✗ 後片付けはする (job が残った)\n'; exit 1; }
-printf '✓ 止められなくても後片付けはする\n'
+assert_called "display-message 予約を取り消した" "sleeper が死んでいても job を取れたなら取り消し成立 (送られないので嘘ではない)"
+[[ "$(jobs_count)" == 0 ]] || { printf '✗ 後片付けができていない\n'; exit 1; }
+[[ -z "$(find "$TMUX_SCHEDULE_KEYS_DIR" -name '*.cancelled' -o -name '*.claimed' 2>/dev/null)" ]] \
+  || { printf '✗ claim 用の一時ファイルが残っている\n'; ls "$TMUX_SCHEDULE_KEYS_DIR"; exit 1; }
+printf '✓ 取消の後始末 (claim 用ファイルも残さない)\n'
 
 printf '\n## read_job: 開けない job の値が前の job から漏れない\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n%s\ngit push --force\n/tmp/sk-sock\n4242\n' "$(( $(/bin/date +%s) + 3600 ))" > "$TMUX_SCHEDULE_KEYS_DIR/aaa.job"
-printf '%%9\n%s\nls\n/tmp/sk-sock\n4242\n' "$(( $(/bin/date +%s) + 7200 ))" > "$TMUX_SCHEDULE_KEYS_DIR/bbb.job"
+write_job aaa "$(( $(/bin/date +%s) + 3600 ))" "git push --force"
+write_job bbb "$(( $(/bin/date +%s) + 7200 ))" "ls"
+sed -i.bak '1s/.*/%%9/' "$TMUX_SCHEDULE_KEYS_DIR/bbb.job" && rm -f "$TMUX_SCHEDULE_KEYS_DIR/bbb.job.bak"
 chmod 000 "$TMUX_SCHEDULE_KEYS_DIR/bbb.job"
 STUB_UI_RESULT="" run "$STUB_PATH" "$SCRIPT" wizard
 chmod 644 "$TMUX_SCHEDULE_KEYS_DIR/bbb.job"
@@ -470,7 +495,7 @@ printf '\n## prune: sleeper が居ない予約だけを掃く\n'
 # pid 再利用: .pid が無関係な生きたプロセスを指す → kill せず、stale として掃く
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 tt_spawn_fake_proc; foreign_pid=$REPLY_PID
-printf '%%5\n%s\nmake test\n/tmp/sk-sock\n4242\n' "$(( $(/bin/date +%s) + 3600 ))" > "$TMUX_SCHEDULE_KEYS_DIR/reused.job"
+write_job reused "$(( $(/bin/date +%s) + 3600 ))" "make test"
 printf '%s\n' "$foreign_pid" > "$TMUX_SCHEDULE_KEYS_DIR/reused.pid"
 STUB_UI_RESULT="" run "$STUB_PATH" "$SCRIPT" wizard
 kill -0 "$foreign_pid" 2>/dev/null || { printf '✗ 無関係なプロセス (pid 再利用) を kill した\n'; exit 1; }
@@ -480,7 +505,7 @@ printf '✓ 無関係なプロセスは kill せず、その job は掃く\n'
 
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 tt_free_pid; dead_pid=$REPLY_PID
-printf '%%5\n%s\nmake test\n/tmp/sk-sock\n4242\n' "$(( $(/bin/date +%s) + 3600 ))" > "$TMUX_SCHEDULE_KEYS_DIR/stale.job"
+write_job stale "$(( $(/bin/date +%s) + 3600 ))" "make test"
 printf '%s\n' "$dead_pid" > "$TMUX_SCHEDULE_KEYS_DIR/stale.pid"
 STUB_UI_RESULT="" run "$STUB_PATH" "$SCRIPT" wizard
 [[ "$RC" -eq 0 && "$(jobs_count)" == 0 ]] || { printf '✗ pid が死んだ stale job が掃かれない\n'; exit 1; }
@@ -488,7 +513,7 @@ printf '✓ stale job (pid 死亡) を掃く\n'
 
 # .pid 未作成 + 作成直後の job は掃かない (fire が書く前の猶予)
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n%s\nmake test\n/tmp/sk-sock\n4242\n' "$(( $(/bin/date +%s) + 3600 ))" > "$TMUX_SCHEDULE_KEYS_DIR/fresh.job"
+write_job fresh "$(( $(/bin/date +%s) + 3600 ))" "make test"
 STUB_UI_RESULT="" run "$STUB_PATH" "$SCRIPT" wizard
 [[ "$(jobs_count)" == 1 ]] || { printf '✗ 作成直後 (.pid 未作成) の job が掃かれた\n'; exit 1; }
 printf '✓ 作成直後の .pid 未作成 job は掃かない\n'
@@ -511,6 +536,73 @@ printf '✓ シェルと UI (src/schedkeys) の引用文字列に絵文字・曖
 bad="$(grep -E '^bind (m|Enter|C-m) ' "$CONF" | perl -CSD -ne "print if /$WIDE_RE/")"
 [[ -z "$bad" ]] || { printf '✗ popup タイトル (bind) に絵文字:\n%s\n' "$bad"; exit 1; }
 printf '✓ popup タイトルに絵文字なし\n'
+
+printf '\n## prune: 猶予の境界 (両側を見る)\n'
+# ⚠️ 「作った直後は消さない」だけでは、猶予を 0 にしても 99999999 にしても緑になる (監査 2026-08-28)。
+# mtime を back-date して両側を通す
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+backdate() { touch -t "$(/bin/date -r "$(( $(/bin/date +%s) - $2 ))" +%Y%m%d%H%M.%S)" "$1"; }
+write_job inside "$(( $(/bin/date +%s) + 3600 ))" "make test"; backdate "$TMUX_SCHEDULE_KEYS_DIR/inside.job" 30
+write_job outside "$(( $(/bin/date +%s) + 3600 ))" "make test"; backdate "$TMUX_SCHEDULE_KEYS_DIR/outside.job" 300
+STUB_UI_RESULT="abort" run "$STUB_PATH" "$SCRIPT" wizard
+[[ -f "$TMUX_SCHEDULE_KEYS_DIR/inside.job" ]] || { printf '✗ 猶予の内側 (30 秒前) の job を消した\n'; exit 1; }
+[[ ! -f "$TMUX_SCHEDULE_KEYS_DIR/outside.job" ]] || { printf '✗ 猶予の外側 (300 秒前) の job を消していない\n'; exit 1; }
+printf '✓ .pid が無い job は、猶予の内側は残し外側は掃く\n'
+
+printf '\n## prune/cancel: sleeper の照合は id の完全一致\n'
+# ⚠️ 前方一致だと id "j-5" のつもりで "j-55" の sleeper に当たる。実害が出るのは **pid が再利用された
+# とき**: j-5 の .pid に別 sleeper の pid が入っていると、j-5 の取消が j-55 を殺す (監査 2026-08-28)。
+# id が全部別単語の fixture では前方一致に変えても緑のままなので、その状況を作って確かめる
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+spawn_sleeper j-55; long_pid=$SLEEPER_PID
+write_job j-5 "$(( $(/bin/date +%s) + 3600 ))" "make test"
+printf '%s\n' "$long_pid" > "$TMUX_SCHEDULE_KEYS_DIR/j-5.pid"   # pid 再利用を模す
+STUB_GUM_EXIT=0 STUB_UI_RESULT="cancel	j-5" run "$STUB_PATH" "$SCRIPT" wizard
+/bin/sleep 0.3
+kill -0 "$long_pid" 2>/dev/null || { printf '✗ j-5 の取消が別 id (j-55) の sleeper を殺した\n'; exit 1; }
+[[ -f "$TMUX_SCHEDULE_KEYS_DIR/j-55.job" ]] || { printf '✗ 別 id (j-55) の job まで消した\n'; exit 1; }
+printf '✓ id の完全一致で照合する (pid を取り違えても別の予約を巻き込まない)\n'
+kill "$long_pid" 2>/dev/null || true
+
+printf '\n## 一覧: 消えた pane は「消滅」と出す\n'
+# ⚠️ 実 tmux は消えた pane への問い合わせでも rc=0 を返し、window 名が空の ": " になる
+# (実測 2026-08-28)。rc では判定できないので中身で見る
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+spawn_sleeper goneone
+STUB_PANE_GONE=1 STUB_UI_RESULT="abort" run "$STUB_PATH" "$SCRIPT" wizard
+grep -q '(消滅)' "$STUB_UI_JOBS_COPY" 2>/dev/null \
+  || { printf '✗ 消えた pane の一覧表示が「消滅」でない:\n%s\n' "$(cat -v "$STUB_UI_JOBS_COPY" 2>/dev/null)"; exit 1; }
+printf '✓ 消えた pane は「消滅」と出る (空の ": " をそのまま見せない)\n'
+
+printf '\n## 通知: 予約文字列の # がフォーマットとして展開されない\n'
+# display-message は #{...} や #H を展開する。予約にはコメントや #{} が普通に入る
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+spawn_sleeper hashy
+write_job hashy "$(( $(/bin/date +%s) + 3600 ))" 'echo #{pane_id} # note'
+STUB_GUM_EXIT=0 STUB_UI_RESULT="cancel	hashy" run "$STUB_PATH" "$SCRIPT" wizard
+assert_called 'display-message 予約を取り消した: echo ##{pane_id} ## note' "# を ## にして展開を止める"
+
+printf '\n## 一覧: 表示名のタブで列がずれない\n'
+# window 名は任意の文字列。タブが入ると TSV の列が割れ、別の予約の文字列が別の id に結びつく
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+write_job tabbed "$(( $(/bin/date +%s) + 3600 ))" "make test"
+STUB_WINDOW_LABEL="$(printf 'main:3\tclaude')" STUB_UI_RESULT="abort" run "$STUB_PATH" "$SCRIPT" wizard
+[[ -s "$STUB_UI_JOBS_COPY" ]] || { printf '✗ 一覧が空\n'; exit 1; }
+fields=$(awk -F'\t' '{print NF}' "$STUB_UI_JOBS_COPY" | sort -u)
+[[ "$fields" == 4 ]] || { printf '✗ TSV の列数が 4 でない (%s):\n%s\n' "$fields" "$(cat -v "$STUB_UI_JOBS_COPY")"; exit 1; }
+printf '✓ 表示名のタブを潰して 4 列を保つ\n'
+
+printf '\n## 取消の確認に残り時間が出る\n'
+# シェル側の fmt_remaining は Go の formatRemaining とは別実装。ここでしか使われないので、
+# 潰しても他のどのテストも落ちない (監査 2026-08-28)
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+spawn_sleeper remain
+write_job remain "$(( $(/bin/date +%s) + 3540 ))" "make test"
+STUB_GUM_EXIT=1 STUB_UI_RESULT="cancel	remain" run "$STUB_PATH" "$SCRIPT" wizard
+assert_called "gum confirm" "確認を出す"
+grep -E '^gum confirm .*59m' "$CALLS" >/dev/null \
+  || { printf '✗ 確認に残り時間が出ていない:\n%s\n' "$(grep '^gum confirm' "$CALLS")"; exit 1; }
+printf '✓ 確認に残り時間 (59m) が出る\n'
 
 printf '\n## ps の桁切り対策 (Linux で生きた予約を消さないため)\n'
 # GNU ps は既定 80 桁で command 列を切る。切られると pid_is_sleeper が常に偽になり、prune が

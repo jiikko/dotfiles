@@ -183,12 +183,9 @@ func (m *model) menuItems() []menuItem {
 }
 
 // submitNow は確定に使う「今」。テストでは nowFn を差し替えて固定する。
-func (m *model) submitNow() time.Time {
-	if m.nowFn == nil {
-		return m.now
-	}
-	return m.nowFn()
-}
+// nil 検査は置かない: 構築点は newModel だけで必ず配線され、その配線は
+// TestNewModelWiresWallClock が守っている (nil を許すと「凍った時計」に静かに戻る)。
+func (m *model) submitNow() time.Time { return m.nowFn() }
 
 func (m *model) keyForm(key, text string) tea.Cmd {
 	switch key {

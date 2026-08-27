@@ -500,3 +500,37 @@ func TestFocusedEditorIsSharedByKeysAndPaste(t *testing.T) {
 		t.Errorf("文字列欄に漏れた: %q", m.form.text.value())
 	}
 }
+
+// 幅がごく狭いときトーストを出さないこと (出すと行が幅を超える)。
+// ⚠️ トーストは frame.render の後に重ねるので、frame の「行は幅を超えない」保証の外側にいる。
+func TestToastFitsNarrowWidth(t *testing.T) {
+	for _, w := range []int{1, 3, 5, 6, 10, 70} {
+		m := newTestModel()
+		m.width, m.height = w, 14
+		press(m, "enter", "")
+		typeText(m, "x")
+		press(m, "enter", "") // 確定 → トースト
+		for range toastFrames {
+			m.Update(toastTickMsg{})
+		}
+		for i, l := range strings.Split(m.View().Content, "\n") {
+			if got := ansi.StringWidth(l); got > w {
+				t.Errorf("w=%d: %d 行目が %d 桁 (トースト): %q", w, i, got, stripSGR(l))
+			}
+		}
+	}
+}
+
+// 候補行にフォーカスしているときの貼り付けが、見ていない文字列欄へ入らないこと。
+func TestPasteIgnoredOnChipRow(t *testing.T) {
+	m := newTestModel()
+	press(m, "enter", "")
+	press(m, "tab", "") // いつ (候補行)
+	m.Update(tea.PasteMsg{Content: "rm -rf /"})
+	if got := m.form.text.value(); got != "" {
+		t.Errorf("候補行での貼り付けが文字列欄に入った: %q", got)
+	}
+	if got := m.form.spec.value(); got != "" {
+		t.Errorf("候補行での貼り付けが入力欄に入った: %q", got)
+	}
+}

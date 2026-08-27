@@ -12,17 +12,25 @@ import (
 )
 
 // maxDigits は入力できる数値の桁数上限。無制限だと掛け算があふれて別の (短い) 時刻に予約される。
+// ⚠️ 正規表現に直値を書かず、ここから組む (二重管理にすると定数だけ直して実際の上限が変わらない)。
 const maxDigits = 5
+
+// digits は maxDigits 桁までの数値にマッチする部分パターン。
+var digits = fmt.Sprintf(`[0-9]{1,%d}`, maxDigits)
+
+// maxDuration は相対時間の上限。桁数だけの制限だと 99999h (11 年) が通り、sleeper が
+// その間ずっと居座る (監査 2026-08-28)。予約入力の用途として十分に長い 30 日にする。
+const maxDuration = 30 * 24 * time.Hour
 
 var errBadSpec = errors.New("bad spec")
 
 var (
 	// 相対時間: "90" (分) / "1h30m" / "1h" / "30m" / "1h30" / "1:30" (h:mm)
-	reMinutes = regexp.MustCompile(`^([0-9]{1,5})$`)
-	reHM      = regexp.MustCompile(`^([0-9]{1,5})[hH]([0-9]{1,5})[mM]?$`)
-	reHour    = regexp.MustCompile(`^([0-9]{1,5})[hH]$`)
-	reMin     = regexp.MustCompile(`^([0-9]{1,5})[mM]$`)
-	reColon   = regexp.MustCompile(`^([0-9]{1,5}):([0-9]{1,2})$`)
+	reMinutes = regexp.MustCompile(`^(` + digits + `)$`)
+	reHM      = regexp.MustCompile(`^(` + digits + `)[hH](` + digits + `)[mM]?$`)
+	reHour    = regexp.MustCompile(`^(` + digits + `)[hH]$`)
+	reMin     = regexp.MustCompile(`^(` + digits + `)[mM]$`)
+	reColon   = regexp.MustCompile(`^(` + digits + `):([0-9]{1,2})$`)
 	// 時刻: "HH:MM" (1〜2 桁の時 + 2 桁の分)
 	reClock = regexp.MustCompile(`^([0-9]{1,2}):([0-9]{2})$`)
 )
@@ -52,7 +60,7 @@ func parseDuration(in string) (time.Duration, error) {
 		return 0, errBadSpec
 	}
 	total := time.Duration(h)*time.Hour + time.Duration(m)*time.Minute
-	if total <= 0 {
+	if total <= 0 || total > maxDuration {
 		return 0, errBadSpec
 	}
 	return total, nil

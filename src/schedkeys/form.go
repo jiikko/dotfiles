@@ -165,7 +165,7 @@ func (f *formState) resolve(now time.Time) (time.Time, string) {
 		}
 		d, err := parseDuration(v)
 		if err != nil {
-			return time.Time{}, fmt.Sprintf("90 / 1h30m / 1:30 の形で (0 と %d 桁超は不可)", maxDigits)
+			return time.Time{}, fmt.Sprintf("90 / 1h30m / 1:30 の形で (0 と %d 日超は不可)", int(maxDuration.Hours()/24))
 		}
 		return now.Add(d), ""
 	}

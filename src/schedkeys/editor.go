@@ -30,8 +30,17 @@ func (e *editor) setValue(s string) {
 // cursorCol はカーソルまでの表示幅 (東アジア文字 = 2 セル)。描画側が本物のカーソルを置く列。
 func (e *editor) cursorCol() int { return ansi.StringWidth(string(e.runes[:e.pos])) }
 
+// maxInput は 1 欄に入れられる文字数。⚠️ 上限が無いと、大きな貼り付け 1 回で 1 行 1MB を超える
+// 予約ができ、以後その一覧を読む側が壊れる (監査 2026-08-28)。コマンド 1 行としては十分に長い。
+const maxInput = 4096
+
 func (e *editor) insert(s string) {
 	r := []rune(s)
+	if room := maxInput - len(e.runes); room <= 0 {
+		return
+	} else if len(r) > room {
+		r = r[:room]
+	}
 	e.runes = append(e.runes[:e.pos], append(r, e.runes[e.pos:]...)...)
 	e.pos += len(r)
 }

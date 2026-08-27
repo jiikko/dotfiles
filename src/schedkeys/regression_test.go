@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -131,8 +133,19 @@ func TestLongInputScrollsHorizontally(t *testing.T) {
 	if w := ansi.StringWidth(shown); w > 30 {
 		t.Errorf("表示幅 = %d (上限 30)", w)
 	}
-	if col > 30 || col < 0 {
-		t.Errorf("カーソル列 = %d (0..30 の外)", col)
+	// ⚠️ col の範囲だけを見ない: viewport 自身が最後に clamp するので、スクロールを丸ごと消しても
+	//    その assert は通る (監査 2026-08-28)。「末尾が見えていて、カーソルがその末尾にある」で見る
+	if col != 29 {
+		t.Errorf("カーソル列 = %d; want 29 (末尾が見える位置までスクロールする)", col)
+	}
+	if ansi.StringWidth(shown) != 29 && ansi.StringWidth(shown) != 30 {
+		t.Errorf("見えている幅 = %d (末尾付近の窓であるべき)", ansi.StringWidth(shown))
+	}
+	// 値の末尾がその窓に含まれていること (先頭で固まっていないこと)
+	e.setValue(strings.Repeat("x", 199) + "Z")
+	shown, _ = e.viewport(30, true)
+	if !strings.HasSuffix(shown, "Z") {
+		t.Errorf("末尾が見えていない (先頭で固まっている): %q", shown)
 	}
 	// 全角でも同じ (半端に割らない)
 	e.setValue(strings.Repeat("あ", 100))
@@ -500,5 +513,128 @@ func TestClockSpecUsesClockAtSubmit(t *testing.T) {
 	}
 	if want := time.Date(2026, 8, 28, 10, 20, 0, 0, time.UTC); !m.res.at.Equal(want) {
 		t.Errorf("at = %v; want %v (過ぎていれば翌日)", m.res.at, want)
+	}
+}
+
+// 中止も「結果」として返すこと。⚠️ 終了コードで中止を表すと、ビルド失敗やバイナリ不在
+// (どちらも rc≠0) と区別できず、呼び出し側が異常を「ユーザーが閉じた」と読んで黙る (監査 2026-08-28)。
+func TestAbortIsAResultNotAnExitCode(t *testing.T) {
+	if got := formatResult(result{}); got != "" {
+		t.Fatalf("中止の result が空行でない: %q", got)
+	}
+	// main はこれを "abort" として書く。ここでは変換規則だけ固定する
+	if line := resultLine(result{}); line != "abort" {
+		t.Errorf("中止の出力 = %q; want abort", line)
+	}
+	if line := resultLine(result{action: "cancel", id: "x"}); line != "cancel\tx" {
+		t.Errorf("cancel の出力 = %q", line)
+	}
+}
+
+// 1 欄に入れられる長さに上限があること。⚠️ 無いと大きな貼り付け 1 回で 1 行 1MB 超の予約ができ、
+// 以後その一覧を読む側が壊れて UI が二度と開けなくなる (監査 2026-08-28 で再現)。
+func TestInputIsCapped(t *testing.T) {
+	var e editor
+	e.insert(strings.Repeat("a", maxInput+5000))
+	if got := len(e.runes); got != maxInput {
+		t.Errorf("入力長 = %d; want %d", got, maxInput)
+	}
+	e.insert("bbb")
+	if got := len(e.runes); got != maxInput {
+		t.Errorf("上限に達した後も増えた: %d", got)
+	}
+	// 貼り付けも同じ上限に従う
+	m := newTestModel()
+	press(m, "enter", "")
+	m.Update(tea.PasteMsg{Content: strings.Repeat("z", maxInput*2)})
+	if got := len([]rune(m.form.text.value())); got > maxInput {
+		t.Errorf("貼り付けで上限を超えた: %d", got)
+	}
+}
+
+// 予約できる長さに上限があること (11 年後に起きる sleeper を作らせない)。
+func TestDurationIsCapped(t *testing.T) {
+	if _, err := parseDuration("99999h"); err == nil {
+		t.Error("99999h (約 11 年) が通った")
+	}
+	if _, err := parseDuration("720h"); err != nil {
+		t.Errorf("30 日は通るべき: %v", err)
+	}
+	if _, err := parseDuration("721h"); err == nil {
+		t.Error("30 日超が通った")
+	}
+}
+
+// ⚠️ トーストが自分でティックを張り、静止のあと自分で閉じメッセージを出すこと。
+// テストが toastTickMsg / toastDoneMsg を手で流すと、**Tick を張らない実装でも緑になる**
+// (= 確定後に popup が永久に閉じない。監査 2026-08-28)。ここは戻り値の Cmd だけを見る。
+func TestToastDrivesItselfToClose(t *testing.T) {
+	saved := toastHold
+	toastHold = time.Millisecond
+	defer func() { toastHold = saved }()
+
+	var to toast
+	cmd := to.start("予約しました")
+	if cmd == nil {
+		t.Fatal("start がティックを張っていない (誰も動かさないので永久に閉じない)")
+	}
+	if _, ok := cmd().(toastTickMsg); !ok {
+		t.Fatalf("start の Cmd が toastTickMsg を出さない: %T", cmd())
+	}
+	// 進めるたびに次の Cmd が返り、最後に閉じメッセージへ辿り着くこと
+	for i := range toastFrames + 2 {
+		cmd = to.advance()
+		if cmd == nil {
+			t.Fatalf("%d フレーム目で動きが止まった (閉じない)", i)
+		}
+		msg := cmd()
+		if _, ok := msg.(toastDoneMsg); ok {
+			return // 静止 → 閉じるところまで自力で来た
+		}
+		if _, ok := msg.(toastTickMsg); !ok {
+			t.Fatalf("%d フレーム目の Cmd が不明: %T", i, msg)
+		}
+	}
+	t.Fatal("静止の後に閉じメッセージが出ない (popup が閉じない)")
+}
+
+// ⚠️ 本番の構築点で「確定用の時計」が配線されていること。テストは自分で nowFn を差し替えるので、
+// newModel から nowFn を落としても全テストが緑のまま通ってしまう (監査 2026-08-28)。
+func TestNewModelWiresWallClock(t *testing.T) {
+	m := newModel("x", now, nil) // nowFn を差し替えない
+	if m.nowFn == nil {
+		t.Fatal("newModel が確定用の時計を配線していない")
+	}
+	// 確定の時計は「実時刻」であること (起動時に渡した now ではない)
+	if d := time.Until(m.submitNow()); d > time.Second || d < -time.Second {
+		t.Errorf("確定の時計が実時刻でない (submitNow=%v, 実時刻との差=%v)", m.submitNow(), d)
+	}
+	if m.submitNow().Equal(m.now) {
+		t.Error("確定の時計が起動時の now に凍っている")
+	}
+}
+
+// ⚠️ 表示用の時計を「自分で」回すこと。テストが tickMsg を手で流すと、Init が Tick を張らない実装
+// (= 放置しても画面が更新されない) でも緑になる (監査 2026-08-28)。
+func TestClockTickIsSelfSustaining(t *testing.T) {
+	m := newTestModel()
+	cmd := m.Init()
+	if cmd == nil {
+		t.Fatal("Init が時計のティックを張っていない")
+	}
+	if _, ok := cmd().(tickMsg); !ok {
+		t.Fatalf("Init の Cmd が tickMsg を出さない: %T", cmd())
+	}
+	_, next := m.Update(tickMsg{})
+	if next == nil {
+		t.Fatal("tick が次のティックを張り直していない (1 回で止まる)")
+	}
+	if _, ok := next().(tickMsg); !ok {
+		t.Fatalf("次の Cmd が tickMsg でない: %T", next())
+	}
+	// 閉じたあとは張り直さない (無駄に動かし続けない)
+	m.quit = true
+	if _, after := m.Update(tickMsg{}); after != nil {
+		t.Error("閉じた後もティックを張り直している")
 	}
 }

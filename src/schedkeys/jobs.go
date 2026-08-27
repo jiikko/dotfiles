@@ -4,6 +4,8 @@ package main
 
 import (
 	"bufio"
+	"errors"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -31,10 +33,20 @@ func readJobs(path string) ([]job, error) {
 	}
 	defer f.Close()
 	var out []job
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() {
-		fields := strings.Split(sc.Text(), "\t")
+	// ⚠️ bufio.Scanner を使わない: 1 行でも上限を超えると Scan が止まり、以降の行を読めないまま
+	//    エラーになる。呼び出し側はそれを「一覧が読めない」= UI 起動失敗として扱うので、
+	//    長い予約が 1 件あるだけで一覧も取消も二度と開けなくなる (監査 2026-08-28 で再現)。
+	//    Reader なら長すぎる行だけを捨てて残りを読める (壊れた行を捨てる既存の方針と同じ)。
+	br := bufio.NewReader(f)
+	for {
+		line, err := readLimitedLine(br)
+		if line == "" && err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return out, err
+		}
+		fields := strings.Split(line, "\t")
 		if len(fields) < 4 {
 			continue
 		}
@@ -43,6 +55,38 @@ func readJobs(path string) ([]job, error) {
 			continue
 		}
 		out = append(out, job{id: fields[0], at: time.Unix(epoch, 0), label: fields[2], text: fields[3]})
+		if err != nil {
+			break
+		}
 	}
-	return out, sc.Err()
+	return out, nil
+}
+
+// maxJobLine は 1 行の上限 (バイト)。これを超える行は丸ごと捨てる。
+const maxJobLine = 64 * 1024
+
+// readLimitedLine は 1 行読む。上限を超えた行は読み飛ばして空文字を返す (err は EOF のときだけ非 nil)。
+func readLimitedLine(br *bufio.Reader) (string, error) {
+	var b strings.Builder
+	tooLong := false
+	for {
+		chunk, isPrefix, err := br.ReadLine()
+		if b.Len()+len(chunk) > maxJobLine {
+			tooLong = true
+		} else {
+			b.Write(chunk)
+		}
+		if err != nil {
+			if tooLong {
+				return "", err
+			}
+			return b.String(), err
+		}
+		if !isPrefix {
+			if tooLong {
+				return "", nil
+			}
+			return b.String(), nil
+		}
+	}
 }

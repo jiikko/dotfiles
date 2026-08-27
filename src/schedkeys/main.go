@@ -4,8 +4,13 @@
 //
 //	new\t<発火 epoch>\t<送る文字列>
 //	cancel\t<予約 id>
+//	abort                     (Esc / Ctrl-C で閉じた)
 //
-// 中止 (Esc / Ctrl-C) は out を空のままにして exit 1。呼び出し側 (scripts/tmux_schedule_keys.sh) が
+// ⚠️ 中止も「結果」として out に書き、exit 0 で終わる。終了コードで中止を表すと、ビルド失敗や
+//
+//	バイナリ不在 (どちらも rc≠0) と区別できず、呼び出し側が異常を「ユーザーが閉じた」と読んで
+//	黙ってしまう (監査 2026-08-28)。exit≠0 は「UI が動かなかった」だけを意味する。呼び出し側 (scripts/tmux_schedule_keys.sh) が
+//
 // job ファイルの作成・sleeper の起動・取消の確認 (gum confirm --default=false) と実行を行う。
 // この分担にしているのは、破壊的な操作をシェル側のテスト済み経路に残すため。
 //
@@ -54,10 +59,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "schedkeys: %v\n", err)
 		os.Exit(2)
 	}
-	line := formatResult(m.res)
-	if line == "" {
-		os.Exit(1) // 中止
-	}
+	line := resultLine(m.res)
 	if err := os.WriteFile(*outPath, []byte(line+"\n"), 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "schedkeys: 結果が書けない: %v\n", err)
 		os.Exit(2)
@@ -78,6 +80,14 @@ func teaKeyName(tmuxKey string) string {
 	default:
 		return strings.ToLower(k)
 	}
+}
+
+// resultLine は out ファイルに書く 1 行。中止も「結果」として返す (終了コードで表さない)。
+func resultLine(r result) string {
+	if line := formatResult(r); line != "" {
+		return line
+	}
+	return "abort"
 }
 
 // formatResult は out ファイルの 1 行を組み立てる。中止なら空文字列。

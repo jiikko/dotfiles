@@ -50,7 +50,29 @@ mkdir -p "$STATE_DIR" "$(dirname "$LOG")" 2>/dev/null || true
 
 # ログは観測用で、書けなくても本体を止めない。リダイレクト自体の失敗 (dir 無し等) も stderr に
 # 出さない: fire は run-shell -b の無音契約下にある
-log() { { printf '%s\t%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$*" >> "$LOG"; } 2>/dev/null || true; }
+# LOG_MAX_LINES: 観測ログの上限。予約 1 件あたり数行なので増加は緩いが、rotate が無いと単調増加
+# する (scripts/tmux_periodic_save.sh が tt-restore-trigger.log に対して同じことをしている)。
+LOG_MAX_LINES="${TMUX_SCHEDULE_KEYS_LOG_MAX_LINES:-2000}"
+
+log() {
+  { printf '%s\t%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$*" >> "$LOG"; } 2>/dev/null || true
+  log_rotate
+}
+
+# log_rotate は上限を超えたら末尾だけ残す。fire からも呼ばれるので無音・非破壊的に失敗する。
+log_rotate() {
+  local n tmp
+  [[ -f "$LOG" ]] || return 0
+  n="$(wc -l < "$LOG" 2>/dev/null | tr -d ' ')"
+  [[ "$n" =~ ^[0-9]+$ ]] || return 0
+  (( n > LOG_MAX_LINES )) || return 0
+  tmp="$LOG.prune.$$"
+  if tail -n "$LOG_MAX_LINES" "$LOG" > "$tmp" 2>/dev/null; then
+    mv -f "$tmp" "$LOG" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+  else
+    rm -f "$tmp" 2>/dev/null
+  fi
+}
 
 # 残り秒 → "1h23m" / "45m" / "30s"
 fmt_remaining() {
@@ -61,9 +83,15 @@ fmt_remaining() {
   else printf '%ds' "$s"; fi
 }
 
-# pane_id → "session:index name" (消えていれば "(消滅)")
+# pane_id → "session:index name"。⚠️ 消えた pane でも tmux は rc=0 で ": " を返す (実測 2026-08-28)
+# ので、rc では消滅を判定できない。中身が空同然なら「消滅」と書く
 pane_label() {
-  tmux display-message -p -t "$1" '#{session_name}:#{window_index} #{window_name}' 2>/dev/null || printf '(消滅)'
+  local out
+  out="$(tmux display-message -p -t "$1" '#{session_name}:#{window_index} #{window_name}' 2>/dev/null || true)"
+  case "$out" in
+    ''|': '|':') printf '(消滅)' ;;
+    *)           printf '%s' "$out" ;;
+  esac
 }
 
 # job ファイルを読む。REPLY_PANE / REPLY_AT / REPLY_TEXT / REPLY_SOCK / REPLY_SRVPID に返す。
@@ -96,7 +124,7 @@ job_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || date
 
 # sleeper が居ない予約 (サーバ再起動で sleeper だけ消えた形) を掃く。kill はしない
 prune_stale() {
-  local j id pid
+  local j id pid n=0
   for j in "$STATE_DIR"/*.job; do
     [[ -f "$j" ]] || continue
     id="$(basename "$j" .job)"
@@ -109,11 +137,28 @@ prune_stale() {
     if ! pid_is_sleeper "$id" "$pid"; then
       log "prune stale $id pid=${pid:-none}"
       rm -f "$j" "$STATE_DIR/$id.pid"
+      n=$((n + 1))
     fi
   done
+  # ⚠️ 黙って消さない: ユーザーは一覧を開いた時点で「無い」ことしか分からず、待ち続ける
+  #    (サーバ再起動で失効するのが主因)。件数だけでも伝える
+  (( n > 0 )) && notify "サーバ再起動などで ${n} 件の予約が失効しました"
+  # 対応する .job が無い .pid も掃く (prune は *.job を起点に走るので、孤児は誰も回収しない)
+  for j in "$STATE_DIR"/*.pid; do
+    [[ -f "$j" ]] || continue
+    [[ -f "${j%.pid}.job" ]] && continue
+    pid=$(cat "$j" 2>/dev/null || true)
+    id="$(basename "$j" .pid)"
+    pid_is_sleeper "$id" "$pid" || rm -f "$j"
+  done
+  return 0
 }
 
-# ui_run は対話 UI を起こし、結果行 (action <TAB> ...) を REPLY_UI に返す。中止・失敗は 1
+# ui_run は対話 UI を起こし、結果行 (action <TAB> ...) を REPLY_UI に返す。
+# 戻り値: 0 = 結果あり / 1 = ユーザーが閉じた (中止) / 2 = UI が動かなかった (異常)
+# ⚠️ 中止と異常を分ける。UI はビルド失敗でも不在でも 0 以外で終わるので、一緒くたにすると
+#    「押しても何も起きないキー」になり、原因がどこにも残らない (監査 2026-08-28)。
+#    中止は UI が out へ "abort" と書いて exit 0 で知らせる契約
 ui_run() {
   local jobs_file=$1 label=$2 out rc=0
   out="$(mktemp "${TMPDIR:-/tmp}/schedkeys.XXXXXX")" || return 1
@@ -125,7 +170,11 @@ ui_run() {
   REPLY_UI=''
   if (( rc == 0 )); then IFS= read -r REPLY_UI < "$out" || REPLY_UI=''; fi
   rm -f "$out"
-  [[ -n "$REPLY_UI" ]]
+  if (( rc != 0 )); then
+    log "ui: 起動できない (rc=$rc)"
+    return 2
+  fi
+  [[ -n "$REPLY_UI" && "$REPLY_UI" != "abort" ]]
 }
 
 # new_reservation は UI が返した発火 epoch と文字列で予約を作る。
@@ -185,8 +234,16 @@ cancel_selected() {
     tmux display-message "その予約はもうありません (発火済みか取消済み)"
     return 0
   fi
+  local grc=0
   gum confirm --default=false --affirmative "取消する" --negative "やめる" \
-    "この予約を取り消す？ $(fmt_remaining $(( REPLY_AT - $(date +%s) ))) $(pane_label "$REPLY_PANE") $REPLY_TEXT" || return 0
+    "この予約を取り消す？ $(fmt_remaining $(( REPLY_AT - $(date +%s) ))) $(pane_label "$REPLY_PANE") $REPLY_TEXT" || grc=$?
+  # ⚠️ 1 (やめる) / 130 (Ctrl-C) 以外は「確認できなかった」= gum 不在や端末を掴めない等。
+  #    黙って閉じると、取消手段が壊れていることに気づけない (監査 2026-08-28)
+  case "$grc" in
+    0) ;;
+    1|130) return 0 ;;
+    *) log "cancel $id: 確認できない (gum rc=$grc)"; notify "取消の確認ができませんでした (gum: rc=$grc)"; return 0 ;;
+  esac
   # ⚠️ 確認ダイアログを読んでいる間に発火しうる。job が消えていたら「取り消した」と言わない
   #    (取消の動機は「もう実行したくない」なので、嘘は実害に直結する)
   if [[ ! -f "$j" ]]; then
@@ -209,11 +266,16 @@ msg_escape() { printf '%s' "${1//\#/##}"; }
 # ⚠️ 「止められなかった」= 発火済みか prune 済み。呼び出し側はそれを「取り消した」と言ってはいけない
 #    (fire は送信直前に trap で TERM を無視するので、kill が届いても送信は完走する)
 cancel_job() {
-  local id=$1 pid rc=1
+  local id=$1 job pid rc
+  job="$STATE_DIR/$id.job"
+  # ⚠️ 成否は kill の rc ではなく **claim を勝ち取れたか** で決める。fire は送信直前に TERM を
+  #    無視するので、kill が exit 0 でも送信は完走しうる。job を rename できた = fire はまだ
+  #    claim していない = 確実に止められた、と言える (監査 2026-08-28)
+  if mv "$job" "$job.cancelled" 2>/dev/null; then rc=0; else rc=1; fi
   pid=$(cat "$STATE_DIR/$id.pid" 2>/dev/null || true)
-  if pid_is_sleeper "$id" "$pid"; then kill "$pid" 2>/dev/null && rc=0; fi
-  rm -f "$STATE_DIR/$id.job" "$STATE_DIR/$id.pid"
-  log "cancel $id pid=${pid:-none} killed=$rc"
+  if pid_is_sleeper "$id" "$pid"; then kill "$pid" 2>/dev/null || true; fi
+  rm -f "$job" "$job.cancelled" "$STATE_DIR/$id.pid"
+  log "cancel $id pid=${pid:-none} claimed=$rc"
   return "$rc"
 }
 
@@ -224,19 +286,23 @@ cancel_job() {
 cmd_fire() {
   local id=$1 job now wait_s
   job="$STATE_DIR/$id.job"
-  read_job "$job" || { log "fire $id: job unreadable"; rm -f "$job" "$STATE_DIR/$id.pid"; exit 0; }
-  printf '%s\n' "$$" > "$STATE_DIR/$id.pid"
+  read_job "$job" || fire_drop "$id" "job を読めない" ""
+  # ⚠️ ここも stderr を出さない (無音契約)。書けなければ予約は成立しないので、new 側の
+  #    「.pid が現れない」検出に任せて静かに降りる
+  printf '%s\n' "$$" > "$STATE_DIR/$id.pid" 2>/dev/null \
+    || { log "fire $id: .pid を書けない"; exit 0; }
   # 予約時と同じサーバへ向ける ($TMUX の 1 フィールド目が socket。bare tmux はこれを見る)
   [[ -n "$REPLY_SOCK" ]] && export TMUX="$REPLY_SOCK,0,0"
 
   # ⚠️ date の出力を算術へ直に入れない。空を返した瞬間に「operand expected」が stderr へ出て
   #    rc=1 になり、無音契約 (run-shell の子は stdout/stderr へ出さず exit 0) を破る
   now="$(date +%s 2>/dev/null || true)"
-  [[ "$now" =~ ^[0-9]+$ ]] || { log "fire $id: 時刻が取れない。破棄 text=$REPLY_TEXT"; rm -f "$job" "$STATE_DIR/$id.pid"; exit 0; }
+  [[ "$now" =~ ^[0-9]+$ ]] || fire_drop "$id" "時刻が取れない" "$REPLY_TEXT"
   wait_s=$(( REPLY_AT - now ))
   (( wait_s > 0 )) && sleep "$wait_s"
 
-  fire_claim "$id" "$job" || { rm -f "$STATE_DIR/$id.pid"; exit 0; }
+  # claim を取れない = 取消された (取消側が通知するのでここは黙る) か、既に誰かが送った
+  fire_claim "$id" "$job" || { log "fire $id: claim を取れず終了 (取消済み)"; rm -f "$STATE_DIR/$id.pid"; exit 0; }
   # ここから先は割り込まれない: 文字列だけ打たれて Enter が届かない半端な状態を作らない
   trap '' TERM INT HUP
   fire_send "$id"
@@ -249,18 +315,31 @@ cmd_fire() {
 #    (分けると、判定を通ってから削除するまでの間に取消が「取り消した」と嘘をつく窓ができる)。
 fire_claim() {
   local id=$1 job=$2 nowpid
-  # 取消されていたら送らない (kill が sleep の隙間に届かなかった場合の保険)
-  [[ -f "$job" ]] || return 1
-  rm -f "$job" "$STATE_DIR/$id.pid"
+  # ⚠️ 「在るか確かめてから消す」ではなく **rename で取る**。確認と削除の間に取消が入ると、
+  #    取消側は「消せた = 止めた」と誤解して「取り消した」と表示しつつ、こちらは送信を完走する
+  #    (監査 2026-08-28)。rename は原子的なので、勝った側だけが先へ進む
+  mv "$job" "$job.claimed" 2>/dev/null || return 1
+  rm -f "$job.claimed" "$STATE_DIR/$id.pid"
   # ⚠️ サーバの同一性は「起きた後・送る直前」に見る。眠る前に見ても意味が無い (壊れるのは
   #    眠っている間にサーバが死んで別のサーバが立つ経路。実機で確認 2026-08-28)。
   #    socket が同じでも中身が別サーバなら、pane id は振り直されていて送り先は別物。
   #    記録が無い job も送らない (fail-closed): 確かめられないものを送らない
   nowpid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
   if [[ -z "$REPLY_SRVPID" || "$nowpid" != "$REPLY_SRVPID" ]]; then
-    log "fire $id: 予約したサーバを確かめられない (job=${REPLY_SRVPID:-none} now=${nowpid:-none})。破棄 text=$REPLY_TEXT"
-    return 1
+    log "fire $id: 予約したサーバを確かめられない (job=${REPLY_SRVPID:-none} now=${nowpid:-none})"
+    fire_drop "$id" "予約したときの tmux サーバがもう居ません" "$REPLY_TEXT"
   fi
+}
+
+# fire_drop は「送らずに終わる」唯一の出口。⚠️ 破棄はログだけにしない: ユーザーは来ない入力を
+# 待ち続けることになる (監査 2026-08-28。送信失敗だけ通知され、他の破棄は無音だった)。
+# 呼んだら戻らない (exit 0。無音契約のため終了コードは常に 0)。
+fire_drop() {
+  local id=$1 why=$2 text=$3
+  log "fire $id: ${why}。破棄 text=$text"
+  rm -f "$STATE_DIR/$id.job" "$STATE_DIR/$id.pid"
+  notify "予約入力を破棄: $why${text:+ ($text)}"
+  exit 0
 }
 
 # fire_send は実際に pane へ流す。ここは tmux へキーを送る作法だけを持つ。
@@ -278,17 +357,26 @@ fire_send() {
   #    そこを escape すると逆にバックスラッシュが残る)
   send_text="$REPLY_TEXT"
   case "$send_text" in *\;) send_text="${send_text%;}\\;" ;; esac
+  # ⚠️ 本文と Enter は **1 回の tmux 呼び出し** (コマンドリスト) で送る。2 回に分けると、同時刻に
+  #    発火した別の予約が間に割り込み、pane では 2 つの文字列が 1 行に連結されて実行される
+  #    (実測 2026-08-28: 同じ HH:MM の予約 2 件で "BBBB…AAAA…" が 1 行になった。parseClock は秒を
+  #    0 に落とすので同時刻は簡単に作れる)。1 呼び出しなら tmux のコマンドキューで 1 単位になる。
+  #    分けないことで「本文は送れたが Enter が失敗」も構造的に消える。
   # send-keys の stderr は捨てる (pane が直前に消えた場合の "can't find pane" が run-shell 経由で
   # アクティブ pane の view-mode に積まれる)。成否は rc で分ける
-  if tmux send-keys -t "$REPLY_PANE" -l -- "$send_text" 2>/dev/null; then
-    tmux send-keys -t "$REPLY_PANE" Enter 2>/dev/null || true
+  if tmux send-keys -t "$REPLY_PANE" -l -- "$send_text" ';' send-keys -t "$REPLY_PANE" Enter 2>/dev/null; then
     log "fire $id: sent to $REPLY_PANE text=$REPLY_TEXT"
     toast "予約入力を送信: $(pane_label "$REPLY_PANE") <- $REPLY_TEXT"
   else
     log "fire $id: pane $REPLY_PANE へ送れず破棄 text=$REPLY_TEXT"
-    toast "予約入力を破棄: 送り先へ送れなかった ($REPLY_TEXT)"
+    notify "予約入力を破棄: 送り先へ送れませんでした ($REPLY_TEXT)"
   fi
 }
+
+# notify はユーザーに必ず届ける通知。⚠️ toast (bin/tmux-toast) は 2 秒の再入ガードと agent panel の
+# 沈黙窓を持ち、**黙って落ちる**ので失敗の通知には使えない (監査 2026-08-28)。status 行の
+# display-message はレート制限が無い。# はフォーマットとして展開されるので潰す
+notify() { tmux display-message "$(msg_escape "$1")" 2>/dev/null || true; }
 
 # toast は装飾 (失敗しても送信結果には影響させない)。tmux-toast は「tmux 内か」を $TMUX の有無で
 # 判定するが、run-shell -b の子はサーバ環境を継承するため $TMUX が無いことがある (socket を
@@ -301,13 +389,22 @@ toast() {
 cmd_wizard() {
   local pane label jobs_file tab
   tab=$'\t'
+  # ⚠️ popup が外から閉じられる (ウィンドウを閉じる / kill-session) と成功パスの rm を通らず、
+  #    全予約の文字列を含む一時ファイルが TMPDIR に残る (監査 2026-08-28)
+  jobs_file=''
+  trap 'rm -f "${jobs_file:-}" 2>/dev/null' EXIT
   pane="$(tmux display-message -p '#{pane_id}')" || return 1
   label="$(pane_label "$pane")"
   prune_stale
   jobs_file="$(mktemp "${TMPDIR:-/tmp}/schedkeys-jobs.XXXXXX")" || return 1
   jobs_tsv "$jobs_file"
-  if ! ui_run "$jobs_file" "$label"; then rm -f "$jobs_file"; return 0; fi
+  ui_run "$jobs_file" "$label"; local ui_rc=$?
   rm -f "$jobs_file"
+  case "$ui_rc" in
+    0) ;;
+    1) return 0 ;;  # ユーザーが閉じた
+    *) notify "予約入力の画面を開けませんでした (~/.cache/tt-schedule-keys.log)"; return 1 ;;
+  esac
   # ⚠️ フィールド数ごと検証する。%%/# の展開で切り出すと、区切りが足りない行 ("new<TAB>4600") が
   #    epoch をそのまま文字列として通してしまう (敵対的レビュー 2026-08-28 で再現)
   local f1 f2 f3 extra
