@@ -264,12 +264,16 @@ func TestRenderCostStaysLinear(t *testing.T) {
 	}
 	small := measure(100)
 	big := measure(10000)
-	if big > 5*time.Millisecond {
-		t.Errorf("10000 文字の 1 フレームが %v (5ms 以内であるべき)", big)
-	}
-	// 100 倍の入力で 30 倍を超えるなら線形ではない (二乗なら 10000 倍近くになる)
+	// ⚠️ 絶対時間で判定しない: runner の速度と -race で 2〜3 倍変わり、CI だけ落ちる
+	//    (実際に darwin レーンで 7.3ms > 5ms で落とした 2026-08-28)。守りたいのは
+	//    「入力長に対して線形」であること。100 倍の入力で 30 倍を超えるなら二乗を疑う
+	//    (二乗なら 10000 倍近くになるので、この閾値は十分に広い)
 	if small > 0 && big > small*30 {
-		t.Errorf("描画コストが入力長に対して非線形: %v → %v", small, big)
+		t.Errorf("描画コストが入力長に対して非線形: 100 文字 %v → 10000 文字 %v", small, big)
+	}
+	// 明らかに使えない遅さだけは絶対値でも止める (runner の速度差では届かない値)
+	if big > 200*time.Millisecond {
+		t.Errorf("10000 文字の 1 フレームが %v (遅すぎる)", big)
 	}
 }
 
