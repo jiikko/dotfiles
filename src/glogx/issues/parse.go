@@ -630,7 +630,12 @@ func (f StatusFilter) String() string {
 //
 // 見えすぎるより見えなさすぎる方を選ぶ: a を 1 打すれば広げられるので、伏せ過ぎは回復できる。
 func ParseStatusFilter(name string) (StatusFilter, bool) {
-	for _, f := range []StatusFilter{FilterOpen, FilterPending, FilterAll} {
+	// ⚠️ 段階を手書きで列挙しないこと (issue 115)。String() は default 無しの switch なので
+	// exhaustive linter が新しい段階を強制するが、**スライスリテラルは誰も強制しない**。
+	// 足し忘れると、保存された新段階名が ok=false で既定 (open) へ落ちて「開き直したら伏せて
+	// いたはずの段階に戻っている」になる (String() の doc が序数保存について警告しているのと同じ絵)。
+	// 上限は Next() が使っている FilterAll と同じ出典にする。
+	for f := FilterOpen; f <= FilterAll; f++ {
 		if f.String() == name {
 			return f, true
 		}

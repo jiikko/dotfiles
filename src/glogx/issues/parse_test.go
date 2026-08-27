@@ -530,3 +530,60 @@ func TestTabsPinHumanFirstRegardlessOfCount(t *testing.T) {
 		t.Fatalf("human 0 件で席が消えた: %+v", t2)
 	}
 }
+
+// 段階の名前は往復すること (issue 115)。
+//
+// ⚠️ 名前は保存形式そのもの。ParseStatusFilter が引けない段階は ok=false で既定 (open) へ落ち、
+// 「開き直したら伏せていたはずの段階に戻っている」という、原因が保存形式だと気づけない形で出る。
+func TestStatusFilterNameRoundTrip(t *testing.T) {
+	// 名前そのものを literal で固定する (production の String() から作ると自己言及になる)
+	for _, tc := range []struct {
+		name string
+		want StatusFilter
+	}{
+		{"open", FilterOpen},
+		{"pending", FilterPending},
+		{"all", FilterAll},
+	} {
+		got, ok := ParseStatusFilter(tc.name)
+		if !ok || got != tc.want {
+			t.Errorf("ParseStatusFilter(%q) = (%v, %v) (期待 (%v, true))", tc.name, got, ok, tc.want)
+		}
+		if s := tc.want.String(); s != tc.name {
+			t.Errorf("%v.String() = %q (期待 %q)", tc.want, s, tc.name)
+		}
+	}
+}
+
+// ⚠️ **全段階**が引けること。段階を増やしたとき、String() 側は default 無しの switch なので
+// exhaustive linter が強制するが、ParseStatusFilter 側は強制されない。ここで範囲を走ることで
+// 「String() には足したが引く側に足し忘れた」を検出する (issue 115 の本題)。
+func TestStatusFilterEveryStageIsParseable(t *testing.T) {
+	n := 0
+	for f := FilterOpen; f <= FilterAll; f++ {
+		got, ok := ParseStatusFilter(f.String())
+		if !ok {
+			t.Errorf("段階 %d (%q) を引けない (String() には在るが引く側に無い)", f, f.String())
+			continue
+		}
+		if got != f {
+			t.Errorf("段階 %d (%q) が %d として引かれた", f, f.String(), got)
+		}
+		n++
+	}
+	// 走査対象 0 件を緑にしない (範囲の書き方が壊れたら赤にする)
+	if n < 3 {
+		t.Fatalf("段階を %d 件しか走査していない (範囲が壊れている)", n)
+	}
+}
+
+// 未知の名前は既定 (open) + ok=false へ倒す (見えすぎるより見えなさすぎる方を選ぶ契約)。
+func TestStatusFilterUnknownNameFallsBackToOpen(t *testing.T) {
+	got, ok := ParseStatusFilter("no-such-stage")
+	if ok {
+		t.Error("未知の名前を受理した")
+	}
+	if got != FilterOpen {
+		t.Errorf("未知の名前が %v へ落ちた (期待 FilterOpen)", got)
+	}
+}
