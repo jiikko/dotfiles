@@ -412,6 +412,12 @@ EOF
   `CLANG_MODULE_CACHE_PATH="$PWD/.build/mcache" swift test --disable-sandbox --cache-path .build/spm-cache`。
   GUI・実機・実サーバ・CI 認証など codex 内で完結しない検証は Phase 0/[5] に委譲し、代替経路と未検証範囲を着手前に固定する。
   (出典: `573-retro-codex-drive-541-2026-08-24.md`)
+- **macOS app (xcodebuild 系) の受け入れ条件は分担を最初に切る**: codex sandbox では `make lint` / `make build` /
+  `make test` (xcodebuild) が SwiftPM / clang cache の書込拒否で `Error 74` になり走らない (obaket 598, 2026-08-27)。
+  codex に任せるのは shared の `swift build` / `swift test` (上の cache フラグつき) まで、xcodebuild 系は **Claude が
+  素の環境で回す**と `[2]` のプロンプトに書く。codex の全体 `swift test` が赤を報告しても sandbox 由来の偽赤が
+  ありうる (同日 2 回観測。素の環境では 0 failure) ので、赤も緑と同じく Claude の再実行で判定する
+  (出典: obaket `issues/613`)。
 - 触ってよい範囲・触らない範囲・既存方針 (設計 doc 等) を明示する。
 
 ### 2. codex に実装させる（write 権限）
