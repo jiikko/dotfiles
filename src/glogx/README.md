@@ -380,7 +380,19 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   `sgr/` (基本 ANSI 色。3 パッケージで別名の写しになっていたものを 1 箇所へ) / `main.go` (配線)
 - `tools/width-probe/`: 端末が各文字に何セル割り当てるかを CPR (CSI 6n) で端末自身に
   問い合わせる調査ツール。幅ズレの原因層 (glogx / 描画エンジン / tmux / 端末) を推測でなく
-  実測で切り分けるためのもので、本体からは参照しない
+  実測で切り分けるためのもので、本体からは参照しない。
+  **3 つの幅モデルを並べて出す** (`grapheme` = `ansi.StringWidth` = glogx の `dispWidth` /
+  `wc` = `ansi.StringWidthWc` = bubbletea v2 描画エンジンの既定 / `uniseg` = 分割に使っている
+  ライブラリ) ので、「端末がどれと一致するか」= **揃える先**が 1 回の実行で決まる (issue 124)。
+  ⚠️ **絵文字を「無情報」として外さないこと**: `⚠+VS16` は (grapheme 2 / wc 1 / uniseg 2) で、
+  実は一覧中で最も決定力のある probe (実測 2026-08-28)。逆に `🇯🇵` は現在の go-runewidth では
+  3 モデル一致で無情報 — 「食い違うのは国旗」はもう成り立たない。
+  ⚠️ 「grapheme と wc が割れる」形を残すのが要点で、インド系 (`ಕಾ` `का` `கா`) / Arabic format /
+  RI 単独 / keycap がそれ。`U+09BE` や `x+U+0897` は uniseg だけが違う (= 分割器の問題。
+  issue 124 の (1)) ので、揃える先の決定には効かない。
+  ⚠️ **`wc` 列は固定の座標系ではない**: `ansi.StringWidthWc` は `mattn/go-runewidth` を使い、
+  その版で答えが変わる (`ಕಾ` の wc は v0.0.23 で 1、v0.0.27 で 2)。indirect 依存なので無関係な
+  更新で判定が反転しうる。ツールは解決版を出力に載せるので、**結果を残すときは必ず一緒に控える**
 - GitHub API はテストでは `CommandRunner` を fake に差し替える (fixture 駆動)
 - `tui.go` のテストは機能クラスタで分割: `tui_helpers_test.go` (共有ヘルパー) /
   `tui_nav_test.go` (カーソル/スクロール/アニメ/View) / `tui_panel_test.go` (job パネル/詳細/ETA/CI 取得) /

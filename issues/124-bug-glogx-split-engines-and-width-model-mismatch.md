@@ -89,3 +89,49 @@ WcWidth 側になる」)。つまり既知の未解決事項。
 
 **最初にやること**: `tools/width-probe` の probe 一覧にインド系 (`ಕಾ` `का` `கா`) と
 `U+0600` を足し、実端末で測る。**それが取れるまで (1)(2) の方向は決められない。**
+
+---
+
+## 進捗 (2026-08-28): 測れるようにした
+
+(3)「判断に必要な実測ができない」を解いた。**probe に文字を足すだけでは足りなかった** —
+測っても「どのモデルへ揃えるべきか」が決まらないので、`tools/width-probe` を作り替えた。
+
+### 3 モデル併記にした
+
+| 列 | 中身 |
+|---|---|
+| `grapheme` | `ansi.StringWidth` = glogx の `dispWidth` |
+| `wc` | `ansi.StringWidthWc` = **bubbletea v2 描画エンジンの既定** |
+| `uniseg` | `uniseg.StringWidth` = 分割に使っているライブラリ |
+| `got` | 端末の実測 |
+
+「判定」列にどのモデルと一致したかを出すので、1 回の実行で揃える先の候補が絞れる。
+
+### 敵対的レビューが直させたもの
+
+| 重要度 | 内容 |
+|---|---|
+| P1 | **CPR に再同期が無く、1 バイト紛れ込むだけで「揺れた」という結論を捏造できた**。決定論的な偽端末に `R` を 1 バイト注入すると「8 文字が揺れた」と断定した。ESC から読み直す形にし、**基準文字 `ASCII x` が 1 でなければ run 全体を無効**と宣言するようにした |
+| P1 | **2 秒 deadline が実 TTY で no-op だった**。`SetReadDeadline` は darwin で `file type does not support deadline` を返す (実測)。CPR が返らないと raw mode のまま無限ハングし、ISIG が落ちているので Ctrl-C も効かない。goroutine + select の実効するタイムアウトに置き換え、**stdout が TTY でなければ起動を止める**ようにした (レビューのハング再現手順が exit 2 で止まることを確認) |
+| P1 | **`RUNEWIDTH_EASTASIAN` ガードが無かった**。本体と全 TestMain は `widthenv.ExitIfUnsupported` を通るのに、**揃える先を決めるこの道具だけが素通り**して誤った判定列を静かに出していた |
+| P2 | **私の README の主張が偽だった**。「絵文字だけでは何も分からない」と書いたが、既存の `⚠+VS16` こそ (2,1,2) で**一覧中で最も決定力のある probe**。真に受けると唯一の決め手を落とす |
+| P2 | **追加した 6 文字は割れる 32 種のうち 5 種しかカバーせず、2 文字は判別に無情報**だった (`U+09BE` / `x+U+0897` は grapheme==wc)。RI 単独 (2,1,2) と keycap (2,1,1) を追加した |
+| P2 | **`wc` 列は固定の座標系ではない**。`ansi.StringWidthWc` は `mattn/go-runewidth` (indirect) を使い、版で答えが変わる (`ಕಾ` は v0.0.23 で 1、v0.0.27 で 2)。解決版を出力に載せるようにした |
+| P2 | 診断用 probe が「食い違い N 件」に混ざり、結語の「使用をやめる」が `ಕಾ` にも掛かっていた。`ui` フラグで分けた |
+
+### ⚠️ この測定でも決まらないこと (レビューの P1-3。issue に残す)
+
+bubbletea v2 は起動時に **mode 2027 を交渉し、対応端末では端末側の幅解釈も切り替える**
+(`tea.go` の `RequestModeUnicodeCore` → `setWidthMethod` → `SetModeUnicodeCore`)。
+width-probe は 2027 を要求も設定もしないので、**glogx が実際に描画する構成とは別の構成を
+測っている**。さらに `shouldQuerySynchronizedOutput` は `TERM_PROGRAM` 等で分岐し、
+Apple 系では 2027 を問い合わせすらしない。
+
+つまり今回の測定は「**2027 OFF 側の答え**」。ここで `wc` と一致するなら揃える先の議論に進み、
+そのとき初めて DECRQM (`CSI ? 2027 $p`) を測る価値が出る。
+
+### 次
+
+→ [issue 127](127-human-verify-glogx-width-model.md) で実端末の測定を依頼した。
+それが返るまで (1)(2) の方向は決められない、という 124 の判断は変わらない。

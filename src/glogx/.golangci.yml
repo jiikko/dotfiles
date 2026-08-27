@@ -78,6 +78,10 @@ linters:
             - "!**/issues/wrap.go"
             - "!**/width_test.go"
             - "!**/width_fast_test.go"   # fast-path の受理集合をクラスタ数で総当たり検証する (幅は測らない)
+            # width-probe は「端末がどの幅モデルと一致するか」を測る道具で、3 モデル
+            # (ansi.StringWidth / ansi.StringWidthWc / uniseg.StringWidth) を並べるのが仕事。
+            # 本体からは参照しない (README の tools/ の項)。issue 124
+            - "!**/tools/width-probe/main.go"
           deny:
             - pkg: github.com/rivo/uniseg
               desc: uniseg は分割専用 (render.go / issues/wrap.go)。幅は dispWidth を通す (issue 112)
