@@ -218,32 +218,48 @@ cancel_job() {
 }
 
 # 内部: 待機して送る。run-shell -b の子なので stdout/stderr へ出さない (無音契約)
+# 内部: 待機して送る。run-shell -b の子なので stdout/stderr へ出さない (無音契約)。
+# 流れは「自分を記録 → 眠る → 送ってよいか判定 → 送る」の 4 段。判定と送信の中身は下の 2 つに分けて
+# ある (安全側の判断と、tmux へキーを流す作法を混ぜない)
 cmd_fire() {
-  local id=$1 job now wait_s
+  local id=$1 job wait_s
   job="$STATE_DIR/$id.job"
   read_job "$job" || { log "fire $id: job unreadable"; rm -f "$job" "$STATE_DIR/$id.pid"; exit 0; }
   printf '%s\n' "$$" > "$STATE_DIR/$id.pid"
   # 予約時と同じサーバへ向ける ($TMUX の 1 フィールド目が socket。bare tmux はこれを見る)
   [[ -n "$REPLY_SOCK" ]] && export TMUX="$REPLY_SOCK,0,0"
-  now=$(date +%s)
-  wait_s=$(( REPLY_AT - now ))
+
+  wait_s=$(( REPLY_AT - $(date +%s) ))
   (( wait_s > 0 )) && sleep "$wait_s"
+
+  fire_allowed "$id" "$job" || exit 0
+  # ここから先は割り込まれない: 文字列だけ打たれて Enter が届かない半端な状態を作らない
+  trap '' TERM INT HUP
+  fire_send "$id"
+  exit 0
+}
+
+# fire_allowed は「今このまま送ってよいか」を判定し、送れないなら理由をログに残して 1 を返す。
+# 送ると決めた時点で job / pid ファイルは片付ける (取消側が「もう止められない」と分かるように)。
+fire_allowed() {
+  local id=$1 job=$2 nowpid
   # 取消されていたら送らない (kill が sleep の隙間に届かなかった場合の保険)
-  [[ -f "$job" ]] || exit 0
+  [[ -f "$job" ]] || return 1
   rm -f "$job" "$STATE_DIR/$id.pid"
   # ⚠️ サーバの同一性は「起きた後・送る直前」に見る。眠る前に見ても意味が無い (壊れるのは
   #    眠っている間にサーバが死んで別のサーバが立つ経路。実機で確認 2026-08-28)。
-  #    socket が同じでも中身が別サーバなら、pane id は振り直されていて送り先は別物
-  local nowpid
+  #    socket が同じでも中身が別サーバなら、pane id は振り直されていて送り先は別物。
+  #    記録が無い job も送らない (fail-closed): 確かめられないものを送らない
   nowpid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
-  # ⚠️ 記録が無い job も送らない (fail-closed)。予約時に #{pid} を取れなかった場合や旧形式の
-  #    job がここへ来ると、同一性を確かめられないまま別サーバの pane を叩きうる
   if [[ -z "$REPLY_SRVPID" || "$nowpid" != "$REPLY_SRVPID" ]]; then
     log "fire $id: 予約したサーバを確かめられない (job=${REPLY_SRVPID:-none} now=${nowpid:-none})。破棄 text=$REPLY_TEXT"
-    exit 0
+    return 1
   fi
-  # ここから先は割り込まれない: 文字列だけ打たれて Enter が届かない半端な状態を作らない
-  trap '' TERM INT HUP
+}
+
+# fire_send は実際に pane へ流す。ここは tmux へキーを送る作法だけを持つ。
+fire_send() {
+  local id=$1 send_text
   # copy-mode 等に入っている pane へはキーが届かない (mode のキーテーブルへ行き、リテラル送信は
   # "not in a mode" で rc=1 になる。tmux 3.7b で実測 2026-08-28)。人が打つときと同じように
   # mode を抜けてから送る。抜けられなくても送信は試す (判定は send-keys の rc に任せる)
@@ -251,13 +267,13 @@ cmd_fire() {
     log "fire $id: pane $REPLY_PANE が mode 中なので抜ける"
     tmux send-keys -t "$REPLY_PANE" -X cancel 2>/dev/null || true
   fi
-  # send-keys の stderr は捨てる (pane が直前に消えた場合の "can't find pane" が run-shell 経由で
-  # アクティブ pane の view-mode に積まれる)。成否は rc で分ける
   # ⚠️ 末尾の ; は tmux のコマンド区切りとして食われる (`--` では守れない。実測 2026-08-28:
   #    "echo a ;" は "echo a" として届く)。最後の 1 個だけ \; にすると通る (途中の ; は素通しで、
   #    そこを escape すると逆にバックスラッシュが残る)
-  local send_text="$REPLY_TEXT"
+  send_text="$REPLY_TEXT"
   case "$send_text" in *\;) send_text="${send_text%;}\\;" ;; esac
+  # send-keys の stderr は捨てる (pane が直前に消えた場合の "can't find pane" が run-shell 経由で
+  # アクティブ pane の view-mode に積まれる)。成否は rc で分ける
   if tmux send-keys -t "$REPLY_PANE" -l -- "$send_text" 2>/dev/null; then
     tmux send-keys -t "$REPLY_PANE" Enter 2>/dev/null || true
     log "fire $id: sent to $REPLY_PANE text=$REPLY_TEXT"
@@ -266,7 +282,6 @@ cmd_fire() {
     log "fire $id: pane $REPLY_PANE へ送れず破棄 text=$REPLY_TEXT"
     toast "予約入力を破棄: 送り先へ送れなかった ($REPLY_TEXT)"
   fi
-  exit 0
 }
 
 # toast は装飾 (失敗しても送信結果には影響させない)。tmux-toast は「tmux 内か」を $TMUX の有無で

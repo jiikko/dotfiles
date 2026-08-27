@@ -66,8 +66,12 @@ case "$*" in
       *)             printf 'main:3 claude\n' ;;
     esac ;;
   "show-options -gv prefix") printf 'C-t\n' ;;
-  "send-keys -t %5 "*)
+  "send-keys -t %5 -l"*)
     # 実 tmux は pane 不在で stderr にエラーを出して rc=1 (この stderr が run-shell 経由で view-mode に積まれる)
+    [ "${STUB_PANE_GONE:-0}" = 1 ] && { echo "can't find pane: %5" >&2; exit 1; }
+    # 送信の途中に割り込む窓を作る (trap のテスト用)
+    [ -n "${STUB_SEND_DELAY:-}" ] && /bin/sleep "$STUB_SEND_DELAY" ;;
+  "send-keys -t %5 "*)
     [ "${STUB_PANE_GONE:-0}" = 1 ] && { echo "can't find pane: %5" >&2; exit 1; } ;;
 esac
 exit 0
@@ -274,6 +278,27 @@ STUB_SRVPID=4242 run "$STUB_PATH" "$SCRIPT" fire j8   # 同じサーバ
 assert_called "tmux send-keys -t %5 -l -- make test" "同じサーバなら送る"
 grep -q 'env TMUX=/tmp/sk-sock,0,0' "$CALLS" || { printf '✗ 予約時の socket を $TMUX に載せていない\n'; cat "$CALLS"; exit 1; }
 printf '✓ 予約時の socket へ向ける ($TMUX)\n'
+
+printf '\n## fire: 送信の途中で TERM が来ても両方送る\n'
+# 文字列だけ打たれて Enter が届かないと、pane に中途半端なコマンドが残る。送信直前に TERM/INT/HUP を
+# 無視するのはそのため (取消が間に合わなかったときの半端送信を防ぐ)
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+printf '%%5\n900\nmake test\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/trapped.job"
+( trap - EXIT; CALLS="$CALLS" PATH="$STUB_PATH" STUB_SEND_DELAY=1 exec "$SCRIPT" fire trapped ) >/dev/null 2>&1 &
+trap_pid=$!; FAKE_PIDS+=("$trap_pid")
+/bin/sleep 0.5; kill -TERM "$trap_pid" 2>/dev/null   # 1 回目の送信中に割り込む
+wait "$trap_pid" 2>/dev/null || true
+assert_called "tmux send-keys -t %5 -l -- make test" "TERM が来ても本文は送られる"
+assert_called "tmux send-keys -t %5 Enter" "TERM が来ても Enter まで送り切る (半端な入力を残さない)"
+
+printf '\n## fire: 眠っている間に取り消されたら送らない\n'
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+printf '%%5\n%s\nmake test\n/tmp/sk-sock\n4242\n' "$(( $(/bin/date +%s) + 2 ))" > "$TMUX_SCHEDULE_KEYS_DIR/canc.job"
+( trap - EXIT; CALLS="$CALLS" PATH="$STUB_PATH" STUB_REAL_SLEEP=1 exec "$SCRIPT" fire canc ) >/dev/null 2>&1 &
+canc_pid=$!; FAKE_PIDS+=("$canc_pid")
+/bin/sleep 0.5; rm -f "$TMUX_SCHEDULE_KEYS_DIR/canc.job"   # 眠っている間に取り消された
+wait "$canc_pid" 2>/dev/null || true
+assert_not_called "send-keys -t %5 -l" "job が消えていたら送らない (kill が間に合わなくても止まる)"
 
 printf '\n## fire: 末尾の ; が食われない\n'
 # tmux は引数の末尾の ; をコマンド区切りとして食う (-- では守れない)。最後の 1 個だけ \; にする
