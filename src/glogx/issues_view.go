@@ -886,6 +886,13 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 		// 番号入力中はここまで届かないので誤爆しない。閉じ→開きは browseModel (takeWantStatus)
 		v.close()
 		v.wantStatus = true
+	case "u":
+		// ⚠️ 黙って無視しない。u は git log 一覧では pull、本文では URL ピッカー、status viewer では
+		// 「pull は p です」を返す — 一覧だけ無音だと「押したのに何も起きない」= 壊れて見える
+		// (status viewer 側で明文化されている規律。issue 122)。
+		// 効かせない理由は openURLPicker の doc: 一覧で押せるようにするとキー 1 打ごとにファイルを
+		// 読むことになり、しかも「その issue に URL があるか」は一覧に出ていない。
+		v.setNotice("URL 一覧は本文を開いてから u で出します", false)
 	case "/":
 		v.numFilter.start() // 絞り込み中なら続きから打てる (行集合は変わらないので refresh 不要)
 	case "j", "down", "ctrl+n":
@@ -1030,6 +1037,12 @@ func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
 	// ⚠️ pagerScrollKey へ渡す前に捌くこと: あちらは enter を 1 行送りに写す。
 	case "q", "esc", "h", "left", "enter":
 		v.closeBody()
+	case "i":
+		// i は本文からも効く (一覧の i と同じ toggle。**s と同じ理由**: --help と README が
+		// 「viewer 内のキー」として i を案内しており、本文だけ沈黙すると案内が嘘になる。issue 122)。
+		// ⚠️ 本文だけ畳む 1 段戻りにはしない: それは Enter / q / h が既に持っている語彙で、
+		//   README の「i で閉じて一覧へ戻る」とも食い違う。
+		v.close()
 	case "s":
 		// status viewer への横断は本文からも効く (一覧の s と同じ。--help が「viewer 内のキー」
 		// として案内しており、本文だけ沈黙すると案内が嘘になる)

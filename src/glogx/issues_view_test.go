@@ -2454,3 +2454,45 @@ func TestIssuesViewerUsageStillWorksWhenNotOwningKeys(t *testing.T) {
 		t.Error("viewer の一覧モードで U が効かない (横取りを止めすぎている)")
 	}
 }
+
+// 本文モードでも i で viewer が閉じる (issue 122)。
+//
+// --help と README は i を「viewer 内のキー」として案内しているのに、handleBodyKey に case が
+// 無く default の pagerScrollKey へ落ちて offset 不変で返っていた = **押しても何も起きず理由も
+// 出ない**。同じ関数の case "s" には「本文だけ沈黙すると案内が嘘になる」という同型の根拠が
+// 既に書かれている。
+func TestIssuesViewerBodyModeIClosesViewer(t *testing.T) {
+	v := loadedView(realIssue(t))
+	v.openBody() // 本文モードへ
+	if v.body == nil {
+		t.Fatal("前提が崩れた: 本文が開いていない")
+	}
+
+	v.handleBodyKey("i", 20)
+
+	if !v.closing && v.shown {
+		t.Error("本文モードの i で viewer が閉じない (--help の案内が嘘になる)")
+	}
+}
+
+// 一覧モードの u は無音で消えず、理由を返す (issue 122)。
+//
+// u は git log 一覧では pull、本文では URL ピッカー、status viewer では「pull は p です」を
+// 返すのに、issues 一覧だけが無音だった。効かせない理由は openURLPicker の doc にあるが、
+// それが画面に出ていなかった。
+func TestIssuesViewerListModeUReturnsReason(t *testing.T) {
+	v := loadedView(realIssue(t))
+	if v.body != nil {
+		t.Fatal("前提が崩れた: 一覧モードでない")
+	}
+
+	v.handleKey("u", vp(20))
+
+	notice, _ := v.takeNotice()
+	if notice == "" {
+		t.Error("一覧モードの u が無音 (押したのに何も起きない = 壊れて見える)")
+	}
+	if !strings.Contains(notice, "本文") {
+		t.Errorf("理由が「本文を開いてから」を案内していない: %q", notice)
+	}
+}
