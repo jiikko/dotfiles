@@ -85,7 +85,9 @@ pid_is_sleeper() {
   local id=$1 pid=$2 cmd
   [[ -n "$pid" && "$pid" =~ ^[0-9]+$ ]] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
-  cmd="$(ps -o command= -p "$pid" 2>/dev/null)"
+  # -ww: GNU ps は既定 80 桁で command 列を切る。切られると「自分の sleeper」を見失い、
+  # 生きている予約を stale として消してしまう
+  cmd="$(ps -ww -o command= -p "$pid" 2>/dev/null)"
   # id は command line の末尾に来る。部分一致だと id "…-5" が "…-55" の sleeper に当たる
   [[ "$cmd" == *"tmux_schedule_keys.sh fire $id" || "$cmd" == *"tmux_schedule_keys.sh fire '$id'" ]]
 }
@@ -145,9 +147,14 @@ new_reservation() {
   # id は英数と - だけなので run-shell の引用は安全
   # ⚠️ run-shell の失敗を握らない: 失敗すると sleeper が居ないまま job だけ残り、UI は
   #    「予約しました」と言い切っている
-  if ! tmux run-shell -b "'$SELF' fire '$id'"; then
-    log "new: sleeper を起こせない ($id)"
-    rm -f "$STATE_DIR/$id.job"
+  tmux run-shell -b "'$SELF' fire '$id'" 2>/dev/null || true
+  # ⚠️ run-shell -b の終了コードは当てにならない (子の exec 失敗も exit 1 も rc=0。実測 2026-08-28)。
+  #    sleeper が起きた証拠は「.pid を書いたか」で見る。書かれなければ予約は成立していない
+  local i=0
+  while [[ ! -s "$STATE_DIR/$id.pid" && $i -lt 30 ]]; do sleep 0.1; i=$((i + 1)); done
+  if [[ ! -s "$STATE_DIR/$id.pid" ]]; then
+    log "new: sleeper が起きない ($id)"
+    rm -f "$STATE_DIR/$id.job" "$STATE_DIR/$id.pid"
     return 1
   fi
   log "new $id pane=$pane at=$at text=$text"
@@ -187,20 +194,27 @@ cancel_selected() {
     tmux display-message "$(msg_escape "取り消せませんでした (確認中に送信されました): $REPLY_TEXT")"
     return 0
   fi
-  cancel_job "$id"
-  tmux display-message "$(msg_escape "予約を取り消した: $REPLY_TEXT")"
+  if cancel_job "$id"; then
+    tmux display-message "$(msg_escape "予約を取り消した: $REPLY_TEXT")"
+  else
+    tmux display-message "$(msg_escape "取り消せませんでした (既に送信されたか、予約が消えています): $REPLY_TEXT")"
+  fi
 }
 
 # msg_escape は display-message のフォーマット展開を止める (# を ## にする)。
 # 予約の文字列には # が普通に入る (コメント・#{...}) ので、そのまま渡すと化ける
 msg_escape() { printf '%s' "${1//\#/##}"; }
 
+# cancel_job は sleeper を止めて後片付けする。実際に止められたら 0、既に居なければ 1。
+# ⚠️ 「止められなかった」= 発火済みか prune 済み。呼び出し側はそれを「取り消した」と言ってはいけない
+#    (fire は送信直前に trap で TERM を無視するので、kill が届いても送信は完走する)
 cancel_job() {
-  local id=$1 pid
+  local id=$1 pid rc=1
   pid=$(cat "$STATE_DIR/$id.pid" 2>/dev/null || true)
-  if pid_is_sleeper "$id" "$pid"; then kill "$pid" 2>/dev/null; fi
+  if pid_is_sleeper "$id" "$pid"; then kill "$pid" 2>/dev/null && rc=0; fi
   rm -f "$STATE_DIR/$id.job" "$STATE_DIR/$id.pid"
-  log "cancel $id pid=${pid:-none}"
+  log "cancel $id pid=${pid:-none} killed=$rc"
+  return "$rc"
 }
 
 # 内部: 待機して送る。run-shell -b の子なので stdout/stderr へ出さない (無音契約)
@@ -220,13 +234,13 @@ cmd_fire() {
   # ⚠️ サーバの同一性は「起きた後・送る直前」に見る。眠る前に見ても意味が無い (壊れるのは
   #    眠っている間にサーバが死んで別のサーバが立つ経路。実機で確認 2026-08-28)。
   #    socket が同じでも中身が別サーバなら、pane id は振り直されていて送り先は別物
-  if [[ -n "$REPLY_SRVPID" ]]; then
-    local nowpid
-    nowpid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
-    if [[ "$nowpid" != "$REPLY_SRVPID" ]]; then
-      log "fire $id: 予約したサーバが居ない (job=$REPLY_SRVPID now=${nowpid:-none})。破棄 text=$REPLY_TEXT"
-      exit 0
-    fi
+  local nowpid
+  nowpid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
+  # ⚠️ 記録が無い job も送らない (fail-closed)。予約時に #{pid} を取れなかった場合や旧形式の
+  #    job がここへ来ると、同一性を確かめられないまま別サーバの pane を叩きうる
+  if [[ -z "$REPLY_SRVPID" || "$nowpid" != "$REPLY_SRVPID" ]]; then
+    log "fire $id: 予約したサーバを確かめられない (job=${REPLY_SRVPID:-none} now=${nowpid:-none})。破棄 text=$REPLY_TEXT"
+    exit 0
   fi
   # ここから先は割り込まれない: 文字列だけ打たれて Enter が届かない半端な状態を作らない
   trap '' TERM INT HUP

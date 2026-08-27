@@ -49,7 +49,14 @@ case "$*" in
   "display-message -p #{socket_path}") printf '%s\n' "${STUB_SOCK:-/tmp/sk-sock}" ;;
   "display-message -p #{pid}")
     if [ -n "${STUB_SRVPID_FILE:-}" ] && [ -f "$STUB_SRVPID_FILE" ]; then cat "$STUB_SRVPID_FILE"; else printf '%s\n' "${STUB_SRVPID:-4242}"; fi ;;
-  "run-shell -b "*)                    exit "${STUB_RUNSHELL_EXIT:-0}" ;;
+  "run-shell -b "*)
+    # 本物の sleeper は起動直後に <id>.pid を書く。呼び出し側はそれを「起きた証拠」に使うので、
+    # stub でも同じ形を作る (STUB_NO_SLEEPER=1 で「起きなかった」を模す)
+    if [ "${STUB_NO_SLEEPER:-0}" != 1 ]; then
+      sid=$(printf '%s' "$*" | sed -n "s/.*fire '\([^']*\)'.*/\1/p")
+      [ -n "$sid" ] && [ -n "${TMUX_SCHEDULE_KEYS_DIR:-}" ] && echo $$ > "$TMUX_SCHEDULE_KEYS_DIR/$sid.pid"
+    fi
+    exit "${STUB_RUNSHELL_EXIT:-0}" ;;
   "display-message -p #{pane_id}") printf '%%5\n' ;;
   "display-message -p -t %5 "*)
     [ "${STUB_PANE_GONE:-0}" = 1 ] && exit 1
@@ -75,6 +82,8 @@ case "$1" in
   confirm)
     # 確認を読んでいる間に発火した状況を作る (fire は送信前に job を消す)
     [ -n "${STUB_GUM_FIRE_JOB:-}" ] && rm -f "$STUB_GUM_FIRE_JOB"
+    # sleeper だけが後始末をせずに死んだ状況 (crash / OOM)
+    [ -n "${STUB_GUM_KILL_PID:-}" ] && kill -9 "$STUB_GUM_KILL_PID" 2>/dev/null
     exit "${STUB_GUM_EXIT:-1}" ;;
   style)   shift; while [ $# -gt 0 ] && [ "${1#-}" != "$1" ]; do shift 2; done; printf '%s\n' "$*"; exit 0 ;;
 esac
@@ -207,7 +216,7 @@ kill "$SLEEPER_PID" 2>/dev/null || true
 
 printf '\n## fire: 送信\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n900\nEnter C-c \\ "q"\n' > "$TMUX_SCHEDULE_KEYS_DIR/j1.job"   # 発火時刻は過去
+printf '%%5\n900\nEnter C-c \\ "q"\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/j1.job"   # 発火時刻は過去
 run "$STUB_PATH" "$SCRIPT" fire j1
 [[ "$RC" -eq 0 ]] || { printf '✗ fire が exit %s\n' "$RC"; exit 1; }
 assert_called 'tmux send-keys -t %5 -l -- Enter C-c \ "q"' "リテラル送信 (-l): \"Enter\" がキー名に化けない"
@@ -221,7 +230,7 @@ assert_not_called "sleep" "発火時刻を過ぎていれば待たない"
 
 printf '\n## fire: 発火時刻まで送らない (実 sleep)\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n%s\nls\n' "$(( $(/bin/date +%s) + 2 ))" > "$TMUX_SCHEDULE_KEYS_DIR/j2.job"
+printf '%%5\n%s\nls\n/tmp/sk-sock\n4242\n' "$(( $(/bin/date +%s) + 2 ))" > "$TMUX_SCHEDULE_KEYS_DIR/j2.job"
 ( trap - EXIT; PATH="$STUB_PATH" STUB_REAL_SLEEP=1 exec "$SCRIPT" fire j2 ) >/dev/null 2>&1 &
 fire_pid=$!
 /bin/sleep 0.5
@@ -240,7 +249,7 @@ STUB_SRVPID=9999 run "$STUB_PATH" "$SCRIPT" fire j7   # 別サーバが立って
 [[ "$RC" -eq 0 && ! -s "$RUN_OUT" && ! -s "$RUN_ERR" ]] || { printf '✗ 無音 exit 0 でない (RC=%s)\n' "$RC"; exit 1; }
 assert_not_called "send-keys" "予約したサーバが居なければ送らない (別サーバの pane を叩かない)"
 [[ "$(jobs_count)" == 0 ]] || { printf '✗ 破棄した job が残っている\n'; exit 1; }
-grep -q '予約したサーバが居ない' "$XDG_CACHE_HOME/tt-schedule-keys.log" || { printf '✗ 破棄の理由がログに残らない\n'; exit 1; }
+grep -q '予約したサーバを確かめられない' "$XDG_CACHE_HOME/tt-schedule-keys.log" || { printf '✗ 破棄の理由がログに残らない\n'; exit 1; }
 printf '✓ サーバが入れ替わっていたら破棄する\n'
 # ⚠️ 判定は「眠る前」ではなく「起きた直後・送る直前」であること。眠る前に見ても、壊れる経路
 #    (眠っている間にサーバが死んで別のサーバが立つ) を検出できない (実機で確認 2026-08-28)
@@ -254,6 +263,11 @@ wait "$j9pid" 2>/dev/null || true
 assert_not_called "send-keys -t %5 -l" "眠っている間にサーバが入れ替わったら送らない (判定は送る直前)"
 unset STUB_SRVPID_FILE
 printf '✓ サーバの同一性は送る直前に見る\n'
+# 旧形式 (サーバ pid を持たない job) は「確かめられない」ので送らない (fail-open にしない)
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+printf '%%5\n900\nmake test\n/tmp/sk-sock\n' > "$TMUX_SCHEDULE_KEYS_DIR/legacy.job"
+run "$STUB_PATH" "$SCRIPT" fire legacy
+assert_not_called "send-keys" "サーバ pid を持たない job は送らない (確かめられないものを送らない)"
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 printf '%%5\n900\nmake test\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/j8.job"
 STUB_SRVPID=4242 run "$STUB_PATH" "$SCRIPT" fire j8   # 同じサーバ
@@ -274,7 +288,7 @@ assert_called 'tmux send-keys -t %5 -l -- echo a ; echo b' "途中の ; は素�
 
 printf '\n## fire: mode 中の pane は抜けてから送る\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n900\nmake test\n' > "$TMUX_SCHEDULE_KEYS_DIR/j5.job"
+printf '%%5\n900\nmake test\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/j5.job"
 STUB_PANE_IN_MODE=1 run "$STUB_PATH" "$SCRIPT" fire j5
 assert_called "tmux send-keys -t %5 -X cancel" "copy-mode 等に入っていたら抜けてから送る (mode 中はキーが届かない)"
 # 順序: cancel が literal 送信より先
@@ -283,13 +297,13 @@ first_sk="$(grep 'send-keys' "$CALLS" | head -n1)"
 printf '✓ mode を抜けてから送る\n'
 assert_called "tmux send-keys -t %5 -l -- make test" "抜けたあと本文を送る"
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n900\nmake test\n' > "$TMUX_SCHEDULE_KEYS_DIR/j6.job"
+printf '%%5\n900\nmake test\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/j6.job"
 STUB_PANE_IN_MODE=0 run "$STUB_PATH" "$SCRIPT" fire j6
 assert_not_called "-X cancel" "mode に入っていなければ余計な cancel を送らない"
 
 printf '\n## fire: 壊れた job (文字列行なし) は送らず掃く\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n900\n' > "$TMUX_SCHEDULE_KEYS_DIR/j4.job"
+printf '%%5\n900\n\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/j4.job"
 run "$STUB_PATH" "$SCRIPT" fire j4
 [[ "$RC" -eq 0 && ! -s "$RUN_OUT" && ! -s "$RUN_ERR" ]] || { printf '✗ 壊れた job で無音 exit 0 でない (RC=%s)\n' "$RC"; exit 1; }
 assert_not_called "send-keys" "文字列行の無い job → 素の Enter を送らない"
@@ -298,7 +312,7 @@ printf '✓ 壊れた job は掃く\n'
 
 printf '\n## fire: 送り先 pane 消滅 → 無音で破棄\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n900\nmake test\n' > "$TMUX_SCHEDULE_KEYS_DIR/j3.job"
+printf '%%5\n900\nmake test\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/j3.job"
 rm -f "$XDG_CACHE_HOME/tt-schedule-keys.log"   # 前ブロックの成功ログを持ち越さない
 STUB_PANE_GONE=1 run "$STUB_PATH" "$SCRIPT" fire j3
 [[ "$RC" -eq 0 ]] || { printf '✗ pane 消滅で exit %s (run-shell 経由なら view-mode が積まれる)\n' "$RC"; exit 1; }
@@ -311,11 +325,17 @@ assert_not_called "send-keys -t %5 Enter" "文字列の送信に失敗したら 
 printf '✓ 無音 exit 0 + job 掃除 + ログ記録 (成功ログ無し)\n'
 
 printf '\n## wizard: sleeper を起こせなかったら job を残さない\n'
+# ⚠️ tmux の run-shell -b は子の失敗を rc に返さない (exec 失敗も exit 1 も rc=0。実測 2026-08-28)。
+# 「起きた証拠」= sleeper が書く .pid で判定していること
 reset_state
-STUB_RUNSHELL_EXIT=1 STUB_UI_RESULT="new	4600	make test" run "$STUB_PATH" "$SCRIPT" wizard
+STUB_NO_SLEEPER=1 STUB_UI_RESULT="new	4600	make test" run "$STUB_PATH" "$SCRIPT" wizard
 [[ "$(jobs_count)" == 0 ]] || { printf '✗ sleeper が起きていないのに job が残った\n'; exit 1; }
-assert_called "display-message 予約に失敗しました" "sleeper を起こせなかったら知らせる (UI は予約したと言っている)"
-printf '✓ run-shell 失敗 → job を残さず知らせる\n'
+assert_called "display-message 予約に失敗しました" "sleeper が起きなければ知らせる (UI は予約したと言っている)"
+printf '✓ sleeper が起きない → job を残さず知らせる (run-shell の rc は当てにしない)\n'
+reset_state
+STUB_RUNSHELL_EXIT=0 STUB_NO_SLEEPER=1 STUB_UI_RESULT="new	4600	make test" run "$STUB_PATH" "$SCRIPT" wizard
+[[ "$(jobs_count)" == 0 ]] || { printf '✗ rc=0 でも sleeper が居なければ予約は不成立であるべき\n'; exit 1; }
+printf '✓ rc=0 でも証拠が無ければ予約しない\n'
 
 printf '\n## wizard: 結果行のフィールド数を検証する\n'
 for bad in "new	4600" "cancel" "cancel	a	b" "new	4600	x	y"; do
@@ -339,6 +359,18 @@ STUB_GUM_EXIT=0 STUB_GUM_FIRE_JOB="$TMUX_SCHEDULE_KEYS_DIR/racy.job" \
 assert_called "display-message 取り消せませんでした" "確認中に発火していたら、その事実を伝える"
 assert_not_called "display-message 予約を取り消した" "止めていないのに「取り消した」と言わない"
 kill "$racy_pid" 2>/dev/null || true
+
+printf '\n## cancel: 止められなかったら「取り消した」と言わない\n'
+# fire は送信直前に TERM を無視する (半端送信を防ぐため)。つまり kill が届いても送信は完走しうる。
+# 「止められた」と言えるのは、生きている sleeper を実際に kill できたときだけ。
+# ここでは「確認を読んでいる間に sleeper が後始末をせず死んだ」(crash) を作る
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+spawn_sleeper crashed; crashed_pid=$SLEEPER_PID
+STUB_GUM_EXIT=0 STUB_GUM_KILL_PID="$crashed_pid" STUB_UI_RESULT="cancel	crashed" run "$STUB_PATH" "$SCRIPT" wizard
+assert_not_called "display-message 予約を取り消した" "止められていないのに「取り消した」と言わない"
+assert_called "display-message 取り消せませんでした" "止められなかったことを伝える"
+[[ "$(jobs_count)" == 0 ]] || { printf '✗ 後片付けはする (job が残った)\n'; exit 1; }
+printf '✓ 止められなくても後片付けはする\n'
 
 printf '\n## read_job: 開けない job の値が前の job から漏れない\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
@@ -393,7 +425,7 @@ printf '\n## prune: sleeper が居ない予約だけを掃く\n'
 # pid 再利用: .pid が無関係な生きたプロセスを指す → kill せず、stale として掃く
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 tt_spawn_fake_proc; foreign_pid=$REPLY_PID
-printf '%%5\n%s\nmake test\n' "$(( $(/bin/date +%s) + 3600 ))" > "$TMUX_SCHEDULE_KEYS_DIR/reused.job"
+printf '%%5\n%s\nmake test\n/tmp/sk-sock\n4242\n' "$(( $(/bin/date +%s) + 3600 ))" > "$TMUX_SCHEDULE_KEYS_DIR/reused.job"
 printf '%s\n' "$foreign_pid" > "$TMUX_SCHEDULE_KEYS_DIR/reused.pid"
 STUB_UI_RESULT="" run "$STUB_PATH" "$SCRIPT" wizard
 kill -0 "$foreign_pid" 2>/dev/null || { printf '✗ 無関係なプロセス (pid 再利用) を kill した\n'; exit 1; }
@@ -403,7 +435,7 @@ printf '✓ 無関係なプロセスは kill せず、その job は掃く\n'
 
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 tt_free_pid; dead_pid=$REPLY_PID
-printf '%%5\n%s\nmake test\n' "$(( $(/bin/date +%s) + 3600 ))" > "$TMUX_SCHEDULE_KEYS_DIR/stale.job"
+printf '%%5\n%s\nmake test\n/tmp/sk-sock\n4242\n' "$(( $(/bin/date +%s) + 3600 ))" > "$TMUX_SCHEDULE_KEYS_DIR/stale.job"
 printf '%s\n' "$dead_pid" > "$TMUX_SCHEDULE_KEYS_DIR/stale.pid"
 STUB_UI_RESULT="" run "$STUB_PATH" "$SCRIPT" wizard
 [[ "$RC" -eq 0 && "$(jobs_count)" == 0 ]] || { printf '✗ pid が死んだ stale job が掃かれない\n'; exit 1; }
@@ -411,7 +443,7 @@ printf '✓ stale job (pid 死亡) を掃く\n'
 
 # .pid 未作成 + 作成直後の job は掃かない (fire が書く前の猶予)
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-printf '%%5\n%s\nmake test\n' "$(( $(/bin/date +%s) + 3600 ))" > "$TMUX_SCHEDULE_KEYS_DIR/fresh.job"
+printf '%%5\n%s\nmake test\n/tmp/sk-sock\n4242\n' "$(( $(/bin/date +%s) + 3600 ))" > "$TMUX_SCHEDULE_KEYS_DIR/fresh.job"
 STUB_UI_RESULT="" run "$STUB_PATH" "$SCRIPT" wizard
 [[ "$(jobs_count)" == 1 ]] || { printf '✗ 作成直後 (.pid 未作成) の job が掃かれた\n'; exit 1; }
 printf '✓ 作成直後の .pid 未作成 job は掃かない\n'
@@ -434,6 +466,12 @@ printf '✓ シェルと UI (src/schedkeys) の引用文字列に絵文字・曖
 bad="$(grep -E '^bind (m|Enter|C-m) ' "$CONF" | perl -CSD -ne "print if /$WIDE_RE/")"
 [[ -z "$bad" ]] || { printf '✗ popup タイトル (bind) に絵文字:\n%s\n' "$bad"; exit 1; }
 printf '✓ popup タイトルに絵文字なし\n'
+
+printf '\n## ps の桁切り対策 (Linux で生きた予約を消さないため)\n'
+# GNU ps は既定 80 桁で command 列を切る。切られると pid_is_sleeper が常に偽になり、prune が
+# 生きている予約を消す。macOS の ps は切らないので**挙動としては観測できない** → 配線を静的に pin する
+grep -q 'ps -ww -o command= -p' "$SCRIPT" || { printf '✗ ps に -ww が無い (GNU ps で command が切られる)\n'; exit 1; }
+printf '✓ ps -ww で command 全体を見る\n'
 
 printf '\n## UI (Go) の配線\n'
 grep -q 'bin/schedkeys' "$SCRIPT" || { printf '✗ シェルが bin/schedkeys を参照していない\n'; exit 1; }

@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/rivo/uniseg"
 )
 
 type editor struct {
@@ -91,26 +92,80 @@ func truncate(s string, width int) string {
 	return out
 }
 
+// isVariationSelector は U+FE00..FE0F と補助 (U+E0100..E01EF)。
+func isVariationSelector(r rune) bool {
+	return (r >= 0xFE00 && r <= 0xFE0F) || (r >= 0xE0100 && r <= 0xE01EF)
+}
+
+// prevBoundary / nextBoundary は書記素クラスタの境界を返す。
+// ⚠️ 移動と削除は「見た目の 1 文字」= 書記素クラスタ単位で行う。rune 単位だと肌色や結合文字の
+//
+//	一部だけが消え、見た目はほぼ同じなのに**別の文字列が pane へ送られる**
+//	(敵対的レビュー 2026-08-28: 👍🏽 の backspace 1 回で 👍 になる)。
+func (e *editor) prevBoundary() int {
+	if e.pos <= 0 {
+		return 0
+	}
+	last := 0
+	for _, b := range e.boundaries() {
+		if b >= e.pos {
+			break
+		}
+		last = b
+	}
+	return last
+}
+
+func (e *editor) nextBoundary() int {
+	for _, i := range e.boundaries() {
+		if i > e.pos {
+			return i
+		}
+	}
+	return len(e.runes)
+}
+
+// boundaries は rune 単位の境界位置を昇順で返す (0 と len を含む)。
+func (e *editor) boundaries() []int {
+	out := []int{0}
+	rest := string(e.runes)
+	state := -1
+	consumed := 0
+	for len(rest) > 0 {
+		var cluster string
+		cluster, rest, _, state = uniseg.StepString(rest, state)
+		consumed += len([]rune(cluster))
+		out = append(out, consumed)
+	}
+	return out
+}
+
+// truncateSGR は装飾を含む文字列を表示幅で切る (装飾は幅に数えない)。
+func truncateSGR(s string, width int) string {
+	if ansi.StringWidth(s) <= width {
+		return s
+	}
+	return ansi.Truncate(s, width, "") + "\x1b[0m"
+}
+
 // handle は編集キーを処理する。扱ったら true (呼び出し側は他の解釈をしない)。
 func (e *editor) handle(key string, text string) bool {
 	switch key {
 	case "backspace", "ctrl+h":
 		if e.pos > 0 {
-			e.runes = append(e.runes[:e.pos-1], e.runes[e.pos:]...)
-			e.pos--
+			b := e.prevBoundary()
+			e.runes = append(e.runes[:b], e.runes[e.pos:]...)
+			e.pos = b
 		}
 	case "delete", "ctrl+d":
 		if e.pos < len(e.runes) {
-			e.runes = append(e.runes[:e.pos], e.runes[e.pos+1:]...)
+			n := e.nextBoundary()
+			e.runes = append(e.runes[:e.pos], e.runes[n:]...)
 		}
 	case "left", "ctrl+b":
-		if e.pos > 0 {
-			e.pos--
-		}
+		e.pos = e.prevBoundary()
 	case "right", "ctrl+f":
-		if e.pos < len(e.runes) {
-			e.pos++
-		}
+		e.pos = e.nextBoundary()
 	case "home", "ctrl+a":
 		e.pos = 0
 	case "end", "ctrl+e":
@@ -144,6 +199,12 @@ func acceptable(text string) bool {
 		// Cc/Cf に加えて Zl/Zp (U+2028/2029) も弾く: 行区切りとして解釈される端末があり、
 		// 打った本人には見えないまま送信される
 		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) {
+			return false
+		}
+		// 異体字セレクタ (U+FE0F 等) も弾く。幅の数え方が描画側 (ultraviolet) と食い違い、
+		// 本物のカーソルが絵文字 1 個につき 1 列ずつ右へずれる = IME の未確定文字が別の場所に出る
+		// (敵対的レビュー 2026-08-28 に実測: ❤️ 5 個で 5 列ずれる)。基底文字 (❤ ⚠) は通る
+		if isVariationSelector(r) {
 			return false
 		}
 	}

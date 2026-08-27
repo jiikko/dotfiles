@@ -88,7 +88,28 @@ func (f *formState) moveFocus(delta int) {
 	f.focus = fs[(cur+delta+len(fs))%len(fs)]
 }
 
-func (f *formState) handleKey(key, text string, _ time.Time) {
+// paste は貼り付けられた文字列を、フォーカス中の入力欄へ入れる。受け付けない文字は落として
+// 残りを入れる (全部拒否すると「1 文字混ざっていたので何も貼れない」になる)。
+func (f *formState) paste(s string) {
+	if f.focus == focusWhen {
+		return
+	}
+	ed := &f.text
+	if f.focus == focusSpec {
+		ed = &f.spec
+	}
+	var keep []rune
+	for _, r := range s {
+		if acceptable(string(r)) {
+			keep = append(keep, r)
+		}
+	}
+	if len(keep) > 0 {
+		ed.insert(string(keep))
+	}
+}
+
+func (f *formState) handleKey(key, text string) {
 	f.err = ""
 	switch key {
 	case "tab", "down", "ctrl+n":
@@ -179,7 +200,9 @@ const labelCol = 9
 func (f *formState) view(label string, now time.Time, width, height int) (string, *tea.Cursor) {
 	var b strings.Builder
 	var cur *tea.Cursor
-	line := func(s string) { b.WriteString(s + "\n") }
+	// ⚠️ どの行も最後に幅で切る。見出しの列 (labelCol) は固定なので、幅がそれ未満の端末では
+	//    見出しだけで溢れる (幅 8 で 9 桁。ラウンド 3 の指摘)
+	line := func(s string) { b.WriteString(truncateSGR(s, width) + "\n") }
 	curY := func() int { return strings.Count(b.String(), "\n") }
 
 	line(sgr(fgDim, "新規予約") + "  " + sgr(fgAccent, truncate(label, maxInt(width-10, 0))))
@@ -228,6 +251,12 @@ func (f *formState) view(label string, now time.Time, width, height int) (string
 		enterHelp = "Enter 予約"
 	}
 	b.WriteString(sgr(fgDim, help(width, "Tab/C-n 欄移動", "h/l C-f/C-b 候補", enterHelp, "Esc 戻る")))
+	// カーソルも枠の中に収める (溢れた行を切った結果、カーソルだけが外に残らないように)
+	if cur != nil && cur.X > width {
+		c := *cur
+		c.X = width
+		cur = &c
+	}
 	return fitHeight(b.String(), height, cur)
 }
 
@@ -262,8 +291,11 @@ func chips(sel int, focused bool, width int) string {
 		labels[sel] = truncate(labels[sel], maxInt(width-2, 0))
 	}
 	lo, hi := chipRange(labels, sel, width)
+	// 端の省略記号を出す余地が無いなら出さない (選択中の候補の閉じ括弧を押し出してしまう)
+	showLeft := lo > 0 && chipWidth(labels, lo, hi) <= width
+	showRight := hi < len(labels)-1 && chipWidth(labels, lo, hi) <= width
 	var out strings.Builder
-	if lo > 0 {
+	if showLeft {
 		out.WriteString(sgr(fgDim, "< "))
 	}
 	for i := lo; i <= hi; i++ {
@@ -280,10 +312,28 @@ func chips(sel int, focused bool, width int) string {
 			out.WriteString(" ")
 		}
 	}
-	if hi < len(labels)-1 {
+	if showRight {
 		out.WriteString(sgr(fgDim, " >"))
 	}
 	return out.String()
+}
+
+// chipWidth は候補 lo..hi を描いたときの表示幅 (端の省略記号ぶんを含む)。
+func chipWidth(labels []string, lo, hi int) int {
+	w := 0
+	for i := lo; i <= hi; i++ {
+		w += ansi.StringWidth(labels[i]) + 2
+		if i < hi {
+			w++
+		}
+	}
+	if lo > 0 {
+		w += 2
+	}
+	if hi < len(labels)-1 {
+		w += 2
+	}
+	return w
 }
 
 // chipRange は幅 width に収まる候補の範囲を選ぶ (sel を必ず含む)。
@@ -292,22 +342,7 @@ func chips(sel int, focused bool, width int) string {
 //	端の省略記号 "< " / " >" が +2 ずつ。ここを近似すると行が幅を超え、端末が折り返して
 //	行数が増える (= popup から溢れてカーソルがずれる。2026-08-28 の回帰テストで検出)。
 func chipRange(labels []string, sel, width int) (int, int) {
-	total := func(lo, hi int) int {
-		w := 0
-		for i := lo; i <= hi; i++ {
-			w += ansi.StringWidth(labels[i]) + 2
-			if i < hi {
-				w++
-			}
-		}
-		if lo > 0 {
-			w += 2
-		}
-		if hi < len(labels)-1 {
-			w += 2
-		}
-		return w
-	}
+	total := func(lo, hi int) int { return chipWidth(labels, lo, hi) }
 	lo, hi := sel, sel
 	for {
 		grew := false
