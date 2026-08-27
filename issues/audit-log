@@ -20,3 +20,4 @@
 2026-08-20 23:28	test-helpers	forge-Standard	issues/072-research-test-audit-2026-08-20.md
 2026-08-27 11:01	leaky-abstraction	direct	issues/112-bug-glogx-clusterwidth-second-width-engine.md,issues/113-bug-glogx-issues-viewer-no-ownskeys.md,issues/114-bug-glogx-status-preview-cache-never-invalidated.md,issues/115-refactor-glogx-statusfilter-list-duplicated.md
 2026-08-27 11:40	lint-from-done	direct	issues/116-bug-glogx-issues-renderer-overflows-at-tiny-width.md,issues/117-test-glogx-bench-metric-routing-unpinned.md,issues/118-chore-glogx-golangci-report-truncation.md
+2026-08-27 12:18	ux	direct	issues/120-docs-glogx-readme-help-drift-from-spec.md,issues/121-bug-glogx-viewer-hint-says-close-but-quits.md,issues/122-bug-glogx-silent-noop-keys-in-issues-viewer.md,issues/123-docs-glogx-rejected-findings-have-no-code-trace.md
