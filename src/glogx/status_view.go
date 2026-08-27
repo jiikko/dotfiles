@@ -872,7 +872,9 @@ func (v *statusView) hint() string {
 	case v.pagerKey != "":
 		return "j/k: スクロール  Space/C-d: 半ページ  g/G: 先頭/末尾  d/q: 閉じる"
 	default:
-		return "j/k: 移動  Tab: セクション  Space: stage/unstage  a: 全 stage  X: 変更を捨てる  d: diff  r: 再読込  b: push  p: pull  U: usage  q: 閉じる"
+		// ⚠️ "q: 終了" (glogx ごと終了。一覧へ戻るのは s)。上の pager の "d/q: 閉じる" は
+		//   pager を閉じるので正しい — 直すのはこちらだけ。issue 121
+		return "j/k: 移動  Tab: セクション  Space: stage/unstage  a: 全 stage  X: 変更を捨てる  d: diff  r: 再読込  b: push  p: pull  U: usage  s: 一覧へ  q: 終了"
 	}
 }
 

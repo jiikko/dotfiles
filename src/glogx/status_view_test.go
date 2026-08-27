@@ -1334,3 +1334,33 @@ func TestStatusCloseDropsPreviewCache(t *testing.T) {
 		t.Errorf("閉じても取得中の札が残った (フレーム tick が回り続ける): %v", v.preview.busy)
 	}
 }
+
+// hint の語が動作と一致すること (issue 121)。
+//
+// 一覧モードの q は **glogx ごと終了**する (ユーザー要望 2026-08-06。git log へは戻らない) のに、
+// hint は長らく「q: 閉じる」と出していた。README は「i/s で閉じて一覧へ戻る」「q/Esc は glogx ごと
+// 終了」と 2 語を使い分けており、画面上の案内だけが古い語のまま残っていた。
+//
+// ⚠️ 全画面 pager の「d/q: 閉じる」は**正しい** (そこでの q は pager を閉じる)。両方を pin して
+// 取り違えを防ぐ — 片方だけ見ていると「まとめて閉じるに戻す」変更が通ってしまう。
+func TestStatusHintWordsMatchBehavior(t *testing.T) {
+	v := newTestStatusView(t, statusRec(" M a.go"))
+
+	list := v.hint()
+	if !strings.Contains(list, "q: 終了") {
+		t.Errorf("一覧の hint が「終了」と案内していない (q は glogx ごと終了する): %q", list)
+	}
+	if strings.Contains(list, "q: 閉じる") {
+		t.Errorf("一覧の hint が「閉じる」と案内している (押すと glogx が終わる): %q", list)
+	}
+	if !strings.Contains(list, "s: 一覧へ") {
+		t.Errorf("一覧の hint に戻り方 (s) が出ていない: %q", list)
+	}
+
+	// pager 表示中は「閉じる」で正しい
+	v.pagerKey = "dummy"
+	pager := v.hint()
+	if !strings.Contains(pager, "d/q: 閉じる") {
+		t.Errorf("pager の hint が「閉じる」でない (そこでの q は pager を閉じる): %q", pager)
+	}
+}

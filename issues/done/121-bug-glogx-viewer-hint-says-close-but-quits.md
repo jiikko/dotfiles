@@ -33,3 +33,29 @@ README と `--help` は正しく直っているので、**画面上の hint だ�
 
 `status_view.go` の pager 用 hint (`d/q: 閉じる`) は**正しい** (そこでの `q` は pager を閉じる)。
 直すのは一覧モードの 2 本だけ。
+
+---
+
+## 対応 (2026-08-28)
+
+- `issues_view.go:hint` / `status_view.go:hint` の**一覧モード**を `q: 終了` へ
+- `status_view.go` には戻り方 `s: 一覧へ` も追加
+- `docs/status-viewer-spec.md` §6 のモック図も同じ古い語だったので直した
+- 既存テスト `TestIssuesViewerHintIsNotPrefixed` の期待値も追随させた (`q: 閉じる` を探していた)
+
+### ⚠️ pager の「d/q: 閉じる」は正しいので触らない
+
+`status_view.go` の全画面 pager の hint は、そこでの `q` が pager を閉じるので**正しい**。
+直したのは一覧モードの 2 本だけ。テストは**両方を pin** している — 片方しか見ていないと
+「まとめて『閉じる』に戻す」変更が通ってしまう。
+
+### issues 側に `i: 一覧へ` は入れられなかった
+
+足すと最長モード (filter=2) で 85 桁になり `TestIssuesViewHintFitsPopupWidth` が落ちる (実測)。
+**幅テストが正しく捕まえた**ので、issues 側は文言修正だけに留め、理由をコード側のコメントに残した
+(戻り方は `--help` と README が正本、という既存の契約どおり)。
+
+### 変異検証 4/4 red
+
+status 一覧を「閉じる」へ戻す / 戻り方 (s) を落とす / **pager まで「終了」にする (取り違え)** /
+issues 一覧を「閉じる」へ戻す。

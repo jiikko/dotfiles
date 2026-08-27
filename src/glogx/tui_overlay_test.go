@@ -916,7 +916,8 @@ func TestIssuesViewerHintIsNotPrefixed(t *testing.T) {
 	if strings.Contains(hint, "CI 状態を取得中") || strings.Contains(hint, "⚠") {
 		t.Fatalf("viewer の hint に前置が入った: %q", hint)
 	}
-	if !strings.Contains(hint, "q: 閉じる") {
+	// ⚠️ 末尾は "q: 終了" (q/esc は glogx ごと終了する。一覧へ戻るのは i)。issue 121
+	if !strings.Contains(hint, "q: 終了") {
 		t.Fatalf("viewer の hint の末尾が切れている: %q", hint)
 	}
 }

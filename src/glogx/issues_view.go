@@ -1828,7 +1828,13 @@ func (v *issuesView) hint() string {
 		next = "a: " + issues.StatusOpen.Badge() + "のみ"
 	case issues.FilterOpen:
 	}
-	return "j/k: 移動  Tab: カテゴリ  /: 検索  Enter: 本文  n: next  " + next + "  q: 閉じる"
+	// ⚠️ "q: 終了" であって "閉じる" ではない。q/esc は **glogx ごと終了**する
+	// (ユーザー要望 2026-08-06)。一覧へ戻るのは i (toggle)。README も 2 語を使い分けており、
+	// git log 一覧の hint も同じ動作を "q: 終了" と書いている。issue 121
+	//
+	// ⚠️ "i: 一覧へ" は入れられない: 足すと最長モード (filter=2) で 85 桁になり
+	//   TestIssuesViewHintFitsPopupWidth が落ちる (実測)。戻り方は --help と README が正本。
+	return "j/k: 移動  Tab: カテゴリ  /: 検索  Enter: 本文  n: next  " + next + "  q: 終了"
 }
 
 // 「次にやる」の目印 (n)。選択中の issue を <issue ディレクトリ>/next/ へ移す。

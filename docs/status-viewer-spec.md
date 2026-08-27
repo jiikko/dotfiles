@@ -177,7 +177,7 @@ untracked の `X` は `restore` ではなく削除 (`clean -fd`) なので、確
 ║  Untracked (1)                     │                                  ║
 ║    ?  tmp/scratch.txt              │                                  ║
 ╟──────────────────────────────────────────────────────────────────────╢
-║ Space: stage/unstage  a: 全 stage  X: 変更を捨てる  d: diff  q: 閉じる║
+║ Space: stage/unstage  a: 全 stage  X: 変更を捨てる  d: diff  q: 終了  ║
 ╚══════════════════════════════════════════════════════════════════════╝
 ```
 
