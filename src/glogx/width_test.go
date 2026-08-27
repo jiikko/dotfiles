@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -96,5 +99,81 @@ func TestOverlayCompositeWidthWithEmoji(t *testing.T) {
 		if w := dispWidth(l); w != width {
 			t.Errorf("合成行 %d の幅 = %d; want %d: %q", i, w, width, l)
 		}
+	}
+}
+
+// TestNoSecondWidthEngine は「表示幅を測るのは dispWidth ただ 1 系統」を強制する (issue 112)。
+//
+// なぜ depguard でなくテストか: depguard は**パッケージ単位**でしか禁止できず、uniseg は
+// grapheme クラスタの**分割**に正当に使われている (render.go / issues/wrap.go)。
+// パッケージごと deny すると正当な用途まで巻き込むので、シンボルを名指しで止める。
+// (import そのものの禁止は .golangci.yml の depguard `width-single-source` が担当。両輪)
+//
+// ⚠️ この検査は文字列一致なので万能ではない。敵対的レビュー (2026-08-27) が
+// **識別子 1 語の書き換えで素通りする経路**を実証した:
+//   - uniseg を既に import しているファイルで `dispWidth(c)` を `g.Width()` に変える
+//   - 同じ x/ansi の 2 本目のモデル `ansi.StringWidthWc` を使う
+//
+// この 2 つは下で明示的に塞いだが、**新しい抜け道は作れる**。clusterWidth の呼び出し地点に
+// 関する本命の防御は TestDropToColumnWidthInvariantWhereEnginesDisagree の方であり、
+// 本テストは「新しい呼び出し地点で素朴に書いた場合」を止める二重化として置いている。
+func TestNoSecondWidthEngine(t *testing.T) {
+	self := filepath.Join(".", "width_test.go")
+
+	var offenders []string
+	checked := 0
+	err := filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			// tools/ は本体から参照しない調査ツール (トップレベルのみ)
+			if path == "tools" || d.Name() == "testdata" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || filepath.Clean(path) == filepath.Clean(self) {
+			return nil
+		}
+		src, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		checked++
+		text := string(src)
+		// uniseg を import しているファイルでは、uniseg 側の幅 API (Graphemes.Width) も塞ぐ。
+		// これを入れないと `w: dispWidth(c)` を `w: g.Width()` に変えるだけで幅が uniseg へ戻る
+		// (全テスト green のまま通ることを敵対的レビューが実測)。
+		importsUniseg := strings.Contains(text, `"github.com/rivo/uniseg"`)
+		for i, line := range strings.Split(text, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "//") {
+				continue // 理由を説明するコメントは対象外
+			}
+			bad := ""
+			switch {
+			case strings.Contains(line, "uniseg.StringWidth"):
+				bad = "uniseg.StringWidth"
+			case strings.Contains(line, "StringWidthWc"):
+				bad = "ansi.StringWidthWc (x/ansi の 2 本目の幅モデル)"
+			case importsUniseg && strings.Contains(line, ".Width()"):
+				bad = "uniseg 側の幅 API (Graphemes.Width)"
+			}
+			if bad != "" {
+				offenders = append(offenders, fmt.Sprintf("%s:%d: %s → %s", path, i+1, trimmed, bad))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("ソース走査に失敗: %v", err)
+	}
+	if checked == 0 {
+		t.Fatal(".go を 1 つも走査できなかった (走査が壊れている)")
+	}
+	if len(offenders) > 0 {
+		t.Fatalf("2 本目の幅エンジンが使われている (幅は dispWidth を通すこと。uniseg は分割にだけ使う):\n  %s",
+			strings.Join(offenders, "\n  "))
 	}
 }

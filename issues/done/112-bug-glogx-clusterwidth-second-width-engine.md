@@ -58,3 +58,56 @@ Arabic format 文字が含まれると**ボックス右側の背景が 1〜3 桁
    `NewGraphemes` を使う `render.go` / `issues/wrap.go`) は path 例外にする
 3. 回帰は「ansi と uniseg が食い違う文字を 1 つ埋めた `dropToColumn` の列不変条件テスト」で pin する。
    変異 = `clusterWidth` を uniseg に戻す、で red になることまで確認すること
+
+---
+
+## 対応 (2026-08-27)
+
+`clusterWidth` を `uniseg.StringWidth` → **`dispWidth`** に変更し、`width.go` から uniseg の
+import を削除した (`ansi.StringWidth` 直呼びでなく `dispWidth` にしたのは、fast-path を通せて
+ASCII が速くなるため。両者が全単一 rune・2-rune 組み合わせで等価なことは敵対的レビューが総当たりで確認)。
+
+### 二重の防御
+
+| 手段 | 何を止めるか |
+|---|---|
+| `width_test.go:TestNoSecondWidthEngine` | シンボル名の走査。`uniseg.StringWidth` / `ansi.StringWidthWc` / uniseg を import したファイル内の `.Width()` |
+| `.golangci.yml` の depguard `uniseg-split-only` | **import ごと禁止** (別名 import もここで止まる)。分割が要る 4 ファイルだけ path 例外 |
+| `render_test.go:TestDropToColumnWidthInvariantWhereEnginesDisagree` | 列不変条件そのもの。ここが本命の防御 |
+
+### 敵対的レビューで直した 4 点
+
+1. **理由づけが誤っていた**。当初コメントは「x/ansi = 描画エンジンの幅モデルだから」と書いたが、
+   v2 の既定は WcWidth で**この層とは既に食い違っている** (width.go 自身が記録済み)。
+   正しい理由は「**幅の出典を 1 本にする**」なので書き直した
+2. **検査が 4 通りで迂回できた**。特に `issues/wrap.go` の `dispWidth(c)` を `g.Width()` に
+   変えるだけで全テスト green のまま uniseg へ戻る経路があった → 塞いで red を確認
+3. **列不変条件テストが straddle 分岐 (全角境界) と SGR 経路を通っていなかった**。
+   全角埋めを丸ごと削っても green だったので、全角入りと SGR 入りを足して red を確認
+4. **走査の除外が緩かった** (`tools` を深さ問わず除外・`width_test.go` で終わる任意のパスを除外)
+
+### 変異検証 (すべて red を確認)
+
+| 変異 | 結果 |
+|---|---|
+| `clusterWidth` を uniseg に戻す | 列不変条件・単一エンジン検査とも red |
+| `wrap.go` を `g.Width()` に変える | red (修正前は全テスト green だった) |
+| `ansi.StringWidthWc` に変える | red |
+| straddle の空白埋めを削る | red (修正前は green だった) |
+| 別名 import (`useg "…/uniseg"`) | depguard が検出 |
+
+### 性能 (dropToColumn。毎フレーム走る経路)
+
+| 入力 | 修正前 (uniseg) | 修正後 (dispWidth) |
+|---|---|---|
+| ASCII | 432 ns/op | **300 ns/op** |
+| CJK | 1022 ns/op | 1043 ns/op |
+| 絵文字 | 1089 ns/op | 1151 ns/op |
+
+alloc はいずれも 0 のまま。ASCII は fast-path が効いて改善、CJK/絵文字は誤差範囲。
+
+### 積み残し → [issue 124](124-bug-glogx-split-engines-and-width-model-mismatch.md)
+
+**列不変条件は 0 にはなっていない (6720 件 → 757 件)。** 幅エンジンは 1 本になったが
+**分割器が 2 本ある** (uniseg=Unicode 15 / x/ansi=16) ため。加えて「揃える先が描画エンジンと
+ずれている」問題 (2115 件、`dispWidth` の全経路に効く) も残る。どちらも 112 の範囲外。

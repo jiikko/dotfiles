@@ -68,6 +68,19 @@ linters:
           deny:
             - pkg: github.com/mattn/go-runewidth
               desc: 幅は width.go の dispWidth (ansi.StringWidth) で測る (locale 非依存)
+        # uniseg は grapheme クラスタの**分割**にだけ使う。幅を測らせないため、分割が要る
+        # 2 ファイル以外からは import ごと禁止する (import 別名を使った持ち込みもここで止まる。
+        # シンボル名の走査は width_test.go:TestNoSecondWidthEngine が担当。両輪。issue 112)
+        uniseg-split-only:
+          files:
+            - "**/*.go"
+            - "!**/render.go"
+            - "!**/issues/wrap.go"
+            - "!**/width_test.go"
+            - "!**/width_fast_test.go"   # fast-path の受理集合をクラスタ数で総当たり検証する (幅は測らない)
+          deny:
+            - pkg: github.com/rivo/uniseg
+              desc: uniseg は分割専用 (render.go / issues/wrap.go)。幅は dispWidth を通す (issue 112)
         render-pure:
           # render.go は「状態 → 文字列」の純粋な描画層。I/O・プロセス起動・非同期を
           # 持ち込むと TUI (毎フレーム呼ばれる) の性能とテスト容易性が壊れる
