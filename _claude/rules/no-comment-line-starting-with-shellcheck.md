@@ -1,3 +1,16 @@
+---
+paths:
+  - "**/*.sh"
+  - "**/*.bash"
+  - "**/*.zsh"
+  - "**/*.bats"
+  - "bin/**"
+  - "scripts/**"
+  - "**/hooks/**"
+  - "tests/**"
+---
+<!-- paths: shell スクリプトのコメントを書く場面でしか発火しない規律なので、シェル系のファイルに触ったときだけ読み込む
+(拡張子の無い bin/ scripts/ hooks/ tests/ 配下も対象。漏れても lint error が即座に出る低リスクな規律) -->
 # shell script の散文コメント行を `# shellcheck` で始めない（directive 誤認で SC1072）
 
 ## ルール
@@ -7,11 +20,9 @@
 - 日本語コメントは「shellcheck が〜」「shellcheck は〜」のように主語として文を始めやすく、**複数行コメントの折り返し位置次第で行頭に来て踏む**（1 行に収まっていた文が、折り返し調整で偶然 `# shellcheck` 始まりの行を生む）
 - 回避: 語順を変える／「SC1071 (shellcheck) で〜」のように言い換える／折り返し位置を変えて `#` 直後に shellcheck が来ないようにする
 
-## なぜ（起源: dotfiles `scripts/discover_shell_scripts.sh`, 2026-07-16 実測）
+## なぜ
 
-散文コメント「`# shellcheck が SC1071 で、…`」（複数行コメントの折り返し 2 行目）を書いたところ directive 誤認で SC1072/SC1073 になり `make test-shellcheck` が落ちた。エラー文言は「directive の構文が壊れている」としか言わず、**原因が散文コメントの折り返し位置だとは気づきにくい**（directive を書いた覚えがないのに directive エラーが出る）。
-
-なお、**正しい directive の後ろに理由コメントを付けるのは問題ない**: `# shellcheck disable=SC2086 # 理由` は valid。禁止するのは「directive でない散文」が `# shellcheck` で始まる形だけ。
+起源: dotfiles `scripts/discover_shell_scripts.sh`, 2026-07-16 実測。根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/no-comment-line-starting-with-shellcheck.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
 
 ## やること / やらないこと
 
