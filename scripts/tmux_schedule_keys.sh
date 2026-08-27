@@ -222,17 +222,21 @@ cancel_job() {
 # 流れは「自分を記録 → 眠る → 送ってよいか判定 → 送る」の 4 段。判定と送信の中身は下の 2 つに分けて
 # ある (安全側の判断と、tmux へキーを流す作法を混ぜない)
 cmd_fire() {
-  local id=$1 job wait_s
+  local id=$1 job now wait_s
   job="$STATE_DIR/$id.job"
   read_job "$job" || { log "fire $id: job unreadable"; rm -f "$job" "$STATE_DIR/$id.pid"; exit 0; }
   printf '%s\n' "$$" > "$STATE_DIR/$id.pid"
   # 予約時と同じサーバへ向ける ($TMUX の 1 フィールド目が socket。bare tmux はこれを見る)
   [[ -n "$REPLY_SOCK" ]] && export TMUX="$REPLY_SOCK,0,0"
 
-  wait_s=$(( REPLY_AT - $(date +%s) ))
+  # ⚠️ date の出力を算術へ直に入れない。空を返した瞬間に「operand expected」が stderr へ出て
+  #    rc=1 になり、無音契約 (run-shell の子は stdout/stderr へ出さず exit 0) を破る
+  now="$(date +%s 2>/dev/null || true)"
+  [[ "$now" =~ ^[0-9]+$ ]] || { log "fire $id: 時刻が取れない。破棄 text=$REPLY_TEXT"; rm -f "$job" "$STATE_DIR/$id.pid"; exit 0; }
+  wait_s=$(( REPLY_AT - now ))
   (( wait_s > 0 )) && sleep "$wait_s"
 
-  fire_allowed "$id" "$job" || exit 0
+  fire_allowed "$id" "$job" || { rm -f "$STATE_DIR/$id.pid"; exit 0; }
   # ここから先は割り込まれない: 文字列だけ打たれて Enter が届かない半端な状態を作らない
   trap '' TERM INT HUP
   fire_send "$id"

@@ -383,3 +383,65 @@ func TestPrefixDoesNotSwallowEditingKey(t *testing.T) {
 		t.Errorf("pos=%d; want 1 (prefix 自身も左移動として処理されるべき)", m.form.text.pos)
 	}
 }
+
+// frame の「行は幅を超えない」を、幅の数え方が食い違う書記素で確かめる。
+// ⚠️ frame は全画面の唯一の幅の関所なので、ここが弱いと保証が丸ごと嘘になる
+// (リファクタで一度弱めた。ansi.Truncate だけでは足りない)。
+func TestFrameNeverExceedsWidth(t *testing.T) {
+	for name, in := range nastyInputs {
+		for _, w := range []int{1, 3, 5, 10, 20, 70} {
+			f := newFrame(w, 20)
+			f.add(in)
+			f.add(sgr(revAccent, in))
+			f.addAt("> "+in, 2)
+			body, _ := f.render()
+			for i, l := range strings.Split(body, "\n") {
+				if got := ansi.StringWidth(l); got > w {
+					t.Errorf("%s w=%d: %d 行目が %d 桁", name, w, i, got)
+				}
+			}
+		}
+	}
+}
+
+// 一覧・メニューも、ユーザーの文字列や window 名がどんな書記素でも幅を超えないこと
+// (frame に載せ替えたとき、pick/menu 側の個別の切り詰めを消したので、ここが唯一の守り)。
+func TestPickAndMenuFitWithNastyInput(t *testing.T) {
+	for name, in := range nastyInputs {
+		jobs := []job{
+			{id: "a", at: now.Add(time.Minute), label: "w:1 " + in, text: in},
+			{id: "b", at: now.Add(time.Hour), label: "w:2 zsh", text: "make test"},
+		}
+		for _, w := range []int{8, 20, 40, 70} {
+			for _, screen := range []string{"menu", "pick"} {
+				m := newModel("main:1 "+in, now, jobs)
+				m.nowFn = func() time.Time { return now }
+				m.width, m.height = w, 14
+				if screen == "pick" {
+					press(m, "j", "")
+					press(m, "enter", "")
+				}
+				for i, l := range strings.Split(m.View().Content, "\n") {
+					if got := ansi.StringWidth(l); got > w {
+						t.Errorf("%s %s w=%d: %d 行目が %d 桁: %q", screen, name, w, i, got, stripSGR(l))
+					}
+				}
+			}
+		}
+	}
+}
+
+// 1 回の add が 2 行にならないこと (行番号がずれるとカーソルが別の行に出る)。
+func TestFrameAddIsOneLine(t *testing.T) {
+	f := newFrame(40, 10)
+	f.add("title\nSECOND")
+	f.addAt("> input", 2)
+	body, cur := f.render()
+	lines := strings.Split(body, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("2 回の add で %d 行になった: %q", len(lines), lines)
+	}
+	if cur == nil || lines[cur.Y] != "> input" {
+		t.Errorf("カーソル行 = %q (入力行であるべき)", lines[cur.Y])
+	}
+}

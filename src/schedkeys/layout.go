@@ -27,7 +27,11 @@ func newFrame(width, height int) *frame {
 }
 
 // add は 1 行足す (幅を超える分は切る)。
+// ⚠️ 埋め込みの改行は空白に潰す。1 回の add が 2 行になると、addAt が覚えた行番号と
+//
+//	実際の行がずれる (= カーソルが入力欄と違う行に出る)。
 func (f *frame) add(s string) {
+	s = strings.ReplaceAll(s, "\n", " ")
 	f.lines = append(f.lines, truncateSGR(s, f.width))
 }
 
@@ -83,12 +87,15 @@ func fitHeight(s string, height int, cur *tea.Cursor) (string, *tea.Cursor) {
 	return strings.Join(lines[start:end], "\n"), cur
 }
 
-// truncateSGR は装飾を含む文字列を表示幅で切る (装飾は幅に数えない)。
+// truncateSGR は装飾を含む文字列を表示幅で切り、切ったら装飾を閉じる。
+// ⚠️ 幅の保証は fitWidth に任せる (ansi.Truncate だけだと、数え方の食い違う書記素で幅が残る。
+//
+//	frame の「行は幅を超えない」は、ここが弱いと丸ごと嘘になる)。
 func truncateSGR(s string, width int) string {
 	if ansi.StringWidth(s) <= width {
 		return s
 	}
-	return ansi.Truncate(s, width, "") + "\x1b[0m"
+	return fitWidth(s, width) + "\x1b[0m"
 }
 
 // help はキー説明を幅に収める (入らないものから落とす。折り返して行数を増やさない)。

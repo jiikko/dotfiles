@@ -71,23 +71,24 @@ func (e *editor) viewport(width int, focused bool) (string, int) {
 }
 
 // truncate は表示幅で切る (書記素クラスタ単位。全角や結合文字を半端に割らない)。
+func truncate(s string, width int) string { return fitWidth(s, width) }
+
+// fitWidth は「ansi.StringWidth で測って width 以内」を保証して切る。
 //
-// ⚠️ ansi.Truncate の結果を ansi.StringWidth で測り直して詰める。両者の数え方が一致しない
-//
-//	書記素があり (キーキャップ 1️⃣ など、Truncate は 1 と数えるが StringWidth は 2 と答える)、
-//	切ったつもりで倍の幅が残る。この UI は「StringWidth で測った幅」で桁を組むので、
-//	そちらに合わせて確実に収める (末尾から rune を落とすので必ず止まる)。
-func truncate(s string, width int) string {
+// ⚠️ ansi.Truncate だけに任せない。両者の数え方が一致しない書記素があり (キーキャップ 1️⃣ は
+// Truncate が 1、StringWidth が 2 と答える)、切ったつもりで倍の幅が残る。この UI は
+// StringWidth で測った幅で桁を組むので、そちらに合わせて確実に収める。要求幅を 1 ずつ下げて
+// 測り直す (装飾の切り方はライブラリに任せたまま、必ず収束する)。
+func fitWidth(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
+	if ansi.StringWidth(s) <= width {
+		return s
+	}
 	out := ansi.Truncate(s, width, "")
-	for ansi.StringWidth(out) > width {
-		r := []rune(out)
-		if len(r) == 0 {
-			return ""
-		}
-		out = string(r[:len(r)-1])
+	for w := width - 1; ansi.StringWidth(out) > width && w >= 0; w-- {
+		out = ansi.Truncate(s, w, "")
 	}
 	return out
 }

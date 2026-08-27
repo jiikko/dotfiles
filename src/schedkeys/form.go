@@ -238,7 +238,7 @@ func (f *formState) view(label string, now time.Time, width, height int) (string
 func (f *formState) addField(fr *frame, name string, ed *editor, focused bool, width int) {
 	prefix := fieldLabel(name, focused)
 	col := ansi.StringWidth(stripSGR(prefix))
-	val, cur := ed.viewport(maxInt(width-col-1, 1), focused)
+	val, cur := ed.viewport(maxInt(width-col-1, 0), focused)
 	if focused {
 		fr.addAt(prefix+val, col+cur)
 		return

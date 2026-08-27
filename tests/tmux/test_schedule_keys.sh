@@ -299,6 +299,26 @@ canc_pid=$!; FAKE_PIDS+=("$canc_pid")
 /bin/sleep 0.5; rm -f "$TMUX_SCHEDULE_KEYS_DIR/canc.job"   # 眠っている間に取り消された
 wait "$canc_pid" 2>/dev/null || true
 assert_not_called "send-keys -t %5 -l" "job が消えていたら送らない (kill が間に合わなくても止まる)"
+# ⚠️ 送らずに抜けるときも .pid を残さない (prune は *.job しか見ないので、残ると誰も回収しない)
+[[ -z "$(find "$TMUX_SCHEDULE_KEYS_DIR" -name '*.pid' 2>/dev/null)" ]] || { printf '✗ 送らずに抜けたのに .pid が残っている\n'; ls "$TMUX_SCHEDULE_KEYS_DIR"; exit 1; }
+printf '✓ 送らずに抜けても後片付けする\n'
+
+printf '\n## fire: 時刻が取れなくても無音で終わる (無音契約)\n'
+# date が壊れている環境でも stdout/stderr へ出さない (run-shell の子の出力は view-mode に積まれる)
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+printf '%%5\n900\nmake test\n/tmp/sk-sock\n4242\n' > "$TMUX_SCHEDULE_KEYS_DIR/nodate.job"
+cat > "$TMP_DIR/bin_nodate_date" <<'EOS2'
+#!/bin/sh
+exit 0
+EOS2
+chmod +x "$TMP_DIR/bin_nodate_date"
+mkdir -p "$TMP_DIR/bin_nodate"; cp "$TMP_DIR/bin/tmux" "$TMP_DIR/bin/sleep" "$TMP_DIR/bin_nodate/" 2>/dev/null
+cp "$TMP_DIR/bin_nodate_date" "$TMP_DIR/bin_nodate/date"
+run "$TMP_DIR/bin_nodate:/usr/bin:/bin" "$SCRIPT" fire nodate
+[[ "$RC" -eq 0 && ! -s "$RUN_OUT" && ! -s "$RUN_ERR" ]] || { printf '✗ 時刻が取れないときに無音 exit 0 でない (RC=%s)\n' "$RC"; cat "$RUN_ERR"; exit 1; }
+assert_not_called "send-keys" "時刻が取れなければ送らない"
+[[ "$(jobs_count)" == 0 ]] || { printf '✗ 破棄した job が残っている\n'; exit 1; }
+printf '✓ 時刻が取れなくても無音で破棄する\n'
 
 printf '\n## fire: 末尾の ; が食われない\n'
 # tmux は引数の末尾の ; をコマンド区切りとして食う (-- では守れない)。最後の 1 個だけ \; にする
