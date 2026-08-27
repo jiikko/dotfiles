@@ -8,7 +8,7 @@
 
 ## なぜ
 
-rate limit のレスポンスヘッダ (`anthropic-ratelimit-*`) を最新化するために、最小コストで API を 1 往復させたいだけの ping。意味のある作業ではないので、思考・ツール往復で時間とトークンを使わせない。`poing` という決め打ちの返答にすることで「ちゃんとルールが効いている」ことも一目で分かる。
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/ping-poing-immediate-reply.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
 
 ## やること / やらないこと
 

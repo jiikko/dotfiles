@@ -13,24 +13,9 @@
   できないなら、外す前に検出手段 (テスト / 静的ゲート) を用意する
 - **「本来の目的に対して冗長」と「他に何も守っていない」は別**。前者だけ確かめて外さない
 
-## なぜ (obaket issue 544、2026-08-26 の実測)
+## なぜ
 
-upload の宛先重複を `stat` で事前確認する preflight があった。SMB では wire 自身が
-`FILE_CREATE` で同じことを強制するので、**preflight は重複**していた。「冗長だから外す」の
-判断自体は正しかった。
-
-見落としたのは、preflight が同時に **「adapter が `options.overwrite` を wire へ流し忘れても
-同名 upload を止める」マスク**でもあったこと。外した結果:
-
-- `SMBAdapter.uploadFileStreaming` の **引数 1 個だけ**が silent overwrite (= データ消失) を
-  防ぐ状態になった
-- しかもその引数は **落としてもコンパイルが通る**。呼び出し側 (`WriteOptions.overwrite`) と
-  ライブラリ側 (`SMBClientSession.upload(overwrite:)`) の **両方の既定値が危険側の `true`**
-- 敵対的レビューは `overwrite: options.overwrite` → `overwrite: true` の **1 トークン変異**で
-  **CI が完全に green のままデータが消える**ことを実証した
-
-**自己レビューでは最後まで出なかった観点**で、独立した 3 観点のレビューのうち **2 本が到達**した
-(= 一人では見えにくいが、視点を変えれば見えるタイプの穴)。
+起源: obaket issue 544、2026-08-26 の実測。根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/list-masked-failure-modes-before-removing-guard.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
 
 ## 特に危険な形
 

@@ -6,9 +6,9 @@
 - 「もう少しで分かりそう」と粘って試行を重ねるのは禁止
 - 「治っていない」という症状報告を受けたら、まず [`instrument-before-second-fix.md`](instrument-before-second-fix.md) に従い観測を増やし、観測しても真因が不明なとき forge へ (初回試行直後に blind で forge 直行ではなく、観測データを手土産にする)
 
-## なぜ (起源: DualNote iOS #030 IME バグ, 2026-05-23)
+## なぜ
 
-「delegate cycle」という hypothesis に固執して 3 回試行 (フラグ抑制 → delegate=nil → 未検証の overclaim docstring) して全て外した。forge Maximum を起動したら複数の専門家エージェントが全員一致で**別の真因**を特定し 1 セッションで構造的解決。損失は 3-4 時間の無駄な試行と「治っていない」報告 2 回。forge 1 回 ~30 分のコストの方が明らかに安い。
+起源: DualNote iOS #030 IME バグ, 2026-05-23。根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/escalate-to-forge-after-failed-tries.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
 
 ## 「2 回」が境界の理由
 

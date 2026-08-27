@@ -6,9 +6,9 @@
 - ある場合は仮説を立てる前に **構造を比較** し、「動いている方」と「動いていない方」の差分を抽出する。差分が原因仮説の最有力候補になる
 - 修正方針の第 1 候補は「**動いている方の構造に揃える**」
 
-## なぜ (起源: DualNote iOS #030 IME バグ, 2026-05-23)
+## なぜ
 
-iOS の UIViewRepresentable wrapper が壊れていたとき、iOS だけ見て delegate cycle 仮説に固執し 3 回試行して全て外した。forge の専門家は macOS の**同機能の動いている wrapper** と構造比較を一発で実施し、真因 (双方向 Binding と `becomeFirstResponder()` 同期呼出という構造的差分) を 5 分で特定した。
+起源: DualNote iOS #030 IME バグ, 2026-05-23。根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/check-other-platform-reference.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
 
 ## 調査開始時の手順
 

@@ -17,25 +17,11 @@
   error** と旧経路が throw していた error の意味論を突き合わせる。呼び出し側の catch / 変換は
   旧 error だけを想定して書かれており、新 error は素通りして汎用エラーに落ちる。
   「refactor は挙動を変えない」は error 経路の意味論には効かない — 正常系のテストが
-  全 green のまま、error の意味だけが silent に変わる (実例 2026-08-21 obaket 536:
-  page ループを共通 helper に置換したら、helper の新 throw (`serviceUnavailable`) を受ける
-  変換 (部分削除の件数を載せる責務) が空白になり、同日に自分で確立した不変条件
-  「部分削除は明示報告」を自分の refactor で壊しかけた)
+  全 green のまま、error の意味だけが silent に変わる
 
-## なぜ (起源: obaket issue 514 / 518, 2026-08-21)
+## なぜ
 
-同一セッションで**同じ構造の見落としを 2 回**やり、どちらも敵対的レビューが P1 として摘出した:
-
-1. **issue 514**: 削除呼び出しに `isDirectory: true` を渡す修正を入れた結果、受け側
-   (`S3Adapter.deleteImpl`) の**非空 preflight** (issue 309 で追加されたガード) を
-   その経路が初めて踏むようになった。呼び出し側 (reconcile executor) の catch は
-   412 系しか想定しておらず、reconcile 全体が中断 → **修正前より悪い永久 wedge** になった
-2. **issue 518**: directory 行を既存の削除安全判定 (`sourceDeletionSafety`) に流した結果、
-   file 前提の「snapshot 必須 = 無ければ unverifiable」が directory (S3 では snapshot が
-   構造的に nil) に誤適用され、**本命ケースが恒久 attention** になった
-
-共通点: 修正自体は正しい方向で、単体では green だった。**壊れたのは「新しい値で初めて
-到達する既存ガードとの相互作用」**で、fake がガードを模していなかったためテストも素通しした。
+起源: obaket issue 514 / 518, 2026-08-21。根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/survey-receiver-guards-before-passing-new-values.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
 
 ## 手順 (修正を書く前の 5 分)
 

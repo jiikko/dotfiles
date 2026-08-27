@@ -9,9 +9,7 @@
 
 ## なぜ
 
-同一 repo・同一 working tree で複数の Claude セッションが並行することがある。git の index（staging area）は working tree に 1 つしかないため、pathspec なしの `git commit` は**他セッションが `git add` 済みの変更を自分のコミットに混入させる**。commit コマンド同士の衝突は git 自身の `index.lock` が直列化してくれるので、混入さえ防げばロックや worktree 分離なしで安全に並行できる。
-
-`git commit -- <pathspec>` は index の状態に関係なく指定ファイルの working tree 内容だけをコミットするため、「変更範囲が被らない」前提が守られている限り混入が構造的に起きない。
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/commit-with-pathspec.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
 
 ## pathspec で「生成物」を漏らすと壊れたコミットになる
 
@@ -19,9 +17,6 @@
   スナップショット等) を同じ commit に含める**。pathspec 方式は「書いたファイルを列挙する」ため、
   自分が直接編集していない生成物を忘れやすい
 - 生成物が漏れると **その commit 単体では壊れる**。手元は再生成済みで build が通るため気づけない
-  (実例 2026-08-11: `APILogging.swift` を `git rm` して `xcodegen generate` したが、pathspec に
-  `project.pbxproj` を入れ忘れた。commit された tree は「ファイルは無いが pbxproj は参照したまま」で、
-  checkout すればビルド不能。手元は再生成済みなので build/test/lint すべて green だった)
 - 対策: **commit 後に `git show --stat HEAD` を読み、想定したファイルが全部入っているか目視する**。
   ファイル削除・追加を伴う変更では特に。`git status` に生成物が残っていたらそれが漏れのサイン
 
@@ -30,9 +25,8 @@
 - **`git mv` は「旧パスの削除」と「新パスの追加」の 2 つの変更**なので、pathspec に**両方**
   列挙しないと片方だけがコミットされる。新パスだけ書くと、旧パスの削除がステージに残ったまま
   commit が成功する
-- 実例 (2026-08-21): issue を `issues/done/` へ移す commit で新パスだけを指定し、旧パスの削除が
-  取り残された。commit は成功し、`git show --stat` にも新パスの追加だけが載るため、
-  **成功した commit の stat を見ても漏れに気づけない** (「無いもの」は stat に出ない)
+- `git show --stat` には新パスの追加だけが載るため、**成功した commit の stat を見ても漏れに
+  気づけない** (「無いもの」は stat に出ない)
 - 検出は `git status`: commit 後に `D  <旧パス>` が残っていたらそれが漏れ。上の「生成物」節が
   「`git status` に残っていたらサイン」と言っているのはこの形も含む
 - 予防: rename を含む commit では `git status --short` で `R`/`D` の行を数え、pathspec が
@@ -43,8 +37,6 @@
 - **`git commit -m "...メッセージ..."` の二重引用符内では、バッククォートが command substitution として
   評価される**。Markdown 的に `` `foo.swift` `` と書いたつもりが `foo.swift` をコマンドとして実行し、
   **その語がメッセージから消える** (`command not found` がシェルに出るだけで commit は成功する)
-- 実例 (2026-08-11): 「lint \`applog_via_service_locator\` が \`fixture.live.appLog\` を誤爆」が
-  「lint  が  を誤爆」になった。commit は成功しており、`git log` を読み返すまで気づかない
 - **必ず heredoc で渡す**。`$(...)` を使う形も同じ理由で危険:
 
 ```bash
@@ -63,7 +55,6 @@ pathspec 規律は「混入」は防ぐが、**履歴を書き換える操作は
 
 - **`git reset HEAD~N` / `git commit --amend` / `git rebase` の前に、必ず `git log -N --format='%h %ad %s' --date=format:'%H:%M'` で対象コミットが自分のものか確認する**（自分が数分前に作ったコミットと、メッセージ・時刻が一致するか）
 - 「直近コミット = 自分の直近コミット」と思い込まない。自分のコミットの直後に並行セッションが commit していれば、reset HEAD~1 は**他人のコミット**を、自分のコミットの上に他人が積んでいれば**自分のつもりで他人の**を切り落とす
-- 実例 (2026-07-16): 並行セッションの `reset HEAD~1` が、直前に積まれていた別セッションのコミット (issue rename の参照更新 14 ファイル) を切り落とし staged に戻した。reflog と `git diff --cached <旧SHA>` の同一性検証で復旧できたが、気づかなければ次の pathspec なし commit に溶けて消えていた
 - 副次の注意: **`git mv` は即座に stage される**。stage された変更は共有 index 上で「他セッションの pathspec なし commit / reset に拾われ得る」状態になるため、stage から commit までの間隔を最小にする
 
 ## やること / やらないこと

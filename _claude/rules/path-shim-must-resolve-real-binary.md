@@ -17,17 +17,9 @@
   する** (`stdbuf -oL` / 進捗は stderr へ)。ブロックバッファのままだと暴走が無音になり、
   気づくのが遅れる
 
-## なぜ (起源: dotfiles bench, 2026-08-21)
+## なぜ
 
-「hook が起動する tmux クライアント数」を数える shim を書き、中で
-`exec "$TMUX_BIN_PATH" ...` と呼んだ。`TMUX_BIN_PATH` の既定値が **`"tmux"` (相対名)** で、
-shim は PATH 先頭に置かれていたため自分自身に解決し、無限再帰した。`-L <socket>` が延々と
-積み重なった `/bin/sh` が CPU を焼き続け、**2 分以上気づかなかった** (bench の出力はファイルへ
-ブロックバッファされていて無音だった)。
-
-同じセッションの `tests/tmux/test_mark_seen.sh` では `command -v` で絶対パス化していた。
-つまり **1 つの変更の中で同型の間違いを片方だけ直した**形で、規律を持っていたのに
-bench 側で落とした (CLAUDE.md「同じ間違いが別の場所にもある前提で grep する」の裏面)。
+起源: dotfiles bench, 2026-08-21。根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/path-shim-must-resolve-real-binary.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
 
 ## 形
 

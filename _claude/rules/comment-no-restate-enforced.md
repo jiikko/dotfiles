@@ -6,6 +6,10 @@
 - コメントに残すのは **「実装では強制できない制約」だけ** にする。典型: なぜこの構造を素朴に作り替えないか (= メタな設計判断)、外部登録値との一致要求、過去事故の再現条件など。これらは [`pending-issue-rationale-in-code.md`](pending-issue-rationale-in-code.md) が言う「Why」に相当する
 - 強制済みかどうかの判定: 「その不変条件を破る変更を入れたとき、**コメントを読まなくても** lint error / compile error / test 失敗で止まるか?」 → 止まるなら実装強制済み = コメント不要。止まらない (= 人がコメントを読んで初めて気づく) ならコメントで残す価値がある
 
+## なぜ
+
+根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/comment-no-restate-enforced.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
+
 ## 強制済み (コメント不要) と コメントで残す の例
 
 | 内容 | 強制手段 | コメントに書くか |
@@ -15,8 +19,6 @@
 | 「この値は non-nil」 | 型 (Optional でない) | ❌ 書かない |
 | 「この enum を registry/plugin に作り替えるな (網羅性が消え silent gap が runtime に戻る)」 | **強制不可** (switch を消す改修自体を compiler は禁止できない) | ✅ 書く |
 | 「この port は外部 IdP の登録値と一致が必要」 | **強制不可** | ✅ 書く |
-
-起源 (obaket 357, 2026-06-29): `StorageServiceKind` enum に「振る舞いは protocol 側でポリモーフィズム済 (= `service ==` 分岐は lint で禁止済)」と書きかけたが、それは SwiftLint `presentation_no_provider_specific_branch` と exhaustive switch が既に強制している事実だった。再掲を削り、実装で守れない「registry 化するな」の rationale だけ残した。
 
 ## 既存コメントを触ったときの掃除
 
