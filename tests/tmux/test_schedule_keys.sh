@@ -7,7 +7,11 @@
 #   - 入力検証: 0h0m / 非数値 / 空文字 / confirm 拒否 / gum 未導入 では job も run-shell も生まれない
 #   - fire はリテラル送信 (send-keys -l) + 別呼び出しの Enter。"Enter" という文字列がキー名に化けない
 #   - fire は発火時刻まで送らない (早すぎる送信 = 予約の意味が無い)
-#   - 送り先 pane が消えていたら送らず、無音 (stdout/stderr 空・exit 0) で job を掃く
+#   - 送り先 pane が消えていたら (send-keys が失敗したら) Enter を送らず、無音 (stdout/stderr 空・
+#     exit 0) で job を掃き、成功ログを書かない
+#   - 入力の桁数上限 (64bit の掛け算あふれで別の時刻に予約されるのを防ぐ)
+#   - .pid の数字だけで kill しない: 無関係なプロセスが同じ pid を持っていても kill せず、stale として掃く
+#   - 一覧の取消は表示文字列の逆引きでなく行頭の連番で選ぶ (表示が一致する 2 件で先頭に化けない)
 #   - list からの取消は sleeper を kill し job/pid を消す。pid が死んだ stale job は list が掃く
 #   - _tmux.conf: bind m が本スクリプトを指し、撤去済み launcher の unbind Enter が残っている
 set -euo pipefail
@@ -42,6 +46,9 @@ case "$*" in
   "display-message -p -t %5 "*)
     [ "${STUB_PANE_GONE:-0}" = 1 ] && exit 1
     case "$*" in *pane_id*) printf '%%5\n' ;; *) printf 'main:3 claude\n' ;; esac ;;
+  "send-keys -t %5 "*)
+    # 実 tmux は pane 不在で stderr にエラーを出して rc=1 (この stderr が run-shell 経由で view-mode に積まれる)
+    [ "${STUB_PANE_GONE:-0}" = 1 ] && { echo "can't find pane: %5" >&2; exit 1; } ;;
 esac
 exit 0
 EOS2
@@ -108,7 +115,7 @@ grep -E '^gum confirm .*--default=false' "$CALLS" >/dev/null || { printf '✗ �
 printf '✓ 確認は --default=false\n'
 
 printf '\n## new: 弾かれる入力\n'
-for bad in "0 0 make" "x 5 make" "1 -5 make"; do
+for bad in "0 0 make" "x 5 make" "1 -5 make" "5124095576030432 0 make" "0 123456 make"; do
   reset_state
   # shellcheck disable=SC2086 # 意図的に単語分割して 3 入力にする
   queue $bad
@@ -155,27 +162,46 @@ printf '✓ .pid = sleeper の pid (取消の kill 先)\n'
 wait "$fire_pid" || { printf '✗ fire が非 0 で終了\n'; exit 1; }
 assert_called 'tmux send-keys -t %5 -l -- ls' "発火時刻後に送信"
 
+printf '\n## fire: 壊れた job (文字列行なし) は送らず掃く\n'
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+printf '%%5\n900\n' > "$TMUX_SCHEDULE_KEYS_DIR/j4.job"
+STUB_NOW=1000 run "$STUB_PATH" "$SCRIPT" fire j4
+[[ "$RC" -eq 0 && ! -s "$RUN_OUT" && ! -s "$RUN_ERR" ]] || { printf '✗ 壊れた job で無音 exit 0 でない (RC=%s)\n' "$RC"; exit 1; }
+assert_not_called "send-keys" "文字列行の無い job → 素の Enter を送らない"
+[[ "$(jobs_count)" == 0 ]] || { printf '✗ 壊れた job が残っている\n'; exit 1; }
+printf '✓ 壊れた job は掃く\n'
+
 printf '\n## fire: 送り先 pane 消滅 → 無音で破棄\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 printf '%%5\n900\nmake test\n' > "$TMUX_SCHEDULE_KEYS_DIR/j3.job"
+rm -f "$XDG_CACHE_HOME/tt-schedule-keys.log"   # 前ブロックの成功ログを持ち越さない
 STUB_NOW=1000 STUB_PANE_GONE=1 run "$STUB_PATH" "$SCRIPT" fire j3
 [[ "$RC" -eq 0 ]] || { printf '✗ pane 消滅で exit %s (run-shell 経由なら view-mode が積まれる)\n' "$RC"; exit 1; }
 [[ ! -s "$RUN_OUT" && ! -s "$RUN_ERR" ]] || { printf '✗ pane 消滅で stdout/stderr に出力 (無音契約違反)\n'; cat "$RUN_OUT" "$RUN_ERR"; exit 1; }
-assert_not_called "send-keys" "pane 消滅 → 送らない"
+assert_called 'tmux send-keys -t %5 -l -- make test' "pane 消滅は send-keys の失敗で検知する (事前チェックとの TOCTOU を作らない)"
 [[ "$(jobs_count)" == 0 ]] || { printf '✗ pane 消滅の job が残っている\n'; exit 1; }
 grep -q 'pane %5 gone' "$XDG_CACHE_HOME/tt-schedule-keys.log" || { printf '✗ 破棄がログに残らない\n'; exit 1; }
-printf '✓ 無音 exit 0 + job 掃除 + ログ記録\n'
+! grep -q 'sent to' "$XDG_CACHE_HOME/tt-schedule-keys.log" || { printf '✗ 送れていないのに成功ログ\n'; exit 1; }
+assert_not_called "send-keys -t %5 Enter" "文字列の送信に失敗したら Enter も送らない"
+printf '✓ 無音 exit 0 + job 掃除 + ログ記録 (成功ログ無し)\n'
 
 printf '\n## list: 取消と stale 掃除\n'
 # shellcheck source=tests/tmux/lib/stub_env.sh
 . "$ROOT_DIR/tests/tmux/lib/stub_env.sh"
+# 本物の sleeper を起こす (pid_is_sleeper は ps の command line で「自分の fire <id>」を確かめるため、
+# 偽 pid では代用できない)。at は十分先、sleep は実物
+spawn_sleeper() {  # $1=id  → SLEEPER_PID
+  printf '%%5\n%s\nmake test\n' "$(( $(/bin/date +%s) + 3600 ))" > "$TMUX_SCHEDULE_KEYS_DIR/$1.job"
+  ( trap - EXIT; PATH="$STUB_PATH" STUB_REAL_SLEEP=1 exec "$SCRIPT" fire "$1" ) >/dev/null 2>&1 &
+  SLEEPER_PID=$!; FAKE_PIDS+=("$SLEEPER_PID")
+  local i=0; while [[ ! -s "$TMUX_SCHEDULE_KEYS_DIR/$1.pid" && $i -lt 50 ]]; do /bin/sleep 0.1; i=$((i+1)); done
+  [[ "$(cat "$TMUX_SCHEDULE_KEYS_DIR/$1.pid")" == "$SLEEPER_PID" ]] || { printf '✗ sleeper %s の .pid が書かれない\n' "$1"; exit 1; }
+}
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-tt_spawn_fake_proc; live_pid=$REPLY_PID
-printf '%%5\n%s\nmake test\n' "$(( $(/bin/date +%s) + 3600 ))" > "$TMUX_SCHEDULE_KEYS_DIR/live.job"
-printf '%s\n' "$live_pid" > "$TMUX_SCHEDULE_KEYS_DIR/live.pid"
+spawn_sleeper live; live_pid=$SLEEPER_PID
 STUB_GUM_EXIT=0 STUB_GUM_CHOOSE_INDEX=1 run "$STUB_PATH" "$SCRIPT" list
 [[ "$RC" -eq 0 ]] || { printf '✗ list が exit %s\n' "$RC"; cat "$RUN_ERR"; exit 1; }
-/bin/sleep 0.2
+/bin/sleep 0.3
 kill -0 "$live_pid" 2>/dev/null && { printf '✗ 取消したのに sleeper が生きている\n'; exit 1; }
 [[ "$(jobs_count)" == 0 && ! -f "$TMUX_SCHEDULE_KEYS_DIR/live.pid" ]] || { printf '✗ 取消後に job/pid が残っている\n'; exit 1; }
 printf '✓ 取消 → sleeper kill + job/pid 削除\n'
@@ -183,13 +209,37 @@ grep -E '^gum confirm .*--default=false' "$CALLS" >/dev/null || { printf '✗ �
 printf '✓ 取消確認も --default=false\n'
 
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-tt_spawn_fake_proc; live_pid=$REPLY_PID
-printf '%%5\n%s\nmake test\n' "$(( $(/bin/date +%s) + 3600 ))" > "$TMUX_SCHEDULE_KEYS_DIR/live.job"
-printf '%s\n' "$live_pid" > "$TMUX_SCHEDULE_KEYS_DIR/live.pid"
+spawn_sleeper live; live_pid=$SLEEPER_PID
 STUB_GUM_EXIT=1 STUB_GUM_CHOOSE_INDEX=1 run "$STUB_PATH" "$SCRIPT" list
 kill -0 "$live_pid" 2>/dev/null || { printf '✗ 取消を拒否したのに sleeper が死んだ\n'; exit 1; }
 [[ "$(jobs_count)" == 1 ]] || { printf '✗ 取消拒否で job が消えた\n'; exit 1; }
 printf '✓ 取消拒否 → 何もしない\n'
+kill "$live_pid" 2>/dev/null || true
+
+# 表示が一致する 2 件 (同 pane・同文字列・同じ残り時間バケツ)。2 行目を選んだら 2 件目が消えること
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+spawn_sleeper 1000-a; pid_a=$SLEEPER_PID
+spawn_sleeper 2000-b; pid_b=$SLEEPER_PID
+STUB_GUM_EXIT=0 STUB_GUM_CHOOSE_INDEX=2 run "$STUB_PATH" "$SCRIPT" list
+/bin/sleep 0.3
+[[ -f "$TMUX_SCHEDULE_KEYS_DIR/1000-a.job" && ! -f "$TMUX_SCHEDULE_KEYS_DIR/2000-b.job" ]] \
+  || { printf '✗ 表示が同じ 2 件で、選んでいない方 (先頭) が取り消された\n'; ls "$TMUX_SCHEDULE_KEYS_DIR"; exit 1; }
+kill -0 "$pid_a" 2>/dev/null || { printf '✗ 選んでいない方の sleeper が死んだ\n'; exit 1; }
+kill -0 "$pid_b" 2>/dev/null && { printf '✗ 選んだ方の sleeper が生きている\n'; exit 1; }
+printf '✓ 表示が同じ 2 件でも選んだ行 (連番) の予約だけ取り消す\n'
+kill "$pid_a" 2>/dev/null || true
+
+# pid 再利用: .pid が無関係な生きたプロセスを指す → kill せず、stale として掃く
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+tt_spawn_fake_proc; foreign_pid=$REPLY_PID
+printf '%%5\n%s\nmake test\n' "$(( $(/bin/date +%s) + 3600 ))" > "$TMUX_SCHEDULE_KEYS_DIR/reused.job"
+printf '%s\n' "$foreign_pid" > "$TMUX_SCHEDULE_KEYS_DIR/reused.pid"
+STUB_GUM_EXIT=0 STUB_GUM_CHOOSE_INDEX=1 run "$STUB_PATH" "$SCRIPT" list
+[[ "$RC" -eq 0 ]] || { printf '✗ list (pid 再利用) が exit %s\n' "$RC"; exit 1; }
+kill -0 "$foreign_pid" 2>/dev/null || { printf '✗ 無関係なプロセス (pid 再利用) を kill した\n'; exit 1; }
+[[ "$(jobs_count)" == 0 ]] || { printf '✗ sleeper 不在 (pid 再利用) の job が掃かれない\n'; exit 1; }
+assert_not_called "gum choose" "pid 再利用 → sleeper 不在として掃き、一覧には出さない"
+printf '✓ 無関係なプロセスは kill しない\n'
 
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 tt_free_pid; dead_pid=$REPLY_PID
@@ -199,6 +249,13 @@ run "$STUB_PATH" "$SCRIPT" list
 [[ "$RC" -eq 0 && "$(jobs_count)" == 0 ]] || { printf '✗ pid が死んだ stale job が掃かれない\n'; exit 1; }
 assert_not_called "gum choose" "stale だけ → 一覧を出さず「予約はありません」"
 printf '✓ stale job (pid 死亡) を掃く\n'
+
+# .pid 未作成 + 作成直後の job は掃かない (fire が書く前の猶予)
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+printf '%%5\n%s\nmake test\n' "$(( $(/bin/date +%s) + 3600 ))" > "$TMUX_SCHEDULE_KEYS_DIR/fresh.job"
+run "$STUB_PATH" "$SCRIPT" list
+[[ "$(jobs_count)" == 1 ]] || { printf '✗ 作成直後 (.pid 未作成) の job が掃かれた\n'; exit 1; }
+printf '✓ 作成直後の .pid 未作成 job は掃かない\n'
 
 printf '\n## _tmux.conf: bind と撤去 bind の unbind\n'
 grep -Eq "^bind m display-popup .*tmux_schedule_keys\.sh" "$CONF" || { printf '✗ bind m が tmux_schedule_keys.sh を指していない\n'; exit 1; }

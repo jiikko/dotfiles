@@ -1,0 +1,45 @@
+# 125 human: prefix+m 予約入力ウィザードを実 tmux で確認する
+
+起票日: 2026-08-27
+期限: 2026-09-03
+種別: human
+関連: commit 683831c（実装）/ `scripts/tmux_schedule_keys.sh` / `tests/tmux/test_schedule_keys.sh`
+
+自動テストは stub 方式（偽 tmux / gum）で判定ロジック・fail-safe・send-keys の形を固定し、
+変異 6 本で red を確認済み。**popup の見え方と、実サーバでの run-shell -b sleeper の生存**は
+tty と実サーバが要るため人の目で確認する。
+
+## 前提
+
+まず conf を reload する（`prefix+R` → 確認 → 実行、または `tmux source-file ~/.tmux.conf`）。
+reload しないと `bind m` は乗らず、撤去済み launcher (prefix+Enter) も残ったまま。
+
+## 確認してほしいこと
+
+1. **launcher が消えたか**: reload 後に `prefix+Enter`（= `prefix+C-m`）を押しても
+   「🚀 Launcher」メニューが出ないこと（`unbind -T prefix Enter` の効果。source-file は既存 bind を
+   消さないので conf から行を消しただけでは残っていた）
+2. **ウィザードの表示**: `prefix+m` で popup（cyan 枠「⏰ 予約入力」）が開き、「新規予約 /
+   予約一覧・取消 (N 件)」の 2 択が出ること。72x14 の枠に header・入力・確認文（2 行）が
+   収まっていて、切れていないこと
+3. **短い予約で通しを見る**: 新規予約 → 時間 `0` → 分 `1` → 文字列 `echo hello` → 確認「予約する」。
+   status に「予約: 1m後に <session:index name> へ送る」が出て、**1 分後にその pane で
+   `echo hello` が実行される**こと（`-l` リテラル + Enter）。送信時に右下 toast が出るか
+   （toast は装飾なので出なくても不具合ではないが、出ないなら報告してほしい）
+4. **別 window に移っていても元の pane に届く**: 予約後に他の window へ移動して待つ。
+   送り先は予約時の pane（pane_id 固定）であり、今見ている pane には送られないこと
+5. **一覧と取消**: 30 分くらいの予約を 1 件入れてから `prefix+m` → 予約一覧。
+   「残り / 送り先 / 文字列」の行が出て、選ぶ → 確認「取消する」で消えること。
+   Esc で戻ったとき何も消えないこと
+6. **`Enter` という文字列が化けないか**: 文字列に `echo Enter C-c` を入れて予約し、
+   その通りの文字列が打ち込まれること（キー名として解釈されて改行や中断にならない）
+7. ~~reload 越しに予約が生きるか~~ → **隔離 -L サーバで実測済み（2026-08-27）**: run-shell -b の
+   sleeper は `source-file` を跨いで生存し、`kill-server` で死ぬ。reload で予約は消えないので
+   人の確認は不要。実装のヘッダコメントに残した
+
+## 崩れていたら
+
+- 見た目の問題（枠のサイズ・文言の切れ）は `_tmux.conf` の `bind m` の `-w/-h` と
+  `scripts/tmux_schedule_keys.sh` の gum header 文言で調整する
+- 送信されない / 別 pane に送られる は不具合。`~/.cache/tt-schedule-keys.log` に
+  new / fire / cancel / prune の行が残るので、それを添えて issue にする
