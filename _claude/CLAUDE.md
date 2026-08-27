@@ -35,7 +35,23 @@ Opus 5 は既定で「よく喋り・よく書き・スコープを広げ・よ�
 
 ## 一時ファイルの配置
 
-- **`/tmp` の使用は禁止. `./tmp` を使うこと。絶対に。**
+- **Claude がセッション中に作る成果物 (レポート・スクラッチ・中間生成物) は `./tmp`**。`/tmp` に置かない
+  - ⚠️ `tmp/` の ignore は **`~/.gitignore_global:5` 由来**で、repo の `.gitignore` には**無い**
+    (実測)。新品チェックアウトと CI では ignore されないし、そもそも `tmp/` が存在しない
+    (`src/glogx/worktree_status_real_test.go` の doc が CI 失敗 run 30823977760 を記録している)
+  - **例外: ハーネスが指定する scratchpad** (`/private/tmp/claude-501/…`) はそのまま使ってよい。
+    置き場所を選べない
+- **スクリプト / テストが実行時に作る隔離ディレクトリはこの規約の対象外**。既定は OS の一時領域
+  (`mktemp -d` / `t.TempDir()` / `os.MkdirTemp("")`)。`./tmp` に置くなら**理由をコード直近に残す**
+  (実例: `src/glogx/worktree_status_real_test.go:repoTmpDir` — 使い捨て repo を repo 内に置く理由と、
+  無ければ作る理由が書いてある)
+- 線引きは置き場所でも `mktemp` かどうかでもなく、**終了時に消す責任が実装されているか**
+  - ⚠️ 「`mktemp -d` は `/tmp` ではないから抵触しない」で判断しない。macOS は TMPDIR を外しても
+    Darwin のユーザ専用一時領域 (`/var/folders/…`) を使い `/tmp` に来ないが、**Linux では
+    `/tmp` 配下になりうる**。パスで線を引くと platform で答えが変わる
+  - ⚠️ 消す責任は「`trap` を書いた」では終わらない。**`trap` は中断では走らず、dir を消しても
+    そこで起こしたプロセスは残る** (`scripts/tmux_reap_orphan_servers.sh` の背景注記: `mktemp -d`
+    の socket を消してもサーバが launchd に里子化して残り、自動復元が **17 日間**不発になった)
 
 ## Issue管理
 

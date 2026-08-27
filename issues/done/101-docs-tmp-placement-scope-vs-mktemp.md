@@ -53,3 +53,36 @@
 - `_claude/CLAUDE.md`「一時ファイルの配置」（正本）
 - [`move-report-conclusions-to-issues.md`](../_claude/rules/move-report-conclusions-to-issues.md) — `./tmp` が gitignore である前提を使っているルール
 - `issues/100-retro-glogx-cli-health-2026-08-24.md` — この気づきが出た経緯
+
+---
+
+## 対応 (2026-08-28)
+
+`_claude/CLAUDE.md`「一時ファイルの配置」を書き直した。**issue の対応案はそのまま採らなかった** —
+敵対的レビューが 5 点の欠陥を出し、うち 2 点は issue の前提そのものが誤っていた。
+
+### issue の前提の誤り
+
+1. **「`mktemp -d` は `/tmp` ではない」は macOS 限定**。Darwin はユーザ専用一時領域
+   (`/var/folders/…`) を使うので TMPDIR を外しても `/tmp` に来ないが、**Linux では `/tmp` 配下に
+   なりうる** (CI がまさにその環境)。この理由づけを規約に書くと Linux で読んだ人が同じ迷いを
+   再生産するので、**パスで線を引かない**形にした
+2. **件数 174 は再現しない**。私の最初の測り直し (288) も再現しなかった。原因は `./tmp` 配下の
+   使い捨てスクラッチを数えていたこと (セッションごとに変わる)。規約に載せる数字ではないので**外した**
+   (追跡ファイルのみなら 82 行 / 68 ファイル。ただしこれも変動する)
+
+### 敵対的レビューが見つけた、私の修正の欠陥
+
+| # | 内容 |
+|---|---|
+| P1 | **ハーネス指定の scratchpad (`/private/tmp/claude-501/…`) を新しい文面が禁じていた**。私が今日使っているディレクトリで、置き場所を選べない → 明示的な例外にした |
+| P2 | **committed code が意図的に反していた**。`src/glogx/worktree_status_real_test.go:repoTmpDir` は使い捨て repo を `./tmp` に置き、`//nolint` と doc で理由を残している → 「`./tmp` に置くなら理由をコード直近に残す」に変え、違反ではなく**文書化された例外**にした |
+| P2 | **「`./tmp` は gitignore」がマシンローカルの事実**。`tmp/` は `~/.gitignore_global:5` にあり repo の `.gitignore` には無い (実測)。**これは私自身が 2 行下で禁じた「ローカル環境からの推論」そのもの**だった → 出典を明記した |
+| P2 | **「`trap` で消すから置きっぱなしにならない」が repo の履歴で反証済み**。`scripts/tmux_reap_orphan_servers.sh` の背景注記: `mktemp -d` の socket を消してもサーバが launchd に里子化して残り、自動復元が **17 日間**不発になった。`trap` は中断では走らないし、dir を消してもプロセスは残る → その 2 つを ⚠️ に書いた |
+| P3 | `mktemp` を tool 固定で書くと `t.TempDir()` / `os.MkdirTemp("")` (repo に 225 箇所超) が判断の外に落ちる → tool 中立にした |
+
+### 却下しなかった理由
+
+issue は「自明なので書かない」という却下の選択肢も挙げていた。採らなかったのは、
+**この修正の過程で判断が 3 回割れた**ため (scratchpad / glogx の `./tmp` 配置 / gitignore の出典)。
+1 行では足りないことが実地で示された。
