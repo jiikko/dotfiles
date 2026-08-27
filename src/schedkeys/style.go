@@ -18,6 +18,7 @@ const (
 	fgOK      = "32" // 発火時刻
 	fgErr     = "31" // 入力エラー
 	revAccent = "7;36"
+	revOK     = "7;32" // トースト (成功) の反転
 )
 
 func sgr(style, s string) string {

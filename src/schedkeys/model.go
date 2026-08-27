@@ -43,6 +43,7 @@ type model struct {
 	// prefix に続けて m / Enter / C-m を受けたら閉じる = 起動キーの再入力でトグルになる
 	togglePrefix string
 	prefixArmed  bool
+	toast        toast
 	width        int
 	height       int
 }
@@ -59,7 +60,21 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+	case toastTickMsg:
+		return m, m.toast.advance()
+	case toastDoneMsg:
+		m.toast.done = true
+		m.quit = true
+		return m, tea.Quit
 	case tea.KeyPressMsg:
+		// トースト表示中は結果が確定済み。キーで状態を変えさせない (閉じるのは早めてよい)
+		if m.toast.shown {
+			if msg.String() == "ctrl+c" || msg.String() == "esc" || msg.String() == "enter" {
+				m.quit = true
+				return m, tea.Quit
+			}
+			return m, nil
+		}
 		return m, m.handleKey(msg)
 	}
 	return m, nil
@@ -146,8 +161,8 @@ func (m *model) keyForm(key, text string) tea.Cmd {
 			return nil
 		}
 		m.res = result{action: "new", at: at, text: txt}
-		m.quit = true
-		return tea.Quit
+		// 結果はもう決まっている。トーストを見せてから閉じる (キーは以降受け付けない)
+		return m.toast.start(fmt.Sprintf("予約しました  %s に送る (%s後)", at.Format("15:04"), formatRemaining(at.Sub(m.now))))
 	}
 	m.form.handleKey(key, text, m.now)
 	return nil
@@ -188,6 +203,11 @@ func (m *model) View() tea.View {
 		body, cur = m.form.view(m.label, m.now, m.width, m.height)
 	case screenPick:
 		body = m.viewPick()
+	}
+	if m.toast.shown {
+		lines := strings.Split(body, "\n")
+		body = strings.Join(m.toast.overlay(lines, m.width, m.height), "\n")
+		cur = nil // トースト中はカーソルを出さない
 	}
 	v.SetContent(body)
 	v.Cursor = cur // form のときだけ本物のカーソルを置く (IME の未確定文字がそこに出る)

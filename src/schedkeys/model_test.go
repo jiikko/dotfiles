@@ -40,6 +40,19 @@ func keyCode(key string) rune {
 
 func keyMod(string) tea.KeyMod { return 0 }
 
+// finishToast は確定後のトーストを最後まで進める (実時間を待たない)。
+// 予約が決まってから閉じるまでの間にトーストを見せる作りなので、確定を確かめるテストは
+// これを通してから quit を見る。
+func finishToast(m *model) {
+	for range toastFrames + 2 {
+		if !m.toast.shown || m.toast.done {
+			break
+		}
+		m.Update(toastTickMsg{})
+	}
+	m.Update(toastDoneMsg{})
+}
+
 // ctrlKey は Ctrl 修飾つきのキー入力を作る (String() が "ctrl+n" 等になる)。
 func ctrlKey(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Mod: tea.ModCtrl} }
 
@@ -61,8 +74,15 @@ func TestMenuToFormAndPresetReservation(t *testing.T) {
 	// 既定フォーカスは文字列欄 (すぐ打ち始められる)
 	typeText(m, "make test")
 	press(m, "enter", "")
-	if !m.quit || m.res.action != "new" {
-		t.Fatalf("res = %+v quit=%v", m.res, m.quit)
+	if m.res.action != "new" {
+		t.Fatalf("res = %+v", m.res)
+	}
+	if !m.toast.shown {
+		t.Error("確定後にトーストが出ていない")
+	}
+	finishToast(m)
+	if !m.quit {
+		t.Fatal("トーストの後に閉じない")
 	}
 	if want := now.Add(5 * time.Minute); !m.res.at.Equal(want) {
 		t.Errorf("at = %v; want %v (既定は先頭の候補 = 5分後)", m.res.at, want)
@@ -89,6 +109,7 @@ func TestPresetSelectionMovesFireTime(t *testing.T) {
 	press(m, "tab", "")
 	typeText(m, "x")
 	press(m, "enter", "")
+	finishToast(m)
 	if want := now.Add(time.Hour); !m.res.at.Equal(want) {
 		t.Errorf("at = %v; want %v", m.res.at, want)
 	}
@@ -109,6 +130,7 @@ func TestClockAndFreeSpec(t *testing.T) {
 	press(m, "tab", "") // → text
 	typeText(m, "y")
 	press(m, "enter", "")
+	finishToast(m)
 	want := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
 	if !m.res.at.Equal(want) {
 		t.Errorf("時刻指定 at = %v; want %v", m.res.at, want)
@@ -124,6 +146,7 @@ func TestClockAndFreeSpec(t *testing.T) {
 	press(m, "tab", "")
 	typeText(m, "y")
 	press(m, "enter", "")
+	finishToast(m)
 	if want := now.Add(90 * time.Minute); !m.res.at.Equal(want) {
 		t.Errorf("自由入力 at = %v; want %v", m.res.at, want)
 	}
@@ -271,6 +294,7 @@ func TestEnterAdvancesInsteadOfSubmitting(t *testing.T) {
 	}
 	typeText(m, "make test")
 	press(m, "enter", "")
+	finishToast(m)
 	if !m.quit || m.res.action != "new" {
 		t.Fatalf("文字列欄の Enter で予約されない (res=%+v)", m.res)
 	}
@@ -295,6 +319,7 @@ func TestEnterAdvancesInsteadOfSubmitting(t *testing.T) {
 	}
 	typeText(m, "y")
 	press(m, "enter", "")
+	finishToast(m)
 	want := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
 	if !m.quit || !m.res.at.Equal(want) {
 		t.Errorf("Enter だけの流れで予約できない (res=%+v want at=%v)", m.res, want)

@@ -119,20 +119,20 @@ ui_run() {
   [[ -n "$REPLY_UI" ]]
 }
 
-# new_reservation は UI が返した発火 epoch と文字列で予約を作る
+# new_reservation は UI が返した発火 epoch と文字列で予約を作る。
+# 成功時に何も表示しないのは、UI 側がトーストを出してから閉じているため (二重に出さない)
 new_reservation() {
-  local pane=$1 label=$2 at=$3 text=$4 sock id total
+  local pane=$1 label=$2 at=$3 text=$4 sock id
   [[ "$at" =~ ^[0-9]+$ && -n "$text" ]] || { log "new: 不正な UI 結果 at=$at text=$text"; return 1; }
   # fire は run-shell -b の子 (サーバ環境を継承) なので、bare tmux がどの socket へ行くか保証が無い。
   # 予約時の socket を job に残し、fire 側で $TMUX にして同じサーバへ向ける
   sock="$(tmux display-message -p '#{socket_path}' 2>/dev/null || true)"
   id="$(date +%s)-$$-$RANDOM"
-  printf '%s\n%s\n%s\n%s\n' "$pane" "$at" "$text" "$sock" > "$STATE_DIR/$id.job"
+  printf '%s\n%s\n%s\n%s\n' "$pane" "$at" "$text" "$sock" > "$STATE_DIR/$id.job" 2>/dev/null \
+    || { log "new: job を書けない ($STATE_DIR/$id.job)"; return 1; }
   # id は英数と - だけなので run-shell の引用は安全
   tmux run-shell -b "'$SELF' fire '$id'"
-  total=$(( at - $(date +%s) ))
   log "new $id pane=$pane at=$at text=$text"
-  tmux display-message "予約: $(fmt_remaining "$total")後に $label へ送る"
 }
 
 # jobs_tsv は今ある予約を UI 用の TSV (id / 発火 epoch / 送り先の表示名 / 文字列) に書き出す。
@@ -217,7 +217,10 @@ cmd_wizard() {
   action="${REPLY_UI%%"$tab"*}"
   rest="${REPLY_UI#*"$tab"}"
   case "$action" in
-    new)    new_reservation "$pane" "$label" "${rest%%"$tab"*}" "${rest#*"$tab"}" ;;
+    # UI は確定した時点で「予約しました」とトーストを出して閉じている。ここで失敗したら
+    # その表示が嘘になるので、失敗だけを目立つ形で知らせる (成功は UI のトーストが担当)
+    new)    new_reservation "$pane" "$label" "${rest%%"$tab"*}" "${rest#*"$tab"}" \
+              || tmux display-message "予約に失敗しました (~/.cache/tt-schedule-keys.log)" ;;
     cancel) cancel_selected "$rest" ;;
     *)      log "wizard: 未知の UI 結果: $REPLY_UI" ;;
   esac

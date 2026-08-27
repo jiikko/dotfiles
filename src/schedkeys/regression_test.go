@@ -342,3 +342,116 @@ func TestTeaKeyName(t *testing.T) {
 		}
 	}
 }
+
+// 予約が決まったらトーストを出し、それが終わってから閉じること (ユーザー要望 2026-08-28)。
+// 右下から滑り込む見せ方は glogx に合わせている。
+func TestToastAfterReservation(t *testing.T) {
+	m := newTestModel()
+	m.width, m.height = 70, 14
+	press(m, "enter", "")
+	typeText(m, "make test")
+	press(m, "enter", "")
+	if !m.toast.shown {
+		t.Fatal("確定してもトーストが出ない")
+	}
+	if m.quit {
+		t.Fatal("トーストを見せる前に閉じた")
+	}
+	if m.res.action != "new" {
+		t.Fatalf("結果が確定していない: %+v", m.res)
+	}
+	// 滑り込み中も画面の高さを超えず、ヘルプ行を消さないこと (最下行に出す)
+	helpBefore := ""
+	for _, l := range strings.Split(m.View().Content, "\n") {
+		if strings.Contains(stripSGR(l), "Esc") {
+			helpBefore = stripSGR(l)
+		}
+	}
+	if helpBefore == "" {
+		t.Fatal("ヘルプ行が見つからない (テストの前提が崩れている)")
+	}
+	widths := []int{}
+	for range toastFrames {
+		m.Update(toastTickMsg{})
+		lines := strings.Split(m.View().Content, "\n")
+		if len(lines) > m.height {
+			t.Fatalf("トーストで画面が溢れた (%d 行 > %d)", len(lines), m.height)
+		}
+		found := false
+		for _, l := range lines {
+			if stripSGR(l) == helpBefore {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("トーストがヘルプ行を消した:\n%s", stripSGR(m.View().Content))
+		}
+		last := lines[len(lines)-1]
+		if w := ansi.StringWidth(last); w > 70 {
+			t.Fatalf("トースト行が %d 桁 (上限 70)", w)
+		}
+		// 行は右端まで空白で埋めるので、見えている中身 (左の空白を除いた幅) を測る
+		widths = append(widths, ansi.StringWidth(strings.TrimLeft(stripSGR(last), " ")))
+	}
+	// 幅が単調に増えて「滑り込む」こと (最後は全幅)
+	for i := 1; i < len(widths); i++ {
+		if widths[i] < widths[i-1] {
+			t.Errorf("滑り込みが逆行した: %v", widths)
+			break
+		}
+	}
+	if widths[len(widths)-1] <= widths[0] {
+		t.Errorf("トーストが広がっていない: %v", widths)
+	}
+	body := stripSGR(m.View().Content)
+	if !strings.Contains(body, "予約しました") {
+		t.Errorf("トーストの文言が出ていない:\n%s", body)
+	}
+	// 静止が終わると閉じる
+	m.Update(toastDoneMsg{})
+	if !m.quit {
+		t.Error("静止の後に閉じない")
+	}
+	if m.res.action != "new" {
+		t.Errorf("結果が消えた: %+v", m.res)
+	}
+}
+
+// トースト中のキーで状態が変わらないこと (確定済みなので取り消し・再編集させない)。
+func TestToastIgnoresEditingKeys(t *testing.T) {
+	m := newTestModel()
+	press(m, "enter", "")
+	typeText(m, "make test")
+	press(m, "enter", "")
+	before := m.res
+	typeText(m, "zzz")
+	press(m, "tab", "")
+	press(m, "left", "")
+	if m.res != before {
+		t.Errorf("トースト中のキーで結果が変わった: %+v → %+v", before, m.res)
+	}
+	if got := m.form.text.value(); got != "make test" {
+		t.Errorf("トースト中に入力が変わった: %q", got)
+	}
+	// Esc / Enter は閉じるのを早めるだけ (結果は保つ)
+	press(m, "esc", "")
+	if !m.quit || m.res.action != "new" {
+		t.Errorf("Esc で閉じられない / 結果が消えた (quit=%v res=%+v)", m.quit, m.res)
+	}
+}
+
+// 取消 (一覧) では確定と同時に閉じること (取消の確認と実行はシェル側なので、ここで
+// 「取り消しました」と出すと嘘になりうる)。
+func TestNoToastForCancel(t *testing.T) {
+	jobs := []job{{id: "a", at: time.Now().Add(time.Hour), label: "x", text: "make test"}}
+	m := newModel("main:3 claude", time.Now(), jobs)
+	press(m, "j", "")
+	press(m, "enter", "")
+	press(m, "enter", "")
+	if m.toast.shown {
+		t.Error("取消でトーストを出している (実行はシェル側なので確定していない)")
+	}
+	if !m.quit || m.res.action != "cancel" {
+		t.Errorf("取消が返らない (quit=%v res=%+v)", m.quit, m.res)
+	}
+}

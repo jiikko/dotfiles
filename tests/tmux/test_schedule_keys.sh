@@ -150,6 +150,18 @@ assert_not_called "gum input" "文字列・時刻の入力は UI が持つ (gum 
 # popup 中は prefix が tmux のキーテーブルへ届かず UI に素通りするので、起動キーの再入力で
 # 閉じられるよう prefix を UI へ渡す (実測 2026-08-28)
 assert_called "--toggle-prefix C-t" "tmux の prefix を UI へ渡す (起動キーの再入力で閉じるため)"
+# 成功の通知は UI のトーストが出す (シェルは二重に出さない)。失敗したときだけ知らせる
+assert_not_called "display-message 予約" "成功時にシェルからも通知しない (UI のトーストと二重になる)"
+
+printf '\n## wizard: 予約を作れなかったら失敗を知らせる (UI は「予約しました」と出して閉じている)\n'
+reset_state
+chmod 500 "$TMUX_SCHEDULE_KEYS_DIR" 2>/dev/null || mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+chmod 500 "$TMUX_SCHEDULE_KEYS_DIR"
+STUB_UI_RESULT="new	4600	make test" run "$STUB_PATH" "$SCRIPT" wizard
+chmod 700 "$TMUX_SCHEDULE_KEYS_DIR"
+[[ "$(jobs_count)" == 0 ]] || { printf '✗ 書けないはずの状態で job が出来た\n'; exit 1; }
+assert_called "display-message 予約に失敗しました" "job を作れなかったら失敗を知らせる"
+assert_not_called "run-shell" "作れなかったら sleeper も起こさない"
 
 printf '\n## wizard: 中止・壊れた結果では何も作らない\n'
 for tc in "exit:UI が中止 (Esc)" "empty:結果が空" "garbage:未知の action" "badepoch:epoch が数値でない" "notext:文字列が空"; do
