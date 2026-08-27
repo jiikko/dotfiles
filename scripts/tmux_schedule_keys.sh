@@ -183,6 +183,13 @@ cmd_fire() {
   rm -f "$job" "$STATE_DIR/$id.pid"
   # ここから先は割り込まれない: 文字列だけ打たれて Enter が届かない半端な状態を作らない
   trap '' TERM INT HUP
+  # copy-mode 等に入っている pane へはキーが届かない (mode のキーテーブルへ行き、リテラル送信は
+  # "not in a mode" で rc=1 になる。tmux 3.7b で実測 2026-08-28)。人が打つときと同じように
+  # mode を抜けてから送る。抜けられなくても送信は試す (判定は send-keys の rc に任せる)
+  if [[ "$(tmux display-message -p -t "$REPLY_PANE" '#{pane_in_mode}' 2>/dev/null)" == 1 ]]; then
+    log "fire $id: pane $REPLY_PANE が mode 中なので抜ける"
+    tmux send-keys -t "$REPLY_PANE" -X cancel 2>/dev/null || true
+  fi
   # send-keys の stderr は捨てる (pane が直前に消えた場合の "can't find pane" が run-shell 経由で
   # アクティブ pane の view-mode に積まれる)。成否は rc で分ける
   if tmux send-keys -t "$REPLY_PANE" -l -- "$REPLY_TEXT" 2>/dev/null; then
@@ -190,8 +197,8 @@ cmd_fire() {
     log "fire $id: sent to $REPLY_PANE text=$REPLY_TEXT"
     toast "予約入力を送信: $(pane_label "$REPLY_PANE") <- $REPLY_TEXT"
   else
-    log "fire $id: pane $REPLY_PANE gone, dropped text=$REPLY_TEXT"
-    toast "予約入力を破棄: 送り先 pane が消えた ($REPLY_TEXT)"
+    log "fire $id: pane $REPLY_PANE へ送れず破棄 text=$REPLY_TEXT"
+    toast "予約入力を破棄: 送り先へ送れなかった ($REPLY_TEXT)"
   fi
   exit 0
 }

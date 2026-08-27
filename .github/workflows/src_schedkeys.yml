@@ -1,3 +1,4 @@
+---
 # src/schedkeys (tmux 予約入力ウィザードの TUI) の CI。lint + test の本体は再利用 workflow
 # _go-project.yml に一元化し、ここは paths filter (触れた変更のときだけ起動) と対象 dir の
 # 指定だけを持つ薄い caller。paths に _go-project.yml を含めるのは、共有本体を編集したとき
@@ -37,3 +38,26 @@ jobs:
     uses: ./.github/workflows/_go-project.yml
     with:
       dir: src/schedkeys
+
+  # darwin での確認。この UI が実際に動くのは macOS の tmux popup だけで、ubuntu 側は
+  # 「ロジックが正しいか」しか見ていない。ここでは同じ unit テストを darwin で走らせ、
+  # 端末幅の計算 (ansi.StringWidth) や rune 処理が platform 差で崩れないことを守る。
+  # ⚠️ 実際の見え方 (popup の中の描画・IME の未確定文字の位置) はここでも検証できない。
+  #   tty と実 tmux が要るため、そこは human issue (issues/125) で人が確認する。
+  darwin:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: src/schedkeys/go.mod
+          cache-dependency-path: src/schedkeys/go.sum
+
+      - name: Build & test (darwin)
+        working-directory: src/schedkeys
+        run: |
+          go build ./...
+          go test -race ./...

@@ -11,6 +11,7 @@
 #   - fire は発火時刻まで送らない (早すぎる送信 = 予約の意味が無い)
 #   - 送り先 pane が消えていたら (send-keys が失敗したら) Enter を送らず、無音 (stdout/stderr 空・
 #     exit 0) で job を掃き、成功ログを書かない
+#   - mode (copy-mode 等) に入っている pane へは、抜けてから送る (mode 中はキーが届かない)
 #   - .pid の数字だけで kill しない: 無関係なプロセスが同じ pid を持っていても kill せず、stale として掃く
 #   - 表示文字列 (シェル / UI とも) に絵文字・曖昧幅の記号を混ぜない
 #   - tmux の prefix を UI へ渡す (popup 中は prefix が UI に素通りするので、そこで閉じる)
@@ -47,7 +48,11 @@ case "$*" in
   "display-message -p #{pane_id}") printf '%%5\n' ;;
   "display-message -p -t %5 "*)
     [ "${STUB_PANE_GONE:-0}" = 1 ] && exit 1
-    case "$*" in *pane_id*) printf '%%5\n' ;; *) printf 'main:3 claude\n' ;; esac ;;
+    case "$*" in
+      *pane_id*)     printf '%%5\n' ;;
+      *pane_in_mode*) printf '%s\n' "${STUB_PANE_IN_MODE:-0}" ;;
+      *)             printf 'main:3 claude\n' ;;
+    esac ;;
   "show-options -gv prefix") printf 'C-t\n' ;;
   "send-keys -t %5 "*)
     # 実 tmux は pane 不在で stderr にエラーを出して rc=1 (この stderr が run-shell 経由で view-mode に積まれる)
@@ -215,6 +220,21 @@ printf '✓ .pid = sleeper の pid (取消の kill 先)\n'
 wait "$fire_pid" || { printf '✗ fire が非 0 で終了\n'; exit 1; }
 assert_called 'tmux send-keys -t %5 -l -- ls' "発火時刻後に送信"
 
+printf '\n## fire: mode 中の pane は抜けてから送る\n'
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+printf '%%5\n900\nmake test\n' > "$TMUX_SCHEDULE_KEYS_DIR/j5.job"
+STUB_PANE_IN_MODE=1 run "$STUB_PATH" "$SCRIPT" fire j5
+assert_called "tmux send-keys -t %5 -X cancel" "copy-mode 等に入っていたら抜けてから送る (mode 中はキーが届かない)"
+# 順序: cancel が literal 送信より先
+first_sk="$(grep 'send-keys' "$CALLS" | head -n1)"
+[[ "$first_sk" == *"-X cancel"* ]] || { printf '✗ mode を抜けるのが送信より後: %s\n' "$first_sk"; exit 1; }
+printf '✓ mode を抜けてから送る\n'
+assert_called "tmux send-keys -t %5 -l -- make test" "抜けたあと本文を送る"
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+printf '%%5\n900\nmake test\n' > "$TMUX_SCHEDULE_KEYS_DIR/j6.job"
+STUB_PANE_IN_MODE=0 run "$STUB_PATH" "$SCRIPT" fire j6
+assert_not_called "-X cancel" "mode に入っていなければ余計な cancel を送らない"
+
 printf '\n## fire: 壊れた job (文字列行なし) は送らず掃く\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 printf '%%5\n900\n' > "$TMUX_SCHEDULE_KEYS_DIR/j4.job"
@@ -233,7 +253,7 @@ STUB_PANE_GONE=1 run "$STUB_PATH" "$SCRIPT" fire j3
 [[ ! -s "$RUN_OUT" && ! -s "$RUN_ERR" ]] || { printf '✗ pane 消滅で stdout/stderr に出力 (無音契約違反)\n'; cat "$RUN_OUT" "$RUN_ERR"; exit 1; }
 assert_called 'tmux send-keys -t %5 -l -- make test' "pane 消滅は send-keys の失敗で検知する (事前チェックとの TOCTOU を作らない)"
 [[ "$(jobs_count)" == 0 ]] || { printf '✗ pane 消滅の job が残っている\n'; exit 1; }
-grep -q 'pane %5 gone' "$XDG_CACHE_HOME/tt-schedule-keys.log" || { printf '✗ 破棄がログに残らない\n'; exit 1; }
+grep -q 'へ送れず破棄' "$XDG_CACHE_HOME/tt-schedule-keys.log" || { printf '✗ 破棄がログに残らない\n'; exit 1; }
 ! grep -q 'sent to' "$XDG_CACHE_HOME/tt-schedule-keys.log" || { printf '✗ 送れていないのに成功ログ\n'; exit 1; }
 assert_not_called "send-keys -t %5 Enter" "文字列の送信に失敗したら Enter も送らない"
 printf '✓ 無音 exit 0 + job 掃除 + ログ記録 (成功ログ無し)\n'
