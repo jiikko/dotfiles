@@ -27,6 +27,29 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # -L の隔離サーバで C-t C-r を押したときに本番の観測ログを汚さない。
 tt_on_default_server || exit 0
 
+# 出力を持たない (run-shell -b の無音契約)。他 2 本 (tmux_periodic_save.sh /
+# tmux_server_watchdog.sh) と揃える。**同一コミット e089e7e で watchdog にだけ入り、
+# ここへ入れ忘れていた**もので、意図的な非対称ではない (issue 111)。
+#
+# ⚠️ 効くのは「将来この経路が stdout へ 1 行でも出したとき」への防御。個々の呼び出し側でも
+#   塞いでいる (`bash "$restore" >/dev/null 2>&1` 等) が、**runner 自身は復元の間ずっと
+#   run-shell のパイプを掴み続ける** (実測: 復元は 4〜10 秒 — ~/.cache/tt-restore-duration.log。
+#   `sleep 3; echo` を run-shell -b すると 3.5 秒後に pane が view-mode になる)。
+#   その間に stdout へ出た 1 行は、**復元中のユーザーのアクティブ pane を view-mode にする**。
+#
+# ⚠️ 実測で崩れた「もっともらしい理由」を書かないこと (2026-08-28 に隔離サーバで測定):
+#   - **stderr は view-mode を開かない**。tmux サーバの fd2 は /dev/null (本番 pid でも実測)。
+#     つまり `2>&1` は view-mode 対策としては空振りで、揃えるためだけに付けている
+#   - **SIGPIPE は来ない**。書いたときにしか飛ばず、このスクリプトは stdout に 1 バイトも書かない
+#   - **stdin ブロックも起きない**。run-shell の子の stdin は即 EOF (`read -t 2` が rc=1。
+#     本物の timeout は 142)。resurrect の restore.sh も inherited stdin を読まない
+#     (12 箇所の `while read` は全て自前の入力を持つ)
+#
+# ⚠️ **view-mode を開く支配的な要因は rc≠0 の方**で、これは exec では塞げない
+#   (無音でも rc=1 なら開く。実測)。この経路は全て `exit 0` で終わるので現状は問題ないが、
+#   終了コードを変えるときはそこが本体だと思うこと。
+exec </dev/null >/dev/null 2>&1
+
 TT_TRIGGER_LOG="${TT_TRIGGER_LOG:-$HOME/.cache/tt-restore-trigger.log}"
 TT_RESTORE_STATE_DIR="${TT_RESTORE_STATE_DIR:-$HOME/.cache/tt-restore-run}"
 
