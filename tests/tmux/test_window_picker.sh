@@ -124,7 +124,9 @@ OUT=$(STUB_WINDOWS="$ROWS" STUB_CURRENT="main:1" PATH="$TMP_DIR/bin:$TMP_DIR/noc
 printf '✓ column 不在でも候補構築と window_id 選択が機能\n'
 grep -q -- '--with-nth=2\.\.' "$CALLS" || { printf '✗ fzf に --with-nth=2.. が渡っていない (2 に狭めると column 不在で表示が崩壊する回帰)\n'; exit 1; }
 printf '✓ fzf の表示指定は --with-nth=2.. (column 不在フォールバックの表示契約)\n'
-disp=$(grep '@10' "$FZF_IN" | cut -f2-)
+# `|| true`: 無マッチで代入ごと死ぬと、下のループの「%s が無い」という具体的な失敗に
+# 到達できず無音の exit 1 になる (set -euo pipefail の下での抽出の定番の罠)。
+disp=$(grep '@10' "$FZF_IN" | cut -f2- || true)
 for want in '秒前' 'vim' 'いまここ'; do
   grep -q "$want" <<< "$disp" || { printf '✗ column 不在の表示フィールド (2..) に %s が無い: %s\n' "$want" "$disp"; exit 1; }
 done
