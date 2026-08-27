@@ -49,8 +49,11 @@ func renderLines(src string, width int, colored bool) []string {
 	return lines
 }
 
+// ⚠️ 幅は**全数掃く**こと。以前は {20,40,60,86,120} の離散点しか見ておらず、20 未満を一度も
+// 通していなかった。実測 2026-08-27: 幅 1 で 80 行・幅 3 で 42 行が溢れていた (幅 20 以上は 0 件)
+// = 「離散点で緑」は「その点では壊せなかった」でしかない (issue 116)。
 func TestRenderBodyNeverExceedsWidth(t *testing.T) {
-	for _, width := range []int{20, 40, 60, 86, 120} {
+	for width := 1; width <= 120; width++ {
 		for i, ln := range renderLines(sample, width, false) {
 			if w := termwidth.Of(ln); w > width {
 				t.Fatalf("width=%d: 行 %d が幅を超えた (w=%d): %q", width, i, w, ln)
@@ -458,5 +461,33 @@ func TestRenderBodySrcLineNumbersSkipFrontMatter(t *testing.T) {
 	_, nums := RenderBody(src, 40, false)
 	if len(nums) == 0 || nums[0] != 4 {
 		t.Fatalf("front matter のぶん行番号がずれている: %v (先頭は 4 のはず)", nums)
+	}
+}
+
+// 幅 0 以下では空行を返す (issue 116。glogx 本体の clipToWidth と同じ契約)。
+//
+// ⚠️ 呼び出し側の「width - 固定列」が極小幅で 0 や負になることがある。そのまま返すと
+// 行が枠を突き破る (issue 053 が本体側で踏んだのと同じ形)。
+func TestRenderBodyAtZeroOrNegativeWidth(t *testing.T) {
+	for _, w := range []int{0, -1, -80} {
+		lines, _ := RenderBody(sample, w, false)
+		for i, ln := range lines {
+			if ln != "" {
+				t.Fatalf("width=%d: 行 %d が空でない (%q)", w, i, ln)
+			}
+		}
+	}
+}
+
+// 色付きで切り詰めても色を開いたまま終わらない (次の行へ色が漏れない)。
+func TestRenderBodyClipDoesNotLeakColor(t *testing.T) {
+	lines, _ := RenderBody("- **太字の項目** と普通の文字がある長い行\n", 3, true)
+	for i, ln := range lines {
+		if !strings.Contains(ln, "\x1b[") {
+			continue // 色を含まない行は対象外
+		}
+		if !strings.HasSuffix(ln, "\x1b[0m") && !strings.HasSuffix(ln, "\x1b[m") {
+			t.Errorf("行 %d が色を開いたまま終わっている (次の行へ漏れる): %q", i, ln)
+		}
 	}
 }
