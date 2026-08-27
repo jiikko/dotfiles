@@ -136,6 +136,10 @@ type statusPollMsg struct{ gen int }
 
 // statusPreviewMsg はプレビュー / 全画面 diff の取得結果。
 type statusPreviewMsg struct {
+	// ⚠️ gen は必須 (他の 3 メッセージと同じ)。無いと、無効化 (閉じ / r) を跨いで着地した
+	// 取得がキャッシュを**復活させ**、以後 begin() に弾かれて取り直しが二度と走らない
+	// (issue 114 の敵対的レビューで実証。窓は色付け 5000 行で 200ms 超)。
+	gen   int
 	key   string
 	lines []string
 	err   error
@@ -263,6 +267,10 @@ func (v *statusView) finishClose() bool {
 	// diff 取得が返らない限り fetching() が true のままフレーム tick を回し続ける。
 	v.loading = false
 	v.preview.clearBusy()
+	// ⚠️ キャッシュ本体も捨てる。キー (section+XY+path) は内容を一意に決めないので、閉じている
+	// あいだに外部編集されても XY が動かなければキーが一致し、開き直しても**編集前の diff が
+	// 出続ける** (プロセスが生きている限り消えない。issue 114)。
+	v.preview.clearEntries()
 	v.gen++
 	return true
 }
@@ -485,6 +493,7 @@ func (v *statusView) fetchDiff(row worktreeRow, colored bool) tea.Cmd {
 	if !v.preview.begin(key) {
 		return nil // キャッシュ済み / 取得中
 	}
+	gen := v.gen // 無効化を跨いだ結果を捨てるため (loadCmd と同じ形)
 	paths := row.pathspecs()
 	staged := row.section == sectionStaged
 	untracked := row.section == sectionUntracked
@@ -498,10 +507,10 @@ func (v *statusView) fetchDiff(row worktreeRow, colored bool) tea.Cmd {
 	return func() tea.Msg {
 		if untracked {
 			lines, err := untrackedPreview(filePath, isDir)
-			return statusPreviewMsg{key: key, lines: lines, err: err}
+			return statusPreviewMsg{gen: gen, key: key, lines: lines, err: err}
 		}
 		lines, err := loadWorktreeDiff(paths, staged, colored)
-		return statusPreviewMsg{key: key, lines: lines, err: err}
+		return statusPreviewMsg{gen: gen, key: key, lines: lines, err: err}
 	}
 }
 
@@ -547,6 +556,12 @@ func untrackedPreview(path string, isDir bool) ([]string, error) {
 // receivePreview は diff 取得の結果を反映する。失敗は「取れなかった」ことをプレビュー欄に
 // 出すだけで、トーストにはしない (カーソルを動かすたびに出ると騒がしい)。
 func (v *statusView) receivePreview(msg statusPreviewMsg) {
+	if msg.gen != v.gen {
+		// 無効化 (閉じ / r) を跨いで着地した結果。捨てるが、**札は必ず降ろす** —
+		// 降ろさないと begin() がこのキーを永久に弾き、取り直しが走らなくなる。
+		v.preview.cancel(msg.key)
+		return
+	}
 	if msg.err != nil {
 		v.storePreview(msg.key, []string{"(diff を取得できませんでした: " + firstLine(msg.err.Error()) + ")"})
 		return
@@ -689,7 +704,16 @@ func (v *statusView) listKey(key string, vp statusViewport) tea.Cmd {
 	case "d", "enter", "l", "right":
 		return v.openPager(vp)
 	case "r":
-		return v.loadCmd()
+		// ⚠️ 明示的な再読込ではプレビューのキャッシュも捨てる。自動更新での据え置きは意図的
+		// (毎 1.5 秒 git diff を走らせないため。TestStatusReceiveSchedulesPreviewRefetchOnChange が
+		// pin 済み) だが、**r と開き直しまで据え置くとは spec も README も言っていない** (issue 114)。
+		// 捨てるだけだとプレビュー欄が空のまま残るので、receive と同じく取り直しも予約する。
+		// ⚠️ gen を進めてから捨てる。進めないと、r を押した時点で飛んでいた取得が着地して
+		// 古い内容を復活させ、r が張った取り直しが begin() に弾かれる = 押しても何も変わらない
+		// (敵対的レビューで実測)。閉じる側 (finishClose) は元から gen++ している。
+		v.gen++
+		v.preview.clearEntries()
+		return tea.Batch(v.loadCmd(), v.previewTickCmd())
 	case "q", "esc":
 		// viewer からの q/esc は glogx ごと終了する (ユーザー要望 2026-08-06: git log 一覧へは
 		// 戻らない)。実際の quit は browseModel が行う (takeWantQuit)。一覧へ戻りたいときは

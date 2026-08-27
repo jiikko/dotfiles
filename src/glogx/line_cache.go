@@ -14,6 +14,23 @@ package main
 // 構造的に消える。
 //
 // ⚠️ アクセス順 (LRU) は追わない: 閲覧は人間律速で、挿入順の粗い evict で十分。
+//
+// ⚠️ **キーの契約**: キーは内容を一意に決めること。決められない caller は、
+// **内容が変わりうる契機で自分で clearEntries すること** (この型は無効化の契機を知らない)。
+//
+// 3 者のうち diff (キー=SHA) と job 詳細 (キー=SHA/cursor) は内容が不変なので契約が成立する。
+// statusView.preview は **キー (section+XY+path) が内容を一意に決めない** —
+// 同じ ` M` のまま中身だけ変わる保存し直しでキーが動かない。キーに内容の指紋 (mtime+size 等) を
+// 混ぜる案は採らなかった: previewKey は描画経路でも呼ばれるので毎フレーム syscall になる。
+// 代わりに statusView 側が **r / 閉じ** の 2 契機で clearEntries する (issue 114)。
+// 自動更新 (1.5 秒ポーリング) でも `receive` が clearEntries を呼ぶが、それは
+// **rows が動いたとき (section/XY/path の変化) だけ**で、上に書いた「同じ ` M` のまま中身だけ
+// 変わる保存し直し」では発火しない。そこを据え置くのは意図的
+// (毎 1.5 秒 git diff を走らせないため。TestStatusReceiveSchedulesPreviewRefetchOnChange が pin)。
+//
+// ⚠️ caller が clearEntries を呼んでも、**飛んでいる取得が後から着地すれば復活する**。
+// statusView はメッセージに gen を載せて世代違いを捨てることで塞いでいる (この型は
+// 無効化の契機も世代も知らないので、型だけでは守れない)。
 type lineCache struct {
 	entries map[string][]string
 	order   []string // entries への挿入順 (上限超過分を古い順に落とすため)
@@ -85,6 +102,10 @@ func (c *lineCache) clearEntries() {
 	c.entries = map[string][]string{}
 	c.order = nil
 }
+
+// cancel は 1 件の取得中の札だけを降ろす (結果を捨てるとき用)。
+// ⚠️ 降ろさないと fetching() が true のまま残り、そのキーは begin() に永久に弾かれる。
+func (c *lineCache) cancel(key string) { delete(c.busy, key) }
 
 // clearBusy は取得中の札だけを全部降ろす (キャッシュは残す)。
 // viewer を閉じたときに使う: 走行中の取得が返らない限り fetching() が true のままになり、

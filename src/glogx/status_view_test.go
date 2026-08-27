@@ -1188,3 +1188,149 @@ func TestStatusViewLinesFitWidthDownToOne(t *testing.T) {
 		}
 	}
 }
+
+// 明示的な再読込 (r) はプレビューのキャッシュも捨てる (issue 114)。
+//
+// キー (section+XY+path) は内容を一意に決めないので、同じ ` M` のまま中身だけ変わる
+// 「保存し直し」では receive の changed 判定を通り抜ける。自動更新での据え置きは意図的だが、
+// r まで据え置くと「再読込したのに編集前の diff が出続ける」になる (silent)。
+func TestStatusReloadKeyDropsPreviewCache(t *testing.T) {
+	// ⚠️ 2 行以上の fixture にすること。1 行だと `len(entries) != 0` では
+	//   「全部捨てる」と「カーソル行だけ捨てる」を区別できない (敵対的レビューで実測)
+	stubWorktreeStatus(t, statusRec(" M a.go", " M b.go"), nil)
+	v := newStatusView()
+	v.closeAnimOff = true
+	v.shown = true
+	applyStatusLoad(t, &v)
+	for _, r := range v.rows {
+		v.preview.store(previewKey(r), []string{"OLD-DIFF"}, "")
+	}
+	if len(v.preview.entries) < 2 {
+		t.Fatalf("前提が崩れた: キャッシュに 2 件仕込めていない (%d 件)", len(v.preview.entries))
+	}
+	// ⚠️ 予約と再読込は別々に見る。`cmd != nil` では判別力が無い — loadCmd だけでも
+	//   previewTickCmd だけでも非 nil が返るので、どちらを落とす変異も green のまま通る (実測)
+	// ⚠️ 再読込の有無は v.loading で見る。loadCmd は呼ばれた時点で同期に loading を立てるので、
+	//   tea.Batch を実行しなくても判る (Batch を実行しても子は走らない = 数えられない)
+	seqBefore := v.previewSeq
+	v.loading = false
+
+	v.listKey("r", testViewport())
+
+	if len(v.preview.entries) != 0 {
+		t.Errorf("r でプレビューのキャッシュが残った (編集前の diff が出続ける): %v", v.preview.entries)
+	}
+	// ⚠️ 捨てるだけだとプレビュー欄が空のまま残る (receive 側と同じ理由で取り直しを予約する)
+	if v.previewSeq == seqBefore {
+		t.Error("r で取り直しが予約されていない (プレビュー欄が空のまま戻らない)")
+	}
+	if !v.loading {
+		t.Error("r が git status を読み直していない (再読込そのものが走らない)")
+	}
+}
+
+// r と閉じで **reset() でなく clearEntries()** を使うこと (issue 114)。
+//
+// reset() は取得中の札まで降ろすので、走行中の取得と、直後に張り直した予約が
+// **同じキーを二重に取りに行く** (lineCache.clearEntries の doc が名指しで禁じている形)。
+func TestStatusReloadKeepsInFlightMark(t *testing.T) {
+	v := newTestStatusView(t, statusRec(" M a.go"))
+	row, _ := v.current()
+	key := previewKey(row)
+	if !v.preview.begin(key) {
+		t.Fatal("前提が崩れた: 取得を始められない")
+	}
+
+	v.listKey("r", testViewport())
+
+	if !v.preview.busy[key] {
+		t.Error("r が取得中の札まで降ろした (走行中の取得と予約が同じキーを二重に取りに行く)")
+	}
+}
+
+// 無効化 (閉じ) を跨いで着地した取得が、古い内容を復活させない (issue 114 の敵対的レビュー)。
+//
+// statusPreviewMsg は 4 兄弟で唯一 gen を持っておらず、閉じた瞬間に飛んでいた取得が
+// clearEntries の**後**に着地してキャッシュを復活させていた。復活すると begin() に弾かれ、
+// 開き直しても取り直しが一度も走らない = 編集前の diff が永久に出続ける。
+func TestStatusLatePreviewAfterCloseIsDropped(t *testing.T) {
+	v := newTestStatusView(t, statusRec(" M a.go"))
+	row, _ := v.current()
+	key := previewKey(row)
+	if !v.preview.begin(key) {
+		t.Fatal("前提が崩れた: 取得を始められない")
+	}
+	staleGen := v.gen
+
+	v.closing = true
+	if !v.finishClose() {
+		t.Fatal("前提が崩れた: finishClose が閉じ切っていない")
+	}
+	v.receivePreview(statusPreviewMsg{gen: staleGen, key: key, lines: []string{"OLD-DIFF"}})
+
+	if len(v.preview.entries) != 0 {
+		t.Errorf("閉じた後に着地した取得がキャッシュを復活させた: %v", v.preview.entries)
+	}
+	// ⚠️ 捨てるときも札は降ろすこと。残すと begin() がこのキーを永久に弾く
+	if v.preview.busy[key] {
+		t.Error("捨てた結果の取得中の札が残った (取り直しが二度と走らない)")
+	}
+}
+
+// r でも同じ (r は gen を進めるので、飛んでいた取得は世代違いで捨てられる)。
+func TestStatusLatePreviewAfterReloadIsDropped(t *testing.T) {
+	v := newTestStatusView(t, statusRec(" M a.go"))
+	row, _ := v.current()
+	key := previewKey(row)
+	if !v.preview.begin(key) {
+		t.Fatal("前提が崩れた: 取得を始められない")
+	}
+	staleGen := v.gen
+
+	v.listKey("r", testViewport())
+	v.receivePreview(statusPreviewMsg{gen: staleGen, key: key, lines: []string{"OLD-DIFF"}})
+
+	if len(v.preview.entries) != 0 {
+		t.Errorf("r の後に着地した取得が古い内容を復活させた (押しても何も変わらない): %v", v.preview.entries)
+	}
+	// ⚠️ 札はここで降ろすこと。r は clearEntries なので札が残っており (それは意図的)、
+	//   捨てた結果の札を降ろさないと begin() がこのキーを永久に弾いて取り直しが走らない。
+	//   閉じる経路は clearBusy が先に走るので、この主張はこちらでしか立たない
+	if v.preview.busy[key] {
+		t.Error("捨てた結果の取得中の札が残った (取り直しが二度と走らない)")
+	}
+}
+
+// viewer を閉じるとプレビューのキャッシュを捨てる (issue 114)。
+//
+// 閉じているあいだに外部編集されても XY が動かなければキーが一致するので、捨てないと
+// **開き直しても編集前の diff が出る**。しかも finishClose は clearBusy しか呼んでおらず、
+// プロセスが生きている限り消えなかった。
+func TestStatusCloseDropsPreviewCache(t *testing.T) {
+	v := newTestStatusView(t, statusRec(" M a.go"))
+	row, _ := v.current()
+	v.receivePreview(statusPreviewMsg{key: previewKey(row), lines: []string{"OLD-DIFF"}})
+	if len(v.preview.entries) == 0 {
+		t.Fatal("前提が崩れた: キャッシュに仕込めていない")
+	}
+
+	// 別の行の取得が飛んでいる状態も作る (閉じた瞬間に in-flight があるのが実際の形)
+	if !v.preview.begin("in-flight-key") {
+		t.Fatal("前提が崩れた: 取得を始められない")
+	}
+
+	v.closing = true
+	if !v.finishClose() {
+		t.Fatal("前提が崩れた: finishClose が閉じ切っていない")
+	}
+
+	if len(v.preview.entries) != 0 {
+		t.Errorf("閉じてもプレビューのキャッシュが残った (開き直しで編集前の diff が出る): %v", v.preview.entries)
+	}
+	// ⚠️ 隣の clearBusy も守る。clearEntries を隣に足したことで「2 行まとめて reset() で
+	//   よくない?」という編集が誘発されやすくなったが、**片方だけ消す編集は無音で通る**。
+	//   札が残ると fetching() が true のままフレーム tick を回し続ける (元の ⚠️ コメント)
+	if len(v.preview.busy) != 0 {
+		t.Errorf("閉じても取得中の札が残った (フレーム tick が回り続ける): %v", v.preview.busy)
+	}
+}
