@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"glogx/termwidth"
 )
 
 // colOf は行内の sub が始まる表示幅カラム位置を返す (CJK 幅考慮、ANSI 無し行専用)。
@@ -13,7 +15,7 @@ func colOf(t *testing.T, row, sub string) int {
 	if i < 0 {
 		t.Fatalf("%q が %q に含まれない", sub, row)
 	}
-	return dispWidth(row[:i])
+	return termwidth.Of(row[:i])
 }
 
 const sampleResult = `You are currently using your subscription to power your Claude Code usage

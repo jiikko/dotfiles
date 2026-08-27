@@ -9,6 +9,8 @@ import (
 	"glogx/termsafe"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"glogx/termwidth"
 )
 
 // issue 本文 (markdown) を端末行へ整形する層。
@@ -158,7 +160,7 @@ func skipFrontMatter(lines []string) ([]string, int) {
 // 枠の右端へ押し出されて折り返し (実際は幅で切り落とし) が起きる。相対インデントは保つ。
 func parseFence(lines []string, i int) (block, int) {
 	m := fenceRe.FindStringSubmatch(lines[i])
-	indent, open, lang := dispWidth(m[1]), m[2], m[3]
+	indent, open, lang := termwidth.Of(m[1]), m[2], m[3]
 	raw := make([]string, 0, 8)
 	for j := i + 1; j < len(lines); j++ {
 		if c := fenceRe.FindStringSubmatch(lines[j]); c != nil && len(c[2]) >= len(open) &&
@@ -213,7 +215,7 @@ func parseQuote(lines []string, i int) (block, int) {
 func parseListItem(lines []string, i int) (block, int) {
 	m := listRe.FindStringSubmatch(lines[i])
 	indent, marker, content := m[1], m[2], m[3]
-	b := block{kind: blkList, level: min(dispWidth(indent)/2, 4)}
+	b := block{kind: blkList, level: min(termwidth.Of(indent)/2, 4)}
 	switch {
 	case strings.HasPrefix(content, "[ ] "):
 		b.marker, content = "☐", strings.TrimPrefix(content, "[ ] ")
@@ -364,7 +366,7 @@ func renderBlocks(blocks []block, width int) []line {
 // 折り返し幅は first / rest の広い方を差し引いた値で一律に計算する (前置が同幅の使い方しか
 // しないため。差が出る使い方を足すときはここを行ごとの幅計算に変える)。
 func renderWrapped(spans []span, width int, first, rest span) []line {
-	limit := width - max(dispWidth(first.Text), dispWidth(rest.Text))
+	limit := width - max(termwidth.Of(first.Text), termwidth.Of(rest.Text))
 	wrapped := wrapSpans(spans, limit)
 	out := make([]line, 0, len(wrapped))
 	for i, ws := range wrapped {
@@ -409,14 +411,14 @@ func renderHeading(b block, width int) []line {
 		}
 	}
 	pre := span{Text: marker, Style: styleMarker}
-	cont := span{Text: strings.Repeat(" ", dispWidth(marker)), Style: styleText}
+	cont := span{Text: strings.Repeat(" ", termwidth.Of(marker)), Style: styleText}
 	return renderWrapped(spans, width, pre, cont)
 }
 
 // renderList は箇条書き 1 項目を描く。継続行は記号の下へぶら下げる。
 func renderList(b block, width int) []line {
 	pre := span{Text: strings.Repeat("  ", b.level) + b.marker + " ", Style: styleMarker}
-	cont := span{Text: strings.Repeat(" ", dispWidth(pre.Text)), Style: styleText}
+	cont := span{Text: strings.Repeat(" ", termwidth.Of(pre.Text)), Style: styleText}
 	return renderWrapped(parseInline(b.text), width, pre, cont)
 }
 
@@ -424,11 +426,11 @@ func renderList(b block, width int) []line {
 // 持つため、折り返すと構造が読めなくなる)。ハイライトは render.go が colored 時に行う。
 func renderCode(b block, width int) []line {
 	pre := span{Text: "┃ ", Style: styleMarker}
-	avail := max(width-dispWidth(pre.Text), 1)
+	avail := max(width-termwidth.Of(pre.Text), 1)
 	out := make([]line, 0, len(b.raw))
 	for i, raw := range b.raw {
 		txt := expandTabs(raw)
-		if dispWidth(txt) > avail {
+		if termwidth.Of(txt) > avail {
 			txt = ansi.Truncate(txt, avail, "…")
 		}
 		// コードは折り返さないのでソース行と 1:1。b.src は開きフェンスの行なので中身は +1 から
@@ -561,7 +563,7 @@ func tableColWidths(rows [][][]span, seps []bool, cols, width int) []int {
 	for ci := range colW {
 		colW[ci] = max(colW[ci], 1)
 	}
-	sepW := dispWidth(" │ ") * (cols - 1)
+	sepW := termwidth.Of(" │ ") * (cols - 1)
 	total := sepW
 	for _, w := range colW {
 		total += w

@@ -3,6 +3,10 @@ package issues
 import (
 	"strings"
 	"testing"
+
+	"glogx/termwidth"
+
+	"glogx/sgr"
 )
 
 // sample は issue 本文で実際に使われている構文を一通り含むテスト用本文
@@ -48,7 +52,7 @@ func renderLines(src string, width int, colored bool) []string {
 func TestRenderBodyNeverExceedsWidth(t *testing.T) {
 	for _, width := range []int{20, 40, 60, 86, 120} {
 		for i, ln := range renderLines(sample, width, false) {
-			if w := dispWidth(ln); w > width {
+			if w := termwidth.Of(ln); w > width {
 				t.Fatalf("width=%d: 行 %d が幅を超えた (w=%d): %q", width, i, w, ln)
 			}
 		}
@@ -66,7 +70,7 @@ func TestRenderBodyPlainHasNoANSI(t *testing.T) {
 func TestRenderBodyColoredResetsEveryStyle(t *testing.T) {
 	// コードブロック以外の装飾は必ず reset で閉じる (色が次の行へ漏れない)
 	for i, ln := range renderLines(sample, 60, true) {
-		if strings.Contains(ln, "\x1b[1m") && !strings.Contains(ln, cReset) {
+		if strings.Contains(ln, "\x1b[1m") && !strings.Contains(ln, sgr.Reset) {
 			t.Fatalf("装飾が閉じられていない (行 %d): %q", i, ln)
 		}
 	}
@@ -247,14 +251,14 @@ func TestTableColumnsAlignAndFitWidth(t *testing.T) {
 	if len(rows) != 3 {
 		t.Fatalf("表の行数が想定と違う: %q", rows)
 	}
-	if dispWidth(rows[0]) != dispWidth(rows[2]) {
+	if termwidth.Of(rows[0]) != termwidth.Of(rows[2]) {
 		t.Fatalf("桁が揃っていない: %q / %q", rows[0], rows[2])
 	}
 	if !strings.Contains(rows[1], "─") || !strings.Contains(rows[1], "┼") {
 		t.Fatalf("区切り行が罫線になっていない: %q", rows[1])
 	}
 	for _, r := range rows {
-		if dispWidth(r) > width {
+		if termwidth.Of(r) > width {
 			t.Fatalf("表が幅を超えた: %q", r)
 		}
 	}
@@ -263,8 +267,8 @@ func TestTableColumnsAlignAndFitWidth(t *testing.T) {
 func TestTableShrinksWidestColumnWhenNarrow(t *testing.T) {
 	const width = 24
 	for _, ln := range renderLines("| short | "+strings.Repeat("long", 20)+" |\n|---|---|\n", width, false) {
-		if dispWidth(ln) > width {
-			t.Fatalf("狭い幅で表が収まっていない (w=%d): %q", dispWidth(ln), ln)
+		if termwidth.Of(ln) > width {
+			t.Fatalf("狭い幅で表が収まっていない (w=%d): %q", termwidth.Of(ln), ln)
 		}
 	}
 }
@@ -379,8 +383,8 @@ func TestBlankLinesCollapse(t *testing.T) {
 
 func TestHorizontalRuleFillsWidth(t *testing.T) {
 	for _, ln := range renderLines("a\n\n---\n\nb\n", 30, false) {
-		if strings.HasPrefix(ln, "─") && dispWidth(ln) != 30 {
-			t.Fatalf("水平線が幅一杯でない (w=%d): %q", dispWidth(ln), ln)
+		if strings.HasPrefix(ln, "─") && termwidth.Of(ln) != 30 {
+			t.Fatalf("水平線が幅一杯でない (w=%d): %q", termwidth.Of(ln), ln)
 		}
 	}
 }

@@ -6,14 +6,9 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/rivo/uniseg"
+
+	"glogx/termwidth"
 )
-
-// 表示幅の計算はこの 2 関数に一本化する。glogx 本体 (width.go) と同じ ansi.StringWidth
-// (GraphemeWidth モデル) に揃えないと、このパッケージが整えた行を glogx 側が測り直した
-// ときに桁がずれる。幅モデルを選んだ理由と層ごとの実測値は width.go 冒頭が一次情報。
-
-// dispWidth は文字列の端末表示幅を返す (ANSI エスケープは幅 0)。
-func dispWidth(s string) int { return ansi.StringWidth(s) }
 
 // style は 1 スパンの意味。ANSI への変換は render.go が担う。
 //
@@ -86,7 +81,7 @@ func flattenSpans(spans []span) []cell {
 		g := uniseg.NewGraphemes(sp.Text)
 		for g.Next() {
 			c := g.Str()
-			cells = append(cells, cell{text: c, w: dispWidth(c), style: sp.Style})
+			cells = append(cells, cell{text: c, w: termwidth.Of(c), style: sp.Style})
 		}
 	}
 	return cells
@@ -192,7 +187,7 @@ func truncSpans(spans []span, limit int, tail string) []span {
 	if total <= limit {
 		return mergeCells(cells)
 	}
-	tw := dispWidth(tail)
+	tw := termwidth.Of(tail)
 	if limit <= tw {
 		return []span{{Text: ansi.Truncate(tail, max(limit, 0), ""), Style: styleDim}}
 	}
@@ -212,7 +207,7 @@ func truncSpans(spans []span, limit int, tail string) []span {
 func spansWidth(spans []span) int {
 	w := 0
 	for _, sp := range spans {
-		w += dispWidth(sp.Text)
+		w += termwidth.Of(sp.Text)
 	}
 	return w
 }
@@ -234,7 +229,7 @@ func expandTabs(s string) string {
 			continue
 		}
 		b.WriteRune(r)
-		col += dispWidth(string(r))
+		col += termwidth.Of(string(r))
 	}
 	return b.String()
 }

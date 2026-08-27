@@ -28,7 +28,7 @@ v1 では pty スモークで実測した回帰 (`TestBrowseBatchedRunesKeyMsg`)
 
 ## 幅モデル — v2 でエンジンの計測ライブラリが変わった
 
-`width.go` の不変条件は「glogx の幅計算とエンジンの幅計算が一致すること」。**その相手は bubbletea の実装詳細で、勝手に一致し続けない**。
+`termwidth` パッケージ (main からは `width.go` の別名経由) の不変条件は「glogx の幅計算とエンジンの幅計算が一致すること」。**その相手は bubbletea の実装詳細で、勝手に一致し続けない**。
 
 ⚠️ 当初この節に「v2 のエンジンは `clipperhouse/displaywidth` で測る」と書いたが**誤り**（セルフレビューで訂正）。`displaywidth` は `x/ansi` v0.11 以降が内部で使うライブラリで、独立した実装ではない。実際に変わったのは**ライブラリではなく幅モデル (`ansi.Method`)**:
 
@@ -41,7 +41,7 @@ v1 では pty スモークで実測した回帰 (`TestBrowseBatchedRunesKeyMsg`)
 
 実害を測った結果は「v2 のほうが揃っている」: 国旗を含む行の右枠位置は v1 が 98 セル相当・v2 が 97 セル相当で、**ASCII 行 (97) と一致するのは v2** だった（100 桁 pane・tmux 3.7b で実測）。したがって v2 化で悪化はしていないが、この安定は「エンジンが WcWidth である」ことに乗っている。
 
-以下は GraphemeWidth モデルでの各ライブラリ比較 (詳細な表と適用箇所は `width.go` の `dropEmojiVS16` 直上コメントが出典):
+以下は GraphemeWidth モデルでの各ライブラリ比較 (詳細な表と適用箇所は `termsafe.DropEmojiVS16` の doc コメントが出典):
 
 | | x/ansi | uniseg | displaywidth | runewidth |
 |---|---|---|---|---|

@@ -3,6 +3,8 @@ package issues
 import (
 	"strings"
 	"testing"
+
+	"glogx/termwidth"
 )
 
 // textSpans はテスト用に素のテキスト 1 本のスパン列を作る。
@@ -128,7 +130,7 @@ func TestExpandTabs(t *testing.T) {
 		t.Fatalf("タブ展開が想定と違う: %q", got)
 	}
 	// タブは次のタブ位置 (4 桁刻み) まで詰める: "タブ" は幅 4 なので 4 桁進んで x は 8 桁目
-	if got := expandTabs("タブ\tx"); got != "タブ    x" || dispWidth(got) != 9 {
-		t.Fatalf("タブ位置がタブストップに揃っていない: %q (w=%d)", got, dispWidth(got))
+	if got := expandTabs("タブ\tx"); got != "タブ    x" || termwidth.Of(got) != 9 {
+		t.Fatalf("タブ位置がタブストップに揃っていない: %q (w=%d)", got, termwidth.Of(got))
 	}
 }

@@ -7,25 +7,13 @@ import (
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
+
+	"glogx/sgr"
 )
 
 // 純粋描画層: 意味付きスパン列へ ANSI を塗る。I/O・プロセス起動・非同期はここに置かない
 // (depguard の render-pure ルールが機械的に禁止している)。
 //
-// ANSI は glogx 本体 (render.go) の役割割り当てを手書きで写す。Go はパッケージ間で定数を
-// 共有できないため、usage パッケージと同じ割り切りで重複を受け入れる。
-const (
-	cReset     = "\x1b[0m"
-	cBold      = "\x1b[1m"
-	cDim       = "\x1b[2m"
-	cItalic    = "\x1b[3m"
-	cUnderline = "\x1b[4m"
-	cStrike    = "\x1b[9m"
-	cGreen     = "\x1b[32m"
-	cYellow    = "\x1b[33m"
-	cCyan      = "\x1b[36m"
-)
-
 // 256色主環境 (docs/theme-colors.md) なので formatter は terminal256、スタイルは
 // glogx 本体の diff ハイライトと同じ gruvbox で揃える。
 var (
@@ -59,10 +47,10 @@ func paintLine(l line, colored bool) string {
 		case sp.Style == styleCodeBlock:
 			b.WriteString(highlightCode(l.lang, sp.Text))
 		default:
-			if sgr := sgrFor(sp.Style); sgr != "" {
-				b.WriteString(sgr)
+			if seq := sgrFor(sp.Style); seq != "" {
+				b.WriteString(seq)
 				b.WriteString(sp.Text)
-				b.WriteString(cReset)
+				b.WriteString(sgr.Reset)
 				continue
 			}
 			b.WriteString(sp.Text)
@@ -75,23 +63,23 @@ func paintLine(l line, colored bool) string {
 func sgrFor(st style) string {
 	switch st {
 	case styleH1:
-		return cBold + cYellow
+		return sgr.Bold + sgr.Yellow
 	case styleH2:
-		return cBold + cCyan
+		return sgr.Bold + sgr.Cyan
 	case styleH3:
-		return cBold
+		return sgr.Bold
 	case styleCodeSpan:
-		return cGreen
+		return sgr.Green
 	case styleStrong:
-		return cBold
+		return sgr.Bold
 	case styleEm:
-		return cItalic
+		return sgr.Italic
 	case styleStrike:
-		return cStrike
+		return sgr.Strike
 	case styleLink:
-		return cUnderline + cCyan
+		return sgr.Underline + sgr.Cyan
 	case styleMarker, styleDim:
-		return cDim
+		return sgr.Dim
 	case styleText, styleCodeBlock:
 		return ""
 	default:

@@ -332,8 +332,8 @@ bare 記号なら全層で 1 に一致するため。割れる文字を出すと
 **副作用として絵文字は脱色する** (カラー絵文字 → 端末フォントの単色グリフ)。VS16 は幅だけでなく
 「カラー絵文字として描け」の指示でもあるため。幅の安定と引き換えに受け入れている意図的な
 トレードオフで、色を戻したいなら VS16 を戻す (揺れが再発する) のではなく Unicode Core Mode
-(DEC 2027) で幅計算をエンドツーエンドに揃える方向で検討する。詳細と実測値は `width.go` の
-`dropEmojiVS16` の doc コメント。
+(DEC 2027) で幅計算をエンドツーエンドに揃える方向で検討する。詳細と実測値は
+`termsafe.DropEmojiVS16` の doc コメント。
 
 この問題は過去に「端末の幅解釈」を測らずに対策を重ねて revert した試行がある (3c74ddf →
 3e5787d)。再発時は必ず `tools/width-probe` で測ってから動くこと。
@@ -370,7 +370,8 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   3 つが外部コマンドを起動するので、値を main に置くと下位から呼べず写しになる。
   **新しい外部コマンド実行は `subproc.CommandContext` を使う** — 素の `exec.CommandContext` は
   `waitdelay_discipline_test.go` が落とす) /
-  `width.go` (表示幅の単一情報源 = ansi.StringWidth への一本化と絵文字正規化) / `main.go` (配線)
+  `termwidth/` (表示幅の単一情報源 = ansi.StringWidth への一本化。main は `width.go` の別名経由、issues / usage は直接) /
+  `sgr/` (基本 ANSI 色。3 パッケージで別名の写しになっていたものを 1 箇所へ) / `main.go` (配線)
 - `tools/width-probe/`: 端末が各文字に何セル割り当てるかを CPR (CSI 6n) で端末自身に
   問い合わせる調査ツール。幅ズレの原因層 (glogx / 描画エンジン / tmux / 端末) を推測でなく
   実測で切り分けるためのもので、本体からは参照しない

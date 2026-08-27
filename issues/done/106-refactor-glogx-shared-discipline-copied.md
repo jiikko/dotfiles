@@ -84,3 +84,38 @@ trigger は据え置き (「幅か色で実際に drift が出たとき」また
 
 対応: 8 箇所を `subproc.WaitDelay` へ置換し、`usage.SubprocessWaitDelay` の別名は
 `usage` 内部だけの利用に落とす (または削除)。
+
+---
+
+## 対応 (2026-08-27)
+
+3 つの写しをすべて leaf へ寄せた (trigger 待ちだったが、ユーザーの明示指示で着手)。
+
+- **表示幅**: `src/glogx/termwidth/` を新設し、`width.go` の実装 (fast-path・`symWidthTable`・
+  `Truncate` / `TruncateLeft` / `FillRight` / `FillLeft` / `PadSpaces`) と、それを守る総当たりテスト
+  (`width_fast_test.go` = `TestAcceptedSymbolsNeverCombineWithEachOther` 等 6 本 + fuzz) を移した。
+  `issues` / `usage` の自前 `dispWidth` (素の `ansi.StringWidth`) は削除して `termwidth.Of` を直接呼ぶ
+  (= 両者も fast-path の恩恵を受ける。ただし性能は未計測で、統合の動機は「出典を 1 本にする」)。
+  main は呼び出し 40 箇所超を触らないため `width.go` に別名を残す (`gitOpTimeout` と同じ形)。
+  **幅モデルは変えていない** (`Of` = `ansi.StringWidth` = GraphemeWidth。issue 124 の判断材料を消さない)
+- **基本 ANSI 色**: `src/glogx/sgr/` を新設 (Reset / Bold / Dim / Italic / Underline / Strike /
+  Red / Green / Yellow / Magenta / Cyan)。main の `ansiRed` 等 7 定数は `sgr.*` の別名、`issues` /
+  `usage` の `cRed` 等は削除して `sgr.*` 直接。256 色のテーマ固有色 (カーソル bg / 影 / フレーム) は
+  main に残す (テーマ意味マップとの対応で、基本色ではない)
+- **子プロセスの猶予 (追記の残り)**: `usage.SubprocessWaitDelay` の別名を削除。main の 8 箇所は
+  `subproc.CommandContext` に置換 (`runGitCmd` だけは ctx 無しの `runGit` も通るので
+  `cmd.WaitDelay = subproc.WaitDelay` を 1 度張る形)。usage 内部の 4 箇所も `subproc.CommandContext`。
+  「usage を出典として名指しする」箇所は 0 になり、別名を消したので再導入は compile error で止まる
+
+守り: `TestNoSecondWidthEngine` は `WalkDir(".")` なので `termwidth/` も走査範囲。depguard
+`uniseg-split-only` の例外 `!**/width_fast_test.go` は移動後も同名で効く。変異検証:
+Box Drawing を受理集合から外す → `termwidth` の 2 本が red / main の `dispWidth` 別名を `len` に
+→ `TestDispWidthMatchesRenderer` 等が red。
+
+## 却下した案
+
+- **main の呼び出し 40 箇所超を `termwidth.Of` に書き換える**: 並行セッションが `tui.go` 等を
+  編集中で衝突するうえ、別名 1 段で複雑性は増えない (`gitOpTimeout` の前例)。次に main 側の
+  幅関数を触るときに別名を消してよい
+- **色と幅を 1 つの leaf にまとめる** (issue 本文の当初案): `widthenv` の doc が言うとおり
+  責務を混ぜない。`termsafe` / `widthenv` / `subproc` と同じ単一責務の粒度で 2 つに分けた

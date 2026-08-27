@@ -5,22 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/x/ansi"
-)
+	"glogx/termwidth"
 
-// dispWidth は文字列の端末表示幅 (ANSI は幅 0)。glogx 本体の width.go と同じ ansi.StringWidth を
-// 使う: runewidth は East Asian ambiguous (罫線・ブロック) を locale 依存で 2 桁と数えるため、
-// このパッケージの出力を glogx 側が dispWidth で測ると環境によって枠がずれる (issue 027)。
-func dispWidth(s string) int { return ansi.StringWidth(s) }
-
-// 自己完結のため ANSI は glogx とは独立に定義する (このパッケージ単独で色付き出力を
-// 完結させ、切り出し時に glogx への依存を残さないため)。
-const (
-	cReset  = "\x1b[0m"
-	cDim    = "\x1b[2m"
-	cGreen  = "\x1b[32m"
-	cYellow = "\x1b[33m"
-	cRed    = "\x1b[31m"
+	"glogx/sgr"
 )
 
 // defaultOrder は Claude の枠のうち描くものと順序。5h セッションと weekly(all models) の
@@ -98,7 +85,7 @@ func RenderTableGroups(s *Snapshot, now time.Time, colored bool) (header string,
 	// 枠ラベル列は最長ラベルに合わせて広げる (codex の "cx7d" 等は最小幅 2 に収まらない)。
 	labelW := tblLabelW
 	for _, w := range ws {
-		labelW = max(labelW, dispWidth(w.Label))
+		labelW = max(labelW, termwidth.Of(w.Label))
 	}
 	// 残り時間を (日 / 時間 / 分) の 3 列に分解し、列ごとに最大幅へ右寄せして単位位置を
 	// 縦に揃える (例: "   4時間25分" と "2日 8時間" の "時間" が同じ桁に来る)。数字の桁数が
@@ -116,12 +103,12 @@ func RenderTableGroups(s *Snapshot, now time.Time, colored bool) (header string,
 	var wMonth, wDate int
 	for i, w := range ws {
 		days[i], hours[i], mins[i] = remainCols(w.ResetAt.Sub(now))
-		wDay = max(wDay, dispWidth(days[i]))
-		wHour = max(wHour, dispWidth(hours[i]))
-		wMin = max(wMin, dispWidth(mins[i]))
+		wDay = max(wDay, termwidth.Of(days[i]))
+		wHour = max(wHour, termwidth.Of(hours[i]))
+		wMin = max(wMin, termwidth.Of(mins[i]))
 		months[i], dates[i], clocks[i] = resetCols(w.ResetAt)
-		wMonth = max(wMonth, dispWidth(months[i]))
-		wDate = max(wDate, dispWidth(dates[i]))
+		wMonth = max(wMonth, termwidth.Of(months[i]))
+		wDate = max(wDate, termwidth.Of(dates[i]))
 	}
 	// ヘッダーの「残り」列はデータの残り列と同じ幅で右寄せし、" / " 区切りをデータ行と
 	// 縦に揃える (固定文字列だと列幅ぶんズレる)。リセット見出しは " / " の直後 (左詰め)。
@@ -150,7 +137,7 @@ func RenderTableGroups(s *Snapshot, now time.Time, colored bool) (header string,
 
 // padRight は表示幅を w に右詰めパディングする (ANSI を含まないセル専用)。
 func padRight(s string, w int) string {
-	pad := w - dispWidth(s)
+	pad := w - termwidth.Of(s)
 	if pad <= 0 {
 		return s
 	}
@@ -159,7 +146,7 @@ func padRight(s string, w int) string {
 
 // padLeft は表示幅を w に左詰めパディングする = 右寄せ (ANSI を含まないセル専用)。
 func padLeft(s string, w int) string {
-	pad := w - dispWidth(s)
+	pad := w - termwidth.Of(s)
 	if pad <= 0 {
 		return s
 	}
@@ -215,14 +202,14 @@ func bar(pct int, colored bool) string {
 	if !colored {
 		return "[" + full + empty + "]"
 	}
-	col := cGreen
+	col := sgr.Green
 	switch {
 	case pct >= 90:
-		col = cRed
+		col = sgr.Red
 	case pct >= 75:
-		col = cYellow
+		col = sgr.Yellow
 	}
-	return "[" + col + full + cDim + empty + cReset + "]"
+	return "[" + col + full + sgr.Dim + empty + sgr.Reset + "]"
 }
 
 // formatRemain は残り時間を "4時間39分" / "2日9時間" へ整形する。1 日未満は時間+分、

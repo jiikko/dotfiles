@@ -1,4 +1,4 @@
-package main
+package termwidth
 
 import (
 	"os"
@@ -8,6 +8,8 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/rivo/uniseg"
+
+	"glogx/widthenv"
 )
 
 // acceptedSymbols は fast-path が受理する記号を表から数え上げる (列挙の写しを持たない)。
@@ -109,15 +111,15 @@ func TestDispWidthAgreesUnderEastAsianEnv(t *testing.T) {
 		// 子プロセス側: 罫線・矢印・… を含む文字列で一致を確かめる
 		for _, s := range []string{"─", "←", "…", "·", strings.Repeat("─", 10),
 			"✓ ok  ─── \x1b[32m→\x1b[0m …", "┌──┐"} {
-			if got, want := dispWidth(s), ansi.StringWidth(s); got != want {
+			if got, want := Of(s), ansi.StringWidth(s); got != want {
 				t.Fatalf("EASTASIAN=1: dispWidth=%d ansi=%d for %q", got, want, s)
 			}
 		}
 		// レイアウト算術が破れないこと (退行の実害はここに出た。罫線 10 個で
-		// fillRight(s,30) が実幅 40、truncateDispLeft(...,8) が 19 になっていた)
+		// FillRight(s,30) が実幅 40、TruncateLeft(...,8) が 19 になっていた)
 		s := strings.Repeat("─", 10)
-		if got := ansi.StringWidth(fillRight(s, 30)); got != 30 {
-			t.Fatalf("EASTASIAN=1: fillRight(s,30) の実幅が %d (要求 30)", got)
+		if got := ansi.StringWidth(FillRight(s, 30)); got != 30 {
+			t.Fatalf("EASTASIAN=1: FillRight(s,30) の実幅が %d (要求 30)", got)
 		}
 		// truncateDispLeft は「dispWidth が ansi.StringWidth だったとき」と同じ結果で
 		// なければならない。⚠️ 実幅 <= 要求幅では主張できない: 全角グリフが切り位置を
@@ -130,8 +132,8 @@ func TestDispWidthAgreesUnderEastAsianEnv(t *testing.T) {
 				if drop > 0 {
 					lib = ansi.TruncateLeft(in, drop, "…")
 				}
-				if got := truncateDispLeft(in, wd, "…"); got != lib {
-					t.Fatalf("EASTASIAN=1: truncateDispLeft(%q,%d) が ansi 基準と違う: %q != %q",
+				if got := TruncateLeft(in, wd, "…"); got != lib {
+					t.Fatalf("EASTASIAN=1: TruncateLeft(%q,%d) が ansi 基準と違う: %q != %q",
 						in, wd, got, lib)
 				}
 			}
@@ -232,7 +234,7 @@ func TestFastDispWidthMatchesLibrary(t *testing.T) {
 		if w != lib {
 			t.Errorf("幅が違う: fast=%d ansi=%d for %q", w, lib, s)
 		}
-		if got := dispWidth(s); got != lib {
+		if got := Of(s); got != lib {
 			t.Errorf("dispWidth=%d ansi=%d for %q", got, lib, s)
 		}
 	}
@@ -252,9 +254,34 @@ func FuzzDispWidthMatchesLibrary(f *testing.F) {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, s string) {
-		got := dispWidth(s)
+		got := Of(s)
 		if w := ansi.StringWidth(s); got != w {
 			t.Fatalf("dispWidth=%d ansi.StringWidth=%d for %q", got, w, s)
 		}
 	})
+}
+
+// TestMain は「glogx が支持しない幅 env」でテストを走らせない (issue 054。main / issues / usage の
+// TestMain と同じ)。⚠️ TestDispWidthAgreesUnderEastAsianEnv が起こす子プロセスだけは除外する:
+// この env をわざと立てて「幅**計算**の層はライブラリと一致し続ける」ことを確かめるため。
+// env マーカー 1 個で判定すると、開発者が `export GLOGX_EAW_CHILD=1` したまま suite を回したとき
+// ガードが丸ごと外れるので、親が必ず渡す幅系限定の -test.run も併せて見る (実測 2026-08-15)。
+func TestMain(m *testing.M) {
+	if !isEastAsianChild() {
+		widthenv.ExitIfUnsupported()
+	}
+	os.Exit(m.Run())
+}
+
+func isEastAsianChild() bool {
+	if os.Getenv("GLOGX_EAW_CHILD") != "1" {
+		return false
+	}
+	for _, a := range os.Args[1:] {
+		if strings.HasPrefix(a, "-test.run=") &&
+			strings.Contains(a, "TestDispWidthAgreesUnderEastAsianEnv") {
+			return true
+		}
+	}
+	return false
 }

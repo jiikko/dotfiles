@@ -7,22 +7,26 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/rivo/uniseg"
+
+	"glogx/sgr"
 )
 
 // 状態記号は絵文字ではなく 1 カラム記号を使う (端末幅とフォント差異の影響を抑える: issue の設計)。
+//
+// 基本色は glogx/sgr の別名 (issues / usage と同じ値を 1 箇所から引く。issue 106)。
 const (
-	ansiReset   = "\x1b[0m"
-	ansiRed     = "\x1b[31m"
-	ansiGreen   = "\x1b[32m"
-	ansiYellow  = "\x1b[33m"
-	ansiMagenta = "\x1b[35m"
-	ansiCyan    = "\x1b[36m"
-	ansiDim     = "\x1b[2m"
+	ansiReset   = sgr.Reset
+	ansiRed     = sgr.Red
+	ansiGreen   = sgr.Green
+	ansiYellow  = sgr.Yellow
+	ansiMagenta = sgr.Magenta
+	ansiCyan    = sgr.Cyan
+	ansiDim     = sgr.Dim
 	// カーソル行の bg (256色の暗灰 237)。テーマの意味マップ (docs/theme-colors.md) の
 	// カーソル行の bg。無彩色の 237 では地色 234/235 と近く見失いやすかったため、
 	// 色相のある暗青 24 に変更 (ユーザー要望 2026-07-21。fg 色はそのまま透ける)
 	ansiCursorBg = "\x1b[48;5;24m"
-	ansiBold     = "\x1b[1m"
+	ansiBold     = sgr.Bold
 	// 落ち影の前景色 (256色の近黒 232)。bg ベタ塗りではなく █/▓ の前景ブロックで影を描き、
 	// グリフの隙間から端末の地色が透けて自然な penumbra になる (端末 bg に依存せず、色の
 	// 濃淡 █>▓ で縁をフェザーできる)。buildShadowPanelBox の drop shadow。

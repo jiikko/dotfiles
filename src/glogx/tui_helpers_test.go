@@ -22,14 +22,10 @@ import (
 // 幅 env のガードもここに置く: RUNEWIDTH_EASTASIAN が真だと幅系テストが 20 本以上まとめて
 // 落ち、しかも「dispWidth(\"→\") = 2; want 1」のような期待値の話に見えるが、実体は glogx が
 // この env を支持していないこと (罫線・ブロックが幅 2 になり枠が 2 倍近くに膨らむ。issue 054)。
-// 意味の分からない赤を量産する代わりに、理由を 1 度だけ言って止める。
-// ⚠️ 子プロセス側 (GLOGX_EAW_CHILD=1) は除外する。TestDispWidthAgreesUnderEastAsianEnv が
-// 「幅**計算**の層は env が何であれ ansi と一致する」ことを、この env をわざと立てて確かめる
-// ため (支持する/しないとは別の主張。widthenv のドキュメント参照)。
+// 意味の分からない赤を量産する代わりに、理由を 1 度だけ言って止める (env をわざと立てる
+// TestDispWidthAgreesUnderEastAsianEnv は termwidth パッケージ側にあり、そちらの TestMain が除外する)。
 func TestMain(m *testing.M) {
-	if !isEastAsianChild() {
-		widthenv.ExitIfUnsupported()
-	}
+	widthenv.ExitIfUnsupported()
 	dir, err := os.MkdirTemp("", "glogx-test-cache")
 	if err == nil {
 		if err := os.Setenv("XDG_CACHE_HOME", dir); err != nil {
@@ -41,58 +37,6 @@ func TestMain(m *testing.M) {
 		_ = os.RemoveAll(dir)
 	}
 	os.Exit(code)
-}
-
-// isEastAsianChild は自分が TestDispWidthAgreesUnderEastAsianEnv の起こした子プロセスか。
-//
-// env マーカー 1 個だけで判定すると、開発者がデバッグ中に `export GLOGX_EAW_CHILD=1` した
-// まま suite 全体を回したときにガードが丸ごと無効化され、20 本以上の生ログが戻る
-// (実測 2026-08-15 の敵対的レビュー)。親は必ず幅系だけに絞った `-test.run` を渡すので、
-// **その filter が当該テスト名を含むこと**まで確かめて、除外を子プロセスの実行形態に縛る。
-//
-// ⚠️ テスト名を変えると filter と食い違い、子はガードに掛かって落ちる。無言で緑にはならず
-// 「支持しない env」のメッセージ付きで親が失敗するので、変更に気づける形にしてある。
-// 除外が「子プロセスの実行形態」に縛られていることを固定する。マーカー env 1 個で通ると、
-// それを export したまま suite 全体を回した人からガードが消える (P2 として実測された穴)。
-func TestEastAsianChildExemptionIsScoped(t *testing.T) {
-	orig := os.Args
-	t.Cleanup(func() { os.Args = orig })
-
-	for _, tc := range []struct {
-		name   string
-		marker string
-		args   []string
-		want   bool
-	}{
-		{"親が起こした子 (幅系の run filter 付き)", "1",
-			[]string{"test.bin", "-test.run=^(TestDispWidthAgreesUnderEastAsianEnv|TestSymbolWidthTableMatchesLibrary)$", "-test.v"}, true},
-		{"マーカーだけ export して suite 全体", "1", []string{"test.bin"}, false},
-		{"マーカーだけ export して別テストを -run", "1",
-			[]string{"test.bin", "-test.run=TestBuildShadowPanelBoxWidths"}, false},
-		{"マーカー無し (filter だけ一致)", "",
-			[]string{"test.bin", "-test.run=TestDispWidthAgreesUnderEastAsianEnv"}, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("GLOGX_EAW_CHILD", tc.marker)
-			os.Args = tc.args
-			if got := isEastAsianChild(); got != tc.want {
-				t.Errorf("isEastAsianChild()=%v, want %v (args=%v)", got, tc.want, tc.args)
-			}
-		})
-	}
-}
-
-func isEastAsianChild() bool {
-	if os.Getenv("GLOGX_EAW_CHILD") != "1" {
-		return false
-	}
-	for _, a := range os.Args[1:] {
-		if strings.HasPrefix(a, "-test.run=") &&
-			strings.Contains(a, "TestDispWidthAgreesUnderEastAsianEnv") {
-			return true
-		}
-	}
-	return false
 }
 
 func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []string) *browseModel {

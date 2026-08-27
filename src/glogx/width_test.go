@@ -173,7 +173,7 @@ func TestNoSecondWidthEngine(t *testing.T) {
 		t.Fatal(".go を 1 つも走査できなかった (走査が壊れている)")
 	}
 	if len(offenders) > 0 {
-		t.Fatalf("2 本目の幅エンジンが使われている (幅は dispWidth を通すこと。uniseg は分割にだけ使う):\n  %s",
+		t.Fatalf("2 本目の幅エンジンが使われている (幅は termwidth.Of (main では dispWidth) を通すこと。uniseg は分割にだけ使う):\n  %s",
 			strings.Join(offenders, "\n  "))
 	}
 }
