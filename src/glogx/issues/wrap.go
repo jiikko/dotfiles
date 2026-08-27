@@ -224,7 +224,7 @@ func expandTabs(s string) string {
 	for _, r := range s {
 		if r == '\t' {
 			n := tabWidth - col%tabWidth
-			b.WriteString(strings.Repeat(" ", n))
+			b.WriteString(termwidth.PadSpaces(n))
 			col += n
 			continue
 		}

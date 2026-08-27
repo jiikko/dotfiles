@@ -2963,7 +2963,7 @@ func (m *browseModel) viewLines() string {
 		// 付けて幅でクリップする (「非活性になって origin へ吸い込まれる」見た目)。
 		// カーソル強調より優先する (演出中の bg 塗りは動きを汚す)
 		if off := slides[i]; off > 0 {
-			text = strings.Repeat(" ", off) + paint(stripANSI(text), ansiDim, m.colored)
+			text = padSpaces(off) + paint(stripANSI(text), ansiDim, m.colored)
 			window = append(window, cursorGutterBlank+clipToWidth(text, max(m.contentWidth()-cursorGutterWidth, 0)))
 			continue
 		}

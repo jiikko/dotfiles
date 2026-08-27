@@ -48,3 +48,46 @@
 (この判断を覆すなら、その実験結果は再利用できる)。
 
 → 2 件はこの issue のついでに手で直せば済む。
+
+---
+
+## 対応 (2026-08-28)
+
+### (1) 報告の打ち切り
+
+`max-same-issues: 0` と `max-issues-per-linter: 0` を足した。**実測で確認**
+(監査が述べた形をそのまま再現。`tui.go` の `timeNow()` 20 箇所を `time.Now()` へ戻す):
+
+| config | forbidigo の報告 |
+|---|---|
+| 既定 (未設定) | **4 行** (指摘 3 + 集計 1) |
+| `max-same-issues: 0` | **21 行** (指摘 20 + 集計 1) |
+
+### (2) `padSpaces` の置換 — 見送りの前提が 106 で崩れていた
+
+118 を起票した時点では「別パッケージから `padSpaces` を参照できないので例外が 4 つ要る」
+という理由で ruleguard 化を見送っていた。**その前提は issue 106 で崩れている** —
+`PadSpaces` が leaf パッケージ `termwidth` へ移り、全パッケージから参照できるようになった。
+
+そこで残っていた `strings.Repeat(" ", n)` を**全部**置換した (main 2 / issues 4 / usage 2)。
+非テストで残るのは実装本体 (`termwidth.go`) だけになり、ruleguard ルール
+`padViaPadSpaces` の例外は **テストと実装本体の 2 つ**で済むようになった。
+
+テストを例外にするのは、期待値の組み立てに `strings.Repeat` が要るため
+(`frame_alloc_test.go` は「`PadSpaces` ≡ `strings.Repeat`」の同値検証そのものを持っており、
+置換すると自己言及になる)。
+
+### ⚠️ golangci-lint のキャッシュに騙されかけた
+
+ルールを足した直後の実行が **`0 issues`** を返したので「例外なしで通った」と読みかけたが、
+`cache clean` してから走らせると**違反 3 件**が出た (テスト 2 + 実装本体)。
+
+**ルールを新設した直後の緑は、キャッシュ由来かもしれない。** 発火の確認は
+`cache clean` の後に行い、さらに production へ違反を入れて名指しで落ちることまで見た
+(`box.go:55:13: ruleguard: 空白の連結は termwidth.PadSpaces(leftGap) を使う`)。
+
+### 検証の履歴 (誤った測り方も残す)
+
+最初は ruleguard の違反を 5 箇所作って `max-same-issues` の効果を測ろうとしたが、
+**設定の有無で件数が変わらなかった** (どちらも 5)。原因は ruleguard のメッセージが site ごとに
+異なり「同一 issue」として畳まれないため。**同一文面が出る forbidigo** で測り直して上表を得た。

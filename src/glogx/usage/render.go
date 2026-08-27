@@ -141,7 +141,7 @@ func padRight(s string, w int) string {
 	if pad <= 0 {
 		return s
 	}
-	return s + strings.Repeat(" ", pad)
+	return s + termwidth.PadSpaces(pad)
 }
 
 // padLeft は表示幅を w に左詰めパディングする = 右寄せ (ANSI を含まないセル専用)。
@@ -150,7 +150,7 @@ func padLeft(s string, w int) string {
 	if pad <= 0 {
 		return s
 	}
-	return strings.Repeat(" ", pad) + s
+	return termwidth.PadSpaces(pad) + s
 }
 
 // remainCols は残り時間を (日 / 時間 / 分) のスロット文字列に分解する。時間と分は常に出し

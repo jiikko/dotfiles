@@ -411,14 +411,14 @@ func renderHeading(b block, width int) []line {
 		}
 	}
 	pre := span{Text: marker, Style: styleMarker}
-	cont := span{Text: strings.Repeat(" ", termwidth.Of(marker)), Style: styleText}
+	cont := span{Text: termwidth.PadSpaces(termwidth.Of(marker)), Style: styleText}
 	return renderWrapped(spans, width, pre, cont)
 }
 
 // renderList は箇条書き 1 項目を描く。継続行は記号の下へぶら下げる。
 func renderList(b block, width int) []line {
 	pre := span{Text: strings.Repeat("  ", b.level) + b.marker + " ", Style: styleMarker}
-	cont := span{Text: strings.Repeat(" ", termwidth.Of(pre.Text)), Style: styleText}
+	cont := span{Text: termwidth.PadSpaces(termwidth.Of(pre.Text)), Style: styleText}
 	return renderWrapped(parseInline(b.text), width, pre, cont)
 }
 
@@ -475,7 +475,7 @@ func renderTable(b block, width int) []line {
 			cell = truncSpans(cell, colW[ci], "…")
 			l.spans = append(l.spans, cell...)
 			if pad := colW[ci] - spansWidth(cell); pad > 0 {
-				l.spans = append(l.spans, span{Text: strings.Repeat(" ", pad), Style: styleText})
+				l.spans = append(l.spans, span{Text: termwidth.PadSpaces(pad), Style: styleText})
 			}
 		}
 		out = append(out, l)

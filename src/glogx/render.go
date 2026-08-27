@@ -634,7 +634,7 @@ func dropToColumn(s string, n int) string {
 		cw := clusterWidth(cluster)
 		if w+cw > n { // 全角グリフが cut をまたいだ: そのグリフを落とし列 n に揃えて空白で埋める
 			i += len(cluster)
-			return sgr.String() + strings.Repeat(" ", (w+cw)-n) + s[i:]
+			return sgr.String() + padSpaces((w+cw)-n) + s[i:]
 		}
 		w += cw
 		i += len(cluster)
