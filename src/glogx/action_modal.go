@@ -147,6 +147,8 @@ func (a *actionModal) runningQuitHint() string {
 // 次の 1 打を食べるため、no-op の通知には重すぎる。右下トーストで出す (ユーザー要望 2026-07-25)。
 func (a *actionModal) handleKey(key string) (consumed bool, action tea.Cmd) {
 	// 確認の「実行」キーは y か Enter (Enter=y はユーザー要望 2026-07-21)。それ以外はキャンセル。
+	// ⚠️ ToLower なので大文字 `Y` も受理する。これを markNextKey の厳密判定へ揃えないのは
+	//    意図的 (理由は status_view.go:discardKey の注記。issue 071 / 123)。
 	confirmYes := strings.ToLower(key) == "y" || key == "enter"
 	if a.pushConfirm {
 		a.pushConfirm = false
@@ -247,6 +249,13 @@ func (a *actionModal) askPull() { a.pullConfirm = true }
 // 返す。⚠️ ここでは updating を立てない: 判定前に立てると早期リターン時にも spinner
 // モーダルが一瞬光る (ユーザー指摘 2026-08-12)。モーダルは updateBeginMsg を受けた
 // runUpdate が立てる。
+//
+// ⚠️ **その帰結として、C / X を押してから最大 5 秒 (claudeVersionFetchTimeout) 画面が
+//
+//	まったく変化しない** — 判定が `claude --version` の起動待ちだから。これは上の不変条件を
+//	選んだ副作用で、既知 (issue 123 の ux 監査が指摘し、074 の不変条件 4 を根拠に却下)。
+//	埋めるなら「判定が 800ms を超えたときだけ右下トーストで『確認中...』」のように、
+//	spinner モーダルを光らせない形にすること。
 func (a *actionModal) startUpdate() tea.Cmd {
 	return func() tea.Msg {
 		if v, latest := installedIsLatest(claudeVersionCacheFile, fetchInstalledClaudeVersion); latest {

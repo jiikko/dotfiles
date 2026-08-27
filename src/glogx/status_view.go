@@ -617,6 +617,16 @@ func (v *statusView) handleKey(key string, vp statusViewport) tea.Cmd {
 }
 
 // discardKey は X の確認中のキー。y/Enter で実行、それ以外はキャンセル (push/pull 確認と同じ語彙)。
+//
+// ⚠️ 3 経路で述語が違うのは**意図的**で、揃えない (issue 071 で反証済み・issue 123 で再確認):
+//
+//	discardKey / actionModal は ToLower なので大文字 `Y` も受理、markNextKey は厳密で `Y` は取り消し。
+//	071 の結論は「厳格側の `Y` は安全側で閉じる、寛容側は意図どおり実行で失敗シナリオが作れない。
+//	厳格側は doc + テストで pin 済みの契約なので、揃える方が不変条件を壊す」。
+//	123 (ux 監査) が「寛容側が最も不可逆な X で、厳格側が可逆な操作 = 非対称が危険な向き」という
+//	新しい角度を出したが、`Y` を y/N プロンプトで押す行為は「はい」の表明であり**実際の失敗
+//	シナリオにはならない**ため却下を維持した。
+//	→ 再評価するなら「`Y` を押して意図と違う結果になった」実例を先に作ること。
 func (v *statusView) discardKey(key string) tea.Cmd {
 	row := v.discard
 	v.discarding, v.discard = false, worktreeRow{}

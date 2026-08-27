@@ -1886,6 +1886,10 @@ func (v *issuesView) askMarkNext() {
 //
 // ⚠️ 取り消しを n/Esc に限定しない: 実ファイルを動かす確認で「知らないキーを押したら実行された」
 // が起きてはいけないので、明示的な y/Enter 以外はすべて取り消しに倒す。
+//
+// ⚠️ ここだけ厳密 (大文字 `Y` も取り消し) なのは意図的で、discardKey / actionModal の
+//
+//	ToLower 判定へ揃えない (理由は status_view.go:discardKey の注記。issue 071 / 123)。
 func (v *issuesView) markNextKey(key string) tea.Cmd {
 	targets, unmark := v.markNext.targets, v.markNext.unmark
 	v.markNext = issuesMarkConfirm{}
