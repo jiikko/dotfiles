@@ -9,7 +9,6 @@ installer.sh
 !vendor/
 !vendor/**
 
-CLAUDE.md
 Brewfile.lock.json
 
 # Claude Code のマシンローカル設定 (auto 生成 / 承認 allow リスト)。
