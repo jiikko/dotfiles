@@ -84,4 +84,61 @@ out=$(run_awk "BenchmarkCalibrate-8 100 3000000 ns/op 8 B/op 1 allocs/op")
 }
 ok "較正器 (glogx_calib) は時間のみ emit"
 
+# --- 3. 兄弟 benchmark の遮蔽 (issue 117) ---
+# awk の振り分けは完全一致 (bench == "...") でなければならない。前方一致に戻すと、
+# JA 対照 (BenchmarkViewSteadyJA 等) や桁違いの版 (StatusViewFrame2000) が既存 metric を
+# 上書きし、**予算ゲートが別の benchmark の数字で判定する** (数値は出るので気づけない)。
+# issue 051 の敵対的レビュー R1-5 が直した形だが、それを守るテストが無かった。
+#
+# ⚠️ benchmark 名はここに列挙せず grep で導出する。列挙すると、兄弟を足したときに
+#   追随を忘れる = まさにこの検査が守りたい事故を、検査自身が踏む。
+SRC_DIR="$SCRIPT_DIR/../../src/glogx"
+all_names=$(grep -h '^func Benchmark' "$SRC_DIR"/*_test.go |
+  sed 's/^func \(Benchmark[A-Za-z0-9_]*\)(.*/\1/' | sort -u)
+[ -n "$all_names" ] || { echo "✗ Benchmark を 1 件も列挙できない (走査が壊れている)" >&2; exit 1; }
+
+registered=$(sed -n "s/.*-bench '^(\(.*\))\$'.*/\1/p" "$BENCH" | tr '|' ' ')
+[ -n "$registered" ] || { echo "✗ bench_glogx.sh の -bench から登録名を抽出できない" >&2; exit 1; }
+
+unreg=0
+reg=0
+for n in $all_names; do
+  case " $registered " in
+    *" $n "*)
+      out=$(run_awk "$n-8 1000 2000000 ns/op 1024 B/op 5 allocs/op")
+      [ -n "$out" ] || {
+        echo "✗ 登録済みの $n が metric を 1 行も出さない (予算に載らず黙って未計測になる)" >&2
+        exit 1
+      }
+      reg=$((reg + 1))
+      ;;
+    *)
+      out=$(run_awk "$n-8 1000 2000000 ns/op 1024 B/op 5 allocs/op")
+      [ -z "$out" ] || {
+        echo "✗ 未登録の $n が metric を出した (兄弟 benchmark を遮蔽している): $out" >&2
+        exit 1
+      }
+      unreg=$((unreg + 1))
+      ;;
+  esac
+done
+# 走査対象 0 件を緑にしない (導出が壊れたら赤にする)
+[ "$unreg" -gt 0 ] || { echo "✗ 未登録の benchmark が 0 件 = 遮蔽の検査が空回りしている" >&2; exit 1; }
+[ "$reg" -gt 0 ] || { echo "✗ 登録済みの benchmark が 0 件 = 導出が壊れている" >&2; exit 1; }
+ok "未登録の benchmark ($unreg 本) は metric を出さず、登録済み ($reg 本) は必ず出す"
+
+# 桁違いの版が無印を上書きしないこと (前方一致に戻すと 2000 版が status_view_frame も出す)
+out=$(run_awk "BenchmarkStatusViewFrame2000-8 1000 2000000 ns/op 1024 B/op 5 allocs/op")
+case "$out" in
+  *status_view_2000*) : ;;
+  *) echo "✗ StatusViewFrame2000 が自分の metric を出していない: $out" >&2; exit 1 ;;
+esac
+case "$out" in
+  *status_view_frame*)
+    echo "✗ StatusViewFrame2000 が無印の metric まで出した (前方一致の遮蔽): $out" >&2
+    exit 1
+    ;;
+esac
+ok "桁違いの版 (2000) は無印の metric を上書きしない"
+
 echo "OK: $pass assertions (test_bench_glogx_metrics)"
