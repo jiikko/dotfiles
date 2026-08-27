@@ -22,11 +22,10 @@
 #
 # codex-drive 以外の skill (codex-lead / codex-review) は意図的に別の effort を使うため対象外。
 #
-# 例外 (sol-mid): codex-drive は「裁定・ゲート役」の 3 フェーズ ([S] の第 3 の codex /
-# [D3] の敵対観点 / [7] の敵対照合) だけ上位モデルを許可している (ユーザー決定 2026-08-26)。
-# その値をこの検査にハードコードすると、許可を変えたときに 2 箇所を直すことになるので、
-# SKILL.md の宣言行から抽出して「既定 または 宣言された例外」だけを許す形にする。
-# 宣言行が消えたら例外も消える (= 無断で sol を使い始めると落ちる)。
+# 例外は無い (2026-08-26 に一度 sol-mid を 3 フェーズだけ許可したが、消費が重く同日中に廃止)。
+# 許可される値は driver の既定ただ 1 組で、SKILL.md に別のモデル / effort が現れたら落とす。
+# 例外を復活させるなら、SKILL.md だけでなくこの検査も同じ変更で直すこと
+# (前回はここが追随せず CI を赤にした)。
 
 set -euo pipefail
 unset CDPATH  # CDPATH が export されていると `cd foo` が解決先を stdout に出し、
@@ -43,17 +42,22 @@ for f in "$DRIVER" "$SKILL_MD"; do
   [ -f "$f" ] || { echo "FAIL: 検査対象が存在しない: $f" >&2; exit 1; }
 done
 
+# 抽出はすべて `|| true` を付ける。`set -euo pipefail` の下では、抽出コマンドが無マッチで
+# 非 0 を返した時点で**代入ごとスクリプトが死ぬ**。そうなると下の「抽出できたか」の検査に
+# 到達できず、**出力ゼロで exit 1** という原因の分からない失敗になる (2026-08-26 に実際に
+# CI をこの形で赤にした)。空を受け取って明示的に FAIL を出す方に倒す。
+#
 # 写し 1: driver の実既定 (基準値)
-def_model=$(sed -n 's/.*CODEX_FANOUT_MERGER_MODEL:-\([^}]*\)}.*/\1/p' "$DRIVER" | head -1)
-def_effort=$(sed -n 's/.*CODEX_FANOUT_MERGER_EFFORT:-\([^}]*\)}.*/\1/p' "$DRIVER" | head -1)
+def_model=$(sed -n 's/.*CODEX_FANOUT_MERGER_MODEL:-\([^}]*\)}.*/\1/p' "$DRIVER" | head -1 || true)
+def_effort=$(sed -n 's/.*CODEX_FANOUT_MERGER_EFFORT:-\([^}]*\)}.*/\1/p' "$DRIVER" | head -1 || true)
 
 # 抽出できないまま緑を返さない (書式が変わったら検査自体が無効になるため)
 [ -n "$def_model" ] || { echo "FAIL: $DRIVER から merger の既定モデルを抽出できない (:- 既定の書式が変わった?)" >&2; exit 1; }
 [ -n "$def_effort" ] || { echo "FAIL: $DRIVER から merger の既定 effort を抽出できない (:- 既定の書式が変わった?)" >&2; exit 1; }
 
 # 写し 2: usage コメントが述べる既定値
-doc_model=$(sed -n 's/.*CODEX_FANOUT_MERGER_MODEL .*既定 \([A-Za-z0-9.-]*\).*/\1/p' "$DRIVER" | head -1)
-doc_effort=$(sed -n 's/.*CODEX_FANOUT_MERGER_EFFORT .*既定 \([a-z]*\).*/\1/p' "$DRIVER" | head -1)
+doc_model=$(sed -n 's/.*CODEX_FANOUT_MERGER_MODEL .*既定 \([A-Za-z0-9.-]*\).*/\1/p' "$DRIVER" | head -1 || true)
+doc_effort=$(sed -n 's/.*CODEX_FANOUT_MERGER_EFFORT .*既定 \([a-z]*\).*/\1/p' "$DRIVER" | head -1 || true)
 
 [ -n "$doc_model" ] || { echo "FAIL: $DRIVER の usage コメントから既定モデルを抽出できない" >&2; exit 1; }
 [ -n "$doc_effort" ] || { echo "FAIL: $DRIVER の usage コメントから既定 effort を抽出できない" >&2; exit 1; }
@@ -67,36 +71,23 @@ if [ "$doc_effort" != "$def_effort" ]; then
   fail=1
 fi
 
-# 例外の宣言を SKILL.md から抽出する (無ければ例外なし = 既定のみ許可)
-exc_model=$(grep -o '例外は下表の「裁定・ゲート役」3 フェーズだけで、そこは `[^`]*`' "$SKILL_MD" \
-  | sed 's/.*`\(.*\)`/\1/' | head -1)
-exc_effort=$(grep -o '3 フェーズだけで、そこは `[^`]*` + effort `[a-z]*`' "$SKILL_MD" \
-  | sed 's/.*effort `\([a-z]*\)`.*/\1/' | head -1)
-
-if [ -n "$exc_model" ] || [ -n "$exc_effort" ]; then
-  # 片方だけ拾えたら宣言行の書式が壊れている (無言で例外を広げない)
-  [ -n "$exc_model" ] && [ -n "$exc_effort" ] \
-    || { echo "FAIL: SKILL.md の sol-mid 例外の宣言行からモデルと effort の両方を抽出できない" >&2; exit 1; }
-  echo "note: 例外 (sol-mid) を許可: model=$exc_model / effort=$exc_effort"
-fi
-
 # 写し 3: SKILL.md の全起動例
-skill_efforts=$(grep -o 'model_reasoning_effort="[a-z]*"' "$SKILL_MD" | sed 's/.*="\(.*\)"/\1/' | sort -u)
-skill_models=$(grep -o -- '-m gpt-[A-Za-z0-9.-]*' "$SKILL_MD" | sed 's/^-m //' | sort -u)
+skill_efforts=$(grep -o 'model_reasoning_effort="[a-z]*"' "$SKILL_MD" | sed 's/.*="\(.*\)"/\1/' | sort -u || true)
+skill_models=$(grep -o -- '-m gpt-[A-Za-z0-9.-]*' "$SKILL_MD" | sed 's/^-m //' | sort -u || true)
 
 [ -n "$skill_efforts" ] || { echo "FAIL: $SKILL_MD から effort 指定を 1 件も抽出できない (起動例の書式が変わった?)" >&2; exit 1; }
 [ -n "$skill_models" ] || { echo "FAIL: $SKILL_MD からモデル指定を 1 件も抽出できない (起動例の書式が変わった?)" >&2; exit 1; }
 
 while IFS= read -r e; do
-  if [ "$e" != "$def_effort" ] && { [ -z "$exc_effort" ] || [ "$e" != "$exc_effort" ]; }; then
-    echo "FAIL: SKILL.md の起動例に effort=$e があるが、許可されるのは $def_effort${exc_effort:+ か $exc_effort} だけ" >&2
+  if [ "$e" != "$def_effort" ]; then
+    echo "FAIL: SKILL.md の起動例に effort=$e があるが、driver の既定は $def_effort (どちらかが追随漏れ)" >&2
     fail=1
   fi
 done <<< "$skill_efforts"
 
 while IFS= read -r m; do
-  if [ "$m" != "$def_model" ] && { [ -z "$exc_model" ] || [ "$m" != "$exc_model" ]; }; then
-    echo "FAIL: SKILL.md の起動例にモデル $m があるが、許可されるのは $def_model${exc_model:+ か $exc_model} だけ" >&2
+  if [ "$m" != "$def_model" ]; then
+    echo "FAIL: SKILL.md の起動例にモデル $m があるが、driver の既定は $def_model (どちらかが追随漏れ)" >&2
     fail=1
   fi
 done <<< "$skill_models"
