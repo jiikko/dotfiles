@@ -27,6 +27,7 @@ func main() {
 	label := flag.String("label", "", "送り先 pane の表示名")
 	jobsPath := flag.String("jobs", "", "予約一覧の TSV (id/epoch/label/text)")
 	outPath := flag.String("out", "", "結果を書くファイル (必須)")
+	togglePrefix := flag.String("toggle-prefix", "", "tmux の prefix キー (例 C-t)。これに続けて m / Enter を押すと閉じる")
 	flag.Parse()
 
 	if *outPath == "" {
@@ -47,6 +48,7 @@ func main() {
 	defer tty.Close()
 
 	m := newModel(*label, time.Now(), jobs)
+	m.togglePrefix = teaKeyName(*togglePrefix)
 	p := tea.NewProgram(m, tea.WithInput(tty), tea.WithOutput(tty))
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "schedkeys: %v\n", err)
@@ -59,6 +61,22 @@ func main() {
 	if err := os.WriteFile(*outPath, []byte(line+"\n"), 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "schedkeys: 結果が書けない: %v\n", err)
 		os.Exit(2)
+	}
+}
+
+// teaKeyName は tmux のキー名 (C-t / M-x / F1) を bubbletea の String() 形式へ直す。
+// 対応できない形は空を返す (トグルが効かないだけで、他の操作には影響しない)。
+func teaKeyName(tmuxKey string) string {
+	k := strings.TrimSpace(tmuxKey)
+	switch {
+	case k == "":
+		return ""
+	case strings.HasPrefix(k, "C-") && len(k) > 2:
+		return "ctrl+" + strings.ToLower(k[2:])
+	case strings.HasPrefix(k, "M-") && len(k) > 2:
+		return "alt+" + strings.ToLower(k[2:])
+	default:
+		return strings.ToLower(k)
 	}
 }
 

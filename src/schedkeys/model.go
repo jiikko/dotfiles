@@ -38,11 +38,18 @@ type model struct {
 	pickIdx int
 	res     result
 	quit    bool
-	width   int
+	// togglePrefix は tmux の prefix キー (例 "ctrl+t")。popup が開いている間 prefix は tmux の
+	// キーテーブルへ届かず、そのままこの UI に入ってくる (隔離サーバで実測 2026-08-28)。
+	// prefix に続けて m / Enter / C-m を受けたら閉じる = 起動キーの再入力でトグルになる
+	togglePrefix string
+	prefixArmed  bool
+	width        int
+	height       int
 }
 
 func newModel(label string, now time.Time, jobs []job) *model {
-	return &model{label: label, now: now, jobs: jobs, form: newForm(), width: 72}
+	// popup の既定 (72x16) の内側。WindowSizeMsg が来る前の 1 フレームだけこの値で描く
+	return &model{label: label, now: now, jobs: jobs, form: newForm(), width: 70, height: 14}
 }
 
 func (m *model) Init() tea.Cmd { return nil }
@@ -51,6 +58,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+		m.height = msg.Height
 	case tea.KeyPressMsg:
 		return m, m.handleKey(msg)
 	}
@@ -60,6 +68,21 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handleKey は画面ごとのキー処理。終了するときだけ tea.Quit を返す。
 func (m *model) handleKey(k tea.KeyPressMsg) tea.Cmd {
 	key := k.String()
+	// 起動キーの再入力で閉じる (トグル)
+	if m.togglePrefix != "" {
+		if m.prefixArmed {
+			m.prefixArmed = false
+			if key == "m" || key == "ctrl+m" || key == "enter" {
+				m.res = result{}
+				m.quit = true
+				return tea.Quit
+			}
+			// prefix に続く別のキーはそのまま処理する (取りこぼさない)
+		} else if key == m.togglePrefix {
+			m.prefixArmed = true
+			return nil
+		}
+	}
 	if key == "ctrl+c" {
 		m.res = result{}
 		m.quit = true
@@ -82,9 +105,9 @@ func (m *model) keyMenu(key string) tea.Cmd {
 	case "esc", "q":
 		m.quit = true
 		return tea.Quit
-	case "j", "down", "tab":
+	case "j", "down", "tab", "ctrl+n":
 		m.menuIdx = (m.menuIdx + 1) % len(items)
-	case "k", "up", "shift+tab":
+	case "k", "up", "shift+tab", "ctrl+p":
 		m.menuIdx = (m.menuIdx - 1 + len(items)) % len(items)
 	case "enter":
 		if m.menuIdx == 0 {
@@ -109,6 +132,14 @@ func (m *model) keyForm(key, text string) tea.Cmd {
 		m.screen = screenMenu
 		return nil
 	case "enter":
+		// 「いつ」と入力欄では Enter は次の欄へ進む。予約が確定するのは最後の欄 (文字列) だけ:
+		// 候補を選んだ流れのまま Enter を押して、意図せず予約されるのを避ける (ユーザー要望 2026-08-28)
+		if m.form.focus != focusText {
+			if err := m.form.advance(m.now); err != "" {
+				m.form.err = err
+			}
+			return nil
+		}
 		at, txt, err := m.form.submit(m.now)
 		if err != "" {
 			m.form.err = err
@@ -126,11 +157,11 @@ func (m *model) keyPick(key string) tea.Cmd {
 	switch key {
 	case "esc", "q":
 		m.screen = screenMenu
-	case "j", "down":
+	case "j", "down", "ctrl+n":
 		if m.pickIdx < len(m.jobs)-1 {
 			m.pickIdx++
 		}
-	case "k", "up":
+	case "k", "up", "ctrl+p":
 		if m.pickIdx > 0 {
 			m.pickIdx--
 		}
@@ -154,56 +185,65 @@ func (m *model) View() tea.View {
 	case screenMenu:
 		body = m.viewMenu()
 	case screenForm:
-		body, cur = m.form.view(m.label, m.now, m.width)
+		body, cur = m.form.view(m.label, m.now, m.width, m.height)
 	case screenPick:
 		body = m.viewPick()
 	}
 	v.SetContent(body)
 	v.Cursor = cur // form のときだけ本物のカーソルを置く (IME の未確定文字がそこに出る)
+	// alt-screen で描く。inline だと画面より高い描画で端末が流れ、次のフレームの再描画が
+	// ずれて表示が二重になる / カーソル位置が行数分ずれる (2026-08-28 のユーザー報告)。
+	// popup は元々全面を占めるので、alt-screen でも見た目は変わらない
+	v.AltScreen = true
 	return v
 }
 
 func (m *model) viewMenu() string {
 	var b strings.Builder
-	b.WriteString(dim("予約入力  対象: ") + m.label + "\n\n")
+	b.WriteString(sgr(fgDim, "予約入力") + "  " + sgr(fgAccent, m.label) + "\n\n")
 	for i, it := range m.menuItems() {
-		if i == 1 && len(m.jobs) == 0 {
-			it = dim(it)
-		}
-		b.WriteString(row(i == m.menuIdx, it) + "\n")
+		disabled := i == 1 && len(m.jobs) == 0
+		b.WriteString(row(i == m.menuIdx, disabled, truncate(it, m.width-2)) + "\n")
 	}
-	b.WriteString("\n" + dim("j/k 移動   Enter 決定   Esc 閉じる"))
-	return b.String()
+	b.WriteString("\n" + sgr(fgDim, help(m.width, "j/k C-n/C-p 移動", "Enter 決定", "Esc 閉じる")))
+	return clampHeight(b.String(), m.height)
 }
 
 func (m *model) viewPick() string {
 	var b strings.Builder
-	b.WriteString(dim("予約一覧") + "\n\n")
+	b.WriteString(sgr(fgDim, "予約一覧") + "\n\n")
 	remW, labelW := 0, 0
 	for _, j := range m.jobs {
 		remW = max(remW, ansi.StringWidth(formatRemaining(j.at.Sub(m.now))))
 		labelW = max(labelW, ansi.StringWidth(j.label))
 	}
+	// 行が幅を超えると折り返して行数が増え、選択の反転も崩れる。文字列側を切って 1 行に収める
+	textW := m.width - 2 - remW - labelW - 4
+	if textW < 8 {
+		textW = 8
+	}
 	for i, j := range m.jobs {
 		line := fmt.Sprintf("%s  %s  %s",
 			pad(formatRemaining(j.at.Sub(m.now)), remW),
 			pad(j.label, labelW),
-			j.text)
-		b.WriteString(row(i == m.pickIdx, line) + "\n")
+			truncate(j.text, textW))
+		b.WriteString(row(i == m.pickIdx, false, line) + "\n")
 	}
-	b.WriteString("\n" + dim("j/k 移動   Enter 取消 (確認あり)   Esc 戻る"))
-	return b.String()
+	b.WriteString("\n" + sgr(fgDim, help(m.width, "j/k C-n/C-p 移動", "Enter 取消", "Esc 戻る")))
+	return clampHeight(b.String(), m.height)
 }
 
-// row は選択行を反転で描く (色は端末のテーマに任せる)。
-func row(selected bool, s string) string {
-	if selected {
-		return "\x1b[7m> " + s + "\x1b[0m"
+// row は一覧の 1 行。選択中は行頭の > と色で示す (太字だけでは分かりにくい、の指摘 2026-08-28)。
+func row(selected, disabled bool, s string) string {
+	switch {
+	case selected:
+		return sgr(revAccent+";"+bold, "> "+s)
+	case disabled:
+		return "  " + sgr(fgDim, s)
+	default:
+		return "  " + s
 	}
-	return "  " + s
 }
-
-func dim(s string) string { return "\x1b[2m" + s + "\x1b[0m" }
 
 // pad は表示幅 (東アジア文字 = 2 セル) で右詰めする。byte 数で詰めると日本語で崩れる。
 func pad(s string, w int) string {

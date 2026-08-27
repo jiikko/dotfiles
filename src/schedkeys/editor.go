@@ -30,6 +30,66 @@ func (e *editor) insert(s string) {
 	e.pos += len(r)
 }
 
+// viewport は幅 width に収まる表示文字列と、その中でのカーソル列を返す。長い入力でも行が
+// 画面幅を超えないようにする: 超えると端末が折り返し、本物のカーソル位置 (= IME の未確定文字が
+// 出る場所) が行数分ずれる (2026-08-28 のユーザー報告の一因)。
+// focused=false のときは末尾を省略記号でなく単純に切る (カーソルが無いので左端固定でよい)。
+func (e *editor) viewport(width int, focused bool) (string, int) {
+	if width < 4 {
+		width = 4
+	}
+	if !focused {
+		return truncate(e.value(), width), 0
+	}
+	// カーソルが右端に来るまでは左端固定。超えたぶんだけ左へずらす
+	col := e.cursorCol()
+	start := 0
+	for col-start > width-1 {
+		start += ansi.StringWidth(string(e.runes[startRune(e.runes, start)]))
+	}
+	shown := ""
+	w := 0
+	for _, r := range e.runes[startRune(e.runes, start):] {
+		rw := ansi.StringWidth(string(r))
+		if w+rw > width {
+			break
+		}
+		shown += string(r)
+		w += rw
+	}
+	return shown, col - start
+}
+
+// startRune は「表示幅 start までに何 rune 使うか」を返す (幅で切った位置を rune 境界に直す)。
+func startRune(runes []rune, startWidth int) int {
+	w := 0
+	for i, r := range runes {
+		if w >= startWidth {
+			return i
+		}
+		w += ansi.StringWidth(string(r))
+	}
+	return len(runes)
+}
+
+// truncate は表示幅で切る (全角を半端に割らない)。
+func truncate(s string, width int) string {
+	if ansi.StringWidth(s) <= width {
+		return s
+	}
+	out := ""
+	w := 0
+	for _, r := range s {
+		rw := ansi.StringWidth(string(r))
+		if w+rw > width {
+			break
+		}
+		out += string(r)
+		w += rw
+	}
+	return out
+}
+
 // handle は編集キーを処理する。扱ったら true (呼び出し側は他の解釈をしない)。
 func (e *editor) handle(key string, text string) bool {
 	switch key {

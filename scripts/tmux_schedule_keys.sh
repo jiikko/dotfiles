@@ -108,7 +108,11 @@ prune_stale() {
 ui_run() {
   local jobs_file=$1 label=$2 out rc=0
   out="$(mktemp "${TMPDIR:-/tmp}/schedkeys.XXXXXX")" || return 1
-  "$UI" --label "$label" --jobs "$jobs_file" --out "$out" || rc=$?
+  # popup が開いている間 prefix は tmux のキーテーブルへ届かず UI に素通りする (実測 2026-08-28)。
+  # prefix キーを渡しておくと、起動キー (prefix+m / Enter / C-m) の再入力で閉じられる
+  local prefix_key
+  prefix_key="$(tmux show-options -gv prefix 2>/dev/null || true)"
+  "$UI" --label "$label" --jobs "$jobs_file" --out "$out" --toggle-prefix "$prefix_key" || rc=$?
   REPLY_UI=''
   if (( rc == 0 )); then IFS= read -r REPLY_UI < "$out" || REPLY_UI=''; fi
   rm -f "$out"

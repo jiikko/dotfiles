@@ -13,6 +13,7 @@
 #     exit 0) で job を掃き、成功ログを書かない
 #   - .pid の数字だけで kill しない: 無関係なプロセスが同じ pid を持っていても kill せず、stale として掃く
 #   - 表示文字列 (シェル / UI とも) に絵文字・曖昧幅の記号を混ぜない
+#   - tmux の prefix を UI へ渡す (popup 中は prefix が UI に素通りするので、そこで閉じる)
 #
 # 時刻の解釈・入力欄の挙動・IME のカーソル位置は Go 側 (src/schedkeys) のテストが持つ。ここは配線だけ。
 set -euo pipefail
@@ -47,6 +48,7 @@ case "$*" in
   "display-message -p -t %5 "*)
     [ "${STUB_PANE_GONE:-0}" = 1 ] && exit 1
     case "$*" in *pane_id*) printf '%%5\n' ;; *) printf 'main:3 claude\n' ;; esac ;;
+  "show-options -gv prefix") printf 'C-t\n' ;;
   "send-keys -t %5 "*)
     # 実 tmux は pane 不在で stderr にエラーを出して rc=1 (この stderr が run-shell 経由で view-mode に積まれる)
     [ "${STUB_PANE_GONE:-0}" = 1 ] && { echo "can't find pane: %5" >&2; exit 1; } ;;
@@ -145,6 +147,9 @@ printf '✓ job = 固定 pane / UI の epoch / 文字列 (空白保持)\n'
 assert_called "tmux run-shell -b '$SCRIPT' fire '$id'" "sleeper を run-shell -b (サーバの子) として起動"
 assert_called "schedkeys --label" "対話 UI (bin/schedkeys) に送り先の表示名を渡して起動"
 assert_not_called "gum input" "文字列・時刻の入力は UI が持つ (gum は使わない)"
+# popup 中は prefix が tmux のキーテーブルへ届かず UI に素通りするので、起動キーの再入力で
+# 閉じられるよう prefix を UI へ渡す (実測 2026-08-28)
+assert_called "--toggle-prefix C-t" "tmux の prefix を UI へ渡す (起動キーの再入力で閉じるため)"
 
 printf '\n## wizard: 中止・壊れた結果では何も作らない\n'
 for tc in "exit:UI が中止 (Esc)" "empty:結果が空" "garbage:未知の action" "badepoch:epoch が数値でない" "notext:文字列が空"; do

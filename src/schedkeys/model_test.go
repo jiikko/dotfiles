@@ -40,6 +40,9 @@ func keyCode(key string) rune {
 
 func keyMod(string) tea.KeyMod { return 0 }
 
+// ctrlKey は Ctrl 修飾つきのキー入力を作る (String() が "ctrl+n" 等になる)。
+func ctrlKey(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Mod: tea.ModCtrl} }
+
 // typeText は文字列を 1 文字ずつ流す (IME の確定は「複数文字がまとめて来る」ので別途)
 func typeText(m *model, s string) {
 	for _, r := range s {
@@ -210,13 +213,13 @@ func TestViewPlacesRealCursorAtFocusedField(t *testing.T) {
 	if got := lines[v.Cursor.Y]; !strings.Contains(got, "ab") {
 		t.Errorf("カーソル行 = %q; 入力中の行でない", got)
 	}
-	if want := len("  > ") + 2; v.Cursor.X != want {
-		t.Errorf("Cursor.X = %d; want %d (プレフィックス + 入力の表示幅)", v.Cursor.X, want)
+	if want := labelCol + 2; v.Cursor.X != want {
+		t.Errorf("Cursor.X = %d; want %d (見出しの幅 + 入力の表示幅)", v.Cursor.X, want)
 	}
 	// 全角を打つと 1 文字 2 セル進む
 	press(m, "あ", "あ")
 	v = m.View()
-	if want := len("  > ") + 2 + 2; v.Cursor.X != want {
+	if want := labelCol + 2 + 2; v.Cursor.X != want {
 		t.Errorf("全角入力後の Cursor.X = %d; want %d", v.Cursor.X, want)
 	}
 	// メニュー画面ではカーソルを出さない
@@ -250,5 +253,90 @@ func TestFormatResultEscapesTabAndNewline(t *testing.T) {
 	}
 	if got := formatResult(result{action: "cancel", id: "x-1"}); got != "cancel\tx-1" {
 		t.Errorf("cancel 行 = %q", got)
+	}
+}
+
+// Enter は「いつ」と入力欄では次の欄へ進み、予約は最後の欄 (文字列) でだけ確定する。
+// 候補を選んだ流れのまま Enter を押して意図せず予約されるのを避ける (ユーザー要望 2026-08-28)。
+func TestEnterAdvancesInsteadOfSubmitting(t *testing.T) {
+	m := newTestModel()
+	press(m, "enter", "") // メニュー → フォーム
+	press(m, "tab", "")   // 文字列 → いつ
+	press(m, "enter", "")
+	if m.quit || m.res.action != "" {
+		t.Fatalf("候補行の Enter で予約された (res=%+v)", m.res)
+	}
+	if m.form.focus != focusText {
+		t.Fatalf("focus = %v; want text (入力欄が無ければ文字列へ)", m.form.focus)
+	}
+	typeText(m, "make test")
+	press(m, "enter", "")
+	if !m.quit || m.res.action != "new" {
+		t.Fatalf("文字列欄の Enter で予約されない (res=%+v)", m.res)
+	}
+
+	// 時刻: いつ → 時刻欄 → 文字列 と Enter だけで進める
+	m = newTestModel()
+	press(m, "enter", "")
+	press(m, "tab", "")
+	press(m, "left", "")
+	press(m, "left", "") // 時刻
+	press(m, "enter", "")
+	if m.form.focus != focusSpec {
+		t.Fatalf("focus = %v; want spec (入力欄があればそこへ)", m.form.focus)
+	}
+	if m.quit {
+		t.Fatal("時刻の候補で予約が確定した")
+	}
+	typeText(m, "09:00")
+	press(m, "enter", "")
+	if m.form.focus != focusText || m.quit {
+		t.Fatalf("時刻欄の Enter で文字列へ進まない (focus=%v quit=%v)", m.form.focus, m.quit)
+	}
+	typeText(m, "y")
+	press(m, "enter", "")
+	want := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
+	if !m.quit || !m.res.at.Equal(want) {
+		t.Errorf("Enter だけの流れで予約できない (res=%+v want at=%v)", m.res, want)
+	}
+}
+
+func TestEnterDoesNotLeaveInvalidSpec(t *testing.T) {
+	m := newTestModel()
+	press(m, "enter", "")
+	press(m, "tab", "")
+	press(m, "left", "")
+	press(m, "left", "") // 時刻
+	press(m, "enter", "")
+	typeText(m, "25:00")
+	press(m, "enter", "")
+	if m.form.focus != focusSpec {
+		t.Errorf("focus = %v; want spec (不正な入力のまま次へ行かせない)", m.form.focus)
+	}
+	if m.form.err == "" {
+		t.Error("理由が出ていない")
+	}
+	if m.quit {
+		t.Error("不正な入力で予約が確定した")
+	}
+	for range 5 {
+		press(m, "backspace", "")
+	}
+	typeText(m, "09:00")
+	press(m, "enter", "")
+	if m.form.focus != focusText {
+		t.Errorf("直した後も進めない (focus=%v)", m.form.focus)
+	}
+}
+
+func TestHelpLineShowsWhatEnterDoes(t *testing.T) {
+	m := newTestModel()
+	press(m, "enter", "")
+	if got := stripSGR(m.View().Content); !strings.Contains(got, "Enter 予約") {
+		t.Error("文字列欄で 'Enter 予約' が出ていない")
+	}
+	press(m, "tab", "")
+	if got := stripSGR(m.View().Content); !strings.Contains(got, "Enter 次へ") {
+		t.Error("候補行で 'Enter 次へ' が出ていない")
 	}
 }
