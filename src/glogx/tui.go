@@ -1302,10 +1302,17 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if m.issuesOv.visible() {
 		// U は viewer の上でも効く (ユーザー要望 2026-08-01)。viewLines が usage を viewer の窓へ
 		// 合成するので「取得だけ走って画面に出ない」問題は起きない (トーストと同じ経路)。
-		if key == "U" {
-			return m, m.toggleUsage()
+		//
+		// ⚠️ viewer が自分でキーを解釈し切る状態 (URL ピッカー / 番号入力 / y/N 確認) では、この
+		// 横取りを飛ばして下の委譲へ落とす。飛ばさないと URL ピッカーが宣言している
+		// 「印字文字はすべて検索語に流す」が大文字 U だけ破れる (issue 113)。
+		// ⚠️ ガードは横取りだけに掛けること (この if 自体に付けると委譲も飛ぶ)。
+		if !m.issuesOv.ownsKeys() {
+			if key == "U" {
+				return m, m.toggleUsage()
+			}
+			m.usageOv.dismiss() // 他のキーで引っ込むのは一覧と同じ語彙 (U で出し、次のキーで消える)
 		}
-		m.usageOv.dismiss() // 他のキーで引っ込むのは一覧と同じ語彙 (U で出し、次のキーで消える)
 		cmd := m.issuesOv.handleKey(key, m.issuesOpts().viewport())
 		// viewer の操作結果 (コピー・URL 起動・読み込み失敗) は glogx 共通の右下トーストで出す
 		// (ユーザー要望 2026-07-31)。viewer が全画面でトーストが隠れていた時代はヘッダー行に

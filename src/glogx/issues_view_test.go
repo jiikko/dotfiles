@@ -2347,3 +2347,110 @@ func TestReorderTabsKeepsHumanPinnedAtZero(t *testing.T) {
 		t.Errorf("件数の並び = %v, want %v", gotCounts, want)
 	}
 }
+
+// URL ピッカー入力中は、外側の U 横取りを止めて viewer へ委譲する (issue 113)。
+//
+// urlPicker は doc で「印字文字はすべて検索語に流す。ここで個別のキーを先に横取りすると、
+// その文字を含む URL を検索できなくなる」と宣言しているのに、tui.go が委譲の 3 行前で
+// 大文字 U だけを奪っていた。`github.com/Ueno/...` のような URL を絞り込めない (silent)。
+func TestIssuesViewerOwnsKeysDuringURLPicker(t *testing.T) {
+	m := newTestBrowse(t, 1, nil, nil)
+	m.issuesOv = *loadedView(realIssue(t))
+	if !m.issuesOv.urlPick.open([]string{"https://github.com/Ueno/repo", "https://example.com/x"}) {
+		t.Fatal("前提が崩れた: URL ピッカーが開かない")
+	}
+	// ⚠️ 起動時グランスの既定を継承しないこと。継承すると片方向で vacuous になる (敵対的レビュー)
+	m.usageOv.visible = false
+
+	m.handleKey("U")
+
+	// 本命の主張はこちら: キーが viewer へ届いているか
+	if q := m.issuesOv.urlPick.query; q != "U" {
+		t.Errorf("U が検索語に届いていない (外側が横取りしている): query=%q (期待 \"U\")", q)
+	}
+	// ⚠️ こちらは別の主張 (残量モーダルを開かない)。混ぜて 1 つの非難文にすると、dismiss の
+	// 位置を変えただけで「キーを奪っている」と誤診する (敵対的レビューが実測)
+	if m.usageOv.visible {
+		t.Error("URL ピッカー入力中の U が残量モーダルを開いた")
+	}
+}
+
+// ⚠️ 述語の 2 節目 (numFilter.typing) を pin する。これが無いと節ごと削る変異も、
+// typing→active の 1 語変異も**全テスト green のまま通る** (敵対的レビューが実測)。
+//
+// active でなく typing を見る理由: 絞り込みを確定した後 (typing=false, active=true) は通常の
+// ナビゲーションなので、そこで U を殺すと**絞り込みを解くまで U が恒久的に死ぬ**。
+func TestIssuesViewerOwnsKeysWhileTypingNumberFilter(t *testing.T) {
+	m := newTestBrowse(t, 1, nil, nil)
+	m.issuesOv = *loadedView(realIssue(t))
+	m.issuesOv.numFilter.start()
+	if !m.issuesOv.ownsKeys() {
+		t.Fatal("番号入力中に ownsKeys() が false")
+	}
+	m.usageOv.visible = false
+	m.handleKey("U")
+	if m.usageOv.visible {
+		t.Error("番号入力中の U が残量モーダルを開いた (入力モードのキーを外側が奪っている)")
+	}
+
+	// 確定後は通常のナビゲーションに戻る = U は外側で受ける
+	// ⚠️ 数字を打ってから確定すること。空入力の確定は clear() に落ちて active も false になり、
+	//   typing→active の変異を素通りさせる (敵対的レビューの再現手順は / → 0 → Enter だった)
+	if !m.issuesOv.numFilter.edit("0") {
+		t.Fatal("前提が崩れた: 番号フィルタが数字を受け付けない")
+	}
+	m.issuesOv.numFilter.confirm()
+	if !m.issuesOv.numFilter.active {
+		t.Fatal("前提が崩れた: 確定後に絞り込みが残っていない")
+	}
+	if m.issuesOv.ownsKeys() {
+		t.Fatal("絞り込み確定後も ownsKeys() が true (U が恒久的に死ぬ)")
+	}
+	releaseKey(m) // 指を離す (上の U とキーリピート判定を跨ぐ)
+	m.handleKey("U")
+	if !m.usageOv.visible {
+		t.Error("絞り込み確定後に U が効かない (typing でなく active を見ている)")
+	}
+}
+
+// ⚠️ 述語の 3 節目 (markNext.active) を pin する。
+//
+// 変更前は確認中の U で usage が開き、**確認が armed のまま裏に残った** (続く y で実ファイル移動)。
+// 変更後は U が「y/Enter 以外 = 取り消し」に落ちる (spec の「知らないキーを押したら実ファイルが
+// 動いた、を作らない」と一致)。安全側の変化なので固定する。
+func TestIssuesViewerOwnsKeysDuringMarkNextConfirm(t *testing.T) {
+	m := newTestBrowse(t, 1, nil, nil)
+	m.issuesOv = *loadedView(realIssue(t))
+	m.issuesOv.markNext = issuesMarkConfirm{active: true}
+	if !m.issuesOv.ownsKeys() {
+		t.Fatal("確認中に ownsKeys() が false")
+	}
+	m.usageOv.visible = false
+
+	m.handleKey("U")
+
+	if m.usageOv.visible {
+		t.Error("確認中の U が残量モーダルを開いた (確認が armed のまま裏に残る)")
+	}
+	if m.issuesOv.markNext.active {
+		t.Error("確認が取り消されていない (知らないキーで実ファイルが動く側に倒れている)")
+	}
+}
+
+// ⚠️ ガードが広すぎないこと: viewer を開いているだけ (どのモードにも入っていない) なら
+// U は従来どおり外側で受ける (ユーザー要望 2026-08-01 の「viewer の上でも U は効く」)。
+// これが無いと「ownsKeys() を常に true にする」変異が素通りする。
+func TestIssuesViewerUsageStillWorksWhenNotOwningKeys(t *testing.T) {
+	m := newTestBrowse(t, 1, nil, nil)
+	m.issuesOv = *loadedView(realIssue(t))
+	if m.issuesOv.ownsKeys() {
+		t.Fatal("前提が崩れた: 一覧モードで ownsKeys() が true")
+	}
+	m.usageOv.visible = false
+
+	m.handleKey("U")
+
+	if !m.usageOv.visible {
+		t.Error("viewer の一覧モードで U が効かない (横取りを止めすぎている)")
+	}
+}

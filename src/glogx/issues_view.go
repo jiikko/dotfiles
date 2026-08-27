@@ -791,6 +791,33 @@ func (v *issuesView) current() *issues.Issue {
 	return v.rows[v.cursor]
 }
 
+// ownsKeys は viewer 自身がキーを解釈し切る状態か (URL ピッカー入力中 / 番号の絞り込み入力中 /
+// 「次にやる」の y/N 確認中)。statusView.ownsKeys と対。
+//
+// ⚠️ browseModel 側の U 横取り (tui.go の issuesOv.visible() ブロック) は、この状態では止める。
+// 止めないと viewer が持つキー語彙を外側が奪う: URL ピッカーは
+// 「印字文字はすべて検索語に流す (個別のキーを先に横取りすると、その文字を含む URL を
+// 検索できなくなる)」と宣言しているのに、大文字 `U` だけが残量モーダルに化けていた
+// (issue 113。`github.com/Ueno/...` のような URL を絞り込めない)。
+//
+// ⚠️ ガードは横取りだけに掛けること: 委譲ごと飛ばすと viewer がキーを受け取れなくなる
+// (status 側が実装中に踏んだ罠。status_view.go:ownsKeys の注記と同じ)。
+//
+// numFilter は active でなく **typing** を見る: 絞り込みが効いているだけの状態
+// (数字を打ち終わった後) は通常のナビゲーションなので、U は外側で受けてよい。
+// active を見ると「絞り込みを解くまで U が恒久的に死ぬ」。
+//
+// ⚠️ numFilter を入れている理由は URL ピッカーとは別で、**今日の実利ではない** (敵対的レビューの
+// 指摘。numFilter は数字しか受けないので、U が検索語になることは今は無い。むしろ入力中の U は
+// 無言の no-op になる = 機能が 1 つ減る)。それでも入れているのは、
+// docs/issues-viewer-spec.md が「タイトル検索を足すときは『数字以外を無視する』を外して
+// 検索語へ流す形になる」と予告しているため。実装した日に同じ穴を開け直さないよう、
+// 「印字入力を食うモード」としてここで一括して扱う。
+// なお status 側の pager も U を無言で飲む (割当が無い) ので、この repo の既存の作法とは一貫する。
+func (v *issuesView) ownsKeys() bool {
+	return v.urlPick.active || v.numFilter.typing || v.markNext.active
+}
+
 // handleKey は viewer 表示中のキーを処理する。
 //
 // 全画面モーダルなのでキーは全部ここで飲む (呼び出し側へ素通りさせない)。素通りさせると
