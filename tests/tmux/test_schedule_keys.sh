@@ -307,6 +307,20 @@ run "$STUB_PATH" "$SCRIPT" list
 [[ "$(jobs_count)" == 1 ]] || { printf '✗ 作成直後 (.pid 未作成) の job が掃かれた\n'; exit 1; }
 printf '✓ 作成直後の .pid 未作成 job は掃かない\n'
 
+printf '\n## 表示文字列に絵文字・曖昧幅の記号が無い (幅計算のずれでノイズになる)\n'
+# 検査対象は「コードの引用文字列」(コメントは除く)。絵文字ブロック + 記号ブロック (✗ ✓ ⚠ ⏰ 等) +
+# 矢印・中黒 (曖昧幅) + VS16。コメント行 (#) は説明に ⚠️ を使ってよいので落とす。
+# 判定は perl -CSD (BSD/GNU grep の -P と UTF モードの差に依存しない)
+WIDE_RE='[\x{1F000}-\x{1FAFF}\x{2600}-\x{27BF}\x{2300}-\x{23FF}\x{2190}-\x{21FF}\x{00B7}\x{FE0F}]'
+code_strings="$(grep -v '^[[:space:]]*#' "$SCRIPT" | grep -oE '"[^"]*"|'"'"'[^'"'"']*'"'"'' || true)"
+[[ -n "$code_strings" ]] || { printf '✗ 引用文字列が 1 つも抽出できない (検査が空振り)\n'; exit 1; }
+bad="$(printf '%s\n' "$code_strings" | perl -CSD -ne "print if /$WIDE_RE/")"
+[[ -z "$bad" ]] || { printf '✗ 表示文字列に絵文字/曖昧幅の記号:\n%s\n' "$bad"; exit 1; }
+printf '✓ script の引用文字列に絵文字・曖昧幅記号なし\n'
+bad="$(grep -E '^bind (m|Enter|C-m) ' "$CONF" | perl -CSD -ne "print if /$WIDE_RE/")"
+[[ -z "$bad" ]] || { printf '✗ popup タイトル (bind) に絵文字:\n%s\n' "$bad"; exit 1; }
+printf '✓ popup タイトルに絵文字なし\n'
+
 printf '\n## _tmux.conf: bind m / Enter / C-m が同じウィザードを指す\n'
 for k in m Enter C-m; do
   grep -Eq "^bind $k +display-popup .*tmux_schedule_keys\.sh" "$CONF" || { printf '✗ bind %s が tmux_schedule_keys.sh を指していない\n' "$k"; exit 1; }

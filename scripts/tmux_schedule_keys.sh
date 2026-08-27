@@ -33,6 +33,9 @@ SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]
 TOAST="$(dirname "$SELF")/../bin/tmux-toast"
 # 自由入力の数値の上限 (桁数)。無制限だと 64bit の掛け算があふれて別の (短い) 時刻に予約される
 MAX_DIGITS=5
+# 表示文字列 (gum の header / 一覧行 / toast) に絵文字・曖昧幅の記号 (✗ · ← 等) を使わない: 端末の幅計算と
+# gum の幅計算が食い違い、行ごとに左右へずれてノイズになる (2026-08-27 ユーザー報告)。ASCII と全角かなで書く。
+# tests/tmux/test_schedule_keys.sh が引用文字列を静的に検査する
 # 「いつ送る？」のプリセット。値は秒。末尾 2 つは逃げ道 (時刻指定 / 自由入力)
 PRESETS=("5 分後:300" "10 分後:600" "15 分後:900" "30 分後:1800" "1 時間後:3600" "2 時間後:7200" "4 時間後:14400" "8 時間後:28800")
 CHOICE_CLOCK="時刻を指定… (HH:MM)"
@@ -144,26 +147,26 @@ ask_text() {
     *UTF-8*|*utf8*|*UTF8*|'') ;;
     *) export LC_CTYPE=C.UTF-8 ;;
   esac
-  gum style --bold "⌨️  入力する文字列 (末尾に Enter を送る。空で中止)"
+  gum style --bold "入力する文字列 (末尾に Enter を送る。空で中止)"
   REPLY_TEXT=''
   IFS= read -e -r -p '> ' REPLY_TEXT || return 1
-  [[ -n "$REPLY_TEXT" ]] || { gum style --foreground 1 "✗ 空文字は予約できない"; sleep 1.2; return 1; }
+  [[ -n "$REPLY_TEXT" ]] || { gum style --foreground 1 "NG: 空文字は予約できない"; sleep 1.2; return 1; }
 }
 
 # 「いつ送る？」の対話。発火 epoch を stdout に返す。キャンセル・不正は 1
 ask_when() {
   local label=$1 now=$2 choice preset in secs
   choice="$({ for preset in "${PRESETS[@]}"; do printf '%s\n' "${preset%%:*}"; done; printf '%s\n%s\n' "$CHOICE_CLOCK" "$CHOICE_FREE"; } \
-    | gum choose --header "⏰ いつ送る？ (対象: $label)" --height 12)" || return 1
+    | gum choose --header "いつ送る？ (対象: $label)" --height 12)" || return 1
   case "$choice" in
     "$CHOICE_CLOCK")
-      in="$(gum input --header "🕒 何時に送る？ (HH:MM。過ぎていれば明日)" --placeholder "15:30")" || return 1
+      in="$(gum input --header "何時に送る？ (HH:MM。過ぎていれば明日)" --placeholder "15:30")" || return 1
       parse_clock_epoch "$in" "$now" "$(date +%H:%M)" \
-        || { gum style --foreground 1 "✗ HH:MM で入力 (例 15:30)"; sleep 1.2; return 1; } ;;
+        || { gum style --foreground 1 "NG: HH:MM で入力 (例 15:30)"; sleep 1.2; return 1; } ;;
     "$CHOICE_FREE")
-      in="$(gum input --header "⏱  どれくらい後？ (90 = 90分 / 1h30m / 1:30)" --placeholder "1h30m")" || return 1
+      in="$(gum input --header "どれくらい後？ (90 = 90分 / 1h30m / 1:30)" --placeholder "1h30m")" || return 1
       secs="$(parse_duration_secs "$in")" \
-        || { gum style --foreground 1 "✗ 90 / 1h30m / 1:30 の形で (0 と ${MAX_DIGITS} 桁超は不可)"; sleep 1.2; return 1; }
+        || { gum style --foreground 1 "NG: 90 / 1h30m / 1:30 の形で (0 と ${MAX_DIGITS} 桁超は不可)"; sleep 1.2; return 1; }
       printf '%s\n' $(( now + secs )) ;;
     *)
       for preset in "${PRESETS[@]}"; do
@@ -213,13 +216,13 @@ cmd_list() {
     ids+=("$id")
     # 行頭の連番が選択の鍵。同じ pane・同じ文字列・同じ残り時間の予約は表示が一致するので、
     # 表示文字列で逆引きすると先頭の 1 件に化ける (敵対的レビュー 2026-08-27)
-    lines+=("$(printf '%d) %s · %s · %s' "$n" "$(fmt_remaining "$rem")" "$(pane_label "$REPLY_PANE")" "$REPLY_TEXT")")
+    lines+=("$(printf '%d) %s | %s | %s' "$n" "$(fmt_remaining "$rem")" "$(pane_label "$REPLY_PANE")" "$REPLY_TEXT")")
   done
   if (( ${#ids[@]} == 0 )); then
     gum style --foreground 3 "予約はありません"; sleep 1.2; return 0
   fi
   local sel idx
-  sel="$(printf '%s\n' "${lines[@]}" | gum choose --header "📋 予約一覧 (選んで取消 / Esc で戻る)" --height 12)" || return 0
+  sel="$(printf '%s\n' "${lines[@]}" | gum choose --header "予約一覧 (選んで取消 / Esc で戻る)" --height 12)" || return 0
   idx="${sel%%)*}"
   [[ "$idx" =~ ^[0-9]+$ && idx -ge 1 && idx -le ${#ids[@]} ]] || return 0
   id="${ids[$((idx - 1))]}"
@@ -257,10 +260,10 @@ cmd_fire() {
   if tmux send-keys -t "$REPLY_PANE" -l -- "$REPLY_TEXT" 2>/dev/null; then
     tmux send-keys -t "$REPLY_PANE" Enter 2>/dev/null || true
     log "fire $id: sent to $REPLY_PANE text=$REPLY_TEXT"
-    toast "⏰ 予約入力を送信: $(pane_label "$REPLY_PANE") ← $REPLY_TEXT"
+    toast "予約入力を送信: $(pane_label "$REPLY_PANE") <- $REPLY_TEXT"
   else
     log "fire $id: pane $REPLY_PANE gone, dropped text=$REPLY_TEXT"
-    toast "⏰ 予約入力を破棄: 送り先 pane が消えた ($REPLY_TEXT)"
+    toast "予約入力を破棄: 送り先 pane が消えた ($REPLY_TEXT)"
   fi
   exit 0
 }
@@ -277,7 +280,7 @@ cmd_wizard() {
   local n choice
   prune_stale
   n=$(find "$STATE_DIR" -name '*.job' 2>/dev/null | wc -l | tr -d ' ')
-  choice="$(printf '%s\n' "新規予約" "予約一覧・取消 ($n 件)" | gum choose --header "⏰ 予約入力" --height 4)" || return 0
+  choice="$(printf '%s\n' "新規予約" "予約一覧・取消 ($n 件)" | gum choose --header "予約入力" --height 4)" || return 0
   case "$choice" in
     "新規予約") cmd_new ;;
     "予約一覧"*) cmd_list ;;
