@@ -98,37 +98,41 @@ func isVariationSelector(r rune) bool {
 	return (r >= 0xFE00 && r <= 0xFE0F) || (r >= 0xE0100 && r <= 0xE01EF)
 }
 
-// prevBoundary / nextBoundary は書記素クラスタの境界を返す。
+// prevBoundary / nextBoundary はカーソルの前後にある書記素クラスタの境界を返す。
 // ⚠️ 移動と削除は「見た目の 1 文字」= 書記素クラスタ単位で行う。rune 単位だと肌色や結合文字の
 //
 //	一部だけが消え、見た目はほぼ同じなのに**別の文字列が pane へ送られる**
 //	(敵対的レビュー 2026-08-28: 👍🏽 の backspace 1 回で 👍 になる)。
 func (e *editor) prevBoundary() int {
-	if e.pos <= 0 {
-		return 0
-	}
 	last := 0
-	for _, b := range e.boundaries() {
+	e.eachBoundary(func(b int) bool {
 		if b >= e.pos {
-			break
+			return false
 		}
 		last = b
-	}
+		return true
+	})
 	return last
 }
 
 func (e *editor) nextBoundary() int {
-	for _, i := range e.boundaries() {
-		if i > e.pos {
-			return i
+	next := len(e.runes)
+	e.eachBoundary(func(b int) bool {
+		if b > e.pos {
+			next = b
+			return false
 		}
-	}
-	return len(e.runes)
+		return true
+	})
+	return next
 }
 
-// boundaries は rune 単位の境界位置を昇順で返す (0 と len を含む)。
-func (e *editor) boundaries() []int {
-	out := []int{0}
+// eachBoundary は rune 単位の境界位置を昇順で渡す (0 と len を含む)。fn が false を返したら止める。
+// スライスを作らないのは、カーソル移動のたびに入力長ぶんのアロケーションをしないため。
+func (e *editor) eachBoundary(fn func(int) bool) {
+	if !fn(0) {
+		return
+	}
 	rest := string(e.runes)
 	state := -1
 	consumed := 0
@@ -136,9 +140,10 @@ func (e *editor) boundaries() []int {
 		var cluster string
 		cluster, rest, _, state = uniseg.StepString(rest, state)
 		consumed += len([]rune(cluster))
-		out = append(out, consumed)
+		if !fn(consumed) {
+			return
+		}
 	}
-	return out
 }
 
 // handle は編集キーを処理する。扱ったら true (呼び出し側は他の解釈をしない)。

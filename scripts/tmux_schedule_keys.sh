@@ -219,7 +219,7 @@ cancel_job() {
 
 # 内部: 待機して送る。run-shell -b の子なので stdout/stderr へ出さない (無音契約)
 # 内部: 待機して送る。run-shell -b の子なので stdout/stderr へ出さない (無音契約)。
-# 流れは「自分を記録 → 眠る → 送ってよいか判定 → 送る」の 4 段。判定と送信の中身は下の 2 つに分けて
+# 流れは「自分を記録 → 眠る → 送る権利を取る → 送る」の 4 段。権利の取得と送信は下の 2 つに分けて
 # ある (安全側の判断と、tmux へキーを流す作法を混ぜない)
 cmd_fire() {
   local id=$1 job now wait_s
@@ -236,16 +236,18 @@ cmd_fire() {
   wait_s=$(( REPLY_AT - now ))
   (( wait_s > 0 )) && sleep "$wait_s"
 
-  fire_allowed "$id" "$job" || { rm -f "$STATE_DIR/$id.pid"; exit 0; }
+  fire_claim "$id" "$job" || { rm -f "$STATE_DIR/$id.pid"; exit 0; }
   # ここから先は割り込まれない: 文字列だけ打たれて Enter が届かない半端な状態を作らない
   trap '' TERM INT HUP
   fire_send "$id"
   exit 0
 }
 
-# fire_allowed は「今このまま送ってよいか」を判定し、送れないなら理由をログに残して 1 を返す。
-# 送ると決めた時点で job / pid ファイルは片付ける (取消側が「もう止められない」と分かるように)。
-fire_allowed() {
+# fire_claim は「この予約を送る権利を取る」。取れたら 0、取れなければ理由をログに残して 1。
+# ⚠️ 名前のとおり判定だけでなく**所有権の移動**をする: 取れた時点で job / pid ファイルを消す。
+#    取消側はファイルの有無で「もう止められない」を知るので、判定と削除は分けられない
+#    (分けると、判定を通ってから削除するまでの間に取消が「取り消した」と嘘をつく窓ができる)。
+fire_claim() {
   local id=$1 job=$2 nowpid
   # 取消されていたら送らない (kill が sleep の隙間に届かなかった場合の保険)
   [[ -f "$job" ]] || return 1

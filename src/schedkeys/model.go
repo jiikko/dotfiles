@@ -158,20 +158,28 @@ func (m *model) keyMenu(key string) tea.Cmd {
 	case "k", "up", "shift+tab", "ctrl+p":
 		m.menuIdx = (m.menuIdx - 1 + len(items)) % len(items)
 	case "enter":
-		if m.menuIdx == 0 {
-			m.screen = screenForm
-			return nil
+		if it := items[m.menuIdx]; it.enabled {
+			m.screen = it.target
 		}
-		if len(m.jobs) == 0 {
-			return nil
-		}
-		m.screen = screenPick
 	}
 	return nil
 }
 
-func (m *model) menuItems() []string {
-	return []string{"新規予約", fmt.Sprintf("予約一覧・取消 (%d 件)", len(m.jobs))}
+// menuItem はメニューの 1 項目。ラベル・遷移先・選べるかを 1 箇所に持つ。
+// ⚠️ 以前はこの 3 つが keyMenu (index 0/1 の分岐) / menuItems (ラベル) / viewMenu (灰色表示) に
+//
+//	散っていて、項目を足すと 3 箇所を直す必要があった (直し漏れると「灰色なのに入れる」等になる)。
+type menuItem struct {
+	label   string
+	target  screen
+	enabled bool
+}
+
+func (m *model) menuItems() []menuItem {
+	return []menuItem{
+		{"新規予約", screenForm, true},
+		{fmt.Sprintf("予約一覧・取消 (%d 件)", len(m.jobs)), screenPick, len(m.jobs) > 0},
+	}
 }
 
 // submitNow は確定に使う「今」。テストでは nowFn を差し替えて固定する。
@@ -265,8 +273,7 @@ func (m *model) viewMenu() string {
 	f.add(sgr(fgDim, "予約入力") + "  " + sgr(fgAccent, truncate(m.label, maxInt(m.width-10, 0))))
 	f.add("")
 	for i, it := range m.menuItems() {
-		disabled := i == 1 && len(m.jobs) == 0
-		f.add(row(i == m.menuIdx, disabled, it))
+		f.add(row(i == m.menuIdx, !it.enabled, it.label))
 	}
 	f.add("")
 	f.add(sgr(fgDim, help(m.width, "j/k C-n/C-p 移動", "Enter 決定", "Esc 閉じる")))

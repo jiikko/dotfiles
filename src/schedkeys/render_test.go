@@ -445,3 +445,58 @@ func TestFrameAddIsOneLine(t *testing.T) {
 		t.Errorf("カーソル行 = %q (入力行であるべき)", lines[cur.Y])
 	}
 }
+
+// メニューの「ラベル・遷移先・選べるか」が 1 箇所に揃っていること。
+// 以前は index 0/1 の意味が 3 箇所 (キー処理・ラベル・灰色表示) に散っており、
+// 項目を足すと直し漏れて「灰色なのに入れる」状態になりえた。
+func TestMenuItemsAreTheSingleSource(t *testing.T) {
+	// 予約 0 件: 一覧は選べない (灰色) し、Enter でも入れない
+	m := newTestModel()
+	items := m.menuItems()
+	if len(items) != 2 || items[1].enabled {
+		t.Fatalf("0 件のとき一覧が選べる扱いになっている: %+v", items)
+	}
+	body := stripSGR(m.View().Content)
+	for _, it := range items {
+		if !strings.Contains(body, it.label) {
+			t.Errorf("メニューに %q が出ていない:\n%s", it.label, body)
+		}
+	}
+	press(m, "j", "")
+	press(m, "enter", "")
+	if m.screen != screenMenu {
+		t.Errorf("0 件なのに一覧へ入れた (screen=%v)", m.screen)
+	}
+	// 1 件あれば入れる
+	m2 := newModel("main:3 claude", now, []job{{id: "a", at: now.Add(time.Hour), label: "x", text: "y"}})
+	m2.nowFn = func() time.Time { return now }
+	if !m2.menuItems()[1].enabled {
+		t.Fatal("予約があるのに一覧が選べない")
+	}
+	press(m2, "j", "")
+	press(m2, "enter", "")
+	if m2.screen != screenPick {
+		t.Errorf("一覧へ入れない (screen=%v)", m2.screen)
+	}
+	// 遷移先は menuItems が決める (キー処理が index を知らない)
+	if m2.menuItems()[0].target != screenForm || m2.menuItems()[1].target != screenPick {
+		t.Errorf("遷移先が menuItems に無い: %+v", m2.menuItems())
+	}
+}
+
+// 貼り付けとキー入力が同じ「フォーカス中の欄」に入ること (選び方が 2 箇所にあると片方だけ直る)。
+func TestFocusedEditorIsSharedByKeysAndPaste(t *testing.T) {
+	m := newTestModel()
+	press(m, "enter", "")
+	press(m, "tab", "")
+	press(m, "left", "") // 自由入力 (spec 欄が出る)
+	press(m, "enter", "")
+	typeText(m, "1h")
+	m.Update(tea.PasteMsg{Content: "30m"})
+	if got := m.form.spec.value(); got != "1h30m" {
+		t.Errorf("キーと貼り付けが同じ欄に入らない: spec=%q text=%q", got, m.form.text.value())
+	}
+	if m.form.text.value() != "" {
+		t.Errorf("文字列欄に漏れた: %q", m.form.text.value())
+	}
+}
