@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"glogx/usage"
+	"glogx/subproc"
 )
 
 // CIState はコミット単位に集約した CI 状態。
@@ -158,13 +158,12 @@ type CommandRunner func(ctx context.Context, name string, args ...string) (stdou
 // ExecRunner は実際にコマンドを実行する CommandRunner。
 // bytes.Buffer 直返しで string 経由の再コピーを避ける (gh run view のログは MB 級になりうる)。
 func ExecRunner(ctx context.Context, name string, args ...string) ([]byte, []byte, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	// ctx の kill は直接の子にしか効かず、gh の孫が pipe を握ると Wait が戻らない
+	// (理由は subproc.WaitDelay の doc。subproc.CommandContext が張る)
+	cmd := subproc.CommandContext(ctx, name, args...)
 	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
-	// ctx の kill は直接の子にしか効かず、gh の孫が pipe を握ると Wait が戻らない
-	// (理由は usage.SubprocessWaitDelay の doc)
-	cmd.WaitDelay = usage.SubprocessWaitDelay
 	err := cmd.Run()
 	return out.Bytes(), errBuf.Bytes(), err
 }

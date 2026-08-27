@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"glogx/usage"
+
+	"glogx/subproc"
 )
 
 // 外部プロセス (git / tmux / claude / ブラウザ / クリップボード) を叩くラッパー群。
@@ -30,11 +32,10 @@ import (
 // 居残る (leak 監査 2026-07-23)。呼び出し側 (actionModal) が deadline 無しの cancel context を
 // 渡し、quit からのみ cancel する。
 func noPromptGitCmd(ctx context.Context, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	// quit の cancel が kill するのは直接の子だけで、hook の孫が pipe を握ると Wait が
-	// 戻らない (理由は usage.SubprocessWaitDelay の doc)
-	cmd.WaitDelay = usage.SubprocessWaitDelay
+	// 戻らない (理由は subproc.WaitDelay の doc。subproc.CommandContext が張る)
+	cmd := subproc.CommandContext(ctx, "git", args...)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	return cmd
 }
 
@@ -173,14 +174,13 @@ func runCLIUpdate(name string, fetchVersion func(context.Context) string) (befor
 	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
 	defer cancel()
 	before = fetchVersion(ctx)
-	cmd := exec.CommandContext(ctx, name, "update")
-	// ⚠️ WaitDelay を必ず張る。ctx の deadline が kill するのは直接の子だけで、子が残した孫が
-	// 親のパイプを握っていると CombinedOutput は孫が閉じるまで戻らない
-	// (理由は usage.SubprocessWaitDelay の doc)。戻らないと updateMsg が発行されず
+	// ⚠️ WaitDelay が必須 (subproc.CommandContext が張る)。ctx の deadline が kill するのは直接の
+	// 子だけで、子が残した孫が親のパイプを握っていると CombinedOutput は孫が閉じるまで戻らない
+	// (理由は subproc.WaitDelay の doc)。戻らないと updateMsg が発行されず
 	// actModal.updating が立ったままになり、上の updateTimeout が約束している
 	// 「超過時は必ず解ける」が成立しない = updating 中は q も Ctrl-C も握り潰す設計なので
 	// TUI から二度と抜けられなくなる。
-	cmd.WaitDelay = usage.SubprocessWaitDelay
+	cmd := subproc.CommandContext(ctx, name, "update")
 	out, e := cmd.CombinedOutput()
 	if e != nil {
 		if ctx.Err() == context.DeadlineExceeded {
@@ -240,10 +240,9 @@ var loadTmuxPrefix = func() string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), localCmdTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "tmux", "show-options", "-g", "prefix")
 	// ctx の kill は直接の子にしか効かず、tmux サーバ側が I/O fd を握ると Wait が戻らない
-	// (理由は usage.SubprocessWaitDelay の doc。以降のクリップボード系も同じ)
-	cmd.WaitDelay = usage.SubprocessWaitDelay
+	// (理由は subproc.WaitDelay の doc。以降のクリップボード系も同じ)
+	cmd := subproc.CommandContext(ctx, "tmux", "show-options", "-g", "prefix")
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -293,11 +292,10 @@ var copyToClipboard = func(text string) error {
 	if os.Getenv("TMUX") != "" {
 		// おまけ側は timeout を本命と分ける (tmux のハングが OS クリップボードを巻き添えにしない)
 		tmuxCtx, tmuxCancel := context.WithTimeout(context.Background(), localCmdTimeout)
-		cmd := exec.CommandContext(tmuxCtx, "tmux", "load-buffer", "-w", "-")
-		// WaitDelay が無いと ctx の kill 後も stdin の copy goroutine の write ブロックを
-		// Wait が待ち続け、timeout が効かない (tmux は stdin fd をサーバへ渡すため、payload が
-		// パイプバッファを超えるとハング中のサーバが read 側を握ったままになる)
-		cmd.WaitDelay = usage.SubprocessWaitDelay
+		// WaitDelay (subproc.CommandContext が張る) が無いと ctx の kill 後も stdin の copy goroutine
+		// の write ブロックを Wait が待ち続け、timeout が効かない (tmux は stdin fd をサーバへ渡すため、
+		// payload がパイプバッファを超えるとハング中のサーバが read 側を握ったままになる)
+		cmd := subproc.CommandContext(tmuxCtx, "tmux", "load-buffer", "-w", "-")
 		cmd.Stdin = strings.NewReader(text)
 		_ = cmd.Run() // 失敗しても OS クリップボードが本命なので無視
 		tmuxCancel()
@@ -307,11 +305,10 @@ var copyToClipboard = func(text string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.CommandContext(ctx, "pbcopy")
+		cmd = subproc.CommandContext(ctx, "pbcopy")
 	default:
-		cmd = exec.CommandContext(ctx, "xclip", "-selection", "clipboard")
+		cmd = subproc.CommandContext(ctx, "xclip", "-selection", "clipboard")
 	}
-	cmd.WaitDelay = usage.SubprocessWaitDelay
 	cmd.Stdin = strings.NewReader(text)
 	return cmd.Run()
 }

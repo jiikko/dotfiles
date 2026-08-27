@@ -17,14 +17,13 @@ import (
 	"context"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"glogx/usage"
-
 	tea "charm.land/bubbletea/v2"
+
+	"glogx/subproc"
 )
 
 const (
@@ -339,10 +338,9 @@ var spawnAutobuild = func(exePath string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), localCmdTimeout)
 	defer cancel()
 	// パスは位置引数で渡す (スクリプトへ文字列連結しない)。$0 に "zsh" を置くので $1 以降が引数。
-	cmd := exec.CommandContext(ctx, "zsh", "-c",
+	cmd := subproc.CommandContext(ctx, "zsh", "-c",
 		`source "$1"; go_autobuild_spawn_if_stale "$2" "$3"`,
 		"zsh", shim, filepath.Dir(exePath), filepath.Base(exePath))
-	cmd.WaitDelay = usage.SubprocessWaitDelay // ctx の kill は直接の子にしか効かない
 	return cmd.Run() == nil
 }
 

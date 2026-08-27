@@ -23,9 +23,10 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"os/exec"
 	"strings"
 	"time"
+
+	"glogx/subproc"
 )
 
 // SourceCodex は codex 由来の Window を示す Source 値 (空文字 = Claude Code)。
@@ -51,8 +52,7 @@ const codexRateLimitsID = 2
 func FetchCodex(ctx context.Context) ([]Window, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "codex", "app-server")
-	cmd.WaitDelay = SubprocessWaitDelay
+	cmd := subproc.CommandContext(ctx, "codex", "app-server")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("codex app-server stdin: %w", err)
@@ -92,8 +92,7 @@ func FetchCodex(ctx context.Context) ([]Window, error) {
 // (Claude 側 FetchVersion の codex 版)。取得・パース失敗はすべて空文字を返す
 // (バージョン表示は付加情報であり、欠けても呼び出し側の主処理は成立させる)。
 func FetchCodexVersion(ctx context.Context) string {
-	cmd := exec.CommandContext(ctx, "codex", "--version")
-	cmd.WaitDelay = SubprocessWaitDelay
+	cmd := subproc.CommandContext(ctx, "codex", "--version")
 	out, err := cmd.Output()
 	if err != nil {
 		return ""

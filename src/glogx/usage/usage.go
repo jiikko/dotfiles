@@ -16,7 +16,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -61,10 +60,6 @@ type claudeResult struct {
 	IsError bool   `json:"is_error"`
 }
 
-// SubprocessWaitDelay は subproc.WaitDelay の別名 (このパッケージの外からも参照されている)。
-// 値と理由の正本は glogx/subproc。
-const SubprocessWaitDelay = subproc.WaitDelay
-
 // Fetch は `claude -p "/usage"` を実行して結果をパースする。
 //
 // --model haiku を明示する: /usage はローカルコマンド処理で LLM を呼ばない
@@ -76,8 +71,7 @@ func Fetch(ctx context.Context) (*Snapshot, error) {
 	verCh := make(chan string, 1)
 	go func() { verCh <- FetchVersion(ctx) }()
 
-	cmd := exec.CommandContext(ctx, "claude", "-p", "/usage", "--model", "haiku", "--output-format", "json")
-	cmd.WaitDelay = SubprocessWaitDelay
+	cmd := subproc.CommandContext(ctx, "claude", "-p", "/usage", "--model", "haiku", "--output-format", "json")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("claude /usage 実行失敗: %w", err)
@@ -101,8 +95,7 @@ func Fetch(ctx context.Context) (*Snapshot, error) {
 // 出力例: "2.1.216 (Claude Code)" → "2.1.216"。取得・パース失敗はすべて空文字を返す
 // (バージョン表示は付加情報であり、欠けても呼び出し側の主処理は成立させる)。
 func FetchVersion(ctx context.Context) string {
-	cmd := exec.CommandContext(ctx, "claude", "--version")
-	cmd.WaitDelay = SubprocessWaitDelay
+	cmd := subproc.CommandContext(ctx, "claude", "--version")
 	out, err := cmd.Output()
 	if err != nil {
 		return ""

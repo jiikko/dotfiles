@@ -9,8 +9,6 @@ import (
 	"strings"
 	"sync"
 
-	"glogx/usage"
-
 	"glogx/subproc"
 )
 
@@ -84,8 +82,9 @@ func runGitCmd(cmd *exec.Cmd) (string, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	// ctx の kill は直接の子にしか効かず、hook の孫が pipe を握ると Wait が戻らない
-	// (理由は usage.SubprocessWaitDelay の doc)
-	cmd.WaitDelay = usage.SubprocessWaitDelay
+	// (理由は subproc.WaitDelay の doc)。runGit (ctx 無し) と runGitTimeout の両方が通るので、
+	// subproc.CommandContext ではなくここで 1 度張る
+	cmd.WaitDelay = subproc.WaitDelay
 	if err := cmd.Run(); err != nil {
 		var exitErr *exec.ExitError
 		code := 1
