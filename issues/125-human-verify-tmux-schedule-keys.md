@@ -16,9 +16,9 @@ reload しないと `bind m` は乗らず、撤去済み launcher (prefix+Enter)
 
 ## 確認してほしいこと
 
-1. **launcher が消えたか**: reload 後に `prefix+Enter`（= `prefix+C-m`）を押しても
-   「🚀 Launcher」メニューが出ないこと（`unbind -T prefix Enter` の効果。source-file は既存 bind を
-   消さないので conf から行を消しただけでは残っていた）
+1. **launcher が消えたか**: reload 後に `prefix+Enter`（= `prefix+C-m`）を押すと「🚀 Launcher」
+   メニューではなく **予約入力ウィザードが開く**こと（同じ席に `bind Enter` を置いて上書き。
+   source-file は既存 bind を消さないので conf から行を消しただけでは残っていた）
 2. **ウィザードの表示**: `prefix+m` で popup（cyan 枠「⏰ 予約入力」）が開き、「新規予約 /
    予約一覧・取消 (N 件)」の 2 択が出ること。72x14 の枠に header・入力・確認文（2 行）が
    収まっていて、切れていないこと

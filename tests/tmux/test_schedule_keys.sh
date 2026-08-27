@@ -13,7 +13,7 @@
 #   - .pid の数字だけで kill しない: 無関係なプロセスが同じ pid を持っていても kill せず、stale として掃く
 #   - 一覧の取消は表示文字列の逆引きでなく行頭の連番で選ぶ (表示が一致する 2 件で先頭に化けない)
 #   - list からの取消は sleeper を kill し job/pid を消す。pid が死んだ stale job は list が掃く
-#   - _tmux.conf: bind m が本スクリプトを指し、撤去済み launcher の unbind Enter が残っている
+#   - _tmux.conf: bind m / Enter / C-m が本スクリプトを指し、旧 launcher (display-menu) が復活していない
 set -euo pipefail
 unset CDPATH
 unset TMUX TMUX_PANE 2>/dev/null || true
@@ -257,12 +257,13 @@ run "$STUB_PATH" "$SCRIPT" list
 [[ "$(jobs_count)" == 1 ]] || { printf '✗ 作成直後 (.pid 未作成) の job が掃かれた\n'; exit 1; }
 printf '✓ 作成直後の .pid 未作成 job は掃かない\n'
 
-printf '\n## _tmux.conf: bind と撤去 bind の unbind\n'
-grep -Eq "^bind m display-popup .*tmux_schedule_keys\.sh" "$CONF" || { printf '✗ bind m が tmux_schedule_keys.sh を指していない\n'; exit 1; }
-printf '✓ bind m → display-popup → tmux_schedule_keys.sh\n'
-grep -Eq '^unbind -T prefix Enter' "$CONF" || { printf '✗ 撤去した launcher (prefix+Enter) の unbind が無い (reload で旧 bind が残る)\n'; exit 1; }
-printf '✓ unbind -T prefix Enter が残っている\n'
-! grep -Eq '^bind(-key)? +(-T prefix +)?Enter ' "$CONF" || { printf '✗ prefix+Enter に bind が復活している\n'; exit 1; }
-printf '✓ prefix+Enter への bind は無い\n'
+printf '\n## _tmux.conf: bind m / Enter / C-m が同じウィザードを指す\n'
+for k in m Enter C-m; do
+  grep -Eq "^bind $k +display-popup .*tmux_schedule_keys\.sh" "$CONF" || { printf '✗ bind %s が tmux_schedule_keys.sh を指していない\n' "$k"; exit 1; }
+  printf '✓ bind %s → display-popup → tmux_schedule_keys.sh\n' "$k"
+done
+# 旧 launcher (display-menu) が復活していないこと。prefix+Enter の席はウィザードが上書きしている
+! grep -Eq '^bind(-key)? +(-T prefix +)?Enter +display-menu' "$CONF" || { printf '✗ prefix+Enter に launcher (display-menu) が復活している\n'; exit 1; }
+printf '✓ prefix+Enter は launcher ではない\n'
 
 printf '\n[test-schedule-keys] all ok\n'
