@@ -18,3 +18,4 @@
 2026-08-20 23:28	ui-components	forge-Standard	issues/071-research-design-audit-2026-08-20.md
 2026-08-20 23:28	test-cleanup	forge-Standard	issues/072-research-test-audit-2026-08-20.md
 2026-08-20 23:28	test-helpers	forge-Standard	issues/072-research-test-audit-2026-08-20.md
+2026-08-27 11:01	leaky-abstraction	direct	issues/112-bug-glogx-clusterwidth-second-width-engine.md,issues/113-bug-glogx-issues-viewer-no-ownskeys.md,issues/114-bug-glogx-status-preview-cache-never-invalidated.md,issues/115-refactor-glogx-statusfilter-list-duplicated.md

@@ -60,3 +60,27 @@ glogx は `main` / `issues` / `usage` / `termsafe` / `widthenv` に分かれて�
 - ⬜ **基本 ANSI 色**: 3 定義のまま (`ansiRed` / `cRed` / `cGreen`)
 
 trigger は据え置き (「幅か色で実際に drift が出たとき」または「4 箇所目の写しを足したくなったとき」)。
+
+---
+
+## 追記 (2026-08-27、leaky-abstraction 監査より)
+
+**✅ とした「子プロセスの猶予」に、値のドリフトとは別の残りがある。**
+
+値の正本は `glogx/subproc.WaitDelay` になり、`usage.SubprocessWaitDelay` は
+`const SubprocessWaitDelay = subproc.WaitDelay` の**別名**にすぎない。それでも main 側の
+**8 箇所** (`gitlog.go` / `github.go` / `external_commands.go` × 5 / `autobuild.go`) と
+6 本の理由コメント (「理由は `usage.SubprocessWaitDelay` の doc」) は、いまだに
+`usage` (= Claude Code の `/usage` と codex rate limit を取る領域パッケージ) を出典として
+名指ししている。git / gh / tmux / clipboard の実行が `usage` を経由して猶予を得ている形。
+
+また `subproc.CommandContext` は「新しい外部コマンド実行はこれを使うこと」と宣言しているが、
+**実際の呼び出しは repo 全体で 1 箇所** (`issues/discover.go`) だけ。
+
+- **壊れ方は compile error** (const alias なので値のドリフトは構造的に起きない)。
+  106 の ✅ は嘘ではない。残っているのは**名前と依存の向き**だけ
+- ⚠️ `waitdelay_discipline_test.go` は「WaitDelay が張られているか」しか見ないので、
+  **この置換を守るテストは無い**。直すときに一緒に考えること
+
+対応: 8 箇所を `subproc.WaitDelay` へ置換し、`usage.SubprocessWaitDelay` の別名は
+`usage` 内部だけの利用に落とす (または削除)。
