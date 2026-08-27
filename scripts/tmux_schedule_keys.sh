@@ -129,6 +129,27 @@ parse_clock_epoch() {
   printf '%s\n' "$target"
 }
 
+# 送る文字列の入力。REPLY_TEXT に返す。空・EOF は 1
+#
+# ⚠️ ここは gum input を使わない。gum (bubbletea) は本物のカーソルを隠して偽カーソルを描くため、IME の
+#    未確定文字 (日本語入力中) は「描画後に本物のカーソルが居る場所」に出る。pty で実測 (2026-08-27,
+#    gum 0.17.0): 既定ではヘルプ行 = 入力行の 2 行下、--no-show-help でも入力欄 (--width) の右端。
+#    readline (read -e) は本物のカーソルで編集するので未確定文字が入力位置に出る。全角の backspace も
+#    bash 3.2 / 5.3 の両方で 1 文字単位で消えることを pty で確認済み。gum が本物のカーソル位置を
+#    報告するようになったら (bubbletea v2 の real cursor) gum input に戻してよい。
+#    数字だけの HH:MM / 相対時間の入力は IME を使わないので gum input のまま (placeholder が効く)
+ask_text() {
+  # readline の全角処理は locale が UTF-8 であることが前提 (LANG=C だと入力ごと落ちる。pty で実測)
+  case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+    *UTF-8*|*utf8*|*UTF8*|'') ;;
+    *) export LC_CTYPE=C.UTF-8 ;;
+  esac
+  gum style --bold "⌨️  入力する文字列 (末尾に Enter を送る。空で中止)"
+  REPLY_TEXT=''
+  IFS= read -e -r -p '> ' REPLY_TEXT || return 1
+  [[ -n "$REPLY_TEXT" ]] || { gum style --foreground 1 "✗ 空文字は予約できない"; sleep 1.2; return 1; }
+}
+
 # 「いつ送る？」の対話。発火 epoch を stdout に返す。キャンセル・不正は 1
 ask_when() {
   local label=$1 now=$2 choice preset in secs
@@ -163,8 +184,8 @@ cmd_new() {
   now=$(date +%s)
   at="$(ask_when "$label" "$now")" || return 1
   total=$(( at - now ))
-  text="$(gum input --header "⌨️  入力する文字列 (末尾に Enter を送る)" --placeholder "make test" --width 60)" || return 1
-  [[ -n "$text" ]] || { gum style --foreground 1 "✗ 空文字は予約できない"; sleep 1.2; return 1; }
+  ask_text || return 1
+  text="$REPLY_TEXT"
 
   gum confirm --default=false --affirmative "予約する" --negative "やめる" \
     "$(printf '%s に %s後 (%s) に送る:\n  %s' "$label" "$(fmt_remaining "$total")" "$(date -r "$at" '+%H:%M' 2>/dev/null || date -d "@$at" '+%H:%M')" "$text")" \
