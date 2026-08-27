@@ -9,7 +9,8 @@
 #   tmux_schedule_keys.sh            : ウィザード (bin/schedkeys を起こし、結果で予約を作る / 取り消す)
 #   tmux_schedule_keys.sh fire <id>  : (内部) 予約 1 件の待機と送信。run-shell -b から呼ばれる
 #
-# 予約は 1 件 = 1 ファイル ($STATE_DIR/<id>.job、行順に pane_id / 発火 epoch / 文字列 / socket_path)。
+# 予約は 1 件 = 1 ファイル ($STATE_DIR/<id>.job、行順に pane_id / 発火 epoch / 文字列 / socket_path /
+# サーバの pid)。
 # 発火プロセスは起動直後に <id>.pid を書く。list は sleeper が居ない .job を stale として掃く
 # (サーバ再起動で sleeper だけ死んだ形)。
 #
@@ -65,12 +66,17 @@ pane_label() {
   tmux display-message -p -t "$1" '#{session_name}:#{window_index} #{window_name}' 2>/dev/null || printf '(消滅)'
 }
 
-# job ファイルを読む。REPLY_PANE / REPLY_AT / REPLY_TEXT / REPLY_SOCK に返す。壊れていれば 1
+# job ファイルを読む。REPLY_PANE / REPLY_AT / REPLY_TEXT / REPLY_SOCK / REPLY_SRVPID に返す。
+# 壊れていれば 1。
+# ⚠️ 先頭で全ての REPLY_* を空にする: ファイルを開けなかったとき (消えた・権限が無い) は
+#    read が 1 回も走らず前の job の値が残り、「A を取り消す」と表示して B を消す事故になる
+#    (敵対的レビュー 2026-08-28 で再現)
 read_job() {
   local f=$1
+  REPLY_PANE='' REPLY_AT='' REPLY_TEXT='' REPLY_SOCK='' REPLY_SRVPID=''
   [[ -f "$f" ]] || return 1
-  REPLY_SOCK=''
-  { IFS= read -r REPLY_PANE; IFS= read -r REPLY_AT; IFS= read -r REPLY_TEXT; IFS= read -r REPLY_SOCK || true; } < "$f"
+  { IFS= read -r REPLY_PANE; IFS= read -r REPLY_AT; IFS= read -r REPLY_TEXT
+    IFS= read -r REPLY_SOCK || true; IFS= read -r REPLY_SRVPID || true; } < "$f"
   [[ -n "$REPLY_PANE" && "$REPLY_AT" =~ ^[0-9]+$ && -n "$REPLY_TEXT" ]]
 }
 
@@ -80,7 +86,8 @@ pid_is_sleeper() {
   [[ -n "$pid" && "$pid" =~ ^[0-9]+$ ]] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
   cmd="$(ps -o command= -p "$pid" 2>/dev/null)"
-  [[ "$cmd" == *"tmux_schedule_keys.sh fire $id"* || "$cmd" == *"tmux_schedule_keys.sh fire '$id'"* ]]
+  # id は command line の末尾に来る。部分一致だと id "…-5" が "…-55" の sleeper に当たる
+  [[ "$cmd" == *"tmux_schedule_keys.sh fire $id" || "$cmd" == *"tmux_schedule_keys.sh fire '$id'" ]]
 }
 
 job_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || date +%s; }
@@ -126,25 +133,39 @@ new_reservation() {
   [[ "$at" =~ ^[0-9]+$ && -n "$text" ]] || { log "new: 不正な UI 結果 at=$at text=$text"; return 1; }
   # fire は run-shell -b の子 (サーバ環境を継承) なので、bare tmux がどの socket へ行くか保証が無い。
   # 予約時の socket を job に残し、fire 側で $TMUX にして同じサーバへ向ける
+  local srvpid
   sock="$(tmux display-message -p '#{socket_path}' 2>/dev/null || true)"
+  # ⚠️ サーバの pid も残す: サーバが異常終了 (SIGKILL) すると sleeper だけが孤児として生き残り、
+  #    同じ socket に立った**別のサーバ**の pane へ送ってしまう (pane id は振り直されるので
+  #    「%5 は存在しない」に逃げられない。敵対的レビュー 2026-08-28 で再現)
+  srvpid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
   id="$(date +%s)-$$-$RANDOM"
-  printf '%s\n%s\n%s\n%s\n' "$pane" "$at" "$text" "$sock" > "$STATE_DIR/$id.job" 2>/dev/null \
+  printf '%s\n%s\n%s\n%s\n%s\n' "$pane" "$at" "$text" "$sock" "$srvpid" > "$STATE_DIR/$id.job" 2>/dev/null \
     || { log "new: job を書けない ($STATE_DIR/$id.job)"; return 1; }
   # id は英数と - だけなので run-shell の引用は安全
-  tmux run-shell -b "'$SELF' fire '$id'"
+  # ⚠️ run-shell の失敗を握らない: 失敗すると sleeper が居ないまま job だけ残り、UI は
+  #    「予約しました」と言い切っている
+  if ! tmux run-shell -b "'$SELF' fire '$id'"; then
+    log "new: sleeper を起こせない ($id)"
+    rm -f "$STATE_DIR/$id.job"
+    return 1
+  fi
   log "new $id pane=$pane at=$at text=$text"
 }
 
 # jobs_tsv は今ある予約を UI 用の TSV (id / 発火 epoch / 送り先の表示名 / 文字列) に書き出す。
 # job ファイルの書式を知るのはこのスクリプトだけに保つ
 jobs_tsv() {
-  local out=$1 j id
+  local out=$1 j id lbl
   : > "$out"
   for j in "$STATE_DIR"/*.job; do
     [[ -f "$j" ]] || continue
     read_job "$j" || continue
     id="$(basename "$j" .job)"
-    printf '%s\t%s\t%s\t%s\n' "$id" "$REPLY_AT" "$(pane_label "$REPLY_PANE")" "$REPLY_TEXT" >> "$out"
+    # 表示名にタブが入ると列がずれる (window 名は任意の文字列)。改行は行そのものが割れる
+    lbl="$(pane_label "$REPLY_PANE")"
+    lbl="${lbl//$'\t'/ }"; lbl="${lbl//$'\n'/ }"
+    printf '%s\t%s\t%s\t%s\n' "$id" "$REPLY_AT" "$lbl" "$REPLY_TEXT" >> "$out"
   done
 }
 
@@ -152,12 +173,27 @@ jobs_tsv() {
 cancel_selected() {
   local id=$1 j
   j="$STATE_DIR/$id.job"
-  read_job "$j" || return 1
+  if ! read_job "$j"; then
+    # 一覧を出してから選ぶまでの間に発火した / 既に消えた
+    tmux display-message "その予約はもうありません (発火済みか取消済み)"
+    return 0
+  fi
   gum confirm --default=false --affirmative "取消する" --negative "やめる" \
     "この予約を取り消す？ $(fmt_remaining $(( REPLY_AT - $(date +%s) ))) $(pane_label "$REPLY_PANE") $REPLY_TEXT" || return 0
+  # ⚠️ 確認ダイアログを読んでいる間に発火しうる。job が消えていたら「取り消した」と言わない
+  #    (取消の動機は「もう実行したくない」なので、嘘は実害に直結する)
+  if [[ ! -f "$j" ]]; then
+    log "cancel $id: 確認中に発火済み"
+    tmux display-message "$(msg_escape "取り消せませんでした (確認中に送信されました): $REPLY_TEXT")"
+    return 0
+  fi
   cancel_job "$id"
-  tmux display-message "予約を取り消した: $REPLY_TEXT"
+  tmux display-message "$(msg_escape "予約を取り消した: $REPLY_TEXT")"
 }
+
+# msg_escape は display-message のフォーマット展開を止める (# を ## にする)。
+# 予約の文字列には # が普通に入る (コメント・#{...}) ので、そのまま渡すと化ける
+msg_escape() { printf '%s' "${1//\#/##}"; }
 
 cancel_job() {
   local id=$1 pid
@@ -181,6 +217,17 @@ cmd_fire() {
   # 取消されていたら送らない (kill が sleep の隙間に届かなかった場合の保険)
   [[ -f "$job" ]] || exit 0
   rm -f "$job" "$STATE_DIR/$id.pid"
+  # ⚠️ サーバの同一性は「起きた後・送る直前」に見る。眠る前に見ても意味が無い (壊れるのは
+  #    眠っている間にサーバが死んで別のサーバが立つ経路。実機で確認 2026-08-28)。
+  #    socket が同じでも中身が別サーバなら、pane id は振り直されていて送り先は別物
+  if [[ -n "$REPLY_SRVPID" ]]; then
+    local nowpid
+    nowpid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
+    if [[ "$nowpid" != "$REPLY_SRVPID" ]]; then
+      log "fire $id: 予約したサーバが居ない (job=$REPLY_SRVPID now=${nowpid:-none})。破棄 text=$REPLY_TEXT"
+      exit 0
+    fi
+  fi
   # ここから先は割り込まれない: 文字列だけ打たれて Enter が届かない半端な状態を作らない
   trap '' TERM INT HUP
   # copy-mode 等に入っている pane へはキーが届かない (mode のキーテーブルへ行き、リテラル送信は
@@ -212,7 +259,7 @@ toast() {
 }
 
 cmd_wizard() {
-  local pane label jobs_file action rest tab
+  local pane label jobs_file tab
   tab=$'\t'
   pane="$(tmux display-message -p '#{pane_id}')" || return 1
   label="$(pane_label "$pane")"
@@ -221,15 +268,23 @@ cmd_wizard() {
   jobs_tsv "$jobs_file"
   if ! ui_run "$jobs_file" "$label"; then rm -f "$jobs_file"; return 0; fi
   rm -f "$jobs_file"
-  action="${REPLY_UI%%"$tab"*}"
-  rest="${REPLY_UI#*"$tab"}"
-  case "$action" in
-    # UI は確定した時点で「予約しました」とトーストを出して閉じている。ここで失敗したら
-    # その表示が嘘になるので、失敗だけを目立つ形で知らせる (成功は UI のトーストが担当)
-    new)    new_reservation "$pane" "$label" "${rest%%"$tab"*}" "${rest#*"$tab"}" \
-              || tmux display-message "予約に失敗しました (~/.cache/tt-schedule-keys.log)" ;;
-    cancel) cancel_selected "$rest" ;;
-    *)      log "wizard: 未知の UI 結果: $REPLY_UI" ;;
+  # ⚠️ フィールド数ごと検証する。%%/# の展開で切り出すと、区切りが足りない行 ("new<TAB>4600") が
+  #    epoch をそのまま文字列として通してしまう (敵対的レビュー 2026-08-28 で再現)
+  local f1 f2 f3 extra
+  IFS="$tab" read -r f1 f2 f3 extra <<< "$REPLY_UI"
+  case "$f1" in
+    new)
+      if [[ -z "$f3" || -n "$extra" ]]; then log "wizard: new の形が違う: $REPLY_UI"; return 0; fi
+      # UI は確定した時点で「予約しました」とトーストを出して閉じている。ここで失敗したら
+      # その表示が嘘になるので、失敗だけを目立つ形で知らせる (成功は UI のトーストが担当)
+      new_reservation "$pane" "$label" "$f2" "$f3" \
+        || tmux display-message "予約に失敗しました (~/.cache/tt-schedule-keys.log)"
+      ;;
+    cancel)
+      if [[ -z "$f2" || -n "$f3" || -n "$extra" ]]; then log "wizard: cancel の形が違う: $REPLY_UI"; return 0; fi
+      cancel_selected "$f2"
+      ;;
+    *) log "wizard: 未知の UI 結果: $REPLY_UI" ;;
   esac
 }
 
