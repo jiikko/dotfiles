@@ -18,7 +18,7 @@ var nastyInputs = map[string]string{
 	"NFD (か+濁点)": strings.Repeat("が", 80),
 	"VS16":       strings.Repeat("❤️", 80),
 	"キーキャップ":     strings.Repeat("1️⃣", 60),
-	"ZWJ 絵文字":    strings.Repeat("\U0001F468‍\U0001F469‍\U0001F467", 20),
+	"ZWJ 絵文字":    strings.Repeat("\U0001F468\u200d\U0001F469\u200d\U0001F467", 20),
 	"ハングル":       strings.Repeat("한글", 80),
 	"アラビア語":      strings.Repeat("العربية", 30),
 	"混在":         strings.Repeat("aあ한❤️", 50),
@@ -207,14 +207,14 @@ func TestToastNeverEatsContent(t *testing.T) {
 // 打った本人に見えないまま pane へ送られる (表示順の反転はコマンドの偽装に使える)。
 func TestInvisibleRunesRejected(t *testing.T) {
 	for name, in := range map[string]string{
-		"RLO":  "‮",
-		"RLM":  "‏",
-		"ZWSP": "​",
-		"ZWJ":  "‍",
-		"NEL":  "",
-		"LS":   " ",
-		"SHY":  "­",
-		"混在":   "a‮b",
+		"RLO":  "\u202e",
+		"RLM":  "\u200f",
+		"ZWSP": "\u200b",
+		"ZWJ":  "\u200d",
+		"NEL":  "\u0085",
+		"LS":   "\u2028",
+		"SHY":  "\u00ad",
+		"混在":   "a\u202eb",
 		"制御文字": "\x01",
 	} {
 		var e editor
