@@ -8,6 +8,11 @@ tmux バインド (_tmux.conf) から display-popup / run-shell 経由で呼ば�
 - popup 内の shell-command では `#{...}` format が展開されない (TMUX_PANE も無い。tmux 3.6a 実測)。
   対象 pane はスクリプト側で `tmux display-message -p` で解決し、冒頭で変数に固定してから
   confirm する (「確認した相手」と「操作する相手」を一致させる。tmux_kill_confirm.sh 参照)
+- **対話 UI が要るものは Go の TUI (src/schedkeys) に出す選択肢がある**。gum は入力欄で
+  IME の未確定文字が入力位置に出ない (bubbletea v1 が本物のカーソルを隠すため。pty 実測 2026-08-27)。
+  日本語を打つ欄がある popup は bubbletea v2 の `tea.View.Cursor` を使う (src/schedkeys/README.md)。
+  そのとき**破壊的な操作 (削除・取消) は UI 側で実行せず、シェルの gum confirm --default=false に残す**
+  (tmux_schedule_keys.sh が実例)
 - bind から引数を渡すときは `#{q:...}` でエスケープする (素の `#{...}` 埋めは値の `"` で
   sh 構文エラーになる穴があった。tmux_scratch_popup.sh 冒頭参照)
 

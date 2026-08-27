@@ -16,6 +16,9 @@
 
 補足:
 
+- **`bin/` のラッパーを zsh で書いたら root [Makefile](../Makefile) の `ZSH_SYNTAX_FILES` に登録する**。
+  `scripts/discover_shell_scripts.sh` が shebang で拾い、登録漏れは **shellcheck の SC1071 で
+  `make test` 全体が落ちる** (bin/schedkeys 追加時に実際に落とした 2026-08-27)
 - `.golangci.yml` は任意（無ければ既定 linter で運用。カスタム lint の実例は glogx を参照）
 - golangci-lint はインストール不要（Makefile が `go run` 経由でバージョン固定実行）
 - テストが「重い / 環境依存」に思えても、CI から除外する前に**実測**すること（parallel-each は「TUI 依存で重い」とされていたが実測 8.7s で CI 投入できた）

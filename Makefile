@@ -18,6 +18,7 @@ ZSH_SYNTAX_FILES := \
   bin/lockman \
   bin/parallel-each \
   bin/repair-mp4-timebase \
+  bin/schedkeys \
   bin/validate-mp4 \
   bin/video_health \
   scripts/check_syntax.zsh \
@@ -34,7 +35,7 @@ ZSH_SYNTAX_FILES := \
 # zsh 例外を除いた補集合。手書き列挙しない (発見された script は登録なしで自動的に lint 対象)。
 SHELLCHECK_FILES := $(filter-out $(ZSH_SYNTAX_FILES),$(shell scripts/discover_shell_scripts.sh))
 
-YAML_FILES := theme/colors.yml pre-commit-config.yml .github/dependabot.yml .github/workflows/tests.yml .github/workflows/lint.yml .github/workflows/karabiner.yml .github/workflows/bench.yml .github/workflows/src_glogx.yml .github/workflows/src_parallel-each.yml .github/workflows/src_disassemble_excel.yml .github/workflows/src_lockman.yml .github/actions/setup-nvim/action.yml .github/actions/run-bench/action.yml
+YAML_FILES := theme/colors.yml pre-commit-config.yml .github/dependabot.yml .github/workflows/tests.yml .github/workflows/lint.yml .github/workflows/karabiner.yml .github/workflows/bench.yml .github/workflows/src_glogx.yml .github/workflows/src_parallel-each.yml .github/workflows/src_disassemble_excel.yml .github/workflows/src_lockman.yml .github/workflows/src_schedkeys.yml .github/actions/setup-nvim/action.yml .github/actions/run-bench/action.yml
 JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 # ruby -c で構文チェックする ruby ファイル (Brewfile は brew の ruby DSL)。
 # _gemrc は YAML だが yamllint default (document-start 必須等) に通らない形式のため

@@ -1,0 +1,9 @@
+#!/usr/bin/env zsh
+# schedkeys — tmux 予約入力ウィザードの TUI (bubbletea)。Go implementation at:
+#   ~/dotfiles/src/schedkeys/
+# 呼び出し元は scripts/tmux_schedule_keys.sh (tmux の prefix+m / Enter / C-m)。
+# 結果は --out のファイル経由で返るため、ビルドは同期 (--async にすると「古い UI が返した結果」を
+# 新コードの結果と誤認しうる。bin/lib/go_autobuild.zsh の注記参照)。
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec "${0:A:h}/../src/schedkeys" schedkeys -- "$@"
