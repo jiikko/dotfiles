@@ -85,6 +85,9 @@ func (t *toast) overlay(lines []string, width, height int) []string {
 	if !t.shown {
 		return lines
 	}
+	if width < 6 {
+		return lines // これ以下の幅ではトーストを出さない (出すと行が幅を超える)
+	}
 	body := "  " + t.text + "  "
 	if w := ansi.StringWidth(body); w > width {
 		body = "  " + truncate(t.text, width-4) + "  "
@@ -104,15 +107,22 @@ func (t *toast) overlay(lines []string, width, height int) []string {
 	out := make([]string, len(lines))
 	copy(out, lines)
 	if height > len(out) {
+		// 画面の最下行に置く (空行で埋める)
 		for len(out) < height {
 			out = append(out, "")
 		}
-	} else if height > 0 {
+	} else if height > 0 && len(out) > height {
 		out = out[:height]
 	}
 	if len(out) == 0 {
 		return []string{row}
 	}
-	out[len(out)-1] = row
+	// ⚠️ 中身の行を上書きしない: 画面が低くて空き行が無いときはトーストを諦める
+	//    (ヘルプ行や入力欄を食う。敵対的レビュー 2026-08-28 で h=8 と h=5 で再現)
+	last := len(out) - 1
+	if strings.TrimSpace(stripSGR(out[last])) != "" {
+		return out
+	}
+	out[last] = row
 	return out
 }

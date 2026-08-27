@@ -220,7 +220,7 @@ func (m *model) View() tea.View {
 
 func (m *model) viewMenu() string {
 	var b strings.Builder
-	b.WriteString(sgr(fgDim, "予約入力") + "  " + sgr(fgAccent, m.label) + "\n\n")
+	b.WriteString(sgr(fgDim, "予約入力") + "  " + sgr(fgAccent, truncate(m.label, maxInt(m.width-10, 0))) + "\n\n")
 	for i, it := range m.menuItems() {
 		disabled := i == 1 && len(m.jobs) == 0
 		b.WriteString(row(i == m.menuIdx, disabled, truncate(it, m.width-2)) + "\n")
@@ -237,17 +237,21 @@ func (m *model) viewPick() string {
 		remW = max(remW, ansi.StringWidth(formatRemaining(j.at.Sub(m.now))))
 		labelW = max(labelW, ansi.StringWidth(j.label))
 	}
-	// 行が幅を超えると折り返して行数が増え、選択の反転も崩れる。文字列側を切って 1 行に収める
+	// ⚠️ 送り先の表示名は #{window_name} で、長さに上限が無い。桁揃えに使うと 1 件の長い名前が
+	//    全行を押し出し、文字列の列が画面外へ消える (= 何を取り消すか読めないまま確認へ進む)。
+	//    敵対的レビュー 2026-08-28 で再現。名前は幅の 1/3 までに抑え、残りを文字列に配る
+	labelW = min(labelW, maxInt(m.width/3, 8))
+	// 行が幅を超えると折り返して行数が増え、選択の反転も崩れる
 	textW := m.width - 2 - remW - labelW - 4
-	if textW < 8 {
-		textW = 8
+	if textW < 4 {
+		textW = 4
 	}
 	for i, j := range m.jobs {
 		line := fmt.Sprintf("%s  %s  %s",
 			pad(formatRemaining(j.at.Sub(m.now)), remW),
-			pad(j.label, labelW),
+			pad(truncate(j.label, labelW), labelW),
 			truncate(j.text, textW))
-		b.WriteString(row(i == m.pickIdx, false, line) + "\n")
+		b.WriteString(row(i == m.pickIdx, false, truncate(line, maxInt(m.width-2, 0))) + "\n")
 	}
 	b.WriteString("\n" + sgr(fgDim, help(m.width, "j/k C-n/C-p 移動", "Enter 取消", "Esc 戻る")))
 	return clampHeight(b.String(), m.height)
