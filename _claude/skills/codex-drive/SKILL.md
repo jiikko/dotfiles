@@ -126,7 +126,16 @@ codex 往復より速いので Claude が直接やってよい (`subagent-model-
 ### 既定: driver (`codex-fanout`) で 1 往復に畳む
 
 dotfiles の `bin/codex-fanout` (PATH に載っている)。read-only / review の並列 fan-out + merger を
-driver 内で完結させ、Claude の Bash 往復を「起動 1 回 + digest 読み 1 回」にする。Claude がやるのは:
+driver 内で完結させ、Claude の Bash 往復を「起動 1 回 + digest 読み 1 回」にする。
+
+**Bash ツールの上限 (15 分) を超えうる起動は detach する**: `run_in_background` の Bash は 15 分で
+プロセスごと kill される (`CODEX_FANOUT_TIMEOUT=2400` や長い workspace-write 実装と矛盾。2026-08-27 に
+敵対 fanout と mutation 単発が同時に全滅した = obaket issues/620)。その場合は
+`(nohup codex-fanout … > log 2>&1; echo "rc=$?" > <outdir>.rc) > /dev/null 2>&1 &` で起動し、
+Monitor ツールの `until [ -f <rc> ]; do sleep 30; done` で完了を待つ (rc ファイルが完了の証拠。
+プロセス不在かつ rc 無し = 死亡として扱う)。15 分以内に収まる起動は従来どおり `run_in_background` でよい。
+
+Claude がやるのは:
 
 1. プロンプト部品を scratchpad に書く — 定型は `~/.claude/skills/codex-drive/templates/`
    (`review-lens-header.md` = lens 共通ヘッダ、`merger.md` = merger の既定指示) を使い、

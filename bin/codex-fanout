@@ -16,6 +16,8 @@
 #   新しい実行結果に混ざるのを構造的に防ぐ。
 #   環境変数:
 #     CODEX_FANOUT_TIMEOUT        1 本あたりの秒数上限 (既定 1200。merger にも適用)。超えたら kill して失敗扱い
+#                                 900 を超える値で使うときは呼び出し側を detach する (Claude Code の Bash は 15 分で
+#                                 background ごと kill される。codex-drive skill「並列起動の作法」参照)
 #     CODEX_FANOUT_MERGER_MODEL   merger のモデル (既定 gpt-5.6-luna)
 #     CODEX_FANOUT_MERGER_EFFORT  merger の effort (既定 max。codex-drive の「全フェーズ max 固定」に合わせる)
 #
