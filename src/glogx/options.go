@@ -207,7 +207,8 @@ func Usage() string {
                             / 番号で絞り込み (部分一致。タブと状態を無視して全 issue から探す) /
                             p 番号コピー / y パスコピー / Y 参照 (番号+タイトル+パス) コピー /
                             N 次に採番すべき番号コピー / n 次にやる目印 (next/ へ移動) /
-                            a done も表示 / e・v $VISUAL・$EDITOR で開く (既定 nvim) /
+                            a done も表示 / u 本文中の URL ピッカー (本文表示中のみ) /
+                            e・v $VISUAL・$EDITOR で開く (既定 nvim) /
                             r 再読込 /
                             Tab・h・l タブ移動 / s status viewer へ切り替え / i 閉じる /
                             q・esc glogx ごと終了。
@@ -219,7 +220,7 @@ func Usage() string {
                             X 変更を捨てる (y/N 確認。untracked は削除) / d 全画面 diff /
                             Tab セクション移動 / r 再読込 / p pull --rebase (y/N 確認) /
                             i issues viewer へ切り替え / s 閉じる / q・esc glogx ごと終了。
-                            push (b) は viewer 内では無効。
+                            b で push (y/N 確認。一覧と同じキー)。
                             開いている間は別プロセスの編集を自動で反映する。
                             規約は docs/status-viewer-spec.md
   U                         Claude Code の /usage 残量を右上モーダルで表示 (toggle)
@@ -265,6 +266,7 @@ job 詳細ポップアップ表示中 (上から step 一覧 (結論+所要時�
   y                         URL コピー
   Y                         表示中の詳細を Markdown でコピー (job 一覧と同じ)
   r                         失敗 job を再実行 (job 一覧と同じ)
+  v                         表示中のログを $VISUAL・$EDITOR で開く (既定 nvim)
 
 diff ポップアップ表示中 (d で開く。ほぼ全画面のモーダル。less 流儀のスクロール):
   j / k / Enter / ↑ / ↓     1 行スクロール

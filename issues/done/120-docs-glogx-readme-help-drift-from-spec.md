@@ -48,3 +48,41 @@ README / `--help` を読んで「viewer 内から remote は触れない」と�
 (追加キーがセルに入らず散文へ逃げる)。viewer 系はセルに詰めず
 `docs/*-viewer-spec.md` の §3 キー表へリンクだけ張る形にすると正本が 1 つになる。
 **これは体裁の変更なので、直す人が判断すること。**
+
+---
+
+## 対応 (2026-08-28)
+
+**4 件とも実装を読んで裏を取ってから書き直した** (嘘を document しないため):
+
+| 記述 | 実装での確認 |
+|---|---|
+| status viewer の `b` = push | `tui.go:handleKey` の status 分岐 (spec §3 / hint と一致) |
+| `X` = codex update | `tui.go:1424` → `actModal.startCodexUpdate()` |
+| `w` = 直近の警告/エラーをコピー | `tui.go:1431` → `lastWarning`。ghErr の sticky 警告も fallback で拾う |
+| job 詳細の `v` | `tui.go:handleDetailKey` → `openJobLogInEditor()` (**job 一覧ではなく詳細ポップアップ**) |
+| issues viewer の `u` | `issues_view.go:handleBodyKey` (**本文表示中のみ**。一覧では効かない) |
+
+- `README.md` の `s` 行: 「`b` (push) は viewer 内では無効」→ spec §3 の内容 (開けた経緯つき) へ
+- `README.md` のキー表: `X` と `w` の行を追加
+- `README.md` の job 詳細ポップアップ節: 冒頭にキー一覧を追加 (`v` を含む)
+- `options.go` (`--help`): `b` の記述を修正 / issues viewer の列挙に `u` を追加 /
+  job 詳細ポップアップに `v` を追加
+
+### 機械的な検査は入れなかった (判断と、入れるなら何か)
+
+ドキュメントと実装の一致は静的検査に落としにくい。ただし**この repo は既に契約を持っている** —
+`issues_view.go:hint` の doc が「hint は収まる範囲へ絞り、**絞られたキーは --help と README を
+正本にする**」と書いている。つまり **hint に出るキーは必ず --help にある** (hint ⊆ help) が
+成り立つはずで、これは hint 文字列が Go のリテラルなので機械的に検査できる。
+
+今回入れなかったのは、hint 文字列から「キー」を切り出す規則 (`j/k:` `Ctrl-D` `Enter/h/q` 等の
+表記ゆれ) を決める必要があり、docs の修正より大きくなるため。**次に同じ追従漏れを踏んだら
+そこが起点**になる。
+
+### 構造の提案 (ぼやき由来。実施していない)
+
+`README.md` の「1 キー = 1 テーブルセルに数百字」という書き方が、今回の 4 件の共通の温床。
+追加キーがセルに入らず散文へ逃げる (`X` がまさにその形だった)。viewer 系はセルに詰めず
+`docs/*-viewer-spec.md` の §3 キー表へリンクだけ張ると正本が 1 つになるが、**体裁の変更なので
+判断が要る**。ここでは既存の形のまま行を足すに留めた。
