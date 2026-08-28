@@ -74,7 +74,31 @@ test-dir:
 	@[ -n "$(DIR)" ] || { echo "✗ DIR を指定してください (例: make test-dir DIR=tests/claude)" >&2; exit 1; }
 	@$(call run_tests,$(DIR))
 
-test-runtime: test-syntax test-discovered test-bats
+# run_all_targets は列挙したターゲットを**全部走らせてから**集約して失敗を返す。
+#
+# ⚠️ prerequisite に並べる形 (`test-runtime: a b c`) だと、先に落ちた 1 本で make が中断し、
+#   後続が **1 度も実行されないまま CI ログから消える** (issue 109)。2026-08-25 に 2 回起き、
+#   push 済みの tests/codex_fanout.bats の修正が数時間 CI 未検証のまま放置された
+#   (赤の原因が別にある間、bats は永久に走らない)。
+#   「CI が緑になったら確認する」は、この形では成立しない。
+#
+# ⚠️ 失敗したターゲット名を最後にまとめて出す。1 本目の失敗で埋もれると、後続の失敗が
+#   スクロールの上に隠れて「1 件だけ直せばよい」と誤読される。
+define run_all_targets
+targets="$(1)"; \
+[ -n "$$targets" ] || { echo "✗ run_all_targets に対象が 0 件 (呼び出しが壊れている)" >&2; exit 1; }; \
+failed=""; \
+for t in $$targets; do \
+	$(MAKE) $$t || failed="$$failed $$t"; \
+done; \
+if [ -n "$$failed" ]; then \
+	{ echo ""; echo "✗ 失敗したターゲット:$$failed"; } >&2; \
+	exit 1; \
+fi
+endef
+
+test-runtime:
+	@+$(call run_all_targets,test-syntax test-discovered test-bats)
 
 # tests/ 配下のテストを自動発見して実行する共通ルール。発見規約: test_*.sh (ファイル名に
 # *helper* を含むものは除く。ヘルパーは lib/ か非 test_ 名で置く)。この規約を満たすファイルを
@@ -82,10 +106,18 @@ test-runtime: test-syntax test-discovered test-bats
 # が構造的に発生しない。ファイル名の空白・改行は非対応 (旧・手動列挙時代と同じ前提)。
 # 発見 0 件は fail にする (テストを持つディレクトリしか対象にしないため、0 件 = ディレクトリの
 # 改名/不在や find の失敗がパイプに隠れて「未実行なのに成功」する状態。それを弾く)。
+# ⚠️ **fail-fast しない** (並列版 run_tests_parallel と揃える)。1 本目で止めると、
+#   ソート順で後ろのテストが **1 度も走らないまま CI ログから消える** (issue 109)。
+#   壁をターゲット境界からファイル境界へ動かしただけになる — 実際 109 の 1 次修正は
+#   test-bats を救っただけで、`.sh` 側の隠れは残っていた (敵対的レビューが実証)。
+#   失敗は一時ファイルへ集め、最後にまとめて出す (`while` はパイプの subshell なので変数が返らない)。
 define run_tests
 tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); \
 [ -n "$$tests" ] || { echo "✗ $(1) 配下にテストが見つかりません (find 失敗 or 0 件)。本当に test_*.sh が無いディレクトリなら、テストを足すか scripts/test_changed.sh の写像の振り先を直す (issue 063 の同型)" >&2; exit 1; }; \
-printf '%s\n' "$$tests" | while IFS= read -r t; do echo "[run] $$t"; "$$t" || exit 1; done
+fails=$$(mktemp); \
+printf '%s\n' "$$tests" | while IFS= read -r t; do echo "[run] $$t"; "$$t" || echo "$$t" >> "$$fails"; done; \
+if [ -s "$$fails" ]; then { echo ""; echo "✗ 失敗したテスト:"; sed 's/^/  /' "$$fails"; } >&2; rm -f "$$fails"; exit 1; fi; \
+rm -f "$$fails"
 endef
 
 # run_tests の並列版。各テストは独自 tempdir で独立しているものだけに使うこと
@@ -114,7 +146,9 @@ test-discovered:
 # GNU grep が無い macOS では **失敗する** (skip して緑を返さない)。詳細は
 # scripts/with_gnu_grep.sh の冒頭コメント。
 test-gnu:
-	@scripts/with_gnu_grep.sh $(MAKE) test-discovered test-bats
+	@rc=; scripts/with_gnu_grep.sh $(MAKE) test-discovered || rc=1; \
+		scripts/with_gnu_grep.sh $(MAKE) test-bats || rc=1; \
+		[ -z "$${rc:-}" ] || { echo "" >&2; echo "✗ test-gnu: 失敗あり (上の出力を確認)" >&2; exit 1; }
 
 # CI (tests.yml) の並列分割用。実行時間の大きい ffmpeg 系 (av1ify/concat) を heavy として
 # 分離し、rest は「tests/ 全体から heavy を除外」の除外方式にする。新ディレクトリは自動で
@@ -169,7 +203,8 @@ test-discovered-rest:
 	@$(call run_tests,tests $(CI_HEAVY_PRUNE))
 
 # CI の rest ジョブ入口 (test-runtime から test-discovered を rest に差し替えたもの)
-test-runtime-rest: test-syntax test-discovered-rest test-bats
+test-runtime-rest:
+	@+$(call run_all_targets,test-syntax test-discovered-rest test-bats)
 
 # 以下の test-<領域> は人間の選択実行用の便宜フィルタ (test-dir の別名)。test-runtime の
 # 実行経路は test-discovered に一本化されているため、新領域をここに足し忘れても死蔵は生まない。
@@ -188,8 +223,11 @@ test-zshrc:
 # .bats も同じ規約で自動発見する (発見 0 件なら何もせず成功)。bats 未インストール環境では skip。
 test-bats:
 	@if command -v bats >/dev/null 2>&1; then \
+		fails=$$(mktemp); \
 		find tests -type f -name '*.bats' ! -name '*helper*' | sort | \
-			while IFS= read -r t; do echo "[run] $$t"; bats "$$t" || exit 1; done; \
+			while IFS= read -r t; do echo "[run] $$t"; bats "$$t" || echo "$$t" >> "$$fails"; done; \
+		if [ -s "$$fails" ]; then { echo ""; echo "✗ 失敗した bats:"; sed 's/^/  /' "$$fails"; } >&2; rm -f "$$fails"; exit 1; fi; \
+		rm -f "$$fails"; \
 	else \
 		echo "bats not found, skipping bats tests"; \
 	fi
@@ -277,7 +315,11 @@ test-ruby-syntax:
 test-lint-tests:
 	@./scripts/lint_test_scripts.sh
 
-test-lint: test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers
+# ⚠️ prerequisite に並べない (issue 109 と同型)。12 本の直列だと 1 本目の失敗で残りが
+#   1 度も走らず、lint.yml は `make test-lint` の 1 ステップなので CI ログにも出ない。
+#   **末尾の新設検査ほど隠れやすい** (実測: test-json を落とすと後続 7 本が未実行)。
+test-lint:
+	@+$(call run_all_targets,test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers)
 
 # Go プロジェクトの静的解析とテスト。実体は各ディレクトリの Makefile の lint / test
 # ターゲットに閉じており、ここはそれへ委譲するだけ (ローカルのコミット前検証用。root の
