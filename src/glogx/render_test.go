@@ -669,6 +669,15 @@ func TestDropToColumnWidthInvariantWhereEnginesDisagree(t *testing.T) {
 		"日本語の コミット 12345",
 		// SGR を含む入力 (色を replay する経路を通す)
 		"\x1b[31mred\x1b[0m ಕಾ \x1b[32mgreen\x1b[0m",
+		// ⚠️ **分割器**の食い違いで壊れていた rune (issue 124)。幅を 1 本にしても
+		//   (issue 112)、クラスタ境界が 2 本あると不変条件は閉じない。
+		//   U+0897 / U+1ACF / U+113B8 / U+1E5EE は Unicode 16 で追加され、uniseg v0.4.7 (15.0)
+		//   は前の文字と結合せず別クラスタとして返す = 「クラスタ幅の総和 ≠ 全体の幅」。
+		//   これらを 1 つも含まないと、分割を uniseg へ戻す変更が green のまま通る。
+		//   **範囲の総当たり**は termwidth 側 (TestFirstClusterWidthsSumToOf) が持つ:
+		//   根の不変条件「クラスタ幅の総和 = 全体の幅」を守れば、それを当てにする
+		//   この経路も閉じる。ここは消費者側の代表ケースだけ置く
+		"ax\u0897z", "a\u1acfb", "a\u113b8b", "a\u1e5eeb", "\u10efa x",
 	} {
 		total := dispWidth(in)
 		for n := 0; n <= total; n++ {

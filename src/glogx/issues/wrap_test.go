@@ -134,3 +134,47 @@ func TestExpandTabs(t *testing.T) {
 		t.Fatalf("タブ位置がタブストップに揃っていない: %q (w=%d)", got, termwidth.Of(got))
 	}
 }
+
+// flattenSpans の分割は幅と同じエンジンを使う (issue 124)。
+//
+// 折り返しは「セル幅の総和」で行の幅を決めるので、分割器が幅の出典と別だと
+// 総和が行全体の幅と一致せず、**limit を超えた行**が出る (silent。ASCII / CJK / 絵文字では
+// 一致するので手元の目視では絶対に出ない)。render.go の dropToColumn と同型の欠陥で、
+// そちらだけ直すと同じバグがここに残る。
+func TestFlattenSpansClusterWidthsSumToTextWidth(t *testing.T) {
+	// ⚠️ Unicode 16 で追加され、uniseg v0.4.7 (15.0) が前の文字と結合しない rune を必ず含める。
+	//   これが無いと、分割を uniseg へ戻す変更が green のまま通る
+	for _, s := range []string{
+		"axࢗz", "a᫏b", "aᄻ8b", "aṞeb", "ჯa x",
+		"ಕಾ ಕಾ", "கா", "؀ arabic", "日本語のテキスト", "⚠️ 警告 🚀", "ASCII only",
+	} {
+		sum := 0
+		for _, c := range flattenSpans(textSpans(s)) {
+			sum += c.w
+		}
+		if want := termwidth.Of(s); sum != want {
+			t.Errorf("セル幅の総和が行全体の幅と食い違う: %q → 総和 %d / termwidth.Of %d", s, sum, want)
+		}
+	}
+}
+
+// 上の食い違いが実際に「limit を超える行」として現れることを、折り返しの出力側で pin する。
+func TestWrapSpansNeverExceedsLimitForDivergentClusters(t *testing.T) {
+	const limit = 6
+	for _, s := range []string{
+		"axࢗz axࢗz axࢗz",
+		"a᫏b a᫏b a᫏b",
+		"aᄻ8b aᄻ8b",
+		"ಕಾ ಕಾ ಕಾ ಕಾ",
+	} {
+		for i, line := range wrapSpans(textSpans(s), limit) {
+			w := 0
+			for _, sp := range line {
+				w += termwidth.Of(sp.Text)
+			}
+			if w > limit {
+				t.Errorf("行が limit を超えた: %q の %d 行目 幅 %d > %d", s, i+1, w, limit)
+			}
+		}
+	}
+}

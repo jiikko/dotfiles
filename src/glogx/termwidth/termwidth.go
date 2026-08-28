@@ -200,6 +200,31 @@ func acceptSymbol(r rune) bool {
 	return false
 }
 
+// FirstCluster は s の先頭の grapheme クラスタ 1 個と、その表示幅を返す。s が空なら ("", 0)。
+//
+// ⚠️ **分割は必ずこれを通す。uniseg で切って Of で測らないこと** (issue 124)。
+// 幅を 1 本にしても (issue 112)、**分割器がもう 1 本ある**と列不変条件
+// `Of(dropToColumn(s,n)) == Of(s)-n` は成立しない: 境界が食い違えば「クラスタごとの幅の
+// 総和 = 全体の幅」が破れるので、クラスタの幅を何で測ろうが直らない。
+// 実測 2026-08-27 (2-rune クラスタの全域走査): uniseg で切ると違反 757 件。原因は Unicode の
+// 版差で、uniseg v0.4.7 は 15.0 (graphemerules.go の宣言)、x/ansi v0.11.7 は 16。
+// 例: "axࢗz" (U+0897 は 16 で追加された結合マーク) は Of=3 だが uniseg は 4 クラスタに割る。
+// 件数は依存を上げるたびに動く (uniseg が 16 に上がれば 0、次の版でまた出る) ので、
+// **版を追うのではなく出典を 1 本にして構造で閉じる**。
+//
+// 幅は ansi が分割と同時に返す値をそのまま使う (Of で測り直さない。同じ Method なので
+// 値は一致するが、測り直す形は「分割と幅が別経路」を復活させる入口になる)。
+//
+// 契約: 入力が非空なら**必ず非空のクラスタ**を返す。呼び出し側は `s = s[len(cluster):]` で
+// 前進するので、空を返すと無限ループになる (TUI では固まる)。この性質は
+// TestFirstClusterWidthsSumToOf が 2 rune クラスタの全域で確かめている。
+func FirstCluster(s string) (cluster string, width int) {
+	if s == "" {
+		return "", 0
+	}
+	return ansi.FirstGraphemeCluster(s, ansi.GraphemeWidth)
+}
+
 // Truncate は表示幅 width まで切り詰め末尾に tail を付す。SGR は保持する。
 func Truncate(s string, width int, tail string) string { return ansi.Truncate(s, width, tail) }
 

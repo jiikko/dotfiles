@@ -5,7 +5,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/rivo/uniseg"
 
 	"glogx/termwidth"
 )
@@ -78,10 +77,12 @@ func flattenSpans(spans []span) []cell {
 	}
 	cells := make([]cell, 0, n)
 	for _, sp := range spans {
-		g := uniseg.NewGraphemes(sp.Text)
-		for g.Next() {
-			c := g.Str()
-			cells = append(cells, cell{text: c, w: termwidth.Of(c), style: sp.Style})
+		// ⚠️ 分割と幅は同じエンジンから同時に受け取る (termwidth.FirstCluster の doc が正本)。
+		// 別の分割器で切ると「セル幅の総和 ≠ 行全体の幅」になり、折り返し位置がずれる
+		for rest := sp.Text; rest != ""; {
+			c, w := termwidth.FirstCluster(rest)
+			cells = append(cells, cell{text: c, w: w, style: sp.Style})
+			rest = rest[len(c):]
 		}
 	}
 	return cells

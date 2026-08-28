@@ -92,6 +92,46 @@ WcWidth 側になる」)。つまり既知の未解決事項。
 
 ---
 
+## 進捗 (2026-08-28): (1) 解決 — 分割も x/ansi へ寄せた
+
+**(1) は (2)(3) と独立** (端末が何セル割り当てるかを知らなくても、glogx の内部整合は決められる)
+ので先に閉じた。
+
+`termwidth.FirstCluster` を足し、**分割と幅を同じ呼び出しから同時に受け取る**形にした
+(`ansi.FirstGraphemeCluster(s, ansi.GraphemeWidth)`)。x/ansi が分割 API を持っていたので、
+uniseg を上げる / `dropToColumn` を作り替える、の 2 案は採らなくて済んだ。
+
+直した呼び出し地点は 2 つ。issue が挙げていたのは `render.go:dropToColumn` だけだが、
+**`issues/wrap.go:flattenSpans` が同型**だった (uniseg で切って `termwidth.Of` で測る。
+折り返しはセル幅の総和で行幅を決めるので、総和が行全体の幅とずれると limit を超えた行が出る)。
+
+`clusterWidth` は呼び出し元が消えたので削除した (幅は分割器が返す値をそのまま使う。
+測り直す形は「分割と幅が別経路」を復活させる入口になる)。
+
+### 実測 (2026-08-28、この repo の依存で)
+
+| 分割器 | 2-rune クラスタ全域走査の違反 |
+|---|---|
+| uniseg (旧) | **744 件 / 93 rune** |
+| x/ansi (新) | **0 件** |
+
+走査は base 8 種 (`a x あ 漢 1 空白 🚀 ⚠`) × 第 2 rune `U+0020..U+2FFFF` × 全列。
+違反 rune は issue 本文の一覧と一致 (U+0897 / U+1ACF..U+1ADD / U+113B8 群 / U+1E5EE 群 等)。
+
+性能も測った (dropToColumn の micro bench、3 入力 × 6 列 × 3 run):
+**11.8µs/op → 4.6µs/op (2.55 倍速)**、確保は 440 B / 16 allocs で不変。
+frame 系の bench (`view_panel_alloc_kb` 35.57 / 予算 36.7、`view_diff_alloc_kb` 46.37 / 予算 47.8) も予算内。
+
+### 回帰の守り方
+
+- `render_test.go`: 明示ケースに U+0897 等を追加 + **全域走査テスト**を新設。
+  手で列挙した rune の集合は依存を上げると動く (uniseg が 16 に上がれば 0 件になり次の版でまた出る)
+  ので、列挙を追わずに範囲を総当たりして 0 件を維持する。走査が空振りしていないことも件数で見る
+- `issues/wrap_test.go`: セル幅の総和 == 行全体の幅 / 折り返し行が limit を超えない
+- `.golangci.yml`: depguard の uniseg 除外から `render.go` / `issues/wrap.go` を外した
+  (本体から uniseg が消えたので、import ごと止まる)
+- 変異検証: HEAD (uniseg 分割) に新テストだけを載せて 2 箇所とも red を確認 (worktree で実施)
+
 ## 進捗 (2026-08-28): 測れるようにした
 
 (3)「判断に必要な実測ができない」を解いた。**probe に文字を足すだけでは足りなかった** —
@@ -134,4 +174,5 @@ Apple 系では 2027 を問い合わせすらしない。
 ### 次
 
 → [issue 127](127-human-verify-glogx-width-model.md) で実端末の測定を依頼した。
-それが返るまで (1)(2) の方向は決められない、という 124 の判断は変わらない。
+**(2) はこれが返るまで決められない** ((1) は上のとおり測定なしで閉じた)。
+残っているのはこの issue では (2) だけ。

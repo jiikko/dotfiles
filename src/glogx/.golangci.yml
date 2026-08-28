@@ -68,14 +68,15 @@ linters:
           deny:
             - pkg: github.com/mattn/go-runewidth
               desc: 幅は termwidth.Of (ansi.StringWidth) で測る (locale 非依存。main では dispWidth 別名)
-        # uniseg は grapheme クラスタの**分割**にだけ使う。幅を測らせないため、分割が要る
-        # 2 ファイル以外からは import ごと禁止する (import 別名を使った持ち込みもここで止まる。
-        # シンボル名の走査は width_test.go:TestNoSecondWidthEngine が担当 (termwidth/ も走査範囲)。両輪。issue 112)
+        # uniseg は本体から一切使わない。**幅だけでなく分割も** x/ansi に一本化したため
+        # (termwidth.FirstCluster。issue 124)。以前は「分割にだけ使う」として render.go /
+        # issues/wrap.go を除外していたが、分割器が 2 本ある限り列不変条件は閉じなかった
+        # (uniseg=Unicode 15 / x/ansi=16 の版差で 2-rune クラスタの走査に違反 744 件)。
+        # import 別名を使った持ち込みもここで止まる。シンボル名の走査は
+        # width_test.go:TestNoSecondWidthEngine が担当 (termwidth/ も走査範囲)。両輪。
         uniseg-split-only:
           files:
             - "**/*.go"
-            - "!**/render.go"
-            - "!**/issues/wrap.go"
             - "!**/width_test.go"
             - "!**/width_fast_test.go"   # fast-path の受理集合をクラスタ数で総当たり検証する (幅は測らない)
             # width-probe は「端末がどの幅モデルと一致するか」を測る道具で、3 モデル
@@ -84,7 +85,7 @@ linters:
             - "!**/tools/width-probe/main.go"
           deny:
             - pkg: github.com/rivo/uniseg
-              desc: uniseg は分割専用 (render.go / issues/wrap.go)。幅は dispWidth を通す (issue 112)
+              desc: 分割も幅も termwidth に一本化した (termwidth.FirstCluster / dispWidth)。uniseg は使わない (issue 124)
         render-pure:
           # render.go は「状態 → 文字列」の純粋な描画層。I/O・プロセス起動・非同期を
           # 持ち込むと TUI (毎フレーム呼ばれる) の性能とテスト容易性が壊れる

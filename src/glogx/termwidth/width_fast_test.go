@@ -285,3 +285,48 @@ func isEastAsianChild() bool {
 	}
 	return false
 }
+
+// FirstCluster の分割と Of の幅が同じエンジンであること = 「クラスタ幅の総和 = 全体の幅」を
+// **2 rune クラスタの全域走査**で閉じる (issue 124)。
+//
+// これが根の不変条件で、これを当てにしている消費者が 2 つある:
+// main の dropToColumn (`Of(drop(s,n)) == Of(s)-n`) と issues の折り返し (セル幅の総和で行幅を決める)。
+// 総和がずれると、消費者側は何で幅を測っても直らない。
+//
+// なぜ範囲の総当たりか: 壊れる rune の集合は**依存を上げると動く**。分割が uniseg だった頃の
+// 違反は 744 件 / 93 rune (U+0897・U+1ACF..U+1ADD・U+113B8 群 等) だが、これは
+// uniseg v0.4.7 が Unicode 15、x/ansi v0.11.7 が 16 という版差の産物で、uniseg が 16 に
+// 上がれば 0 件になり、次の Unicode 版でまた別の rune が増える。列挙を追うのではなく
+// 「範囲を総当たりして 0 件」を維持する。
+func TestFirstClusterWidthsSumToOf(t *testing.T) {
+	// 後続 rune がどの base に付くかで境界規則が変わる (ASCII / 全角 / 絵文字 / 空白)
+	bases := []rune{'a', 'x', 'あ', '漢', '1', ' ', '🚀', '⚠'}
+	checked := 0
+	for _, b := range bases {
+		for r := rune(0x20); r <= 0x2FFFF; r++ {
+			if r >= 0xD800 && r <= 0xDFFF { // サロゲートは単独では文字にならない
+				continue
+			}
+			s := string(b) + string(r)
+			checked++
+			sum := 0
+			for rest := s; rest != ""; {
+				c, w := FirstCluster(rest)
+				if c == "" { // 前進しない = 無限ループ。分割器が壊れている
+					t.Fatalf("FirstCluster が空を返した: %q の残り %q", s, rest)
+				}
+				sum += w
+				rest = rest[len(c):]
+			}
+			if want := Of(s); sum != want {
+				t.Fatalf("クラスタ幅の総和が全体の幅と食い違う: %q (U+%04X + U+%04X) 総和 %d / Of %d",
+					s, b, r, sum, want)
+			}
+		}
+	}
+	// 走査が空振りしていないこと (range の書き換えや continue の増設で 0 件になると
+	// 「違反 0 件」が「1 つも試していない」を意味しうる)
+	if want := len(bases) * 0x2F000; checked < want {
+		t.Fatalf("走査した組み合わせが %d 件しかない (期待 %d 件以上。走査が空振りしている)", checked, want)
+	}
+}

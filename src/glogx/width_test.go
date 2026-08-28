@@ -104,10 +104,14 @@ func TestOverlayCompositeWidthWithEmoji(t *testing.T) {
 
 // TestNoSecondWidthEngine は「表示幅を測るのは dispWidth ただ 1 系統」を強制する (issue 112)。
 //
-// なぜ depguard でなくテストか: depguard は**パッケージ単位**でしか禁止できず、uniseg は
-// grapheme クラスタの**分割**に正当に使われている (render.go / issues/wrap.go)。
-// パッケージごと deny すると正当な用途まで巻き込むので、シンボルを名指しで止める。
-// (import そのものの禁止は .golangci.yml の depguard `width-single-source` が担当。両輪)
+// なぜ depguard でなくテストか: depguard は**パッケージ単位**でしか禁止できず、
+// 「同じパッケージの中の 2 本目のモデル」(ansi.StringWidthWc) を止められない。
+// import そのものの禁止は .golangci.yml の depguard (`width-single-source` /
+// `uniseg-split-only`) が担当する。両輪。
+// ⚠️ issue 124 で uniseg は本体から消えた (分割も termwidth.FirstCluster へ寄せた) ので、
+// 下の importsUniseg 分岐が守るのは「uniseg を再び持ち込んだファイル」だけになった。
+// depguard がその import 自体を止めるため二重だが、depguard の除外リストを緩めた瞬間に
+// 効き始める側なので残す。
 //
 // ⚠️ この検査は文字列一致なので万能ではない。敵対的レビュー (2026-08-27) が
 // **識別子 1 語の書き換えで素通りする経路**を実証した:

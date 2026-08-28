@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/rivo/uniseg"
 
 	"glogx/sgr"
 )
@@ -629,9 +628,9 @@ func dropToColumn(s string, n int) string {
 			i = j
 			continue
 		}
-		// 次の grapheme クラスタを 1 個。⚠️ 等の複数 rune クラスタを分断/誤幅にしない
-		cluster, _, _, _ := uniseg.FirstGraphemeClusterInString(s[i:], -1)
-		cw := clusterWidth(cluster)
+		// 次の grapheme クラスタを 1 個。⚠️ 等の複数 rune クラスタを分断/誤幅にしない。
+		// 分割と幅は同じエンジンから同時に受け取る (termwidth.FirstCluster の doc が正本)
+		cluster, cw := firstCluster(s[i:])
 		if w+cw > n { // 全角グリフが cut をまたいだ: そのグリフを落とし列 n に揃えて空白で埋める
 			i += len(cluster)
 			return sgr.String() + padSpaces((w+cw)-n) + s[i:]
