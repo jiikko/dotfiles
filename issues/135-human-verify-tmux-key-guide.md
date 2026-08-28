@@ -1,4 +1,4 @@
-# 133 human: prefix キーガイド (status-right) と prefix+? の一覧を実 tmux で確認する
+# 135 human: prefix キーガイド (status-right) と prefix+? の一覧を実 tmux で確認する
 
 起票日: 2026-08-28
 期限: 2026-09-05
