@@ -638,3 +638,26 @@ func TestEscapeStepsBackThroughFields(t *testing.T) {
 		t.Errorf("2 回目の Esc でメニューへ降りない (screen=%v)", m2.screen)
 	}
 }
+
+// --start pick で一覧から開けること (取消のあとシェルが開き直すために使う)。
+// ⚠️ 予約が 0 件のときは一覧を開かない (空の一覧を見せない。menuItems の enabled と同じ判断)。
+func TestStartAtPick(t *testing.T) {
+	jobs := []job{{id: "a", at: now.Add(time.Hour), label: "x", text: "make test"}}
+	m := newTestModel(jobs...)
+	m.startAt("pick")
+	if m.screen != screenPick {
+		t.Errorf("--start pick で一覧から始まらない (screen=%v)", m.screen)
+	}
+	// 0 件なら一覧へは入らない
+	m2 := newTestModel()
+	m2.startAt("pick")
+	if m2.screen != screenMenu {
+		t.Errorf("0 件なのに一覧から始まった (screen=%v)", m2.screen)
+	}
+	// 指定なしはメニュー
+	m3 := newTestModel(jobs...)
+	m3.startAt("")
+	if m3.screen != screenMenu {
+		t.Errorf("指定なしでメニューから始まらない (screen=%v)", m3.screen)
+	}
+}

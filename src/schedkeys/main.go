@@ -33,6 +33,7 @@ func main() {
 	jobsPath := flag.String("jobs", "", "予約一覧の TSV (id/epoch/label/text)")
 	outPath := flag.String("out", "", "結果を書くファイル (必須)")
 	togglePrefix := flag.String("toggle-prefix", "", "tmux の prefix キー (例 C-t)。これに続けて m / Enter を押すと閉じる")
+	start := flag.String("start", "", "最初に開く画面 (空 = メニュー / pick = 予約一覧)")
 	flag.Parse()
 
 	if *outPath == "" {
@@ -54,6 +55,7 @@ func main() {
 
 	m := newModel(*label, time.Now(), jobs)
 	m.togglePrefix = teaKeyName(*togglePrefix)
+	m.startAt(*start)
 	p := tea.NewProgram(m, tea.WithInput(tty), tea.WithOutput(tty))
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "schedkeys: %v\n", err)

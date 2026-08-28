@@ -57,6 +57,14 @@ func newModel(label string, now time.Time, jobs []job) *model {
 	return &model{label: label, now: now, jobs: jobs, form: newForm(), width: 70, height: 14, nowFn: time.Now}
 }
 
+// startAt は最初に開く画面を選ぶ。取消のあと一覧へ戻すために呼び出し側 (シェル) が指定する。
+// ⚠️ 予約が 0 件のときは一覧を開かない (menuItems の enabled と同じ判断。空の一覧を見せない)。
+func (m *model) startAt(name string) {
+	if name == "pick" && len(m.jobs) > 0 {
+		m.screen = screenPick
+	}
+}
+
 func (m *model) Init() tea.Cmd { return tickCmd() }
 
 type tickMsg struct{}

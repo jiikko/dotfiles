@@ -97,8 +97,12 @@ exit 0
 EOS2
 chmod +x "$TMP_DIR/bin/gum"
 
-# stub schedkeys (対話 UI): 渡された --jobs を控え、STUB_UI_RESULT を --out へ書く。
-# 中止は out に "abort" (STUB_UI_RESULT=abort)、UI が動かない場合は STUB_UI_EXIT で 0 以外を返す
+# stub schedkeys (対話 UI): 渡された --jobs を控え、結果を --out へ書く。
+# 1 回きりなら STUB_UI_RESULT、対話の流れ (取消 → 一覧 → 閉じる 等) は STUB_UI_RESULTS に
+# 改行区切りで積む (1 起動につき 1 行を消費し、尽きたら "abort")。
+# ⚠️ 同じ結果を返し続ける stub にしないこと: 呼び出し側が「取消したら一覧へ戻る」ループを持つので、
+#    実際に無限に回った (2026-08-28)。対話の終わりまで模す
+# 中止は out の "abort"、UI が動かない場合は STUB_UI_EXIT で 0 以外を返す
 cat > "$TMP_DIR/bin/schedkeys" <<'EOS2'
 #!/bin/sh
 echo "schedkeys $*" >> "$CALLS"
@@ -110,10 +114,20 @@ while [ $# -gt 0 ]; do
     *) shift ;;
   esac
 done
-[ -n "$jobs" ] && [ -f "$jobs" ] && cp "$jobs" "$STUB_UI_JOBS_COPY"
+[ -n "$jobs" ] && [ -f "$jobs" ] && cp "$jobs" "$STUB_UI_JOBS_COPY.$$" && mv "$STUB_UI_JOBS_COPY.$$" "$STUB_UI_JOBS_COPY"
+[ -n "$jobs" ] && [ -f "$jobs" ] && cat "$jobs" >> "$STUB_UI_JOBS_ALL"
+result="${STUB_UI_RESULT:-}"
+if [ -n "${STUB_UI_QUEUE:-}" ]; then
+  if [ -s "$STUB_UI_QUEUE" ]; then
+    result="$(head -n1 "$STUB_UI_QUEUE")"
+    tail -n +2 "$STUB_UI_QUEUE" > "$STUB_UI_QUEUE.tmp" && mv "$STUB_UI_QUEUE.tmp" "$STUB_UI_QUEUE"
+  else
+    result="abort"
+  fi
+fi
 # 中止でも out に中身を残す形を模す (mktemp の使い回し・途中書き)。呼び出し側は
 # 「終了コードが非 0 なら結果を使わない」ことで守る
-printf '%s\n' "${STUB_UI_RESULT:-}" > "$out"
+printf '%s\n' "$result" > "$out"
 exit "${STUB_UI_EXIT:-0}"
 EOS2
 chmod +x "$TMP_DIR/bin/schedkeys"
@@ -137,11 +151,26 @@ export TMUX_SCHEDULE_KEYS_UI="$TMP_DIR/bin/schedkeys"
 STUB_PATH="$TMP_DIR/bin:/usr/bin:/bin"
 NOGUM_PATH="$TMP_DIR/bin_nogum:/usr/bin:/bin"
 export STUB_UI_JOBS_COPY="$TMP_DIR/ui_jobs.tsv"
+export STUB_UI_JOBS_ALL="$TMP_DIR/ui_jobs_all.tsv"
+export STUB_UI_QUEUE=""
+
+# ui_queue は「UI が起動ごとに返す結果」を積む (対話の流れを模す)。
+ui_queue() {
+  STUB_UI_QUEUE="$TMP_DIR/ui_queue"
+  : > "$STUB_UI_QUEUE"
+  local r
+  for r in "$@"; do printf '%s\n' "$r" >> "$STUB_UI_QUEUE"; done
+}
 RUN_OUT="$TMP_DIR/out.log"; RUN_ERR="$TMP_DIR/err.log"
 # shellcheck source=tests/tmux/lib/stub_assert_helper.sh
 . "$ROOT_DIR/tests/tmux/lib/stub_assert_helper.sh"
 jobs_count() { find "$TMUX_SCHEDULE_KEYS_DIR" -name '*.job' 2>/dev/null | wc -l | tr -d ' '; }
-reset_state() { rm -rf "$TMUX_SCHEDULE_KEYS_DIR"; reset_calls; }
+reset_state() {
+  rm -rf "$TMUX_SCHEDULE_KEYS_DIR"
+  rm -f "$STUB_UI_JOBS_COPY" "$STUB_UI_JOBS_ALL"
+  STUB_UI_QUEUE=""
+  reset_calls
+}
 
 # shellcheck source=tests/tmux/lib/stub_env.sh
 . "$ROOT_DIR/tests/tmux/lib/stub_env.sh"
@@ -415,18 +444,58 @@ done
 
 printf '\n## cancel: 発火済み・不在の予約は「取り消した」と言わない\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-STUB_GUM_EXIT=0 STUB_UI_RESULT="cancel	vanished" run "$STUB_PATH" "$SCRIPT" wizard
+ui_queue "cancel	vanished"; STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
 assert_called "display-message その予約はもうありません" "既に無い予約の取消は、その旨を出す (黙って何もしない、にしない)"
 assert_not_called "display-message 予約を取り消した" "取り消していないのに成功を出さない"
 
 printf '\n## cancel: 確認を読んでいる間に発火したら「取り消した」と言わない\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 spawn_sleeper racy; racy_pid=$SLEEPER_PID
-STUB_GUM_EXIT=0 STUB_GUM_FIRE_JOB="$TMUX_SCHEDULE_KEYS_DIR/racy.job" \
-  STUB_UI_RESULT="cancel	racy" run "$STUB_PATH" "$SCRIPT" wizard
+ui_queue "cancel	racy"; STUB_GUM_EXIT=0 STUB_GUM_FIRE_JOB="$TMUX_SCHEDULE_KEYS_DIR/racy.job" run "$STUB_PATH" "$SCRIPT" wizard
 assert_called "display-message 取り消せませんでした" "確認中に発火していたら、その事実を伝える"
 assert_not_called "display-message 予約を取り消した" "止めていないのに「取り消した」と言わない"
 kill "$racy_pid" 2>/dev/null || true
+
+printf '\n## cancel: 取り消したら一覧へ戻る (popup を閉じない)\n'
+# ⚠️ 取消の実行はシェル側 (gum の確認つき) なので、UI をいったん閉じる必要がある。閉じたまま
+# 終わると「1 件消すたびに popup が閉じる」ことになる (ユーザー要望 2026-08-28)。
+# 更新した一覧で UI を開き直し、--start pick で一覧の画面から始める
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+spawn_sleeper keep1
+spawn_sleeper drop1
+ui_queue "cancel	drop1" "abort"   # 1 件消して、次の一覧で閉じる
+STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
+[[ "$RC" -eq 0 ]] || { printf '✗ wizard が exit %s\n' "$RC"; cat "$RUN_ERR"; exit 1; }
+# UI が 2 回起動し、2 回目は一覧から始まること
+ui_starts=$(grep -c '^schedkeys --label' "$CALLS")
+[[ "$ui_starts" == 2 ]] || { printf '✗ UI の起動が %s 回 (取消後に開き直していない)\n%s\n' "$ui_starts" "$(grep '^schedkeys' "$CALLS")"; exit 1; }
+grep -q '^schedkeys .*--start pick' "$CALLS" || { printf '✗ 2 回目が一覧から始まっていない:\n%s\n' "$(grep '^schedkeys' "$CALLS")"; exit 1; }
+printf '✓ 取消のあと一覧を開き直す (--start pick)\n'
+# 開き直した一覧から、消した予約が消えていること
+grep -q 'drop1' "$STUB_UI_JOBS_COPY" && { printf '✗ 取り消した予約が一覧に残っている:\n%s\n' "$(cat "$STUB_UI_JOBS_COPY")"; exit 1; }
+grep -q 'keep1' "$STUB_UI_JOBS_COPY" || { printf '✗ 消していない予約まで一覧から消えた:\n%s\n' "$(cat "$STUB_UI_JOBS_COPY")"; exit 1; }
+printf '✓ 開き直した一覧は取消を反映している\n'
+[[ "$(jobs_count)" == 1 ]] || { printf '✗ job が %s 件 (1 件だけ消えるべき)\n' "$(jobs_count)"; exit 1; }
+
+printf '\n## cancel: 続けて取り消せる (毎回閉じない)\n'
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+spawn_sleeper a1
+spawn_sleeper a2
+ui_queue "cancel	a1" "cancel	a2" "abort"
+STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
+[[ "$RC" -eq 0 ]] || { printf '✗ wizard が exit %s\n' "$RC"; exit 1; }
+[[ "$(jobs_count)" == 0 ]] || { printf '✗ 2 件目が消えていない (%s 件)\n' "$(jobs_count)"; exit 1; }
+[[ "$(grep -c '^schedkeys --label' "$CALLS")" == 3 ]] || { printf '✗ UI の起動回数が想定と違う:\n%s\n' "$(grep -c '^schedkeys --label' "$CALLS")"; exit 1; }
+printf '✓ 閉じずに続けて取り消せる\n'
+
+printf '\n## wizard: UI が同じ結果を返し続けても止まる\n'
+# ⚠️ ループに上限が無いと、壊れた UI で無限に回る (実際に踏んだ 2026-08-28)
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+spawn_sleeper stuck
+STUB_GUM_EXIT=0 STUB_UI_RESULT="cancel	stuck" run "$STUB_PATH" "$SCRIPT" wizard   # キューを使わない = 同じ結果を返し続ける
+[[ "$RC" -ne 0 ]] || { printf '✗ 同じ結果を返し続ける UI で成功として終わった\n'; exit 1; }
+grep -q '上限' "$XDG_CACHE_HOME/tt-schedule-keys.log" || { printf '✗ 打ち切りがログに残らない\n'; exit 1; }
+printf '✓ 上限で打ち切る (無限に回らない)\n'
 
 printf '\n## cancel: 成否は「job を先に取れたか」で決まる\n'
 # ⚠️ kill の成否では決めない。fire は送信直前に TERM を無視するので、kill が exit 0 でも送信は
@@ -434,7 +503,7 @@ printf '\n## cancel: 成否は「job を先に取れたか」で決まる\n'
 # 「取り消した」は嘘ではない。判定は rename (原子的な claim) の成否
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 spawn_sleeper crashed; crashed_pid=$SLEEPER_PID
-STUB_GUM_EXIT=0 STUB_GUM_KILL_PID="$crashed_pid" STUB_UI_RESULT="cancel	crashed" run "$STUB_PATH" "$SCRIPT" wizard
+ui_queue "cancel	crashed"; STUB_GUM_EXIT=0 STUB_GUM_KILL_PID="$crashed_pid" run "$STUB_PATH" "$SCRIPT" wizard
 assert_called "display-message 予約を取り消した" "sleeper が死んでいても job を取れたなら取り消し成立 (送られないので嘘ではない)"
 [[ "$(jobs_count)" == 0 ]] || { printf '✗ 後片付けができていない\n'; exit 1; }
 [[ -z "$(find "$TMUX_SCHEDULE_KEYS_DIR" -name '*.cancelled' -o -name '*.claimed' 2>/dev/null)" ]] \
@@ -457,7 +526,7 @@ printf '✓ 開けない job は一覧に出さない (前の値を引きずら�
 printf '\n## cancel: UI が選んだ予約を確認してから取り消す\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 spawn_sleeper live; live_pid=$SLEEPER_PID
-STUB_GUM_EXIT=0 STUB_UI_RESULT="cancel	live" run "$STUB_PATH" "$SCRIPT" wizard
+ui_queue "cancel	live"; STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
 [[ "$RC" -eq 0 ]] || { printf '✗ wizard (cancel) が exit %s\n' "$RC"; cat "$RUN_ERR"; exit 1; }
 /bin/sleep 0.3
 kill -0 "$live_pid" 2>/dev/null && { printf '✗ 取消したのに sleeper が生きている\n'; exit 1; }
@@ -468,7 +537,7 @@ printf '✓ 取消確認は --default=false (Enter 素通しでは消えない)\
 
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 spawn_sleeper live; live_pid=$SLEEPER_PID
-STUB_GUM_EXIT=1 STUB_UI_RESULT="cancel	live" run "$STUB_PATH" "$SCRIPT" wizard
+ui_queue "cancel	live"; STUB_GUM_EXIT=1 run "$STUB_PATH" "$SCRIPT" wizard
 kill -0 "$live_pid" 2>/dev/null || { printf '✗ 取消を拒否したのに sleeper が死んだ\n'; exit 1; }
 [[ "$(jobs_count)" == 1 ]] || { printf '✗ 取消拒否で job が消えた\n'; exit 1; }
 printf '✓ 取消拒否 → 何もしない\n'
@@ -476,7 +545,7 @@ kill "$live_pid" 2>/dev/null || true
 
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 spawn_sleeper live; live_pid=$SLEEPER_PID
-STUB_UI_RESULT="cancel	live" run "$NOGUM_PATH" "$SCRIPT" wizard
+ui_queue "cancel	live"; run "$NOGUM_PATH" "$SCRIPT" wizard
 kill -0 "$live_pid" 2>/dev/null || { printf '✗ gum 未導入なのに取り消された (fail-safe の && 短絡)\n'; exit 1; }
 [[ "$(jobs_count)" == 1 ]] || { printf '✗ gum 未導入で job が消えた\n'; exit 1; }
 printf '✓ gum 未導入 (exit 127) → 取り消さない\n'
@@ -484,7 +553,7 @@ kill "$live_pid" 2>/dev/null || true
 
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 spawn_sleeper live; live_pid=$SLEEPER_PID
-STUB_GUM_EXIT=0 STUB_UI_RESULT="cancel	no-such-id" run "$STUB_PATH" "$SCRIPT" wizard
+ui_queue "cancel	no-such-id"; STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
 kill -0 "$live_pid" 2>/dev/null || { printf '✗ 存在しない id の取消で無関係な sleeper が死んだ\n'; exit 1; }
 [[ "$(jobs_count)" == 1 ]] || { printf '✗ 存在しない id の取消で job が消えた\n'; exit 1; }
 assert_not_called "gum confirm" "存在しない id → 確認まで進まない"
@@ -557,7 +626,7 @@ reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 spawn_sleeper j-55; long_pid=$SLEEPER_PID
 write_job j-5 "$(( $(/bin/date +%s) + 3600 ))" "make test"
 printf '%s\n' "$long_pid" > "$TMUX_SCHEDULE_KEYS_DIR/j-5.pid"   # pid 再利用を模す
-STUB_GUM_EXIT=0 STUB_UI_RESULT="cancel	j-5" run "$STUB_PATH" "$SCRIPT" wizard
+ui_queue "cancel	j-5"; STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
 /bin/sleep 0.3
 kill -0 "$long_pid" 2>/dev/null || { printf '✗ j-5 の取消が別 id (j-55) の sleeper を殺した\n'; exit 1; }
 [[ -f "$TMUX_SCHEDULE_KEYS_DIR/j-55.job" ]] || { printf '✗ 別 id (j-55) の job まで消した\n'; exit 1; }
@@ -579,7 +648,7 @@ printf '\n## 通知: 予約文字列の # がフォーマットとして展開�
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 spawn_sleeper hashy
 write_job hashy "$(( $(/bin/date +%s) + 3600 ))" 'echo #{pane_id} # note'
-STUB_GUM_EXIT=0 STUB_UI_RESULT="cancel	hashy" run "$STUB_PATH" "$SCRIPT" wizard
+ui_queue "cancel	hashy"; STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
 assert_called 'display-message 予約を取り消した: echo ##{pane_id} ## note' "# を ## にして展開を止める"
 
 printf '\n## 一覧: 表示名のタブで列がずれない\n'
@@ -598,7 +667,7 @@ printf '\n## 取消の確認に残り時間が出る\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 spawn_sleeper remain
 write_job remain "$(( $(/bin/date +%s) + 3540 ))" "make test"
-STUB_GUM_EXIT=1 STUB_UI_RESULT="cancel	remain" run "$STUB_PATH" "$SCRIPT" wizard
+ui_queue "cancel	remain"; STUB_GUM_EXIT=1 run "$STUB_PATH" "$SCRIPT" wizard
 assert_called "gum confirm" "確認を出す"
 grep -E '^gum confirm .*59m' "$CALLS" >/dev/null \
   || { printf '✗ 確認に残り時間が出ていない:\n%s\n' "$(grep '^gum confirm' "$CALLS")"; exit 1; }

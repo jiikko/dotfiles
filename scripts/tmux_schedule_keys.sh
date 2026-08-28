@@ -160,13 +160,13 @@ prune_stale() {
 #    「押しても何も起きないキー」になり、原因がどこにも残らない (監査 2026-08-28)。
 #    中止は UI が out へ "abort" と書いて exit 0 で知らせる契約
 ui_run() {
-  local jobs_file=$1 label=$2 out rc=0
+  local jobs_file=$1 label=$2 start=${3:-} out rc=0
   out="$(mktemp "${TMPDIR:-/tmp}/schedkeys.XXXXXX")" || return 1
   # popup が開いている間 prefix は tmux のキーテーブルへ届かず UI に素通りする (実測 2026-08-28)。
   # prefix キーを渡しておくと、起動キー (prefix+m / Enter / C-m) の再入力で閉じられる
   local prefix_key
   prefix_key="$(tmux show-options -gv prefix 2>/dev/null || true)"
-  "$UI" --label "$label" --jobs "$jobs_file" --out "$out" --toggle-prefix "$prefix_key" || rc=$?
+  "$UI" --label "$label" --jobs "$jobs_file" --out "$out" --toggle-prefix "$prefix_key" --start "$start" || rc=$?
   REPLY_UI=''
   if (( rc == 0 )); then IFS= read -r REPLY_UI < "$out" || REPLY_UI=''; fi
   rm -f "$out"
@@ -387,7 +387,7 @@ toast() {
 }
 
 cmd_wizard() {
-  local pane label jobs_file tab
+  local pane label jobs_file tab start="" ui_rc f1 f2 f3 extra
   tab=$'\t'
   # ⚠️ popup が外から閉じられる (ウィンドウを閉じる / kill-session) と成功パスの rm を通らず、
   #    全予約の文字列を含む一時ファイルが TMPDIR に残る (監査 2026-08-28)
@@ -395,34 +395,50 @@ cmd_wizard() {
   trap 'rm -f "${jobs_file:-}" 2>/dev/null' EXIT
   pane="$(tmux display-message -p '#{pane_id}')" || return 1
   label="$(pane_label "$pane")"
-  prune_stale
   jobs_file="$(mktemp "${TMPDIR:-/tmp}/schedkeys-jobs.XXXXXX")" || return 1
-  jobs_tsv "$jobs_file"
-  ui_run "$jobs_file" "$label"; local ui_rc=$?
-  rm -f "$jobs_file"
-  case "$ui_rc" in
-    0) ;;
-    1) return 0 ;;  # ユーザーが閉じた
-    *) notify "予約入力の画面を開けませんでした (~/.cache/tt-schedule-keys.log)"; return 1 ;;
-  esac
-  # ⚠️ フィールド数ごと検証する。%%/# の展開で切り出すと、区切りが足りない行 ("new<TAB>4600") が
-  #    epoch をそのまま文字列として通してしまう (敵対的レビュー 2026-08-28 で再現)
-  local f1 f2 f3 extra
-  IFS="$tab" read -r f1 f2 f3 extra <<< "$REPLY_UI"
-  case "$f1" in
-    new)
-      if [[ -z "$f3" || -n "$extra" ]]; then log "wizard: new の形が違う: $REPLY_UI"; return 0; fi
-      # UI は確定した時点で「予約しました」とトーストを出して閉じている。ここで失敗したら
-      # その表示が嘘になるので、失敗だけを目立つ形で知らせる (成功は UI のトーストが担当)
-      new_reservation "$pane" "$label" "$f2" "$f3" \
-        || tmux display-message "予約に失敗しました (~/.cache/tt-schedule-keys.log)"
-      ;;
-    cancel)
-      if [[ -z "$f2" || -n "$f3" || -n "$extra" ]]; then log "wizard: cancel の形が違う: $REPLY_UI"; return 0; fi
-      cancel_selected "$f2"
-      ;;
-    *) log "wizard: 未知の UI 結果: $REPLY_UI" ;;
-  esac
+
+  # ⚠️ 取消したら**一覧へ戻す** (ユーザー要望 2026-08-28)。取消の実行はここ (gum の確認つき) に
+  #    あるので、UI をいったん閉じ、更新した一覧でもう一度開く。1 件消すたびに popup を閉じない。
+  #
+  # ⚠️ 回る回数に上限を置く。UI が同じ結果を返し続けると無限に回る (対話 UI なら起きないが、
+  #    壊れた UI・stub では実際に起きた)。上限は「今ある予約を全部消せる回数 + 余裕」
+  local rounds=0 max_rounds
+  max_rounds=$(( $(find "$STATE_DIR" -name '*.job' 2>/dev/null | wc -l) + 5 ))
+  while (( rounds < max_rounds )); do
+    rounds=$((rounds + 1))
+    prune_stale
+    jobs_tsv "$jobs_file"
+    ui_rc=0
+    ui_run "$jobs_file" "$label" "$start" || ui_rc=$?
+    case "$ui_rc" in
+      0) ;;
+      1) return 0 ;;  # ユーザーが閉じた
+      *) notify "予約入力の画面を開けませんでした (~/.cache/tt-schedule-keys.log)"; return 1 ;;
+    esac
+
+    # ⚠️ フィールド数ごと検証する。%%/# の展開で切り出すと、区切りが足りない行 ("new<TAB>4600") が
+    #    epoch をそのまま文字列として通してしまう (敵対的レビュー 2026-08-28 で再現)
+    IFS="$tab" read -r f1 f2 f3 extra <<< "$REPLY_UI"
+    case "$f1" in
+      new)
+        if [[ -z "$f3" || -n "$extra" ]]; then log "wizard: new の形が違う: $REPLY_UI"; return 0; fi
+        # UI は確定した時点で「予約しました」とトーストを出して閉じている。ここで失敗したら
+        # その表示が嘘になるので、失敗だけを目立つ形で知らせる (成功は UI のトーストが担当)
+        new_reservation "$pane" "$label" "$f2" "$f3" \
+          || notify "予約に失敗しました (~/.cache/tt-schedule-keys.log)"
+        return 0
+        ;;
+      cancel)
+        if [[ -z "$f2" || -n "$f3" || -n "$extra" ]]; then log "wizard: cancel の形が違う: $REPLY_UI"; return 0; fi
+        cancel_selected "$f2"
+        start="pick"   # 取り消したら一覧へ戻る (残りが 0 件なら UI 側がメニューを出す)
+        ;;
+      *) log "wizard: 未知の UI 結果: $REPLY_UI"; return 0 ;;
+    esac
+  done
+  log "wizard: 上限 ($max_rounds 回) まで回った。UI が同じ結果を返し続けている"
+  notify "予約入力を閉じました (画面が応答していません)"
+  return 1
 }
 
 case "${1:-wizard}" in
