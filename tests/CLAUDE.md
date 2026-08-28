@@ -20,7 +20,17 @@
 
 - `set -euo pipefail` 下の `var=$(… | grep …)` は無マッチの時点で代入ごと死に、直後の FAIL メッセージへ到達しない。抽出は `|| true` で受けて、空を明示的に FAIL にする
 - `… | grep -q` は一致していても偽になりうる (grep が先に抜けて producer が SIGPIPE → pipefail が拾う)。`grep -q PAT <<< "$(cmd)"` にする。`make test-pipefail-grep-q` (scripts/check_pipefail_grep_q.sh) が落とす。例外は行内 `pipefail-grep-q: allow` + 理由
-- grep の方言差 (BSD vs GNU。`\t` の解釈等) は手元だけ緑・CI だけ赤になる。パターンや観測ログの assert を触ったら `make test-gnu` で GNU grep を通す
+
+## BSD (手元) / GNU (CI) の方言差
+
+手元 macOS は BSD、CI は GNU。この差は**手元だけ緑**になるので、目視では捕まらない。
+
+- **grep** (`\t` の解釈等) は実行で見る: パターンや観測ログの assert を触ったら `make test-gnu` (GNU grep を `grep` として見せて tests/ 全体を回す)
+- **stat / date** は静的に落とす: `make test-platform-dialect` (`scripts/check_platform_dialect.sh`)。
+  空白区切りの `stat -f %X` を `stat -c` より先に置く形と、フォールバックの無い `date -r <epoch>` を落とす。
+  例外は行内に `platform-dialect: allow` + 理由。実測と直し方の正本はスクリプト冒頭
+- 使い分け: **grep は挙動が入力次第なので実行で、stat / date は書き方で決まるので静的検査で**見る
+- mtime を取る shell コードは `scripts/lib/tmux_resurrect_guards.sh` の `tt_mtime_of` を使う (自前で `stat` を呼ばない)
 
 ## tmux を触るテスト
 
