@@ -177,21 +177,6 @@ tt_on_default_server() {
 # 短すぎると (a) で生きた lock を奪い、長すぎると復旧が遅れる。issue 103
 TT_LOCK_ORPHAN_STALE_SECONDS="${TT_LOCK_ORPHAN_STALE_SECONDS:-30}"
 
-# ファイル/ディレクトリの mtime を epoch 秒で返す (BSD -f %m / GNU -c %Y の両対応)。
-# ⚠️ `stat -f %m "$1" || stat -c %Y "$1"` と素で書かないこと。GNU stat の `-f` は
-#   **ファイルシステム情報の表示**であって書式指定ではないので、`%m` はファイル名として
-#   扱われる。結果 `%m` が無いというエラーで rc=1 になる一方、**引数の "$1" 側の
-#   ファイルシステム情報は stdout に出す**。コマンド置換はその複数行を拾うので、
-#   フォールバックの epoch と連結されて数値でなくなる (実測 2026-08-28 / GNU coreutils 9)。
-#   段ごとに数値であることを確かめてから採用する。
-tt_mtime_epoch() {
-  local v
-  v="$(stat -f %m "$1" 2>/dev/null)" || v=''
-  case "$v" in ''|*[!0-9]*) v="$(stat -c %Y "$1" 2>/dev/null)" || v='' ;; esac
-  case "$v" in ''|*[!0-9]*) return 1 ;; esac
-  printf '%s\n' "$v"
-}
-
 # dir の mtime が secs より古いか。
 #   戻り値: 0 = 古い (取り残し扱いしてよい) / 1 = 新しい・または存在しない / 2 = 判定不能
 #
@@ -203,10 +188,12 @@ tt_mtime_epoch() {
 #   誤判定する (実測: 親が読み取り専用のとき rc=2 が rc=1 に化けた)。
 # ⚠️ mtime が読めないときは 0/1 に丸めず 2 を返すこと。丸めると「奪ってよい」か
 #   「先任がいる」のどちらかの嘘になる (判定不能は第 3 の結果)。
+# ⚠️ mtime の取得は tt_mtime_of に集約する (stat の GNU/BSD 方言差の罠と実測はあちらに記録)。
+#   ここで `stat` を直に呼ぶ形を書き足さないこと。
 tt_lock_dir_older_than() {
   local dir="$1" secs="$2" m now age
   [ -d "$dir" ] || return 1
-  m="$(tt_mtime_epoch "$dir" || true)"
+  m="$(tt_mtime_of "$dir" || true)"
   case "$m" in ''|*[!0-9]*) return 2 ;; esac
   now="$(date +%s 2>/dev/null || true)"
   case "$now" in ''|*[!0-9]*) return 2 ;; esac

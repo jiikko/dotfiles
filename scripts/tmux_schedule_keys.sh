@@ -43,6 +43,9 @@ UI="${TMUX_SCHEDULE_KEYS_UI:-$(dirname "$SELF")/../bin/schedkeys}"
 # 表示文字列 (toast / display-message) に絵文字・曖昧幅の記号を使わない: 端末と描画側の幅計算が
 # 食い違い、行ごとに左右へずれてノイズになる (2026-08-27 ユーザー報告)。UI 側 (src/schedkeys) も同じ規律。
 # tests/tmux/test_schedule_keys.sh が両方を静的に検査する
+# shellcheck source=scripts/lib/tmux_resurrect_guards.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmux_resurrect_guards.sh"
+
 # fire が .pid を書くまでの猶予。これより古い .pid 無し .job だけを stale 候補にする
 PID_GRACE_SECS=60
 
@@ -120,7 +123,16 @@ pid_is_sleeper() {
   [[ "$cmd" == *"tmux_schedule_keys.sh fire $id" || "$cmd" == *"tmux_schedule_keys.sh fire '$id'" ]]
 }
 
-job_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || date +%s; }
+# mtime は guards.sh の tt_mtime_of に集約 (stat の GNU/BSD 方言差の罠と実測はあちらに記録)。
+# ⚠️ ここに `stat -f %m ... || stat -c %Y ...` を書き戻さないこと。GNU では `-f` が
+#   ファイルシステム情報を **stdout に出しつつ** rc=1 で終わるため、フォールバックの epoch と
+#   連結されて数値でなくなり、prune が Linux で一切走らなくなる (CI run 33138075381 で実証)。
+# mtime が取れなければ「今」扱い (= 新しい側に倒す。古い側に倒すと作った直後の予約を消す)
+job_mtime() {
+  local m; m="$(tt_mtime_of "$1")"
+  case "$m" in ''|*[!0-9]*) m="$(date +%s)" ;; esac
+  printf '%s\n' "$m"
+}
 
 # sleeper が居ない予約 (サーバ再起動で sleeper だけ消えた形) を掃く。kill はしない
 prune_stale() {
