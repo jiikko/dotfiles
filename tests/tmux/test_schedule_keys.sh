@@ -610,7 +610,19 @@ printf '\n## prune: 猶予の境界 (両側を見る)\n'
 # ⚠️ 「作った直後は消さない」だけでは、猶予を 0 にしても 99999999 にしても緑になる (監査 2026-08-28)。
 # mtime を back-date して両側を通す
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
-backdate() { touch -t "$(/bin/date -r "$(( $(/bin/date +%s) - $2 ))" +%Y%m%d%H%M.%S)" "$1"; }
+# ⚠️ epoch → 日時の変換は BSD と GNU で別物。BSD (macOS) は `date -r <epoch>` だが、GNU
+#   (Linux = CI) の -r は「参照ファイルの時刻」なので epoch をファイル名として探して失敗し、
+#   stdout は空・rc=1 になる (実測 2026-08-28)。素の `date -r` だけだと `touch -t ''` になり、
+#   **CI でだけこのテストが死ぬ** (run 33136841310)。両方試して先に成功した方を採る
+#   (`_claude/statusline-command.sh` の fmt_epoch と同じ形)。
+backdate() { # $1=対象パス $2=何秒前にするか
+  local at=$(( $(/bin/date +%s) - $2 )) stamp
+  stamp="$(/bin/date -r "$at" +%Y%m%d%H%M.%S 2>/dev/null || /bin/date -d "@$at" +%Y%m%d%H%M.%S 2>/dev/null)"
+  # 変換できないまま touch を撃たない。backdate が no-op になると、猶予の内側/外側を分ける
+  # 検査が「どちらも作りたて」を見ることになり意味を失う
+  [[ -n "$stamp" ]] || { printf '✗ backdate: epoch を日時へ変換できない (BSD/GNU どちらの date でもない)\n'; exit 1; }
+  touch -t "$stamp" "$1"
+}
 write_job inside "$(( $(/bin/date +%s) + 3600 ))" "make test"; backdate "$TMUX_SCHEDULE_KEYS_DIR/inside.job" 30
 write_job outside "$(( $(/bin/date +%s) + 3600 ))" "make test"; backdate "$TMUX_SCHEDULE_KEYS_DIR/outside.job" 300
 STUB_UI_RESULT="abort" run "$STUB_PATH" "$SCRIPT" wizard
