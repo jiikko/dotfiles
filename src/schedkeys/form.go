@@ -53,7 +53,7 @@ type formState struct {
 	err     string
 }
 
-// 開いた直後は「いつ」にフォーカスする。この画面の流れは「いつ → (時刻/自由) → 文字列 → 予約」で、
+// 開いた直後は「いつ」にフォーカスする。この画面の流れは「いつ → (時刻/自由) → 何を → 予約」で、
 // 最初に決めるのは送る時刻だから (ユーザー要望 2026-08-28)。Enter が次の欄へ進むので、
 // 開いてから予約まで Enter だけで辿れる。
 func newForm() formState { return formState{focus: focusWhen} }
@@ -182,7 +182,7 @@ func (f *formState) submit(now time.Time) (time.Time, string, string) {
 	}
 	text := f.text.value()
 	if strings.TrimSpace(text) == "" {
-		return time.Time{}, "", "送る文字列を入れる"
+		return time.Time{}, "", "何を送るかを入れる"
 	}
 	return at, text, ""
 }

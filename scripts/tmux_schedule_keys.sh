@@ -86,15 +86,17 @@ fmt_remaining() {
   else printf '%ds' "$s"; fi
 }
 
-# pane_id → "session:index name"。⚠️ 消えた pane でも tmux は rc=0 で ": " を返す (実測 2026-08-28)
-# ので、rc では消滅を判定できない。中身が空同然なら「消滅」と書く
+# pane_id → "session:index cmd window名"。
+# ⚠️ **実行中のコマンドを入れる**: 送り先が claude なのか shell なのかは window 名から分からない
+#    (実測 2026-08-28: Claude の pane は cmd=claude.exe / window名=「✳ タスク名」、shell は cmd=zsh)。
+#    順序も意図的で、一覧の列は幅で切られるため、先に出したコマンドだけは残る。
+# ⚠️ 消えた pane でも tmux は rc=0 を返す (実測) ので、rc では消滅を判定できない。中身が
+#    区切り文字だけなら「消滅」と書く
 pane_label() {
-  local out
-  out="$(tmux display-message -p -t "$1" '#{session_name}:#{window_index} #{window_name}' 2>/dev/null || true)"
-  case "$out" in
-    ''|': '|':') printf '(消滅)' ;;
-    *)           printf '%s' "$out" ;;
-  esac
+  local out bare
+  out="$(tmux display-message -p -t "$1" '#{session_name}:#{window_index} #{pane_current_command} #{window_name}' 2>/dev/null || true)"
+  bare="${out//[: ]/}"
+  if [[ -z "$bare" ]]; then printf '(消滅)'; else printf '%s' "$out"; fi
 }
 
 # job ファイルを読む。REPLY_PANE / REPLY_AT / REPLY_TEXT / REPLY_SOCK / REPLY_SRVPID に返す。

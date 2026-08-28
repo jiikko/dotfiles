@@ -36,7 +36,7 @@ func (f *formState) view(label string, now time.Time, width, height int) (string
 	}
 
 	fr.add("")
-	f.addField(fr, "文字列", &f.text, f.focus == focusText, width)
+	f.addField(fr, "何を", &f.text, f.focus == focusText, width)
 	fr.add("")
 
 	// 結果 (発火時刻) かエラーを 1 行だけ出す。両方出すと同じ文言が二重に並ぶ

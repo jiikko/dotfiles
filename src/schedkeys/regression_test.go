@@ -22,7 +22,7 @@ func TestCursorSitsOnFocusedFieldRow(t *testing.T) {
 		marker string
 		typed  string
 	}{
-		{"文字列 (入力欄なし)", func(m *model) { typeText(m, "make test") }, "文字列", "make test"},
+		{"何を (入力欄なし)", func(m *model) { typeText(m, "make test") }, "何を", "make test"},
 		{"時刻欄", func(m *model) {
 			focusSpecOfKind(t, m, kindClock)
 			typeText(m, "09:00")

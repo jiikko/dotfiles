@@ -645,6 +645,17 @@ kill -0 "$long_pid" 2>/dev/null || { printf '✗ j-5 の取消が別 id (j-55) �
 printf '✓ id の完全一致で照合する (pid を取り違えても別の予約を巻き込まない)\n'
 kill "$long_pid" 2>/dev/null || true
 
+printf '\n## 送り先の表示に「実行中のコマンド」が入る\n'
+# ⚠️ window 名だけでは送り先が claude なのか shell なのか分からない (実測 2026-08-28:
+# Claude の pane は cmd=claude.exe / window名=「✳ タスク名」、shell は cmd=zsh)。
+# stub は tmux の format を解釈できないので、問い合わせの形を pin する
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+spawn_sleeper labeled
+STUB_UI_RESULT="abort" run "$STUB_PATH" "$SCRIPT" wizard
+grep -q 'display-message -p -t %5 #{session_name}:#{window_index} #{pane_current_command} #{window_name}' "$CALLS" \
+  || { printf '✗ 送り先の問い合わせに pane_current_command が入っていない:\n%s\n' "$(grep 'display-message -p -t' "$CALLS" | head -3)"; exit 1; }
+printf '✓ 送り先の表示は session:index + 実行中のコマンド + window 名\n'
+
 printf '\n## 一覧: 消えた pane は「消滅」と出す\n'
 # ⚠️ 実 tmux は消えた pane への問い合わせでも rc=0 を返し、window 名が空の ": " になる
 # (実測 2026-08-28)。rc では判定できないので中身で見る
