@@ -305,6 +305,40 @@ tt_lock_sweep_stale "$sw"
 [ -d "$sw/888888.lock.steal" ] && ng "TTL 超過の .steal 孤児が残った" || ok "TTL 超過の .steal 孤児を回収する"
 [ -d "$sw/777777.lock.steal" ] && ok "新しい .steal (奪取中かもしれない) は消さない" || ng "奪取中かもしれない .steal を消した"
 
+# --- GNU stat 環境で mtime を読めること (platform 差の固定) ----------------------
+# ⚠️ `stat -f %m "$x" || stat -c %Y "$x"` と素で書くと **Linux で壊れる**。GNU stat の `-f` は
+#   書式指定ではなく「ファイルシステム情報の表示」なので `%m` はファイル名として扱われ、
+#   `%m` が無いエラーで rc=1 になる一方 **"$x" 側の fs 情報は stdout に出す**。コマンド置換が
+#   その複数行を拾い、フォールバックの epoch と連結されて数値でなくなる → 年齢が常に「判定不能」
+#   になり、取り残しの回収が Linux でだけ全滅する (実測 2026-08-28: 旧実装 + 実 GNU stat で rc=2)。
+#   手元 (macOS) は BSD stat なので緑のまま。ここで **GNU の挙動を模したシムで両方の形を作る**。
+gnu_dir="$BASE/gnu"; mkdir -p "$gnu_dir"
+gnu_target="$BASE/gnu-target"; mkdir -p "$gnu_target"
+gnu_epoch="$(tt_mtime_epoch "$gnu_target")"
+write_gnu_stat_shim() { # $1=-c %Y が返す epoch
+  cat > "$gnu_dir/stat" <<SHIM
+#!/bin/sh
+SHIM_EPOCH="$1"
+# GNU stat の模擬: -f は fs 情報を stdout に出しつつ '%m' で失敗する / -c %Y が本命
+case "\$1" in
+  -f) printf '  File: "%s"\n' "\$3"; printf 'Block size: 4096\n'
+      printf "stat: cannot read file system information for '%%m'\n" >&2; exit 1 ;;
+  -c) printf '%s\n' "\$SHIM_EPOCH" ;;
+  *)  exit 64 ;;
+esac
+SHIM
+  chmod +x "$gnu_dir/stat"
+}
+write_gnu_stat_shim "$gnu_epoch"
+got="$(PATH="$gnu_dir:$PATH" tt_mtime_epoch "$gnu_target" || true)"
+[ "$got" = "$gnu_epoch" ] \
+  && ok "GNU stat 環境でも mtime を epoch 1 行で読める" \
+  || ng "GNU stat 環境で mtime が壊れる (得た値: [$(printf '%s' "$got" | tr '\n' '|')])"
+touch -t "$OLD_STAMP" "$gnu_target"
+write_gnu_stat_shim "$(tt_mtime_epoch "$gnu_target")"
+rc=0; ( PATH="$gnu_dir:$PATH"; tt_lock_dir_older_than "$gnu_target" 30 ) || rc=$?
+[ "$rc" = 0 ] && ok "GNU stat 環境でも TTL 超過を「古い」と判定する" || ng "GNU stat 環境で年齢判定が rc=$rc (取り残しを回収できない)"
+
 printf '\n=== 条件付き解放 (issue 103) ===\n\n'
 
 # 自分が owner なら解放する

@@ -178,8 +178,18 @@ tt_on_default_server() {
 TT_LOCK_ORPHAN_STALE_SECONDS="${TT_LOCK_ORPHAN_STALE_SECONDS:-30}"
 
 # ファイル/ディレクトリの mtime を epoch 秒で返す (BSD -f %m / GNU -c %Y の両対応)。
+# ⚠️ `stat -f %m "$1" || stat -c %Y "$1"` と素で書かないこと。GNU stat の `-f` は
+#   **ファイルシステム情報の表示**であって書式指定ではないので、`%m` はファイル名として
+#   扱われる。結果 `%m` が無いというエラーで rc=1 になる一方、**引数の "$1" 側の
+#   ファイルシステム情報は stdout に出す**。コマンド置換はその複数行を拾うので、
+#   フォールバックの epoch と連結されて数値でなくなる (実測 2026-08-28 / GNU coreutils 9)。
+#   段ごとに数値であることを確かめてから採用する。
 tt_mtime_epoch() {
-  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null
+  local v
+  v="$(stat -f %m "$1" 2>/dev/null)" || v=''
+  case "$v" in ''|*[!0-9]*) v="$(stat -c %Y "$1" 2>/dev/null)" || v='' ;; esac
+  case "$v" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s\n' "$v"
 }
 
 # dir の mtime が secs より古いか。
