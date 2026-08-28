@@ -148,8 +148,8 @@ set -g status on
 set -g status-interval 1   # status-left の毎秒点滅の駆動（continuum 用には >0 であればよい）
 # 右側は prefix 押下中のキーガイド用に使っている（上流 continuum が要求する「status-right の確保」は
 # vendor パッチで interpolation を撤去済みのため不要。_tmux.conf の該当ブロック参照）
-set -g status-right-length 20
-set -g status-right "#{?client_prefix,#{p20:@keyguide},#{p20:@nothing}}"
+set -g status-right-length 27
+set -g status-right "#{?client_prefix,#{p27:@keyguide},#{p27:@nothing}}"
 ```
 
 `@continuum-save-interval` は明示設定していない（= デフォルト 15 分）。`@resurrect-strategy-vim/nvim` も標準構成では設定していない（vim/nvim のセッション復元は別途 vim-obsession 等が必要）。
