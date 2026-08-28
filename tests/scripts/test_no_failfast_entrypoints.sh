@@ -33,10 +33,22 @@ printf 'lint:\n\t@echo bad-lint >> %s\n\t@exit 1\ntest:\n\t@echo bad-test >> %s\
 printf 'lint:\n\t@echo good-lint >> %s\ntest:\n\t@echo good-test >> %s\n' \
   "$TMP_DIR/calls" "$TMP_DIR/calls" > "$TMP_DIR/good/Makefile"
 
+# ⚠️ `go` のスタブを PATH 先頭に置く。Makefile の run_go_projects は `command -v go` が
+#    無ければ "go not found; skipping" で **exit 0** するため、go が入っていない環境では
+#    この節の 6 つの assert がまるごと空振りする。dotfiles の CI (Tests ジョブ) には go を
+#    入れていないので、置かないと **CI では何も検査していない**ことになる (実測: run
+#    33169546465 で 6 件が false green ではなく false red として露出した)。
+#    ここで見たいのは「集約して回すか」だけで go の挙動ではない。偽プロジェクトの Makefile は
+#    go を呼ばないので、スタブは**呼ばれたら失敗する**形にする (黙って 0 を返すと、将来
+#    recipe が本当に go を使い始めたときに嘘の緑になる)。
+mkdir -p "$TMP_DIR/bin"
+printf '#!/bin/sh\necho "test stub: go must not be executed here" >&2\nexit 97\n' > "$TMP_DIR/bin/go"
+chmod +x "$TMP_DIR/bin/go"
+
 for goal in lint test; do
   : > "$TMP_DIR/calls"
   target="test-go"; [ "$goal" = lint ] && target="test-go-lint"
-  if make "$target" GO_PROJECT_DIRS="$TMP_DIR/bad $TMP_DIR/good" > "$TMP_DIR/out" 2>&1; then
+  if PATH="$TMP_DIR/bin:$PATH" make "$target" GO_PROJECT_DIRS="$TMP_DIR/bad $TMP_DIR/good" > "$TMP_DIR/out" 2>&1; then
     bad "$target: 失敗したプロジェクトがあるのに成功した"
   else
     note "$target: 失敗を返す"
