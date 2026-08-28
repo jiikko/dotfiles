@@ -1,4 +1,10 @@
-# 127 human: width-probe を実端末で走らせて「揃える先」を決める
+# 136 human: width-probe を実端末で走らせて「揃える先」を決める
+
+> ⚠️ **2026-08-28 に 127 → 136 へ改番**。同じ 127 が 2 件あった
+> (`issues/done/127-test-schedkeys-duplicate-and-coupled-tests.md`)。あちらは `issues/audit-log`
+> の日付つき記録と push 済み commit (`7a2254d`) から参照されており、動かすと記録を書き換える
+> ことになるため、参照が 1 箇所だけのこちらを動かした。**過去の会話やメモの「127」が
+> width-probe の話なら、それはこの issue。**
 
 起票日: 2026-08-28
 期限: 2026-09-04
