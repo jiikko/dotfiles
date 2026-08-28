@@ -125,7 +125,7 @@ func TestFocusedFieldStaysVisibleWhenShort(t *testing.T) {
 		press(m, "enter", "")
 		focusSpecOfKind(t, m, kindFree)
 		typeText(m, "1h30m")
-		press(m, "enter", "")
+		openForm(t, m)
 		typeText(m, "make test")
 		v := m.View()
 		lines := strings.Split(v.Content, "\n")
@@ -174,7 +174,7 @@ func TestToastNeverEatsContent(t *testing.T) {
 	for _, h := range []int{5, 8, 9, 14, 40} {
 		m := newTestModel()
 		m.width, m.height = 70, h
-		press(m, "enter", "")
+		openForm(t, m)
 		typeText(m, "make test")
 		before := strings.Split(stripSGR(m.View().Content), "\n")
 		press(m, "enter", "") // 確定 → トースト開始
@@ -259,7 +259,7 @@ func TestRenderCostStaysLinear(t *testing.T) {
 	measure := func(n int) time.Duration {
 		m := newTestModel()
 		m.width, m.height = 70, 14
-		press(m, "enter", "")
+		openForm(t, m)
 		m.form.text.setValue(strings.Repeat("x", n))
 		start := time.Now()
 		for range 20 {
@@ -318,7 +318,7 @@ func TestEditingMovesByGraphemeCluster(t *testing.T) {
 // ペーストが入力欄に入ること (KeyPressMsg では来ないので、捨てると貼り付けが完全に効かない)。
 func TestPasteEntersField(t *testing.T) {
 	m := newTestModel()
-	press(m, "enter", "")
+	openForm(t, m)
 	m.Update(tea.PasteMsg{Content: "make deploy"})
 	if got := m.form.text.value(); got != "make deploy" {
 		t.Errorf("文字列欄に貼れない: %q", got)
@@ -339,9 +339,9 @@ func TestPasteEntersField(t *testing.T) {
 	}
 	// トースト中は貼れない (確定済み)
 	m3 := newTestModel()
-	press(m3, "enter", "")
+	openForm(t, m3)
 	typeText(m3, "x")
-	press(m3, "enter", "")
+	openForm(t, m3)
 	m3.Update(tea.PasteMsg{Content: "zzz"})
 	if got := m3.form.text.value(); got != "x" {
 		t.Errorf("トースト中に貼れてしまった: %q", got)
@@ -372,7 +372,7 @@ func TestDisplayClockAdvances(t *testing.T) {
 func TestPrefixDoesNotSwallowEditingKey(t *testing.T) {
 	m := newTestModel()
 	m.togglePrefix = "ctrl+b"
-	press(m, "enter", "")
+	openForm(t, m)
 	typeText(m, "abc")
 	press(m, "ctrl+b", "") // prefix として arm される
 	press(m, "ctrl+b", "") // 続く C-b: トグルではないので、2 つとも左移動として効く
@@ -502,7 +502,7 @@ func TestToastFitsNarrowWidth(t *testing.T) {
 	for _, w := range []int{1, 3, 5, 6, 10, 70} {
 		m := newTestModel()
 		m.width, m.height = w, 14
-		press(m, "enter", "")
+		openForm(t, m)
 		typeText(m, "x")
 		press(m, "enter", "") // 確定 → トースト
 		for range toastFrames {
@@ -519,8 +519,7 @@ func TestToastFitsNarrowWidth(t *testing.T) {
 // 候補行にフォーカスしているときの貼り付けが、見ていない文字列欄へ入らないこと。
 func TestPasteIgnoredOnChipRow(t *testing.T) {
 	m := newTestModel()
-	press(m, "enter", "")
-	press(m, "tab", "") // いつ (候補行)
+	press(m, "enter", "") // 開いた直後が「いつ」(候補行)
 	m.Update(tea.PasteMsg{Content: "rm -rf /"})
 	if got := m.form.text.value(); got != "" {
 		t.Errorf("候補行での貼り付けが文字列欄に入った: %q", got)
@@ -538,7 +537,6 @@ func TestSelectedChipStaysVisible(t *testing.T) {
 		for idx := range presets {
 			m := newTestModelAt("main:3 claude", w, 14)
 			press(m, "enter", "")
-			press(m, "tab", "") // いつ
 			for range idx {
 				press(m, "right", "")
 			}

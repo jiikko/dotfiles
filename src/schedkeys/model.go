@@ -190,6 +190,13 @@ func (m *model) submitNow() time.Time { return m.nowFn() }
 func (m *model) keyForm(key, text string) tea.Cmd {
 	switch key {
 	case "esc":
+		// ⚠️ 入力欄で Esc を押したら「一つ前の欄へ戻る」。いきなり画面を降りると、打ち間違いを
+		//    直したいだけのときに入力ごと畳まれる (ユーザー要望 2026-08-28)。
+		//    先頭の欄 (いつ) まで戻ってから押したときだけメニューへ降りる
+		if m.form.focus != focusWhen {
+			m.form.moveFocus(-1)
+			return nil
+		}
 		m.screen = screenMenu
 		return nil
 	case "enter":

@@ -34,7 +34,7 @@ func TestCursorSitsOnFocusedFieldRow(t *testing.T) {
 	} {
 		m := newTestModel()
 		m.width, m.height = 70, 14
-		press(m, "enter", "")
+		openForm(t, m) // 文字列欄まで進む (入力欄のあるケースは setup が入り直す)
 		tc.setup(m)
 		v := m.View()
 		if v.Cursor == nil {
@@ -111,8 +111,7 @@ func TestLongInputScrollsHorizontally(t *testing.T) {
 func TestSelectionIsVisibleWithoutBoldOnly(t *testing.T) {
 	m := newTestModel()
 	m.width, m.height = 70, 14
-	press(m, "enter", "")
-	press(m, "tab", "") // いつ にフォーカス
+	press(m, "enter", "") // 開いた直後が「いつ」
 	body := m.View().Content
 	plain := stripSGR(body)
 	if !strings.Contains(plain, "[5分後]") {
@@ -143,12 +142,16 @@ func TestSelectionIsVisibleWithoutBoldOnly(t *testing.T) {
 func TestEmacsKeysMoveFocusAndChips(t *testing.T) {
 	m := newTestModel()
 	press(m, "enter", "")
-	if m.form.focus != focusText {
-		t.Fatal("初期フォーカスが文字列でない")
+	if m.form.focus != focusWhen {
+		t.Fatal("開いた直後のフォーカスが「いつ」でない")
 	}
 	press(m, "ctrl+n", "")
-	if m.form.focus != focusWhen {
+	if m.form.focus != focusText {
 		t.Errorf("C-n で欄が移らない (focus=%v)", m.form.focus)
+	}
+	press(m, "ctrl+p", "")
+	if m.form.focus != focusWhen {
+		t.Errorf("C-p で「いつ」へ戻らない (focus=%v)", m.form.focus)
 	}
 	press(m, "ctrl+f", "")
 	if got := m.form.current().label; got != "10分後" {
@@ -158,11 +161,8 @@ func TestEmacsKeysMoveFocusAndChips(t *testing.T) {
 	if got := m.form.current().label; got != "5分後" {
 		t.Errorf("C-b で候補が戻らない (%q)", got)
 	}
-	press(m, "ctrl+p", "")
-	if m.form.focus != focusText {
-		t.Errorf("C-p で欄が戻らない (focus=%v)", m.form.focus)
-	}
 	// 文字列欄では C-f / C-b は文字移動 (欄移動に横取りされない)
+	focusTextField(t, m)
 	typeText(m, "ab")
 	press(m, "ctrl+b", "")
 	if m.form.text.pos != 1 {
@@ -210,7 +210,7 @@ func TestTogglePrefixCloses(t *testing.T) {
 	for _, second := range []string{"m", "enter", "ctrl+m"} {
 		m := newTestModel()
 		m.togglePrefix = "ctrl+t"
-		press(m, "enter", "") // フォームへ
+		openForm(t, m)
 		typeText(m, "make test")
 		press(m, "ctrl+t", "")
 		if m.quit {
@@ -235,7 +235,7 @@ func TestTogglePrefixCloses(t *testing.T) {
 func TestTogglePrefixDoesNotSwallowOtherKeys(t *testing.T) {
 	m := newTestModel()
 	m.togglePrefix = "ctrl+t"
-	press(m, "enter", "")
+	openForm(t, m)
 	press(m, "ctrl+t", "")
 	typeText(m, "a")
 	if got := m.form.text.value(); got != "a" {
@@ -279,7 +279,7 @@ func TestTeaKeyName(t *testing.T) {
 func TestToastAfterReservation(t *testing.T) {
 	m := newTestModel()
 	m.width, m.height = 70, 14
-	press(m, "enter", "")
+	openForm(t, m)
 	typeText(m, "make test")
 	press(m, "enter", "")
 	if !m.toast.shown {
@@ -351,7 +351,7 @@ func TestToastAfterReservation(t *testing.T) {
 // トースト中のキーで状態が変わらないこと (確定済みなので取り消し・再編集させない)。
 func TestToastIgnoresEditingKeys(t *testing.T) {
 	m := newTestModel()
-	press(m, "enter", "")
+	openForm(t, m)
 	typeText(m, "make test")
 	press(m, "enter", "")
 	before := m.res
@@ -392,7 +392,7 @@ func TestNoToastForCancel(t *testing.T) {
 // (敵対的レビュー 2026-08-28)。
 func TestReservationUsesClockAtSubmit(t *testing.T) {
 	m := newTestModel()
-	press(m, "enter", "")
+	openForm(t, m)
 	typeText(m, "make test")
 	// popup を開いてから 25 分経ってから確定した
 	late := now.Add(25 * time.Minute)
@@ -419,7 +419,7 @@ func TestClockSpecUsesClockAtSubmit(t *testing.T) {
 	typeText(m, "10:20") // now は 10:00
 	late := now.Add(25 * time.Minute)
 	m.nowFn = func() time.Time { return late } // 10:25 に確定
-	press(m, "enter", "")
+	openForm(t, m)
 	typeText(m, "x")
 	press(m, "enter", "")
 	finishToast(m)
@@ -460,7 +460,7 @@ func TestInputIsCapped(t *testing.T) {
 	}
 	// 貼り付けも同じ上限に従う
 	m := newTestModel()
-	press(m, "enter", "")
+	openForm(t, m)
 	m.Update(tea.PasteMsg{Content: strings.Repeat("z", maxInput*2)})
 	if got := len([]rune(m.form.text.value())); got > maxInput {
 		t.Errorf("貼り付けで上限を超えた: %d", got)
@@ -551,5 +551,90 @@ func TestClockTickIsSelfSustaining(t *testing.T) {
 	m.quit = true
 	if _, after := m.Update(tickMsg{}); after != nil {
 		t.Error("閉じた後もティックを張り直している")
+	}
+}
+
+// 開いた直後は「いつ」にフォーカスし、Enter だけで予約まで辿れること (ユーザー要望 2026-08-28)。
+// ⚠️ 既定を文字列欄に戻すと、時刻を選ばずに打ち始める流れになり、この画面の順序 (いつ → 何を) が崩れる。
+func TestFormStartsOnWhenRow(t *testing.T) {
+	m := newTestModel()
+	press(m, "enter", "") // メニュー → フォーム
+	if m.form.focus != focusWhen {
+		t.Fatalf("開いた直後の focus = %v; want when", m.form.focus)
+	}
+	// カーソル (IME の位置) は入力欄が対象なので、候補行では出さない
+	if m.View().Cursor != nil {
+		t.Error("候補行なのにカーソルを出している")
+	}
+	// 候補を選ぶキーがそのまま効く (欄移動なしで)
+	press(m, "right", "")
+	if got := m.form.current().label; got != "10分後" {
+		t.Errorf("開いた直後に候補を動かせない (%q)", got)
+	}
+	// Enter だけで 文字列 → 予約 まで進める
+	press(m, "enter", "")
+	if m.form.focus != focusText {
+		t.Fatalf("Enter で文字列欄へ進まない (focus=%v)", m.form.focus)
+	}
+	typeText(m, "make test")
+	press(m, "enter", "")
+	finishToast(m)
+	if !m.quit || m.res.action != "new" {
+		t.Fatalf("Enter だけの流れで予約できない (res=%+v)", m.res)
+	}
+	if want := now.Add(10 * time.Minute); !m.res.at.Equal(want) {
+		t.Errorf("at = %v; want %v (選んだ候補が効いている)", m.res.at, want)
+	}
+}
+
+// 入力欄の Esc は「一つ前の欄へ戻る」。先頭の欄 (いつ) で押したときだけメニューへ降りる
+// (ユーザー要望 2026-08-28)。⚠️ いきなり降りると、打ち間違いを直したいだけのときに入力ごと畳まれる。
+func TestEscapeStepsBackThroughFields(t *testing.T) {
+	m := newTestModel()
+	press(m, "enter", "")
+	focusSpecOfKind(t, m, kindFree) // いつ → (自由) 入力欄
+	typeText(m, "1h30m")
+	press(m, "enter", "") // → 文字列
+	typeText(m, "make test")
+	if m.form.focus != focusText {
+		t.Fatalf("前提が崩れている (focus=%v)", m.form.focus)
+	}
+
+	press(m, "esc", "") // 文字列 → 入力欄
+	if m.form.focus != focusSpec {
+		t.Fatalf("Esc で一つ前の欄へ戻らない (focus=%v)", m.form.focus)
+	}
+	if m.screen != screenForm {
+		t.Fatal("Esc で画面を降りてしまった")
+	}
+	press(m, "esc", "") // 入力欄 → いつ
+	if m.form.focus != focusWhen {
+		t.Fatalf("Esc で「いつ」へ戻らない (focus=%v)", m.form.focus)
+	}
+	if m.screen != screenForm {
+		t.Fatal("Esc で画面を降りてしまった")
+	}
+	// 入力は畳まれていない (戻っただけ)
+	if got := m.form.text.value(); got != "make test" {
+		t.Errorf("戻る操作で入力が消えた: %q", got)
+	}
+	if got := m.form.spec.value(); got != "1h30m" {
+		t.Errorf("戻る操作で入力欄が消えた: %q", got)
+	}
+	press(m, "esc", "") // いつ → メニュー
+	if m.screen != screenMenu {
+		t.Errorf("先頭の欄の Esc でメニューへ降りない (screen=%v)", m.screen)
+	}
+	// 入力欄の無い候補でも同じ (文字列 → いつ → メニュー)
+	m2 := newTestModel()
+	press(m2, "enter", "")
+	focusTextField(t, m2)
+	press(m2, "esc", "")
+	if m2.form.focus != focusWhen || m2.screen != screenForm {
+		t.Errorf("入力欄が無いとき Esc が「いつ」へ戻らない (focus=%v screen=%v)", m2.form.focus, m2.screen)
+	}
+	press(m2, "esc", "")
+	if m2.screen != screenMenu {
+		t.Errorf("2 回目の Esc でメニューへ降りない (screen=%v)", m2.screen)
 	}
 }

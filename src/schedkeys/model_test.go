@@ -100,13 +100,47 @@ func newTestModelAt(label string, w, h int, jobs ...job) *model {
 	return m
 }
 
+// focusWhenRow は「いつ」の行へ戻す (どの欄に居ても)。
+func focusWhenRow(t *testing.T, m *model) {
+	t.Helper()
+	for range len(presets) + 3 {
+		if m.form.focus == focusWhen {
+			return
+		}
+		press(m, "tab", "")
+	}
+	t.Fatal("いつ の行へ移れない")
+}
+
+// focusTextField は文字列欄へフォーカスする (開いた直後は「いつ」なので、打つ前に呼ぶ)。
+func focusTextField(t *testing.T, m *model) {
+	t.Helper()
+	for range len(presets) + 3 {
+		if m.form.focus == focusText {
+			return
+		}
+		press(m, "tab", "")
+	}
+	t.Fatal("文字列欄へ移れない")
+}
+
+// openForm はメニューからフォームを開き、文字列欄へフォーカスする (打ち始められる状態)。
+func openForm(t *testing.T, m *model) {
+	t.Helper()
+	press(m, "enter", "")
+	if m.screen != screenForm {
+		t.Fatalf("フォームに入れていない (screen=%v)", m.screen)
+	}
+	focusTextField(t, m)
+}
+
 // focusSpecOfKind は「いつ」の候補を目的の種類まで進め、その入力欄へフォーカスする。
 // ⚠️ press(tab); press(left); press(left) と位置で書かないこと: 候補を 1 つ足すだけで
 //
 //	無関係なテストが 11 本落ちる (監査 2026-08-28)。並びでなく種類で探す。
 func focusSpecOfKind(t *testing.T, m *model, k presetKind) {
 	t.Helper()
-	press(m, "tab", "") // 文字列 → いつ
+	focusWhenRow(t, m)
 	for range presets {
 		if m.form.current().kind == k {
 			press(m, "enter", "") // 入力欄へ
@@ -126,7 +160,11 @@ func TestMenuToFormAndPresetReservation(t *testing.T) {
 	if m.screen != screenForm {
 		t.Fatalf("screen = %v; want form", m.screen)
 	}
-	// 既定フォーカスは文字列欄 (すぐ打ち始められる)
+	// 開いた直後は「いつ」。Enter で次の欄へ進み、文字列欄で確定する
+	if m.form.focus != focusWhen {
+		t.Fatalf("開いた直後の focus = %v; want when", m.form.focus)
+	}
+	press(m, "enter", "") // いつ → 文字列
 	typeText(m, "make test")
 	press(m, "enter", "")
 	if m.res.action != "new" {
@@ -150,9 +188,8 @@ func TestMenuToFormAndPresetReservation(t *testing.T) {
 func TestPresetSelectionMovesFireTime(t *testing.T) {
 	m := newTestModel()
 	press(m, "enter", "")
-	press(m, "tab", "") // 文字列 → いつ (fields は when,text の 2 つ)
 	if m.form.focus != focusWhen {
-		t.Fatalf("focus = %v; want when", m.form.focus)
+		t.Fatalf("開いた直後の focus = %v; want when", m.form.focus)
 	}
 	press(m, "right", "")
 	press(m, "right", "")
@@ -211,6 +248,7 @@ func TestInvalidInputKeepsForm(t *testing.T) {
 			typeText(m, tc.spec)
 			press(m, "tab", "")
 		}
+		focusTextField(t, m)
 		typeText(m, tc.text)
 		press(m, "enter", "")
 		if m.quit || m.res.action != "" {
@@ -224,8 +262,11 @@ func TestInvalidInputKeepsForm(t *testing.T) {
 
 func TestEscAndCtrlCDoNotReserve(t *testing.T) {
 	m := newTestModel()
-	press(m, "enter", "")
+	openForm(t, m)
 	typeText(m, "make test")
+	// Esc は欄を 1 つずつ戻り、先頭 (いつ) まで来てからメニューへ降りる
+	// (欄ごとの挙動は TestEscapeStepsBackThroughFields)
+	press(m, "esc", "")
 	press(m, "esc", "")
 	if m.screen != screenMenu || m.res.action != "" {
 		t.Errorf("Esc でフォームを抜けない (screen=%v res=%+v)", m.screen, m.res)
@@ -258,7 +299,7 @@ func TestPickReturnsSelectedID(t *testing.T) {
 // 置いていることを View から確かめる (これが無いと gum と同じズレが再発する)。
 func TestViewPlacesRealCursorAtFocusedField(t *testing.T) {
 	m := newTestModel()
-	press(m, "enter", "")
+	openForm(t, m)
 	typeText(m, "ab")
 	v := m.View()
 	if v.Cursor == nil {
@@ -290,7 +331,7 @@ func TestViewPlacesRealCursorAtFocusedField(t *testing.T) {
 func TestIMECommitArrivesAsMultiRuneText(t *testing.T) {
 	// IME 確定は「複数 rune が 1 つの入力として来る」。1 文字ずつでない経路も受けること
 	m := newTestModel()
-	press(m, "enter", "")
+	openForm(t, m)
 	m.Update(tea.KeyPressMsg{Code: 'あ', Text: "こんにちは"})
 	if got := m.form.text.value(); got != "こんにちは" {
 		t.Errorf("IME 確定文字列 = %q; want こんにちは", got)
@@ -386,11 +427,12 @@ func TestEnterDoesNotLeaveInvalidSpec(t *testing.T) {
 func TestHelpLineShowsWhatEnterDoes(t *testing.T) {
 	m := newTestModel()
 	press(m, "enter", "")
-	if got := stripSGR(m.View().Content); !strings.Contains(got, "Enter 予約") {
-		t.Error("文字列欄で 'Enter 予約' が出ていない")
-	}
-	press(m, "tab", "")
+	// 開いた直後は「いつ」= Enter は次へ
 	if got := stripSGR(m.View().Content); !strings.Contains(got, "Enter 次へ") {
 		t.Error("候補行で 'Enter 次へ' が出ていない")
+	}
+	focusTextField(t, m)
+	if got := stripSGR(m.View().Content); !strings.Contains(got, "Enter 予約") {
+		t.Error("文字列欄で 'Enter 予約' が出ていない")
 	}
 }
