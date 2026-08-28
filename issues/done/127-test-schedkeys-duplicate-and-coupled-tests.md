@@ -50,3 +50,25 @@
 
 1〜2 は「消す」判断がユーザー確認向き (テストを消す変更なので)。3〜5 は機械的に寄せられる。
 着手するときは、寄せた後に **元の変異が今も red か** を確認してから commit すること。
+
+## 結果 (2026-08-28 実施)
+
+全 5 項目を実施した。**削除の前後で変異バッテリ (11 本) を回し、どの変異にも守り手が残ることを
+確認してから消した**。
+
+- 1・2: `TestFormFitsInPopup` / `TestPickRowsFitWidth` / `TestPickEmptyDoesNotOpen` /
+  `TestEditorIgnoresControlInput` を削除。消す前に `TestFrameFitsEverySize` の
+  カーソル検査を 1 段強く (`> w` → `>= w`) し、空文字の拒否を `TestInvisibleRunesRejected` へ移した
+  (これらが削除するテストの固有の主張だった)
+- 3: `focusSpecOfKind(t, m, kind)` を入れ、位置依存の 27 箇所を種類ベースへ。候補を足しても
+  無関係なテストが落ちなくなり、「意図した欄に入れたか」の検査も付いた
+- 4: `newTestModelAt(label, w, h, jobs...)` に集約。実時計で走っていた 3 本を固定時計へ。
+  さらに **`TestTestsUseSharedConstructor`** を足し、テストが `newModel` を直に呼んだら落ちるようにした
+  (この回帰が再発しないよう構造で止める。ガード自身が空振りしないことも検査する)
+- 5: `keyMod`/`keyCode` に修飾キーの接頭辞を解釈させ、`ctrlKey` を削除。`press(m, "ctrl+n", "")` と
+  本番と同じ表記で書けるようになった (以前は `c` の打鍵になっていた)
+
+**副産物**: バッテリで **`chipRange` を全範囲にしても誰も捕まえない**穴が見つかった (行の幅は
+守られるのに選択中の候補が画面外へ出る)。`TestSelectedChipStaysVisible` を追加。
+あわせて、幅 9 のような極端に狭い端末でカーソルが最終列の外 (X == width) に置かれていたのを
+`width-1` に clamp した。

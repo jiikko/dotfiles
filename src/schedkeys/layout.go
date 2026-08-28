@@ -50,8 +50,10 @@ func (f *frame) render() (string, *tea.Cursor) {
 	var cur *tea.Cursor
 	if f.curRow >= 0 {
 		col := f.curCol
-		if col > f.width {
-			col = f.width
+		// ⚠️ 端末の最終列は width-1。width に置くと画面の外になり、そこへ IME の未確定文字が出る
+		//    (幅 9 のような極端に狭い端末で実際に起きた)
+		if col > f.width-1 {
+			col = f.width - 1
 		}
 		if col < 0 {
 			col = 0

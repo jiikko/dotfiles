@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -79,18 +81,13 @@ func TestFrameFitsEverySize(t *testing.T) {
 			}{
 				{"プリセット", func(m *model) {}},
 				{"時刻欄", func(m *model) {
-					press(m, "tab", "")
-					press(m, "left", "")
-					press(m, "left", "")
-					press(m, "enter", "")
+					focusSpecOfKind(t, m, kindClock)
 					typeText(m, "25:00")
 					press(m, "enter", "")
 				}},
 				{"長い文字列", func(m *model) { typeText(m, strings.Repeat("あ", 100)) }},
 			} {
-				m := newModel(label, now, nil)
-				m.nowFn = func() time.Time { return now }
-				m.width, m.height = w, h
+				m := newTestModelAt(label, w, h)
 				press(m, "enter", "")
 				tc.setup(m)
 				v := m.View()
@@ -109,7 +106,9 @@ func TestFrameFitsEverySize(t *testing.T) {
 				if v.Cursor.Y < 0 || v.Cursor.Y >= len(lines) {
 					t.Errorf("%dx%d %s: Cursor.Y=%d が枠 (%d 行) の外", w, h, tc.name, v.Cursor.Y, len(lines))
 				}
-				if v.Cursor.X < 0 || v.Cursor.X > w {
+				// ⚠️ X == w も外とする (1 桁はみ出しを許さない)。削除した TestFormFitsInPopup が
+				//    持っていた強さをここへ移した
+				if v.Cursor.X < 0 || v.Cursor.X >= w {
 					t.Errorf("%dx%d %s: Cursor.X=%d が幅 %d の外", w, h, tc.name, v.Cursor.X, w)
 				}
 			}
@@ -124,9 +123,7 @@ func TestFocusedFieldStaysVisibleWhenShort(t *testing.T) {
 		m := newTestModel()
 		m.width, m.height = 70, h
 		press(m, "enter", "")
-		press(m, "tab", "")
-		press(m, "left", "") // 自由入力 (欄が 1 つ増える)
-		press(m, "enter", "")
+		focusSpecOfKind(t, m, kindFree)
 		typeText(m, "1h30m")
 		press(m, "enter", "")
 		typeText(m, "make test")
@@ -153,9 +150,7 @@ func TestPickKeepsTextColumnVisible(t *testing.T) {
 		{id: "b", at: now.Add(time.Hour), label: "w:2 zsh", text: "deploy production"},
 	}
 	for _, w := range []int{40, 70, 120} {
-		m := newModel("main:3 claude", now, jobs)
-		m.nowFn = func() time.Time { return now }
-		m.width, m.height = w, 14
+		m := newTestModelAt("main:3 claude", w, 14, jobs...)
 		press(m, "j", "")
 		press(m, "enter", "")
 		lines := strings.Split(m.View().Content, "\n")
@@ -231,6 +226,16 @@ func TestInvisibleRunesRejected(t *testing.T) {
 			t.Errorf("%s: 値が変わった (%q)", name, e.value())
 		}
 	}
+	// 空文字も受けない (キーが文字を生まない場合。editor_test.go から移した唯一の固有主張)
+	var e0 editor
+	e0.setValue("ok")
+	if e0.handle("unknown-key", "") {
+		t.Error("空文字を受け入れた")
+	}
+	if e0.value() != "ok" {
+		t.Errorf("空文字で値が変わった: %q", e0.value())
+	}
+
 	// 通常の文字と、異体字セレクタを伴わない絵文字は通る
 	for _, in := range []string{"a", "あ", "한", "❤", "😀", "が"} {
 		var e editor
@@ -327,9 +332,7 @@ func TestPasteEntersField(t *testing.T) {
 	// 入力欄 (時刻/自由) にも貼れる
 	m2 := newTestModel()
 	press(m2, "enter", "")
-	press(m2, "tab", "")
-	press(m2, "left", "")
-	press(m2, "enter", "")
+	focusSpecOfKind(t, m2, kindFree)
 	m2.Update(tea.PasteMsg{Content: "1h30m"})
 	if got := m2.form.spec.value(); got != "1h30m" {
 		t.Errorf("入力欄に貼れない: %q", got)
@@ -350,10 +353,7 @@ func TestPasteEntersField(t *testing.T) {
 func TestDisplayClockAdvances(t *testing.T) {
 	m := newTestModel()
 	press(m, "enter", "")
-	press(m, "tab", "")
-	press(m, "left", "")
-	press(m, "left", "") // 時刻
-	press(m, "enter", "")
+	focusSpecOfKind(t, m, kindClock)
 	typeText(m, "10:20") // now = 10:00 なので今日
 	if body := stripSGR(m.View().Content); !strings.Contains(body, "10:20 に送る") {
 		t.Fatalf("前提が崩れている:\n%s", body)
@@ -374,8 +374,8 @@ func TestPrefixDoesNotSwallowEditingKey(t *testing.T) {
 	m.togglePrefix = "ctrl+b"
 	press(m, "enter", "")
 	typeText(m, "abc")
-	m.Update(ctrlKey('b')) // prefix として arm される
-	m.Update(ctrlKey('b')) // 続く C-b: トグルではないので、2 つとも左移動として効く
+	press(m, "ctrl+b", "") // prefix として arm される
+	press(m, "ctrl+b", "") // 続く C-b: トグルではないので、2 つとも左移動として効く
 	if m.quit {
 		t.Fatal("C-b 2 回で閉じた")
 	}
@@ -414,9 +414,7 @@ func TestPickAndMenuFitWithNastyInput(t *testing.T) {
 		}
 		for _, w := range []int{8, 20, 40, 70} {
 			for _, screen := range []string{"menu", "pick"} {
-				m := newModel("main:1 "+in, now, jobs)
-				m.nowFn = func() time.Time { return now }
-				m.width, m.height = w, 14
+				m := newTestModelAt("main:1 "+in, w, 14, jobs...)
 				if screen == "pick" {
 					press(m, "j", "")
 					press(m, "enter", "")
@@ -468,8 +466,7 @@ func TestMenuItemsAreTheSingleSource(t *testing.T) {
 		t.Errorf("0 件なのに一覧へ入れた (screen=%v)", m.screen)
 	}
 	// 1 件あれば入れる
-	m2 := newModel("main:3 claude", now, []job{{id: "a", at: now.Add(time.Hour), label: "x", text: "y"}})
-	m2.nowFn = func() time.Time { return now }
+	m2 := newTestModel(job{id: "a", at: now.Add(time.Hour), label: "x", text: "y"})
 	if !m2.menuItems()[1].enabled {
 		t.Fatal("予約があるのに一覧が選べない")
 	}
@@ -488,9 +485,7 @@ func TestMenuItemsAreTheSingleSource(t *testing.T) {
 func TestFocusedEditorIsSharedByKeysAndPaste(t *testing.T) {
 	m := newTestModel()
 	press(m, "enter", "")
-	press(m, "tab", "")
-	press(m, "left", "") // 自由入力 (spec 欄が出る)
-	press(m, "enter", "")
+	focusSpecOfKind(t, m, kindFree)
 	typeText(m, "1h")
 	m.Update(tea.PasteMsg{Content: "30m"})
 	if got := m.form.spec.value(); got != "1h30m" {
@@ -532,5 +527,73 @@ func TestPasteIgnoredOnChipRow(t *testing.T) {
 	}
 	if got := m.form.spec.value(); got != "" {
 		t.Errorf("候補行での貼り付けが入力欄に入った: %q", got)
+	}
+}
+
+// 選択中の候補が必ず「見えている」こと。⚠️ 行の幅を守るだけでは足りない: 候補を全部並べて
+// 最後に切ると、行は幅に収まるのに**選択中の候補が画面外**になる (監査 2026-08-28 の変異で判明。
+// 幅の検査は全部通るのに誰も捕まえなかった)。
+func TestSelectedChipStaysVisible(t *testing.T) {
+	for _, w := range []int{20, 24, 30, 40, 70, 120} {
+		for idx := range presets {
+			m := newTestModelAt("main:3 claude", w, 14)
+			press(m, "enter", "")
+			press(m, "tab", "") // いつ
+			for range idx {
+				press(m, "right", "")
+			}
+			body := stripSGR(m.View().Content)
+			want := "[" + m.form.current().label + "]"
+			if !strings.Contains(body, want) {
+				t.Errorf("w=%d 候補 %q が見えていない (選択の枠 %q が無い):\n%s", w, m.form.current().label, want, body)
+			}
+		}
+	}
+}
+
+// テストは newTestModel / newTestModelAt を通ること。⚠️ newModel を直に呼ぶと時計の固定を
+// 書き忘れやすく、実際に 3 本が実時刻で走っていた (監査 2026-08-28)。例外は本番の構築点を
+// 検査する TestNewModelWiresWallClock と、ヘルパー自身だけ。
+func TestTestsUseSharedConstructor(t *testing.T) {
+	files, err := filepath.Glob("*_test.go")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("テストファイルを列挙できない: %v", err)
+	}
+	allowed := map[string]bool{
+		"func newTestModelAt(":                true,
+		"func TestNewModelWiresWallClock(":    true,
+		"func TestTestsUseSharedConstructor(": true, // この検査自身
+	}
+	needle := "newModel" + "("
+	found := 0
+	for _, f := range files {
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+		lines := strings.Split(string(src), "\n")
+		fn := ""
+		for i, l := range lines {
+			if strings.HasPrefix(l, "func ") {
+				fn = l
+			}
+			if !strings.Contains(l, needle) {
+				continue
+			}
+			found++
+			ok := false
+			for prefix := range allowed {
+				if strings.HasPrefix(fn, prefix) {
+					ok = true
+				}
+			}
+			if !ok {
+				t.Errorf("%s:%d が newModel を直に呼んでいる (newTestModel / newTestModelAt を使う): %s",
+					f, i+1, strings.TrimSpace(l))
+			}
+		}
+	}
+	if found < 2 {
+		t.Fatalf("newModel の呼び出しが %d 件しか見つからない (検査が空振りしている)", found)
 	}
 }

@@ -32,19 +32,6 @@ func TestEditorMultibyteEditing(t *testing.T) {
 	}
 }
 
-func TestEditorIgnoresControlInput(t *testing.T) {
-	var e editor
-	e.setValue("abc")
-	for _, in := range []string{"\x00", "\x1b", "\x7f", ""} {
-		if e.handle("unknown-key", in) {
-			t.Errorf("制御文字 %q を受け入れた", in)
-		}
-	}
-	if e.value() != "abc" {
-		t.Errorf("値が変わった: %q", e.value())
-	}
-}
-
 func TestEditorLineOps(t *testing.T) {
 	var e editor
 	e.setValue("make test now")

@@ -13,58 +13,6 @@ import (
 // 以下はユーザー報告のバグに対する回帰テスト。いずれも「実端末で見て分かった」ものなので、
 // 再発を機械で捕まえられる形 (行数・カーソル位置・行幅) に落としてある。
 
-// popup の内側 (70x14) に必ず収まること。溢れると端末が流れ、表示が二重になり、
-// 本物のカーソル位置 (IME の未確定文字が出る場所) も行数分ずれる (2026-08-28 報告)。
-func TestFormFitsInPopup(t *testing.T) {
-	const w, h = 70, 14
-	for _, tc := range []struct {
-		name  string
-		setup func(*model)
-	}{
-		{"既定 (プリセット)", func(m *model) {}},
-		{"時刻欄 + エラー", func(m *model) {
-			press(m, "tab", "")
-			press(m, "left", "")
-			press(m, "left", "")
-			press(m, "enter", "")
-			typeText(m, "25:00")
-			press(m, "enter", "")
-		}},
-		{"自由入力 + 長い文字列", func(m *model) {
-			press(m, "tab", "")
-			press(m, "left", "")
-			press(m, "enter", "")
-			typeText(m, "1h30m")
-			press(m, "enter", "")
-			typeText(m, strings.Repeat("x", 200))
-		}},
-		{"長い日本語", func(m *model) { typeText(m, strings.Repeat("あ", 120)) }},
-	} {
-		m := newTestModel()
-		m.width, m.height = w, h
-		press(m, "enter", "")
-		tc.setup(m)
-		v := m.View()
-		lines := strings.Split(v.Content, "\n")
-		if len(lines) > h {
-			t.Errorf("%s: %d 行 (上限 %d)", tc.name, len(lines), h)
-		}
-		for i, l := range lines {
-			if got := ansi.StringWidth(l); got > w {
-				t.Errorf("%s: %d 行目が %d 桁 (上限 %d): %q", tc.name, i, got, w, stripSGR(l))
-			}
-		}
-		if v.Cursor != nil {
-			if v.Cursor.Y >= len(lines) || v.Cursor.Y < 0 {
-				t.Errorf("%s: Cursor.Y=%d が行数 %d の外", tc.name, v.Cursor.Y, len(lines))
-			}
-			if v.Cursor.X >= w || v.Cursor.X < 0 {
-				t.Errorf("%s: Cursor.X=%d が幅 %d の外", tc.name, v.Cursor.X, w)
-			}
-		}
-	}
-}
-
 // カーソルは「フォーカス中の欄の、入力済みの直後」に置かれること。入力欄が増減しても
 // 行がずれない (自由入力で 5 行ずれた 2026-08-28 の報告)。
 func TestCursorSitsOnFocusedFieldRow(t *testing.T) {
@@ -76,16 +24,11 @@ func TestCursorSitsOnFocusedFieldRow(t *testing.T) {
 	}{
 		{"文字列 (入力欄なし)", func(m *model) { typeText(m, "make test") }, "文字列", "make test"},
 		{"時刻欄", func(m *model) {
-			press(m, "tab", "")
-			press(m, "left", "")
-			press(m, "left", "")
-			press(m, "enter", "")
+			focusSpecOfKind(t, m, kindClock)
 			typeText(m, "09:00")
 		}, "時刻", "09:00"},
 		{"自由入力欄", func(m *model) {
-			press(m, "tab", "")
-			press(m, "left", "")
-			press(m, "enter", "")
+			focusSpecOfKind(t, m, kindFree)
 			typeText(m, "1h30m")
 		}, "あと", "1h30m"},
 	} {
@@ -113,10 +56,7 @@ func TestCursorSitsOnFocusedFieldRow(t *testing.T) {
 func TestErrorShownOnce(t *testing.T) {
 	m := newTestModel()
 	press(m, "enter", "")
-	press(m, "tab", "")
-	press(m, "left", "")
-	press(m, "left", "")
-	press(m, "enter", "")
+	focusSpecOfKind(t, m, kindClock)
 	typeText(m, "25:00")
 	press(m, "enter", "")
 	body := stripSGR(m.View().Content)
@@ -167,28 +107,6 @@ func TestLongInputScrollsHorizontally(t *testing.T) {
 	}
 }
 
-// 一覧の行も幅を超えないこと (折り返すと選択の反転が崩れ、行数も増える)。
-func TestPickRowsFitWidth(t *testing.T) {
-	n := time.Now()
-	jobs := []job{
-		{id: "a", at: n.Add(time.Minute), label: "main:3 クロード実況中", text: strings.Repeat("y", 200)},
-		{id: "b", at: n.Add(time.Hour), label: "w:1 zsh", text: "short"},
-	}
-	m := newModel("main:3 claude", n, jobs)
-	m.width, m.height = 70, 14
-	press(m, "j", "")
-	press(m, "enter", "")
-	lines := strings.Split(m.View().Content, "\n")
-	if len(lines) > 14 {
-		t.Errorf("%d 行 (上限 14)", len(lines))
-	}
-	for i, l := range lines {
-		if got := ansi.StringWidth(l); got > 70 {
-			t.Errorf("%d 行目が %d 桁: %q", i, got, stripSGR(l))
-		}
-	}
-}
-
 // 選択中の候補・欄が「太字だけ」でなく色と記号でも分かること (2026-08-28 の指摘)。
 func TestSelectionIsVisibleWithoutBoldOnly(t *testing.T) {
 	m := newTestModel()
@@ -228,25 +146,25 @@ func TestEmacsKeysMoveFocusAndChips(t *testing.T) {
 	if m.form.focus != focusText {
 		t.Fatal("初期フォーカスが文字列でない")
 	}
-	m.Update(ctrlKey('n'))
+	press(m, "ctrl+n", "")
 	if m.form.focus != focusWhen {
 		t.Errorf("C-n で欄が移らない (focus=%v)", m.form.focus)
 	}
-	m.Update(ctrlKey('f'))
+	press(m, "ctrl+f", "")
 	if got := m.form.current().label; got != "10分後" {
 		t.Errorf("C-f で候補が進まない (%q)", got)
 	}
-	m.Update(ctrlKey('b'))
+	press(m, "ctrl+b", "")
 	if got := m.form.current().label; got != "5分後" {
 		t.Errorf("C-b で候補が戻らない (%q)", got)
 	}
-	m.Update(ctrlKey('p'))
+	press(m, "ctrl+p", "")
 	if m.form.focus != focusText {
 		t.Errorf("C-p で欄が戻らない (focus=%v)", m.form.focus)
 	}
 	// 文字列欄では C-f / C-b は文字移動 (欄移動に横取りされない)
 	typeText(m, "ab")
-	m.Update(ctrlKey('b'))
+	press(m, "ctrl+b", "")
 	if m.form.text.pos != 1 {
 		t.Errorf("文字列欄の C-b が文字移動でない (pos=%d)", m.form.text.pos)
 	}
@@ -261,25 +179,25 @@ func TestEmacsKeysMoveMenuAndPick(t *testing.T) {
 		{id: "a", at: time.Now().Add(time.Minute), label: "x", text: "1"},
 		{id: "b", at: time.Now().Add(time.Hour), label: "y", text: "2"},
 	}
-	m := newModel("main:3 claude", time.Now(), jobs)
-	m.Update(ctrlKey('n'))
+	m := newTestModel(jobs...)
+	press(m, "ctrl+n", "")
 	if m.menuIdx != 1 {
 		t.Errorf("メニューが C-n で動かない (idx=%d)", m.menuIdx)
 	}
-	m.Update(ctrlKey('p'))
+	press(m, "ctrl+p", "")
 	if m.menuIdx != 0 {
 		t.Errorf("メニューが C-p で戻らない (idx=%d)", m.menuIdx)
 	}
-	m.Update(ctrlKey('n'))
+	press(m, "ctrl+n", "")
 	press(m, "enter", "")
 	if m.screen != screenPick {
 		t.Fatal("一覧に入れない")
 	}
-	m.Update(ctrlKey('n'))
+	press(m, "ctrl+n", "")
 	if m.pickIdx != 1 {
 		t.Errorf("一覧が C-n で動かない (idx=%d)", m.pickIdx)
 	}
-	m.Update(ctrlKey('p'))
+	press(m, "ctrl+p", "")
 	if m.pickIdx != 0 {
 		t.Errorf("一覧が C-p で戻らない (idx=%d)", m.pickIdx)
 	}
@@ -294,13 +212,13 @@ func TestTogglePrefixCloses(t *testing.T) {
 		m.togglePrefix = "ctrl+t"
 		press(m, "enter", "") // フォームへ
 		typeText(m, "make test")
-		m.Update(ctrlKey('t'))
+		press(m, "ctrl+t", "")
 		if m.quit {
 			t.Fatalf("%s: prefix だけで閉じた", second)
 		}
 		switch second {
 		case "ctrl+m":
-			m.Update(ctrlKey('m'))
+			press(m, "ctrl+m", "")
 		default:
 			press(m, second, "")
 		}
@@ -318,7 +236,7 @@ func TestTogglePrefixDoesNotSwallowOtherKeys(t *testing.T) {
 	m := newTestModel()
 	m.togglePrefix = "ctrl+t"
 	press(m, "enter", "")
-	m.Update(ctrlKey('t'))
+	press(m, "ctrl+t", "")
 	typeText(m, "a")
 	if got := m.form.text.value(); got != "a" {
 		t.Errorf("prefix の次のキーが落ちた (text=%q)", got)
@@ -340,7 +258,7 @@ func TestTogglePrefixDoesNotSwallowOtherKeys(t *testing.T) {
 func TestNoTogglePrefixMeansNoSpecialKey(t *testing.T) {
 	m := newTestModel()
 	press(m, "enter", "")
-	m.Update(ctrlKey('t'))
+	press(m, "ctrl+t", "")
 	press(m, "m", "m")
 	if m.quit {
 		t.Error("--toggle-prefix 未指定なのに閉じた")
@@ -457,7 +375,7 @@ func TestToastIgnoresEditingKeys(t *testing.T) {
 // 「取り消しました」と出すと嘘になりうる)。
 func TestNoToastForCancel(t *testing.T) {
 	jobs := []job{{id: "a", at: time.Now().Add(time.Hour), label: "x", text: "make test"}}
-	m := newModel("main:3 claude", time.Now(), jobs)
+	m := newTestModel(jobs...)
 	press(m, "j", "")
 	press(m, "enter", "")
 	press(m, "enter", "")
@@ -497,10 +415,7 @@ func TestReservationUsesClockAtSubmit(t *testing.T) {
 func TestClockSpecUsesClockAtSubmit(t *testing.T) {
 	m := newTestModel()
 	press(m, "enter", "")
-	press(m, "tab", "")
-	press(m, "left", "")
-	press(m, "left", "") // 時刻
-	press(m, "enter", "")
+	focusSpecOfKind(t, m, kindClock)
 	typeText(m, "10:20") // now は 10:00
 	late := now.Add(25 * time.Minute)
 	m.nowFn = func() time.Time { return late } // 10:25 に確定

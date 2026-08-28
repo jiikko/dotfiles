@@ -11,8 +11,34 @@ import (
 var now = time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)
 
 // press はキー入力を 1 つ流す。text は IME 確定文字列を含む「そのキーが生む文字」。
+// キー名は本番と同じ表記 ("ctrl+n" / "shift+tab" / "a") で書ける。
+// ⚠️ 修飾キー専用の別経路を作らないこと: 以前は ctrlKey() が press を迂回していたため、
+//
+//	press(m, "ctrl+n", "") と書くと **c の打鍵**になり、名前と無関係な理由で通っていた。
 func press(m *model, key, text string) {
-	m.Update(tea.KeyPressMsg{Code: keyCode(key), Text: text, Mod: keyMod(key)})
+	code, mod := parseKey(key)
+	m.Update(tea.KeyPressMsg{Code: code, Text: text, Mod: mod})
+}
+
+// parseKey は "ctrl+n" のような表記を bubbletea の Code / Mod に直す
+// (この 2 つが揃って初めて String() が元の表記に戻る)。
+func parseKey(key string) (rune, tea.KeyMod) {
+	var mod tea.KeyMod
+	for {
+		switch {
+		case strings.HasPrefix(key, "ctrl+"):
+			mod |= tea.ModCtrl
+			key = key[len("ctrl+"):]
+		case strings.HasPrefix(key, "alt+"):
+			mod |= tea.ModAlt
+			key = key[len("alt+"):]
+		case strings.HasPrefix(key, "shift+"):
+			mod |= tea.ModShift
+			key = key[len("shift+"):]
+		default:
+			return keyCode(key), mod
+		}
+	}
 }
 
 func keyCode(key string) rune {
@@ -33,12 +59,12 @@ func keyCode(key string) rune {
 		return tea.KeyDown
 	case "backspace":
 		return tea.KeyBackspace
+	case "space":
+		return tea.KeySpace
 	default:
 		return []rune(key)[0]
 	}
 }
-
-func keyMod(string) tea.KeyMod { return 0 }
 
 // finishToast は確定後のトーストを最後まで進める (実時間を待たない)。
 // 予約が決まってから閉じるまでの間にトーストを見せる作りなので、確定を確かめるテストは
@@ -53,9 +79,6 @@ func finishToast(m *model) {
 	m.Update(toastDoneMsg{})
 }
 
-// ctrlKey は Ctrl 修飾つきのキー入力を作る (String() が "ctrl+n" 等になる)。
-func ctrlKey(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Mod: tea.ModCtrl} }
-
 // typeText は文字列を 1 文字ずつ流す (IME の確定は「複数文字がまとめて来る」ので別途)
 func typeText(m *model, s string) {
 	for _, r := range s {
@@ -63,11 +86,38 @@ func typeText(m *model, s string) {
 	}
 }
 
-// テストでは「今」を固定する (確定の時計を差し替えられるのが本番との唯一の違い)。
-func newTestModel(jobs ...job) *model {
-	m := newModel("main:3 claude", now, jobs)
+// newTestModel は既定の見た目 (popup の内側 70x14) でモデルを作る。
+// ⚠️ テストで newModel を直に呼ばないこと: 時計の固定を書き忘れた 3 本が実時刻で走っていた
+//
+//	(監査 2026-08-28)。ここを唯一の入口にする。
+func newTestModel(jobs ...job) *model { return newTestModelAt("main:3 claude", 70, 14, jobs...) }
+
+// newTestModelAt はラベルと画面サイズを指定してモデルを作る (時計は必ず固定する)。
+func newTestModelAt(label string, w, h int, jobs ...job) *model {
+	m := newModel(label, now, jobs)
 	m.nowFn = func() time.Time { return now }
+	m.width, m.height = w, h
 	return m
+}
+
+// focusSpecOfKind は「いつ」の候補を目的の種類まで進め、その入力欄へフォーカスする。
+// ⚠️ press(tab); press(left); press(left) と位置で書かないこと: 候補を 1 つ足すだけで
+//
+//	無関係なテストが 11 本落ちる (監査 2026-08-28)。並びでなく種類で探す。
+func focusSpecOfKind(t *testing.T, m *model, k presetKind) {
+	t.Helper()
+	press(m, "tab", "") // 文字列 → いつ
+	for range presets {
+		if m.form.current().kind == k {
+			press(m, "enter", "") // 入力欄へ
+			if m.form.focus != focusSpec {
+				t.Fatalf("入力欄に入れていない (focus=%v)", m.form.focus)
+			}
+			return
+		}
+		press(m, "right", "")
+	}
+	t.Fatalf("候補に kind=%v が無い", k)
 }
 
 func TestMenuToFormAndPresetReservation(t *testing.T) {
@@ -124,13 +174,7 @@ func TestClockAndFreeSpec(t *testing.T) {
 	// 時刻: 過ぎていれば翌日
 	m := newTestModel()
 	press(m, "enter", "")
-	press(m, "tab", "")
-	press(m, "left", "") // 先頭 → 自由
-	press(m, "left", "") // → 時刻
-	if m.form.current().kind != kindClock {
-		t.Fatalf("kind = %v; want clock", m.form.current().kind)
-	}
-	press(m, "tab", "") // → spec
+	focusSpecOfKind(t, m, kindClock)
 	typeText(m, "09:00")
 	press(m, "tab", "") // → text
 	typeText(m, "y")
@@ -144,9 +188,7 @@ func TestClockAndFreeSpec(t *testing.T) {
 	// 自由入力
 	m = newTestModel()
 	press(m, "enter", "")
-	press(m, "tab", "")
-	press(m, "left", "") // → 自由
-	press(m, "tab", "")
+	focusSpecOfKind(t, m, kindFree)
 	typeText(m, "1h30m")
 	press(m, "tab", "")
 	typeText(m, "y")
@@ -165,10 +207,7 @@ func TestInvalidInputKeepsForm(t *testing.T) {
 		m := newTestModel()
 		press(m, "enter", "")
 		if tc.spec != "" {
-			press(m, "tab", "")
-			press(m, "left", "")
-			press(m, "left", "") // 時刻
-			press(m, "tab", "")
+			focusSpecOfKind(t, m, kindClock)
 			typeText(m, tc.spec)
 			press(m, "tab", "")
 		}
@@ -212,15 +251,6 @@ func TestPickReturnsSelectedID(t *testing.T) {
 	press(m, "enter", "")
 	if m.res.action != "cancel" || m.res.id != "b" {
 		t.Errorf("res = %+v; want cancel b (表示が同じでも選んだ行の id)", m.res)
-	}
-}
-
-func TestPickEmptyDoesNotOpen(t *testing.T) {
-	m := newTestModel()
-	press(m, "j", "")
-	press(m, "enter", "")
-	if m.screen == screenPick {
-		t.Error("予約 0 件で一覧が開いた")
 	}
 }
 
@@ -307,10 +337,7 @@ func TestEnterAdvancesInsteadOfSubmitting(t *testing.T) {
 	// 時刻: いつ → 時刻欄 → 文字列 と Enter だけで進める
 	m = newTestModel()
 	press(m, "enter", "")
-	press(m, "tab", "")
-	press(m, "left", "")
-	press(m, "left", "") // 時刻
-	press(m, "enter", "")
+	focusSpecOfKind(t, m, kindClock)
 	if m.form.focus != focusSpec {
 		t.Fatalf("focus = %v; want spec (入力欄があればそこへ)", m.form.focus)
 	}
@@ -334,10 +361,7 @@ func TestEnterAdvancesInsteadOfSubmitting(t *testing.T) {
 func TestEnterDoesNotLeaveInvalidSpec(t *testing.T) {
 	m := newTestModel()
 	press(m, "enter", "")
-	press(m, "tab", "")
-	press(m, "left", "")
-	press(m, "left", "") // 時刻
-	press(m, "enter", "")
+	focusSpecOfKind(t, m, kindClock)
 	typeText(m, "25:00")
 	press(m, "enter", "")
 	if m.form.focus != focusSpec {
