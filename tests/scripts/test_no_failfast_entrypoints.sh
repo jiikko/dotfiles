@@ -14,7 +14,11 @@ unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
-TMP_DIR="$(mktemp -d "$ROOT_DIR/tmp/failfast.XXXXXX")"
+# ⚠️ repo 内の `tmp/` に作らないこと。あの ignore は `~/.gitignore_global` 由来で repo の
+#    .gitignore には無く、追跡もされないので **新品チェックアウトと CI には tmp/ が存在しない**
+#    (CI run 33168462220 で "mkdtemp failed ... No such file or directory")。手元は tmp/ が
+#    あるので緑になり、Linux でだけ落ちる。隔離ディレクトリの既定は OS の一時領域。
+TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 fail=0
