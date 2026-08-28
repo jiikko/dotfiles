@@ -74,7 +74,7 @@ fi
 # 異常終了 (TERM は無視するが INT / エラー / 正常終了) でも lock を残さない。残すと次世代の
 # 起動が上の stale 判定に頼ることになり、pid 再利用の窓を無駄に開ける
 # shellcheck disable=SC2329 # trap 経由の間接呼び出し
-release_watchdog_lock() { rm -rf "$LOCK_DIR" 2>/dev/null; }
+release_watchdog_lock() { tt_lock_release_if_owner "$LOCK_DIR"; }
 trap release_watchdog_lock EXIT
 
 # サーバ終了時の SIGTERM を無視する (冒頭コメント参照)。HUP も終端切断対策で無視。
@@ -170,5 +170,5 @@ tt_trigger_log "server-death pid=$SERVER_PID start=$SERVER_START socket=$SOCKET_
 ls -1t "$TT_PSLOG_DIR"/tt-server-death-*.pslog 2>/dev/null | tail -n +"$((TT_PSLOG_KEEP + 1))" \
   | while IFS= read -r f; do rm -f "$f" 2>/dev/null; done
 
-rm -rf "$LOCK_DIR" 2>/dev/null
+tt_lock_release_if_owner "$LOCK_DIR"
 exit 0

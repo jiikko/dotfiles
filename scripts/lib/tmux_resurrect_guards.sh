@@ -169,6 +169,43 @@ tt_on_default_server() {
 }
 
 # ── lock の取得 ──────────────────────────────────────────────────────────────
+# 「取り残し」とみなすまでの猶予 (秒)。2 箇所で使う:
+#   (a) owner 記録の無い lock … `mkdir` と owner 記録は原子的でないので、記録前の一瞬は
+#       正当な取得者の lock も「owner 不在」に見える。ここを猶予なしで奪うと**二重取得**する
+#   (b) 奪取の直列化 lock (`<dir>.steal`) … 奪取は rm+mkdir+write の数ミリ秒で終わるので、
+#       これを超えて残るのは奪取の途中で死んだプロセスの取り残しだけ
+# 短すぎると (a) で生きた lock を奪い、長すぎると復旧が遅れる。issue 103
+TT_LOCK_ORPHAN_STALE_SECONDS="${TT_LOCK_ORPHAN_STALE_SECONDS:-30}"
+
+# ファイル/ディレクトリの mtime を epoch 秒で返す (BSD -f %m / GNU -c %Y の両対応)。
+tt_mtime_epoch() {
+  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null
+}
+
+# dir の mtime が secs より古いか。
+#   戻り値: 0 = 古い (取り残し扱いしてよい) / 1 = 新しい・または存在しない / 2 = 判定不能
+#
+# ⚠️ `find -mmin -N` で書かないこと。**未来 mtime にもマッチする**ため「新しい」と判定し、
+#   NTP のステップバック・スリープ復帰・VM の suspend/resume・バックアップからの復元で
+#   mtime が未来にずれた取り残しが**永久に回収されなくなる** (呼び出し側は無音で退くので、
+#   保存も watchdog も二度と張られないのにログが 1 行も出ない)。実測 2026-08-28。
+# ⚠️ 存在しない dir を「古い」と答えないこと。**作れなかった**ケースを**取り残し**と
+#   誤判定する (実測: 親が読み取り専用のとき rc=2 が rc=1 に化けた)。
+# ⚠️ mtime が読めないときは 0/1 に丸めず 2 を返すこと。丸めると「奪ってよい」か
+#   「先任がいる」のどちらかの嘘になる (判定不能は第 3 の結果)。
+tt_lock_dir_older_than() {
+  local dir="$1" secs="$2" m now age
+  [ -d "$dir" ] || return 1
+  m="$(tt_mtime_epoch "$dir" || true)"
+  case "$m" in ''|*[!0-9]*) return 2 ;; esac
+  now="$(date +%s 2>/dev/null || true)"
+  case "$now" in ''|*[!0-9]*) return 2 ;; esac
+  age=$(( now - m ))
+  # 未来 mtime は「新しい」ではなく壊れているとみなして取り残し扱いにする (上の ⚠️)。
+  [ "$age" -lt 0 ] && return 0
+  [ "$age" -ge "$secs" ]
+}
+
 # 死んだサーバ/watcher の stale lock を掃除する (`<dir>/<pid>.lock` の形を前提)。
 # ⚠️ owner の判定を pid だけで行わないこと。pid 再利用で「先任が生きている」と誤認すると、
 #   新世代が無音で退いて **装置が 1 つも張られない** (サーバが死んでも死亡記録が残らない。
@@ -183,8 +220,16 @@ tt_lock_sweep_stale() {
     spid="$(basename "$d" .lock)"
     # 掃除するのは **サーバも owner も死んでいる**ときだけ (どちらか生きていれば残す)
     if ! kill -0 "$spid" 2>/dev/null && ! tt_lock_owner_alive "$d"; then
-      rm -rf "$d" 2>/dev/null
+      # 奪取の直列化 lock も道連れにする。lock 名にサーバ pid が入るので同じパスが
+      # 再訪されることは実質なく、ここで拾わないと空 dir が上限なく溜まり続ける。
+      rm -rf "$d" "$d.steal" 2>/dev/null
     fi
+  done
+  # 本体が既に消えている `.steal` の孤児 (奪取の途中で死んだ形) も回収する。
+  for d in "$base"/*.lock.steal; do
+    [ -d "$d" ] || continue
+    [ -d "${d%.steal}" ] && continue
+    tt_lock_dir_older_than "$d" "$TT_LOCK_ORPHAN_STALE_SECONDS" && rm -rf "$d" 2>/dev/null
   done
   # ⚠️ 掃除は best-effort。必ず 0 を返すこと。ループ末尾の `rm -rf` の rc がそのまま漏れると、
   #   呼び出し側に `set -e` が入った瞬間に「掃除に失敗したら装置を張らずに死ぬ」へ化ける
@@ -203,19 +248,88 @@ tt_lock_sweep_stale() {
 # ⚠️ 戻り値を読む側は `rc=0; tt_lock_acquire "$d" || rc=$?` の形にすること。素の `rc=$?` は
 #   後から `set -e` が入った瞬間に「rc を読む前にスクリプトごと死ぬ」へ変わる (無音で機能停止)。
 tt_lock_acquire() {
-  local dir="$1"
+  local dir="$1" steal="$1.steal"
+  if mkdir "$dir" 2>/dev/null; then
+    tt_lock_write_owner "$dir"
+    return 0
+  fi
+  tt_lock_owner_alive "$dir" && return 1
+
+  # ⚠️ ここで「owner が生きていない」= 取り残し、と即断しないこと。**`mkdir` と owner 記録は
+  #   原子的でない** ので、正当な取得者が `tt_lock_write_owner` の中 (`ps` の fork を挟むため
+  #   実測 4.6ms) にいる間、その lock も owner 不在に見える。猶予なしで奪うと**両方が rc=0 に
+  #   なり**、さらに遅れて届いた相手の owner 記録が自分の記録を上書きし、相手の
+  #   `tt_lock_release_if_owner` が**走行中の自分の lock を消す** (issue 103 の原症状)。
+  #   実測 2026-08-28: lock 不在から 2 プロセスが同時に来る形 (= production の全経路) で
+  #   二重取得 2/30、`write_owner` を遅らせると 15/15。
+  #   区別は owner ファイルの**有無**で付く: 記録済みで死んでいる owner は即奪ってよく
+  #   (記録が終わっているので書き込み中の相手はいない)、記録がまだ無いものだけ猶予を要る。
+  # ⚠️ `[ -d "$dir" ]` を落とさないこと。dir が無い = mkdir が「既にある」以外の理由 (権限・親が
+  #   無い) で失敗した形で、これは**取得できなかった (rc=2)** であって「先任がいる (rc=1)」では
+  #   ない。ここで 1 に丸めると呼び出し元 3 本はどれも無音 exit 0 なので、装置が張られないことが
+  #   ログに 1 行も出なくなる (実測 2026-08-28: 既存の read-only 親のテストが捕まえた)。
+  if [ -d "$dir" ] && [ ! -s "$dir/pid" ]; then
+    tt_lock_dir_older_than "$dir" "$TT_LOCK_ORPHAN_STALE_SECONDS"
+    case $? in
+      1) return 1 ;;   # まだ新しい = 相手が記録中。先任がいるのと同じ扱いで退く
+      2) return 2 ;;   # 判定不能。奪ってよいか分からないので観測できる失敗として返す
+    esac
+  fi
+
+  # 取り残し (owner 不在) を奪う。
+  #
+  # ⚠️ 「owner の生存確認 → rm -rf → mkdir」を素直に書くと**非アトミック**で、2 プロセスが
+  #   1〜5ms 差で来ると**両方が取得に成功する** (issue 103。E2E で restore.sh が 40/40 二重実行)。
+  #   `mv` へ差し替える案も窓が残る (B の mv が A の作った新しい lock を掴む)。
+  #   **奪取そのものを mkdir で直列化する**: 奪取権 lock を取れた 1 プロセスだけが奪う。
+  if ! mkdir "$steal" 2>/dev/null; then
+    # 作れなかったのが「既にある」以外の理由 (権限・親が無い) なら取得不能 = rc=2
+    [ -d "$steal" ] || return 2
+    # 奪取は rm+mkdir+write の数ミリ秒で終わる。TTL を超えて残っている = 奪取の途中で
+    # 死んだプロセスの取り残し。回収しないと**この経路が二度と走らない**ので 1 回だけ再挑戦する。
+    tt_lock_dir_older_than "$steal" "$TT_LOCK_ORPHAN_STALE_SECONDS"
+    case $? in
+      0) rm -rf "$steal" 2>/dev/null; mkdir "$steal" 2>/dev/null || return 1 ;;
+      1) return 1 ;; # 別プロセスが今まさに奪取中 = 呼び出し側から見れば「先任がいる」と同じ
+      2) return 2 ;; # 判定不能。ここも rc=1 に丸めない (無音で装置が張られなくなる)
+    esac
+  fi
+  # 奪取権を得た。待っている間に正当な owner が現れていないか確認し直す
+  if tt_lock_owner_alive "$dir"; then
+    rmdir "$steal" 2>/dev/null
+    return 1
+  fi
+  rm -rf "$dir" 2>/dev/null
   if ! mkdir "$dir" 2>/dev/null; then
+    # rm と mkdir の隙間に別プロセスが素で取った形。奪えなかっただけで異常ではない
+    rmdir "$steal" 2>/dev/null
     tt_lock_owner_alive "$dir" && return 1
-    # owner 不在 = 前回の取り残し。奪って続行する
-    # ⚠️ 既知のレース (issue 103): 「owner の生存確認 → 奪う」が非アトミックなので、取り残しの
-    #   lock を 2 プロセスが 1〜5ms 差で掴むと**両方が取得に成功する**。実測で restore.sh が
-    #   40/40 二重実行された。これは統合前 (3 本にコピーされていた頃) から同じ穴で、統合で
-    #   新たに開いたものではない。閉じるには acquire/release を対で作り替える必要があり、
-    #   単純な `mv` への差し替えでは窓が残る (issue 103 に反証つきで記録)。
-    rm -rf "$dir" 2>/dev/null
-    mkdir "$dir" 2>/dev/null || return 2
+    return 2
   fi
   tt_lock_write_owner "$dir"
+  rmdir "$steal" 2>/dev/null
+  return 0
+}
+
+# tt_lock_release_if_owner は**自分が現 owner のときだけ** lock を解放する (EXIT trap 用)。
+#
+# ⚠️ 無条件の `rm -rf "$LOCK_DIR"` にしないこと。奪取のレース中は 2 プロセスが同じパスを
+#   保持しうるので、**先に終わった側が、まだ走っている側の lock を消す** (issue 103)。
+#   消えた後に来た 3 本目が自由に取れるので、二重どころか多重になる。
+#   同じ理由で tmux_resurrect_save.sh は tt_save_release_lock_if_owner を持っている。
+tt_lock_release_if_owner() {
+  local dir="$1" line='' cur_pid='' cur_start='' mine_start=''
+  line="$(cat "$dir/pid" 2>/dev/null || true)"
+  [ -n "$line" ] || return 0
+  IFS="$(printf '\t')" read -r cur_pid cur_start <<<"$line"
+  [ "$cur_pid" = "$$" ] || return 0
+  mine_start="$(tt_proc_starttime "$$")"
+  # ⚠️ 生文字列比較にしないこと。`ps -o lstart=` が**記録時は動いて解放時に失敗する**環境だと
+  #   比較が必ず外れ、自分の lock を解放できずに取り残す (実測 2026-08-28)。判定に使う材料が
+  #   欠けたときは pid 一致だけで自分とみなす — tt_same_proc と同じ fail-open に揃える。
+  if [ -z "$cur_start" ] || [ -z "$mine_start" ] || [ "$cur_start" = "$mine_start" ]; then
+    rm -rf "$dir" 2>/dev/null
+  fi
   return 0
 }
 

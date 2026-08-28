@@ -69,7 +69,7 @@ elif [ "$tt_lock_rc" -ne 0 ]; then
   exit 0
 fi
 # shellcheck disable=SC2329 # trap 経由の間接呼び出し
-cleanup() { rm -rf "$LOCK_DIR" 2>/dev/null; }
+cleanup() { tt_lock_release_if_owner "$LOCK_DIR"; }
 trap cleanup EXIT
 
 # 観測ログを上限行数に刈る。書き手は全員 `>> file` の open-append-close なので、

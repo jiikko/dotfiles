@@ -76,7 +76,7 @@ elif [ "$tt_lock_rc" -ne 0 ]; then
   exit 0
 fi
 # shellcheck disable=SC2329 # trap 経由の間接呼び出し
-release_lock() { rm -rf "$LOCK_DIR" 2>/dev/null; }
+release_lock() { tt_lock_release_if_owner "$LOCK_DIR"; }
 trap release_lock EXIT
 
 # restore.sh は @resurrect-restore-script-path から解決する (ハードコードすると vendor
