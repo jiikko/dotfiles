@@ -10,7 +10,7 @@ runs:
   using: composite
   steps:
     # config は Neovim 0.12 系前提 (vim.lsp.config / vim.diagnostic.jump に加え、
-    # nvim-treesitter main 系が 0.12+ 必須)。Ubuntu apt の neovim は古い (0.9.5) ため
+    # nvim-treesitter main 系が 0.12+ 必須)。runner に入っている版は古いことがあるため、
     # 公式リリースを別途セットアップする。
     # ⚠️ version は明示 pin する ("stable" にしない): stable が進んだ瞬間に treesitter 系の
     #   API 非互換で無関係の PR が赤くなるのを避け、更新をこのファイルの変更として可視化する。
@@ -25,10 +25,22 @@ runs:
         # (2026-07-24 の bench 赤)。actionlint (lint.yml) と同じ手動 DL + リトライ方針に揃える。
         # curl の -f は 404/504 の HTML を tarball として保存して後段の tar を
         # 「not in gzip format」で殺す分かりにくい失敗を防ぎ、--retry-all-errors で 504 も再試行する。
-        url="https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-linux-x86_64.tar.gz"
+        # ⚠️ asset 名を決め打ちにしないこと。runner を macOS へ移した (issue 133) ため、
+        # Linux 決め打ちだと 404 の HTML を掴んで後段の tar が「not in gzip format」で死ぬ。
+        # 未対応の組み合わせは skip せず**失敗**させる (黙って古い nvim で走らせない)。
+        case "$(uname -s)/$(uname -m)" in
+          Darwin/arm64)  asset="nvim-macos-arm64.tar.gz" ;;
+          Darwin/x86_64) asset="nvim-macos-x86_64.tar.gz" ;;
+          Linux/x86_64)  asset="nvim-linux-x86_64.tar.gz" ;;
+          Linux/aarch64) asset="nvim-linux-arm64.tar.gz" ;;
+          *) echo "::error::未対応の runner: $(uname -s)/$(uname -m)"; exit 1 ;;
+        esac
+        url="https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/${asset}"
         curl -fsSL --retry 5 --retry-all-errors -o "$RUNNER_TEMP/nvim.tar.gz" "$url"
         mkdir -p "$RUNNER_TEMP/nvim"
         tar xzf "$RUNNER_TEMP/nvim.tar.gz" -C "$RUNNER_TEMP/nvim" --strip-components=1
+        # 展開できたことを確認してから PATH に足す (curl / tar の rc だけを根拠にしない)
+        "$RUNNER_TEMP/nvim/bin/nvim" --version | head -1
         echo "$RUNNER_TEMP/nvim/bin" >> "$GITHUB_PATH"
 
     # プラグイン (lazy.nvim 本体 + 各プラグイン) の clone を ~/.local/share/nvim/lazy ごと

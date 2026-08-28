@@ -1,3 +1,10 @@
+## 対象プラットフォーム
+
+- **macOS のみ。Linux はサポート対象外** (2026-08-28 決定 / issue 133)。CI も macOS runner で回す
+- したがって **BSD 側の書き方で構わない**。「GNU でも動くように」という理由だけで分岐を足さない
+- ⚠️ ただし**移行の途中**。`scripts/check_platform_dialect.sh` / `make test-gnu` / 各所の BSD-GNU
+  コメントは Linux 前提の名残で、外す順序と「それが副次的に守っていたもの」の精査は issue 133 の
+  手順 4 に残してある。**先走って消さないこと** (bench はまだ ubuntu で回っている)
 
 ## `_claude/` (Claude Code 設定の正本) を触るとき
 

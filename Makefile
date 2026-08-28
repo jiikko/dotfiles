@@ -43,7 +43,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-packages-heavy ci-packages-rest pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-gnu test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-platform-dialect test-go-lint test-go test-src
+.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-gnu test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-platform-dialect test-go-lint test-go test-src
 
 # settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
 # pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、
@@ -167,26 +167,26 @@ CI_HEAVY_PRUNE := \( $(foreach d,$(CI_HEAVY_TEST_DIRS),-path $(d) -o) -false \) 
 # 依存のテストを足したとき「Makefile だけ直して CI が command not found で落ちる」まで
 # 気づけない (どのディレクトリが heavy かの出典はここ、依存の出典は workflow、の二重管理)。
 # heavy は zsh テストのみなので tmux/bats を省いて ~60s 節約している。
-CI_PACKAGES_HEAVY := zsh make
-CI_PACKAGES_REST  := tmux zsh make bats
+CI_COMMANDS_HEAVY := zsh make
+CI_COMMANDS_REST  := tmux zsh make bats
 # rest にはあるが heavy には無い = heavy で使うと CI が落ちるコマンド (乖離検査の対象)
-CI_PACKAGES_ONLY_REST := $(filter-out $(CI_PACKAGES_HEAVY),$(CI_PACKAGES_REST))
+CI_COMMANDS_ONLY_REST := $(filter-out $(CI_COMMANDS_HEAVY),$(CI_COMMANDS_REST))
 
 # 値の確認用 (人間と test-ci-group-deps の照合対象)。
-# ⚠️ workflow はこのターゲットを呼べない: make 自体が apt install の対象なので、依存を解決する
-# 時点では make が無い可能性がある。workflow は Makefile の生の行を sed で読む = 実際の契約は
-# 「1 行の `:=` で書くこと」で、make の意味論 (+= / 行継続 / $(OTHER)) は通らない。
+# ⚠️ workflow はこのターゲットを呼べない: 依存を解決する時点で make があるとは限らないため。
+# workflow は Makefile の生の行を sed で読む = 実際の契約は「1 行の `:=` で書くこと」で、
+# make の意味論 (+= / 行継続 / $(OTHER)) は通らない。
 # その食い違いは test-ci-group-deps が make の値と sed の結果を突き合わせて検出する。
-ci-packages-heavy:
-	@echo '$(CI_PACKAGES_HEAVY)'
-ci-packages-rest:
-	@echo '$(CI_PACKAGES_REST)'
+ci-commands-heavy:
+	@echo '$(CI_COMMANDS_HEAVY)'
+ci-commands-rest:
+	@echo '$(CI_COMMANDS_REST)'
 
 # heavy グループのテストが「heavy に入れていないコマンド」へ依存していないか検査する。
 # 依存の決定は人間が行う (= 二重管理そのものは残る) ので、乖離だけを機械的に落とす。
 test-ci-group-deps:
-	@CI_HEAVY_TEST_DIRS='$(CI_HEAVY_TEST_DIRS)' CI_PACKAGES_ONLY_REST='$(CI_PACKAGES_ONLY_REST)' \
-		CI_PACKAGES_HEAVY='$(CI_PACKAGES_HEAVY)' CI_PACKAGES_REST='$(CI_PACKAGES_REST)' \
+	@CI_HEAVY_TEST_DIRS='$(CI_HEAVY_TEST_DIRS)' CI_COMMANDS_ONLY_REST='$(CI_COMMANDS_ONLY_REST)' \
+		CI_COMMANDS_HEAVY='$(CI_COMMANDS_HEAVY)' CI_COMMANDS_REST='$(CI_COMMANDS_REST)' \
 		scripts/check_ci_group_deps.sh
 
 # `… | grep -q` が pipefail 下で判定を反転させる形を落とす (issue 096)。

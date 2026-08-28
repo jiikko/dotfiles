@@ -33,10 +33,10 @@ jobs:
       matrix:
         include:
           # heavy (av1ify/concat) は nvim テストを含まない (setup-nvim 省略)。
-          # ⚠️ apt パッケージをここに書かないこと: グループ定義 (CI_HEAVY_TEST_DIRS) の出典が
+          # ⚠️ 必要なコマンドをここに書かないこと: グループ定義 (CI_HEAVY_TEST_DIRS) の出典が
           # Makefile なのに依存だけ workflow にあると、heavy に bats/tmux 依存のテストを足した
           # とき「Makefile だけ直して CI が command not found で落ちる」まで気づけない
-          # (issue 073)。依存も Makefile の CI_PACKAGES_* が出典で、下の step が読む。
+          # (issue 073)。依存も Makefile の CI_COMMANDS_* が出典で、下の step が読む。
           - group: heavy
             make-target: test-discovered-heavy
             needs-nvim: false
@@ -44,44 +44,66 @@ jobs:
             make-target: test-runtime-rest
             needs-nvim: true
     name: dotfiles-tests (${{ matrix.group }})
-    runs-on: ubuntu-slim
-    timeout-minutes: 10
+    # 対象は macOS のみ (issue 133)。Linux はサポート対象外なので CI もそちらへ揃える。
+    runs-on: macos-latest
+    # macOS runner は VM 起動が遅く、実行自体も ubuntu より遅い。ubuntu 時代の 10 分では
+    # 足りない可能性があるので広げる (実測して詰めること)。
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
-      # 依存の出典は Makefile の CI_PACKAGES_<GROUP>。⚠️ make 自体が apt の対象なので
-      # `make -s ci-packages-*` はここでは使えない (この時点で未インストールの可能性)。sed で読む。
-      # 空を install に流すと「何も入らないまま成功」になるため、読めなければ明示的に落とす。
-      - name: Resolve runtime dependencies from Makefile (${{ matrix.group }})
+      # 依存の出典は Makefile の CI_COMMANDS_<GROUP>。⚠️ ここで `make -s ci-commands-*` は
+      # 使わない (依存を解決する時点で make があるとは限らない)。Makefile の生の行を sed で読む。
+      # 空を後段に流すと「何も入らないまま成功」になるため、読めなければ明示的に落とす。
+      - name: Resolve required commands from Makefile (${{ matrix.group }})
         id: deps
         run: |
-          var="CI_PACKAGES_$(printf '%s' '${{ matrix.group }}' | tr '[:lower:]' '[:upper:]')"
-          pkgs=$(sed -n "s/^${var}[[:space:]]*:=[[:space:]]*//p" Makefile)
-          if [ -z "$pkgs" ]; then
+          var="CI_COMMANDS_$(printf '%s' '${{ matrix.group }}' | tr '[:lower:]' '[:upper:]')"
+          cmds=$(sed -n "s/^${var}[[:space:]]*:=[[:space:]]*//p" Makefile)
+          if [ -z "$cmds" ]; then
             echo "::error::Makefile から $var を読めなかった (変数名の変更 / 書式変更)"
             exit 1
           fi
-          echo "packages=$pkgs" >> "$GITHUB_OUTPUT"
-          echo "$var = $pkgs"
+          echo "commands=$cmds" >> "$GITHUB_OUTPUT"
+          echo "$var = $cmds"
 
       # ⚠️ ${{ }} を run: の中に直接埋めないこと。Makefile 由来の値がシェルとして評価される
-      # (実測: CI_PACKAGES_HEAVY := $(OTHER) と書くと sed が生テキストを掴み、run: 側で
-      # コマンド置換として実行されてパッケージ 0 個になる)。env 経由で受け、許可文字だけを通す。
-      # $PKGS は複数パッケージへ分割させるため意図的に無引用。文字種の検証がその安全弁。
-      - name: Install runtime dependencies (${{ steps.deps.outputs.packages }})
+      # (実測: CI_COMMANDS_HEAVY := $(OTHER) と書くと sed が生テキストを掴み、run: 側で
+      # コマンド置換として実行されて 0 個になる)。env 経由で受け、許可文字だけを通す。
+      # $CMDS は複数コマンドへ分割させるため意図的に無引用。文字種の検証がその安全弁。
+      #
+      # ⚠️ 「brew install が成功した」を導入の証拠にしないこと。既に入っているものは skip し、
+      #    最後に **command -v で実在を確認**してから先へ進む。
+      - name: Ensure required commands (${{ steps.deps.outputs.commands }})
         env:
-          DEBIAN_FRONTEND: noninteractive
-          PKGS: ${{ steps.deps.outputs.packages }}
+          CMDS: ${{ steps.deps.outputs.commands }}
         run: |
-          case "$PKGS" in
+          case "$CMDS" in
             *[!a-z0-9.+_\ -]*)
-              echo "::error::パッケージ名に想定外の文字がある: [$PKGS]"
+              echo "::error::コマンド名に想定外の文字がある: [$CMDS]"
               exit 1
               ;;
           esac
-          sudo apt-get update
-          # shellcheck disable=SC2086 # 複数パッケージへ分割させる意図 (文字種は上で検証済み)
-          sudo apt-get install -y --no-install-recommends $PKGS
+          for c in $CMDS; do
+            command -v "$c" >/dev/null 2>&1 && continue
+            # コマンド名 → Homebrew formula 名。既定は同名で、**違うものだけ**ここに書く
+            # (apt と違い brew は bats を bats-core という名前で配っている)。
+            case "$c" in
+              bats) formula=bats-core ;;
+              *)    formula="$c" ;;
+            esac
+            echo "installing $c (brew formula: $formula)"
+            brew install --quiet "$formula"
+          done
+          missing=""
+          for c in $CMDS; do
+            command -v "$c" >/dev/null 2>&1 || missing="$missing $c"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::導入後もコマンドが見つからない:$missing"
+            exit 1
+          fi
+          for c in $CMDS; do printf '%s = %s\n' "$c" "$(command -v "$c")"; done
 
       # Neovim 0.12 pin + plugin cache + lazy restore。pin の理由・cache key の世代管理は
       # action 側に集約 (bench.yml と共有。二重管理を防ぐため詳細はそちらだけに書く)

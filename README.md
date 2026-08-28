@@ -1,5 +1,10 @@
 # dotfiles
 
+**対象は macOS のみ。Linux はサポート対象外**です (2026-08-28 決定 / issue 133)。
+Linux でも動きそうに見える箇所がありますが、意図的な対応ではありません
+(例: `scripts/tmux_extract_popup.sh` は `pbcopy` を無条件で呼び、`zshlib/_fs_helpers.zsh` の
+`mount` パースは macOS の出力形式のみを前提にしています)。CI も macOS runner で回します。
+
 # Installing
 
 ```

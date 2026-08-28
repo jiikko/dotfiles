@@ -2,11 +2,11 @@
 # CI (tests.yml) のグループ分割が「Makefile を出典にする」契約を守れているか検査する。
 #
 # 検査は 3 本:
-#   1. sed 契約: workflow は make を使えない (make 自体が apt の対象) ため Makefile の生の行を
+#   1. sed 契約: workflow は make を使えない (依存解決の時点で make があるとは限らない) ため Makefile の生の行を
 #      sed で読む。つまり実際の契約は「1 行の `VAR := ...` で書くこと」で、make の意味論
 #      (`+=` / 行継続 / `$(OTHER)`) は通らない。make が見る値と sed が読む値を突き合わせ、
 #      食い違ったら落とす。これが無いと「make は正しいのに CI だけパッケージが減る」状態が
-#      無言で成立する (実測: `+=` 追記・行継続・変数参照のいずれでも apt 引数が減って rc=0。
+#      無言で成立する (実測: `+=` 追記・行継続・変数参照のいずれでも 導入対象が減って rc=0。
 #      しかも欠けたのが bats だと test-bats が skip して緑になるので観測できない)
 #   2. heavy に .bats を置かない: heavy ジョブが走らせるのは test_*.sh だけで (test-discovered-heavy)、
 #      .bats は prune の無い test-bats = rest ジョブで走る。heavy に置くと「heavy の依存として
@@ -23,9 +23,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR" || { printf '✗ repo root へ移動できない\n'; exit 1; }
 
 dirs="${CI_HEAVY_TEST_DIRS:-}"
-only_rest="${CI_PACKAGES_ONLY_REST:-}"
-pkgs_heavy="${CI_PACKAGES_HEAVY:-}"
-pkgs_rest="${CI_PACKAGES_REST:-}"
+only_rest="${CI_COMMANDS_ONLY_REST:-}"
+pkgs_heavy="${CI_COMMANDS_HEAVY:-}"
+pkgs_rest="${CI_COMMANDS_REST:-}"
 
 fail() { printf '✗ %s\n' "$1"; exit 1; }
 
@@ -40,9 +40,9 @@ grep -q probe <<< "$(grep -vE '^#' <<< 'probe')" || fail "grep -vE が正常に�
 [ "$(printf 'first\nsecond\n' | head -1)" = "first" ] || fail "head が正常に動作しない"
 
 [ -n "$dirs" ] || fail "CI_HEAVY_TEST_DIRS が空 (Makefile から渡されていない)"
-[ -n "$only_rest" ] || fail "CI_PACKAGES_ONLY_REST が空 (heavy と rest の差が無い、または受け渡しが壊れている)"
-[ -n "$pkgs_heavy" ] || fail "CI_PACKAGES_HEAVY が空"
-[ -n "$pkgs_rest" ] || fail "CI_PACKAGES_REST が空"
+[ -n "$only_rest" ] || fail "CI_COMMANDS_ONLY_REST が空 (heavy と rest の差が無い、または受け渡しが壊れている)"
+[ -n "$pkgs_heavy" ] || fail "CI_COMMANDS_HEAVY が空"
+[ -n "$pkgs_rest" ] || fail "CI_COMMANDS_REST が空"
 
 # ---- 1. sed 契約: make の値と workflow が読む値が一致すること --------------------------
 # workflow (.github/workflows/tests.yml) と同じ式を使う。ここを変えたら workflow も直す。
@@ -54,19 +54,19 @@ for grp in HEAVY REST; do
     HEAVY) want="$pkgs_heavy" ;;
     REST) want="$pkgs_rest" ;;
   esac
-  got="$(sed_read "CI_PACKAGES_$grp")"
-  [ -n "$got" ] || fail "workflow の sed 式が CI_PACKAGES_$grp を読めない (1 行の := で書くこと)"
+  got="$(sed_read "CI_COMMANDS_$grp")"
+  [ -n "$got" ] || fail "workflow の sed 式が CI_COMMANDS_$grp を読めない (1 行の := で書くこと)"
   # 複数行が返る = 同名の定義が 2 つある (workflow は両方を連結して受け取り、意図とずれる)
   if [ "$(printf '%s\n' "$got" | grep -c .)" -ne 1 ]; then
-    fail "CI_PACKAGES_$grp の := 定義が複数行ある (workflow は最初の 1 行だけを見ない)"
+    fail "CI_COMMANDS_$grp の := 定義が複数行ある (workflow は最初の 1 行だけを見ない)"
   fi
   a="$(printf '%s' "$want" | norm)"
   b="$(printf '%s' "$got" | norm)"
   if [ "$a" != "$b" ]; then
-    printf '✗ CI_PACKAGES_%s: make の値と workflow が読む値が食い違う\n' "$grp"
+    printf '✗ CI_COMMANDS_%s: make の値と workflow が読む値が食い違う\n' "$grp"
     printf '    make (意図):        [%s]\n' "$a"
     printf '    workflow (sed):     [%s]\n' "$b"
-    printf '  workflow は make を使えない (make 自体が apt の対象) ため生の行を sed で読む。\n'
+    printf '  workflow は make を使えない (依存解決の時点で make があるとは限らない) ため生の行を sed で読む。\n'
     printf '  make の意味論 (+= / 行継続 / 他変数の参照) は通らない。1 行の := で書くこと。\n'
     exit 1
   fi
@@ -139,8 +139,8 @@ for d in $dirs; do
 done
 
 if [ "$bad" -ne 0 ]; then
-  printf '\nheavy グループ (CI_PACKAGES_HEAVY = %s) にこれらは入っていないため、CI では\n' "$pkgs_heavy"
-  printf 'command not found で落ちる。Makefile の CI_PACKAGES_HEAVY に足すか、そのテストを\n'
+  printf '\nheavy グループ (CI_COMMANDS_HEAVY = %s) にこれらは入っていないため、CI では\n' "$pkgs_heavy"
+  printf 'command not found で落ちる。Makefile の CI_COMMANDS_HEAVY に足すか、そのテストを\n'
   printf 'rest 側 (heavy 以外のディレクトリ) へ置くこと。\n'
   printf '散文 (heredoc 等) の誤検出なら、その行に ci-group-deps: allow と書けば除外される。\n'
   exit 1
