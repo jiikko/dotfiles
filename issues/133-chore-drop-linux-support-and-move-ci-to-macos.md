@@ -130,3 +130,42 @@ issue 132 は「手元と CI の差を手元で出す」方向の話だったが
 `/opt/homebrew/bin/bash` が実際に使われていることを CI ログで確認) / `check_ci_group_deps.sh` の
 3 検査は改名後も意味を保つ / 上記 2 本以外に macOS 移行で新たに空振りになったテストは無い
 (むしろ `lsof` / `osascript` / `swift` 依存の 3 本が **macOS で初めて実行されるようになり +15 assert**)。
+
+## 手順 3 の続き (2026-08-28): lint.yml を移し、bench.yml と _go-project.yml は保留
+
+### lint.yml → macos-15
+
+- `runs-on` を pin (tests.yml と同じ規律で `macos-latest` にしない)。timeout 5 → 15 分
+- apt → 「存在を確かめ、無いものだけ brew で入れ、最後にもう一度確かめる」形へ (zsh / jq / ruby /
+  yamllint)。runner image の preinstall 内容に依存しない
+- shellcheck / actionlint のリリースバイナリの asset 名を `uname` で分岐 (setup-nvim と同じ罠)。
+  **push 前に URL の実在を HTTP 200 で確認済み** (darwin.aarch64 / darwin_arm64 とも 200)
+- bash 5 を入れる。⚠️ 実測では `make test-lint` は **bash 3.2 でも exit 0** だった。それでも揃える
+  のは、移行の前提が「CI を開発機に合わせる」だからで、検査スクリプトが将来 bash 4+ の機能を
+  使い始めた日に手元だけ緑になるのを避けるため (tests.yml で実際に踏んだ)
+
+### bench.yml: 保留 (単なる runner 差し替えでは済まない)
+
+1. **予算値が ubuntu で較正されている**。移して予算だけ据え置くと「緑だが基準が違う」形になり、
+   `perf-claims-need-measurement.md` の観点で不正直
+2. 敵対的レビューの確定 5: **CI の zsh は `_zshrc` の brew ブロックを通らない**ので、bench は
+   「両プラグイン無しの zsh」を測っている。macOS へ移すと brew は在るがプラグインは無いので
+   **また別の第 3 の状態**になる。実機の起動コストを測りたいなら、プラグインを入れるかどうかを
+   先に決める必要がある
+
+→ **trigger**: bench の数字を実機の判断に使いたくなったとき。そのとき ①プラグインの扱いを決め
+②全予算を再較正する。それまでは ubuntu のまま (相対比較としては機能している)。
+
+### _go-project.yml: 保留 (Go の platform 依存は既に別ジョブが見ている)
+
+- `src_glogx.yml` / `src_lockman.yml` には既に **`darwin-build` ジョブ (macos)** があり、
+  「ロジックの検証は ubuntu 側の -race テストが担い、ここは darwin でコンパイルが通ることだけを
+  守る」と設計意図が明記されている。Go の platform 依存面は**既に macOS で見ている**
+- 移すと `make lint` が golangci-lint を `go run @version` で cold compile する経路が macOS 上に
+  乗る。ubuntu-slim でも 15 分超の実績があり、**timeout → cancel → cache 保存されず再び cold**
+  の悪循環が実際に起きている (a43cbe8 / 40b2600)。macOS runner は起動も遅く同時実行上限も低い
+- 得られるものは「darwin で -race テストも回る」だが、現状の gap (darwin 固有の**実行時**挙動が
+  未テスト) は移行前からあり、ubuntu のままでも悪化しない
+
+→ **trigger**: darwin 固有の実行時バグが実際に出たとき。そのときは `_go-project.yml` 全体を移す
+のではなく、`darwin-build` を `darwin-build-and-test` に広げる方が安く済む可能性が高い。

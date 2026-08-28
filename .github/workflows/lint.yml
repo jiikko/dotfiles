@@ -23,19 +23,47 @@ concurrency:
 
 jobs:
   dotfiles-lint:
-    runs-on: ubuntu-slim
-    timeout-minutes: 5
+    # 対象は macOS のみ (issue 133)。Linux はサポート対象外なので CI もそちらへ揃える。
+    # ⚠️ `macos-latest` にしない (ラベルの移動で誰の commit も無しに環境が変わる)。開発機が
+    #    darwin24 = macOS 15 なので 15 に置く。tests.yml と同じ規律。
+    runs-on: macos-15
+    # macOS runner は VM 起動が遅い。ubuntu 時代の 5 分では足りないので広げる (実測して詰めること)
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install lint dependencies
-        env:
-          DEBIAN_FRONTEND: noninteractive
+      # ⚠️ macOS runner の /bin/bash は 3.2 (開発機は Homebrew の bash 5 が PATH 先頭)。
+      # 実測では `make test-lint` は 3.2 でも通るが、**移行の前提が「CI を開発機に合わせる」**
+      # なので揃える。揃えないと検査スクリプト側が bash 4+ の機能を使い始めた日に、手元だけ
+      # 緑で CI が落ちる (tests.yml で実際に踏んだ: declare -A / bats の非 ASCII テスト名)。
+      - name: Ensure modern bash (runner の /bin/bash は 3.2)
         run: |
-          sudo apt-get update
-          # ruby は test-ruby-syntax (Brewfile/_pryrc の ruby -c と _gemrc の YAML パース) 用
-          # apt からは shellcheck を入れない (下でバージョン固定して導入する)
-          sudo apt-get install -y --no-install-recommends zsh yamllint jq ruby
+          brew install --quiet bash
+          brew_bin="$(brew --prefix)/bin"
+          [ -x "$brew_bin/bash" ] || { echo "::error::brew の bash が見つからない: $brew_bin/bash"; exit 1; }
+          "$brew_bin/bash" --version | head -1
+          echo "$brew_bin" >> "$GITHUB_PATH"
+
+      # ⚠️ 「入っているはず」で進めないこと。runner image に何が preinstall されているかは
+      # 変わりうるので、**存在を確かめ、無いものだけ入れ、最後にもう一度確かめる**
+      # (brew install の成功ではなく「何が呼べるか」で判定する)。
+      # ruby は test-ruby-syntax (Brewfile/_pryrc の ruby -c と _gemrc の YAML パース) 用。
+      - name: Ensure lint dependencies
+        run: |
+          for c in zsh jq ruby yamllint; do
+            command -v "$c" >/dev/null 2>&1 && continue
+            echo "installing $c"
+            brew install --quiet "$c"
+          done
+          missing=""
+          for c in zsh jq ruby yamllint; do
+            command -v "$c" >/dev/null 2>&1 || missing="$missing $c"
+          done
+          [ -z "$missing" ] || { echo "::error::導入後もコマンドが見つからない:$missing"; exit 1; }
+          for c in zsh jq ruby yamllint; do printf '%s = %s\n' "$c" "$(command -v "$c")"; done
+          echo "bash = $(command -v bash) ($(bash --version | head -1))"
+          major="$(bash -c 'echo "${BASH_VERSINFO[0]}"')"
+          [ "${major:-0}" -ge 5 ] || { echo "::error::bash が ${major:-?} 系のまま (期待: 5 以上)"; exit 1; }
 
       # 静的解析の shellcheck はバージョンを固定してリリースバイナリで入れる。
       # apt (ubuntu 24.04) は 0.9 系で、開発機 (brew = 0.11) と指摘が食い違い「手元 green なのに
@@ -45,8 +73,16 @@ jobs:
         env:
           SHELLCHECK_VERSION: v0.11.0
         run: |
+          # ⚠️ asset 名を決め打ちにしないこと (setup-nvim と同じ罠)。runner を macOS へ移した
+          # ので Linux 決め打ちだと 404 の HTML を掴み、後段の tar が分かりにくく死ぬ。
+          case "$(uname -s)/$(uname -m)" in
+            Darwin/arm64)  sc_asset="darwin.aarch64" ;;
+            Darwin/x86_64) sc_asset="darwin.x86_64" ;;
+            Linux/x86_64)  sc_asset="linux.x86_64" ;;
+            *) echo "::error::未対応の runner: $(uname -s)/$(uname -m)"; exit 1 ;;
+          esac
           curl -fsSL --retry 3 --retry-all-errors -o "$RUNNER_TEMP/shellcheck.tar.xz" \
-            "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+            "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.${sc_asset}.tar.xz"
           tar xJf "$RUNNER_TEMP/shellcheck.tar.xz" -C "$RUNNER_TEMP"
           mkdir -p "$RUNNER_TEMP/bin"
           mv "$RUNNER_TEMP/shellcheck-${SHELLCHECK_VERSION}/shellcheck" "$RUNNER_TEMP/bin/shellcheck"
@@ -65,8 +101,14 @@ jobs:
         env:
           ACTIONLINT_VERSION: 1.7.12
         run: |
+          case "$(uname -s)/$(uname -m)" in
+            Darwin/arm64)  al_asset="darwin_arm64" ;;
+            Darwin/x86_64) al_asset="darwin_amd64" ;;
+            Linux/x86_64)  al_asset="linux_amd64" ;;
+            *) echo "::error::未対応の runner: $(uname -s)/$(uname -m)"; exit 1 ;;
+          esac
           curl -fsSL --retry 3 --retry-all-errors -o "$RUNNER_TEMP/actionlint.tar.gz" \
-            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_${al_asset}.tar.gz"
           mkdir -p "$RUNNER_TEMP/actionlint"
           tar xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP/actionlint" actionlint
           echo "$RUNNER_TEMP/actionlint" >> "$GITHUB_PATH"
