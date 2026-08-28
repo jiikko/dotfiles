@@ -672,29 +672,37 @@ fi
 if command -v brew > /dev/null 2>&1; then
   brew_prefix="$(brew --prefix)"
 
+  # 未導入の案内は **stderr へ、かつ対話シェルのときだけ**。
+  # ⚠️ zshrc が stdout に書くと、zsh の出力をキャプチャする経路が全部壊れる。実測 2026-08-28:
+  #    CI を macOS へ移した瞬間にこのブロックが有効になり (ubuntu には brew が無く丸ごと
+  #    skip されていた)、テストが期待値の代わりにこの案内を受け取って落ちた。
+  #    案内は人が読むためのもので、非対話シェルには不要。
+  __dotfiles_hint() { [[ -o interactive ]] && print -ru2 -- "$1"; }
+
   if [ -f "$brew_prefix/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]; then
     source "$brew_prefix/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
   else
-    echo "zsh-autosuggestions がインストールされていません。brew install zsh-autosuggestions を実行してインストールしてね。"
+    __dotfiles_hint "zsh-autosuggestions がインストールされていません。brew install zsh-autosuggestions を実行してインストールしてね。"
   fi
 
   if [ -f "$brew_prefix/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]; then
     source "$brew_prefix/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
   else
-    echo "zsh-syntax-highlighting がインストールされていません。brew install zsh-syntax-highlighting を実行してインストールしてね。"
+    __dotfiles_hint "zsh-syntax-highlighting がインストールされていません。brew install zsh-syntax-highlighting を実行してインストールしてね。"
   fi
 
   # nvim-treesitter (main ブランチ) のパーサーコンパイルに tree-sitter CLI が必須。
   # brew の tree-sitter formula はライブラリのみで CLI は tree-sitter-cli に分離されている
   if ! command -v tree-sitter > /dev/null 2>&1; then
-    echo "tree-sitter-cli がインストールされていません。brew install tree-sitter-cli を実行してインストールしてね。"
+    __dotfiles_hint "tree-sitter-cli がインストールされていません。brew install tree-sitter-cli を実行してインストールしてね。"
   fi
 
   # tmux の pane kill 確認ダイアログ (_tmux.conf の bind x / bind q) が gum confirm を使う。
   # 無いと kill 確認が exit 127 で常にキャンセル扱いになり pane を閉じられない
   if ! command -v gum > /dev/null 2>&1; then
-    echo "gum がインストールされていません。brew install gum を実行してインストールしてね。"
+    __dotfiles_hint "gum がインストールされていません。brew install gum を実行してインストールしてね。"
   fi
+  unfunction __dotfiles_hint
 fi
 
 # ---- dotfiles: 適用スクリプトの実行漏れ検出 (direnv 風 / 非同期) --------------

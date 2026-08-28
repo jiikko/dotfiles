@@ -15,6 +15,10 @@ env:
   GIT_CONFIG_COUNT: "1"
   GIT_CONFIG_KEY_0: init.defaultBranch
   GIT_CONFIG_VALUE_0: main
+  # ⚠️ TERM を固定する。macOS runner は TERM が無い/dumb で、zsh の `print -P '%B'` のような
+  # terminfo 由来の展開が**空**になる (実測 2026-08-28: TERM 未設定/dumb で空、xterm-256color で
+  # ^[[1m)。開発機は実端末なので手元だけ緑になる。実端末に合わせて固定する。
+  TERM: xterm-256color
 
 # 同一 ref の連続 push では古い run を打ち切る (旧コミットの結果に価値が無いため)
 concurrency:
@@ -51,6 +55,21 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+
+      # ⚠️ macOS runner の /bin/bash は **3.2**。開発機は Homebrew の bash 5 が PATH 先頭にいるので、
+      # ここを揃えないと「手元だけ緑」が逆向きに起きる。実測 2026-08-28 で 3.2 のまま踏んだもの:
+      #   - `declare -A` が invalid option (tests/check_bench_budgets.sh)
+      #   - bats 1.13 が**日本語のテスト名を解決できず 0 件実行**して警告だけ出す (しかも rc=0)
+      #   - statusline の advisor 整形が 7 件不一致
+      # ⚠️ CI_COMMANDS_* には入れない: あちらは「存在するか」の検査で、`command -v bash` は 3.2 でも
+      # 成功してしまう。ここは**版**が要件なので独立した step にして、次の step で実際に検証する。
+      - name: Ensure modern bash (runner の /bin/bash は 3.2)
+        run: |
+          brew install --quiet bash
+          brew_bin="$(brew --prefix)/bin"
+          [ -x "$brew_bin/bash" ] || { echo "::error::brew の bash が見つからない: $brew_bin/bash"; exit 1; }
+          "$brew_bin/bash" --version | head -1
+          echo "$brew_bin" >> "$GITHUB_PATH"
 
       # 依存の出典は Makefile の CI_COMMANDS_<GROUP>。⚠️ ここで `make -s ci-commands-*` は
       # 使わない (依存を解決する時点で make があるとは限らない)。Makefile の生の行を sed で読む。
@@ -104,6 +123,11 @@ jobs:
             exit 1
           fi
           for c in $CMDS; do printf '%s = %s\n' "$c" "$(command -v "$c")"; done
+          # 前 step の GITHUB_PATH がこの step から効く。bash が 5 以上になったことをここで確認する
+          # (「brew install が成功した」ではなく「実際に何が呼ばれるか」で判定する)
+          echo "bash = $(command -v bash) ($(bash --version | head -1))"
+          major="$(bash -c 'echo "${BASH_VERSINFO[0]}"')"
+          [ "${major:-0}" -ge 5 ] || { echo "::error::bash が ${major:-?} 系のまま (期待: 5 以上)"; exit 1; }
 
       # Neovim 0.12 pin + plugin cache + lazy restore。pin の理由・cache key の世代管理は
       # action 側に集約 (bench.yml と共有。二重管理を防ぐため詳細はそちらだけに書く)
