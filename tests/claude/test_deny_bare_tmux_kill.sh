@@ -13,7 +13,19 @@ HOOK="$ROOT_DIR/_claude/hooks/deny-bare-tmux-kill.sh"
 # 本番の配線 (_claude/settings.json の PreToolUse) と同じ上限。timeout に殺されると hook は
 # 無出力で終わる = 素通りなので、この値を課さないと「ゲートが消える」退行が観測できない。
 HOOK_TIMEOUT=10
-command -v timeout >/dev/null 2>&1 || { echo "SKIP: timeout(1) が無い環境 (本番と同じ上限を課せない)"; exit 0; }
+# ⚠️ 「timeout が無いから skip」で**緑を返さない**こと。ここは hook の上限を本番と同じ形で
+#    課す検査で、課せないなら合格でも不合格でもなく **判定不能 = 失敗**として扱う。
+#    実際に事故った: CI を macOS へ移した時点で timeout(1) が無くなり、このファイルの
+#    60 件が丸ごと skip に化けたのに `[ok]` として集計されていた (run 33174901609)。
+#    macOS の coreutils は g 接頭辞で入るので gtimeout も見る。
+if command -v timeout >/dev/null 2>&1; then
+  TIMEOUT_BIN=timeout
+elif command -v gtimeout >/dev/null 2>&1; then
+  TIMEOUT_BIN=gtimeout
+else
+  echo "✗ timeout(1) / gtimeout(1) がどちらも無い。本番と同じ上限を課せないので検査できない" >&2
+  exit 1
+fi
 
 # フック本体が正しくても settings.json からエントリが消えれば防御はゼロになるのに、それを
 # 見る検査が無かった (2026-08-20 の red team)。まず配線を検査する。
@@ -68,7 +80,7 @@ decision() {  # $1=コマンド文字列 → "deny" / "allow" / "error" / "harne
     echo harness-error   # 入力を組めなかった = 判定していない (allow に畳まない)
     return
   fi
-  out="$(timeout "$HOOK_TIMEOUT" "$HOOK" <"$json" 2>/dev/null)"
+  out="$("$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" <"$json" 2>/dev/null)"
   rc=$?
   rm -f "$payload" "$json"
   if [ -n "$out" ]; then

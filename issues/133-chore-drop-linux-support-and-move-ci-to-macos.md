@@ -73,3 +73,60 @@ issue 132 は「手元と CI の差を手元で出す」方向の話だったが
 - [132](132-feat-detect-ci-only-preconditions-before-push.md) — こちらが前提になるので、
   132 の #1 / #2 (方言) は本 issue で根本解決される。132 に残るのは #3 (`tmp/`) 系統だけ
 - `_claude/rules/list-masked-failure-modes-before-removing-guard.md` — 手順 4 の作法
+
+---
+
+## 手順 3 の結果 (2026-08-28): Tests を macOS へ移し、敵対的レビューを通した
+
+`f3875bb` (移行) → `7b3eb61` (移行で露出した 3 件) → 本コミット (レビュー指摘の反映)。
+
+### 移行で露出した「ubuntu では起きない」3 つの根
+
+いずれも手元で再現してから直した。
+
+1. **runner の `/bin/bash` が 3.2** (開発機は Homebrew の bash 5 が PATH 先頭)。bash 3.2 を PATH
+   先頭に見せて再現: `declare -A` が invalid option / statusline の advisor が 7 件不一致 (CI と同数) /
+   **bats 1.13 が日本語のテスト名を解決できず 0 件実行して rc=0**
+2. **`_zshrc` の未導入案内が stdout に出ていた**。ubuntu には brew が無くブロックごと skip されて
+   いた。テストは `zsh -i -c` で起動するので、効くのは interactive gate ではなく **stderr 側**
+3. **TERM 未設定/dumb で `print -P '%B'` が空**になる
+
+### 敵対的レビューの全数勘定 (6 確定 / 5 未確認 / 3 は壊せず)
+
+**採用して直したもの**:
+
+| 指摘 | 対応 |
+|---|---|
+| P1 `test_deny_bare_tmux_kill.sh` が `timeout(1)` 不在で**丸ごと skip** (60 assert 消失)。しかも `[ok]` として集計される | `timeout` / `gtimeout` のフォールバックにし、**両方無ければ fail** (判定不能を緑に畳まない)。CI に `gtimeout` (formula `coreutils`) を要求 |
+| P1 (自分で発見) `test_fork_scratch.sh` が `uname == Darwin` で skip し、CI から消えた | 判定を OS から **`$CI` の有無**へ。避けたいのは「開発機の実サーバとの同居」であって macOS そのものではない |
+| P1 `TERM` を workflow の env で撒いたのは、テストの前提を別ファイルへ外出ししただけ | `test_print_p_injection.sh` 自身で `export TERM` し、workflow の env は**削除**。TERM 無しで全体を回して他に依存が無いことを確認 (1974 ✓) |
+| P2 `macos-latest` は無 pin で、同じ commit の nvim pin の規律と矛盾 | **`macos-15` に pin**。runner の `macos-latest` は darwin25 で開発機 (darwin24) より 1 メジャー先だった。移行の根拠が「mount/ps/stat の出力が macOS 形式」である以上、ここがズレると逆向きの「CI だけ緑」を作る |
+| P3 `Makefile` のコメントが `apt install` のまま / issue 132 の `CI_PACKAGES_*` 参照が stale / formula 写像への導線が無い | 3 件とも修正 |
+| P3 `zshlib/_ansi_colors.zsh` が**存在しない** `tests/zshrc/test_ansi_colors.sh` を参照 | 実体 (`test_print_p_injection.sh`) に修正 |
+| R1 レーステストの `sleep 0.3` は未実測のマジックナンバー | 親が解放を許すまで保持する**マーカー待ち**へ。定数が消え、実行も 6.3 秒に短縮。ガード除去の変異が今も red になることを確認 |
+| 攻撃 (a) `__dotfiles_hint` が非対話で **rc=1 を返す** (現時点では悪用不能だが装填された銃) | `if … then … fi` 形にして装填解除 |
+
+**採用しなかった / 保留**:
+
+- **P2 `zsh` も `command -v` では版を見ていない** (CI は system zsh 5.9、開発機は brew zsh)。
+  **未対応**。bash と違って今のところ実害が観測されていないので、trigger 待ちにする
+  (実害が出たら bash と同じ形で版を要求する)。verify step に `zsh --version` を出す案は、
+  次に CI を触るときに入れる
+- **P2 `_zshrc` の brew ブロックが CI では常に「未導入」側しか通らない**。成功パス
+  (プラグインの source) が CI で一度も走っていない。`bench.yml` は ubuntu のままなので
+  ブロックごと skip で、**tests (macOS・未導入) / bench (ubuntu・不在) / 開発機 (導入済み)** の
+  3 分裂。**手順 4 で bench を移すときに揃えるか決める** (予算値の再較正が要るのでここでは触らない)
+- **R2 `nvim --version | head -1` が composite action の `pipefail` 下** — SIGPIPE で落ちうる。
+  未発生。次に action を触るときに直す
+- **R3 brew の非決定性** (`HOMEBREW_NO_AUTO_UPDATE` 未設定で日によって版が変わる) / `aws/tap` の
+  アノテーション汚染。**未対応**。runner pin で一部は緩和されたが、formula の版は依然として無 pin
+- **R4 `#!/bin/bash` が 2 本残っている** (`bin/sync_ratelimit_calendar.sh` /
+  `mac/finder-actions/setup-concat-finder-action.sh`) = bash 5 保証の外側。どのテストからも
+  実行されていないので実害なし。`#!/usr/bin/env bash` を強制する静的検査は別 issue の候補
+- **R5 `test_dangling_symlinks.sh` が対象 0 件でも同じ出力**で常に空回り。移行前からの性質で
+  今回の退行ではない。件数を出す設計への修正は別件
+
+**レビューが攻めたが壊せなかった範囲**: bash 5 導入 step の穴 (heavy/rest 両レーンで
+`/opt/homebrew/bin/bash` が実際に使われていることを CI ログで確認) / `check_ci_group_deps.sh` の
+3 検査は改名後も意味を保つ / 上記 2 本以外に macOS 移行で新たに空振りになったテストは無い
+(むしろ `lsof` / `osascript` / `swift` 依存の 3 本が **macOS で初めて実行されるようになり +15 assert**)。

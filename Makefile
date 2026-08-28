@@ -162,13 +162,15 @@ test-gnu:
 CI_HEAVY_TEST_DIRS := tests/zshrc/av1ify tests/zshrc/concat
 CI_HEAVY_PRUNE := \( $(foreach d,$(CI_HEAVY_TEST_DIRS),-path $(d) -o) -false \) -prune -o
 
-# CI (tests.yml) が各グループで apt install するランタイム依存。グループ定義 (上の
+# CI (tests.yml) が各グループで用意するランタイム依存 (コマンド名)。brew の formula 名が
+# 違うもの (bats → bats-core / gtimeout → coreutils) の写像は tests.yml の case 文にある。
+# グループ定義 (上の
 # CI_HEAVY_TEST_DIRS) と同じ場所に置く: workflow 側にハードコードすると、heavy に bats/tmux
 # 依存のテストを足したとき「Makefile だけ直して CI が command not found で落ちる」まで
 # 気づけない (どのディレクトリが heavy かの出典はここ、依存の出典は workflow、の二重管理)。
 # heavy は zsh テストのみなので tmux/bats を省いて ~60s 節約している。
 CI_COMMANDS_HEAVY := zsh make
-CI_COMMANDS_REST  := tmux zsh make bats
+CI_COMMANDS_REST  := tmux zsh make bats gtimeout
 # rest にはあるが heavy には無い = heavy で使うと CI が落ちるコマンド (乖離検査の対象)
 CI_COMMANDS_ONLY_REST := $(filter-out $(CI_COMMANDS_HEAVY),$(CI_COMMANDS_REST))
 

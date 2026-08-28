@@ -15,10 +15,6 @@ env:
   GIT_CONFIG_COUNT: "1"
   GIT_CONFIG_KEY_0: init.defaultBranch
   GIT_CONFIG_VALUE_0: main
-  # ⚠️ TERM を固定する。macOS runner は TERM が無い/dumb で、zsh の `print -P '%B'` のような
-  # terminfo 由来の展開が**空**になる (実測 2026-08-28: TERM 未設定/dumb で空、xterm-256color で
-  # ^[[1m)。開発機は実端末なので手元だけ緑になる。実端末に合わせて固定する。
-  TERM: xterm-256color
 
 # 同一 ref の連続 push では古い run を打ち切る (旧コミットの結果に価値が無いため)
 concurrency:
@@ -49,7 +45,12 @@ jobs:
             needs-nvim: true
     name: dotfiles-tests (${{ matrix.group }})
     # 対象は macOS のみ (issue 133)。Linux はサポート対象外なので CI もそちらへ揃える。
-    runs-on: macos-latest
+    # ⚠️ `macos-latest` にしない。同じ commit の setup-nvim が「stable にせず明示 pin する
+    #    (更新をファイルの変更として可視化する)」と書いているのと同じ理由で、ラベルの移動で
+    #    誰の commit も無しに環境が変わるのを避ける。**開発機に合わせて 15 (darwin24) に置く**
+    #    (macos-latest は darwin25 = 1 メジャー先だった。mount/ps/stat の出力差は移行の根拠
+    #    そのものなので、ここがズレると逆向きの「CI だけ緑」を作る)。
+    runs-on: macos-15
     # macOS runner は VM 起動が遅く、実行自体も ubuntu より遅い。ubuntu 時代の 10 分では
     # 足りない可能性があるので広げる (実測して詰めること)。
     timeout-minutes: 20
@@ -108,8 +109,9 @@ jobs:
             # コマンド名 → Homebrew formula 名。既定は同名で、**違うものだけ**ここに書く
             # (apt と違い brew は bats を bats-core という名前で配っている)。
             case "$c" in
-              bats) formula=bats-core ;;
-              *)    formula="$c" ;;
+              bats)     formula=bats-core ;;
+              gtimeout) formula=coreutils ;;   # timeout(1) は macOS に無い。g 接頭辞で入る
+              *)        formula="$c" ;;
             esac
             echo "installing $c (brew formula: $formula)"
             brew install --quiet "$formula"

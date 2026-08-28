@@ -29,10 +29,13 @@
 set -euo pipefail
 unset CDPATH
 
-# macOS (開発機) では実行しない。本テストは実 tmux サーバと同居する環境で走らせない設計
-# (bare `tmux` を叩く挙動テストを含むため)。CI の Linux runner でのみ実行する。
-# Linux でも tmux ペイン内なら同じ事故が起きるため、無条件の unset TMUX も必須 (下記)。
-if [[ "$(uname -s)" == "Darwin" ]]; then
+# 実 tmux サーバと同居する環境では走らせない設計 (bare `tmux` を叩く挙動テストを含むため)。
+# ⚠️ 判定を `uname` にしないこと。CI を macOS へ移した (issue 133) 途端に**このテストが CI から
+#    消えた** — 2026-07-07 の「make test が本番サーバを kill した」再発防止テストなのに、
+#    ファイル単位では skip が緑に見えるので気づけない。避けたいのは「開発機の実サーバとの
+#    同居」であって macOS そのものではないので、CI かどうかで切る (runner に本番サーバは無い)。
+# tmux ペイン内なら同じ事故が起きるため、無条件の unset TMUX も必須 (下記)。
+if [[ -z "${CI:-}" ]] && [[ "$(uname -s)" == "Darwin" ]]; then
   print "[test-fork-scratch:zsh] skipped: macOS (開発機) では実行しない。実 tmux サーバ誤 kill 防止 (2026-07-07 の再発防止)"
   exit 0
 fi

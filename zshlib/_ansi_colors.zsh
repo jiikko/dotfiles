@@ -12,7 +12,7 @@
 #   %F{green}=ESC[32m %F{red}=ESC[31m %F{cyan}=ESC[36m %F{yellow}=ESC[33m
 #   %F{white}=ESC[37m %B=ESC[1m %b=ESC[0m %f=ESC[39m
 # `_C_NOBOLD` が ESC[0m (全属性リセット) なのは `%b` の実挙動に合わせたため。
-# ずれたら tests/zshrc/test_ansi_colors.sh が落ちる (print -P の出力と突き合わせている)。
+# ずれたら tests/zshrc/test_print_p_injection.sh が落ちる (print -P の出力と突き合わせている)。
 #
 # 色を無効化する仕組みは持たない (従来の `print -P` も端末判定なしで常に色を出していた
 # ため、挙動を変えない)。必要になったらここで一括して空文字にできる。

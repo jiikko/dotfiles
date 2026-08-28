@@ -677,7 +677,9 @@ if command -v brew > /dev/null 2>&1; then
   #    CI を macOS へ移した瞬間にこのブロックが有効になり (ubuntu には brew が無く丸ごと
   #    skip されていた)、テストが期待値の代わりにこの案内を受け取って落ちた。
   #    案内は人が読むためのもので、非対話シェルには不要。
-  __dotfiles_hint() { [[ -o interactive ]] && print -ru2 -- "$1"; }
+  # ⚠️ `[[ … ]] && print …` の形にしないこと。非対話では **rc=1 を返す**ので、この rc を見る
+  #    経路 (err_exit / ERR trap の下で source する道具) ができた瞬間に事故る。
+  __dotfiles_hint() { if [[ -o interactive ]]; then print -ru2 -- "$1"; fi; }
 
   if [ -f "$brew_prefix/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]; then
     source "$brew_prefix/share/zsh-autosuggestions/zsh-autosuggestions.zsh"

@@ -125,7 +125,7 @@ printf '\n=== 取り残し lock の奪取レース (issue 103) ===\n\n'
 
 # ⚠️ 別プロセスで起こすこと。同一シェルの subshell だと `$$` が同じになり、
 #   tt_lock_write_owner が同じ owner を書くので「2 プロセスが競る」形にならない。
-race_worker() { # $1=guards.sh $2=lock dir $3=結果ファイル $4=窓を広げるか(0/1)
+race_worker() { # $1=guards.sh $2=lock dir $3=結果ファイル $4=窓を広げるか(0/1) $5=解放マーカー
   bash -c '
     . "$1" || exit 9
     # $4=1 のとき tt_proc_starttime を遅くして、mkdir と owner 記録の間の窓を広げる。
@@ -135,12 +135,14 @@ race_worker() { # $1=guards.sh $2=lock dir $3=結果ファイル $4=窓を広げ
     rc=0
     tt_lock_acquire "$2" || rc=$?
     printf "%s\n" "$rc" >> "$3"
-    # ⚠️ 取得したら**保持したまま**少し待つこと。すぐ終了すると owner が死んだ lock が残り、
+    # ⚠️ 取得したら**親が解放を許すまで保持する**。すぐ終了すると owner が死んだ lock が残り、
     #    後続は「記録済みで死んだ owner」を**正当に**奪える。その再取得を「二重取得」と数えると
-    #    テストが機械の速さに依存して落ちる (実測 2026-08-28: CI (macOS) で
-    #    形状=leftover delay=0.005s が 2 winners になった。手元と ubuntu では出ていなかった)。
-    sleep 0.3
-  ' _ "$1" "$2" "$3" "$4" &
+    #    機械の速さ次第で落ちる (実測 2026-08-28: CI (macOS) で 形状=leftover delay=0.005s が
+    #    2 winners)。固定 sleep で凌ぐと「どれだけ待てば十分か」が未実測のマジックナンバーに
+    #    なるので、マーカー待ちにして定数を消す (敵対的レビューの指摘 R1)。
+    i=0
+    while [ ! -e "$5" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$(( i + 1 )); done
+  ' _ "$1" "$2" "$3" "$4" "$5" &
 }
 
 # 2 プロセスを delay 秒ずらして走らせ、取得に成功した数 (rc=0) を返す。**1 でなければならない。**
@@ -151,9 +153,9 @@ race_worker() { # $1=guards.sh $2=lock dir $3=結果ファイル $4=窓を広げ
 #   `mkdir` で入り、奪取権 lock を一切持たないまま owner を記録する — そこが issue 103 の
 #   原症状の窓だった。leftover だけ緑にして「閉じた」と誤判定した実例がある (2026-08-28)。
 race_winners() { # $1=delay $2=形状(leftover|fresh) $3=窓を広げるか(0/1)
-  local dir="$BASE/race.lock" out="$BASE/race.out" g p1 p2
+  local dir="$BASE/race.lock" out="$BASE/race.out" rel="$BASE/race.release" g p1 p2 i
   g="$ROOT_DIR/scripts/lib/tmux_resurrect_guards.sh"
-  rm -rf "$dir" "$dir.steal" "$out"
+  rm -rf "$dir" "$dir.steal" "$out" "$rel"
   # ⚠️ 取り残しは**古く**すること。作りたての owner 不在 dir は「今まさに owner を記録中」と
   #   区別できないので奪えないのが正しい (それが production 形状の二重取得を止めている)。
   #   ここを `mkdir` だけにすると本物の取り残しではなくなり、勝者 0 で落ちる。
@@ -164,9 +166,14 @@ race_winners() { # $1=delay $2=形状(leftover|fresh) $3=窓を広げるか(0/1)
     kill "$REPLY_PID" 2>/dev/null || true; wait "$REPLY_PID" 2>/dev/null || true
   fi
   : > "$out"
-  race_worker "$g" "$dir" "$out" "$3"; p1=$!
+  race_worker "$g" "$dir" "$out" "$3" "$rel"; p1=$!
   sleep "$1"
-  race_worker "$g" "$dir" "$out" "$3"; p2=$!
+  race_worker "$g" "$dir" "$out" "$3" "$rel"; p2=$!
+  # 2 本の結果が出揃ってから解放を許す。これで「片方が保持している間に、もう片方も取得できたか」
+  # だけを見る形になる (出揃わない場合は下の harness: 分類が拾う)
+  i=0
+  while [ "$(grep -c . "$out" 2>/dev/null || true)" -lt 2 ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$(( i + 1 )); done
+  : > "$rel"
   # ⚠️ 素の `wait` は使わない。このファイルは前段で補助プロセスを起こしており、
   #   bare wait がそれらを拾って「子ではない」警告を出す
   wait "$p1" 2>/dev/null || true
