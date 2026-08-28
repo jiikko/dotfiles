@@ -15,6 +15,9 @@ cd dotfiles
 
 Run the regression test suite (Neovim, tmux, setup.sh, plus existing zsh tests) with:
 
+`make test` runs lint and the tests **all the way through** and reports every failure at the end;
+a lint failure no longer stops the tests from running. Use `make test-lint` when you only want lint.
+
 ```
 
 make test

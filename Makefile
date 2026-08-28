@@ -57,7 +57,12 @@ pull:
 # CI (_go-project.yml) と test-changed の src 腕は lint + test を回すため、部分実行の
 # 方が全体実行より厳しいねじれがあった。golangci-lint は各 src Makefile が go run 経由・
 # バージョン固定で自己完結しており、追加のツールインストールは不要
-test: test-lint test-runtime test-src
+# ⚠️ **集約にする** (issue 130)。prerequisite に並べる形 (`test: a b c`) だと、lint が 1 つ
+#   落ちた日は **テストが 1 本も走らないまま赤を見る**。コミット前ゲートとして常用する入口なので、
+#   全部走らせてから失敗をまとめて返す (所要時間より「その日の全ての赤が 1 回で見える」を採る)。
+#   lint だけ先に見たいときは `make test-lint`。
+test:
+	@+$(call run_all_targets,test-lint test-runtime test-src)
 
 # 変更したパスだけ検証する (CI の paths filter のローカル対応物)。写像とヘルプの
 # 正本は scripts/test_changed.sh (--help)。共有 working tree では dirty に並行
@@ -343,28 +348,38 @@ test-lint:
 #   `_claude/rules/adversarial-review-own-safeguards.md` が禁じる false green そのもの。
 GO_PROJECT_DIRS := $(patsubst %/,%,$(dir $(wildcard src/*/go.mod)))
 
+# ⚠️ **最初のプロジェクトの失敗で残りを隠さない** (issue 130)。全プロジェクトを回してから
+#   失敗したディレクトリをまとめて返す (run_all_targets と同じ規律。CI は src_*.yml で
+#   プロジェクト別に分かれているため無傷だったが、ローカルの方が弱い状態だった)。
+# ⚠️ go 未導入は skip して緑にする。0 件は上のガードで失敗させるので、
+#   「発見が壊れた」と「go が無い」は別の結果として出る。
+define run_go_projects
+if [ -z "$(strip $(GO_PROJECT_DIRS))" ]; then \
+	echo "[go-$(1)] src/*/go.mod が 1 つも見つからない (発見の仕方が壊れている)" >&2; exit 1; \
+fi; \
+if ! command -v go >/dev/null 2>&1; then \
+	echo "[go-$(1)] go not found; skipping"; exit 0; \
+fi; \
+failed=""; \
+for dir in $(GO_PROJECT_DIRS); do \
+	$(MAKE) -C $$dir $(1) || failed="$$failed $$dir"; \
+done; \
+if [ -n "$$failed" ]; then \
+	{ echo ""; echo "✗ [go-$(1)] 失敗したプロジェクト:$$failed"; } >&2; \
+	exit 1; \
+fi
+endef
+
 test-go-lint:
-	@if [ -z "$(strip $(GO_PROJECT_DIRS))" ]; then \
-		echo "[go-lint] src/*/go.mod が 1 つも見つからない (発見の仕方が壊れている)" >&2; exit 1; \
-	fi
-	@if command -v go >/dev/null 2>&1; then \
-		for dir in $(GO_PROJECT_DIRS); do $(MAKE) -C $$dir lint || exit 1; done; \
-	else \
-		echo "[go-lint] go not found; skipping golangci-lint"; \
-	fi
+	@+$(call run_go_projects,lint)
 
 test-go:
-	@if [ -z "$(strip $(GO_PROJECT_DIRS))" ]; then \
-		echo "[go-test] src/*/go.mod が 1 つも見つからない (発見の仕方が壊れている)" >&2; exit 1; \
-	fi
-	@if command -v go >/dev/null 2>&1; then \
-		for dir in $(GO_PROJECT_DIRS); do $(MAKE) -C $$dir test || exit 1; done; \
-	else \
-		echo "[go-test] go not found; skipping go tests"; \
-	fi
+	@+$(call run_go_projects,test)
 
 # src/ 配下の全プロジェクトを lint + test 一括で回す集約ターゲット (人間の選択実行用)。
 # root の `make test` は test-go (テストのみ) を含むが golangci-lint は含まないため、
 # src/ を触った後のコミット前検証はこれ 1 発で CI (src_*.yml の lint / test 両 job) と揃う。
-test-src: test-go-lint test-go
+# ⚠️ ここも集約 (issue 130)。prerequisite に並べると lint の失敗で test が走らない
+test-src:
+	@+$(call run_all_targets,test-go-lint test-go)
 

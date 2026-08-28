@@ -199,13 +199,22 @@ if [ "$dry_run" -eq 1 ]; then
   exit 0
 fi
 
+# ⚠️ **1 本目の失敗で残りを隠さない** (issue 130)。触った範囲の検証が途中で止まると、
+#   「直したら別の赤が出た」を繰り返すことになる。全部走らせてから、失敗をまとめて返す。
+failed=""
 for t in $targets; do
-  make "$t" || exit 1
+  make "$t" || failed="$failed $t"
 done
 for d in $test_dirs; do
-  make test-dir DIR="$d" || exit 1
+  make test-dir DIR="$d" || failed="$failed test-dir:$d"
 done
 for d in $go_dirs; do
-  # CI (_go-project.yml) は lint と test の両方を回すため、ここも揃える
-  make -C "$d" lint test || exit 1
+  # CI (_go-project.yml) は lint と test を**別 job** で回すので、ここも 2 回に分けて呼ぶ。
+  # `make -C "$d" lint test` の 1 make 2 goal だと lint が落ちた時点で test が走らない
+  make -C "$d" lint || failed="$failed $d:lint"
+  make -C "$d" test || failed="$failed $d:test"
 done
+if [ -n "$failed" ]; then
+  printf '\n✗ [test-changed] 失敗:%s\n' "$failed" >&2
+  exit 1
+fi
