@@ -179,9 +179,13 @@ for p in "$@"; do
     # dangling (rename/削除の置き去り) を検証している
     _claude/CLAUDE.md|_claude/agents/*|_claude/rules/*|_claude/skills/*|_claude/references/*|_claude/commands/*)
       add_test_dir "tests/claude" ;;
+    # issue ファイルは「テスト対象なし」ではない: tests/issues が NNN の一意性を検証する
+    # (追加・改番がそのまま検査のトリガー。2026-08-28 に 127 と 133 が同時に衝突した)
+    issues/*)
+      add_test_dir "tests/issues" ;;
     # テスト対象なし (明示写像)。ドキュメント・vendor・データファイルは対応する
     # テストが存在しないので何も回さないが、黙って落とすのではなく報告する
-    *.md|*.txt|LICENSE|issues/*|docs/*|vendor/*|kinesis*)
+    *.md|*.txt|LICENSE|docs/*|vendor/*|kinesis*)
       notest="$notest $p" ;;
     *)
       echo "✗ 写像に無いパス: $p (make test で全体を回すか、scripts/test_changed.sh に写像を足すこと)" >&2

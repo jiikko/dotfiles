@@ -51,6 +51,11 @@ expect "参照の無い新規スクリプトは lint だけ" 'test-shellcheck' s
 expect "tests/<dir> -> test-dir + lint-tests" 'test-lint-tests.*tests: .*tests/claude' tests/claude/test_statusline.sh
 expect "zshlib -> shell 系" 'test-zshrc' zshlib/_concat.zsh
 expect "json -> test-json" 'test-json' _claude/settings.json
+# issue ファイルは「ドキュメント = テスト対象なし」に落ちていた (2026-08-28 に修正)。
+# 追加・改番が NNN 一意性検査のトリガーそのものなので、*.md の腕へ戻ると無言で検査されなくなる。
+# パスは合成 (写像はパス文字列だけを見る)。実在の issue 名を書くと done/ への移動で腐る。
+expect "issues/*.md -> tests/issues (ドキュメント扱いに戻さない)" 'tests: .*tests/issues' issues/999-bug-synthetic-example.md
+expect "issues/done/*.md も同じ腕へ落ちる" 'tests: .*tests/issues' issues/done/998-bug-synthetic-example.md
 
 # 素通り防止側: 未知パスは fail する / notest は明示報告する
 if "$TC" --dry-run path/that/should/never/match.xyz >/dev/null 2>&1; then

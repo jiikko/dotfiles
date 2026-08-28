@@ -1,5 +1,11 @@
 # 135 human: prefix キーガイド (status-right) と prefix+? の一覧を実 tmux で確認する
 
+> ⚠️ **2026-08-28 に 133 → 135 へ改番**。同じ 133 が 2 件あった
+> (`issues/133-chore-drop-linux-support-and-move-ci-to-macos.md`)。あちらは tracked 7 ファイルと
+> push 済み commit 3 本 (93b47ee / 7b3eb61 / f3875bb) から参照されており、commit message は
+> 履歴なので直せない。参照が自分自身だけだったこちらを動かした。**過去の会話やメモの「133」が
+> prefix キーガイドの話なら、それはこの issue。**
+
 起票日: 2026-08-28
 期限: 2026-09-05
 種別: human
