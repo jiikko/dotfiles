@@ -146,9 +146,10 @@ set -g @resurrect-capture-pane-contents 'on'
 # continuum の autosave は status 更新を使うため status はオンに保つ
 set -g status on
 set -g status-interval 1   # status-left の毎秒点滅の駆動（continuum 用には >0 であればよい）
-# 右側は非表示だが、continuum の hook 用に最小限の長さ(1)は確保する
-set -g status-right-length 1
-set -g status-right ""
+# 右側は prefix 押下中のキーガイド用に使っている（上流 continuum が要求する「status-right の確保」は
+# vendor パッチで interpolation を撤去済みのため不要。_tmux.conf の該当ブロック参照）
+set -g status-right-length 20
+set -g status-right "#{?client_prefix,#{p20:@keyguide},#{p20:@nothing}}"
 ```
 
 `@continuum-save-interval` は明示設定していない（= デフォルト 15 分）。`@resurrect-strategy-vim/nvim` も標準構成では設定していない（vim/nvim のセッション復元は別途 vim-obsession 等が必要）。
@@ -223,7 +224,7 @@ set -g @resurrect-hook-post-restore-all '... 所要秒を記録し @tt-restore-c
 
 - **bash 必須**: `bash` がない環境では動かない
 - **status line 必須（autosave）**: continuum は status line の更新を使う。`status off` や `status-interval 0` だと continuum 由来の自動保存が止まる（ただしこのリポジトリでは window/pane フックの debounce 保存があるため、構成変化時の保存はそちらでも走る）
-- **テーマや別設定で status-right を上書き**すると continuum の autosave が止まることがある（continuum を最後に読み込むのが基本。このリポジトリでは status-right を空にしつつ length 1 を確保している）
+- **テーマや別設定で status-right を上書き**すると、上流構成では continuum の autosave が止まる（continuum を最後に読み込むのが基本）。⚠️ このリポジトリは vendor パッチで save interpolation を撤去済みなので autosave は status-right に依存しない。代わりに status-right は prefix 押下中のキーガイドに使っており、上書きするとそちらが消える
 - **`Ctrl-s` が効かない**場合: 端末のフロー制御に奪われていることがある（必要なら `stty -ixon`）
 
 ## トラブルシューティング
@@ -239,7 +240,7 @@ cat "${DOTFILES_DIR:-$HOME/dotfiles}/vendor/tmux-plugins/VERSIONS.txt"
 
 - `status` が `on` になっているか
 - `status-interval` が 0 になっていないか
-- `status-right` を別設定が上書きしていないか（テーマ導入時によくある）
+- `status-right` を別設定が上書きしていないか（テーマ導入時によくある。※このリポジトリでは autosave の原因にはならない。上の注意点を参照）
 - 構成変化時の debounce 保存が走るかは `scripts/tmux_resurrect_debounced_save.sh` のガード（復元中 / lock）を確認
 
 ### 自動復元されない

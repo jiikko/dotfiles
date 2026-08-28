@@ -367,7 +367,7 @@ tmux send-keys -t :.+ 'watch -n2 docker ps' Enter
 
 #### status-interval による定期更新と continuum の前提
 
-【何ができるか】status-interval で status の `#(shell)` や `#{...}` を定期再評価する。continuum の autosave も status 更新フックに乗るため `status on` + `interval > 0` + status-right の最小長確保が必要。
+【何ができるか】status-interval で status の `#(shell)` や `#{...}` を定期再評価する。上流の continuum は autosave を status-right の `#(...)` interpolation に乗せるため `status on` + `interval > 0` + status-right の確保を要求するが、**この repo は vendor パッチでその interpolation を撤去済み**（毎秒 fork を避けるため。周期保存は `scripts/tmux_periodic_save.sh` が担う）。そのため status-right は自由に使えるが、上流の前提で書かれた記述（`docs/tmux-plugins.md`）と混同しないこと。
 
 【使う tmux 機能】`set -g status-interval N`、`status on`、`status-right-length`。
 
@@ -375,11 +375,13 @@ tmux send-keys -t :.+ 'watch -n2 docker ps' Enter
 ```tmux
 set -g status on
 set -g status-interval 1   # この repo は prefix 点滅・放置フェードの駆動で 1 秒
-set -g status-right-length 1
-set -g status-right ""   # continuum autosave 用に最小長は残す
+# status-right は prefix 押下中だけキーガイドを出す島に使う（非押下時は同幅の空白）
+set -g @keyguide ' m:予約 ?:キー一覧 '
+set -g status-right-length 20
+set -g status-right "#{?client_prefix,#{p20:@keyguide},#{p20:@nothing}}"
 ```
 
-【この repo の実例】`/Users/koji/dotfiles/_tmux.conf` の status 設定と status-right-length 1。`docs/tmux-plugins.md`「status line 必須（autosave）」節に運用注意。値 0 や `status off` は continuum 由来 autosave を止める。
+【この repo の実例】`/Users/koji/dotfiles/_tmux.conf` の status 設定。⚠️ 両分岐を `#{p20:}` で同じ幅に固定するのが要点で、片方だけ可変にすると prefix を押すたび window list の描画幅が変わる（status-left の島を 20 セル固定にしているのと同じ理由）。`status-interval` の値 0 や `status off` 自体は、上流構成なら continuum 由来 autosave を止める。
 
 ---
 
@@ -402,6 +404,7 @@ set -g status-right ""   # continuum autosave 用に最小長は残す
 | scratch / prefix 点滅 | scratch 表示時・prefix 押下時 | #{T:@secfmt} + #{e|m:} 剰余の format 算術（fork ゼロ） | `_tmux.conf` status-left |
 | セッション bootstrap / 復元待ち | `t` / `tt` コマンド | new-session / has-session / @tt-restore-complete 待ち | `zshlib/_tmux_session.zsh` |
 | window 名 = コマンド名追従 | preexec/precmd | automatic-rename-format '#{pane_title}' + OSC 2 | `zshlib/_tmux_window_name.zsh` |
+| キーガイド / 全キー一覧 | prefix 押下中の status-right / `prefix + ?` | `#{?client_prefix,...}` の条件 format（両分岐 `#{p20:}` で同幅）/ 各 bind の `-N` 注記 + `list-keys -N` | `_tmux.conf` status-right と各 `bind -N` |
 | 予約入力 (指定時刻に send-keys) | `prefix + m` / `prefix + Enter` / `prefix + C-m`（ウィザード / 予約一覧・取消） | display-popup + 自作 TUI (bubbletea v2) / run-shell -b で sleep / send-keys -l / display -p で自 pane 固定 / 取消の確認は gum confirm | `scripts/tmux_schedule_keys.sh` + `src/schedkeys/` |
 | エージェント常駐パネル (herdr 風) | `prefix + a`（トグル）+ window 切替追従 | floating pane (new-pane -X/-Y -d, 3.7+) / after-select-window hook で kill+create 追従 / @claude_state 集約 | `scripts/tmux_agent_panel.sh` |
 

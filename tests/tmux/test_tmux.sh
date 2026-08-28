@@ -176,6 +176,49 @@ else
   print -u2 "[test-tmux:zsh] warning: status-left の scratch 検出条件が見つからず flash 分岐を検査できませんでした (条件式が変わった可能性)"
 fi
 
+# status-right の prefix キーガイド: 押下中 / 非押下の両分岐が同じ表示幅であること。
+# 幅が変わると prefix を押すたび window list の描画幅が動く (status-left の島を 20 セル固定に
+# しているのと同じ理由)。conf 側は両分岐を #{p20:} で包んでいるが、片方の p を外す・文言を
+# 20 セル超へ伸ばす・片方だけ幅を変える、のどれでも壊れるので **展開後の表示幅** で pin する
+# (ソース文字列の grep では「20 と書いてあるか」しか見られず、実際の幅は見ていない)。
+print "[test-tmux:zsh] checking status-right key guide keeps both branches the same width"
+fmt_sr=$("${TMUX_CMD[@]}" show-options -gv status-right)
+if [[ "$fmt_sr" != *'client_prefix'* ]]; then
+  print -u2 "[test-tmux:zsh] status-right が client_prefix で分岐していない (キーガイドの構造が変わった)"
+  print -u2 "  status-right: $fmt_sr"
+  exit 1
+fi
+# 条件を差し替えて両分岐を展開する (status-left の scratch flash 分岐と同じ手口)。
+# tmux の #{?...} はリテラル 1 を真と見ないので、値を持つ user option を経由させる
+sr_width() {  # $1=@sr_probe に入れる値 → #[...] を除いた表示幅
+  local expanded stripped
+  "${TMUX_CMD[@]}" set -g @sr_probe "$1" >/dev/null
+  expanded=$("${TMUX_CMD[@]}" display-message -t dotfiles_test -p "${fmt_sr/client_prefix/@sr_probe}")
+  stripped=$(print -r -- "$expanded" | sed -E 's/#\[[^]]*\]//g')
+  print -r -- "${(m)#stripped}"
+}
+w_armed=$(sr_width 1)
+w_idle=$(sr_width "")
+sr_len=$("${TMUX_CMD[@]}" show-options -gv status-right-length)
+"${TMUX_CMD[@]}" set -gu @sr_probe >/dev/null
+if (( w_armed == 0 )); then
+  print -u2 "[test-tmux:zsh] status-right の prefix 分岐が空 (キーガイドが出ない)"
+  exit 1
+fi
+if (( w_armed != w_idle )); then
+  print -u2 "[test-tmux:zsh] status-right の幅が prefix 押下で変わる (window list がガタつく): armed=${w_armed} idle=${w_idle}"
+  print -u2 "  両分岐を同じ #{pN:} で包むこと (_tmux.conf の status-right ブロック)"
+  exit 1
+fi
+if (( w_armed != sr_len )); then
+  print -u2 "[test-tmux:zsh] status-right の表示幅 ${w_armed} が status-right-length ${sr_len} と一致しない (切れる/余る)"
+  exit 1
+fi
+assert_no_style_leak "status-right/armed" \
+  "$("${TMUX_CMD[@]}" set -g @sr_probe 1 >/dev/null; "${TMUX_CMD[@]}" display-message -t dotfiles_test -p "${fmt_sr/client_prefix/@sr_probe}")"
+"${TMUX_CMD[@]}" set -gu @sr_probe >/dev/null
+print "[test-tmux:zsh] ok: status-right は両分岐とも ${w_armed} セル (status-right-length と一致)"
+
 # glogx popup (prefix g / C-g) の git repo ガード。repo 外では popup を出さず toast に
 # 落ちることを、conf 内の実際の条件式を取り出して両方向 (repo 内 / repo 外) で実行して固定する。
 # 条件式を conf から抜いて使うので、ガードの書き換え時にテスト側の複製が腐らない。

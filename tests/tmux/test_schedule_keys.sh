@@ -614,9 +614,15 @@ for f in "$SCRIPT" "${ui_sources[@]}"; do
   [[ -z "$bad" ]] || { printf '✗ %s の表示文字列に絵文字/曖昧幅の記号:\n%s\n' "$f" "$bad"; exit 1; }
 done
 printf '✓ シェルと UI (src/schedkeys) の引用文字列に絵文字・曖昧幅記号なし\n'
-bad="$(grep -E '^bind (m|Enter|C-m) ' "$CONF" | perl -CSD -ne "print if /$WIDE_RE/")"
+# bind は キーの手前に -n / -r / -N "注記" を任意個取る。フラグを吸収しないと 1 件も拾えず、
+# この検査が空振りする (pipefail 下では代入ごと silent に死ぬ。2026-08-28 に -N 追加で実際に踏んだ)。
+# 注記も popup タイトルと同じ行に乗るので、検査対象に含まれるのが正しい
+BIND_FLAGS='( +(-[nr]|-N +"[^"]*"))*'
+bind_lines="$(grep -E "^bind${BIND_FLAGS} +(m|Enter|C-m) " "$CONF" || true)"
+[[ -n "$bind_lines" ]] || { printf '✗ bind m/Enter/C-m の行が 1 件も取れない (検査が空振り)\n'; exit 1; }
+bad="$(printf '%s\n' "$bind_lines" | perl -CSD -ne "print if /$WIDE_RE/")"
 [[ -z "$bad" ]] || { printf '✗ popup タイトル (bind) に絵文字:\n%s\n' "$bad"; exit 1; }
-printf '✓ popup タイトルに絵文字なし\n'
+printf '✓ popup タイトル・注記に絵文字なし\n'
 
 printf '\n## prune: 猶予の境界 (両側を見る)\n'
 # ⚠️ 「作った直後は消さない」だけでは、猶予を 0 にしても 99999999 にしても緑になる (監査 2026-08-28)。
@@ -723,11 +729,17 @@ printf '✓ シェル → bin/schedkeys (同期ビルド) → src/schedkeys\n'
 
 printf '\n## _tmux.conf: bind m / Enter / C-m が同じウィザードを指す\n'
 for k in m Enter C-m; do
-  grep -Eq "^bind $k +display-popup .*tmux_schedule_keys\.sh" "$CONF" || { printf '✗ bind %s が tmux_schedule_keys.sh を指していない\n' "$k"; exit 1; }
+  grep -Eq "^bind${BIND_FLAGS} +$k +display-popup .*tmux_schedule_keys\.sh" "$CONF" || { printf '✗ bind %s が tmux_schedule_keys.sh を指していない\n' "$k"; exit 1; }
   printf '✓ bind %s → display-popup → tmux_schedule_keys.sh\n' "$k"
+  # 注記 (-N) が付いていること。prefix+? (list-keys -N) の一覧はこれが唯一の出典で、
+  # 注記を消すとキーが一覧から**黙って消える** (エラーにならず、押せば動くので気づけない)。
+  # 3 キーとも別々に書くので、1 つだけ落とす編集も検出できるよう個別に見る
+  grep -Eq "^bind( +-[nr])* +-N +\"[^\"]+\"( +-[nr])* +$k +display-popup" "$CONF" \
+    || { printf '✗ bind %s に -N の注記が無い (prefix+? の一覧から消える)\n' "$k"; exit 1; }
+  printf '✓ bind %s に -N 注記あり (prefix+? に出る)\n' "$k"
 done
 # 旧 launcher (display-menu) が復活していないこと。prefix+Enter の席はウィザードが上書きしている
-! grep -Eq '^bind(-key)? +(-T prefix +)?Enter +display-menu' "$CONF" || { printf '✗ prefix+Enter に launcher (display-menu) が復活している\n'; exit 1; }
+! grep -Eq "^bind(-key)?${BIND_FLAGS} +(-T prefix +)?Enter +display-menu" "$CONF" || { printf '✗ prefix+Enter に launcher (display-menu) が復活している\n'; exit 1; }
 printf '✓ prefix+Enter は launcher ではない\n'
 
 printf '\n[test-schedule-keys] all ok\n'
