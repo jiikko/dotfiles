@@ -48,6 +48,15 @@ func (t *toast) start(text string) tea.Cmd {
 }
 
 // advance は 1 フレーム進める。全幅に達したら静止のタイマーを返す。
+//
+// ⚠️ `t.done` の早期 return と `!t.holdCh` を「到達不能なので消せる」と判断しないこと
+// (監査 2026-08-28 の指摘を却下した理由をここに残す)。どちらも **2 本目の toastTickMsg で
+// advance が呼ばれたとき**にだけ効く。通常は tick は 1 本しか飛ばず (start の呼び出し元は
+// model.go の submit 1 箇所で、表示後はキーを受け付けない)、toastDoneMsg は tea.Quit を
+// 返すので後続は届かない — が、bubbletea が quit の前に**予約済みの tick を配送しない**
+// 保証は確かめられず、再現も反証もできなかった。外すと遅れて届いた tick が 2 本目の hold
+// タイマー (= 2 通目の toastDoneMsg) を張り、アニメーションの再開・二重終了が**無音で**起きる。
+// 消してよくなる条件: quit 後に tick が配送されないことをテストで固定できたとき。
 func (t *toast) advance() tea.Cmd {
 	if !t.shown || t.done {
 		return nil
