@@ -54,3 +54,51 @@ git のパターンは**どの階層の `CLAUDE.md` にもマッチする**た�
 
 - `_claude/rules/claude-md-layer-prompt.md` — レイヤー CLAUDE.md の作成を促すルール
 - `_claude/rules/claude-md-maintenance.md` — 「CLAUDE.md は code の一部として扱う」(追跡前提の記述)
+
+---
+
+## 対応 (2026-08-28): 着手前の検証で **既に解決済み**と判明。コード変更なしで done
+
+着手時に「issue の記述を鵜呑みにしない」で実コード・git 履歴に照らしたところ、本文の
+前提 (`.gitignore:12` に無条件の `CLAUDE.md` がある) が既に成り立っていなかった。
+
+### 何が起きていたか
+
+| issue の記述 | 現在 (2026-08-28 実測) |
+|---|---|
+| `.gitignore:12` に無条件の `CLAUDE.md` | **行そのものが無い** (`d9f8e62` で削除) |
+| `scripts/CLAUDE.md` が追跡されない (5420 byte) | **追跡済み** (`d9f8e62` で追加。現在 5953 byte) |
+| repo root の `CLAUDE.md` が追跡されない | **追跡済み** (`e2262d2` で追加) |
+
+つまり **対応案 1 + 2 の併用**(推奨案どおり) が `d9f8e62`「全階層の CLAUDE.md を無視する行を
+外し、scripts/CLAUDE.md を追跡する」で実施済みだった。issue の起票 (2026-08-26) 後に
+別セッションが対応したが、issue を done へ移していなかったため open のまま残っていた。
+
+### 内容が欠けていないことの確認
+
+追跡は「その時点の版」を固定するので、**欠けた版が commit された可能性**を別に確かめた:
+
+- `d9f8e62` 時点の `scripts/CLAUDE.md` は **5420 byte** = issue が記録したサイズと一致
+  (追跡前に中身が失われてはいない)
+- issue が名指しした load-bearing な不変条件は両方とも現存:
+  `tt_on_default_server` を通す規約 / `tmux_server_watchdog.sh` の `trap '' TERM`
+- 全 CLAUDE.md に未コミットの差分なし
+
+### 再発しないことの確認 (この issue の本質)
+
+本質は「**今後作るレイヤー CLAUDE.md が黙って飲まれない**」こと。パターン単位でなく
+`git check-ignore` で判定した (global gitignore も評価されるため):
+
+- 未作成のレイヤーパス 5 つ (`src/schedkeys/` `zshlib/` `bin/` `_claude/hooks/` `tests/tmux/`)
+  はいずれも ignore されない
+- `~/.gitignore_global` に `CLAUDE.md` / `*.md` 系のパターンなし (`*.swp` `*~` `*tmp-browserify*`
+  `**/.claude/settings.local.json` のみ)
+- repo の `.gitignore` に md を飲む行なし
+
+### 残るリスク (対応せず。次の audit が再生成しないよう理由を残す)
+
+**ignore ではなく「作ったまま `git add` を忘れる」経路は塞いでいない。** `scripts/CLAUDE.md` が
+長期間 1 台にしか無かった直接の原因は ignore だが、ignore を外した今でも「新しいレイヤー
+CLAUDE.md を作って commit し忘れる」は起こりうる。ディスク上の CLAUDE.md が全て追跡されて
+いるかを検査するゲート (`tests/claude/test_claude_links_complete.sh` と同型) で塞げるが、
+**この issue の範囲外**なので実施していない。必要になったら別 issue で起こす。
