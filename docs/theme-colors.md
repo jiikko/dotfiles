@@ -9,7 +9,8 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 |---|---|---|---|
 | **現在地** (いまここ) | 蛍光オレンジ `#FF5F00`/202 (cterm 完全一致) | `@cur-accent` (current window 島) | `palette.accent.current_accent` (bufferline 選択タブの pill。両端キャップも同色) |
 | 最近作業した (鮮度) | バイオレット ramp 201→164→127→90→53 (黄昏の残光) | `@fade-*` (放置フェード) | — (対応概念なし。持ち込まない) |
-| 選択中テキスト | Kraft `#D4A27F`/180 | — | `palette.accent.kraft` (Visual)。現在地 (蛍光オレンジ) より一段落ち着けたのは意図的 (長時間注視するため)。truecolor/256色の両環境に適用 |
+| 選択中テキスト | Kraft `#D4A27F`/180 | — | `palette.accent.kraft` (Visual)。現在地 (蛍光オレンジ) より一段落ち着けたのは意図的 (長時間注視するため)。truecolor/256色の両環境に適用。⚠️ **Visual は他の group から link されている**: nvim 既定で `LspReferenceText` / `LspReferenceTarget` / `LspSignatureActiveParameter` / `SnippetTabstop` が Visual を指すため、ここを暖色にすると「地色として塗られる」用途へ漏れる。参照ハイライトは下行で link を切ってあるが、残り 2 つは未対応 (実害待ち) |
+| LSP 参照 / hover 範囲 | dark1 `#3c3836`/237 | — | `palette.dark1` (`LspReferenceText` = documentHighlight / `LspReferenceTarget` = hover の対象範囲)。**前景色を殺さない暗地であることが要件** — Kraft が漏れていた頃は Go で `func` にカーソルを置くと gopls が `func` + 全 `return` を返し、赤いキーワードが 1.5:1 で読めなかった。MatchParen (vim-matchup の対応ハイライト) は dark2 相当 + bold + underline なので地色で区別できる。`tests/nvim/test_lsp_reference_hl.sh` が両 colorscheme 分岐で 3.0:1 を検査する |
 | 通知 (bell/メッセージ) | シアン 51 (稀なイベントの ping) | bell セル反転・message-style (alert 帯/: プロンプト)・copy-mode current match | — |
 | マーカー (未保存) | 橙 208 | copy-mode mark 行 | `palette.bright_orange` (incline ● のみ) |
 | 選択バー (bufferline) | — (pill 化で廃止 2026-07-17) | — | slant 系スタイルではインジケータバー自体が描画されない。選択の強調は pill のキャップ (現在地色) が担う。indicator_selected のクリーム light1 指定は非 slant へ戻したとき用に残置 (橙系は蛍光橙地 202 と近接して不可視になるため使わない、の判断ごと保存) |

@@ -117,6 +117,23 @@ require("lazy").setup({
       -- 分岐の外に置き truecolor (gruvbox) / 256色 (retrobox) の両環境で効かせる。
       -- colorscheme 適用後に呼ぶこと (ColorScheme の全クリアより後に乗せる必要がある)。
       require("dotfiles.hl").set("Visual", { bg = pal.accent.kraft.hex, ctermbg = pal.accent.kraft.cterm })
+      -- ⚠️ 罠: LspReferenceText は nvim 既定で Visual に link しているため、上の Kraft 上書きが
+      -- LSP 参照ハイライト (lsp.lua の CursorHold → documentHighlight) へ漏れる。Kraft 地の上では
+      -- keyword (bright_red) が 1.5:1、他の前景も 1.1〜1.4:1 まで落ちて読めない (Go は func に
+      -- カーソルを置くと gopls が func + 全 return を返すため面積が大きい)。前景色を殺さない
+      -- 暗地で明示定義して link を切る。dark2 相当 + bold + underline の MatchParen (matchup の
+      -- 対応ハイライト) とは地色で区別する。
+      -- LspReferenceTarget (hover の対象範囲) も別途必要: retrobox は LspReferenceText へ link
+      -- するが gruvbox は Visual へ直接 link するため、Text だけ定義しても truecolor 側で漏る。
+      -- Read/Write は gruvbox が前景色 (Yellow/OrangeBold) で描く方式を持つので上書きしない
+      -- (retrobox 側は LspReferenceText への link で追従する)。検査は
+      -- tests/nvim/lsp_reference_hl_check.lua が両分岐で行う。
+      -- 同じ Visual 漏れは LspSignatureActiveParameter (シグネチャヘルプの現在引数) と
+      -- SnippetTabstop にも及ぶが、実害を確認していないので現状維持 (VisualNOS は Visual と
+      -- 同義なので妥当)。どちらかが読めないという実感が出た時点で同じ形で切り出す。
+      local lsp_ref = { bg = pal.dark1.hex, ctermbg = pal.dark1.cterm }
+      require("dotfiles.hl").set("LspReferenceText", lsp_ref)
+      require("dotfiles.hl").set("LspReferenceTarget", lsp_ref)
     end,
   },
   -- toggle.nvim は repo 内に vendor 済み (vendor/nvim-plugins/toggle.nvim、VENDOR.md 参照)。
