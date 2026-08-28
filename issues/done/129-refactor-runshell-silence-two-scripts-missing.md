@@ -48,3 +48,26 @@
 
 2 本に `exec </dev/null >/dev/null 2>&1` を入れ、`tests/tmux/test_runshell_silence.sh` の
 `targets` に足す。入れる位置は「実処理 (`tt_trigger_log` 等) より前」— テストがそこを見ている。
+
+## 結果 (2026-08-28 実施)
+
+2 本に `exec </dev/null >/dev/null 2>&1` を入れ、`tests/tmux/test_runshell_silence.sh` の対象に足した
+(3 → 5 本)。
+
+⚠️ **置き場所は issue の想定と違い、ファイル先頭には置けなかった**:
+
+- `scripts/tmux_schedule_keys.sh` は対話の wizard も兼ねる。先頭で塞ぐと popup の gum が端末を
+  掴めない → 長命なのは `fire` だけなので、その関数の冒頭に置いた
+- `scripts/tmux_resurrect_debounced_save.sh` はテストが `TT_DEBOUNCE_SOURCE_ONLY=1` で source して
+  関数だけ使う。先頭で塞ぐと**テスト自身の出力まで消える** → 直接実行の枝に置いた
+
+そのため検査を 2 点変えた: (a) 行頭の空白を許す (b) 「実処理の目印」を対象ごとに持たせる
+(共通の `tt_trigger_log` を持たないスクリプトがあるため)。目印が見つからないときは
+「空振り」として落とす。
+
+変異検証 (全て red): 2 本それぞれの exec 除去 / exec を sleep より後ろへ移動 / 目印を存在しない語に
+差し替え (空振りの検出)。
+
+副次: `fire` 経路の「stdout/stderr が空」を見ていた既存の assert は、exec によって**構造的に真**に
+なった。判定の主役が rc=0 の方であること (view-mode を積む支配的要因は rc≠0) を各行にコメントで
+明記した。リダイレクト自体は `test_runshell_silence.sh` が守る。

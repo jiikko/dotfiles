@@ -12,30 +12,45 @@
 # この契約の対象外。**基準は「detach されて長く生きるか」**で、機械的には導出できないため
 # 明示列挙する。
 #
-# ⚠️ **同じ基準に当てはまるのに未対応の 2 本がある** (issue 129):
-#   scripts/tmux_schedule_keys.sh (fire は最大 30 日 sleep する) と
-#   scripts/tmux_resurrect_debounced_save.sh (既定 10 秒)。
-#   ここに足すには先に本体へリダイレクトを入れる必要があり、111 の範囲外なので分けた。
-#   **「この 3 本で全部」ではない**ことを、リストを読む人に伝えるためここに書いておく。
+# ⚠️ **リストは手で維持する**。基準 (「detach されて長く生きるか」) は機械的に導出できないので、
+#   run-shell -b で起動する長命なスクリプトを足したら、ここにも足すこと。
+#
+# ⚠️ exec の**置き場所はスクリプトごとに違う**。ファイル先頭に置けないものがある:
+#   - tmux_schedule_keys.sh は対話 popup (wizard) も兼ねる。先頭で塞ぐと gum が端末を掴めない
+#     → 長命なのは fire だけなので、その関数の中に置く
+#   - tmux_resurrect_debounced_save.sh はテストが source して関数だけ使う。先頭で塞ぐと
+#     テスト自身の出力まで消える → 直接実行の枝に置く
+#   そのため下の検査は**行頭の空白を許す**。代わりに「実処理より前にあること」を目印で見る。
 set -euo pipefail
 unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# 「対象:実処理の目印」。目印は「exec より後に来るはず」の行で、スクリプトごとに違う
+# (共通の tt_trigger_log を持たないものがあるため)。目印が見つからない場合は exec の存在だけを見る。
 targets=(
-  scripts/tmux_periodic_save.sh   # 周期保存 (viewer を開いている間ずっと生きる)
-  scripts/tmux_server_watchdog.sh # 死亡監視 (サーバの寿命だけ生きる)
-  scripts/tmux_restore_runner.sh  # 手動復元 (復元が終わるまで生きる)
+  "scripts/tmux_periodic_save.sh:tt_trigger_log "           # 周期保存 (viewer を開いている間ずっと生きる)
+  "scripts/tmux_server_watchdog.sh:tt_trigger_log "         # 死亡監視 (サーバの寿命だけ生きる)
+  "scripts/tmux_restore_runner.sh:tt_trigger_log "          # 手動復元 (復元が終わるまで生きる)
+  "scripts/tmux_schedule_keys.sh:sleep \"\$wait_s\""          # 予約入力の fire (最長 30 日 sleep する)
+  "scripts/tmux_resurrect_debounced_save.sh:tt_debounced_save_main$" # debounce 保存 (既定 10 秒)
 )
 
 fails=0
-for rel in "${targets[@]}"; do
+for spec in "${targets[@]}"; do
+  rel="${spec%%:*}"
+  marker="${spec#*:}"
   f="$ROOT_DIR/$rel"
   [ -f "$f" ] || { printf '✗ 対象が存在しない: %s\n' "$rel" >&2; fails=$((fails + 1)); continue; }
   # ⚠️ 字面の存在だけを見ると、末尾の死んだコードや heredoc 本文に同じ 32 バイトがあるだけで
   #   緑になる (敵対的レビューが変異で実証)。**実処理より前にあること**まで見る。
-  #   実処理の目印は tt_trigger_log — 3 本とも exec の後にしか現れない。
-  exec_line="$(grep -n '^exec </dev/null >/dev/null 2>&1$' "$f" | head -1 | cut -d: -f1)"
-  work_line="$(grep -n 'tt_trigger_log ' "$f" | grep -v '^[0-9]*:#' | head -1 | cut -d: -f1)"
+  #   行頭の空白は許す (関数の中 / if の枝に置くスクリプトがある。冒頭の注記を参照)。
+  exec_line="$(grep -n '^[[:space:]]*exec </dev/null >/dev/null 2>&1$' "$f" | head -1 | cut -d: -f1)"
+  work_line="$(grep -n -- "$marker" "$f" | grep -v '^[0-9]*:[[:space:]]*#' | head -1 | cut -d: -f1)"
+  if [ -z "$work_line" ]; then
+    printf '✗ %s の目印 (%s) が見つからない (検査が空振りしている)\n' "$rel" "$marker" >&2
+    fails=$((fails + 1))
+    continue
+  fi
   if [ -n "$exec_line" ] && { [ -z "$work_line" ] || [ "$exec_line" -lt "$work_line" ]; }; then
     printf '✓ %s が無音契約を実装している (%s 行目、実処理より前)\n' "$rel" "$exec_line"
   elif [ -n "$exec_line" ]; then

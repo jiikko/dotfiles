@@ -299,6 +299,13 @@ cancel_job() {
 # ある (安全側の判断と、tmux へキーを流す作法を混ぜない)
 cmd_fire() {
   local id=$1 job now wait_s
+  # 無音契約 (issue 129)。⚠️ **ここに置く。ファイル先頭には置けない**: このスクリプトは対話の
+  # wizard も兼ねており、先頭で塞ぐと popup の gum が端末を掴めなくなる。
+  # fire は run-shell -b の子として最長 30 日生きるので、その間 tmux のパイプを掴んだままにしない
+  # (掴んだままだと run-shell がずっと active で、サーバ死亡時に SIGPIPE を受ける)。
+  # ⚠️ view-mode を積む支配的な要因は rc≠0 の方で、exec では塞げない (issue 111 の実測)。
+  #    この関数が exit 0 以外で抜けないことは、下の各経路 (fire_drop / 失敗時の exit 0) が担う
+  exec </dev/null >/dev/null 2>&1
   job="$STATE_DIR/$id.job"
   read_job "$job" || fire_drop "$id" "job を読めない" ""
   # ⚠️ ここも stderr を出さない (無音契約)。書けなければ予約は成立しないので、new 側の

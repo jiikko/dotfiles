@@ -301,6 +301,9 @@ printf '\n## fire: 予約したサーバでなければ送らない\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 write_job j7 900 "make test"
 STUB_SRVPID=9999 run "$STUB_PATH" "$SCRIPT" fire j7   # 別サーバが立っている
+# ⚠️ fire は冒頭で exec </dev/null >/dev/null 2>&1 する (issue 129) ので、stdout/stderr が空なのは
+#    **構造的に真**であり、この行の主役は rc=0 の方 (view-mode を積む支配的な要因は rc≠0。111 の実測)。
+#    リダイレクトそのものは tests/tmux/test_runshell_silence.sh が「実処理より前にあるか」で守る
 [[ "$RC" -eq 0 && ! -s "$RUN_OUT" && ! -s "$RUN_ERR" ]] || { printf '✗ 無音 exit 0 でない (RC=%s)\n' "$RC"; exit 1; }
 assert_not_called "send-keys" "予約したサーバが居なければ送らない (別サーバの pane を叩かない)"
 [[ "$(jobs_count)" == 0 ]] || { printf '✗ 破棄した job が残っている\n'; exit 1; }
@@ -365,6 +368,9 @@ chmod +x "$TMP_DIR/bin_nodate_date"
 mkdir -p "$TMP_DIR/bin_nodate"; cp "$TMP_DIR/bin/tmux" "$TMP_DIR/bin/sleep" "$TMP_DIR/bin_nodate/" 2>/dev/null
 cp "$TMP_DIR/bin_nodate_date" "$TMP_DIR/bin_nodate/date"
 run "$TMP_DIR/bin_nodate:/usr/bin:/bin" "$SCRIPT" fire nodate
+# ⚠️ fire は冒頭で exec </dev/null >/dev/null 2>&1 する (issue 129) ので、stdout/stderr が空なのは
+#    **構造的に真**であり、この行の主役は rc=0 の方 (view-mode を積む支配的な要因は rc≠0。111 の実測)。
+#    リダイレクトそのものは tests/tmux/test_runshell_silence.sh が「実処理より前にあるか」で守る
 [[ "$RC" -eq 0 && ! -s "$RUN_OUT" && ! -s "$RUN_ERR" ]] || { printf '✗ 時刻が取れないときに無音 exit 0 でない (RC=%s)\n' "$RC"; cat "$RUN_ERR"; exit 1; }
 assert_not_called "send-keys" "時刻が取れなければ送らない"
 [[ "$(jobs_count)" == 0 ]] || { printf '✗ 破棄した job が残っている\n'; exit 1; }
@@ -400,6 +406,9 @@ printf '\n## fire: 壊れた job (文字列行なし) は送らず掃く\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 write_job j4 900 ""
 run "$STUB_PATH" "$SCRIPT" fire j4
+# ⚠️ fire は冒頭で exec </dev/null >/dev/null 2>&1 する (issue 129) ので、stdout/stderr が空なのは
+#    **構造的に真**であり、この行の主役は rc=0 の方 (view-mode を積む支配的な要因は rc≠0。111 の実測)。
+#    リダイレクトそのものは tests/tmux/test_runshell_silence.sh が「実処理より前にあるか」で守る
 [[ "$RC" -eq 0 && ! -s "$RUN_OUT" && ! -s "$RUN_ERR" ]] || { printf '✗ 壊れた job で無音 exit 0 でない (RC=%s)\n' "$RC"; exit 1; }
 assert_not_called "send-keys" "文字列行の無い job → 素の Enter を送らない"
 [[ "$(jobs_count)" == 0 ]] || { printf '✗ 壊れた job が残っている\n'; exit 1; }
@@ -411,6 +420,9 @@ write_job j3 900 "make test"
 rm -f "$XDG_CACHE_HOME/tt-schedule-keys.log"   # 前ブロックの成功ログを持ち越さない
 STUB_PANE_GONE=1 run "$STUB_PATH" "$SCRIPT" fire j3
 [[ "$RC" -eq 0 ]] || { printf '✗ pane 消滅で exit %s (run-shell 経由なら view-mode が積まれる)\n' "$RC"; exit 1; }
+# ⚠️ fire は冒頭で exec </dev/null >/dev/null 2>&1 する (issue 129) ので、stdout/stderr が空なのは
+#    **構造的に真**であり、この行の主役は rc=0 の方 (view-mode を積む支配的な要因は rc≠0。111 の実測)。
+#    リダイレクトそのものは tests/tmux/test_runshell_silence.sh が「実処理より前にあるか」で守る
 [[ ! -s "$RUN_OUT" && ! -s "$RUN_ERR" ]] || { printf '✗ pane 消滅で stdout/stderr に出力 (無音契約違反)\n'; cat "$RUN_OUT" "$RUN_ERR"; exit 1; }
 assert_called 'tmux send-keys -t %5 -l -- make test ; send-keys -t %5 Enter' "pane 消滅は send-keys の失敗で検知する (事前チェックとの TOCTOU を作らない)"
 [[ "$(jobs_count)" == 0 ]] || { printf '✗ pane 消滅の job が残っている\n'; exit 1; }
