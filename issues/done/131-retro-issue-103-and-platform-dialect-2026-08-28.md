@@ -160,10 +160,13 @@ GNU `date -r <epoch>` の終了コードを `gdate ... | head -2` の後の `$?`
 
 ## 残課題
 
-- [ ] 項目 6 → `verify-execution-not-just-exit-code.md` へ追記 (環境を変えたら出力を全行 diff)
-- [ ] 項目 7 → `mutation-verify-new-tests.md` へ追記 (A-B のケース間で状態を共有しない)
-- [ ] 項目 8・9・10 は却下 (理由は各項に記載)
-- [ ] 項目 1 → `mutation-verify-new-tests.md` へ追記
-- [ ] 項目 2 → `claude-md-maintenance.md` のトリガー行へ半行追記
-- [ ] 項目 4 → `tests/CLAUDE.md` へ 1 行追記
-- [ ] 項目 3・5 は却下 (理由は各項に記載)
+- [x] 項目 1 → `mutation-verify-new-tests.md` の「守っていないテストの形」へ 2 項目
+      (フィクスチャが production の初期状態と違う / ミリ秒の窓は広げて決定論にする)
+- [x] 項目 2 → `claude-md-maintenance.md` のトリガー行へ半行 (規約より先に同じ lib 内を grep)
+- [x] 項目 4 → `tests/CLAUDE.md` に「bash 前提の lib を手検証するとき」節
+- [x] 項目 6 → `verify-execution-not-just-exit-code.md` に「実行環境を変えたら全行 diff」節
+- [x] 項目 7 → `mutation-verify-new-tests.md` の「復元の作法」へ A-B の隔離
+- [x] 項目 3・5・8・9・10 は却下 (理由は各項に記載)
+
+実例は本文に書かず `_claude/rules-rationale/` の同名ファイルへ退避した (ルール本文は毎セッション
+全文読まれるため。root の CLAUDE.md の規約)。**この retro の残課題は空になった。**

@@ -32,6 +32,11 @@
 - 使い分け: **grep は挙動が入力次第なので実行で、stat / date は書き方で決まるので静的検査で**見る
 - mtime を取る shell コードは `scripts/lib/tmux_resurrect_guards.sh` の `tt_mtime_of` を使う (自前で `stat` を呼ばない)
 
+## bash 前提の lib を手検証するとき
+
+- **`bash -c` で回す。** このリポジトリの対話シェル (Claude の Bash ツール含む) は zsh で、glob・配列・単語分割が違う。実例 2026-08-28: zsh の `MARK_DIRS` で `*.lock` が `foo.lock/` に展開され、`"$d.steal"` が別パスを指したため「掃除が効いていない」と誤診しかけた (lib 冒頭は「呼び出し元は bash」と明記している)
+- **CI の bash は 5 系**。`.github/workflows/tests.yml` と `lint.yml` が brew の bash を PATH 先頭に出している。runner の `/bin/bash` は 3.2 で、`declare -A` も bats の非 ASCII テスト名も通らない
+
 ## tmux を触るテスト
 
 - 冒頭で `unset TMUX TMUX_PANE` し、`-L <一意名>` か `TMUX_TMPDIR` で socket を隔離する。`$TMUX` が生きていると `TMUX_TMPDIR` は無視されて本番サーバへ向く (2026-07-07 に `make test` が本番を kill した。tests/tmux/test_fork_scratch.sh 冒頭が正本)
