@@ -31,19 +31,9 @@ runs:
         key: bench-prev-${{ inputs.name }}-${{ github.run_id }}
         restore-keys: bench-prev-${{ inputs.name }}-
 
-    # ⚠️ macOS runner の /bin/bash は 3.2 で、予算 checker が使う連想配列が動かない。
-    # しかも黙って rc=0 を返すため**予算ゲートが消えたまま緑になる** (実測 run 33230761754)。
-    # 4 つの bench job が共通で通る唯一の場所なのでここで揃える (checker 側にも版のガードを
-    # 入れてあり、こちらが漏れても loud に落ちる = 二重化は意図的)。
-    - name: Ensure modern bash (runner の /bin/bash は 3.2)
-      shell: bash
-      run: |
-        brew install --quiet bash
-        brew_bin="$(brew --prefix)/bin"
-        [ -x "$brew_bin/bash" ] || { echo "::error::brew の bash が見つからない: $brew_bin/bash"; exit 1; }
-        "$brew_bin/bash" --version | head -1
-        echo "$brew_bin" >> "$GITHUB_PATH"
-
+    # ⚠️ bash の版は呼び出し側の job が ./.github/actions/ensure-toolchain で揃えている
+    # (issue 141 で集約)。ここには置かない — 二重に brew install することになる。
+    # 予算 checker 側にも bash 4+ のガードがあるので、漏れたら loud に落ちる。
     - name: Bench ${{ inputs.name }} (budget check)
       shell: bash
       env:

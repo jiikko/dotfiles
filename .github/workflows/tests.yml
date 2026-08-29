@@ -57,21 +57,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # ⚠️ macOS runner の /bin/bash は **3.2**。開発機は Homebrew の bash 5 が PATH 先頭にいるので、
-      # ここを揃えないと「手元だけ緑」が逆向きに起きる。実測 2026-08-28 で 3.2 のまま踏んだもの:
-      #   - `declare -A` が invalid option (tests/check_bench_budgets.sh)
-      #   - bats 1.13 が**日本語のテスト名を解決できず 0 件実行**して警告だけ出す (しかも rc=0)
-      #   - statusline の advisor 整形が 7 件不一致
-      # ⚠️ CI_COMMANDS_* には入れない: あちらは「存在するか」の検査で、`command -v bash` は 3.2 でも
-      # 成功してしまう。ここは**版**が要件なので独立した step にして、次の step で実際に検証する。
-      - name: Ensure modern bash (runner の /bin/bash は 3.2)
-        run: |
-          brew install --quiet bash
-          brew_bin="$(brew --prefix)/bin"
-          [ -x "$brew_bin/bash" ] || { echo "::error::brew の bash が見つからない: $brew_bin/bash"; exit 1; }
-          "$brew_bin/bash" --version | head -1
-          echo "$brew_bin" >> "$GITHUB_PATH"
-
       # 依存の出典は Makefile の CI_COMMANDS_<GROUP>。⚠️ ここで `make -s ci-commands-*` は
       # 使わない (依存を解決する時点で make があるとは限らない)。Makefile の生の行を sed で読む。
       # 空を後段に流すと「何も入らないまま成功」になるため、読めなければ明示的に落とす。
@@ -87,49 +72,10 @@ jobs:
           echo "commands=$cmds" >> "$GITHUB_OUTPUT"
           echo "$var = $cmds"
 
-      # ⚠️ ${{ }} を run: の中に直接埋めないこと。Makefile 由来の値がシェルとして評価される
-      # (実測: CI_COMMANDS_HEAVY := $(OTHER) と書くと sed が生テキストを掴み、run: 側で
-      # コマンド置換として実行されて 0 個になる)。env 経由で受け、許可文字だけを通す。
-      # $CMDS は複数コマンドへ分割させるため意図的に無引用。文字種の検証がその安全弁。
-      #
-      # ⚠️ 「brew install が成功した」を導入の証拠にしないこと。既に入っているものは skip し、
-      #    最後に **command -v で実在を確認**してから先へ進む。
-      - name: Ensure required commands (${{ steps.deps.outputs.commands }})
-        env:
-          CMDS: ${{ steps.deps.outputs.commands }}
-        run: |
-          case "$CMDS" in
-            *[!a-z0-9.+_\ -]*)
-              echo "::error::コマンド名に想定外の文字がある: [$CMDS]"
-              exit 1
-              ;;
-          esac
-          for c in $CMDS; do
-            command -v "$c" >/dev/null 2>&1 && continue
-            # コマンド名 → Homebrew formula 名。既定は同名で、**違うものだけ**ここに書く
-            # (apt と違い brew は bats を bats-core という名前で配っている)。
-            case "$c" in
-              bats)     formula=bats-core ;;
-              gtimeout) formula=coreutils ;;   # timeout(1) は macOS に無い。g 接頭辞で入る
-              *)        formula="$c" ;;
-            esac
-            echo "installing $c (brew formula: $formula)"
-            brew install --quiet "$formula"
-          done
-          missing=""
-          for c in $CMDS; do
-            command -v "$c" >/dev/null 2>&1 || missing="$missing $c"
-          done
-          if [ -n "$missing" ]; then
-            echo "::error::導入後もコマンドが見つからない:$missing"
-            exit 1
-          fi
-          for c in $CMDS; do printf '%s = %s\n' "$c" "$(command -v "$c")"; done
-          # 前 step の GITHUB_PATH がこの step から効く。bash が 5 以上になったことをここで確認する
-          # (「brew install が成功した」ではなく「実際に何が呼ばれるか」で判定する)
-          echo "bash = $(command -v bash) ($(bash --version | head -1))"
-          major="$(bash -c 'echo "${BASH_VERSINFO[0]}"')"
-          [ "${major:-0}" -ge 5 ] || { echo "::error::bash が ${major:-?} 系のまま (期待: 5 以上)"; exit 1; }
+      # 導入と検証は共有 action に集約 (issue 141)。formula 名の写像もあちら側にある。
+      - uses: ./.github/actions/ensure-toolchain
+        with:
+          commands: ${{ steps.deps.outputs.commands }}
 
       # Neovim 0.12 pin + plugin cache + lazy restore。pin の理由・cache key の世代管理は
       # action 側に集約 (bench.yml と共有。二重管理を防ぐため詳細はそちらだけに書く)
