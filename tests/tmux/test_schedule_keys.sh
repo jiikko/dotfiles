@@ -707,7 +707,10 @@ printf '\n## 取消の確認に残り時間が出る\n'
 # 潰しても他のどのテストも落ちない (監査 2026-08-28)
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 spawn_sleeper remain
-write_job remain "$(( $(/bin/date +%s) + 3540 ))" "make test"
+# ⚠️ 発火までを分の境界ちょうど (3540 = 59m00s) に置かない。fmt_remaining は切り捨てなので、
+#    fixture 作成から gum confirm までに 1 秒でも経つと 58m になる (CI で実発生 2026-08-29
+#    run 33260033544)。59m59s に置けば、59 秒経つまで 59m のまま
+write_job remain "$(( $(/bin/date +%s) + 3599 ))" "make test"
 ui_queue "cancel	remain"; STUB_GUM_EXIT=1 run "$STUB_PATH" "$SCRIPT" wizard
 assert_called "gum confirm" "確認を出す"
 grep -E '^gum confirm .*59m' "$CALLS" >/dev/null \
