@@ -169,3 +169,51 @@ issue 132 は「手元と CI の差を手元で出す」方向の話だったが
 
 → **trigger**: darwin 固有の実行時バグが実際に出たとき。そのときは `_go-project.yml` 全体を移す
 のではなく、`darwin-build` を `darwin-build-and-test` に広げる方が安く済む可能性が高い。
+
+## 手順 3 の完了 (2026-08-29): bench.yml と _go-project.yml も macOS へ
+
+ユーザー判断「macOS のみ動く前提でいい」を受けて、保留していた 2 件も移した。**これで
+ubuntu で走る workflow はゼロ**。
+
+### _go-project.yml (lint / test)
+
+- 両 job を `macos-15` に pin。test の timeout を 10 → 20 分 (lint は cold compile 用の 25 分を維持)
+- ⚠️ **`darwin-build` は残した**。`src_glogx.yml` / `src_lockman.yml` の macOS ビルド確認ジョブは、
+  lint/test が macOS で回るようになった今 **冗長になった可能性が高い** (実測: `CGO_ENABLED=1
+  go build ./...` は通り、`go test` も同条件でコンパイルする)。ただし「冗長だから外す」は
+  [`list-masked-failure-modes-before-removing-guard.md`](../_claude/rules/list-masked-failure-modes-before-removing-guard.md)
+  の対象で、外す前に「本来の目的以外に何を守っていたか」の列挙が要る。移行後の CI を観測してから別途判断する
+
+### bench.yml (nvim / zsh / tmux / glogx の 4 job)
+
+- 4 job とも `macos-15` に pin。timeout を 1.3〜1.7 倍に広げた
+- 依存は「存在を確かめ → 無いものだけ brew → 最後にもう一度確かめる」形へ
+- compaudit の fpath 修正ステップは **macOS では no-op** (実測: compaudit が何も返さない)。
+  ubuntu runner 固有の事情への対処なので、壊れないことを確認したうえで残した
+  (`xargs -r` も macOS で空入力時にコマンドを起動しないことを実測)
+
+**予算の再較正は不要と判断した** (実測に基づく):
+
+| 対象 | 手元 macOS の実測 | 予算 | 判断 |
+|---|---|---|---|
+| zsh startup / first_command / prompt_lag | 50.5 / 92.3 / 23.0 ms | 500 / 1000 / 500 | 10 倍の余裕。予算ファイル自身が「桁級の回帰しか捕まえない粗い上限」と書いている |
+| glogx の `*_alloc_kb` | 30.023 / 35.569 | 31.0 / 36.7 | **アロケーション量なので platform 非依存**。移行で値は動かない |
+| 時間系の `rel` 予算 | — | `calibrate` でスケール | 機械速度の差は較正器が吸収する設計 (checker のヘッダが一次情報) |
+
+→ 移行後の CI 実測を見て、超過があればそこだけ較正する。**超過が無ければ「予算が緩すぎる」
+可能性の方が高い**ので、そのときは絞る方向の別 issue にする (今回は範囲外)。
+
+### 保留していた「brew ブロックの成功パス」問題は、defect ではないと判断した
+
+敵対的レビューの確定 5 は「CI の zsh は `_zshrc` の brew ブロックを通らないので、実機と違う
+zsh を測っている」だった。macOS へ移してもプラグインは入っていないので状況は変わらない。
+
+**しかし bench の目的は回帰検出であって絶対値の忠実さではない**。プラグインを CI に入れると
+第三者コードの更新が数字を動かし、**自分のコードの回帰と区別できなくなる**。一貫した
+「プラグイン無しの zsh」を測り続ける方が、目的に対しては正しい。→ **現状維持**。
+実機の起動コストを知りたくなったら、手元で `tests/zshrc/bench_zsh.sh` を叩く (それが正しい経路)。
+
+### 残る手順 4 (Linux 前提の防御の撤去) は未着手
+
+ubuntu が消えたので前提は整った。ただし外すには「副次的に守っていたもの」の列挙が要るので、
+本 issue 上部の表を埋めてから別途行う。
