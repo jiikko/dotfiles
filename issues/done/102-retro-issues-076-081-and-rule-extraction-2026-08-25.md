@@ -121,6 +121,11 @@ guards.sh 側の指紋比較に触るテストが 1 本も無かったため。1
 
 ## 残課題
 
-- [ ] issues 078 / 079 の残課題 (lock 取得手順の統合 / `_tmux.conf` のインライン hook)。
-      どちらも**挙動変更を伴うので独立に判断すべき**と判断して見送った分で、trigger は
-      各 issue の本文にある
+- [x] issues 078 / 079 の残課題 (lock 取得手順の統合 / `_tmux.conf` のインライン hook)。
+      どちらも**挙動変更を伴うので独立に判断すべき**と判断して見送った分だった。
+      **2026-08-29 に確認: 両方とも同じ 2026-08-25 中に完了して `[x]` になっており、
+      `issues/done/` に移っている**。
+      078 は `tt_lock_sweep_stale` / `tt_lock_acquire` の 2 関数へ 3 本を移行 (寄せなかった
+      2 箇所は理由つきで 078 に記録)。079 は `_tmux.conf` の復元 hook 2 つを
+      `scripts/tmux_log_restore_hook.sh` へ出し、再発を `make test-trigger-log-writers` で
+      静的に止めるところまで入っている

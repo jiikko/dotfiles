@@ -112,3 +112,17 @@ A-B が取れた。
 
 危なかったのは、**最初の 1 回だけ測っていたら「修正が効いていない」と誤診して、効いている
 修正を作り替えていた**こと。矛盾に気づけたのは、その前に単発で測った結果と食い違ったから。
+
+## 2026-08-29: 正規表現の方言チェックが「macOS 専用化」で他 repo 向けに退いた経緯
+
+本文の「比較に使う正規表現の方言」の項は、もともと dotfiles が Linux CI を持っていた時期に
+書かれた。実測 2026-08-25 の内容は次のとおり:
+
+- `grep -qE '\tfoo'` は **BSD grep (macOS) がタブとして解釈**し、**GNU grep (Linux CI) は
+  `stray \ before t` と警告してリテラル `t` として扱う** (= 行中の実タブにマッチしない)
+- POSIX ERE にタブの escape は無い。`\s` は両方が受ける (実測)
+
+dotfiles は **2026-08-28 に macOS 専用**になり (issue 133。CI も全 workflow が macOS runner)、
+GNU grep を被せて回す `make test-gnu` と `scripts/check_platform_dialect.sh` は
+**「正しい macOS の書き方を弾く」側に回ったので撤去された**。本文の項は
+**複数 platform を対象にする repo では引き続き効く**ため規範としては残し、経緯だけここへ移した。
