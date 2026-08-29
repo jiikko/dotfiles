@@ -66,8 +66,10 @@ jobs:
           [ "${major:-0}" -ge 5 ] || { echo "::error::bash が ${major:-?} 系のまま (期待: 5 以上)"; exit 1; }
 
       # 静的解析の shellcheck はバージョンを固定してリリースバイナリで入れる。
-      # apt (ubuntu 24.04) は 0.9 系で、開発機 (brew = 0.11) と指摘が食い違い「手元 green なのに
-      # CI 赤」を生む (実例 2026-07-25: `[ -n "$x" ] && y || true` が 0.9 では SC2015、0.11 では無指摘)。
+      # かつて apt (ubuntu 24.04) の 0.9 系を使っていた頃、開発機 (brew = 0.11) と指摘が食い違い
+      # 「手元 green なのに CI 赤」を生んだ (実例 2026-07-25: `[ -n "$x" ] && y || true` が
+      # 0.9 では SC2015、0.11 では無指摘)。runner を macOS へ移した今も、brew 任せにすると
+      # 版が黙って動くので pin は維持する。
       # ⚠️ 手元の brew shellcheck を上げたらここも同じ版へ更新すること (差が戻ると同じ罠が再発する)。
       - name: Install shellcheck (pinned)
         env:

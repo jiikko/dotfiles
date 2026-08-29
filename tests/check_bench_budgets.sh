@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
+
+# ⚠️ bash 4+ 必須 (連想配列を使う)。**バージョンを確かめずに走らせないこと**。bash 3.2 では
+#    `declare -A` が invalid option になるだけで**スクリプトは止まらず、予算を 1 件も照合しない
+#    まま rc=0 を返す** (実測 2026-08-29: stdout 空・rc=0)。呼び出し側 (tests/run_bench.sh) は
+#    この rc をそのまま返すので、**予算ゲートが消えているのに CI は緑**になる。
+#    実際に踏んだ: CI を macOS へ移した直後、runner の /bin/bash が 3.2 で全 bench の予算判定が
+#    無効化されていたが Bench workflow は success だった (run 33230761754)。
+#    「検査できなかった」は合格ではないので、ここで止める。
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+  printf '::error::check_bench_budgets.sh は bash 4+ が必要 (現在: %s)。予算を照合できないので失敗させる\n' "${BASH_VERSION:-unknown}" >&2
+  exit 1
+fi
 # bench スクリプトの "metric=<name> ms=<value>" 出力を予算ファイルと突き合わせ、
 # 超過があれば非 0 で終了する (CI のデグレ検出用)。
 #

@@ -6,7 +6,7 @@
 # ⚠️ paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
 #
 # ⚠️ lockman の対象環境は macOS (smbfs + macOS のファイル共有) だが、ここで回るのは
-#   ubuntu 上のローカル FS のテストだけ。SMB 由来の前提 (キャッシュ・mtime の打刻・
+#   ローカル FS のテストだけ (runner は macOS。issue 133 で ubuntu から移した)。SMB 由来の前提 (キャッシュ・mtime の打刻・
 #   fcntl ロックの転送) は CI では一切検証されない。実機検証は human issue で人が行う。
 #   darwin 固有コード (IOPlatformUUID / kern.boottime 等) を入れたら、そのとき
 #   src_glogx.yml の darwin-build job に倣って macOS runner のビルド確認を足すこと。
