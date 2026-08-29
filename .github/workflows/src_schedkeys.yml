@@ -38,27 +38,3 @@ jobs:
     uses: ./.github/workflows/_go-project.yml
     with:
       dir: src/schedkeys
-
-  # darwin での確認。⚠️ lint/test も macOS へ移した (issue 133) ため冗長の可能性がある。
-  # 外す判断は issue 133 手順 4 で行う。この UI が実際に動くのは macOS の tmux popup だけで、旧 ubuntu 側は
-  # 「ロジックが正しいか」しか見ていない。ここでは同じ unit テストを darwin で走らせ、
-  # 端末幅の計算 (ansi.StringWidth) や rune 処理が platform 差で崩れないことを守る。
-  # ⚠️ 実際の見え方 (popup の中の描画・IME の未確定文字の位置) はここでも検証できない。
-  #   tty と実 tmux が要るため、そこは human issue (issues/125) で人が確認する。
-  darwin:
-    runs-on: macos-15  # pin する (issue 133。latest はラベルの移動で黙って版が変わる)
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: src/schedkeys/go.mod
-          cache-dependency-path: src/schedkeys/go.sum
-
-      - name: Build & test (darwin)
-        working-directory: src/schedkeys
-        run: |
-          go build ./...
-          go test -race ./...

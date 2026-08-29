@@ -34,28 +34,3 @@ jobs:
     uses: ./.github/workflows/_go-project.yml
     with:
       dir: src/glogx
-
-  # darwin ビルド確認。⚠️ **この job は冗長になった可能性がある** (2026-08-29)。
-  # 元の理由は「lint/test が ubuntu で走るので ime_tis_darwin.go (darwin && cgo) が一度も
-  # コンパイルされない」だったが、issue 133 で lint/test も macOS へ移したため、そちらでも
-  # コンパイルされるようになった (実測: CGO_ENABLED=1 go build ./... が通り、go test も同条件)。
-  # ただし「冗長だから外す」は _claude/rules/list-masked-failure-modes-before-removing-guard.md の
-  # 対象で、外す前に「副次的に何を守っていたか」の列挙が要る (例: test が早期に失敗した回でも
-  # ビルドだけは通ることを保証していた)。移行後の CI を観測してから判断する。issue 133 手順 4。
-  darwin-build:
-    runs-on: macos-15  # pin する (issue 133。latest はラベルの移動で黙って版が変わる)
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: src/glogx/go.mod
-          cache-dependency-path: src/glogx/go.sum
-
-      - name: Build (darwin, cgo)
-        working-directory: src/glogx
-        env:
-          CGO_ENABLED: "1"
-        run: go build ./...

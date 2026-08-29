@@ -32,6 +32,13 @@ env:
   GIT_CONFIG_COUNT: "1"
   GIT_CONFIG_KEY_0: init.defaultBranch
   GIT_CONFIG_VALUE_0: main
+  # ⚠️ cgo を明示的に有効にする。`//go:build darwin && cgo` のファイル (src/glogx の
+  # ime_tis_darwin.go) は **CGO_ENABLED=0 だと IgnoredGoFiles に落ちて黙って除外される**
+  # (実測 2026-08-29: CGO=1 で CgoFiles に入り、CGO=0 で IgnoredGoFiles 行き)。
+  # 既定値は「C コンパイラがあれば 1」なので、runner image の中身に依存する。
+  # `-race` は cgo を要求しない (実測: CGO_ENABLED=0 go test -race が通る) ため、
+  # ここを明示しないと「darwin 固有コードが 1 行もコンパイルされないまま緑」が成立する。
+  CGO_ENABLED: "1"
 
 jobs:
   # lint と test は独立 job: 並列実行 + 片方だけの再実行が可能
