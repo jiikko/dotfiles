@@ -51,3 +51,44 @@ CI を macOS へ移した (issue 133) 直後、`tests/claude/test_deny_bare_tmux
 - `_claude/rules/verify-execution-not-just-exit-code.md` — 「実行環境を変えたら出力を全行 diff」を
   2026-08-29 に追記した。本 issue はその**自動化**にあたる (人が diff しなくても分かる形)
 - [133](133-chore-drop-linux-support-and-move-ci-to-macos.md) 手順 3 — 60 件消失の発生源
+
+---
+
+## 対応 (2026-08-29): `exit 77` = ファイル全体 skip の規約を入れた
+
+### 採らなかった案
+
+- **出力から `SKIP:` を正規表現で拾う** — 表記が `SKIP:` / `skipped:` / `⚠ … skip` の 3 種類に
+  割れており脆い。全体 skip と部分 skip も区別できない
+- **`✓` が 0 件のファイルを skip とみなす** — 実測すると **97 本中 21 本**が別の出力形式
+  (`OK:` / `All … passed` / `[test-x] すべて成功`) で、誤検出だらけになる
+
+→ **終了コードなら出力形式に依存しない**。automake の慣例に合わせて 77 を採った。
+
+### 入れたもの
+
+- 直列 runner: 77 を `[skip]` に分類し、末尾に**件数と一覧**を出す (skip は失敗ではないので緑のまま)
+- 並列 runner: `[ok]` / `[skip]` / `[FAIL]` の 3 値
+- 全体 skip する 7 箇所を 77 に変更。⚠️ `test_retro_open.sh:145` は date スタブ内の `exit 0` なので対象外
+- 受け側を先に洗った: テストファイルを直接実行するのは runner 2 本だけで、
+  `scripts/test_changed.sh` と `Makefile:97` は make target 経由なので 77 は漏れない
+
+### 効果 (実際に見えるようになったもの)
+
+| 環境 | 丸ごと skip していたテスト |
+|---|---|
+| 開発機 | `tests/tmux/test_fork_scratch.sh` (実サーバ誤 kill 防止で skip する設計) |
+| CI | `tests/claude/test_claude_links_complete.sh` (runner に `~/dotfiles` が無い。設計どおり) |
+
+**どちらも従来は `[ok]` に埋もれていた**。環境によって skip するものが違うことも、これで見える。
+
+### 受け入れ条件
+
+- [x] skip するテストが `[ok]` にならない (プローブで直列・並列とも確認)
+- [x] 正当な skip があっても `make test` は緑
+- [x] 変異検証 (「何も検査せず exit 77」のプローブが集計に現れる)
+- [x] 件数を出す
+
+### 残課題
+
+なし。
