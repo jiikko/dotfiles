@@ -217,3 +217,43 @@ zsh を測っている」だった。macOS へ移してもプラグインは入�
 
 ubuntu が消えたので前提は整った。ただし外すには「副次的に守っていたもの」の列挙が要るので、
 本 issue 上部の表を埋めてから別途行う。
+
+## 手順 4 の実施 (2026-08-29): Linux 前提の防御を外した
+
+「冗長だから外す」は
+[`list-masked-failure-modes-before-removing-guard.md`](../_claude/rules/list-masked-failure-modes-before-removing-guard.md)
+の対象なので、対象ごとに「本来の目的」と「副次的に守っていたもの」を埋めてから外した。
+
+| 対象 | 本来の目的 | 副次的に守っていたもの | 結論 |
+|---|---|---|---|
+| `scripts/check_platform_dialect.sh` + target + テスト | BSD 専用の stat / date が Linux で壊るのを止める | **無かった**。むしろ macOS 単一では**害**に回る: 素の `stat -f %m` は正しいのに GNU フォールバックを要求する (検査は新規コードを弾く形で残る) | **撤去** |
+| `make test-gnu` + `scripts/with_gnu_grep.sh` | grep の方言差を push 前に手元で出す | 正規表現を移植可能に保つ規律。macOS 単一では不要。opt-in なので CI には元から無い | **撤去** ([108](done/108-chore-no-gnu-grep-repro-for-tests.md) に撤去の追記) |
+| 各所の BSD-GNU コメント | 方言差の注意喚起 | **一部は方言以外の理由を持つ** (`ps -o lstart=` のパディングは同じ macOS でも版差がありうる) | **一律削除しない**。存在しない道具を指す誘導だけ直した (`mutation-verify-new-tests.md` / root `CLAUDE.md` / `tests/CLAUDE.md` / issue 132) |
+| `CI_COMMANDS_*` / `test-ci-group-deps` | CI の依存宣言と heavy/rest の整合検査 | 削除ではなく**作り替え**が要ると事前に判断していた | 手順 3 で brew ベースへ作り替え済み。**維持** |
+| `darwin-build` (src_glogx) / `darwin` (src_schedkeys) | lint/test が ubuntu だったので darwin+cgo のファイルを唯一コンパイルする経路 | **`CGO_ENABLED=1` の明示**。ここが本体だった (下記) | **撤去**。保証を `_go-project.yml` の env へ移した |
+
+### ⚠️ darwin-build は「冗長」ではなかった — 実測で想定が覆った
+
+当初は「lint/test が macOS で回るようになったので、ビルドするだけの job は冗長」と考えた。
+根拠として「`-race` は cgo を要求するから、test が動く時点で cgo は有効」と推論したが、**実測で
+覆った**:
+
+```
+CGO_ENABLED=0 go test -race ./...     → 通る          (-race は cgo を要求しない)
+CGO_ENABLED=1 go list -f CgoFiles     → ime_tis_darwin.go
+CGO_ENABLED=0 go list -f IgnoredGoFiles → ime_tis_darwin.go   ← 黙って除外される
+```
+
+つまり `darwin-build` が持っていた `CGO_ENABLED: "1"` の**明示**こそが、darwin 固有コードが
+コンパイルされることの唯一の保証だった。既定値は「C コンパイラがあれば 1」で runner image の
+中身に依存するため、外すだけなら**「darwin 固有コードが 1 行もコンパイルされないまま緑」**を
+作るところだった。
+
+→ 保証を `_go-project.yml` の job env (`CGO_ENABLED: "1"`) へ移してから撤去した。結果として
+**ビルドだけでなく test も cgo 込みで回る**ようになり、移す前より強くなっている。
+`src_lockman.yml` の「darwin 固有コードを入れたら darwin-build に倣え」というコメントも、
+「_go-project が CGO_ENABLED=1 を明示しているので不要」へ直した。
+
+### 残課題
+
+なし。issue 133 は手順 1〜5 すべて完了。

@@ -15,7 +15,7 @@
 
 | # | 依存していた前提 | CI での壊れ方 | 現状 |
 |---|---|---|---|
-| 1 | `stat -f %m` が BSD 書式 | 年齢判定が常に「判定不能」→ 取り残しの回収が全滅 | **塞いだ** (`check_platform_dialect.sh`) |
+| 1 | `stat -f %m` が BSD 書式 | 年齢判定が常に「判定不能」→ 取り残しの回収が全滅 | **前提ごと消えた** (133 で CI が macOS に。検査も撤去) |
 | 2 | `date -r <epoch>` が BSD 書式 | `touch -t ''` でテストごと死ぬ | **塞いだ** (同上) |
 | 3 | repo 内に `tmp/` が存在する | `mkdtemp failed ... No such file or directory` | 個別対応済。**仕組みは未対応 (本 issue の残り)** |
 | 4 | `go` が PATH にある | Makefile が `go not found; skipping` で exit 0 → assert 6 件が空振り | 個別対応済 (テスト側に go スタブ)。**133 で前提ごと消える** |
@@ -43,7 +43,7 @@
 
 - **捕まえるもの**: 未追跡のファイル / ディレクトリへの依存 (#3 の系統)。`tmp/` に限らず、
   手元にだけある生成物・キャッシュ・設定への依存が全部対象になる
-- **形は `test-gnu` に揃える**: opt-in (所要時間を倍にしない)、push 前に回す、
+- **形は opt-in に揃える** (かつて `make test-gnu` が同じ形だった。133 で撤去済み): 所要時間を倍にしない、push 前に回す、
   依存が無ければ skip せず**失敗する**。実装は `scripts/with_fresh_worktree.sh` + Makefile target
 - **性質上の限界**: HEAD で回るので**未コミットの変更は検査されない**。これは欠陥ではなく
   「新品チェックアウト」の定義そのもの。push 前チェックとしては正しい粒度
@@ -69,7 +69,7 @@
 ## 却下した案 (次に同じ提案が出たとき用)
 
 - **手元専用の道具として Docker で CI parity を作る**: docker 依存が増え、1 回の実行が重い。
-  他のゲート (`test-gnu` / 静的検査) が「軽い opt-in」で揃っているのに、ここだけ運用が変わる。
+  他のゲートが「軽い opt-in」で揃っているのに、ここだけ運用が変わる。
   ⚠️ CI 自体をコンテナ化する案は別物 (上の Phase 2 候補 B) で、こちらは 133 の決定により
   「そもそも Linux を見ない」方が上位なので不要になった
 - **テストごとに `# requires: go` を宣言させる**: 宣言と実態の乖離を検出できないと意味がなく、
@@ -83,13 +83,13 @@
       worktree を残さない (異常終了・中断でも)
 - [ ] **変異で確認**: どれか 1 つのテストの隔離ディレクトリを `$ROOT_DIR/tmp/...` に戻すと
       `make test-fresh` が赤になり、`make test` は緑のまま (= 手元との差を実際に出せている)
-- [ ] worktree の作成に失敗したら skip せず**失敗する** (`test-gnu` と同じ規律)
+- [ ] worktree の作成に失敗したら skip せず**失敗する** (依存が無いときに緑を返さない規律)
 - [ ] 入口ドキュメント: `tests/CLAUDE.md` の「BSD (手元) / GNU (CI) の方言差」の隣に
-      「新品チェックアウトとの差」を足し、`test-gnu` との使い分けを 1 行で書く
+      「新品チェックアウトとの差」を 1 行で書く
 
 ## 関連
 
-- `scripts/check_platform_dialect.sh` — #1 / #2 を塞いだ静的ゲート (方言は書き方で決まるので静的)
-- `scripts/with_gnu_grep.sh` / `make test-gnu` — 「環境を変えて全体を回す」opt-in の先例
+- ~~`scripts/with_gnu_grep.sh` / `make test-gnu`~~ — 「環境を変えて全体を回す」opt-in の先例だったが、
+  133 で撤去済み (対象が macOS だけになり、正しい macOS の書き方を弾く側に回ったため)
 - `_claude/CLAUDE.md`「一時ファイルの配置」— `tmp/` が CI に無いことの正本 (#3 はこれを踏んだ)
 - `_claude/rules/verify-execution-not-just-exit-code.md` — #4 の「依存が無いと黙って空振りする」形

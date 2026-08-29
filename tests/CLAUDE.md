@@ -21,21 +21,17 @@
 - `set -euo pipefail` 下の `var=$(… | grep …)` は無マッチの時点で代入ごと死に、直後の FAIL メッセージへ到達しない。抽出は `|| true` で受けて、空を明示的に FAIL にする
 - `… | grep -q` は一致していても偽になりうる (grep が先に抜けて producer が SIGPIPE → pipefail が拾う)。`grep -q PAT <<< "$(cmd)"` にする。`make test-pipefail-grep-q` (scripts/check_pipefail_grep_q.sh) が落とす。例外は行内 `pipefail-grep-q: allow` + 理由
 
-## BSD (手元) / GNU (CI) の方言差
+## platform (macOS のみ)
 
-手元 macOS は BSD、CI は GNU。この差は**手元だけ緑**になるので、目視では捕まらない。
+対象は macOS だけ (issue 133)。**CI も全 workflow が macos-15 runner**なので、手元と CI の
+userland は同じ。かつて「手元 BSD / CI GNU」の差を潰すために持っていた道具
+(`make test-gnu` / `scripts/with_gnu_grep.sh` / `scripts/check_platform_dialect.sh`) は、
+**対象が macOS だけになった時点で「正しい macOS の書き方」を弾く側に回った**ので外した
+(例: 素の `stat -f %m` は macOS では正しいのに、あの検査は GNU フォールバックを要求していた)。
 
-- **grep** (`\t` の解釈等) は実行で見る: パターンや観測ログの assert を触ったら `make test-gnu` (GNU grep を `grep` として見せて tests/ 全体を回す)
-- **stat / date** は静的に落とす: `make test-platform-dialect` (`scripts/check_platform_dialect.sh`)。
-  空白区切りの `stat -f %X` を `stat -c` より先に置く形と、フォールバックの無い `date -r <epoch>` を落とす。
-  例外は行内に `platform-dialect: allow` + 理由。実測と直し方の正本はスクリプト冒頭
-- 使い分け: **grep は挙動が入力次第なので実行で、stat / date は書き方で決まるので静的検査で**見る
-- mtime を取る shell コードは `scripts/lib/tmux_resurrect_guards.sh` の `tt_mtime_of` を使う (自前で `stat` を呼ばない)
-
-## bash 前提の lib を手検証するとき
-
-- **`bash -c` で回す。** このリポジトリの対話シェル (Claude の Bash ツール含む) は zsh で、glob・配列・単語分割が違う。実例 2026-08-28: zsh の `MARK_DIRS` で `*.lock` が `foo.lock/` に展開され、`"$d.steal"` が別パスを指したため「掃除が効いていない」と誤診しかけた (lib 冒頭は「呼び出し元は bash」と明記している)
-- **CI の bash は 5 系**。`.github/workflows/tests.yml` と `lint.yml` が brew の bash を PATH 先頭に出している。runner の `/bin/bash` は 3.2 で、`declare -A` も bats の非 ASCII テスト名も通らない
+- BSD の書き方で構わない。「GNU でも動くように」だけを理由に分岐を足さない
+- ⚠️ **残っているのは「版」の差**。CI の `/bin/bash` は 3.2、開発機は Homebrew の 5 系。
+  workflow が brew の bash を PATH 先頭に出して揃えている (下の節)
 
 ## tmux を触るテスト
 

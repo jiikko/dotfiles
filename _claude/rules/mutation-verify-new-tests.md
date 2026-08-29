@@ -153,9 +153,9 @@ flaky をそのまま素通しし、**その後のミューテーション判定
   **タブは変数に落として使う** (`tab="$(printf '\t')"`)。
   `\s` は両方が受けるので使える (実測)。**ヘルパー関数へパターンを渡す形だと `grep` の近くを
   grep しても見つからない**ので、掃くときは「正規表現になる文字列」全部を見る。
-  → **dotfiles には `make test-gnu` がある** (`scripts/with_gnu_grep.sh`)。GNU grep を `grep` として
-  見せて tests/ 全体を回すので、この差を push 前に手元で潰せる。grep のパターンや観測ログ系の
-  assert を触ったら回す。GNU grep が無い環境では skip せず**失敗する** (緑を返さない)
+  ⚠️ dotfiles は 2026-08-29 に **macOS 専用**になり (CI も全 workflow が macOS runner)、GNU grep を
+  被せて回す `make test-gnu` は「正しい macOS の書き方を弾く」側に回ったので外した。**複数
+  platform を対象にする repo では引き続きこの項目が効く**ので、規範としては残す
 - **fake / stub が外部コマンドの exit code を模しているか**。`err == nil` しか返さない fake は、
   実際には exit 1 を返すコマンドの契約を再現していない (関連:
   [`survey-receiver-guards-before-passing-new-values.md`](survey-receiver-guards-before-passing-new-values.md)

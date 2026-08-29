@@ -98,3 +98,12 @@ shim 自身も「貼れた」で終わらせず、実行前に `grep --version` 
 
 `_claude/rules/mutation-verify-new-tests.md` の「比較に使う正規表現の方言」の項から
 `make test-gnu` を指すようにした (この罠を踏む人が読む場所)。
+
+---
+
+## 後日 (2026-08-29): 撤去した
+
+issue 133 で **Linux をサポート対象外**にし、CI も全 workflow を macOS runner へ移した。
+GNU grep を被せて回す `make test-gnu` / `scripts/with_gnu_grep.sh` は、対象が macOS だけに
+なった時点で「正しい macOS の書き方を弾く」側に回ったため撤去した。
+本 issue の判断が誤っていたわけではない (当時は CI が Linux で、差は実害だった)。**前提が変わった**。

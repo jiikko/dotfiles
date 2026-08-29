@@ -2,9 +2,10 @@
 
 - **macOS のみ。Linux はサポート対象外** (2026-08-28 決定 / issue 133)。CI も macOS runner で回す
 - したがって **BSD 側の書き方で構わない**。「GNU でも動くように」という理由だけで分岐を足さない
-- ⚠️ ただし**移行の途中**。`scripts/check_platform_dialect.sh` / `make test-gnu` / 各所の BSD-GNU
-  コメントは Linux 前提の名残で、外す順序と「それが副次的に守っていたもの」の精査は issue 133 の
-  手順 4 に残してある。**先走って消さないこと** (bench はまだ ubuntu で回っている)
+- 移行は完了済み (issue 133)。Linux 前提の道具 (`make test-gnu` / `scripts/check_platform_dialect.sh`)
+  は、対象が macOS だけになった時点で「正しい macOS の書き方を弾く」側に回ったので外した
+- ⚠️ **残るのは「版」の差**。CI runner の `/bin/bash` は 3.2、開発機は Homebrew の 5 系。
+  workflow 側で brew の bash を PATH 先頭に出して揃えている。新しい workflow を足すときは同じ手当てが要る
 
 ## `_claude/` (Claude Code 設定の正本) を触るとき
 

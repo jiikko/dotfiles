@@ -43,7 +43,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-gnu test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-platform-dialect test-go-lint test-go test-src
+.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-go-lint test-go test-src
 
 # settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
 # pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、
@@ -144,17 +144,6 @@ endef
 test-discovered:
 	@$(call run_tests,tests)
 
-# tests/ 全体を「GNU grep が grep として見える」環境で回す (issue 108)。
-# BSD grep (macOS) と GNU grep (Linux CI) は正規表現の方言が違うため、テストが手元だけ
-# 緑・CI だけ赤になる。観測ログ系の assert や grep のパターンを触ったら、push 前にこれを
-# 回すと CI の往復が減る。opt-in なのは `make test` の所要時間を倍にしないため。
-# GNU grep が無い macOS では **失敗する** (skip して緑を返さない)。詳細は
-# scripts/with_gnu_grep.sh の冒頭コメント。
-test-gnu:
-	@rc=; scripts/with_gnu_grep.sh $(MAKE) test-discovered || rc=1; \
-		scripts/with_gnu_grep.sh $(MAKE) test-bats || rc=1; \
-		[ -z "$${rc:-}" ] || { echo "" >&2; echo "✗ test-gnu: 失敗あり (上の出力を確認)" >&2; exit 1; }
-
 # CI (tests.yml) の並列分割用。実行時間の大きい ffmpeg 系 (av1ify/concat) を heavy として
 # 分離し、rest は「tests/ 全体から heavy を除外」の除外方式にする。新ディレクトリは自動で
 # rest 側に入るため、グループ列挙の更新漏れによる死蔵は発生しない。heavy のパスを
@@ -195,11 +184,6 @@ test-ci-group-deps:
 # 正本は scripts/check_pipefail_grep_q.sh (なぜ危険か・直し方・例外マーカーはそこに書いてある)。
 test-pipefail-grep-q:
 	@scripts/check_pipefail_grep_q.sh
-
-# BSD (macOS) 専用の stat / date の書き方が Linux (CI) で壊れる形を落とす。
-# 正本は scripts/check_platform_dialect.sh (実測・直し方・例外マーカーはそこに書いてある)。
-test-platform-dialect:
-	@scripts/check_platform_dialect.sh
 
 # 共有観測ログ (tt-restore-trigger.log) の書き手が guards.sh の tt_trigger_log 以外に増えるのを落とす。
 # 正本は scripts/check_trigger_log_writers.sh (なぜ危険か・例外マーカーはそこに書いてある)。
@@ -331,7 +315,7 @@ test-lint-tests:
 #   1 度も走らず、lint.yml は `make test-lint` の 1 ステップなので CI ログにも出ない。
 #   **末尾の新設検査ほど隠れやすい** (実測: test-json を落とすと後続 7 本が未実行)。
 test-lint:
-	@+$(call run_all_targets,test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-platform-dialect)
+	@+$(call run_all_targets,test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers)
 
 # Go プロジェクトの静的解析とテスト。実体は各ディレクトリの Makefile の lint / test
 # ターゲットに閉じており、ここはそれへ委譲するだけ (ローカルのコミット前検証用。root の
