@@ -16,7 +16,7 @@ trap cleanup EXIT
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "skip: python3 が無いので比較テーブルを検証できない (min 集約だけの縮退経路)"
-  exit 0
+  exit 77
 fi
 
 pass=0

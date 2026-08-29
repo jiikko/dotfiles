@@ -23,7 +23,7 @@ ng() { printf '✗ %s\n' "$1"; fails=$((fails + 1)); }
 
 command -v "$TMUX_BIN_PATH" >/dev/null 2>&1 || {
   printf 'SKIP: tmux が無い環境なので実行系の検査は落とした\n'
-  exit 0
+  exit 77
 }
 [ -x "$HOOK" ] || { ng "hook が無い/実行不可: $HOOK"; exit 1; }
 

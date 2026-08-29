@@ -25,11 +25,11 @@ CLAUDE_HOME="$HOME/.claude"
 expected_root="$(cd "$HOME/dotfiles" 2>/dev/null && pwd -P || true)"
 if [ "$expected_root" != "$ROOT_DIR" ]; then
   echo "skipped: ~/dotfiles がこの checkout ($ROOT_DIR) ではない (setup.sh 未適用の環境)"
-  exit 0
+  exit 77
 fi
 if [ ! -d "$CLAUDE_HOME/rules" ]; then
   echo "skipped: $CLAUDE_HOME/rules が無い (setup.sh 未実行の環境)"
-  exit 0
+  exit 77
 fi
 
 fail=0

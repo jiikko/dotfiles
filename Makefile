@@ -119,14 +119,21 @@ test-runtime:
 define run_tests
 tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); \
 [ -n "$$tests" ] || { echo "✗ $(1) 配下にテストが見つかりません (find 失敗 or 0 件)。本当に test_*.sh が無いディレクトリなら、テストを足すか scripts/test_changed.sh の写像の振り先を直す (issue 063 の同型)" >&2; exit 1; }; \
-fails=$$(mktemp); \
-printf '%s\n' "$$tests" | while IFS= read -r t; do echo "[run] $$t"; "$$t" || echo "$$t" >> "$$fails"; done; \
-if [ -s "$$fails" ]; then { echo ""; echo "✗ 失敗したテスト:"; sed 's/^/  /' "$$fails"; } >&2; rm -f "$$fails"; exit 1; fi; \
-rm -f "$$fails"
+fails=$$(mktemp); skips=$$(mktemp); \
+printf '%s\n' "$$tests" | while IFS= read -r t; do echo "[run] $$t"; \
+	if "$$t"; then :; else rc=$$?; if [ "$$rc" -eq 77 ]; then echo "$$t" >> "$$skips"; else echo "$$t" >> "$$fails"; fi; fi; done; \
+if [ -s "$$skips" ]; then { echo ""; echo "[skip] 丸ごと skip したテスト $$(wc -l < "$$skips" | tr -d ' ') 件 (失敗ではない。増えていたら理由を確かめる):"; sed 's/^/  /' "$$skips"; }; fi; \
+if [ -s "$$fails" ]; then { echo ""; echo "✗ 失敗したテスト:"; sed 's/^/  /' "$$fails"; } >&2; rm -f "$$fails" "$$skips"; exit 1; fi; \
+rm -f "$$fails" "$$skips"
 endef
 
 # run_tests の並列版。各テストは独自 tempdir で独立しているものだけに使うこと
 # (nvim/tmux 系は共有資源の競合が未検証のため直列の run_tests のまま)。出力は
+# ⚠️ **exit 77 = そのファイルは丸ごと skip した** (automake の慣例)。0 と区別しないと、依存が
+# 無くて何も検査しなかったテストが合格と同じ `[ok]` になる。実害: 2026-08-29 に
+# test_deny_bare_tmux_kill.sh が timeout(1) 不在で丸ごと skip し、**60 件の assert が消えたのに
+# `[ok]`** と集計されていた (issue 139)。skip 自体は失敗ではないので緑のままにするが、
+# **件数と一覧を出して「増えた」に気づける**ようにする。
 # テストごとにファイルへ隔離し、失敗時にまとめて吐く (並列で行が混ざるのを防ぐ)。
 # fail-fast はしない (xargs は失敗後も残りを流し、最後に非 0 (123) を返す)。
 # parallel-each は不採用: CI runner に Go が無くビルドできない・retries/resume の
@@ -136,7 +143,10 @@ define run_tests_parallel
 tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); \
 [ -n "$$tests" ] || { echo "✗ $(1) 配下にテストが見つかりません (find 失敗 or 0 件)。本当に test_*.sh が無いディレクトリなら、テストを足すか scripts/test_changed.sh の写像の振り先を直す (issue 063 の同型)" >&2; exit 1; }; \
 printf '%s\n' "$$tests" | xargs -P $(NPROC) -n 1 sh -c \
-	'out=$$(mktemp); if "$$0" >"$$out" 2>&1; then echo "[ok] $$0"; rm -f "$$out"; else echo "[FAIL] $$0"; cat "$$out"; rm -f "$$out"; exit 1; fi'
+	'out=$$(mktemp); "$$0" >"$$out" 2>&1; rc=$$?; \
+	if [ "$$rc" -eq 0 ]; then echo "[ok] $$0"; \
+	elif [ "$$rc" -eq 77 ]; then echo "[skip] $$0"; cat "$$out"; \
+	else echo "[FAIL] $$0"; cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"'
 endef
 
 # test-runtime の実行本体。tests/ 全体を走査するため、新ディレクトリ tests/foo/ を作っても
