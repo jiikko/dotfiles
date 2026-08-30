@@ -21,3 +21,10 @@
 真因は「その実行環境に検査対象のソースが存在しない」で外した。**このとき失敗経路に環境変数の
 dump を入れていたので、次の 1 往復で確定できた**。逆に言えば、確度の低い 1 回目の時点で
 dump を入れていれば往復は 1 回で済んでいた。
+
+実例 (obaket 617 M2, 2026-08-29): Swift runtime の `swift_task_dealloc` abort に対し、仮説 fix を 2 回
+(Task.detached 化 / guard-let 化) 当てて 3/3 クラッシュのまま → 効かなかった修正を戻し、forge に観測データ
+(crash report の frame・決定的な再現子) を手土産に escalate → probe A (stored async closure を短命 Task から
+呼んで完了させると落ちる) で真因を確定。修正は protocol witness の sleeper + cancel しない単一 driver。
+仮説 fix を 3 回目に進めていたら、同じ形 (`scheduleProgressFlush`) の 2 箇所目を見落としたまま
+「たまに落ちる」に戻っていた。

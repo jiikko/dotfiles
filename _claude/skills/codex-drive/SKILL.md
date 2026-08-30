@@ -259,7 +259,9 @@ codex-drive を回す前に、**そのタスクが codex 実装に向いてい�
 [3.7] テスト強化       … codex に「実装は触らず、この実装を落とすテスト」だけ書かせる
 [3.8] ミューテーション検証 … 使い捨て worktree で codex が実装に現実的なバグを注入 → テストが検知するか機械確認。
                         検知漏れ = テストの穴として [3.7] に差し戻す。commit 直前の最終ゲート
-[4]   commit & push    … 自分の差分のみ commit (commit-policy)。push は必要時
+[4]   commit & push    … 自分の差分のみ commit (commit-policy)。push は必要時。**マイルストーンごとに issue の「進捗チェックポイント」節を更新して同時に commit する**
+                        (採用設計の要点 / マイルストーン表と commit hash / 手順 / 再開方法。context 圧縮や別セッションからの再開はこの節が入口。
+                        設計ファイルは `./tmp` で消えるので、再開に要る判断はここに残す。obaket 617 で圧縮 2 回を跨いで有効だった)
 [5]   実地検証 (任意)   … 実行 / 実機 / CI で動かす。失敗したら [6]
 [6]   観測 → 次の指示   … blind fix しない。観測を増やし事実を取り、次の指示にする → [2] (設計前提の誤りなら D2/D3 へ)
 [7]   要件照合         … [R] のリストと成果物を突き合わせ。codex 敵対照合 1 本を必須で先行させ、Claude が確定
@@ -454,6 +456,11 @@ EOF
   素の環境で回す**と `[2]` のプロンプトに書く。codex の全体 `swift test` が赤を報告しても sandbox 由来の偽赤が
   ありうる (同日 2 回観測。素の環境では 0 failure) ので、赤も緑と同じく Claude の再実行で判定する
   (出典: obaket `issues/613`)。
+  **codex に xcodebuild を試みさせない**とプロンプトに書く (試みると Error 74 の往復で時間を溶かす。obaket 617 M3)。
+  codex が書いた macOS target のテストは **Claude が baseline 緑 + 変異 red を xcodebuild で確認するまで未検証扱い**
+  (617 M5: codex 版の macOS テスト 2 本が baseline red / 変異検知が vacuous だった。`[3.8]` の gate は shared の filter
+  suite しか回さないので、macOS 側の変異は Claude が worktree で `xcodebuild -only-testing:<suite>` を当てる)。
+  codex が `Package.swift` (依存の追加) を触ったら要約に明示させる (617 M5: test target の依存追加が要約に無く diff で気づいた)
 - 触ってよい範囲・触らない範囲・既存方針 (設計 doc 等) を明示する。
 
 ### 2. codex に実装させる（write 権限）
