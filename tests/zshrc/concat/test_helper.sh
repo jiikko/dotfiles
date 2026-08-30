@@ -93,21 +93,47 @@ case "$*" in
 esac
 
 # 映像情報
+#
+# 実 ffprobe と同じく「-show_entries stream=<列> で要求された列だけを、ffprobe 内部の
+# 固定順で csv 出力する」形にしてある。フィールド名を完全一致で見分ける実装にすると
+# `stream=codec_name,width,height,r_frame_rate,pix_fmt` のような複合クエリが素通りし、
+# 「r_frame_rate を映像情報に戻す」変異をテストが検知できなくなる (実物とずれたモックが
+# 変異を隠す典型)。
 if echo "$*" | grep -q "select_streams v:0"; then
-  # time_base クエリ
-  if echo "$*" | grep -q "stream=time_base"; then
-    if echo "$input_file" | grep -q "tbase_002"; then
-      echo "1/30000"
+  requested=$(echo "$*" | sed -n 's/.*-show_entries stream=\([A-Za-z0-9_,]*\).*/\1/p')
+  if [ -n "$requested" ]; then
+    # ファイルごとの値を決める
+    if echo "$input_file" | grep -q "mismatch_002"; then
+      v_codec_name=hevc; v_width=1280; v_height=720; v_pix_fmt=yuv422p
     else
-      echo "1/90000"
+      v_codec_name=h264; v_width=1920; v_height=1080; v_pix_fmt=yuv420p
     fi
+    if echo "$input_file" | grep -q "fpsdiff_002"; then
+      v_r_frame_rate="30000/1001"
+    else
+      v_r_frame_rate="30/1"
+    fi
+    if echo "$input_file" | grep -q "tbase_002"; then
+      v_time_base="1/30000"
+    else
+      v_time_base="1/90000"
+    fi
+
+    # 要求された列だけを ffprobe 内部の順で並べる
+    # (実測: codec_name,width,height,pix_fmt,r_frame_rate,time_base の順で出る)
+    out=""
+    for field in codec_name width height pix_fmt r_frame_rate time_base; do
+      if echo ",$requested," | grep -q ",$field,"; then
+        eval "value=\$v_$field"
+        if [ -z "$out" ]; then
+          out="$value"
+        else
+          out="$out,$value"
+        fi
+      fi
+    done
+    printf '%s\n' "$out"
     exit 0
-  fi
-  # mismatch_002 ファイルの場合は異なる情報を返す
-  if echo "$input_file" | grep -q "mismatch_002"; then
-    echo "hevc,1280,720,30/1,yuv422p"
-  else
-    echo "h264,1920,1080,30/1,yuv420p"
   fi
   exit 0
 fi

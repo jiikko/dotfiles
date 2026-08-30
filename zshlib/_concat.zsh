@@ -21,6 +21,7 @@ concat — 複数の動画ファイルを無劣化で結合します。
   - 同一コーデック・フォーマットの動画を高速に連結できます。
   - ファイル名の連続性（連番パターン）をチェックします。
   - コーデック・解像度などの不一致を検出し、再エンコードが必要な場合はエラーにします。
+  - フレームレートの不一致は警告のみで結合を続行します（無劣化結合できるため）。
 
 使い方:
   concat [オプション...] <ファイル1> <ファイル2> [<ファイル3> ...]
@@ -301,7 +302,12 @@ EOF
   [[ -n "$first_audio_info" ]] && has_input_audio=1
 
   local video_info audio_info
+  local -a fps_list=()
+  local fps_mismatch=0
   if (( ! force_mode )); then
+    for file in "${input_files[@]}"; do
+      fps_list+=("$(__concat_get_video_frame_rate "$file")")
+    done
     for file in "${input_files[@]:1}"; do
       video_info=$(__concat_get_video_info "$file")
       audio_info=$(__concat_get_audio_info "$file")
@@ -320,6 +326,35 @@ EOF
         return 1
       fi
     done
+
+    # フレームレート不一致は「エラー」ではなく「警告」。concat demuxer + `-c copy` が
+    # 一致を要求するのは codec / 解像度 / pix_fmt / extradata であって、フレーム
+    # レートはコンテナ側のタイミング情報なので、混在しても各パケットの PTS と
+    # duration はそのまま保たれる (出力は可変フレームレートの mp4 になる)。
+    #
+    # ここをエラーにしていた頃は --force を使うしかなく、--force は同時に
+    # フレーム順序検証まで落とすため、「無害な差のために有害な取り違えの検出を
+    # 失う」という逆転が起きていた。警告に落として検証は残す。
+    #
+    # PTS の丸めが起きるのは time_base が揃っていないときだけで、それは直後の
+    # time_base チェックが独立に捕まえる (こちらはエラーのまま)。
+    local _i
+    for ((_i=2; _i<=${#input_files[@]}; _i++)); do
+      if [[ "${fps_list[$_i]}" != "${fps_list[1]}" ]]; then
+        fps_mismatch=1
+      fi
+    done
+
+    if (( fps_mismatch )); then
+      print -ru2 -- ""
+      print -r -- "${_C_YELLOW}${_C_BOLD}⚠️  フレームレート不一致 (結合は続行します)${_C_NOBOLD}${_C_OFF}" >&2
+      print -r -- "${_C_YELLOW}出力は可変フレームレートの mp4 になります${_C_OFF}" >&2
+      print -ru2 -- ""
+      for ((_i=1; _i<=${#input_files[@]}; _i++)); do
+        print -r -- "  ${_C_CYAN}${input_files[$_i]:t}${_C_OFF}: ${fps_list[$_i]}" >&2
+      done
+      print -ru2 -- ""
+    fi
 
     # time_base 不一致は max timescale (= 高分解能側) に揃える方向で repair する。
     # 低→高 (例: 1/30000 → 1/90000) は PTS を整数倍するだけなので常に無損失。

@@ -299,10 +299,32 @@ __concat_float() {
   }'
 }
 
+# concat demuxer + `-c copy` が「再エンコードなしで繋げる」ために一致を要求する属性だけを返す。
+# フレームレートはここに含めない (コンテナ側のタイミング情報であり、混在しても
+# 可変フレームレートの mp4 になるだけで再エンコードは要らない)。取得は
+# __concat_get_video_frame_rate に分けてあり、不一致は警告どまりにしている。
+#
+# ⚠️ extradata (SPS/PPS/hvcC) の違いはここでは捕まえられない。codec / 解像度 / pix_fmt が
+# 同じでも extradata が違うと後半セグメントがデコードエラーになる (HEVC の CTU サイズ違いで
+# 再現確認済み)。ただし `extradata_hash` をここに足す形では直らない —
+# ハッシュは fps 差でも容器差 (mp4 の avcC と MPEG-TS の Annex B) でも変わるのに、
+# どちらも実際には無劣化で繋がるため、正常な入力を誤って弾くうえフレームレート差が
+# 下の警告に到達しなくなる (2026-08-30 実測)。出力側のデコード検査へ寄せる方向で
+# issue 139-bug-concat-ignores-audio-timebase-and-video-extradata に整理してある。
 __concat_get_video_info() {
   local file="$1"
   ffprobe -v error -select_streams v:0 \
-    -show_entries stream=codec_name,width,height,r_frame_rate,pix_fmt \
+    -show_entries stream=codec_name,width,height,pix_fmt \
+    -of csv=p=0 -- "$file" 2>/dev/null | head -n1
+}
+
+# r_frame_rate は ffprobe の推測値で、CFR でも実際と違う値を返すことがある
+# (_video_health.zsh がスロー/早送り破損判定から撤去したのと同じ理由)。
+# 結合可否の判定材料にはせず、表示専用に使う。
+__concat_get_video_frame_rate() {
+  local file="$1"
+  ffprobe -v error -select_streams v:0 \
+    -show_entries stream=r_frame_rate \
     -of csv=p=0 -- "$file" 2>/dev/null | head -n1
 }
 
@@ -313,6 +335,10 @@ __concat_get_video_time_base() {
     -of csv=p=0 -- "$file" 2>/dev/null | head -n1
 }
 
+# ⚠️ 音声の time_base はまだ見ていない。codec / sample_rate / channels が同じでも
+# time_base が違う (mp4 の 1/44100 と MPEG-TS の 1/90000 など) と、音声だけが倍近くに
+# 伸びた出力が警告なしで成功扱いになる。issue 139 に再現手順がある
+# (修復は再エンコード不要で、MPEG-TS 側を `-c copy` で mp4 へ remux すれば正規化される)。
 __concat_get_audio_info() {
   local file="$1"
   ffprobe -v error -select_streams a:0 \
