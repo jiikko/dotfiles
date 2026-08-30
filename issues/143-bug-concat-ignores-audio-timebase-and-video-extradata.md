@@ -1,4 +1,11 @@
-# bug: concat が音声 time_base と映像 extradata を見ておらず、壊れた結合を成功扱いする
+# 143 bug: concat が音声 time_base と映像 extradata を見ておらず、壊れた結合を成功扱いする
+
+> ⚠️ **2026-08-30 に 139 → 143 へ改番**。同じ 139 が 2 件あった
+> (`issues/done/139-bug-test-runner-cannot-distinguish-skip-from-pass.md`)。あちらは tracked 2 ファイル
+> (`Makefile` / `tests/CLAUDE.md`) と push 済み commit の**件名** (ec12ee6 `... (issue 139)`) から
+> 参照されており、commit message は履歴なので直せない。こちらの参照は tracked 2 行
+> (`zshlib/_concat_helpers.zsh`) と commit 94a4b3c の**本文**だけだったので、こちらを動かした。
+> **過去の会話やメモの「139」が concat の話なら、それはこの issue。**
 
 - カテゴリ: bug
 - 起票: 2026-08-30

@@ -310,7 +310,7 @@ __concat_float() {
 # ハッシュは fps 差でも容器差 (mp4 の avcC と MPEG-TS の Annex B) でも変わるのに、
 # どちらも実際には無劣化で繋がるため、正常な入力を誤って弾くうえフレームレート差が
 # 下の警告に到達しなくなる (2026-08-30 実測)。出力側のデコード検査へ寄せる方向で
-# issue 139-bug-concat-ignores-audio-timebase-and-video-extradata に整理してある。
+# issue 143-bug-concat-ignores-audio-timebase-and-video-extradata に整理してある。
 __concat_get_video_info() {
   local file="$1"
   ffprobe -v error -select_streams v:0 \
@@ -337,7 +337,7 @@ __concat_get_video_time_base() {
 
 # ⚠️ 音声の time_base はまだ見ていない。codec / sample_rate / channels が同じでも
 # time_base が違う (mp4 の 1/44100 と MPEG-TS の 1/90000 など) と、音声だけが倍近くに
-# 伸びた出力が警告なしで成功扱いになる。issue 139 に再現手順がある
+# 伸びた出力が警告なしで成功扱いになる。issue 143 に再現手順がある
 # (修復は再エンコード不要で、MPEG-TS 側を `-c copy` で mp4 へ remux すれば正規化される)。
 __concat_get_audio_info() {
   local file="$1"
