@@ -67,6 +67,12 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
    ```
 3. `tests/nvim/test_nvim.sh` (config ロード + 全プラグイン強制ロード)
 
+⚠️ **link の解決は colorscheme 分岐ごとに採る**。「どの group が X を指しているか」を
+`nvim_get_hl` で列挙するとき、**片方の分岐 (truecolor=gruvbox / 256色=retrobox) だけ走査した
+結果を両分岐の話として書かない**。link 先は分岐で違う — 実測 2026-08-28:
+`LspSignatureActiveParameter` は retrobox 側だけが `Visual` を指し、gruvbox 側は `Search`
+(reverse) を独自に持っていて無傷だった。走査は両分岐で 1 回ずつ回す。
+
 ## 点火アニメ (window 切替の「ぬるっと」遷移)
 
 window を切り替えると、current 島が **切替直前の表示色 → 暗く沈む → 蛍光へ点火、の V 字輝度

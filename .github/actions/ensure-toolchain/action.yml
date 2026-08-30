@@ -1,0 +1,75 @@
+---
+name: Ensure toolchain (bash 5 + required commands)
+description: >-
+  macOS runner で「テストが使う道具が実際に呼べる」状態を作る共有 action。
+  bash の版を揃え、指定されたコマンドを (無いものだけ) brew で入れ、最後に実在を確認する。
+  tests.yml / lint.yml / bench.yml の 4 job が同じ形を持っていたのを 1 箇所へ集約した
+  (issue 141。formula 名の写像を足すたびに 3 箇所を直す状態だった)。
+
+inputs:
+  commands:
+    description: >-
+      必要なコマンドを空白区切りで (例 "tmux zsh bats")。空でもよい (その場合は bash だけ揃える)。
+      ⚠️ ここに書くのは**コマンド名**であって brew の formula 名ではない。両者が違うものだけ
+      下の case に写像を足す。
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # ⚠️ macOS runner の /bin/bash は 3.2、開発機は Homebrew の 5 系。揃えないと「手元だけ緑」が
+    # 逆向きに起きる。実測 2026-08-28〜29 で 3.2 のまま踏んだもの:
+    #   - tests/check_bench_budgets.sh の `declare -A` が invalid option になり、**予算を 1 件も
+    #     照合しないまま rc=0** を返して Bench が緑になった (issue 133)
+    #   - bats 1.13 が日本語のテスト名を解決できず 0 件実行して警告だけ出す
+    #   - statusline の advisor 整形が 7 件不一致
+    - name: Ensure modern bash (runner の /bin/bash は 3.2)
+      shell: bash
+      run: |
+        brew install --quiet bash
+        brew_bin="$(brew --prefix)/bin"
+        [ -x "$brew_bin/bash" ] || { echo "::error::brew の bash が見つからない: $brew_bin/bash"; exit 1; }
+        "$brew_bin/bash" --version | head -1
+        echo "$brew_bin" >> "$GITHUB_PATH"
+
+    # ⚠️ ${{ }} を run: に直接埋めない (呼び出し側から渡った値がシェルとして評価される)。
+    # env 経由で受け、許可文字だけを通す。$CMDS は複数コマンドへ分割させるため意図的に無引用で、
+    # 文字種の検証がその安全弁。
+    # ⚠️ 「brew install が成功した」を導入の証拠にしない。既にあるものは skip し、最後に
+    # command -v で実在を確認してから先へ進む (runner image の preinstall 内容に依存しない)。
+    - name: Ensure required commands (${{ inputs.commands }})
+      shell: bash
+      env:
+        CMDS: ${{ inputs.commands }}
+      run: |
+        case "$CMDS" in
+          *[!a-z0-9.+_\ -]*)
+            echo "::error::コマンド名に想定外の文字がある: [$CMDS]"
+            exit 1
+            ;;
+        esac
+        for c in $CMDS; do
+          command -v "$c" >/dev/null 2>&1 && continue
+          # コマンド名 → Homebrew formula 名。既定は同名で、**違うものだけ**ここに書く
+          case "$c" in
+            bats)     formula=bats-core ;;   # brew は bats-core という名前で配っている
+            gtimeout) formula=coreutils ;;   # timeout(1) は macOS に無い。g 接頭辞で入る
+            *)        formula="$c" ;;
+          esac
+          echo "installing $c (brew formula: $formula)"
+          brew install --quiet "$formula"
+        done
+        missing=""
+        for c in $CMDS; do
+          command -v "$c" >/dev/null 2>&1 || missing="$missing $c"
+        done
+        if [ -n "$missing" ]; then
+          echo "::error::導入後もコマンドが見つからない:$missing"
+          exit 1
+        fi
+        for c in $CMDS; do printf '%s = %s\n' "$c" "$(command -v "$c")"; done
+        # 前 step の GITHUB_PATH はこの step から効く。実際に何が呼ばれるかで判定する
+        echo "bash = $(command -v bash) ($(bash --version | head -1))"
+        major="$(bash -c 'echo "${BASH_VERSINFO[0]}"')"
+        [ "${major:-0}" -ge 5 ] || { echo "::error::bash が ${major:-?} 系のまま (期待: 5 以上)"; exit 1; }

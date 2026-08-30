@@ -47,12 +47,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # bench_nvim.sh は zsh スクリプト (#!/usr/bin/env zsh)。macOS には zsh が入っているが、
-      # 「入っているはず」で進めず存在を確かめる (無ければ loud に落ちる)
-      - name: Ensure runtime dependencies (zsh)
-        run: |
-          command -v zsh >/dev/null 2>&1 || { echo "::error::zsh が無い"; exit 1; }
-          echo "zsh = $(command -v zsh) ($(zsh --version))"
+      # bench_nvim.sh は zsh スクリプト (#!/usr/bin/env zsh)
+      - uses: ./.github/actions/ensure-toolchain
+        with:
+          commands: zsh
 
       - uses: ./.github/actions/setup-nvim
 
@@ -77,10 +75,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Ensure runtime dependencies (zsh)
-        run: |
-          command -v zsh >/dev/null 2>&1 || { echo "::error::zsh が無い"; exit 1; }
-          echo "zsh = $(command -v zsh) ($(zsh --version))"
+      - uses: ./.github/actions/ensure-toolchain
+        with:
+          commands: zsh
 
       # ⚠️ 以下は ubuntu runner の事情への対処で、macOS では compaudit が何も返さないため
       #   実質 no-op (実測 2026-08-29)。壊れないので残す (runner を戻したときに効く)。
@@ -110,18 +107,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # bench_tmux.sh は zsh スクリプト。計測対象の tmux も必要。
-      # 「入っているはず」で進めず、無いものだけ入れて最後にもう一度確かめる
-      - name: Ensure runtime dependencies (tmux, zsh)
-        run: |
-          for c in tmux zsh; do
-            command -v "$c" >/dev/null 2>&1 && continue
-            echo "installing $c"; brew install --quiet "$c"
-          done
-          missing=""
-          for c in tmux zsh; do command -v "$c" >/dev/null 2>&1 || missing="$missing $c"; done
-          [ -z "$missing" ] || { echo "::error::導入後もコマンドが見つからない:$missing"; exit 1; }
-          echo "tmux = $(command -v tmux) ($(tmux -V)) / zsh = $(command -v zsh) ($(zsh --version))"
+      # bench_tmux.sh は zsh スクリプト。計測対象の tmux も必要
+      - uses: ./.github/actions/ensure-toolchain
+        with:
+          commands: tmux zsh
 
       # ボトルネックになりがちな箇所 = conf ロード / status format 展開 /
       # hook (debounced_save, mark-seen) 込みの window 操作を計測する。display -p 系は
@@ -138,6 +127,9 @@ jobs:
     timeout-minutes: 25  # BENCH_RUNS=20: build 1 回 + 1 run 数秒
     steps:
       - uses: actions/checkout@v7
+
+      # 予算 checker (tests/check_bench_budgets.sh) が bash 4+ を要求する。ここで版を揃える
+      - uses: ./.github/actions/ensure-toolchain
 
       - name: Set up Go
         uses: actions/setup-go@v7

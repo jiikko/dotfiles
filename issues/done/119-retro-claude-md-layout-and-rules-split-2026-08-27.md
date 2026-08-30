@@ -108,3 +108,30 @@ green のまま通った (grep で `termwidth.Of` が 0 件になって気づい
 着手通知 → 相手から「worktree を切れ / 112 で入れた 3 重の防御に追随を / 幅モデルは変えるな」→
 触るファイルの事前連絡 → 「TestNoSecondWidthEngine の走査起点を確認して変異で実証を」。全部
 実装前か commit 前に届き、手戻りは無かった。うまくいった話なので retro には残さない (規約どおり)。
+
+---
+
+## 切り出しの結果 (2026-08-29 実施)
+
+- **項目 1 / 3 / 7 → 却下** (本文で理由を明記済み)
+- **項目 2 → 済**。root `CLAUDE.md` の `_claude/` 節に「`paths:` は Read でしか発火せず
+  Write / Edit では発火しない」を制約として記載済み
+- **項目 4 → 却下 (issue 化しない)**。`InstructionsLoaded` hook でのロード検証を再利用可能な
+  道具にする案は見送り。**手順そのものは本文の項目 4 に残っている**ので、次に rules の
+  ロード量を測りたくなったらここを出典にして tmp/ で組み直す
+- **項目 5 → issue 化**: [142](142-research-claude-hooks-link-unreferenced.md)。
+  2026-08-29 に裏を取った: `_claude/settings.json` の hook command は全て
+  `~/dotfiles/_claude/hooks/...` の直接パスで、`~/.claude/hooks/` を指すものは **0 件**。
+  repo 内でそのパスを書いているのは `setup.sh` (張る側) と
+  `tests/claude/test_claude_links_complete.sh` (検査する側) だけ = **読む側がいない**
+- **項目 6 → 却下 (issue 化しない)**。per-file link を続ける。dir symlink 化は
+  過去に二重リンク事故で per-file へ移行した経緯があり、**戻す動機がその事故より強くない**。
+  漏れの検出は項目 5 の link 完全性テストが担う (CI では skip されるが手元では効く)
+- **項目 8 → 実施**。[`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md)
+  の「復元の作法」に「**worktree でも `git checkout --` は安全にならない**」を追記した
+  (worktree が消すのは他人の混入だけで、その worktree にある自分の未コミット変更は同じように
+  消える。しかも戻った旧実装が build も test も通せば green のまま気づけない)
+
+## 残課題
+
+なし (全項目が却下・実施・issue 化で閉じた)

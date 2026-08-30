@@ -670,7 +670,15 @@ if (( $+functions[fzf-history-widget] )); then
 fi
 
 if command -v brew > /dev/null 2>&1; then
-  brew_prefix="$(brew --prefix)"
+  # ⚠️ `brew --prefix` を毎回呼ばないこと。**1 回 9.6ms の fork** で、zsh の startup 実測 52.5ms の
+  #   約 19% をこれだけで使う (実測 2026-08-29 / issue 140)。シェル起動は 1 日に何十回も通る
+  #   経路なので、`zsh-hook-return-via-reply.md` が hook について言っているのと同じ話。
+  # 標準的な導入では prefix は brew 実体の 2 つ上 (`/opt/homebrew/bin/brew` → `/opt/homebrew`。
+  # Intel Mac は `/usr/local`)。`$commands` は zsh のコマンドハッシュなので fork しない。
+  # ⚠️ 決め打ちにしないこと (Intel Mac で壊れる)。導出が外れた場合 (非標準の導入) だけ
+  #   従来どおり `brew --prefix` へ落とす — 正しさは維持したまま、通常経路の fork だけ消す。
+  brew_prefix="${commands[brew]:h:h}"
+  [[ -d "$brew_prefix/share" ]] || brew_prefix="$(brew --prefix)"
 
   # 未導入の案内は **stderr へ、かつ対話シェルのときだけ**。
   # ⚠️ zshrc が stdout に書くと、zsh の出力をキャプチャする経路が全部壊れる。実測 2026-08-28:

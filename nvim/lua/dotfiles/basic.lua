@@ -20,7 +20,14 @@ local function set_options()
   opt.wildignore:append(".DS_Store")
   opt.wildignore:append({ "node_modules", "bower_components", "elm-stuff" })
 
-  opt.synmaxcol = 200
+  -- 既定値 (3000) のまま使う。下げると長い行で構文解析が途中で打ち切られ、閉じていない
+  -- 文字列リージョンがファイル末尾まで漏れる (実測 2026-08-29: synmaxcol=200 で 209 バイトの
+  -- Go 文字列行を解析しきれず、以降 391 行が goString 扱い = 事実上ハイライトが消えた)。
+  -- synmaxcol は「バイト」で数えるので、日本語 (3 バイト/字) は 67 文字で 200 に到達する。
+  -- treesitter が動いている filetype は無関係だが、レガシー Vimscript syntax へ
+  -- フォールバックする filetype (現状 go を含む) が踏む。長い 1 行のファイルで描画が重くて
+  -- 下げたくなったら、global ではなく該当 filetype の ftplugin に閉じ込めること。
+  opt.synmaxcol = 3000
   opt.grepprg = [[git grep -nI --no-color $*]]
   opt.grepformat = "%f:%l:%m"
 

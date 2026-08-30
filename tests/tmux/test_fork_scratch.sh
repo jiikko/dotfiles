@@ -37,7 +37,7 @@ unset CDPATH
 # tmux ペイン内なら同じ事故が起きるため、無条件の unset TMUX も必須 (下記)。
 if [[ -z "${CI:-}" ]] && [[ "$(uname -s)" == "Darwin" ]]; then
   print "[test-fork-scratch:zsh] skipped: macOS (開発機) では実行しない。実 tmux サーバ誤 kill 防止 (2026-07-07 の再発防止)"
-  exit 0
+  exit 77
 fi
 
 # 継承 $TMUX を遮断: これが残っていると bare `tmux` が TMUX_TMPDIR でなく実サーバの socket に
@@ -99,7 +99,7 @@ if ! "$TMUX_BIN_PATH" -L "$SOCKET_NAME" -f "$CONF_FILE" new-session -d -s fork_t
   if grep -qiE "operation not permitted|permission denied" "$log"; then
     print -u2 "[test-fork-scratch:zsh] skipped: tmux cannot create sockets in this environment"
     cat "$log" >&2
-    exit 0
+    exit 77
   fi
   cat "$log" >&2
   fail "failed to create test session"

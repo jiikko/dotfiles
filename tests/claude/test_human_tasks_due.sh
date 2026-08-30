@@ -16,7 +16,7 @@ fails=0
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "SKIP: jq が無い環境 (hook 自体は素の stdout へフォールバックする)"
-  exit 0
+  exit 77
 fi
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/human-tasks-due.XXXXXX")"

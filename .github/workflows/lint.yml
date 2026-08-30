@@ -32,38 +32,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # ⚠️ macOS runner の /bin/bash は 3.2 (開発機は Homebrew の bash 5 が PATH 先頭)。
-      # 実測では `make test-lint` は 3.2 でも通るが、**移行の前提が「CI を開発機に合わせる」**
-      # なので揃える。揃えないと検査スクリプト側が bash 4+ の機能を使い始めた日に、手元だけ
-      # 緑で CI が落ちる (tests.yml で実際に踏んだ: declare -A / bats の非 ASCII テスト名)。
-      - name: Ensure modern bash (runner の /bin/bash は 3.2)
-        run: |
-          brew install --quiet bash
-          brew_bin="$(brew --prefix)/bin"
-          [ -x "$brew_bin/bash" ] || { echo "::error::brew の bash が見つからない: $brew_bin/bash"; exit 1; }
-          "$brew_bin/bash" --version | head -1
-          echo "$brew_bin" >> "$GITHUB_PATH"
-
-      # ⚠️ 「入っているはず」で進めないこと。runner image に何が preinstall されているかは
-      # 変わりうるので、**存在を確かめ、無いものだけ入れ、最後にもう一度確かめる**
-      # (brew install の成功ではなく「何が呼べるか」で判定する)。
       # ruby は test-ruby-syntax (Brewfile/_pryrc の ruby -c と _gemrc の YAML パース) 用。
-      - name: Ensure lint dependencies
-        run: |
-          for c in zsh jq ruby yamllint; do
-            command -v "$c" >/dev/null 2>&1 && continue
-            echo "installing $c"
-            brew install --quiet "$c"
-          done
-          missing=""
-          for c in zsh jq ruby yamllint; do
-            command -v "$c" >/dev/null 2>&1 || missing="$missing $c"
-          done
-          [ -z "$missing" ] || { echo "::error::導入後もコマンドが見つからない:$missing"; exit 1; }
-          for c in zsh jq ruby yamllint; do printf '%s = %s\n' "$c" "$(command -v "$c")"; done
-          echo "bash = $(command -v bash) ($(bash --version | head -1))"
-          major="$(bash -c 'echo "${BASH_VERSINFO[0]}"')"
-          [ "${major:-0}" -ge 5 ] || { echo "::error::bash が ${major:-?} 系のまま (期待: 5 以上)"; exit 1; }
+      # 導入と検証は共有 action に集約 (issue 141)
+      - uses: ./.github/actions/ensure-toolchain
+        with:
+          commands: zsh jq ruby yamllint
 
       # 静的解析の shellcheck はバージョンを固定してリリースバイナリで入れる。
       # かつて apt (ubuntu 24.04) の 0.9 系を使っていた頃、開発機 (brew = 0.11) と指摘が食い違い
