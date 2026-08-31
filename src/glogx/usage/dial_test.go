@@ -273,27 +273,50 @@ func TestRenderDashboardSeparatesRows(t *testing.T) {
 	}
 }
 
-// 盤の中央の文字はリングや針に接しない。接すると数字が読めなくなるが、幅も行数も
-// 契約どおりなので他のテストでは検出できない (実測: 中央行を 1 行上へずらすと接した)。
+// 盤の中央の文字はリングにも針にも接しない。接すると数字が読めなくなるが、幅も行数も
+// 契約どおりなので他のテストでは検出できない (実測: 中央行を 1 行上へずらすと接し、
+// 針を中心から引くと角度によって使用率の数字を横切った)。
 func TestRenderDashboardCenterTextHasClearance(t *testing.T) {
 	lines := RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false)
-	for _, want := range []string{"残1時間48分", "残2日9時間"} {
-		found := false
-		for _, ln := range lines {
-			i := strings.Index(ln, want)
-			if i < 0 {
-				continue
-			}
-			found = true
-			if i == 0 || ln[i-1] != ' ' {
-				t.Errorf("%q の左が詰まっている: %q", want, ln)
-			}
-			if after := ln[i+len(want):]; after != "" && !strings.HasPrefix(after, " ") {
-				t.Errorf("%q の右が詰まっている: %q", want, ln)
+	// 中央は 2 行 (残り時間 / 使用率)。両方を見る — 針は角度によってどちらか一方だけを
+	// 横切るので、片方しか見ないと針の変異を取りこぼす。
+	cases := []struct{ remain, pct string }{
+		{"残1時間48分", "62%"},
+		{"残2日9時間", "78%"},
+	}
+	for _, c := range cases {
+		row := -1
+		for i, ln := range lines {
+			if strings.Contains(ln, c.remain) {
+				row = i
+				break
 			}
 		}
-		if !found {
-			t.Errorf("%q が盤の中央に無い", want)
+		if row < 0 {
+			t.Errorf("%q が盤の中央に無い", c.remain)
+			continue
 		}
+		assertClearance(t, lines[row], c.remain)
+		if row+1 >= len(lines) || !strings.Contains(lines[row+1], c.pct) {
+			t.Errorf("%q の下に %q が無い", c.remain, c.pct)
+			continue
+		}
+		assertClearance(t, lines[row+1], c.pct)
+	}
+}
+
+// assertClearance は行 ln の中の sub が左右とも空白に囲まれていることを確かめる。
+func assertClearance(t *testing.T, ln, sub string) {
+	t.Helper()
+	i := strings.Index(ln, sub)
+	if i < 0 {
+		t.Errorf("%q が行に無い: %q", sub, ln)
+		return
+	}
+	if i == 0 || ln[i-1] != ' ' {
+		t.Errorf("%q の左が詰まっている: %q", sub, ln)
+	}
+	if after := ln[i+len(sub):]; after != "" && !strings.HasPrefix(after, " ") {
+		t.Errorf("%q の右が詰まっている: %q", sub, ln)
 	}
 }
