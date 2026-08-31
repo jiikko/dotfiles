@@ -20,13 +20,58 @@ local ts_js_inlay_hints = {
   includeInlayFunctionLikeReturnTypeHints = true,
 }
 
+-- Ruby は project ごとに 1 サーバだけ attach する (ruby_lsp と solargraph を両方 attach すると
+-- rubocop 由来の診断が二重に出る)。既定は従来どおり solargraph で、下の allowlist に挙げた
+-- project root 配下でだけ ruby_lsp へ切り替える。全体を ruby_lsp に倒さないのは、既存 project が
+-- solargraph 前提で運用されており一斉切替の影響を確認していないため。
+-- 増やすときはここへ 1 行足す (ruby-lsp gem は使う ruby version ごとに `gem install ruby-lsp`
+-- が要る。現状 rbenv 3.2.2 にのみ導入済み)。
+-- 末尾スラッシュはここで剥がす。付いたままだと下の dir == root も dir .. "/" の前方一致も
+-- 両方外れ、その project だけ無言で solargraph に落ちる (エラーも警告も出ない)。
+local ruby_lsp_projects = vim.tbl_map(function(path)
+  return (vim.fn.expand(path):gsub("/+$", ""))
+end, {
+  "~/src/the-rss-reader",
+})
+
+-- want ("ruby_lsp" / "solargraph") がその project の担当サーバのときだけ on_dir を呼ぶ。
+-- root は lspconfig 既定の root_markers と同じ { Gemfile, .git } で決めてから振り分ける。
+local function ruby_root_dir(want)
+  return function(bufnr, on_dir)
+    local name = vim.api.nvim_buf_get_name(bufnr)
+    local dir = vim.fs.root(name ~= "" and name or bufnr, { "Gemfile", ".git" })
+    if not dir then return end
+    local use_ruby_lsp = false
+    for _, root in ipairs(ruby_lsp_projects) do
+      if dir == root or vim.startswith(dir, root .. "/") then
+        use_ruby_lsp = true
+        break
+      end
+    end
+    if (want == "ruby_lsp") == use_ruby_lsp then on_dir(dir) end
+  end
+end
+
 M.servers = {
-  -- solargraph は mason が入れたバイナリを直接使う (useBundler=false)。project の Gemfile 側
+  -- ruby-lsp / solargraph とも rbenv に gem install したものを PATH 経由で使う。
+  -- 整形は ruby-lsp 内蔵の formatter (lspconfig 既定 init_options.formatter = "auto" が bundle の
+  -- rubocop を検出) が担うので、solargraph と同じく <leader>F の lsp_format="fallback" で効く。
+  ruby_lsp = {
+    root_dir = ruby_root_dir("ruby_lsp"),
+  },
+  -- solargraph は PATH のバイナリを直接使う (useBundler=false)。project の Gemfile 側
   -- solargraph を bundle exec で使いたい場合のみ true にする (Gemfile に無い project では起動失敗)。
   -- formatting=true は coc-settings の solargraph.formatting: true を踏襲 (これが無いと Ruby の
   -- <leader>F/:Format が lsp_format fallback 先の solargraph 既定 off で no-op になる)。
+  -- ⚠️ PATH 側が >= 0.56 で project の bundle が < 0.54.2 を pin していると無限ループする:
+  --   0.56 は gem doc のキャッシュを `solargraph cache <gem>` の子プロセスへ投げる際 (library.rb の
+  --   cache_next_gemspec) GEM_HOME を project の bundle へ書き換えるため、子は bundle 側の古い
+  --   solargraph を起動する。0.52 に cache サブコマンドは無く即死するが親は exit status を見ず、
+  --   同じ gem を選び直して毎秒 spawn し続ける (CPU 60% と "Caching gem" 通知が出っぱなし)。
+  --   回避はその project の bundle の solargraph を >= 0.54.2 に上げること。
   solargraph = {
     settings = { solargraph = { useBundler = false, diagnostics = true, formatting = true } },
+    root_dir = ruby_root_dir("solargraph"),
   },
   ts_ls = {
     settings = {
@@ -70,6 +115,7 @@ M.servers = {
 --   - バイナリ導入 (mason-tool-installer) は value (mason パッケージ名) を使う
 -- 新サーバはここへ 1 行足せば enable と導入の両方に効く。
 -- coc の LSP 系 extension (tsserver/eslint/pyright/go/solargraph/html/css/json/yaml/sh/docker/tailwind/sql) を踏襲。
+-- Ruby だけは project ごとに ruby_lsp / solargraph を出し分ける (両方ここに載せ、M.servers の root_dir で排他)。
 -- 意図的に移行しなかった coc 機能 (欠落ではなく意図した縮退。パリティ台帳としてここに明記):
 --   - spell-checker / 色プレビュー / markdownlint / swagger (ユーザー確認済み。必要時に cspell(nvim-lint) / nvim-colorizer / markdownlint(nvim-lint) を足す)
 --   - coc-html-css-support (HTML 内の CSS クラス名補完): ネイティブに直等価なし。html/cssls で部分カバー
@@ -82,6 +128,7 @@ M.server_packages = {
   eslint = "eslint-lsp",
   pyright = "pyright",
   gopls = "gopls",
+  ruby_lsp = "ruby-lsp",
   solargraph = "solargraph",
   html = "html-lsp",
   cssls = "css-lsp",

@@ -327,7 +327,9 @@ require("lazy").setup({
         local ready = {}
         for name in pairs(lsp.server_packages) do
           local cmd = vim.lsp.config[name] and vim.lsp.config[name].cmd
-          -- cmd が関数のサーバは実在判定できないため enable に含める (現行の一覧は全て table)
+          -- cmd が関数のサーバ (ruby_lsp) は実在判定できないため無条件に enable に含める。
+          -- ruby_lsp は lsp.lua の root_dir allowlist で attach 先 project を絞っているため、
+          -- gem 未導入の ruby version でも他 project に spawn 失敗が漏れない。
           if type(cmd) ~= "table" or vim.fn.executable(cmd[1]) == 1 then
             table.insert(ready, name)
           end
@@ -389,7 +391,8 @@ require("lazy").setup({
       local conform = require("conform")
       conform.setup({
         -- 列挙が無い ft (ruby 等) は lsp_format="fallback" でサーバ整形に委ねる
-        -- (ruby は lsp.lua の solargraph.formatting=true 前提)。
+        -- (ruby は lsp.lua の ruby_lsp / solargraph どちらかが整形を提供する前提。
+        --  ruby_lsp は init_options.formatter="auto"、solargraph は settings の formatting=true)。
         formatters_by_ft = {
           javascript = { "prettierd" },
           javascriptreact = { "prettierd" },
