@@ -249,3 +249,25 @@ func TestRenderDashboardDegradesWithoutCutting(t *testing.T) {
 		}
 	}
 }
+
+// 段と段のあいだには空行が入る (ユーザー要望 2026-08-31: 1 段目と 2 段目が密着して見える)。
+// 空行が消えても幅・行数の契約は満たされるので、間隔は別の主張として固定する。
+func TestRenderDashboardSeparatesRows(t *testing.T) {
+	lines := RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false)
+	head2 := -1
+	for i, ln := range lines {
+		if strings.Contains(ln, "codex") {
+			head2 = i
+			break
+		}
+	}
+	if head2 < 2 {
+		t.Fatalf("2 段目の見出しが見つからない (index=%d)", head2)
+	}
+	if strings.TrimSpace(lines[head2-1]) != "" {
+		t.Errorf("段のあいだに空行が無い: %q", lines[head2-1])
+	}
+	if strings.TrimSpace(lines[head2-2]) == "" {
+		t.Errorf("空行の前が空 (1 段目が短すぎる / 空行が余っている): %q", lines[head2-2])
+	}
+}
