@@ -295,6 +295,10 @@ type browseModel struct {
 	// (issues_view.go) に切り出し、ここは 1 フィールドだけ持つ。読む規約の一次情報は
 	// docs/issues-viewer-spec.md。
 	issuesOv issuesView
+	// ratelimit ダッシュボード (R キーで開く全画面の残量ビュー)。usage オーバーレイと同じ
+	// Snapshot を枠ごとのアナログ盤にして描く (取得経路は usageOv のものを共用。
+	// ratelimit_dashboard.go 冒頭)。
+	rlDash ratelimitDash
 	// status viewer (s キーで開く全画面の作業ツリービュー)。stage / unstage / 変更を捨てる を
 	// 行う write 側の画面で、状態と描画は statusView 型 (status_view.go) に切り出す。
 	// 読み書きの規約の一次情報は docs/status-viewer-spec.md。
@@ -956,7 +960,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// オーバーレイは起動時グランスの後どのナビゲーションキーでも dismiss されるので、
 		// 実際にはほぼ常に非表示 = 見えないもののために 60 秒ごと永続に node を起こしていた。
 		// 「即座に最新が見える」という元の意図は再表示 (U) 時の stale 判定で保つ。
-		if !m.usageOv.visible {
+		if !m.wantsUsageRefresh() {
 			return m, usageRefreshTick() // チェーンは維持 (再表示後に周期取得が復活する)
 		}
 		return m, tea.Batch(m.usageOv.fetchCmd(false), usageRefreshTick())
@@ -1292,6 +1296,18 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	// ratelimit ダッシュボード表示中も全画面: キーはここで飲み切る (裏の一覧をスクロール
+	// させない)。issues / status と同じ位置に置く理由もそちらと同じ (actModal と prefix の後)。
+	if m.rlDash.visible() {
+		closed, refresh := m.rlDash.handleKey(key)
+		switch {
+		case closed:
+			return m, m.maybeTick()
+		case refresh:
+			return m, tea.Batch(m.usageOv.fetchCmd(false), m.maybeTick())
+		}
+		return m, nil // 閉じる / 更新以外は握り潰す
+	}
 	// issues viewer 表示中は全画面モーダル: キーは全部 viewer が飲む。⚠️ この判定を下の
 	// 裸の b / u (push / pull) より後ろに置くと、一覧を見ている最中の u が
 	// git pull --rebase の確認を開く footgun になる (U の判定順と同じ事故の型)。
@@ -1384,6 +1400,11 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// グランス」を引っ込める副作用だけ持たせ、キー本来の動作は下の dispatch/switch で続行する。
 	if key == "U" {
 		return m, m.toggleUsage()
+	}
+	// R = 全画面 ratelimit ダッシュボード。U と同じ判定位置に置く (モーダル・prefix・実行中
+	// ガードの後) — 先頭に置くと push/pull 確認を素通りする footgun が同じ形で起きる。
+	if key == "R" {
+		return m, m.toggleRatelimitDash()
 	}
 	m.usageOv.dismiss()
 	// diff ポップアップ表示中はスクロール/閉じる操作だけを受ける (最前面のモーダル)
@@ -1944,6 +1965,7 @@ var repeatGuardedKeys = map[string]bool{
 	"i": true, // issues viewer (押しっぱなしで高速に開閉する。ユーザー報告 2026-08-01)
 	"s": true, // status viewer (i と同じ toggle。ユーザー報告 2026-08-07)
 	"U": true, // usage オーバーレイ (開くたびに取り直しの判定が走る)
+	"R": true, // ratelimit ダッシュボード (U と同じ toggle。開くたびに取得判定が走る)
 	"d": true, // diff ポップアップ
 	"P": true, // PR 状態ポップアップ
 	"n": true, // next へ移動の確認 (開いた確認を次のリピートが閉じてしまう)
@@ -1962,6 +1984,38 @@ func (m *browseModel) swallowKeyRepeat(key string) bool {
 	// 窓が伸び続ける。更新しないと keyRepeatGuard ごとに 1 回ずつ通ってしまう。
 	m.lastKey, m.lastKeyAt = key, now
 	return repeat
+}
+
+// wantsUsageRefresh は 1 分ごとの /usage 再取得を回すか。右上オーバーレイと全画面
+// ダッシュボードのどちらかが見えていれば回す (どちらも同じ Snapshot を描くので、取得経路は
+// 1 本のまま)。見えていないときに回さない理由は usageRefreshMsg ハンドラの注記。
+func (m *browseModel) wantsUsageRefresh() bool {
+	return m.usageOv.visible || m.rlDash.visible()
+}
+
+// rlDashLoading はダッシュボードが取得待ち (スピナーを回す) か。usageOverlay.loading() は
+// 右上オーバーレイの表示状態を見るので、ダッシュボードだけが開いているときは false になる。
+func (m *browseModel) rlDashLoading() bool {
+	return m.rlDash.visible() && m.usageOv.snap == nil && m.usageOv.err == nil
+}
+
+// toggleRatelimitDash は全画面 ratelimit ダッシュボードの開閉 (R)。開くときは右上の usage
+// オーバーレイを引っ込め (同じ値を 2 か所に出さない)、Snapshot が無い / 古ければ取得を起こす。
+// ⚠️ 取得の判定は usageOv に委ねる (single-flight ガードと cancel を 1 か所に保つため)。
+func (m *browseModel) toggleRatelimitDash() tea.Cmd {
+	m.rlDash.toggle()
+	if !m.rlDash.visible() {
+		return m.maybeTick()
+	}
+	m.usageOv.dismiss()
+	if m.usageOv.snap == nil {
+		// 初回はディスクキャッシュを使う (fresh なら subprocess を起こさず即描ける)
+		return tea.Batch(m.usageOv.fetchCmd(true), m.maybeTick())
+	}
+	if m.usageOv.stale() {
+		return tea.Batch(m.usageOv.fetchCmd(false), m.maybeTick())
+	}
+	return m.maybeTick()
 }
 
 // toggleUsage は usage オーバーレイの開閉 (U)。コミット一覧と issues viewer の両方から呼ぶ
@@ -2733,7 +2787,7 @@ func (m *browseModel) fillUnknown() {
 func (m *browseModel) spinnerActive() bool {
 	// 演出 (glide / toast / 開閉スライド / zoom) は列挙しない: tickInterval が周期を上げている =
 	// 何かの演出中、で導出する。演出の登録先を tickInterval の 1 箇所に保つ (同期漏れの再発防止)
-	return m.tickInterval() != spinnerInterval || m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.awaitCI) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.issuesOv.loading() ||
+	return m.tickInterval() != spinnerInterval || m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.awaitCI) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.rlDashLoading() || m.issuesOv.loading() ||
 		m.statusOv.fetching()
 }
 
@@ -2753,6 +2807,20 @@ func (m *browseModel) statusOpts() statusRenderOpts {
 // viewport は描画情報から「窓の寸法 + 色」を取り出す (キー処理へ渡す形)。
 func (o statusRenderOpts) viewport() statusViewport {
 	return statusViewport{width: o.width, page: o.page, colored: o.colored}
+}
+
+// ratelimitOpts は全画面 ratelimit ダッシュボードの描画情報。データは usageOv の Snapshot を
+// そのまま渡す (取得経路を 1 本に保つ。ratelimit_dashboard.go 冒頭)。
+func (m *browseModel) ratelimitOpts() ratelimitRenderOpts {
+	return ratelimitRenderOpts{
+		width:   m.contentWidth(),
+		page:    m.pageSize(),
+		colored: m.colored,
+		spinner: m.spinner(),
+		snap:    m.usageOv.snap,
+		err:     m.usageOv.err,
+		now:     timeNow(),
+	}
 }
 
 func (m *browseModel) issuesOpts() issuesRenderOpts {
@@ -2944,6 +3012,11 @@ func (m *browseModel) viewLines() string {
 	// ⚠️ issues より前に判定する必要はない (同時には開かない: i/s の横断は閉じてから開き、
 	// 起動時 restore も status が開いていれば捨てる — issuesRestoreMsg の注記) が、
 	// 共通 chrome (トースト / usage 等) は finishWithGlobalChrome が同じ前面順で載せる。
+	// ratelimit ダッシュボードも全画面 (issues / status と同じ経路)。同時には開かない:
+	// 開くのは一覧からだけで、開いている間は他の画面へ移るキーを飲む (handleKey)。
+	if m.rlDash.visible() {
+		return m.finishWithGlobalChrome(m.rlDash.lines(m.ratelimitOpts()), page)
+	}
 	if m.statusOv.visible() {
 		return m.finishWithGlobalChrome(m.statusOv.lines(m.statusOpts()), page)
 	}
@@ -3176,7 +3249,10 @@ func (m *browseModel) bgLine(text, bg string) string {
 }
 
 func (m *browseModel) hintLine() string {
-	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  P: PR 状態  y: URL コピー  b: push  u: pull  i: issues  U: usage  C: update  w: 警告コピー  q: 終了"
+	if m.rlDash.visible() {
+		return m.hintLineText(m.rlDash.hint())
+	}
+	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  P: PR 状態  y: URL コピー  b: push  u: pull  i: issues  U: usage  R: 残量  C: update  w: 警告コピー  q: 終了"
 	switch {
 	case m.statusOv.visible():
 		// status viewer も全画面なので issues と同じ扱い (CI 進捗・警告の前置をしない)。

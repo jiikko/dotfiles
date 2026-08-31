@@ -173,17 +173,27 @@ func parseCodexRateLimits(result []byte) ([]Window, error) {
 			continue
 		}
 		ws = append(ws, Window{
-			Label:   codexLabel(w.WindowDurationMins),
-			Raw:     "codex",
-			Source:  SourceCodex,
-			Percent: int(math.Round(w.UsedPercent)),
-			ResetAt: time.Unix(*w.ResetsAt, 0),
+			Label:      codexLabel(w.WindowDurationMins),
+			Raw:        "codex",
+			Source:     SourceCodex,
+			Percent:    int(math.Round(w.UsedPercent)),
+			ResetAt:    time.Unix(*w.ResetsAt, 0),
+			WindowMins: codexWindowMins(w.WindowDurationMins),
 		})
 	}
 	if len(ws) == 0 {
 		return nil, errors.New("codex rateLimits 応答に利用枠がない")
 	}
 	return ws, nil
+}
+
+// codexWindowMins は API の windowDurationMins をそのまま枠の長さ (分) にする。null は 0
+// (不明)。負値も 0 に倒す — 窓幅は経過割合の分母なので、負のまま通すと盤が破綻する。
+func codexWindowMins(mins *int64) int64 {
+	if mins == nil || *mins <= 0 {
+		return 0
+	}
+	return *mins
 }
 
 // codexLabel は枠の窓幅 (分) を "cx7d" / "cx5h" のような短ラベルへ写像する。cx 接頭辞で

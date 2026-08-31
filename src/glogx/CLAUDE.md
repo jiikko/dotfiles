@@ -6,7 +6,7 @@
 
 - Bubble Tea は v2 (`charm.land/bubbletea/v2`)。バージョンを上げる / 描画・キー入力に手を入れる前に `docs/glogx-bubbletea-v2.md` を読む (幅モデルの一致がエンジンの実装詳細に依存しており、勝手に一致し続けない)
 - 画面仕様がある機能は docs が先: issues viewer = `docs/issues-viewer-spec.md`、status viewer = `docs/status-viewer-spec.md`、色 = `docs/theme-colors.md`
-- 表示・レイアウトの判断は本体へ入れる前にサンプルで回す (`tools/border-preview.sh` の形。`~/.claude/rules/decide-layout-in-sample-renderer-first.md`)。幅ズレは推測せず `go run ./tools/width-probe` で端末に聞く (glogx / 描画エンジン / tmux / 端末のどの層かを実測で切り分ける)
+- 表示・レイアウトの判断は本体へ入れる前にサンプルで回す (罫線色は `tools/border-preview.sh`、全画面 ratelimit ダッシュボードの盤は `go run ./tools/dial-preview -w 120 -h 36` — 後者は本体の `usage.RenderDashboard` をそのまま呼ぶので「プレビューでは良かったのに本体で違う」が起きない。`-mono` で色を外すと幅ズレだけを見られる。`~/.claude/rules/decide-layout-in-sample-renderer-first.md`)。幅ズレは推測せず `go run ./tools/width-probe` で端末に聞く (glogx / 描画エンジン / tmux / 端末のどの層かを実測で切り分ける)
 
 ## 不変条件は lint / test が正本 (ここにもコードにも再掲しない)
 

@@ -224,6 +224,11 @@ func Usage() string {
                             開いている間は別プロセスの編集を自動で反映する。
                             規約は docs/status-viewer-spec.md
   U                         Claude Code の /usage 残量を右上モーダルで表示 (toggle)
+  R                         Claude Code / codex の残量を全画面ダッシュボードで表示 (toggle)。
+                            枠 (5h / weekly) ごとに 1 周 = 枠の長さのアナログ盤を並べる。
+                            12 時 = リセット点 / 針 = いまの経過 / 外周の弧 = 復活までの残り /
+                            内周の弧 = 消費した割合。1 分ごとに自動更新。
+                            r で今すぐ更新 / R・q・esc・h で閉じる
   C                         claude update を実行する (確認なし即実行。結果は下部に表示)
   X                         codex update を実行する (C の codex 版。起動時に新バージョンを
                             検出するとトーストで X を案内する)

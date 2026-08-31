@@ -33,7 +33,15 @@ type Window struct {
 	// Source は枠の出所 (SourceCodex = codex、空文字 = Claude Code)。omitempty により
 	// codex 対応前のディスクキャッシュ (フィールドなし) は Claude 枠として読める。
 	Source string `json:",omitempty"`
+	// WindowMins は枠の長さ (分)。codex は API の windowDurationMins、Claude は元ラベル
+	// ("Current session" 等) から確定する。0 = 不明 (窓幅を返さない codex 枠 / この項目が
+	// 無い頃のディスクキャッシュ)。全画面ダッシュボードの盤はこれが無いと描けないので、
+	// 不明のときはテキストカードへ落ちる (dial.go)。
+	WindowMins int64 `json:",omitempty"`
 }
+
+// Span は枠の長さ。不明なら 0 (呼び出し側が「窓のどこにいるか」を出さない判断に使う)。
+func (w Window) Span() time.Duration { return time.Duration(w.WindowMins) * time.Minute }
 
 // Snapshot は `/usage` 一回分のパース結果。
 type Snapshot struct {
@@ -139,10 +147,11 @@ func Parse(result string, now time.Time) (*Snapshot, error) {
 			continue
 		}
 		snap.Windows = append(snap.Windows, Window{
-			Label:   labelFor(raw),
-			Raw:     raw,
-			Percent: pct,
-			ResetAt: reset,
+			Label:      labelFor(raw),
+			Raw:        raw,
+			Percent:    pct,
+			ResetAt:    reset,
+			WindowMins: windowMinsFor(raw),
 		})
 	}
 	if len(snap.Windows) == 0 {
@@ -166,6 +175,19 @@ func labelFor(raw string) string {
 		return "7d"
 	}
 	return raw
+}
+
+// windowMinsFor は `/usage` の元ラベルから枠の長さ (分) を決める。Claude 側は窓幅を出力
+// しないので、ラベルの語が唯一の出典になる ("Current session" = 5 時間、"Current week" 系 =
+// 7 日)。未知のラベルは 0 (不明) にして、推測で盤を描かせない。
+func windowMinsFor(raw string) int64 {
+	switch {
+	case strings.HasPrefix(raw, "Current session"):
+		return int64((5 * time.Hour) / time.Minute)
+	case strings.HasPrefix(raw, "Current week"):
+		return int64((7 * 24 * time.Hour) / time.Minute)
+	}
+	return 0
 }
 
 // parseResetTime は "Jul 22" + "3:09am" をローカルタイムの時刻へ変換する。`/usage` は年を
