@@ -26,6 +26,9 @@ const (
 	fieldSep     = "\x1f"
 	prettyFormat = "--pretty=format:%x1e%H%x1f%h%x1f%s%x1f%an%x1f%ae%x1f%ad%x1f%ar%x1f%D%x1f%B%x1f"
 	numFields    = 9
+	// fingerprintFormat は「表示が変わったか」だけを測るための最小フォーマット (gitlog_watch.go)。
+	// SHA と decoration しか出さないので、-p の巨大 patch を持つ表示でも測る側は軽い。
+	fingerprintFormat = "--pretty=format:%H%x1f%D"
 )
 
 // Commit は git log 1 レコード分。
@@ -99,27 +102,39 @@ func runGitCmd(cmd *exec.Cmd) (string, error) {
 // BuildLogArgs は allowlist 済みオプションから git log の引数列を組み立てる (データ解析用。
 // prettyFormat の制御文字レコードで機械 parse する)。colored は --stat / -p の本文にのみ効く。
 func BuildLogArgs(opts *Options, colored bool) []string {
-	return buildLogArgsWith(prettyFormat, opts, colored)
+	return buildLogArgsWith(prettyFormat, opts, colored, true)
 }
 
 // BuildDisplayArgs は表示用 (verbatim) の git log 引数列。format を指定せず git の素の
 // 出力 (medium 形式) をそのまま得る = 見た目は git log と機械的に一致する。
 func BuildDisplayArgs(opts *Options, colored bool) []string {
-	return buildLogArgsWith("", opts, colored)
+	return buildLogArgsWith("", opts, colored, true)
 }
 
-func buildLogArgsWith(format string, opts *Options, colored bool) []string {
+// BuildFingerprintArgs は表示中の git log が変わったかを測る引数列 (gitlog_watch.go)。
+// 表示と同じ revs / max-count / paths のまま --stat / -p を外す: 本文は SHA で決まるので、
+// SHA と decoration が同じなら表示も同じ = 空振りの再読込 (CI の再取得を伴う) を出さない。
+// 色は常に付けない (比較しかしないので ANSI は無駄。装飾の揺れを偽の変化にしない)。
+func BuildFingerprintArgs(opts *Options) []string {
+	return buildLogArgsWith(fingerprintFormat, opts, false, false)
+}
+
+// buildLogArgsWith は 3 つの入口の共通部 (revs / max-count / paths の組み立ての単一の出典)。
+// withBody は --stat / -p を通すか (指紋は本文を読まないので false)。
+func buildLogArgsWith(format string, opts *Options, colored, withBody bool) []string {
 	args := []string{"log"}
 	if format != "" {
 		args = append(args, format)
 	}
 	args = append(args, fmt.Sprintf("--max-count=%d", opts.MaxCount))
 	args = append(args, colorArg(colored))
-	if opts.Stat {
-		args = append(args, "--stat")
-	}
-	if opts.Patch {
-		args = append(args, "--patch")
+	if withBody {
+		if opts.Stat {
+			args = append(args, "--stat")
+		}
+		if opts.Patch {
+			args = append(args, "--patch")
+		}
 	}
 	args = append(args, opts.Revs...)
 	if len(opts.Paths) > 0 {

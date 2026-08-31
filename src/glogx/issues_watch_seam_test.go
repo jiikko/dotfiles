@@ -4,7 +4,7 @@ package main
 //
 // なぜ別建てか: CI (ubuntu-slim) では fsnotify.NewWatcher が通らず、watcher を前提にした
 // 検査は全部 skip される。issues_watch_test.go 側の検査は「実 fsnotify との結合」を見る
-// 価値があるので残したまま、**不変条件そのもの**は newIssuesWatcher seam へフェイクを差して
+// 価値があるので残したまま、**不変条件そのもの**は newDirWatcher seam へフェイクを差して
 // どの環境でも走る形で固定する (skip を消して「CI で走っている」ことにはしない)。
 //
 // ⚠️ 各検査は v.watch.w がフェイクであることを最初に確かめる。将来 startWatch が seam を
@@ -23,7 +23,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// fakeWatcher は issuesWatcher のフェイク。Add の履歴と watch 集合を観測できる。
+// fakeWatcher は dirWatcher のフェイク。Add の履歴と watch 集合を観測できる。
 //
 // 実 fsnotify に合わせている点:
 //   - 存在しないパスの Add は失敗する (watch も張られない)
@@ -117,14 +117,18 @@ func (f *fakeWatcher) emit(ev fsnotify.Event) {
 	f.events <- ev
 }
 
-// fakeWatcherSeam は newIssuesWatcher をフェイクへ差し替え、そのフェイクを返す。
+// fakeWatcherSeam は newDirWatcher をフェイクへ差し替え、そのフェイクを返す。
+//
+// ⚠️ seam は 2 つの見張り (issues / git log) の共用なので、1 つのテストで両方を起動すると
+// **同じフェイクを 2 つが掴んでイベントチャネルを取り合う**。両方を動かすテストを書くなら
+// フェイクを見張りごとに分けること。
 func fakeWatcherSeam(t *testing.T) *fakeWatcher {
 	t.Helper()
 	fw := newFakeWatcher()
-	prev := newIssuesWatcher
-	newIssuesWatcher = func() (issuesWatcher, error) { return fw, nil }
+	prev := newDirWatcher
+	newDirWatcher = func() (dirWatcher, error) { return fw, nil }
 	t.Cleanup(func() {
-		newIssuesWatcher = prev
+		newDirWatcher = prev
 		_ = fw.Close()
 	})
 	return fw
@@ -136,7 +140,7 @@ func requireFake(t *testing.T, v *issuesView) *fakeWatcher {
 	t.Helper()
 	fw, ok := v.watch.w.(*fakeWatcher)
 	if !ok {
-		t.Fatalf("startWatch が newIssuesWatcher seam を通っていない (w=%T)。この検査は実 fsnotify に依存している", v.watch.w)
+		t.Fatalf("startWatch が newDirWatcher seam を通っていない (w=%T)。この検査は実 fsnotify に依存している", v.watch.w)
 	}
 	return fw
 }

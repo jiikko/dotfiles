@@ -59,7 +59,8 @@ type issuesWatchMsg struct {
 	gen int
 }
 
-// issuesWatcher は fsnotify.Watcher のうち見張りが使う面だけを切った seam。
+// dirWatcher は fsnotify.Watcher のうち見張りが使う面だけを切った seam (issue の見張りと
+// git log の見張り (gitlog_watch.go) で共用する)。
 //
 // ⚠️ 実装を差し替えるためではなく、**CI で不変条件を観測できるようにするため**にある。
 // CI (ubuntu-slim) では fsnotify.NewWatcher が通らず watch.w が nil になるので、実 watcher を
@@ -68,7 +69,7 @@ type issuesWatchMsg struct {
 // eventCmd の本体をそのまま走らせられる。
 // Events/Errors をメソッドにしているのは fsnotify.Watcher がチャネルを**フィールド**で公開して
 // いてインタフェースに乗らないため (fsWatcher が薄く包む)。
-type issuesWatcher interface {
+type dirWatcher interface {
 	Add(string) error
 	Close() error
 	WatchList() []string
@@ -76,7 +77,7 @@ type issuesWatcher interface {
 	Errors() <-chan error
 }
 
-// fsWatcher は *fsnotify.Watcher を issuesWatcher へ合わせるだけのアダプタ (ロジックを持たない)。
+// fsWatcher は *fsnotify.Watcher を dirWatcher へ合わせるだけのアダプタ (ロジックを持たない)。
 type fsWatcher struct{ w *fsnotify.Watcher }
 
 func (f fsWatcher) Add(dir string) error          { return f.w.Add(dir) }
@@ -85,7 +86,7 @@ func (f fsWatcher) WatchList() []string           { return f.w.WatchList() }
 func (f fsWatcher) Events() <-chan fsnotify.Event { return f.w.Events }
 func (f fsWatcher) Errors() <-chan error          { return f.w.Errors }
 
-// newIssuesWatcher は watcher を作る唯一の経路 (テストがフェイクへ差し替える口)。
+// newDirWatcher は watcher を作る唯一の経路 (テストがフェイクへ差し替える口)。
 //
 // ⚠️ production ではここを分岐させない。差し替えはテストだけの都合。
 // ⚠️ 差し替えは package 変数の書き換えなので、この seam を使うテストで t.Parallel() を呼ばないこと
@@ -94,7 +95,7 @@ func (f fsWatcher) Errors() <-chan error          { return f.w.Errors }
 // (typed nil)、「watcher を作れない環境ではポーリングへ縮退する」という startWatch / eventCmd /
 // pollInterval / handleWatch の nil ガード全部が panic に変わる。fsnotify v1.10.1 は成功時に
 // 必ず非 nil を返すので今は起きないが、その契約 1 つに縮退の正しさを乗せない。
-var newIssuesWatcher = func() (issuesWatcher, error) {
+var newDirWatcher = func() (dirWatcher, error) {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
@@ -107,7 +108,7 @@ var newIssuesWatcher = func() (issuesWatcher, error) {
 
 // issuesWatch は見張りの状態。zero value は「見張っていない」。
 type issuesWatch struct {
-	w issuesWatcher
+	w dirWatcher
 	// ⚠️ 「Add 済み」を自前で覚えて skip しないこと。fsnotify の watch は**ディレクトリが
 	// 消えると黙って失われる**ので、印だけが残って二度と Add されない状態になる (実測
 	// 2026-08-21: 実 repo で git switch により issues/done が消えて戻ると、同一 viewer
@@ -143,7 +144,7 @@ func (v *issuesView) startWatch() {
 		return
 	}
 	if v.watch.w == nil {
-		w, err := newIssuesWatcher()
+		w, err := newDirWatcher()
 		if err != nil {
 			return
 		}
@@ -214,7 +215,7 @@ func (v *issuesView) eventCmd() tea.Cmd {
 }
 
 // drainWatchEvents は quiet の間イベントが来なくなるまで吸う (バーストの畳み込み)。
-func drainWatchEvents(w issuesWatcher, quiet time.Duration) {
+func drainWatchEvents(w dirWatcher, quiet time.Duration) {
 	timer := time.NewTimer(quiet)
 	defer timer.Stop()
 	for {

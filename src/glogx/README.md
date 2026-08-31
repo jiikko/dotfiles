@@ -61,6 +61,12 @@ Date:   Thu Jul 16 14:03:21 2026 +0900
   (結果を下部モーダルに表示)。**codex も同様に扱う**: 起動時に npm registry と `codex --version`
   を比較して新バージョンがあればトーストで知らせ、`X` で `codex update` を実行する
   (claude の新バージョン検出 / `C` と完全な鏡像)
+- **表示中は外部の変更を自動で追う**: 別ターミナルの commit / rebase、Claude Code、`git pull`
+  で履歴が動いたら、その場で読み直す (`.git` の fsnotify イベントで気づき、1 分ポーリングを
+  保険にする)。**カーソルが先頭なら pull と同じ演出** (新規コミット行が上から降る)、
+  **途中を読んでいるときは見ているコミットが同じ画面行に残る**。件数は右下のトーストで出す
+  (ポップアップ・モーダル・job パネル・全画面の viewer を開いている間は見送り、閉じた後の
+  観測で反映する)
 - **tmux popup 対応**: ctrl+g の popup 内では tmux prefix が window 操作に効かないため、
   押すとその旨を案内する。飲み込むのは prefix キー自体だけで、続くキーは通常の glogx
   操作として処理する (押し間違えた後の打ち直しがそのまま効く)
@@ -418,5 +424,11 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   ⚠️ 切替の「実行」は TUI 開始前に完了させる必要がある — raw mode でも IME は OS の入力ソース層で
   効くため、未完了だと打鍵が日本語 IME の composition に吸われる。よって問い合わせ (1 本目) だけを
   先に取得し、切替は TUI 開始直前に行う
-- 未対応 (必要になったら issue 化): `--watch` / 失敗 workflow への URL 表示 /
+- **表示中の追従は「イベントで起こし、指紋で判定する」** (`gitlog_watch.go`。issues viewer の
+  見張りと同じ方式)。イベントは真偽の正本にしない — git は 1 操作で index / refs / logs / `*.lock`
+  を続けて書き、rebase では HEAD が何度も動くため。起こされたら**表示と同じ revs / max-count /
+  paths のまま `--stat` / `-p` を外した `git log` (`%H` + `%D`) を測り**、変わったときだけ読み直す
+  (本文は SHA で決まるので、空振りの再読込 = CI の再取得を出さない)。1 分ポーリングは
+  イベントの取り落ちと fsnotify を作れない環境のための保険
+- 未対応 (必要になったら issue 化): 失敗 workflow への URL 表示 /
   `--json` / GitHub Enterprise Server / GitHub 以外のホスティング

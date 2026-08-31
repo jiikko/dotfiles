@@ -131,26 +131,34 @@ func newTempRepo(t *testing.T, subjects []string) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Chdir(dir)
-	git := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=tester", "GIT_AUTHOR_EMAIL=t@example.com",
-			"GIT_COMMITTER_NAME=tester", "GIT_COMMITTER_EMAIL=t@example.com")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	git("init", "-q", "-b", "main")
+	gitInRepo(t, dir, "init", "-q", "-b", "main")
 	for i, subject := range subjects {
-		file := filepath.Join(dir, "file.txt")
-		if err := os.WriteFile(file, []byte(strings.Repeat("line\n", i+1)), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		git("add", ".")
-		git("commit", "-q", "-m", subject)
+		commitLines(t, dir, i+1, subject)
 	}
 	return dir
+}
+
+// gitInRepo は dir を作業ディレクトリとして git を走らせる (author / committer を固定)。
+func gitInRepo(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=tester", "GIT_AUTHOR_EMAIL=t@example.com",
+		"GIT_COMMITTER_NAME=tester", "GIT_COMMITTER_EMAIL=t@example.com")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+// commitLines は file.txt を lines 行にして subject でコミットする (コミットを 1 本足す)。
+func commitLines(t *testing.T, dir string, lines int, subject string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte(strings.Repeat("line\n", lines)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitInRepo(t, dir, "add", ".")
+	gitInRepo(t, dir, "commit", "-q", "-m", subject)
 }
 
 func TestIntegrationLoadCommitsOrderAndCount(t *testing.T) {

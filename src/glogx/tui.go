@@ -291,6 +291,10 @@ type browseModel struct {
 	// 「監視しない」で、shim が GO_AUTOBUILD_PENDING を立てた起動でだけ動く (autobuild.go)。
 	autobuild autobuildWatch
 
+	// 別プロセス (別ターミナルの commit / rebase・Claude Code・pull) による git log の変化の
+	// 見張り。状態と判定は gitLogWatch 型 (gitlog_watch.go) に切り出し、反映は reloadLog を使う。
+	logWatch gitLogWatch
+
 	// issues viewer (i キーで開く全画面の issue ブラウザ)。状態と描画は issuesView 型
 	// (issues_view.go) に切り出し、ここは 1 フィールドだけ持つ。読む規約の一次情報は
 	// docs/issues-viewer-spec.md。
@@ -440,10 +444,13 @@ func (m *browseModel) Init() tea.Cmd {
 	// 走らず (m.fetching == false)、ciResultMsg 起点の開始点をどれも踏まないまま
 	// 「pending なのに追わない」状態になる (キャッシュの pending TTL 内に再起動した場合)。
 	poll := m.ensureCIPoll()
+	// 別プロセスによる git log の変化の見張り (gitlog_watch.go)。対象ディレクトリの解決は
+	// git を叩くので非同期にし、保険のポーリングだけ先に張る (イベント待ちは解決後に張る)。
+	logWatch := tea.Batch(gitLogWatchDirsCmd(), m.gitLogPollCmd())
 	if m.fetching {
-		return tea.Batch(m.fetch, prefix, u, ver, cliHealth, ab, restore, poll, m.maybeTick(), usageRefreshTick())
+		return tea.Batch(m.fetch, prefix, u, ver, cliHealth, ab, restore, poll, logWatch, m.maybeTick(), usageRefreshTick())
 	}
-	return tea.Batch(prefix, u, ver, cliHealth, ab, restore, poll, m.maybeTick(), usageRefreshTick())
+	return tea.Batch(prefix, u, ver, cliHealth, ab, restore, poll, logWatch, m.maybeTick(), usageRefreshTick())
 }
 
 // issuesRestoreCmd は記憶した画面が今の repo のものか確かめる (別 repo で開いた glogx に
@@ -964,6 +971,12 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, usageRefreshTick() // チェーンは維持 (再表示後に周期取得が復活する)
 		}
 		return m, tea.Batch(m.usageOv.fetchCmd(false), usageRefreshTick())
+	case gitLogDirsMsg:
+		return m, m.handleGitLogDirs(msg)
+	case gitLogProbeMsg:
+		return m, m.handleGitLogProbe(msg)
+	case gitLogFPMsg:
+		return m, m.handleGitLogFP(msg)
 	case ciPollMsg:
 		if msg.gen != m.ciPollGen {
 			return m, nil // reloadAfterPull で世代が進んだ後の残タイマーは破棄
@@ -1543,20 +1556,52 @@ func (m *browseModel) confirmPush() tea.Cmd {
 	return nil
 }
 
-// reloadAfterPull は pull --rebase 成功後の全面リロード。rebase でローカル SHA が
+// reloadAfterPull は pull --rebase 成功後の全面リロード (カーソルは新規コミットの先頭へ)。
+func (m *browseModel) reloadAfterPull() tea.Cmd {
+	_, cmd, _ := m.reloadLog(false, "pull 後の再読込に失敗しました: ")
+	return cmd
+}
+
+// reloadLog は git log を読み直して派生キャッシュを畳む共通経路。rebase でローカル SHA が
 // 変わりうるため、コミット列・push 状態・CI・派生キャッシュ (details/PR/diff/job 詳細)
 // をすべて取り直す (部分更新は旧 SHA の残骸が混ざる)。
-func (m *browseModel) reloadAfterPull() tea.Cmd {
+//
+// keepView == false なら先頭へ寄せて新規コミット行を上から降らせる (pull した本人は先頭を見る)。
+// true なら**見えている画面を動かさない** (外部の変更を反映するとき、読んでいる行をずらさない
+// = gitlog_watch.go)。錨は 2 段に取る:
+//
+//   - ビューポート先頭のコミット → その画面行を保つ (offset の復元)
+//   - カーソルのコミット → カーソルの選択を保つ
+//
+// ⚠️ カーソルだけを錨にしないこと: ctrl+d でページ送りした状態 (cursor == 0 のまま下を読む) では
+// カーソルが指すのは**先頭コミット**で、`--amend` で最も消えやすい SHA になる。消えた瞬間に
+// 「先頭へ倒す」経路へ落ちて読んでいた位置が飛ぶ (敵対レビューで実測 2026-09-01)。
+// 両方消えていたら (rebase / reset) 先頭へ倒す。
+//
+// 返り値の added は先頭へ増えた新規コミット数、ok=false は読み直しに失敗した = モデルを
+// 一切触っていない (警告はここで出しているので、呼び出し側は追加の通知をしない)。
+func (m *browseModel) reloadLog(keepView bool, failPrefix string) (added int, cmd tea.Cmd, ok bool) {
 	commits, err := LoadCommits(m.opts, m.colored)
 	if err != nil {
-		m.showWarning("pull 後の再読込に失敗しました: " + firstLine(err.Error()))
-		return nil
+		m.showWarning(failPrefix + firstLine(err.Error()))
+		return 0, nil, false
 	}
-	// pull 前の SHA 集合。pull 後に先頭へ増えた新規コミット数を「既知 SHA に当たるまで」で
-	// 数え、アニメーションの対象行数を決める (rebase で SHA が書き換わった場合も破綻しない)。
+	// 読み直し前の SHA 集合。先頭へ増えた新規コミット数を「既知 SHA に当たるまで」で数え、
+	// アニメーションの対象行数を決める (rebase で SHA が書き換わった場合も破綻しない)。
 	oldSHAs := make(map[string]struct{}, len(m.commits))
 	for _, c := range m.commits {
 		oldSHAs[c.SHA] = struct{}{}
+	}
+	// 錨は行集合が入れ替わる前に取る (読み直し後に同じ画面行へ戻すため)。
+	cursorSHA, topSHA, topRow := "", "", 0
+	if keepView {
+		if m.cursor >= 0 && m.cursor < len(m.commits) {
+			cursorSHA = m.commits[m.cursor].SHA
+		}
+		if idx := topVisibleCommitIdx(m.lines(), m.offset); idx >= 0 && idx < len(m.commits) {
+			topSHA = m.commits[idx].SHA
+			topRow = headerLineIndex(m.lines(), idx) - m.offset
+		}
 	}
 	m.commits = commits
 	shas := make([]string, len(commits))
@@ -1578,8 +1623,7 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 	// ⚠️ ciPollInFlight はここで false に戻さない: pull で SHA 集合が入れ替わっても既存 SHA は
 	// 残るので、飛んでいる旧 poll と新 poll が同一 SHA を並行取得し、完了順で古い結果が勝ちうる。
 	// 旧 poll の結果が着弾した時点で false に戻る (数周期 fetch を見送るだけで追従は途切れない)。
-	m.glide.stop()            // pull リロードは pull アニメ側が担うので一覧の glide は破棄
-	m.cursor, m.offset = 0, 0 // カーソルは新規コミットの先頭へ (ユーザー要望 2026-07-20)
+	m.glide.stop() // リロードの演出はアニメ側が担うので一覧の glide は破棄
 	if !m.oneline {
 		m.verbatim = nil
 		if raw, dispErr := LoadLogDisplay(m.opts, m.colored); dispErr == nil {
@@ -1587,23 +1631,73 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 		}
 	}
 	m.invalidateLines()
-	// 先頭に増えた新規コミット行を上から降らせる演出。startPullAnim が offset を新規行数だけ
-	// 手前 (下スクロール位置) へ置き、tick で 1 行/フレームずつ 0 へ戻すと新規行が上から入り
-	// 既存行が下へずれて見える。アニメしないと決まったときだけ即カーソル可視化に落とす
-	m.startPullAnim(oldSHAs)
-	if !m.pullAnimating {
+	// 見張りの基準を作り直す (gitlog_watch.go)。自分で読み直した後の状態を「変化」として
+	// もう一度反映しないため。空にすると次の測定が手元のコミット列と突き合わせて基準を作る。
+	// ⚠️ 飛んでいる測定の札も降ろす: 読み直しの直前に測った古い指紋が届くと、新しいコミット列と
+	// 突き合わせて必ず不一致になり、無駄な再読込・トースト・CI 再取得が続けて走る。
+	m.logWatch.hasSeen, m.logWatch.measuring = false, false
+	added = countNewCommits(commits, oldSHAs)
+	newTop, newCursor := indexOfCommit(commits, topSHA), indexOfCommit(commits, cursorSHA)
+	switch {
+	case newTop >= 0:
+		// 画面先頭のコミットが残っている: その画面行を保つ = 見えている内容が動かない。
+		// 新規コミットは画面外の上に積まれるので降らせる演出はしない。
+		m.offset = m.clampOffset(headerLineIndex(m.lines(), newTop) - topRow)
+		if newCursor >= 0 {
+			m.cursor = newCursor
+		} else {
+			m.cursor = clampIdx(newTop, len(commits)) // カーソルのコミットだけ消えた (amend 等)
+		}
+	case newCursor >= 0:
+		// 画面先頭は消えたがカーソルのコミットは残っている: 選択を保って画面内へ収める
+		m.cursor = newCursor
 		m.ensureCursorVisible()
+	default:
+		m.cursor, m.offset = 0, 0 // カーソルは新規コミットの先頭へ (ユーザー要望 2026-07-20)
+		// 先頭に増えた新規コミット行を上から降らせる演出。startPullAnim が offset を新規行数だけ
+		// 手前 (下スクロール位置) へ置き、tick で 1 行/フレームずつ 0 へ戻すと新規行が上から入り
+		// 既存行が下へずれて見える。アニメしないと決まったときだけ即カーソル可視化に落とす
+		m.startPullAnim(oldSHAs)
+		if !m.pullAnimating {
+			m.ensureCursorVisible()
+		}
 	}
+
 	if !m.hasRepo || len(m.toFetch) == 0 {
 		// fetching == (pendingFetches > 0) の不変条件を保つ (取得を始めないので両方下ろす)
 		m.pendingFetches = 0
 		m.fetching = false
 		if m.pullAnimating {
-			return m.maybeTick() // CI 取得は無いが、アニメーションのために tick を回す
+			return added, m.maybeTick(), true // CI 取得は無いが、アニメーションのために tick を回す
 		}
-		return nil
+		return added, nil, true
 	}
-	return tea.Batch(m.startCIFetch(m.toFetch), m.maybeTick())
+	return added, tea.Batch(m.startCIFetch(m.toFetch), m.maybeTick()), true
+}
+
+// indexOfCommit は sha のコミットの index (無ければ -1)。sha == "" は常に -1 (錨なし)。
+func indexOfCommit(commits []Commit, sha string) int {
+	if sha == "" {
+		return -1
+	}
+	for i, c := range commits {
+		if c.SHA == sha {
+			return i
+		}
+	}
+	return -1
+}
+
+// countNewCommits は先頭へ増えた新規コミット数 (既知 SHA に当たるまで)。
+func countNewCommits(commits []Commit, oldSHAs map[string]struct{}) int {
+	n := 0
+	for _, c := range commits {
+		if _, ok := oldSHAs[c.SHA]; ok {
+			break // 既知コミットに到達 = ここから下は元からある分
+		}
+		n++
+	}
+	return n
 }
 
 // pullAnimMaxLines は pull アニメで降らせる最大行数。大量 pull でも待ちが伸びすぎないよう
@@ -1614,13 +1708,7 @@ const pullAnimMaxLines = 8
 // その分 (上限 pullAnimMaxLines) だけ下げてアニメーションを開始する。tick は
 // reloadAfterPull / tickMsg 側で回す。
 func (m *browseModel) startPullAnim(oldSHAs map[string]struct{}) {
-	newCommits := 0
-	for _, c := range m.commits {
-		if _, ok := oldSHAs[c.SHA]; ok {
-			break // 既知コミットに到達 = ここから下は元からある分
-		}
-		newCommits++
-	}
+	newCommits := countNewCommits(m.commits, oldSHAs)
 	if newCommits == 0 {
 		return
 	}
@@ -1771,6 +1859,12 @@ func (m *browseModel) slideColumns(lines []Line) map[int]int {
 // は本物なので通常どおり取得・キャッシュする。tip は演出が statuses を先に消すため
 // pushAnimTip (startPushAnim が捕捉) を優先する。
 func (m *browseModel) refetchAfterPush() tea.Cmd {
+	// 自分の push で origin/* が動いた分は見張りの基準を作り直して飲み込む (gitlog_watch.go)。
+	// SHA は変わらないので次の測定は再読込せず基準だけ更新する = push の直後に「更新しました」
+	// のトーストと CI 再取得が二重に走らない。⚠️ %D の decoration (origin/master の位置) は
+	// 読み直していないので古いまま残る (push 前からの挙動。全面リロードを自分の操作の直後に
+	// 足さない判断)。飛んでいる測定も同じ理由で捨てる (reloadLog と同じ規律)。
+	m.logWatch.hasSeen, m.logWatch.measuring = false, false
 	m.awaitCI = map[string]bool{}
 	m.awaitAttempts = 0
 	if m.pushAnimTip != "" {
@@ -1832,7 +1926,7 @@ func (m *browseModel) centerModalLines() []string {
 }
 
 // cancelAll は走行中の全非同期リソース (CI fetch の ctx / usage fetch / push・pull の git /
-// issues の fsnotify watcher) を止める後始末の単一ファネル。冪等。quit() (キー操作の終了) と
+// issues と git log の fsnotify watcher) を止める後始末の単一ファネル。冪等。quit() (キー操作の終了) と
 // main.go の defer の両方が呼ぶ: bubbletea v2 は SIGINT/SIGTERM を InterruptMsg/QuitMsg に
 // 変換するが、この 2 つだけは model.Update を経由せず eventLoop が直接 return するため
 // (tea.go の handleSignals/eventLoop)、シグナル終了では quit() が走らない。defer 側が無いと
@@ -1848,6 +1942,7 @@ func (m *browseModel) cancelAll() {
 	// (backend_kqueue.go newKqueue) には CloseOnExec を呼ばず、viewer を開いたまま r で再起動する
 	// たびに kqueue fd が新プロセスへ 1 本ずつ継承され続ける。
 	m.issuesOv.stopWatch()
+	m.stopGitLogWatch() // git log の見張りも同じ理由で閉じる (gitlog_watch.go)
 }
 
 // quit はアプリ全体を終了する (取得中断分は unknown へ落とす)。
@@ -2939,14 +3034,29 @@ func (m *browseModel) clampOffset(offset int) int {
 // offset を調整する。
 func (m *browseModel) ensureCursorVisible() {
 	lines := m.lines()
-	header := 0
-	for i, l := range lines {
-		if l.Header && l.CommitIdx == m.cursor {
-			header = i
-			break
+	m.offset = windowOffsetFor(m.offset, headerLineIndex(lines, m.cursor), len(lines), m.pageSize())
+}
+
+// topVisibleCommitIdx はビューポート先頭 (offset 行目) に見えているコミットの index。
+// 区切り行 (CommitIdx == -1) の上に乗っている場合は下へ辿る。どれも無ければ -1。
+func topVisibleCommitIdx(lines []Line, offset int) int {
+	for i := max(offset, 0); i < len(lines); i++ {
+		if lines[i].CommitIdx >= 0 {
+			return lines[i].CommitIdx
 		}
 	}
-	m.offset = windowOffsetFor(m.offset, header, len(lines), m.pageSize())
+	return -1
+}
+
+// headerLineIndex は commitIdx のヘッダー行 (カーソルが乗る行) の行 index。
+// 見つからなければ 0 (行集合が空 / 対象外のとき先頭へ倒す)。
+func headerLineIndex(lines []Line, commitIdx int) int {
+	for i, l := range lines {
+		if l.Header && l.CommitIdx == commitIdx {
+			return i
+		}
+	}
+	return 0
 }
 
 // View は画面内容に加えて端末モード (Alt Screen) も宣言する。bubbletea v2 では
