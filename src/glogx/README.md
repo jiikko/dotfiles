@@ -364,6 +364,12 @@ go run ./tools/width-probe
 go test -run '^$' -bench BenchmarkView -benchmem .
 ```
 
+⚠️ **lint の確認は必ず `make lint` で行う。PATH の `golangci-lint` を直接叩かないこと。**
+`make lint` は `go run ...@v2.5.0` で版を固定していて、PATH のバイナリとは指摘が食い違う
+(実測 2026-09-01: 同じツリーで `make lint` = 0 issues / PATH の v2.12.2 = 6 issues)。
+逆向きも起きる — PATH 版が 0 issues なのに固定版が prealloc を 1 件出し、master の lint が
+落ちた実例が `1b025b8`。CI が回すのは固定版なので、そちらが唯一の出典。
+
 - CI: `.github/workflows/src_glogx.yml` (paths filter 付きの薄い caller) が再利用 workflow
   `_go-project.yml` を呼び、lint と test を回す (src/glogx を触った push/PR のときだけ起動)
 - Bubble Tea は v2 (`charm.land/bubbletea/v2`)。移行で変えた点・採らなかった v2 機能・上げるときに
