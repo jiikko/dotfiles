@@ -186,7 +186,7 @@ func TestCodexWindowMins(t *testing.T) {
 func TestBrailleLineWidth(t *testing.T) {
 	cv := newBraille(20, 5)
 	cv.arc(20, 10, 8, 0, 1, "", 2, 1)
-	cv.putASCII(2, 8, "1:48", "")
+	cv.putText(2, 8, "残1時間48分", "")
 	for i, ln := range cv.lines(false) {
 		if got := termwidth.Of(ln); got > 20 {
 			t.Errorf("%d 行目の幅 %d > 20: %q", i, got, ln)
@@ -194,16 +194,32 @@ func TestBrailleLineWidth(t *testing.T) {
 	}
 }
 
-// putASCII は ASCII 以外を捨てる。全角を通すと 1 セルに幅 2 の文字が入り格子がずれる。
-func TestBraillePutASCIIRejectsWide(t *testing.T) {
-	cv := newBraille(10, 2)
-	cv.putASCII(0, 0, "あ1", "")
-	lines := cv.lines(false)
-	if strings.ContainsRune(lines[0], 'あ') {
-		t.Errorf("全角が入った: %q", lines[0])
+// 全角文字は 2 セルを占め、2 セル目には何も出さない。素朴に 1 セル 1 文字で置くと
+// 行の表示幅が cols を超え、盤の下のテキストと縦が揃わなくなる。
+func TestBraillePutTextKeepsGridWithWideChars(t *testing.T) {
+	cv := newBraille(12, 2)
+	cv.arc(12, 4, 5, 0, 1, "", 1, 1) // 下地の点描があっても覆った桁に漏れないこと
+	cv.putText(0, 0, "残2日9時間", "")
+	line := cv.lines(false)[0]
+	if w := termwidth.Of(line); w > 12 {
+		t.Errorf("全角で格子が広がった: 幅 %d > 12 (%q)", w, line)
 	}
-	if !strings.ContainsRune(lines[0], '1') {
-		t.Errorf("ASCII が落ちた: %q", lines[0])
+	if !strings.Contains(line, "残2日9時間") {
+		t.Errorf("全角が落ちた: %q", line)
+	}
+}
+
+// 盤の中央は残り時間を日本語で出す (ユーザー要望 2026-09-01: 6d23h ではなく 残6日23時間)。
+// 内周に収まらない狭い盤でだけ短い表記へ落ちる。
+func TestRenderDashboardCenterUsesJapaneseRemain(t *testing.T) {
+	all := strings.Join(RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false), "\n")
+	for _, want := range []string{"残1時間48分", "残2日9時間"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("盤の中央に %q が無い:\n%s", want, all)
+		}
+	}
+	if strings.Contains(all, "2d09h") {
+		t.Error("ASCII 表記が残っている")
 	}
 }
 

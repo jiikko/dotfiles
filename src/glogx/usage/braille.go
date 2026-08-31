@@ -6,13 +6,14 @@ package usage
 // ⚠️ ドットの縦横比: 端末セルは概ね 横 1 : 縦 2 なので、それを 横 2 x 縦 4 に割った 1 ドットは
 // ほぼ正方形になる。円をドット座標でそのまま描けば端末上でも円に見える (縦横の補正は不要)。
 // ⚠️ 幅: braille は termwidth の受理表に載っていて幅 1 が保証されている (termwidth.acceptSymbol)。
-// 中央へ置く文字を ASCII に限っているのも同じ理由で、全角を混ぜると格子の桁が合わなくなる。
+// 上に載せる文字は全角も置けるが、2 セル目を「覆われている」印にして格子を保つ (putText)。
 
 import (
 	"math"
 	"strings"
 
 	"glogx/sgr"
+	"glogx/termwidth"
 )
 
 // brailleBit は (セル内 x, セル内 y) → ドットのビット。
@@ -25,8 +26,9 @@ type braille struct {
 	cols, rows int
 	bits       []byte
 	color      []string
-	text       []byte // 0 以外ならそのセルを ASCII 文字で上書きする
+	text       []rune // 0 以外ならそのセルを文字で上書きする
 	textColor  []string
+	textSkip   []bool // 直前のセルの全角文字が覆っているので何も出さない
 }
 
 func newBraille(cols, rows int) *braille {
@@ -34,7 +36,8 @@ func newBraille(cols, rows int) *braille {
 	return &braille{
 		cols: max(cols, 0), rows: max(rows, 0),
 		bits: make([]byte, n), color: make([]string, n),
-		text: make([]byte, n), textColor: make([]string, n),
+		text: make([]rune, n), textColor: make([]string, n),
+		textSkip: make([]bool, n),
 	}
 }
 
@@ -98,23 +101,27 @@ func (b *braille) ray(cx, cy, r0, r1, t float64, col string) {
 // dialAngle は「12 時を 0 とする時計回りの割合」をラジアンへ写す (画面座標は y が下向き)。
 func dialAngle(t float64) float64 { return -math.Pi/2 + 2*math.Pi*t }
 
-// putASCII は行 row・桁 col から ASCII 文字列を点描の上に置く。全角は受け付けない
-// (格子の桁がずれるため。呼び出し側が ASCII だけを渡す契約)。
-func (b *braille) putASCII(row, col int, s, color string) {
+// putText は行 row・桁 col から文字列を点描の上に置く。全角は 2 セルを占め、2 セル目は
+// 「覆われている」印を付けて何も出さない (点描の格子と桁がずれないため)。
+func (b *braille) putText(row, col int, s, color string) {
 	if row < 0 || row >= b.rows {
 		return
 	}
-	for i := range len(s) {
-		ch := s[i]
-		if ch < 0x20 || ch > 0x7e {
+	x := col
+	for _, r := range s {
+		w := termwidth.Of(string(r))
+		if w <= 0 {
 			continue
 		}
-		x := col + i
-		if x < 0 || x >= b.cols {
-			continue
+		if x >= 0 && x < b.cols {
+			j := row*b.cols + x
+			b.text[j], b.textColor[j], b.textSkip[j] = r, color, false
+			if w == 2 && x+1 < b.cols {
+				b.textSkip[j+1] = true
+				b.text[j+1] = 0
+			}
 		}
-		j := row*b.cols + x
-		b.text[j], b.textColor[j] = ch, color
+		x += w
 	}
 }
 
@@ -129,12 +136,15 @@ func (b *braille) lines(colored bool) []string {
 			i := r*b.cols + c
 			// 空セルは U+2800 (点の無い braille) ではなく空白にする。U+2800 はフォントに
 			// よって薄い点が見え、盤の外側が一面グレーになる (かつ行末が trim できない)。
+			if b.textSkip[i] {
+				continue // 直前の全角文字が覆っている桁 (何も出さない)
+			}
 			ch, col := ' ', b.color[i]
 			if b.bits[i] != 0 {
 				ch = rune(0x2800 + int(b.bits[i]))
 			}
 			if b.text[i] != 0 {
-				ch, col = rune(b.text[i]), b.textColor[i]
+				ch, col = b.text[i], b.textColor[i]
 			}
 			if colored && col != cur {
 				if cur != "" {

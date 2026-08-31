@@ -289,11 +289,12 @@ func renderFace(c dialCard, remain time.Duration, elapsed float64, col string, w
 	cv.tick(cx, cy, rOut+1, rOut+6, 0, sgr.Bold)
 	cv.ray(cx, cy, 2, rOut-1, el, sgr.BrightWhite)
 
-	// 盤の中央は ASCII だけを置く (点描の格子に全角を混ぜると桁が合わない)。
-	mid := compactRemain(remain)
-	cv.putASCII(faceH/2-1, w/2-len(mid)/2, mid, sgr.Bold)
+	// 盤の中央。内周に収まる範囲でいちばん読みやすい表記を選ぶ (狭い盤では語を落とす)。
+	inner := int(rIn * 2 * 0.9)
+	mid := fitText(inner, []string{"残" + formatRemain(remain), formatRemain(remain), compactRemain(remain)})
+	cv.putText(faceH/2-1, w/2-termwidth.Of(mid)/2, mid, sgr.BrightWhite)
 	pct := fmt.Sprintf("%d%%", c.win.Percent)
-	cv.putASCII(faceH/2, w/2-len(pct)/2, pct, col)
+	cv.putText(faceH/2, w/2-termwidth.Of(pct)/2, pct, col)
 	return cv.lines(colored)
 }
 
@@ -338,6 +339,16 @@ func fitLine(w int, candidates []string) string {
 	}
 	last := candidates[len(candidates)-1]
 	return termwidth.Truncate(last, w, "…")
+}
+
+// fitText は幅 w に収まる最初の候補を返す (どれも収まらなければ最後の候補)。
+func fitText(w int, candidates []string) string {
+	for _, s := range candidates {
+		if termwidth.Of(s) <= w {
+			return s
+		}
+	}
+	return candidates[len(candidates)-1]
 }
 
 // centerCell は幅 w の中で s を中央寄せする (左余白だけ付ける。右端は呼び出し側が埋める)。
