@@ -30,50 +30,121 @@ const (
 	// カードと地続きに見える」のを防ぐための余白 (ユーザー要望 2026-08-31)。
 	dialGap    = 4
 	dialRowGap = 1
+	// dialBannerMinH は CLI 名を AA の大見出しで出す最小の段の高さ。これを下回ると盤が
+	// 潰れるので、1 行のテキスト見出しへ落とす。
+	dialBannerMinH = 15
 )
 
 // RenderDashboard は Snapshot の全枠を格子状のアナログ盤にして描く。返す行数はちょうど
 // height。s が nil / 枠が 1 つも無いときは nil を返す (呼び出し側が取得中・失敗を出す)。
 func RenderDashboard(s *Snapshot, now time.Time, width, height int, colored bool) []string {
-	cards := dialCards(s)
-	if len(cards) == 0 || width <= 0 || height <= 0 {
+	groups := dialGroups(s)
+	if len(groups) == 0 || width <= 0 || height <= 0 {
 		return nil
 	}
-	cols := 2
-	if width < dialMinW*2+dialGap {
-		cols = 1
-	}
-	rows := (len(cards) + cols - 1) / cols
-	cellW := (width - (cols-1)*dialGap) / cols
-	cellH := (height - (rows-1)*dialRowGap) / rows
 	out := make([]string, 0, height)
-	for r := range rows {
-		if r > 0 {
+	groupH := (height - (len(groups)-1)*dialRowGap) / len(groups)
+	for gi, g := range groups {
+		if gi > 0 {
 			for range dialRowGap {
 				out = append(out, "")
 			}
 		}
-		grid := make([][]string, 0, cols)
-		for cc := range cols {
-			i := r*cols + cc
-			if i >= len(cards) {
-				grid = append(grid, make([]string, cellH))
-				continue
-			}
-			grid = append(grid, renderCard(cards[i], now, cellW, cellH, colored))
-		}
-		for line := range cellH {
-			parts := make([]string, 0, cols)
-			for _, g := range grid {
-				parts = append(parts, padRight(termwidth.Truncate(g[line], cellW, ""), cellW))
-			}
-			out = append(out, strings.TrimRight(strings.Join(parts, termwidth.PadSpaces(dialGap)), " "))
-		}
+		out = append(out, renderGroup(g, now, width, groupH, colored)...)
 	}
 	for len(out) < height {
 		out = append(out, "")
 	}
 	return out[:height]
+}
+
+// dialGroup は 1 つの CLI の枠をまとめた段 (大見出し + その CLI の盤)。
+type dialGroup struct {
+	cli     string // "Claude Code" / "codex"
+	version string // 取れていれば "2.1.216" (取得失敗時は空)
+	cards   []dialCard
+}
+
+// dialGroups は枠を CLI ごとの段へまとめる。段の順序と段内の順序はどちらも renderWindows
+// (Claude → codex) に従う: 同じ Snapshot を見る 3 つの描画で枠の並びが食い違わないようにする。
+func dialGroups(s *Snapshot) []dialGroup {
+	var groups []dialGroup
+	for _, c := range dialCards(s) {
+		if n := len(groups); n > 0 && groups[n-1].cli == c.cli {
+			groups[n-1].cards = append(groups[n-1].cards, c)
+			continue
+		}
+		ver := s.Version
+		if c.cli == "codex" {
+			ver = s.CodexVersion
+		}
+		groups = append(groups, dialGroup{cli: c.cli, version: ver, cards: []dialCard{c}})
+	}
+	return groups
+}
+
+// renderGroup は 1 つの CLI の段 (大見出し + 盤の格子) をちょうど h 行で返す。
+func renderGroup(g dialGroup, now time.Time, width, h int, colored bool) []string {
+	head := groupHead(g, width, h, colored)
+	cardsH := max(h-len(head), 1)
+	cols := 2
+	if width < dialMinW*2+dialGap {
+		cols = 1
+	}
+	rows := (len(g.cards) + cols - 1) / cols
+	cellW := (width - (cols-1)*dialGap) / cols
+	cellH := cardsH / rows
+	out := head
+	for r := range rows {
+		grid := make([][]string, 0, cols)
+		for cc := range cols {
+			i := r*cols + cc
+			if i >= len(g.cards) {
+				grid = append(grid, make([]string, cellH))
+				continue
+			}
+			grid = append(grid, renderCard(g.cards[i], now, cellW, cellH, colored))
+		}
+		for line := range cellH {
+			parts := make([]string, 0, cols)
+			for _, cell := range grid {
+				parts = append(parts, padRight(termwidth.Truncate(cell[line], cellW, ""), cellW))
+			}
+			out = append(out, strings.TrimRight(strings.Join(parts, termwidth.PadSpaces(dialGap)), " "))
+		}
+	}
+	for len(out) < h {
+		out = append(out, "")
+	}
+	return out[:h]
+}
+
+// groupHead は段の大見出し。幅と高さが足りれば CLI 名をブロック文字の AA で出し、足りなければ
+// 1 行のテキストへ落とす。バージョンは AA の中段の右に dim で添える (ロゴのバージョンタグの形)。
+func groupHead(g dialGroup, width, h int, colored bool) []string {
+	aa := bannerLines(g.cli)
+	bw := bannerWidth(g.cli)
+	if aa == nil || h < dialBannerMinH || bw > width {
+		return []string{centerCell(paintIf(g.cli, sgr.Bold, colored)+versionTag(g.version, colored), width)}
+	}
+	indent := termwidth.PadSpaces(max((width-bw)/2, 0))
+	out := make([]string, 0, bannerRows+1)
+	for i, row := range aa {
+		line := indent + paintIf(row, sgr.Bold, colored)
+		if i == 1 {
+			line += versionTag(g.version, colored)
+		}
+		out = append(out, line)
+	}
+	return append(out, "") // 見出しと盤のあいだを 1 行空ける
+}
+
+// versionTag は " v2.1.216" (取れていなければ空)。
+func versionTag(v string, colored bool) string {
+	if v == "" {
+		return ""
+	}
+	return paintIf("  v"+v, sgr.Dim, colored)
 }
 
 // dialCard は 1 枠ぶんのカードの入力。
@@ -181,12 +252,8 @@ func renderCard(c dialCard, now time.Time, w, h int, colored bool) []string {
 	// 見出し・数値行は狭い割り当てでは端から情報を落とす (切り詰めの … で読めなくするより、
 	// 落とす順を決めておく方が読める)。落とす順は「重要度の低い順」= 種別 → CLI 名 /
 	// リセット絶対時刻 → 見出しの語 / 想定と乖離 → 使用率。
-	cliCell := paintIf(c.cli, sgr.Bold, colored)
-	titleCell := paintIf("· "+strings.TrimSpace(c.label+" "+c.kind), col, colored)
 	head := fitLine(w, []string{
-		cliCell + " " + titleCell,
-		cliCell + " " + paintIf("· "+c.label, col, colored),
-		paintIf(c.cli+" "+c.label, col, colored),
+		paintIf(strings.TrimSpace(c.label+" "+c.kind), col, colored),
 		paintIf(c.label, col, colored),
 	})
 	foot := cardFoot(c, remain, elapsed, col, word, w, cardFootLines(h), colored)
@@ -287,14 +354,21 @@ func renderFace(c dialCard, remain time.Duration, elapsed float64, col string, w
 	// 12 時 = リセット点 / 針 = いまの経過位置。どちらも「時間」なので外周の残り弧と同じ色に
 	// する — 盤に乗る色を「時間 (白) と消費 (状態色)」の 2 系統だけに保つ。
 	cv.tick(cx, cy, rOut+1, rOut+6, 0, sgr.Bold)
-	cv.ray(cx, cy, 2, rOut-1, el, sgr.BrightWhite)
+	// 針は中央の文字にぶつからない位置から始める (中心から引くと、角度によって残り時間の
+	// 数字を横切る)。内周の 3/4 = 中央の文字がだいたい収まる半径。
+	cv.ray(cx, cy, rIn*0.75, rOut+1, el, sgr.BrightWhite)
 
 	// 盤の中央。内周に収まる範囲でいちばん読みやすい表記を選ぶ (狭い盤では語を落とす)。
-	inner := int(rIn * 2 * 0.9)
+	// ⚠️ 内周の差し渡しは 2*rIn ドット = rIn セル (ドットは横 2 つで 1 セル)。ドット数のまま
+	// 桁数として使うと 2 倍に見積もり、文字がリングに接する。左右に 1 セルずつ余白を残す。
+	inner := max(int(rIn)-4, 1)
 	mid := fitText(inner, []string{"残" + formatRemain(remain), formatRemain(remain), compactRemain(remain)})
-	cv.putText(faceH/2-1, w/2-termwidth.Of(mid)/2, mid, sgr.BrightWhite)
+	// 中央 2 行は盤の中心 (cy) を挟む行に置く。faceH/2 で数えると 1 行上へずれ、円が細く
+	// なる位置に文字が来てリングへ接する。
+	midRow := int(cy) / 4
+	cv.putText(midRow, w/2-termwidth.Of(mid)/2, mid, sgr.BrightWhite)
 	pct := fmt.Sprintf("%d%%", c.win.Percent)
-	cv.putText(faceH/2, w/2-termwidth.Of(pct)/2, pct, col)
+	cv.putText(midRow+1, w/2-termwidth.Of(pct)/2, pct, col)
 	return cv.lines(colored)
 }
 

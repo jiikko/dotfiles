@@ -58,7 +58,7 @@ func TestRenderDashboardEmpty(t *testing.T) {
 // 盤には「復活まで」と使用率が必ず出る (見た目が変わっても情報は落とさない)。
 func TestRenderDashboardShowsRemainAndPercent(t *testing.T) {
 	all := strings.Join(RenderDashboard(dialTestSnap(), dialTestNow(), 120, 36, false), "\n")
-	for _, want := range []string{"復活まで", "1時間48分", "62%", "78%", "31%", "44%", "Claude Code", "codex"} {
+	for _, want := range []string{"復活まで", "1時間48分", "62%", "78%", "31%", "44%"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("%q が出ていない", want)
 		}
@@ -255,8 +255,9 @@ func TestRenderDashboardDegradesWithoutCutting(t *testing.T) {
 func TestRenderDashboardSeparatesRows(t *testing.T) {
 	lines := RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false)
 	head2 := -1
+	codexBanner := bannerLines("codex")[0]
 	for i, ln := range lines {
-		if strings.Contains(ln, "codex") {
+		if strings.Contains(ln, codexBanner) {
 			head2 = i
 			break
 		}
@@ -269,5 +270,30 @@ func TestRenderDashboardSeparatesRows(t *testing.T) {
 	}
 	if strings.TrimSpace(lines[head2-2]) == "" {
 		t.Errorf("空行の前が空 (1 段目が短すぎる / 空行が余っている): %q", lines[head2-2])
+	}
+}
+
+// 盤の中央の文字はリングや針に接しない。接すると数字が読めなくなるが、幅も行数も
+// 契約どおりなので他のテストでは検出できない (実測: 中央行を 1 行上へずらすと接した)。
+func TestRenderDashboardCenterTextHasClearance(t *testing.T) {
+	lines := RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false)
+	for _, want := range []string{"残1時間48分", "残2日9時間"} {
+		found := false
+		for _, ln := range lines {
+			i := strings.Index(ln, want)
+			if i < 0 {
+				continue
+			}
+			found = true
+			if i == 0 || ln[i-1] != ' ' {
+				t.Errorf("%q の左が詰まっている: %q", want, ln)
+			}
+			if after := ln[i+len(want):]; after != "" && !strings.HasPrefix(after, " ") {
+				t.Errorf("%q の右が詰まっている: %q", want, ln)
+			}
+		}
+		if !found {
+			t.Errorf("%q が盤の中央に無い", want)
+		}
 	}
 }
