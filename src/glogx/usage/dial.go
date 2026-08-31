@@ -68,8 +68,9 @@ type dialGroup struct {
 // dialGroups は枠を CLI ごとの段へまとめる。段の順序と段内の順序はどちらも renderWindows
 // (Claude → codex) に従う: 同じ Snapshot を見る 3 つの描画で枠の並びが食い違わないようにする。
 func dialGroups(s *Snapshot) []dialGroup {
-	var groups []dialGroup
-	for _, c := range dialCards(s) {
+	cards := dialCards(s)
+	groups := make([]dialGroup, 0, len(cards)) // 上限は枠の数 (CLI が 1 枠ずつのとき)
+	for _, c := range cards {
 		if n := len(groups); n > 0 && groups[n-1].cli == c.cli {
 			groups[n-1].cards = append(groups[n-1].cards, c)
 			continue
