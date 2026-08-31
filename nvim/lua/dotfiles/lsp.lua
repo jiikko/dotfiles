@@ -26,29 +26,37 @@ local ts_js_inlay_hints = {
 -- solargraph 前提で運用されており一斉切替の影響を確認していないため。
 -- 増やすときはここへ 1 行足す (ruby-lsp gem は使う ruby version ごとに `gem install ruby-lsp`
 -- が要る。現状 rbenv 3.2.2 にのみ導入済み)。
--- 末尾スラッシュはここで剥がす。付いたままだと下の dir == root も dir .. "/" の前方一致も
--- 両方外れ、その project だけ無言で solargraph に落ちる (エラーも警告も出ない)。
-local ruby_lsp_projects = vim.tbl_map(function(path)
+-- allowlist の要素を比較可能な形に正規化する (~ 展開 + 末尾スラッシュ除去)。末尾スラッシュが
+-- 残ると M.ruby_server_for の dir == root も dir .. "/" の前方一致も両方外れ、その project だけ
+-- 無言で solargraph に落ちる (エラーも警告も出ない)。
+function M.normalize_project_root(path)
   return (vim.fn.expand(path):gsub("/+$", ""))
-end, {
+end
+
+-- 公開しているのはテストがここを真の出典として読めるようにするため (テスト側へ project パスを
+-- 写すと、allowlist を増減したときにテストだけ古い前提のまま緑になる)。
+M.ruby_lsp_projects = vim.tbl_map(M.normalize_project_root, {
   "~/src/the-rss-reader",
 })
 
--- want ("ruby_lsp" / "solargraph") がその project の担当サーバのときだけ on_dir を呼ぶ。
--- root は lspconfig 既定の root_markers と同じ { Gemfile, .git } で決めてから振り分ける。
+-- project root を担当するサーバ名を返す。返り値が常に 1 つであることが ruby_lsp / solargraph の
+-- 排他の担保で、判定点をここ 1 か所に閉じている (root_dir 側に条件を 2 本書くと、片方の更新漏れが
+-- そのまま二重 attach = 診断の二重表示になる)。
+function M.ruby_server_for(dir)
+  for _, root in ipairs(M.ruby_lsp_projects) do
+    -- "/" 境界を要求する。素の前方一致だと ~/src/the-rss-reader-old のような兄弟が誤爆する
+    if dir == root or vim.startswith(dir, root .. "/") then return "ruby_lsp" end
+  end
+  return "solargraph"
+end
+
+-- want が担当サーバのときだけ on_dir を呼ぶ (呼ばなければ attach しない)。root は lspconfig
+-- 既定の root_markers と同じ { Gemfile, .git } で決める。
 local function ruby_root_dir(want)
   return function(bufnr, on_dir)
     local name = vim.api.nvim_buf_get_name(bufnr)
     local dir = vim.fs.root(name ~= "" and name or bufnr, { "Gemfile", ".git" })
-    if not dir then return end
-    local use_ruby_lsp = false
-    for _, root in ipairs(ruby_lsp_projects) do
-      if dir == root or vim.startswith(dir, root .. "/") then
-        use_ruby_lsp = true
-        break
-      end
-    end
-    if (want == "ruby_lsp") == use_ruby_lsp then on_dir(dir) end
+    if dir and M.ruby_server_for(dir) == want then on_dir(dir) end
   end
 end
 

@@ -327,9 +327,10 @@ require("lazy").setup({
         local ready = {}
         for name in pairs(lsp.server_packages) do
           local cmd = vim.lsp.config[name] and vim.lsp.config[name].cmd
-          -- cmd が関数のサーバ (ruby_lsp) は実在判定できないため無条件に enable に含める。
-          -- ruby_lsp は lsp.lua の root_dir allowlist で attach 先 project を絞っているため、
-          -- gem 未導入の ruby version でも他 project に spawn 失敗が漏れない。
+          -- cmd が関数のサーバ (ruby_lsp / ts_ls / eslint / html / cssls / jsonls / yamlls /
+          -- tailwindcss) は実在判定できないため無条件に enable に含める。この場合バイナリ不在は
+          -- 通知されず :LspLog にだけ残る (ruby_lsp は lsp.lua の allowlist で attach 先 project を
+          -- 絞っているので、gem 未導入の ruby version の影響は当該 project 内に閉じる)。
           if type(cmd) ~= "table" or vim.fn.executable(cmd[1]) == 1 then
             table.insert(ready, name)
           end
