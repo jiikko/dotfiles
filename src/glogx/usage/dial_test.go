@@ -215,3 +215,21 @@ func TestBrailleBlankCellIsSpace(t *testing.T) {
 		t.Errorf("空セルに U+2800: %q", got)
 	}
 }
+
+// 狭い幅では情報を「落とす」が「途中で切らない」。リセット絶対時刻は括弧ごと消えるか
+// 丸ごと残るかのどちらかで、"(9月1日0" のように切れた形にはならない。
+//
+// ⚠️ 幅の契約 (TestRenderDashboardFitsBox) はこれを守らない: 最後の砦の切り詰めが幅だけは
+// 満たしてしまうので、候補フォールバックが壊れても幅テストは green のままになる (実測)。
+func TestRenderDashboardDegradesWithoutCutting(t *testing.T) {
+	for _, w := range []int{54, 60, 66, 72, 80} {
+		for _, ln := range RenderDashboard(dialTestSnap(), dialTestNow(), w, 24, false) {
+			if strings.Count(ln, "(") != strings.Count(ln, ")") {
+				t.Errorf("width=%d: 括弧が途中で切れている: %q", w, ln)
+			}
+			if strings.Contains(ln, "…") {
+				t.Errorf("width=%d: 切り詰めが出た (候補を落として収めるべき): %q", w, ln)
+			}
+		}
+	}
+}

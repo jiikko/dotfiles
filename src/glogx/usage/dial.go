@@ -26,10 +26,10 @@ const (
 	// 盤が潰れて読めないので、同じ情報をテキストカード (バー + 数値) で出す。
 	dialMinW = 26
 	dialMinH = 9
-	// dialGap はカード間の空き桁。
-	dialGap = 2
-	// dialFootLines はカード下部の数値行数 (復活まで / 使用率と想定の 2 行)。
-	dialFootLines = 2
+	// dialGap はカード間の空き桁。dialRowGap は段と段の間に挟む空行。どちらも「盤が隣の
+	// カードと地続きに見える」のを防ぐための余白 (ユーザー要望 2026-08-31)。
+	dialGap    = 4
+	dialRowGap = 1
 )
 
 // RenderDashboard は Snapshot の全枠を格子状のアナログ盤にして描く。返す行数はちょうど
@@ -45,9 +45,14 @@ func RenderDashboard(s *Snapshot, now time.Time, width, height int, colored bool
 	}
 	rows := (len(cards) + cols - 1) / cols
 	cellW := (width - (cols-1)*dialGap) / cols
-	cellH := height / rows
+	cellH := (height - (rows-1)*dialRowGap) / rows
 	out := make([]string, 0, height)
 	for r := range rows {
+		if r > 0 {
+			for range dialRowGap {
+				out = append(out, "")
+			}
+		}
 		grid := make([][]string, 0, cols)
 		for cc := range cols {
 			i := r*cols + cc
@@ -143,9 +148,24 @@ func paceState(used int, elapsed, band float64) (color, word string) {
 	case d >= -band:
 		return sgr.Green, "適正"
 	case d >= -band*2.5:
-		return sgr.Cyan, "余裕"
+		return sgr.BrightBlue, "余裕"
 	default:
 		return sgr.Magenta, "余剰"
+	}
+}
+
+// cardFootLines はカード下部に置く行数を高さから決める。狭いカードでは重要度の低い順
+// (予算と助言 → ゲージ) に落とす。数値行と「復活まで」は必ず残す。
+func cardFootLines(h int) int {
+	switch {
+	case h >= 16:
+		return 5 // 空行 / ゲージ / 数値 / 復活まで / 予算と助言
+	case h >= 15:
+		return 4 // ゲージ / 数値 / 復活まで / 予算と助言
+	case h >= 10:
+		return 3 // ゲージ / 数値 / 復活まで
+	default:
+		return 2 // 数値 / 復活まで
 	}
 }
 
@@ -169,24 +189,10 @@ func renderCard(c dialCard, now time.Time, w, h int, colored bool) []string {
 		paintIf(c.cli+" "+c.label, col, colored),
 		paintIf(c.label, col, colored),
 	})
-	remainCell := paintIf(formatRemain(remain), sgr.Bold, colored)
-	pctCell := paintIf(fmt.Sprintf("%3d%%", c.win.Percent), col, colored)
-	foot := []string{
-		fitLine(w, []string{
-			"復活まで " + remainCell + " " + paintIf("("+formatReset(c.win.ResetAt)+")", sgr.Dim, colored),
-			"復活まで " + remainCell,
-			remainCell,
-		}),
-		fitLine(w, []string{
-			pctCell + " " + paintIf(fmt.Sprintf("想定%3.0f%%", elapsed), sgr.Dim, colored) + " " +
-				paintIf(fmt.Sprintf("%+5.1fpt %s", float64(c.win.Percent)-elapsed, word), col, colored),
-			pctCell + " " + paintIf(word, col, colored),
-			pctCell,
-		}),
-	}
-	bodyH := max(0, h-1-dialFootLines)
+	foot := cardFoot(c, remain, elapsed, col, word, w, cardFootLines(h), colored)
+	bodyH := max(0, h-1-len(foot))
 	var body []string
-	if c.span <= 0 || w < dialMinW || h < dialMinH || bodyH < 3 {
+	if c.span <= 0 || w < dialMinW || bodyH < 5 {
 		body = textCardBody(c, col, w, bodyH, colored)
 	} else {
 		body = renderFace(c, remain, elapsed, col, w, bodyH, colored)
@@ -200,6 +206,59 @@ func renderCard(c dialCard, now time.Time, w, h int, colored bool) []string {
 		out = append(out, "")
 	}
 	return out[:h]
+}
+
+// cardFoot はカード下部の行 (ゲージ / 数値 / 復活まで / 予算と助言) を n 行で返す。
+func cardFoot(c dialCard, remain time.Duration, elapsed float64, col, word string, w, n int, colored bool) []string {
+	cells := dialDivisions(c.span)
+	// いま居るスロット (経過を 1 スロットで割った位置)。窓幅不明のときは印を出さない。
+	at := -1
+	if c.span > 0 {
+		at = min(int(elapsed*float64(cells)/100), cells-1)
+	}
+	gauge := paceGauge(cells, float64(c.win.Percent), elapsed, at, colored)
+	if gauge == "" || c.span <= 0 {
+		gauge = paintIf(bar(c.win.Percent, false), col, colored) // 10 等分以上の窓は素のバー
+	}
+	pctCell := paintIf(fmt.Sprintf("%3d%%", c.win.Percent), col, colored)
+	remainCell := paintIf(formatRemain(remain), sgr.Bold, colored)
+	numbers := fitLine(w, []string{
+		pctCell + " " + paintIf(fmt.Sprintf("想定%3.0f%%", elapsed), sgr.Dim, colored) + " " +
+			paintIf(fmt.Sprintf("%+5.1fpt %s", float64(c.win.Percent)-elapsed, word), col, colored),
+		pctCell + " " + paintIf(word, col, colored),
+		pctCell,
+	})
+	reset := fitLine(w, []string{
+		"復活まで " + remainCell + " " + paintIf("("+formatReset(c.win.ResetAt)+")", sgr.Dim, colored),
+		"復活まで " + remainCell,
+		remainCell,
+	})
+	// 予算と助言。どちらも空になることがある (適正で残りが 1 スロット未満のとき)。
+	parts := make([]string, 0, 2)
+	if b := paceBudget(c.win.Percent, remain, c.span, cells); b != "" {
+		parts = append(parts, b)
+	}
+	if a := paceAdvice(c.win.Percent, elapsed, c.span, cells); a != "" {
+		parts = append(parts, a)
+	}
+	pace := ""
+	if len(parts) > 0 {
+		pace = fitLine(w, []string{
+			paintIf(strings.Join(parts, " · "), col, colored),
+			paintIf(parts[len(parts)-1], col, colored),
+		})
+	}
+	switch {
+	case n >= 5:
+		// 盤とゲージが地続きに見えないよう 1 行空ける (ユーザー要望 2026-08-31)
+		return []string{"", fitLine(w, []string{gauge}), numbers, reset, pace}
+	case n == 4:
+		return []string{fitLine(w, []string{gauge}), numbers, reset, pace}
+	case n == 3:
+		return []string{fitLine(w, []string{gauge}), numbers, reset}
+	default:
+		return []string{numbers, reset}
+	}
 }
 
 // renderFace は盤を faceH 行の点描で描く。
@@ -221,13 +280,14 @@ func renderFace(c dialCard, remain time.Duration, elapsed float64, col string, w
 	}
 	// 外周: 経過ぶんは破線の下地、残りが明るい弧 (これが縮んで 0 になる = 復活)。
 	cv.arc(cx, cy, rOut, 0, el, sgr.Dim, 1, 3)
-	cv.arc(cx, cy, rOut, el, 1, sgr.Cyan, 2, 1)
+	cv.arc(cx, cy, rOut, el, 1, sgr.BrightWhite, 2, 1)
 	// 内周: 枠の消費。
 	cv.arc(cx, cy, rIn, 0, 1, sgr.Dim, 1, 3)
 	cv.arc(cx, cy, rIn, 0, used, col, 2, 1)
-	// 12 時 = リセット点 / 針 = いまの経過位置。
+	// 12 時 = リセット点 / 針 = いまの経過位置。どちらも「時間」なので外周の残り弧と同じ色に
+	// する — 盤に乗る色を「時間 (白) と消費 (状態色)」の 2 系統だけに保つ。
 	cv.tick(cx, cy, rOut+1, rOut+6, 0, sgr.Bold)
-	cv.ray(cx, cy, 2, rOut-1, el, sgr.Bold)
+	cv.ray(cx, cy, 2, rOut-1, el, sgr.BrightWhite)
 
 	// 盤の中央は ASCII だけを置く (点描の格子に全角を混ぜると桁が合わない)。
 	mid := compactRemain(remain)
@@ -254,12 +314,11 @@ func dialDivisions(span time.Duration) int {
 
 // textCardBody は盤を描けないとき (桁不足 / 窓幅不明) の代替本文。数値は foot が持つので、
 // ここはバーと「なぜ盤が無いか」だけを出す (情報は落とさない)。
-func textCardBody(c dialCard, col string, w, h int, colored bool) []string {
+func textCardBody(c dialCard, _ string, w, h int, colored bool) []string {
 	out := make([]string, 0, h)
 	if h <= 0 {
 		return out
 	}
-	out = append(out, "", centerCell(paintIf(bar(c.win.Percent, false), col, colored), w))
 	if c.span <= 0 {
 		out = append(out, centerCell(paintIf("窓幅が不明のため盤は省略", sgr.Dim, colored), w))
 	}
