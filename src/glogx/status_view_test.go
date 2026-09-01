@@ -901,9 +901,10 @@ func TestStatusViewerRendersFullScreenAndHint(t *testing.T) {
 		t.Fatalf("hint 行が status viewer のものになっていない:\n%s", view)
 	}
 	// remote 操作キー (b/p) は hint に出す (発見性。ユーザー要望 2026-08-07)。
-	// ⚠️ view でなく hint() を直接見る: hint 行は端末幅でクリップされ、テストの 80 桁では
-	// 末尾が「…」に落ちるため view の Contains では検査できない
-	hint := m.statusOv.hint()
+	// ⚠️ view でなく hint() を直接、しかも**広い幅**で見る: hint は幅に応じて優先度の低い項目を
+	// 落とすので (issue 155)、テストの 80 桁では b/p は出ない (出るのは「今の幅で確実に読める
+	// もの」だけ。全キーの正本は --help / README)
+	hint := m.statusOv.hint(200)
 	if !strings.Contains(hint, "b: push") || !strings.Contains(hint, "p: pull") {
 		t.Fatalf("hint に remote 操作キー (b: push / p: pull) が出ていない: %q", hint)
 	}
@@ -1346,7 +1347,7 @@ func TestStatusCloseDropsPreviewCache(t *testing.T) {
 func TestStatusHintWordsMatchBehavior(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
 
-	list := v.hint()
+	list := v.hint(testPopupWidth)
 	if !strings.Contains(list, "q: 終了") {
 		t.Errorf("一覧の hint が「終了」と案内していない (q は glogx ごと終了する): %q", list)
 	}
@@ -1359,15 +1360,16 @@ func TestStatusHintWordsMatchBehavior(t *testing.T) {
 
 	// pager 表示中は「閉じる」で正しい
 	v.pagerKey = "dummy"
-	pager := v.hint()
+	pager := v.hint(testPopupWidth)
 	if !strings.Contains(pager, "d/q: 閉じる") {
 		t.Errorf("pager の hint が「閉じる」でない (そこでの q は pager を閉じる): %q", pager)
 	}
 }
 
 // R は ratelimit ダッシュボードへ横断する (i と対。ユーザー要望 2026-09-01)。viewer は閉じ、
-// 実際に開くのは browseModel (takeWantRatelimit)。hint も案内する (一覧モードのキーは
-// 幅の制約が無いので出せる — issues 側とはそこが違う)。
+// 実際に開くのは browseModel (takeWantRatelimit)。
+// ⚠️ hint の案内は**広い端末でだけ**出る (issue 155 で幅に応じて落とすようにしたため。popup の
+// 実幅では優先度の低い R は落ちる)。狭い幅での正本は --help / README。
 func TestStatusRSwitchesToRatelimitDash(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
 
@@ -1382,7 +1384,67 @@ func TestStatusRSwitchesToRatelimitDash(t *testing.T) {
 	if !v.closing && v.shown {
 		t.Error("R で viewer が閉じない (全画面は同時に 1 枚)")
 	}
-	if !strings.Contains(v.hint(), "R: 残量") {
-		t.Errorf("hint が R を案内していない: %q", v.hint())
+	if !strings.Contains(v.hint(200), "R: 残量") {
+		t.Errorf("hint が R を案内していない: %q", v.hint(200))
+	}
+}
+
+// hint は与えられた幅に必ず収まる。⚠️ issues viewer と同じ検査を status にも置く (issue 155:
+// 片方だけ無検査だったので、キーを足すたびに末尾が黙って削られていた)。
+//
+// ⚠️ 幅を 1 点だけ見ない。popup の実幅 (84) は代表値でしかなく、端末は任意の幅を取る。
+func TestStatusViewHintFitsWidth(t *testing.T) {
+	v := newTestStatusView(t, statusRec(" M a.go"))
+	for w := 10; w <= 200; w++ {
+		for _, mode := range []struct {
+			name  string
+			setup func()
+		}{
+			{"一覧", func() { v.pagerKey, v.discarding = "", false }},
+			{"pager", func() { v.pagerKey, v.discarding = "dummy", false }},
+			{"破棄確認", func() { v.pagerKey, v.discarding = "", true }},
+		} {
+			mode.setup()
+			if got := dispWidth(v.hint(w)); got > w && mode.name == "一覧" {
+				t.Errorf("w=%d %s: hint が %d 桁 (収まっていない): %q", w, mode.name, got, v.hint(w))
+			}
+		}
+	}
+}
+
+// 狭い端末でも「抜ける手段」は必ず案内する。⚠️ ここが issue 155 の実害:
+// 末尾から切る実装では、並びの最後にある s/q が幅に関係なく最初に消えていた。
+func TestStatusViewHintKeepsExitKeys(t *testing.T) {
+	v := newTestStatusView(t, statusRec(" M a.go"))
+	for _, w := range []int{40, 60, testPopupWidth, 120} {
+		h := v.hint(w)
+		for _, want := range []string{"s: 一覧へ", "q: 終了"} {
+			if !strings.Contains(h, want) {
+				t.Errorf("w=%d: 抜ける手段 %q が消えた: %q", w, want, h)
+			}
+		}
+	}
+	// 広い端末では全部出る (落とす条件が広すぎないこと)
+	full := v.hint(200)
+	for _, want := range []string{"j/k: 移動", "Space: stage/unstage", "X: 変更を捨てる", "b: push", "R: 残量"} {
+		if !strings.Contains(full, want) {
+			t.Errorf("広い幅なのに %q が出ていない: %q", want, full)
+		}
+	}
+}
+
+// hint を組む予算と、描画側が切る幅は同じ 1 か所から取る (browseModel.hintWidth)。
+// ⚠️ 2 か所に式を書くと「収まるつもりで組んだ hint が黙って切られる」形でずれる (issue 155)。
+func TestStatusHintUsesRenderBudget(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.handleKey("s")
+	releaseKey(m)
+	line := m.hintLine()
+	if got := dispWidth(stripANSI(line)); got > m.width {
+		t.Errorf("hint 行が端末幅を超えた (%d > %d): %q", got, m.width, line)
+	}
+	// 切り詰めの … が出ていない = 組む側が予算どおりに収めている
+	if strings.Contains(line, "…") {
+		t.Errorf("hint が切り詰められている (組む側の予算が描画側とずれている): %q", line)
 	}
 }

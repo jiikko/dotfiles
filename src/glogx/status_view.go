@@ -890,17 +890,82 @@ func (v *statusView) openPager(vp statusViewport) tea.Cmd {
 }
 
 // hint は hint 行 (browseModel が枠の下に出す)。
-func (v *statusView) hint() string {
+func (v *statusView) hint(width int) string {
 	switch {
 	case v.discarding:
 		return "y/Enter: 捨てる  n/Esc: キャンセル"
 	case v.pagerKey != "":
 		return "j/k: スクロール  Space/C-d: 半ページ  g/G: 先頭/末尾  d/q: 閉じる"
-	default:
-		// ⚠️ "q: 終了" (glogx ごと終了。一覧へ戻るのは s)。上の pager の "d/q: 閉じる" は
-		//   pager を閉じるので正しい — 直すのはこちらだけ。issue 121
-		return "j/k: 移動  Tab: セクション  Space: stage/unstage  a: 全 stage  X: 変更を捨てる  d: diff  r: 再読込  b: push  p: pull  U: usage  R: 残量  s: 一覧へ  q: 終了"
 	}
+	// ⚠️ "q: 終了" (glogx ごと終了。一覧へ戻るのは s)。上の pager の "d/q: 閉じる" は
+	//   pager を閉じるので正しい — 直すのはこちらだけ。issue 121
+	//
+	// 一覧モードの案内は全部で 155 桁あり、popup の実幅 (84 桁前後) には入らない。入らない分は
+	// hintLineText が**末尾から黙って切る**ので、素朴に並べると「抜ける手段 (s/q) だけが
+	// 画面から消える」状態になっていた (issue 155)。幅に応じて優先度の低い順に落とす。
+	return fitHintItems(width, []hintItem{
+		{"j/k: 移動", 4},
+		{"Tab: セクション", 5},
+		{"Space: stage/unstage", 2}, // この画面の主目的
+		{"a: 全 stage", 5},
+		{"X: 変更を捨てる", 3}, // 破壊操作は案内が消えると危ない
+		{"d: diff", 3},
+		{"r: 再読込", 5},
+		{"b: push", 6},
+		{"p: pull", 6},
+		{"U: usage", 7},
+		{"R: 残量", 7},
+		{"s: 一覧へ", 1}, // 抜ける手段は最後まで残す
+		{"q: 終了", 1},
+	})
+}
+
+// hintItem は hint の 1 項目と優先度 (小さいほど残す)。
+type hintItem struct {
+	text string
+	prio int
+}
+
+// fitHintItems は幅 width に収まるところまで項目を採り、**元の並び順で**繋ぐ。
+//
+// ⚠️ 「入らないから末尾を切る」ではなく「入らない項目を落とす」。切ると語の途中で切れて
+// 意味が壊れ (実測 2026-09-01: "d: diff" が "d…" になっていた)、しかも切れるのは常に末尾 =
+// 並びの最後にある項目が幅に関係なく消える。優先度で落とせば、狭い端末でも「何ができて
+// どう抜けるか」は残る。
+//
+// ⚠️ 落とした項目は `--help` / README / docs/status-viewer-spec.md が正本 (issues viewer の
+// hint と同じ作法)。画面の案内は「今の幅で確実に読めるもの」だけにする。
+func fitHintItems(width int, items []hintItem) string {
+	const sep = "  "
+	keep := make([]bool, len(items))
+	total := 0
+	// 優先度の高い順に採る。同じ優先度は元の並び順 (左から) を優先する。
+	for prio := 1; prio <= 7; prio++ {
+		for i, it := range items {
+			if keep[i] || it.prio != prio {
+				continue
+			}
+			w := dispWidth(it.text)
+			if total > 0 {
+				w += dispWidth(sep)
+			}
+			if total+w > width {
+				continue // この項目は入らない。より短い後続は入るかもしれないので続ける
+			}
+			keep[i], total = true, total+w
+		}
+	}
+	out := make([]string, 0, len(items))
+	for i, it := range items {
+		if keep[i] {
+			out = append(out, it.text)
+		}
+	}
+	if len(out) == 0 && len(items) > 0 {
+		// 1 つも入らない極端な幅でも無言にしない (hintLineText が切り詰めて出す)
+		return items[len(items)-1].text
+	}
+	return strings.Join(out, sep)
 }
 
 // ---- 描画 ----

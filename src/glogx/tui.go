@@ -3432,7 +3432,7 @@ func (m *browseModel) hintLine() string {
 	switch {
 	case m.statusOv.visible():
 		// status viewer も全画面なので issues と同じ扱い (CI 進捗・警告の前置をしない)。
-		return m.hintLineText(m.statusOv.hint())
+		return m.hintLineText(m.statusOv.hint(m.hintWidth()))
 	case m.issuesOv.visible():
 		// issues viewer は全画面モーダルなので、ここが最優先 (下のパネル系より先に判定する)。
 		// CI 進捗・GH 警告の前置もしない: viewer の hint は popup の実幅ぴったりに詰めてあり
@@ -3480,9 +3480,19 @@ func (m *browseModel) hintLineText(hint string) string {
 		// hint は板の外 (最下行) だが、左余白 1 桁を付けて板の左端 (┌) と縦に揃える。素朴に
 		// " " を前置すると、既定 hint が clip 後に m.width ちょうどになり実効幅 m.width+1 で
 		// 折り返し崩壊するため、clip 幅を左右余白ぶん (2) 差し引く (板の footprint と同じ span)。
-		return " " + clipToWidth(painted, max(m.width-2, 1))
+		return " " + clipToWidth(painted, m.hintWidth())
 	}
-	return clipToWidth(painted, m.width)
+	return clipToWidth(painted, m.hintWidth())
+}
+
+// hintWidth は hint 行に使える桁数。⚠️ hintLineText の clip 幅と、hint を組む側 (statusView.hint)
+// が使う予算はこの 1 か所から取る。2 か所に式を書くと、片方だけ余白を変えた瞬間に「収まる
+// つもりで組んだ hint が黙って切られる」形でずれる (issue 155 はその状態だった)。
+func (m *browseModel) hintWidth() int {
+	if m.frameActive() {
+		return max(m.width-2, 1)
+	}
+	return m.width
 }
 
 func clampIdx(i, total int) int {
