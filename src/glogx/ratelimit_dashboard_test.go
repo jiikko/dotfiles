@@ -234,3 +234,56 @@ func TestRatelimitDashHeaderFitsWidth(t *testing.T) {
 		}
 	}
 }
+
+// 全画面ダッシュボードは画面全体 (枠・余白・影・hint 行まで) に地色を敷く。
+//
+// ⚠️ 「端末の既定へ戻す」では足りない場面のための固定色。scratch popup は display-popup 自身が
+// 濃紺を敷いており、その popup では既定の背景が濃紺になる (ユーザー要望 2026-09-01)。
+func TestRatelimitDashPaintsScreenBackground(t *testing.T) {
+	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m.colored = true
+	m.width, m.height = 100, 30
+	m.handleKey("R")
+	lines := strings.Split(m.View().Content, "\n")
+	if len(lines) < 10 {
+		t.Fatalf("行が少なすぎる: %d", len(lines))
+	}
+	for i, ln := range lines {
+		if !strings.HasPrefix(ln, ansiScreenBg) {
+			t.Errorf("%d 行目に地色が無い: %q", i, ln)
+			continue
+		}
+		// 端末幅ぶん塗り切る (途中で切れると右側が端末の地色のまま残る)。
+		if w := dispWidth(ln); w != m.width {
+			t.Errorf("%d 行目の塗り幅 %d != %d: %q", i, w, m.width, ln)
+		}
+		// 行内の SGR リセットの後は地色を張り直す (リセットで地が切れる)。
+		body := strings.TrimSuffix(ln, ansiReset)
+		if idx := strings.LastIndex(body, ansiReset); idx >= 0 &&
+			!strings.HasPrefix(body[idx+len(ansiReset):], ansiScreenBg) {
+			t.Errorf("%d 行目: リセット後に地色を張り直していない: %q", i, ln)
+		}
+	}
+}
+
+// 面塗りはダッシュボードだけ。一覧や色なし (NO_COLOR) では敷かない — 面塗りは環境の配色
+// 次第で視認性を落とすため、既定では増やさないというのが repo の判断 (bgLine の doc)。
+func TestScreenBackgroundOnlyForDashboard(t *testing.T) {
+	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m.colored = true
+	m.width, m.height = 100, 30
+	if got := m.screenBg(); got != "" {
+		t.Errorf("一覧なのに地色を敷いた: %q", got)
+	}
+	if strings.Contains(m.View().Content, ansiScreenBg) {
+		t.Error("一覧の描画に地色が混ざっている")
+	}
+	m.handleKey("R")
+	if m.screenBg() != ansiScreenBg {
+		t.Error("ダッシュボードで地色を敷いていない")
+	}
+	m.colored = false
+	if got := m.screenBg(); got != "" {
+		t.Errorf("色なしなのに地色を敷いた: %q", got)
+	}
+}

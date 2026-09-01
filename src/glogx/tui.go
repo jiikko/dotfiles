@@ -3218,14 +3218,45 @@ func (m *browseModel) finishWindow(window []string, page int) string {
 			size += len(w) + 1
 		}
 	}
+	// 画面全体の地色 (全画面 ratelimit ダッシュボードだけ)。枠・余白・影・hint まで含めて
+	// 塗るので、ここ (1 フレームの出口) で 1 回だけ掛ける。
+	bg := m.screenBg()
+	if bg != "" {
+		size += (len(window) + 1) * (len(bg) + len(ansiReset) + m.width)
+	}
 	var b strings.Builder
 	b.Grow(size)
 	for _, w := range window {
-		b.WriteString(w)
+		b.WriteString(paintScreenBg(w, bg, m.width))
 		b.WriteString("\n")
 	}
-	b.WriteString(hint)
+	b.WriteString(paintScreenBg(hint, bg, m.width))
 	return b.String()
+}
+
+// screenBg は画面全体に敷く地の色 ("" = 端末の地色のまま)。
+//
+// ⚠️ 面塗りは既定では**しない**。bgLine の doc にあるとおり、push 済みエリアの面塗りは
+// 「環境の配色次第で視認性を落とす」としてユーザー判断で撤去した経緯があり、その判断は
+// 生きている (面塗りを自発的に増やさない)。ここが例外なのは、全画面の残量表示だけは地色を
+// 固定したいという明示要望があるため (2026-09-01。理由は ansiScreenBg の doc)。
+func (m *browseModel) screenBg() string {
+	if !m.colored || !m.rlDash.visible() {
+		return ""
+	}
+	return ansiScreenBg
+}
+
+// paintScreenBg は 1 行を bg で端末幅まで塗る。行内の SGR リセットで地色が切れるので、
+// リセット直後に張り直す (bgLine と同じ手口だが、あちらは板の内側 contentWidth 幅、
+// こちらは枠や hint も含む端末幅ぶん)。
+func paintScreenBg(line, bg string, width int) string {
+	if bg == "" || width <= 0 {
+		return line
+	}
+	line = clipToWidth(line, width)
+	pad := max(width-dispWidth(line), 0)
+	return bg + reapplyAfterReset(line, bg) + padSpaces(pad) + ansiReset
 }
 
 // boxAnchor は sha のコミットヘッダー行のウィンドウ内位置を返す
