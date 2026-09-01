@@ -393,6 +393,45 @@ func paceState(used int, elapsed, band float64) (color, word string) {
 	}
 }
 
+// denseFoot はゲージ・使用率・想定と乖離・復活まで・ペースを 1 行へ集約する。幅が足りず
+// **どれかを落とすことになるなら "" を返す** (呼び出し側が従来の複数行へ落ちる)。
+//
+// ⚠️ 盤の中央にも「残り時間」と使用率が出るが、ここでは省かない。中央は盤が小さいと
+// ASCII 表記へ落ち、さらに小さいと消える (drawCenter) ので、下段が唯一の出所になる幅がある。
+func denseFoot(c dialCard, remain time.Duration, elapsed float64, col, word, gauge string, w int, colored bool) string {
+	sep := paintIf("  ·  ", sgr.Dim, colored)
+	pct := paintIf(fmt.Sprintf("%d%%", c.win.Percent), col, colored)
+	left := gauge + "  " + pct
+	if c.span > 0 {
+		left += " " + paintIf(fmt.Sprintf("想定%.0f%%", elapsed), sgr.Dim, colored) +
+			" " + paintIf(fmt.Sprintf("%+.1fpt %s", float64(c.win.Percent)-elapsed, word), col, colored)
+	}
+	rest := "残" + paintIf(formatRemain(remain), sgr.Bold, colored)
+	at := paintIf("("+formatReset(c.win.ResetAt)+")", sgr.Dim, colored)
+	parts := make([]string, 0, 2)
+	if b := paceBudget(c.win.Percent, remain, c.span, dialDivisions(c.span)); b != "" {
+		parts = append(parts, b)
+	}
+	if a := paceAdvice(c.win.Percent, elapsed, c.span, dialDivisions(c.span)); a != "" {
+		parts = append(parts, a)
+	}
+	pace := ""
+	if len(parts) > 0 {
+		pace = sep + paintIf(strings.Join(parts, " · "), col, colored)
+	}
+	// 絶対時刻だけは落としてよい (相対の「残り」が同じことを言っている)。それ以外を
+	// 落とすことになったら畳まない。
+	for _, cand := range []string{
+		left + sep + rest + " " + at + pace,
+		left + sep + rest + pace,
+	} {
+		if termwidth.Of(cand) <= w {
+			return centerCell(cand, w)
+		}
+	}
+	return ""
+}
+
 // cardFootLines はカード下部に置く行数を高さから決める。狭いカードでは重要度の低い順
 // (予算と助言 → ゲージ) に落とす。数値行と「復活まで」は必ず残す。
 func cardFootLines(h int) int {
@@ -541,6 +580,15 @@ func cardFoot(c dialCard, remain time.Duration, elapsed float64, col, word strin
 			paintIf(strings.Join(parts, " · "), col, colored),
 			paintIf(parts[len(parts)-1], col, colored),
 		})
+	}
+	// 幅が足りるなら 4 行ぶんを 1 行へ集約し、空いた 3 行を盤に回す (ユーザー選定 2026-09-01)。
+	// ⚠️ 空行は残す: 盤とゲージが地続きに見えないための余白で、これ自体が過去の要望
+	// (2026-08-31)。⚠️ 入らない幅では畳まない — 畳むために情報を落とすと、狭い端末ほど
+	// 読めなくなる (盤が大きいことより、想定・乖離・助言が出ていることの方が価値が高い)。
+	if n >= 4 {
+		if dense := denseFoot(c, remain, elapsed, col, word, gauge, w, colored); dense != "" {
+			return []string{"", dense}
+		}
 	}
 	switch {
 	case n >= 5:

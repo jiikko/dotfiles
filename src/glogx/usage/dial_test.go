@@ -562,3 +562,61 @@ func TestRenderDashboardBandKeepsGap(t *testing.T) {
 		}
 	}
 }
+
+// 幅が足りるカードでは、ゲージ・使用率・想定と乖離・復活まで・ペースを 1 行へ集約する
+// (ユーザー選定 2026-09-01)。空いた行は盤に回る。
+func TestRenderDashboardDenseFoot(t *testing.T) {
+	lines := RenderDashboard(dialTestSnap(), dialTestNow(), 225, 40, false)
+	// ⚠️ 最初に見つかった行を使う。codex 段にも同じ目盛りが出るので、最後の一致を取ると
+	// 別の CLI の行を検査してしまう (Claude の 5h は 62%、codex は 31%)。
+	dense := ""
+	for _, ln := range lines {
+		if strings.Contains(ln, "[ 1 2 3 4 5 ]") {
+			dense = ln
+			break
+		}
+	}
+	if dense == "" {
+		t.Fatal("5h のゲージが見つからない")
+	}
+	// ゲージと同じ行に、他の 3 行ぶんが乗っていること
+	for _, want := range []string{"62%", "想定", "pt ", "残", "%/時"} {
+		if !strings.Contains(dense, want) {
+			t.Errorf("集約行に %q が無い: %q", want, dense)
+		}
+	}
+	// 盤が広がっていること (集約しない幅より盤の行数が多い)。⚠️ 「集約した」だけを見ると、
+	// 空いた行を盤に回し損ねても green になる (行が余ったまま下に空白が残る形)。
+	rows := func(w int) int {
+		n := 0
+		for _, ln := range RenderDashboard(dialTestSnap(), dialTestNow(), w, 40, false) {
+			if slices.ContainsFunc([]rune(ln), isBrailleRune) {
+				n++
+			}
+		}
+		return n
+	}
+	if wide, narrow := rows(225), rows(120); wide <= narrow {
+		t.Errorf("集約したのに盤が広がっていない (225 で %d 行 / 120 で %d 行)", wide, narrow)
+	}
+}
+
+// 情報を落としてまで畳まない。狭いカードでは集約せず、想定・乖離・助言が別々の行で残る。
+func TestDenseFootRefusesToDropInfo(t *testing.T) {
+	now := dialTestNow()
+	c := dialCard{
+		win:  Window{Label: "7d", Percent: 78, ResetAt: now.Add(3400 * time.Minute), WindowMins: 10080},
+		kind: "weekly",
+	}
+	c.span = c.win.Span()
+	remain, elapsed, col, word := cardPace(c, now)
+	gauge := paceGauge(dialDivisions(c.span), float64(c.win.Percent), elapsed, 3, false)
+	for _, w := range []int{20, 40, 58} {
+		if got := denseFoot(c, remain, elapsed, col, word, gauge, w, false); got != "" {
+			t.Errorf("w=%d: 入らない幅で畳んだ (情報が落ちる): %q", w, got)
+		}
+	}
+	if got := denseFoot(c, remain, elapsed, col, word, gauge, 110, false); got == "" {
+		t.Error("入る幅なのに畳まなかった")
+	}
+}
