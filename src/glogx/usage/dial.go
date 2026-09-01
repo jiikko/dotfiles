@@ -328,6 +328,13 @@ func cardHead(c dialCard, col string, w, h, footN int, colored bool) []string {
 	if aa == nil || h-bannerRows-footN < 5 {
 		return plain
 	}
+	// ⚠️ 中央の使用率の AA を犠牲にしてまで見出しを大きくしない。見出しの AA は 3 行あり、
+	// 盤が 2 行縮む。優先順位は「中央の数字 > 見出し」— 中央は盤の主役で、見出しは
+	// 同じことを小さい字でも言えるため (実測 2026-09-01: 120x44 で見出しを AA にすると
+	// 中央が普通の字へ落ちた)。
+	if c.span > 0 && centerAAFits(w, h-1-footN, c.win.Percent) && !centerAAFits(w, h-bannerRows-footN, c.win.Percent) {
+		return plain
+	}
 	kind := ""
 	if c.kind != "" {
 		kind = paintIf("  "+c.kind, sgr.Dim, colored)
@@ -415,12 +422,7 @@ func cardFoot(c dialCard, remain time.Duration, elapsed float64, col, word strin
 // renderFace は盤を faceH 行の点描で描く。
 func renderFace(c dialCard, remain time.Duration, elapsed float64, col string, w, faceH int, colored bool) []string {
 	cv := newBraille(w, faceH)
-	// braille のドットは正方形になる (セルの縦横比 1:2 を横 2 x 縦 4 で割るため)。よって
-	// 直径は「桁 x2」と「行 x4」の狭い方で決まり、円は縦横どちらにも歪まない。
-	d := float64(min(w*2, faceH*4))
-	cx, cy := float64(w), float64(faceH*2)
-	rOut := d/2 - 3
-	rIn := max(rOut-4, rOut/2)
+	cx, cy, rOut, rIn := faceGeom(w, faceH)
 	used := math.Max(0, math.Min(100, float64(c.win.Percent))) / 100
 	el := elapsed / 100
 
@@ -509,6 +511,33 @@ func innerWidthAt(cy, rIn float64, row int) int {
 		return 0
 	}
 	return max(int(math.Sqrt(rIn*rIn-dy*dy))-5, 0)
+}
+
+// faceGeom は盤の寸法 (中心・外周・内周)。renderFace と centerAAFits が同じ式を見るための
+// 単一の出典 — 片方だけ変えると「入る判定なのに描くと接する」がすぐ起きる。
+//
+// braille のドットは正方形になる (セルの縦横比 1:2 を横 2 x 縦 4 で割るため)。よって直径は
+// 「桁 x2」と「行 x4」の狭い方で決まり、円は縦横どちらにも歪まない。
+func faceGeom(w, faceH int) (cx, cy, rOut, rIn float64) {
+	d := float64(min(w*2, faceH*4))
+	cx, cy = float64(w), float64(faceH*2)
+	rOut = d/2 - 3
+	rIn = max(rOut-4, rOut/2)
+	return cx, cy, rOut, rIn
+}
+
+// centerAAFits は faceH 行の盤に、中央の AA (使用率) が入るか。drawCenter の分岐と同じ条件。
+func centerAAFits(w, faceH, pct int) bool {
+	if faceH <= 0 {
+		return false
+	}
+	_, cy, _, rIn := faceGeom(w, faceH)
+	midRow := int(cy) / 4
+	if midRow-2 < 0 || midRow+1 >= faceH {
+		return false
+	}
+	avail := min(innerWidthAt(cy, rIn, midRow-1), innerWidthAt(cy, rIn, midRow), innerWidthAt(cy, rIn, midRow+1))
+	return bigWidth(strconv.Itoa(pct))+1 <= avail
 }
 
 // dialDivisions は盤の目盛り数 (窓を何等分して刻むか)。5h → 5 (1 時間)、7d → 7 (1 日)。

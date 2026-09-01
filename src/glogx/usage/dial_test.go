@@ -390,7 +390,8 @@ func TestRenderDashboardGroupsStayConsistent(t *testing.T) {
 func TestRenderDashboardCardHeadAA(t *testing.T) {
 	all := strings.Join(RenderDashboard(dialTestSnap(), dialTestNow(), 130, 50, false), "\n")
 	for _, want := range append(bigLines("5H"), bigLines("7D")...) {
-		if !strings.Contains(all, want) {
+		// ⚠️ 行末の空白は格子の組み立てで落ちるので、期待値も落としてから探す。
+		if !strings.Contains(all, strings.TrimRight(want, " ")) {
 			t.Errorf("枠ラベルの AA が出ていない (%q):\n%s", want, all)
 		}
 	}
@@ -422,4 +423,37 @@ func TestRenderDashboardCardHeadFallsBackWhenFaceWouldDie(t *testing.T) {
 			t.Errorf("h=%d: 見出しを AA にしたせいで盤が消えた:\n%s", h, all)
 		}
 	}
+}
+
+// 見出しの AA より中央の使用率の AA を優先する。見出しの AA は 3 行あり盤が 2 行縮むので、
+// 「普通の見出しなら中央が AA になれたのに、見出しを AA にしたせいで落ちる」高さでは
+// 見出しを AA にしない (盤の主役は中央の数字)。
+//
+// ⚠️ 描画結果から「見出しが AA かつ中央が普通の字」を探すだけでは足りない。どちらにしても
+// 中央が入らない小さな盤では、見出しを AA にしても何も失っていないので正しい状態になる。
+// 判断そのもの (cardHead) を突く。
+func TestCardHeadYieldsToCenterAA(t *testing.T) {
+	c := dialCards(dialTestSnap())[0] // Claude の 5h
+	const w, footN = 58, 4
+	conflicts := 0
+	for h := 8; h <= 40; h++ {
+		plainFits := centerAAFits(w, h-1-footN, c.win.Percent)
+		aaFits := centerAAFits(w, h-bannerRows-footN, c.win.Percent)
+		head := cardHead(c, "", w, h, footN, false)
+		switch {
+		case plainFits && !aaFits: // 見出しを AA にすると中央を失う高さ
+			conflicts++
+			if len(head) != 1 {
+				t.Errorf("h=%d: 中央の AA を捨てて見出しを AA にした (%d 行)", h, len(head))
+			}
+		case aaFits && h-bannerRows-footN >= 5: // 両方入る高さ
+			if len(head) != bannerRows {
+				t.Errorf("h=%d: 両方入るのに見出しが AA でない (%d 行)", h, len(head))
+			}
+		}
+	}
+	if conflicts == 0 {
+		t.Fatal("優先順位が問われる高さが 1 つも無い (テストが空回りしている)")
+	}
+	t.Logf("優先順位が問われた高さ: %d 通り", conflicts)
 }
