@@ -9,7 +9,7 @@
 
 - カテゴリ: bug
 - 起票: 2026-08-30
-- 状態: open
+- 状態: done (2026-09-02)
 
 ## 要約
 
@@ -149,3 +149,25 @@ ffmpeg -v error -i "$output" -f null -   # stderr が空でなければ破損
   `__concat_frame_hash` が空を返し、`__concat_verify_frame_order` は警告を出すだけで
   成功扱いのまま続行する。連番正規表現の修正は extradata 不一致の検出策にならない
   （skip 経路そのものの是非は別の話として残る）。
+
+## 決着 (2026-09-02)
+
+3 点とも実装した。実 ffmpeg 8.0.1 で本 issue の再現 1 / 2 を流し、どちらも拒否されて出力が残らないこと、
+同一ファイルの `-c copy` コピー同士 (clip_001/002) は境界デコード検証を通って ✅ になることを確認した。
+
+- **音声 time_base**: `__concat_get_audio_time_base` を足し、`_concat.zsh` の映像 time_base チェックの直後に
+  独立チェックを置いた (`音声情報不一致` = 再エンコード案内に混ぜない)。基準は `1/<sample_rate>` で、外れている
+  側に `ffmpeg -i in -c copy out_remux.mp4` を案内する。実測: same_001.mp4 (1/44100) + same_002.ts (1/90000)
+  → same_002.ts だけを remux 対象として案内
+- **映像 extradata**: `__concat_verify_decode` を足し、フレーム順序検証の後に各セグメント境界の前後 1 秒を
+  `ffmpeg -v error ... -f null -` でデコードする。stderr 非空か exit 非 0 で失敗 → 出力を消して元ファイルを残す。
+  実測: scene_001_take/scene_002_take (CTU 64/16) → 境界 2.000s で `cu_qp_delta 27 is outside the valid range` を
+  捕まえて拒否 (連番名のときはフレーム順序検証が先に落とす)
+- **検査できなかったを緑にしない**: `__concat_get_video_info` / `__concat_get_audio_info` /
+  `__concat_get_audio_time_base` は `| head -n1` をやめて ffprobe の exit code を返す。失敗は
+  「ffprobe 失敗」として拒否 (旧実装は先頭ファイルで失敗すると音声チェックごと skip、2 本目以降で失敗すると
+  「再エンコードが必要」と誤案内していた)。テストの mock はこれを模して `probefail_002` で exit 1 を返す
+- テスト: `tests/zshrc/concat/test_concat_audio_time_base.sh` / `test_concat_decode_check.sh`。変異検証:
+  不一致判定を潰す → red / デコード判定を潰す → red / audio_info の `|| return 1` を外す → red
+- 敵対的レビューは通していない (codex は自発起動しない運用)。ffprobe の実 CLI 契約は本セッションで
+  stdout / exit code を分けて実測した (音声なし → 空・rc 0 / ファイルなし → rc 1)

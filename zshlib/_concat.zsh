@@ -297,8 +297,13 @@ EOF
   # 3. 再エンコード回避チェック（--forceでスキップ）
   local has_input_audio=0
   local first_video_info first_audio_info
-  first_video_info=$(__concat_get_video_info "${input_files[1]}")
-  first_audio_info=$(__concat_get_audio_info "${input_files[1]}")
+  # ffprobe が失敗したら「判定不能」として拒否する。空を「情報なし」と読むと、先頭ファイルで
+  # 失敗すれば音声チェックごと黙って skip され、2 本目以降で失敗すれば「再エンコードが必要」という
+  # 誤った案内で落ちる (issue 143)。
+  first_video_info=$(__concat_get_video_info "${input_files[1]}") \
+    || { print -r -- "エラー: 映像情報を取得できませんでした (ffprobe 失敗): ${input_files[1]:t}" >&2; return 1; }
+  first_audio_info=$(__concat_get_audio_info "${input_files[1]}") \
+    || { print -r -- "エラー: 音声情報を取得できませんでした (ffprobe 失敗): ${input_files[1]:t}" >&2; return 1; }
   [[ -n "$first_audio_info" ]] && has_input_audio=1
 
   local video_info audio_info
@@ -309,8 +314,10 @@ EOF
       fps_list+=("$(__concat_get_video_frame_rate "$file")")
     done
     for file in "${input_files[@]:1}"; do
-      video_info=$(__concat_get_video_info "$file")
-      audio_info=$(__concat_get_audio_info "$file")
+      video_info=$(__concat_get_video_info "$file") \
+        || { print -r -- "エラー: 映像情報を取得できませんでした (ffprobe 失敗): ${file:t}" >&2; return 1; }
+      audio_info=$(__concat_get_audio_info "$file") \
+        || { print -r -- "エラー: 音声情報を取得できませんでした (ffprobe 失敗): ${file:t}" >&2; return 1; }
 
       if [[ "$video_info" != "$first_video_info" ]]; then
         print -r -- "エラー: 再エンコードが必要です - 映像情報不一致:" >&2
@@ -402,6 +409,48 @@ EOF
       done
       print "" >&2
       return 1
+    fi
+
+    # 音声 time_base 不一致もエラー。mp4 の音声トラックは timescale = sample_rate が通例なので
+    # 1/<sample_rate> を基準にし、外れている側 (MPEG-TS の 1/90000 等) を remux で正規化する案内を出す。
+    # 再エンコードは不要 (`-c copy` の remux で 1/90000 → 1/44100 になることを実測。issue 143)。
+    # ffprobe が失敗したファイルがあれば「判定不能」として拒否する (空を一致と読んで素通りしない)。
+    if (( has_input_audio )); then
+      local -a atb_list=()
+      local atb atb_mismatch=0 sample_rate="${${(s:,:)first_audio_info}[2]}"
+      local target_atb="1/${sample_rate}"
+      for file in "${input_files[@]}"; do
+        if ! atb=$(__concat_get_audio_time_base "$file"); then
+          print -r -- "エラー: 音声 time_base を取得できませんでした (ffprobe 失敗): ${file:t}" >&2
+          return 1
+        fi
+        atb_list+=("$atb")
+      done
+      for ((i=2; i<=${#input_files[@]}; i++)); do
+        [[ "${atb_list[$i]}" != "${atb_list[1]}" ]] && atb_mismatch=1
+      done
+      if (( atb_mismatch )); then
+        print -ru2 -- ""
+        print -r -- "${_C_RED}${_C_BOLD}❌ エラー: 音声 time_base不一致${_C_NOBOLD}${_C_OFF}" >&2
+        print -r -- "${_C_RED}無劣化結合すると音声だけが伸びて A/V がずれます${_C_OFF}" >&2
+        print -ru2 -- ""
+        for ((i=1; i<=${#input_files[@]}; i++)); do
+          if [[ "${atb_list[$i]}" == "$target_atb" ]]; then
+            print -r -- "  ${_C_CYAN}${input_files[$i]:t}${_C_OFF}: ${_C_GREEN}${atb_list[$i]}${_C_OFF}" >&2
+          else
+            print -r -- "  ${_C_CYAN}${input_files[$i]:t}${_C_OFF}: ${_C_YELLOW}${atb_list[$i]}${_C_OFF}" >&2
+          fi
+        done
+        print "" >&2
+        print -r -- "${_C_WHITE}${_C_BOLD}修復方法 (再エンコード不要。mp4 へ remux すると ${target_atb} に正規化されます):${_C_NOBOLD}${_C_OFF}" >&2
+        for ((i=1; i<=${#input_files[@]}; i++)); do
+          if [[ "${atb_list[$i]}" != "$target_atb" ]]; then
+            print -r -- "  ffmpeg -i \"${input_files[$i]}\" -c copy \"${input_files[$i]:r}_remux.mp4\"" >&2
+          fi
+        done
+        print "" >&2
+        return 1
+      fi
     fi
   fi
 
@@ -542,6 +591,18 @@ EOF
         return 1
       fi
       (( verbose_mode )) && print -r -- ">> フレーム順序検証完了 (${$(( SECONDS - start_time ))}秒)"
+
+      # 13. 境界デコード検証。属性が揃っていても extradata (SPS/PPS/hvcC) が違うと後半が
+      # デコードエラーになる (issue 143)。入力側の属性では判定できないので出力を読んで確かめる。
+      (( verbose_mode )) && print -r -- ">> 境界デコード検証中..."
+      start_time=$SECONDS
+      if ! __concat_verify_decode "$output_path" "${sorted_files[@]}"; then
+        print -r -- "❌ デコードエラー: $REPLY" >&2
+        print -r -- "   入力の extradata (エンコード設定) が揃っていない可能性があります。再エンコードが必要です" >&2
+        rm -f -- "$output_path"
+        return 1
+      fi
+      (( verbose_mode )) && print -r -- ">> 境界デコード検証完了 (${$(( SECONDS - start_time ))}秒)"
     elif (( force_mode )); then
       (( verbose_mode )) && print -r -- ">> フレーム順序検証スキップ (--force)"
     fi

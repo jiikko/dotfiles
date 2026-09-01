@@ -44,8 +44,13 @@ for arg in "$@"; do
   esac
 done
 
-# -f null の場合はデコードテスト（何も出力しない）
+# -f null の場合はデコードテスト（何も出力しない）。MOCK_FFMPEG_DECODE_STDERR があれば
+# 破損した出力を模して stderr に出し非 0 で終わる (__concat_verify_decode の検知テスト用)
 if echo "$*" | grep -q "\-f null"; then
+  if [ -n "${MOCK_FFMPEG_DECODE_STDERR-}" ]; then
+    printf '%s\n' "$MOCK_FFMPEG_DECODE_STDERR" >&2
+    exit 1
+  fi
   exit 0
 fi
 
@@ -138,13 +143,32 @@ if echo "$*" | grep -q "select_streams v:0"; then
   exit 0
 fi
 
-# 音声情報
+# 音声情報 (映像と同じく、要求された列だけを ffprobe 内部の固定順で返す。
+# 実測 ffmpeg 8.0.1: codec_name,sample_rate,channels,time_base の順)
+# probefail_002 は ffprobe 自体の失敗を模す (rc=1・出力なし)
 if echo "$*" | grep -q "select_streams a:0"; then
-  if echo "$input_file" | grep -q "mismatch_002"; then
-    echo "mp3,44100,1"
-  else
-    echo "aac,48000,2"
+  if echo "$input_file" | grep -q "probefail_002"; then
+    exit 1
   fi
+  requested=$(echo "$*" | sed -n 's/.*-show_entries stream=\([A-Za-z0-9_,]*\).*/\1/p')
+  if echo "$input_file" | grep -q "mismatch_002"; then
+    a_codec_name=mp3; a_sample_rate=44100; a_channels=1
+  else
+    a_codec_name=aac; a_sample_rate=48000; a_channels=2
+  fi
+  if echo "$input_file" | grep -q "audtb_002"; then
+    a_time_base="1/90000"
+  else
+    a_time_base="1/48000"
+  fi
+  out=""
+  for field in codec_name sample_rate channels time_base; do
+    if echo ",$requested," | grep -q ",$field,"; then
+      eval "value=\$a_$field"
+      if [ -z "$out" ]; then out="$value"; else out="$out,$value"; fi
+    fi
+  done
+  printf '%s\n' "$out"
   exit 0
 fi
 

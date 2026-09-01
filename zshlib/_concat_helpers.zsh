@@ -309,13 +309,17 @@ __concat_float() {
 # 再現確認済み)。ただし `extradata_hash` をここに足す形では直らない —
 # ハッシュは fps 差でも容器差 (mp4 の avcC と MPEG-TS の Annex B) でも変わるのに、
 # どちらも実際には無劣化で繋がるため、正常な入力を誤って弾くうえフレームレート差が
-# 下の警告に到達しなくなる (2026-08-30 実測)。出力側のデコード検査へ寄せる方向で
-# issue 143-bug-concat-ignores-audio-timebase-and-video-extradata に整理してある。
+# 下の警告に到達しなくなる (2026-08-30 実測)。代わりに結合後の出力をセグメント境界で
+# デコードして捕まえる (__concat_verify_decode)。
+#
+# 戻り値 rc=1 は ffprobe 自体の失敗 (呼び出し側は「判定不能」として拒否する)。パイプで head へ
+# 流すと exit code が消え、失敗が「空 = 全入力で一致」として素通りするので使わない。
 __concat_get_video_info() {
-  local file="$1"
-  ffprobe -v error -select_streams v:0 \
+  local file="$1" out
+  out=$(ffprobe -v error -select_streams v:0 \
     -show_entries stream=codec_name,width,height,pix_fmt \
-    -of csv=p=0 -- "$file" 2>/dev/null | head -n1
+    -of csv=p=0 -- "$file" 2>/dev/null) || return 1
+  print -r -- "${out%%$'\n'*}"
 }
 
 # r_frame_rate は ffprobe の推測値で、CFR でも実際と違う値を返すことがある
@@ -335,15 +339,26 @@ __concat_get_video_time_base() {
     -of csv=p=0 -- "$file" 2>/dev/null | head -n1
 }
 
-# ⚠️ 音声の time_base はまだ見ていない。codec / sample_rate / channels が同じでも
-# time_base が違う (mp4 の 1/44100 と MPEG-TS の 1/90000 など) と、音声だけが倍近くに
-# 伸びた出力が警告なしで成功扱いになる。issue 143 に再現手順がある
-# (修復は再エンコード不要で、MPEG-TS 側を `-c copy` で mp4 へ remux すれば正規化される)。
+# 音声の time_base は含めない (別チェック __concat_get_audio_time_base で remux 案内つきの
+# エラーにする。ここに混ぜると「再エンコードが必要」と案内してしまうが、実際は -c copy の remux で直る)。
+# rc=1 は ffprobe 自体の失敗 (__concat_get_video_info と同じ契約)。rc=0 で空は音声ストリーム無し。
 __concat_get_audio_info() {
-  local file="$1"
-  ffprobe -v error -select_streams a:0 \
+  local file="$1" out
+  out=$(ffprobe -v error -select_streams a:0 \
     -show_entries stream=codec_name,sample_rate,channels \
-    -of csv=p=0 -- "$file" 2>/dev/null | head -n1
+    -of csv=p=0 -- "$file" 2>/dev/null) || return 1
+  print -r -- "${out%%$'\n'*}"
+}
+
+# 音声 time_base。codec / sample_rate / channels が同じでも time_base が違う (mp4 の 1/44100 と
+# MPEG-TS の 1/90000 など) と、concat demuxer は音声だけを倍近くに伸ばした出力を成功扱いで作る。
+# rc=1 は ffprobe 自体の失敗、rc=0 で空は音声ストリーム無し (__concat_get_video_info と同じ契約)。
+__concat_get_audio_time_base() {
+  local file="$1" out
+  out=$(ffprobe -v error -select_streams a:0 \
+    -show_entries stream=time_base \
+    -of csv=p=0 -- "$file" 2>/dev/null) || return 1
+  print -r -- "${out%%$'\n'*}"
 }
 
 __concat_get_duration() {
@@ -674,6 +689,39 @@ __concat_verify_frame_order() {
       return 1
     fi
     cumulative=$(awk -v c="$cumulative" -v d="$dur" 'BEGIN{ printf "%.3f", c+d }')
+  done
+  REPLY=""
+  return 0
+}
+
+# 内部補助: 結合後の出力をセグメント境界の前後でデコードし、エラーが出ないことを確かめる
+# $1: 出力ファイル  $2...: 入力ファイル (結合順)
+# 属性の突き合わせでは捕まらない破損 (extradata 不一致・未知の非互換) を出力側で捕まえる。
+# 全長デコードは長尺で重いので、各境界の前 1 秒 + 後 1 秒だけ読む。
+# 判定は「ffmpeg の exit code が非 0 か、stderr に 1 行でも出たか」。-v error なので正常時の
+# stderr は空。ffmpeg が起動できない・出力が読めない場合も同じ経路で非 0 になる (判定不能を緑にしない)。
+__concat_verify_decode() {
+  local outfile="$1"
+  shift
+  local -a files=("$@")
+  local file dur boundary=0 start err rc
+  local i
+  # 最後のファイルの終端は境界ではないので、末尾 1 つ手前まで
+  for ((i=1; i<${#files[@]}; i++)); do
+    file="${files[$i]}"
+    dur=$(__concat_get_duration "$file")
+    if [[ -z "$dur" ]]; then
+      REPLY="duration取得失敗: ${file:t}"
+      return 1
+    fi
+    boundary=$(awk -v b="$boundary" -v d="$dur" 'BEGIN{ printf "%.3f", b+d }')
+    start=$(awk -v b="$boundary" 'BEGIN{ s=b-1; if(s<0) s=0; printf "%.3f", s }')
+    err=$(ffmpeg -hide_banner -nostdin -v error -ss "$start" -t 2 -i "$outfile" -f null - 2>&1 >/dev/null)
+    rc=$?
+    if (( rc != 0 )) || [[ -n "$err" ]]; then
+      REPLY="境界 ${boundary}s (${file:t} の直後) のデコードに失敗: ${err:-exit $rc}"
+      return 1
+    fi
   done
   REPLY=""
   return 0
