@@ -562,3 +562,96 @@ func TestRenderDashboardBandKeepsGap(t *testing.T) {
 		}
 	}
 }
+
+// 逼迫している枠が 1 つだけあるとき、その枠を主役にする (ユーザー選定 2026-09-01)。
+// ⚠️ 「常に非対称」にはしない: どちらを見るべきかの信号にならず、ただ大きさが揃っていない
+// 画面になる。両方赤・両方平常なら対称のまま。
+func TestDialHero(t *testing.T) {
+	now := dialTestNow()
+	card := func(pct int, mins int64, remain time.Duration) dialCard {
+		w := Window{Label: "x", Percent: pct, ResetAt: now.Add(remain), WindowMins: mins}
+		return dialCard{win: w, span: w.Span()}
+	}
+	over := card(95, 10080, 4900*time.Minute) // 消費 95% / 経過 51% = 超過 (赤)
+	fine := card(62, 300, 108*time.Minute)    // 適正
+	unknown := dialCard{win: Window{Label: "x", Percent: 99, ResetAt: now}, span: 0}
+
+	for _, tc := range []struct {
+		name  string
+		cards []dialCard
+		width int
+		want  int
+	}{
+		{"片方だけ超過", []dialCard{fine, over}, 225, 1},
+		{"逆順でも位置を返す", []dialCard{over, fine}, 225, 0},
+		{"両方平常なら対称", []dialCard{fine, fine}, 225, -1},
+		{"両方超過なら対称", []dialCard{over, over}, 225, -1},
+		{"窓幅不明は候補にしない", []dialCard{unknown, fine}, 225, -1},
+		{"狭い端末では作らない", []dialCard{fine, over}, dialHeroMinW - 1, -1},
+		{"2 枚でなければ作らない", []dialCard{over}, 225, -1},
+	} {
+		if got := dialHero(tc.cards, now, tc.width); got != tc.want {
+			t.Errorf("%s: dialHero = %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+// 主役が居る段では、脇役は盤をやめて数値の塊になる (盤の直径は高さで決まるので、幅を配り
+// 直しても主役は大きくならない — 差が付くのは脇役が盤をやめる側)。
+func TestRenderDashboardHeroCompactsTheOther(t *testing.T) {
+	now := dialTestNow()
+	snap := &Snapshot{Version: "2.1.216", Windows: []Window{
+		{Label: "5h", Percent: 62, ResetAt: now.Add(108 * time.Minute), WindowMins: 300},
+		{Label: "7d", Percent: 95, ResetAt: now.Add(4900 * time.Minute), WindowMins: 10080},
+	}}
+	const w = 225
+	lines := RenderDashboard(snap, now, w, 40, false)
+	left, right := 0, 0
+	for _, ln := range lines {
+		rs := []rune(ln)
+		for i, r := range rs {
+			if !isBrailleRune(r) {
+				continue
+			}
+			if termwidth.Of(string(rs[:i])) < w/2 {
+				left++
+			} else {
+				right++
+			}
+		}
+	}
+	if left != 0 {
+		t.Errorf("脇役 (適正な 5h) に盤が残っている: %d セル", left)
+	}
+	if right == 0 {
+		t.Error("主役 (超過した 7d) の盤が無い")
+	}
+	// 脇役でも数値は残る (盤をやめるだけで、情報を捨てるわけではない)
+	if all := strings.Join(lines, "\n"); !strings.Contains(all, "62%") {
+		t.Error("脇役の使用率が消えた")
+	}
+}
+
+// 平常時 (赤が無い) は対称のまま = 両方の枠に盤が出る。非対称そのものが信号なので、
+// 平常時に非対称だと信号が意味を失う。
+func TestRenderDashboardStaysSymmetricWhenCalm(t *testing.T) {
+	lines := RenderDashboard(dialTestSnap(), dialTestNow(), 225, 40, false)
+	const w = 225
+	left, right := 0, 0
+	for _, ln := range lines {
+		rs := []rune(ln)
+		for i, r := range rs {
+			if !isBrailleRune(r) {
+				continue
+			}
+			if termwidth.Of(string(rs[:i])) < w/2 {
+				left++
+			} else {
+				right++
+			}
+		}
+	}
+	if left == 0 || right == 0 {
+		t.Errorf("平常時なのに片側の盤が消えた (左 %d / 右 %d セル)", left, right)
+	}
+}
