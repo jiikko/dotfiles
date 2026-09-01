@@ -230,7 +230,17 @@ func TestBraillePutTextKeepsGridWithWideChars(t *testing.T) {
 // 段と段のあいだには空行が入る (ユーザー要望 2026-08-31: 1 段目と 2 段目が密着して見える)。
 // 空行が消えても幅・行数の契約は満たされるので、間隔は別の主張として固定する。
 func TestRenderDashboardSeparatesRows(t *testing.T) {
-	lines := RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false)
+	// ⚠️ 幅を 2 点見る。120 は肩書き罫線 (案 A)、225 は素の罫線 (案 B) で、線を作る関数が
+	// 別なので片方だけでは「もう一方が罫線を出さなくなった」を検出できない
+	// (変異検証で実測 2026-09-01: plainRule を空にしても 120 だけの検査は green)。
+	for _, w := range []int{120, 225} {
+		assertGroupRules(t, w)
+	}
+}
+
+func assertGroupRules(t *testing.T, width int) {
+	t.Helper()
+	lines := RenderDashboard(dialTestSnap(), dialTestNow(), width, 44, false)
 	// 罫線 = ─ が 10 桁以上続く行 (肩書き付きの案 A では CLI 名が線の中に入るので、
 	// 「全部 ─」では拾えない)
 	rules := []int{}
@@ -240,14 +250,14 @@ func TestRenderDashboardSeparatesRows(t *testing.T) {
 		}
 	}
 	if len(rules) != 2 {
-		t.Fatalf("罫線が段の数だけ出ていない (%d 本): %v", len(rules), rules)
+		t.Fatalf("w=%d: 罫線が段の数だけ出ていない (%d 本): %v", width, len(rules), rules)
 	}
 	if rules[0] != 0 {
-		t.Errorf("1 段目の罫線が先頭に無い (index=%d)", rules[0])
+		t.Errorf("w=%d: 1 段目の罫線が先頭に無い (index=%d)", width, rules[0])
 	}
 	// 2 段目の罫線の直前は 1 段目の中身 (罫線が余った空行の中に浮いていない)
 	if prev := strings.TrimSpace(lines[rules[1]-1]); prev == "" {
-		t.Errorf("2 段目の罫線の前が空 (1 段目が短すぎる): index=%d", rules[1])
+		t.Errorf("w=%d: 2 段目の罫線の前が空 (1 段目が短すぎる): index=%d", width, rules[1])
 	}
 }
 
@@ -520,15 +530,24 @@ func TestRenderDashboardMergedBand(t *testing.T) {
 	if bands != 2 {
 		t.Errorf("枠ラベルの見出しが出る行が %d 行 (段ごとに帯の中段 1 行 = 2 行のはず)", bands)
 	}
+	// ⚠️ AA の形だけ見ても足りない: カードが見出しを描いても、その高さでは AA に入らず
+	// テキスト ("5h セッション") へ落ちるので AA の検査を素通りする (変異検証で実測 2026-09-01)。
+	for _, ln := range lines {
+		if strings.Contains(ln, "5h セッション") || strings.Contains(ln, "7d weekly") {
+			t.Errorf("帯を採ったのにカードが自分の見出しを描いている: %q", ln)
+		}
+	}
 }
 
 // 帯の中で語が地続きにならない (種別語と CLI 名のあいだにカード間と同じ空きを取る)。
 // ⚠️ 幅の合計が契約内でも「詰まって読めない」は起きる (幅テストでは検出できない形)。
 func TestRenderDashboardBandKeepsGap(t *testing.T) {
-	mid := bannerLines("codex")[1]
+	// ⚠️ 両方の CLI の帯を見る。codex の AA は短いので中央に余裕があり、詰まるのは AA が長い
+	// Claude 側から (変異検証で実測 2026-09-01: codex の帯だけ見ていて空き 0 桁を見逃した)。
+	mids := []string{bannerLines("codex")[1], bannerLines("Claude Code")[1]}
 	for w := 26; w <= 260; w++ {
 		for _, ln := range RenderDashboard(dialTestSnap(), dialTestNow(), w, 44, false) {
-			if !strings.Contains(ln, mid) {
+			if !slices.ContainsFunc(mids, func(m string) bool { return strings.Contains(ln, m) }) {
 				continue
 			}
 			i := strings.Index(ln, "セッション")
