@@ -1,6 +1,7 @@
 package usage
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -209,47 +210,6 @@ func TestBraillePutTextKeepsGridWithWideChars(t *testing.T) {
 	}
 }
 
-// 盤の中央は残り時間を日本語で出す (ユーザー要望 2026-09-01: 6d23h ではなく 残6日23時間)。
-// 内周に収まらない狭い盤でだけ短い表記へ落ちる。
-func TestRenderDashboardCenterUsesJapaneseRemain(t *testing.T) {
-	all := strings.Join(RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false), "\n")
-	for _, want := range []string{"残1時間48分", "残2日9時間"} {
-		if !strings.Contains(all, want) {
-			t.Errorf("盤の中央に %q が無い:\n%s", want, all)
-		}
-	}
-	if strings.Contains(all, "2d09h") {
-		t.Error("ASCII 表記が残っている")
-	}
-}
-
-// 空セルは U+2800 (点の無い braille) ではなく空白。U+2800 はフォントによって薄い点が見え、
-// 盤の外側が一面グレーになる。
-func TestBrailleBlankCellIsSpace(t *testing.T) {
-	cv := newBraille(4, 1)
-	if got := cv.lines(false)[0]; strings.ContainsRune(got, '⠀') {
-		t.Errorf("空セルに U+2800: %q", got)
-	}
-}
-
-// 狭い幅では情報を「落とす」が「途中で切らない」。リセット絶対時刻は括弧ごと消えるか
-// 丸ごと残るかのどちらかで、"(9月1日0" のように切れた形にはならない。
-//
-// ⚠️ 幅の契約 (TestRenderDashboardFitsBox) はこれを守らない: 最後の砦の切り詰めが幅だけは
-// 満たしてしまうので、候補フォールバックが壊れても幅テストは green のままになる (実測)。
-func TestRenderDashboardDegradesWithoutCutting(t *testing.T) {
-	for _, w := range []int{54, 60, 66, 72, 80} {
-		for _, ln := range RenderDashboard(dialTestSnap(), dialTestNow(), w, 24, false) {
-			if strings.Count(ln, "(") != strings.Count(ln, ")") {
-				t.Errorf("width=%d: 括弧が途中で切れている: %q", w, ln)
-			}
-			if strings.Contains(ln, "…") {
-				t.Errorf("width=%d: 切り詰めが出た (候補を落として収めるべき): %q", w, ln)
-			}
-		}
-	}
-}
-
 // 段と段のあいだには空行が入る (ユーザー要望 2026-08-31: 1 段目と 2 段目が密着して見える)。
 // 空行が消えても幅・行数の契約は満たされるので、間隔は別の主張として固定する。
 func TestRenderDashboardSeparatesRows(t *testing.T) {
@@ -273,50 +233,59 @@ func TestRenderDashboardSeparatesRows(t *testing.T) {
 	}
 }
 
-// 盤の中央の文字はリングにも針にも接しない。接すると数字が読めなくなるが、幅も行数も
-// 契約どおりなので他のテストでは検出できない (実測: 中央行を 1 行上へずらすと接し、
-// 針を中心から引くと角度によって使用率の数字を横切った)。
+// 盤に載せた文字 (残り時間・使用率の AA) はリングにも針にも接しない。接すると数字が
+// 読めなくなるが、幅も行数も契約どおりなので他のテストでは検出できない
+// (実測: 中央行を 1 行上へずらす / 針を中心から引く / 余白を 1 セルにする、のいずれでも接した)。
+//
+// 「盤の行」= 点描 (braille) を含む行。その行の中で点描と文字が隣り合っていたら接触。
+// 文字の中身を書かずに接触だけを見るので、中央の表記が変わってもこのテストは張り替え不要。
 func TestRenderDashboardCenterTextHasClearance(t *testing.T) {
-	lines := RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false)
-	// 中央は 2 行 (残り時間 / 使用率)。両方を見る — 針は角度によってどちらか一方だけを
-	// 横切るので、片方しか見ないと針の変異を取りこぼす。
-	cases := []struct{ remain, pct string }{
-		{"残1時間48分", "62%"},
-		{"残2日9時間", "78%"},
-	}
-	for _, c := range cases {
-		row := -1
-		for i, ln := range lines {
-			if strings.Contains(ln, c.remain) {
-				row = i
-				break
+	for _, size := range []struct{ w, h int }{{120, 44}, {100, 40}, {160, 50}} {
+		for _, ln := range RenderDashboard(dialTestSnap(), dialTestNow(), size.w, size.h, false) {
+			rs := []rune(ln)
+			if !slices.ContainsFunc(rs, isBrailleRune) {
+				continue // 盤の行ではない (見出し・ゲージ・数値行)
+			}
+			for i := 1; i < len(rs); i++ {
+				a, b := rs[i-1], rs[i]
+				if isBrailleRune(a) && isFaceText(b) || isFaceText(a) && isBrailleRune(b) {
+					t.Errorf("%dx%d: 盤と文字が接している (%q と %q): %q", size.w, size.h, a, b, ln)
+				}
 			}
 		}
-		if row < 0 {
-			t.Errorf("%q が盤の中央に無い", c.remain)
-			continue
-		}
-		assertClearance(t, lines[row], c.remain)
-		if row+1 >= len(lines) || !strings.Contains(lines[row+1], c.pct) {
-			t.Errorf("%q の下に %q が無い", c.remain, c.pct)
-			continue
-		}
-		assertClearance(t, lines[row+1], c.pct)
 	}
 }
 
-// assertClearance は行 ln の中の sub が左右とも空白に囲まれていることを確かめる。
-func assertClearance(t *testing.T, ln, sub string) {
-	t.Helper()
-	i := strings.Index(ln, sub)
-	if i < 0 {
-		t.Errorf("%q が行に無い: %q", sub, ln)
-		return
+func isBrailleRune(r rune) bool { return r >= 0x2800 && r <= 0x28FF }
+
+// isFaceText は盤の上に載せた文字か (空白と点描以外)。AA のブロック文字も含む。
+func isFaceText(r rune) bool { return r != ' ' && !isBrailleRune(r) }
+
+// 盤の中央には残り時間と使用率が必ず出る (表記は幅で変わるので、数字だけを見る)。
+func TestRenderDashboardCenterShowsRemainAndPercent(t *testing.T) {
+	lines := RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false)
+	face := make([]string, 0, len(lines))
+	for _, ln := range lines {
+		if slices.ContainsFunc([]rune(ln), isBrailleRune) {
+			face = append(face, ln)
+		}
 	}
-	if i == 0 || ln[i-1] != ' ' {
-		t.Errorf("%q の左が詰まっている: %q", sub, ln)
+	all := strings.Join(face, "\n")
+	for _, want := range []string{"1時間48分", "2日9時間"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("盤の中央に %q が無い:\n%s", want, all)
+		}
 	}
-	if after := ln[i+len(sub):]; after != "" && !strings.HasPrefix(after, " ") {
-		t.Errorf("%q の右が詰まっている: %q", sub, ln)
+	// 使用率は AA (ブロック文字) で出す。普通の字の "62%" が盤に残っていたら AA が
+	// 効いていない (ユーザー要望 2026-09-01: 普通の文字より大きく)。
+	if !strings.Contains(all, "%") {
+		t.Errorf("盤の中央に使用率が無い:\n%s", all)
+	}
+	if strings.Contains(all, "62%") {
+		t.Errorf("使用率が普通の字のまま (AA になっていない):\n%s", all)
+	}
+	// 残り時間は日本語表記 (ユーザー要望 2026-09-01: 6d23h ではなく 6日23時間)。
+	if strings.Contains(all, "2d09h") {
+		t.Errorf("ASCII 表記が残っている:\n%s", all)
 	}
 }

@@ -14,6 +14,7 @@ package usage
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -230,8 +231,11 @@ func paceState(used int, elapsed, band float64) (color, word string) {
 // (予算と助言 → ゲージ) に落とす。数値行と「復活まで」は必ず残す。
 func cardFootLines(h int) int {
 	switch {
-	case h >= 16:
-		return 5 // 空行 / ゲージ / 数値 / 復活まで / 予算と助言
+	case h >= 18:
+		// 空行 / ゲージ / 数値 / 復活まで / 予算と助言。⚠️ 閾値を下げないこと: 盤とゲージの
+		// あいだの空行より、盤が 1 行大きいこと (中央に AA の使用率と日本語の残り時間が
+		// 両方入る) を優先する。h=17 で 5 行にすると中央が ASCII 表記へ落ちる。
+		return 5
 	case h >= 15:
 		return 4 // ゲージ / 数値 / 復活まで / 予算と助言
 	case h >= 10:
@@ -359,18 +363,61 @@ func renderFace(c dialCard, remain time.Duration, elapsed float64, col string, w
 	// 数字を横切る)。内周の 3/4 = 中央の文字がだいたい収まる半径。
 	cv.ray(cx, cy, rIn*0.75, rOut+1, el, sgr.BrightWhite)
 
-	// 盤の中央。内周に収まる範囲でいちばん読みやすい表記を選ぶ (狭い盤では語を落とす)。
-	// ⚠️ 内周の差し渡しは 2*rIn ドット = rIn セル (ドットは横 2 つで 1 セル)。ドット数のまま
-	// 桁数として使うと 2 倍に見積もり、文字がリングに接する。左右に 1 セルずつ余白を残す。
-	inner := max(int(rIn)-4, 1)
-	mid := fitText(inner, []string{"残" + formatRemain(remain), formatRemain(remain), compactRemain(remain)})
-	// 中央 2 行は盤の中心 (cy) を挟む行に置く。faceH/2 で数えると 1 行上へずれ、円が細く
-	// なる位置に文字が来てリングへ接する。
+	// 中央は盤の中心 (cy) を挟む行に置く。faceH/2 で数えると 1 行上へずれ、円が細くなる
+	// 位置に文字が来てリングへ接する。
 	midRow := int(cy) / 4
-	cv.putText(midRow, w/2-termwidth.Of(mid)/2, mid, sgr.BrightWhite)
-	pct := fmt.Sprintf("%d%%", c.win.Percent)
-	cv.putText(midRow+1, w/2-termwidth.Of(pct)/2, pct, col)
+	drawCenter(cv, c.win.Percent, remain, col, w, faceH, midRow, cy, rIn)
 	return cv.lines(colored)
+}
+
+// drawCenter は盤の中央に「残り時間 + 使用率」を置く。使用率は入るなら 3 行の AA で大きく
+// 出す (ユーザー要望 2026-09-01: 普通の文字より大きく)。内周に入らない盤では従来どおり
+// 1 行ずつの文字に落ちる — 盤からはみ出した数字はリングと重なって読めなくなる。
+func drawCenter(cv *braille, pct int, remain time.Duration, col string, w, faceH, midRow int, cy, rIn float64) {
+	digits := strconv.Itoa(pct)
+	aa := bannerLines(digits)
+	aaW := bannerWidth(digits) + 1 // 末尾に普通の字の "%" を添えるぶん
+	// AA は中心行を挟む 3 行。その 1 行上に残り時間を置くので、上下に 2 行ずつの余裕が要る。
+	// AA は 3 行あり、盤の中心が行の境目に来るとは限らないので上下で弦の長さが違う。
+	// いちばん狭い行に合わせないと、下端 (または上端) だけがリングに接する。
+	aaAvail := min(innerWidthAt(cy, rIn, midRow-1), innerWidthAt(cy, rIn, midRow), innerWidthAt(cy, rIn, midRow+1))
+	if aa != nil && midRow-2 >= 0 && midRow+1 < faceH && aaW <= aaAvail {
+		putCentered(cv, midRow-2, w, remainText(remain, innerWidthAt(cy, rIn, midRow-2)), sgr.BrightWhite)
+		for i, row := range aa {
+			line := row
+			if i == 1 {
+				line += "%" // 単位は中段に添える (数字と同じ高さの真ん中に来る)
+			}
+			putCentered(cv, midRow-1+i, w, line, col)
+		}
+		return
+	}
+	putCentered(cv, midRow, w, remainText(remain, innerWidthAt(cy, rIn, midRow)), sgr.BrightWhite)
+	putCentered(cv, midRow+1, w, digits+"%", col)
+}
+
+// remainText は幅 w に収まる残り時間の表記を選ぶ。狭い盤ほど語を落とす。
+func remainText(d time.Duration, w int) string {
+	return fitText(w, []string{"残" + formatRemain(d), formatRemain(d), compactRemain(d)})
+}
+
+// putCentered は行 row の中央 (盤の中心 w/2) に s を置く。
+func putCentered(cv *braille, row, w int, s, col string) {
+	cv.putText(row, w/2-termwidth.Of(s)/2, s, col)
+}
+
+// innerWidthAt は内周リングの内側で、行 row に置ける桁数。
+//
+// ⚠️ 盤の差し渡し (rIn セル) をどの行にも使うと、中心から離れた行で文字がリングに接する
+// (円は上下ほど細い)。その行の弦の長さで測り、左右に 2 セルずつ余白を残す。
+// 弦の半分 = sqrt(rIn^2 - dy^2) ドット = そのままセル数 (ドットは横 2 つで 1 セル)。
+// ⚠️ 余白 1 セルでは足りない: リングは太さ 2 ドットあり、弦の計算は外側の 1 本しか見ていない。
+func innerWidthAt(cy, rIn float64, row int) int {
+	dy := math.Abs(float64(row*4+2) - cy) // 行の中心のドット座標と盤の中心の差
+	if dy >= rIn {
+		return 0
+	}
+	return max(int(math.Sqrt(rIn*rIn-dy*dy))-4, 0)
 }
 
 // dialDivisions は盤の目盛り数 (窓を何等分して刻むか)。5h → 5 (1 時間)、7d → 7 (1 日)。
