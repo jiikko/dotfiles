@@ -931,6 +931,35 @@ C は「**インストーラの台帳に無い**」を見るので、**バイナ
   (⚠️ `sfltool dumpbtm` の出力形式は非公開で macOS バージョン間の安定性が不明。
   **パースに失敗したら BTM の行を出さないだけ**にし、診断全体を落とさない)
 
+#### ⚠️ 実測 (2026-09-01): plist を削除しても BTM は追随しない
+
+この issue の起点になった `homebrew.mxcl.mysql@8.0` を実際に片付けて確認した:
+
+```
+launchctl bootout gui/501/homebrew.mxcl.mysql@8.0   → 成功 (launchctl list から消滅)
+rm ~/Library/LaunchAgents/homebrew.mxcl.mysql@8.0.plist → 成功
+```
+
+**それでも BTM には残った**:
+
+```
+Name: mysqld_safe   /   Type: legacy agent (0x10008)
+Identifier: 8.homebrew.mxcl.mysql@8.0
+URL: file:///Users/koji/Library/LaunchAgents/homebrew.mxcl.mysql@8.0.plist   ← 存在しない
+Executable Path: /opt/homebrew/opt/mysql@8.0/bin/mysqld_safe                 ← 存在しない
+```
+
+**BTM のデータベースは launchd の登録とも plist の実在とも独立している。** つまり:
+
+- 「plist を消せば BTM も消える」と案内してはいけない (**実測で外れた**)
+- **BTM 単独で「参照先が存在しない項目」を検出できる** —
+  `URL` と `Executable Path` の両方が `os.Stat` で不在なら、それは確実に残骸。
+  この判定は `4` 章の A (起動対象が存在しない) と同じ論法で、
+  **plist が既に消えていても検出できる**点が強い
+- ただし**掃除する手段が UI にしか無い可能性がある** (`legacy agent` タイプは
+  システム設定のログイン項目に現れないことがある)。
+  検出しても「消し方」を提示できないなら、**出す価値があるか要判断** (未決事項へ)
+
 ### 実装上の制約 — ここだけ外部コマンドの exec が要る
 
 ディスク診断の受け入れ条件は「走査に外部コマンドを exec していない」だが、
@@ -1296,6 +1325,9 @@ src/glogx/doctor_svc.go  ← サービス診断を doctor に接続する層
   root 所有だが `0644` が通例なので読めるはず。読めない場合は「診断できず」に倒す
 - **`sfltool dumpbtm` を使うか**。2026-09-01 の実測では**一般ユーザーで出力が取れた**が、
   出力形式は非公開で macOS バージョン間の安定性が不明。補助情報に留めるか、そもそも外すか
+- **BTM の残骸を「独立した検出項目」に昇格させるか** (4 章の実測を受けて)。
+  plist が消えていても検出できる強い判定だが、**`legacy agent` の消し方を提示できない**
+  可能性がある。「検出できるが直せない」項目を出すべきかの判断が要る
 - **`launchctl print` の出力パースの安定性**。`penalty box` は `properties = ` 行に出るが、
   これも非公開形式。**取れなければ「penalty box 情報なし」で続行**する設計にはしてある
 - サービス診断の結果もキャッシュするか (ディスクと違い走査が軽いので、
