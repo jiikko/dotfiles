@@ -11,13 +11,17 @@ popup で使うときの実幅は 84 桁前後 (`tui_helpers_test.go:testPopupWi
 幅 82 (フレーム有効時の clip 幅 = `m.width-2`) で見えるのはここまで:
 
 ```
-j/k: 移動  Tab: セクション  Space: stage/unstage  a: 全 stage  X: 変更を捨てる  d:
+j/k: 移動  Tab: セクション  Space: stage/unstage  a: 全 stage  X: 変更を捨てる  d…
 ```
 
-切れて**画面に出ないキー**:
+⚠️ `clipToWidth` (`render.go`) は**末尾に `…` を付ける**ので、本文に使えるのは 81 桁。
+`d:` のコロンまで届かず `d` で切れる (初稿は `d:` と書いていたが誤り。反証レビューで訂正)。
+
+切れて**画面に出ないキー** (`dispWidth` での開始位置: `b` = 100 / `p` = 109 / `R` = 128 /
+`s` = 137 / `q` = 148。幅 84 でも全て範囲外):
 
 ```
- diff  r: 再読込  b: push  p: pull  U: usage  R: 残量  s: 一覧へ  q: 終了
+: diff  r: 再読込  b: push  p: pull  U: usage  R: 残量  s: 一覧へ  q: 終了
 ```
 
 つまり **status viewer から抜ける手段 (`s` = 一覧へ / `q` = 終了) が案内から消えている**。
@@ -33,6 +37,11 @@ issues viewer 側には **`TestIssuesViewHintFitsPopupWidth`** (`issues_view_tes
 
 **status viewer にはその制約が無く、テストも無い**。同じ repo の同じ種類の画面で、片方だけ
 無検査なので、キーを足すたびに末尾が静かに削られていく (今回の `R` 追加がまさにそれ)。
+
+⚠️ さらに、`status_view_test.go` の既存コメント (`TestStatusHintWordsMatchBehavior` の近く) は
+**「hint 行は端末幅でクリップされ、テストの 80 桁では末尾が `…` に落ちる」ことを認めた上で**
+`hint()` の戻り値を直接 assert する回避策を取っている。切れている事実は既に知られていて、
+「案内が画面に出るか」を守る側だけが無いということ。
 
 ## 対応案 (どれを採るかは未決定)
 
@@ -50,3 +59,5 @@ issues viewer 側には **`TestIssuesViewHintFitsPopupWidth`** (`issues_view_tes
   入ることしか見ておらず、**画面に出るか**は見ていない (この issue が直せば意味を持つ assert)
 - `_claude/rules/no-mixed-width-columns-in-terminal-ui.md` — 「桁は合っているが目には合わない」
   同族。こちらは「桁も合っていない」形
+- popup の実幅の根拠: `_tmux.conf` の popup 起動が `-w 90%` (端末幅の 9 割)。
+  `testPopupWidth = 84` はその代表値
