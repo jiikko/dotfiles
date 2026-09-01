@@ -16,6 +16,11 @@ on:
       # 検査が 1 度も走らない (red team 指摘 2026-09-01)。tests.yml 側からも叩いているが、
       # そちらは 1 テストだけなので、ここでは glogx 全体を回して周辺の退行も見る。
       - _claude/statusline-command.sh
+      # ⚠️ 色の単一ソース。box_test.go の TestFrameBorderMatchesThemeYML が
+      # ansiFrameBorder と blink_magenta の一致を検査するが、この Go テストを CI で
+      # 走らせるのはこの workflow だけ (tests.yml は test-src を含まない)。ここに
+      # 含めないと「yml だけ変えた push」で glogx が無言でずれる。
+      - theme/colors.yml
       - .github/workflows/src_glogx.yml
       - .github/workflows/_go-project.yml
   pull_request:
@@ -26,6 +31,11 @@ on:
       # 検査が 1 度も走らない (red team 指摘 2026-09-01)。tests.yml 側からも叩いているが、
       # そちらは 1 テストだけなので、ここでは glogx 全体を回して周辺の退行も見る。
       - _claude/statusline-command.sh
+      # ⚠️ 色の単一ソース。box_test.go の TestFrameBorderMatchesThemeYML が
+      # ansiFrameBorder と blink_magenta の一致を検査するが、この Go テストを CI で
+      # 走らせるのはこの workflow だけ (tests.yml は test-src を含まない)。ここに
+      # 含めないと「yml だけ変えた push」で glogx が無言でずれる。
+      - theme/colors.yml
       - .github/workflows/src_glogx.yml
       - .github/workflows/_go-project.yml
   workflow_dispatch:  # GitHub UI からの手動再実行用
