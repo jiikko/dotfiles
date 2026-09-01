@@ -30,25 +30,12 @@
 
 ## 3. done へ送った issue に、実測しないまま結論を書いた (この session 最大の誤り)
 
-issue 075 を done へ送るとき、決着節に「現状 `status-interval 0`」「再現には 1 へ戻す必要が
-ある」と書いて commit した (`44c95fc`)。**実測すると `_tmux.conf:73` も稼働サーバも 1** で、
-前提が逆だった (`ed7bfa7` で訂正)。
+issue 075 を done へ送るとき、決着節に現在の設定値を実測せずに書いて commit した
+(`44c95fc` → `ed7bfa7` で訂正)。
 
-- 何が起きたか: issue 本文の調査メモ (「`status-interval 0` でブレが消えたのなら〜」という
-  **仮定法の記述**) を、現在の設定値だと読み違えた。`tmux show -g status-interval` は 1 コマンド
-  で済むのに、閉じる作業を「文章を書くだけ」と見なして測らなかった
-- 実害: 訂正しなければ、**再開の trigger が実行不能な手順**として残った (「1 に戻して再現を見る」
-  = 既に 1 なので何もできない)。しかも done 配下なので次に読まれるのは再発したときだけ
-- 切り出し先: **`_claude/rules/` へ**。既存ルールは「性能の主張」
-  ([`perf-claims-need-measurement.md`](../_claude/rules/perf-claims-need-measurement.md)) と
-  「外部 CLI の観測」
-  ([`measure-external-cli-streams-separately.md`](../_claude/rules/measure-external-cli-streams-separately.md))
-  を扱うが、**「issue を閉じるときに、その issue が前提にしている環境値を実測する」**は
-  どちらにも無い。案: 既存の
-  [`move-report-conclusions-to-issues.md`](../_claude/rules/move-report-conclusions-to-issues.md)
-  に一節を足す (新規ルールを増やさない) — 「done へ送る前に、本文中の『現状は〜』を実測で
-  確認する。測れない値なら『未実測』と明記する」
-- ⚠️ ユーザーの判断待ち (このセッションでは切り出さない)
+- 切り出し先: **`_claude/rules/move-report-conclusions-to-issues.md` へ追記済み**
+  (「同型: issue を `done/` へ送るときは、本文が前提にしている『現状』を実測する」)。
+  規範はそちらが正本で、経緯と実例は同名の `rules-rationale/` に置いた
 
 ## 4. hint に足したキーが画面に出ていなかった
 
@@ -74,4 +61,5 @@ status viewer の hint へ `R: 残量` を足したが、実測すると hint �
 
 ## 残課題
 
-- [ ] 項目 3 の切り出し (`move-report-conclusions-to-issues.md` への追記) をやるか決める
+なし (2026-09-01 に決着)。項目 3 は rules へ追記、項目 4 は issue 155 として起票、
+項目 1・2・5 は理由つきで却下した。
