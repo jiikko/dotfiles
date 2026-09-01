@@ -27,6 +27,7 @@ ZSH_SYNTAX_FILES := \
   zshlib/_ensure_cli_with_brew.zsh \
   zshlib/_ffprobe_helpers.zsh \
   zshlib/_fs_helpers.zsh \
+  zshlib/_reload_then_call.zsh \
   zshlib/_repair.zsh \
   zshlib/_tmux_session.zsh \
   zshlib/_tmux_window_name.zsh

@@ -34,5 +34,18 @@ Claude Code の shell snapshot (`~/.claude/shell-snapshots/snapshot-zsh-*.sh`) �
 
 ## 受け入れ条件
 
-- [ ] 2 系統それぞれの方針決定 (直す / 明示的に断る / 現状維持を理由つきで記録)
-- [ ] 直す場合は snapshot 条件の回帰テスト (149 のテストと同形) を付ける
+- [x] 2 系統それぞれの方針決定 (直す / 明示的に断る / 現状維持を理由つきで記録)
+- [x] 直す場合は snapshot 条件の回帰テスト (149 のテストと同形) を付ける
+
+## 決着 (2026-09-02)
+
+両系統とも「直す」を採った (対応候補 1 / 2 をそのまま実装)。需要の有無で分けず直した理由:
+修正は 1 行ガードで済み、「明示的に断る」を実装しても同じ行数のガードが要る。断る方が安いわけではない。
+
+- `_reload_then_call` を `zshlib/_reload_then_call.zsh` に切り出し、_zshrc の 6 ラッパーは先頭で
+  `(( ${+functions[_reload_then_call]} )) || source ...` してから呼ぶ (codex() と同形)
+- t / tt は `${_TMUX_SESSION_LIB:-$HOME/dotfiles/zshlib/_tmux_session.zsh}` を source する。
+  変数が生きていれば従来どおりそちらを優先 (test_tt.sh Part 2 の差し替え idiom は無傷)
+- 回帰テスト `tests/zshrc/test_snapshot_wrappers_survive.sh`。変異検証: concat のガード削除 → red /
+  tt の既定パス削除 → red を確認
+- 敵対的レビューは省略 (変更は 1 行ガードの追加のみ。codex は自発起動しない運用)

@@ -321,5 +321,8 @@ _tt_impl () {
 # --- 公開コマンド（薄いラッパー）------------------------------------------------
 # source 失敗（編集中の構文エラー等）で t/tt 自体が使えなくならないよう、source は
 # ガードし、失敗時は直近ロード済みの実体で続行する（実体呼び出しまで止めない）。
-t ()  { [[ -r "$_TMUX_SESSION_LIB" ]] && source "$_TMUX_SESSION_LIB"; _t_impl "$@"; }
-tt () { [[ -r "$_TMUX_SESSION_LIB" ]] && source "$_TMUX_SESSION_LIB"; _tt_impl "$@"; }
+# `:-` の既定パスは Claude Code の shell snapshot 対策: snapshot には t/tt は載るが
+# _TMUX_SESSION_LIB (非 export) と `_` 始まりの実体は載らない。変数が消えると -r ガードが黙って
+# 偽になり _t_impl not found で壊れるので、既定パスから lib を読み直して自己修復する (issue 152)。
+t ()  { local _l="${_TMUX_SESSION_LIB:-$HOME/dotfiles/zshlib/_tmux_session.zsh}"; [[ -r "$_l" ]] && source "$_l"; _t_impl "$@"; }
+tt () { local _l="${_TMUX_SESSION_LIB:-$HOME/dotfiles/zshlib/_tmux_session.zsh}"; [[ -r "$_l" ]] && source "$_l"; _tt_impl "$@"; }
