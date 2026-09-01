@@ -190,11 +190,18 @@ func parseCodexRateLimits(result []byte) ([]Window, error) {
 // codexWindowMins は API の windowDurationMins をそのまま枠の長さ (分) にする。null は 0
 // (不明)。負値も 0 に倒す — 窓幅は経過割合の分母なので、負のまま通すと盤が破綻する。
 func codexWindowMins(mins *int64) int64 {
-	if mins == nil || *mins <= 0 {
+	// ⚠️ 上限も見る。Span() は分を time.Duration へ掛けるので、巨大値はオーバーフローして
+	// **負や 0** になる (実測: 200000000 分 → -1790762h、MaxInt64 → -1m)。結果は
+	// 「窓幅不明」へ落ちるので事故にはならないが、負を弾く宣言だけして通していた。
+	if mins == nil || *mins <= 0 || *mins > maxWindowMins {
 		return 0
 	}
 	return *mins
 }
+
+// maxWindowMins は枠の長さとして受け付ける上限 (366 日)。これを超える窓は実在せず、
+// Span() のオーバーフローを構造的に避ける。
+const maxWindowMins = 366 * 24 * 60
 
 // codexLabel は枠の窓幅 (分) を "cx7d" / "cx5h" のような短ラベルへ写像する。cx 接頭辞で
 // Claude の枠 ("5h"/"7d") と識別する。窓幅不明 (null) は素の "cx"。

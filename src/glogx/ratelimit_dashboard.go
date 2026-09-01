@@ -43,7 +43,14 @@ func (d *ratelimitDash) lines(o ratelimitRenderOpts) []string {
 	body := max(o.page-len(head), 1)
 	switch {
 	case o.snap != nil:
-		return padTo(append(head, usage.RenderDashboard(o.snap, o.now, o.width, body, o.colored)...), o.page)
+		// ⚠️ snap があっても描く枠が 0 件になりうる (RenderDashboard は nil を返す)。
+		// Claude 側は既定の枠ラベル ("5h" / "7d") でしか拾わないので、/usage の文言が
+		// 変わった環境では「パースは成功しているが描く枠が無い」が起こる。無言の白画面に
+		// せず理由を出す (全画面なので、ユーザーには壊れたようにしか見えない)。
+		if rows := usage.RenderDashboard(o.snap, o.now, o.width, body, o.colored); rows != nil {
+			return padTo(append(head, rows...), o.page)
+		}
+		return padTo(append(head, centerLine("表示できる利用枠がありません", o.width)), o.page)
 	case o.err != nil:
 		return padTo(append(head, centerLine("取得失敗", o.width)), o.page)
 	default:
@@ -88,10 +95,14 @@ func (d *ratelimitDash) handleKey(key string) (closed, refresh bool) {
 }
 
 // centerLine は幅 w の中で s を中央寄せする (左余白のみ)。
+//
+// ⚠️ 入らないときは切り詰める。そのまま返すと見出し (CLI 名 + バージョン 2 つで 49 桁固定) が
+// 狭い端末で width を超え、フレームが自動 OFF になる帯 (frameMinWidth 未満) ではクリップも
+// 効かないので折り返して画面が崩れる (セルフレビュー指摘 2026-09-01)。
 func centerLine(s string, w int) string {
 	pad := w - dispWidth(s)
 	if pad <= 0 {
-		return s
+		return clipToWidth(s, w)
 	}
 	return padSpaces(pad/2) + s
 }

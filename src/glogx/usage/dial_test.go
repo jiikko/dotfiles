@@ -15,6 +15,11 @@ func dialTestSnap() *Snapshot {
 	now := dialTestNow()
 	mins := func(d time.Duration) int64 { return int64(d / time.Minute) }
 	return &Snapshot{
+		// ⚠️ バージョンを空にしないこと。見出しはバージョンを右へ後付けするので、空だと
+		// 幅の契約テストがその経路を通らない (実測 2026-09-01: 56 通りの幅で契約が
+		// 破れていたのに素通りしていた)。
+		Version:      "2.1.216",
+		CodexVersion: "0.144.6",
 		Windows: []Window{
 			{Label: "5h", Percent: 62, ResetAt: now.Add(108 * time.Minute), WindowMins: mins(5 * time.Hour)},
 			{Label: "7d", Percent: 78, ResetAt: now.Add(3420 * time.Minute), WindowMins: mins(7 * 24 * time.Hour)},
@@ -28,8 +33,11 @@ func dialTestSnap() *Snapshot {
 // 超えると呼び出し側 (finishWindow) が枠を組めず、行が折り返して画面全体が崩れる。
 func TestRenderDashboardFitsBox(t *testing.T) {
 	snap := dialTestSnap()
-	sizes := []struct{ w, h int }{
-		{120, 36}, {100, 30}, {80, 24}, {60, 20}, {40, 12}, {30, 8}, {26, 9}, {200, 50},
+	var sizes []struct{ w, h int }
+	for w := 1; w <= 200; w += 3 {
+		for h := 1; h <= 60; h += 3 {
+			sizes = append(sizes, struct{ w, h int }{w, h})
+		}
 	}
 	for _, colored := range []bool{false, true} {
 		for _, s := range sizes {
@@ -347,6 +355,32 @@ func TestBraillePutTextClipsAtEdges(t *testing.T) {
 		cv.putText(0, c.start, "残2日9時間", "")
 		if w := termwidth.Of(cv.lines(false)[0]); w > 12 {
 			t.Errorf("%s: 幅 %d > 12 (%q)", c.name, w, cv.lines(false)[0])
+		}
+	}
+}
+
+// 段によって盤が出たり出なかったりしない。見出しの AA は CLI 名の桁数で可否が決まるので、
+// 「AA が 4 行食ったせいでその段だけ盤が消える」= 同じ画面で Claude 段は盤あり・codex 段は
+// 空行だけ、という非対称が起きていた (セルフレビュー指摘 2026-09-01)。
+func TestRenderDashboardGroupsStayConsistent(t *testing.T) {
+	for w := 26; w <= 200; w += 3 {
+		for h := 12; h <= 60; h += 2 {
+			lines := RenderDashboard(dialTestSnap(), dialTestNow(), w, h, false)
+			half := len(lines) / 2
+			upper, lower := 0, 0
+			for i, ln := range lines {
+				if !slices.ContainsFunc([]rune(ln), isBrailleRune) {
+					continue
+				}
+				if i < half {
+					upper++
+				} else {
+					lower++
+				}
+			}
+			if (upper == 0) != (lower == 0) {
+				t.Errorf("%dx%d: 片方の段だけ盤が消えた (上 %d 行 / 下 %d 行)", w, h, upper, lower)
+			}
 		}
 	}
 }

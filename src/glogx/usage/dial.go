@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"glogx/sgr"
+	"glogx/termsafe"
 	"glogx/termwidth"
 )
 
@@ -87,13 +88,21 @@ func dialGroups(s *Snapshot) []dialGroup {
 
 // renderGroup は 1 つの CLI の段 (大見出し + 盤の格子) をちょうど h 行で返す。
 func renderGroup(g dialGroup, now time.Time, width, h int, colored bool) []string {
-	head := groupHead(g, width, h, colored)
-	cardsH := max(h-len(head), 1)
 	cols := 2
 	if width < dialMinW*2+dialGap {
 		cols = 1
 	}
-	rows := (len(g.cards) + cols - 1) / cols
+	rowsN := (len(g.cards) + cols - 1) / cols
+	// ⚠️ 見出しの高さは「AA を出しても盤が残るか」で決める。段の高さ h だけで判断すると、
+	// AA が 4 行食ったせいで盤が消え、理由も無い空行だけが残る段ができる (実測 2026-09-01:
+	// CLI 名の桁数で AA の可否が決まるため、同じ画面で Claude 段は盤あり・codex 段は盤なし
+	// という非対称になっていた)。
+	head := groupHead(g, width, h, colored)
+	if len(head) > 1 && !fitsFace(h-len(head), rowsN) && fitsFace(h-1, rowsN) {
+		head = groupHead(g, width, 0, colored) // 高さ 0 を渡して 1 行のテキスト見出しへ落とす
+	}
+	cardsH := max(h-len(head), 1)
+	rows := rowsN
 	cellW := (width - (cols-1)*dialGap) / cols
 	cellH := cardsH / rows
 	out := head
@@ -121,28 +130,56 @@ func renderGroup(g dialGroup, now time.Time, width, h int, colored bool) []strin
 	return out[:h]
 }
 
+// fitsFace は段に高さ cardsH を割り当てたとき、各カードに盤が描けるだけの行が残るか。
+// renderCard の分岐 (bodyH = cellH - 見出し 1 行 - foot) と同じ式を使う。
+func fitsFace(cardsH, rows int) bool {
+	if cardsH <= 0 || rows <= 0 {
+		return false
+	}
+	cellH := cardsH / rows
+	return cellH-1-cardFootLines(cellH) >= 5
+}
+
 // groupHead は段の大見出し。幅と高さが足りれば CLI 名をブロック文字の AA で出し、足りなければ
 // 1 行のテキストへ落とす。バージョンは AA の中段の右に dim で添える (ロゴのバージョンタグの形)。
 func groupHead(g dialGroup, width, h int, colored bool) []string {
 	aa := bannerLines(g.cli)
 	bw := bannerWidth(g.cli)
 	if aa == nil || h < dialBannerMinH || bw > width {
-		return []string{centerCell(paintIf(g.cli, sgr.Bold, colored)+versionTag(g.version, colored), width)}
+		return []string{fitLine(width, []string{
+			paintIf(g.cli, sgr.Bold, colored) + versionTag(g.version, colored),
+			paintIf(g.cli, sgr.Bold, colored),
+		})}
 	}
-	indent := termwidth.PadSpaces(max((width-bw)/2, 0))
+	// ⚠️ バージョンは AA の右へ後付けするので、**幅の予算に入れてから**中央寄せする。
+	// AA だけで中央に置いてから足すと、その行だけ width をはみ出す (実測 2026-09-01:
+	// バージョン付きで 56 通りの幅が契約を破っていた。狭い端末ではフレームが自動 OFF に
+	// なりクリップも効かないので、折り返して画面全体が崩れる)。入らなければ落とす。
+	tag := versionTag(g.version, colored)
+	if bw+termwidth.Of(tag) > width {
+		tag = ""
+	}
+	indent := termwidth.PadSpaces(max((width-bw-termwidth.Of(tag))/2, 0))
 	out := make([]string, 0, bannerRows+1)
 	for i, row := range aa {
 		line := indent + paintIf(row, sgr.Bold, colored)
 		if i == 1 {
-			line += versionTag(g.version, colored)
+			line += tag
 		}
-		out = append(out, line)
+		out = append(out, termwidth.Truncate(line, width, "")) // 最後の砦
 	}
 	return append(out, "") // 見出しと盤のあいだを 1 行空ける
 }
 
 // versionTag は " v2.1.216" (取れていなければ空)。
+//
+// ⚠️ v は `claude --version` / `codex --version` の出力から切り出した**外部由来の文字列**。
+// 空白は落ちているが空白を含まない CSI/OSC は残るので、載せる前に無害化する。同じ値を
+// 描く他の 2 箇所 (usage_overlay.go / ratelimit_dashboard.go) は無害化しており、ここだけが
+// 生だった (セルフレビュー指摘 2026-09-01)。termwidth.Of は ANSI を 0 幅で数えるため、
+// 幅の検査でも黙って通ってしまう。
 func versionTag(v string, colored bool) string {
+	v = termsafe.PlainLine(v)
 	if v == "" {
 		return ""
 	}

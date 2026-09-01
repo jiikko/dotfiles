@@ -60,15 +60,15 @@ func TestRenderDashboardBanner(t *testing.T) {
 
 // バージョンは AA の脇に添える (取得できていないときは何も出さない)。
 func TestRenderDashboardBannerVersion(t *testing.T) {
-	snap := dialTestSnap()
-	snap.Version, snap.CodexVersion = "2.1.216", "0.144.6"
-	all := strings.Join(RenderDashboard(snap, dialTestNow(), 120, 44, false), "\n")
+	all := strings.Join(RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false), "\n")
 	for _, want := range []string{"v2.1.216", "v0.144.6"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("%q が出ていない", want)
 		}
 	}
-	none := strings.Join(RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false), "\n")
+	bare := dialTestSnap()
+	bare.Version, bare.CodexVersion = "", ""
+	none := strings.Join(RenderDashboard(bare, dialTestNow(), 120, 44, false), "\n")
 	if strings.Contains(none, " v") {
 		t.Error("バージョン未取得なのに v を出した")
 	}
@@ -142,5 +142,48 @@ func TestRenderDashboardPrefersWideDigits(t *testing.T) {
 	// 普通の字の "62%" が盤に残っていたら AA が効いていない。
 	if strings.Contains(face, "62%") {
 		t.Errorf("普通の字のまま:\n%s", face)
+	}
+}
+
+// バージョンは AA の右へ後付けするので、幅の予算に入れてから中央寄せしないとその行だけ
+// width をはみ出す。入らない幅ではバージョンを落とす (見出しごと消さない)。
+func TestRenderDashboardBannerVersionFitsWidth(t *testing.T) {
+	for w := 1; w <= 130; w++ {
+		for _, ln := range RenderDashboard(dialTestSnap(), dialTestNow(), w, 40, false) {
+			if got := termwidth.Of(ln); got > w {
+				t.Errorf("w=%d: 幅 %d の行が出た: %q", w, got, ln)
+			}
+		}
+	}
+	// AA は入るがバージョンまでは入らない幅では、AA が残ってバージョンだけ消える。
+	// ⚠️ ここは groupHead を直接呼ぶ。RenderDashboard 経由だと、その幅では 1 カラムに
+	// なって「AA を出すと盤が潰れる」判定が先に効き、見出しごとテキストへ落ちるため
+	// バージョンの落とし方を観測できない。
+	g := dialGroup{cli: "Claude Code", version: "2.1.216"}
+	bw := bannerWidth(g.cli)
+	head := groupHead(g, bw+2, 40, false) // AA は入るがバージョン (10 桁) は入らない幅
+	joined := strings.Join(head, "\n")
+	if !strings.Contains(joined, bannerLines(g.cli)[0]) {
+		t.Errorf("AA ごと消えている (バージョンだけ落とすべき):\n%s", joined)
+	}
+	if strings.Contains(joined, "v2.1.216") {
+		t.Errorf("入らないバージョンを出している:\n%s", joined)
+	}
+	// 入る幅では出る (落とす条件が広すぎないこと)。
+	if wide := strings.Join(groupHead(g, bw+20, 40, false), "\n"); !strings.Contains(wide, "v2.1.216") {
+		t.Errorf("入る幅なのにバージョンが出ていない:\n%s", wide)
+	}
+}
+
+// バージョンは外部コマンドの出力なので、載せる前に無害化する (制御列を盤へ通さない)。
+func TestRenderDashboardBannerVersionSanitized(t *testing.T) {
+	snap := dialTestSnap()
+	snap.Version = "\x1b[2J\x1b[H2.1.216"
+	all := strings.Join(RenderDashboard(snap, dialTestNow(), 160, 44, false), "\n")
+	if strings.Contains(all, "\x1b[2J") || strings.Contains(all, "[2J") {
+		t.Errorf("制御列が素通りした:\n%q", all)
+	}
+	if !strings.Contains(all, "v2.1.216") {
+		t.Error("無害化でバージョンごと消えた")
 	}
 }

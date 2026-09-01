@@ -198,3 +198,39 @@ func TestRatelimitDashDismissesUsageOverlay(t *testing.T) {
 		t.Error("ダッシュボードを開いても右上オーバーレイが残っている")
 	}
 }
+
+// 取得できていても「描ける枠が 1 つも無い」ことがある (Claude 側は既定の枠ラベルでしか
+// 拾わないので、/usage の文言が変わると起こる)。全画面なので、無言の白画面にせず理由を出す。
+func TestRatelimitDashNoRenderableWindows(t *testing.T) {
+	var d ratelimitDash
+	d.toggle()
+	snap := &usage.Snapshot{Windows: []usage.Window{
+		{Label: "Current opus quota", Percent: 5, ResetAt: time.Now().Add(time.Hour)},
+	}}
+	got := strings.Join(d.lines(rlTestOpts(snap, nil)), "\n")
+	if !strings.Contains(got, "表示できる利用枠がありません") {
+		t.Errorf("無言の白画面になっている:\n%s", got)
+	}
+}
+
+// 見出しは狭い端末でも width を超えない。フレームが自動 OFF になる帯ではクリップが
+// 効かないので、超えると折り返して画面全体が崩れる。
+func TestRatelimitDashHeaderFitsWidth(t *testing.T) {
+	var d ratelimitDash
+	d.toggle()
+	snap := rlTestSnap()
+	snap.CodexVersion = "0.144.6"
+	snap.Windows = append(snap.Windows, usage.Window{
+		Label: "cx5h", Source: usage.SourceCodex, Percent: 10,
+		ResetAt: time.Now().Add(time.Hour), WindowMins: 300,
+	})
+	for w := 1; w <= 120; w++ {
+		o := rlTestOpts(snap, nil)
+		o.width, o.page = w, 30
+		for i, ln := range d.lines(o) {
+			if got := dispWidth(ln); got > w {
+				t.Errorf("w=%d: %d 行目の幅 %d: %q", w, i, got, ln)
+			}
+		}
+	}
+}
