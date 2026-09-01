@@ -630,6 +630,38 @@ func TestRenderDashboardHeroCompactsTheOther(t *testing.T) {
 	if all := strings.Join(lines, "\n"); !strings.Contains(all, "62%") {
 		t.Error("脇役の使用率が消えた")
 	}
+	// 脇役の塊は**縦の中央**にある。⚠️ 「盤が無い」だけを見ると、数値が最下段に貼り付いて
+	// 上が丸ごと空白の状態 (壊れた画面に見える形) を素通りする — 変異検証で実測 2026-09-01。
+	// ⚠️ 見出し帯 (罫線 + 3 行) は左半分にも枠ラベルを出すので、走査から外す。含めると塊が
+	// 上に寄って見え、中央判定が常に外れる (実測 2026-09-01)。
+	const headLines = 4
+	first, last := -1, -1
+	for i, ln := range lines[headLines:] {
+		i += headLines
+		rs := []rune(ln)
+		half := ""
+		for j, r := range rs {
+			if termwidth.Of(string(rs[:j])) >= w/2 {
+				break
+			}
+			half += string(r)
+		}
+		if strings.TrimSpace(half) == "" {
+			continue
+		}
+		if first < 0 {
+			first = i
+		}
+		last = i
+	}
+	if first < 0 {
+		t.Fatal("脇役の列が丸ごと空")
+	}
+	// カード領域の中心と塊の中心がおおむね一致すること
+	area := (headLines + len(lines)) / 2
+	if center := (first + last) / 2; center < area-3 || center > area+3 {
+		t.Errorf("脇役の塊が縦中央に無い (中心 %d / カード領域の中心 %d)", center, area)
+	}
 }
 
 // 平常時 (赤が無い) は対称のまま = 両方の枠に盤が出る。非対称そのものが信号なので、
