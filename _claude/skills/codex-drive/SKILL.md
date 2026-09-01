@@ -442,6 +442,10 @@ EOF
 - **承認済み設計 (軽量パスなら確認済みアウトライン) を基に**、今回の **1 マイルストーン**を決める (例: 「probe が NEGOTIATE して交渉結果を出す」)。大機能は複数マイルストーンに割る。
 - **受け入れ条件 = どう検証するか**を先に決める (プロジェクト標準 build/test green / CLI 出力 / CI E2E green / 実機ログ。
   Swift プロジェクトなら `swift build` / `swift test`)。
+- **挙動保存リファクタで「移行前後の differential 比較」を受け入れ条件に持つなら、移行前の
+  characterization (transcript / 期待値の固定) を最初の実装 commit より前に採取する**。
+  移行 commit 後には「移行前」を動かす手段が消え、原理的に作れない
+  (実測: obaket 651 — M2a 後に気づき characterization + 変異検証の代替で確定させた)。
 - そのうち **codex 内で完結する検証を、codex が自分の sandbox で回せるか確認する**。
   **着手前に確かめるのは本流だけでよい**。`[2p]` の worktree と `[3.8]` の mutation worktree は
   cwd・cache path・依存取得先・fixture 位置が変わるので、**そのフェーズを実際に使うときに、
