@@ -375,20 +375,26 @@ func renderFace(c dialCard, remain time.Duration, elapsed float64, col string, w
 // 1 行ずつの文字に落ちる — 盤からはみ出した数字はリングと重なって読めなくなる。
 func drawCenter(cv *braille, pct int, remain time.Duration, col string, w, faceH, midRow int, cy, rIn float64) {
 	digits := strconv.Itoa(pct)
-	aa := bannerLines(digits)
-	aaW := bannerWidth(digits) + 1 // 末尾に普通の字の "%" を添えるぶん
-	// AA は中心行を挟む 3 行。その 1 行上に残り時間を置くので、上下に 2 行ずつの余裕が要る。
 	// AA は 3 行あり、盤の中心が行の境目に来るとは限らないので上下で弦の長さが違う。
 	// いちばん狭い行に合わせないと、下端 (または上端) だけがリングに接する。
 	aaAvail := min(innerWidthAt(cy, rIn, midRow-1), innerWidthAt(cy, rIn, midRow), innerWidthAt(cy, rIn, midRow+1))
-	if aa != nil && midRow-2 >= 0 && midRow+1 < faceH && aaW <= aaAvail {
+	// AA は中心行を挟む 3 行。その 1 行上に残り時間を置くので、上下に 2 行ずつの余裕が要る。
+	//
+	// ⚠️ 入らない盤では「狭い字形」ではなく**普通の字**へ落とす。見出しと同じ 3 桁幅の字形は
+	// 0 と 8、5 と 6 の見分けが付かず (ユーザー指摘 2026-09-01)、1 行の "62%" の方が読める。
+	// 大きくする目的を果たせないなら大きくしない。
+	aa := digitLines(digits)
+	if aa != nil && midRow-2 >= 0 && midRow+1 < faceH && digitWidth(digits)+1 <= aaAvail { // +1 は末尾の "%"
 		putCentered(cv, midRow-2, w, remainText(remain, innerWidthAt(cy, rIn, midRow-2)), sgr.BrightWhite)
+		// ⚠️ 3 行を行ごとに中央寄せしない。"%" を添えた中段だけ 1 桁広く、桁揃えが崩れて
+		// 数字が斜めに見える。"%" 込みの塊を中央に置き、起点は 3 行で共有する。
+		start := w/2 - (digitWidth(digits)+1)/2
 		for i, row := range aa {
 			line := row
 			if i == 1 {
 				line += "%" // 単位は中段に添える (数字と同じ高さの真ん中に来る)
 			}
-			putCentered(cv, midRow-1+i, w, line, col)
+			cv.putText(midRow-1+i, start, line, col)
 		}
 		return
 	}

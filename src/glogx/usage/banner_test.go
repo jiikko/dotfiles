@@ -1,6 +1,7 @@
 package usage
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -70,5 +71,76 @@ func TestRenderDashboardBannerVersion(t *testing.T) {
 	none := strings.Join(RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false), "\n")
 	if strings.Contains(none, " v") {
 		t.Error("バージョン未取得なのに v を出した")
+	}
+}
+
+// 半ブロックの詰め方: 上下とも点灯 = █ / 上だけ = ▀ / 下だけ = ▄ / 消灯 = 空白。
+// 5 段目の下 (6 段目) は常に空なので、最下行は必ず ▀ か空白になる。
+func TestPackPixelsHalfBlocks(t *testing.T) {
+	got := packPixels([pixelRows]string{"##", "##", "# ", " #", "  "}, 2)
+	want := [bannerRows]string{"██", "▀▄", "  "}
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// 盤の中央の数字は 4 桁幅の字形。3 桁だと 0 と 8、5 と 6 の見分けが付かない
+// (ユーザー指摘 2026-09-01: 潰れて見えない)。字形そのものをここで固定する。
+func TestDigitLinesGlyphs(t *testing.T) {
+	cases := map[string][]string{
+		"0": {"█▀▀█", "█  █", "▀▀▀▀"},
+		"6": {"█▀▀▀", "█▀▀█", "▀▀▀▀"},
+		"8": {"█▀▀█", "█▀▀█", "▀▀▀▀"},
+		"9": {"█▀▀█", "▀▀▀█", "▀▀▀▀"},
+	}
+	for d, want := range cases {
+		got := digitLines(d)
+		if strings.Join(got, "|") != strings.Join(want, "|") {
+			t.Errorf("digitLines(%q) = %q, want %q", d, got, want)
+		}
+	}
+	// 0 と 8 は中段で、5 と 6 は下段側で分かれる (どちらも同じにならないこと)。
+	for _, pair := range [][2]string{{"0", "8"}, {"5", "6"}, {"6", "8"}} {
+		if strings.Join(digitLines(pair[0]), "|") == strings.Join(digitLines(pair[1]), "|") {
+			t.Errorf("%s と %s の字形が同じ", pair[0], pair[1])
+		}
+	}
+}
+
+func TestDigitLinesShapeAndRejects(t *testing.T) {
+	for _, s := range []string{"0", "62", "100"} {
+		got := digitLines(s)
+		if len(got) != bannerRows {
+			t.Fatalf("%q: %d 行", s, len(got))
+		}
+		for i, ln := range got {
+			if w := termwidth.Of(ln); w != digitWidth(s) {
+				t.Errorf("%q の %d 行目: 幅 %d, want %d", s, i, w, digitWidth(s))
+			}
+		}
+	}
+	for _, s := range []string{"", "6a", "六"} {
+		if got := digitLines(s); got != nil {
+			t.Errorf("%q が AA になった: %q", s, got)
+		}
+	}
+}
+
+// 盤に入るなら 4 桁幅を使う。3 桁幅へ落ちるのは 4 桁が入らない盤だけ。
+func TestRenderDashboardPrefersWideDigits(t *testing.T) {
+	face := ""
+	for _, ln := range RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false) {
+		if slices.ContainsFunc([]rune(ln), isBrailleRune) {
+			face += ln + "\n"
+		}
+	}
+	for _, want := range digitLines("62") {
+		if !strings.Contains(face, want) {
+			t.Errorf("4 桁幅の字形が出ていない (%q):\n%s", want, face)
+		}
+	}
+	// 普通の字の "62%" が盤に残っていたら AA が効いていない。
+	if strings.Contains(face, "62%") {
+		t.Errorf("普通の字のまま:\n%s", face)
 	}
 }
