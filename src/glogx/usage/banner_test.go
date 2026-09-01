@@ -155,22 +155,23 @@ func TestRenderDashboardBannerVersionFitsWidth(t *testing.T) {
 			}
 		}
 	}
-	// AA は入るがバージョンまでは入らない幅では、AA が残ってバージョンだけ消える。
+	// AA は入るがバージョンまでは入らない幅では、AA が残ってバージョンだけ**丸ごと**消える。
 	// ⚠️ ここは groupHead を直接呼ぶ。RenderDashboard 経由だと、その幅では 1 カラムに
 	// なって「AA を出すと盤が潰れる」判定が先に効き、見出しごとテキストへ落ちるため
 	// バージョンの落とし方を観測できない。
+	// ⚠️ 幅を 1 点だけ見ない。最後の砦の切り詰めが効くと "  v2.1" のような途中で切れた版が
+	// 残るが、切れる位置は幅次第で、たまたま "v" の手前で切れる幅を選ぶと素通りする
+	// (実測 2026-09-01: bw+2 では予算に入れない変異が green のままだった)。
 	g := dialGroup{cli: "Claude Code", version: "2.1.216"}
 	bw := bannerWidth(g.cli)
-	head := groupHead(g, bw+2, 40, false) // AA は入るがバージョン (10 桁) は入らない幅
-	joined := strings.Join(head, "\n")
-	if !strings.Contains(joined, bannerLines(g.cli)[0]) {
-		t.Errorf("AA ごと消えている (バージョンだけ落とすべき):\n%s", joined)
-	}
-	// ⚠️ 「完全なバージョン文字列が無いこと」では足りない。最後の砦の切り詰めが効くと
-	//   "  v2.1" のような**途中で切れた**版が残り、それでも assert は通ってしまう
-	//   (実測 2026-09-01: 予算に入れない変異が green のままだった)。v 自体を出さない、で見る。
-	if strings.Contains(joined, "v") {
-		t.Errorf("入らないバージョンを途中まで出している (丸ごと落とすべき):\n%s", joined)
+	for w := bw; w <= bw+16; w++ {
+		joined := strings.Join(groupHead(g, w, 40, false), "\n")
+		if strings.Contains(joined, "v") && !strings.Contains(joined, "v2.1.216") {
+			t.Errorf("w=%d: バージョンが途中で切れている (丸ごと落とすべき):\n%s", w, joined)
+		}
+		if !strings.Contains(joined, bannerLines(g.cli)[0]) {
+			t.Errorf("w=%d: AA ごと消えている:\n%s", w, joined)
+		}
 	}
 	// 入る幅では出る (落とす条件が広すぎないこと)。
 	if wide := strings.Join(groupHead(g, bw+20, 40, false), "\n"); !strings.Contains(wide, "v2.1.216") {
