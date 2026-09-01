@@ -19,8 +19,8 @@ import (
 const (
 	bannerRows   = 3 // 描画後の行数 (5 段を 2 段ずつ詰めて 3 行)
 	pixelRows    = 5 // 字形の段数
-	bannerGlyphW = 3 // 見出しの字幅
-	digitGlyphW  = 4 // 盤の中央の数字の字幅 (3 桁だと 0/6/8/9 の空きが潰れる)
+	bannerGlyphW = 3 // 段の大見出し (CLI 名) の字幅。語として読むので 3 桁で潰れない
+	bigGlyphW    = 4 // 数字と枠ラベルの字幅 (3 桁だと 0/6/8/9 の空きが潰れる)
 )
 
 // bannerPixels は見出し用の 3x5 字形 ('#' = 点灯)。収録は実際に使う字だけ (CLI 名は
@@ -38,9 +38,10 @@ var bannerPixels = map[rune][pixelRows]string{
 	' ': {"   ", "   ", "   ", "   ", "   "},
 }
 
-// digitPixels は盤の中央に置く数字の 4x5 字形。見出しより 1 桁広いのは、3 桁だと
-// 0 と 8、6 と 5 の区別が付かなくなるため (実測で比較して 4 桁を採用)。
-var digitPixels = map[rune][pixelRows]string{
+// bigPixels は盤の中央の数字と、カード見出しの枠ラベル ("5H" / "7D" / "30M") に使う 4x5 字形。
+// 段の大見出しより 1 桁広いのは、3 桁だと 0 と 8、6 と 5 の区別が付かなくなるため
+// (実測で比較して 4 桁を採用)。単位の字は枠ラベルに出るものだけ収録する。
+var bigPixels = map[rune][pixelRows]string{
 	'0': {"####", "#  #", "#  #", "#  #", "####"},
 	'1': {"  # ", " ## ", "  # ", "  # ", "####"},
 	'2': {"####", "   #", "####", "#   ", "####"},
@@ -51,6 +52,9 @@ var digitPixels = map[rune][pixelRows]string{
 	'7': {"####", "   #", "  # ", " #  ", " #  "},
 	'8': {"####", "#  #", "####", "#  #", "####"},
 	'9': {"####", "#  #", "####", "   #", "####"},
+	'H': {"#  #", "#  #", "####", "#  #", "#  #"},
+	'D': {"### ", "#  #", "#  #", "#  #", "### "},
+	'M': {"#  #", "####", "####", "#  #", "#  #"},
 }
 
 // packPixels は 5 段の字形を半ブロックで 3 行へ詰める (6 段目は空)。
@@ -128,8 +132,8 @@ func bannerLines(s string) []string {
 // bannerWidth は bannerLines が返す AA の桁数。
 func bannerWidth(s string) int { return pixelWidth(s, bannerGlyphW) }
 
-// digitLines は数字列を盤の中央用の AA にする (数字以外は nil)。
-func digitLines(s string) []string { return pixelLines(s, digitPixels, digitGlyphW) }
+// bigLines は数字と枠ラベルを 4 桁幅の AA にする (収録外の字が混ざれば nil)。
+func bigLines(s string) []string { return pixelLines(strings.ToUpper(s), bigPixels, bigGlyphW) }
 
-// digitWidth は digitLines が返す AA の桁数。
-func digitWidth(s string) int { return pixelWidth(s, digitGlyphW) }
+// bigWidth は bigLines が返す AA の桁数。
+func bigWidth(s string) int { return pixelWidth(s, bigGlyphW) }

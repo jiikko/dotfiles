@@ -94,14 +94,14 @@ func TestDigitLinesGlyphs(t *testing.T) {
 		"9": {"█▀▀█", "▀▀▀█", "▀▀▀▀"},
 	}
 	for d, want := range cases {
-		got := digitLines(d)
+		got := bigLines(d)
 		if strings.Join(got, "|") != strings.Join(want, "|") {
-			t.Errorf("digitLines(%q) = %q, want %q", d, got, want)
+			t.Errorf("bigLines(%q) = %q, want %q", d, got, want)
 		}
 	}
 	// 0 と 8 は中段で、5 と 6 は下段側で分かれる (どちらも同じにならないこと)。
 	for _, pair := range [][2]string{{"0", "8"}, {"5", "6"}, {"6", "8"}} {
-		if strings.Join(digitLines(pair[0]), "|") == strings.Join(digitLines(pair[1]), "|") {
+		if strings.Join(bigLines(pair[0]), "|") == strings.Join(bigLines(pair[1]), "|") {
 			t.Errorf("%s と %s の字形が同じ", pair[0], pair[1])
 		}
 	}
@@ -109,18 +109,18 @@ func TestDigitLinesGlyphs(t *testing.T) {
 
 func TestDigitLinesShapeAndRejects(t *testing.T) {
 	for _, s := range []string{"0", "62", "100"} {
-		got := digitLines(s)
+		got := bigLines(s)
 		if len(got) != bannerRows {
 			t.Fatalf("%q: %d 行", s, len(got))
 		}
 		for i, ln := range got {
-			if w := termwidth.Of(ln); w != digitWidth(s) {
-				t.Errorf("%q の %d 行目: 幅 %d, want %d", s, i, w, digitWidth(s))
+			if w := termwidth.Of(ln); w != bigWidth(s) {
+				t.Errorf("%q の %d 行目: 幅 %d, want %d", s, i, w, bigWidth(s))
 			}
 		}
 	}
 	for _, s := range []string{"", "6a", "六"} {
-		if got := digitLines(s); got != nil {
+		if got := bigLines(s); got != nil {
 			t.Errorf("%q が AA になった: %q", s, got)
 		}
 	}
@@ -134,7 +134,7 @@ func TestRenderDashboardPrefersWideDigits(t *testing.T) {
 			face += ln + "\n"
 		}
 	}
-	for _, want := range digitLines("62") {
+	for _, want := range bigLines("62") {
 		if !strings.Contains(face, want) {
 			t.Errorf("4 桁幅の字形が出ていない (%q):\n%s", want, face)
 		}

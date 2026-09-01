@@ -384,3 +384,42 @@ func TestRenderDashboardGroupsStayConsistent(t *testing.T) {
 		}
 	}
 }
+
+// カード見出しの枠ラベルは 4 桁幅の AA。種別 (セッション / weekly) は AA にできないので
+// 中段の右へ普通の字で添える (ユーザー要望 2026-09-01)。
+func TestRenderDashboardCardHeadAA(t *testing.T) {
+	all := strings.Join(RenderDashboard(dialTestSnap(), dialTestNow(), 130, 50, false), "\n")
+	for _, want := range append(bigLines("5H"), bigLines("7D")...) {
+		if !strings.Contains(all, want) {
+			t.Errorf("枠ラベルの AA が出ていない (%q):\n%s", want, all)
+		}
+	}
+	for _, want := range []string{"セッション", "weekly"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("種別 %q が出ていない", want)
+		}
+	}
+	// 普通の字の見出しは残っていない (AA が効いている)。
+	if strings.Contains(all, "5h セッション") {
+		t.Errorf("普通の字の見出しのまま:\n%s", all)
+	}
+}
+
+// 盤が残らない高さでは見出しを AA にしない。見出しを大きくして盤が消えたら本末転倒。
+func TestRenderDashboardCardHeadFallsBackWhenFaceWouldDie(t *testing.T) {
+	for h := 12; h <= 60; h++ {
+		lines := RenderDashboard(dialTestSnap(), dialTestNow(), 130, h, false)
+		hasFace := false
+		for _, ln := range lines {
+			if slices.ContainsFunc([]rune(ln), isBrailleRune) {
+				hasFace = true
+				break
+			}
+		}
+		all := strings.Join(lines, "\n")
+		hasAAHead := strings.Contains(all, bigLines("5H")[0])
+		if hasAAHead && !hasFace {
+			t.Errorf("h=%d: 見出しを AA にしたせいで盤が消えた:\n%s", h, all)
+		}
+	}
+}

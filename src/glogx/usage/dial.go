@@ -294,19 +294,16 @@ func renderCard(c dialCard, now time.Time, w, h int, colored bool) []string {
 	// 見出し・数値行は狭い割り当てでは端から情報を落とす (切り詰めの … で読めなくするより、
 	// 落とす順を決めておく方が読める)。落とす順は「重要度の低い順」= 種別 → CLI 名 /
 	// リセット絶対時刻 → 見出しの語 / 想定と乖離 → 使用率。
-	head := fitLine(w, []string{
-		paintIf(strings.TrimSpace(c.label+" "+c.kind), col, colored),
-		paintIf(c.label, col, colored),
-	})
 	foot := cardFoot(c, remain, elapsed, col, word, w, cardFootLines(h), colored)
-	bodyH := max(0, h-1-len(foot))
+	head := cardHead(c, col, w, h, len(foot), colored)
+	bodyH := max(0, h-len(head)-len(foot))
 	var body []string
 	if c.span <= 0 || w < dialMinW || bodyH < 5 {
 		body = textCardBody(c, col, w, bodyH, colored)
 	} else {
 		body = renderFace(c, remain, elapsed, col, w, bodyH, colored)
 	}
-	out := append([]string{head}, body...)
+	out := append(append([]string{}, head...), body...)
 	for len(out) < h-len(foot) {
 		out = append(out, "")
 	}
@@ -315,6 +312,45 @@ func renderCard(c dialCard, now time.Time, w, h int, colored bool) []string {
 		out = append(out, "")
 	}
 	return out[:h]
+}
+
+// cardHead はカード見出し。枠ラベル ("5H" / "7D") は 4 桁幅の AA で大きく出し、種別
+// (セッション / weekly) は AA にできないので中段の右へ普通の字で添える。
+//
+// ⚠️ AA は 3 行あるので、盤が残らないなら 1 行の普通の見出しへ落とす。見出しを大きくして
+// 盤が消えたら本末転倒 (段の大見出しと同じ判断。groupHead / fitsFace 参照)。
+func cardHead(c dialCard, col string, w, h, footN int, colored bool) []string {
+	aa := bigLines(c.label)
+	plain := []string{fitLine(w, []string{
+		paintIf(strings.TrimSpace(c.label+" "+c.kind), col, colored),
+		paintIf(c.label, col, colored),
+	})}
+	if aa == nil || h-bannerRows-footN < 5 {
+		return plain
+	}
+	kind := ""
+	if c.kind != "" {
+		kind = paintIf("  "+c.kind, sgr.Dim, colored)
+	}
+	// ⚠️ 種別は幅の予算に入れてから中央寄せする (段の大見出しと同じ罠。後付けするとその行
+	// だけ width をはみ出す)。入らなければ種別だけ落とす。
+	bw := bigWidth(c.label)
+	if bw+termwidth.Of(kind) > w {
+		kind = ""
+	}
+	if bw > w {
+		return plain
+	}
+	indent := termwidth.PadSpaces(max((w-bw-termwidth.Of(kind))/2, 0))
+	out := make([]string, 0, bannerRows)
+	for i, row := range aa {
+		line := indent + paintIf(row, col, colored)
+		if i == 1 {
+			line += kind
+		}
+		out = append(out, termwidth.Truncate(line, w, "")) // 最後の砦
+	}
+	return out
 }
 
 // cardFoot はカード下部の行 (ゲージ / 数値 / 復活まで / 予算と助言) を n 行で返す。
@@ -426,12 +462,12 @@ func drawCenter(cv *braille, pct int, remain time.Duration, col string, w, faceH
 	// ⚠️ 入らない盤では「狭い字形」ではなく**普通の字**へ落とす。見出しと同じ 3 桁幅の字形は
 	// 0 と 8、5 と 6 の見分けが付かず (ユーザー指摘 2026-09-01)、1 行の "62%" の方が読める。
 	// 大きくする目的を果たせないなら大きくしない。
-	aa := digitLines(digits)
-	if aa != nil && midRow-2 >= 0 && midRow+1 < faceH && digitWidth(digits)+1 <= aaAvail { // +1 は末尾の "%"
+	aa := bigLines(digits)
+	if aa != nil && midRow-2 >= 0 && midRow+1 < faceH && bigWidth(digits)+1 <= aaAvail { // +1 は末尾の "%"
 		putCentered(cv, midRow-2, w, remainText(remain, innerWidthAt(cy, rIn, midRow-2)), sgr.BrightWhite)
 		// ⚠️ 3 行を行ごとに中央寄せしない。"%" を添えた中段だけ 1 桁広く、桁揃えが崩れて
 		// 数字が斜めに見える。"%" 込みの塊を中央に置き、起点は 3 行で共有する。
-		start := w/2 - (digitWidth(digits)+1)/2
+		start := w/2 - (bigWidth(digits)+1)/2
 		for i, row := range aa {
 			line := row
 			if i == 1 {
