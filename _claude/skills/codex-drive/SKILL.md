@@ -140,9 +140,12 @@ Claude がやるのは:
 1. プロンプト部品を scratchpad に書く — 定型は `~/.claude/skills/codex-drive/templates/`
    (`review-lens-header.md` = lens 共通ヘッダ、`merger.md` = merger の既定指示) を使い、
    **Claude が書くのは lens の攻め口 + タスク固有の的の brief 数行だけ** (トークン経済 2)
-2. manifest (TSV: `label \t mode \t model \t effort \t 部品1,部品2,...`。部品は順に連結) を書く。
+2. manifest (TSV: `label \t mode \t model \t effort \t 部品1,部品2,... [\t timeout_s]`。部品は順に連結) を書く。
    **`mode` は `ro` | `review` の 2 値** (それぞれ `codex exec -s read-only` / `codex exec review`)。
-   下の例はコマンド形で書いてあるので、manifest には略号の方を書くこと
+   下の例はコマンド形で書いてあるので、manifest には略号の方を書くこと。
+   末尾の `timeout_s` は任意で、**その行だけ** timeout を上書きする (省略時は `CODEX_FANOUT_TIMEOUT`)。
+   敵対レビュー系 lens は反証の構築に時間がかかり既定値で rc=143 になりやすい (dotfiles issue 150) ので
+   `2400` を付ける ([3.6] が正本)
 3. **manifest・prompt 部品・merger prompt (`-m`)・outdir はすべて cwd 依存**なので、各 Bash 呼び出しで
    値を再計算するか、前回出力のリテラル絶対パスを使う。prompt part のパスにはカンマを入れない
    (manifest は単純なカンマ分割)。`codex-fanout <絶対パスの manifest> <絶対パスの outdir>` を、
@@ -737,6 +740,9 @@ command codex exec review -m gpt-5.6-luna -c model_reasoning_effort="max" \
   - **1 本回して「指摘なし」で閉じるのは禁止** — 枯れるまで lens を足すか escalate する。
 - 各 lens は **別々の Bash 呼び出しで `run_in_background: true`**・出力は別パス (`[3.5]` と同じ並列作法)。
 - `[3.5]` の 2 本と**同時に走らせない** (3.5 の指摘を直した後のコードを攻めるため)。
+- **manifest の各 lens 行に timeout 列 `2400` を付ける** (発見型レビューと違い、反証の構築は思考時間が
+  長く既定の 1200 秒で rc=143 が頻発した — dotfiles issue 150 の実測。3〜4 回落ちて単発再実行では毎回完走)。
+  900 秒超なので起動は detach 形 (「並列起動の作法」の nohup + Monitor) にする。
 
 ```bash
 # 起動は codex-fanout driver が既定 (lens ごとの brief + review-lens-header.md を連結する manifest)。

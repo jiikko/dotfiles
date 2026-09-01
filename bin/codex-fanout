@@ -15,17 +15,21 @@
 #   outdir は新規 (空) であること。使い回しは拒否する — 前回世代の残骸 (.rc / .out.md) が
 #   新しい実行結果に混ざるのを構造的に防ぐ。
 #   環境変数:
-#     CODEX_FANOUT_TIMEOUT        1 本あたりの秒数上限 (既定 1200。merger にも適用)。超えたら kill して失敗扱い
+#     CODEX_FANOUT_TIMEOUT        1 本あたりの秒数上限 (既定 1200。merger にも適用)。超えたら kill して失敗扱い。
+#                                 manifest の timeout_s 列があればその行はそちらが優先
 #                                 900 を超える値で使うときは呼び出し側を detach する (Claude Code の Bash は 15 分で
 #                                 background ごと kill される。codex-drive skill「並列起動の作法」参照)
 #     CODEX_FANOUT_MERGER_MODEL   merger のモデル (既定 gpt-5.6-luna)
 #     CODEX_FANOUT_MERGER_EFFORT  merger の effort (既定 max。codex-drive の「全フェーズ max 固定」に合わせる)
 #
 # manifest (TSV・1 行 1 本。空行と # 始まりは無視。CRLF は末尾 \r を剥がして受ける):
-#   label <TAB> mode <TAB> model <TAB> effort <TAB> prompt_part1[,part2,...]
+#   label <TAB> mode <TAB> model <TAB> effort <TAB> prompt_part1[,part2,...] [<TAB> timeout_s]
 #   mode: ro (codex exec -s read-only) | review (codex exec review)
 #   prompt_part: ファイルパス。複数はカンマ区切りで順に連結する (共通テンプレート + タスク固有 brief)。
 #                パスにカンマは使えない (区切りと衝突する)
+#   timeout_s: この行だけの秒数上限 (任意。省略時は CODEX_FANOUT_TIMEOUT)。敵対レビュー系
+#              (反証を構築する lens) は思考時間が長く既定値で rc=143 になりやすい (issue 150)
+#              ので、その行だけ 2400 程度に伸ばす。900 超は呼び出し側の detach が必要 (上記)
 #
 # 出力 (outdir):
 #   <label>.out.md  codex の最終応答 (-o)
@@ -80,10 +84,17 @@ outdir="$2"
 command -v codex >/dev/null 2>&1 || die "codex が PATH に無い"
 mkdir -p "$outdir" || die "outdir を作れない: $outdir"
 [ -z "$(ls -A "$outdir")" ] || die "outdir が空でない (使い回し禁止 — 前回世代の残骸が結果に混ざる): $outdir"
+# timeout の検証 (env と manifest 行で共用)。2 つの罠がどちらも「watchdog の無音無効化」になる:
+# ・[0-9] の範囲式はロケールの照合順で全角数字を通す (ja_JP.UTF-8 で実測) → 明示列挙で弾く
+# ・純数字でも 19 桁以上は [ -ge ] が integer expected で常に偽 → 桁数上限 9 (≈31 年) で弾く
+validate_timeout() { # $1=値 $2=エラー文脈 ("CODEX_FANOUT_TIMEOUT" / "manifest N 行目: timeout_s")
+  case "$1" in
+    '' | *[!0123456789]*) die "$2 は秒数の整数 (got: $1)。非数値だと watchdog が無効化される" ;;
+  esac
+  [ "${#1}" -le 9 ] || die "$2 が大きすぎる (最大 9 桁。got: $1)。桁あふれも watchdog を無音で無効化する"
+}
 timeout_s="${CODEX_FANOUT_TIMEOUT:-1200}"
-case "$timeout_s" in
-  '' | *[!0-9]*) die "CODEX_FANOUT_TIMEOUT は秒数の整数 (got: $timeout_s)。非数値だと watchdog が無効化される" ;;
-esac
+validate_timeout "$timeout_s" "CODEX_FANOUT_TIMEOUT"
 
 # --- 中断時の後始末: 走行中の codex を kill してから死ぬ (孤児化・裏での API 消費を防ぐ) ---
 # shellcheck disable=SC2329 # trap 経由の間接呼び出し (SC2329 は直接呼び出ししか見ない)
@@ -106,16 +117,24 @@ modes=()
 models=()
 efforts=()
 parts=()
+timeouts=()
 lineno=0
-while IFS=$'\t' read -r label mode model effort part_list || [ -n "${label:-}" ]; do
+while IFS=$'\t' read -r label mode model effort part_list row_timeout || [ -n "${label:-}" ]; do
   lineno=$((lineno + 1))
   case "${label:-}" in '' | '#'*) continue ;; esac
-  part_list="${part_list%$'\r'}" # CRLF manifest の末尾 \r で実在ファイルを「無い」と誤検出しない
+  # CRLF manifest の末尾 \r は最終列に付く (timeout 列の有無で位置が変わる)
+  part_list="${part_list%$'\r'}"
+  row_timeout="${row_timeout%$'\r'}"
   { [ -n "${mode:-}" ] && [ -n "${model:-}" ] && [ -n "${effort:-}" ] && [ -n "${part_list:-}" ]; } ||
-    die "manifest ${lineno} 行目: 列が足りない (label/mode/model/effort/prompt_parts の TSV)"
+    die "manifest ${lineno} 行目: 列が足りない (label/mode/model/effort/prompt_parts[/timeout_s] の TSV)"
   case "$mode" in ro | review) ;; *) die "manifest ${lineno} 行目: mode は ro|review (got: $mode)" ;; esac
   # label は出力ファイル名になるためパス区切り等を弾く
   case "$label" in *[!A-Za-z0-9._-]*) die "manifest ${lineno} 行目: label は英数と ._- のみ (got: $label)" ;; esac
+  if [ -z "$row_timeout" ]; then
+    row_timeout="$timeout_s"
+  else
+    validate_timeout "$row_timeout" "manifest ${lineno} 行目: timeout_s"
+  fi
   IFS=',' read -ra pf <<<"$part_list"
   for f in "${pf[@]}"; do
     [ -f "$f" ] || die "manifest ${lineno} 行目: prompt part が無い: $f (カンマ区切りのため、パスにカンマが混ざるとここで割れる)"
@@ -125,6 +144,7 @@ while IFS=$'\t' read -r label mode model effort part_list || [ -n "${label:-}" ]
   models+=("$model")
   efforts+=("$effort")
   parts+=("$part_list")
+  timeouts+=("$row_timeout")
 done <"$manifest"
 [ "${#labels[@]}" -ge 1 ] || die "manifest に実行行が無い"
 dup="$(printf '%s\n' "${labels[@]}" | sort | uniq -d | head -1)"
@@ -154,24 +174,24 @@ if [ "$do_merge" -eq 1 ]; then
 fi
 
 # --- 起動と watchdog (fan-out 本体と merger で共用) ---
-# launch_with_watchdog <rcfile> <pidfile> <cmd...>
+# launch_with_watchdog <timeout_s> <rcfile> <pidfile> <cmd...>
 # cmd を専用 process group で bg 起動し (perl setpgrp → exec。macOS に setsid が無いための代替。
 # exec は PATH を直接引くので shell 関数/エイリアスを経由しない = `command` プレフィックスと同等)、
-# timeout_s 超過でグループごと kill する (hang した codex を wait で待ち続けない・codex の
+# timeout 超過でグループごと kill する (hang した codex を wait で待ち続けない・codex の
 # 子プロセスを取り残さない。kill された run は rc=143 で失敗扱い)。
 # リダイレクトは呼び出し側で関数ごと付ける。
 launch_with_watchdog() {
-  local rcfile="$1" pidfile="$2"
-  shift 2
+  local run_timeout="$1" rcfile="$2" pidfile="$3"
+  shift 3
   perl -e 'setpgrp(0, 0); exec @ARGV or die "exec: $!"' -- "$@" &
   local cpid=$! # = setpgrp した process group の leader
   printf '%s\n' "$cpid" >"$pidfile" # 中断時の後始末 (on_interrupt) が読む
   local poll=5
-  [ "$timeout_s" -lt 30 ] && poll=1
+  [ "$run_timeout" -lt 30 ] && poll=1
   (
     slept=0
     while kill -0 "$cpid" 2>/dev/null; do
-      if [ "$slept" -ge "$timeout_s" ]; then
+      if [ "$slept" -ge "$run_timeout" ]; then
         kill -- "-$cpid" 2>/dev/null # 負の pid = グループごと (子プロセス含む)
         exit 0
       fi
@@ -188,8 +208,8 @@ launch_with_watchdog() {
   return "$rc"
 }
 
-run_one() { # $1=label $2=mode $3=model $4=effort $5=part_list
-  local label="$1" mode="$2" model="$3" effort="$4" part_list="$5"
+run_one() { # $1=label $2=mode $3=model $4=effort $5=part_list $6=timeout_s
+  local label="$1" mode="$2" model="$3" effort="$4" part_list="$5" run_timeout="$6"
   local out="$outdir/$label.out.md" log="$outdir/$label.log"
   local prompt pf
   IFS=',' read -ra pf <<<"$part_list"
@@ -199,13 +219,13 @@ run_one() { # $1=label $2=mode $3=model $4=effort $5=part_list
     ro) cmd=(codex exec -s read-only) ;;
     review) cmd=(codex exec review) ;;
   esac
-  launch_with_watchdog "$outdir/$label.rc" "$outdir/$label.pid" \
+  launch_with_watchdog "$run_timeout" "$outdir/$label.rc" "$outdir/$label.pid" \
     "${cmd[@]}" -m "$model" -c model_reasoning_effort="$effort" \
     --ephemeral -o "$out" "$prompt" </dev/null >"$log" 2>&1
 }
 
 for i in "${!labels[@]}"; do
-  run_one "${labels[$i]}" "${modes[$i]}" "${models[$i]}" "${efforts[$i]}" "${parts[$i]}" &
+  run_one "${labels[$i]}" "${modes[$i]}" "${models[$i]}" "${efforts[$i]}" "${parts[$i]}" "${timeouts[$i]}" &
 done
 wait
 
@@ -259,7 +279,7 @@ if [ "$do_merge" -eq 1 ]; then
       printf -- '- %s\n' "${failed[@]}"
     fi
   } >"$merger_prompt"
-  if ! launch_with_watchdog "$outdir/merger.rc" "$outdir/merger.pid" \
+  if ! launch_with_watchdog "$timeout_s" "$outdir/merger.rc" "$outdir/merger.pid" \
     codex exec -s read-only -m "${CODEX_FANOUT_MERGER_MODEL:-gpt-5.6-luna}" \
     -c model_reasoning_effort="${CODEX_FANOUT_MERGER_EFFORT:-max}" \
     --ephemeral -o "$outdir/digest.md" "$(cat "$merger_prompt")" \

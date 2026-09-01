@@ -150,11 +150,14 @@ EOS
   [ ! -e "$WORK/out5/a.rc" ] && [ ! -e "$WORK/out5b/a.rc" ]
 }
 
-@test "CRLF manifest: 末尾 \\r を剥がして正常に走る" {
-  printf 'a\tro\tm1\thigh\t%s\r\n' "$WORK/brief_ok.md" >"$WORK/m.tsv"
+@test "CRLF manifest: 末尾 \\r を剥がして正常に走る (timeout 列の有無どちらでも)" {
+  # \r は最終列に付く: 5 列なら prompt_parts、6 列なら timeout_s (両方の剥がしを検証)
+  printf 'a\tro\tm1\thigh\t%s\r\nb\tro\tm1\thigh\t%s\t60\r\n' \
+    "$WORK/brief_ok.md" "$WORK/brief_ok.md" >"$WORK/m.tsv"
   run "$DRIVER" -M "$WORK/m.tsv" "$WORK/out_crlf"
   [ "$status" -eq 0 ]
   [ -s "$WORK/out_crlf/a.out.md" ]
+  [ -s "$WORK/out_crlf/b.out.md" ]
 }
 
 @test "outdir の使い回しを拒否する (前回世代の残骸混入の防止)" {
@@ -171,6 +174,45 @@ EOS
   CODEX_FANOUT_TIMEOUT=abc run "$DRIVER" -M "$WORK/m.tsv" "$WORK/out_tv"
   [ "$status" -eq 1 ]
   [ ! -e "$WORK/out_tv/a.rc" ]
+}
+
+# issue 150: 敵対レビュー lens だけ思考時間が長く既定 timeout で rc=143 になるため、
+# 行単位で timeout を上書きできる (省略行は CODEX_FANOUT_TIMEOUT のまま)
+@test "manifest の timeout_s 列: その行だけ上書きされ、省略行は env 既定のまま走る" {
+  printf 'hang\tro\tm1\thigh\t%s\t2\nok\tro\tm1\thigh\t%s\n' \
+    "$WORK/brief_sleep.md" "$WORK/brief_ok.md" >"$WORK/m.tsv"
+  # env は十分長い値: hang 行が 2 秒で殺されたなら行の列が効いた証拠
+  CODEX_FANOUT_TIMEOUT=600 run "$DRIVER" -M "$WORK/m.tsv" "$WORK/out_rowto"
+  [ "$status" -eq 2 ]
+  grep -q "^hang	143	" "$WORK/out_rowto/runs.tsv"
+  grep -q "^ok	0	" "$WORK/out_rowto/runs.tsv"
+}
+
+@test "timeout_s 列の非数値は起動前に弾く (watchdog の無効化を防ぐ)" {
+  printf 'a\tro\tm1\thigh\t%s\tabc\n' "$WORK/brief_ok.md" >"$WORK/m.tsv"
+  run "$DRIVER" -M "$WORK/m.tsv" "$WORK/out_rowtv"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"timeout_s は秒数の整数"* ]]
+  [ ! -e "$WORK/out_rowtv/a.rc" ]
+}
+
+# 敵対レビューの実測 (issue 150): どちらも通すと [ -ge ] が integer expected で常に偽になり、
+# watchdog が「無音で」無効化される (die もせず hang した codex を永久に待つ)
+@test "全角数字 (ロケール照合) と 19 桁 (桁あふれ) の timeout も起動前に弾く" {
+  # 全角数字: ja_JP.UTF-8 の照合順では範囲式 [0-9] を素通りする → 明示列挙で弾く
+  printf 'a\tro\tm1\thigh\t%s\t３\n' "$WORK/brief_ok.md" >"$WORK/m.tsv"
+  LC_ALL= LANG=ja_JP.UTF-8 run "$DRIVER" -M "$WORK/m.tsv" "$WORK/out_zen"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"timeout_s は秒数の整数"* ]]
+  # 純数字の桁あふれ (19 桁): 文字種検査は通るが整数評価が壊れる → 桁数上限で弾く
+  printf 'a\tro\tm1\thigh\t%s\t9999999999999999999\n' "$WORK/brief_ok.md" >"$WORK/m2.tsv"
+  run "$DRIVER" -M "$WORK/m2.tsv" "$WORK/out_ovf"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"大きすぎる"* ]]
+  # env 側 (CODEX_FANOUT_TIMEOUT) も同じ検証を通る
+  CODEX_FANOUT_TIMEOUT=9999999999999999999 run "$DRIVER" -M "$WORK/m2.tsv" "$WORK/out_ovfenv"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"CODEX_FANOUT_TIMEOUT が大きすぎる"* ]]
 }
 
 @test "timeout: hang した codex をグループごと kill して失敗扱いにする (孫も残さない)" {
