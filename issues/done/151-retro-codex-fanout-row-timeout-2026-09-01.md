@@ -53,8 +53,19 @@ repo 内に `*[!0-9]*` は 25 箇所あるが、他は全て「非数値 → 安
   数える手順を issues/README.md に一行足す (完全な解決ではないが窓が縮む)。hook 化は
   過剰かもしれない
 
-## 残課題
+## 切り出し結果 (2026-09-01)
 
-- 上記 1〜3 の切り出し可否の判断 (ユーザー)
-- issue 150 の受け入れ条件「実タスクで rc=143 が出ない」は未実測 (trigger は issue 150 に記録済み:
-  次回 codex-drive の [3.6] が自然に検証になる)
+- 反省点 1 → [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) /
+  [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の実測回数を
+  3 → 4 に更新。4 回目の詳細 (単純な入力検証ゲートでも想定の外側が残る) は
+  adversarial 側の rationale に節として追記
+- 反省点 2 → 新ルール [`shell-numeric-gate-explicit-digits.md`](../_claude/rules/shell-numeric-gate-explicit-digits.md)
+  を作成 (トリガー型: die/reject の数値検証ゲートを書く瞬間。フォールバック用途は対象外と明記)。
+  実測の再現コマンド・ゲート/フォールバックを分けた理由は同名 rationale に置いた。`./setup.sh`
+  再実行で link 済み
+- 反省点 3 → `issues/README.md` の「次番号の確認」を fetch + origin 側も数える形に更新
+  (working tree の `ls` では別セッションの push 済み採番が見えない、が 148 衝突の起点)。
+  hook 化は過剰なので採らず
+
+issue 150 の受け入れ条件「実タスクで rc=143 が出ない」の未実測は issue 150 側に trigger を
+記録済み (次回 codex-drive の [3.6] が自然に検証になる)。この retro としての残課題は無い。

@@ -177,7 +177,7 @@ pathspec commit に入る** (`git status` では自分の変更と区別がつ�
   あちらは「無価値なテストを書かない」、こちらは「書いたテストが実際に効くか確かめる」
 - [`adversarial-review-own-safeguards.md`](adversarial-review-own-safeguards.md) — **変異は自分が
   想定した不変条件しか試さない**。並行・時間差・外部プロセスが絡む安全機構は、変異を全部 red に
-  した後でも敵対レビューが P1 を出す (実測 3 回)。片方で閉じず、両方通す
+  した後でも敵対レビューが P1 を出す (実測 4 回)。片方で閉じず、両方通す
 - [`instrument-before-second-fix.md`](instrument-before-second-fix.md) — 「主張ではなく
   観測で確かめる」同思想 (あちらは修正、こちらはテスト)
 - [`verify-execution-not-just-exit-code.md`](verify-execution-not-just-exit-code.md) — 本ルールの **前段**

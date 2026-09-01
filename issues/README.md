@@ -26,10 +26,13 @@ issues/NNN-<カテゴリ>-<スラッグ>.md
 
 例: `issues/001-refactor-makefile-test-autodiscovery.md` / `issues/002-bug-nvim-cterm-drift-2026-07-16.md`
 
-次番号の確認:
+次番号の確認 (先に `git fetch` して origin 側も数える — 別セッションが push 済みの採番は
+working tree の `ls` には見えない。148 が 2 セッションで衝突した起点):
 
 ```sh
-ls issues issues/pending issues/done | grep -E '^[0-9]{3}-' | sort | tail -1
+git fetch origin
+{ ls issues issues/pending issues/done; git ls-tree -r --name-only origin/master -- issues | sed 's|.*/||'; } |
+  grep -E '^[0-9]{3}-' | sort | tail -1
 ```
 
 **番号の一意性は機械が守る**: `tests/issues/test_issue_numbers_unique.sh`（`make test` に自動発見で

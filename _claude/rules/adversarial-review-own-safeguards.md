@@ -108,7 +108,7 @@ CI 環境で実際に実行されているか**を、同じ commit の中で確�
   (実例 2026-08-26 obaket 544)
 - [`mutation-verify-new-tests.md`](mutation-verify-new-tests.md) — 「green は正しさの証明ではない」同思想 (あちらはテスト、こちらは安全機構全般)。
   **変異検証は本ルールの代わりにならない**: 変異は自分が想定した不変条件しか試さないので、
-  変異を全部 red にした後でも敵対レビューは「想定の外側」の P1 を出す (実測 3 回)
+  変異を全部 red にした後でも敵対レビューは「想定の外側」の P1 を出す (実測 4 回)
 - [`instrument-before-second-fix.md`](instrument-before-second-fix.md) — 推測でなく観測に寄せる同思想
 - [`path-shim-must-resolve-real-binary.md`](path-shim-must-resolve-real-binary.md) — 自作の計測装置そのものが暴走する形 (節 6 の計測が「見えない」に対して、こちらは計測が「壊す」)
 - 起源の記録: obaket `macOS/issues/done/457-test-profile-scope-pollutes-real-application-support.md` の「後日追記 2」
