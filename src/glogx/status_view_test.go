@@ -1436,15 +1436,25 @@ func TestStatusViewHintKeepsExitKeys(t *testing.T) {
 // hint を組む予算と、描画側が切る幅は同じ 1 か所から取る (browseModel.hintWidth)。
 // ⚠️ 2 か所に式を書くと「収まるつもりで組んだ hint が黙って切られる」形でずれる (issue 155)。
 func TestStatusHintUsesRenderBudget(t *testing.T) {
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.handleKey("s")
-	releaseKey(m)
-	line := m.hintLine()
-	if got := dispWidth(stripANSI(line)); got > m.width {
-		t.Errorf("hint 行が端末幅を超えた (%d > %d): %q", got, m.width, line)
-	}
-	// 切り詰めの … が出ていない = 組む側が予算どおりに収めている
-	if strings.Contains(line, "…") {
-		t.Errorf("hint が切り詰められている (組む側の予算が描画側とずれている): %q", line)
+	// ⚠️ 幅を 1 点で見ない。項目単位で採るので、ある幅では予算のずれ 2 桁が余白に吸われて
+	// 表に出ない。ずれが「切り詰めの …」として現れる幅は幅の刻みでしか見つからない
+	// (変異検証で実測 2026-09-01: 1 点だけの検査は、組む側だけ予算をずらす変異を素通りした)。
+	for w := frameMinWidth; w <= 140; w++ {
+		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		// newTestBrowse は NoFrame なので、フレームぶん 2 桁引く経路を明示的に有効化する
+		m.showFrame, m.width, m.height = true, w, 40
+		if !m.frameActive() {
+			t.Fatalf("w=%d: 前提が崩れた (フレームが有効でない)", w)
+		}
+		m.handleKey("s")
+		releaseKey(m)
+		line := m.hintLine()
+		if got := dispWidth(stripANSI(line)); got > w {
+			t.Errorf("w=%d: hint 行が端末幅を超えた (%d 桁): %q", w, got, line)
+		}
+		// 切り詰めの … が出ていない = 組む側の予算と描画側の clip 幅が一致している
+		if strings.Contains(line, "…") {
+			t.Errorf("w=%d: hint が切り詰められている (予算がずれている): %q", w, line)
+		}
 	}
 }
