@@ -523,6 +523,30 @@ else
   fails=$(( fails + 1 ))
 fi
 
+# --- glogx との pace ルールの乖離 (帯・状態語) -------------------------------------------
+#
+# statusline の pace_row と glogx (src/glogx/usage) は同じ判定を 2 言語で二重実装している。
+# 突き合わせは Go 側のテスト (usage/pace_drift_test.go) が持つが、**そこから叩くだけでは
+# この乖離は CI で守られない**:
+#   - .github/workflows/src_glogx.yml の paths は src/glogx/** だけなので、この shell を
+#     単独で変更した push では glogx の Go テストが 1 度も走らない
+#   - `go test` のキャッシュキーに外部ファイル (この shell) の内容は入らないので、Go ソースが
+#     無変更なら `(cached) ok` が返る (実測 2026-09-01)
+# よって **paths filter の無い tests.yml 側から `-count=1` つきで叩く**のがこの検査の本命の経路。
+echo "[test-statusline] glogx との pace ルールの乖離を検査"
+if command -v go >/dev/null 2>&1; then
+  if (cd "$ROOT_DIR/src/glogx" && go test ./usage/ -run '^TestPaceRulesMatchStatusline$' -count=1 >/dev/null 2>&1); then
+    echo "✓ pace ルールが glogx と一致 (帯・状態語)"
+  else
+    echo "✗ pace ルールが glogx と乖離している。次で詳細を見る:"
+    echo "    cd src/glogx && go test ./usage/ -run TestPaceRulesMatchStatusline -count=1 -v"
+    fails=$((fails + 1))
+  fi
+else
+  # ⚠️ skip は「合格」ではない。理由を出す (go 未導入の環境でだけ起きる)
+  echo "- SKIP: go が無いので glogx との乖離を検査できていない"
+fi
+
 if (( fails > 0 )); then
   printf '[test-statusline] %d 件失敗\n' "$fails" >&2
   exit 1

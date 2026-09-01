@@ -11,11 +11,21 @@ on:
     branches: [master]
     paths:
       - 'src/glogx/**'
+      # ⚠️ statusline (shell) は glogx と同じ pace ルールを二重実装しており、乖離を
+      # usage/pace_drift_test.go が検出する。これを含めないと「shell だけ変えた push」で
+      # 検査が 1 度も走らない (red team 指摘 2026-09-01)。tests.yml 側からも叩いているが、
+      # そちらは 1 テストだけなので、ここでは glogx 全体を回して周辺の退行も見る。
+      - _claude/statusline-command.sh
       - .github/workflows/src_glogx.yml
       - .github/workflows/_go-project.yml
   pull_request:
     paths:
       - 'src/glogx/**'
+      # ⚠️ statusline (shell) は glogx と同じ pace ルールを二重実装しており、乖離を
+      # usage/pace_drift_test.go が検出する。これを含めないと「shell だけ変えた push」で
+      # 検査が 1 度も走らない (red team 指摘 2026-09-01)。tests.yml 側からも叩いているが、
+      # そちらは 1 テストだけなので、ここでは glogx 全体を回して周辺の退行も見る。
+      - _claude/statusline-command.sh
       - .github/workflows/src_glogx.yml
       - .github/workflows/_go-project.yml
   workflow_dispatch:  # GitHub UI からの手動再実行用

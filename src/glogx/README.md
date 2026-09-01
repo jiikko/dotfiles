@@ -55,6 +55,12 @@ Date:   Thu Jul 16 14:03:21 2026 +0900
   3 秒周期で状態を取り直す**。パネルを開いているか・push からどれだけ経ったかは問わず、
   決着 (success / failure / neutral) するまで追い、決着したら止まる。push 直後に CI がまだ
   1 つも現れないケースだけは 2 分で打ち切る (workflow を持たない repo で回り続けないため)
+- ⚠️ **pace 判定 (帯 25/10・超過/先行/適正/余裕/余剰) は `_claude/statusline-command.sh` と
+  二重実装**。bash に浮動小数点が無いため shell 側は整数の切り捨てで判定するので、Go 側も
+  `paceElapsed` (切り捨て) を通してから判定・表示する。乖離は `usage/pace_drift_test.go` が
+  突き合わせる (経過率は 0.1 刻みで総当たり)。**shell だけ変えたときに走らせる経路は
+  `tests/claude/test_statusline.sh`** — `go test` のキャッシュは外部ファイルの変更を見ないので
+  `-count=1` が必要 (実測 2026-09-01)
 - **Claude Code 連携**: `U` で `/usage` の残量を右上モーダルに表示 (codex CLI があれば
   その残量も区切り罫線付きで併記。表示中は 1 分ごとに自動更新。
   非表示のあいだは更新を止め、再表示時に古ければ取り直す)、`C` で `claude update` を実行

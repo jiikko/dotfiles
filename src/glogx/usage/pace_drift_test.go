@@ -13,8 +13,19 @@ package usage
 //
 // ⚠️ 抽出に失敗したら FAIL する (skip しない)。「検査できなかった」を緑にすると、shell の
 // 書き方が変わった日から乖離検出が黙って止まる (rules/adversarial-review-own-safeguards)。
+//
+// ⚠️ **状態語の一致まで要求する**のは、同じ枠を 2 画面が違う語で呼ぶと読み替えが要るため
+// (issue 144 の目視確認に「statusline のペース行と同じ見え方になっているか」が入っていたのは
+// これを人の目で見ようとしていた)。⚠️ 意図的に片方だけ語を変えたくなったら、この検査を
+// 「語の対応表」を持つ形へ変えること (両方書き換えて無理に揃えない。片方の表示都合で
+// もう片方の語を歪めるのが一番損)。
+//
+// ⚠️ **`go test` のキャッシュはこのファイルが読む shell の変更を見ない** (実測 2026-09-01:
+// shell の帯を変えても `(cached) ok` が返る)。shell だけを変えたときに確実に走らせる経路は
+// tests/claude/test_statusline.sh が `-count=1` つきで持っている。
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -36,8 +47,14 @@ func statuslinePath(t *testing.T) string {
 	dir := filepath.Dir(self)
 	for range 8 {
 		p := filepath.Join(dir, "_claude", "statusline-command.sh")
+		// ⚠️ 「見つかった」だけでは採らない。repo root であること (.git が隣にある) も確かめる。
+		// この repo の tmp/ 配下には過去の検証で作った古い複製が実在し (tmp/verify-tests/sbx/
+		// _claude/statusline-command.sh 等)、src/glogx を tmp へ丸ごとコピーして走らせると、
+		// 本物より先にそれが見つかって**古い shell と比較して緑になる** (red team 指摘 2026-09-01)。
 		if _, err := os.Stat(p); err == nil {
-			return p
+			if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+				return p
+			}
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -46,7 +63,7 @@ func statuslinePath(t *testing.T) string {
 		dir = parent
 	}
 	// ⚠️ ここで skip しない。見つからない = 乖離を検査できていない、であって合格ではない。
-	t.Fatalf("_claude/statusline-command.sh が見つからない (%s から上へ探索)", filepath.Dir(self))
+	t.Fatalf("repo root の _claude/statusline-command.sh が見つからない (%s から上へ探索。.git の隣にあるものだけを採る)", filepath.Dir(self))
 	return ""
 }
 
@@ -182,22 +199,28 @@ func TestPaceRulesMatchStatusline(t *testing.T) {
 		if int(goBand) != bands[tc.kind] {
 			t.Errorf("%s の帯が乖離: glogx=%v / statusline=%d", tc.kind, goBand, bands[tc.kind])
 		}
+		// ⚠️ 経過率は**小数まで**回す。本番の cardPace は窓の残り時間から連続値を作るので、
+		// 整数だけで比べると「Go が小数で判定し shell が切り捨てで判定する」差を構造的に
+		// 見落とす (初版がその穴を持っていた: 経過 24.9% / 使用 49% で shell=先行・glogx=適正。
+		// red team 指摘 2026-09-01)。shell は $(( ... )) の整数除算しか持たないので、
+		// **切り捨てた整数**を渡した結果と一致しなければならない。
 		checked := 0
 		for used := range 101 {
-			for elapsed := range 101 {
-				delta := used - elapsed
-				_, gotGo := paceState(used, float64(elapsed), goBand)
-				wantSh := shellWord(t, rungs, elseWord, limitWord, bands[tc.kind], used, delta)
+			for tenth := range 1001 { // 0.0 .. 100.0 を 0.1 刻み
+				elapsed := float64(tenth) / 10
+				_, gotGo := paceState(used, paceElapsed(elapsed), goBand)
+				shExp := int(math.Floor(elapsed)) // shell の整数除算と同じ切り捨て
+				wantSh := shellWord(t, rungs, elseWord, limitWord, bands[tc.kind], used, used-shExp)
 				if gotGo != wantSh {
-					t.Fatalf("%s used=%d elapsed=%d (delta=%+d): glogx=%q / statusline=%q",
-						tc.kind, used, elapsed, delta, gotGo, wantSh)
+					t.Fatalf("%s used=%d elapsed=%.1f (shell の想定=%d%%): glogx=%q / statusline=%q",
+						tc.kind, used, elapsed, shExp, gotGo, wantSh)
 				}
 				checked++
 			}
 		}
 		// ⚠️ 件数を出す。0 件でも緑になる形 (ループの上限を壊す変更) をここで弾く。
-		if checked != 101*101 {
-			t.Fatalf("%s の検査が %d 件 (101x101 のはず)", tc.kind, checked)
+		if checked != 101*1001 {
+			t.Fatalf("%s の検査が %d 件 (101x1001 のはず)", tc.kind, checked)
 		}
 		t.Logf("%s: %d 通りで一致 (帯 %d)", tc.kind, checked, bands[tc.kind])
 	}

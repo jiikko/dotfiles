@@ -246,6 +246,11 @@ pace_gauge() {
 #
 # ⚠️ 窓幅は API から取れないため種別ごとの定数。resets_at - now が窓幅を超える形で
 #   返ってきたら経過 0 に clamp する (負の経過で想定率がマイナスになるのを防ぐ)。
+# ⚠️ この帯と下の状態語 (上限/超過/先行/適正/余裕/余剰) は **glogx が同じ値を持つ二重実装**で、
+#   乖離すると同じ枠が 2 画面で違う状態を名乗る。src/glogx/usage/pace_drift_test.go が
+#   突き合わせているので、ここを変えたら `bash tests/claude/test_statusline.sh` (または
+#   `cd src/glogx && go test ./usage/ -run TestPaceRulesMatchStatusline -count=1`) を通すこと。
+#   ⚠️ `-count=1` が必要: go test のキャッシュはこのファイルの変更を見ない (実測 2026-09-01)。
 # ⚠️ 想定帯 (band) は種別ごとに変える。5 時間窓は本質的にバースト的で、作業中は
 #   「1 時間目に 40% 使った」= +20pt が常態になる。7d と同じ ±10pt では赤が出続けて
 #   信号にならないので ±25pt (= ±1.25 時間) にしている。
