@@ -166,8 +166,11 @@ func TestRenderDashboardBannerVersionFitsWidth(t *testing.T) {
 	if !strings.Contains(joined, bannerLines(g.cli)[0]) {
 		t.Errorf("AA ごと消えている (バージョンだけ落とすべき):\n%s", joined)
 	}
-	if strings.Contains(joined, "v2.1.216") {
-		t.Errorf("入らないバージョンを出している:\n%s", joined)
+	// ⚠️ 「完全なバージョン文字列が無いこと」では足りない。最後の砦の切り詰めが効くと
+	//   "  v2.1" のような**途中で切れた**版が残り、それでも assert は通ってしまう
+	//   (実測 2026-09-01: 予算に入れない変異が green のままだった)。v 自体を出さない、で見る。
+	if strings.Contains(joined, "v") {
+		t.Errorf("入らないバージョンを途中まで出している (丸ごと落とすべき):\n%s", joined)
 	}
 	// 入る幅では出る (落とす条件が広すぎないこと)。
 	if wide := strings.Join(groupHead(g, bw+20, 40, false), "\n"); !strings.Contains(wide, "v2.1.216") {
