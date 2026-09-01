@@ -44,8 +44,9 @@ fail-closed にならない。同型の grep (`2>/dev/null | head -n1`) で vide
 - `__concat_get_video_frame_rate` / `__concat_get_video_time_base` / `__concat_get_duration` には
   同じ形が**残っている**。frame_rate は表示専用、time_base は空なら `target_timescale` の計算から
   外れて不一致扱いにならない (= 素通り)、duration は空を検証側が失敗扱いにしている。
-  video time_base の空は素通りなので同じ穴。**切り出し先案**: 新規 issue (bug / low:
-  「`__concat_get_video_time_base` の ffprobe 失敗が time_base チェックを素通りする」)
+  video time_base の空は素通りなので同じ穴だった → **同セッションで修正済み** (`__concat_get_video_time_base`
+  も rc を返し、呼び出し側で拒否。`test_concat_time_base.sh` Test 6。変異: `|| return 1` を外す → red)。
+  frame_rate は表示専用、duration は検証側が空を失敗扱いにしているので残してよい
 
 ### 4. 実 CLI の契約を先に測ってから mock を書いた (良かった点)
 
@@ -57,4 +58,3 @@ rc 1」を stdout / exit code を分けて実測し、mock をそれに合わせ
 
 - [ ] 項目 1 の切り出し (ルールに 1 項 or 却下)
 - [ ] 項目 2 の mock コメント追記
-- [ ] 項目 3 の新規 issue 起票

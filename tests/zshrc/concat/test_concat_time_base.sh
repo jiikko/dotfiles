@@ -88,4 +88,20 @@ setopt err_exit
 assert_contains "$output" "repair-mp4-timebase 90000" "Reverse order: target is still 90000 (max), not 30000"
 assert_contains "$output" "tbase_002.mp4" "Reverse order: lists 30000-side file as repair target"
 
+# Test 6: 映像 time_base の ffprobe 失敗は「判定不能」として拒否 (空を素通りさせない)
+printf '\n## Test 6: video time_base probe failure is rejected\n'
+TEST_DIR="$TEST_TMP/tb5"
+mkdir -p "$TEST_DIR"
+echo "video 1" > "$TEST_DIR/vtbfail_001.mp4"
+echo "video 2" > "$TEST_DIR/vtbfail_002.mp4"
+cd "$TEST_DIR"
+unsetopt err_exit
+output=$(concat "$TEST_DIR/vtbfail_001.mp4" "$TEST_DIR/vtbfail_002.mp4" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_exit_code "1" "$exit_code" "Returns exit code 1 when video time_base ffprobe fails"
+assert_contains "$output" "映像 time_base を取得できませんでした" "Reports the probe failure explicitly"
+assert_contains "$output" "vtbfail_002" "Names the file that could not be probed"
+assert_file_not_exists "$TEST_DIR/vtbfail.mp4" "No output file when probe failed"
+
 printf '\n=== time_base Tests Completed ===\n'

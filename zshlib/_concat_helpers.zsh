@@ -332,11 +332,14 @@ __concat_get_video_frame_rate() {
     -of csv=p=0 -- "$file" 2>/dev/null | head -n1
 }
 
+# rc=1 は ffprobe 自体の失敗 (__concat_get_video_info と同じ契約)。空を返して呼び出し側の
+# target_timescale 計算から黙って外れると、その file だけ不一致判定を素通りする。
 __concat_get_video_time_base() {
-  local file="$1"
-  ffprobe -v error -select_streams v:0 \
+  local file="$1" out
+  out=$(ffprobe -v error -select_streams v:0 \
     -show_entries stream=time_base \
-    -of csv=p=0 -- "$file" 2>/dev/null | head -n1
+    -of csv=p=0 -- "$file" 2>/dev/null) || return 1
+  print -r -- "${out%%$'\n'*}"
 }
 
 # 音声の time_base は含めない (別チェック __concat_get_audio_time_base で remux 案内つきの

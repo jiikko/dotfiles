@@ -372,7 +372,8 @@ EOF
     local target_timescale=0
     local tb scale i
     for file in "${input_files[@]}"; do
-      tb=$(__concat_get_video_time_base "$file")
+      tb=$(__concat_get_video_time_base "$file") \
+        || { print -r -- "エラー: 映像 time_base を取得できませんでした (ffprobe 失敗): ${file:t}" >&2; return 1; }
       tb_list+=("$tb")
       scale="${tb#1/}"
       if [[ "$scale" =~ ^[0-9]+$ ]] && (( scale > target_timescale )); then

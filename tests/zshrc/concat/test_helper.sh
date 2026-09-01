@@ -104,7 +104,11 @@ esac
 # `stream=codec_name,width,height,r_frame_rate,pix_fmt` のような複合クエリが素通りし、
 # 「r_frame_rate を映像情報に戻す」変異をテストが検知できなくなる (実物とずれたモックが
 # 変異を隠す典型)。
+# vtbfail_002 は time_base だけの問い合わせで ffprobe が失敗する形を模す (映像情報の取得は成功する)
 if echo "$*" | grep -q "select_streams v:0"; then
+  if echo "$input_file" | grep -q "vtbfail_002" && echo "$*" | grep -q "stream=time_base"; then
+    exit 1
+  fi
   requested=$(echo "$*" | sed -n 's/.*-show_entries stream=\([A-Za-z0-9_,]*\).*/\1/p')
   if [ -n "$requested" ]; then
     # ファイルごとの値を決める
