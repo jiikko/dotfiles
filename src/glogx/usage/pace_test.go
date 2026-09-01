@@ -137,3 +137,35 @@ func TestRenderDashboardShowsGaugeAndAdvice(t *testing.T) {
 		}
 	}
 }
+
+// ゲージの塗りは切り上げ。四捨五入・切り捨てにすると、窓の終端がカラムの手前に落ちたときに
+// 「いま居るカラム」が塗られない (残 4 時間で当日のセルが暗いまま、の実例が statusline にある)。
+func TestCeilCols(t *testing.T) {
+	cases := []struct {
+		pct  float64
+		cols int
+		want int
+	}{
+		{0, 10, 0},    // 0 は 0 (少しも掛かっていない)
+		{1, 10, 1},    // 1% でも 1 カラム目に掛かっている → 切り上げ
+		{5, 10, 1},    // 切り捨てなら 0 になる値
+		{34, 14, 5},   // 4.76 → 5 (切り捨てなら 4)
+		{50, 10, 5},   // ちょうど
+		{100, 10, 10}, // 上限
+		{120, 10, 10}, // 超過は clamp
+		{-5, 10, 0},   // 負は 0
+	}
+	for _, c := range cases {
+		if got := ceilCols(c.pct, c.cols); got != c.want {
+			t.Errorf("ceilCols(%v, %d) = %d, want %d", c.pct, c.cols, got, c.want)
+		}
+	}
+}
+
+// 1% でもゲージの 1 カラム目が塗られる (切り上げが描画まで効いていること)。
+func TestPaceGaugePaintsFirstColumnOnTinyUsage(t *testing.T) {
+	got := paceGauge(5, 1, 0, 0, true)
+	if !strings.Contains(got, sgr.BgRedOnBlack) {
+		t.Errorf("1%% の消化が 1 カラムも塗られていない: %q", got)
+	}
+}

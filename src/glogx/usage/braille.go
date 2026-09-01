@@ -113,10 +113,12 @@ func (b *braille) putText(row, col int, s, color string) {
 		if w <= 0 {
 			continue
 		}
-		if x >= 0 && x < b.cols {
+		// ⚠️ 全角が最終桁に来たら書かない。2 セル目に「覆われている」印を打てないので、
+		// 書くとその行の表示幅が cols+1 になる (格子が 1 桁広がる)。
+		if x >= 0 && x+w <= b.cols {
 			j := row*b.cols + x
 			b.text[j], b.textColor[j], b.textSkip[j] = r, color, false
-			if w == 2 && x+1 < b.cols {
+			if w == 2 {
 				b.textSkip[j+1] = true
 				b.text[j+1] = 0
 			}

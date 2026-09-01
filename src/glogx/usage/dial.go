@@ -294,12 +294,18 @@ func cardFoot(c dialCard, remain time.Duration, elapsed float64, col, word strin
 	}
 	pctCell := paintIf(fmt.Sprintf("%3d%%", c.win.Percent), col, colored)
 	remainCell := paintIf(formatRemain(remain), sgr.Bold, colored)
-	numbers := fitLine(w, []string{
-		pctCell + " " + paintIf(fmt.Sprintf("想定%3.0f%%", elapsed), sgr.Dim, colored) + " " +
-			paintIf(fmt.Sprintf("%+5.1fpt %s", float64(c.win.Percent)-elapsed, word), col, colored),
-		pctCell + " " + paintIf(word, col, colored),
-		pctCell,
-	})
+	// ⚠️ 窓幅が分からない枠では想定・乖離・状態語を出さない。elapsed は 0 固定なので
+	// 「想定 0% / +50.0pt 超過」のような、根拠のない断定になる (盤の側は「窓幅が不明」と
+	// 断っているのに数値行だけが言い切る形になっていた)。
+	numbers := fitLine(w, []string{pctCell})
+	if c.span > 0 {
+		numbers = fitLine(w, []string{
+			pctCell + " " + paintIf(fmt.Sprintf("想定%3.0f%%", elapsed), sgr.Dim, colored) + " " +
+				paintIf(fmt.Sprintf("%+5.1fpt %s", float64(c.win.Percent)-elapsed, word), col, colored),
+			pctCell + " " + paintIf(word, col, colored),
+			pctCell,
+		})
+	}
 	reset := fitLine(w, []string{
 		"復活まで " + remainCell + " " + paintIf("("+formatReset(c.win.ResetAt)+")", sgr.Dim, colored),
 		"復活まで " + remainCell,
@@ -399,7 +405,7 @@ func drawCenter(cv *braille, pct int, remain time.Duration, col string, w, faceH
 		return
 	}
 	putCentered(cv, midRow, w, remainText(remain, innerWidthAt(cy, rIn, midRow)), sgr.BrightWhite)
-	putCentered(cv, midRow+1, w, digits+"%", col)
+	putCentered(cv, midRow+1, w, fitText(innerWidthAt(cy, rIn, midRow+1), []string{digits + "%"}), col)
 }
 
 // remainText は幅 w に収まる残り時間の表記を選ぶ。狭い盤ほど語を落とす。
@@ -407,8 +413,12 @@ func remainText(d time.Duration, w int) string {
 	return fitText(w, []string{"残" + formatRemain(d), formatRemain(d), compactRemain(d)})
 }
 
-// putCentered は行 row の中央 (盤の中心 w/2) に s を置く。
+// putCentered は行 row の中央 (盤の中心 w/2) に s を置く。空文字は何も置かない
+// (fitText が「入らない」を空で返すので、その結果をそのまま渡せる)。
 func putCentered(cv *braille, row, w int, s, col string) {
+	if s == "" {
+		return
+	}
 	cv.putText(row, w/2-termwidth.Of(s)/2, s, col)
 }
 
@@ -418,12 +428,14 @@ func putCentered(cv *braille, row, w int, s, col string) {
 // (円は上下ほど細い)。その行の弦の長さで測り、左右に 2 セルずつ余白を残す。
 // 弦の半分 = sqrt(rIn^2 - dy^2) ドット = そのままセル数 (ドットは横 2 つで 1 セル)。
 // ⚠️ 余白 1 セルでは足りない: リングは太さ 2 ドットあり、弦の計算は外側の 1 本しか見ていない。
+// さらに 1 セル余分に引く: 中央寄せは w/2 と幅/2 の 2 回切り捨てるので、桁数の偶奇によって
+// 文字が最大 1 セル左へずれる (実測 2026-09-01: 余白 2 セルでも 72 通りのサイズで接触した)。
 func innerWidthAt(cy, rIn float64, row int) int {
 	dy := math.Abs(float64(row*4+2) - cy) // 行の中心のドット座標と盤の中心の差
 	if dy >= rIn {
 		return 0
 	}
-	return max(int(math.Sqrt(rIn*rIn-dy*dy))-4, 0)
+	return max(int(math.Sqrt(rIn*rIn-dy*dy))-5, 0)
 }
 
 // dialDivisions は盤の目盛り数 (窓を何等分して刻むか)。5h → 5 (1 時間)、7d → 7 (1 日)。
@@ -469,14 +481,19 @@ func fitLine(w int, candidates []string) string {
 	return termwidth.Truncate(last, w, "…")
 }
 
-// fitText は幅 w に収まる最初の候補を返す (どれも収まらなければ最後の候補)。
+// fitText は幅 w に収まる最初の候補を返す。
+//
+// ⚠️ どれも収まらなければ**空**を返す (最後の候補を返さない)。盤の上に置く文字は、
+// はみ出すとリングと重なって読めなくなるうえ「文字が盤に接しない」不変条件も壊す。
+// 数字は盤の下の数値行にも出るので、極小の盤では中央を空にする方が正しい
+// (実測 2026-09-01: 最後の候補を返す実装だと 40〜200 桁 x 12〜60 行のうち 1266 通りで接触)。
 func fitText(w int, candidates []string) string {
 	for _, s := range candidates {
 		if termwidth.Of(s) <= w {
 			return s
 		}
 	}
-	return candidates[len(candidates)-1]
+	return ""
 }
 
 // centerCell は幅 w の中で s を中央寄せする (左余白だけ付ける。右端は呼び出し側が埋める)。

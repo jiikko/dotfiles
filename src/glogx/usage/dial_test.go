@@ -76,8 +76,17 @@ func TestRenderDashboardUnknownSpan(t *testing.T) {
 	if !strings.Contains(all, "窓幅が不明") {
 		t.Errorf("窓幅不明の断りが無い:\n%s", all)
 	}
-	if strings.ContainsRune(all, '⠿') || strings.Contains(all, "想定 50%") {
-		t.Errorf("窓幅不明なのに盤・想定を描いている:\n%s", all)
+	// ⚠️ 特定の braille 1 文字 ('⠿' 等) を検出子にしない。braille は 256 通りあり、正常な盤にも
+	// 出ない字が大半なので「盤を描いた」の検出にならない (実測: 盤を描かせる変異を当てても
+	// 発火しなかった)。範囲で判定する。
+	if slices.ContainsFunc([]rune(all), isBrailleRune) {
+		t.Errorf("窓幅不明なのに盤を描いている:\n%s", all)
+	}
+	// 窓幅が分からないので想定・乖離・状態語は出さない (根拠のない断定をしない)。
+	for _, ng := range []string{"想定", "pt ", "適正", "超過", "先行", "余裕", "余剰"} {
+		if strings.Contains(all, ng) {
+			t.Errorf("窓幅不明なのにペース判定を出している (%q):\n%s", ng, all)
+		}
 	}
 }
 
@@ -240,20 +249,30 @@ func TestRenderDashboardSeparatesRows(t *testing.T) {
 // 「盤の行」= 点描 (braille) を含む行。その行の中で点描と文字が隣り合っていたら接触。
 // 文字の中身を書かずに接触だけを見るので、中央の表記が変わってもこのテストは張り替え不要。
 func TestRenderDashboardCenterTextHasClearance(t *testing.T) {
-	for _, size := range []struct{ w, h int }{{120, 44}, {100, 40}, {160, 50}} {
-		for _, ln := range RenderDashboard(dialTestSnap(), dialTestNow(), size.w, size.h, false) {
-			rs := []rune(ln)
-			if !slices.ContainsFunc(rs, isBrailleRune) {
-				continue // 盤の行ではない (見出し・ゲージ・数値行)
-			}
-			for i := 1; i < len(rs); i++ {
-				a, b := rs[i-1], rs[i]
-				if isBrailleRune(a) && isFaceText(b) || isFaceText(a) && isBrailleRune(b) {
-					t.Errorf("%dx%d: 盤と文字が接している (%q と %q): %q", size.w, size.h, a, b, ln)
+	checked := 0
+	for w := 40; w <= 200; w += 4 {
+		for h := 12; h <= 60; h += 2 {
+			for _, ln := range RenderDashboard(dialTestSnap(), dialTestNow(), w, h, false) {
+				rs := []rune(ln)
+				if !slices.ContainsFunc(rs, isBrailleRune) {
+					continue // 盤の行ではない (見出し・ゲージ・数値行)
+				}
+				checked++
+				for i := 1; i < len(rs); i++ {
+					a, b := rs[i-1], rs[i]
+					if isBrailleRune(a) && isFaceText(b) || isFaceText(a) && isBrailleRune(b) {
+						t.Errorf("%dx%d: 盤と文字が接している (%q と %q): %q", w, h, a, b, ln)
+					}
 				}
 			}
 		}
 	}
+	// ⚠️ 「盤の行が 1 つも無い」= このテストは何も検査していない。中央の描画をまるごと
+	// 落とす変異でも pass してしまうので、検査したことを数で確かめる。
+	if checked == 0 {
+		t.Fatal("盤の行が 1 つも無い (テストが空回りしている)")
+	}
+	t.Logf("検査した盤の行: %d", checked)
 }
 
 func isBrailleRune(r rune) bool { return r >= 0x2800 && r <= 0x28FF }
@@ -287,5 +306,47 @@ func TestRenderDashboardCenterShowsRemainAndPercent(t *testing.T) {
 	// 残り時間は日本語表記 (ユーザー要望 2026-09-01: 6d23h ではなく 6日23時間)。
 	if strings.Contains(all, "2d09h") {
 		t.Errorf("ASCII 表記が残っている:\n%s", all)
+	}
+}
+
+// 盤の中央の AA が「正しい値」を出していること。存在と幅だけを見ていると、値を取り違える
+// 変異 (pct を定数に差し替える等) が素通りする — 使用率は盤の下の数値行にも出るので、
+// 盤の外の文字列だけでは AA の中身を守れない。
+func TestRenderDashboardCenterAAShowsActualPercent(t *testing.T) {
+	face := faceLines(RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false))
+	// 62 の 1 行目 (4 桁幅の字形)。リテラルで固定する — production の digitLines から
+	// 期待値を作ると自己言及になり、字形が変わっても検出できない。
+	if !strings.Contains(face, "█▀▀▀ ▀▀▀█") {
+		t.Errorf("62%% の AA が出ていない:\n%s", face)
+	}
+	// 78 の 2 行目。カードごとに違う値が出ていること (全カードが同じ定数に化ける変異を弾く)。
+	if !strings.Contains(face, " ▄▀  █▀▀█") {
+		t.Errorf("78%% の AA が出ていない:\n%s", face)
+	}
+}
+
+// faceLines は盤 (点描を含む行) だけを返す。
+func faceLines(lines []string) string {
+	var b strings.Builder
+	for _, ln := range lines {
+		if slices.ContainsFunc([]rune(ln), isBrailleRune) {
+			b.WriteString(ln + "\n")
+		}
+	}
+	return b.String()
+}
+
+// 全角が最終桁に来たら書かない。書くと 2 セル目に「覆われている」印を打てず、その行の
+// 表示幅が cols+1 になる (格子が 1 桁広がる)。左へはみ出す分も同様に落とす。
+func TestBraillePutTextClipsAtEdges(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		start int
+	}{{"右端に全角", 11}, {"左へはみ出す", -3}, {"完全に外", 99}} {
+		cv := newBraille(12, 1)
+		cv.putText(0, c.start, "残2日9時間", "")
+		if w := termwidth.Of(cv.lines(false)[0]); w > 12 {
+			t.Errorf("%s: 幅 %d > 12 (%q)", c.name, w, cv.lines(false)[0])
+		}
 	}
 }
