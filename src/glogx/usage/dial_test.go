@@ -620,3 +620,24 @@ func TestDenseFootRefusesToDropInfo(t *testing.T) {
 		t.Error("入る幅なのに畳まなかった")
 	}
 }
+
+// リセット時刻が窓の長さより先を指していると (時計のずれ / CLI の申告ずれ)、経過率が負になる。
+// 負のまま paceState へ渡すと「使用 - 経過」が水増しされ、まだ 5% しか使っていない枠が
+// 「超過」(赤) に化ける。clampPct が 0 で止める。
+//
+// ⚠️ 上限側 (100 超え) は今の実装では構造的に到達しない (remain >= 0 なので経過率は 1 を
+// 超えない)。ここで固定するのは下限側だけ。
+func TestCardPaceClampsElapsedForFutureReset(t *testing.T) {
+	now := dialTestNow()
+	c := dialCard{
+		win:  Window{Label: "5h", Percent: 5, ResetAt: now.Add(8 * time.Hour), WindowMins: 300},
+		span: 5 * time.Hour,
+	}
+	_, elapsed, _, word := cardPace(c, now)
+	if elapsed != 0 {
+		t.Errorf("窓より先のリセットで経過率 %v (want 0)", elapsed)
+	}
+	if word != "適正" {
+		t.Errorf("5%% しか使っていない枠の状態語が %q (want 適正)", word)
+	}
+}

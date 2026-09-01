@@ -495,7 +495,7 @@ func cardFootLines(h int) int {
 func cardPace(c dialCard, now time.Time) (remain time.Duration, elapsed float64, col, word string) {
 	remain = max(c.win.ResetAt.Sub(now), 0)
 	if c.span > 0 {
-		elapsed = math.Max(0, math.Min(100, float64(c.span-remain)/float64(c.span)*100))
+		elapsed = clampPct(float64(c.span-remain) / float64(c.span) * 100)
 	}
 	// ⚠️ 状態の判定には**切り捨てた整数**の経過率を使う。生の小数で判定すると、同じ瞬間に
 	// statusline (shell) と違う状態語が出る: shell は $(( pr_elapsed * 100 / pr_window )) の
@@ -506,6 +506,10 @@ func cardPace(c dialCard, now time.Time) (remain time.Duration, elapsed float64,
 	col, word = paceState(c.win.Percent, paceElapsed(elapsed), paceBand(c.span))
 	return remain, elapsed, col, word
 }
+
+// clampPct は百分率として成立する範囲 (0..100) へ丸める。経過率 (時間から計算) と使用率
+// (CLI の出力そのまま) の両方が通るので、丸め方を 1 箇所に持つ。
+func clampPct(v float64) float64 { return min(max(v, 0), 100) }
 
 // paceElapsed は状態の判定と想定% の表示に使う経過率 (切り捨て)。statusline (shell) の整数除算に
 // 揃えるための唯一の窓口 — 2 か所で別々に丸めると、また今回と同じ形でずれる。
@@ -650,7 +654,7 @@ func cardFoot(c dialCard, remain time.Duration, elapsed float64, col, word strin
 func renderFace(c dialCard, remain time.Duration, elapsed float64, col string, w, faceH int, colored bool) []string {
 	cv := newBraille(w, faceH)
 	cx, cy, rOut, rIn := faceGeom(w, faceH)
-	used := math.Max(0, math.Min(100, float64(c.win.Percent))) / 100
+	used := clampPct(float64(c.win.Percent)) / 100
 	el := elapsed / 100
 
 	// ⚠️ 円周を**背景色の帯**で太く描く案を一度実装したが、**色がダサい**という理由で revert した
