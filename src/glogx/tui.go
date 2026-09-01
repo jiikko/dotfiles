@@ -980,6 +980,8 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleGitLogProbe(msg)
 	case gitLogFPMsg:
 		return m, m.handleGitLogFP(msg)
+	case gitLogReloadMsg:
+		return m, m.handleGitLogReload(msg)
 	case ciPollMsg:
 		if msg.gen != m.ciPollGen {
 			return m, nil // reloadAfterPull で世代が進んだ後の残タイマーは破棄
@@ -1595,7 +1597,56 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 	return cmd
 }
 
-// reloadLog は git log を読み直して派生キャッシュを畳む共通経路。rebase でローカル SHA が
+// logData は git log の読み直しで取り直すもの一式 (Update の外で集め、applyLogData でモデルへ入れる)。
+type logData struct {
+	commits  []Commit
+	raw      []string // 表示用 verbatim (oneline では nil)
+	statuses map[string]CIState
+	toFetch  []string
+	repo     Repo
+	hasRepo  bool
+}
+
+// loadLogData は git を fork して logData を集める純粋な読み込み (モデルを触らない)。
+// git を 5-6 本 fork する (LoadCommits / LoadLogDisplay / planStatuses の rev-list・remote get-url・
+// rev-parse) ので、Update の中では呼ばず Cmd に出す (reflectGitLogChange)。pull 後の全面リロード
+// (reloadLog) は利用者の操作なので同期のまま。
+func loadLogData(opts *Options, colored, oneline bool) (logData, error) {
+	commits, err := LoadCommits(opts, colored)
+	if err != nil {
+		return logData{}, err
+	}
+	shas := make([]string, len(commits))
+	for i, c := range commits {
+		shas[i] = c.SHA
+	}
+	d := logData{commits: commits}
+	d.statuses, d.toFetch, d.repo, d.hasRepo, _ = planStatuses(opts, shas)
+	if !oneline {
+		if raw, dispErr := LoadLogDisplay(opts, colored); dispErr == nil {
+			d.raw = raw // 照合失敗は applyLogData 側で nil = 自前レンダリングへ
+		}
+	}
+	return d, nil
+}
+
+// reloadLog は git log を読み直して派生キャッシュを畳む共通経路 (同期。pull 後の全面リロード用)。
+// 読み込みと反映は loadLogData / applyLogData に分かれており、外部変更の追従 (gitlog_watch.go) は
+// 読み込みだけを Cmd へ出して同じ applyLogData で反映する。
+//
+// 返り値の added は先頭へ増えた新規コミット数、ok=false は読み直しに失敗した = モデルを
+// 一切触っていない (警告はここで出しているので、呼び出し側は追加の通知をしない)。
+func (m *browseModel) reloadLog(keepView bool, failPrefix string) (added int, cmd tea.Cmd, ok bool) {
+	d, err := loadLogData(m.opts, m.colored, m.oneline)
+	if err != nil {
+		m.showWarning(failPrefix + firstLine(err.Error()))
+		return 0, nil, false
+	}
+	added, cmd = m.applyLogData(d, keepView)
+	return added, cmd, true
+}
+
+// applyLogData は読み直した logData をモデルへ入れ、派生キャッシュを畳む。rebase でローカル SHA が
 // 変わりうるため、コミット列・push 状態・CI・派生キャッシュ (details/PR/diff/job 詳細)
 // をすべて取り直す (部分更新は旧 SHA の残骸が混ざる)。
 //
@@ -1611,21 +1662,16 @@ func (m *browseModel) reloadAfterPull() tea.Cmd {
 // 「先頭へ倒す」経路へ落ちて読んでいた位置が飛ぶ (敵対レビューで実測 2026-09-01)。
 // 両方消えていたら (rebase / reset) 先頭へ倒す。
 //
-// 返り値の added は先頭へ増えた新規コミット数、ok=false は読み直しに失敗した = モデルを
-// 一切触っていない (警告はここで出しているので、呼び出し側は追加の通知をしない)。
-func (m *browseModel) reloadLog(keepView bool, failPrefix string) (added int, cmd tea.Cmd, ok bool) {
-	commits, err := LoadCommits(m.opts, m.colored)
-	if err != nil {
-		m.showWarning(failPrefix + firstLine(err.Error()))
-		return 0, nil, false
-	}
+// 錨は行集合が入れ替わる直前 (この関数の中) で測る。非同期の読み直しでは Cmd を出してから
+// 結果が届くまでに利用者がスクロールしうるので、Cmd を出す時点で測った錨は使えない。
+func (m *browseModel) applyLogData(d logData, keepView bool) (added int, cmd tea.Cmd) {
+	commits := d.commits
 	// 読み直し前の SHA 集合。先頭へ増えた新規コミット数を「既知 SHA に当たるまで」で数え、
 	// アニメーションの対象行数を決める (rebase で SHA が書き換わった場合も破綻しない)。
 	oldSHAs := make(map[string]struct{}, len(m.commits))
 	for _, c := range m.commits {
 		oldSHAs[c.SHA] = struct{}{}
 	}
-	// 錨は行集合が入れ替わる前に取る (読み直し後に同じ画面行へ戻すため)。
 	cursorSHA, topSHA, topRow := "", "", 0
 	if keepView {
 		if m.cursor >= 0 && m.cursor < len(m.commits) {
@@ -1637,11 +1683,7 @@ func (m *browseModel) reloadLog(keepView bool, failPrefix string) (added int, cm
 		}
 	}
 	m.commits = commits
-	shas := make([]string, len(commits))
-	for i, c := range commits {
-		shas[i] = c.SHA
-	}
-	m.statuses, m.toFetch, m.repo, m.hasRepo, _ = planStatuses(m.opts, shas)
+	m.statuses, m.toFetch, m.repo, m.hasRepo = d.statuses, d.toFetch, d.repo, d.hasRepo
 	m.details = map[string][]CheckDetail{}
 	m.detailsLoading = map[string]bool{}
 	m.detailOv.reset() // job 詳細ログキャッシュも破棄 (旧 SHA の残骸を持ち越さない)
@@ -1657,18 +1699,20 @@ func (m *browseModel) reloadLog(keepView bool, failPrefix string) (added int, cm
 	// 残るので、飛んでいる旧 poll と新 poll が同一 SHA を並行取得し、完了順で古い結果が勝ちうる。
 	// 旧 poll の結果が着弾した時点で false に戻る (数周期 fetch を見送るだけで追従は途切れない)。
 	m.glide.stop() // リロードの演出はアニメ側が担うので一覧の glide は破棄
-	if !m.oneline {
-		m.verbatim = nil
-		if raw, dispErr := LoadLogDisplay(m.opts, m.colored); dispErr == nil {
-			m.verbatim = VerbatimLines(raw, commits) // 照合失敗は nil = 自前レンダリングへ
-		}
+	m.verbatim = nil
+	if !m.oneline && d.raw != nil {
+		m.verbatim = VerbatimLines(d.raw, commits) // 照合失敗は nil = 自前レンダリングへ
 	}
 	m.invalidateLines()
 	// 見張りの基準を作り直す (gitlog_watch.go)。自分で読み直した後の状態を「変化」として
 	// もう一度反映しないため。空にすると次の測定が手元のコミット列と突き合わせて基準を作る。
 	// ⚠️ 飛んでいる測定の札も降ろす: 読み直しの直前に測った古い指紋が届くと、新しいコミット列と
 	// 突き合わせて必ず不一致になり、無駄な再読込・トースト・CI 再取得が続けて走る。
+	// reloadSeq を進めるのは、飛んでいる非同期の読み直し (reflectGitLogChange) を捨てるため:
+	// この後に届く古い logData を入れると、いま入れたものより古い状態へ戻る。
 	m.logWatch.hasSeen, m.logWatch.measuring = false, false
+	m.logWatch.reloadSeq++
+	m.logWatch.reloading = false
 	added = countNewCommits(commits, oldSHAs)
 	newTop, newCursor := indexOfCommit(commits, topSHA), indexOfCommit(commits, cursorSHA)
 	switch {
@@ -1701,11 +1745,11 @@ func (m *browseModel) reloadLog(keepView bool, failPrefix string) (added int, cm
 		m.pendingFetches = 0
 		m.fetching = false
 		if m.pullAnimating {
-			return added, m.maybeTick(), true // CI 取得は無いが、アニメーションのために tick を回す
+			return added, m.maybeTick() // CI 取得は無いが、アニメーションのために tick を回す
 		}
-		return added, nil, true
+		return added, nil
 	}
-	return added, tea.Batch(m.startCIFetch(m.toFetch), m.maybeTick()), true
+	return added, tea.Batch(m.startCIFetch(m.toFetch), m.maybeTick())
 }
 
 // indexOfCommit は sha のコミットの index (無ければ -1)。sha == "" は常に -1 (錨なし)。

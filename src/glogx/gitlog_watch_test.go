@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -205,9 +206,11 @@ func TestGitLogFingerprintBaselineCatchesStartupWindow(t *testing.T) {
 	}
 	m.logWatch.hasSeen = false // reloadLog が基準を降ろした直後と同じ状態
 	m.handleGitLogProbe(gitLogProbeMsg{})
-	if cmd := m.handleGitLogFP(gitLogFPMsg{fp: fp2, ok: true}); cmd == nil {
+	cmd := m.handleGitLogFP(gitLogFPMsg{fp: fp2, ok: true})
+	if cmd == nil {
 		t.Fatal("手元のコミット列と食い違う指紋を基準にして飲み込んだ")
 	}
+	runGitLogReload(t, m, cmd)
 	if len(m.commits) != 3 || m.commits[0].Subject != "c3" {
 		t.Fatalf("再読込されていない: %d 件 先頭=%q", len(m.commits), m.commits[0].Subject)
 	}
@@ -237,9 +240,11 @@ func TestGitLogReflectKeepsAnchorRow(t *testing.T) {
 	commitLines(t, dir, 9, "c5")
 	m.logWatch.seen, m.logWatch.hasSeen = "before", true
 	m.handleGitLogProbe(gitLogProbeMsg{})
-	if cmd := m.handleGitLogFP(gitLogFPMsg{fp: "after", ok: true}); cmd == nil {
+	cmd := m.handleGitLogFP(gitLogFPMsg{fp: "after", ok: true})
+	if cmd == nil {
 		t.Fatal("指紋が変わったのに反映されない")
 	}
+	runGitLogReload(t, m, cmd)
 	if len(m.commits) != 5 || m.commits[0].Subject != "c5" {
 		t.Fatalf("再読込されていない: %d 件 先頭=%q", len(m.commits), m.commits[0].Subject)
 	}
@@ -286,7 +291,7 @@ func TestGitLogReflectAtTopFallsToPullAnim(t *testing.T) {
 	commitLines(t, dir, 9, "c5")
 	m.logWatch.seen, m.logWatch.hasSeen = "before", true
 	m.handleGitLogProbe(gitLogProbeMsg{})
-	m.handleGitLogFP(gitLogFPMsg{fp: "after", ok: true})
+	runGitLogReload(t, m, m.handleGitLogFP(gitLogFPMsg{fp: "after", ok: true}))
 	if m.cursor != 0 {
 		t.Errorf("カーソルが先頭に残らない: %d", m.cursor)
 	}
@@ -367,7 +372,18 @@ func TestGitLogWatchWiredThroughUpdate(t *testing.T) {
 		t.Fatal("Update が gitLogProbeMsg を受けていない (case の配線漏れ)")
 	}
 	fpMsg := m.gitLogMeasureCmd()() // 実 git で指紋を測る
-	m.Update(fpMsg)
+	_, reloadCmd := m.Update(fpMsg)
+	if reloadCmd == nil {
+		t.Fatal("指紋の変化で読み直しの Cmd が返らない")
+	}
+	if len(m.commits) != 2 {
+		t.Fatalf("Update の中で同期に読み直した (Cmd に出す契約。issue 146): %d 件", len(m.commits))
+	}
+	reloadMsg := reloadCmd() // 実 git で読み直す (goroutine 側の仕事)
+	if _, ok := reloadMsg.(gitLogReloadMsg); !ok {
+		t.Fatalf("読み直しの Cmd が gitLogReloadMsg を返さない: %T", reloadMsg)
+	}
+	m.Update(reloadMsg)
 	if len(m.commits) != 3 || m.commits[0].Subject != "c3" {
 		t.Fatalf("配線経由で反映されない: %d 件 先頭=%q", len(m.commits), m.commits[0].Subject)
 	}
@@ -494,7 +510,7 @@ func TestGitLogReflectKeepsViewportScrolledWithCursorAtTop(t *testing.T) {
 	commitLines(t, dir, 9, "c6")
 	m.logWatch.seen, m.logWatch.hasSeen = "before", true
 	m.handleGitLogProbe(gitLogProbeMsg{})
-	m.handleGitLogFP(gitLogFPMsg{fp: "after", ok: true})
+	runGitLogReload(t, m, m.handleGitLogFP(gitLogFPMsg{fp: "after", ok: true}))
 	if m.commits[0].Subject != "c6" {
 		t.Fatalf("反映されていない: 先頭=%q", m.commits[0].Subject)
 	}
@@ -563,7 +579,7 @@ func TestGitLogReflectSurvivesAmendOfTopCommit(t *testing.T) {
 	gitInRepo(t, dir, "commit", "-q", "--amend", "-m", "c6 amended")
 	m.logWatch.seen, m.logWatch.hasSeen = "before", true
 	m.handleGitLogProbe(gitLogProbeMsg{})
-	m.handleGitLogFP(gitLogFPMsg{fp: "after", ok: true})
+	runGitLogReload(t, m, m.handleGitLogFP(gitLogFPMsg{fp: "after", ok: true}))
 
 	if m.commits[0].Subject != "c6 amended" {
 		t.Fatalf("反映されていない: 先頭=%q", m.commits[0].Subject)
@@ -610,5 +626,131 @@ func TestGitLogEmptyFingerprintIsNotSentinel(t *testing.T) {
 	}
 	if m.toast.visible() {
 		t.Errorf("変化していないのにトーストが出た: %q", m.toast.text)
+	}
+}
+
+// runGitLogReload は reflectGitLogChange が返した読み直しの Cmd を goroutine の代わりに実行し、
+// その結果を handleGitLogReload へ渡す (反映は Update の外で読み、Msg で受ける契約。issue 146)。
+func runGitLogReload(t *testing.T, m *browseModel, cmd tea.Cmd) {
+	t.Helper()
+	if cmd == nil {
+		t.Fatal("読み直しの Cmd が返らない")
+	}
+	msg, ok := cmd().(gitLogReloadMsg)
+	if !ok {
+		t.Fatalf("読み直しの Cmd が gitLogReloadMsg を返さない")
+	}
+	m.handleGitLogReload(msg)
+}
+
+// 読み直している間に pull が入ったら、届いた古い logData で pull の結果を上書きしない。
+func TestGitLogReloadDiscardsWhenSelfReloadHappenedMeanwhile(t *testing.T) {
+	dir := newTempRepo(t, []string{"c1", "c2"})
+	opts := &Options{MaxCount: 20, NoFrame: true}
+	commits, err := LoadCommits(opts, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, 10)
+	t.Cleanup(m.cancel)
+	m.zoom.off = true
+	commitLines(t, dir, 9, "c3")
+	cmd := m.reflectGitLogChange()
+	staleMsg := cmd() // c3 まで読んだ結果 (まだ届いていない)
+	commitLines(t, dir, 10, "c4")
+	m.reloadAfterPull() // 利用者の pull が先に反映された (c4 まで)
+	m.pullAnimating = false
+	m.toast = toast{}
+	if cmd := m.handleGitLogReload(staleMsg.(gitLogReloadMsg)); cmd != nil {
+		t.Error("古い読み直しの結果で何か起きた")
+	}
+	if len(m.commits) != 4 || m.commits[0].Subject != "c4" {
+		t.Fatalf("古い logData が pull の結果を上書きした: %d 件 先頭=%q", len(m.commits), m.commits[0].Subject)
+	}
+	if m.toast.visible() {
+		t.Errorf("捨てた読み直しでトーストが出た: %q", m.toast.text)
+	}
+	if m.logWatch.reloading {
+		t.Error("reloading の札が降りていない (以降の観測が全部見送られる)")
+	}
+}
+
+// 読み直している間にポップアップが開かれたら、届いた結果を入れない (開いている内容の
+// キャッシュが消える)。基準は触らないので閉じた後の観測で反映される。
+func TestGitLogReloadDefersWhenOverlayOpensDuringReload(t *testing.T) {
+	dir := newTempRepo(t, []string{"c1", "c2"})
+	opts := &Options{MaxCount: 20, NoFrame: true}
+	commits, err := LoadCommits(opts, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, 10)
+	t.Cleanup(m.cancel)
+	m.zoom.off = true
+	m.logWatch.seen, m.logWatch.hasSeen = "before", true
+	commitLines(t, dir, 9, "c3")
+	cmd := m.reflectGitLogChange()
+	msg := cmd()
+	m.diffOv.open(commits[0].SHA) // 読み直し中に開かれた
+	if cmd := m.handleGitLogReload(msg.(gitLogReloadMsg)); cmd != nil {
+		t.Error("ポップアップを開いている状態で反映した")
+	}
+	if len(m.commits) != 2 {
+		t.Fatalf("反映されてしまった: %d 件", len(m.commits))
+	}
+	if !m.logWatch.hasSeen || m.logWatch.seen != "before" {
+		t.Errorf("見送ったのに基準が動いた: hasSeen=%v seen=%q", m.logWatch.hasSeen, m.logWatch.seen)
+	}
+	if m.logWatch.reloading {
+		t.Error("reloading の札が降りていない")
+	}
+}
+
+// 読み直しが飛んでいる間は測らない (結果は読み直しが基準を降ろした後に捨てられるだけの fork)。
+func TestGitLogProbeSkipsMeasureWhileReloading(t *testing.T) {
+	newTempRepo(t, []string{"c1"})
+	opts := &Options{MaxCount: 20, NoFrame: true}
+	commits, err := LoadCommits(opts, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, 10)
+	t.Cleanup(m.cancel)
+	_ = m.reflectGitLogChange() // Cmd は実行しない = in-flight のまま
+	if !m.logWatch.reloading {
+		t.Fatal("reflectGitLogChange が reloading の札を立てない")
+	}
+	m.handleGitLogProbe(gitLogProbeMsg{})
+	if m.logWatch.measuring {
+		t.Error("読み直し中に測定を始めた")
+	}
+}
+
+// 読み直しの git fork は Cmd の実行時 (goroutine) に走り、Update の中 (reflectGitLogChange の呼び出し時)
+// では走らない (issue 146)。Cmd を作った後に git を使えなくして、Cmd の実行が初めて失敗することで固定する
+// (Update 内で読んでしまう変異は、Cmd を作った時点で結果を握っているので成功してしまう)。
+func TestGitLogReflectRunsGitInsideCmd(t *testing.T) {
+	newTempRepo(t, []string{"c1"})
+	opts := &Options{MaxCount: 20, NoFrame: true}
+	commits, err := LoadCommits(opts, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, 10)
+	t.Cleanup(m.cancel)
+	cmd := m.reflectGitLogChange()
+	t.Setenv("PATH", "") // ここから git は起動できない
+	msg, ok := cmd().(gitLogReloadMsg)
+	if !ok {
+		t.Fatalf("gitLogReloadMsg でない: %T", msg)
+	}
+	if msg.err == nil {
+		t.Fatal("git を使えなくした後の Cmd 実行が成功した = Update の中で既に読んでいる")
+	}
+	if cmd := m.handleGitLogReload(msg); cmd != nil {
+		t.Error("失敗した読み直しで何か起きた")
+	}
+	if m.logWatch.reloading {
+		t.Error("失敗後に reloading の札が降りていない")
 	}
 }

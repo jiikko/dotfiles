@@ -67,6 +67,14 @@ type gitLogFPMsg struct {
 // gitLogDirsMsg は見張り対象ディレクトリの解決結果 (起動時に 1 回)。
 type gitLogDirsMsg struct{ dirs []string }
 
+// gitLogReloadMsg は外部変更の反映のために Update の外で読み直した git log (reflectGitLogChange)。
+type gitLogReloadMsg struct {
+	data logData
+	err  error
+	gen  int // logWatch.gen (見張りの世代)
+	seq  int // logWatch.reloadSeq (読み直しの世代。届くまでに別の読み直しが入っていたら捨てる)
+}
+
 // gitLogWatch は見張りの状態。zero value は「まだ何も張っていない」。
 type gitLogWatch struct {
 	w    dirWatcher
@@ -83,6 +91,13 @@ type gitLogWatch struct {
 	// ⚠️ 厳密な排他ではない: 自分で読み直したとき (reloadLog) は飛んでいる測定を捨てるために
 	// 札を降ろすので、その結果が届く前に次の測定が始まりうる (最大 fork 1 本の重複)。
 	measuring bool
+	// reloading は外部変更の反映のための読み直し (reflectGitLogChange) が in-flight か。
+	// 立っている間は測定を見送る (読み直し中に測っても、結果は読み直しが基準を降ろした後に
+	// 捨てられるだけ)。
+	reloading bool
+	// reloadSeq は読み直しの世代。applyLogData が進める。飛んでいる非同期の読み直しが、その後に
+	// 入った pull の読み直しを古い状態で上書きしないための札 (gen は見張りの世代で、pull では進まない)。
+	reloadSeq int
 }
 
 // gitLogWatchDirsCmd は見張るディレクトリを解決する (git を叩くので Init の同期経路に乗せない)。
@@ -262,6 +277,7 @@ func (m *browseModel) handleGitLogProbe(msg gitLogProbeMsg) tea.Cmd {
 		// ⚠️ 飛んでいる測定の札もここで降ろす: 世代を進めた後に届く結果は gen 違いで捨てられるので、
 		// 降ろさないと measuring が永久に true のまま = 以降ひとつも測らなくなる (静かに機能停止)。
 		m.logWatch.measuring = false
+		m.logWatch.reloading = false // 同じ理由 (gen 違いで捨てられる読み直しを待ち続けない)
 		m.logWatch.pollArmed = false // 旧世代の tick は捨てられるので張り直す
 		return m.gitLogWatchCmd()
 	}
@@ -271,7 +287,7 @@ func (m *browseModel) handleGitLogProbe(msg gitLogProbeMsg) tea.Cmd {
 		m.logWatch.pollArmed = false
 		m.startGitLogWatch() // 消えて戻ったディレクトリを取り戻す (Add は冪等)
 	}
-	if m.logWatch.measuring || m.gitLogReloadDeferred() {
+	if m.logWatch.measuring || m.logWatch.reloading || m.gitLogReloadDeferred() {
 		// 見送る = 基準 (seen) を触らないので、反映できるようになった次の観測で気づく
 		return m.gitLogWatchCmd()
 	}
@@ -341,25 +357,57 @@ func (m *browseModel) gitLogReloadDeferred() bool {
 		m.issuesOv.visible() || m.statusOv.visible() || m.rlDash.visible()
 }
 
-// reflectGitLogChange は外部の変更を画面へ反映する。
+// reflectGitLogChange は外部の変更を画面へ反映する (読み直しを Cmd へ出し、結果は
+// handleGitLogReload が受ける)。
 //
-// ⚠️ 反映は Update の中で同期的に git を 5-6 本 fork する (reloadLog → LoadCommits /
-// LoadLogDisplay / planStatuses)。合成 repo (60 コミット × 各 4000 行 patch) での実測
-// 2026-09-01: 既定 22ms / --stat 45ms / -p 139ms。pull は利用者の操作なので停止が予期できるが、
-// この経路は無操作で入るため、大きな repo で体感できるなら非同期化が要る (issue 146)。
+// 読み直しは git を 5-6 本 fork する (loadLogData)。合成 repo (60 コミット × 各 4000 行 patch) での
+// 実測 2026-09-01 は既定 22ms / --stat 45ms / -p 139ms で、Update の中で同期にやると rebase 中は
+// 1 秒ごとにその停止が無操作で入る (issue 146)。pull の全面リロードは利用者の操作なので同期のまま。
+//
+// ⚠️ LoadCommits は timeout なしの runGit を使う (起動時の同期経路と同じ関数)。git が stall しても
+// Update は止まらないが、reloading の札が立ったままになり自動追従だけが止まる (次の観測は全部
+// 見送られる)。起動もできない repo なので追従だけを timeout で救う形は採らない。
+func (m *browseModel) reflectGitLogChange() tea.Cmd {
+	m.logWatch.reloading = true
+	opts, colored, oneline := m.opts, m.colored, m.oneline
+	gen, seq := m.logWatch.gen, m.logWatch.reloadSeq
+	return func() tea.Msg {
+		d, err := loadLogData(opts, colored, oneline)
+		return gitLogReloadMsg{data: d, err: err, gen: gen, seq: seq}
+	}
+}
+
+// handleGitLogReload は読み直しの結果をモデルへ入れる。
+//
+// 捨てる条件はいずれも「基準 (seen) を触らない」ので、次の観測で変化に気づいて再挑戦する:
+//
+//   - 見張りの世代が進んだ (watcher の閉じ直し) / 読み直しの世代が進んだ (この間に pull が入った。
+//     古い logData を入れると pull の結果より古い状態へ戻る)
+//   - 読み直しに失敗した (警告だけ出す)
+//   - 見送り状態になった (読み直している間にポップアップが開かれた等。applyLogData は開いている
+//     内容のキャッシュを消す)
 //
 // カーソルが先頭にいるときだけ pull と同じ演出 (新規行が上から降る) に倒し、途中を読んで
 // いるときは見ているコミットを同じ画面行に留める (ユーザー選定 2026-09-01: 読んでいる行を
-// ずらさない)。
-func (m *browseModel) reflectGitLogChange() tea.Cmd {
+// ずらさない)。「先頭を見ている」の判定と錨は**ここ**で (= 行集合を入れ替える直前に) 測る:
+// Cmd を出してから届くまでに利用者はスクロールしている。
+func (m *browseModel) handleGitLogReload(msg gitLogReloadMsg) tea.Cmd {
+	if msg.gen != m.logWatch.gen || msg.seq != m.logWatch.reloadSeq {
+		return nil
+	}
+	m.logWatch.reloading = false
+	if msg.err != nil {
+		m.showWarning("git log の再読込に失敗しました: " + firstLine(msg.err.Error()))
+		return nil
+	}
+	if m.gitLogReloadDeferred() {
+		return nil
+	}
 	// ⚠️ 「先頭を見ている」は cursor だけでは決まらない: ctrl+d / pgdown はカーソルを動かさず
 	// ビューポートだけ下げるので、cursor == 0 のまま下の方を読んでいる状態がある。offset も見ないと
 	// その状態で画面が先頭へ飛ぶ (この機能の主旨に反する)。
 	keepView := m.cursor > 0 || m.offset > 0
-	added, cmd, ok := m.reloadLog(keepView, "git log の再読込に失敗しました: ")
-	if !ok {
-		return nil // 読み直しに失敗 (警告は reloadLog が出す)。基準は動いていないので次の周期で再挑戦
-	}
+	added, cmd := m.applyLogData(msg.data, keepView)
 	m.toast.show(gitLogChangeToast(added), true)
 	return tea.Batch(cmd, m.maybeTick())
 }
