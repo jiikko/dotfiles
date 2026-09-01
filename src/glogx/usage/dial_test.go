@@ -231,22 +231,23 @@ func TestBraillePutTextKeepsGridWithWideChars(t *testing.T) {
 // 空行が消えても幅・行数の契約は満たされるので、間隔は別の主張として固定する。
 func TestRenderDashboardSeparatesRows(t *testing.T) {
 	lines := RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false)
-	head2 := -1
-	codexBanner := bannerLines("codex")[0]
+	// 罫線 = ─ が 10 桁以上続く行 (肩書き付きの案 A では CLI 名が線の中に入るので、
+	// 「全部 ─」では拾えない)
+	rules := []int{}
 	for i, ln := range lines {
-		if strings.Contains(ln, codexBanner) {
-			head2 = i
-			break
+		if strings.Contains(ln, strings.Repeat("─", 10)) {
+			rules = append(rules, i)
 		}
 	}
-	if head2 < 2 {
-		t.Fatalf("2 段目の見出しが見つからない (index=%d)", head2)
+	if len(rules) != 2 {
+		t.Fatalf("罫線が段の数だけ出ていない (%d 本): %v", len(rules), rules)
 	}
-	if strings.TrimSpace(lines[head2-1]) != "" {
-		t.Errorf("段のあいだに空行が無い: %q", lines[head2-1])
+	if rules[0] != 0 {
+		t.Errorf("1 段目の罫線が先頭に無い (index=%d)", rules[0])
 	}
-	if strings.TrimSpace(lines[head2-2]) == "" {
-		t.Errorf("空行の前が空 (1 段目が短すぎる / 空行が余っている): %q", lines[head2-2])
+	// 2 段目の罫線の直前は 1 段目の中身 (罫線が余った空行の中に浮いていない)
+	if prev := strings.TrimSpace(lines[rules[1]-1]); prev == "" {
+		t.Errorf("2 段目の罫線の前が空 (1 段目が短すぎる): index=%d", rules[1])
 	}
 }
 
@@ -456,4 +457,89 @@ func TestCardHeadYieldsToCenterAA(t *testing.T) {
 		t.Fatal("優先順位が問われる高さが 1 つも無い (テストが空回りしている)")
 	}
 	t.Logf("優先順位が問われた高さ: %d 通り", conflicts)
+}
+
+// 見出しの形は画面の中で 1 つに揃う (ユーザー指摘 2026-09-01: 「codex 5h のラベルだけ AA に
+// なっていないか」)。段ごとに幅の判定を独立させると、CLI 名の桁数が違うぶん codex の段だけ
+// 合体帯になり、同じ画面で見出しの読み方が 2 通りになる。
+func TestRenderDashboardBandFormIsUniform(t *testing.T) {
+	claudeAA, codexAA := bannerLines("Claude Code")[0], bannerLines("codex")[0]
+	mixed := 0
+	for w := 26; w <= 240; w += 7 {
+		for h := 12; h <= 60; h += 3 {
+			all := strings.Join(RenderDashboard(dialTestSnap(), dialTestNow(), w, h, false), "\n")
+			if strings.Contains(all, claudeAA) != strings.Contains(all, codexAA) {
+				mixed++
+				if mixed <= 3 {
+					t.Errorf("%dx%d: 段によって見出しの形が違う (Claude=%v codex=%v)",
+						w, h, strings.Contains(all, claudeAA), strings.Contains(all, codexAA))
+				}
+			}
+		}
+	}
+	if mixed > 3 {
+		t.Errorf("形が混ざったサイズが %d 通り", mixed)
+	}
+}
+
+// 合体帯 (案 B) は「枠ラベル | CLI 名 | 枠ラベル」を同じ 3 行に置き、カードは自分の見出しを
+// 描かない (二重に出ると帯にした意味が無く、行も節約できない)。
+func TestRenderDashboardMergedBand(t *testing.T) {
+	lines := RenderDashboard(dialTestSnap(), dialTestNow(), 225, 44, false)
+	mid := bannerLines("codex")[1]
+	var band string
+	for _, ln := range lines {
+		if strings.Contains(ln, mid) {
+			band = ln
+		}
+	}
+	if band == "" {
+		t.Fatal("codex の合体帯が見つからない")
+	}
+	for _, want := range []string{bigLines("5H")[1], bigLines("7D")[1], "セッション", "weekly"} {
+		if !strings.Contains(band, want) {
+			t.Errorf("帯の中段に %q が無い: %q", want, band)
+		}
+	}
+	// 枠ラベルの AA が出る行は「帯」だけ (カード側にも見出しが残っていたら別の行に出る)。
+	// ⚠️ 単純な出現回数では数えない: 字形が同じ並びになる組み合わせがあり (実測 2026-09-01:
+	// "78" の上段が "5H" の中段と同じ "▀▀▀█ █▀▀█")、盤の中央の数字を見出しと数えてしまう。
+	bands := 0
+	for _, ln := range lines {
+		if !strings.Contains(ln, bigLines("5H")[1]) {
+			continue
+		}
+		if slices.ContainsFunc([]rune(ln), isBrailleRune) {
+			continue // 盤の中央の数字 (字形がたまたま一致した行)
+		}
+		if !strings.Contains(ln, mid) && !strings.Contains(ln, bannerLines("Claude Code")[1]) {
+			t.Errorf("帯の外に枠ラベルの見出しが残っている: %q", ln)
+		}
+		bands++
+	}
+	if bands != 2 {
+		t.Errorf("枠ラベルの見出しが出る行が %d 行 (段ごとに帯の中段 1 行 = 2 行のはず)", bands)
+	}
+}
+
+// 帯の中で語が地続きにならない (種別語と CLI 名のあいだにカード間と同じ空きを取る)。
+// ⚠️ 幅の合計が契約内でも「詰まって読めない」は起きる (幅テストでは検出できない形)。
+func TestRenderDashboardBandKeepsGap(t *testing.T) {
+	mid := bannerLines("codex")[1]
+	for w := 26; w <= 260; w++ {
+		for _, ln := range RenderDashboard(dialTestSnap(), dialTestNow(), w, 44, false) {
+			if !strings.Contains(ln, mid) {
+				continue
+			}
+			i := strings.Index(ln, "セッション")
+			if i < 0 {
+				t.Errorf("w=%d: 帯に種別が無い: %q", w, ln)
+				continue
+			}
+			rest := ln[i+len("セッション"):]
+			if gap := len(rest) - len(strings.TrimLeft(rest, " ")); gap < dialGap {
+				t.Errorf("w=%d: 種別と CLI 名の間が %d 桁しかない: %q", w, gap, ln)
+			}
+		}
+	}
 }

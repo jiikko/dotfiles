@@ -40,30 +40,44 @@ func TestBannerLinesFoldsCase(t *testing.T) {
 	}
 }
 
-// 段の見出しは CLI 名の AA + バージョン。高さが足りないときだけ 1 行のテキストへ落ちる
-// (盤を潰してまで見出しを大きくしない)。
+// 段の見出しの形は幅と高さで決まる (ユーザー選定 2026-09-01)。
+//
+//	幅が足りる → 合体帯 (案 B): CLI 名の AA が枠ラベルの AA と同じ行に並ぶ
+//	幅が足りない → 肩書き罫線 (案 A): CLI 名は罫線の中のテキスト。AA は出ない
+//	高さが足りない → 盤を潰さないよう、幅が足りていても案 A へ落ちる
 func TestRenderDashboardBanner(t *testing.T) {
-	tall := strings.Join(RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false), "\n")
+	wide := strings.Join(RenderDashboard(dialTestSnap(), dialTestNow(), 225, 44, false), "\n")
 	for _, want := range append(bannerLines("Claude Code"), bannerLines("codex")...) {
-		if !strings.Contains(tall, want) {
-			t.Errorf("AA の行が出ていない: %q", want)
+		if !strings.Contains(wide, want) {
+			t.Errorf("合体帯に CLI 名の AA が出ていない: %q", want)
 		}
 	}
-	short := strings.Join(RenderDashboard(dialTestSnap(), dialTestNow(), 120, 20, false), "\n")
+	narrow := strings.Join(RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false), "\n")
+	if strings.Contains(narrow, bannerLines("codex")[0]) {
+		t.Error("幅が足りないのに CLI 名の AA を出した (盤の見出しと重なる)")
+	}
+	if !strings.Contains(narrow, "codex") {
+		t.Error("AA を落としたのに肩書きのテキストも無い")
+	}
+	short := strings.Join(RenderDashboard(dialTestSnap(), dialTestNow(), 225, 20, false), "\n")
 	if strings.Contains(short, bannerLines("codex")[0]) {
 		t.Error("高さが足りないのに AA を出した (盤が潰れる)")
 	}
 	if !strings.Contains(short, "codex") {
-		t.Error("AA を落としたのにテキストの見出しも無い")
+		t.Error("AA を落としたのに肩書きのテキストも無い (高さ不足)")
 	}
 }
 
 // バージョンは AA の脇に添える (取得できていないときは何も出さない)。
 func TestRenderDashboardBannerVersion(t *testing.T) {
-	all := strings.Join(RenderDashboard(dialTestSnap(), dialTestNow(), 120, 44, false), "\n")
-	for _, want := range []string{"v2.1.216", "v0.144.6"} {
-		if !strings.Contains(all, want) {
-			t.Errorf("%q が出ていない", want)
+	// 合体帯 (幅が足りる) と肩書き罫線 (足りない) の両方で出ること。片方だけ見ると、もう片方で
+	// バージョンが落ちても気づけない (実測 2026-09-01: 段ごとに形が違った時期に取り違えた)。
+	for _, w := range []int{225, 120} {
+		all := strings.Join(RenderDashboard(dialTestSnap(), dialTestNow(), w, 44, false), "\n")
+		for _, want := range []string{"v2.1.216", "v0.144.6"} {
+			if !strings.Contains(all, want) {
+				t.Errorf("w=%d: %q が出ていない", w, want)
+			}
 		}
 	}
 	bare := dialTestSnap()
@@ -155,27 +169,32 @@ func TestRenderDashboardBannerVersionFitsWidth(t *testing.T) {
 			}
 		}
 	}
-	// AA は入るがバージョンまでは入らない幅では、AA が残ってバージョンだけ**丸ごと**消える。
-	// ⚠️ ここは groupHead を直接呼ぶ。RenderDashboard 経由だと、その幅では 1 カラムに
-	// なって「AA を出すと盤が潰れる」判定が先に効き、見出しごとテキストへ落ちるため
-	// バージョンの落とし方を観測できない。
-	// ⚠️ 幅を 1 点だけ見ない。最後の砦の切り詰めが効くと "  v2.1" のような途中で切れた版が
-	// 残るが、切れる位置は幅次第で、たまたま "v" の手前で切れる幅を選ぶと素通りする
-	// (実測 2026-09-01: bw+2 では予算に入れない変異が green のままだった)。
+	// 肩書き罫線 (案 A) は、バージョンまで入らない幅ではバージョンだけ**丸ごと**消える。
+	// ⚠️ ここは titledRule を直接呼ぶ。RenderDashboard 経由だと、その幅では合体帯 (案 B) や
+	// 1 行見出しへ落ちる判定が先に効き、バージョンの落とし方を観測できない。
+	// ⚠️ 幅を 1 点だけ見ない。切り詰めが効くと "  v2.1" のような途中で切れた版が残るが、
+	// 切れる位置は幅次第で、たまたま "v" の手前で切れる幅を選ぶと素通りする
+	// (実測 2026-09-01: 予算に入れない変異が green のままだった)。
 	g := dialGroup{cli: "Claude Code", version: "2.1.216"}
-	bw := bannerWidth(g.cli)
-	for w := bw; w <= bw+16; w++ {
-		joined := strings.Join(groupHead(g, w, 40, false), "\n")
-		if strings.Contains(joined, "v") && !strings.Contains(joined, "v2.1.216") {
-			t.Errorf("w=%d: バージョンが途中で切れている (丸ごと落とすべき):\n%s", w, joined)
+	base := termwidth.Of("──  ") + termwidth.Of(g.cli)
+	for w := base; w <= base+24; w++ {
+		rule, ok := titledRule(w, g.cli, g.version, false)
+		if !ok {
+			continue
 		}
-		if !strings.Contains(joined, bannerLines(g.cli)[0]) {
-			t.Errorf("w=%d: AA ごと消えている:\n%s", w, joined)
+		if strings.Contains(rule, "v") && !strings.Contains(rule, "v2.1.216") {
+			t.Errorf("w=%d: バージョンが途中で切れている (丸ごと落とすべき): %q", w, rule)
+		}
+		if !strings.Contains(rule, g.cli) {
+			t.Errorf("w=%d: 肩書きが切れている: %q", w, rule)
+		}
+		if got := termwidth.Of(rule); got > w {
+			t.Errorf("w=%d: 罫線が幅を超えた (%d 桁): %q", w, got, rule)
 		}
 	}
 	// 入る幅では出る (落とす条件が広すぎないこと)。
-	if wide := strings.Join(groupHead(g, bw+20, 40, false), "\n"); !strings.Contains(wide, "v2.1.216") {
-		t.Errorf("入る幅なのにバージョンが出ていない:\n%s", wide)
+	if wide, ok := titledRule(base+24, g.cli, g.version, false); !ok || !strings.Contains(wide, "v2.1.216") {
+		t.Errorf("入る幅なのにバージョンが出ていない (ok=%v): %q", ok, wide)
 	}
 }
 

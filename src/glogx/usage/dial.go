@@ -28,13 +28,12 @@ const (
 	// 盤が潰れて読めないので、同じ情報をテキストカード (バー + 数値) で出す。
 	dialMinW = 26
 	dialMinH = 9
-	// dialGap はカード間の空き桁。dialRowGap は段と段の間に挟む空行。どちらも「盤が隣の
-	// カードと地続きに見える」のを防ぐための余白 (ユーザー要望 2026-08-31)。
-	dialGap    = 4
-	dialRowGap = 1
-	// dialBannerMinH は CLI 名を AA の大見出しで出す最小の段の高さ。これを下回ると盤が
-	// 潰れるので、1 行のテキスト見出しへ落とす。
-	dialBannerMinH = 15
+	// dialGap はカード間の空き桁。「盤が隣のカードと地続きに見える」のを防ぐ余白
+	// (ユーザー要望 2026-08-31)。段と段のあいだは空行ではなく罫線で仕切る (下記)。
+	dialGap = 4
+	// dialRuleMinTail は肩書き付き罫線 (案 A) を採るのに必要な、肩書きの右に残る線の長さ。
+	// これを下回るなら「線に見えない」ので素の罫線 + 1 行見出しへ落とす。
+	dialRuleMinTail = 4
 )
 
 // RenderDashboard は Snapshot の全枠を格子状のアナログ盤にして描く。返す行数はちょうど
@@ -45,14 +44,12 @@ func RenderDashboard(s *Snapshot, now time.Time, width, height int, colored bool
 		return nil
 	}
 	out := make([]string, 0, height)
-	groupH := (height - (len(groups)-1)*dialRowGap) / len(groups)
-	for gi, g := range groups {
-		if gi > 0 {
-			for range dialRowGap {
-				out = append(out, "")
-			}
-		}
-		out = append(out, renderGroup(g, now, width, groupH, colored)...)
+	groupH := height / len(groups)
+	bands := dialBands(groups, now, width, groupH, colored)
+	for i, g := range groups {
+		// 段の区切りは空行ではなく罫線 (ユーザー要望 2026-09-01)。各段が自分の 1 行目に持つので
+		// ここでは挟まない: 罫線の形 (素 / 肩書き付き) は段が採った見出しの形で決まるため。
+		out = append(out, renderGroup(g, now, width, groupH, bands[i], colored)...)
 	}
 	for len(out) < height {
 		out = append(out, "")
@@ -86,24 +83,70 @@ func dialGroups(s *Snapshot) []dialGroup {
 	return groups
 }
 
-// renderGroup は 1 つの CLI の段 (大見出し + 盤の格子) をちょうど h 行で返す。
-func renderGroup(g dialGroup, now time.Time, width, h int, colored bool) []string {
-	cols := 2
+// dialCols は盤を何カラムで並べるか (1 枚に最低 dialMinW 桁が要る)。
+func dialCols(width int) int {
 	if width < dialMinW*2+dialGap {
-		cols = 1
+		return 1
 	}
+	return 2
+}
+
+// dialBands は各段の合体帯 (案 B) を返す。**全段そろって組めるときだけ**採り、1 段でも
+// 組めなければ全段 nil を返す (画面の中で見出しの形を 1 つに保つ)。バージョンを添えるかも
+// 同じ理由で全段そろえる: 片方の段にだけ版が出ると、揃っていないことの方が目に付く。
+func dialBands(groups []dialGroup, now time.Time, width, groupH int, colored bool) [][]string {
+	cols := dialCols(width)
+	cellW := (width - (cols-1)*dialGap) / cols
+	for _, withTag := range []bool{true, false} {
+		bands := make([][]string, len(groups))
+		ok := cols == 2
+		for i, g := range groups {
+			rowsN := (len(g.cards) + cols - 1) / cols
+			b := mergedHead(g, now, width, cellW, withTag, colored)
+			// 帯 3 行 + 罫線 1 行を使っても、その段の全カードに盤が残ること
+			if b == nil || !fitsFace(groupH-1-len(b), rowsN, 0) {
+				ok = false
+				break
+			}
+			bands[i] = b
+		}
+		if ok {
+			return bands
+		}
+	}
+	return make([][]string, len(groups))
+}
+
+// renderGroup は 1 つの CLI の段 (見出し + 盤の格子) をちょうど h 行で返す。band は合体帯
+// (案 B) の 3 行。空なら肩書き罫線 (案 A) か 1 行見出しへ落ちる。形の選択は RenderDashboard が
+// **画面全体で 1 つに揃えて**決める (段ごとに違う形にすると「codex の段だけ見出しが大きい」
+// のような非対称になり、同じ画面で読み方が 2 通りになる。ユーザー指摘 2026-09-01)。
+func renderGroup(g dialGroup, now time.Time, width, h int, band []string, colored bool) []string {
+	cols := dialCols(width)
 	rowsN := (len(g.cards) + cols - 1) / cols
-	// ⚠️ 見出しの高さは「AA を出しても盤が残るか」で決める。段の高さ h だけで判断すると、
-	// AA が 4 行食ったせいで盤が消え、理由も無い空行だけが残る段ができる (実測 2026-09-01:
-	// CLI 名の桁数で AA の可否が決まるため、同じ画面で Claude 段は盤あり・codex 段は盤なし
-	// という非対称になっていた)。
-	head := groupHead(g, width, h, colored)
-	if len(head) > 1 && !fitsFace(h-len(head), rowsN) && fitsFace(h-1, rowsN) {
-		head = groupHead(g, width, 0, colored) // 高さ 0 を渡して 1 行のテキスト見出しへ落とす
+	cellW := (width - (cols-1)*dialGap) / cols
+	// 見出しは 3 段構えで、盤が残る最初の形を採る (ユーザー選定 2026-09-01)。
+	//
+	//  1. 合体帯 (案 B): 素の罫線 + 「5H | CLI 名 | 7D」を 1 つの 3 行帯に組む。CLI 名と枠
+	//     ラベルが同じ高さに並び、別の帯に積むより 1〜4 行短い
+	//  2. 肩書き罫線 (案 A): 罫線の中に CLI 名とバージョンを入れ、カード見出しは各カードの上へ
+	//     残す。合体帯が幅で入らないときのフォールバック
+	//  3. 素の罫線 + 1 行テキスト: 肩書きすら入らない幅
+	//
+	// ⚠️ 高さの判定は「その形にしても盤が残るか」で行う。段の高さ h だけで決めると、見出しが
+	// 食った行のせいで盤が消え、理由も無い空行だけが残る段ができる (実測 2026-09-01: CLI 名の
+	// 桁数で可否が決まるため、同じ画面で Claude 段は盤あり・codex 段は盤なしになっていた)。
+	var head []string
+	headless := false // true = カードは自分の見出しを描かない (合体帯が既に出している)
+	if len(band) > 0 {
+		head, headless = append([]string{plainRule(width, colored)}, band...), true
+	} else if rule, ok := titledRule(width, g.cli, g.version, colored); ok {
+		head = []string{rule}
+	} else {
+		head = []string{plainRule(width, colored), groupTextHead(g, width, colored)}
 	}
 	cardsH := max(h-len(head), 1)
 	rows := rowsN
-	cellW := (width - (cols-1)*dialGap) / cols
 	cellH := cardsH / rows
 	out := head
 	for r := range rows {
@@ -114,7 +157,7 @@ func renderGroup(g dialGroup, now time.Time, width, h int, colored bool) []strin
 				grid = append(grid, make([]string, cellH))
 				continue
 			}
-			grid = append(grid, renderCard(g.cards[i], now, cellW, cellH, colored))
+			grid = append(grid, renderCard(g.cards[i], now, cellW, cellH, headless, colored))
 		}
 		for line := range cellH {
 			parts := make([]string, 0, cols)
@@ -131,44 +174,125 @@ func renderGroup(g dialGroup, now time.Time, width, h int, colored bool) []strin
 }
 
 // fitsFace は段に高さ cardsH を割り当てたとき、各カードに盤が描けるだけの行が残るか。
-// renderCard の分岐 (bodyH = cellH - 見出し 1 行 - foot) と同じ式を使う。
-func fitsFace(cardsH, rows int) bool {
+// renderCard の分岐 (bodyH = cellH - 見出し - foot) と同じ式を使う。headLines はカードが
+// 自分の見出しに使う行数 (合体帯を採ったときは 0 = カードは見出しを描かない)。
+func fitsFace(cardsH, rows, headLines int) bool {
 	if cardsH <= 0 || rows <= 0 {
 		return false
 	}
 	cellH := cardsH / rows
-	return cellH-1-cardFootLines(cellH) >= 5
+	return cellH-headLines-cardFootLines(cellH) >= 5
 }
 
-// groupHead は段の大見出し。幅と高さが足りれば CLI 名をブロック文字の AA で出し、足りなければ
-// 1 行のテキストへ落とす。バージョンは AA の中段の右に dim で添える (ロゴのバージョンタグの形)。
-func groupHead(g dialGroup, width, h int, colored bool) []string {
-	aa := bannerLines(g.cli)
-	bw := bannerWidth(g.cli)
-	if aa == nil || h < dialBannerMinH || bw > width {
-		return []string{fitLine(width, []string{
-			paintIf(g.cli, sgr.Bold, colored) + versionTag(g.version, colored),
-			paintIf(g.cli, sgr.Bold, colored),
-		})}
+// plainRule は段の区切りの罫線 (全幅)。段の頭に置くので 1 段目の上にも出る。
+func plainRule(width int, colored bool) string {
+	if width <= 0 {
+		return ""
 	}
-	// ⚠️ バージョンは AA の右へ後付けするので、**幅の予算に入れてから**中央寄せする。
-	// AA だけで中央に置いてから足すと、その行だけ width をはみ出す (実測 2026-09-01:
-	// バージョン付きで 56 通りの幅が契約を破っていた。狭い端末ではフレームが自動 OFF に
-	// なりクリップも効かないので、折り返して画面全体が崩れる)。入らなければ落とす。
-	tag := versionTag(g.version, colored)
-	if bw+termwidth.Of(tag) > width {
-		tag = ""
+	return paintIf(strings.Repeat("─", width), sgr.Dim, colored)
+}
+
+// titledRule は肩書き付きの罫線 (案 A)。"── codex  v0.144.6 ────…" の形で CLI 名と
+// バージョンを罫線の中に入れる。ok=false = 肩書きを入れると線が dialRuleMinTail 未満に
+// なる幅 (呼び出し側は素の罫線 + 1 行見出しへ落とす)。
+//
+// ⚠️ 罫線の長さは肩書きを**予算に入れてから**決める。後付けすると width を超え、狭い端末では
+// フレームが自動 OFF でクリップも効かないため折り返して画面全体が崩れる (旧 groupHead が
+// バージョンタグで踏んだ罠と同じ形)。
+func titledRule(width int, cli, ver string, colored bool) (string, bool) {
+	lead, gap := "── ", " "
+	fixed := termwidth.Of(lead) + termwidth.Of(cli) + termwidth.Of(gap)
+	tag := versionTag(ver, colored)
+	used := fixed + termwidth.Of(tag)
+	if used+dialRuleMinTail > width {
+		tag, used = "", fixed // バージョンは飾りなので先に落とす
 	}
-	indent := termwidth.PadSpaces(max((width-bw-termwidth.Of(tag))/2, 0))
-	out := make([]string, 0, bannerRows+1)
-	for i, row := range aa {
-		line := indent + paintIf(row, sgr.Bold, colored)
+	if used+dialRuleMinTail > width {
+		return "", false
+	}
+	return paintIf(lead, sgr.Dim, colored) + paintIf(cli, sgr.Bold, colored) + tag + gap +
+		paintIf(strings.Repeat("─", max(width-used, 0)), sgr.Dim, colored), true
+}
+
+// groupTextHead は CLI 名の 1 行見出し (肩書き罫線すら入らない幅のときだけ使う)。
+func groupTextHead(g dialGroup, width int, colored bool) string {
+	return fitLine(width, []string{
+		paintIf(g.cli, sgr.Bold, colored) + versionTag(g.version, colored),
+		paintIf(g.cli, sgr.Bold, colored),
+	})
+}
+
+// mergedHead は「左カードの見出し | CLI 名 | 右カードの見出し」を 1 つの 3 行帯にする
+// (案 B。ユーザー選定 2026-09-01)。段の大見出しとカード見出しを別の帯に積む形より 1〜4 行
+// 短く、CLI 名と枠ラベルが同じ高さに並ぶ。
+//
+// 左右の見出しは**自分の盤の真上** (セルの中央) に置く。全幅の端へ寄せると、どの盤の見出しか
+// の対応が弱くなる。CLI 名は全幅の中央なので、盤 2 枚のあいだの空きへ入る。
+//
+// nil を返す条件 (呼び出し側は肩書き罫線 = 案 A へ落ちる):
+//   - カードが 2 枚でない。codex のプランは枠数が可変で、3 枚以上は「左右」に割れない
+//   - ラベル / CLI 名に字形表の外の字が混ざる (bigLines / bannerLines が nil)
+//   - 幅が足りず、左右の見出しと中央の CLI 名を最低 2 桁の隙間つきで並べられない
+func mergedHead(g dialGroup, now time.Time, width, cellW int, withTag, colored bool) []string {
+	if len(g.cards) != 2 || cellW <= 0 {
+		return nil
+	}
+	l, r := g.cards[0], g.cards[1]
+	lAA, rAA, cAA := bigLines(l.label), bigLines(r.label), bannerLines(g.cli)
+	if lAA == nil || rAA == nil || cAA == nil {
+		return nil
+	}
+	lw, rw, cw := bigWidth(l.label), bigWidth(r.label), bannerWidth(g.cli)
+	_, _, lCol, _ := cardPace(l, now)
+	_, _, rCol, _ := cardPace(r, now)
+	lKind, rKind := kindTag(l.kind, colored), kindTag(r.kind, colored)
+	tag := ""
+	if withTag {
+		tag = versionTag(g.version, colored)
+	}
+	lAt := max(cellW/2-lw/2, 0)
+	rAt := max(cellW+dialGap+cellW/2-rw/2, 0)
+	cAt := max((width-cw-termwidth.Of(tag))/2, 0)
+	// ⚠️ 種別 ("セッション" / "weekly") は落とさない: 飾りではなく枠の意味そのもので、これを
+	// 捨ててまで合体帯に留まるより、種別が残る肩書き罫線 (案 A) の方が読める。落とせるのは
+	// バージョンだけで、その判断は画面全体で揃える (呼び出し側の withTag)。
+	// 要素どうしの隙間はカード間の空き (dialGap) と同じだけ要求する。2 桁だと隣の語と
+	// 地続きに見え、「セッション」が CLI 名の一部のように読める (実測 2026-09-01: 幅 160 で
+	// 種別語と CLI 名の AA が 2 桁差で並んだ)。
+	if cAt < lAt+lw+termwidth.Of(lKind)+dialGap || rAt < cAt+cw+termwidth.Of(tag)+dialGap ||
+		rAt+rw+termwidth.Of(rKind) > width {
+		return nil
+	}
+	out := make([]string, 0, bannerRows)
+	for i := range bannerRows {
+		line := placeAt("", lAt, paintIf(lAA[i], lCol, colored))
+		if i == 1 {
+			line += lKind
+		}
+		line = placeAt(line, cAt, paintIf(cAA[i], sgr.Bold, colored))
 		if i == 1 {
 			line += tag
 		}
+		line = placeAt(line, rAt, paintIf(rAA[i], rCol, colored))
+		if i == 1 {
+			line += rKind
+		}
 		out = append(out, termwidth.Truncate(line, width, "")) // 最後の砦
 	}
-	return append(out, "") // 見出しと盤のあいだを 1 行空ける
+	return out
+}
+
+// placeAt は line の表示桁 col から s を置く (col まで空白で詰める)。
+func placeAt(line string, col int, s string) string {
+	return line + termwidth.PadSpaces(max(col-termwidth.Of(line), 0)) + s
+}
+
+// kindTag は見出しに添える種別 ("  セッション" / "  weekly")。AA にできない字なので普通の字。
+func kindTag(kind string, colored bool) string {
+	if kind == "" {
+		return ""
+	}
+	return paintIf("  "+kind, sgr.Dim, colored)
 }
 
 // versionTag は " v2.1.216" (取れていなければ空)。
@@ -282,20 +406,30 @@ func cardFootLines(h int) int {
 	}
 }
 
-// renderCard は 1 枚ぶんをちょうど h 行で返す。
-func renderCard(c dialCard, now time.Time, w, h int, colored bool) []string {
-	remain := max(c.win.ResetAt.Sub(now), 0)
-	elapsed := 0.0
+// cardPace はカードの「残り時間 / 経過率 / 状態色 / 状態語」を返す。renderCard と mergedHead が
+// 同じ値を使う (色は状態を表すので、見出し帯とカード本体で食い違わせない)。
+func cardPace(c dialCard, now time.Time) (remain time.Duration, elapsed float64, col, word string) {
+	remain = max(c.win.ResetAt.Sub(now), 0)
 	if c.span > 0 {
 		elapsed = math.Max(0, math.Min(100, float64(c.span-remain)/float64(c.span)*100))
 	}
-	col, word := paceState(c.win.Percent, elapsed, paceBand(c.span))
+	col, word = paceState(c.win.Percent, elapsed, paceBand(c.span))
+	return remain, elapsed, col, word
+}
+
+// renderCard は 1 枚ぶんをちょうど h 行で返す。headless = 見出しを描かない (段の見出し帯が
+// 既にこのカードのラベルを出しているとき。renderGroup が決める)。
+func renderCard(c dialCard, now time.Time, w, h int, headless, colored bool) []string {
+	remain, elapsed, col, word := cardPace(c, now)
 
 	// 見出し・数値行は狭い割り当てでは端から情報を落とす (切り詰めの … で読めなくするより、
 	// 落とす順を決めておく方が読める)。落とす順は「重要度の低い順」= 種別 → CLI 名 /
 	// リセット絶対時刻 → 見出しの語 / 想定と乖離 → 使用率。
 	foot := cardFoot(c, remain, elapsed, col, word, w, cardFootLines(h), colored)
-	head := cardHead(c, col, w, h, len(foot), colored)
+	var head []string
+	if !headless {
+		head = cardHead(c, col, w, h, len(foot), colored)
+	}
 	bodyH := max(0, h-len(head)-len(foot))
 	var body []string
 	if c.span <= 0 || w < dialMinW || bodyH < 5 {
@@ -335,10 +469,7 @@ func cardHead(c dialCard, col string, w, h, footN int, colored bool) []string {
 	if c.span > 0 && centerAAFits(w, h-1-footN, c.win.Percent) && !centerAAFits(w, h-bannerRows-footN, c.win.Percent) {
 		return plain
 	}
-	kind := ""
-	if c.kind != "" {
-		kind = paintIf("  "+c.kind, sgr.Dim, colored)
-	}
+	kind := kindTag(c.kind, colored)
 	// ⚠️ 種別は幅の予算に入れてから中央寄せする (段の大見出しと同じ罠。後付けするとその行
 	// だけ width をはみ出す)。入らなければ種別だけ落とす。
 	bw := bigWidth(c.label)

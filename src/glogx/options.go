@@ -229,6 +229,9 @@ func Usage() string {
   U                         Claude Code の /usage 残量を右上モーダルで表示 (toggle)
   R                         Claude Code / codex の残量を全画面ダッシュボードで表示 (toggle)。
                             枠 (5h / weekly) ごとに 1 周 = 枠の長さのアナログ盤を並べる。
+                            CLI ごとに罫線で区切り、幅が足りれば見出しを 1 段に合体させる
+                            (「5H セッション | CLI 名 | 7D weekly」)。足りなければ罫線の中に
+                            CLI 名を入れ、枠ラベルは各盤の真上に出す。
                             12 時 = リセット点 / 針 = いまの経過 / 外周の弧 = 復活までの残り /
                             内周の弧 = 消費した割合。1 分ごとに自動更新。
                             r で今すぐ更新 / i・s で issues・status viewer へ切り替え
