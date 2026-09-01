@@ -653,12 +653,24 @@ func renderFace(c dialCard, remain time.Duration, elapsed float64, col string, w
 	used := math.Max(0, math.Min(100, float64(c.win.Percent))) / 100
 	el := elapsed / 100
 
+	// 盤の地: 円の内側を一段浮かせた地 (docs/theme-colors.md の 235 = tmux バー地と同段) で
+	// 塗り、盤を「面」として立ち上げる。円周の帯はこの地とのコントラストで読ませるので、
+	// 地を先に敷いてから帯を重ねる。
+	cv.bgArc(cx, cy, 0, rOut+2, 0, 1, sgr.BgFace)
+	// 外周は背景色の帯にする (ユーザー要望 2026-09-01「円周をもっと背景に色をつけたい」)。
+	// 経過ぶんは沈んだ地、残りが明るい帯 = これが縮んで 0 になると復活。前景の弧はドット
+	// 2 本 = 細線にしかならず、盤が小さいほど円周が読めなくなるため、太さが要るここだけ背景で描く。
+	cv.bgArc(cx, cy, rOut-2, rOut+2, 0, el, sgr.BgTrack)
+	cv.bgArc(cx, cy, rOut-2, rOut+2, el, 1, sgr.BgWhite)
+
 	// 目盛り = 窓の等分 (5h なら 1 時間ごと、weekly なら 1 日ごと)。
 	div := dialDivisions(c.span)
 	for k := range div {
 		cv.tick(cx, cy, rOut+1, rOut+4, float64(k)/float64(div), sgr.Dim)
 	}
-	// 外周: 経過ぶんは破線の下地、残りが明るい弧 (これが縮んで 0 になる = 復活)。
+	// 外周の弧。色付きの端末では上の帯が同じことを太く描いているので見えないが、**色を持たない
+	// 端末では円周そのものがこの点描にしか残らない** (背景色は colored=false で出力されない)。
+	// 帯があるから冗長、と外すと mono で外周が消える。
 	cv.arc(cx, cy, rOut, 0, el, sgr.Dim, 1, 3)
 	cv.arc(cx, cy, rOut, el, 1, sgr.BrightWhite, 2, 1)
 	// 内周: 枠の消費。

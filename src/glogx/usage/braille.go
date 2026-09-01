@@ -26,7 +26,8 @@ type braille struct {
 	cols, rows int
 	bits       []byte
 	color      []string
-	text       []rune // 0 以外ならそのセルを文字で上書きする
+	bg         []string // セルの背景色 (点描より粗い「帯」を塗るため。空 = 背景なし)
+	text       []rune   // 0 以外ならそのセルを文字で上書きする
 	textColor  []string
 	textSkip   []bool // 直前のセルの全角文字が覆っているので何も出さない
 }
@@ -35,7 +36,7 @@ func newBraille(cols, rows int) *braille {
 	n := max(cols, 0) * max(rows, 0)
 	return &braille{
 		cols: max(cols, 0), rows: max(rows, 0),
-		bits: make([]byte, n), color: make([]string, n),
+		bits: make([]byte, n), color: make([]string, n), bg: make([]string, n),
 		text: make([]rune, n), textColor: make([]string, n),
 		textSkip: make([]bool, n),
 	}
@@ -74,6 +75,30 @@ func (b *braille) arc(cx, cy, r, t0, t1 float64, col string, thick, dash int) {
 	}
 }
 
+// bgArc は半径 r0..r1 の輪のうち、割合 t0..t1 の範囲にあるセルを背景色で塗る。
+//
+// ⚠️ 点描 (2x4 ドット) と違い、背景は 1 セルが最小単位。判定はセル中心の座標で行うので、
+// 帯の太さは指定した半径差ではなくセルの大きさに丸まる (縦 1 行 = 4 ドット、横 1 桁 = 2 ドット)。
+// 細い帯を指定しても最低 1 セルは塗られる = 前景の弧より必ず太くなる。
+func (b *braille) bgArc(cx, cy, r0, r1, t0, t1 float64, col string) {
+	if col == "" || r1 < r0 {
+		return
+	}
+	for row := range b.rows {
+		for c := range b.cols {
+			dx := float64(c*2) + 0.5 - cx // セル中心のドット座標
+			dy := float64(row*4) + 1.5 - cy
+			if r := math.Hypot(dx, dy); r < r0 || r > r1 {
+				continue
+			}
+			if t := dialFraction(dx, dy); t < t0 || t > t1 {
+				continue
+			}
+			b.bg[row*b.cols+c] = col
+		}
+	}
+}
+
 // tick は割合 t の位置に、円周方向へ 2 ドットぶんの太さを持つ目盛りを引く。1 本の ray だけだと
 // 斜めの角度でドットが飛び飛びになり、目盛りではなく「散らばった点」に見える。
 func (b *braille) tick(cx, cy, r0, r1, t float64, col string) {
@@ -100,6 +125,15 @@ func (b *braille) ray(cx, cy, r0, r1, t float64, col string) {
 
 // dialAngle は「12 時を 0 とする時計回りの割合」をラジアンへ写す (画面座標は y が下向き)。
 func dialAngle(t float64) float64 { return -math.Pi/2 + 2*math.Pi*t }
+
+// dialFraction は dialAngle の逆写像 (中心からの相対座標 → 12 時を 0 とする時計回りの割合)。
+func dialFraction(dx, dy float64) float64 {
+	t := (math.Atan2(dy, dx) + math.Pi/2) / (2 * math.Pi)
+	if t < 0 {
+		t += 1
+	}
+	return t
+}
 
 // putText は行 row・桁 col から文字列を点描の上に置く。全角は 2 セルを占め、2 セル目は
 // 「覆われている」印を付けて何も出さない (点描の格子と桁がずれないため)。
@@ -148,6 +182,7 @@ func (b *braille) lines(colored bool) []string {
 			if b.text[i] != 0 {
 				ch, col = b.text[i], b.textColor[i]
 			}
+			col = b.bg[i] + col // 背景 → 前景の順 (前景色だけの更新でも背景が消えないよう毎回両方出す)
 			if colored && col != cur {
 				if cur != "" {
 					sb.WriteString(sgr.Reset)

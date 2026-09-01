@@ -33,6 +33,13 @@ const (
 	// _claude/statusline-command.sh の bg_in / bg_over と同じ配色。
 	BgGreenOnBlack = "\x1b[42;30m" // 想定内の消化
 	BgRedOnBlack   = "\x1b[41;30m" // 前借り
+	// 盤 (ratelimit ダッシュボード) の地と帯。前景の弧はドット 2 本 = 細い線にしかならないので、
+	// 円周を太く見せたいところは背景色で塗る (背景は 1 セルが最小単位なので必ず太くなる)。
+	// ⚠️ BgFace だけ 256 色なのは、dotfiles のテーマで「一段浮かせた地」が 235 に決まっている
+	// ため (docs/theme-colors.md: 234 = pane 地 / 235 = tmux バー地)。基本 8 色に該当が無い。
+	BgFace  = "\x1b[48;5;235m" // 盤の内側 (円盤としての地)
+	BgTrack = "\x1b[100m"      // 円周のうち「もう過ぎた」ぶん
+	BgWhite = "\x1b[47m"       // 円周のうち「残っている時間」ぶん
 	// UnderlineBold は現在位置の目印。背景色と反転は競合するので下線を使う。
 	UnderlineBold = "\x1b[4;1m"
 )
