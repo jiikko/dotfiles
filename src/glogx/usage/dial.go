@@ -10,6 +10,14 @@ package usage
 // = 同じ目盛りに乗るため。5h と weekly で窓幅が違っても読み方は変わらない。
 //
 // RenderLine / RenderTable と同じく bubbletea 非依存の純関数で、now は引数で受ける。
+//
+// ⚠️ このファイルは 800 行を超えるが**分割しない**。責務は「ダッシュボード 1 枚の描画」で
+// 一貫していて、段のレイアウト → カード → 盤 → 下段は上から下へ 1 本の流れになっている
+// (読むときの jump は増えない)。行数だけを理由に割ると、複雑性は減らずファイル間の探索が
+// 増えるだけ (`_claude/rules/verify-design-intent-before-refactor.md`)。
+// **分割の trigger**: ①盤 (braille) の描画を別の画面からも使いたくなったとき
+// ②段のレイアウトに「カラム数を可変にする」等の分岐が入り、盤の描画と独立に読みたくなったとき。
+// そのときの境界は「レイアウト (renderGroup / renderCard / foot)」と「盤 (braille* / renderFace)」。
 
 import (
 	"fmt"
@@ -393,6 +401,39 @@ func paceState(used int, elapsed, band float64) (color, word string) {
 	}
 }
 
+// paceParts は「1 スロットあたりの予算」と「助言」を並べたもの (どちらも空になりうる:
+// 適正で残りが 1 スロット未満のとき)。⚠️ cardFoot と denseFoot の両方が同じものを出すので
+// ここに 1 本化する — 片方だけ助言を落とす変更が入ると、幅で形が変わったときに情報量が
+// 変わってしまう。
+func paceParts(c dialCard, remain time.Duration, elapsed float64) []string {
+	cells := dialDivisions(c.span)
+	parts := make([]string, 0, 2)
+	if b := paceBudget(c.win.Percent, remain, c.span, cells); b != "" {
+		parts = append(parts, b)
+	}
+	if a := paceAdvice(c.win.Percent, elapsed, c.span, cells); a != "" {
+		parts = append(parts, a)
+	}
+	return parts
+}
+
+// paceDeviation は「想定 X% ±Y.Ypt 状態語」。窓幅が不明な枠では空を返す (elapsed が 0 固定
+// なので「想定 0% +50.0pt 超過」のような根拠のない断定になる)。
+//
+// tight = 桁揃えの余白を入れない (1 行へ集約する denseFoot 用)。複数行に積む cardFoot 側は
+// 数値の桁を揃えたいので %3.0f / %+5.1f を使う — カードが縦に並ぶと桁のズレが目に付くため。
+func paceDeviation(c dialCard, elapsed float64, word, col string, tight, colored bool) string {
+	if c.span <= 0 {
+		return ""
+	}
+	expFmt, devFmt := "想定%3.0f%%", "%+5.1fpt %s"
+	if tight {
+		expFmt, devFmt = "想定%.0f%%", "%+.1fpt %s"
+	}
+	return paintIf(fmt.Sprintf(expFmt, elapsed), sgr.Dim, colored) + " " +
+		paintIf(fmt.Sprintf(devFmt, float64(c.win.Percent)-elapsed, word), col, colored)
+}
+
 // denseFoot はゲージ・使用率・想定と乖離・復活まで・ペースを 1 行へ集約する。幅が足りず
 // **どれかを落とすことになるなら "" を返す** (呼び出し側が従来の複数行へ落ちる)。
 //
@@ -402,19 +443,12 @@ func denseFoot(c dialCard, remain time.Duration, elapsed float64, col, word, gau
 	sep := paintIf("  ·  ", sgr.Dim, colored)
 	pct := paintIf(fmt.Sprintf("%d%%", c.win.Percent), col, colored)
 	left := gauge + "  " + pct
-	if c.span > 0 {
-		left += " " + paintIf(fmt.Sprintf("想定%.0f%%", elapsed), sgr.Dim, colored) +
-			" " + paintIf(fmt.Sprintf("%+.1fpt %s", float64(c.win.Percent)-elapsed, word), col, colored)
+	if dev := paceDeviation(c, elapsed, word, col, true, colored); dev != "" {
+		left += " " + dev
 	}
 	rest := "残" + paintIf(formatRemain(remain), sgr.Bold, colored)
 	at := paintIf("("+formatReset(c.win.ResetAt)+")", sgr.Dim, colored)
-	parts := make([]string, 0, 2)
-	if b := paceBudget(c.win.Percent, remain, c.span, dialDivisions(c.span)); b != "" {
-		parts = append(parts, b)
-	}
-	if a := paceAdvice(c.win.Percent, elapsed, c.span, dialDivisions(c.span)); a != "" {
-		parts = append(parts, a)
-	}
+	parts := paceParts(c, remain, elapsed)
 	pace := ""
 	if len(parts) > 0 {
 		pace = sep + paintIf(strings.Join(parts, " · "), col, colored)
@@ -553,10 +587,9 @@ func cardFoot(c dialCard, remain time.Duration, elapsed float64, col, word strin
 	// 「想定 0% / +50.0pt 超過」のような、根拠のない断定になる (盤の側は「窓幅が不明」と
 	// 断っているのに数値行だけが言い切る形になっていた)。
 	numbers := fitLine(w, []string{pctCell})
-	if c.span > 0 {
+	if dev := paceDeviation(c, elapsed, word, col, false, colored); dev != "" {
 		numbers = fitLine(w, []string{
-			pctCell + " " + paintIf(fmt.Sprintf("想定%3.0f%%", elapsed), sgr.Dim, colored) + " " +
-				paintIf(fmt.Sprintf("%+5.1fpt %s", float64(c.win.Percent)-elapsed, word), col, colored),
+			pctCell + " " + dev,
 			pctCell + " " + paintIf(word, col, colored),
 			pctCell,
 		})
@@ -566,14 +599,7 @@ func cardFoot(c dialCard, remain time.Duration, elapsed float64, col, word strin
 		"復活まで " + remainCell,
 		remainCell,
 	})
-	// 予算と助言。どちらも空になることがある (適正で残りが 1 スロット未満のとき)。
-	parts := make([]string, 0, 2)
-	if b := paceBudget(c.win.Percent, remain, c.span, cells); b != "" {
-		parts = append(parts, b)
-	}
-	if a := paceAdvice(c.win.Percent, elapsed, c.span, cells); a != "" {
-		parts = append(parts, a)
-	}
+	parts := paceParts(c, remain, elapsed)
 	pace := ""
 	if len(parts) > 0 {
 		pace = fitLine(w, []string{
