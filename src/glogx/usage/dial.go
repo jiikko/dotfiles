@@ -34,11 +34,6 @@ const (
 	// dialRuleMinTail は肩書き付き罫線 (案 A) を採るのに必要な、肩書きの右に残る線の長さ。
 	// これを下回るなら「線に見えない」ので素の罫線 + 1 行見出しへ落とす。
 	dialRuleMinTail = 4
-	// dialHeroMinW / dialHeroPct は「逼迫している枠を主役にする」配分 (ユーザー選定 2026-09-01)。
-	// 主役が dialHeroPct%、脇役が残り。⚠️ 脇役に盤が残る幅を与えないこと自体が狙いなので、
-	// 脇役側の下限は置かない (残りが dialMinW を切れば textCardBody へ落ちる = 意図どおり)。
-	dialHeroMinW = 90
-	dialHeroPct  = 62
 )
 
 // RenderDashboard は Snapshot の全枠を格子状のアナログ盤にして描く。返す行数はちょうど
@@ -96,64 +91,18 @@ func dialCols(width int) int {
 	return 2
 }
 
-// dialHero は段の中で「逼迫している 1 枚」の位置を返す (-1 = 該当なし)。
-//
-// 逼迫 = paceState が赤 (超過 / 上限)。**片方だけ**が赤のときに限る: 両方赤・両方平常なら
-// 対称のままにする。常に非対称だと「どちらを見るべきか」の信号にならず、ただ大きさが揃って
-// いない画面になる (ユーザー選定 2026-09-01: レイアウトそのものを信号にする)。
-//
-// ⚠️ 窓幅が不明な枠 (span <= 0) は候補にしない。乖離を計算できないので、赤いのは
-// 「消費が多い」だけで前借りの証拠にならない。
-func dialHero(cards []dialCard, now time.Time, width int) int {
-	if len(cards) != 2 || width < dialHeroMinW {
-		return -1
-	}
-	hero := -1
-	for i, c := range cards {
-		if c.span <= 0 {
-			continue
-		}
-		if _, _, col, _ := cardPace(c, now); col != sgr.Red {
-			continue
-		}
-		if hero >= 0 {
-			return -1 // 両方が赤: 差が付かないので対称のまま
-		}
-		hero = i
-	}
-	return hero
-}
-
-// dialCellWidths は各カラムの桁数。hero >= 0 ならその列を広く取り、もう一方はテキストカードに
-// 落ちる幅まで狭める (盤を 2 つ並べるのをやめ、視線が主役へ行くようにする)。
-func dialCellWidths(width, cols, hero int) []int {
-	usable := width - (cols-1)*dialGap
-	if cols != 2 || hero < 0 {
-		out := make([]int, cols)
-		for i := range out {
-			out[i] = usable / cols
-		}
-		return out
-	}
-	big := usable * dialHeroPct / 100
-	small := usable - big
-	if hero == 0 {
-		return []int{big, small}
-	}
-	return []int{small, big}
-}
-
 // dialBands は各段の合体帯 (案 B) を返す。**全段そろって組めるときだけ**採り、1 段でも
 // 組めなければ全段 nil を返す (画面の中で見出しの形を 1 つに保つ)。バージョンを添えるかも
 // 同じ理由で全段そろえる: 片方の段にだけ版が出ると、揃っていないことの方が目に付く。
 func dialBands(groups []dialGroup, now time.Time, width, groupH int, colored bool) [][]string {
 	cols := dialCols(width)
+	cellW := (width - (cols-1)*dialGap) / cols
 	for _, withTag := range []bool{true, false} {
 		bands := make([][]string, len(groups))
 		ok := cols == 2
 		for i, g := range groups {
 			rowsN := (len(g.cards) + cols - 1) / cols
-			b := mergedHead(g, now, width, dialCellWidths(width, cols, dialHero(g.cards, now, width)), withTag, colored)
+			b := mergedHead(g, now, width, cellW, withTag, colored)
 			// 帯 3 行 + 罫線 1 行を使っても、その段の全カードに盤が残ること
 			if b == nil || !fitsFace(groupH-1-len(b), rowsN, 0) {
 				ok = false
@@ -175,8 +124,7 @@ func dialBands(groups []dialGroup, now time.Time, width, groupH int, colored boo
 func renderGroup(g dialGroup, now time.Time, width, h int, band []string, colored bool) []string {
 	cols := dialCols(width)
 	rowsN := (len(g.cards) + cols - 1) / cols
-	hero := dialHero(g.cards, now, width)
-	cellWs := dialCellWidths(width, cols, hero)
+	cellW := (width - (cols-1)*dialGap) / cols
 	// 見出しは 3 段構えで、盤が残る最初の形を採る (ユーザー選定 2026-09-01)。
 	//
 	//  1. 合体帯 (案 B): 素の罫線 + 「5H | CLI 名 | 7D」を 1 つの 3 行帯に組む。CLI 名と枠
@@ -199,6 +147,11 @@ func renderGroup(g dialGroup, now time.Time, width, h int, band []string, colore
 	}
 	cardsH := max(h-len(head), 1)
 	rows := rowsN
+	// ⚠️ カードの割り当ては段をまたいで同じにする (等分)。「逼迫している枠を主役にして
+	// 幅を 62/38 に振る」を一度実装したが、**段ごとに列幅が変わると上下の段で盤の位置が
+	// 揃わず、崩れて見える** (ユーザー確認 2026-09-01 で revert)。格子の縦の整列は、段の中の
+	// 強弱より優先する。強弱を付けたいなら、幅ではなく色・枠線など**位置を動かさない手段**で。
+	// 参考: 盤の直径は高さで決まるので、幅を配り直しても主役の盤は大きくならない (実測)。
 	cellH := cardsH / rows
 	out := head
 	for r := range rows {
@@ -209,15 +162,12 @@ func renderGroup(g dialGroup, now time.Time, width, h int, band []string, colore
 				grid = append(grid, make([]string, cellH))
 				continue
 			}
-			// hero が居る段では、主役以外は盤をやめてテキストカードへ落とす。盤の直径は高さで
-			// 決まるので、幅を配り直しても主役の盤は大きくならない — 差を作れるのは「脇役が
-			// 盤をやめる」方だけ (実測 2026-09-01: 幅だけ 62/38 に振っても見た目が変わらなかった)。
-			grid = append(grid, renderCard(g.cards[i], now, cellWs[cc], cellH, headless, hero >= 0 && i != hero, colored))
+			grid = append(grid, renderCard(g.cards[i], now, cellW, cellH, headless, colored))
 		}
 		for line := range cellH {
 			parts := make([]string, 0, cols)
-			for cc, cell := range grid {
-				parts = append(parts, padRight(termwidth.Truncate(cell[line], cellWs[cc], ""), cellWs[cc]))
+			for _, cell := range grid {
+				parts = append(parts, padRight(termwidth.Truncate(cell[line], cellW, ""), cellW))
 			}
 			out = append(out, strings.TrimRight(strings.Join(parts, termwidth.PadSpaces(dialGap)), " "))
 		}
@@ -288,8 +238,8 @@ func groupTextHead(g dialGroup, width int, colored bool) string {
 //   - カードが 2 枚でない。codex のプランは枠数が可変で、3 枚以上は「左右」に割れない
 //   - ラベル / CLI 名に字形表の外の字が混ざる (bigLines / bannerLines が nil)
 //   - 幅が足りず、左右の見出しと中央の CLI 名を最低 2 桁の隙間つきで並べられない
-func mergedHead(g dialGroup, now time.Time, width int, cellWs []int, withTag, colored bool) []string {
-	if len(g.cards) != 2 || len(cellWs) != 2 || cellWs[0] <= 0 || cellWs[1] <= 0 {
+func mergedHead(g dialGroup, now time.Time, width, cellW int, withTag, colored bool) []string {
+	if len(g.cards) != 2 || cellW <= 0 {
 		return nil
 	}
 	l, r := g.cards[0], g.cards[1]
@@ -305,8 +255,8 @@ func mergedHead(g dialGroup, now time.Time, width int, cellWs []int, withTag, co
 	if withTag {
 		tag = versionTag(g.version, colored)
 	}
-	lAt := max(cellWs[0]/2-lw/2, 0)
-	rAt := max(cellWs[0]+dialGap+cellWs[1]/2-rw/2, 0)
+	lAt := max(cellW/2-lw/2, 0)
+	rAt := max(cellW+dialGap+cellW/2-rw/2, 0)
 	cAt := max((width-cw-termwidth.Of(tag))/2, 0)
 	// ⚠️ 種別 ("セッション" / "weekly") は落とさない: 飾りではなく枠の意味そのもので、これを
 	// 捨ててまで合体帯に留まるより、種別が残る肩書き罫線 (案 A) の方が読める。落とせるのは
@@ -474,28 +424,12 @@ func cardPace(c dialCard, now time.Time) (remain time.Duration, elapsed float64,
 
 // renderCard は 1 枚ぶんをちょうど h 行で返す。headless = 見出しを描かない (段の見出し帯が
 // 既にこのカードのラベルを出しているとき。renderGroup が決める)。
-func renderCard(c dialCard, now time.Time, w, h int, headless, compact, colored bool) []string {
+func renderCard(c dialCard, now time.Time, w, h int, headless, colored bool) []string {
 	remain, elapsed, col, word := cardPace(c, now)
 
 	// 見出し・数値行は狭い割り当てでは端から情報を落とす (切り詰めの … で読めなくするより、
 	// 落とす順を決めておく方が読める)。落とす順は「重要度の低い順」= 種別 → CLI 名 /
 	// リセット絶対時刻 → 見出しの語 / 想定と乖離 → 使用率。
-	// compact = 主役以外 (hero が居る段の脇役)。盤をやめ、数値だけの塊を**縦の中央**へ置く。
-	// ⚠️ 素朴に「盤を空にする」だけでは、数値がカードの最下段に貼り付いたまま上が丸ごと空白に
-	// なり、壊れた画面に見える (実測 2026-09-01)。脇役は「小さくまとまっている」ことが分かる
-	// 形にして初めて、主役との対比が意図に見える。
-	if compact {
-		foot := cardFoot(c, remain, elapsed, col, word, w, min(cardFootLines(h), 4), colored)
-		out := make([]string, 0, h)
-		for range max((h-len(foot))/2, 0) {
-			out = append(out, "")
-		}
-		out = append(out, foot...)
-		for len(out) < h {
-			out = append(out, "")
-		}
-		return out[:h]
-	}
 	foot := cardFoot(c, remain, elapsed, col, word, w, cardFootLines(h), colored)
 	var head []string
 	if !headless {
@@ -503,7 +437,7 @@ func renderCard(c dialCard, now time.Time, w, h int, headless, compact, colored 
 	}
 	bodyH := max(0, h-len(head)-len(foot))
 	var body []string
-	if c.span <= 0 || w < dialMinW || bodyH < 5 || compact {
+	if c.span <= 0 || w < dialMinW || bodyH < 5 {
 		body = textCardBody(c, col, w, bodyH, colored)
 	} else {
 		body = renderFace(c, remain, elapsed, col, w, bodyH, colored)
