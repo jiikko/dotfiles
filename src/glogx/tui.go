@@ -1325,6 +1325,14 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		// ⚠️ toggle を呼ぶので、ここへ来る時点で相手の viewer が開いていないこと (全画面は
 		// 同時に 1 枚) が前提。開いていると toggle が「開く」でなく「閉じる」に化ける。起動時
 		// 復元との競合はその前提を守るために issuesRestoreMsg 側で弾いている。
+		//
+		// ⚠️ 一覧の i/s が持つ `m.panelSHA == ""` ガードは、ここでは**意図的に付けない**
+		// (敵対レビュー指摘 2026-09-01)。あのガードの理由は「job パネルを開いている間はそちらの
+		// キー語彙を優先する」= キーの取り合いの解消で、ダッシュボードは全画面で全キーを飲む
+		// ため取り合いが起きない。パネル (panelSHA / panelCursor / details) は viewer とは独立
+		// した状態で、閉じれば元のパネルがそのまま描き直される。⚠️ 逆にガードを付けると、
+		// パネルを開いたまま R → i が無音の no-op になる (issue 122 が禁じた形)。
+		// パネル側の状態を viewer が読むようになったら、この判断を再評価すること。
 		case rlDashIssues:
 			return m, tea.Batch(m.issuesOv.toggle(currentDir()), m.maybeTick())
 		case rlDashStatus:
