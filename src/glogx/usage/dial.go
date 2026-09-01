@@ -426,12 +426,18 @@ func paceDeviation(c dialCard, elapsed float64, word, col string, tight, colored
 	if c.span <= 0 {
 		return ""
 	}
-	expFmt, devFmt := "想定%3.0f%%", "%+5.1fpt %s"
+	// ⚠️ 乖離は**整数 pt** で出す。判定に使う経過率を切り捨てた整数にしたので、小数を出しても
+	// 常に .0 になるうえ、statusline は %+4dpt で出しており「同じ意味の数字が 2 か所で違う桁数」
+	// になる (issue 144 の「statusline と同じ見え方か」の確認項目がこれを見ていた)。
+	expFmt, devFmt := "想定%3.0f%%", "%+4dpt %s"
 	if tight {
-		expFmt, devFmt = "想定%.0f%%", "%+.1fpt %s"
+		expFmt, devFmt = "想定%.0f%%", "%+dpt %s"
 	}
-	return paintIf(fmt.Sprintf(expFmt, elapsed), sgr.Dim, colored) + " " +
-		paintIf(fmt.Sprintf(devFmt, float64(c.win.Percent)-elapsed, word), col, colored)
+	// ⚠️ 判定と同じ切り捨てた値を出す。%.0f は四捨五入なので、生の小数を渡すと「画面は想定
+	// 25% なのに判定は 24.9 で行う」内部不整合になる (実測 2026-09-01)。
+	exp := paceElapsed(elapsed)
+	return paintIf(fmt.Sprintf(expFmt, exp), sgr.Dim, colored) + " " +
+		paintIf(fmt.Sprintf(devFmt, c.win.Percent-int(exp), word), col, colored)
 }
 
 // denseFoot はゲージ・使用率・想定と乖離・復活まで・ペースを 1 行へ集約する。幅が足りず
@@ -491,9 +497,20 @@ func cardPace(c dialCard, now time.Time) (remain time.Duration, elapsed float64,
 	if c.span > 0 {
 		elapsed = math.Max(0, math.Min(100, float64(c.span-remain)/float64(c.span)*100))
 	}
-	col, word = paceState(c.win.Percent, elapsed, paceBand(c.span))
+	// ⚠️ 状態の判定には**切り捨てた整数**の経過率を使う。生の小数で判定すると、同じ瞬間に
+	// statusline (shell) と違う状態語が出る: shell は $(( pr_elapsed * 100 / pr_window )) の
+	// 整数除算しか持たないので常に切り捨てで比較する (実測 2026-09-01: 経過 24.9% / 使用 49%
+	// で shell = 先行 / glogx = 適正)。表示 (paceDeviation) も同じ切り捨てを使う。
+	// ⚠️ 返す elapsed は生の小数のまま。盤の針・ゲージの塗りは連続値で描く (1% 刻みに丸めると
+	// 針がガタつく)。丸めるのは「状態語と想定%」だけ。
+	col, word = paceState(c.win.Percent, paceElapsed(elapsed), paceBand(c.span))
 	return remain, elapsed, col, word
 }
+
+// paceElapsed は状態の判定と想定% の表示に使う経過率 (切り捨て)。statusline (shell) の整数除算に
+// 揃えるための唯一の窓口 — 2 か所で別々に丸めると、また今回と同じ形でずれる。
+// 乖離は usage/pace_drift_test.go が固定する。
+func paceElapsed(elapsed float64) float64 { return math.Floor(elapsed) }
 
 // renderCard は 1 枚ぶんをちょうど h 行で返す。headless = 見出しを描かない (段の見出し帯が
 // 既にこのカードのラベルを出しているとき。renderGroup が決める)。
