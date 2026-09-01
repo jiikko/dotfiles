@@ -1,14 +1,11 @@
 package usage
 
 import (
-	"math"
 	"slices"
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
-	"glogx/sgr"
 	"glogx/termwidth"
 )
 
@@ -621,114 +618,5 @@ func TestDenseFootRefusesToDropInfo(t *testing.T) {
 	}
 	if got := denseFoot(c, remain, elapsed, col, word, gauge, 110, false); got == "" {
 		t.Error("入る幅なのに畳まなかった")
-	}
-}
-
-// countBGCells は colored 出力のうち、背景色 bg が有効なあいだに描かれたセル数を数える。
-//
-// ⚠️ 背景色は「変わり目でだけ SGR を挟む」ので、SGR の出現回数を数えても帯の太さにはならない
-// (1 回の SGR が何セル続くかは行ごとに違う)。状態を持って走査し、セルを数える。
-func countBGCells(lines []string, bg string) int {
-	known := []string{sgr.BgFace, sgr.BgTrack, sgr.BgWhite}
-	n := 0
-	for _, ln := range lines {
-		cur := ""
-		for i := 0; i < len(ln); {
-			if ln[i] == 0x1b {
-				j := strings.IndexByte(ln[i:], 'm')
-				if j < 0 {
-					break // 途中で切れた SGR (起きたらそれ自体がバグだが、走査は止める)
-				}
-				seq := ln[i : i+j+1]
-				if seq == sgr.Reset {
-					cur = ""
-				}
-				if slices.Contains(known, seq) {
-					cur = seq
-				}
-				i += j + 1
-				continue
-			}
-			_, size := utf8.DecodeRuneInString(ln[i:])
-			if cur == bg {
-				n++
-			}
-			i += size
-		}
-	}
-	return n
-}
-
-// bgArc は「セル中心が半径 r0..r1 かつ角度 t0..t1 の中にある」セルだけを塗る。円の外・内側の
-// 空洞・範囲外の角度まで塗ると、盤の地と帯の区別が消える (盤が一面ベタになる)。
-func TestBrailleBgArcPaintsAnnulusOnly(t *testing.T) {
-	cv := newBraille(21, 6)
-	cx, cy := 21.0, 12.0 // 盤の中心 (ドット座標)
-	cv.bgArc(cx, cy, 8, 12, 0, 0.5, sgr.BgWhite)
-	for row := range cv.rows {
-		for c := range cv.cols {
-			dx, dy := float64(c*2)+0.5-cx, float64(row*4)+1.5-cy
-			r, frac := math.Hypot(dx, dy), dialFraction(dx, dy)
-			want := r >= 8 && r <= 12 && frac <= 0.5
-			if got := cv.bg[row*cv.cols+c] == sgr.BgWhite; got != want {
-				t.Errorf("セル (%d,%d): r=%.1f t=%.2f 塗り=%v (want %v)", row, c, r, frac, got, want)
-			}
-		}
-	}
-}
-
-// 背景色は colored=false では 1 バイトも出さない。mono は「色を落とした同じ絵」であって
-// 「SGR が混ざった絵」ではない (幅の契約テストと呼び出し側の前提が崩れる)。
-func TestBrailleBgArcSilentInMono(t *testing.T) {
-	cv := newBraille(21, 6)
-	cv.bgArc(21, 12, 0, 12, 0, 1, sgr.BgFace)
-	for i, ln := range cv.lines(false) {
-		if strings.ContainsRune(ln, 0x1b) {
-			t.Errorf("mono の %d 行目に SGR が出た: %q", i, ln)
-		}
-	}
-}
-
-// 円周の帯は「残り時間」を表す: 残りが多いほど明るい帯 (BgWhite) が長く、過ぎたぶんの帯
-// (BgTrack) が短い。盤の地 (BgFace) は残り時間で変わらない。
-//
-// ⚠️ ここが盤の主張そのもの。帯を描いているかだけを見ると、両者を取り違えても緑になる。
-func TestRenderDashboardRimBandTracksRemaining(t *testing.T) {
-	now := dialTestNow()
-	type sample struct {
-		remain             time.Duration
-		face, track, white int
-	}
-	remains := []time.Duration{30 * time.Minute, 120 * time.Minute, 280 * time.Minute}
-	got := make([]sample, 0, len(remains))
-	for _, remain := range remains {
-		snap := &Snapshot{Version: "2.1.216", Windows: []Window{
-			{Label: "5h", Percent: 62, ResetAt: now.Add(remain), WindowMins: 300},
-		}}
-		lines := RenderDashboard(snap, now, 120, 36, true)
-		got = append(got, sample{remain,
-			countBGCells(lines, sgr.BgFace),
-			countBGCells(lines, sgr.BgTrack),
-			countBGCells(lines, sgr.BgWhite)})
-	}
-	for i, s := range got {
-		if s.face == 0 || s.track == 0 || s.white == 0 {
-			t.Fatalf("remain=%v: 帯か地が描かれていない %+v", s.remain, s)
-		}
-		if i == 0 {
-			continue
-		}
-		prev := got[i-1]
-		if s.white <= prev.white {
-			t.Errorf("remain=%v の明るい帯 %d が remain=%v の %d より伸びていない",
-				s.remain, s.white, prev.remain, prev.white)
-		}
-		if s.track >= prev.track {
-			t.Errorf("remain=%v の過ぎた帯 %d が remain=%v の %d より縮んでいない",
-				s.remain, s.track, prev.remain, prev.track)
-		}
-		if s.face != prev.face {
-			t.Errorf("盤の地が残り時間で変わった: %d → %d", prev.face, s.face)
-		}
 	}
 }

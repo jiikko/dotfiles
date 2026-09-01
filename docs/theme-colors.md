@@ -17,7 +17,7 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 | 点滅/scratch アイデンティティ | マゼンタ 201 | prefix/SCRATCH 点滅・scratch チップ/popup 枠 (fade hot 201 と紛れるなら 213 へ。ライブ判断) | — (nvim では未使用。glogx の最外周フレーム罫線が同色 = `src/glogx/render.go` の `ansiFrameBorder`。Go なので定数は共有できず手書きコピー) |
 | 危険/警告状態 | 赤 160 (zoom) / 196 (sync) | `@zoom-accent` / pane-border sync | `palette.diag.error_bg` (診断は coc 踏襲の別系統) |
 | アクティブ pane | 緑 46 (枠・ACTIVE 帯) / terminal 既定地 (=プロファイルの暖色) | pane-active-border / `window-active-style bg=terminal` | — (nvim は自前で地を塗る) |
-| 地色 | 234 (pane/エディタ) / 235 (バー) | `window-style` bg / status-style bg | retrobox Normal bg=234 / `palette.dark0_hard` (bufferline fill)。**両ツールの地は 234 で揃っている**。bufferline の非選択タブ pill だけ一段浮かせた dark0 (235) = tmux バー地と同段。glogx の ratelimit ダッシュボードで盤 (アナログ時計) の地を塗る背景色も同じ 235 = `src/glogx/sgr/sgr.go` の `BgFace` (Go なので定数は共有できず手書きコピー。上の「点滅/scratch」行の `ansiFrameBorder` と同じ事情) |
+| 地色 | 234 (pane/エディタ) / 235 (バー) | `window-style` bg / status-style bg | retrobox Normal bg=234 / `palette.dark0_hard` (bufferline fill)。**両ツールの地は 234 で揃っている**。bufferline の非選択タブ pill だけ一段浮かせた dark0 (235) = tmux バー地と同段 |
 
 ## 定数の出典 (単一ソース)
 
