@@ -107,6 +107,11 @@ func pixelLines(s string, table map[rune][pixelRows]string, w int) []string {
 }
 
 // pixelWidth は pixelLines が返す AA の桁数 (字数から計算できるので描かずに測れる)。
+//
+// ⚠️ termwidth.Of を介さず字数から計算している。幅の単一出典 (CLAUDE.md) の例外だが、
+// 字形表が閉じた ASCII 集合 (A-Z の一部と数字) で全角を含まないため桁数 = 字数 x 字幅 で
+// 決まる。実際の描画幅との一致は TestBannerLinesShape / TestDigitLinesShapeAndRejects が
+// termwidth.Of で固定している。全角を収録するなら描いてから測る形へ変えること。
 func pixelWidth(s string, w int) int {
 	n := len([]rune(s))
 	if n == 0 {
