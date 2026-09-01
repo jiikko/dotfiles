@@ -77,21 +77,43 @@ func (d *ratelimitDash) headerLine(o ratelimitRenderOpts) string {
 
 // hint は最下行のキー案内。
 func (d *ratelimitDash) hint() string {
-	return "r: 今すぐ更新  R/q/esc/h: 閉じる  (毎分自動更新)"
+	return "r: 今すぐ更新  i: issues  s: status  R/q/esc/h: 閉じる  (毎分自動更新)"
 }
 
-// handleKey はダッシュボードが飲むキー。戻り値 true = このキーをここで処理した。
-// ⚠️ 「閉じる / 更新以外は握り潰す」を明示する: 全画面なので、素通りさせると裏の一覧が
-// 見えないままスクロールし、閉じたときにカーソルが移動している。
-func (d *ratelimitDash) handleKey(key string) (closed, refresh bool) {
+// rlDashAction は handleKey の結果。閉じ→開きの連携 (横断) は viewer 単体では完結しないので、
+// issuesView.wantStatus / statusView.wantIssues と同じ語彙で browseModel へ返す。
+type rlDashAction int
+
+const (
+	// rlDashSwallow = 握り潰す。全画面なので裏の一覧へ素通りさせない (見えないままスクロールし、
+	// 閉じたときにカーソルが移動している状態になる)。
+	rlDashSwallow rlDashAction = iota
+	rlDashClosed               // 閉じた (裏の画面へ戻る)
+	rlDashRefresh              // 今すぐ取り直す (取得は browseModel が起こす)
+	rlDashIssues               // issues viewer へ横断 (このダッシュボードは閉じ済み)
+	rlDashStatus               // status viewer へ横断 (同上)
+)
+
+// handleKey はダッシュボードが飲むキー。
+//
+// i / s は issues / status viewer への横断 (ユーザー要望 2026-09-01)。viewer 側の R と対で、
+// 全画面どうしを往復できる。⚠️ 横断でも自分は必ず閉じる: 全画面は同時に 1 枚の前提で、
+// 重ねると「見えている画面」と「キーを受ける画面」が食い違う (issues ↔ status と同じ作法)。
+func (d *ratelimitDash) handleKey(key string) rlDashAction {
 	switch key {
 	case "R", "q", "esc", "h", "left":
 		d.close()
-		return true, false
+		return rlDashClosed
 	case "r":
-		return false, true
+		return rlDashRefresh
+	case "i":
+		d.close()
+		return rlDashIssues
+	case "s":
+		d.close()
+		return rlDashStatus
 	}
-	return false, false
+	return rlDashSwallow
 }
 
 // centerLine は幅 w の中で s を中央寄せする (左余白のみ)。

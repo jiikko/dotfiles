@@ -97,14 +97,13 @@ func TestRatelimitDashHeaderShowsVersions(t *testing.T) {
 	}
 }
 
-// 閉じる / 更新以外のキーは飲み切る (全画面なので裏の一覧をスクロールさせない)。
+// 閉じる / 更新 / 横断以外のキーは飲み切る (全画面なので裏の一覧をスクロールさせない)。
 func TestRatelimitDashHandleKey(t *testing.T) {
 	for _, key := range []string{"R", "q", "esc", "h", "left"} {
 		var d ratelimitDash
 		d.toggle()
-		closed, refresh := d.handleKey(key)
-		if !closed || refresh {
-			t.Errorf("%q: closed=%v refresh=%v", key, closed, refresh)
+		if got := d.handleKey(key); got != rlDashClosed {
+			t.Errorf("%q: action=%v, want rlDashClosed", key, got)
 		}
 		if d.visible() {
 			t.Errorf("%q で閉じていない", key)
@@ -112,17 +111,86 @@ func TestRatelimitDashHandleKey(t *testing.T) {
 	}
 	var d ratelimitDash
 	d.toggle()
-	if closed, refresh := d.handleKey("r"); closed || !refresh {
-		t.Errorf("r: closed=%v refresh=%v", closed, refresh)
+	if got := d.handleKey("r"); got != rlDashRefresh {
+		t.Errorf("r: action=%v, want rlDashRefresh", got)
 	}
 	if !d.visible() {
 		t.Error("r で閉じてしまった")
 	}
-	for _, key := range []string{"j", "k", "i", "s", "b", "u", "enter"} {
-		closed, refresh := d.handleKey(key)
-		if closed || refresh {
-			t.Errorf("%q を飲み込んでいない: closed=%v refresh=%v", key, closed, refresh)
+	// i / s は viewer への横断 (ユーザー要望 2026-09-01)。⚠️ 横断でも自分は閉じる:
+	// 開いたまま viewer を開くと「見えている画面」と「キーを受ける画面」が食い違う。
+	for _, tc := range []struct {
+		key  string
+		want rlDashAction
+	}{{"i", rlDashIssues}, {"s", rlDashStatus}} {
+		var d ratelimitDash
+		d.toggle()
+		if got := d.handleKey(tc.key); got != tc.want {
+			t.Errorf("%q: action=%v, want %v", tc.key, got, tc.want)
 		}
+		if d.visible() {
+			t.Errorf("%q の横断でダッシュボードが閉じていない", tc.key)
+		}
+	}
+	d = ratelimitDash{}
+	d.toggle()
+	for _, key := range []string{"j", "k", "b", "u", "enter"} {
+		if got := d.handleKey(key); got != rlDashSwallow {
+			t.Errorf("%q を飲み込んでいない: action=%v", key, got)
+		}
+	}
+	if !d.visible() {
+		t.Error("飲み込むキーで閉じてしまった")
+	}
+}
+
+// ダッシュボード ⇄ viewer の往復 (ダッシュボードの i/s と viewer の R。ユーザー要望 2026-09-01)。
+// 全画面は同時に 1 枚なので、横断のたびに「相手が開く」と「自分が閉じる」の両方を見る。
+func TestRatelimitDashCrossSwitching(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.handleKey("R")
+	if !m.rlDash.visible() {
+		t.Fatal("前提が崩れた: R でダッシュボードが開かない")
+	}
+	releaseKey(m)
+	m.handleKey("i")
+	if m.rlDash.visible() || !m.issuesOv.visible() {
+		t.Fatalf("ダッシュボードの i で issues viewer へ移らない (dash=%v issues=%v)", m.rlDash.visible(), m.issuesOv.visible())
+	}
+	releaseKey(m)
+	m.handleKey("R")
+	if !m.rlDash.visible() || m.issuesOv.visible() {
+		t.Fatalf("issues viewer の R でダッシュボードへ移らない (dash=%v issues=%v)", m.rlDash.visible(), m.issuesOv.visible())
+	}
+	releaseKey(m)
+	m.handleKey("s")
+	if m.rlDash.visible() || !m.statusOv.visible() {
+		t.Fatalf("ダッシュボードの s で status viewer へ移らない (dash=%v status=%v)", m.rlDash.visible(), m.statusOv.visible())
+	}
+	releaseKey(m)
+	m.handleKey("R")
+	if !m.rlDash.visible() || m.statusOv.visible() {
+		t.Fatalf("status viewer の R でダッシュボードへ移らない (dash=%v status=%v)", m.rlDash.visible(), m.statusOv.visible())
+	}
+}
+
+// 起動時 restore が返る前に R が押されていたら復元を捨てる (status viewer と同じ理由。
+// 捨てないと裏に issues viewer が開き、ダッシュボードの i が toggle で「閉じる」に化ける)。
+func TestIssuesRestoreDroppedWhenRatelimitDashOpen(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.handleKey("R")
+	m.Update(issuesRestoreMsg{})
+	if m.issuesOv.visible() {
+		t.Fatal("ダッシュボード表示中の遅延 restore で issues viewer が開いた")
+	}
+	if !m.rlDash.visible() {
+		t.Fatal("前提が崩れた: ダッシュボードが開いていない")
+	}
+	// 横断が toggle で裏返らないこと (この restore ガードが守っている本体)
+	releaseKey(m)
+	m.handleKey("i")
+	if !m.issuesOv.visible() {
+		t.Fatal("復元を捨てた後の i で issues viewer が開かない")
 	}
 }
 

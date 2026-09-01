@@ -210,7 +210,8 @@ func Usage() string {
                             a done も表示 / u 本文中の URL ピッカー (本文表示中のみ) /
                             e・v $VISUAL・$EDITOR で開く (既定 nvim) /
                             r 再読込 /
-                            Tab・h・l タブ移動 / s status viewer へ切り替え / i 閉じる /
+                            Tab・h・l タブ移動 / s status viewer へ切り替え /
+                            R ratelimit ダッシュボードへ切り替え / i 閉じる /
                             q・esc glogx ごと終了。
                             読む規約は docs/issues-viewer-spec.md
   s                         status viewer を全画面で開く (toggle。板が左端から生えてくる演出)。
@@ -219,7 +220,9 @@ func Usage() string {
                             Space stage/unstage (セクションが向きを決める) / a 全 stage /
                             X 変更を捨てる (y/N 確認。untracked は削除) / d 全画面 diff /
                             Tab セクション移動 / r 再読込 / p pull --rebase (y/N 確認) /
-                            i issues viewer へ切り替え / s 閉じる / q・esc glogx ごと終了。
+                            i issues viewer へ切り替え /
+                            R ratelimit ダッシュボードへ切り替え / s 閉じる /
+                            q・esc glogx ごと終了。
                             b で push (y/N 確認。一覧と同じキー)。
                             開いている間は別プロセスの編集を自動で反映する。
                             規約は docs/status-viewer-spec.md
@@ -228,7 +231,8 @@ func Usage() string {
                             枠 (5h / weekly) ごとに 1 周 = 枠の長さのアナログ盤を並べる。
                             12 時 = リセット点 / 針 = いまの経過 / 外周の弧 = 復活までの残り /
                             内周の弧 = 消費した割合。1 分ごとに自動更新。
-                            r で今すぐ更新 / R・q・esc・h で閉じる
+                            r で今すぐ更新 / i・s で issues・status viewer へ切り替え
+                            (viewer 側の R と対で往復できる) / R・q・esc・h で閉じる
   C                         claude update を実行する (確認なし即実行。結果は下部に表示)
   X                         codex update を実行する (C の codex 版。起動時に新バージョンを
                             検出するとトーストで X を案内する)

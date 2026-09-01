@@ -114,6 +114,8 @@ type issuesView struct {
 	// wantStatus は「s で status viewer へ切り替えたい」の一度きりの信号 (browseModel が
 	// takeWantStatus で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。
 	wantStatus bool
+	// wantRatelimit は「R で ratelimit ダッシュボードへ切り替えたい」の一度きりの信号 (同上)。
+	wantRatelimit bool
 	// wantQuit は「q/esc で glogx ごと終了したい」の一度きりの信号 (同上。quit は browseModel の
 	// 仕事で、viewer は tea.Quit を出さない)。
 	wantQuit bool
@@ -343,6 +345,13 @@ func (v *issuesView) animating() bool {
 func (v *issuesView) takeWantStatus() bool {
 	want := v.wantStatus
 	v.wantStatus = false
+	return want
+}
+
+// takeWantRatelimit は「R で ratelimit ダッシュボードへ切り替えたい」を一度だけ取り出す。
+func (v *issuesView) takeWantRatelimit() bool {
+	want := v.wantRatelimit
+	v.wantRatelimit = false
 	return want
 }
 
@@ -886,6 +895,13 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 		// 番号入力中はここまで届かないので誤爆しない。閉じ→開きは browseModel (takeWantStatus)
 		v.close()
 		v.wantStatus = true
+	case "R":
+		// ratelimit ダッシュボードへの横断 (ユーザー要望 2026-09-01)。s と同じ扱い
+		// (全画面どうしの入れ替えなので閉じてから開く)。ダッシュボード側の i と対で往復できる。
+		// ⚠️ hint には入れない (1 行が popup 実幅に詰まっている。i と同じ理由で --help と
+		// README が正本。issues_view.go:hint の注記)
+		v.close()
+		v.wantRatelimit = true
 	case "u":
 		// ⚠️ 黙って無視しない。u は git log 一覧では pull、本文では URL ピッカー、status viewer では
 		// 「pull は p です」を返す — 一覧だけ無音だと「押したのに何も起きない」= 壊れて見える
@@ -1048,6 +1064,10 @@ func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
 		// として案内しており、本文だけ沈黙すると案内が嘘になる)
 		v.close()
 		v.wantStatus = true
+	case "R":
+		// ratelimit ダッシュボードへの横断も本文から効く (s と同じ理由)
+		v.close()
+		v.wantRatelimit = true
 	case "u":
 		v.openURLPicker()
 	default:

@@ -1364,3 +1364,25 @@ func TestStatusHintWordsMatchBehavior(t *testing.T) {
 		t.Errorf("pager の hint が「閉じる」でない (そこでの q は pager を閉じる): %q", pager)
 	}
 }
+
+// R は ratelimit ダッシュボードへ横断する (i と対。ユーザー要望 2026-09-01)。viewer は閉じ、
+// 実際に開くのは browseModel (takeWantRatelimit)。hint も案内する (一覧モードのキーは
+// 幅の制約が無いので出せる — issues 側とはそこが違う)。
+func TestStatusRSwitchesToRatelimitDash(t *testing.T) {
+	v := newTestStatusView(t, statusRec(" M a.go"))
+
+	v.handleKey("R", statusViewport{width: testPopupWidth, page: 20})
+
+	if !v.takeWantRatelimit() {
+		t.Error("R でダッシュボードへの横断を要求しない")
+	}
+	if v.takeWantRatelimit() {
+		t.Error("takeWantRatelimit が 2 回 true を返す (横断が二重に起きる)")
+	}
+	if !v.closing && v.shown {
+		t.Error("R で viewer が閉じない (全画面は同時に 1 枚)")
+	}
+	if !strings.Contains(v.hint(), "R: 残量") {
+		t.Errorf("hint が R を案内していない: %q", v.hint())
+	}
+}

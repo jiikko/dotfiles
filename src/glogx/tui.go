@@ -900,7 +900,10 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// いたら復元を捨てる。restore は自分の shown しか見ないため、ここで弾かないと両 viewer
 		// 同時 shown になり「見えている status」と「キーを受ける issues」が食い違う
 		// (敵対レビューで再現 2026-08-06)
-		if m.statusOv.visible() {
+		// ⚠️ ratelimit ダッシュボード (R) が先に開いていた場合も同じ理由で捨てる: 復元すると
+		// 裏に issues viewer が開いた状態になり、ダッシュボードの i (横断) が toggle で
+		// 「開く」ではなく「閉じる」に化ける。
+		if m.statusOv.visible() || m.rlDash.visible() {
 			return m, m.maybeTick()
 		}
 		return m, tea.Batch(m.issuesOv.restore(currentDir(), msg.screen), m.maybeTick())
@@ -1312,14 +1315,24 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// ratelimit ダッシュボード表示中も全画面: キーはここで飲み切る (裏の一覧をスクロール
 	// させない)。issues / status と同じ位置に置く理由もそちらと同じ (actModal と prefix の後)。
 	if m.rlDash.visible() {
-		closed, refresh := m.rlDash.handleKey(key)
-		switch {
-		case closed:
+		switch m.rlDash.handleKey(key) {
+		case rlDashClosed:
 			return m, m.maybeTick()
-		case refresh:
+		case rlDashRefresh:
 			return m, tea.Batch(m.usageOv.fetchCmd(false), m.maybeTick())
+		// i / s = viewer へ横断 (viewer 側の R と対。ユーザー要望 2026-09-01)。handleKey が
+		// 既に閉じているので、issues ↔ status の横断と同じく閉じ演出は待たずに即着地する。
+		// ⚠️ toggle を呼ぶので、ここへ来る時点で相手の viewer が開いていないこと (全画面は
+		// 同時に 1 枚) が前提。開いていると toggle が「開く」でなく「閉じる」に化ける。起動時
+		// 復元との競合はその前提を守るために issuesRestoreMsg 側で弾いている。
+		case rlDashIssues:
+			return m, tea.Batch(m.issuesOv.toggle(currentDir()), m.maybeTick())
+		case rlDashStatus:
+			return m, tea.Batch(m.statusOv.toggle(), m.maybeTick())
+		case rlDashSwallow:
+			// 閉じる / 更新 / 横断以外は握り潰す (下の return へ落ちる)
 		}
-		return m, nil // 閉じる / 更新以外は握り潰す
+		return m, nil
 	}
 	// issues viewer 表示中は全画面モーダル: キーは全部 viewer が飲む。⚠️ この判定を下の
 	// 裸の b / u (push / pull) より後ろに置くと、一覧を見ている最中の u が
@@ -1357,6 +1370,13 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		if m.issuesOv.takeWantStatus() {
 			m.issuesOv.finishClose()
 			return m, tea.Batch(cmd, m.statusOv.toggle(), m.maybeTick())
+		}
+		// R = ratelimit ダッシュボードへ横断 (ユーザー要望 2026-09-01)。s と同じ経路で、
+		// 閉じ演出を待たず即着地させる (全画面は同時に 1 枚)。取得の起こし方は一覧の R と
+		// 同じ toggleRatelimitDash に委ねる (single-flight ガードを 1 か所に保つ)。
+		if m.issuesOv.takeWantRatelimit() {
+			m.issuesOv.finishClose()
+			return m, tea.Batch(cmd, m.toggleRatelimitDash())
 		}
 		return m, tea.Batch(cmd, m.maybeTick())
 	}
@@ -1403,6 +1423,11 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		if m.statusOv.takeWantIssues() {
 			m.statusOv.finishClose()
 			return m, tea.Batch(cmd, m.issuesOv.toggle(currentDir()), m.maybeTick())
+		}
+		// R = ratelimit ダッシュボードへ横断 (issues 側の R と同じ。ユーザー要望 2026-09-01)
+		if m.statusOv.takeWantRatelimit() {
+			m.statusOv.finishClose()
+			return m, tea.Batch(cmd, m.toggleRatelimitDash())
 		}
 		return m, tea.Batch(cmd, m.maybeTick())
 	}
@@ -3123,7 +3148,9 @@ func (m *browseModel) viewLines() string {
 	// 起動時 restore も status が開いていれば捨てる — issuesRestoreMsg の注記) が、
 	// 共通 chrome (トースト / usage 等) は finishWithGlobalChrome が同じ前面順で載せる。
 	// ratelimit ダッシュボードも全画面 (issues / status と同じ経路)。同時には開かない:
-	// 開くのは一覧からだけで、開いている間は他の画面へ移るキーを飲む (handleKey)。
+	// viewer からの R も、ダッシュボードからの i/s も「閉じてから開く」ので、3 画面のうち
+	// 高々 1 枚しか shown にならない (起動時 restore は開いていれば捨てる — issuesRestoreMsg
+	// の注記)。開いている間の他のキーは handleKey が飲む。
 	if m.rlDash.visible() {
 		return m.finishWithGlobalChrome(m.rlDash.lines(m.ratelimitOpts()), page)
 	}

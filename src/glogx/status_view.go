@@ -81,6 +81,8 @@ type statusView struct {
 	// wantIssues は「i で issues viewer へ切り替えたい」の一度きりの信号 (browseModel が
 	// takeWantIssues で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。
 	wantIssues bool
+	// wantRatelimit は「R で ratelimit ダッシュボードへ切り替えたい」の一度きりの信号 (同上)。
+	wantRatelimit bool
 	// wantQuit は「q/esc で glogx ごと終了したい」の一度きりの信号 (同上。quit は browseModel の
 	// 仕事で、viewer は tea.Quit を出さない)。
 	wantQuit bool
@@ -742,6 +744,12 @@ func (v *statusView) listKey(key string, vp statusViewport) tea.Cmd {
 		v.close()
 		v.wantIssues = true
 		return nil
+	case "R":
+		// ratelimit ダッシュボードへの横断 (ユーザー要望 2026-09-01)。i と同じ扱い
+		// (全画面どうしの入れ替えなので閉じてから開く)。ダッシュボード側の s と対で往復できる
+		v.close()
+		v.wantRatelimit = true
+		return nil
 	}
 	return nil
 }
@@ -750,6 +758,13 @@ func (v *statusView) listKey(key string, vp statusViewport) tea.Cmd {
 func (v *statusView) takeWantIssues() bool {
 	want := v.wantIssues
 	v.wantIssues = false
+	return want
+}
+
+// takeWantRatelimit は「R で ratelimit ダッシュボードへ切り替えたい」を一度だけ取り出す。
+func (v *statusView) takeWantRatelimit() bool {
+	want := v.wantRatelimit
+	v.wantRatelimit = false
 	return want
 }
 
@@ -884,7 +899,7 @@ func (v *statusView) hint() string {
 	default:
 		// ⚠️ "q: 終了" (glogx ごと終了。一覧へ戻るのは s)。上の pager の "d/q: 閉じる" は
 		//   pager を閉じるので正しい — 直すのはこちらだけ。issue 121
-		return "j/k: 移動  Tab: セクション  Space: stage/unstage  a: 全 stage  X: 変更を捨てる  d: diff  r: 再読込  b: push  p: pull  U: usage  s: 一覧へ  q: 終了"
+		return "j/k: 移動  Tab: セクション  Space: stage/unstage  a: 全 stage  X: 変更を捨てる  d: diff  r: 再読込  b: push  p: pull  U: usage  R: 残量  s: 一覧へ  q: 終了"
 	}
 }
 
