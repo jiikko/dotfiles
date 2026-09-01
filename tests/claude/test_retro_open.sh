@@ -139,7 +139,11 @@ case "$1" in
   # exec で呼ぶと最初の /bin/date にプロセスが置き換わり、失敗しても || の後段が走らない
   # (host が GNU date の Linux では -j が非 0 で終わり、スタブが常に失敗していた)
   -d)
-    out=$(/bin/date -j -f '%Y-%m-%d' "$2" +%s 2>/dev/null) \
+    # ⚠️ 時刻つきの形を先に試す。BSD の -f は寛容で、'%Y-%m-%d' に
+    # "2026-09-01 00:00:00" を渡すと**日付だけ読んで時刻は今の時刻で埋める**ため、
+    # 順序を逆にすると GNU date のふりをしながら壁時計を混ぜてしまう
+    out=$(/bin/date -j -f '%Y-%m-%d %H:%M:%S' "$2" +%s 2>/dev/null) \
+      || out=$(/bin/date -j -f '%Y-%m-%d' "$2" +%s 2>/dev/null) \
       || out=$(/bin/date -d "$2" +%s 2>/dev/null) || exit 1
     printf '%s\n' "$out"
     exit 0
@@ -213,7 +217,45 @@ check "jq 不在でも黙らない" "未決着の retro issue" "$plain"
 check "jq 不在でも .cwd 側の repo を報告する" "issues/013-retro-session" "$plain"
 check "jq 不在で PWD 側の repo を報告しない" "" "$(printf '%s' "$plain" | grep 'retro-elsewhere' || true)"
 
+# --- 16. 壁時計が進んでも経過日数は暦日で数える (実測 2026-09-02 の flake) ---
+# hook は today_epoch を先に取り、あとで各 issue の日付を解釈する。BSD の
+# `date -j -f '%Y-%m-%d'` は時刻を 00:00:00 にせず**実行時点の時刻**を埋めるため、その 2 回の
+# 呼び出しに 1 秒でも差があると引き算が 86400 を割り、「1 日前」が「0 日前」に落ちていた。
+# 単体実行では通り抜け、負荷のかかった `make test` でだけ落ちる flake だったので、
+# 「呼ばれるたびに進む時計」で決定論的に固定する。
+clock="$WORK/stub-clock"; mkdir -p "$clock"
+tick="$WORK/tick"
+base_day="$(date +%F)"
+# 正午を基準にする (境界をまたがせない: 深夜に走らせたとき進んだぶんで日付が変わると、
+# この回帰テスト自身が壁時計依存になる)
+base_epoch="$(date -j -f '%Y-%m-%d %H:%M:%S' "$base_day 12:00:00" +%s)"
+yday="$(date -v-1d +%F 2>/dev/null || date -d '-1 day' +%F)"
+cat >"$clock/date" <<STUB
+#!/bin/sh
+# 呼ばれるたびに 5 秒進む時計 + BSD date の「時刻を埋める」挙動の再現
+n=\$(cat "$tick" 2>/dev/null || echo 0); n=\$((n + 1)); printf '%s' "\$n" > "$tick"
+now=\$(( $base_epoch + n * 5 ))
+if [ "\$1" = "-j" ] && [ "\$2" = "-f" ]; then
+  case "\$3" in
+    '%Y-%m-%d')
+      # 本物の BSD date と同じく 00:00:00 にせず「今の時刻」を埋める (これが罠の本体)
+      exec /bin/date -j -f '%Y-%m-%d %H:%M:%S' "\$4 \$(/bin/date -r \$now +%H:%M:%S)" +%s ;;
+    *) exec /bin/date -j -f "\$3" "\$4" +%s ;;
+  esac
+fi
+case "\$*" in
+  '+%s') printf '%s\n' "\$now" ;;
+  '+%F') /bin/date -r "\$now" +%F ;;
+  *) exec /bin/date "\$@" ;;
+esac
+STUB
+chmod +x "$clock/date"
+: > "$tick"
+mkissue "019-retro-clockdrift.md" "起票日: ${yday}"
+check "壁時計が進んでも暦日で数える" "1 日前 +issues/019-retro-clockdrift" \
+  "$(report env "PATH=$clock:$PATH")"
+
 if [ "$fails" -gt 0 ]; then
   echo "FAIL: retro-open.sh ($fails 件)"; exit 1
 fi
-echo "OK: retro-open.sh (24 観点)"
+echo "OK: retro-open.sh (25 観点)"

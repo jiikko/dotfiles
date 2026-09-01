@@ -31,12 +31,27 @@ issue_hook_resolve_dir || exit 0
 root="$ISSUE_HOOK_ROOT"
 dir="$ISSUE_HOOK_DIR"
 
-today_epoch=$(date +%s)
+# midnight_epoch <YYYY-MM-DD>: その日の 0 時の epoch。読めなければ非 0。
+#
+# ⚠️ 時刻を明示すること。BSD の `date -j -f '%Y-%m-%d'` は**時刻を 00:00:00 にせず、実行時点の
+# 時刻を埋める**。両辺を壁時計込みで引くと、today_epoch を取ってから日付を解釈するまでに
+# 1 秒でも経った分だけ差が 86400 を割り、「1 日前」が「0 日前」に落ちる。単体実行では
+# 通り抜け、負荷のかかった `make test` でだけ落ちる flake になっていた (実測 2026-09-02)。
+# 経過日数は暦日の差なので、両辺を 0 時に丸めて壁時計を計算から外す。
+midnight_epoch() {
+  local d="$1"
+  date -j -f '%Y-%m-%d %H:%M:%S' "$d 00:00:00" +%s 2>/dev/null ||
+    date -d "$d 00:00:00" +%s 2>/dev/null || return 1
+}
+
+# today_epoch が取れない環境では日数を出さない (days_since が「日付不明」へ倒す)。
+today_epoch=$(midnight_epoch "$(date +%F)" || true)
 
 # days_since <YYYY-MM-DD>: 経過日数を stdout に出す。date が解釈できなければ非 0
 days_since() {
   local d="$1" epoch=""
-  epoch=$(date -j -f '%Y-%m-%d' "$d" +%s 2>/dev/null || date -d "$d" +%s 2>/dev/null || true)
+  [ -n "$today_epoch" ] || return 1
+  epoch=$(midnight_epoch "$d" || true)
   [ -n "$epoch" ] || return 1
   printf '%d' $(((today_epoch - epoch) / 86400))
 }
