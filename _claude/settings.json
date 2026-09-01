@@ -5,6 +5,7 @@
   "permissions": {
     "defaultMode": "auto"
   },
+  "model": "fable",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -127,6 +128,14 @@
   },
   "language": "日本語",
   "alwaysThinkingEnabled": true,
+  "modelSettings": {
+    "claude-opus-5": {
+      "effortLevel": "low"
+    },
+    "claude-fable-5": {
+      "effortLevel": "low"
+    }
+  },
   "skipWorkflowUsageWarning": true,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true
