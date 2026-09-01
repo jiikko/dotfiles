@@ -23,6 +23,9 @@ codex トークンを積極消費したいタスク向け。
    (作法は「並列起動の作法」の集約規約)。**起動〜merger は driver (`codex-fanout`) で 1 往復に畳む**
    (per-run の起動・tail の Bash 往復自体が Claude の消費源。同節参照)。
 2. **貼らずに参照させる**: codex は repo 内のファイルを自分で読める (read-only sandbox も読み取りは可)。
+   **逆方向の注意**: read-only の codex は**長文の成果物を `-o` に出せない** (apply_patch が拒否され、要約だけ残って設計本文が stdout の
+   思考ログに埋もれる。obaket 674 項目 4 で 405 行の D2v2 が抽出不能になった)。設計本文・digest のように長い成果物を書かせるときは
+   `-s workspace-write` で `./tmp/` への書き出しを指示する (ro は「読んで答える」用)。`-o` の親ディレクトリは先に mkdir する。
    設計スライス・spec・要件はプロンプトに長文で貼らず、`./tmp/codex-drive-design.*.md` 等の
    **ファイルパス + セクション名を指示して読ませる** (Claude の出力トークンを長文 heredoc に使わない)。
    定型部分は `templates/` のテンプレートとの**ファイル連結**で組み、Claude が書くのは brief 数行だけ。
@@ -471,6 +474,8 @@ EOF
   ありうる (同日 2 回観測。素の環境では 0 failure) ので、赤も緑と同じく Claude の再実行で判定する
   (出典: obaket `issues/613`)。
   **codex に xcodebuild を試みさせない**とプロンプトに書く (試みると Error 74 の往復で時間を溶かす。obaket 617 M3)。
+  **`project.pbxproj` は触らない (xcodegen が `project.yml` から生成する) ともプロンプトに書く** — 書かないと codex が新規テストファイルを
+  pbxproj に手で登録する (obaket 686, 2026-09-01。再生成で上書きされるので実害は無いが diff がノイズになる)。
   codex が書いた macOS target のテストは **Claude が baseline 緑 + 変異 red を xcodebuild で確認するまで未検証扱い**
   (617 M5: codex 版の macOS テスト 2 本が baseline red / 変異検知が vacuous だった。`[3.8]` の gate は shared の filter
   suite しか回さないので、macOS 側の変異は Claude が worktree で `xcodebuild -only-testing:<suite>` を当てる)。
@@ -921,6 +926,9 @@ EOF
     (「この patch を落とすテストを書け」— 的が具体的なので循環テストになりにくい)。テスト追加後に漏れた変異だけ再検証
 - **省略できるケース**: `[3.7]` を省略したマイルストーン (追加テストなし + 既存テストで受け入れ条件を完全機械判定)。
   省略したら一言明示する。worktree は成否に関わらず必ず削除する。
+  **後始末に stale な `swiftpm-testing-helper` の確認を含める**: codex の `swift test --disable-sandbox` や worktree での mutation 実行が
+  helper プロセスを残す (obaket 674 項目 6: 5 個以上残留。無害だがリソースを食う)。`pgrep -fl swiftpm-testing-helper` で確認し、
+  **自分が起動した scratch / worktree の path を持つものだけ** kill する (他セッションの実行中 helper を巻き込まない)。
 
 ### 4. commit & push（Claude）
 
