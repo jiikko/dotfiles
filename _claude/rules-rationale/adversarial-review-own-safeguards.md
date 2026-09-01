@@ -100,3 +100,20 @@ codex-fanout の manifest に行単位 timeout 列を足した変更 (`a181655`)
 入力検証**でも「自分が想定した文字集合の外側」（ロケール・桁数）が残ることを示した。
 自分で書いた非数値テスト（`abc`）は、ガードが主張する防御範囲の最弱部を踏んでいなかった。
 切り出し先: [`shell-numeric-gate-explicit-digits.md`](../rules/shell-numeric-gate-explicit-digits.md)。
+
+## 2026-09-01 obaket 688 C7 — 掃除機構を作りかけて、発生源の差し替えに変えた
+
+E2E が実 Keychain に残す credential の残骸 (実データで 3 エントリ現存を確認) に対し、
+`check-test-profile-residue` へ「E2E 形状の service を消して回る sweep」を実装しかけた。
+ユーザーの「e2e の時は keychain みたいな永続化のレイヤーに fake obj を入れるとかは無理?」で
+方針転換し、**E2E profile の credential 永続化層を in-memory 実装へ差し替え**た。
+
+比較:
+- sweep = ユーザーの login keychain への**破壊的操作を新設**。パターンを誤れば本番 credential を消す。
+  しかも残骸が出てから消す後追い。認可ダイアログ・live run 判定・誤爆防止の検証が要る
+- 差し替え = **残骸自体が発生しない**。変更は composition root の分岐 1 箇所
+
+気づけなかった理由: 直前に別の層 (`ObjectStorageFactory`) で「fake 注入は具象型保持のせいで高い」と
+判断しており、その結論を credential 側にも無検証で持ち越した。実際には
+`credentialRepository` は既に `any CredentialRepository` で保持されていた。
+**同じ形の問題でも、依存の型が違えばコストは変わる**。
