@@ -61,3 +61,16 @@ iOS スタイルのコンテナは**ディレクトリ名が UUID** で、bundle
 - [ ] `Wrapper/` 形式の bundle id が `collectBundleIDs` に含まれる (fixture テスト)
 - [ ] symlink の `.app` の bundle id が含まれる (fixture テスト)
 - [ ] 変異検証: 1 の fail-closed を外すと UUID コンテナが候補に戻ることを確認する
+
+## 事前検証 (2026-09-03、実コード)
+
+**(b) と (c) は実コードで確認できた。**
+
+- `collectBundleIDs` (`src/doctor/disk/guard.go:167`) が読むのは `<bundle>/Contents/Info.plist` **だけ**
+  (`guard.go:184`)。`Wrapper/*.app/Info.plist` と `Versions/*/Resources/Info.plist` は読まない
+- `os.ReadDir` の結果を `e.IsDir()` で絞っている (`guard.go:179`) ので、**symlink の `.app` は走査対象から外れる**
+  (`DirEntry.IsDir` は symlink に対して false)
+- `containerOwnedByInstalled` (`guard.go:209`) は `id` (= ディレクトリ名) を bundle id として突合するので、
+  (a) の UUID 名コンテナは構造的に素通りする
+
+実機の `~/Library/Containers` に UUID 名があるかは未再確認 (issue 起票時の実測を採用)。
