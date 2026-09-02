@@ -91,6 +91,20 @@ func doctorTestOpts(page int) doctorRenderOpts {
 	return doctorRenderOpts{width: 100, page: page, colored: false, spinner: "⠋", now: time.Date(2026, 9, 2, 12, 0, 0, 0, time.Local)}
 }
 
+// doctorFirstDiskEvent は open して disk の 1 件目だけを受け取る (= 走査中で diskResults が非空の状態)。
+// 「まだ完了していないが結果を持っている」形は partial 保存の規律が効く唯一の状態なので、
+// そこを作らずに書いたテストは何も守らない (issues/170)。
+func doctorFirstDiskEvent(t *testing.T, v *doctorView) {
+	t.Helper()
+	for _, sub := range v.open()().(tea.BatchMsg) {
+		if msg, ok := sub().(doctorDiskMsg); ok && msg.ev.r != nil {
+			v.receiveDisk(msg)
+			return
+		}
+	}
+	t.Fatal("disk の 1 件目が取れない")
+}
+
 func doctorText(v *doctorView, page int) string {
 	return strings.Join(v.lines(doctorTestOpts(page)), "\n")
 }
@@ -216,17 +230,7 @@ func TestDoctorSavesCacheOnCompleteAndPartialPolicy(t *testing.T) {
 	if err := saveDoctorDiskCache(doctorDiskCache{ScannedAt: time.Now(), Total: 45 << 30, Entries: []doctorDiskCacheEntry{{ID: "big", Size: 45 << 30, Status: "ok"}}}); err != nil {
 		t.Fatal(err)
 	}
-	firstDisk := func(v *doctorView) {
-		t.Helper()
-		for _, sub := range v.open()().(tea.BatchMsg) {
-			if msg, ok := sub().(doctorDiskMsg); ok && msg.ev.r != nil {
-				v.receiveDisk(msg)
-				return
-			}
-		}
-		t.Fatal("disk の 1 件目が取れない")
-	}
-	firstDisk(v2)
+	doctorFirstDiskEvent(t, v2)
 	v2.close()
 	c2, _ := loadDoctorDiskCache()
 	if c2.Partial || c2.Total != 45<<30 {
@@ -234,7 +238,7 @@ func TestDoctorSavesCacheOnCompleteAndPartialPolicy(t *testing.T) {
 	}
 	// 完全な結果が無ければ partial を保存する
 	v3 := doctorTestView(t)
-	firstDisk(v3)
+	doctorFirstDiskEvent(t, v3)
 	v3.close()
 	if c3, ok := loadDoctorDiskCache(); !ok || !c3.Partial || len(c3.Entries) != 1 {
 		t.Fatalf("完全な結果が無いのに partial が保存されない: ok=%v %+v", ok, c3)
@@ -268,12 +272,17 @@ func TestDoctorIgnoresStaleGeneration(t *testing.T) {
 // キー: D/q/esc で閉じる、r は再スキャンの信号 (走査は止めるが partial は書かない)。
 func TestDoctorHandleKey(t *testing.T) {
 	v := doctorTestView(t)
-	_ = v.open()
+	// 走査中で結果を持っている状態から押す。open() 直後 (diskResults が空) だと、r を close() に
+	// 変えても「どちらも何も書かない」で通ってしまう (issues/170)
+	doctorFirstDiskEvent(t, v)
+	if len(v.diskResults) == 0 {
+		t.Fatal("前提が崩れている: diskResults が空のまま")
+	}
 	if v.handleKey("r", 20) != doctorRescan {
 		t.Error("r が再スキャンの信号を返さない")
 	}
 	if _, ok := loadDoctorDiskCache(); ok {
-		t.Error("r で partial が保存された")
+		t.Error("r で partial が保存された (r は close を経由しない)")
 	}
 	for _, k := range []string{"D", "q", "esc"} {
 		_ = v.open()
@@ -620,14 +629,28 @@ func TestDoctorReusesHeavyEntries(t *testing.T) {
 	v.close()
 	// 軽い (Elapsed 小) / 古い (1 時間超) は再利用しない
 	for name, mod := range map[string]func(*disk.Result){
-		"light": func(r *disk.Result) { r.Elapsed = 10 * time.Millisecond },
-		"old":   func(r *disk.Result) { r.MeasuredAt = now.Add(-2 * time.Hour) },
+		"light":   func(r *disk.Result) { r.Elapsed = 10 * time.Millisecond },
+		"old":     func(r *disk.Result) { r.MeasuredAt = now.Add(-2 * time.Hour) },
+		"future":  func(r *disk.Result) { r.MeasuredAt = now.Add(48 * time.Hour) }, // 時計を戻した
+		"failed":  func(r *disk.Result) { r.Status = disk.StatusFailed },
+		"blocked": func(r *disk.Result) { r.Status = disk.StatusBlocked },
+		"nomeasure": func(r *disk.Result) {
+			r.MeasuredAt = time.Time{}
+		},
 	} {
 		h := heavy
 		mod(&h)
 		if f := doctorReuseFrom(doctorSnapshot{ScannedAt: now, Disk: disk.Report{Results: []disk.Result{h}}}, true, now); f != nil && f(disk.Entry{ID: "thing"}) != nil {
 			t.Errorf("%s: 再利用してはいけないものを再利用した", name)
 		}
+	}
+	// partial な snapshot は丸ごと再利用しない (中断で歪んだ結果を次の走査へ持ち込まない)
+	if f := doctorReuseFrom(doctorSnapshot{ScannedAt: now, Disk: disk.Report{Partial: true, Results: []disk.Result{heavy}}}, true, now); f != nil {
+		t.Error("partial な snapshot から再利用した")
+	}
+	// 読めなかった snapshot (ok=false) も同じ
+	if f := doctorReuseFrom(doctorSnapshot{ScannedAt: now, Disk: disk.Report{Results: []disk.Result{heavy}}}, false, now); f != nil {
+		t.Error("読めていない snapshot から再利用した")
 	}
 }
 
@@ -686,5 +709,202 @@ func TestDoctorSvcAnnotationsMatchCLI(t *testing.T) {
 	// 「台帳にあり=false」のような、人が読めない暗号でごまかしていないこと
 	if strings.Contains(copies.String(), "台帳にあり=") {
 		t.Error("Y のコピー文が brew 孤児を暗号 (台帳にあり=) で書いている")
+	}
+}
+
+// partial 保存の境界。「小さい partial が完全な結果を潰さない」だけを見ていると、それを成立させている
+// 3 つの条件のうち 2 つ (合計の比較 / 前回が partial かどうか) を消しても green になる (issues/170)。
+func TestDoctorSaveCachePartialBoundaries(t *testing.T) {
+	rep := func(total int64, partial bool) disk.Report {
+		return disk.Report{Partial: partial, Total: total, ScannedAt: time.Now(),
+			Results: []disk.Result{{Entry: disk.Entry{ID: "thing", Label: "Thing"}, Status: disk.StatusOK,
+				Size: total, Items: []disk.Item{{Path: "/x", Size: total}}}}}
+	}
+
+	// (a) 合計が前回より大きい partial は書く。重いエントリが先に終わった中断結果を捨てない
+	v := doctorTestView(t)
+	if err := saveDoctorDiskCache(doctorDiskCache{ScannedAt: time.Now(), Total: 1 << 30}); err != nil {
+		t.Fatal(err)
+	}
+	v.saveCache(rep(45<<30, true))
+	if c, _ := loadDoctorDiskCache(); c.Total != 45<<30 || !c.Partial {
+		t.Errorf("大きい partial が書かれない: %+v", c)
+	}
+
+	// (b) 前回が partial なら、合計が小さくても最新の partial で置き換える
+	v2 := doctorTestView(t)
+	if err := saveDoctorDiskCache(doctorDiskCache{ScannedAt: time.Now(), Total: 45 << 30, Partial: true}); err != nil {
+		t.Fatal(err)
+	}
+	v2.saveCache(rep(1<<30, true))
+	if c, _ := loadDoctorDiskCache(); c.Total != 1<<30 {
+		t.Errorf("前回が partial なのに最新の partial で置き換わらない: %+v", c)
+	}
+
+	// (c) 完全な結果は、前回が大きくても常に書く (再スキャンで減った実体を反映する)
+	v3 := doctorTestView(t)
+	if err := saveDoctorDiskCache(doctorDiskCache{ScannedAt: time.Now(), Total: 45 << 30}); err != nil {
+		t.Fatal(err)
+	}
+	v3.saveCache(rep(1<<30, false))
+	if c, _ := loadDoctorDiskCache(); c.Total != 1<<30 || c.Partial {
+		t.Errorf("完全な結果が書かれない: %+v", c)
+	}
+
+	// (d) close が書く partial には合計が入る (Total の計算を消すと 0 になり、トーストが沈黙する)
+	v4 := doctorTestView(t)
+	doctorFirstDiskEvent(t, v4)
+	var want int64 // production の SumDeletable ではなく Items から自前で足す
+	for _, r := range v4.diskResults {
+		for _, it := range r.Items {
+			want += it.Size
+		}
+	}
+	if want == 0 {
+		t.Fatal("前提が崩れている: 受け取った結果に Items が無い")
+	}
+	v4.close()
+	if c, ok := loadDoctorDiskCache(); !ok || c.Total != want {
+		t.Errorf("close の partial に合計が入っていない: ok=%v total=%d want=%d", ok, c.Total, want)
+	}
+}
+
+// snapshot は「未来の時刻」と「中断した svc」を拒む。どちらも消しても、正常系のテストは全部通る。
+func TestDoctorSnapshotRejectsFutureAndInterrupted(t *testing.T) {
+	v := doctorTestView(t)
+	_ = v
+	now := time.Now()
+	write := func(sn doctorSnapshot) {
+		t.Helper()
+		data, _ := json.Marshal(sn)
+		path, _ := doctorSnapshotPath()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 時計を戻した (ScannedAt が未来) snapshot は TTL 内と読まない
+	write(doctorSnapshot{ScannedAt: now.Add(48 * time.Hour)})
+	if _, ok := loadDoctorSnapshot(now); ok {
+		t.Error("未来の snapshot を TTL 内として読んだ")
+	}
+	// 正常な TTL 内は読む (上の assert が「常に false」で通っていないことの確認)
+	write(doctorSnapshot{ScannedAt: now.Add(-1 * time.Minute)})
+	if _, ok := loadDoctorSnapshot(now); !ok {
+		t.Error("TTL 内の snapshot を読めない")
+	}
+
+	// 中断した svc を含む結果は snapshot にしない (開き直しで中断の姿を再現しない)
+	path, _ := doctorSnapshotPath()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveDoctorSnapshot(doctorSnapshot{ScannedAt: now, Svc: svc.Report{Interrupted: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := loadDoctorSnapshotAny(); ok {
+		t.Error("svc が中断した結果を snapshot に書いた")
+	}
+	if err := saveDoctorSnapshot(doctorSnapshot{ScannedAt: now, Disk: disk.Report{Partial: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := loadDoctorSnapshotAny(); ok {
+		t.Error("partial な disk の結果を snapshot に書いた")
+	}
+	// ガードに当たらない結果は書ける
+	if err := saveDoctorSnapshot(doctorSnapshot{ScannedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := loadDoctorSnapshotAny(); !ok {
+		t.Error("正常な結果が snapshot に書かれない")
+	}
+}
+
+// 閉じた後に届いた disk の Msg は捨てる。世代 (gen) が同じでも画面が閉じていれば無視する
+// (閉じた画面のキャッシュ書き込み・状態更新を起こさない)。
+func TestDoctorIgnoresDiskMsgAfterClose(t *testing.T) {
+	v := doctorTestView(t)
+	gen := 0
+	var complete doctorDiskMsg
+	for _, sub := range v.open()().(tea.BatchMsg) {
+		if msg, ok := sub().(doctorDiskMsg); ok {
+			gen = msg.gen
+			if msg.ev.rep != nil {
+				complete = msg
+			}
+		}
+	}
+	// 完了イベントは channel の後ろにいるので、届くまで受け取る (回数で打ち切る。時間で待たない)
+	for i := 0; complete.ev.rep == nil && i < 100; i++ {
+		msg, ok := v.waitDiskCmd(gen)().(doctorDiskMsg)
+		if !ok {
+			break
+		}
+		if msg.ev.rep != nil {
+			complete = msg
+		}
+	}
+	if complete.ev.rep == nil {
+		t.Fatal("完了イベントが取れない")
+	}
+	v.close()
+	if _, ok := loadDoctorDiskCache(); ok {
+		t.Fatal("前提が崩れている: close の時点でキャッシュが書かれている")
+	}
+	if cmd := v.receiveDisk(complete); cmd != nil {
+		t.Error("閉じた後の Msg に対して次の待ち受けを返した")
+	}
+	if v.diskRep != nil {
+		t.Error("閉じた後の Msg で画面の状態を更新した")
+	}
+	if _, ok := loadDoctorDiskCache(); ok {
+		t.Error("閉じた後の Msg でキャッシュを書いた")
+	}
+}
+
+// トーストの文面は実経路 (走査の Report → キャッシュ → 文面) で固定する。純関数だけを手作りの
+// キャッシュで見ていると、Report からキャッシュへ落とす部分 (Status / Label) を壊しても green になる。
+func TestDoctorStartupToastThroughRealPath(t *testing.T) {
+	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.Local)
+	rep := disk.Report{ScannedAt: now, Total: 30 << 30, Results: []disk.Result{
+		{Entry: disk.Entry{ID: "xcode", Label: "Xcode"}, Status: disk.StatusOK, Size: 20 << 30, Items: []disk.Item{{Path: "/x", Size: 20 << 30}}},
+		{Entry: disk.Entry{ID: "npm", Label: "npm"}, Status: disk.StatusOK, Size: 10 << 30, Items: []disk.Item{{Path: "/n", Size: 10 << 30}}},
+		{Entry: disk.Entry{ID: "boom", Label: "壊れた", Risk: disk.RiskSafe}, Status: disk.StatusFailed, Size: 99 << 30, Reason: "走査できず"},
+		{Entry: disk.Entry{ID: "empty", Label: "空"}, Status: disk.StatusOK},
+	}}
+	c := doctorCacheFromReport(rep, time.Time{})
+
+	// 候補 0 件の ok エントリは持たない。失敗したものは (数字を出さないために) 落とさず status で区別する
+	for _, e := range c.Entries {
+		if e.ID == "empty" {
+			t.Error("候補 0 件のエントリをキャッシュに持っている")
+		}
+	}
+	got := doctorStartupToast(c, true, now)
+	for _, want := range []string{"30.0GB 解放できます", "Xcode 20.0GB", "npm 10.0GB", "D で doctor を開く"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("トーストに %q が無い: %q", want, got)
+		}
+	}
+	// failed のサイズはトーストに出さない (走査できていない数字を「解放できます」に混ぜない)
+	if strings.Contains(got, "壊れた") || strings.Contains(got, "99.0GB") {
+		t.Errorf("走査できなかったエントリがトーストに出た: %q", got)
+	}
+	// cooldown 内は沈黙し、明けたら出る。未来の記録 (時計を戻した) でも沈黙し続けない
+	if s := doctorStartupToast(c, true, now.Add(time.Hour)); s != "" {
+		_ = s // cooldown は LastNotifiedAt が空なので出る側。ここでは c を使い回さない
+	}
+	c2 := c
+	c2.LastNotifiedAt = now.Add(-1 * time.Hour)
+	if s := doctorStartupToast(c2, true, now); s != "" {
+		t.Errorf("cooldown 内なのにトーストが出た: %q", s)
+	}
+	c3 := c
+	c3.LastNotifiedAt = now.Add(-8 * 24 * time.Hour)
+	if s := doctorStartupToast(c3, true, now); s == "" {
+		t.Error("cooldown が明けてもトーストが出ない")
 	}
 }

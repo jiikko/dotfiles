@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -205,6 +206,27 @@ func TestSimDeviceOrphanFailsClosed(t *testing.T) {
 	r = scanOne(t, env, f, e, okBoot)
 	if r.Status != StatusOK || len(r.Items) != 0 {
 		t.Fatalf("Previews セットのデバイスを孤児にした: %+v", r)
+	}
+	// argv を丸ごと突き合わせる。fakeRunner の応答は先頭一致で選ぶので、`--set` の後ろ (パスと
+	// list devices -j の順序) を検証しないと、そこを壊す変更をテストが通す (issues/170)。
+	// パスに空白が含まれる ("Simulator Devices") ので、1 引数として渡っていることも同時に見る。
+	wantSet := []string{"xcrun", "simctl", "--set", previews, "list", "devices", "-j"}
+	wantDefault := []string{"xcrun", "simctl", "list", "devices", "-j"}
+	var sawSet, sawDefault bool
+	f.mu.Lock()
+	for _, c := range f.calls {
+		if slices.Equal(c, wantSet) {
+			sawSet = true
+		}
+		if slices.Equal(c, wantDefault) {
+			sawDefault = true
+		}
+	}
+	got := append([][]string(nil), f.calls...)
+	f.mu.Unlock()
+	if !sawSet || !sawDefault {
+		t.Fatalf("simctl の argv が想定と違う (既定=%v Previews=%v):\n want %v\n want %v\n got  %v",
+			sawDefault, sawSet, wantDefault, wantSet, got)
 	}
 	f = &fakeRunner{resp: map[string]fakeResp{
 		"xcrun simctl list":  {out: `{"devices":{}}`},
