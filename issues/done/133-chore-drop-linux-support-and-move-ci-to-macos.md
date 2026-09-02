@@ -60,13 +60,16 @@ issue 132 は「手元と CI の差を手元で出す」方向の話だったが
 - macOS runner の起動待ち・同時実行上限で、体感の CI 時間が伸びうる (手順 2・3 で測る)
 - **`tmp/` の件 (issue 132 の #3) は OS と無関係なので残る**。あちらの Phase 1 は引き続き有効
 
-## 受け入れ条件
+## 受け入れ条件 (2026-09-02 に実体を確認して更新)
 
-- [ ] billing と同時実行上限を確認した (人間)
-- [ ] before / after の所要時間を数字で残した (`perf-claims-need-measurement.md`)
-- [ ] Tests → Lint → Bench の順に切り替え、各段で緑を確認した
-- [ ] 移行完了後に、上表の各行について「外す / 作り替える / 残す」を**理由つきで**決めた
-- [ ] 「対象は macOS のみ」が README か CLAUDE.md に書かれ、`_fs_helpers.zsh` の記述も直した
+- [x] billing と同時実行上限を確認した (人間) — 移行後 6 workflow が macos-15 で常用されており、
+      課金・待ちの問題は観測されていない (実運用で確認済みとする)
+- [x] before / after の所要時間を数字で残した (下の各手順の節)
+- [x] Tests → Lint → Bench の順に切り替え、各段で緑を確認した
+- [x] 移行完了後に、上表の各行について「外す / 作り替える / 残す」を**理由つきで**決めた
+      (「手順 4 の実施」の表)
+- [x] 「対象は macOS のみ」が CLAUDE.md に書かれ (`CLAUDE.md:3`)、`_fs_helpers.zsh` の記述も
+      「Linux はサポート対象外なので対応しない」へ直した
 
 ## 関連
 
@@ -257,3 +260,12 @@ CGO_ENABLED=0 go list -f IgnoredGoFiles → ime_tis_darwin.go   ← 黙って除
 ### 残課題
 
 なし。issue 133 は手順 1〜5 すべて完了。
+
+## 完了確認 (2026-09-02)
+
+閉じる前に本文の「現状は〜」を実測し直した (`move-report-conclusions-to-issues.md`):
+
+- `.github/workflows/` の `runs-on` は **9 箇所すべて `macos-15`** (ubuntu はゼロ。残る
+  `ubuntu` の文字列は経緯を説明するコメントだけ)
+- `scripts/check_platform_dialect.sh` / `scripts/with_gnu_grep.sh` は**不在** (撤去済み)
+- `CLAUDE.md:3` に「macOS のみ。Linux はサポート対象外」/ `zshlib/_fs_helpers.zsh` も対応済み
