@@ -512,7 +512,21 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 		}
 		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "           "+advice)})
 		for _, f := range r.Failures {
-			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiYellow, "           ❓ 一部走査できず (合計に含めていません): "+f)})
+			// 「診断できず」は最も追加調査が必要な行なので、選んで中身を取り出せるようにする
+			// (幅で末尾が切れても y / Y で完全な文字列が手に入る。幅そのものの改善は issues/182)。
+			// ⚠️ y が渡すのは理由の文字列 (パスを含む) で、パス単体ではない: disk.Result.Failures が
+			// []string で、パスがエラー文に埋め込まれているため (構造化は issues/180 で保留と判断)
+			rows = append(rows, doctorRow{
+				text:       doctorColor(o.colored, ansiYellow, "           ❓ 一部走査できず (合計に含めていません): "+f),
+				selectable: true,
+				key:        "diskfail:" + r.Entry.ID + ":" + f,
+				detail: []string{
+					doctorColor(o.colored, ansiDim, "        "+r.Entry.Label+" の一部を走査できませんでした (この分は合計に入っていません)"),
+					doctorColor(o.colored, ansiDim, "        "+f),
+				},
+				copyPath: f,
+				copyText: diskCopyText(r, mark),
+			})
 		}
 	}
 	if v.diskRep != nil && shown == 0 {
@@ -608,7 +622,20 @@ func (v *doctorView) svcSection(o doctorRenderOpts) []doctorRow {
 		}
 	}
 	for _, u := range rep.Undiagnosed {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiYellow, " ❔ 診断できず: "+u.PlistPath+" ("+u.Reason+")")})
+		// 選べないと理由も plist のパスもどこからも取り出せなかった (幅 80 で理由が丸ごと消える。issues/180)
+		rows = append(rows, doctorRow{
+			text:       doctorColor(o.colored, ansiYellow, " ❔ 診断できず: "+u.PlistPath+" ("+u.Reason+")"),
+			selectable: true,
+			key:        "svcundiagnosed:" + u.PlistPath,
+			detail: []string{
+				doctorColor(o.colored, ansiDim, "      理由: "+u.Reason),
+				doctorColor(o.colored, ansiDim, "      手動で確かめてください (このツールは実行しません):"),
+				"        plutil -p " + u.PlistPath,
+				"        ls -l " + u.PlistPath,
+			},
+			copyPath: u.PlistPath,
+			copyText: svcUndiagnosedCopyText(u),
+		})
 	}
 	if len(rep.Findings) == 0 && !undiagnosed {
 		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "   壊れた登録は見つかりませんでした")})
@@ -686,6 +713,19 @@ func diskCopyText(r disk.Result, mark string) string {
 	for _, c := range r.Contents {
 		fmt.Fprintf(&b, "  中身: %s\n", c)
 	}
+	return b.String()
+}
+
+// svcUndiagnosedCopyText は Y でコピーする解説文 (判定できなかった登録)。
+// 「診断できなかったので人が確かめてほしい」と言う以上、確かめる材料 (完全なパス・理由・裏取りコマンド) を渡す。
+func svcUndiagnosedCopyText(u svc.Undiagnosed) string {
+	var b strings.Builder
+	b.WriteString("glogx doctor (サービス診断) が判定できなかった登録\n")
+	fmt.Fprintf(&b, "plist: %s\n", u.PlistPath)
+	fmt.Fprintf(&b, "理由: %s\n", u.Reason)
+	b.WriteString("手動で確かめるコマンド (ツールは実行しない):\n")
+	fmt.Fprintf(&b, "  plutil -p %s\n", u.PlistPath)
+	fmt.Fprintf(&b, "  ls -l %s\n", u.PlistPath)
 	return b.String()
 }
 

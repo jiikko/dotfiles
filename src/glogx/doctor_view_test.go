@@ -908,3 +908,70 @@ func TestDoctorStartupToastThroughRealPath(t *testing.T) {
 		t.Error("cooldown が明けてもトーストが出ない")
 	}
 }
+
+// 「診断できず」の行は選べて、y / Y で完全な情報が取り出せる。以前は非 selectable で、
+// disk の Failures は親行の Y からしか取れず、svc の Undiagnosed は**どこからも取れなかった**
+// (幅 80 で理由が丸ごと消える。issues/180)。
+func TestDoctorUndiagnosedRowsAreSelectable(t *testing.T) {
+	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v.diskRep = &disk.Report{Results: []disk.Result{{
+		Entry:  disk.Entry{ID: "npm-cache", Label: "npm", Risk: disk.RiskSafe, Recover: "再取得", DeleteVia: "rm"},
+		Status: disk.StatusOK, Size: 2048, Items: []disk.Item{{Path: "/h/.npm/_cacache", Size: 2048}},
+		Failures: []string{"走査できず: /h/.npm/_locks: permission denied"},
+	}}}
+	v.svcRep = &svc.Report{Scanned: 3, Undiagnosed: []svc.Undiagnosed{
+		{PlistPath: "/Library/LaunchDaemons/com.vendor.broken.plist", Reason: "plist を読めない: permission denied"},
+	}}
+	v.brew = &brewDoctorResult{Clean: true}
+
+	// 行の種類で探す (押した回数で位置を決めると、選べる行が増えた時に前提が崩れる)
+	find := func(prefix string) int {
+		t.Helper()
+		for i, r := range v.rows {
+			if strings.Contains(r.text, prefix) {
+				if !r.selectable {
+					t.Fatalf("%q の行が選べない", prefix)
+				}
+				return i
+			}
+		}
+		t.Fatalf("%q の行が無い:\n%s", prefix, strings.Join(v.lines(doctorTestOpts(40)), "\n"))
+		return -1
+	}
+	_ = v.lines(doctorTestOpts(40))
+
+	// disk の「一部走査できず」: y は理由の文字列 (パスを含む)、Y は親エントリの解説
+	i := find("一部走査できず")
+	v.cursor = i
+	if got := v.handleKey("y", 40); got != doctorCopyPath || !strings.Contains(v.copyPayload(), "/h/.npm/_locks") {
+		t.Errorf("Failures 行の y: action=%v payload=%q", got, v.copyPayload())
+	}
+	v.cursor = i
+	if got := v.handleKey("Y", 40); got != doctorCopyText || !strings.Contains(v.copyPayload(), "_locks: permission denied") {
+		t.Errorf("Failures 行の Y に走査できなかった理由が無い: action=%v payload=%q", got, v.copyPayload())
+	}
+
+	// svc の「診断できず」: y は plist のパス、Y は理由と裏取りコマンド
+	_ = v.lines(doctorTestOpts(40))
+	j := find("診断できず")
+	v.cursor = j
+	if got := v.handleKey("y", 40); got != doctorCopyPath || v.copyPayload() != "/Library/LaunchDaemons/com.vendor.broken.plist" {
+		t.Errorf("Undiagnosed 行の y: action=%v payload=%q", got, v.copyPayload())
+	}
+	v.cursor = j
+	if got := v.handleKey("Y", 40); got != doctorCopyText {
+		t.Fatalf("Undiagnosed 行の Y: action=%v", got)
+	}
+	for _, want := range []string{"/Library/LaunchDaemons/com.vendor.broken.plist", "permission denied", "plutil -p ", "ls -l "} {
+		if !strings.Contains(v.copyPayload(), want) {
+			t.Errorf("Undiagnosed 行の Y に %q が無い:\n%s", want, v.copyPayload())
+		}
+	}
+
+	// Enter で理由が読める (一覧の行は幅で切れても、詳細には出る)
+	v.cursor = j
+	v.handleKey("enter", 40)
+	if txt := strings.Join(v.lines(doctorTestOpts(40)), "\n"); !strings.Contains(txt, "理由: plist を読めない") {
+		t.Errorf("Undiagnosed 行の Enter で理由が出ない:\n%s", txt)
+	}
+}
