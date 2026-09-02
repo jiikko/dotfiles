@@ -39,3 +39,30 @@
 
 - [ ] コメントの主張が実測の有無と一致している
 - [ ] 実名を採った後、glob がその名前に当たることを fixture テストで固定する
+
+## 対応 (2026-09-03) — 対応案 1 を実施し、2 / 3 は実測待ちで `pending/` へ
+
+**主張は成立する。** 裏取りを再確認した:
+
+- `issues/148` の Tier 2 表 (`148-feat-glogx-doctor-disk-diagnosis.md:142`) が記録しているのは
+  `/private/var/tmp/*.logarchive` という**パターンだけ**で、ファイル名の実測は無い
+- 修正 commit `824b863a` の diff にも測定記録は無い
+- 実機に現物が無い (`ls /private/var/tmp/*.logarchive` → no matches。2026-09-03 再確認)
+
+### 1 を実施: コメントの主張を実測の有無に合わせた
+
+`src/doctor/disk/catalog.go` の `xctest-logarchive` のコメントから「実測の名前」という記述を削り、
+**「この glob 自体が未実測」**であることと、確定手順 (`xcodebuild test` の直後に `ls -la` で実名を採る) を書いた。
+コード直近に残すのは [`pending-issue-rationale-in-code.md`](../_claude/rules/pending-issue-rationale-in-code.md) の規律
+(issue は移動するがコードは現場に残り、改修者が該当行を編集する瞬間に必ず目に入る)。
+
+### 2 / 3 は実測待ち → `issues/pending/`
+
+- **2 (実名を採って glob を確定)** は `xcodebuild test` を回さないと測れない。この repo には iOS/macOS アプリが
+  無く、シミュレータでの動作確認は封印されている ([`no-ios-simulator-verification.md`](../_claude/rules/no-ios-simulator-verification.md))
+- **3 (未検証の検出項目と分かる形にする案)** は UI の語彙を増やす判断で、2 の結果次第で不要になりうる
+  (実名が判れば「未検証」ではなくなる)。2 の前に UI を増やすのは早い
+
+**再開の trigger は据え置き**: iOS/macOS アプリ側で `xcodebuild test` を回す作業が入ったとき。
+そのとき `ls -la /private/var/tmp/*.logarchive` を実行して実名を採り、glob を fixture テストで固定する。
+コード側のコメントに同じ手順を書いたので、issue が見つからなくても手順は失われない。
