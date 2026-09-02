@@ -89,5 +89,46 @@ CLAUDE.md は「足したら `./setup.sh` を再実行する」と規律で縛�
 
 ## 残課題
 
-- [ ] 項目 1〜4 の切り出し (ユーザーの判断待ち)
-- [ ] `./setup.sh` の実行可否 (ユーザーの判断待ち。当事者セッションは終了済み)
+- [x] 項目 1 の切り出し → `_claude/CLAUDE.md`「ぼやきポイント推奨」に 1 行
+- [x] 項目 2 の切り出し → `_claude/rules/commit-with-pathspec.md`「履歴操作の前に所有者を確認する」に追記
+- [x] 項目 3 の切り出し → `_claude/rules/decide-layout-in-sample-renderer-first.md` に 2 行
+- [x] 項目 4 の切り出し → issue [160](160-claude-link-leak-after-session-ends.md) を起票
+- [x] `./setup.sh` の実行可否 → **不要になっていた** (09/02 08:58 の実行で link 済み。
+      `tests/claude/test_claude_links_complete.sh` が rc 0 / 94 個 link 済みを出力)
+
+## 切り出しの内容 (2026-09-02)
+
+### 項目 1 → `_claude/CLAUDE.md`「ぼやきポイント推奨」
+
+「ぼやきも事実の主張なら裏を取る。**不在の主張**(「〜は検査されていない」) は軽い口調ゆえに
+裏取りの敷居が下がる。取っていないなら『未確認だが』と明示する」を追記。
+実例 (Go の検査は `tests/` ではなく `src/<proj>/*_test.go` にある) も 1 行で入れた。
+
+### 項目 2 → `_claude/rules/commit-with-pathspec.md`
+
+既存の「履歴操作の前に直近コミットの所有者を確認する」節は
+「`git log --format='%h %ad %s'` で**自分のものか**確認する」と書いており、
+**自分のメッセージとの一致**を見る限りは正しい。そこへ「**他セッションへの帰属には使えない**」を
+足した (同一 git user で author では区別できず、`git pull --rebase` で時刻が前後する。
+帰属に使えるのは触ったファイルと本人に聞くことだけ)。既存記述と矛盾しない位置に置いた。
+
+### 項目 3 → `_claude/rules/decide-layout-in-sample-renderer-first.md`
+
+「『やってみて』は実装の許可であって見た目の承認ではない。合意の条件は**ユーザーが実物を見たこと**で、
+モデルが見て選ぶのは合意ではない」+ 但し書き「**確認を挟むかは却下されたときの損で決める**
+(revert が安く実装が軽いなら聞かずに作って見せる方が往復が少ない)」。
+retro が懸念していた「ルールが重くなる」は但し書きで回避した。
+
+### 項目 4 → issue 160
+
+`_claude/` への追加を当事者に即時通知する PostToolUse hook を推し (案 A) として起票し、
+観点を分けた 2 体の反証レビューを通した。**事実観点は反証 0 件、設計観点が案 A に P1 級の穴を 3 つ**
+出したので、推しを **git の post-commit hook (案 E/F)** へ差し替えた。
+
+特に効いた指摘: PostToolUse の matcher `Write|Edit` は Claude Code の Write/Edit ツールしか捕まえず、
+**Bash の heredoc / `sed -i` / `git pull` での取り込みは全て素通り**する
+(この issue 自身が Bash の heredoc で作られていた = 推しの案が自分の作業経路を検出できない)。
+「状態が変わる点は Write ではなく commit」という視点の転換が本体だった。
+
+また、反証レビューが `a7e9b29` (2026-02-09) を掘り当て、「ディレクトリ丸ごと symlink」案が
+ubiregi-cli との競合で**却下済み**であることが分かった。issue に「蒸し返さないこと」として明記した。
