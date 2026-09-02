@@ -1,6 +1,15 @@
 # 184 bug: 入力予約の発火で Enter が効かず、文字列が入力欄に残ることがある
 
 起票日: 2026-09-02
+状態: **pending** (2026-09-02 に保留)
+
+**着手条件 (trigger)**: 症状が再発したとき。そのとき記録してほしいのは
+**送り先アプリの名前**と `~/.cache/tt-schedule-keys.log` の該当行 (`sent` か `破棄` か)。
+現行コードでは受け側 3 種で再現せず、原因と目された改行入力は 2026-08-28 の UI 側の防御で
+塞がっているため、再現例が出るまで防御コードは足さない。
+なお下記「残っている作業」のうち **job 書式の脆さ (6)** は再現と無関係に成立する独立の穴なので、
+schedkeys の job を書く経路を次に触るときに一緒に直す。
+
 関連: `scripts/tmux_schedule_keys.sh` (`fire_send`) / `src/schedkeys/` (ウィザード TUI) /
 `_tmux.conf` の `bind m` / issue 166 (予約の pane 表示) / issue 135 (tmux key guide の human 確認)
 
