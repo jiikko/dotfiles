@@ -8,13 +8,16 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 // fakeRunner はコマンド名 + 先頭引数で応答を返す。calls で「読み取り系しか呼んでいない」を確かめる。
+// Scan はエントリを並行に走らせるので、記録は mutex で守る (-race で検出された)。
 type fakeRunner struct {
 	resp  map[string]fakeResp // key: "pgrep -x" / "xcrun simctl list" / "brew list" / ...
+	mu    sync.Mutex
 	calls [][]string
 }
 
@@ -25,7 +28,9 @@ type fakeResp struct {
 }
 
 func (f *fakeRunner) run(_ context.Context, name string, args ...string) (string, string, int, error) {
+	f.mu.Lock()
 	f.calls = append(f.calls, append([]string{name}, args...))
+	f.mu.Unlock()
 	for k, r := range f.resp {
 		if strings.HasPrefix(strings.Join(append([]string{name}, args...), " "), k) {
 			return r.out, "stderr", r.rc, r.err
