@@ -210,11 +210,107 @@ session limit で死んだ実例)、**枠が開いた直後に起動する**。�
 issue 148「敵対的レビュー 2 回目」節の「記録に留めたもの」5 件と「壊せなかった攻め口」。特に: 2 プロセス同時の lost update /
 cancel 後の有界な残り I/O / restart 直前の子 / 空白入りラベルの B 未評価 / ハードリンクの 2 件目 0 表示。
 
-## 結果 (走らせた後にここへ書く。索引)
+## 結果 (索引)
 
-- 起票した issue (番号 / カテゴリ / タイトル / 重要度):
-- 却下 (理由つき):
-- 壊せなかった攻め口:
+走行 1 回目: 2026-09-02 17:05〜17:17。6 体を並行起動したが **全体が session limit (429) で途中終了**した。
+体 1 / 2 / 6 は報告を書き終えており、体 4 は実測ログを、体 5 は証跡を残していたので、そこから起票した。
+**体 3 (並行・中断・状態機械) だけ成果ゼロ**なので、別枠で直列に走らせる (下記「未走行」)。
+以降のサブエージェントは並行させず 1 体ずつ直列に動かす (ユーザー指示 2026-09-02)。
+
+### 起票した issue
+
+| # | カテゴリ | タイトル | 重要度 | 出典 |
+|---|---|---|---|---|
+| 167 | bug | `collectBundleIDs` の走査漏れでインストール済みアプリのコンテナを孤児にする | **P1** | 体 1 + 体 5 |
+| 168 | bug | `simDeviceUDIDs` が XCTestDevices セットを見ない | P2 | 体 1 |
+| 169 | bug | `xctest-logarchive` の glob が未実測で黙って 0 件になりうる | P2 | 体 1 |
+| 170 | test | doctor のテスト 11 箇所が変異しても green | P2 | 体 1 + 体 2 |
+| 171 | bug | `brew doctor` の警告本文が空行以降で切り捨てられる | P2 | 体 2 |
+| 172 | bug | 再利用した計測値がトーストに乗る | P3 | 体 2 |
+| 173 | bug | failed した完全な結果がキャッシュを潰しトーストが沈黙する | P3 | 体 2 |
+| 174 | bug | `LastNotifiedAt` が未来だとトーストが永久に沈黙する | P3 | 体 2 |
+| 175 | bug | `expand` が glob メタ文字 / 相対パスで無音の 0 件になる | P2 | 体 5 |
+| 176 | bug | `/opt/homebrew` ハードコードで Intel Mac が候補 0 件に化ける | P2 | 体 5 |
+| 177 | bug | CLI の exit code が「診断できず」を伝え落とす | P2 | 体 5 + 体 6 |
+| 178 | bug | snapshot を信用する境界が閉じていない (④ の前提) | **P1** | 体 5 |
+| 179 | ux | UI が svc の `com.apple.` 偽装 / brew 孤児の注記を落とす | P2 | 体 6 |
+| 180 | ux | 「診断できず」の行が選べず末尾も切れる | P2 | 体 6 |
+| 181 | ux | 入口ドキュメントが 4 箇所欠けている | P2 | 体 6 |
+| 182 | ux | 狭い幅で意味が消える表示が 4 系統 | P3 | 体 6 |
+| 183 | ux | `Y` のコピー文に裏取りコマンドが無い | P3 | 体 6 |
+
+### 却下 (理由つき。同じ指摘の再生成を止めるため)
+
+**体 4 (リーク / パフォーマンス) は全項目が実測で「問題なし」だったので 1 件も起票していない。** 実測値は下の表に残す。
+
+- **却下: goroutine / fd のリーク** — doctor 画面の開閉 100 回 (mid 50 / full 50 / snapshot 復元→再スキャン 98) で
+  goroutine 2→2、fd 6→6、settle 0 秒。`runner.Exec` の cancel 100 回でも goroutine 2→2 / fd 6→6、
+  プロセスグループの生存は return 時点 0 件 / 100ms 後 0 件 (平均 51ms / 最大 76ms で消える)。Setpgid + グループ kill は効いている
+- **却下: `lines()` の毎フレーム再構築が重い** — 実測 172µs/call (実機相当の行構成) / 100 行の合成でも 267µs。
+  12.5fps で CPU 0.2%、60fps でも約 1%。`-cpuprofile` の top は grapheme 幅計算 (uax29 / displaywidth) で 13% 程度。
+  メモ化 (`status_view.go` の `idxCache` 相当) を入れる価値は現時点で無い。**再検討の trigger**: 行数が 200 を超える設計変更が入ったとき
+- **却下: `duSize` の 4 並行が SSD で最適でない** — 実測 (実機 63GB / 596k ファイル、順序を入れ替えて 2 周):
+  conc=1 で 16.0s / 16.7s、conc=2 で 9.1s / 7.8s、conc=4 で 4.6s / 5.5s、conc=8 で 4.7s / 4.4s。
+  4 で頭打ちになり 8 でも悪化しないので、既定 4 は妥当
+- **却下: `brewledger.Installed` を disk と svc で 2 回起こしているのが遅い** — 実測 `brew info --json=v2 --installed` は
+  0.84〜0.90 秒 (issue 163 本文の「1.5 秒」は過大)。2 本を並行させても wall 0.91 秒で、brew の内部 lock で直列化されていない。
+  走査全体のパターン (doctor ∥ info ∥ cleanup --dry-run) は wall 2.71 秒で、律速は `brew cleanup --dry-run` (2.5〜2.75s) と
+  `brew doctor` (2.23〜2.27s)。**1 回に寄せても体感は変わらない**
+- **却下: 起動パスの `loadDoctorDiskCache` が起動時間を悪化させる** — 実測 26.5µs / 5.6KB / 65 allocs。
+  `bin/glogx` の起動〜初回描画の before/after は**未計測**だが、この値では観測不能
+- **却下: snapshot を `start()` で 2 回読むのが遅い** — 実測 `loadDoctorSnapshotAny` 168µs、2 回読む経路の合計 331µs。
+  `saveCache` 187µs / `saveDoctorSnapshot` 204µs も同オーダー。Update の中で同期にやって問題ない
+- **却下: `containerOwnedByInstalled` の接頭辞判定で偶然一致の偽陰性が出る** — 実機で孤児判定された 8 件のうち 7 件
+  (Acrobat.Pro / LINE.TimelinePreviewService.0,1 / 1password.browser-support / google.one / pdfeditor / Telegram.TelegramShare) は
+  本体不在か旧版の残骸で**正しい孤児**。逆向き (コンテナ id が app id の接頭辞) や偶然一致で現役を見逃す形は作れなかった
+- **却下: `brewSharedVarDirs` の除外漏れ / `Parse` の `@` 落としで現役を孤児にする** — 実機の `/opt/homebrew/var` は
+  cache / db / homebrew / log / mysql / postgresql@14 / run で、孤児判定は `postgresql@14` のみ (`brew list` に無いので正しい)。
+  `brew info --json=v2` に oldnames / aliases が実在することも確認 (216 formulae)。
+  `var/mongodb` と `mongodb-community@X` 型の不一致は**該当 formula が無く未確認**
+- **却下: `canonicalPath` / `EvalSymlinks` で削除対象と比較対象がずれる** — `_zshrc` の規則 (anyenv 優先 → `~/.tool`、
+  `<UPPER>_ROOT` を起動時 export) と一致。実機 `GOENV_ROOT=~/.anyenv/envs/goenv` で `~/.goenv` (244MB) が孤児 = 設計どおり。
+  root 自体が symlink でも両側 `EvalSymlinks` で揃う
+- **却下: svc の `keepAliveRestartsOnFailure` / `PathState` / 非数値 PID** — dict `{SuccessfulExit:false, Crashed:true}` は
+  true を返す (正しい)。`PathState` は偽陰性側。実機 `launchctl list` に非数値 PID / 空白ラベル行は 0 件。
+  svcdoctor の実行結果は 12 件走査 / Findings 0 / Undiagnosed 0 / StatusErr・BrewErr 空
+- **却下: Xcode 無し (CLT のみ) / brew 無しで false green になる** — 偽環境で実測し、**4 ID すべて failed (診断できず) に倒れた**
+  (simulator-runtimes / coresimulator-orphan / brew-orphan-state / brew-cleanup-residue)。rc=2、stderr 0 byte。
+  `LANG=C LC_ALL=C` でも同じ。AppDirs が空 / 不在なら「bundle id を 1 つも取れなかった」で fail-closed。
+  Previews セット不在は `os.Stat` で skip。**ただし svcdoctor の exit code だけは 0 に化けた** → issue 177 で起票
+- **却下: HOME に空白 / 末尾スラッシュ / `*` で壊れる** — いずれも正常 (items=1)。壊れたのは `[` を含む形と相対 TMPDIR
+  → issue 175 で起票
+- **却下: TMPDIR が `/var/folders` 以外だと壊れる** — 実 `/var/folders` / scratchpad 配下はいずれも正常。
+  symlink 経由の `~/tmp` は「経路の途中に symlink がある」で fail-closed (正しい)
+- **却下: CI で doctor のテストが skip されて手元でだけ緑** — `t.Skip` は 3 箇所のみ。
+  `TestStdPathMatchesPathsH` は paths.h が CLT SDK にも在るので CLT だけの環境でも PASS (実測)、
+  `disk/scan_test.go` の 1 つは root のときだけ skip (runner は非 root)、もう 1 つは実 `du` を使う (macOS 標準)。
+  glogx の doctor テストは `XDG_CACHE_HOME` を `t.TempDir()` に向けており実キャッシュを触らない。
+  **ただし `make test` は `-v` 無しなので skip が出力に出ない** (今回は実害なし。記録に留める)
+- **却下: 壊れた JSON で誤動作する** — `total` が文字列 / `results` が object / `elapsed` が文字列 / 末尾ゴミは
+  いずれも load 失敗 → 走査に倒れる (正しい)。部分的に壊れている形 (未知 status / 負の size / 未来の measured_at) は
+  実害があるので issue 178 で起票
+- **却下: 変更耐性が低い (カタログに 1 つ足すと波及が広い)** — 実験 (`~/Library/Caches/pip` を追加) では
+  `catalog.go` の 1 箇所だけで両 module の `go build` / `go test` が全 green。波及は issue 148 の表 (写し) を含めて 2 箇所
+
+### 壊せなかった攻め口
+
+- 体 1: `containerOwnedByInstalled` の偶然一致 / `brewSharedVarDirs` と `@` 落とし / `canonicalPath` の symlink /
+  svc の KeepAlive dict・PathState・非数値 PID / xcrun 不在の fail-closed / Previews セット不在 / Containers の隠しファイル
+- 体 2: 再利用の TTL 連鎖 (`Scan` は `*prev` を丸ごとコピーし `MeasuredAt` / `Elapsed` を更新しないので、元計測から 1 時間で必ず切れる) /
+  `reusable` の ID 一致 (disk 側の `TestReuseSkipsScan` は変異で red = 効いている) / 軽いエントリの非再利用 /
+  時計戻しの `loadDoctorSnapshot` と `doctorReuseFrom` (両方に `age<0` がある) / `doctorNothing` の実経路 /
+  brew の同じ見出し 2 回 (key に index を含むので衝突しない)
+- 体 4: 上の「却下」の実測値がそのまま「壊せなかった」の記録
+- 体 6: 合計 (`SumDeletable` 単一) / 件数 / partial の有無 / 「OK かつ 0 件かつ Failures 無しなら隠す」条件は CLI・UI で一致。
+  マーク列の開始位置は幅 60 / 80 / 120 で固定 (col 54)。全角ラベル列は左寄せ・半角サイズ列は右寄せに分かれており**同列混在は無い**。
+  表示記号 ✅ ⛔ ❓ ❔ 🚨 はいずれも Emoji_Presentation (2 桁固定) で、⚠ の doctor 表示経路への残りは 0 件 (grep はコメント内のみ)。
+  `▌ ▶ ─` は East Asian Ambiguous だが glogx 全体と同じ扱いで新規リスクではない。snapshot ヘッダ「N 分前の結果」は幅 60 でも残る
+
+### 未走行 (別枠で直列に走らせる)
+
+- **体 3: 並行・中断・状態機械 (doctor 画面)** — session limit で成果ゼロ。攻め口は本 issue の「### 体 3」節がそのまま使える
+  (rows とカーソル index のずれ / `expanded` キーのずれ / nil channel の永久ブロック / Setpgid と SIGINT・`syscall.Exec` 再起動 /
+  `TestExecKillsGrandchildOnCancel` の時間依存)
 
 ## 受け入れ条件
 
