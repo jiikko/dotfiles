@@ -238,6 +238,13 @@ func Usage() string {
                             内周の弧 = 消費した割合。1 分ごとに自動更新。
                             r で今すぐ更新 / i・s で issues・status viewer へ切り替え
                             (viewer 側の R と対で往復できる) / R・q・esc・h で閉じる
+  D                         doctor を全画面で表示 (toggle)。掃除候補のディスク占有と壊れた
+                            launchd 登録を、リスクと復元方法つきで一覧する。
+                            削除はしない (dry-run。実行するコマンドを提示するだけ)。
+                            画面内のキー: j/k で移動 / Enter で詳細の開閉 /
+                            y でパスをコピー / Y で解説をコピー / r で再スキャン /
+                            D・q・esc で閉じる。
+                            同じ検査は CLI からも叩ける (bin/diskdoctor / bin/svcdoctor)
   C                         claude update を実行する (確認なし即実行。結果は下部に表示)
   X                         codex update を実行する (C の codex 版。起動時に新バージョンを
                             検出するとトーストで X を案内する)
