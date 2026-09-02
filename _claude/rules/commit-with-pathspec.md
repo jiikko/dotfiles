@@ -23,6 +23,8 @@
 - 予防: **commit の前に `cd "$(git rev-parse --show-toplevel)"`**。ツールの cwd がサブディレクトリに
   残っている状態で pathspec を組まない (シェルの cwd は前のコマンドから持ち越される)
 - 検出: commit 直後の `git log -1 --stat` で想定ファイルが入っているか見る (下の節と同じ規律)
+- ⚠️ **パイプ越しでも見失う**: `git commit ... | head` のように通すと `$?` はパイプ終端の
+  status になり、上の rc=1 が消える ([`verify-execution-not-just-exit-code.md`](verify-execution-not-just-exit-code.md) の系)
 
 ## pathspec で「生成物」を漏らすと壊れたコミットになる
 

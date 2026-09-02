@@ -70,4 +70,10 @@
 
 ## 残課題
 
-- [ ] 項目 2 の切り出し (`decide-layout-in-sample-renderer-first.md` への追記) をやるか決める
+- [x] 項目 2 の切り出し → **採用 (2026-09-02)**。
+      [`decide-layout-in-sample-renderer-first.md`](../_claude/rules/decide-layout-in-sample-renderer-first.md)
+      に「繰り返す単位が複数あるレイアウトは、サンプルでも複数単位を描く (1 単位のサンプルは
+      単位間の整列を原理的に検査できない)」を追加。本 retro の revert (`59d1c6a`) を実例として
+      添えた
+
+残課題なし。
