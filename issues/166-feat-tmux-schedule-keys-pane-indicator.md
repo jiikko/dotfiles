@@ -85,3 +85,48 @@ format 側から `#()` で `.job` を読む案は採らない。`status-interval
 ## レビュー状態
 
 起票時の反証レビューは未実施 (本文の事実は起票者が `scripts/tmux_schedule_keys.sh` / `_tmux.conf` / `tmux -V` で直接確認したが、設計案は反証されていない提案として扱う。着手時に設計レビューを通す)。
+
+## 適用ログ (2026-09-02)
+
+commit 8469218 (実装) / f48f657 (テストの書き直し)。
+
+### 起票時の事実誤認
+
+- 「`_tmux.conf` に `pane-border-status` / `pane-border-format` の設定は無い」は**誤り**。
+  実際は `pane-border-status top` で既に有効で、`pane-border-format` は claude 状態 +
+  ACTIVE 帯 + zoom ヒントを出していた。よって案 A の難点 (「全 pane に枠が 1 行増える」
+  「予約ゼロのとき window 単位で off に戻す切替が要る」) は**発生しない**。
+  枠は既に常時出ているので、条件セグメントを足すだけで済んだ (window 単位の切替なし)。
+
+### 決めたこと
+
+- 状態の持ち方は設計案どおり pane オプション `@schedkeys-at` (値 = `"HH:MM"` /
+  複数なら `"HH:MM ほかN件"`)。正本は `.job` のまま。`#()` は使わない (毎秒 fork する)
+- **位置は上端バーの左端**。要望の「左下」ではない。`pane-border-status bottom` へ変えると
+  ACTIVE 帯 (現在地の表示) も一緒に下へ動き、`_tmux.conf` の意図的な設計判断を壊すため。
+  下端が良いかの判断は issue 184 に回した
+- 表示は ` 入力予約 HH:MM ` の語順にした。値を先に置くと複数件で
+  「14:30 ほか1件 入力予約」となって読みにくい (隔離サーバで両方出して比べた)
+- 発火が近いときの色替えは入れていない (未確定のまま。要望が出たら足す)
+- 集約点は `refresh_pane_indicator` 1 関数。状態を書き換える 5 経路
+  (`new_reservation` / `cancel_job` / `fire_claim` / `fire_drop` / `prune_stale`) から呼ぶ。
+  `read_job` は使わない (呼び出し側が `REPLY_*` を後で使うため、上書きすると
+  「A を送ったと表示して B の文字列を出す」事故になる)
+
+### 検証
+
+- 隔離 `-L` サーバで実測: `set-option -p @schedkeys-at` で黄帯が出て、`-pu` で消える。
+  `tmux -L <name> ls` が本番セッションを返さないことを先に確認した
+- 変異検証 7 本 (使い捨て worktree)。**初回は 2 本が緑のまま生き残った**:
+  - `fire_drop` の refresh 削除 → 別サーバ判定は claim の**後**なので claim 側の refresh で緑。
+    claim より前に降りる経路 (時刻が取れない) を date stub で通して red にした
+  - 「最早を選ぶ」を「最後に見た job」に変える変異 → `*.job` の glob 順で早い方が最後に
+    来る fixture では緑。id の並びを入れ替えて 2 回見る形にして red にした
+  - 書き直し後は 7 本すべて red (new / cancel / fire claim / fire drop / prune / conf の
+    format / 最早の選択)
+- `make test` 全緑
+
+### 残り
+
+- 見え方・位置・色の判断は issue 184 (human)。issue 125 には追記していない
+  (あちらはウィザードの確認で、独立して消化できる)
