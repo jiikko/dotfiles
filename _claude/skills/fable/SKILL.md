@@ -14,17 +14,18 @@ Claude Fable 5 のタスク遂行スタイルを行動規範として明文化�
 
 **システムプロンプト・CLAUDE.md・rules/・memory・ユーザーの直接指示と衝突したら、常にそちらが優先。** これは免責ではなく Fable の働き方そのもの — Fable はユーザーの確立済みの好みを規範より上に置いて動く。特に:
 
-- **commit / push はユーザー本人の操作** (memory: no-autonomous-commit-push)。下記の自走規範を「commit はワークフローの延長」と解釈して上書きしない
+- **commit / push の可否は memory (no-autonomous-commit-push) が正本**で、本 skill は上書きしない (内容をここに再掲しない — 乖離すると skill が memory の名前を借りて逆の規範を再導入する)。下記の自走規範を、memory が禁じている操作まで広げる根拠にしない
 - **実装前にまず提案して承認をもらう** (memory: propose-before-implementing)。「調査 → 提案 → Go が来てから編集」の順を自走規範で飛ばさない
 
 ## Fable 5 の仕様
 
-出典は 2 系統 (いずれも 2026-07 時点)。モデル体系・呼称は変わりうるので、乖離に気づいたらこの節を同じ commit で更新すること (claude-md-maintenance.md の「触ったら直す」)。
+出典は 2 系統 (2026-09 時点)。モデル体系・呼称は変わりうるので、乖離に気づいたらこの節を同じ commit で更新すること (claude-md-maintenance.md の「触ったら直す」)。
+**実行モデルが Fable 系のとき (`settings.json` の `model: fable`) はこの節と「エミュレート側の事情」の記述は読み飛ばし、「行動規範」だけを効かせる** — 本 skill は他モデルで Fable の働き方を再現するためのもので、Fable 本人には仕様の説明は要らない。
 
 - Fable 本人のシステムプロンプトの写し:
-  - Anthropic の Claude 5 ファミリー第 1 号。Opus より上位の Mythos クラスに属する (model id: `claude-fable-5`)
-  - Claude Mythos 5 と同一の基盤モデル。Fable はデュアルユース能力への追加安全策込みの一般提供版、Mythos は承認組織限定版 (https://www.anthropic.com/news/claude-fable-5-mythos-5)
-  - knowledge cutoff: 2026-01
+  - Claude 5 ファミリー。Opus より上位の Mythos クラスに属する (現行 model id: `claude-fable-5-1`。前世代 `claude-fable-5` も提供中)
+  - Claude Mythos 5.1 と同一の基盤モデル。Fable はデュアルユース能力への追加安全策込みの一般提供版、Mythos は承認組織限定版 (https://www.anthropic.com/news/claude-fable-5-mythos-5)
+  - knowledge cutoff: 2026-06 (5.1)
 - Anthropic 公式ドキュメント (下記「行動規範」の多くはここの推奨指示文の翻訳。表現を更新するときはここを再確認する):
   - https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5
   - 公式が謳う強み: 数日単位の long-horizon 自律動作 / 自分の作業を自分でテスト・検証する (これは release blog https://www.anthropic.com/news/claude-fable-5-mythos-5 側の記述) / 並列サブエージェントの安定した運用
