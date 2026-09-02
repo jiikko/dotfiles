@@ -25,14 +25,18 @@ const (
 
 // Result は 1 エントリの結果。
 type Result struct {
-	Entry    Entry    `json:"entry"`
-	Status   Status   `json:"status"`
-	Reason   string   `json:"reason,omitempty"` // blocked / failed の理由
-	Items    []Item   `json:"items"`
-	Size     int64    `json:"size"`
-	Failures []string `json:"failures,omitempty"` // 走査できなかった Item (理由つき)。Size に入っていない
-	Contents []string `json:"contents,omitempty"` // Inspect のとき: 各 Item 直下の名前
-	Elapsed  time.Duration
+	Entry    Entry         `json:"entry"`
+	Status   Status        `json:"status"`
+	Reason   string        `json:"reason,omitempty"` // blocked / failed の理由
+	Items    []Item        `json:"items"`
+	Size     int64         `json:"size"`
+	Failures []string      `json:"failures,omitempty"` // 走査できなかった Item (理由つき)。Size に入っていない
+	Contents []string      `json:"contents,omitempty"` // Inspect のとき: 各 Item 直下の名前
+	Elapsed  time.Duration `json:"elapsed"`
+	// MeasuredAt は実際に走査した時刻。Reused は今回走査せず前回の結果をそのまま返した (Options.Reuse)。
+	// 再利用時も Elapsed / MeasuredAt は元の計測のまま (次回「重い」と判定し続けるため)。
+	MeasuredAt time.Time `json:"measured_at"`
+	Reused     bool      `json:"reused,omitempty"`
 }
 
 // Report は全エントリの結果。
@@ -54,6 +58,10 @@ type Options struct {
 	// OnResult は完了したエントリを順次受ける (UI のインクリメンタル表示用)。nil 可。
 	// ⚠️ 走査 goroutine から並行に呼ばれる (呼び出し側で直列化する。bubbletea なら Msg に載せる)
 	OnResult func(Result)
+	// Reuse は「このエントリは走査せず、この前回結果を使え」を返す (nil = 走査する)。走査はディスク I/O を
+	// 使うので、重いエントリを短い間隔で何度も測り直さないための口。判定 (何を重いとみなし、いつまで使うか)
+	// は呼び出し側 (glogx の doctor) が持つ。返した Result は Reused=true を立てて OnResult / Results に載る
+	Reuse func(Entry) *Result
 }
 
 // Scan は全エントリを走査して Report を返す。削除はしない (その経路はこのパッケージに無い)。
@@ -84,8 +92,15 @@ func Scan(ctx context.Context, opt Options) Report {
 			ectx, cancel := context.WithTimeout(ctx, opt.PerEntry)
 			defer cancel()
 			start := time.Now()
-			r := scanEntry(ectx, opt, g, e)
-			r.Elapsed = time.Since(start)
+			var r Result
+			if prev := reusable(opt, e); prev != nil {
+				r = *prev
+				r.Reused = true
+			} else {
+				r = scanEntry(ectx, opt, g, e)
+				r.Elapsed = time.Since(start)
+				r.MeasuredAt = start
+			}
 			mu.Lock()
 			results[i] = r
 			mu.Unlock()
@@ -307,4 +322,16 @@ func SumDeletable(results []Result) int64 {
 		}
 	}
 	return total
+}
+
+// reusable は Options.Reuse が前回結果を返せばそれ (Entry の ID が一致するものだけ。別エントリの結果を混ぜない)。
+func reusable(opt Options, e Entry) *Result {
+	if opt.Reuse == nil {
+		return nil
+	}
+	prev := opt.Reuse(e)
+	if prev == nil || prev.Entry.ID != e.ID {
+		return nil
+	}
+	return prev
 }

@@ -467,3 +467,45 @@ func TestSumDeletableSkipsBlockedAndFailed(t *testing.T) {
 		t.Fatalf("合計 %d (blocked / failed を足している)", got)
 	}
 }
+
+// Options.Reuse が前回結果を返したエントリは走査しない (パスが存在しなくても前回の値が Reused で載る)。
+// ID が違う結果は混ぜない。
+func TestReuseSkipsScan(t *testing.T) {
+	env := testEnv(t)
+	prev := Result{Entry: Entry{ID: "heavy"}, Status: StatusOK, Size: 12345, Elapsed: 3 * time.Second,
+		MeasuredAt: time.Now().Add(-10 * time.Minute), Items: []Item{{Path: "/gone", Size: 12345}}}
+	cat := []Entry{
+		{ID: "heavy", Label: "Heavy", Recover: "x", Paths: []string{filepath.Join(env.Home, "nowhere-heavy")}},
+		{ID: "light", Label: "Light", Recover: "y", Paths: []string{filepath.Join(env.Home, "nowhere-light")}},
+	}
+	rep := Scan(context.Background(), Options{Env: env, Run: (&fakeRunner{}).run, Catalog: cat, BootTime: okBoot,
+		Reuse: func(e Entry) *Result {
+			if e.ID == "heavy" {
+				return &prev
+			}
+			if e.ID == "light" {
+				wrong := prev
+				wrong.Entry.ID = "heavy" // 別エントリの結果を返す誤り → 使わない
+				return &wrong
+			}
+			return nil
+		}})
+	var heavy, light Result
+	for _, r := range rep.Results {
+		switch r.Entry.ID {
+		case "heavy":
+			heavy = r
+		case "light":
+			light = r
+		}
+	}
+	if !heavy.Reused || heavy.Size != 12345 || heavy.Elapsed != 3*time.Second || heavy.MeasuredAt.IsZero() {
+		t.Fatalf("前回結果が再利用されない / 計測情報が保たれない: %+v", heavy)
+	}
+	if light.Reused || len(light.Items) != 0 {
+		t.Fatalf("ID の違う結果を混ぜた: %+v", light)
+	}
+	if rep.Total != 12345 {
+		t.Errorf("再利用分が合計に入らない: %d", rep.Total)
+	}
+}

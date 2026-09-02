@@ -511,3 +511,122 @@ func TestDoctorReusesRecentSnapshot(t *testing.T) {
 		t.Fatal("partial が snapshot として保存された")
 	}
 }
+
+// y はパス、Y は解説文をコピーする。中身は行の種類ごとに違う (ディスク = 対象パス、svc = plist、brew = 概要)。
+func TestDoctorCopyPathAndText(t *testing.T) {
+	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v.diskRep = &disk.Report{Results: []disk.Result{{Entry: disk.Entry{ID: "npm-cache", Label: "npm", Risk: disk.RiskSafe, Recover: "再取得", DeleteVia: "rm"},
+		Status: disk.StatusOK, Size: 2048, Items: []disk.Item{{Path: "/h/.npm/_cacache", Size: 2048}, {Path: "/h/.npm/other", Size: 0}}}}}
+	v.svcRep = &svc.Report{Findings: []svc.Finding{{Label: "com.x.y", PlistPath: "/L/com.x.y.plist", Domain: "gui/501",
+		Reasons: []string{"実行ファイルがありません: /nowhere"}, MissingExec: "/nowhere", Commands: []string{"launchctl bootout gui/501/com.x.y"}}}}
+	v.brew = &brewDoctorResult{Warnings: []string{"Warning: Some kegs\nbody line"}}
+	_ = v.lines(doctorTestOpts(40))
+	if got := v.handleKey("y", 40); got != doctorCopyPath || v.copyPayload() != "/h/.npm/_cacache\n/h/.npm/other" {
+		t.Fatalf("ディスク行の y: action=%v payload=%q", got, v.copyPayload())
+	}
+	if got := v.handleKey("Y", 40); got != doctorCopyText {
+		t.Fatal("ディスク行の Y が解説をコピーしない")
+	}
+	for _, want := range []string{"npm [npm-cache]", "✅ 安全", "2.0KB", "削除経路: rm", "復元方法: 再取得", "/h/.npm/_cacache"} {
+		if !strings.Contains(v.copyPayload(), want) {
+			t.Errorf("解説に %q が無い:\n%s", want, v.copyPayload())
+		}
+	}
+	v.handleKey("j", 40) // svc
+	_ = v.lines(doctorTestOpts(40))
+	if v.handleKey("y", 40) != doctorCopyPath || v.copyPayload() != "/L/com.x.y.plist" {
+		t.Fatalf("svc 行の y: %q", v.copyPayload())
+	}
+	v.handleKey("Y", 40)
+	if !strings.Contains(v.copyPayload(), "launchctl bootout gui/501/com.x.y") || !strings.Contains(v.copyPayload(), "実行ファイルがありません") {
+		t.Errorf("svc の解説にコマンド / 理由が無い:\n%s", v.copyPayload())
+	}
+	v.handleKey("j", 40) // brew
+	_ = v.lines(doctorTestOpts(40))
+	if v.handleKey("y", 40) != doctorCopyPath || v.copyPayload() != "Some kegs" {
+		t.Fatalf("brew 行の y: %q", v.copyPayload())
+	}
+	if v.handleKey("Y", 40) != doctorCopyText || !strings.Contains(v.copyPayload(), "body line") {
+		t.Fatalf("brew 行の Y: %q", v.copyPayload())
+	}
+	// 選べる行に居なければ「無い」
+	v.rows = nil
+	v.cursor = 0
+	if v.handleKey("y", 40) != doctorNothing {
+		t.Error("行が無いのにコピーした")
+	}
+}
+
+// browseModel 経由: y がクリップボード (差し替え) に届き、トーストが出る。
+func TestDoctorCopyThroughBrowseModel(t *testing.T) {
+	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m.width, m.height = 100, 30
+	var copied string
+	orig := copyToClipboard
+	copyToClipboard = func(s string) error { copied = s; return nil }
+	t.Cleanup(func() { copyToClipboard = orig })
+	m.doctorOv = doctorView{shown: true, expanded: map[string]bool{}}
+	m.doctorOv.diskRep = &disk.Report{Results: []disk.Result{{Entry: disk.Entry{ID: "a", Label: "A", Risk: disk.RiskSafe, Recover: "r"},
+		Status: disk.StatusOK, Size: 1, Items: []disk.Item{{Path: "/p/a", Size: 1}}}}}
+	m.doctorOv.svcRep = &svc.Report{}
+	m.doctorOv.brew = &brewDoctorResult{Clean: true}
+	_ = m.View()
+	m.handleKey("y")
+	if copied != "/p/a" {
+		t.Fatalf("y でパスがクリップボードに届かない: %q", copied)
+	}
+	if !m.toast.visible() || !strings.Contains(m.toast.text, "コピー") {
+		t.Errorf("コピーのトーストが出ない: %q", m.toast.text)
+	}
+	if !strings.Contains(m.hintLine(), "y: パスをコピー") {
+		t.Errorf("hint に y/Y が無い: %q", m.hintLine())
+	}
+}
+
+// 前回 2 秒以上かかったエントリは 1 時間以内なら測り直さず前回の値を出す (snapshot の TTL 5 分を過ぎた再オープンでも)。
+// 軽いエントリと r の再スキャンは測り直す。
+func TestDoctorReusesHeavyEntries(t *testing.T) {
+	v := doctorTestView(t)
+	now := time.Now()
+	heavy := disk.Result{Entry: disk.Entry{ID: "thing", Label: "古い定義"}, Status: disk.StatusOK, Size: 777, Elapsed: 3 * time.Second,
+		MeasuredAt: now.Add(-20 * time.Minute), Items: []disk.Item{{Path: "/prev", Size: 777}}}
+	sn := doctorSnapshot{ScannedAt: now.Add(-10 * time.Minute), Disk: disk.Report{Results: []disk.Result{heavy}}} // TTL 5 分は過ぎている
+	data, _ := json.Marshal(sn)
+	path, _ := doctorSnapshotPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := v.open()
+	if cmd == nil {
+		t.Fatal("TTL 切れなのに走査しない")
+	}
+	runDoctorCmds(t, v, cmd)
+	r := v.diskRep.Results[0]
+	if !r.Reused || r.Size != 777 || r.Entry.Label != "Thing キャッシュ" {
+		t.Fatalf("重いエントリの前回値が再利用されない / ラベルが今のカタログに揃わない: %+v", r)
+	}
+	if !strings.Contains(doctorText(v, 40), "分前の計測を再利用") {
+		t.Error("再利用した旨が行に出ない")
+	}
+	v.close()
+	// r は測り直す
+	runDoctorCmds(t, v, v.rescan())
+	if v.diskRep.Results[0].Reused {
+		t.Fatal("r でも前回値を再利用した")
+	}
+	v.close()
+	// 軽い (Elapsed 小) / 古い (1 時間超) は再利用しない
+	for name, mod := range map[string]func(*disk.Result){
+		"light": func(r *disk.Result) { r.Elapsed = 10 * time.Millisecond },
+		"old":   func(r *disk.Result) { r.MeasuredAt = now.Add(-2 * time.Hour) },
+	} {
+		h := heavy
+		mod(&h)
+		if f := doctorReuseFrom(doctorSnapshot{ScannedAt: now, Disk: disk.Report{Results: []disk.Result{h}}}, true, now); f != nil && f(disk.Entry{ID: "thing"}) != nil {
+			t.Errorf("%s: 再利用してはいけないものを再利用した", name)
+		}
+	}
+}

@@ -1368,6 +1368,12 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		case doctorRescan:
 			// close() を経由しない: 数件だけの partial を書いて完全な結果を潰さない (doctorView.saveCache の注記)
 			return m, tea.Batch(m.doctorOv.rescan(), m.maybeTick())
+		case doctorCopyPath:
+			m.copyWithToast(m.doctorOv.copyPayload(), "パスをコピーしました")
+		case doctorCopyText:
+			m.copyWithToast(m.doctorOv.copyPayload(), "解説をコピーしました (LLM にそのまま貼れます)")
+		case doctorNothing:
+			m.toast.show("この行にはコピーするものがありません", false)
 		case doctorSwallow:
 		}
 		return m, m.maybeTick()

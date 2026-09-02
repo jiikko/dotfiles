@@ -51,6 +51,8 @@ type doctorView struct {
 	expanded map[string]bool // 展開中の行 (key = 行の同一性)
 	rows     []doctorRow     // 直近の描画で組んだ行 (キー操作の対象。lines() が作り直す)
 
+	pendingCopy string // 直近の y / Y の中身 (copyPayload)
+
 	// テスト用の差し替え口 (zero value = 本番)
 	diskOpts func() disk.Options
 	svcOpts  func() svc.Options
@@ -63,6 +65,10 @@ type doctorRow struct {
 	selectable bool
 	key        string
 	detail     []string
+	// copyPath は y でコピーするパス (複数なら改行区切り)。copyText は Y でコピーする解説文
+	// (ラベル・パス・復元方法・リスク・削除経路・提示コマンド。別セッションの LLM にそのまま投げられる形)。
+	copyPath string
+	copyText string
 }
 
 // doctorDiskEvent は disk.Scan からの 1 イベント (r = 1 エントリ完了 / rep = 全完了)。
@@ -137,6 +143,11 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	dOpt := disk.Options{Env: disk.RealEnv(), Run: runner.Exec}
 	if v.diskOpts != nil {
 		dOpt = v.diskOpts()
+	}
+	if !force {
+		// TTL を過ぎて走査し直すときも、重かったエントリは前回の値を使う (ディスク I/O を節約)
+		sn, ok := loadDoctorSnapshotAny()
+		dOpt.Reuse = doctorReuseFrom(sn, ok, timeNow())
 	}
 	catalogN := len(dOpt.Catalog)
 	if catalogN == 0 {
@@ -262,8 +273,14 @@ type doctorAction int
 const (
 	doctorSwallow doctorAction = iota // 全画面なので裏の一覧へ素通りさせない
 	doctorClosed
-	doctorRescan // r: 走査し直す (browseModel が open() で起こす。close は経由しない = partial を書かない)
+	doctorRescan   // r: 走査し直す (browseModel が open() で起こす。close は経由しない = partial を書かない)
+	doctorCopyPath // y: 選んだ行のパスをコピー (中身は copyPayload)
+	doctorCopyText // Y: 選んだ行の解説文をコピー (同上)
+	doctorNothing  // y/Y を押したがコピーするものが無い (browseModel がその旨をトーストにする)
 )
+
+// copyPayload は直近の y / Y でコピーする文字列 (handleKey がセットし、browseModel が取り出す)。
+func (v *doctorView) copyPayload() string { return v.pendingCopy }
 
 func (v *doctorView) handleKey(key string, page int) doctorAction {
 	switch key {
@@ -296,6 +313,20 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 			k := v.rows[v.cursor].key
 			v.expanded[k] = !v.expanded[k]
 		}
+	case "y", "Y":
+		if v.cursor < 0 || v.cursor >= len(v.rows) || !v.rows[v.cursor].selectable {
+			return doctorNothing
+		}
+		row := v.rows[v.cursor]
+		v.pendingCopy = row.copyText
+		action := doctorCopyText
+		if key == "y" {
+			v.pendingCopy, action = row.copyPath, doctorCopyPath
+		}
+		if v.pendingCopy == "" {
+			return doctorNothing
+		}
+		return action
 	}
 	return doctorSwallow
 }
@@ -331,7 +362,7 @@ func (v *doctorView) moveCursor(dir int) {
 }
 
 func (v *doctorView) hint() string {
-	return "j/k: 移動  Enter: 詳細を開く/閉じる  r: 再スキャン  D/q/esc: 閉じる  (削除はまだできません。表示のみ)"
+	return "j/k: 移動  Enter: 詳細  y: パスをコピー  Y: 解説をコピー  r: 再スキャン  D/q/esc: 閉じる  (削除はまだできません)"
 }
 
 // doctorRenderOpts は描画情報。
@@ -464,6 +495,8 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 			selectable: true,
 			key:        "disk:" + r.Entry.ID,
 			detail:     v.diskDetail(o, r),
+			copyPath:   diskCopyPath(r),
+			copyText:   diskCopyText(r, mark),
 		}
 		rows = append(rows, row)
 		if r.Status == disk.StatusFailed {
@@ -473,6 +506,9 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 		advice := r.Entry.Recover
 		if newest := doctorNewest(r); !newest.IsZero() {
 			advice += fmt.Sprintf("。最終更新 %s (%d日前)", newest.Format("2006-01-02"), int(o.now.Sub(newest).Hours()/24))
+		}
+		if r.Reused {
+			advice += fmt.Sprintf("。%d 分前の計測を再利用 (r で再計測)", int(o.now.Sub(r.MeasuredAt).Minutes()))
 		}
 		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "           "+advice)})
 		for _, f := range r.Failures {
@@ -562,7 +598,8 @@ func (v *doctorView) svcSection(o doctorRenderOpts) []doctorRow {
 		for _, c := range f.Commands {
 			detail = append(detail, "        "+c)
 		}
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiRed, " ⛔ "+f.Label), selectable: true, key: "svc:" + f.PlistPath, detail: detail})
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiRed, " ⛔ "+f.Label), selectable: true, key: "svc:" + f.PlistPath, detail: detail,
+			copyPath: f.PlistPath, copyText: svcCopyText(f)})
 		for _, r := range f.Reasons {
 			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "      - "+r)})
 		}
@@ -609,7 +646,72 @@ func (v *doctorView) brewSection(o doctorRenderOpts) []doctorRow {
 		if gap >= 1 {
 			text += padSpaces(gap) + doctorColor(o.colored, ansiDim, count)
 		}
-		rows = append(rows, doctorRow{text: text, selectable: true, key: fmt.Sprintf("brew:%d:%s", i, summary), detail: detail})
+		rows = append(rows, doctorRow{text: text, selectable: true, key: fmt.Sprintf("brew:%d:%s", i, summary), detail: detail,
+			copyPath: summary, copyText: "brew doctor の警告 (macOS Homebrew):\n" + w + "\n"})
 	}
 	return rows
+}
+
+// diskCopyPath は y でコピーする対象パス (複数なら改行区切り。ググる / ls する用)。
+func diskCopyPath(r disk.Result) string {
+	paths := make([]string, 0, len(r.Items))
+	for _, it := range r.Items {
+		paths = append(paths, it.Path)
+	}
+	return strings.Join(paths, "\n")
+}
+
+// diskCopyText は Y でコピーする解説文。別セッションの LLM に「これは消していいか」を聞ける形にする。
+func diskCopyText(r disk.Result, mark string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "glogx doctor (ディスク診断) の候補: %s [%s]\n", r.Entry.Label, r.Entry.ID)
+	fmt.Fprintf(&b, "判定: %s / 合計 %s / 削除経路: %s\n", mark, disk.HumanSize(r.Size), r.Entry.DeleteVia)
+	fmt.Fprintf(&b, "復元方法: %s\n", r.Entry.Recover)
+	if r.Entry.Detail != "" {
+		fmt.Fprintf(&b, "補足: %s\n", r.Entry.Detail)
+	}
+	if r.Reason != "" {
+		fmt.Fprintf(&b, "理由: %s\n", r.Reason)
+	}
+	for _, f := range r.Failures {
+		fmt.Fprintf(&b, "走査できず: %s\n", f)
+	}
+	if len(r.Items) > 0 {
+		b.WriteString("対象:\n")
+		for _, it := range r.Items {
+			fmt.Fprintf(&b, "  %s  %s", disk.HumanSize(it.Size), it.Path)
+			if !it.Mtime.IsZero() {
+				fmt.Fprintf(&b, "  (最終更新 %s)", it.Mtime.Format("2006-01-02"))
+			}
+			b.WriteString("\n")
+		}
+	}
+	for _, c := range r.Contents {
+		fmt.Fprintf(&b, "  中身: %s\n", c)
+	}
+	return b.String()
+}
+
+// svcCopyText は Y でコピーする解説文 (壊れた launchd 登録)。
+func svcCopyText(f svc.Finding) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "glogx doctor (サービス診断) の候補: %s\n", f.Label)
+	fmt.Fprintf(&b, "plist: %s (ドメイン %s)\n", f.PlistPath, f.Domain)
+	for _, r := range f.Reasons {
+		fmt.Fprintf(&b, "理由: %s\n", r)
+	}
+	if f.PenaltyBox {
+		b.WriteString("launchd の penalty box 入り\n")
+	}
+	if f.MissingExec != "" {
+		fmt.Fprintf(&b, "不在の実行ファイル: %s\n", f.MissingExec)
+	}
+	if f.BrewFormula != "" {
+		fmt.Fprintf(&b, "Homebrew formula: %s (台帳にあり=%v)\n", f.BrewFormula, !f.BrewOrphan)
+	}
+	b.WriteString("手動で実行するコマンド (ツールは実行しない):\n")
+	for _, c := range f.Commands {
+		fmt.Fprintf(&b, "  %s\n", c)
+	}
+	return b.String()
 }

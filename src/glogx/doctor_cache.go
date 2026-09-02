@@ -220,6 +220,18 @@ func saveDoctorSnapshot(sn doctorSnapshot) error {
 
 // loadDoctorSnapshot は TTL 内の完全な結果を返す。欠損・破損・期限切れ・未来の時刻は「無し」(走査に倒す)。
 func loadDoctorSnapshot(now time.Time) (doctorSnapshot, bool) {
+	sn, ok := loadDoctorSnapshotAny()
+	if !ok {
+		return doctorSnapshot{}, false
+	}
+	if age := now.Sub(sn.ScannedAt); age < 0 || age >= doctorSnapshotTTL {
+		return doctorSnapshot{}, false
+	}
+	return sn, true
+}
+
+// loadDoctorSnapshotAny は期限を見ずに読む (重いエントリの再利用判定は個々の MeasuredAt で行うため)。
+func loadDoctorSnapshotAny() (doctorSnapshot, bool) {
 	path, err := doctorSnapshotPath()
 	if err != nil {
 		return doctorSnapshot{}, false
@@ -232,8 +244,42 @@ func loadDoctorSnapshot(now time.Time) (doctorSnapshot, bool) {
 	if err := json.Unmarshal(data, &sn); err != nil || sn.ScannedAt.IsZero() {
 		return doctorSnapshot{}, false
 	}
-	if age := now.Sub(sn.ScannedAt); age < 0 || age >= doctorSnapshotTTL {
-		return doctorSnapshot{}, false
-	}
 	return sn, true
+}
+
+// 重いエントリの再利用 (ユーザー要望 2026-09-02: スキャンはディスク I/O を食うので、明らかに重いものを何度も
+// 測り直さない)。前回の計測に doctorHeavyElapsed 以上かかったエントリは、計測から doctorHeavyReuseTTL 以内なら
+// 走査せず前回の値を出す (行に「前回の計測を再利用」と添える)。r は全部測り直す。
+// 軽いエントリ (数十 ms) は毎回測る: 再利用しても得るものが無く、古い値を出す損だけが残る。
+const (
+	doctorHeavyElapsed  = 2 * time.Second
+	doctorHeavyReuseTTL = time.Hour
+)
+
+// doctorReuseFrom は snapshot から「再利用してよい前回結果」を返す関数を作る (disk.Options.Reuse 用)。
+// 対象は Status ok で、走査に成功したもの (failed / blocked / partial は毎回測り直す)。
+func doctorReuseFrom(sn doctorSnapshot, ok bool, now time.Time) func(disk.Entry) *disk.Result {
+	if !ok || sn.Disk.Partial {
+		return nil
+	}
+	byID := map[string]disk.Result{}
+	for _, r := range sn.Disk.Results {
+		if r.Status != disk.StatusOK || r.Elapsed < doctorHeavyElapsed || r.MeasuredAt.IsZero() {
+			continue
+		}
+		if age := now.Sub(r.MeasuredAt); age < 0 || age >= doctorHeavyReuseTTL {
+			continue
+		}
+		byID[r.Entry.ID] = r
+	}
+	if len(byID) == 0 {
+		return nil
+	}
+	return func(e disk.Entry) *disk.Result {
+		if r, ok := byID[e.ID]; ok {
+			r.Entry = e // 表示文言はカタログの今の定義に合わせる (計測値だけを再利用)
+			return &r
+		}
+		return nil
+	}
 }
