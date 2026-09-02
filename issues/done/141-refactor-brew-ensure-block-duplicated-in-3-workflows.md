@@ -70,9 +70,39 @@ CLAUDE.md「コード変更時の自律改善」は**同じ変更を 2 箇所に
 ### 受け入れ条件
 
 - [x] formula 名の写像が 1 箇所になった
-- [x] 3 つの workflow (6 job) すべてが CI で緑 → **下の CI 確認で判定する**
-- [x] 実行された証拠を確認する → **同上**
+- [x] 3 つの workflow (6 job) すべてが CI で緑
+- [x] 実行された証拠を確認した
+
+### CI 確認 (2026-09-02, commit 48db380)
+
+`gh run view --log` で 3 run すべてを確認した。
+
+| run | workflow | 結果 |
+|---|---|---|
+| 33601182513 | Tests (heavy / rest) | success |
+| 33601182590 | Lint | success |
+| 33601182500 | Bench (glogx / nvim / tmux / zsh) | success |
+
+**実行された証拠** — 6 job すべてのログに composite の step
+`Ensure required commands (...)` と、その末尾の実在確認出力が出ている
+(`verify-execution-not-just-exit-code.md`。緑という結果ではなく出力で判定した):
+
+```
+dotfiles-tests (rest)  Ensure required commands (tmux zsh make bats gtimeout)
+  tmux = /opt/homebrew/bin/tmux
+  bats = /opt/homebrew/bin/bats          ← 写像 bats → bats-core が効いている
+  gtimeout = /opt/homebrew/bin/gtimeout  ← 写像 gtimeout → coreutils が効いている
+  bash = /opt/homebrew/bin/bash (GNU bash, version 5.3.15(1)-release)
+dotfiles-lint          Ensure required commands (zsh jq ruby yamllint)
+dotfiles-tests (heavy) Ensure required commands (zsh make)
+bench-glogx            Ensure required commands ()        ← 空入力でも bash 5 は揃う
+bench-nvim / bench-zsh Ensure required commands (zsh)
+bench-tmux             Ensure required commands (tmux zsh)
+```
+
+`brew install --quiet bash` の残存箇所も 1 件 (`ensure-toolchain/action.yml:30`) のみで、
+`run-bench` 側は二重導入にならないことを grep で確認した。
 
 ### 残課題
 
-なし (CI 緑を確認した時点で done)。
+なし。
