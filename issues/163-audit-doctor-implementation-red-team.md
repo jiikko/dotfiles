@@ -17,7 +17,7 @@ Setpgid / partial 保存の規律 / 案 A レイアウト + カーソル + Enter
 
 ## 走らせ方
 
-read-only のサブエージェント 4 体を並行で (体 4 は実測を伴うので、計測コマンドの実行は許可する。ファイルの編集は不可)。**「レビューして」ではなく「壊す手順を見つけろ。壊せなければ壊せなかったと明記しろ」**
+read-only のサブエージェント 6 体を並行で (体 4・5・6 は実測 / 偽環境の実験を伴うので、計測コマンドと一時ディレクトリでの実験は許可する。repo のファイル編集は不可。体 6 の「1 つ足す試行」は使い捨て worktree で)。**「レビューして」ではなく「壊す手順を見つけろ。壊せなければ壊せなかったと明記しろ」**
 で投げる (`_claude/rules/issue-creation-codex-review.md` の反証の作法)。走行中は対象ファイルを編集しない
 (`parallel-write-agents-need-worktree-isolation.md`)。5h 枠の残量が少ないと途中で落ちるので (2026-09-02 に 3 体とも
 session limit で死んだ実例)、**枠が開いた直後に起動する**。報告は各 2000 字以内を指定する。
@@ -154,6 +154,57 @@ session limit で死んだ実例)、**枠が開いた直後に起動する**。�
 判定の書き方: リークは「回数 / fd 数 / プロセス数が開閉前後で不変か」で、パフォーマンスは「実測値 (before/after or 並行数別)」で。
 「遅そう」「漏れそう」だけの指摘は却下側に分類する (`perf-claims-need-measurement.md`)。
 
+### 体 5: 環境差とキャッシュを信用する境界 — 「実機 1 台でしか動かしていない」穴を狙う
+
+読むもの: `src/doctor/disk/{guard,scan,paths}.go`、`src/doctor/svc/scan.go`、`src/glogx/doctor_cache.go`、
+`doctor_view.go` の `start` / `saveCache` / `doctorReuseFrom`、issue 148 の 2 章「パス安全性」「TOCTOU」。
+実験は偽 HOME / PATH を細工した子プロセスで (実環境を触らない。`adversarial-review-own-safeguards.md` 節 1)。
+
+環境差 (fresh な Mac / CI runner で動くか):
+- **Xcode 無し** (CommandLineTools だけ): `xcrun simctl` は何を返すか (エラー文 / rc)。`coresimulator-orphan` と
+  `simulator-runtimes` が「診断できず」に倒れるか、それとも panic / 空白 / 候補 0 件 (false green) か。
+  PATH から `xcrun` を外した偽環境で実測する
+- **brew 無し**: `brewledger.Installed` の失敗が disk (brew-orphan-state / brew-cleanup-residue) と svc (C 判定) と
+  brew doctor の 3 箇所で全部「診断できず」になるか。1 箇所でも「候補 0 件」に化けていないか
+- `~/Applications` 無し / `/Applications` に .app が 0 件 (installedBundleIDs が error を返す → 孤児判定をしない、を確認) /
+  `/opt/homebrew` 無し (Intel Mac の `/usr/local`。カタログのパスがハードコード) / TMPDIR が `/var/folders` 以外 /
+  HOME に空白を含む / `LANG=C` (sort や表示幅)。それぞれで全セクションが正しく縮退するか
+- **CI (`_go-project.yml` の macOS runner)** で `make -C src/doctor test` が何をスキップしているか。`TestStdPathMatchesPathsH` の
+  skip、`du` の有無、`brew` の有無。runner で走らないテストが手元でだけ緑になっていないか (`verify-execution-not-just-exit-code.md`)
+
+キャッシュを信用する境界 (④ の削除の入力になる):
+- `doctor-snapshot.json` / `doctor-disk.json` は一般ユーザー権限で書き換え可能。**snapshot の `Items[].Path` に任意パスを
+  差し込んだとき、④ の削除がそれを対象にする経路が設計上ありうるか**。結論として「削除は必ず再スキャン + `validateTarget` を
+  通し、snapshot の Path を削除対象にしない」を ④ の不変条件として issue 148 に書く (今は削除が無いので、ここでは
+  設計の穴の有無だけ確定する)
+- 重いエントリの再利用 (`doctorReuseFrom`) は snapshot の Result をそのまま `Results` に載せる。Reused の Result の Path は
+  **再スキャンしていない**。④ で「Reused の行は削除前に必ず再スキャン」が要る。今の `Reused` フラグがそこまで伝わる形か
+- catalog の ID が変わった / 消えたとき、古い snapshot の Result が UI に残るか (`doctorReuseFrom` は今の catalog にある ID
+  だけを返すか。`start` の snapshot 復元 (TTL 5 分) は catalog を見ずに丸ごと出す → 消えた ID の行が出る)
+- JSON の型が壊れているとき (`Total` が文字列 / `Results` が object): `json.Unmarshal` エラーで「無し」に倒れる (確認) が、
+  **部分的に壊れている** (1 Result だけ Status が知らない文字列) と何が起きるか
+
+### 体 6: CLI と UI の一致 / 見え方 / 説明可能性 / 入口 / 変更耐性
+
+読むもの: `src/doctor/disk/report.go` と `src/glogx/doctor_view.go` の diskSection、`src/doctor/svc/report.go` と svcSection、
+`src/doctor/cmd/*/main.go` (exit code)、`src/glogx/README.md` のキー表と `options.go` の `--help`、`src/glogx/CLAUDE.md`。
+
+- **CLI と UI の一致**: 同じ `Scan` の Report を `disk.Format` と `diskSection` に通し、合計 / 件数 / 「診断できず」の有無 /
+  partial の表示が食い違う入力を探す (fixture を作って両方に流す)。exit code (0 / 1 / 2) と画面の色分けの対応
+- **見え方**: `NO_COLOR` / パイプ (色なし) でリスク記号だけで判別できるか。幅 60 / 80 / 120 で何が切れるか
+  (`truncateDisp` は末尾を落とすので、右端の要約・行数・リスク記号が先に消える)。全角ラベルと半角マークの列
+  (`no-mixed-width-columns-in-terminal-ui.md`: 幅計算でなく目で見る。`tmp/doctor_sample.txt` を端末に cat する)。
+  🚨 以外に表示幅が揺れる記号 (✅ ⛔ ❓ ❔ ▌ ▶ ▼) が無いか、実端末で 1 分間見て右端が動かないか
+- **説明可能性**: 各候補の「なぜ出たか」が、人がそのまま打てる裏取りコマンドになっているか。ディスクは `du -sk <path>` /
+  `xcrun simctl list devices` / `brew info <formula>`、svc は `launchctl list | grep <label>` / `launchctl print gui/$(id -u)/<label>` /
+  `ls -l <Program>`。**Y のコピー文に裏取りコマンドを載せる**と、別セッションの LLM が自分で確かめられる (提案として起票)
+- **入口ドキュメント** (`new-tool-requires-entrypoint-docs.md`): glogx README のキー表に `D` / `Enter` / `y` / `Y` / `r` が載っているか、
+  `glogx --help` に doctor が出るか、`bin/diskdoctor --help` / `bin/svcdoctor --help` の文言が現状 (削除なし / exit code の意味)
+  と合っているか、`src/README.md` の一覧に doctor があるか。無ければ起票 (ux)
+- **変更耐性**: カタログにエントリを 1 つ足す試行 (例: `~/Library/Caches/pip`。commit しない)。触る箇所が `catalog.go` 1 箇所で
+  済むか、UI / snapshot / テスト (`TestCatalogRespectsExclusions`) / README のどこに波及するか。issue 148 が「将来の
+  診断項目を同じ枠で足せる器か」を ③ の検証と位置づけているので、足してみるのが最も安い検証。波及が 3 箇所を超えるなら起票
+
 ## 前回 (2 回目) で「記録に留めた」もの — 再提出しない
 
 issue 148「敵対的レビュー 2 回目」節の「記録に留めたもの」5 件と「壊せなかった攻め口」。特に: 2 プロセス同時の lost update /
@@ -167,7 +218,7 @@ cancel 後の有界な残り I/O / restart 直前の子 / 空白入りラベル�
 
 ## 受け入れ条件
 
-- [ ] 4 体の報告が、トピックごとの issue (`issues/NNN-*-doctor-*.md`) と、この issue の索引に分かれて残っている (体 4 は数字つき)
+- [ ] 6 体の報告が、トピックごとの issue (`issues/NNN-*-doctor-*.md`) と、この issue の索引に分かれて残っている (体 4 は数字つき)
 - [ ] 起票した issue はそれぞれ反証レビューを通している (P1 は必須)
 - [ ] 却下した指摘は理由つきでこの issue に残っている (次の audit が同じ指摘を出さない)
 - [ ] 修正はこの issue の仕事ではない。起票した issue を個別に着手する (着手時に変異検証 / もう 1 周の規律が付く)
