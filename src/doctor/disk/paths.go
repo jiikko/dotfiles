@@ -22,27 +22,54 @@ func RealEnv() Env {
 		AppDirs: []string{"/Applications", filepath.Join(home, "Applications")}}
 }
 
+// escapeGlobMeta は環境変数由来の literal 部分を glob パターンとして解釈させないための escape。
+// filepath.Glob には Escape が無いので自前でやる (macOS なので `\` が escape 文字として効く)。
+// これをしないと HOME に `[` が入っているだけで Glob が 0 件を返し、実在するキャッシュが
+// 「候補なし」に化ける (issue 175 / false green)。
+func escapeGlobMeta(s string) string {
+	// byte 単位で回す (rune で回すと不正 UTF-8 が U+FFFD に置換され、pattern が実バイト列と
+	// 食い違ってマッチしなくなる)。メタ文字はすべて ASCII なので継続バイトを誤爆しない。
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if strings.IndexByte(`*?[\`, s[i]) >= 0 {
+			b.WriteByte('\\')
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
 // expand はテンプレート (~ / $TMPDIR) を展開して glob する。
 // 変数が空なら error (空パス展開で `rm -rf /foo` が組み立たる事故の入口を塞ぐ。走査でも同じ規律)。
+// 展開結果が絶対パスでなければ error (相対 TMPDIR 等。glob が 0 件になって無音で消えるのを防ぐ:
+// 「診断できず」と「候補なし」を混ぜない)。
+// 変数由来の部分は escapeGlobMeta で literal 化するので、glob として効くのはテンプレート側の
+// メタ文字だけになる。
 // glob の結果 0 件は空スライス (エラーではない)。
 func expand(env Env, tmpl string) ([]string, error) {
-	p := tmpl
-	if strings.HasPrefix(p, "~/") || p == "~" {
+	logical, pattern := tmpl, tmpl // logical = 判定用の素のパス / pattern = Glob に渡す escape 済み
+	if strings.HasPrefix(tmpl, "~/") || tmpl == "~" {
 		if env.Home == "" {
 			return nil, errors.New("HOME が空です")
 		}
-		p = env.Home + p[1:]
+		logical = env.Home + logical[1:]
+		pattern = escapeGlobMeta(env.Home) + pattern[1:]
 	}
-	if strings.Contains(p, "$TMPDIR") {
+	if strings.Contains(tmpl, "$TMPDIR") {
 		if env.TmpDir == "" {
 			return nil, errors.New("TMPDIR が空です")
 		}
-		p = strings.ReplaceAll(p, "$TMPDIR", strings.TrimRight(env.TmpDir, "/"))
+		t := strings.TrimRight(env.TmpDir, "/")
+		logical = strings.ReplaceAll(logical, "$TMPDIR", t)
+		pattern = strings.ReplaceAll(pattern, "$TMPDIR", escapeGlobMeta(t))
 	}
-	if strings.Contains(p, "$") {
+	if strings.Contains(logical, "$") {
 		return nil, fmt.Errorf("未対応の変数があります: %s", tmpl)
 	}
-	matches, err := filepath.Glob(p)
+	if !filepath.IsAbs(logical) {
+		return nil, fmt.Errorf("展開結果が絶対パスでない (診断できず): %s", logical)
+	}
+	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return nil, fmt.Errorf("glob が不正: %w", err)
 	}

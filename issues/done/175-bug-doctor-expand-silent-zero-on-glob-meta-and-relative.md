@@ -77,3 +77,53 @@ npm キャッシュのエントリが `status=ok, items=0` になる (実在す�
 - 併せて確認できたこと: symlink 経由の TMPDIR は `validateTarget` の symlink 検査で正しく
   `failed` になる (`paths.go:99-107`)。issue の表の他の行 (空白・`*`・末尾スラッシュ・実 TMPDIR)
   は正常挙動で、**問題はメタ文字 HOME とマッチしない相対パスの 2 パターンに限定される**
+
+## 対応 (2026-09-03)
+
+**修正した。** `src/doctor/disk/paths.go` の `expand` を 2 点直した。
+
+1. **`escapeGlobMeta` を新設**し、環境変数由来 (`env.Home` / `env.TmpDir`) の literal 部分だけを
+   escape してから `filepath.Glob` に渡す。`logical` (判定用の素のパス) と `pattern` (Glob 用の
+   escape 済み) を並行して組み立てる。テンプレート側のメタ文字 (`~/go/*/pkg/mod` の `*` 等) は
+   escape しないので glob として効いたまま。`filepath.Glob` に Escape 関数が無いので自前
+   (macOS 前提なので `\` が escape 文字として効く)
+2. **展開結果が絶対パスでなければ error** (fail-closed)。相対 TMPDIR / 相対 HOME が
+   「cwd に一致すれば failed / 一致しなければ無音の 0 件」という非対称になっていたのを、
+   常に「診断できず」へ倒した
+
+対応案の 3 点目 (「glob 0 件でも展開元のディレクトリが存在しなければ診断できずに倒す」) は**入れていない**。
+テンプレートが literal のとき「パスが存在しない」は正当な「候補なし」であり、両者を区別するには
+カタログ側に「親はあるはず」の宣言が要る。false green の実害 2 パターン (メタ文字 HOME / 相対パス) は
+上の 2 点で閉じたので、親ディレクトリ検査は入れずに済ませた。**同根の issue 176 (brew prefix) では
+prefix の存在検査を入れる**ので、必要ならそちらの形を横展開する。
+
+### 変異検証
+
+- `escapeGlobMeta` を外す (旧挙動) → `TestExpandLiteralizesGlobMetaInEnv` が red
+- escape 対象 `*?[\` から **1 文字ずつ**外す 4 変異 → いずれも red。敵対レビューがケース名ごとの
+  pass/fail まで確認し、各変異で**意図した 1 ケースだけ**が落ちることを実測
+- `!filepath.IsAbs(logical)` の fail-closed を外す → `TestExpandRelativeFailsClosed` が red
+- どの変異も `go build ./...` が通ることを先に確認 (stale build の緑を読まないため)
+
+### 敵対的レビュー (sonnet / read-only / 2 周)
+
+1 周目 5 観点: 採用 2 / 却下 0 / 未確認 1。
+
+- **採用**: `"h?x"` ケースが vacuous (escape 集合から `?` を外しても green のまま) → 各ケースに
+  「escape しなければ余分にマッチする」おとりの兄弟ディレクトリ (`decoys`) を追加して解消
+- **採用**: `escapeGlobMeta` の rune ループが不正 UTF-8 を U+FFFD に置換して pattern を壊しうる
+  → byte ループへ変更 (メタ文字は全て ASCII なので継続バイトを誤爆しない)
+- **採用 (予防)**: ループ内 `t.Fatalf` が後続ケースを検査させない → `t.Errorf` + `continue`
+- **壊せなかった**: escape 不足による false green (多バイト文字・バックスラッシュ多重を含む
+  十数種の HOME 名で実測) / over-escape によるテンプレート側メタ文字の無効化 / `RealEnv` での
+  fail-closed 誤爆 / `logical` と `pattern` の乖離
+
+2 周目 (1 周目の修正差分を攻めさせた) 4 観点: **すべて壊せなかった**。byte ループの継続バイト誤爆
+(UTF-8 の構造上、escape 対象 4 バイトはすべて `< 0x80` なので衝突しない)、decoy 設計の穴、
+ケース間の状態汚染、decoy による偽陽性/偽陰性、いずれも再現せず。
+
+### 未確認リスク (直していない)
+
+- 環境変数 `HOME` / `TMPDIR` が**不正 UTF-8 バイト列**を持つ場合。macOS は不正 UTF-8 のディレクトリ名の
+  作成自体を拒否する (`illegal byte sequence`) ので実ディレクトリ由来なら発生しないが、環境変数は
+  任意バイト列を持てる。byte ループ化で構造的には守っているものの、その経路のテストは書いていない

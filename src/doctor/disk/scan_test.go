@@ -531,3 +531,56 @@ func TestReuseSkipsScan(t *testing.T) {
 		t.Errorf("再利用分が合計に入らない: %d", rep.Total)
 	}
 }
+
+// issue 175: HOME に glob メタ文字が入っていても、実在するパスは候補として拾えること。
+// 素朴に filepath.Glob へ渡すと `[1]` が文字クラスとして解釈されて 0 件になり、実在するのに
+// 「候補なし」に化ける (false green)。
+func TestExpandLiteralizesGlobMetaInEnv(t *testing.T) {
+	base := t.TempDir()
+	// 各メタ文字名に「escape しなければ余分にマッチする」おとりの兄弟を必ず作る。
+	// おとりが無いと ? のように「escape しなくても同じ結果になる」ケースが混ざり、変異させても
+	// green のまま残る (敵対レビュー指摘)。
+	decoys := map[string]string{"h[1]": "h1", "h*": "hZZ", "h?x": "hax", `h\z`: "hXz", "h 1": "hY1"}
+	for _, name := range []string{"h[1]", "h*", "h?x", `h\z`, "h 1"} {
+		home := filepath.Join(base, name)
+		if err := os.MkdirAll(filepath.Join(home, ".npm", "_cacache"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(base, decoys[name], ".npm", "_cacache"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		got, err := expand(Env{Home: home, TmpDir: "/t"}, "~/.npm/_cacache")
+		if err != nil {
+			t.Errorf("HOME=%q: err=%v", name, err)
+			continue
+		}
+		if len(got) != 1 || got[0] != filepath.Join(home, ".npm", "_cacache") {
+			t.Errorf("HOME=%q: 実在するのに拾えていない: got=%v", name, got)
+		}
+	}
+	// テンプレート側のメタ文字は glob として効いたまま (literal 化しすぎていない)
+	home := filepath.Join(base, "h[1]")
+	if err := os.MkdirAll(filepath.Join(home, "go", "1.24", "pkg", "mod"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := expand(Env{Home: home, TmpDir: "/t"}, "~/go/*/pkg/mod")
+	if err != nil || len(got) != 1 {
+		t.Errorf("テンプレートの * が効いていない: got=%v err=%v", got, err)
+	}
+}
+
+// issue 175: 展開結果が相対パスなら「診断できず」にする (glob が 0 件になって無音で消えるのを防ぐ)。
+// 相対パスは cwd に偶然一致すると validateTarget が failed にし、一致しなければ無音の 0 件になる
+// 非対称があった。expand の時点で常に error に倒す。
+func TestExpandRelativeFailsClosed(t *testing.T) {
+	if _, err := expand(Env{Home: "/h", TmpDir: "tmp"}, "$TMPDIR/TemporaryItems/NSIRD_Finder_*"); err == nil {
+		t.Error("相対 TMPDIR が無音の 0 件になった (診断できずに倒れていない)")
+	}
+	if _, err := expand(Env{Home: "relhome", TmpDir: "/t"}, "~/.npm"); err == nil {
+		t.Error("相対 HOME が無音の 0 件になった")
+	}
+	// 絶対パスなら従来どおり通る
+	if _, err := expand(Env{Home: "/h", TmpDir: t.TempDir()}, "$TMPDIR/nothing/*"); err != nil {
+		t.Errorf("絶対 TMPDIR が拒否された: %v", err)
+	}
+}
