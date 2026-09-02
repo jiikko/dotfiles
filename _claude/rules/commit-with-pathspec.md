@@ -11,6 +11,19 @@
 
 根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/commit-with-pathspec.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
 
+## pathspec は cwd 相対で解決される — repo root へ移動してから打つ
+
+- pathspec は **cwd 相対**。`cd src/glogx` した状態で `git commit -- src/doctor/x.go` と打つと
+  `src/glogx/src/doctor/x.go` を探して外れる
+- 外れたら **commit されない**。実測 (2026-09-02): `git commit -- <root 相対>` は **rc=1** +
+  stderr に `error: pathspec '...' did not match any file(s) known to git`、`git add` は **rc=128**。
+  つまり無音ではない
+- ⚠️ **誤認は次の push で起きる**。commit が空振りした後の `git push` は
+  **`Everything up-to-date` で rc=0** を返すので、push の出力だけを見ると成功に見える
+- 予防: **commit の前に `cd "$(git rev-parse --show-toplevel)"`**。ツールの cwd がサブディレクトリに
+  残っている状態で pathspec を組まない (シェルの cwd は前のコマンドから持ち越される)
+- 検出: commit 直後の `git log -1 --stat` で想定ファイルが入っているか見る (下の節と同じ規律)
+
 ## pathspec で「生成物」を漏らすと壊れたコミットになる
 
 - **ソースを消す / 足す変更をしたら、それに連動する生成物 (Xcode の `project.pbxproj`、lock ファイル、

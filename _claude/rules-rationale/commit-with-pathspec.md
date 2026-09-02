@@ -26,3 +26,16 @@
   「lint  が  を誤爆」になった。commit は成功しており、`git log` を読み返すまで気づかない
 
 - 実例 (2026-07-16): 並行セッションの `reset HEAD~1` が、直前に積まれていた別セッションのコミット (issue rename の参照更新 14 ファイル) を切り落とし staged に戻した。reflog と `git diff --cached <旧SHA>` の同一性検証で復旧できたが、気づかなければ次の pathspec なし commit に溶けて消えていた
+
+## cwd 相対の pathspec で空振りした実例 (2026-09-02, retro 164 項目 2)
+
+doctor ③ の実装中、`cd src/glogx` した状態から `git add src/doctor/...` /
+`git commit -- src/...` を打ち、**同じセッションで 2 回**空振りさせた。
+
+git はエラーを出していた (実測: commit は rc=1 + `error: pathspec '...' did not match any
+file(s) known to git`、add は rc=128)。見落としたのはエラーそのものではなく、
+**その後の `git push` が `Everything up-to-date` で rc=0 を返した**ことで
+「commit も push も成功した」と読んでしまった点。気づいたのは hook が出す git state 表示。
+
+だから対策は「エラーを見る」ではなく **cwd を repo root に固定する**方 (エラーは既に出ていた)。
+ツールのシェルは cwd を持ち越すので、サブディレクトリでテストを走らせた直後が一番危ない。
