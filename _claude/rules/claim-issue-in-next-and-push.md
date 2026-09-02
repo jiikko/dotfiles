@@ -31,6 +31,10 @@
   含む Bash コマンドを検出したら「claim を単独 commit して push したか」を注入する
   (配線: `_claude/settings.json`)。**hook が見えるのは Claude が Bash で動かした移動だけ**で、
   glogx の issues viewer の `n` キー (Go 側で移動する) は Bash を通らないので発火しない
+- ⚠️ **jq が無い環境では hook が丸ごと無音で死ぬ** (`command -v jq || exit 0`)。検出が消えても
+  何の兆候も出ないので、claim の規律は最終的に**この md を読む人が守る**もので、hook はその補助
+- ⚠️ **静的検査なので宛先が変数・相対パスだと検出できない**
+  (`D=issues/next; git mv x "$D/"` / `cd issues && git mv x next/`)。取りこぼすより出す側へ倒す方針
 - hook は**注意を出すだけ**で、push を強制しない。「fetch してから着手する」「他の変更を
   混ぜない」も hook では強制できないため、本 md が正本のまま残る
   ([`comment-no-restate-enforced.md`](comment-no-restate-enforced.md) の区分)

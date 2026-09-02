@@ -63,12 +63,20 @@ expect_fire "末尾スラッシュ無し"           "git mv issues/186-x.md issu
 expect_fire "後続コマンドが続く形"         "git mv issues/186-x.md issues/next/ && echo done"
 expect_fire "空白入りのパス"               'git mv "issues/186 x.md" issues/next/'
 
+# --- 敵対的レビュー 2026-09-02 が P1 として見つけた抜け (当時は 4 件とも無検出だった)。
+#     判定を行 grep から「区切りで割って移動先を見る」形へ作り替えたので、ここで固定する。
+expect_fire "行継続で宛先が次の行"         "$(printf 'git mv issues/186-x.md \\\n  issues/next/')"
+expect_fire "; が空白なしで隣接"           "git mv issues/186-x.md issues/next/; git add issues/next/186-x.md"
+expect_fire "宛先にファイル名まで書く"     "git mv issues/186-x.md issues/next/186-x.md"
+expect_fire "for ループの中"               'for f in issues/18*.md; do git mv "$f" issues/next/; done'
+
 # --- 発火してはいけない形 ---
 expect_silent "next から出す (claim 解除)" "git mv issues/next/186-x.md issues/"
 expect_silent "next を見るだけ"            "ls issues/next/"
 expect_silent "done への移動"              "git mv issues/186-x.md issues/done/"
 expect_silent "無関係な commit"            "git commit -m x"
 expect_silent "next を含む文字列だけ"      "grep -rn next issues/README.md"
+expect_silent "next 配下から done へ"      "git mv issues/next/186-x.md issues/done/"
 
 # --- 異常系: 壊れた入力で JSON を壊さない / 落ちない ---
 if printf '' | "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" >/dev/null 2>&1; then

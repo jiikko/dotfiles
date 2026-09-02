@@ -29,10 +29,36 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""')
 
-# `git mv <何か> issues/next/` / `mv <何か> .../issues/next/` を拾う。
-# `git mv issues/next/x.md issues/` (next から出す = claim の解除) は対象外にしたいので、
-# **移動先**に issues/next が来る形だけを見る (行末 or 空白の手前で終わる)。
-printf '%s' "$cmd" | grep -Eq '(^|[[:space:]])(git[[:space:]]+)?mv([[:space:]]+-[^[:space:]]+)*[[:space:]]+[^|;&]*[[:space:]]issues/next/?([[:space:]]|$)' || exit 0
+# 判定: 「mv 系コマンドの**移動先**が issues/next か」を見る。
+#
+# ⚠️ 素朴な行 grep では駄目だった (敵対的レビュー 2026-09-02 で P1 が 4 件)。実測した抜け:
+#   - `grep` は行単位なので、行継続 (`\` 改行) や複数行スクリプトだと mv と宛先が別行になり外れる
+#   - `... issues/next/; git add ...` のように `;` が空白なしで隣接すると外れる
+#   - `git mv a issues/next/186-x.md` (宛先にファイル名まで書く形) が外れる
+#   - `for f in ...; do git mv "$f" issues/next/; done` が外れる
+# そこで **改行を空白に潰し、コマンド区切り (; && || |) でセグメントへ割り、mv を含む
+# セグメントの最後のトークンが issues/next を指すか**で判定する。最後のトークン = 移動先、
+# という近似なので `git mv issues/next/x.md issues/` (claim の解除) は発火しない。
+#
+# 残る既知の穴 (静的検査の限界。取りこぼすより出す側へ倒す方針は変えない):
+#   - 宛先が変数・相対パス (`D=issues/next; git mv x "$D/"` / `cd issues && git mv x next/`)
+#   - `mv -t issues/next/ a.md` のような宛先が末尾に来ない形 (macOS の mv / git mv には -t が無い)
+#   - issues/next 内でのリネームは発火する (claim 済みへの再通知。害は注意書き 1 回)
+fires=$(printf '%s' "$cmd" | tr '\n' ' ' | awk '
+  {
+    n = split($0, seg, /;|&&|\|\||\|/)
+    for (i = 1; i <= n; i++) {
+      if (seg[i] !~ /(^|[[:space:]])(git[[:space:]]+)?mv([[:space:]]|$)/) continue
+      # セグメント末尾の空白を落として最後のトークンを取る (= 移動先の近似)
+      sub(/[[:space:]]+$/, "", seg[i])
+      m = split(seg[i], tok, /[[:space:]]+/)
+      if (m < 2) continue
+      last = tok[m]
+      gsub(/^["'"'"']|["'"'"']$/, "", last)   # 前後のクォートを外す
+      if (last ~ /(^|\/)issues\/next(\/|$)/) { print "fire"; exit }
+    }
+  }')
+[ "$fires" = fire ] || exit 0
 
 state=$(
   {
