@@ -737,12 +737,23 @@ STUB_UI_RESULT="new	$sk_at	make test" run "$STUB_PATH" "$SCRIPT" wizard
 assert_called "tmux set-option -p -t %5 @schedkeys-at $sk_hm" "new: 発火時刻 (HH:MM) を pane オプションへ書く"
 
 printf '\n## pane 表示: 同じ pane に複数あるときは最早の時刻と残件数\n'
-reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+# ⚠️ **id の並び順を入れ替えて 2 回見る**。*.job の glob 順で「最後に見た job」を採る実装でも、
+#    早い方が最後に来る fixture では緑になる (変異検証 2026-09-02 で実際に素通りした)。
+#    片方の並びだけでは「最早を選ぶ」を何も守っていない
 sk_early=$(( $(/bin/date +%s) + 600 )); sk_late=$(( $(/bin/date +%s) + 7200 ))
-write_job early "$sk_early" "echo early"
-STUB_UI_RESULT="new	$sk_late	make test" run "$STUB_PATH" "$SCRIPT" wizard
-assert_called "tmux set-option -p -t %5 @schedkeys-at $(fmt_hm "$sk_early") ほか1件" "最早の時刻 + 残件数 (遅い方の時刻は出さない)"
-assert_not_called "@schedkeys-at $(fmt_hm "$sk_late")" "遅い方の時刻で上書きしない"
+for order in early-first early-last; do
+  reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+  if [[ "$order" == early-first ]]; then
+    write_job aaa "$sk_early" "echo early"; write_job zzz "$sk_late" "echo late"
+  else
+    write_job aaa "$sk_late" "echo late"; write_job zzz "$sk_early" "echo early"
+  fi
+  # 3 件目を取り消して refresh を起こす (残り 2 件の最早が表示になる)
+  spawn_sleeper mmm   # at = now+3600 なので最早でも最遅でもない
+  ui_queue "cancel	mmm" "abort"; STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
+  assert_called "tmux set-option -p -t %5 @schedkeys-at $(fmt_hm "$sk_early") ほか1件" "[$order] 最早の時刻 + 残件数"
+  assert_not_called "@schedkeys-at $(fmt_hm "$sk_late")" "[$order] 遅い方の時刻で上書きしない"
+done
 
 printf '\n## pane 表示: 取消で消える / 残りがあれば最早へ繰り上がる\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
@@ -767,7 +778,27 @@ reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 write_job dropped "$(( $(/bin/date +%s) - 1 ))" "make test"
 STUB_SRVPID=9999 run "$STUB_PATH" "$SCRIPT" fire dropped   # 予約時と別サーバ = 送らずに破棄
 assert_not_called "send-keys -t %5 -l" "別サーバなら送らない (前提の確認)"
-assert_called "tmux set-option -pu -t %5 @schedkeys-at" "fire の破棄経路でも表示を消す"
+assert_called "tmux set-option -pu -t %5 @schedkeys-at" "別サーバの破棄でも表示を消す"
+
+# ⚠️ 上のブロックは fire_drop の refresh を守っていない: 別サーバ判定は **claim の後**なので、
+#    claim 側の refresh だけで緑になる (変異検証 2026-09-02)。fire_drop 固有の経路は
+#    「claim より前に降りる」= 時刻が取れないとき。そこだけ date を壊して通す
+#    (このブロック限定の stub。他は実 date を使う)
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+mkdir -p "$TMP_DIR/bin_nodate"
+cp "$TMP_DIR/bin/tmux" "$TMP_DIR/bin/sleep" "$TMP_DIR/bin_nodate/"
+cat > "$TMP_DIR/bin_nodate/date" <<'EOS2'
+#!/bin/sh
+# +%s (現在時刻) だけを壊す。ログの日時整形と -r <epoch> は実物に通す
+case "$1" in +%s) exit 1 ;; esac
+exec /bin/date "$@"
+EOS2
+chmod +x "$TMP_DIR/bin_nodate/date"
+write_job notime "$(( $(/bin/date +%s) - 1 ))" "make test"
+run "$TMP_DIR/bin_nodate:/usr/bin:/bin" "$SCRIPT" fire notime
+[[ "$RC" -eq 0 ]] || { printf '✗ 時刻が取れないときに fire が exit %s (無音契約は exit 0)\n' "$RC"; exit 1; }
+assert_not_called "send-keys -t %5 -l" "時刻が取れなければ送らない (claim より前に降りる)"
+assert_called "tmux set-option -pu -t %5 @schedkeys-at" "claim 前に降りる破棄でも表示を消す (fire_drop 側)"
 
 printf '\n## pane 表示: stale 掃除で消える (サーバ再起動で sleeper だけ死んだ形)\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
