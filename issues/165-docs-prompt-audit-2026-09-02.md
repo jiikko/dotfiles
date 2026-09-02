@@ -284,3 +284,20 @@ echo "/fork-scratch は一時無効化中です (休眠。理由と復活手順�
 ## 反証レビューの結果 (2026-09-02, read-only サブエージェント 1 体)
 
 P1 (事実誤認 / hunk が当たらない) は 0 件。`-` 行は全 hunk が原文と一致。P2 として訂正したもの: High の件数 (7 → 8)、M5 の 3 ファイルの置き場所 (`_common/` は cross-review.md だけ)、H7 の「5 ファイル同一」(4 同一 + 1 同型)、L1 の行数 (推定の汎用行数を総行数のように読める書き方だった)、L2 の Tool Selection Strategy 側 (見出しだけ共通で中身は agent 固有。重複ではない)。diff 3 の境界を実見出し行 (:295 / :418) に合わせた。
+
+## 適用ログ (2026-09-02、途中まで)
+
+1 hunk = 1 commit で直列に適用中。ユーザーの指示でここで一旦停止。
+
+| hunk | commit | 内容 |
+|---|---|---|
+| diff 1 (H1) | `3b272e9` | codex-review SKILL.md の `--full-auto` 注記を 0.152.1 の現状へ (削除済みフラグ)。実測: `codex --version` = 0.152.1 / `codex exec --help` に該当 0 件 |
+| diff 2 (H2) | `3b272e9` | modes.md の Maximum ロスターに refactoring-patterns の条件を明記 |
+| diff 3 (H3) | `788122b` | agents.md の per-agent プロンプト本文を削除 (281 → 233 行)。見出し・条件行は残し、役割 1 行に圧縮。冒頭 ⚠️ も 1 文へ |
+
+### 未適用 (残り)
+
+- **High**: H4 / H5 (fable SKILL.md)、H6 / H7 / H8 (agents の英語テンプレ)
+- **Medium**: M1 (diff 9, 10)、M2 (diff 11)、M3 + M13 (rules 本文の実例を rationale へ / 欠落 7 本の新設)、
+  M4・M5・M7・M8・M9・M10 (diff 14)・M11・M12 (diff 15)
+- 適用後の注意は「適用するときの注意」節のとおり (H1 適用後の `grep -rn full-auto _claude/skills` の目視は未実施)
