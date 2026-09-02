@@ -1474,6 +1474,10 @@ quit / spinner の経路 / struct コピー / validateTarget の各種 (HOME 直
 - **警告の記号は 🚨**: ⚠️ (U+26A0 + VS16) は端末で表示幅が揺れ、右端がフレームごとに動いて見えた。表示に使う記号の
   規約は `src/glogx/CLAUDE.md` と `_claude/rules/no-mixed-width-columns-in-terminal-ui.md` に書いた
 
+- **④ の注意 (並行セッション dotfiles-94 より、5b0ddd1)**: `tui.go` の `handleKey` で C / X (claude / codex update) は
+  `updateKeyReachable()` を通れば doctor の分岐より前で update に取られる。④ で削除の y/N 確認を doctor に足すときは、
+  確認中に C / X が update へ流れないよう `updateKeyReachable` に doctor の確認モードを足す (同関数のコメント参照)
+
 ### 次の一手 (引き継ぎ。ここから続ける)
 
 **段階 ①②③ は完了、次は ④ 削除経路** (ゴミ箱移動 / TOCTOU / インベントリ記録 / 削除後の再スキャン)。
