@@ -90,7 +90,7 @@ Claude が**実質的な作業をやり切った時点**（機能追加・バグ
 ## ディレクトリ構成
 
 - `issues/*.md` — open な issue
-- `issues/next/` — **「次にやる」目印 兼 着手の claim**。glogx の issues viewer の `n` で付け外しできる。
+- `issues/next/` — **「次にやる」目印 兼 着手の claim**（このディレクトリが在ることが claim 運用の opt-in。無い repo では規律ごと適用されない）。glogx の issues viewer の `n` で付け外しできる。
   **複数マシンが同じ repo を触るので、着手するときはここへ移してその移動だけを即 push する**
   （push されていない claim は他マシンから見えず、二重着手を防げない）。完了したら `done/` へ。
   規範は [`_claude/rules/claim-issue-in-next-and-push.md`](../_claude/rules/claim-issue-in-next-and-push.md)

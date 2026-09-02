@@ -27,6 +27,13 @@ input=$(cat)
 
 command -v jq >/dev/null 2>&1 || exit 0
 
+# 適用範囲は「作業中の repo に issues/next/ が実在するとき」だけ。仕事の repo のように
+# issues/ を持たない repo では、この規律ごと無効にする (ユーザー要求 2026-09-02)。
+# PostToolUse は移動の**後**に走るので、`mkdir -p issues/next && git mv ...` で運用を
+# 始めた回もこの時点では存在する = 正しく発火する。
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+[ -n "$repo_root" ] && [ -d "$repo_root/issues/next" ] || exit 0
+
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""')
 
 # 判定: 「mv 系コマンドの**移動先**が issues/next か」を見る。

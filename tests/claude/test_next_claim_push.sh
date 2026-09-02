@@ -78,6 +78,34 @@ expect_silent "無関係な commit"            "git commit -m x"
 expect_silent "next を含む文字列だけ"      "grep -rn next issues/README.md"
 expect_silent "next 配下から done へ"      "git mv issues/next/186-x.md issues/done/"
 
+# --- 適用範囲: issues/next/ が無い repo では丸ごと無効 (ユーザー要求 2026-09-02。
+#     仕事の repo は issues/ を持たないので、そこでこの規律を出さない) ---
+scope_tmp=$(mktemp -d)
+trap 'rm -rf "$scope_tmp"' EXIT
+(
+  cd "$scope_tmp" && git init -q . && mkdir -p issues && : > issues/1.md &&
+    git add -A && git -c user.email=t@t -c user.name=t commit -qm init
+) >/dev/null 2>&1
+
+# issues/ はあるが next/ が無い → 無効
+out=$(cd "$scope_tmp" && jq -n --arg c "git mv issues/1.md issues/next/" '{tool_input: {command: $c}}' |
+  "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
+if [ -z "$out" ]; then ok=$((ok + 1)); else
+  echo "✗ issues/next/ が無い repo で発火した (仕事の repo でも出てしまう)"; fail=$((fail + 1)); fi
+
+# next/ を作れば有効 (opt-in が効くこと。無効側だけ見ると「常に黙る」退行を見逃す)
+mkdir -p "$scope_tmp/issues/next"
+out=$(cd "$scope_tmp" && jq -n --arg c "git mv issues/1.md issues/next/" '{tool_input: {command: $c}}' |
+  "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
+if [ -n "$out" ]; then ok=$((ok + 1)); else
+  echo "✗ issues/next/ を作っても発火しない (opt-in が効いていない)"; fail=$((fail + 1)); fi
+
+# git 管理外 → 無効
+out=$(cd "$(mktemp -d)" && jq -n --arg c "git mv issues/1.md issues/next/" '{tool_input: {command: $c}}' |
+  "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
+if [ -z "$out" ]; then ok=$((ok + 1)); else
+  echo "✗ git 管理外で発火した"; fail=$((fail + 1)); fi
+
 # --- 異常系: 壊れた入力で JSON を壊さない / 落ちない ---
 if printf '' | "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" >/dev/null 2>&1; then
   ok=$((ok + 1))
