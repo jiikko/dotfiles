@@ -35,10 +35,11 @@ Homebrew 側の `diagnostic.rb` には `\n\n` 入りの heredoc が 11 件ある
 ## 再現手順
 
 ```
-brew doctor > /tmp/bd.out 2> /tmp/bd.err; echo rc=$?
+d=$(mktemp -d); brew doctor > "$d/bd.out" 2> "$d/bd.err"; echo rc=$?
 ```
 
-`/tmp/bd.err` (または stdout) を `parseBrewDoctor` に食わせ、残った行数と元の非空行数を比べる。
+`$d/bd.err` (または stdout) を `parseBrewDoctor` に食わせ、残った行数と元の非空行数を比べる。
+stdout / stderr / rc を分けて採るのは `measure-external-cli-streams-separately.md` の規律。
 
 ## 対応案
 

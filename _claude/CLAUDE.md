@@ -36,6 +36,10 @@
 ## 一時ファイルの配置
 
 - **Claude がセッション中に作る成果物 (レポート・スクラッチ・中間生成物) は `./tmp`**。`/tmp` に置かない
+  - **溜まったら `make clean-tmp`** (既定は 30 日より古いトップレベルのエントリ。`DRY_RUN=1` で一覧だけ、
+    `DAYS=7` で期間を変える)。消す前に**結論が issue / コードへ移っているか**と、**issue や doc が指している
+    パスでないか**を確かめる (`grep -rn 'tmp/' issues/ _claude/`)。放置すると溜まる:
+    2026-09-02 に 309 エントリ / 831MB あり、うち 78 件 / 588MB が 1 か月超だった
   - ⚠️ `tmp/` の ignore は **`~/.gitignore_global:5` 由来**で、repo の `.gitignore` には**無い**
     (実測)。新品チェックアウトと CI では ignore されないし、そもそも `tmp/` が存在しない
     (`src/glogx/worktree_status_real_test.go` の doc が CI 失敗 run 30823977760 を記録している)

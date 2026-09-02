@@ -193,7 +193,8 @@ session limit で死んだ実例)、**枠が開いた直後に起動する**。�
   partial の表示が食い違う入力を探す (fixture を作って両方に流す)。exit code (0 / 1 / 2) と画面の色分けの対応
 - **見え方**: `NO_COLOR` / パイプ (色なし) でリスク記号だけで判別できるか。幅 60 / 80 / 120 で何が切れるか
   (`truncateDisp` は末尾を落とすので、右端の要約・行数・リスク記号が先に消える)。全角ラベルと半角マークの列
-  (`no-mixed-width-columns-in-terminal-ui.md`: 幅計算でなく目で見る。`tmp/doctor_sample.txt` を端末に cat する)。
+  (`no-mixed-width-columns-in-terminal-ui.md`: 幅計算でなく目で見る。`bin/glogx` を起動して `D` を押し、
+  端末幅を変えて実物を見る。`tmp/` のサンプルは gitignore なので残っていないことがある)。
   🚨 以外に表示幅が揺れる記号 (✅ ⛔ ❓ ❔ ▌ ▶ ▼) が無いか、実端末で 1 分間見て右端が動かないか
 - **説明可能性**: 各候補の「なぜ出たか」が、人がそのまま打てる裏取りコマンドになっているか。ディスクは `du -sk <path>` /
   `xcrun simctl list devices` / `brew info <formula>`、svc は `launchctl list | grep <label>` / `launchctl print gui/$(id -u)/<label>` /

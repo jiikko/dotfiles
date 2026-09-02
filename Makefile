@@ -46,7 +46,40 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-go-lint test-go test-src
+.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-go-lint test-go test-src
+
+# ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ)。
+#
+# ./tmp は「Claude がセッション中に作る成果物 (レポート・中間生成物)」の置き場
+# (~/.claude/CLAUDE.md「一時ファイルの配置」)。gitignore なので放っておくと溜まる一方で、
+# 2026-09-02 時点で 309 エントリ / 831MB あった (最古は 7 月)。
+#
+# ⚠️ **消す前に、その中身の結論が issue かコードへ移っているか確かめる**
+# (`_claude/rules/move-report-conclusions-to-issues.md`)。レポート本体は消えてよいが、
+# 却下理由と全数勘定が tmp にしか無い状態で消すと、次の audit が同じ指摘を再生成する。
+#
+# ⚠️ **issue やドキュメントが指している tmp のパスは消すと参照が切れる**。DAYS を絞るだけでは
+# 防げないので、まず `make clean-tmp DRY_RUN=1` で一覧を見る。参照の有無は
+# `grep -rn 'tmp/' issues/ _claude/` で確かめる (指している側が間違っていることも多い)。
+#
+# 使い方:
+#   make clean-tmp              # 30 日より古いものを消す
+#   make clean-tmp DRY_RUN=1    # 消さずに一覧と合計サイズだけ出す
+#   make clean-tmp DAYS=7       # 7 日より古いものを消す
+clean-tmp: DAYS ?= 30
+clean-tmp:
+	@[ -d tmp ] || { echo "tmp/ が無い (掃除するものなし)"; exit 0; }
+	@list="$$(find tmp -maxdepth 1 -mindepth 1 -mtime +$(DAYS) | sort)"; \
+	if [ -z "$$list" ]; then echo "✓ $(DAYS) 日より古い tmp のエントリは 0 件"; exit 0; fi; \
+	n="$$(printf '%s\n' "$$list" | wc -l | tr -d ' ')"; \
+	size="$$(printf '%s\n' "$$list" | tr '\n' '\0' | xargs -0 du -sk 2>/dev/null | awk '{s+=$$1} END {printf "%.0f", s/1024}')"; \
+	printf '%s\n' "$$list" | sed 's/^/  /'; \
+	if [ "$(DRY_RUN)" = "1" ]; then \
+		echo "(DRY_RUN) $${n} 件 / $${size}MB が対象。消すには DRY_RUN を外す"; \
+	else \
+		printf '%s\n' "$$list" | tr '\n' '\0' | xargs -0 rm -rf; \
+		echo "✓ $${n} 件 / $${size}MB を削除した (残り $$(ls tmp | wc -l | tr -d ' ') エントリ)"; \
+	fi
 
 # settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
 # pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、

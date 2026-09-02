@@ -36,8 +36,8 @@
 ## 再現手順
 
 ```
-mkdir -p '/tmp/h[1]/.npm/_cacache' && : > '/tmp/h[1]/.npm/_cacache/x'
-env -i HOME='/tmp/h[1]' PATH=/usr/bin:/bin TMPDIR=/tmp <diskdoctor> -json
+d=$(mktemp -d); mkdir -p "$d/h[1]/.npm/_cacache" && : > "$d/h[1]/.npm/_cacache/x"
+env -i HOME="$d/h[1]" PATH=/usr/bin:/bin TMPDIR="$d" <diskdoctor> -json
 ```
 
 npm キャッシュのエントリが `status=ok, items=0` になる (実在するのに)。
