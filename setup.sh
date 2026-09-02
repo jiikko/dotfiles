@@ -61,6 +61,12 @@ done
 # 空展開してループを skip する (本 script は #!/usr/bin/env zsh、set -e 無しでも
 # NOMATCH は当該行で script ごと停止するため。下の掃除ループが本命だが全 glob に付す)。
 # なお sh で起動されてもファイル冒頭の guard で zsh へ再 exec 済みなのでここは常に zsh。
+# hooks の link は「現状どこからも読まれていない」。hook の起動経路は _claude/settings.json の
+# command だけで、そこには dotfiles の実体パスを書いている (実測 2026-09-02 / issue 142:
+# Claude Code 2.1.257 のバイナリに .claude/hooks の文字列は 0 件 = 規約ディレクトリではない。
+# 起動時の $0 も dotfiles 側だった)。それでも張るのは、dotfiles の置き場所に依存しない安定パスを
+# 用意しておくため。⚠️ 読む側が現れたら (settings.json を ~/.claude/hooks/ 経由に変える等)
+# lib の link も必須になる — hook は lib を dirname "$0" で解決し、$0 は symlink を解決しない。
 for f in ~/dotfiles/_claude/hooks/*(N); do
   [ -e "$f" ] && ln -sfn "$f" ~/.claude/hooks/"$(basename "$f")"
 done

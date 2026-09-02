@@ -15,6 +15,10 @@
 #
 # 期待するリンク集合は setup.sh のループと対応させる (agents/commands/rules/hooks = 全ファイル、
 # skills = ディレクトリ、workflows = *.js のみ)。setup.sh 側の方針を変えたらここも直す。
+#
+# ⚠️ hooks だけは「未リンク = 読まれない」が成り立たない。hook は _claude/settings.json の command
+# (dotfiles の実体パス) から起動されるので、link が無くても動く (issue 142 の実測)。ここで hooks を
+# 検査しているのは link 集合を setup.sh と一致させるためで、hooks の FAIL は機能停止を意味しない。
 
 set -euo pipefail
 unset CDPATH
@@ -67,7 +71,8 @@ if [ "$checked" -eq 0 ]; then
   exit 1
 fi
 if [ "$fail" -ne 0 ]; then
-  echo "→ ./setup.sh を再実行してリンクを張り直す (Claude Code は未リンクのファイルを読まない)" >&2
+  echo "→ ./setup.sh を再実行してリンクを張り直す (Claude Code は未リンクのファイルを読まない。" >&2
+  echo "   ただし hooks は settings.json の実体パス起動なので link 無しでも動く — issue 142)" >&2
   exit 1
 fi
 echo "OK: _claude/ の $checked 個が ~/.claude に link 済み"
