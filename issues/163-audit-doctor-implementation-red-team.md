@@ -17,7 +17,7 @@ Setpgid / partial 保存の規律 / 案 A レイアウト + カーソル + Enter
 
 ## 走らせ方
 
-read-only のサブエージェント 3 体を並行で。**「レビューして」ではなく「壊す手順を見つけろ。壊せなければ壊せなかったと明記しろ」**
+read-only のサブエージェント 4 体を並行で (体 4 は実測を伴うので、計測コマンドの実行は許可する。ファイルの編集は不可)。**「レビューして」ではなく「壊す手順を見つけろ。壊せなければ壊せなかったと明記しろ」**
 で投げる (`_claude/rules/issue-creation-codex-review.md` の反証の作法)。走行中は対象ファイルを編集しない
 (`parallel-write-agents-need-worktree-isolation.md`)。5h 枠の残量が少ないと途中で落ちるので (2026-09-02 に 3 体とも
 session limit で死んだ実例)、**枠が開いた直後に起動する**。報告は各 2000 字以内を指定する。
@@ -93,6 +93,53 @@ session limit で死んだ実例)、**枠が開いた直後に起動する**。�
 - `-progress` (CLI) と `OnResult` の並行呼び出しは記録済み。glogx 側は channel で直列化 → `catalogN+1` の容量計算に
   `Reuse` が影響しないか (再利用でも OnResult は 1 回呼ばれるか。`scan.go` の goroutine は再利用時も `OnResult` を呼ぶ経路か)
 
+### 体 4: リソースリークとパフォーマンス — 「閉じた後に何が残るか」「毎フレーム何をしているか」を狙う
+
+読むもの: `src/glogx/doctor_view.go` / `doctor_cache.go` / `doctor_brew.go`、`tui.go` の doctor 配線 (`spinnerActive` /
+`tickInterval` / `viewLines` / `Init`)、`src/doctor/disk/{scan,size,guard}.go`、`src/doctor/runner/runner.go`、
+`src/doctor/svc/scan.go`。実測は `go test -bench` / `-race` / `-cpuprofile` と、実機で `bin/glogx` を開いた状態の
+`ps -o rss,vsz` / `lsof -p` / `fs_usage` で取る (数字を出す。`perf-claims-need-measurement.md`)。
+
+リーク (閉じた後 / quit 後に残るもの):
+- **goroutine**: 開閉を 100 回繰り返した後の `runtime.NumGoroutine()` が増え続けないか。`waitDiskCmd` の 1 件待ち goroutine
+  (bubbletea が Cmd を goroutine で走らせる) は旧 channel に必ずイベントが来て終わる契約だが、**snapshot 復元 (`diskCh` nil)
+  の後に gen が一致する `receiveDisk` 経路は無いか** (nil channel の受信は永久ブロック)。テストで
+  `runtime.NumGoroutine()` を open/close の前後で比べる (回数で判定。時間で判定しない)
+- **fd**: `runner.Exec` の pipe (stdout / stderr の bytes.Buffer 用)、`os.ReadDir` / `os.ReadFile` (Info.plist を再帰で数百本読む)、
+  `filepath.WalkDir` が開く dir fd。cancel された Cmd の pipe は `WaitDelay` 後に閉じられるか。`lsof -p <glogx pid> | wc -l` を
+  開閉 20 回の前後で比べる
+- **子プロセス / プロセスグループ**: `Setpgid` 後の孫が cancel で本当に消えるかを実機で (`pgrep -g <pgid>`)。`launchctl print`
+  を候補ごとに起こす経路で候補が多いとき (数十件) の同時本数。brew doctor (60 秒 timeout) を開いて即閉じ、
+  60 秒待たずに `ps` から消えるか
+- **メモリ**: `disk.Result.Items` に全 item を持つ (DerivedData は数十 dir)。`Contents` (Inspect の中身一覧) は上限なし →
+  `~/Library/Containers` が 600 件超のとき孤児候補ごとに `ReadDir` の名前を全部持つ。snapshot JSON が肥大しないか
+  (実機で `doctor-snapshot.json` のサイズを見る)。`doctorDiskCache.Entries` は候補 0 件を除いているか
+- **キャッシュファイル**: `doctor-disk.json` / `doctor-snapshot.json` の `.tmp.<pid>` が異常終了で残らないか (rename 前に kill)。
+  `doctor-history/` は ④ で増える一方なので上限を決める必要があるか (今は無い)
+
+パフォーマンス (体感に効くもの):
+- **毎フレームの再構築**: `lines()` が呼ばれるごとに `buildRows` → 3 セクションのソート (`sort.SliceStable`) + 文字列生成 +
+  `truncateDisp` (幅計算) を全行やり直す。走査中は 12.5fps、演出中は 30〜60fps でこれが回る。行数 (実機で 60〜100 行) ×
+  幅計算のコストを `-cpuprofile` で見る。`rows` を Msg 到着時だけ作り直す (描画では窓を切るだけ) 形にできるか。
+  比較対象: `status_view.go` の `idxCache` (行構成のメモ化と、その無効化の規律)
+- **起動パス**: `Init` の `loadDoctorDiskCache` (ファイル 1 本読み) は許容としたが、**受け入れ条件「起動時間が悪化しない」は
+  未実測**。`bin/glogx` の起動〜初回描画を before/after で 10 回ずつ測る (Bench の既存経路 `bench.yml` があれば乗せる)
+- **walk のコスト**: `duSize` は全ファイルを `Lstat` する (`du -sk` と同じ)。DerivedData 17.6GB で 5.7 秒。ctx 確認が 256 件ごと
+  なので中断の遅れは最大 256 stat。`seen` map の dedupe は entry ごとに作り直す (エントリ間の重複は数えない、は既知)。
+  4 並行のセマフォは SSD で最適か (I/O が競合して 1 並行より遅くなっていないか。並行 1 / 2 / 4 / 8 で合計時間を実測)
+- **重いエントリの再利用**: 再利用しても `sizePaths` → `validateTarget` の前に `expand` (glob) は走る? (`reusable` は
+  `scanEntry` の前に返すので走らない、を確認)。svc 側は毎回全 plist を読み直す (数十ファイル、軽い) が、`launchctl print`
+  を候補ごとに毎回起こす
+- **brew**: `brew info --json=v2 --installed` (1.5 秒) を disk と svc で **2 回**起こしている (`brewledger.Installed` を
+  それぞれが呼ぶ。同じ走査で 1 回に寄せられる)。`brew cleanup --dry-run` (2.8 秒) + `brew doctor` (4.5 秒) と合わせて
+  brew だけで 10 秒近い。並行はしているが、brew は内部で lock を取るので直列化されていないか実測する
+- **snapshot の読み書き**: `start()` が `loadDoctorSnapshot` と `loadDoctorSnapshotAny` で同じファイルを 2 回読む。
+  `receiveDisk` / `receiveSvc` / `receiveBrew` の各着弾で `maybeSaveSnapshot` が呼ばれ、3 つ揃った時点で 1 回書く (確認)。
+  `saveCache` が `loadDoctorDiskCache` → 書き、を Update の中で同期にやる (小さいファイルなので許容か、数字で)
+
+判定の書き方: リークは「回数 / fd 数 / プロセス数が開閉前後で不変か」で、パフォーマンスは「実測値 (before/after or 並行数別)」で。
+「遅そう」「漏れそう」だけの指摘は却下側に分類する (`perf-claims-need-measurement.md`)。
+
 ## 前回 (2 回目) で「記録に留めた」もの — 再提出しない
 
 issue 148「敵対的レビュー 2 回目」節の「記録に留めたもの」5 件と「壊せなかった攻め口」。特に: 2 プロセス同時の lost update /
@@ -107,7 +154,7 @@ cancel 後の有界な残り I/O / restart 直前の子 / 空白入りラベル�
 
 ## 受け入れ条件
 
-- [ ] 3 体の報告がこの issue の「結果」節に転記されている (`./tmp` に残さない)
+- [ ] 4 体の報告がこの issue の「結果」節に転記されている (体 4 は数字つき) (`./tmp` に残さない)
 - [ ] P1 は全部、再現手順を実コードで裏取りしてから直すか却下する (裏取りせず直さない)
 - [ ] 直した分には変異検証 (red) を付ける
 - [ ] 直した差分に対して、もう 1 周 (節 7) を回すか、回さない理由を書く
