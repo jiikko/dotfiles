@@ -94,7 +94,7 @@ cmd_check() {
 }
 
 cmd_apply() {
-  local d link target cur err rc=0 n=0
+  local d link target cur err tries rc=0 n=0
   for d in $DIRS; do
     if [ -L "$CLAUDE_HOME/$d" ]; then
       echo "refused: $CLAUDE_HOME/$d が dir symlink のまま (旧形式)。./setup.sh で migrate してから" >&2
@@ -129,14 +129,23 @@ cmd_apply() {
     # 最終状態は両者とも同じ target なので、状態が合っていれば linked。合っていなければ ln の stderr を出す。
     # expected_links は glob 時点のスナップショットなので、張る直前に並行セッションが target を git mv
     # していれば dangling ができる。それも -ef で failed になり、呼び出し側が ./setup.sh (掃除) へ誘導する
-    err=$(ln -sfn "$target" "$link" 2>&1 || true)
-    if [ -L "$link" ] && [ "$link" -ef "$target" ]; then
-      echo "linked: $link -> $target"
-      n=$((n + 1))
-    else
-      echo "failed: ln -sfn $target $link${err:+ ($err)}" >&2
-      rc=2
-    fi
+    # さらに、自分の ln が成功した直後でも、他方が unlink 済み・symlink 未作成の瞬間を見ると link が
+    # 「無い」ので、状態確認は数回やり直す (窓はマイクロ秒。5 並行 x 20 回で 1/100 を実測、retry 後 0)
+    tries=0
+    while :; do
+      err=$(ln -sfn "$target" "$link" 2>&1 || true)
+      if [ -L "$link" ] && [ "$link" -ef "$target" ]; then
+        echo "linked: $link -> $target"
+        n=$((n + 1))
+        break
+      fi
+      tries=$((tries + 1))
+      if [ "$tries" -ge 5 ]; then
+        echo "failed: ln -sfn $target $link${err:+ ($err)}" >&2
+        rc=2
+        break
+      fi
+    done
   done < <(drift)
   echo "linked $n"
   return "$rc"
