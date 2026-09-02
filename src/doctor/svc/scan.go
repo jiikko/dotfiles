@@ -71,6 +71,7 @@ type Report struct {
 	Scanned     int
 	StatusErr   string
 	BrewErr     string
+	Interrupted bool     // ctx が途中で切れた (Ctrl-C)。補助情報 (print) が欠けた完全な体の報告を出さない
 	DirErrs     []string // 走査できなかったディレクトリ (存在しないものは含めない)
 }
 
@@ -153,6 +154,7 @@ func Scan(ctx context.Context, opt Options) Report {
 		}
 	}
 	sort.Slice(rep.Findings, func(a, b int) bool { return rep.Findings[a].Label < rep.Findings[b].Label })
+	rep.Interrupted = ctx.Err() != nil
 	return rep
 }
 

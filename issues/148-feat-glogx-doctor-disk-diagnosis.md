@@ -1347,6 +1347,44 @@ Homebrew = 判定は brew 側)。
 - ③ で glogx から呼ぶのは `svc.Scan` / `disk.Scan` の直接呼び出し (exec ではない)。`disk.Options.OnResult`
   は goroutine から並行に呼ばれるので Msg に載せて直列化する
 
+### 敵対的レビュー (2026-09-02、共有 module 化 f44b6c3 に対して。read-only 3 体: 壊す / 素通り / 並行・中断)
+
+**採用して直したもの**
+
+- **P1 (壊す)**: glogx の再ビルド判定 (`go_autobuild` の指紋と `src/glogx/autobuild.go`) が `replace doctor => ../doctor` の
+  先を見ていなかった。`src/doctor` だけを直すと glogx は旧 cachedir のバイナリを無音で exec する (CI の paths には
+  足していたのに autobuild 側が未対応)。→ 両方の入力集合に go.mod の相対 `replace` 先を含めた
+  (1 行形式 / ブロック形式)。テスト: `tests/bin/test_go_autobuild.sh` の replace 節 3 ケース +
+  `TestAutobuildSourcesNewerSeesReplaceTargets`
+- **P2 (並行)**: `runner.Exec` に `WaitDelay` が無く、ctx で子を殺しても孫 (brew → ruby → git) が pipe を握っている限り
+  `Run` が戻らない。**実測: 1 秒の timeout で 20 秒、WaitDelay 1 秒で 2 秒**。→ `WaitDelay = 2s`。
+  テスト `TestExecReturnsAfterTimeoutEvenIfGrandchildHoldsPipe` (10 秒超で red)
+- **P2 (並行)**: `go_autobuild_spawn_if_stale <cmd_dir>` を外部 (別プロセス) から呼ぶと module 変数が無く、cmd 局所の
+  指紋で常に stale → module root の外で build → 失敗、の形。→ module root を `src_dir` から上へ `go.mod` を探して
+  自力で解く (`_go_autobuild_resolve_mod`)。`--pkg` を省いて cmd dir を渡しても同じ結論になる。テスト 2 ケース
+- **P2 (壊す/素通り)**: zstat 縮退経路 (`_go_autobuild_sources_newer_than`) と `.autobuild.rev` の dirty 判定が
+  `cmd/<name>/` しか見ていなかった。→ 入力集合を `_go_autobuild_inputs` に一本化し、rev は module root 基準に
+- **P3 (壊す)**: `--pkg` の値が無いと zsh の `shift 2` が何もせず無限ループ + stderr 洪水。→ `exit 2` で止める。
+  `--pkg` 無しの呼び出しで前回の module 変数を `unset` する防御も入れた
+- **P3 (並行)**: svcdoctor は Ctrl-C を「部分結果」として表現できず、penalty box が全部 false の完全な体の報告を
+  exit 0/1 で出していた。→ `Report.Interrupted` を足し、表示 + exit 2
+
+**記録に留めたもの**
+
+- README (`src/README.md`) の Template 節が実物の CI (`_go-project.yml`: macos-15 / setup-go@v7 / 再利用 workflow) と
+  乖離している。今回の変更前からの既存乖離。**別 commit で直す** (テンプレの丸ごと書き換えなので、本 issue の
+  差分に混ぜない)
+- doctor module には glogx の `.golangci.yml` (depguard / forbidigo / ruleguard) が掛からない。TUI 層でないので
+  設計上の想定内 (README の「.golangci.yml は任意」どおり)
+- `disk.Scan` の `OnResult` 並行呼び出しは `-progress` の stderr 書き込みが 1 write なので実害なし。③ では Msg で直列化
+- `--pkg` では `cmd/diskdoctor/main.go` の編集でも svcdoctor が再ビルドされる (指紋が module 全体。安全側)
+- `--async --pkg` の組み合わせは未テスト (doctor CLI は同期のみ)。使うときにテストを足す
+
+**壊せなかった攻め口** (3 体の報告から): module 変数の別プロセスへの漏れ / 相対パス呼び出しでの -o のずれ /
+別 main 同士の記録の上書き / svcdoctor・diskdoctor の同時起動 (別 cmd dir + 実 pid) / spawn サブシェルの変数継承 /
+Partial と exit code の整合 / キャンセル済み ctx での Start / CI の checkout・replace 解決 / Makefile の自動発見 /
+.gitignore の成果物混入 / cacheBaseDir の委譲による挙動差
+
 ### 次の一手 (引き継ぎ。ここから続ける)
 
 **段階 ①② は完了、次は ③ glogx の doctor 画面 + キャッシュ + 起動時トースト** (削除は作らない)。

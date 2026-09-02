@@ -750,3 +750,42 @@ func TestAutobuildRunningRev(t *testing.T) {
 		t.Fatalf("空の記録で何か言った: %q", got)
 	}
 }
+
+// go.mod の replace 先 (相対パス) のソースが新しければ stale (glogx → ../doctor の形。
+// 取り込み先だけを直しても src_dir の下は変わらないので、ここを見ないと shim と glogx の両方が黙る)。
+func TestAutobuildSourcesNewerSeesReplaceTargets(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "glogx")
+	shared := filepath.Join(root, "shared")
+	if err := os.MkdirAll(filepath.Join(shared, "pkg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	binAt := now.Add(-time.Hour)
+	writeStamp(t, filepath.Join(dir, "main.go"), now.Add(-2*time.Hour))
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module glogx\n\nrequire shared v0.0.0\n\nreplace (\n\tshared => ../shared\n)\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(dir, "go.mod"), binAt.Add(-time.Hour), binAt.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	writeStamp(t, filepath.Join(shared, "pkg", "p.go"), now.Add(-2*time.Hour))
+	if autobuildSourcesNewer(dir, binAt) {
+		t.Fatal("何も新しくないのに stale")
+	}
+	writeStamp(t, filepath.Join(shared, "pkg", "p.go"), now)
+	if !autobuildSourcesNewer(dir, binAt) {
+		t.Fatal("replace 先の変更を見ていない")
+	}
+	writeStamp(t, filepath.Join(shared, "pkg", "p.go"), now.Add(-2*time.Hour))
+	writeStamp(t, filepath.Join(shared, "pkg", "p_test.go"), now)
+	if autobuildSourcesNewer(dir, binAt) {
+		t.Fatal("replace 先の *_test.go で stale になった")
+	}
+	if got := autobuildReplaceDirs(dir); len(got) != 1 || got[0] != shared {
+		t.Fatalf("replace 先の解決: %v", got)
+	}
+}

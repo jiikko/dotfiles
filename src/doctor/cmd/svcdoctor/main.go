@@ -45,7 +45,7 @@ func main() {
 	fmt.Print(svc.Format(rep))
 	// 診断できなかったものがあれば exit 2 (検査できなかったを緑にしない)。候補あり = 1、無し = 0
 	switch {
-	case rep.StatusErr != "" || len(rep.Undiagnosed) > 0 || len(rep.DirErrs) > 0:
+	case rep.Interrupted || rep.StatusErr != "" || len(rep.Undiagnosed) > 0 || len(rep.DirErrs) > 0:
 		os.Exit(2)
 	case len(rep.Findings) > 0:
 		os.Exit(1)

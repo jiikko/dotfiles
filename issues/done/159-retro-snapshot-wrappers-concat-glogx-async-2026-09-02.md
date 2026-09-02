@@ -71,6 +71,14 @@ fail-closed にならない。同型の grep (`2>/dev/null | head -n1`) で vide
 早く実機で流せた。④ の削除は実機で流せないので、この段階で穴を出し切っておく価値がある。
 **切り出し先**: なし (記録)
 
+### 8. CI の paths には足したのに、autobuild の指紋には足していなかった (replace 先)
+
+glogx が `replace doctor => ../doctor` で別 module を取り込む変更で、「取り込み先が変わったら再ビルド」を
+CI (paths) では手当てしたのに、手元の autobuild (指紋) では忘れた。同じ「入力集合」の定義が 3 箇所
+(CI paths / zsh の指紋 / glogx の Go 側 stale 判定) にあり、1 箇所直して満足した。敵対レビューの P1 で発覚。
+**切り出し先案**: なし (入力集合の定義を `_go_autobuild_inputs` に一本化し、Go 側はコメントで参照させた。
+3 箇所目の CI paths は性質が違うので残る)
+
 ### 4. 実 CLI の契約を先に測ってから mock を書いた (良かった点)
 
 ffprobe の列順 (`codec_name,sample_rate,channels,time_base`) と「音声なし → 空・rc 0 / ファイルなし →

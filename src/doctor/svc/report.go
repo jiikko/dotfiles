@@ -9,6 +9,9 @@ import (
 func Format(rep Report) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "サービス診断: %d 件を走査\n", rep.Scanned)
+	if rep.Interrupted {
+		b.WriteString("⚠️  途中で中断されました (penalty box 等の補助情報が欠けています)\n")
+	}
 	if rep.StatusErr != "" {
 		fmt.Fprintf(&b, "⚠️  診断できず (launchctl): %s\n    起動状態 (B: 失敗し続けている) は判定していません。実行ファイルの不在 (A) と Homebrew 台帳 (C) だけを出しています\n", rep.StatusErr)
 	}

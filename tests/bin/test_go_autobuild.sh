@@ -136,6 +136,8 @@ binary_is() { [[ "$(binary_mark "$1")" == "$2" ]]; }
 # 本番でこの窓に入ると余分なビルドが 1 本走るだけ (install ガードが中止する) だが、テストは
 # 決定的に書く。
 builder_done() { [[ ! -d "$1/src/tool/.autobuild.lock" ]]; }
+builder_done_at() { [[ ! -d "$1/.autobuild.lock" ]]; }   # --pkg の cmd/<name> 版
+mark_at_is() { [[ "$(tail -1 "$1" 2>/dev/null | awk '{print $NF}')" == "$2" ]]; }   # 任意パスのバイナリの mark
 
 wait_for() {  # $1=説明, 残り=条件コマンド。10 秒まで待つ
   local msg="$1"; shift
@@ -733,6 +735,84 @@ n2="$(calls "$ROOT")"
 out="$(FAKE_GO_MARK=a4 run_pkg "$ROOT" a)"
 [[ "$out" == "a3" && "$(calls "$ROOT")" == "$n2" ]] || fail "--pkg: 別 main のビルドで a の記録が壊れ、a が再ビルドされた (got: $out)"
 ok "--pkg: 別 main のビルドが他の main の記録を上書きしない"
+
+printf '\n## go.mod の replace 先 (相対パス) の変更で再ビルドする\n'
+# glogx → ../doctor の形。取り込み先だけを直しても src_dir の下は変わらないので、指紋に replace 先を
+# 含めないと旧バイナリを黙って exec する (敵対レビュー 2026-09-02 P1)。
+ROOT="$(new_project replace)"
+mkdir -p "$ROOT/src/shared/pkg"
+printf 'module shared\n\ngo 1.99\n' > "$ROOT/src/shared/go.mod"
+printf 'package pkg\n' > "$ROOT/src/shared/pkg/p.go"
+printf 'module tool\n\ngo 1.99\n\nrequire shared v0.0.0\n\nreplace shared => ../shared\n' > "$ROOT/src/tool/go.mod"
+out="$(FAKE_GO_MARK=r1 run_tool "$ROOT")"
+[[ "$out" == "r1" ]] || fail "replace 付き module の初回ビルドが走らない (got: $out)"
+grep -q "src/shared/pkg/p.go" "$ROOT/src/tool/.autobuild.built" || fail "指紋に replace 先が入っていない: $(cat "$ROOT/src/tool/.autobuild.built")"
+n="$(calls "$ROOT")"
+out="$(FAKE_GO_MARK=r2 run_tool "$ROOT")"
+[[ "$out" == "r1" && "$(calls "$ROOT")" == "$n" ]] || fail "replace 先が不変なのに再ビルドした"
+sleep 1.1
+printf 'package pkg\n// changed\n' > "$ROOT/src/shared/pkg/p.go"
+out="$(FAKE_GO_MARK=r3 run_tool "$ROOT")"
+[[ "$out" == "r3" ]] || fail "replace 先の変更で再ビルドされない (got: $out)"
+ok "replace 先 (../shared) の変更で再ビルドする"
+# ブロック形式の replace も読む
+printf 'module tool\n\ngo 1.99\n\nrequire shared v0.0.0\n\nreplace (\n\tshared => ../shared\n)\n' > "$ROOT/src/tool/go.mod"
+FAKE_GO_MARK=r4 run_tool "$ROOT" >/dev/null
+sleep 1.1
+printf 'package pkg\n// changed again\n' > "$ROOT/src/shared/pkg/p.go"
+out="$(FAKE_GO_MARK=r5 run_tool "$ROOT")"
+[[ "$out" == "r5" ]] || fail "ブロック形式の replace 先の変更で再ビルドされない (got: $out)"
+ok "ブロック形式 (replace ( ... )) の replace 先も見る"
+# *_test.go は replace 先でも除外
+printf 'package pkg\n' > "$ROOT/src/shared/pkg/p_test.go"
+n="$(calls "$ROOT")"
+out="$(FAKE_GO_MARK=r6 run_tool "$ROOT")"
+[[ "$out" == "r5" && "$(calls "$ROOT")" == "$n" ]] || fail "replace 先の *_test.go で再ビルドした"
+ok "replace 先の *_test.go では再ビルドしない"
+
+printf '\n## --pkg 相当を外部呼び出し (go_autobuild_spawn_if_stale <cmd_dir>) でも再現する\n'
+# glogx が走行中に呼ぶ形 (新プロセスなので module 変数が無い)。cmd/<name> を渡されたら上へ go.mod を
+# 探して module root を見つけ、指紋が cmd 局所にならず、build も module root で走ること。
+ROOT="$(new_project spawnpkg)"
+mkdir -p "$ROOT/src/tool/cmd/a"
+printf 'package main\n' > "$ROOT/src/tool/cmd/a/main.go"
+cat > "$ROOT/bin/a" <<'EOS'
+#!/usr/bin/env zsh
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec --pkg cmd/a "${0:A:h}/../src/tool" a -- "$@"
+EOS
+chmod +x "$ROOT/bin/a"
+PATH="$TMP_DIR/bin:$PATH" FAKE_GO_CALLS="$ROOT/calls" FAKE_GO_MARK=s1 "$ROOT/bin/a" >/dev/null 2>>"$ROOT/stderr"
+# 入力が同じなら外部呼び出しも stale と見ない (cmd 局所の指紋で常に不一致になる形の検出)
+if PATH="$TMP_DIR/bin:$PATH" FAKE_GO_CALLS="$ROOT/calls" zsh -c "source '$LIB'; go_autobuild_spawn_if_stale '$ROOT/src/tool/cmd/a' a" 2>>"$ROOT/stderr"; then
+  fail "外部呼び出しが cmd 局所の指紋で stale と誤判定した"
+fi
+ok "外部呼び出しでも module root の指紋で判定する (同じ入力を stale と言わない)"
+sleep 1.1
+printf 'package sub\n// changed\n' > "$ROOT/src/tool/sub/sub.go"
+PATH="$TMP_DIR/bin:$PATH" FAKE_GO_CALLS="$ROOT/calls" FAKE_GO_MARK=s2 zsh -c "source '$LIB'; go_autobuild_spawn_if_stale '$ROOT/src/tool/cmd/a' a" 2>>"$ROOT/stderr" \
+  || fail "module root 配下 (sub/) の変更を外部呼び出しが拾わない"
+# ⚠️ lock の不在を完了の合図にしない: spawn は fork 後に lock を作るので、作る前に見ると「完了」に見える。
+# 成果物の中身 (mark) が変わるのを待つ
+wait_for "外部呼び出しの build が module root で走らなかった (mark が s2 にならない)" mark_at_is "$ROOT/src/tool/cmd/a/a" s2
+wait_for "外部呼び出しの spawn が完走しない" builder_done_at "$ROOT/src/tool/cmd/a"
+[[ ! -e "$ROOT/src/tool/cmd/a/.autobuild.failed" ]] || fail "外部呼び出しの build が失敗した (go.mod が見つからない形): $(cat "$ROOT/src/tool/cmd/a/.autobuild.log" 2>/dev/null)"
+ok "外部呼び出しの spawn も module root で build する"
+
+printf '\n## --pkg の値が無いと loud に止まる (無限ループしない)\n'
+cat > "$ROOT/bin/broken" <<'EOS'
+#!/usr/bin/env zsh
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec --pkg
+EOS
+chmod +x "$ROOT/bin/broken"
+set +e
+out="$(PATH="$TMP_DIR/bin:$PATH" timeout 5 "$ROOT/bin/broken" 2>&1)"; rc=$?
+set -e
+[[ "$rc" == 2 ]] || fail "--pkg の値欠落で exit 2 にならない (rc=$rc out=${out:0:200})"
+ok "--pkg の値欠落は exit 2 で止まる"
 
 printf '\n## 作業ファイル / lock を残さない\n'
 # ⚠️ 「いずれ消える」で判定する。builder は非同期なので、バイナリが入った瞬間にはまだ lock の

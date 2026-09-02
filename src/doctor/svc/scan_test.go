@@ -386,3 +386,26 @@ func TestManualCommandsSudo(t *testing.T) {
 		}
 	}
 }
+
+// Ctrl-C (ctx cancel) が走査の途中で入ったら Interrupted を立てる (完全な体の報告を出さない)。
+func TestScanMarksInterrupted(t *testing.T) {
+	dir := t.TempDir()
+	writePlist(t, dir, "com.example.gone", kv("com.example.gone", args("/nowhere/x")+keepAlive))
+	ctx, cancel := context.WithCancel(context.Background())
+	f := &fakeRunner{listOut: listWith("-\t0\tcom.example.gone")}
+	// list の直後に cancel が入った形を、fake の呼び出しで再現する
+	run := func(c context.Context, name string, a ...string) (string, string, int, error) {
+		out, e, rc, err := f.run(c, name, a...)
+		if name == "launchctl" && a[0] == "list" {
+			cancel()
+		}
+		return out, e, rc, err
+	}
+	rep := Scan(ctx, Options{Dirs: []LaunchDir{{Path: dir, Domain: "gui/501"}}, Run: run})
+	if !rep.Interrupted {
+		t.Fatal("中断が Interrupted に出ない")
+	}
+	if !strings.Contains(Format(rep), "中断") {
+		t.Error("表示に中断が出ない")
+	}
+}

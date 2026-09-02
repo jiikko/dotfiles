@@ -19,6 +19,10 @@
 # --pkg <rel>: 1 つの module に複数の main を置く形 (src/doctor/cmd/svcdoctor 等) 用。
 #   指紋と go build は module root (<src_dir>) で取り、成果物と作業ファイルは <src_dir>/<rel> に
 #   置く (main ごとに別ディレクトリなので、同じ module の別 main と .autobuild.* が衝突しない)。
+#   --pkg を省いて <src_dir>/<rel> を直接渡しても、上へ go.mod を探して同じ結論になる
+#   (_go_autobuild_resolve_mod。go_autobuild_spawn_if_stale を外部から呼ぶ経路のため)。
+# 指紋は go.mod の `replace X => <相対パス>` の先も含む (glogx → ../doctor)。取り込み先だけを直しても
+#   再ビルドされる。
 #   ⚠️ 成果物の置き場を module root にしない: 同じ .autobuild.built を複数の main が上書きし合い、
 #   「入力は同じ = ビルド済み」と読んで別 main の古いバイナリを走らせる。
 #
@@ -57,11 +61,70 @@ fi
 # ソース集合は再帰 glob で取る。サブパッケージ (usage/ ovba/ 等) を含めるため。
 # *_test.go は go build の入力ではないので除外する (テスト編集で無用な再ビルドを起こさない)。
 # zsh の * は / を跨がないため **/*.go~*_test.go では usage/*_test.go を取りこぼす → ループ内で弾く。
+# module root と build 対象を解く。reply=(mod_dir pkg)。
+#   --pkg 指定 (typeset -g _GO_AUTOBUILD_MOD_DIR / _GO_AUTOBUILD_PKG) があればそれ。無ければ src_dir から
+#   上へ go.mod を探す (src_dir 自身に go.mod があれば従来どおり mod_dir=src_dir, pkg=.)。
+# ⚠️ 上へ探すのは、外部から `go_autobuild_spawn_if_stale <cmd_dir> <name>` と呼ばれたとき (glogx が
+#   走行中に呼ぶ形) にも --pkg 相当を再現するため。module 変数は別プロセスに漏れないので、
+#   cmd/<name> を渡されたら自力で module root を見つける必要がある (敵対レビュー 2026-09-02)。
+# ⚠️ パスは :A (symlink も解決) で正規化する。指紋はパス文字列を含むので、/var/... と /private/var/...
+#   (macOS の /var は symlink) が呼び方で揺れると同じ入力が別の指紋になり、常に stale になる。
+_go_autobuild_resolve_mod() {  # $1=src_dir
+  local src_dir="${1:A}" d
+  if [[ -n "${_GO_AUTOBUILD_MOD_DIR-}" ]]; then
+    reply=("${_GO_AUTOBUILD_MOD_DIR:A}" "${_GO_AUTOBUILD_PKG:-.}")
+    return 0
+  fi
+  d="$src_dir"
+  while [[ "$d" != "/" && ! -e "$d/go.mod" ]]; do d="${d:h}"; done
+  if [[ "$d" == "/" || "$d" == "$src_dir" ]]; then
+    reply=("$src_dir" .)
+  else
+    reply=("$d" "./${src_dir#$d/}")
+  fi
+  return 0
+}
+
+# go.mod の `replace X => <相対パス>` の先 (別 module を相対パスで取り込む形。glogx → ../doctor)。
+# reply=(絶対パス...)。⚠️ 取り込み先を編集しても src_dir の指紋は変わらないので、ここを入力に
+# 含めないと「replace 先だけ直した」変更で旧バイナリを黙って exec する (敵対レビュー 2026-09-02, P1)。
+# 1 行形式 (`replace a => ../b`) とブロック形式 (`replace (` ... `a => ../b` ... `)`) の両方を見る。
+# 相対パス (./ か ../ で始まる) だけが対象。バージョン指定 (`a => b v1.2.3`) は無視する。
+_go_autobuild_replace_dirs() {  # $1=mod_dir
+  local mod_dir="$1" line target
+  reply=()
+  [[ -r "$mod_dir/go.mod" ]] || return 0
+  while IFS= read -r line; do
+    [[ "$line" == *'=>'* ]] || continue
+    target="${line##*=>}"; target="${target## }"; target="${target%% *}"; target="${target%%$'\t'*}"
+    [[ "$target" == ./* || "$target" == ../* ]] || continue
+    reply+=("${mod_dir}/${target}"(:A))
+  done < "$mod_dir/go.mod"
+  return 0
+}
+
+# ビルド入力の集合を reply へ返す (*_test.go を除く .go + 各 module root の go.mod / go.sum。
+# module root と replace 先を合わせる)。⚠️ 入力集合はここが唯一の定義 (指紋・縮退経路・
+# glogx 側 src/glogx/autobuild.go の autobuildSourcesNewer と同じ定義を保つ)。
+# `//go:embed` で .go 以外を焼き込むようになったら、そのアセットもここへ足すこと。
+_go_autobuild_inputs() {  # $1=src_dir
+  local root
+  local -a roots files
+  _go_autobuild_resolve_mod "$1"; roots=("$reply[1]")
+  _go_autobuild_replace_dirs "$reply[1]"; roots+=("${reply[@]}")
+  files=()
+  for root in "${roots[@]}"; do
+    files+=("$root"/**/*.go(N) "$root"/go.mod(N) "$root"/go.sum(N))
+  done
+  reply=(${files:#*_test.go})   # go build の入力ではない (テスト編集で再ビルドを起こさない)
+  return 0
+}
+
 _go_autobuild_sources_newer_than() {  # 0 = 新しいソースがある (ref 不在も含む)
-  local ref="$1" src_dir="$2" f
+  local ref="$1" f
   [[ -e "$ref" ]] || return 0
-  for f in "$src_dir"/**/*.go(N) "$src_dir"/go.mod(N) "$src_dir"/go.sum(N); do
-    [[ "$f" == *_test.go ]] && continue
+  _go_autobuild_inputs "$2"
+  for f in "${reply[@]}"; do
     [[ "$f" -nt "$ref" ]] && return 0
   done
   return 1
@@ -124,21 +187,17 @@ _go_autobuild_lock_owner() {  # $1=lock dir
 # ⚠️ 指紋は mtime を信じている点は順序比較と同じ (rsync -a 等で mtime ごと巻き戻されると
 # 騙される)。そこは glogx 側の stale 判定 (src/glogx/autobuild.go) が受け持つ。
 # zstat は +<field> を 1 つしか取れないので 2 回に分ける。どちらも全ファイル一括 (実測 0.75ms)。
-_go_autobuild_fingerprint() {  # $1=src_dir (--pkg のときは _GO_AUTOBUILD_MOD_DIR = module root を見る)
-  local src_dir="${_GO_AUTOBUILD_MOD_DIR:-$1}" i
+_go_autobuild_fingerprint() {  # $1=src_dir (入力集合は _go_autobuild_inputs: module root + replace 先)
+  local i
   local -a files mt sz
   REPLY=
-  # ⚠️ 入力集合はここが唯一の定義。`//go:embed` で .go 以外を焼き込むようになったら、その
-  # アセットもここへ足すこと (足さないと、テンプレや静的ファイルだけを直しても再ビルドされない)。
-  # 2026-08-02 時点では src/ 配下のどのツールも go:embed / go.work / vendor を使っていない。
-  files=("$src_dir"/**/*.go(N) "$src_dir"/go.mod(N) "$src_dir"/go.sum(N))
-  files=(${files:#*_test.go})   # go build の入力ではない (テスト編集で再ビルドを起こさない)
+  _go_autobuild_inputs "$1"; files=("${reply[@]}")
   (( $#files )) || return 0
   zstat -A mt +mtime -- "${files[@]}" 2>/dev/null || return 0
   zstat -A sz +size  -- "${files[@]}" 2>/dev/null || return 0
   local out=
   for (( i = 1; i <= $#files; i++ )); do
-    out+="${files[i]#$src_dir/} $mt[i] $sz[i]"$'\n'
+    out+="${files[i]} $mt[i] $sz[i]"$'\n'   # 絶対パス (replace 先は src_dir の外にある)
   done
   # ⚠️ 末尾に改行を残さない。読み出し側の `$(<file)` は末尾改行を落とすので、残すと
   # 「書いた指紋」と「読んだ指紋」が毎回食い違い、常に stale = 起動ごとに再ビルドになる。
@@ -240,7 +299,8 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   _go_autobuild_fingerprint "$src_dir"; built_fp=$REPLY
   # install の可否を決めるための基準 (下の guard の doc)。開始時点の記録を控える。
   _go_autobuild_read_built "$src_dir"; seen_at=$reply[1]; seen_fp=$reply[2]
-  local local_go required_go mod_dir="${_GO_AUTOBUILD_MOD_DIR:-$src_dir}"
+  local local_go required_go mod_dir pkg
+  _go_autobuild_resolve_mod "$src_dir"; mod_dir="$reply[1]"; pkg="$reply[2]"
   local_go=$(go env GOVERSION 2>/dev/null) || local_go=unknown
   required_go=$(awk '$1 == "go" {print $2; exit}' "$mod_dir/go.mod" 2>/dev/null)
   print -u2 -- "$name: building... (go=${local_go:-unknown} / go.mod=${required_go:-?})"
@@ -266,7 +326,7 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   # 自身が exec する foreground コマンドだけ。詳細と実測表: rules/zsh-trap-not-inherited.md
   # -C なら cd 用の fork が要らないのでこの条件を満たす (go 1.20 以降・かつ最初の引数)。
   # --pkg のときは module root で `go build ./<rel>` (成果物 $tmp は絶対パスなので置き場は変わらない)
-  go build -C "$mod_dir" -o "$tmp" "${_GO_AUTOBUILD_PKG:-.}" || rc=$?
+  go build -C "$mod_dir" -o "$tmp" "$pkg" || rc=$?
   if (( rc )); then
     command rm -f "$tmp" 2>/dev/null
     # exit code を残す: コンパイルエラーなら go build 自身が理由を上に出すが、シグナルで
@@ -323,12 +383,13 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
 # 嘘をつかない: 未コミットの変更があれば +dirty を添える。
 # これがあると「古い版で動いています」を「動いているのは tree abc1234 / 今は def5678」と言える。
 # git を 3 回 fork するが、走るのはビルド成功時だけなので起動のホットパスには乗らない。
-_go_autobuild_record_rev() {  # $1=src_dir
-  local src_dir="$1" top rel rev
-  top=$(command git -C "$src_dir" rev-parse --show-toplevel 2>/dev/null) || return 0
-  rel=${src_dir#$top/}
-  [[ "$rel" == "$src_dir" ]] && rel=""   # src_dir が repo のルートそのもの
-  rev=$(command git -C "$src_dir" rev-parse "HEAD:$rel" 2>/dev/null) || return 0
+_go_autobuild_record_rev() {  # $1=src_dir (記録先)。tree hash と dirty は module root 基準
+  local src_dir="$1" mod_dir top rel rev
+  _go_autobuild_resolve_mod "$src_dir"; mod_dir="$reply[1]"
+  top=$(command git -C "$mod_dir" rev-parse --show-toplevel 2>/dev/null) || return 0
+  rel=${mod_dir#$top/}
+  [[ "$rel" == "$mod_dir" ]] && rel=""   # module root が repo のルートそのもの
+  rev=$(command git -C "$mod_dir" rev-parse "HEAD:$rel" 2>/dev/null) || return 0
   # ⚠️ diff でなく status で見る。diff は追跡対象しか比較しないので、まだ git add していない
   # 新規 .go を見落とす。それは go build の入力に入る (= その版はコミットに存在しないコードで
   # 動いている) ので、記録が clean を名乗ると診断が嘘になる (自己レビューで検出 2026-08-02)。
@@ -337,7 +398,9 @@ _go_autobuild_record_rev() {  # $1=src_dir
   # +dirty になる。*_test.go を含めても同じことが起きる: テストは go build の入力ではないので
   # 成果物はコミットの内容そのものなのに、テストを常時いじるこの repo では +dirty が
   # 出っぱなしになり記録が何も言わなくなる (自己レビューで検出 2026-08-02)。
-  [[ -n "$(command git -C "$src_dir" status --porcelain \
+  # ⚠️ replace 先の dirty は見ない (別 module の tree なので、この記録の「どこから作ったか」には
+  # 含めない。指紋には含めているので再ビルド判定は正しい)
+  [[ -n "$(command git -C "$mod_dir" status --porcelain \
       -- '*.go' go.mod go.sum ':(exclude)*_test.go' 2>/dev/null)" ]] \
     && rev+=" +dirty"
   print -r -- "$rev" >| "$src_dir/.autobuild.rev" 2>/dev/null
@@ -418,7 +481,11 @@ go_autobuild_exec() {
   while (( $# )); do
     case "$1" in
       --async) async=1; shift ;;
-      --pkg) pkg="$2"; shift 2 ;;
+      --pkg)
+        # ⚠️ 値が無いと zsh の shift 2 は何も shift せず、この while が --pkg を永久に見る (無限ループ +
+        # stderr 洪水。敵対レビュー 2026-09-02)。ラッパーの書き間違いは loud に止める
+        (( $# >= 2 )) || { print -u2 -- "go_autobuild_exec: --pkg には値が要る"; exit 2 }
+        pkg="$2"; shift 2 ;;
       *) break ;;
     esac
   done
@@ -429,6 +496,8 @@ go_autobuild_exec() {
     # spawn のサブシェルにも継承される (export は要らない。子プロセスの go には渡さない)。
     typeset -g _GO_AUTOBUILD_MOD_DIR="${src_dir:a}" _GO_AUTOBUILD_PKG="./${pkg#./}"
     src_dir="$src_dir/${pkg#./}"
+  else
+    unset _GO_AUTOBUILD_MOD_DIR _GO_AUTOBUILD_PKG   # 同一シェルで前の呼び出しの値を引きずらない
   fi
   [[ "${1-}" == "--" ]] && shift
   local bin="$src_dir/$name"

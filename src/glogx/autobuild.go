@@ -159,6 +159,39 @@ func autobuildSourcesNewer(dir string, binAt time.Time) bool {
 	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err != nil {
 		return false
 	}
+	for _, root := range append([]string{dir}, autobuildReplaceDirs(dir)...) {
+		if autobuildTreeNewer(root, binAt) {
+			return true
+		}
+	}
+	return false
+}
+
+// autobuildReplaceDirs は go.mod の `replace X => <相対パス>` の先 (別 module を相対パスで取り込む形。
+// glogx → ../doctor)。取り込み先だけを直しても dir の下は変わらないので、ここを見ないと
+// 「shim は再ビルドするのに glogx は黙る」ではなく**両方が黙る** (shim 側も同じ定義を持つ。
+// 敵対レビュー 2026-09-02 P1)。1 行形式とブロック形式の両方を見る。バージョン指定は無視。
+func autobuildReplaceDirs(dir string) []string {
+	data, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		return nil
+	}
+	var dirs []string
+	for _, line := range strings.Split(string(data), "\n") {
+		_, target, ok := strings.Cut(line, "=>")
+		if !ok {
+			continue
+		}
+		target = strings.Fields(target + " ")[0]
+		if strings.HasPrefix(target, "./") || strings.HasPrefix(target, "../") {
+			dirs = append(dirs, filepath.Clean(filepath.Join(dir, target)))
+		}
+	}
+	return dirs
+}
+
+// autobuildTreeNewer は 1 つの module root 配下に binAt より新しいソースがあるか。
+func autobuildTreeNewer(dir string, binAt time.Time) bool {
 	newer := false
 	// 起動パスに乗るが fork は無い。実測 169µs/回 (2026-07-31 の src/glogx = 90 ファイル /
 	// 6 ディレクトリ)。外部プロセス起動と比べても十分小さく、Bench の分解能以下。
