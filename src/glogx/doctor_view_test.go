@@ -630,3 +630,61 @@ func TestDoctorReusesHeavyEntries(t *testing.T) {
 		}
 	}
 }
+
+// svc の注記 (penalty box / com.apple. 偽装 / brew 孤児 / system ドメイン) は CLI と UI と
+// Y のコピー文の 3 経路すべてに出る。以前は各経路が自前で文言を持っており、CLI にしか無い注記
+// (AppleLikeOut / BrewOrphan) と UI にしか無い注記 (system ドメイン) があった (issues/179)。
+func TestDoctorSvcAnnotationsMatchCLI(t *testing.T) {
+	rep := svc.Report{Scanned: 4, Findings: []svc.Finding{
+		{Label: "com.apple.fake.agent", PlistPath: "/L/LaunchAgents/com.apple.fake.agent.plist", Domain: "gui/501",
+			Reasons: []string{"実行ファイルがありません: /nowhere"}, MissingExec: "/nowhere",
+			PenaltyBox: true, AppleLikeOut: true, Commands: []string{"launchctl bootout gui/501/com.apple.fake.agent"}},
+		{Label: "homebrew.mxcl.mysql@8.0", PlistPath: "/L/LaunchAgents/homebrew.mxcl.mysql@8.0.plist", Domain: "gui/501",
+			Reasons: []string{"起動に失敗し続けています (exit 1)"}, LastExit: 1, HasLastExit: true,
+			BrewOrphan: true, BrewFormula: "mysql@8.0", Commands: []string{"launchctl bootout gui/501/homebrew.mxcl.mysql@8.0"}},
+		{Label: "com.vendor.daemon", PlistPath: "/Library/LaunchDaemons/com.vendor.daemon.plist", Domain: "system",
+			Reasons: []string{"実行ファイルがありません: /opt/vendor/bin/d"}, MissingExec: "/opt/vendor/bin/d",
+			Commands: []string{"sudo launchctl bootout system/com.vendor.daemon"}},
+	}}
+
+	// 注記は 4 種すべてが fixture に現れる (どれか 1 つでも欠けていると、この test は通っても何も守らない)
+	var all []string
+	for _, f := range rep.Findings {
+		all = append(all, svc.Annotations(f)...)
+	}
+	if len(all) != 4 {
+		t.Fatalf("fixture が注記 4 種を網羅していない: %q", all)
+	}
+
+	cli := svc.Format(rep)
+	v := &doctorView{shown: true, expanded: map[string]bool{}, svcRep: &rep}
+	// 幅を広く取る: 注記が出ているかを見るテストなので、末尾切れ (truncateDisp) で落ちないようにする
+	// (狭い幅で注記が読めなくなる問題は issues/182 が別に扱う)
+	wide := doctorTestOpts(60)
+	wide.width = 240
+	ui := strings.Join(v.lines(wide), "\n")
+
+	var copies strings.Builder
+	for _, r := range v.rows {
+		if r.copyText != "" {
+			copies.WriteString(r.copyText)
+		}
+	}
+
+	for _, a := range all {
+		if !strings.Contains(cli, a) {
+			t.Errorf("CLI の Format に注記が無い: %q\n%s", a, cli)
+		}
+		if !strings.Contains(ui, a) {
+			t.Errorf("UI の svcSection に注記が無い: %q\n%s", a, ui)
+		}
+		if !strings.Contains(copies.String(), a) {
+			t.Errorf("Y のコピー文に注記が無い: %q\n%s", a, copies.String())
+		}
+	}
+
+	// 「台帳にあり=false」のような、人が読めない暗号でごまかしていないこと
+	if strings.Contains(copies.String(), "台帳にあり=") {
+		t.Error("Y のコピー文が brew 孤児を暗号 (台帳にあり=) で書いている")
+	}
+}

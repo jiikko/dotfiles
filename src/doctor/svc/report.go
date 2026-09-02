@@ -5,6 +5,27 @@ import (
 	"strings"
 )
 
+// Annotations は Finding に添える注記。CLI (Format) と glogx の doctor 画面が
+// 同じ文言を使うための単一の出典 — 片方にだけ注記を足すと、CLI を叩かないと見えない
+// 判定 (AppleLikeOut など) が生まれる (issues/179)。
+// 行頭の記号・インデントは呼び出し側が付ける。
+func Annotations(f Finding) []string {
+	var out []string
+	if f.PenaltyBox {
+		out = append(out, "launchd の penalty box 入り (失敗の繰り返しで起動間隔が延ばされています)")
+	}
+	if f.AppleLikeOut {
+		out = append(out, "🚨 com.apple. を名乗っていますが Apple の管理領域 (/System/Library) の外にあります")
+	}
+	if f.BrewOrphan {
+		out = append(out, "アンインストール済みの formula の登録が残っているようです (/opt/homebrew/var 配下の残骸も確認してください)")
+	}
+	if f.Domain == "system" && !f.HasLastExit {
+		out = append(out, "起動状態は不明 (system ドメインは一般ユーザーの launchctl list に出ない)")
+	}
+	return out
+}
+
 // Format は人が読むテキスト。各行に「なぜ出ているか」を必ず添える。
 func Format(rep Report) string {
 	var b strings.Builder
@@ -31,14 +52,8 @@ func Format(rep Report) string {
 		for _, r := range f.Reasons {
 			fmt.Fprintf(&b, "   - %s\n", r)
 		}
-		if f.PenaltyBox {
-			b.WriteString("   - launchd の penalty box 入り (失敗の繰り返しで起動間隔が延ばされています)\n")
-		}
-		if f.AppleLikeOut {
-			b.WriteString("   - 🚨 com.apple. を名乗っていますが Apple の管理領域 (/System/Library) の外にあります\n")
-		}
-		if f.BrewOrphan {
-			b.WriteString("   アンインストール済みの formula の登録が残っているようです (/opt/homebrew/var 配下の残骸も確認してください)\n")
+		for _, a := range Annotations(f) {
+			fmt.Fprintf(&b, "   - %s\n", a)
 		}
 		b.WriteString("   手動で実行してください (このツールは実行しません):\n")
 		for _, c := range f.Commands {

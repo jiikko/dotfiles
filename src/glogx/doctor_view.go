@@ -603,11 +603,8 @@ func (v *doctorView) svcSection(o doctorRenderOpts) []doctorRow {
 		for _, r := range f.Reasons {
 			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "      - "+r)})
 		}
-		if f.PenaltyBox {
-			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "      - launchd の penalty box 入り (失敗の繰り返しで起動間隔が延ばされています)")})
-		}
-		if f.Domain == "system" && !f.HasLastExit {
-			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "      - 起動状態は不明 (system ドメインは一般ユーザーの launchctl list に出ない)")})
+		for _, a := range svc.Annotations(f) {
+			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "      - "+a)})
 		}
 	}
 	for _, u := range rep.Undiagnosed {
@@ -700,14 +697,14 @@ func svcCopyText(f svc.Finding) string {
 	for _, r := range f.Reasons {
 		fmt.Fprintf(&b, "理由: %s\n", r)
 	}
-	if f.PenaltyBox {
-		b.WriteString("launchd の penalty box 入り\n")
+	for _, a := range svc.Annotations(f) {
+		fmt.Fprintf(&b, "注記: %s\n", a)
 	}
 	if f.MissingExec != "" {
 		fmt.Fprintf(&b, "不在の実行ファイル: %s\n", f.MissingExec)
 	}
 	if f.BrewFormula != "" {
-		fmt.Fprintf(&b, "Homebrew formula: %s (台帳にあり=%v)\n", f.BrewFormula, !f.BrewOrphan)
+		fmt.Fprintf(&b, "Homebrew formula: %s\n", f.BrewFormula)
 	}
 	b.WriteString("手動で実行するコマンド (ツールは実行しない):\n")
 	for _, c := range f.Commands {
