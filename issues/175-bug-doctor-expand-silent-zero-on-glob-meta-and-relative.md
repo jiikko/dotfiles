@@ -54,3 +54,26 @@ npm キャッシュのエントリが `status=ok, items=0` になる (実在す�
 - [ ] メタ文字入り HOME で実在するキャッシュが検出される (probe テスト)
 - [ ] 相対 TMPDIR が「診断できず」に倒れる
 - [ ] 変異検証: fail-closed を外すと items=0 の false green が再現することを確認する
+
+## 事前検証 (2026-09-03、read-only サブエージェント sonnet)
+
+**主張は成立する。** 修正コミットは無く、`git log -- src/doctor/disk/{paths,scan}.go` の最新は
+`cd80c37b` (issue 148 の機能追加) で、glob メタ文字・相対パスへの対処は入っていない。
+
+- 実装: `expand` は `src/doctor/disk/paths.go:28-50`。`~` / `$TMPDIR` 展開後に `filepath.Glob` へ
+  そのまま渡す。**関数のコメント自身が「glob の結果 0 件は空スライス (エラーではない)」と明記**
+- 無音である経路: `sizePaths` (`scan.go:251-281`) は `Items==0 && Failures==0` のとき素の
+  `StatusOK` を返し、人向けの `Format` (`report.go:51`) は**その Result を丸ごと `continue` で
+  出力から除外する**。つまり「診断できず」と「本当に候補なし」が構造的に区別できない
+- 再現 (一時テストで実測、実行後に削除して `git status` で無変更を確認):
+  - HOME にメタ文字 `[1]` を含む → `paths=[] err=<nil>` / `status=ok items=0 failures=[]`
+  - 相対 TMPDIR でマッチ無し → 同上 (無音の 0 件)
+  - ⚠️ **相対 TMPDIR で cwd にたまたま一致した場合は `validateTarget` (`paths.go:79-81`) が
+    非絶対パスを拒否して `status=failed` になる**。つまり相対パスは「一致したら fail-closed /
+    一致しなければ無音」という非対称。対応案を書くときはこの差を潰す形にする
+- 影響範囲: `expand` の呼び出し元は `scanEntry` (`scan.go:177`) の 1 箇所だけで、そこから
+  `disk.Scan` → `cmd/diskdoctor/main.go:38` と `src/glogx/doctor_view.go:162` の 2 経路。
+  **カタログの `Paths` を持つ全エントリが通る**ので、`expand` を直せば一括で解消する見込み
+- 併せて確認できたこと: symlink 経由の TMPDIR は `validateTarget` の symlink 検査で正しく
+  `failed` になる (`paths.go:99-107`)。issue の表の他の行 (空白・`*`・末尾スラッシュ・実 TMPDIR)
+  は正常挙動で、**問題はメタ文字 HOME とマッチしない相対パスの 2 パターンに限定される**
