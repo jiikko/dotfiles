@@ -29,5 +29,7 @@
 
 ## 残課題
 
-- [ ] 項目 1 を `mutation-verify-new-tests.md` に反映する (ユーザー判断待ち)
+- [x] 項目 1 を `mutation-verify-new-tests.md` に反映した (2026-09-02。「よくある『守っていない
+      テスト』の形」に「テーブル駆動 / サブテストなら変異で**全ケース**が red になるか。判定は
+      ケース名ごとの pass/fail 一覧で行い、スイートの rc で読まない」を追加)
 - [ ] 項目 4: status viewer での codex update の要否 (ユーザー判断待ち)
