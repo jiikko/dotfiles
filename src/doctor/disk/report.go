@@ -47,10 +47,12 @@ func Format(rep Report, now time.Time) string {
 	if rep.Partial {
 		b.WriteString("🚨  途中で中断されました (部分結果)\n")
 	}
+	shown := 0
 	for _, r := range rep.Results {
 		if r.Status == StatusOK && len(r.Items) == 0 && len(r.Failures) == 0 {
 			continue
 		}
+		shown++
 		size := HumanSize(r.Size)
 		if r.Status == StatusFailed {
 			size = "---"
@@ -81,6 +83,10 @@ func Format(rep Report, now time.Time) string {
 				fmt.Fprintf(&b, "             %9s  %s\n", HumanSize(it.Size), it.Path)
 			}
 		}
+	}
+	// 見出しだけで終わらせない (UI と svcdoctor は「見つかりませんでした」を出す。issue 177)
+	if shown == 0 {
+		b.WriteString("\n掃除の候補はありませんでした\n")
 	}
 	return b.String()
 }

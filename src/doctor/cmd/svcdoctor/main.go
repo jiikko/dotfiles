@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"doctor/exitcode"
 	"doctor/runner"
 	"doctor/svc"
 )
@@ -17,37 +19,38 @@ import (
 func main() {
 	jsonOut := flag.Bool("json", false, "JSON で出力する")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: svcdoctor [-json]\n\n壊れた launchd 登録 (実行ファイル不在 / 失敗し続けている / Homebrew 台帳に無い) を検出して表示する。\n停止・削除は行わない。手で実行するコマンドを提示するだけ。\n\n終了コード:\n  0  候補なし\n  1  候補あり (または home の解決・出力に失敗)\n  2  引数が不正、または診断できなかったものがある\n     (中断 / launchctl の失敗 / 読めないディレクトリ。「検査できなかった」を緑にしない)\n\n⚠️ -json では候補・未診断があっても 0 を返す (issue 177 で是正予定)。\n\n")
+		fmt.Fprintf(os.Stderr, "usage: svcdoctor [-json]\n\n壊れた launchd 登録 (実行ファイル不在 / 失敗し続けている / Homebrew 台帳に無い) を検出して表示する。\n停止・削除は行わない。手で実行するコマンドを提示するだけ。\n\n終了コード (diskdoctor と共通の語彙):\n  0  診断できた + 候補なし\n  1  診断できた + 候補あり\n  2  引数が不正、または診断できなかったものがある (2 が 1 より優先)\n     (中断 / launchctl の失敗 / brew 台帳が取れない / 読めないディレクトリ。\n      「検査できなかった」を緑にしない)\n  3  実行環境・出力の失敗 (home の解決 / JSON のエンコード)\n\n-json でも同じ終了コードを返す。\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
 	if flag.NArg() > 0 {
 		fmt.Fprintf(os.Stderr, "svcdoctor: サブコマンドはありません (%q)\n", flag.Arg(0))
-		os.Exit(2)
+		os.Exit(exitcode.Undiagnosed)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	home, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "svcdoctor:", err)
-		os.Exit(1)
+		os.Exit(exitcode.EnvFailure)
 	}
 	rep := svc.Scan(ctx, svc.Options{Dirs: svc.DefaultDirs(home, os.Getuid()), Run: runner.Exec})
-	if *jsonOut {
-		enc := json.NewEncoder(os.Stdout)
+	os.Exit(emit(rep, *jsonOut, os.Stdout, os.Stderr))
+}
+
+// emit は出力して終了コードを返す。**出力の分岐の外**で終了コードを決めるのが要点:
+// 分岐の中で return / os.Exit すると、片方の経路だけ判定を飛ばす形 (issue 177 (b) の -json) が
+// 再び書けてしまう。構造でそれを禁じる。
+func emit(rep svc.Report, jsonOut bool, stdout, stderr io.Writer) int {
+	if jsonOut {
+		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(rep); err != nil {
-			fmt.Fprintln(os.Stderr, "svcdoctor:", err)
-			os.Exit(1)
+			_, _ = fmt.Fprintln(stderr, "svcdoctor:", err)
+			return exitcode.EnvFailure
 		}
-		return
+	} else {
+		_, _ = fmt.Fprint(stdout, svc.Format(rep))
 	}
-	fmt.Print(svc.Format(rep))
-	// 診断できなかったものがあれば exit 2 (検査できなかったを緑にしない)。候補あり = 1、無し = 0
-	switch {
-	case rep.Interrupted || rep.StatusErr != "" || len(rep.Undiagnosed) > 0 || len(rep.DirErrs) > 0:
-		os.Exit(2)
-	case len(rep.Findings) > 0:
-		os.Exit(1)
-	}
+	return svcExitCode(rep)
 }

@@ -67,3 +67,14 @@ doctor 0 件 / 両 CLI の `--help` に exit code 無し / `src/doctor/README.md
 - `diskdoctor` の rc は run ごとに変わる (0 の回と 2 の回がある)。2 は failed エントリが出た回で、
   `blocked` (guard による対象外) では 2 にならない — `blocked` と `failed` は別扱い
 - 検証: `make -C src/doctor lint` / `test`、`make -C src/glogx lint`、`go test ./...` すべて green
+
+## 後日追記 (2026-09-03、issue 177 の対応で終了コードの記述を差し替えた)
+
+上の「終了コードは実装どおりに書いた (177 と重ねなかった)」の表と、そこに書いた既知の非対称は
+**issue 177 の対応で解消したので、記述はもう現状と一致しない**。現在の正本は
+`src/doctor/README.md` の終了コード表と両 CLI の `--help` (どちらも 177 の commit で書き換えた)。
+
+現在の語彙 (2 本で共通): `0` 診断できた+候補なし / `1` 診断できた+候補あり /
+`2` 引数が不正または診断できなかったものがある (`2` が `1` より優先) / `3` 実行環境・出力の失敗。
+**`-json` でも同じ終了コードを返す** (両 CLI)。判定は `src/doctor/cmd/*/exit.go` の純関数、
+数字の定義は `src/doctor/exitcode` package に 1 箇所だけ置いてある。
