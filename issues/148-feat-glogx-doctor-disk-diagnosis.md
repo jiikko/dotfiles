@@ -1196,6 +1196,25 @@ src/glogx/doctor_svc.go  ← サービス診断を doctor に接続する層
   ③ で doctor に接続する前に svcdoctor 込みで通す**
 - `src/README.md` の「`GO_PROJECT_DIRS` に登録」は自動発見 (issue 080) に変わっていたので同時に直した
 
+### 次の一手 (引き継ぎ。ここから続ける)
+
+**段階 ① は完了、次は ② `src/diskdoctor` の走査 + `bin/diskdoctor` の dry-run 一覧** (削除は作らない)。
+
+- 型を ① と揃える: `Options` (Dirs / Run / Stat を注入) → `Scan(ctx, opt) Report` →
+  `Format(rep)` / `-json`。fake runner は `src/svcdoctor/scan_test.go` の `fakeRunner` の形
+  (argv を記録して「読み取り系しか呼んでいない」を実行経路で assert する) を写す
+- 着手前に決めること (未決事項): **`cacheBaseDir()` の置き場** (glogx の unexported。共有 package へ
+  切り出すか、diskdoctor に同一仕様の exported helper を持たせるか、呼び出し側から注入するか)。
+  ② の CLI 単体なら「注入」で先へ進める (glogx 接続の ③ で決着すればよい)
+- ② の受け入れ条件は「診断・削除ロジック」節のうち**削除に関わらないもの**:
+  占有量の降順 / `du` 一致 (Blocks + (dev, ino) dedupe) / EvalSymlinks 不使用 / 途中 symlink の拒否 /
+  simctl・boottime 失敗の fail-closed / 走査失敗を「走査できず」に区別 / `orphan-container` の
+  Info.plist 突合 / `versionmanager-orphan-root` の `*_ROOT` 実効値 / 除外リストのテスト固定
+- ②〜④ を通して: 段階ごとに `## 進捗` へ節を足し、受け入れ条件の該当項目を `[x]` にする。
+  done へ送るのは全段階が閉じてから
+- 段階 ① の残り (③ で回収): BTM の扱い判断 / svcdoctor 込みの敵対的レビュー (①壊す ②素通り ③並行・中断)。
+  ① のテストは `make -C src/svcdoctor test`、実機確認は `bin/svcdoctor` (exit 0/1/2 の意味は上)
+
 ## 7. 受け入れ条件
 
 **診断・削除ロジック (`src/diskdoctor` / `bin/diskdoctor`)**
