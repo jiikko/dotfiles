@@ -43,7 +43,7 @@
 
 ### Maximum モード
 - **エージェント**: 全エージェント（条件付き含む）を**並行実行**
-- **追加エージェント**: dependency-analyzer, test-coverage-advisor, refactoring-patterns
+- **追加エージェント**: dependency-analyzer, test-coverage-advisor（無条件）。refactoring-patterns はリファクタ系タスクのときだけ（判定は agents.md「Maximum 専用エージェント」）
 - **クロスレビュー**: Phase 1.1 / Phase 4.1 を実行
 - **統合**: Phase 1.1統合 / Phase 4.2 を実行
 

@@ -202,7 +202,7 @@ Codex はリポジトリ内のコンテキストをある程度拾えるが、�
 
 - `command codex` を使うこと（`codex` 直接呼び出しは zsh 関数オーバーライドでエラーになる場合がある）
 - **全ての `command codex exec` 呼び出しに `</dev/null` を必ず付ける**。Claude Code の Bash ツールの stdin は非TTYのパイプ（書き込み側が開いたまま EOF が来ない）なので、prompt を引数で渡しても codex が「Reading additional input from stdin...」で stdin の EOF を待ち続け、コマンドがタイムアウトまでハングする。`</dev/null` で stdin を即 EOF にすると解消する（[openai/codex#20919](https://github.com/openai/codex/issues/20919)）。selector モード・プロンプトモードのどちらでも必要。codex 側が stdin チェックにタイムアウトを実装する等で修正されたら本対処は不要になる
-- 常に `--ephemeral -o "$review_out"` を付与する。`--full-auto` は付けない（codex-cli 0.139.0 時点で `--sandbox workspace-write` の deprecated alias であり、`-s read-only` と併用すると後勝ちで上書きして codex が書き込み可能になることを実測確認済み。codex 側で alias が削除されたら本注記ごと整理してよい）
+- 常に `--ephemeral -o "$review_out"` を付与する。sandbox は `-s read-only` を明示する（`--full-auto` は付けない。codex-cli 0.152.1 で削除済みで、渡すと未知の引数として即エラーになる。かつては `--sandbox workspace-write` の deprecated alias で、`-s read-only` と併用すると後勝ちで書き込み可能になった）
 - `codex exec` fallback を使う時は `-s read-only` を付ける
 - レビュー結果はそのままユーザーに見せる（要約しすぎない）
 - `/tmp` は使わず、出力ファイルは必ず `./tmp` に置く
