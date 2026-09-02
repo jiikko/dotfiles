@@ -304,6 +304,24 @@ P1 (事実誤認 / hunk が当たらない) は 0 件。`-` 行は全 hunk が�
 | M3 + M13 | `cc7d510` | rules 本文の事故ナラティブ 7 箇所を圧縮・rationale へ移送。rationale 2 本を新設 (refuse-low-value-coverage / avoid-wall-clock-assertions) |
 | M4 + M5 | `ed4e927` | codex-drive の実測記述は現状維持 + 冒頭に理由を明記。cross-review.md / phase-4.3-ultra.md に「出力例は説明用、wire format は forge.js の `*_SCHEMA`」の断りを追加 |
 
+| M7 | `1ad3f18` | debugger の "The symptom is never the cause" 系 4 節を Core Principles に統合。Anti-Patterns を理由つき 3 項目へ、Quality Gates は固有分だけに |
+| M8 | `2f323d5` | research-assistant の "Search 1..5" 固定クエリ 4 ブロックを、出典の優先順位・観点・打ち切り条件の散文へ。Never/Always 5 連を理由つき 3 項目へ |
+| M9 / L2 | `3f1f9bc` | **提案とは逆向きの対応**。`@` 参照が展開されないことを実測したので統合は不可。壊れていた参照 3 箇所をインライン化し、`_common/` 側の Usage も直した (下記) |
+| M10 / M11 | `c7610b5` | 年の固定 (2025 / 2024) を外す。3 agent の "Be Proactive / Be Specific" を削り、契約を含む項目だけ理由つきで残す |
+
+### L2 の未確認事項を実測して確定させた (2026-09-02)
+
+**`@../_common/...` は展開されない。** `architecture-reviewer` サブエージェントに自分の instructions を
+引用させたところ、`See @../_common/language-adaptation.md for guidelines.` の**1 行がリテラルのまま**
+届いていた (中身は展開されていない)。したがって:
+
+- **M9 の「共通スキャフォールドを `_common/` へ 1 部にまとめる」は成立しない** (移した先が読まれない)。却下
+- L2 の 2 択のうち「**参照している 2 本の方が壊れている**」が正しい。`architecture-reviewer` の
+  Language Adaptation / Tool Selection Strategy と `swift-language-expert` の Language Adaptation は、
+  **中身が一切効いていなかった**。3 箇所ともインライン化した (repo 内の他 agent は元からインライン形式)
+- 誤りの発生源は `_common/*.md` 自身の「Usage: agent 定義から `@` 参照しろ」という指示なので、
+  両ファイルに実測つきの警告を足し、Usage をインライン方式へ直した
+
 ### 適用時に issue の提案から変えた判断 (次の監査が同じ指摘を出さないため)
 
 - **M13 の「rationale 7 本新設」は 2 本に留めた**。残る 5 本 (claude-md-layer-prompt /
@@ -326,7 +344,5 @@ P1 (事実誤認 / hunk が当たらない) は 0 件。`-` 行は全 hunk が�
 ### 未適用 (残り)
 
 - **High**: なし (H1-H8 すべて適用済み)
-- **Medium**: M7 (debugger の 4 節反復)、M8 (research-assistant の固定検索手順 / 理由なし禁止列)、
-  M9 (architecture-designer の共通スキャフォールド)、M10 (diff 14)、M11 (Working Style の一般的美徳)、
-  M12 (diff 15、fork-scratch の到達不能な手順)
+- **Medium**: M12 (diff 15、fork-scratch の到達不能な手順) のみ。M9 は実測により却下 (上記)
 - 適用後の注意は「適用するときの注意」節のとおり (H1 適用後の `grep -rn full-auto _claude/skills` の目視は未実施)
