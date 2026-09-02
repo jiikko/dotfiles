@@ -45,3 +45,24 @@ xcrun simctl --set ~/Library/Developer/XCTestDevices list devices -j
 - [ ] XCTestDevices セットのデバイスが孤児にならない (偽 runner で 3 セット分の argv を検証)
 - [ ] セット取得の失敗が「診断できず」に倒れる
 - [ ] 変異検証: セット列挙から XCTestDevices を外すと候補に戻ることを確認する
+
+## 事前検証 (2026-09-03、実機)
+
+**主張は成立する。さらにセットがもう 1 つある。**
+
+```
+$ ls ~/Library/Developer/
+CoreSimulator  DVTDownloads  XCPGDevices  XCTestDevices  Xcode
+$ find ~/Library/Developer -maxdepth 3 -type d -name '*Devices*'
+/Users/koji/Library/Developer/XCTestDevices
+/Users/koji/Library/Developer/XCPGDevices
+/Users/koji/Library/Developer/CoreSimulator/Devices
+```
+
+- `~/Library/Developer/XCTestDevices` と **`~/Library/Developer/XCPGDevices`** (Playground 用) が両方実在する
+  (どちらも現在は空)
+- `xcrun simctl --set <各セット> list devices -j` は**両方とも rc=0 で JSON を返す** (stdout / stderr / rc を分けて実測)
+- 現行の `simDeviceUDIDs` (`src/doctor/disk/guard.go:54`) が見ているのは**既定セットと Xcode Previews の 2 つだけ**
+
+したがって issue の対応案「セットを列挙する形にする」を、`~/Library/Developer/*Devices` の**実在するディレクトリを
+全部列挙する**形で実装するのが、将来のセット追加 (XCPGDevices のように増える) に対して変更耐性がある。
