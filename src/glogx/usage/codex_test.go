@@ -54,11 +54,22 @@ func TestParseCodexRateLimitsSecondaryAndFloat(t *testing.T) {
 	}
 }
 
-func TestParseCodexRateLimitsSkipsNullResetsAt(t *testing.T) {
-	// resetsAt null の枠は表示情報が欠けるため捨てる。全部欠けたらエラー。
-	in := `{"rateLimits":{"primary":{"usedPercent":10,"windowDurationMins":300,"resetsAt":null},"secondary":null}}`
-	if _, err := parseCodexRateLimits([]byte(in)); err == nil {
-		t.Error("全枠 resetsAt null でエラーにならなかった")
+func TestParseCodexRateLimitsNullResetsAtIsUnused(t *testing.T) {
+	// resetsAt null は「まだ消費が始まっていない」枠 (窓が開いていないので締め切りが無い)。
+	// 捨てると 5h を使っていない時間帯にカードが黙って消える (ユーザー報告 2026-09-03)。
+	in := `{"rateLimits":{"primary":{"usedPercent":0,"windowDurationMins":300,"resetsAt":null},"secondary":{"usedPercent":42,"windowDurationMins":10080,"resetsAt":200}}}`
+	ws, err := parseCodexRateLimits([]byte(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ws) != 2 {
+		t.Fatalf("len = %d, want 2 (未消費の枠を捨てている)", len(ws))
+	}
+	if !ws[0].Unused || !ws[0].ResetAt.IsZero() || ws[0].Label != "cx5h" || ws[0].WindowMins != 300 {
+		t.Errorf("primary = %+v, want Unused/cx5h/300min/ResetAt ゼロ", ws[0])
+	}
+	if ws[1].Unused {
+		t.Errorf("secondary が Unused になっている: %+v", ws[1])
 	}
 }
 
@@ -391,6 +402,30 @@ func TestParseCodexVersion(t *testing.T) {
 	for in, want := range cases {
 		if got := parseCodexVersion(in); got != want {
 			t.Errorf("parseCodexVersion(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// 未消費の枠は 1 行表示・表でも「未消費」と出し、ゼロ値のリセット時刻 (1月1日00:00 /
+// リセット済み) を捏造しない。
+func TestRenderUnusedWindow(t *testing.T) {
+	now := time.Date(2026, 9, 3, 10, 0, 0, 0, time.Local)
+	snap := &Snapshot{Windows: []Window{
+		{Label: "cx5h", Source: SourceCodex, Percent: 0, Unused: true, WindowMins: 300},
+		{Label: "cx7d", Source: SourceCodex, Percent: 42, ResetAt: now.Add(48 * time.Hour), WindowMins: 10080},
+	}}
+	line := RenderLine(snap, now, false)
+	if !strings.Contains(line, "cx5h:[▱▱▱▱▱▱▱▱▱▱]0%(未消費)") {
+		t.Errorf("RenderLine = %q", line)
+	}
+	_, groups := RenderTableGroups(snap, now, false)
+	all := strings.Join(groups[0], "\n")
+	if !strings.Contains(all, "未消費") {
+		t.Errorf("表に未消費が無い:\n%s", all)
+	}
+	for _, ng := range []string{"リセット済み", "1月1日"} {
+		if strings.Contains(line+all, ng) {
+			t.Errorf("未消費なのに %q を出している:\n%s\n%s", ng, line, all)
 		}
 	}
 }

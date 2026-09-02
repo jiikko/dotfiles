@@ -493,6 +493,11 @@ func cardFootLines(h int) int {
 // cardPace はカードの「残り時間 / 経過率 / 状態色 / 状態語」を返す。renderCard と mergedHead が
 // 同じ値を使う (色は状態を表すので、見出し帯とカード本体で食い違わせない)。
 func cardPace(c dialCard, now time.Time) (remain time.Duration, elapsed float64, col, word string) {
+	// 未消費の枠には締め切りが無いので、残り・経過・ペースのどれも定義されない。ここで
+	// 判定へ流すと ResetAt ゼロ値から「残り 0 / 経過 100% / 余剰」を作ってしまう。
+	if c.win.Unused {
+		return 0, 0, sgr.Dim, unusedWord
+	}
 	remain = max(c.win.ResetAt.Sub(now), 0)
 	if c.span > 0 {
 		elapsed = clampPct(float64(c.span-remain) / float64(c.span) * 100)
@@ -531,7 +536,7 @@ func renderCard(c dialCard, now time.Time, w, h int, headless, colored bool) []s
 	}
 	bodyH := max(0, h-len(head)-len(foot))
 	var body []string
-	if c.span <= 0 || w < dialMinW || bodyH < 5 {
+	if c.win.Unused || c.span <= 0 || w < dialMinW || bodyH < 5 {
 		body = textCardBody(c, col, w, bodyH, colored)
 	} else {
 		body = renderFace(c, remain, elapsed, col, w, bodyH, colored)
@@ -592,6 +597,9 @@ func cardHead(c dialCard, col string, w, h, footN int, colored bool) []string {
 
 // cardFoot はカード下部の行 (ゲージ / 数値 / 復活まで / 予算と助言) を n 行で返す。
 func cardFoot(c dialCard, remain time.Duration, elapsed float64, col, word string, w, n int, colored bool) []string {
+	if c.win.Unused {
+		return unusedFoot(c, col, w, n, colored)
+	}
 	cells := dialDivisions(c.span)
 	// いま居るスロット (経過を 1 スロットで割った位置)。窓幅不明のときは印を出さない。
 	at := -1
@@ -648,6 +656,29 @@ func cardFoot(c dialCard, remain time.Duration, elapsed float64, col, word strin
 	default:
 		return []string{numbers, reset}
 	}
+}
+
+// unusedFoot は未消費の枠の下段。想定・乖離・予算・助言はどれも締め切りが無いと定義されない
+// ので出さず、使用率と「リセット時刻なし」だけを出す。行数の契約 (ちょうど n 行) は
+// cardFoot と同じ: 上から埋め、余りは空行で前に詰める (盤側との余白になる)。
+func unusedFoot(c dialCard, col string, w, n int, colored bool) []string {
+	pctCell := paintIf(fmt.Sprintf("%3d%%", c.win.Percent), col, colored)
+	numbers := pctCell + " " + paintIf(unusedWord, col, colored)
+	resetLong := paintIf("リセット時刻なし (使い始めると出ます)", sgr.Dim, colored)
+	resetShort := paintIf("リセット時刻なし", sgr.Dim, colored)
+	lines := []string{
+		fitLine(w, []string{numbers, pctCell}),
+		fitLine(w, []string{resetLong, resetShort}),
+	}
+	// 幅が足りるなら cardFoot の dense 形と同じく 1 行へ畳む (畳んで情報を落とすことはしない)。
+	if dense := numbers + paintIf("  ·  ", sgr.Dim, colored) + resetLong; n >= 4 && termwidth.Of(dense) <= w {
+		lines = []string{"", centerCell(dense, w)}
+	}
+	out := make([]string, 0, n)
+	for len(out)+len(lines) < n {
+		out = append(out, "")
+	}
+	return append(out, lines...)[:n]
 }
 
 // renderFace は盤を faceH 行の点描で描く。
@@ -799,9 +830,32 @@ func textCardBody(c dialCard, _ string, w, h int, colored bool) []string {
 	if h <= 0 {
 		return out
 	}
-	if c.span <= 0 {
-		out = append(out, centerCell(paintIf("窓幅が不明のため盤は省略", sgr.Dim, colored), w))
+	var msg []string
+	switch {
+	case c.win.Unused:
+		// 盤は「窓のどこにいるか」を描くもので、開いていない窓には描くものが無い。理由を
+		// 書かないと「盤が無い = 壊れた」に見える (5h カードが丸ごと消えていた頃と同じ印象)。
+		// 2 行目は幅に入る形を選び、どれも入らなければ落とす (切り詰めて読めない字を残さない)。
+		msg = append(msg, fitLine(w, []string{
+			paintIf("まだ消費されていません", sgr.Dim, colored),
+			paintIf(unusedWord, sgr.Dim, colored),
+		}))
+		if h >= 2 {
+			if s := fitText(w, []string{"使い始めると窓が開き、盤とリセット時刻が出ます", "使い始めると盤が出ます"}); s != "" {
+				msg = append(msg, centerCell(paintIf(s, sgr.Dim, colored), w))
+			}
+		}
+	case c.span <= 0:
+		msg = append(msg, fitLine(w, []string{
+			paintIf("窓幅が不明のため盤は省略", sgr.Dim, colored),
+			paintIf("窓幅不明", sgr.Dim, colored),
+		}))
 	}
+	// 盤の代わりの文なので、盤と同じく本体の中央に置く (上端に張り付くと見出しの続きに見える)。
+	for range max((h-len(msg))/2, 0) {
+		out = append(out, "")
+	}
+	out = append(out, msg...)
 	for len(out) < h {
 		out = append(out, "")
 	}

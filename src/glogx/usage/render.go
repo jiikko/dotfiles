@@ -42,12 +42,21 @@ func RenderLine(s *Snapshot, now time.Time, colored bool) string {
 	ws := renderWindows(s)
 	parts := make([]string, 0, len(ws))
 	for _, w := range ws {
+		if w.Unused {
+			parts = append(parts, fmt.Sprintf("%s:%s%d%%(%s)", w.Label, bar(w.Percent, colored), w.Percent, unusedWord))
+			continue
+		}
 		parts = append(parts, fmt.Sprintf("%s:%s%d%%(残:%s / %s)",
 			w.Label, bar(w.Percent, colored), w.Percent,
 			formatRemain(w.ResetAt.Sub(now)), formatReset(w.ResetAt)))
 	}
 	return strings.Join(parts, " ")
 }
+
+// unusedWord は Unused な枠 (リセット時刻が無い = まだ消費が始まっていない) を表す語。
+// 1 行表示・表・ダッシュボードの 3 経路が同じ語を出す (画面ごとに違う語で同じ状態を
+// 言わない)。
+const unusedWord = "未消費"
 
 // 表レイアウトの列定義。ヘッダーとデータ行で共有し縦の列を揃える。
 const (
@@ -102,6 +111,13 @@ func RenderTableGroups(s *Snapshot, now time.Time, colored bool) (header string,
 	clocks := make([]string, len(ws))
 	var wMonth, wDate int
 	for i, w := range ws {
+		if w.Unused {
+			// リセット時刻が無い枠。残りの列は「時間」のスロットに語を置き (日/分は空)、
+			// リセット側は空にする。列分割は他の行と同じに保つ (縦揃えを崩さない)。
+			hours[i], clocks[i] = unusedWord, "—"
+			wHour = max(wHour, termwidth.Of(hours[i]))
+			continue
+		}
 		days[i], hours[i], mins[i] = remainCols(w.ResetAt.Sub(now))
 		wDay = max(wDay, termwidth.Of(days[i]))
 		wHour = max(wHour, termwidth.Of(hours[i]))

@@ -160,8 +160,9 @@ type codexRateWindow struct {
 }
 
 // parseCodexRateLimits は rateLimits 応答の result から利用枠を抽出する。resetsAt が null の
-// 枠は表示に必要な情報が欠けているため読み飛ばす (Claude 側 Parse がパース不能行を continue
-// で捨てるのと同じ方針)。1 枠も取れなければエラー。
+// 枠は「まだ消費が始まっていない」枠として Unused で返す (窓は最初の消費で開くので、開く前の
+// 窓にはリセット時刻が無い。実測: 5h を使っていない時間帯の primary が
+// `usedPercent: 0, windowDurationMins: 300, resetsAt: null`)。1 枠も取れなければエラー。
 func parseCodexRateLimits(result []byte) ([]Window, error) {
 	var res codexRateLimitsResult
 	if err := json.Unmarshal(result, &res); err != nil {
@@ -169,17 +170,22 @@ func parseCodexRateLimits(result []byte) ([]Window, error) {
 	}
 	ws := make([]Window, 0, 2)
 	for _, w := range []*codexRateWindow{res.RateLimits.Primary, res.RateLimits.Secondary} {
-		if w == nil || w.ResetsAt == nil {
+		if w == nil {
 			continue
 		}
-		ws = append(ws, Window{
+		win := Window{
 			Label:      codexLabel(w.WindowDurationMins),
 			Raw:        "codex",
 			Source:     SourceCodex,
 			Percent:    int(math.Round(w.UsedPercent)),
-			ResetAt:    time.Unix(*w.ResetsAt, 0),
 			WindowMins: codexWindowMins(w.WindowDurationMins),
-		})
+		}
+		if w.ResetsAt == nil {
+			win.Unused = true
+		} else {
+			win.ResetAt = time.Unix(*w.ResetsAt, 0)
+		}
+		ws = append(ws, win)
 	}
 	if len(ws) == 0 {
 		return nil, errors.New("codex rateLimits 応答に利用枠がない")

@@ -641,3 +641,42 @@ func TestCardPaceClampsElapsedForFutureReset(t *testing.T) {
 		t.Errorf("5%% しか使っていない枠の状態語が %q (want 適正)", word)
 	}
 }
+
+// 未消費の枠 (resetsAt が無い) は消さずにカードを出し、理由を書く。締め切りが無いので
+// 盤・想定・乖離・状態語・残り時間は出さない (ResetAt ゼロ値から作った値は全部嘘になる)。
+func TestRenderDashboardUnusedWindow(t *testing.T) {
+	now := dialTestNow()
+	snap := &Snapshot{Version: "2.1.216", CodexVersion: "0.144.6", Windows: []Window{
+		{Label: "cx5h", Source: SourceCodex, Percent: 0, Unused: true, WindowMins: 300},
+	}}
+	all := strings.Join(RenderDashboard(snap, now, 80, 24, false), "\n")
+	for _, want := range []string{"未消費", "リセット時刻なし", "まだ消費されていません", "0%"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("未消費カードに %q が無い:\n%s", want, all)
+		}
+	}
+	if slices.ContainsFunc([]rune(all), isBrailleRune) {
+		t.Errorf("未消費なのに盤を描いている:\n%s", all)
+	}
+	for _, ng := range []string{"想定", "pt ", "適正", "超過", "先行", "余裕", "余剰", "復活まで", "リセット済み", "1月1日"} {
+		if strings.Contains(all, ng) {
+			t.Errorf("未消費なのに %q を出している:\n%s", ng, all)
+		}
+	}
+	// 通常の枠と混ぜても幅・行数の契約を守る (dense 形 / 複数行形の両方を通す)。
+	mixed := dialTestSnap()
+	mixed.Windows[2] = Window{Label: "cx5h", Source: SourceCodex, Unused: true, WindowMins: 300}
+	for w := 1; w <= 200; w += 3 {
+		for h := 1; h <= 60; h += 3 {
+			lines := RenderDashboard(mixed, now, w, h, true)
+			if len(lines) != h {
+				t.Fatalf("%dx%d: 行数 %d", w, h, len(lines))
+			}
+			for i, ln := range lines {
+				if got := termwidth.Of(ln); got > w {
+					t.Errorf("%dx%d: %d 行目の幅 %d > %d\n%q", w, h, i, got, w, ln)
+				}
+			}
+		}
+	}
+}
