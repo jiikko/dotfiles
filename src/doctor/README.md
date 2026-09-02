@@ -57,3 +57,27 @@ CLI が要るのは「スクリプトから叩きたい」「JSON で受けた�
 - **判定できなかったものを合計に足さない** (`blocked` / `failed` は別扱いで、
   終了コードにも出す)。「見えなかったもの」を「無かったもの」に丸めない
 - 外部コマンドは `runner` 越しに呼ぶので、テストは実 `launchctl` / `du` なしで書ける
+
+## テストと CI
+
+```
+make -C src/doctor lint
+make -C src/doctor test
+```
+
+CI は 3 レーンに分かれている。**doctor 機能を触ったら見るのは `doctor` レーン**。
+
+| レーン | 見るもの | 実測 |
+|---|---|---|
+| [`doctor.yml`](../../.github/workflows/doctor.yml) | **doctor 機能の横断レーン**。この module のテスト + glogx 側の doctor 配線テストだけ + 2 CLI のビルド + 依存コマンド失敗時に fail-closed へ倒れる smoke | glogx 側は 1 秒 |
+| [`src_doctor.yml`](../../.github/workflows/src_doctor.yml) | この module 単体の lint + test (module の正本) | — |
+| [`src_glogx.yml`](../../.github/workflows/src_glogx.yml) | glogx 全体の lint + test (doctor 以外の退行を見る。`replace` で取り込むのでここも走る) | 31 秒 |
+
+`doctor.yml` が持つ 2 つの gate は、どちらも「素通りする形」を止めるためにある。
+
+- **テスト本数の下限**: `go test -run 'TestDoctor'` は**1 本も走らなくても rc=0** を返す。
+  パターンとテスト名が食い違うと vacuous pass になるので、`--- PASS: TestDoctor` の本数を数えて
+  下限 (15 本。実測 19 本) を課している。テスト名の頭を変えるならこの gate も直す
+- **fail-closed の smoke**: `xcrun` / `brew` を**必ず失敗する偽物**に差し替えて `diskdoctor -json` を回し、
+  依存コマンドを使う 4 判定が `failed` (診断できず) になることを見る。
+  ⚠️ PATH から外すだけでは足りない (`xcrun` は `/usr/bin` にあるので実在して成功する)

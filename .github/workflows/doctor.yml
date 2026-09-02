@@ -1,0 +1,147 @@
+---
+# doctor 機能に特化したレーン (module と glogx 配線をまたぐ横断レーン)。
+#
+# なぜ別に要るか: doctor 機能は 2 つの module にまたがっている。
+#   - 判定と CLI の本体: src/doctor (svcdoctor / diskdoctor)
+#   - 画面とキャッシュ: src/glogx の doctor_*.go + tui.go の配線
+# 既存レーンは module 単位なので、**doctor 機能が緑かを 1 つの check で見られない**。
+# src_doctor.yml は module 単体、src_glogx.yml は glogx 全体 (実測 31 秒) で、
+# glogx 側の doctor テストはその中に埋もれる。ここは doctor だけを **実測 1 秒**で回し、
+# 「doctor を触った」ときに最初に赤くなる先行指標を作る。
+#
+# 既存レーンとの分担 (重複させない):
+#   - src_doctor.yml  : src/doctor の lint + test (module 単体の正本)
+#   - src_glogx.yml   : glogx 全体の lint + test (doctor 以外の退行を見る)
+#   - このファイル     : doctor に絞ったテスト + 2 CLI のビルド + fail-closed の smoke
+#
+# ⚠️ paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
+# ⚠️ ここでも実データ・実 launchd は触らない。CLI の smoke は偽 HOME + PATH を絞った
+#   環境で回し、**依存コマンドが無い環境で「候補 0 件」ではなく「診断できず」に倒れる**
+#   ことを見る (issues/163 の体 5 が見つけた false green の形を CI で見張る)。
+name: doctor
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/doctor/**'
+      - 'src/glogx/doctor_*.go'
+      - 'src/glogx/tui.go'
+      - .github/workflows/doctor.yml
+  pull_request:
+    paths:
+      - 'src/doctor/**'
+      - 'src/glogx/doctor_*.go'
+      - 'src/glogx/tui.go'
+      - .github/workflows/doctor.yml
+  workflow_dispatch:  # GitHub UI からの手動再実行用
+
+permissions:
+  contents: read
+
+# 同一 ref の連続 push では古い run を打ち切る (旧コミットの結果に価値が無いため)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  doctor:
+    # macOS runner: doctor は launchd / xcrun / brew / du の挙動を前提にした判定なので、
+    # Linux で回すと「動くが意味が無い」テストになる (repo 全体の方針も macOS のみ = issue 133)
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Silence git init.defaultBranch hint
+        run: git config --global init.defaultBranch main
+
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: src/doctor/go.mod
+          cache-dependency-path: |
+            src/doctor/go.sum
+            src/glogx/go.sum
+
+      # 判定の本体。module 単体の正本は src_doctor.yml だが、こちらでも回す:
+      # glogx 配線だけ緑で判定が赤い状態を「doctor は緑」と読ませないため
+      - name: doctor module のテスト
+        run: go test -race ./...
+        working-directory: src/doctor
+
+      # glogx 側の doctor 配線。glogx 全体 (31 秒) からこの部分だけを切り出す (1 秒)
+      # ⚠️ -run のパターンは「テスト名が TestDoctor で始まる」ことに依存する。
+      #   下の gate がその前提を検査するので、名前を変えたら gate が落ちて気づく
+      - name: glogx の doctor 配線テスト
+        run: go test -race -count=1 -run 'TestDoctor' -v . | tee /tmp/doctor-tests.log
+        working-directory: src/glogx
+
+      # 「そもそも走ったか」を出力で確かめる (exit 0 は「1 本も走らなかった」を含む)。
+      # -run のパターンが名前と食い違うと vacuous pass になるので、本数を数えて下限を課す。
+      # 実測 2026-09-03 時点で 19 本。減る変更が入ったら気づけるよう 15 を下限にする
+      # (規範: _claude/rules/verify-execution-not-just-exit-code.md)
+      - name: doctor テストが実際に走ったことを確認する
+        run: |
+          n=$(grep -c '^--- PASS: TestDoctor' /tmp/doctor-tests.log || true)
+          echo "doctor テスト: ${n} 本が PASS"
+          if [ "${n:-0}" -lt 15 ]; then
+            echo "✗ doctor のテストが ${n} 本しか走っていない (-run のパターンとテスト名が食い違っている疑い)" >&2
+            exit 1
+          fi
+
+      # 2 つの CLI がビルドできること。判定の本体を触ったときに CLI 側の
+      # 呼び出しが壊れる形 (シグネチャ変更) をここで止める
+      - name: CLI をビルドする
+        run: |
+          go build -o /tmp/diskdoctor ./cmd/diskdoctor
+          go build -o /tmp/svcdoctor ./cmd/svcdoctor
+        working-directory: src/doctor
+
+      # fail-closed の smoke: 依存コマンド (brew / xcrun) が失敗する環境で
+      # 「候補 0 件 (安全です)」に化けず「診断できず」に倒れることを見る。
+      # ここが ok に化けるのが issues/163 の体 5 が見つけた false green の形。
+      #
+      # ⚠️ PATH から外すだけでは不足: `xcrun` は /usr/bin にあるので、PATH を
+      #   /usr/bin:/bin に絞っても**実在して成功する** (実測 2026-09-03: それだと
+      #   simulator-runtimes が ok / items 2 になり、この検査は何も確かめない)。
+      #   なので**必ず失敗する偽物を PATH 先頭に置く**。この shim は実体を呼ばないので
+      #   path-shim-must-resolve-real-binary.md の再帰の罠には当たらない。
+      # ⚠️ HOME と TMPDIR は空の一時ディレクトリにして実データを触らない。
+      - name: 依存コマンド失敗時に fail-closed へ倒れることを確認する
+        run: |
+          h=$(mktemp -d); t=$(mktemp -d); shim=$(mktemp -d)
+          printf '#!/bin/sh\nexit 72\n' > "$shim/xcrun"
+          printf '#!/bin/sh\nexit 1\n' > "$shim/brew"
+          chmod +x "$shim/xcrun" "$shim/brew"
+          set +e
+          env -i HOME="$h" TMPDIR="$t" LANG=C \
+            PATH="$shim:/usr/bin:/bin:/usr/sbin:/sbin" \
+            /tmp/diskdoctor -json > "$t/out.json" 2> "$t/err.txt"
+          rc=$?
+          set -e
+          echo "diskdoctor -json rc=$rc (2 = 診断できずが在る)"
+          echo "--- stderr ---"; cat "$t/err.txt"
+          # JSON として妥当であること (壊れた出力を「異常なし」と読ませない)
+          python3 -c "import json; json.load(open('$t/out.json'))"
+          # 依存コマンドを使う 4 つの判定が failed (診断できず) になっていること。
+          # ⚠️ id は results[].entry.ID にある (results[].id ではない。実測 2026-09-03)
+          python3 - "$t/out.json" <<'PYCHECK'
+          import json, sys
+          want = ["brew-orphan-state", "brew-cleanup-residue",
+                  "simulator-runtimes", "coresimulator-orphan"]
+          results = json.load(open(sys.argv[1]))["results"]
+          by_id = {r["entry"]["ID"]: r for r in results}
+          bad = []
+          for i in want:
+              r = by_id.get(i)
+              st = r["status"] if r else "MISSING"
+              print(f"  {i}: {st}")
+              if st != "failed":
+                  bad.append(f"{i} が '{st}' (診断できずに倒れていない)")
+          if bad:
+              sys.exit("✗ " + " / ".join(bad))
+          print(f"✓ 依存コマンド失敗時に {len(want)} 件すべてが診断できずへ倒れた")
+          PYCHECK
+          # 診断できずが在るなら exit 2 (スクリプトから読めることを固定する)
+          [ "$rc" = 2 ] || { echo "✗ 診断できずが在るのに rc=$rc" >&2; exit 1; }
