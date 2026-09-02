@@ -300,9 +300,33 @@ P1 (事実誤認 / hunk が当たらない) は 0 件。`-` 行は全 hunk が�
 | diff 4-5 (H4/H5) | `f1bf7e4` | fable SKILL.md: commit/push は memory を正本として委譲 (内容の再掲をやめる)。仕様節を Fable 5.1 (`claude-fable-5-1` / cutoff 2026-06) へ更新し、実行モデルが Fable のときは仕様節を読み飛ばす旨を明記。⚠️ memory `no-autonomous-commit-push` の実体は確認できなかった (dotfiles の memory ディレクトリは空) — 委譲する形にしたので内容の真偽に依存しない |
 | diff 6-8 (H6/H7/H8) | `f743df7` | agents の英語テンプレ定型を削除: research-assistant の "am I being lazy?" + "Remember: ..." / 5 agent の "Surface-level X is insufficient" を `## Focus areas` へ / smoke-test-runner の同文反復 1 件 |
 
+| diff 9-11 (M1/M2) | `dfc2ff2` | CLAUDE.md / subagent-model-tiering.md のモデル名ピンを外す (規範は維持)。レビュー方針の主語を codex → 外部レビューへ一般化し、memory `no-codex-usage` との相殺を解消 |
+| M3 + M13 | `cc7d510` | rules 本文の事故ナラティブ 7 箇所を圧縮・rationale へ移送。rationale 2 本を新設 (refuse-low-value-coverage / avoid-wall-clock-assertions) |
+| M4 + M5 | `ed4e927` | codex-drive の実測記述は現状維持 + 冒頭に理由を明記。cross-review.md / phase-4.3-ultra.md に「出力例は説明用、wire format は forge.js の `*_SCHEMA`」の断りを追加 |
+
+### 適用時に issue の提案から変えた判断 (次の監査が同じ指摘を出さないため)
+
+- **M13 の「rationale 7 本新設」は 2 本に留めた**。残る 5 本 (claude-md-layer-prompt /
+  claude-md-maintenance / no-concurrent-spm-build-during-xcodebuild / no-ios-simulator-verification /
+  pending-issue-rationale-in-code) は**本文に移すべき実例が無く、rationale への dangling 参照も無い**
+  (実測: 全 rules で `rules-rationale/<同名>` を参照しつつファイルが無いものは 0 件)。
+  空の rationale を置くのは `claude-md-maintenance.md` の「とりあえず置く」禁止と同型なので作らない
+- **M4 は move ではなく「意図的な現状維持を明記」を採った**。実測値は「どのフェーズを削れるか」の
+  判断根拠で、落とすと無根拠な削減主張だけが残る (`perf-claims-need-measurement.md` との緊張は
+  issue が指摘していたとおりで、残す側に倒した)
+- **M5 の `examples-*.md` は対象外**。wire format の記述ではなく使い方の会話例で、`*_SCHEMA` と競合しない
+- **M3 の `parallel-write-agents-need-worktree-isolation.md`** は実例段落ではなく「規範 + なぜ」の形
+  だったので、移送せず冗長な尾部だけ圧縮した
+- **diff 5 の URL 差し替え (`/news/...` → `/claude/fable`) は当てていない**。既存 URL は同ファイル内で
+  release blog として別途参照されており、差し替えの裏が取れていない
+- **H4 の前提は確認できていない**: memory `no-autonomous-commit-push` の実体は見つからなかった
+  (dotfiles の memory ディレクトリは空)。diff 4 は「memory が正本」と委譲する形にしたので、
+  memory の現在の内容に依存しない
+
 ### 未適用 (残り)
 
 - **High**: なし (H1-H8 すべて適用済み)
-- **Medium**: M1 (diff 9, 10)、M2 (diff 11)、M3 + M13 (rules 本文の実例を rationale へ / 欠落 7 本の新設)、
-  M4・M5・M7・M8・M9・M10 (diff 14)・M11・M12 (diff 15)
+- **Medium**: M7 (debugger の 4 節反復)、M8 (research-assistant の固定検索手順 / 理由なし禁止列)、
+  M9 (architecture-designer の共通スキャフォールド)、M10 (diff 14)、M11 (Working Style の一般的美徳)、
+  M12 (diff 15、fork-scratch の到達不能な手順)
 - 適用後の注意は「適用するときの注意」節のとおり (H1 適用後の `grep -rn full-auto _claude/skills` の目視は未実施)
