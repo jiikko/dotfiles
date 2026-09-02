@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -463,5 +464,50 @@ Warning: Unbrewed header files were found in /usr/local/include.
 		return "", "", -1, errors.New("brew not found")
 	}).Unavailable == "" {
 		t.Error("brew 不在を診断できずにしない")
+	}
+}
+
+// 直近 5 分以内の完全な結果があれば、開いたときに走査せずそれを出す (popup の開閉ごとにスキャンしない)。
+// r は snapshot を無視して走査し直す。partial は snapshot にならない。
+func TestDoctorReusesRecentSnapshot(t *testing.T) {
+	v := doctorTestView(t)
+	runDoctorCmds(t, v, v.open())
+	v.close()
+	if _, ok := loadDoctorSnapshot(time.Now()); !ok {
+		t.Fatal("完了後に snapshot が書かれない")
+	}
+	if cmd := v.open(); cmd != nil {
+		t.Fatal("TTL 内の再オープンで走査 Cmd が返った (毎回スキャンしている)")
+	}
+	if v.scanning() || v.diskRep == nil || v.svcRep == nil || v.brew == nil || v.snapshotAt.IsZero() {
+		t.Fatalf("snapshot から 3 セクションが復元されない: %+v", v.scanning())
+	}
+	if out := doctorText(v, 40); !strings.Contains(out, "分前の結果 (r で再スキャン)") || !strings.Contains(out, "Thing キャッシュ") {
+		t.Errorf("snapshot 表示のヘッダー / 中身が出ない:\n%s", out)
+	}
+	if v.handleKey("r", 40) != doctorRescan {
+		t.Fatal("r が再スキャンの信号を返さない")
+	}
+	if cmd := v.rescan(); cmd == nil || !v.scanning() || !v.snapshotAt.IsZero() {
+		t.Fatal("r が snapshot を無視して走査し直さない")
+	}
+	v.close()
+	// TTL 切れは走査する
+	path, _ := doctorSnapshotPath()
+	old := doctorSnapshot{ScannedAt: time.Now().Add(-doctorSnapshotTTL - time.Minute)}
+	data, _ := json.Marshal(old)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if cmd := v.open(); cmd == nil {
+		t.Fatal("TTL 切れの snapshot を使った")
+	}
+	v.close()
+	// partial は snapshot にならない
+	if err := saveDoctorSnapshot(doctorSnapshot{ScannedAt: time.Now(), Disk: disk.Report{Partial: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if sn, ok := loadDoctorSnapshot(time.Now()); ok && sn.Disk.Partial {
+		t.Fatal("partial が snapshot として保存された")
 	}
 }

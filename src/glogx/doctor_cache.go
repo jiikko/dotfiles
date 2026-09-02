@@ -9,6 +9,7 @@ import (
 
 	"doctor/cachedir"
 	"doctor/disk"
+	"doctor/svc"
 )
 
 // doctor のディスク診断結果の保存と、起動時トースト (issue 148 の 3 章)。
@@ -167,4 +168,72 @@ func doctorTopEntries(c doctorDiskCache, n int) string {
 		s += " ほか"
 	}
 	return s
+}
+
+// doctorSnapshotTTL は「開いたときに前回の結果をそのまま出す」期間。C-g の popup を高頻度で開閉すると毎回
+// スキャンが走って見えるので、直近の完全な結果はこの間そのまま出し、r で明示的に走査し直す (ユーザー要望 2026-09-02)。
+const doctorSnapshotTTL = 5 * time.Minute
+
+// doctorSnapshot は doctor 画面の 3 セクションの完全な結果 (トースト用の doctor-disk.json とは別ファイル。
+// あちらは合計と上位だけの軽い要約で、こちらは画面をそのまま再現するための全体)。
+type doctorSnapshot struct {
+	ScannedAt time.Time        `json:"scanned_at"`
+	Disk      disk.Report      `json:"disk"`
+	Svc       svc.Report       `json:"svc"`
+	Brew      brewDoctorResult `json:"brew"`
+}
+
+func doctorSnapshotPath() (string, error) {
+	base, err := cachedir.Base()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "doctor-snapshot.json"), nil
+}
+
+// saveDoctorSnapshot は完全な結果だけを書く (partial は書かない。開き直しで中断の姿を再現しない)。atomic。
+func saveDoctorSnapshot(sn doctorSnapshot) error {
+	if sn.Disk.Partial || sn.Svc.Interrupted {
+		return nil
+	}
+	path, err := doctorSnapshotPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.Marshal(sn)
+	if err != nil {
+		return err
+	}
+	tmp := fmt.Sprintf("%s.tmp.%d", path, os.Getpid())
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+// loadDoctorSnapshot は TTL 内の完全な結果を返す。欠損・破損・期限切れ・未来の時刻は「無し」(走査に倒す)。
+func loadDoctorSnapshot(now time.Time) (doctorSnapshot, bool) {
+	path, err := doctorSnapshotPath()
+	if err != nil {
+		return doctorSnapshot{}, false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return doctorSnapshot{}, false
+	}
+	var sn doctorSnapshot
+	if err := json.Unmarshal(data, &sn); err != nil || sn.ScannedAt.IsZero() {
+		return doctorSnapshot{}, false
+	}
+	if age := now.Sub(sn.ScannedAt); age < 0 || age >= doctorSnapshotTTL {
+		return doctorSnapshot{}, false
+	}
+	return sn, true
 }

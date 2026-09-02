@@ -44,6 +44,7 @@ type doctorView struct {
 	svcRep      *svc.Report // nil = 走査中
 	brew        *brewDoctorResult
 	startedAt   time.Time
+	snapshotAt  time.Time // 前回の結果をそのまま出しているときの走査時刻 (zero = 今回走査した)
 
 	cursor   int             // rows の index (選べる行を指す)
 	offset   int             // 窓の先頭 (rows の index)
@@ -101,13 +102,34 @@ func (v *doctorView) toggle() tea.Cmd {
 	return v.open()
 }
 
-func (v *doctorView) open() tea.Cmd {
+// open は開いて走査を始める。⚠️ 直近 doctorSnapshotTTL 以内の完全な結果があれば走査せずそれを出す
+// (popup の開閉のたびにスキャンが走って見えるのを避ける)。r (rescan) は snapshot を無視する。
+func (v *doctorView) open() tea.Cmd { return v.start(false) }
+
+// rescan は snapshot を無視して走査し直す (r)。
+func (v *doctorView) rescan() tea.Cmd { return v.start(true) }
+
+func (v *doctorView) start(force bool) tea.Cmd {
 	v.shown = true
 	v.gen++
 	v.cursor, v.offset = 0, 0
 	v.expanded = map[string]bool{}
 	v.diskResults, v.diskRep, v.svcRep, v.brew = nil, nil, nil, nil
 	v.startedAt = timeNow()
+	v.snapshotAt = time.Time{}
+	if !force {
+		if sn, ok := loadDoctorSnapshot(timeNow()); ok {
+			rep := sn.Disk
+			v.diskRep = &rep
+			v.diskResults = rep.Results
+			svcRep := sn.Svc
+			v.svcRep = &svcRep
+			brew := sn.Brew
+			v.brew = &brew
+			v.snapshotAt = sn.ScannedAt
+			return nil
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	v.cancel = cancel
 	gen := v.gen
@@ -199,6 +221,7 @@ func (v *doctorView) receiveDisk(msg doctorDiskMsg) tea.Cmd {
 	if msg.ev.rep != nil {
 		v.diskRep = msg.ev.rep
 		v.saveCache(*msg.ev.rep) // Partial な完了 (中断) も saveCache の規律の中で扱う
+		v.maybeSaveSnapshot()
 		return nil
 	}
 	if msg.ev.r != nil {
@@ -213,6 +236,7 @@ func (v *doctorView) receiveSvc(msg doctorSvcMsg) {
 	}
 	rep := msg.rep
 	v.svcRep = &rep
+	v.maybeSaveSnapshot()
 }
 
 func (v *doctorView) receiveBrew(msg doctorBrewMsg) {
@@ -221,6 +245,15 @@ func (v *doctorView) receiveBrew(msg doctorBrewMsg) {
 	}
 	res := msg.res
 	v.brew = &res
+	v.maybeSaveSnapshot()
+}
+
+// maybeSaveSnapshot は 3 セクションが揃った時点で完全な結果を書く (TTL 内の開き直しで再利用)。
+func (v *doctorView) maybeSaveSnapshot() {
+	if v.diskRep == nil || v.svcRep == nil || v.brew == nil || v.diskRep.Partial {
+		return
+	}
+	_ = saveDoctorSnapshot(doctorSnapshot{ScannedAt: timeNow(), Disk: *v.diskRep, Svc: *v.svcRep, Brew: *v.brew})
 }
 
 // doctorAction は handleKey の結果 (rlDash と同じ語彙)。
@@ -342,8 +375,11 @@ func (v *doctorView) lines(o doctorRenderOpts) []string {
 
 func (v *doctorView) headerLine(o doctorRenderOpts) string {
 	left := " doctor"
-	if v.scanning() {
+	switch {
+	case v.scanning():
 		left += "  " + o.spinner + " スキャン中 " + timeNow().Sub(v.startedAt).Round(time.Second).String()
+	case !v.snapshotAt.IsZero():
+		left += fmt.Sprintf("  %d 分前の結果 (r で再スキャン)", int(o.now.Sub(v.snapshotAt).Minutes()))
 	}
 	right := "[Enter] 詳細  [r] 再スキャン  [D/Esc] 閉じる "
 	gap := o.width - dispWidth(left) - dispWidth(right)

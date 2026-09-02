@@ -1465,6 +1465,15 @@ quit / spinner の経路 / struct コピー / validateTarget の各種 (HOME 直
 - カーソル (j/k) はセクションをまたいで「選べる行」だけに止まる。④ の Space / d はこのカーソルに乗せる
 - 実機のサンプル: `tmp/doctor_sample.txt`
 
+### 追記 (2026-09-02、ユーザー要望)
+
+- **開いたときの再スキャン抑止**: 直近 5 分以内の完全な結果 (`cachedir.Base()/doctor-snapshot.json`。3 セクションの
+  全体) があれば走査せずそのまま出し、ヘッダーに「N 分前の結果 (r で再スキャン)」を添える。C-g の popup を高頻度で
+  開閉すると毎回スキャンが走って見えるため。partial / 中断は snapshot にしない。`r` は snapshot を無視する。
+  トースト用の `doctor-disk.json` (要約) とは別ファイル
+- **警告の記号は 🚨**: ⚠️ (U+26A0 + VS16) は端末で表示幅が揺れ、右端がフレームごとに動いて見えた。表示に使う記号の
+  規約は `src/glogx/CLAUDE.md` と `_claude/rules/no-mixed-width-columns-in-terminal-ui.md` に書いた
+
 ### 次の一手 (引き継ぎ。ここから続ける)
 
 **段階 ①②③ は完了、次は ④ 削除経路** (ゴミ箱移動 / TOCTOU / インベントリ記録 / 削除後の再スキャン)。

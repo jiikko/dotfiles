@@ -19,6 +19,10 @@ render.go の純粋描画層・幅計算の単一出典・stdout / 時刻のシ�
 - 外部由来の文字列 (git / CI ログ / issue markdown / ファイル名) は表示前に termsafe を入口で 1 回通す。出所ごとに書き分けると漏れる (issue markdown と git status のパスが実際に漏れた)
 - glog (`40d4a28` で退役) の派生だが、glog との差分管理はもう無い
 
+- **表示に使う記号は表示幅が安定するものだけ**。警告は 🚨 (U+1F6A8、常に 2 桁) を使い、⚠️ (U+26A0 + VS16) は
+  使わない — 端末によって 1 桁と 2 桁で揺れ、行の右端がフレームごとに動いて見える (doctor 画面で実測 2026-09-02)。
+  コメント内の ⚠️ は表示に乗らないので対象外
+
 ## ビルド・テスト
 
 - 起動は `bin/glogx` (autobuild `--async`: 旧版で即起動し、新版は次回から。今すぐ欲しければ `GO_AUTOBUILD_SYNC=1 glogx`)。`.autobuild.*` は autobuild の作業ファイル (gitignore 済み)
