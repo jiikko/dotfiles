@@ -1271,9 +1271,52 @@ Homebrew = 判定は brew 側)。
   ③ で doctor に接続する前に svcdoctor 込みで通す**
 - `src/README.md` の「`GO_PROJECT_DIRS` に登録」は自動発見 (issue 080) に変わっていたので同時に直した
 
+### 段階 2: `src/diskdoctor` + `bin/diskdoctor` (2026-09-02 実装。走査 + dry-run 一覧のみ、削除なし)
+
+- 実装: `src/diskdoctor/` (catalog.go / paths.go / size.go / guard.go / scan.go / report.go / main.go)。
+  `Scan(ctx, Options) Report` → `Format` / `-json` / `-progress` (完了順に stderr へ)。svcdoctor と同じ
+  Runner 契約 (stdout / stderr / rc 分離)。削除の経路は無い (`rm` / `trash` / `cli:` は表示だけ)
+- カタログは 1 章の写し (Tier 1〜3、23 エントリ)。**変えた点**: `brew-orphan-state` は `/opt/homebrew/var/*`
+  だけ (etc は ImageMagick-7 / certs / fonts / openldap のように formula 名と一致しない共有ディレクトリが
+  並んで雑音になった。実測)。`orphan-container` は `com.apple.*` を除外 (System 側のアプリ / daemon の
+  コンテナで、CloudDocs は TCC で読めもしない)
+- サイズは `Stat_t.Blocks × 512` + `(dev, ino)` dedupe。`du -sk` との一致をハードリンク + sparse + symlink の
+  ツリーで実 du と突き合わせて固定 (`TestDuSizeMatchesDu`)。`EvalSymlinks` は使っていない
+- パス安全性 (`validateTarget`): `..` / ルート / `/Users` / `/Users/<name>` / HOME / HOME 直下の通常ディレクトリ /
+  経路途中の symlink を拒否。**`/var` `/tmp` `/etc` だけは `/private/...` に書き換えてから検査する**
+  (TMPDIR が `/var/folders/...` なので、これを symlink として拒否すると Tier 2/3 が全滅する)。
+  深さの閾値は 3 で、HOME 直下はドットで始まる tool root (`~/.goenv`) だけ許す
+- fail-closed: simctl / boottime / `/Applications` 走査 / brew の失敗はそのエントリを「走査できず」にし、
+  候補 0 件に畳まない。権限エラーは item 単位で `Failures` に残し (合計に入れない)、他の item は続ける
+- **走査できなかった item の例 (実機)**: `~/Library/Containers/com.apple.CloudDocs.*` は TCC で
+  `operation not permitted`。com.apple.* 除外で候補からは消えるが、この形の失敗が他にも出うる
+- 起動時刻は `unix.SysctlTimeval("kern.boottime")` (構造体で受ける。sed パースの sec/usec 取り違えは起きない)
+- `versionmanager-orphan-root` の実効 ROOT: 環境変数 → `~/.anyenv/envs/<tool>` の存在 → `~/.<tool>` の順。
+  ⚠️ この機の実測は issue 本文と違い `NODENV_ROOT=~/.nodenv` が **set されていた** (= ~/.nodenv は現役扱いで
+  候補にならない)。本文の「~/.nodenv 2.2GB が孤児」は 2026-09-01 時点の観測で、現在は env が指している
+- 実機 (2026-09-02): 23 エントリ 8 秒、**合計 73.7GB** (npm `_cacache` 20.9GB は最終更新 2023-11 /
+  DerivedData 17.6GB / シミュレータランタイム 16.2GB / go-build 9.6GB / go mod 5.8GB)。Chrome 起動中で
+  `chrome-tmp` は blocked。走査できずは 0 件 (com.apple 除外後)
+- 既知の重なり: `brew-cleanup-residue` の一部 (`~/Library/Caches/Homebrew/...`) は `homebrew-cache` にも
+  含まれる (dedupe はエントリ内だけ)。合計が数十 MB 過大になる。④ で削除順を決めるときに整理する
+- 変異検証 (すべて red): dedupe 削除 / 途中 symlink 検査削除 / ルート・HOME ガード削除 / simctl 失敗を空集合に
+  倒す / boottime 失敗を now に倒す / Info.plist 突合を外す / 走査失敗を黙って捨てる / 合計に blocked・failed
+  を足す (最後の 1 本は最初のテストでは green だった: blocked / failed は構造上 Size 0 なので、合計の計算を
+  `sumDeletable` に切り出して Size 持ちの failed を直接与える形に作り替えた)
+- 未着手 (④ 以降): 削除 / TOCTOU (Lstat 取り直しと (dev, ino) 照合。item に札は持たせてある) / ゴミ箱移動 /
+  インベントリ記録 / `cacheBaseDir()` の置き場 (② の CLI はキャッシュを持たない)
+- 敵対的レビューは通していない (③ の前に svcdoctor / diskdoctor 込みで通す)
+
 ### 次の一手 (引き継ぎ。ここから続ける)
 
-**段階 ① は完了、次は ② `src/diskdoctor` の走査 + `bin/diskdoctor` の dry-run 一覧** (削除は作らない)。
+**段階 ①② は完了、次は ③ glogx の doctor 画面 + キャッシュ + 起動時トースト** (削除は作らない)。
+③ の前に決めること: `cacheBaseDir()` の置き場 / 起動キー / トーストからの導線 (未決事項)。
+③ の入口は `src/glogx/tui.go` の viewer 配線 (`issuesOv` / `statusOv` の各分岐を doctor にも足す)。
+diskdoctor / svcdoctor は別 module なので glogx からは `exec` で `-json` を叩くか、共有 package へ
+切り出すかを最初に決める (同一 module に取り込むと glogx の go.mod に plist / x/sys が入る)。
+
+<details><summary>② を始めるときの手引き (完了済み。記録として残す)</summary>
+
 
 - 型を ① と揃える: `Options` (Dirs / Run / Stat を注入) → `Scan(ctx, opt) Report` →
   `Format(rep)` / `-json`。fake runner は `src/svcdoctor/scan_test.go` の `fakeRunner` の形
@@ -1290,27 +1333,29 @@ Homebrew = 判定は brew 側)。
 - 段階 ① の残り (③ で回収): BTM の扱い判断 / svcdoctor 込みの敵対的レビュー (①壊す ②素通り ③並行・中断)。
   ① のテストは `make -C src/svcdoctor test`、実機確認は `bin/svcdoctor` (exit 0/1/2 の意味は上)
 
+</details>
+
 ## 7. 受け入れ条件
 
 **診断・削除ロジック (`src/diskdoctor` / `bin/diskdoctor`)**
 
-- [ ] `bin/diskdoctor` が allowlist に基づく候補一覧を**占有量の降順**で出せる (dry-run 既定)
-- [ ] `coresimulator-orphan` が `simctl` と照合し、現存 UUID を候補にしない
-- [ ] `chrome-tmp` が Chrome 起動中は候補にならない (プロセス判定は**完全一致**)
+- [x] `bin/diskdoctor` が allowlist に基づく候補一覧を**占有量の降順**で出せる (dry-run 既定)
+- [x] `coresimulator-orphan` が `simctl` と照合し、現存 UUID を候補にしない
+- [x] `chrome-tmp` が Chrome 起動中は候補にならない (プロセス判定は**完全一致**)
 - [ ] 空変数 / ルート / シンボリックリンク / 0 件 の各ガードにテストがあり、
       **ガードを外す変異で red になる**ことを確認済み
-- [ ] **表示サイズが `du` と一致する** — `Stat_t.Blocks` ベース、`(dev, ino)` で dedupe。
+- [x] **表示サイズが `du` と一致する** — `Stat_t.Blocks` ベース、`(dev, ino)` で dedupe。
       ハードリンク・APFS clone・sparse file を含むツリーで `du -sk` と突き合わせて検証
-- [ ] **`filepath.EvalSymlinks` を正規化に使っていない** (リンク先を消す経路が生まれない)
-- [ ] 経路の途中にシンボリックリンクが挟まる対象を**拒否**する
+- [x] **`filepath.EvalSymlinks` を正規化に使っていない** (リンク先を消す経路が生まれない)
+- [x] 経路の途中にシンボリックリンクが挟まる対象を**拒否**する
 - [ ] **TOCTOU 対策**: 削除直前に `Lstat` を取り直し、スキャン時の `(dev, ino)` と
       一致しなければ**そのエントリを飛ばす**。差し替えを仕込むテストがある
 - [ ] `risk: confirm` は `rm` ではなく**ゴミ箱へ移動**され、ユーザーが復元できる
-- [ ] 「mtime が起動時刻より古い」を**単独の削除ゲートにしていない**
+- [x] 「mtime が起動時刻より古い」を**単独の削除ゲートにしていない**
       (孤児照合 / プロセス不在 / `lsof` のいずれかを併用)
 - [ ] キャッシュ・履歴の置き場が **`cacheBaseDir()` 経由** (パスをハードコードしていない)
-- [ ] `simctl` 失敗・`boottime` パース失敗が **fail-closed** (候補 0 件) になる
-- [ ] 走査失敗が「候補 0 件」に畳まれず、**「走査できず」として区別**される
+- [x] `simctl` 失敗・`boottime` パース失敗が **fail-closed** (候補 0 件) になる
+- [x] 走査失敗が「候補 0 件」に畳まれず、**「走査できず」として区別**される
 - [ ] 削除時にインベントリが `doctor-history/` に残る
 - [ ] sudo をツールが実行しない (Tier 4 に該当が出た場合もコマンド表示のみ)
 - [ ] **`deleteVia: cli:` の対象を `rm` しない。** `simulator-runtimes` を `rm` で消そうとする
@@ -1320,16 +1365,16 @@ Homebrew = 判定は brew 側)。
       (非同期削除する `simctl` を模した fake で固定する)
 - [ ] 外部コマンドの **stdout / stderr / exit code を分離**して扱う
       (`simctl` の `rc=24` + stderr のみ、というケースを fake で再現)
-- [ ] `orphan-container` が **`mdfind` 単独で判定していない**。
+- [x] `orphan-container` が **`mdfind` 単独で判定していない**。
       `/Applications` の `Info.plist` を突合し、**アプリが実在するのに Spotlight に無い**
       ケースで孤児にならないことを固定する
-- [ ] `versionmanager-orphan-root` が **`*_ROOT` の実効値**で判定し、
+- [x] `versionmanager-orphan-root` が **`*_ROOT` の実効値**で判定し、
       **現役の `~/.rbenv` 型 (anyenv 側が無く fallback が効いている構成) を候補にしない**
-- [ ] `brew-cleanup-residue` が `/opt/homebrew/Library/Homebrew/vendor/` を見ている
+- [x] `brew-cleanup-residue` が `/opt/homebrew/Library/Homebrew/vendor/` を見ている
       (`~/Library/Caches/Homebrew` だけでは 424MB を取りこぼす)
-- [ ] `swiftui-drag-cache` が `finder-nsird` と同じ扱い (`risk: confirm` /
+- [ ] (② で risk: confirm + 中身一覧まで。ゴミ箱移動は ④) `swiftui-drag-cache` が `finder-nsird` と同じ扱い (`risk: confirm` /
       中身一覧を見るまで選択不可 / ゴミ箱移動) になっている
-- [ ] 除外リスト (自作アプリの sandbox コンテナ / `~/.cache/dein` /
+- [x] 除外リスト (自作アプリの sandbox コンテナ / `~/.cache/dein` /
       `~/Library/Application Support/Google`) が**テストで固定**されている
 
 **サービス診断 (`src/svcdoctor` / `bin/svcdoctor`)**

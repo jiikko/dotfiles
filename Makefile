@@ -13,6 +13,7 @@ ZSH_SYNTAX_FILES := \
   bin/binav1c \
   bin/concat \
   bin/disassemble_excel \
+  bin/diskdoctor \
   bin/glogx \
   bin/lib/go_autobuild.zsh \
   bin/lockman \

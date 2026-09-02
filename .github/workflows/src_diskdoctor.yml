@@ -1,0 +1,39 @@
+---
+# src/diskdoctor (掃除候補の一覧 CLI) の CI。lint + test の本体は再利用 workflow
+# _go-project.yml に一元化し、ここは paths filter (触れた変更のときだけ起動) と対象 dir の
+# 指定だけを持つ薄い caller。paths に _go-project.yml を含めるのは、共有本体を編集したとき
+# にも全プロジェクトの CI を走らせて検証するため (含めないと本体変更が誰にも検証されない)。
+# ⚠️ paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
+#
+# ⚠️ 実データは触らない (テストは偽 HOME と fake runner。du との一致は実 du で確かめる)。runner は macOS なので
+#   darwin 前提 (kern.boottime / Stat_t.Blocks) もそのままコンパイルされる。
+name: src/diskdoctor
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/diskdoctor/**'
+      - .github/workflows/src_diskdoctor.yml
+      - .github/workflows/_go-project.yml
+  pull_request:
+    paths:
+      - 'src/diskdoctor/**'
+      - .github/workflows/src_diskdoctor.yml
+      - .github/workflows/_go-project.yml
+  workflow_dispatch:  # GitHub UI からの手動再実行用
+
+permissions:
+  contents: read
+
+# 同一 ref の連続 push では古い run を打ち切る (旧コミットの結果に価値が無いため)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # job id はチェック名の識別子 (共有 workflow のため check 名が "<id> / lint" になり、全 caller で同一 id だと区別不能)。プロジェクト名にする。
+  diskdoctor:
+    uses: ./.github/workflows/_go-project.yml
+    with:
+      dir: src/diskdoctor
