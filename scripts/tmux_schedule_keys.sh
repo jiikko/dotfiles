@@ -151,14 +151,15 @@ job_mtime() {
 #    確かめられないときは何も書かない (fail-closed: 相手が分からない pane を触らない)
 # ⚠️ 表示は装飾。失敗しても予約の成立・送信・取消には影響させない (fire の無音契約と同じ)
 refresh_pane_indicator() {
-  local pane=$1 j p at txt sock srvpid earliest='' n=0 hm v now_sock now_srvpid
+  local pane=$1 j p at sock srvpid earliest='' n=0 hm v now_sock now_srvpid
   [[ -n "$pane" ]] || return 0
   now_sock="$(tmux display-message -p '#{socket_path}' 2>/dev/null || true)"
   now_srvpid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
   [[ -n "$now_sock" && -n "$now_srvpid" ]] || return 0
   for j in "$STATE_DIR"/*.job; do
     [[ -f "$j" ]] || continue
-    { IFS= read -r p; IFS= read -r at; IFS= read -r txt
+    # 3 行目 (文字列) は読み飛ばす: ここでは使わない
+    { IFS= read -r p; IFS= read -r at; IFS= read -r _
       IFS= read -r sock || true; IFS= read -r srvpid || true; } < "$j" 2>/dev/null || continue
     [[ "$p" == "$pane" && "$at" =~ ^[0-9]+$ ]] || continue
     [[ "$sock" == "$now_sock" && "$srvpid" == "$now_srvpid" ]] || continue

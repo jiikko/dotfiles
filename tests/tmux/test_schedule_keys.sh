@@ -46,7 +46,10 @@ cat > "$TMP_DIR/bin/tmux" <<'EOS2'
 echo "tmux $*" >> "$CALLS"
 [ -n "${TMUX:-}" ] && echo "env TMUX=$TMUX" >> "$CALLS"
 case "$*" in
-  "display-message -p #{socket_path}") printf '%s\n' "${STUB_SOCK:-/tmp/sk-sock}" ;;
+  "display-message -p #{socket_path}")
+    # STUB_NO_SOCK=1 で「tmux が socket を答えない」を模す (空 + rc=0)
+    [ "${STUB_NO_SOCK:-0}" = 1 ] && exit 0
+    printf '%s\n' "${STUB_SOCK:-/tmp/sk-sock}" ;;
   "display-message -p #{pid}")
     if [ -n "${STUB_SRVPID_FILE:-}" ] && [ -f "$STUB_SRVPID_FILE" ]; then cat "$STUB_SRVPID_FILE"; else printf '%s\n' "${STUB_SRVPID:-4242}"; fi ;;
   "run-shell -b "*)
@@ -815,6 +818,14 @@ STUB_UI_RESULT="new	$sk_mine	make test" run "$STUB_PATH" "$SCRIPT" wizard
 assert_called "tmux set-option -p -t %5 @schedkeys-at $(fmt_hm "$sk_mine")" "自サーバの予約だけを数える"
 assert_not_called "@schedkeys-at $(fmt_hm "$sk_other")" "別サーバの予約の時刻を出さない"
 assert_not_called "ほか1件" "別サーバの予約を件数に数えない"
+
+printf '\n## pane 表示: サーバを同定できなければ何も書かない (fail-closed)\n'
+# ⚠️ socket / サーバ pid が取れないときに書くと、どのサーバの pane を触っているのか
+#    分からないまま set / unset することになる。相手が分からない pane は触らない
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+STUB_NO_SOCK=1 STUB_UI_RESULT="new	$(( $(/bin/date +%s) + 3600 ))	make test" run "$STUB_PATH" "$SCRIPT" wizard
+[[ "$(jobs_count)" == 1 ]] || { printf '✗ 前提が崩れている (予約が成立していない)\n'; exit 1; }
+assert_not_called "set-option" "socket が取れなければ表示を書かない (予約自体は成立させる)"
 
 printf '\n## pane 表示: stale 掃除で消える (サーバ再起動で sleeper だけ死んだ形)\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
