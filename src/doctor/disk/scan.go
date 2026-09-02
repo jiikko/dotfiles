@@ -1,6 +1,8 @@
-package main
+package disk
 
 import (
+	"doctor/runner"
+
 	"context"
 	"errors"
 	"fmt"
@@ -44,7 +46,7 @@ type Report struct {
 // Options は Scan の入力。テストは Env / Run / Catalog / BootTime を差す。
 type Options struct {
 	Env         Env
-	Run         Runner
+	Run         runner.Runner
 	Catalog     []Entry
 	BootTime    func() (time.Time, error)
 	Concurrency int           // 既定 4 (ディスク I/O が競合する)

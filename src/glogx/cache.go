@@ -1,6 +1,8 @@
 package main
 
 import (
+	"doctor/cachedir"
+
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -47,17 +49,8 @@ func (e cacheEntry) fresh(now time.Time) bool {
 
 // cacheBaseDir は glogx のキャッシュ置き場 ($XDG_CACHE_HOME/glog、未設定時は ~/.cache/glog)。
 // CI キャッシュと claude バージョンキャッシュ (claude_version.go) で共有する。
-func cacheBaseDir() (string, error) {
-	base := os.Getenv("XDG_CACHE_HOME")
-	if base == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		base = filepath.Join(home, ".cache")
-	}
-	return filepath.Join(base, "glog"), nil
-}
+// 実体は doctor module の cachedir (doctor のスキャン結果も同じ置き場に保存するため。issue 148)。
+func cacheBaseDir() (string, error) { return cachedir.Base() }
 
 // CachePath はリポジトリごとのキャッシュファイルパス。
 // $XDG_CACHE_HOME/glog/github.com/<owner>/<name>.json (未設定時は ~/.cache/glog/...)。

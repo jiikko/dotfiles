@@ -11,6 +11,7 @@ on:
     branches: [master]
     paths:
       - 'src/glogx/**'
+      - 'src/doctor/**'   # replace で取り込む共有 module (issue 148)
       # ⚠️ statusline (shell) は glogx と同じ pace ルールを二重実装しており、乖離を
       # usage/pace_drift_test.go が検出する。これを含めないと「shell だけ変えた push」で
       # 検査が 1 度も走らない (red team 指摘 2026-09-01)。tests.yml 側からも叩いているが、
@@ -26,6 +27,7 @@ on:
   pull_request:
     paths:
       - 'src/glogx/**'
+      - 'src/doctor/**'   # replace で取り込む共有 module (issue 148)
       # ⚠️ statusline (shell) は glogx と同じ pace ルールを二重実装しており、乖離を
       # usage/pace_drift_test.go が検出する。これを含めないと「shell だけ変えた push」で
       # 検査が 1 度も走らない (red team 指摘 2026-09-01)。tests.yml 側からも叩いているが、

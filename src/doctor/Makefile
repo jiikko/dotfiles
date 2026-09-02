@@ -1,5 +1,5 @@
-# diskdoctor (Go) の静的解析とテスト。root Makefile の test-go-lint / test-go と CI
-# (.github/workflows/src_diskdoctor.yml) から `make -C src/diskdoctor lint|test` として呼ばれる
+# doctor (Go) の静的解析とテスト。root Makefile の test-go-lint / test-go と CI
+# (.github/workflows/src_doctor.yml) から `make -C src/doctor lint|test` として呼ばれる
 # 自己完結ターゲット。golangci-lint はインストール不要で go run 経由・バージョン固定。
 # バージョンは .golangci.yml (version: "2") と整合させること。
 GOLANGCI_LINT_VERSION := v2.5.0

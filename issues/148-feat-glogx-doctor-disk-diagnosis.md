@@ -1331,13 +1331,28 @@ Homebrew = 判定は brew 側)。
   カタログの記述ミスを表面化させる意図で、隠さない
 - 両方: Runner / execRunner を別 module に写している (同じ 40 行)。③ で共有 package を切るなら統合候補
 
+### 共有 module への切り出し (2026-09-02、ユーザー承認)
+
+- `src/svcdoctor` と `src/diskdoctor` (別 module × 2) を **`src/doctor` (1 module)** に統合した。
+  package: `svc` (launchd 診断) / `disk` (ディスク走査) / `runner` (外部コマンドの実行口。2 module に写していた
+  40 行を 1 つに) / `cachedir` (キャッシュ置き場) / `cmd/svcdoctor` `cmd/diskdoctor` (CLI の main)
+- **`cacheBaseDir()` の置き場は決着**: `doctor/cachedir.Base()` を正本にし、glogx の `cacheBaseDir()` は
+  それへ委譲する (glogx が doctor を `replace doctor => ../doctor` で取り込む)。③ のスキャン結果の保存先は
+  `cachedir.Base()/doctor-disk.json`
+- CLI は `bin/svcdoctor` / `bin/diskdoctor` のまま。`go_autobuild` に `--pkg <rel>` を足した (指紋と build は
+  module root、成果物と `.autobuild.*` は `cmd/<name>/`。同じ module の別 main と記録が衝突しない)。
+  回帰テストは `tests/bin/test_go_autobuild.sh` の `--pkg` 節 (4 ケース)
+- CI: `src_svcdoctor.yml` / `src_diskdoctor.yml` を `src_doctor.yml` に置き換え、`src_glogx.yml` の paths に
+  `src/doctor/**` を足した (replace 先の変更で glogx の CI も走る)
+- ③ で glogx から呼ぶのは `svc.Scan` / `disk.Scan` の直接呼び出し (exec ではない)。`disk.Options.OnResult`
+  は goroutine から並行に呼ばれるので Msg に載せて直列化する
+
 ### 次の一手 (引き継ぎ。ここから続ける)
 
 **段階 ①② は完了、次は ③ glogx の doctor 画面 + キャッシュ + 起動時トースト** (削除は作らない)。
-③ の前に決めること: `cacheBaseDir()` の置き場 / 起動キー / トーストからの導線 (未決事項)。
+③ の前に決めること: 起動キー / トーストからの導線 (未決事項)。`cacheBaseDir()` と呼び方は上の
+「共有 module への切り出し」で決着済み (直接 import。`doctor/svc` `doctor/disk` `doctor/cachedir`)。
 ③ の入口は `src/glogx/tui.go` の viewer 配線 (`issuesOv` / `statusOv` の各分岐を doctor にも足す)。
-diskdoctor / svcdoctor は別 module なので glogx からは `exec` で `-json` を叩くか、共有 package へ
-切り出すかを最初に決める (同一 module に取り込むと glogx の go.mod に plist / x/sys が入る)。
 
 <details><summary>② を始めるときの手引き (完了済み。記録として残す)</summary>
 

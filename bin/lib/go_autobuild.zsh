@@ -14,7 +14,13 @@
 #
 # 使い方:
 #   source "${0:A:h}/lib/go_autobuild.zsh"
-#   go_autobuild_exec [--async] <src_dir> <name> -- "$@"
+#   go_autobuild_exec [--async] [--pkg <rel>] <src_dir> <name> -- "$@"
+#
+# --pkg <rel>: 1 つの module に複数の main を置く形 (src/doctor/cmd/svcdoctor 等) 用。
+#   指紋と go build は module root (<src_dir>) で取り、成果物と作業ファイルは <src_dir>/<rel> に
+#   置く (main ごとに別ディレクトリなので、同じ module の別 main と .autobuild.* が衝突しない)。
+#   ⚠️ 成果物の置き場を module root にしない: 同じ .autobuild.built を複数の main が上書きし合い、
+#   「入力は同じ = ビルド済み」と読んで別 main の古いバイナリを走らせる。
 #
 # --async: 既存バイナリで即 exec し、再ビルドはバックグラウンドで走らせる (次回起動から反映)。
 #   tmux popup から起動するツール (glogx) 向け。ビルド出力を人に見せないため。
@@ -118,8 +124,8 @@ _go_autobuild_lock_owner() {  # $1=lock dir
 # ⚠️ 指紋は mtime を信じている点は順序比較と同じ (rsync -a 等で mtime ごと巻き戻されると
 # 騙される)。そこは glogx 側の stale 判定 (src/glogx/autobuild.go) が受け持つ。
 # zstat は +<field> を 1 つしか取れないので 2 回に分ける。どちらも全ファイル一括 (実測 0.75ms)。
-_go_autobuild_fingerprint() {  # $1=src_dir
-  local src_dir="$1" i
+_go_autobuild_fingerprint() {  # $1=src_dir (--pkg のときは _GO_AUTOBUILD_MOD_DIR = module root を見る)
+  local src_dir="${_GO_AUTOBUILD_MOD_DIR:-$1}" i
   local -a files mt sz
   REPLY=
   # ⚠️ 入力集合はここが唯一の定義。`//go:embed` で .go 以外を焼き込むようになったら、その
@@ -234,9 +240,9 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   _go_autobuild_fingerprint "$src_dir"; built_fp=$REPLY
   # install の可否を決めるための基準 (下の guard の doc)。開始時点の記録を控える。
   _go_autobuild_read_built "$src_dir"; seen_at=$reply[1]; seen_fp=$reply[2]
-  local local_go required_go
+  local local_go required_go mod_dir="${_GO_AUTOBUILD_MOD_DIR:-$src_dir}"
   local_go=$(go env GOVERSION 2>/dev/null) || local_go=unknown
-  required_go=$(awk '$1 == "go" {print $2; exit}' "$src_dir/go.mod" 2>/dev/null)
+  required_go=$(awk '$1 == "go" {print $2; exit}' "$mod_dir/go.mod" 2>/dev/null)
   print -u2 -- "$name: building... (go=${local_go:-unknown} / go.mod=${required_go:-?})"
   # GOTOOLCHAIN は既定 (auto) のまま。local に固定すると go.mod の要求版に足りない環境で
   # 「go.mod requires go >= X」で失敗して手動対応が必要になる。auto なら toolchain (~90MB) を
@@ -259,7 +265,8 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   # (= 「古い版で動いています」が出続けてビルドされない)。ignore が届くのは、trap を張ったシェル
   # 自身が exec する foreground コマンドだけ。詳細と実測表: rules/zsh-trap-not-inherited.md
   # -C なら cd 用の fork が要らないのでこの条件を満たす (go 1.20 以降・かつ最初の引数)。
-  go build -C "$src_dir" -o "$tmp" . || rc=$?
+  # --pkg のときは module root で `go build ./<rel>` (成果物 $tmp は絶対パスなので置き場は変わらない)
+  go build -C "$mod_dir" -o "$tmp" "${_GO_AUTOBUILD_PKG:-.}" || rc=$?
   if (( rc )); then
     command rm -f "$tmp" 2>/dev/null
     # exit code を残す: コンパイルエラーなら go build 自身が理由を上に出すが、シグナルで
@@ -407,14 +414,22 @@ go_autobuild_spawn_if_stale() {
 }
 
 go_autobuild_exec() {
-  local async=0
+  local async=0 pkg=""
   while (( $# )); do
     case "$1" in
       --async) async=1; shift ;;
+      --pkg) pkg="$2"; shift 2 ;;
       *) break ;;
     esac
   done
   local src_dir="$1" name="$2"; shift 2
+  if [[ -n "$pkg" ]]; then
+    # module root は指紋と go build に、<rel> は成果物と作業ファイルに使う (冒頭の doc)。
+    # 下の関数群は src_dir しか受けないので、module root と package は module 変数で渡す。
+    # spawn のサブシェルにも継承される (export は要らない。子プロセスの go には渡さない)。
+    typeset -g _GO_AUTOBUILD_MOD_DIR="${src_dir:a}" _GO_AUTOBUILD_PKG="./${pkg#./}"
+    src_dir="$src_dir/${pkg#./}"
+  fi
   [[ "${1-}" == "--" ]] && shift
   local bin="$src_dir/$name"
   [[ -n "${GO_AUTOBUILD_SYNC-}" ]] && async=0

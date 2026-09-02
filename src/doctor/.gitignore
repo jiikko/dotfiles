@@ -1,0 +1,5 @@
+# go_autobuild が cmd/<name>/ に置く成果物と作業ファイル (bin/svcdoctor / bin/diskdoctor)
+/cmd/svcdoctor/svcdoctor
+/cmd/diskdoctor/diskdoctor
+/cmd/*/.autobuild.*
+/*.test

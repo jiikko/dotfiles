@@ -8,6 +8,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"doctor/runner"
+	"doctor/svc"
 )
 
 // サブコマンドは持たない (一覧だけ)。停止・削除の入口が無いことが「実行しない」の担保。
@@ -29,7 +32,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "svcdoctor:", err)
 		os.Exit(1)
 	}
-	rep := Scan(ctx, Options{Dirs: defaultDirs(home, os.Getuid()), Run: execRunner})
+	rep := svc.Scan(ctx, svc.Options{Dirs: svc.DefaultDirs(home, os.Getuid()), Run: runner.Exec})
 	if *jsonOut {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -39,7 +42,7 @@ func main() {
 		}
 		return
 	}
-	fmt.Print(Format(rep))
+	fmt.Print(svc.Format(rep))
 	// 診断できなかったものがあれば exit 2 (検査できなかったを緑にしない)。候補あり = 1、無し = 0
 	switch {
 	case rep.StatusErr != "" || len(rep.Undiagnosed) > 0 || len(rep.DirErrs) > 0:

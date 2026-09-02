@@ -1,4 +1,4 @@
-package main
+package disk
 
 import (
 	"errors"
@@ -16,7 +16,7 @@ type Env struct {
 	AppDirs []string // orphan-container が .app を実走査するディレクトリ
 }
 
-func realEnv() Env {
+func RealEnv() Env {
 	home, _ := os.UserHomeDir()
 	return Env{Home: home, TmpDir: os.Getenv("TMPDIR"), Getenv: os.Getenv,
 		AppDirs: []string{"/Applications", filepath.Join(home, "Applications")}}

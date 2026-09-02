@@ -1,6 +1,8 @@
-package main
+package disk
 
 import (
+	"doctor/runner"
+
 	"context"
 	"encoding/json"
 	"errors"
@@ -30,8 +32,8 @@ func bootTime() (time.Time, error) {
 
 // processRunning は完全一致でプロセスの有無を見る (pgrep -x)。部分一致は `tor` が thermalmonitord に
 // 当たった実例があるので使わない。pgrep 自体が失敗したら error (fail-closed: 「起動中かもしれない」)。
-func processRunning(ctx context.Context, run Runner, name string) (bool, error) {
-	_, stderr, rc, err := runWithTimeout(ctx, run, "pgrep", "-x", name)
+func processRunning(ctx context.Context, run runner.Runner, name string) (bool, error) {
+	_, stderr, rc, err := runner.WithTimeout(ctx, run, cmdTimeout, "pgrep", "-x", name)
 	if err != nil {
 		return false, err
 	}
@@ -46,8 +48,8 @@ func processRunning(ctx context.Context, run Runner, name string) (bool, error) 
 
 // simDeviceUDIDs は `xcrun simctl list devices -j` の現存デバイス UDID。失敗は error (孤児判定を
 // 全件「孤児でない」に倒す)。
-func simDeviceUDIDs(ctx context.Context, run Runner) (map[string]bool, error) {
-	out, stderr, rc, err := runWithTimeout(ctx, run, "xcrun", "simctl", "list", "devices", "-j")
+func simDeviceUDIDs(ctx context.Context, run runner.Runner) (map[string]bool, error) {
+	out, stderr, rc, err := runner.WithTimeout(ctx, run, cmdTimeout, "xcrun", "simctl", "list", "devices", "-j")
 	if err != nil {
 		return nil, err
 	}
@@ -82,8 +84,8 @@ type simRuntime struct {
 	Path       string
 }
 
-func simRuntimes(ctx context.Context, run Runner) ([]simRuntime, error) {
-	out, stderr, rc, err := runWithTimeout(ctx, run, "xcrun", "simctl", "runtime", "list", "-j")
+func simRuntimes(ctx context.Context, run runner.Runner) ([]simRuntime, error) {
+	out, stderr, rc, err := runner.WithTimeout(ctx, run, cmdTimeout, "xcrun", "simctl", "runtime", "list", "-j")
 	if err != nil {
 		return nil, err
 	}
@@ -150,8 +152,8 @@ func installedBundleIDs(env Env) (map[string]bool, error) {
 }
 
 // brewFormulae は brew list --formula の台帳。
-func brewFormulae(ctx context.Context, run Runner) (map[string]bool, error) {
-	out, stderr, rc, err := runWithTimeout(ctx, run, "brew", "list", "--formula")
+func brewFormulae(ctx context.Context, run runner.Runner) (map[string]bool, error) {
+	out, stderr, rc, err := runner.WithTimeout(ctx, run, cmdTimeout, "brew", "list", "--formula")
 	if err != nil {
 		return nil, err
 	}
@@ -173,15 +175,15 @@ var brewWouldRemoveRe = regexp.MustCompile(`^Would remove: (/\S.*?) \(`)
 
 // brewCleanupTargets は `brew cleanup --dry-run` の stdout から `Would remove: <path> (…)` の絶対パスを取る。
 // 「Would remove Library/Homebrew/vendor/…」のような相対表記は brew の prefix 配下として解決する。
-func brewCleanupTargets(ctx context.Context, run Runner) ([]string, error) {
-	out, stderr, rc, err := runWithTimeout(ctx, run, "brew", "cleanup", "--dry-run")
+func brewCleanupTargets(ctx context.Context, run runner.Runner) ([]string, error) {
+	out, stderr, rc, err := runner.WithTimeout(ctx, run, cmdTimeout, "brew", "cleanup", "--dry-run")
 	if err != nil {
 		return nil, err
 	}
 	if rc != 0 {
 		return nil, fmt.Errorf("brew cleanup --dry-run: exit %d: %s", rc, strings.TrimSpace(stderr))
 	}
-	prefixOut, _, prc, perr := runWithTimeout(ctx, run, "brew", "--prefix")
+	prefixOut, _, prc, perr := runner.WithTimeout(ctx, run, cmdTimeout, "brew", "--prefix")
 	prefix := strings.TrimSpace(prefixOut)
 	var paths []string
 	for _, line := range strings.Split(out, "\n") {

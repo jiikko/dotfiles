@@ -9,6 +9,9 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"doctor/disk"
+	"doctor/runner"
 )
 
 // 一覧 (dry-run) だけ。削除のフラグは無い (④ で足すときも既定は dry-run のまま)。
@@ -26,13 +29,13 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	opt := Options{Env: realEnv(), Run: execRunner}
+	opt := disk.Options{Env: disk.RealEnv(), Run: runner.Exec}
 	if *progress {
-		opt.OnResult = func(r Result) {
-			fmt.Fprintf(os.Stderr, "  %-28s %-8s %9s  %s\n", r.Entry.ID, r.Status, humanSize(r.Size), r.Elapsed.Round(time.Millisecond))
+		opt.OnResult = func(r disk.Result) {
+			fmt.Fprintf(os.Stderr, "  %-28s %-8s %9s  %s\n", r.Entry.ID, r.Status, disk.HumanSize(r.Size), r.Elapsed.Round(time.Millisecond))
 		}
 	}
-	rep := Scan(ctx, opt)
+	rep := disk.Scan(ctx, opt)
 	if *jsonOut {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -41,11 +44,11 @@ func main() {
 			os.Exit(1)
 		}
 	} else {
-		fmt.Print(Format(rep, time.Now()))
+		fmt.Print(disk.Format(rep, time.Now()))
 	}
 	// 走査できなかったエントリがあれば exit 2 (検査できなかったを緑にしない)
 	for _, r := range rep.Results {
-		if r.Status == StatusFailed {
+		if r.Status == disk.StatusFailed {
 			os.Exit(2)
 		}
 	}

@@ -1,39 +1,14 @@
-package main
+package svc
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
+
+	"doctor/runner"
 )
-
-// Runner は外部コマンドの実行口。stdout / stderr / exit code を分けて返す (混ぜると
-// どの stream が判定材料か確定できない)。テストは fake を差す。err は「起動できなかった /
-// タイムアウト」で、exit code が非 0 なだけなら err == nil で rc に入る。
-type Runner func(ctx context.Context, name string, args ...string) (stdout, stderr string, rc int, err error)
-
-// execRunner は実際に exec する Runner。ctx のキャンセルで子プロセスを殺す。
-func execRunner(ctx context.Context, name string, args ...string) (string, string, int, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
-	var out, errb bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errb
-	err := cmd.Run()
-	if err != nil {
-		var ee *exec.ExitError
-		if errors.As(err, &ee) && ctx.Err() == nil {
-			return out.String(), errb.String(), ee.ExitCode(), nil
-		}
-		if ctx.Err() != nil {
-			return out.String(), errb.String(), -1, fmt.Errorf("%s: %w", name, ctx.Err())
-		}
-		return out.String(), errb.String(), -1, err
-	}
-	return out.String(), errb.String(), 0, nil
-}
 
 // launchctlTimeout は launchctl 1 回あたりの上限。print は候補に絞ってから呼ぶので回数は少ない。
 const launchctlTimeout = 10 * time.Second
@@ -71,10 +46,8 @@ func parseLaunchctlList(out string) map[string]jobStatus {
 
 // launchctlList は `launchctl list` を 1 回だけ呼ぶ。失敗は「診断できず」(呼び出し側が B を
 // 評価せず、その旨を表示する)。候補 0 件には畳まない。
-func launchctlList(ctx context.Context, run Runner) (map[string]jobStatus, error) {
-	ctx, cancel := context.WithTimeout(ctx, launchctlTimeout)
-	defer cancel()
-	out, stderr, rc, err := run(ctx, "launchctl", "list")
+func launchctlList(ctx context.Context, run runner.Runner) (map[string]jobStatus, error) {
+	out, stderr, rc, err := runner.WithTimeout(ctx, run, launchctlTimeout, "launchctl", "list")
 	if err != nil {
 		return nil, err
 	}
@@ -105,10 +78,8 @@ func parseLaunchctlPrint(out string) printInfo {
 
 // launchctlPrint は候補に絞ってから呼ぶ (全ラベルに対して呼ばない)。失敗は無視して続行する
 // (補助情報なので、無くても A / B の判定は成立する)。
-func launchctlPrint(ctx context.Context, run Runner, target string) printInfo {
-	ctx, cancel := context.WithTimeout(ctx, launchctlTimeout)
-	defer cancel()
-	out, _, rc, err := run(ctx, "launchctl", "print", target)
+func launchctlPrint(ctx context.Context, run runner.Runner, target string) printInfo {
+	out, _, rc, err := runner.WithTimeout(ctx, run, launchctlTimeout, "launchctl", "print", target)
 	if err != nil || rc != 0 {
 		return printInfo{}
 	}

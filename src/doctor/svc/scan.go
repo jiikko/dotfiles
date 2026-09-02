@@ -1,4 +1,4 @@
-package main
+package svc
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"doctor/runner"
 )
 
 // LaunchDir は走査するディレクトリと、その登録が属する launchd ドメイン。
@@ -15,10 +17,10 @@ type LaunchDir struct {
 	Domain string // "gui/<uid>" か "system"
 }
 
-// defaultDirs はサードパーティ領域だけ。/System/Library と /usr/lib は Apple 管理 (SIP 下で消せず
+// DefaultDirs はサードパーティ領域だけ。/System/Library と /usr/lib は Apple 管理 (SIP 下で消せず
 // ユーザーが判断できない) なので走査しない。除外は**パス基準**で、ラベル名 (com.apple.*) では
 // 除外しない: ラベルはただの文字列で、/Library に第三者が置いた plist も同じ名前を名乗れる。
-func defaultDirs(home string, uid int) []LaunchDir {
+func DefaultDirs(home string, uid int) []LaunchDir {
 	gui := fmt.Sprintf("gui/%d", uid)
 	return []LaunchDir{
 		{Path: filepath.Join(home, "Library", "LaunchAgents"), Domain: gui},
@@ -30,7 +32,7 @@ func defaultDirs(home string, uid int) []LaunchDir {
 // Options は Scan の入力。テストは Dirs / Run / Stat を差し替える。
 type Options struct {
 	Dirs []LaunchDir
-	Run  Runner
+	Run  runner.Runner
 	Stat func(string) error // 実行ファイルの存在確認 (nil なら os.Stat)
 }
 

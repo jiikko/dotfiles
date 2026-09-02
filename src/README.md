@@ -17,6 +17,12 @@
 
 補足:
 
+- **1 つの module に複数の CLI (main) を置くとき** は `src/<mod>/cmd/<name>/main.go` に置き、bin ラッパーは
+  `go_autobuild_exec --pkg cmd/<name> "$src/<mod>" <name> -- "$@"` と書く (実例: `src/doctor` の
+  `bin/svcdoctor` / `bin/diskdoctor`)。指紋は module root 全体、成果物と `.autobuild.*` は `cmd/<name>/` に置かれる。
+  `.gitignore` は `cmd/<name>/<name>` と `cmd/*/.autobuild.*` を除外する。別 module から取り込むときは
+  go.mod の `replace <mod> => ../<mod>` (実例: glogx → doctor)
+
 - **`bin/` のラッパーを zsh で書いたら root [Makefile](../Makefile) の `ZSH_SYNTAX_FILES` に登録する**。
   `scripts/discover_shell_scripts.sh` が shebang で拾い、登録漏れは **shellcheck の SC1071 で
   `make test` 全体が落ちる** (bin/schedkeys 追加時に実際に落とした 2026-08-27)

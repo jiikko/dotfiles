@@ -1,4 +1,4 @@
-package main
+package disk
 
 // Risk は表示の記号と、削除時の扱い (④) を決める階級。
 type Risk string

@@ -1,9 +1,11 @@
-package main
+package svc
 
 import (
 	"context"
 	"fmt"
 	"strings"
+
+	"doctor/runner"
 )
 
 // brewLabelPrefix は Homebrew services が置く plist のラベル接頭辞。C の判定はここに限定する:
@@ -21,10 +23,8 @@ func brewFormulaOf(label string) string {
 
 // brewFormulae は `brew list --formula` の台帳。brew が無い / 失敗したら error で、C は評価しない
 // (その旨を表示する。候補 0 件には畳まない)。
-func brewFormulae(ctx context.Context, run Runner) (map[string]bool, error) {
-	ctx, cancel := context.WithTimeout(ctx, launchctlTimeout)
-	defer cancel()
-	out, stderr, rc, err := run(ctx, "brew", "list", "--formula")
+func brewFormulae(ctx context.Context, run runner.Runner) (map[string]bool, error) {
+	out, stderr, rc, err := runner.WithTimeout(ctx, run, launchctlTimeout, "brew", "list", "--formula")
 	if err != nil {
 		return nil, err
 	}

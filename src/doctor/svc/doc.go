@@ -1,4 +1,4 @@
-// Package main は svcdoctor: 壊れた launchd 登録の検出 (issue 148 の 4 章)。
+// Package svc は svcdoctor: 壊れた launchd 登録の検出 (issue 148 の 4 章)。
 //
 // 「使っていないこと」ではなく「壊れていること」で拾う。判定は構造的に確定する事実だけ:
 //
@@ -8,4 +8,4 @@
 //
 // 停止・削除の経路はこのプログラムに存在しない (コマンドを表示するだけ)。「実行しない」を
 // 運用ルールではなくコードの不在で担保する。
-package main
+package svc

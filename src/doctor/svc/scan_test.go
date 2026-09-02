@@ -1,4 +1,4 @@
-package main
+package svc
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"doctor/runner"
 )
 
 // fakeRunner は launchctl / brew の fake。実際の出力形式を模す。渡された argv を記録するので、
@@ -185,7 +187,7 @@ func TestRelativeProgramArgumentsResolvedViaStdPath(t *testing.T) {
 // _PATH_STDPATH は launchd の実装定数。paths.h と一致することを固定する (SDK が無ければ skip)。
 func TestStdPathMatchesPathsH(t *testing.T) {
 	candidates := []string{"/usr/include/paths.h"}
-	if out, _, rc, err := execRunner(context.Background(), "xcrun", "--show-sdk-path"); err == nil && rc == 0 {
+	if out, _, rc, err := runner.Exec(context.Background(), "xcrun", "--show-sdk-path"); err == nil && rc == 0 {
 		candidates = append(candidates, filepath.Join(strings.TrimSpace(out), "usr/include/paths.h"))
 	}
 	for _, p := range candidates {
@@ -287,12 +289,12 @@ func TestBrokenPlistIsolated(t *testing.T) {
 
 // 走査範囲はパス基準: 既定に /System/Library が無く、ラベルが com.apple.* でもユーザー領域なら候補に入る。
 func TestScopeIsPathBasedNotLabelBased(t *testing.T) {
-	for _, d := range defaultDirs("/Users/x", 501) {
+	for _, d := range DefaultDirs("/Users/x", 501) {
 		if strings.HasPrefix(d.Path, "/System/Library") || strings.HasPrefix(d.Path, "/usr/lib") {
 			t.Errorf("Apple 管理領域を走査している: %s", d.Path)
 		}
 	}
-	if got := defaultDirs("/Users/x", 501); got[0].Path != "/Users/x/Library/LaunchAgents" || got[2].Domain != "system" {
+	if got := DefaultDirs("/Users/x", 501); got[0].Path != "/Users/x/Library/LaunchAgents" || got[2].Domain != "system" {
 		t.Errorf("既定の走査先: %+v", got)
 	}
 	dir := t.TempDir()

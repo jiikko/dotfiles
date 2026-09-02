@@ -1,4 +1,4 @@
-package main
+package disk
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func humanSize(n int64) string {
+func HumanSize(n int64) string {
 	const unit = 1024.0
 	f := float64(n)
 	for _, u := range []string{"B", "KB", "MB", "GB", "TB"} {
@@ -43,7 +43,7 @@ func riskMark(r Result) string {
 // 候補 0 件のエントリは省く (表示が埋まる)。走査できなかったエントリは省かない。
 func Format(rep Report, now time.Time) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "ディスク診断   合計 %s 解放可能 (blocked / 走査できず は含まない)\n", humanSize(rep.Total))
+	fmt.Fprintf(&b, "ディスク診断   合計 %s 解放可能 (blocked / 走査できず は含まない)\n", HumanSize(rep.Total))
 	if rep.Partial {
 		b.WriteString("⚠️  途中で中断されました (部分結果)\n")
 	}
@@ -51,7 +51,7 @@ func Format(rep Report, now time.Time) string {
 		if r.Status == StatusOK && len(r.Items) == 0 && len(r.Failures) == 0 {
 			continue
 		}
-		size := humanSize(r.Size)
+		size := HumanSize(r.Size)
 		if r.Status == StatusFailed {
 			size = "---"
 		}
@@ -78,7 +78,7 @@ func Format(rep Report, now time.Time) string {
 			}
 		} else if len(r.Items) > 1 {
 			for _, it := range r.Items {
-				fmt.Fprintf(&b, "             %9s  %s\n", humanSize(it.Size), it.Path)
+				fmt.Fprintf(&b, "             %9s  %s\n", HumanSize(it.Size), it.Path)
 			}
 		}
 	}

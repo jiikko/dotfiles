@@ -684,6 +684,56 @@ ok "走行中のビルドは HUP を無視して完走する"
 [[ -f "$ROOT/src/tool/.autobuild.failed" ]] && fail "HUP 死の失敗記録が残っている (TTL まで旧版に固定される)"
 ok "HUP で失敗記録を残さない"
 
+printf '\n## --pkg: 1 module に複数 main (指紋は module root、成果物は cmd/<name>/)\n'
+# src/doctor の形: <root>/src/tool を module root、cmd/a と cmd/b を別 main にする。
+# 見たいこと: (1) 成果物と .autobuild.* が cmd/a/ に置かれる (2) cmd/ の外 (sub/) の編集でも再ビルドされる
+# (3) 別 main (cmd/b) をビルドしても a の記録が上書きされず a が stale にならない。
+ROOT="$(new_project pkg)"
+mkdir -p "$ROOT/src/tool/cmd/a" "$ROOT/src/tool/cmd/b"
+printf 'package main\n' > "$ROOT/src/tool/cmd/a/main.go"
+printf 'package main\n' > "$ROOT/src/tool/cmd/b/main.go"
+cat > "$ROOT/bin/a" <<'EOS'
+#!/usr/bin/env zsh
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec --pkg cmd/a "${0:A:h}/../src/tool" a -- "$@"
+EOS
+cat > "$ROOT/bin/b" <<'EOS'
+#!/usr/bin/env zsh
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec --pkg cmd/b "${0:A:h}/../src/tool" b -- "$@"
+EOS
+chmod +x "$ROOT/bin/a" "$ROOT/bin/b"
+run_pkg() {  # $1=root $2=bin name
+  local root="$1" name="$2"; shift 2
+  PATH="$TMP_DIR/bin:$PATH" FAKE_GO_CALLS="$root/calls" FAKE_GO_MARK="${FAKE_GO_MARK:-v1}" "$root/bin/$name" "$@" 2>>"$root/stderr"
+}
+out="$(FAKE_GO_MARK=a1 run_pkg "$ROOT" a)"
+[[ "$out" == "a1" ]] || fail "--pkg の初回ビルドが走らない (got: $out)"
+[[ -x "$ROOT/src/tool/cmd/a/a" && -f "$ROOT/src/tool/cmd/a/.autobuild.built" ]] || fail "--pkg の成果物 / 記録が cmd/a/ に置かれていない"
+[[ ! -e "$ROOT/src/tool/a" && ! -e "$ROOT/src/tool/.autobuild.built" ]] || fail "--pkg なのに module root に成果物 / 記録を置いた"
+grep -q "cmd/a/main.go" "$ROOT/src/tool/cmd/a/.autobuild.built" && grep -q "sub/sub.go" "$ROOT/src/tool/cmd/a/.autobuild.built" \
+  || fail "--pkg の指紋が module root 全体を見ていない: $(cat "$ROOT/src/tool/cmd/a/.autobuild.built")"
+ok "--pkg: 成果物と記録は cmd/a/、指紋は module root 全体"
+# 偽 go が -C で移動した先 (module root) と build 対象 (./cmd/a) を確かめる
+grep -q "build" "$ROOT/calls" || fail "ビルドが記録されていない"
+n1="$(calls "$ROOT")"
+out="$(FAKE_GO_MARK=a2 run_pkg "$ROOT" a)"
+[[ "$out" == "a1" && "$(calls "$ROOT")" == "$n1" ]] || fail "--pkg: 入力が変わっていないのに再ビルドした"
+ok "--pkg: 入力が同じなら再ビルドしない"
+sleep 1.1  # 指紋は mtime 秒精度。同秒の書き換えを差として拾えないので 1 秒空ける
+printf 'package sub\n// changed\n' > "$ROOT/src/tool/sub/sub.go"
+out="$(FAKE_GO_MARK=a3 run_pkg "$ROOT" a)"
+[[ "$out" == "a3" ]] || fail "--pkg: cmd/ の外 (sub/) の変更で再ビルドされない (got: $out)"
+ok "--pkg: module root 配下の別パッケージの変更で再ビルドする"
+out="$(FAKE_GO_MARK=b1 run_pkg "$ROOT" b)"
+[[ "$out" == "b1" && -x "$ROOT/src/tool/cmd/b/b" ]] || fail "--pkg: 別 main (cmd/b) をビルドできない (got: $out)"
+n2="$(calls "$ROOT")"
+out="$(FAKE_GO_MARK=a4 run_pkg "$ROOT" a)"
+[[ "$out" == "a3" && "$(calls "$ROOT")" == "$n2" ]] || fail "--pkg: 別 main のビルドで a の記録が壊れ、a が再ビルドされた (got: $out)"
+ok "--pkg: 別 main のビルドが他の main の記録を上書きしない"
+
 printf '\n## 作業ファイル / lock を残さない\n'
 # ⚠️ 「いずれ消える」で判定する。builder は非同期なので、バイナリが入った瞬間にはまだ lock の
 # 解放 (spawn subshell の EXIT trap) が済んでいないことがある。即時判定にすると spawn を使う

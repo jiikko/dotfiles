@@ -1,8 +1,8 @@
 #!/usr/bin/env zsh
 # diskdoctor — 既知の掃除候補 (allowlist) を占有量の降順で、リスクと復元方法つきで一覧する。
 # 削除は行わない (dry-run のみ。issue 148 の段階 ②)。
-# Go implementation at: ~/dotfiles/src/diskdoctor/
+# Go implementation at: ~/dotfiles/src/doctor/ (cmd/diskdoctor が main。判定本体は svc/ disk/)
 # 再ビルドは同期: 候補の判定 (孤児 / プロセス / 起動時刻) を読んで人が手を動かす道具なので、旧版を出さない。
 set -u
 source "${0:A:h}/lib/go_autobuild.zsh"
-go_autobuild_exec "${0:A:h}/../src/diskdoctor" diskdoctor -- "$@"
+go_autobuild_exec --pkg cmd/diskdoctor "${0:A:h}/../src/doctor" diskdoctor -- "$@"
