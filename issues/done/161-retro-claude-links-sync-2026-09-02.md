@@ -30,9 +30,12 @@
    しかし setup.sh を触った変更なのに tests/setup を回していない。memory の「コミット前に make test」を
    状況判断で外したのが直接の原因。回すコストは 3 分、赤の切り分けはターゲット名で足りた。
    → 切り出し先: 却下 (既にルール化されている。守らなかっただけ)。ただし補助として次項
-6. **`scripts/test_changed.sh` に `setup.sh` の写像が無い**。`make test-changed PATHS=setup.sh` は
-   「写像に無いパス」で止まる設計なので、使っていれば全体実行に誘導されていた。setup.sh → tests/setup
-   の写像を足せば部分実行でも拾える。→ 切り出し先: 新規 issue (小)
+6. ~~`scripts/test_changed.sh` に `setup.sh` の写像が無い~~ **誤り**。`grep setup scripts/test_changed.sh`
+   が空だったことを「写像が無い」と読んだが、`*.sh` の汎用写像 + `add_test_dirs_referencing` が拾う。
+   実測 (2026-09-02): `make test-changed PATHS=setup.sh DRY_RUN=1` → `tests: tests/claude tests/setup
+   tests/zshrc`。使っていれば tests/setup は回っていた。問題は写像ではなく、私が test-changed も
+   `make test` も使わなかったこと (項目 5)。→ 却下。不在の主張を grep 1 回で断定した点は
+   CLAUDE.md「ぼやきも事実の主張なら裏を取る」の再演
 7. **1 周目の敵対レビューは commit 前のコードにしか当たっていなかった**。`adversarial-review-own-safeguards.md`
    の節 7 (指摘を直した差分にもう 1 周) は「1 周目の指摘への修正」を対象にしているが、今回 2 周目で
    出た P1 2 件 (setup.sh の回帰 / ln -sfn の並行) は 1 周目の観点 (壊す / 素通り) にそもそも無かった
@@ -42,8 +45,11 @@
    `<(...)` を数えれば分かったこと、変異の本数は当てた list を数え直せば分かったこと。
    → 切り出し先: 却下 (`perf-claims-need-measurement.md` の範囲。issue 160 に訂正を残した)
 
-## 残課題
+## 決着 (2026-09-02)
 
-- [ ] 項目 1 を `mutation-verify-new-tests.md` に反映する (ユーザー判断待ち)
-- [ ] 項目 2 の実測回数の更新 (ユーザー判断待ち)
-- [ ] 項目 6 を新規 issue に切り出す (ユーザー判断待ち)
+- 項目 1: `mutation-verify-new-tests.md` に手順 1.6 (変異の diff を目視) を追加。起源は rules-rationale へ
+- 項目 2: `adversarial-review-own-safeguards.md` / `mutation-verify-new-tests.md` の実測回数を 5 → 6
+- 項目 6: 実測で写像が在ることを確認し却下 (上記)
+- 項目 3, 4, 5, 7, 8: 却下 / 切り出し不要 (各項目に理由)
+
+残課題なし。
