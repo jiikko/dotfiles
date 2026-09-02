@@ -1204,6 +1204,43 @@ src/glogx/doctor_svc.go  ← サービス診断を doctor に接続する層
 - 未決のまま: 起動キー / トーストから直接開けるか / サービス結果をキャッシュするか
   (軽いので開くたび実行で足りる見込み)
 
+#### 3 つ目のセクション: Homebrew (`brew doctor` の出力を写す) — ユーザー要望 2026-09-02
+
+`brew doctor` は自分では判定を持たない**外部診断の転記**。器が「自前の判定を持たない項目」も
+載せられるかの検証にもなる (ディスク = 自前判定 + 削除 / サービス = 自前判定 + exec 依存 /
+Homebrew = 判定は brew 側)。
+
+```
+ ▸ Homebrew       brew doctor: 警告 1 件                                   (4.5 秒)
+   Warning: Some installed casks are deprecated or disabled.
+     ...brew の出力をそのまま (インデントだけ揃える)
+```
+
+実測 (2026-09-02, Homebrew 6.0.20, stdout / stderr / rc を分けて採取):
+
+| 観測 | 値 |
+|---|---|
+| 所要 | **4.5 秒** (ネットワーク不要) |
+| 警告あり | **stdout 空 / stderr に本文 / rc=1**。先頭 3 行は定型の前置き ("Please note that these warnings are just used to help…") |
+| 警告なし | rc=0 で "Your system is ready to brew." (**未実測**: この機には警告があった。fake で固定し、実機で出たら追記) |
+
+設計:
+
+- 走査は `brew doctor` を **1 回だけ**、`context.Context` 付きで exec (svcdoctor と同じ Runner)。
+  他セクションと並行し、終わったら埋まる (4.5 秒なのでサービスの後・ディスクの前に出る)
+- **判定は brew の出力を写すだけ**。`Warning:` で始まる行を見出しに、以降の行を本文にまとめる。
+  定型の前置き 3 行は落とす。rc=1 は「警告あり」であって失敗ではない (rc だけで色を決めない)
+- brew 不在 / タイムアウト / 起動できず → **「診断できず」** (svcdoctor の StatusErr と同じ扱い。
+  0 件に畳まない)
+- **提示だけで実行しない**。brew doctor が示す修復コマンド (`brew untap` / `brew cleanup` 等) も
+  表示のみ。⚠️ `brew cleanup` はディスク側の `brew-cleanup-residue` (`deleteVia: cli:`) と同じ操作を
+  指すので、④ で削除経路を作るときは**同じ画面に「実行する行」と「提示だけの行」を並べる形**になる。
+  区別が付く表示 (⛔ 手動 / [d] 実行可) を ④ の要件に足す
+- キャッシュしない (軽い。開くたび実行)。起動時トーストの対象にもしない
+- 置き場: 実装は `src/svcdoctor` に足さない (あちらは launchd 専用で「削除経路が無い」を package の
+  責務にしている)。`src/glogx/doctor_brew.go` で glogx 側に直接持つ (Runner だけ共有) か、
+  `src/brewdoctor` を切るかは ③ で判断。転記だけなので glogx 直下で足りる見込み
+
 ### 起動導線 (未決)
 
 - glogx 内のキー割り当て (例: `D` / `?d`) — 既存キーとの衝突確認が要る
