@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -205,6 +206,32 @@ func installedBundleIDs(env Env) (map[string]bool, error) {
 const bundleMaxDepth = 8
 
 func collectBundleIDs(dir string, depth int, ids map[string]bool) error {
+	return collectBundleIDsSeen(dir, depth, ids, map[[2]uint64]struct{}{})
+}
+
+// collectVisits は collectBundleIDs が実際に降りたディレクトリ数 (テスト専用の計測点)。
+// 巡回検出が効いているかを**壁時計でなく回数**で判定するため (avoid-wall-clock-assertions)。
+// 走査は単一 goroutine から呼ばれる (installedBundleIDs → collectBundleIDs) ので素の int でよい。
+var collectVisits int
+
+// dirKey は (device, inode)。同じディレクトリを 2 度走査しないための鍵。
+func dirKey(fi os.FileInfo) ([2]uint64, bool) {
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return [2]uint64{}, false
+	}
+	return [2]uint64{uint64(st.Dev), st.Ino}, true
+}
+
+// collectBundleIDsSeen は seen で巡回を止める。
+//
+// 🚨 **symlink を辿るなら巡回検出が要る**: 旧コードの `e.IsDir()` は symlink に false を返すので
+// 「symlink を辿らない」= 循環しない、を副次的に保証していた。issue 167 (c) でそれを外したとき、
+// 循環防止をノーガードで捨てていた。`bundleMaxDepth` は深さしか縛らず**幅は無制限**なので、
+// 同じディレクトリを指す symlink を n 個並べると n^8 に膨らむ。実測 (敵対レビュー 2026-09-03、
+// ユーザー書き込み可能な ~/Applications で成立): n=2 で 67ms / n=3 で 1.32s / n=4 は 8 秒でも
+// 終わらない。ここには ctx が無いのでキャンセルもできない。
+func collectBundleIDsSeen(dir string, depth int, ids map[string]bool, seen map[[2]uint64]struct{}) error {
 	if depth > bundleMaxDepth {
 		return nil
 	}
@@ -216,23 +243,68 @@ func collectBundleIDs(dir string, depth int, ids map[string]bool) error {
 		return nil // bundle 内の読めない dir は無視 (判定は続ける)
 	}
 	for _, e := range entries {
-		if !e.IsDir() {
+		p := filepath.Join(dir, e.Name())
+		// e.IsDir() で絞らない: DirEntry.IsDir は symlink に false を返すので、symlink の .app が
+		// 走査から落ちる (issue 167 (c))。os.Stat で解決先を見る。解決先が AppDirs の外でも
+		// bundle id は集める (集めすぎても「実在するアプリ」が増えるだけで、孤児の見落とし = 安全側)
+		fi, err := os.Stat(p)
+		if err != nil || !fi.IsDir() {
 			continue
 		}
-		p := filepath.Join(dir, e.Name())
-		if isBundleName(e.Name()) {
-			if data, err := os.ReadFile(filepath.Join(p, "Contents", "Info.plist")); err == nil {
-				var info struct {
-					ID string `plist:"CFBundleIdentifier"`
-				}
-				if _, err := plist.Unmarshal(data, &info); err == nil && info.ID != "" {
-					ids[info.ID] = true
-				}
+		if k, ok := dirKey(fi); ok {
+			if _, dup := seen[k]; dup {
+				continue // 既に走査した実体 (symlink の巡回・別名)。中身は同一なので読み直さない
 			}
+			seen[k] = struct{}{}
 		}
-		_ = collectBundleIDs(p, depth+1, ids)
+		collectVisits++
+		if isBundleName(e.Name()) {
+			readBundleID(p, ids)
+		}
+		_ = collectBundleIDsSeen(p, depth+1, ids, seen)
 	}
 	return nil
+}
+
+// bundleInfoPlistPaths は bundle 内で Info.plist が置かれうる場所 (実在する 3 形)。
+//   - Contents/Info.plist          : 通常の macOS bundle
+//   - Wrapper/*/Info.plist         : iOS-on-Mac (flat 配置。X.app/Wrapper/Y.app/Info.plist)
+//   - Versions/*/Resources/Info.plist : framework (実機に 1Password の Electron Framework 等)
+//
+// issue 167 (b): Contents/ しか読んでいなかったので、後ろ 2 つの bundle id が集まらず、
+// そのアプリのコンテナが孤児と判定されていた。
+func readBundleID(bundle string, ids map[string]bool) {
+	// ⚠️ **bundle のパスを glob パターンに素で埋めない**。`MyApp [Beta].app` のように名前に
+	// メタ文字が入ると `[Beta]` が文字クラスとして解釈され、そのアプリの bundle id が集まらない。
+	// 結果は「拾いすぎ」(安全側) ではなく**拾わなすぎ**で、実在するアプリのコンテナが孤児候補に
+	// 出る = issue 167 が塞ごうとした症状の再発 (敵対レビュー 2026-09-03 で実測)。
+	// 固定パスは Glob を通さず、可変部があるものだけ prefix を escape して Glob する。
+	esc := escapeGlobMeta(bundle)
+	paths := []string{filepath.Join(bundle, "Contents", "Info.plist")}
+	for _, g := range []string{
+		filepath.Join(esc, "Wrapper", "*", "Info.plist"),
+		filepath.Join(esc, "Versions", "*", "Resources", "Info.plist"),
+	} {
+		matches, err := filepath.Glob(g)
+		if err != nil {
+			continue
+		}
+		paths = append(paths, matches...)
+	}
+	{
+		for _, m := range paths {
+			data, err := os.ReadFile(m)
+			if err != nil {
+				continue
+			}
+			var info struct {
+				ID string `plist:"CFBundleIdentifier"`
+			}
+			if _, err := plist.Unmarshal(data, &info); err == nil && info.ID != "" {
+				ids[info.ID] = true
+			}
+		}
+	}
 }
 
 func isBundleName(name string) bool {
@@ -243,6 +315,16 @@ func isBundleName(name string) bool {
 	}
 	return false
 }
+
+// containerUUIDNameRe は bundle id ではなく UUID を名前に持つコンテナ (iOS-on-Mac アプリのデータ
+// コンテナはこの形)。bundle id は `.com.apple.containermanagerd.metadata.plist` にしか無く、その
+// plist は TCC で読めない (plutil が operation not permitted)。名前で突合する仕組みでは**構造的に
+// 素通りする**ので、孤児判定をせず候補から外す (issue 167 (a): 実在する /Applications/やくそく帳.app の
+// データコンテナが RiskConfirm trash の候補に出ていた)。
+var containerUUIDNameRe = regexp.MustCompile(`^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$`)
+
+// containerIsUndiagnosable は「名前から bundle id を決められないコンテナ」か。
+func containerIsUndiagnosable(name string) bool { return containerUUIDNameRe.MatchString(name) }
 
 // containerOwnedByInstalled は container の bundle id が実在するアプリ本体か、その配下 (拡張・ウィジェット。
 // `<app id>.<ext>` の形) かを見る。

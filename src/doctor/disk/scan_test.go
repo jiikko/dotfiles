@@ -773,6 +773,83 @@ func TestSimDeviceEnumeratesAllDeviceSets(t *testing.T) {
 	}
 }
 
+// issue 167: コンテナの孤児判定は「ディレクトリ名 = bundle id」を前提にしているので、
+// (a) UUID 名のコンテナは構造的に素通りする → 判定できないものとして候補から外す (fail-closed)
+// (b) Wrapper/ と Versions/*/Resources/ の Info.plist を読まないと bundle id が集まらない
+// (c) symlink の .app は DirEntry.IsDir が false を返すので走査から落ちる
+func TestOrphanContainerCollectsAllBundleForms(t *testing.T) {
+	env := testEnv(t)
+	apps := env.AppDirs[0]
+	mkplist := func(p, id string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		body := `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>` + id + `</string></dict></plist>`
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 通常形 (これが無いと installedBundleIDs が fail-closed で failed になる)
+	mkplist(filepath.Join(apps, "Alive.app", "Contents", "Info.plist"), "com.example.alive")
+	// (b) iOS-on-Mac の flat 配置
+	mkplist(filepath.Join(apps, "Promise.app", "Wrapper", "Promise.app", "Info.plist"), "com.example.wrapped")
+	// (b) framework の Versions/A/Resources
+	mkplist(filepath.Join(apps, "Vendor.app", "Contents", "Frameworks", "Electron Framework.framework", "Versions", "A", "Resources", "Info.plist"), "com.example.framework")
+	// メタ文字入りの名前 (`MyApp [Beta].app` の形)。glob パターンに素で埋めると集まらない
+	mkplist(filepath.Join(apps, "MyApp [Beta].app", "Contents", "Info.plist"), "com.example.bracket")
+	// メタ文字入りの名前 + 可変部のある形 (Versions/*/Resources)。glob の prefix を escape しないと
+	// `[Beta]` が文字クラスとして解釈されて 0 件になる
+	mkplist(filepath.Join(apps, "Vendor [JP].app", "Contents", "Frameworks", "Helper [x].framework", "Versions", "A", "Resources", "Info.plist"), "com.example.bracketfw")
+	mkplist(filepath.Join(apps, "Vendor [JP].app", "Contents", "Info.plist"), "com.example.bracketapp")
+	// (c) symlink の .app (実体は AppDirs の外)
+	outside := filepath.Join(env.Home, "elsewhere", "Linked.app")
+	mkplist(filepath.Join(outside, "Contents", "Info.plist"), "com.example.linked")
+	if err := os.Symlink(outside, filepath.Join(apps, "Linked.app")); err != nil {
+		t.Fatal(err)
+	}
+
+	cont := filepath.Join(env.Home, "Library", "Containers")
+	const uuidName = "0A7CEF49-521F-4A65-95E2-9B8495EA27BB"
+	// 小文字ケースは**別の UUID 値**にする。同じ値の大文字/小文字だと APFS (既定は大小無視) が
+	// 同じディレクトリに畳み込み、got に現れず assert が恒常的に空振りする
+	// (敵対レビュー 2026-09-03 で実測)
+	const uuidLower = "1b8df05a-4c62-47e1-9d33-0af7be215cc9"
+	for _, name := range []string{"com.example.alive", "com.example.wrapped", "com.example.framework",
+		"com.example.linked", "com.example.bracket", "com.example.bracketfw", "com.example.bracketapp",
+		"com.example.gone", uuidName, uuidLower} {
+		mkfile(t, filepath.Join(cont, name, "Data", "f"), 8)
+	}
+	e := Entry{ID: "orphan-container", Paths: []string{filepath.Join(cont, "*")}, Guard: GuardOrphanApp, Inspect: true}
+	r := scanOne(t, env, &fakeRunner{}, e, okBoot)
+	if r.Status != StatusOK {
+		t.Fatalf("status=%s reason=%s", r.Status, r.Reason)
+	}
+	var got []string
+	for _, it := range r.Items {
+		got = append(got, filepath.Base(it.Path))
+	}
+	// 孤児は com.example.gone だけ。UUID 名は「判定できず」で候補から外す
+	if len(got) != 1 || got[0] != "com.example.gone" {
+		t.Errorf("孤児は com.example.gone だけのはず: got=%v", got)
+	}
+	// どの形が落ちたのかを個別に言う (1 件でも混ざれば上で red になるが、原因が読めるように)
+	for _, bad := range []struct{ name, why string }{
+		{"com.example.wrapped", "Wrapper/ の Info.plist を読んでいない (b)"},
+		{"com.example.framework", "Versions/*/Resources/ の Info.plist を読んでいない (b)"},
+		{"com.example.linked", "symlink の .app を走査していない (c)"},
+		{"com.example.bracket", "名前にメタ文字を含む bundle を glob パターンに素で埋めている (拾わなすぎ)"},
+		{"com.example.bracketfw", "Versions/*/Resources の glob で prefix を escape していない"},
+		{"com.example.bracketapp", "メタ文字入りの .app の Contents/Info.plist を読めていない"},
+		{uuidName, "UUID 名コンテナを fail-closed にしていない (a)"},
+		{uuidLower, "小文字の UUID 名を fail-closed にしていない (a)"},
+	} {
+		if slices.Contains(got, bad.name) {
+			t.Errorf("%s を孤児にした: %s", bad.name, bad.why)
+		}
+	}
+}
+
 // ~/Library/Developer 自体が読めないときも fail-closed (孤児判定をしない)。無視して空を返すと
 // 「セットが無い」と同じ結果になり、生きたデバイスの作業領域を孤児にする — この関数が防いでいる
 // 失敗モードそのものを、診断の痕跡を出さずに再現する (敵対レビュー 2026-09-03)。
@@ -807,5 +884,74 @@ func TestSimDeviceSetDirUnreadableFailsClosed(t *testing.T) {
 	r := scanOne(t, env, f(), e, okBoot)
 	if r.Status != StatusFailed {
 		t.Errorf("~/Library/Developer が読めないのを候補 0 件に畳んだ: status=%s items=%d", r.Status, len(r.Items))
+	}
+}
+
+// UUID 名の判定は「bundle id の形でないもの」を弾くだけで、bundle id を巻き込まない。
+func TestContainerIsUndiagnosable(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want bool
+	}{
+		{"0A7CEF49-521F-4A65-95E2-9B8495EA27BB", true},
+		{"0a7cef49-521f-4a65-95e2-9b8495ea27bb", true},
+		{"com.example.app", false},
+		{"com.apple.CloudDocs", false},
+		// UUID に見えるが桁が足りない / 余分な接尾辞つきは bundle id 側 (突合に回す)
+		{"0A7CEF49-521F-4A65-95E2-9B8495EA27B", false},
+		{"0A7CEF49-521F-4A65-95E2-9B8495EA27BB.extra", false},
+		{"com.example.0A7CEF49-521F-4A65-95E2-9B8495EA27BB", false},
+	} {
+		if got := containerIsUndiagnosable(tc.name); got != tc.want {
+			t.Errorf("%q: got=%v want=%v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// 敵対レビュー 2026-09-03: symlink を辿るようにしたので巡回検出が要る。同じディレクトリを指す
+// symlink を n 個並べると、bundleMaxDepth (深さ) は縛っても**幅**が無制限なので n^8 に膨らむ
+// (実測: n=4 は 8 秒でも終わらなかった)。collectBundleIDs には ctx が無くキャンセルもできない。
+//
+// 判定は**壁時計でなく訪問回数**で行う (avoid-wall-clock-assertions)。正常側は「実ディレクトリ数」
+// ぴったりで、巡回検出が無い側は n^8 に発散するので、閾値をどこに置いても桁で判別できる。
+func TestCollectBundleIDsStopsOnSymlinkLoops(t *testing.T) {
+	base := t.TempDir()
+	evil := filepath.Join(base, "Evil")
+	if err := os.MkdirAll(filepath.Join(evil, "Real.app", "Contents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.example.real</string></dict></plist>`
+	if err := os.WriteFile(filepath.Join(evil, "Real.app", "Contents", "Info.plist"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// 兄弟 symlink 6 本 (どれも親の Evil を指す)。巡回検出が無いと 6^8 = 168 万回走査する
+	loops := []string{"LoopA.app", "LoopB.app", "LoopC.app", "LoopD.app", "LoopE.app", "LoopF.app"}
+	for _, n := range loops {
+		if err := os.Symlink(evil, filepath.Join(evil, n)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 実ディレクトリは Evil / Real.app / Contents の 3 つ。symlink 6 本はどれも Evil の別名なので
+	// 1 回目で seen に入り、2 回目以降は降りない。降りる回数の上限を実体数 + symlink 数で押さえる。
+	const wantMax = 3 + 6
+
+	collectVisits = 0
+	ids := map[string]bool{}
+	done := make(chan struct{})
+	go func() {
+		_ = collectBundleIDs(base, 0, ids)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		// 訪問回数で判定できない (終わらない) 形。安全網であって合否の基準ではない
+		t.Fatalf("走査が終わらない (巡回検出が無い): visits=%d", collectVisits)
+	}
+	if collectVisits > wantMax {
+		t.Errorf("同じ実体を何度も走査している (巡回検出が効いていない): visits=%d want<=%d", collectVisits, wantMax)
+	}
+	if !ids["com.example.real"] {
+		t.Errorf("巡回検出が効きすぎて実体の bundle id を取り逃した: %v ids=%v", collectVisits, ids)
 	}
 }

@@ -223,6 +223,12 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 		}
 		paths = filterPaths(paths, func(p string) bool {
 			id := filepath.Base(p)
+			// 名前から bundle id を決められないコンテナ (UUID 名) は判定できないので候補にしない。
+			// 突合は「ディレクトリ名 = bundle id」を前提にしており、UUID 名は構造的に素通りする
+			// (issue 167 (a))
+			if containerIsUndiagnosable(id) {
+				return false
+			}
 			for _, pre := range containerExcludePrefixes {
 				if strings.HasPrefix(id, pre) {
 					return false
