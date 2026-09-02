@@ -155,14 +155,19 @@ func Scan(ctx context.Context, opt Options) Report {
 }
 
 // manualCommands は人が手で実行するためのコマンド。このツールはこれを実行しない。
+// bootout の sudo はドメインで決まる (system だけ)。rm の sudo はファイルの置き場で決まる:
+// /Library/LaunchAgents は gui ドメインだが root 所有なので、sudo なしの rm は permission denied になる。
 func manualCommands(f Finding) []string {
-	sudo := ""
+	bootSudo, rmSudo := "", ""
 	if f.Domain == "system" {
-		sudo = "sudo "
+		bootSudo = "sudo "
+	}
+	if strings.HasPrefix(f.PlistPath, "/Library/") {
+		rmSudo = "sudo "
 	}
 	return []string{
-		fmt.Sprintf("%slaunchctl bootout %s/%s", sudo, f.Domain, f.Label),
-		fmt.Sprintf("%srm %s", sudo, shellQuote(f.PlistPath)),
+		fmt.Sprintf("%slaunchctl bootout %s/%s", bootSudo, f.Domain, f.Label),
+		fmt.Sprintf("%srm %s", rmSudo, shellQuote(f.PlistPath)),
 	}
 }
 

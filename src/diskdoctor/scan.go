@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -48,7 +49,8 @@ type Options struct {
 	BootTime    func() (time.Time, error)
 	Concurrency int           // 既定 4 (ディスク I/O が競合する)
 	PerEntry    time.Duration // 1 エントリの上限。既定 60 秒
-	// OnResult は完了したエントリを順次受ける (UI のインクリメンタル表示用)。nil 可
+	// OnResult は完了したエントリを順次受ける (UI のインクリメンタル表示用)。nil 可。
+	// ⚠️ 走査 goroutine から並行に呼ばれる (呼び出し側で直列化する。bubbletea なら Msg に載せる)
 	OnResult func(Result)
 }
 
@@ -240,7 +242,10 @@ func sizePaths(ctx context.Context, opt Options, e Entry, paths []string) Result
 		it, err := duSize(ctx, vp, seen)
 		if err != nil {
 			if ctx.Err() != nil {
-				return failed(e, "走査が時間内に終わらなかった: "+vp)
+				if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+					return failed(e, "走査が時間内に終わらなかった: "+vp)
+				}
+				return failed(e, "走査を中断した: "+vp)
 			}
 			r.Failures = append(r.Failures, "走査できず: "+err.Error())
 			continue
@@ -280,7 +285,11 @@ func scanSimRuntimes(ctx context.Context, opt Options, e Entry) Result {
 	for _, rt := range rts {
 		r.Items = append(r.Items, item{Path: rt.Path, Size: rt.SizeBytes, Mtime: rt.LastUsedAt})
 		r.Size += rt.SizeBytes
-		r.Contents = append(r.Contents, fmt.Sprintf("%s  id=%s  最終使用 %s", rt.Name, rt.Identifier, rt.LastUsedAt.Format("2006-01-02")))
+		used := "未使用 (lastUsedAt なし)"
+		if !rt.LastUsedAt.IsZero() {
+			used = "最終使用 " + rt.LastUsedAt.Format("2006-01-02")
+		}
+		r.Contents = append(r.Contents, fmt.Sprintf("%s  id=%s  %s", rt.Name, rt.Identifier, used))
 	}
 	return r
 }

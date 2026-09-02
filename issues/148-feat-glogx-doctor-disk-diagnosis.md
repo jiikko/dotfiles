@@ -1307,6 +1307,30 @@ Homebrew = 判定は brew 側)。
   インベントリ記録 / `cacheBaseDir()` の置き場 (② の CLI はキャッシュを持たない)
 - 敵対的レビューは通していない (③ の前に svcdoctor / diskdoctor 込みで通す)
 
+### セルフレビュー (2026-09-02、①②に対して。敵対的レビューの代わりではない)
+
+観点は ①壊す ②素通り ③並行・中断。直したもの 3 件 / 記録に留めたもの 6 件。
+
+直した:
+- svcdoctor: `/Library/LaunchAgents` の plist は gui ドメインだが root 所有なので、提示する `rm` に sudo が無いと
+  permission denied になる (実機の Adobe の候補がこの形)。bootout の sudo はドメイン、rm の sudo は置き場で決める
+  (`TestManualCommandsSudo`。sudo 判定を外す変異で red)
+- diskdoctor: Esc / Ctrl-C の中断を「走査が時間内に終わらなかった」と表示していた。`context.Canceled` と
+  `DeadlineExceeded` を分けた
+- diskdoctor: `lastUsedAt` の無いランタイムを「最終使用 0001-01-01」と表示していた
+
+記録 (③④ で扱う / 仕様として受け入れる):
+- svcdoctor: `/Library/LaunchDaemons` (system ドメイン) は一般ユーザーの `launchctl list` に出ないので B を
+  評価していない (A / C だけ)。表示にその旨が出ていない → ③ の UI で「状態不明 (system)」を添える
+- diskdoctor: `OnResult` は走査 goroutine から並行に呼ばれる (doc に明記した)。③ で bubbletea に載せるときは
+  Msg 経由で直列化する。CLI の `-progress` は stderr への短い書き込みなので実害なし
+- diskdoctor: 合計の重なり (brew-cleanup-residue ⊂ homebrew-cache の一部)。② の記録どおり
+- diskdoctor: `brew cleanup --dry-run` の対象に brew 自身の `vendor/bundle/ruby/3.4.0` (38MB) が入る。brew の
+  申告どおりに載せている (削除は `cli:brew cleanup` なので brew の判断に従う)
+- diskdoctor: validateTarget が拒否したパスは `Failures` として「一部走査できず: 対象パスを拒否」に出る。
+  カタログの記述ミスを表面化させる意図で、隠さない
+- 両方: Runner / execRunner を別 module に写している (同じ 40 行)。③ で共有 package を切るなら統合候補
+
 ### 次の一手 (引き継ぎ。ここから続ける)
 
 **段階 ①② は完了、次は ③ glogx の doctor 画面 + キャッシュ + 起動時トースト** (削除は作らない)。

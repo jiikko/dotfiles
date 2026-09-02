@@ -366,3 +366,21 @@ func TestParseLaunchctlListFormats(t *testing.T) {
 		t.Error("ヘッダ行をラベルとして読んだ")
 	}
 }
+
+// 提示コマンドの sudo: bootout はドメイン、rm はファイルの置き場で決まる。
+func TestManualCommandsSudo(t *testing.T) {
+	cases := []struct {
+		domain, path string
+		want         []string
+	}{
+		{"gui/501", "/Users/x/Library/LaunchAgents/a.plist", []string{"launchctl bootout gui/501/a", "rm /Users/x/Library/LaunchAgents/a.plist"}},
+		{"gui/501", "/Library/LaunchAgents/a.plist", []string{"launchctl bootout gui/501/a", "sudo rm /Library/LaunchAgents/a.plist"}},
+		{"system", "/Library/LaunchDaemons/a.plist", []string{"sudo launchctl bootout system/a", "sudo rm /Library/LaunchDaemons/a.plist"}},
+	}
+	for _, c := range cases {
+		got := manualCommands(Finding{Label: "a", Domain: c.domain, PlistPath: c.path})
+		if strings.Join(got, "|") != strings.Join(c.want, "|") {
+			t.Errorf("%s %s: got %v want %v", c.domain, c.path, got, c.want)
+		}
+	}
+}
