@@ -17,7 +17,7 @@ import (
 func main() {
 	jsonOut := flag.Bool("json", false, "JSON で出力する")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: svcdoctor [-json]\n\n壊れた launchd 登録 (実行ファイル不在 / 失敗し続けている / Homebrew 台帳に無い) を検出して表示する。\n停止・削除は行わない。手で実行するコマンドを提示するだけ。\n\n")
+		fmt.Fprintf(os.Stderr, "usage: svcdoctor [-json]\n\n壊れた launchd 登録 (実行ファイル不在 / 失敗し続けている / Homebrew 台帳に無い) を検出して表示する。\n停止・削除は行わない。手で実行するコマンドを提示するだけ。\n\n終了コード:\n  0  候補なし\n  1  候補あり (または home の解決・出力に失敗)\n  2  引数が不正、または診断できなかったものがある\n     (中断 / launchctl の失敗 / 読めないディレクトリ。「検査できなかった」を緑にしない)\n\n⚠️ -json では候補・未診断があっても 0 を返す (issue 177 で是正予定)。\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()

@@ -19,7 +19,7 @@ func main() {
 	jsonOut := flag.Bool("json", false, "JSON で出力する")
 	progress := flag.Bool("progress", false, "完了したエントリを stderr に順次出す")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: diskdoctor [-json] [-progress]\n\n既知の掃除候補 (allowlist) を占有量の降順で、リスクと復元方法つきで一覧する。\n削除は行わない (dry-run のみ)。\n\n")
+		fmt.Fprintf(os.Stderr, "usage: diskdoctor [-json] [-progress]\n\n既知の掃除候補 (allowlist) を占有量の降順で、リスクと復元方法つきで一覧する。\n削除は行わない (dry-run のみ)。\n\n終了コード:\n  0  一覧を出せた (候補の有無では変わらない)\n  1  出力に失敗した (-json のエンコード)\n  2  引数が不正、または走査できなかったエントリがある\n     (「検査できなかった」を緑にしないため。部分的な結果は表示したうえで 2 を返す)\n\n⚠️ svcdoctor は「候補あり」を 1 で返すが diskdoctor は 0 のまま (issue 177 で是正予定)。\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
