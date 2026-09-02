@@ -49,7 +49,7 @@ glogx の画面のうち、**複数 repo をこの規約に寄せる** / **書�
 | 種類 | 置き場 |
 |---|---|
 | 全プロジェクト共通の作業規範 (毎セッション読まれる) | [`_claude/rules/`](../_claude/rules/) — 本文は規範だけ。根拠は `_claude/rules-rationale/` |
-| dotfiles 固有で、必要なときだけ読む規範 | [`rules/`](../rules/) — zsh の hook / trap、bench の見方 |
+| dotfiles 固有で、必要なときだけ読む規範 | [`rules/`](../rules/README.md) — zsh の hook / trap、bench の見方 (索引つき) |
 | ディレクトリ固有の規約 | そのディレクトリの `CLAUDE.md` (`scripts/` / `tests/` / `src/glogx/` / `_claude/`) |
 | 各ツールの使い方 | `src/<name>/README.md` と `<tool> --help` |
 | 作業の記録・残課題・振り返り | [`issues/`](../issues/) (書式は `issues/README.md`) |

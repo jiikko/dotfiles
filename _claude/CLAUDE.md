@@ -75,7 +75,7 @@
 - 変更したファイルにGodクラス/Godファイルの予兆（責務の混在、過度な行数など）を見つけたら、リファクタリングを提案すること（ただし行数だけで判断せず、下記のとおり複雑性が実際に下がるかで判断する）
 - **リファクタリングの目的は「複雑性を下げる」こと。行数が多いだけで単純にファイル/クラスを分けるのはリファクタではない**（分割は複雑性を移動するだけで削減しない）。「何をもって複雑性が下がるか」の判断基準と着手前の確認手順は [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md)
 - バグフィックス後、そのプロジェクトに導入されているlinterのカスタムルールやpresetルールで再発防止できないか検討し、提案すること
-- **zsh の hook (precmd/preexec) 経路から呼ぶ関数は `$(...)` でなく `REPLY` で返す**（fork が毎操作の体感レイテンシになる）。詳細は dotfiles repo の `rules/zsh-hook-return-via-reply.md`
+- **zsh の hook (precmd/preexec) 経路から呼ぶ関数は `$(...)` でなく `REPLY` で返す**（fork が毎操作の体感レイテンシになる）。詳細は dotfiles repo の `rules/zsh-hook-return-via-reply.md`（dotfiles 固有の規範は `rules/README.md` が索引。zsh の trap 継承・Bench の見方もそこ）
 - **カバレッジ向上を要求されても、対象が「テスト困難 かつ 低価値」の両方を満たすなら拒否する**（数値のための水増しテストを書かない）。判断は「テスト容易性 × 価値」の 2 軸で行い、困難×高価値は逃げずにテスタブルへ直してから書く。詳細は [`refuse-low-value-coverage.md`](rules/refuse-low-value-coverage.md)
 - **検証は exit code ではなく「実行された証拠」で判定する**（exit 0 は「失敗しなかった」であり「そもそも走らなかった」を含む）。新設した検査は集約経路から実行して**その検査の出力が出ることを確認**する。`cmd | tail` の `$?` はパイプ終端の status。詳細は [`verify-execution-not-just-exit-code.md`](rules/verify-execution-not-just-exit-code.md)
 - **新規テストは「壊す変更を 1 つ当てて red を見る」まで確認してから commit する**（green は「正しい」ではなく「その書き方では壊せなかった」）。変異させても green のままのテストは主張を何も守っていないので書き直す。詳細は [`mutation-verify-new-tests.md`](rules/mutation-verify-new-tests.md)
