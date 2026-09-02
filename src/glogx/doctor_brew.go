@@ -42,6 +42,9 @@ func parseBrewDoctor(stdout, stderr string, rc int) brewDoctorResult {
 	var blocks []string
 	var cur []string
 	flush := func() {
+		for len(cur) > 0 && strings.TrimSpace(cur[len(cur)-1]) == "" {
+			cur = cur[:len(cur)-1] // 末尾の空行は塊に含めない
+		}
 		if len(cur) > 0 {
 			blocks = append(blocks, strings.Join(cur, "\n"))
 			cur = nil
@@ -57,7 +60,15 @@ func parseBrewDoctor(stdout, stderr string, rc int) brewDoctorResult {
 			flush()
 			cur = append(cur, line)
 		case strings.TrimSpace(line) == "":
-			flush()
+			// 空行では切らない: brew の警告は本文に空行を含み (diagnostic.rb の heredoc)、切ると
+			// 2 塊目以降が Warning: で始まらず others として黙って捨てられる (issue 171)。
+			// ただし段落の切れ目としては残す: 前置き allowlist に無い行が警告のあいだに現れたとき、
+			// 直前の警告の本文へ地続きに繋がって見えるのを避ける (敵対レビュー 2026-09-03)。
+			// 塊の先頭・末尾の空行は持たない。
+			// 連続する空行は 1 つに畳む (段落区切りとしては 1 行で足り、展開時の余白が増えるだけ)
+			if len(cur) > 0 && cur[len(cur)-1] != "" {
+				cur = append(cur, "")
+			}
 		default:
 			cur = append(cur, line)
 		}

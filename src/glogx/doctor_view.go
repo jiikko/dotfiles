@@ -662,7 +662,10 @@ func (v *doctorView) brewSection(o doctorRenderOpts) []doctorRow {
 		for _, l := range lines[1:] {
 			detail = append(detail, doctorColor(o.colored, ansiDim, "     "+l))
 		}
-		count := fmt.Sprintf("(%d 行)", len(lines))
+		// 「Enter で何行出てくるか」の予告なので detail の行数をそのまま数える (見出しは既に見えているので
+		// 数えない / 段落の空行は 1 行として表示されるので数える)。敵対レビュー 2026-09-03: 見出しを数えて
+		// 空行を数えない中間形にすると、段落の数によって実際の展開行数と系統的にずれる。
+		count := fmt.Sprintf("(%d 行)", len(detail))
 		inner := o.width - 2
 		sumW := dispWidth(summary)
 		gap := inner - 3 - sumW - dispWidth(count) - 1

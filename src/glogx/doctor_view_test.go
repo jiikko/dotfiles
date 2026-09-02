@@ -30,7 +30,11 @@ func doctorTestView(t *testing.T) *doctorView {
 		t.Fatal(err)
 	}
 	fake := func(context.Context, string, ...string) (string, string, int, error) {
-		return "", "Warning: Some installed casks are deprecated or disabled.\nYou should find replacements:\n  foo\n", 1, nil
+		// 段落 (空行) を 2 箇所入れる: 「(N 行) を len(detail) で数える」と「非空行で数える」と
+		// 「len(lines) で数える」が全部違う数になる形にして、数え方の変異を検出できるようにする
+		// (敵対レビュー 2026-09-03: 空行の無い fixture では 3 つの式が区別できず vacuous だった)。
+		// detail=6 / 非空行=5 / len(lines)=7
+		return "", "Warning: Some installed casks are deprecated or disabled.\nYou should find replacements:\n  foo\n\nUninstall them with `brew uninstall --cask`\n\nSee also: brew help uninstall\n", 1, nil
 	}
 	v := &doctorView{
 		diskOpts: func() disk.Options {
@@ -137,7 +141,7 @@ func TestDoctorLinesFillsPage(t *testing.T) {
 	}
 	check("完了")
 	out := doctorText(v, 40)
-	for _, want := range []string{"▌ディスク占有", "Thing キャッシュ", "✅ 安全", "▌サービス", "壊れた登録は見つかりませんでした", "▌Homebrew", "Some installed casks are deprecated or disabled.", "(3 行)"} {
+	for _, want := range []string{"▌ディスク占有", "Thing キャッシュ", "✅ 安全", "▌サービス", "壊れた登録は見つかりませんでした", "▌Homebrew", "Some installed casks are deprecated or disabled.", "(6 行)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("完了後の表示に %q が無い:\n%s", want, out)
 		}
