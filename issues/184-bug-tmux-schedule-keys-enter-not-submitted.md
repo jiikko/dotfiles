@@ -1,4 +1,4 @@
-# 167 bug: 入力予約の発火で Enter が効かず、文字列が入力欄に残ることがある
+# 184 bug: 入力予約の発火で Enter が効かず、文字列が入力欄に残ることがある
 
 起票日: 2026-09-02
 関連: `scripts/tmux_schedule_keys.sh` (`fire_send`) / `src/schedkeys/` (ウィザード TUI) /
