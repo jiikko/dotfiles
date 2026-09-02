@@ -297,10 +297,12 @@ P1 (事実誤認 / hunk が当たらない) は 0 件。`-` 行は全 hunk が�
 | diff 1 (H1) | `3b272e9` | codex-review SKILL.md の `--full-auto` 注記を 0.152.1 の現状へ (削除済みフラグ)。実測: `codex --version` = 0.152.1 / `codex exec --help` に該当 0 件 |
 | diff 2 (H2) | `3b272e9` | modes.md の Maximum ロスターに refactoring-patterns の条件を明記 |
 | diff 3 (H3) | `788122b` | agents.md の per-agent プロンプト本文を削除 (281 → 233 行)。見出し・条件行は残し、役割 1 行に圧縮。冒頭 ⚠️ も 1 文へ |
+| diff 4-5 (H4/H5) | `f1bf7e4` | fable SKILL.md: commit/push は memory を正本として委譲 (内容の再掲をやめる)。仕様節を Fable 5.1 (`claude-fable-5-1` / cutoff 2026-06) へ更新し、実行モデルが Fable のときは仕様節を読み飛ばす旨を明記。⚠️ memory `no-autonomous-commit-push` の実体は確認できなかった (dotfiles の memory ディレクトリは空) — 委譲する形にしたので内容の真偽に依存しない |
+| diff 6-8 (H6/H7/H8) | `f743df7` | agents の英語テンプレ定型を削除: research-assistant の "am I being lazy?" + "Remember: ..." / 5 agent の "Surface-level X is insufficient" を `## Focus areas` へ / smoke-test-runner の同文反復 1 件 |
 
 ### 未適用 (残り)
 
-- **High**: H4 / H5 (fable SKILL.md)、H6 / H7 / H8 (agents の英語テンプレ)
+- **High**: なし (H1-H8 すべて適用済み)
 - **Medium**: M1 (diff 9, 10)、M2 (diff 11)、M3 + M13 (rules 本文の実例を rationale へ / 欠落 7 本の新設)、
   M4・M5・M7・M8・M9・M10 (diff 14)・M11・M12 (diff 15)
 - 適用後の注意は「適用するときの注意」節のとおり (H1 適用後の `grep -rn full-auto _claude/skills` の目視は未実施)
