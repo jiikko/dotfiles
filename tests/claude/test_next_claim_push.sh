@@ -29,9 +29,27 @@ command -v jq >/dev/null 2>&1 || { echo "✗ jq が無い。hook は jq 前提�
 fail=0
 ok=0
 
+# 判定式の検査は **issues/next/ が実在する偽 repo** の中で走らせる。
+# ⚠️ 本物の dotfiles で走らせてはいけない: `issues/next/` は空のときディレクトリごと
+# git に載らないので、**新品チェックアウトと CI には存在しない**。hook は
+# 「issues/next/ が実在する repo でだけ有効」(opt-in) なので、前提を作らずに呼ぶと
+# 判定式が壊れていなくても全件が無出力になり、9 件が落ちる (実測 2026-09-02: CI run
+# 33649890092。手元では過去の作業で残った issues/next/ があったため気づけなかった)。
+# 偽 repo にしておけば本物の repo を汚さず、opt-in の有無も下の scope テストで別に見られる。
+FIRE_REPO=$(mktemp -d)
+cleanup() { rm -rf "$FIRE_REPO" "${scope_tmp:-}"; }
+trap cleanup EXIT
+(
+  cd "$FIRE_REPO" && git init -q . && mkdir -p issues/next && : > issues/186-x.md &&
+    git add -A && git -c user.email=t@t -c user.name=t commit -qm init
+) >/dev/null 2>&1
+
 run_hook() { # $1 = command 文字列 → stdout に hook の出力
-  jq -n --arg c "$1" '{tool_input: {command: $c}}' |
-    "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true
+  (
+    cd "$FIRE_REPO" &&
+      jq -n --arg c "$1" '{tool_input: {command: $c}}' |
+      "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null
+  ) || true
 }
 
 expect_fire() {
@@ -81,7 +99,6 @@ expect_silent "next 配下から done へ"      "git mv issues/next/186-x.md iss
 # --- 適用範囲: issues/next/ が無い repo では丸ごと無効 (ユーザー要求 2026-09-02。
 #     仕事の repo は issues/ を持たないので、そこでこの規律を出さない) ---
 scope_tmp=$(mktemp -d)
-trap 'rm -rf "$scope_tmp"' EXIT
 (
   cd "$scope_tmp" && git init -q . && mkdir -p issues && : > issues/1.md &&
     git add -A && git -c user.email=t@t -c user.name=t commit -qm init
