@@ -778,7 +778,10 @@ reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 write_job dropped "$(( $(/bin/date +%s) - 1 ))" "make test"
 STUB_SRVPID=9999 run "$STUB_PATH" "$SCRIPT" fire dropped   # 予約時と別サーバ = 送らずに破棄
 assert_not_called "send-keys -t %5 -l" "別サーバなら送らない (前提の確認)"
-assert_called "tmux set-option -pu -t %5 @schedkeys-at" "別サーバの破棄でも表示を消す"
+# ⚠️ 別サーバなら**表示にも触らない**。今この socket に居るのは別サーバで、そこの %5 は
+#    無関係な pane (pane id はサーバごとに振り直される)。unset すると他人の枠を消す
+#    (敵対的レビュー 2026-09-02 の P2)
+assert_not_called "set-option" "別サーバのときは表示を触らない (無関係な pane を消さない)"
 
 # ⚠️ 上のブロックは fire_drop の refresh を守っていない: 別サーバ判定は **claim の後**なので、
 #    claim 側の refresh だけで緑になる (変異検証 2026-09-02)。fire_drop 固有の経路は
@@ -799,6 +802,19 @@ run "$TMP_DIR/bin_nodate:/usr/bin:/bin" "$SCRIPT" fire notime
 [[ "$RC" -eq 0 ]] || { printf '✗ 時刻が取れないときに fire が exit %s (無音契約は exit 0)\n' "$RC"; exit 1; }
 assert_not_called "send-keys -t %5 -l" "時刻が取れなければ送らない (claim より前に降りる)"
 assert_called "tmux set-option -pu -t %5 @schedkeys-at" "claim 前に降りる破棄でも表示を消す (fire_drop 側)"
+
+printf '\n## pane 表示: 別サーバの予約は同じ pane id でも数えない\n'
+# ⚠️ $STATE_DIR は全サーバで共有 (-L の隔離サーバも同じディレクトリ)。pane id はサーバごとに
+#    振り直されるので、文字列一致だけで数えると別サーバの予約の時刻をこちらの枠に出す
+#    (敵対的レビュー 2026-09-02 の P1)。同一性は job の socket + サーバ pid で見る
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+sk_other=$(( $(/bin/date +%s) + 300 ))
+write_job other "$sk_other" "echo other" "/tmp/other-sock" "7777"   # 同じ %5 だが別サーバ
+sk_mine=$(( $(/bin/date +%s) + 3600 ))
+STUB_UI_RESULT="new	$sk_mine	make test" run "$STUB_PATH" "$SCRIPT" wizard
+assert_called "tmux set-option -p -t %5 @schedkeys-at $(fmt_hm "$sk_mine")" "自サーバの予約だけを数える"
+assert_not_called "@schedkeys-at $(fmt_hm "$sk_other")" "別サーバの予約の時刻を出さない"
+assert_not_called "ほか1件" "別サーバの予約を件数に数えない"
 
 printf '\n## pane 表示: stale 掃除で消える (サーバ再起動で sleeper だけ死んだ形)\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"

@@ -144,14 +144,24 @@ job_mtime() {
 #    ので pane 側の後始末は要らない)。
 # ⚠️ read_job を使わない: 呼び出し側 (fire_send / cancel_selected) が REPLY_* を後で使うので、
 #    ここで上書きすると「A を送ったと表示して B の文字列を出す」形の事故になる。
+# ⚠️ **pane id の文字列一致だけで数えない**。pane id はサーバごとに振り直され、$STATE_DIR は
+#    全サーバで共有なので (-L の隔離サーバも同じディレクトリを使う)、一致だけで絞ると別サーバの
+#    予約を数えてその時刻をこちらの枠に出す。同一性は job に記録した socket + サーバ pid で見る
+#    (fire_claim が送信前に見ているものと同じ。敵対的レビュー 2026-09-02)。
+#    確かめられないときは何も書かない (fail-closed: 相手が分からない pane を触らない)
 # ⚠️ 表示は装飾。失敗しても予約の成立・送信・取消には影響させない (fire の無音契約と同じ)
 refresh_pane_indicator() {
-  local pane=$1 j p at earliest='' n=0 hm v
+  local pane=$1 j p at txt sock srvpid earliest='' n=0 hm v now_sock now_srvpid
   [[ -n "$pane" ]] || return 0
+  now_sock="$(tmux display-message -p '#{socket_path}' 2>/dev/null || true)"
+  now_srvpid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
+  [[ -n "$now_sock" && -n "$now_srvpid" ]] || return 0
   for j in "$STATE_DIR"/*.job; do
     [[ -f "$j" ]] || continue
-    { IFS= read -r p; IFS= read -r at; } < "$j" 2>/dev/null || continue
+    { IFS= read -r p; IFS= read -r at; IFS= read -r txt
+      IFS= read -r sock || true; IFS= read -r srvpid || true; } < "$j" 2>/dev/null || continue
     [[ "$p" == "$pane" && "$at" =~ ^[0-9]+$ ]] || continue
+    [[ "$sock" == "$now_sock" && "$srvpid" == "$now_srvpid" ]] || continue
     n=$((n + 1))
     if [[ -z "$earliest" ]] || (( at < earliest )); then earliest="$at"; fi
   done
@@ -378,7 +388,6 @@ fire_claim() {
   #    (監査 2026-08-28)。rename は原子的なので、勝った側だけが先へ進む
   mv "$job" "$job.claimed" 2>/dev/null || return 1
   rm -f "$job.claimed" "$STATE_DIR/$id.pid"
-  refresh_pane_indicator "$REPLY_PANE"
   # ⚠️ サーバの同一性は「起きた後・送る直前」に見る。眠る前に見ても意味が無い (壊れるのは
   #    眠っている間にサーバが死んで別のサーバが立つ経路。実機で確認 2026-08-28)。
   #    socket が同じでも中身が別サーバなら、pane id は振り直されていて送り先は別物。
@@ -386,8 +395,13 @@ fire_claim() {
   nowpid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
   if [[ -z "$REPLY_SRVPID" || "$nowpid" != "$REPLY_SRVPID" ]]; then
     log "fire $id: 予約したサーバを確かめられない (job=${REPLY_SRVPID:-none} now=${nowpid:-none})"
+    # ⚠️ 表示にも触らない。今この socket に居るのは別サーバで、そこの $REPLY_PANE は
+    #    無関係な pane (pane id は振り直される)。空にして fire_drop の refresh を no-op にする
+    REPLY_PANE=''
     fire_drop "$id" "予約したときの tmux サーバがもう居ません" "$REPLY_TEXT"
   fi
+  # 表示の更新は同一性を確かめた後 (確かめる前に書くと、別サーバの無関係な pane を触る)
+  refresh_pane_indicator "$REPLY_PANE"
 }
 
 # fire_drop は「送らずに終わる」唯一の出口。⚠️ 破棄はログだけにしない: ユーザーは来ない入力を
