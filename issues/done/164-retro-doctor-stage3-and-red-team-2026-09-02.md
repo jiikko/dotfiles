@@ -57,11 +57,11 @@ UI にしか無かった = 欠落が両方向)。実例は rationale へ
       (root 相対を渡すと `git commit` は rc=1 / `git add` は rc=128 で **commit されない**。
       その後の `git push` は `Everything up-to-date` の rc=0 を返すので push の出力では気づけない。
       パイプ越しに叩くと rc そのものを見失う)
-- [x] 項目 5 → **採用 (2026-09-02、並行セッションが実施 `6274192a`)**。
+- [x] 項目 5 → **採用 (2026-09-02、別マシンのセッションが実施 `6274192a`。2026-09-02 に本人確認)**。
       [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) に 1 項追加。
       ⚠️ 本セッションは同じ項目を**却下する**方向で検討していた
       (「同じ間違いが別の場所にもある前提で grep する」が CLAUDE.md の一般則として既にあるため)。
-      並行セッションの採用が先に入っていたので、**却下へ差し戻さない** —
+      別セッションの採用が先に入っていたので、**却下へ差し戻さない** —
       既に入った規範を外すには [`list-masked-failure-modes-before-removing-guard.md`](../_claude/rules/list-masked-failure-modes-before-removing-guard.md)
       の手順 (何をマスクしていたかの列挙) が要る。重複だと感じたら、そのときに正式に外す
 
