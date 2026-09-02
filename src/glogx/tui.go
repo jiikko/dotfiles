@@ -1218,6 +1218,24 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateKeyReachable は C / X を update の入口として受けてよいかを返す。overlay が入力モード
+// (issues の絞り込み・URL ピッカー・目印確認 / status の pager・破棄確認 = ownsKeys) にあるときは
+// その語彙を優先し、status viewer では X が「変更を捨てる」(docs/status-viewer-spec.md) なので渡す。
+// それ以外 (doctor / ratelimit / diff / PR status / job パネル) は入力モードも C / X の割り当ても
+// 持たないので常に受ける = どの画面からでも update を始められる (README のキー表が正本)。
+// ⚠️ overlay に新しい入力モード (y/N 確認など) や C / X の割り当てを足すときはここも直す。
+// overlay 側は「未知キーは無視」なので、忘れても build もテストも壊れず、update が確認中のキーを
+// 先取りする形で静かに壊れる (doctor に削除確認を足す予定 = issue 148 ④ が最初の該当)。
+func (m *browseModel) updateKeyReachable(key string) bool {
+	if m.issuesOv.visible() && m.issuesOv.ownsKeys() {
+		return false
+	}
+	if m.statusOv.visible() && (m.statusOv.ownsKeys() || key == "X") {
+		return false
+	}
+	return true
+}
+
 func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if m.swallowKeyRepeat(key) {
 		return m, nil
@@ -1333,6 +1351,16 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	// doctor 表示中も全画面: キーはここで飲み切る (rlDash と同じ位置・同じ理由)。
+	// C = claude update / X = codex update (確認なし即実行。ユーザー選定 2026-07-22)。U=usage と並ぶ
+	// 大文字の「Claude Code メタ操作」で、実行中は spinner モーダルを出す (描画は finishWithGlobalChrome
+	// がどの画面にも重ねる)。⚠️ overlay の分岐より前に置くこと: 後ろだと各 overlay がキーを飲み、
+	// git log 一覧へ戻らないと update を始められない (ユーザー要望 2026-09-02: doctor / ratelimit /
+	// issues / status の上からも開始したい)。overlay 自身の語彙が先に立つ場面だけ updateKeyReachable
+	// が譲る (入力・確認モード中、status viewer の X = 変更を捨てる)。
+	if target, ok := updateKeyTarget(key); ok && m.updateKeyReachable(key) {
+		m.usageOv.dismiss() // 一覧の他のキーと同じ語彙 (U で出し、次のキーで消える)
+		return m, tea.Batch(m.actModal.startUpdateFor(target), m.maybeTick())
+	}
 	if m.doctorOv.visible() {
 		switch m.doctorOv.handleKey(key, m.pageSize()) {
 		case doctorClosed:
@@ -1519,15 +1547,6 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	if key == "u" {
 		m.actModal.askPull()
 		return m, nil
-	}
-	// C = claude update (確認なし即実行。ユーザー選定 2026-07-22)。glogx の独自機能で
-	// U=usage と並ぶ大文字の「Claude Code メタ操作」。実行中は spinner モーダルを出す。
-	if key == "C" {
-		return m, tea.Batch(m.actModal.startUpdate(), m.maybeTick())
-	}
-	// X = codex update (C の codex 版。新バージョン通知 codexUpdateAvailableMsg と対)
-	if key == "X" {
-		return m, tea.Batch(m.actModal.startCodexUpdate(), m.maybeTick())
 	}
 	// w = 直近の警告/エラーをクリップボードへコピー (issue 026)。トーストは数秒で消えるが
 	// lastWarning は保持しているので消えた後でもコピーできる。ghErr (CI 取得失敗の sticky

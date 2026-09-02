@@ -65,7 +65,7 @@ git の XY は **X = index 側 / Y = 作業ツリー側**。この画面は 1 �
 | `g` `G` `C-d` `C-u` | 先頭 / 末尾 / 半ページ | — |
 | `Space` | **セクションを移す** (Unstaged/Untracked → Staged / Staged → Unstaged) | `add` / `restore --staged` |
 | `a` | Unstaged + Untracked をまとめて Staged へ | `add --` (対象パスを列挙) |
-| `X` | **作業ツリーの変更を捨てる** (y/N 確認。4 節。Staged 行では受けない) | `restore` / `clean -fd` |
+| `X` | **作業ツリーの変更を捨てる** (y/N 確認。4 節。Staged 行では受けない。⚠️ 一覧の `X` = codex update はこの画面では効かない — `C` = claude update は効く) | `restore` / `clean -fd` |
 | `Enter` `l` `→` `d` | そのファイルの diff を全画面 pager で開く | `diff` / `diff --cached` |
 | `r` | 手動で読み直す | `status` |
 | `p` | **pull --rebase** (y/N 確認。確認モーダルは viewer の上に重なる) | `pull --rebase` |

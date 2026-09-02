@@ -852,10 +852,10 @@ func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
 	if m.actModal.pushConfirm {
 		t.Fatal("viewer 表示中の b が push 確認を開いた")
 	}
-	// C (claude update) や w (警告コピー) も素通りしない
-	m.handleKey("C")
-	if m.actModal.anyUpdating() {
-		t.Fatal("viewer 表示中の C が update を起動した")
+	// C (claude update) は viewer の上でも効く (ユーザー要望 2026-09-02。詳細は
+	// tui_update_keys_test.go)。ここでは viewer が閉じないことだけ見る
+	if _, cmd := m.handleKey("C"); cmd == nil || !m.issuesOv.visible() {
+		t.Fatalf("viewer 表示中の C が update を始めない / viewer を閉じた (cmd=%v visible=%v)", cmd != nil, m.issuesOv.visible())
 	}
 	// ⚠️ U (usage) だけは素通りではなく viewer の上でも効く (ユーザー要望 2026-08-01)。
 	// 以前は「全画面 viewer の下では描かれないのに取得だけ走る」ため弾いていたので、
