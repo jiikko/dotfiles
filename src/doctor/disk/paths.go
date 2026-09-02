@@ -14,6 +14,10 @@ type Env struct {
 	TmpDir  string
 	Getenv  func(string) string
 	AppDirs []string // orphan-container が .app を実走査するディレクトリ
+	// BrewPrefix は `brew --prefix` の実測値 ($BREW_PREFIX の展開に使う)。RealEnv では空で、
+	// scanEntry が brew を必要とするエントリの直前に解決して差す (Apple Silicon = /opt/homebrew,
+	// Intel = /usr/local。直書きすると Intel で候補 0 件に化ける: issue 176)。
+	BrewPrefix string
 }
 
 func RealEnv() Env {
@@ -62,6 +66,14 @@ func expand(env Env, tmpl string) ([]string, error) {
 		t := strings.TrimRight(env.TmpDir, "/")
 		logical = strings.ReplaceAll(logical, "$TMPDIR", t)
 		pattern = strings.ReplaceAll(pattern, "$TMPDIR", escapeGlobMeta(t))
+	}
+	if strings.Contains(tmpl, "$BREW_PREFIX") {
+		if env.BrewPrefix == "" {
+			return nil, errors.New("brew prefix が空です")
+		}
+		b := strings.TrimRight(env.BrewPrefix, "/")
+		logical = strings.ReplaceAll(logical, "$BREW_PREFIX", b)
+		pattern = strings.ReplaceAll(pattern, "$BREW_PREFIX", escapeGlobMeta(b))
 	}
 	if strings.Contains(logical, "$") {
 		return nil, fmt.Errorf("未対応の変数があります: %s", tmpl)

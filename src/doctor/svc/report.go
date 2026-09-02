@@ -18,7 +18,7 @@ func Annotations(f Finding) []string {
 		out = append(out, "🚨 com.apple. を名乗っていますが Apple の管理領域 (/System/Library) の外にあります")
 	}
 	if f.BrewOrphan {
-		out = append(out, "アンインストール済みの formula の登録が残っているようです (/opt/homebrew/var 配下の残骸も確認してください)")
+		out = append(out, "アンインストール済みの formula の登録が残っているようです (brew --prefix の var 配下の残骸も確認してください)")
 	}
 	if f.Domain == "system" && !f.HasLastExit {
 		out = append(out, "起動状態は不明 (system ドメインは一般ユーザーの launchctl list に出ない)")

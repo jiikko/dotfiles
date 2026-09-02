@@ -460,7 +460,7 @@ func TestOnlyReadOnlyCommands(t *testing.T) {
 		"xcrun simctl runtime list": {out: `{}`},
 		"brew list":                 {out: ""},
 		"brew cleanup --dry-run":    {out: ""},
-		"brew --prefix":             {out: "/opt/homebrew"},
+		"brew --prefix":             {out: env.Home}, // 実機の /opt/homebrew に依存させない
 	}}
 	Scan(context.Background(), Options{Env: env, Run: f.run, BootTime: okBoot})
 	allowed := []string{"pgrep -x", "xcrun simctl list devices -j", "xcrun simctl --set", "xcrun simctl runtime list -j", "brew info --json=v2 --installed", "brew cleanup --dry-run", "brew --prefix"}
@@ -582,5 +582,116 @@ func TestExpandRelativeFailsClosed(t *testing.T) {
 	// 絶対パスなら従来どおり通る
 	if _, err := expand(Env{Home: "/h", TmpDir: t.TempDir()}, "$TMPDIR/nothing/*"); err != nil {
 		t.Errorf("絶対 TMPDIR が拒否された: %v", err)
+	}
+}
+
+// issue 176: brew prefix は `brew --prefix` から解決する (Apple Silicon /opt/homebrew と
+// Intel /usr/local で違うので直書きしない)。取れないときは fail-closed。
+func TestBrewPrefixIsResolvedNotHardcoded(t *testing.T) {
+	env := testEnv(t)
+	prefix := filepath.Join(env.Home, "usr", "local") // Intel 相当。/opt/homebrew ではない
+	mkfile(t, filepath.Join(prefix, "var", "mysql", "f"), 8)
+	e := Entry{ID: "brew-orphan-state", Paths: []string{"$BREW_PREFIX/var/*"}, Guard: GuardBrewOrphan}
+
+	f := &fakeRunner{resp: map[string]fakeResp{
+		"brew info":     {out: `{"formulae":[{"name":"redis"}]}`},
+		"brew --prefix": {out: prefix + "\n"},
+	}}
+	r := scanOne(t, env, f, e, okBoot)
+	if r.Status != StatusOK || len(r.Items) != 1 || filepath.Base(r.Items[0].Path) != "mysql" {
+		t.Fatalf("prefix が動的に解決されていない (Intel 相当の prefix で候補 0 件): %+v", r)
+	}
+
+	// 取れない / 空 / 相対 / 実在しない → すべて failed (候補 0 件に畳まない)。
+	// ⚠️ fixture は「その guard だけを踏む」形にする。どれも空文字や存在しないパスにすると、
+	// 実際には Stat の guard 1 つだけが全部を弾いていて、他の guard を消しても green のまま残る
+	// (敵対レビュー 2026-09-03 で実測)。各ケースは error 文言で「どの guard が弾いたか」まで固定する。
+	for _, tc := range []struct {
+		name, out, wantMsg string
+		rc                 int
+	}{
+		// rc≠0: out は正当な prefix にして、rc だけで弾かれることを固定する
+		{name: "rc!=0", out: prefix, rc: 1, wantMsg: "exit 1"},
+		{name: "空", out: "\n", wantMsg: "空を返した"},
+		// 相対: cwd から見て実在する "." にして、Stat ではなく IsAbs で弾かれることを固定する
+		{name: "相対", out: ".", wantMsg: "絶対パスでない"},
+		{name: "実在しない", out: filepath.Join(env.Home, "no-such-prefix"), wantMsg: "確認できない"},
+		// "/" は expand の TrimRight で空に潰れ、$BREW_PREFIX/var/* が /var/* に化ける
+		{name: "ルート", out: "/", wantMsg: "ルート (/) を返した"},
+	} {
+		f := &fakeRunner{resp: map[string]fakeResp{
+			"brew info":     {out: `{"formulae":[{"name":"redis"}]}`},
+			"brew --prefix": {out: tc.out, rc: tc.rc},
+		}}
+		r := scanOne(t, env, f, e, okBoot)
+		if r.Status != StatusFailed {
+			t.Errorf("%s: 診断できずに倒れていない: status=%s items=%d", tc.name, r.Status, len(r.Items))
+			continue
+		}
+		// 文言だけでなく「brewPrefix が弾いたこと」まで固定する。下流 (expand の絶対パス検査 /
+		// validateTarget) にも二重の防御があるので、prefix 側の guard を消しても別の層が弾いて
+		// green のまま残る (敵対レビュー 2026-09-03 で "." の相対ケースが実際にそうなっていた)。
+		const by = "brew --prefix を取得できず"
+		if !strings.HasPrefix(r.Reason, by) || !strings.Contains(r.Reason, tc.wantMsg) {
+			t.Errorf("%s: brewPrefix 以外の層が弾いている (このケースは対象の guard を検査できていない): reason=%q want~=%q", tc.name, r.Reason, tc.wantMsg)
+		}
+	}
+	// ディレクトリでない prefix (ファイル) も弾く
+	fileAsPrefix := filepath.Join(env.Home, "not-a-dir")
+	mkfile(t, fileAsPrefix, 1)
+	f = &fakeRunner{resp: map[string]fakeResp{
+		"brew info":     {out: `{"formulae":[{"name":"redis"}]}`},
+		"brew --prefix": {out: fileAsPrefix},
+	}}
+	if r := scanOne(t, env, f, e, okBoot); r.Status != StatusFailed || !strings.Contains(r.Reason, "ディレクトリでない") {
+		t.Errorf("ファイルを prefix として受け入れた: %+v", r)
+	}
+}
+
+// カタログが brew prefix を直書きしていないこと (issue 176 の再発防止)。
+func TestCatalogHasNoHardcodedBrewPrefix(t *testing.T) {
+	for _, e := range catalog {
+		for _, p := range e.Paths {
+			if strings.HasPrefix(p, "/opt/homebrew") || strings.HasPrefix(p, "/usr/local") {
+				t.Errorf("%s: brew prefix を直書きしている (%s)。$BREW_PREFIX を使う", e.ID, p)
+			}
+		}
+	}
+}
+
+// issue 176: brew cleanup の相対表記 (Would remove Library/Homebrew/vendor/...) は prefix 配下として
+// 解決する。prefix が取れないときに**黙って捨てる**と「消す対象は無い」という false green になる。
+func TestBrewCleanupRelativeLineFailsClosed(t *testing.T) {
+	env := testEnv(t)
+	prefix := filepath.Join(env.Home, "usr", "local")
+	mkfile(t, filepath.Join(prefix, "Library", "Homebrew", "vendor", "portable-ruby", "f"), 8)
+	e := Entry{ID: "brew-cleanup-residue", Guard: GuardBrewCleanup}
+	const out = "Would remove Library/Homebrew/vendor/portable-ruby\n"
+
+	f := &fakeRunner{resp: map[string]fakeResp{
+		"brew cleanup --dry-run": {out: out},
+		"brew --prefix":          {out: prefix},
+	}}
+	r := scanOne(t, env, f, e, okBoot)
+	if r.Status != StatusOK || len(r.Items) != 1 {
+		t.Fatalf("相対表記が prefix 配下として解決されていない: %+v", r)
+	}
+
+	// prefix が取れないなら候補 0 件に畳まず failed
+	f = &fakeRunner{resp: map[string]fakeResp{
+		"brew cleanup --dry-run": {out: out},
+		"brew --prefix":          {rc: 1},
+	}}
+	if r := scanOne(t, env, f, e, okBoot); r.Status != StatusFailed {
+		t.Errorf("相対表記を黙って捨てた (false green): status=%s items=%d", r.Status, len(r.Items))
+	}
+
+	// 絶対パスの行しか無いなら brew --prefix の失敗に巻き込まれない
+	f = &fakeRunner{resp: map[string]fakeResp{
+		"brew cleanup --dry-run": {out: "Would remove: " + filepath.Join(prefix, "Library", "Homebrew", "vendor", "portable-ruby") + " (1 file, 8KB)\n"},
+		"brew --prefix":          {rc: 1},
+	}}
+	if r := scanOne(t, env, f, e, okBoot); r.Status != StatusOK || len(r.Items) != 1 {
+		t.Errorf("絶対パスの行が brew --prefix の失敗に巻き込まれた: %+v", r)
 	}
 }

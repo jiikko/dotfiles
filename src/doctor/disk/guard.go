@@ -223,7 +223,40 @@ func brewFormulae(ctx context.Context, run runner.Runner) (map[string]bool, erro
 	return brewledger.Installed(ctx, run)
 }
 
-// brewSharedVarDirs は formula の状態ではない /opt/homebrew/var 直下の共有ディレクトリ。台帳に名前が無いのは
+// brewPrefix は `brew --prefix` の実測値を返す。取れない / 空 / 絶対パスでない / 実在しないは
+// すべて error にする (fail-closed)。ここを既定値 (/opt/homebrew) に fallback させると、
+// Intel Mac や非標準 prefix の環境で「候補なし」という false green に化ける (issue 176)。
+func brewPrefix(ctx context.Context, run runner.Runner) (string, error) {
+	out, stderr, rc, err := runner.WithTimeout(ctx, run, cmdTimeout, "brew", "--prefix")
+	if err != nil {
+		return "", err
+	}
+	if rc != 0 {
+		return "", fmt.Errorf("brew --prefix: exit %d: %s", rc, strings.TrimSpace(stderr))
+	}
+	p := strings.TrimSpace(out)
+	if p == "" {
+		return "", errors.New("brew --prefix が空を返した")
+	}
+	if !filepath.IsAbs(p) {
+		return "", fmt.Errorf("brew --prefix が絶対パスでない: %s", p)
+	}
+	// "/" を弾く: expand の TrimRight で空に潰れ、$BREW_PREFIX/var/* が /var/* に化ける
+	// (深さ 3 なので validateTarget の minDepth も素通りする)。敵対レビュー 2026-09-03
+	if filepath.Clean(p) == "/" {
+		return "", errors.New("brew --prefix がルート (/) を返した")
+	}
+	fi, err := os.Stat(p)
+	if err != nil {
+		return "", fmt.Errorf("brew prefix を確認できない: %w", err)
+	}
+	if !fi.IsDir() {
+		return "", fmt.Errorf("brew prefix がディレクトリでない: %s", p)
+	}
+	return p, nil
+}
+
+// brewSharedVarDirs は formula の状態ではない brew prefix の var 直下の共有ディレクトリ。台帳に名前が無いのは
 // 当然で、孤児判定の対象外 (db は現役 redis の dump 置き場だった。敵対レビュー 2026-09-02 P1)。
 var brewSharedVarDirs = map[string]bool{"homebrew": true, "log": true, "cache": true, "run": true, "db": true, "www": true,
 	"lib": true, "spool": true, "mail": true, "tmp": true, "lock": true, "state": true}
@@ -240,17 +273,32 @@ func brewCleanupTargets(ctx context.Context, run runner.Runner) ([]string, error
 	if rc != 0 {
 		return nil, fmt.Errorf("brew cleanup --dry-run: exit %d: %s", rc, strings.TrimSpace(stderr))
 	}
-	prefixOut, _, prc, perr := runner.WithTimeout(ctx, run, cmdTimeout, "brew", "--prefix")
-	prefix := strings.TrimSpace(prefixOut)
+	// prefix は相対表記の行が出たときだけ要る。先に取ると brew --prefix の失敗で
+	// 絶対パスの行まで巻き添えで落ちるので、遅延して解決する。
+	prefix, prefixErr := "", error(nil)
+	resolvePrefix := func() (string, error) {
+		if prefix == "" && prefixErr == nil {
+			prefix, prefixErr = brewPrefix(ctx, run)
+		}
+		return prefix, prefixErr
+	}
 	var paths []string
 	for _, line := range strings.Split(out, "\n") {
 		if m := brewWouldRemoveRe.FindStringSubmatch(line); m != nil {
 			paths = append(paths, m[1])
 			continue
 		}
-		if rest, ok := strings.CutPrefix(line, "Would remove "); ok && !strings.HasPrefix(rest, "/") && perr == nil && prc == 0 && prefix != "" {
-			paths = append(paths, filepath.Join(prefix, strings.TrimSpace(rest)))
+		rest, ok := strings.CutPrefix(line, "Would remove ")
+		if !ok || strings.HasPrefix(rest, "/") {
+			continue
 		}
+		// 相対表記は prefix 配下として解決する。prefix が取れないなら**黙って捨てない**
+		// (捨てると「brew cleanup が消す対象は無い」という false green になる: issue 176)
+		pre, err := resolvePrefix()
+		if err != nil {
+			return nil, fmt.Errorf("brew cleanup の相対表記 %q を解決できず (brew --prefix): %w", strings.TrimSpace(rest), err)
+		}
+		paths = append(paths, filepath.Join(pre, strings.TrimSpace(rest)))
 	}
 	return paths, nil
 }

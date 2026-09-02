@@ -131,6 +131,8 @@ type guards struct {
 	formulaeErr error
 	cleanup     []string
 	cleanupErr  error
+	prefix      string
+	prefixErr   error
 }
 
 func (g *guards) do(key string, f func()) {
@@ -172,9 +174,23 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 			}
 		}
 	}
+	// $BREW_PREFIX を使うエントリは brew --prefix を実測してから展開する (直書きしない: issue 176)。
+	// 取れなければ fail-closed (候補 0 件に畳まない)。
+	env := opt.Env
+	for _, tmpl := range e.Paths {
+		if !strings.Contains(tmpl, "$BREW_PREFIX") {
+			continue
+		}
+		g.do("prefix", func() { g.prefix, g.prefixErr = brewPrefix(ctx, opt.Run) })
+		if g.prefixErr != nil {
+			return failed(e, "brew --prefix を取得できず (候補にしない): "+g.prefixErr.Error())
+		}
+		env.BrewPrefix = g.prefix
+		break
+	}
 	var paths []string
 	for _, tmpl := range e.Paths {
-		ps, err := expand(opt.Env, tmpl)
+		ps, err := expand(env, tmpl)
 		if err != nil {
 			return failed(e, err.Error())
 		}
