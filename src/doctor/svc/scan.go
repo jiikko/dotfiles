@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -180,9 +181,21 @@ func manualCommands(f Finding) []string {
 	}
 }
 
+// shellSafeRe は素で貼ってよい文字だけ。**allowlist で判定する** (禁止文字を数える形だと
+// `;` `&` `|` `<` `>` `(` `)` `*` `?` `#` `!` `~` `\n` のような「引用しないと別のコマンドになる」
+// 文字を数え漏らす)。実測 2026-09-03 (issue 178 の敵対レビュー): 旧実装は `;` を引用しないので
+// `/Library/LaunchDaemons/x;id>/tmp/pwned.plist` という plist 名があると、提示コマンドが
+// `sudo rm /Library/LaunchDaemons/x` と `id > /tmp/pwned.plist` の 2 つに割れる。
+// **提示コマンドは人がそのまま貼る前提**なので、これは実走査でも成立する (細工した snapshot に限らない)。
+var shellSafeRe = regexp.MustCompile(`^[A-Za-z0-9_@%+=:,./-]+$`)
+
+// ShellQuote は「人がそのまま貼るコマンド」にパスを埋めるときの引用。**パスをコマンド行へ入れる
+// 経路は必ずここを通す** (glogx の doctor 画面が出す plutil / ls も)。
+func ShellQuote(s string) string { return shellQuote(s) }
+
 func shellQuote(s string) string {
-	if strings.ContainsAny(s, " \t'\"$`\\") {
-		return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	if s != "" && shellSafeRe.MatchString(s) {
+		return s
 	}
-	return s
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

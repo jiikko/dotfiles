@@ -37,6 +37,12 @@ type Result struct {
 	// 再利用時も Elapsed / MeasuredAt は元の計測のまま (次回「重い」と判定し続けるため)。
 	MeasuredAt time.Time `json:"measured_at"`
 	Reused     bool      `json:"reused,omitempty"`
+	// FromSnapshot は「今回走査しておらず、保存された結果をそのまま復元した」印。**Reused とは別物**:
+	// Reused は「重いエントリの計測値だけを前回から引き継いだ (行に『N 分前の計測を再利用』と出る)」で、
+	// こちらは「画面ごと snapshot から再現した」。前者を後者にも流用すると、普通の開き直しで
+	// 「-1113 分前の計測を再利用」のような嘘の注記が全行に出る (issue 178 の敵対レビューで実測)。
+	// ④ (削除) は**どちらの印が立っていても再スキャンを通す** (issues/148 の不変条件)。
+	FromSnapshot bool `json:"from_snapshot,omitempty"`
 }
 
 // Report は全エントリの結果。

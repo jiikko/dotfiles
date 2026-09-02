@@ -465,3 +465,32 @@ func TestBrewOldnameIsNotOrphan(t *testing.T) {
 		t.Fatalf("旧名の登録を C で孤児にした (A の不在だけが理由のはず): %+v", rep.Findings)
 	}
 }
+
+// issue 178 の敵対レビュー (2026-09-03): 提示コマンドは人がそのまま貼る前提なので、
+// plist のパスに「引用しないと別のコマンドになる」文字が入っていたら必ず引用する。
+// 旧実装は禁止文字を数える形で `;` `&` `|` `<` `>` を数え漏らしていた (実走査でも成立する)。
+func TestManualCommandsQuotesShellMetacharacters(t *testing.T) {
+	for _, p := range []string{
+		"/Library/LaunchDaemons/x;id>/tmp/pwned.plist",
+		"/Library/LaunchDaemons/a&b.plist",
+		"/Library/LaunchDaemons/a|b.plist",
+		"/Library/LaunchDaemons/a(b).plist",
+		"/Library/LaunchDaemons/a*b.plist",
+		"/Library/LaunchDaemons/a b.plist",
+		"/Library/LaunchDaemons/a\nb.plist",
+		"/Library/LaunchDaemons/~b.plist",
+		"/Library/LaunchDaemons/a#b.plist",
+		"/Library/LaunchDaemons/a!b.plist",
+	} {
+		got := manualCommands(Finding{Label: "a", Domain: "system", PlistPath: p})
+		rm := got[len(got)-1]
+		if !strings.Contains(rm, "'") {
+			t.Errorf("引用されていない: %q → %q", p, rm)
+		}
+	}
+	// 素直なパスは引用しない (読みやすさを損なわない)
+	got := manualCommands(Finding{Label: "a", Domain: "system", PlistPath: "/Library/LaunchDaemons/com.example.a.plist"})
+	if strings.Contains(got[len(got)-1], "'") {
+		t.Errorf("素直なパスを引用した: %q", got[len(got)-1])
+	}
+}

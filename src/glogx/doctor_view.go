@@ -112,6 +112,20 @@ func (v *doctorView) toggle() tea.Cmd {
 // (popup の開閉のたびにスキャンが走って見えるのを避ける)。r (rescan) は snapshot を無視する。
 func (v *doctorView) open() tea.Cmd { return v.start(false) }
 
+// catalogHas は「この ID が実効カタログにあるか」を返す (テストは diskOpts で catalog を差し替える)。
+func (v *doctorView) catalogHas() func(string) bool {
+	if v.diskOpts != nil {
+		if cat := v.diskOpts().Catalog; len(cat) > 0 {
+			ids := map[string]bool{}
+			for _, e := range cat {
+				ids[e.ID] = true
+			}
+			return func(id string) bool { return ids[id] }
+		}
+	}
+	return disk.CatalogHasID
+}
+
 // rescan は snapshot を無視して走査し直す (r)。
 func (v *doctorView) rescan() tea.Cmd { return v.start(true) }
 
@@ -126,6 +140,9 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	if !force {
 		if sn, ok := loadDoctorSnapshot(timeNow()); ok {
 			rep := sn.Disk
+			// 実効カタログに無い ID は落とす (snapshot は書き換えられる。issue 178)
+			rep.Results = doctorSnapshotInCatalog(rep.Results, v.catalogHas())
+			rep.Total = disk.SumDeletable(rep.Results)
 			v.diskRep = &rep
 			v.diskResults = rep.Results
 			svcRep := sn.Svc
@@ -643,8 +660,8 @@ func (v *doctorView) svcSection(o doctorRenderOpts) []doctorRow {
 			detail: []string{
 				doctorColor(o.colored, ansiDim, "      理由: "+u.Reason),
 				doctorColor(o.colored, ansiDim, "      手動で確かめてください (このツールは実行しません):"),
-				"        plutil -p " + u.PlistPath,
-				"        ls -l " + u.PlistPath,
+				"        plutil -p " + svc.ShellQuote(u.PlistPath),
+				"        ls -l " + svc.ShellQuote(u.PlistPath),
 			},
 			copyPath: u.PlistPath,
 			copyText: svcUndiagnosedCopyText(u),
@@ -740,8 +757,8 @@ func svcUndiagnosedCopyText(u svc.Undiagnosed) string {
 	fmt.Fprintf(&b, "plist: %s\n", u.PlistPath)
 	fmt.Fprintf(&b, "理由: %s\n", u.Reason)
 	b.WriteString("手動で確かめるコマンド (ツールは実行しない):\n")
-	fmt.Fprintf(&b, "  plutil -p %s\n", u.PlistPath)
-	fmt.Fprintf(&b, "  ls -l %s\n", u.PlistPath)
+	fmt.Fprintf(&b, "  plutil -p %s\n", svc.ShellQuote(u.PlistPath))
+	fmt.Fprintf(&b, "  ls -l %s\n", svc.ShellQuote(u.PlistPath))
 	return b.String()
 }
 

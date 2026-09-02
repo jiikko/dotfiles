@@ -137,3 +137,15 @@ var excludedRoots = []string{
 
 // CatalogSize は既定カタログのエントリ数 (UI の進捗表示の分母)。
 func CatalogSize() int { return len(catalog) }
+
+// CatalogHasID は既定カタログにその ID があるか。キャッシュ / snapshot から復元した Result が
+// 「今のカタログに実在するエントリか」を確かめるために使う。snapshot は一般ユーザー権限で
+// 書き換えられるので、そこに書かれた ID をそのまま行にしない (issue 178)。
+func CatalogHasID(id string) bool {
+	for _, e := range catalog {
+		if e.ID == id {
+			return true
+		}
+	}
+	return false
+}
