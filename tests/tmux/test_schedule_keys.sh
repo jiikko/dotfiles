@@ -38,6 +38,10 @@ CALLS="$TMP_DIR/calls.log"; : > "$CALLS"; export CALLS
 export HOME="$TMP_DIR/home"; mkdir -p "$HOME"
 export TMUX_SCHEDULE_KEYS_DIR="$TMP_DIR/state"
 export XDG_CACHE_HOME="$TMP_DIR/cache"
+# ⚠️ XDG_STATE_HOME を隔離する: 実行環境に設定があると STATE_ROOT がそちらへ向き、
+#    「socket ごとの dir」の検査が TMP_DIR の外を見て false red になる上、job を外へ書き残す
+#    (敵対的レビュー 2026-09-03 の P3-4 で実測)
+unset XDG_STATE_HOME
 
 mkdir -p "$TMP_DIR/bin" "$TMP_DIR/bin_nogum"
 # stub tmux: 呼び出しを記録し、スクリプトが使う照会にだけ応える。STUB_PANE_GONE=1 で %5 消滅を模す
@@ -869,24 +873,29 @@ sk_expect="$sk_root/%tmp%tmux-501%mysock"
 printf '✓ 既定の置き場は socket ごとの dir (共有 root 直下には置かない)\n'
 assert_called "run-shell -b TMUX_SCHEDULE_KEYS_DIR='$sk_expect'" "fire には socket ごとの dir を env で渡す"
 
-printf '\n## 置き場: 別サーバの dir の予約は見えない (構造で分ける)\n'
-# 別 socket の dir に job を置いても、こちらの一覧・失効件数には出てこない
-# 自サーバの dir は空にしておく: 前のブロックで作った job が残っていると、その失効通知を
-# 「別サーバの分を数えた」と誤読する (実際に踏んだ)
+printf '\n## 置き場: 別サーバの dir と旧共有 dir の予約は見えない\n'
+# ⚠️ fixture は **退行したら見えるようになる場所**にも置く。別 socket の dir だけに置くと、
+#    共有 root を見る退行 (= 修正前の姿) では最初から不可視なので、このブロックは何も守らない
+#    (敵対的レビュー 2026-09-03 の P2-2 で、変異を当てても緑のまま通ることを実証された)。
+#    旧共有 dir (root 直下) は「移さない」と決めた置き場なので、そこに置くのが退行の観測点になる
 rm -f "$sk_expect"/*.job "$sk_expect"/*.pid
 other_dir="$sk_root/%tmp%tmux-501%othersock"; mkdir -p "$other_dir"
 printf '%%5\n%s\necho other\n/tmp/tmux-501/othersock\n9999\n' "$(( $(/bin/date +%s) + 600 ))" > "$other_dir/foreign.job"
+printf '%%5\n%s\necho legacy\n/tmp/tmux-501/mysock\n4242\n' "$(( $(/bin/date +%s) + 900 ))" > "$sk_root/legacy.job"
 reset_calls; rm -f "$STUB_UI_JOBS_COPY"
 STUB_SOCK="/tmp/tmux-501/mysock" HOME="$sk_home" STUB_UI_RESULT="abort" \
   run "$STUB_PATH" env -u TMUX_SCHEDULE_KEYS_DIR "$SCRIPT" wizard
 grep -q 'foreign' "$STUB_UI_JOBS_COPY" && { printf '✗ 別サーバの予約が一覧に出た:\n%s\n' "$(cat "$STUB_UI_JOBS_COPY")"; exit 1; }
+grep -q 'legacy' "$STUB_UI_JOBS_COPY" && { printf '✗ 旧共有 dir の予約が一覧に出た:\n%s\n' "$(cat "$STUB_UI_JOBS_COPY")"; exit 1; }
 [[ -f "$other_dir/foreign.job" ]] || { printf '✗ 別サーバの予約を掃いてしまった\n'; exit 1; }
-assert_not_called "display-message サーバ再起動" "別サーバの予約を失効件数に数えない"
-printf '✓ 別サーバの dir は覗かない・掃かない\n'
+[[ -f "$sk_root/legacy.job" ]] || { printf '✗ 旧共有 dir の予約を掃いてしまった (移さない・触らないと決めた)\n'; exit 1; }
+assert_not_called "display-message サーバ再起動" "別サーバ・旧共有 dir の予約を失効件数に数えない"
+printf '✓ 別サーバの dir と旧共有 dir は覗かない・掃かない\n'
 
 printf '\n## 置き場: socket が取れなければ予約を作らない (fail-closed)\n'
 # ⚠️ 共有 dir へ落とすと混ざりが戻る。どのサーバの予約か分からないものは作らない
 reset_calls
+rm -f "$sk_root"/*.job   # 前のブロックが置いた旧共有 dir の fixture を片付ける
 STUB_NO_SOCK=1 HOME="$sk_home" STUB_UI_RESULT="new	$(( $(/bin/date +%s) + 3600 ))	make test" \
   run "$STUB_PATH" env -u TMUX_SCHEDULE_KEYS_DIR "$SCRIPT" wizard
 [[ "$RC" -ne 0 ]] || { printf '✗ socket が取れないのに成功で終わった\n'; exit 1; }
@@ -894,6 +903,72 @@ assert_not_called "run-shell" "socket が取れなければ sleeper を起こさ
 assert_called "display-message 予約入力を開けませんでした" "理由を知らせる (押しても何も起きないキーにしない)"
 [[ -z "$(find "$sk_root" -maxdepth 1 -name '*.job' 2>/dev/null)" ]] \
   || { printf '✗ 共有 root 直下に job を作った\n'; exit 1; }
+
+printf '\n## 置き場: 同じ socket に立ち直ったサーバは前任の予約を失効させる\n'
+# ⚠️ 入れ物を分けても socket が同じなら dir は同じ。pane id は振り直されているので、前任の job は
+#    一覧に**今のサーバの pane 名で**並び、発火時に fire_claim が拒否するまで待たされる
+#    (敵対的レビュー 2026-09-03 の P2-3 で実験で再現)。kill はしない: job を消せば前任の
+#    sleeper は claim に失敗して静かに降りる
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+spawn_sleeper mine                                        # 今のサーバ (stub の pid=4242) の予約
+# ⚠️ 前任の job にも**本物の sleeper**を付ける。偽 pid だと通常の stale 掃除が先に消すので、
+#    前任判定を外しても緑のまま通る (変異検証 2026-09-03 で実際に素通りした)
+spawn_sleeper oldsrv
+sed -i.bak '5s/.*/1234/' "$TMUX_SCHEDULE_KEYS_DIR/oldsrv.job" && rm -f "$TMUX_SCHEDULE_KEYS_DIR/oldsrv.job.bak"
+rm -f "$STUB_UI_JOBS_COPY"
+STUB_UI_RESULT="abort" run "$STUB_PATH" "$SCRIPT" wizard
+[[ ! -f "$TMUX_SCHEDULE_KEYS_DIR/oldsrv.job" ]] || { printf '✗ 前任サーバの予約が残っている (一覧に他人の pane 名で並ぶ)\n'; exit 1; }
+[[ -f "$TMUX_SCHEDULE_KEYS_DIR/mine.job" ]] || { printf '✗ 今のサーバの予約まで消した\n'; exit 1; }
+grep -q 'oldsrv' "$STUB_UI_JOBS_COPY" && { printf '✗ 前任サーバの予約が一覧に出た:\n%s\n' "$(cat "$STUB_UI_JOBS_COPY")"; exit 1; }
+assert_called "display-message サーバ再起動などで 1 件の予約が失効しました" "前任サーバの予約は失効として知らせる (黙って消さない)"
+printf '✓ 前任サーバの予約を失効させ、今のサーバの予約は残す\n'
+
+printf '\n## 置き場: サーバ pid が取れないときは前任判定をしない\n'
+# ⚠️ 確かめられないものを消さない。ここで消すと、tmux が答えないだけの状況で全予約が飛ぶ
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+# ⚠️ 本物の sleeper を起こしてから job のサーバ pid だけ前任の値に書き換える。偽 pid だと
+#    通常の stale 掃除で消えてしまい、「前任判定をしていない」ことの検査にならない
+spawn_sleeper keepit
+sed -i.bak '5s/.*/1234/' "$TMUX_SCHEDULE_KEYS_DIR/keepit.job" && rm -f "$TMUX_SCHEDULE_KEYS_DIR/keepit.job.bak"
+: > "$TMP_DIR/empty_srvpid"   # tmux が pid を答えない形 (空 + rc=0)
+STUB_SRVPID_FILE="$TMP_DIR/empty_srvpid" STUB_UI_RESULT="abort" run "$STUB_PATH" "$SCRIPT" wizard
+[[ -f "$TMUX_SCHEDULE_KEYS_DIR/keepit.job" ]] || { printf '✗ サーバ pid が取れないのに前任扱いで消した\n'; exit 1; }
+printf '✓ サーバ pid が取れなければ前任判定をしない\n'
+
+printf '\n## 置き場: 改行を含む置き場は扱わない (run-shell のコマンド文字列が割れる)\n'
+# ⚠️ env 指定の経路は socket 由来の検査を通らないので、ここで同じ検査をかけている
+#    (敵対的レビュー 2026-09-03 の P3-2)。改行が入ると run-shell へ渡す 1 行が割れる
+reset_calls
+nl_dir="$TMP_DIR/nl
+dir"
+mkdir -p "$nl_dir" 2>/dev/null || true
+TMUX_SCHEDULE_KEYS_DIR="$nl_dir" STUB_UI_RESULT="new	$(( $(/bin/date +%s) + 3600 ))	make test" \
+  run "$STUB_PATH" "$SCRIPT" wizard
+assert_not_called "run-shell" "改行を含む置き場では sleeper を起こさない"
+[[ -z "$(find "$nl_dir" -name '*.job' 2>/dev/null)" ]] || { printf '✗ 改行を含む置き場に job を作った\n'; exit 1; }
+printf '✓ 改行を含む置き場は扱わない\n'
+
+printf '\n## 置き場: socket 名の潰し方で別 socket が衝突しない\n'
+# ⚠️ `/` → `%` だけだと /tmp/a%b と /tmp/a/b が同じ dir 名になり、直したはずの混ざりが黙って戻る
+#    (敵対的レビュー 2026-09-03 の P3-1)。% を先に %25 へ逃がす
+for pair in "/tmp/x/y:%tmp%x%y" "/tmp/x%y:%tmp%x%25y"; do
+  sk_in="${pair%%:*}"; sk_want="${pair##*:}"
+  reset_calls; rm -rf "$sk_home/.local/state/tmux-schedule-keys"
+  STUB_SOCK="$sk_in" HOME="$sk_home" STUB_UI_RESULT="new	$(( $(/bin/date +%s) + 3600 ))	make test" \
+    run "$STUB_PATH" env -u TMUX_SCHEDULE_KEYS_DIR "$SCRIPT" wizard
+  [[ -d "$sk_root/$sk_want" ]] || { printf '✗ socket %s の dir 名が %s でない:\n%s\n' "$sk_in" "$sk_want" "$(find "$sk_root" -maxdepth 1)"; exit 1; }
+done
+printf '✓ %% を先に逃がすので /tmp/x/y と /tmp/x%%y が同じ dir にならない\n'
+
+printf '\n## 置き場: socket path の #{...} が展開されない (wizard と fire でズレない)\n'
+# ⚠️ run-shell のコマンド文字列は **tmux がフォーマット展開してから** sh へ渡すので、socket path に
+#    #{pane_id} が入ると wizard の置き場と fire の置き場が食い違う (tmux 3.7b で実測。P2-1)
+reset_calls; rm -rf "$sk_home/.local/state/tmux-schedule-keys"
+STUB_SOCK='/tmp/x#{pane_id}y' HOME="$sk_home" STUB_UI_RESULT="new	$(( $(/bin/date +%s) + 3600 ))	make test" \
+  run "$STUB_PATH" env -u TMUX_SCHEDULE_KEYS_DIR "$SCRIPT" wizard
+assert_called "TMUX_SCHEDULE_KEYS_DIR='$sk_root/%tmp%x##{pane_id}y'" "run-shell へ渡す前に # を ## にする (tmux の展開を止める)"
+[[ -d "$sk_root/%tmp%x#{pane_id}y" ]] || { printf '✗ wizard 側の dir 名が socket そのままでない:\n%s\n' "$(find "$sk_root" -maxdepth 1)"; exit 1; }
+printf '✓ #{...} を含む socket でも wizard と fire が同じ dir を見る\n'
 
 printf '\n## 置き場: fire は env が無ければ黙って降りる\n'
 # ⚠️ 置き場を渡されなかった fire (この変更より前に起きた sleeper / 手打ち) が走ると、

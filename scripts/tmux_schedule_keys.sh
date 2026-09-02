@@ -49,15 +49,32 @@ STATE_DIR="${TMUX_SCHEDULE_KEYS_DIR:-}"
 #    claim (job の rename) が失敗し、予約が黙って発火しなくなる。古い予約はそのまま発火し、
 #    一覧には出なくなる (issue 189 の移行の項)
 resolve_state_dir() {
-  local sock
-  [[ -z "$STATE_DIR" ]] || return 0
+  local sock enc
+  if [[ -n "$STATE_DIR" ]]; then
+    # env 指定 (テストと使い捨てスクリプト用の上書き)。⚠️ この経路は socket 由来の検査を
+    # 通らないので、ここで同じ検査をかける。サーバ環境にこの変数が居ると全サーバが同じ dir を
+    # 使う = 修正が無効になるため、効いていることをログに残す
+    case "$STATE_DIR" in *$'\n'*) return 1 ;; esac
+    log "置き場は env の指定を使う ($STATE_DIR)"
+    return 0
+  fi
   sock="$(tmux display-message -p '#{socket_path}' 2>/dev/null || true)"
   [[ -n "$sock" ]] || return 1
-  # run-shell のコマンド文字列へ ' 囲みで埋めるので、' と改行を含む socket は扱わない
-  case "$sock" in *"'"*|*$'\n'*) return 1 ;; esac
-  STATE_DIR="$STATE_ROOT/${sock//\//%}"
+  case "$sock" in *$'\n'*) return 1 ;; esac
+  # ⚠️ **% を先に逃がしてから / を潰す**。`/` → `%` だけだと `/tmp/a%b` と `/tmp/a/b` が
+  #    同じ dir 名になり、直したはずの混ざりが黙って戻る (敵対的レビュー 2026-09-03 の P3-1)
+  enc="${sock//%/%25}"
+  STATE_DIR="$STATE_ROOT/${enc//\//%}"
   return 0
 }
+
+# sh_quote は sh のコマンド文字列へ埋めるための ' 囲み (中の ' は '\'' で閉じ直す)。
+# tmux_escape は tmux のフォーマット展開を止める (# を ## にする)。
+# ⚠️ **両方が必要**。run-shell のコマンド文字列は tmux がフォーマット展開してから sh へ渡すので、
+#    socket path に `#{pane_id}` が入っていると wizard と fire で置き場がズレる
+#    (tmux 3.7b で実測。敵対的レビュー 2026-09-03 の P2-1)
+sh_quote() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
+tmux_escape() { printf '%s' "${1//\#/##}"; }
 LOG="${XDG_CACHE_HOME:-$HOME/.cache}/tt-schedule-keys.log"
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 TOAST="$(dirname "$SELF")/../bin/tmux-toast"
@@ -168,9 +185,9 @@ job_mtime() {
 #    ので pane 側の後始末は要らない)。
 # ⚠️ read_job を使わない: 呼び出し側 (fire_send / cancel_selected) が REPLY_* を後で使うので、
 #    ここで上書きすると「A を送ったと表示して B の文字列を出す」形の事故になる。
-# ⚠️ **pane id の文字列一致だけで数えない**。pane id はサーバごとに振り直され、$STATE_DIR は
-#    全サーバで共有なので (-L の隔離サーバも同じディレクトリを使う)、一致だけで絞ると別サーバの
-#    予約を数えてその時刻をこちらの枠に出す。同一性は job に記録した socket + サーバ pid で見る
+# ⚠️ **pane id の文字列一致だけで数えない**。置き場は socket ごとに分けたが (STATE_ROOT の注記)、
+#    同じ socket にサーバが立ち直ると前任の job が同じ dir に残る。pane id は振り直されているので、
+#    一致だけで絞るとその時刻をこちらの枠に出す。同一性は job に記録した socket + サーバ pid で見る
 #    (fire_claim が送信前に見ているものと同じ。敵対的レビュー 2026-09-02)。
 #    確かめられないときは何も書かない (fail-closed: 相手が分からない pane を触らない)
 # ⚠️ 表示は装飾。失敗しても予約の成立・送信・取消には影響させない (fire の無音契約と同じ)
@@ -203,11 +220,28 @@ refresh_pane_indicator() {
 
 # sleeper が居ない予約 (サーバ再起動で sleeper だけ消えた形) を掃く。kill はしない
 prune_stale() {
-  local j id pid n=0
+  local j id pid n=0 nowsrv srvpid
+  # ⚠️ 同じ socket にサーバが立ち直ると、前任サーバの job が同じ dir に残る。pane id は
+  #    振り直されているので、その job は一覧に**今のサーバの pane 名で**並び、発火時には
+  #    fire_claim が拒否する (= 待たされた末に届かない)。入れ物を分けても socket が同じなら
+  #    混ざるので、ここで失効させる (敵対的レビュー 2026-09-03 の P2-3)。
+  #    kill はしない: job を消せば前任の sleeper は claim に失敗して静かに降りる
+  nowsrv="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
   for j in "$STATE_DIR"/*.job; do
     [[ -f "$j" ]] || continue
     id="$(basename "$j" .job)"
     pid=$(cat "$STATE_DIR/$id.pid" 2>/dev/null || true)
+    # 前任サーバの job (記録された pid が今のサーバと違う) は .pid の有無に関わらず失効。
+    # サーバ pid が取れないときは触らない (確かめられないものを消さない)
+    srvpid="$(sed -n 5p "$j" 2>/dev/null || true)"
+    if [[ -n "$nowsrv" && -n "$srvpid" && "$srvpid" != "$nowsrv" ]]; then
+      log "prune 前任サーバの予約 $id (job=$srvpid now=$nowsrv)"
+      local opane; opane="$(head -n 1 "$j" 2>/dev/null || true)"
+      rm -f "$j" "$STATE_DIR/$id.pid"
+      refresh_pane_indicator "$opane"
+      n=$((n + 1))
+      continue
+    fi
     # .pid 無し = fire が起動直後 (書く前) かもしれないので、猶予内は触らない。
     # mtime が取れなければ「今」扱い (= 新しい側に倒す。古い側に倒すと作った直後の予約を消す)
     if [[ -z "$pid" ]]; then
@@ -279,8 +313,8 @@ new_reservation() {
   # ⚠️ run-shell の失敗を握らない: 失敗すると sleeper が居ないまま job だけ残り、UI は
   #    「予約しました」と言い切っている
   # ⚠️ 置き場を env で渡す: fire は自分では解決できない (run-shell の子は $TMUX を持たないことが
-  #    ある)。dir に ' が無いことは resolve_state_dir が保証している
-  tmux run-shell -b "TMUX_SCHEDULE_KEYS_DIR='$STATE_DIR' '$SELF' fire '$id'" 2>/dev/null || true
+  #    ある)。sh の引用と tmux のフォーマット展開の二段を通るので、両方を潰す (sh_quote / tmux_escape)
+  tmux run-shell -b "$(tmux_escape "TMUX_SCHEDULE_KEYS_DIR=$(sh_quote "$STATE_DIR") $(sh_quote "$SELF") fire $(sh_quote "$id")")" 2>/dev/null || true
   # ⚠️ run-shell -b の終了コードは当てにならない (子の exec 失敗も exit 1 も rc=0。実測 2026-08-28)。
   #    sleeper が起きた証拠は「.pid を書いたか」で見る。書かれなければ予約は成立していない
   local i=0
