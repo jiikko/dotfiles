@@ -1,7 +1,9 @@
 package svc
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,15 +54,35 @@ func parseJob(path string) (job, error) {
 	}
 	j.RunAtLoad, _ = raw["RunAtLoad"].(bool)
 	for _, k := range restartKeyNames {
-		if v, ok := raw[k]; ok && v != nil {
-			// KeepAlive は false でも「キーがある」だけでは再起動条件にならない
-			if b, isBool := v.(bool); isBool && !b {
-				continue
-			}
-			j.restartKeys = append(j.restartKeys, k)
+		v, ok := raw[k]
+		if !ok || v == nil {
+			continue
 		}
+		if k == "KeepAlive" && !keepAliveRestartsOnFailure(v) {
+			continue
+		}
+		j.restartKeys = append(j.restartKeys, k)
 	}
 	return j, nil
+}
+
+// keepAliveRestartsOnFailure は KeepAlive の値が「異常終了 (正の exit code) の後に再起動する」意味か。
+//   - true → 常に再起動 / false → しない
+//   - dict: SuccessfulExit=false (異常終了時に再起動) なら該当。SuccessfulExit=true は正常終了時のみ、
+//     Crashed=true はクラッシュ (シグナル) 時のみで、正の exit code では再起動しない → 該当しない。
+//     PathState / OtherJobEnabled 等の条件付きは判定できないので該当させない (偽陽性側に倒さない)。
+//     (敵対レビュー 2026-09-02: dict を一律「再起動条件あり」と読んで B の偽陽性を作っていた)
+func keepAliveRestartsOnFailure(v any) bool {
+	switch kv := v.(type) {
+	case bool:
+		return kv
+	case map[string]any:
+		if se, ok := kv["SuccessfulExit"].(bool); ok && !se {
+			return true
+		}
+		return false
+	}
+	return false
 }
 
 // stdPath は launchd が ProgramArguments[0] の相対名を解決する検索パス (_PATH_STDPATH)。
@@ -72,8 +94,11 @@ const stdPath = "/usr/bin:/bin:/usr/sbin:/sbin"
 type execTarget struct {
 	Path     string // 判定に使ったパス (相対名は解決後。解決できなければ元の相対名)
 	Skip     bool   // 判定対象外 (BundleProgram のみ / 実行対象の指定が無い)
-	Missing  bool   // 不在 = 壊れて確定
+	Missing  bool   // 不在 = 壊れて確定 (ErrNotExist のときだけ)
 	Relative bool   // 相対名だった (解決を試みた)
+	// Unknown は stat が不在以外の理由で失敗した (EACCES 等)。「実行ファイルがありません」と断定できないので
+	// 診断できずにする (root 700 の dir 配下の Program を不在扱いして sudo rm を提示していた。敵対レビュー 2026-09-02)
+	Unknown error
 }
 
 // resolveExecTarget は man 5 launchd.plist の規則で起動対象を決める。
@@ -87,20 +112,40 @@ func resolveExecTarget(j job, stat func(string) error) execTarget {
 		if !filepath.IsAbs(j.Program) {
 			return execTarget{Path: j.Program, Missing: true}
 		}
-		return execTarget{Path: j.Program, Missing: stat(j.Program) != nil}
+		return statTarget(j.Program, false, stat)
 	}
 	if len(j.ProgramArguments) > 0 && j.ProgramArguments[0] != "" {
 		first := j.ProgramArguments[0]
 		if filepath.IsAbs(first) {
-			return execTarget{Path: first, Missing: stat(first) != nil}
+			return statTarget(first, false, stat)
 		}
+		var unknown error
 		for _, dir := range strings.Split(stdPath, ":") {
 			cand := filepath.Join(dir, first)
-			if stat(cand) == nil {
+			err := stat(cand)
+			if err == nil {
 				return execTarget{Path: cand, Relative: true}
 			}
+			if !errors.Is(err, fs.ErrNotExist) {
+				unknown = err
+			}
+		}
+		if unknown != nil {
+			return execTarget{Path: first, Relative: true, Unknown: unknown}
 		}
 		return execTarget{Path: first, Relative: true, Missing: true}
 	}
 	return execTarget{Skip: true}
+}
+
+func statTarget(p string, relative bool, stat func(string) error) execTarget {
+	err := stat(p)
+	switch {
+	case err == nil:
+		return execTarget{Path: p, Relative: relative}
+	case errors.Is(err, fs.ErrNotExist):
+		return execTarget{Path: p, Relative: relative, Missing: true}
+	default:
+		return execTarget{Path: p, Relative: relative, Unknown: err}
+	}
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"syscall"
 	"time"
 )
 
@@ -23,6 +24,16 @@ func Exec(ctx context.Context, name string, args ...string) (string, string, int
 	cmd := exec.CommandContext(ctx, name, args...)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
+	// 子を自分のプロセスグループにし、cancel ではグループごと殺す。CommandContext の既定は直接の子だけ
+	// なので、brew (bash → ruby → git) のような多段の孫が親を失って残る。pipe に書かない孫は WaitDelay
+	// でも回収されない (敵対レビュー 2026-09-02 の未確認リスクを構造で潰す)。
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
 	// ⚠️ WaitDelay が無いと、ctx で子を殺した後も孫 (brew → ruby → git 等) が pipe を握っている限り
 	// Run が戻らない (実測 2026-09-02: 1 秒の timeout で 20 秒。WaitDelay 1 秒なら 2 秒)。
 	// timeout は「直接の子を殺す」だけなので、pipe を閉じる期限を別に持つ。孫を殺すのは本ツールの責務外

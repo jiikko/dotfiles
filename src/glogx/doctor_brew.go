@@ -36,10 +36,9 @@ func runBrewDoctor(ctx context.Context, run runner.Runner) brewDoctorResult {
 // parseBrewDoctor は出力を見出し単位にまとめる。rc=0 は警告なし。それ以外は本文を写す
 // (rc が 0 でも stderr に Warning があれば写す。rc だけで決めない)。
 func parseBrewDoctor(stdout, stderr string, rc int) brewDoctorResult {
-	body := stderr
-	if strings.TrimSpace(body) == "" {
-		body = stdout
-	}
+	// stdout と stderr は連結して読む (片方だけを選ぶと、前置きだけの stderr に負けて stdout の警告を落とす。
+	// 敵対レビュー 2026-09-02)
+	body := stdout + "\n" + stderr
 	var blocks []string
 	var cur []string
 	flush := func() {
@@ -77,9 +76,21 @@ func parseBrewDoctor(stdout, stderr string, rc int) brewDoctorResult {
 		}
 		return brewDoctorResult{Warnings: warns}
 	}
-	if rc != 0 && len(blocks) == 0 {
-		// 非 0 なのに本文が無い = brew 自体の失敗 (診断できず)。0 件に畳まない
-		return brewDoctorResult{Unavailable: "brew doctor が exit " + strconv.Itoa(rc) + " で本文なし"}
+	var warns, others []string
+	for _, b := range blocks {
+		if strings.HasPrefix(b, "Warning:") {
+			warns = append(warns, b)
+		} else {
+			others = append(others, b)
+		}
 	}
-	return brewDoctorResult{Warnings: blocks}
+	if rc != 0 && len(warns) == 0 {
+		// 非 0 なのに警告が無い = brew 自体の失敗 (Error: 行等)。診断できずにする。0 件に畳まない
+		reason := "brew doctor が exit " + strconv.Itoa(rc) + " で警告なし"
+		if len(others) > 0 {
+			reason += ": " + strings.Split(others[0], "\n")[0]
+		}
+		return brewDoctorResult{Unavailable: reason}
+	}
+	return brewDoctorResult{Warnings: warns}
 }

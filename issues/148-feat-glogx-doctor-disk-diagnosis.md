@@ -1408,6 +1408,63 @@ Partial と exit code の整合 / キャンセル済み ctx での Start / CI �
 - 未着手 (④): 削除キー / 中身一覧 (Enter) / risk: confirm の選択ガード。svcdoctor の「状態不明 (system)」注記は
   ③ で入れた
 
+### 敵対的レビュー 2 回目 (2026-09-02、①②③ の判定ロジックと doctor 画面に対して。read-only 3 体: 壊す / 素通り / 並行・中断)
+
+**採用して直したもの (判定 = ④ の削除の入力なので最優先)**
+
+- **P1 orphan-container**: `/Applications` 直下の `.app` しか見ていなかった。実機で `Adobe Acrobat DC/Adobe Acrobat.app`
+  (フォルダ入り) や app 内蔵の appex / XPC のコンテナが孤児判定されていた。→ AppDirs を深さ 8 まで再帰して
+  bundle (.app / .appex / .xpc / .plugin / .framework 等) の Info.plist を集め、`<app id>.<ext>` の形 (拡張のコンテナ)
+  も本体が実在すれば孤児にしない
+- **P1 brew-orphan-state**: 除外が homebrew / log / cache / run だけで、共有 dir `var/db` (現役 redis の dump 置き場) を
+  孤児にしていた。→ 共有 dir の除外を広げ (db / www / lib / spool / mail / tmp / lock / state)、台帳を
+  `brew info --json=v2 --installed` (旧名 oldnames / 別名 aliases 込み。実測 1.5 秒) に替えた。rename 済み formula
+  (postgresql → postgresql@14) の状態 dir を孤児にしない。台帳は `doctor/brewledger` に置き svc の C 判定と共有
+- **P1 coresimulator-orphan**: 既定のデバイスセットしか照合せず、Xcode Previews のセット (`~/Library/Developer/Xcode/
+  UserData/Previews/Simulator Devices`) の生きたデバイスを孤児 (RiskSafe rm) にしていた。→ Previews セットも
+  `simctl --set` で照合。取得失敗は fail-closed
+- **P2 xctest-logarchive**: glob `/private/var/tmp/*.logarchive` が `log collect` で人が採った証跡にも当たる。→ `XCTest*` /
+  `xctest*` に限定
+- **P2 svc A**: stat の全エラーを不在扱いし、root 700 配下の Program を「実行ファイルがありません + sudo rm」と
+  していた。→ `ErrNotExist` だけ不在、他は「診断できず」
+- **P2 svc B**: KeepAlive が dict のとき意味論を見ていなかった (`SuccessfulExit=true` / `Crashed=true` は正の exit code
+  で再起動しない)。今動いている (PID あり) ものも B にしていた。→ どちらも B から外す
+- **P2 chrome-tmp**: glob は Canary / Beta の tmp にも当たるのにプロセス判定は `Google Chrome` だけ。→ 4 系列を判定
+- **P3 versionmanager-orphan-root**: `*_ROOT` が `~` 付き / 相対 / 末尾スラッシュだと現役を孤児にした。→ 両側を
+  同じ正規化 (~ 展開 / 絶対化 / symlink 解決。比較専用で削除には使わない) で比べる
+- **P2 doctor 画面**: Esc / `r` の partial 保存が完全な結果を潰し、起動トーストが閾値未満で無期限に沈黙する。→ partial は
+  「完全な結果が無い」か「完全な結果より合計が大きい」ときだけ書く。`r` は close を経由しない
+- **P2 brew doctor**: stdout / stderr の片方だけを選び、前置きだけの stderr に負けて stdout の警告を落とす。→ 連結して
+  読む。`Error:` 行だけのときは「診断できず」
+- **P1 (false green)**: UI の「診断できず」表示 (failed / Failures / partial / svc の StatusErr・Interrupted / brew の
+  Unavailable) にテストが 1 本も無く、分岐を削っても全 green だった。brew の Unavailable を削ると「警告 0 件」に化ける。
+  → `TestDoctorShowsUndiagnosedStates` で全部固定。世代テストは close → open 後に旧 gen を送る形に直した。
+  合計の計算は `disk.SumDeletable` の 1 箇所に寄せた (UI に 2 つあった写しを消した)
+- **並行 (ユーザーの問い「孤児プロセス / リークの余地」)**: `runner.Exec` を Setpgid + グループ kill にした。
+  `exec.CommandContext` は直接の子しか殺さず、brew (bash → ruby → git) の孫が pipe に書かなければ完走まで残る形が
+  あった (敵対レビューは「未確認リスク」と評価。構造で潰した)。テスト: 孫が marker を書く前に cancel → 書かれない
+
+**記録に留めたもの**
+
+- 2 プロセス (tmux popup 2 枚) 同時の `LastNotifiedAt` lost update。窓は µs で rename は atomic なので破損はしない。
+  両方でトーストが出る程度
+- cancel 後も残エントリが Lstat + 最大 256 件の WalkDir を続ける (有界。閉じた瞬間に I/O が止まるわけではない)
+- restart (`syscall.Exec`) 直前に cancel した子が新イメージの子として残る形 (usage / git の既存経路と同型。未実測)
+- svc の `parseLaunchctlList` はラベルに空白があると B 未評価 (偽陰性側)。`duSize` の dedupe でハードリンクの 2 件目が
+  0 表示 (合計は正しい)。kern.boottime は clock step 後のずれを未検証
+
+**壊せなかった攻め口**: channel 詰まり / 旧 waitDiskCmd の goroutine / Report と Result の順序逆転 / cancelAll 経由の
+quit / spinner の経路 / struct コピー / validateTarget の各種 (HOME 直下・`..`・`/var` 正規化・親 symlink) /
+`$TMPDIR` 空 / `Failures` の合計混入 / fail-closed の各経路 / 壊れキャッシュ / cooldown と 7 日判定の境界
+
+### レイアウトの決定 (2026-09-02、ユーザー選定)
+
+- セクション見出しは**案 A** (左に縦棒 + 太字の題、右端に要約、下に罫線)。候補 3 案は `tmp/doctor_layout_candidates.txt`
+- **一覧は概要のみ、Enter で選んだ行の詳細をインライン展開** (ユーザー要望: brew doctor の出力をそのまま出さない)。
+  brew は「Warning: を落とした 1 行目 + (N 行)」、ディスクは Enter で削除経路 / 補足 / 内訳 (Inspect なら中身一覧)
+- カーソル (j/k) はセクションをまたいで「選べる行」だけに止まる。④ の Space / d はこのカーソルに乗せる
+- 実機のサンプル: `tmp/doctor_sample.txt`
+
 ### 次の一手 (引き継ぎ。ここから続ける)
 
 **段階 ①②③ は完了、次は ④ 削除経路** (ゴミ箱移動 / TOCTOU / インベントリ記録 / 削除後の再スキャン)。

@@ -35,8 +35,8 @@ type Entry struct {
 	DeleteVia string // rm | trash | cli:<cmd> | propose (④ で使う。② では表示だけ)
 	Paths     []string
 	Guard     Guard
-	Process   string // GuardProcessAbsent の判定名 (完全一致。推測しない)
-	Inspect   bool   // 中身一覧を必ず見せる (ユーザーファイルの可能性)
+	Processes []string // GuardProcessAbsent の判定名 (完全一致。推測しない。1 つでも起動中なら blocked)
+	Inspect   bool     // 中身一覧を必ず見せる (ユーザーファイルの可能性)
 }
 
 // catalog はカタログ本体 (issue 148 の 1 章の写し)。載せる条件は「消したまま戻らないこと」を
@@ -76,7 +76,9 @@ var catalog = []Entry{
 	// --- Tier 2: 残骸 (孤児判定が要る) ---
 	{ID: "xctest-logarchive", Label: "XCTest ログ (/var/tmp/*.logarchive)", Tier: 2, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "特定のテストセッションの産物。再生成されません (不要)", Detail: "最終起動より古いものだけ。/var/tmp は再起動で消えない",
-		Paths: []string{"/private/var/tmp/*.logarchive"}, Guard: GuardBoottime},
+		// `sudo log collect --output /var/tmp/x.logarchive` で人が採った証跡と区別するため、XCTest 由来の名前に限る
+		// (実測の名前: XCTestTesting.<uuid>.logarchive / xctest-*.logarchive。他の命名は未実測なので載せない)
+		Paths: []string{"/private/var/tmp/XCTest*.logarchive", "/private/var/tmp/xctest*.logarchive"}, Guard: GuardBoottime},
 	{ID: "xctest-spindump", Label: "XCTest spindump", Tier: 2, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "再生成されません (不要)", Paths: []string{"/private/var/tmp/XCTestTesting.*.spindump.txt"}, Guard: GuardBoottime},
 	{ID: "coresimulator-orphan", Label: "孤児シミュレータの作業領域", Tier: 2, Risk: RiskSafe, DeleteVia: "rm",
@@ -105,8 +107,11 @@ var catalog = []Entry{
 		Recover: "そのマネージャで入れた言語の全世代が消えます", Detail: "<TOOL>_ROOT の実効値と一致しないものだけ (存在するだけでは候補にしない)",
 		Paths: []string{"~/.rbenv", "~/.nodenv", "~/.goenv"}, Guard: GuardVMRoot},
 	// --- Tier 3: アプリ起動中は触らない ---
+	// glob は Canary / Beta / Dev の tmp (.com.google.Chrome.canary.* 等) にも当たるので、プロセス判定も全系列を見る
+	// (Stable 終了・Canary 起動中に Canary の生きた tmp を消さない。敵対レビュー 2026-09-02)
 	{ID: "chrome-tmp", Label: "Chrome 一時ファイル", Tier: 3, Risk: RiskSafe, DeleteVia: "rm",
-		Recover: "Chrome が再生成します", Paths: []string{"$TMPDIR/.com.google.Chrome.*"}, Guard: GuardProcessAbsent, Process: "Google Chrome"},
+		Recover: "Chrome が再生成します", Paths: []string{"$TMPDIR/.com.google.Chrome.*"}, Guard: GuardProcessAbsent,
+		Processes: []string{"Google Chrome", "Google Chrome Canary", "Google Chrome Beta", "Google Chrome Dev"}},
 }
 
 // containerExcludePrefixes は orphan-container で決して孤児にしない bundle id の接頭辞。

@@ -110,6 +110,10 @@ func Scan(ctx context.Context, opt Options) Report {
 			f := Finding{Label: j.Label, PlistPath: path, Domain: d.Domain}
 			// A: 起動対象の不在 (主判定)
 			t := resolveExecTarget(j, stat)
+			if t.Unknown != nil {
+				rep.Undiagnosed = append(rep.Undiagnosed, Undiagnosed{PlistPath: path, Reason: "実行ファイルの有無を確認できない: " + t.Unknown.Error()})
+				continue
+			}
 			if !t.Skip && t.Missing {
 				f.MissingExec = t.Path
 				if t.Relative {
@@ -119,9 +123,10 @@ func Scan(ctx context.Context, opt Options) Report {
 				}
 			}
 			// B: 正の exit code + 再起動条件 (launchctl が使えたときだけ)
+			// 今動いている (PID あり) ものは「失敗し続けている」ではない (一度失敗して復帰した KeepAlive)
 			if st, ok := statuses[j.Label]; ok && st.HasExit {
 				f.LastExit, f.HasLastExit = st.Exit, true
-				if st.Exit > 0 && len(j.restartKeys) > 0 {
+				if st.Exit > 0 && st.PID == 0 && len(j.restartKeys) > 0 {
 					f.RestartKeys = j.restartKeys
 					f.Reasons = append(f.Reasons, fmt.Sprintf("起動に失敗し続けています: last exit %d / %s", st.Exit, strings.Join(j.restartKeys, ", ")))
 				}

@@ -2,9 +2,9 @@ package svc
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
+	"doctor/brewledger"
 	"doctor/runner"
 )
 
@@ -21,19 +21,8 @@ func brewFormulaOf(label string) string {
 	return strings.TrimPrefix(label, brewLabelPrefix)
 }
 
-// brewFormulae は `brew list --formula` の台帳。brew が無い / 失敗したら error で、C は評価しない
-// (その旨を表示する。候補 0 件には畳まない)。
+// brewFormulae は Homebrew の台帳 (doctor/brewledger。旧名・別名を含む)。brew が無い / 失敗したら error で、
+// C は評価しない (その旨を表示する。候補 0 件には畳まない)。
 func brewFormulae(ctx context.Context, run runner.Runner) (map[string]bool, error) {
-	out, stderr, rc, err := runner.WithTimeout(ctx, run, launchctlTimeout, "brew", "list", "--formula")
-	if err != nil {
-		return nil, err
-	}
-	if rc != 0 {
-		return nil, fmt.Errorf("brew list --formula: exit %d: %s", rc, strings.TrimSpace(stderr))
-	}
-	set := map[string]bool{}
-	for _, f := range strings.Fields(out) {
-		set[f] = true
-	}
-	return set, nil
+	return brewledger.Installed(ctx, run)
 }

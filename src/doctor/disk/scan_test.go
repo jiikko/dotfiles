@@ -31,10 +31,17 @@ func (f *fakeRunner) run(_ context.Context, name string, args ...string) (string
 	f.mu.Lock()
 	f.calls = append(f.calls, append([]string{name}, args...))
 	f.mu.Unlock()
-	for k, r := range f.resp {
-		if strings.HasPrefix(strings.Join(append([]string{name}, args...), " "), k) {
-			return r.out, "stderr", r.rc, r.err
+	// 最長一致 ("pgrep -x Google Chrome" が "pgrep -x Google Chrome Canary" を横取りしない)
+	line := strings.Join(append([]string{name}, args...), " ")
+	best := ""
+	for k := range f.resp {
+		if strings.HasPrefix(line, k) && len(k) > len(best) {
+			best = k
 		}
+	}
+	if best != "" {
+		r := f.resp[best]
+		return r.out, "stderr", r.rc, r.err
 	}
 	return "", "unexpected: " + name, 1, nil
 }
@@ -186,6 +193,26 @@ func TestSimDeviceOrphanFailsClosed(t *testing.T) {
 	if r.Status != StatusOK || len(r.Items) != 1 || !strings.HasSuffix(r.Items[0].Path, dead) {
 		t.Fatalf("現存 UUID を候補から外し、無い UUID だけ残すはず: %+v", r)
 	}
+	// Xcode Previews のデバイスセットにいるものも現存 (既定セットだけ見ると Preview 中の作業領域を孤児にする)
+	previews := filepath.Join(env.Home, "Library", "Developer", "Xcode", "UserData", "Previews", "Simulator Devices")
+	if err := os.MkdirAll(previews, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f = &fakeRunner{resp: map[string]fakeResp{
+		"xcrun simctl list":  {out: `{"devices":{"rt":[{"udid":"11111111-1111-1111-1111-111111111111"}]}}`},
+		"xcrun simctl --set": {out: `{"devices":{"rt":[{"udid":"22222222-2222-2222-2222-222222222222"}]}}`},
+	}}
+	r = scanOne(t, env, f, e, okBoot)
+	if r.Status != StatusOK || len(r.Items) != 0 {
+		t.Fatalf("Previews セットのデバイスを孤児にした: %+v", r)
+	}
+	f = &fakeRunner{resp: map[string]fakeResp{
+		"xcrun simctl list":  {out: `{"devices":{}}`},
+		"xcrun simctl --set": {rc: 1},
+	}}
+	if r = scanOne(t, env, f, e, okBoot); r.Status != StatusFailed {
+		t.Fatalf("Previews セットの取得失敗を fail-closed にしていない: %+v", r)
+	}
 }
 
 // 起動時刻が取れなければ mtime ガードのエントリは候補にしない (fail-closed)。
@@ -210,7 +237,7 @@ func TestBoottimeFailsClosed(t *testing.T) {
 	}
 }
 
-// 権限エラーは握り潰さず Failures に出し、合計に足さない。全 item が失敗ならエントリを failed に。
+// 権限エラーは握り潰さず Failures に出し、合計に足さない。全 Item が失敗ならエントリを failed に。
 func TestPermissionErrorIsReported(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("root では権限エラーを作れない")
@@ -227,14 +254,14 @@ func TestPermissionErrorIsReported(t *testing.T) {
 	e := Entry{ID: "x", Paths: []string{filepath.Join(base, "*")}}
 	r := scanOne(t, env, &fakeRunner{}, e, okBoot)
 	if r.Status != StatusOK || len(r.Items) != 1 || len(r.Failures) != 1 || !strings.Contains(r.Failures[0], "locked") {
-		t.Fatalf("読めない item を Failures に出して他を続けるはず: %+v", r)
+		t.Fatalf("読めない Item を Failures に出して他を続けるはず: %+v", r)
 	}
 	if !strings.Contains(Format(Report{Results: []Result{r}}, time.Now()), "一部走査できず") {
 		t.Error("表示に走査できずが出ない")
 	}
 	e2 := Entry{ID: "y", Paths: []string{locked}}
 	if r := scanOne(t, env, &fakeRunner{}, e2, okBoot); r.Status != StatusFailed {
-		t.Fatalf("全 item 失敗なのに failed でない: %+v", r)
+		t.Fatalf("全 Item 失敗なのに failed でない: %+v", r)
 	}
 }
 
@@ -249,14 +276,27 @@ func TestOrphanContainerUsesInfoPlist(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(apps, "Alive.app", "Contents", "Info.plist"), []byte(plist), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// フォルダに入った app (Adobe Acrobat DC/Adobe Acrobat.app の形) と、app 内蔵の appex
+	nested := `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.vendor.nested</string></dict></plist>`
+	if err := os.MkdirAll(filepath.Join(apps, "Vendor Suite", "Nested.app", "Contents", "PlugIns", "Widget.appex", "Contents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apps, "Vendor Suite", "Nested.app", "Contents", "Info.plist"), []byte(nested), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(apps, "Vendor Suite", "Nested.app", "Contents", "PlugIns", "Widget.appex", "Contents", "Info.plist"),
+		[]byte(strings.ReplaceAll(nested, "com.vendor.nested", "com.vendor.nested.widget")), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	cont := filepath.Join(env.Home, "Library", "Containers")
-	for _, id := range []string{"com.example.alive", "com.example.gone", "com.jiikko.mine", "com.apple.CloudDocs"} {
+	for _, id := range []string{"com.example.alive", "com.example.gone", "com.jiikko.mine", "com.apple.CloudDocs",
+		"com.vendor.nested", "com.vendor.nested.widget", "com.example.alive.ShareExtension"} {
 		mkfile(t, filepath.Join(cont, id, "Data", "f"), 8)
 	}
 	e := Entry{ID: "orphan-container", Paths: []string{filepath.Join(cont, "*")}, Guard: GuardOrphanApp, Inspect: true}
 	r := scanOne(t, env, &fakeRunner{}, e, okBoot)
 	if r.Status != StatusOK || len(r.Items) != 1 || filepath.Base(r.Items[0].Path) != "com.example.gone" {
-		t.Fatalf("実在アプリ / 除外接頭辞を候補から外し、孤児だけ残すはず: %+v", r)
+		t.Fatalf("実在アプリ (入れ子 / 内蔵 appex / 拡張の <app id>.<ext>) と除外接頭辞を外し、孤児だけ残すはず: %+v", r)
 	}
 	if len(r.Contents) == 0 {
 		t.Error("Inspect の中身一覧が空")
@@ -296,13 +336,27 @@ func TestVersionManagerRootUsesEffectiveRoot(t *testing.T) {
 	if strings.Join(got, ",") != ".nodenv,.goenv" {
 		t.Fatalf("実効 root の判定が違う: %v (status=%s reason=%s)", got, r.Status, r.Reason)
 	}
+	// 環境変数が ~ 付き / 末尾スラッシュ / 相対でも現役を孤児にしない
+	for _, val := range []string{"~/.rbenv", env.Home + "/.rbenv/", ".rbenv"} {
+		e2 := Entry{ID: "vm", Paths: []string{filepath.Join(env.Home, ".rbenv")}, Guard: GuardVMRoot}
+		env2 := env
+		env2.Getenv = func(k string) string {
+			if k == "RBENV_ROOT" {
+				return val
+			}
+			return ""
+		}
+		if r := scanOne(t, env2, &fakeRunner{}, e2, okBoot); len(r.Items) != 0 {
+			t.Errorf("RBENV_ROOT=%q で現役 root を孤児にした", val)
+		}
+	}
 }
 
 // プロセス起動中は blocked (合計に足さない)。pgrep 自体の失敗は failed。
 func TestProcessGuard(t *testing.T) {
 	env := testEnv(t)
 	mkfile(t, filepath.Join(env.TmpDir, ".com.google.Chrome.abc", "f"), 8)
-	e := Entry{ID: "chrome-tmp", Paths: []string{"$TMPDIR/.com.google.Chrome.*"}, Guard: GuardProcessAbsent, Process: "Google Chrome"}
+	e := Entry{ID: "chrome-tmp", Paths: []string{"$TMPDIR/.com.google.Chrome.*"}, Guard: GuardProcessAbsent, Processes: []string{"Google Chrome"}}
 	cases := map[string]struct {
 		resp fakeResp
 		want Status
@@ -311,8 +365,9 @@ func TestProcessGuard(t *testing.T) {
 		"absent":  {fakeResp{rc: 1}, StatusOK},
 		"broken":  {fakeResp{err: errors.New("no pgrep")}, StatusFailed},
 	}
+	e.Processes = []string{"Google Chrome", "Google Chrome Canary"}
 	for name, c := range cases {
-		f := &fakeRunner{resp: map[string]fakeResp{"pgrep -x Google Chrome": c.resp}}
+		f := &fakeRunner{resp: map[string]fakeResp{"pgrep -x Google Chrome Canary": c.resp, "pgrep -x Google Chrome": {rc: 1}}}
 		rep := Scan(context.Background(), Options{Env: env, Run: f.run, Catalog: []Entry{e}, BootTime: okBoot})
 		r := rep.Results[0]
 		if r.Status != c.want {
@@ -331,16 +386,25 @@ func TestProcessGuard(t *testing.T) {
 func TestBrewOrphanState(t *testing.T) {
 	env := testEnv(t)
 	base := filepath.Join(env.Home, "opt", "homebrew", "var")
-	for _, d := range []string{"mysql", "postgresql@14", "homebrew", "log"} {
+	for _, d := range []string{"mysql", "postgresql@14", "homebrew", "log", "db", "www"} {
 		mkfile(t, filepath.Join(base, d, "f"), 8)
 	}
 	e := Entry{ID: "brew-orphan-state", Paths: []string{filepath.Join(base, "*")}, Guard: GuardBrewOrphan}
-	f := &fakeRunner{resp: map[string]fakeResp{"brew list": {out: "postgresql@14\nredis\n"}}}
+	f := &fakeRunner{resp: map[string]fakeResp{"brew info": {out: `{"formulae":[{"name":"postgresql@14"},{"name":"redis"}]}`}}}
 	r := scanOne(t, env, f, e, okBoot)
 	if r.Status != StatusOK || len(r.Items) != 1 || filepath.Base(r.Items[0].Path) != "mysql" {
-		t.Fatalf("台帳に無い mysql だけが候補のはず: %+v", r)
+		t.Fatalf("台帳に無い mysql だけが候補のはず (db / www は共有 dir): %+v", r)
 	}
-	f = &fakeRunner{resp: map[string]fakeResp{"brew list": {rc: 1}}}
+	// rename 済み formula: 旧名 postgresql の状態 dir は oldnames で現役扱い
+	mkfile(t, filepath.Join(base, "postgresql", "f"), 8)
+	f2 := &fakeRunner{resp: map[string]fakeResp{"brew info": {out: `{"formulae":[{"name":"postgresql@14","oldnames":["postgresql"]},{"name":"redis"}]}`}}}
+	r = scanOne(t, env, f2, e, okBoot)
+	for _, it := range r.Items {
+		if filepath.Base(it.Path) == "postgresql" {
+			t.Fatal("旧名 (oldnames) の状態 dir を孤児にした")
+		}
+	}
+	f = &fakeRunner{resp: map[string]fakeResp{"brew info": {rc: 1}}}
 	if r := scanOne(t, env, f, e, okBoot); r.Status != StatusFailed {
 		t.Fatalf("brew 失敗を候補に畳んだ: %+v", r)
 	}
@@ -352,7 +416,7 @@ func TestCatalogRespectsExclusions(t *testing.T) {
 		if e.Recover == "" {
 			t.Errorf("%s: Recover (復元方法) が無い。サイズだけの行を作らない", e.ID)
 		}
-		if e.Guard == GuardProcessAbsent && e.Process == "" {
+		if e.Guard == GuardProcessAbsent && len(e.Processes) == 0 {
 			t.Errorf("%s: プロセス判定の名前が無い (推測しない)", e.ID)
 		}
 		for _, p := range e.Paths {
@@ -377,7 +441,7 @@ func TestOnlyReadOnlyCommands(t *testing.T) {
 		"brew --prefix":             {out: "/opt/homebrew"},
 	}}
 	Scan(context.Background(), Options{Env: env, Run: f.run, BootTime: okBoot})
-	allowed := []string{"pgrep -x", "xcrun simctl list devices -j", "xcrun simctl runtime list -j", "brew list --formula", "brew cleanup --dry-run", "brew --prefix"}
+	allowed := []string{"pgrep -x", "xcrun simctl list devices -j", "xcrun simctl --set", "xcrun simctl runtime list -j", "brew info --json=v2 --installed", "brew cleanup --dry-run", "brew --prefix"}
 	for _, c := range f.calls {
 		line := strings.Join(c, " ")
 		ok := false
@@ -394,7 +458,7 @@ func TestOnlyReadOnlyCommands(t *testing.T) {
 
 // 合計は ok だけを数える (blocked / failed が Size を持っていても足さない)。
 func TestSumDeletableSkipsBlockedAndFailed(t *testing.T) {
-	got := sumDeletable([]Result{
+	got := SumDeletable([]Result{
 		{Status: StatusOK, Size: 100},
 		{Status: StatusBlocked, Size: 1000},
 		{Status: StatusFailed, Size: 10000},

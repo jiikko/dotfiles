@@ -28,10 +28,10 @@ type Result struct {
 	Entry    Entry    `json:"entry"`
 	Status   Status   `json:"status"`
 	Reason   string   `json:"reason,omitempty"` // blocked / failed の理由
-	Items    []item   `json:"items"`
+	Items    []Item   `json:"items"`
 	Size     int64    `json:"size"`
-	Failures []string `json:"failures,omitempty"` // 走査できなかった item (理由つき)。Size に入っていない
-	Contents []string `json:"contents,omitempty"` // Inspect のとき: 各 item 直下の名前
+	Failures []string `json:"failures,omitempty"` // 走査できなかった Item (理由つき)。Size に入っていない
+	Contents []string `json:"contents,omitempty"` // Inspect のとき: 各 Item 直下の名前
 	Elapsed  time.Duration
 }
 
@@ -95,7 +95,7 @@ func Scan(ctx context.Context, opt Options) Report {
 		}(i, e)
 	}
 	wg.Wait()
-	rep := Report{Results: results, ScannedAt: time.Now(), Partial: ctx.Err() != nil, Total: sumDeletable(results)}
+	rep := Report{Results: results, ScannedAt: time.Now(), Partial: ctx.Err() != nil, Total: SumDeletable(results)}
 	sort.SliceStable(rep.Results, func(a, b int) bool { return rep.Results[a].Size > rep.Results[b].Size })
 	return rep
 }
@@ -147,12 +147,14 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 		}
 		return sizePaths(ctx, opt, e, g.cleanup)
 	case GuardProcessAbsent:
-		running, err := processRunning(ctx, opt.Run, e.Process)
-		if err != nil {
-			return failed(e, "プロセスの有無を判定できず: "+err.Error())
-		}
-		if running {
-			return Result{Entry: e, Status: StatusBlocked, Reason: e.Process + " 起動中のため対象外"}
+		for _, name := range e.Processes {
+			running, err := processRunning(ctx, opt.Run, name)
+			if err != nil {
+				return failed(e, "プロセスの有無を判定できず: "+err.Error())
+			}
+			if running {
+				return Result{Entry: e, Status: StatusBlocked, Reason: name + " 起動中のため対象外"}
+			}
 		}
 	}
 	var paths []string
@@ -163,7 +165,7 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 		}
 		paths = append(paths, ps...)
 	}
-	// guard による item の絞り込み
+	// guard による Item の絞り込み
 	switch e.Guard {
 	case GuardBoottime:
 		g.do("boot", func() { g.boot, g.bootErr = opt.BootTime() })
@@ -175,7 +177,7 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 			return err == nil && fi.ModTime().Before(g.boot)
 		})
 	case GuardSimDevice:
-		g.do("udids", func() { g.udids, g.udidsErr = simDeviceUDIDs(ctx, opt.Run) })
+		g.do("udids", func() { g.udids, g.udidsErr = simDeviceUDIDs(ctx, opt.Run, opt.Env) })
 		if g.udidsErr != nil {
 			return failed(e, "simctl で現存デバイスを取れず (孤児判定をしない): "+g.udidsErr.Error())
 		}
@@ -195,7 +197,7 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 					return false
 				}
 			}
-			return !g.apps[id]
+			return !containerOwnedByInstalled(id, g.apps)
 		})
 	case GuardBrewOrphan:
 		g.do("formulae", func() { g.formulae, g.formulaeErr = brewFormulae(ctx, opt.Run) })
@@ -204,8 +206,7 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 		}
 		paths = filterPaths(paths, func(p string) bool {
 			name := filepath.Base(p)
-			// var/homebrew, var/log, etc/bash_completion.d 等は formula の状態ではない
-			if fi, err := os.Lstat(p); err != nil || !fi.IsDir() || strings.Contains(name, ".") || name == "homebrew" || name == "log" || name == "cache" || name == "run" {
+			if fi, err := os.Lstat(p); err != nil || !fi.IsDir() || strings.Contains(name, ".") || brewSharedVarDirs[name] {
 				return false
 			}
 			return !g.formulae[name]
@@ -213,7 +214,7 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 	case GuardVMRoot:
 		paths = filterPaths(paths, func(p string) bool {
 			tool := strings.TrimPrefix(filepath.Base(p), ".")
-			return filepath.Clean(p) != effectiveVMRoot(opt.Env, tool)
+			return canonicalPath(opt.Env, p) != effectiveVMRoot(opt.Env, tool) // 両側を同じ正規化で比べる
 		})
 	}
 	return sizePaths(ctx, opt, e, paths)
@@ -229,11 +230,11 @@ func filterPaths(paths []string, keep func(string) bool) []string {
 	return out
 }
 
-// sizePaths は各パスを検証してから du 相当で測る。検証 / 走査に失敗した item は Failures に残して
-// 他の item は続ける (TCC で読めない 1 コンテナのために全部を隠さない)。全 item が失敗、または
+// sizePaths は各パスを検証してから du 相当で測る。検証 / 走査に失敗した Item は Failures に残して
+// 他の Item は続ける (TCC で読めない 1 コンテナのために全部を隠さない)。全 Item が失敗、または
 // ctx が切れたらエントリを failed にする。Failures の分は Size に入らない (合計に足さない)。
 func sizePaths(ctx context.Context, opt Options, e Entry, paths []string) Result {
-	r := Result{Entry: e, Status: StatusOK, Items: []item{}}
+	r := Result{Entry: e, Status: StatusOK, Items: []Item{}}
 	seen := map[[2]uint64]struct{}{}
 	for _, p := range paths {
 		vp, err := validateTarget(opt.Env, p)
@@ -264,7 +265,7 @@ func sizePaths(ctx context.Context, opt Options, e Entry, paths []string) Result
 	return r
 }
 
-// listContents は Inspect 用に item 直下の名前を挙げる (ユーザーファイルかを人が見るため)。
+// listContents は Inspect 用に Item 直下の名前を挙げる (ユーザーファイルかを人が見るため)。
 func listContents(p string) []string {
 	entries, err := os.ReadDir(p)
 	if err != nil {
@@ -283,9 +284,9 @@ func scanSimRuntimes(ctx context.Context, opt Options, e Entry) Result {
 	if err != nil {
 		return failed(e, "simctl runtime list を実行できず: "+err.Error())
 	}
-	r := Result{Entry: e, Status: StatusOK, Items: []item{}}
+	r := Result{Entry: e, Status: StatusOK, Items: []Item{}}
 	for _, rt := range rts {
-		r.Items = append(r.Items, item{Path: rt.Path, Size: rt.SizeBytes, Mtime: rt.LastUsedAt})
+		r.Items = append(r.Items, Item{Path: rt.Path, Size: rt.SizeBytes, Mtime: rt.LastUsedAt})
 		r.Size += rt.SizeBytes
 		used := "未使用 (lastUsedAt なし)"
 		if !rt.LastUsedAt.IsZero() {
@@ -296,9 +297,9 @@ func scanSimRuntimes(ctx context.Context, opt Options, e Entry) Result {
 	return r
 }
 
-// sumDeletable は「今消せる量」。blocked (guard で対象外) と failed (走査できず) は行として出すが
-// 合計には足さない (トーストの発火判定も同じ合計を使う。issue 148)。
-func sumDeletable(results []Result) int64 {
+// SumDeletable は「今消せる量」。blocked (guard で対象外) と failed (走査できず) は行として出すが
+// 合計には足さない (トーストの発火判定も同じ合計を使う。issue 148)。UI の途中集計もこれを使う (計算を 2 つ持たない)。
+func SumDeletable(results []Result) int64 {
 	var total int64
 	for _, r := range results {
 		if r.Status == StatusOK {

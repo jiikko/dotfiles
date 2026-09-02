@@ -1338,7 +1338,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		case doctorClosed:
 			return m, m.maybeTick()
 		case doctorRescan:
-			m.doctorOv.close()
+			// close() を経由しない: 数件だけの partial を書いて完全な結果を潰さない (doctorView.saveCache の注記)
 			return m, tea.Batch(m.doctorOv.open(), m.maybeTick())
 		case doctorSwallow:
 		}

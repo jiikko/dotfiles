@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,7 +39,12 @@ func (f *fakeRunner) run(_ context.Context, name string, args ...string) (string
 		if f.brewErr != nil {
 			return "", "", -1, f.brewErr
 		}
-		return f.brewOut, "", 0, nil
+		// brewOut は formula 名の改行区切り → brew info --json=v2 の形に包む
+		var names []string
+		for _, n := range strings.Fields(f.brewOut) {
+			names = append(names, `{"name":"`+n+`"}`)
+		}
+		return `{"formulae":[` + strings.Join(names, ",") + `]}`, "", 0, nil
 	}
 	return "", "unexpected", 1, nil
 }
@@ -332,7 +338,7 @@ func TestOnlyReadOnlyCommandsAreExecuted(t *testing.T) {
 			if c[2] != "gui/501/homebrew.mxcl.gone" {
 				t.Errorf("候補でないラベルに print を呼んだ: %v", c)
 			}
-		case c[0] == "brew" && c[1] == "list":
+		case c[0] == "brew" && c[1] == "info":
 		default:
 			t.Errorf("読み取り以外のコマンドが実行された: %v", c)
 		}
@@ -407,5 +413,55 @@ func TestScanMarksInterrupted(t *testing.T) {
 	}
 	if !strings.Contains(Format(rep), "中断") {
 		t.Error("表示に中断が出ない")
+	}
+}
+
+// A: stat が不在以外で失敗 (EACCES 等) したら「診断できず」にする (不在と断定して sudo rm を提示しない)。
+func TestStatPermissionErrorIsUndiagnosed(t *testing.T) {
+	dir := t.TempDir()
+	writePlist(t, dir, "com.example.locked", kv("com.example.locked", args("/Library/Application Support/Foo/bin/foo")+keepAlive))
+	f := &fakeRunner{listOut: listWith("-\t0\tcom.example.locked")}
+	stat := func(string) error { return fs.ErrPermission }
+	rep := Scan(context.Background(), Options{Dirs: []LaunchDir{{Path: dir, Domain: "gui/501"}}, Run: f.run, Stat: stat})
+	if len(rep.Findings) != 0 || len(rep.Undiagnosed) != 1 {
+		t.Fatalf("EACCES を不在扱いにした / 診断できずに出ない: %+v", rep)
+	}
+}
+
+// B: KeepAlive の dict は意味論を見る。SuccessfulExit=true / Crashed=true は正の exit code で再起動しない。
+// 今動いている (PID あり) ものは「失敗し続けている」ではない。
+func TestKeepAliveDictAndRunningAreNotRepeatedFailure(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "ok")
+	if err := os.WriteFile(exe, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dict := func(k, v string) string { return "<key>KeepAlive</key><dict><key>" + k + "</key><" + v + "/></dict>" }
+	writePlist(t, dir, "com.example.onsuccess", kv("com.example.onsuccess", args(exe)+dict("SuccessfulExit", "true")))
+	writePlist(t, dir, "com.example.oncrash", kv("com.example.oncrash", args(exe)+dict("Crashed", "true")))
+	writePlist(t, dir, "com.example.onfail", kv("com.example.onfail", args(exe)+dict("SuccessfulExit", "false")))
+	writePlist(t, dir, "com.example.recovered", kv("com.example.recovered", args(exe)+keepAlive))
+	f := &fakeRunner{listOut: listWith("-\t1\tcom.example.onsuccess", "-\t1\tcom.example.oncrash", "-\t1\tcom.example.onfail", "4242\t1\tcom.example.recovered")}
+	rep := scanDir(t, dir, f)
+	if got := labels(rep); len(got) != 1 || got[0] != "com.example.onfail" {
+		t.Fatalf("SuccessfulExit=false だけが B のはず: %v", got)
+	}
+}
+
+// C: rename 済み formula は oldnames で現役扱い (postgresql → postgresql@14)。
+func TestBrewOldnameIsNotOrphan(t *testing.T) {
+	dir := t.TempDir()
+	writePlist(t, dir, "homebrew.mxcl.postgresql", kv("homebrew.mxcl.postgresql", args("/nowhere/pg")+keepAlive))
+	f := &fakeRunner{listOut: listWith("-\t0\thomebrew.mxcl.postgresql")}
+	// fake の brew は brewOut の名前だけを name にするので、oldnames 付きの応答は run を差し替えて返す
+	run := func(c context.Context, name string, a ...string) (string, string, int, error) {
+		if name == "brew" {
+			return `{"formulae":[{"name":"postgresql@14","oldnames":["postgresql"]}]}`, "", 0, nil
+		}
+		return f.run(c, name, a...)
+	}
+	rep := Scan(context.Background(), Options{Dirs: []LaunchDir{{Path: dir, Domain: "gui/501"}}, Run: run})
+	if len(rep.Findings) != 1 || rep.Findings[0].BrewOrphan {
+		t.Fatalf("旧名の登録を C で孤児にした (A の不在だけが理由のはず): %+v", rep.Findings)
 	}
 }

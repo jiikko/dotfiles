@@ -85,7 +85,7 @@ func Format(rep Report, now time.Time) string {
 	return b.String()
 }
 
-func newestMtime(items []item) time.Time {
+func newestMtime(items []Item) time.Time {
 	var t time.Time
 	for _, it := range items {
 		if it.Mtime.After(t) {

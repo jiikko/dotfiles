@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// item は走査した 1 パス。Dev / Ino は ④ の削除直前に Lstat を取り直して同一性を確かめるための札。
-type item struct {
+// Item は走査した 1 パス (公開: glogx の doctor 画面が内訳を描く)。Dev / Ino は ④ の削除直前に Lstat を取り直して同一性を確かめるための札。
+type Item struct {
 	Path  string    `json:"path"`
 	Size  int64     `json:"size"`
 	Files int       `json:"files"`
@@ -29,8 +29,8 @@ type item struct {
 //   - symlink は辿らない (リンク自身のブロックだけ数える)。WalkDir の既定
 //   - 権限エラー等は握り潰さず error で返す (呼び出し側が「走査できず」にする)
 //   - ctx の期限で中断する (1 エントリ 60 秒の上限)
-func duSize(ctx context.Context, root string, seen map[[2]uint64]struct{}) (item, error) {
-	it := item{Path: root}
+func duSize(ctx context.Context, root string, seen map[[2]uint64]struct{}) (Item, error) {
+	it := Item{Path: root}
 	fi, err := os.Lstat(root)
 	if err != nil {
 		return it, err
