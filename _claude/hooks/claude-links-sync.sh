@@ -10,7 +10,8 @@
 # pull で別 machine から入ってきた分にも同じ経路で効く (post-commit / post-merge の git hook より
 # 契機を選ばない)。
 #
-# 毎回 apply はしない。check (builtin の -L / -ef だけ、fork 無し) で揃っていれば無言で exit 0。
+# 毎回 apply はしない。check (外部コマンド無し。builtin の -L / -ef 判定と subshell 2 回、実測 20ms 前後 /
+# 95 件) で揃っていれば無言で exit 0。
 # 破壊的操作 (dangling の削除・dir symlink の migrate・実ファイルや他ツールの link の上書き) は
 # 持たない = scripts/claude_links.sh apply の契約。それらが要る状態は「張れなかった」として
 # 報告し、./setup.sh を手で回すよう促す。
@@ -23,7 +24,8 @@
 
 set -u
 
-root="${DOTFILES_ROOT:-$HOME/dotfiles}"
+# ${HOME:-}: set -u 下で HOME 未設定でも落ちず、下の「スクリプトが無い」報告へ倒す (常に exit 0 を守る)
+root="${DOTFILES_ROOT:-${HOME:-}/dotfiles}"
 script="$root/scripts/claude_links.sh"
 
 lib="$(dirname "$0")/lib/issue-hooks.sh"

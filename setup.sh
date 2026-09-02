@@ -47,6 +47,9 @@ done
 # SessionStart hook (_claude/hooks/claude-links-sync.sh) も同じスクリプトを呼ぶので、rule を
 # 足して setup.sh を忘れても次のセッション起動で補われる (issue 160)。ただし apply は張るだけで、
 # 掃除 (下の dangling 削除) と上の migrate はここ setup.sh だけが担う。
+# ~/.claude 自体はここで作る。apply は ~/.claude 不在を「検査できない」(exit 3) と扱って何も張らないので、
+# 新品マシンの初回 setup.sh ではこの mkdir が唯一の作成点 (消すと tests/setup/test_setup.sh が落ちる)
+mkdir -p ~/.claude
 ~/dotfiles/scripts/claude_links.sh apply || echo "WARN: ~/.claude への link を張り切れなかった (上の refused/failed を見る)"
 # dotfiles 側で削除されたファイルの symlink が残ると壊れたリンクになるので掃除する。
 # dotfiles/_claude 配下を指すリンクだけを対象にし、ユーザーが手動で張った別由来のリンクは触らない

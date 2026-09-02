@@ -31,8 +31,9 @@
 set -u
 shopt -s nullglob
 
-ROOT="${DOTFILES_ROOT:-$HOME/dotfiles}"
-CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
+# ${HOME:-}: set -u 下で HOME 未設定でも落ちず、preflight の「検査できない」(exit 3) へ倒す
+ROOT="${DOTFILES_ROOT:-${HOME:-}/dotfiles}"
+CLAUDE_HOME="${CLAUDE_HOME:-${HOME:-}/.claude}"
 DIRS="agents commands rules hooks skills workflows"
 
 usage() {
@@ -93,7 +94,7 @@ cmd_check() {
 }
 
 cmd_apply() {
-  local d link target rc=0 n=0
+  local d link target cur err rc=0 n=0
   for d in $DIRS; do
     if [ -L "$CLAUDE_HOME/$d" ]; then
       echo "refused: $CLAUDE_HOME/$d が dir symlink のまま (旧形式)。./setup.sh で migrate してから" >&2
@@ -111,20 +112,29 @@ cmd_apply() {
       continue
     fi
     if [ -L "$link" ]; then
-      case "$(readlink "$link")" in
-        "$ROOT"/_claude/*) ;;
+      cur=$(readlink "$link" || true)
+      # 空 = -L を見た直後に並行プロセスが消した (TOCTOU)。「他ツールの link」ではないので張りに進む
+      case "$cur" in
+        '' | "$ROOT"/_claude/*) ;;
         *)
-          echo "refused: $link -> $(readlink "$link") は _claude/ 以外を指す (他ツールの link と衝突)。上書きしない" >&2
+          echo "refused: $link -> $cur は _claude/ 以外を指す (他ツールの link と衝突)。上書きしない" >&2
           rc=2
           continue
           ;;
       esac
     fi
-    if ln -sfn "$target" "$link"; then
+    # ⚠️ 成否は ln の exit code でなく結果の状態 (-ef) で判定する。BSD ln -f は symlink() が EEXIST の
+    # とき unlink → symlink を retry する非アトミックな実装で、複数セッションが同時に起動して同じ
+    # link を張ると、片方の 2 回目 symlink() が EEXIST で非 0 になる (2-way で 57%、実測 2026-09-02)。
+    # 最終状態は両者とも同じ target なので、状態が合っていれば linked。合っていなければ ln の stderr を出す。
+    # expected_links は glob 時点のスナップショットなので、張る直前に並行セッションが target を git mv
+    # していれば dangling ができる。それも -ef で failed になり、呼び出し側が ./setup.sh (掃除) へ誘導する
+    err=$(ln -sfn "$target" "$link" 2>&1 || true)
+    if [ -L "$link" ] && [ "$link" -ef "$target" ]; then
       echo "linked: $link -> $target"
       n=$((n + 1))
     else
-      echo "failed: ln -sfn $target $link" >&2
+      echo "failed: ln -sfn $target $link${err:+ ($err)}" >&2
       rc=2
     fi
   done < <(drift)

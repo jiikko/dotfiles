@@ -8,7 +8,7 @@
 # 揃っているのに毎回 apply する / 実ファイルや他ツールの link を上書きする / dir symlink 越しに
 # repo 側へ書き込む (setup.sh の migrate コメントが警告する自己参照 symlink 破壊)。両方を pin する。
 # 規範: issue 160 / ~/.claude/rules/adversarial-review-own-safeguards.md
-# ケース番号は 1〜13 + 6b。
+# ケース番号は 1〜16 + 6b。
 set -euo pipefail
 unset CDPATH
 
@@ -199,8 +199,64 @@ hook_run
 [ "$RC" -eq 0 ] || ng "hook(noscript) rc=$RC"
 grep -q '省略した' <<<"$CTX" || ng "hook がスクリプト不在を伝えていない:"$'\n'"$CTX"
 
+# --- 14. HOME 未設定でも set -u で死なない: script は rc=3 (検査不能)、hook は rc=0 で報告する ---
+fixture nohomevar
+set +e
+OUT=$(env -u HOME -u DOTFILES_ROOT -u CLAUDE_HOME "$SCRIPT" check 2>&1); RC=$?
+set -e
+[ "$RC" -eq 3 ] || ng "HOME 未設定の script check が rc=$RC (3 のはず)"$'\n'"$OUT"
+set +e
+raw=$(printf '{}' | env -u HOME -u DOTFILES_ROOT "$HOOK" 2>&1); RC=$?
+set -e
+[ "$RC" -eq 0 ] || ng "HOME 未設定の hook が rc=$RC (常に 0 のはず)"$'\n'"$raw"
+grep -q '省略した' <<<"$raw" || ng "HOME 未設定の hook が配線の問題を報告していない:"$'\n'"$raw"
+
+# --- 15. 並行 apply (3 本同時 x 5 回): 全部 rc=0、failed 無し、最終状態は揃う ---
+# BSD ln -sfn は既存 link の上書きを unlink → symlink で retry するため同時実行で片方が非 0 を返す。
+# apply は ln の rc でなく -ef の状態で判定するので、複数セッションの同時起動で偽の failed を出さない
+fixture parallel
+run apply
+for i in 1 2 3 4 5; do
+  rm -f "$CH/rules/r1.md" "$CH/agents/a1.md" "$CH/commands/c1.md"   # 3 件を欠けさせて同時に張らせる
+  ln -sfn "$DOT/_claude/rules/gone.md" "$CH/hooks/h1.sh"           # 上書き経路 (stale link) も混ぜる
+  pids=""
+  for j in 1 2 3; do
+    ( DOTFILES_ROOT="$DOT" CLAUDE_HOME="$CH" "$SCRIPT" apply >"$H/par.$i.$j" 2>&1; echo "rc=$?" >>"$H/par.$i.$j" ) &
+    pids="$pids $!"
+  done
+  # wait は子の非 0 を返すので set -e で落ちないよう受ける (判定は下の rc= 行で行う)
+  # shellcheck disable=SC2086
+  wait $pids || true
+  for j in 1 2 3; do
+    grep -q '^rc=0$' "$H/par.$i.$j" || ng "並行 apply #$i.$j が非 0:"$'\n'"$(cat "$H/par.$i.$j")"
+    grep -q '^failed: ' "$H/par.$i.$j" && ng "並行 apply #$i.$j が failed を出した:"$'\n'"$(cat "$H/par.$i.$j")"
+  done
+  run check
+  [ "$RC" -eq 0 ] || ng "並行 apply #$i の後に check が rc=$RC:"$'\n'"$OUT"
+done
+
+# --- 16. -L を見た直後に link が消えた (readlink が空) は「他ツールの link」ではなく、張りに進む ---
+# 実際の窓はミリ秒なので、readlink だけを PATH 先頭の shim で差し替えて再現する (rules/r1.md に対して
+# だけ空を返す。他は実体 /usr/bin/readlink へ絶対パスで exec)
+fixture toctou
+run apply
+ln -sfn "$DOT/_claude/rules/gone.md" "$CH/rules/r1.md"   # drift させる (repo 配下を指す stale)
+mkdir -p "$H/shim"
+cat >"$H/shim/readlink" <<'SHIM'
+#!/bin/sh
+case "$1" in *"/rules/r1.md") exit 0 ;; esac
+exec /usr/bin/readlink "$@"
+SHIM
+chmod +x "$H/shim/readlink"
+set +e
+OUT=$(PATH="$H/shim:$PATH" DOTFILES_ROOT="$DOT" CLAUDE_HOME="$CH" "$SCRIPT" apply 2>&1); RC=$?
+set -e
+[ "$RC" -eq 0 ] || ng "readlink 空で rc=$RC (refused 扱いにしている)"$'\n'"$OUT"
+grep -q "^linked: $CH/rules/r1.md" <<<"$OUT" || ng "readlink 空の link を張り直していない"$'\n'"$OUT"
+[ "$CH/rules/r1.md" -ef "$DOT/_claude/rules/r1.md" ] || ng "readlink 空の後、r1.md が正しい実体を指していない"
+
 if [ "$fails" -ne 0 ]; then
   echo "FAIL: $fails 件"
   exit 1
 fi
-echo "OK: claude_links.sh + claude-links-sync.sh (14 ケース)"
+echo "OK: claude_links.sh + claude-links-sync.sh (17 ケース)"

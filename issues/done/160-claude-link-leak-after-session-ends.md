@@ -109,8 +109,8 @@ link が無くても動く ([142](done/142-research-claude-hooks-link-unreferenc
 
 - `scripts/claude_links.sh` — 期待するリンク集合の唯一の出典。`check` (変更なし。0 = 揃っている /
   1 = 欠けあり / 3 = 検査不能) と `apply` (欠けた分だけ `ln -sfn`。0 / 2 = 張れないものあり / 3)
-- `_claude/hooks/claude-links-sync.sh` — SessionStart で `check`。揃っていれば無言 (fork 無しの
-  builtin 判定だけ)。欠けていれば `apply` して張った内容を additionalContext で報告。常に exit 0
+- `_claude/hooks/claude-links-sync.sh` — SessionStart で `check`。揃っていれば無言 (外部コマンド無し。
+  builtin の -L / -ef 判定と subshell 2 回、実測 20ms 前後 / 95 件)。欠けていれば `apply` して張った内容を additionalContext で報告。常に exit 0
 - `setup.sh` は同じスクリプトを `apply` で呼ぶだけにした。**掃除 (dangling 削除) と migrate は
   setup.sh にだけ残す**
 
@@ -151,3 +151,33 @@ hook の実行順)。報告文は「遅くとも次のセッションから有�
   中身検査は別の道具の責務なので、ここでは扱わない
 - 両者が確認した「素通りではなかった」項目: timeout 10 秒に対し実測 20ms 前後 (95 件) / lib 欠落時も
   フォールバックで黙らない / オラクル test_claude_links_complete.sh と期待集合が一致 (95 件で実測)
+
+### 敵対レビュー 2 周目 (2026-09-02、commit 9cc51ee に対して 3 体: 回帰と CI / 並行・中断 / 主張と実装)
+
+1 周目の「指摘なし」は commit 前のコードに対するものだったので、commit 後に観点を変えて回した。
+**P1 が 2 件出て、いずれも本物**だった。修正は follow-up commit で入れた。
+
+- **P1 回帰 (CI 赤)**: setup.sh から消した `mkdir -p ~/.claude/agents ...` は `~/.claude` 自体を作る
+  副作用も担っていた。apply は `~/.claude` 不在を「検査できない」(exit 3) と扱うので、新品環境の
+  setup.sh は 1 件も張らず、後続の `ln -sf ... ~/.claude/keybindings.json` も全滅し、しかも exit 0 で
+  完走する。`tests/setup/test_setup.sh` が検出していて **9cc51ee と 1592682 の CI Tests は failure**
+  (run 33582074696)。原因は commit 前に `make test` 全体を回さず tests/claude だけ回したこと
+  (retro 161 項目 5)。修正: setup.sh に `mkdir -p ~/.claude` を戻す (apply の契約は変えない)
+- **P1 並行**: 複数セッションを同時に起動すると BSD `ln -sfn` の非アトミックな retry (symlink →
+  EEXIST → unlink → symlink) で片方が非 0 を返し、最終状態は正しいのに hook が「./setup.sh を手で
+  実行」と偽警告を出す (2-way で 57%、3-way 以上でほぼ毎回。データは壊れない)。修正: 成否を ln の rc
+  でなく **結果の状態 (-ef)** で判定する。テスト 15 (3 本同時 x 5 回) で固定
+- **P2**: `$HOME` 未設定だと hook が `set -u` で exit 1 になり「常に exit 0」が嘘だった → `${HOME:-}`。
+  テスト 14
+- **P2**: apply 中に並行セッションが `git mv` すると dangling を作りうる (target は glob 時点の
+  スナップショット)。張る直前の再確認を足しかけたが、その分岐は変異で緑のまま (テストで守れない) だった
+  ので外し、-ef の事後検証に任せた: dangling は failed (rc=2) として出て、hook が ./setup.sh (掃除) へ
+  誘導する。旧名側の dangling は check の期待集合に無いので検出せず、setup.sh の掃除と
+  `test_dangling_symlinks.sh` の責務 (変わらず)
+- **P3**: `-L` を見た直後に link が消えると readlink が空を返し「他ツールの link」扱いで refused に
+  なっていた → 空は「消えた」として張りに進む
+- **文書の訂正**: commit 9cc51ee のメッセージにある「fork 無し」は誤り (subshell 2 回)、「変異 9 本」は
+  8 本 (実ファイル拒否と実ディレクトリ拒否は同じガード 1 行への同じ変異)。commit message は直せない
+  ので、ここを正とする
+- 反証できなかった主張: 案 E 不採用の根拠 (post-merge は rebase で発火しない / .git/hooks は clone に
+  付いてこない) / 95 件 / 20ms / 中断 (SIGTERM) は次回起動で自己修復 / 「無言で exit 0」になる経路なし
