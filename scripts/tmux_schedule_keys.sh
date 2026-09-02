@@ -34,7 +34,30 @@
 # 実行はここに残す)。
 set -uo pipefail
 
-STATE_DIR="${TMUX_SCHEDULE_KEYS_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/tmux-schedule-keys}"
+# 予約の置き場は **tmux サーバ (socket) ごとに分ける**。pane id はサーバごとに振り直されるので、
+# 全サーバで 1 つのディレクトリを共有すると、一覧・取消・失効件数が別サーバの予約を混ぜる
+# (取消は別サーバの sleeper を実際に kill できた。issue 189 で実験で再現)。
+# 読む側で socket を照合する形は絞り忘れが 1 箇所でも残ると漏れるので、入れ物で分ける。
+# ⚠️ dir の解決は wizard だけが行う。fire は run-shell のコマンド文字列で
+#    TMUX_SCHEDULE_KEYS_DIR を受け取るので、tmux へ問い合わせない (子は $TMUX を持たないことがある)
+STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/tmux-schedule-keys"
+STATE_DIR="${TMUX_SCHEDULE_KEYS_DIR:-}"
+
+# resolve_state_dir は今のサーバの socket から置き場を決める。決められなければ 1 を返す
+# (呼び出し側は予約を作らない = fail-closed。相手の分からない状態を共有 dir に混ぜない)。
+# ⚠️ 旧版の共有 dir ($STATE_ROOT 直下の *.job) は移さない。移すと眠っている sleeper の
+#    claim (job の rename) が失敗し、予約が黙って発火しなくなる。古い予約はそのまま発火し、
+#    一覧には出なくなる (issue 189 の移行の項)
+resolve_state_dir() {
+  local sock
+  [[ -z "$STATE_DIR" ]] || return 0
+  sock="$(tmux display-message -p '#{socket_path}' 2>/dev/null || true)"
+  [[ -n "$sock" ]] || return 1
+  # run-shell のコマンド文字列へ ' 囲みで埋めるので、' と改行を含む socket は扱わない
+  case "$sock" in *"'"*|*$'\n'*) return 1 ;; esac
+  STATE_DIR="$STATE_ROOT/${sock//\//%}"
+  return 0
+}
 LOG="${XDG_CACHE_HOME:-$HOME/.cache}/tt-schedule-keys.log"
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 TOAST="$(dirname "$SELF")/../bin/tmux-toast"
@@ -49,7 +72,8 @@ UI="${TMUX_SCHEDULE_KEYS_UI:-$(dirname "$SELF")/../bin/schedkeys}"
 # fire が .pid を書くまでの猶予。これより古い .pid 無し .job だけを stale 候補にする
 PID_GRACE_SECS=60
 
-mkdir -p "$STATE_DIR" "$(dirname "$LOG")" 2>/dev/null || true
+mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
+[[ -n "$STATE_DIR" ]] && mkdir -p "$STATE_DIR" 2>/dev/null || true
 
 # ログは観測用で、書けなくても本体を止めない。リダイレクト自体の失敗 (dir 無し等) も stderr に
 # 出さない: fire は run-shell -b の無音契約下にある
@@ -254,7 +278,9 @@ new_reservation() {
   # id は英数と - だけなので run-shell の引用は安全
   # ⚠️ run-shell の失敗を握らない: 失敗すると sleeper が居ないまま job だけ残り、UI は
   #    「予約しました」と言い切っている
-  tmux run-shell -b "'$SELF' fire '$id'" 2>/dev/null || true
+  # ⚠️ 置き場を env で渡す: fire は自分では解決できない (run-shell の子は $TMUX を持たないことが
+  #    ある)。dir に ' が無いことは resolve_state_dir が保証している
+  tmux run-shell -b "TMUX_SCHEDULE_KEYS_DIR='$STATE_DIR' '$SELF' fire '$id'" 2>/dev/null || true
   # ⚠️ run-shell -b の終了コードは当てにならない (子の exec 失敗も exit 1 も rc=0。実測 2026-08-28)。
   #    sleeper が起きた証拠は「.pid を書いたか」で見る。書かれなければ予約は成立していない
   local i=0
@@ -464,6 +490,13 @@ toast() {
 
 cmd_wizard() {
   local pane label jobs_file tab start="" ui_rc f1 f2 f3 extra
+  # 置き場が決まらなければ何もしない (どのサーバの予約か分からないまま共有 dir へ混ぜない)
+  if ! resolve_state_dir; then
+    log "wizard: socket が取れないので置き場を決められない"
+    notify "予約入力を開けませんでした (tmux サーバを特定できません)"
+    return 1
+  fi
+  mkdir -p "$STATE_DIR" 2>/dev/null || true
   tab=$'\t'
   # ⚠️ popup が外から閉じられる (ウィンドウを閉じる / kill-session) と成功パスの rm を通らず、
   #    全予約の文字列を含む一時ファイルが TMPDIR に残る (監査 2026-08-28)
@@ -519,6 +552,8 @@ cmd_wizard() {
 
 case "${1:-wizard}" in
   wizard) cmd_wizard ;;
-  fire)   [[ -n "${2:-}" ]] || exit 0; cmd_fire "$2" ;;
+  # fire は置き場を env で受け取る (run-shell のコマンド文字列。上の new_reservation 参照)。
+  # 無ければ動けないので黙って降りる (無音契約)
+  fire)   [[ -n "${2:-}" && -n "$STATE_DIR" ]] || exit 0; cmd_fire "$2" ;;
   *) echo "usage: $0 [wizard|fire <id>]" >&2; exit 1 ;;
 esac

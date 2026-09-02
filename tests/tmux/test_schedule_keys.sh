@@ -57,7 +57,11 @@ case "$*" in
     # stub でも同じ形を作る (STUB_NO_SLEEPER=1 で「起きなかった」を模す)
     if [ "${STUB_NO_SLEEPER:-0}" != 1 ]; then
       sid=$(printf '%s' "$*" | sed -n "s/.*fire '\([^']*\)'.*/\1/p")
-      [ -n "$sid" ] && [ -n "${TMUX_SCHEDULE_KEYS_DIR:-}" ] && echo $$ > "$TMUX_SCHEDULE_KEYS_DIR/$sid.pid"
+      # 置き場は run-shell のコマンド文字列に入っている (本物の fire もそこから受け取る)。
+      # 無ければ env にフォールバック (dir を直接指定するテスト用の上書き経路)
+      sdir=$(printf '%s' "$*" | sed -n "s/.*TMUX_SCHEDULE_KEYS_DIR='\([^']*\)'.*/\1/p")
+      [ -n "$sdir" ] || sdir="${TMUX_SCHEDULE_KEYS_DIR:-}"
+      [ -n "$sid" ] && [ -n "$sdir" ] && echo $$ > "$sdir/$sid.pid"
     fi
     exit "${STUB_RUNSHELL_EXIT:-0}" ;;
   "display-message -p #{pane_id}") printf '%%5\n' ;;
@@ -210,7 +214,8 @@ job="$(ls "$TMUX_SCHEDULE_KEYS_DIR"/*.job)"; id="$(basename "$job" .job)"
 [[ "$(sed -n 5p "$job")" == "4242" ]] || { printf '✗ サーバ pid が保存されていない: %s\n' "$(sed -n 5p "$job")"; exit 1; }
 printf '✓ job に socket とサーバ pid が残る (サーバが入れ替わったら送らないため)\n'
 printf '✓ job = 固定 pane / UI の epoch / 文字列 (空白保持)\n'
-assert_called "tmux run-shell -b '$SCRIPT' fire '$id'" "sleeper を run-shell -b (サーバの子) として起動"
+assert_called "tmux run-shell -b TMUX_SCHEDULE_KEYS_DIR='$TMUX_SCHEDULE_KEYS_DIR' '$SCRIPT' fire '$id'" \
+  "sleeper を run-shell -b (サーバの子) として起動し、置き場を env で渡す (fire は自分で解決できない)"
 assert_called "schedkeys --label" "対話 UI (bin/schedkeys) に送り先の表示名を渡して起動"
 assert_not_called "gum input" "文字列・時刻の入力は UI が持つ (gum は使わない)"
 # popup 中は prefix が tmux のキーテーブルへ届かず UI に素通りするので、起動キーの再入力で
@@ -843,6 +848,52 @@ grep -q 'pane-border-format .*@schedkeys-at' "$CONF" \
 grep -q '#(' <<< "$(grep -E '^set -g pane-border-format' "$CONF")" \
   && { printf '✗ pane-border-format が #() で外部コマンドを呼んでいる (毎秒 fork する)\n'; exit 1; }
 printf '✓ pane-border-format が @schedkeys-at を見る (fork なしの format 展開のみ)\n'
+
+printf '\n## 置き場: 既定は tmux サーバ (socket) ごとに分かれる\n'
+# ⚠️ 全サーバで 1 つの dir を共有すると、pane id はサーバごとに振り直されるので一覧・取消・
+#    失効件数が別サーバの予約を混ぜる (issue 189。取消は別サーバの sleeper を実際に kill できた)。
+#    以降のテストは TMUX_SCHEDULE_KEYS_DIR で dir を直接指定する形 (テスト用の上書き) なので、
+#    **既定の解決経路はここだけが見ている**
+sk_home="$TMP_DIR/home_sockdir"; mkdir -p "$sk_home"
+sk_root="$sk_home/.local/state/tmux-schedule-keys"
+reset_calls
+STUB_SOCK="/tmp/tmux-501/mysock" \
+  HOME="$sk_home" STUB_UI_RESULT="new	$(( $(/bin/date +%s) + 3600 ))	make test" \
+  run "$STUB_PATH" env -u TMUX_SCHEDULE_KEYS_DIR "$SCRIPT" wizard
+sk_expect="$sk_root/%tmp%tmux-501%mysock"
+[[ -d "$sk_expect" ]] || { printf '✗ socket ごとの dir が作られない (期待: %s)\n%s\n' "$sk_expect" "$(find "$sk_root" -maxdepth 1 2>/dev/null)"; exit 1; }
+[[ "$(find "$sk_expect" -name '*.job' | wc -l | tr -d ' ')" == 1 ]] \
+  || { printf '✗ job が socket ごとの dir に置かれていない\n%s\n' "$(find "$sk_root" 2>/dev/null)"; exit 1; }
+[[ -z "$(find "$sk_root" -maxdepth 1 -name '*.job' 2>/dev/null)" ]] \
+  || { printf '✗ 共有 dir (root 直下) に job が置かれている\n'; exit 1; }
+printf '✓ 既定の置き場は socket ごとの dir (共有 root 直下には置かない)\n'
+assert_called "run-shell -b TMUX_SCHEDULE_KEYS_DIR='$sk_expect'" "fire には socket ごとの dir を env で渡す"
+
+printf '\n## 置き場: 別サーバの dir の予約は見えない (構造で分ける)\n'
+# 別 socket の dir に job を置いても、こちらの一覧・失効件数には出てこない
+# 自サーバの dir は空にしておく: 前のブロックで作った job が残っていると、その失効通知を
+# 「別サーバの分を数えた」と誤読する (実際に踏んだ)
+rm -f "$sk_expect"/*.job "$sk_expect"/*.pid
+other_dir="$sk_root/%tmp%tmux-501%othersock"; mkdir -p "$other_dir"
+printf '%%5\n%s\necho other\n/tmp/tmux-501/othersock\n9999\n' "$(( $(/bin/date +%s) + 600 ))" > "$other_dir/foreign.job"
+reset_calls; rm -f "$STUB_UI_JOBS_COPY"
+STUB_SOCK="/tmp/tmux-501/mysock" HOME="$sk_home" STUB_UI_RESULT="abort" \
+  run "$STUB_PATH" env -u TMUX_SCHEDULE_KEYS_DIR "$SCRIPT" wizard
+grep -q 'foreign' "$STUB_UI_JOBS_COPY" && { printf '✗ 別サーバの予約が一覧に出た:\n%s\n' "$(cat "$STUB_UI_JOBS_COPY")"; exit 1; }
+[[ -f "$other_dir/foreign.job" ]] || { printf '✗ 別サーバの予約を掃いてしまった\n'; exit 1; }
+assert_not_called "display-message サーバ再起動" "別サーバの予約を失効件数に数えない"
+printf '✓ 別サーバの dir は覗かない・掃かない\n'
+
+printf '\n## 置き場: socket が取れなければ予約を作らない (fail-closed)\n'
+# ⚠️ 共有 dir へ落とすと混ざりが戻る。どのサーバの予約か分からないものは作らない
+reset_calls
+STUB_NO_SOCK=1 HOME="$sk_home" STUB_UI_RESULT="new	$(( $(/bin/date +%s) + 3600 ))	make test" \
+  run "$STUB_PATH" env -u TMUX_SCHEDULE_KEYS_DIR "$SCRIPT" wizard
+[[ "$RC" -ne 0 ]] || { printf '✗ socket が取れないのに成功で終わった\n'; exit 1; }
+assert_not_called "run-shell" "socket が取れなければ sleeper を起こさない"
+assert_called "display-message 予約入力を開けませんでした" "理由を知らせる (押しても何も起きないキーにしない)"
+[[ -z "$(find "$sk_root" -maxdepth 1 -name '*.job' 2>/dev/null)" ]] \
+  || { printf '✗ 共有 root 直下に job を作った\n'; exit 1; }
 
 printf '\n## UI (Go) の配線\n'
 grep -q 'bin/schedkeys' "$SCRIPT" || { printf '✗ シェルが bin/schedkeys を参照していない\n'; exit 1; }
