@@ -6,6 +6,8 @@
 > `pairingTable()` / `resolvePairing()` / `integratePrompt()` / 各 `*_SCHEMA` が実装している。
 > ペアリングや統合ルールを変更したら forge.js も同期更新すること。main Claude（skill 層）はこのファイルを
 > 直接読む必要はない（fan-out は forge.js が実行する）。仕様確認の出典としてのみ参照する。
+> **以下の出力例 (絵文字見出しの markdown) は説明用**。実際の wire format は forge.js の `*_SCHEMA` (JSON) で、
+> ここの体裁を編集しても動作は変わらない。
 
 ## クロスレビューの目的
 
