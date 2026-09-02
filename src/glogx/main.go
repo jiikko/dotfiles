@@ -40,7 +40,11 @@ func run(argv []string) int {
 	// ⚠️ TUI は alt screen へ入るので、対話モードではこの行は終了後に見えることになる。
 	// 主な発火先である CI / 非 TTY 実行では stderr にそのまま残る。
 	if widthenv.EastAsianAmbiguous() {
-		fmt.Fprintln(os.Stderr, "⚠️ "+widthenv.Message)
+		// 🚨 (U+1F6A8、常に 2 桁) を使う。VS16 付きの警告記号は端末で幅が割れるため
+		// CLAUDE.md が使用を禁じている (実測 2026-09-02 / issue 136: 同じマシンで
+		// tmux 内は 2 桁 / Apple Terminal は 1 桁)。外部由来の文字列は
+		// termsafe.DropEmojiVS16 が同じ正規化をしており、自前のリテラルだけ例外にしない。
+		fmt.Fprintln(os.Stderr, "🚨 "+widthenv.Message)
 	}
 	startProbe() // GLOGX_PROBE_DIR があるときだけ動く計測フック (probe.go)
 
