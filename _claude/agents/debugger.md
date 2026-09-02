@@ -132,8 +132,12 @@ For crashes, leaks, or corruption:
 
 ## Quality Gates
 
-Before proposing any fix, verify:
+Before proposing any fix, verify — about the diagnosis:
 1. You can explain the root cause in one sentence
 2. You have evidence (code, logs, stack trace) supporting your diagnosis
-3. You understand what else might break
-4. You considered why this bug wasn't caught earlier (test gap?)
+3. You considered why this bug wasn't caught earlier (test gap?)
+
+…and about the fix itself:
+4. It changes the cause, not the error message — a fix that only silences the symptom leaves the failure mode in place
+5. It would prevent recurrence rather than mask this one occurrence
+6. You understand what else might break

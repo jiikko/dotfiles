@@ -121,7 +121,7 @@
 ## レビュー方針
 
 - **重要なコード変更・バグ修正は、設計と実装の両方を外部レビューに通すことを基本とする**（設計 → レビュー → 実装 → テスト → レビュー）。レビュワーは、codex の使用がユーザーに許可されている環境では codex、それ以外では観点を分けた read-only サブエージェント（作法は [`issue-creation-codex-review.md`](rules/issue-creation-codex-review.md) の代替節）。指摘は無視せず、根拠の弱い断定・false positive を訂正してから commit する
-- 起動は skill 経由（`codex-review` / `cross-review` / `review-loop` / `codex-lead` / `codex-drive`、下表参照）。typo・数行の chore など軽微な変更は対象外
+- 起動は skill 経由（codex を使う環境では `codex-review` / `cross-review` / `review-loop` / `codex-lead` / `codex-drive`、下表参照）。codex を使わない環境では、観点を分けた read-only サブエージェントを直接起動する（`cross-review` skill は codex を含むため丸ごとは使えない）。typo・数行の chore など軽微な変更は対象外
 - **レビューは「探す」だけで閉じない。壊しにいくパス（敵対的レビュー / red team）を 1 本混ぜる**。判断ロジック・境界・状態遷移・外部 I/O が動いた変更では、commit / PR クローズ前の最終ゲートとして通す（機械的置換・設定値変更だけなら省略してよいが、省略したことは一言明示する）
 - **「指摘なし」は「正しい」ではなく「その探し方では壊せなかった」**として扱う。不変条件は「壊す方法が見つからなかった」ではなく、テスト・型・設計で固定して初めて閉じる
 - **主張は証拠ではない**。自分/codex/エージェントの「対応済み」「検証済み」「テスト green」は、diff・実行結果・外部基準（spec の test vector / 実サーバ / CI）で裏を取ってから受け入れる。裏の取れない主張は「未検証」として報告に残す
