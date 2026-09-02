@@ -1173,6 +1173,29 @@ src/glogx/doctor_svc.go  ← サービス診断を doctor に接続する層
 
 ---
 
+## 進捗
+
+### 段階 1: `src/svcdoctor` + `bin/svcdoctor` (2026-09-02 実装)
+
+段階分割 (ユーザー判断 2026-09-02): ① svcdoctor 単体 → ② diskdoctor の走査 + dry-run 一覧 →
+③ glogx の doctor 画面 + キャッシュ + トースト → ④ 削除経路。この節は ① の記録。
+
+- 実装: `src/svcdoctor/` (plist.go / launchctl.go / brew.go / scan.go / report.go / main.go)。
+  判定 A (実行ファイル不在) / B (正の exit code + 再起動条件) / C (brew 台帳に無い) を実装。
+  plist は `howett.net/plist` で XML / binary の両方を読む
+- **BTM (`sfltool dumpbtm`) は載せていない** (未決事項どおり形式が非公開で、消し方も提示できない。
+  ③ か別 issue で判断)。`brew services list` も未使用 (C は `brew list --formula` だけで確定する)
+- exit code: 候補なし 0 / 候補あり 1 / 診断できず (launchctl 失敗・壊れた plist・走査不能 dir) 2
+- 実機 (2026-09-02, 15 件走査): `com.adobe.ARMDCHelper.*` が **last exit 110 + StartInterval** で
+  候補 1 件。plist は `/Library/LaunchAgents` (Adobe のインストーラが置いたもの)。誤検出ではなく
+  Acrobat 更新ヘルパーが失敗を繰り返している実例。`homebrew.mxcl.mysql@8.4` / `redis` は
+  brew 台帳にあり候補にならない (期待どおり)
+- 変異検証 (すべて red): 負値除外を外す / 再起動条件を外す / 相対名を stat で直接判定 /
+  launchctl 失敗を 0 件に畳む / bootout を実行する経路を足す
+- 敵対的レビューは通していない (codex は自発起動しない運用)。**総括の「観点を分けた敵対的レビュー」は
+  ③ で doctor に接続する前に svcdoctor 込みで通す**
+- `src/README.md` の「`GO_PROJECT_DIRS` に登録」は自動発見 (issue 080) に変わっていたので同時に直した
+
 ## 7. 受け入れ条件
 
 **診断・削除ロジック (`src/diskdoctor` / `bin/diskdoctor`)**
@@ -1217,33 +1240,33 @@ src/glogx/doctor_svc.go  ← サービス診断を doctor に接続する層
 
 **サービス診断 (`src/svcdoctor` / `bin/svcdoctor`)**
 
-- [ ] `~/Library/LaunchAgents` / `/Library/LaunchAgents` / `/Library/LaunchDaemons` のみを
+- [x] `~/Library/LaunchAgents` / `/Library/LaunchAgents` / `/Library/LaunchDaemons` のみを
       走査し、**`/System/Library/**` を候補にしない**。
       除外は**パス基準のみ**で、`com.apple.*` というラベル名で除外していない
       (`~/Library/LaunchAgents/com.apple.foo.plist` は候補に入る)
-- [ ] **Status 列の負値 (`-9` 等) と `-` を候補にしない** —
+- [x] **Status 列の負値 (`-9` 等) と `-` を候補にしない** —
       `-9` を 60 件 + 正の exit code 1 件のフィクスチャで **候補が 1 件だけ**になる。
       **負値除外を外す変異で red になる**ことを確認済み
-- [ ] 実行ファイル不在が **主判定**として単独で候補になる (exit code が `0` でも拾う)
-- [ ] **`Program` と `ProgramArguments[0]` を別ルールで判定している** —
+- [x] 実行ファイル不在が **主判定**として単独で候補になる (exit code が `0` でも拾う)
+- [x] **`Program` と `ProgramArguments[0]` を別ルールで判定している** —
       `ProgramArguments[0]` の相対名は `_PATH_STDPATH` で解決してから判定し、
       `["python3", ...]` のような**正常な登録を候補にしない**。
       `_PATH_STDPATH` は呼び出し側の `$PATH` ではなく `/usr/include/paths.h` の値と一致する
-- [ ] `BundleProgram` だけを持つ plist を**判定対象外**にしている
-- [ ] B (失敗し続けている) の条件が**再起動条件を持つものに限られる** —
+- [x] `BundleProgram` だけを持つ plist を**判定対象外**にしている
+- [x] B (失敗し続けている) の条件が**再起動条件を持つものに限られる** —
       `RunAtLoad` のみ + 正の exit code は候補にならない
-- [ ] `launchctl print` を**候補に絞ってから**呼ぶ (全ラベルに対して呼ばない)
-- [ ] `launchctl` の失敗・不在・タイムアウトが **「診断できず」**になる
+- [x] `launchctl print` を**候補に絞ってから**呼ぶ (全ラベルに対して呼ばない)
+- [x] `launchctl` の失敗・不在・タイムアウトが **「診断できず」**になる
       (「候補 0 件」に畳まれない)
-- [ ] 壊れた plist / 空の `ProgramArguments` / 相対パスの `Program` で**クラッシュしない**。
+- [x] 壊れた plist / 空の `ProgramArguments` / 相対パスの `Program` で**クラッシュしない**。
       その 1 件だけを「診断できず」にし、他を巻き込まない
-- [ ] `sfltool dumpbtm` のパース失敗が **BTM 行を出さないだけ**で済み、診断全体を落とさない
-- [ ] **停止・削除のコード経路が存在しない** — 検証は grep ではなく**実行経路の assert**で行う
+- [ ] (段階 1 では未実装) `sfltool dumpbtm` のパース失敗が **BTM 行を出さないだけ**で済み、診断全体を落とさない
+- [x] **停止・削除のコード経路が存在しない** — 検証は grep ではなく**実行経路の assert**で行う
       (codex 反証: grep は `launchctl remove` / `unload` / `os.RemoveAll` / `sh -c` 経由を漏らす):
-      - [ ] `bin/svcdoctor` のサブコマンド表に破壊的コマンドが**無い**
-      - [ ] fake runner に渡った argv が **`list` / `print` 系だけ**であることを assert
-      - [ ] `src/svcdoctor` が `os.Remove` / `os.RemoveAll` を import 経路上で呼ばない
-- [ ] exec が `context.Context` 付きで、キャンセル時に**子プロセスが残らない**
+      - [x] `bin/svcdoctor` のサブコマンド表に破壊的コマンドが**無い**
+      - [x] fake runner に渡った argv が **`list` / `print` 系だけ**であることを assert
+      - [x] `src/svcdoctor` が `os.Remove` / `os.RemoveAll` を import 経路上で呼ばない
+- [x] exec が `context.Context` 付きで、キャンセル時に**子プロセスが残らない**
 
 **doctor UI (glogx)**
 

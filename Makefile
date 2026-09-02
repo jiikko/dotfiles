@@ -18,6 +18,7 @@ ZSH_SYNTAX_FILES := \
   bin/lockman \
   bin/parallel-each \
   bin/repair-mp4-timebase \
+  bin/svcdoctor \
   bin/schedkeys \
   bin/validate-mp4 \
   bin/video_health \

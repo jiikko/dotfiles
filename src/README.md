@@ -8,8 +8,9 @@
 
 1. **プロジェクト直下に Makefile（`lint` / `test` ターゲット必須）**
    root の `make test-go-lint` / `make test-go` と CI が `make -C src/<name> lint|test` として呼ぶ契約。実装言語が Go 以外になっても、この 2 ターゲットの契約だけは維持する
-2. **root [Makefile](../Makefile) の `GO_PROJECT_DIRS` に登録**
-   ローカルの `make test`（コミット前検証）に組み込まれる
+2. **`go.mod` をプロジェクト直下に置く** (登録作業は無い)
+   root [Makefile](../Makefile) の `GO_PROJECT_DIRS` は `src/*/go.mod` の存在で自動発見する
+   (issue 080)。ローカルの `make test`（コミット前検証）に自動で組み込まれる
 3. **`.github/workflows/src_<name>.yml` を作成**
    paths filter 付きの専用 workflow で lint / test を回す（プロジェクトに触れた push だけで起動）。
    ⚠️ paths filter 付き check を branch protection の **required check に登録しないこと**（非接触 PR では run が生成されず、check が永遠に pending になる）

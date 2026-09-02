@@ -1,0 +1,8 @@
+#!/usr/bin/env zsh
+# svcdoctor — 壊れた launchd 登録 (実行ファイル不在 / 失敗し続けている / Homebrew 台帳に無い) を
+# 検出して表示する。停止・削除は行わない (手で実行するコマンドを提示するだけ)。
+# Go implementation at: ~/dotfiles/src/svcdoctor/  (issue 148 の 4 章)
+# 再ビルドは同期: 診断結果を読んで人が手を動かす道具なので、旧版の判定を出さない。
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec "${0:A:h}/../src/svcdoctor" svcdoctor -- "$@"

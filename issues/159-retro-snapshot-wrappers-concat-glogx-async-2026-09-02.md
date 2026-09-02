@@ -7,6 +7,7 @@
 1. issue 152: Claude Code の shell snapshot で壊れるラッパー (動画系 6 関数 / t・tt) を self-heal に (`359b12e` / `c40b8b2`)
 2. issue 143: concat に音声 time_base チェック・境界デコード検証・ffprobe 失敗の fail-closed を入れた (`1584bb3`)
 3. issue 146: glogx の git log 自動追従の読み直しを Cmd に出し、Update を止めなくした (`43b34a6`)
+4. issue 148 段階 1: `src/svcdoctor` (壊れた launchd 登録の検出、読み取り専用) を新設
 
 ## 反省・気づき (各項目に切り出し先を提案。実行はユーザーの判断待ち)
 
@@ -47,6 +48,11 @@ fail-closed にならない。同型の grep (`2>/dev/null | head -n1`) で vide
   video time_base の空は素通りなので同じ穴だった → **同セッションで修正済み** (`__concat_get_video_time_base`
   も rc を返し、呼び出し側で拒否。`test_concat_time_base.sh` Test 6。変異: `|| return 1` を外す → red)。
   frame_rate は表示専用、duration は検証側が空を失敗扱いにしているので残してよい
+
+### 5. src/README.md の「GO_PROJECT_DIRS に登録」が自動発見 (issue 080) 以後も残っていた
+
+新プロジェクトを足す手順書が古い手順を指していた。読んでから Makefile を見たので気づけたが、
+手順書だけ信じると存在しない登録先を探す。同じ commit で直した。**切り出し先**: なし (直した)
 
 ### 4. 実 CLI の契約を先に測ってから mock を書いた (良かった点)
 
