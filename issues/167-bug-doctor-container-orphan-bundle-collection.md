@@ -6,7 +6,8 @@
 
 ## 対象
 
-`src/doctor/disk/scan.go` の `collectBundleIDs` / `containerOwnedByInstalled` / `scanEntry` の GuardOrphanApp filter
+`src/doctor/disk/guard.go` の `collectBundleIDs` / `containerOwnedByInstalled`、
+`src/doctor/disk/scan.go` の `scanEntry` の GuardOrphanApp filter (`id := filepath.Base(p)` でディレクトリ名を bundle id 扱いする箇所)
 
 ## 何が起きるか
 
