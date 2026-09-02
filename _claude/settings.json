@@ -139,6 +139,9 @@
     },
     "claude-fable-5": {
       "effortLevel": "low"
+    },
+    "claude-fable-5-1": {
+      "effortLevel": "low"
     }
   },
   "skipWorkflowUsageWarning": true,
