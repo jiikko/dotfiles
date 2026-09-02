@@ -50,3 +50,17 @@
 書けた。実測は正しさを守るだけでなく、結論を進める。
 
 起源の記録: `issues/done/154-retro-glogx-viewer-crossnav-2026-09-01.md` の項目 3。
+
+## 2026-08-27 good-chrome-extensions — 役目を終えた probe の実行指示が issue に残っていた
+
+open issue が `tmp/probe-dex4.js` / `probe-dex6.js` / `save-main.js` の実行を指示していたが、
+**その直後の節に「解決: dex の第3引数は encrypt/decrypt フラグだった」と結論が書かれていた**。
+つまり probe はもう役目を終えており、しかも製品側 (`bjp_download` の `dexRunner`) が同じことを
+jsdom でやっていた。移さず削除し、issue を製品側へのポインタに直した。
+
+なお probe が読む HTML ダンプは、その前の tmp 掃除で既に消えており **半分壊れていた**
+(tmp に置いた道具は、置いた本人が思うより早く動かなくなる)。
+
+学び: `tmp/` を指す実行指示を見つけたら、まず「その解析はもう終わっていないか」を問う。
+終わっているなら tracked へ移すのではなく削除し、製品側へのポインタに直す (移すと二重実装になる)。
+

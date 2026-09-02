@@ -44,13 +44,7 @@ node tmp/probe-dex6.js   # atob 2 段目の入力を観測
 - **まだ必要で小さい** → issue に本文ごと貼る (issue と一緒に永続する)
 - **まだ必要で大きい** → tracked なパスに置いて、issue はそこを指す
 
-実例 (2026-08-27, good-chrome-extensions): open issue が `tmp/probe-dex4.js` /
-`probe-dex6.js` / `save-main.js` の実行を指示していたが、**その直後の節に
-「解決: dex の第3引数は encrypt/decrypt フラグだった」と結論が書かれていた**。
-つまり probe はもう役目を終えており、しかも製品側 (`bjp_download` の `dexRunner`) が
-同じことを jsdom でやっていた。移さず削除し、issue を製品側へのポインタに直した。
-なお probe が読む HTML ダンプは、その前の tmp 掃除で既に消えており **半分壊れていた**
-(tmp に置いた道具は、置いた本人が思うより早く動かなくなる)。
+実例は rationale (good-chrome-extensions 2026-08-27: 役目を終えた probe の実行指示が issue に残っていた)。
 
 ## 同型: issue を `done/` へ送るときは、本文が前提にしている「現状」を実測する
 
