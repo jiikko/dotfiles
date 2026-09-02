@@ -64,6 +64,9 @@
 - **人にやってほしい動作確認は応答本文に書いて流さず、issue に起こす**（chat は流れて存在自体が忘れられる）。`NNN-human-<スラッグ>.md`（人間しかできない作業のカテゴリ。動作確認・目視レビュー・外部サービスの操作・判断待ち）で起票し、本文に `期限: YYYY-MM-DD` を書く。**既読はファイルの位置で表す**（未読 = `issues/`、確認済み = `issues/done/`。既読ヘッダーは本文の書き換え忘れで嘘が残るので使わない）。期限切れはセッション開始時に hook（`_claude/hooks/human-tasks-due.sh`）が注入し、`issue-sync` skill でも最初に報告する。**hook が期限切れを出したらセッション冒頭で一言伝える**
 - **実質的な作業をやり切ったら、セッションの振り返りを `NNN-retro-<スラッグ>-YYYY-MM-DD.md` に起票する**（chat の反省は流れて消える）。反省・気づき・改善案を書き、各項目に切り出し先（新規 issue / `_claude/rules/` / 却下）を提案するが、切り出しの実行はユーザーの判断を待つ。typo・数行の chore・調査だけのセッションは対象外。**done は「本文の残課題が空になったとき」**（実装の有無では判定しない）。未決着の retro はセッション開始時に hook（`_claude/hooks/retro-open.sh`）が注入するので、**古いものが溜まっていたらセッション冒頭で一言伝える**。書式の正本は `issues/README.md`
 - **`issues/next/` があるリポジトリでは、着手する issue をそこへ移して claim し、その移動だけを即 push する**（複数マシンが同じ issue 列を処理するため。claim は push されて初めて他マシンから見える。着手前に `git fetch` して既に next に居ないかを見る）。**`issues/next/` が無いリポジトリ（仕事の repo 等）ではこの規律は適用しない**。詳細は [`claim-issue-in-next-and-push.md`](rules/claim-issue-in-next-and-push.md)。PostToolUse hook（`_claude/hooks/next-claim-push.sh`）が `issues/next/` への移動を検出して push を促す
+- **設計判断・仕様・調査記録は `docs/`**（索引は [`docs/README.md`](../docs/README.md)）。触る前に読む制約
+  (glogx の bubbletea v2 / テーマ色の定数 / tmux のセッション永続化) と、glogx の画面の契約がここにある。
+  **新しく足したら索引に 1 行足す**（載っていない文書は存在を知っている人にしか届かない）
 - **検証・監査・レビューのレポートを `./tmp` に出したら、結論・全数勘定・却下理由を issue （または対象コードのコメント）へ移すまでが 1 セット**。`tmp/` は gitignore なのでレポート本体は消える。特に「却下した指摘とその理由」は残さないと次の audit が同じ指摘を再生成する。詳細は [`move-report-conclusions-to-issues.md`](rules/move-report-conclusions-to-issues.md)
 
 ## 設計方針

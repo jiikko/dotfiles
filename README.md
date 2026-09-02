@@ -16,6 +16,12 @@ cd dotfiles
 
 [for Mac](./mac "for Mac")
 
+## 設計文書・仕様・調査記録
+
+[`docs/README.md`](docs/README.md) が索引。触る前に読む制約 (glogx の bubbletea、テーマ色、tmux の
+セッション永続化)、glogx の画面の仕様、tmux 周りの仕組み、nvim の棚卸しがある。
+自作ツールの使い方は [`src/README.md`](src/README.md) から各プロジェクトの README へ。
+
 ## Testing
 
 Run the regression test suite (Neovim, tmux, setup.sh, plus existing zsh tests) with:
