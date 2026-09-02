@@ -136,6 +136,36 @@ job_mtime() {
   printf '%s\n' "$m"
 }
 
+# refresh_pane_indicator は「この pane に残っている予約」を pane オプション @schedkeys-at に写す
+# (値 = "HH:MM" / 複数なら "HH:MM ほかN件")。表示は _tmux.conf の pane-border-format が
+# このオプションを見て出す。正本は .job のままで、これは表示用の写し。
+# ⚠️ 予約の状態を書き換える全経路 (new / cancel / fire の claim・drop / prune) から呼ぶ。
+#    1 経路でも漏れると、予約が無い pane に幽霊表示が残り続ける (pane が消えればオプションも消える
+#    ので pane 側の後始末は要らない)。
+# ⚠️ read_job を使わない: 呼び出し側 (fire_send / cancel_selected) が REPLY_* を後で使うので、
+#    ここで上書きすると「A を送ったと表示して B の文字列を出す」形の事故になる。
+# ⚠️ 表示は装飾。失敗しても予約の成立・送信・取消には影響させない (fire の無音契約と同じ)
+refresh_pane_indicator() {
+  local pane=$1 j p at earliest='' n=0 hm v
+  [[ -n "$pane" ]] || return 0
+  for j in "$STATE_DIR"/*.job; do
+    [[ -f "$j" ]] || continue
+    { IFS= read -r p; IFS= read -r at; } < "$j" 2>/dev/null || continue
+    [[ "$p" == "$pane" && "$at" =~ ^[0-9]+$ ]] || continue
+    n=$((n + 1))
+    if [[ -z "$earliest" ]] || (( at < earliest )); then earliest="$at"; fi
+  done
+  # 時刻に化けたら (date が壊れた) 表示を消す: 嘘の時刻を出すより無い方が安全
+  if (( n > 0 )); then hm="$(date -r "$earliest" '+%H:%M' 2>/dev/null || true)"; fi
+  if (( n == 0 )) || [[ -z "${hm:-}" ]]; then
+    tmux set-option -pu -t "$pane" @schedkeys-at 2>/dev/null || true
+    return 0
+  fi
+  v="$hm"
+  (( n > 1 )) && v="$hm ほか$((n - 1))件"
+  tmux set-option -p -t "$pane" @schedkeys-at "$v" 2>/dev/null || true
+}
+
 # sleeper が居ない予約 (サーバ再起動で sleeper だけ消えた形) を掃く。kill はしない
 prune_stale() {
   local j id pid n=0
@@ -150,7 +180,10 @@ prune_stale() {
     fi
     if ! pid_is_sleeper "$id" "$pid"; then
       log "prune stale $id pid=${pid:-none}"
+      # 消す前に送り先を控える (消した後では読めない)
+      local pane; pane="$(head -n 1 "$j" 2>/dev/null || true)"
       rm -f "$j" "$STATE_DIR/$id.pid"
+      refresh_pane_indicator "$pane"
       n=$((n + 1))
     fi
   done
@@ -221,6 +254,7 @@ new_reservation() {
     return 1
   fi
   log "new $id pane=$pane at=$at text=$text"
+  refresh_pane_indicator "$pane"
 }
 
 # jobs_tsv は今ある予約を UI 用の TSV (id / 発火 epoch / 送り先の表示名 / 文字列) に書き出す。
@@ -280,8 +314,10 @@ msg_escape() { printf '%s' "${1//\#/##}"; }
 # ⚠️ 「止められなかった」= 発火済みか prune 済み。呼び出し側はそれを「取り消した」と言ってはいけない
 #    (fire は送信直前に trap で TERM を無視するので、kill が届いても送信は完走する)
 cancel_job() {
-  local id=$1 job pid rc
+  local id=$1 job pid rc pane
   job="$STATE_DIR/$id.job"
+  # 消す前に送り先を控える (表示の更新に使う。read_job は呼び出し側の REPLY_* を壊すので使わない)
+  pane="$(head -n 1 "$job" 2>/dev/null || true)"
   # ⚠️ 成否は kill の rc ではなく **claim を勝ち取れたか** で決める。fire は送信直前に TERM を
   #    無視するので、kill が exit 0 でも送信は完走しうる。job を rename できた = fire はまだ
   #    claim していない = 確実に止められた、と言える (監査 2026-08-28)
@@ -290,6 +326,7 @@ cancel_job() {
   if pid_is_sleeper "$id" "$pid"; then kill "$pid" 2>/dev/null || true; fi
   rm -f "$job" "$job.cancelled" "$STATE_DIR/$id.pid"
   log "cancel $id pid=${pid:-none} claimed=$rc"
+  refresh_pane_indicator "$pane"
   return "$rc"
 }
 
@@ -341,6 +378,7 @@ fire_claim() {
   #    (監査 2026-08-28)。rename は原子的なので、勝った側だけが先へ進む
   mv "$job" "$job.claimed" 2>/dev/null || return 1
   rm -f "$job.claimed" "$STATE_DIR/$id.pid"
+  refresh_pane_indicator "$REPLY_PANE"
   # ⚠️ サーバの同一性は「起きた後・送る直前」に見る。眠る前に見ても意味が無い (壊れるのは
   #    眠っている間にサーバが死んで別のサーバが立つ経路。実機で確認 2026-08-28)。
   #    socket が同じでも中身が別サーバなら、pane id は振り直されていて送り先は別物。
@@ -359,6 +397,8 @@ fire_drop() {
   local id=$1 why=$2 text=$3
   log "fire $id: ${why}。破棄 text=$text"
   rm -f "$STATE_DIR/$id.job" "$STATE_DIR/$id.pid"
+  # job を読めなかった経路では REPLY_PANE が空 (その場合は何もしない)
+  refresh_pane_indicator "${REPLY_PANE:-}"
   notify "予約入力を破棄: $why${text:+ ($text)}"
   exit 0
 }

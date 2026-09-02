@@ -723,6 +723,69 @@ printf '\n## ps の桁切り対策 (Linux で生きた予約を消さないた�
 grep -q 'ps -ww -o command= -p' "$SCRIPT" || { printf '✗ ps に -ww が無い (GNU ps で command が切られる)\n'; exit 1; }
 printf '✓ ps -ww で command 全体を見る\n'
 
+printf '\n## pane 表示: 予約の有無を pane オプション @schedkeys-at に写す\n'
+# ⚠️ 表示の正本は .job で、pane オプションはその写し。**状態を書き換える全経路** (new / cancel /
+#    fire の claim・drop / prune) で set / unset が一致していないと、予約が無い pane に
+#    幽霊表示が残る。1 経路ずつ見るのはそのため (どれか 1 つで unset を落とすと red になる)。
+# ⚠️ 値の HH:MM は `date -r <epoch>` (BSD) で作る。この repo は macOS 専用 (CLAUDE.md)
+fmt_hm() { /bin/date -r "$1" '+%H:%M' 2>/dev/null || /bin/date -d "@$1" '+%H:%M' 2>/dev/null; }
+
+reset_state
+sk_at=$(( $(/bin/date +%s) + 3600 )); sk_hm="$(fmt_hm "$sk_at")"
+[[ -n "$sk_hm" ]] || { printf '✗ epoch を HH:MM へ変換できない (検査が空振り)\n'; exit 1; }
+STUB_UI_RESULT="new	$sk_at	make test" run "$STUB_PATH" "$SCRIPT" wizard
+assert_called "tmux set-option -p -t %5 @schedkeys-at $sk_hm" "new: 発火時刻 (HH:MM) を pane オプションへ書く"
+
+printf '\n## pane 表示: 同じ pane に複数あるときは最早の時刻と残件数\n'
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+sk_early=$(( $(/bin/date +%s) + 600 )); sk_late=$(( $(/bin/date +%s) + 7200 ))
+write_job early "$sk_early" "echo early"
+STUB_UI_RESULT="new	$sk_late	make test" run "$STUB_PATH" "$SCRIPT" wizard
+assert_called "tmux set-option -p -t %5 @schedkeys-at $(fmt_hm "$sk_early") ほか1件" "最早の時刻 + 残件数 (遅い方の時刻は出さない)"
+assert_not_called "@schedkeys-at $(fmt_hm "$sk_late")" "遅い方の時刻で上書きしない"
+
+printf '\n## pane 表示: 取消で消える / 残りがあれば最早へ繰り上がる\n'
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+spawn_sleeper only1
+ui_queue "cancel	only1" "abort"; STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
+assert_called "tmux set-option -pu -t %5 @schedkeys-at" "cancel: 最後の予約が消えたら表示も消す"
+
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+spawn_sleeper dropy
+sk_keep=$(( $(/bin/date +%s) + 1800 ))
+write_job keepy "$sk_keep" "echo keep"
+ui_queue "cancel	dropy" "abort"; STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
+assert_called "tmux set-option -p -t %5 @schedkeys-at $(fmt_hm "$sk_keep")" "cancel: 残りがあれば最早へ繰り上げる (消さない)"
+
+printf '\n## pane 表示: fire (送信) と破棄で消える\n'
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+write_job sent "$(( $(/bin/date +%s) - 1 ))" "make test"
+run "$STUB_PATH" "$SCRIPT" fire sent
+assert_called "tmux set-option -pu -t %5 @schedkeys-at" "fire: 送る時点で表示を消す (送信後も残ると幽霊になる)"
+
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+write_job dropped "$(( $(/bin/date +%s) - 1 ))" "make test"
+STUB_SRVPID=9999 run "$STUB_PATH" "$SCRIPT" fire dropped   # 予約時と別サーバ = 送らずに破棄
+assert_not_called "send-keys -t %5 -l" "別サーバなら送らない (前提の確認)"
+assert_called "tmux set-option -pu -t %5 @schedkeys-at" "fire の破棄経路でも表示を消す"
+
+printf '\n## pane 表示: stale 掃除で消える (サーバ再起動で sleeper だけ死んだ形)\n'
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+write_job gone "$(( $(/bin/date +%s) + 3600 ))" "make test"
+backdate "$TMUX_SCHEDULE_KEYS_DIR/gone.job" 300   # 猶予の外 = stale
+STUB_UI_RESULT="abort" run "$STUB_PATH" "$SCRIPT" wizard
+[[ "$(jobs_count)" == 0 ]] || { printf '✗ 前提が崩れている (stale を掃いていない)\n'; exit 1; }
+assert_called "tmux set-option -pu -t %5 @schedkeys-at" "prune: 掃いた予約の表示も消す"
+
+printf '\n## _tmux.conf: pane-border-format が @schedkeys-at を見る\n'
+# ⚠️ シェル側が set-option するだけでは何も出ない。表示は conf 側の format が担うので、両方を固定する。
+#    #() で job を読む形に戻していないことも見る (status-interval 1 の毎秒再描画で fork する)
+grep -q 'pane-border-format .*@schedkeys-at' "$CONF" \
+  || { printf '✗ pane-border-format が @schedkeys-at を参照していない\n'; exit 1; }
+grep -q '#(' <<< "$(grep -E '^set -g pane-border-format' "$CONF")" \
+  && { printf '✗ pane-border-format が #() で外部コマンドを呼んでいる (毎秒 fork する)\n'; exit 1; }
+printf '✓ pane-border-format が @schedkeys-at を見る (fork なしの format 展開のみ)\n'
+
 printf '\n## UI (Go) の配線\n'
 grep -q 'bin/schedkeys' "$SCRIPT" || { printf '✗ シェルが bin/schedkeys を参照していない\n'; exit 1; }
 [[ -x "$ROOT_DIR/bin/schedkeys" ]] || { printf '✗ bin/schedkeys が無い / 実行不可\n'; exit 1; }
