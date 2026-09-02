@@ -39,3 +39,12 @@ snapshot に載った `codex` 関数が実行時に壊れる。`/opt/homebrew/bi
   確認は次セッション起動後 (snapshot は起動時に再生成される)。テストが同条件を固定している
 - 横展開: 同型 2 系統 (`_reload_then_call` 系 6 関数 / t・tt の `_TMUX_SESSION_LIB` 消失) を
   issue 152 に起票。codex と違い「Claude Bash から呼ぶ需要があるか」の判断が要るため分離した
+
+## 受け入れ条件 1 の確認 (2026-09-02)
+
+新 snapshot (`snapshot-zsh-1788306374630`, 09/02 08:46) を `zsh -f` で source し、helper 未定義
+(`${+functions[_ensure_cli_with_brew]}` = 0) のまま関数経由で `codex --version` → `codex-cli 0.152.1` / rc 0。
+旧 snapshot (`...1788188722354`) では `command not found: _ensure_cli_with_brew` / rc 1。
+
+⚠️ Bash ツールのシェルは**プロセス起動時の snapshot を持ち続ける**ため、起動済みセッションでは
+旧定義のままになる (会話を clear しても引き継がれる)。既存セッションでは `command codex` で回避する。

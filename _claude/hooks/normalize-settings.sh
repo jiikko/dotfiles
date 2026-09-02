@@ -18,7 +18,12 @@ SETTINGS="${CLAUDE_DIR}/settings.json"
 LOCAL="${CLAUDE_DIR}/settings.local.json"
 
 # 退避対象の揮発キー。共有したくない・CLI が勝手に書き換えるものだけ。
-VOLATILE='["model","effortLevel","advisorModel","voice","autoMode"]'
+# modelSettings は /effort の書き込み先。CLI が top-level の effortLevel から
+# modelSettings.<model>.effortLevel のネスト形式へ移したため、effortLevel だけでは
+# 空振りする (2026-09-02 実測: dc94919 が model と modelSettings を追跡ファイルへ持ち込み、
+# /model・/effort のたびに settings.json が dirty になっていた = 共有 tree の ff pull を阻む)。
+# top-level の effortLevel は旧形式の残骸を回収するために残す。
+VOLATILE='["model","effortLevel","modelSettings","advisorModel","voice","autoMode"]'
 
 [ -f "$SETTINGS" ] || exit 0
 command -v jq >/dev/null 2>&1 || { echo "normalize-settings: jq not found; skip" >&2; exit 0; }
