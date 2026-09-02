@@ -6,6 +6,9 @@
 「レポート + 提案 diff を出して止まる」なので、**この issue に書いた変更はどれもまだ当てていない**。
 hunk 単位で採否を決めてから当てる。
 
+⚠️ **2026-09-02 に diff 1 / 2 / 3 (H1 / H2 / H3) は適用済み**。最新の状態は末尾の「適用ログ」を見る
+(下の「提案 diff」節は起票時のままなので、適用済み hunk の `-` 行はもう原文と一致しない)。
+
 ## 前提 (監査が置いた仮定)
 
 - **スコープ**: リクエストにファイル指定が無いので、working directory 全体のプロンプト面。
@@ -93,21 +96,21 @@ hunk 単位で採否を決めてから当てる。
 
 ## 提案 diff (hunk 単位で採否を決める。未適用)
 
-### diff 1 — H1 `_claude/skills/codex-review/SKILL.md:205`
+### diff 1 — H1 `_claude/skills/codex-review/SKILL.md:205` ✅ 適用済み (`3b272e9`)
 
 ```diff
 -- 常に `--ephemeral -o "$review_out"` を付与する。`--full-auto` は付けない（codex-cli 0.139.0 時点で `--sandbox workspace-write` の deprecated alias であり、`-s read-only` と併用すると後勝ちで上書きして codex が書き込み可能になることを実測確認済み。codex 側で alias が削除されたら本注記ごと整理してよい）
 +- 常に `--ephemeral -o "$review_out"` を付与する。sandbox は `-s read-only` を明示する（`--full-auto` は codex-cli 0.152.1 で削除済み。渡すと未知の引数として即エラー）
 ```
 
-### diff 2 — H2 `_claude/skills/forge/_common/modes.md:46`
+### diff 2 — H2 `_claude/skills/forge/_common/modes.md:46` ✅ 適用済み (`3b272e9`)
 
 ```diff
 -- **追加エージェント**: dependency-analyzer, test-coverage-advisor, refactoring-patterns
 +- **追加エージェント**: dependency-analyzer, test-coverage-advisor（無条件）。refactoring-patterns はリファクタ系タスクのときだけ（判定は agents.md「Maximum 専用エージェント」）
 ```
 
-### diff 3 — H3 `_claude/skills/forge/_common/agents.md`
+### diff 3 — H3 `_claude/skills/forge/_common/agents.md` ✅ 適用済み (`788122b`)
 
 範囲指定。`## 必須エージェント（6+1つ）` (:125) 〜 `## 条件付き必須エージェント` (:295) の直前と、
 `## Maximum 専用エージェント` (:339) 〜 `## 言語別エージェント置換ルール` (:418) の直前の各 `### N. <agent>` 配下から、
