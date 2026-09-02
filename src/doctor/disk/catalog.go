@@ -122,3 +122,6 @@ var excludedRoots = []string{
 	"~/Library/CloudStorage", "~/Library/Messages", "~/Documents", "~/Desktop", "~/Pictures", "~/Movies",
 	"~/Downloads", "~/src", "~/.cache/dein", "~/Library/Application Support/Google",
 }
+
+// CatalogSize は既定カタログのエントリ数 (UI の進捗表示の分母)。
+func CatalogSize() int { return len(catalog) }

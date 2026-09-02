@@ -18,6 +18,7 @@ require (
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
+	howett.net/plist v1.0.1 // indirect
 )
 
 require (

@@ -303,6 +303,8 @@ type browseModel struct {
 	// Snapshot を枠ごとのアナログ盤にして描く (取得経路は usageOv のものを共用。
 	// ratelimit_dashboard.go 冒頭)。
 	rlDash ratelimitDash
+	// doctorOv は D の全画面 doctor (doctor_view.go)。rlDash と同じ薄い器で、開くと走査を始める
+	doctorOv doctorView
 	// status viewer (s キーで開く全画面の作業ツリービュー)。stage / unstage / 変更を捨てる を
 	// 行う write 側の画面で、状態と描画は statusView 型 (status_view.go) に切り出す。
 	// 読み書きの規約の一次情報は docs/status-viewer-spec.md。
@@ -414,6 +416,14 @@ func (m *browseModel) Init() tea.Cmd {
 	// nil Msg で無音)。
 	ver := tea.Batch(checkClaudeVersionCmd(), checkCodexVersionCmd())
 	cliHealth := checkCLIHealthCmd()
+	// doctor の起動時トースト: 前回のスキャン結果 (ファイル読みのみ、fork なし) が閾値を超えていれば
+	// 文言で D へ誘導する。起動時に走査はしない (issue 148 の骨格)。
+	if c, ok := loadDoctorDiskCache(); ok {
+		if text := doctorStartupToast(c, ok, timeNow()); text != "" {
+			m.toast.showInfo(text)
+			markDoctorNotified(timeNow())
+		}
+	}
 	// バックグラウンド再ビルドの監視 (autobuild.go)。shim が GO_AUTOBUILD_PENDING を
 	// 立てていない通常起動では nil = tick が増えない。
 	//
@@ -903,7 +913,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// ⚠️ ratelimit ダッシュボード (R) が先に開いていた場合も同じ理由で捨てる: 復元すると
 		// 裏に issues viewer が開いた状態になり、ダッシュボードの i (横断) が toggle で
 		// 「開く」ではなく「閉じる」に化ける。
-		if m.statusOv.visible() || m.rlDash.visible() {
+		if m.statusOv.visible() || m.rlDash.visible() || m.doctorOv.visible() {
 			return m, m.maybeTick()
 		}
 		return m, tea.Batch(m.issuesOv.restore(currentDir(), msg.screen), m.maybeTick())
@@ -911,6 +921,14 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.showClaudeUpdate(msg.latest)
 	case codexUpdateAvailableMsg:
 		m.toast.show("codex v"+msg.latest+" が公開されています (X で更新)", true)
+		return m, m.maybeTick()
+	case doctorDiskMsg:
+		return m, tea.Batch(m.doctorOv.receiveDisk(msg), m.maybeTick())
+	case doctorSvcMsg:
+		m.doctorOv.receiveSvc(msg)
+		return m, m.maybeTick()
+	case doctorBrewMsg:
+		m.doctorOv.receiveBrew(msg)
 		return m, m.maybeTick()
 	case cliHealthMsg:
 		for _, issue := range msg.issues {
@@ -1314,6 +1332,18 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	// doctor 表示中も全画面: キーはここで飲み切る (rlDash と同じ位置・同じ理由)。
+	if m.doctorOv.visible() {
+		switch m.doctorOv.handleKey(key, m.pageSize()) {
+		case doctorClosed:
+			return m, m.maybeTick()
+		case doctorRescan:
+			m.doctorOv.close()
+			return m, tea.Batch(m.doctorOv.open(), m.maybeTick())
+		case doctorSwallow:
+		}
+		return m, m.maybeTick()
+	}
 	// ratelimit ダッシュボード表示中も全画面: キーはここで飲み切る (裏の一覧をスクロール
 	// させない)。issues / status と同じ位置に置く理由もそちらと同じ (actModal と prefix の後)。
 	if m.rlDash.visible() {
@@ -1453,6 +1483,12 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// ガードの後) — 先頭に置くと push/pull 確認を素通りする footgun が同じ形で起きる。
 	if key == "R" {
 		return m, m.toggleRatelimitDash()
+	}
+	// D = 全画面 doctor (issue 148)。R と同じ判定位置 (モーダル・prefix・実行中ガードの後)。
+	// 開いた時にスキャンが始まる (起動時には走査しない)。
+	if key == "D" {
+		m.usageOv.dismiss()
+		return m, tea.Batch(m.doctorOv.toggle(), m.maybeTick())
 	}
 	m.usageOv.dismiss()
 	// diff ポップアップ表示中はスクロール/閉じる操作だけを受ける (最前面のモーダル)
@@ -2020,6 +2056,7 @@ func (m *browseModel) cancelAll() {
 	// たびに kqueue fd が新プロセスへ 1 本ずつ継承され続ける。
 	m.issuesOv.stopWatch()
 	m.stopGitLogWatch() // git log の見張りも同じ理由で閉じる (gitlog_watch.go)
+	m.doctorOv.stop()   // doctor の走査 goroutine / 子プロセス (brew / simctl) を止める (popup の開閉で残さない)
 }
 
 // quit はアプリ全体を終了する (取得中断分は unknown へ落とす)。
@@ -2138,6 +2175,7 @@ var repeatGuardedKeys = map[string]bool{
 	"s": true, // status viewer (i と同じ toggle。ユーザー報告 2026-08-07)
 	"U": true, // usage オーバーレイ (開くたびに取り直しの判定が走る)
 	"R": true, // ratelimit ダッシュボード (U と同じ toggle。開くたびに取得判定が走る)
+	"D": true, // doctor (開くたびにスキャンが走る。押しっぱなしで開閉と走査を繰り返す)
 	"d": true, // diff ポップアップ
 	"P": true, // PR 状態ポップアップ
 	"n": true, // next へ移動の確認 (開いた確認を次のリピートが閉じてしまう)
@@ -2960,7 +2998,7 @@ func (m *browseModel) spinnerActive() bool {
 	// 演出 (glide / toast / 開閉スライド / zoom) は列挙しない: tickInterval が周期を上げている =
 	// 何かの演出中、で導出する。演出の登録先を tickInterval の 1 箇所に保つ (同期漏れの再発防止)
 	return m.tickInterval() != spinnerInterval || m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.awaitCI) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.rlDashLoading() || m.issuesOv.loading() ||
-		m.statusOv.fetching()
+		m.statusOv.fetching() || m.doctorOv.scanning()
 }
 
 // issuesOpts は issues viewer へ渡す描画情報。カーソル行の強調はコミット一覧と同じ
@@ -2983,6 +3021,10 @@ func (o statusRenderOpts) viewport() statusViewport {
 
 // ratelimitOpts は全画面 ratelimit ダッシュボードの描画情報。データは usageOv の Snapshot を
 // そのまま渡す (取得経路を 1 本に保つ。ratelimit_dashboard.go 冒頭)。
+func (m *browseModel) doctorOpts() doctorRenderOpts {
+	return doctorRenderOpts{width: m.contentWidth(), page: m.pageSize(), colored: m.colored, spinner: m.spinner(), now: timeNow()}
+}
+
 func (m *browseModel) ratelimitOpts() ratelimitRenderOpts {
 	return ratelimitRenderOpts{
 		width:   m.contentWidth(),
@@ -3205,6 +3247,9 @@ func (m *browseModel) viewLines() string {
 	// の注記)。開いている間の他のキーは handleKey が飲む。
 	if m.rlDash.visible() {
 		return m.finishWithGlobalChrome(m.rlDash.lines(m.ratelimitOpts()), page)
+	}
+	if m.doctorOv.visible() {
+		return m.finishWithGlobalChrome(m.doctorOv.lines(m.doctorOpts()), page)
 	}
 	if m.statusOv.visible() {
 		return m.finishWithGlobalChrome(m.statusOv.lines(m.statusOpts()), page)
@@ -3472,7 +3517,10 @@ func (m *browseModel) hintLine() string {
 	if m.rlDash.visible() {
 		return m.hintLineText(m.rlDash.hint())
 	}
-	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  P: PR 状態  y: URL コピー  b: push  u: pull  i: issues  U: usage  R: 残量  C: update  w: 警告コピー  q: 終了"
+	if m.doctorOv.visible() {
+		return m.hintLineText(m.doctorOv.hint())
+	}
+	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  P: PR 状態  y: URL コピー  b: push  u: pull  i: issues  U: usage  R: 残量  C: update  D: doctor  w: 警告コピー  q: 終了"
 	switch {
 	case m.statusOv.visible():
 		// status viewer も全画面なので issues と同じ扱い (CI 進捗・警告の前置をしない)。
