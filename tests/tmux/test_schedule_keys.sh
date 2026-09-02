@@ -895,6 +895,16 @@ assert_called "display-message 予約入力を開けませんでした" "理由�
 [[ -z "$(find "$sk_root" -maxdepth 1 -name '*.job' 2>/dev/null)" ]] \
   || { printf '✗ 共有 root 直下に job を作った\n'; exit 1; }
 
+printf '\n## 置き場: fire は env が無ければ黙って降りる\n'
+# ⚠️ 置き場を渡されなかった fire (この変更より前に起きた sleeper / 手打ち) が走ると、
+#    STATE_DIR が空のまま "/<id>.job" を見て「破棄しました」と通知してしまう。
+#    存在しない予約の破棄を知らせるのは嘘なので、何もせず exit 0 する
+reset_calls
+run "$STUB_PATH" env -u TMUX_SCHEDULE_KEYS_DIR "$SCRIPT" fire someid
+[[ "$RC" -eq 0 ]] || { printf '✗ 置き場なしの fire が exit %s (無音契約は exit 0)\n' "$RC"; exit 1; }
+assert_not_called "send-keys" "置き場が無ければ何も送らない"
+assert_not_called "display-message" "存在しない予約の破棄を通知しない (嘘をつかない)"
+
 printf '\n## UI (Go) の配線\n'
 grep -q 'bin/schedkeys' "$SCRIPT" || { printf '✗ シェルが bin/schedkeys を参照していない\n'; exit 1; }
 [[ -x "$ROOT_DIR/bin/schedkeys" ]] || { printf '✗ bin/schedkeys が無い / 実行不可\n'; exit 1; }
