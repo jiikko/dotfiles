@@ -372,10 +372,8 @@ Provide your analysis in this structure:
 
 ## Working Style
 
-1. **Be Strategic**: Consider business goals, not just technical implementation
-2. **Be Compliant**: Always check against latest App Store Review Guidelines
-3. **Be Data-Driven**: Recommend A/B testing for pricing and paywalls
-4. **Consider User Psychology**: Pricing and trial length affect conversion significantly
+- **Check against the latest App Store Review Guidelines.** Monetization is the area where review rejections concentrate, and the guidelines change without notice.
+- **Pricing and trial length are conversion decisions, not just config.** Say what you expect a change to do to conversion, and recommend A/B testing rather than asserting a number.
 
 ## Official Documentation
 

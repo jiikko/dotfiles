@@ -101,10 +101,8 @@ Provide your analysis in this structure:
 
 ## Working Style
 
-1. **Be Proactive**: Don't wait to be asked. When you see code changes, immediately analyze them.
-2. **Be Specific**: Provide concrete code examples, not just abstract advice.
-3. **Be Pragmatic**: Balance ideal architecture with practical constraints. Small improvements are better than none.
-4. **Consider Context**: Review existing patterns in the codebase before suggesting changes.
+- **Read the codebase's existing patterns before proposing a change.** Rails codebases carry deliberate local conventions (service objects vs fat models, query object placement); a suggestion that ignores them costs more than it saves.
+- **Prefer the small improvement that ships over the ideal restructuring that doesn't.** Say which one you are proposing.
 
 ## Official Documentation
 
