@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -228,7 +229,9 @@ func TestDoctorSavesCacheOnCompleteAndPartialPolicy(t *testing.T) {
 	if !ok || c.Partial || len(c.Entries) != 1 || c.Entries[0].ID != "thing" || c.Total == 0 {
 		t.Fatalf("完了時のキャッシュ: ok=%v %+v", ok, c)
 	}
-	// 完全な結果 (Total 大) がある状態で、小さい partial を close で書こうとしても潰さない
+	// 完全な結果 (Total 大) がある状態で小さい partial を close で書いても、**情報を減らさない**。
+	// partial は前回の記録に重ねて書くので、走査が届かなかった big の 45GB は残る
+	// (以前は「書かない」ことで守っていたが、それだと今回測ったぶんが捨てられた。issue 172/173)。
 	// (doctorTestView は XDG_CACHE_HOME を作り直すので、キャッシュは view を作った後にその置き場へ書く)
 	v2 := doctorTestView(t)
 	if err := saveDoctorDiskCache(doctorDiskCache{ScannedAt: time.Now(), Total: 45 << 30, Entries: []doctorDiskCacheEntry{{ID: "big", Size: 45 << 30, Status: "ok"}}}); err != nil {
@@ -237,8 +240,17 @@ func TestDoctorSavesCacheOnCompleteAndPartialPolicy(t *testing.T) {
 	doctorFirstDiskEvent(t, v2)
 	v2.close()
 	c2, _ := loadDoctorDiskCache()
-	if c2.Partial || c2.Total != 45<<30 {
+	if c2.Total < 45<<30 {
 		t.Fatalf("小さい partial が完全な結果を潰した: %+v", c2)
+	}
+	var sawBig bool
+	for _, e := range c2.Entries {
+		if e.ID == "big" && e.Size == 45<<30 {
+			sawBig = true
+		}
+	}
+	if !sawBig {
+		t.Fatalf("走査が届かなかったエントリの記録が partial の書き込みで消えた: %+v", c2)
 	}
 	// 完全な結果が無ければ partial を保存する
 	v3 := doctorTestView(t)
@@ -390,6 +402,21 @@ func TestDoctorStartupToast(t *testing.T) {
 	old.ScannedAt = now.Add(-10 * 24 * time.Hour)
 	if got := doctorStartupToast(old, true, now); !strings.Contains(got, "(10 日前の診断)") || !strings.Contains(got, "45.0GB") {
 		t.Errorf("古い結果でも数字を出し、日数を添える: %q", got)
+	}
+	// issue 174: LastNotifiedAt が未来 (時計を戻した / NTP の大補正 / 別マシンのキャッシュ) だと
+	// now.Sub(...) が負になり、cooldown 判定が常に真で永久に沈黙していた。負は cooldown 明けとして扱う。
+	for _, ahead := range []time.Duration{time.Second, doctorToastCooldown, 365 * 24 * time.Hour} {
+		future := big
+		future.LastNotifiedAt = now.Add(ahead)
+		if got := doctorStartupToast(future, true, now); got == "" {
+			t.Errorf("LastNotifiedAt が %v 未来のときトーストが沈黙した", ahead)
+		}
+	}
+	// 境界: ちょうど now のときは cooldown 内 (沈黙)
+	same := big
+	same.LastNotifiedAt = now
+	if doctorStartupToast(same, true, now) != "" {
+		t.Error("LastNotifiedAt == now で cooldown が効いていない")
 	}
 }
 
@@ -879,7 +906,7 @@ func TestDoctorStartupToastThroughRealPath(t *testing.T) {
 		{Entry: disk.Entry{ID: "boom", Label: "壊れた", Risk: disk.RiskSafe}, Status: disk.StatusFailed, Size: 99 << 30, Reason: "走査できず"},
 		{Entry: disk.Entry{ID: "empty", Label: "空"}, Status: disk.StatusOK},
 	}}
-	c := doctorCacheFromReport(rep, time.Time{})
+	c := doctorCacheFromReport(rep, doctorDiskCache{})
 
 	// 候補 0 件の ok エントリは持たない。失敗したものは (数字を出さないために) 落とさず status で区別する
 	for _, e := range c.Entries {
@@ -977,5 +1004,347 @@ func TestDoctorUndiagnosedRowsAreSelectable(t *testing.T) {
 	v.handleKey("enter", 40)
 	if txt := strings.Join(v.lines(doctorTestOpts(40)), "\n"); !strings.Contains(txt, "理由: plist を読めない") {
 		t.Errorf("Undiagnosed 行の Enter で理由が出ない:\n%s", txt)
+	}
+}
+
+// issue 172: 再利用 (Reused) した計測値はトーストの材料にしない。行には「N 分前の計測を再利用」の
+// 注記が付くが、トーストには無い。実体を消した後も最大 1 時間「解放できます」と言い続け、
+// 「開けば直る」も効かない (トーストは次に doctor を開くまで更新されない)。
+// 代わりに**前回のキャッシュのそのエントリを引き継ぐ** (= 最後に実測した値)。
+func TestDoctorSaveCacheKeepsLastRealMeasurement(t *testing.T) {
+	ok := func(id string, size int64) disk.Result {
+		return disk.Result{Entry: disk.Entry{ID: id, Label: id}, Status: disk.StatusOK, Size: size,
+			Items: []disk.Item{{Path: "/" + id, Size: size}}}
+	}
+	rep := func(rs ...disk.Result) disk.Report {
+		return disk.Report{ScannedAt: time.Now(), Results: rs, Total: disk.SumDeletable(rs)}
+	}
+	prev := doctorDiskCache{ScannedAt: time.Now(), Total: 45 << 30, Entries: []doctorDiskCacheEntry{
+		{ID: "heavy", Label: "Heavy", Size: 44 << 30, Status: "ok"},
+		{ID: "small", Label: "Small", Size: 1 << 30, Status: "ok"},
+	}}
+	// heavy は再利用 (今回は実測していない)。しかも古い値が実態より大きい
+	reused := ok("heavy", 100<<30)
+	reused.Reused = true
+
+	next := doctorCacheFromReport(rep(reused, ok("small", 1<<30)), prev)
+	if next.Total != 45<<30 {
+		t.Errorf("再利用ぶんに前回の実測値 (44GB) が使われていない: total=%d", next.Total)
+	}
+	for _, e := range next.Entries {
+		if e.ID == "heavy" && e.Size != 44<<30 {
+			t.Errorf("再利用した計測値 (100GB) がトーストの材料に乗った: size=%d", e.Size)
+		}
+	}
+	if !next.Reused {
+		t.Error("再利用を含む結果に Reused の印が付いていない")
+	}
+
+	// 前回のエントリが無ければ持たない (でっち上げない)
+	orphan := doctorCacheFromReport(rep(reused), doctorDiskCache{ScannedAt: time.Now()})
+	if orphan.Total != 0 || len(orphan.Entries) != 0 {
+		t.Errorf("前回の実測が無いのに再利用ぶんを載せた: %+v", orphan)
+	}
+
+	// 完全な実測どうしなら、減っていても上書きする (実体が消えたことを反映する)
+	v := doctorTestView(t)
+	if err := saveDoctorDiskCache(prev); err != nil {
+		t.Fatal(err)
+	}
+	v.saveCache(rep(ok("small", 1<<30)))
+	if c, _ := loadDoctorDiskCache(); c.Total != 1<<30 {
+		t.Errorf("完全な実測で上書きされない: total=%d", c.Total)
+	}
+}
+
+// issue 172 の敵対レビュー (2026-09-03、3 周): 「Reused が 1 件でもあれば結果ごと書かない」に
+// してはいけない。doctorReuseFrom の 1 時間は**各エントリが実測されるたびにリセットされる**ので、
+// 重いエントリが 2 件以上あって実測時刻が互い違いだと「常にどれか 1 件が再利用対象」の状態が
+// 持続し、キャッシュが恒久的に凍結する (実測: 20 分おきに 6 時間・18 回開いても一度も更新されず、
+// 軽いエントリが 1GB → 100GB に激増しても反映されなかった)。エントリ単位でマージする。
+func TestDoctorSaveCacheDoesNotFreezeWithStaggeredReuse(t *testing.T) {
+	base := doctorDiskCache{ScannedAt: time.Now(), Total: 21 << 30, Entries: []doctorDiskCacheEntry{
+		{ID: "heavyA", Label: "HeavyA", Size: 10 << 30, Status: "ok"},
+		{ID: "heavyB", Label: "HeavyB", Size: 10 << 30, Status: "ok"},
+		{ID: "small", Label: "Small", Size: 1 << 30, Status: "ok"},
+	}}
+	res := func(id string, size int64, reused bool) disk.Result {
+		return disk.Result{Entry: disk.Entry{ID: id, Label: id}, Status: disk.StatusOK, Size: size,
+			Items: []disk.Item{{Path: "/" + id, Size: size}}, Reused: reused}
+	}
+	// 18 回 (20 分おき・6 時間相当)。毎回どちらかの重いエントリが再利用対象になる。
+	// small は 1GB → 100GB に激増している (ユーザーが気づきたい急変)
+	v := doctorTestView(t)
+	if err := saveDoctorDiskCache(base); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 18 {
+		a, b := i%2 == 0, i%2 == 1
+		v.saveCache(disk.Report{ScannedAt: time.Now(), Results: []disk.Result{
+			res("heavyA", 10<<30, a), res("heavyB", 10<<30, b), res("small", 100<<30, false)}})
+	}
+	if c, _ := loadDoctorDiskCache(); c.Total != 120<<30 {
+		t.Errorf("互い違いの再利用でキャッシュが凍結した (small の激増が反映されない): total=%d want=%d", c.Total, int64(120)<<30)
+	}
+	// 診断できず件数も凍結しない (Reused と failed が同居する形)
+	v2 := doctorTestView(t)
+	if err := saveDoctorDiskCache(base); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		v2.saveCache(disk.Report{ScannedAt: time.Now(), Results: []disk.Result{
+			res("heavyA", 10<<30, true),
+			{Entry: disk.Entry{ID: "heavyB", Label: "HeavyB"}, Status: disk.StatusFailed, Reason: "permission denied"},
+			res("small", 1<<30, false)}})
+	}
+	if c, _ := loadDoctorDiskCache(); c.Failed != 1 {
+		t.Errorf("Reused と failed が同居すると診断できず件数が入らない: failed=%d", c.Failed)
+	}
+}
+
+// issue 173: 「診断できず」をトーストから消さない (sinking silently の禁止)。
+func TestDoctorStartupToastReportsUndiagnosed(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.Local)
+	// 閾値を超えているときは合計に添える
+	big := doctorDiskCache{ScannedAt: now.Add(-time.Hour), Total: 45 << 30, Failed: 2,
+		Entries: []doctorDiskCacheEntry{{ID: "a", Label: "Xcode", Size: 45 << 30, Status: "ok"}}}
+	if got := doctorStartupToast(big, true, now); !strings.Contains(got, "2 件は診断できず") {
+		t.Errorf("診断できずの件数が添えられない: %q", got)
+	}
+	// 閾値未満でも、診断できずが在れば黙らない
+	small := big
+	small.Total = 1 << 30
+	got := doctorStartupToast(small, true, now)
+	if !strings.Contains(got, "2 件を診断できませんでした") || !strings.Contains(got, "D で doctor を開く") {
+		t.Errorf("閾値未満 + 診断できずで沈黙した: %q", got)
+	}
+	// 診断できずが無ければ従来どおり沈黙する (通知を増やさない)
+	quiet := small
+	quiet.Failed = 0
+	if s := doctorStartupToast(quiet, true, now); s != "" {
+		t.Errorf("閾値未満で余計なトーストが出た: %q", s)
+	}
+	// cooldown は「診断できず」のトーストにも効く
+	cooled := small
+	cooled.LastNotifiedAt = now.Add(-time.Hour)
+	if s := doctorStartupToast(cooled, true, now); s != "" {
+		t.Errorf("診断できずのトーストが cooldown を無視した: %q", s)
+	}
+}
+
+// issue 173 の敵対レビュー (2026-09-03、2 周): failed を含む「完走した」結果はキャッシュを更新する。
+// ガードに載せると「1 エントリが恒久的に測れない Mac」でキャッシュが永久に凍結し (保存しない →
+// 次回も prev は完全なまま → 同じ判定)、合計も Failed 件数も更新されない = issue 173 が塞いだはずの
+// sinking silently の再現。時間で区切る形も採らない (「前回の完全結果の古さ」は「今回の結果が
+// 途中経過か」と無関係で、doctor をたまにしか開かない運用が丸ごと無保護になる)。
+// 沈黙は Failed 件数とトースト側で防ぐ。
+func TestDoctorSaveCacheWritesCompletedScanWithFailures(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.Local)
+	chronic := disk.Report{ScannedAt: now, Results: []disk.Result{
+		{Entry: disk.Entry{ID: "small", Label: "Small"}, Status: disk.StatusOK, Size: 1 << 30,
+			Items: []disk.Item{{Path: "/small", Size: 1 << 30}}},
+		{Entry: disk.Entry{ID: "heavy", Label: "Heavy"}, Status: disk.StatusFailed, Reason: "permission denied"},
+	}}
+	chronic.Total = disk.SumDeletable(chronic.Results)
+
+	// 何度繰り返しても凍結しない (完走している結果はその環境の現実)
+	v := doctorTestView(t)
+	if err := saveDoctorDiskCache(doctorDiskCache{ScannedAt: now.Add(-3 * time.Hour), Total: 45 << 30}); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		v.saveCache(chronic)
+	}
+	c, _ := loadDoctorDiskCache()
+	if c.Total != 1<<30 {
+		t.Errorf("完走した結果でキャッシュが更新されない (latch): total=%d", c.Total)
+	}
+	if c.Failed != 1 {
+		t.Errorf("診断できず件数が入らない: failed=%d", c.Failed)
+	}
+	// 凍結しない代わりに、トーストが沈黙しない (閾値未満だが「診断できず」を伝える)
+	if got := doctorStartupToast(c, true, now); !strings.Contains(got, "1 件を診断できませんでした") {
+		t.Errorf("トーストが沈黙した: %q", got)
+	}
+
+	// 一方、**中断した部分結果** (partial) は完全な結果を潰さない。前回の記録に重ねて書くので、
+	// 走査が届かなかったエントリの数字が残る (敵対レビュー 2026-09-03: 3 時間前の 45GB が
+	// 「開いて即 Esc」の 1MB で潰れる形にしてはいけない)。
+	// ⚠️ ただし引き継ぎには鮮度の上限 (doctorCarryTTL) がある。上限を持たせないと、
+	// 「重いので毎回 Esc の前にたどり着けない」エントリが無期限に延命し、実体が消えても
+	// 検出する手段が構造上無くなる (同レビュー 5 周目)。
+	partial := func() disk.Report {
+		return disk.Report{ScannedAt: now, Partial: true, Results: []disk.Result{
+			{Entry: disk.Entry{ID: "small", Label: "Small"}, Status: disk.StatusOK, Size: 1 << 20,
+				MeasuredAt: now, Items: []disk.Item{{Path: "/small", Size: 1 << 20}}}}}
+	}
+	prevWith := func(measured time.Time) doctorDiskCache {
+		return doctorDiskCache{ScannedAt: measured, Total: 45 << 30, Entries: []doctorDiskCacheEntry{
+			{ID: "big", Label: "Big", Size: 45 << 30, Status: "ok", MeasuredAt: measured}}}
+	}
+	for _, tc := range []struct {
+		name    string
+		age     time.Duration
+		carried bool
+	}{
+		{"1 分前", time.Minute, true},
+		{"TTL 直前", doctorCarryTTL - time.Minute, true},
+		{"TTL 超過 (30 日前)", 30 * 24 * time.Hour, false},
+		{"未来 (時計を戻した)", -time.Hour, true}, // 記録を残す側が安全
+	} {
+		v2 := doctorTestView(t)
+		if err := saveDoctorDiskCache(prevWith(now.Add(-tc.age))); err != nil {
+			t.Fatal(err)
+		}
+		v2.saveCache(partial())
+		c, _ := loadDoctorDiskCache()
+		if got := c.Total >= 45<<30; got != tc.carried {
+			t.Errorf("%s: 引き継ぎ=%v want=%v (total=%d)", tc.name, got, tc.carried, c.Total)
+		}
+	}
+}
+
+// issue 173 の敵対レビュー (2026-09-03、4 周): 中断した部分結果を**洗い替えで**書くと、
+// 今回走査が届かなかったエントリの記録と「診断できず」件数が消える。
+// 「合計が前回より大きい partial は書いてよい」(2026-09-02 の仕様) を経由するので、
+// 大きいエントリを 1 つ測った直後に Esc するだけで恒久 failed の記録が failed=0 に化けた。
+// partial は前回の記録に**重ねて**書く。
+func TestDoctorSaveCachePartialMergesInsteadOfReplacing(t *testing.T) {
+	v := doctorTestView(t)
+	base := doctorDiskCache{ScannedAt: time.Now(), Total: 5 << 30, Entries: []doctorDiskCacheEntry{
+		{ID: "heavy", Label: "Heavy", Size: 5 << 30, Status: "ok"},
+		{ID: "broken", Label: "Broken", Size: 0, Status: "failed"}, // 恒久的に測れないエントリ
+	}}
+	base.Failed = 1
+	if err := saveDoctorDiskCache(base); err != nil {
+		t.Fatal(err)
+	}
+	// heavy にも broken にも触れないまま、大きい新エントリだけを測って中断した
+	v.saveCache(disk.Report{ScannedAt: time.Now(), Partial: true, Results: []disk.Result{
+		{Entry: disk.Entry{ID: "new", Label: "New"}, Status: disk.StatusOK, Size: 50 << 30,
+			Items: []disk.Item{{Path: "/new", Size: 50 << 30}}}}})
+	c, _ := loadDoctorDiskCache()
+	byID := map[string]doctorDiskCacheEntry{}
+	for _, e := range c.Entries {
+		byID[e.ID] = e
+	}
+	if e, ok := byID["heavy"]; !ok || e.Size != 5<<30 {
+		t.Errorf("走査が届かなかったエントリの記録が消えた: %+v", c.Entries)
+	}
+	if _, ok := byID["broken"]; !ok || c.Failed != 1 {
+		t.Errorf("「診断できず」の記録が消えた (sinking silently): failed=%d entries=%+v", c.Failed, c.Entries)
+	}
+	if c.Total != 55<<30 {
+		t.Errorf("合計が重ならない: total=%d want=%d", c.Total, int64(55)<<30)
+	}
+	// 重ねるといっても、**今回測って候補 0 件になった**エントリは消す (掃除した結果を残さない)
+	v3 := doctorTestView(t)
+	if err := saveDoctorDiskCache(base); err != nil {
+		t.Fatal(err)
+	}
+	v3.saveCache(disk.Report{ScannedAt: time.Now(), Partial: true, Results: []disk.Result{
+		{Entry: disk.Entry{ID: "heavy", Label: "Heavy"}, Status: disk.StatusOK, Items: []disk.Item{}},
+		{Entry: disk.Entry{ID: "new", Label: "New"}, Status: disk.StatusOK, Size: 50 << 30,
+			Items: []disk.Item{{Path: "/new", Size: 50 << 30}}}}})
+	c3, _ := loadDoctorDiskCache()
+	for _, e := range c3.Entries {
+		if e.ID == "heavy" {
+			t.Errorf("今回測って候補 0 件になったエントリが残った: %+v", c3.Entries)
+		}
+	}
+	if c3.Total != 50<<30 {
+		t.Errorf("候補 0 件になったエントリが合計に残った: total=%d", c3.Total)
+	}
+	// 完走した結果は洗い替えでよい (カタログを一巡しているので、消えたエントリは本当に消えた)
+	v2 := doctorTestView(t)
+	if err := saveDoctorDiskCache(base); err != nil {
+		t.Fatal(err)
+	}
+	v2.saveCache(disk.Report{ScannedAt: time.Now(), Results: []disk.Result{
+		{Entry: disk.Entry{ID: "new", Label: "New"}, Status: disk.StatusOK, Size: 50 << 30,
+			Items: []disk.Item{{Path: "/new", Size: 50 << 30}}}}})
+	if c, _ := loadDoctorDiskCache(); len(c.Entries) != 1 || c.Entries[0].ID != "new" || c.Failed != 0 {
+		t.Errorf("完走した結果に前回の記録が残った: failed=%d entries=%+v", c.Failed, c.Entries)
+	}
+}
+
+// 2026-09-02 の敵対レビュー P2 の回帰テスト。以前は saveCache の「合計が前回より小さければ書かない」
+// ガードが守っていたが、partial を前回の記録に重ねて書くようにした時点でそのガードは冗長になり、
+// 「今回実際に測り直して縮んだと分かったエントリ」まで古い値へ差し戻す副作用があったので外した
+// (issue 173 にマスクしていた failure mode を列挙してある)。**この不変条件を今守っているのは
+// マージそのもの**なので、ガードではなくマージに対する回帰テストとしてここに置く。
+func TestDoctorSaveCacheNearEmptyPartialDoesNotCollapseCache(t *testing.T) {
+	now := time.Now()
+	v := doctorTestView(t)
+	prev := doctorDiskCache{ScannedAt: now, Total: 45 << 30, Entries: []doctorDiskCacheEntry{
+		{ID: "a", Label: "A", Size: 30 << 30, Status: "ok", MeasuredAt: now},
+		{ID: "b", Label: "B", Size: 15 << 30, Status: "ok", MeasuredAt: now},
+	}}
+	if err := saveDoctorDiskCache(prev); err != nil {
+		t.Fatal(err)
+	}
+	// 開いた直後に Esc: 1 件も完了していない部分結果
+	v.saveCache(disk.Report{ScannedAt: now, Partial: true})
+	c, _ := loadDoctorDiskCache()
+	if c.Total != 45<<30 || len(c.Entries) != 2 {
+		t.Fatalf("何も測っていない partial が完全な結果を潰した: %+v", c)
+	}
+	if s := doctorStartupToast(c, true, now); !strings.Contains(s, "45.0GB") {
+		t.Errorf("トーストが沈黙した / 数字が変わった: %q", s)
+	}
+	// 鮮度はキャッシュ全体の ScannedAt ではなく**エントリごとの MeasuredAt** で見る。
+	// キャッシュは partial のたびに書き直されるので ScannedAt は常に新しくなり、それで判定すると
+	// 「一度も測り直していない古い記録」が新しく見えて無期限に延命する
+	vStale := doctorTestView(t)
+	stale := prev
+	stale.ScannedAt = now // キャッシュ自体は今書かれた
+	stale.Entries = []doctorDiskCacheEntry{
+		{ID: "a", Label: "A", Size: 30 << 30, Status: "ok", MeasuredAt: now.Add(-30 * 24 * time.Hour)}, // 実測は 30 日前
+		{ID: "b", Label: "B", Size: 15 << 30, Status: "ok", MeasuredAt: now},
+	}
+	if err := saveDoctorDiskCache(stale); err != nil {
+		t.Fatal(err)
+	}
+	vStale.saveCache(disk.Report{ScannedAt: now, Partial: true})
+	if c, _ := loadDoctorDiskCache(); c.Total != 15<<30 {
+		t.Errorf("エントリごとの MeasuredAt で鮮度を見ていない (30 日前の実測が延命した): total=%d", c.Total)
+	}
+
+	// 逆に、**今回実際に測り直して縮んだ**エントリはその場で反映する (古い値へ差し戻さない)
+	v2 := doctorTestView(t)
+	if err := saveDoctorDiskCache(prev); err != nil {
+		t.Fatal(err)
+	}
+	v2.saveCache(disk.Report{ScannedAt: now, Partial: true, Results: []disk.Result{
+		{Entry: disk.Entry{ID: "a", Label: "A"}, Status: disk.StatusOK, Size: 1 << 20, MeasuredAt: now,
+			Items: []disk.Item{{Path: "/a", Size: 1 << 20}}}}})
+	if c, _ := loadDoctorDiskCache(); c.Total != (15<<30)+(1<<20) {
+		t.Errorf("測り直して縮んだ値が古い値へ差し戻された: total=%d", c.Total)
+	}
+}
+
+// Entries は占有量の降順 (doctorTopEntries が先頭から n 件取るので、マージで順序が崩れると
+// トーストの上位が変わる)。敵対レビュー 2026-09-03: 並び替えを消しても全テストが green だった。
+func TestDoctorCacheEntriesAreSortedBySize(t *testing.T) {
+	now := time.Now()
+	prev := doctorDiskCache{ScannedAt: now, Entries: []doctorDiskCacheEntry{
+		{ID: "carried", Label: "Carried", Size: 20 << 30, Status: "ok", MeasuredAt: now},
+	}}
+	c := doctorCacheFromReport(disk.Report{ScannedAt: now, Partial: true, Results: []disk.Result{
+		{Entry: disk.Entry{ID: "small", Label: "Small"}, Status: disk.StatusOK, Size: 1 << 30, MeasuredAt: now,
+			Items: []disk.Item{{Path: "/s", Size: 1 << 30}}},
+		{Entry: disk.Entry{ID: "huge", Label: "Huge"}, Status: disk.StatusOK, Size: 40 << 30, MeasuredAt: now,
+			Items: []disk.Item{{Path: "/h", Size: 40 << 30}}},
+	}}, prev)
+	got := make([]string, 0, len(c.Entries))
+	for _, e := range c.Entries {
+		got = append(got, e.ID)
+	}
+	want := []string{"huge", "carried", "small"}
+	if !slices.Equal(got, want) {
+		t.Errorf("占有量の降順になっていない: got=%v want=%v", got, want)
+	}
+	if tops := doctorTopEntries(c, 2); !strings.HasPrefix(tops, "Huge 40.0GB / Carried 20.0GB") {
+		t.Errorf("トーストの上位が占有量順でない: %q", tops)
 	}
 }

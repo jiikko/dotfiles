@@ -213,15 +213,28 @@ func (v *doctorView) stop() {
 	}
 }
 
-// saveCache は結果をキャッシュへ。🚨 partial で**完全な結果を潰さない**: Esc や r の直後の数件だけの
-// partial で 45GB の結果を 200MB に置き換えると、起動トーストが閾値未満で無期限に沈黙する
-// (敵対レビュー 2026-09-02 P2)。partial は「完全な結果が無いとき」か「完全な結果より合計が大きいとき」だけ書く。
+// saveCache は結果をキャッシュへ。**不完全さの種類ごとに扱いを分ける** (issue 172 / 173)。
+// 時間で区切る形は採らない: 「前回の完全結果の古さ」は「今回の結果が途中経過か」と無関係で、
+// doctor をたまにしか開かない普通の運用が丸ごと無保護になる (敵対レビュー 2026-09-03 で実測:
+// 3 時間前の 45GB が、開いて即 Esc の 1MB で潰れた)。
+//
+//	partial (中断)     : 🚨 完全な結果を潰さない。Esc や r の直後の数件だけの結果で 45GB を 200MB に
+//	                     置き換えると、起動トーストが閾値未満で無期限に沈黙する (敵対レビュー
+//	                     2026-09-02 P2)。**これは doctorCacheFromReport が前回の記録に重ねて書く
+//	                     ことで構造的に防ぐ**。以前は「合計が前回より小さければ書かない」という
+//	                     ガードで守っていたが、重ねるようになった今それは冗長で、しかも
+//	                     「今回実際に測り直して縮んだと分かったエントリ」まで古い値へ差し戻す
+//	                     副作用があった (敵対レビュー 2026-09-03)。外したときにマスクしていたものは
+//	                     issue 173 に列挙してある
+//	Reused を含む完了  : 書く。ただし再利用したエントリの数字は**前回の実測値を引き継ぐ**
+//	                     (doctorCacheFromReport)。「Reused があれば書かない」にすると、重いエントリが
+//	                     複数あるときに恒久的に凍結する (issue 172)
+//	failed を含む完了  : 書く。走査は完走していて、その環境の現実がそれ。書かないと「1 エントリが
+//	                     恒久的に測れない Mac」でキャッシュが永久に凍結する。沈黙は Failed 件数を
+//	                     キャッシュに持たせ、トースト側で「N 件は診断できず」を出して防ぐ (issue 173)
 func (v *doctorView) saveCache(rep disk.Report) {
-	prev, hadPrev := loadDoctorDiskCache()
-	if rep.Partial && hadPrev && !prev.Partial && prev.Total >= rep.Total {
-		return
-	}
-	_ = saveDoctorDiskCache(doctorCacheFromReport(rep, prev.LastNotifiedAt)) // 保存失敗は表示に影響しない
+	prev, _ := loadDoctorDiskCache()
+	_ = saveDoctorDiskCache(doctorCacheFromReport(rep, prev)) // 保存失敗は表示に影響しない
 }
 
 // receiveDisk は disk のイベントを受ける。完了なら nil、途中なら次を待つ Cmd を返す。
