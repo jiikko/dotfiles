@@ -1308,6 +1308,24 @@ Homebrew = 判定は brew 側)。
   `sumDeletable` に切り出して Size 持ちの failed を直接与える形に作り替えた)
 - 未着手 (④ 以降): 削除 / TOCTOU (Lstat 取り直しと (dev, ino) 照合。item に札は持たせてある) / ゴミ箱移動 /
   インベントリ記録 / `cacheBaseDir()` の置き場 (② の CLI はキャッシュを持たない)
+
+### 🚨 ④ (削除) の不変条件: 削除対象は「今回の走査で `validateTarget` を通った Result」だけ
+
+issue 178 (2026-09-03) で確定させた信頼境界。**④ を実装する前にここを読むこと**。
+
+> **削除は必ず「再スキャン + `validateTarget`」を通した Result だけを対象にする。
+> snapshot / キャッシュ由来の Path を削除対象にしない。
+> `Reused == true` の行 (前回の計測値の再利用 / snapshot からの復元) は、削除の前に必ず再スキャンする。**
+
+理由: `doctor-snapshot.json` と `doctor-disk.json` は `$XDG_CACHE_HOME/glog` にあり、**一般ユーザー権限で
+書き換えられる**。TTL 内の snapshot は画面をそのまま再現するために丸ごと復元されるので、そこに書いた
+任意のパスが行になり、`y` のコピー経路にも乗る (issue 178 が実測)。issue 178 で入れた sanitize
+(`sanitizeSnapshotResults` / `doctorSnapshotInCatalog`) は**表示の健全性**を守るもので、
+「そのパスが今も存在し、消してよい形か」は何も保証しない — それを保証するのは走査時の
+`validateTarget` だけで、snapshot にはその判定の痕跡が残らない。
+
+**`Reused` は「走査していない」印**として使う (issue 178 で snapshot 復元経路の Result にも立てた)。
+④ の削除キーはこの印を見て、再スキャンを挟んでから実行する。
 - 敵対的レビューは通していない (③ の前に svcdoctor / diskdoctor 込みで通す)
 
 ### セルフレビュー (2026-09-02、①②に対して。敵対的レビューの代わりではない)
