@@ -24,7 +24,7 @@ func HumanSize(n int64) string {
 func riskMark(r Result) string {
 	switch r.Status {
 	case StatusBlocked:
-		return "⚠️ " + r.Reason
+		return "🚨 " + r.Reason
 	case StatusFailed:
 		return "❓ 走査できず"
 	}
@@ -32,7 +32,7 @@ func riskMark(r Result) string {
 	case RiskSafe:
 		return "✅ 安全"
 	case RiskCaution:
-		return "⚠️ 注意"
+		return "🚨 注意"
 	case RiskConfirm:
 		return "⛔ 要確認"
 	}
@@ -45,7 +45,7 @@ func Format(rep Report, now time.Time) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "ディスク診断   合計 %s 解放可能 (blocked / 走査できず は含まない)\n", HumanSize(rep.Total))
 	if rep.Partial {
-		b.WriteString("⚠️  途中で中断されました (部分結果)\n")
+		b.WriteString("🚨  途中で中断されました (部分結果)\n")
 	}
 	for _, r := range rep.Results {
 		if r.Status == StatusOK && len(r.Items) == 0 && len(r.Failures) == 0 {

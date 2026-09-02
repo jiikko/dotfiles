@@ -28,9 +28,9 @@ import (
 // スキャンは**開いた時に始める** (起動時には走査しない。起動時は前回の結果を読んでトーストを出すだけ
 // = doctor_cache.go)。終わったセクションから順に埋まる。
 //
-// ⚠️ 走査は ctx で束ね、閉じる / quit (cancelAll) で必ず cancel する。glogx は popup 運用で開閉が
+// 🚨 走査は ctx で束ね、閉じる / quit (cancelAll) で必ず cancel する。glogx は popup 運用で開閉が
 // 頻繁なので、残留するとディスク I/O を飽和させる (3 章「終了時の後始末」)。
-// ⚠️ disk.Scan の OnResult は走査 goroutine から並行に呼ばれるので、channel に載せて Cmd で 1 件ずつ
+// 🚨 disk.Scan の OnResult は走査 goroutine から並行に呼ばれるので、channel に載せて Cmd で 1 件ずつ
 // Msg にする (Update の外で状態を触らない)。
 type doctorView struct {
 	shown  bool
@@ -180,7 +180,7 @@ func (v *doctorView) stop() {
 	}
 }
 
-// saveCache は結果をキャッシュへ。⚠️ partial で**完全な結果を潰さない**: Esc や r の直後の数件だけの
+// saveCache は結果をキャッシュへ。🚨 partial で**完全な結果を潰さない**: Esc や r の直後の数件だけの
 // partial で 45GB の結果を 200MB に置き換えると、起動トーストが閾値未満で無期限に沈黙する
 // (敵対レビュー 2026-09-02 P2)。partial は「完全な結果が無いとき」か「完全な結果より合計が大きいとき」だけ書く。
 func (v *doctorView) saveCache(rep disk.Report) {
@@ -468,10 +468,12 @@ func (v *doctorView) diskDetail(o doctorRenderOpts, r disk.Result) []string {
 	return out
 }
 
+// 記号は表示幅が安定するものだけ使う。⚠️ (U+26A0 + VS16) は端末によって 1 桁と 2 桁で揺れ、行の右端が
+// フレームごとに動いて見えた (ユーザー報告 2026-09-02)。🚨 (U+1F6A8) は常に 2 桁。
 func doctorRiskMark(r disk.Result) (string, string) {
 	switch r.Status {
 	case disk.StatusBlocked:
-		return "⚠️ " + r.Reason, ansiYellow
+		return "🚨 " + r.Reason, ansiYellow
 	case disk.StatusFailed:
 		return "❓ 走査できず", ansiDim
 	case disk.StatusOK:
@@ -480,7 +482,7 @@ func doctorRiskMark(r disk.Result) (string, string) {
 	case disk.RiskSafe:
 		return "✅ 安全", ansiGreen
 	case disk.RiskCaution:
-		return "⚠️ 注意", ansiYellow
+		return "🚨 注意", ansiYellow
 	case disk.RiskConfirm:
 		return "⛔ 要確認", ansiRed
 	}
@@ -508,16 +510,16 @@ func (v *doctorView) svcSection(o doctorRenderOpts) []doctorRow {
 	rows := sectionHeader(o, "サービス", fmt.Sprintf("壊れた登録 %d 件 (%d 件を走査)", len(rep.Findings), rep.Scanned))
 	undiagnosed := rep.Interrupted || rep.StatusErr != "" || rep.BrewErr != "" || len(rep.DirErrs) > 0 || len(rep.Undiagnosed) > 0
 	if rep.Interrupted {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiYellow, " ⚠️ 途中で中断されました")})
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiYellow, " 🚨 途中で中断されました")})
 	}
 	if rep.StatusErr != "" {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiYellow, " ⚠️ 診断できず (launchctl): "+rep.StatusErr+" — 実行ファイルの不在と Homebrew 台帳だけを見ています")})
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiYellow, " 🚨 診断できず (launchctl): "+rep.StatusErr+" — 実行ファイルの不在と Homebrew 台帳だけを見ています")})
 	}
 	if rep.BrewErr != "" {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiYellow, " ⚠️ 診断できず (brew): "+rep.BrewErr)})
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiYellow, " 🚨 診断できず (brew): "+rep.BrewErr)})
 	}
 	for _, e := range rep.DirErrs {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiYellow, " ⚠️ 走査できず: "+e)})
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiYellow, " 🚨 走査できず: "+e)})
 	}
 	for _, f := range rep.Findings {
 		detail := []string{doctorColor(o.colored, ansiDim, "      手動で実行してください (このツールは実行しません):")}
@@ -551,7 +553,7 @@ func (v *doctorView) brewSection(o doctorRenderOpts) []doctorRow {
 	b := v.brew
 	switch {
 	case b.Unavailable != "":
-		return append(sectionHeader(o, "Homebrew", "診断できず"), doctorRow{text: doctorColor(o.colored, ansiYellow, " ⚠️ "+b.Unavailable)})
+		return append(sectionHeader(o, "Homebrew", "診断できず"), doctorRow{text: doctorColor(o.colored, ansiYellow, " 🚨 "+b.Unavailable)})
 	case b.Clean:
 		return append(sectionHeader(o, "Homebrew", "brew doctor: 警告なし"), doctorRow{text: doctorColor(o.colored, ansiDim, "   Your system is ready to brew.")})
 	}
