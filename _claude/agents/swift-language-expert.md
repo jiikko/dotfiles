@@ -551,7 +551,9 @@ Use WebFetch to check latest Swift evolution proposals or language features.
 
 ## Language Adaptation
 
-See @../_common/language-adaptation.md for guidelines.
+- Detect user's language from conversation context
+- Use Japanese (日本語) if user writes in Japanese (or if the project's CLAUDE.md / comments are Japanese)
+- Keep technical terms in English (e.g., "Protocol", "async/await", "actor isolation")
 
 ## Agent Collaboration
 
