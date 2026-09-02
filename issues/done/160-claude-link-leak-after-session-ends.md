@@ -102,3 +102,52 @@ link が無くても動く ([142](done/142-research-claude-hooks-link-unreferenc
 ## trigger
 
 急がない。`_claude/hooks/` か `setup.sh` を次に触るときに一緒に入れる。
+
+## 決着 (2026-09-02)
+
+**採用: SessionStart hook で「欠けているときだけ」link を張る** (案 C + 案 F の合体。案 E の git hook は不採用)。
+
+- `scripts/claude_links.sh` — 期待するリンク集合の唯一の出典。`check` (変更なし。0 = 揃っている /
+  1 = 欠けあり / 3 = 検査不能) と `apply` (欠けた分だけ `ln -sfn`。0 / 2 = 張れないものあり / 3)
+- `_claude/hooks/claude-links-sync.sh` — SessionStart で `check`。揃っていれば無言 (fork 無しの
+  builtin 判定だけ)。欠けていれば `apply` して張った内容を additionalContext で報告。常に exit 0
+- `setup.sh` は同じスクリプトを `apply` で呼ぶだけにした。**掃除 (dangling 削除) と migrate は
+  setup.sh にだけ残す**
+
+**なぜ案 E (git post-commit / post-merge) でなく hook か**: E は警告を読んで `./setup.sh` を打つ人が
+要る = 忘れる余地が残る。SessionStart なら忘れても次の起動で直る。加えて E は `pull.rebase=true`
+のこの環境では post-merge が発火せず post-rewrite も要る、`.git/hooks` は clone に付いてこない、
+worktree から commit すると是正できない、と契機の穴が多い。SessionStart は「rule がどう届いたか
+(commit / pull / cp)」を問わない。
+
+**案 D (setup.sh 丸ごと自動) の却下理由はそのまま有効**。切り出した `apply` は破壊的操作を持たない:
+- `~/.claude/<dir>` が dir symlink (旧形式) なら 1 件も張らず exit 2 (`ln -sfn` がリンク先 = repo 側へ
+  書き込み、元ファイルを自己参照 symlink で壊すため。setup.sh の migrate が前提)
+- link 先に symlink でない実ファイル / `_claude/` 以外を指す symlink (他ツールの link。a7e9b29 の
+  衝突がこれ) があれば上書きせず exit 2 で報告
+- dangling は消さない (setup.sh の責務。`test_dangling_symlinks.sh` が検出する)
+
+**「検査できなかった」を緑にしない**: `~/.claude` / `_claude` が無ければ exit 3 で、hook は
+「点検できなかった」を注入する。スクリプト不在 (配線ミス) も注入する。無言なのは「揃っている」
+だけ。
+
+**未実測**: SessionStart hook が張った rule が**その**セッションで読まれるか (rules の読み込みと
+hook の実行順)。報告文は「遅くとも次のセッションから有効」と保守的に書いた。実測は「rule を足した
+直後のセッションで、その rule の内容が context に在るか」を見れば分かる。急がない。
+
+**検証**: 実環境で hook が自分自身 (`claude-links-sync.sh`) の link を補い、2 回目は無出力になる
+ことを実行で確認。unit テスト `tests/claude/test_claude_links_sync.sh` (13 ケース。素通り側と
+過剰側の両方) + 変異検証 + 観点を分けた敵対レビュー (結果は commit message に記載)。
+
+### 敵対レビューの結果 (2026-09-02、観点を分けた read-only 2 体)
+
+- **壊す観点: P1/P2 なし**。実測で出た事実: `ln -sfn` は dest が**実ディレクトリ**だと `-n` が効かず
+  `dest/<basename>` として中へ潜り込む (BSD ln)。これを防ぐのは `apply` の「symlink でない実体なら
+  refuse」1 行だけなので、テストに実ディレクトリ (skills/sk1) のケースを足し、ガードを外す変異で
+  red を確認した。readlink の前方一致は `..` 入りで理論上すり抜けるが、書き込む値はスクリプトが
+  計算した正しい実体なので実害は「他ツールの link が正しい link に置き換わる」に留まる (記録のみ)
+- **素通り観点: P2 1 件、却下**。「skills/<name>/ に SKILL.md が無くても check は揃っている扱い」。
+  この機構は **link の有無**を保証するもので、中身の妥当性は対象外 (旧 setup.sh も同じ)。skill の
+  中身検査は別の道具の責務なので、ここでは扱わない
+- 両者が確認した「素通りではなかった」項目: timeout 10 秒に対し実測 20ms 前後 (95 件) / lib 欠落時も
+  フォールバックで黙らない / オラクル test_claude_links_complete.sh と期待集合が一致 (95 件で実測)

@@ -100,6 +100,11 @@
             "type": "command",
             "command": "~/dotfiles/_claude/hooks/retro-open.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/dotfiles/_claude/hooks/claude-links-sync.sh",
+            "timeout": 10
           }
         ]
       }

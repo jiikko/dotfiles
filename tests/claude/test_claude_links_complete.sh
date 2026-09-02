@@ -13,8 +13,9 @@
 # この checkout でない / ~/.claude/rules が無い場合は検査対象が無いので、skipped を明示して exit 0
 # する (無言で pass にしない)。リンク先の一致は -ef (実体の同一性) で見る。
 #
-# 期待するリンク集合は setup.sh のループと対応させる (agents/commands/rules/hooks = 全ファイル、
-# skills = ディレクトリ、workflows = *.js のみ)。setup.sh 側の方針を変えたらここも直す。
+# 期待するリンク集合は scripts/claude_links.sh (setup.sh と SessionStart hook が呼ぶ実装) と対応させる
+# (agents/commands/rules/hooks = 全ファイル、skills = ディレクトリ、workflows = *.js のみ)。あちらの方針を
+# 変えたらここも直す。⚠️ このテストは意図的にあのスクリプトを呼ばない (実装が自分を検査する形にしない)。
 #
 # ⚠️ hooks だけは「未リンク = 読まれない」が成り立たない。hook は _claude/settings.json の command
 # (dotfiles の実体パス) から起動されるので、link が無くても動く (issue 142 の実測)。ここで hooks を
@@ -71,7 +72,8 @@ if [ "$checked" -eq 0 ]; then
   exit 1
 fi
 if [ "$fail" -ne 0 ]; then
-  echo "→ ./setup.sh を再実行してリンクを張り直す (Claude Code は未リンクのファイルを読まない。" >&2
+  echo "→ scripts/claude_links.sh apply (または ./setup.sh) でリンクを張る。通常は次のセッション起動時に" >&2
+  echo "   _claude/hooks/claude-links-sync.sh が自動で補う (Claude Code は未リンクのファイルを読まない。" >&2
   echo "   ただし hooks は settings.json の実体パス起動なので link 無しでも動く — issue 142)" >&2
   exit 1
 fi

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # SessionStart hook 共通処理。issues/ を読んでコンテキストへ注入する hook
-# (human-tasks-due.sh / retro-open.sh) が source する。
+# (human-tasks-due.sh / retro-open.sh) が source する。issue_hook_emit だけは issue と無関係な
+# claude-links-sync.sh も使う (additionalContext の JSON 形を 1 箇所に保つため)。
 #
 # なぜ共通化するか: 「stdin の hook JSON から cwd を取る / repo root を出す / issues か issue か
 # を判定する / jq が無い環境でも黙らない」は全 issue 系 hook で同一で、コピーすると片方だけ
