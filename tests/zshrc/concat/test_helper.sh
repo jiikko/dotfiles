@@ -73,6 +73,11 @@ chmod +x "$MOCK_BIN_DIR/ffmpeg"
 cat > "$MOCK_BIN_DIR/ffprobe" <<'FFPROBE_MOCK'
 #!/usr/bin/env sh
 # concat用のffprobeモック
+#
+# ⚠️ fixture 名による分岐は `grep -q` の部分一致。新しい fixture 名を足すときは、既存パターンの
+# substring / superstring になっていないか確認する。実例: 音声 time_base 用に `atbase_002` を
+# 足したところ既存の映像 `tbase_002` に部分一致し、映像側の不一致が先に発火して音声のテストが
+# 落ちた (現在の名前 `audtb_002` はそれを避けた形)。
 
 # 引数から入力ファイルを特定
 input_file=""
