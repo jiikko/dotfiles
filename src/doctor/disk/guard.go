@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -56,13 +57,52 @@ func simDeviceUDIDs(ctx context.Context, run runner.Runner, env Env) (map[string
 	if err := simDeviceUDIDsInto(ctx, run, nil, set); err != nil {
 		return nil, err
 	}
-	previews := filepath.Join(env.Home, "Library", "Developer", "Xcode", "UserData", "Previews", "Simulator Devices")
-	if fi, err := os.Stat(previews); err == nil && fi.IsDir() {
-		if err := simDeviceUDIDsInto(ctx, run, []string{"--set", previews}, set); err != nil {
-			return nil, fmt.Errorf("previews のデバイスセット (Xcode Previews): %w", err)
+	dirs, err := simDeviceSetDirs(env)
+	if err != nil {
+		return nil, err
+	}
+	for _, dir := range dirs {
+		if err := simDeviceUDIDsInto(ctx, run, []string{"--set", dir}, set); err != nil {
+			return nil, fmt.Errorf("デバイスセット %s: %w", dir, err)
 		}
 	}
 	return set, nil
+}
+
+// simDeviceSetDirs は既定セット以外の実在するデバイスセット。**列挙で持つ**: セットは増える
+// (実測 2026-09-03: Xcode Previews に加え ~/Library/Developer/XCTestDevices と XCPGDevices が実在し、
+// どちらも simctl --set が rc=0 で応答する)。名前を直書きすると新しいセットが増えるたびに、
+// そこのデバイスの作業領域が孤児と判定される (issue 168)。
+//
+// 拾い方は ~/Library/Developer 直下の `*Devices` ディレクトリ + Xcode Previews の固定パス。
+// 前者は「並列テストの clone (XCTestDevices)」「Playground (XCPGDevices)」を名前を知らずに拾える。
+// ~/Library/Developer が読めない場合は error (fail-closed)。無視して空を返すと「セットが無い」と
+// 同じ結果になり、そこに生きたデバイスがあっても孤児と判定してしまう — この関数が防いでいる
+// 失敗モードそのものを、診断の痕跡を出さずに再現する (敵対レビュー 2026-09-03 で実測:
+// chmod 000 で dirs が黙って空になった)。ディレクトリが無い場合だけは正常 (Xcode 未使用)。
+func simDeviceSetDirs(env Env) ([]string, error) {
+	var dirs []string
+	dev := filepath.Join(env.Home, "Library", "Developer")
+	entries, err := os.ReadDir(dev)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("デバイスセットの置き場を読めない (%s): %w", dev, err)
+	}
+	for _, e := range entries {
+		// symlink も辿る (DirEntry.IsDir は symlink に false を返す)
+		p := filepath.Join(dev, e.Name())
+		if !strings.HasSuffix(e.Name(), "Devices") {
+			continue
+		}
+		if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+			dirs = append(dirs, p)
+		}
+	}
+	previews := filepath.Join(dev, "Xcode", "UserData", "Previews", "Simulator Devices")
+	if fi, err := os.Stat(previews); err == nil && fi.IsDir() {
+		dirs = append(dirs, previews)
+	}
+	sort.Strings(dirs) // 呼ぶ順を決定論にする (テストが argv を固定できる)
+	return dirs, nil
 }
 
 func simDeviceUDIDsInto(ctx context.Context, run runner.Runner, setArgs []string, set map[string]bool) error {

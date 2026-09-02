@@ -695,3 +695,117 @@ func TestBrewCleanupRelativeLineFailsClosed(t *testing.T) {
 		t.Errorf("絶対パスの行が brew --prefix の失敗に巻き込まれた: %+v", r)
 	}
 }
+
+// issue 168: デバイスセットは既定 + Previews の 2 つではない。~/Library/Developer/*Devices に
+// XCTestDevices (並列テストの clone) / XCPGDevices (Playground) が実在する (2026-09-03 実機で確認)。
+// 名前を直書きせず列挙するので、将来セットが増えても孤児判定に落ちない。
+func TestSimDeviceEnumeratesAllDeviceSets(t *testing.T) {
+	env := testEnv(t)
+	vt := filepath.Join(env.Home, "private", "var", "tmp")
+	const cloneUDID = "33333333-3333-3333-3333-333333333333"
+	clone := "com.apple.CoreSimulator.SimDevice." + cloneUDID
+	mkfile(t, filepath.Join(vt, clone, "f"), 8)
+	e := Entry{ID: "coresimulator-orphan", Paths: []string{filepath.Join(vt, "com.apple.CoreSimulator.SimDevice.*")}, Guard: GuardSimDevice}
+
+	dev := filepath.Join(env.Home, "Library", "Developer")
+	xctest := filepath.Join(dev, "XCTestDevices")
+	xcpg := filepath.Join(dev, "XCPGDevices")
+	previews := filepath.Join(dev, "Xcode", "UserData", "Previews", "Simulator Devices")
+	for _, d := range []string{xctest, xcpg, previews} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 紛らわしいもの: Devices で終わらない dir と、Devices で終わるファイルは --set に渡さない
+	if err := os.MkdirAll(filepath.Join(dev, "DVTDownloads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mkfile(t, filepath.Join(dev, "NotADevices"), 1)
+
+	// clone は XCTestDevices セットにだけ居る (既定にも Previews にも居ない)
+	f := &fakeRunner{resp: map[string]fakeResp{
+		"xcrun simctl list":              {out: `{"devices":{}}`},
+		"xcrun simctl --set " + xctest:   {out: `{"devices":{"rt":[{"udid":"` + cloneUDID + `"}]}}`},
+		"xcrun simctl --set " + xcpg:     {out: `{"devices":{}}`},
+		"xcrun simctl --set " + previews: {out: `{"devices":{}}`},
+	}}
+	r := scanOne(t, env, f, e, okBoot)
+	if r.Status != StatusOK || len(r.Items) != 0 {
+		t.Fatalf("XCTestDevices セットのデバイス (並列テストの clone) を孤児にした: %+v", r)
+	}
+
+	// 3 セットすべてに argv が渡っていること / 紛らわしいものには渡っていないこと
+	f.mu.Lock()
+	calls := append([][]string(nil), f.calls...)
+	f.mu.Unlock()
+	for _, dir := range []string{xctest, xcpg, previews} {
+		want := []string{"xcrun", "simctl", "--set", dir, "list", "devices", "-j"}
+		if !slices.ContainsFunc(calls, func(c []string) bool { return slices.Equal(c, want) }) {
+			t.Errorf("セット %s に問い合わせていない:\n want %v\n got  %v", filepath.Base(dir), want, calls)
+		}
+	}
+	for _, c := range calls {
+		for _, a := range c {
+			if strings.HasSuffix(a, "DVTDownloads") || strings.HasSuffix(a, "NotADevices") {
+				t.Errorf("デバイスセットでないものに問い合わせた: %v", c)
+			}
+		}
+	}
+
+	// どのセットの取得失敗も fail-closed (孤児判定をしない)。
+	// ⚠️ このループの手前で dev が読める状態であることを確かめる。読めないと全イテレーションが
+	// 「別の理由で fail-closed」になり、per-set の fail-closed を丸ごと消しても green のまま残る
+	// (敵対レビュー 2026-09-03 が、chmod の復元行を消すだけでそうなることを実測した)
+	if _, err := os.ReadDir(dev); err != nil {
+		t.Fatalf("この時点で %s は読める必要がある (以降の assert が空振りする): %v", dev, err)
+	}
+	for _, bad := range []string{xctest, xcpg, previews} {
+		resp := map[string]fakeResp{
+			"xcrun simctl list":              {out: `{"devices":{}}`},
+			"xcrun simctl --set " + xctest:   {out: `{"devices":{}}`},
+			"xcrun simctl --set " + xcpg:     {out: `{"devices":{}}`},
+			"xcrun simctl --set " + previews: {out: `{"devices":{}}`},
+		}
+		resp["xcrun simctl --set "+bad] = fakeResp{rc: 1}
+		if r := scanOne(t, env, &fakeRunner{resp: resp}, e, okBoot); r.Status != StatusFailed {
+			t.Errorf("%s の取得失敗を fail-closed にしていない: %+v", filepath.Base(bad), r)
+		}
+	}
+}
+
+// ~/Library/Developer 自体が読めないときも fail-closed (孤児判定をしない)。無視して空を返すと
+// 「セットが無い」と同じ結果になり、生きたデバイスの作業領域を孤児にする — この関数が防いでいる
+// 失敗モードそのものを、診断の痕跡を出さずに再現する (敵対レビュー 2026-09-03)。
+// 独立したテストにする: 同じ関数の中で chmod すると、復元行を消しただけで後続の assert が
+// 「別の理由で fail-closed」になって恒常的に green になる (同レビューの 2 周目で実測)。
+func TestSimDeviceSetDirUnreadableFailsClosed(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root は permission を無視するのでこの検査は成立しない")
+	}
+	env := testEnv(t)
+	vt := filepath.Join(env.Home, "private", "var", "tmp")
+	mkfile(t, filepath.Join(vt, "com.apple.CoreSimulator.SimDevice.44444444-4444-4444-4444-444444444444", "f"), 8)
+	dev := filepath.Join(env.Home, "Library", "Developer")
+	if err := os.MkdirAll(filepath.Join(dev, "XCTestDevices"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e := Entry{ID: "coresimulator-orphan", Paths: []string{filepath.Join(vt, "com.apple.CoreSimulator.SimDevice.*")}, Guard: GuardSimDevice}
+	f := func() *fakeRunner {
+		return &fakeRunner{resp: map[string]fakeResp{
+			"xcrun simctl list":  {out: `{"devices":{}}`},
+			"xcrun simctl --set": {out: `{"devices":{}}`},
+		}}
+	}
+	// 前提: 読める状態なら候補に出る (この test が「読めない」以外の理由で failed になっていない証拠)
+	if r := scanOne(t, env, f(), e, okBoot); r.Status != StatusOK || len(r.Items) != 1 {
+		t.Fatalf("前提が崩れている (読める状態で候補に出ない): %+v", r)
+	}
+	if err := os.Chmod(dev, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dev, 0o755) })
+	r := scanOne(t, env, f(), e, okBoot)
+	if r.Status != StatusFailed {
+		t.Errorf("~/Library/Developer が読めないのを候補 0 件に畳んだ: status=%s items=%d", r.Status, len(r.Items))
+	}
+}
