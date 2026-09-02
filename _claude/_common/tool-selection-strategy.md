@@ -1,6 +1,13 @@
 # Tool Selection Strategy
 
-This is a shared template for all agents. Reference this file for common tool usage patterns.
+This is a shared template for all agents.
+
+> ⚠️ **agent 定義から `@` 参照しても展開されない** (実測 2026-09-02: `architecture-reviewer` に
+> 自分の instructions を引用させたところ、`See @../_common/language-adaptation.md for guidelines.`
+> の 1 行がリテラルのまま届いており、この文書の中身は一切効いていなかった)。
+> **この文書は人が読む正本であって、agent への配布経路ではない**。agent 定義には中身を
+> インラインで書く (repo 内の他 agent はすべてその形)。
+
 
 ## Core Tools
 
@@ -37,7 +44,7 @@ Each agent may add domain-specific tool usage. Document these in your agent defi
 ```markdown
 ## Tool Selection Strategy
 
-See @_common/tool-selection-strategy.md for base guidelines.
+[この文書の Core Tools 表をインラインで書く]
 
 ### Agent-Specific Tools
 - **[Tool]**: [When to use for this agent's domain]

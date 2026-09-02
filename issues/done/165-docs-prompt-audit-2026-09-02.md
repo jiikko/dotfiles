@@ -6,8 +6,8 @@
 「レポート + 提案 diff を出して止まる」なので、**この issue に書いた変更はどれもまだ当てていない**。
 hunk 単位で採否を決めてから当てる。
 
-⚠️ **2026-09-02 に diff 1 / 2 / 3 (H1 / H2 / H3) は適用済み**。最新の状態は末尾の「適用ログ」を見る
-(下の「提案 diff」節は起票時のままなので、適用済み hunk の `-` 行はもう原文と一致しない)。
+✅ **2026-09-02 に High / Medium は全件決着済み**。最新の状態は末尾の「適用ログ」を見る
+(下の「提案 diff」節は起票時のままなので、`-` 行はもう原文と一致しない)。Low は flag のみで着手対象外。
 
 ## 前提 (監査が置いた仮定)
 
@@ -297,10 +297,55 @@ P1 (事実誤認 / hunk が当たらない) は 0 件。`-` 行は全 hunk が�
 | diff 1 (H1) | `3b272e9` | codex-review SKILL.md の `--full-auto` 注記を 0.152.1 の現状へ (削除済みフラグ)。実測: `codex --version` = 0.152.1 / `codex exec --help` に該当 0 件 |
 | diff 2 (H2) | `3b272e9` | modes.md の Maximum ロスターに refactoring-patterns の条件を明記 |
 | diff 3 (H3) | `788122b` | agents.md の per-agent プロンプト本文を削除 (281 → 233 行)。見出し・条件行は残し、役割 1 行に圧縮。冒頭 ⚠️ も 1 文へ |
+| diff 4-5 (H4/H5) | `f1bf7e4` | fable SKILL.md: commit/push は memory を正本として委譲 (内容の再掲をやめる)。仕様節を Fable 5.1 (`claude-fable-5-1` / cutoff 2026-06) へ更新し、実行モデルが Fable のときは仕様節を読み飛ばす旨を明記。⚠️ memory `no-autonomous-commit-push` の実体は確認できなかった (dotfiles の memory ディレクトリは空) — 委譲する形にしたので内容の真偽に依存しない |
+| diff 6-8 (H6/H7/H8) | `f743df7` | agents の英語テンプレ定型を削除: research-assistant の "am I being lazy?" + "Remember: ..." / 5 agent の "Surface-level X is insufficient" を `## Focus areas` へ / smoke-test-runner の同文反復 1 件 |
 
-### 未適用 (残り)
+| diff 9-11 (M1/M2) | `dfc2ff2` | CLAUDE.md / subagent-model-tiering.md のモデル名ピンを外す (規範は維持)。レビュー方針の主語を codex → 外部レビューへ一般化し、memory `no-codex-usage` との相殺を解消 |
+| M3 + M13 | `cc7d510` | rules 本文の事故ナラティブ 7 箇所を圧縮・rationale へ移送。rationale 2 本を新設 (refuse-low-value-coverage / avoid-wall-clock-assertions) |
+| M4 + M5 | `ed4e927` | codex-drive の実測記述は現状維持 + 冒頭に理由を明記。cross-review.md / phase-4.3-ultra.md に「出力例は説明用、wire format は forge.js の `*_SCHEMA`」の断りを追加 |
 
-- **High**: H4 / H5 (fable SKILL.md)、H6 / H7 / H8 (agents の英語テンプレ)
-- **Medium**: M1 (diff 9, 10)、M2 (diff 11)、M3 + M13 (rules 本文の実例を rationale へ / 欠落 7 本の新設)、
-  M4・M5・M7・M8・M9・M10 (diff 14)・M11・M12 (diff 15)
+| M7 | `1ad3f18` | debugger の "The symptom is never the cause" 系 4 節を Core Principles に統合。Anti-Patterns を理由つき 3 項目へ、Quality Gates は固有分だけに |
+| M8 | `2f323d5` | research-assistant の "Search 1..5" 固定クエリ 4 ブロックを、出典の優先順位・観点・打ち切り条件の散文へ。Never/Always 5 連を理由つき 3 項目へ |
+| M9 / L2 | `3f1f9bc` | **提案とは逆向きの対応**。`@` 参照が展開されないことを実測したので統合は不可。壊れていた参照 3 箇所をインライン化し、`_common/` 側の Usage も直した (下記) |
+| M10 / M11 | `c7610b5` | 年の固定 (2025 / 2024) を外す。3 agent の "Be Proactive / Be Specific" を削り、契約を含む項目だけ理由つきで残す |
+
+### L2 の未確認事項を実測して確定させた (2026-09-02)
+
+**`@../_common/...` は展開されない。** `architecture-reviewer` サブエージェントに自分の instructions を
+引用させたところ、`See @../_common/language-adaptation.md for guidelines.` の**1 行がリテラルのまま**
+届いていた (中身は展開されていない)。したがって:
+
+- **M9 の「共通スキャフォールドを `_common/` へ 1 部にまとめる」は成立しない** (移した先が読まれない)。却下
+- L2 の 2 択のうち「**参照している 2 本の方が壊れている**」が正しい。`architecture-reviewer` の
+  Language Adaptation / Tool Selection Strategy と `swift-language-expert` の Language Adaptation は、
+  **中身が一切効いていなかった**。3 箇所ともインライン化した (repo 内の他 agent は元からインライン形式)
+- 誤りの発生源は `_common/*.md` 自身の「Usage: agent 定義から `@` 参照しろ」という指示なので、
+  両ファイルに実測つきの警告を足し、Usage をインライン方式へ直した
+
+### 適用時に issue の提案から変えた判断 (次の監査が同じ指摘を出さないため)
+
+- **M13 の「rationale 7 本新設」は 2 本に留めた**。残る 5 本 (claude-md-layer-prompt /
+  claude-md-maintenance / no-concurrent-spm-build-during-xcodebuild / no-ios-simulator-verification /
+  pending-issue-rationale-in-code) は**本文に移すべき実例が無く、rationale への dangling 参照も無い**
+  (実測: 全 rules で `rules-rationale/<同名>` を参照しつつファイルが無いものは 0 件)。
+  空の rationale を置くのは `claude-md-maintenance.md` の「とりあえず置く」禁止と同型なので作らない
+- **M4 は move ではなく「意図的な現状維持を明記」を採った**。実測値は「どのフェーズを削れるか」の
+  判断根拠で、落とすと無根拠な削減主張だけが残る (`perf-claims-need-measurement.md` との緊張は
+  issue が指摘していたとおりで、残す側に倒した)
+- **M5 の `examples-*.md` は対象外**。wire format の記述ではなく使い方の会話例で、`*_SCHEMA` と競合しない
+- **M3 の `parallel-write-agents-need-worktree-isolation.md`** は実例段落ではなく「規範 + なぜ」の形
+  だったので、移送せず冗長な尾部だけ圧縮した
+- **diff 5 の URL 差し替え (`/news/...` → `/claude/fable`) は当てていない**。既存 URL は同ファイル内で
+  release blog として別途参照されており、差し替えの裏が取れていない
+- **H4 の前提は確認できていない**: memory `no-autonomous-commit-push` の実体は見つからなかった
+  (dotfiles の memory ディレクトリは空)。diff 4 は「memory が正本」と委譲する形にしたので、
+  memory の現在の内容に依存しない
+
+| M12 | `a5950ff` | fork-scratch の到達不能な 25 行を削除。失うと復活できない本体は `docs/claude-fork-popup.md` の復活手順へ移送し、実態と合わなくなったガードの説明も直した |
+
+### 残り
+
+**High / Medium は全件決着** (M9 は実測により却下、M4 は現状維持を明記して決着)。
+Low (L1 / L3 / L4 / L5 / L6) は起票時から「flag のみ・diff は出さない」扱いで、着手対象ではない。
+ただし L2 は M9 の過程で実測して確定させた (上記)。
 - 適用後の注意は「適用するときの注意」節のとおり (H1 適用後の `grep -rn full-auto _claude/skills` の目視は未実施)

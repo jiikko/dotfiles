@@ -313,7 +313,7 @@ extension Task {
 
 ### 5. Data Migration
 
-**SwiftData Migration** (Limited support as of 2025):
+**SwiftData Migration** (check the current release notes — support has been expanding release by release):
 ```swift
 // Currently, SwiftData migration is automatic but limited
 // For complex migrations, consider Core Data or manual migration

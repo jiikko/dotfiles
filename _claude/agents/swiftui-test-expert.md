@@ -351,7 +351,7 @@ Use WebSearch to find solutions for test issues:
    - Swift Testing framework (new in Swift 6)
 
 2. **What to search for**:
-   - "XCUITest flaky test fix 2024"
+   - "XCUITest flaky test fix [current year]"
    - "Swift Testing vs XCTest"
    - "ViewInspector SwiftUI [component]"
    - "XCTest async await best practice"

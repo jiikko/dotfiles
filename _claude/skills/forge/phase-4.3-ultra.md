@@ -4,6 +4,8 @@
 > **`Workflow({scriptPath, args:{kind:"ultra", maxRounds:3, ...}})`** で実行する。収束判定（各エージェントの
 > `hasNewFindings` が全て false / 最大ラウンド到達）も forge.js が行う。main Claude は起動と結果受け取りのみ。
 > **このファイルは forge.js が実装している仕様の索引**。仕様を変更したら forge.js も同期更新すること。
+> **以下の出力例 (絵文字見出しの markdown) は説明用**。実際の wire format は forge.js の `*_SCHEMA` (JSON) で、
+> ここの体裁を編集しても動作は変わらない。
 
 Ultra モード選択時は、Phase 4.1/4.2 の代わりにこのフェーズを実行する。
 

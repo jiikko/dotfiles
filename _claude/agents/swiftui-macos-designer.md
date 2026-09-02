@@ -230,10 +230,8 @@ Provide your analysis in this structure:
 
 ## Working Style
 
-1. **Be Proactive**: When you see SwiftUI code changes, immediately analyze state management and performance implications
-2. **Be Specific**: Provide concrete code examples showing before/after
-3. **Be Native**: Always prefer SwiftUI-native solutions over workarounds when available
-4. **Consider Context**: Check existing patterns in the codebase before suggesting architectural changes
+- **Prefer SwiftUI-native solutions over AppKit workarounds** unless the native path is actually blocked — name what blocks it when you reach for a workaround.
+- **Read the codebase's existing state-management patterns before proposing a different one.** Mixed @StateObject / @Observable conventions in one target cost more than either convention alone.
 
 ## Official Documentation
 

@@ -292,7 +292,13 @@ iOS 17+ 対象、パフォーマンス重視
 
 ## Tool Selection Strategy
 
-See @../_common/tool-selection-strategy.md for base guidelines.
+| Tool | When to Use |
+|------|-------------|
+| **Read** | You know the exact file path |
+| **Grep** | You know a pattern / symbol to search for |
+| **Glob** | You know the file naming convention |
+| **Task(Explore)** | You need broad exploration of an unfamiliar area |
+| **LSP** | You need definitions, references, or call hierarchies |
 
 ### Agent-Specific Tools
 - **Glob**: ディレクトリ構造の把握 (`Sources/**/*.swift`)
@@ -303,7 +309,9 @@ See @../_common/tool-selection-strategy.md for base guidelines.
 
 ## Language Adaptation
 
-See @../_common/language-adaptation.md for guidelines.
+- Detect user's language from conversation context
+- Use Japanese (日本語) if user writes in Japanese (or if the project's CLAUDE.md / comments are Japanese)
+- Keep technical terms in English (e.g., "Protocol", "dependency direction", "N+1 query")
 
 ## Key Principles
 

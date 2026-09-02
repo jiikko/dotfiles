@@ -59,7 +59,29 @@ scratch popup（C-t t）と fork popup（C-t b）を両方開くと popup の上
 
 ## 復活手順
 
-1. `_claude/commands/fork-scratch.md` 冒頭の早期 exit ガード（`echo ...; exit 0`）を削除
+1. `_claude/commands/fork-scratch.md` にフォーク作成の手順を書き戻す。休眠時に削った本体は次のとおり
+   （2026-09-02 に command 側から本文へ移した。当時のガード行 `echo ...; exit 0` は不要）:
+
+   ```bash
+   if [ -z "$CLAUDE_CODE_SESSION_ID" ]; then
+     echo "CLAUDE_CODE_SESSION_ID 未設定: fork 不可 (Claude Code の Bash tool 内で実行すること)"
+   else
+     tmux kill-session -t claude-fork 2>/dev/null
+     tmux new-session -d -s claude-fork -c "$PWD" "claude --resume \"$CLAUDE_CODE_SESSION_ID\" --fork-session"
+     tmux has-session -t claude-fork 2>/dev/null && echo "fork OK: claude-fork (元 session=$CLAUDE_CODE_SESSION_ID)" || echo "fork FAILED"
+   fi
+   ```
+
+   注意点:
+   - `$CLAUDE_CODE_SESSION_ID` は Bash tool の env にある現在のセッション ID。シェルが展開してから
+     tmux に渡る（tmux 側では展開されない）。内側コマンド文字列内でもダブルクォートで囲み、
+     tmux が `/bin/sh -c` で再評価する際の word splitting を防ぐ
+   - 固定名・上書き運用（常に最新フォーク 1 つだけを live で持つ）。再 fork 時、前のフォークで
+     実行中だった作業は失われる。確定済みの会話はディスクに残るので `claude --resume` の
+     対話ピッカーから選び直せる（フォークの新 ID は出力に出ない）
+   - detached (`-d`) なので非ブロッキング。display-popup と違い会話を止めない
+   - 初回 popup で claude の起動確認プロンプトが出ることがある（claude の標準挙動。Enter で進む）
+   - `fork FAILED` の場合は `tmux list-sessions` と `claude --version` を確認する
 2. `_tmux.conf` の `bind b` のコメントアウトを外す。その際、scratch（bind t）と同様に
    開閉判定を `scripts/tmux_fork_popup.sh` 側へ集約する型に揃えること
    （scratch は 2026-07-04 にスクリプト集約型へリファクタ済み。bind は 1 行にする）
