@@ -1,4 +1,4 @@
-# 186 test: `make test` の所要時間を測り、docs 変更で回せる分割 target を用意する
+# 188 test: `make test` の所要時間を測り、docs 変更で回せる分割 target を用意する
 
 起票日: 2026-09-02
 出典: [issue 185](185-retro-prompt-audit-apply-2026-09-02.md) 項目 4 (retro からの切り出し)

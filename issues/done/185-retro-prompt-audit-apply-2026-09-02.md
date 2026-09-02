@@ -72,7 +72,7 @@ rationale 2 本の追加だけなので影響は薄いと見ているが、**全
       展開されない参照先へ移すのは削除と同じで、ファイルは在るので気づけない」を追加。
       別ルールにはしなかった: 発動点が「共通化しようとした瞬間」で、あちらの
       「refactor を提案する前に確認する」チェックリストと同じ位置にある
-- [x] 項目 4 → **issue 化した**: [issue 186](186-test-make-test-duration-and-split.md)
+- [x] 項目 4 → **issue 化した**: [issue 188](../188-test-make-test-duration-and-split.md)
       (`make test` の所要時間を測り、分割 target を用意するか判断する)
 - [x] 未 push の commit → 2026-09-02 に push 済み
 
