@@ -10,6 +10,29 @@
 - lint は shebang で方言判別する: zsh shebang → `zsh -n`、それ以外 → `shellcheck -S warning`。shebang を忘れると zsh 構文のまま shellcheck に回って落ちる
 - 単体実行は `make test-dir DIR=tests/<dir>`、変更に紐づく分だけは `make test-changed PATHS="..."` (写像は `scripts/test_changed.sh --help`)
 
+## 所要時間 (実測 2026-09-03 / 開発機・Go キャッシュ有効)
+
+**`make test` は約 7 分** (414 秒)。コミット前の既定はこれを通すこと。2 分程度で打ち切ると
+**一度も完走しない** (下の内訳のとおり `tests/zshrc` だけで 3 分を超える)。
+
+| 内訳 | 秒 | 支配的なもの |
+|---|---|---|
+| `test-lint` | 20 | shellcheck + 発見式の check_*.sh |
+| `test-syntax` | 1 | |
+| `test-discovered` | 326 | `tests/zshrc` 187 / `tests/tmux` 56 / `tests/bin` 45 / 他 10 ディレクトリで 33 |
+| `test-bats` | 14 | |
+| `test-src` | 53 | Go 6 プロジェクトの lint + `go test -race` |
+
+`tests/zshrc` の中は **`av1ify` 124 秒 + `concat` 56 秒 = 96%**。どちらも実 ffmpeg を回す
+動画系で、待ちの実体はエンコードなので**分割しても総量は減らない**。
+
+- **判断基準**: 触ったパスを `make test-changed PATHS="<触ったファイル>"` に渡す。これで足りるのは
+  「そのパスの写像先だけで壊れうる変更」のとき。**時間が無くて全体を省いたら、その事実を報告に書く**
+  (「docs だけだから省いた」を前例として積まない。issue 185 項目 4 / issue 188)
+- ⚠️ `test-changed` は写像先しか回さない。`test-lint` の発見式ゲート (`check_*.sh`) は
+  shell / workflow / json 等を触ったときだけ入るので、**Makefile や CI の構造を変えたら
+  `make test-lint` を明示的に回す**
+
 ## 「0 件」「skip」「沈黙」の扱い
 
 - 発見 0 件は失敗 (`run_tests` が落とす。issue 063)。find の失敗やディレクトリ改名を「未実行なのに緑」にしない
