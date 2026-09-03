@@ -133,7 +133,7 @@ func (v *doctorView) toggle() tea.Cmd {
 	return v.open()
 }
 
-// open は開いて走査を始める。⚠️ 直近 doctorSnapshotTTL 以内の完全な結果があれば走査せずそれを出す
+// open は開いて走査を始める。🚨 直近 doctorSnapshotTTL 以内の完全な結果があれば走査せずそれを出す
 // (popup の開閉のたびにスキャンが走って見えるのを避ける)。r (rescan) は snapshot を無視する。
 func (v *doctorView) open() tea.Cmd { return v.start(false) }
 
@@ -155,7 +155,7 @@ func (v *doctorView) catalogHas() func(string) bool {
 func (v *doctorView) rescan() tea.Cmd { return v.start(true) }
 
 func (v *doctorView) start(force bool) tea.Cmd {
-	// ⚠️ **前世代を止めてから世代を進める** (issue 211 の敵対的レビュー P1)。rescan (r) は
+	// 🚨 **前世代を止めてから世代を進める** (issue 211 の敵対的レビュー P1)。rescan (r) は
 	// start(true) を直接呼ぶので、ここで止めないと前世代の disk goroutine を誰も cancel できず、
 	// latch に載ったまま完走する = waitDoctorCleanup の上限が「cancel + WaitDelay 2 秒」ではなく
 	// PerEntry 60 秒 × 並列度 (約 6 分) になる。latch を入れる前は即終了だったので、
@@ -166,7 +166,7 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	v.cur.reset()
 	v.expanded = map[string]bool{}
 	v.selected, v.selectedItems, v.inspected = map[string]bool{}, map[string]bool{}, map[string]bool{}
-	// ⚠️ 世代をまたいで残る状態をここで**まとめて**捨てる。1 つでも残すと前の世代の行・文言・
+	// 🚨 世代をまたいで残る状態をここで**まとめて**捨てる。1 つでも残すと前の世代の行・文言・
 	// Cmd が次の画面に混ざる (pendingToast は実際に漏れて、次の再スキャンの理由として
 	// 再表示されていた。敵対レビュー 2026-09-03)
 	v.rows, v.enterDetail, v.pendingCopy, v.pendingToast, v.pendingDeleteCmd = nil, "", "", "", nil
@@ -231,7 +231,7 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	if bRun == nil {
 		bRun = runner.Exec
 	}
-	// ⚠️ svc / brew は tea.Cmd の goroutine で走る。bubbletea は Run を抜けるときに
+	// 🚨 svc / brew は tea.Cmd の goroutine で走る。bubbletea は Run を抜けるときに
 	// Cmd の goroutine を待たないので、latch で看取る側を作っておく (issue 211)
 	return tea.Batch(
 		v.waitDiskCmd(gen),
@@ -278,7 +278,7 @@ func (v *doctorView) close() {
 func (v *doctorView) stop() {
 	// 削除の途中で外から終了させられたら、**ctx で中断を伝える** (プロセスを殺すだけだと
 	// 記録が executing のまま残り、cli: の子プロセスが孤児になる)。
-	// ⚠️ cancel だけでは**子プロセスの死を待たない** (issue 211)。cancelAll → waitDoctorCleanup の
+	// 🚨 cancel だけでは**子プロセスの死を待たない** (issue 211)。cancelAll → waitDoctorCleanup の
 	//    順で看取ること。削除も doctorCleanup latch に載っている (doctor_delete.go)
 	if v.del.cancel != nil {
 		v.del.cancel()
@@ -389,11 +389,11 @@ func (v *doctorView) jumpIntoDetail() {
 
 // takeCursorFellBack は「描画中に選択行が消えて寄せた」印を 1 回だけ取り出し、文言を返す。
 //
-// ⚠️ **キーを飲まずに知らせる**ための seam。以前は handleKey の先頭で `doctorToast` を
+// 🚨 **キーを飲まずに知らせる**ための seam。以前は handleKey の先頭で `doctorToast` を
 // 返していたが、それだと**その打鍵が空振りする** (q / esc / d / r / Enter が等しく 1 回死ぬ)。
 // 呼ぶのは browseModel 側 (tui.go) で、handleKey を呼ぶ**前**にトーストを出す。
 //
-// ⚠️ 文言は**返り値で渡す**。pendingToast に書くと、それを消すのは takeToast() だけなので、
+// 🚨 文言は**返り値で渡す**。pendingToast に書くと、それを消すのは takeToast() だけなので、
 // 次の再スキャンの理由として使い回される (敵対レビュー 2026-09-03 が実測)。
 func (v *doctorView) takeCursorFellBack() string {
 	if !v.cur.takeFellBack() {
@@ -573,7 +573,7 @@ func (v *doctorView) headerLine(o doctorRenderOpts) string {
 	case !v.snapshotAt.IsZero():
 		left += fmt.Sprintf("  %d 分前の結果 (r で再スキャン)", int(o.now.Sub(v.snapshotAt).Minutes()))
 	}
-	// ⚠️ キーの凡例をここに置かない。**hint() が唯一の出典**にする (下段は常に描かれる)。
+	// 🚨 キーの凡例をここに置かない。**hint() が唯一の出典**にする (下段は常に描かれる)。
 	// 以前は右端にも凡例を置いていたが、語も内容も hint と食い違っていた
 	// (「詳細」vs「開閉」/ q が無い / Space と d が無い) うえ、hint が issue 201 で
 	// fitHintItems に寄った後もこちらは幅が足りないと凡例ごと消す旧方式のままだった。
@@ -648,7 +648,7 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 	sort.SliceStable(sorted, func(a, b int) bool { return sorted[a].Size > sorted[b].Size })
 	shown := 0
 	for _, r := range sorted {
-		// 候補 0 件の行は畳む。⚠️ ただし **検出条件そのものが未実測のエントリは畳まない**
+		// 候補 0 件の行は畳む。🚨 ただし **検出条件そのものが未実測のエントリは畳まない**
 		// (issue 169 / 207)。畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と
 		// **同じ見え方**になり、探せていないことが画面から永久に消える (false green)。
 		// CLI 側 (src/doctor/disk/report.go) と同じ規律。実測で名前が確定して
@@ -706,7 +706,7 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 			advice += fmt.Sprintf("。最終更新 %s (%d日前)", newest.Format("2006-01-02"), int(o.now.Sub(newest).Hours()/24))
 		}
 		if r.Reused {
-			// ⚠️ 再利用の注記は**行頭**に置く。末尾に足すと狭い幅で真っ先に切れ、
+			// 🚨 再利用の注記は**行頭**に置く。末尾に足すと狭い幅で真っ先に切れ、
 			// 「その数字は今測ったものではない」が分からなくなる (issue 172 が
 			// 「注記で分かる形にしてある」と書いた前提が幅で崩れる。issue 182)
 			advice = fmt.Sprintf("%d 分前の計測を再利用 (r で再計測)。%s", int(o.now.Sub(r.MeasuredAt).Minutes()), advice)
@@ -715,7 +715,7 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 		for _, f := range r.Failures {
 			// 「診断できず」は最も追加調査が必要な行なので、選んで中身を取り出せるようにする
 			// (幅で末尾が切れても y / Y で完全な文字列が手に入る。幅そのものの改善は issues/182)。
-			// ⚠️ y が渡すのは理由の文字列 (パスを含む) で、パス単体ではない: disk.Result.Failures が
+			// 🚨 y が渡すのは理由の文字列 (パスを含む) で、パス単体ではない: disk.Result.Failures が
 			// []string で、パスがエラー文に埋め込まれているため (構造化は issues/180 で保留と判断)
 			rows = append(rows, doctorRow{
 				text:       doctorColor(o.colored, ansiYellow, "           ❓ 一部走査できず (合計に含めていません): "+f),
@@ -743,7 +743,7 @@ func (v *doctorView) diskDetail(o doctorRenderOpts, r disk.Result) []doctorRow {
 	// 走査できなかった行に削除経路を出さない。消せる候補が確定していないのに
 	// 「削除経路: rm」だけ出ると、消してよいものが見つかったように読める
 	// (CLI の Format は failed のとき理由だけを出す。UI もそれに揃える。issue 182)
-	// ⚠️ **ok の行にだけ**削除の案内を出す。blocked (今は対象外) にも出していたので、
+	// 🚨 **ok の行にだけ**削除の案内を出す。blocked (今は対象外) にも出していたので、
 	// 「Space で選び d で削除」と案内しておいて Space が拒否する形になっていた
 	// (敵対レビュー 2026-09-03 が実測)
 	if r.Status == disk.StatusOK {
@@ -757,7 +757,7 @@ func (v *doctorView) diskDetail(o doctorRenderOpts, r disk.Result) []doctorRow {
 		for _, c := range r.Contents {
 			out = append(out, doctorRow{text: "               - " + c})
 		}
-		// ⚠️ Inspect は「中身を見てから選ばせる」ためのゲートなので、**開いても何も出ない**形を
+		// 🚨 Inspect は「中身を見てから選ばせる」ためのゲートなので、**開いても何も出ない**形を
 		// 作らない (中身が無いのか、走査が拾えなかったのかが区別できないまま選べてしまう。
 		// 敵対レビュー 2026-09-03)。中身が無ければ対象のパスそのものを出す
 		if len(r.Contents) == 0 {
@@ -785,7 +785,7 @@ func (v *doctorView) diskItemRows(o doctorRenderOpts, r disk.Result) []doctorRow
 			selectable: true,
 			key:        "diskitem:" + diskItemKey(r.Entry.ID, it.Path),
 			copyPath:   it.Path,
-			// ⚠️ エントリ全体の解説を使い回さない。この行が指すのは**この 1 本**なので、
+			// 🚨 エントリ全体の解説を使い回さない。この行が指すのは**この 1 本**なので、
 			// 合計や他のパスを混ぜると「何を聞かれているか」がずれる
 			copyText: diskItemCopyText(r, it, riskMark),
 		})
@@ -801,7 +801,7 @@ func diskItemKey(entryID, path string) string { return entryID + "\x00" + path }
 func doctorRiskMark(r disk.Result) (string, string) {
 	switch r.Status {
 	case disk.StatusBlocked:
-		// ⚠️ マーク列は**固定語彙**にする。可変長の理由をここに置くと狭い幅で切れて
+		// 🚨 マーク列は**固定語彙**にする。可変長の理由をここに置くと狭い幅で切れて
 		// 「🚨 Google Chrome Canary …」のように**何が起きたのか分からない断片**が残る
 		// (実測 2026-09-03 幅 80。issue 182)。理由は呼び出し側が下の dim 行へ出す。
 		// 記号も caution (🚨) と分ける: NO_COLOR では色が消えるので、記号が同じだと
@@ -971,10 +971,10 @@ func diskCopyPath(r disk.Result) string {
 // 引用しないと doctor 自身が提示するコマンドがインジェクションを運ぶ (issue 178 / 193 が塞いだ穴を
 // 新設することになる。`svc.manualCommands` が Label に対して同じ規律を持つ)。
 //
-// ⚠️ ここに**既存の出力と重複するコマンドを足さない**。`diskCopyText` は各 Item のサイズ・
+// 🚨 ここに**既存の出力と重複するコマンドを足さない**。`diskCopyText` は各 Item のサイズ・
 // 最終更新・合計・`Contents` を既に出しているので、`du -sk` や `stat -f %Sm` は情報を増やさない
 // (2026-09-03 の反証レビュー)。
-// ⚠️ `orphan-container` に **`mdfind` を出さない**。カタログの Detail が
+// 🚨 `orphan-container` に **`mdfind` を出さない**。カタログの Detail が
 // 「Info.plist を実走査して突合 (mdfind は使わない)」と明記した手段で、
 // 裏取り用でも載せると否定された判定材料を復活させる (同レビュー)。
 func diskVerifyCommands(r disk.Result) []string {
@@ -1081,7 +1081,7 @@ func svcUndiagnosedCopyText(u svc.Undiagnosed) string {
 // svcCopyText は Y でコピーする解説文 (壊れた launchd 登録)。
 // svcVerifyCommands は壊れた登録の判定を人が確かめるコマンド (issue 183)。読み取りのみ。
 //
-// ⚠️ `f.Commands` (= `svc.manualCommands`) と混ぜない。あちらは `launchctl bootout` / `rm` の
+// 🚨 `f.Commands` (= `svc.manualCommands`) と混ぜない。あちらは `launchctl bootout` / `rm` の
 // **破壊コマンド**で、「消してよいか確かめる」ためのものではない。コピー文では見出しを分ける。
 //
 // 🚨 パスと Label は `svc.ShellQuote` を通す (Label は plist が決める任意文字列で、

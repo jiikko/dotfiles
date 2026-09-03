@@ -24,7 +24,7 @@ import (
 // writeDoctorSnapshot は snapshot をキャッシュ位置へ書く (TTL 内 / 外の前提を作る)。
 // 同じ 4〜10 行がこのファイルに 8 回あったのを 1 行にしたもの (issue 199)。
 //
-// ⚠️ 壊れた JSON を書くテスト (TestDoctorCacheCorruptAndAtomic) と、書き込み先を
+// 🚨 壊れた JSON を書くテスト (TestDoctorCacheCorruptAndAtomic) と、書き込み先を
 // 直接触るテスト (os.Remove / os.Chmod) は path 自体が要るので寄せていない。
 // そちらは doctorSnapshotPath() を直接呼ぶ。
 func writeDoctorSnapshot(t *testing.T, sn doctorSnapshot) {
@@ -407,7 +407,7 @@ func TestDoctorWiredThroughBrowseModel(t *testing.T) {
 
 func TestDoctorStartupToast(t *testing.T) {
 	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.Local)
-	// ⚠️ ID は**実在のカタログ ID**にする。トーストはカタログに無い ID を落とすので
+	// 🚨 ID は**実在のカタログ ID**にする。トーストはカタログに無い ID を落とすので
 	// (issue 193)、架空の ID だと全件落ちて「常に沈黙」を検証するだけのテストになる
 	big := doctorDiskCache{ScannedAt: now.Add(-time.Hour), Total: 45 << 30, Entries: []doctorDiskCacheEntry{
 		{ID: "xcode-deriveddata", Label: "Xcode", Size: 30 << 30, Status: "ok"},
@@ -426,7 +426,7 @@ func TestDoctorStartupToast(t *testing.T) {
 	if doctorStartupToast(doctorDiskCache{}, false, now) != "" {
 		t.Error("結果が無いのにトーストが出た (初回は沈黙する)")
 	}
-	// ⚠️ Total だけ下げても効かない: トーストは**合計をエントリから引き直す** (細工した Total を
+	// 🚨 Total だけ下げても効かない: トーストは**合計をエントリから引き直す** (細工した Total を
 	// 信用しない。issue 193)。閾値未満を作るならエントリ側を小さくする
 	small := big
 	small.Entries = []doctorDiskCacheEntry{{ID: "npm-cache", Label: "npm", Size: 9 << 30, Status: "ok"}}
@@ -693,7 +693,7 @@ func TestDoctorReusesHeavyEntries(t *testing.T) {
 		"future":  func(r *disk.Result) { r.MeasuredAt = now.Add(48 * time.Hour) }, // 時計を戻した
 		"failed":  func(r *disk.Result) { r.Status = disk.StatusFailed },
 		"blocked": func(r *disk.Result) { r.Status = disk.StatusBlocked },
-		// ⚠️ このケースは **TTL 判定に包含されている** (now が実時刻なので、ゼロ値との差は
+		// 🚨 このケースは **TTL 判定に包含されている** (now が実時刻なので、ゼロ値との差は
 		// 常に TTL 超え)。`IsZero()` ガードを外しても red にならない = ここでは
 		// 「ゼロ値を弾く」を守っていない (issue 198 発見 3)。守るのは下の
 		// TestDoctorReuseSkipsZeroMeasuredAtNearEpoch。
@@ -1129,7 +1129,7 @@ func TestDoctorSaveCacheDoesNotFreezeWithStaggeredReuse(t *testing.T) {
 func TestDoctorStartupToastReportsUndiagnosed(t *testing.T) {
 	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.Local)
 	// 閾値を超えているときは合計に添える
-	// ⚠️ Total / Failed は**エントリから導出される値**なので、手で設定するだけでは効かない
+	// 🚨 Total / Failed は**エントリから導出される値**なので、手で設定するだけでは効かない
 	// (トーストが引き直す。細工した doctor-disk.json を信用しないため。issue 193)。
 	// production の doctorCacheFromReport も failed エントリを Entries に入れて数えるので、
 	// fixture もその形にする (Entries と整合しない Failed は実経路では起こらない)
@@ -1201,7 +1201,7 @@ func TestDoctorSaveCacheWritesCompletedScanWithFailures(t *testing.T) {
 	// 一方、**中断した部分結果** (partial) は完全な結果を潰さない。前回の記録に重ねて書くので、
 	// 走査が届かなかったエントリの数字が残る (敵対レビュー 2026-09-03: 3 時間前の 45GB が
 	// 「開いて即 Esc」の 1MB で潰れる形にしてはいけない)。
-	// ⚠️ ただし引き継ぎには鮮度の上限 (doctorCarryTTL) がある。上限を持たせないと、
+	// 🚨 ただし引き継ぎには鮮度の上限 (doctorCarryTTL) がある。上限を持たせないと、
 	// 「重いので毎回 Esc の前にたどり着けない」エントリが無期限に延命し、実体が消えても
 	// 検出する手段が構造上無くなる (同レビュー 5 周目)。
 	partial := func() disk.Report {
@@ -1419,7 +1419,7 @@ func TestDoctorSnapshotTrustBoundary(t *testing.T) {
 	if !v.diskResults[0].FromSnapshot {
 		t.Error("snapshot 復元の Result に「走査していない」印 (FromSnapshot) が付いていない")
 	}
-	// ⚠️ Reused を流用しない (行の「N 分前の計測を再利用」注記が普通の開き直しで嘘になる)
+	// 🚨 Reused を流用しない (行の「N 分前の計測を再利用」注記が普通の開き直しで嘘になる)
 	if v.diskResults[0].Reused {
 		t.Error("snapshot 復元に Reused を流用している (別の意味を持つフィールド)")
 	}
@@ -1588,7 +1588,7 @@ func TestDoctorSnapshotTrustBoundaryFreeText(t *testing.T) {
 //	    ScannedAt は保存のたびに更新されるので「真の経過」が積まれない
 func TestDoctorCarryTTLClampsMeasuredAt(t *testing.T) {
 	base := time.Date(2026, 9, 3, 12, 0, 0, 0, time.Local)
-	// ⚠️ MeasuredAt と ScannedAt を**別の値**にする。同じにすると
+	// 🚨 MeasuredAt と ScannedAt を**別の値**にする。同じにすると
 	// 「MeasuredAt を書く」を「ScannedAt を書く」に変える変異を素通りさせる (実測 2026-09-03)。
 	// 実際に別々になるのは、重いエントリの計測値を再利用した走査 (計測は前、走査は今)
 	heavy := func(scannedAt, measuredAt time.Time) disk.Report {
@@ -1625,7 +1625,7 @@ func TestDoctorCarryTTLClampsMeasuredAt(t *testing.T) {
 	}
 
 	// (b) TTL より短い間隔を何ラウンド重ねても、真の経過が TTL を超えたら失効する。
-	// ⚠️ 1 ラウンドでは検出できない: 10h は TTL 内なので carry されるのが正しい。
+	// 🚨 1 ラウンドでは検出できない: 10h は TTL 内なので carry されるのが正しい。
 	// MeasuredAt を書かない実装だと、毎回「前回保存からの 10h」しか見ずに永久に生き残る
 	fresh := doctorCacheFromReport(heavy(base, base), doctorDiskCache{})
 	if len(fresh.Entries) != 1 || fresh.Entries[0].MeasuredAt.IsZero() {
@@ -1729,7 +1729,7 @@ func TestDoctorRestoredValuesAreValidated(t *testing.T) {
 // 別マシンから持ってきた壊れた snapshot と時計のズレが重なった場合) は age が TTL 内に収まり、
 // **測った覚えのない値を「前回の計測」として再利用する**。純関数なので直接呼んで固定する。
 func TestDoctorReuseSkipsZeroMeasuredAtNearEpoch(t *testing.T) {
-	// ⚠️ ゼロ値は **西暦 1 年** (Unix epoch ではない)。基準を time.Unix(0,0) にすると差が
+	// 🚨 ゼロ値は **西暦 1 年** (Unix epoch ではない)。基準を time.Unix(0,0) にすると差が
 	//    約 2562047 時間になり TTL 判定で弾かれてしまい、このテストは何も守らない
 	//    (最初にそう書いて変異が green のままだった)。ゼロ値そのものから 30 分後を now にする。
 	now := time.Time{}.Add(30 * time.Minute) // ゼロ値との差 30 分 = TTL (1 時間) の内側
@@ -1767,7 +1767,7 @@ func TestDoctorDiskRowKeepsStateAtNarrowWidth(t *testing.T) {
 			Status: disk.StatusOK, Size: 3 << 30, Items: []disk.Item{{Path: "/opt/homebrew/var/x", Size: 3 << 30}}},
 		{Entry: disk.Entry{ID: "chrome-tmp", Label: "Chrome 一時ファイル", Risk: disk.RiskSafe},
 			Status: disk.StatusBlocked, Reason: "Google Chrome Canary 起動中のため対象外"},
-		// ⚠️ Recover は**実物に近い長さ**にする。短い文言だと、注記を末尾へ戻す変異でも
+		// 🚨 Recover は**実物に近い長さ**にする。短い文言だと、注記を末尾へ戻す変異でも
 		// 行が幅に収まってしまい検出できない (実測 2026-09-03)。カタログの実際の Recover は
 		// 「アプリを再インストールしても設定は戻りません」のように長い
 		{Entry: disk.Entry{ID: "npm-cache", Label: "npm キャッシュ", Risk: disk.RiskSafe,
@@ -1901,7 +1901,7 @@ func TestDoctorCopyTextCarriesVerifyCommands(t *testing.T) {
 // 畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と**同じ見え方**になる
 // (issue 169 / 207)。
 //
-// ⚠️ **CLI (disk.Format) と UI (diskSection) で突き合わせる**。同じデータから同じ結論を描く形は、
+// 🚨 **CLI (disk.Format) と UI (diskSection) で突き合わせる**。同じデータから同じ結論を描く形は、
 // 片方のテストがもう片方を 1 mm も守らない (規範: mutation-verify-new-tests.md
 // 「同じ判定・同じ結論を 2 箇所で別実装していないか」)。片側の分岐だけ消す変異が
 // red になるよう、両方の出力を同じ fixture から見る。
