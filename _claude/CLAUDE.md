@@ -63,6 +63,16 @@
 - **issue の記述を鵜呑みにしない**。実際のコードと git 履歴に照らして検証してから着手する（既に修正済み・false positive を着手前に弾く）。関連: [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md)（refactor 提案の事前確認）/ [`issue-creation-codex-review.md`](rules/issue-creation-codex-review.md)（issue 作成時の codex レビュー）
 - **人にやってほしい動作確認は応答本文に書いて流さず、issue に起こす**（chat は流れて存在自体が忘れられる）。`NNN-human-<スラッグ>.md`（人間しかできない作業のカテゴリ。動作確認・目視レビュー・外部サービスの操作・判断待ち）で起票し、本文に `期限: YYYY-MM-DD` を書く。**既読はファイルの位置で表す**（未読 = `issues/`、確認済み = `issues/done/`。既読ヘッダーは本文の書き換え忘れで嘘が残るので使わない）。期限切れはセッション開始時に hook（`_claude/hooks/human-tasks-due.sh`）が注入し、`issue-sync` skill でも最初に報告する。**hook が期限切れを出したらセッション冒頭で一言伝える**
 - **実質的な作業をやり切ったら、セッションの振り返りを `NNN-retro-<スラッグ>-YYYY-MM-DD.md` に起票する**（chat の反省は流れて消える）。反省・気づき・改善案を書き、各項目に切り出し先（新規 issue / `_claude/rules/` / 却下）を提案するが、切り出しの実行はユーザーの判断を待つ。typo・数行の chore・調査だけのセッションは対象外。**done は「本文の残課題が空になったとき」**（実装の有無では判定しない）。未決着の retro はセッション開始時に hook（`_claude/hooks/retro-open.sh`）が注入するので、**古いものが溜まっていたらセッション冒頭で一言伝える**。書式の正本は `issues/README.md`
+- 🚨 **retro の切り出し先は「既存ルールへの追記」を既定にする**。新規ルールを 1 本立てるのは
+  **発動点 (トリガー) が既存のどれとも違うと言えるときだけ**で、言えないなら既存ルールの節として足す。
+  理由は流入速度: `_claude/rules/` は実測で **2026-07-01 の 13 本 626 行 → 2026-09-03 に 37 本 2480 行**
+  (65 日で 4 倍、直近 3 日で +445 行) まで増え、本文は毎セッション全文読まれる。増加の経路は
+  ほぼ「retro の残課題 → rules へ切り出し」に集中している。**整理で削れるのは 1 回あたり百数十行**
+  (2026-09-03 の監査の実測) で、**1 日ぶんの流入に負ける**ので、入口で絞る方が効く
+  - 新規で立てるときは、retro の切り出し節に**なぜ既存へ追記できないか (発動点の違い)** を 1 行書く
+  - 本文には規範だけを書き、実例・実測・起源は同名の `rules-rationale/` へ最初から書く
+    (後から移す形は失敗している。実例: `rules-rationale/mutation-verify-new-tests.md` の
+    「ルール本文から移した実例」節が文頭の切れた断片集になっている)
 - **`issues/next/` があるリポジトリでは、着手する issue をそこへ移して claim し、その移動だけを即 push する**（複数マシンが同じ issue 列を処理するため。claim は push されて初めて他マシンから見える。着手前に `git fetch` して既に next に居ないかを見る）。**`issues/next/` が無いリポジトリ（仕事の repo 等）ではこの規律は適用しない**。詳細は [`claim-issue-in-next-and-push.md`](rules/claim-issue-in-next-and-push.md)。PostToolUse hook（`_claude/hooks/next-claim-push.sh`）が `issues/next/` への移動を検出して push を促し、UserPromptSubmit hook（`_claude/hooks/next-claim-uncommitted.sh`）が未コミットのまま残った claim（glogx の `n` で人が付けたものを含む）を拾って push の可否をユーザーに伺わせる
 - **設計判断・仕様・調査記録は `docs/`**（索引は [`docs/README.md`](../docs/README.md)）。触る前に読む制約
   (glogx の bubbletea v2 / テーマ色の定数 / tmux のセッション永続化) と、glogx の画面の契約がここにある。
