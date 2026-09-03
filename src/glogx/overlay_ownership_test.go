@@ -110,32 +110,26 @@ func TestOverlayUninterruptibleMatchesCtrlCAndRestartPrompt(t *testing.T) {
 //
 // ⚠️ **compile error にはできない**ので、`browseModel` のフィールドを reflect で走査し、
 // `ownsKeys()` を実装している型が表に在ることを要求する。非公開メソッドの interface は
-// 同一 package なら判定できる。全メソッドがポインタレシーバなので `reflect.PointerTo` で見る。
+// 同一 package なら判定できる。走査の実体は `ownsKeysFieldNames` (ポインタ / スライスの
+// フィールドを取りこぼさないこと自体を canary で検査している)。
 func TestOverlayOwnershipTableCoversAllParticipants(t *testing.T) {
-	type ownsKeyser interface{ ownsKeys() bool }
-	want := reflect.TypeOf((*ownsKeyser)(nil)).Elem()
-
+	mt := reflect.TypeOf(browseModel{})
 	inTable := map[string]bool{}
 	for _, p := range overlayOwnershipTable {
 		inTable[p.name] = true
 	}
 
-	mt := reflect.TypeOf(browseModel{})
-	found := 0
-	for i := range mt.NumField() {
-		f := mt.Field(i)
-		if !reflect.PointerTo(f.Type).Implements(want) {
-			continue
-		}
-		found++
-		if !inTable[f.Name] {
-			t.Errorf("browseModel.%s は ownsKeys() を実装しているのに overlayOwnershipTable に無い"+
-				" (updateKeyReachable / ctrl+c / restartPromptVisible / cancelAll の直し忘れが黙る)", f.Name)
-		}
-	}
-	if found == 0 {
+	names := ownsKeysFieldNames(mt)
+	if len(names) == 0 {
 		t.Fatal("判定不能: ownsKeys() を実装したフィールドが 1 つも見つからない (走査が壊れている)")
 	}
+	for _, name := range names {
+		if !inTable[name] {
+			t.Errorf("browseModel.%s は ownsKeys() を実装しているのに overlayOwnershipTable に無い"+
+				" (updateKeyReachable / ctrl+c / restartPromptVisible / cancelAll の直し忘れが黙る)", name)
+		}
+	}
+
 	// 表に in-table だけあって実体が無い行も検出する (消えた overlay を表に残さない)
 	for name := range inTable {
 		if name == "actModal" {
@@ -219,4 +213,62 @@ func isQuitCmd(cmd tea.Cmd) bool {
 	}
 	_, ok := cmd().(tea.QuitMsg)
 	return ok
+}
+
+// ownsKeysFieldNames は t のフィールドのうち `ownsKeys()` を持つ型の名前を返す。
+//
+// ⚠️ **値フィールドだけを見ては駄目**。`reflect.PointerTo(f.Type).Implements(...)` は
+// **ポインタ / スライス / interface のフィールドを素通りする** (実測 2026-09-03:
+// `*fooView` のフィールドは false、`[]fooView` も false)。既存の値フィールドで
+// 件数 > 0 になるので「判定不能」ガードも鳴らず、**次の overlay をポインタで持たせた瞬間に
+// 静かに無検査になる** (敵対的レビューの P2)。ポインタ / スライスは要素型まで開いて見る。
+func ownsKeysFieldNames(t reflect.Type) []string {
+	type ownsKeyser interface{ ownsKeys() bool }
+	want := reflect.TypeOf((*ownsKeyser)(nil)).Elem()
+
+	implements := func(ft reflect.Type) bool {
+		for range 2 { // 値 → 要素型 の 2 段まで開く (*T / []T)
+			if ft.Implements(want) || reflect.PointerTo(ft).Implements(want) {
+				return true
+			}
+			switch ft.Kind() {
+			case reflect.Pointer, reflect.Slice, reflect.Array:
+				ft = ft.Elem()
+			default:
+				return false
+			}
+		}
+		return false
+	}
+
+	var names []string
+	for i := range t.NumField() {
+		f := t.Field(i)
+		if implements(f.Type) {
+			names = append(names, f.Name)
+		}
+	}
+	return names
+}
+
+// 走査そのものを canary で検査する (取りこぼす形を固定する)。
+// ⚠️ **本走査と同じ関数を通す**。式をコピーして別に書くと canary はコピーを検査するだけになる。
+func TestOwnsKeysFieldScanFindsPointerAndSliceFields(t *testing.T) {
+	type probe struct {
+		Value    doctorView
+		Pointer  *doctorView
+		Slice    []doctorView
+		Unrelate int
+	}
+	got := ownsKeysFieldNames(reflect.TypeOf(probe{}))
+	want := map[string]bool{"Value": true, "Pointer": true, "Slice": true}
+	for _, n := range got {
+		if !want[n] {
+			t.Errorf("無関係なフィールドを拾った: %s", n)
+		}
+		delete(want, n)
+	}
+	for n := range want {
+		t.Errorf("%s フィールドを取りこぼした (この形で overlay を持たせると無検査になる)", n)
+	}
 }

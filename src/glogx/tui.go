@@ -1408,6 +1408,11 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.actModal.startUpdateFor(target), m.maybeTick())
 	}
 	if m.doctorOv.visible() {
+		// 描画中に選択行が消えて寄せていたら、**キーを飲まずに**知らせる (issue 210)。
+		// restoreCursor は View から呼ばれるので、通知経路はここしか無い
+		if m.doctorOv.takeCursorFellBack() {
+			m.toast.show(m.doctorOv.pendingToast, false)
+		}
 		switch m.doctorOv.handleKey(key, m.pageSize()) {
 		case doctorClosed:
 			return m, m.maybeTick()

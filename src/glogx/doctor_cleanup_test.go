@@ -440,7 +440,9 @@ func TestCursorStaysOnSameRowWhenRowsGrowAbove(t *testing.T) {
 // フィールド代入しか見ておらず、本番では一度も出ない状態で緑だった)。
 func TestCursorFallbackIsToldThroughBrowseModel(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	v := m.doctorOv
+	// ⚠️ `doctorOv` は**値フィールド**なので `v := m.doctorOv` だと**コピー**になり、
+	//    m 側に何も伝わらない (実測 2026-09-03: それで配線のテストが緑にならなかった)
+	v := &m.doctorOv
 	v.shown = true
 	a := disk.Result{Entry: disk.Entry{ID: "a", Label: "A", Tier: 1}, Size: 300, Status: disk.StatusOK,
 		Items: []disk.Item{{Path: "/tmp/a", Size: 300}}}
@@ -460,18 +462,34 @@ func TestCursorFallbackIsToldThroughBrowseModel(t *testing.T) {
 		t.Fatal("消えた行を指したまま")
 	}
 
-	// 次のキー操作で**画面に**出る
+	// 次のキー操作で**画面に**出る。⚠️ **browseModel.handleKey 経由**で見る
+	// (tui.go に配線があるので、doctorView だけ叩くと配線の穴を守れない)
 	m.toast.text = ""
-	if act := v.handleKey("j", 20); act != doctorToast {
-		t.Fatalf("寄せた後の最初のキーが doctorToast を返さない (act=%v)", act)
-	}
-	m.toast.show(v.pendingToast, false) // tui.go の case doctorToast: と同じ扱い
+	m.handleKey("j")
 	if !strings.Contains(m.toast.text, "近くの行へ移りました") {
 		t.Fatalf("寄せたことが画面に出ない (toast=%q)", m.toast.text)
 	}
 	// 一度出したら再発しない (毎キー出ると邪魔)
-	if act := v.handleKey("j", 20); act == doctorToast {
-		t.Fatal("同じ寄せで 2 回目もトーストを返した")
+	m.toast.text = ""
+	m.handleKey("j")
+	if strings.Contains(m.toast.text, "近くの行へ移りました") {
+		t.Fatal("同じ寄せで 2 回目もトーストが出た")
+	}
+
+	// ⚠️ **その打鍵が飲まれない**こと (敵対的レビュー 2026-09-03 の P2)。
+	//    以前は handleKey の先頭で doctorToast を返しており、寄せた直後の
+	//    q / esc / d / r / Enter が等しく 1 回空振りしていた
+	v.diskResults = []disk.Result{a, b}
+	v.lines(o)
+	v.moveCursor(1)
+	v.diskResults = []disk.Result{a}
+	v.lines(o) // ここで再度寄せる
+	if !v.cursorFellBack {
+		t.Fatal("前提が作れていない: 寄せの印が立っていない")
+	}
+	m.handleKey("q") // 閉じるキー
+	if v.shown {
+		t.Fatal("寄せた直後の q が飲まれた (doctor が閉じない)")
 	}
 }
 

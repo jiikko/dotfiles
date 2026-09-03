@@ -171,6 +171,7 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	v.shown = true
 	v.gen++
 	v.cursor, v.cursorKey, v.offset = 0, "", 0
+	v.cursorFellBack = false
 	v.expanded = map[string]bool{}
 	v.selected, v.selectedItems, v.inspected = map[string]bool{}, map[string]bool{}, map[string]bool{}
 	v.del.reset()
@@ -389,13 +390,6 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 	if act, taken := v.handleDeleteKey(key); taken {
 		return act
 	}
-	// 描画中に選択行が消えて寄せていたら、**ここで**知らせる (View からは通知経路が無い)。
-	// 黙って別の行に付くのが issue 210 の症状なので、寄せた事実は必ず出す
-	if v.cursorFellBack {
-		v.cursorFellBack = false
-		v.pendingToast = "選んでいた行が無くなったので近くの行へ移りました"
-		return doctorToast
-	}
 	switch key {
 	case " ":
 		if act, ok := v.snapshotRescan(); ok {
@@ -431,6 +425,7 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 		}
 	case "g":
 		v.cursor, v.cursorKey, v.offset = 0, "", 0
+		v.cursorFellBack = false
 		v.moveCursor(0)
 	case "G":
 		v.cursor = len(v.rows) - 1
@@ -520,8 +515,12 @@ func (v *doctorView) restoreCursor() {
 		if v.cursor >= len(v.rows) {
 			v.cursor = len(v.rows) - 1
 		}
+		was := v.cursor
 		v.moveCursor(0)
-		if v.cursorKey != "" {
+		// ⚠️ 判定は「**cursor が実際に動いたか**」。`cursorKey != ""` で見ると、選べる行が
+		//    0 件のフレーム (key は保持する) で**動いていないのに寄せたと言う**
+		//    (敵対的レビュー 2026-09-03 の P3)
+		if v.cursor != was && v.cursorKey != "" {
 			// ⚠️ ここで pendingToast に書いても**画面には出ない**。表示するのは
 			//    tui.go の `case doctorToast:` = handleKey の戻り値経路だけで、restoreCursor は
 			//    View (lines) から呼ばれる (敵対的レビュー 2026-09-03 の P1)。
@@ -536,6 +535,21 @@ func (v *doctorView) restoreCursor() {
 	}
 	v.moveCursor(0)
 	v.rememberCursorKey()
+}
+
+// takeCursorFellBack は「描画中に選択行が消えて寄せた」印を 1 回だけ取り出す。
+//
+// ⚠️ **キーを飲まずに知らせる**ための seam。以前は handleKey の先頭で `doctorToast` を
+// 返していたが、それだと**その打鍵が空振りする** (q / esc / d / r / Enter が等しく 1 回死ぬ。
+// 実運用の主経路は「削除完了で選択行が rows から落ちた直後」。敵対的レビュー 2026-09-03 の P2)。
+// 呼ぶのは browseModel 側 (tui.go) で、handleKey を呼ぶ**前**にトーストを出す。
+func (v *doctorView) takeCursorFellBack() bool {
+	if !v.cursorFellBack {
+		return false
+	}
+	v.cursorFellBack = false
+	v.pendingToast = "選んでいた行が無くなったので近くの行へ移りました"
+	return true
 }
 
 // rememberCursorKey は今の index が指す行の key を覚える (次の描画で復元する材料)。
