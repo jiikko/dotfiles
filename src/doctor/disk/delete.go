@@ -20,6 +20,8 @@ package disk
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -125,9 +127,9 @@ type DeleteOptions struct {
 	TrashDir string
 	Now      func() time.Time
 	DryRun   bool
-	PerEntry time.Duration
-	// VerifyTimeout は削除後の再走査 1 回の上限。走査の PerEntry (既定 60 秒) は「初回の全走査」
-	// 向けの値で、消えたことの確認には過大なので別に持つ。
+	// ScanTimeout は削除の**前**にやり直す走査 1 回の上限、VerifyTimeout は削除**後**の確認の上限。
+	// どちらも「初回の全走査」向けの 60 秒より短くてよい (対象が 1 エントリに絞られているため)。
+	ScanTimeout   time.Duration
 	VerifyTimeout time.Duration
 	CmdTimeout    time.Duration
 	// OnProgress は 1 エントリ終わるごとに呼ばれる (UI の進捗表示用)。nil 可。
@@ -150,8 +152,8 @@ func withDeleteDefaults(opt DeleteOptions) DeleteOptions {
 	if opt.TrashDir == "" && opt.Env.Home != "" {
 		opt.TrashDir = filepath.Join(opt.Env.Home, ".Trash")
 	}
-	if opt.PerEntry <= 0 {
-		opt.PerEntry = 60 * time.Second
+	if opt.ScanTimeout <= 0 {
+		opt.ScanTimeout = 60 * time.Second
 	}
 	if opt.VerifyTimeout <= 0 {
 		opt.VerifyTimeout = 30 * time.Second
@@ -219,9 +221,16 @@ func Delete(ctx context.Context, targets []Result, opt DeleteOptions) (DeleteRep
 		verifyEntry(ctx, &out, opt)
 		rep.Entries[i] = out
 		// エントリ単位で記録を更新する。ここで落ちても「どこまでやったか」が残る
-		// (ゴミ箱の移動先 Dest も、完了まで書かないと失われる)
+		// (ゴミ箱の移動先 Dest も、完了まで書かないと失われる)。
+		// 🚨 書けなくなったら**残りを触らずに止める**。fail-closed は最初の 1 回だけでなく
+		// 途中でも成り立たせる (ディスク掃除ツールが走るのは、まさにディスクが逼迫した状況)
 		if err := hist.write(rep, phaseExecuting); err != nil {
 			rep.HistoryError = err.Error()
+			for j := i + 1; j < len(rep.Entries); j++ {
+				rep.Entries[j].Outcome = OutcomeSkipped
+				rep.Entries[j].Reason = "記録を残せなくなったため中止しました (このエントリは触っていません)"
+			}
+			break
 		}
 		if opt.OnProgress != nil {
 			opt.OnProgress(i+1, len(rep.Entries), out.Label)
@@ -232,8 +241,13 @@ func Delete(ctx context.Context, targets []Result, opt DeleteOptions) (DeleteRep
 		rep.Trashed += e.Trashed
 	}
 	rep.FinishedAt = opt.Now()
+	// 中断で終わった run に done (= 最後まで行った) と書かない
+	phase := phaseDone
+	if ctx.Err() != nil {
+		phase = phaseAborted
+	}
 	// ここから先の書き込み失敗は削除を取り消せないので、error ではなく報告に残す
-	if err := hist.write(rep, phaseDone); err != nil {
+	if err := hist.write(rep, phase); err != nil {
 		rep.HistoryError = err.Error()
 	}
 	return rep, nil
@@ -318,63 +332,75 @@ func planDelete(ctx context.Context, t Result, opt DeleteOptions) EntryOutcome {
 		out.Outcome, out.Reason = OutcomeSkipped, "対象がありません"
 		return out
 	}
-	out.BeforeSize = t.Size
-	// 🚨 Items のパスが**そのエントリのもの**であることを確かめる。planDelete がここまでに見たのは
-	// Reused / FromSnapshot / Status の 3 つのフラグだけで、パスの中身は誰も見ていない。
-	// 印を立て忘れた復元経路が 1 本でもあれば、細工した JSON の任意パスが os.RemoveAll に届く
-	// (敵対レビュー 2026-09-03 が捏造 Result で ~/Documents/photos の削除を実測)。
-	// cli: はパスに触らないので突合しない (対象が SIP 配下で、カタログの Paths にも無い)。
-	var allowed map[string]bool
-	if method != methodCLI {
-		set, err := entryPathSet(ctx, opt, e)
-		if err != nil {
-			return fail("対象パスを確かめられません: " + err.Error())
-		}
-		allowed = set
+	// 🚨 **削除の直前に走査し直し、その結果だけを対象にする。**
+	//
+	// 渡された Result の Items / Size は「画面に出すための申告値」で、測り直した値ではない。
+	// glob だけを突き合わせても足りない: guard (Chrome 起動中 / mtime が起動時刻より古い /
+	// 孤児判定) こそが「そのパスは今消してよいか」を決めているので、guard を通さない突合は
+	// 「エントリの glob の内側」しか守らない (敵対レビュー 2026-09-03 が実測: Chrome 起動中に
+	// ライブなテンポラリを消せた / 走査後に mtime が更新された対象を警告なしで消せた)。
+	// 走査を通せば集合の作り方が 1 つになり (走査側と削除側で 2 実装しない)、サイズと
+	// (dev, ino) も実測値になる。
+	//
+	// ⚠️ 代償は時間。重いエントリ (DerivedData で実測 5.7 秒) は削除の前後で 2 回走査する。
+	// 破壊的操作の正しさを申告値に預けないための費用として受け入れる。
+	fresh := Scan(ctx, Options{Env: opt.Env, Run: opt.Run, BootTime: opt.BootTime,
+		Catalog: []Entry{e}, Concurrency: 1, PerEntry: opt.ScanTimeout})
+	var cur Result
+	if len(fresh.Results) > 0 {
+		cur = fresh.Results[0]
 	}
-	for _, it := range t.Items {
-		out.Items = append(out.Items, planItem(method, argv, it, allowed, opt))
+	switch {
+	case cur.Status == StatusBlocked:
+		out.Outcome, out.Reason = OutcomeSkipped, "いまは対象外です: "+cur.Reason
+		return out
+	case cur.Status != StatusOK || fresh.Partial:
+		return fail("削除の前に走査し直せませんでした: " + cur.Reason)
+	}
+	index := map[string]Item{}
+	for _, it := range cur.Items {
+		index[itemKey(method, it)] = it
+	}
+	for _, want := range t.Items {
+		it, ok := index[itemKey(method, want)]
+		if !ok {
+			out.Items = append(out.Items, unmatchedItem(opt, want))
+			continue
+		}
+		out.Items = append(out.Items, planItem(method, argv, it, opt))
+		out.BeforeSize += it.Size // 申告値ではなく測り直した値
 	}
 	out.Outcome = OutcomePlanned
 	return out
 }
 
-// entryPathSet はカタログのエントリが指すパスを展開し直した集合 (validateTarget の正規化まで通す)。
-// guard は絞り込むだけで新しいパスを増やさないので、rm / trash の対象はこの集合に必ず属する。
-// ⚠️ 集合が空でも error にしない (走査の後に実体が消えた場合は空になりうる)。属さない Item が
-// 弾かれれば目的は足りる。
-func entryPathSet(ctx context.Context, opt DeleteOptions, e Entry) (map[string]bool, error) {
-	env := opt.Env
-	for _, tmpl := range e.Paths {
-		if strings.Contains(tmpl, "$BREW_PREFIX") && env.BrewPrefix == "" {
-			prefix, err := brewPrefix(ctx, opt.Run)
-			if err != nil {
-				return nil, fmt.Errorf("brew --prefix を取得できず: %w", err)
-			}
-			env.BrewPrefix = prefix
-			break
+// itemKey は「同じ対象か」を突き合わせる鍵。cli: で識別子を持つもの (simctl のランタイム) は
+// パスでなく識別子で照合する (パスは SIP 配下で、消す手がかりにならない)。
+func itemKey(method string, it Item) string {
+	if method == methodCLI && it.Ref != "" {
+		return "ref:" + it.Ref
+	}
+	return "path:" + filepath.Clean(it.Path)
+}
+
+// unmatchedItem は「走査し直したら候補に無かった」対象の結末。既に消えていた場合と、
+// そもそも候補でない (細工された / guard が今は除外している) 場合を分ける。
+func unmatchedItem(opt DeleteOptions, want Item) ItemOutcome {
+	o := ItemOutcome{Path: want.Path, Size: want.Size, Ref: want.Ref}
+	if p, err := validateTarget(opt.Env, want.Path); err == nil {
+		if _, err := os.Lstat(p); os.IsNotExist(err) {
+			o.Outcome, o.Reason = OutcomeSkipped, "既に存在しません"
+			return o
 		}
 	}
-	set := map[string]bool{}
-	for _, tmpl := range e.Paths {
-		ps, err := expand(env, tmpl)
-		if err != nil {
-			return nil, err
-		}
-		for _, p := range ps {
-			vp, err := validateTarget(env, p)
-			if err != nil {
-				continue // 走査時にも Failures として弾かれている
-			}
-			set[vp] = true
-		}
-	}
-	return set, nil
+	o.Outcome = OutcomeFailed
+	o.Reason = "いまは削除の候補ではありません (再スキャンしてください)"
+	return o
 }
 
 // planItem は 1 対象の事前検査。rm / trash はパスの形と実体の同一性を確かめ、cli は識別子だけを見る
 // (**cli の対象パスには触らない**。SIP 配下で rm できないものがここに来る)。
-func planItem(method string, argv []string, it Item, allowed map[string]bool, opt DeleteOptions) ItemOutcome {
+func planItem(method string, argv []string, it Item, opt DeleteOptions) ItemOutcome {
 	o := ItemOutcome{Path: it.Path, Size: it.Size, Ref: it.Ref, Outcome: OutcomePlanned, dev: it.Dev, ino: it.Ino}
 	skip := func(reason string) ItemOutcome {
 		o.Outcome, o.Reason = OutcomeSkipped, reason
@@ -405,10 +431,6 @@ func planItem(method string, argv []string, it Item, allowed map[string]bool, op
 			return skip("既に存在しません")
 		}
 		o.Outcome, o.Reason = OutcomeFailed, "確認できません: "+err.Error()
-		return o
-	}
-	if !allowed[p] {
-		o.Outcome, o.Reason = OutcomeFailed, "このエントリの対象ではありません (再スキャンしてください)"
 		return o
 	}
 	dev, ino, ok := statIdentity(fi)
@@ -501,11 +523,44 @@ func removeItem(o *ItemOutcome) error {
 		o.Outcome, o.Reason = OutcomeFailed, err.Error()
 		return err
 	}
-	if err := root.RemoveAll(base); err != nil {
+	// 🚨 消す前に**予測できない名前へ改名する**。Lstat と RemoveAll は base を 2 回名前解決するので、
+	// そのあいだに同じ親ディレクトリ内で rename を当てられると、検査していない木が消える
+	// (敵対レビュー 2026-09-03 の実測: 4464 試行中 121 回 = 2.7% で成立した)。改名してしまえば、
+	// 相手は自分が置けない名前を狙うことになる。
+	// ⚠️ 改名と削除のあいだにプロセスが死ぬと、この名前の残骸が親ディレクトリに残る
+	// (対象はキャッシュの中なので実害は小さいが、次の走査の glob には出ないことがある)。
+	staged, err := stagingName()
+	if err != nil {
+		o.Outcome, o.Reason = OutcomeFailed, "削除の準備ができません: "+err.Error()
+		return err
+	}
+	if err := root.Rename(base, staged); err != nil {
+		o.Outcome, o.Reason = OutcomeFailed, "削除の準備ができません: "+err.Error()
+		return err
+	}
+	// 改名したものが本当に検査した実体か (改名の直前に差し替えられていたら、ここで初めて分かる)
+	if fi, err := root.Lstat(staged); err != nil {
+		o.Outcome, o.Reason = OutcomeFailed, "確認できません: "+err.Error()
+		return err
+	} else if d, i, ok := statIdentity(fi); !ok || d != o.dev || i != o.ino {
+		_ = root.Rename(staged, base) // 掴んだものが違うので戻す
+		o.Outcome, o.Reason = OutcomeSkipped, "直前に別の実体へ差し替わりました (再スキャンしてください)"
+		return errIdentityChanged
+	}
+	if err := root.RemoveAll(staged); err != nil {
 		o.Outcome, o.Reason = OutcomeIncomplete, "一部だけ消えた可能性があります: "+err.Error()
 		return err
 	}
 	return nil
+}
+
+// stagingName は削除の直前に付ける一時名。相手が先回りして置けないよう乱数から作る。
+func stagingName() (string, error) {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return ".glogx-delete-" + hex.EncodeToString(b[:]), nil
 }
 
 var errIdentityChanged = errors.New("走査時と別の実体")
@@ -520,6 +575,11 @@ func execCLI(ctx context.Context, out *EntryOutcome, opt DeleteOptions) {
 	// 中断 / タイムアウトで落ちたコマンドは「実行できなかった」ではない。go clean -modcache や
 	// brew cleanup は途中まで消しているので、failed (何も起きていない) に畳まず incomplete にする。
 	run1 := func(args []string) (CommandRecord, Outcome) {
+		// 外部コマンドも破壊的操作。ここを通さないと、Run を差し忘れた fixture が
+		// 実カタログの `go clean -modcache` / `brew cleanup` を本当に実行する
+		if err := allowDestructive("cli", strings.Join(args, " ")); err != nil {
+			return CommandRecord{Name: args[0], Args: args[1:], RC: -1, Err: err.Error()}, OutcomeFailed
+		}
 		stdout, stderr, rc, err := runner.WithTimeout(ctx, opt.Run, opt.CmdTimeout, args[0], args[1:]...)
 		rec := CommandRecord{Name: args[0], Args: args[1:], RC: rc, Stdout: strings.TrimSpace(stdout), Stderr: strings.TrimSpace(stderr)}
 		if err == nil && rc == 0 {
@@ -788,11 +848,10 @@ func trashMove(src, trashDir string, dev, ino uint64) (string, error) {
 	if err := os.MkdirAll(trashDir, 0o700); err != nil {
 		return "", fmt.Errorf("ゴミ箱を用意できません: %w", err)
 	}
-	// ゴミ箱自体が symlink なら、移動先は ~/.Trash の外に落ちる
-	if fi, err := os.Lstat(trashDir); err != nil {
-		return "", fmt.Errorf("ゴミ箱を確認できません: %w", err)
-	} else if fi.Mode()&os.ModeSymlink != 0 {
-		return "", errors.New("ゴミ箱が symlink です (移動しません)")
+	// ゴミ箱の**経路のどこか**に symlink があると、移動先は ~/.Trash の外に落ちる
+	// (最終要素だけを見る Lstat / O_NOFOLLOW では足りない。HOME 自体が symlink の構成で実測)
+	if err := noSymlinkInPath(trashDir); err != nil {
+		return "", fmt.Errorf("ゴミ箱を使えません: %w", err)
 	}
 	srcDir, err := openDirNoFollow(filepath.Dir(src))
 	if err != nil {
@@ -844,15 +903,30 @@ func trashMove(src, trashDir string, dev, ino uint64) (string, error) {
 	return "", fmt.Errorf("ゴミ箱に同名が多すぎます: %s", base)
 }
 
+// noSymlinkInPath は経路の全要素が symlink でないことを確かめる (validateTarget と同じ規律)。
+func noSymlinkInPath(p string) error {
+	// /var → /private/var 等は macOS の既定の link なので先に畳む (validateTarget と同じ)
+	for dir := normalizeSystemLinks(filepath.Clean(p)); dir != "/" && dir != "."; dir = filepath.Dir(dir) {
+		fi, err := os.Lstat(dir)
+		if err != nil {
+			return err
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("経路の途中に symlink がある: %s", dir)
+		}
+	}
+	return nil
+}
+
 // openDirNoFollow はディレクトリを fd で開く (最後の要素が symlink なら拒否する)。
 func openDirNoFollow(dir string) (int, error) {
 	return unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 }
 
-// destructive-op: allow 呼び出し側 (trashMove) が allowDestructive を通してから呼ぶ薄い包み。
-// ここで再度通すと、連番のリトライごとに検査が走る (同じ src に対して何度も記録が積まれる)。
+// renameExcl は trashMove 専用の薄い包み。呼び出し側が allowDestructive を通してから呼ぶ
+// (ここで再度通すと、連番のリトライごとに検査が走って同じ src の記録が何度も積まれる)。
 func renameExcl(srcDir int, srcBase string, dstDir int, dstBase string) error {
-	return unix.RenameatxNp(srcDir, srcBase, dstDir, dstBase, unix.RENAME_EXCL)
+	return unix.RenameatxNp(srcDir, srcBase, dstDir, dstBase, unix.RENAME_EXCL) // destructive-op: allow trashMove が通す
 }
 
 // allowDestructive は破壊的操作の直前に必ず通る検査点。production では素通りし、
@@ -860,23 +934,36 @@ func renameExcl(srcDir int, srcBase string, dstDir int, dstBase string) error {
 // これが無いと、テストの書き間違い 1 つで実ファイルが消える。
 var destructiveHook func(op, path string) error
 
+// runningUnderTest は「テストバイナリとして走っている」の判定。testing を production の
+// import に持ち込まないための実行ファイル名の検査 (go test が作るバイナリは .test で終わる)。
+// ⚠️ 完全ではない (`go run` で書いた自作ハーネスは検出できない)。目的は
+// **他パッケージのテストが hook を差し忘れたまま Delete を呼ぶ**のを止めることだけ。
+var runningUnderTest = strings.HasSuffix(os.Args[0], ".test") || strings.Contains(os.Args[0], "/_test/")
+
 func allowDestructive(op, path string) error {
-	if destructiveHook == nil {
-		return nil
+	if destructiveHook != nil {
+		return destructiveHook(op, path)
 	}
-	return destructiveHook(op, path)
+	// テスト中に hook が無いのは「ハーネスを差し忘れた」= 実データを消しうる状態。
+	// disk 以外のパッケージ (glogx など) が Delete を呼ぶテストを書いた瞬間にここへ来る
+	if runningUnderTest {
+		return fmt.Errorf("テスト中に破壊的操作 (%s) が要求されましたが、ハーネスが設定されていません: %s", op, path)
+	}
+	return nil
 }
 
 // ---- インベントリ ----
 
 type history struct {
 	path string
+	now  func() time.Time
 }
 
 // 記録の相。読み手が「実行前に止まった」「実行中に落ちた」「最後まで行った」を区別できるようにする。
 const (
 	phasePlanned   = "planned"   // まだ何も触っていない
 	phaseExecuting = "executing" // 1 エントリ以上を処理した (ここで止まっていたら途中で落ちた)
+	phaseAborted   = "aborted"   // 中断された (最後まで行っていない)
 	phaseDone      = "done"
 )
 
@@ -914,17 +1001,26 @@ func newHistory(opt DeleteOptions) (*history, error) {
 			return nil, err
 		}
 		_ = f.Close()
-		return &history{path: p}, nil
+		return &history{path: p, now: opt.Now}, nil
 	}
 	return nil, errors.New("記録ファイルの名前を確保できません")
 }
 
 // discard は確保だけして中身を書けなかったファイルを消す (0 バイトの .json を残すと、
 // 次に記録を読む処理が JSON のパースエラーになる)。
-//
-// destructive-op: allow 消すのは**このプロセスが直前に O_EXCL で作った記録ファイル**だけで、
-// ユーザーのデータではない (パスは newHistory が決めた h.path に限られる)。
-func (h *history) discard() { _ = os.Remove(h.path) }
+func (h *history) at() time.Time {
+	if h.now == nil {
+		return time.Now()
+	}
+	return h.now()
+}
+
+func (h *history) discard() {
+	if err := allowDestructive("history-remove", h.path); err != nil {
+		return
+	}
+	_ = os.Remove(h.path)
+}
 
 type inventory struct {
 	Phase   string       `json:"phase"`
@@ -942,7 +1038,11 @@ type inventory struct {
 // 無音で破れる (敵対レビュー 2026-09-03 が実測)。名前は秒粒度で予測できるので現実的な穴だった。
 // newHistory 側が O_EXCL を使っている規律を、この置き場への**全部の書き込み**に通すこと。
 func (h *history) write(rep DeleteReport, phase string) error {
-	b, err := json.MarshalIndent(inventory{Phase: phase, Tool: "glogx doctor", Written: time.Now(), Report: rep}, "", "  ")
+	// 置き場は呼び出し側が決められる (opt.HistoryDir)。実ファイルを上書きしうるので検査点を通す
+	if err := allowDestructive("history-write", h.path); err != nil {
+		return err
+	}
+	b, err := json.MarshalIndent(inventory{Phase: phase, Tool: "glogx doctor", Written: h.at(), Report: rep}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -952,8 +1052,7 @@ func (h *history) write(rep DeleteReport, phase string) error {
 		return err
 	}
 	tmp := f.Name()
-	// destructive-op: allow 消すのは os.CreateTemp が今作った一時ファイルだけ (rename 成功後は no-op)
-	defer func() { _ = os.Remove(tmp) }()
+	defer func() { _ = os.Remove(tmp) }() // destructive-op: allow CreateTemp が今作った一時ファイルだけ
 	if err := f.Chmod(0o600); err != nil {
 		_ = f.Close()
 		return err

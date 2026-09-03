@@ -82,9 +82,12 @@ func newDeleteFixture(t *testing.T, e Entry, kb int) *deleteFixture {
 	mkfile(t, filepath.Join(target, "blob"), kb)
 	e.Paths = []string{"~/Library/Caches/testcache"}
 	run := &deleteRunner{}
+	if m, argv, err := parseDeleteVia(e.DeleteVia); err == nil && m == methodCLI {
+		sandboxAllowCommand(t, argv[0]) // cli: は登録したコマンドしか実行できない
+	}
 	return &deleteFixture{env: env, entry: e, target: target, run: run,
 		opt: DeleteOptions{Env: env, Run: run.run, BootTime: okBoot, Catalog: []Entry{e},
-			HistoryDir: filepath.Join(t.TempDir(), "history"),
+			HistoryDir: sandboxTempDir(t, "history"),
 			TrashDir:   filepath.Join(env.Home, ".Trash"), Now: time.Now}}
 }
 
@@ -233,21 +236,25 @@ func TestDeleteRmRemovesAndCountsFreedFromRescan(t *testing.T) {
 	}
 }
 
-// TOCTOU: 走査後に実体が差し替わっていたら触らない。
-func TestDeleteSkipsWhenIdentityChanged(t *testing.T) {
+// 削除の直前に走査し直すので、UI の走査と削除のあいだに実体が入れ替わっていても
+// **測り直した方**を対象にする (guard も同じ経路で再評価される)。
+// plan と exec のあいだの差し替えを弾くのは removeItem 側 (TestRemoveItemRefusesLateIdentitySwap)。
+func TestDeleteRemeasuresBeforeDeleting(t *testing.T) {
 	f := newDeleteFixture(t, rmEntry, 64)
 	r := f.scan(t)
-	if err := os.RemoveAll(f.target); err != nil {
-		t.Fatal(err)
-	}
-	mkfile(t, filepath.Join(f.target, "other"), 8) // 同じパス・別 inode
+	stale := r.Items[0].Size
+	rmFixture(t, f.target)
+	mkfile(t, filepath.Join(f.target, "other"), 8) // 同じパス・別 inode・別サイズ
 	rep := f.delete(t, r)
 	got := rep.Entries[0]
-	if !exists(filepath.Join(f.target, "other")) {
-		t.Fatal("差し替わった実体を消した (走査時の (dev, ino) と照合すること)")
+	if got.Outcome != OutcomeDeleted {
+		t.Fatalf("outcome = %s: %+v", got.Outcome, got)
 	}
-	if got.Items[0].Outcome != OutcomeSkipped || !strings.Contains(got.Items[0].Reason, "別の実体") {
-		t.Errorf("item = %+v", got.Items[0])
+	if got.BeforeSize == stale {
+		t.Errorf("走査時の申告値 %d をそのまま使っている (測り直すこと)", stale)
+	}
+	if got.Freed != got.BeforeSize {
+		t.Errorf("freed = %d before = %d", got.Freed, got.BeforeSize)
 	}
 }
 
@@ -280,7 +287,7 @@ func TestDeleteCLIVerifiedByRescan(t *testing.T) {
 	f.run.resp = map[string]cmdResp{"faketool purge": {rc: 0}}
 	f.run.onCall = func(args []string) {
 		if strings.Join(args, " ") == "faketool purge" {
-			_ = os.RemoveAll(f.target)
+			_ = os.RemoveAll(f.target) // destructive-op: allow fixture 内。sandboxAllow 済みの HOME 配下
 		}
 	}
 	rep := f.delete(t, f.scan(t))
@@ -320,12 +327,13 @@ func TestDeleteSimRuntimeUsesIdentifierNotPath(t *testing.T) {
 	e := Entry{ID: "simulator-runtimes", Label: "ランタイム", Tier: 1, Risk: RiskCaution,
 		DeleteVia: "cli:xcrun simctl runtime delete <id>", Recover: "x", Guard: GuardSimRuntime}
 	list := `{"a":{"identifier":"ABC-123.def_x","runtimeIdentifier":"com.apple.iOS-18-0","version":"18.0","build":"22A","sizeBytes":1024,"lastUsedAt":"2026-01-01T00:00:00Z","path":"` + rtPath + `"}}`
+	sandboxAllowCommand(t, "xcrun")
 	run := &deleteRunner{resp: map[string]cmdResp{
 		"xcrun simctl runtime list":   {stdout: list},
 		"xcrun simctl runtime delete": {stderr: "Please retry in 48s", rc: 24},
 	}}
 	opt := DeleteOptions{Env: env, Run: run.run, BootTime: okBoot, Catalog: []Entry{e},
-		HistoryDir: filepath.Join(t.TempDir(), "h"), TrashDir: filepath.Join(env.Home, ".Trash"), Now: time.Now}
+		HistoryDir: sandboxTempDir(t, "h"), TrashDir: filepath.Join(env.Home, ".Trash"), Now: time.Now}
 	rep := Scan(context.Background(), Options{Env: env, Run: run.run, Catalog: []Entry{e}, BootTime: okBoot})
 	out, err := Delete(context.Background(), rep.Results, opt)
 	if err != nil {
@@ -494,8 +502,8 @@ func TestDeleteDryRunTouchesNothing(t *testing.T) {
 	if !exists(f.target) {
 		t.Fatal("dry-run で消した")
 	}
-	if exists(f.opt.HistoryDir) {
-		t.Error("dry-run で記録を書いた")
+	if left, _ := filepath.Glob(filepath.Join(f.opt.HistoryDir, "*")); len(left) != 0 {
+		t.Errorf("dry-run で記録を書いた: %v", left)
 	}
 }
 
@@ -520,7 +528,7 @@ func TestDeleteRefusesPathsOutsideTheEntry(t *testing.T) {
 		t.Fatal("このエントリの対象でないパスを消した")
 	}
 	got := rep.Entries[0]
-	if got.Items[0].Outcome != OutcomeFailed || !strings.Contains(got.Items[0].Reason, "このエントリの対象ではありません") {
+	if got.Items[0].Outcome != OutcomeFailed || !strings.Contains(got.Items[0].Reason, "いまは削除の候補ではありません") {
 		t.Errorf("item = %+v", got.Items[0])
 	}
 	if got.Freed != 0 {
@@ -528,22 +536,36 @@ func TestDeleteRefusesPathsOutsideTheEntry(t *testing.T) {
 	}
 }
 
-// 走査時の実体が識別できない Item (Dev も Ino も 0) は触らない。
+// 実体を識別できない Item (Dev も Ino も 0) は触らない。
 // 「識別できないときは素通り」だと、守りが自分を無効化する条件を持つことになる。
-func TestDeleteSkipsItemWithoutIdentity(t *testing.T) {
-	f := newDeleteFixture(t, rmEntry, 64)
-	r := f.scan(t)
-	r.Items[0].Dev, r.Items[0].Ino = 0, 0
-	rep := f.delete(t, r)
-	if !exists(f.target) {
-		t.Fatal("識別できない Item を消した")
-	}
-	if got := rep.Entries[0].Items[0]; got.Outcome != OutcomeSkipped || !strings.Contains(got.Reason, "識別できません") {
+func TestPlanItemSkipsItemWithoutIdentity(t *testing.T) {
+	env := testEnv(t)
+	sandboxAllow(t, env.Home)
+	target := filepath.Join(env.Home, "Library", "Caches", "x")
+	mkfile(t, filepath.Join(target, "blob"), 8)
+	got := planItem(methodRM, nil, Item{Path: target, Size: 8192}, DeleteOptions{Env: env})
+	if got.Outcome != OutcomeSkipped || !strings.Contains(got.Reason, "識別できません") {
 		t.Errorf("item = %+v", got)
 	}
 }
 
-// 複数 Item: 片方だけ差し替わっていたら、そちらだけ飛ばして残りは消す。
+// 呼び出し側が申告した Item のサイズは使わない (測り直した値で数える)。
+func TestDeleteIgnoresClaimedItemSize(t *testing.T) {
+	f := newDeleteFixture(t, rmEntry, 64)
+	r := f.scan(t)
+	r.Items[0].Size = 1 << 40 // 1TB と申告する
+	r.Size = 1 << 40
+	rep := f.delete(t, r)
+	got := rep.Entries[0]
+	if got.BeforeSize >= 1<<40 || got.Freed >= 1<<40 {
+		t.Errorf("申告値を信じた: before=%d freed=%d", got.BeforeSize, got.Freed)
+	}
+	if got.Outcome != OutcomeDeleted {
+		t.Errorf("outcome = %s", got.Outcome)
+	}
+}
+
+// 複数 Item: 片方が既に消えていたら、そちらは触らず解放量にも数えない。
 // (Item 1 個の fixture だけだと「合計」と「先頭」を取り違える変異が素通りする)
 func TestDeleteHandlesMixedItemOutcomes(t *testing.T) {
 	env := testEnv(t)
@@ -556,46 +578,37 @@ func TestDeleteHandlesMixedItemOutcomes(t *testing.T) {
 		Recover: "x", Paths: []string{"~/Library/Caches/multi/*"}}
 	run := &deleteRunner{}
 	opt := DeleteOptions{Env: env, Run: run.run, BootTime: okBoot, Catalog: []Entry{e},
-		HistoryDir: filepath.Join(t.TempDir(), "h"), TrashDir: filepath.Join(env.Home, ".Trash"), Now: time.Now}
+		HistoryDir: sandboxTempDir(t, "h"), TrashDir: filepath.Join(env.Home, ".Trash"), Now: time.Now}
 	scan := Scan(context.Background(), Options{Env: env, Run: run.run, Catalog: []Entry{e}, BootTime: okBoot})
 	r := scan.Results[0]
 	if len(r.Items) != 2 {
 		t.Fatalf("前提が崩れている: Item が %d 件", len(r.Items))
 	}
-	// b だけ差し替える (同じパス・別 inode)
-	if err := os.RemoveAll(b); err != nil {
-		t.Fatal(err)
-	}
-	mkfile(t, filepath.Join(b, "other"), 32)
+	rmFixture(t, b) // 画面を見ているあいだに b が消えた
 
 	rep, err := Delete(context.Background(), []Result{r}, opt)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if exists(a) {
-		t.Error("差し替わっていない方が消えていない")
-	}
-	if !exists(b) {
-		t.Error("差し替わった方を消した")
+		t.Error("残っている方を消していない")
 	}
 	got := rep.Entries[0]
-	if got.Outcome != OutcomeIncomplete {
-		t.Errorf("outcome = %s (残りがあるので incomplete)", got.Outcome)
-	}
-	if len(got.Remaining) != 1 {
-		t.Errorf("残り = %v (1 件のはず)", got.Remaining)
-	}
-	// freed は「消えた a のぶん」ちょうど。飛ばした b は入らない
+	var skipped, deleted int
 	var deletedSize int64
 	for _, it := range got.Items {
-		if it.Outcome == OutcomeDeleted {
+		switch it.Outcome {
+		case OutcomeSkipped:
+			skipped++
+		case OutcomeDeleted:
+			deleted++
 			deletedSize += it.Size
 		}
 	}
-	if deletedSize == 0 {
-		t.Fatal("前提が崩れている: 消えた Item が無い")
+	if deleted != 1 || skipped != 1 {
+		t.Fatalf("結末の内訳 = deleted %d / skipped %d: %+v", deleted, skipped, got.Items)
 	}
-	if got.Freed != deletedSize {
+	if got.Freed != deletedSize || deletedSize == 0 {
 		t.Errorf("freed = %d, 消えた Item の合計 = %d (触った分だけを数えること)", got.Freed, deletedSize)
 	}
 }
@@ -608,9 +621,7 @@ func TestRemoveItemRefusesLateIdentitySwap(t *testing.T) {
 	mkfile(t, filepath.Join(target, "x"), 1)
 	dev, ino := identityOf(t, target)
 	// plan の後・exec の前に差し替わった状況
-	if err := os.RemoveAll(target); err != nil {
-		t.Fatal(err)
-	}
+	rmFixture(t, target)
 	mkfile(t, filepath.Join(target, "IMPORTANT"), 1)
 
 	o := &ItemOutcome{Path: target, dev: dev, ino: ino}
@@ -643,31 +654,46 @@ func TestDeleteStopsOnCancel(t *testing.T) {
 	}
 }
 
-// 再走査が blocked (guard で対象外) を返したら「消えた」にしない。
+// 削除の**前**に guard が閉じていたら、消さずに飛ばす (「いまは対象外」)。
+func TestDeleteSkipsWhenGuardClosesBeforeDelete(t *testing.T) {
+	env, e, run, target := guardedFixture(t)
+	scan := Scan(context.Background(), Options{Env: env, Run: run.run, Catalog: []Entry{e}, BootTime: okBoot})
+	if scan.Results[0].Status != StatusOK || len(scan.Results[0].Items) == 0 {
+		t.Fatalf("前提が崩れている: %+v", scan.Results[0])
+	}
+	// 画面を見ているあいだに FakeApp が起動した (guard が閉じた)
+	run.mu.Lock()
+	run.resp["pgrep -x FakeApp"] = cmdResp{rc: 0}
+	run.mu.Unlock()
+	rep, err := Delete(context.Background(), scan.Results, deleteOptFor(t, env, e, run))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rep.Entries[0]; got.Outcome != OutcomeSkipped || !strings.Contains(got.Reason, "いまは対象外") {
+		t.Fatalf("entry = %+v", got)
+	}
+	if !exists(target) {
+		t.Fatal("guard が閉じているのに消した")
+	}
+}
+
+// 削除の**後**の再走査が blocked を返したら「消えた」にしない。
 // blocked は Items が nil / Size 0 で返るので、素通りさせると全額 freed に化ける。
 func TestDeleteBlockedRescanIsIncomplete(t *testing.T) {
-	env := testEnv(t)
-	sandboxAllow(t, env.Home)
-	target := filepath.Join(env.Home, "Library", "Caches", "guarded")
-	mkfile(t, filepath.Join(target, "blob"), 128)
-	e := Entry{ID: "guarded", Label: "プロセス次第", Tier: 1, Risk: RiskSafe,
-		DeleteVia: "cli:faketool purge", Recover: "x", Guard: GuardProcessAbsent,
-		Processes: []string{"FakeApp"}, Paths: []string{"~/Library/Caches/guarded"}}
-	run := &deleteRunner{resp: map[string]cmdResp{
-		"pgrep -x FakeApp": {rc: 1}, // 走査時は起動していない
-		"faketool purge":   {rc: 0}, // 成功を申告するが実際には何もしない
-	}}
+	env, e, run, target := guardedFixture(t)
+	// cli は成功を申告するが何もしない。その実行を境に guard が閉じる
+	run.onCall = func(args []string) {
+		if strings.Join(args, " ") == "faketool purge" {
+			run.mu.Lock()
+			run.resp["pgrep -x FakeApp"] = cmdResp{rc: 0}
+			run.mu.Unlock()
+		}
+	}
 	scan := Scan(context.Background(), Options{Env: env, Run: run.run, Catalog: []Entry{e}, BootTime: okBoot})
 	if scan.Results[0].Status != StatusOK {
 		t.Fatalf("前提が崩れている: %+v", scan.Results[0])
 	}
-	// 削除の後、再走査の時点では起動している = blocked
-	run.mu.Lock()
-	run.resp["pgrep -x FakeApp"] = cmdResp{rc: 0}
-	run.mu.Unlock()
-
-	rep, err := Delete(context.Background(), scan.Results, DeleteOptions{Env: env, Run: run.run,
-		BootTime: okBoot, Catalog: []Entry{e}, HistoryDir: filepath.Join(t.TempDir(), "h"), Now: time.Now})
+	rep, err := Delete(context.Background(), scan.Results, deleteOptFor(t, env, e, run))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -681,6 +707,30 @@ func TestDeleteBlockedRescanIsIncomplete(t *testing.T) {
 	if !exists(target) {
 		t.Fatal("cli: の対象を消した")
 	}
+}
+
+// guardedFixture は「プロセスの有無で対象が変わる cli: エントリ」を用意する。
+func guardedFixture(t *testing.T) (Env, Entry, *deleteRunner, string) {
+	t.Helper()
+	env := testEnv(t)
+	sandboxAllow(t, env.Home)
+	sandboxAllowCommand(t, "faketool")
+	target := filepath.Join(env.Home, "Library", "Caches", "guarded")
+	mkfile(t, filepath.Join(target, "blob"), 128)
+	e := Entry{ID: "guarded", Label: "プロセス次第", Tier: 1, Risk: RiskSafe,
+		DeleteVia: "cli:faketool purge", Recover: "x", Guard: GuardProcessAbsent,
+		Processes: []string{"FakeApp"}, Paths: []string{"~/Library/Caches/guarded"}}
+	run := &deleteRunner{resp: map[string]cmdResp{
+		"pgrep -x FakeApp": {rc: 1}, // 走査時は起動していない
+		"faketool purge":   {rc: 0}, // 成功を申告するが実際には何もしない
+	}}
+	return env, e, run, target
+}
+
+func deleteOptFor(t *testing.T, env Env, e Entry, run *deleteRunner) DeleteOptions {
+	t.Helper()
+	return DeleteOptions{Env: env, Run: run.run, BootTime: okBoot, Catalog: []Entry{e},
+		HistoryDir: sandboxTempDir(t, "h"), Now: time.Now}
 }
 
 // コマンドが起動できなかった / 中断されたを、rc≠0 と同じ扱いにしない。
@@ -717,6 +767,7 @@ func TestDeleteSimRuntimeSuccess(t *testing.T) {
 	e := Entry{ID: "simulator-runtimes", Label: "ランタイム", Tier: 1, Risk: RiskCaution,
 		DeleteVia: "cli:xcrun simctl runtime delete <id>", Recover: "x", Guard: GuardSimRuntime}
 	list := `{"a":{"identifier":"ABC-123","runtimeIdentifier":"com.apple.iOS-18-0","version":"18.0","build":"22A","sizeBytes":2048,"lastUsedAt":"2026-01-01T00:00:00Z","path":"/nonexistent"}}`
+	sandboxAllowCommand(t, "xcrun")
 	run := &deleteRunner{resp: map[string]cmdResp{
 		"xcrun simctl runtime list":   {stdout: list},
 		"xcrun simctl runtime delete": {rc: 0},
@@ -730,7 +781,7 @@ func TestDeleteSimRuntimeSuccess(t *testing.T) {
 	}
 	scan := Scan(context.Background(), Options{Env: env, Run: run.run, Catalog: []Entry{e}, BootTime: okBoot})
 	rep, err := Delete(context.Background(), scan.Results, DeleteOptions{Env: env, Run: run.run,
-		BootTime: okBoot, Catalog: []Entry{e}, HistoryDir: filepath.Join(t.TempDir(), "h"), Now: time.Now})
+		BootTime: okBoot, Catalog: []Entry{e}, HistoryDir: sandboxTempDir(t, "h"), Now: time.Now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -744,9 +795,7 @@ func TestDeleteSimRuntimeSuccess(t *testing.T) {
 func TestDeleteAlreadyGoneIsSkipped(t *testing.T) {
 	f := newDeleteFixture(t, rmEntry, 64)
 	r := f.scan(t)
-	if err := os.RemoveAll(f.target); err != nil {
-		t.Fatal(err)
-	}
+	rmFixture(t, f.target)
 	rep := f.delete(t, r)
 	got := rep.Entries[0]
 	if got.Items[0].Outcome != OutcomeSkipped || !strings.Contains(got.Items[0].Reason, "既に存在しません") {
@@ -788,6 +837,7 @@ func TestDeleteDedupesTargets(t *testing.T) {
 // 実体を持たない (fail-closed が無音で破れる)。名前は秒粒度で予測できるので現実的な穴だった。
 func TestHistoryWriteDoesNotFollowSymlink(t *testing.T) {
 	dir := t.TempDir()
+	sandboxAllow(t, dir)
 	victim := filepath.Join(t.TempDir(), "victim")
 	if err := os.WriteFile(victim, []byte("PRECIOUS"), 0o600); err != nil {
 		t.Fatal(err)
@@ -814,7 +864,7 @@ func TestHistoryWriteDoesNotFollowSymlink(t *testing.T) {
 
 // 記録の名前は同じ秒に 2 回消しても衝突しない (ヘッダの主張を実測で固定する)。
 func TestNewHistoryAvoidsCollision(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "h")
+	dir := sandboxTempDir(t, "h")
 	fixed := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
 	opt := DeleteOptions{HistoryDir: dir, Now: func() time.Time { return fixed }}
 	seen := map[string]bool{}
@@ -833,7 +883,7 @@ func TestNewHistoryAvoidsCollision(t *testing.T) {
 // 確保だけして書けなかった記録ファイルは消す (0 バイトの .json を残すと、次に記録を読む処理が
 // JSON のパースエラーになる)。
 func TestHistoryDiscardRemovesClaimedFile(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "h")
+	dir := sandboxTempDir(t, "h")
 	h, err := newHistory(DeleteOptions{HistoryDir: dir, Now: time.Now})
 	if err != nil {
 		t.Fatal(err)
@@ -856,7 +906,7 @@ func TestWithDeleteDefaults(t *testing.T) {
 	if got.TrashDir != "/h/.Trash" {
 		t.Errorf("TrashDir = %q", got.TrashDir)
 	}
-	if got.PerEntry <= 0 || got.VerifyTimeout <= 0 || got.CmdTimeout <= 0 || got.Now == nil ||
+	if got.ScanTimeout <= 0 || got.VerifyTimeout <= 0 || got.CmdTimeout <= 0 || got.Now == nil ||
 		got.Run == nil || got.BootTime == nil || len(got.Catalog) == 0 {
 		t.Errorf("既定値が埋まっていない: %+v", got)
 	}
@@ -922,5 +972,136 @@ func TestCatalogPathEntriesHavePaths(t *testing.T) {
 	}
 	if n == 0 {
 		t.Fatal("rm / trash のエントリが 1 件も無い (検査が空振りしている)")
+	}
+}
+
+// ---- 2 周目の敵対的レビューが開けた穴を塞ぐテスト ----
+
+// 記録が**途中で**書けなくなったら、残りのエントリを触らずに止める
+// (fail-closed は最初の 1 回だけでなく途中でも成り立たせる)。
+func TestDeleteStopsWhenHistoryBecomesUnwritable(t *testing.T) {
+	env := testEnv(t)
+	sandboxAllow(t, env.Home)
+	sandboxAllowCommand(t, "faketool")
+	hist := sandboxTempDir(t, "h")
+	first := Entry{ID: "first", Label: "1 件目", Tier: 1, Risk: RiskSafe, DeleteVia: "cli:faketool purge",
+		Recover: "x", Paths: []string{"~/Library/Caches/first"}}
+	second := Entry{ID: "second", Label: "2 件目", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
+		Recover: "x", Paths: []string{"~/Library/Caches/second"}}
+	t1 := filepath.Join(env.Home, "Library", "Caches", "first")
+	t2 := filepath.Join(env.Home, "Library", "Caches", "second")
+	mkfile(t, filepath.Join(t1, "blob"), 16)
+	mkfile(t, filepath.Join(t2, "blob"), 16)
+	run := &deleteRunner{resp: map[string]cmdResp{"faketool purge": {rc: 0}}}
+	// 1 件目の処理中に置き場が書けなくなる (ディスク満杯・権限変更を模す)
+	run.onCall = func(args []string) {
+		if strings.Join(args, " ") == "faketool purge" {
+			_ = os.Chmod(hist, 0o500)
+		}
+	}
+	t.Cleanup(func() { _ = os.Chmod(hist, 0o700) })
+	cat := []Entry{first, second}
+	scan := Scan(context.Background(), Options{Env: env, Run: run.run, Catalog: cat, BootTime: okBoot})
+	rep, err := Delete(context.Background(), scan.Results, DeleteOptions{Env: env, Run: run.run,
+		BootTime: okBoot, Catalog: cat, HistoryDir: hist, Now: time.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.HistoryError == "" {
+		t.Fatal("記録の失敗が報告されていない")
+	}
+	var stopped bool
+	for _, e := range rep.Entries {
+		if e.ID == "second" {
+			stopped = e.Outcome == OutcomeSkipped && strings.Contains(e.Reason, "記録を残せなくなった")
+		}
+	}
+	if !stopped {
+		t.Errorf("記録が書けなくなった後もエントリを処理した: %+v", rep.Entries)
+	}
+	if !exists(t2) {
+		t.Fatal("記録を残せないのに 2 件目を消した")
+	}
+}
+
+// 中断で終わった run に done (= 最後まで行った) と書かない。
+func TestDeleteRecordsAbortedPhase(t *testing.T) {
+	f := newDeleteFixture(t, rmEntry, 64)
+	r := f.scan(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rep, err := Delete(ctx, []Result{r}, f.opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inv inventory
+	b, err := os.ReadFile(rep.HistoryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &inv); err != nil {
+		t.Fatal(err)
+	}
+	if inv.Phase != phaseAborted {
+		t.Errorf("phase = %q (中断なので %q)", inv.Phase, phaseAborted)
+	}
+}
+
+// 記録の時刻は opt.Now から取る (テストが時刻を差せる場所を 1 箇所も残さない)。
+func TestHistoryUsesInjectedClock(t *testing.T) {
+	f := newDeleteFixture(t, rmEntry, 64)
+	fixed := time.Date(2026, 9, 3, 1, 2, 3, 0, time.UTC)
+	f.opt.Now = func() time.Time { return fixed }
+	rep := f.delete(t, f.scan(t))
+	b, err := os.ReadFile(rep.HistoryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inv inventory
+	if err := json.Unmarshal(b, &inv); err != nil {
+		t.Fatal(err)
+	}
+	if !inv.Written.Equal(fixed) {
+		t.Errorf("written = %s (注入した時刻 %s のはず)", inv.Written, fixed)
+	}
+}
+
+// 削除が成功したら、途中で使う一時名の残骸を残さない。
+func TestRemoveItemLeavesNoStagingLeftover(t *testing.T) {
+	root := t.TempDir()
+	sandboxAllow(t, root)
+	target := filepath.Join(root, "tree")
+	mkfile(t, filepath.Join(target, "x"), 1)
+	dev, ino := identityOf(t, target)
+	if err := removeItem(&ItemOutcome{Path: target, dev: dev, ino: ino}); err != nil {
+		t.Fatal(err)
+	}
+	left, _ := filepath.Glob(filepath.Join(root, ".glogx-delete-*"))
+	if len(left) != 0 {
+		t.Errorf("一時名の残骸: %v", left)
+	}
+}
+
+// ゴミ箱の**経路の途中**に symlink があれば移動しない
+// (最終要素だけを見る Lstat / O_NOFOLLOW では、HOME 自体が symlink の構成を素通りする)。
+func TestTrashMoveRejectsSymlinkedAncestor(t *testing.T) {
+	root := t.TempDir()
+	sandboxAllow(t, root)
+	real := filepath.Join(root, "real-home")
+	if err := os.MkdirAll(filepath.Join(real, ".Trash"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "home")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(root, "victim")
+	mkfile(t, src, 1)
+	dev, ino := identityOf(t, src)
+	if _, err := trashMove(src, filepath.Join(link, ".Trash"), dev, ino); err == nil {
+		t.Fatal("経路の途中に symlink があるゴミ箱へ移動した")
+	}
+	if !exists(src) {
+		t.Fatal("移動元が消えた")
 	}
 }
