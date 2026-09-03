@@ -1,0 +1,66 @@
+# golangci-lint v2 config for doctor (svcdoctor / diskdoctor の判定本体と、それを叩く CLI)。
+# 既定の linter (errcheck / govet / ineffassign / staticcheck / unused) に、このモジュールの
+# 不変条件を機械で守るものを足す。バージョンは Makefile の GOLANGCI_LINT_VERSION と整合させること。
+#
+# 🚨 この設定が無かった間、CI (src_doctor.yml → _go-project.yml の `make -C src/doctor lint`) は
+# **既定の 5 個だけ**を回していた。glogx が `disk.Risk` / `Status` / `Outcome` / `Guard` を
+# そのまま分岐材料に使っているのに、網羅の強制 (exhaustive) は glogx 側だけに掛かっており、
+# gofmt されていないファイルが commit 済みでも誰も気づかなかった (issue 222)。
+version: "2"
+
+linters:
+  enable:
+    - asasalint      # []any を ...any にそのまま渡す誤り
+    - bidichk        # 危険な Unicode 双方向制御文字 (コピペ由来の混入対策)
+    - bodyclose      # HTTP response body の close 漏れ (fd リーク)
+    - containedctx   # struct フィールドへの ctx 格納の検出 (ctx は引数で渡す)
+    - contextcheck   # ctx の非伝播・context.Background の握り込み検出
+    - copyloopvar    # loop variables needlessly copied (Go 1.22+)
+    - dupl           # コピペ重複の検出 (閾値は下。テストは除外)
+    - durationcheck  # Duration 同士の乗算バグ (timeout 計算があるモジュール)
+    - errname        # sentinel error は Err 接頭辞・error 型は Error 接尾辞
+    - errorlint      # errors.Is/As を使わない比較・%w 漏れの検出
+    - exhaustive     # default なし switch の enum 網羅を強制 (settings 参照)
+    - exptostd       # x/exp で書いたものの stdlib 昇格済み検出
+    - fatcontext     # ループ内で context を積み重ねるパターンの検出
+    - makezero       # make([]T, n) への append で先頭にゼロ値が残るバグ
+    - mirror         # bytes/strings の鏡写し API の取り違え
+    - misspell       # common English misspellings in comments/strings
+    - nilnesserr     # err != nil を確認したのに別の nil error を返すバグ
+    - nolintlint     # nolint コメントの体裁
+    - recvcheck      # value / pointer receiver の混在検出
+    - usestdlibvars  # hand-written constants that exist in the stdlib
+    - usetesting     # テストの os.MkdirTemp/Chdir 等を t.TempDir/t.Chdir へ
+    - wastedassign   # assignments whose value is never read
+    # 未導入 (既存の指摘を潰してから足す。数は 2026-09-03 の実測):
+    #   prealloc 6 / intrange 3 / perfsprint 2 / unparam 1 / unconvert 1。
+    #   unconvert は disk/size.go の Stat_t 変換に既存の nolint があるので、外す判断とセットで見る。
+    #   intrange の 1 件は src/doctor/disk/scan_test.go (issue 222 の残件)
+  settings:
+    dupl:
+      threshold: 120
+    exhaustive:
+      # default 付き switch は「残りは default で受ける」という意図表明なので網羅を要求しない
+      # (glogx の .golangci.yml と同じ設定。判定の出典を 2 つにしない)。
+      # 🚨 したがって、網羅を守らせたい switch には default を書かず全 case を並べること。
+      # disk/scan.go の scanEntry がその形 (Guard を前後 2 本の switch で分担しており、
+      # どちらにも書き忘れると guard 無しで候補になる = fail-open)。
+      default-signifies-exhaustive: true
+  exclusions:
+    rules:
+      # テストのテーブル/フローの相似は仕様 (glogx と同じ扱い)
+      - path: _test\.go
+        linters:
+          - dupl
+
+issues:
+  # 同じ文面の指摘を 4 件目から落とす既定 (3) では、一括退行のときに直しては再実行を繰り返す
+  # ことになる (glogx の issue 118 と同じ理由)
+  max-same-issues: 0
+  max-issues-per-linter: 0
+
+# gofmt を CI ゲートにする (v2 では formatter は linters と別枠。ここに無いと run が整形差分を見ない)。
+# 🚨 これが無かったため disk/report_test.go が改行なしで commit されていた (issue 222)
+formatters:
+  enable:
+    - gofmt

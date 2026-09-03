@@ -704,6 +704,8 @@ func verifyEntry(ctx context.Context, out *EntryOutcome, opt DeleteOptions) {
 	switch out.Outcome {
 	case OutcomeFailed, OutcomeSkipped, OutcomeProposed:
 		return
+	case OutcomePlanned, OutcomeDeleted, OutcomeTrashed, OutcomeIncomplete:
+		// 再走査して実際に消えたかを確かめる (下へ進む)
 	}
 	e, ok := lookupEntry(opt.Catalog, out.ID)
 	if !ok {
@@ -753,6 +755,8 @@ func verifyEntry(ctx context.Context, out *EntryOutcome, opt DeleteOptions) {
 			touchedSize += it.Size
 		case OutcomeFailed:
 			failed++
+		case OutcomePlanned, OutcomeProposed, OutcomeSkipped:
+			// 触っていない (解放量にも失敗にも数えない)
 		}
 	}
 	// 🚨 解放量は **①再走査の引き算** と **②実際に触った Item の合計** の小さい方。

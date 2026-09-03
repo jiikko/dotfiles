@@ -603,6 +603,8 @@ func TestDeleteHandlesMixedItemOutcomes(t *testing.T) {
 		case OutcomeDeleted:
 			deleted++
 			deletedSize += it.Size
+		case OutcomePlanned, OutcomeTrashed, OutcomeProposed, OutcomeIncomplete, OutcomeFailed:
+			// このテストでは出ない結末 (出たら下の内訳チェックが落ちる)
 		}
 	}
 	if deleted != 1 || skipped != 1 {

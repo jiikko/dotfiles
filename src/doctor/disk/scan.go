@@ -179,6 +179,11 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 				return Result{Entry: e, Status: StatusBlocked, Reason: name + " 起動中のため対象外"}
 			}
 		}
+	// 🚨 残りの Guard は**パス展開の後**の switch (下の「guard による Item の絞り込み」) が受ける。
+	// 全 Guard をどちらか一方で必ず受けるのが不変条件。default を書かず全 case を並べることで
+	// exhaustive (.golangci.yml) がそれを強制する: 新しい Guard をどちらにも書き忘れると
+	// guard が 1 つも適用されないまま候補になる (fail-open)。
+	case GuardNone, GuardBoottime, GuardSimDevice, GuardOrphanApp, GuardBrewOrphan, GuardVMRoot:
 	}
 	// $BREW_PREFIX を使うエントリは brew --prefix を実測してから展開する (直書きしない: issue 176)。
 	// 取れなければ fail-closed (候補 0 件に畳まない)。
@@ -274,6 +279,8 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 			}
 		}
 		paths = kept
+	// 絞り込みが無い (GuardNone) か、上の switch で処理済み。理由は上の case 群のコメント
+	case GuardNone, GuardSimRuntime, GuardBrewCleanup, GuardProcessAbsent:
 	}
 	return sizePaths(ctx, opt, e, paths)
 }
