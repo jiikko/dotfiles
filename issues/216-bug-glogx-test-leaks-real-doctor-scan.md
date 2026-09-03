@@ -47,8 +47,11 @@ fake runner)」を doctor 側の不変条件として書いているが、**同�
 - `t.Cleanup` を `stop()` ではなく `doctorCleanup` latch の join (`waitDoctorCleanup` 相当) にする。
   latch は既にあるので数行
 
-⚠️ **`src/glogx/doctor_view.go` はユーザー指示で凍結中** (2026-09-03、別セッションが全体見直し中)。
-着手は合図待ち。見直しに含める方が安いなら、そちらへ寄せてよい。
+⚠️ **`src/glogx/doctor_view.go` / `src/glogx/tui_helpers_test.go` はユーザー指示で凍結中**
+(2026-09-03。ユーザーが別マシンのセッションで全体見直し中)。**合図が出るまでどのセッションも
+触らない**。同じ凍結指示は dotfiles-92 にも届いており、そちらが凍結直前に入れていた
+doctor_view.go の 3 箇所は revert され、patch が `issues/pending/169` の末尾に退避されている
+(合図後に見直し後の実装と突き合わせて当てる方針)。着手時はその patch との衝突を先に見る。
 
 ## テスト観点
 
