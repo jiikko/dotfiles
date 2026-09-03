@@ -72,7 +72,8 @@ func loadUsageCache(path string, now time.Time) (*usage.Snapshot, bool) {
 			return nil, false
 		}
 	}
-	if now.Sub(entry.FetchedAt) >= usageCacheTTL {
+	// age < 0 (未来) も取り直す (issue 201)
+	if age := now.Sub(entry.FetchedAt); age < 0 || age >= usageCacheTTL {
 		return nil, false
 	}
 	return entry.Snapshot, true

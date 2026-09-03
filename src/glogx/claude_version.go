@@ -129,7 +129,8 @@ func loadClaudeVersionCache(path string, now time.Time) (latest string, ok bool)
 	if err := json.Unmarshal(data, &c); err != nil {
 		return "", false
 	}
-	if c.Latest == "" || now.Sub(c.FetchedAt) >= claudeVersionTTL {
+	// age < 0 (未来) も取り直す (時計の巻き戻しで古い版を永久に使い続けない。issue 201)
+	if age := now.Sub(c.FetchedAt); c.Latest == "" || age < 0 || age >= claudeVersionTTL {
 		return "", false
 	}
 	return c.Latest, true

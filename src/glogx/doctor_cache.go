@@ -317,7 +317,11 @@ func doctorStartupToast(c doctorDiskCache, ok bool, now time.Time) string {
 		text += fmt.Sprintf("、%d 件は診断できず", c.Failed)
 	}
 	text += " — D で doctor を開く"
-	if age := now.Sub(c.ScannedAt); age > doctorStaleAfter {
+	// ⚠️ age < 0 (ScannedAt が未来) は「N 日前」を負の数で出さず、鮮度が不明である旨にする。
+	// 黙って注記を落とすと「新しい診断」に見える (issue 201)。
+	if age := now.Sub(c.ScannedAt); age < 0 {
+		text += " (診断時刻が未来。時計を確認してください)"
+	} else if age > doctorStaleAfter {
 		text += fmt.Sprintf(" (%d 日前の診断)", int(age.Hours()/24))
 	}
 	return text

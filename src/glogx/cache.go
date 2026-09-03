@@ -44,7 +44,11 @@ func cacheTTL(state CIState) time.Duration {
 }
 
 func (e cacheEntry) fresh(now time.Time) bool {
-	return now.Sub(e.FetchedAt) < cacheTTL(e.State)
+	// age < 0 (FetchedAt が未来) は fresh にしない。時計を戻した / NTP の大補正 /
+	// 別マシンのキャッシュを持ってきたときに、古い CI 状態を**永久に**使い続けるのを防ぐ
+	// (issue 201。doctor 側は既に同じ規律を持っており、ここが非対称だった)。
+	age := now.Sub(e.FetchedAt)
+	return age >= 0 && age < cacheTTL(e.State)
 }
 
 // cacheBaseDir は glogx のキャッシュ置き場 ($XDG_CACHE_HOME/glog、未設定時は ~/.cache/glog)。
