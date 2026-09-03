@@ -9,6 +9,10 @@
 - ヘルパーは `lib/` か `test_` で始まらない名前に置く。`.bats` も自動発見 (bats 未導入環境は skip を表示して通る)
 - lint は shebang で方言判別する: zsh shebang → `zsh -n`、それ以外 → `shellcheck -S warning`。shebang を忘れると zsh 構文のまま shellcheck に回って落ちる
 - 単体実行は `make test-dir DIR=tests/<dir>`、変更に紐づく分だけは `make test-changed PATHS="..."` (写像は `scripts/test_changed.sh --help`)
+- ⚠️ **`bash tests/.../test_x.sh` の直接実行はしない**。zsh のテストを bash で回すと
+  `source "${0:A:h}/test_helper.sh"` が空パスに潰れて helper が 1 行も走らず、`cd` の失敗を
+  見ていない経路が **repo root に fixture を書く** (実測 2026-09-03。残骸 3 件 / issue 204)。
+  数字も無効になる (rc=127 で即落ちしたものを「速い」と読む)。ランナー経由なら shebang が尊重される
 
 ## 所要時間 (実測 2026-09-03 / 開発機・macOS)
 

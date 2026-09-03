@@ -82,3 +82,29 @@ E2E の credential を実 Keychain に書かなくする変更 (in-memory 実装
 
 教訓は「pipefail を使え」ではない (1 回目は status の問題ではない)。
 **検証は出力をファイルへ落としてから読む**。削るのは読んだ後でいい。
+
+## 「抽出が空 = 違反 0 件 = 緑」の実例 (2026-09-03, dotfiles issue 203)
+
+予防的 lint 2 本 (`scripts/check_go_project_lanes.sh` / 公開ラッパーのガード静的検査) を
+書いた 1 セッションで、**同じ形の false green を 4 回作った**。いずれも検査は走り、出力も出て、
+「違反 0 件」と報告した。
+
+1. **`set -euo pipefail` 下の無マッチ grep**: `refs=$(... | grep -oE ... | sort -u)` は
+   無マッチ (rc=1) で**代入ごとスクリプトを殺す**。直後に置いた「抽出できなければ FAIL」の
+   ガードには到達せず、1 本目の関数で静かに終わって rc=1 になった。`|| true` を落とすたびに
+   再発し、このセッションで 3 回踏んだ
+2. **フィルタがパス名を前提にしていた**: 関数の定義元を `[[ "$src" == *"/dotfiles/"* ]]` で
+   絞ったところ、**worktree (`/private/tmp/.../wt-a2`) では 1 件も一致せず**、走査 0 件のまま
+   緑になった。変異 9 本が全部素通りして初めて気づいた (変異検証がこの穴の発見器になった)
+3. **sed の式の破損**: 括弧の対応を崩した sed がエラーを出しつつ空を返し、refs が空 = 違反 0 件
+   として緑になった
+4. **`comm` の locale**: `sort` だけ `LC_ALL=C` にして `comm` を既定 locale のままにしたため、
+   comm から見て入力が未ソートになり**引き算が黙って崩れた** (`local _l` の除外が効かず、
+   逆に誤検出した)
+
+塞いだ形: 抽出を 1 関数 (`sk_refs_of`) に集約し、**canary 3 本が同じ関数を通る**ようにした
+(参照の抽出 / 文字列リテラルの除外 / `local` の引き算)。さらに「この repo なら必ず居る関数
+(`concat` / `av1ify`) が列挙に入っているか」を確かめる canary を足し、2 の形を塞いだ。
+
+出典: `issues/done/203-test-lint-candidates-preventive.md` /
+`issues/done/208-retro-tmux-indicator-and-lint-checks-2026-09-03.md` 項目 2。
