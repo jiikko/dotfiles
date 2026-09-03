@@ -1,7 +1,7 @@
 # 205 audit: doctor 画面の並行・中断・状態機械を red team で攻める (163 の体 3。唯一の未走行)
 
 起票日: 2026-09-03
-出典: [issues/163](163-audit-doctor-implementation-red-team.md) の「体 3」(6 観点のうちこれだけ成果ゼロ)
+出典: [issues/163](done/163-audit-doctor-implementation-red-team.md) の「体 3」(6 観点のうちこれだけ成果ゼロ)
 重要度: P2 (④ 削除の土台になる状態機械。指摘が出れば P1 になりうる)
 対象: `src/glogx/doctor_view.go` 全文、`src/glogx/tui.go` の doctor 配線、`src/glogx/main.go` の再起動と
 Ctrl-C 経路、`src/doctor/runner/runner.go`、`src/doctor/disk/scan.go` の goroutine と `OnResult`
@@ -22,14 +22,24 @@ Ctrl-C 経路、`src/doctor/runner/runner.go`、`src/doctor/disk/scan.go` の go
   **描画とキーの間で結果が届く** (disk の Msg で `diskResults` が伸びる) と `cursor` が別の行を指す。
   Enter / y / Y が意図と違う行に効く再現手順を作る (bubbletea は Update → View の順だが、Msg 2 つが
   連続すると View を挟まない)
-  - ⚠️ **2026-09-03 に周辺が動いている**: issue 180 で Failures 行と Undiagnosed 行を selectable にし、
-    182 でラベル列を幅に応じて縮める形にした。**選べる行の数と順序が変わったので、当時の攻め口は
-    そのまま成立しない**。まず現状のコードを読み直すこと
+  - **2026-09-03 の変更でこの攻め口は当たりやすくなった** (最初は「成立しない」と書いたが逆だった。
+    敵対的レビューで訂正): issue 180 が Failures 行を `selectable: true` にし、しかも
+    **各 Result の直下に挿入する** (`doctor_view.go` の `diskSection`)。走査中は Msg が届くたびに
+    `diskResults` が伸びるので、**選択可能な行が行の途中に増える** = カーソル index のずれの
+    再現性は上がっている。
+    ⚠️ issue 182 (ラベル列の幅を縮める) は `labelW` の切り詰めだけで `selectable` にも行数にも
+    触らないので、**この攻め口とは無関係**
 - **`expanded` のキーのずれ**: brew は `brew:<i>:<summary>`、disk は `disk:<ID>`。再スキャンで順序が
   変わると展開状態がずれる / 別の行が開く。`start` が `map{}` で作り直しているのは意図か
-- **nil channel の永久ブロック**: `start(force=false)` で snapshot 復元したとき `diskCh` は nil。
-  `waitDiskCmd` が nil channel を読むと**永久にブロック**する。gen 一致で呼ばれる経路が
-  無いことを証明するか、あるなら再現する
+- **旧世代のチャネルを新しい gen で待つ**: 163 は「snapshot 復元したとき `diskCh` は nil なので
+  `waitDiskCmd` が永久にブロックする」と書いていたが、**これは事実誤認だった** (敵対的レビューで訂正)。
+  `diskCh` に nil を代入する箇所は無く (`doctor_view.go` の宣言 / 代入 / 読みの 3 箇所を確認)、
+  `start(force=false)` の snapshot 復元は**チャネルを作る前に早期 return する**ので、
+  `diskCh` は**前世代のチャネルを保持したまま**になる (nil なのは初回起動時だけ)。
+  ⇒ 攻めるべきは「**旧世代のチャネルを新しい gen で待つ**」形。`waitDiskCmd(gen)` が掴むのは
+  `v.diskCh` (旧世代) で、そこへ旧世代の走査が書き込むと `receiveDisk` は gen 不一致で捨てる。
+  捨てた後に再アームされないなら、その世代の待ち受けが消える。**初回起動 (nil) で
+  `waitDiskCmd` が呼ばれる経路が無いこと**も併せて確かめる
 - **`Setpgid` と割り込みの相互作用**: 子を別プロセスグループにしたので glogx が受ける SIGINT が子に届かない。
   `cancelAll` が必ず走るか (Ctrl-C 2 回の `quitNow` 経由を含む)。`main.go` の `syscall.Exec` 再起動 (`r`) の
   直前に cancel した子が新イメージの子として残る形 (163 では「記録に留めた」。Setpgid 導入後は
@@ -53,7 +63,8 @@ Ctrl-C 経路、`src/doctor/runner/runner.go`、`src/doctor/disk/scan.go` の go
 
 163 の「## 前回 (2 回目) で「記録に留めた」もの」と「## 結果 (索引)」の却下・壊せなかった攻め口、
 [issues/148](next/148-feat-glogx-doctor-disk-diagnosis.md) の「敵対的レビュー 2 回目」の記録済み 5 件。
-2026-09-03 に done へ入った 167-182 の内容も再提出しない (`ls issues/done/1[6-8]*` でタイトルを確認)。
+2026-09-03 に決着した 167-183 の内容も再提出しない。配置はばらけているので
+`ls issues/done/1[6-8]* issues/pending/169-* issues/183-*` でタイトルを確認する。
 
 ## 受け入れ条件
 
