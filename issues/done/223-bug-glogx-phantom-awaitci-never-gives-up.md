@@ -131,3 +131,62 @@ CI 取得の会計を型へ閉じる話は issue 224 に分けた。
 - issue 224 (CI 取得の会計に所有者が無い。本件はその帰結の 1 つ)
 - issue 227 (同じ「単一の概念が手書きで散る」形)
 - issue [032](done/032-fix-glogx-bubbletea-tick-gaps.md) — tick チェーンの落ちる側 (対になる欠陥)
+
+## 対応 (2026-09-04。`5c205228`)
+
+不変条件を **「awaitCI ⊆ commits の SHA」**にした。3 箇所:
+
+| 箇所 | 変更 |
+|---|---|
+| `refetchAfterPush` | `pushAnimTip` を入れる前に commits 所属を確かめる (入口) |
+| `settleAwaitCI` | commits に無い SHA を毎周期落とす (張る経路が増えたときの最後の砦) |
+| `ciPollMsg` の targets 空分岐 | 残っている `awaitCI` を空にする |
+
+### 🚨 起票時の対応方針に 1 つ誤りがあった
+
+本文は「打ち切りの計上を早期 return の**前**へ出す (targets の有無に関わらず 2 分で諦める)」
+と書いていたが、**これは効かない**。`len(targets) == 0` の分岐は `m.ciPolling = false` で
+**チェーンごと止める**ので、そこで 1 回数えても次の周期が来ない。2 分の打ち切りに到達しない
+ことは変わらない。
+
+代わりに「**targets が空なら、残っている awaitCI は定義上ファントム**」を使った。
+`ciPollTargets` は commits を走査して `m.awaitCI[c.SHA]` を targets に入れるので、
+`targets == 0` は「awaitCI の要素がすべて commits の外にいる」と同値。そこで nil にする。
+
+### テスト: 両向きを 1 つの表で見る (issue 032 との対)
+
+契約は「必要なときに回る」と「不要になったら止まる」の両方なので、テーブルに両方入れた。
+
+🚨 **最初に書いた表は何も測っていなかった。** `newTestBrowse` は `usageOv` を `visible` で
+作るので `usageOv.loading()` が常に true になり、`spinnerActive()` は awaitCI に関わらず
+true のままだった (3 ケースが落ちて気づいた)。usage を「取得済み」にして awaitCI だけが
+効く状態にしてから測る。**この中和を外す変異 (M4) も当ててあり**、観測点が飽和する形への
+退行は red になる。
+
+### 変異 4 本
+
+| 変異 | 結果 |
+|---|---|
+| 入口の membership 検査を外す (元の形へ戻す) | red |
+| `settleAwaitCI` の掃除を外す | red 2 件 |
+| targets 空でのファントム掃除を外す | red 2 件 |
+| 表の中和を外す (観測点を飽和させる) | red |
+
+⚠️ 復元で 1 度失敗した。新規テストは untracked なので `git checkout --` では戻せず
+(`did not match any file(s) known to git`)、M4 の変異が残ったまま `make test` まで進んだ
+(lint の unused で気づいた)。[`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md)
+が明記している罠を踏んだ。
+
+## 未確認のまま残したもの
+
+発火手順 3 (「push 演出中の pull で tip の SHA が消える」) は**実機で再現していない**。
+構造としては commits 外の SHA が入れば同じ結果になるので、入口の網羅ではなくガードを直した
+(本文の判断どおり)。
+
+## この issue では扱わなかったもの
+
+`awaitCI` のライフサイクルに単一の所有者が無い件 (張る / 卒業 / 諦め / 破棄が 4 箇所) は
+issue 224 へ分けてあり、224 は「`fetching` の派生化」だけ実施して `ciFetch` 型の切り出しは
+trigger 待ちにしてある。本件の 3 箇所はその型が来ても残る (不変条件の判定そのものなので)。
+
+`make test` rc=0。⚠️ **敵対的レビューは未実施。**
