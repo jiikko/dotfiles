@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -67,9 +68,15 @@ func TestOverlayBoxTopRightEmpty(t *testing.T) {
 	if got := overlayBoxTopRight(nil, []string{"x"}, 10, false); got != nil {
 		t.Errorf("空ウィンドウで nil を返さない: %v", got)
 	}
-	window := []string{"a"}
-	_ = overlayBoxTopRight(window, nil, 10, false)          // 空 box: 何もしない
-	_ = overlayBoxTopRight(window, []string{"x"}, 0, false) // width0: panic しなければ OK
+	// 空 box / 幅 0 は**ウィンドウをそのまま返す**。戻り値を捨てると「背景を丸ごと落とす」
+	// 退行 (overlayBoxRight の早期 return を nil にする) が素通りする (issue 198 発見 1)。
+	window := []string{"a", "b"}
+	if got := overlayBoxTopRight(window, nil, 10, false); !slices.Equal(got, window) {
+		t.Errorf("空 box でウィンドウが変わった: got %v want %v", got, window)
+	}
+	if got := overlayBoxTopRight(window, []string{"x"}, 0, false); !slices.Equal(got, window) {
+		t.Errorf("幅 0 でウィンドウが変わった: got %v want %v", got, window)
+	}
 }
 
 // overlayCenteredBox は中央モーダルを行塗り潰しでなく合成で重ね、左右の背景リストを残す

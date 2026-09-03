@@ -672,6 +672,10 @@ func TestDoctorReusesHeavyEntries(t *testing.T) {
 		"future":  func(r *disk.Result) { r.MeasuredAt = now.Add(48 * time.Hour) }, // 時計を戻した
 		"failed":  func(r *disk.Result) { r.Status = disk.StatusFailed },
 		"blocked": func(r *disk.Result) { r.Status = disk.StatusBlocked },
+		// ⚠️ このケースは **TTL 判定に包含されている** (now が実時刻なので、ゼロ値との差は
+		// 常に TTL 超え)。`IsZero()` ガードを外しても red にならない = ここでは
+		// 「ゼロ値を弾く」を守っていない (issue 198 発見 3)。守るのは下の
+		// TestDoctorReuseSkipsZeroMeasuredAtNearEpoch。
 		"nomeasure": func(r *disk.Result) {
 			r.MeasuredAt = time.Time{}
 		},
@@ -1738,5 +1742,38 @@ func TestDoctorRestoredValuesAreValidated(t *testing.T) {
 	// 細工した Failed も信用しない (エントリから数え直す)
 	if strings.Contains(got, "9 件") {
 		t.Errorf("細工した Failed がそのまま出た: %q", got)
+	}
+}
+
+// doctorReuseFrom は MeasuredAt がゼロ値の Result を再利用しない。
+//
+// 🚨 このガードは **TTL 判定では代替できない**。TestDoctorReusesHeavyEntries の "nomeasure" は
+// now が実時刻なので「ゼロ値との差 = 約 56 年 >= TTL」で弾かれ、`IsZero()` を外しても green の
+// ままだった (issue 198 発見 3)。now が epoch 近傍のとき (fake clock を入れた場合や、
+// 別マシンから持ってきた壊れた snapshot と時計のズレが重なった場合) は age が TTL 内に収まり、
+// **測った覚えのない値を「前回の計測」として再利用する**。純関数なので直接呼んで固定する。
+func TestDoctorReuseSkipsZeroMeasuredAtNearEpoch(t *testing.T) {
+	// ⚠️ ゼロ値は **西暦 1 年** (Unix epoch ではない)。基準を time.Unix(0,0) にすると差が
+	//    約 2562047 時間になり TTL 判定で弾かれてしまい、このテストは何も守らない
+	//    (最初にそう書いて変異が green のままだった)。ゼロ値そのものから 30 分後を now にする。
+	now := time.Time{}.Add(30 * time.Minute) // ゼロ値との差 30 分 = TTL (1 時間) の内側
+	zero := disk.Result{Entry: disk.Entry{ID: "thing"}, Status: disk.StatusOK, Elapsed: 3 * time.Second}
+	sn := doctorSnapshot{ScannedAt: now, Disk: disk.Report{Results: []disk.Result{zero}}}
+	if reuse := doctorReuseFrom(sn, true, now); reuse != nil {
+		if got := reuse(disk.Entry{ID: "thing"}); got != nil {
+			t.Fatalf("MeasuredAt ゼロ値を再利用した: %+v", got)
+		}
+	}
+	// 対照: 同じ now で MeasuredAt が実在すれば再利用する (上の assert が「常に nil」で
+	// 通っているだけでないことを示す)
+	ok := zero
+	ok.MeasuredAt = now.Add(-10 * time.Minute)
+	sn.Disk.Results = []disk.Result{ok}
+	reuse := doctorReuseFrom(sn, true, now)
+	if reuse == nil {
+		t.Fatal("実在する MeasuredAt でも再利用関数を返さない")
+	}
+	if got := reuse(disk.Entry{ID: "thing"}); got == nil {
+		t.Fatal("実在する MeasuredAt を再利用しない")
 	}
 }

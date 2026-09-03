@@ -92,3 +92,40 @@ _ = overlayBoxTopRight(window, []string{"x"}, 0, false) // width0: panic しな�
   FAIL に分ける形で、黙って緑になる skip は無い
 - fake 群 (`fakeWatcher` / `stubUpdates` / `stubDiff`): 常に成功する fake は無く、exit code は
   `usage_overlay_test.go` の実 stub CLI (`exit 1`) で模されていた
+
+## 対応 (2026-09-03、後続セッション)
+
+**5 件すべて修正し、各件で変異 → red を確認した** (production は 1 行も変えていない。変更は
+テストファイル 5 本だけ)。
+
+| 発見 | 修正 | 当てた変異 → 結果 |
+|---|---|---|
+| 1 | `TestOverlayBoxTopRightEmpty` で戻り値を `slices.Equal` と突き合わせる | `overlayBoxRight` の早期 return を `nil` へ → **red** |
+| 2 | `TestIssuesLayoutAgreesBetweenKeysAndRender` に「page がヘッダー行数以下でも 1 行は残す」を追加。期待値は式でなく**リテラルの 1** | `visibleRows` の下限クランプを外す → **red** |
+| 3 | `TestDoctorReuseSkipsZeroMeasuredAtNearEpoch` を新設 (純関数 `doctorReuseFrom` を直接呼ぶ)。既存の `nomeasure` ケースには「TTL に包含されていて守っていない」と注記 | `r.MeasuredAt.IsZero()` を外す → **red** |
+| 4 | `TestAnsiColorsAreDistinctPerMeaning` を新設。基本色をリテラルで pin + 意味の違う色どうしの衝突を検出 | `ansiYellow = sgr.Cyan` → **red** |
+| 5 | main 側の重複 3 assert を削除し、残りを `TestDropEmojiVS16BareWidth` へ改名 | `DropEmojiVS16` を無効化 → termsafe 側と main の `TestSanitizeDetailLineDropsVS16` が **両方 red** (カバレッジは失われていない) / `termwidth.Of` が bare ⚠ を 2 と数える → `TestDropEmojiVS16BareWidth` が **red** |
+
+### 途中で踏んだ誤り (同じ罠を次に踏まないため)
+
+発見 3 の新テストは、最初 `now := time.Unix(0, 0).Add(30 * time.Minute)` と書いたため
+**変異を当てても green のままだった**。`time.Time{}` のゼロ値は **Unix epoch (1970) ではなく
+西暦 1 年**で、`time.Unix(0,0)` を基準にすると差が約 2,562,047 時間になり TTL 判定で弾かれる。
+`time.Time{}.Add(30 * time.Minute)` に直して red を確認した。テスト本文にもこの注記を残した。
+
+**「テストを書いた」だけでは守っていない**ことの実例で、変異検証を通さなければ
+issue 198 が指摘したのと同じ vacuous なテストをもう 1 本増やすところだった。
+
+### issue 本文の誤り (訂正)
+
+発見 2 のテスト名を `TestIssuesViewBodyVisibleRows` と書いていたが、実際は
+`TestIssuesLayoutAgreesBetweenKeysAndRender` (その中のサブテスト「本文 (引き出し)」)。
+
+### 受け入れ条件
+
+- [x] 発見 1〜5 それぞれについて、変異を当てると red になることを確認した
+- [x] 発見 3 は「production の冗長条件を削る」ではなく「テストで守れるようにする」を選んだ。
+      `IsZero()` は now が epoch 近傍のとき (fake clock / 壊れた snapshot と時計のズレ) に
+      **TTL では代替できない**ため、外さずに残した
+      ([`list-masked-failure-modes-before-removing-guard.md`](../../_claude/rules/list-masked-failure-modes-before-removing-guard.md))
+- [x] 変異を戻して green に戻ることを確認した (`go test ./...` green / `make lint` 0 issues)

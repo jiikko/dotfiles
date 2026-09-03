@@ -57,21 +57,16 @@ func TestDropToColumnStraddleAndCluster(t *testing.T) {
 }
 
 // dropEmojiVS16 は VS16 (U+FE0F) を除去し bare 記号 (双方幅 1 で端末と食い違わない) へ倒す。
-func TestDropEmojiVS16(t *testing.T) {
-	const vs16 = "️"
-	got := dropEmojiVS16("危険 ⚠" + vs16 + " 注意")
-	if want := "危険 ⚠ 注意"; got != want {
-		t.Fatalf("VS16 が除去されない: got %q want %q", got, want)
-	}
+// dropEmojiVS16 は termsafe.DropEmojiVS16 への 1 行 alias なので、**除去そのものの検査は
+// termsafe/termsafe_test.go:TestDropEmojiVS16 が持つ** (1 つの変異で両方が落ちる重複だった。
+// issue 198 発見 5)。ここに残すのは main / termwidth 固有の主張だけ。
+func TestDropEmojiVS16BareWidth(t *testing.T) {
 	// bare 記号は描画エンジンでも幅 1 (端末実測とも一致) — この不変条件が崩れたら再発
 	if w := dispWidth("⚠"); w != 1 {
 		t.Fatalf("bare ⚠ の dispWidth = %d; want 1", w)
 	}
-	// VS16 無しは同一文字列を素通り (高速パス)
-	if s := "plain ⚠ text"; dropEmojiVS16(s) != s {
-		t.Fatalf("VS16 無しで変化した: %q", dropEmojiVS16(s))
-	}
-	// VS15 (U+FE0E, text 強制) は残す
+	// VS15 (U+FE0E, text 強制) は残す (termsafe 側は VS16 の除去だけを見ており、VS15 の
+	// 保持は幅モデルと対で意味を持つのでこちらに残す)
 	if s := "⚠︎"; dropEmojiVS16(s) != s {
 		t.Fatalf("VS15 まで除去した: %q", dropEmojiVS16(s))
 	}

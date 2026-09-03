@@ -687,3 +687,41 @@ func TestDropToColumnWidthInvariantWhereEnginesDisagree(t *testing.T) {
 		}
 	}
 }
+
+// 表示色は「意味ごとに違う色」であることが本体で、値そのものは sgr の別名。
+//
+// 🚨 テストの期待値を production の定数から作ると (`strings.HasPrefix(out[0], ansiYellow)` の形)、
+// **定数を書き換えても期待値が一緒に動くので永久に green** になる。実測 (issue 198 発見 4):
+// `ansiYellow = sgr.Cyan` に変えても全 957 本が green のままで、commit 行と hunk 行が同じ色に
+// なる退行を 1 本も検出しなかった。ここでは値をリテラルで pin し、意味の違う色どうしが
+// 衝突しないことを固定する。
+func TestAnsiColorsAreDistinctPerMeaning(t *testing.T) {
+	// リテラルで pin する最小限 (SGR 30-37 の基本色)。ここが動いたら意味の割り当てが変わっている
+	for _, c := range []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"ansiYellow", ansiYellow, "\x1b[33m"},
+		{"ansiCyan", ansiCyan, "\x1b[36m"},
+		{"ansiGreen", ansiGreen, "\x1b[32m"},
+		{"ansiRed", ansiRed, "\x1b[31m"},
+		{"ansiMagenta", ansiMagenta, "\x1b[35m"},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s = %q; want %q (色の割り当てが変わった。docs/theme-colors.md と揃っているか確認する)", c.name, c.got, c.want)
+		}
+	}
+	// 意味の違う色が同じ値に潰れていないこと (別名どうしの衝突は上の pin だけでは防げない —
+	// 2 つ同時に同じ値へ変えられると両方 red になるが、片方だけ変える変異は相互比較が拾う)
+	seen := map[string]string{}
+	for _, c := range []struct{ name, val string }{
+		{"ansiRed", ansiRed}, {"ansiGreen", ansiGreen}, {"ansiYellow", ansiYellow},
+		{"ansiMagenta", ansiMagenta}, {"ansiCyan", ansiCyan}, {"ansiDim", ansiDim},
+	} {
+		if prev, dup := seen[c.val]; dup {
+			t.Errorf("%s と %s が同じ値 %q (意味の違う色が区別できない)", prev, c.name, c.val)
+		}
+		seen[c.val] = c.name
+	}
+}

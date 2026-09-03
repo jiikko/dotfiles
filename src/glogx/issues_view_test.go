@@ -2072,6 +2072,34 @@ func TestIssuesLayoutAgreesBetweenKeysAndRender(t *testing.T) {
 			}
 		}
 	})
+	// 🚨 上の 2 つは期待値を production と同じ式で作っているので、**下限クランプを外す変異を
+	// 検出できない** (issue 198 発見 2)。page がヘッダー行数以下のときに 1 を返すことを、
+	// 式ではなく**リテラルの 1** で固定する。0 や負を返すとキー処理 (bodyOff の計算・
+	// ページ送り) が空回りするか、末尾を超えてスクロールする。
+	t.Run("page がヘッダー行数以下でも 1 行は残す", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "001-feat-x.md")
+		if err := os.WriteFile(path, []byte("# 001 feat: x\n\n"+strings.Repeat("本文。\n", 60)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		iss := &issues.Issue{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"}
+		for _, page := range []int{0, 1, 2} {
+			// 一覧側 (ヘッダーは listHeadLines)
+			v := loadedView(iss)
+			if got := v.visibleRows(issuesRenderOpts{width: 40, page: page}.viewport()); got != 1 {
+				t.Fatalf("一覧 page=%d: visibleRows=%d; want 1 (下限クランプ)", page, got)
+			}
+			// 本文側 (ヘッダーは bodyHeadLines。行数が違うので別に見る)
+			v2 := loadedView(iss)
+			v2.handleKey("enter", vp(20))
+			if v2.open == nil {
+				t.Fatal("本文モードに入れていない")
+			}
+			if got := v2.visibleRows(issuesRenderOpts{width: 40, page: page}.viewport()); got != 1 {
+				t.Fatalf("本文 page=%d: visibleRows=%d; want 1 (下限クランプ)", page, got)
+			}
+		}
+	})
 }
 
 // 再スキャンをまたいで選択を保つ (錨をパスで張り替える)。
