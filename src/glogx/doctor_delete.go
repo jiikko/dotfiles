@@ -101,7 +101,12 @@ func (v *doctorView) startDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 		run = disk.Delete
 	}
 	return tea.Batch(v.waitDeleteCmd(gen), func() tea.Msg {
-		rep, err := run(ctx, targets, opt)
+		// ⚠️ **削除も latch に載せる** (issue 211 の敵対的レビュー P1)。走査 3 本だけ看取っても、
+		// いちばん危ない経路 (rm / trash / brew cleanup / simctl delete と、その後のインベントリ
+		// 記録) が終了・再起動で watchdog ごと消えて走り続ける。CmdTimeout は 5 分ある
+		var rep disk.DeleteReport
+		var err error
+		doctorTrack(func() { rep, err = run(ctx, targets, opt) })
 		ev := doctorDeleteEvent{rep: &rep, dryRun: dryRun}
 		if err != nil {
 			ev.err = err.Error()

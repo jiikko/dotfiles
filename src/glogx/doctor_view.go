@@ -148,6 +148,12 @@ func (v *doctorView) catalogHas() func(string) bool {
 func (v *doctorView) rescan() tea.Cmd { return v.start(true) }
 
 func (v *doctorView) start(force bool) tea.Cmd {
+	// ⚠️ **前世代を止めてから世代を進める** (issue 211 の敵対的レビュー P1)。rescan (r) は
+	// start(true) を直接呼ぶので、ここで止めないと前世代の disk goroutine を誰も cancel できず、
+	// latch に載ったまま完走する = waitDoctorCleanup の上限が「cancel + WaitDelay 2 秒」ではなく
+	// PerEntry 60 秒 × 並列度 (約 6 分) になる。latch を入れる前は即終了だったので、
+	// これが無いと 211 が hang を新設することになる
+	v.stop()
 	v.shown = true
 	v.gen++
 	v.cursor, v.offset = 0, 0
@@ -197,9 +203,9 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	dOpt.OnResult = func(r disk.Result) { ch <- doctorDiskEvent{r: &r} }
 	// latch へ登録する (issue 211): 再起動・終了の直前に子プロセスの帰還を看取るため。
 	// doctorTrack は Add を呼び出し元の goroutine で済ませるので、Wait が登録を追い越さない
-	doctorCleanup.Add(1)
+	doctorCleanup.add()
 	go func() {
-		defer doctorCleanup.Done()
+		defer doctorCleanup.done()
 		rep := disk.Scan(ctx, dOpt)
 		ch <- doctorDiskEvent{rep: &rep}
 	}()
@@ -260,7 +266,9 @@ func (v *doctorView) close() {
 // stop は走査だけを止める (cancelAll から呼ぶ後始末。画面の状態は触らない。partial も保存しない)。
 func (v *doctorView) stop() {
 	// 削除の途中で外から終了させられたら、**ctx で中断を伝える** (プロセスを殺すだけだと
-	// 記録が executing のまま残り、cli: の子プロセスが孤児になる)
+	// 記録が executing のまま残り、cli: の子プロセスが孤児になる)。
+	// ⚠️ cancel だけでは**子プロセスの死を待たない** (issue 211)。cancelAll → waitDoctorCleanup の
+	//    順で看取ること。削除も doctorCleanup latch に載っている (doctor_delete.go)
 	if v.del.cancel != nil {
 		v.del.cancel()
 	}
