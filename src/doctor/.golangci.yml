@@ -32,8 +32,10 @@ linters:
     - usestdlibvars  # hand-written constants that exist in the stdlib
     - usetesting     # テストの os.MkdirTemp/Chdir 等を t.TempDir/t.Chdir へ
     - wastedassign   # assignments whose value is never read
-    # 未導入 (既存の指摘を潰してから足す。数は 2026-09-03 の実測):
-    #   prealloc 6 / intrange 3 / perfsprint 2 / unparam 1 / unconvert 1。
+    # 未導入 (既存の指摘を潰してから足す)。2026-09-03 の実測 = 計 14 件で、
+    # production 6 件 (prealloc 2 = disk/guard.go / perfsprint 2 = svc/scan.go /
+    # intrange 1 = disk/paths.go / unconvert 1 = disk/size.go) と
+    # テスト 8 件 (prealloc 4 / intrange 3 / unparam 1)。unparam は production 0 件。
     #   unconvert は disk/size.go の Stat_t 変換に既存の nolint があるので、外す判断とセットで見る。
     #   intrange の 1 件は src/doctor/disk/scan_test.go (issue 222 の残件)
   settings:

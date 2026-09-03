@@ -1151,13 +1151,27 @@ func TestDiskVerifyCommandsIDsExistInCatalog(t *testing.T) {
 	if end < 0 {
 		t.Fatal("関数の終わりが見つからない")
 	}
-	ids := regexp.MustCompile(`case "([a-z0-9-]+)"`).FindAllStringSubmatch(body[start:start+end], -1)
-	if len(ids) < 5 {
+	// 🚨 `case "([a-z0-9-]+)"` で拾うと **case 直後の 1 個目のリテラルにしか当たらない**。
+	// `case "a", "b":` の 2 個目以降が突合を素通りし、11 ID 中 7 件しか見ていなかった
+	// (実測 2026-09-03)。case 行に出る全リテラルを拾うこと。
+	// この switch の case 行は ID しか持たない前提。別の文字列を並べたら
+	// 「カタログに無い ID」で落ちる (fail-closed 側なので、落ちたら走査を直す)
+	lit := regexp.MustCompile(`"([a-z0-9-]+)"`)
+	var ids []string
+	for _, line := range strings.Split(body[start:start+end], "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "case ") {
+			continue
+		}
+		for _, m := range lit.FindAllStringSubmatch(line, -1) {
+			ids = append(ids, m[1])
+		}
+	}
+	if len(ids) < 10 {
 		t.Fatalf("case を %d 件しか拾えていない (走査が壊れている)", len(ids))
 	}
-	for _, m := range ids {
-		if !disk.CatalogHasID(m[1]) {
-			t.Errorf("カタログに無い ID を見ている: %q (リネームで裏取りが黙って消える)", m[1])
+	for _, id := range ids {
+		if !disk.CatalogHasID(id) {
+			t.Errorf("カタログに無い ID を見ている: %q (リネームで裏取りが黙って消える)", id)
 		}
 	}
 }
