@@ -99,7 +99,7 @@ for _, c := range m.commits { ... }   // ← こちらは commits 由来なの�
 **変異**: 加算と上限判定を早期 return の後ろへ戻す (= 今の形に戻す) → red を確認する。
 これは「機構を戻す」形の変異なので、実際に起こりうる退行を再現している。
 
-### 構造 (issue 222 と同根)
+### 構造 (issue 227 と同根)
 
 `awaitCI` のライフサイクルに単一の所有者が無い — 張る (`refetchAfterPush`) / 卒業 (`settleAwaitCI`) /
 諦め (`ciPollMsg`) / 破棄 (`applyLogData`) が 4 箇所に分かれているのが根。
@@ -129,5 +129,5 @@ CI 取得の会計を型へ閉じる話は issue 224 に分けた。
 ## 関連
 
 - issue 224 (CI 取得の会計に所有者が無い。本件はその帰結の 1 つ)
-- issue 222 (同じ「単一の概念が手書きで散る」形)
+- issue 227 (同じ「単一の概念が手書きで散る」形)
 - issue [032](done/032-fix-glogx-bubbletea-tick-gaps.md) — tick チェーンの落ちる側 (対になる欠陥)

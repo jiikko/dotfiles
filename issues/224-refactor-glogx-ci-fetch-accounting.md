@@ -92,6 +92,6 @@ issue [071](done/071-research-design-audit-2026-08-20.md) の「`actionModal` �
 ## 関連
 
 - issue 223 (`awaitCI` の phantom。本件の「所有者不在」の帰結の 1 つ)
-- issue 222 (同じ「単一の概念が手書きで散る」形。あちらは全画面ビューア)
+- issue 227 (同じ「単一の概念が手書きで散る」形。あちらは全画面ビューア)
 - issue [085](done/085-refactor-glogx-chrome-composition-dup.md) — 「doc が一本化を主張しているのに
   実体は N コピー」を実際に寄せた前例 (変異検証の形も同じ)
