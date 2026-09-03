@@ -26,14 +26,14 @@ import (
 //   - BOM (GitHub のログ先頭に付く U+FEFF) と \r 等の残る制御文字は落とす
 //   - VS16 付き絵文字 (⚠️ 等) は描画エンジンと端末で幅が食い違いガタつくため bare 記号へ
 //     正規化する (DropEmojiVS16 参照)
-func DetailLine(s string) string { return sanitize(s, false, true) }
+func DetailLine(s string) string { return sanitize(s, policy{keepTabs: false, keepSGR: true}) }
 
 // LineKeepTabs は DetailLine のタブ非展開版。git 由来テキスト (commit の
 // subject/message/body・verbatim 行) は、静的出力 (--no-pager / パイプ) で git log との
 // パリティ (タブ保持) が契約されている (render_test の …TabsInTUI が pin) ため、入口では
 // 制御シーケンスの除去だけ行い、タブ展開は TUI 描画側 (Width > 0 の mediumLines /
 // decorateVerbatim) が担う。
-func LineKeepTabs(s string) string { return sanitize(s, true, true) }
+func LineKeepTabs(s string) string { return sanitize(s, policy{keepTabs: true, keepSGR: true}) }
 
 // PlainLine は SGR も含めて ANSI を全て落とす版。「色を持つ正当な理由がない外部テキスト」用:
 // issue markdown の本文・見出し、作業ツリーのファイル名 (git status のパス) など。
@@ -42,7 +42,7 @@ func LineKeepTabs(s string) string { return sanitize(s, true, true) }
 // 逆に通すと、描画側が自分で塗った色の途中に外部由来の SGR が挟まって色が行をまたいで滲む
 // (issue viewer は span ごとに自前で塗るため実害が出る)。git / CI ログは `--color` の出力を
 // 表示する契約があるので DetailLine 側 (SGR 許可) を使う。
-func PlainLine(s string) string { return sanitize(s, false, false) }
+func PlainLine(s string) string { return sanitize(s, policy{}) }
 
 // PlainLineKeepTabs は PlainLine のタブ非展開版。タブを「自前のタブストップ揃え」で展開する
 // 整形層 (issues の expandTabs) の入口で使う。
@@ -50,7 +50,16 @@ func PlainLine(s string) string { return sanitize(s, false, false) }
 // ⚠️ ここでタブを潰すと、桁揃えが「タブストップ」から「一律 4 スペース」に変わって崩れる
 // (`ab<TAB>c` が `ab  c` でなく `ab    c` になる)。無害化はタブの有無に関係なく成立するので、
 // タブの解釈は後段の整形層に任せる。無害化だけを掛けたいがタブ展開はしたくない、が使い分けの軸。
-func PlainLineKeepTabs(s string) string { return sanitize(s, true, false) }
+func PlainLineKeepTabs(s string) string { return sanitize(s, policy{keepTabs: true}) }
+
+// PlainBlock は PlainLine の「改行だけ残す」版。**1 件が複数行の塊として描かれる**自由文
+// (brew doctor の警告本文のように、段落ごと畳んで出すもの) 用。
+//
+// 🚨 改行を残す = **行数を相手に決めさせる**ということ。1 行として描く場所でこれを使うと、
+// 偽の行を差し込まれて固定高パネルの行数が狂う (幅を数えるテストは改行を検出しないので
+// 素通りする)。「1 件 = 1 行」の場所では必ず PlainLine を使うこと。行数・長さの上限は
+// 用途ごとの関心なので、この関数ではなく呼び出し側が持つ。
+func PlainBlock(s string) string { return sanitize(s, policy{keepNewlines: true}) }
 
 // DropEmojiVS16 は絵文字異体字セレクタ VS16 (U+FE0F) を除去して、⚠️❤️✔️ 等の
 // 「記号 + VS16」を bare な text presentation (⚠❤✔) へ倒す。
@@ -114,7 +123,15 @@ func DropEmojiVS16(s string) string {
 //
 // ⚠️ 改行を保存しない (\n は制御文字として落ちる)。複数行を渡す呼び出し側は行へ分割してから
 // 1 行ずつ通すこと。
-func sanitize(s string, keepTabs, keepSGR bool) string {
+// policy は sanitize の分岐 (どれを残すか)。bool の位置引数を増やすと呼び出し側が
+// `sanitize(s, false, true, false)` になって読めないので、名前で渡す。
+type policy struct {
+	keepTabs     bool // タブをスペース 4 へ展開しない
+	keepSGR      bool // 色 / 装飾 (ESC[…m) を残す
+	keepNewlines bool // 改行を残す (複数行が正常な塊のみ)
+}
+
+func sanitize(s string, p policy) string {
 	s = DropEmojiVS16(s)
 	if !needsSanitize(s) {
 		return s
@@ -125,12 +142,14 @@ func sanitize(s string, keepTabs, keepSGR bool) string {
 	for i := 0; i < len(rs); i++ {
 		r := rs[i]
 		switch {
-		case r == '\t' && keepTabs:
+		case r == '\t' && p.keepTabs:
 			b.WriteRune(r)
 		case r == '\t':
 			b.WriteString("    ")
+		case r == '\n' && p.keepNewlines:
+			b.WriteRune(r)
 		case r == '\x1b':
-			i = skipEscape(&b, rs, i, keepSGR)
+			i = skipEscape(&b, rs, i, p.keepSGR)
 		case isC1(r):
 			i = skipC1(rs, i)
 		case mustStrip(r):

@@ -333,14 +333,20 @@ func (v *doctorView) receiveDisk(msg doctorDiskMsg) tea.Cmd {
 	if msg.gen != v.gen || !v.shown {
 		return nil
 	}
+	// 🚨 **ここが live 経路の唯一の関門** (issue 228)。走査した値はパスも Contents も
+	// 「自分以外が書いた文字列」で、無害化せずに持つと doctorRow.text と `y` / `Y` の
+	// コピーへ生のまま乗る (コピーは pbcopy 経由なので、貼った先の端末で発火する)。
+	// 出所ごとに書き分けず、モデルへ入る前に 1 回通す。CLI (diskdoctor の Format) と
+	// **同じ関数**を使う (判定を 2 実装持たない)。
 	if msg.ev.rep != nil {
-		v.diskRep = msg.ev.rep
-		v.saveCache(*msg.ev.rep) // Partial な完了 (中断) も saveCache の規律の中で扱う
+		rep := disk.SanitizeForDisplay(*msg.ev.rep)
+		v.diskRep = &rep
+		v.saveCache(rep) // Partial な完了 (中断) も saveCache の規律の中で扱う
 		v.maybeSaveSnapshot()
 		return nil
 	}
 	if msg.ev.r != nil {
-		v.diskResults = append(v.diskResults, *msg.ev.r)
+		v.diskResults = append(v.diskResults, disk.SanitizeResultForDisplay(*msg.ev.r))
 	}
 	return v.waitDiskCmd(msg.gen)
 }
@@ -349,7 +355,7 @@ func (v *doctorView) receiveSvc(msg doctorSvcMsg) {
 	if msg.gen != v.gen || !v.shown {
 		return
 	}
-	rep := msg.rep
+	rep := svc.SanitizeForDisplay(msg.rep) // live も復元と同じ関門を通す (issue 228)
 	v.svcRep = &rep
 	v.maybeSaveSnapshot()
 }
@@ -358,7 +364,9 @@ func (v *doctorView) receiveBrew(msg doctorBrewMsg) {
 	if msg.gen != v.gen || !v.shown {
 		return
 	}
-	res := msg.res
+	// 🚨 brew の警告本文は**複数行が正常**なので、改行だけ残す版で通す (1 行 1 件の
+	// ディスク節とは別扱い。cleanBrewText の doc 参照)
+	res := cleanLiveBrew(msg.res)
 	v.brew = &res
 	v.maybeSaveSnapshot()
 }

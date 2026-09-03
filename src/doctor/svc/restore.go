@@ -4,7 +4,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"unicode"
+
+	"termsafe"
 )
 
 // 保存した Report を読み戻すときの信頼境界 (issue 178)。
@@ -86,20 +87,21 @@ func validPlistPath(p string) bool {
 }
 
 // cleanText は制御文字 (改行・ANSI エスケープ) を落として長さを切る。表示用の自由文に使う。
+//
+// 🚨 無害化そのものは termsafe に委ねる (issue 228)。以前はここで `unicode.IsPrint` を回して
+// いたが、それは「ESC を落として payload (`]52;c;…`) は本文として残す」形で、同じ判定を
+// glogx 側と 2 実装持っていた。**残るのは復元固有の関心 = 長さの上限**だけ。
+// タブは PlainLine がスペース 4 へ展開する (端末のタブストップと dispWidth の食い違いを作らない)。
 func cleanText(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		// 🚨 タブは通さない。unicode.IsPrint はタブを非印字として弾くが、以前ここで明示的に
-		// 通していた。dispWidth はタブを幅 0 と数えるのに端末は次のタブ位置まで進めるので、
-		// 幅を数えるテストを素通りしたまま画面の枠を壊せる (敵対レビュー 2026-09-03)
-		if unicode.IsPrint(r) {
-			b.WriteRune(r)
-		}
-		if b.Len() >= maxRestoredText {
-			break
+	s = termsafe.PlainLine(s)
+	// 🚨 切るのは rune 境界。バイト位置で切ると不正な UTF-8 の断片が残り、幅計算と端末で
+	// 解釈が割れる (`for i := range s` の i は rune の先頭バイトだけを取る)
+	for i := range s {
+		if i > maxRestoredText {
+			return s[:i]
 		}
 	}
-	return b.String()
+	return s
 }
 
 func cleanTexts(ss []string) []string {

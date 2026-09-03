@@ -64,7 +64,26 @@ CLI が要るのは「スクリプトから叩きたい」「JSON で受けた�
 | `cachedir/` | キャッシュ置き場 (`$XDG_CACHE_HOME/glog`、未設定なら `~/.cache/glog`) の解決。glogx 本体と doctor のスキャン結果で共有する (🚨 ディレクトリ名は `glogx` ではなく `glog`) |
 | `runner/` | 外部コマンドの実行口。**stdout / stderr / exit code を分けて返す** (混ぜるとどの stream が判定材料か確定できない)。テストではここを差し替える |
 
-`glogx` からは go.mod の `replace doctor => ../doctor` で参照する。
+`glogx` からは go.mod の `replace doctor => ../doctor` で参照する。無害化の関門
+(`src/termsafe`) は逆に**この module が取り込む**側 (`replace termsafe => ../termsafe`)。
+
+## 表示に出す前の関門 (`SanitizeForDisplay`)
+
+走査した値は**すべて自分以外が書いた文字列** — パスはファイル名由来 (macOS のファイル名は
+`/` と NUL 以外の任意バイトを許す)、`Contents` は `os.ReadDir` の名前、`svc` の Label は
+plist の中身、`Reason` は OS のエラー文。対象は `$TMPDIR` や `~/Library/LaunchAgents` の
+ような**誰でも書ける場所**なので、細工した名前を 1 つ置くだけで注入できる。
+
+🚨 **CLI は stdout へ直接書く** = TUI と違って後段が無いので、OSC52 (クリップボード書き込み) や
+タイトル書き換えが「表示しただけ」で発火する。そこで:
+
+- `disk.SanitizeForDisplay` / `svc.SanitizeForDisplay` を **`Format` の先頭で通す**
+  (glogx の doctor 画面も同じ関数を受け口で通す = 判定を 2 実装持たない。issue 228)
+- 🚨 **`disk` の `Item.Path` は書き換えず、制御文字を含むものを落とす** (落とした件数は
+  `Failures` に残し、合計からも引く)。書き換えると `planDelete` の照合 (`itemKey`) から外れ、
+  「画面に出ているものと消えるものが違う」を作る
+- 削除の**記録** (`DeleteReport`) は逆にパスを書き換える (`SanitizeDeleteReportForDisplay`)。
+  もう照合には使わないので、落とすと「触ったのに一覧に出ない対象」ができて記録が嘘になる
 
 ## 設計の要点
 

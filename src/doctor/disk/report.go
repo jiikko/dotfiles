@@ -112,6 +112,10 @@ func Mark(r Result) string {
 // Format は人が読む一覧 (占有量の降順)。各行にリスク記号と一行の助言を必ず添える。
 // 候補 0 件のエントリは省く (表示が埋まる)。走査できなかったエントリは省かない。
 func Format(rep Report, now time.Time) string {
+	// 🚨 **stdout へ直接書く経路なので、ここが最後の関門**。走査した値 (パス / ReadDir の名前 /
+	// OS のエラー文) は自分以外が書いた文字列で、そのまま出すと OSC52 やタイトル書き換えが
+	// 「表示しただけ」で発火する。TUI (glogx) の受け口も同じ関数を通す (issue 228)。
+	rep = SanitizeForDisplay(rep)
 	var b strings.Builder
 	fmt.Fprintf(&b, "ディスク診断   合計 %s 解放可能 (blocked / 走査できず は含まない)\n", HumanSize(rep.Total))
 	if rep.Partial {

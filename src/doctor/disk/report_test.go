@@ -97,3 +97,55 @@ func TestFoldable(t *testing.T) {
 		t.Error("blocked の行を畳んだ (理由を出す必要がある)")
 	}
 }
+
+// CLI (diskdoctor) は stdout へ**直接**書くので、ここが最後の関門 (issue 228)。
+// TUI の描画層はセル単位に分解するため端末制御そのものは落ちるが、この経路にはその後段が無い:
+// OSC52 (クリップボード書き込み) やタイトル書き換えが「表示しただけ」で発火する。
+//
+// 🚨 材料は実在のファイル名と ReadDir の名前。macOS のファイル名は `/` と NUL 以外を許し、
+// カタログの対象 ($TMPDIR / ~/Library/Caches) は誰でも書ける場所なので、細工した名前の
+// ディレクトリを 1 つ置けば注入できる。
+func TestFormatSanitizesUntrustedText(t *testing.T) {
+	const esc, bel = "\x1b", "\a"
+	osc52 := esc + "]52;c;cHduZWQ=" + bel
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	// 2 エントリに分ける: Format はパス一覧と中身一覧 (Inspect) を**別の分岐**で出すので、
+	// 片方だけの fixture では他方の経路を 1 度も踏まない
+	rep := Report{Results: []Result{{
+		Entry: Entry{ID: "x", Label: "細工" + osc52, Risk: RiskSafe, DeleteVia: "rm",
+			Recover: "再生成" + esc + "[2J されます"},
+		Status: StatusOK, Size: 12288,
+		Items: []Item{{Path: "/tmp/ok", Size: 4096}, {Path: "/tmp/ev" + osc52 + "il", Size: 8192},
+			{Path: "/tmp/ok2", Size: 4096}},
+		Failures: []string{"読めず" + esc + "[31m"},
+	}, {
+		Entry: Entry{ID: "y", Label: "中身を見せる項目", Risk: RiskConfirm, DeleteVia: "trash",
+			Recover: "戻せません", Inspect: true},
+		Status: StatusOK, Size: 4096,
+		Items:    []Item{{Path: "/tmp/inspect", Size: 4096}},
+		Contents: []string{"inspect/child" + esc + "[2Jname"},
+	}}}
+	rep.Total = SumDeletable(rep.Results)
+
+	out := Format(rep, now)
+	for _, line := range strings.Split(out, "\n") {
+		for _, r := range line {
+			if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+				t.Fatalf("stdout へ制御シーケンスが出た (%q): %q", r, line)
+			}
+		}
+	}
+	if strings.Contains(out, "cHduZWQ=") {
+		t.Errorf("OSC の中身が本文として残った: %q", out)
+	}
+	// 制御文字入りのパスは落とす。落としたことは黙らせない (行数と合計が理由なく減る)
+	if strings.Contains(out, "/tmp/ev") {
+		t.Errorf("制御文字入りのパスが出た: %q", out)
+	}
+	if !strings.Contains(out, "制御文字") {
+		t.Errorf("落としたことが出力に残っていない: %q", out)
+	}
+	if !strings.Contains(out, "/tmp/ok") {
+		t.Errorf("綺麗なパスまで落ちた: %q", out)
+	}
+}

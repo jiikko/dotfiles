@@ -8,11 +8,11 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode"
 
 	"doctor/cachedir"
 	"doctor/disk"
 	"doctor/svc"
+	"termsafe"
 )
 
 // doctor のディスク診断結果の保存と、起動時トースト (issue 148 の 3 章)。
@@ -469,17 +469,22 @@ func sanitizeRestoredBrew(b brewDoctorResult) brewDoctorResult {
 }
 
 // cleanOneLine は「1 件が 1 行として描かれる」自由文を絞る (改行も落とす)。
-func cleanOneLine(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		if unicode.IsPrint(r) { // 改行・タブ・ANSI エスケープはすべて非印字なので落ちる
-			b.WriteRune(r)
-		}
-		if b.Len() >= maxRestoredBrewText {
-			break
+//
+// 🚨 無害化そのものは termsafe に委ねる (issue 228)。以前はここで `unicode.IsPrint` を回して
+// いたが、それは ESC だけ落として payload (`]52;c;…`) を本文に残す形で、doctor / issues /
+// git の各所と同じ判定を別実装で持っていた。**ここに残るのは長さの上限**だけ
+// (画面を埋め尽くさせない = 保存されたキャッシュを読み戻す側の関心)。
+func cleanOneLine(s string) string { return cutRunes(termsafe.PlainLine(s), maxRestoredBrewText) }
+
+// cutRunes は rune 境界で切る (バイト位置で切ると不正な UTF-8 の断片が残り、
+// 幅計算と端末で解釈が割れる)。`for i := range s` の i は rune の先頭バイトだけを取る。
+func cutRunes(s string, maxBytes int) string {
+	for i := range s {
+		if i > maxBytes {
+			return s[:i]
 		}
 	}
-	return b.String()
+	return s
 }
 
 // --- 復元した値の検査 (snapshot と doctor-disk.json が共有する述語) ---
@@ -519,12 +524,10 @@ func safeDisplayPath(p string) bool {
 	if p != filepath.Clean(p) {
 		return false // `..` や重複スラッシュを畳んだ形と一致しないもの
 	}
-	for _, r := range p {
-		if !unicode.IsPrint(r) {
-			return false // 改行・タブ・ANSI エスケープ
-		}
-	}
-	return true
+	// 制御文字の判定は disk.DisplayablePath (CLI と共有する述語) に寄せる。ここに残るのは
+	// **復元経路だけの整合性検査** (絶対パス / Clean 済み / 長さ) で、live のパスは実在する
+	// ものなので満たして当たり前 = 検査する意味があるのは保存ファイル相手のときだけ
+	return disk.DisplayablePath(p)
 }
 
 // cleanOneLineList は自由文の一覧を絞る (件数と 1 件あたりの長さ、改行)。
@@ -552,17 +555,21 @@ const (
 )
 
 // cleanBrewText は改行だけ残して他の制御文字を落とし、長さを切る (警告本文は複数行が正常)。
-func cleanBrewText(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		if r == '\n' || unicode.IsPrint(r) { // タブは通さない (dispWidth は幅 0 と数えるが端末は進む)
-			b.WriteRune(r)
-		}
-		if b.Len() >= maxRestoredBrewText {
-			break
-		}
+// 無害化は termsafe.PlainBlock に委ねる (cleanOneLine と同じ理由。issue 228)。
+func cleanBrewText(s string) string { return cutRunes(termsafe.PlainBlock(s), maxRestoredBrewText) }
+
+// cleanLiveBrew は走査したての brew doctor の結果を無害化する (live 経路の関門。issue 228)。
+//
+// 🚨 復元経路 (sanitizeRestoredBrew) と違って**件数は絞らず、`Warning:` で始まらない塊も
+// 落とさない**。あちらは書き換えられるキャッシュファイルが相手なので「形が違うものは
+// 復元しない」でよいが、こちらは brew doctor の実出力で、形が違う = brew の出力形式が
+// 変わったということ。落とすと診断そのものが黙って消える。
+func cleanLiveBrew(b brewDoctorResult) brewDoctorResult {
+	out := brewDoctorResult{Clean: b.Clean, Unavailable: cleanBrewText(b.Unavailable)}
+	for _, w := range b.Warnings {
+		out.Warnings = append(out.Warnings, cleanBrewText(w))
 	}
-	return b.String()
+	return out
 }
 
 // doctorSnapshotInCatalog は実効カタログに無い ID の Result を落とす。「カタログから消えた ID …
@@ -659,6 +666,11 @@ func sanitizeSnapshotResults(rs []disk.Result, now time.Time) []disk.Result {
 		r.Reason = cleanOneLine(r.Reason)
 		r.Failures = cleanOneLineList(r.Failures)
 		r.Contents = cleanOneLineList(r.Contents)
+		// 🚨 Entry も保存ファイルの中身 (live ではカタログの写しだが、復元では JSON から来る)。
+		// doctorRiskMark は `string(r.Entry.Risk)` を、行は Label / Recover をそのまま描く。
+		// これは issue 229 (Entry をカタログへ束ね直す) の代わりではない — ここが直すのは
+		// 制御文字だけで、「保存された Risk / DeleteVia が実物と違う」意味のずれは残る
+		r.Entry = disk.SanitizeEntryForDisplay(r.Entry)
 		r.FromSnapshot = true // 走査していない印 (④ の削除は必ず再スキャンを通す)
 		out = append(out, r)
 	}

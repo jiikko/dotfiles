@@ -15,11 +15,13 @@ on:
     branches: [master]
     paths:
       - 'src/doctor/**'
+      - 'src/termsafe/**'  # replace で取り込む共有 module (無害化の関門。issue 228)
       - .github/workflows/src_doctor.yml
       - .github/workflows/_go-project.yml
   pull_request:
     paths:
       - 'src/doctor/**'
+      - 'src/termsafe/**'  # replace で取り込む共有 module (無害化の関門。issue 228)
       - .github/workflows/src_doctor.yml
       - .github/workflows/_go-project.yml
   workflow_dispatch:  # GitHub UI からの手動再実行用

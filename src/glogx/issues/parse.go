@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"glogx/termsafe"
+	"termsafe"
 )
 
 // bytesRead は issue ファイルから実際に読んだ累計バイト数 (プロセス全体・テスト観測用)。

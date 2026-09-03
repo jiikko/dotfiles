@@ -12,7 +12,8 @@ src/glog の完全コピーから出発しており、当時 github.go / render.
 一本化 (分離不要のまま終わり) / 同じ修正を両方へ入れる事態が 2 回起きたら core を抽出」の
 二択で再評価すると決めていた。結果は前者: **glog は 2026-07-22 に退役済み (`40d4a28`) で、
 重複問題ごと消滅した**。glogx は flat な package main を維持する (サブパッケージを切る基準は
-「実在する第二消費者」か「明示的な分離要望」— issues/ termsafe/ usage/ subproc/ の前例)。
+「実在する第二消費者」か「明示的な分離要望」— issues/ usage/ subproc/ の前例。termsafe は
+`src/termsafe` の独立 module へ出した = doctor module も同じ関門を通すため。issue 228)。
 
 GitHub Actions / GitHub Checks の結果をコミットごとに添える `git log` ラッパー。
 

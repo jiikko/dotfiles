@@ -323,13 +323,19 @@ func (v *doctorView) receiveDelete(msg doctorDeleteMsg) tea.Cmd {
 	if !v.shown || msg.gen != v.gen || !v.del.active() {
 		return nil // 閉じた後に届いた古い Msg
 	}
+	// 🚨 **ここも live 経路の関門** (issue 228)。削除の記録に乗るのは対象パス (ファイル名由来) と
+	// OS のエラー文、そして `cli:` で起こしたコマンドの stdout / stderr = どれも自分以外が
+	// 書いた文字列。パネルに描くだけでなく `y` でまるごとコピーできるので、無害化せずに
+	// 持つと**貼った先の端末**で発火する。CLI と同じ関数を通す。
 	ev := msg.ev
 	if ev.cmd != nil {
-		v.del.log = append(v.del.log, commandLogLines(*ev.cmd)...)
+		rec := disk.SanitizeCommandRecordForDisplay(*ev.cmd)
+		v.del.log = append(v.del.log, commandLogLines(rec)...)
 		return v.waitDeleteCmd(msg.gen)
 	}
 	if ev.prog != nil {
 		next := *ev.prog
+		next.label = sanitizePlainLine(next.label) // エントリ名は Result 由来 = 外部の文字列
 		// 同じ相の続きなら基準を据え置く (経過が 0 に戻らないように)
 		if next.sameStep(v.del.progress) {
 			next.since = v.del.progress.since
@@ -344,15 +350,18 @@ func (v *doctorView) receiveDelete(msg doctorDeleteMsg) tea.Cmd {
 	}
 	v.del.preparing, v.del.running = false, false
 	if ev.err != "" {
-		v.del.err = ev.err
+		v.del.err = sanitizePlainLine(ev.err)
 		return nil
 	}
+	rep := disk.SanitizeDeleteReportForDisplay(*ev.rep)
 	if ev.dryRun {
-		v.del.plan, v.del.confirm = ev.rep, true
-
+		// 🚨 plan は表示だけでなく**実行対象の絞り込み**にも使われる (plannedTargets → Entry.ID。
+		// issue 245)。無害化が触るのは表示に出る文字列 (Label / Reason / パス) だけで **ID は
+		// 触らない**ので、絞り込みも実際に消す対象 (selectedResults 側の実パス) も変わらない
+		v.del.plan, v.del.confirm = &rep, true
 		return nil
 	}
-	v.del.result = ev.rep
+	v.del.result = &rep
 	return nil
 }
 

@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"glogx/termsafe"
+	"termsafe"
 )
 
 // Body は issue 1 件の本文と、整形結果の幅ごとのキャッシュ。

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"glogx/termsafe"
 	"glogx/usage"
+	"termsafe"
 )
 
 // usage スナップショット (Claude /usage + codex rateLimits の併合結果) のディスクキャッシュ。

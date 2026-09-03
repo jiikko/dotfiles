@@ -6,7 +6,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"glogx/termsafe"
+	"termsafe"
 
 	"github.com/charmbracelet/x/ansi"
 

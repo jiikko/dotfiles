@@ -14,9 +14,11 @@ render.go の純粋描画層・幅計算の単一出典・stdout / 時刻のシ�
 
 ## 構造の判断 (lint では守れないもの)
 
-- flat な `package main` は意図的。サブパッケージを切る基準は「実在する第二消費者」か「明示的な分離要望」(issues/ termsafe/ usage/ subproc/ の前例)。行数や責務の見た目で割らない (README「glog との共通コード分離について」)
+- flat な `package main` は意図的。サブパッケージを切る基準は「実在する第二消費者」か「明示的な分離要望」(issues/ usage/ subproc/ の前例)。行数や責務の見た目で割らない (README「glog との共通コード分離について」)
 - main から下位パッケージへ値・規律を共有したくなったら独立パッケージへ出す。main は下位から import できず、置くと「値を写す」運用になる (subproc がその教訓: issue 105)
-- 外部由来の文字列 (git / CI ログ / issue markdown / ファイル名) は表示前に termsafe を入口で 1 回通す。出所ごとに書き分けると漏れる (issue markdown と git status のパスが実際に漏れた)
+- 外部由来の文字列 (git / CI ログ / issue markdown / ファイル名) は表示前に termsafe を入口で 1 回通す。出所ごとに書き分けると漏れる (issue markdown と git status のパスが実際に漏れた / doctor の live 経路が 1 度も通っていなかった = issue 228)
+  - termsafe は **`src/termsafe` の独立 module** (glogx と doctor が replace で取り込む)。doctor 側の CLI (`bin/diskdoctor` / `bin/svcdoctor`) は **stdout へ直接書く**ので、TUI と違って描画層による後段の落としが無い = そちらこそ関門が要る、というのが分離の理由
+  - doctor の走査結果は `disk.SanitizeForDisplay` / `svc.SanitizeForDisplay` を CLI と共有する。🚨 **`Item.Path` は書き換えず、制御文字を含むものを落とす** — 書き換えると画面のパスと実体が食い違い、削除の照合 (`planDelete` の itemKey) から外れて「見えているものと消えるものが違う」を作る
 - glog (`40d4a28` で退役) の派生だが、glog との差分管理はもう無い
 
 - **表示に使う記号は表示幅が安定するものだけ**。警告は 🚨 (U+1F6A8、常に 2 桁) を使い、⚠️ (U+26A0 + VS16) は

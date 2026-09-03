@@ -179,3 +179,24 @@ func hasControl(s string) bool {
 	}
 	return false
 }
+
+// PlainBlock は改行だけ残し、他は PlainLine と同じに落とす。
+// 🚨 「改行を残す」と「行構造を偽装させない」は両立しない。両立させる側 (1 件 1 行) の
+// 呼び出しが PlainBlock を使っていないことは、呼び出し側のテストが守る。
+func TestPlainBlockKeepsOnlyNewlines(t *testing.T) {
+	in := "Warning: a\nb" + esc + "[2J" + esc + "]52;c;cHduZWQ=" + bel + "\tc\rd" + esc + "[31me"
+	got := PlainBlock(in)
+	if want := "Warning: a\nb    cde"; got != want {
+		t.Errorf("PlainBlock = %q, want %q", got, want)
+	}
+	if strings.ContainsAny(got, esc+bel+"\r") {
+		t.Errorf("制御文字が残った: %q", got)
+	}
+	// 1 行版は改行も落とす (ここが唯一の差)
+	if got := PlainLine("a\nb"); got != "ab" {
+		t.Errorf("PlainLine が改行を残した: %q", got)
+	}
+	if got := PlainBlock("a\nb"); got != "a\nb" {
+		t.Errorf("PlainBlock が改行を落とした: %q", got)
+	}
+}

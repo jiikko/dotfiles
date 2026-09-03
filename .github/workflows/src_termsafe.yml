@@ -1,0 +1,38 @@
+---
+# src/termsafe (端末制御シーケンスの無害化。glogx と doctor が replace で取り込む共有 module) の CI。
+# lint + test の本体は再利用 workflow _go-project.yml に一元化し、ここは paths filter
+# (触れた変更のときだけ起動) と対象 dir の指定だけを持つ薄い caller。
+# 🚨 paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
+#
+# 🚨 ここを変えたら src_glogx.yml / src_doctor.yml も走る (両方の paths に src/termsafe/** を
+#   足してある)。無害化は「表示に出す前の唯一の関門」なので、取り込む側のテストまで通す。
+name: src/termsafe
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/termsafe/**'
+      - .github/workflows/src_termsafe.yml
+      - .github/workflows/_go-project.yml
+  pull_request:
+    paths:
+      - 'src/termsafe/**'
+      - .github/workflows/src_termsafe.yml
+      - .github/workflows/_go-project.yml
+  workflow_dispatch:  # GitHub UI からの手動再実行用
+
+permissions:
+  contents: read
+
+# 同一 ref の連続 push では古い run を打ち切る (旧コミットの結果に価値が無いため)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # job id はチェック名の識別子 (共有 workflow のため check 名が "<id> / lint" になり、全 caller で同一 id だと区別不能)。プロジェクト名にする。
+  termsafe:
+    uses: ./.github/workflows/_go-project.yml
+    with:
+      dir: src/termsafe

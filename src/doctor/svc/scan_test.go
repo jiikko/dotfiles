@@ -503,3 +503,29 @@ func TestManualCommandsQuotesShellMetacharacters(t *testing.T) {
 		}
 	}
 }
+
+// CLI (svcdoctor) も stdout へ直接書く (issue 228)。材料は plist の中身 =
+// `~/Library/LaunchAgents` に誰でも置ける。
+func TestFormatSanitizesUntrustedText(t *testing.T) {
+	const esc, bel = "\x1b", "\a"
+	osc52 := esc + "]52;c;cHduZWQ=" + bel
+	out := Format(Report{
+		Scanned: 1,
+		Findings: []Finding{{
+			Label: "com.evil" + osc52, PlistPath: "/x" + esc + "[2J.plist", Domain: "gui/501",
+			Reasons: []string{"実行ファイルが無い" + esc + "[31m"}, Commands: []string{"launchctl bootout gui/501/x" + osc52},
+		}},
+		Undiagnosed: []Undiagnosed{{PlistPath: "/y" + osc52 + ".plist", Reason: "壊れた" + esc + "[2J"}},
+		StatusErr:   "launchctl 失敗" + osc52,
+	})
+	for _, line := range strings.Split(out, "\n") {
+		for _, r := range line {
+			if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+				t.Fatalf("stdout へ制御シーケンスが出た (%q): %q", r, line)
+			}
+		}
+	}
+	if strings.Contains(out, "cHduZWQ=") {
+		t.Errorf("OSC の中身が本文として残った: %q", out)
+	}
+}

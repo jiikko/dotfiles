@@ -1,0 +1,19 @@
+# golangci-lint v2 config for termsafe.
+# 既定の linter (errcheck / govet / ineffassign / staticcheck / unused) に加えて、
+# 低ノイズで自動修正できる衛生系だけを足す (他の src/* と同じ構成)。
+version: "2"
+
+linters:
+  enable:
+    - copyloopvar    # loop variables needlessly copied (Go 1.22+)
+    - intrange       # for i := 0; i < n; i++  ->  for i := range n
+    - misspell       # common English misspellings in comments/strings
+    - perfsprint     # fmt.Sprintf that a faster stdlib call can replace
+    - unconvert      # redundant type conversions
+    - usestdlibvars  # hand-written constants that exist in the stdlib
+    - wastedassign   # assignments whose value is never read
+
+# gofmt を CI ゲートにする (v2 では formatter は linters と別枠。ここに無いと run が整形差分を見ない)
+formatters:
+  enable:
+    - gofmt

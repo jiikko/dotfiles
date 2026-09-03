@@ -28,6 +28,10 @@ func Annotations(f Finding) []string {
 
 // Format は人が読むテキスト。各行に「なぜ出ているか」を必ず添える。
 func Format(rep Report) string {
+	// 🚨 **stdout へ直接書く経路なので、ここが最後の関門**。材料は plist の中身と launchctl /
+	// brew の出力で、そのまま出すと OSC52 やタイトル書き換えが「表示しただけ」で発火する
+	// (issue 228)。TUI (glogx) の受け口も同じ関数を通す。
+	rep = SanitizeForDisplay(rep)
 	var b strings.Builder
 	fmt.Fprintf(&b, "サービス診断: %d 件を走査\n", rep.Scanned)
 	if rep.Interrupted {

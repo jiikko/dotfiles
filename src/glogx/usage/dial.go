@@ -27,8 +27,8 @@ import (
 	"time"
 
 	"glogx/sgr"
-	"glogx/termsafe"
 	"glogx/termwidth"
+	"termsafe"
 )
 
 const (
