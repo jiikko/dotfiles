@@ -45,7 +45,7 @@ func (c *rowCursor) restore(rows []doctorRow) {
 		if c.index >= len(rows) {
 			c.index = len(rows) - 1
 		}
-		c.move(rows, 0) // ⚠️ move は remember するので c.key はここで書き換わる
+		c.move(rows, 0) // 🚨 move は remember するので c.key はここで書き換わる
 		// 🚨 判定は「**別の選べる行に着いたか**」。
 		//   - clamp 後の index と比べる形だと、行が縮んだだけで着地点が同じとき (c が消えて
 		//     b に着く) に**報告されない** (2026-09-03 に実測: この経路が丸ごと死んでいた)
@@ -69,7 +69,7 @@ func (c *rowCursor) remember(rows []doctorRow) {
 		c.key = rows[c.index].key
 		return
 	}
-	// ⚠️ 選べる行が無いフレームでは既存の key を保持する (捨てると index 保持へ退行する)
+	// 🚨 選べる行が無いフレームでは既存の key を保持する (捨てると index 保持へ退行する)
 }
 
 // move は選べる行の間を dir 方向に 1 つ動く (0 = 今の位置を選べる行へ寄せる)。
@@ -78,7 +78,7 @@ func (c *rowCursor) move(rows []doctorRow, dir int) {
 		c.index = 0
 		return
 	}
-	// ⚠️ **関数の先頭で登録する**。dir==0 のブロックより後に置くと、その経路 (G / 寄せ直し) が
+	// 🚨 **関数の先頭で登録する**。dir==0 のブロックより後に置くと、その経路 (G / 寄せ直し) が
 	//    key を覚えず、次の描画で restore が古い key の行へ巻き戻す
 	defer c.remember(rows)
 	i := c.index
