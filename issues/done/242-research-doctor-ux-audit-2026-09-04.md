@@ -95,3 +95,74 @@
   **現在 4 呼び出し（status / doctor / detailOv / job パネル）で事実として古い**。移動は推奨しないが記述が実態と違う
 - test fixture の `disk.Entry` が production の不変条件（`DeleteVia` 等）を満たしているかは**未測定**。
   正規表現で数えると入れ子の `{}` を含むリテラルを取りこぼす偏りが出る（go/ast で測ること）
+
+## 対応（2026-09-04）
+
+P3 の 5 件をすべて直した。**それぞれ変異を 1 つ当てて red を確認**している（baseline は全 PASS）。
+
+| P3 | 直したもの | 当てた変異 → red になったテスト |
+|---|---|---|
+| 1 | `confirmLines` の結末語を `doctorPlanOutcomeWord` へ（`Failed` = `❌ できず` を分けた。`Skipped` は一覧と同じ `🚫 対象外` のまま）| 下見の Skipped を結果画面の語へ戻す → `TestDeleteConfirmSeparatesSkippedFromFailed` / `TestDeleteConfirmPerMethodLines` |
+| 2 | エラーパネルの案内を `他のキー: 閉じてもう一度スキャン` へ（hint と同じことを言わせる）| 「閉じる」へ戻す → `TestDeleteShowsEngineError` |
+| 3 | `hint` を preparing / running で分け、中断の案内を相に依らず出す | (a) hint の 2 相を入れ替え → `TestDeletePhaseWording…` の**両ケース** / (b) 中断案内を running だけに戻す → `preparing` ケースのみ |
+| 4 | 一覧の `g` / `G` に `home` / `end` を足す | `home` を外す / `end` を外す（各 1 回）→ `TestDoctorListHomeEndAreAliasesOfGG` |
+| 5 | `rowCursor.restore` の 0 行フレームで key を捨てない | key を捨てる形へ戻す → `TestRowCursorKeepsKeyWhenNoRowsAtAll` |
+
+🚨 変異検証で 1 回踏んだ罠: 絵文字を含む置換を `perl -0pi -e '…\x{1F6AB}…'` で当てたらファイルが
+壊れ（`Wide character in print`）、**関係ないテストまで全部 red になった**。「red が出た = 変異を
+検知した」と読むと誤診する形。`sed` で当て直し、diff を目視してから判定した
+（`~/.claude/rules/mutation-verify-new-tests.md` の手順 1.6）。
+
+### 実装中に分かったこと
+
+- **P3-3 の「（機能上は効く）」は裏が取れた**が、その先が壊れている。DryRun + cancel 済み ctx で
+  `disk.Delete` を呼ぶと `outcome=failed reason="削除の前に走査し直せませんでした: "`（理由が空）。
+  下見の中断は engine まで届くのに、**中断したことが画面に出ない**（`planHasWork` が false になり
+  「消せるものがありません」と表示される）→ [244](../244-bug-doctor-dryrun-abort-has-no-reason.md) として起票
+- **P3-4 のテストは「差が出ない」形になりやすい**。カーソルの初期位置が先頭なので、`home` を押す前に
+  `G` で下へ動かさないと、別名を外しても緑のまま通る（最初にそう書いて、変異で気づいた）
+
+### 未確認リスクの扱い
+
+1. **`fitHintItems` の prio 範囲外** — 実コードで裏を取った（`status_view.go:948` の
+   `for prio := 1; prio <= 7`。範囲外は `keep` が立たず無言で落ちる）。今日の呼び出しは全部 1..7 に
+   収まっており、今回の変更でも `hintItem` は増やしていない（P3-3 は早期 return）。
+   **観測ポイントとして残す**（対応しない）
+2. **issues / status viewer のカーソルが再構築で別の行へ移る** — 実行時の再現を作れていないので、
+   観測ポイントのまま残す
+3. **doctor に `docs/` の spec が無い** — 本 issue では対応しない。契約は `issues/done/148` に
+   埋まったまま（切り出すなら別 issue）
+
+### 敵対的レビュー（2026-09-04、opus 1 体・read-only）
+
+「壊す手順を見つけろ。壊せなければ壊せなかったと明記しろ」で投げた。結果は**壊せた 2 件 / 指摘 6 件 /
+壊せなかった観点 6 件**。指摘はすべて実コードで裏を取ってから採否を決めた。
+
+**壊せた 2 件**（どちらも起票へ）:
+
+1. **部分中断した下見の確認画面で `y` が「見せた合計より多く」消す** → [245](../245-bug-doctor-confirm-total-does-not-match-what-y-deletes.md)
+   として起票（P1）。`y` の対象は確認画面に出した plan ではなく UI の選択で、`deletable` は
+   下見の結末を見ない。**機構は変更前からあるが、P3-3 で中断を案内したことで確定的に踏める入口ができた**
+2. **確認画面の行が結果画面の行と 1 バイトも違わなくなる** → P3-1 の直し方を変えて**半分解消**した
+   （下記）。残る `Failed` 行の同一性は 245 の却下節に理由つきで記録
+
+**採用して直した指摘 4 件**（レビュー対応 commit）:
+
+| 指摘 | 直したもの | 変異 → red |
+|---|---|---|
+| 下見の `Skipped` は blocked 由来なので、一覧の `🚫 対象外` と食い違う（しかも直下の理由は「いまは対象外です」で語と矛盾）| `doctorPlanOutcomeWord` を分け、`Skipped` は一覧と同じ語に戻した。期待値は `disk.Mark` から取って突き合わせる | 下見の Skipped を結果画面の語へ戻す → `TestDeleteConfirm…` 2 本 |
+| 結果パネルの tail も「何かキーを押すと閉じ」で嘘（`y` は閉じない）| tail を hint と同じ `y: 出力をコピー   他のキー: 閉じてもう一度スキャン` へ | tail を戻す → `TestDoctorDeleteRunsAndShowsResult` |
+| `armedCC` で「2 回押せ」と「もう 1 回押せ」が並ぶ | `armedCC` なら「もう一度」だけ出す | 分岐を戻す → `TestDeletePhaseWording…/preparing+armed` のみ |
+| `deleteRowFixedW` の語彙前提が古い（語の出典が増えた）| `deleteWordW` を定数に切り出し、**全語彙の幅**をテストで固定 | 語彙に 13 桁超の語を足す → `TestDeleteVocabulary` |
+
+**記録だけして直さなかった指摘 2 件**:
+
+- P3-2 で足した hint の assert は**この変更を守っていない**（hint 側は変更前から正しかったので、
+  パネルを revert しても緑のまま）。対の pin としては機能するので残す。**変異で red になったのは
+  パネル側の assert**（commit message もそう書いた）
+- エラーパネルの案内が 35 → 51 桁に伸びた。`doctorPanel` は必ず切るので、切れたとき最初に消えるのが
+  「どう抜けるか」になる。予算は 82 桁なので今は壊れていない（余裕 47 → 31 桁）。pin するテストは無い
+
+**壊せなかった観点**（レビューが明記した 6 件）: `preparing && running` の混相 / 下見中の Ctrl-C が
+engine に届かない経路 / `home`・`end` の競合 / P3-5 が production の挙動を変える経路 /
+P3-1 が合計・サイズの意味を変える経路（確認画面に `Deleted` は来ない）/ 新テスト 4 本の vacuous 性。
