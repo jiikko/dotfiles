@@ -1,0 +1,55 @@
+# 206 perf: doctor の未計測項目 (実機の fd / プロセスグループ / 起動時間の before-after) を埋める
+
+起票日: 2026-09-03
+出典: [issues/163](163-audit-doctor-implementation-red-team.md) の「体 4」(計測の大半は済んでいて、実機観察だけが残った)
+重要度: **P3** (済んだ計測は全部「問題なし」だった。残りは網羅性のため)
+対象: `src/glogx/doctor_view.go` / `doctor_cache.go`、`src/doctor/runner/runner.go`、`bin/glogx` の起動
+
+## 済んでいること (163 の「却下」節に実測値つきで残っている)
+
+体 4 は 2026-09-02 に大半を計測し、**全項目が「問題なし」だった**ので指摘を 1 件も起票していない。
+
+| 測ったもの | 実測値 | 判定 |
+|---|---|---|
+| goroutine / fd のリーク (開閉 100 回) | goroutine 2→2 / fd 6→6 / settle 0 秒 | 漏れなし |
+| `runner.Exec` の cancel 100 回 | goroutine 2→2 / fd 6→6 / pgid 生存 0 件 (平均 51ms で消える) | 漏れなし |
+| `lines()` の 1 回 | 172µs (実機相当) / 267µs (100 行) → 12.5fps で CPU 0.2% | メモ化不要 |
+| `duSize` の並行度 (63GB / 596k ファイル) | 1: 16.0s / 2: 9.1s / 4: 4.6s / 8: 4.7s | 既定 4 が妥当 |
+| `brew info --json=v2 --installed` | 0.84〜0.90 秒 (2 本並行でも wall 0.91 秒) | 2 回呼びは実害なし |
+| `loadDoctorDiskCache` (起動時) | 26.5µs / 5.6KB / 65 allocs | 観測不能 |
+| snapshot の読み書き | 読み 168µs / 2 回読む経路 331µs / 書き 204µs | 同期で問題なし |
+
+## 残っている 2 項目
+
+### (a) 実機での fd / プロセスグループの観察
+
+Go のテスト内では測ったが、**実機で `bin/glogx` を起動した状態での観察**が残っている。
+
+- `lsof -p <glogx pid> | wc -l` を doctor の開閉 20 回の前後で比べる
+- `pgrep -g <pgid>` で `Setpgid` 後の孫が cancel で消えることを実機で見る
+- `brew doctor` (60 秒 timeout) を開いて即閉じ、**60 秒待たずに `ps` から消える**か
+
+### (b) `bin/glogx` の起動時間の before / after
+
+`Init` で `loadDoctorDiskCache` (ファイル 1 本読み) を足したので、受け入れ条件の
+「起動時間が悪化しない」を実測で言えるようにする。単体は 26.5µs なので**悪化しないはず**だが、
+[`perf-claims-need-measurement.md`](../_claude/rules/perf-claims-need-measurement.md) に照らすと
+「未実測」のまま「悪化しない」と書くのは避けたい。
+
+- doctor を足す前の commit と現在で、起動〜初回描画を 10 回ずつ測って中央値を比べる
+- 既存の Bench 経路 (`.github/workflows/bench.yml`) に乗せられるなら乗せる
+
+## 着手の判断材料
+
+**急がない**。(a) は Go のテスト側で「漏れていない」ことが既に確認できていて、実機観察は
+その独立確認にあたる。(b) は単体の実測値から悪化しないと見積もれている。
+
+⚠️ ただし **④ (削除) を実装するときは (a) を先にやる**。削除は破壊的操作を新設するので、
+「閉じた後に何が残るか」を実機で確かめていない状態で進めるべきではない
+([`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) 節 1)。
+
+## 受け入れ条件
+
+- [ ] (a) の 3 項目に実測値がつく (開閉前後の fd 数 / pgid の生存件数 / brew doctor の子が消えるまでの秒数)
+- [ ] (b) の before / after が数字で残る。測れないなら「未実測 + 測れない理由 + trigger」を書く
+- [ ] 判定は「回数 / 件数が前後で不変か」で書く (「漏れていなさそう」で終わらせない)
