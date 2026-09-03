@@ -80,6 +80,12 @@ case "$*" in
                       printf '%s\n' "${STUB_WINDOW_LABEL:-main:3 claude}" ;;
     esac ;;
   "show-options -gv prefix") printf 'C-t\n' ;;
+  "list-sessions -F #{session_name}")
+    # STUB_SESSIONS で「このサーバのセッション一覧」を模す (既定は main のみ)
+    printf '%s\n' "${STUB_SESSIONS:-main}" ;;
+  "show-options -t "*" -qv @schedkeys-rows")
+    # 「自分が上げた印」。STUB_ROWS_OWNED=1 で印あり
+    [ "${STUB_ROWS_OWNED:-0}" = 1 ] && printf '1\n' ;;
   "send-keys -t %5 -l"*)
     # 実 tmux は pane 不在で stderr にエラーを出して rc=1 (この stderr が run-shell 経由で view-mode に積まれる)
     [ "${STUB_PANE_GONE:-0}" = 1 ] && { echo "can't find pane: %5" >&2; exit 1; }
@@ -830,12 +836,49 @@ assert_called "tmux set-option -p -t %5 @schedkeys-text ${sk_long//\#/##}" "本�
 assert_not_called "@schedkeys-text $sk_long" "生の # をそのまま書かない"
 assert_called "tmux set-option -t main status 2" "予約があるセッションの status を 2 行にする"
 
-printf '\n## 2 行目: 予約が無くなったら 1 行へ戻す\n'
+printf '\n## 2 行目: 予約が無くなったら 1 行へ戻す (自分が上げた分だけ)\n'
+# ⚠️ 戻すのは「自分が上げた印 (@schedkeys-rows) があるセッション」だけ。人が手で status 2 に
+#    しているセッションを勝手に 1 へ戻さない (セルフレビューの指摘)
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 spawn_sleeper only2
-ui_queue "cancel	only2" "abort"; STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
+ui_queue "cancel	only2" "abort"; STUB_ROWS_OWNED=1 STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
 assert_called "tmux set-option -pu -t %5 @schedkeys-text" "取消で本文のオプションも消す"
 assert_called "tmux set-option -t main status 1" "予約が無くなったら status を 1 行へ戻す"
+assert_called "tmux set-option -u -t main @schedkeys-rows" "印も外す (-tu と書くと ambiguous option になる)"
+
+printf '\n## 2 行目: 印が無いセッションの status は触らない\n'
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+spawn_sleeper only3
+ui_queue "cancel	only3" "abort"; STUB_ROWS_OWNED=0 STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
+assert_not_called "set-option -t main status 1" "人が手で 2 行にしたセッションを 1 へ戻さない"
+
+printf '\n## 2 行目: 別サーバの stale job で無関係なセッションを 2 行にしない\n'
+# ⚠️ refresh_pane_indicator と同じ穴を refresh_session_status でも作っていた
+#    (セルフレビュー 2026-09-03 の P1。同じ socket でサーバが再起動した後の残骸で発火する)
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+# ⚠️ サーバ pid は**今のサーバと同じ**にする。違えると prune の「前任サーバの予約」規則が先に
+#    掃いてしまい、socket フィルタの検査にならない (別 socket + 同 pid が socket 照合の到達経路)
+write_job foreign2 "$(( $(/bin/date +%s) + 600 ))" "echo other" "/tmp/other-sock" "${STUB_SRVPID:-4242}"
+spawn_sleeper mine3
+ui_queue "cancel	mine3" "abort"; STUB_ROWS_OWNED=1 STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
+assert_not_called "set-option -t main status 2" "別サーバの予約でセッションを 2 行にしない"
+assert_called "tmux set-option -t main status 1" "自サーバの予約が無くなれば 1 行へ戻す"
+
+printf '\n## 2 行目: 予約の pane が消えていても 1 行へ戻る\n'
+# ⚠️ 起点を pane にすると、最後の予約の pane が消えた後に誰もそのセッションを refresh できず、
+#    status が 2 のまま固定される (セルフレビュー 2026-09-03 の P2)。全セッションを掃く形にした
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+spawn_sleeper gone2
+ui_queue "cancel	gone2" "abort"
+STUB_PANE_GONE=1 STUB_ROWS_OWNED=1 STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
+assert_called "tmux set-option -t main status 1" "pane が消えていてもセッションの status は 1 行へ戻る"
+
+printf '\n## 2 行目: 予約のある pane 以外を見ているとき用の控え\n'
+# ⚠️ status はクライアント単位・@schedkeys-at は pane 単位なので、同じセッションの別 pane を
+#    見ていると 2 行目が空行になる。セッション単位の控えを持たせて空行を残さない
+reset_state
+STUB_UI_RESULT="new	$(( $(/bin/date +%s) + 3600 ))	make test" run "$STUB_PATH" "$SCRIPT" wizard
+assert_called "tmux set-option -t main @schedkeys-session このセッションに 1 件の入力予約" "セッション単位の控えを置く"
 
 printf '\n## 2 行目: scratch セッションの status は触らない\n'
 # ⚠️ scratch は常時 2 行で、2 行目を自前の演出に使っている (tmux_scratch_popup.sh が作成時に

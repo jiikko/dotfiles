@@ -216,7 +216,7 @@ refresh_pane_indicator() {
   if (( n == 0 )) || [[ -z "${hm:-}" ]]; then
     tmux set-option -pu -t "$pane" @schedkeys-at 2>/dev/null || true
     tmux set-option -pu -t "$pane" @schedkeys-text 2>/dev/null || true
-    refresh_session_status "$pane"
+    refresh_session_status
     return 0
   fi
   v="$hm"
@@ -227,29 +227,57 @@ refresh_pane_indicator() {
   # ⚠️ タブと改行は空白へ潰す (status の 1 行に収める)。# は ## にして format 展開を止める
   etext="${earliest_text//$'\t'/ }"; etext="${etext//$'\n'/ }"
   tmux set-option -p -t "$pane" @schedkeys-text "$(msg_escape "$etext")" 2>/dev/null || true
-  refresh_session_status "$pane"
+  refresh_session_status
 }
 
-# refresh_session_status は「この pane が属するセッションに予約が残っているか」で status の行数を
-# 切り替える (予約がある間だけ 2 行)。2 行目の中身は _tmux.conf の status-format[1]。
-# ⚠️ scratch セッションは触らない: あちらは常時 2 行で、2 行目を自前の演出に使っている
+# refresh_session_status は **このサーバの全セッション**について status の行数を揃える
+# (予約があるセッションだけ 2 行。2 行目の中身は _tmux.conf の status-format[1])。
+# ⚠️ **pane を起点にしない**。予約の pane が消えていると起点のセッションを引けず、そのセッションの
+#    行数が 2 のまま固定される (セルフレビュー 2026-09-03 の P2)。全セッションを掃く形なら
+#    「予約が無いセッション」は必ず 1 へ戻る
+# ⚠️ job は socket + サーバ pid で絞る。絞らないと別サーバの stale job で無関係なセッションが
+#    2 行になる (同 P1。refresh_pane_indicator と同じ穴を作っていた)
+# ⚠️ **自分が上げた行数だけ下げる**。印 (@schedkeys-rows) が無いセッションは触らない。
+#    人が手で status 2 にしたセッションを勝手に 1 へ戻さないため
+# ⚠️ scratch は触らない: 常時 2 行で、2 行目を自前の演出に使っている
 #    (scripts/tmux_scratch_popup.sh が作成時に set -t scratch status 2 する)
-# ⚠️ pane が消えているとセッションを引けない。そのときは行数をそのままにする (次に wizard を
-#    開いたときの prune → refresh で揃う)。無関係なセッションの見た目を勝手に戻さない
+# ⚠️ 行数は 1 か 2 しか扱わない。将来 3 行以上を使う機構が出たらこの丸めを見直す
 # ⚠️ 表示は装飾。失敗しても予約の成立・送信・取消には影響させない
 refresh_session_status() {
-  local pane=$1 sess j p psess want=1
-  sess="$(tmux display-message -p -t "$pane" '#{session_name}' 2>/dev/null || true)"
-  [[ -n "$sess" ]] || return 0
-  [[ "$sess" == scratch ]] && return 0
+  local now_sock now_srvpid j p at sock srvpid psess tally='' sess n owned
+  now_sock="$(tmux display-message -p '#{socket_path}' 2>/dev/null || true)"
+  now_srvpid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
+  [[ -n "$now_sock" && -n "$now_srvpid" ]] || return 0
+  # 予約を持つセッション名を 1 行 1 件で数え上げる
   for j in "$STATE_DIR"/*.job; do
     [[ -f "$j" ]] || continue
-    { IFS= read -r p; } < "$j" 2>/dev/null || continue
-    [[ -n "$p" ]] || continue
+    { IFS= read -r p; IFS= read -r at; IFS= read -r _
+      IFS= read -r sock || true; IFS= read -r srvpid || true; } < "$j" 2>/dev/null || continue
+    [[ -n "$p" && "$at" =~ ^[0-9]+$ ]] || continue
+    [[ "$sock" == "$now_sock" && "$srvpid" == "$now_srvpid" ]] || continue
     psess="$(tmux display-message -p -t "$p" '#{session_name}' 2>/dev/null || true)"
-    [[ "$psess" == "$sess" ]] && { want=2; break; }
+    [[ -n "$psess" ]] && tally="$tally$psess"$'\n'
   done
-  tmux set-option -t "$sess" status "$want" 2>/dev/null || true
+  # ⚠️ セッション名には空白が入りうるので while read で回す ($(...) の単語分割は使えない)
+  while IFS= read -r sess; do
+    [[ -n "$sess" ]] || continue
+    [[ "$sess" == scratch ]] && continue
+    n=$(printf '%s' "$tally" | grep -cx -- "$sess" 2>/dev/null || true)
+    case "$n" in ''|*[!0123456789]*) n=0 ;; esac
+    if (( n > 0 )); then
+      tmux set-option -t "$sess" status 2 2>/dev/null || true
+      tmux set-option -t "$sess" @schedkeys-rows 1 2>/dev/null || true
+      # 予約のある pane 以外を見ているときの 2 行目 (空行を残さないための控え)
+      tmux set-option -t "$sess" @schedkeys-session "このセッションに ${n} 件の入力予約" 2>/dev/null || true
+    else
+      owned="$(tmux show-options -t "$sess" -qv @schedkeys-rows 2>/dev/null || true)"
+      [[ "$owned" == 1 ]] || continue
+      tmux set-option -t "$sess" status 1 2>/dev/null || true
+      # ⚠️ `-tu` と書くと -t の引数が u になり「ambiguous option」で失敗する (実測)。-u は分ける
+      tmux set-option -u -t "$sess" @schedkeys-rows 2>/dev/null || true
+      tmux set-option -u -t "$sess" @schedkeys-session 2>/dev/null || true
+    fi
+  done < <(tmux list-sessions -F '#{session_name}' 2>/dev/null || true)
 }
 
 # sleeper が居ない予約 (サーバ再起動で sleeper だけ消えた形) を掃く。kill はしない
