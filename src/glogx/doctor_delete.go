@@ -217,13 +217,32 @@ func (v *doctorView) handleDeleteKey(key string) (doctorAction, bool) {
 	return doctorSwallow, false
 }
 
-// selectedResults は選択中のエントリの、いま画面に出ている Result。
+// selectedResults は削除に渡す Result。**エントリ全体を選んだものは丸ごと、ディレクトリ単位で
+// 選んだものは Items をその部分集合にした Result** を返す。
+//
+// engine (disk.Delete) は渡された Items を「今回の走査でも候補だったか」で照合するので、
+// **部分集合をそのまま渡してよい** (UI 側で消す対象を組み直す必要はない)。
 func (v *doctorView) selectedResults() []disk.Result {
-	var out []disk.Result
+	out := make([]disk.Result, 0, len(v.selected)+len(v.selectedItems))
 	for _, r := range v.currentDiskResults() {
 		if v.selected[r.Entry.ID] {
 			out = append(out, r)
+			continue
 		}
+		var items []disk.Item
+		var size int64
+		for _, it := range r.Items {
+			if v.selectedItems[diskItemKey(r.Entry.ID, it.Path)] {
+				items = append(items, it)
+				size += it.Size
+			}
+		}
+		if len(items) == 0 {
+			continue
+		}
+		part := r
+		part.Items, part.Size = items, size
+		out = append(out, part)
 	}
 	return out
 }
@@ -259,31 +278,95 @@ func (v *doctorView) deletable(r disk.Result) (bool, string) {
 }
 
 // toggleSelect は現在行の選択を切り替える。選べない行なら理由を返す。
+//
+// 2 つの粒度がある: **エントリ全体** (`disk:` の行) と **ディレクトリ単位** (`diskitem:` の行)。
+// 後者は Enter で開いた中の対象パス。どちらも同じ `deletable` のゲートを通す
+// (ゲートはエントリの性質 = 走査の新しさ・危険度で決まるので、粒度で緩めない)。
 func (v *doctorView) toggleSelect() (string, bool) {
 	if v.cursor < 0 || v.cursor >= len(v.rows) {
 		return "", false
 	}
-	id, ok := strings.CutPrefix(v.rows[v.cursor].key, "disk:")
+	key := v.rows[v.cursor].key
+	if itemKey, ok := strings.CutPrefix(key, "diskitem:"); ok {
+		return v.toggleItem(itemKey)
+	}
+	id, ok := strings.CutPrefix(key, "disk:")
 	if !ok {
 		return "選べるのはディスクの行だけです", false
 	}
-	for _, r := range v.currentDiskResults() {
-		if r.Entry.ID != id {
-			continue
-		}
-		if ok, why := v.deletable(r); !ok {
-			return why, false
-		}
-		if v.selected == nil {
-			v.selected = map[string]bool{}
-		}
-		v.selected[id] = !v.selected[id]
-		if !v.selected[id] {
-			delete(v.selected, id)
-		}
-		return "", true
+	r, ok := v.findDiskResult(id)
+	if !ok {
+		return "この行の結果が見つかりません (r で取り直してください)", false
 	}
-	return "", false
+	if ok, why := v.deletable(r); !ok {
+		return why, false
+	}
+	if v.selected == nil {
+		v.selected = map[string]bool{}
+	}
+	v.selected[id] = !v.selected[id]
+	if !v.selected[id] {
+		delete(v.selected, id)
+	}
+	// エントリ全体を選んだら、その中の個別選択は畳む (二重に数えない)
+	if v.selected[id] {
+		v.clearItemsOf(id)
+	}
+	return "", true
+}
+
+// toggleItem はディレクトリ単位の選択。
+func (v *doctorView) toggleItem(itemKey string) (string, bool) {
+	id, _, ok := strings.Cut(itemKey, "\x00")
+	if !ok {
+		return "", false
+	}
+	r, ok := v.findDiskResult(id)
+	if !ok {
+		return "この行の結果が見つかりません (r で取り直してください)", false
+	}
+	if ok, why := v.deletable(r); !ok {
+		return why, false
+	}
+	if v.selectedItems == nil {
+		v.selectedItems = map[string]bool{}
+	}
+	v.selectedItems[itemKey] = !v.selectedItems[itemKey]
+	if !v.selectedItems[itemKey] {
+		delete(v.selectedItems, itemKey)
+	}
+	// 個別に選んだら、エントリ全体の選択は畳む (「全部」と「一部」を同時に立てない)
+	if v.selectedItems[itemKey] {
+		delete(v.selected, id)
+	}
+	return "", true
+}
+
+func (v *doctorView) findDiskResult(id string) (disk.Result, bool) {
+	for _, r := range v.currentDiskResults() {
+		if r.Entry.ID == id {
+			return r, true
+		}
+	}
+	return disk.Result{}, false
+}
+
+// hasSelectedItems はそのエントリの中で個別に選ばれたものがあるか (行頭の印に使う)。
+func (v *doctorView) hasSelectedItems(id string) bool {
+	for k := range v.selectedItems {
+		if strings.HasPrefix(k, id+"\x00") {
+			return true
+		}
+	}
+	return false
+}
+
+func (v *doctorView) clearItemsOf(id string) {
+	for k := range v.selectedItems {
+		if strings.HasPrefix(k, id+"\x00") {
+			delete(v.selectedItems, k)
+		}
+	}
 }
 
 // selectionSummary は選択中の件数と合計。

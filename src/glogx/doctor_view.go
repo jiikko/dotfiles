@@ -52,6 +52,9 @@ type doctorView struct {
 	//    (disk 行は Size 降順に並べ替えて描くので、大きい結果が後から届くと上に入る)。
 	//    y / Y が別エントリをコピーし、Enter が別の行を開く (issue 210。red team が実測)
 	cursorKey string
+	// enterDetail は「Enter で今開いた行」。次の描画でカーソルをその中の最初の対象パスへ移す
+	// (開いてから j を何度も押さずに、消したいディレクトリへ直接行けるようにする)
+	enterDetail string
 	// cursorFellBack は「選んでいた行が消えたので近くへ寄せた」印。View では通知できないので、
 	// 次のキー操作で handleKey が doctorToast に変えて知らせる (issue 210)
 	cursorFellBack bool
@@ -64,7 +67,10 @@ type doctorView struct {
 
 	// ④ 削除 (doctor_delete.go)。selected はエントリ ID、inspected は「Enter で中身を一度開いた」印
 	// (risk: confirm の行はこれが立つまで選べない)。
-	selected         map[string]bool
+	selected map[string]bool
+	// selectedItems は**ディレクトリ単位**の選択 (key = diskItemKey)。エントリ全体を選ぶ
+	// selected とは別に持つ: 「エントリを丸ごと」と「その中の一部」は意図が違う
+	selectedItems    map[string]bool
 	inspected        map[string]bool
 	del              doctorDelete
 	pendingDeleteCmd tea.Cmd // handleKey が組んだ削除の Cmd (browseModel が取り出して返す)
@@ -90,7 +96,7 @@ type doctorRow struct {
 	text       string
 	selectable bool
 	key        string
-	detail     []string
+	detail     []doctorRow
 	// copyPath は y でコピーするパス (複数なら改行区切り)。copyText は Y でコピーする解説文
 	// (ラベル・パス・復元方法・リスク・削除経路・提示コマンド。別セッションの LLM にそのまま投げられる形)。
 	copyPath string
@@ -166,7 +172,7 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	v.gen++
 	v.cursor, v.cursorKey, v.offset = 0, "", 0
 	v.expanded = map[string]bool{}
-	v.selected, v.inspected = map[string]bool{}, map[string]bool{}
+	v.selected, v.selectedItems, v.inspected = map[string]bool{}, map[string]bool{}, map[string]bool{}
 	v.del.reset()
 	v.diskResults, v.diskRep, v.svcRep, v.brew = nil, nil, nil, nil
 	v.startedAt = timeNow()
@@ -430,6 +436,17 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 		v.cursor = len(v.rows) - 1
 		v.moveCursor(0)
 	case "enter":
+		// 対象パスの行で Enter を押したら**親のエントリを畳んで戻る** (Enter で入って Enter で出る)。
+		// 入る側だけを作るとカーソルが中に居たまま畳めなくなる
+		if v.cursor >= 0 && v.cursor < len(v.rows) {
+			if itemKey, ok := strings.CutPrefix(v.rows[v.cursor].key, "diskitem:"); ok {
+				if id, _, ok := strings.Cut(itemKey, "\x00"); ok {
+					delete(v.expanded, "disk:"+id)
+					v.cursorKey = "disk:" + id
+				}
+				return doctorSwallow
+			}
+		}
 		if v.cursor >= 0 && v.cursor < len(v.rows) && v.rows[v.cursor].selectable && len(v.rows[v.cursor].detail) > 0 {
 			k := v.rows[v.cursor].key
 			v.expanded[k] = !v.expanded[k]
@@ -438,6 +455,7 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 					v.inspected = map[string]bool{}
 				}
 				v.inspected[id] = true // risk: confirm の行はこれが立つまで選べない
+				v.enterDetail = k      // 開いた直後はカーソルを中の対象パスへ移す (ユーザー要望 2026-09-03)
 			}
 		}
 	case "y", "Y":
@@ -456,6 +474,28 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 		return action
 	}
 	return doctorSwallow
+}
+
+// jumpIntoDetail は Enter で開いた直後に、カーソルを**その中の最初の対象パス**へ移す。
+// 開いてから j を何度も押さずに、消したいディレクトリへ直接行けるようにする
+// (ユーザー要望 2026-09-03)。対象パスの行が無い (Inspect の中身一覧だけ / 走査できず) なら
+// 何もしない = カーソルはエントリの行に留まる。
+func (v *doctorView) jumpIntoDetail() {
+	if v.enterDetail == "" {
+		return
+	}
+	id, ok := strings.CutPrefix(v.enterDetail, "disk:")
+	v.enterDetail = ""
+	if !ok {
+		return
+	}
+	prefix := "diskitem:" + id + "\x00"
+	for i, r := range v.rows {
+		if r.selectable && strings.HasPrefix(r.key, prefix) {
+			v.cursor, v.cursorKey = i, r.key
+			return
+		}
+	}
 }
 
 // restoreCursor は「前に選んでいた行」を key で探し直す (issue 210)。
@@ -565,7 +605,7 @@ func (v *doctorView) hint(width int) string {
 		{"j/k: 移動", 3},
 		{"Space: 選択", 2}, // 削除の入口なので Enter より優先して残す
 		{"d: 削除", 2},
-		{"Enter: 詳細", 4},
+		{"Enter: 開閉", 4}, // 開くと対象パスへカーソルが移り、そこでも Space で選べる (幅を「詳細」と同じに保つ)
 		{"y: パスをコピー", 5},
 		{"Y: 解説をコピー", 6},
 		{"r: 再スキャン", 5},
@@ -593,6 +633,7 @@ func (v *doctorView) lines(o doctorRenderOpts) []string {
 		return padTo(panel, o.page)
 	}
 	v.rows = v.buildRows(o)
+	v.jumpIntoDetail()
 	v.restoreCursor()
 	head := []string{v.headerLine(o), ""}
 	room := max(o.page-len(head), 1)
@@ -653,9 +694,7 @@ func (v *doctorView) buildRows(o doctorRenderOpts) []doctorRow {
 		for _, r := range section {
 			rows = append(rows, r)
 			if r.selectable && v.expanded[r.key] {
-				for _, d := range r.detail {
-					rows = append(rows, doctorRow{text: d})
-				}
+				rows = append(rows, r.detail...) // 詳細の行も選べることがある (ディスクの対象パス)
 			}
 		}
 		rows = append(rows, doctorRow{})
@@ -664,6 +703,15 @@ func (v *doctorView) buildRows(o doctorRenderOpts) []doctorRow {
 	add(v.svcSection(o))
 	add(v.brewSection(o))
 	return rows
+}
+
+// textRows は「ただ表示するだけ」の詳細行 (選べない)。
+func textRows(lines []string) []doctorRow {
+	out := make([]doctorRow, 0, len(lines))
+	for _, l := range lines {
+		out = append(out, doctorRow{text: l})
+	}
+	return out
 }
 
 func doctorColor(colored bool, code, s string) string {
@@ -710,9 +758,14 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 			labelW = max(room, doctorMinLabelWidth)
 		}
 		label := truncateDisp(r.Entry.Label, labelW, "…")
+		// 選択の印は**半角 1 桁で固定**する (全角を混ぜると列がずれる)。
+		// `*` = エントリ全体 / `+` = 中の一部だけ (Enter で開いて個別に選んだ状態)
 		sel := " "
-		if v.selected[r.Entry.ID] {
-			sel = doctorColor(o.colored, ansiBold, "*") // 選択は半角 1 桁で固定 (全角を混ぜると列がずれる)
+		switch {
+		case v.selected[r.Entry.ID]:
+			sel = doctorColor(o.colored, ansiBold, "*")
+		case v.hasSelectedItems(r.Entry.ID):
+			sel = doctorColor(o.colored, ansiBold, "+")
 		}
 		row := doctorRow{
 			text:       fmt.Sprintf("%s%8s  %s%s %s", sel, size, label, padSpaces(labelW-dispWidth(label)), doctorColor(o.colored, color, mark)),
@@ -748,10 +801,10 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 				text:       doctorColor(o.colored, ansiYellow, "           ❓ 一部走査できず (合計に含めていません): "+f),
 				selectable: true,
 				key:        "diskfail:" + r.Entry.ID + ":" + f,
-				detail: []string{
+				detail: textRows([]string{
 					doctorColor(o.colored, ansiDim, "        "+r.Entry.Label+" の一部を走査できませんでした (この分は合計に入っていません)"),
 					doctorColor(o.colored, ansiDim, "        "+f),
-				},
+				}),
 				copyPath: f,
 				copyText: diskCopyText(r, mark),
 			})
@@ -763,38 +816,59 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 	return rows
 }
 
-// diskDetail は Enter で開く内訳: Inspect なら中身の一覧 (ユーザーファイルかを人が見る)、それ以外は item ごとのサイズとパス。
-func (v *doctorView) diskDetail(o doctorRenderOpts, r disk.Result) []string {
-	out := make([]string, 0, 2+len(r.Contents)+len(r.Items))
+// diskDetail は Enter で開く内訳。**対象パスの行は選べる** (ディレクトリ単位で削除するため。
+// ユーザー要望 2026-09-03)。Inspect の中身一覧は「人が見て判断する」ためのものなので選べない。
+func (v *doctorView) diskDetail(o doctorRenderOpts, r disk.Result) []doctorRow {
+	out := make([]doctorRow, 0, 2+len(r.Contents)+len(r.Items))
 	// 走査できなかった行に削除経路を出さない。消せる候補が確定していないのに
 	// 「削除経路: rm」だけ出ると、消してよいものが見つかったように読める
 	// (CLI の Format は failed のとき理由だけを出す。UI もそれに揃える。issue 182)
 	if r.Status != disk.StatusFailed {
-		out = append(out, doctorColor(o.colored, ansiDim, "             削除経路: "+r.Entry.DeleteVia+" (Space で選び d で削除)"))
+		out = append(out, doctorRow{text: doctorColor(o.colored, ansiDim,
+			"             削除経路: "+r.Entry.DeleteVia+" (Space で選び d で削除)")})
 	}
 	if r.Entry.Detail != "" {
-		out = append(out, doctorColor(o.colored, ansiDim, "             "+r.Entry.Detail))
+		out = append(out, doctorRow{text: doctorColor(o.colored, ansiDim, "             "+r.Entry.Detail)})
 	}
 	if r.Entry.Inspect || len(r.Contents) > 0 {
 		for _, c := range r.Contents {
-			out = append(out, "               - "+c)
+			out = append(out, doctorRow{text: "               - " + c})
 		}
 		// ⚠️ Inspect は「中身を見てから選ばせる」ためのゲートなので、**開いても何も出ない**形を
 		// 作らない (中身が無いのか、走査が拾えなかったのかが区別できないまま選べてしまう。
 		// 敵対レビュー 2026-09-03)。中身が無ければ対象のパスそのものを出す
 		if len(r.Contents) == 0 {
-			out = append(out, doctorColor(o.colored, ansiDim, "             (中身の一覧はありません。対象は次のパスです)"))
-			for _, it := range r.Items {
-				out = append(out, fmt.Sprintf("             %9s  %s", disk.HumanSize(it.Size), it.Path))
-			}
+			out = append(out, doctorRow{text: doctorColor(o.colored, ansiDim,
+				"             (中身の一覧はありません。対象は次のパスです)")})
+			out = append(out, v.diskItemRows(o, r)...)
 		}
 		return out
 	}
+	return append(out, v.diskItemRows(o, r)...)
+}
+
+// diskItemRows は対象パスを 1 行ずつ、**選べる行**として出す。エントリ全体でなく
+// ディレクトリ単位で消したいときの入口 (`Space` で個別に選ぶ)。
+func (v *doctorView) diskItemRows(o doctorRenderOpts, r disk.Result) []doctorRow {
+	out := make([]doctorRow, 0, len(r.Items))
 	for _, it := range r.Items {
-		out = append(out, fmt.Sprintf("             %9s  %s", disk.HumanSize(it.Size), it.Path))
+		mark := " "
+		if v.selectedItems[diskItemKey(r.Entry.ID, it.Path)] {
+			mark = doctorColor(o.colored, ansiBold, "*")
+		}
+		out = append(out, doctorRow{
+			text:       fmt.Sprintf("        %s%9s  %s", mark, disk.HumanSize(it.Size), it.Path),
+			selectable: true,
+			key:        "diskitem:" + diskItemKey(r.Entry.ID, it.Path),
+			copyPath:   it.Path,
+			copyText:   diskCopyText(r, ""),
+		})
 	}
 	return out
 }
+
+// diskItemKey は「どのエントリのどのパスか」の同一性。パスに \x00 は現れない。
+func diskItemKey(entryID, path string) string { return entryID + "\x00" + path }
 
 // 記号は表示幅が安定するものだけ使う。⚠️ (U+26A0 + VS16) は端末によって 1 桁と 2 桁で揺れ、行の右端が
 // フレームごとに動いて見えた (ユーザー報告 2026-09-02)。🚨 (U+1F6A8) は常に 2 桁。
@@ -878,7 +952,7 @@ func (v *doctorView) svcSection(o doctorRenderOpts) []doctorRow {
 		for _, c := range f.Commands {
 			detail = append(detail, "        "+c)
 		}
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiRed, " ⛔ "+f.Label), selectable: true, key: "svc:" + f.PlistPath, detail: detail,
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiRed, " ⛔ "+f.Label), selectable: true, key: "svc:" + f.PlistPath, detail: textRows(detail),
 			copyPath: f.PlistPath, copyText: svcCopyText(f)})
 		for _, r := range f.Reasons {
 			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "      - "+r)})
@@ -893,12 +967,12 @@ func (v *doctorView) svcSection(o doctorRenderOpts) []doctorRow {
 			text:       doctorColor(o.colored, ansiYellow, " ❔ 診断できず: "+u.PlistPath+" ("+u.Reason+")"),
 			selectable: true,
 			key:        "svcundiagnosed:" + u.PlistPath,
-			detail: []string{
+			detail: textRows([]string{
 				doctorColor(o.colored, ansiDim, "      理由: "+u.Reason),
 				doctorColor(o.colored, ansiDim, "      手動で確かめてください (このツールは実行しません):"),
 				"        plutil -p " + svc.ShellQuote(u.PlistPath),
 				"        ls -l " + svc.ShellQuote(u.PlistPath),
-			},
+			}),
 			copyPath: u.PlistPath,
 			copyText: svcUndiagnosedCopyText(u),
 		})
@@ -939,7 +1013,7 @@ func (v *doctorView) brewSection(o doctorRenderOpts) []doctorRow {
 		if gap >= 1 {
 			text += padSpaces(gap) + doctorColor(o.colored, ansiDim, count)
 		}
-		rows = append(rows, doctorRow{text: text, selectable: true, key: fmt.Sprintf("brew:%d:%s", i, summary), detail: detail,
+		rows = append(rows, doctorRow{text: text, selectable: true, key: fmt.Sprintf("brew:%d:%s", i, summary), detail: textRows(detail),
 			copyPath: summary, copyText: "brew doctor の警告 (macOS Homebrew):\n" + w + "\n"})
 	}
 	return rows

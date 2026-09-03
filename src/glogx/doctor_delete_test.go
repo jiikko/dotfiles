@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"doctor/disk"
+	"doctor/svc"
 )
 
 // fakeDelete は disk.Delete の差し替え。呼ばれた引数を記録し、進捗を流してから rep を返す。
@@ -185,10 +188,13 @@ func TestDoctorSelectRequiresInspectForConfirmRisk(t *testing.T) {
 	if act := v.handleKey(" ", 20); act != doctorToast || !strings.Contains(v.pendingToast, "中身を確認") {
 		t.Fatalf("act=%v toast=%q", act, v.pendingToast)
 	}
-	v.handleKey("enter", 20) // 中身を開く
+	v.handleKey("enter", 20) // 中身を開く (カーソルは中の対象パスへ移る)
 	_ = v.lines(doctorTestOpts(30))
-	if act := v.handleKey(" ", 20); act != doctorSwallow || !v.selected["thing"] {
-		t.Fatalf("中身を見た後も選べない: act=%v selected=%v", act, v.selected)
+	if act := v.handleKey(" ", 20); act != doctorSwallow || len(v.selectedItems) == 0 {
+		t.Fatalf("中身を見た後も選べない: act=%v selectedItems=%v toast=%q", act, v.selectedItems, v.pendingToast)
+	}
+	if got := v.selectedResults(); len(got) != 1 {
+		t.Fatalf("選んだ対象が削除に渡らない: %d 件", len(got))
 	}
 }
 
@@ -504,7 +510,7 @@ func TestDiskDetailShowsPathsWhenNoContents(t *testing.T) {
 	v := &doctorView{}
 	r := disk.Result{Status: disk.StatusOK, Entry: disk.Entry{ID: "x", Inspect: true, DeleteVia: "trash"},
 		Items: []disk.Item{{Path: "/tmp/a", Size: 1024}}}
-	out := strings.Join(v.diskDetail(doctorTestOpts(30), r), "\n")
+	out := strings.Join(rowTexts(v.diskDetail(doctorTestOpts(30), r)), "\n")
 	if !strings.Contains(out, "/tmp/a") {
 		t.Errorf("中身が無いときに対象のパスも出ない:\n%s", out)
 	}
@@ -775,5 +781,127 @@ func TestDoctorSelectableAfterRescan(t *testing.T) {
 	}
 	if act := v.handleKey(" ", 20); act != doctorSwallow || !v.selected["thing"] {
 		t.Fatalf("取り直した後も選べない: act=%v selected=%v toast=%q", act, v.selected, v.pendingToast)
+	}
+}
+
+// rowTexts は行の本文だけを取り出す (詳細行が doctorRow になったため)。
+func rowTexts(rows []doctorRow) []string {
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r.text)
+	}
+	return out
+}
+
+// ---- ディレクトリ単位の選択 (ユーザー要望 2026-09-03) ----
+
+// multiItemView は 2 つの対象パスを持つエントリ 1 件の doctor。
+func multiItemView(t *testing.T, f *fakeDelete) *doctorView {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "cache"))
+	for _, name := range []string{"a", "b"} {
+		p := filepath.Join(home, "Library", "Caches", "multi", name, "blob")
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, make([]byte, 4096), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v := &doctorView{
+		diskOpts: func() disk.Options {
+			return disk.Options{
+				Env: disk.Env{Home: home, TmpDir: home + "/", Getenv: func(string) string { return "" }},
+				Catalog: []disk.Entry{{ID: "multi", Label: "2 つある", Tier: 1, Risk: disk.RiskSafe,
+					DeleteVia: "rm", Recover: "x", Paths: []string{"~/Library/Caches/multi/*"}}},
+				BootTime: func() (time.Time, error) { return time.Now(), nil },
+			}
+		},
+		svcOpts: func() svc.Options {
+			return svc.Options{Dirs: []svc.LaunchDir{{Path: filepath.Join(home, "LaunchAgents"), Domain: "gui/501"}},
+				Run: func(context.Context, string, ...string) (string, string, int, error) {
+					return "PID\tStatus\tLabel\n", "", 0, nil
+				}}
+		},
+		brewRun: func(context.Context, string, ...string) (string, string, int, error) { return "", "", 0, nil },
+	}
+	if f != nil {
+		v.deleteFn = f.fn
+		v.deleteOpts = func() disk.DeleteOptions { return disk.DeleteOptions{} }
+	}
+	runDoctorCmds(t, v, v.open())
+	_ = v.lines(doctorTestOpts(40))
+	return v
+}
+
+// Enter で開くと、カーソルが**中の対象パス**へ移る (j を何度も押さずに消したいものへ行ける)。
+func TestDoctorEnterMovesCursorIntoItems(t *testing.T) {
+	v := multiItemView(t, nil)
+	if !strings.HasPrefix(v.rows[v.cursor].key, "disk:") {
+		t.Fatalf("前提: カーソルがエントリの行にない (%q)", v.rows[v.cursor].key)
+	}
+	v.handleKey("enter", 20)
+	_ = v.lines(doctorTestOpts(40))
+	if !strings.HasPrefix(v.rows[v.cursor].key, "diskitem:") {
+		t.Fatalf("Enter で対象パスへ移らない: cursor=%q", v.rows[v.cursor].key)
+	}
+	// Enter で入って Enter で出る (中に居たまま畳めないと戻れない)
+	v.handleKey("enter", 20)
+	_ = v.lines(doctorTestOpts(40))
+	if !strings.HasPrefix(v.rows[v.cursor].key, "disk:") || v.expanded["disk:multi"] {
+		t.Fatalf("対象パスの行の Enter で畳んで戻らない: cursor=%q expanded=%v",
+			v.rows[v.cursor].key, v.expanded)
+	}
+}
+
+// ディレクトリ単位で選ぶと、そのパスだけが削除に渡る。
+func TestDoctorSelectSingleDirectory(t *testing.T) {
+	v := multiItemView(t, nil)
+	v.handleKey("enter", 20)
+	_ = v.lines(doctorTestOpts(40))
+	picked := v.rows[v.cursor].key
+	if act := v.handleKey(" ", 20); act != doctorSwallow {
+		t.Fatalf("act=%v toast=%q", act, v.pendingToast)
+	}
+	got := v.selectedResults()
+	if len(got) != 1 || len(got[0].Items) != 1 {
+		t.Fatalf("渡る対象 = %d エントリ / %d 件 (1 エントリ 1 件のはず)", len(got), len(got[0].Items))
+	}
+	if !strings.HasSuffix(picked, got[0].Items[0].Path) {
+		t.Errorf("選んだのと違うパスが渡る: key=%q path=%q", picked, got[0].Items[0].Path)
+	}
+	if got[0].Size != got[0].Items[0].Size {
+		t.Errorf("合計を引き直していない: size=%d item=%d", got[0].Size, got[0].Items[0].Size)
+	}
+	// 行頭の印: エントリは「一部」の +、選んだパスは *
+	out := strings.Join(v.lines(doctorTestOpts(40)), "\n")
+	if !strings.Contains(out, "+") || !strings.Contains(out, "*") {
+		t.Errorf("選択の印が出ていない:\n%s", out)
+	}
+}
+
+// エントリ全体を選ぶと、中の個別選択は畳まれる (二重に数えない)。
+func TestDoctorEntrySelectionSupersedesItems(t *testing.T) {
+	v := multiItemView(t, nil)
+	v.handleKey("enter", 20)
+	_ = v.lines(doctorTestOpts(40))
+	v.handleKey(" ", 20) // 1 件目のパスを選ぶ
+	v.handleKey("enter", 20)
+	_ = v.lines(doctorTestOpts(40)) // エントリの行へ戻る
+	v.handleKey(" ", 20)            // エントリ全体を選ぶ
+	if len(v.selectedItems) != 0 {
+		t.Errorf("個別の選択が残っている: %v", v.selectedItems)
+	}
+	got := v.selectedResults()
+	if len(got) != 1 || len(got[0].Items) != 2 {
+		t.Fatalf("エントリ全体が渡らない: %d エントリ / %d 件", len(got), len(got[0].Items))
+	}
+	// 逆向き: 個別に選ぶとエントリ全体の選択は落ちる
+	v.handleKey("enter", 20)
+	_ = v.lines(doctorTestOpts(40))
+	v.handleKey(" ", 20)
+	if v.selected["multi"] {
+		t.Error("個別に選んだのにエントリ全体の選択が残っている")
 	}
 }

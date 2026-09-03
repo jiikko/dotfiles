@@ -1812,7 +1812,7 @@ func TestDoctorDiskRowKeepsStateAtNarrowWidth(t *testing.T) {
 	// 走査できなかった行に削除経路を出さない (CLI の Format と揃える)
 	failed := disk.Result{Entry: disk.Entry{ID: "npm-cache", Label: "npm", DeleteVia: "rm"},
 		Status: disk.StatusFailed, Reason: "権限がありません"}
-	if d := strings.Join(v.diskDetail(doctorTestOpts(24), failed), "\n"); strings.Contains(d, "削除経路") {
+	if d := strings.Join(rowTexts(v.diskDetail(doctorTestOpts(24), failed)), "\n"); strings.Contains(d, "削除経路") {
 		t.Errorf("走査できなかった行に削除経路が出た:\n%s", d)
 	}
 }
