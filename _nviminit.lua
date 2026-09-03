@@ -111,14 +111,16 @@ require("lazy").setup({
         vim.opt.termguicolors = false
         vim.cmd("colorscheme retrobox")
       end
-      -- 選択範囲は Kraft (暖ベージュ、hl.set = ColorScheme 再適用 + cterm 併記規律) で強調。
-      -- 長時間注視する領域なので、現在地 (accent.current_accent = bufferline 選択タブ /
-      -- tmux island) より一段落ち着いた色に意図的に分けている。
+      -- 選択範囲は dark2 (gruvbox 公式の選択地。hl.set = ColorScheme 再適用 + cterm 併記規律)。
+      -- ⚠️ **明るい地を選ばないこと**。2026-07-16〜2026-09-03 は暖ベージュ Kraft (#D4A27F/180)
+      -- だったが、前景色が暗地向けに設計されているため選択すると文字が地に溶けた
+      -- (実測: 最悪 1.10:1。String 142 と Type 214 がほぼ不可視)。暗地なら同じ実測で 2.40:1 まで
+      -- 戻る (最悪は Comment 102。地の明度を上げるほどここが先に潰れる)。
       -- 分岐の外に置き truecolor (gruvbox) / 256色 (retrobox) の両環境で効かせる。
       -- colorscheme 適用後に呼ぶこと (ColorScheme の全クリアより後に乗せる必要がある)。
-      require("dotfiles.hl").set("Visual", { bg = pal.accent.kraft.hex, ctermbg = pal.accent.kraft.cterm })
-      -- ⚠️ 罠: LspReferenceText は nvim 既定で Visual に link しているため、上の Kraft 上書きが
-      -- LSP 参照ハイライト (lsp.lua の CursorHold → documentHighlight) へ漏れる。Kraft 地の上では
+      require("dotfiles.hl").set("Visual", { bg = pal.dark2.hex, ctermbg = pal.dark2.cterm })
+      -- ⚠️ 罠: LspReferenceText は nvim 既定で Visual に link しているため、上の Visual 上書きが
+      -- LSP 参照ハイライト (lsp.lua の CursorHold → documentHighlight) へ漏れる。Kraft 地 (旧) の上では
       -- keyword (bright_red) が 1.5:1、他の前景も 1.1〜1.4:1 まで落ちて読めない (Go は func に
       -- カーソルを置くと gopls が func + 全 return を返すため面積が大きい)。前景色を殺さない
       -- 暗地で明示定義して link を切る。dark2 相当 + bold + underline の MatchParen (matchup の
@@ -153,7 +155,7 @@ require("lazy").setup({
       --     NormalFloat の地 (237) が文字色に、前景 (187) が地になる。比は保存されるので
       --     コントラストは 7.70:1 で可読。256色の Search は反転後オリーブ地 (ctermfg=100) なので
       --     見分けは付く (実測)
-      -- VisualNOS は Visual と同義 (非アクティブウィンドウの選択範囲) なので Kraft のままが正しい。
+      -- VisualNOS は Visual と同義 (非アクティブウィンドウの選択範囲) なので Visual と同色が正しい。
       require("dotfiles.hl").set("SnippetTabstop", {
         bg = pal.dark1.hex, ctermbg = pal.dark1.cterm, underline = true,
       })

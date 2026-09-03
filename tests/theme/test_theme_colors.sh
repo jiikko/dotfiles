@@ -54,7 +54,7 @@ assert_lua() { # <説明> <キー> <hex> <cterm> (キーの後の整列スペー
   fi
 }
 assert_lua "現在地 current_accent" current_accent "$THEME_CURRENT_ACCENT_HEX" "$THEME_CURRENT_ACCENT"
-assert_lua "選択テキスト kraft" kraft "$THEME_KRAFT_HEX" "$THEME_KRAFT"
+assert_lua "選択テキスト dark2" dark2 "$THEME_SELECTION_BG_HEX" "$THEME_SELECTION_BG"
 assert_lua "マーカー bright_orange" bright_orange "$THEME_MARKER_ORANGE_HEX" "$THEME_MARKER_ORANGE"
 assert_lua "数量 bright_yellow" bright_yellow "$THEME_QUANTITY_YELLOW_HEX" "$THEME_QUANTITY_YELLOW"
 assert_lua "pane 地 dark0_hard" dark0_hard "$THEME_BASE_PANE_BG_HEX" "$THEME_BASE_PANE_BG"

@@ -135,60 +135,62 @@ end
 -- ---------------------------------------------------------------------------
 local visual = vim.api.nvim_get_hl(0, { name = "Visual", link = false })
 
--- 🚨 **全 group を走査して「Visual の地色に解決される group」を洗う** (issue 134 の敵対レビュー)。
--- 名前のリスト (COLOR_GROUPS) だけでは**足し忘れた group を構造的に検出できない**。
--- 実測 2026-09-03: 名前で 2 group を足した直後の版でも `BlinkCmpDocCursorLine` が
--- 両分岐で `link=Visual` → Kraft のまま残っていた (blink.cmp/highlights.lua が
--- `{default=true, link='Visual'}` で定義する)。
+-- 🚨 **Visual の地色が明るくなっていないことを検査する** (2026-09-03 に検査の軸を移した)。
 --
--- ⚠️ **blink.cmp の highlight を明示的に読み込んでから走査する**。blink は
--- `InsertEnter` / `CmdlineEnter` の lazy なので、headless 起動しただけでは
--- その 53 group が**存在せず**、走査しても 0 件で緑になる (= プラグイン定義の group が
--- 構造的に検査の外へ落ちる)。読み込めない場合は「検査できなかった」として落とす。
--- Visual の地色を引いてよい group。**個別に名前を書く** (`Mini*` のようなパターンで
--- 除外すると、将来その名前空間に本当に困る group が増えたとき無言で見逃す)。
-local ALLOW_VISUAL_BG = {
-  Visual = true,
-  VisualNOS = true, -- Visual と同義 (非アクティブウィンドウの選択範囲) なので Kraft が正しい
-  -- gruvbox が `link = "Visual"` で定義している (gruvbox.lua)。**mini.pick は本構成に
-  -- 導入していない** (`mini.trailspace` だけ) ので、この group は誰も塗らない。
-  -- ⚠️ **mini.pick を導入したらこの行を外す** — そのとき初めて「選択済みの項目」に
-  -- Kraft が塗られ、前景色が読めなくなる。導入は `_nviminit.lua` を `mini.pick` で
-  -- grep すれば分かる
-  MiniPickMatchMarked = true,
-}
+-- 以前ここには「全 group を走査して Visual の地色に解決するものを洗う」検査があった。
+-- Visual が暖ベージュ Kraft (#D4A27F/180) だった頃は、そこへ link する group はすべて
+-- 「明るい地に暗地向けの前景色」になって潰れたので、link の有無が実害と 1:1 だった。
+--
+-- Visual を gruvbox 公式の dark2 (#504945/239) へ変えた時点でその前提が消えた。dark2 は
+-- MatchParen / MatchWord / WildMenu / lualine_c_* が正当に使う中立な暗地で、実測 11 件が
+-- 「漏れ」として挙がる。許可リストに 11 件並べても、それは**何も守らないリストを保守する**
+-- ことにしかならない (地色が同じでも実害が無いため)。
+--
+-- 守るべきだった不変条件は link の有無ではなく **「Visual の地を明るくしない」** の側だった。
+-- 実測 2026-09-03 (前景 7 色 = Normal/Keyword/String/Comment/Type/Constant/Identifier の最悪比):
+--   dark0 (通常の地) 輝度 0.021 → 4.02:1   dark1 0.041 → 3.16:1
+--   dark2 (現 Visual) 輝度 0.069 → 2.40:1   dark3 0.111 → 1.77:1
+--   Kraft (旧 Visual) 輝度 0.414 → **1.10:1**
+-- 地の輝度と最悪比は単調なので、輝度に上限を課せば原因側を直接止められる。
+--
+-- **ガードを差し替えるにあたり、旧検査がマスクしていた失敗モードを列挙した**
+-- (規範: _claude/rules/list-masked-failure-modes-before-removing-guard.md):
+--   1. Visual が明るいときに link 経由で前景が潰れる → **本検査が原因側で止める** (上限)
+--   2. 個別 group が意図せず Visual を引く → 実害は 1 に含まれる。Visual が暗い限り無害
+--   3. 明示定義した group の色が壊れる → 下の COLOR_GROUPS のコントラスト検査が受け持つ
+--      (blink の group もそこで名前を挙げているので、blink の読み込みは引き続き必要)
+local VISUAL_LUM_MAX = 0.08  -- dark2 (0.069) は通る。dark3 (0.111) と Kraft (0.414) は落ちる
 do
+  -- COLOR_GROUPS に blink の group を含むため、lazy (InsertEnter) の highlight を先に読む。
+  -- 読み込めないなら「検査できなかった」として落とす (存在しない group は下で捕まる)。
   local ok, err = pcall(function() require("blink.cmp.highlights").setup() end)
   if not ok then
-    fail(("blink.cmp の highlight を読み込めない (%s)。プラグイン定義の group を走査できず、検査が空振りする"):format(tostring(err)))
+    fail(("blink.cmp の highlight を読み込めない (%s)。BlinkCmp* の group が存在せず、検査が空振りする"):format(tostring(err)))
   end
-  local all = vim.api.nvim_get_hl(0, {})
-  local scanned, blink_seen, leaked = 0, 0, {}
-  for name, _ in pairs(all) do
-    scanned = scanned + 1
-    if name:match("^BlinkCmp") then blink_seen = blink_seen + 1 end
-    local h = vim.api.nvim_get_hl(0, { name = name, link = false })
-    local same = (visual.ctermbg ~= nil and h.ctermbg == visual.ctermbg)
-      or (visual.bg ~= nil and h.bg == visual.bg)
-    if same and not ALLOW_VISUAL_BG[name] then leaked[#leaked + 1] = name end
+  -- 地色は gui / cterm のどちらか在る方から RGB を取る (256色分岐は gui を持たない)。
+  -- ⚠️ cterm 0-15 は端末プロファイル依存で測れないので、そのときは「測れなかった」として落とす
+  -- (明るい色を 0-15 で指定して検査をすり抜ける形を残さない)。
+  local rgb
+  if visual.bg ~= nil then
+    rgb = { gui_to_rgb(visual.bg) }
+  elseif visual.ctermbg ~= nil then
+    local r, g, b = cterm_to_rgb(visual.ctermbg)
+    if r == nil then
+      fail(("Visual の地色が cterm %d (0-15 のパレット依存色) で、明るさを測れない。gruvbox の dark0〜dark2 に対応する 234/235/237/239 から選ぶこと"):format(visual.ctermbg))
+    else
+      rgb = { r, g, b }
+    end
+  else
+    fail("Visual に地色が無い (_nviminit.lua の Visual 定義が効いていない)")
   end
-  -- 走査が空振りしていないこと (0 件で緑にしない)
-  if scanned < 100 then
-    fail(("highlight group を %d 件しか走査していない (nvim_get_hl(0,{}) が期待どおり返っていない)"):format(scanned))
+  if rgb then
+    local l = relative_luminance(unpack(rgb))
+    if l > VISUAL_LUM_MAX then
+      fail(("Visual の地色 rgb(%d,%d,%d) が明るすぎる (輝度 %.4f > 上限 %.4f)。前景色は暗地向けに設計されているので、選択すると文字が地に溶ける (暖ベージュ Kraft #D4A27F だった頃の実測は最悪 1.10:1)。gruvbox の dark0〜dark2 の範囲から選ぶこと"):format(rgb[1], rgb[2], rgb[3], l, VISUAL_LUM_MAX))
+    else
+      print(("Visual bg rgb(%d,%d,%d) 輝度 %.4f (上限 %.4f 以内, colorscheme=%s)"):format(rgb[1], rgb[2], rgb[3], l, VISUAL_LUM_MAX, tostring(vim.g.colors_name)))
+    end
   end
-  -- 🚨 **blink の group が走査に含まれたこと**を確かめる。件数の下限だけでは足りない:
-  -- setup を呼ばなくても nvim 標準の 470 群は数えられるので、blink の 40 群が丸ごと
-  -- 欠けても「100 件以上あるから緑」になる (実測 2026-09-03: setup を外すと 519 → 477 に
-  -- 減るだけで rc=0 だった)。**将来 blink が新しい Visual link group を足したとき**、
-  -- ここが無いと無言で検査の外へ落ちる。
-  if blink_seen < 20 then
-    fail(("BlinkCmp* の group が %d 件しか走査に入っていない (blink.cmp の highlight を読み込めていない。lazy のまま走査すると、プラグイン定義の Visual link 漏れを見逃す)"):format(blink_seen))
-  end
-  if #leaked > 0 then
-    table.sort(leaked)
-    fail(("Visual の地色に解決される group が %d 件ある: %s。Visual は本構成で Kraft (暖色) に上書きされているので、地色として塗る用途へ漏れると前景色が読めなくなる。_nviminit.lua で明示定義して link を切ること"):format(#leaked, table.concat(leaked, ", ")))
-  end
-  print(("scanned %d groups (BlinkCmp* %d), no Visual bg leak (colorscheme=%s)"):format(scanned, blink_seen, tostring(vim.g.colors_name)))
 end
 local checked = { cterm = 0, gui = 0 }
 

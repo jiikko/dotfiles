@@ -13,6 +13,7 @@ local M = {
   dark0_hard    = { hex = "#1d2021", cterm = 234 },
   dark0         = { hex = "#282828", cterm = 235 },
   dark1         = { hex = "#3c3836", cterm = 237 },
+  dark2         = { hex = "#504945", cterm = 239 },
   dark3         = { hex = "#665c54", cterm = 245 },
   light1        = { hex = "#ebdbb2", cterm = 223 },
   light4        = { hex = "#a89984", cterm = 250 },
@@ -29,8 +30,6 @@ M.accent = {
   -- 「いまここ = 蛍光オレンジ」の色言語を揃える。
   -- 変えるときは tmux 側 @cur-accent と対で (docs/theme-colors.md のペア表)。
   current_accent = { hex = "#FF5F00", cterm = 202 },
-  -- Visual (選択テキスト) 用の暖色。現在地 Coral より一段落ち着いたトーン (tmux ペアなし)。
-  kraft = { hex = "#D4A27F", cterm = 180 },
 }
 
 M.diag = {

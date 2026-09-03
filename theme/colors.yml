@@ -15,9 +15,9 @@
 current_accent:      # 現在地 (tmux @cur-accent / nvim bufferline 選択 pill)
   cterm: 202
   hex: "#FF5F00"
-kraft:               # 選択中テキスト (nvim Visual)
-  cterm: 180
-  hex: "#D4A27F"
+selection_bg:        # 選択中テキスト (nvim Visual)。gruvbox 公式 dark2
+  cterm: 239
+  hex: "#504945"
 active_green:        # 正常/アクティブ (tmux ACTIVE 帯・カーソル / popup CLEAN バッジ)
   cterm: 46
 info_cyan:           # 情報/通知 (tmux バー session/path 帯・bell / popup ブランチ)
