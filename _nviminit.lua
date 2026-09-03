@@ -818,6 +818,24 @@ require("lazy").setup({
         lsp_doc_border = false,
       },
     },
+    config = function(_, opts)
+      -- cmdline popup (/ 検索・: コマンド) の色を明示する。noice の既定は default link で
+      -- popup=Normal (本文と同じ背景 = 抜けて見える)、枠とアイコン=DiagnosticSignInfo/Warn
+      -- (lsp.lua が診断サイン用に定義した黒字/橙地のブロック) に落ちる。gruvbox.nvim は
+      -- Noice 用の色を持つが 256 色運用の retrobox には無いため、両環境で効く色をここで持つ。
+      -- default link なので後から noice.setup が走っても上書きされない。
+      -- hl.set = ColorScheme 再適用 + cterm 併記 (256色環境) の規律 (dotfiles/hl.lua 参照)
+      local hl = require("dotfiles.hl")
+      local popup_bg = { bg = pal.dark1.hex, ctermbg = pal.dark1.cterm }
+      hl.set("NoiceCmdlinePopup", vim.tbl_extend("force", popup_bg, { fg = pal.light1.hex, ctermfg = pal.light1.cterm }))
+      hl.set("NoiceCmdlinePopupBorder", vim.tbl_extend("force", popup_bg, { fg = pal.light4.hex, ctermfg = pal.light4.cterm }))
+      hl.set("NoiceCmdlinePopupTitle", vim.tbl_extend("force", popup_bg, { fg = pal.light4.hex, ctermfg = pal.light4.cterm, bold = true }))
+      hl.set("NoiceCmdlineIcon", vim.tbl_extend("force", popup_bg, { fg = pal.light4.hex, ctermfg = pal.light4.cterm }))
+      -- 検索 (/ ?) だけ黄で区別する (gruvbox.nvim の配色と同じ意味づけ)
+      hl.set("NoiceCmdlinePopupBorderSearch", vim.tbl_extend("force", popup_bg, { fg = pal.bright_yellow.hex, ctermfg = pal.bright_yellow.cterm }))
+      hl.set("NoiceCmdlineIconSearch", vim.tbl_extend("force", popup_bg, { fg = pal.bright_yellow.hex, ctermfg = pal.bright_yellow.cterm }))
+      require("noice").setup(opts)
+    end,
   },
   { "lewis6991/gitsigns.nvim",
     event = { "BufReadPre", "BufNewFile" },
