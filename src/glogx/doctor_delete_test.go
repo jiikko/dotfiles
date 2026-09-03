@@ -692,7 +692,8 @@ func TestDeleteConfirmPerMethodLines(t *testing.T) {
 	}}
 	v := &doctorView{del: doctorDelete{confirm: true, plan: &plan}}
 	out := strings.Join(v.lines(doctorTestOpts(30)), "\n")
-	for _, want := range []string{"3 件をゴミ箱へ移動", "go clean -modcache を実行", "実行しません", "🚫 対象外", "いまは対象外です"} {
+	// cli はコマンドの実体を 1 本ずつ出す (件数だけの注記と二重に出さない)
+	for _, want := range []string{"3 件をゴミ箱へ移動", "$ go clean -modcache", "1 件にコマンドを実行", "実行しません", "🚫 対象外", "いまは対象外です"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("確認に %q が無い:\n%s", want, out)
 		}
@@ -951,5 +952,66 @@ func TestDeleteConfirmPathsCannotForgeLines(t *testing.T) {
 	}
 	if strings.Contains(out, "y: 何もしない") && !strings.Contains(out, "/tmp/x 何もしません y: 何もしない") {
 		t.Errorf("偽の行を差し込めた:\n%s", out)
+	}
+}
+
+// 確認画面に「実際に実行するコマンド」が出る (ユーザー要望 2026-09-03)。
+// 組み立ては engine が持つので、確認に出した形と実行する形は同じ。
+func TestDeleteConfirmListsCommands(t *testing.T) {
+	plan := disk.DeleteReport{Entries: []disk.EntryOutcome{
+		{Label: "ランタイム", Method: "cli", Command: "xcrun simctl runtime delete <id>",
+			Outcome: disk.OutcomePlanned, BeforeSize: 1 << 30,
+			Items: []disk.ItemOutcome{{Path: "/L/a", Ref: "ABC-1"}, {Path: "/L/b", Ref: "DEF-2"}}},
+		{Label: "提示だけ", Method: "propose", Command: "sudo rm -rf /x", Outcome: disk.OutcomeProposed},
+	}}
+	v := &doctorView{del: doctorDelete{confirm: true, plan: &plan}}
+	out := strings.Join(v.lines(doctorTestOpts(30)), "\n")
+	for _, want := range []string{
+		"$ xcrun simctl runtime delete ABC-1",
+		"$ xcrun simctl runtime delete DEF-2",
+		"実行しません。手で叩いてください: sudo rm -rf /x",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("確認に %q が無い:\n%s", want, out)
+		}
+	}
+}
+
+// 実行中の画面にコマンドと stdout / stderr / 終了コードが流れる。
+func TestDeleteRunningPanelStreamsCommandOutput(t *testing.T) {
+	v := &doctorView{del: doctorDelete{running: true, progress: "1/1 …",
+		log: commandLogLines(disk.CommandRecord{Name: "faketool", Args: []string{"purge"},
+			RC: 24, Stdout: "done", Stderr: "retry later"})}}
+	out := strings.Join(v.lines(doctorTestOpts(20)), "\n")
+	for _, want := range []string{"$ faketool purge", "exit 24", "1| done", "2| retry later"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("実行中の画面に %q が無い:\n%s", want, out)
+		}
+	}
+}
+
+// 結果 / エラーの画面で y は出力をコピーする (閉じない)。失敗を LLM へ投げるため。
+func TestDeleteResultCopiesCommandOutput(t *testing.T) {
+	rep := disk.DeleteReport{HistoryPath: "/tmp/h.json", Entries: []disk.EntryOutcome{
+		{Label: "ランタイム", Outcome: disk.OutcomeFailed, Reason: "exit 24",
+			Items: []disk.ItemOutcome{{Path: "/L/a", Outcome: disk.OutcomeFailed, Reason: "exit 24"}}}}}
+	v := &doctorView{del: doctorDelete{result: &rep,
+		log: commandLogLines(disk.CommandRecord{Name: "xcrun", Args: []string{"simctl"}, RC: 24, Stderr: "retry"})}}
+	act, taken := v.handleDeleteKey("y")
+	if !taken || act != doctorCopyText {
+		t.Fatalf("act=%v taken=%v (y は出力をコピー)", act, taken)
+	}
+	if v.del.result == nil {
+		t.Fatal("y で閉じてしまった (コピーは閉じない)")
+	}
+	got := v.copyPayload()
+	for _, want := range []string{"$ xcrun simctl", "exit 24", "2| retry", "/L/a", "/tmp/h.json"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("コピー文に %q が無い:\n%s", want, got)
+		}
+	}
+	// y 以外は閉じて再スキャン
+	if act, _ := v.handleDeleteKey("j"); act != doctorRescan || v.del.active() {
+		t.Errorf("他のキーで閉じない: act=%v", act)
 	}
 }

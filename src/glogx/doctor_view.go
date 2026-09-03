@@ -613,7 +613,7 @@ func (v *doctorView) hint(width int) string {
 		return " y: 削除する   n/Esc: やめる"
 	}
 	if v.del.result != nil || v.del.err != "" {
-		return " 何かキーを押すと閉じ、もう一度スキャンします"
+		return " y: 出力をコピー   他のキー: 閉じてもう一度スキャン"
 	}
 	items := []hintItem{
 		{"j/k: 移動", 3},

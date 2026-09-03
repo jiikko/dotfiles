@@ -1129,3 +1129,44 @@ func TestDeleteReportsScanPhaseEvenInDryRun(t *testing.T) {
 		}
 	}
 }
+
+// cli: のコマンドは 1 本ごとに流れる (実行中の画面へ出すため)。stdout / stderr / 終了コードは
+// 分けたまま渡す。
+func TestDeleteStreamsCommands(t *testing.T) {
+	f := newDeleteFixture(t, cliEntry, 64)
+	f.run.resp = map[string]cmdResp{"faketool purge": {stdout: "out", stderr: "err", rc: 3}}
+	var got []CommandRecord
+	f.opt.OnCommand = func(rec CommandRecord) { got = append(got, rec) }
+	f.delete(t, f.scan(t))
+	if len(got) != 1 {
+		t.Fatalf("流れたコマンド = %d 件", len(got))
+	}
+	if got[0].Name != "faketool" || got[0].RC != 3 || got[0].Stdout != "out" || got[0].Stderr != "err" {
+		t.Errorf("記録 = %+v (stdout / stderr / rc を分けたまま渡すこと)", got[0])
+	}
+}
+
+// CommandLines は「確認画面に出すコマンド」と「実際に実行するコマンド」の単一の出典。
+func TestEntryOutcomeCommandLines(t *testing.T) {
+	withRef := EntryOutcome{Method: methodCLI, Command: "xcrun simctl runtime delete <id>",
+		Items: []ItemOutcome{{Ref: "ABC-1"}, {Ref: "DEF-2"}, {Ref: "-f"}}}
+	got := withRef.CommandLines()
+	want := []string{"xcrun simctl runtime delete ABC-1", "xcrun simctl runtime delete DEF-2"}
+	if len(got) != len(want) {
+		t.Fatalf("%v (識別子ごとに 1 本。使えない識別子は落とす)", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	noRef := EntryOutcome{Method: methodCLI, Command: "go clean -modcache", Items: make([]ItemOutcome, 3)}
+	if got := noRef.CommandLines(); len(got) != 1 || got[0] != "go clean -modcache" {
+		t.Errorf("識別子を使わないコマンドは 1 本: %v", got)
+	}
+	for _, e := range []EntryOutcome{{Method: methodRM}, {Method: methodTrash}, {Method: methodPropose, Command: "x"}} {
+		if got := e.CommandLines(); got != nil {
+			t.Errorf("%s で外部コマンドを出した: %v", e.Method, got)
+		}
+	}
+}

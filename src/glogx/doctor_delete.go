@@ -39,6 +39,10 @@ type doctorDelete struct {
 	err       string
 	progress  string // 「2/3 Xcode DerivedData を走査中」
 
+	// log は実行したコマンドとその出力 (実行中は垂れ流し、終わった後も残す)。
+	// 失敗したときに LLM へ投げられるよう、y でまるごとコピーできる
+	log []string
+
 	cancel  context.CancelFunc
 	ch      chan doctorDeleteEvent
 	armedCC bool // 実行中に Ctrl-C が 1 回押された (2 回目で cancel)
@@ -62,6 +66,7 @@ func (d *doctorDelete) reset() {
 // doctorDeleteEvent は削除の進捗 / 完了 (channel 経由で Update へ運ぶ)。
 type doctorDeleteEvent struct {
 	progress string
+	cmd      *disk.CommandRecord // cli: の 1 コマンドが終わった
 	rep      *disk.DeleteReport
 	err      string
 	dryRun   bool
@@ -96,6 +101,12 @@ func (v *doctorView) startDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 		default:
 		}
 	}
+	opt.OnCommand = func(rec disk.CommandRecord) {
+		select {
+		case ch <- doctorDeleteEvent{cmd: &rec}:
+		default: // 読み手が詰まっても engine を止めない (進捗と同じ扱い)
+		}
+	}
 	run := v.deleteFn
 	if run == nil {
 		run = disk.Delete
@@ -114,6 +125,29 @@ func (v *doctorView) startDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 		ch <- ev
 		return nil
 	})
+}
+
+// commandLogLines は 1 コマンドの記録を、そのまま貼れる形の行にする。
+// **stdout と stderr を混ぜない** (どちらに出たかが判定材料なので、印で分ける)。
+func commandLogLines(rec disk.CommandRecord) []string {
+	out := []string{"$ " + strings.TrimSpace(rec.Name+" "+strings.Join(rec.Args, " "))}
+	switch {
+	case rec.Err != "":
+		out = append(out, "  ! "+rec.Err)
+	default:
+		out = append(out, fmt.Sprintf("  exit %d", rec.RC))
+	}
+	for _, l := range strings.Split(rec.Stdout, "\n") {
+		if l != "" {
+			out = append(out, "  1| "+l) // stdout
+		}
+	}
+	for _, l := range strings.Split(rec.Stderr, "\n") {
+		if l != "" {
+			out = append(out, "  2| "+l) // stderr
+		}
+	}
+	return out
 }
 
 func doctorPhaseWord(p disk.DeletePhase) string {
@@ -149,6 +183,10 @@ func (v *doctorView) receiveDelete(msg doctorDeleteMsg) tea.Cmd {
 		return nil // 閉じた後に届いた古い Msg
 	}
 	ev := msg.ev
+	if ev.cmd != nil {
+		v.del.log = append(v.del.log, commandLogLines(*ev.cmd)...)
+		return v.waitDeleteCmd(msg.gen)
+	}
 	if ev.rep == nil {
 		v.del.progress = ev.progress
 		return v.waitDeleteCmd(msg.gen)
@@ -184,7 +222,15 @@ func (v *doctorView) handleDeleteKey(key string) (doctorAction, bool) {
 		}
 		return doctorSwallow, true
 	case d.result != nil || d.err != "":
-		// 結果はどのキーでも閉じる。閉じたら再スキャンして表示を実体に合わせる
+		// y / Y は出力をコピー (失敗したときに LLM へそのまま投げられる形)。閉じない
+		if key == "y" || key == "Y" {
+			v.pendingCopy = v.deleteLogText()
+			if v.pendingCopy == "" {
+				return doctorNothing, true
+			}
+			return doctorCopyText, true
+		}
+		// それ以外はどのキーでも閉じる。閉じたら再スキャンして表示を実体に合わせる
 		d.reset()
 		return doctorRescan, true
 	case d.confirm && !planHasWork(d.plan):
@@ -215,6 +261,39 @@ func (v *doctorView) handleDeleteKey(key string) (doctorAction, bool) {
 		}
 	}
 	return doctorSwallow, false
+}
+
+// deleteLogText は「別セッションの LLM にそのまま投げられる」形の実行記録。
+// 実行したコマンド・終了コード・stdout・stderr を**分けたまま**入れる。
+func (v *doctorView) deleteLogText() string {
+	d := &v.del
+	var b strings.Builder
+	b.WriteString("glogx doctor の削除の記録 (macOS)\n")
+	if d.err != "" {
+		b.WriteString("\n中止した理由: " + d.err + "\n")
+	}
+	if rep := d.result; rep != nil {
+		for _, e := range rep.Entries {
+			fmt.Fprintf(&b, "\n[%s] %s", e.Label, doctorOutcomeWord(e.Outcome))
+			if e.Reason != "" {
+				b.WriteString(" — " + e.Reason)
+			}
+			b.WriteString("\n")
+			for _, it := range e.Items {
+				fmt.Fprintf(&b, "  %s  %s %s\n", doctorOutcomeWord(it.Outcome), it.Path, it.Reason)
+			}
+		}
+		if rep.HistoryPath != "" {
+			b.WriteString("\n記録: " + rep.HistoryPath + "\n")
+		}
+	}
+	if len(d.log) > 0 {
+		b.WriteString("\n実行したコマンド (1| = stdout / 2| = stderr):\n")
+		for _, l := range d.log {
+			b.WriteString(l + "\n")
+		}
+	}
+	return b.String()
 }
 
 // selectedResults は削除に渡す Result。**エントリ全体を選んだものは丸ごと、ディレクトリ単位で
@@ -435,10 +514,14 @@ func (v *doctorView) deletePanel(o doctorRenderOpts) []string {
 	d := &v.del
 	switch {
 	case d.err != "":
-		return doctorPanel(o, "削除できませんでした", []string{
-			d.err, "", "何も消えていません。", "", "何かキーを押すと閉じます"})
+		body := []string{d.err, "", "何も消えていません。"}
+		if len(d.log) > 0 {
+			body = append(body, "", " 実行したコマンド:")
+			body = append(body, d.log...)
+		}
+		return doctorPanel(o, "削除できませんでした", append(body, "", "y: 出力をコピー   他のキー: 閉じる"))
 	case d.result != nil:
-		blocks, tail := doctorDeleteResultLines(o, *d.result)
+		blocks, tail := doctorDeleteResultLines(o, *d.result, d.log)
 		return assembleDeletePanel(o, "削除の結果", blocks, tail)
 	case d.blocking():
 		head := "削除しています"
@@ -451,8 +534,13 @@ func (v *doctorView) deletePanel(o doctorRenderOpts) []string {
 		} else {
 			body = append(body, "Ctrl-C を 2 回押すと中断します")
 			if d.armedCC {
-				body = append(body, "", "もう一度 Ctrl-C を押すと中断します")
+				body = append(body, "もう一度 Ctrl-C を押すと中断します")
 			}
+		}
+		// 実行したコマンドと出力を垂れ流す (何が起きているかを見せる)。入る分だけ末尾を出す
+		if len(d.log) > 0 {
+			body = append(body, "")
+			body = append(body, tailLines(d.log, max(o.page-len(body)-3, 1))...)
 		}
 		return doctorPanel(o, head, body)
 	case d.confirm:
@@ -511,13 +599,15 @@ func (v *doctorView) confirmLines(o doctorRenderOpts) (blocks [][]string, tail [
 		case e.Method == "trash":
 			out = append(out, deleteNote(o, fmt.Sprintf("%d 件をゴミ箱へ移動 (空にするまで容量は戻りません)", len(e.Items))))
 		case e.Method == "cli":
-			out = append(out, deleteNote(o, fmt.Sprintf("%s を実行 (%d 件)", e.Command, len(e.Items))))
+			// コマンドの実体はこの下に 1 本ずつ出るので、ここでは件数だけ (二重に出さない)
+			out = append(out, deleteNote(o, fmt.Sprintf("%d 件にコマンドを実行", len(e.Items))))
 		case e.Method == "propose":
 			out = append(out, deleteNote(o, "コマンドを表示するだけで、実行しません"))
 		default:
 			out = append(out, deleteNote(o, fmt.Sprintf("%d 件を削除", len(e.Items))))
 		}
 		if !skipped {
+			out = append(out, deleteCommandLines(o, e)...)
 			out = append(out, deletePathLines(o, e)...)
 		}
 		blocks = append(blocks, out)
@@ -535,6 +625,25 @@ func (v *doctorView) confirmLines(o doctorRenderOpts) (blocks [][]string, tail [
 		return blocks, append(tail, " 何かキーを押すと戻ります")
 	}
 	return blocks, append(tail, " y: 削除する      n / Esc: やめる")
+}
+
+// deleteCommandLines は「このエントリで実際に実行するコマンド」を並べる (ユーザー要望 2026-09-03)。
+// 組み立ては engine (EntryOutcome.CommandLines) が持つ = **確認に出した形と実行する形が同じ**。
+// rm / trash は外部コマンドを起こさないので何も出さない (経路の語が既にそう言っている)。
+func deleteCommandLines(o doctorRenderOpts, e disk.EntryOutcome) []string {
+	if e.Method == "propose" {
+		return []string{deleteNote(o, "実行しません。手で叩いてください: "+cleanOneLine(e.Command))}
+	}
+	cmds := e.CommandLines()
+	out := make([]string, 0, min(len(cmds), maxConfirmPaths)+1)
+	for i, c := range cmds {
+		if i >= maxConfirmPaths {
+			out = append(out, deleteNote(o, fmt.Sprintf("… 他 %d 本", len(cmds)-maxConfirmPaths)))
+			break
+		}
+		out = append(out, deleteNote(o, "$ "+cleanOneLine(c)))
+	}
+	return out
 }
 
 // deletePathLines は「これから触るもの」をフルパスで並べる。
@@ -564,7 +673,7 @@ func deletePathLines(o doctorRenderOpts, e disk.EntryOutcome) []string {
 const maxConfirmPaths = 10
 
 // doctorDeleteResultLines は結果。**incomplete を成功にも失敗にも畳まない**。
-func doctorDeleteResultLines(o doctorRenderOpts, rep disk.DeleteReport) (blocks [][]string, tail []string) {
+func doctorDeleteResultLines(o doctorRenderOpts, rep disk.DeleteReport, log []string) (blocks [][]string, tail []string) {
 	labelW := deleteLabelWidth(rep.Entries, o.width)
 	for _, e := range rep.Entries {
 		out := []string{fmt.Sprintf(" %8s  %s  %s",
@@ -573,6 +682,11 @@ func doctorDeleteResultLines(o doctorRenderOpts, rep disk.DeleteReport) (blocks 
 			out = append(out, deleteNote(o, e.Reason))
 		}
 		blocks = append(blocks, out)
+	}
+	// 実行したコマンドの記録は**塊として**出す (エントリの後、合計の前)。失敗したときに
+	// ここを読んで原因が分かる形にする。y でまるごとコピーできる
+	if len(log) > 0 {
+		blocks = append(blocks, append([]string{" 実行したコマンド:"}, log...))
 	}
 	// 捨ててよい順: 空行 → 記録のパス → 記録のエラー → 合計 → 操作の説明
 	tail = append(tail, "")
@@ -717,6 +831,16 @@ func assembleDeletePanel(o doctorRenderOpts, title string, blocks [][]string, ta
 		out[i] = truncateDisp(l, o.width, "…")
 	}
 	return padTo(out, o.page)
+}
+
+// tailLines は末尾 n 行 (実行中は「今どこか」が見たいので先頭ではなく末尾を残す)。
+func tailLines(lines []string, n int) []string {
+	if n <= 0 || len(lines) <= n {
+		return lines
+	}
+	out := make([]string, 0, n+1)
+	out = append(out, fmt.Sprintf("… 先頭 %d 行は省略", len(lines)-n))
+	return append(out, lines[len(lines)-n:]...)
 }
 
 // doctorPanel は見出し + 本文を全画面に敷く (行数は呼び出し側の lines が padTo で揃える)。

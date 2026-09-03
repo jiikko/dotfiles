@@ -112,6 +112,32 @@ type EntryOutcome struct {
 	Remaining  []string `json:"remaining,omitempty"`
 }
 
+// CommandLines は「このエントリで実際に実行するコマンド」を組み立てた形。
+// cli: 以外は空 (rm / trash はツールが直接消すので外部コマンドを起こさない)。
+//
+// ⚠️ 置換の規則をここに置くのは、**UI 側で組み直させない**ため (同じ判定が 2 実装になると
+// 「確認画面に出したコマンド」と「実際に実行するコマンド」が食い違う)。
+func (e EntryOutcome) CommandLines() []string {
+	if e.Method != methodCLI || e.Command == "" {
+		return nil
+	}
+	_, argv, err := parseDeleteVia("cli:" + e.Command)
+	if err != nil {
+		return nil
+	}
+	if !cliNeedsRef(argv) {
+		return []string{strings.Join(argv, " ")}
+	}
+	out := make([]string, 0, len(e.Items))
+	for _, it := range e.Items {
+		if validateRef(it.Ref) != nil {
+			continue
+		}
+		out = append(out, strings.Join(substituteRef(argv, it.Ref), " "))
+	}
+	return out
+}
+
 // DeleteReport は 1 回の削除操作の全体。
 type DeleteReport struct {
 	Entries      []EntryOutcome `json:"entries"`
@@ -145,6 +171,9 @@ type DeleteOptions struct {
 	// ⚠️ **Delete を呼んだ goroutine から同期に呼ばれる** (Scan.OnResult のように別 goroutine から
 	// 並行に呼ばれるのではない)。bubbletea なら model を直接触らず Msg に載せること。
 	OnProgress func(done, total int, label string)
+	// OnCommand は cli: の 1 コマンドが終わるたびに呼ばれる (実行中の画面へ流すため)。
+	// stdout / stderr / 終了コードを**分けたまま**渡す。OnProgress と同じ goroutine から同期に呼ばれる。
+	OnCommand func(CommandRecord)
 	// OnPhase は「今このエントリの何をしているか」を流す。plan の走査は重いエントリで数秒かかり、
 	// **DryRun (確認プロンプトを出すための下見) でも通る**ので、口が無いと UI が無言で固まる。
 	// OnProgress と同じ goroutine から同期に呼ばれる。nil 可。
@@ -607,17 +636,22 @@ func execCLI(ctx context.Context, out *EntryOutcome, opt DeleteOptions) {
 		}
 		stdout, stderr, rc, err := runner.WithTimeout(ctx, opt.Run, opt.CmdTimeout, args[0], args[1:]...)
 		rec := CommandRecord{Name: args[0], Args: args[1:], RC: rc, Stdout: strings.TrimSpace(stdout), Stderr: strings.TrimSpace(stderr)}
-		if err == nil && rc == 0 {
-			return rec, OutcomeDeleted // 実際に消えたかは verifyEntry の再走査が決める
-		}
-		rec.Err = ""
-		if err != nil {
+		res := OutcomeDeleted // 実際に消えたかは verifyEntry の再走査が決める
+		switch {
+		case err == nil && rc == 0:
+		case err != nil:
 			rec.Err = err.Error()
+			res = OutcomeFailed
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return rec, OutcomeIncomplete
+				res = OutcomeIncomplete // 中断・タイムアウトは途中まで消している可能性がある
 			}
+		default:
+			res = OutcomeFailed
 		}
-		return rec, OutcomeFailed
+		if opt.OnCommand != nil {
+			opt.OnCommand(rec)
+		}
+		return rec, res
 	}
 	if !cliNeedsRef(argv) {
 		rec, res := run1(argv)
