@@ -825,6 +825,57 @@ func dialDivisions(span time.Duration) int {
 
 // textCardBody は盤を描けないとき (桁不足 / 窓幅不明) の代替本文。数値は foot が持つので、
 // ここはバーと「なぜ盤が無いか」だけを出す (情報は落とさない)。
+// unusedArt は「まだ消費されていない枠」の本体を描く。幅で AA の割り方を選び、
+// 余った高さに説明文を足す。
+//
+// ⚠️ AA は他のカードの数字と同じ `bigPixels` を使う (字形表を 2 つ持たない)。
+// 収録外の字が混ざると `bigLines` が nil を返すので、その場合も語だけの表示へ落ちる。
+func unusedArt(w, h int, colored bool) []string {
+	dim := func(s string) string { return paintIf(s, sgr.Dim, colored) }
+
+	// 幅に入る割り方を広い順に試す。AA は bannerRows (3 行) を消費する
+	var art []string
+	if h >= bannerRows {
+		for _, cand := range [][]string{{"NO DATA"}, {"NO", "DATA"}} {
+			fits := true
+			for _, line := range cand {
+				if bigWidth(line) > w {
+					fits = false
+					break
+				}
+			}
+			if !fits || len(cand)*bannerRows > h {
+				continue
+			}
+			for _, line := range cand {
+				rows := bigLines(line)
+				if rows == nil { // 収録外の字 (字形表を削ったとき)
+					art = nil
+					break
+				}
+				for _, r := range rows {
+					art = append(art, centerCell(dim(r), w))
+				}
+			}
+			if art != nil {
+				break
+			}
+		}
+	}
+	if art == nil {
+		// AA が入らない狭さ / 高さ。語だけは必ず出す (無言で空白にしない)
+		return []string{fitLine(w, []string{dim("まだ消費されていません"), dim(unusedWord)})}
+	}
+
+	// 残った高さに説明文 (1 行空けてから)
+	if rest := h - len(art); rest >= 2 {
+		if s := fitText(w, []string{"使い始めると窓が開き、盤とリセット時刻が出ます", "使い始めると盤が出ます", unusedWord}); s != "" {
+			art = append(art, "", centerCell(dim(s), w))
+		}
+	}
+	return art
+}
+
 func textCardBody(c dialCard, _ string, w, h int, colored bool) []string {
 	out := make([]string, 0, h)
 	if h <= 0 {
@@ -835,16 +886,12 @@ func textCardBody(c dialCard, _ string, w, h int, colored bool) []string {
 	case c.win.Unused:
 		// 盤は「窓のどこにいるか」を描くもので、開いていない窓には描くものが無い。理由を
 		// 書かないと「盤が無い = 壊れた」に見える (5h カードが丸ごと消えていた頃と同じ印象)。
-		// 2 行目は幅に入る形を選び、どれも入らなければ落とす (切り詰めて読めない字を残さない)。
-		msg = append(msg, fitLine(w, []string{
-			paintIf("まだ消費されていません", sgr.Dim, colored),
-			paintIf(unusedWord, sgr.Dim, colored),
-		}))
-		if h >= 2 {
-			if s := fitText(w, []string{"使い始めると窓が開き、盤とリセット時刻が出ます", "使い始めると盤が出ます"}); s != "" {
-				msg = append(msg, centerCell(paintIf(s, sgr.Dim, colored), w))
-			}
-		}
+		//
+		// 状態は**他のカードの数字と同じ字形の AA** で出す (ユーザー指示 2026-09-03)。
+		// 散文だけだと「盤が無い上に小さい字がある」で、隣のカードと視線の高さが揃わない。
+		// 幅に応じて 1 行 (34 桁) / 2 行 (19 桁) を選び、どちらも入らなければ語だけに落とす。
+		// 2 行目以降の説明文は残った高さに入るぶんだけ描く (切り詰めて読めない字を残さない)。
+		msg = append(msg, unusedArt(w, h, colored)...)
 	case c.span <= 0:
 		msg = append(msg, fitLine(w, []string{
 			paintIf("窓幅が不明のため盤は省略", sgr.Dim, colored),

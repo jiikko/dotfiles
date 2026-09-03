@@ -133,7 +133,9 @@ func TestDigitLinesShapeAndRejects(t *testing.T) {
 			}
 		}
 	}
-	for _, s := range []string{"", "6a", "六"} {
+	// ⚠️ 収録外の例に使う字は、字形表を増やすたびに見直す。'a' は "NO DATA" のために
+	// 'A' を収録した時点で (ToUpper 経由で) 収録内になった (2026-09-03)
+	for _, s := range []string{"", "6z", "六"} {
 		if got := bigLines(s); got != nil {
 			t.Errorf("%q が AA になった: %q", s, got)
 		}

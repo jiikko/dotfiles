@@ -650,7 +650,9 @@ func TestRenderDashboardUnusedWindow(t *testing.T) {
 		{Label: "cx5h", Source: SourceCodex, Percent: 0, Unused: true, WindowMins: 300},
 	}}
 	all := strings.Join(RenderDashboard(snap, now, 80, 24, false), "\n")
-	for _, want := range []string{"未消費", "リセット時刻なし", "まだ消費されていません", "0%"} {
+	// 本体は AA の "NO DATA" (2026-09-03 にユーザー指示で散文から変更)。見出し帯と脚注の
+	// 語はそのまま残す = 「盤が無い理由」は帯と脚注が、状態は AA が伝える
+	for _, want := range []string{"未消費", "リセット時刻なし", "0%", "█▄ █"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("未消費カードに %q が無い:\n%s", want, all)
 		}
@@ -676,6 +678,61 @@ func TestRenderDashboardUnusedWindow(t *testing.T) {
 				if got := termwidth.Of(ln); got > w {
 					t.Errorf("%dx%d: %d 行目の幅 %d > %d\n%q", w, h, i, got, w, ln)
 				}
+			}
+		}
+	}
+}
+
+// 未消費の枠は、他のカードの数字と同じ字形の AA で「NO DATA」を出す
+// (ユーザー指示 2026-09-03 / issue 197)。散文だけだと隣のカードと視線の高さが揃わない。
+func TestUnusedCardShowsNoDataArt(t *testing.T) {
+	joined := func(w, h int) string { return strings.Join(unusedArt(w, h, false), "\n") }
+
+	// 幅が足りれば 1 行 ("NO DATA" = 34 桁)
+	wide := joined(bigWidth("NO DATA")+2, 12)
+	for _, want := range []string{"█▄ █", "█▀▀▄"} { // N の上段 / D の上段
+		if !strings.Contains(wide, want) {
+			t.Errorf("広い幅で AA が出ない (%q が無い):\n%s", want, wide)
+		}
+	}
+	// 幅が足りるなら **1 行に収める** (2 行に割れると縦が伸びて隣のカードと高さが揃わない)。
+	// 空白の字形が抜けると "NO DATA" が描けず 2 行版へ落ちるので、その退行もここで捕まえる
+	if got := len(strings.Split(wide, "\n")); got < bannerRows || got >= bannerRows*2 {
+		t.Errorf("広い幅で 1 行の AA になっていない: %d 行\n%s", got, wide)
+	}
+
+	// 1 行に入らない幅では 2 行 ("NO" / "DATA") に割る
+	narrow := joined(bigWidth("DATA")+2, 12)
+	if strings.Contains(narrow, "まだ消費されていません") {
+		t.Errorf("2 行に割れる幅なのに散文へ落ちた:\n%s", narrow)
+	}
+	if got := len(strings.Split(narrow, "\n")); got < bannerRows*2 {
+		t.Errorf("2 行の AA になっていない: %d 行\n%s", got, narrow)
+	}
+
+	// どちらも入らない幅では語だけに落ちる (無言の空白にしない)
+	tiny := joined(bigWidth("DATA")-1, 12)
+	if !strings.Contains(tiny, unusedWord) && !strings.Contains(tiny, "まだ消費されていません") {
+		t.Errorf("狭い幅で状態を示す語が消えた: %q", tiny)
+	}
+	// 高さが AA に足りないときも同じ (3 行未満)
+	if short := joined(80, 2); !strings.Contains(short, unusedWord) && !strings.Contains(short, "まだ消費されていません") {
+		t.Errorf("低いカードで状態を示す語が消えた: %q", short)
+	}
+
+	// ⚠️ **カード本体 (textCardBody) 経由でも出ること**を見る。unusedArt を直接呼ぶだけだと
+	// 「関数は正しいが誰も呼んでいない」を通す (実測 2026-09-03: 呼び出しを散文へ戻す変異が
+	// green のままだった)
+	body := strings.Join(textCardBody(dialCard{win: Window{Unused: true}}, "", 80, 12, false), "\n")
+	if !strings.Contains(body, "█▄ █") {
+		t.Errorf("カード本体に AA が出ない (unusedArt が配線されていない):\n%s", body)
+	}
+
+	// 出力はカード幅を超えない (超えると隣のカードへ食い込む)
+	for _, w := range []int{40, 46, 64, 80, 120} {
+		for _, line := range unusedArt(w, 12, false) {
+			if got := termwidth.Of(line); got > w {
+				t.Errorf("w=%d でカード幅を超えた (%d 桁): %q", w, got, line)
 			}
 		}
 	}
