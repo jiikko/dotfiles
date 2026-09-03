@@ -496,7 +496,7 @@ func TestGitLogReflectKeepsViewportScrolledWithCursorAtTop(t *testing.T) {
 	}
 }
 
-// 見送りの条件は 6 つある。1 つ外れても他が立っていると気づけないので、各条件を単独で固定する。
+// 見送りの条件は複数ある。1 つ外れても他が立っていると気づけないので、各条件を単独で固定する。
 func TestGitLogReloadDeferredCoversEachState(t *testing.T) {
 	cases := []struct {
 		name string
@@ -513,16 +513,22 @@ func TestGitLogReloadDeferredCoversEachState(t *testing.T) {
 		{"issues viewer", func(m *browseModel) { m.issuesOv.shown = true }},
 		{"status viewer", func(m *browseModel) { m.statusOv.shown = true }},
 		{"残量ダッシュボード", func(m *browseModel) { m.rlDash.shown = true }},
+		{"doctor", func(m *browseModel) { m.doctorOv.shown = true }},
 	}
+	// 🚨 t.Run でケースごとに分ける (issue 227)。1 つの loop で回して t.Fatalf を使うと、
+	// 変異を当てたときに「スイートが red」しか分からず、**緑のまま残ったケース**が見えない
+	// (mutation-verify-new-tests.md「テーブル駆動なら全ケースが red になるか」)。
 	for _, c := range cases {
-		m := newTestBrowse(t, 3, map[string]CIState{}, nil)
-		if m.gitLogReloadDeferred() {
-			t.Fatalf("%s: 何も開いていないのに見送り状態", c.name)
-		}
-		c.set(m)
-		if !m.gitLogReloadDeferred() {
-			t.Errorf("%s: 反映してはいけない状態を見送らない", c.name)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+			if m.gitLogReloadDeferred() {
+				t.Fatal("何も開いていないのに見送り状態")
+			}
+			c.set(m)
+			if !m.gitLogReloadDeferred() {
+				t.Error("反映してはいけない状態を見送らない")
+			}
+		})
 	}
 }
 

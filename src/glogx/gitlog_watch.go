@@ -346,15 +346,22 @@ func (m *browseModel) handleGitLogFP(msg gitLogFPMsg) tea.Cmd {
 //     確認した対象と実行する対象がずれる
 //   - job パネルも SHA を握る UI で、reloadLog は closePanel() で黙って閉じる
 //   - 演出中 (pull / push アニメ) は offset がアニメの進行度なので、錨の画面行を測れない
-//   - 全画面の viewer (issues / status / 残量ダッシュボード) を見ている間は、そもそも git log が
+//   - 全画面の viewer (issues / status / 残量ダッシュボード / doctor) を見ている間は、そもそも git log が
 //     見えていない。反映するとトーストだけが viewer の上に出て、裏でカーソルのリセットと CI の
 //     再取得 (GitHub API) と見えないアニメの tick が走る (敵対レビューで実測 2026-09-01)
 //
 // いずれも見送るだけで基準は動かさないので、閉じた後の観測で反映される (最悪 1 分後)。
+//
+// 🚨 **全画面ビューアを足したらここへも足すこと** (issue 227)。doctor は issue 148 で
+// 後から足されたときこの列挙から漏れ、doctor を開いている間に外部で git が動くと裏で
+// 全面リロード (git 5〜6 fork) + カーソルのリセット + CI の再取得が走っていた。
+// build もテストも通るので silent に壊れる。「今どの全画面ビューアが出ているか」の出典が
+// 8 箇所に散っている構造そのものは issue 227 の本題として残っている。
 func (m *browseModel) gitLogReloadDeferred() bool {
 	return m.actModal.active() || m.diffOv.visible() || m.prStatusOv.visible() ||
 		m.detailOv.visible() || m.panelSHA != "" || m.pullAnimating || m.pushAnimating ||
-		m.issuesOv.visible() || m.statusOv.visible() || m.rlDash.visible()
+		m.issuesOv.visible() || m.statusOv.visible() || m.rlDash.visible() ||
+		m.doctorOv.visible()
 }
 
 // reflectGitLogChange は外部の変更を画面へ反映する (読み直しを Cmd へ出し、結果は
