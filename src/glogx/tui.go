@@ -1247,10 +1247,11 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// updateKeyReachable は C / X を update の入口として受けてよいかを返す。overlay が入力モード
-// (issues の絞り込み・URL ピッカー・目印確認 / status の pager・破棄確認 = ownsKeys) にあるときは
-// その語彙を優先し、status viewer では X が「変更を捨てる」(docs/status-viewer-spec.md) なので渡す。
-// それ以外 (doctor / ratelimit / diff / PR status / job パネル) は入力モードも C / X の割り当ても
+// updateKeyReachable は C / X を update の入口として受けてよいかを返す。overlay が自分の語彙を
+// 持っているとき (= ownsKeys) はそちらを優先する。今その状態を持つのは 3 つ:
+// issues の絞り込み・URL ピッカー・目印確認 / status の pager・破棄確認 / **doctor の削除の確認と
+// 実行中** (issue 148 ④)。status viewer では X が「変更を捨てる」(docs/status-viewer-spec.md) なので渡す。
+// それ以外 (ratelimit / diff / PR status / job パネル) は入力モードも C / X の割り当ても
 // 持たないので常に受ける = どの画面からでも update を始められる (README のキー表が正本)。
 // ⚠️ overlay に新しい入力モード (y/N 確認など) や C / X の割り当てを足すときはここも直す。
 // overlay 側は「未知キーは無視」なので、忘れても build もテストも壊れず、update が確認中のキーを
@@ -1318,11 +1319,11 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 			// **1 回目の Ctrl-C でプロセスごと落ちる**。それは削除の中断を ctx で伝える経路を
 			// 使わないので、記録が executing のまま残り、cli: の子プロセスも孤児化する
 			// (doctor_delete.go 冒頭の不変条件を、UI の配線が破る形。敵対レビュー 2026-09-03 が実測)。
-			// 中断の意味づけ自体は doctorView が持つので、判定を 2 箇所に書かず handleDeleteKey へ渡す
+			// 中断の意味づけ (1 回目は武装 / 2 回目で cancel) は doctorView が持つので、
+			// 判定を 2 箇所に書かず handleDeleteKey へ渡す。**どちらの回でもここで飲む**
+			// (2 回目の cancel は相を落とさない = 相を落とすのは receiveDelete なので、
+			// 回数で戻り値を分けても同じ値になる)
 			m.doctorOv.handleDeleteKey("ctrl+c")
-			if m.doctorOv.del.blocking() {
-				return m, m.maybeTick() // 1 回目: 武装しただけ
-			}
 			return m, m.maybeTick()
 		case m.actModal.pushing || m.actModal.pulling:
 			// 途中終了は不整合 (特に pull --rebase の mid-rebase 状態) を招くので 1 回目はブロック。

@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"doctor/disk"
+)
 
 // C / X (claude / codex update) が git log 一覧以外の画面からも始められることの配線テスト。
 // 以前は各 overlay の分岐が先にキーを飲み、一覧へ戻らないと update できなかった
@@ -133,5 +137,52 @@ func TestUpdateKeysYieldToOverlayInputModes(t *testing.T) {
 	}
 	if m2.statusOv.ownsKeys() {
 		t.Fatal("破棄確認中の C が確認を閉じていない (y/N 以外はキャンセルの語彙)")
+	}
+}
+
+// doctor の削除の確認・実行中は C / X を受けない (確認中の X が codex update を始めると、
+// 削除の確認が裏に残る)。
+//
+// ⚠️ この検査が無いと `updateKeyReachable` の doctor 節を消す変異が**全テスト green** を通る
+// (敵対レビュー 2026-09-03 の実測)。doctorView 側のテストは `ownsKeys()` の値しか見ておらず、
+// **browseModel がそれを見ているか**は守っていなかった。
+func TestUpdateKeysYieldToDoctorDelete(t *testing.T) {
+	claude, codex := stubUpdates(t)
+	states := []struct {
+		name string
+		del  doctorDelete
+	}{
+		{"確認中", doctorDelete{confirm: true}},
+		{"下見中", doctorDelete{preparing: true}},
+		{"実行中", doctorDelete{running: true}},
+		{"結果の表示中", doctorDelete{result: &disk.DeleteReport{}}},
+	}
+	// ⚠️ 状態 × キーの直積で、**1 キーだけ**押す。確認や結果は 1 キーで解けるので、
+	// 続けて押すと「解けた後の画面に答えた」ことになり、この分岐の主張と混ざる
+	for _, st := range states {
+		for _, key := range []string{"C", "X"} {
+			t.Run(st.name+"/"+key, func(t *testing.T) {
+				m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+				m.doctorOv.shown = true
+				m.doctorOv.del = st.del
+				if !m.doctorOv.ownsKeys() {
+					t.Fatal("前提: doctor が語彙を持っていない")
+				}
+				before, beforeX := *claude, *codex
+				press(m, key)
+				if *claude != before || *codex != beforeX {
+					t.Fatalf("削除の %s に %s が update を始めた (claude=%d codex=%d)",
+						st.name, key, *claude, *codex)
+				}
+			})
+		}
+	}
+	// 削除の語彙が立っていなければ、doctor の上からでも update は始められる (既存の契約)
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.doctorOv.shown = true
+	before := *claude
+	press(m, "C")
+	if *claude == before {
+		t.Error("平常時の doctor から C が届かない (どの画面からでも update を始められる契約)")
 	}
 }
