@@ -61,3 +61,42 @@ var collectVisits int
 ## レビュー状態
 
 反証レビュー未実施。競合の事実は `-race` の出力で確認済み (上記)。
+
+## 決着 (2026-09-03)
+
+**修正済み**: `collectVisits` を `atomic.Int64` に (commit `bad49d3c` / `1c7f076f`)。
+「単一 goroutine 前提」のコメントは atomic が要る理由に書き換えた。
+
+検証:
+
+- baseline: `go test -race -run 'TestConcurrentScansDoNotRaceOnCollectVisits|TestCollect' ./disk/` が green
+- 元症状: glogx の `TestUpdateKeysYieldToDoctorDelete` が `-race` で green (rc=0)
+- **変異**: 使い捨て worktree で `atomic.Int64` → 素の `int` (`.Add(1)` → `++`、未使用 import 削除、
+  テスト側も素の int に) に戻し、**ビルドが通ることと diff が意図した 3 箇所だけであることを確認**
+  してから実行 → `WARNING: DATA RACE` × 4 + FAIL。落ちたのは `got <= before` の判定不能ガードでは
+  なく race detector で、予測どおり
+- CI 配線: `-race` は `src/*/Makefile` の `test:` 全 6 プロジェクトと
+  `.github/workflows/doctor.yml` の両方に入っている。退行は止まる
+
+## 敵対的レビュー (opus, red team) の結果
+
+**修正そのものは壊せなかった** (「壊せなかった」と明記させた)。空振りだった攻め口:
+
+- 同型バグの取り残し (doctor 側): 非テスト全ファイルで package 変数への代入を走査。可変な
+  package 状態は `collectVisits` の他に `destructiveHook` (TestMain が 1 度書く) と
+  `runningUnderTest` (init) だけ。`catalog` / 正規表現 / `brewSharedVarDirs` は read-only。
+  `svc` / `brewledger` / `runner` に可変 package 状態は無い。glogx 側の counter は
+  `probeSeq` / `bytesRead` が既に atomic
+- `guards.do` の sync.Once の帰属: 本文の主張は正しい (`g := &guards{opt: opt}` は `Scan` 内の
+  per-scan instance。`installedBundleIDs` の呼び出しは `g.do("apps", …)` の 1 箇所だけ)
+- production の `r` 重なりでの誤集計・二重削除: 世代は `gen` で全 Msg が捨てられ、ch は世代ごとに
+  buffered、`Reuse` closure は snapshot のコピーを返すだけで共有 map への書き込みが無い
+- 回帰テストの検知力: 非 atomic への差し替えで単独実行でも FAIL。判定不能ガードもあり vacuous でない
+
+**切り出した指摘** (このコミットでは直さない):
+
+- 216 (P2): glogx の unit test が doctor の実走査 goroutine を join せずに漏らす。
+  214 のデータ競合の**上流の発火源**で、`collectVisits` は「たまたま跨いでいた唯一の package 変数」
+  だった。修正先の `src/glogx/doctor_view.go` はユーザー指示で凍結中 (別セッションが全体見直し)
+- 217 (P3): `pullCleanup` が `sync.WaitGroup` のまま (発火経路は未確認) +
+  `collectVisits` の assert が絶対値を見ている件の記録
