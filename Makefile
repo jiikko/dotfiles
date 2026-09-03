@@ -46,7 +46,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-cd-rc test-trigger-log-writers test-skip-exit-code test-workflow-action-pins test-go-project-lanes test-go-lint test-go test-src
+.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-cd-rc test-trigger-log-writers test-skip-exit-code test-workflow-action-pins test-go-project-lanes test-go-lint test-go test-src test-fresh
 
 # ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ)。
 #
@@ -184,6 +184,15 @@ printf '%s\n' "$$tests" | xargs -P $(NPROC) -n 1 sh -c \
 	elif [ "$$rc" -eq 77 ]; then echo "[skip] $$0"; cat "$$out"; \
 	else echo "[FAIL] $$0"; cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"'
 endef
+
+# 新品チェックアウト (= 追跡されているものだけがある状態) で回す opt-in レーン (issue 132)。
+# 「手元には在るが git に載っていないもの」への依存を push 前に出す。判定は「ignore か」では
+# なく「git に載っているか」: 空ディレクトリ (issues/next/) も untracked も同じ形で壊れる。
+# 🚨 test からは呼ばない (所要時間を倍にしない。push 前に自分で叩く)。HEAD で回るので
+#    未コミットの変更は検査しない — これは「新品チェックアウト」の定義そのもの。
+# 後始末と残骸掃除の正本は scripts/with_fresh_worktree.sh。
+test-fresh:
+	@./scripts/with_fresh_worktree.sh $(MAKE) test-discovered test-bats
 
 # test-runtime の実行本体。tests/ 全体を走査するため、新ディレクトリ tests/foo/ を作っても
 # 自動で拾われる (ディレクトリ単位の死蔵も発生しない)。

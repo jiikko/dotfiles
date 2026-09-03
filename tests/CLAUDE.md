@@ -99,6 +99,20 @@ userland は同じ。かつて「手元 BSD / CI GNU」の差を潰すために�
 - 🚨 **残っているのは「版」の差**。CI の `/bin/bash` は 3.2、開発機は Homebrew の 5 系。
   workflow が brew の bash を PATH 先頭に出して揃えている (下の節)
 
+## 新品チェックアウトとの差 (`make test-fresh`)
+
+platform の差が消えた今も残るのが**「手元には在るが git に載っていないもの」への依存**。
+`make test-fresh` が使い捨て worktree (= 追跡されているものだけがある状態) で
+`test-discovered` + `test-bats` を回すので、**push 前に自分で叩く** (`make test` からは
+呼ばない。所要時間を倍にしないための opt-in)。
+
+- 判定は「ignore されているか」ではなく **「git に載っているか」**。ignore (`tmp/` は
+  `~/.gitignore_global` 由来で repo の `.gitignore` に無い) だけでなく、**空ディレクトリ**
+  (`issues/next/` は git がディレクトリごと載せない) と untracked でも同じ形で壊れる
+- HEAD で回るので**未コミットの変更は検査しない**。これは「新品チェックアウト」の定義そのもの
+- 後始末の正本は `scripts/with_fresh_worktree.sh` (起動時に前回の残骸も掃除する。
+  `trap` は SIGKILL では走らないため)
+
 ## tmux を触るテスト
 
 - 冒頭で `unset TMUX TMUX_PANE` し、`-L <一意名>` か `TMUX_TMPDIR` で socket を隔離する。`$TMUX` が生きていると `TMUX_TMPDIR` は無視されて本番サーバへ向く (2026-07-07 に `make test` が本番を kill した。tests/tmux/test_fork_scratch.sh 冒頭が正本)
