@@ -46,21 +46,14 @@ type doctorView struct {
 	startedAt   time.Time
 	snapshotAt  time.Time // 前回の結果をそのまま出しているときの走査時刻 (zero = 今回走査した)
 
-	cursor int // rows の index (選べる行を指す)
-	// cursorKey は「今どの行を選んでいるか」を **行の同一性 (key) で覚える**もの。
-	// ⚠️ index だけで覚えると、走査中に**カーソルより上へ行が挿入された**瞬間に別の行を指す
-	//    (disk 行は Size 降順に並べ替えて描くので、大きい結果が後から届くと上に入る)。
-	//    y / Y が別エントリをコピーし、Enter が別の行を開く (issue 210。red team が実測)
-	cursorKey string
 	// enterDetail は「Enter で今開いた行」。次の描画でカーソルをその中の最初の対象パスへ移す
 	// (開いてから j を何度も押さずに、消したいディレクトリへ直接行けるようにする)
 	enterDetail string
-	// cursorFellBack は「選んでいた行が消えたので近くへ寄せた」印。View では通知できないので、
-	// 次のキー操作で handleKey が doctorToast に変えて知らせる (issue 210)
-	cursorFellBack bool
-	offset         int             // 窓の先頭 (rows の index)
-	expanded       map[string]bool // 展開中の行 (key = 行の同一性)
-	rows           []doctorRow     // 直近の描画で組んだ行 (キー操作の対象。lines() が作り直す)
+	// cur は行の上のカーソルと窓 (doctor_rowcursor.go)。行の列しか知らない閉じた機械なので、
+	// 不変条件はそちらのテストが行の列を直接与えて検査する
+	cur      rowCursor
+	expanded map[string]bool // 展開中の行 (key = 行の同一性)
+	rows     []doctorRow     // 直近の描画で組んだ行 (キー操作の対象。lines() が作り直す)
 
 	pendingCopy  string // 直近の y / Y の中身 (copyPayload)
 	pendingToast string // 直近の doctorToast の文言
@@ -170,15 +163,13 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	v.stop()
 	v.shown = true
 	v.gen++
-	v.cursor, v.cursorKey, v.offset = 0, "", 0
-	v.cursorFellBack = false
+	v.cur.reset()
 	v.expanded = map[string]bool{}
 	v.selected, v.selectedItems, v.inspected = map[string]bool{}, map[string]bool{}, map[string]bool{}
 	// ⚠️ 世代をまたいで残る状態をここで**まとめて**捨てる。1 つでも残すと前の世代の行・文言・
 	// Cmd が次の画面に混ざる (pendingToast は実際に漏れて、次の再スキャンの理由として
 	// 再表示されていた。敵対レビュー 2026-09-03)
 	v.rows, v.enterDetail, v.pendingCopy, v.pendingToast, v.pendingDeleteCmd = nil, "", "", "", nil
-	v.cursorFellBack = false
 	v.del.reset()
 	v.diskResults, v.diskRep, v.svcRep, v.brew = nil, nil, nil, nil
 	v.startedAt = timeNow()
@@ -380,6 +371,37 @@ const (
 	doctorRunDelete // 削除を開始する (pendingDeleteCmd を browseModel が実行する)
 )
 
+// jumpIntoDetail は Enter で開いた直後に、カーソルを**その中の最初の対象パス**へ移す。
+// 開いてから j を何度も押さずに、消したいディレクトリへ直接行けるようにする
+// (ユーザー要望 2026-09-03)。対象パスの行が無い (Inspect の中身一覧だけ / 走査できず) なら
+// 何もしない = カーソルはエントリの行に留まる。
+func (v *doctorView) jumpIntoDetail() {
+	if v.enterDetail == "" {
+		return
+	}
+	id, ok := strings.CutPrefix(v.enterDetail, "disk:")
+	v.enterDetail = ""
+	if !ok {
+		return
+	}
+	v.cur.jumpTo(v.rows, "diskitem:"+id+"\x00")
+}
+
+// takeCursorFellBack は「描画中に選択行が消えて寄せた」印を 1 回だけ取り出し、文言を返す。
+//
+// ⚠️ **キーを飲まずに知らせる**ための seam。以前は handleKey の先頭で `doctorToast` を
+// 返していたが、それだと**その打鍵が空振りする** (q / esc / d / r / Enter が等しく 1 回死ぬ)。
+// 呼ぶのは browseModel 側 (tui.go) で、handleKey を呼ぶ**前**にトーストを出す。
+//
+// ⚠️ 文言は**返り値で渡す**。pendingToast に書くと、それを消すのは takeToast() だけなので、
+// 次の再スキャンの理由として使い回される (敵対レビュー 2026-09-03 が実測)。
+func (v *doctorView) takeCursorFellBack() string {
+	if !v.cur.takeFellBack() {
+		return ""
+	}
+	return "選んでいた行が無くなったので近くの行へ移りました"
+}
+
 // takeToast は溜めておいた文言を取り出して空にする (同じ文言が次の操作で再び出ないように)。
 func (v *doctorView) takeToast() string {
 	t := v.pendingToast
@@ -417,39 +439,39 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 	case "r":
 		return doctorRescan // 止めるのは start() の先頭 (issue 211)。ここで二重に呼ばない
 	case "j", "down":
-		v.moveCursor(+1)
+		v.cur.move(v.rows, +1)
 	case "k", "up":
-		v.moveCursor(-1)
+		v.cur.move(v.rows, -1)
 	case "ctrl+d", "pgdown":
 		for range max(1, page/2) {
-			v.moveCursor(+1)
+			v.cur.move(v.rows, +1)
 		}
 	case "ctrl+u", "pgup":
 		for range max(1, page/2) {
-			v.moveCursor(-1)
+			v.cur.move(v.rows, -1)
 		}
 	case "g":
-		// cursorFellBack は消さない: tui が handleKey より前に必ず取り出すので、
-		// ここに来た時点で常に false (書いても意味が無く、G 側にも同じ行が無い = 非対称だった)
-		v.cursor, v.cursorKey, v.offset = 0, "", 0
-		v.moveCursor(0)
+		// fellBack は消さない: tui が handleKey より前に必ず取り出すので、ここに来た時点で
+		// 常に false (書いても意味が無く、G 側にも同じ行が無い = 非対称だった)
+		v.cur.index, v.cur.key, v.cur.offset = 0, "", 0
+		v.cur.move(v.rows, 0)
 	case "G":
-		v.cursor = len(v.rows) - 1
-		v.moveCursor(0)
+		v.cur.index = len(v.rows) - 1
+		v.cur.move(v.rows, 0)
 	case "enter":
 		// 対象パスの行で Enter を押したら**親のエントリを畳んで戻る** (Enter で入って Enter で出る)。
 		// 入る側だけを作るとカーソルが中に居たまま畳めなくなる
-		if v.cursor >= 0 && v.cursor < len(v.rows) {
-			if itemKey, ok := strings.CutPrefix(v.rows[v.cursor].key, "diskitem:"); ok {
+		if v.cur.index >= 0 && v.cur.index < len(v.rows) {
+			if itemKey, ok := strings.CutPrefix(v.rows[v.cur.index].key, "diskitem:"); ok {
 				if id, _, ok := strings.Cut(itemKey, "\x00"); ok {
 					delete(v.expanded, "disk:"+id)
-					v.cursorKey = "disk:" + id
+					v.cur.key = "disk:" + id
 				}
 				return doctorSwallow
 			}
 		}
-		if v.cursor >= 0 && v.cursor < len(v.rows) && v.rows[v.cursor].selectable && len(v.rows[v.cursor].detail) > 0 {
-			k := v.rows[v.cursor].key
+		if v.cur.index >= 0 && v.cur.index < len(v.rows) && v.rows[v.cur.index].selectable && len(v.rows[v.cur.index].detail) > 0 {
+			k := v.rows[v.cur.index].key
 			v.expanded[k] = !v.expanded[k]
 			if id, ok := strings.CutPrefix(k, "disk:"); ok && v.expanded[k] {
 				if v.inspected == nil {
@@ -460,10 +482,10 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 			}
 		}
 	case "y", "Y":
-		if v.cursor < 0 || v.cursor >= len(v.rows) || !v.rows[v.cursor].selectable {
+		if v.cur.index < 0 || v.cur.index >= len(v.rows) || !v.rows[v.cur.index].selectable {
 			return doctorNothing
 		}
-		row := v.rows[v.cursor]
+		row := v.rows[v.cur.index]
 		v.pendingCopy = row.copyText
 		action := doctorCopyText
 		if key == "y" {
@@ -475,133 +497,6 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 		return action
 	}
 	return doctorSwallow
-}
-
-// jumpIntoDetail は Enter で開いた直後に、カーソルを**その中の最初の対象パス**へ移す。
-// 開いてから j を何度も押さずに、消したいディレクトリへ直接行けるようにする
-// (ユーザー要望 2026-09-03)。対象パスの行が無い (Inspect の中身一覧だけ / 走査できず) なら
-// 何もしない = カーソルはエントリの行に留まる。
-func (v *doctorView) jumpIntoDetail() {
-	if v.enterDetail == "" {
-		return
-	}
-	id, ok := strings.CutPrefix(v.enterDetail, "disk:")
-	v.enterDetail = ""
-	if !ok {
-		return
-	}
-	prefix := "diskitem:" + id + "\x00"
-	for i, r := range v.rows {
-		if r.selectable && strings.HasPrefix(r.key, prefix) {
-			v.cursor, v.cursorKey = i, r.key
-			return
-		}
-	}
-}
-
-// restoreCursor は「前に選んでいた行」を key で探し直す (issue 210)。
-// 行が増減しても選択が同じエントリに留まる。key が消えていたら **index の近傍**へ寄せる
-// (元の位置に近い selectable 行)。
-//
-// ⚠️ 寄せたことはユーザーに見せる。黙って別の行に付くのが元の症状なので、無言の寄せは
-// 同じ問題を再生産する (敵対的レビューの補正)。トーストは pendingToast 経由で出す。
-func (v *doctorView) restoreCursor() {
-	if len(v.rows) == 0 {
-		v.cursor, v.cursorKey = 0, ""
-		return
-	}
-	if v.cursorKey != "" {
-		for i, r := range v.rows {
-			if r.selectable && r.key == v.cursorKey {
-				v.cursor = i
-				return
-			}
-		}
-		// key が消えた (エントリが落ちた / 本文が変わった)。近傍へ寄せて、その事実を伝える
-		if v.cursor >= len(v.rows) {
-			v.cursor = len(v.rows) - 1
-		}
-		was := v.cursor
-		v.moveCursor(0)
-		// ⚠️ 判定は「**cursor が実際に動いたか**」。`cursorKey != ""` で見ると、選べる行が
-		//    0 件のフレーム (key は保持する) で**動いていないのに寄せたと言う**
-		//    (敵対的レビュー 2026-09-03 の P3)
-		if v.cursor != was && v.cursorKey != "" {
-			// ⚠️ ここで pendingToast に書いても**画面には出ない**。表示するのは
-			//    tui.go の `case doctorToast:` = handleKey の戻り値経路だけで、restoreCursor は
-			//    View (lines) から呼ばれる (敵対的レビュー 2026-09-03 の P1)。
-			//    フラグに残し、**次のキー操作で**知らせる (ユーザーがその行に対して何かする
-			//    まさにその瞬間に出るので、遅れは実害にならない)
-			v.cursorFellBack = true
-		}
-		return
-	}
-	if v.cursor >= len(v.rows) {
-		v.cursor = max(0, len(v.rows)-1)
-	}
-	v.moveCursor(0)
-	v.rememberCursorKey()
-}
-
-// takeCursorFellBack は「描画中に選択行が消えて寄せた」印を 1 回だけ取り出す。
-//
-// ⚠️ **キーを飲まずに知らせる**ための seam。以前は handleKey の先頭で `doctorToast` を
-// 返していたが、それだと**その打鍵が空振りする** (q / esc / d / r / Enter が等しく 1 回死ぬ。
-// 実運用の主経路は「削除完了で選択行が rows から落ちた直後」。敵対的レビュー 2026-09-03 の P2)。
-// 呼ぶのは browseModel 側 (tui.go) で、handleKey を呼ぶ**前**にトーストを出す。
-func (v *doctorView) takeCursorFellBack() bool {
-	if !v.cursorFellBack {
-		return false
-	}
-	v.cursorFellBack = false
-	v.pendingToast = "選んでいた行が無くなったので近くの行へ移りました"
-	return true
-}
-
-// rememberCursorKey は今の index が指す行の key を覚える (次の描画で復元する材料)。
-func (v *doctorView) rememberCursorKey() {
-	if v.cursor >= 0 && v.cursor < len(v.rows) && v.rows[v.cursor].selectable {
-		v.cursorKey = v.rows[v.cursor].key
-		return
-	}
-	// ⚠️ **選べる行が無いフレームでは既存の key を保持する**。捨てると index 保持へ退行する
-	//    (走査の初期や全セクションが見出しだけのフレームで起きる。敵対的レビュー 2026-09-03 の P2)。
-	//    key を消すのは start / 明示的なリセットだけにする
-}
-
-// moveCursor は選べる行の間を dir 方向に 1 つ動く (0 = 今の位置を選べる行へ寄せる)。
-func (v *doctorView) moveCursor(dir int) {
-	if len(v.rows) == 0 {
-		v.cursor = 0
-		return
-	}
-	// ⚠️ **関数の先頭で登録する**。dir==0 のブロックより後に置くと、その経路 (G / 寄せ直し) が
-	//    key を覚えず、次の描画で restoreCursor が**古い key の行へ巻き戻す** (G が効かない。
-	//    敵対的レビュー 2026-09-03 が実測: after G cursor=6 なのに cursorKey="disk:b" のまま →
-	//    repaint で cursor=4 へ戻る)
-	defer v.rememberCursorKey()
-	i := v.cursor
-	if dir == 0 {
-		for j := i; j < len(v.rows); j++ {
-			if v.rows[j].selectable {
-				v.cursor = j
-				return
-			}
-		}
-		for j := i; j >= 0; j-- {
-			if v.rows[j].selectable {
-				v.cursor = j
-				return
-			}
-		}
-		return
-	}
-	for j := i + dir; j >= 0 && j < len(v.rows); j += dir {
-		if v.rows[j].selectable {
-			v.cursor = j
-			return
-		}
-	}
 }
 
 // hint は最下行の案内。**幅に入らない項目は落とす** (切ると語の途中で切れて意味が壊れ、
@@ -654,23 +549,15 @@ func (v *doctorView) lines(o doctorRenderOpts) []string {
 	}
 	v.rows = v.buildRows(o)
 	v.jumpIntoDetail()
-	v.restoreCursor()
+	v.cur.restore(v.rows)
 	head := []string{v.headerLine(o), ""}
 	room := max(o.page-len(head), 1)
-	if v.cursor < v.offset {
-		v.offset = v.cursor
-	}
-	if v.cursor >= v.offset+room {
-		v.offset = v.cursor - room + 1
-	}
-	if v.offset > max(0, len(v.rows)-room) {
-		v.offset = max(0, len(v.rows)-room)
-	}
+	from := v.cur.window(len(v.rows), room)
 	out := make([]string, 0, o.page)
 	out = append(out, head...)
-	for i := v.offset; i < len(v.rows) && len(out) < o.page; i++ {
+	for i := from; i < len(v.rows) && len(out) < o.page; i++ {
 		mark := "  "
-		if i == v.cursor && v.rows[i].selectable {
+		if i == v.cur.index && v.rows[i].selectable {
 			mark = "▶ "
 		}
 		out = append(out, truncateDisp(mark+v.rows[i].text, o.width, "…"))
@@ -686,12 +573,12 @@ func (v *doctorView) headerLine(o doctorRenderOpts) string {
 	case !v.snapshotAt.IsZero():
 		left += fmt.Sprintf("  %d 分前の結果 (r で再スキャン)", int(o.now.Sub(v.snapshotAt).Minutes()))
 	}
-	right := "[Enter] 詳細  [r] 再スキャン  [D/Esc] 閉じる "
-	gap := o.width - dispWidth(left) - dispWidth(right)
-	if gap < 1 {
-		return left
-	}
-	return left + padSpaces(gap) + right
+	// ⚠️ キーの凡例をここに置かない。**hint() が唯一の出典**にする (下段は常に描かれる)。
+	// 以前は右端にも凡例を置いていたが、語も内容も hint と食い違っていた
+	// (「詳細」vs「開閉」/ q が無い / Space と d が無い) うえ、hint が issue 201 で
+	// fitHintItems に寄った後もこちらは幅が足りないと凡例ごと消す旧方式のままだった。
+	// 状態 (スキャン中 / 前回の結果) はここにしか無いので、そちらだけ残す
+	return left
 }
 
 // sectionHeader は案 A の見出し 2 行 (左に縦棒 + 太字の題、右端に要約 / 下に罫線)。

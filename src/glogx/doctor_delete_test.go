@@ -327,13 +327,13 @@ func TestDoctorDeleteRunsAndShowsResult(t *testing.T) {
 func TestDoctorDeleteBlocksKeysWhileRunning(t *testing.T) {
 	v := deleteTestView(t, &fakeDelete{})
 	v.del = doctorDelete{running: true, progress: "1/1 …"}
-	cursor := v.cursor
+	cursor := v.cur.index
 	for _, key := range []string{"j", "k", "d", " ", "enter", "q", "esc", "D", "r"} {
 		if act := v.handleKey(key, 20); act != doctorSwallow {
 			t.Errorf("%q が飲まれていない: act = %v", key, act)
 		}
 	}
-	if v.cursor != cursor {
+	if v.cur.index != cursor {
 		t.Error("実行中にカーソルが動いた")
 	}
 	if !v.del.running {
@@ -841,20 +841,20 @@ func multiItemView(t *testing.T, f *fakeDelete) *doctorView {
 // Enter で開くと、カーソルが**中の対象パス**へ移る (j を何度も押さずに消したいものへ行ける)。
 func TestDoctorEnterMovesCursorIntoItems(t *testing.T) {
 	v := multiItemView(t, nil)
-	if !strings.HasPrefix(v.rows[v.cursor].key, "disk:") {
-		t.Fatalf("前提: カーソルがエントリの行にない (%q)", v.rows[v.cursor].key)
+	if !strings.HasPrefix(v.rows[v.cur.index].key, "disk:") {
+		t.Fatalf("前提: カーソルがエントリの行にない (%q)", v.rows[v.cur.index].key)
 	}
 	v.handleKey("enter", 20)
 	_ = v.lines(doctorTestOpts(40))
-	if !strings.HasPrefix(v.rows[v.cursor].key, "diskitem:") {
-		t.Fatalf("Enter で対象パスへ移らない: cursor=%q", v.rows[v.cursor].key)
+	if !strings.HasPrefix(v.rows[v.cur.index].key, "diskitem:") {
+		t.Fatalf("Enter で対象パスへ移らない: cursor=%q", v.rows[v.cur.index].key)
 	}
 	// Enter で入って Enter で出る (中に居たまま畳めないと戻れない)
 	v.handleKey("enter", 20)
 	_ = v.lines(doctorTestOpts(40))
-	if !strings.HasPrefix(v.rows[v.cursor].key, "disk:") || v.expanded["disk:multi"] {
+	if !strings.HasPrefix(v.rows[v.cur.index].key, "disk:") || v.expanded["disk:multi"] {
 		t.Fatalf("対象パスの行の Enter で畳んで戻らない: cursor=%q expanded=%v",
-			v.rows[v.cursor].key, v.expanded)
+			v.rows[v.cur.index].key, v.expanded)
 	}
 }
 
@@ -863,7 +863,7 @@ func TestDoctorSelectSingleDirectory(t *testing.T) {
 	v := multiItemView(t, nil)
 	v.handleKey("enter", 20)
 	_ = v.lines(doctorTestOpts(40))
-	picked := v.rows[v.cursor].key
+	picked := v.rows[v.cur.index].key
 	if act := v.handleKey(" ", 20); act != doctorSwallow {
 		t.Fatalf("act=%v toast=%q", act, v.pendingToast)
 	}
@@ -1101,7 +1101,7 @@ func TestSelectionSummaryCountsDirectories(t *testing.T) {
 // 前回の結果の画面でも、削除に関係ない行では再スキャンを起こさない。
 func TestSnapshotRescanOnlyOnDiskRows(t *testing.T) {
 	v := &doctorView{snapshotAt: time.Now().Add(-time.Minute),
-		rows: []doctorRow{{key: "brew:0:x", selectable: true}}, cursor: 0}
+		rows: []doctorRow{{key: "brew:0:x", selectable: true}}, cur: rowCursor{index: 0}}
 	if _, ok := v.snapshotRescan(); ok {
 		t.Error("brew の行で再スキャンを起こした")
 	}
@@ -1168,13 +1168,13 @@ func TestDoctorStartClearsCarryOverState(t *testing.T) {
 	runDoctorCmds(t, v, v.open())
 	_ = v.lines(doctorTestOpts(30))
 	v.pendingToast, v.pendingCopy, v.enterDetail = "残り", "残り", "disk:thing"
-	v.cursorFellBack = true
+	v.cur.fellBack = true
 	v.pendingDeleteCmd = func() tea.Msg { return nil }
 	v.selected = map[string]bool{"thing": true}
 	runDoctorCmds(t, v, v.rescan())
 	if v.pendingToast != "" || v.pendingCopy != "" || v.enterDetail != "" ||
-		v.cursorFellBack || v.pendingDeleteCmd != nil || len(v.selected) != 0 {
+		v.cur.fellBack || v.pendingDeleteCmd != nil || len(v.selected) != 0 {
 		t.Errorf("前の世代の状態が残っている: toast=%q copy=%q enter=%q fellBack=%v cmd=%v selected=%v",
-			v.pendingToast, v.pendingCopy, v.enterDetail, v.cursorFellBack, v.pendingDeleteCmd != nil, v.selected)
+			v.pendingToast, v.pendingCopy, v.enterDetail, v.cur.fellBack, v.pendingDeleteCmd != nil, v.selected)
 	}
 }

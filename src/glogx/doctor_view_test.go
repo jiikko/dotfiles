@@ -194,8 +194,8 @@ func TestDoctorCursorAndExpand(t *testing.T) {
 	v := doctorTestView(t)
 	runDoctorCmds(t, v, v.open())
 	_ = v.lines(doctorTestOpts(40))
-	if !v.rows[v.cursor].selectable || !strings.Contains(v.rows[v.cursor].text, "Thing キャッシュ") {
-		t.Fatalf("初期カーソルが最初の選べる行 (ディスク 1 件目) にない: %q", v.rows[v.cursor].text)
+	if !v.rows[v.cur.index].selectable || !strings.Contains(v.rows[v.cur.index].text, "Thing キャッシュ") {
+		t.Fatalf("初期カーソルが最初の選べる行 (ディスク 1 件目) にない: %q", v.rows[v.cur.index].text)
 	}
 	v.handleKey("enter", 40)
 	out := doctorText(v, 40)
@@ -211,8 +211,8 @@ func TestDoctorCursorAndExpand(t *testing.T) {
 		v.handleKey("j", 40)
 	}
 	_ = v.lines(doctorTestOpts(40))
-	if !strings.Contains(v.rows[v.cursor].text, "Some installed casks") {
-		t.Fatalf("j で brew の概要行に着かない: %q", v.rows[v.cursor].text)
+	if !strings.Contains(v.rows[v.cur.index].text, "Some installed casks") {
+		t.Fatalf("j で brew の概要行に着かない: %q", v.rows[v.cur.index].text)
 	}
 	v.handleKey("enter", 40)
 	if out := doctorText(v, 40); !strings.Contains(out, "You should find replacements") || !strings.Contains(out, "  foo") {
@@ -626,7 +626,7 @@ func TestDoctorCopyPathAndText(t *testing.T) {
 	}
 	// 選べる行に居なければ「無い」
 	v.rows = nil
-	v.cursor = 0
+	v.cur.index = 0
 	if v.handleKey("y", 40) != doctorNothing {
 		t.Error("行が無いのにコピーした")
 	}
@@ -996,11 +996,11 @@ func TestDoctorUndiagnosedRowsAreSelectable(t *testing.T) {
 
 	// disk の「一部走査できず」: y は理由の文字列 (パスを含む)、Y は親エントリの解説
 	i := find("一部走査できず")
-	v.cursor = i
+	v.cur.index = i
 	if got := v.handleKey("y", 40); got != doctorCopyPath || !strings.Contains(v.copyPayload(), "/h/.npm/_locks") {
 		t.Errorf("Failures 行の y: action=%v payload=%q", got, v.copyPayload())
 	}
-	v.cursor = i
+	v.cur.index = i
 	if got := v.handleKey("Y", 40); got != doctorCopyText || !strings.Contains(v.copyPayload(), "_locks: permission denied") {
 		t.Errorf("Failures 行の Y に走査できなかった理由が無い: action=%v payload=%q", got, v.copyPayload())
 	}
@@ -1008,11 +1008,11 @@ func TestDoctorUndiagnosedRowsAreSelectable(t *testing.T) {
 	// svc の「診断できず」: y は plist のパス、Y は理由と裏取りコマンド
 	_ = v.lines(doctorTestOpts(40))
 	j := find("診断できず")
-	v.cursor = j
+	v.cur.index = j
 	if got := v.handleKey("y", 40); got != doctorCopyPath || v.copyPayload() != "/Library/LaunchDaemons/com.vendor.broken.plist" {
 		t.Errorf("Undiagnosed 行の y: action=%v payload=%q", got, v.copyPayload())
 	}
-	v.cursor = j
+	v.cur.index = j
 	if got := v.handleKey("Y", 40); got != doctorCopyText {
 		t.Fatalf("Undiagnosed 行の Y: action=%v", got)
 	}
@@ -1023,7 +1023,7 @@ func TestDoctorUndiagnosedRowsAreSelectable(t *testing.T) {
 	}
 
 	// Enter で理由が読める (一覧の行は幅で切れても、詳細には出る)
-	v.cursor = j
+	v.cur.index = j
 	v.handleKey("enter", 40)
 	if txt := strings.Join(v.lines(doctorTestOpts(40)), "\n"); !strings.Contains(txt, "理由: plist を読めない") {
 		t.Errorf("Undiagnosed 行の Enter で理由が出ない:\n%s", txt)

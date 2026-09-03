@@ -416,8 +416,8 @@ func TestCursorStaysOnSameRowWhenRowsGrowAbove(t *testing.T) {
 	v.lines(o) // 1 度描いて rows を組む
 
 	// 一番上の選べる行から 1 つ下へ動く (= 2 番目のエントリを選ぶ)
-	v.moveCursor(1)
-	before := v.rows[v.cursor].key
+	v.cur.move(v.rows, 1)
+	before := v.rows[v.cur.index].key
 	if before == "" {
 		t.Fatal("判定不能: 選択行に key が無い")
 	}
@@ -426,7 +426,7 @@ func TestCursorStaysOnSameRowWhenRowsGrowAbove(t *testing.T) {
 	v.diskResults = append(v.diskResults, huge)
 	v.lines(o)
 
-	after := v.rows[v.cursor].key
+	after := v.rows[v.cur.index].key
 	if after != before {
 		t.Fatalf("走査中に選択が別の行へ移った: before=%s after=%s (y / Y が別エントリをコピーする)", before, after)
 	}
@@ -452,13 +452,13 @@ func TestCursorFallbackIsToldThroughBrowseModel(t *testing.T) {
 	o := doctorRenderOpts{page: 40, width: 100}
 	v.diskResults = []disk.Result{a, b}
 	v.lines(o)
-	v.moveCursor(1)
-	gone := v.rows[v.cursor].key
+	v.cur.move(v.rows, 1)
+	gone := v.rows[v.cur.index].key
 
 	// 再走査で b が落ちた → 描画で寄せる
 	v.diskResults = []disk.Result{a}
 	v.lines(o)
-	if v.rows[v.cursor].key == gone {
+	if v.rows[v.cur.index].key == gone {
 		t.Fatal("消えた行を指したまま")
 	}
 
@@ -481,10 +481,10 @@ func TestCursorFallbackIsToldThroughBrowseModel(t *testing.T) {
 	//    q / esc / d / r / Enter が等しく 1 回空振りしていた
 	v.diskResults = []disk.Result{a, b}
 	v.lines(o)
-	v.moveCursor(1)
+	v.cur.move(v.rows, 1)
 	v.diskResults = []disk.Result{a}
 	v.lines(o) // ここで再度寄せる
-	if !v.cursorFellBack {
+	if !v.cur.fellBack {
 		t.Fatal("前提が作れていない: 寄せの印が立っていない")
 	}
 	m.handleKey("q") // 閉じるキー
@@ -509,15 +509,15 @@ func TestCursorEndKeySurvivesRepaint(t *testing.T) {
 	v.lines(o)
 
 	// G 相当: 末尾へ飛んで寄せる
-	v.cursor = len(v.rows) - 1
-	v.moveCursor(0)
-	atEnd := v.rows[v.cursor].key
+	v.cur.index = len(v.rows) - 1
+	v.cur.move(v.rows, 0)
+	atEnd := v.rows[v.cur.index].key
 	if atEnd == "" {
 		t.Fatal("判定不能: 末尾の選べる行に key が無い")
 	}
 
 	v.lines(o) // 次の描画
-	if got := v.rows[v.cursor].key; got != atEnd {
+	if got := v.rows[v.cur.index].key; got != atEnd {
 		t.Fatalf("G の後の描画で巻き戻った: at end=%s after repaint=%s", atEnd, got)
 	}
 }
@@ -533,8 +533,8 @@ func TestCursorKeySurvivesFrameWithoutSelectableRows(t *testing.T) {
 	o := doctorRenderOpts{page: 40, width: 100}
 	v.diskResults = []disk.Result{a, b}
 	v.lines(o)
-	v.moveCursor(1)
-	want := v.cursorKey
+	v.cur.move(v.rows, 1)
+	want := v.cur.key
 	if want == "" {
 		t.Fatal("判定不能: key を覚えていない")
 	}
@@ -550,7 +550,7 @@ func TestCursorKeySurvivesFrameWithoutSelectableRows(t *testing.T) {
 		Items: []disk.Item{{Path: "/tmp/huge", Size: 999999}}}
 	v.diskResults = []disk.Result{a, b, huge}
 	v.lines(o)
-	if v.rows[v.cursor].key != want {
-		t.Fatalf("空フレームを挟んだら別の行へ移った: want=%s got=%s", want, v.rows[v.cursor].key)
+	if v.rows[v.cur.index].key != want {
+		t.Fatalf("空フレームを挟んだら別の行へ移った: want=%s got=%s", want, v.rows[v.cur.index].key)
 	}
 }

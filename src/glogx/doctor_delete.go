@@ -376,10 +376,10 @@ func (v *doctorView) deletable(r disk.Result) (bool, string) {
 // 後者は Enter で開いた中の対象パス。どちらも同じ `deletable` のゲートを通す
 // (ゲートはエントリの性質 = 走査の新しさ・危険度で決まるので、粒度で緩めない)。
 func (v *doctorView) toggleSelect() (string, bool) {
-	if v.cursor < 0 || v.cursor >= len(v.rows) {
+	if v.cur.index < 0 || v.cur.index >= len(v.rows) {
 		return "", false
 	}
-	key := v.rows[v.cursor].key
+	key := v.rows[v.cur.index].key
 	if itemKey, ok := strings.CutPrefix(key, "diskitem:"); ok {
 		return v.toggleItem(itemKey)
 	}
@@ -498,8 +498,8 @@ func (v *doctorView) snapshotRescan() (doctorAction, bool) {
 	}
 	// ⚠️ 削除に関係ない行 (brew の警告 / svc) の上では起こさない。押した意図
 	// (この行を消したい) が存在しないので、全体の再スキャンは驚きにしかならない
-	if v.cursor >= 0 && v.cursor < len(v.rows) {
-		k := v.rows[v.cursor].key
+	if v.cur.index >= 0 && v.cur.index < len(v.rows) {
+		k := v.rows[v.cur.index].key
 		if !strings.HasPrefix(k, "disk:") && !strings.HasPrefix(k, "diskitem:") {
 			return doctorSwallow, false
 		}

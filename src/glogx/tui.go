@@ -1409,9 +1409,9 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	}
 	if m.doctorOv.visible() {
 		// 描画中に選択行が消えて寄せていたら、**キーを飲まずに**知らせる (issue 210)。
-		// restoreCursor は View から呼ばれるので、通知経路はここしか無い
-		if m.doctorOv.takeCursorFellBack() {
-			m.toast.show(m.doctorOv.takeToast(), false)
+		// カーソルの寄せは View から起きるので、通知経路はここしか無い
+		if t := m.doctorOv.takeCursorFellBack(); t != "" {
+			m.toast.show(t, false)
 		}
 		switch m.doctorOv.handleKey(key, m.pageSize()) {
 		case doctorClosed:
