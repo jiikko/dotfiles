@@ -40,6 +40,11 @@ set -uo pipefail
 # 読む側で socket を照合する形は絞り忘れが 1 箇所でも残ると漏れるので、入れ物で分ける。
 # ⚠️ dir の解決は wizard だけが行う。fire は run-shell のコマンド文字列で
 #    TMUX_SCHEDULE_KEYS_DIR を受け取るので、tmux へ問い合わせない (子は $TMUX を持たないことがある)
+# ⚠️ 二度と使われない socket の dir に残った .job / .pid は**誰も掃かない** (prune は自 dir しか
+#    見ない)。掃除機構を置かないのは意図的: 残骸は数バイトのテキストで、使い捨ての -L サーバは
+#    popup と UI を経ないので予約をほぼ作らない。掃除は破壊的操作の新設なので、溜まった証拠が
+#    出てから作る。再開の trigger は「予約していないのに
+#    `find "$STATE_ROOT" -name '*.job'` が非空」(issue 189 done の P2-4)
 STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/tmux-schedule-keys"
 STATE_DIR="${TMUX_SCHEDULE_KEYS_DIR:-}"
 
