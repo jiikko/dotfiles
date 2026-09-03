@@ -167,13 +167,13 @@ func (a *actionModal) handleKey(key string) (consumed bool, action tea.Cmd) {
 		if confirmYes {
 			a.pulling = true
 			ctx, cancel := a.startCancelable()
-			// Add は closure 側 (発行側で Add すると、Cmd を実行しない経路が latch を
-			// 立てっぱなしにする)。goroutine 起動前に quit が Wait を素通りする race は
+			// 登録は closure 側 (発行側で登録すると、Cmd を実行しない経路が latch を
+			// 立てっぱなしにする)。goroutine 起動前に quit が看取りを素通りする race は
 			// 理論上あるが、quit には y の後さらに 2 打鍵 (Ctrl-C×2) が要るので実害はない。
 			// 看取りは main.go の waitPullCleanup
 			return true, func() tea.Msg {
-				pullCleanup.Add(1)
-				defer pullCleanup.Done()
+				pullCleanup.add()
+				defer pullCleanup.done()
 				defer cancel()
 				return pullMsg{err: runGitPullRebase(ctx)}
 			}

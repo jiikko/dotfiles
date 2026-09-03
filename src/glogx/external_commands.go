@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"glogx/usage"
@@ -52,15 +51,23 @@ var runGitPush = func(ctx context.Context) error {
 // bubbletea は tea.Cmd の goroutine を待たずに Run を抜けるため、quit で pull が cancel
 // された直後に main が os.Exit すると、「quit で cancel された場合こそ後始末が要る」はずの
 // abort (runGitPullRebase 内) が走り切る前にプロセスごと消え、repo に rebase-merge が残る。
-// Add は tea.Cmd の closure 側 (actionModal.handleKey)、Wait は main.go の waitPullCleanup。
-var pullCleanup sync.WaitGroup
+// 登録は tea.Cmd の closure 側 (actionModal.handleKey)、看取りは main.go の waitPullCleanup。
+//
+// 🚨 **sync.WaitGroup ではなく cleanupLatch を使う** (issue 217 で載せ替えた)。登録が
+// tea.Cmd の closure 側なので、**カウント 0 での Add が Wait と同時に走りうる**形になっている。
+// WaitGroup はそれを禁じており、`race.Enabled` に囲まれていない panic
+// (`sync: WaitGroup misuse: Add called concurrently with Wait`) なので **production でも落ちうる**。
+// 現状は登録地点が 1 か所で pull も `a.pulling` が二重起動を塞ぐため発火経路は未確認だったが、
+// 同じ形の doctor 側 (doctorCleanup) は登録地点が 3 つあり `-race` で実際に赤くなった。
+// 「今は当たらない」に依存せず、構造で閉じる。
+var pullCleanup cleanupLatch
 
 // waitPullCleanup は走行中の pull 後始末を看取ってから戻る (main の終了直前用)。
 // 待ちは runGitTimeout (gitOpTimeout) と WaitDelay で構造的に有限。すぐ終わらないときだけ
 // 理由を出す (無言で固まったように見せない)。
 func waitPullCleanup() {
 	done := make(chan struct{})
-	go func() { pullCleanup.Wait(); close(done) }()
+	go func() { <-pullCleanup.wait(); close(done) }()
 	select {
 	case <-done:
 		return

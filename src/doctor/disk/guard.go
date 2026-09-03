@@ -3,7 +3,6 @@ package disk
 import (
 	"doctor/brewledger"
 	"doctor/runner"
-	"sync/atomic"
 
 	"context"
 	"encoding/json"
@@ -207,19 +206,22 @@ func installedBundleIDs(env Env) (map[string]bool, error) {
 const bundleMaxDepth = 8
 
 func collectBundleIDs(dir string, depth int, ids map[string]bool) error {
-	return collectBundleIDsSeen(dir, depth, ids, map[[2]uint64]struct{}{})
+	var visits int64
+	return collectBundleIDsSeen(dir, depth, ids, map[[2]uint64]struct{}{}, &visits)
 }
 
-// collectVisits は collectBundleIDs が実際に降りたディレクトリ数 (テスト専用の計測点)。
-// 巡回検出が効いているかを**壁時計でなく回数**で判定するため (avoid-wall-clock-assertions)。
+// collectBundleIDsCounted は collectBundleIDs と同じ走査をして「実際に降りたディレクトリ数」も返す。
+// 巡回検出が効いているかを**壁時計でなく回数**で判定するために要る (avoid-wall-clock-assertions)。
 //
-// 🚨 **atomic である必要がある** (issue 214)。以前は「走査は単一 goroutine から呼ばれるので
-// 素の int でよい」と書いていたが、その前提は **1 回の走査の中**でしか成立しない
-// (`guards.do` の sync.Once は走査ごとの instance に属する)。走査が 2 つ同時に走ると
-// package 変数だけが共有され、`-race` がデータ競合として落とす (実測 2026-09-03:
-// glogx の TestUpdateKeysYieldToDoctorDelete が赤)。並行する経路は
-// 「テストが複数の doctorView を作る」「r の前世代と新世代が一瞬重なる」。
-var collectVisits atomic.Int64
+// 🚨 **数え上げは呼び出しごとに持つ** (issue 217)。以前は package 変数 (`atomic.Int64`) に
+// 数えており、テストは `Store(0)` してから絶対値を見ていた。そのため「同 package に並行して
+// 走る走査が無い」ことを暗黙に前提にしており、`t.Parallel()` を 1 つ足した瞬間に flaky になる
+// (幅が 9 しかないので当たりやすい)。呼び出しごとに数えれば前提そのものが消える。
+func collectBundleIDsCounted(dir string, depth int, ids map[string]bool) (int64, error) {
+	var visits int64
+	err := collectBundleIDsSeen(dir, depth, ids, map[[2]uint64]struct{}{}, &visits)
+	return visits, err
+}
 
 // dirKey は (device, inode)。同じディレクトリを 2 度走査しないための鍵。
 func dirKey(fi os.FileInfo) ([2]uint64, bool) {
@@ -238,7 +240,7 @@ func dirKey(fi os.FileInfo) ([2]uint64, bool) {
 // 同じディレクトリを指す symlink を n 個並べると n^8 に膨らむ。実測 (敵対レビュー 2026-09-03、
 // ユーザー書き込み可能な ~/Applications で成立): n=2 で 67ms / n=3 で 1.32s / n=4 は 8 秒でも
 // 終わらない。ここには ctx が無いのでキャンセルもできない。
-func collectBundleIDsSeen(dir string, depth int, ids map[string]bool, seen map[[2]uint64]struct{}) error {
+func collectBundleIDsSeen(dir string, depth int, ids map[string]bool, seen map[[2]uint64]struct{}, visits *int64) error {
 	if depth > bundleMaxDepth {
 		return nil
 	}
@@ -264,11 +266,11 @@ func collectBundleIDsSeen(dir string, depth int, ids map[string]bool, seen map[[
 			}
 			seen[k] = struct{}{}
 		}
-		collectVisits.Add(1)
+		*visits++
 		if isBundleName(e.Name()) {
 			readBundleID(p, ids)
 		}
-		_ = collectBundleIDsSeen(p, depth+1, ids, seen)
+		_ = collectBundleIDsSeen(p, depth+1, ids, seen, visits)
 	}
 	return nil
 }

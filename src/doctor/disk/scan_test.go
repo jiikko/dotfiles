@@ -951,24 +951,30 @@ func TestCollectBundleIDsStopsOnSymlinkLoops(t *testing.T) {
 	// 1 回目で seen に入り、2 回目以降は降りない。降りる回数の上限を実体数 + symlink 数で押さえる。
 	const wantMax = 3 + 6
 
-	collectVisits.Store(0)
+	// 🚨 数え上げは**この呼び出しのぶんだけ**を受け取る (issue 217)。以前は package 変数を
+	// `Store(0)` してから絶対値を見ており、「同 package に並行して走る走査が無い」ことを
+	// 暗黙に前提にしていた (`t.Parallel()` を 1 つ足した瞬間に flaky。幅が 9 しかない)。
 	ids := map[string]bool{}
+	var visits int64
 	done := make(chan struct{})
 	go func() {
-		_ = collectBundleIDs(base, 0, ids)
+		visits, _ = collectBundleIDsCounted(base, 0, ids)
 		close(done)
 	}()
 	select {
 	case <-done:
 	case <-time.After(30 * time.Second):
 		// 訪問回数で判定できない (終わらない) 形。安全網であって合否の基準ではない
-		t.Fatalf("走査が終わらない (巡回検出が無い): visits=%d", collectVisits.Load())
+		t.Fatal("走査が終わらない (巡回検出が無い)")
 	}
-	if collectVisits.Load() > int64(wantMax) {
-		t.Errorf("同じ実体を何度も走査している (巡回検出が効いていない): visits=%d want<=%d", collectVisits.Load(), wantMax)
+	if visits > int64(wantMax) {
+		t.Errorf("同じ実体を何度も走査している (巡回検出が効いていない): visits=%d want<=%d", visits, wantMax)
+	}
+	if visits == 0 {
+		t.Fatalf("判定不能: 計測点を 1 度も通っていない (fixture が期待どおり作られていない)")
 	}
 	if !ids["com.example.real"] {
-		t.Errorf("巡回検出が効きすぎて実体の bundle id を取り逃した: %v ids=%v", collectVisits.Load(), ids)
+		t.Errorf("巡回検出が効きすぎて実体の bundle id を取り逃した: visits=%d ids=%v", visits, ids)
 	}
 }
 
@@ -1097,12 +1103,25 @@ func TestCanonicalPathAndVMRootRejectBlankHome(t *testing.T) {
 	}
 }
 
-// 走査を 2 つ同時に回しても -race が落ちない (issue 214)。
+// 走査を 4 つ同時に回しても -race が落ちず、**各呼び出しが自分の結果を得る** (issue 214 / 217)。
 //
-// 🚨 `guards.do` の sync.Once は **走査ごとの instance に属する**ので、走査間では
-// 直列化しない。package 変数の計測点 (collectVisits) が素の int だと、ここで競合する。
-// glogx 側の TestUpdateKeysYieldToDoctorDelete が実際にこの形で赤くなっていた。
-func TestConcurrentScansDoNotRaceOnCollectVisits(t *testing.T) {
+// 元の形 (issue 214): 計測点が package 変数 (`atomic.Int64`) だったため、走査が 2 つ同時に走ると
+// そこだけが共有されて `-race` が落ちた (`guards.do` の sync.Once は**走査ごとの instance に
+// 属する**ので走査間では直列化しない)。glogx 側の TestUpdateKeysYieldToDoctorDelete が
+// 実際にこの形で赤くなっていた。
+//
+// 🚨 **その競合は issue 217 で構造的に消えた** (数え上げを呼び出しごとに持つようにしたので、
+// 共有される package 変数がもう無い)。このテストを消さずに主張を移したのは、元の防御が
+// **副次的に守っていたもの**が残っているため
+// (規範: list-masked-failure-modes-before-removing-guard.md):
+//
+//  1. 計測点そのもののデータ競合 → **構造的に解消**。共有変数が存在しない
+//  2. 走査の**途中に共有状態を再導入する**変更 (package 単位のキャッシュ / メモ化 /
+//     seen の共有) → **まだ起こりうる**。ここが受け持つ
+//  3. 並行に回したとき**各呼び出しが自分の結果を得る**こと → 同上。下の assert が見る
+//
+// 3 を assert しないと「落ちなかった」だけの test になり、共有 ids へ書くような変更を通す。
+func TestConcurrentScansDoNotShareState(t *testing.T) {
 	dir := t.TempDir()
 	// bundle を 1 つ置いて collectBundleIDs が実際に降りる状態にする (0 件では計測点を通らない)
 	app := dir + "/Some.app/Contents"
@@ -1114,18 +1133,34 @@ func TestConcurrentScansDoNotRaceOnCollectVisits(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	before := collectVisits.Load()
+	const n = 4
+	type out struct {
+		visits int64
+		ids    map[string]bool
+	}
+	got := make([]out, n)
 	var wg sync.WaitGroup
-	for i := 0; i < 4; i++ {
+	for i := 0; i < n; i++ {
 		wg.Add(1)
-		go func() {
+		go func(i int) {
 			defer wg.Done()
 			ids := map[string]bool{}
-			_ = collectBundleIDs(dir, 0, ids)
-		}()
+			v, _ := collectBundleIDsCounted(dir, 0, ids)
+			got[i] = out{visits: v, ids: ids}
+		}(i)
 	}
 	wg.Wait()
-	if got := collectVisits.Load(); got <= before {
-		t.Fatalf("判定不能: 計測点を 1 度も通っていない (before=%d after=%d)", before, got)
+
+	// 各呼び出しが同じ答えを独立に得る。共有状態があると片方が 0 になったり数が膨らむ
+	for i, g := range got {
+		if g.visits == 0 {
+			t.Errorf("%d 番目: 計測点を 1 度も通っていない (判定不能)", i)
+		}
+		if g.visits != got[0].visits {
+			t.Errorf("%d 番目の訪問数が %d で 0 番目の %d と違う (走査の状態が共有されている疑い)", i, g.visits, got[0].visits)
+		}
+		if !g.ids["com.example.some"] {
+			t.Errorf("%d 番目が bundle id を取れていない: %v", i, g.ids)
+		}
 	}
 }
