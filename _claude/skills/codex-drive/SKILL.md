@@ -491,7 +491,10 @@ EOF
   codex が書いた macOS target のテストは **Claude が baseline 緑 + 変異 red を xcodebuild で確認するまで未検証扱い**
   (617 M5: codex 版の macOS テスト 2 本が baseline red / 変異検知が vacuous だった。`[3.8]` の gate は shared の filter
   suite しか回さないので、macOS 側の変異は Claude が worktree で `xcodebuild -only-testing:<suite>` を当てる)。
-  codex が `Package.swift` (依存の追加) を触ったら要約に明示させる (617 M5: test target の依存追加が要約に無く diff で気づいた)
+  codex が `Package.swift` (依存の追加) を触ったら要約に明示させる (617 M5: test target の依存追加が要約に無く diff で気づいた)。
+  **codex の要約に「未実行」「実行できなかった」がある成果物は、採用判定 (`[3]`) より先に Claude がその検証を回す**
+  (645 M6c, 2026-09-03: 「macOS 側 xcodebuild は未実行」と明記された IA cancel test を、同ラウンドの shared 緑に
+  引っ張られて後回しにし、hang の発見が 1 ラウンド遅れた。未実行の理由が sandbox 由来なら構造的に毎回 Claude 担当)
 - 触ってよい範囲・触らない範囲・既存方針 (設計 doc 等) を明示する。
 
 ### 2. codex に実装させる（write 権限）
