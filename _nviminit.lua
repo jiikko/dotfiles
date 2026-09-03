@@ -242,6 +242,13 @@ require("lazy").setup({
   },
   { "folke/which-key.nvim",
     event = "VeryLazy",
+    keys = {
+      -- チートシート: このバッファにだけ張られたキー (go.lua の ]] [[ af if <leader>gd と
+      -- LSP attach の gd gD <C-j> <C-k> t 等) を一覧する。言語固有キーは全て buffer-local に
+      -- 寄せているので、global を除くだけで「今の言語で使えるキー」になる
+      { "<leader>?", function() require("which-key").show({ global = false }) end, desc = "Buffer local keymaps (cheatsheet)" },
+      { "<leader>/", function() require("which-key").show() end, desc = "All keymaps" },
+    },
     -- popup に出すプレフィックスの見出し (group)。個々のキーの説明は各 keymap の
     -- desc が出典で、ここは「束の意味」だけを与える。ruby/go の ftplugin 由来の
     -- buffer-local マッピング (r/y/b 等) は該当 buffer でだけ popup に現れる
@@ -250,6 +257,7 @@ require("lazy").setup({
         { "<leader>f", group = "find (telescope)" },
         { "<leader>a", group = "code action / 診断" },
         { "<leader>g", group = "git blame / go 定義" },
+        { "<leader>c", group = "code reading (trouble: 呼び出し階層 / LSP 一覧)" },
         { "<leader>n", group = "filer (nvim-tree)" },
         { "<leader>s", group = "split" },
         { "<leader>r", group = "ruby refactor" },
@@ -497,6 +505,95 @@ require("lazy").setup({
       telescope.load_extension("ui-select")
       telescope.load_extension("notify")
     end,
+  },
+  -- ============================================================================
+  -- ソースリーディング支援 (2026-09 導入。定義/参照ジャンプの先にある「読む」工程を支える層)
+  --   treesitter-context : 画面上部に囲んでいる func/if/for の行を固定表示 (深いネストで迷子にならない)
+  --   aerial             : 宣言アウトライン (サイドバー / パンくず float)。<leader>gd の picker を
+  --                        常駐化したもの。lualine へのパンくず組み込みは aerial が起動時ロードに
+  --                        なるので見送り (代わりに <leader>O の nav float)
+  --   trouble            : 呼び出し階層 (incoming/outgoing) と LSP 一覧を 1 ペインで行き来する。
+  --                        参照一覧 (<C-k>=telescope) は「飛ぶ」用、trouble は「開いたまま辿る」用
+  --   glance             : 定義/参照をジャンプせずフロートで覗く (読みの文脈を失わない)
+  -- 全て keys/cmd ゲート (treesitter-context のみ BufReadPost) で、起動コストには載せない。
+  -- ============================================================================
+  { "nvim-treesitter/nvim-treesitter-context",
+    -- vim.treesitter 直叩きで nvim-treesitter のモジュール API に依存しないため、
+    -- treesitter main ブランチ (上の spec) と併用できる
+    event = { "BufReadPost", "BufNewFile" },
+    opts = {
+      max_lines = 3,           -- 固定表示は最大 3 行 (関数 + 分岐 2 段程度)。それ以上は本文を圧迫する
+      min_window_height = 20,  -- 小さい split では出さない (本文が見えなくなる)
+      mode = "cursor",
+      trim_scope = "outer",
+    },
+    keys = {
+      -- [c は組み込みの diff hunk 移動なので上書きしない (大文字で退避)
+      { "[C", function() require("treesitter-context").go_to_context(vim.v.count1) end,
+        desc = "Jump to context (outer scope)" },
+    },
+  },
+  { "stevearc/aerial.nvim",
+    -- main は nvim 0.12 専用 (0.11 でロードすると deprecated の ERROR 通知が出て test_nvim.sh が
+    -- 落ちる。実測 2026-09-03)。nvim 0.12+ へ上げたら branch 指定を外す
+    branch = "nvim-0.11",
+    cmd = { "AerialToggle", "AerialNavToggle", "AerialOpen" },
+    keys = {
+      { "<leader>o", "<cmd>AerialToggle! right<cr>", desc = "Outline (aerial)" },
+      { "<leader>O", "<cmd>AerialNavToggle<cr>", desc = "Outline nav float (aerial)" },
+    },
+    dependencies = { "nvim-treesitter/nvim-treesitter", "nvim-tree/nvim-web-devicons" },
+    opts = {
+      -- LSP があれば LSP (gopls の SymbolKind が正確)、無ければ treesitter に落ちる
+      backends = { "lsp", "treesitter", "markdown", "man" },
+      layout = { default_direction = "right", min_width = 30 },
+      attach_mode = "global",   -- どの window から開いても 1 つのアウトラインを共有する
+      show_guides = true,
+      -- 宣言だけを出す。go.lua の decl_kinds と同じ絞り方 (変数・フィールドは出さない)
+      filter_kind = { "Class", "Constructor", "Enum", "Function", "Interface", "Method", "Module", "Struct" },
+      highlight_on_hover = true,
+      autojump = false,
+      nav = { preview = true, keymaps = { ["q"] = "actions.close", ["<esc>"] = "actions.close" } },
+    },
+  },
+  { "folke/trouble.nvim",
+    cmd = "Trouble",
+    dependencies = { "nvim-tree/nvim-web-devicons" },
+    keys = {
+      -- 呼び出し階層 (誰が呼ぶか / 何を呼ぶか)。gopls が callHierarchy を返す
+      { "<leader>ci", "<cmd>Trouble lsp_incoming_calls toggle focus=true<cr>", desc = "Incoming calls (誰が呼ぶか)" },
+      { "<leader>co", "<cmd>Trouble lsp_outgoing_calls toggle focus=true<cr>", desc = "Outgoing calls (何を呼ぶか)" },
+      -- 定義/参照/実装/呼び出しを 1 ペインにまとめた LSP 一覧 (カーソル移動に追従する)
+      { "<leader>cl", "<cmd>Trouble lsp toggle focus=false win.position=right<cr>", desc = "LSP 一覧 (定義/参照/実装/呼び出し)" },
+      { "<leader>cd", "<cmd>Trouble diagnostics toggle<cr>", desc = "Diagnostics (trouble)" },
+      { "<leader>cq", "<cmd>Trouble qflist toggle<cr>", desc = "Quickfix (trouble)" },
+    },
+    opts = {
+      focus = false,
+      auto_preview = true,
+      -- 呼び出し階層は右に縦長で開く (左右で「本文 | 呼び出し元」を並べて読む)
+      modes = {
+        lsp_incoming_calls = { win = { position = "right", size = 0.35 } },
+        lsp_outgoing_calls = { win = { position = "right", size = 0.35 } },
+      },
+    },
+  },
+  { "dnlhc/glance.nvim",
+    cmd = "Glance",
+    keys = {
+      { "gp", "<cmd>Glance definitions<cr>", desc = "Peek definitions (glance)" },
+      { "gP", "<cmd>Glance references<cr>", desc = "Peek references (glance)" },
+      { "gI", "<cmd>Glance implementations<cr>", desc = "Peek implementations (glance)" },
+    },
+    opts = {
+      -- 1 件だけなら picker を挟まず直接開く (gd と同じ体感)。複数のときだけ一覧+プレビュー
+      hooks = {
+        before_open = function(results, open, jump, _method)
+          if #results == 1 then jump(results[1]) else open(results) end
+        end,
+      },
+      border = { enable = true },
+    },
   },
   -- ambiwidth.nvim (旧 rbtnn/vim-ambiwidth を Lua 移植) は repo 内に vendor 済み
   -- (vendor/nvim-plugins/ambiwidth.nvim、VENDOR.md 参照)。
