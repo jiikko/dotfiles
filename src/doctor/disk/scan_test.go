@@ -965,10 +965,10 @@ func TestCollectBundleIDsStopsOnSymlinkLoops(t *testing.T) {
 		t.Fatalf("走査が終わらない (巡回検出が無い): visits=%d", collectVisits.Load())
 	}
 	if collectVisits.Load() > int64(wantMax) {
-		t.Errorf("同じ実体を何度も走査している (巡回検出が効いていない): visits=%d want<=%d", collectVisits, wantMax)
+		t.Errorf("同じ実体を何度も走査している (巡回検出が効いていない): visits=%d want<=%d", collectVisits.Load(), wantMax)
 	}
 	if !ids["com.example.real"] {
-		t.Errorf("巡回検出が効きすぎて実体の bundle id を取り逃した: %v ids=%v", collectVisits, ids)
+		t.Errorf("巡回検出が効きすぎて実体の bundle id を取り逃した: %v ids=%v", collectVisits.Load(), ids)
 	}
 }
 
