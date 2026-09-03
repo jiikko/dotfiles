@@ -114,9 +114,30 @@ S2 で「中断は ctx で伝える」「実行中はキーを飲む」を `doct
 ## 残課題
 
 - [x] 項目 1 → `adversarial-review-own-safeguards.md` の 0-B として切り出した (2026-09-03)
-- [ ] 項目 2 を `adversarial-review-own-safeguards.md` に追記するか決める
-- [ ] 項目 3 + 4 の新規ルールを書くか決める
-- [ ] 項目 5 を rationale へ追記するか、却下するか決める
-- [ ] 項目 6 (worktree の成果を cp で戻して別マシンの変更を消した) をルールへ追記するか決める
-- [ ] 項目 7 (層の不変条件を層の中のテストで確かめた) を issue 化 + ルール追記するか決める
+- [x] 項目 2 → `adversarial-review-own-safeguards.md` に **§1.5「N 段構えと書いたなら段ごとに
+      変異を当てて red を確認する」** として追記 (2026-09-03)。「やらないこと」にも 1 行
+- [x] 項目 3 + 4 → 新規ルール **`sandbox-real-destructive-test-apis.md`** を書いた (2026-09-03)。
+      項目 4 (検査と破壊的操作は隣接させる / TOCTOU の窓は距離そのもの) は同ルールの 1 節。
+      rationale も同名で作成。`adversarial-review-own-safeguards.md` への追記にしなかったのは
+      発動点が違うため (あちらは機構の検査、こちらは**テストから本物の破壊的 API を呼ぶ瞬間**)
+- [x] 項目 5 → 本文の「実測 6 回」を **8 回**へ更新し、rationale に実測 6〜8 回目として記録
+      (2026-09-03)。回数では規範が変わらないので本文の加筆はこの数字だけ。
+      規範に効いた**形** (0-B と §1.5) は別途本文へ入れた
+- [x] 項目 6 → `parallel-write-agents-need-worktree-isolation.md` に追記 (2026-09-03)。
+      「worktree の成果は **commit してから** cherry-pick で戻す。`cp` は他マシンの変更を黙って
+      消す」+ 根本 (`cp` を選ばせたのは worktree で commit しなかったこと) も明記
+- [x] 項目 7 → **issue 側は既に完了** (`issues/done/213-design-overlay-key-ownership-scattered.md`
+      として起票・対応済み)。ルール追記は `mutation-verify-new-tests.md` の「守っていない
+      テストの形」に **「入れ子の UI で層の不変条件を主張したら、テストは外側の入口から書く」**
+      として入れた (2026-09-03)
 - [x] 項目 8 は却下 (理由は本文)
+
+## 切り出し完了 (2026-09-03)
+
+残課題 8 項目すべてに決着。内訳は **既存ルールへの追記 4 件 (項目 1 / 2 / 6 / 7)** +
+**新規ルール 1 本 (項目 3 + 4)** + **rationale のみ 1 件 (項目 5)** + **却下 1 件 (項目 8)**。
+
+- 新規ルールは `~/.claude/rules/` へ link 済み (`scripts/claude_links.sh apply`)。
+  `tests/claude` は EXIT=0 (11 本実走。link の完全性検査を含む)
+- 項目 8 の却下理由は本文に残した (`perf-claims-need-measurement.md` の親戚だが、
+  一般化すると発動条件が曖昧でルールとして働きにくい)

@@ -47,6 +47,12 @@ git worktree add --detach "$root/../wt-taskB" <base-commit>
 
 - 各エージェントに `-C <worktree>` で作業根を渡す
 - 統合は cherry-pick / patch で行い、**衝突は人間（main agent）が解決する**
+- 🚨 **worktree の成果は「commit してから」cherry-pick で戻す**。`cp` でファイルを上書きすると、
+  **その間に他マシン / 他セッションが同じファイルへ入れた変更を黙って消す**
+  (実測 2026-09-03 dotfiles: レビュー対応を worktree でやり `cp` で本体へ戻したところ、
+  別マシンが同じ `doctor_view.go` へ入れた後始末 latch の修正が丸ごと消えた。テストが落ちて
+  気づき、HEAD から復元して当て直した)。**`cp` を選ばせる根本は「worktree で commit して
+  いないこと」**なので、統合の直前に必ず commit する (WIP の commit でよい。後で潰せる)
 - 終わったら `git worktree remove --force` + `git branch -D`（CLAUDE.md「worktree を残さない」）
 
 共有ファイル（テストヘルパー、生成物、設定 YAML）が衝突しうるなら、**先に 1 体で共有部分を
@@ -56,6 +62,7 @@ git worktree add --detach "$root/../wt-taskB" <base-commit>
 
 - ✗ `-s workspace-write` を 2 体以上、同一 working tree で並行起動する
 - ✗ 「担当ディレクトリが重ならない」を理由に分離を省く
+- ✗ worktree の成果を `cp` でファイル単位に上書きして戻す（他マシンの変更を黙って消す）
 - ✗ 並行中に main agent が同じ tree で build / test を走らせる（何を検証したか不明になる）
 - ✗ read-only のレビュー中に、同じファイルを書き換える（変異検証も、思いついた修正も）
 
