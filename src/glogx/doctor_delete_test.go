@@ -314,6 +314,11 @@ func TestDoctorDeleteRunsAndShowsResult(t *testing.T) {
 			t.Errorf("結果に %q が無い:\n%s", want, out)
 		}
 	}
+	// 🚨 パネルと hint が違うことを言わない。**y / Y は閉じずにコピーする**ので「何かキーを押すと
+	// 閉じ」は嘘になる (エラーパネル側と同じ規律。issue 242 の P3-2)
+	if h := v.hint(120); !strings.Contains(out, "y: 出力をコピー") || !strings.Contains(h, "y: 出力をコピー") {
+		t.Errorf("結果パネルと hint で案内が食い違う: hint=%q panel=\n%s", h, out)
+	}
 	// どのキーでも閉じ、実体に合わせて再スキャンする
 	if act := v.handleKey("j", 20); act != doctorRescan {
 		t.Fatalf("結果を閉じたら再スキャン: act = %v", act)
@@ -685,6 +690,19 @@ func TestDeleteVocabulary(t *testing.T) {
 			t.Errorf("%q の幅 = %d (2 でない記号は使わない)", s, w)
 		}
 	}
+	// 🚨 語は行の**最後の列**なので、deleteWordW を超えるとラベルの予算が破れて語自体が切れる。
+	// 出典は deleteMethodWord と doctorOutcomeWord / doctorPlanOutcomeWord の 3 つある
+	words := []string{deleteMethodWord("rm"), deleteMethodWord("trash"), deleteMethodWord("cli"),
+		deleteMethodWord("propose"), doctorPlanOutcomeWord(disk.OutcomeSkipped)}
+	for _, o := range []disk.Outcome{disk.OutcomeDeleted, disk.OutcomeTrashed, disk.OutcomeIncomplete,
+		disk.OutcomeSkipped, disk.OutcomeProposed, disk.OutcomeFailed, disk.OutcomePlanned} {
+		words = append(words, doctorOutcomeWord(o))
+	}
+	for _, w := range words {
+		if got := dispWidth(w); got > deleteWordW {
+			t.Errorf("語 %q の幅 = %d (deleteWordW = %d を超えると行末で切れる)", w, got, deleteWordW)
+		}
+	}
 }
 
 // 削除の経路ごとに確認の文言が変わる (trash はゴミ箱、cli はコマンド、対象外は理由)。
@@ -699,7 +717,7 @@ func TestDeleteConfirmPerMethodLines(t *testing.T) {
 	v := &doctorView{del: doctorDelete{confirm: true, plan: &plan}}
 	out := strings.Join(v.lines(doctorTestOpts(30)), "\n")
 	// cli はコマンドの実体を 1 本ずつ出す (件数だけの注記と二重に出さない)
-	for _, want := range []string{"3 件をゴミ箱へ移動", "$ go clean -modcache", "1 件にコマンドを実行", "実行しません", "🚫 触れず", "いまは対象外です"} {
+	for _, want := range []string{"3 件をゴミ箱へ移動", "$ go clean -modcache", "1 件にコマンドを実行", "実行しません", "🚫 対象外", "いまは対象外です"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("確認に %q が無い:\n%s", want, out)
 		}
@@ -1434,15 +1452,17 @@ func TestDeleteConfirmSeparatesSkippedFromFailed(t *testing.T) {
 	}}
 	v := &doctorView{del: doctorDelete{confirm: true, plan: &plan}}
 	out := doctorPanelText(v, 30)
-	for _, want := range []string{"🚫 触れず", "❌ できず"} {
+	// 🚨 下見の Skipped は「いまは対象外」なので**一覧と同じ語**であること。期待値は
+	// disk.Mark から取る (リテラルで書くと、一覧側だけ語が変わっても気づけない)
+	for _, want := range []string{disk.Mark(disk.Result{Status: disk.StatusBlocked}), "❌ できず"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("確認に %q が無い:\n%s", want, out)
 		}
 	}
-	// 🚫 対象外 は一覧 (disk.Mark) では StatusBlocked の語。確認画面で使い回すと
-	// 同じ記号が「対象外」「触れず」の 2 つの意味を持つ
-	if strings.Contains(out, "🚫 対象外") {
-		t.Errorf("確認が一覧 (disk.Mark) の語を使っている:\n%s", out)
+	// 結果画面の語 (実行したが触らなかった) を下見で使わない。直下に出る理由は
+	// 「いまは対象外です: …」なので、「触れず」だと 1 行の中で語と理由が食い違う
+	if w := doctorOutcomeWord(disk.OutcomeSkipped); strings.Contains(out, w) {
+		t.Errorf("確認が結果画面の語 %q を使っている:\n%s", w, out)
 	}
 }
 
@@ -1453,15 +1473,23 @@ func TestDeletePhaseWordingSeparatesPreparingFromRunning(t *testing.T) {
 		name     string
 		del      doctorDelete
 		panel    []string
+		notPanel []string
 		wantHint string
 		notHint  string
 	}{
-		{"preparing", doctorDelete{preparing: true, progress: "1/2 なにか を走査中"},
-			[]string{"削除できるか確認しています", "対象を走査し直しています", "Ctrl-C を 2 回押すと中断します"},
-			"確認しています", "実行中"},
-		{"running", doctorDelete{running: true, progress: "1/2 なにか を削除中"},
-			[]string{"削除しています", "Ctrl-C を 2 回押すと中断します"},
-			"実行中です", "確認しています"},
+		{name: "preparing", del: doctorDelete{preparing: true, progress: "1/2 なにか を走査中"},
+			panel:    []string{"削除できるか確認しています", "対象を走査し直しています", "Ctrl-C を 2 回押すと中断します"},
+			notPanel: []string{"もう一度 Ctrl-C"},
+			wantHint: "確認しています", notHint: "実行中"},
+		{name: "running", del: doctorDelete{running: true, progress: "1/2 なにか を削除中"},
+			panel:    []string{"削除しています", "Ctrl-C を 2 回押すと中断します"},
+			notPanel: []string{"もう一度 Ctrl-C"},
+			wantHint: "実行中です", notHint: "確認しています"},
+		// 1 回目を押した後は残り 1 回。「2 回押せ」と「もう 1 回押せ」を並べるとあと何回か読めない
+		{name: "preparing+armed", del: doctorDelete{preparing: true, armedCC: true, progress: "1/2 なにか を走査中"},
+			panel:    []string{"もう一度 Ctrl-C を押すと中断します"},
+			notPanel: []string{"2 回押すと中断します"},
+			wantHint: "確認しています", notHint: "実行中"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			v := &doctorView{del: tc.del}
@@ -1469,6 +1497,11 @@ func TestDeletePhaseWordingSeparatesPreparingFromRunning(t *testing.T) {
 			for _, want := range tc.panel {
 				if !strings.Contains(out, want) {
 					t.Errorf("パネルに %q が無い:\n%s", want, out)
+				}
+			}
+			for _, ng := range tc.notPanel {
+				if strings.Contains(out, ng) {
+					t.Errorf("パネルに %q が出ている:\n%s", ng, out)
 				}
 			}
 			h := v.hint(120)

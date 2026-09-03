@@ -653,9 +653,11 @@ func (v *doctorView) deletePanel(o doctorRenderOpts) []string {
 		// 🚨 中断の案内は相に依らず出す。下見中も handleDeleteKey の blocking 分岐が
 		// Ctrl-C を受けて cancel でき (実測 2026-09-04: 走査が打ち切られて確認へ戻る)、
 		// 案内が無いと「このパネルから抜ける手段が無い」に見える
-		body = append(body, "Ctrl-C を 2 回押すと中断します")
+		// armedCC なら残り 1 回。「2 回押せ」と「もう 1 回押せ」を並べると、あと何回なのか読めない
 		if d.armedCC {
 			body = append(body, "もう一度 Ctrl-C を押すと中断します")
+		} else {
+			body = append(body, "Ctrl-C を 2 回押すと中断します")
 		}
 		// 実行したコマンドと出力を垂れ流す (何が起きているかを見せる)。入る分だけ末尾を出す
 		if len(d.log) > 0 {
@@ -709,7 +711,7 @@ func (v *doctorView) confirmLines(o doctorRenderOpts) (blocks [][]string, tail [
 		skipped := e.Outcome == disk.OutcomeSkipped || e.Outcome == disk.OutcomeFailed
 		switch {
 		case skipped:
-			size, word = "---", doctorOutcomeWord(e.Outcome)
+			size, word = "---", doctorPlanOutcomeWord(e.Outcome)
 		case e.Method == "trash":
 			trashing += e.BeforeSize
 		case e.Method != "propose":
@@ -831,7 +833,9 @@ func doctorDeleteResultLines(o doctorRenderOpts, rep disk.DeleteReport, log []st
 	} else {
 		tail = append(tail, " 解放された容量はありません")
 	}
-	return blocks, append(tail, " 何かキーを押すと閉じ、もう一度スキャンします")
+	// 🚨 hint (doctor_view.go) と同じことを言う。「何かキー」と書くと y を含んでしまうが、
+	// y / Y は閉じずにコピーする (handleDeleteKey の result/err 分岐)
+	return blocks, append(tail, " y: 出力をコピー   他のキー: 閉じてもう一度スキャン")
 }
 
 // deleteTotalsLine は合計を 1 行にまとめる (狭い画面で落ちにくくするため)。0 なら空。
@@ -883,6 +887,21 @@ func doctorOutcomeWord(o disk.Outcome) string {
 	return string(o)
 }
 
+// doctorPlanOutcomeWord は**下見 (確認画面) の**結末語。結果画面 (doctorOutcomeWord) と
+// 分けているのは、同じ Outcome でも指している状態が違うため:
+//
+//   - 下見の Skipped は「いまは対象外」(engine の StatusBlocked 分岐 / 触る対象 0 件) で、
+//     一覧が同じ行に付ける語と揃える必要がある。結果画面の「🚫 触れず」(= 実行したが
+//     触らなかった) とは別の状態で、直下に出る理由も「いまは対象外です: …」になる。
+//     🚨 一覧 (disk.Mark) と語が割れていないかは confirmLines のテストが突き合わせる
+//   - Failed は下見でも結果でも「実行できなかった」なので、結果画面の語をそのまま借りる
+func doctorPlanOutcomeWord(o disk.Outcome) string {
+	if o == disk.OutcomeSkipped {
+		return "🚫 対象外"
+	}
+	return doctorOutcomeWord(o)
+}
+
 func deleteMethodWord(method string) string {
 	switch method {
 	case "trash":
@@ -904,9 +923,15 @@ func deleteLabelWidth(entries []disk.EntryOutcome, width int) int {
 	return max(8, min(w, width-deleteRowFixedW))
 }
 
-// deleteRowFixedW は 1 行のうちラベル以外が使う幅 (先頭 1 + サイズ 8 + 区切り 2 + 区切り 2 + 語 13)。
-// 語は固定語彙で最長が「🚮 ゴミ箱へ」= 2+1+8 と「📋 コマンド」= 2+1+10 なので 13。
-const deleteRowFixedW = 26
+// deleteWordW は行の最後の列 (語) に充てている幅。
+// 🚨 語の出典は deleteMethodWord **と** doctorPlanOutcomeWord / doctorOutcomeWord の両方。
+// 今の最長は「📋 コマンド」= 2+1+10 = 13 で収まっているが、これを超える語を足すと
+// ラベルの予算が破れ、行末の truncateDisp が**語そのもの**を切る (語が最後の列なので)。
+// 全語彙が収まっているかは TestDeleteVocabulary が見る
+const deleteWordW = 13
+
+// deleteRowFixedW は 1 行のうちラベル以外が使う幅 (先頭 1 + サイズ 8 + 区切り 2 + 区切り 2 + 語)。
+const deleteRowFixedW = 1 + 8 + 2 + 2 + deleteWordW
 
 func padLabel(label string, w int) string {
 	label = truncateDisp(label, w, "…")
