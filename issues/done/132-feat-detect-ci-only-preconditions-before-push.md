@@ -88,12 +88,12 @@
 
 ## 受け入れ条件
 
-- [ ] `make test-fresh` が使い捨て worktree で `test-discovered` + `test-bats` を回し、終了時に
+- [x] `make test-fresh` が使い捨て worktree で `test-discovered` + `test-bats` を回し、終了時に
       worktree を残さない (異常終了・中断でも)
-- [ ] **変異で確認**: どれか 1 つのテストの隔離ディレクトリを `$ROOT_DIR/tmp/...` に戻すと
+- [x] **変異で確認**: どれか 1 つのテストの隔離ディレクトリを `$ROOT_DIR/tmp/...` に戻すと
       `make test-fresh` が赤になり、`make test` は緑のまま (= 手元との差を実際に出せている)
-- [ ] worktree の作成に失敗したら skip せず**失敗する** (依存が無いときに緑を返さない規律)
-- [ ] 入口ドキュメント: `tests/CLAUDE.md` の「BSD (手元) / GNU (CI) の方言差」の隣に
+- [x] worktree の作成に失敗したら skip せず**失敗する** (依存が無いときに緑を返さない規律)
+- [x] 入口ドキュメント: `tests/CLAUDE.md` の「BSD (手元) / GNU (CI) の方言差」の隣に
       「新品チェックアウトとの差」を 1 行で書く
 
 ## 関連
@@ -102,3 +102,42 @@
   133 で撤去済み (対象が macOS だけになり、正しい macOS の書き方を弾く側に回ったため)
 - `_claude/CLAUDE.md`「一時ファイルの配置」— `tmp/` が CI に無いことの正本 (#3 はこれを踏んだ)
 - `_claude/rules/verify-execution-not-just-exit-code.md` — #4 の「依存が無いと黙って空振りする」形
+
+## 決着 (2026-09-03)
+
+Phase 1 を実装した (`scripts/with_fresh_worktree.sh` + `make test-fresh` + `tests/CLAUDE.md`)。
+受け入れ条件 4 件すべて実測で満たした。
+
+- **実走**: `make test-fresh` が EXIT=0、`[run]` 106 本。worktree は残らない
+- **変異 (A/B)**: `tests/test_bench_stats.sh` の隔離先を
+  `mktemp -d "$ROOT_DIR/tmp/bench_stats.XXXXXX"` に戻して commit し、同じ commit で
+  - 新品チェックアウト → **red**。`mktemp: mkdtemp failed on .../tmp/bench_stats.XXXXXX:
+    No such file or directory` (#3 の当時と同じ文言)
+  - `tmp/` を作った木 → **green**
+  差は `tmp/` の有無だけなので、手元との差を実際に出せている
+- **作成失敗**: `TMPDIR=/nonexistent-xyz/` で `worktree add` を失敗させると **exit 128**
+  (skip せず落ちる)。残骸なし
+
+### 変異の 1 回目は緑だった (記録)
+
+最初の変異は `TMP="$ROOT_DIR/tmp/..."; mkdir -p "$TMP"` と書いたため **green** になった。
+`mkdir -p` が欠落したディレクトリを自分で作ってしまい、退行を埋めていた。
+本物の #3 は `mktemp` が親を作らないことで失敗する形なので、変異もその形にして初めて red が出た。
+**「変異が red になった」より前に「その変異は実際に起こりうる退行の形か」を問う**必要がある。
+
+### 後始末で潰した残留経路 (実測)
+
+`trap` だけでは足りず、2 つの経路で残骸が固定化した。詳細は commit 86f4c9ee の message。
+
+1. `git worktree remove` を先に試す順序が半端な状態を作る (remove が `.git` だけ消して失敗
+   → 以降は validation で拒否、`rm` も "Directory not empty" で落ちる)。
+   **先に `rm -rf`、その後 `prune`** へ変更
+2. **SIGKILL は script だけを殺し、子の `git worktree add` は checkout を続ける**。
+   消しながら書かれるので `rm` が取りこぼす。掃除の前にそのパスを掴むプロセスを止める
+
+保証は「trap (EXIT/INT/TERM/HUP)」+「起動時の残骸掃除 (自分の prefix かつ pid が死んでいる
+ものだけ)」の 2 段。掃除しきれなければ 🚨 で理由ごと出す (黙って続行しない)。
+
+### Phase 2 は却下のまま
+
+133 で前提ごと消えているので変更なし。再提案されたときの理由は本文に残してある。
