@@ -35,3 +35,7 @@
 2026-09-03 23:09	resource-leaks	direct	issues/219-bug-doctor-cache-fixed-name-tmp-write.md
 2026-09-03 23:09	dead-code	direct	issues/219-bug-doctor-cache-fixed-name-tmp-write.md
 2026-09-03 23:21	responsibility	forge-Minimum	issues/222-bug-glogx-fullscreen-viewer-registry.md,issues/223-bug-glogx-phantom-awaitci-never-gives-up.md,issues/224-refactor-glogx-ci-fetch-accounting.md
+2026-09-03 23:45	design	direct	issues/222-bug-doctor-module-has-no-lint-config.md
+2026-09-03 23:45	responsibility	direct	issues/222-bug-doctor-module-has-no-lint-config.md
+2026-09-03 23:45	duplication	direct	issues/222-bug-doctor-module-has-no-lint-config.md
+2026-09-03 23:45	polymorphism	direct	issues/222-bug-doctor-module-has-no-lint-config.md
