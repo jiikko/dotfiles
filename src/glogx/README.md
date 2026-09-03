@@ -51,6 +51,22 @@ Date:   Thu Jul 16 14:03:21 2026 +0900
   stage / unstage / 変更を捨てる)、`b` で push (y/N 確認)、`u` で pull --rebase
   (conflict は自動 abort で元に戻す。未コミット変更があるときは案内して中止)。job パネル /
   job 詳細の `r` で失敗 job を再実行 (y/N 確認。`gh run rerun --job`)
+- **doctor (`D`) — 環境の健全性診断と、掃除候補の削除**: 消してよさそうなディスク占有
+  (Xcode DerivedData / 各種キャッシュ / シミュレータランタイム等) と、壊れた launchd 登録を、
+  **リスク階級・復元方法つき**で一覧する。ディスクの行は `Space` で選び `d` で削除できる
+  (**確認プロンプトを必ず挟む**。`y` 以外はすべて中止)。
+  - **削除の作法はカタログが決める**: 直接消す / **ゴミ箱へ移動** (ユーザーのファイルで
+    ありうるもの。空にするまで容量は戻らない) / 専用 CLI を実行する (`go clean -modcache` /
+    `xcrun simctl runtime delete`。SIP 配下など `rm` できないもの) / コマンドを表示するだけ
+  - **消したことは実測で確認する**: 削除の直前と直後に走査し直し、実際に減った分だけを
+    「解放しました」と数える。消えていなければ「未完了」を**成功にも失敗にも畳まずに**出す
+    (非同期に消す `simctl` が実際にこの形を返す)
+  - **記録が残せないなら削除しない**。何をいつ消したかは `$XDG_CACHE_HOME/glog/doctor-history/`
+    に残る。**sudo は実行しない** (必要なものはコマンドを表示するだけ)
+  - サービス診断 (launchd) は**表示とコピーのみ**で、停止・削除の経路を持たない。
+    同じ検査は CLI (`bin/diskdoctor` / `bin/svcdoctor`) からも叩けるが、**CLI は走査だけで
+    削除しない**。設計と不変条件は [src/doctor/README.md](../doctor/README.md) と
+    `src/doctor/disk/delete.go` の冒頭が正本
 - **実行中の CI を追う**: 一覧に **pending (queued / in_progress) のコミットが 1 つでもあれば
   3 秒周期で状態を取り直す**。パネルを開いているか・push からどれだけ経ったかは問わず、
   決着 (success / failure / neutral) するまで追い、決着したら止まる。push 直後に CI がまだ
