@@ -368,14 +368,14 @@ func TestBrowsePanelDuringBatchFetchWaits(t *testing.T) {
 func TestBrowseCIResultMergesAndStopsSpinner(t *testing.T) {
 	shas := []string{strings.Repeat("a", 40)}
 	m := newTestBrowse(t, 1, map[string]CIState{}, shas)
-	if !m.fetching {
+	if !m.fetching() {
 		t.Fatalf("toFetch ありで fetching が立っていない")
 	}
 	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: shas, batch: CIBatch{
 		Statuses: map[string]CIState{shas[0]: StateFailure},
 		Details:  map[string][]CheckDetail{shas[0]: {{Name: "lint", State: StateFailure}}},
 	}})
-	if m.fetching {
+	if m.fetching() {
 		t.Errorf("取得完了後も fetching のまま")
 	}
 	if m.statuses[shas[0]] != StateFailure || m.fetched[shas[0]] != StateFailure {
@@ -406,8 +406,8 @@ func TestBrowseCIResultChunksLandIncrementally(t *testing.T) {
 		m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: chunk, batch: CIBatch{Statuses: statuses}})
 
 		last := i == len(chunks)-1
-		if m.fetching == last {
-			t.Errorf("チャンク %d/%d 着弾後の fetching = %v", i+1, len(chunks), m.fetching)
+		if m.fetching() == last {
+			t.Errorf("チャンク %d/%d 着弾後の fetching = %v", i+1, len(chunks), m.fetching())
 		}
 		// 着弾したチャンクの SHA は toFetch から消え、未着のぶんだけ残る
 		for _, sha := range chunk {
@@ -492,7 +492,7 @@ func TestBrowseCIResultDiscardsStaleEpoch(t *testing.T) {
 		stale[sha] = StateSuccess
 	}
 	m.Update(ciResultMsg{epoch: oldEpoch, shas: chunkSHAs(shas)[0], batch: CIBatch{Statuses: stale}})
-	if m.pendingFetches != pending || !m.fetching {
+	if m.pendingFetches != pending || !m.fetching() {
 		t.Errorf("旧世代チャンクが pendingFetches を減算した: %d → %d", pending, m.pendingFetches)
 	}
 	if !slices.Equal(m.toFetch, toFetch) {
@@ -1233,7 +1233,7 @@ func TestCIPollSkipsFetchWhileBusy(t *testing.T) {
 		t.Fatalf("in-flight 中に fetch を重ねた: calls=%d", calls)
 	}
 	// 一括取得 (fetching) 中も重ねない
-	m.ciPollInFlight, m.fetching = false, true
+	m.ciPollInFlight, m.pendingFetches = false, 1 // 一括取得中 (fetching() はここから導出)
 	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd == nil {
 		t.Fatal("一括取得中に timer が切れた")
 	}
@@ -1282,7 +1282,7 @@ func TestCIPollAwaitCapGivesUp(t *testing.T) {
 func TestCIPollArmedAtInitFromCachedPending(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statuses[m.commits[0].SHA] = StatePending
-	m.fetching = false // キャッシュヒットで取得なし
+	m.pendingFetches = 0 // キャッシュヒットで取得なし (fetching() はここから導出。issue 224)
 	m.Init()
 	if !m.ciPolling {
 		t.Error("キャッシュ済み pending で起動したのに追従チェーンが張られない")

@@ -232,10 +232,13 @@ type browseModel struct {
 	details        map[string][]CheckDetail
 	detailsLoading map[string]bool
 	// toFetch は一括取得の「まだ結果が来ていない」SHA。チャンクが着弾するたびに縮む
-	// (fetching も pendingFetches==0 で下りる)。パネルの「進行中の一括取得を待つ」ガードが
+	// (fetching() も pendingFetches==0 で下りる)。パネルの「進行中の一括取得を待つ」ガードが
 	// これを見るので、既に着弾したチャンクの SHA で待たされないようにするために縮める必要がある。
 	toFetch []string
-	// pendingFetches は未着の一括取得チャンク数。fetching = pendingFetches > 0 を保つ
+	// pendingFetches は未着の一括取得チャンク数。**取得中かどうかの唯一の出典**で、
+	// fetching() がここから導出する (issue 224。以前は fetching bool を並置し、4 箇所で
+	// 手書き同期していた。1 箇所書き忘れるとスピナーが回りっぱなし / パネルが待たずに
+	// 二重取得する形で silent に狂い、build もテストも通った)。
 	// (スピナー・invalidate gate・パネルガードが fetching を見るので、最後のチャンクが
 	// 着弾するまで下ろせない)。
 	pendingFetches int
@@ -338,8 +341,7 @@ type browseModel struct {
 	// toast は右下に数秒だけ出す結果フィードバック (push/pull 完了)。自動消滅 (toast.go)。
 	toast toast
 
-	fetching bool
-	ticking  bool // 80ms スピナー tick チェーンが 1 本生きているか (maybeTick の single-flight)
+	ticking bool // 80ms スピナー tick チェーンが 1 本生きているか (maybeTick の single-flight)
 	// push 成功の演出 (startPushAnim)。演出が statuses の StateUnpushed を先に消していく
 	// ため、演出後の CI ポーリング対象 (push 時点の tip) は pushAnimTip に捕捉しておく
 	pushAnimating bool
@@ -386,14 +388,16 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		showFrame:      !opts.NoFrame,
 		width:          width,
 		height:         height,
-		fetching:       len(toFetch) > 0,
 		cancel:         cancel,
 		usageOv:        usageOverlay{visible: true},
 		issuesOv:       newIssuesView(),
 		statusOv:       newStatusView(),
 		autobuild:      newAutobuildWatch(selfExePath(), os.Getenv(autobuildPendingEnv) != "", timeNow()),
 	}
-	if m.fetching {
+	// 🚨 ここは「取得中か」ではなく **「これから取得を始めるか」** の判定なので、
+	// fetching() (= pendingFetches > 0) を使ってはいけない。pendingFetches はこの下の
+	// チャンク分割で初めて入る (issue 224 で fetching フィールドを消したときの落とし穴)。
+	if len(toFetch) > 0 {
 		// 起動時の一括取得は m.cancel と ctx を共有する意図的例外 (q 中断で走行中の
 		// GraphQL を止めるため)。チャンクへ割って並列に投げるので、画面に映っている先頭
 		// コミットの CI が最初に埋まる (startCIFetch の分割方針)。
@@ -464,13 +468,13 @@ func (m *browseModel) Init() tea.Cmd {
 		restore = issuesRestoreCmd(s)
 	}
 	// 🚨 起動時にも追従チェーンを張る: ディスクキャッシュに pending が残っていると初回 fetch が
-	// 走らず (m.fetching == false)、ciResultMsg 起点の開始点をどれも踏まないまま
+	// 走らず (m.fetching() == false)、ciResultMsg 起点の開始点をどれも踏まないまま
 	// 「pending なのに追わない」状態になる (キャッシュの pending TTL 内に再起動した場合)。
 	poll := m.ensureCIPoll()
 	// 別プロセスによる git log の変化の見張り (gitlog_watch.go)。対象ディレクトリの解決は
 	// git を叩くので非同期にし、保険のポーリングだけ先に張る (イベント待ちは解決後に張る)。
 	logWatch := tea.Batch(gitLogWatchDirsCmd(), m.gitLogPollCmd())
-	if m.fetching {
+	if m.fetching() {
 		return tea.Batch(m.fetch, prefix, u, ver, cliHealth, ab, restore, poll, logWatch, m.maybeTick(), usageRefreshTick())
 	}
 	return tea.Batch(prefix, u, ver, cliHealth, ab, restore, poll, logWatch, m.maybeTick(), usageRefreshTick())
@@ -566,7 +570,7 @@ func fetchCIStatusesCmd(repo Repo, targets []string, wrap func(CIBatch, *GHError
 
 // startCIFetch は一括取得を chunkSHAs のチャンクへ割り、チャンクごとに ciResultMsg を返す Cmd を
 // 束ねて返す。取得の「開始点」は 3 箇所 (起動 / reloadAfterPull / refetchAfterPush)
-// あるので、状態 (toFetch / pendingFetches / fetching / ghErr) の立て方をここへ集約する。
+// あるので、状態 (toFetch / pendingFetches / ghErr) の立て方をここへ集約する。
 //
 // チャンク 1 が commits の表示順先頭なので、画面に映っているコミットの CI が最初に埋まる
 // (ビューポート計算もカーソル追従も不要。commits が既に表示順なのを利用している)。
@@ -574,13 +578,19 @@ func fetchCIStatusesCmd(repo Repo, targets []string, wrap func(CIBatch, *GHError
 // ghErr はここでクリアする: チャンクごとに無条件代入すると、後から着弾した成功チャンクが先の
 // 失敗チャンクの警告を消してしまう。「新しい取得で警告をリセットする」(レビュー C4 の
 // sticky 警告防止) は開始時にやり、ハンドラ側は非 nil のときだけ立てる。
+// fetching は一括取得のチャンクが 1 つでも未着か。**pendingFetches からの派生**であって
+// 独立した状態ではない (issue 224)。フィールドとして並置すると、新しく「取得を始める /
+// 終える」経路を足したときに代入を書き忘れ、スピナー (spinnerActive)・再描画ゲート
+// (tickMsg)・パネルの「進行中の一括取得を待つ」ガード・ciPollMsg の並行抑止が
+// **silent に狂う** (build もテストも通る)。導出にすればその失敗モードが構造的に消える。
+func (m *browseModel) fetching() bool { return m.pendingFetches > 0 }
+
 func (m *browseModel) startCIFetch(shas []string) tea.Cmd {
 	shas = capFetchSHAs(shas) // 超過分は StateUnknown のまま (newBrowseModel と同じポリシー)
 	chunks := chunkSHAs(shas)
 	m.fetchEpoch++ // 旧世代の未着チャンクを無効化 (ciResultMsg ハンドラの世代ガード)
 	m.toFetch = shas
 	m.pendingFetches = len(chunks)
-	m.fetching = true
 	m.ghErr = nil
 	cmds := make([]tea.Cmd, 0, len(chunks))
 	for _, chunk := range chunks {
@@ -742,7 +752,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 複製する必要があり、表示バグの危険が利得に見合わない。
 		// -p を常用して fetch 中の描画が重いと体感したら再評価する (その時は Line にスピナー
 		// 位置を持たせて View 側で差し替えるのが筋)。
-		if m.fetching || len(m.awaitCI) > 0 {
+		if m.fetching() || len(m.awaitCI) > 0 {
 			m.invalidateLines()
 		}
 		return m, tea.Batch(m.maybeTick(), toastHoldCmd, pushRefetchCmd)
@@ -764,11 +774,10 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// まだ飛んでいるチャンクの SHA を「応答に無かった」と誤判定する
 		filled := fillUnknownFetched(msg.batch.Statuses, msg.shas)
 		m.mergeCIBatch(filled, msg.batch.Details, msg.batch.PRs)
-		// 未着チャンクが残っている間は fetching を下ろさない (スピナー・invalidate gate・
+		// 未着チャンクが残っている間は fetching() が true のまま (スピナー・invalidate gate・
 		// パネルガードの出典)。toFetch は着弾ぶんを差し引き、パネルが既に結果の来た SHA で
 		// 待たされないようにする
 		m.pendingFetches = max(m.pendingFetches-1, 0)
-		m.fetching = m.pendingFetches > 0
 		// 🚨 ここを slices.DeleteFunc で書かないこと: あれは in-place 圧縮して破棄した末尾を
 		// ゼロ埋めするが、chunkSHAs は元スライスの部分スライスを返すので m.toFetch と
 		// 未着チャンクの msg.shas は同じ配列を共有している。in-place に削ると「まだ飛んでいる
@@ -1039,7 +1048,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next := m.scheduleCIPoll()
 		// 別経路の取得と重ねない (同一 SHA への GraphQL 並行は完了順で statuses/details が
 		// 上書きされる。fetchPanelDetails と同じ注意)。タイマーだけ繋いで次の周期に回す
-		if m.ciPollInFlight || m.fetching {
+		if m.ciPollInFlight || m.fetching() {
 			return m, next
 		}
 		m.ciPollInFlight = true
@@ -1865,9 +1874,7 @@ func (m *browseModel) applyLogData(d logData, keepView bool) (added int, cmd tea
 	}
 
 	if !m.hasRepo || len(m.toFetch) == 0 {
-		// fetching == (pendingFetches > 0) の不変条件を保つ (取得を始めないので両方下ろす)
-		m.pendingFetches = 0
-		m.fetching = false
+		m.pendingFetches = 0 // 取得を始めないので下ろす (fetching() もこれで下りる)
 		if m.pullAnimating {
 			return added, m.maybeTick() // CI 取得は無いが、アニメーションのために tick を回す
 		}
@@ -2161,7 +2168,7 @@ func (m *browseModel) quitNow() (tea.Model, tea.Cmd) { return m.quitWith(false) 
 func (m *browseModel) quitWith(animate bool) (tea.Model, tea.Cmd) {
 	m.rememberIssuesScreen()
 	m.cancelAll()
-	if m.fetching {
+	if m.fetching() {
 		m.fillUnknown()
 	}
 	if animate && m.zoom.startClose(timeNow()) {
@@ -2758,7 +2765,7 @@ func (m *browseModel) fetchPanelDetails(sha string) tea.Cmd {
 	// 進行中の一括取得に含まれる SHA は、その結果 (details 込み) を待つ。
 	// ここで別リクエストを打つと同一 SHA への GraphQL が並行し、完了順で
 	// statuses/details が上書きされる (codex レビュー指摘)
-	if m.fetching && slices.Contains(m.toFetch, sha) {
+	if m.fetching() && slices.Contains(m.toFetch, sha) {
 		m.detailsLoading[sha] = true
 		return nil
 	}
@@ -2804,7 +2811,7 @@ func (m *browseModel) maybeFetchETABasis() tea.Cmd {
 		case c.SHA == m.panelSHA:
 		case m.detailsLoading[c.SHA]:
 		case m.statuses[c.SHA] == StateUnpushed:
-		case m.fetching && slices.Contains(m.toFetch, c.SHA): // 進行中の一括取得を待つ
+		case m.fetching() && slices.Contains(m.toFetch, c.SHA): // 進行中の一括取得を待つ
 		default:
 			if _, ok := m.details[c.SHA]; !ok { // Details 未取得のものだけ
 				targets = append(targets, c.SHA)
@@ -3088,7 +3095,7 @@ func (m *browseModel) fillUnknown() {
 func (m *browseModel) spinnerActive() bool {
 	// 演出 (glide / toast / 開閉スライド / zoom) は列挙しない: tickInterval が周期を上げている =
 	// 何かの演出中、で導出する。演出の登録先を tickInterval の 1 箇所に保つ (同期漏れの再発防止)
-	return m.tickInterval() != spinnerInterval || m.fetching || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.awaitCI) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.rlDashLoading() || m.issuesOv.loading() ||
+	return m.tickInterval() != spinnerInterval || m.fetching() || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.awaitCI) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.rlDashLoading() || m.issuesOv.loading() ||
 		m.statusOv.fetching() || m.doctorOv.scanning()
 }
 
@@ -3665,7 +3672,7 @@ func (m *browseModel) hintLine() string {
 	case m.panelSHA != "":
 		hint = "j: job を選択  d: diff  p: PR  y: commit URL  Enter/h/q: 閉じる"
 	}
-	if m.fetching {
+	if m.fetching() {
 		hint = m.spinner() + " CI 状態を取得中...  " + hint
 	}
 	if m.ghErr != nil {

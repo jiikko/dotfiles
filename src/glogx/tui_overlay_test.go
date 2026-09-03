@@ -910,7 +910,7 @@ func TestIssuesViewerHintIsNotPrefixed(t *testing.T) {
 	// 末尾のキー案内が黙って切り落とされる (issues_view.go の hint の不変条件が結合点で壊れる)。
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.handleKey("i")
-	m.fetching = true
+	m.pendingFetches = 1 // 一括取得中 (fetching() はここから導出。issue 224)
 	m.ghErr = &GHError{Kind: GHOther, Detail: "boom"}
 	hint := m.hintLine()
 	if strings.Contains(hint, "CI 状態を取得中") || strings.Contains(hint, "🚨") {

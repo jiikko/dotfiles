@@ -305,8 +305,8 @@ func TestBrowsePushFlow(t *testing.T) {
 			t.Fatalf("push 成功後も commits[%d] の status キャッシュが残っている", i)
 		}
 	}
-	if !m.fetching || len(m.toFetch) != len(m.commits) {
-		t.Fatalf("push 成功で全件再取得に入らない: fetching=%v toFetch=%d", m.fetching, len(m.toFetch))
+	if !m.fetching() || len(m.toFetch) != len(m.commits) {
+		t.Fatalf("push 成功で全件再取得に入らない: fetching=%v toFetch=%d", m.fetching(), len(m.toFetch))
 	}
 	// CI 出現待ち (awaitCI) の対象は tip (最新の unpushed) だけ。途中のコミットには CI が走らないため
 	newSHA := m.commits[0].SHA
@@ -334,7 +334,7 @@ func TestBrowsePushFlow(t *testing.T) {
 		t.Fatal("途中コミットの none (本物) まで捨てられた")
 	}
 	// ciPollMsg で再取得が走る (CI 未出現の SHA は追従対象)
-	m.fetching = false
+	m.pendingFetches = 0 // 一括取得は完了済み (fetching() はここから導出。issue 224)
 	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd == nil || !m.ciPollInFlight {
 		t.Fatal("ciPollMsg で再取得が始まらない")
 	}

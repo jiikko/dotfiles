@@ -127,12 +127,12 @@ func TestBrowseTickSingleFlight(t *testing.T) {
 		t.Fatal("チェーンが生きているのに 2 本目の maybeTick が非 nil (二重チェーン)")
 	}
 	// tickMsg 到着で 1 拍消費 → spinnerActive なら 1 本だけ再アーム
-	m.fetching = true
+	m.pendingFetches = 1 // 一括取得中 (fetching() はここから導出。issue 224)
 	if _, cmd := m.Update(tickMsg{}); cmd == nil || !m.ticking {
 		t.Fatal("spinnerActive 中の tickMsg で再アームされない")
 	}
 	// spinnerActive でなくなれば再アームせずチェーンは死ぬ
-	m.fetching = false
+	m.pendingFetches = 0
 	if _, cmd := m.Update(tickMsg{}); cmd != nil || m.ticking {
 		t.Fatalf("非 spinnerActive で tick が止まらない: cmd=%v ticking=%v", cmd != nil, m.ticking)
 	}
@@ -158,7 +158,7 @@ func TestBrowseTickPullAnimOncePerTick(t *testing.T) {
 func TestBrowseTickInvalidateGate(t *testing.T) {
 	// fetching 中はリストの loading スピナーが動くので無効化する
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.fetching = true
+	m.pendingFetches = 1
 	m.linesValid = true
 	m.Update(tickMsg{})
 	if m.linesValid {
@@ -488,7 +488,7 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		name string
 		set  func(m *browseModel)
 	}{
-		{"fetching", func(m *browseModel) { m.fetching = true }},
+		{"fetching", func(m *browseModel) { m.pendingFetches = 1 }},
 		{"actModal.running", func(m *browseModel) { m.actModal.pushing = true }},
 		{"pullAnimating", func(m *browseModel) { m.pullAnimating = true }},
 		{"pushAnimating", func(m *browseModel) { m.pushAnimating = true }},
