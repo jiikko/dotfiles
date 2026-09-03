@@ -66,8 +66,10 @@ var pullCleanup cleanupLatch
 // 待ちは runGitTimeout (gitOpTimeout) と WaitDelay で構造的に有限。すぐ終わらないときだけ
 // 理由を出す (無言で固まったように見せない)。
 func waitPullCleanup() {
-	done := make(chan struct{})
-	go func() { <-pullCleanup.wait(); close(done) }()
+	// wait() は channel を返すだけでブロックしないので、goroutine を挟まず同期に取る
+	// (waitDoctorCleanup と同じ形。WaitGroup 時代は Wait() がブロックしたので goroutine が
+	// 要ったが、載せ替えで不要になった。残すと latch を読む瞬間だけ非決定になる。issue 217)
+	done := pullCleanup.wait()
 	select {
 	case <-done:
 		return

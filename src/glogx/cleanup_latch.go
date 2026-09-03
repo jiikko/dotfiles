@@ -29,7 +29,19 @@ func (l *cleanupLatch) add() {
 func (l *cleanupLatch) done() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.n--
+	// 🚨 **n を負にしない**。`sync.WaitGroup` は done 過多で大声で落ちる
+	// (`panic: sync: negative WaitGroup counter`) が、素朴に `l.n--` すると負のまま続行し、
+	// **次の add() が n を 0 に戻した瞬間に、走行中の仕事があるのに wait() が閉じ済みを返す**
+	// (= 看取りが素通りする)。載せ替えで「うるさい失敗」を「静かな取りこぼし」に
+	// 交換してしまう形なので、0 で止める (敵対的レビューが実験で示した。issue 217)。
+	//
+	// 0 で止めるのを選び、panic を選ばなかった理由: この latch の目的は「終了前に看取る」で、
+	// 壊れ方の最悪は**待たずに終わること**。負を許さなければ、対応が 1 つずれても
+	// 「余分に待つ」側へ倒れる (安全側)。呼び出しは全て `add(); defer done()` の対なので、
+	// ここに到達するのは実装ミスのときだけ。
+	if l.n > 0 {
+		l.n--
+	}
 	if l.n <= 0 && l.waitC != nil {
 		close(l.waitC)
 		l.waitC = nil

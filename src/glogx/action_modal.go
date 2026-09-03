@@ -168,9 +168,15 @@ func (a *actionModal) handleKey(key string) (consumed bool, action tea.Cmd) {
 			a.pulling = true
 			ctx, cancel := a.startCancelable()
 			// 登録は closure 側 (発行側で登録すると、Cmd を実行しない経路が latch を
-			// 立てっぱなしにする)。goroutine 起動前に quit が看取りを素通りする race は
-			// 理論上あるが、quit には y の後さらに 2 打鍵 (Ctrl-C×2) が要るので実害はない。
-			// 看取りは main.go の waitPullCleanup
+			// 立てっぱなしにする)。看取りは main.go の waitPullCleanup。
+			//
+			// closure が始まる前に終了が走ると看取りは素通りするが、**その窓では
+			// runGitPullRebase がまだ始まっていない**ので、後始末すべき rebase-merge が
+			// そもそも存在しない (これが「遅れた登録の取りこぼしを許容する」根拠。
+			// cleanup_latch.go の doc も同じことを言っている)。
+			// ⚠️ 打鍵経路の 2 打鍵 (Ctrl-C×2) だけを根拠にしないこと: main.go の
+			// SIGINT/SIGTERM 経路は **0 打鍵**で Run を抜ける (bubbletea は Update を呼ばない)。
+			// 結論は変わらないが、根拠は打鍵数ではなく上の「まだ始まっていない」の方
 			return true, func() tea.Msg {
 				pullCleanup.add()
 				defer pullCleanup.done()

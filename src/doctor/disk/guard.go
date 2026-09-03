@@ -205,12 +205,18 @@ func installedBundleIDs(env Env) (map[string]bool, error) {
 // bundleMaxDepth は bundle を探す深さの上限 (/Applications/Vendor/App.app/Contents/PlugIns/X.appex/... を拾える程度)。
 const bundleMaxDepth = 8
 
+// 🚨 **セットアップを 2 箇所に書かない**。この関数は collectBundleIDsCounted へ委譲する。
+// 以前は両方が `map[[2]uint64]struct{}{}` と `var visits int64` を独立に組み立てており、
+// テストは Counted 側だけを呼んでいた。その結果 **production が通る側 (この関数) に
+// 共有状態を入れる変異が doctor 全体で素通り**した (敵対的レビューが実験で証明。
+// 走査の並行性と巡回検出が production 経路では機械的に未検査だった)。
+// 委譲にすれば、Counted を検査するテストがそのまま production 経路を守る。
 func collectBundleIDs(dir string, depth int, ids map[string]bool) error {
-	var visits int64
-	return collectBundleIDsSeen(dir, depth, ids, map[[2]uint64]struct{}{}, &visits)
+	_, err := collectBundleIDsCounted(dir, depth, ids)
+	return err
 }
 
-// collectBundleIDsCounted は collectBundleIDs と同じ走査をして「実際に降りたディレクトリ数」も返す。
+// collectBundleIDsCounted は collectBundleIDs の実体で、「実際に降りたディレクトリ数」も返す。
 // 巡回検出が効いているかを**壁時計でなく回数**で判定するために要る (avoid-wall-clock-assertions)。
 //
 // 🚨 **数え上げは呼び出しごとに持つ** (issue 217)。以前は package 変数 (`atomic.Int64`) に
