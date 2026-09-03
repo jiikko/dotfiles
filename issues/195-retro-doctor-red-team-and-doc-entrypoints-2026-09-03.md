@@ -25,10 +25,12 @@
 `$?` が `tail` のものになって「変異を当てたのに rc=0」と読んだ。分離して測り直したら rc=1 で正しく red だった。
 ⚠️ **この 2 つ目は、自分が同じ日に CI へ入れた gate が守ろうとしている罠そのもの**。
 
-**切り出し先案**: [`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md) に
-1 項。既存は「`cmd | tail` の `$?` はパイプ終端の status」を書いているが、
-**「失敗ログ自体を `tail` / `head` で捨てない (原因が消える)」は書かれていない**。
-検証コマンドは**ファイルへ落としてから読む**を既定にする、の形で足す。
+**切り出し済み** (2026-09-03): [`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
+に 1 項追加。既存は「`cmd | tail` の `$?` はパイプ終端の status」だけで、**失敗ログ自体を捨てる形**が
+無かった。足したのは「検証コマンドの出力を `tail` / `head` / `grep` で削って読まない。ファイルへ落として
+から読む」。理由として **集約 target は結論行を最後に出す設計が多い**ので `| tail -n` が
+「結論だけ残して理由を捨てる」形になりやすいこと、捨てた後に再実行して緑ならもう追えないことを書いた。
+実例 2 件は rationale へ。
 
 ### 2. 既存ドキュメントの記述を引き写して、事実誤認を 3 件書きかけた
 
@@ -113,7 +115,7 @@ issue 180 は「軽い方」と「型変更が要る重い方」に割れてい�
 
 ## 残課題
 
-- [ ] 項目 1 の切り出し (`verify-execution-not-just-exit-code.md` に「失敗ログを捨てない」を 1 項 / 却下)
+- [x] 項目 1 の切り出し → `verify-execution-not-just-exit-code.md` に「出力はファイルへ落としてから読む」を追加
 - [ ] 項目 2 の切り出し (`docs/glogx-bubbletea-v2.md` の charm 依存の記述を実測に直す issue を起票 / 却下)
 - [ ] 項目 3 の切り出し (issue 132 に「`issues/next/` も同型」を追記 / 却下)
 - [x] 項目 4 — 対応済み (別セッションが `subagent-model-tiering.md` へ切り出し、done/164 に記録)
