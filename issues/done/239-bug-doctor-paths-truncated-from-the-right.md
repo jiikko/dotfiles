@@ -39,3 +39,30 @@
 
 issue 182 は「マーク列 / ラベル / pad / 再利用注記」の 4 系統でパス行を含まない。
 `diskItemRows` / `deletePathLines` はどちらも 182 対応後（2026-09-03）に追加された。236 / 237 / 233 に該当なし。
+
+## 決着 (2026-09-04)
+
+パスを**先頭から削って末尾を残す**形へ変えた。出典は `doctorFitPath`
+(`doctor_view.go`) 1 つで、一覧の対象パス行と確認画面の両方が通る。
+
+- 一覧 (`diskItemRows`): 予算は `o.width - doctorItemPathFixedW`
+  (8 空白 + 選択の印 1 + サイズ 9 + 空白 2 + カーソル欄 2 = 22)。**この層で予算に収める**のが要点で、
+  収めずに返すと後段の `lines()` が行末を切って末尾が落ちる
+- 確認画面 (`deletePathLines`): 予算は `o.width - deleteNoteIndent` (11)。
+  `deleteNote` の字下げをリテラルから定数へ出して、予算計算と出典を 1 つにした
+- `copyPath` は**切っていない実パス**のまま (表示の都合でコピーを壊さない)
+
+実測 (幅 77): `…per/Xcode/DerivedData/ThumbnailThumb-cxxbmelbwqqahjagpvzoszkxfvfz` —
+世代を見分けるハッシュ部が残る。
+
+### 検証
+
+- 変異 2 本 (`go build` 通過を確認してから判定):
+  | 変異 | 結果 |
+  |---|---|
+  | 一覧のパスを右切りへ戻す | `TestDiskItemRowKeepsPathTail` が red |
+  | 確認画面のパスを右切りへ戻す | `TestDeleteConfirmKeepsPathTail` が red |
+- 🚨 1 本目は**最初 green だった**: テストが `diskItemRows` の戻り値に末尾が含まれるかしか見ておらず、
+  切らずに返す変異でも通っていた (切るのは後段の `lines()` なので、この層では末尾が残る)。
+  **行が予算に収まっているか**を足して red になった
+- `make -C src/glogx lint` 0 issues / `make -C src/glogx test` (-race) 全緑

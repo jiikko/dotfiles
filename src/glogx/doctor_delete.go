@@ -775,7 +775,10 @@ func deletePathLines(o doctorRenderOpts, e disk.EntryOutcome) []string {
 		// 🚨 パスは**ファイル名由来**なので改行や制御文字が入りうる (macOS のファイル名は
 		// `/` と NUL 以外を許す)。1 行 = 1 件の契約を破ると、確認画面に偽の行
 		// (「y: 削除する」等) を差し込めてしまう。印字可能文字だけに絞る
-		out = append(out, deleteNote(o, cleanOneLine(it.Path)))
+		// 🚨 パスは**先頭を削って末尾を残す** (issue 239)。確認画面で末尾が落ちると、
+		// 同一プロジェクトの旧 DerivedData のように**世代の違いが見分けられない**まま
+		// y を押すことになる。deleteNote が 11 桁字下げするので、その分を引いた予算で詰める
+		out = append(out, deleteNote(o, doctorFitPath(cleanOneLine(it.Path), o.width-deleteNoteIndent)))
 	}
 	return out
 }
@@ -895,8 +898,11 @@ func padLabel(label string, w int) string {
 
 // deleteNote はラベル列の下に付く補足 (dim)。1 行 = 1 件の契約なので改行は入れない。
 func deleteNote(o doctorRenderOpts, s string) string {
-	return doctorColor(o.colored, ansiDim, "           "+s)
+	return doctorColor(o.colored, ansiDim, padSpaces(deleteNoteIndent)+s)
 }
+
+// deleteNoteIndent は deleteNote の字下げ幅 (パスの予算計算に要る)。
+const deleteNoteIndent = 11
 
 // assembleDeletePanel は「見出し + エントリの塊 + 末尾」をちょうど page 行に収める。
 //

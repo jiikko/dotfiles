@@ -42,3 +42,30 @@ README:199 の「`risk: 要確認` の行は `Enter` で中身を見るまで選
 ## 既存 issue との関係
 
 issue 163 の `Contents` への言及は**メモリ上限**のみ。236 / 237 / 233 に該当なし。
+
+## 決着 (2026-09-04)
+
+`diskDetail` は Inspect / Contents のエントリでも**対象パスの行 (選べる行) を必ず出す**ようにした。
+
+- 以前は Contents が非空だと選べる行を出さずに `return` しており、Inspect の 5 エントリ
+  (どれも `RiskConfirm`) は「エントリ全体か、何もしないか」しか選べなかった。
+  `jumpIntoDetail` の飛び先 (`diskitem:`) も無いのでカーソルも動かなかった
+- 中身の一覧は**残す** (「見てから選ばせる」ゲートなので消さない) が、対象パス行の下へ移し、
+  `中身 (この一覧は選べません):` の見出しを付けた。`Contents` は全 Item を平坦に連結した
+  名前の羅列でパスもサイズも持たないため、選択の単位にできない
+- 中身が取れなかったときの案内は `(中身の一覧はありません。上の対象パスから選んでください)` へ
+  (対象パス行が上に来たので「次のパスです」は逆向きになった)
+- 🚨 `(Inspect || RiskConfirm) && !inspected` のゲートは**そのまま**。README:199 の
+  「`risk: 要確認` の行は `Enter` で中身を見るまで選べず」は今も正しい
+
+### 検証
+
+- 変異: 「Contents があるときは対象パス行を出さない」(本 issue 以前の姿) へ戻すと
+  `TestDiskDetailInspectWithContentsStillHasSelectablePaths` が red
+- `make -C src/glogx lint` 0 issues / `make -C src/glogx test` (-race) 全緑
+- 描画のサンプルで目視確認 (選べる行 2 本 + 選べない中身の一覧)
+
+### 残り (実装ではなく記述)
+
+`src/glogx/README.md` の `D` の行と `issues/done/148` は「ディレクトリ単位で選べる」と書いており、
+**実装がそれに追いついた**ので記述の変更は不要。

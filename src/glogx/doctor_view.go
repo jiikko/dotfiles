@@ -756,16 +756,25 @@ func (v *doctorView) diskDetail(o doctorRenderOpts, r disk.Result) []doctorRow {
 		out = append(out, doctorRow{text: doctorColor(o.colored, ansiDim, "             "+r.Entry.Detail)})
 	}
 	if r.Entry.Inspect || len(r.Contents) > 0 {
-		for _, c := range r.Contents {
-			out = append(out, doctorRow{text: "               - " + c})
-		}
+		// 🚨 **対象パスの行を必ず出す** (issue 240)。以前は Contents があると選べる行を出さずに
+		// 返しており、Inspect の 5 エントリ (どれも RiskConfirm) は「エントリ全体か、何もしないか」
+		// しか選べなかった。README と画面の「ディレクトリ単位で選べる」が嘘になり、
+		// jumpIntoDetail の飛び先 (diskitem:) も無いのでカーソルも動かない
+		out = append(out, v.diskItemRows(o, r)...)
 		// 🚨 Inspect は「中身を見てから選ばせる」ためのゲートなので、**開いても何も出ない**形を
 		// 作らない (中身が無いのか、走査が拾えなかったのかが区別できないまま選べてしまう。
-		// 敵対レビュー 2026-09-03)。中身が無ければ対象のパスそのものを出す
+		// 敵対レビュー 2026-09-03)
 		if len(r.Contents) == 0 {
 			out = append(out, doctorRow{text: doctorColor(o.colored, ansiDim,
-				"             (中身の一覧はありません。対象は次のパスです)")})
-			out = append(out, v.diskItemRows(o, r)...)
+				"             (中身の一覧はありません。上の対象パスから選んでください)")})
+			return out
+		}
+		// 中身は**選べない**: Contents は全 Item を平坦に連結した名前の羅列で、パスもサイズも
+		// 持たない (選択の単位にできない)。選ぶのは上の対象パス行
+		out = append(out, doctorRow{text: doctorColor(o.colored, ansiDim,
+			"             中身 (この一覧は選べません):")})
+		for _, c := range r.Contents {
+			out = append(out, doctorRow{text: "               - " + c})
 		}
 		return out
 	}
@@ -783,7 +792,8 @@ func (v *doctorView) diskItemRows(o doctorRenderOpts, r disk.Result) []doctorRow
 		}
 		riskMark, _ := doctorRiskMark(r)
 		out = append(out, doctorRow{
-			text:       fmt.Sprintf("        %s%9s  %s", mark, disk.HumanSize(it.Size), it.Path),
+			text: fmt.Sprintf("        %s%9s  %s", mark, disk.HumanSize(it.Size),
+				doctorFitPath(it.Path, o.width-doctorItemPathFixedW)),
 			selectable: true,
 			key:        "diskitem:" + diskItemKey(r.Entry.ID, it.Path),
 			copyPath:   it.Path,
@@ -794,6 +804,22 @@ func (v *doctorView) diskItemRows(o doctorRenderOpts, r disk.Result) []doctorRow
 	}
 	return out
 }
+
+// doctorFitPath はパスを予算に収める。🚨 **先頭を削って末尾を残す**。
+// 末尾から切ると「どのディレクトリを消すのか」がまさに消える (issue 239): DerivedData の
+// `ThumbnailThumb-cxxbmelbwqqahjagpvzoszkxfvfz` はハッシュ部で世代を見分けるので、
+// そこが落ちると同一プロジェクトの旧世代を区別できない。規律の正本は termwidth.TruncateLeft の
+// doc と status_view.go:statusPathText。
+func doctorFitPath(path string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	return truncateDispLeft(path, width, "…")
+}
+
+// doctorItemPathFixedW は対象パス行のうちパス以外が使う幅 (8 空白 + 選択の印 1 +
+// サイズ %9s + 空白 2) と、行頭のカーソル欄。
+const doctorItemPathFixedW = 8 + 1 + 9 + 2 + cursorGutterWidth
 
 // diskItemKey は「どのエントリのどのパスか」の同一性。パスに \x00 は現れない。
 func diskItemKey(entryID, path string) string { return entryID + "\x00" + path }

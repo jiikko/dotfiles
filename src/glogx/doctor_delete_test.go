@@ -1247,3 +1247,91 @@ func TestDoctorStartClearsCarryOverState(t *testing.T) {
 			v.pendingToast, v.pendingCopy, v.enterDetail, v.cur.fellBack, v.pendingDeleteCmd != nil, v.selected)
 	}
 }
+
+// パスは**末尾を残して**詰める (issue 239)。末尾から切ると DerivedData のハッシュ部が落ち、
+// 同一プロジェクトの旧世代を確認画面で見分けられないまま y を押すことになる。
+func TestDeleteConfirmKeepsPathTail(t *testing.T) {
+	long := "/Users/koji/Library/Developer/Xcode/DerivedData/ThumbnailThumb-cxxbmelbwqqahjagpvzoszkxfvfz"
+	plan := disk.DeleteReport{Entries: []disk.EntryOutcome{{
+		Label: "DerivedData", Method: "rm", Outcome: disk.OutcomePlanned, BeforeSize: 1 << 30,
+		Items: []disk.ItemOutcome{{Path: long, Size: 1 << 30}},
+	}}}
+	v := &doctorView{del: doctorDelete{confirm: true, plan: &plan}}
+	out := strings.Join(v.lines(doctorRenderOpts{width: 77, page: 24}), "\n")
+	if !strings.Contains(out, "ThumbnailThumb-cxxbmelbwqqahjagpvzoszkxfvfz") {
+		t.Errorf("末尾 (世代を見分ける識別子) が落ちている:\n%s", out)
+	}
+	if strings.Contains(out, "/Users/koji/Library/Developer/Xcode/DerivedData/Thumb") {
+		t.Errorf("先頭から出ている = 末尾を切っている:\n%s", out)
+	}
+}
+
+// 一覧の対象パス行も同じ規律 (Space で選ぶ対象そのものなので、どれか分からないと選べない)。
+func TestDiskItemRowKeepsPathTail(t *testing.T) {
+	long := "/Users/koji/Library/Developer/Xcode/DerivedData/ThumbnailThumb-cxxbmelbwqqahjagpvzoszkxfvfz"
+	r := disk.Result{Entry: disk.Entry{ID: "dd", Label: "DerivedData", Risk: disk.RiskSafe},
+		Status: disk.StatusOK, Items: []disk.Item{{Path: long, Size: 1 << 30}}}
+	v := &doctorView{}
+	rows := v.diskItemRows(doctorRenderOpts{width: 77, page: 24}, r)
+	if len(rows) != 1 {
+		t.Fatalf("行数 = %d", len(rows))
+	}
+	if !strings.Contains(rows[0].text, "ThumbnailThumb-cxxbmelbwqqahjagpvzoszkxfvfz") {
+		t.Errorf("末尾が落ちている: %q", rows[0].text)
+	}
+	// 🚨 **この層で予算に収めていること**まで見る。行が予算を超えたまま返ると、後段の lines() が
+	// 行末を切るので末尾が落ちる (この assert が無いと「切らずに返す」変異が緑のまま通った。実測)
+	if w := dispWidth(rows[0].text); w > 77-cursorGutterWidth {
+		t.Errorf("行が予算を超えている: 幅 %d > %d: %q", w, 77-cursorGutterWidth, rows[0].text)
+	}
+	// 🚨 コピーは**切っていない実パス**であること (表示の都合で壊さない)
+	if rows[0].copyPath != long {
+		t.Errorf("copyPath が切られている: %q", rows[0].copyPath)
+	}
+}
+
+// Inspect のエントリは**中身の一覧があっても**対象パスを選べる (issue 240)。
+// 以前は Contents が非空だと選べる行を出さずに返しており、Inspect の 5 エントリ
+// (どれも RiskConfirm) は「エントリ全体か、何もしないか」しか選べなかった。
+func TestDiskDetailInspectWithContentsStillHasSelectablePaths(t *testing.T) {
+	r := disk.Result{
+		Entry:  disk.Entry{ID: "orphan-container", Label: "孤児コンテナ", Risk: disk.RiskConfirm, Inspect: true, DeleteVia: "trash"},
+		Status: disk.StatusOK,
+		Items: []disk.Item{
+			{Path: "/Users/koji/Library/Containers/com.example.gone", Size: 1 << 20},
+			{Path: "/Users/koji/Library/Containers/com.example.other", Size: 2 << 20},
+		},
+		Contents: []string{"com.example.gone/Data", "com.example.other/Data"},
+	}
+	v := &doctorView{}
+	rows := v.diskDetail(doctorRenderOpts{width: 100, page: 30}, r)
+	var sel []string
+	for _, row := range rows {
+		if row.selectable {
+			sel = append(sel, row.key)
+		}
+	}
+	if len(sel) != len(r.Items) {
+		t.Fatalf("選べる対象パス行が %d 件 (期待 %d):\n%v", len(sel), len(r.Items), rowTexts(rows))
+	}
+	for _, it := range r.Items {
+		want := "diskitem:" + diskItemKey(r.Entry.ID, it.Path)
+		found := false
+		for _, k := range sel {
+			if k == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%q が選べる行に無い: %v", want, sel)
+		}
+	}
+	// 中身の一覧は残す (見てから選ぶためのゲートなので消さない) が、選べないことを明示する
+	joined := strings.Join(rowTexts(rows), "\n")
+	if !strings.Contains(joined, "com.example.gone/Data") {
+		t.Errorf("中身の一覧が消えている:\n%s", joined)
+	}
+	if !strings.Contains(joined, "この一覧は選べません") {
+		t.Errorf("中身が選べないことを伝えていない:\n%s", joined)
+	}
+}
