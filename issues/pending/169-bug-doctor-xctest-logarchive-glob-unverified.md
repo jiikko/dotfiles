@@ -66,3 +66,46 @@
 **再開の trigger は据え置き**: iOS/macOS アプリ側で `xcodebuild test` を回す作業が入ったとき。
 そのとき `ls -la /private/var/tmp/*.logarchive` を実行して実名を採り、glob を fixture テストで固定する。
 コード側のコメントに同じ手順を書いたので、issue が見つからなくても手順は失われない。
+
+## 2026-09-03 の追加調査 — 静的探索は尽きた + 同型が 1 件見つかった
+
+### 静的には確定できないことが分かった (同じ grep を繰り返さないための記録)
+
+起票時の裏取りは「**推測した名前** (`XCTestTesting`) で Xcode を grep して 0 件」で止まっていた。
+**名前を作っている側**を探したところ、確定手段が構造的に無いことが分かった:
+
+- 生成の入口は `XCTAutomationSupport` の
+  `collectLogArchiveWithStartDate:outputPath:withReply:` (iPhoneOS / WatchOS / AppleTVOS /
+  XROS / WatchSimulator の各 platform に同名で在る)。**`outputPath` は呼び出し側が渡す**ので、
+  生成側のバイナリに名前のリテラルは無い
+- `.logarchive` のリテラルを Xcode 全体 (Platforms / Library/PrivateFrameworks /
+  Contents/Frameworks / SharedFrameworks / usr) の Mach-O から拾うと、当たるのは
+  `logdump` と `LoggingSupportHost` の**拡張子検査**だけ
+  (`An archive must have extension .logarchive` / `File name does not end with .logarchive (%@)`)
+- 走査したのは XCTest 系 68 バイナリ + 上記ディレクトリ配下の全 Mach-O (Xcode 26.3)
+
+→ **実行時に採る以外に確定手段が無い**。再開の trigger は据え置き。
+
+### 同型: `xctest-spindump` も同じ推測を共有していた
+
+`catalog.go` の `xctest-spindump` は `/private/var/tmp/XCTestTesting.*.spindump.txt` を使うが、
+**その `XCTestTesting.` 接頭辞こそが未確認のもの**だった。実測:
+
+```
+grep -rl --binary-files=text 'XCTestTesting' <Xcode>/Contents/Developer/Platforms/MacOSX.platform
+  → 0 件 (Xcode 26.3)
+ls -la /private/var/tmp/ | grep -i 'xctest|logarchive|spindump'
+  → 無し (var/tmp の全体は 5 エントリ)
+```
+
+起票時の裏取りは「spindump 側は `%@-Spindump.txt` / `Hang (Spindump).txt` が XCTHarness に在る」と
+**書式の方**を確認していたが、**接頭辞は確認していなかった**。この issue は logarchive だけを
+対象にしていたので、同じ推測を持つ隣のエントリが視野の外に落ちていた
+(規範: `~/.claude/CLAUDE.md`「直したバグは同じ間違いが別の場所にもある前提で grep する」)。
+
+**対応**: `catalog.go` の `xctest-spindump` にも未実測である旨のコメントを入れた。
+実名を採るときは**2 エントリまとめて**確定する。
+
+### 受け入れ条件の追記
+
+- [ ] 実名を採るとき、`xctest-logarchive` と `xctest-spindump` の**両方**の glob を確定する
