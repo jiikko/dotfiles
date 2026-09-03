@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"strings"
@@ -9,8 +10,41 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"doctor/disk"
+	"doctor/svc"
 	"glogx/widthenv"
 )
+
+// installInertDoctor は doctor の走査口を**何も触らない fake** に差し替える。
+//
+// 🚨 差さないと、キー操作の先で **実マシンに対する走査**が始まる: `D` で開く経路だけでなく、
+// 削除の結果パネルを閉じる (= doctorRescan) のような**間接的な経路**でも起きる。
+// 実測 2026-09-03 (issue 216): glogx のテスト全体で実 `xcrun` / `brew` / `pgrep` を 29 回叩き、
+// しかも `t.Cleanup(m.cancel)` は join しないので goroutine が次のテストへ跨いでいた
+// (issue 214 のデータ競合はその跨ぎが踏んだ 1 個)。
+//
+// カタログを空にするのが要点: エントリが 0 件なら走査は即座に終わり、Run も呼ばれない。
+// doctor 自体を検査するテストは `doctorTestView` を使うか、この後で seam を上書きする。
+func installInertDoctor(t *testing.T, v *doctorView) {
+	t.Helper()
+	home := t.TempDir()
+	inert := func(_ context.Context, name string, _ ...string) (string, string, int, error) {
+		if name == "launchctl" {
+			return "PID\tStatus\tLabel\n", "", 0, nil
+		}
+		return "", "", 0, nil
+	}
+	v.diskOpts = func() disk.Options {
+		return disk.Options{
+			Env:      disk.Env{Home: home, TmpDir: home + "/", Getenv: func(string) string { return "" }},
+			Run:      inert,
+			Catalog:  []disk.Entry{}, // 空 = 走査対象なし (nil にすると本物のカタログが使われる)
+			BootTime: func() (time.Time, error) { return time.Now(), nil },
+		}
+	}
+	v.svcOpts = func() svc.Options { return svc.Options{Run: inert} } // Dirs 空 = 走査対象なし
+	v.brewRun = inert
+}
 
 // TestMain はパッケージ全体のキャッシュ置き場を一時ディレクトリへ逃がす。
 //
@@ -54,7 +88,13 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 	// 大きくするテストが誤ってフレームを踏まないよう明示 OFF を決定的にする。
 	m := newBrowseModel(commits, statuses, toFetch, Repo{Owner: "o", Name: "r"}, true,
 		&Options{NoFrame: true}, false, 80, 10)
-	t.Cleanup(m.cancel)
+	installInertDoctor(t, &m.doctorOv)
+	t.Cleanup(func() {
+		m.cancel()
+		// ⚠️ cancel は**子の死を待たない** (doctorView.stop() のコメントが正本。issue 211)。
+		// join しないと走査 goroutine が次のテストへ跨ぎ、package 変数を踏む (issue 214 / 216)
+		waitDoctorCleanup()
+	})
 	// 🚨 開閉の演出はテストでは切る (zoom.go)。View の期待値が「中央から開く途中の姿」に
 	// なると全テストが読めなくなるため。演出そのものは zoom_test.go が直接検査する。
 	m.zoom.off = true
