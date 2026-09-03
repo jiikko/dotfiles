@@ -1,5 +1,61 @@
 # 148 feat: glogx doctor — 環境の健全性診断 (ディスク占有 / サービス)
 
+## 現状 (2026-09-03 時点。ここを最初に読む)
+
+**段階 ①②③ は実装済み・稼働中。④ (削除) は未着手**で、この issue に残っている本題は ④ だけ。
+2026-09-02〜03 に red team (issue 163) 由来のバグ修正が 19 件入り、**構成と不変条件が
+当初の仕様から動いた**。以下は「今のコードはこうなっている」の要約で、
+以降の章 (1〜6) は**設計時の記録**として残してある (当時の判断理由が要るときに読む)。
+
+### いまの配置
+
+```
+src/doctor/                    ← 1 module (当初は src/svcdoctor と src/diskdoctor の 2 module だった)
+  disk/       catalog.go paths.go size.go guard.go scan.go report.go run.go doc.go
+  svc/        plist.go launchctl.go brew.go scan.go report.go restore.go doc.go
+  brewledger/ ← disk の brew-orphan-state と svc の台帳判定が引く共有パッケージ
+  cachedir/   ← $XDG_CACHE_HOME/glog の解決 (glogx 本体とも共有)
+  runner/     ← 外部コマンドの実行口 (stdout / stderr / exit code を分離)
+  exitcode/   ← 2 CLI で共通の終了コード語彙 (issue 177)
+  cmd/diskdoctor/  cmd/svcdoctor/    ← CLI 本体 (main.go + exit.go)
+src/glogx/
+  doctor_view.go doctor_cache.go doctor_brew.go   ← D の画面・キャッシュ・トースト
+```
+
+使い方・終了コードの正本は **`src/doctor/README.md`** (issue 181 で新設)。
+
+### 当初の仕様から変わった不変条件 (④ を実装する前に必ず読む)
+
+| 変わったこと | 出典 | 影響 |
+|---|---|---|
+| **終了コードの語彙を 2 CLI で統一**。`0` 診断できた+候補なし / `1` 候補あり / `2` 診断できず (`1` より優先) / `3` 実行環境・出力の失敗。**`-json` でも同じ判定を通す** | 177 | 6 章の「exit 0/1/2」の記述は古い。正本は `src/doctor/README.md` と `cmd/*/exit.go` |
+| **snapshot / キャッシュから復元した結果に信頼境界を置いた**。未知 status / 負サイズ / 未来の `MeasuredAt` / カタログ外 ID を落とし、自由文の制御文字を切る。svc の `Commands` は保存値を使わず**再生成**する | 178 / 193 | ④ の削除対象は「今回の走査で `validateTarget` を通った Result」だけ (下記の 🚨 節が正本) |
+| **「走査していない」印が 2 つある**。`Reused` = 重いエントリの計測値を引き継いだ / `FromSnapshot` = 画面ごと snapshot から復元した | 178 | ④ は**どちらの印でも再スキャンを通す** |
+| **キャッシュはエントリ単位でマージする**。partial (中断) は前回の記録に重ねる。再利用値はトーストの材料にしない | 172 / 173 | 「合計が前回より小さければ書かない」旧ガードは撤去済み |
+| **時計の巻き戻しを弾く**。`age < 0` を鮮度判定・cooldown・carry-forward の全経路で扱う (走査テストが追随を強制) | 174 / 194 / 201 | 未来の時刻で永久沈黙・永久 fresh にならない |
+| **`brew --prefix` を実測で解決**する (`/opt/homebrew` のハードコードをやめた) | 176 | Intel Mac で候補 0 件に化けない |
+| **`expand` の false green を塞いだ**。glob メタ文字入り HOME / 相対パスで無音の 0 件にしない | 175 | 「診断できず」と「候補なし」が区別できる |
+| **提示コマンドのインジェクションを塞いだ**。`shellQuote` を allowlist 判定へ、`launchctl bootout` の Label も引用する | 178 | **snapshot とは無関係の本番バグだった** |
+| **「診断できず」の行を選べる**。`y` / `Y` / `Enter` で中身を取り出せる | 180 | |
+| **hint が幅に収まる**。`fitHintItems` で入らない項目を落とし、抜ける手段を最優先で残す | 201 | doctor の hint は固定文字列ではなくなった |
+
+### red team (issue 163) 由来の issue の決着
+
+| 状態 | issue |
+|---|---|
+| **done (19 件)** | 167 168 170 171 172 173 174 175 176 177 178 179 180 181 182 191 192 193 194 |
+| **pending (1 件)** | 169 (`xctest-logarchive` の glob が未実測。実機で `xcodebuild test` を回す機会待ち) |
+| **open (1 件)** | 183 (`Y` のコピー文に裏取りコマンドが無い。disk 側が未実装) |
+
+163 自身は **体 3 (並行・中断・状態機械) が未走行**、P2 の反証レビューが未実施で open のまま。
+
+### ④ を始めるときの入口
+
+1. この節の「変わった不変条件」表
+2. 下記 🚨 **「④ (削除) の不変条件」** 節 (削除対象は今回の走査を通った Result だけ)
+3. 7 章の受け入れ条件のうち削除系 (未チェックのまま残っている)
+4. `src/doctor/README.md` (2 CLI の使い分けと終了コード)
+
 ## 背景
 
 2026-09-01、手動でディスク棚卸しをして **41GB** を解放した。問題は「解放できたこと」ではなく
@@ -1126,7 +1182,7 @@ PPID=1 のプロセス:                 695
 ## 6. 構成案
 
 ```
-src/diskdoctor/        ← 診断ロジック本体 (glogx の TUI に依存しない)
+src/doctor/disk/       ← 診断ロジック本体 (glogx の TUI に依存しない)
   catalog.go           allowlist 定義 (Tier / guard / risk / advice / deleteVia)
   scan.go              走査 (並行・上限付き・エラーを握り潰さない)
   guard.go             パス安全性・プロセス判定・boottime 判定
@@ -1135,7 +1191,7 @@ src/diskdoctor/        ← 診断ロジック本体 (glogx の TUI に依存し�
                        stdout/stderr/rc を分離して扱う。propose は実行しない
   cache.go             cacheBaseDir()/doctor-disk.json (= ~/.cache/glog/…。glogx ではない)
 
-src/svcdoctor/         ← サービス診断 (launchd)。削除機能を持たない
+src/doctor/svc/        ← サービス診断 (launchd)。削除機能を持たない
   scan.go              plist 走査 (~/Library/LaunchAgents 等に限定) + launchctl 突合
   launchctl.go         launchctl の exec とパース (負値 / `-` を除外するのはここ)
   btm.go               sfltool dumpbtm 突合 (任意。パース失敗は無視して続行)
@@ -1237,7 +1293,7 @@ Homebrew = 判定は brew 側)。
   指すので、④ で削除経路を作るときは**同じ画面に「実行する行」と「提示だけの行」を並べる形**になる。
   区別が付く表示 (⛔ 手動 / [d] 実行可) を ④ の要件に足す
 - キャッシュしない (軽い。開くたび実行)。起動時トーストの対象にもしない
-- 置き場: 実装は `src/svcdoctor` に足さない (あちらは launchd 専用で「削除経路が無い」を package の
+- 置き場: 実装は `src/doctor/svc` に足さない (あちらは launchd 専用で「削除経路が無い」を package の
   責務にしている)。`src/glogx/doctor_brew.go` で glogx 側に直接持つ (Runner だけ共有) か、
   `src/brewdoctor` を切るかは ③ で判断。転記だけなので glogx 直下で足りる見込み
 
@@ -1253,12 +1309,13 @@ Homebrew = 判定は brew 側)。
 
 ## 進捗
 
-### 段階 1: `src/svcdoctor` + `bin/svcdoctor` (2026-09-02 実装)
+### 段階 1: サービス診断 + `bin/svcdoctor` (2026-09-02 実装。当時は `src/svcdoctor` 単独 module)
 
 段階分割 (ユーザー判断 2026-09-02): ① svcdoctor 単体 → ② diskdoctor の走査 + dry-run 一覧 →
 ③ glogx の doctor 画面 + キャッシュ + トースト → ④ 削除経路。この節は ① の記録。
 
-- 実装: `src/svcdoctor/` (plist.go / launchctl.go / brew.go / scan.go / report.go / main.go)。
+- 実装: 当時 `src/svcdoctor/` (plist.go / launchctl.go / brew.go / scan.go / report.go / main.go)。
+  **現在は `src/doctor/svc/` + `src/doctor/cmd/svcdoctor/`** (下の「共有 module への切り出し」で統合)。
   判定 A (実行ファイル不在) / B (正の exit code + 再起動条件) / C (brew 台帳に無い) を実装。
   plist は `howett.net/plist` で XML / binary の両方を読む
 - **BTM (`sfltool dumpbtm`) は載せていない** (未決事項どおり形式が非公開で、消し方も提示できない。
@@ -1274,9 +1331,10 @@ Homebrew = 判定は brew 側)。
   ③ で doctor に接続する前に svcdoctor 込みで通す**
 - `src/README.md` の「`GO_PROJECT_DIRS` に登録」は自動発見 (issue 080) に変わっていたので同時に直した
 
-### 段階 2: `src/diskdoctor` + `bin/diskdoctor` (2026-09-02 実装。走査 + dry-run 一覧のみ、削除なし)
+### 段階 2: ディスク診断 + `bin/diskdoctor` (2026-09-02 実装。走査 + dry-run 一覧のみ、削除なし。当時は `src/diskdoctor` 単独 module)
 
-- 実装: `src/diskdoctor/` (catalog.go / paths.go / size.go / guard.go / scan.go / report.go / main.go)。
+- 実装: 当時 `src/diskdoctor/` (catalog.go / paths.go / size.go / guard.go / scan.go / report.go / main.go)。
+  **現在は `src/doctor/disk/` + `src/doctor/cmd/diskdoctor/`**。
   `Scan(ctx, Options) Report` → `Format` / `-json` / `-progress` (完了順に stderr へ)。svcdoctor と同じ
   Runner 契約 (stdout / stderr / rc 分離)。削除の経路は無い (`rm` / `trash` / `cli:` は表示だけ)
 - カタログは 1 章の写し (Tier 1〜3、23 エントリ)。**変えた点**: `brew-orphan-state` は `/opt/homebrew/var/*`
@@ -1537,7 +1595,7 @@ quit / spinner の経路 / struct コピー / validateTarget の各種 (HOME 直
 
 
 - 型を ① と揃える: `Options` (Dirs / Run / Stat を注入) → `Scan(ctx, opt) Report` →
-  `Format(rep)` / `-json`。fake runner は `src/svcdoctor/scan_test.go` の `fakeRunner` の形
+  `Format(rep)` / `-json`。fake runner は `src/doctor/svc/scan_test.go` の `fakeRunner` の形
   (argv を記録して「読み取り系しか呼んでいない」を実行経路で assert する) を写す
 - 着手前に決めること (未決事項): **`cacheBaseDir()` の置き場** (glogx の unexported。共有 package へ
   切り出すか、diskdoctor に同一仕様の exported helper を持たせるか、呼び出し側から注入するか)。
@@ -1549,19 +1607,22 @@ quit / spinner の経路 / struct コピー / validateTarget の各種 (HOME 直
 - ②〜④ を通して: 段階ごとに `## 進捗` へ節を足し、受け入れ条件の該当項目を `[x]` にする。
   done へ送るのは全段階が閉じてから
 - 段階 ① の残り (③ で回収): BTM の扱い判断 / svcdoctor 込みの敵対的レビュー (①壊す ②素通り ③並行・中断)。
-  ① のテストは `make -C src/svcdoctor test`、実機確認は `bin/svcdoctor` (exit 0/1/2 の意味は上)
+  ① のテストは `make -C src/doctor test`、実機確認は `bin/svcdoctor` (終了コードは下の「現状」節)
 
 </details>
 
 ## 7. 受け入れ条件
 
-**診断・削除ロジック (`src/diskdoctor` / `bin/diskdoctor`)**
+**診断・削除ロジック (`src/doctor/disk` / `bin/diskdoctor`)**
 
 - [x] `bin/diskdoctor` が allowlist に基づく候補一覧を**占有量の降順**で出せる (dry-run 既定)
 - [x] `coresimulator-orphan` が `simctl` と照合し、現存 UUID を候補にしない
 - [x] `chrome-tmp` が Chrome 起動中は候補にならない (プロセス判定は**完全一致**)
-- [ ] 空変数 / ルート / シンボリックリンク / 0 件 の各ガードにテストがあり、
+- [x] 空変数 / ルート / シンボリックリンク / 0 件 の各ガードにテストがあり、
       **ガードを外す変異で red になる**ことを確認済み
+      (`disk/scan_test.go`: `TestValidateTargetGuards` / `TestExpandEmptyVarFails` /
+      `TestSymlinkTargetIsNotDescended` / `TestExpandRelativeFailsClosed` /
+      `TestExpandLiteralizesGlobMetaInEnv`。最後の 2 本は issue 175 で追加)
 - [x] **表示サイズが `du` と一致する** — `Stat_t.Blocks` ベース、`(dev, ino)` で dedupe。
       ハードリンク・APFS clone・sparse file を含むツリーで `du -sk` と突き合わせて検証
 - [x] **`filepath.EvalSymlinks` を正規化に使っていない** (リンク先を消す経路が生まれない)
@@ -1571,7 +1632,10 @@ quit / spinner の経路 / struct コピー / validateTarget の各種 (HOME 直
 - [ ] `risk: confirm` は `rm` ではなく**ゴミ箱へ移動**され、ユーザーが復元できる
 - [x] 「mtime が起動時刻より古い」を**単独の削除ゲートにしていない**
       (孤児照合 / プロセス不在 / `lsof` のいずれかを併用)
-- [ ] キャッシュ・履歴の置き場が **`cacheBaseDir()` 経由** (パスをハードコードしていない)
+- [x] キャッシュ・履歴の置き場が **`cachedir.Base()` 経由** (パスをハードコードしていない)。
+      8 章の未決だった「`cacheBaseDir()` は `package main` の unexported」は
+      **`doctor/cachedir` パッケージへ切り出して解決**。glogx 側の `cacheBaseDir()` は
+      `cachedir.Base()` への 1 行 alias になっている
 - [x] `simctl` 失敗・`boottime` パース失敗が **fail-closed** (候補 0 件) になる
 - [x] 走査失敗が「候補 0 件」に畳まれず、**「走査できず」として区別**される
 - [ ] 削除時にインベントリが `doctor-history/` に残る
@@ -1595,7 +1659,7 @@ quit / spinner の経路 / struct コピー / validateTarget の各種 (HOME 直
 - [x] 除外リスト (自作アプリの sandbox コンテナ / `~/.cache/dein` /
       `~/Library/Application Support/Google`) が**テストで固定**されている
 
-**サービス診断 (`src/svcdoctor` / `bin/svcdoctor`)**
+**サービス診断 (`src/doctor/svc` / `bin/svcdoctor`)**
 
 - [x] `~/Library/LaunchAgents` / `/Library/LaunchAgents` / `/Library/LaunchDaemons` のみを
       走査し、**`/System/Library/**` を候補にしない**。
@@ -1714,12 +1778,9 @@ quit / spinner の経路 / struct コピー / validateTarget の各種 (HOME 直
   起こすなら前提は「外部に正本が無いので**自分で記録を作る**」ことで、
   glogx が起動したプロセスを追跡する常設の仕組みが要る。
   **`5` 章の実測 (629 件の誤検出 / `pane_pid` の限界) をそのまま前提として引き継ぐこと**
-- ⚠️ **`cacheBaseDir()` は `package main` の unexported 関数** (`src/glogx/cache.go`)。
-  codex 反証で判明した**ディスク側の受け入れ条件の実装不能点**:
-  `src/diskdoctor` を「TUI 非依存の別パッケージ」にすると、**この関数を呼べない**。
-  → 共有パッケージへ切り出す / 同一仕様の exported helper を diskdoctor 側に持つ /
-  パスを呼び出し側から注入する のいずれかを選ぶ必要がある。
-  **「`cacheBaseDir()` 経由」という受け入れ条件は、この決着後に文言を直すこと**
+- ~~`cacheBaseDir()` が `package main` の unexported で、別パッケージから呼べない~~
+  → **解決 (2026-09-02)**。`doctor/cachedir` パッケージへ切り出し、glogx 側は
+  `cacheBaseDir()` を `cachedir.Base()` の 1 行 alias にした。受け入れ条件の文言も直した
 
 ## 関連
 
