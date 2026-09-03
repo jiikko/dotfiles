@@ -437,8 +437,37 @@ func planDelete(ctx context.Context, t Result, opt DeleteOptions) EntryOutcome {
 		out.Items = append(out.Items, planItem(method, argv, it, opt))
 		out.BeforeSize += it.Size // 申告値ではなく測り直した値
 	}
+	// 🚨 **触る対象が 1 件も無いなら Planned にしない** (issue 231)。rm / trash / cli の ref 版は
+	// exec が Item 単位で非 Planned を弾くので実害が出ないが、cli の非 ref 版
+	// (`go clean -modcache` / `brew cleanup`) は Item を 1 つも見ずにコマンドを 1 回実行する。
+	// その後 verifyEntry は touched == 0 を見て「触れる対象がありませんでした」と書くので、
+	// **実行したのに「何も起きていない」と記録が断言する**形になっていた。
+	// 前提は 4 経路で共通なので、判定を execCLI に足さずここを出典にする。
+	planned, failed := 0, 0
+	for _, it := range out.Items {
+		switch it.Outcome {
+		case OutcomePlanned:
+			planned++
+		case OutcomeFailed:
+			failed++
+		case OutcomeDeleted, OutcomeTrashed, OutcomeIncomplete, OutcomeSkipped, OutcomeProposed:
+		}
+	}
+	if planned == 0 {
+		out.Outcome, out.Reason = untouchedOutcome(failed)
+		return out
+	}
 	out.Outcome = OutcomePlanned
 	return out
+}
+
+// untouchedOutcome は「触った Item が 1 件も無い」ときの結末語。plan の時点 (issue 231) と
+// exec 後の verify が**同じ語**を使うための出典 (2 箇所で別の語を作らない)。
+func untouchedOutcome(failed int) (Outcome, string) {
+	if failed > 0 {
+		return OutcomeFailed, fmt.Sprintf("%d 件を削除できませんでした", failed)
+	}
+	return OutcomeSkipped, "触れる対象がありませんでした"
 }
 
 // itemKey は「同じ対象か」を突き合わせる鍵。cli: で識別子を持つもの (simctl のランタイム) は
@@ -748,8 +777,22 @@ func verifyEntry(ctx context.Context, out *EntryOutcome, opt DeleteOptions) {
 		out.Reason = "削除後の再走査が途中で終わりました (消えたか分かりません)"
 		return
 	}
-	out.AfterSize = after.Size
+	// 🚨 **数える範囲を「触ろうとした対象」に閉じる** (issue 232)。after はエントリ全体の
+	// 再走査なので、部分選択 (Enter で開いて Space でディレクトリを選ぶ正規の経路) では
+	// 残した兄弟がそのまま after に載る。BeforeSize は渡された Item のぶんしか足していないので、
+	// 閉じないと引き算の両辺でスコープが違い、①兄弟が残っているだけで
+	// 「実行したのに残っている」= incomplete、②Freed = BeforeSize - AfterSize が
+	// 兄弟のほうが大きいと負に落ちて 0、小さいと「選んだ分 - 兄弟」という別物になる。
+	// エントリ全体を渡した場合は集合が一致するので、値は今までと変わらない。
+	touchedKeys := make(map[string]struct{}, len(out.Items))
+	for _, it := range out.Items {
+		touchedKeys[itemKey(out.Method, Item{Path: it.Path, Ref: it.Ref})] = struct{}{}
+	}
 	for _, it := range after.Items {
+		if _, ok := touchedKeys[itemKey(out.Method, it)]; !ok {
+			continue // 触っていない兄弟。自分の成否の材料にしない
+		}
+		out.AfterSize += it.Size
 		out.Remaining = append(out.Remaining, it.Path)
 	}
 
@@ -784,22 +827,22 @@ func verifyEntry(ctx context.Context, out *EntryOutcome, opt DeleteOptions) {
 		out.Freed = freed
 	}
 	switch {
-	case touched == 0 && failed > 0:
-		// 1 件も触れていない = 何も起きていない
-		out.Outcome = OutcomeFailed
-		out.Reason = fmt.Sprintf("%d 件を削除できませんでした", failed)
 	case touched == 0:
-		out.Outcome = OutcomeSkipped
-		if out.Reason == "" {
-			out.Reason = "触れる対象がありませんでした"
+		// 1 件も触れていない = 何も起きていない。語は untouchedOutcome が出典 (plan 側と揃える)
+		outcome, reason := untouchedOutcome(failed)
+		out.Outcome = outcome
+		if failed > 0 || out.Reason == "" {
+			out.Reason = reason
 		}
-	case partial > 0 || failed > 0 || len(after.Items) > 0:
+	case partial > 0 || failed > 0 || len(out.Remaining) > 0:
 		// 第 3 の状態: 実行したのに残っている (simctl の非同期削除 / 部分削除がこの形)。
-		// 一部でも消えているので「失敗」に畳まない (再試行の可否が変わる)
+		// 一部でも消えているので「失敗」に畳まない (再試行の可否が変わる)。
+		// 🚨 残存は out.Remaining (触った対象に閉じた集合) で数える。after.Items 全部で数えると
+		// 部分選択のたびに incomplete になる (issue 232)
 		out.Outcome = OutcomeIncomplete
-		out.Reason = fmt.Sprintf("削除を要求しましたが %d 件が残っています (時間をおいて再スキャンしてください)", len(after.Items))
+		out.Reason = fmt.Sprintf("削除を要求しましたが %d 件が残っています (時間をおいて再スキャンしてください)", len(out.Remaining))
 		if failed+partial > 0 {
-			out.Reason = fmt.Sprintf("%d 件が完了しませんでした。%d 件が残っています (時間をおいて再スキャンしてください)", failed+partial, len(after.Items))
+			out.Reason = fmt.Sprintf("%d 件が完了しませんでした。%d 件が残っています (時間をおいて再スキャンしてください)", failed+partial, len(out.Remaining))
 		}
 	case trashed > 0:
 		out.Outcome = OutcomeTrashed

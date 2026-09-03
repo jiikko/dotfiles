@@ -1236,3 +1236,91 @@ func TestHistoryDirRejectsSymlinkInPath(t *testing.T) {
 		t.Error("経路の途中が symlink なのに記録の置き場として受け入れた")
 	}
 }
+
+// 対象が全部消えた後は、cli の非 ref 版でもコマンドを実行しない (issue 231)。
+//
+// 🚨 assert は **fake が呼ばれた回数**で行う。結末語 (Skipped) は修正前も同じなので、
+// 語だけを見ると修正の有無で結果が変わらず、何も守らないテストになる。
+func TestDeleteCLISkipsCommandWhenNothingToTouch(t *testing.T) {
+	f := newDeleteFixture(t, cliEntry, 64)
+	f.run.resp = map[string]cmdResp{"faketool purge": {rc: 0}}
+	scanned := f.scan(t)
+	// 確認画面を出してから y を押すまでの間に、他のプロセスが消した状況を作る
+	if err := os.RemoveAll(f.target); err != nil { // destructive-op: allow fixture 内。sandboxAllow 済みの HOME 配下
+		t.Fatal(err)
+	}
+	rep := f.delete(t, scanned)
+	for _, line := range f.run.callLines() {
+		if line == "faketool purge" {
+			t.Fatalf("触る対象が 1 件も無いのにコマンドを実行した: %v", f.run.callLines())
+		}
+	}
+	if got := rep.Entries[0].Outcome; got != OutcomeSkipped {
+		t.Errorf("outcome = %s (skipped であるべき)", got)
+	}
+}
+
+// ディレクトリ単位で一部だけ選んで消したとき、解放量と結末は**選んだ対象だけ**で数える
+// (issue 232)。残した兄弟がエントリ全体の再走査に載るせいで incomplete になり、
+// Freed = BeforeSize - AfterSize が別物になっていた。
+func TestDeletePartialSelectionCountsOnlySelected(t *testing.T) {
+	// 🚨 兄弟が選んだ側より**大きい場合と小さい場合の両方**を通す。片方だけだと
+	// 引き算の符号の効果 (負に落ちて 0 / 「選んだ分 - 兄弟」) のどちらかが見えない
+	for _, tc := range []struct {
+		name   string
+		keepKB int
+	}{
+		{"兄弟のほうが大きい", 512},
+		{"兄弟のほうが小さい", 16},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testEnv(t)
+			sandboxAllow(t, env.Home)
+			base := filepath.Join(env.Home, "Library", "Caches", "multi")
+			mkfile(t, filepath.Join(base, "gone", "blob"), 128)
+			mkfile(t, filepath.Join(base, "keep", "blob"), tc.keepKB)
+			e := Entry{ID: "multi", Label: "複数対象", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
+				Recover: "再生成されます", Paths: []string{"~/Library/Caches/multi/*"}}
+			run := &deleteRunner{}
+			opt := DeleteOptions{Env: env, Run: run.run, BootTime: okBoot, Catalog: []Entry{e},
+				HistoryDir: sandboxTempDir(t, "history"), TrashDir: filepath.Join(env.Home, ".Trash"), Now: time.Now}
+
+			scanned := Scan(context.Background(), Options{Env: env, Run: run.run, Catalog: []Entry{e}, BootTime: okBoot}).Results[0]
+			if scanned.Status != StatusOK || len(scanned.Items) != 2 {
+				t.Fatalf("前提が崩れている: status=%s items=%d", scanned.Status, len(scanned.Items))
+			}
+			// 「Enter で開いて Space で 1 本だけ選んだ」形 = Items を部分集合にして渡す
+			var picked Item
+			for _, it := range scanned.Items {
+				if filepath.Base(it.Path) == "gone" {
+					picked = it
+				}
+			}
+			if picked.Path == "" {
+				t.Fatalf("選ぶ対象が見つからない: %+v", scanned.Items)
+			}
+			partial := scanned
+			partial.Items = []Item{picked}
+
+			rep, err := Delete(context.Background(), []Result{partial}, opt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := rep.Entries[0]
+			if got.Outcome != OutcomeDeleted {
+				t.Errorf("outcome = %s reason=%q (deleted であるべき。残した兄弟を未完了の根拠にしている)",
+					got.Outcome, got.Reason)
+			}
+			if got.Freed != picked.Size {
+				t.Errorf("freed = %d, want %d (選んだ対象のサイズ。before=%d after=%d)",
+					got.Freed, picked.Size, got.BeforeSize, got.AfterSize)
+			}
+			if len(got.Remaining) != 0 {
+				t.Errorf("触っていない兄弟を残存に数えている: %v", got.Remaining)
+			}
+			if !exists(filepath.Join(base, "keep")) {
+				t.Error("選んでいない兄弟を消した")
+			}
+		})
+	}
+}
