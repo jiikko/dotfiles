@@ -172,7 +172,7 @@ func TestSaveCacheCleansTempOnRenameFailure(t *testing.T) {
 	if err := SaveCache(path, map[string]CIState{"sha": StateSuccess}, time.Now()); err == nil {
 		t.Fatal("rename が失敗するはずの構成でエラーが返らない")
 	}
-	leftovers, err := filepath.Glob(filepath.Join(dir, "*.tmp.*"))
+	leftovers, err := filepath.Glob(filepath.Join(dir, filepath.Base(path)+".tmp.*"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -94,7 +94,7 @@ confused deputy にして TCC 保護下のファイルを truncate する）。*
 
 ## 受け入れ条件
 
-- [x] `saveDoctorDiskCache` / `saveDoctorSnapshot` が `writeAtomic` 経由になる（tmp prefix を引数化。2026-09-04）
+- [x] `saveDoctorDiskCache` / `saveDoctorSnapshot` が `writeAtomic` 経由になる（2026-09-04。**tmp 名は引数化せず writeAtomic 内で導出**。理由は下記 P1）
 - [x] **write 失敗**で tmp が残らない回帰テストを doctor 側に足した (2026-09-04)。rename 失敗は
       `cache_test.go:164` と同じ手（rename 先をディレクトリにする）で作れるが、**write 失敗の再現には
       別の手が要る**（RAM ディスク / 書き込みを差せる seam）。難しければ
@@ -214,6 +214,59 @@ confused deputy にして TCC 保護下のファイルを truncate する）。*
 
 ### 副産物 (issue の範囲外)
 
-全経路の temp 名が `<base>.tmp.<乱数>` に揃ったので、**`~/.cache/glog` の残骸を掃く道具は
-`*.tmp.*` の 1 glob で書ける**ようになった。doctor は元々 `~/.cache` を掃除する画面なので、
-そちらへ回収するのが上位の解かもしれない (敵対レビューのぼやき)。
+全経路の temp 名が `<base>.tmp.<乱数>` に揃ったので、残骸を掃く道具が書きやすくなった。
+🚨 **ただし「1 glob で掃ける」は誤りだった** (実装レビューで訂正):
+
+- `writeAtomic` 経由の 5 経路は **再帰の `**/*.tmp.*`** が要る。CI キャッシュは
+  `<base>/github.com/<owner>/<name>.json` なので、top level の `*.tmp.*` では**1 件も拾えない**
+- `doctor-history` の temp は `.<乱数>.tmp` (`src/doctor/disk/delete.go`) で命名が別。
+  `parallel-each` も別。どちらも別の glob が要る
+
+doctor は元々 `~/.cache` を掃除する画面なので、そちらへ回収するのが上位の解かもしれない。
+
+## 実装フェーズの敵対的レビュー (opus, 2026-09-04) — P1 を 1 件採用
+
+**最初の実装 (pattern を引数にする形) に P1 が出たので直した。**
+
+### P1: `pattern` 引数が knob になり、既存テストが呼び出し側 1 行で vacuous になる
+
+引数化すると「production が作る名前」と「テストが glob する名前」が**別々のリテラル**になる。
+レビューが作った変異 (M-G) を**こちらでも再現した**:
+
+- `cache.go` の呼び出しの pattern を `".glog-cache-*"` に戻す (掃除は健全) → 全テスト PASS
+- **上に加えて rename 分岐の `os.Remove` を削除** (= rename 失敗で temp が実際に残る)
+  → **スイート全体が PASS**。issue 219 が塞いだはずの穴と同型のリークが緑で通る
+
+引数化の目的は「残骸の出所が読める」ことで、**`writeAtomic` 内で導出しても同じだけ満たせる**。
+引数は「コンパイル時の不変条件」を「何も強制しない 5 箇所の慣習」に格下げしていた。
+
+対応: **`pattern` 引数を削除**し `writeAtomic` 内で `filepath.Base(path)+".tmp.*"` を導出。
+`cache_test.go` の glob も `filepath.Base(path)+".tmp.*"` と **path から導出**する形にして、
+リテラルの二重管理をやめた。修正後の変異 (当て直した実測):
+
+| 変異 | 新テスト (write 分岐) | 既存 (rename 分岐) |
+|---|---|---|
+| write 分岐の `os.Remove` を外す | **FAIL** (2 ケース) | PASS |
+| rename 分岐の `os.Remove` を外す | PASS | **FAIL** |
+| 名前の導出を旧名 `.glog-cache-*` に変える | **FAIL** (2 ケース) | PASS |
+
+呼び出し側に knob が無くなったので M-G は**構造的に作れない**。
+
+### 満たせていない主張 (実装レビューの指摘で追記)
+
+- 🚨 **Close 分岐の掃除は変異検証の射程外**。`RLIMIT_FSIZE` では Close 失敗を作れないため、
+  `cache.go` の Close 分岐の `os.Remove` を外しても**どのテストも赤くならない** (実測)。
+  「3 分岐すべて掃除する」は実装の事実だが、**pin されているのは write と rename の 2 分岐だけ**。
+  `writeAtomic` の doc にも書いた
+- **`RLIMIT_FSIZE=0` は子プロセスに継承され、非 Go の子は SIGXFSZ で即死する** (機構は実測:
+  `/bin/sh -c 'echo > file'` が `signal: filesize limit exceeded`)。この package は
+  `runner.Exec` 経由で `du` / `brew` / `launchctl` を起こし、issue 216 の「テストが実走査の
+  goroutine を漏らす」と組み合わさると誤判定しうる。**発生は再現できなかった**
+  (`-shuffle` 3 seed / coverage 付きフル走で EXIT=0。窓が JSON 1 個の Write 1 回なので確率が極小)。
+  doc に「窓の中でプロセスを起こさないこと」を明記した
+
+### レビューが崩せなかった点
+
+5 経路の命名統一 / `RLIMIT_FSIZE` 手法と production seam 不要 / 変異 A・B・C の分岐名指し /
+race・lint・gofmt / glob のパスが実際の書き込み先であること / `filepath.Base` の実用上の安全性 /
+旧 `.glog-cache-*` 残骸は 0 件で失うものが無いこと。**新テストが vacuous でないことも独立に再現された**。

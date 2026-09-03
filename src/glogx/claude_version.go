@@ -141,7 +141,7 @@ func saveClaudeVersionCache(path, latest string, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(path, data, filepath.Base(path)+".tmp.*")
+	return writeAtomic(path, data)
 }
 
 // checkCLIVersionCmd は「latest 照会 (TTL キャッシュ) → インストール済みと比較 → 新しければ
