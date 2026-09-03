@@ -174,6 +174,11 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	v.cursorFellBack = false
 	v.expanded = map[string]bool{}
 	v.selected, v.selectedItems, v.inspected = map[string]bool{}, map[string]bool{}, map[string]bool{}
+	// ⚠️ 世代をまたいで残る状態をここで**まとめて**捨てる。1 つでも残すと前の世代の行・文言・
+	// Cmd が次の画面に混ざる (pendingToast は実際に漏れて、次の再スキャンの理由として
+	// 再表示されていた。敵対レビュー 2026-09-03)
+	v.rows, v.enterDetail, v.pendingCopy, v.pendingToast, v.pendingDeleteCmd = nil, "", "", "", nil
+	v.cursorFellBack = false
 	v.del.reset()
 	v.diskResults, v.diskRep, v.svcRep, v.brew = nil, nil, nil, nil
 	v.startedAt = timeNow()
@@ -371,6 +376,7 @@ const (
 	doctorCopyText  // Y: 選んだ行の解説文をコピー (同上)
 	doctorNothing   // y/Y を押したがコピーするものが無い (browseModel がその旨をトーストにする)
 	doctorToast     // 削除の導線が理由を出したい (pendingToast)
+	doctorCopyLog   // 削除の実行記録をコピー (y。トーストの文言が「解説」ではないので分ける)
 	doctorRunDelete // 削除を開始する (pendingDeleteCmd を browseModel が実行する)
 )
 
@@ -409,8 +415,7 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 		v.close()
 		return doctorClosed
 	case "r":
-		v.stop()
-		return doctorRescan
+		return doctorRescan // 止めるのは start() の先頭 (issue 211)。ここで二重に呼ばない
 	case "j", "down":
 		v.moveCursor(+1)
 	case "k", "up":
@@ -424,8 +429,9 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 			v.moveCursor(-1)
 		}
 	case "g":
+		// cursorFellBack は消さない: tui が handleKey より前に必ず取り出すので、
+		// ここに来た時点で常に false (書いても意味が無く、G 側にも同じ行が無い = 非対称だった)
 		v.cursor, v.cursorKey, v.offset = 0, "", 0
-		v.cursorFellBack = false
 		v.moveCursor(0)
 	case "G":
 		v.cursor = len(v.rows) - 1
@@ -837,7 +843,10 @@ func (v *doctorView) diskDetail(o doctorRenderOpts, r disk.Result) []doctorRow {
 	// 走査できなかった行に削除経路を出さない。消せる候補が確定していないのに
 	// 「削除経路: rm」だけ出ると、消してよいものが見つかったように読める
 	// (CLI の Format は failed のとき理由だけを出す。UI もそれに揃える。issue 182)
-	if r.Status != disk.StatusFailed {
+	// ⚠️ **ok の行にだけ**削除の案内を出す。blocked (今は対象外) にも出していたので、
+	// 「Space で選び d で削除」と案内しておいて Space が拒否する形になっていた
+	// (敵対レビュー 2026-09-03 が実測)
+	if r.Status == disk.StatusOK {
 		out = append(out, doctorRow{text: doctorColor(o.colored, ansiDim,
 			"             削除経路: "+r.Entry.DeleteVia+" (Space で選び d で削除)")})
 	}
@@ -870,12 +879,15 @@ func (v *doctorView) diskItemRows(o doctorRenderOpts, r disk.Result) []doctorRow
 		if v.selectedItems[diskItemKey(r.Entry.ID, it.Path)] {
 			mark = doctorColor(o.colored, ansiBold, "*")
 		}
+		riskMark, _ := doctorRiskMark(r)
 		out = append(out, doctorRow{
 			text:       fmt.Sprintf("        %s%9s  %s", mark, disk.HumanSize(it.Size), it.Path),
 			selectable: true,
 			key:        "diskitem:" + diskItemKey(r.Entry.ID, it.Path),
 			copyPath:   it.Path,
-			copyText:   diskCopyText(r, ""),
+			// ⚠️ エントリ全体の解説を使い回さない。この行が指すのは**この 1 本**なので、
+			// 合計や他のパスを混ぜると「何を聞かれているか」がずれる
+			copyText: diskItemCopyText(r, it, riskMark),
 		})
 	}
 	return out
@@ -1094,6 +1106,21 @@ func diskVerifyCommands(r disk.Result) []string {
 // maxVerifyCommands はコピー文に載せる裏取りコマンドの上限 (Items が多いエントリで
 // コピー文が読めない長さになるのを防ぐ)。
 const maxVerifyCommands = 5
+
+// diskItemCopyText は**ディレクトリ 1 本**についての解説文 (Y でコピー)。エントリ全体の
+// diskCopyText を使い回すと、合計と他のパスが混ざって「何を聞かれているか」がずれる。
+func diskItemCopyText(r disk.Result, it disk.Item, mark string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "glogx doctor (ディスク診断) の候補のうち 1 件: %s [%s]\n", r.Entry.Label, r.Entry.ID)
+	fmt.Fprintf(&b, "判定: %s / 削除経路: %s\n", mark, r.Entry.DeleteVia)
+	fmt.Fprintf(&b, "復元方法: %s\n", r.Entry.Recover)
+	fmt.Fprintf(&b, "対象: %s  %s", disk.HumanSize(it.Size), it.Path)
+	if !it.Mtime.IsZero() {
+		fmt.Fprintf(&b, "  (最終更新 %s)", it.Mtime.Format("2006-01-02"))
+	}
+	b.WriteString("\n\nこのディレクトリは消してよいですか? 消すと何が起きますか?\n")
+	return b.String()
+}
 
 func diskCopyText(r disk.Result, mark string) string {
 	var b strings.Builder

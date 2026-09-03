@@ -1411,7 +1411,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		// 描画中に選択行が消えて寄せていたら、**キーを飲まずに**知らせる (issue 210)。
 		// restoreCursor は View から呼ばれるので、通知経路はここしか無い
 		if m.doctorOv.takeCursorFellBack() {
-			m.toast.show(m.doctorOv.pendingToast, false)
+			m.toast.show(m.doctorOv.takeToast(), false)
 		}
 		switch m.doctorOv.handleKey(key, m.pageSize()) {
 		case doctorClosed:
@@ -1428,6 +1428,8 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 			m.copyWithToast(m.doctorOv.copyPayload(), "パスをコピーしました")
 		case doctorCopyText:
 			m.copyWithToast(m.doctorOv.copyPayload(), "解説をコピーしました (LLM にそのまま貼れます)")
+		case doctorCopyLog:
+			m.copyWithToast(m.doctorOv.copyPayload(), "実行の記録をコピーしました (LLM にそのまま貼れます)")
 		case doctorNothing:
 			m.toast.show("この行にはコピーするものがありません", false)
 		case doctorToast:
@@ -2225,7 +2227,7 @@ func (m *browseModel) restartPromptVisible() bool {
 	// ⚠️ doctor の削除中も出さない。このダイアログの r は cancelAll で走行中の処理を殺すし、
 	// 出ている間はどのキーもダイアログに吸われて doctor に届かない (削除の確認が裏に残る)。
 	// actModal を除外しているのと同じ理由 (敵対レビュー 2026-09-03 が実測)
-	return m.restartPending && !m.actModal.active() && (!m.doctorOv.visible() || !m.doctorOv.del.blocking())
+	return m.restartPending && !m.actModal.active() && (!m.doctorOv.visible() || !m.doctorOv.ownsKeys())
 }
 
 // restartPromptLines は完成ダイアログの箱 (push/pull 確認と同じ見た目)。

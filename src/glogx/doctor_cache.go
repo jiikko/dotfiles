@@ -688,6 +688,11 @@ func doctorReuseFrom(sn doctorSnapshot, ok bool, now time.Time) func(disk.Entry)
 	return func(e disk.Entry) *disk.Result {
 		if r, ok := byID[e.ID]; ok {
 			r.Entry = e // 表示文言はカタログの今の定義に合わせる (計測値だけを再利用)
+			// 🚨 **FromSnapshot は落とす**。再利用は「前回の計測値を引き継いだ」(= Reused) で
+			// あって「画面ごと復元した」ではない。残すと、今回走査した画面なのに削除が
+			// 「前回の結果を表示しています」と断り、しかも snapshotAt は zero なので
+			// 再スキャンにも倒れない = その行だけ行き止まりになる (敵対レビュー 2026-09-03 が実測)
+			r.FromSnapshot = false
 			return &r
 		}
 		return nil

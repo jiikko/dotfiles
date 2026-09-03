@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -562,7 +563,7 @@ func TestDeleteRefusedWhileScanning(t *testing.T) {
 	doctorFirstDiskEvent(t, v) // 1 件だけ届いた = 走査中
 	_ = v.lines(doctorTestOpts(30))
 	v.selected = map[string]bool{"thing": true}
-	if act := v.handleKey("d", 20); act != doctorToast || !strings.Contains(v.pendingToast, "スキャン中") {
+	if act := v.handleKey("d", 20); act != doctorToast || !strings.Contains(v.pendingToast, "スキャンが終わるまで") {
 		t.Fatalf("act=%v toast=%q", act, v.pendingToast)
 	}
 	if len(f.calls) != 0 {
@@ -998,7 +999,7 @@ func TestDeleteResultCopiesCommandOutput(t *testing.T) {
 	v := &doctorView{del: doctorDelete{result: &rep,
 		log: commandLogLines(disk.CommandRecord{Name: "xcrun", Args: []string{"simctl"}, RC: 24, Stderr: "retry"})}}
 	act, taken := v.handleDeleteKey("y")
-	if !taken || act != doctorCopyText {
+	if !taken || act != doctorCopyLog {
 		t.Fatalf("act=%v taken=%v (y は出力をコピー)", act, taken)
 	}
 	if v.del.result == nil {
@@ -1013,5 +1014,167 @@ func TestDeleteResultCopiesCommandOutput(t *testing.T) {
 	// y 以外は閉じて再スキャン
 	if act, _ := v.handleDeleteKey("j"); act != doctorRescan || v.del.active() {
 		t.Errorf("他のキーで閉じない: act=%v", act)
+	}
+}
+
+// ---- doctor_view.go の通しレビュー (opus, 2026-09-03) で出た食い違いの回帰 ----
+
+// blocked の行に削除の案内を出さない。出しておいて Space が断るのは案内が嘘になる。
+func TestBlockedRowDoesNotAdvertiseDeletion(t *testing.T) {
+	v := &doctorView{}
+	r := disk.Result{Status: disk.StatusBlocked, Reason: "Google Chrome 起動中のため対象外",
+		Entry: disk.Entry{ID: "chrome-tmp", Label: "Chrome の一時ファイル", DeleteVia: "rm"}}
+	if out := strings.Join(rowTexts(v.diskDetail(doctorTestOpts(40), r)), "\n"); strings.Contains(out, "d で削除") {
+		t.Errorf("blocked の行が削除を案内している:\n%s", out)
+	}
+	// 拒否文も「走査できていない」と混ぜない (blocked は走査できた上で対象外)
+	ok, why := v.deletable(r)
+	if ok || !strings.Contains(why, "いまは対象外") || !strings.Contains(why, "Chrome") {
+		t.Errorf("ok=%v why=%q (理由まで伝えること)", ok, why)
+	}
+}
+
+// 🚨 重いエントリの計測値を再利用しても「画面ごと復元した」印は立てない。
+// 立つと、今回走査した画面なのに削除が「前回の結果を表示しています」と断り、
+// snapshotAt は zero なので再スキャンにも倒れず、その行だけ行き止まりになる。
+func TestReuseDoesNotCarryFromSnapshot(t *testing.T) {
+	now := time.Now()
+	sn := doctorSnapshot{ScannedAt: now.Add(-10 * time.Minute), Disk: disk.Report{Results: []disk.Result{{
+		Entry: disk.Entry{ID: "heavy"}, Status: disk.StatusOK, MeasuredAt: now.Add(-10 * time.Minute),
+		Elapsed: 5 * time.Second, FromSnapshot: true, Items: []disk.Item{{Path: "/x", Size: 1}}, Size: 1,
+	}}}}
+	reuse := doctorReuseFrom(sn, true, now)
+	if reuse == nil {
+		t.Fatal("再利用が効いていない (前提が崩れている)")
+	}
+	got := reuse(disk.Entry{ID: "heavy"})
+	if got == nil {
+		t.Fatal("再利用されない")
+	}
+	if got.FromSnapshot {
+		t.Error("再利用に「画面ごと復元した」印が残っている")
+	}
+}
+
+// 削除の**確認中**も再起動ダイアログを出さない (出るとどのキーも吸われ、y が食われる)。
+func TestRestartPromptDefersWhileDeleteConfirm(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		del  doctorDelete
+	}{{"確認中", doctorDelete{confirm: true}}, {"結果の表示中", doctorDelete{result: &disk.DeleteReport{}}}} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m.doctorOv.shown = true
+			m.doctorOv.del = tc.del
+			m.restartPending = true
+			if m.restartPromptVisible() {
+				t.Fatalf("%s に再起動ダイアログを出した", tc.name)
+			}
+		})
+	}
+}
+
+// トーストは一度出したら消える (残ると、次の再スキャンの理由として使い回される)。
+func TestDoctorToastIsConsumedOnce(t *testing.T) {
+	v := &doctorView{pendingToast: "一度だけ"}
+	if got := v.takeToast(); got != "一度だけ" {
+		t.Fatalf("takeToast = %q", got)
+	}
+	if got := v.takeToast(); got != "" {
+		t.Errorf("2 回目でも文言が残っている: %q", got)
+	}
+}
+
+// hint の「選択 N 件」は**ディレクトリ数**で数える (確認画面が Item 数で数えるため)。
+func TestSelectionSummaryCountsDirectories(t *testing.T) {
+	v := multiItemView(t, nil)
+	v.handleKey(" ", 20) // エントリ全体 (= 中の 2 本)
+	n, total := v.selectionSummary()
+	if n != 2 {
+		t.Errorf("選択 = %d 件 (ディレクトリ 2 本のはず)", n)
+	}
+	if total <= 0 {
+		t.Errorf("合計 = %d", total)
+	}
+}
+
+// 前回の結果の画面でも、削除に関係ない行では再スキャンを起こさない。
+func TestSnapshotRescanOnlyOnDiskRows(t *testing.T) {
+	v := &doctorView{snapshotAt: time.Now().Add(-time.Minute),
+		rows: []doctorRow{{key: "brew:0:x", selectable: true}}, cursor: 0}
+	if _, ok := v.snapshotRescan(); ok {
+		t.Error("brew の行で再スキャンを起こした")
+	}
+	v.rows = []doctorRow{{key: "disk:thing", selectable: true}}
+	if _, ok := v.snapshotRescan(); !ok {
+		t.Error("ディスクの行で再スキャンを起こさない")
+	}
+}
+
+// ディレクトリ行の解説文は、その 1 本についての話にする (エントリ全体の使い回しにしない)。
+func TestDiskItemCopyTextIsAboutOnePath(t *testing.T) {
+	r := disk.Result{Status: disk.StatusOK, Size: 3 << 20,
+		Entry: disk.Entry{ID: "x", Label: "ラベル", Risk: disk.RiskSafe, DeleteVia: "rm", Recover: "戻せます"},
+		Items: []disk.Item{{Path: "/a", Size: 1 << 20}, {Path: "/b", Size: 2 << 20}}}
+	// ⚠️ 関数を直接呼ぶだけでは**配線**を守れない (行が別の関数を使っていても green になる)。
+	// 行を組み立てて、その行の copyText を見る
+	v := &doctorView{}
+	rows := v.diskItemRows(doctorTestOpts(60), r)
+	if len(rows) != 2 {
+		t.Fatalf("対象パスの行が %d 本", len(rows))
+	}
+	got := rows[0].copyText
+	if !strings.Contains(got, "/a") || strings.Contains(got, "/b") {
+		t.Errorf("他のパスが混ざっている:\n%s", got)
+	}
+	if !strings.Contains(got, "✅ 安全") {
+		t.Errorf("判定が空:\n%s", got)
+	}
+	if strings.Contains(got, "3.0MB") {
+		t.Errorf("エントリ全体の合計が混ざっている:\n%s", got)
+	}
+}
+
+// 裏取りコマンドの switch が見ているカタログ ID は、実在するものだけ
+// (リネームすると裏取りが黙って消えるだけで build も test も赤くならない)。
+func TestDiskVerifyCommandsIDsExistInCatalog(t *testing.T) {
+	src, err := os.ReadFile("doctor_view.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src)
+	start := strings.Index(body, "func diskVerifyCommands(")
+	if start < 0 {
+		t.Fatal("diskVerifyCommands が見つからない (走査が壊れている)")
+	}
+	end := strings.Index(body[start:], "\n}\n")
+	if end < 0 {
+		t.Fatal("関数の終わりが見つからない")
+	}
+	ids := regexp.MustCompile(`case "([a-z0-9-]+)"`).FindAllStringSubmatch(body[start:start+end], -1)
+	if len(ids) < 5 {
+		t.Fatalf("case を %d 件しか拾えていない (走査が壊れている)", len(ids))
+	}
+	for _, m := range ids {
+		if !disk.CatalogHasID(m[1]) {
+			t.Errorf("カタログに無い ID を見ている: %q (リネームで裏取りが黙って消える)", m[1])
+		}
+	}
+}
+
+// 開き直しで世代をまたぐ状態を残さない (1 つでも残すと前の画面の文言・Cmd が混ざる)。
+func TestDoctorStartClearsCarryOverState(t *testing.T) {
+	v := doctorTestView(t)
+	runDoctorCmds(t, v, v.open())
+	_ = v.lines(doctorTestOpts(30))
+	v.pendingToast, v.pendingCopy, v.enterDetail = "残り", "残り", "disk:thing"
+	v.cursorFellBack = true
+	v.pendingDeleteCmd = func() tea.Msg { return nil }
+	v.selected = map[string]bool{"thing": true}
+	runDoctorCmds(t, v, v.rescan())
+	if v.pendingToast != "" || v.pendingCopy != "" || v.enterDetail != "" ||
+		v.cursorFellBack || v.pendingDeleteCmd != nil || len(v.selected) != 0 {
+		t.Errorf("前の世代の状態が残っている: toast=%q copy=%q enter=%q fellBack=%v cmd=%v selected=%v",
+			v.pendingToast, v.pendingCopy, v.enterDetail, v.cursorFellBack, v.pendingDeleteCmd != nil, v.selected)
 	}
 }

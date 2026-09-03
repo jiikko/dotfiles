@@ -122,7 +122,13 @@ func (v *doctorView) startDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 		if err != nil {
 			ev.err = err.Error()
 		}
-		ch <- ev
+		// ⚠️ 素の送信にしない。読み手 (Update ループ) が終了で消えていて、かつバッファが
+		// 埋まっていると永久にブロックして goroutine が残る。走査側 (diskCh) が容量を
+		// カタログ数ぶん確保しているのと同じ規律を、こちらは ctx で満たす
+		select {
+		case ch <- ev:
+		case <-ctx.Done():
+		}
 		return nil
 	})
 }
@@ -224,11 +230,8 @@ func (v *doctorView) handleDeleteKey(key string) (doctorAction, bool) {
 	case d.result != nil || d.err != "":
 		// y / Y は出力をコピー (失敗したときに LLM へそのまま投げられる形)。閉じない
 		if key == "y" || key == "Y" {
-			v.pendingCopy = v.deleteLogText()
-			if v.pendingCopy == "" {
-				return doctorNothing, true
-			}
-			return doctorCopyText, true
+			v.pendingCopy = v.deleteLogText() // 見出しを必ず書くので空にならない
+			return doctorCopyLog, true
 		}
 		// それ以外はどのキーでも閉じる。閉じたら再スキャンして表示を実体に合わせる
 		d.reset()
@@ -339,6 +342,9 @@ func (v *doctorView) currentDiskResults() []disk.Result {
 // 押した後に失敗するより、押す前に理由を出す方が親切。
 func (v *doctorView) deletable(r disk.Result) (bool, string) {
 	switch {
+	case r.Status == disk.StatusBlocked:
+		// blocked は「走査**できた上で**今は対象外」。走査できなかったのと混ぜない (issue 182 の語彙)
+		return false, "いまは対象外の行です: " + r.Reason
 	case r.Status != disk.StatusOK:
 		return false, "走査できていない行は削除できません"
 	case len(r.Items) == 0:
@@ -448,12 +454,14 @@ func (v *doctorView) clearItemsOf(id string) {
 	}
 }
 
-// selectionSummary は選択中の件数と合計。
+// selectionSummary は選択中の**ディレクトリ数**と合計。
+// ⚠️ エントリ数で数えない: 確認画面が「N 件を削除」を Item 数で出すので、hint だけ
+// エントリ数だと「hint は 1 件、確認は 3 件」になる (敵対レビュー 2026-09-03)。
 func (v *doctorView) selectionSummary() (int, int64) {
 	var n int
 	var total int64
 	for _, r := range v.selectedResults() {
-		n++
+		n += len(r.Items)
 		total += r.Size
 	}
 	return n, total
@@ -480,6 +488,14 @@ func (v *doctorView) snapshotRescan() (doctorAction, bool) {
 	if v.snapshotAt.IsZero() {
 		return doctorSwallow, false
 	}
+	// ⚠️ 削除に関係ない行 (brew の警告 / svc) の上では起こさない。押した意図
+	// (この行を消したい) が存在しないので、全体の再スキャンは驚きにしかならない
+	if v.cursor >= 0 && v.cursor < len(v.rows) {
+		k := v.rows[v.cursor].key
+		if !strings.HasPrefix(k, "disk:") && !strings.HasPrefix(k, "diskitem:") {
+			return doctorSwallow, false
+		}
+	}
 	v.pendingToast = "前回の結果を表示していたので、取り直します (終わったら選び直してください)"
 	return doctorRescan, true
 }
@@ -490,8 +506,11 @@ func (v *doctorView) beginDelete() doctorAction {
 		return act
 	}
 	switch {
-	case v.scanning():
-		v.pendingToast = "スキャン中は削除できません (終わるまで待つか r で取り直してください)"
+	case v.diskRep == nil:
+		// ⚠️ v.scanning() ではない: あれは svc / brew も見るので、ディスクが完走していても
+		// brew doctor (最大 60 秒) の間ずっと d が通らなくなる。削除に要るのはディスクの結果だけ。
+		// 助言も「r で取り直す」と言わない (全部を最初からやり直すので待ち時間が増えるだけ)
+		v.pendingToast = "ディスクのスキャンが終わるまで待ってください"
 		return doctorToast
 	case len(v.selectedResults()) == 0:
 		v.pendingToast = "Space で削除するものを選んでください"
