@@ -1032,3 +1032,7 @@ require("dotfiles.smooth_scroll").setup()
 -- 折り畳み (計算 = FastFold 方式の expr→manual 凍結、表示 = foldtext/開閉 keymap とも
 -- dotfiles/folds.lua に集約。foldmethod をここで set しない理由も同ファイル冒頭参照)
 require("dotfiles.folds").setup()
+
+-- 常駐チートシート (右下 float に buffer-local キーを出し続ける。<leader>k / :Cheatsheet でトグル。
+-- 中身は desc 付き buffer-local keymap から動的生成。モジュール冒頭コメント参照)
+require("dotfiles.cheatsheet").setup()

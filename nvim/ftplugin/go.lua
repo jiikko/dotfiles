@@ -19,10 +19,10 @@ local ok_sel, select = pcall(require, "nvim-treesitter-textobjects.select")
 if ok_move then
   vim.keymap.set({ "n", "x" }, "]]", function()
     move.goto_next_start("@function.outer", "textobjects")
-  end, { buffer = true, silent = true, desc = "Next function start" })
+  end, { buffer = true, silent = true, desc = "次の関数の先頭へ (next function)" })
   vim.keymap.set({ "n", "x" }, "[[", function()
     move.goto_previous_start("@function.outer", "textobjects")
-  end, { buffer = true, silent = true, desc = "Prev function start" })
+  end, { buffer = true, silent = true, desc = "前の関数の先頭へ (prev function)" })
 end
 
 -- テキストオブジェクト (旧 vim-go go#textobj#Function/Comment)。x(visual)/o(operator-pending)。
@@ -55,9 +55,9 @@ end
 local decl_kinds = { "function", "method", "struct", "interface", "class", "constant" }
 vim.keymap.set("n", "<leader>gd", function()
   require("telescope.builtin").lsp_document_symbols({ symbols = decl_kinds })
-end, { buffer = true, silent = true, desc = "Go declarations (document symbols)" })
+end, { buffer = true, silent = true, desc = "このファイルの宣言一覧 (document symbols)" })
 -- GoDeclsDir 相当。ディレクトリ限定の厳密同等は telescope に無いため workspace 全体の
 -- 動的シンボル検索で代替する (旧実装も非稼働だったため実挙動の後退はない)。
 vim.keymap.set("n", "<leader>gD", function()
   require("telescope.builtin").lsp_dynamic_workspace_symbols({ symbols = decl_kinds })
-end, { buffer = true, silent = true, desc = "Go declarations (workspace symbols)" })
+end, { buffer = true, silent = true, desc = "ワークスペース全体の宣言検索 (workspace symbols)" })

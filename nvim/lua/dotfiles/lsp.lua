@@ -190,9 +190,9 @@ local function on_attach(client, bufnr)
   local function tb() return require("telescope.builtin") end
 
   -- ジャンプ (coc: gd=定義 / gD=実装 / <C-k>=参照)
-  map("n", "gd", function() tb().lsp_definitions() end, "LSP definitions")
-  map("n", "gD", function() tb().lsp_implementations() end, "LSP implementations")
-  map("n", "<C-k>", function() tb().lsp_references() end, "LSP references")
+  map("n", "gd", function() tb().lsp_definitions() end, "定義へジャンプ (LSP definitions)")
+  map("n", "gD", function() tb().lsp_implementations() end, "interface の実装一覧へ (LSP implementations)")
+  map("n", "<C-k>", function() tb().lsp_references() end, "参照元一覧 (LSP references)")
 
   -- <C-j>: interface 上なら実装へ、無ければ定義へフォールバック。
   -- coc 時代の <C-j> の意図 (実装優先 → 無ければ従来の定義ジャンプ) をネイティブで再現する。
@@ -215,16 +215,20 @@ local function on_attach(client, bufnr)
       end
       tb().lsp_definitions()
     end)
-  end, "LSP implementation or definition")
+  end, "実装へ、無ければ定義へ (impl or definition)")
+
+  -- K: nvim 0.11 が LspAttach で張る既定の hover (desc が "vim.lsp.buf.hover()" のまま) を
+  -- 説明付きで張り直す。t (global) と同じ動作で、チートシートに意図が出るようにするため
+  map("n", "K", vim.lsp.buf.hover, "ホバー: 型とドキュメントを表示 (hover)")
 
   -- コードアクション (coc: <leader>ac=cursor / <leader>as=source / <leader>qf=quickfix)
-  map("n", "<leader>ac", vim.lsp.buf.code_action, "Code action")
+  map("n", "<leader>ac", vim.lsp.buf.code_action, "カーソル位置のコードアクション (code action)")
   map("n", "<leader>as", function()
     vim.lsp.buf.code_action({ context = { only = { "source" } } })
-  end, "Source action")
+  end, "import 整理など (source action)")
   map("n", "<leader>qf", function()
     vim.lsp.buf.code_action({ context = { only = { "quickfix" } }, apply = true })
-  end, "Quickfix")
+  end, "quickfix を即適用 (quickfix)")
 
   -- インポート整理 (coc: :OR)
   vim.api.nvim_buf_create_user_command(bufnr, "OR", function()
