@@ -246,6 +246,7 @@ func (v *doctorView) waitDiskCmd(gen int) tea.Cmd {
 // close は走査を止めて閉じる。ディスクが未完了なら完了済みの分を partial としてキャッシュに書く
 // (savePartialOnClose が守る条件のもとで)。
 func (v *doctorView) close() {
+	v.del.reset() // 相を残さない (今は handleDeleteKey が閉じるキーを飲むので不到達だが、並び順に依存させない)
 	v.stop()
 	v.shown = false
 	if v.diskRep == nil && len(v.diskResults) > 0 {
@@ -258,6 +259,11 @@ func (v *doctorView) close() {
 
 // stop は走査だけを止める (cancelAll から呼ぶ後始末。画面の状態は触らない。partial も保存しない)。
 func (v *doctorView) stop() {
+	// 削除の途中で外から終了させられたら、**ctx で中断を伝える** (プロセスを殺すだけだと
+	// 記録が executing のまま残り、cli: の子プロセスが孤児になる)
+	if v.del.cancel != nil {
+		v.del.cancel()
+	}
 	if v.cancel != nil {
 		v.cancel()
 		v.cancel = nil
@@ -461,7 +467,7 @@ func (v *doctorView) hint(width int) string {
 		return " y: 削除する   n/Esc: やめる"
 	}
 	if v.del.result != nil || v.del.err != "" {
-		return " 何かキーを押すと閉じます"
+		return " 何かキーを押すと閉じ、もう一度スキャンします"
 	}
 	items := []hintItem{
 		{"j/k: 移動", 3},
@@ -675,7 +681,7 @@ func (v *doctorView) diskDetail(o doctorRenderOpts, r disk.Result) []string {
 	// 「削除経路: rm」だけ出ると、消してよいものが見つかったように読める
 	// (CLI の Format は failed のとき理由だけを出す。UI もそれに揃える。issue 182)
 	if r.Status != disk.StatusFailed {
-		out = append(out, doctorColor(o.colored, ansiDim, "             削除経路: "+r.Entry.DeleteVia+" (このツールはまだ削除しません)"))
+		out = append(out, doctorColor(o.colored, ansiDim, "             削除経路: "+r.Entry.DeleteVia+" (Space で選び d で削除)"))
 	}
 	if r.Entry.Detail != "" {
 		out = append(out, doctorColor(o.colored, ansiDim, "             "+r.Entry.Detail))
@@ -683,6 +689,15 @@ func (v *doctorView) diskDetail(o doctorRenderOpts, r disk.Result) []string {
 	if r.Entry.Inspect || len(r.Contents) > 0 {
 		for _, c := range r.Contents {
 			out = append(out, "               - "+c)
+		}
+		// ⚠️ Inspect は「中身を見てから選ばせる」ためのゲートなので、**開いても何も出ない**形を
+		// 作らない (中身が無いのか、走査が拾えなかったのかが区別できないまま選べてしまう。
+		// 敵対レビュー 2026-09-03)。中身が無ければ対象のパスそのものを出す
+		if len(r.Contents) == 0 {
+			out = append(out, doctorColor(o.colored, ansiDim, "             (中身の一覧はありません。対象は次のパスです)"))
+			for _, it := range r.Items {
+				out = append(out, fmt.Sprintf("             %9s  %s", disk.HumanSize(it.Size), it.Path))
+			}
 		}
 		return out
 	}

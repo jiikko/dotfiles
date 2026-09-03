@@ -1313,6 +1313,17 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 			// 終了すると、残った自己更新が孤児のまま進む)。
 			// escape は updateTimeout のみ。モーダルに「完了まで終了できません」を出す。
 			return m, nil
+		case m.doctorOv.visible() && m.doctorOv.del.blocking():
+			// doctor の削除も push / pull と同じ 2 段ガード。⚠️ ここに case が無いと
+			// **1 回目の Ctrl-C でプロセスごと落ちる**。それは削除の中断を ctx で伝える経路を
+			// 使わないので、記録が executing のまま残り、cli: の子プロセスも孤児化する
+			// (doctor_delete.go 冒頭の不変条件を、UI の配線が破る形。敵対レビュー 2026-09-03 が実測)。
+			// 中断の意味づけ自体は doctorView が持つので、判定を 2 箇所に書かず handleDeleteKey へ渡す
+			m.doctorOv.handleDeleteKey("ctrl+c")
+			if m.doctorOv.del.blocking() {
+				return m, m.maybeTick() // 1 回目: 武装しただけ
+			}
+			return m, m.maybeTick()
 		case m.actModal.pushing || m.actModal.pulling:
 			// 途中終了は不整合 (特に pull --rebase の mid-rebase 状態) を招くので 1 回目はブロック。
 			// ただし stall で永久に閉じられなくならないよう、2 回目の Ctrl-C で強制終了する
@@ -2200,7 +2211,10 @@ func (m *browseModel) autobuildAfterPull() tea.Cmd {
 //
 // 完成の事実は restartPending が保持しているので、actModal が手を離せば自然に出る。
 func (m *browseModel) restartPromptVisible() bool {
-	return m.restartPending && !m.actModal.active()
+	// ⚠️ doctor の削除中も出さない。このダイアログの r は cancelAll で走行中の処理を殺すし、
+	// 出ている間はどのキーもダイアログに吸われて doctor に届かない (削除の確認が裏に残る)。
+	// actModal を除外しているのと同じ理由 (敵対レビュー 2026-09-03 が実測)
+	return m.restartPending && !m.actModal.active() && (!m.doctorOv.visible() || !m.doctorOv.del.blocking())
 }
 
 // restartPromptLines は完成ダイアログの箱 (push/pull 確認と同じ見た目)。

@@ -18,15 +18,39 @@ type fakeDelete struct {
 	rep     disk.DeleteReport
 	err     error
 	phases  []disk.DeletePhase // 流す進捗
+	ctxErr  error              // ctx が切れていたときに記録する
 }
 
-func (f *fakeDelete) fn(_ context.Context, targets []disk.Result, opt disk.DeleteOptions) (disk.DeleteReport, error) {
+// fn は engine (disk.Delete) の契約を模す:
+//   - OnPhase は nil でも落ちない (本物は DeleteOptions.phase() が nil ガードする)
+//   - ctx が切れていたら「触っていない」= 中断として返す (本物は破壊的操作の前に必ず見る)
+//   - error を返すのは 1 件も触っていないときだけ (本物の契約。UI の「何も消えていません」の根拠)
+func (f *fakeDelete) fn(ctx context.Context, targets []disk.Result, opt disk.DeleteOptions) (disk.DeleteReport, error) {
 	f.calls = append(f.calls, opt)
 	f.targets = append(f.targets, targets)
+	if err := ctx.Err(); err != nil {
+		f.ctxErr = err
+		return disk.DeleteReport{Entries: []disk.EntryOutcome{
+			{Label: "中断", Outcome: disk.OutcomeSkipped, Reason: "中断されました"}}}, nil
+	}
 	for i, p := range f.phases {
-		opt.OnPhase(i, len(f.phases), "テスト対象", p)
+		if opt.OnPhase != nil {
+			opt.OnPhase(i, len(f.phases), "テスト対象", p)
+		}
 	}
 	return f.rep, f.err
+}
+
+// targetIDs は engine へ渡った対象の ID (この UI 層の唯一の仕事なので必ず assert する)。
+func (f *fakeDelete) targetIDs(call int) []string {
+	if call >= len(f.targets) {
+		return nil
+	}
+	out := make([]string, 0, len(f.targets[call]))
+	for _, r := range f.targets[call] {
+		out = append(out, r.Entry.ID)
+	}
+	return out
 }
 
 // deleteTestView は doctor を開いて 1 件を選べる状態にし、削除だけ fake に差し替える。
@@ -45,8 +69,9 @@ func deleteTestView(t *testing.T, f *fakeDelete) *doctorView {
 // ⚠️ **Batch の中身は並行に走らせる**。本番の bubbletea はそうするし、逐次に回すと
 // waitDeleteCmd が channel 待ちに入って producer が動かず、そのまま止まる。
 // Msg の取り込み (receiveDelete) はこの goroutine だけが行う (Update の外で状態を触らない)。
-func runDeleteCmds(t *testing.T, v *doctorView, cmd tea.Cmd) {
+func runDeleteCmds(t *testing.T, v *doctorView, cmd tea.Cmd) []string {
 	t.Helper()
+	var progress []string
 	msgs := make(chan tea.Msg, 64)
 	var start func(tea.Cmd)
 	start = func(c tea.Cmd) {
@@ -74,12 +99,16 @@ func runDeleteCmds(t *testing.T, v *doctorView, cmd tea.Cmd) {
 			if !ok {
 				t.Fatalf("知らない Msg: %T", m)
 			}
+			if dm.ev.rep == nil {
+				progress = append(progress, dm.ev.progress)
+			}
 			start(v.receiveDelete(dm))
 			if !v.del.blocking() {
-				return // 確認 / 結果 / エラーに落ちた (待ち続けている waiter は捨ててよい)
+				return progress // 確認 / 結果 / エラーに落ちた (待ち続けている waiter は捨ててよい)
 			}
 		case <-deadline:
 			t.Fatalf("削除が終わらない: %+v", v.del)
+			return nil
 		}
 	}
 }
@@ -188,9 +217,14 @@ func TestDoctorDeleteShowsDryRunInConfirm(t *testing.T) {
 	if act := v.handleKey("d", 20); act != doctorRunDelete {
 		t.Fatalf("act = %v", act)
 	}
-	runDeleteCmds(t, v, v.takeDeleteCmd())
+	_ = runDeleteCmds(t, v, v.takeDeleteCmd())
 	if len(f.calls) != 1 || !f.calls[0].DryRun {
 		t.Fatalf("下見を DryRun で呼んでいない: %+v", f.calls)
+	}
+	// 🚨 この層の唯一の仕事は「選んだ行を engine に渡す」こと。集合そのものを見る
+	// (見ないと、nil を渡す変異が素通りする。敵対レビュー 2026-09-03 の実測)
+	if got := f.targetIDs(0); len(got) != 1 || got[0] != "thing" {
+		t.Fatalf("engine へ渡した対象 = %v (選んだ 1 件のはず)", got)
 	}
 	if !v.del.confirm {
 		t.Fatalf("確認プロンプトが出ていない: %+v", v.del)
@@ -211,10 +245,17 @@ func TestDoctorDeleteConfirmCancel(t *testing.T) {
 			v := deleteTestView(t, f)
 			v.handleKey(" ", 20)
 			v.handleKey("d", 20)
-			runDeleteCmds(t, v, v.takeDeleteCmd())
+			_ = runDeleteCmds(t, v, v.takeDeleteCmd())
+			// 中止したら下見の ctx も切る (切らないと leak する)
+			cancelled := false
+			orig := v.del.cancel
+			v.del.cancel = func() { cancelled = true; orig() }
 			v.handleKey(key, 20)
 			if v.del.active() {
 				t.Fatalf("中止したのに状態が残っている: %+v", v.del)
+			}
+			if !cancelled {
+				t.Error("中止で ctx を切っていない")
 			}
 			if len(f.calls) != 1 {
 				t.Fatalf("engine を %d 回呼んだ (下見の 1 回だけのはず)", len(f.calls))
@@ -233,7 +274,7 @@ func TestDoctorDeleteRunsAndShowsResult(t *testing.T) {
 	v := deleteTestView(t, f)
 	v.handleKey(" ", 20)
 	v.handleKey("d", 20)
-	runDeleteCmds(t, v, v.takeDeleteCmd())
+	_ = runDeleteCmds(t, v, v.takeDeleteCmd())
 
 	f.rep = disk.DeleteReport{Freed: 4096, HistoryPath: "/tmp/h.json",
 		Entries: []disk.EntryOutcome{
@@ -241,9 +282,18 @@ func TestDoctorDeleteRunsAndShowsResult(t *testing.T) {
 	if act := v.handleKey("y", 20); act != doctorRunDelete {
 		t.Fatalf("act = %v", act)
 	}
-	runDeleteCmds(t, v, v.takeDeleteCmd())
+	if h := v.hint(120); !strings.Contains(h, "実行中") {
+		t.Errorf("実行中の hint = %q", h)
+	}
+	prog := runDeleteCmds(t, v, v.takeDeleteCmd())
 	if len(f.calls) != 2 || f.calls[1].DryRun {
 		t.Fatalf("本番を DryRun でない形で呼んでいない: %+v", f.calls)
+	}
+	if got := f.targetIDs(1); len(got) != 1 || got[0] != "thing" {
+		t.Fatalf("本番へ渡した対象 = %v", got)
+	}
+	if len(prog) == 0 || !strings.Contains(prog[0], "走査中") {
+		t.Errorf("進捗が届いていない: %v", prog)
 	}
 	if v.del.result == nil {
 		t.Fatalf("結果が出ていない: %+v", v.del)
@@ -282,8 +332,9 @@ func TestDoctorDeleteBlocksKeysWhileRunning(t *testing.T) {
 	if v.handleKey("ctrl+c", 20); !v.del.armedCC {
 		t.Error("1 回目の Ctrl-C で武装していない")
 	}
-	if v.del.cancel != nil {
-		t.Skip("cancel は startDelete が入れる (この経路では nil)")
+	// 実行中の hint は「消せる」と読める語彙を出さない
+	if h := v.hint(120); strings.Contains(h, "d: 削除") || strings.Contains(h, "Space: 選択") {
+		t.Errorf("実行中の hint に削除の導線が出ている: %q", h)
 	}
 }
 
@@ -332,5 +383,323 @@ func TestDoctorDeletePanelKeepsPromptWhenCramped(t *testing.T) {
 		if n := len(v.lines(doctorTestOpts(page))); n != page {
 			t.Errorf("page=%d なのに %d 行", page, n)
 		}
+	}
+}
+
+// ---- 敵対的レビュー (2026-09-03) が開けた穴を塞ぐテスト ----
+
+// 🚨 削除の実行中に Ctrl-C / Ctrl-G が **browseModel の側で** 先に捌かれ、1 回目でアプリごと
+// 落ちていた。中断は ctx で伝える契約 (プロセスを殺すと記録が executing のまま残り、
+// cli: の子が孤児になる) が、UI の配線で破れていた形。
+//
+// ⚠️ doctorView.handleKey を直叩きするテストではこの穴を 1 mm も守れない (それが実際に
+// 起きたこと)。**browseModel.handleKey 経由**で見る。
+func TestBrowseCtrlCDuringDeleteDoesNotQuit(t *testing.T) {
+	for _, key := range []string{"ctrl+c", "ctrl+g"} {
+		t.Run(key, func(t *testing.T) {
+			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m.doctorOv.shown = true
+			cancelled := false
+			m.doctorOv.del = doctorDelete{running: true, progress: "1/1 …",
+				cancel: func() { cancelled = true }}
+			m.handleKey(key)
+			if m.done || m.restartRequested {
+				t.Fatalf("1 回目の %s でアプリを終了した (中断は ctx で伝えること)", key)
+			}
+			if !m.doctorOv.del.armedCC {
+				t.Errorf("1 回目で武装していない")
+			}
+			if cancelled {
+				t.Errorf("1 回目で中断した (誤爆を 1 段止める設計)")
+			}
+			m.handleKey(key)
+			if !cancelled {
+				t.Errorf("2 回目でも中断しない")
+			}
+			if m.done {
+				t.Errorf("2 回目でアプリごと落ちた (ctx の cancel だけでよい)")
+			}
+		})
+	}
+}
+
+// 削除の実行中は再起動ダイアログを出さない (出るとどのキーも吸われ、r は走行中の削除を殺す)。
+func TestRestartPromptDefersWhileDeleting(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.doctorOv.shown = true
+	m.doctorOv.del = doctorDelete{running: true}
+	m.restartPending = true
+	if m.restartPromptVisible() {
+		t.Fatal("削除中に再起動ダイアログを出した")
+	}
+	m.handleKey("r")
+	if m.restartRequested {
+		t.Error("削除中の r で再起動した (走行中の削除を殺す)")
+	}
+}
+
+// doctor を止める (popup を閉じる / 終了) と、削除も ctx で中断される。
+func TestDoctorStopCancelsDelete(t *testing.T) {
+	v := &doctorView{}
+	cancelled := false
+	v.del = doctorDelete{running: true, cancel: func() { cancelled = true }}
+	v.stop()
+	if !cancelled {
+		t.Error("stop() が削除の ctx を切っていない (cli: の子が孤児になる)")
+	}
+}
+
+// 下見の最中に押した Ctrl-C が、本番の 1 回目で即中断に化けない。
+func TestDeleteArmedCCNotCarriedIntoRun(t *testing.T) {
+	f := &fakeDelete{rep: disk.DeleteReport{DryRun: true}}
+	v := deleteTestView(t, f)
+	v.handleKey(" ", 20)
+	v.handleKey("d", 20)
+	v.del.armedCC = true // 下見の最中に 1 回押した
+	_ = runDeleteCmds(t, v, v.takeDeleteCmd())
+	v.handleKey("y", 20)
+	if v.del.armedCC {
+		t.Error("下見の armedCC を本番へ持ち越した (1 回目の Ctrl-C で即中断になる)")
+	}
+	if v.del.confirm {
+		t.Error("実行中なのに confirm が立ったまま (相が 2 つ)")
+	}
+}
+
+// y は入口と同じガードをもう一度通す (入口だけの検査は非対称)。
+func TestDeleteConfirmRechecksDeletable(t *testing.T) {
+	f := &fakeDelete{rep: disk.DeleteReport{DryRun: true}}
+	v := deleteTestView(t, f)
+	v.handleKey(" ", 20)
+	v.handleKey("d", 20)
+	_ = runDeleteCmds(t, v, v.takeDeleteCmd())
+	v.diskRep.Results[0].FromSnapshot = true // 確認中に「走査していない」印が立った
+	if act := v.handleKey("y", 20); act != doctorToast {
+		t.Fatalf("act = %v (理由を出して止めること)", act)
+	}
+	if len(f.calls) != 1 {
+		t.Errorf("engine を %d 回呼んだ (下見の 1 回だけのはず)", len(f.calls))
+	}
+}
+
+// risk: confirm は Inspect が付いていなくてもゲートに掛かる
+// (カタログが Inspect を付け忘れた瞬間にゲートが消える形を防ぐ)。
+func TestDeletableGatesRiskConfirmWithoutInspect(t *testing.T) {
+	v := &doctorView{}
+	r := disk.Result{Status: disk.StatusOK, Items: []disk.Item{{Path: "/x"}},
+		Entry: disk.Entry{ID: "x", Risk: disk.RiskConfirm, Inspect: false}}
+	if ok, why := v.deletable(r); ok || !strings.Contains(why, "中身を確認") {
+		t.Errorf("ok=%v why=%q", ok, why)
+	}
+}
+
+// Inspect の行は、中身の一覧が無くても**開けば何かが出る** (何も出ないと、
+// 中身が無いのか走査が拾えなかったのかが区別できないまま選べてしまう)。
+func TestDiskDetailShowsPathsWhenNoContents(t *testing.T) {
+	v := &doctorView{}
+	r := disk.Result{Status: disk.StatusOK, Entry: disk.Entry{ID: "x", Inspect: true, DeleteVia: "trash"},
+		Items: []disk.Item{{Path: "/tmp/a", Size: 1024}}}
+	out := strings.Join(v.diskDetail(doctorTestOpts(30), r), "\n")
+	if !strings.Contains(out, "/tmp/a") {
+		t.Errorf("中身が無いときに対象のパスも出ない:\n%s", out)
+	}
+}
+
+// 🚨 狭い画面でも「合計」は残る (1 件目のサイズだけを見て y を押す形にしない)。
+func TestDeleteConfirmKeepsTotalsWhenCramped(t *testing.T) {
+	entries := make([]disk.EntryOutcome, 0, 12)
+	for range 12 {
+		entries = append(entries, disk.EntryOutcome{Label: "エントリ", Method: "rm",
+			Outcome: disk.OutcomePlanned, BeforeSize: 1 << 30, Items: make([]disk.ItemOutcome, 1)})
+	}
+	v := &doctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
+	// ⚠️ page は**判別できる値**を入れる。6/10/24 だけだと「末尾を後ろから残す」機構を
+	// 丸ごと外しても green だった (敵対レビュー 2026-09-03 の実測: 差が出るのは 4 と 5)
+	for _, page := range []int{3, 4, 5, 6, 10, 24} {
+		out := strings.Join(v.lines(doctorTestOpts(page)), "\n")
+		// 操作の説明は**どんなに狭くても**残る (page=3 でも)
+		if !strings.Contains(out, "y: 削除する") {
+			t.Errorf("page=%d で操作の説明が消えた:\n%s", page, out)
+		}
+		// 合計は 2 行ぶんの余地があれば残る (1 件目のサイズだけを見て y を押す形にしない)
+		if page >= 4 && !strings.Contains(out, "解放される見込み") {
+			t.Errorf("page=%d で合計が消えた:\n%s", page, out)
+		}
+	}
+}
+
+// d の直前に「走査していない」印が立ったら、押した時点で止める (選択時の検査だけでは非対称)。
+func TestDeleteRechecksAtPressTime(t *testing.T) {
+	f := &fakeDelete{}
+	v := deleteTestView(t, f)
+	v.handleKey(" ", 20)
+	v.diskRep.Results[0].Reused = true // 選んだ後に印が立った
+	if act := v.handleKey("d", 20); act != doctorToast || !strings.Contains(v.pendingToast, "前回の計測") {
+		t.Fatalf("act=%v toast=%q", act, v.pendingToast)
+	}
+	if len(f.calls) != 0 {
+		t.Error("engine を呼んだ")
+	}
+}
+
+// スキャン中は削除を始めない (走査中の結果を対象にしない)。
+func TestDeleteRefusedWhileScanning(t *testing.T) {
+	f := &fakeDelete{}
+	v := doctorTestView(t)
+	v.deleteFn, v.deleteOpts = f.fn, func() disk.DeleteOptions { return disk.DeleteOptions{} }
+	doctorFirstDiskEvent(t, v) // 1 件だけ届いた = 走査中
+	_ = v.lines(doctorTestOpts(30))
+	v.selected = map[string]bool{"thing": true}
+	if act := v.handleKey("d", 20); act != doctorToast || !strings.Contains(v.pendingToast, "スキャン中") {
+		t.Fatalf("act=%v toast=%q", act, v.pendingToast)
+	}
+	if len(f.calls) != 0 {
+		t.Error("走査中に engine を呼んだ")
+	}
+}
+
+// 進捗は実行中のパネルに出る (出ないと数秒〜数十秒のあいだ無言で固まる)。
+func TestDeleteShowsProgressInPanel(t *testing.T) {
+	v := deleteTestView(t, &fakeDelete{})
+	v.del = doctorDelete{running: true, progress: "2/3 Xcode DerivedData を削除中"}
+	out := doctorPanelText(v, 20)
+	for _, want := range []string{"削除しています", "2/3 Xcode DerivedData を削除中", "Ctrl-C"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("実行中のパネルに %q が無い:\n%s", want, out)
+		}
+	}
+	v.del = doctorDelete{preparing: true, progress: "1/2 走査中"}
+	if out := doctorPanelText(v, 20); !strings.Contains(out, "確認しています") || !strings.Contains(out, "1/2 走査中") {
+		t.Errorf("下見のパネル:\n%s", out)
+	}
+}
+
+// engine が error を返したら、その旨と「何も消えていません」を出す
+// (engine の契約: error は 1 件も触っていないときだけ)。
+func TestDeleteShowsEngineError(t *testing.T) {
+	f := &fakeDelete{err: errDeleteTest}
+	v := deleteTestView(t, f)
+	v.handleKey(" ", 20)
+	v.handleKey("d", 20)
+	_ = runDeleteCmds(t, v, v.takeDeleteCmd())
+	if v.del.err == "" {
+		t.Fatalf("エラーの相に落ちていない: %+v", v.del)
+	}
+	out := doctorPanelText(v, 20)
+	for _, want := range []string{"削除できませんでした", "記録を残せない", "何も消えていません"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("エラーのパネルに %q が無い:\n%s", want, out)
+		}
+	}
+	if act := v.handleKey("j", 20); act != doctorRescan || v.del.active() {
+		t.Errorf("エラーを閉じられない: act=%v del=%+v", act, v.del)
+	}
+}
+
+var errDeleteTest = deleteTestError("記録を残せないため中止しました")
+
+type deleteTestError string
+
+func (e deleteTestError) Error() string { return string(e) }
+
+// 中断は ctx で engine へ伝わる (プロセスを殺さない)。
+func TestDeleteCancelReachesEngine(t *testing.T) {
+	f := &fakeDelete{}
+	v := deleteTestView(t, f)
+	v.handleKey(" ", 20)
+	v.handleKey("d", 20)
+	cmd := v.takeDeleteCmd()
+	v.del.cancel() // 実行の直前に中断された状況
+	_ = runDeleteCmds(t, v, cmd)
+	if f.ctxErr == nil {
+		t.Error("engine に中断が伝わっていない (ctx を渡していない)")
+	}
+}
+
+// 閉じた後に届いた古い Msg を取り込まない。
+func TestDeleteIgnoresStaleMsg(t *testing.T) {
+	v := deleteTestView(t, &fakeDelete{})
+	v.del = doctorDelete{running: true}
+	rep := disk.DeleteReport{Freed: 1}
+	v.receiveDelete(doctorDeleteMsg{gen: v.gen + 1, ev: doctorDeleteEvent{rep: &rep}})
+	if v.del.result != nil {
+		t.Error("古い世代の Msg を取り込んだ")
+	}
+	v.shown = false
+	v.receiveDelete(doctorDeleteMsg{gen: v.gen, ev: doctorDeleteEvent{rep: &rep}})
+	if v.del.result != nil {
+		t.Error("閉じた後の Msg を取り込んだ")
+	}
+}
+
+// 語彙と桁の対応 (取り違えると「消えていないのに数字が出る」)。
+func TestDeleteVocabulary(t *testing.T) {
+	for _, tc := range []struct {
+		o        disk.Outcome
+		wantWord string
+		e        disk.EntryOutcome
+		wantSize string
+	}{
+		{disk.OutcomeDeleted, "✅ 削除した", disk.EntryOutcome{Outcome: disk.OutcomeDeleted, Freed: 1024}, "1.0KB"},
+		{disk.OutcomeTrashed, "🚮 ゴミ箱へ", disk.EntryOutcome{Outcome: disk.OutcomeTrashed, Trashed: 2048}, "2.0KB"},
+		{disk.OutcomeIncomplete, "🚨 未完了", disk.EntryOutcome{Outcome: disk.OutcomeIncomplete, Freed: 4096}, "---"},
+		{disk.OutcomeSkipped, "🚫 触れず", disk.EntryOutcome{Outcome: disk.OutcomeSkipped, Freed: 4096}, "---"},
+		{disk.OutcomeFailed, "❌ できず", disk.EntryOutcome{Outcome: disk.OutcomeFailed, Freed: 4096}, "---"},
+		{disk.OutcomeProposed, "📋 表示のみ", disk.EntryOutcome{Outcome: disk.OutcomeProposed}, "---"},
+	} {
+		if got := doctorOutcomeWord(tc.o); got != tc.wantWord {
+			t.Errorf("%s の語 = %q, want %q", tc.o, got, tc.wantWord)
+		}
+		// 🚨 消えていない / 消えたか分からないものに数字を出さない
+		if got := deleteResultSize(tc.e); got != tc.wantSize {
+			t.Errorf("%s の桁 = %q, want %q", tc.o, got, tc.wantSize)
+		}
+	}
+	for method, want := range map[string]string{"rm": "✅ 削除", "trash": "🚮 ゴミ箱へ", "cli": "📋 コマンド", "propose": "📋 表示のみ"} {
+		if got := deleteMethodWord(method); got != want {
+			t.Errorf("%s の語 = %q, want %q", method, got, want)
+		}
+	}
+	// 記号は単独で幅 2 のものだけ (端末で右端が動かないように)
+	for _, s := range []string{"✅", "🚮", "🚨", "🚫", "❌", "📋"} {
+		if w := dispWidth(s); w != 2 {
+			t.Errorf("%q の幅 = %d (2 でない記号は使わない)", s, w)
+		}
+	}
+}
+
+// 削除の経路ごとに確認の文言が変わる (trash はゴミ箱、cli はコマンド、対象外は理由)。
+func TestDeleteConfirmPerMethodLines(t *testing.T) {
+	plan := disk.DeleteReport{Entries: []disk.EntryOutcome{
+		{Label: "ごみ", Method: "trash", Outcome: disk.OutcomePlanned, BeforeSize: 2048, Items: make([]disk.ItemOutcome, 3)},
+		{Label: "こまんど", Method: "cli", Command: "go clean -modcache", Outcome: disk.OutcomePlanned,
+			BeforeSize: 1024, Items: make([]disk.ItemOutcome, 1)},
+		{Label: "ていじ", Method: "propose", Outcome: disk.OutcomeProposed},
+		{Label: "たいしょうがい", Method: "rm", Outcome: disk.OutcomeSkipped, Reason: "いまは対象外です"},
+	}}
+	v := &doctorView{del: doctorDelete{confirm: true, plan: &plan}}
+	out := strings.Join(v.lines(doctorTestOpts(30)), "\n")
+	for _, want := range []string{"3 件をゴミ箱へ移動", "go clean -modcache を実行", "実行しません", "🚫 対象外", "いまは対象外です"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("確認に %q が無い:\n%s", want, out)
+		}
+	}
+	// ゴミ箱ぶんは「解放される見込み」に足さない (空にするまで容量は戻らない)
+	if strings.Contains(out, "解放される見込み: 3.0KB") {
+		t.Errorf("ゴミ箱の分を解放量に足している:\n%s", out)
+	}
+}
+
+// 入りきらない件数は注記で伝える (黙って消さない)。
+func TestDeletePanelElisionNote(t *testing.T) {
+	entries := make([]disk.EntryOutcome, 0, 8)
+	for range 8 {
+		entries = append(entries, disk.EntryOutcome{Label: "え", Method: "rm",
+			Outcome: disk.OutcomePlanned, BeforeSize: 1024, Items: make([]disk.ItemOutcome, 1)})
+	}
+	v := &doctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
+	out := strings.Join(v.lines(doctorTestOpts(10)), "\n")
+	if !strings.Contains(out, "他 ") || !strings.Contains(out, "画面に入りません") {
+		t.Errorf("省いた件数の注記が無い:\n%s", out)
 	}
 }

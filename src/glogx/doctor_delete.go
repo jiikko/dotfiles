@@ -10,6 +10,10 @@ package main
 //   - 中断は **ctx の cancel** で伝える (プロセスを殺すと記録が executing のまま残る)
 //   - 結果は 3 値ではない。`incomplete` (実行したが残っている) を成功にも失敗にも畳まない
 //
+// engine の契約 (ここが崩れると UI が嘘をつく): **error を返すのは 1 件も触っていないときだけ**
+// (記録を残せず中止した場合)。中断・部分失敗は error ではなく Outcome で返る。だから
+// エラーのパネルは「何も消えていません」と断言してよい。
+//
 // 進捗の Msg は走査 goroutine から並行に届くので、channel に載せて Cmd で 1 件ずつ Msg にする
 // (Update の外で状態を触らない)。ディスク走査 (doctorDiskEvent) と同じ形。
 
@@ -71,20 +75,26 @@ type doctorDeleteMsg struct {
 // startDelete は下見 (dryRun) か本番の削除を走らせる。どちらも同じ経路で、
 // 違うのは DryRun フラグだけ (確認プロンプトに出す内容を UI 側で組み直さないため)。
 func (v *doctorView) startDelete(targets []disk.Result, dryRun bool) tea.Cmd {
+	if v.del.cancel != nil {
+		v.del.cancel() // 前の相 (下見) の ctx を残さない
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan doctorDeleteEvent, 16)
-	v.del.cancel, v.del.ch = cancel, ch
-	if dryRun {
-		v.del.preparing = true
-	} else {
-		v.del.running = true
-	}
-	v.del.progress = "準備中"
+	// 相は 1 つだけ立てる。⚠️ confirm を落とし忘れると confirm && running の非正規状態になり、
+	// 今は switch の並び順だけで無害になっている (並べ替えた瞬間に黙って壊れる)。
+	// armedCC も引き継がない: 下見の最中に押した Ctrl-C が、本番の 1 回目で即中断に化ける
+	v.del = doctorDelete{cancel: cancel, ch: ch, progress: "準備中",
+		preparing: dryRun, running: !dryRun}
 	gen := v.gen
 	opt := v.deleteOptions()
 	opt.DryRun = dryRun
 	opt.OnPhase = func(i, total int, label string, p disk.DeletePhase) {
-		ch <- doctorDeleteEvent{progress: fmt.Sprintf("%d/%d %s を%s", i+1, total, label, doctorPhaseWord(p))}
+		// ⚠️ ノンブロッキング。読み手 (receiveDelete の再アーム) が止まると、engine が
+		// **削除の途中で** channel 待ちに入る。進捗は落としてよい情報なので捨てる方へ倒す
+		select {
+		case ch <- doctorDeleteEvent{progress: fmt.Sprintf("%d/%d %s を%s", i+1, total, label, doctorPhaseWord(p))}:
+		default:
+		}
 	}
 	run := v.deleteFn
 	if run == nil {
@@ -130,7 +140,7 @@ func (v *doctorView) waitDeleteCmd(gen int) tea.Cmd {
 
 // receiveDelete は進捗 / 完了を取り込む。次の 1 件を待つ Cmd を返す。
 func (v *doctorView) receiveDelete(msg doctorDeleteMsg) tea.Cmd {
-	if msg.gen != v.gen || !v.del.active() {
+	if !v.shown || msg.gen != v.gen || !v.del.active() {
 		return nil // 閉じた後に届いた古い Msg
 	}
 	ev := msg.ev
@@ -178,7 +188,16 @@ func (v *doctorView) handleDeleteKey(key string) (doctorAction, bool) {
 			targets := v.selectedResults()
 			if len(targets) == 0 {
 				d.reset()
-				return doctorNothing, true
+				v.pendingToast = "削除する対象がありません"
+				return doctorToast, true
+			}
+			// 入口 (beginDelete) だけで検査すると非対称になる。押す瞬間にもう一度見る
+			for _, r := range targets {
+				if ok, why := v.deletable(r); !ok {
+					d.reset()
+					v.pendingToast = r.Entry.Label + ": " + why
+					return doctorToast, true
+				}
 			}
 			v.pendingDeleteCmd = v.startDelete(targets, false)
 			return doctorRunDelete, true
@@ -222,8 +241,10 @@ func (v *doctorView) deletable(r disk.Result) (bool, string) {
 		return false, "前回の結果を表示しています (r で再スキャンしてから削除してください)"
 	case r.Reused:
 		return false, "前回の計測を再利用した行です (r で再スキャンしてから削除してください)"
-	case r.Entry.Inspect && !v.inspected[r.Entry.ID]:
-		// ユーザーのファイルでありうる行は、中身を一度見るまで選べない (issue 148 の 3 章)
+	case (r.Entry.Inspect || r.Entry.Risk == disk.RiskConfirm) && !v.inspected[r.Entry.ID]:
+		// ユーザーのファイルでありうる行は、中身を一度見るまで選べない (issue 148 の 3 章)。
+		// ⚠️ Inspect だけを見ると、カタログが `RiskConfirm` に `Inspect` を付け忘れた瞬間に
+		// ゲートが消える (今の 5 件はたまたま両方立っている)。危険度そのものも条件にする
 		return false, "中身を確認してから選んでください (Enter で開く)"
 	}
 	return true, ""
@@ -370,14 +391,16 @@ func (v *doctorView) confirmLines(o doctorRenderOpts) (blocks [][]string, tail [
 		}
 		blocks = append(blocks, out)
 	}
-	if freeing > 0 {
-		tail = append(tail, " 解放される見込み: "+disk.HumanSize(freeing))
+	// ⚠️ 合計は**1 行にまとめる**。2 行に割ると、狭い画面で先に落ちて「1 件目のサイズだけが
+	// 見えている状態で y を受ける」形になる (敵対レビュー 2026-09-03: 78GB の削除で 1.0GB しか
+	// 見えなかった)。assembleDeletePanel は末尾を後ろから残すので、1 行なら生き残りやすい
+	// ⚠️ tail は「**捨ててよい順**」に並べる (assembleDeletePanel は前から削る)。
+	// 空行 → 合計 → 操作の説明。最後の行は必ず残る
+	tail = append(tail, "")
+	if sum := deleteTotalsLine("解放される見込み", freeing, trashing); sum != "" {
+		tail = append(tail, sum)
 	}
-	if trashing > 0 {
-		tail = append(tail, fmt.Sprintf(" ゴミ箱へ移動: %s (すぐには容量が戻りません)", disk.HumanSize(trashing)))
-	}
-	// ⚠️ 最後の行 (操作の説明) は**必ず残す**。assembleDeletePanel が後ろから優先して残す
-	return blocks, append(tail, "", " y: 削除する      n / Esc: やめる")
+	return blocks, append(tail, " y: 削除する      n / Esc: やめる")
 }
 
 // doctorDeleteResultLines は結果。**incomplete を成功にも失敗にも畳まない**。
@@ -391,22 +414,34 @@ func doctorDeleteResultLines(o doctorRenderOpts, rep disk.DeleteReport) (blocks 
 		}
 		blocks = append(blocks, out)
 	}
-	if rep.Freed > 0 {
-		tail = append(tail, " 解放しました: "+disk.HumanSize(rep.Freed))
-	}
-	if rep.Trashed > 0 {
-		tail = append(tail, fmt.Sprintf(" ゴミ箱へ移動: %s (空にするまで容量は戻りません)", disk.HumanSize(rep.Trashed)))
-	}
-	if rep.Freed == 0 && rep.Trashed == 0 {
-		tail = append(tail, " 解放された容量はありません")
+	// 捨ててよい順: 空行 → 記録のパス → 記録のエラー → 合計 → 操作の説明
+	tail = append(tail, "")
+	if rep.HistoryPath != "" {
+		tail = append(tail, " 記録: "+rep.HistoryPath)
 	}
 	if rep.HistoryError != "" {
 		tail = append(tail, " 🚨 記録を書けませんでした: "+rep.HistoryError)
 	}
-	if rep.HistoryPath != "" {
-		tail = append(tail, " 記録: "+rep.HistoryPath)
+	if sum := deleteTotalsLine("解放しました", rep.Freed, rep.Trashed); sum != "" {
+		tail = append(tail, sum)
+	} else {
+		tail = append(tail, " 解放された容量はありません")
 	}
-	return blocks, append(tail, "", " 何かキーを押すと閉じ、もう一度スキャンします")
+	return blocks, append(tail, " 何かキーを押すと閉じ、もう一度スキャンします")
+}
+
+// deleteTotalsLine は合計を 1 行にまとめる (狭い画面で落ちにくくするため)。0 なら空。
+func deleteTotalsLine(label string, freed, trashed int64) string {
+	switch {
+	case freed > 0 && trashed > 0:
+		return fmt.Sprintf(" %s: %s / ゴミ箱へ %s (空にするまで容量は戻りません)",
+			label, disk.HumanSize(freed), disk.HumanSize(trashed))
+	case freed > 0:
+		return fmt.Sprintf(" %s: %s", label, disk.HumanSize(freed))
+	case trashed > 0:
+		return fmt.Sprintf(" ゴミ箱へ %s (空にするまで容量は戻りません)", disk.HumanSize(trashed))
+	}
+	return ""
 }
 
 func deleteResultSize(e disk.EntryOutcome) string {
@@ -487,28 +522,30 @@ func deleteNote(o doctorRenderOpts, s string) string {
 func assembleDeletePanel(o doctorRenderOpts, title string, blocks [][]string, tail []string) []string {
 	head := []string{" " + doctorColor(o.colored, ansiBold, title), ""}
 	room := max(o.page-len(head), 1)
-	// 末尾は**後ろから**優先して残す (最後の行 = 操作の説明が最重要)
+	// 末尾は**後ろから**優先して残す。tail の並びは「捨ててよい順」= 空行 → 補足 → 合計 → 操作の説明
 	kept := tail
-	for len(kept) > 1 && len(kept) >= room {
+	for len(kept) > 1 && len(kept) > room {
 		kept = kept[1:]
 	}
-	// 1 件も入らないなら、合計より「何を消すのか」を優先して末尾を削る
-	// (操作の説明 = 最後の 1 行だけは必ず残す)
-	if len(blocks) > 0 {
-		for len(kept) > 1 && len(blocks[0])+len(kept)+1 > room {
-			kept = kept[1:]
-		}
+	avail := max(room-len(kept), 0)
+	var need int
+	for _, b := range blocks {
+		need += len(b)
+	}
+	elide := need > avail
+	if elide {
+		avail = max(avail-1, 0) // 「他 N 件」の注記のぶんを先に確保する
 	}
 	var body []string
 	shown := 0
 	for _, b := range blocks {
-		if len(body)+len(b)+len(kept)+1 > room {
+		if len(body)+len(b) > avail {
 			break
 		}
 		body = append(body, b...)
 		shown++
 	}
-	if shown < len(blocks) {
+	if elide && avail > 0 {
 		body = append(body, doctorColor(o.colored, ansiDim,
 			fmt.Sprintf(" … 他 %d 件は画面に入りません (端末を広げてください)", len(blocks)-shown)))
 	}
