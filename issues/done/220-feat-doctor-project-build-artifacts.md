@@ -24,10 +24,53 @@
 - **復元手段が在ることを確認してから出す** (lock ファイルの存在 / registry が公開か)
 - 削除は `DeleteVia: propose` (コマンドを提示するだけ) から始めるのが安全
 
-## 未実測
+## 実測 (2026-09-04)
 
-この機の `~/src` 配下の実サイズを測っていない。**着手時に最初に測る**
-(現行カタログの合計 84.6GB に対してどれくらいか分からないと、優先度が決まらない)。
+`~/src` は **54.4GB**。現行カタログの合計 84.6GB と同じ桁で、無視できる規模ではない。
+
+### 成果物ディレクトリの種類別 (最上位のものだけ。入れ子は親に含める)
+
+| 種類 | 合計 | 個数 |
+|---|---|---|
+| `.next` | **6.11 GB** | 4 |
+| `node_modules` | **4.38 GB** | 17 |
+| `build` | 4.10 GB | 262 |
+| `dist` | 0.99 GB | 912 |
+| `vendor` | 0.56 GB | 27 |
+| `target` / `.venv` / `__pycache__` | 0.08 GB | 15 |
+| **合計** | **≈ 16.2 GB** | |
+
+### 🚨 成果物は 54.4GB のうち 16.2GB でしかない
+
+残り約 38GB は成果物ではない。直下の内訳 (上位): `working` 20.6 / `pj_energy_matching` 12.8 /
+`ubiregi-server` 6.3 / `gx-navi` 5.4 / `ubiregi` 2.6 GB。`.git` は **65 repo で 3.18GB**。
+**この issue が扱えるのは 16.2GB までで、残りはソースと履歴**。優先度の判断材料になる。
+
+### プロジェクト単位 (100MB 以上の成果物を持つもの)
+
+| プロジェクト | 成果物 | 最終更新 | 復元手段 |
+|---|---|---|---|
+| `pj_energy_matching/frontend` | **6.59 GB** | **1 日前** | yarn.lock |
+| `ubiregi-server` | 0.93 GB | 1 日前 | package-lock.json |
+| `gx-navi/frontend/app` | 0.92 GB | **404 日前** | yarn.lock |
+| `working/dropbox-multi-video-player-electron` | 0.70 GB | 119 日前 | package-lock.json |
+| `ubiregi-log-viewer` | 0.65 GB | **709 日前** | pnpm-lock.yaml |
+| `monthly_hours_manager` | 0.60 GB | **841 日前** | package-lock.json |
+| `working/good-chrome-extensions/dropbox-video-player` | 0.11 GB | 308 日前 | package-lock.json |
+| `working/convenient-link-extension` | 0.10 GB | 408 日前 | package-lock.json |
+
+### この実測が設計に与える答え
+
+1. **「最終更新で絞る」は必須**。最大の 6.59GB は**1 日前に触った現役**で、消すと次のビルドが
+   数分〜十数分かかる。逆に **1 年以上触っていない 3 件で 2.17GB**、119 日以上まで広げると
+   **4.08GB** になる。ここが実際に狙える範囲
+2. **lock ファイルは全件に在った** (8/8)。「復元手段の確認」は実装できるが、この機では
+   絞り込みの役に立たない (全部通る)。private registry / ネットワーク不通のリスクは残るので
+   検査自体は要る
+3. **`dist` は数だけ多くて量が小さい** (912 個で 0.99GB)。プロジェクト単位でまとめないと
+   912 行が並ぶ。issue の「プロジェクトを単位にする」判断は実測でも正しい
+4. **`.next` が最大の種類** (6.11GB / 4 個)。Next.js のビルドキャッシュはプロジェクトに
+   1 つで巨大という形なので、`node_modules` と同じ扱いでよい
 
 ## 受け入れ条件
 
