@@ -1582,3 +1582,81 @@ func TestDoctorSnapshotTrustBoundaryFreeText(t *testing.T) {
 		}
 	}
 }
+
+// carry-forward の TTL が依拠する時刻そのものを、書き込み側で不変条件にする (issue 194)。
+//
+// 172 で doctorCarryTTL を入れて「今回実測していないエントリの無期限延命」を塞いだが、
+// TTL が見る MeasuredAt の正しさは誰も守っていなかった。2 つの経路で同じ延命に戻る:
+//
+//	(a) 極端に未来の MeasuredAt (RTC 故障 / 不正な NTP) では age が永久に負のまま
+//	(b) MeasuredAt を持たないエントリはキャッシュ全体の ScannedAt へフォールバックし、
+//	    ScannedAt は保存のたびに更新されるので「真の経過」が積まれない
+func TestDoctorCarryTTLClampsMeasuredAt(t *testing.T) {
+	base := time.Date(2026, 9, 3, 12, 0, 0, 0, time.Local)
+	// ⚠️ MeasuredAt と ScannedAt を**別の値**にする。同じにすると
+	// 「MeasuredAt を書く」を「ScannedAt を書く」に変える変異を素通りさせる (実測 2026-09-03)。
+	// 実際に別々になるのは、重いエントリの計測値を再利用した走査 (計測は前、走査は今)
+	heavy := func(scannedAt, measuredAt time.Time) disk.Report {
+		return disk.Report{ScannedAt: scannedAt, Results: []disk.Result{{
+			Entry: disk.Entry{ID: "heavy", Label: "H"}, Status: disk.StatusOK, Size: 44 << 30,
+			Items: []disk.Item{{Path: "/x", Size: 44 << 30}}, MeasuredAt: measuredAt,
+		}}}
+	}
+	// Esc (partial) を n 回繰り返す。partial は「前回の記録に重ねる」経路なので carry が効く
+	carryRounds := func(c doctorDiskCache, start time.Time, step time.Duration, n int) doctorDiskCache {
+		for i := 1; i <= n; i++ {
+			c = doctorCacheFromReport(disk.Report{ScannedAt: start.Add(time.Duration(i) * step), Partial: true}, c)
+		}
+		return c
+	}
+
+	// (a) 100 年後を指す MeasuredAt でも TTL 相当で失効する。
+	// 書き込み時に頭打ちにするので、キャッシュに残る時刻は走査時刻を超えない
+	future := doctorDiskCache{ScannedAt: base, Entries: []doctorDiskCacheEntry{
+		{ID: "heavy", Label: "H", Size: 44 << 30, Status: "ok", MeasuredAt: base.AddDate(100, 0, 0)},
+	}}
+	// 1 回目の partial で頭打ちが効く (この時点ではまだ TTL 内なので引き継がれる)
+	c := carryRounds(future, base, time.Hour, 1)
+	if len(c.Entries) != 1 {
+		t.Fatalf("TTL 内なのに引き継がれない: %+v", c.Entries)
+	}
+	if got := c.Entries[0].MeasuredAt; got.After(base.Add(time.Hour)) {
+		t.Errorf("未来の MeasuredAt が頭打ちにされていない: %v", got)
+	}
+	// その後 TTL を超えれば失効する (100 年後のままなら永久に生き残る)
+	c = carryRounds(c, base.Add(time.Hour), doctorCarryTTL+time.Hour, 1)
+	if len(c.Entries) != 0 {
+		t.Errorf("未来の MeasuredAt を持つエントリが TTL を超えても失効しない: %+v", c.Entries)
+	}
+
+	// (b) TTL より短い間隔を何ラウンド重ねても、真の経過が TTL を超えたら失効する。
+	// ⚠️ 1 ラウンドでは検出できない: 10h は TTL 内なので carry されるのが正しい。
+	// MeasuredAt を書かない実装だと、毎回「前回保存からの 10h」しか見ずに永久に生き残る
+	fresh := doctorCacheFromReport(heavy(base, base), doctorDiskCache{})
+	if len(fresh.Entries) != 1 || fresh.Entries[0].MeasuredAt.IsZero() {
+		t.Fatalf("実測したエントリに MeasuredAt が書かれていない: %+v", fresh.Entries)
+	}
+	short := carryRounds(fresh, base, 10*time.Hour, 30) // 真の経過 300h
+	if len(short.Entries) != 0 {
+		t.Errorf("TTL より短い間隔の繰り返しで無期限延命した (真の経過 300h): %+v", short.Entries)
+	}
+	// 同じ経路でも TTL 内 (2 ラウンド = 20h) なら生きている (上の assert が「常に空」で通らないこと)
+	if live := carryRounds(fresh, base, 10*time.Hour, 2); len(live.Entries) != 1 {
+		t.Errorf("TTL 内 (20h) なのに失効した: %+v", live.Entries)
+	}
+
+	// (c) 保存されるのは「走査した時刻」ではなく「実測した時刻」。
+	// 再利用した計測値を含む走査では両者がずれるので、走査時刻を書くと鮮度を過大評価する
+	stale := doctorCacheFromReport(heavy(base, base.Add(-20*time.Hour)), doctorDiskCache{})
+	if len(stale.Entries) != 1 {
+		t.Fatalf("エントリが書かれていない: %+v", stale.Entries)
+	}
+	if got := stale.Entries[0].MeasuredAt; !got.Equal(base.Add(-20 * time.Hour)) {
+		t.Errorf("実測時刻ではなく走査時刻が保存されている: %v (want %v)", got, base.Add(-20*time.Hour))
+	}
+	// 実測から 20h 経っているので、あと 5h の carry で TTL (24h) を超えて失効する。
+	// 走査時刻を書く実装だと 5h しか経っていないことになり、ここで生き残る
+	if c := carryRounds(stale, base, 5*time.Hour, 1); len(c.Entries) != 0 {
+		t.Errorf("実測から 25h 経っているのに失効しない (走査時刻を鮮度に使っている疑い): %+v", c.Entries)
+	}
+}

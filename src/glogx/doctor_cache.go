@@ -93,16 +93,45 @@ func doctorDiskCachePath() (string, error) {
 func carryFresh(e doctorDiskCacheEntry, prevScannedAt, now time.Time) bool {
 	at := e.MeasuredAt
 	if at.IsZero() {
+		// 旧いキャッシュ (MeasuredAt を持たない版で書かれたもの) だけがここへ来る。
+		// 新しく書くエントリは doctorCacheFromReport が clampMeasuredAt で必ず埋めるので、
+		// **このフォールバックが継続的な判定に使われることは無い**。
+		// ⚠️ フォールバックを carryFresh の常用経路にしてはいけない: キャッシュ全体の
+		// ScannedAt は保存のたびに更新されるので、TTL より短い間隔で保存が続くと
+		// 「前回保存からの経過」しか見なくなり、**実測からの真の経過が永久に積まれない**
+		// (実測 2026-09-03: MeasuredAt を書かない変異で 10h おき 30 ラウンド = 真の経過 300h でも
+		// 124GB のエントリが生き残った。issue 194)
 		at = prevScannedAt
 	}
 	if at.IsZero() {
 		return false // 実測時刻が分からないものは引き継がない
 	}
-	// ⚠️ 未来の時刻 (時計を戻した / 別マシンのキャッシュ) は**引き継ぐ**。他の age 判定
-	// (cooledDown / loadDoctorSnapshot / doctorReuseFrom) は「作業を省いてよいか / 黙ってよいか」を
-	// 決めるので未来を疑う側 = 安全側だが、ここは「記録を残してよいか」なので**残す側が安全**。
-	// 引き継ぎ続けるわけでもない: 時計のズレが過ぎれば age は正になり、TTL で切れる。
+	// ⚠️ 未来の時刻は**引き継ぐ**。他の age 判定 (cooledDown / loadDoctorSnapshot /
+	// doctorReuseFrom) は「作業を省いてよいか / 黙ってよいか」を決めるので未来を疑う側 = 安全側だが、
+	// ここは「記録を残してよいか」なので**残す側が安全**。
+	// この判断が成立するのは **MeasuredAt が未来を指さないこと**を書き込み側 (clampMeasuredAt) が
+	// 保証しているからで、判定側だけを見て「小さいズレならすぐ正になる」と読んではいけない
+	// (実測 2026-09-03: 100 年後を指す MeasuredAt では 300 日経っても一度も失効しなかった。issue 194)。
 	return now.Sub(at) < doctorCarryTTL
+}
+
+// clampMeasuredAt は実測時刻を「保存する時点」で頭打ちにする。読み出し側で未来を救うのではなく
+// **書き込み側で不変条件を作る** (救う経路が 1 つで済む。carryFresh / トースト / 再利用判定が
+// それぞれ未来を疑う形にすると、どれか 1 つ漏れたときに同じ無期限延命が戻る)。
+//
+// ゼロ値も同時に埋める: MeasuredAt を持たないエントリは carryFresh でキャッシュ全体の ScannedAt へ
+// フォールバックし、TTL より短い間隔の保存が続くと真の経過を無視する (上記の実測)。
+func clampMeasuredAt(at, fallback, now time.Time) time.Time {
+	if at.IsZero() {
+		at = fallback
+	}
+	if at.IsZero() {
+		return time.Time{} // 埋める材料が無い (carryFresh 側が引き継がない判断をする)
+	}
+	if at.After(now) {
+		return now
+	}
+	return at
 }
 
 func doctorCacheFromReport(rep disk.Report, prev doctorDiskCache) doctorDiskCache {
@@ -127,6 +156,9 @@ func doctorCacheFromReport(rep disk.Report, prev doctorDiskCache) doctorDiskCach
 	if rep.Partial {
 		for _, e := range prev.Entries {
 			if carryFresh(e, prev.ScannedAt, rep.ScannedAt) {
+				// 旧版が書いた未来の時刻がキャッシュに居座っている場合もここで頭打ちにする
+				// (書き込みのたびに正規化されるので、次の保存以降は TTL が正しく効く)
+				e.MeasuredAt = clampMeasuredAt(e.MeasuredAt, prev.ScannedAt, rep.ScannedAt)
 				put(e)
 			}
 		}
@@ -136,6 +168,7 @@ func doctorCacheFromReport(rep disk.Report, prev doctorDiskCache) doctorDiskCach
 			// 今回は実測していない。前回の実測値があればそれを引き継ぐ (無ければ持たない)
 			if e, ok := prevByID[r.Entry.ID]; ok && carryFresh(e, prev.ScannedAt, rep.ScannedAt) {
 				e.Label = r.Entry.Label // 表示文言だけは今のカタログに合わせる
+				e.MeasuredAt = clampMeasuredAt(e.MeasuredAt, prev.ScannedAt, rep.ScannedAt)
 				put(e)
 			}
 			c.Reused = true
@@ -145,7 +178,10 @@ func doctorCacheFromReport(rep disk.Report, prev doctorDiskCache) doctorDiskCach
 			delete(merged, r.Entry.ID) // 候補が無くなった
 			continue
 		}
-		put(doctorDiskCacheEntry{ID: r.Entry.ID, Label: r.Entry.Label, Size: r.Size, Status: string(r.Status), MeasuredAt: r.MeasuredAt})
+		// MeasuredAt は書き込み時点で頭打ちにし、ゼロなら走査時刻で埋める (issue 194)。
+		// 読み出し側 (carryFresh) で未来を救う形にすると、救う経路が判定の数だけ要る
+		put(doctorDiskCacheEntry{ID: r.Entry.ID, Label: r.Entry.Label, Size: r.Size, Status: string(r.Status),
+			MeasuredAt: clampMeasuredAt(r.MeasuredAt, rep.ScannedAt, rep.ScannedAt)})
 	}
 	for _, id := range ids {
 		e, ok := merged[id]
