@@ -46,7 +46,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-skip-exit-code test-workflow-action-pins test-go-lint test-go test-src
+.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-skip-exit-code test-workflow-action-pins test-go-project-lanes test-go-lint test-go test-src
 
 # ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ)。
 #
@@ -247,6 +247,12 @@ test-skip-exit-code:
 test-trigger-log-writers:
 	@scripts/check_trigger_log_writers.sh
 
+# 新しい Go プロジェクトが「CI レーン無し」で入るのを落とす (issue 203 候補 B / 出典 080・087)。
+# Makefile 側は wildcard で発見するが、CI の paths filter とプロジェクトの lint/test target は
+# 手で用意するので、そこだけ穴が残っている。正本は scripts/check_go_project_lanes.sh。
+test-go-project-lanes:
+	@scripts/check_go_project_lanes.sh
+
 # heavy は 21 本 × ~16s (CI 実測) の直列で 5.6 分に育ったため並列実行する
 # (av1ify/concat は tempdir 独立で並列安全。2026-07-20 に 338s → 数十秒へ)
 test-discovered-heavy:
@@ -372,7 +378,7 @@ test-lint-tests:
 #   1 度も走らず、lint.yml は `make test-lint` の 1 ステップなので CI ログにも出ない。
 #   **末尾の新設検査ほど隠れやすい** (実測: test-json を落とすと後続 7 本が未実行)。
 test-lint:
-	@+$(call run_all_targets,test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-skip-exit-code test-workflow-action-pins)
+	@+$(call run_all_targets,test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-skip-exit-code test-workflow-action-pins test-go-project-lanes)
 
 # Go プロジェクトの静的解析とテスト。実体は各ディレクトリの Makefile の lint / test
 # ターゲットに閉じており、ここはそれへ委譲するだけ (ローカルのコミット前検証用。root の

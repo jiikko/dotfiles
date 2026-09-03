@@ -73,3 +73,71 @@ out="$(HOME="$FAKE_HOME" zsh -f -c '
 ok "_TMUX_SESSION_LIB が定義済みならそちらを優先して毎回再評価する"
 
 printf 'snapshot wrapper survival: すべて成功\n'
+
+# --- 4. 静的検査: 新しい公開ラッパーが self-heal ガードなしで増えるのを止める (issue 203 候補 A) ---
+# 上の実行時テストが固定しているのは concat と tt の 2 本だけで、**新しい公開ラッパーが
+# 増えたときは何も見ない**。snapshot は `_` 始まりの関数を含めないので、公開関数が
+# `_` helper を参照していてガードが無ければ、その関数は Claude Code の Bash から
+# `command not found: _helper` で壊れる (issue 149 / 152 で実発生)。
+#
+# 検査対象は「snapshot に載る定義」= `_zshrc` と、`_zshrc` が **列 0 で無条件に** source する
+# zshlib。⚠️ lazy source される lib (`zshlib/_av1ify.zsh` 等) の中の公開関数は snapshot に
+# 載らないので対象外 (条件つき source = インデントされた行は拾わない)。
+# 判定: 本体が `_` 始まりの名前を参照しているなら、本体に self-heal の `source` があること。
+# repo にある 3 つのガードの形 (`${+functions[_x]} || source` / `if (( ! ... )) && [[ -r ]]` /
+# `local _l=...; [[ -r "$_l" ]] && source "$_l"`) はいずれも `source` を含む。
+targets=("$ROOT_DIR/_zshrc")
+while IFS= read -r lib; do
+  [[ -n "$lib" ]] || continue
+  [[ -f "$ROOT_DIR/$lib" ]] && targets+=("$ROOT_DIR/$lib")
+done < <(grep -E '^source .*zshlib/[A-Za-z0-9_.-]+\.zsh' "$ROOT_DIR/_zshrc" \
+         | sed -E 's|.*(zshlib/[A-Za-z0-9_.-]+\.zsh).*|\1|' | sort -u)
+[[ "${#targets[@]}" -ge 2 ]] || fail "検査対象が _zshrc だけ (無条件 source の抽出が壊れている)"
+
+# 公開関数を「名前 <TAB> 本体を 1 行に潰したもの」で列挙する。
+# 定義の形は `name() {` / `name () {` / `function name() {` の 3 つ、本体は 1 行にも複数行にも
+# なる (複数行は列 0 の `}` で閉じる = この repo の書き方)
+extract_public_funcs() {
+  awk '
+    function emit() { if (name != "") { gsub(/\t/, " ", body); printf "%s\t%s\n", name, body; name = ""; body = "" } }
+    /^(function[[:space:]]+)?[A-Za-z][A-Za-z0-9_-]*[[:space:]]*\(\)[[:space:]]*\{/ {
+      emit()
+      line = $0
+      sub(/^function[[:space:]]+/, "", line)
+      name = line; sub(/[[:space:]]*\(\).*/, "", name)
+      body = $0
+      if ($0 ~ /\}[[:space:]]*$/) emit()
+      next
+    }
+    name != "" { body = body " " $0; if ($0 ~ /^\}/) emit() }
+    END { emit() }
+  ' "$1"
+}
+
+offenders=()
+scanned=0
+for f in "${targets[@]}"; do
+  while IFS=$'\t' read -r fname fbody; do
+    [[ -n "$fname" ]] || continue
+    scanned=$((scanned + 1))
+    # 本体から「`_` 始まりの識別子への参照」を探す。定義行自身と、コメントは対象外
+    # ⚠️ `|| true` が必須。set -euo pipefail 下では grep の無マッチ (rc=1) が代入ごと
+    #    スクリプトを殺し、**1 本目の関数で静かに終わる** (実測 2026-09-03: 検査が
+    #    1 件も見ずに緑を返していた。`_claude/rules/adversarial-review-own-safeguards.md`
+    #    の「失敗はするが原因が消える」形)
+    refs=$(printf '%s' "$fbody" | grep -oE '(^|[^A-Za-z0-9_$"{])_[A-Za-z][A-Za-z0-9_]*' | tr -d ' ' | sort -u | head -5 || true)
+    [[ -n "$refs" ]] || continue
+    # self-heal の source があるか (3 つのガードの形すべてが source を含む)
+    if printf '%s' "$fbody" | grep -q 'source '; then continue; fi
+    offenders+=("$(basename "$f"):$fname → $(printf '%s' "$refs" | tr '\n' ' ')")
+  done < <(extract_public_funcs "$f")
+done
+[[ "$scanned" -gt 0 ]] || fail "公開関数が 1 つも抽出できない (静的検査が空振り)"
+if [[ "${#offenders[@]}" -gt 0 ]]; then
+  printf '✗ self-heal ガードの無い公開ラッパー (snapshot 下で command not found になる):\n'
+  printf '   %s\n' "${offenders[@]}"
+  printf '   直し方: 本体の先頭で helper を source して自己修復する\n'
+  printf '     (( ${+functions[_helper]} )) || source "$HOME/dotfiles/zshlib/_helper.zsh"\n'
+  exit 1
+fi
+ok "公開関数 $scanned 本すべてが self-heal ガードつき (静的検査)"

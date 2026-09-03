@@ -73,6 +73,7 @@ tmux バインド (_tmux.conf) から display-popup / run-shell 経由で呼ば�
 | `check_ci_group_deps.sh` | CI の heavy/rest 分割と Makefile の値の食い違い (issue 073 §3) | — |
 | `check_skip_exit_code.sh` | 丸ごと skip なのに `exit 0` (runner が `[ok]` と数える。issue 139) | `partial-skip: allow` |
 | `check_workflow_action_pins.sh` | 同じ Action が workflow 間で違う版 (issue 073 §1) | `action-pin: allow` |
+| `check_go_project_lanes.sh` | 新しい Go プロジェクトが CI レーン無しで入る (`src/*/go.mod` があるのに lint/test target・`src_<name>.yml`・paths filter が欠ける。issue 203 / 出典 080・087) | — |
 
 ## テスト
 
