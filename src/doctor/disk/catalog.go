@@ -200,6 +200,19 @@ var excludedRoots = []string{
 // CatalogSize は既定カタログのエントリ数 (UI の進捗表示の分母)。
 func CatalogSize() int { return len(catalog) }
 
+// CatalogEntry は既定カタログの ID からエントリを引く。復元した Result の Entry を
+// **カタログの今の定義へ束ね直す**ために使う: snapshot / キャッシュには Entry が丸ごと保存されるので、
+// そのまま使うと (a) カタログを直しても古い文言が出続け (b) 一般ユーザー権限で書き換えた
+// 文言がそのまま画面と y のコピーに載る (issue 229)。
+func CatalogEntry(id string) (Entry, bool) {
+	for _, e := range catalog {
+		if e.ID == id {
+			return e, true
+		}
+	}
+	return Entry{}, false
+}
+
 // CatalogHasID は既定カタログにその ID があるか。キャッシュ / snapshot から復元した Result が
 // 「今のカタログに実在するエントリか」を確かめるために使う。snapshot は一般ユーザー権限で
 // 書き換えられるので、そこに書かれた ID をそのまま行にしない (issue 178)。

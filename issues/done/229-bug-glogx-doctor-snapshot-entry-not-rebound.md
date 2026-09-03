@@ -101,3 +101,22 @@ r.Entry = e // 表示文言はカタログの今の定義に合わせる (計測
 - issue 228 (doctor の **live** 経路が termsafe を通らない。同じクラスタで報告されたが別物)
 - `issues/done/178` / `issues/done/193` — snapshot の信頼境界を引いた issue。本件はその**取りこぼし**
 - `src/doctor/disk/delete.go` — `FromSnapshot` を拒否し ID で再解決する側 (本件の影響を受けない理由)
+
+## 決着 (2026-09-04)
+
+`doctorSnapshotInCatalog` を**姉妹経路と同じ形**にした（`has(id) bool` → `lookup(id) (Entry, bool)`）。
+
+- `disk.CatalogEntry(id) (Entry, bool)` を export し、`v.catalogHas()` を `v.catalogLookup()` へ
+- 復元した Result は `r.Entry = e` でカタログの今の定義へ束ね直す。これで
+  条件 1（カタログを直しても古い文言が出続ける）と条件 2（細工した文言が画面と `y` のコピーへ載る）が
+  同時に閉じ、**`Entry` を sanitize する必要そのものが消えた**（snapshot 由来なのは計測値だけになる）
+- `sanitizeSnapshotResults` の doc から「今は削除機能が無いので実害は表示だけ」を外し、
+  **削除経路がこの境界に依存していない**理由（`Reused`/`FromSnapshot` を拒否し、
+  `lookupEntry(opt.Catalog, ID)` で引き直して再走査する）を実測どおり書いた
+
+### 検証
+
+- `TestDoctorSnapshotRebindsEntryToCatalog`: 細工した Label/Detail を持つ snapshot を書いて開き、
+  画面にカタログの Label が出て「偽ラベル」が行にも `copyText` にも載らないことを固定
+- 変異: `r.Entry = e` を外す（本 issue 以前の姿）→ red。復元で green
+- `make -C src/glogx lint` 0 issues / `make -C src/glogx test`（-race）全緑

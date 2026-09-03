@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"glogx/termsafe"
 	"glogx/usage"
 )
 
@@ -75,6 +76,15 @@ func loadUsageCache(path string, now time.Time) (*usage.Snapshot, bool) {
 	// age < 0 (未来) も取り直す (issue 201)
 	if age := now.Sub(entry.FetchedAt); age < 0 || age >= usageCacheTTL {
 		return nil, false
+	}
+	// 🚨 **表示に載る文字列は入口で 1 回 termsafe を通す** (src/glogx/CLAUDE.md の規律。issue 230)。
+	// このファイルは一般ユーザー権限で書き換えられる。live の取得経路は安全 (Claude は
+	// defaultOrder の完全一致でしか描かれず、codex の Label は分から組み立てる) だが、
+	// **codex 枠は Source で拾う**ので、キャッシュに書かれた Label がそのまま
+	// RenderLine / RenderTableGroups / RenderDashboard の 3 経路へ出る (敵対レビューが再現)。
+	// 出所ごとに書き分けると漏れるので、復元直後にここで閉じる
+	for i := range entry.Snapshot.Windows {
+		entry.Snapshot.Windows[i].Label = termsafe.PlainLine(entry.Snapshot.Windows[i].Label)
 	}
 	return entry.Snapshot, true
 }

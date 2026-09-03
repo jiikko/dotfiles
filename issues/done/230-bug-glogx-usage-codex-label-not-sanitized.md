@@ -93,3 +93,24 @@ usage は「外部由来の表示」の規律の対象に入っている。に�
 - issue 228 (doctor の live 経路が termsafe を通らない。**同じ「外部由来の表示」規律の別の穴**)
 - issue 229 (doctor の snapshot 復元経路が Entry を再束縛しない。**同じ「キャッシュ由来の文字列」の穴**)
 - `issues/done/178` / `issues/done/193` — キャッシュファイルの信頼境界の前例
+
+## 決着 (2026-09-04)
+
+`loadUsageCache` が復元した `Snapshot` の全 `Window.Label` を **`termsafe.PlainLine` へ 1 回通す**
+形にした（入口 1 箇所で閉じる。`src/glogx/CLAUDE.md` の「出所ごとに書き分けると漏れる」に従う）。
+
+`renderWindows` 側で通す案は採らなかった: 描画は 3 経路（`RenderLine` / `RenderTableGroups` /
+`RenderDashboard`）あり、そこで通すと出口ごとの書き分けになる。
+
+### 検証
+
+- `untrusted_display_test.go:TestUsageCacheSanitizesCodexLabel`: **codex 枠**の Label に OSC を仕込んだ
+  キャッシュを保存 → 読み込み → `RenderLine` / `RenderTable` に制御シーケンスも `PWNED` も出ないことを固定。
+  🚨 fixture を Claude 枠で作ると `defaultOrder` の allowlist に阻まれ、**退行しても最初から不可視**に
+  なるので codex 枠で作った（issue の指示どおり）
+- 変異 2 本（いずれも `go build` 通過を確認してから判定）:
+  | 変異 | 結果 |
+  |---|---|
+  | 無害化を丸ごと外す（本 issue 以前の姿） | red |
+  | Claude 枠だけ無害化し codex を素通しする | red |
+- `make -C src/glogx lint` 0 issues / `make -C src/glogx test`（-race）全緑

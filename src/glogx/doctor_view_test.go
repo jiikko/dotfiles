@@ -2003,3 +2003,34 @@ func TestDoctorRiskMarkDelegatesWordAndAddsColor(t *testing.T) {
 		}
 	}
 }
+
+// snapshot から復元した行は、**表示文言をカタログの今の定義へ束ね直す** (issue 229)。
+// snapshot には Entry が丸ごと保存されるので、そのまま使うと (a) カタログを直しても古い文言が
+// 出続け (b) 一般ユーザー権限で書き換えた Label / Detail がそのまま行と y のコピーへ載る。
+func TestDoctorSnapshotRebindsEntryToCatalog(t *testing.T) {
+	v := doctorTestView(t) // カタログは 1 件 (ID=thing / Label="Thing キャッシュ")
+	forged := disk.Entry{
+		ID: "thing", Label: "偽ラベル (snapshot で書き換えた)", Risk: disk.RiskSafe,
+		Recover: "偽の復元方法", DeleteVia: "rm", Detail: "偽の解説",
+	}
+	writeDoctorSnapshot(t, doctorSnapshot{ScannedAt: time.Now(), Disk: disk.Report{
+		Results: []disk.Result{{Entry: forged, Status: disk.StatusOK, Size: 4096,
+			Items: []disk.Item{{Path: "/tmp/x", Size: 4096}}}},
+	}})
+	if cmd := v.open(); cmd != nil {
+		t.Fatal("TTL 内の snapshot を使わずに走査した (前提が違う)")
+	}
+	out := strings.Join(v.lines(doctorTestOpts(30)), "\n")
+	if !strings.Contains(out, "Thing キャッシュ") {
+		t.Errorf("カタログの Label が出ていない:\n%s", out)
+	}
+	if strings.Contains(out, "偽ラベル") {
+		t.Errorf("snapshot に書かれた Label がそのまま出ている (再束縛していない):\n%s", out)
+	}
+	// y のコピーにも載らないこと (行の copyText はカタログ由来の文言で組む)
+	for _, r := range v.rows {
+		if strings.Contains(r.copyText, "偽") || strings.Contains(r.text, "偽") {
+			t.Errorf("細工した文言がコピー/表示に載っている: text=%q copyText=%q", r.text, r.copyText)
+		}
+	}
+}

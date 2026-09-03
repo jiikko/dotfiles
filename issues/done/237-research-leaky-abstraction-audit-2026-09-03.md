@@ -89,3 +89,15 @@ depguard `exec-via-runner` (runner/ とテスト以外での `os/exec` import �
 - `issues/done/071-research-design-audit-2026-08-20.md` — 同じ形式の先行記録 (却下一覧の正本)
 - `issues/226-retro-glogx-audit-2026-09-03.md` — 別セッションの retro。項目 1 が
   「テストの**射程**を測らずに却下の根拠にした」で、本監査の C3 / C11 / C12 は**逆に射程を測って却下できた**
+
+## 追記 (2026-09-04): 切り出した 3 本の決着
+
+| issue | 状態 |
+|---|---|
+| [228](228-bug-glogx-doctor-live-path-skips-termsafe.md) | **別セッションが着手** (`issues/next/` へ claim) |
+| 229 (snapshot の Entry 再束縛) | **完了** — `disk.CatalogEntry` を export し、復元時にカタログへ束ね直す |
+| 230 (usage の codex Label) | **完了** — `loadUsageCache` で `termsafe.PlainLine` を 1 回通す |
+
+229 / 230 はどちらも変異検証つきで閉じた（229: 再束縛を外すと red / 230: 無害化を外す・
+codex だけ素通しの 2 種とも red）。本 issue は却下台帳としてこのまま `done/` に残す
+（`issues/done/071` と同じ扱い。以降の audit が却下済みの指摘を再生成しないための正本）。

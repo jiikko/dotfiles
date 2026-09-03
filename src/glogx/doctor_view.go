@@ -138,17 +138,23 @@ func (v *doctorView) toggle() tea.Cmd {
 func (v *doctorView) open() tea.Cmd { return v.start(false) }
 
 // catalogHas は「この ID が実効カタログにあるか」を返す (テストは diskOpts で catalog を差し替える)。
-func (v *doctorView) catalogHas() func(string) bool {
+// catalogLookup は ID から**今のカタログの Entry** を引く関数を返す (テストは diskOpts で差し替える)。
+// 在るかどうかだけでなく Entry を返すのは、復元した Result の表示文言をカタログ側へ
+// 束ね直すため (issue 229)。
+func (v *doctorView) catalogLookup() func(string) (disk.Entry, bool) {
 	if v.diskOpts != nil {
 		if cat := v.diskOpts().Catalog; len(cat) > 0 {
-			ids := map[string]bool{}
+			byID := make(map[string]disk.Entry, len(cat))
 			for _, e := range cat {
-				ids[e.ID] = true
+				byID[e.ID] = e
 			}
-			return func(id string) bool { return ids[id] }
+			return func(id string) (disk.Entry, bool) {
+				e, ok := byID[id]
+				return e, ok
+			}
 		}
 	}
-	return disk.CatalogHasID
+	return disk.CatalogEntry
 }
 
 // rescan は snapshot を無視して走査し直す (r)。
@@ -178,7 +184,7 @@ func (v *doctorView) start(force bool) tea.Cmd {
 		if sn, ok := loadDoctorSnapshot(timeNow()); ok {
 			rep := sn.Disk
 			// 実効カタログに無い ID は落とす (snapshot は書き換えられる。issue 178)
-			rep.Results = doctorSnapshotInCatalog(rep.Results, v.catalogHas())
+			rep.Results = doctorSnapshotInCatalog(rep.Results, v.catalogLookup())
 			rep.Total = disk.SumDeletable(rep.Results)
 			v.diskRep = &rep
 			v.diskResults = rep.Results

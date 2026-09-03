@@ -6,6 +6,8 @@ import (
 
 	"glogx/issues"
 	"glogx/usage"
+	"path/filepath"
+	"time"
 )
 
 // 外部由来の文字列が「無害化を通らずに端末へ出る」sink が残っていないことを、sink ごとに固定する。
@@ -126,5 +128,41 @@ func TestPanelBoxDropsANSIWhenNotColored(t *testing.T) {
 	got := strings.Join(buildShadowPanelBox(" title ", rows, 40, true, ansiDim), "\n")
 	if !strings.Contains(got, "\x1b[41;30m") {
 		t.Errorf("色ありモードで外部の SGR まで落とした: %q", got)
+	}
+}
+
+// usage の **codex 枠の Label** はキャッシュ由来 (`~/.cache/glog/claude-usage.json` は一般ユーザー
+// 権限で書き換えられる)。live の取得経路は安全だが、codex 枠は allowlist ではなく Source で拾うので、
+// キャッシュに書かれた Label がそのまま 3 経路 (RenderLine / RenderTableGroups / RenderDashboard) へ出る。
+// 🚨 fixture は **codex 枠**で作ること: Claude 枠だと defaultOrder の allowlist に阻まれて
+// 退行しても最初から不可視になり、何も守らないテストになる (issue 230)。
+func TestUsageCacheSanitizesCodexLabel(t *testing.T) {
+	stubLookPath(t, nil)
+	path := filepath.Join(t.TempDir(), usageCacheFile)
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.Local)
+	snap := usageSnapFixture(t)
+	snap.Windows = append(snap.Windows, usage.Window{
+		Label:   "cx7d\a" + osc8 + "0;PWNED" + st8,
+		Percent: 20, Source: usage.SourceCodex, ResetAt: now.Add(time.Hour),
+	})
+	if err := saveUsageCache(path, snap, now); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := loadUsageCache(path, now)
+	if !ok {
+		t.Fatal("キャッシュを読めない (前提が違う)")
+	}
+	line := usage.RenderLine(got, now, false)
+	if hasTerminalControl(line) {
+		t.Errorf("RenderLine に制御シーケンスが残った: %q", line)
+	}
+	if strings.Contains(line, "PWNED") {
+		t.Errorf("OSC の中身が残った: %q", line)
+	}
+	header, rows := usage.RenderTable(got, now, false)
+	for _, l := range append(rows, header) {
+		if hasTerminalControl(l) {
+			t.Errorf("RenderTable に制御シーケンスが残った: %q", l)
+		}
 	}
 }

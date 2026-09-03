@@ -569,21 +569,34 @@ func cleanBrewText(s string) string {
 // 4.7GB ✅ 安全」という行を snapshot から作れてしまうのを塞ぐ (doctorReuseFrom は ID で引くので
 // 同じ規律になっており、復元経路だけが緩かった)。実効カタログはテストが差し替えるので、
 // 既定カタログを前提にせず呼び出し側から渡す。
-func doctorSnapshotInCatalog(rs []disk.Result, has func(string) bool) []disk.Result {
+func doctorSnapshotInCatalog(rs []disk.Result, lookup func(string) (disk.Entry, bool)) []disk.Result {
 	out := make([]disk.Result, 0, len(rs))
 	for _, r := range rs {
-		if has(r.Entry.ID) {
-			out = append(out, r)
+		e, ok := lookup(r.Entry.ID)
+		if !ok {
+			continue
 		}
+		// 🚨 **Entry はカタログの今の定義へ束ね直す** (issue 229)。snapshot には Entry が丸ごと
+		// 保存されるので、そのまま使うと (a) カタログを直しても古い文言が出続け (b) 一般ユーザー
+		// 権限で書き換えた Label / Detail / Risk がそのまま行と y のコピーに載る。
+		// 計測値の再利用 (Reused) 側は同じことを既にやっている (doctorReuseFrom の r.Entry = e)。
+		// これで Entry を sanitize する必要そのものが消える (計測値だけが snapshot 由来になる)
+		r.Entry = e
+		out = append(out, r)
 	}
 	return out
 }
 
 // sanitizeSnapshotResults は snapshot 由来の Result を「信用してよい形」に絞る (issue 178)。
 //
-// 🚨 **信頼境界**: `doctor-snapshot.json` は一般ユーザー権限で書き換えられる。今は削除機能が無いので
-// 実害は表示だけだが、④ (削除) はこの画面の行を対象にする設計なので、境界をここで確定しておく。
-// 細工した JSON の任意パスが行・y のコピー・合計・次の snapshot への書き戻しに載ってはいけない。
+// 🚨 **信頼境界**: `doctor-snapshot.json` は一般ユーザー権限で書き換えられる。細工した JSON の
+// 任意パスが行・y のコピー・合計・次の snapshot への書き戻しに載ってはいけない。
+//
+// 🚨 削除経路は**この境界に依存していない** (2026-09-04 に実測して doc を更新): `disk.Delete` は
+// `Reused` / `FromSnapshot` の Result を拒否し、対象は `lookupEntry(opt.Catalog, ID)` で
+// コンパイル済みカタログから引き直したうえで走査もやり直す。したがって細工した DeleteVia / Paths が
+// 削除の作法を乗っ取ることはない。ここが守るのは**表示と y / Y のコピー**。
+// Entry 自体は doctorSnapshotInCatalog がカタログへ束ね直すので、この関数は計測値だけを見る (issue 229)。
 //
 // 落とすもの:
 //   - **未知の Status** — ok / blocked / failed 以外は「✅ 安全 + サイズ表示」に化けていた。
