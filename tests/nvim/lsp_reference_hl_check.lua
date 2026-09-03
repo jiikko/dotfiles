@@ -28,7 +28,26 @@ local MIN_CONTRAST = 3.0
 
 -- 色を検査する group。Text/Read/Write は下の extmark 経路で名前を pin できるが、Target は
 -- hover (vim.lsp.buf.hover) 側で使われるため名前の pin は doc (hl-LspReferenceTarget) が根拠。
-local COLOR_GROUPS = { "LspReferenceText", "LspReferenceRead", "LspReferenceWrite", "LspReferenceTarget" }
+--
+-- ⚠️ **「LspReference 一族」ではなく「Visual を link 経由で引きうる地塗り group」を検査する**
+-- (issue 134)。ee5e2b7 は LspReference だけを直したが、同じ根 (nvim 既定の Visual への link +
+-- 本構成の Visual 上書き) を持つ group が他にもあり、名前で pin していたので検出できなかった。
+-- 実測 2026-09-03: SnippetTabstop は両分岐で、LspSignatureActiveParameter は 256色分岐で
+-- `link=Visual` のまま Kraft (180) を引いていた (最悪 1.10:1)。
+-- **新しい group を足すときは、その group が「Visual へ link する既定を持つか」を
+-- `nvim_get_hl(0, {name=..., link=true})` で確かめてから足すこと** (推測で並べない)。
+local COLOR_GROUPS = {
+  "LspReferenceText", "LspReferenceRead", "LspReferenceWrite", "LspReferenceTarget",
+  "SnippetTabstop",              -- vim.snippet がバッファ内の tabstop に塗る
+  "LspSignatureActiveParameter", -- blink.cmp のシグネチャヘルプの現在引数
+}
+
+-- REVERSE_OK は「reverse で前景色を殺さない」方式を採った group。reverse は前景と背景を
+-- 入れ替えるので**地色を持たない**が、その場合コントラストは Normal と同じで基準を満たす。
+-- 地色が無いことを「検査漏れ」ではなく「意図した方式」として扱うために名前で持つ。
+-- ⚠️ ここに足すのは reverse を**明示定義した**group だけ。link 先が偶然 reverse を持つ形
+-- (retrobox の Search 等) を許すと、link が変わったときに無言で検査が緩む。
+local REVERSE_OK = { LspSignatureActiveParameter = true }
 
 -- xterm-256 の色番号 → RGB。termguicolors=off では端末が使うのはこちらなので、
 -- gui の hex ではなくこの近似値でコントラストを測る必要がある。
@@ -119,6 +138,17 @@ local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
 
 for _, group in ipairs(COLOR_GROUPS) do
   local hl = vim.api.nvim_get_hl(0, { name = group, link = false })
+
+  -- reverse を採った group は地色を持たないのが正しい。**reverse が消えていたら落とす**
+  -- (地色も reverse も無い = 何も塗らない状態に退行しても、下の地色検査は素通りする)
+  if REVERSE_OK[group] then
+    if not hl.reverse then
+      fail(("%s は reverse で定義しているはずだが reverse が無い (link が復活したか定義が消えた)"):format(group))
+    end
+    if hl.bg ~= nil or hl.ctermbg ~= nil then
+      fail(("%s は reverse なのに地色を持っている (方式が混ざっている)"):format(group))
+    end
+  end
 
   -- Visual 上書きの漏れ (nvim 既定の LspReferenceText → Visual link) の回帰検出
   if hl.ctermbg ~= nil and hl.ctermbg == visual.ctermbg then

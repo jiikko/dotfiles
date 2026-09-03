@@ -128,12 +128,28 @@ require("lazy").setup({
       -- Read/Write は gruvbox が前景色 (Yellow/OrangeBold) で描く方式を持つので上書きしない
       -- (retrobox 側は LspReferenceText への link で追従する)。検査は
       -- tests/nvim/lsp_reference_hl_check.lua が両分岐で行う。
-      -- 同じ Visual 漏れは LspSignatureActiveParameter (シグネチャヘルプの現在引数) と
-      -- SnippetTabstop にも及ぶが、実害を確認していないので現状維持 (VisualNOS は Visual と
-      -- 同義なので妥当)。どちらかが読めないという実感が出た時点で同じ形で切り出す。
       local lsp_ref = { bg = pal.dark1.hex, ctermbg = pal.dark1.cterm }
       require("dotfiles.hl").set("LspReferenceText", lsp_ref)
       require("dotfiles.hl").set("LspReferenceTarget", lsp_ref)
+
+      -- 同じ Visual 漏れが SnippetTabstop と LspSignatureActiveParameter にもあった (issue 134)。
+      -- 実測 2026-09-03 (nvim 0.11.5): SnippetTabstop は**両 colorscheme 分岐**で `link=Visual`、
+      -- LspSignatureActiveParameter は 256色 (retrobox) だけ `link=Visual` で truecolor (gruvbox) は
+      -- `link=Search` (reverse)。前者は vim.snippet が**バッファ内**の tabstop に塗るので、
+      -- 前景は通常のシンタックス色 = LspReference と同じ条件で 1.10:1 (Type 214) まで落ちる。
+      --
+      -- ⚠️ **2 つで違う方式を採る**。同じ「Visual 漏れ」でも意味が違うため:
+      --   SnippetTabstop = 下線 + dark1。地色だけだと LspReference (dark1) と見分けが付かない。
+      --     下線を足して「次に <Tab> で飛ぶ先」を示す (MatchParen は dark2 + bold なので地色で区別)。
+      --     最悪コントラスト 3.17:1 (Comment 102 on dark1)、検査の基準 3.0:1 を超える
+      --   LspSignatureActiveParameter = reverse。**truecolor 側の gruvbox が既に採っている方式**に
+      --     256色側を揃える (`link=Search` の実体が reverse)。reverse は前景色を殺さないので
+      --     float の中で色を失わない。分岐ごとに違う見え方にしない方が、後から読む人が驚かない
+      -- VisualNOS は Visual と同義 (非アクティブウィンドウの選択範囲) なので Kraft のままが正しい。
+      require("dotfiles.hl").set("SnippetTabstop", {
+        bg = pal.dark1.hex, ctermbg = pal.dark1.cterm, underline = true,
+      })
+      require("dotfiles.hl").set("LspSignatureActiveParameter", { reverse = true })
     end,
   },
   -- toggle.nvim は repo 内に vendor 済み (vendor/nvim-plugins/toggle.nvim、VENDOR.md 参照)。

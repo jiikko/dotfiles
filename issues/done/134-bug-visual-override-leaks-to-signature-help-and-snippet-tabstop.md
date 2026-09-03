@@ -89,3 +89,66 @@ ee5e2b7 と同型で、gruvbox の意図と衝突しないように分ける:
 - ee5e2b7 — 同根の修正 (`LspReferenceText` / `LspReferenceTarget`)
 - `docs/theme-colors.md` の「選択中テキスト」行 — Visual が他 group から link されている罠の入口
 - `tests/nvim/lsp_reference_hl_check.lua` — コントラスト 3.0:1 の検査 (両 colorscheme 分岐)
+
+
+---
+
+## 対応 (2026-09-03)
+
+**着手前に実測で再現した** (nvim 0.11.5)。issue の表と完全に一致:
+
+| group | 256色 (retrobox) | truecolor (gruvbox) |
+|---|---|---|
+| `SnippetTabstop` | `link=Visual` → Kraft 180 | `link=Visual` → Kraft 180 |
+| `LspSignatureActiveParameter` | `link=Visual` → Kraft 180 | `link=Search` → reverse (漏れなし) |
+
+### 方式を用途で分けた (対応方針 1 / 2 の判断)
+
+コントラストを計算して候補を比べた (xterm-256 実値。基準 3.0:1):
+
+| 案 | 最悪コントラスト |
+|---|---|
+| A 現状 (Kraft 180) | **1.10:1** (Type 214) ✗ |
+| B / E dark1 237 | 3.17:1 (Comment 102) ✓ |
+| C reverse / D 下線のみ | 地色を塗らないので前景色がそのまま残る (Type 9.24 / Comment 4.74) ✓ |
+
+- **`SnippetTabstop` = dark1 + 下線**。地色だけだと `LspReference` (同じ dark1) と見分けが
+  付かない。下線を足して「次に `<Tab>` で飛ぶ先」を示す (`MatchParen` は dark2 + bold なので
+  地色で区別できる)
+- **`LspSignatureActiveParameter` = reverse**。**truecolor 側の gruvbox が既に採っている方式**
+  (`link=Search` の実体が reverse) に 256色側を揃えた。分岐ごとに違う見え方にしない方が、
+  後から読む人が驚かない。reverse は前景色を殺さないので float の中で色を失わない
+
+### 検査を「名前の pin」から「Visual を引きうる地塗り group」へ広げた (対応方針 3)
+
+`COLOR_GROUPS` に 2 つを足しただけでは足りなかった。**reverse は地色を持たない**ので、
+定義が消えて「地色も reverse も無い」状態へ退行しても、既存の地色検査は素通りする。
+`REVERSE_OK` を持たせ、**reverse があること**と**地色を持たないこと**の両方を見る形にした。
+
+⚠️ `REVERSE_OK` に足すのは reverse を**明示定義した** group だけ。link 先が偶然 reverse を
+持つ形 (retrobox の `Search` 等) を許すと、link が変わったときに無言で検査が緩む。
+
+### 変異検証 (使い捨て worktree、3 本とも red)
+
+| 変異 | 落ちた assert |
+|---|---|
+| `SnippetTabstop` の定義を消す | ctermbg が Visual と同じ (180) |
+| `LspSignatureActiveParameter` の定義を消す | reverse で定義しているはずだが reverse が無い |
+| reverse を外して地色 (Kraft) に変える | 同上 (**方式が混ざる形も落ちる**) |
+
+### ドキュメント
+
+`_nviminit.lua` の「未対応 (実害待ち)」コメントを消し、方式を分けた理由を書いた。
+`docs/theme-colors.md` は Kraft 行の「残り 2 つは未対応」を直し、**2 行を新設**した
+(snippet の tabstop / シグネチャヘルプの現在引数)。
+
+### 対象外 (issue の記述どおり)
+
+`VisualNOS` は Visual と同義なので Kraft のままが正しい。`Visual` 自体の色も変えない。
+
+## 受け入れ条件
+
+- [x] 両 colorscheme 分岐で `SnippetTabstop` / `LspSignatureActiveParameter` が Visual を引かない
+- [x] `tests/nvim/test_lsp_reference_hl.sh` が両分岐で緑 (256色 35 件 / truecolor 23 件)
+- [x] 変異検証で red を確認 (3 本)
+- [x] `_nviminit.lua` と `docs/theme-colors.md` の「未対応」記述を直した
