@@ -89,19 +89,18 @@
 
 ## 受け入れ条件
 
-- [ ] (a) 語彙の所有と (b) 中断できない処理の 2 軸が、**`actModal` を含めた**参加者ごとに
-      表で書かれている (今どちらを持つか / 持たないなら理由。status の理由は上記のとおり
-      「壊れない」ではなく「Update を跨ぐ相にならない」)
-- [ ] 参加者に新しい状態を足したとき、**参照すべき経路のどれかを直し忘れたら気づける**
-      (テストの red。「コメントで注意する」は不可。**compile error は原理的に無理**)
-- [ ] その仕掛けが効くことを**変異で確認**した。変異は 3 本とも実在する:
-      `updateKeyReachable` / `ctrl+c` の switch / `restartPromptVisible` から
-      doctor 節をそれぞれ外して red になること
-- [ ] **悪化を作らない**: `issuesOv` / `statusOv` の Ctrl-C の扱いが今と変わらない。
-      かつ **`restartPromptVisible` が issues / status に対して今と同じ**
-      (「再起動ダイアログは viewer の入力モードより優先で、キーを 1 つ飲んで必ず閉じる」は
-      `tui.go` の doc で**意図的に選ばれた**設計。`r` が issues viewer の再読込にも
-      割り当たっているため。畳むと黙って反転する)
+- [x] (a) 語彙の所有と (b) 中断できない処理の 2 軸が、**`actModal` を含めた**参加者ごとに
+      表で書かれている → `src/glogx/overlay_ownership_test.go` の `overlayOwnershipTable`
+      (4 参加者 × owns / uninterruptible / 理由 / cancelAll が止めるか)
+- [x] 参加者に新しい状態を足したとき、**参照すべき経路のどれかを直し忘れたら気づける**
+      → 表の主張と実装の一致を `browseModel` 経由で pin する 2 本 +
+      **reflect で `ownsKeys()` の実装を数え上げ、表に無ければ red** にする 1 本 +
+      「(b) を持たないなら理由が空でない」1 本
+- [x] その仕掛けが効くことを**変異で確認**した (5 本すべて red。適用の証拠つき):
+      `updateKeyReachable` の doctor / issues / status 節をそれぞれ外す /
+      `ctrl+c` の switch から doctor 節を外す / `restartPromptVisible` から doctor 節を外す
+- [x] **悪化を作らない**: **production は 1 行も変えていない** (検査を足しただけ)。
+      したがって issues / status の Ctrl-C と `restartPromptVisible` の挙動は今と同一
 
 ## 発火条件 (再発したときの見え方)
 
@@ -121,3 +120,47 @@
 - 本 issue の反証レビュー (opus 1 体、2026-09-03)。5 件の事実誤認を訂正し、
   `updateKeyReachable` の未防備を実測で出した (その場で `TestUpdateKeysYieldToDoctorDelete` を追加)
 - `issues/209-retro-doctor-delete-engine-2026-09-03.md` 項目 7
+
+## 適用ログ (2026-09-03)
+
+### 採った案: 「1 (actModal の語彙へ寄せる)」ではなく **検査だけを足す**
+
+対応案 1 (overlay 側に `active()` / `running()` 相当を持たせて `browseModel` で 1 箇所に数える) は
+**採らなかった**。理由は 2 つ。
+
+- ⚠️ `verify-design-intent-before-refactor.md`: 集約は複雑性が実際に下がるときだけ。
+  5 つの参照経路は**聞いている問いが違う** (`updateKeyReachable` は「X を横取りするか」、
+  `ctrl+c` は「1 回目を飲むか」、`restartPromptVisible` は「ダイアログを出すか」、
+  `cancelAll` は「止めるか」)。1 つの述語に畳むと (a)(b) の区別が消え、issue 本文が
+  警告している悪化になる
+- 受け入れ条件が要求しているのは「**直し忘れたら気づける**」であって「1 箇所にする」ではない。
+  production を触らなければ**悪化を作らないことが自明**になる (条件 4 が無条件で満たされる)
+
+### 入れたもの (`src/glogx/overlay_ownership_test.go`)
+
+- `overlayOwnershipTable`: 参加者 4 つ (`actModal` / `doctorOv` / `issuesOv` / `statusOv`) の
+  2 軸と、(b) を持たない理由、`cancelAll` が止めるか
+- `TestOverlayOwnsKeysMatchesUpdateKeyReachable`: (a) の主張と `updateKeyReachable` の一致。
+  **`browseModel` 経由**で見る (overlay の handleKey 直叩きでは経路の落ちを検出できない)
+- `TestOverlayUninterruptibleMatchesCtrlCAndRestartPrompt`: (b) の主張と `ctrl+c` /
+  `restartPromptVisible` の一致
+- `TestOverlayOwnershipTableCoversAllParticipants`: **reflect で `browseModel` のフィールドを
+  走査**し、`ownsKeys()` を実装した型が表に在ることを要求する。逆向き (表にあって実体が無い) も見る
+- `TestOverlayNonUninterruptibleHasReason`: (b) を持たない参加者に理由が書かれていること
+
+状態の作り方は `showOverlayOwning` / `showOverlayUninterruptible` に集約した
+(各テストで別々に作ると、片方だけ実装に追従して「別の状態を検査している」ことに気づけない)。
+
+### 表に記録した既知の穴 (このセッションでは直さない)
+
+- **`cancelAll` が `statusOv` を止めていない** (`stoppedByCancelAll: false`)。
+  `statusView.fetchDiff` の `git diff` が終了時に残りうる。`statusView` に `stop()` が無いので
+  実装が要る = 別 issue の範囲。表に false として**明示**したので、次に status へ非同期を足す人が
+  ここを見る
+
+### 着手時に見つけた障害物
+
+`TestUpdateKeysYieldToDoctorDelete` が HEAD で赤かった。原因は 213 ではなく
+**`doctor/disk` のデータ競合** (テスト専用カウンタ `collectVisits` が package 変数)。
+issue 214 として起票し、`atomic.Int64` へ直して並行走査の回帰テストを足した (`f3bd400a`)。
+これを先に潰さないと 213 の変異検証が「赤の中の赤」で読めなかった。
