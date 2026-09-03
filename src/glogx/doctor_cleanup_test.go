@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -552,5 +553,43 @@ func TestCursorKeySurvivesFrameWithoutSelectableRows(t *testing.T) {
 	v.lines(o)
 	if v.rows[v.cur.index].key != want {
 		t.Fatalf("空フレームを挟んだら別の行へ移った: want=%s got=%s", want, v.rows[v.cur.index].key)
+	}
+}
+
+// browseModel を作る**両方の工場**が、doctor の seam と後始末を通していることを固定する。
+//
+// ⚠️ 挙動で試すと非決定になる (join の有無は「Cleanup が戻る時点で goroutine が終わっているか」
+// で、遅い fake を挟まないと差が出ず、挟むと join 側が待ちに入る)。**配線を静的に pin する**
+// 形にした (verify-interactive-prompt-with-pty-driver.md の「pty が要る挙動は配線を pin する」と
+// 同じ判断)。敵対レビュー 2026-09-03 の実測: `waitDoctorCleanup()` を消しても全テストが緑だった。
+func TestBrowseFactoriesInstallInertDoctorAndJoin(t *testing.T) {
+	for _, tc := range []struct{ file, fn string }{
+		{"tui_helpers_test.go", "newTestBrowse"},
+		{"gitlog_watch_test.go", "realRepoBrowse"},
+	} {
+		t.Run(tc.fn, func(t *testing.T) {
+			src, err := os.ReadFile(tc.file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := string(src)
+			i := strings.Index(body, "func "+tc.fn+"(")
+			if i < 0 {
+				t.Fatalf("%s が %s に無い (走査が壊れている)", tc.fn, tc.file)
+			}
+			end := strings.Index(body[i:], "\n}\n")
+			if end < 0 {
+				t.Fatal("関数の終わりが見つからない")
+			}
+			fn := body[i : i+end]
+			for _, want := range []string{"installInertDoctor(", "m.cancelAll()", "joinDoctorCleanup(t)"} {
+				if !strings.Contains(fn, want) {
+					t.Errorf("%s が %s を通していない (テストが実マシンを叩く / goroutine が跨ぐ)", tc.fn, want)
+				}
+			}
+			if strings.Contains(fn, "t.Cleanup(m.cancel)") {
+				t.Errorf("%s が m.cancel のまま (doctor に届かない。cancelAll にすること)", tc.fn)
+			}
+		})
 	}
 }

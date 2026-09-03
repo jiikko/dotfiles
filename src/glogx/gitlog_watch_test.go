@@ -38,7 +38,13 @@ func realRepoBrowse(t *testing.T, height int, subjects ...string) (*browseModel,
 		t.Fatal(err)
 	}
 	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, height)
-	t.Cleanup(m.cancel)
+	// ⚠️ browseModel を作る工場は newTestBrowse と**ここの 2 つ**。両方に同じ後始末を通す
+	// (片方だけだと、doctor に触れるテストがこちらに書かれた瞬間に実マシンを叩く。issue 216)
+	installInertDoctor(t, &m.doctorOv)
+	t.Cleanup(func() {
+		m.cancelAll()
+		joinDoctorCleanup(t)
+	})
 	m.zoom.off = true
 	return m, dir, opts
 }

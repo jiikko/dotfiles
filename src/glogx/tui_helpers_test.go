@@ -36,14 +36,32 @@ func installInertDoctor(t *testing.T, v *doctorView) {
 	}
 	v.diskOpts = func() disk.Options {
 		return disk.Options{
-			Env:      disk.Env{Home: home, TmpDir: home + "/", Getenv: func(string) string { return "" }},
-			Run:      inert,
-			Catalog:  []disk.Entry{}, // 空 = 走査対象なし (nil にすると本物のカタログが使われる)
-			BootTime: func() (time.Time, error) { return time.Now(), nil },
+			Env:     disk.Env{Home: home, TmpDir: home + "/", Getenv: func(string) string { return "" }},
+			Run:     inert,
+			Catalog: []disk.Entry{}, // 空 = 走査対象なし (nil にすると本物のカタログが使われる)
+			// 固定時刻 (カタログを足したときに「全部が boot 後」の偏った fixture にしない)
+			BootTime: func() (time.Time, error) { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), nil },
 		}
 	}
 	v.svcOpts = func() svc.Options { return svc.Options{Run: inert} } // Dirs 空 = 走査対象なし
 	v.brewRun = inert
+}
+
+// joinDoctorCleanup は走査の終了を**上限つきで**待つ。
+//
+// ⚠️ production の `waitDoctorCleanup()` を直接呼ばない: あれは上限が無く、止まらない走査が
+// あると go test の 10 分タイムアウトまでハングして goroutine dump で終わる (何が悪いのか
+// 読めない)。判定不能は**第 3 の結果**として Fatal で出す (doctor_cleanup_test.go の
+// drainDoctorCleanup と同じ規律)。
+func joinDoctorCleanup(t *testing.T) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() { defer close(done); waitDoctorCleanup() }()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("判定不能: doctor の走査が 30 秒で帰らない (cancel が届いていないか、seam が差さっていない)")
+	}
 }
 
 // TestMain はパッケージ全体のキャッシュ置き場を一時ディレクトリへ逃がす。
@@ -61,10 +79,11 @@ func installInertDoctor(t *testing.T, v *doctorView) {
 func TestMain(m *testing.M) {
 	widthenv.ExitIfUnsupported()
 	dir, err := os.MkdirTemp("", "glogx-test-cache")
-	if err == nil {
-		if err := os.Setenv("XDG_CACHE_HOME", dir); err != nil {
-			panic(err) // 隔離できないまま走らせると実ユーザーのキャッシュを触る
-		}
+	if err != nil {
+		panic(err) // 隔離できないまま走らせると実ユーザーのキャッシュを触る (Setenv 失敗と同じ扱い)
+	}
+	if err := os.Setenv("XDG_CACHE_HOME", dir); err != nil {
+		panic(err)
 	}
 	code := m.Run() // 🚨 os.Exit は defer を走らせないので、片付けは Run の後に手で書く
 	if dir != "" {
@@ -90,10 +109,14 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 		&Options{NoFrame: true}, false, 80, 10)
 	installInertDoctor(t, &m.doctorOv)
 	t.Cleanup(func() {
-		m.cancel()
+		// 🚨 `m.cancel` ではなく `m.cancelAll`。前者は browseModel 自身の fetch ctx だけで
+		// **doctorOv.stop() を呼ばない**ので、走っている走査は止まらない。上限なしの join と
+		// 組み合わさると**パッケージ全体がハングする** (敵対レビュー 2026-09-03 が再現)。
+		// production の quit / main.go と同じ後始末にすることで fidelity も上がる
+		m.cancelAll()
 		// ⚠️ cancel は**子の死を待たない** (doctorView.stop() のコメントが正本。issue 211)。
 		// join しないと走査 goroutine が次のテストへ跨ぎ、package 変数を踏む (issue 214 / 216)
-		waitDoctorCleanup()
+		joinDoctorCleanup(t)
 	})
 	// 🚨 開閉の演出はテストでは切る (zoom.go)。View の期待値が「中央から開く途中の姿」に
 	// なると全テストが読めなくなるため。演出そのものは zoom_test.go が直接検査する。

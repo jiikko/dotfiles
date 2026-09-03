@@ -56,3 +56,22 @@ jobs:
     uses: ./.github/workflows/_go-project.yml
     with:
       dir: src/glogx
+
+  # 🚨 テストが**実マシンのコマンドを叩かない**ことの検査 (issue 216)。
+  #
+  # ここに置く理由: この検査は `go test` を PATH shim の下で回すので **Go が要る**。
+  # Tests workflow の runner には Go が無く、tests/glogx/*.sh は exit 77 で skip される
+  # (実測 2026-09-03: run 33758282835 で「skipped: go が無い」= **検査が 1 度も走っていなかった**)。
+  # 共有の _go-project.yml には置かない (doctor 等、他のプロジェクトには関係が無い)。
+  no-real-commands:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: src/glogx/go.mod
+          cache-dependency-path: src/glogx/go.sum
+      - name: テストが実マシンのコマンドを叩かないか (scope=all)
+        run: GLOGX_SHIM_SCOPE=all tests/glogx/test_no_real_commands_in_tests.sh
