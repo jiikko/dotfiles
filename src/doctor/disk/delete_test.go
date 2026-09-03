@@ -1105,3 +1105,27 @@ func TestTrashMoveRejectsSymlinkedAncestor(t *testing.T) {
 		t.Fatal("移動元が消えた")
 	}
 }
+
+// 進捗の口は plan の走査でも呼ばれる (DryRun = 確認プロンプトの下見でも数秒かかるため)。
+func TestDeleteReportsScanPhaseEvenInDryRun(t *testing.T) {
+	f := newDeleteFixture(t, rmEntry, 64)
+	var phases []DeletePhase
+	f.opt.OnPhase = func(_, _ int, _ string, p DeletePhase) { phases = append(phases, p) }
+	f.opt.DryRun = true
+	f.delete(t, f.scan(t))
+	if len(phases) != 1 || phases[0] != PhaseScanning {
+		t.Fatalf("dry-run の進捗 = %v (走査の 1 件だけのはず)", phases)
+	}
+	phases = nil
+	f.opt.DryRun = false
+	f.delete(t, f.scan(t))
+	want := []DeletePhase{PhaseScanning, PhaseDeleting, PhaseVerifying}
+	if len(phases) != len(want) {
+		t.Fatalf("進捗 = %v, want %v", phases, want)
+	}
+	for i := range want {
+		if phases[i] != want[i] {
+			t.Fatalf("進捗 = %v, want %v", phases, want)
+		}
+	}
+}

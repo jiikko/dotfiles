@@ -37,6 +37,15 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// DeletePhase は 1 エントリの処理段階 (進捗表示用。結末ではない)。
+type DeletePhase string
+
+const (
+	PhaseScanning  DeletePhase = "scanning"  // 削除の前に走査し直している
+	PhaseDeleting  DeletePhase = "deleting"  // 実際に消している
+	PhaseVerifying DeletePhase = "verifying" // 消えたことを確かめている
+)
+
 // Outcome は 1 エントリ / 1 対象の結末。**成功と失敗の 2 値にしない**: 「実行したが対象が残っている」
 // (非同期削除の simctl が実際にこれを返す) を第 3 の状態として持つ。
 type Outcome string
@@ -133,7 +142,13 @@ type DeleteOptions struct {
 	VerifyTimeout time.Duration
 	CmdTimeout    time.Duration
 	// OnProgress は 1 エントリ終わるごとに呼ばれる (UI の進捗表示用)。nil 可。
+	// ⚠️ **Delete を呼んだ goroutine から同期に呼ばれる** (Scan.OnResult のように別 goroutine から
+	// 並行に呼ばれるのではない)。bubbletea なら model を直接触らず Msg に載せること。
 	OnProgress func(done, total int, label string)
+	// OnPhase は「今このエントリの何をしているか」を流す。plan の走査は重いエントリで数秒かかり、
+	// **DryRun (確認プロンプトを出すための下見) でも通る**ので、口が無いと UI が無言で固まる。
+	// OnProgress と同じ goroutine から同期に呼ばれる。nil 可。
+	OnPhase func(i, total int, label string, phase DeletePhase)
 }
 
 func withDeleteDefaults(opt DeleteOptions) DeleteOptions {
@@ -183,7 +198,8 @@ func Delete(ctx context.Context, targets []Result, opt DeleteOptions) (DeleteRep
 	// 同じエントリを 2 回渡されても 1 回しか処理しない (二重に渡すと解放量が二重計上される)
 	targets = dedupeTargets(targets)
 	if opt.DryRun {
-		for _, t := range targets {
+		for i, t := range targets {
+			opt.phase(i, len(targets), t.Entry.Label, PhaseScanning)
 			rep.Entries = append(rep.Entries, planDelete(ctx, t, opt))
 		}
 		rep.FinishedAt = opt.Now()
@@ -216,8 +232,11 @@ func Delete(ctx context.Context, targets []Result, opt DeleteOptions) (DeleteRep
 		// plan (実体の同一性検査) と exec を**隣接**させる。全件を先に plan すると、
 		// 最後のエントリは検査から実行までの間に再走査 (最大 PerEntry) を何度も挟むことになり、
 		// TOCTOU の窓が分単位で開く (敵対レビュー 2026-09-03 で親ディレクトリ差し替えを実測)
+		opt.phase(i, len(targets), t.Entry.Label, PhaseScanning)
 		out := planDelete(ctx, t, opt)
+		opt.phase(i, len(targets), out.Label, PhaseDeleting)
 		execEntry(ctx, &out, opt)
+		opt.phase(i, len(targets), out.Label, PhaseVerifying)
 		verifyEntry(ctx, &out, opt)
 		rep.Entries[i] = out
 		// エントリ単位で記録を更新する。ここで落ちても「どこまでやったか」が残る
@@ -251,6 +270,12 @@ func Delete(ctx context.Context, targets []Result, opt DeleteOptions) (DeleteRep
 		rep.HistoryError = err.Error()
 	}
 	return rep, nil
+}
+
+func (o DeleteOptions) phase(i, total int, label string, p DeletePhase) {
+	if o.OnPhase != nil {
+		o.OnPhase(i, total, label, p)
+	}
 }
 
 // intent は「これから触るつもりの対象」。planDelete より前に記録へ残すためのもので、

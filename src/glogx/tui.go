@@ -937,6 +937,8 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.maybeTick()
 	case doctorDiskMsg:
 		return m, tea.Batch(m.doctorOv.receiveDisk(msg), m.maybeTick())
+	case doctorDeleteMsg:
+		return m, tea.Batch(m.doctorOv.receiveDelete(msg), m.maybeTick())
 	case doctorSvcMsg:
 		m.doctorOv.receiveSvc(msg)
 		return m, m.maybeTick()
@@ -1257,6 +1259,11 @@ func (m *browseModel) updateKeyReachable(key string) bool {
 	if m.issuesOv.visible() && m.issuesOv.ownsKeys() {
 		return false
 	}
+	// doctor の削除は y/N の確認と実行中のブロックを持つ (issue 148 ④)。ここで譲らないと
+	// 確認中の X が codex update を始め、削除の確認が裏に残る
+	if m.doctorOv.visible() && m.doctorOv.ownsKeys() {
+		return false
+	}
 	if m.statusOv.visible() && (m.statusOv.ownsKeys() || key == "X") {
 		return false
 	}
@@ -1401,6 +1408,11 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 			m.copyWithToast(m.doctorOv.copyPayload(), "解説をコピーしました (LLM にそのまま貼れます)")
 		case doctorNothing:
 			m.toast.show("この行にはコピーするものがありません", false)
+		case doctorToast:
+			m.toast.show(m.doctorOv.pendingToast, false)
+		case doctorRunDelete:
+			// 削除 (と、その下見) は doctorView が組んだ Cmd をそのまま走らせる
+			return m, tea.Batch(m.doctorOv.takeDeleteCmd(), m.maybeTick())
 		case doctorSwallow:
 		}
 		return m, m.maybeTick()

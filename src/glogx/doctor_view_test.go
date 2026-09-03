@@ -182,8 +182,10 @@ func TestDoctorLinesFillsPage(t *testing.T) {
 	if strings.Contains(out, "You should find replacements") {
 		t.Error("brew の本文が展開前から出ている (一覧は概要のみ)")
 	}
-	if strings.Contains(out, "[d]") || strings.Contains(v.hint(80), " d:") {
-		t.Error("段階 ③ では削除キーを出さない")
+	// ④ で削除の導線が入った。hint は「選ぶ手段」と「消す手段」を出す
+	// (段階 ③ の「削除はまだできません」を固定していたテストの置き換え)
+	if h := v.hint(80); !strings.Contains(h, "Space: 選択") || !strings.Contains(h, "d: 削除") {
+		t.Errorf("hint に削除の導線が無い: %q", h)
 	}
 }
 

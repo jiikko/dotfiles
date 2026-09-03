@@ -51,12 +51,30 @@ type doctorView struct {
 	expanded map[string]bool // 展開中の行 (key = 行の同一性)
 	rows     []doctorRow     // 直近の描画で組んだ行 (キー操作の対象。lines() が作り直す)
 
-	pendingCopy string // 直近の y / Y の中身 (copyPayload)
+	pendingCopy  string // 直近の y / Y の中身 (copyPayload)
+	pendingToast string // 直近の doctorToast の文言
+
+	// ④ 削除 (doctor_delete.go)。selected はエントリ ID、inspected は「Enter で中身を一度開いた」印
+	// (risk: confirm の行はこれが立つまで選べない)。
+	selected         map[string]bool
+	inspected        map[string]bool
+	del              doctorDelete
+	pendingDeleteCmd tea.Cmd // handleKey が組んだ削除の Cmd (browseModel が取り出して返す)
 
 	// テスト用の差し替え口 (zero value = 本番)
-	diskOpts func() disk.Options
-	svcOpts  func() svc.Options
-	brewRun  runner.Runner
+	diskOpts   func() disk.Options
+	svcOpts    func() svc.Options
+	brewRun    runner.Runner
+	deleteOpts func() disk.DeleteOptions
+	deleteFn   func(context.Context, []disk.Result, disk.DeleteOptions) (disk.DeleteReport, error)
+}
+
+// deleteOptions は削除の実行口。走査と同じ Env / Runner を使う (判定の材料を 2 つ持たない)。
+func (v *doctorView) deleteOptions() disk.DeleteOptions {
+	if v.deleteOpts != nil {
+		return v.deleteOpts()
+	}
+	return disk.DeleteOptions{Env: disk.RealEnv(), Run: runner.Exec}
 }
 
 // doctorRow は 1 行。selectable な行だけにカーソルが止まる。detail は Enter で展開する本文。
@@ -134,6 +152,8 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	v.gen++
 	v.cursor, v.offset = 0, 0
 	v.expanded = map[string]bool{}
+	v.selected, v.inspected = map[string]bool{}, map[string]bool{}
+	v.del.reset()
 	v.diskResults, v.diskRep, v.svcRep, v.brew = nil, nil, nil, nil
 	v.startedAt = timeNow()
 	v.snapshotAt = time.Time{}
@@ -303,17 +323,35 @@ type doctorAction int
 const (
 	doctorSwallow doctorAction = iota // 全画面なので裏の一覧へ素通りさせない
 	doctorClosed
-	doctorRescan   // r: 走査し直す (browseModel が open() で起こす。close は経由しない = partial を書かない)
-	doctorCopyPath // y: 選んだ行のパスをコピー (中身は copyPayload)
-	doctorCopyText // Y: 選んだ行の解説文をコピー (同上)
-	doctorNothing  // y/Y を押したがコピーするものが無い (browseModel がその旨をトーストにする)
+	doctorRescan    // r: 走査し直す (browseModel が open() で起こす。close は経由しない = partial を書かない)
+	doctorCopyPath  // y: 選んだ行のパスをコピー (中身は copyPayload)
+	doctorCopyText  // Y: 選んだ行の解説文をコピー (同上)
+	doctorNothing   // y/Y を押したがコピーするものが無い (browseModel がその旨をトーストにする)
+	doctorToast     // 削除の導線が理由を出したい (pendingToast)
+	doctorRunDelete // 削除を開始する (pendingDeleteCmd を browseModel が実行する)
 )
 
 // copyPayload は直近の y / Y でコピーする文字列 (handleKey がセットし、browseModel が取り出す)。
 func (v *doctorView) copyPayload() string { return v.pendingCopy }
 
 func (v *doctorView) handleKey(key string, page int) doctorAction {
+	// 削除の語彙が立っているあいだは、そちらが先にキーを取る
+	// (確認中の y が「コピー」に化けない / 実行中に別の行へ移動できない)
+	if act, taken := v.handleDeleteKey(key); taken {
+		return act
+	}
 	switch key {
+	case " ":
+		if why, ok := v.toggleSelect(); !ok {
+			if why == "" {
+				return doctorSwallow
+			}
+			v.pendingToast = why
+			return doctorToast
+		}
+		return doctorSwallow
+	case "d":
+		return v.beginDelete()
 	case "D", "q", "esc":
 		v.close()
 		return doctorClosed
@@ -324,7 +362,7 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 		v.moveCursor(+1)
 	case "k", "up":
 		v.moveCursor(-1)
-	case "ctrl+d", "pgdown", " ":
+	case "ctrl+d", "pgdown":
 		for range max(1, page/2) {
 			v.moveCursor(+1)
 		}
@@ -342,6 +380,12 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 		if v.cursor >= 0 && v.cursor < len(v.rows) && v.rows[v.cursor].selectable && len(v.rows[v.cursor].detail) > 0 {
 			k := v.rows[v.cursor].key
 			v.expanded[k] = !v.expanded[k]
+			if id, ok := strings.CutPrefix(k, "disk:"); ok && v.expanded[k] {
+				if v.inspected == nil {
+					v.inspected = map[string]bool{}
+				}
+				v.inspected[id] = true // risk: confirm の行はこれが立つまで選べない
+			}
 		}
 	case "y", "Y":
 		if v.cursor < 0 || v.cursor >= len(v.rows) || !v.rows[v.cursor].selectable {
@@ -396,15 +440,29 @@ func (v *doctorView) moveCursor(dir int) {
 // 実測 2026-09-03: 固定文字列だと 112 桁あり、popup の予算 82 桁で「D/q/esc: 閉じる」と
 // 「(削除はまだできません)」が画面から消えていた (issue 201)。
 func (v *doctorView) hint(width int) string {
-	return fitHintItems(width, []hintItem{
+	if v.del.blocking() {
+		return " 実行中です (Ctrl-C ×2 で中断)"
+	}
+	if v.del.confirm {
+		return " y: 削除する   n/Esc: やめる"
+	}
+	if v.del.result != nil || v.del.err != "" {
+		return " 何かキーを押すと閉じます"
+	}
+	items := []hintItem{
 		{"j/k: 移動", 3},
-		{"Enter: 詳細", 3},
-		{"y: パスをコピー", 4},
-		{"Y: 解説をコピー", 5},
-		{"r: 再スキャン", 4},
+		{"Space: 選択", 2}, // 削除の入口なので Enter より優先して残す
+		{"d: 削除", 2},
+		{"Enter: 詳細", 4},
+		{"y: パスをコピー", 5},
+		{"Y: 解説をコピー", 6},
+		{"r: 再スキャン", 5},
 		{"D/q/esc: 閉じる", 1}, // 抜ける手段は最優先で残す
-		{"(削除はまだできません)", 2}, // 破壊操作の有無は誤解が高くつくので優先度を上げる
-	})
+	}
+	if n, total := v.selectionSummary(); n > 0 {
+		items = append([]hintItem{{fmt.Sprintf("選択 %d 件 %s", n, disk.HumanSize(total)), 1}}, items...)
+	}
+	return fitHintItems(width, items)
 }
 
 // doctorRenderOpts は描画情報。
@@ -418,6 +476,10 @@ type doctorRenderOpts struct {
 
 // lines はちょうど page 行を返す (全画面 viewer 共通の契約)。行を組み直し、カーソルが窓に入るよう offset を寄せる。
 func (v *doctorView) lines(o doctorRenderOpts) []string {
+	// 削除の確認 / 進捗 / 結果は全画面で差し替える (重ねると狭い幅で下の行が透けて読めなくなる)
+	if panel := v.deletePanel(o); panel != nil {
+		return padTo(panel, o.page)
+	}
 	v.rows = v.buildRows(o)
 	if v.cursor >= len(v.rows) {
 		v.cursor = max(0, len(v.rows)-1)
@@ -539,8 +601,12 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 			labelW = max(room, doctorMinLabelWidth)
 		}
 		label := truncateDisp(r.Entry.Label, labelW, "…")
+		sel := " "
+		if v.selected[r.Entry.ID] {
+			sel = doctorColor(o.colored, ansiBold, "*") // 選択は半角 1 桁で固定 (全角を混ぜると列がずれる)
+		}
 		row := doctorRow{
-			text:       fmt.Sprintf(" %8s  %s%s %s", size, label, padSpaces(labelW-dispWidth(label)), doctorColor(o.colored, color, mark)),
+			text:       fmt.Sprintf("%s%8s  %s%s %s", sel, size, label, padSpaces(labelW-dispWidth(label)), doctorColor(o.colored, color, mark)),
 			selectable: true,
 			key:        "disk:" + r.Entry.ID,
 			detail:     v.diskDetail(o, r),
