@@ -731,13 +731,34 @@ func TestDeleteConfirmScrollKeysDoNotCancel(t *testing.T) {
 	}
 	v := &doctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
 	first := strings.Join(v.lines(doctorTestOpts(12)), "\n") // 高さを測らせる (窓は描画で決まる)
-	for _, key := range []string{"j", "down", "k", "up", "ctrl+d", "pgdown", "ctrl+u", "pgup", "g", "home", "G", "end"} {
+	// 🚨 キーごとに「**本当に動くか**」まで見る。confirm が閉じないことだけを見ていたら、
+	// scroll() から j/k/ctrl+d/… の case を消す変異が緑のまま通った (敵対レビュー 2026-09-04 の実測)。
+	// パネルの注記が "(j/k で送る)" と名指ししているので、動かないのは案内が嘘になる形
+	down := []string{"j", "down", "ctrl+d", "pgdown", "G", "end"}
+	up := []string{"k", "up", "ctrl+u", "pgup", "g", "home"}
+	for _, key := range append(append([]string{}, down...), up...) {
+		forward := slicesContains(down, key)
 		v.del.confirmScroll.offset = 0
-		if _, handled := v.handleDeleteKey(key); !handled {
+		if !forward {
+			v.del.confirmScroll.offset = v.del.confirmScroll.total - v.del.confirmScroll.view // 末尾から戻す
+		}
+		before := v.del.confirmScroll.offset
+		act, handled := v.handleDeleteKey(key)
+		if !handled {
 			t.Fatalf("%q が処理されていない", key)
+		}
+		if act != doctorSwallow {
+			t.Errorf("%q の act = %v; want doctorSwallow (送るだけ。再スキャン等を起こさない)", key, act)
 		}
 		if !v.del.confirm {
 			t.Fatalf("%q で確認が閉じた (送るキーは中止に落とさない)", key)
+		}
+		got := v.del.confirmScroll.offset
+		if forward && got <= before {
+			t.Errorf("%q で送れていない: offset %d -> %d", key, before, got)
+		}
+		if !forward && got >= before {
+			t.Errorf("%q で戻れていない: offset %d -> %d", key, before, got)
 		}
 	}
 	// 🚨 判定は**本文の中身**で行う。注記 ("上に N 行") だけを見ると、window が offset を
@@ -1334,4 +1355,67 @@ func TestDiskDetailInspectWithContentsStillHasSelectablePaths(t *testing.T) {
 	if !strings.Contains(joined, "この一覧は選べません") {
 		t.Errorf("中身が選べないことを伝えていない:\n%s", joined)
 	}
+}
+
+// 「消せるものがありません」の画面でも送れる (issue 241 の敵対レビュー P1)。
+// パネルは入り切らないときに「(j/k で送る)」と出すので、送れないと**案内どおり押した打鍵で
+// 無言で消える** = 241 が塞いだはずの形をこちらで作ることになる。消せない理由 (Reason) こそ読みたい。
+func TestDeleteNoWorkPanelScrolls(t *testing.T) {
+	entries := make([]disk.EntryOutcome, 0, 10)
+	for i := range 10 {
+		entries = append(entries, disk.EntryOutcome{Label: fmt.Sprintf("え%d", i), Method: "rm",
+			Outcome: disk.OutcomeSkipped, Reason: "走査し直したら候補ではなくなっていました"})
+	}
+	v := &doctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
+	first := strings.Join(v.lines(doctorTestOpts(14)), "\n")
+	if !strings.Contains(first, "消せるものがありません") {
+		t.Fatalf("前提が違う (消せるものがありません の画面):\n%s", first)
+	}
+	if !strings.Contains(first, "j/k で送る") {
+		t.Fatalf("前提が違う (入り切らず注記が出ること):\n%s", first)
+	}
+	if _, handled := v.handleDeleteKey("j"); !handled {
+		t.Fatal("j が処理されていない")
+	}
+	if !v.del.confirm {
+		t.Error("j で画面が閉じた (パネルが j/k を勧めているのに消えるのは 241 と同型)")
+	}
+	if v.del.confirmScroll.offset == 0 {
+		t.Error("j で送れていない")
+	}
+	// 送るキー以外は従来どおり戻る
+	if _, handled := v.handleDeleteKey("x"); !handled {
+		t.Fatal("x が処理されていない")
+	}
+	if v.del.confirm {
+		t.Error("送るキー以外で戻らなかった")
+	}
+}
+
+// 結果パネル (窓を持たない側) は塊単位で落とし、落としたことを注記で伝える。
+// 🚨 このカバレッジは元々 TestDeletePanelElisionNote が持っていたが、確認パネルが窓へ移った
+// 書き換えで失われていた (敵対レビュー 2026-09-04 の P2-3: elide を false にする変異が全緑だった)。
+func TestDeleteResultPanelElisionNote(t *testing.T) {
+	entries := make([]disk.EntryOutcome, 0, 8)
+	for i := range 8 {
+		entries = append(entries, disk.EntryOutcome{Label: fmt.Sprintf("え%d", i), Method: "rm",
+			Outcome: disk.OutcomeDeleted, Freed: 1024, Items: make([]disk.ItemOutcome, 1)})
+	}
+	rep := disk.DeleteReport{Entries: entries}
+	v := &doctorView{del: doctorDelete{result: &rep}}
+	out := strings.Join(v.lines(doctorTestOpts(10)), "\n")
+	for _, want := range []string{"他 ", "画面に入りません"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("落とした件数の注記に %q が無い:\n%s", want, out)
+		}
+	}
+}
+
+func slicesContains(xs []string, x string) bool {
+	for _, s := range xs {
+		if s == x {
+			return true
+		}
+	}
+	return false
 }

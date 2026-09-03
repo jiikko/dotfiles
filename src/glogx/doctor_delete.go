@@ -74,8 +74,11 @@ func (s *deleteScroll) window(o doctorRenderOpts, all []string, avail int) []str
 	s.total = len(all)
 	if avail <= 0 {
 		// 本文に使える行が無い (極端に低い画面)。注記も出さない:
-		// 1 行でも返すと末尾 (合計と操作の説明) が押し出される
-		s.offset, s.view = 0, 0
+		// 1 行でも返すと末尾 (合計と操作の説明) が押し出される。
+		// 🚨 offset は**捨てない**。捨てると、端末が一瞬縮んだだけで送った位置が失われる
+		// (敵対レビュー 2026-09-04 の P3-2 が実測: page20 で G → page3 を 1 フレーム → page20 に
+		// 戻しても末尾が見えない)
+		s.view = 0
 		return nil
 	}
 	if len(all) <= avail {
@@ -288,7 +291,7 @@ func (v *doctorView) receiveDelete(msg doctorDeleteMsg) tea.Cmd {
 	}
 	if ev.dryRun {
 		v.del.plan, v.del.confirm = ev.rep, true
-		v.del.confirmScroll = deleteScroll{} // 開き直しは必ず先頭から見せる
+
 		return nil
 	}
 	v.del.result = ev.rep
@@ -321,14 +324,19 @@ func (v *doctorView) handleDeleteKey(key string) (doctorAction, bool) {
 		// それ以外はどのキーでも閉じる。閉じたら再スキャンして表示を実体に合わせる
 		d.reset()
 		return doctorRescan, true
-	case d.confirm && !planHasWork(d.plan):
-		d.reset() // 消せるものが無いので、どのキーでも戻る
-		return doctorSwallow, true
 	case d.confirm:
 		// 🚨 送るキーは**中止に落とさない** (issue 241)。窓に入り切らない対象を見ようとした
-		// 打鍵で確認が消えるのを塞ぐ。ここに無いキーは既定どおり中止側 (安全側) へ落ちる
+		// 打鍵で確認が消えるのを塞ぐ。ここに無いキーは既定どおり中止側 (安全側) へ落ちる。
+		// 🚨 **「消せるものがありません」の画面でも送れること**: あちらもパネルに
+		// 「(j/k で送る)」と出るので、送れないと「案内どおり押したら無言で消えた」形になる
+		// (敵対レビュー 2026-09-04 の P1。塞いだはずの形を自分で作っていた)。
+		// 消せない理由 (skipped の Reason) こそ読みたいので、読む手段を先に確保する
 		if deleteScrollKeys[key] {
 			d.confirmScroll.scroll(key)
+			return doctorSwallow, true
+		}
+		if !planHasWork(d.plan) {
+			d.reset() // 消せるものが無いので、送るキー以外はどれでも戻る
 			return doctorSwallow, true
 		}
 		switch key {
@@ -763,8 +771,12 @@ func deleteCommandLines(o doctorRenderOpts, e disk.EntryOutcome) []string {
 // 走査し直して正規化したもの = 実際に触る対象そのもの。
 //
 // 🚨 1 エントリあたりの表示は maxConfirmPaths 件で打ち切る。全部並べると 1 エントリで画面を
-// 埋め、**他のエントリが丸ごと省略される** (assembleDeletePanel は塊単位で落とすため)。
-// 打ち切ったことは件数で伝える。
+// 埋め、**他のエントリが窓の外へ押し出される** (送れば読めるが、最初のフレームに何が出るかは
+// 「どれを消すか」の把握に効く)。打ち切ったことは件数で伝える。
+// 🚨 理由の更新 (issue 241): 以前は「塊単位で落とすので他のエントリが**丸ごと省略される**」と
+// 書いていたが、確認パネルは行単位の窓になったので丸ごと省略はもう起きない。打ち切りを残すのは
+// 「1 エントリで最初の画面を埋めない」ためで、11 件目以降が窓でも読めない点は残っている
+// (issue 241 の決着節に記録)。
 func deletePathLines(o doctorRenderOpts, e disk.EntryOutcome) []string {
 	out := make([]string, 0, min(len(e.Items), maxConfirmPaths)+1)
 	for i, it := range e.Items {
