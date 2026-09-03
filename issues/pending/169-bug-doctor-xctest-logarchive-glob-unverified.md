@@ -109,3 +109,71 @@ ls -la /private/var/tmp/ | grep -i 'xctest|logarchive|spindump'
 ### 受け入れ条件の追記
 
 - [ ] 実名を採るとき、`xctest-logarchive` と `xctest-spindump` の**両方**の glob を確定する
+
+## UI 側 (glogx) の差分は未適用 — 適用待ちのパッチをここに退避 (2026-09-03)
+
+対応案 3「検出 0 件を『候補なし』と表示せず、未検証と分かる形にする」は
+**doctor module 側 (`src/doctor/disk/`) だけ適用済み**で、**glogx の画面側は未適用**。
+
+理由: `src/glogx/doctor_view.go` は別マシンで全体見直し中のため、ユーザーの指示で変更を停止した
+(2026-09-03)。合図が出たら下のパッチを当てる。当てると CLI と同じく、未実測の 2 エントリが
+候補 0 件でも行として残り `🔎 未検証` が付く。
+
+⚠️ **当てる前に見直し後の実装と突き合わせること**。行番号ではなく
+`diskSection` の 0 件畳み込みと `doctorRiskMark` の `StatusOK` 分岐を目印にする。
+
+```diff
+diff --git a/src/glogx/doctor_view.go b/src/glogx/doctor_view.go
+index 7b8d7f61..586ddc66 100644
+--- a/src/glogx/doctor_view.go
++++ b/src/glogx/doctor_view.go
+@@ -755,7 +755,12 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
+ 	sort.SliceStable(sorted, func(a, b int) bool { return sorted[a].Size > sorted[b].Size })
+ 	shown := 0
+ 	for _, r := range sorted {
+-		if r.Status == disk.StatusOK && len(r.Items) == 0 && len(r.Failures) == 0 {
++		// 候補 0 件の行は畳む。⚠️ ただし **検出条件そのものが未実測のエントリは畳まない**
++		// (issue 169 / 207)。畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と
++		// **同じ見え方**になり、探せていないことが画面から永久に消える (false green)。
++		// 実測で名前が確定して Entry.Unverified が空になれば、この行も自動的に畳まれる側へ戻る。
++		if r.Status == disk.StatusOK && len(r.Items) == 0 && len(r.Failures) == 0 &&
++			r.Entry.Unverified == "" {
+ 			continue
+ 		}
+ 		shown++
+@@ -795,6 +800,13 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
+ 			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "           "+r.Reason)})
+ 			continue
+ 		}
++		// 未実測のエントリで 0 件のときは、Recover (「消しても再生成されます」) を出さない。
++		// 消す対象が 1 件も無いのに復元方法を出すと、**検出できている**ように読めるため。
++		if r.Entry.Unverified != "" && len(r.Items) == 0 {
++			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim,
++				"           0 件ですが「候補なし」ではありません: "+r.Entry.Unverified)})
++			continue
++		}
+ 		advice := r.Entry.Recover
+ 		if newest := doctorNewest(r); !newest.IsZero() {
+ 			advice += fmt.Sprintf("。最終更新 %s (%d日前)", newest.Format("2006-01-02"), int(o.now.Sub(newest).Hours()/24))
+@@ -898,6 +910,12 @@ func doctorRiskMark(r disk.Result) (string, string) {
+ 	case disk.StatusFailed:
+ 		return "❓ 走査できず", ansiDim
+ 	case disk.StatusOK:
++		// 検出条件が未実測のエントリで候補 0 件のとき。**リスク記号を出さない**:
++		// 「✅ 安全」は「調べたうえで安全」の意味なので、調べられていない行に出すと嘘になる。
++		// 走査自体は成功しているので「❓ 走査できず」とも違う (記号を分けて区別する)。
++		if r.Entry.Unverified != "" && len(r.Items) == 0 {
++			return "🔎 未検証", ansiDim
++		}
+ 	}
+ 	switch r.Entry.Risk {
+ 	case disk.RiskSafe:
+```
+
+### 当てた後にやること
+
+- [ ] glogx 側にも同じ主張のテストを足す (doctor module 側は
+      `src/doctor/disk/report_test.go:TestFormatKeepsUnverifiedEntryWithZeroItems`。
+      変異 3 本で red 確認済み: 畳みに戻す / マークを ✅ 安全 に戻す / 説明行を消して Recover を出す)
+- [ ] CLI と UI で同じ入力から同じ結論が出ることを確かめる
+      (規範: `mutation-verify-new-tests.md`「同じ判定を 2 箇所で別実装していないか」)

@@ -30,6 +30,12 @@ func riskMark(r Result) string {
 		return "🚫 対象外"
 	case StatusFailed:
 		return "❓ 走査できず"
+	case StatusOK:
+		// 検出条件が未実測で候補 0 件。「✅ 安全」は「調べたうえで安全」の意味なので出さない。
+		// 走査自体は成功しているので「❓ 走査できず」とも別語彙にする (UI 側と同じ記号)。
+		if r.Entry.Unverified != "" && len(r.Items) == 0 {
+			return "🔎 未検証"
+		}
 	}
 	switch r.Entry.Risk {
 	case RiskSafe:
@@ -52,7 +58,11 @@ func Format(rep Report, now time.Time) string {
 	}
 	shown := 0
 	for _, r := range rep.Results {
-		if r.Status == StatusOK && len(r.Items) == 0 && len(r.Failures) == 0 {
+		// 候補 0 件は畳む。⚠️ **検出条件そのものが未実測のエントリは畳まない** (issue 169 / 207)。
+		// 畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と同じ見え方になる。
+		// UI 側 (src/glogx/doctor_view.go) と同じ規律。実測で Entry.Unverified が空になれば畳まれる側へ戻る
+		if r.Status == StatusOK && len(r.Items) == 0 && len(r.Failures) == 0 &&
+			r.Entry.Unverified == "" {
 			continue
 		}
 		shown++
@@ -67,6 +77,12 @@ func Format(rep Report, now time.Time) string {
 		fmt.Fprintf(&b, "\n%9s  %s  %s\n", size, riskMark(r), r.Entry.Label)
 		if r.Status == StatusFailed || r.Status == StatusBlocked {
 			fmt.Fprintf(&b, "           %s\n", r.Reason)
+			continue
+		}
+		if r.Entry.Unverified != "" && len(r.Items) == 0 {
+			// 消す対象が 0 件なのに Recover (「消しても再生成されます」) を出すと、
+			// 検出できているように読める
+			fmt.Fprintf(&b, "           0 件ですが「候補なし」ではありません: %s\n", r.Entry.Unverified)
 			continue
 		}
 		fmt.Fprintf(&b, "           %s", r.Entry.Recover)

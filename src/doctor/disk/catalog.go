@@ -37,6 +37,12 @@ type Entry struct {
 	Guard     Guard
 	Processes []string // GuardProcessAbsent の判定名 (完全一致。推測しない。1 つでも起動中なら blocked)
 	Inspect   bool     // 中身一覧を必ず見せる (ユーザーファイルの可能性)
+	// Unverified は「**検出条件そのものが未実測**」の印 (空でなければ未検証。中身は短い理由)。
+	// 走査は正常に終わっているので Status は ok のままだが、**0 件を「候補なし」と読んではいけない**
+	// エントリを区別する。表示側は 0 件でもこの行を隠さない (隠すと「探せていない」が
+	// 「きれいです」と同じ見え方になる = false green)。
+	// 実測で名前を確定したらこのフィールドを消す (issue 169)。
+	Unverified string
 }
 
 // catalog はカタログ本体 (issue 148 の 1 章の写し)。載せる条件は「消したまま戻らないこと」を
@@ -90,7 +96,8 @@ var catalog = []Entry{
 		// 名前が違えばこの検出項目は黙って 0 件になる (false negative)。
 		// **確定手順**: `xcodebuild test` を回した直後に `ls -la /private/var/tmp/*.logarchive` で実名を採り、
 		// この glob をその名前に合わせて fixture テストで固定する。
-		Paths: []string{"/private/var/tmp/XCTest*.logarchive", "/private/var/tmp/xctest*.logarchive"}, Guard: GuardBoottime},
+		Paths: []string{"/private/var/tmp/XCTest*.logarchive", "/private/var/tmp/xctest*.logarchive"}, Guard: GuardBoottime,
+		Unverified: "ファイル名が未実測 (issue 169)"},
 	{ID: "xctest-spindump", Label: "XCTest spindump", Tier: 2, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "再生成されません (不要)",
 		// ⚠️ **この glob も未実測** (issue 169 と同型。2026-09-03 に発見)。上の xctest-logarchive と
@@ -98,7 +105,8 @@ var catalog = []Entry{
 		// `grep -rl --binary-files=text 'XCTestTesting' <Xcode>/Platforms/MacOSX.platform` が **0 件**
 		// (Xcode 26.3。バイナリも含めた全走査)。実機の /private/var/tmp にも現物が無い。
 		// 名前が違えばこの検出項目も黙って 0 件になる。確定手順は上のエントリと同じ。
-		Paths: []string{"/private/var/tmp/XCTestTesting.*.spindump.txt"}, Guard: GuardBoottime},
+		Paths: []string{"/private/var/tmp/XCTestTesting.*.spindump.txt"}, Guard: GuardBoottime,
+		Unverified: "ファイル名が未実測 (issue 169)"},
 	{ID: "coresimulator-orphan", Label: "孤児シミュレータの作業領域", Tier: 2, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "現存しないデバイスの残骸。再生成されません", Detail: "simctl list devices に無い UUID だけ (現役の作業領域は候補にしない)",
 		Paths: []string{"/private/var/tmp/com.apple.CoreSimulator.SimDevice.*"}, Guard: GuardSimDevice},
