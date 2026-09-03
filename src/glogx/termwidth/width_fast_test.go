@@ -73,6 +73,11 @@ func TestAcceptedSymbolsNeverCombineWithEachOther(t *testing.T) {
 	for _, a := range syms {
 		for _, b := range probes {
 			s := string(a) + string(b)
+			// ⚠️ uniseg は Unicode 15、本番の分割器 (x/ansi) は 16 で**判断が割れる**
+			// (実測 2026-09-03: "a"+U+0897 は uniseg が 2 クラスタ / ansi.StringWidth が幅 1)。
+			// このオラクルは前段の目安で、**本番との一致は下の 2 つの assert が担う** —
+			// 版差のある rune を acceptedSymbols に足しても fastDispWidth が受理せず red になる
+			// (issue 202 発見 2 はここを見落とした false positive)。
 			if n := uniseg.GraphemeClusterCount(s); n != 2 {
 				t.Fatalf("U+%04X + U+%04X が %d クラスタに結合した", a, b, n)
 			}

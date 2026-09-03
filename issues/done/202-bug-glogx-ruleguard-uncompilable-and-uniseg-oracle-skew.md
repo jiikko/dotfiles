@@ -44,59 +44,55 @@ golangci-lint 同梱の go-ruleguard が行う。
 - どちらを採るにせよ、**ルールが無言で消えていないこと**を検査する方法 (意図的に違反コードを
   置いて lint が落ちるか) を同じ変更で用意する
 
-## 発見 2: 幅テストのオラクル (`uniseg`) が本番の分割器と Unicode 版が違う
+## 発見 2 (❌ **却下: false positive**): 幅テストのオラクルの版差
 
-`github.com/rivo/uniseg v0.4.7` は direct require だが、**本体 (TUI) からは 1 箇所も import
-されていない**。生きている参照は 2 つだけ:
+監査は「`TestAcceptedSymbolsNeverCombineWithEachOther` が uniseg (Unicode 15) をオラクルに
+しているので、Unicode 16 でだけ結合する記号を `acceptedSymbols` に足すとテストが green のまま
+通る」と報告した。**main agent が実測して否定した (2026-09-03)。**
 
-- `tools/width-probe/main.go` (README で「本体から参照しない調査ツール」と明示、depguard も除外)
-- **`termwidth/width_fast_test.go:76` — `uniseg.GraphemeClusterCount(s)`**
+### 版差そのものは実在する (実測)
 
-2 つ目が問題。`fastDispWidth` の受理集合が「互いに結合しない」ことを保証する
-`TestAcceptedSymbolsNeverCombineWithEachOther` は、**uniseg のクラスタ境界を正解とみなしている**。
-一方、本番の分割器は `termwidth/termwidth.go:225` の
-`ansi.FirstGraphemeCluster(s, ansi.GraphemeWidth)`。
+`"a" + U+0897` などで測ると:
 
-**この repo 自身が版差を記録している** (`termwidth/width_fast_test.go:296-299`):
+| rune | `uniseg.GraphemeClusterCount` | `ansi.StringWidth` |
+|---|---|---|
+| U+0897 | **2** (結合しない) | **1** (結合する) |
+| U+1ACF | 2 | 1 |
+| U+1ADD | 2 | 1 |
+| U+113B8 | 2 | 1 |
 
-> uniseg v0.4.7 が Unicode 15、x/ansi v0.11.7 が 16 という版差の産物で、uniseg が 16 に
-> 上がれば 0 件になり
+uniseg v0.4.7 (Unicode 15) と x/ansi v0.11.7 (16) の判断は確かに割れている。
 
-過去に 744 件 / 93 rune の不一致が実測されている。
+### しかしテストは素通りしない
 
-### 発火条件
+このテストは uniseg の後に **2 つの assert** を持つ。同じ入力で 3 つの assert を順に評価した実測:
 
-`acceptedSymbols` に記号を 1 つ足したとき、その記号が **Unicode 16 では後続と結合するが
-Unicode 15 では結合しない**ケースだと:
+```
+U+0897: [assert1 uniseg==2] true / [assert2 受理] ok=false / [assert3 fast==ansi] 0 vs 1 → 不一致
+U+1ACF: [assert1 uniseg==2] true / [assert2 受理] ok=false / [assert3 fast==ansi] 0 vs 1 → 不一致
+```
 
-1. uniseg (オラクル) は「2 クラスタ」と答え、テストは **green のまま通る**
-2. 本番の `ansi.FirstGraphemeCluster` は 1 クラスタに結合する
-3. `fastDispWidth` の逐次加算が `ansi.StringWidth` と食い違い、fast-path が幅を誤る
-4. `TruncateLeft` / `dropToColumn` の桁がずれる
+uniseg のオラクル (assert1) は確かに通してしまうが、**`fastDispWidth` が受理しない
+(assert2 の `t.Fatalf("受理されなかった")`) ので red になる**。仮に受理されたとしても、
+assert3 (`fast == ansi.StringWidth`) が 0 vs 1 で落ちる。
 
-**「幅は 1 本に統一した」という設計 (`.golangci.yml:69-75` の depguard 2 ルール +
-`width_test.go:TestNoSecondWidthEngine`) が、その統一を検証する側で破れている。**
-depguard の除外 (`width_fast_test.go`) は width-probe と同じ扱いになっており、
-この版差リスクには触れていない。
+**守っている本体は「fast-path の逐次加算 == ansi.StringWidth の総和」の方**で、uniseg は
+補助的な前段チェックにすぎない。監査は assert1 だけを見て「オラクルが本番と違う」と判断したが、
+**後続の assert が本番のライブラリで裏を取っている**ことを見落としていた。
 
-### 対応案
+### 対応
 
-- オラクルを `ansi.FirstGraphemeCluster` に揃える (本番と同じ分割器で「結合しない」を確かめる)。
-  ⚠️ ただし**本番と同じライブラリをオラクルにすると自己言及になる**
-  ([`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の「自己言及」)。
-  この検査が守りたいのは「fastDispWidth の逐次加算 == ansi.StringWidth の総和」なので、
-  **オラクルを uniseg から `ansi.StringWidth` との突き合わせへ変える**方が筋が良い可能性がある
-- または uniseg を Unicode 16 対応版へ上げる (上げれば版差は消えるが、**次の Unicode 版でまた開く**)
-- どちらにせよ、**版差が開いていることを検知する検査**を足すのが本筋
-  (`uniseg` と `x/ansi` のクラスタ境界が食い違う rune が 0 件であることを範囲総当たりで見る、等)
+**何もしない。** ただし、この却下理由を残しておかないと次の監査が同じ指摘を再生成するので、
+`width_fast_test.go` の uniseg を使う箇所に「このオラクルは前段で、本番との一致は下の
+`ansi.StringWidth` 比較が担う」という 1 行を足す
+([`pending-issue-rationale-in-code.md`](../_claude/rules/pending-issue-rationale-in-code.md))。
 
 ## 受け入れ条件
 
-- [ ] 発見 1: `ruleguard.rules.go` の型エラーが CI で落ちる形にする (または「型検査されない」ことを
-      ファイル冒頭に明記し、`dsl` の require の意味も書く)
-- [ ] 発見 2: オラクルの版差が塞がるか、版差が開いたことを検知できる形にする
-- [ ] 各対応は**変異で red を見る**まで確認する (ルールに型エラーを入れる / 版差のある rune を
-      `acceptedSymbols` に足す)
+- [x] 発見 1: `gorules/rules.go` へ移し、`make lint` が `go vet -tags ruleguard ./gorules` を
+      回す形にした (`397fded2`)。変異 (`m.NoSuchMethodZZ`) で red を確認
+- [x] 発見 2: **却下 (false positive)**。版差は実在するが、テストは後続の assert で red になる
+      ことを実測で確認した。却下理由をコード直近にコメントで残す
 
 ## 報告に留めたもの (issue 化しない。発火条件が弱いか、今は動かせない)
 
