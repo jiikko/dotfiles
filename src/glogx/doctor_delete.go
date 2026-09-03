@@ -43,8 +43,13 @@ type doctorDelete struct {
 	// 失敗したときに LLM へ投げられるよう、y でまるごとコピーできる
 	log []string
 
-	cancel  context.CancelFunc
+	cancel context.CancelFunc
+	// ch は進捗とコマンドの出力 (落としてよい)。done は**完了**専用の 1 バッファ。
+	// 🚨 完了を取りこぼすと UI が「実行中」のまま永久に止まる。進捗で埋まった ch に
+	// 完了を載せると詰まり、ctx で諦めると今度は届かない (2026-09-03 に実測: テストが 10 秒で
+	// タイムアウトした)。**落としてよいもの**と**落としてはいけないもの**を別の口にする
 	ch      chan doctorDeleteEvent
+	done    chan doctorDeleteEvent
 	armedCC bool // 実行中に Ctrl-C が 1 回押された (2 回目で cancel)
 }
 
@@ -85,10 +90,11 @@ func (v *doctorView) startDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan doctorDeleteEvent, 16)
+	done := make(chan doctorDeleteEvent, 1)
 	// 相は 1 つだけ立てる。⚠️ confirm を落とし忘れると confirm && running の非正規状態になり、
 	// 今は switch の並び順だけで無害になっている (並べ替えた瞬間に黙って壊れる)。
 	// armedCC も引き継がない: 下見の最中に押した Ctrl-C が、本番の 1 回目で即中断に化ける
-	v.del = doctorDelete{cancel: cancel, ch: ch, progress: "準備中",
+	v.del = doctorDelete{cancel: cancel, ch: ch, done: done, progress: "準備中",
 		preparing: dryRun, running: !dryRun}
 	gen := v.gen
 	opt := v.deleteOptions()
@@ -122,13 +128,7 @@ func (v *doctorView) startDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 		if err != nil {
 			ev.err = err.Error()
 		}
-		// ⚠️ 素の送信にしない。読み手 (Update ループ) が終了で消えていて、かつバッファが
-		// 埋まっていると永久にブロックして goroutine が残る。走査側 (diskCh) が容量を
-		// カタログ数ぶん確保しているのと同じ規律を、こちらは ctx で満たす
-		select {
-		case ch <- ev:
-		case <-ctx.Done():
-		}
+		done <- ev // cap 1 の専用口。進捗で詰まらないし、取りこぼしもしない
 		return nil
 	})
 }
@@ -170,16 +170,24 @@ func doctorPhaseWord(p disk.DeletePhase) string {
 
 // waitDeleteCmd は channel から 1 件だけ受けて Msg にする (Update の外で状態を触らない)。
 func (v *doctorView) waitDeleteCmd(gen int) tea.Cmd {
-	ch := v.del.ch
-	if ch == nil {
+	ch, done := v.del.ch, v.del.done
+	if ch == nil || done == nil {
 		return nil
 	}
 	return func() tea.Msg {
-		ev, ok := <-ch
-		if !ok {
-			return nil
+		// 溜まっている進捗を先に出す (両方 ready のときに select が完了を選ぶと、
+		// 直前のコマンドの出力が画面に出ないまま結果へ飛ぶ)
+		select {
+		case ev := <-ch:
+			return doctorDeleteMsg{gen: gen, ev: ev}
+		default:
 		}
-		return doctorDeleteMsg{gen: gen, ev: ev}
+		select {
+		case ev := <-ch:
+			return doctorDeleteMsg{gen: gen, ev: ev}
+		case ev := <-done:
+			return doctorDeleteMsg{gen: gen, ev: ev}
+		}
 	}
 }
 
