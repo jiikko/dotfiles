@@ -23,7 +23,7 @@
 `golangci-lint` の `exhaustive` が `switch` の case 漏れ (`rlDashSwallow`) を弾いた。
 握り潰しを**明示的な case** として書くことになり、意図が型に乗った。
 
-- ⚠️ `make lint` を回すまで気づかなかった (`go build` は通る)。**Go の変更は
+- 🚨 `make lint` を回すまで気づかなかった (`go build` は通る)。**Go の変更は
   `go test` だけでなく `make lint` まで回してから commit する**が、既に memory
   (`make lint/test before commit`) にある
 - 切り出し先: **却下** (既存 memory どおり)
@@ -46,7 +46,7 @@ status viewer の hint へ `R: 残量` を足したが、実測すると hint �
 - issues viewer 側には幅テスト (`TestIssuesViewHintFitsPopupWidth`) があるが status には無い、
   という非対称が原因
 - 切り出し先: **issue 155 として起票済み**
-- ⚠️ 一般化して「表示されるかを assert しろ」というルールにはしない。既存の
+- 🚨 一般化して「表示されるかを assert しろ」というルールにはしない。既存の
   [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の
   「その assert が見ている量は、壊れたときに動くのか」が既に同じことを言っている
 

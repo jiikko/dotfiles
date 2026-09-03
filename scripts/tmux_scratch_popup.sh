@@ -3,7 +3,7 @@
 # で呼ばれる)。開閉判定ごとここに集約する (旧実装は if-shell -F 込みの 200 文字超の bind
 # 文字列が t / C-t に複製されており、二重エスケープで壊れやすかった)。
 # 引数: $1 = client_name / $2 = session_name (いずれも run-shell の format 展開で渡る。
-#   ⚠️ #{q:} でシェル特殊文字をエスケープすること。素の "#{...}" 埋めは値に " が入ると
+#   🚨 #{q:} でシェル特殊文字をエスケープすること。素の "#{...}" 埋めは値に " が入ると
 #   sh 構文エラーになる)
 #
 # - session_name が scratch = popup 内で押された
@@ -17,11 +17,11 @@
 #   アイデンティティを優先してユーザー判断で固定に戻した 2026-07-02)。中身は濃紺 (-s bg=colour17)。
 # - 動的タイトル: 開いた時刻 (#{t/f/%H#:%M:client_activity} = C-t t の keypress 時刻) を
 #   スナップショット表示 (生時計にはならない。per-draw のタイトル再展開は 3.5a に無い)。
-#   ⚠️ bare の %H:%M は -T では strftime 展開されない (実測)。t/f 修飾子経由が必須。
+#   🚨 bare の %H:%M は -T では strftime 展開されない (実測)。t/f 修飾子経由が必須。
 # - status 2 行化: scratch セッションだけ status 2 にして演出 2 行目 (status-format[1],
 #   _tmux.conf 側で定義) を出す。通常セッションは 1 行のまま。
 #
-# ⚠️ 以下の不変条件は _tmux.conf の bind t コメント (孤児サーバ予防の経緯) 由来。壊さないこと:
+# 🚨 以下の不変条件は _tmux.conf の bind t コメント (孤児サーバ予防の経緯) 由来。壊さないこと:
 # - `unset TMUX TMUX_TMPDIR`: nested attach ガード越え + 呼び出し元が継承 TMUX_TMPDIR を
 #   持つ環境 (テストサーバ等) でも scratch を必ず実 default socket 側に作り孤児を生まない
 # - 既存 scratch に `new-session -d -A` を打ってはいけない (popup 内の最初の C-t t が

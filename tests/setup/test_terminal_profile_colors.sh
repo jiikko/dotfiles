@@ -7,7 +7,7 @@
 # (terminal_profile_restore.sh) は非 0 終了しか見ないので、abort だと「何が壊れているか」が
 # 一切伝わらない。フォールバックを削除して「壊れた blob → 診断 + exit 1」に揃えたことを固定する。
 #
-# ⚠️ 検査は 2 段構え:
+# 🚨 検査は 2 段構え:
 #   - 静的 (どの環境でも走る。CI = ubuntu に swift は無い): NSUnarchiver を使っていないこと
 #   - 実行 (macOS + swift + python3 のみ): 壊れた blob で abort せず診断 + exit 1
 # 実行系を skip した事実は出力に出す (「検査できなかった」を緑に見せない)。
@@ -67,7 +67,7 @@ broken_st['BackgroundColor'] = b'\x04\x0bstreamtyped\x81\xe8\x03\x84\x01' + b'\x
 plistlib.dump(broken_st, open(work + '/broken-streamtyped.terminal', 'wb'))
 PYEOF
 
-# ⚠️ 本番 (terminal_profile_restore.sh) と同じ呼び方にする。-suppress-warnings を付けて測ると
+# 🚨 本番 (terminal_profile_restore.sh) と同じ呼び方にする。-suppress-warnings を付けて測ると
 # 「本番では warning が混ざって壊れる」形を観測できない。
 run_decoder() { swift "$SWIFT_SRC" "$1" >"$WORK/out" 2>"$WORK/err"; }
 
@@ -84,7 +84,7 @@ else
 fi
 
 # --- 3. 壊れた blob: abort ではなく診断 + exit 1 --------------------------------------------
-# ⚠️ ここが 084 の本体。exit >= 128 はシグナル死 (SIGABRT=134) で、呼び出し側には
+# 🚨 ここが 084 の本体。exit >= 128 はシグナル死 (SIGABRT=134) で、呼び出し側には
 # 「何が壊れているか」が伝わらない。
 for case_name in broken-keyed broken-streamtyped; do
   set +e

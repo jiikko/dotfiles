@@ -21,7 +21,7 @@
   - architecture-reviewer が nodejs-expert の結果をレビュー
     → ✅ 同意: Stream ベースは適切
   - nodejs-expert が electron-expert の結果をレビュー
-    → ⚠️ 要注意: IPC メッセージの頻度制限（throttle）が必要
+    → 🚨 要注意: IPC メッセージの頻度制限（throttle）が必要
   - security-auditor が research-assistant の結果をレビュー
     → 💡 追加: ファイルパスの sanitize が必要
   - css-expert が electron-expert の結果をレビュー

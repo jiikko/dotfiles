@@ -95,7 +95,7 @@ _dotfiles_git_prompt() {
   # precmd hook なので、グローバル REPLY を書き換えて他の hook / widget を壊さないため。
   local REPLY
   if _dotfiles_git_branch; then
-    # ⚠️ ブランチ名の % は %% へ畳んでから埋める。ブランチ名は .git/HEAD 由来 = 攻撃者が選べる
+    # 🚨 ブランチ名の % は %% へ畳んでから埋める。ブランチ名は .git/HEAD 由来 = 攻撃者が選べる
     # 文字列で (clone してきた repo / PR ブランチ)、prompt_subst 下ではそのまま prompt エスケープ
     # として解釈される。実測 2026-08-21: 名前 `x%F{red}%#%B` で色と bold が変わり、%f%k が
     # 打ち消しきれず ] の後まで赤が漏れ、%# で root 表示を偽装できた。

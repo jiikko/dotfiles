@@ -43,7 +43,7 @@ status バーの window list で、**最近 shell でコマンドを実行した
 **その window の shell がコマンドを実行した時刻**だけが起点。具体的には zsh の
 preexec（実行開始）と precmd（実行完了）でスタンプされる。
 
-- ⚠️ **window を select して前面に出しただけでは絶対に若返らない**（ユーザー要件
+- 🚨 **window を select して前面に出しただけでは絶対に若返らない**（ユーザー要件
   2026-07-04）。「見た」と「作業した」は別物。当初 after-select-window hook で実装したが
   この理由で廃棄した。select 契機の再導入提案は棄却してよい
 - Enter 空打ち・シェル起動直後の初回プロンプトもスタンプしない（precmd は preexec が
@@ -78,7 +78,7 @@ preexec（実行開始）と precmd（実行完了）でスタンプされる。
   （preexec = コマンド実行の直前に走るため、同期だと throttle が明けるたびに 3.7〜9.7ms の
   体感レイテンシが乗る。2026-07-25）。読む側は次の status 再描画で拾うので数 ms の遅延は見えない。
   縮退は「`exec nvim` 等でシェルが置き換わると背景ジョブが刈られてスタンプを取りこぼす」ことだけで、
-  その window は最大 throttle 分古い扱いになった後、次のコマンドで復帰する。⚠️ throttle は `@fade-step-secs`（3 秒）以下で
+  その window は最大 throttle 分古い扱いになった後、次のコマンドで復帰する。🚨 throttle は `@fade-step-secs`（3 秒）以下で
   なければならない。throttle > step だと @last-touched が最大 throttle 秒古いまま残り、離れた直後の
   window が数段沈んで見え、発見性という主目的が壊れる（2026-07-14 に 5 秒フェード化と同時に 30→3 へ）
 

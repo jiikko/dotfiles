@@ -224,7 +224,7 @@ set -g @resurrect-hook-post-restore-all '... 所要秒を記録し @tt-restore-c
 
 - **bash 必須**: `bash` がない環境では動かない
 - **status line 必須（autosave）**: continuum は status line の更新を使う。`status off` や `status-interval 0` だと continuum 由来の自動保存が止まる（ただしこのリポジトリでは window/pane フックの debounce 保存があるため、構成変化時の保存はそちらでも走る）
-- **テーマや別設定で status-right を上書き**すると、上流構成では continuum の autosave が止まる（continuum を最後に読み込むのが基本）。⚠️ このリポジトリは vendor パッチで save interpolation を撤去済みなので autosave は status-right に依存しない。代わりに status-right は prefix 押下中のキーガイドに使っており、上書きするとそちらが消える
+- **テーマや別設定で status-right を上書き**すると、上流構成では continuum の autosave が止まる（continuum を最後に読み込むのが基本）。🚨 このリポジトリは vendor パッチで save interpolation を撤去済みなので autosave は status-right に依存しない。代わりに status-right は prefix 押下中のキーガイドに使っており、上書きするとそちらが消える
 - **`Ctrl-s` が効かない**場合: 端末のフロー制御に奪われていることがある（必要なら `stty -ixon`）
 
 ## トラブルシューティング

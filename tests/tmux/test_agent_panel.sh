@@ -163,7 +163,7 @@ fi
 STUB_PANEL_ON=1 STUB_PANEL_PANE='%9' STUB_RENDER_PANES='%9' STUB_PANE_WINDOW='@1' "$SCRIPT" follow '@2' || ng "follow (別 window) が失敗"
 grep -q 'kill-pane -t %9' "$CALLS" || ng "follow (別 window): 旧 panel を kill しない"
 grep -q 'new-pane -d' "$CALLS" || ng "follow (別 window): 新 window に作らない"
-# ⚠️ CALLS 全体への部分一致で `-t @2` を探さないこと。production は new-pane より前に
+# 🚨 CALLS 全体への部分一致で `-t @2` を探さないこと。production は new-pane より前に
 # `display-message -p -t "$win"` を 2 箇所 (cmd_follow / create_panel) で呼び、同じ文字列を
 # CALLS に書くため、**new-pane の target と無関係に必ずマッチする** (監査 072 / 反証で生存)。
 # new-pane の行に限って見る。
@@ -224,7 +224,7 @@ STUB_PANEL_ON=1 STUB_SAVED_WINDOW='@3' STUB_RENDER_PANES='%88' "$SCRIPT" save-sh
 grep -q 'set-option -gu @agent_panel_saving' "$CALLS" || ng "save-show: saving を降ろさない"
 grep -q 'kill-pane -t %88' "$CALLS" || ng "save-show: 既存 panel を掃討しない (二重化)"
 grep -q 'new-pane -d' "$CALLS" || ng "save-show: panel を復帰させない"
-# ⚠️ follow 側 (:170) と同じ理由で CALLS 全体への部分一致にしないこと。display-message が
+# 🚨 follow 側 (:170) と同じ理由で CALLS 全体への部分一致にしないこと。display-message が
 # 同じ文字列を先に書くため、new-pane の target 退行を捕まえられない (監査 072 / 反証で生存)。
 grep -E '^tmux new-pane .*-t @3( |$)' "$CALLS" >/dev/null \
   || ng "save-show: new-pane が退避元 window を target にしない"

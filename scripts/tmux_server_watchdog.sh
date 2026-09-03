@@ -12,7 +12,7 @@
 #   exit-empty               … session-closed remaining=0 のみ (pane 死亡連鎖など)
 #   external-signal-or-crash … 上記いずれも無し (SIGTERM/SIGKILL/クラッシュ)。pslog を見る
 #
-# ⚠️ 生存の生命線: tmux はサーバ終了時 (kill-server / SIGTERM 両方) に run-shell ジョブの
+# 🚨 生存の生命線: tmux はサーバ終了時 (kill-server / SIGTERM 両方) に run-shell ジョブの
 #   子プロセスへ SIGTERM を 1 発送る (3.7b 実測 2026-07-30)。trap '' TERM で無視しないと
 #   肝心の死亡瞬間に watchdog 自身が死ぬ。nohup (HUP のみ) では不十分。
 #
@@ -55,7 +55,7 @@ exec </dev/null >/dev/null 2>&1
 # lock は「サーバ pid ごと」の mkdir。既存 lock の watcher が生きていれば自分は退く。
 mkdir -p "$TT_WATCHDOG_DIR" 2>/dev/null || exit 0
 # 死んだサーバ/watcher の stale lock を掃除する。
-# ⚠️ owner の判定は pid だけで行わないこと。pid 再利用で「先任が生きている」と誤認すると、
+# 🚨 owner の判定は pid だけで行わないこと。pid 再利用で「先任が生きている」と誤認すると、
 # 新世代の watchdog が無音で退いて **watchdog が 1 つも張られない** (サーバが死んでも死亡記録が
 # 残らず観測装置が丸ごと不発になる。2026-07-30 の監査で実証済み。以前ここには「実害は二重
 # watchdog 側に倒れるので許容」と書いていたが実測と逆で、装置不在側に倒れる)。
@@ -67,7 +67,7 @@ tt_lock_acquire "$LOCK_DIR" || tt_lock_rc=$?
 if [ "$tt_lock_rc" -eq 1 ]; then
   exit 0   # 先任の watchdog が (同一プロセスとして) 生きている = 正常。無音で退く
 elif [ "$tt_lock_rc" -ne 0 ]; then
-  # ⚠️ 上と同じ理由で、取得不能を無音にしない (watchdog 不在 = 死因が二度と記録されない)
+  # 🚨 上と同じ理由で、取得不能を無音にしない (watchdog 不在 = 死因が二度と記録されない)
   tt_trigger_log "watchdog-aborted reason=lock-failed server=$SERVER_PID epoch=$(date +%s)"
   exit 0
 fi
@@ -105,7 +105,7 @@ check_health() {
   if [ "$state" = ng ]; then
     tt_trigger_log "snapshot-health ng epoch=$now detail=$out"
     # 見える通知 (フォーカスを奪わない toast)。落ちても監視は続ける
-    [ -x "$TT_TOAST" ] && "$TT_TOAST" -d 8 -b 52 "⚠️ スナップショット異常: ${out#スナップショット異常: }" 2>/dev/null || true
+    [ -x "$TT_TOAST" ] && "$TT_TOAST" -d 8 -b 52 "🚨 スナップショット異常: ${out#スナップショット異常: }" 2>/dev/null || true
   else
     tt_trigger_log "snapshot-health ok epoch=$now"
   fi
@@ -133,7 +133,7 @@ ps -axo pid,ppid,user,lstart,command > "$pslog" 2>/dev/null || pslog=none
 #   (1) epoch= が時間窓 (TT_VERDICT_WINDOW) 内
 #   (2) pid= が「今死んだサーバ」と一致する
 #   (3) パターンに一致する行のうち最新のもの
-# ⚠️ (2) が無いと世代を跨いで誤分類する。tmux は kill-server 直後に新サーバが立つため、
+# 🚨 (2) が無いと世代を跨いで誤分類する。tmux は kill-server 直後に新サーバが立つため、
 #   「前世代を kill-server で落とし、新サーバが 2 分以内に外因死」で外因死が
 #   verdict=kill-server-command になる (レビューで実証 2026-07-30)。pid は kill shim と
 #   session-closed ロガーが各行に刻む。pid フィールドが無い行 (旧形式) は採用しない

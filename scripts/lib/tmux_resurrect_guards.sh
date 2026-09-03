@@ -40,7 +40,7 @@ tt_only_hold_sessions() {
   # セッション皆無（list-sessions 失敗/空）のときも here-string の空行がここにマッチし
   # 「実セッションあり」と同じ経路で return 1 する（= 抑止しない。意図どおり）。
   #
-  # ⚠️ ここを `printf … | grep -q` のパイプに戻さないこと（here-string 必須）。この lib は
+  # 🚨 ここを `printf … | grep -q` のパイプに戻さないこと（here-string 必須）。この lib は
   #   pipefail 下で source される（tmux_resurrect_save.sh:49 の set -uo pipefail）。パイプにすると
   #   grep -q が非マッチ行を見つけた瞬間に exit してパイプを閉じ、まだ書いている printf が
   #   SIGPIPE(141) で死ぬ。pipefail がその 141 を拾ってパイプライン全体を偽の非 0 にするため、
@@ -64,13 +64,13 @@ tt_only_hold_sessions() {
 # PID だけでは再起動跨ぎ / PID 再利用で別プロセスを同一 owner と誤認するため、指紋として併用する。
 # `ps -o lstart=` は BSD(macOS)/GNU(Linux) 双方で同一プロセスに安定な文字列を返す。
 #
-# ⚠️ **空白を潰すのは必須**。owner 行を `read -r pid start` のように空白分割で読む書き手が
+# 🚨 **空白を潰すのは必須**。owner 行を `read -r pid start` のように空白分割で読む書き手が
 #   いるため、生の `ps` 出力 (例 "火  8/25 17:09:37 2026") を入れると先頭語だけが記録され、
 #   比較が壊れる。ここが**指紋の唯一の出典**で、`scripts/tmux_resurrect_save.sh` にあった
 #   独立実装 (同じ処理を別書式で持っていた) は削除済み (issue 078。二重化は issue 068 の
 #   drift の直接原因だった)。
 # 起動時刻トークンの正規化: 空白を `_` に潰し、**前後の `_` を落とす**。
-# ⚠️ 前後を落とすのは必須。`ps -o lstart=` の末尾パディングは platform 依存で、macOS は
+# 🚨 前後を落とすのは必須。`ps -o lstart=` の末尾パディングは platform 依存で、macOS は
 #   空白で埋めるが Linux は埋めない。落とさないと同じプロセスの指紋が OS によって別物になり、
 #   下の移行ガード (記録側の正規化) が Linux でだけ破れて**生存 owner を奪う**。
 #   実測 2026-08-25: macOS 手元は緑・Linux CI だけ赤、で発覚した。
@@ -83,7 +83,7 @@ tt_norm_fp() {
 tt_proc_starttime() { tt_norm_fp "$(ps -o lstart= -p "$1" 2>/dev/null)"; }
 
 # ファイルの mtime (epoch)。取れなければ空を返す。
-# ⚠️ GNU を先に試すこと。`stat -f` は macOS では「書式指定」だが GNU ではファイルシステム情報の
+# 🚨 GNU を先に試すこと。`stat -f` は macOS では「書式指定」だが GNU ではファイルシステム情報の
 # 表示で、Linux では成功して別物 (mount point 等) を返すため `||` のフォールバックが発動しない。
 # GNU に無い `-c` を先に試せば macOS では invalid option で失敗して `-f` へ落ちる。
 # (実測 2026-07: Ubuntu 24.04 で `[: File: ... integer expression expected` で死んだ)
@@ -99,7 +99,7 @@ tt_same_proc() {
   cur="$(tt_proc_starttime "$pid")"
   # 起動時刻が取れない環境 (ps 制限等) は pid 生存のみで判定する (fail-open)
   [ -n "$cur" ] || return 0
-  # ⚠️ 記録側も同じ正規化を通してから比較する。指紋の書式を変えた移行期に、旧書式で書かれた
+  # 🚨 記録側も同じ正規化を通してから比較する。指紋の書式を変えた移行期に、旧書式で書かれた
   #   lock を「別プロセス」と誤判定して**生存 owner を奪う**のを防ぐ (issue 078)。
   want="$(tt_norm_fp "$want")"
   [ "$cur" = "$want" ]
@@ -107,12 +107,12 @@ tt_same_proc() {
 
 # lock ディレクトリに owner を記録する ($1=lock dir, $2=pid。省略時は自分)。
 # 形式: "<pid>\t<lstart>"。旧形式 (pid のみ) も読み手が受け付ける。
-# ⚠️ $2 はテストが「他プロセスを owner にした lock」を production と同じ書式で作るための seam。
+# 🚨 $2 はテストが「他プロセスを owner にした lock」を production と同じ書式で作るための seam。
 # 書式をテスト側へ写すと書式変更に追従できず、実物とずれた fixture で常に緑になる
 # (実例 2026-08-20: 読み手が cat|kill -0 で書式を無視しており誤報していたのに気づけなかった)
 tt_lock_write_owner() {
   local dir="$1" pid="${2:-$$}"
-  # ⚠️ `{ ...; } 2>/dev/null` で括ること。`printf ... > "$dir/pid" 2>/dev/null` の形だと、
+  # 🚨 `{ ...; } 2>/dev/null` で括ること。`printf ... > "$dir/pid" 2>/dev/null` の形だと、
   #   **リダイレクト先を open できない失敗はシェル自身が報告する**ので抑止できない
   #   (lock dir が競合で消えている間に stderr が漏れる。実測 2026-08-25)。
   { printf '%s\t%s\n' "$pid" "$(tt_proc_starttime "$pid")" > "$dir/pid"; } 2>/dev/null || true
@@ -180,15 +180,15 @@ TT_LOCK_ORPHAN_STALE_SECONDS="${TT_LOCK_ORPHAN_STALE_SECONDS:-30}"
 # dir の mtime が secs より古いか。
 #   戻り値: 0 = 古い (取り残し扱いしてよい) / 1 = 新しい・または存在しない / 2 = 判定不能
 #
-# ⚠️ `find -mmin -N` で書かないこと。**未来 mtime にもマッチする**ため「新しい」と判定し、
+# 🚨 `find -mmin -N` で書かないこと。**未来 mtime にもマッチする**ため「新しい」と判定し、
 #   NTP のステップバック・スリープ復帰・VM の suspend/resume・バックアップからの復元で
 #   mtime が未来にずれた取り残しが**永久に回収されなくなる** (呼び出し側は無音で退くので、
 #   保存も watchdog も二度と張られないのにログが 1 行も出ない)。実測 2026-08-28。
-# ⚠️ 存在しない dir を「古い」と答えないこと。**作れなかった**ケースを**取り残し**と
+# 🚨 存在しない dir を「古い」と答えないこと。**作れなかった**ケースを**取り残し**と
 #   誤判定する (実測: 親が読み取り専用のとき rc=2 が rc=1 に化けた)。
-# ⚠️ mtime が読めないときは 0/1 に丸めず 2 を返すこと。丸めると「奪ってよい」か
+# 🚨 mtime が読めないときは 0/1 に丸めず 2 を返すこと。丸めると「奪ってよい」か
 #   「先任がいる」のどちらかの嘘になる (判定不能は第 3 の結果)。
-# ⚠️ mtime の取得は tt_mtime_of に集約する (stat の GNU/BSD 方言差の罠と実測はあちらに記録)。
+# 🚨 mtime の取得は tt_mtime_of に集約する (stat の GNU/BSD 方言差の罠と実測はあちらに記録)。
 #   ここで `stat` を直に呼ぶ形を書き足さないこと。
 tt_lock_dir_older_than() {
   local dir="$1" secs="$2" m now age
@@ -198,16 +198,16 @@ tt_lock_dir_older_than() {
   now="$(date +%s 2>/dev/null || true)"
   case "$now" in ''|*[!0-9]*) return 2 ;; esac
   age=$(( now - m ))
-  # 未来 mtime は「新しい」ではなく壊れているとみなして取り残し扱いにする (上の ⚠️)。
+  # 未来 mtime は「新しい」ではなく壊れているとみなして取り残し扱いにする (上の 🚨)。
   [ "$age" -lt 0 ] && return 0
   [ "$age" -ge "$secs" ]
 }
 
 # 死んだサーバ/watcher の stale lock を掃除する (`<dir>/<pid>.lock` の形を前提)。
-# ⚠️ owner の判定を pid だけで行わないこと。pid 再利用で「先任が生きている」と誤認すると、
+# 🚨 owner の判定を pid だけで行わないこと。pid 再利用で「先任が生きている」と誤認すると、
 #   新世代が無音で退いて **装置が 1 つも張られない** (サーバが死んでも死亡記録が残らない。
 #   2026-07-30 の監査で実証済み。実害は「二重起動」ではなく「装置不在」側に倒れる)。
-# ⚠️ この掃除は **lock 名に pid を持つ経路専用**。単一 lock (`<dir>/lock`) の経路
+# 🚨 この掃除は **lock 名に pid を持つ経路専用**。単一 lock (`<dir>/lock`) の経路
 #   (tmux_restore_runner.sh) では呼ばないこと。掃除を後付けすると「今まで掃除しなかった
 #   経路が掃除を始める」= 挙動変更で、誤奪の新しい窓を開ける (issue 078 で意図的に分けた)。
 tt_lock_sweep_stale() {
@@ -228,7 +228,7 @@ tt_lock_sweep_stale() {
     [ -d "${d%.steal}" ] && continue
     tt_lock_dir_older_than "$d" "$TT_LOCK_ORPHAN_STALE_SECONDS" && rm -rf "$d" 2>/dev/null
   done
-  # ⚠️ 掃除は best-effort。必ず 0 を返すこと。ループ末尾の `rm -rf` の rc がそのまま漏れると、
+  # 🚨 掃除は best-effort。必ず 0 を返すこと。ループ末尾の `rm -rf` の rc がそのまま漏れると、
   #   呼び出し側に `set -e` が入った瞬間に「掃除に失敗したら装置を張らずに死ぬ」へ化ける
   #   (掃除できない = 装置を張らない理由にはならない)。
   return 0
@@ -237,12 +237,12 @@ tt_lock_sweep_stale() {
 # lock ディレクトリを取り、成功したら owner (pid + 起動時刻) を記録する。
 #   戻り値: 0 = 取得した / 1 = 先任が同一プロセスとして生きている / 2 = 取得に失敗した
 #
-# ⚠️ **政策は呼び出し側に残す**。「先任が生きていたら何をログに出してどう終わるか」は経路ごとに
+# 🚨 **政策は呼び出し側に残す**。「先任が生きていたら何をログに出してどう終わるか」は経路ごとに
 #   違う (periodic_save / watchdog は無音で exit 0、restore_runner は理由を観測ログへ残す)。
 #   ここが返すのは「取れたか / なぜ取れなかったか」だけで、判断は呼び出し側が持つ。
 #   同じ理由で `tmux_resurrect_save.sh` の stale 判定 (mtime hard TTL backstop を持つ) は
 #   この関数へ寄せていない — 政策が違うものを 1 つにすると保存停止か誤奪を作る (issue 078)。
-# ⚠️ 戻り値を読む側は `rc=0; tt_lock_acquire "$d" || rc=$?` の形にすること。素の `rc=$?` は
+# 🚨 戻り値を読む側は `rc=0; tt_lock_acquire "$d" || rc=$?` の形にすること。素の `rc=$?` は
 #   後から `set -e` が入った瞬間に「rc を読む前にスクリプトごと死ぬ」へ変わる (無音で機能停止)。
 tt_lock_acquire() {
   local dir="$1" steal="$1.steal"
@@ -252,7 +252,7 @@ tt_lock_acquire() {
   fi
   tt_lock_owner_alive "$dir" && return 1
 
-  # ⚠️ ここで「owner が生きていない」= 取り残し、と即断しないこと。**`mkdir` と owner 記録は
+  # 🚨 ここで「owner が生きていない」= 取り残し、と即断しないこと。**`mkdir` と owner 記録は
   #   原子的でない** ので、正当な取得者が `tt_lock_write_owner` の中 (`ps` の fork を挟むため
   #   実測 4.6ms) にいる間、その lock も owner 不在に見える。猶予なしで奪うと**両方が rc=0 に
   #   なり**、さらに遅れて届いた相手の owner 記録が自分の記録を上書きし、相手の
@@ -261,7 +261,7 @@ tt_lock_acquire() {
   #   二重取得 2/30、`write_owner` を遅らせると 15/15。
   #   区別は owner ファイルの**有無**で付く: 記録済みで死んでいる owner は即奪ってよく
   #   (記録が終わっているので書き込み中の相手はいない)、記録がまだ無いものだけ猶予を要る。
-  # ⚠️ `[ -d "$dir" ]` を落とさないこと。dir が無い = mkdir が「既にある」以外の理由 (権限・親が
+  # 🚨 `[ -d "$dir" ]` を落とさないこと。dir が無い = mkdir が「既にある」以外の理由 (権限・親が
   #   無い) で失敗した形で、これは**取得できなかった (rc=2)** であって「先任がいる (rc=1)」では
   #   ない。ここで 1 に丸めると呼び出し元 3 本はどれも無音 exit 0 なので、装置が張られないことが
   #   ログに 1 行も出なくなる (実測 2026-08-28: 既存の read-only 親のテストが捕まえた)。
@@ -275,7 +275,7 @@ tt_lock_acquire() {
 
   # 取り残し (owner 不在) を奪う。
   #
-  # ⚠️ 「owner の生存確認 → rm -rf → mkdir」を素直に書くと**非アトミック**で、2 プロセスが
+  # 🚨 「owner の生存確認 → rm -rf → mkdir」を素直に書くと**非アトミック**で、2 プロセスが
   #   1〜5ms 差で来ると**両方が取得に成功する** (issue 103。E2E で restore.sh が 40/40 二重実行)。
   #   `mv` へ差し替える案も窓が残る (B の mv が A の作った新しい lock を掴む)。
   #   **奪取そのものを mkdir で直列化する**: 奪取権 lock を取れた 1 プロセスだけが奪う。
@@ -310,7 +310,7 @@ tt_lock_acquire() {
 
 # tt_lock_release_if_owner は**自分が現 owner のときだけ** lock を解放する (EXIT trap 用)。
 #
-# ⚠️ 無条件の `rm -rf "$LOCK_DIR"` にしないこと。奪取のレース中は 2 プロセスが同じパスを
+# 🚨 無条件の `rm -rf "$LOCK_DIR"` にしないこと。奪取のレース中は 2 プロセスが同じパスを
 #   保持しうるので、**先に終わった側が、まだ走っている側の lock を消す** (issue 103)。
 #   消えた後に来た 3 本目が自由に取れるので、二重どころか多重になる。
 #   同じ理由で tmux_resurrect_save.sh は tt_save_release_lock_if_owner を持っている。
@@ -321,7 +321,7 @@ tt_lock_release_if_owner() {
   IFS="$(printf '\t')" read -r cur_pid cur_start <<<"$line"
   [ "$cur_pid" = "$$" ] || return 0
   mine_start="$(tt_proc_starttime "$$")"
-  # ⚠️ 生文字列比較にしないこと。`ps -o lstart=` が**記録時は動いて解放時に失敗する**環境だと
+  # 🚨 生文字列比較にしないこと。`ps -o lstart=` が**記録時は動いて解放時に失敗する**環境だと
   #   比較が必ず外れ、自分の lock を解放できずに取り残す (実測 2026-08-28)。判定に使う材料が
   #   欠けたときは pid 一致だけで自分とみなす — tt_same_proc と同じ fail-open に揃える。
   if [ -z "$cur_start" ] || [ -z "$mine_start" ] || [ "$cur_start" = "$mine_start" ]; then
@@ -333,11 +333,11 @@ tt_lock_release_if_owner() {
 # ── 共有観測ログ (tt-restore-trigger.log) ────────────────────────────────────
 # 復元・保存・kill の因果を 1 本の時系列で読むための共有ログ。**書き手はこの関数だけ**にする。
 #
-# ⚠️ 直接 `>> "$HOME/.cache/tt-restore-trigger.log"` と書かないこと。seam
+# 🚨 直接 `>> "$HOME/.cache/tt-restore-trigger.log"` と書かないこと。seam
 #   (`TT_TRIGGER_LOG`) を迂回した経路はテストから観測できず、テストが緑でも実際には
 #   書けていない/別の場所に書いている状態を作れてしまう (issue 079。実際に
 #   tmux_resurrect_save.sh と tmux_reap_orphan_servers.sh が迂回していた)。
-# ⚠️ 行書式は「ISO8601 <TAB> 本文」。読み手 (tmux_server_watchdog.sh の verdict 判定など) が
+# 🚨 行書式は「ISO8601 <TAB> 本文」。読み手 (tmux_server_watchdog.sh の verdict 判定など) が
 #   この形に依存しているので、変えるならこの 1 箇所を変えて読み手も同時に直す。
 #
 # rotation はここでは**やらない**。上限 (TT_TRIGGER_LOG_MAX_LINES) の適用は
@@ -346,7 +346,7 @@ tt_lock_release_if_owner() {
 #   周期実行されていて追加 fork ゼロで刈れる。増加は実測 96 行/日 ≒ 8KB/日で、上限は
 #   forensics の保持期間を決めるものであって安全機構ではないため、periodic_save が
 #   止まっている間に上限を超えても実害は無い (ディスクを食う速度が 8KB/日)。
-#   ⚠️ この「暗黙の依存」を明示にするのがこのコメントの役目。prune を別の場所へ移すなら
+#   🚨 この「暗黙の依存」を明示にするのがこのコメントの役目。prune を別の場所へ移すなら
 #   ここも直すこと。
 # $1=本文 / $2=打刻 (省略時は「今」)。$2 は「イベントの発生時刻と、それを書ける状態になる時刻が
 # ずれる」書き手のためにある (watchdog の server-death は死亡検知時の時刻で打刻し、その後に

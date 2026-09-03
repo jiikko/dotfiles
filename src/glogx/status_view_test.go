@@ -14,7 +14,7 @@ import (
 // --- ヘルパー ---
 
 // newTestStatusView は「開いた状態で porcelain を読み込んだ」viewer を返す。
-// ⚠️ toggle() は通さない: 返り値の tea.Batch には tea.Tick (自動更新 1.5s / プレビュー 120ms) が
+// 🚨 toggle() は通さない: 返り値の tea.Batch には tea.Tick (自動更新 1.5s / プレビュー 120ms) が
 // 混ざっており、テストで実行すると本当に待つことになる。読み込みは loadCmd だけを同期実行する。
 func newTestStatusView(t *testing.T, porcelain string) *statusView {
 	t.Helper()
@@ -67,7 +67,7 @@ func applyStatusLoad(t *testing.T, v *statusView) {
 }
 
 // deliverStatus は「git status が返ってきた」ことにして viewer へ流す (browseModel 経由の
-// テスト用)。⚠️ Update から返った Cmd を実行する経路は使えない: toggle の Batch には tick が
+// テスト用)。🚨 Update から返った Cmd を実行する経路は使えない: toggle の Batch には tick が
 // 混ざっており、実行すると本当に待つ (newTestStatusView の doc と同じ理由)。
 func deliverStatus(t *testing.T, v *statusView, porcelain string) {
 	t.Helper()
@@ -301,7 +301,7 @@ func TestStatusLoadErrorAfterLoadedKeepsLastGood(t *testing.T) {
 	applyStatusLoad(t, &v)
 	state.err = errors.New("fatal: unable to read index")
 	applyStatusLoad(t, &v)
-	// ⚠️ 1 カラムの幅で見る: 2 カラムだと右のプレビュー欄がカーソル行のパスを出すため、
+	// 🚨 1 カラムの幅で見る: 2 カラムだと右のプレビュー欄がカーソル行のパスを出すため、
 	// 一覧が消えていても "a.go" が画面に残ってしまい last-good の有無を区別できない
 	body := strings.Join(v.lines(testStatusOpts(70, 20)), "\n")
 	if !strings.Contains(body, "a.go") {
@@ -314,7 +314,7 @@ func TestStatusLoadErrorAfterLoadedKeepsLastGood(t *testing.T) {
 
 // hasTerminalControl は「端末が制御として解釈しうる文字が残っているか」。
 //
-// ⚠️ ESC と BEL だけを見る判定にしないこと: それだと 8bit の CSI (U+009B) / OSC (U+009D) を
+// 🚨 ESC と BEL だけを見る判定にしないこと: それだと 8bit の CSI (U+009B) / OSC (U+009D) を
 // 原理的に見逃し、「ESC と BEL だけ落とす」実装がテストを全部 green で通ってしまう
 // (敵対的レビュー 2026-08-05 が実際にこの盲点を突いた)。許可した文字だけが残っているか、の
 // allowlist 側で判定する。
@@ -330,7 +330,7 @@ func hasTerminalControl(s string) bool {
 // ファイル名の端末制御シーケンスは画面へ出さない。POSIX のファイル名は / と NUL 以外の任意
 // バイトを許し、-z の git status はクォートせず生で返すので、第三者ブランチに ESC 入りの名前の
 // untracked が 1 つあるだけで status viewer を開いた瞬間に端末が乗っ取られる。
-// ⚠️ git へ渡す側 (path / pathspecs) は実物のまま — 無害化するとファイルを見失う。
+// 🚨 git へ渡す側 (path / pathspecs) は実物のまま — 無害化するとファイルを見失う。
 func TestStatusPathIsSanitizedForDisplayOnly(t *testing.T) {
 	const esc, bel = "\x1b", "\a"
 	evil := "evil" + esc + "]0;pwned" + bel + ".txt"
@@ -511,7 +511,7 @@ func TestStatusLoadErrorShowsMessageAndKeepsViewOpen(t *testing.T) {
 // --- 描画 ---
 
 func TestStatusLinesTwoColumnsWhenWide(t *testing.T) {
-	// ⚠️ ブランチ名は長いものを使う: 短いとヘッダーが一覧カラム幅 (48 桁ほど) に収まってしまい、
+	// 🚨 ブランチ名は長いものを使う: 短いとヘッダーが一覧カラム幅 (48 桁ほど) に収まってしまい、
 	// 「全幅で描く」ことの検証にならない (件数が切れる条件を作れない)
 	v := newTestStatusView(t, statusRec("## feature/a-very-long-branch-name-for-header-width...origin/x", " M a.go"))
 	lines := v.lines(testStatusOpts(120, 20))
@@ -747,7 +747,7 @@ func TestStatusViewerNotOpenedWhileJobPanelOpen(t *testing.T) {
 }
 
 // u は viewer 内では pull を開かず「pull は p」と案内する (spec 3 節。押しても無言にしない)。
-// ⚠️ 「確認が開かない」だけでは不十分: ガードを外しても viewer のキーに無い u は素通りして
+// 🚨 「確認が開かない」だけでは不十分: ガードを外しても viewer のキーに無い u は素通りして
 // 何も起きないため、トーストが出ることまで固定する (ミューテーション検証 2026-08-03)。
 func TestStatusViewerUKeyGuidesToP(t *testing.T) {
 	m := newTestBrowse(t, 3, nil, nil)
@@ -766,7 +766,7 @@ func TestStatusViewerUKeyGuidesToP(t *testing.T) {
 
 // p で pull --rebase の確認を開く (ユーザー要望 2026-08-05)。
 //
-// ⚠️ spec 3 節は「staging の途中から remote 操作へ滑る導線を作らない」として b/u を遮断して
+// 🚨 spec 3 節は「staging の途中から remote 操作へ滑る導線を作らない」として b/u を遮断して
 // いた。p を通すのはその判断の一部を覆すもので、キーを一覧の u と分けているのが折衷点:
 // 誤爆しやすい隣接キーではなく、明示的に p を押したときだけ remote に触る。
 func TestStatusViewerPullKeyOpensConfirm(t *testing.T) {
@@ -779,7 +779,7 @@ func TestStatusViewerPullKeyOpensConfirm(t *testing.T) {
 	if !m.statusOv.visible() {
 		t.Error("p で viewer が閉じた (確認は viewer の上に重ねる)")
 	}
-	// ⚠️ 確認モーダルが viewer の上に描かれること。キーは viewer より先に actModal が捌くので、
+	// 🚨 確認モーダルが viewer の上に描かれること。キーは viewer より先に actModal が捌くので、
 	// 描かれないと「見えないモーダルが y/N を持つ」= 画面の指示と行き先が食い違う。
 	out := stripANSI(m.View().Content)
 	if !strings.Contains(out, "pull") {
@@ -792,10 +792,10 @@ func TestStatusViewerPullKeyOpensConfirm(t *testing.T) {
 	}
 }
 
-// ⚠️ 回帰防止 (perf): 整形するのは可視の窓の分だけ。全行を整形してから切ると、画面に出る
+// 🚨 回帰防止 (perf): 整形するのは可視の窓の分だけ。全行を整形してから切ると、画面に出る
 // 行数と無関係に変更ファイル数へ比例したコストになる (実測 40 件 103µs / 2000 件 1.65ms)。
 //
-// ⚠️ 出力では検出できない: 全行を整形しても「返す」のは窓の分だけなので、返り値は同じになる
+// 🚨 出力では検出できない: 全行を整形しても「返す」のは窓の分だけなので、返り値は同じになる
 // (最初この形で書いて変異が green のまま通った)。違うのは行った仕事量なので、alloc 数が
 // 件数に比例しないことを見る。時間は CI のノイズで flake するため、そちらの番人は
 // tests/glogx/bench_budgets.ci の status_view_2000 に置く。
@@ -901,7 +901,7 @@ func TestStatusViewerRendersFullScreenAndHint(t *testing.T) {
 		t.Fatalf("hint 行が status viewer のものになっていない:\n%s", view)
 	}
 	// remote 操作キー (b/p) は hint に出す (発見性。ユーザー要望 2026-08-07)。
-	// ⚠️ view でなく hint() を直接、しかも**広い幅**で見る: hint は幅に応じて優先度の低い項目を
+	// 🚨 view でなく hint() を直接、しかも**広い幅**で見る: hint は幅に応じて優先度の低い項目を
 	// 落とすので (issue 155)、テストの 80 桁では b/p は出ない (出るのは「今の幅で確実に読める
 	// もの」だけ。全キーの正本は --help / README)
 	hint := m.statusOv.hint(200)
@@ -960,7 +960,7 @@ func TestStatusPreviewCacheIsBounded(t *testing.T) {
 // (捨てるだけだとカーソルを動かすまでプレビュー欄が空のまま = 眺める用途で死ぬ)。
 // 外部編集で古い diff を捨てても、走行中の取得は二重発行にならない。
 //
-// ⚠️ 回帰防止 (セルフレビュー 2026-08-05): キャッシュを lineCache へ集約したとき、この経路を
+// 🚨 回帰防止 (セルフレビュー 2026-08-05): キャッシュを lineCache へ集約したとき、この経路を
 // reset() にして走行中の札まで降ろしてしまった。この経路は直後に取り直しを予約する
 // (previewTickCmd) ので、札が無いと同じキーへ git diff が 2 本走る。移行前は cache と order
 // だけを捨てていたので、移行で入れた挙動変化だった。
@@ -1196,7 +1196,7 @@ func TestStatusViewLinesFitWidthDownToOne(t *testing.T) {
 // 「保存し直し」では receive の changed 判定を通り抜ける。自動更新での据え置きは意図的だが、
 // r まで据え置くと「再読込したのに編集前の diff が出続ける」になる (silent)。
 func TestStatusReloadKeyDropsPreviewCache(t *testing.T) {
-	// ⚠️ 2 行以上の fixture にすること。1 行だと `len(entries) != 0` では
+	// 🚨 2 行以上の fixture にすること。1 行だと `len(entries) != 0` では
 	//   「全部捨てる」と「カーソル行だけ捨てる」を区別できない (敵対的レビューで実測)
 	stubWorktreeStatus(t, statusRec(" M a.go", " M b.go"), nil)
 	v := newStatusView()
@@ -1209,9 +1209,9 @@ func TestStatusReloadKeyDropsPreviewCache(t *testing.T) {
 	if len(v.preview.entries) < 2 {
 		t.Fatalf("前提が崩れた: キャッシュに 2 件仕込めていない (%d 件)", len(v.preview.entries))
 	}
-	// ⚠️ 予約と再読込は別々に見る。`cmd != nil` では判別力が無い — loadCmd だけでも
+	// 🚨 予約と再読込は別々に見る。`cmd != nil` では判別力が無い — loadCmd だけでも
 	//   previewTickCmd だけでも非 nil が返るので、どちらを落とす変異も green のまま通る (実測)
-	// ⚠️ 再読込の有無は v.loading で見る。loadCmd は呼ばれた時点で同期に loading を立てるので、
+	// 🚨 再読込の有無は v.loading で見る。loadCmd は呼ばれた時点で同期に loading を立てるので、
 	//   tea.Batch を実行しなくても判る (Batch を実行しても子は走らない = 数えられない)
 	seqBefore := v.previewSeq
 	v.loading = false
@@ -1221,7 +1221,7 @@ func TestStatusReloadKeyDropsPreviewCache(t *testing.T) {
 	if len(v.preview.entries) != 0 {
 		t.Errorf("r でプレビューのキャッシュが残った (編集前の diff が出続ける): %v", v.preview.entries)
 	}
-	// ⚠️ 捨てるだけだとプレビュー欄が空のまま残る (receive 側と同じ理由で取り直しを予約する)
+	// 🚨 捨てるだけだとプレビュー欄が空のまま残る (receive 側と同じ理由で取り直しを予約する)
 	if v.previewSeq == seqBefore {
 		t.Error("r で取り直しが予約されていない (プレビュー欄が空のまま戻らない)")
 	}
@@ -1272,7 +1272,7 @@ func TestStatusLatePreviewAfterCloseIsDropped(t *testing.T) {
 	if len(v.preview.entries) != 0 {
 		t.Errorf("閉じた後に着地した取得がキャッシュを復活させた: %v", v.preview.entries)
 	}
-	// ⚠️ 捨てるときも札は降ろすこと。残すと begin() がこのキーを永久に弾く
+	// 🚨 捨てるときも札は降ろすこと。残すと begin() がこのキーを永久に弾く
 	if v.preview.busy[key] {
 		t.Error("捨てた結果の取得中の札が残った (取り直しが二度と走らない)")
 	}
@@ -1294,7 +1294,7 @@ func TestStatusLatePreviewAfterReloadIsDropped(t *testing.T) {
 	if len(v.preview.entries) != 0 {
 		t.Errorf("r の後に着地した取得が古い内容を復活させた (押しても何も変わらない): %v", v.preview.entries)
 	}
-	// ⚠️ 札はここで降ろすこと。r は clearEntries なので札が残っており (それは意図的)、
+	// 🚨 札はここで降ろすこと。r は clearEntries なので札が残っており (それは意図的)、
 	//   捨てた結果の札を降ろさないと begin() がこのキーを永久に弾いて取り直しが走らない。
 	//   閉じる経路は clearBusy が先に走るので、この主張はこちらでしか立たない
 	if v.preview.busy[key] {
@@ -1328,9 +1328,9 @@ func TestStatusCloseDropsPreviewCache(t *testing.T) {
 	if len(v.preview.entries) != 0 {
 		t.Errorf("閉じてもプレビューのキャッシュが残った (開き直しで編集前の diff が出る): %v", v.preview.entries)
 	}
-	// ⚠️ 隣の clearBusy も守る。clearEntries を隣に足したことで「2 行まとめて reset() で
+	// 🚨 隣の clearBusy も守る。clearEntries を隣に足したことで「2 行まとめて reset() で
 	//   よくない?」という編集が誘発されやすくなったが、**片方だけ消す編集は無音で通る**。
-	//   札が残ると fetching() が true のままフレーム tick を回し続ける (元の ⚠️ コメント)
+	//   札が残ると fetching() が true のままフレーム tick を回し続ける (元の 🚨 コメント)
 	if len(v.preview.busy) != 0 {
 		t.Errorf("閉じても取得中の札が残った (フレーム tick が回り続ける): %v", v.preview.busy)
 	}
@@ -1342,7 +1342,7 @@ func TestStatusCloseDropsPreviewCache(t *testing.T) {
 // hint は長らく「q: 閉じる」と出していた。README は「i/s で閉じて一覧へ戻る」「q/Esc は glogx ごと
 // 終了」と 2 語を使い分けており、画面上の案内だけが古い語のまま残っていた。
 //
-// ⚠️ 全画面 pager の「d/q: 閉じる」は**正しい** (そこでの q は pager を閉じる)。両方を pin して
+// 🚨 全画面 pager の「d/q: 閉じる」は**正しい** (そこでの q は pager を閉じる)。両方を pin して
 // 取り違えを防ぐ — 片方だけ見ていると「まとめて閉じるに戻す」変更が通ってしまう。
 func TestStatusHintWordsMatchBehavior(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
@@ -1368,7 +1368,7 @@ func TestStatusHintWordsMatchBehavior(t *testing.T) {
 
 // R は ratelimit ダッシュボードへ横断する (i と対。ユーザー要望 2026-09-01)。viewer は閉じ、
 // 実際に開くのは browseModel (takeWantRatelimit)。
-// ⚠️ hint の案内は**広い端末でだけ**出る (issue 155 で幅に応じて落とすようにしたため。popup の
+// 🚨 hint の案内は**広い端末でだけ**出る (issue 155 で幅に応じて落とすようにしたため。popup の
 // 実幅では優先度の低い R は落ちる)。狭い幅での正本は --help / README。
 func TestStatusRSwitchesToRatelimitDash(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
@@ -1389,10 +1389,10 @@ func TestStatusRSwitchesToRatelimitDash(t *testing.T) {
 	}
 }
 
-// hint は与えられた幅に必ず収まる。⚠️ issues viewer と同じ検査を status にも置く (issue 155:
+// hint は与えられた幅に必ず収まる。🚨 issues viewer と同じ検査を status にも置く (issue 155:
 // 片方だけ無検査だったので、キーを足すたびに末尾が黙って削られていた)。
 //
-// ⚠️ 幅を 1 点だけ見ない。popup の実幅 (84) は代表値でしかなく、端末は任意の幅を取る。
+// 🚨 幅を 1 点だけ見ない。popup の実幅 (84) は代表値でしかなく、端末は任意の幅を取る。
 func TestStatusViewHintFitsWidth(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
 	for w := 10; w <= 200; w++ {
@@ -1412,7 +1412,7 @@ func TestStatusViewHintFitsWidth(t *testing.T) {
 	}
 }
 
-// 狭い端末でも「抜ける手段」は必ず案内する。⚠️ ここが issue 155 の実害:
+// 狭い端末でも「抜ける手段」は必ず案内する。🚨 ここが issue 155 の実害:
 // 末尾から切る実装では、並びの最後にある s/q が幅に関係なく最初に消えていた。
 func TestStatusViewHintKeepsExitKeys(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
@@ -1434,9 +1434,9 @@ func TestStatusViewHintKeepsExitKeys(t *testing.T) {
 }
 
 // hint を組む予算と、描画側が切る幅は同じ 1 か所から取る (browseModel.hintWidth)。
-// ⚠️ 2 か所に式を書くと「収まるつもりで組んだ hint が黙って切られる」形でずれる (issue 155)。
+// 🚨 2 か所に式を書くと「収まるつもりで組んだ hint が黙って切られる」形でずれる (issue 155)。
 func TestStatusHintUsesRenderBudget(t *testing.T) {
-	// ⚠️ 幅を 1 点で見ない。項目単位で採るので、ある幅では予算のずれ 2 桁が余白に吸われて
+	// 🚨 幅を 1 点で見ない。項目単位で採るので、ある幅では予算のずれ 2 桁が余白に吸われて
 	// 表に出ない。ずれが「切り詰めの …」として現れる幅は幅の刻みでしか見つからない
 	// (変異検証で実測 2026-09-01: 1 点だけの検査は、組む側だけ予算をずらす変異を素通りした)。
 	for w := frameMinWidth; w <= 140; w++ {

@@ -12,7 +12,7 @@ runs:
     # config は Neovim 0.12 系前提 (vim.lsp.config / vim.diagnostic.jump に加え、
     # nvim-treesitter main 系が 0.12+ 必須)。runner に入っている版は古いことがあるため、
     # 公式リリースを別途セットアップする。
-    # ⚠️ version は明示 pin する ("stable" にしない): stable が進んだ瞬間に treesitter 系の
+    # 🚨 version は明示 pin する ("stable" にしない): stable が進んだ瞬間に treesitter 系の
     #   API 非互換で無関係の PR が赤くなるのを避け、更新をこのファイルの変更として可視化する。
     #   0.11 系へ戻すことはできない (main 系 nvim-treesitter が 0.12+ 必須)。
     - name: Set up Neovim (0.12 系に pin)
@@ -25,7 +25,7 @@ runs:
         # (2026-07-24 の bench 赤)。actionlint (lint.yml) と同じ手動 DL + リトライ方針に揃える。
         # curl の -f は 404/504 の HTML を tarball として保存して後段の tar を
         # 「not in gzip format」で殺す分かりにくい失敗を防ぎ、--retry-all-errors で 504 も再試行する。
-        # ⚠️ asset 名を決め打ちにしないこと。runner を macOS へ移した (issue 133) ため、
+        # 🚨 asset 名を決め打ちにしないこと。runner を macOS へ移した (issue 133) ため、
         # Linux 決め打ちだと 404 の HTML を掴んで後段の tar が「not in gzip format」で死ぬ。
         # 未対応の組み合わせは skip せず**失敗**させる (黙って古い nvim で走らせない)。
         case "$(uname -s)/$(uname -m)" in

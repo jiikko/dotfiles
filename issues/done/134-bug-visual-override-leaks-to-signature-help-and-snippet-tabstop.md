@@ -125,7 +125,7 @@ ee5e2b7 と同型で、gruvbox の意図と衝突しないように分ける:
 定義が消えて「地色も reverse も無い」状態へ退行しても、既存の地色検査は素通りする。
 `REVERSE_OK` を持たせ、**reverse があること**と**地色を持たないこと**の両方を見る形にした。
 
-⚠️ `REVERSE_OK` に足すのは reverse を**明示定義した** group だけ。link 先が偶然 reverse を
+🚨 `REVERSE_OK` に足すのは reverse を**明示定義した** group だけ。link 先が偶然 reverse を
 持つ形 (retrobox の `Search` 等) を許すと、link が変わったときに無言で検査が緩む。
 
 ### 変異検証 (使い捨て worktree、3 本とも red)
@@ -178,7 +178,7 @@ member ごとに存在を assert するようにした。
 探す**形にした (`ALLOW_VISUAL_BG` は Visual / VisualNOS / MiniPickMatchMarked)。
 実測 519 群 (256色) / 1322 群 (truecolor)。
 
-⚠️ 走査の空振りガードは**件数の下限だけでは足りなかった**。`setup()` を外す変異が
+🚨 走査の空振りガードは**件数の下限だけでは足りなかった**。`setup()` を外す変異が
 green のままで、nvim 標準の 477 群だけで下限 100 を満たしていた。`BlinkCmp*` の
 実数に下限 (20) を課して塞いだ。
 

@@ -21,7 +21,7 @@ func TestTruncate(t *testing.T) {
 		{"hello", 10, "hello"},
 		{"hello", 5, "hello"},
 		{"hello world", 8, "hello w…"},
-		// ⚠️ 桁 (表示幅) で切る。以前は rune 数で切っていたため max=4 に対して 7 桁の
+		// 🚨 桁 (表示幅) で切る。以前は rune 数で切っていたため max=4 に対して 7 桁の
 		// "日本語…" を返しており、呼び出し側 (m.width から引き算した残り桁) の枠を越えていた
 		{"日本語テスト", 4, "日…"},
 		{"abc", 0, ""},

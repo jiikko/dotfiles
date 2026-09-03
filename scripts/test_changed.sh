@@ -97,17 +97,17 @@ add_shell_targets() {
 }
 
 # 変更されたスクリプトを **名前で参照しているテストディレクトリ**も回す。
-# ⚠️ ここを「どのディレクトリを回すか」の登録表にしないこと。この repo は「登録なしで対象に
+# 🚨 ここを「どのディレクトリを回すか」の登録表にしないこと。この repo は「登録なしで対象に
 # なる」を全域で徹底しており (SHELLCHECK_FILES は discover_shell_scripts、テストは test-dir の
 # 自動発見)、写像を手で列挙すると必ず腐る。実際 issues/done/060 は tests/claude の写像漏れを
 # 直したが「tests/tmux / tests/bin にも同種の漏れがあるかは未網羅」と開いたまま残しており、
 # その穴を監査 071 が指摘して反証にも耐えた (shell 系のどのパスも lint 4 種へ潰れ、
 # tests/tmux 等に一度も到達していなかった)。
 #
-# ⚠️ grep の rc は 3 分岐する: 0 = 参照あり / 1 = 参照なし / >=2 = 検査できなかった。
+# 🚨 grep の rc は 3 分岐する: 0 = 参照あり / 1 = 参照なし / >=2 = 検査できなかった。
 # 「検査できなかった」を「参照なし」に畳むと、テストを回さない方向へ倒れる (= 未検証なのに
 # green)。ここでは安全側 = **回す方**へ倒す (余分なテストが走るだけで害がない)。
-# ⚠️ POSIX sh なので local は使えない (SC3043)。変数名を _ref_ 接頭辞で衝突回避する。
+# 🚨 POSIX sh なので local は使えない (SC3043)。変数名を _ref_ 接頭辞で衝突回避する。
 add_test_dirs_referencing() {  # $1=変更されたパス
   _ref_base="${1##*/}"
   [ -n "$_ref_base" ] || return 0
@@ -119,7 +119,7 @@ add_test_dirs_referencing() {  # $1=変更されたパス
     case "$_ref_rc" in
       0) add_test_dir "$_ref_d" ;;
       1) : ;;
-      # ⚠️ この分岐はテストで pin できていない (grep を確実に rc>=2 にする状況を写像テストの
+      # 🚨 この分岐はテストで pin できていない (grep を確実に rc>=2 にする状況を写像テストの
       # 中で作れないため。変異させても緑のまま = 守られていない)。消すと「検査できなかった」が
       # 「参照なし」に畳まれ、未検証なのにテストを回さない方向へ倒れるので、意図をここに残す。
       *) add_test_dir "$_ref_d" ;;   # 検査できなかった = 回す方へ倒す
@@ -157,7 +157,7 @@ for p in "$@"; do
     # theme/colors.yml は色の単一ソースで、消費者が 4 つに分かれている:
     # shell (生成物の drift) / _tmux.conf / nvim palette.lua は tests/theme が、
     # glogx の ansiFrameBorder は Go 側の TestFrameBorderMatchesThemeYML が突き合わせる。
-    # ⚠️ *.yml の写像 (test-yaml だけ) に落とすと、色を変えても文法検査しか走らない。
+    # 🚨 *.yml の写像 (test-yaml だけ) に落とすと、色を変えても文法検査しか走らない。
     theme/*)
       add_target test-yaml; add_test_dir "tests/theme"; add_go_dir "src/glogx" ;;
     mac/karabiner.json)
@@ -211,7 +211,7 @@ if [ "$dry_run" -eq 1 ]; then
   exit 0
 fi
 
-# ⚠️ **1 本目の失敗で残りを隠さない** (issue 130)。触った範囲の検証が途中で止まると、
+# 🚨 **1 本目の失敗で残りを隠さない** (issue 130)。触った範囲の検証が途中で止まると、
 #   「直したら別の赤が出た」を繰り返すことになる。全部走らせてから、失敗をまとめて返す。
 failed=""
 for t in $targets; do

@@ -27,7 +27,7 @@ func TestExecReturnsAfterTimeoutEvenIfGrandchildHoldsPipe(t *testing.T) {
 
 // cancel で孫まで死ぬ (プロセスグループ)。孫が pipe に書かなくても残らない。
 //
-// ⚠️ **判定を時計に依存させない** (issue 212)。旧版は「300ms 待って cancel し、2 秒後に marker が
+// 🚨 **判定を時計に依存させない** (issue 212)。旧版は「300ms 待って cancel し、2 秒後に marker が
 // 無ければ合格」だったので、**孫が fork される前に cancel が届いた run では何も検査していない**
 // (marker が無いのは当たり前で、緑の側から観測できない)。CI が高負荷のときだけ vacuous になる形。
 // 今の形は「孫が自分の pid を書く」→「読めるまで待つ (= 孫が確かに生まれた)」→「cancel」→
@@ -39,7 +39,7 @@ func TestExecKillsGrandchildOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		// 孫の pid は **親から見た `$!`** で取る。⚠️ サブシェルの中の `$$` は POSIX では
+		// 孫の pid は **親から見た `$!`** で取る。🚨 サブシェルの中の `$$` は POSIX では
 		// **起動シェル (= 直接の子) の pid** で、孫の pid ではない (実測 2026-09-03)。
 		// `$$` で書くと、この検査は孫ではなく**直接の子**を見ることになり、
 		// `Kill(-pgid)` を `Kill(pid)` に退行させても緑のまま通る (変異検証で実際に素通りした)。
@@ -93,7 +93,7 @@ func waitForPID(t *testing.T, path string, limit time.Duration) int {
 }
 
 // processAlive は pid が生きているかを signal 0 で見る。
-// ⚠️ ゾンビ (親が wait していない) にも 0 は通るが、ここでは親 (sh) がプロセスグループごと
+// 🚨 ゾンビ (親が wait していない) にも 0 は通るが、ここでは親 (sh) がプロセスグループごと
 // 殺されるため孫は再親付けされて init が回収する。生存判定として十分
 func processAlive(pid int) bool {
 	return syscall.Kill(pid, 0) == nil

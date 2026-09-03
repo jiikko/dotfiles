@@ -40,7 +40,7 @@ if [ -n "$run_id" ]; then
   if $all; then
     gh run view "$run_id" --log
   else
-    # ⚠️ `gh ... | grep -q .` で有無を見てから本体をもう一度叩く形にしないこと。grep -q が
+    # 🚨 `gh ... | grep -q .` で有無を見てから本体をもう一度叩く形にしないこと。grep -q が
     # 最初の 1 行で抜けると gh が SIGPIPE で死に、pipefail で rc=141 になるため、失敗ログが
     # 実在しても `||` 側の「(失敗した job はありません)」を出してしまう (実測: 191 行 24.8KB の
     # 失敗ログがある run で嘘を出しつつ、stdout には同じログを吐いていた)。gh を 2 回叩く

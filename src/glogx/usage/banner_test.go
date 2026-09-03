@@ -133,7 +133,7 @@ func TestDigitLinesShapeAndRejects(t *testing.T) {
 			}
 		}
 	}
-	// ⚠️ 収録外の例に使う字は、字形表を増やすたびに見直す。'a' は "NO DATA" のために
+	// 🚨 収録外の例に使う字は、字形表を増やすたびに見直す。'a' は "NO DATA" のために
 	// 'A' を収録した時点で (ToUpper 経由で) 収録内になった (2026-09-03)
 	for _, s := range []string{"", "6z", "六"} {
 		if got := bigLines(s); got != nil {
@@ -172,9 +172,9 @@ func TestRenderDashboardBannerVersionFitsWidth(t *testing.T) {
 		}
 	}
 	// 肩書き罫線 (案 A) は、バージョンまで入らない幅ではバージョンだけ**丸ごと**消える。
-	// ⚠️ ここは titledRule を直接呼ぶ。RenderDashboard 経由だと、その幅では合体帯 (案 B) や
+	// 🚨 ここは titledRule を直接呼ぶ。RenderDashboard 経由だと、その幅では合体帯 (案 B) や
 	// 1 行見出しへ落ちる判定が先に効き、バージョンの落とし方を観測できない。
-	// ⚠️ 幅を 1 点だけ見ない。切り詰めが効くと "  v2.1" のような途中で切れた版が残るが、
+	// 🚨 幅を 1 点だけ見ない。切り詰めが効くと "  v2.1" のような途中で切れた版が残るが、
 	// 切れる位置は幅次第で、たまたま "v" の手前で切れる幅を選ぶと素通りする
 	// (実測 2026-09-01: 予算に入れない変異が green のままだった)。
 	g := dialGroup{cli: "Claude Code", version: "2.1.216"}

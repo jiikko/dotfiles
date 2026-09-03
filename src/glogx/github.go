@@ -281,7 +281,7 @@ func fetchCIChunk(ctx context.Context, run CommandRunner, repo Repo, shas []stri
 // (n=1 0.51s / n=10 0.70s / n=20 0.90s / n=50 1.55s)。よって割って並列に投げると縮む
 // (n=20 → 3 チャンク 0.74s / n=50 → 4 チャンク 0.78s)。
 //
-// ⚠️ fetchConcurrency を上げるときは実測し直すこと。4 並列までは throttling が観測されなかったが
+// 🚨 fetchConcurrency を上げるときは実測し直すこと。4 並列までは throttling が観測されなかったが
 // (13 SHA × 4 の wall 0.78s ≈ 単発 13 SHA の 0.70s)、それ以上は未計測で GitHub の secondary
 // rate limit (バースト側) に寄る。「チャンクサイズ固定でチャンク数を導く」ではなく「並列度に
 // 上限を置いてチャンクサイズを件数から導く」向きにしているのはこのため。
@@ -311,7 +311,7 @@ func capFetchSHAs(shas []string) []string {
 
 // chunkSHAs は shas を最大 fetchConcurrency 個のチャンクへほぼ均等に割る
 // (件数が少ないときは 1 チャンク = 従来どおりの単発リクエスト)。
-// ⚠️ 入力は capFetchSHAs 済み (≤ fetchTotalSHAs) が前提。これにより 1 チャンクは
+// 🚨 入力は capFetchSHAs 済み (≤ fetchTotalSHAs) が前提。これにより 1 チャンクは
 // 必ず fetchMaxSHAs 以下になる (等分なので len/fetchConcurrency ≤ fetchMaxSHAs)。
 func chunkSHAs(shas []string) [][]string {
 	n := min((len(shas)+minChunkSHAs-1)/minChunkSHAs, fetchConcurrency)
@@ -590,7 +590,7 @@ func FetchJobDetail(ctx context.Context, run CommandRunner, repo Repo, check Che
 	// 投機の無駄は「非失敗なのに annotations が付く」稀ケースだけ (実測 0/10) で、その場合は
 	// 結果を捨てる。失敗 job は投機しない (annotations が出るのでログ自体が不要)。
 	speculateLog := check.State != StateFailure
-	// ⚠️ tail という名前で受けるのは package の logTail 関数を局所で覆い隠さないため
+	// 🚨 tail という名前で受けるのは package の logTail 関数を局所で覆い隠さないため
 	var (
 		lines     []string
 		annStdout []byte

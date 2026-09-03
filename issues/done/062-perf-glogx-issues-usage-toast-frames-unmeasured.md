@@ -56,7 +56,7 @@ issues ドロワーは開閉アニメを持つので、発生するとしたら 
 4. usage グランスは**別ケース**にする (フィクスチャで `usageOv` を消さない版)。
    起動直後の実フレームなので代表性が高い
 
-⚠️ zoom / glide / action モーダルはアニメ中の一過性フレームで、`AllocsPerRun` /
+🚨 zoom / glide / action モーダルはアニメ中の一過性フレームで、`AllocsPerRun` /
 `b.Loop()` の定常測定と相性が悪い (毎 iteration 同じ状態を描くため実運用と乖離する)。
 **後回しにするか、測るなら「1 フレームぶんの状態を固定して測る」形にする**こと。
 
@@ -85,7 +85,7 @@ issues ドロワーは開閉アニメを持つので、発生するとしたら 
   issues-40 209 回 33,849B → 上限 213 / 34,900、usage-glance 176 / 35,624B → 180 / 36,700、
   toast-holding 182 / 36,864B → 186 / 38,000
 - usage グランスは fixture で消さない版 (`budgetUsageGlanceModel`) = 起動直後の実フレーム。
-  toast は entering/leaving でなく holding を advance で作って固定 (方針の⚠️どおり
+  toast は entering/leaving でなく holding を advance で作って固定 (方針の🚨どおり
   一過性フレームは測らない)
 - 変異検証: issuesView.lines に 4KB の確保水増しを入れると issues-40 のバイト側が
   37,944B > 34,900B で red (回数は 210 ≤ 213 で素通り = バイトゲートの存在意義も同時に実証)
@@ -96,7 +96,7 @@ issues ドロワーは開閉アニメを持つので、発生するとしたら 
   (+5%/+2 allocs)。048 同型の穴は**無かった** (可視窓だけ整形できている)
 - metric は 19 → 23 本。Step Summary の可読性は現状観察 (問題になったら別途)
 
-zoom / glide / action モーダルは方針の⚠️どおり対象外のまま (一過性フレーム)。
+zoom / glide / action モーダルは方針の🚨どおり対象外のまま (一過性フレーム)。
 
 ### CI 初回実測 (2026-08-15, run 31818192100)
 

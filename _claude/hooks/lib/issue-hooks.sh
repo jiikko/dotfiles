@@ -22,7 +22,7 @@ issue_hook_resolve_dir() {
     if command -v jq >/dev/null 2>&1; then
       from_json=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null || true)
     else
-      # ⚠️ jq が無いときに `.cwd` を捨てて $PWD へ落とすと、hook が「別 repo の issues を
+      # 🚨 jq が無いときに `.cwd` を捨てて $PWD へ落とすと、hook が「別 repo の issues を
       # 報告する」= 黙って間違う (実測 2026-08-21)。沈黙より誤報の方が悪いので sed で拾う
       from_json=$(printf '%s' "$input" | tr -d '\n' \
         | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
@@ -48,7 +48,7 @@ issue_hook_resolve_dir() {
 # issue_hook_category <basename>: `NNN-<カテゴリ>-<スラッグ>.md` のカテゴリを stdout に出す。
 # 番号 (数字のみ。桁数は問わない = 1000 番以降も捨てない) で始まらないものは非 0 を返す。
 #
-# ⚠️ `*-human-*` / `*-retro-*` のような部分一致でカテゴリを判定しない。スラッグ側に同じ語を
+# 🚨 `*-human-*` / `*-retro-*` のような部分一致でカテゴリを判定しない。スラッグ側に同じ語を
 # 含む別カテゴリを誤検出する (実測 2026-08-20: 061-docs-mutation-verify-fake-mutations.md を
 # human として拾った)。逆に `[0-9][0-9][0-9]*-retro-*` のように `*` を挟むと今度は
 # `011-docs-retro-format-notes.md` を飲む (実測 2026-08-21)。position 2 を切り出すのが唯一の解。

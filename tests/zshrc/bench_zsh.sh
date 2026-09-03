@@ -82,7 +82,7 @@ measure_startup() {
 # --- zpty 共通ヘルパー ---
 # marker が pty 出力に現れるまで非ブロッキングで読み進める (成功 0 / deadline 超過 1)。
 # 読んだ内容は wait_buf に蓄積 (失敗時の診断 dump 用)。
-# ⚠️ zpty の -t は引数を取らない (-rt = 非ブロッキング読み)。`zpty -r -t 1 name` と書くと
+# 🚨 zpty の -t は引数を取らない (-rt = 非ブロッキング読み)。`zpty -r -t 1 name` と書くと
 # "1" が pty 名として解釈され、存在しない pty への read が黙って失敗し続ける (実測でハマった)
 zpty_wait_marker() {
   local name="$1" marker="$2"
@@ -120,7 +120,7 @@ measure_first_command() {
   zpty zbench env "${bench_env[@]}" zsh -l -i
   zpty -w zbench "print __ZSH_BENCH_''READY__; exit"
   if ! zpty_wait_marker zbench "$marker" $(( t0 + 30 )); then
-    # ⚠️ zpty -d に 2>/dev/null を付けないこと: zsh 5.9 では zpty -d への一時リダイレクトが
+    # 🚨 zpty -d に 2>/dev/null を付けないこと: zsh 5.9 では zpty -d への一時リダイレクトが
     # 復元されず、サブシェルの fd 2 が /dev/null を指したままになり直後の診断 print -u2 が
     # 握り潰される (macOS/Ubuntu 両方で実測)。zpty -d は stderr ノイズを出さない
     zpty -d zbench || true

@@ -67,7 +67,7 @@ func warnf(format string, args ...any) {
 //
 // smbfs はサーバ不達で長時間ブロックする。スクリプトの中で無言のまま固まるのが最悪なので、
 // 「固まった」を「空いている」と混同せず、判定不能として返せるようにする。
-// ⚠️ 固まった goroutine は回収できない (ブロック中の syscall は中断できない)。
+// 🚨 固まった goroutine は回収できない (ブロック中の syscall は中断できない)。
 // プロセスの終了で解放される前提の使い捨て。
 func withTimeout[T any](d time.Duration, fn func() (T, error)) (T, error) {
 	type result struct {

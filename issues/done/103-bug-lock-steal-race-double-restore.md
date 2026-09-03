@@ -93,7 +93,7 @@ lock を消す**。この repo は既に正解を持っている: `scripts/tmux_
 
 ```
 A: mkdir "$dir" 成功 → tt_lock_write_owner へ
-   ⚠ write_owner は printf の前に $(tt_proc_starttime) で ps を fork する (実測 4.6ms)。
+   🚨 write_owner は printf の前に $(tt_proc_starttime) で ps を fork する (実測 4.6ms)。
      この間 "$dir/pid" は存在しない
 B: mkdir 失敗 → owner 不在 → 取り残しと誤認 → rm -rf "$dir" → mkdir → rc=0
 A: 遅れて owner を記録 → **B の記録を上書き** → A の release が **走行中の B の lock を消す**

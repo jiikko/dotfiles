@@ -78,20 +78,20 @@ ok "_TMUX_SESSION_LIB が定義済みならそちらを優先して毎回再評�
 # `_` 始まりの helper (関数でも変数でも) を参照していてガードが無ければ、その関数は
 # Claude Code の Bash から `command not found` / 空変数で壊れる (issue 149 / 152 で実発生)。
 #
-# ⚠️ **関数の列挙は zsh 自身にさせる** (`${(k)functions}` + `${functions[name]}`)。正規表現で
+# 🚨 **関数の列挙は zsh 自身にさせる** (`${(k)functions}` + `${functions[name]}`)。正規表現で
 #    定義行を拾う形は、この repo に実在する書き方を取りこぼした (敵対的レビュー 2026-09-03 の
 #    P1-1: `function history-all { ... }` の括弧なし / `if` の中でインデントされた `anyenv() {`)。
 #    heredoc の中の偽定義を拾う・1 行 2 定義の 2 本目を落とす、も同時に消える
-# ⚠️ 参照の検出は `$_X` / `${_X}` の**変数**も含める。issue 152 で `tt` が壊れた原因は
+# 🚨 参照の検出は `$_X` / `${_X}` の**変数**も含める。issue 152 で `tt` が壊れた原因は
 #    `_TMUX_SESSION_LIB` (非 export 変数) で、関数呼び出しだけを見ていると素通りする (同 P1-2)
-# ⚠️ コメントと `local` 宣言は除く。除かないと「コメントに helper 名を書いた」「`local _l=`」だけで
+# 🚨 コメントと `local` 宣言は除く。除かないと「コメントに helper 名を書いた」「`local _l=`」だけで
 #    落ちる (同 P2-6 / P2-7)
-# ⚠️ ガードは **helper の source かどうか**を見る。body 全域の素の `source ` マッチだと、
+# 🚨 ガードは **helper の source かどうか**を見る。body 全域の素の `source ` マッチだと、
 #    無関係な source・コメント・文字列で通ってしまう (同 P2-4)
 guard_probe="$TMP/guard_probe.zsh"
 cat > "$guard_probe" <<'PROBE'
 # 公開関数 (先頭が _ でない) を「名前 <TAB> 本体」で出す。本体の改行は \x01 に置き換える。
-# ⚠️ **この repo が定義した関数だけ**に絞る (functions_source が定義元ファイルを返す)。
+# 🚨 **この repo が定義した関数だけ**に絞る (functions_source が定義元ファイルを返す)。
 #    絞らないと zsh 同梱の compdef 等が入り、`_comps` 参照で誤検出する
 #    (敵対的レビュー 2026-09-03 の指摘を受けた実測)
 zmodload zsh/parameter 2>/dev/null
@@ -99,7 +99,7 @@ for k in ${(ko)functions}; do
   [[ "$k" == _* ]] && continue
   [[ "$k" == *-widget ]] && continue   # zle widget は snapshot の対象外 (対話シェル専用)
   src="${functions_source[$k]:-}"
-  # ⚠️ パス名に "/dotfiles/" を期待しない。worktree や別名チェックアウトでは 1 件も
+  # 🚨 パス名に "/dotfiles/" を期待しない。worktree や別名チェックアウトでは 1 件も
   #    一致せず、**何も走査しないまま緑**になる (実測 2026-09-03: 変異が全部素通りした)
   [[ "$src" == "$SK_ROOT"/* || "$src" == "$SK_FAKE"/* ]] || continue
   body="${functions[$k]}"
@@ -112,7 +112,7 @@ funcs_out="$TMP/funcs.tsv"
 SK_ROOT="$ROOT_DIR" SK_FAKE="$FAKE_HOME" HOME="$FAKE_HOME" ZDOTDIR="$ZDOT" \
   zsh -i -c "source '$guard_probe'" > "$funcs_out" 2>/dev/null || true
 [[ -s "$funcs_out" ]] || fail "公開関数を zsh から列挙できない (静的検査が空振り)"
-# ⚠️ **列挙が _zshrc に届いていることを確かめる**。定義元の絞り込みを間違えると、
+# 🚨 **列挙が _zshrc に届いていることを確かめる**。定義元の絞り込みを間違えると、
 #    走査 0 件のまま緑になる (上のパス前提で実際に踏んだ)。_zshrc 由来の既知の関数で見る
 for sk_known in concat av1ify; do
   grep -qx "$sk_known" <<< "$(cut -f1 "$funcs_out")" \
@@ -122,11 +122,11 @@ done
 # 参照の抽出は 1 つの関数に集約する。**canary と本走査が同じ経路を通る**ことが要点で、
 # 別々に書くと canary が「コピーしたロジック」を検査するだけになる。
 # ①変数形 ($_X / ${_X) と ②コマンド位置 (行頭・; & | ( ) { } 空白の直後) を分ける。
-# ⚠️ 境界にクォートを含めない: `[[ "$f" =~ "_test.rb" ]]` の文字列リテラルを参照と読んで
+# 🚨 境界にクォートを含めない: `[[ "$f" =~ "_test.rb" ]]` の文字列リテラルを参照と読んで
 #    誤検出した (実測 2026-09-03。rt() が引っかかった)。変数形は `$` 自体が目印なので
 #    直前の文字を問わない
-# ⚠️ sort は LC_ALL=C にする: 既定の照合順は locale 依存で、canary の期待値が環境で変わる
-# ⚠️ 無マッチが正解のケースがあるので `|| true` が要る。付け忘れると set -euo pipefail 下で
+# 🚨 sort は LC_ALL=C にする: 既定の照合順は locale 依存で、canary の期待値が環境で変わる
+# 🚨 無マッチが正解のケースがあるので `|| true` が要る。付け忘れると set -euo pipefail 下で
 #    grep の rc=1 が代入ごとスクリプトを殺し、**§4 が 1 行も出さずに rc=1** で終わる
 #    (このセッションで 3 回踏んだ形)
 SK_NAME_RE='[$][{]?_[A-Za-z][A-Za-z0-9_]*|(^|[;&|(){}[:space:]])_[A-Za-z][A-Za-z0-9_]*'
@@ -140,7 +140,7 @@ sk_refs_of() {
   locals=$(printf '%s' "$code" | grep -oE '(local|typeset)[^;]*' | sk_names_in)
   refs=$(printf '%s' "$code" | sk_names_in)
   if [[ -n "$locals" ]]; then
-    # ⚠️ comm も LC_ALL=C にする。sort だけ C にして comm を locale のままにすると、
+    # 🚨 comm も LC_ALL=C にする。sort だけ C にして comm を locale のままにすると、
     #    comm から見て入力が未ソートになり **引き算が黙って崩れる** (実測 2026-09-03)
     LC_ALL=C comm -23 <(printf '%s\n' "$refs" | sed '/^$/d') <(printf '%s\n' "$locals" | sed '/^$/d') || true
   else
@@ -148,7 +148,7 @@ sk_refs_of() {
   fi
 }
 
-# ⚠️ **抽出そのものを canary で検査する**。sed / grep の式を壊すと refs が空になり、
+# 🚨 **抽出そのものを canary で検査する**。sed / grep の式を壊すと refs が空になり、
 #    「違反 0 件」として緑を返す (実測 2026-09-03: sed の括弧を壊して実際に緑になった)
 sk_got=$(sk_refs_of 'foo() { local _l=/x; _reload_then_call foo "$_TMUX_SESSION_LIB" "$REPO_AND_PATH" }' | tr '\n' ' ')
 [[ "$sk_got" == "_TMUX_SESSION_LIB _reload_then_call " ]] \

@@ -91,7 +91,7 @@ else
 fi
 
 # ブランチ名は攻撃者が選べる文字列 (clone してきた repo / PR ブランチ) なので、prompt
-# エスケープとして解釈させない。⚠️ 本番と同じ条件で観測する: PROMPT は prompt_subst の下で
+# エスケープとして解釈させない。🚨 本番と同じ条件で観測する: PROMPT は prompt_subst の下で
 # 'シングルクォート内の ${_DOTFILES_GIT_PROMPT}' として展開されるため、テストも同じ形で描く
 # (値を先に展開して print -P へ渡す形にすると、それ自体が下の「コマンド実行しない」検査を壊す)。
 setopt prompt_subst

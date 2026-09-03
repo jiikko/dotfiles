@@ -106,7 +106,7 @@ tt_save_lock_older_than() {
   [ -z "$(find "$TT_SAVE_LOCK_DIR" -maxdepth 0 -mmin "-$(( secs / 60 + 1 ))" 2>/dev/null)" ]
 }
 
-# ⚠️ 起動時刻の指紋は **guards.sh の tt_proc_starttime が唯一の出典**。ここに独立実装を置くと、
+# 🚨 起動時刻の指紋は **guards.sh の tt_proc_starttime が唯一の出典**。ここに独立実装を置くと、
 #   片方の書式を変えたときに無音で drift する (issue 068 の直接原因。issue 078 で統合した)。
 
 # 渡された owner 行（"PID 起動時刻トークン"）が「取り残し」かを判定する。owner 行は呼び出し側が
@@ -128,7 +128,7 @@ tt_save_owner_is_stale() {
     # 生死は kill -0 が主判定。死亡していれば取り残し（解除可）。
     kill -0 "$owner_pid" 2>/dev/null || return 0
     cur_start="$(tt_proc_starttime "$owner_pid")"
-    # ⚠️ 旧書式の owner 行 (正規化前の生 ps 出力) は上の `read -r` が空白で切るため、
+    # 🚨 旧書式の owner 行 (正規化前の生 ps 出力) は上の `read -r` が空白で切るため、
     #   owner_start に先頭語だけが入る。それを新書式と比べると必ず不一致になり、
     #   **生存 owner を奪う**。正規化済みトークンは必ず `_` を含むので、含まないものは
     #   「同定不能」に落として下の TTL backstop に委ねる (issue 078 の移行ガード)。
@@ -220,7 +220,7 @@ tt_capture_contents_on() {
 }
 
 # archive が「gzip として最後まで読めるか」。
-# ⚠️ サイズや mtime で判定しないこと: truncate された壊れた archive は mtime が新しく、
+# 🚨 サイズや mtime で判定しないこと: truncate された壊れた archive は mtime が新しく、
 # サイズも 0 でないことがある (実測: gzip stub が 200 byte 出して死んだケース)。
 # 中身を実際に読めるかだけが唯一の判定基準 (レビューで実証 2026-07-30)。
 # ここは保存経路上の安価なゲートに留める (tar の entry と last の pane 集合の突合という
@@ -228,7 +228,7 @@ tt_capture_contents_on() {
 tt_archive_ok() {
   [ -s "$1" ] || return 1
   gzip -t "$1" 2>/dev/null || return 1
-  # entry が 1 つ以上あるか。⚠️ この検査を省くと「中身が空の archive」を健全と誤判定する:
+  # entry が 1 つ以上あるか。🚨 この検査を省くと「中身が空の archive」を健全と誤判定する:
   # 全 pane の capture が失敗しても tar/gzip 自体は成功するため、entry 0 の tar.gz は
   # 非空で gzip -t も通る。その状態を healthy と読むと、下の掃除が唯一の良い退避コピーを
   # 消してしまう (実測 2026-08-21: 0 entry の tar.gz が [ -s ] と gzip -t を素通り)。
@@ -337,7 +337,7 @@ tt_save_main() {
   # (実測 ~1MB の cp。upstream 自身が毎保存で全 archive を再生成するのに比べ十分軽い)。
   # upstream は `gzip > file` で同一 inode を truncate 上書きするため hardlink 退避は不可＝実コピーする。
   local tt_archive='' tt_archive_bak='' tt_bak_old='' tt_bak_pid=''
-  # ⚠️ archive の在処は退行ガードの有無に関わらず決めること。旧実装はこの 2 行がガードの
+  # 🚨 archive の在処は退行ガードの有無に関わらず決めること。旧実装はこの 2 行がガードの
   # 内側にあり、正当な bypass (TT_SAVE_ALLOW_REGRESSION=1) では tt_archive が空のままで
   # archive 検証・修復・archive-broken ログがまるごと skip されていた。bypass を使う場面
   # (状態が大きく動いた直後) は archive が壊れやすい局面と重なるので、逆を向いていた。
@@ -410,7 +410,7 @@ tt_save_main() {
          { [ "${tt_prev_w:-0}" -ge 8 ] && [ "$(( tt_new_w * 3 ))" -le "${tt_prev_w:-0}" ]; } || \
          { [ "${tt_prev_w:-0}" -ge 1 ] && [ "$tt_new_w" -eq 0 ]; }; then
         # 連続 reject の escape hatch。
-        # ⚠️ しきい値は「凍結した prev」との比なので、ユーザーが正当にセッションを 1/3 以下へ
+        # 🚨 しきい値は「凍結した prev」との比なので、ユーザーが正当にセッションを 1/3 以下へ
         #   畳むと以後の保存が毎回 reject され、機構が恒久停止する (レビューで実証 2026-07-30:
         #   8→2 セッションにしたあと全保存が reject され続け、last が 8 セッション世代で凍結)。
         #   全喪失 (new_w=0) は artifact と断定できるので escape させないが、それ以外は
@@ -420,7 +420,7 @@ tt_save_main() {
           tt_reject_streak_set 0
           tt_save_log "regression-stuck-override prev_sessions=$tt_prev_n new_sessions=$tt_new_n prev_windows=$tt_prev_w new_windows=$tt_new_w streak=$tt_streak accepted=$tt_new_target"
           # last は前進させたまま (= 縮小を受け入れる)。archive も新しいものを残す。
-          # ⚠️ 退避コピーを消す前に検証を通すこと: この経路は「縮小を受け入れる」ので新 archive が
+          # 🚨 退避コピーを消す前に検証を通すこと: この経路は「縮小を受け入れる」ので新 archive が
           # 正になるが、その新 archive が壊れていた場合の復旧手段は退避コピーだけ。旧実装は
           # 検証せずに消して return していた (finalize が掃除まで面倒を見る)。
           tt_archive_finalize "$tt_archive" "$tt_archive_bak" 0
@@ -434,13 +434,13 @@ tt_save_main() {
           mv -f "$tt_archive_bak" "$tt_archive" 2>/dev/null || true
         fi
         tt_save_log_guard "$tt_prev_n" "$tt_new_n" "$tt_prev_w" "$tt_new_w" "$tt_prev_target" "$tt_new_target"
-        # ⚠️ この経路でも archive の検証を通す。上の mv で退避コピーは消費済みなので**修復は
+        # 🚨 この経路でも archive の検証を通す。上の mv で退避コピーは消費済みなので**修復は
         # できない**が、戻した archive 自体が壊れていた場合に `archive-broken` を残せる
         # (残さないと「退行を戻したので安全」と読めてしまい、scrollback が失われた事実が
         # 観測から消える)。finalize は「全 return 経路から呼ぶ」と宣言しており、ここを
         # 呼んでいなかったのがコメントと実装の食い違いだった (2026-08-21 の敵対レビュー)。
         tt_archive_finalize "$tt_archive" "" 1
-        # ⚠️ reject したら非 0 を返す。rc=0 は「保存した」を意味しなければならない。
+        # 🚨 reject したら非 0 を返す。rc=0 は「保存した」を意味しなければならない。
         #   旧実装は rc=0 を返しており、全呼び出し側が虚偽の成功を記録していた
         #   (periodic-save rc=0 / kill-cmd save=ok / 手動 C-s の「Tmux environment saved!」)。
         #   呼び出し側の扱い: debounce は timestamp を進めず `|| true` で hook 契約を守る /
@@ -449,7 +449,7 @@ tt_save_main() {
         return 1
       fi
       # last を前進させた保存も 1 行残す。
-      # ⚠️ reject だけ記録して pass を記録しないのは非対称で、より危険な結果 (しきい値未満の
+      # 🚨 reject だけ記録して pass を記録しないのは非対称で、より危険な結果 (しきい値未満の
       #   部分喪失が last に焼き付く) の方が観測できなかった (レビュー指摘 2026-07-30)。
       tt_reject_streak_set 0
       tt_save_log "save-advanced prev_sessions=${tt_prev_n:-0} new_sessions=$tt_new_n prev_windows=${tt_prev_w:-0} new_windows=$tt_new_w target=$tt_new_target"
@@ -459,7 +459,7 @@ tt_save_main() {
   return "$tt_rc"
 }
 
-# archive の完全性検証と退避コピーの掃除。⚠️ tt_save_main の**全 return 経路**から呼ぶこと
+# archive の完全性検証と退避コピーの掃除。🚨 tt_save_main の**全 return 経路**から呼ぶこと
 # (tt_archive を解決した後の return は通常経路・escape hatch・reject の 3 つ。それより手前の
 # return は tt_archive が空なので finalize は no-op で通る = 呼ばなくても差は出ない)。
 # 旧実装はこのブロックが関数末尾にインラインで置かれていたため、reject streak の escape hatch が
@@ -467,7 +467,7 @@ tt_save_main() {
 # 先に消してから返っていた)。
 #
 # Fix B3: archive の完全性を rc に依らず検証し、壊れていれば退避コピーから復旧する。
-  # ⚠️ rc≠0 だけを見ていた旧実装には穴があった (レビューで実証 2026-07-30):
+  # 🚨 rc≠0 だけを見ていた旧実装には穴があった (レビューで実証 2026-07-30):
   #   upstream の save_all は pane_contents の生成失敗を戻り値に反映しない。gzip が失敗しても
   #   save.sh は rc=0 を返すため、「last は健全な layout・archive は 0 byte のゴミ」という
   #   不整合がそのまま残り、復元すると window は全部出るのに全 pane の scrollback が空になる。
@@ -478,7 +478,7 @@ tt_archive_finalize() {
   local tt_archive="$1" tt_archive_bak="$2" tt_rc="$3"
   [ -n "$tt_archive" ] || return 0
   if [ -f "$tt_archive" ] && ! tt_archive_ok "$tt_archive"; then
-    # ⚠️ 退避コピーは「非空」ではなく **現 archive と同じ基準 (tt_archive_ok)** で検査する。
+    # 🚨 退避コピーは「非空」ではなく **現 archive と同じ基準 (tt_archive_ok)** で検査する。
     # [ -s ] だけだと、壊れた退避 (0 entry / truncate) から「復旧した」と偽のログを出して
     # 退避を消費し、壊れた archive を壊れた archive で置き換えて終わる (実測 2026-08-21:
     # 現 archive と退避の両方が 0 entry のとき archive-repaired が出ていた)。

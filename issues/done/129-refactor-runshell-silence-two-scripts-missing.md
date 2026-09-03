@@ -54,7 +54,7 @@
 2 本に `exec </dev/null >/dev/null 2>&1` を入れ、`tests/tmux/test_runshell_silence.sh` の対象に足した
 (3 → 5 本)。
 
-⚠️ **置き場所は issue の想定と違い、ファイル先頭には置けなかった**:
+🚨 **置き場所は issue の想定と違い、ファイル先頭には置けなかった**:
 
 - `scripts/tmux_schedule_keys.sh` は対話の wizard も兼ねる。先頭で塞ぐと popup の gum が端末を
   掴めない → 長命なのは `fire` だけなので、その関数の冒頭に置いた

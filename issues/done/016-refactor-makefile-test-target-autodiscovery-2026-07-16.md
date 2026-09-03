@@ -10,7 +10,7 @@ Makefile の test-nvim / test-tmux / test-zshrc / test-setup がテストスク�
 
 `tests/test_registration.sh` 自身が `find tests -type f \( -name 'test_*.sh' -o -name '*.bats' \) ! -name '*helper*'` で全テストを権威的に列挙している = **命名規約 (test_*.sh) だけでテストか否かを機械決定できる**ことを meta テスト自身が証明している。手動リストが不可避な lint リスト (下記「対象外」) とは前提が異なる。
 
-## ⚠️ 対象外: lint リスト (SHELLCHECK_FILES / ZSH_SYNTAX_FILES) は wildcard 化しない
+## 🚨 対象外: lint リスト (SHELLCHECK_FILES / ZSH_SYNTAX_FILES) は wildcard 化しない
 
 `SHELLCHECK_FILES` / `ZSH_SYNTAX_FILES` の手動列挙は**意図的設計** (commit 8dd0fae, 2026-07-16)。shellcheck 可否は shebang / 拡張子から機械決定できない (同じ .zsh でも `_av1ify.zsh` は shellcheck 側 / `_concat.zsh` は zsh -n 側) ため、リストは手動維持し網羅だけを `tests/test_lint_coverage.sh` で守る。**本 issue の自動発見化を lint リストへ波及させないこと** (将来の audit が「同様に wildcard 化せよ」と誤指摘したらこの節を根拠に棄却する)。
 

@@ -381,7 +381,7 @@ set -g status-right-length 27
 set -g status-right "#{?client_prefix,#{p27:@keyguide},#{p27:@nothing}}"
 ```
 
-【この repo の実例】`/Users/koji/dotfiles/_tmux.conf` の status 設定。⚠️ 両分岐を `#{pN:}` で同じ幅に固定するのが要点で、片方だけ可変にすると prefix を押すたび window list の描画幅が変わる（status-left の島を 20 セル固定にしているのと同じ理由）。N を変えるときは `status-right-length` も同じ値へ。`status-interval` の値 0 や `status off` 自体は、上流構成なら continuum 由来 autosave を止める。
+【この repo の実例】`/Users/koji/dotfiles/_tmux.conf` の status 設定。🚨 両分岐を `#{pN:}` で同じ幅に固定するのが要点で、片方だけ可変にすると prefix を押すたび window list の描画幅が変わる（status-left の島を 20 セル固定にしているのと同じ理由）。N を変えるときは `status-right-length` も同じ値へ。`status-interval` の値 0 や `status off` 自体は、上流構成なら continuum 由来 autosave を止める。
 
 ---
 

@@ -20,7 +20,7 @@
   - architecture-reviewer が swift-language-expert の結果をレビュー
     → ✅ 同意: CGFloat は適切
   - swiftui-performance-expert が swiftui-macos-designer の結果をレビュー
-    → ⚠️ 要注意: kerning modifier は大量テキストで重くなる可能性
+    → 🚨 要注意: kerning modifier は大量テキストで重くなる可能性
   - swift-language-expert が architecture-reviewer の結果をレビュー
     → ✅ 同意: Model層配置は適切
   - Explore が swiftui-test-expert の結果をレビュー
@@ -92,7 +92,7 @@
   - architecture-reviewer が swift-language-expert の指摘をレビュー
     → ✅ 同意: retain cycle は修正必須
   - swift-language-expert が architecture-reviewer の指摘をレビュー
-    → ⚠️ 要検討: 分割は大きな変更、段階的に行うべき
+    → 🚨 要検討: 分割は大きな変更、段階的に行うべき
   - swiftui-macos-designer が swiftui-performance-expert の指摘をレビュー
     → ✅ 同意: 再描画最適化は必要
 
@@ -103,7 +103,7 @@
   |---|-----|--------------|
   | 1 | retain cycle | ✅ 同意 |
   | 2 | 再描画が重い | ✅ 同意 |
-  ### ⚠️ 要検討
+  ### 🚨 要検討
   | # | 指摘 | 論点 |
   |---|-----|------|
   | 1 | 責務分割 | 大きな変更のため段階的実施を推奨 |

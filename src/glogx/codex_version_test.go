@@ -96,7 +96,7 @@ func TestCheckCodexVersionCmd(t *testing.T) {
 
 // 起動時トーストが新版を告げた直後に X を押しても codex が更新しなかったケース (実測 2026-09-03)。
 // codex は自前の latest キャッシュ (~/.codex/version.json) が stale だと "already up to date" を
-// 出して exit 0 で終わるため、glogx から見ると before == after の成功に見える。⚠️ これを
+// 出して exit 0 で終わるため、glogx から見ると before == after の成功に見える。🚨 これを
 // 「すでに最新版です」と出すと、直前の「新版が公開されています」トーストと真っ向から矛盾した
 // 案内になる (ユーザー報告の元の症状)。glogx は registry 直取りの latest を握っているので、
 // それより古いままなら警告として出し、codex の言い分 (note) を添える。

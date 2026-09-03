@@ -138,7 +138,7 @@ assert_file_exists "$TEST_DIR/space name-enc.mp4" "Resolves backslash-escaped sp
 assert_file_exists "$TEST_DIR/quoted-enc.mp4" "Resolves single-quoted path"
 
 # Test 7: 一覧表示ではファイル名の $(...) を実行しない
-# ⚠️ 主張はここまで。**承認 (y) した後**は処理本体 (_av1ify_encode.zsh の print -P 群) が
+# 🚨 主張はここまで。**承認 (y) した後**は処理本体 (_av1ify_encode.zsh の print -P 群) が
 #    実行してしまう = 未修正の issue 089 の管轄。この経路をこのテストは検証していない
 #    (red team が y 版で pwned 生成を実測済み。issue 089 に記録)。
 printf '\n## Test 7: Command substitution in filename is not executed while listing\n'
@@ -186,7 +186,7 @@ assert_contains "$CLIP_OUTPUT" "クリップボードの読み取りに失敗" "
 unset MOCK_PBPASTE_FAIL
 
 # Test 10: 本番のゲートは「このテスト自身の文脈 (非対話)」で閉じている
-# ⚠️ ここは seam を差し替えない。差し替えテストは「ゲート関数が偽ならヘルプ」しか pin できず、
+# 🚨 ここは seam を差し替えない。差し替えテストは「ゲート関数が偽ならヘルプ」しか pin できず、
 #    「スクリプトでは発火しない」という後方互換の主張を一切守らない (red team 指摘)。
 printf '\n## Test 10: Real gate is closed in this (non-interactive) context\n'
 unfunction __av1ify_clipboard_mode_available
@@ -206,7 +206,7 @@ setopt err_exit
   || { printf '✗ Interactive shell with redirected stdin: got %s\n' "$gate_out"; exit 1; }
 
 # Test 12: ゲートが -o interactive を要求していることを静的に pin する
-# ⚠️ 静的検査にしている理由: setopt interactive は実行時に変更できず、pty も必要なので
+# 🚨 静的検査にしている理由: setopt interactive は実行時に変更できず、pty も必要なので
 #    「対話 + 端末」の真の組み合わせを自動テストから作れない。条件が消えると
 #    「端末から起動したスクリプトで発火する」= 削除つき経路が復活するため、
 #    文字列としてでも消えないように留める (挙動確認は pty 手動検証と issue 094)。
@@ -321,7 +321,7 @@ assert_file_not_exists "$TEST_DIR/fps-enc.mp4" "Does not convert on invalid fps"
 [[ "$fps_rc" -eq 1 ]] && printf '✓ Exit code is 1 on invalid fps\n' || { printf '✗ Exit code is 1 on invalid fps (got %s)\n' "$fps_rc"; exit 1; }
 
 # Test 21: 先行入力の drain が配線されていることを静的に pin する
-# ⚠️ 実行時テストにできない理由 (実測 2026-08-22): zsh の `read -t 0` は**端末に対してのみ**
+# 🚨 実行時テストにできない理由 (実測 2026-08-22): zsh の `read -t 0` は**端末に対してのみ**
 #    「入力が溜まっているか」を答える。パイプでは常に偽を返すため、パイプで drain を呼んでも
 #    何も捨てられず、テストは「drain が無い実装」と区別できない (= 書いても vacuous)。
 #    pty での実測は取れており、先行入力 "junkline" は
@@ -539,7 +539,7 @@ echo "dummy video" > "$TEST_DIR/sample_b.avi"
 cd "$TEST_DIR" || exit 1
 setopt glob_subst nomatch
 unsetopt err_exit
-# ⚠️ サブシェルで走らせること。ガードが無いと NOMATCH の未捕捉エラーで
+# 🚨 サブシェルで走らせること。ガードが無いと NOMATCH の未捕捉エラーで
 #    「テストスクリプトごと落ちる」= ✗ を一度も出さずに終わるため、変異させても
 #    失敗として観測できない (この形で実際に見落とした。2026-08-23)。
 #    サブシェルなら死んでも親は続き、出力が空になることで red として出る。

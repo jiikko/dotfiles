@@ -8,7 +8,7 @@ package main
 // 合成は finishWithGlobalChrome に一本化したので、この検査は「一本化が外れて片方の経路が
 // 素の finishWindow に戻る」変異を捕まえる。
 //
-// ⚠️ 描画結果 (View().Content) で見ること。「トーストが visible か」だけを見る検査は、
+// 🚨 描画結果 (View().Content) で見ること。「トーストが visible か」だけを見る検査は、
 // 合成を落としても緑のまま通る (状態は立つが画面に出ない = まさに起きた事故の形)。
 
 import (

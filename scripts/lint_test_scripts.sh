@@ -30,7 +30,7 @@ done <<EOF
 $files
 EOF
 
-# ⚠️ zsh -n は 1 ファイルずつ回す (issue 056): `zsh -n f1 f2` は f1 しかパースせず、
+# 🚨 zsh -n は 1 ファイルずつ回す (issue 056): `zsh -n f1 f2` は f1 しかパースせず、
 # f2 以降は f1 への位置パラメータになる。多引数で渡すと 2 本目以降が無検査のまま
 # 「N 本 OK」と報告する false green になる。件数は「渡した数」でなく検査した数を数える。
 zsh_checked=0
@@ -49,5 +49,5 @@ if command -v shellcheck >/dev/null 2>&1; then
   [ -z "$sh_files" ] || shellcheck -S warning $sh_files
   echo "[lint-tests] zsh -n $zsh_checked 本 + shellcheck $sh_count 本 OK"
 else
-  echo "[lint-tests] zsh -n $zsh_checked 本 OK / ⚠️ shellcheck 未導入のため sh 系 $sh_count 本は未検査"
+  echo "[lint-tests] zsh -n $zsh_checked 本 OK / 🚨 shellcheck 未導入のため sh 系 $sh_count 本は未検査"
 fi

@@ -14,7 +14,7 @@ popup で使うときの実幅は 84 桁前後 (`tui_helpers_test.go:testPopupWi
 j/k: 移動  Tab: セクション  Space: stage/unstage  a: 全 stage  X: 変更を捨てる  d…
 ```
 
-⚠️ `clipToWidth` (`render.go`) は**末尾に `…` を付ける**ので、本文に使えるのは 81 桁。
+🚨 `clipToWidth` (`render.go`) は**末尾に `…` を付ける**ので、本文に使えるのは 81 桁。
 `d:` のコロンまで届かず `d` で切れる (初稿は `d:` と書いていたが誤り。反証レビューで訂正)。
 
 切れて**画面に出ないキー** (`dispWidth` での開始位置: `b` = 100 / `p` = 109 / `R` = 128 /
@@ -38,7 +38,7 @@ issues viewer 側には **`TestIssuesViewHintFitsPopupWidth`** (`issues_view_tes
 **status viewer にはその制約が無く、テストも無い**。同じ repo の同じ種類の画面で、片方だけ
 無検査なので、キーを足すたびに末尾が静かに削られていく (今回の `R` 追加がまさにそれ)。
 
-⚠️ さらに、`status_view_test.go` の既存コメント (`TestStatusHintWordsMatchBehavior` の近く) は
+🚨 さらに、`status_view_test.go` の既存コメント (`TestStatusHintWordsMatchBehavior` の近く) は
 **「hint 行は端末幅でクリップされ、テストの 80 桁では末尾が `…` に落ちる」ことを認めた上で**
 `hint()` の戻り値を直接 assert する回避策を取っている。切れている事実は既に知られていて、
 「案内が画面に出るか」を守る側だけが無いということ。
@@ -46,7 +46,7 @@ issues viewer 側には **`TestIssuesViewHintFitsPopupWidth`** (`issues_view_tes
 ## 対応案 (どれを採るかは未決定)
 
 1. **status 側にも幅テストを足し、入らないキーを削る** (issues 側と同じ解決。削ったキーは
-   `--help` / README / `docs/status-viewer-spec.md` を正本にする)。⚠️ 削る候補を選ぶ判断が要る
+   `--help` / README / `docs/status-viewer-spec.md` を正本にする)。🚨 削る候補を選ぶ判断が要る
    — 抜ける手段 (`s`/`q`) を残すのが最優先で、`Space`/`a`/`X` の説明語を短縮する余地がある
 2. **hint を幅で切らずに畳む** (入らない分を `…` にする / 2 段に分ける)。全画面ビューなので
    最下行を 2 行にする余地はあるが、issues viewer と行数の契約が変わる
@@ -77,7 +77,7 @@ popup の実幅 (84) で**抜ける手段が見える**ようになった (こ�
 
 ### 変異検証
 
-5 本すべて red。⚠️ 初回は「組む側だけ予算をずらす」変異が **green** だった — 幅 1 点でしか
+5 本すべて red。🚨 初回は「組む側だけ予算をずらす」変異が **green** だった — 幅 1 点でしか
 見ておらず、その幅ではずれ 2 桁が項目間の余白に吸われて表に出なかった。幅の刻みで走査する
 形に直して検出 (`2b122c7`)。
 
@@ -92,7 +92,7 @@ popup の実幅 (84) で**抜ける手段が見える**ようになった (こ�
 ## 関連
 
 - `d01c52a` — `R` (ratelimit ダッシュボードへの横断) を hint に足した commit。この issue の
-  発見契機。⚠️ `TestStatusRSwitchesToRatelimitDash` は `hint()` の**文字列**に `R: 残量` が
+  発見契機。🚨 `TestStatusRSwitchesToRatelimitDash` は `hint()` の**文字列**に `R: 残量` が
   入ることしか見ておらず、**画面に出るか**は見ていない (この issue が直せば意味を持つ assert)
 - `_claude/rules/no-mixed-width-columns-in-terminal-ui.md` — 「桁は合っているが目には合わない」
   同族。こちらは「桁も合っていない」形

@@ -12,7 +12,7 @@
 変更前は `音ズレ疑い` を出して `-check_ng-avsync-` へリネームし NG を返していた。
 変更後は「packet 実測では正常」と表示して警告を消す。
 
-⚠️ `av1ify --delete-origin` を使っている場合、**元ファイルが trash
+🚨 `av1ify --delete-origin` を使っている場合、**元ファイルが trash
 (ネットワーク FS では `rm`) へ回る**。既定は `__AV1IFY_DELETE_ORIGIN=0` なので
 オプション指定時のみだが、音ズレした出力だけが残る形になりうる。
 
@@ -30,7 +30,7 @@ ffmpeg -y -loglevel error -i src.mp4 -itsoffset 5 -i src.mp4 \
 zsh -c "source <各版の zshlib/_av1ify_postcheck.zsh>; __av1ify_postcheck \$PWD/out-enc.mp4 \$PWD/src.mp4"
 ```
 
-⚠️ postcheck は NG 時にファイルをリネームするので、**版ごとに fixture を作り直す**こと
+🚨 postcheck は NG 時にファイルをリネームするので、**版ごとに fixture を作り直す**こと
 (使い回すと 2 回目が「音声ストリーム検出できず」になる)。
 
 ### ffprobe の宣言値 (ffprobe 8.0.1)
@@ -48,8 +48,8 @@ zsh -c "source <各版の zshlib/_av1ify_postcheck.zsh>; __av1ify_postcheck \$PW
 
 | `_av1ify_postcheck.zsh` の版 | 出力 | リネーム後 |
 |---|---|---|
-| `997d078` (変更前) | `⚠️ チェック警告: 音ズレ疑い (src_delta=0.000000s out_delta=-4.976689s Δ=4.976689s threshold=2.0s), 映像コーデック不一致` | `out-check_ng-`**`avsync`**`-codec-enc.mp4` |
-| **HEAD** | `>> 音ズレ判定: 宣言 duration ベースでは Δ=4.976689s だが packet 実測では Δ=0.000680s のため正常と判定 (ソースの宣言 duration が不正確)`<br>`⚠️ チェック警告: 映像コーデック不一致` | `out-check_ng-codec-enc.mp4` (**avsync が消えた**) |
+| `997d078` (変更前) | `🚨 チェック警告: 音ズレ疑い (src_delta=0.000000s out_delta=-4.976689s Δ=4.976689s threshold=2.0s), 映像コーデック不一致` | `out-check_ng-`**`avsync`**`-codec-enc.mp4` |
+| **HEAD** | `>> 音ズレ判定: 宣言 duration ベースでは Δ=4.976689s だが packet 実測では Δ=0.000680s のため正常と判定 (ソースの宣言 duration が不正確)`<br>`🚨 チェック警告: 映像コーデック不一致` | `out-check_ng-codec-enc.mp4` (**avsync が消えた**) |
 
 コーデック不一致はハーネスが h264 を使っているためのノイズで、avsync 判定とは独立。
 
@@ -66,7 +66,7 @@ src.mp4       v:0 -> 20.000000 / a:0 -> 20.000000
 out2-enc.mp4  v:0 -> 20.000000 / a:0 -> 19.999320
 
 === 997d078 (変更前) ===
-⚠️ チェック警告: 音ズレ疑い (Δ=4.976689s threshold=2.0s)
+🚨 チェック警告: 音ズレ疑い (Δ=4.976689s threshold=2.0s)
 [rc=1]                        → p2-check_ng-avsync-enc.mp4 へリネーム
 
 === HEAD ===

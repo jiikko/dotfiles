@@ -67,7 +67,7 @@
 | ✅ stevearc/conform.nvim  | 整形         | - | 同プラグイン | × | × | いいえ | `:Format`/`<leader>f`。prettier/shfmt、他は `lsp_format=fallback`。 |
 | ✅ mfussenegger/nvim-lint | Lint         | - | 同プラグイン | × | × | いいえ | sh の shellcheck（旧 coc-diagnostic 相当）。他言語は LSP 診断。 |
 | ✅ nvim-treesitter/nvim-treesitter-context | 囲むスコープの固定表示 | 2026-09 導入 | 同プラグイン | × | × | いいえ | **2026-09 ソースリーディング支援として導入**。画面上部に囲んでいる func/if/for を最大 3 行固定。`[C` で外側スコープへジャンプ。vim.treesitter 直叩きなので treesitter main と併用可。 |
-| ✅ stevearc/aerial.nvim | 宣言アウトライン | 2026-09 導入 | 同プラグイン, `hedyhli/outline.nvim` | × | × | いいえ | `<leader>o` サイドバー / `<leader>O` パンくず float。`<leader>gd` (telescope symbols) の常駐版。⚠️ main は nvim 0.12 専用なので `branch = "nvim-0.11"` 固定 (0.12 へ上げたら外す)。 |
+| ✅ stevearc/aerial.nvim | 宣言アウトライン | 2026-09 導入 | 同プラグイン, `hedyhli/outline.nvim` | × | × | いいえ | `<leader>o` サイドバー / `<leader>O` パンくず float。`<leader>gd` (telescope symbols) の常駐版。🚨 main は nvim 0.12 専用なので `branch = "nvim-0.11"` 固定 (0.12 へ上げたら外す)。 |
 | ✅ folke/trouble.nvim | 呼び出し階層 / LSP 一覧 | 2026-09 導入 | 同プラグイン | × | × | いいえ | `<leader>ci`/`<leader>co` = incoming/outgoing calls (gopls callHierarchy)、`<leader>cl` = 定義/参照/実装/呼び出しの 1 ペイン。telescope の `<C-k>` は「飛ぶ」、trouble は「開いたまま辿る」で使い分け。 |
 | ✅ dnlhc/glance.nvim | 定義/参照のピーク | 2026-09 導入 | 同プラグイン, `rmagatti/goto-preview` | × | × | いいえ | `gp`/`gP`/`gI` = 定義/参照/実装をジャンプせずフロートで覗く。1 件なら直接ジャンプ (gd と同じ体感)。 |
 

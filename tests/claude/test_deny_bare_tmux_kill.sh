@@ -13,7 +13,7 @@ HOOK="$ROOT_DIR/_claude/hooks/deny-bare-tmux-kill.sh"
 # 本番の配線 (_claude/settings.json の PreToolUse) と同じ上限。timeout に殺されると hook は
 # 無出力で終わる = 素通りなので、この値を課さないと「ゲートが消える」退行が観測できない。
 HOOK_TIMEOUT=10
-# ⚠️ 「timeout が無いから skip」で**緑を返さない**こと。ここは hook の上限を本番と同じ形で
+# 🚨 「timeout が無いから skip」で**緑を返さない**こと。ここは hook の上限を本番と同じ形で
 #    課す検査で、課せないなら合格でも不合格でもなく **判定不能 = 失敗**として扱う。
 #    実際に事故った: CI を macOS へ移した時点で timeout(1) が無くなり、このファイルの
 #    60 件が丸ごと skip に化けたのに `[ok]` として集計されていた (run 33174901609)。
@@ -34,13 +34,13 @@ SETTINGS="$ROOT_DIR/_claude/settings.json"
 [ -x "$HOOK" ] || { printf '✗ フックに実行権限が無い: %s\n' "$HOOK"; exit 1; }
 [ -f "$SETTINGS" ] || { printf '✗ settings.json が無い: %s\n' "$SETTINGS"; exit 1; }
 
-# ⚠️ 依存コマンドの不在を「配線されていない」と誤診断しないこと (検査不能と防御ゼロは別)。
+# 🚨 依存コマンドの不在を「配線されていない」と誤診断しないこと (検査不能と防御ゼロは別)。
 command -v grep >/dev/null 2>&1 || { printf '✗ grep が無く配線を検査できない\n'; exit 1; }
 grep -q 'deny-bare-tmux-kill.sh' "$SETTINGS" \
   || { printf '✗ settings.json にフックが配線されていない (防御が丸ごと無効)\n'; exit 1; }
 
 if ! command -v jq >/dev/null 2>&1; then
-  # ⚠️ ここを exit 0 (成功) にしないこと。フック本体は jq 不在時 fail-open (= 防御ゼロ) なので、
+  # 🚨 ここを exit 0 (成功) にしないこと。フック本体は jq 不在時 fail-open (= 防御ゼロ) なので、
   # 「防御が完全に無効な環境で All tests passed」と報告する形になる (2026-08-20 の red team)。
   # 判定を検査できないことは失敗として扱い、意図的にスキップする環境では明示させる。
   if [ "${TT_ALLOW_SKIP_JQ:-}" = "1" ]; then
@@ -59,15 +59,15 @@ jq -e '[.hooks.PreToolUse[]? | select((.matcher // "") | test("Bash")) | .hooks[
 printf '✓ settings.json の PreToolUse(Bash) に配線されている\n'
 
 decision() {  # $1=コマンド文字列 → "deny" / "allow" / "error" / "harness-error"
-  # ⚠️ フックの異常終了・壊れた出力を allow に畳まないこと。旧実装は
+  # 🚨 フックの異常終了・壊れた出力を allow に畳まないこと。旧実装は
   #   ... | jq -r '...// empty' | grep . || echo allow
   # で、フックが落ちても jq が失敗しても "allow" になり、「素通り」と「検査できなかった」が
   # 区別できなかった (検査できないときに緑を返す形)。
-  # ⚠️ 本番と同じ timeout を課すこと (_claude/settings.json の PreToolUse は timeout: 10)。
+  # 🚨 本番と同じ timeout を課すこと (_claude/settings.json の PreToolUse は timeout: 10)。
   # 課さないと「入力長で hook が timeout に殺されて deny が消える」= 安全機構が無効化される
   # 退行を観測できない (時間内に終わるかどうかが判定に影響しないため、変異を当てても緑のまま
   # 通る。2026-08-21 に実際にこの形の空回りテストを書いて気づいた)。
-  # ⚠️ コマンド文字列は **argv でなくファイル経由** で jq に渡すこと。--arg に数百 KB を渡すと
+  # 🚨 コマンド文字列は **argv でなくファイル経由** で jq に渡すこと。--arg に数百 KB を渡すと
   # Linux では ARG_MAX を超えて `jq: Argument list too long` になり、しかも失敗を allow に
   # 畳むと「ハーネスが動かなかった」が「素通り」に化ける (CI で実際に踏んだ 2026-08-21。
   # macOS の ARG_MAX は 1MB 級なので手元では再現しなかった = 環境差の罠)。

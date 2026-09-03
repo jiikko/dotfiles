@@ -66,7 +66,7 @@ const (
 )
 
 // RenderTable は複数行モーダル用のヘッダー行とデータ行を、列を揃えて返す。
-// ⚠️ 現在 production の呼び出し元は無い (glogx 本体は罫線を挟むため RenderTableGroups を
+// 🚨 現在 production の呼び出し元は無い (glogx 本体は罫線を挟むため RenderTableGroups を
 // 直接使う)。テストの検証入口と、将来の単独コマンド切り出し用の flat な公開面として残している。
 // 単独コマンド案を捨てるならテストを RenderTableGroups へ寄せてから削除してよい。
 // データ行は残り時間とリセット時刻を " / " で対にし (どの残がどのリセットとペアか明示)、

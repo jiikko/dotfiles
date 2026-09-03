@@ -234,7 +234,7 @@ _tt_impl () {
     if [ -z "${TT_SKIP_REAP:-}" ] && [ -x "$_reap" ]; then "$_reap" 2>/dev/null || true; fi
 
     # tmux サーバはセッションが 1 つも無いと即終了する。復元完了までサーバを生かす hold を置く。
-    # ⚠️ hold の目的は「サーバをセッション 0 個で落とさない」ことだけ。かつてここには
+    # 🚨 hold の目的は「サーバをセッション 0 個で落とさない」ことだけ。かつてここには
     #   「総ペイン数 = 1 で restore_from_scratch が有効化されスクロールバックごと復元される」と
     #   書いてあったが、これは誤り (2026-07-30 の A/B 実測で反証)。スクロールバック復元は
     #   from_scratch と無関係で、new_session/new_window/new_pane が pane_contents_file_exists で
@@ -270,7 +270,7 @@ _tt_impl () {
           # (_tt_gc_stale_holds)・保存抑止 (tt_only_hold_sessions)・「再起動後に hold 名で
           # 復元され次 boot の GC に殺される」問題のすべてから構造的に外れる（旧フラグ方式を
           # 廃止した経緯は _tt_gc_stale_holds のコメント参照）。
-          # ⚠️ ただし復元が実際に進行中（@tt-restore-in-progress が TTL 内）の間は rename
+          # 🚨 ただし復元が実際に進行中（@tt-restore-in-progress が TTL 内）の間は rename
           # しない: rename 済みの実名セッションへ進行中の restore が後から到達すると、
           # from-scratch overwrite 分岐（vendor restore.sh の pane_exists &&
           # is_restoring_from_scratch → new_pane + kill-pane）が attach 中の作業ペインを

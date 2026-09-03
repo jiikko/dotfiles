@@ -69,7 +69,7 @@ section/path/XY の比較なので、**まさにそのケースでは到達し�
 caller は内容が変わりうる契機で自分で `clearEntries` する」)。3 者のうち diff と job 詳細は
 契約を満たし、`statusView.preview` だけが満たさない、という非対称も明記した。
 
-### ⚠️ 敵対的レビューが「修正が目的を達していない」ことを示した (P1)
+### 🚨 敵対的レビューが「修正が目的を達していない」ことを示した (P1)
 
 **`statusPreviewMsg` は 4 兄弟で唯一 `gen` を持っていなかった** (`statusLoadMsg` /
 `statusPollMsg` / `statusPreviewTickMsg` は全部持つ)。`tui.go` は世代も `visible()` も見ずに
@@ -108,7 +108,7 @@ gen ガードを外す / 捨てるとき札を降ろさない / `r` で `gen++` 
 `r` から `loadCmd` を落とす / `r` を修正前へ / `finishClose` の `clearEntries` を削る /
 同 `clearBusy` を削る / `changed` の早期 return を壊す。
 
-⚠️ 途中で**変異が別の同名箇所に当たっていた**ことに気づいた (`if msg.gen != v.gen {` が
+🚨 途中で**変異が別の同名箇所に当たっていた**ことに気づいた (`if msg.gen != v.gen {` が
 `receive` と `receivePreview` の 2 箇所にあり、先頭マッチを掴んでいた)。
 「green のまま」を検知力不足と誤診しかけた。**変異が意図した箇所に当たったかを確認すること。**
 

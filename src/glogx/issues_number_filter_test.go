@@ -36,7 +36,7 @@ func numbersOf(rows []*issues.Issue) string {
 	return strings.Join(out, ",")
 }
 
-// 部分一致で絞り込む。⚠️ タブ (カテゴリ) と状態フィルタの両方を無視する: 番号で引くのは
+// 部分一致で絞り込む。🚨 タブ (カテゴリ) と状態フィルタの両方を無視する: 番号で引くのは
 // 「その issue へ飛びたい」ときで、done だから出てこないのでは用を成さない。
 func TestIssuesNumberFilterMatchesAcrossTabsAndStatuses(t *testing.T) {
 	v := filteringView(t, "41", numbered()...)
@@ -62,7 +62,7 @@ func TestIssuesNumberFilterBackspaceWidensAgain(t *testing.T) {
 	}
 }
 
-// 入力中は数字以外の印字文字を捨てる。⚠️ 一覧のキーとして実行しない: 打った文字で画面が動くと
+// 入力中は数字以外の印字文字を捨てる。🚨 一覧のキーとして実行しない: 打った文字で画面が動くと
 // 「検索語を打っただけで何かが起きた」状態になる (将来タイトル検索を足すと j/k も検索語になる)。
 func TestIssuesNumberFilterTypingSwallowsListKeys(t *testing.T) {
 	v := filteringView(t, "4", numbered()...)
@@ -126,7 +126,7 @@ func TestIssuesNumberFilterEscUnfiltersBeforeClosing(t *testing.T) {
 	}
 }
 
-// viewer を閉じ切ったら絞り込みは捨てる。⚠️ q / Esc は 1 段戻るだけ (絞り込みを解いて viewer は
+// viewer を閉じ切ったら絞り込みは捨てる。🚨 q / Esc は 1 段戻るだけ (絞り込みを解いて viewer は
 // 残る) だが、i は 1 段戻さず閉じる。ここで捨てないと次に開いた viewer が絞り込まれたまま始まる。
 func TestIssuesNumberFilterIsDroppedWhenViewerCloses(t *testing.T) {
 	v := filteringView(t, "41", numbered()...)
@@ -144,7 +144,7 @@ func TestIssuesNumberFilterIsDroppedWhenViewerCloses(t *testing.T) {
 	}
 }
 
-// ⚠️ 再スキャン (r / 見張り) を跨いでも絞り込みが残る。行集合を作るのが refresh の 1 箇所で
+// 🚨 再スキャン (r / 見張り) を跨いでも絞り込みが残る。行集合を作るのが refresh の 1 箇所で
 // ないと、絞り込みヘッダーを出したままタブの行へ黙って戻る。
 func TestIssuesNumberFilterSurvivesRescan(t *testing.T) {
 	v := filteringView(t, "41", numbered()...)

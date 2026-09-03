@@ -38,7 +38,7 @@ cooldown の判定が `now.Sub(LastNotifiedAt) < cooldown` で書かれている
 (`src/glogx/doctor_cache.go`)。`LastNotifiedAt` が未来なら「cooldown 明け」として扱う。
 `loadDoctorSnapshot` と `doctorReuseFrom` は既に `age < 0` を弾いており、**ここだけが非対称**だった。
 
-⚠️ **安全側の向きは場所によって違う**ので、コメントに明示した。`cooledDown` は「未来なら通知する
+🚨 **安全側の向きは場所によって違う**ので、コメントに明示した。`cooledDown` は「未来なら通知する
 (安全側 = 沈黙しない)」に倒すが、同じセッションで一度入れた `saveCache` の `fresh` 判定は
 「未来なら保護しない (危険側)」に倒れていた。判定の形が似ているぶん取り違えやすい
 (敵対レビュー 2026-09-03 の指摘。`fresh` は別の理由で撤回したので現在は存在しない)。

@@ -41,7 +41,7 @@ unset CDPATH
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 
-# render pane の pane_id を列挙する。⚠️ 同一性は**スクリプト名**で見る (絶対パス完全一致に
+# render pane の pane_id を列挙する。🚨 同一性は**スクリプト名**で見る (絶対パス完全一致に
 # しないこと)。worktree や tmp のコピーから起動した panel はパスが違うため、完全一致では
 # 自分のものと認識できず掃討も save-hide も掴めない。実測 2026-08-21: 本番 window に孤児
 # panel が 6 枚・6〜7 日累積し、最新スナップショットに pane 行 6 本 + floating layout が
@@ -69,7 +69,7 @@ REFRESH_SECS=2      # 描画ループの更新間隔
 # busy 窓の秒数 (3 秒) は読み手側 (bin/tmux-toast / tmux_resurrect_debounced_save.sh の
 # AGENT_PANEL_QUIET_SECS) が持つ。ここは書くだけ (epoch)
 
-# now_epoch は現在の epoch を REPLY へ入れる。⚠️ echo で返さない / date を呼ばない:
+# now_epoch は現在の epoch を REPLY へ入れる。🚨 echo で返さない / date を呼ばない:
 # `$(date +%s)` は 1 回ごとに fork+exec になり、描画 tick (行数に比例) と window 切替 hook の
 # 両方に乗る (rules/zsh-hook-return-via-reply.md と同思想)。bash 5+ の $EPOCHSECONDS は
 # 組み込みなので 0 fork。素の macOS /bin/bash (3.2) だけ date へ落ちる。
@@ -84,14 +84,14 @@ mark_busy() { now_epoch; tmux set-option -g @agent_panel_busy "$REPLY" 2>/dev/nu
 panel_pane() { tmux show-option -gqv @agent_panel_pane 2>/dev/null; }
 panel_on()   { [ "$(tmux show-option -gqv @agent_panel_on 2>/dev/null)" = "1" ]; }
 
-# ⚠️ exit code でなく出力で判定する: display-message -p -t <消滅した pane> は
+# 🚨 exit code でなく出力で判定する: display-message -p -t <消滅した pane> は
 # stderr に "can't find pane" を吐きつつ exit 0 で空行を返す (tmux 3.7b 実測)
 pane_alive() { [ -n "${1:-}" ] && [ -n "$(tmux display-message -p -t "$1" '#{pane_id}' 2>/dev/null)" ]; }
 
 pane_window() { tmux display-message -p -t "$1" '#{window_id}' 2>/dev/null; }
 
 # @claude_state 持ち pane の一覧 (tab 区切り: state, session:index, pane_title)。
-# ⚠️ 名前は window_name でなく pane_title を使う: window_name は「その window の
+# 🚨 名前は window_name でなく pane_title を使う: window_name は「その window の
 # アクティブ pane のタイトル」なので、同一 window に複数エージェントが居ると
 # 全行が同じ名前になる (全部 "Auth0" 表示になった実発 2026-08-08)。pane_title は
 # pane 単位 (claude が ✳ 付きで自セッション名をセットする) なので区別できる
@@ -111,7 +111,7 @@ list_agents() {
 }
 
 # epoch → 短い相対時間 ("45s"/"12m"/"3h"。不正/未設定は空) を REPLY へ。
-# ⚠️ 出力で返さない (呼び出しごとに $( ) = fork。行数に比例して増える)。現在時刻も引数で
+# 🚨 出力で返さない (呼び出しごとに $( ) = fork。行数に比例して増える)。現在時刻も引数で
 # 受ける: tick あたり 1 回だけ取れば済むものを行ごとに測り直さない。
 rel_time() {
   local since="$1" now="$2" d
@@ -126,7 +126,7 @@ rel_time() {
 }
 
 # panel の一意性は @agent_panel_pane の記録でなく「render を実行中の pane を全部消す」
-# 掃討で強制する。⚠️ 記録だけを kill する実装に戻さないこと: 並走した follow
+# 掃討で強制する。🚨 記録だけを kill する実装に戻さないこと: 並走した follow
 # (client-attached / client-session-changed / after-select-window は popup 開閉で同時に
 # 発火する) が panel を二重作成すると、記録から漏れた孤児が prefix+a で消せず残る
 # (scratch:5 に孤児が残った実発 2026-08-08)
@@ -268,10 +268,10 @@ ensure_unfocused() {
 # pane-exited / after-select-pane hook から呼ばれる (無音契約)。render の 2 秒 tick も
 # 同じ関数で自衛するが、hook 経由は「pane が閉じた / 移動で乗った直後」に即発火するので
 # フォーカスがパネルに居る時間を最小化できる。
-# ⚠️ 弾き返しの select-pane が after-select-pane を再発火させるが、2 回目はパネルが
+# 🚨 弾き返しの select-pane が after-select-pane を再発火させるが、2 回目はパネルが
 # 非アクティブで ensure_unfocused が即 return するため 1 段で収束する
 cmd_unfocus() {
-  # ⚠️ @agent_panel_pane の記録だけを見ない (kill_panel と同じ掃討方式で render 実行中の
+  # 🚨 @agent_panel_pane の記録だけを見ない (kill_panel と同じ掃討方式で render 実行中の
   # pane を全列挙する)。記録依存だと、follow の並走で記録から漏れた孤児 panel に
   # フォーカスが乗ったとき誰も弾かない (敵対レビュー指摘 2026-08-11)。
   # なお resurrect 復元後の「render 無しの素 shell 残骸」はここでも対象外 (KNOWN LIMITATION)
@@ -320,7 +320,7 @@ cmd_save_show() {
 
 # state 文字列 → ソート優先度 / 256 色を REPLY へ。色は _tmux.conf の @claude-state-fg と
 # 同じ意味の対応 (input=203 / working=220 / seen=244 / idle=10)。
-# ⚠️ echo で返さない: 行ごとに $( ) = fork になり、表示行数に比例して積み上がる
+# 🚨 echo で返さない: 行ごとに $( ) = fork になり、表示行数に比例して積み上がる
 # (この repo は tmux-continuum の status interpolation を「5〜10 fork/秒は基準に合わない」と
 # して捨てているので、自分の常駐 panel が同じ形をしていてはいけない)。
 state_rank() {
@@ -349,7 +349,7 @@ draw_once() {
   # フォーカス自衛 (hook 経由の即時版が取りこぼした経路の保険。ensure_unfocused 参照)
   [ "${active:-0}" = "1" ] && [ -n "${TMUX_PANE:-}" ] && ensure_unfocused "$TMUX_PANE"
 
-  # ⚠️ この関数は 2 秒ごとに回る常駐ループなので、行ごとに $( ) を作らない (fork が表示行数に
+  # 🚨 この関数は 2 秒ごとに回る常駐ループなので、行ごとに $( ) を作らない (fork が表示行数に
   # 比例して積み上がる。issue 083)。件数の集計・ソート用の feed 作り・行の組み立ては
   # 1 パスの bash 組み込み (printf -v / REPLY 返しのヘルパー) だけで済ませる。
   local feed="" state loc name since cur
@@ -380,7 +380,7 @@ draw_once() {
       # 場所を行頭・固定幅・シアンに置く (「どこに居るエージェントか」が縦に揃って
       # 一目で読めるように。loc は ASCII 前提なので printf の桁揃えがセル幅と一致する)。
       # 経過時間 (状態が claude hook に書かれてからの時間) は %-4s で state の直後。
-      # 今表示中の pane (cur=1) は行全体に背景を敷いて強調する。⚠️ この行は途中で
+      # 今表示中の pane (cur=1) は行全体に背景を敷いて強調する。🚨 この行は途中で
       # \e[0m を使わない (フル reset は背景も消す。\e[22m/\e[39m で bold/fg だけ戻す)。
       # 行末も reset しない: 出力ループの \e[K が背景色のまま行末まで塗ってから
       # \e[0m する (reset を先にすると強調がテキスト幅で切れる)
@@ -407,7 +407,7 @@ draw_once() {
   # \e[K → \e[0m の順が重要: ハイライト行 (cur=1) は行末に背景色を残したまま来るので、
   # \e[K が背景色で行末まで塗った後に reset して次行へ漏らさない
   printf '\e[H'
-  # ⚠️ `printf '%s' "$out" | while read` にしないこと (パイプがサブシェル = 1 fork)。
+  # 🚨 `printf '%s' "$out" | while read` にしないこと (パイプがサブシェル = 1 fork)。
   # here-string はこのシェル内で回る。末尾改行は落とす (残すと空行を 1 本余計に描く)
   while IFS= read -r line; do
     printf '%s\e[K\e[0m\n' "$line"
@@ -417,7 +417,7 @@ draw_once() {
   # 🔔 input が 1 件でもあればパネル自体の背景を暗赤にして周辺視で気づけるようにする
   # (bell シアン反転 / zoom 暗赤と同じ「色面で知らせる」思想)。fork+tmux 呼び出しなので
   # 毎 tick ではなく変化したときだけ叩く。
-  # ⚠️ select-pane -P で書かないこと: select-pane はたとえ -P 目的でも対象 pane を
+  # 🚨 select-pane -P で書かないこと: select-pane はたとえ -P 目的でも対象 pane を
   # アクティブにする (3.7b 実測 2026-08-11)。input 遷移のたびにパネルがフォーカスを
   # 奪い全 pane が dim する実発バグの原因だった。set-option -p window-style は
   # フォーカスに一切触れない (同実測で style 適用とアクティブ不変を確認済み)
@@ -441,7 +441,7 @@ cmd_render() {
 
 # ---- main -------------------------------------------------------------------
 
-# ⚠️ source されたときは関数を定義するだけで dispatch しない。tests/tmux/bench_tmux.sh の
+# 🚨 source されたときは関数を定義するだけで dispatch しない。tests/tmux/bench_tmux.sh の
 # agent_panel_tick_forks が draw_once を**同じプロセスで**呼んで子プロセス数 (fork) を数えるため
 # (別プロセスで実行すると親からは子 1 個にしか見えず、tick 内の fork が観測できない)。
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then

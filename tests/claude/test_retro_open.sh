@@ -47,7 +47,7 @@ check() { # $1=説明 $2=期待パターン (grep -E、空なら無出力を期�
     [ -z "$got" ] && return 0
     echo "NG: $desc — 何も出さないはずが出力された:"; printf '%s\n' "$got"; fails=$((fails + 1)); return
   fi
-  # ⚠️ パイプに戻さないこと (pipefail + grep -q の EPIPE で判定が反転する)。
+  # 🚨 パイプに戻さないこと (pipefail + grep -q の EPIPE で判定が反転する)。
   # 経緯は tests/claude/test_human_tasks_due.sh の同じ箇所のコメント。
   grep -Eq "$want" <<<"$got" && return 0
   echo "NG: $desc — /$want/ が出力に無い:"; printf '%s\n' "${got:-(無出力)}"; fails=$((fails + 1))
@@ -139,7 +139,7 @@ case "$1" in
   # exec で呼ぶと最初の /bin/date にプロセスが置き換わり、失敗しても || の後段が走らない
   # (host が GNU date の Linux では -j が非 0 で終わり、スタブが常に失敗していた)
   -d)
-    # ⚠️ 時刻つきの形を先に試す。BSD の -f は寛容で、'%Y-%m-%d' に
+    # 🚨 時刻つきの形を先に試す。BSD の -f は寛容で、'%Y-%m-%d' に
     # "2026-09-01 00:00:00" を渡すと**日付だけ読んで時刻は今の時刻で埋める**ため、
     # 順序を逆にすると GNU date のふりをしながら壁時計を混ぜてしまう
     out=$(/bin/date -j -f '%Y-%m-%d %H:%M:%S' "$2" +%s 2>/dev/null) \
@@ -200,7 +200,7 @@ check "番号なしは拾わない" "" "$(report env | grep 'nonum-retro-slug' |
 rm -f "$repo/issues/nonum-retro-slug.md"
 
 # --- 18. jq が無い環境でも .cwd を捨てず、素のテキストで報告する ---
-# ⚠️ .cwd を捨てて $PWD に落ちると「別 repo の issues を報告する」= 黙って間違う
+# 🚨 .cwd を捨てて $PWD に落ちると「別 repo の issues を報告する」= 黙って間違う
 nojq="$WORK/nojq"; mkdir -p "$nojq"
 # bash / env も入れる (hook の shebang が `env bash` なので PATH から消すと 127 になる)
 for c in bash env dirname cat git date grep sed awk tr sort cut basename; do

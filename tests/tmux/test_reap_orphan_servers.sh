@@ -70,7 +70,7 @@ trap 'exit 130' INT TERM
 command -v "$TMUX_BIN_PATH" >/dev/null 2>&1 || { print -u2 "tmux not found (set \$TMUX_BIN)"; exit 1; }
 [[ -x "$REAP" ]] || fail "reap script not found/executable: $REAP"
 # ---- 静的検査 (実 tmux / lsof を要さないので gate より前に置く) ----------------------------
-# ⚠️ この位置を gate の下へ動かさないこと。lsof が無い CI では gate で exit 0 するため、
+# 🚨 この位置を gate の下へ動かさないこと。lsof が無い CI では gate で exit 0 するため、
 # 下に置いた検査は**一度も走らない**。実測 2026-08-21: 保護の実装を revert しても CI は緑で、
 # 退行を止める力が 0 だった (規範: _claude/rules/adversarial-review-own-safeguards.md の
 # 「その機構が CI で実際に走るか、同じ commit で確認する」)。
@@ -79,7 +79,7 @@ command -v "$TMUX_BIN_PATH" >/dev/null 2>&1 || { print -u2 "tmux not found (set 
 # (実測: 既定値を壊す変異で E は緑のまま通った)。既定値そのものを検査して閉じる。
 grep -q 'TT_REAP_PROTECT_SOCKS' "$REAP" \
   || fail "E-2: 保護リストの seam (TT_REAP_PROTECT_SOCKS) が無い"
-# ⚠️ '/tmp/tmux-$uid/default' で grep すると '/private/tmp/...' に部分一致して、/tmp 版が
+# 🚨 '/tmp/tmux-$uid/default' で grep すると '/private/tmp/...' に部分一致して、/tmp 版が
 # 消えても緑になる (実測)。引用符直後の形で厳密に見る。
 grep -q '"/tmp/tmux-\$uid/default' "$REAP" \
   || fail "E-2: 既定の保護リストに本番の default socket (/tmp 表記) が含まれていない"

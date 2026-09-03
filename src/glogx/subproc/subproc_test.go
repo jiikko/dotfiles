@@ -6,7 +6,7 @@ import (
 )
 
 // CommandContext が WaitDelay を張ることを固定する。
-// ⚠️ これが緩むと issue 105 の再発 (出力を取る実行で Wait が戻らなくなる) を誰も検知できない。
+// 🚨 これが緩むと issue 105 の再発 (出力を取る実行で Wait が戻らなくなる) を誰も検知できない。
 func TestCommandContextSetsWaitDelay(t *testing.T) {
 	cmd := CommandContext(context.Background(), "true")
 	if cmd.WaitDelay != WaitDelay {

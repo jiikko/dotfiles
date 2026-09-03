@@ -37,7 +37,7 @@ func run(argv []string) int {
 		return 0
 	}
 	// 支持しない幅 env は黙って壊れさせず、起動時に一度警告する (issue 054)。
-	// ⚠️ TUI は alt screen へ入るので、対話モードではこの行は終了後に見えることになる。
+	// 🚨 TUI は alt screen へ入るので、対話モードではこの行は終了後に見えることになる。
 	// 主な発火先である CI / 非 TTY 実行では stderr にそのまま残る。
 	if widthenv.EastAsianAmbiguous() {
 		// 🚨 (U+1F6A8、常に 2 桁) を使う。VS16 付きの警告記号は端末で幅が割れるため
@@ -78,7 +78,7 @@ func runLog(opts *Options, colored, isTTY bool) int {
 	// IME の現在ソースもここで先に取得し、切替は TUI 開始直前の finish() で行う。取得・切替・
 	// 終了時の復元はすべて TIS 直接呼び出しで、外部プロセスは起動しない (ime.go)。
 	// 対話ブラウズにならない経路 (非 TTY / --no-pager) では IME を触らないので開始もしない。
-	// ⚠️ 「1 画面に収まるので静的出力」のショートカット (下の interactive 再判定) に落ちる場合は
+	// 🚨 「1 画面に収まるので静的出力」のショートカット (下の interactive 再判定) に落ちる場合は
 	// 問い合わせが空振りするが、read-only で副作用は無い。
 	var ime *imeSwitch
 	if isTTY && !opts.NoPager {
@@ -203,12 +203,12 @@ func runLog(opts *Options, colored, isTTY bool) int {
 		fmt.Fprintln(os.Stderr, model.ghErr.Warning())
 	}
 	if model.restartRequested {
-		// ⚠️ exec はプロセスを置き換えるので、上に積んだ defer は 1 つも走らない。IME 復元と
+		// 🚨 exec はプロセスを置き換えるので、上に積んだ defer は 1 つも走らない。IME 復元と
 		// 走行中 subprocess の後始末をここで明示的に済ませてから渡す。特に IME を戻さないと、
 		// 次のプロセスが「英数」を元の入力ソースだと記憶し、最終的に英数へ置き去りにする。
 		restore()
 		browse.cancelAll()
-		// ⚠️ **cancelAll と restartSelf の間で看取る** (issue 211)。syscall.Exec はプロセス像を
+		// 🚨 **cancelAll と restartSelf の間で看取る** (issue 211)。syscall.Exec はプロセス像を
 		// 置き換えるので、cancel で起きた kill の watchdog goroutine ごと消える。ここで待たないと
 		// brew の子孫が新しいプロセス像の子として走り続ける。上に積んだ defer
 		// (waitPullCleanup / waitDoctorCleanup) は exec では 1 つも走らないため、明示で呼ぶ
@@ -228,7 +228,7 @@ func runLog(opts *Options, colored, isTTY bool) int {
 // 中で動いており、親が終わると popup ごと閉じて子だけが行き場を失う。exec なら pid も端末も
 // そのまま引き継がれる。
 //
-// ⚠️ GO_AUTOBUILD_PENDING は落とす。shim が「裏でビルドを spawn した」印として立てるもので、
+// 🚨 GO_AUTOBUILD_PENDING は落とす。shim が「裏でビルドを spawn した」印として立てるもので、
 // 完成後の再起動へ引き継ぐと、新しいプロセスが終わったビルドを待ち続けて「ビルド中」を出す。
 func restartSelf() error {
 	exe := selfExePath()

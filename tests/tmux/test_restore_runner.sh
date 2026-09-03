@@ -79,7 +79,7 @@ assert_not_called "restore ran" "未解決時は何も実行しない"
 printf '✓ restore.sh 未解決: 記録のみで無害終了\n'
 
 # --- (4) 先任が実行中なら復元しない (tt_lock_acquire rc=1) -------------------------------
-# ⚠️ この rc 分岐は issue 078 の統合で新設したもので、**どのテストからも踏まれていなかった**
+# 🚨 この rc 分岐は issue 078 の統合で新設したもので、**どのテストからも踏まれていなかった**
 #   (敵対レビューの指摘)。`|| tt_lock_rc=$?` を `&& ...` に変える 1 文字のタイポで lock を
 #   取らないまま restore.sh を走らせる = 二重復元になるが、旧 3 ケースは全部 green のまま通る。
 reset_calls; : > "$LOG"
@@ -96,7 +96,7 @@ printf '✓ 先任が実行中: 復元せず skip を記録\n'
 
 # --- (5) lock を取れないなら復元しない (tt_lock_acquire rc=2) ----------------------------
 if [ "$(id -u)" = 0 ]; then
-  printf '⚠ root では書き込み不可ディレクトリを作れないため lock 取得失敗のテストを skip した\n'
+  printf '🚨 root では書き込み不可ディレクトリを作れないため lock 取得失敗のテストを skip した\n'
 else
   reset_calls; : > "$LOG"
   RO_STATE="$TMP_DIR/rstate_ro"; rm -rf "$RO_STATE"; mkdir -p "$RO_STATE"; chmod 500 "$RO_STATE"

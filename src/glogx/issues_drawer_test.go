@@ -56,7 +56,7 @@ func TestDrawerPhasesAndWidth(t *testing.T) {
 	}
 }
 
-// targetWidth は比率 + 固定の上乗せ。⚠️ 上乗せのための下限で「上乗せ前より狭くなる」ことは
+// targetWidth は比率 + 固定の上乗せ。🚨 上乗せのための下限で「上乗せ前より狭くなる」ことは
 // 起きてはいけない (ユーザー要望で広げたのに狭くなる本末転倒)。
 func TestDrawerTargetWidth(t *testing.T) {
 	var d issuesDrawer
@@ -199,7 +199,7 @@ func TestComposeDrawer(t *testing.T) {
 	if a, b := strings.Index(narrow[0], "▏"), strings.Index(out[0], "▏"); a <= b {
 		t.Errorf("板が左へ動いていない: 幅 6 の左辺=%d, 幅 10 の左辺=%d", a, b)
 	}
-	// ⚠️ 区切りに "│" を使わない (本文のスクロールバーと隣り合って "││" に見える)
+	// 🚨 区切りに "│" を使わない (本文のスクロールバーと隣り合って "││" に見える)
 	if strings.Contains(out[0], "│") {
 		t.Errorf("スクロールバーと紛らわしい区切りを使っている: %q", out[0])
 	}
@@ -234,7 +234,7 @@ func TestIssuesViewDrawerIntegration(t *testing.T) {
 	if !strings.Contains(stripANSI(out), v.open.Rel) {
 		t.Errorf("本文のヘッダーが出ていない:\n%s", out)
 	}
-	// ⚠️ 下地は一覧のヘッダー (タブ) であって本文のヘッダーではない
+	// 🚨 下地は一覧のヘッダー (タブ) であって本文のヘッダーではない
 	if strings.Count(stripANSI(out), v.open.Rel) != 1 {
 		t.Errorf("本文のヘッダーが下地にも出ている:\n%s", out)
 	}

@@ -69,7 +69,7 @@ EXIT=2
 $ git checkout -- tests/nvim/bench_nvim.sh
 ```
 
-⚠️ 5f4eef9 のコミットメッセージにある検証「zsh テストへ構文エラー → `zsh -n` fail」は、
+🚨 5f4eef9 のコミットメッセージにある検証「zsh テストへ構文エラー → `zsh -n` fail」は、
 **変異先が sort 順 1 本目のときにしか再現しない**。この検証が通ったこと自体が、
 本件を見逃した理由になっている (`mutation-verify-new-tests.md` の失敗例)。
 
@@ -103,7 +103,7 @@ make: *** [test-dir] Error 1
    (環境依存で skip されるテストほど危ない)
 3. **bench 2 本はローカル `make test` では一切走らない**。ここは lint だけが頼り
 
-⚠️ shellcheck 側 (39 本) は全数が正常に検査されている (6 本目に注入して SC1046/SC1072 で赤を確認済み)。
+🚨 shellcheck 側 (39 本) は全数が正常に検査されている (6 本目に注入して SC1046/SC1072 で赤を確認済み)。
 
 ## 同じファイルのもう 1 つの false green (16 行目)
 

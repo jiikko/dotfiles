@@ -242,7 +242,7 @@ func TestToastStackBoxLinesOrder(t *testing.T) {
 	}
 }
 
-// 進行中トースト (…シアン) は新しい通知が来たら退く。⚠️ 積んだままにすると「PR を検索中...」の
+// 進行中トースト (…シアン) は新しい通知が来たら退く。🚨 積んだままにすると「PR を検索中...」の
 // 下に結果が並び、終わったのに検索中と書いてある状態が数秒残る (実測 2026-07-31)。
 func TestToastInfoIsSupersededByResult(t *testing.T) {
 	var s toast
@@ -378,7 +378,7 @@ func TestToastBoxLinesRespectsMaxLines(t *testing.T) {
 	}
 }
 
-// 溢れたときの追い出しは重要度を見る。⚠️ 年齢だけで捨てると、起動時の警告の後に成功通知が
+// 溢れたときの追い出しは重要度を見る。🚨 年齢だけで捨てると、起動時の警告の後に成功通知が
 // 3 回来ただけで警告が消える (実測 2026-08-13。issue 028 P2 が要求していた
 // 「重要度 error > info の逆転を防ぐ」が、スタック化後は満たされていなかった)。
 func TestToastEvictionKeepsWarningOverSuccess(t *testing.T) {
@@ -425,7 +425,7 @@ func TestToastEvictionFallsBackToAgeWhenAllWarnings(t *testing.T) {
 }
 
 // 描画予算に入らないときも、落とす順は追い出しと同じ規則にする。
-// ⚠️ 保持と表示で規則が違うと「保持はしているのに重要な通知だけ画面に出ない」状態になる
+// 🚨 保持と表示で規則が違うと「保持はしているのに重要な通知だけ画面に出ない」状態になる
 // (実測 2026-08-13: 警告の後に成功通知が来た狭い端末で、警告が 1 行も描かれなかった)。
 func TestToastBoxLinesKeepsWarningWithinBudget(t *testing.T) {
 	var s toast
@@ -450,13 +450,13 @@ func TestToastBoxLinesKeepsWarningWithinBudget(t *testing.T) {
 	if !strings.Contains(out, "ok2") {
 		t.Errorf("最新が描かれない:\n%s", out)
 	}
-	// ⚠️ 残す枚の並びは元のまま (上が新しい)。重要な枚を上へ繰り上げない
+	// 🚨 残す枚の並びは元のまま (上が新しい)。重要な枚を上へ繰り上げない
 	if strings.Index(out, "ok2") > strings.Index(out, "未 push") {
 		t.Errorf("並び順が入れ替わっている (上が新しいという読み方が崩れる):\n%s", out)
 	}
 
 	// 1 枚ぶんの予算では最新 1 枚だけ (既存の不変条件: 見えない通知より覆う通知)。
-	// ⚠️ 行数だけの assert にしない: 最新が落ちて古い警告が残っても行数は同じ 4 行で通る。
+	// 🚨 行数だけの assert にしない: 最新が落ちて古い警告が残っても行数は同じ 4 行で通る。
 	// 実際この fixture は issue 057 のバグ (最新 ok2 が消え「未 push」だけが描かれる) を
 	// 再現していたのに、行数 assert だったため green を返し続けていた
 	one := strings.Join(s.boxLines(false, toastBoxLines), "\n")

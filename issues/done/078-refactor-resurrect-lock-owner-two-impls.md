@@ -68,7 +68,7 @@ lock 周辺 (guards.sh / periodic_save / watchdog / resurrect_save の lock 節)
 
 `tt_save_proc_starttime` (save 側の独立実装) を削除し、`tt_proc_starttime` (guards.sh) に寄せた。
 
-⚠️ **書式が実際に食い違っていた**ことを実測で確認した:
+🚨 **書式が実際に食い違っていた**ことを実測で確認した:
 
 | | 出力 |
 |---|---|
@@ -79,7 +79,7 @@ save 側は owner 行を `read -r owner_pid owner_start` で**空白分割**し�
 混ざると先頭語 (`火`) だけが記録され比較が壊れる。統合先は **正規化する側 (save の書式)** を採り、
 guards の `tt_proc_starttime` が正規化するようにした。
 
-⚠️ 2 系統は lock dir が別 (`$TT_SAVE_STATE_DIR/lock` と `$TT_PERIODIC_STATE_DIR/*.lock`) なので、
+🚨 2 系統は lock dir が別 (`$TT_SAVE_STATE_DIR/lock` と `$TT_PERIODIC_STATE_DIR/*.lock`) なので、
 この drift は**潜在**で実害は出ていなかった。068 と同じ「出典が 2 つある」状態を閉じたのが本質。
 
 ### 移行ガード (誤奪の防止)
@@ -92,7 +92,7 @@ guards の `tt_proc_starttime` が正規化するようにした。
 - save `tt_save_owner_is_stale`: 正規化済みトークンは必ず `_` を含むので、含まない記録は
   「同定不能」に落として **mtime hard TTL backstop** に委ねる (奪わない側へ倒す)
 
-### ⚠️ 一本化だけでは守られなかった (変異検証)
+### 🚨 一本化だけでは守られなかった (変異検証)
 
 統合直後に変異を当てたところ、**5 本中 4 本が green のまま通った**:
 起動時刻の比較を `return 0` に潰す / 移行ガードを外す / 死亡 pid チェックを外す /
@@ -109,7 +109,7 @@ lock の owner 書式を変える。**guards.sh 側の指紋比較を触るテ�
 挙動変更**で、保存停止 (掃除しすぎ) か誤奪 (掃除の条件が緩む) のどちらかを作りうる。指紋の
 統合とは独立に判断できるので分けた。
 
-⚠️ また、save 側の `tt_save_owner_is_stale` を guards の `tt_lock_owner_alive` で**置き換えては
+🚨 また、save 側の `tt_save_owner_is_stale` を guards の `tt_lock_owner_alive` で**置き換えては
 いけない**ことも確認した。guards 側は「起動時刻が取れない環境」で fail-open (= 生存扱い) のまま
 永久に待つが、save 側にはそこに **mtime hard TTL backstop** がある。置き換えると PID 再利用時に
 全保存経路が exit 1 を繰り返す (= 保存停止) 経路が復活する。**判定の骨格は共有、政策層は save

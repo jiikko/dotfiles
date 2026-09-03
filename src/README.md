@@ -13,7 +13,7 @@
    (issue 080)。ローカルの `make test`（コミット前検証）に自動で組み込まれる
 3. **`.github/workflows/src_<name>.yml` を作成**
    paths filter 付きの専用 workflow で lint / test を回す（プロジェクトに触れた push だけで起動）。
-   ⚠️ paths filter 付き check を branch protection の **required check に登録しないこと**（非接触 PR では run が生成されず、check が永遠に pending になる）
+   🚨 paths filter 付き check を branch protection の **required check に登録しないこと**（非接触 PR では run が生成されず、check が永遠に pending になる）
 
 補足:
 

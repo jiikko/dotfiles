@@ -3,7 +3,7 @@ package main
 // issue 本文の「引き出し (drawer)」演出。issue を選ぶと本文が画面の右外から飛び出して左へ
 // 滑り込み、画面の 8 割を占めて止まる。閉じるときは同じ動きの逆再生 (ユーザー要望 2026-07-31)。
 //
-// ⚠️ 幅を 0 から伸ばす実装にしない: それは「ページが開く」動きであって「飛び出してくる」動きに
+// 🚨 幅を 0 から伸ばす実装にしない: それは「ページが開く」動きであって「飛び出してくる」動きに
 // ならない (最初の実装がこれで、イメージと違うと指摘を受けた)。板は最終幅のまま位置だけを
 // 動かし、画面外から入ってくるように見せる。
 //
@@ -28,14 +28,14 @@ const (
 	// issuesDrawerMinList は左に残す一覧の最小幅 (溝 + 番号 = "→ 014 " が見える程度)。本文が
 	// 画面を食い切って「どこから開いたか」が消えるのを防ぐ下限。
 	issuesDrawerMinList = 8
-	// issuesDrawerMaxPeek は左に残す一覧の最大幅。⚠️ 比率だけで決めると画面が広いほど一覧が
+	// issuesDrawerMaxPeek は左に残す一覧の最大幅。🚨 比率だけで決めると画面が広いほど一覧が
 	// 場所を食う: popup は端末幅の 90% (_tmux.conf) なので、312 桁の端末では一覧に 50 桁超を
 	// 割いていた (ユーザー報告 2026-07-31「まだ一覧が見えている」)。覗き見に要るのは「どの行から
 	// 開いたか」が分かる幅だけなので、番号・状態・カテゴリが見える 18 桁で止める
 	// ("→ 014 ○ research" = 18)。以降の幅は全部本文へ回す。
 	issuesDrawerMaxPeek = 18
 	// issuesDrawerDuration は開閉の所要時間。開く演出 (issuesAnimDuration) より速いのは、
-	// issue を次々に見るときに往復 1.4s は待たされる感じになるため。⚠️ 変えるならここ 1 箇所。
+	// issue を次々に見るときに往復 1.4s は待たされる感じになるため。🚨 変えるならここ 1 箇所。
 	issuesDrawerDuration = 225 * time.Millisecond
 )
 
@@ -51,7 +51,7 @@ const (
 
 // issuesDrawer は本文引き出しの開閉アニメの状態。zero value = 閉じている。
 //
-// ⚠️ 閉じる演出のあいだ本文 (issuesView.open / body) を消してはいけない: 逆再生で中身が
+// 🚨 閉じる演出のあいだ本文 (issuesView.open / body) を消してはいけない: 逆再生で中身が
 // 見えている必要がある。実際の破棄は演出が着地してから (issuesView.settleDrawer)。
 type issuesDrawer struct {
 	phase   drawerPhase
@@ -143,7 +143,7 @@ func (d *issuesDrawer) targetWidth(total int) int {
 	// (比率のままだと一覧が伸びてしまう)。
 	peek := max(min(total-(ratioOnly+issuesDrawerExtra), issuesDrawerMaxPeek), issuesDrawerMinList)
 	w := total - peek
-	// ⚠️ 比率ぶんより狭くはしない — 覗き見の下限が効いて「広げたのに本文が狭くなる」のは本末転倒
+	// 🚨 比率ぶんより狭くはしない — 覗き見の下限が効いて「広げたのに本文が狭くなる」のは本末転倒
 	// (総幅 20 桁で 16 → 12 に縮む実測)。狭い端末では覗き見が minList を下回る方を選ぶ。
 	return max(w, ratioOnly)
 }
@@ -180,7 +180,7 @@ func composeDrawer(base, panel []string, w, total int, colored bool) []string {
 		w = total
 	}
 	left := total - w // 板の左辺 = 一覧が見えている幅
-	// ⚠️ 区切りに "│" を使わない: 本文の pager はスクロールバーを右端に "│" で描くので、
+	// 🚨 区切りに "│" を使わない: 本文の pager はスクロールバーを右端に "│" で描くので、
 	// 隣り合って "││" になり壊れて見える (実測)。細いブロックなら板の縁として区別できる。
 	sep := paint("▏", ansiDim, colored)
 	out := make([]string, len(base))
@@ -199,7 +199,7 @@ func composeDrawer(base, panel []string, w, total int, colored bool) []string {
 		if left < total {
 			line += sep
 		}
-		// 板は左辺から見えていく = 本文の左側から現れる。⚠️ clipToWidth でなく truncateKeepANSI:
+		// 板は左辺から見えていく = 本文の左側から現れる。🚨 clipToWidth でなく truncateKeepANSI:
 		// 前者は末尾に "…" を付けるので、滑り込み中の全行に "…" が並んで「切れている」ように見える。
 		vis := truncateKeepANSI(p, max(w-1, 0))
 		if colored {

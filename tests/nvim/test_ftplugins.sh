@@ -145,7 +145,7 @@ guard("go ftplugin check", function()
 
   -- (3) capture が実解決し ]] が実際にカーソルを次関数へ動かすか (非破壊)。
   --     parser 未 install の環境では flaky を避けて skip する。
-  --     ⚠️ CI は**構造的に常にこちら**: .github/actions/setup-nvim が DOTFILES_TS_SKIP_ENSURE=1 で
+  --     🚨 CI は**構造的に常にこちら**: .github/actions/setup-nvim が DOTFILES_TS_SKIP_ENSURE=1 で
   --     parser を入れない (コンパイラ不在の runner で 31 個の DL+ビルドを撒かないため)。つまり
   --     この assert は手元 (parser を入れた環境) でしか走らない。走ったか否かを呼び出し側が
   --     判定できるよう、どちらの経路でもマーカーを出す (nvim のログは失敗時しか表示されない
@@ -170,7 +170,7 @@ end)
 EOF
 
   _run_headless_lua "$lua_file" "$log_file"
-  # ⚠️ 走行の有無をテスト自身の出力に出す。nvim のログは失敗時しか表示されないので、
+  # 🚨 走行の有無をテスト自身の出力に出す。nvim のログは失敗時しか表示されないので、
   # 「skip したこと」がどこにも出ないと未検証を検証済みと読み違える (issue 082)。
   # マーカーが無い = ハーネスが壊れた (判定不能) なので、pass にも skip にも丸めず落とす。
   if grep -q 'TS_BEHAVIOR_ASSERT=ran' "$log_file"; then

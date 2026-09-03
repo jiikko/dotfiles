@@ -180,7 +180,7 @@ func simRuntimes(ctx context.Context, run runner.Runner) ([]simRuntime, error) {
 // CFBundleIdentifier を集める。mdfind (Spotlight) は使わない: インデックス欠落で実在するアプリを「無い」と
 // 答えた実例がある。
 //
-// ⚠️ 直下の .app だけを見ると偽陽性になる (敵対レビュー 2026-09-02 P1): `/Applications/Adobe Acrobat DC/
+// 🚨 直下の .app だけを見ると偽陽性になる (敵対レビュー 2026-09-02 P1): `/Applications/Adobe Acrobat DC/
 // Adobe Acrobat.app` のようにフォルダに入った app、app 内蔵の appex / XPC / LoginItems は別の bundle id で
 // コンテナを持つ。走査は深さ上限つきで bundle の中にも入る。
 // 走査できないディレクトリがあれば error (fail-closed: 孤児判定をしない)。存在しない dir は無視。
@@ -213,7 +213,7 @@ func collectBundleIDs(dir string, depth int, ids map[string]bool) error {
 // collectVisits は collectBundleIDs が実際に降りたディレクトリ数 (テスト専用の計測点)。
 // 巡回検出が効いているかを**壁時計でなく回数**で判定するため (avoid-wall-clock-assertions)。
 //
-// ⚠️ **atomic である必要がある** (issue 214)。以前は「走査は単一 goroutine から呼ばれるので
+// 🚨 **atomic である必要がある** (issue 214)。以前は「走査は単一 goroutine から呼ばれるので
 // 素の int でよい」と書いていたが、その前提は **1 回の走査の中**でしか成立しない
 // (`guards.do` の sync.Once は走査ごとの instance に属する)。走査が 2 つ同時に走ると
 // package 変数だけが共有され、`-race` がデータ競合として落とす (実測 2026-09-03:
@@ -281,7 +281,7 @@ func collectBundleIDsSeen(dir string, depth int, ids map[string]bool, seen map[[
 // issue 167 (b): Contents/ しか読んでいなかったので、後ろ 2 つの bundle id が集まらず、
 // そのアプリのコンテナが孤児と判定されていた。
 func readBundleID(bundle string, ids map[string]bool) {
-	// ⚠️ **bundle のパスを glob パターンに素で埋めない**。`MyApp [Beta].app` のように名前に
+	// 🚨 **bundle のパスを glob パターンに素で埋めない**。`MyApp [Beta].app` のように名前に
 	// メタ文字が入ると `[Beta]` が文字クラスとして解釈され、そのアプリの bundle id が集まらない。
 	// 結果は「拾いすぎ」(安全側) ではなく**拾わなすぎ**で、実在するアプリのコンテナが孤児候補に
 	// 出る = issue 167 が塞ごうとした症状の再発 (敵対レビュー 2026-09-03 で実測)。
@@ -443,7 +443,7 @@ func effectiveVMRoot(env Env, tool string) (string, error) {
 	// 空のまま filepath.Join に渡すと ".anyenv/envs/<tool>" や ".<tool>" という**相対パス**が
 	// でき、比較が必ず外れて現役の root を孤児と判定する (実測 2026-09-03)。
 	//
-	// ⚠️ この検査は canonicalPath の HOME 検査に対して**冗長** (相対パスはあちらでも弾かれるので、
+	// 🚨 この検査は canonicalPath の HOME 検査に対して**冗長** (相対パスはあちらでも弾かれるので、
 	// 外しても変異テストは green のまま)。それでも残すのは、下の `os.Stat` を**相対パスのまま
 	// cwd 基準で走らせないため**: cwd にたまたま `.anyenv/envs/<tool>` があると、無関係な
 	// ディレクトリを見て分岐が変わる。冗長さを理由に外すなら、その stat の副作用を先に潰すこと
@@ -457,7 +457,7 @@ func effectiveVMRoot(env Env, tool string) (string, error) {
 	return canonicalPath(env, filepath.Join(env.Home, "."+tool))
 }
 
-// canonicalPath は比較用の正規化 (~ 展開 / 絶対化 / symlink 解決)。⚠️ 削除対象の決定には使わない
+// canonicalPath は比較用の正規化 (~ 展開 / 絶対化 / symlink 解決)。🚨 削除対象の決定には使わない
 // (EvalSymlinks はリンク先を指す。ここは「同じ場所か」の比較にだけ使う)。環境変数が相対や ~ 付きでも
 // 現役 root を孤児にしない (敵対レビュー 2026-09-02 P3)。
 //

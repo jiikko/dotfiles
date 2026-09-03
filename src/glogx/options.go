@@ -181,7 +181,7 @@ func Usage() string {
         このヘルプを表示する
 
 対話ブラウズのキー操作 (TTY のみ。Ctrl-F は全ビューで → の別名。
-⚠ 本家 glog と異なり Ctrl-B の ← 別名は無い):
+🚨 本家 glog と異なり Ctrl-B の ← 別名は無い):
   b                         git push (y/N 確認つき。未 push が無ければ警告のみ。
                             diff 表示中の b はスクロールのまま)
   u                         git pull --rebase (y/N 確認つき。成功で一覧を再読込。

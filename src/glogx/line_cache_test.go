@@ -110,7 +110,7 @@ func TestLineCacheRestoreDoesNotDuplicateOrder(t *testing.T) {
 
 // clearEntries は中身だけ捨てて取得中の札を残す。
 //
-// ⚠️ 回帰防止 (セルフレビュー 2026-08-05): lineCache へ集約したとき、statusView の
+// 🚨 回帰防止 (セルフレビュー 2026-08-05): lineCache へ集約したとき、statusView の
 // 「外部編集で古い diff を捨てる」経路を reset() にしてしまい、走行中の取得の札まで降ろしていた。
 // あの経路は直後に取り直しを予約するので、札が無いと同じキーを二重に取りに行く (git diff が
 // 2 本走る)。移行前は cache と order だけを捨てていたので、これは移行で入れた挙動変化だった。

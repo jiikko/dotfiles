@@ -31,11 +31,11 @@ const (
 	// 対になる export は bin/lib/go_autobuild.zsh。名前を変えるなら両方直すこと。
 	autobuildPendingEnv = "GO_AUTOBUILD_PENDING"
 	// autobuildFailedStamp はビルド失敗の記録ファイル名 (go_autobuild.zsh が書く)。
-	// ⚠️ 中身 (失敗した入力の指紋) はここでは読まない。使うのは存在と mtime だけ。
+	// 🚨 中身 (失敗した入力の指紋) はここでは読まない。使うのは存在と mtime だけ。
 	autobuildFailedStamp = ".autobuild.failed"
 	// autobuildRevStamp はビルド元の tree hash の記録 (go_autobuild.zsh が書く。診断用)。
 	// これがあると「古い版で動いています」に「どの版が動いているか」を添えられる。
-	// ⚠️ stale の判定には使わない (判定は shim 側の指紋。理由は go_autobuild.zsh の doc)。
+	// 🚨 stale の判定には使わない (判定は shim 側の指紋。理由は go_autobuild.zsh の doc)。
 	autobuildRevStamp = ".autobuild.rev"
 	// autobuildLockDir はビルド中を示す lock ディレクトリ名 (go_autobuild.zsh が mkdir する)。
 	// autobuildFailedStamp と同じく shim との取り決めなので、名前を変えるなら両方直すこと。
@@ -120,7 +120,7 @@ var selfExePath = func() string {
 // shim を経ずバイナリを直接起動する。原因を 1 つずつ塞ぐのではなく「ソースの方が新しい」という
 // 1 つの事実へ還元する (issue 033)。
 //
-// ⚠️ shim の env で判定しない: env が立つのは「backoff が再挑戦を止めている瞬間」だけなので、
+// 🚨 shim の env で判定しない: env が立つのは「backoff が再挑戦を止めている瞬間」だけなので、
 // TTL 超過で再挑戦した経路・shim を経ずバイナリを直接起動した経路・別セッションが撒いた失敗を
 // 取りこぼす。ファイルという事実そのものを見れば、どの経路でも同じ結論になる。
 func autobuildStaleBinary(exePath string) bool {
@@ -148,7 +148,7 @@ func autobuildStaleBinary(exePath string) bool {
 
 // autobuildSourcesNewer は dir 配下のソースが binAt (自バイナリ) より新しいかを返す。
 //
-// ⚠️ 「ソース」の定義は go_autobuild.zsh の再帰 glob と揃える (**/*.go から _test.go を除く +
+// 🚨 「ソース」の定義は go_autobuild.zsh の再帰 glob と揃える (**/*.go から _test.go を除く +
 // 直下の go.mod / go.sum)。食い違うと「shim は再ビルドしないのに glogx は古いと言う」矛盾、
 // あるいはその逆 (黙って旧版に固定) が出る。片方を変えたら両方直すこと。
 func autobuildSourcesNewer(dir string, binAt time.Time) bool {
@@ -266,7 +266,7 @@ func (w *autobuildWatch) tickCmd() tea.Cmd {
 // handle は観測結果を状態へ反映し、「今トーストで出すべき結果」を返す。期限切れは無言で監視を
 // 終える。戻り値 keepWatching が true なら呼び出し側は tickCmd を張り直す。
 //
-// ⚠️ 以前はトーストが塞がっているとき (busy) 結果を保持して次の tick で出し直していた。トーストが
+// 🚨 以前はトーストが塞がっているとき (busy) 結果を保持して次の tick で出し直していた。トーストが
 // 積めるようになった (toast の doc) ので、その調停は不要になり引数から落とした。pending は
 // 「起動直後に出す『ビルド中』を Init まで運ぶ」役だけを担う。
 func (w *autobuildWatch) handle(res autobuildResult, now time.Time) (out autobuildResult, notify, keepWatching bool) {
@@ -275,7 +275,7 @@ func (w *autobuildWatch) handle(res autobuildResult, now time.Time) (out autobui
 	}
 	// 完成は伝える。以前は無言だった (開始時に「次回起動で反映」と伝えているため二度言うことに
 	// なる) が、その場で再起動できるようになったので意味が変わった: 「次回起動で反映」は待ちの
-	// 案内、完成は行動できる合図。⚠️ 出し方はトーストでなく再起動を促すダイアログ (呼び出し側)。
+	// 案内、完成は行動できる合図。🚨 出し方はトーストでなく再起動を促すダイアログ (呼び出し側)。
 	// 数秒で消えるトーストだと、目を離している間に行動の機会だけが消える。
 	if res == autobuildInstalled {
 		w.active = false
@@ -306,7 +306,7 @@ func (w *autobuildWatch) handle(res autobuildResult, now time.Time) (out autobui
 // autobuildRunningRev は「動いているバイナリがどこから作られたか」を短く返す (" (tree abc1234)")。
 // 記録が無ければ空文字 — shim を経ずに置かれたバイナリや、この記録が入る前のビルドで起きる。
 //
-// ⚠️ 判定には使わない。tree hash はコミット済みの内容しか見ないので「今より新しいか」は
+// 🚨 判定には使わない。tree hash はコミット済みの内容しか見ないので「今より新しいか」は
 // 言えない (未コミットの編集が見えない)。ここで言えるのは「どの版か」だけで、それで十分:
 // 追う人が git show でその tree を辿れる。
 func autobuildRunningRev(exePath string) string {
@@ -344,7 +344,7 @@ func spawnAutobuildCmd() tea.Cmd {
 // autobuildShimPath は go_autobuild.zsh のパス ("" = 使えない)。
 //
 // バイナリは shim が src_dir 直下へ置く取り決め (autobuildFailedStamp の在り処と同じ前提) なので、
-// そこから repo 内の既知の位置を辿る。⚠️ 見つからなければこの機能ごと黙って諦める: shim を経ない
+// そこから repo 内の既知の位置を辿る。🚨 見つからなければこの機能ごと黙って諦める: shim を経ない
 // 起動や別レイアウトへコピーされたバイナリでも glogx 本体は動き続けるべきで、再ビルドの自動化は
 // あくまで付加価値 (fail-open)。
 func autobuildShimPath(exePath string) string {
@@ -360,7 +360,7 @@ func autobuildShimPath(exePath string) string {
 
 // spawnAutobuild は shim の go_autobuild_spawn_if_stale を呼び、裏ビルドが起動したかを返す。
 //
-// ⚠️ stale の判定 (指紋) と backoff (同じ入力での再挑戦抑制) を Go 側へ写経しない。shim が正本で、
+// 🚨 stale の判定 (指紋) と backoff (同じ入力での再挑戦抑制) を Go 側へ写経しない。shim が正本で、
 // 二重に実装すると必ずずれる。多重起動は shim の lock が防ぐので、走行中に呼んでも安全。
 // テストで実 zsh を叩かないための差し替え点として var。
 var spawnAutobuild = func(exePath string) bool {
@@ -381,7 +381,7 @@ var spawnAutobuild = func(exePath string) bool {
 func autobuildToast(res autobuildResult) (text string, ok bool) {
 	switch res {
 	case autobuildStarted:
-		// ⚠️ 「次回起動で反映」とは書かない: 完成したら再起動ダイアログを出すので、その場で
+		// 🚨 「次回起動で反映」とは書かない: 完成したら再起動ダイアログを出すので、その場で
 		// 反映できる (起動時に spawn された分も pull 後に spawn した分も同じ)。
 		return "新しい glogx をビルド中 (完成したら再起動を案内します)", true
 	case autobuildInstalled:

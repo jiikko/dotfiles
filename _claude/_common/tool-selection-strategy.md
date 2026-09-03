@@ -2,7 +2,7 @@
 
 This is a shared template for all agents.
 
-> ⚠️ **agent 定義から `@` 参照しても展開されない** (実測 2026-09-02: `architecture-reviewer` に
+> 🚨 **agent 定義から `@` 参照しても展開されない** (実測 2026-09-02: `architecture-reviewer` に
 > 自分の instructions を引用させたところ、`See @../_common/language-adaptation.md for guidelines.`
 > の 1 行がリテラルのまま届いており、この文書の中身は一切効いていなかった)。
 > **この文書は人が読む正本であって、agent への配布経路ではない**。agent 定義には中身を

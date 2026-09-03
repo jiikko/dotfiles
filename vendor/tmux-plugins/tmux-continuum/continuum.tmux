@@ -30,7 +30,7 @@ _status_right='' _status_left=''
 
 read_server_state() {
 	# display-message -F は user option (#{@x}) と組み込み値を安全に読める。
-	# ⚠️ display-message は出力中の改行を "_" に置換するため複数行 format は使えない
+	# 🚨 display-message は出力中の改行を "_" に置換するため複数行 format は使えない
 	#   (実測でハマった)。スカラー値 (version/epoch/on-off) は ";" 区切りの 1 行で読む
 	#   (これらの値に ";" は現れない)。status-right/left は値に任意の format 文字列を
 	#   含むため区切り文字が衝突しうる。show-option -gqv の行で読む (グローバル

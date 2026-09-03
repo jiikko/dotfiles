@@ -7,7 +7,7 @@ package main
 // 価値があるので残したまま、**不変条件そのもの**は newDirWatcher seam へフェイクを差して
 // どの環境でも走る形で固定する (skip を消して「CI で走っている」ことにはしない)。
 //
-// ⚠️ 各検査は v.watch.w がフェイクであることを最初に確かめる。将来 startWatch が seam を
+// 🚨 各検査は v.watch.w がフェイクであることを最初に確かめる。将来 startWatch が seam を
 // 通らなくなったら、この検査は「実 fsnotify が要る = CI では skip」へ静かに戻ってしまうため。
 
 import (
@@ -104,7 +104,7 @@ func (f *fakeWatcher) addCount(dir string) int {
 
 // emit はイベントを 1 本流す (実 fsnotify の代わり)。
 //
-// ⚠️ 送信までロックを持ったままにする。closed を読んでから解錠して送ると、その隙間に Close が
+// 🚨 送信までロックを持ったままにする。closed を読んでから解錠して送ると、その隙間に Close が
 // 入って「閉じたチャネルへの送信」で panic する (red team が 2000 回ループで再現)。events は
 // バッファ 16 で、ドレインするのは検査対象のコードだけ (Add/Close/WatchList はチャネルを読まない)
 // なので、ロックを持ったままの送信でデッドロックしない。
@@ -119,7 +119,7 @@ func (f *fakeWatcher) emit(ev fsnotify.Event) {
 
 // fakeWatcherSeam は newDirWatcher をフェイクへ差し替え、そのフェイクを返す。
 //
-// ⚠️ seam は 2 つの見張り (issues / git log) の共用なので、1 つのテストで両方を起動すると
+// 🚨 seam は 2 つの見張り (issues / git log) の共用なので、1 つのテストで両方を起動すると
 // **同じフェイクを 2 つが掴んでイベントチャネルを取り合う**。両方を動かすテストを書くなら
 // フェイクを見張りごとに分けること。
 func fakeWatcherSeam(t *testing.T) *fakeWatcher {
@@ -155,7 +155,7 @@ func TestIssuesWatchReAddsRecreatedDirWithoutFsnotify(t *testing.T) {
 	if err := os.MkdirAll(done, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// ⚠️ 空ディレクトリは watch 対象にならない (FindDirs は markdown を含むものだけ拾う)
+	// 🚨 空ディレクトリは watch 対象にならない (FindDirs は markdown を含むものだけ拾う)
 	writeIssue(t, filepath.Join(done, "000-feat-old.md"), "# 000 feat: old\n", time.Now().Add(-time.Hour))
 	v := openedWatchView(t, root, path)
 	fw := requireFake(t, v)
@@ -200,7 +200,7 @@ func TestIssuesWatchEventPathWithoutFsnotify(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("イベント待ちの Cmd が作れない")
 	}
-	// ⚠️ 先に走らせて「イベントが来るまで返らない」ことを確かめる。emit の後で走らせると、
+	// 🚨 先に走らせて「イベントが来るまで返らない」ことを確かめる。emit の後で走らせると、
 	// select を消して即座に指紋を返す実装でも緑になる (指紋は emit 前の書き込みを拾うため)。
 	// 待ちの検査は片側だけ厳しい: ブロックしている実装は絶対に早く返らないので、CI が遅くても
 	// 偽の失敗にはならない (偽の成功に倒れるだけ)。
@@ -245,7 +245,7 @@ func TestIssuesWatchEventPathWithoutFsnotify(t *testing.T) {
 // 回帰 (リーク監査 2026-08-01) を CI でも走らせる版: ポーリング由来の観測でイベント待ちの札まで
 // 降ろすと、観測 1 回につきイベント待ちの goroutine が 1 本積み上がる。
 //
-// ⚠️ liveEventChains の 300ms 窓は、この検査が CI (ubuntu-slim) で初めて無条件に走る箇所になる。
+// 🚨 liveEventChains の 300ms 窓は、この検査が CI (ubuntu-slim) で初めて無条件に走る箇所になる。
 // 極端な混雑下での flaky は理論上否定できないが、CPU 飽和 + GOMAXPROCS=1 + -race で 80 回
 // 回しても再現しなかった (red team 実測 2026-08-21)。実際に intermittent な失敗が出たら、
 // 窓を広げる推測ベースの防御ではなく「チャネル close の完了を ack で同期する」形へ直すこと。

@@ -143,7 +143,7 @@ local function set_autocmds()
   vim.filetype.add({
     extension = { tf = "terraform", tfvars = "terraform" },
     filename = { Schemafile = "ruby" },
-    -- ⚠️ pattern に ^ / $ を書かないこと: vim.filetype.add は登録時にキーを '^..$' で
+    -- 🚨 pattern に ^ / $ を書かないこと: vim.filetype.add は登録時にキーを '^..$' で
     -- 自動的に包む (nvim 0.11 filetype.lua M.add "implicitly anchored")。自分で $ を
     -- 付けると '$$' = リテラル $ 要求に化けて一切マッチしなくなる (実測でハマった)
     pattern = {

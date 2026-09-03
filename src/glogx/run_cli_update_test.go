@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// runCLIUpdate は成功時にも CLI 出力の末尾行を返す。⚠️ ここが空だと呼び出し側は
+// runCLIUpdate は成功時にも CLI 出力の末尾行を返す。🚨 ここが空だと呼び出し側は
 // before == after の理由を語れず、「CLI が更新をサボった」を「最新版です」と誤訳する経路が
 // 復活する (実測 2026-09-03 の codex の症状)。run*Update を差し替えるテストは updateMsg より
 // 手前を通らないので、この配線はここでだけ検証できる。

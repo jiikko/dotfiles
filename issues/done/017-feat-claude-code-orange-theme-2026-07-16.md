@@ -20,7 +20,7 @@ Claude / Anthropic 系としてよく知られる色 (公式パレットの出�
 | Coral (Claude ブランドの橙) | `#D97757` | **173** (#d7875f) | 18 | 現在地アクセント |
 | Book Cloth | `#CC785C` | 173 | 19 | (Coral と同枠。173 が両方の近似) |
 | Kraft | `#D4A27F` | **180** (#d7af87) | 16 | 選択テキスト (Visual) |
-| Manilla | `#EBDBBC` | **223** (#ffd7af) | 24 | 明るい文字色。⚠️ gruvbox light1 (#ebdbb2) とほぼ同色 = 既存 palette と自然に調和する |
+| Manilla | `#EBDBBC` | **223** (#ffd7af) | 24 | 明るい文字色。🚨 gruvbox light1 (#ebdbb2) とほぼ同色 = 既存 palette と自然に調和する |
 | Claude 暗背景 | `#1F1E1D` | **234** (#1c1c1c) | **4** | 地色 |
 | Claude 暗背景2 | `#262624` | **235** (#262626) | **2** | バー地 |
 
@@ -55,11 +55,11 @@ Claude / Anthropic 系としてよく知られる色 (公式パレットの出�
 |---|---|---|---|
 | ターミナル地/字/カーソル | (既定 or 手動設定) | 地 `#1F1E1D` / 字 `#EBDBBC` / カーソル `#D97757` | Terminal.app プロファイル (下記) |
 | **現在地** (tmux 島 + nvim 選択タブ) | ショッキングピンク #ff00af/199 | **Coral `#D97757`/173** (黒字 bold は維持) | `@cur-accent` + `palette.accent.current_pink` (対で。ガイドライン記載のペア) |
-| アクティブ pane の地 (素シェル) | 紺 colour17 | `bg=terminal` (層1 の warm 地を透過。「アクティブ=暖色そのまま / 非アクティブ=無彩 234 で冷ます」の対比に反転)。⚠️ **Phase 1 の対象は window-active-style のみ**。colour17 は他に message-command-style / copy-mode-match-style / scratch popup 内側 (`tmux_scratch_popup.sh -s bg=colour17`。_tmux.conf コメントが「active pane と同色で統一」と明記する意図的設計) でも使われており、それらは Phase 1 では「システム紺」として残す (下記 Phase 2 参照)。`bg=terminal` の受理は tmux 3.7b 実機で確認済み (set→show 読み戻し OK。透過の見た目はプロファイル適用後に目視) | `window-active-style` + 周辺コメント (_tmux.conf の window-style 説明 401-407 行付近は「アクティブ=濃紺」前提の記述なので同時更新) |
+| アクティブ pane の地 (素シェル) | 紺 colour17 | `bg=terminal` (層1 の warm 地を透過。「アクティブ=暖色そのまま / 非アクティブ=無彩 234 で冷ます」の対比に反転)。🚨 **Phase 1 の対象は window-active-style のみ**。colour17 は他に message-command-style / copy-mode-match-style / scratch popup 内側 (`tmux_scratch_popup.sh -s bg=colour17`。_tmux.conf コメントが「active pane と同色で統一」と明記する意図的設計) でも使われており、それらは Phase 1 では「システム紺」として残す (下記 Phase 2 参照)。`bg=terminal` の受理は tmux 3.7b 実機で確認済み (set→show 読み戻し OK。透過の見た目はプロファイル適用後に目視) | `window-active-style` + 周辺コメント (_tmux.conf の window-style 説明 401-407 行付近は「アクティブ=濃紺」前提の記述なので同時更新) |
 | 選択テキスト (Visual) | ローズ #d3869b/175 | **Kraft `#D4A27F`/180** (暖色系で基調に馴染ませる) | `palette` に kraft 追加 + Visual 参照差し替え |
 
 - 現在地の色名は実態に合わせ **`current_pink` → `current_accent` に rename** する。
-  ⚠️ rename は key 変更なので参照は自動追従しない (値だけ変えるなら palette 1 箇所で済むが、
+  🚨 rename は key 変更なので参照は自動追従しない (値だけ変えるなら palette 1 箇所で済むが、
   名前が pink のまま嘘になる)。追従対象の全サイト (2026-07-16 時点の grep 実測):
   `palette.lua` (定義 + accent コメント) / `_nviminit.lua` (Visual 分離コメント + bufferline
   selected 4 entry) / `_tmux.conf` (@cur-accent のペアコメント) / `docs/theme-colors.md` (4 参照)。
@@ -71,12 +71,12 @@ Claude / Anthropic 系としてよく知られる色 (公式パレットの出�
 
 | ロール | 現行 | 案 | 備考 |
 |---|---|---|---|
-| 最近作業 fade | シアン ramp 51→23 | **採用 (ユーザー決定 2026-07-16): バイオレット ramp 201→164→127→90→53** (cube の r=b 対角。算術 `16+37L` = 既存シアン式の係数 7→37 の差し替えのみで基数 16 は共通。`@fade-hot-bg` も同式で自動導出)。メタファーは**黄昏の残光**: 橙の陽 (いまここ) が沈んだ場所に紫の残光が残り、闇 (地) へ溶けていく | fg 閾値の再調整が必要 (90/53 の暗い 2 段は黒字が読めない → 明灰の適用範囲を広げる)。⚠️ hot 201 は現行の「システム magenta 家族」と同色 — 下の衝突解消とセットで適用する |
+| 最近作業 fade | シアン ramp 51→23 | **採用 (ユーザー決定 2026-07-16): バイオレット ramp 201→164→127→90→53** (cube の r=b 対角。算術 `16+37L` = 既存シアン式の係数 7→37 の差し替えのみで基数 16 は共通。`@fade-hot-bg` も同式で自動導出)。メタファーは**黄昏の残光**: 橙の陽 (いまここ) が沈んだ場所に紫の残光が残り、闇 (地) へ溶けていく | fg 閾値の再調整が必要 (90/53 の暗い 2 段は黒字が読めない → 明灰の適用範囲を広げる)。🚨 hot 201 は現行の「システム magenta 家族」と同色 — 下の衝突解消とセットで適用する |
 | **通知 (bell)** | 橙 208 | **採用 (ユーザー決定): シアン 51** (セル反転 = bg51×黒字)。fade から解放されたシアンを「稀なイベントの ping」へ転用する — 常在させると浮いた寒色が、たまにしか出ない通知なら最強の目立ち役になる | `window-status-format` の bell 分岐 / `window-status-bell-style` の 2 箇所。copy-mode-mark-style (208) は別役割なので据え置き可 |
 | システム magenta 201 家族 (衝突解消) | message-style / mode-style / copy-mode-current-match / blink / scratch チップ・枠 | **推奨: メッセージ系をシアン家族へ** — message-style → bg51×黒 (alert-bell 帯も message-style 経由なので bell セルと自動で揃う ✓) / copy-mode-current-match → bg51×黒 / mode-style (copy-mode 選択) → bg45 等のシアン系。「シアン=システム/通知」に意味を集約し、fade hot 201 との衝突を根から消す | blink (PREFIX/SCRATCH) と scratch のチップ/popup 枠の 201 は「scratch の視覚アイデンティティ (ピンク)」なのでライブ判断: 紫 fade と紛れるなら 213 (#ff87ff 明ピンク) へずらす。全 201 サイト: status-left blink×3 / status-format[1] チップ / message-style / mode-style / current-match / scratch popup 枠 (grep: colour201) |
 | 〃 (不採用に降格) | — | ゴールド ramp 220→178→136→94→52 (`10+42L`) / アンバー (bell 衝突) / イエロー (尾が olive) | バイオレット採用により代替案へ。ゴールドは bell をシアンへ移した後なら衝突なしで復活可能な第2候補 |
 | 一時メッセージ/点滅 | マゼンタ 201 | 維持 (システム色として対比を残す)。徹底するなら 166 (#d75f00) | message-style / status-left の blink 3 箇所 (@blink-phase 参照側) / copy-mode current match |
-| システム紺 (colour17 家族) | message-command-style 地 / copy-mode-match 地 / scratch popup 内側 | 維持 (シアン字との組が確立したシステム配色)。徹底するなら 234/235 へ寄せる | `message-command-style` / `copy-mode-match-style` / `scripts/tmux_scratch_popup.sh` の `-s bg=colour17` (⚠️ scratch は「active pane の紺と同色統一」の意図コメントがあり、Phase 1 で active 紺を廃止すると統一根拠が消える→コメント更新 or 同時に変える。docs/tmux-as-platform.md の記述例 2 箇所も追従) |
+| システム紺 (colour17 家族) | message-command-style 地 / copy-mode-match 地 / scratch popup 内側 | 維持 (シアン字との組が確立したシステム配色)。徹底するなら 234/235 へ寄せる | `message-command-style` / `copy-mode-match-style` / `scripts/tmux_scratch_popup.sh` の `-s bg=colour17` (🚨 scratch は「active pane の紺と同色統一」の意図コメントがあり、Phase 1 で active 紺を廃止すると統一根拠が消える→コメント更新 or 同時に変える。docs/tmux-as-platform.md の記述例 2 箇所も追従) |
 | アクティブ pane 枠 | 緑 46 | 維持 (「稼働中」の意味色。warm 地に補色で立つ)。徹底するなら Coral 173 | pane-active-border-style / ACTIVE 帯 |
 | tmux バー地 | 235 | 維持 (≒#262624)。徹底するなら `status-style bg=default` で層1 透過 | prefix 点滅の bg 反転との干渉をライブ確認 |
 | nvim 地 (256色) | retrobox 234 | 維持 (≒#1F1E1D)。徹底するなら `hl.set("Normal", { ctermbg = "NONE" })` で層1 透過 | 透過は scrollview/vimade 等の bg 前提を崩しうるのでライブ確認必須 |
@@ -152,7 +152,7 @@ fade をバイオレットへ移行した後の ramp サンプル:
 - **Terminal.app プロファイルは repo 外の状態**を持つ (書き出しで mac/ に保存して緩和)。
   truecolor 端末 (別マシン) では層1 が無いので、truecolor 側の warm 地は gruvbox の
   `#282828` のまま (これも warm。差は許容) か、Phase 2 で Normal bg を #1F1E1D に上書き
-- ⚠️ このテーマ変更は見た目の大改修。**Phase 1 だけ入れて数日運用 → Phase 2 を判断**を推奨
+- 🚨 このテーマ変更は見た目の大改修。**Phase 1 だけ入れて数日運用 → Phase 2 を判断**を推奨
 
 ## 関連
 

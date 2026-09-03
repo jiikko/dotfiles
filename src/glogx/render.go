@@ -27,7 +27,7 @@ const (
 	ansiCursorBg = "\x1b[48;5;24m"
 	// ansiScreenBg は全画面 ratelimit ダッシュボードだけが敷く地の色 (256 色の黒 16)。
 	//
-	// ⚠️ 「端末の既定の背景」に戻す (\x1b[49m) では解決しない場面のための固定色。scratch popup は
+	// 🚨 「端末の既定の背景」に戻す (\x1b[49m) では解決しない場面のための固定色。scratch popup は
 	// display-popup 自身が `-s bg=colour17` (濃紺) を敷いており、**その popup では既定の背景が
 	// 濃紺**なので既定へ戻しても青いままになる (scripts/tmux_scratch_popup.sh)。
 	// ユーザー要望 2026-09-01: 全画面の残量表示だけは地色を固定したい。
@@ -42,7 +42,7 @@ const (
 	// 同じ色で、glogx も「ふだんの pane とは別の一時的な板」であることを色で示す
 	// (ユーザー要望 2026-07-25「scratch tmux terminal みたいに色をつけたい」)。
 	//
-	// ⚠️ 色番号は theme/colors.yml の blink_magenta が出典。変えるなら yml 側と揃えること
+	// 🚨 色番号は theme/colors.yml の blink_magenta が出典。変えるなら yml 側と揃えること
 	// (yml は機械可読な単一ソースで、tests/theme/test_theme_colors.sh が tmux/nvim 側の
 	// 定数との一致を検証している。glogx は Go で定数を共有できないため手書きコピーになる)。
 	ansiFrameBorder = "\x1b[38;5;201m"
@@ -553,7 +553,7 @@ func clipMeasure(line string, width int) (string, int) {
 // git log --color は短縮形 `ESC[m` を多用するため両形を拾う必要がある (literal 一致だと
 // 色付き行の塗りが途中で切れる。実測 2026-07-19)。
 //
-// ⚠️ 正規表現ではなく手書きの走査にしている: この関数はカーソル行のために毎フレーム走り、
+// 🚨 正規表現ではなく手書きの走査にしている: この関数はカーソル行のために毎フレーム走り、
 // regexp だと 1 フレームあたり約 0.9 KB (bitState + 置換結果) を確保していた (実測 2026-08-14)。
 // 対象が固定 2 パターンしかないので走査で足りる。
 func reapplyAfterReset(text, bg string) string {
@@ -635,7 +635,7 @@ func dropToColumn(s string, n int) string {
 			i = j
 			continue
 		}
-		// 次の grapheme クラスタを 1 個。⚠️ 等の複数 rune クラスタを分断/誤幅にしない。
+		// 次の grapheme クラスタを 1 個。🚨 等の複数 rune クラスタを分断/誤幅にしない。
 		// 分割と幅は同じエンジンから同時に受け取る (termwidth.FirstCluster の doc が正本)
 		cluster, cw := firstCluster(s[i:])
 		if w+cw > n { // 全角グリフが cut をまたいだ: そのグリフを落とし列 n に揃えて空白で埋める

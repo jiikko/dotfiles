@@ -93,7 +93,7 @@ __repair_mp4_one() {
   fi
 
   # 古い in_progress を掃除
-  [[ -e "$tmp" ]] && { print -r -- "⚠️ 残骸削除: $tmp"; rm -f -- "$tmp"; }
+  [[ -e "$tmp" ]] && { print -r -- "🚨 残骸削除: $tmp"; rm -f -- "$tmp"; }
 
   # コンテナフォーマット取得
   local fmt
@@ -118,7 +118,7 @@ __repair_mp4_one() {
   local need_repair=0
 
   if (( fps_val > 240 )); then
-    print -r -- "⚠️ 異常なフレームレート検出: ${fps_val}fps → ${target_fps}fpsに正規化"
+    print -r -- "🚨 異常なフレームレート検出: ${fps_val}fps → ${target_fps}fpsに正規化"
     input_opts=(-r "$target_fps")
     need_repair=1
   else

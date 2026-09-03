@@ -105,7 +105,7 @@ review_out="./tmp/codex-review.$stamp.md"
 #### 実行パターン
 
 ```bash
-# ⚠️ 全パターンで `</dev/null` 必須（理由は下記「ルール」参照）
+# 🚨 全パターンで `</dev/null` 必須（理由は下記「ルール」参照）
 
 # パターン A: デフォルトの未コミットレビュー
 command codex exec review --uncommitted --ephemeral -o "$review_out" </dev/null
@@ -161,7 +161,7 @@ rm -f "$review_out"
 ```
 
 - **削除はグロブ禁止・完全一致パスのみ**。`./tmp/*.md` / `./tmp/codex-*.log` のような **glob を `rm` に渡さない**（並行する**他セッション**の codex レビューファイルを巻き込んで消す事故になる）。消すのは `codex-review.$stamp.md`（`$stamp` は `date +%Y%m%d-%H%M%S.$$` で **PID 込み = セッション一意**）の **その 1 本だけ**
-- **⚠️ Bash ツールは呼び出しごとに別シェルで、シェル変数 `$review_out` は次の呼び出しに引き継がれない**。安全なのは次のどちらか:
+- **🚨 Bash ツールは呼び出しごとに別シェルで、シェル変数 `$review_out` は次の呼び出しに引き継がれない**。安全なのは次のどちらか:
   1. **review 実行 → 出力 read → `rm -f "$review_out"` を 1 回の Bash 呼び出しにまとめる**（`$review_out` がスコープ内に残る。これを既定とする）
   2. 別呼び出しで消すなら、`$review_out` の **リテラル絶対パスをこの会話に控えてから、その完全一致パスを直接 `rm -f`** する。**固定名のマーカーファイル（例: `./tmp/.last_review_path`）に退避しない**（並行セッションが同名で上書きし合い、誤ったパスを消す）
 - stderr を別ファイルに採る場合も **同じ `$stamp` を含む一意名**にし、削除はその完全一致パスのみ（`*.log` glob 禁止）

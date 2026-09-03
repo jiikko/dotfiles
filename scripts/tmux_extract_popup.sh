@@ -3,7 +3,7 @@
 # 単語) を抽出し、fzf で選んで貼り付け・コピー・開く (extrakto 型)。
 # _tmux.conf の `bind y` から display-popup -E 経由で呼ばれる前提。
 #
-# ⚠️ popup の shell-command 内では #{...} フォーマットは展開されない (bind x のコメント参照)。
+# 🚨 popup の shell-command 内では #{...} フォーマットは展開されない (bind x のコメント参照)。
 # そのため対象ペインは popup 内シェルの `tmux display -p` で解決する
 # (popup 内からの暗黙ターゲットは popup 直下のアクティブペインを指す。実測済)。
 #

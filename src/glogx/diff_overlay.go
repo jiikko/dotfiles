@@ -76,7 +76,7 @@ func (o *diffOverlay) visibleLines() []string {
 
 // scroll は pager 流儀のキー操作を反映する。rows は表示可能行数 (レイアウト依存なので
 // 呼び出し側が算出して渡す)。閉じる系キー (q/esc/h/left/d) はここで閉じる。末尾に達したら
-// 最終行を表示したまま止まる (自動で閉じない)。⚠️ y (URL コピー) は境界をまたぐため
+// 最終行を表示したまま止まる (自動で閉じない)。🚨 y (URL コピー) は境界をまたぐため
 // 呼び出し側が handleDiffKey で処理し、ここには渡さない。
 func (o *diffOverlay) scroll(key string, rows int) {
 	switch key {
@@ -114,7 +114,7 @@ func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *
 		// offset は据え置かれ、k / up / ctrl+p は max(offset-n, 0) しか見ないので
 		// **(rows_new - rows_old) 打鍵だけ上スクロールが死ぬ** (実測 2026-08-21: diff 33 打鍵 /
 		// job 詳細 11 打鍵)。描画で確定した行数・窓で論理 offset を収束させて防ぐ
-		// (issues_view.go の bodyOff が同じ規律。⚠️ pagerScrollKey の k 腕に clamp を足す形は
+		// (issues_view.go の bodyOff が同じ規律。🚨 pagerScrollKey の k 腕に clamp を足す形は
 		// 不可: job 詳細のスクロールは pagerScrollKey を通らない手書きなので片面しか直らない)。
 		o.offset = clampScrollOffset(o.offset, len(lines), rows)
 		start := clampScrollOffset(o.glide.offset(o.offset), len(lines), rows)

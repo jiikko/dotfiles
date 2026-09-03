@@ -20,7 +20,7 @@ const (
 
 // hasTerminalControl は「端末が制御として解釈しうる文字が残っているか」。
 //
-// ⚠️ ESC と BEL だけを見る判定にしないこと: それだと 8bit の CSI (U+009B) / OSC (U+009D) を
+// 🚨 ESC と BEL だけを見る判定にしないこと: それだと 8bit の CSI (U+009B) / OSC (U+009D) を
 // 原理的に見逃し、「ESC と BEL だけ落とす」実装がテストを全部 green で通ってしまう
 // (敵対的レビュー 2026-08-05 が実際にこの盲点を突いた)。許可した文字だけが残っているか、の
 // allowlist 側で判定する。
@@ -67,7 +67,7 @@ func TestIssueBodyAndTitleAreSanitized(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := b.Lines(60, false)
-	// ⚠️ 行ごとに見る: 連結してから検査すると区切りの改行自体を制御文字として拾ってしまう
+	// 🚨 行ごとに見る: 連結してから検査すると区切りの改行自体を制御文字として拾ってしまう
 	for i, ln := range lines {
 		if hasTerminalControl(ln) {
 			t.Errorf("本文 %d 行目に制御シーケンスが残った: %q", i, ln)
@@ -81,7 +81,7 @@ func TestIssueBodyAndTitleAreSanitized(t *testing.T) {
 
 // 8bit の C1 制御文字 (U+009B = CSI / U+009D = OSC) も落ちる。
 //
-// ⚠️ 最初の実装はここが素通しだった。ESC と BEL しか見ない実装・テストの組み合わせだと
+// 🚨 最初の実装はここが素通しだった。ESC と BEL しか見ない実装・テストの組み合わせだと
 // 「無害化している」ように見えて 8bit 版が丸ごと通る (敵対的レビュー 2026-08-05)。
 // git のブランチ名は ASCII 制御文字しか禁じられていないので、C1 は実際に外部から入ってくる。
 func TestIssueC1ControlCharsAreDropped(t *testing.T) {
@@ -118,7 +118,7 @@ func TestIssueC1ControlCharsAreDropped(t *testing.T) {
 	}
 }
 
-// ⚠️ 回帰防止: 無害化はタブの桁揃えを壊してはいけない。
+// 🚨 回帰防止: 無害化はタブの桁揃えを壊してはいけない。
 //
 // 本文のタブは expandTabs が「タブストップ揃え」(4 の倍数の桁へ送る) で展開する。無害化の側で
 // タブを一律 4 スペースへ潰すと、行頭以外のタブで桁がずれる (`ab<TAB>c` が `ab  c` ではなく
@@ -135,7 +135,7 @@ func TestBodyKeepsTabStopAlignment(t *testing.T) {
 }
 
 // ファイル名の制御シーケンスも一覧の表示文字列には出ない。ファイル名は POSIX が / と NUL 以外の
-// 任意バイトを許すので、ESC 入りの名前で PR を出せる。⚠️ 同一性 (Path) は実物のまま残す
+// 任意バイトを許すので、ESC 入りの名前で PR を出せる。🚨 同一性 (Path) は実物のまま残す
 // (無害化した名前で開こうとするとファイルを見失う)。
 func TestIssueFilenameIsSanitizedForDisplayOnly(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "issues")

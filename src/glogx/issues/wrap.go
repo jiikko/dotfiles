@@ -33,7 +33,7 @@ const (
 
 // span は同じ style が続く区間。
 //
-// ⚠️ 不変条件: Text は ANSI エスケープを含まない素のテキスト。この不変条件が崩れると
+// 🚨 不変条件: Text は ANSI エスケープを含まない素のテキスト。この不変条件が崩れると
 // wrap が SGR の途中で分割しうる (styleCodeBlock だけは render.go が塗る段で chroma の
 // ANSI を載せるため、その 1 スパンで 1 行を占める形にしてから渡す)。
 type span struct {
@@ -45,7 +45,7 @@ type span struct {
 type line struct {
 	spans []span
 	lang  string // styleCodeBlock のスパンを chroma へ渡すときの言語 ("" = 素通し)
-	// src はこの行に対応するソース (.md) の行番号 (1 起点、0 = 出さない)。⚠️ 折り返しの
+	// src はこの行に対応するソース (.md) の行番号 (1 起点、0 = 出さない)。🚨 折り返しの
 	// 続き行と、段落へ畳まれた 2 行目以降は 0 にする — 同じ番号を何行も並べると「その番号の
 	// 行がそこにある」と読めてしまい、外 (nvim / Claude Code) へ持ち出したとき指す先がずれる。
 	src int
@@ -77,7 +77,7 @@ func flattenSpans(spans []span) []cell {
 	}
 	cells := make([]cell, 0, n)
 	for _, sp := range spans {
-		// ⚠️ 分割と幅は同じエンジンから同時に受け取る (termwidth.FirstCluster の doc が正本)。
+		// 🚨 分割と幅は同じエンジンから同時に受け取る (termwidth.FirstCluster の doc が正本)。
 		// 別の分割器で切ると「セル幅の総和 ≠ 行全体の幅」になり、折り返し位置がずれる
 		for rest := sp.Text; rest != ""; {
 			c, w := termwidth.FirstCluster(rest)

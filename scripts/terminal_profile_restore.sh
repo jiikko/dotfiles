@@ -7,7 +7,7 @@
 # 仕組み: プロファイルの実体は defaults の com.apple.Terminal に入っている。
 #   - "Window Settings"                  = プロファイル名 → 設定 dict の辞書 (登録)
 #   - "Default/Startup Window Settings"  = 既定プロファイル名 (選択)
-# ⚠️ Terminal 稼働中は prefs をアプリがメモリ上に持ち終了時に書き戻すため、defaults へ直接
+# 🚨 Terminal 稼働中は prefs をアプリがメモリ上に持ち終了時に書き戻すため、defaults へ直接
 #   書いても quit 時に巻き戻る。稼働中は AppleScript (Terminal 自身の状態を変える = quit 時に
 #   そのまま永続化) で settings set を構築する。open による import 経路は採らない: 余計な窓が
 #   1 枚開く上、blob が Terminal-native な NSKeyedArchiver 形式でないと「ファイルが壊れています」
@@ -31,11 +31,11 @@ if pgrep -xq Terminal; then
     echo "✗ swift が無い (色デコードに必要)。Terminal を終了してから再実行すれば defaults 経路で設定できる。" >&2
     exit 1
   }
-  # ⚠️ -suppress-warnings は付けない: 抑止していた deprecation warning の出元 (旧 streamtyped
+  # 🚨 -suppress-warnings は付けない: 抑止していた deprecation warning の出元 (旧 streamtyped
   # blob 用の NSUnarchiver フォールバック) を削除したので、今は 0 件 (実測 2026-08-21)。
   # 付け直すと将来の実 warning も一緒に隠れる。
   colors=$(swift "$SCRIPT_DIR/lib/terminal_profile_colors.swift" "$FILE")
-  # ⚠️ プロファイル名を AppleScript のソース文字列へ埋めないこと。`name` は .terminal ファイル
+  # 🚨 プロファイル名を AppleScript のソース文字列へ埋めないこと。`name` は .terminal ファイル
   # (= 第 1 引数で任意に差し替えられる外部入力) 由来なので、`"` を含む名前で文字列を脱出でき
   # **`do shell script` に到達する**。実在形式の細工ファイルで marker 生成に成功した
   # (実測 2026-08-21。60 行目の「✗ 構築に失敗」表示より前に payload が走っていた)。

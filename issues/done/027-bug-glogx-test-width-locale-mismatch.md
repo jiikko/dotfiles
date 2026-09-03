@@ -41,7 +41,7 @@ go test . -count=1                       # → 12 件 FAIL
 LANG=C LC_ALL=C go test . -count=1       # → ok (全て通る)
 ```
 
-⚠️ `-count=1` を付けないと go test のキャッシュで前回の PASS を拾い「0 件失敗」に見える
+🚨 `-count=1` を付けないと go test のキャッシュで前回の PASS を拾い「0 件失敗」に見える
 (調査中に踏んだ)。
 
 ## 既に一部だけ移行済み

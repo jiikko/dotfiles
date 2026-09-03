@@ -354,7 +354,7 @@ EOF
 
     if (( fps_mismatch )); then
       print -ru2 -- ""
-      print -r -- "${_C_YELLOW}${_C_BOLD}⚠️  フレームレート不一致 (結合は続行します)${_C_NOBOLD}${_C_OFF}" >&2
+      print -r -- "${_C_YELLOW}${_C_BOLD}🚨  フレームレート不一致 (結合は続行します)${_C_NOBOLD}${_C_OFF}" >&2
       print -r -- "${_C_YELLOW}出力は可変フレームレートの mp4 になります${_C_OFF}" >&2
       print -ru2 -- ""
       for ((_i=1; _i<=${#input_files[@]}; _i++)); do
@@ -572,7 +572,7 @@ EOF
     local _diag_rc=$?
     if (( _diag_rc == 2 )); then
       # 警告: 入力に未参照データあるが出力は正常
-      print -r -- "⚠️  診断警告:" >&2
+      print -r -- "🚨  診断警告:" >&2
       print -r -- "$REPLY" >&2
     elif (( _diag_rc != 0 )); then
       print -r -- "❌ 診断エラー: $REPLY" >&2

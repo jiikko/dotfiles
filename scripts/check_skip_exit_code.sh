@@ -18,7 +18,7 @@
 #     (pipefail-grep-q: allow / trigger-log-writer: allow と同じイディオム)
 #   - このスクリプト自身と、説明文に同じ字面が出るドキュメント
 #
-# ⚠️ 0 件でも「検査対象が 1 つも見つからない」なら失敗にする (パスの書き方が壊れたら赤にする)。
+# 🚨 0 件でも「検査対象が 1 つも見つからない」なら失敗にする (パスの書き方が壊れたら赤にする)。
 set -uo pipefail
 unset CDPATH
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -42,7 +42,7 @@ while IFS= read -r f; do
     # 置かれることがある (実測: test_reap_orphan_servers.sh)
     from=$((lineno > 3 ? lineno - 3 : 1))
     window=$(sed -n "${from},$((lineno + 3))p" "$f")
-    # ⚠️ パイプで grep -q に渡さない。pipefail 下では一致していても非 0 になりうる
+    # 🚨 パイプで grep -q に渡さない。pipefail 下では一致していても非 0 になりうる
     # (issue 096 / scripts/check_pipefail_grep_q.sh が落とす形)。herestring で渡す
     grep -qE '^[[:space:]]*exit 0([[:space:]]|$)' <<< "$window" || continue
     grep -q 'partial-skip: allow' <<< "$window" && continue

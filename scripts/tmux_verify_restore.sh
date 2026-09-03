@@ -61,6 +61,6 @@ tt_trigger_log "restore-verify saved=$saved live=$live missing=$missing missing_
 
 # 人にも見せる (これが無いと「完走したのに部分復元」に気づけない = 今日の 22/29)
 [ -x "$TT_TOAST" ] && "$TT_TOAST" -d 8 -b 52 \
-  "⚠️ 復元が不完全: 保存 $saved 中 $missing セッション未復元 ($names)" 2>/dev/null || true
+  "🚨 復元が不完全: 保存 $saved 中 $missing セッション未復元 ($names)" 2>/dev/null || true
 
 exit 1

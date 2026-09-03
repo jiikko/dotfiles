@@ -14,8 +14,8 @@
 #   - src_glogx.yml   : glogx 全体の lint + test (doctor 以外の退行を見る)
 #   - このファイル     : doctor に絞ったテスト + 2 CLI のビルド + fail-closed の smoke
 #
-# ⚠️ paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
-# ⚠️ ここでも実データ・実 launchd は触らない。CLI の smoke は偽 HOME + PATH を絞った
+# 🚨 paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
+# 🚨 ここでも実データ・実 launchd は触らない。CLI の smoke は偽 HOME + PATH を絞った
 #   環境で回し、**依存コマンドが無い環境で「候補 0 件」ではなく「診断できず」に倒れる**
 #   ことを見る (issues/163 の体 5 が見つけた false green の形を CI で見張る)。
 name: doctor
@@ -71,7 +71,7 @@ jobs:
         working-directory: src/doctor
 
       # glogx 側の doctor 配線。glogx 全体 (31 秒) からこの部分だけを切り出す (1 秒)
-      # ⚠️ -run のパターンは「テスト名が TestDoctor で始まる」ことに依存する。
+      # 🚨 -run のパターンは「テスト名が TestDoctor で始まる」ことに依存する。
       #   下の gate がその前提を検査するので、名前を変えたら gate が落ちて気づく
       - name: glogx の doctor 配線テスト
         run: go test -race -count=1 -run 'TestDoctor' -v . | tee /tmp/doctor-tests.log
@@ -102,12 +102,12 @@ jobs:
       # 「候補 0 件 (安全です)」に化けず「診断できず」に倒れることを見る。
       # ここが ok に化けるのが issues/163 の体 5 が見つけた false green の形。
       #
-      # ⚠️ PATH から外すだけでは不足: `xcrun` は /usr/bin にあるので、PATH を
+      # 🚨 PATH から外すだけでは不足: `xcrun` は /usr/bin にあるので、PATH を
       #   /usr/bin:/bin に絞っても**実在して成功する** (実測 2026-09-03: それだと
       #   simulator-runtimes が ok / items 2 になり、この検査は何も確かめない)。
       #   なので**必ず失敗する偽物を PATH 先頭に置く**。この shim は実体を呼ばないので
       #   path-shim-must-resolve-real-binary.md の再帰の罠には当たらない。
-      # ⚠️ HOME と TMPDIR は空の一時ディレクトリにして実データを触らない。
+      # 🚨 HOME と TMPDIR は空の一時ディレクトリにして実データを触らない。
       - name: 依存コマンド失敗時に fail-closed へ倒れることを確認する
         run: |
           h=$(mktemp -d); t=$(mktemp -d); shim=$(mktemp -d)
@@ -125,7 +125,7 @@ jobs:
           # JSON として妥当であること (壊れた出力を「異常なし」と読ませない)
           python3 -c "import json; json.load(open('$t/out.json'))"
           # 依存コマンドを使う 4 つの判定が failed (診断できず) になっていること。
-          # ⚠️ id は results[].entry.ID にある (results[].id ではない。実測 2026-09-03)
+          # 🚨 id は results[].entry.ID にある (results[].id ではない。実測 2026-09-03)
           python3 - "$t/out.json" <<'PYCHECK'
           import json, sys
           want = ["brew-orphan-state", "brew-cleanup-residue",

@@ -169,7 +169,7 @@ report mark_seen_direct_x20 $(( $(now_ms) - t0 ))
 # (1 tick 数十 ms は体感に出ない) ので、予算はプロセス数で持つ。
 #
 # 測り方: tmux をスタブに差し替え、draw_once を**同じプロセスで** source して呼び、SIGCHLD を
-# 数える。⚠️ 数えるのは直接の子プロセスだけ (サブシェルの中で exec された孫は数に入らない)
+# 数える。🚨 数えるのは直接の子プロセスだけ (サブシェルの中で exec された孫は数に入らない)
 # ので、この値は下限。行数に比例する fork はすべて直接の子なので回帰検知には十分。
 # 行数は 10 固定 (実運用のパネル高さ 14 に収まる典型)。
 panel_stub_dir="$TMUX_TMPDIR/panel-stub"
@@ -231,12 +231,12 @@ printf '%s\n' "$best"
 TIMEEOF
 panel_forks=$(PANEL_STUB_ROWS=10 bash "$TMUX_TMPDIR/panel-forks.sh" "$panel_stub_dir" "$ROOT_DIR/scripts/tmux_agent_panel.sh")
 case "$panel_forks" in
-  # ⚠️ 計測失敗を「0 = 予算内」に見せない。予算より大きい番兵を出して loud に落とす
+  # 🚨 計測失敗を「0 = 予算内」に見せない。予算より大きい番兵を出して loud に落とす
   ''|*[!0-9]*) panel_forks=999 ;;
 esac
 report agent_panel_tick_forks_rows10 "$panel_forks"
 
-# ⚠️ fork 数だけでは足りない: SIGCHLD は**直接の子**しか数えないので、行ごとの fork を
+# 🚨 fork 数だけでは足りない: SIGCHLD は**直接の子**しか数えないので、行ごとの fork を
 # パイプ (右辺がサブシェル) の中に置かれると数に出ない (red team 実測 2026-08-21: 行ループを
 # パイプへ移して行ごとに外部コマンドを呼ぶ変異で、fork 数は 4 のまま = 素通りした)。
 #
@@ -262,7 +262,7 @@ ms_stub_dir="$TMUX_TMPDIR/ms-stub"
 mkdir -p "$ms_stub_dir"
 ms_calls_file="$TMUX_TMPDIR/ms-calls"
 : > "$ms_calls_file"
-# ⚠️ shim は tmux を**絶対パス**で呼ぶこと。$TMUX_BIN_PATH は既定が素の "tmux" なので、
+# 🚨 shim は tmux を**絶対パス**で呼ぶこと。$TMUX_BIN_PATH は既定が素の "tmux" なので、
 # PATH 先頭に置いた shim 自身へ解決し直して無限再帰する (実測 2026-08-21: -L が延々と
 # 積み重なった /bin/sh が CPU を焼き続けた)。
 ms_real_tmux=$(command -v "$TMUX_BIN_PATH")
@@ -277,7 +277,7 @@ EOS
 chmod +x "$ms_stub_dir/tmux"
 ms_win=$("${TMUX_CMD[@]}" new-window -d -t bench -P -F '#{window_id}')
 for _ in {1..3}; do "${TMUX_CMD[@]}" split-window -d -t "$ms_win" -l 3; done
-# ⚠️ $TMUX/$TMUX_PANE を消して呼ぶ (隣の mark_seen_direct_x20 と対称)。socket は shim が
+# 🚨 $TMUX/$TMUX_PANE を消して呼ぶ (隣の mark_seen_direct_x20 と対称)。socket は shim が
 # -L で明示するので漏れないことを確認済みだが、ambient な $TMUX を残す形をここに置かない。
 TMUX= TMUX_PANE= PATH="$ms_stub_dir:$PATH" "$ROOT_DIR/_claude/hooks/tmux-mark-seen.sh" "$ms_win" >/dev/null 2>&1 || true
 ms_calls=$(wc -l < "$ms_calls_file" | tr -d ' ')

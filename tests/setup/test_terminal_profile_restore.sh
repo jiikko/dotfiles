@@ -6,7 +6,7 @@
 # `do shell script` に到達する (監査 2026-08-21 が細工ファイルで marker 生成に成功)。
 # 名前は `on run argv` の argv でデータとして渡すのが正で、その形が崩れていないかを固定する。
 #
-# ⚠️ 実行系のテスト (osascript) は macOS 限定なので、無い環境では構造検査だけに落とす
+# 🚨 実行系のテスト (osascript) は macOS 限定なので、無い環境では構造検査だけに落とす
 # (「検査できなかった」を緑にしないため、落とした事実は出力に出す)。
 set -euo pipefail
 unset CDPATH
@@ -24,7 +24,7 @@ ng() { printf '✗ %s\n' "$1"; fails=$((fails + 1)); }
 
 # --- 1. 構造: AppleScript の組み立てに $NAME を埋めていない -------------------------------
 # as_lines の組み立て区間 (on run argv 〜 osascript 呼び出し) に $NAME が現れてはいけない。
-# ⚠️ 範囲指定 (/a/,/b/) は終端行も含むので、名前を argv で渡す osascript 行そのものが
+# 🚨 範囲指定 (/a/,/b/) は終端行も含むので、名前を argv で渡す osascript 行そのものが
 # 混ざって偽の失敗になる。フラグで終端行を除く。
 block="$(awk '/as_lines="on run argv/{f=1} /osascript -e "\$as_lines"/{f=0} f' "$SCRIPT")"
 if [ -z "$block" ]; then

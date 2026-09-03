@@ -73,7 +73,7 @@ func TestLongInputScrollsHorizontally(t *testing.T) {
 	if w := ansi.StringWidth(shown); w > 30 {
 		t.Errorf("表示幅 = %d (上限 30)", w)
 	}
-	// ⚠️ col の範囲だけを見ない: viewport 自身が最後に clamp するので、スクロールを丸ごと消しても
+	// 🚨 col の範囲だけを見ない: viewport 自身が最後に clamp するので、スクロールを丸ごと消しても
 	//    その assert は通る (監査 2026-08-28)。「末尾が見えていて、カーソルがその末尾にある」で見る
 	if col != 29 {
 		t.Errorf("カーソル列 = %d; want 29 (末尾が見える位置までスクロールする)", col)
@@ -431,7 +431,7 @@ func TestClockSpecUsesClockAtSubmit(t *testing.T) {
 	}
 }
 
-// 中止も「結果」として返すこと。⚠️ 終了コードで中止を表すと、ビルド失敗やバイナリ不在
+// 中止も「結果」として返すこと。🚨 終了コードで中止を表すと、ビルド失敗やバイナリ不在
 // (どちらも rc≠0) と区別できず、呼び出し側が異常を「ユーザーが閉じた」と読んで黙る (監査 2026-08-28)。
 func TestAbortIsAResultNotAnExitCode(t *testing.T) {
 	if got := formatResult(result{}); got != "" {
@@ -446,7 +446,7 @@ func TestAbortIsAResultNotAnExitCode(t *testing.T) {
 	}
 }
 
-// 1 欄に入れられる長さに上限があること。⚠️ 無いと大きな貼り付け 1 回で 1 行 1MB 超の予約ができ、
+// 1 欄に入れられる長さに上限があること。🚨 無いと大きな貼り付け 1 回で 1 行 1MB 超の予約ができ、
 // 以後その一覧を読む側が壊れて UI が二度と開けなくなる (監査 2026-08-28 で再現)。
 func TestInputIsCapped(t *testing.T) {
 	var e editor
@@ -480,7 +480,7 @@ func TestDurationIsCapped(t *testing.T) {
 	}
 }
 
-// ⚠️ トーストが自分でティックを張り、静止のあと自分で閉じメッセージを出すこと。
+// 🚨 トーストが自分でティックを張り、静止のあと自分で閉じメッセージを出すこと。
 // テストが toastTickMsg / toastDoneMsg を手で流すと、**Tick を張らない実装でも緑になる**
 // (= 確定後に popup が永久に閉じない。監査 2026-08-28)。ここは戻り値の Cmd だけを見る。
 func TestToastDrivesItselfToClose(t *testing.T) {
@@ -513,7 +513,7 @@ func TestToastDrivesItselfToClose(t *testing.T) {
 	t.Fatal("静止の後に閉じメッセージが出ない (popup が閉じない)")
 }
 
-// ⚠️ 本番の構築点で「確定用の時計」が配線されていること。テストは自分で nowFn を差し替えるので、
+// 🚨 本番の構築点で「確定用の時計」が配線されていること。テストは自分で nowFn を差し替えるので、
 // newModel から nowFn を落としても全テストが緑のまま通ってしまう (監査 2026-08-28)。
 func TestNewModelWiresWallClock(t *testing.T) {
 	m := newModel("x", now, nil) // nowFn を差し替えない
@@ -529,7 +529,7 @@ func TestNewModelWiresWallClock(t *testing.T) {
 	}
 }
 
-// ⚠️ 表示用の時計を「自分で」回すこと。テストが tickMsg を手で流すと、Init が Tick を張らない実装
+// 🚨 表示用の時計を「自分で」回すこと。テストが tickMsg を手で流すと、Init が Tick を張らない実装
 // (= 放置しても画面が更新されない) でも緑になる (監査 2026-08-28)。
 func TestClockTickIsSelfSustaining(t *testing.T) {
 	m := newTestModel()
@@ -555,7 +555,7 @@ func TestClockTickIsSelfSustaining(t *testing.T) {
 }
 
 // 開いた直後は「いつ」にフォーカスし、Enter だけで予約まで辿れること (ユーザー要望 2026-08-28)。
-// ⚠️ 既定を文字列欄に戻すと、時刻を選ばずに打ち始める流れになり、この画面の順序 (いつ → 何を) が崩れる。
+// 🚨 既定を文字列欄に戻すと、時刻を選ばずに打ち始める流れになり、この画面の順序 (いつ → 何を) が崩れる。
 func TestFormStartsOnWhenRow(t *testing.T) {
 	m := newTestModel()
 	press(m, "enter", "") // メニュー → フォーム
@@ -588,7 +588,7 @@ func TestFormStartsOnWhenRow(t *testing.T) {
 }
 
 // 入力欄の Esc は「一つ前の欄へ戻る」。先頭の欄 (いつ) で押したときだけメニューへ降りる
-// (ユーザー要望 2026-08-28)。⚠️ いきなり降りると、打ち間違いを直したいだけのときに入力ごと畳まれる。
+// (ユーザー要望 2026-08-28)。🚨 いきなり降りると、打ち間違いを直したいだけのときに入力ごと畳まれる。
 func TestEscapeStepsBackThroughFields(t *testing.T) {
 	m := newTestModel()
 	press(m, "enter", "")
@@ -640,7 +640,7 @@ func TestEscapeStepsBackThroughFields(t *testing.T) {
 }
 
 // --start pick で一覧から開けること (取消のあとシェルが開き直すために使う)。
-// ⚠️ 予約が 0 件のときは一覧を開かない (空の一覧を見せない。menuItems の enabled と同じ判断)。
+// 🚨 予約が 0 件のときは一覧を開かない (空の一覧を見せない。menuItems の enabled と同じ判断)。
 func TestStartAtPick(t *testing.T) {
 	jobs := []job{{id: "a", at: now.Add(time.Hour), label: "x", text: "make test"}}
 	m := newTestModel(jobs...)

@@ -656,20 +656,20 @@ func TestTruncateKeepANSIDoesNotCloseOpenStyle(t *testing.T) {
 // 合成側は「n 桁落とせば表示幅も n 減る」を当てにして浮動ボックスを背景行に重ねる。
 // clusterWidth が 2 本目の幅エンジン (uniseg) を使っていた頃、この不変条件はインド系文字と
 // Arabic format 文字で崩れ、ボックス右側の背景が 1〜3 桁ずれていた (silent)。
-// ⚠️ ASCII / CJK / 絵文字では ansi と uniseg が一致するため、それらだけで測っても検出できない。
+// 🚨 ASCII / CJK / 絵文字では ansi と uniseg が一致するため、それらだけで測っても検出できない。
 func TestDropToColumnWidthInvariantWhereEnginesDisagree(t *testing.T) {
 	for _, in := range []string{
 		"ಕಾ ಕಾ commit",       // カンナダ語: ansi=1 / uniseg=2 のクラスタ
 		"؀ arabic sign",      // Arabic number sign: ansi=0 / uniseg=1
 		"கா கா தமிழ் commit", // タミル語
 		"ASCII only commit",  // 対照 (エンジンが一致する側)
-		// ⚠️ 全角を含む入力を必ず 1 本入れる: 全角境界で切ると dropToColumn の straddle 分岐
+		// 🚨 全角を含む入力を必ず 1 本入れる: 全角境界で切ると dropToColumn の straddle 分岐
 		//   (空白で埋め直す経路) を通る。ここが無いと、その分岐を丸ごと削っても本テストは
 		//   green のまま通る (敵対的レビューで実測)
 		"日本語の コミット 12345",
 		// SGR を含む入力 (色を replay する経路を通す)
 		"\x1b[31mred\x1b[0m ಕಾ \x1b[32mgreen\x1b[0m",
-		// ⚠️ **分割器**の食い違いで壊れていた rune (issue 124)。幅を 1 本にしても
+		// 🚨 **分割器**の食い違いで壊れていた rune (issue 124)。幅を 1 本にしても
 		//   (issue 112)、クラスタ境界が 2 本あると不変条件は閉じない。
 		//   U+0897 / U+1ACF / U+113B8 / U+1E5EE は Unicode 16 で追加され、uniseg v0.4.7 (15.0)
 		//   は前の文字と結合せず別クラスタとして返す = 「クラスタ幅の総和 ≠ 全体の幅」。

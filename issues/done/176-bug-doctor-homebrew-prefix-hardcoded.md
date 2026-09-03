@@ -75,7 +75,7 @@ brew --prefix          # /usr/local が返る
 | 同 Stat / IsDir 検査を外す | red (`実在しない` と `ディレクトリでない` の 2 ケース) |
 | `brewCleanupTargets` が相対表記を黙って捨てる旧挙動へ戻す | red (`status=ok items=0`) |
 
-⚠️ 最初に書いたテーブル駆動テストは **4 ケース中 3 ケースが vacuous** だった (fixture がどれも空文字や
+🚨 最初に書いたテーブル駆動テストは **4 ケース中 3 ケースが vacuous** だった (fixture がどれも空文字や
 存在しないパスで、実際には Stat の guard 1 つが全部を弾いていた)。各ケースを「その guard だけを踏む」
 形に作り直し、`r.Reason` が `"brew --prefix を取得できず"` で始まること (= 下流の `expand` /
 `validateTarget` ではなく `brewPrefix` が弾いたこと) まで assert してから変異を当て直した。

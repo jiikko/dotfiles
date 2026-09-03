@@ -27,7 +27,7 @@ type actionModal struct {
 	rerunAction tea.Cmd
 	rerunning   bool // gh run rerun 実行中 (終了以外のキーを無視)
 	// updating は自己更新が走行中の CLI 名の集合 ("claude" / "codex")。
-	// ⚠️ bool + 対象名の単数にしないこと: claude と codex は独立した外部コマンドで並走できるのに、
+	// 🚨 bool + 対象名の単数にしないこと: claude と codex は独立した外部コマンドで並走できるのに、
 	// 単数だと running() が片方の実行中に C/X を飲んでしまい直列化する (ユーザー要望 2026-08-21)。
 	// 空なら update なし。同じ CLI の二重起動は beginUpdate が弾く (npm の自己更新が競合する)。
 	updating map[string]bool
@@ -81,7 +81,7 @@ func (a *actionModal) beginUpdate(target string) bool {
 
 // finishUpdate は target を走行中から外す。他の CLI が走っていればモーダルは残る。
 //
-// ⚠️ target が空のときは全て外す (fail-safe)。走行中の集合が降りないと running() が真のままで
+// 🚨 target が空のときは全て外す (fail-safe)。走行中の集合が降りないと running() が真のままで
 // Ctrl-C の終了ガードが解けず、モーダルを閉じられなくなる。実運用では runUpdate が必ず target を
 // 入れるので通らない経路だが、「閉じられなくなる」方向の失敗は避ける。
 func (a *actionModal) finishUpdate(target string) {
@@ -109,7 +109,7 @@ func (a *actionModal) updatingTargets() []string {
 // active はいずれかのモーダルが表示中か。「描かれる」と「キーを消費する」は同じ条件で、
 // この 1 つの述語が両方を表す (boxLines の描画条件であり、handleKey が consumed を返す条件)。
 //
-// ⚠️ 2 つに分けないこと。「最前面に描かれるモーダル」と「キーを受け取るモーダル」がずれると、
+// 🚨 2 つに分けないこと。「最前面に描かれるモーダル」と「キーを受け取るモーダル」がずれると、
 // 画面の選択肢が効かない/別の操作が走る、という形の事故になる。実際に起きた例: 再起動ダイアログが
 // running() だけを見ていたため push 確認 (y/N) 中に最前面へ重なり、画面の「その他のキー: 後で」に
 // 従って押した y が push を実行した。他のモーダルは「自分を出してよいか」をこれで判断する。
@@ -141,13 +141,13 @@ func (a *actionModal) runningQuitHint() string {
 
 // handleKey は最前面の action モーダルがキーを消費したら consumed=true を返す。push/pull 確認の
 // 実行キー (y/Enter) は実行する tea.Cmd を action に載せる (呼び出し側が maybeTick と束ねる)。
-// ⚠️ ここへ来る前に browseModel が Ctrl-C/Ctrl-G の quit 判定 (running 中のブロック) を済ませて
+// 🚨 ここへ来る前に browseModel が Ctrl-C/Ctrl-G の quit 判定 (running 中のブロック) を済ませて
 // いる前提。判定順 (push 確認 → pull 確認 → 実行中ガード) は footgun 回避のため厳守。
-// ⚠️ 通知だけの用件 (push 対象なし・update 結果など) をここへ戻さないこと: キー待ちのモーダルは
+// 🚨 通知だけの用件 (push 対象なし・update 結果など) をここへ戻さないこと: キー待ちのモーダルは
 // 次の 1 打を食べるため、no-op の通知には重すぎる。右下トーストで出す (ユーザー要望 2026-07-25)。
 func (a *actionModal) handleKey(key string) (consumed bool, action tea.Cmd) {
 	// 確認の「実行」キーは y か Enter (Enter=y はユーザー要望 2026-07-21)。それ以外はキャンセル。
-	// ⚠️ ToLower なので大文字 `Y` も受理する。これを markNextKey の厳密判定へ揃えないのは
+	// 🚨 ToLower なので大文字 `Y` も受理する。これを markNextKey の厳密判定へ揃えないのは
 	//    意図的 (理由は status_view.go:discardKey の注記。issue 071 / 123)。
 	confirmYes := strings.ToLower(key) == "y" || key == "enter"
 	if a.pushConfirm {
@@ -194,12 +194,12 @@ func (a *actionModal) handleKey(key string) (consumed bool, action tea.Cmd) {
 		// 例外: update だけが走っているとき、C / X は「もう片方の CLI の更新開始」として
 		// **ここで消費する** (claude と codex を並走させるため。ユーザー要望 2026-08-21)。
 		//
-		// ⚠️ consumed=false で browseModel へ素通ししないこと。素通しは全画面 viewer の
+		// 🚨 consumed=false で browseModel へ素通ししないこと。素通しは全画面 viewer の
 		// キー語彙に漏れる: status viewer を開いた状態で X が「変更の破棄」確認を立て、
 		// update 完了後の y で git restore が着弾するのを実測した (red team 2026-08-21)。
 		// この型の doc が禁じている「描かれるモーダルとキーを受け取るモーダルのずれ」そのもの。
 		//
-		// ⚠️ 同じ CLI のキーは消費して何もしない: 判定 Cmd を走らせると、その結果
+		// 🚨 同じ CLI のキーは消費して何もしない: 判定 Cmd を走らせると、その結果
 		// (「すでに latest」の早期リターン) が走行中の update を降ろしてしまう
 		// (終了ガードが解けて自己更新が孤児化 / 二重起動する。同 red team が実測)。
 		// push / pull / rerun 中は update を重ねないので従来どおり飲む。
@@ -224,7 +224,7 @@ func (a *actionModal) askRerun(jobName string, action tea.Cmd) {
 }
 
 // startCancelable は push/pull 用の deadline 無し cancel context を張り、cancel を保持する
-// (quit からの中断用)。⚠️ deadline は付けない — 正当な巨大 push を timeout で切らない (K2)。
+// (quit からの中断用)。🚨 deadline は付けない — 正当な巨大 push を timeout で切らない (K2)。
 // cancel は closure の defer と stop() の双方から呼ばれうるが CancelFunc は冪等なので安全。
 func (a *actionModal) startCancelable() (context.Context, context.CancelFunc) {
 	a.forceQuitArmed = false // 新しい操作は「1 回目の Ctrl-C から」でやり直す
@@ -246,11 +246,11 @@ func (a *actionModal) askPull() { a.pullConfirm = true }
 // startUpdate は C で claude update を確認なし即実行する (ユーザー選定 2026-07-22)。
 // まず「既に latest か」をバックグラウンドで判定し、latest なら updateMsg{before==after}
 // (=「すでに最新版です」トースト) で早期リターン、実際に更新するときだけ updateBeginMsg を
-// 返す。⚠️ ここでは updating を立てない: 判定前に立てると早期リターン時にも spinner
+// 返す。🚨 ここでは updating を立てない: 判定前に立てると早期リターン時にも spinner
 // モーダルが一瞬光る (ユーザー指摘 2026-08-12)。モーダルは updateBeginMsg を受けた
 // runUpdate が立てる。
 //
-// ⚠️ **その帰結として、C / X を押してから最大 5 秒 (claudeVersionFetchTimeout) 画面が
+// 🚨 **その帰結として、C / X を押してから最大 5 秒 (claudeVersionFetchTimeout) 画面が
 //
 //	まったく変化しない** — 判定が `claude --version` の起動待ちだから。これは上の不変条件を
 //	選んだ副作用で、既知 (issue 123 の ux 監査が指摘し、074 の不変条件 4 を根拠に却下)。

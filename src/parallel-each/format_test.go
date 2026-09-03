@@ -9,9 +9,9 @@ import (
 )
 
 // visibleLen / truncate は「端末の桁」を数える (tui.go が m.width から引き算した残り桁に
-// 合わせて使う)。⚠️ rune 数で数えると全角・絵文字で桁がずれ、罫線や列区切りが崩れる。
+// 合わせて使う)。🚨 rune 数で数えると全角・絵文字で桁がずれ、罫線や列区切りが崩れる。
 //
-// ⚠️ オラクルは**手書きの期待値**にする。ansi.StringWidth と比べるだけだと
+// 🚨 オラクルは**手書きの期待値**にする。ansi.StringWidth と比べるだけだと
 // 「実装と同じ関数で検算する」同義反復になり、幅モデルそのものの誤り (wcwidth への差し替え・
 // 上流の更新) を検出できない。値は実測で確定させたもの。
 func TestVisibleLenColumnsAgainstHandWrittenTable(t *testing.T) {
@@ -29,7 +29,7 @@ func TestVisibleLenColumnsAgainstHandWrittenTable(t *testing.T) {
 		{"🇯🇵", 2},                   // 国旗 (regional indicator の組)
 		{"①", 1},                    // East Asian Ambiguous は 1 桁 (GraphemeWidth)
 		{"→", 1},                    // 同上
-		{"a\tb", 2},                 // ⚠️ タブは幅 0。truncate 側で空白へ均す
+		{"a\tb", 2},                 // 🚨 タブは幅 0。truncate 側で空白へ均す
 	} {
 		t.Run(tt.s, func(t *testing.T) {
 			if got := visibleLen(tt.s); got != tt.want {
@@ -39,7 +39,7 @@ func TestVisibleLenColumnsAgainstHandWrittenTable(t *testing.T) {
 	}
 }
 
-// 幅モデルが描画側 (lipgloss) と一致していること。⚠️ ここが食い違うと「測る側と描く側が
+// 幅モデルが描画側 (lipgloss) と一致していること。🚨 ここが食い違うと「測る側と描く側が
 // 別モデル」になり、収めたつもりが 1 桁溢れる原因がどちらの責任か分からなくなる。
 func TestVisibleLenMatchesLipgloss(t *testing.T) {
 	for _, s := range []string{"abc", "日本語", "⚠️", "🇯🇵", "①", "→", "\x1b[31m赤\x1b[0m"} {
@@ -49,7 +49,7 @@ func TestVisibleLenMatchesLipgloss(t *testing.T) {
 	}
 }
 
-// truncate は「max 桁に収める」もの。⚠️ rune 数で切ると全角で 2 倍の桁を出し、枠を越える。
+// truncate は「max 桁に収める」もの。🚨 rune 数で切ると全角で 2 倍の桁を出し、枠を越える。
 // タブ (端末では次のタブストップまで伸びる) を含む行でも約束を守る。
 func TestTruncateFitsColumns(t *testing.T) {
 	for _, tt := range []struct {
@@ -90,7 +90,7 @@ func TestTruncateMarksTrimmed(t *testing.T) {
 	}
 }
 
-// 切り口で装飾を閉じる。⚠️ 閉じないと中身のない色指定が末尾に残り、以降の要素や次の行まで
+// 切り口で装飾を閉じる。🚨 閉じないと中身のない色指定が末尾に残り、以降の要素や次の行まで
 // 染める (実測: "…\x1b[32m")。reset は幅 0 なので桁の約束は壊れない。
 func TestTruncateClosesStyling(t *testing.T) {
 	for _, tt := range []struct{ name, s string }{
@@ -112,7 +112,7 @@ func TestTruncateClosesStyling(t *testing.T) {
 	}
 }
 
-// max の境界の契約。⚠️ max == 1 は「省略記号で潰さず中身を優先」(元の実装からの意図的な挙動)。
+// max の境界の契約。🚨 max == 1 は「省略記号で潰さず中身を優先」(元の実装からの意図的な挙動)。
 // 呼び出し側は m.width から引き算した値を渡すので、極小端末で 0 以下・1 が実際に来る。
 func TestTruncateEdgeContract(t *testing.T) {
 	for _, tt := range []struct {

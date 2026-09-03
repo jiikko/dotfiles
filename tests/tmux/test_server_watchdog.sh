@@ -148,10 +148,10 @@ kill "$FAKE" 2>/dev/null
 printf '✓ 非 default socket (テストサーバ) は看取らない\n'
 
 # --- (5) lock を作れないときは無音で消えない -------------------------------------------
-# ⚠️ rc=2 (取得不能) を rc=1 (先任生存) と畳むと **watchdog が張られない = 死因が二度と
+# 🚨 rc=2 (取得不能) を rc=1 (先任生存) と畳むと **watchdog が張られない = 死因が二度と
 #   記録されない**のに 1 行も残らない (敵対レビューが chmod 500 で実測)。
 if [ "$(id -u)" = 0 ]; then
-  printf '⚠ root では書き込み不可ディレクトリを作れないため lock 取得失敗のテストを skip した\n'
+  printf '🚨 root では書き込み不可ディレクトリを作れないため lock 取得失敗のテストを skip した\n'
 else
   : > "$LOG"
   RO_WD="$TMP_DIR/wd_ro"; rm -rf "$RO_WD"; mkdir -p "$RO_WD"; chmod 500 "$RO_WD"
@@ -167,7 +167,7 @@ else
 fi
 
 # --- (6) 死んだサーバの stale lock を掃除してから張る -----------------------------------
-# ⚠️ 掃除の呼び出し**そのもの**を pin する。関数の中身は guards.sh の unit テストが見ているが、
+# 🚨 掃除の呼び出し**そのもの**を pin する。関数の中身は guards.sh の unit テストが見ているが、
 #   watchdog 側の呼び出し行を消しても他のテストは全部 green だった (敵対レビューの指摘)。
 : > "$LOG"
 tt_free_pid; DEADSRV="$REPLY_PID"
@@ -187,7 +187,7 @@ wait "$WD" 2>/dev/null || true
 printf '✓ 死んだサーバの stale lock を掃除してから監視を張る\n'
 
 # --- (7) スナップショット健全性の状態遷移を観測ログに残す -------------------------------
-# ⚠️ この 2 行 (snapshot-health ng / ok) は **どのテストも見ていなかった**ため、issue 079 で
+# 🚨 この 2 行 (snapshot-health ng / ok) は **どのテストも見ていなかった**ため、issue 079 で
 #   共有 seam (tt_trigger_log) へ寄せても移行が無検証だった。状態が変わったときだけ書く、
 #   という契約ごとここで固定する (毎回書くと toast も観測ログも騒がしくなる)。
 : > "$LOG"

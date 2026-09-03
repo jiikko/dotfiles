@@ -18,7 +18,7 @@
 実例 (2026-09-02): `b6c3b5e` が `_claude/rules/avoid-wall-clock-assertions.md` を足したまま
 `./setup.sh` 未実行で終了した (その後 09/02 08:58 に別の実行で解消済み)。
 
-⚠️ **hooks はこの症状の対象外**。hook の起動経路は `_claude/settings.json` の実体パスなので、
+🚨 **hooks はこの症状の対象外**。hook の起動経路は `_claude/settings.json` の実体パスなので、
 link が無くても動く ([142](done/142-research-claude-hooks-link-unreferenced.md))。
 実害があるのは rules / skills / agents / commands / workflows。
 
@@ -59,7 +59,7 @@ link が無くても動く ([142](done/142-research-claude-hooks-link-unreferenc
 
 1. **素通り経路**: PostToolUse の matcher `Write|Edit` は **Claude Code の Write/Edit ツールしか
    捕まえない**。`cat > ... <<EOF` / `sed -i` / `cp` / `git mv` / `git pull` での取り込みは全て
-   Bash ツールなので発火しない。⚠️ **ハーネスが Bash 優先の運用を指示する場合があり、その下では
+   Bash ツールなので発火しない。🚨 **ハーネスが Bash 優先の運用を指示する場合があり、その下では
    案 A の検出対象そのものが日常的に迂回される** (この issue 自身、Bash の heredoc で作られた)
 2. **非 blocking**: PostToolUse はツール実行**後**なので原理的に止められない。この repo で block
    しているのは PreToolUse の `deny-bare-tmux-kill.sh` だけ。通知が出た同じターンで従わずに
@@ -83,7 +83,7 @@ link が無くても動く ([142](done/142-research-claude-hooks-link-unreferenc
 
 ## 蒸し返さないこと
 
-⚠️ **「`~/.claude/rules` 等をディレクトリ丸ごと symlink にすれば per-file のリンク漏れ自体が起きない」は
+🚨 **「`~/.claude/rules` 等をディレクトリ丸ごと symlink にすれば per-file のリンク漏れ自体が起きない」は
 既に検討され却下済み**。`a7e9b29` (2026-02-09):「ディレクトリ丸ごとのシンボリックリンクだと
 他ツール (ubiregi-cli 等) が配置したリンクと競合するため、skill/agent 単位の個別リンクに変更」。
 [`verify-design-intent-before-refactor.md`](../_claude/rules/verify-design-intent-before-refactor.md) の
@@ -91,7 +91,7 @@ link が無くても動く ([142](done/142-research-claude-hooks-link-unreferenc
 
 ## 設計時の必須事項
 
-⚠️ [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) を通すこと。
+🚨 [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) を通すこと。
 特に:
 
 - **「検査できなかった」を緑にしない**。`~/.claude` が無い / 別 checkout が `~/dotfiles` の場合は

@@ -117,7 +117,7 @@ func parseFlags(cmd string, args []string) (*opts, []string, error) {
 	fs.BoolVar(&o.verbose, "verbose", false, "掃除などの詳細を stderr に出す")
 	fs.BoolVar(&o.force, "force", false, "確認せず実行する")
 	fs.StringVar(&o.onLost, "on-lost", "kill", "with で lease を失ったとき: kill | warn")
-	// ⚠️ flag は最初の非フラグ引数で解析を止める。シェルからは
+	// 🚨 flag は最初の非フラグ引数で解析を止める。シェルからは
 	// `lockman acquire "$dir" --ttl 5m` の順で書くのが自然なので、位置引数を
 	// 取り除きながら解析し直して、フラグが後ろに来ても効くようにする。
 	var positional []string

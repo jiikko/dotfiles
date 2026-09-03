@@ -28,7 +28,7 @@ func statusRowsFixture(t *testing.T, files int) *statusView {
 
 // oldDisplayIndex は **メモ化前の実装をそのまま書き写した独立オラクル**。
 //
-// ⚠️ 検証対象の rebuildDisplayIndex を呼んではいけない。当初そう書いていたため、
+// 🚨 検証対象の rebuildDisplayIndex を呼んではいけない。当初そう書いていたため、
 // 両辺が同じ関数由来になり `at[i] = len(index)` のバグが相殺されて
 // **cursorAt を全滅させる変異 (at[i] = 0) でも PASS した** (2026-08-14 の R2 レビューが実証)。
 // cursorAt がずれると「画面のカーソル行とスクロール位置が別の行を指す」という
@@ -111,7 +111,7 @@ func TestDisplayIndexCacheInvalidatesWhenRowsReplaced(t *testing.T) {
 }
 
 // セクション構成が変わる差し替え (件数が同じでも無効になること)。
-// ⚠️ 件数だけを鍵にすると素通りする形。裏の配列の同一性で見ているので通る。
+// 🚨 件数だけを鍵にすると素通りする形。裏の配列の同一性で見ているので通る。
 func TestDisplayIndexCacheInvalidatesWhenSectionsChangeAtSameCount(t *testing.T) {
 	v := statusRowsFixture(t, 4) // staged 2 / unstaged 2 = 見出し 2 + 行 4 = 6 行
 	before, _ := v.displayIndex()
@@ -149,7 +149,7 @@ func TestDisplayIndexNoRebuildOnCursorMove(t *testing.T) {
 	}
 }
 
-// ⚠️ 既知の限界を明示する characterization test。
+// 🚨 既知の限界を明示する characterization test。
 //
 // メモの有効性は「rows の裏の配列の同一性」で見ているので、**同じ配列を in-place で
 // 書き換える**とメモは古いまま返る。現状 rows は receive で丸ごと差し替えるだけなので
@@ -175,7 +175,7 @@ func TestDisplayIndexCacheStaleOnInPlaceMutation(t *testing.T) {
 
 // フレームの確保**バイト数**がファイル数に比例しないこと (issue 048 の主張)。
 //
-// ⚠️ `AllocsPerRun` (確保の**回数**) では測れない。この最適化が削るのは「1 本の大きな
+// 🚨 `AllocsPerRun` (確保の**回数**) では測れない。この最適化が削るのは「1 本の大きな
 // スライス」なので、回数の差は最適化の前後どちらも +5 で動かない — 実際 R1 レビューが
 // 当初の回数版テストを「メモ化を丸ごと revert しても PASS」と実証した (false green)。
 // バイト数なら 2000 件と 40 件の差が 48,745 B -> 682 B と 71 倍分離する。

@@ -118,7 +118,7 @@ func TestAutobuildWatchHandle(t *testing.T) {
 		}
 	})
 
-	// 完成は伝えて監視終了 (ユーザー要望 2026-08-01)。⚠️ 以前は無言だった — 開始時に
+	// 完成は伝えて監視終了 (ユーザー要望 2026-08-01)。🚨 以前は無言だった — 開始時に
 	// 「次回起動で反映」と伝えているため二度言うことになるから。その場で再起動できるように
 	// なったので意味が変わった: 完成は「行動できる」合図で、呼び出し側が再起動ダイアログを出す。
 	t.Run("完成は通知して監視終了", func(t *testing.T) {
@@ -215,7 +215,7 @@ func TestAutobuildToast(t *testing.T) {
 }
 
 // Update 経路の結合: ビルド完了は消えるトーストでなく再起動ダイアログで出す
-// (ユーザー要望 2026-08-01)。⚠️ トーストだと目を離している間に行動の機会だけが消える。
+// (ユーザー要望 2026-08-01)。🚨 トーストだと目を離している間に行動の機会だけが消える。
 func TestAutobuildMsgInstalledOpensRestartPrompt(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.toast.phase = toastHidden
@@ -238,7 +238,7 @@ func TestAutobuildMsgInstalledOpensRestartPrompt(t *testing.T) {
 
 // 中断できない処理 (claude update / push / pull) の最中は再起動ダイアログを出さない。
 //
-// ⚠️ 実際に起きた不具合の回帰防止: 以前は「キーは actModal が先に飲む」「描画は再起動ダイアログを
+// 🚨 実際に起きた不具合の回帰防止: 以前は「キーは actModal が先に飲む」「描画は再起動ダイアログを
 // 後に重ねる」と順序を 2 箇所へ別々に書いていたため、update 中に裏ビルドが完成すると
 // 「最前面のダイアログにどのキーも届かない」= 操作不能になった (実測: r/j/q/esc/enter/ctrl+g の
 // すべてが無反応)。しかもダイアログが更新中モーダルを覆うので、効かない理由も画面から消えていた。
@@ -255,7 +255,7 @@ func TestRestartPromptDefersWhileBlockingOperation(t *testing.T) {
 		{"claude update 中", func(m *browseModel) { m.actModal.beginUpdate("claude") }},
 		{"push 中", func(m *browseModel) { m.actModal.pushing = true }},
 		{"pull 中", func(m *browseModel) { m.actModal.pulling = true }},
-		// ⚠️ 確認待ち (y/N) も同じ。むしろこちらが危険だった: キーは確認モーダルが持つのに
+		// 🚨 確認待ち (y/N) も同じ。むしろこちらが危険だった: キーは確認モーダルが持つのに
 		// 最前面が再起動ダイアログになり、「その他のキー: 後で」に従って押した y が push を
 		// 実行した (実測)。無反応より悪い = 画面の指示どおりに押すと破壊的操作が走る。
 		{"push 確認中", func(m *browseModel) { m.actModal.pushConfirm = true }},
@@ -269,7 +269,7 @@ func TestRestartPromptDefersWhileBlockingOperation(t *testing.T) {
 			if out := stripANSI(m.View().Content); strings.Contains(out, "新しいバージョンが利用可能です") {
 				t.Errorf("actModal が出ているのに再起動ダイアログを重ねた:\n%s", out)
 			}
-			// ⚠️ 1 キーだけ押して見る: 確認待ちは 1 キーで解けるので、続けて押すと「解けた後の
+			// 🚨 1 キーだけ押して見る: 確認待ちは 1 キーで解けるので、続けて押すと「解けた後の
 			// ダイアログに答えた」ことになり、この分岐の主張と混ざる。
 			// r はこのダイアログの実行キー = 一番危険なキーなので、これで代表させる。
 			m.handleKey("r")
@@ -283,7 +283,7 @@ func TestRestartPromptDefersWhileBlockingOperation(t *testing.T) {
 	}
 }
 
-// ⚠️ 実際に起きた事故そのものの回帰防止。push 確認 (y/N) 中に裏ビルドが完成すると、以前は
+// 🚨 実際に起きた事故そのものの回帰防止。push 確認 (y/N) 中に裏ビルドが完成すると、以前は
 // 再起動ダイアログが最前面へ重なった。キーの持ち主は確認モーダルのままなので、画面の
 // 「その他のキー: 後で」に従って押した y が push を実行した (無反応より悪い: 画面の指示に
 // 従うと破壊的操作が走る)。ダイアログを出さないことで「見えている選択肢 = 効く選択肢」を保つ。
@@ -338,7 +338,7 @@ func TestRestartPromptKeys(t *testing.T) {
 			t.Error("ダイアログが残っている")
 		}
 	})
-	// ⚠️ r は issues viewer の再読込・job パネルの再実行にも割り当たっている。ダイアログが
+	// 🚨 r は issues viewer の再読込・job パネルの再実行にも割り当たっている。ダイアログが
 	// 出ている間は 1 キーで必ず閉じ、r 以外では再起動しない ("再読込のつもりが再起動" を防ぐ)。
 	for _, key := range []string{"j", "q", "esc", "i", "R"} {
 		t.Run(key+" は再起動しない", func(t *testing.T) {
@@ -396,7 +396,7 @@ func TestAutobuildMsgKeepsWatchingWhileNotifying(t *testing.T) {
 // pull で自分のソースが更新されたら、その場で裏ビルドを始めて完成したら再起動を案内する
 // (ユーザー要望 2026-08-05: glogx を手で起動し直す手間をなくす)。
 //
-// ⚠️ 「pull した repo が dotfiles か」は判定しない。shim の指紋比較は自分のソースディレクトリ
+// 🚨 「pull した repo が dotfiles か」は判定しない。shim の指紋比較は自分のソースディレクトリ
 // だけを見るので、無関係な repo の pull では stale にならず何も起きない (判定を写経しない)。
 func TestPullStartsAutobuildAndOffersRestart(t *testing.T) {
 	var asked []string
@@ -407,7 +407,7 @@ func TestPullStartsAutobuildAndOffersRestart(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.toast.phase = toastHidden
 	m.actModal.pulling = true
-	// ⚠️ pullMsg の Batch をそのまま走らせる (配線ごと固定する)。deliverMsgs は Batch を
+	// 🚨 pullMsg の Batch をそのまま走らせる (配線ごと固定する)。deliverMsgs は Batch を
 	// 再帰展開して match したものだけ Update へ渡すので、tick が状態を進めてしまうことはない。
 	_, cmd := m.Update(pullMsg{})
 	if cmd == nil {
@@ -473,7 +473,7 @@ func TestAutobuildNotifiesAtStartup(t *testing.T) {
 	if !m.toast.visible() {
 		t.Fatal("起動直後に「ビルド中」トーストが出ていない")
 	}
-	// ⚠️ 「次回起動で反映」とは書かない: 完成したら再起動ダイアログを出すので、その場で反映できる。
+	// 🚨 「次回起動で反映」とは書かない: 完成したら再起動ダイアログを出すので、その場で反映できる。
 	// ビルド中であることと、完成後に行動できることの両方が伝わっているか。
 	if !strings.Contains(m.toast.text, "ビルド中") || !strings.Contains(m.toast.text, "再起動") {
 		t.Errorf("文面が想定と違う: %q", m.toast.text)
@@ -511,7 +511,7 @@ func TestAutobuildNotWatchedWithoutEnv(t *testing.T) {
 
 // 前回のビルドが失敗したまま再挑戦も止まっている状態は、起動時に警告として出す。
 //
-// ⚠️ この経路が無いと完全に無言になる: backoff が効いているので GO_AUTOBUILD_PENDING は
+// 🚨 この経路が無いと完全に無言になる: backoff が効いているので GO_AUTOBUILD_PENDING は
 // 立たず、ビルドも走らないので監視も何も検出しない。「新しいコードを書いたのに旧版が
 // 動き続ける」ことに誰も気づけない (実例 2026-07-31: 13 分間 stale なバイナリで操作していた)。
 func TestAutobuildStaleWarnsAtStartup(t *testing.T) {
@@ -644,7 +644,7 @@ func TestAutobuildStaleBinary(t *testing.T) {
 
 // ソースが自バイナリより新しい = 誰もビルドしていない、も stale の根拠にする。
 //
-// ⚠️ これが無いと無言で旧版に固定される経路が残る (issue 033): lock 残留で shim が
+// 🚨 これが無いと無言で旧版に固定される経路が残る (issue 033): lock 残留で shim が
 // 「他がビルド中」と誤認する / 同期ツールでソースの mtime が巻き戻り shim の -nt が偽になる /
 // shim を経ずバイナリを直接起動する。失敗記録はどれでも作られない。
 func TestAutobuildStaleFromNewerSources(t *testing.T) {
@@ -719,7 +719,7 @@ func mkdir(t *testing.T, path string) {
 }
 
 // 「古い版で動いています」に、動いている版の手がかりを添える。
-// ⚠️ 判定には使わない (tree hash はコミット済みしか見ないので「今より古いか」は言えない)。
+// 🚨 判定には使わない (tree hash はコミット済みしか見ないので「今より古いか」は言えない)。
 // ここで言えるのは「どの版か」だけで、追う人が git show で辿れれば足りる。
 func TestAutobuildRunningRev(t *testing.T) {
 	dir := t.TempDir()

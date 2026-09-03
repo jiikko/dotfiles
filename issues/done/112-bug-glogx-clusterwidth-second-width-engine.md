@@ -20,7 +20,7 @@ U+0600 (Arabic number sign)  disp=0 / cluster=1
 া (U+09BE)                    disp=1 / cluster=0
 ```
 
-ASCII / CJK / 国旗 / ZWJ 絵文字 / 肌色 / bare ⚠ は**全部一致する** (= 日常の入力では出ない)。
+ASCII / CJK / 国旗 / ZWJ 絵文字 / 肌色 / bare 🚨 は**全部一致する** (= 日常の入力では出ない)。
 
 ## 発火条件と壊れ方
 

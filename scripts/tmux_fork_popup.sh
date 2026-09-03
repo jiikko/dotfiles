@@ -18,7 +18,7 @@
 #   実害化しない (開くたびに緑帯が再設定される)。FORK 中は緑帯で scratch (点滅ピンク/赤) とも
 #   通常セッション (青) とも一目で区別できる。
 #
-# ⚠️ `new-session -d -A` は使わない: 既存セッションに -A を打つと popup 内の最初の C-t b
+# 🚨 `new-session -d -A` は使わない: 既存セッションに -A を打つと popup 内の最初の C-t b
 #    (close 用 detach-client) が 1 回効かず「閉じるのに 2 回押す」回帰になる (scratch で実測・
 #    _tmux.conf の bind t コメント参照)。ここは attach のみで -A を一切使わない。
 set -eu

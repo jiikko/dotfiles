@@ -23,9 +23,9 @@ import (
 // browseModel を返す。このファイルの 10 テストが同じ 9 行のプロローグを繰り返していたのを
 // 1 行にしたもの (issue 199)。
 //
-// ⚠️ 3 つとも返すこと。dir は追加コミット (commitLines) に、opts は BuildFingerprintArgs /
+// 🚨 3 つとも返すこと。dir は追加コミット (commitLines) に、opts は BuildFingerprintArgs /
 // LoadCommits に個別に要る。どれかを隠すと呼び出し側が結局自前で組み直す。
-// ⚠️ newTempRepo は t.Chdir する副作用を持つので、LoadCommits より先に呼ぶ順序を変えない。
+// 🚨 newTempRepo は t.Chdir する副作用を持つので、LoadCommits より先に呼ぶ順序を変えない。
 //
 // ここに置くのは意図的で、tui_helpers_test.go へは上げない。実 git repo に依存するのは
 // このファイルだけで、共有語彙に見せると読み手が「全 main テストの前提」と誤解する。
@@ -304,7 +304,7 @@ func TestGitLogReflectAtTopFallsToPullAnim(t *testing.T) {
 //
 // これが崩れる形は「イベントが来ないので 1 分ポーリングだけになる」= 無音ではなく静かに
 // 即時性を失うだけなので、gitLogWatchDirs の対象漏れは他のどの検査でも観測できない。
-// ⚠️ fsnotify を作れない環境では skip する (その環境ではポーリングが唯一の経路)。
+// 🚨 fsnotify を作れない環境では skip する (その環境ではポーリングが唯一の経路)。
 func TestIntegrationGitLogWatchSeesCommitEvent(t *testing.T) {
 	w, err := newDirWatcher()
 	if err != nil {
@@ -448,7 +448,7 @@ func TestGitLogFPDiscardsMeasurementTakenBeforeSelfReload(t *testing.T) {
 		t.Fatalf("pull の読み直しが効いていない: %d 件", len(m.commits))
 	}
 	m.toast = toast{} // pull のトーストと区別する
-	// ⚠️ pull の演出中は見送り (gitLogReloadDeferred) に入って何もしないため、演出を落として
+	// 🚨 pull の演出中は見送り (gitLogReloadDeferred) に入って何もしないため、演出を落として
 	// 「古い測定値をどう扱うか」だけを判定に残す (落とさないと、この検査は演出のおかげで
 	// 通ってしまい、古い測定値を採用する変異を検知できない — 実測 2026-09-01)。
 	m.pullAnimating = false
@@ -521,7 +521,7 @@ func TestGitLogReloadDeferredCoversEachState(t *testing.T) {
 }
 
 // ctrl+d でページ送りしている最中に先頭コミットが書き換わっても (`--amend`)、見えている画面は
-// 動かない。⚠️ カーソルだけを錨にすると、この状態のカーソルは先頭コミット = amend で最も
+// 動かない。🚨 カーソルだけを錨にすると、この状態のカーソルは先頭コミット = amend で最も
 // 消えやすい SHA を指すため「先頭へ倒す」経路に落ちる (敵対レビューで実測 2026-09-01)。
 func TestGitLogReflectSurvivesAmendOfTopCommit(t *testing.T) {
 	m, dir, _ := realRepoBrowse(t, 10, "c1", "c2", "c3", "c4", "c5", "c6")
@@ -560,7 +560,7 @@ func TestGitLogWatchDirsCoversNestedRefs(t *testing.T) {
 	gitInRepo(t, dir, "switch", "-q", "-c", "feature/x")
 	commitLines(t, dir, 3, "c2")
 	dirs := gitLogWatchDirs()
-	// ⚠️ t.TempDir() のパスと git が返す --absolute-git-dir は macOS では symlink の解決で
+	// 🚨 t.TempDir() のパスと git が返す --absolute-git-dir は macOS では symlink の解決で
 	// 食い違う (/var/folders と /private/var/folders) ので、末尾で照合する。
 	want := filepath.Join("refs", "heads", "feature")
 	found := slices.ContainsFunc(dirs, func(d string) bool { return strings.HasSuffix(d, want) })

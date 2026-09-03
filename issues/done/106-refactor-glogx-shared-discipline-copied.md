@@ -79,7 +79,7 @@ trigger は据え置き (「幅か色で実際に drift が出たとき」また
 
 - **壊れ方は compile error** (const alias なので値のドリフトは構造的に起きない)。
   106 の ✅ は嘘ではない。残っているのは**名前と依存の向き**だけ
-- ⚠️ `waitdelay_discipline_test.go` は「WaitDelay が張られているか」しか見ないので、
+- 🚨 `waitdelay_discipline_test.go` は「WaitDelay が張られているか」しか見ないので、
   **この置換を守るテストは無い**。直すときに一緒に考えること
 
 対応: 8 箇所を `subproc.WaitDelay` へ置換し、`usage.SubprocessWaitDelay` の別名は

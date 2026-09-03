@@ -68,7 +68,7 @@ _ = overlayBoxTopRight(window, []string{"x"}, 0, false) // width0: panic しな�
 
 - **変異**: `termsafe.DropEmojiVS16` を `return s` へ → `glogx/termsafe` と `glogx` の
   **両方が同時に FAIL** (1 変異で 2 本落ちる = 片方が冗長であることの実証)
-- **対応**: main 側の重複 3 assert を削除。ただし `dispWidth("⚠") == 1` と VS15 保持の
+- **対応**: main 側の重複 3 assert を削除。ただし `dispWidth("🚨") == 1` と VS15 保持の
   2 assert は main/termwidth 固有なので残す。同名テストは紛らわしいので残す分を
   `TestDropEmojiVS16BareWidth` 等へ改名する
 

@@ -54,7 +54,7 @@ grep -qE "${TT_TAB}restore=42s$" "$DLOG" \
 printf '✓ post: restore-end と所要時間を記録する\n'
 
 # --- (3) 非 default socket では 1 行も書かない (この抽出の本題) --------------------------
-# ⚠️ ここが緩むと -L の隔離テストサーバの復元が本番ログへ混ざり、watchdog の verdict が汚れる
+# 🚨 ここが緩むと -L の隔離テストサーバの復元が本番ログへ混ざり、watchdog の verdict が汚れる
 for phase in pre post; do
   STUB_SOCKET_PATH="/nowhere/tmux-501/lab" STUB_DURATION=7 hook "$phase"
   [ ! -s "$LOG" ] || { printf '✗ 非 default socket なのに観測ログへ書いた (%s):\n' "$phase"; cat "$LOG"; exit 1; }

@@ -27,7 +27,7 @@ Ctrl-C 経路、`src/doctor/runner/runner.go`、`src/doctor/disk/scan.go` の go
     **各 Result の直下に挿入する** (`doctor_view.go` の `diskSection`)。走査中は Msg が届くたびに
     `diskResults` が伸びるので、**選択可能な行が行の途中に増える** = カーソル index のずれの
     再現性は上がっている。
-    ⚠️ issue 182 (ラベル列の幅を縮める) は `labelW` の切り詰めだけで `selectable` にも行数にも
+    🚨 issue 182 (ラベル列の幅を縮める) は `labelW` の切り詰めだけで `selectable` にも行数にも
     触らないので、**この攻め口とは無関係**
 - **`expanded` のキーのずれ**: brew は `brew:<i>:<summary>`、disk は `disk:<ID>`。再スキャンで順序が
   変わると展開状態がずれる / 別の行が開く。`start` が `map{}` で作り直しているのは意図か
@@ -85,7 +85,7 @@ Ctrl-C 経路、`src/doctor/runner/runner.go`、`src/doctor/disk/scan.go` の go
 |---|---|---|---|
 | ① | rows とカーソルの index ずれ | **210** (P2) | disk 行は **Size 降順に並べ替えて**描くのに `cursor` は index 保持。走査中に大きい結果が届くと**選択が別エントリへ黙って移り**、`y`/`Y` が別の行をコピーする |
 | ④ | Setpgid と割り込み | **211** (P2) | `cancel()` は同期的に殺さない (watchdog goroutine が `Kill(-pgid)`)。`cancelAll()` の次の行が `syscall.Exec` なので**プロセス像ごと消えて孫が孤児化**する。実測 3/3: cancel 直後 alive=true / 2 秒後 alive=false |
-| ⑤ | 時間依存のテスト | **212** (P3) | `TestExecKillsGrandchildOnCancel` は「marker が無いこと」で判定するため、**孫が fork される前に cancel が届くと同じ緑**。⚠️ red team は「機構が壊れていても緑」と報告したが、**反証レビューがこれを否定**した (下記) |
+| ⑤ | 時間依存のテスト | **212** (P3) | `TestExecKillsGrandchildOnCancel` は「marker が無いこと」で判定するため、**孫が fork される前に cancel が届くと同じ緑**。🚨 red team は「機構が壊れていても緑」と報告したが、**反証レビューがこれを否定**した (下記) |
 
 ### 壊せなかった攻め口 (3 件。次の監査で再生成しないための記録)
 

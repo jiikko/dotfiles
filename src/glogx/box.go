@@ -84,7 +84,7 @@ type panelBoxStyle struct {
 	color  string    // 枠線の SGR 色 (通常 ansiDim。toast だけ種別色)
 	// indent は全行の頭に付ける空白の桁数 (0 = 付けない)。
 	//
-	// ⚠️ 見た目の都合ではなく確保を削るために持っている。呼び出し側で
+	// 🚨 見た目の都合ではなく確保を削るために持っている。呼び出し側で
 	// `" " + line` を全行に掛けると**可視行ぶんの文字列を丸ごともう 1 部作る**ことになり、
 	// 実測で 8.3 KB/frame (1 フレーム 40 KB のうち約 20%) を捨てていた。ここで組み立てに
 	// 織り込めば、既にある連結の一部になるので追加の確保が要らない。
@@ -156,7 +156,7 @@ func withScrollbar(rows []string, boxWidth, total, offset int, colored bool) []s
 
 // scrollbarColumnWidth はバー列がこの関数のクリップで消費する桁数 (バー 1 桁 + 手前の空き 1 桁)。
 //
-// ⚠️ 内訳を変えるならここ 1 箇所。事前に幅を差し引いてから行を組む呼び出し側 (issues viewer の
+// 🚨 内訳を変えるならここ 1 箇所。事前に幅を差し引いてから行を組む呼び出し側 (issues viewer の
 // listLines / bodyLines) もこの定数を引く — 別々の数で持つと等号でずれ、小さければ全幅の行だけ
 // 末尾 1 文字が "…" に化け、大きければ 1 桁ぶん本文が痩せる。どちらも「幅を超えない」ので
 // テストの上限アサートを素通りする。
@@ -284,7 +284,7 @@ func buildPanelBoxImpl(title string, rows []string, width int, colored bool, st 
 	leftEdge, rightEdge := paint(b.v+" ", border, colored), paint(" "+b.v, border, colored)
 	shadeFirst, shadeRest := shadowFeather(colored), shadowRun(1, colored)
 	for i, row := range rows {
-		// ⚠️ 色なしモードでは外部由来の SGR を落とす。paint も scrollbarColumn も
+		// 🚨 色なしモードでは外部由来の SGR を落とす。paint も scrollbarColumn も
 		// colored=false のとき reset を一切出さないため、CI ログ 1 行に閉じていない SGR が
 		// あると padding・枠・スクロールバー列・後続行まで属性が続く (NO_COLOR 起動時に
 		// 「以降が全部消える」形の画面破壊になる)。色を出さないモードなのだから、

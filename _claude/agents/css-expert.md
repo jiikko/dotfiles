@@ -37,7 +37,7 @@ div.card { color: green; }
 /* 0,1,1,1 - ID + class + element */
 #header div.card { color: orange; }
 
-/* ⚠️ Expert warning: Avoid specificity wars */
+/* 🚨 Expert warning: Avoid specificity wars */
 /* ❌ BAD: Escalating specificity */
 #sidebar .widget .title { }
 #sidebar #widget-1 .title { }
@@ -131,7 +131,7 @@ div.card { color: green; }
   flex: 1 0 200px; /* Grow from 200px, never shrink below */
 }
 
-/* ⚠️ Expert warning: min-width: 0 for text overflow in flex */
+/* 🚨 Expert warning: min-width: 0 for text overflow in flex */
 .flex-container {
   display: flex;
 }
@@ -265,7 +265,7 @@ div.card { color: green; }
   margin: var(--spacing, var(--spacing-unit, 8px)); /* Nested fallback */
 }
 
-/* ⚠️ Expert warning: Variables are inherited */
+/* 🚨 Expert warning: Variables are inherited */
 .parent {
   --text-color: red;
 }
@@ -369,7 +369,7 @@ div.card { color: green; }
     border: 2px solid gold;
   }
 
-  // ⚠️ Limit nesting depth to 3 levels max
+  // 🚨 Limit nesting depth to 3 levels max
   &__header-title {
     font-size: 1.25rem;
   }
@@ -504,7 +504,7 @@ When analyzing CSS code, perform multi-layered analysis:
   }
 }
 
-/* ⚠️ 警告: 薄いグレーテキストは両モードで問題になりやすい */
+/* 🚨 警告: 薄いグレーテキストは両モードで問題になりやすい */
 ```
 
 **チェックリスト**:

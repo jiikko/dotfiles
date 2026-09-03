@@ -29,7 +29,7 @@ CLAUDE.md「コード変更時の自律改善」は**同じ変更を 2 箇所に
 `.github/actions/` に composite を 1 本切り出す (`run-bench` が既にこの形)。入力は
 「必要なコマンドの空白区切り」だけにし、**formula 名の写像も composite 側に集約**する。
 
-## ⚠️ 注意
+## 🚨 注意
 
 - bash 5 の導入は `run-bench` composite に既に入っている。**二重に入れない**
 - `tests.yml` だけは対象コマンドを Makefile (`CI_COMMANDS_*`) から sed で読む step を持つ。

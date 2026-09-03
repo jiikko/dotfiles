@@ -73,7 +73,7 @@ issue 149 (codex 関数が snapshot で壊れる) の対応。修正 c460f0e / �
   dirty のまま**なので、共有 tree では `make pull` を使う
 - 新しい揮発キーを CLI が書き始めたら同じことが起きる。構造で止めるなら
   「settings.json の top-level キーを allowlist で検査する」ゲートが要る (未実装)
-- ⚠️ **未検証の疑問**: `normalize-settings` は `local * extracted` で **settings.json 側を優先**
+- 🚨 **未検証の疑問**: `normalize-settings` は `local * extracted` で **settings.json 側を優先**
   して local を上書きする。一方 Claude Code の設定の優先順位は local > settings.json。
   現在 local は `model: opus`、settings.json は `model: fable` で食い違っており、
   「CLI がどちらのファイルへ書くか」を確かめていない。**取り違えると `/model` の選択が

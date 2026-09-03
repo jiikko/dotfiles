@@ -80,7 +80,7 @@ set-hook -g client-attached 'if -F "#{==:#{session_name},scratch}" "set -g statu
 set-hook -g client-detached 'set -g status-interval 1'
 ```
 
-⚠️ `client-attached` は popup 以外の attach でも発火するので条件を詰める必要がある。
+🚨 `client-attached` は popup 以外の attach でも発火するので条件を詰める必要がある。
 実装するなら隔離サーバ (`-L`) で検証してから入れること。
 
 ### (B) `status-interval 0` を既定にする (演出を捨てる)
@@ -104,7 +104,7 @@ set-hook -g client-detached 'set -g status-interval 1'
 | `_tmux.conf` の設定 | **1** | `_tmux.conf:73` |
 | `tmux show -s terminal-features` の行数 | **5** | 2026-09-01 実測 (`5f12aea` 反映済み) |
 
-⚠️ **この issue が「切り分けのために戻せ」と書いていた条件 (`status-interval 1`) は、実は
+🚨 **この issue が「切り分けのために戻せ」と書いていた条件 (`status-interval 1`) は、実は
 一度も外れていない**。`status-interval 0` は調査中の一時的な set であって `_tmux.conf` には
 入っておらず、稼働サーバも 1 のままだった (この節の初稿は「現状 0」と書いていたが誤り。
 実測で訂正した)。
@@ -115,7 +115,7 @@ set-hook -g client-detached 'set -g status-interval 1'
 - `terminal-features` の膨張だけが直っている (38 → 5 エントリ、`5f12aea`)
 
 この条件でブレが出ていないなら、issue の判定表どおり**原因は `terminal-features` の膨張**
-だったことになり、追加対応は不要。⚠️ ただし「今ブレていないか」をユーザーに確認して
+だったことになり、追加対応は不要。🚨 ただし「今ブレていないか」をユーザーに確認して
 いないので原因は断定しない (「再現していないという報告も取っていない」が正確な状態)。
 
 - **再開の trigger**: 背景のブレが再発したとき。そのときは (A)(B)(C) から着手する。

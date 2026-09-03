@@ -86,7 +86,7 @@ printf '## kill_confirm: 対象の固定と fail-safe\n'
 reset_calls
 STUB_GUM_EXIT=0 run "$STUB_PATH" "$KILL" window
 assert_called "tmux kill-window -t @7" "window 承認 → 冒頭で固定した window_id へ kill-window"
-# ⚠️ "gum confirm --default=false" の連結で assert しないこと。引数順に結合してしまい、
+# 🚨 "gum confirm --default=false" の連結で assert しないこと。引数順に結合してしまい、
 # 不変条件が守られたまま並べ替えただけで red になる (= assert を緩める圧力になる)。
 grep -E '^gum .*--default=false' "$CALLS" >/dev/null \
   || { printf '✗ 確認が --default=false でない (Enter 素通しで実行される):\n'; cat "$CALLS"; exit 1; }

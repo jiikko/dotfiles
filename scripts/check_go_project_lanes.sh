@@ -12,9 +12,9 @@
 #   2. .github/workflows/src_<name>.yml がある (paths filter つきの薄い caller)
 #   3. その workflow の paths が src/<name>/ を含む (含まないと push で 1 度も起動しない)
 #
-# ⚠️ 検査できなかったときに緑を返さない。依存コマンド不在・発見 0 件はすべて失敗にする
+# 🚨 検査できなかったときに緑を返さない。依存コマンド不在・発見 0 件はすべて失敗にする
 #   (`_claude/rules/adversarial-review-own-safeguards.md` の false green)。
-# ⚠️ paths の検査は「行として現れるか」の静的検査。YAML として解釈しないので、
+# 🚨 paths の検査は「行として現れるか」の静的検査。YAML として解釈しないので、
 #   コメントアウトされた paths も通ってしまう。取りこぼすより出す側へ倒す方針は変えない
 #   (誤って通す形は下の quoted/unquoted 両対応で狭めてある)。
 set -uo pipefail
@@ -31,7 +31,7 @@ done
 grep -q probe <<< 'probe' || fail "grep が正常に動作しない"
 
 # 出典は Makefile と同じ `src/*/go.mod` (手で列挙しない)。
-# ⚠️ glob + `-f` で見る。`find` は symlink を辿らないので、`src/<name>` が symlink のとき
+# 🚨 glob + `-f` で見る。`find` は symlink を辿らないので、`src/<name>` が symlink のとき
 #    make の `wildcard` は見えるのに検査は見えない = 「出典は Makefile と同じ」が崩れる
 #    (敵対的レビュー 2026-09-03 の P3-10 で実測)
 projects=""
@@ -54,12 +54,12 @@ while IFS= read -r name; do
     printf '✗ %s: %s が無い (make -C で lint / test を呼べない)\n' "$name" "$mk"; bad=$((bad + 1)); continue
   fi
   for t in lint test; do
-    # ⚠️ 行頭の target 定義だけを見る (`.PHONY: lint test` の行や `test-foo:` に当てない)。
+    # 🚨 行頭の target 定義だけを見る (`.PHONY: lint test` の行や `test-foo:` に当てない)。
     #    `^$t:` だけだと **make の変数代入 `lint:=x` にも当たる** (敵対的レビュー 2026-09-03 の P2-8)
     if ! grep -qE "^$t:([[:space:]]|\$)" "$mk"; then
       printf '✗ %s: %s に %s: target が無い\n' "$name" "$mk" "$t"; bad=$((bad + 1)); continue
     fi
-    # ⚠️ 名前だけあって recipe が空だと「lint が走る」を守れない (同 P3-9)。
+    # 🚨 名前だけあって recipe が空だと「lint が走る」を守れない (同 P3-9)。
     #    target 行の次の行がタブ始まり (recipe) か、依存を持つことを求める
     if ! awk -v t="$t" '
           $0 ~ "^" t ":" { got = 1; deps = $0; sub(/^[^:]*:[[:space:]]*/, "", deps); next }
@@ -72,7 +72,7 @@ while IFS= read -r name; do
   if [ ! -f "$wf" ]; then
     printf '✗ %s: %s が無い (push しても CI が起動しない)\n' "$name" "$wf"; bad=$((bad + 1)); continue
   fi
-  # ⚠️ **`paths:` ブロックの中だけ**を見る。行だけ grep すると `paths-ignore:` の下に書かれた
+  # 🚨 **`paths:` ブロックの中だけ**を見る。行だけ grep すると `paths-ignore:` の下に書かれた
   #    「その dir を除外する」設定を「含む」と読んでしまい、不変条件が反転したまま緑になる
   #    (敵対的レビュー 2026-09-03 の P2-3 で実測)。指定は quoted / unquoted の両方が使われている
   if ! awk -v want="src/$name/" '

@@ -334,7 +334,7 @@ func TestFetchCIStatusesChunkPartialFailure(t *testing.T) {
 
 // argsRunner は呼び出し引数に応じて応答を切り替える CommandRunner。
 //
-// ⚠️ この runner の中で t.Fatal* を呼んではいけない (Errorf を使う)。CommandRunner は
+// 🚨 この runner の中で t.Fatal* を呼んではいけない (Errorf を使う)。CommandRunner は
 // FetchJobDetail / FetchCIStatuses が goroutine から呼ぶので、テスト goroutine 以外での
 // FailNow は runtime.Goexit でその goroutine だけを終わらせ、「即座に停止」の契約が黙って
 // 破棄される — テストは FetchJobDetail から先へ進み、欠けたデータで後続 assert が落ちて
@@ -457,7 +457,7 @@ func recordingRunner(responses map[string]string, failures map[string]error) (Co
 		mu.Lock()
 		calls = append(calls, joined)
 		mu.Unlock()
-		// ⚠️ 長いパターンから照合する: map の反復順は非決定的で、"actions/jobs/7" と
+		// 🚨 長いパターンから照合する: map の反復順は非決定的で、"actions/jobs/7" と
 		// "actions/jobs/7/logs" のように前方一致で競合する組を登録すると、実行ごとに
 		// 別の応答が返って flake する
 		if pattern, ok := longestMatch(joined, slices.Collect(maps.Keys(failures))); ok {
@@ -614,7 +614,7 @@ func TestSanitizeDetailLineDropsNonSGREscapes(t *testing.T) {
 		{"DCS", "a\x1bPq#0\x1b\\b", "ab"},
 		{"2 文字エスケープ", "a\x1b7b", "ab"},
 		{"末尾の裸 ESC", "ab\x1b", "ab"},
-		// ⚠️ 途切れたシーケンスは「導入子 (ESC) だけ落として残りは本文として出す」。
+		// 🚨 途切れたシーケンスは「導入子 (ESC) だけ落として残りは本文として出す」。
 		// 行末まで捨てる実装にしていたが、それだと `BUILD <ESC>]FAILED: 12 tests failed` の
 		// ような入力で失敗の記録が黙って消える = 制御シーケンスを使わずに文字を隠せる
 		// (敵対的レビュー 2026-08-05 の指摘)。ESC さえ落とせば残りはただの文字列で端末は

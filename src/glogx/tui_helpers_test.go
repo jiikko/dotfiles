@@ -14,7 +14,7 @@ import (
 
 // TestMain はパッケージ全体のキャッシュ置き場を一時ディレクトリへ逃がす。
 //
-// ⚠️ 実ユーザーの ~/.cache/glog を触らせないため: quit() は「最後に見ていた画面」を保存/削除する
+// 🚨 実ユーザーの ~/.cache/glog を触らせないため: quit() は「最後に見ていた画面」を保存/削除する
 // (issues_state.go) ので、隔離しないと make test が開発者の記憶を消す。CI キャッシュ
 // (cache.go) と claude バージョンキャッシュも同じ base を使う。個別テストの
 // t.Setenv("XDG_CACHE_HOME", ...) は従来どおり上書きできる。
@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 			panic(err) // 隔離できないまま走らせると実ユーザーのキャッシュを触る
 		}
 	}
-	code := m.Run() // ⚠️ os.Exit は defer を走らせないので、片付けは Run の後に手で書く
+	code := m.Run() // 🚨 os.Exit は defer を走らせないので、片付けは Run の後に手で書く
 	if dir != "" {
 		_ = os.RemoveAll(dir)
 	}
@@ -55,7 +55,7 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 	m := newBrowseModel(commits, statuses, toFetch, Repo{Owner: "o", Name: "r"}, true,
 		&Options{NoFrame: true}, false, 80, 10)
 	t.Cleanup(m.cancel)
-	// ⚠️ 開閉の演出はテストでは切る (zoom.go)。View の期待値が「中央から開く途中の姿」に
+	// 🚨 開閉の演出はテストでは切る (zoom.go)。View の期待値が「中央から開く途中の姿」に
 	// なると全テストが読めなくなるため。演出そのものは zoom_test.go が直接検査する。
 	m.zoom.off = true
 	// issues viewer の閉じる演出も同じ理由で切る (既存テストは i / q で即座に閉じる前提)。
@@ -69,7 +69,7 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 
 // stubClock は timeNow を固定時刻 Unix(1000, 0) に差し替え、テスト終了時に戻す。返す advance で
 // 時計を進める (演出の進捗・経過時間の判定を決定的にする)。実時間に戻したいテストは従来どおり
-// 自前で退避する。⚠️ 基準時刻を変えないこと: tui_panel_test.go の ETA fixture (StartedAt に
+// 自前で退避する。🚨 基準時刻を変えないこと: tui_panel_test.go の ETA fixture (StartedAt に
 // Unix(880/910/940) 等) が「Unix(1000) から見た相対時間」で組まれている。
 func stubClock(t *testing.T) (advance func(time.Duration)) {
 	t.Helper()
@@ -81,7 +81,7 @@ func stubClock(t *testing.T) (advance func(time.Duration)) {
 }
 
 // releaseKey は「指を離した」ことにする (キーリピート判定をリセットする。swallowKeyRepeat)。
-// ⚠️ テストは同じキーを瞬間的に 2 回押すが、実機ではありえない速さなので自動リピート扱いに
+// 🚨 テストは同じキーを瞬間的に 2 回押すが、実機ではありえない速さなので自動リピート扱いに
 // なる。意図的な 2 回目であることをテスト側で明示する (実機では 300ms 空ければ同じ)。
 func releaseKey(m *browseModel) {
 	m.lastKey, m.lastKeyAt = "", time.Time{}
@@ -151,7 +151,7 @@ func stubBrowser(t *testing.T) *string {
 	return &opened
 }
 
-// testPopupWidth は tmux popup で glogx が実際に使う幅の代表値。⚠️ production はこの値を持たない
+// testPopupWidth は tmux popup で glogx が実際に使う幅の代表値。🚨 production はこの値を持たない
 // (幅は m.contentWidth() = 端末幅から決まる)。tmux 側が端末幅の 90% を popup に割り当てる運用
 // (_tmux.conf) での実測値で、「1 行に収まるか」を見るテストの基準として共有する。
 // ここを変えると hint の長さの許容量が変わるので、変えたら実機で末尾が切れないか確認すること。
@@ -159,7 +159,7 @@ const testPopupWidth = 84
 
 // pinFallbackEditor は $VISUAL / $EDITOR を空にして editorCommand の fallback (nvim) を固定する。
 //
-// ⚠️ 起動コマンドを**完全一致**で検証するテストはこれを呼ぶ。editorCommand は環境変数を読むので、
+// 🚨 起動コマンドを**完全一致**で検証するテストはこれを呼ぶ。editorCommand は環境変数を読むので、
 // 開発者の環境 (EDITOR="code -w" 等) がそのまま期待値に混ざる。末尾引数だけ見る形にすれば環境に
 // 強いが、それだと前に引数を挿し込む変異 (例: -R を足して実ファイルを readonly で開く =
 // editCmd の doc が禁じている) を通してしまうので、環境を固定して完全一致で見る方を選ぶ。
@@ -171,7 +171,7 @@ func pinFallbackEditor(t *testing.T) {
 
 // stubEditorCapture は runEditorCmd を「起動せず *exec.Cmd を記録する」実装へ差し替える。
 //
-// ⚠️ エディタ連携のテストは全部これを使う。回数だけ数える stub も昔あったが、それだと
+// 🚨 エディタ連携のテストは全部これを使う。回数だけ数える stub も昔あったが、それだと
 // 「何を開いたか」が見えず、渡す対象を取り違えた実装 (iss.Path → iss.Dir 等) を通してしまう。
 // 差し替え点を 1 つに保つのは、runEditorCmd の契約 (非 nil な Cmd を返す) が変わったときに
 // 直す箇所を 1 箇所にするため。

@@ -40,7 +40,7 @@ Claude Code に issue を書かせながら viewer で眺める使い方では�
 
 - **tick は autobuildWatch の型を踏襲する** (`autobuild.go`)。`spinnerActive()` に足して 12.5fps の
   フレーム tick を常時回すのではなく、**自分の周期 (1s) で自己再アームする独立チェーン**にする。
-  viewer を閉じたら止める。⚠️ フレーム tick に混ぜると「viewer を開いている間ずっと 12.5fps で
+  viewer を閉じたら止める。🚨 フレーム tick に混ぜると「viewer を開いている間ずっと 12.5fps で
   起きている」= glogx が守ってきた「動くものがある間だけ tick を回す」設計を崩す
 - 監視対象は 2 種類。**ディレクトリの mtime だけでは本文の書き換えを検出できない** (dir の mtime は
   create/delete/rename でしか動かない):

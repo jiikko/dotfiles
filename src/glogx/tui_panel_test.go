@@ -77,7 +77,7 @@ func TestCIPollStartsAtOpenPanelWithoutDetails(t *testing.T) {
 
 // 世代ガード: リロード (ciPollGen が進む) 後に届いた旧世代の ciPollMsg は、追従対象があっても
 // 破棄される (リロードで対象そのものが入れ替わるため、旧タイマーが 2 本目のチェーンにならない)。
-// ⚠️ 追従対象 (pending) を残しておくのが要: 対象が無いと世代比較の後の「対象なしで停止」経路で
+// 🚨 追従対象 (pending) を残しておくのが要: 対象が無いと世代比較の後の「対象なしで停止」経路で
 // 先に return し、世代ガードを消しても PASS してしまう。
 func TestCIPollGenGuardDiscardsStaleGeneration(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
@@ -611,7 +611,7 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	if !slices.Contains((*cmds)[0].Args, "-R") {
 		t.Fatalf("readonly (-R) で開いていない: %v", (*cmds)[0].Args)
 	}
-	// ⚠️ -c の scratch 設定まで見る。-R だけ守っても、buftype=nofile / noswapfile /
+	// 🚨 -c の scratch 設定まで見る。-R だけ守っても、buftype=nofile / noswapfile /
 	// nomodifiable が落ちると「誤編集できず :q が常にクリーンに閉じる」(openJobLogInEditor の
 	// doc。素の nvim - で :q がエラーになるというユーザー報告 2026-07-21 由来) が破れる。
 	// 実測: nomodifiable を落としても -c を丸ごと消しても全テストが green だった。
@@ -631,7 +631,7 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	if string(buf) != "boom\nat foo.go:10\n" {
 		t.Fatalf("stdin の中身 = %q", string(buf))
 	}
-	// エラーで閉じたら失敗トースト、成功なら無し。⚠️ 文言はツール名を名指ししない
+	// エラーで閉じたら失敗トースト、成功なら無し。🚨 文言はツール名を名指ししない
 	// (起動対象は $VISUAL/$EDITOR で変わる。ここの job ログ経路だけは nvim 固定だが、
 	// トーストは editorClosedMsg で共通なので総称になる)。原因は err がそのまま載る
 	m.Update(editorClosedMsg{err: errors.New("nvim: not found")})
@@ -841,7 +841,7 @@ func TestBrowseReloadAfterPullResetsJobDetailCache(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.opts = &Options{MaxCount: 20}
 	m.detailOv.cache.store("stale/0", []string{"old log"}, "stale/0")
-	// ⚠️ 札は未キャッシュのキーで立てる: begin はキャッシュ済みなら何もしないので、
+	// 🚨 札は未キャッシュのキーで立てる: begin はキャッシュ済みなら何もしないので、
 	// 上と同じキーに対して呼ぶと busy が空のまま = 下の busy 検査が空振りになる
 	if !m.detailOv.cache.begin("inflight/1") {
 		t.Fatal("走行中の札を立てられない (前提が崩れた)")
@@ -1172,7 +1172,7 @@ func TestJobDetailBoxLinesScrollbar(t *testing.T) {
 }
 
 // エディタが 0 以外で終了したとき (nvim の :cq 等) は、ファイルが保存済みなので取り直す。
-// ⚠️ 起動失敗 (PATH に無い等) と分けるのが要点。混ぜて「エラーなら reload しない」にすると、
+// 🚨 起動失敗 (PATH に無い等) と分けるのが要点。混ぜて「エラーなら reload しない」にすると、
 // 保存済みの編集が出ないまま古い内容を最新として表示する (editorClosedMsg の doc)。
 func TestBrowseEditorExitErrorStillReloads(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
@@ -1183,7 +1183,7 @@ func TestBrowseEditorExitErrorStillReloads(t *testing.T) {
 	if exitErr == nil {
 		t.Fatal("前提が崩れた: exit 1 がエラーにならない")
 	}
-	// ⚠️ 戻り値の cmd != nil では検証にならない (maybeTick も Cmd を返すので、reload を
+	// 🚨 戻り値の cmd != nil では検証にならない (maybeTick も Cmd を返すので、reload を
 	// 飛ばす変異が通ってしまった)。取り直しが実際に走ったか = scanning が立ったかを見る。
 	m.Update(editorClosedMsg{err: exitErr})
 	if !m.issuesOv.scanning {

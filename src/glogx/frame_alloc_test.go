@@ -12,7 +12,7 @@ import (
 // という主張を、この 2 実装の一致で機械的に固定する。
 var reapplyAfterResetRe = regexp.MustCompile("\x1b\\[0?m")
 
-// ⚠️ 旧 production は置換テンプレートに `"$0"+bg` を使っていたが、ここでは
+// 🚨 旧 production は置換テンプレートに `"$0"+bg` を使っていたが、ここでは
 // `"${0}" + $ をエスケープした bg` を使う。bg を置換テンプレートへ埋める形は bg 自身が
 // テンプレートとして解釈されるためで、差分 fuzz が実際に 2 通りの化け方を見つけた:
 //
@@ -50,7 +50,7 @@ func TestReapplyAfterResetMatchesRegexpImpl(t *testing.T) {
 		"\x1b]0;t\x07",  // OSC
 		"日本語\x1b[m混在",   // マルチバイト
 		"\x1b[m\x1b[1m\x1b[m",
-		// ⚠️ 入れ子の ESC。走査の刻み幅 (i += 2) が load-bearing であることを固定する。
+		// 🚨 入れ子の ESC。走査の刻み幅 (i += 2) が load-bearing であることを固定する。
 		// 「CSI の終端まで飛ばす」という一見自然な最適化に変えると、この入力でリセットを
 		// 取りこぼす (R1 レビューの指摘。それまでの表 22 件では 1 件も捕まえられていなかった)
 		"\x1b[\x1b[m",
@@ -95,11 +95,11 @@ func FuzzReapplyAfterReset(f *testing.F) {
 // 確保を落とした。実測 178 → 135 / 40,144 → 30,745 B。内訳は **indent が 38・カーソル行の
 // regexp 撤去が 5** (片方だけ戻して実測。43 は 2 つの変更の合計であって indent 単独ではない)。
 //
-// ⚠️ 上限は実測値の**すぐ上**に置く。緩い上限は退行を通す: 当初 list を 150 にしていたら
+// 🚨 上限は実測値の**すぐ上**に置く。緩い上限は退行を通す: 当初 list を 150 にしていたら
 // 「38 行のうち 15 行を旧形に戻す」(削減の 35%) と「regexp 撤去だけを revert する」(+5) の
 // どちらも素通りした (2026-08-14 の R3 レビューで実測)。余裕は -race の揺れ (下記) の分だけ。
 //
-// ⚠️ -race で値が変わるので、上限は **-race 側の実測**から採る。実測
+// 🚨 -race で値が変わるので、上限は **-race 側の実測**から採る。実測
 // (darwin/arm64・GOMAXPROCS=14・-race・-count=10 の分布):
 //
 //	list / list-ja  135 (10/10)          → 上限 138
@@ -118,7 +118,7 @@ func FuzzReapplyAfterReset(f *testing.F) {
 // 完全一致のまま B/op だけ +0.8〜1.0% 増えており、048 では回数版のガードが
 // **メモ化を丸ごと revert しても PASS** した (R1 レビューが実証)。
 //
-// ⚠️ バイトの上限も -race 側の実測から採る (`make test` は -race 付き)。実測
+// 🚨 バイトの上限も -race 側の実測から採る (`make test` は -race 付き)。実測
 // (darwin/arm64・GOMAXPROCS=14・-race・4 回の最大値):
 //
 //	list 30776 / list-ja 31488 / status-40 43047 / diff-overlay 47654 / job-panel 36366 B
@@ -132,7 +132,7 @@ func FuzzReapplyAfterReset(f *testing.F) {
 // 経時比較つきで render_large_patch / model_init_200 など本テストが持たない経路も見る)。
 // 確保が増える変更を意図して入れるときは**両方**を同じ commit で更新すること。
 //
-// ⚠️ 回数と同じく、この上限は `RUNEWIDTH_EASTASIAN=1` の環境では落ちる (issue 054)。実測で
+// 🚨 回数と同じく、この上限は `RUNEWIDTH_EASTASIAN=1` の環境では落ちる (issue 054)。実測で
 // list が 135 回 30776 B → 322 回 41139 B になる (幅計算が変わり行の作り直しが増えるため)。
 // その環境で赤くなったら、退行ではなく env 前提の方を疑うこと。
 func TestFrameAllocBudget(t *testing.T) {
@@ -182,7 +182,7 @@ func TestFrameAllocBudget(t *testing.T) {
 // 相当する API が無いので `testing.Benchmark` の AllocedBytesPerOp を使う (issue 048 の
 // TestStatusFrameAllocBytesDoNotScaleWithFileCount と同じ形)。
 //
-// ⚠️ `testing.Benchmark` は同じプロセスの `-benchtime` を拾う。`go test -bench=. -benchtime=1x`
+// 🚨 `testing.Benchmark` は同じプロセスの `-benchtime` を拾う。`go test -bench=. -benchtime=1x`
 // のように短く回すと b.N=1 の測定 (= 遅延初期化込みの 1 発目) が返り、絶対値の予算と
 // 比べる意味が無くなる。**測れなかったときに緑を返さない**ため、反復が足りなければ落とす。
 func frameAllocBytes(t *testing.T, build func(testing.TB) *browseModel) int64 {
@@ -251,7 +251,7 @@ func budgetPanelModel(tb testing.TB) *browseModel {
 
 // indent が「余白を織り込むだけ」であることを、**全行の完全一致**で固定する。
 //
-// ⚠️ 「行頭が空白か」で見てはいけない: 下端の影行は shadowBottomOffset = 2 桁の空白で
+// 🚨 「行頭が空白か」で見てはいけない: 下端の影行は shadowBottomOffset = 2 桁の空白で
 // 始まるため、indent を落としても行頭は空白のままで prefix 判定を素通りする。
 // 実際その形の変異 (影行だけ pre を落とす) は出力を 880 行ぶん変えるのに、
 // リポジトリ全体のテストが green だった (2026-08-14 の R1 レビューで検出)。
@@ -278,7 +278,7 @@ func TestPanelBoxIndentIsPureLeftPad(t *testing.T) {
 						t.Fatalf("indent=%d で行数が変わった: %d != %d (w=%d colored=%v)",
 							indent, len(got), len(base), width, colored)
 					}
-					// ⚠️ 相対比較だけでは「両辺に同じ定数を足す」変異 (pre を
+					// 🚨 相対比較だけでは「両辺に同じ定数を足す」変異 (pre を
 					// padSpaces(indent+1) にする等) がキャンセルして素通りする (R3 の指摘)。
 					// indent=0 のときの**絶対**の姿を 1 点固定して基準を釘付けする:
 					// 色なしの上辺は罫線の角で始まり、空白では始まらない。
@@ -313,7 +313,7 @@ func TestWrapWindowFrameGeometry(t *testing.T) {
 			t.Errorf("termW=%d: 先頭は上余白の空行のはず: %q", termW, got[0])
 		}
 		for i, l := range got[1:] {
-			// ⚠️ HasPrefix(" ") では見ない: 下端の影行は 2 桁の空白で始まるので
+			// 🚨 HasPrefix(" ") では見ない: 下端の影行は 2 桁の空白で始まるので
 			// 余白を落としても素通りする (R1 が false green の原因と特定した判定形)。
 			// 「行頭の空白がちょうど 1 桁 + 影のオフセット分」を厳密に数える
 			lead := len(l) - len(strings.TrimLeft(l, " "))
@@ -334,7 +334,7 @@ func TestWrapWindowFrameGeometry(t *testing.T) {
 
 // padSpaces が strings.Repeat(" ", n) と同値であること (n<=0 は "")。
 //
-// ⚠️ 256 桁を跨いで確かめる: padSpaces は 256 桁までは定数文字列のスライスを返し、
+// 🚨 256 桁を跨いで確かめる: padSpaces は 256 桁までは定数文字列のスライスを返し、
 // それを超えると strings.Repeat に落ちる。047 で strings.Repeat の呼び出しを
 // padSpaces へ置き換えた根拠が「同値だが無確保」なので、fallback 側の同値を
 // 守るテストが無いと主張が裏付けられない (R3 の指摘。それまで直接テストは 0 本だった)。

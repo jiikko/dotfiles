@@ -323,7 +323,7 @@ func TestPagerOverlayReclampsOffsetOnRedraw(t *testing.T) {
 		t.Errorf("diff overlay が offset を窓へ再クランプしていない: title=%q, want [43-50/50]", title)
 	}
 
-	// ⚠️ 描画 (title) だけでなく **論理 offset フィールドが収束したか**も見る。描画は毎回
+	// 🚨 描画 (title) だけでなく **論理 offset フィールドが収束したか**も見る。描画は毎回
 	// clamp するので title は書き戻しが無くても正しく、上スクロールだけが死ぬ (k / up /
 	// ctrl+p は max(offset-n, 0) しか見ないため rows_new - rows_old 打鍵ぶん無反応。
 	// 実測 2026-08-21: diff 33 打鍵 / job 詳細 11 打鍵)。title だけの検査ではこの退行が緑になる。
@@ -433,10 +433,10 @@ func TestBrowseDiffPagerKeysScrollNotClose(t *testing.T) {
 	if m.diffOv.offset != maxOffset {
 		t.Errorf("末尾で offset = %d; want %d (最終行を表示し続ける)", m.diffOv.offset, maxOffset)
 	}
-	// 半ページ移動は glide (scroll_glide.go) で数フレームかけて着地する。⚠️ ここで手で
+	// 半ページ移動は glide (scroll_glide.go) で数フレームかけて着地する。🚨 ここで手で
 	// advanceGlide を呼ぶ前に「キー処理が tick を返している」ことを必ず確かめる: 手で進める
 	// だけのテストは、tick を張り忘れて実機で永久に固まるバグ (敵対的レビュー P1) を隠す。
-	// ⚠️ cmd の nil 判定では足りない: maybeTick は single-flight で、既にチェーンが生きていれば
+	// 🚨 cmd の nil 判定では足りない: maybeTick は single-flight で、既にチェーンが生きていれば
 	// nil を返す。不変条件は「glide 中は tick チェーンが生きている (m.ticking)」。
 	if m.handleKey(" "); m.diffOv.glide.active && !m.ticking {
 		t.Fatal("glide 中なのに tick チェーンが無い (実機では中途位置で固まる)")
@@ -842,7 +842,7 @@ func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
 	if !m.issuesOv.visible() {
 		t.Fatal("i で issues viewer が開かない")
 	}
-	// ⚠️ 回帰防止の主眼: viewer 表示中のキーは viewer が全部飲む。判定順を崩すと、一覧を
+	// 🚨 回帰防止の主眼: viewer 表示中のキーは viewer が全部飲む。判定順を崩すと、一覧を
 	// 見ている最中の u / b が pull / push の確認を開く (裸の b/u が push/pull なので)
 	m.handleKey("u")
 	if m.actModal.pullConfirm {
@@ -857,7 +857,7 @@ func TestIssuesViewerOpenAndSwallowKeys(t *testing.T) {
 	if _, cmd := m.handleKey("C"); cmd == nil || !m.issuesOv.visible() {
 		t.Fatalf("viewer 表示中の C が update を始めない / viewer を閉じた (cmd=%v visible=%v)", cmd != nil, m.issuesOv.visible())
 	}
-	// ⚠️ U (usage) だけは素通りではなく viewer の上でも効く (ユーザー要望 2026-08-01)。
+	// 🚨 U (usage) だけは素通りではなく viewer の上でも効く (ユーザー要望 2026-08-01)。
 	// 以前は「全画面 viewer の下では描かれないのに取得だけ走る」ため弾いていたので、
 	// 開けるようにした今は「本当に画面へ出ること」まで見る (出ないなら弾いていた頃と同じ、
 	// 見えない層へ状態を書く経路に戻る)。
@@ -913,10 +913,10 @@ func TestIssuesViewerHintIsNotPrefixed(t *testing.T) {
 	m.fetching = true
 	m.ghErr = &GHError{Kind: GHOther, Detail: "boom"}
 	hint := m.hintLine()
-	if strings.Contains(hint, "CI 状態を取得中") || strings.Contains(hint, "⚠") {
+	if strings.Contains(hint, "CI 状態を取得中") || strings.Contains(hint, "🚨") {
 		t.Fatalf("viewer の hint に前置が入った: %q", hint)
 	}
-	// ⚠️ 末尾は "q: 終了" (q/esc は glogx ごと終了する。一覧へ戻るのは i)。issue 121
+	// 🚨 末尾は "q: 終了" (q/esc は glogx ごと終了する。一覧へ戻るのは i)。issue 121
 	if !strings.Contains(hint, "q: 終了") {
 		t.Fatalf("viewer の hint の末尾が切れている: %q", hint)
 	}
@@ -963,7 +963,7 @@ func TestIssuesViewerReloadsAfterEditorCloses(t *testing.T) {
 	if !strings.Contains(out, "編集後") {
 		t.Fatalf("編集結果が一覧に反映されていない:\n%s", out)
 	}
-	// ⚠️ フィクスチャに checkbox を残しているのは意図。これが無いと下の
+	// 🚨 フィクスチャに checkbox を残しているのは意図。これが無いと下の
 	// 「一覧に進捗が出ない」は**どんな退行でも赤にならない** (チェックボックスが無ければ
 	// 進捗を出す実装でも "1/1" は生成されない)。差が出る状況を作ってから主張する
 	// (2026-08-14 の R1 レビューで、フィクスチャを削ったせいでこの assert が
@@ -1240,7 +1240,7 @@ func TestIssuesViewerCursorArrowNotDoubled(t *testing.T) {
 
 // issues viewer の操作結果は glogx 共通の右下トーストに出る (ユーザー要望 2026-07-31)。
 //
-// ⚠️ viewer は全画面で viewLines が早期 return するため、トーストを合成し忘れると通知が
+// 🚨 viewer は全画面で viewLines が早期 return するため、トーストを合成し忘れると通知が
 // 画面に一切出ない (それが以前ヘッダー行に出していた理由)。ここは実 View の出力まで見る。
 func TestIssuesViewerNotifiesViaToast(t *testing.T) {
 	stubClipboardFunc(t, func(string) error { return nil })

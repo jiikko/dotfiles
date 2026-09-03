@@ -147,7 +147,7 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 		prev := m.offset
 		_, cmd := m.handleKey("ctrl+d")
 		if m.offset == prev {
-			// ⚠️ Skip にしないこと: geometry は上の newTestBrowse + m.height で決定論的に
+			// 🚨 Skip にしないこと: geometry は上の newTestBrowse + m.height で決定論的に
 			// 組んでいるので、offset が動かないのは環境要因ではなく **実装の退行だけ**。
 			// Skip にすると「browse の半ページ下スクロールが完全に死んでも ok glogx」になる
 			// (実測 2026-08-21: pageSize()/2 を潰す変異で 2 箇所とも SKIP に化けた)。
@@ -213,7 +213,7 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 	})
 
 	t.Run("advanceGlide が本文 pager を進める", func(t *testing.T) {
-		// ⚠️ 一覧は glide を持たない (幾何的にアニメしないため削除。issue 031)
+		// 🚨 一覧は glide を持たない (幾何的にアニメしないため削除。issue 031)
 		v := newTestIssuesView()
 		v.bodyOff = 10
 		v.bodyGlide.start(0, 10)
@@ -278,7 +278,7 @@ func TestResizeStopsAllGlides(t *testing.T) {
 
 // 一覧の窓は必ずカーソル行を含む (どのスクロールキーの直後も)。
 //
-// ⚠️ この不変条件のテストは glide を外した後も残す (issue 031 の決定)。半ページ移動は cursor と
+// 🚨 この不変条件のテストは glide を外した後も残す (issue 031 の決定)。半ページ移動は cursor と
 // offset を同時に動かすので、窓の導出を素朴に書き換えると「カーソル行が 1 本も描かれない =
 // 見えない行が Enter・v・y の対象になる」窓が復活する (敵対的レビュー P2 の回帰)。
 func TestIssuesListWindowAlwaysKeepsCursorVisible(t *testing.T) {

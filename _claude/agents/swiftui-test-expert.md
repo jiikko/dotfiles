@@ -404,7 +404,7 @@ Use WebSearch to find solutions for test issues:
 
 ## Project-Specific: ThumbnailThumb Testing Patterns
 
-⚠️ **CRITICAL**: This project has specific testing rules documented in CLAUDE.md. Always follow these patterns.
+🚨 **CRITICAL**: This project has specific testing rules documented in CLAUDE.md. Always follow these patterns.
 
 ### Handler Calls in Tests (Deadlock Prevention)
 

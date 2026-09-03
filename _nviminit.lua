@@ -112,14 +112,14 @@ require("lazy").setup({
         vim.cmd("colorscheme retrobox")
       end
       -- 選択範囲は dark2 (gruvbox 公式の選択地。hl.set = ColorScheme 再適用 + cterm 併記規律)。
-      -- ⚠️ **明るい地を選ばないこと**。2026-07-16〜2026-09-03 は暖ベージュ Kraft (#D4A27F/180)
+      -- 🚨 **明るい地を選ばないこと**。2026-07-16〜2026-09-03 は暖ベージュ Kraft (#D4A27F/180)
       -- だったが、前景色が暗地向けに設計されているため選択すると文字が地に溶けた
       -- (実測: 最悪 1.10:1。String 142 と Type 214 がほぼ不可視)。暗地なら同じ実測で 2.40:1 まで
       -- 戻る (最悪は Comment 102。地の明度を上げるほどここが先に潰れる)。
       -- 分岐の外に置き truecolor (gruvbox) / 256色 (retrobox) の両環境で効かせる。
       -- colorscheme 適用後に呼ぶこと (ColorScheme の全クリアより後に乗せる必要がある)。
       require("dotfiles.hl").set("Visual", { bg = pal.dark2.hex, ctermbg = pal.dark2.cterm })
-      -- ⚠️ 罠: LspReferenceText は nvim 既定で Visual に link しているため、上の Visual 上書きが
+      -- 🚨 罠: LspReferenceText は nvim 既定で Visual に link しているため、上の Visual 上書きが
       -- LSP 参照ハイライト (lsp.lua の CursorHold → documentHighlight) へ漏れる。Kraft 地 (旧) の上では
       -- keyword (bright_red) が 1.5:1、他の前景も 1.1〜1.4:1 まで落ちて読めない (Go は func に
       -- カーソルを置くと gopls が func + 全 return を返すため面積が大きい)。前景色を殺さない
@@ -140,18 +140,18 @@ require("lazy").setup({
       -- `link=Search` (reverse)。前者は vim.snippet が**バッファ内**の tabstop に塗るので、
       -- 前景は通常のシンタックス色 = LspReference と同じ条件で 1.10:1 (Type 214) まで落ちる。
       --
-      -- ⚠️ **2 つで違う方式を採る**。同じ「Visual 漏れ」でも意味が違うため:
+      -- 🚨 **2 つで違う方式を採る**。同じ「Visual 漏れ」でも意味が違うため:
       --   SnippetTabstop = 下線 + dark1。地色だけだと LspReference (dark1) と見分けが付かない。
       --     下線を足して「次に <Tab> で飛ぶ先」を示す。
       --     最悪コントラスト 3.16:1 (Comment 102 on dark1)、検査の基準 3.0:1 を超える。
-      --     ⚠️ **MatchParen との区別は弱い**: 256色分岐の MatchParen は bg=239 + bold + **underline**
+      --     🚨 **MatchParen との区別は弱い**: 256色分岐の MatchParen は bg=239 + bold + **underline**
       --     で、下線を両方が持ち地色差は 237 と 239 (1.37:1) しかない。区別要素は実質 bold だけ
       --     (truecolor 分岐の MatchParen は underline を持たないので、そちらでは下線で区別できる)。
       --     括弧が tabstop になる snippet では重なりうるが、どちらも「今ここ」を示すので実害は薄い
       --   LspSignatureActiveParameter = reverse。**truecolor 側の gruvbox が既に採っている方式**に
       --     256色側を揃える (`link=Search` の実体が reverse)。分岐ごとに違う見え方にしない方が、
       --     後から読む人が驚かない。
-      --     ⚠️ reverse は前景色を「殺さない」のではなく**前景と背景を入れ替える**。float の中では
+      --     🚨 reverse は前景色を「殺さない」のではなく**前景と背景を入れ替える**。float の中では
       --     NormalFloat の地 (237) が文字色に、前景 (187) が地になる。比は保存されるので
       --     コントラストは 7.70:1 で可読。256色の Search は反転後オリーブ地 (ctermfg=100) なので
       --     見分けは付く (実測)
@@ -162,7 +162,7 @@ require("lazy").setup({
       require("dotfiles.hl").set("LspSignatureActiveParameter", { reverse = true })
 
       -- blink.cmp のドキュメント窓のカーソル行も `link = Visual` (blink/cmp/highlights.lua)。
-      -- ⚠️ **敵対レビューが全 group 走査で見つけた** (issue 134)。名前を 2 つ足しただけの版では
+      -- 🚨 **敵対レビューが全 group 走査で見つけた** (issue 134)。名前を 2 つ足しただけの版では
       -- 見えていなかった: blink は InsertEnter の lazy なので、headless 起動しただけでは
       -- その 53 group が存在せず、検査の外にいた。検査は blink の highlight を明示的に
       -- 読み込んでから走査する形に直してある (tests/nvim/lsp_reference_hl_check.lua)。
@@ -940,7 +940,7 @@ require("lazy").setup({
   },
   {
     "MeanderingProgrammer/render-markdown.nvim",
-    -- ⚠️ ft = { "markdown" } にしないこと: lazy.nvim は ft ゲートのプラグインをロードした後
+    -- 🚨 ft = { "markdown" } にしないこと: lazy.nvim は ft ゲートのプラグインをロードした後
     -- FileType を再発火し、その再実行がレガシー Vimscript syntax 一式 (markdown.vim →
     -- html.vim → css.vim, ~16ms) を treesitter highlight と二重にロードする実バグがあった
     -- (issues/done/013-bug-nvim-markdown-legacy-syntax-double-load.md、A/B 実測で特定)。

@@ -34,7 +34,7 @@ func Exec(ctx context.Context, name string, args ...string) (string, string, int
 		}
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
-	// ⚠️ WaitDelay が無いと、ctx で子を殺した後も孫 (brew → ruby → git 等) が pipe を握っている限り
+	// 🚨 WaitDelay が無いと、ctx で子を殺した後も孫 (brew → ruby → git 等) が pipe を握っている限り
 	// Run が戻らない (実測 2026-09-02: 1 秒の timeout で 20 秒。WaitDelay 1 秒なら 2 秒)。
 	// timeout は「直接の子を殺す」だけなので、pipe を閉じる期限を別に持つ。孫を殺すのは本ツールの責務外
 	cmd.WaitDelay = waitDelay

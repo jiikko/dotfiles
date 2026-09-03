@@ -92,15 +92,15 @@ func TestBodyProgressCountsCheckboxes(t *testing.T) {
 		{"末尾に改行が無い", "- [x] a", "1/1"},
 		{"CRLF", "- [x] a\r\n- [ ] b\r\n", "1/2"},
 		{"空文字列", "", ""},
-		// ⚠️ 現行はコードフェンス非対応 (例示のチェックボックスも数える)。Issue から移しただけで
+		// 🚨 現行はコードフェンス非対応 (例示のチェックボックスも数える)。Issue から移しただけで
 		// 挙動を変えていないことを明示的に固定する (フェンス対応は別 issue)
 		{"フェンス内も数える", "# t\n\n```\n- [ ] 例示\n```\n- [x] 実物\n", "1/2"},
-		// ⚠️ 無害化 (termsafe.PlainLine) を通していることを固定する。これが無いと
+		// 🚨 無害化 (termsafe.PlainLine) を通していることを固定する。これが無いと
 		// 行頭に ANSI や NUL がある行を数え落とす (旧 LoadMeta も無害化後に数えていた)。
 		// R1 レビューで「関門を外しても全テスト green」だったため追加
 		{"行頭に ANSI がある", "\x1b[31m- [x] a\n- [ ] b\n", "1/2"},
 		{"行頭に NUL がある", "\x00- [x] a\n", "1/1"},
-		// ⚠️ front matter 内も数える (旧 Issue.Progress は数えなかった)。Body.Progress の
+		// 🚨 front matter 内も数える (旧 Issue.Progress は数えなかった)。Body.Progress の
 		// doc で受け入れた差なので、意図した挙動として固定する
 		{"front matter 内も数える", "---\nstatus: open\n- [x] a\n---\n# T\n- [ ] b\n", "1/2"},
 	}

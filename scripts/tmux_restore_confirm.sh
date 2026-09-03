@@ -4,7 +4,7 @@
 # (実例: C-t の Ctrl を離さないまま r → C-t C-r で稼働中サーバへ手動復元が暴発 2026-07-17。
 #  自動復元はサーバ起動時に走るため、稼働中サーバへの手動復元はほぼ誤爆でしか起きない)。
 #
-# ⚠️ set -e は使わない: fail-safe は `gum confirm && restore` の && 短絡に依存しており
+# 🚨 set -e は使わない: fail-safe は `gum confirm && restore` の && 短絡に依存しており
 #    (gum 未導入なら exit 127 で復元されない)、kill_confirm と同じ構造を保つ。
 set -uo pipefail
 
@@ -16,7 +16,7 @@ if [ -z "$restore" ] || [ ! -f "$restore" ]; then
   sleep 3
   exit 1
 fi
-# ⚠️ 実行は popup 内で同期しない。popup -E 内で restore.sh を走らせると「popup を閉じる /
+# 🚨 実行は popup 内で同期しない。popup -E 内で restore.sh を走らせると「popup を閉じる /
 # キー入力 = 復元プロセスの kill」になり途中死する (2026-07-30 実発: pane 60/93 で途中死し
 # 6 セッション未復元 + in-progress フラグ残置)。runner (detach + 異常終了の観測) に委ねる。
 gum confirm --default=false --affirmative "復元する" --negative "やめる" \

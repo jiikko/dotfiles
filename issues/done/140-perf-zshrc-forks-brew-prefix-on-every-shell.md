@@ -23,7 +23,7 @@ if command -v brew > /dev/null 2>&1; then
 あり、「hook 経路の fork が毎操作の体感レイテンシになる」という規律を持っている。あちらは
 precmd/preexec だが、**シェル起動は 1 日に何十回も通る経路**で性質は同じ。
 
-## ⚠️ 定数へ置き換えるだけにしないこと
+## 🚨 定数へ置き換えるだけにしないこと
 
 `/opt/homebrew` は Apple Silicon の既定で、**Intel Mac は `/usr/local`**。決め打ちにすると
 別マシンで壊れる。キャッシュする形にして、キャッシュが無効なときだけ `brew --prefix` を呼ぶ。

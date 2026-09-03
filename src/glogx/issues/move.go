@@ -9,12 +9,12 @@ import (
 
 // issue ファイルを状態ディレクトリへ移す層 (viewer の n = 「次にやる」の目印)。
 //
-// ⚠️ git mv を使わない: 実ファイルの移動だけを行い、index には触れない。git mv は移動を即座に
+// 🚨 git mv を使わない: 実ファイルの移動だけを行い、index には触れない。git mv は移動を即座に
 // stage するため、同じ repo で並行して作業しているセッションの pathspec なし commit に巻き込まれる
 // (dotfiles の commit-with-pathspec ルールが記録している実害)。viewer は「置き場所を変えるだけ」
 // に徹し、commit するかどうかは人が決める。
 //
-// ⚠️ 上書きしない: 同じ basename が 2 箇所にあるのは viewer が警告する異常 (spec 3 節の
+// 🚨 上書きしない: 同じ basename が 2 箇所にあるのは viewer が警告する異常 (spec 3 節の
 // 「同じファイル名が 2 箇所にあったら警告する」) で、移動でそれを作らない。宛先があれば失敗させる。
 
 // MoveToSubdir は issue を同じ issue ディレクトリ配下の subdir へ移す (subdir="" は直下へ戻す)。

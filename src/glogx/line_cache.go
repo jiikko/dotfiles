@@ -13,9 +13,9 @@ package main
 // storePreview で 4 通りに書かれていた)。状態と手順を同じ型に置くと、順序を間違える余地が
 // 構造的に消える。
 //
-// ⚠️ アクセス順 (LRU) は追わない: 閲覧は人間律速で、挿入順の粗い evict で十分。
+// 🚨 アクセス順 (LRU) は追わない: 閲覧は人間律速で、挿入順の粗い evict で十分。
 //
-// ⚠️ **キーの契約**: キーは内容を一意に決めること。決められない caller は、
+// 🚨 **キーの契約**: キーは内容を一意に決めること。決められない caller は、
 // **内容が変わりうる契機で自分で clearEntries すること** (この型は無効化の契機を知らない)。
 //
 // 3 者のうち diff (キー=SHA) と job 詳細 (キー=SHA/cursor) は内容が不変なので契約が成立する。
@@ -28,7 +28,7 @@ package main
 // 変わる保存し直し」では発火しない。そこを据え置くのは意図的
 // (毎 1.5 秒 git diff を走らせないため。TestStatusReceiveSchedulesPreviewRefetchOnChange が pin)。
 //
-// ⚠️ caller が clearEntries を呼んでも、**飛んでいる取得が後から着地すれば復活する**。
+// 🚨 caller が clearEntries を呼んでも、**飛んでいる取得が後から着地すれば復活する**。
 // statusView はメッセージに gen を載せて世代違いを捨てることで塞いでいる (この型は
 // 無効化の契機も世代も知らないので、型だけでは守れない)。
 type lineCache struct {
@@ -94,7 +94,7 @@ func (c *lineCache) abort(key string) { delete(c.busy, key) }
 
 // clearEntries は中身だけを捨てる (取得中の札は残す)。
 //
-// ⚠️ reset と使い分けること。「キャッシュした内容はもう当てにならないが、走行中の取得は
+// 🚨 reset と使い分けること。「キャッシュした内容はもう当てにならないが、走行中の取得は
 // 走行中のまま」という状況で使う (外部編集で作業ツリーが変わった等)。ここで札まで降ろすと、
 // 直後に張り直した取得予約が「誰も取っていない」と判断して同じキーを二重に取りに行く
 // (statusView の外部編集検知で実際に起きた)。
@@ -104,7 +104,7 @@ func (c *lineCache) clearEntries() {
 }
 
 // cancel は 1 件の取得中の札だけを降ろす (結果を捨てるとき用)。
-// ⚠️ 降ろさないと fetching() が true のまま残り、そのキーは begin() に永久に弾かれる。
+// 🚨 降ろさないと fetching() が true のまま残り、そのキーは begin() に永久に弾かれる。
 func (c *lineCache) cancel(key string) { delete(c.busy, key) }
 
 // clearBusy は取得中の札だけを全部降ろす (キャッシュは残す)。

@@ -10,7 +10,7 @@ import "fmt"
 // 取得は details/statuses/commits と構造的に結合するため browseModel に残し、この型は「job ログを
 // どうスクロール/キャッシュ/スピン/描画するか」だけを持つ。
 //
-// ⚠️ diffOverlay との差 (素朴コピー禁止): (1) scroll の閉じキーは enter/space/esc/h/left
+// 🚨 diffOverlay との差 (素朴コピー禁止): (1) scroll の閉じキーは enter/space/esc/h/left
 // (diff は q/esc/h/left/d)。job 詳細では enter/space も「閉じる」= tig 流の詳細→job 一覧。
 // (2) startOpen は cache ヒット時 offset をログ末尾へ (直近出力を表示)。diffOv.open の offset=0 clone
 // ではない。(3) toggle しない (open 中は handlePanelKey が handleDetailKey へ委譲するため常に閉状態
@@ -77,7 +77,7 @@ func (o *jobDetailOverlay) receive(msg jobDetailMsg, currentKey string, rows int
 
 // scroll は詳細 pager のスクロール/閉じキーを反映する。contentKey は maxOffset 算出用の現在の
 // cache キー、rows は表示可能行数 (どちらもレイアウト/パネル状態依存なので呼び出し側が渡す)。
-// ⚠️ 閉じキーは enter/space/esc/h/left (diffOverlay と異なる)。o/v/y の越境キーは呼び出し側
+// 🚨 閉じキーは enter/space/esc/h/left (diffOverlay と異なる)。o/v/y の越境キーは呼び出し側
 // (handleDetailKey) が処理し、ここには渡らない。
 func (o *jobDetailOverlay) scroll(key, contentKey string, rows int) {
 	maxOffset := max(len(o.lines(contentKey))-rows, 0)
@@ -123,7 +123,7 @@ func (o *jobDetailOverlay) boxLines(width int, colored bool, spinner, name, key 
 		// offset は据え置かれ、k / up / ctrl+p は max(offset-n, 0) しか見ないので
 		// **(rows_new - rows_old) 打鍵だけ上スクロールが死ぬ** (実測 2026-08-21: diff 33 打鍵 /
 		// job 詳細 11 打鍵)。描画で確定した行数・窓で論理 offset を収束させて防ぐ
-		// (issues_view.go の bodyOff が同じ規律。⚠️ pagerScrollKey の k 腕に clamp を足す形は
+		// (issues_view.go の bodyOff が同じ規律。🚨 pagerScrollKey の k 腕に clamp を足す形は
 		// 不可: job 詳細のスクロールは pagerScrollKey を通らない手書きなので片面しか直らない)。
 		o.offset = clampScrollOffset(o.offset, len(lines), rows)
 		start := clampScrollOffset(o.offset, len(lines), rows)

@@ -98,7 +98,7 @@ end
 -- qlmanage には表示差し替えも位置指定も無いため、kill 前に System Events で座標を読み、
 -- respawn 後に書き戻す。ターミナルにアクセシビリティ権限が無い環境では osascript が
 -- 失敗するだけで、プレビュー自体は従来どおり成立する (無音でスキップ)。
--- ⚠️ 再試行ループは張らない (rules/no-osascript-…: 2 回で打ち切る)。respawn 直後は窓が
+-- 🚨 再試行ループは張らない (rules/no-osascript-…: 2 回で打ち切る)。respawn 直後は窓が
 -- まだ無いので 400ms / 900ms の 2 点だけ試す
 local OSA_GET_POS = 'tell application "System Events" to tell process "qlmanage" to get {position, size} of front window'
 local function osa_set_pos(x, y)

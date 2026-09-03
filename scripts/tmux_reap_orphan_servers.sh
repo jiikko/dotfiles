@@ -56,11 +56,11 @@ uid=$(id -u)
 # 直前の resurrect 保存 (周期 15 分) 以降が失われる。
 # 本スクリプトの目的は冒頭の現況コメントのとおり「mktemp socket 上の孤児の掃除」なので、
 # default socket を除外しても目的は達成できる。
-# ⚠️ TMUX_TMPDIR で隔離された socket は保護しない (テスト・probe の孤児は掃除対象。後片付けは
+# 🚨 TMUX_TMPDIR で隔離された socket は保護しない (テスト・probe の孤児は掃除対象。後片付けは
 # probe 側の責務という既存の不変条件を維持する)。macOS では /tmp が /private/tmp の symlink で
 # lsof がどちらを返すか環境依存なので両方を候補に持つ。
 # TT_REAP_PROTECT_SOCKS はテスト用の seam (実 default socket を使うテストは本番と衝突する)。
-# ⚠️ seam は「追加」であって「置換」ではない。`:-` の置換形にすると、空白 1 個や末尾スラッシュ
+# 🚨 seam は「追加」であって「置換」ではない。`:-` の置換形にすると、空白 1 個や末尾スラッシュ
 # のような**空でないが無意味な値**を渡したときに既定の本番保護が黙って全消えする (実測
 # 2026-08-21: `TT_REAP_PROTECT_SOCKS=" "` で default socket が保護対象から外れた)。
 # 既定は常に含め、seam の値はそこへ足すだけにする。
@@ -79,7 +79,7 @@ reaped_pids=""
 for pid in $pids; do
   # この PID が開いている tmux unix socket のパスを取得（fd が複数ありうる）。
   # -F n のフィールド出力 (n<path> 行) からパス全体を行単位で取る。
-  # ⚠️ NAME 列を awk '{print $NF}' で取ると空白入りパス (例: TMUX_TMPDIR="~/tmp dir") が
+  # 🚨 NAME 列を awk '{print $NF}' で取ると空白入りパス (例: TMUX_TMPDIR="~/tmp dir") が
   #    最終フィールドだけに truncate され、[ -S ] が常に偽 → 生きているサーバを孤児と
   #    誤判定して kill する (実測で再現)。-F n はパスを 1 行で返すため壊れない。
   # client 側の接続 fd は NAME が '->0x...' 形式でパスを含まないため grep で落ちる
@@ -93,7 +93,7 @@ for pid in $pids; do
   while IFS= read -r s; do
     [ -n "$s" ] || continue
     npaths=$((npaths + 1))
-    # ⚠️ 相対パスの socket は **[ -S ] で確認できない**。lsof が返すパスは対象プロセスの cwd
+    # 🚨 相対パスの socket は **[ -S ] で確認できない**。lsof が返すパスは対象プロセスの cwd
     # 基準なので、reaper 自身の cwd で解決すると生きている socket を「無い」と読む。tmux は
     # `-S ./rel/...` の相対パスを絶対化しないため、この形の live サーバが実在しうる
     # (実測 2026-08-21: cwd を変えるだけで同じ生存サーバが would reap に入った / 消えた。
@@ -104,7 +104,7 @@ for pid in $pids; do
       *)  alive=1 ;;
     esac
     # 保護対象 (default socket) を開いているプロセスは、socket が消えていても触らない。
-    # ⚠️ lsof のパス表記は環境依存。macOS は /tmp が /private/tmp の symlink なので
+    # 🚨 lsof のパス表記は環境依存。macOS は /tmp が /private/tmp の symlink なので
     # /private/tmp/... を返す (実測 2026-08-21)。素の文字列比較だと保護が黙って外れるため、
     # 先頭 /private を剥がして正規化してから比べる。
     ns="$s"; case "$ns" in /private/*) ns="${ns#/private}" ;; esac
@@ -172,7 +172,7 @@ fi
 
 # 観測ログに残す（_tmux.conf Fix C / tmux_resurrect_save.sh Fix B と同じファイル）。
 if [ "$reaped" -gt 0 ] && [ "${DRY_RUN:-0}" != "1" ]; then
-  # ⚠️ ここだけ共有の tt_trigger_log (lib/tmux_resurrect_guards.sh) を使わない。本ファイルは
+  # 🚨 ここだけ共有の tt_trigger_log (lib/tmux_resurrect_guards.sh) を使わない。本ファイルは
   #    #!/bin/sh で、guards.sh は herestring (<<<) を使う **bash 専用**のため source すると
   #    /bin/sh が dash の環境 (Linux CI) で構文エラーになる。代わりに seam (TT_TRIGGER_LOG) は
   #    尊重する — issue 079 が問題にしていたのは「seam を迂回してテストから観測できない」ことで、

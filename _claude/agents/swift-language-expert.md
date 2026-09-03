@@ -66,7 +66,7 @@ class ViewController {
 
     // Expert consideration: When to use unowned
     func setupWithUnowned() {
-        // ⚠️ unowned: Use only when you GUARANTEE self outlives the closure
+        // 🚨 unowned: Use only when you GUARANTEE self outlives the closure
         // If self is deallocated while closure exists -> CRASH
         onComplete = { [unowned self] in
             print(self.name)  // Crash if self is deallocated
@@ -122,7 +122,7 @@ func processItems(_ items: [Item]) {  // items is let, no copy needed
 }
 
 func processItemsBad(_ items: [Item]) {
-    var mutableItems = items  // ⚠️ Potential copy if items modified elsewhere
+    var mutableItems = items  // 🚨 Potential copy if items modified elsewhere
     // ... but CoW means copy only happens on mutation
 }
 
@@ -384,13 +384,13 @@ Swift 6 introduces strict concurrency checking as a requirement. Use this checkl
 **Common Swift 6 Warnings and Fixes**:
 
 ```swift
-// ⚠️ WARNING: Sending 'value' risks causing data races
+// 🚨 WARNING: Sending 'value' risks causing data races
 class NonSendableData { var x = 0 }
 
 func example() async {
     let data = NonSendableData()
     await Task {
-        print(data.x)  // ⚠️ Swift 6 error
+        print(data.x)  // 🚨 Swift 6 error
     }.value
 }
 
@@ -417,7 +417,7 @@ func exampleFixed() async {
 
 **@unchecked Sendable Documentation Pattern**:
 ```swift
-// ⚠️ When using @unchecked Sendable, ALWAYS document the safety reasoning
+// 🚨 When using @unchecked Sendable, ALWAYS document the safety reasoning
 // This is required by SwiftLint rule: unchecked_sendable
 
 // SAFETY: ThreadSafeCache is safe to send across concurrency domains because:

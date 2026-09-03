@@ -29,7 +29,7 @@ func benchBrowse(tb testing.TB, n, w, h int) *browseModel {
 
 // benchBrowseSubjects は benchBrowse の本体。ja=true で commit subject を日本語混在にする。
 //
-// ⚠️ 日本語を別に測る理由: 幅計算の fast-path (termwidth の fastDispWidth) は CJK を
+// 🚨 日本語を別に測る理由: 幅計算の fast-path (termwidth の fastDispWidth) は CJK を
 // 受理せず ansi へ委ねるので、**日本語の subject を含む行はフレームの中で唯一 fast-path を
 // 通れない行**になる。ASCII 固定のフィクスチャだけで測ると fast-path の効果を過大評価する
 // (この repo 自身の commit message は日本語なので、実運用は ja=true 側に近い)。
@@ -124,7 +124,7 @@ func BenchmarkViewWithPanelJA(b *testing.B) {
 	}
 }
 
-// status viewer の 1 フレーム。⚠️ 一覧と別に測る理由: この画面だけ「毎フレーム・全行」で
+// status viewer の 1 フレーム。🚨 一覧と別に測る理由: この画面だけ「毎フレーム・全行」で
 // worktreeRow.dispPath() を通る (パスは git へ渡す生の値と表示用を分けているため、表示側は
 // 呼ぶたびに無害化を通す)。一覧側の無害化は取り込み時に 1 回で済むので、ここが唯一
 // 「無害化がフレーム予算に乗る」経路になる。

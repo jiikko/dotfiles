@@ -49,7 +49,7 @@ func renderLines(src string, width int, colored bool) []string {
 	return lines
 }
 
-// ⚠️ 幅は**全数掃く**こと。以前は {20,40,60,86,120} の離散点しか見ておらず、20 未満を一度も
+// 🚨 幅は**全数掃く**こと。以前は {20,40,60,86,120} の離散点しか見ておらず、20 未満を一度も
 // 通していなかった。実測 2026-08-27: 幅 1 で 80 行・幅 3 で 42 行が溢れていた (幅 20 以上は 0 件)
 // = 「離散点で緑」は「その点では壊せなかった」でしかない (issue 116)。
 func TestRenderBodyNeverExceedsWidth(t *testing.T) {
@@ -187,7 +187,7 @@ func TestUnterminatedFenceStillRenders(t *testing.T) {
 }
 
 func TestIndentedFenceInsideListIsCode(t *testing.T) {
-	// ⚠️ 回帰防止: 箇条書きの中のコードブロックは 4 桁以上インデントされる。フェンスを 0-3 桁に
+	// 🚨 回帰防止: 箇条書きの中のコードブロックは 4 桁以上インデントされる。フェンスを 0-3 桁に
 	// 縛ると、中身が項目の継続行として散文に連結され (reflowJoin) コードが壊れて出る。
 	src := "1. 設定内容:\n" +
 		"     ```yaml\n" +
@@ -405,7 +405,7 @@ func TestQuoteIsPrefixedOnEveryLine(t *testing.T) {
 }
 
 // 本文の左に出す行番号は「ソース (.md) の行番号」で、表示行の連番ではない
-// (ユーザー選定 2026-08-01)。⚠️ 段落は複数のソース行を畳み、折り返しは 1 行を複数行に割るので、
+// (ユーザー選定 2026-08-01)。🚨 段落は複数のソース行を畳み、折り返しは 1 行を複数行に割るので、
 // 番号はブロックの先頭の表示行にだけ出す。同じ番号を続き行にも並べると「その番号の行がそこに
 // ある」と読めてしまい、外 (nvim / Claude Code) へ持ち出したとき指す先がずれる。
 func TestRenderBodySrcLineNumbers(t *testing.T) {
@@ -466,7 +466,7 @@ func TestRenderBodySrcLineNumbersSkipFrontMatter(t *testing.T) {
 
 // 幅 0 以下では空行を返す (issue 116。glogx 本体の clipToWidth と同じ契約)。
 //
-// ⚠️ 呼び出し側の「width - 固定列」が極小幅で 0 や負になることがある。そのまま返すと
+// 🚨 呼び出し側の「width - 固定列」が極小幅で 0 や負になることがある。そのまま返すと
 // 行が枠を突き破る (issue 053 が本体側で踏んだのと同じ形)。
 func TestRenderBodyAtZeroOrNegativeWidth(t *testing.T) {
 	for _, w := range []int{0, -1, -80} {

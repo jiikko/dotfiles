@@ -56,7 +56,7 @@ $ grep -n 'hooks' _claude/settings.json
 - `--hooks-dir` / `SELF_HOSTED_RUNNER_HOOKS_DIR` という文字列はあるが、これは同梱の
   self-hosted runner (orchestrator mode) 用で Claude Code の hook とは無関係
 
-⚠️ 版依存の事実である。**上の grep が唯一の検出手段**なので、Claude Code の版が上がって
+🚨 版依存の事実である。**上の grep が唯一の検出手段**なので、Claude Code の版が上がって
 hooks の探索が入った場合は静かに前提が崩れる (再測は上の 1 コマンドで足りる)。
 
 ### (1b) 起動パスの直接実測 — `$0` は dotfiles 側だった

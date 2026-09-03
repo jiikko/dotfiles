@@ -32,14 +32,14 @@ var modalStates = []struct {
 // active() は「描かれる条件」であると同時に「handleKey が consumed を返す条件」でなければ
 // ならない = 見えているモーダルがキーを持つ。
 //
-// ⚠️ この一致がこのテストの主張そのもの。他のモーダル (再起動ダイアログ) は「自分を出してよいか」を
+// 🚨 この一致がこのテストの主張そのもの。他のモーダル (再起動ダイアログ) は「自分を出してよいか」を
 // active() で判断するので、ずれると「最前面に出ているのにキーが別のモーダルへ行く」状態が生まれる。
 // 実際に起きた事故: 再起動ダイアログが running() だけを見ていたため push 確認 (y/N) 中に最前面へ
 // 重なり、画面の「その他のキー: 後で」に従って押した y が push を実行した。
 func TestActionModalActiveMatchesHandleKey(t *testing.T) {
 	// 確認は y/Enter で実行へ進み、それ以外はキャンセルする = キーによって遷移が変わるので
 	// 代表を複数試す。どのキーでも「consumed か否か」は active() と一致すること。
-	// ⚠️ C / X を必ず含めること。これらは update 走行中に「もう片方の CLI を始める」ため
+	// 🚨 C / X を必ず含めること。これらは update 走行中に「もう片方の CLI を始める」ため
 	// 例外的に扱われるが、**消費はする** (素通しにすると viewer のキー語彙へ漏れて
 	// 破棄確認を誤爆させた実測がある)。同値が崩れていないことをこのキーで確かめる。
 	for _, key := range []string{"y", "enter", "n", "j", "r", "q", "C", "X"} {
@@ -92,7 +92,7 @@ func TestWaitPullCleanupOutlivesQuit(t *testing.T) {
 
 // modalStates が actionModal の bool フィールドを網羅していることを型から検査する。
 //
-// ⚠️ これが無いと上の対応テストは「私が思い出した状態」しか見ない。新しい確認/実行中フラグを
+// 🚨 これが無いと上の対応テストは「私が思い出した状態」しか見ない。新しい確認/実行中フラグを
 // 足した人が active() の更新を忘れても気づけないので、フィールドを足したらここで落として
 // 「対応を確認して一覧に足す」ことを強制する (テストが守れる範囲を実際に広げるための一段)。
 func TestActionModalStateListCoversAllFlags(t *testing.T) {
@@ -102,7 +102,7 @@ func TestActionModalStateListCoversAllFlags(t *testing.T) {
 			listed[st.field] = true
 		}
 	}
-	// ⚠️ 「状態フィールドの型」で絞り込まないこと (bool 限定や、名前のハードコードを含む)。
+	// 🚨 「状態フィールドの型」で絞り込まないこと (bool 限定や、名前のハードコードを含む)。
 	// map / slice / 独自型の状態は静かに網羅対象から落ちる (並列化で updating を map へ変えた
 	// 2026-08-21 に実際に落ち、red team が「非 bool の状態を足すと active() との不一致が
 	// 検出されない」ことを実測した)。除外リスト方式にして、**新設フィールドは必ず落ちる**
@@ -127,7 +127,7 @@ func TestActionModalStateListCoversAllFlags(t *testing.T) {
 }
 
 // claude と codex の自己更新は並走できること (ユーザー要望 2026-08-21、issue 074)。
-// ⚠️ 単数の bool + 対象名に戻すと、片方の実行中に running() がもう片方の C/X を飲んで
+// 🚨 単数の bool + 対象名に戻すと、片方の実行中に running() がもう片方の C/X を飲んで
 // 直列化する。この test 群がその退行を捕まえる。
 func TestActionModalParallelUpdates(t *testing.T) {
 	t.Run("別の CLI は並走できる", func(t *testing.T) {
@@ -267,7 +267,7 @@ func TestActionModalUpdateKeyOwnership(t *testing.T) {
 }
 
 // 並走モーダルの表示。走行中の CLI が行で分かること / 終了できない理由が画面にあること。
-// ⚠️ この 2 つは「並走中に片方の行しか出ない」「並走中だけ案内が消える」変異で緑になっていた
+// 🚨 この 2 つは「並走中に片方の行しか出ない」「並走中だけ案内が消える」変異で緑になっていた
 // (red team 2026-08-21)。Ctrl-C はブロックされ続けるのに理由が画面から消えるのが最悪の形。
 func TestActionModalUpdateBoxLines(t *testing.T) {
 	t.Run("単独走行", func(t *testing.T) {
@@ -297,7 +297,7 @@ func TestActionModalUpdateBoxLines(t *testing.T) {
 	})
 }
 
-// 走行中の一覧は決定論的な順で返ること。⚠️ 2 要素だけで 1 回試す形にしないこと:
+// 走行中の一覧は決定論的な順で返ること。🚨 2 要素だけで 1 回試す形にしないこと:
 // sort を外しても map の反復順で 8/10 は昇順になり、退行検知として当てにならない
 // (red team 2026-08-21 が 10 回実行で PASS 8 / FAIL 2 を実測)。
 func TestUpdatingTargetsIsDeterministic(t *testing.T) {

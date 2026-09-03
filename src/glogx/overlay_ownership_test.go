@@ -16,12 +16,12 @@ import (
 //  1. **参加者 × 2 軸の表**を 1 箇所に置き、表の主張と実装 (browseModel の各経路) の一致を pin する
 //  2. **表に載っていない参加者が現れたら red にする** (reflect で ownsKeys の実装を数え上げる)
 //
-// ⚠️ production の述語を新しく発明しない (issue 213 の判断)。`actModal.active()` /
+// 🚨 production の述語を新しく発明しない (issue 213 の判断)。`actModal.active()` /
 // `running()` と `doctorDelete.active()` / `blocking()` が既に 2 軸そのもので、doc も
 // 一致テストの前例 (`TestActionModalActiveMatchesHandleKey`) も在る。ここは**参照側の
 // 網羅**だけを守る。
 //
-// ⚠️ compile error にはできない (issue 213 に明記)。リストへ書き忘れても型は満たされるので、
+// 🚨 compile error にはできない (issue 213 に明記)。リストへ書き忘れても型は満たされるので、
 // 「書き忘れ」を捕まえるのは reflect の数え上げだけ。
 
 // overlayParticipant は 2 軸の主張。owns = (a) 自分の語彙を持ちうるか /
@@ -32,7 +32,7 @@ type overlayParticipant struct {
 	owns bool
 	// uninterruptible は (b) を持つか。持つなら ctrl+c と restartPromptVisible が譲ること
 	uninterruptible bool
-	// whyNotUninterruptible は (b) を持たない理由。⚠️ **「壊れないから」ではない**
+	// whyNotUninterruptible は (b) を持たない理由。🚨 **「壊れないから」ではない**
 	whyNotUninterruptible string
 	// stoppedByCancelAll は cancelAll が止めるか (走行中の非同期を終了・再起動で残さない)
 	stoppedByCancelAll bool
@@ -55,18 +55,18 @@ var overlayOwnershipTable = []overlayParticipant{
 	},
 	{
 		name: "statusOv", owns: true, uninterruptible: false,
-		// ⚠️ 破壊的操作 (runGitRestoreWorktree / runGitCleanUntracked) は **Update の中で同期に**
+		// 🚨 破壊的操作 (runGitRestoreWorktree / runGitCleanUntracked) は **Update の中で同期に**
 		// 走るので相を跨がない。非同期は fetchDiff (読み取り専用) だけ。
 		// **status に非同期の破壊的操作を足した瞬間に (b) 側へ移る**
 		whyNotUninterruptible: "破壊的操作は Update 内で同期に完了し、非同期は読み取り専用の fetchDiff だけ",
-		// ⚠️ 既知の穴 (issue 213 が記録): cancelAll は statusOv を止めていないので、
+		// 🚨 既知の穴 (issue 213 が記録): cancelAll は statusOv を止めていないので、
 		// fetchDiff の git diff が終了時に残りうる。ここを true にするなら stop() の実装が要る
 		stoppedByCancelAll: false,
 	},
 }
 
 // 表の (a) の主張と `updateKeyReachable` の実装が一致する。
-// ⚠️ **overlay の handleKey を直叩きしない**。browseModel 経由で見ないと、
+// 🚨 **overlay の handleKey を直叩きしない**。browseModel 経由で見ないと、
 // 「経路の 1 つを直し忘れた」形は検出できない (issue 213 の発火条件)。
 func TestOverlayOwnsKeysMatchesUpdateKeyReachable(t *testing.T) {
 	for _, p := range overlayOwnershipTable {
@@ -108,7 +108,7 @@ func TestOverlayUninterruptibleMatchesCtrlCAndRestartPrompt(t *testing.T) {
 
 // 表に載っていない参加者が現れたら red にする (issue 213 の受け入れ条件)。
 //
-// ⚠️ **compile error にはできない**ので、`browseModel` のフィールドを reflect で走査し、
+// 🚨 **compile error にはできない**ので、`browseModel` のフィールドを reflect で走査し、
 // `ownsKeys()` を実装している型が表に在ることを要求する。非公開メソッドの interface は
 // 同一 package なら判定できる。走査の実体は `ownsKeysFieldNames` (ポインタ / スライスの
 // フィールドを取りこぼさないこと自体を canary で検査している)。
@@ -156,7 +156,7 @@ func TestOverlayNonUninterruptibleHasReason(t *testing.T) {
 }
 
 // showOverlayOwning は「その参加者が (a) 語彙を持っている」状態を作る。
-// ⚠️ **状態の作り方をここに集約する**。各テストで別々に作ると、片方だけ実装に追従して
+// 🚨 **状態の作り方をここに集約する**。各テストで別々に作ると、片方だけ実装に追従して
 //
 //	もう片方が「別の状態を検査している」ことに気づけない
 func showOverlayOwning(t *testing.T, m *browseModel, name string) {
@@ -217,7 +217,7 @@ func isQuitCmd(cmd tea.Cmd) bool {
 
 // ownsKeysFieldNames は t のフィールドのうち `ownsKeys()` を持つ型の名前を返す。
 //
-// ⚠️ **値フィールドだけを見ては駄目**。`reflect.PointerTo(f.Type).Implements(...)` は
+// 🚨 **値フィールドだけを見ては駄目**。`reflect.PointerTo(f.Type).Implements(...)` は
 // **ポインタ / スライス / interface のフィールドを素通りする** (実測 2026-09-03:
 // `*fooView` のフィールドは false、`[]fooView` も false)。既存の値フィールドで
 // 件数 > 0 になるので「判定不能」ガードも鳴らず、**次の overlay をポインタで持たせた瞬間に
@@ -252,7 +252,7 @@ func ownsKeysFieldNames(t reflect.Type) []string {
 }
 
 // 走査そのものを canary で検査する (取りこぼす形を固定する)。
-// ⚠️ **本走査と同じ関数を通す**。式をコピーして別に書くと canary はコピーを検査するだけになる。
+// 🚨 **本走査と同じ関数を通す**。式をコピーして別に書くと canary はコピーを検査するだけになる。
 func TestOwnsKeysFieldScanFindsPointerAndSliceFields(t *testing.T) {
 	type probe struct {
 		Value    doctorView

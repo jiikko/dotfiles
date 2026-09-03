@@ -32,7 +32,7 @@ var checkboxRe = regexp.MustCompile(`^\s*[-*+]\s+\[([ xX])\]`)
 
 // Progress はチェックボックスの生の事実 ("3/7")。チェックボックスが無ければ ""。
 //
-// ⚠️ ここから「着手中」を導出しない。実測でパスと真逆になる: done/ にあるのに 0/N の
+// 🚨 ここから「着手中」を導出しない。実測でパスと真逆になる: done/ にあるのに 0/N の
 // ファイルが 36 件 (dropbox 16 / DualNote 13 / SnapTrim 7)、逆に全チェック済みでも
 // 本文が未完を明記している open ファイルがある。チェックボックスは「作業項目の進捗」
 // ではなく「将来の実装計画」や「Phase 追跡」に使われていて、意味が repo・ファイルごとに違う。
@@ -41,7 +41,7 @@ var checkboxRe = regexp.MustCompile(`^\s*[-*+]\s+\[([ xX])\]`)
 // 持つと**一覧を出すたびに全 issue の全文を読む**ことになっていた (LoadMeta の doc)。
 // Body は issue を開いたときだけ作られ、その時点で全文がメモリにあるので追加の I/O が要らない。
 //
-// ⚠️ 数える範囲が旧 Issue.Progress と 1 点だけ違う: **front matter 内の行も数える**。
+// 🚨 数える範囲が旧 Issue.Progress と 1 点だけ違う: **front matter 内の行も数える**。
 // 旧実装は front matter を別分岐で処理していたため数えなかった (実測差分: 先頭が `---` で
 // 始まり front matter 内に `- [x]` がある入力で旧 1/1 に対し新 2/3 等。2026-08-14 の R1
 // レビューが 426 件の差分入力を提示)。front matter に checkbox を書く issue は
@@ -49,7 +49,7 @@ var checkboxRe = regexp.MustCompile(`^\s*[-*+]\s+\[([ xX])\]`)
 // この差を受け入れる。「先頭 `---` ブロック」の規則を Body 側にも複製すると
 // 同じ規則が 2 箇所になるので、そちらは採らない。
 //
-// ⚠️ コードフェンス内の `- [ ]` も数える (checkboxRe はフェンス非対応)。これは旧と同じ挙動。
+// 🚨 コードフェンス内の `- [ ]` も数える (checkboxRe はフェンス非対応)。これは旧と同じ挙動。
 // フェンス対応が要るなら別 issue で。
 func (b *Body) Progress() string {
 	if b.progressDone {
@@ -92,7 +92,7 @@ func (b *Body) Lines(width int, colored bool) []string {
 }
 
 // SrcLines は Lines と同じ並びのソース (.md) 行番号 (0 = その行には出さない)。
-// ⚠️ Lines を呼ぶ前は空。整形しないと行の対応が決まらないため。
+// 🚨 Lines を呼ぶ前は空。整形しないと行の対応が決まらないため。
 func (b *Body) SrcLines() []int { return b.srcLines }
 
 // SrcLineCount は本文のソース行数。行番号の溝を何桁取るかを整形前に決めるのに使う
@@ -108,7 +108,7 @@ func (b *Body) Len() int { return len(b.lines) }
 // 文末の句点つき `url。` のいずれの形でも現れる。貪欲に拾うと `)` や `。` が URL に混ざり、
 // ブラウザが 404 を開く。逆に `?` `#` `=` `&` は query / fragment の一部なので残す。
 //
-// ⚠️ 制御文字 (C0 \x00-\x1f / DEL \x7f / C1 \u0080-\u009f) も終端に含める。URL に生の制御文字は
+// 🚨 制御文字 (C0 \x00-\x1f / DEL \x7f / C1 \u0080-\u009f) も終端に含める。URL に生の制御文字は
 // 入らないので実用上の損失は
 // 無く、含めないと `https://example.com/<ESC>]0;…<BEL>` が 1 本の URL として抽出され、URL
 // ピッカーの一覧描画で端末へ素通りする (URLs は整形経路を通らず生ソースから拾うため、

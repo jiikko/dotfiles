@@ -178,7 +178,7 @@ tt_debounced_save_main() {
 
 # source 時（テスト）は main を実行しない。直接実行時のみ走らせる。
 if [ "${TT_DEBOUNCE_SOURCE_ONLY:-}" != "1" ]; then
-  # 無音契約 (issue 129)。⚠️ **この枝に置く。ファイル先頭には置けない**: テストはこの
+  # 無音契約 (issue 129)。🚨 **この枝に置く。ファイル先頭には置けない**: テストはこの
   # スクリプトを source して関数だけを使うので、先頭で塞ぐとテスト自身の出力まで消える。
   # debounce は既定 10 秒 sleep する間 tmux のパイプを掴むため、その間 run-shell が active になる
   exec </dev/null >/dev/null 2>&1

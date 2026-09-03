@@ -65,7 +65,7 @@ __validate_mp4_check() {
   # --- チェック4+5: 全デコード1パスで「破損」と「実デコード終端」を両方取る (重い) ---
   # -stats で進捗の time= を強制出力させ、最後の time= を実デコード終端とみなす。
   #
-  # ⚠️ ffmpeg の exit code は意図的に見ない (|| true で捨てる)。破損判定は exit code でなく
+  # 🚨 ffmpeg の exit code は意図的に見ない (|| true で捨てる)。破損判定は exit code でなく
   # DECODE_ERROR_RE の特定文字列マッチで行う (理由は上の DECODE_ERROR_RE コメント参照)。
   # ffmpeg/ffprobe 不在の環境ではチェック1 の ffprobe が空を返し unreadable で確定するため
   # ここに到達しない。この前提が崩れない限り exit code 判定は追加しない。

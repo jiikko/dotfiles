@@ -14,7 +14,7 @@
 123:  printf '::error::bench regression: %s %sms > budget %sms (%s)\n' ...
 ```
 
-⚠️ 121 行 (`rel` metric が極端な混雑 run で警告のみに落ちる経路) を忘れないこと。
+🚨 121 行 (`rel` metric が極端な混雑 run で警告のみに落ちる経路) を忘れないこと。
 エラー側だけ直すと、そちらに KB/MB の誤表示が残る。
 
 この repo の metric は**単位を名前が持つ**流儀 (`server_rss_mb` = MB / `startup_cpu_ms` =
@@ -48,7 +48,7 @@ unit_of() { case "$1" in *_kb) printf 'KB';; *_mb) printf 'MB';; *_cpu_ms|*) pri
 共有 checker なので nvim / tmux / zsh / glogx の全 metric に同時に効く。
 **呼び出しは 121 / 123 の両方**に入れること (片方だけ直すのが典型的な取りこぼし)。
 
-⚠️ **予算ファイルに単位トークンを持たせる案 (`view_steady_alloc_kb 31.0 kb`) は採らない**。
+🚨 **予算ファイルに単位トークンを持たせる案 (`view_steady_alloc_kb 31.0 kb`) は採らない**。
 051 で「行の書式は増やさず、単位は metric 名が持つ」と決めた判断と衝突する
 (書式を増やすと checker / bench_stats / 縮退経路 / 既存 4 予算ファイルに波及する)。
 表示だけの問題なので、表示側で解く。
@@ -69,7 +69,7 @@ unit_of() { case "$1" in *_kb) printf 'KB';; *_mb) printf 'MB';; *_cpu_ms|*) pri
 ## 対応記録 (2026-08-15)
 
 - `check_bench_budgets.sh` に `unit_of()` (metric 名の接尾辞 → 表示単位) を追加し、
-  超過文言の警告経路 (極端混雑) とエラー経路の**両方**に適用 (issue の⚠️どおり)
+  超過文言の警告経路 (極端混雑) とエラー経路の**両方**に適用 (issue の🚨どおり)
 - 予算ファイルの書式は増やしていない (051 の判断を維持。表示だけを表示側で解いた)
 - `test_check_bench_budgets.sh` に文言の単位 assert 4 本を追加 (KB / MB / 従来 ms /
   警告経路の KB)。変異検証: unit_of の kb/mb 分岐を消すと

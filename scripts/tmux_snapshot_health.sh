@@ -67,7 +67,7 @@ if [ -z "$last_target" ] || [ ! -f "$rdir/$last_target" ]; then
   last_age=-1
 else
   last_mtime="$(tt_mtime_of "$rdir/$last_target")"
-  # ⚠️ 鮮度の入力は「last の mtime」だけにしないこと。upstream は状態無変化のとき新 layout を
+  # 🚨 鮮度の入力は「last の mtime」だけにしないこと。upstream は状態無変化のとき新 layout を
   #   捨てて last を据え置く (dedup) ため、保存が成功していても last の mtime は前進しない。
   #   構成変化のない夜間・週末に「保存経路が止まっている」と誤検知する (レビュー指摘 2026-07-30)。
   #   保存が走ったことは archive の mtime に現れるので、両者の新しい方を「最後に保存が成功した
@@ -89,7 +89,7 @@ daemon_alive() {  # $1=state dir, $2=表示名
   local d found=0
   for d in "$1"/*.lock; do
     [ -d "$d" ] || continue
-    # ⚠️ owner ファイルを自分で読んで kill -0 に渡さないこと。書式 ("pid<TAB>lstart") を
+    # 🚨 owner ファイルを自分で読んで kill -0 に渡さないこと。書式 ("pid<TAB>lstart") を
     # 知っているのは guards.sh 側だけで、tab 以降が混ざると kill が illegal pid で必ず失敗し、
     # 常駐プロセスが生きていても「不在」と誤報する (実測 2026-08-20)。判定は書き手と対の
     # tt_lock_owner_alive に委ねる (pid 再利用の照合もそちらが持つ)。
@@ -106,7 +106,7 @@ daemon_alive "$TT_PERIODIC_STATE_DIR" "周期保存"
 daemon_alive "$TT_WATCHDOG_DIR" "watchdog"
 
 # --- 3. archive の中身の健全性 (mtime ではなく実際に読めるかで判定) ---------------------
-# ⚠️ mtime 比較では今回の破損を検出できない。truncate された archive は mtime が新しくなるため
+# 🚨 mtime 比較では今回の破損を検出できない。truncate された archive は mtime が新しくなるため
 #   「archive の方が新しい = OK」に見えてしまう (レビューで実証 2026-07-30: 200 byte の壊れた
 #   archive でも mtime 判定は OK を返した)。中身を読んで last の pane 集合を包含しているかだけが
 #   唯一この破損を捕まえる検査。壊れていれば「window は復元されるのに全 pane の scrollback が

@@ -21,10 +21,10 @@
   (予算は桁級回帰の安全網で、微デグレの追跡と「変わっていない」ことの提示は
   この比較が担う)。「🔺 悪化 (有意)」が出たら 1〜3 の対処判断に進む
 
-## 判定保留 (⚠) が出ていたら、まず同じコミットで Bench を再実行する
+## 判定保留 (🚨) が出ていたら、まず同じコミットで Bench を再実行する
 
 **「🔺 悪化」より先に、その run が比較に足る環境だったかを見る。** 較正器の cur/baseline 比が
-1±25% を外れた run では rel metric の判定を出さず `⚠ 判定保留 (環境差 ×N.NN)` になる
+1±25% を外れた run では rel metric の判定を出さず `🚨 判定保留 (環境差 ×N.NN)` になる
 (実装は `tests/bench_stats.sh` の `CALIB_TRUST_BAND`)。CLI からは Step Summary が見えないので、
 ジョブログの `bench_env_shift=<比> trusted=<yes|no>` 行で同じことが分かる
 (`gh run view <id> --log | grep bench_env_shift`)。

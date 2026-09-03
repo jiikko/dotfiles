@@ -28,7 +28,7 @@
 - **ファイル**: `_nviminit.lua:648,654`（`tag = "v0.2.1"` 固定 + `set_number = false`）
 - **内容**: 固定 `v0.2.1`（commit `2cd194d`）の実ソース `lua/modes.lua` で `set_number` は **L15 の既定テーブルにしか現れず、どこからも読まれない**（`grep set_number lua/` のヒットは 1 行のみ）。`M.highlight()` は全 scene の `winhighlight` マップ（`CursorLineNr` 含む）を `set_number` の判定なしに無条件適用する。→ `set_number=false`（行番号背景を無効化する意図）は**効かない**。ゲート `if not config.set_number then winhl_map.CursorLineNr = nil end` は後続 commit `9ca1d68`("fix: ignored `set_number` config (#45)", 2023-09-20) で追加され、これは `2cd194d` の子孫（`git merge-base --is-ancestor 2cd194d 9ca1d68` = 真）。
 - **✅ 対応済み** (`ac23d88`): 案 (a) を採用し **modes.nvim を `v0.3.0` へ更新**（spec の `tag` + lock commit）。`set_number` ゲート（#45 fix）を含む版になり `set_number=false` が効くようになる。v0.3.0 の schema 変更に追従して `ignore_filetypes`→`ignore` へ改称し、新設 `set_signcolumn=false` を追加（256色運用で `set_cursorline`/`set_number` を off にしている既存方針に合わせる。`set_signcolumn` は v0.3.0 で実際に読まれることをソース確認済み）。
-  - **⚠️ 要フォロー（ユーザ操作）**: 反映には `:Lazy restore`（or `:Lazy sync`）が必要（installed は現状まだ v0.2.1=`2cd194d`）。更新後に 256色運用で表示崩れがないか目視確認。
+  - **🚨 要フォロー（ユーザ操作）**: 反映には `:Lazy restore`（or `:Lazy sync`）が必要（installed は現状まだ v0.2.1=`2cd194d`）。更新後に 256色運用で表示崩れがないか目視確認。
 - **検証メモ**: main が HEAD=2cd194d と set_number 未参照を実測再確認。「v0.2.1 旧ピン」と同一根なので (a) が根本解。severity P3 は「行番号背景の色だけ・256色運用では視認性が低い」ため。
 
 ---

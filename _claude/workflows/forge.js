@@ -90,7 +90,7 @@ const CROSS_VERDICT_SCHEMA = {
     reviewer: { type: 'string' },
     verdict: { type: 'string', enum: ['agree', 'needs_discussion', 'disagree'] },
     agree: { type: 'array', items: { type: 'string' }, description: '✅ 妥当と判断した指摘' },
-    needsDiscussion: { type: 'array', items: { type: 'string' }, description: '⚠️ 追加検討が必要' },
+    needsDiscussion: { type: 'array', items: { type: 'string' }, description: '🚨 追加検討が必要' },
     overreach: { type: 'array', items: { type: 'string' }, description: '❌ 過剰反応と判断' },
     additional: {
       type: 'array',
@@ -157,7 +157,7 @@ function integratedItem() {
       location: { type: 'string' },
       category: { type: 'string' },
       source: { type: 'string', description: '指摘元エージェント名' },
-      crossReview: { type: 'string', description: 'クロスレビュー判定 (✅/⚠️/❌ + 補足)' },
+      crossReview: { type: 'string', description: 'クロスレビュー判定 (✅/🚨/❌ + 補足)' },
       suggestion: { type: 'string' },
     },
   }
@@ -406,7 +406,7 @@ function crossReviewPrompt(originalAgent, lens, phase, findingsJson) {
     '5. 構造的修正か: パッチワークでなく前提の是正になっているか',
     '',
     'verdict は agree (全体に妥当) / needs_discussion (要検討あり) / disagree (過剰が多い) のいずれか。',
-    'agree[]=✅妥当 / needsDiscussion[]=⚠️要検討 / overreach[]=❌過剰 / additional[]=💡見落とし、を JSON スキーマに従って返すこと。',
+    'agree[]=✅妥当 / needsDiscussion[]=🚨要検討 / overreach[]=❌過剰 / additional[]=💡見落とし、を JSON スキーマに従って返すこと。',
   ].join('\n')
 }
 
@@ -418,7 +418,7 @@ function integratePrompt(phase, reviewed) {
     '【統合ルール】(_common/cross-review.md)',
     '1. 重複排除: same file + same line + same category は重複とみなし severity が高い方を採用',
     '2. ❌ 過剰と判断された指摘は excluded[] に理由付きで移動',
-    '3. ⚠️ 要検討は該当 item の crossReview に注釈',
+    '3. 🚨 要検討は該当 item の crossReview に注釈',
     '4. 💡 追加指摘 (additional) は通常の指摘として取り込む',
     '5. 出典 (source = エージェント名) を保持',
     '6. severity 順にソート (high → medium → low)',

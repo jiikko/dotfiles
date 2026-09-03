@@ -10,7 +10,7 @@ unset CDPATH
 setopt err_exit no_unset pipe_fail extended_glob
 setopt prompt_subst   # 対話シェルの既定。この下でないと $(...) は実行されない
 
-# ⚠️ TERM をこのファイルで固定する。`print -P '%B'` は terminfo 由来なので TERM が無い / dumb だと
+# 🚨 TERM をこのファイルで固定する。`print -P '%B'` は terminfo 由来なので TERM が無い / dumb だと
 #    **空**を返し、比較対象のハードコード ANSI と 食い違って落ちる (実測 2026-08-28: 未設定・dumb で
 #    空、xterm-256color で ESC[1m)。CI の workflow 側で TERM を撒くと「テストの前提が別ファイルに
 #    ある」状態になり、cron やエディタのタスク実行など非 tty 経路で実装は無傷なのに赤くなる。

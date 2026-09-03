@@ -58,7 +58,7 @@ local function refresh_buf(buf)
   end
 end
 
--- ⚠️ vim.defer_fn の timer は「自分の callback が走ったとき」にだけ close される
+-- 🚨 vim.defer_fn の timer は「自分の callback が走ったとき」にだけ close される
 -- (nvim runtime の実装)。debounce で撃ち直すときに stop() だけして捨てると uv handle が
 -- 開いたまま残り、TextChanged 連打のたびに 1 個ずつ増える (実測: stop のみ 50 回 → 生存
 -- timer 50 個 / stop+close → 1 個)。停止は必ずこの関数を通して close まで行う。
@@ -73,7 +73,7 @@ end
 local function schedule_refresh(buf)
   if not eligible(buf) then return end
   cancel_timer(buf)
-  -- ⚠️ 満了と callback 実行の間 (defer_fn は schedule_wrap 越しに走る) に cancel_timer +
+  -- 🚨 満了と callback 実行の間 (defer_fn は schedule_wrap 越しに走る) に cancel_timer +
   -- 再スケジュールが割り込むことがある。その古い callback は「自分がまだ登録中の timer か」を
   -- 見てから動く: 見ないと (a) 新しい timer の参照を timers[buf]=nil で捨て、(b) キャンセル
   -- したはずの refresh が走って fold の開閉状態が foldlevel 既定へ戻る (refresh_win 参照)。
@@ -102,7 +102,7 @@ function M.setup()
   vim.opt.foldlevel = 100
   vim.opt.foldtext = "v:lua.require'dotfiles.folds'.foldtext()"
   vim.opt.fillchars = { fold = " " } -- 折りたたんだ際のあまりの部分をスペースにする
-  -- ⚠️ <Tab> と <C-i> は端末では同一キーコード (Apple Terminal + tmux は拡張キー報告で
+  -- 🚨 <Tab> と <C-i> は端末では同一キーコード (Apple Terminal + tmux は拡張キー報告で
   -- 区別しない) ため、このマップで <C-i> (jumplist 前進) は fold open に化けて失われる。
   -- fold 開閉を <Tab> に置く利便を優先した意図的なトレードオフ。<C-i> が必要になったら
   -- fold を za/zo 系や <leader> 配下へ移して再評価する。

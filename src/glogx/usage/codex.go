@@ -45,7 +45,7 @@ const codexRateLimitsID = 2
 // FetchCodex は `codex app-server` を起動して codex の利用枠を取得する。ctx はタイムアウト
 // 付きで渡す契約 (Fetch と同じ)。無期限 ctx だと server 無応答時に stdout 待ちで返らない。
 //
-// ⚠️ 応答を受信する前に stdin を閉じないこと: app-server は stdin の EOF で shutdown し、
+// 🚨 応答を受信する前に stdin を閉じないこと: app-server は stdin の EOF で shutdown し、
 // 処理中の要求への応答を捨てる (実測 2026-07-31。パイプで 3 行流して即 EOF にすると
 // initialize 応答すら返らない)。stdin を開いたまま stdout を待ち、応答受信後に ctx cancel で
 // プロセスを終了させる。
@@ -196,7 +196,7 @@ func parseCodexRateLimits(result []byte) ([]Window, error) {
 // codexWindowMins は API の windowDurationMins をそのまま枠の長さ (分) にする。null は 0
 // (不明)。負値も 0 に倒す — 窓幅は経過割合の分母なので、負のまま通すと盤が破綻する。
 func codexWindowMins(mins *int64) int64 {
-	// ⚠️ 上限も見る。Span() は分を time.Duration へ掛けるので、巨大値はオーバーフローして
+	// 🚨 上限も見る。Span() は分を time.Duration へ掛けるので、巨大値はオーバーフローして
 	// **負や 0** になる (実測: 200000000 分 → -1790762h、MaxInt64 → -1m)。結果は
 	// 「窓幅不明」へ落ちるので事故にはならないが、負を弾く宣言だけして通していた。
 	if mins == nil || *mins <= 0 || *mins > maxWindowMins {
@@ -252,7 +252,7 @@ func (s *Snapshot) HasCodex() bool {
 // 表示は成立させ、逆に Claude 側が失敗しても codex の枠だけの Snapshot を返す。両方失敗した
 // ときだけエラー (呼び出し側の「取得失敗」表示は全滅時に限る)。
 //
-// ⚠️ 片側だけの失敗は err=nil で返るため、返った Snapshot は前回より枠が減っていることが
+// 🚨 片側だけの失敗は err=nil で返るため、返った Snapshot は前回より枠が減っていることが
 // ある。前回結果を持つ呼び出し側は MergeLastGood で欠けた出所を補完すること (これを怠ると
 // 一時失敗のたびに取れていた枠が黙って消える。敵対的レビュー指摘 2026-07-31)。
 func FetchAll(ctx context.Context) (*Snapshot, error) {

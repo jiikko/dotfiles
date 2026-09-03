@@ -26,7 +26,7 @@ TT_TRIGGER_LOG="${TT_TRIGGER_LOG:-$HOME/.cache/tt-restore-trigger.log}"
 
 tt_on_default_server || exit 0
 
-# ⚠️ pgrep へ置き換えないこと (SC2009 を意図的に抑制): この値は「かつて continuum の Gate2 が
+# 🚨 pgrep へ置き換えないこと (SC2009 を意図的に抑制): この値は「かつて continuum の Gate2 が
 # 数えていた ps ベースのカウント」を再現する診断値で、判定式を変えると過去ログとの比較が壊れる。
 # vendor/tmux-plugins/tmux-continuum/scripts/helpers.sh の all_tmux_processes と同じ数え方に揃える。
 # shellcheck disable=SC2009

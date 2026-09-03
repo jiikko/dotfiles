@@ -127,7 +127,7 @@ grep -q "refused: $CH/agents/a1.md" <<<"$OUT" || ng "他ツール link 拒否を
 [ "$CH/commands/c1.md" -ef "$DOT/_claude/commands/c1.md" ] || ng "拒否した以外の分 (commands/c1.md) を張っていない"
 grep -q '^linked 5$' <<<"$OUT" || ng "拒否 2 件を除く 5 件を張ったはず"$'\n'"$OUT"
 
-# --- 6b. link 先が symlink でない実ディレクトリ (skills/sk1) も拒否する。⚠️ ln -sfn は dest が実ディレクトリ
+# --- 6b. link 先が symlink でない実ディレクトリ (skills/sk1) も拒否する。🚨 ln -sfn は dest が実ディレクトリ
 #         だと -n が効かず dest/<basename> として中に潜り込む (BSD ln 実測)。ガードはこの 1 行だけ ---
 fixture refuse_dir
 mkdir -p "$CH/skills/sk1"

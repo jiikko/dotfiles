@@ -31,7 +31,7 @@ func TestMoveToSubdirCreatesDir(t *testing.T) {
 	}
 }
 
-// ⚠️ 上書きしない: 同じ basename が 2 箇所にあるのは viewer が警告する異常 (静かな内容喪失)
+// 🚨 上書きしない: 同じ basename が 2 箇所にあるのは viewer が警告する異常 (静かな内容喪失)
 // なので、移動でそれを作らない。
 func TestMoveToSubdirRefusesOverwrite(t *testing.T) {
 	dir := t.TempDir()
@@ -77,7 +77,7 @@ func TestMoveToSubdirNoopWhenAlreadyThere(t *testing.T) {
 }
 
 // next/ は状態として認識し、既定の一覧 (open のみ) でも必ず見せる。
-// ⚠️ 伏せると「目印を付けた issue が既定の一覧から消える」という逆の結果になる。
+// 🚨 伏せると「目印を付けた issue が既定の一覧から消える」という逆の結果になる。
 func TestNextDirIsAStatusAndAlwaysVisible(t *testing.T) {
 	dir := t.TempDir()
 	nextDir := filepath.Join(dir, NextDirName)

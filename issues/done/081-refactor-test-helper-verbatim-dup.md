@@ -17,7 +17,7 @@
 | 重複 | 実数 | 状態 |
 |---|---|---|
 | nvim headless ラッパ | `tests/nvim/test_smooth_scroll.sh:34` / `test_folds_timer.sh:32` が `grep -q "^OK"`、`test_image_hover.sh:32` は **`grep -q "OK"` (アンカー無し)** | **既に drift 済み**。`tests/nvim/lib/check_log.sh` のヘッダは「コピペの貼り忘れが実 false-pass を起こしたので一元化した」と明記しているのに、この 3 本には適用されていない (同型バグの横展開漏れ) |
-| 偽サーバ / 補助プロセス生成 | `tests/tmux/test_periodic_save.sh` (`spawn_helper`) / `test_snapshot_health.sh` (`spawn_helper`) / `test_server_watchdog.sh` (`spawn_fake_server`) | load-bearing な ⚠️ コメント (素の `cmd &` は EXIT trap 継承で TMP_DIR がテスト途中で消える。2026-07-30 に実測特定) ごとコピー。**既に名前・リダイレクト・配列名が 3 者で違う** |
+| 偽サーバ / 補助プロセス生成 | `tests/tmux/test_periodic_save.sh` (`spawn_helper`) / `test_snapshot_health.sh` (`spawn_helper`) / `test_server_watchdog.sh` (`spawn_fake_server`) | load-bearing な 🚨 コメント (素の `cmd &` は EXIT trap 継承で TMP_DIR がテスト途中で消える。2026-07-30 に実測特定) ごとコピー。**既に名前・リダイレクト・配列名が 3 者で違う** |
 | `DEFAULT_SOCK=` | tests/tmux 5 ファイル | 逐語 |
 | `assert_contains` の定義 | tests 配下 8 ファイル | 逐語相当 |
 | `assert_file_exists` の定義 | tests 配下 5 ファイル | 逐語相当 |
@@ -65,16 +65,16 @@
 | 項目 | 内容 | 検証 |
 |---|---|---|
 | 1. nvim ラッパ | `tests/nvim/lib/check_log.sh` に `tt_nvim_run_check` を足して 3 本を寄せた。anchor は厳しい側 (`^OK`) へ統一 | 別 commit `fcf5d7b`。変異で「旧形式は素通り」を実証 |
-| 2. 補助プロセス生成 | `tests/tmux/lib/stub_env.sh` に `tt_spawn_fake_proc` / `tt_free_pid` を新設し 3 本を寄せた。load-bearing な EXIT trap 注記の touch 箇所が 3 → 1 | ⚠️ 下記 |
+| 2. 補助プロセス生成 | `tests/tmux/lib/stub_env.sh` に `tt_spawn_fake_proc` / `tt_free_pid` を新設し 3 本を寄せた。load-bearing な EXIT trap 注記の touch 箇所が 3 → 1 | 🚨 下記 |
 | 3-a. `DEFAULT_SOCK` | 同 lib の `TT_DEFAULT_SOCK` へ (5 ファイルでバイト同一だった) | 変異 (別パスにする) で **5/5 が red** ✓ |
 | 5. `out=$(...); rc=$?` | `tests/tmux/test_tmux_toast.sh` の 2 箇所を `\|\| rc=$?` へ | 変異で **旧形式は診断 0 行・新形式は診断 1 行** ✓ |
 
-⚠️ **項目 2 はテストで pin できない**。素の `cmd &` へ戻す変異を当てても 3 本とも green のままだった
+🚨 **項目 2 はテストで pin できない**。素の `cmd &` へ戻す変異を当てても 3 本とも green のままだった
 (fork/exec のレースは確率的で、CI でも常には踏まない)。つまりこの統合の価値は「テストで守れる
 ようになった」ことではなく、**load-bearing な注記の出典を 1 つにした**ことだけ。次に 4 本目を
 書く人が注記ごとコピーし忘れる経路を塞いだ、という位置づけで記録しておく。
 
-⚠️ **項目 5 は issue の記述が過大だった**。`rc=$?` を使う 4 箇所のうち、実際に無言死するのは
+🚨 **項目 5 は issue の記述が過大だった**。`rc=$?` を使う 4 箇所のうち、実際に無言死するのは
 `test_tmux_toast.sh` (`set -euo pipefail`) だけ。`test_confirm_default_gate.sh` と
 `test_mark_seen.sh` は `set -uo pipefail` で **`-e` が無く**、`test_av1ify_clipboard.sh` は
 `unsetopt err_exit` で囲まれていた。3 つは元の形で安全なので触っていない

@@ -122,7 +122,7 @@ func TestBrowseUpdateFlow(t *testing.T) {
 		t.Fatalf("トースト表示中に j が消費された (cursor=%d)", m.cursor)
 	}
 
-	// 変わらなかった場合。⚠️ ここで「最新版です」と言わないことがこのテストの主張:
+	// 変わらなかった場合。🚨 ここで「最新版です」と言わないことがこのテストの主張:
 	// update が走った上で before == after なのは「CLI が更新しなかった」であって、
 	// 「これが最新である」は glogx には言えない (CLI は stale なキャッシュを見て
 	// 更新不要と判断しても exit 0 で成功する)。CLI の言い分 (note) を添えて事実だけ出す。
@@ -727,7 +727,7 @@ func TestBrowseRerunFailureShowsToast(t *testing.T) {
 	}
 }
 
-// version 通知 (issue 024) は先行トーストを潰さない。⚠️ 以前は「1 枠を譲り合う」ために専用
+// version 通知 (issue 024) は先行トーストを潰さない。🚨 以前は「1 枠を譲り合う」ために専用
 // タイマーで遅延再送していたが、トーストが積めるようになったので両方が同時に出るのが正しい姿
 // (ユーザー要望 2026-07-31)。
 func TestBrowseClaudeUpdateToastStacksWithExisting(t *testing.T) {
@@ -740,7 +740,7 @@ func TestBrowseClaudeUpdateToastStacksWithExisting(t *testing.T) {
 
 	// 先行 error トースト表示中 → 上に積まれ、先行も残る (どちらも読める)
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m2.height = 24 // ⚠️ 2 枚出すには窓の高さが要る (低い窓では行数上限で古い方を出さない。toast の doc)
+	m2.height = 24 // 🚨 2 枚出すには窓の高さが要る (低い窓では行数上限で古い方を出さない。toast の doc)
 	m2.toast.show("先行警告: ...", false)
 	m2.Update(claudeUpdateAvailableMsg{latest: "9.9.9"})
 	if !strings.Contains(m2.toast.text, "9.9.9") {
@@ -911,7 +911,7 @@ func TestBrowseFrameAutoOffAndNoFrame(t *testing.T) {
 
 // 押しっぱなし (キーリピート) は 1 回の入力として扱う (ユーザー報告 2026-08-01)。
 //
-// ⚠️ 端末はキーを離したことを教えてくれないので、離鍵の代わりに時間で判定する。窓は押される
+// 🚨 端末はキーを離したことを教えてくれないので、離鍵の代わりに時間で判定する。窓は押される
 // たびに更新するので、押し続けている限り 1 回にまとまり、指を離して窓が切れてから次の 1 回になる。
 func TestKeyRepeatIsOneInput(t *testing.T) {
 	advance := stubClock(t)
@@ -965,7 +965,7 @@ func TestKeyRepeatIsOneInputStatusViewer(t *testing.T) {
 	}
 }
 
-// ⚠️ 移動系は潰さない: 押しっぱなしでスクロールし続けるのは期待される動作で、潰すと
+// 🚨 移動系は潰さない: 押しっぱなしでスクロールし続けるのは期待される動作で、潰すと
 // 「押しても動かない」壊れ方になる。
 func TestKeyRepeatDoesNotBlockMovement(t *testing.T) {
 	advance := stubClock(t)
@@ -1189,7 +1189,7 @@ func TestEditorCommand(t *testing.T) {
 			wantPath: "vim", wantArgsTail: []string{"/tmp/a.md"},
 		},
 		{
-			// ⚠️ PATH で解決できない絶対パスにする。実在するエディタの絶対パスを使うと
+			// 🚨 PATH で解決できない絶対パスにする。実在するエディタの絶対パスを使うと
 			// 「指定を捨てて PATH 上の同名を起動する」実装でも Path が偶然一致して assert が
 			// 空振りする (実測: /opt/homebrew/bin/nvim だと変異が通った)。
 			name: "絶対パス + 引数", editor: "/opt/glogx-test/bin/myeditor -p",
@@ -1200,12 +1200,12 @@ func TestEditorCommand(t *testing.T) {
 			t.Setenv("VISUAL", tt.visual)
 			t.Setenv("EDITOR", tt.editor)
 			cmd := editorCommand("/tmp/a.md")
-			// exec.Command は PATH 解決するので Path は絶対パスになりうる。⚠️ HasSuffix で見ると
+			// exec.Command は PATH 解決するので Path は絶対パスになりうる。🚨 HasSuffix で見ると
 			// want="vim" が ".../bin/nvim" にも一致して別物を通すので、Base の完全一致で見る。
 			if got, want := filepath.Base(cmd.Path), filepath.Base(tt.wantPath); got != want {
 				t.Errorf("実行ファイル名が違う: got=%q want=%q (Path=%q)", got, want, cmd.Path)
 			}
-			// ⚠️ 絶対パス指定は Path そのものを見る。Base 一致だけだと「指定を捨てて PATH 上の
+			// 🚨 絶対パス指定は Path そのものを見る。Base 一致だけだと「指定を捨てて PATH 上の
 			// 同名を起動する」実装 (= ユーザーが指定した実体が無視される) を通してしまう。
 			if filepath.IsAbs(tt.wantPath) && cmd.Path != tt.wantPath {
 				t.Errorf("絶対パス指定の実体が起動されない: Path=%q want=%q", cmd.Path, tt.wantPath)
@@ -1315,7 +1315,7 @@ func TestUpdateDoesNotOverlapConfirmModal(t *testing.T) {
 				t.Errorf("確認モーダルが消えた (期待する語 %q が無い):\n%s", st.want, out)
 			}
 			// 譲ったことを伝えるトーストが唯一のフィードバック。消えると「C が効かない」だけに
-			// なる。⚠️ View() には入場アニメーションの途中なので出ない。状態で検査する。
+			// なる。🚨 View() には入場アニメーションの途中なので出ない。状態で検査する。
 			if !strings.Contains(m.toast.text, "claude update は確認") {
 				t.Errorf("update を譲った理由のトーストが無い: text=%q", m.toast.text)
 			}
@@ -1432,7 +1432,7 @@ func TestEarlyLatestJudgmentDoesNotDropRunningUpdate(t *testing.T) {
 }
 
 // 「すでに latest」の判定が返す updateMsg に early 印が付くこと。
-// ⚠️ 印が付かないと、走行中の update を降ろさないためのガード (early && isUpdating) が
+// 🚨 印が付かないと、走行中の update を降ろさないためのガード (early && isUpdating) が
 // 常に偽になり、red team 2026-08-21 が実測した「走行中の自己更新が孤児化 / 二重起動」が
 // 黙って復活する (ガード側のテストだけでは印の脱落を検出できなかった)。
 func TestLatestJudgmentMarksMsgEarly(t *testing.T) {
@@ -1514,7 +1514,7 @@ func TestBrowseParallelUpdateThroughKeys(t *testing.T) {
 }
 
 // push が stall したときの脱出口 (Ctrl-C 2 回) が、update と共存しても消えないこと。
-// ⚠️ 現状は updateBeginMsg の譲りで共存しないが、その if 1 つに依存させない。
+// 🚨 現状は updateBeginMsg の譲りで共存しないが、その if 1 つに依存させない。
 // red team 2026-08-21 が「共存させると anyUpdating 分岐が常時ブロックに化け、push の
 // 強制終了が不可能になる」ことを状態直組みで実測した。
 func TestForceQuitSurvivesUpdateCoexistence(t *testing.T) {

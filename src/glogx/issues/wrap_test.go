@@ -142,11 +142,11 @@ func TestExpandTabs(t *testing.T) {
 // 一致するので手元の目視では絶対に出ない)。render.go の dropToColumn と同型の欠陥で、
 // そちらだけ直すと同じバグがここに残る。
 func TestFlattenSpansClusterWidthsSumToTextWidth(t *testing.T) {
-	// ⚠️ Unicode 16 で追加され、uniseg v0.4.7 (15.0) が前の文字と結合しない rune を必ず含める。
+	// 🚨 Unicode 16 で追加され、uniseg v0.4.7 (15.0) が前の文字と結合しない rune を必ず含める。
 	//   これが無いと、分割を uniseg へ戻す変更が green のまま通る
 	for _, s := range []string{
 		"axࢗz", "a᫏b", "aᄻ8b", "aṞeb", "ჯa x",
-		"ಕಾ ಕಾ", "கா", "؀ arabic", "日本語のテキスト", "⚠️ 警告 🚀", "ASCII only",
+		"ಕಾ ಕಾ", "கா", "؀ arabic", "日本語のテキスト", "🚨 警告 🚀", "ASCII only",
 	} {
 		sum := 0
 		for _, c := range flattenSpans(textSpans(s)) {

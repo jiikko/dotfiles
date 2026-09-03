@@ -25,7 +25,7 @@
 
 ## 対応案
 
-`github.com/charmbracelet/x/ansi` を使う。⚠️ **モジュール機構の追加は要らない**:
+`github.com/charmbracelet/x/ansi` を使う。🚨 **モジュール機構の追加は要らない**:
 `src/parallel-each/go.mod` に `x/ansi v0.10.1` が既に indirect で入っているので、import 1 行で済む
 （glogx と parallel-each は別モジュールなので共有パッケージを作る話にはしない — 上流ライブラリを
 共有し、薄い wrapper を各パッケージで再宣言する方針は `src/glogx/issues/wrap.go` が前例）。

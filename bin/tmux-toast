@@ -90,7 +90,7 @@ fi
 if grep -q -- '-X x-position' <<< "$(tmux list-commands new-pane 2>/dev/null)"; then
   read -r win_w win_h < <(tmux display-message -p '#{window_width} #{window_height}')
   box_w=$((width + 4))
-  # ⚠️ clamp は `-ge` で、上限は win_w ではなく win_w - 1。box_w == win_w は tmux が受理せず
+  # 🚨 clamp は `-ge` で、上限は win_w ではなく win_w - 1。box_w == win_w は tmux が受理せず
   # new-pane が失敗するため、**長い toast が一度も表示されない**状態になっていた
   # (呼び出し元は `|| true` なので完全に無音。80 幅 window + 104 セルのメッセージで
   # rc=1・pane 未作成を実測 2026-08-21)。閾値は決定論的 (表示幅 + 4 >= window 幅)。
@@ -104,7 +104,7 @@ if grep -q -- '-X x-position' <<< "$(tmux list-commands new-pane 2>/dev/null)"; 
   [ "$x" -lt 0 ] && x=0
   [ "$y" -lt 0 ] && y=0
   # shellcheck disable=SC2016 # sh -c の '$1'/'$2' は pane 内の sh が展開する (意図どおり)
-  # ⚠️ 失敗を無音で飲むこと (`2>/dev/null || exit 0`)。set -euo pipefail のまま非 0 で抜けると、
+  # 🚨 失敗を無音で飲むこと (`2>/dev/null || exit 0`)。set -euo pipefail のまま非 0 で抜けると、
   # hook (after-split-window / pane-exited) 経由の呼び出しでアクティブ pane に view-mode が
   # 積まれる (end-to-end で実測 2026-08-21。発火因子は終了コードで、stderr 単独では積まれない)。
   # 下の fallback 経路は「非 0 や stderr を返さないこと」と自ら明記しており、ここだけ非対称だった。
@@ -119,7 +119,7 @@ fi
 
 # --- fallback: クライアント tty へ直接描画 (floating panes 非対応 tmux) -----
 # 表示先クライアントが無い (detached サーバ / headless テスト等) なら黙って exit 0 する。
-# ⚠️ ここで非 0 や stderr を返さないこと: after-split-window / pane-exited hook の
+# 🚨 ここで非 0 や stderr を返さないこと: after-split-window / pane-exited hook の
 # run-shell はエラー出力をアクティブ pane の view-mode として積み、tmux 3.4 では
 # モードスタックが copy-mode のスクロールを無反応にする実害がある (CI の
 # test_smooth_scroll step5 が split 直後の C-u 無反応で fail した実測 2026-07-29)。

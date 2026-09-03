@@ -20,7 +20,7 @@ import (
 // この型は「一覧 + プレビュー + 確認」の状態機械と描画だけを持ち、browseModel の状態は知らない
 // (issuesView と同じ契約)。操作結果は notice に置いて browseModel がトーストにする。
 //
-// ⚠️ 一覧は毎回 git status から作り直す派生ビューであり、stage の結果をローカルの配列へ書いて
+// 🚨 一覧は毎回 git status から作り直す派生ビューであり、stage の結果をローカルの配列へ書いて
 // 済ませない。glogx は「別プロセス (Claude Code / $EDITOR / git pull) が同じツリーを同時に編集する」
 // 環境で使うため、書き換え型は外部編集が入った瞬間に画面が嘘になる (spec 5 節)。
 type statusView struct {
@@ -39,14 +39,14 @@ type statusView struct {
 	// 「index 内のどこを指すか」にしか影響しないので、両者を分けて持つ
 	// (カーソル移動で行構成を作り直さない)。
 	//
-	// ⚠️ 有効性の判定は **rows の裏の配列が同じか** で行う (idxRows)。世代カウンタに
+	// 🚨 有効性の判定は **rows の裏の配列が同じか** で行う (idxRows)。世代カウンタに
 	// しないのは、rows への代入箇所が増えたときに「カウンタを上げ忘れる」経路を作らない
 	// ため — 新しいスライスを代入すれば裏の配列が変わり、メモは自動的に無効になる。
 	// この設計が依存する不変条件は 1 つ: **v.rows へは常に新しいスライスを代入する**
 	// (同じ配列を in-place で書き換えない)。現状の代入は receive と applyFresh にあり、
 	// どちらも ordered() が make した新しい配列を入れるので満たしている。
 	//
-	// ⚠️ 箇所数をここに書かない (すぐ嘘になる)。数え直すときは `grep 'v\.rows ='` では
+	// 🚨 箇所数をここに書かない (すぐ嘘になる)。数え直すときは `grep 'v\.rows ='` では
 	// 足りない — applyFresh は `v.st, v.rows, ... = st, st.ordered(), ...` の**タプル代入**で、
 	// このパターンに当たらない (実際に 2 箇所と数え落とした。2026-08-14 の R1 レビューと
 	// 並行セッションの双方が独立に指摘)。`grep 'rows[ ,]'` 等で広めに拾うこと。
@@ -138,7 +138,7 @@ type statusPollMsg struct{ gen int }
 
 // statusPreviewMsg はプレビュー / 全画面 diff の取得結果。
 type statusPreviewMsg struct {
-	// ⚠️ gen は必須 (他の 3 メッセージと同じ)。無いと、無効化 (閉じ / r) を跨いで着地した
+	// 🚨 gen は必須 (他の 3 メッセージと同じ)。無いと、無効化 (閉じ / r) を跨いで着地した
 	// 取得がキャッシュを**復活させ**、以後 begin() に弾かれて取り直しが二度と走らない
 	// (issue 114 の敵対的レビューで実証。窓は色付け 5000 行で 200ms 超)。
 	gen   int
@@ -155,7 +155,7 @@ type statusPreviewTickMsg struct {
 
 // statusRenderOpts は描画に必要な外側の情報 (issuesRenderOpts と同じ役割)。
 //
-// ⚠️ cursorPaint を受け取らない: browseModel の cursorEmphasis は行を contentWidth まで
+// 🚨 cursorPaint を受け取らない: browseModel の cursorEmphasis は行を contentWidth まで
 // 塗るので、2 カラムではプレビュー側まで背景色が伸びる。カーソル強調は一覧カラムの幅で
 // 完結させる必要があるため、この型が自分で塗る (statusCursorPaint)。
 type statusRenderOpts struct {
@@ -167,7 +167,7 @@ type statusRenderOpts struct {
 
 // statusViewport は「今この窓は何桁 × 何行か」+ 色 (キー処理が取得を発行するのに必要)。
 //
-// ⚠️ colored を含むのは issuesViewport と違う点。diff の色付けは取得時に 1 回だけ行い
+// 🚨 colored を含むのは issuesViewport と違う点。diff の色付けは取得時に 1 回だけ行い
 // (毎フレーム chroma を回さない)、取得を発行するのはキー処理なのでここに必要になる。
 type statusViewport struct {
 	width   int
@@ -184,7 +184,7 @@ func (v *statusView) visible() bool { return v.shown }
 
 // ownsKeys は viewer 自身がキーを解釈し切る状態か (全画面 pager 表示中 / 破棄の y/N 確認中)。
 //
-// ⚠️ browseModel 側の p / b / u / U 横取り (tui.go の statusOv.visible() ブロック) は、この状態では
+// 🚨 browseModel 側の p / b / u / U 横取り (tui.go の statusOv.visible() ブロック) は、この状態では
 // 止めなければならない。止めないと viewer が持つキー語彙を外側が奪う:
 //   - 全画面 diff の `b` (半ページ戻り) が push 確認に化け、続く Enter (pager を閉じるつもり) で
 //     実 push が走る (実測 2026-08-21)
@@ -249,9 +249,9 @@ func (v *statusView) settleClose() {
 }
 
 // finishClose は片付けの一本化点 (演出の着地とキーによる即着地の両方がここを通る)。閉じる演出中
-// でなければ何もしない — ⚠️ この guard は必須: handleKey は毎打鍵でこれを呼ぶ (閉じ演出中のキーを
+// でなければ何もしない — 🚨 この guard は必須: handleKey は毎打鍵でこれを呼ぶ (閉じ演出中のキーを
 // viewer に届かせないため) ので、guard が無いと最初のキーで開いている viewer が畳まれる。
-// ⚠️ gen を進めるのは、閉じる前に張った自動更新チェーンが開き直した後の状態へ効かないため。
+// 🚨 gen を進めるのは、閉じる前に張った自動更新チェーンが開き直した後の状態へ効かないため。
 // 戻り値の意味は issuesView.finishClose と同じ契約 (実際に畳んだか)。
 func (v *statusView) finishClose() bool {
 	if !v.closing {
@@ -263,13 +263,13 @@ func (v *statusView) finishClose() bool {
 	v.pagerGlide.stop()
 	v.discarding, v.discard = false, worktreeRow{}
 	v.pollArmed = false
-	// ⚠️ 走行中の取得の札を降ろす。降ろさないと閉じた瞬間に飛んでいた git status の結果は
+	// 🚨 走行中の取得の札を降ろす。降ろさないと閉じた瞬間に飛んでいた git status の結果は
 	// 世代違いで捨てられる (receive) 一方 loading が立ったまま残り、次に開いたとき loadCmd が
 	// 「取得中」と判断して二度と読み直さない = 古い一覧が永久に居座る。busy も同様に、走行中の
 	// diff 取得が返らない限り fetching() が true のままフレーム tick を回し続ける。
 	v.loading = false
 	v.preview.clearBusy()
-	// ⚠️ キャッシュ本体も捨てる。キー (section+XY+path) は内容を一意に決めないので、閉じている
+	// 🚨 キャッシュ本体も捨てる。キー (section+XY+path) は内容を一意に決めないので、閉じている
 	// あいだに外部編集されても XY が動かなければキーが一致し、開き直しても**編集前の diff が
 	// 出続ける** (プロセスが生きている限り消えない。issue 114)。
 	v.preview.clearEntries()
@@ -292,7 +292,7 @@ func (v *statusView) advanceGlide() {
 }
 
 // setNotice / takeNotice は操作結果の受け渡し (browseModel がトーストにする)。
-// ⚠️ ここで無害化する: 通知文はパス・git のエラー出力を素で埋め込む呼び出しが多く、
+// 🚨 ここで無害化する: 通知文はパス・git のエラー出力を素で埋め込む呼び出しが多く、
 // 呼び出しごとに包むと必ずどこかが漏れる (自前の静的文だけの通知は無害化しても変わらない)。
 func (v *statusView) setNotice(text string, ok bool) {
 	v.notice, v.noticeOK = sanitizePlainLine(text), ok
@@ -317,7 +317,7 @@ func (v *statusView) loadCmd() tea.Cmd {
 	}
 }
 
-// pollCmd は次の自動更新を予約する (自己再アームの独立チェーン)。⚠️ フレーム tick に混ぜない:
+// pollCmd は次の自動更新を予約する (自己再アームの独立チェーン)。🚨 フレーム tick に混ぜない:
 // 混ぜると viewer を開いている間ずっと 12.5fps で起きることになり、「動くものがある間だけ tick を
 // 回す」glogx の設計を崩す (issuesWatch と同じ理由)。
 func (v *statusView) pollCmd() tea.Cmd {
@@ -374,10 +374,10 @@ func (v *statusView) receive(msg statusLoadMsg) tea.Cmd {
 	}
 	// 内容が変わったら古い diff は捨てる (キーに XY を含めているので大半は当たらないが、
 	// 同じ XY のまま中身だけ変わる編集 = 保存し直しでは当たってしまう)。
-	// ⚠️ 走行中の札は残す (clearEntries): 下で取り直しを予約するので、札まで降ろすと
+	// 🚨 走行中の札は残す (clearEntries): 下で取り直しを予約するので、札まで降ろすと
 	// 走行中の取得と予約が同じキーを二重に取りに行く。
 	v.preview.clearEntries()
-	// ⚠️ 捨てたら取り直しも予約する。捨てるだけだと、外部編集のたびにプレビュー欄が空になり
+	// 🚨 捨てたら取り直しも予約する。捨てるだけだと、外部編集のたびにプレビュー欄が空になり
 	// 「カーソルを動かすまで戻らない」= 別プロセスに作業させながら眺める用途で画面が死ぬ。
 	return v.previewTickCmd()
 }
@@ -500,7 +500,7 @@ func (v *statusView) fetchDiff(row worktreeRow, colored bool) tea.Cmd {
 	staged := row.section == sectionStaged
 	untracked := row.section == sectionUntracked
 	isDir := row.isDir()
-	// ⚠️ ファイルを直接読む経路だけは repo root と結合する (rows のパスは root 相対で、
+	// 🚨 ファイルを直接読む経路だけは repo root と結合する (rows のパスは root 相対で、
 	// glogx はサブディレクトリから起動されうる。git 側は pathspec の :(top) で解決している)
 	filePath := row.path
 	if v.st.root != "" {
@@ -522,13 +522,13 @@ func untrackedPreview(path string, isDir bool) ([]string, error) {
 	if isDir {
 		return []string{"(未追跡のディレクトリ)"}, nil
 	}
-	// ⚠️ symlink は中身を出さない: untracked のリンクを辿ると、カーソルを合わせただけで
+	// 🚨 symlink は中身を出さない: untracked のリンクを辿ると、カーソルを合わせただけで
 	// リンク先 (~/.ssh/id_rsa 等) の中身が画面に出る。第三者ブランチに 1 本仕込むだけで成立する
 	// ので、リンクであること自体を表示して読まない (issues の isIssueFile と同じ判断)。
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		return []string{"(シンボリックリンク。リンク先の中身は表示しません)"}, nil
 	}
-	// ⚠️ ファイル全体を読まない: untracked には巨大な生成物 (動画・アーカイブ) が混ざりうるので、
+	// 🚨 ファイル全体を読まない: untracked には巨大な生成物 (動画・アーカイブ) が混ざりうるので、
 	// カーソルを合わせただけで数百 MB を掴むことになる。プレビューに必要な先頭だけ読む。
 	f, err := os.Open(path)
 	if err != nil {
@@ -601,7 +601,7 @@ func (v *statusView) visibleKey() string {
 // handleKey は viewer 内のキーを捌く。返り値の tea.Cmd は取得・自動更新の予約
 // (browseModel が maybeTick と束ねる)。
 //
-// ⚠️ 判定順を変えないこと: 確認モーダル (X) が最優先で、次に全画面 diff (pager)、最後に一覧。
+// 🚨 判定順を変えないこと: 確認モーダル (X) が最優先で、次に全画面 diff (pager)、最後に一覧。
 // 逆にすると確認中の j が一覧を動かして「確認に出した行」と「カーソル行」が食い違う。
 func (v *statusView) handleKey(key string, vp statusViewport) tea.Cmd {
 	// 開く演出中のキーは即着地させる (issues viewer の finishAnim と同じ契約。spec 7 節)。
@@ -620,7 +620,7 @@ func (v *statusView) handleKey(key string, vp statusViewport) tea.Cmd {
 
 // discardKey は X の確認中のキー。y/Enter で実行、それ以外はキャンセル (push/pull 確認と同じ語彙)。
 //
-// ⚠️ 3 経路で述語が違うのは**意図的**で、揃えない (issue 071 で反証済み・issue 123 で再確認):
+// 🚨 3 経路で述語が違うのは**意図的**で、揃えない (issue 071 で反証済み・issue 123 で再確認):
 //
 //	discardKey / actionModal は ToLower なので大文字 `Y` も受理、markNextKey は厳密で `Y` は取り消し。
 //	071 の結論は「厳格側の `Y` は安全側で閉じる、寛容側は意図どおり実行で失敗シナリオが作れない。
@@ -638,7 +638,7 @@ func (v *statusView) discardKey(key string) tea.Cmd {
 	return v.runDiscard(row)
 }
 
-// runDiscard は「確認に出した行」を捨てる。⚠️ 実行前に git status を取り直して
+// runDiscard は「確認に出した行」を捨てる。🚨 実行前に git status を取り直して
 // (パス, XY) の一致を検証する (spec 4 節の不変条件 1): 確認中に別プロセスがそのファイルを
 // 変えていたら、ユーザーが見て判断した対象はもう存在しないので捨てない。
 func (v *statusView) runDiscard(row worktreeRow) tea.Cmd {
@@ -716,11 +716,11 @@ func (v *statusView) listKey(key string, vp statusViewport) tea.Cmd {
 	case "d", "enter", "l", "right":
 		return v.openPager(vp)
 	case "r":
-		// ⚠️ 明示的な再読込ではプレビューのキャッシュも捨てる。自動更新での据え置きは意図的
+		// 🚨 明示的な再読込ではプレビューのキャッシュも捨てる。自動更新での据え置きは意図的
 		// (毎 1.5 秒 git diff を走らせないため。TestStatusReceiveSchedulesPreviewRefetchOnChange が
 		// pin 済み) だが、**r と開き直しまで据え置くとは spec も README も言っていない** (issue 114)。
 		// 捨てるだけだとプレビュー欄が空のまま残るので、receive と同じく取り直しも予約する。
-		// ⚠️ gen を進めてから捨てる。進めないと、r を押した時点で飛んでいた取得が着地して
+		// 🚨 gen を進めてから捨てる。進めないと、r を押した時点で飛んでいた取得が着地して
 		// 古い内容を復活させ、r が張った取り直しが begin() に弾かれる = 押しても何も変わらない
 		// (敵対的レビューで実測)。閉じる側 (finishClose) は元から gen++ している。
 		v.gen++
@@ -733,7 +733,7 @@ func (v *statusView) listKey(key string, vp statusViewport) tea.Cmd {
 		v.wantQuit = true
 		return nil
 	case "s":
-		// ⚠️ 閉じるキーはこの型が持つ (browseModel 側で拾わない): 全画面ビューのキーは
+		// 🚨 閉じるキーはこの型が持つ (browseModel 側で拾わない): 全画面ビューのキーは
 		// すべて handleKey を通る契約なので、ここに無いと「押しても閉じない」になる。
 		// s が閉じるのは toggle の語彙 (i = issues viewer と同じ)。
 		v.close()
@@ -858,7 +858,7 @@ func (v *statusView) stageAll() tea.Cmd {
 
 // askDiscard は X の確認へ入る。
 //
-// ⚠️ Staged 行では受けない: 「staged の変更を捨てる」は unstage + 作業ツリーの破棄という
+// 🚨 Staged 行では受けない: 「staged の変更を捨てる」は unstage + 作業ツリーの破棄という
 // 二段の破壊で、同じキー・同じ文言では意味が変わる。先に Space で降ろさせて、X の意味を
 // 「作業ツリーの変更を捨てる」1 つに保つ (spec 3/4 節)。
 func (v *statusView) askDiscard() {
@@ -897,7 +897,7 @@ func (v *statusView) hint(width int) string {
 	case v.pagerKey != "":
 		return "j/k: スクロール  Space/C-d: 半ページ  g/G: 先頭/末尾  d/q: 閉じる"
 	}
-	// ⚠️ "q: 終了" (glogx ごと終了。一覧へ戻るのは s)。上の pager の "d/q: 閉じる" は
+	// 🚨 "q: 終了" (glogx ごと終了。一覧へ戻るのは s)。上の pager の "d/q: 閉じる" は
 	//   pager を閉じるので正しい — 直すのはこちらだけ。issue 121
 	//
 	// 一覧モードの案内は全部で 155 桁あり、popup の実幅 (84 桁前後) には入らない。入らない分は
@@ -928,17 +928,17 @@ type hintItem struct {
 
 // fitHintItems は幅 width に収まるところまで項目を採り、**元の並び順で**繋ぐ。
 //
-// ⚠️ この画面専用ではないが、**今の利用者は status viewer だけ**なので status_view.go に置く。
+// 🚨 この画面専用ではないが、**今の利用者は status viewer だけ**なので status_view.go に置く。
 // git log 一覧の hint (163 桁。同じく切られている) と issues viewer の hint も同じ仕組みで
 // 直せるので、**2 つ目の利用者が出た時点で共通の場所へ移す** (それまでは移さない —
 // 置き場所を探す jump が増えるだけで複雑性は下がらない)。
 //
-// ⚠️ 「入らないから末尾を切る」ではなく「入らない項目を落とす」。切ると語の途中で切れて
+// 🚨 「入らないから末尾を切る」ではなく「入らない項目を落とす」。切ると語の途中で切れて
 // 意味が壊れ (実測 2026-09-01: "d: diff" が "d…" になっていた)、しかも切れるのは常に末尾 =
 // 並びの最後にある項目が幅に関係なく消える。優先度で落とせば、狭い端末でも「何ができて
 // どう抜けるか」は残る。
 //
-// ⚠️ 落とした項目は `--help` / README / docs/status-viewer-spec.md が正本 (issues viewer の
+// 🚨 落とした項目は `--help` / README / docs/status-viewer-spec.md が正本 (issues viewer の
 // hint と同じ作法)。画面の案内は「今の幅で確実に読めるもの」だけにする。
 func fitHintItems(width int, items []hintItem) string {
 	const sep = "  "
@@ -999,7 +999,7 @@ func (v *statusView) lines(o statusRenderOpts) []string {
 		}
 	}
 	body = append(head, body...)
-	// ⚠️ 契約 (ちょうど page 行) をここで必ず満たす。ヘッダー 1 行 + 本文の合成は page が
+	// 🚨 契約 (ちょうど page 行) をここで必ず満たす。ヘッダー 1 行 + 本文の合成は page が
 	// 極端に小さいとき (0 / 1 行の窓) に page を超える
 	body = padTo(body, o.page)
 	if box := v.pagerBox(o); len(box) > 0 {
@@ -1076,7 +1076,7 @@ func (v *statusView) listLines(o statusRenderOpts, width int) []string {
 		return []string{paint(clipToWidth(msg, width), ansiDim, o.colored)}
 	}
 	rows := max(o.page, 1)
-	// ⚠️ 整形するのは窓の中だけ (displayIndex の doc)。全行を整形してから切ると、画面に出る
+	// 🚨 整形するのは窓の中だけ (displayIndex の doc)。全行を整形してから切ると、画面に出る
 	// 行数と無関係に変更ファイル数へ比例したコストになる。
 	index, cursorAt := v.displayIndex()
 	v.offset = windowOffsetFor(v.offset, cursorAt, len(index), rows)
@@ -1105,11 +1105,11 @@ func (v *statusView) headerLine(o statusRenderOpts, width int) string {
 	if v.err != "" {
 		// last-good の一覧を出しているあいだ、「今の表示は古いかもしれない」ことを示す
 		// (emptyMessage は loaded 後は失敗を出さないので、ここが唯一の手がかりになる)
-		right = "⚠ status 取得失敗 / " + right
+		right = "🚨 status 取得失敗 / " + right
 	}
 	if v.st.skipped > 0 {
 		// 一部だけ解釈できなかったケース (行はあるが取りこぼしている = 一覧が不完全)
-		right = fmt.Sprintf("⚠ %d 件解釈不能 / ", v.st.skipped) + right
+		right = fmt.Sprintf("🚨 %d 件解釈不能 / ", v.st.skipped) + right
 	}
 	pad := max(width-dispWidth(left)-dispWidth(right), 1)
 	return paint(clipToWidth(left+padSpaces(pad)+right, width), ansiBold, o.colored)
@@ -1119,14 +1119,14 @@ func (v *statusView) headerLine(o statusRenderOpts, width int) string {
 func (v *statusView) emptyMessage(o statusRenderOpts) string {
 	switch {
 	case v.err != "" && !v.loaded:
-		// ⚠️ 読めた履歴があるときは一覧を消さない (last-good を維持する。usage overlay /
+		// 🚨 読めた履歴があるときは一覧を消さない (last-good を維持する。usage overlay /
 		// issues viewer と同じ規律)。自動更新は 1.5 秒ごとに走るので、一時的な失敗で一覧が
 		// 消えると「操作しようとした瞬間だけ画面が空になる」ことになる。失敗はヘッダーに出す
 		return "git status に失敗しました: " + v.err
 	case v.loading && !v.loaded:
 		return o.spinner + " git status を読んでいます..."
 	case v.st.clean() && v.st.skipped > 0:
-		// ⚠️ 「読めなかった」を「クリーン」と同じ絵にしない (沈黙を成功にしない)。git の出力形式が
+		// 🚨 「読めなかった」を「クリーン」と同じ絵にしない (沈黙を成功にしない)。git の出力形式が
 		// 想定と違うとき、変更を見せるための画面が「変更なし」と嘘をつくことになる
 		return fmt.Sprintf("git status の出力を解釈できませんでした (%d レコード)", v.st.skipped)
 	case v.st.clean():
@@ -1148,7 +1148,7 @@ type statusDisplayLine struct {
 
 // displayIndex は一覧の行構成 (見出し + 行) と、カーソルが何行目かを返す。
 //
-// ⚠️ ここで文字列を作らない。整形 (rowLine → パスの切り詰め → 幅計算) は可視の窓の分だけに
+// 🚨 ここで文字列を作らない。整形 (rowLine → パスの切り詰め → 幅計算) は可視の窓の分だけに
 // 掛ける (listLines)。以前は全行を整形してから窓で切っていたため、画面に 40 行しか出ないのに
 // 変更ファイル数に比例して働いていた: 実測で 40 件 103µs / 2000 件 1.65ms (16 倍・627KB/frame)。
 // 大きな merge や大量の untracked を抱えた repo で status viewer を開くと、見えない行のために
@@ -1251,7 +1251,7 @@ func (v *statusView) rowLine(i int, o statusRenderOpts, width int) string {
 func statusPathText(r worktreeRow, width int, colored bool) string {
 	path := r.dispPath()
 	if dispWidth(path) > width {
-		// ⚠️ 先頭を削る (末尾を残す)。末尾から切ると basename が消えて「どのファイルか」が
+		// 🚨 先頭を削る (末尾を残す)。末尾から切ると basename が消えて「どのファイルか」が
 		// 分からなくなる = 一覧として役に立たなくなる
 		return paint(truncateDispLeft(path, width, "…"), ansiDim, colored)
 	}
@@ -1265,7 +1265,7 @@ func statusPathText(r worktreeRow, width int, colored bool) string {
 	return paint(dir, ansiDim, colored) + base
 }
 
-// statusCursorPaint はカーソル行の強調。⚠️ 塗る幅は「一覧カラムの幅」で、画面幅ではない
+// statusCursorPaint はカーソル行の強調。🚨 塗る幅は「一覧カラムの幅」で、画面幅ではない
 // (browseModel の cursorEmphasis は contentWidth まで塗るのでプレビュー側まで背景が伸びる)。
 func statusCursorPaint(text string, width int, colored bool) string {
 	if !colored {
@@ -1335,7 +1335,7 @@ func (v *statusView) pagerBox(o statusRenderOpts) []string {
 	if v.pagerKey == "" {
 		return nil
 	}
-	// ⚠️ diffOverlay.boxLines のような width<=0 の下限ガードは置かない: 幅 0 の窓へ重ねる
+	// 🚨 diffOverlay.boxLines のような width<=0 の下限ガードは置かない: 幅 0 の窓へ重ねる
 	// overlayCenteredBox 自体が何もせず返すため観測できず、テストで壊せない防御になる
 	// (ミューテーション検証 2026-08-03: ガードを外しても TestStatusLinesSurvivesExtremeSizes は green)。
 	width := o.width
@@ -1362,7 +1362,7 @@ func (v *statusView) pagerBox(o statusRenderOpts) []string {
 // pagerRows は全画面 diff の本文行数 (visibleDiffRows と同じ内訳: 枠 2 + 影 1 + 余白 1 + hint 1)。
 func (v *statusView) pagerRows(page int) int { return max(page-5, 3) }
 
-// discardBox は X の確認モーダル。⚠️ untracked は restore ではなく削除なので文言を変える
+// discardBox は X の確認モーダル。🚨 untracked は restore ではなく削除なので文言を変える
 // (同じ見た目のキーで意味が変わるものを同じ文言で確認しない。spec 4 節)。
 func (v *statusView) discardBox(o statusRenderOpts) []string {
 	if !v.discarding {

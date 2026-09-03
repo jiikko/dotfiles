@@ -9,7 +9,7 @@
 #   - `-read_intervals` 付き区間スキャン
 #   - 複数行取得 (例: _validate_mp4.zsh の全 audio stream codec 列挙は head しない)
 #
-# ⚠️ 複数フィールドを 1 回の ffprobe に統合する改修はしないこと:
+# 🚨 複数フィールドを 1 回の ffprobe に統合する改修はしないこと:
 #   tests/zshrc/av1ify/test_helper.sh の mock ffprobe がクエリ文字列の部分一致で応答を
 #   分岐するため、統合すると mock を書き直すことになる (_av1ify_encode.zsh の
 #   __av1ify_probe_source 近傍の意図コメントが一次情報)。本ヘルパーは 1 フィールド

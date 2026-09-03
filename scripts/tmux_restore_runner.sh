@@ -31,13 +31,13 @@ tt_on_default_server || exit 0
 # tmux_server_watchdog.sh) と揃える。**同一コミット e089e7e で watchdog にだけ入り、
 # ここへ入れ忘れていた**もので、意図的な非対称ではない (issue 111)。
 #
-# ⚠️ 効くのは「将来この経路が stdout へ 1 行でも出したとき」への防御。個々の呼び出し側でも
+# 🚨 効くのは「将来この経路が stdout へ 1 行でも出したとき」への防御。個々の呼び出し側でも
 #   塞いでいる (`bash "$restore" >/dev/null 2>&1` 等) が、**runner 自身は復元の間ずっと
 #   run-shell のパイプを掴み続ける** (実測: 復元は 4〜10 秒 — ~/.cache/tt-restore-duration.log。
 #   `sleep 3; echo` を run-shell -b すると 3.5 秒後に pane が view-mode になる)。
 #   その間に stdout へ出た 1 行は、**復元中のユーザーのアクティブ pane を view-mode にする**。
 #
-# ⚠️ 実測で崩れた「もっともらしい理由」を書かないこと (2026-08-28 に隔離サーバで測定):
+# 🚨 実測で崩れた「もっともらしい理由」を書かないこと (2026-08-28 に隔離サーバで測定):
 #   - **stderr は view-mode を開かない**。tmux サーバの fd2 は /dev/null (本番 pid でも実測)。
 #     つまり `2>&1` は view-mode 対策としては空振りで、揃えるためだけに付けている
 #   - **SIGPIPE は来ない**。書いたときにしか飛ばず、このスクリプトは stdout に 1 バイトも書かない
@@ -45,7 +45,7 @@ tt_on_default_server || exit 0
 #     本物の timeout は 142)。resurrect の restore.sh も inherited stdin を読まない
 #     (12 箇所の `while read` は全て自前の入力を持つ)
 #
-# ⚠️ **view-mode を開く支配的な要因は rc≠0 の方**で、これは exec では塞げない
+# 🚨 **view-mode を開く支配的な要因は rc≠0 の方**で、これは exec では塞げない
 #   (無音でも rc=1 なら開く。実測)。この経路は全て `exit 0` で終わるので現状は問題ないが、
 #   終了コードを変えるときはそこが本体だと思うこと。
 exec </dev/null >/dev/null 2>&1
@@ -55,12 +55,12 @@ TT_RESTORE_STATE_DIR="${TT_RESTORE_STATE_DIR:-$HOME/.cache/tt-restore-run}"
 
 
 # ---- 単一実行ガード -------------------------------------------------------------------
-# ⚠️ popup 内同期実行だった旧実装は popup が事実上直列化していたが、detach 化で C-t C-r の
+# 🚨 popup 内同期実行だった旧実装は popup が事実上直列化していたが、detach 化で C-t C-r の
 # 連打や auto-restore との重なりで restore.sh が並行実行できるようになった。並行すると
 # 復元中フラグ (@tt-restore-*) と pane 生成が競合する (2026-07-30 セルフレビューで検出)。
 mkdir -p "$TT_RESTORE_STATE_DIR" 2>/dev/null || true
 LOCK_DIR="$TT_RESTORE_STATE_DIR/lock"
-# ⚠️ ここでは tt_lock_sweep_stale を呼ばない。この経路の lock は `<dir>/lock` の 1 個だけで
+# 🚨 ここでは tt_lock_sweep_stale を呼ばない。この経路の lock は `<dir>/lock` の 1 個だけで
 #   pid を名前に持たず、掃除を後付けすると「今まで掃除しなかった経路が掃除を始める」= 挙動変更に
 #   なる (issue 078 で意図的に分けた)。取り残しは下の「owner 不在なら奪う」で回収される。
 # `|| tt_lock_rc=$?` の形にしておく (素の `rc=$?` は後から `set -e` が入ると、rc を読む前に
@@ -105,7 +105,7 @@ fi
 tmux set-option -gu @tt-restore-complete 2>/dev/null || true
 
 # サーバ死亡時の SIGTERM でも後始末 (フラグ掃除 + 記録 + lock 解放) を実行してから終わる。
-# ⚠️ この trap は上の release_lock の EXIT trap を置き換えるため、lock 解放を内側に含めること
+# 🚨 この trap は上の release_lock の EXIT trap を置き換えるため、lock 解放を内側に含めること
 # (trap は同一シグナルで後勝ち。分けると lock が残り復元が二度と走らなくなる)。
 finished=0
 # shellcheck disable=SC2329 # trap 経由の間接呼び出し

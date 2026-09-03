@@ -155,7 +155,7 @@ When analyzing Electron code, perform multi-layered analysis:
 #### ストレージ戦略
 - 設定ストア: [electron-store/custom]
 - ユーザーデータ: [SQLite/JSON/none]
-- セキュアストレージ: [safeStorage/keytar/平文 ⚠️]
+- セキュアストレージ: [safeStorage/keytar/平文 🚨]
 - マイグレーション: [バージョン管理あり/なし]
 ```
 

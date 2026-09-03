@@ -13,7 +13,7 @@ import (
 // repoRootOracle は repoRoot() と**別の手段**で repo root を出す独立オラクル
 // (テストファイルの位置から .git を持つ親を探す)。
 //
-// ⚠️ 期待値を production の repoRoot() から作らないこと: 同じ関数を両側で呼ぶ自己言及になり、
+// 🚨 期待値を production の repoRoot() から作らないこと: 同じ関数を両側で呼ぶ自己言及になり、
 // repoRoot() が壊れても緑のままになる (issue 082)。git に問い合わせる repoRoot() とは
 // 実装経路が違うので、片方の誤りをもう片方が捕まえられる。
 func repoRootOracle(t *testing.T) string {
@@ -71,7 +71,7 @@ func TestOpenEditorAtRoot(t *testing.T) {
 	if len(c.Args) < 2 || !strings.HasSuffix(c.Args[0], "nvim") || c.Args[1] != "." {
 		t.Fatalf("起動コマンドが nvim . でない: %v", c.Args)
 	}
-	// ⚠️ `nvim .` は引数でなく **cwd が開く対象**なので、非空チェックでは対象の取り違えを
+	// 🚨 `nvim .` は引数でなく **cwd が開く対象**なので、非空チェックでは対象の取り違えを
 	// 通してしまう (実測: cmd.Dir を "/" にしても全テストが green だった)。期待値は
 	// repoRoot() ではなく独立オラクルから作る (repoRootOracle の doc 参照)。
 	if want := repoRootOracle(t); realPath(t, c.Dir) != want {

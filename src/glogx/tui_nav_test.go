@@ -217,7 +217,7 @@ func TestBrowseBatchedRunesKeyMsg(t *testing.T) {
 
 // 複数 rune がまとまって届く経路でも tick チェーンを張る (issue 032)。
 //
-// ⚠️ 単キー経路のコメントは「ハンドラ内部で出したトーストが return m, nil されても tick が確実に
+// 🚨 単キー経路のコメントは「ハンドラ内部で出したトーストが return m, nil されても tick が確実に
 // 回る」と不変条件を宣言しているのに、分解ループ側はそこから外れていた。トースト (コピー結果) や
 // glide が始まっても他に tick を回す理由が無ければ 1 フレームも進まず、shown=0 のまま凍る。
 // 判定は cmd != nil ではなく m.ticking で見る: single-flight なので、別経路が先に張っていると
@@ -468,7 +468,7 @@ func TestAdvancePullAnimTerminates(t *testing.T) {
 // スピナー/経過秒が固まる (静的には検出されない) ため、「源を 1 つだけ立てたら true」を
 // table で検査して回帰を検出する (issue 028 P3 案 B)。
 //
-// ⚠️ このテストは「既存の項を消した/条件を反転した」回帰は捕まえるが、**新しい非同期源を
+// 🚨 このテストは「既存の項を消した/条件を反転した」回帰は捕まえるが、**新しい非同期源を
 // 足して spinnerActive への追記を忘れた** ケースは捕まえない (テーブルへの追記も同時に
 // 忘れるため)。新しい源を足すときはここにも 1 行足すこと。
 // 実際に漏れた 2 例 (どちらも 2026-08-13 に補充):
@@ -476,7 +476,7 @@ func TestAdvancePullAnimTerminates(t *testing.T) {
 //   - statusOv.fetching は `v.loading || v.preview.fetching()` の 2 項で、テーブルは前者だけを
 //     立てていた (「補充した」対象の内側に穴が残っていた)
 //
-// ⚠️ 演出 (glide / toast / 開閉スライド / zoom) は spinnerActive が列挙せず tickInterval から
+// 🚨 演出 (glide / toast / 開閉スライド / zoom) は spinnerActive が列挙せず tickInterval から
 // 導出する形に変わっている。テーブルはその**一部**を通って true になるだけで、
 // tickInterval の全項を網羅してはいない (未カバー: zoom.animating / issuesOv.slideAnimating /
 // statusOv.slideAnimating / statusOv.animating — これらは他のテストが個別に押さえている)。
@@ -505,11 +505,11 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 			m.details[m.panelSHA] = []CheckDetail{{Name: "job", State: StatePending, StartedAt: time.Now()}}
 		}},
 		{"usageOv.loading", func(m *browseModel) { m.usageOv.visible = true; m.usageOv.snap = nil; m.usageOv.err = nil }},
-		// ⚠️ 以下 2 つは spinnerActive へ後から入った源で、テーブルへの追記が漏れていた
+		// 🚨 以下 2 つは spinnerActive へ後から入った源で、テーブルへの追記が漏れていた
 		// (issue 028 P3 が予測した「追記漏れ」が実際に起きていた形)。
 		{"issuesOv.loading", func(m *browseModel) { m.issuesOv.scanning = true }},
 		{"statusOv.fetching", func(m *browseModel) { m.statusOv.loading = true }},
-		// ⚠️ 以下 3 つは「全テストスイートを生き残る」ことを変異で実測した無防備な源
+		// 🚨 以下 3 つは「全テストスイートを生き残る」ことを変異で実測した無防備な源
 		// (2026-08-13 の敵対的レビュー)。前 2 つは tickInterval 経由、3 つ目は上の
 		// statusOv.fetching の第 2 disjunct で、そこだけ覆えていなかった。
 		{"diffOv.animating", func(m *browseModel) { m.diffOv.glide.active = true }},

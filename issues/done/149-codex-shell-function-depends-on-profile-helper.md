@@ -46,5 +46,5 @@ snapshot に載った `codex` 関数が実行時に壊れる。`/opt/homebrew/bi
 (`${+functions[_ensure_cli_with_brew]}` = 0) のまま関数経由で `codex --version` → `codex-cli 0.152.1` / rc 0。
 旧 snapshot (`...1788188722354`) では `command not found: _ensure_cli_with_brew` / rc 1。
 
-⚠️ Bash ツールのシェルは**プロセス起動時の snapshot を持ち続ける**ため、起動済みセッションでは
+🚨 Bash ツールのシェルは**プロセス起動時の snapshot を持ち続ける**ため、起動済みセッションでは
 旧定義のままになる (会話を clear しても引き継がれる)。既存セッションでは `command codex` で回避する。

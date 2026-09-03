@@ -36,7 +36,7 @@ CI を macOS へ移した (issue 133) 直後、`tests/claude/test_deny_bare_tmux
 - テストが skip したことを機械可読な形で出す (既存の `skipped:` / `SKIP:` を拾うか、
   専用の終了コード。既存出力を拾う方が全テストの書き換えが要らない)
 - runner は末尾に `[skip] N 件` を出す。**0 件でないことは失敗ではない** (正当な skip はある)
-- ⚠️ 本命は「前回との差」。skip が**増えた**ことが分かる形にする。CI なら前回 run との比較、
+- 🚨 本命は「前回との差」。skip が**増えた**ことが分かる形にする。CI なら前回 run との比較、
   手元なら件数の表示だけでも「あれ、増えてる」に気づける
 
 ## 受け入れ条件
@@ -58,7 +58,7 @@ CI を macOS へ移した (issue 133) 直後、`tests/claude/test_deny_bare_tmux
 
 ### 採らなかった案
 
-- **出力から `SKIP:` を正規表現で拾う** — 表記が `SKIP:` / `skipped:` / `⚠ … skip` の 3 種類に
+- **出力から `SKIP:` を正規表現で拾う** — 表記が `SKIP:` / `skipped:` / `🚨 … skip` の 3 種類に
   割れており脆い。全体 skip と部分 skip も区別できない
 - **`✓` が 0 件のファイルを skip とみなす** — 実測すると **97 本中 21 本**が別の出力形式
   (`OK:` / `All … passed` / `[test-x] すべて成功`) で、誤検出だらけになる
@@ -69,7 +69,7 @@ CI を macOS へ移した (issue 133) 直後、`tests/claude/test_deny_bare_tmux
 
 - 直列 runner: 77 を `[skip]` に分類し、末尾に**件数と一覧**を出す (skip は失敗ではないので緑のまま)
 - 並列 runner: `[ok]` / `[skip]` / `[FAIL]` の 3 値
-- 全体 skip する 7 箇所を 77 に変更。⚠️ `test_retro_open.sh:145` は date スタブ内の `exit 0` なので対象外
+- 全体 skip する 7 箇所を 77 に変更。🚨 `test_retro_open.sh:145` は date スタブ内の `exit 0` なので対象外
 - 受け側を先に洗った: テストファイルを直接実行するのは runner 2 本だけで、
   `scripts/test_changed.sh` と `Makefile:97` は make target 経由なので 77 は漏れない
 

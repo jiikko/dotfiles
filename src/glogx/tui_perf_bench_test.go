@@ -99,7 +99,7 @@ func BenchmarkModelInit200(b *testing.B) {
 // tests/glogx/bench_budgets.ci の calibrate 宣言と対で、Bench の比較テーブル (bench_stats.sh)
 // が rel metric を run 間で正規化するのに使う (較正器なしだと無変更 push でも全 metric が
 // 一様に ×2 級で振れ、偽の悪化表示になる。実測 2026-07-30: run 30454886162 → 30475764682)。
-// ⚠️ このワークロードを変えたら budgets の calibrate 基準値も取り直すこと。
+// 🚨 このワークロードを変えたら budgets の calibrate 基準値も取り直すこと。
 func BenchmarkCalibrate(b *testing.B) {
 	buf := make([]byte, 64<<10)
 	for i := range buf {

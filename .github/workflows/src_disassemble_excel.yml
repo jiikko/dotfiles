@@ -3,7 +3,7 @@
 # _go-project.yml に一元化し、ここは paths filter (触れた変更のときだけ起動) と対象 dir の
 # 指定だけを持つ薄い caller。paths に _go-project.yml を含めるのは、共有本体を編集したときにも
 # 全プロジェクトの CI を走らせて検証するため (含めないと本体変更が誰にも検証されない)。
-# ⚠️ paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
+# 🚨 paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
 name: src/disassemble_excel
 
 on:

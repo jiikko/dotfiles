@@ -12,7 +12,7 @@
 // ここに置いてあれば `go vet -tags ruleguard ./gorules` で型検査できる
 // (`make lint` から回している。Makefile の vet-gorules を参照)。
 //
-// ⚠️ go.mod の `go-ruleguard/dsl` のバージョンは**この DSL の型定義にしか効かない**。
+// 🚨 go.mod の `go-ruleguard/dsl` のバージョンは**この DSL の型定義にしか効かない**。
 // 実際にルールを評価するのは golangci-lint 同梱の go-ruleguard なので、
 // dsl を上げても lint の挙動は変わらない。
 package gorules
@@ -22,7 +22,7 @@ import "github.com/quasilyte/go-ruleguard/dsl"
 // toastEncapsulation: toast の内部状態は toast.go の外から触らない。
 // 窓口は show / showInfo / advance / animating / startLeaving / boxLines に限定する。
 // toast.go 自身とテスト (_test.go は埋め込みフィールドを直接読む設計。toast.go の
-// 「⚠️ 最新の 1 枚を埋め込みで持つ」コメント参照) は .golangci.yml の exclusions で除外。
+// 「🚨 最新の 1 枚を埋め込みで持つ」コメント参照) は .golangci.yml の exclusions で除外。
 func toastEncapsulation(m dsl.Matcher) {
 	m.Match(
 		`$_.toast.text`, `$_.toast.ok`, `$_.toast.info`,
@@ -38,7 +38,7 @@ func toastEncapsulation(m dsl.Matcher) {
 // (バッキング共有 = 無確保) を返し、上限を超えた分だけ Repeat に落ちる。描画は毎フレーム
 // 全行で走るので、ここが積もると frame alloc 予算に効く。
 //
-// ⚠️ このルールが安くなったのは issue 106 で PadSpaces が leaf パッケージ (termwidth) へ
+// 🚨 このルールが安くなったのは issue 106 で PadSpaces が leaf パッケージ (termwidth) へ
 // 移り、**全パッケージから参照できるようになったから**。それ以前は「参照できない別パッケージ」
 // のために例外を 4 つ足す必要があり、費用対効果が合わないとして 118 で一度見送っていた。
 // 現在の例外は実装本体 (termwidth.go) とテストだけ (.golangci.yml の exclusions)。

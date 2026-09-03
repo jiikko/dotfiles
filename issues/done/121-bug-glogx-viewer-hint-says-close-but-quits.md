@@ -24,7 +24,7 @@ README と `--help` は正しく直っているので、**画面上の hint だ�
 
 - 両 hint の `q: 閉じる` を **`q: 終了`** にする (git log 一覧の hint と同語)
 - 幅に余裕があれば issues 側は `i: 一覧へ`、status 側は `s: 一覧へ` を足す
-  (⚠️ `issues_view.go:hint` には幅テスト `TestIssuesViewHintFitsPopupWidth` があり、
+  (🚨 `issues_view.go:hint` には幅テスト `TestIssuesViewHintFitsPopupWidth` があり、
   doc に「`a: pending も` (14 桁) では末尾の `q: 閉じる` が黙って切れる」と実測が残っている。
   足すなら幅を測ってから)
 - `docs/status-viewer-spec.md` のモック図も同じ古い語 (`d: diff  q: 閉じる`) なので同時に直す
@@ -43,7 +43,7 @@ README と `--help` は正しく直っているので、**画面上の hint だ�
 - `docs/status-viewer-spec.md` §6 のモック図も同じ古い語だったので直した
 - 既存テスト `TestIssuesViewerHintIsNotPrefixed` の期待値も追随させた (`q: 閉じる` を探していた)
 
-### ⚠️ pager の「d/q: 閉じる」は正しいので触らない
+### 🚨 pager の「d/q: 閉じる」は正しいので触らない
 
 `status_view.go` の全画面 pager の hint は、そこでの `q` が pager を閉じるので**正しい**。
 直したのは一覧モードの 2 本だけ。テストは**両方を pin** している — 片方しか見ていないと

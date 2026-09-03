@@ -31,10 +31,10 @@ tt_nvim_log_backstop() {
 #        しまう scheduled callback 内の lua 例外 (これを見ないと OK が出て緑になる)
 #     ③ **行頭の** OK マーカー (`^OK`)
 #
-#   ⚠️ ③ のアンカーを外さないこと。`grep -q "OK"` だと "not OK" のような出力でも通る。
+#   🚨 ③ のアンカーを外さないこと。`grep -q "OK"` だと "not OK" のような出力でも通る。
 #     実際 test_image_hover.sh だけアンカー無しに drift していた (issue 081)。この関数は
 #     その drift を「1 か所しか無い」状態にするために作った。
-#   ⚠️ `qa!` は必須。check スクリプトが無名バッファへ書き込んで modified になると、未保存拒否で
+#   🚨 `qa!` は必須。check スクリプトが無名バッファへ書き込んで modified になると、未保存拒否で
 #     headless nvim が終了せず**永久にハングする** (2026-07-12 実測)。
 #
 #   要求する変数 (呼び出し側が設定済みであること): NVIM_BIN / SCRIPT_DIR / CONFIG_FILE

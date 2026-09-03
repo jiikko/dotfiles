@@ -11,7 +11,7 @@ unset CDPATH
 # ここでは ② を関数 seam で回避する: `__concat_get_duration` を上書きして出力側の duration だけを
 # 制御し、tolerance もこのファイル内でだけ production 既定 (5) に戻して 2 方向を pin する。
 #
-# ⚠️ `CONCAT_DURATION_TOLERANCE=100` を 5 へ「直す」修正は誤り。モックが duration を 20.0 に
+# 🚨 `CONCAT_DURATION_TOLERANCE=100` を 5 へ「直す」修正は誤り。モックが duration を 20.0 に
 #   固定している他の 14 ファイルで正常なテストが乖離扱いになり false failure を作る (issue 076 の
 #   「崩れた側」)。tolerance の上書きはこのテストの中だけに閉じること。
 
@@ -96,7 +96,7 @@ setopt err_exit
 assert_exit_code 0 "$rc" "入力合計が 10 秒以下なら乖離検査をスキップする"
 
 # --- 6. production の既定 tolerance (5%) が生きている ------------------------
-# ⚠️ ここを pin しないと `${CONCAT_DURATION_TOLERANCE:-5}` を `:-100` に変える変異が
+# 🚨 ここを pin しないと `${CONCAT_DURATION_TOLERANCE:-5}` を `:-100` に変える変異が
 #   **緑のまま通る** (実測 2026-08-25)。test_helper.sh が 100 を export しているので、既定値を
 #   見るテストは自分で unset する必要がある = 「seam が本番の既定を隠している」形。
 unsetopt err_exit

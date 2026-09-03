@@ -741,7 +741,7 @@ func (m model) View() string {
 		if m.forceKillConfirmActive() {
 			remaining := max(int(time.Until(m.forceKillConfirmUntil).Round(time.Second)/time.Second), 1)
 			b.WriteString(styleFail.Render(fmt.Sprintf(
-				"  ⚠ force-kill? type 'quit' again within %ds to confirm (running: %d).",
+				"  🚨 force-kill? type 'quit' again within %ds to confirm (running: %d).",
 				remaining, running)))
 		} else if running > 0 {
 			b.WriteString(styleFail.Render(fmt.Sprintf(

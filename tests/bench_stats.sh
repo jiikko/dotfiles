@@ -27,10 +27,10 @@
 # cur 環境へ換算してからプールする (run ごとに環境が違うため一律スケールは誤り。無変更 push が
 # 軒並み悪化表示になった実例 run 30453173113 への対処)。絶対予算の metric (RSS 等) は素のまま。
 #
-# 判定保留 (⚠, 2026-08-01 導入): 較正は「混雑が全 metric へ一様に乗る」前提だが、環境差が大きい
+# 判定保留 (🚨, 2026-08-01 導入): 較正は「混雑が全 metric へ一様に乗る」前提だが、環境差が大きい
 # run では一様でなくなる。実例 run 30683781313 は較正器 +50% の混雑下で render_large_patch が
 # +88% (換算後も +25% 残る) となり、コードに機構が無いのに 🔺 悪化 と表示された (同じコミットの
-# 再実行で 0.940 に戻り flake と確定)。⚠️ この状況で 悪化/改善/誤差圏 のどれを出しても嘘になる
+# 再実行で 0.940 に戻り flake と確定)。🚨 この状況で 悪化/改善/誤差圏 のどれを出しても嘘になる
 # ため、環境差が CALIB_TRUST_BAND を超えたら rel metric の判定を出さず「保留」にする。
 # 切り分けは同じコミットで Bench を再実行する (rules/bench-watch-after-push.md)。
 # 予算ゲート側は独自の CALIB_MAX_SCALE を持つので触らない (桁級の回帰は保留中も捕まえる)。
@@ -57,7 +57,7 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 0
 fi
 
-# ⚠️ `python3 -` はスクリプトを stdin (heredoc) から読むため、データをパイプで渡せない
+# 🚨 `python3 -` はスクリプトを stdin (heredoc) から読むため、データをパイプで渡せない
 # (heredoc が stdin を占有してパイプが黙って捨てられる。実測でハマった)。データは
 # 一時ファイル渡しにする
 data_file="$(mktemp)"
@@ -180,7 +180,7 @@ for b in blocks:
 # 一様に乗る」前提が崩れ、換算しても偽の悪化/改善が残る (ファイル冒頭の実例)。
 env_shift = statistics.median([s for s in block_scales if s > 0]) if any(s > 0 for s in block_scales) else 0.0
 calib_trusted = env_shift <= 0 or abs(env_shift - 1) <= CALIB_TRUST_BAND
-# ⚠️ ジョブログにも出す: Step Summary は API 非公開なので、CLI で数値を追う経路
+# 🚨 ジョブログにも出す: Step Summary は API 非公開なので、CLI で数値を追う経路
 # (rules/bench-watch-after-push.md) からは stdout しか見えない。check_bench_budgets.sh は
 # metric= 以外の行を素通しするので、この行を足しても予算ゲートには影響しない。
 if env_shift > 0:
@@ -247,7 +247,7 @@ if summary:
         elif blocks:
             rows.append(f"較正器 {calib_name} の baseline 値が無いため正規化なし (環境差がそのまま出る)")
     if not calib_trusted:
-        rows.append(f"⚠ この run は baseline と環境が違いすぎる (較正器 ×{env_shift:.2f})。"
+        rows.append(f"🚨 この run は baseline と環境が違いすぎる (較正器 ×{env_shift:.2f})。"
                     "換算しても偽の悪化/改善が残るため rel metric の判定は出さない — "
                     "**同じコミットで Bench を再実行**すると切り分けられる")
     rows += ["",
@@ -268,7 +268,7 @@ if summary:
         if normalized and not calib_trusted:
             # 換算しても偽の悪化/改善が残る環境差。悪化・改善・誤差圏のどれを出しても嘘になるので
             # 判定しない (Δ は残すので人が見られる)。切り分けは同じコミットでの Bench 再実行。
-            verdict = f"⚠ 判定保留 (環境差 ×{env_shift:.2f})"
+            verdict = f"🚨 判定保留 (環境差 ×{env_shift:.2f})"
         else:
             if abs(z) >= 1.96 and abs(delta) >= 5:
                 verdict = f"🔺 悪化 (|z|={abs(z):.1f})" if delta > 0 else f"✅ 改善 (|z|={abs(z):.1f})"

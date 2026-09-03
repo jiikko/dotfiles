@@ -204,7 +204,7 @@ func TestConflictsIgnoresNonStatusSubgroupDirs(t *testing.T) {
 }
 
 func TestConflictsWarnsWhenSubgroupAndStatusDirShareName(t *testing.T) {
-	// ⚠️ 回帰防止: サブグループを「状態でないから」と数える前に除くと、プロダクト別
+	// 🚨 回帰防止: サブグループを「状態でないから」と数える前に除くと、プロダクト別
 	// ディレクトリで運用している repo の done 移動 (この警告が存在する唯一の理由) を黙らせる。
 	// 片方でも状態を持つ配置にあるなら二重化として警告する。
 	root := t.TempDir()
@@ -309,7 +309,7 @@ func TestLoadMetaReadsTitleAndFrontMatter(t *testing.T) {
 func TestLoadMetaStopsAtH1(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "099-feat-probe.md")
-	// ⚠️ 上限は loadMetaMaxLine から組む。リテラル (2MB 等) で書くと、上限を上げた変更で
+	// 🚨 上限は loadMetaMaxLine から組む。リテラル (2MB 等) で書くと、上限を上げた変更で
 	// このテストが無言で恒真になる (R3 レビューで実証済み)
 	huge := strings.Repeat("x", loadMetaMaxLine+1)
 	body := "---\nstatus: open\n---\n# 099 feat: probe\n" + huge
@@ -331,7 +331,7 @@ func TestLoadMetaStopsAtH1(t *testing.T) {
 
 // H1 がファイルの深い位置にあっても取れること (打ち切りに行数上限を設けていないこと)。
 //
-// ⚠️ 「行数上限は設けない」は issue 050 の明示的な決定。実データに H1 が 239 行目にある
+// 🚨 「行数上限は設けない」は issue 050 の明示的な決定。実データに H1 が 239 行目にある
 // issue が存在し (別 repo の 559 行のファイル)、上限を入れるとそのタイトルが無言で消える。
 // 決定を守るテストが無いと、後から「先頭 N 行だけ読む」最適化で静かに壊れる
 // (R3 レビューで上限 5 行の変異が全 green だったため追加)。
@@ -533,7 +533,7 @@ func TestTabsPinHumanFirstRegardlessOfCount(t *testing.T) {
 
 // 段階の名前は往復すること (issue 115)。
 //
-// ⚠️ 名前は保存形式そのもの。ParseStatusFilter が引けない段階は ok=false で既定 (open) へ落ち、
+// 🚨 名前は保存形式そのもの。ParseStatusFilter が引けない段階は ok=false で既定 (open) へ落ち、
 // 「開き直したら伏せていたはずの段階に戻っている」という、原因が保存形式だと気づけない形で出る。
 func TestStatusFilterNameRoundTrip(t *testing.T) {
 	// 名前そのものを literal で固定する (production の String() から作ると自己言及になる)
@@ -555,7 +555,7 @@ func TestStatusFilterNameRoundTrip(t *testing.T) {
 	}
 }
 
-// ⚠️ **全段階**が引けること。段階を増やしたとき、String() 側は default 無しの switch なので
+// 🚨 **全段階**が引けること。段階を増やしたとき、String() 側は default 無しの switch なので
 // exhaustive linter が強制するが、ParseStatusFilter 側は強制されない。ここで範囲を走ることで
 // 「String() には足したが引く側に足し忘れた」を検出する (issue 115 の本題)。
 func TestStatusFilterEveryStageIsParseable(t *testing.T) {

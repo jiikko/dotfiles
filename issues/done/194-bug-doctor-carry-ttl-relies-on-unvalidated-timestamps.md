@@ -61,7 +61,7 @@ issue 172 で `doctorCarryTTL = 24h` を入れて「今回実測していない�
 - [x] 100 年後の `MeasuredAt` を持つエントリが TTL 相当で失効する
 - [x] 変異検証: `MeasuredAt: r.MeasuredAt` を `rep.ScannedAt` に変えると red になる
 - [x] 変異検証: `MeasuredAt` を書かない変異が red になる
-      — ⚠️ **「TTL より短い間隔の複数ラウンドで」の部分は成立しなくなった**。実装を
+      — 🚨 **「TTL より短い間隔の複数ラウンドで」の部分は成立しなくなった**。実装を
       「読み出し側のフォールバックを残したまま新規エントリだけ埋める」ではなく
       「**carry するときにも埋める**」形にしたので、ゼロ値は 1 回目の carry で埋まり、
       フォールバックが継続しない = **(b) の再発条件そのものが構造的に消えた**。
@@ -94,7 +94,7 @@ issue 172 で `doctorCarryTTL = 24h` を入れて「今回実測していない�
 `TestDoctorCarryTTLClampsMeasuredAt` を追加。(a) 未来の頭打ちと失効 / (b) TTL より短い間隔の
 30 ラウンドで失効・2 ラウンドでは生存 / (c) 走査時刻ではなく実測時刻が保存される、を固定する。
 
-⚠️ **fixture で `MeasuredAt` と `ScannedAt` を別の値にした**。同じ値だと
+🚨 **fixture で `MeasuredAt` と `ScannedAt` を別の値にした**。同じ値だと
 「`MeasuredAt` を書く」を「`ScannedAt` を書く」に変える変異を素通りさせる
 (最初はこれで書いてしまい、変異 M1 が green だった)。実際に両者がずれるのは
 「重いエントリの計測値を再利用した走査」(計測は前、走査は今)。

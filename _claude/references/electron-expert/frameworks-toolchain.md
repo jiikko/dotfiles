@@ -114,7 +114,7 @@ export default defineConfig({
 // ✅ Expert: preload の API 型を renderer と共有
 // src/shared/electron-api.d.ts
 
-// ⚠️ Expert: 実際の preload 実装では必ず channel ホワイトリスト検証を行うこと
+// 🚨 Expert: 実際の preload 実装では必ず channel ホワイトリスト検証を行うこと
 // （Section 2 の validChannels パターン参照）。この型定義は renderer 側の DX 用。
 interface ElectronAPI {
   invoke: <T = unknown>(channel: string, ...args: unknown[]) => Promise<T>;
@@ -267,7 +267,7 @@ window.electronAPI.invoke('read-file', ...); // 名前不一致！
   "main": "out/main/index.js"
 }
 
-// ⚠️ Expert warning: ESM 環境では __dirname が未定義
+// 🚨 Expert warning: ESM 環境では __dirname が未定義
 // electron-vite は CJS 互換構文を自動提供するが、
 // 手動設定の場合は以下が必要:
 import { fileURLToPath } from 'url';

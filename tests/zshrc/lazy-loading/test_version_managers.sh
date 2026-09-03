@@ -5,7 +5,7 @@ unset CDPATH
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 TMP_ZDOTDIR="$(mktemp -d)"
 TMP_HOME="$(mktemp -d)"
-# ⚠️ 後始末はリトライする。goenv の遅延ロードは GOROOT を取るために実 `go` を呼び、go は
+# 🚨 後始末はリトライする。goenv の遅延ロードは GOROOT を取るために実 `go` を呼び、go は
 # telemetry のカウンタを $HOME/Library/Application Support/go/telemetry へ**遅れて**書くため、
 # rm の走査直後にファイルが生えて "Directory not empty" で失敗する (実測 2026-08-21: 本体を
 # 実行する assert を足した途端に毎回再発した)。失敗を握り潰さず、諦めるときは残骸の場所を出す。
@@ -16,7 +16,7 @@ cleanup() {
     sleep 1
   done
   rm -rf "$TMP_ZDOTDIR" "$TMP_HOME" 2>/dev/null ||
-    printf '⚠️ 一時ディレクトリを消せなかった (残骸: %s %s)\n' "$TMP_ZDOTDIR" "$TMP_HOME" >&2
+    printf '🚨 一時ディレクトリを消せなかった (残骸: %s %s)\n' "$TMP_ZDOTDIR" "$TMP_HOME" >&2
 }
 trap cleanup EXIT
 
@@ -36,7 +36,7 @@ create_fake_env() {
   local tool_bin="$root/bin/$tool"
   local upper_tool
   upper_tool="$(printf '%s' "$tool" | tr '[:lower:]' '[:upper:]')"
-  # ⚠️ 内側の heredoc は quote する (<<'SCRIPT')。unquoted だと emit される関数本体の "$*" が
+  # 🚨 内側の heredoc は quote する (<<'SCRIPT')。unquoted だと emit される関数本体の "$*" が
   # **ツール実行時 (init -)** に展開されて "init -" に固定され、遅延ロード後の再ディスパッチが
   # 引数を渡せているかを観測できなくなる (issue 082: この歪みのせいで assert を足せなかった)。
   cat <<EOF_TOOL > "$tool_bin"
@@ -128,7 +128,7 @@ assert_path_priority() {
 
 # 遅延ロード**本体**の検査 (issue 082)。
 #
-# ⚠️ これまでの assert は「関数として定義されているか」「*_ROOT」「PATH 順」の 3 種だけで、
+# 🚨 これまでの assert は「関数として定義されているか」「*_ROOT」「PATH 順」の 3 種だけで、
 # ラッパーの中身 (unfunction → eval "$(<tool> init -)" → 再ディスパッチ) が一度も実行されて
 # いなかった。監査時の実測では _zshrc の eval 文字列を空関数に置き換えても 12 assert 全部が
 # 緑だった。ここでは 1 つの zsh セッションの中で実際に呼び、
@@ -141,7 +141,7 @@ assert_lazy_body_runs() {
   local upper
   upper="$(printf '%s' "$tool" | tr '[:lower:]' '[:upper:]')"
   local out
-  # ⚠️ 1 コマンドにまとめる: 遅延ロードの効果はセッション内の状態なので、別々の zsh -c に
+  # 🚨 1 コマンドにまとめる: 遅延ロードの効果はセッション内の状態なので、別々の zsh -c に
   # 分けると毎回「未ロード」から始まり (2)(3) を観測できない。
   out=$(run_zsh "$tool first-call; print -r -- \"INIT=\${${upper}_INIT_CALLED:-}\"; $tool second-call" 2>&1 || echo "<zsh failed>")
   local want_first="$tool real: first-call"

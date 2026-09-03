@@ -10,7 +10,7 @@
 
 ## 不変条件は lint / test が正本 (ここにもコードにも再掲しない)
 
-render.go の純粋描画層・幅計算の単一出典・stdout / 時刻のシーム・外部プロセスの WaitDelay・toast の隠蔽・switch の網羅は `.golangci.yml` (depguard / forbidigo / exhaustive) / `gorules/rules.go` (gocritic の ruleguard。⚠️ **glogx 直下に置くと package 名衝突で型検査されない**ので独立ディレクトリ。`make lint` が `go vet -tags ruleguard ./gorules` も回す。issue 202) / `waitdelay_discipline_test.go` / `clock_rollback_test.go` (永続キャッシュの鮮度判定に時計の巻き戻しガードを強制。issue 201) / `hint_width_test.go` (最下行の hint が幅に収まること。収まらないと**抜ける手段が案内から消える**) が強制し、理由もそこに書いてある。新しい規律を足すときも、まず lint / test で強制できないかを考える (`~/.claude/rules/comment-no-restate-enforced.md`)。
+render.go の純粋描画層・幅計算の単一出典・stdout / 時刻のシーム・外部プロセスの WaitDelay・toast の隠蔽・switch の網羅は `.golangci.yml` (depguard / forbidigo / exhaustive) / `gorules/rules.go` (gocritic の ruleguard。🚨 **glogx 直下に置くと package 名衝突で型検査されない**ので独立ディレクトリ。`make lint` が `go vet -tags ruleguard ./gorules` も回す。issue 202) / `waitdelay_discipline_test.go` / `clock_rollback_test.go` (永続キャッシュの鮮度判定に時計の巻き戻しガードを強制。issue 201) / `hint_width_test.go` (最下行の hint が幅に収まること。収まらないと**抜ける手段が案内から消える**) が強制し、理由もそこに書いてある。新しい規律を足すときも、まず lint / test で強制できないかを考える (`~/.claude/rules/comment-no-restate-enforced.md`)。
 
 ## 構造の判断 (lint では守れないもの)
 
@@ -21,7 +21,7 @@ render.go の純粋描画層・幅計算の単一出典・stdout / 時刻のシ�
 
 - **表示に使う記号は表示幅が安定するものだけ**。警告は 🚨 (U+1F6A8、常に 2 桁) を使い、⚠️ (U+26A0 + VS16) は
   使わない — 端末によって 1 桁と 2 桁で揺れ、行の右端がフレームごとに動いて見える (doctor 画面で実測 2026-09-02)。
-  コメント内の ⚠️ は表示に乗らないので対象外
+  コメント内の 🚨 は表示に乗らないので対象外
 
 ## ビルド・テスト
 

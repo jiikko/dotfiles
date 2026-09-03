@@ -82,7 +82,7 @@ var fetchLatestClaudeVersion = func(ctx context.Context) string {
 
 // fetchInstalledClaudeVersion はテストで claude CLI を起動しないための差し替え点。
 //
-// ⚠️ ここを memo 化しない (perf 監査 2026-07-25 で「起動時に claude --version が 2 回走る」
+// 🚨 ここを memo 化しない (perf 監査 2026-07-25 で「起動時に claude --version が 2 回走る」
 // と指摘されたが、対応しないと判断した理由):
 //   - 2 回目の出典は usage.Fetch 内の並列取得 (usage/usage.go)。ただし usage 側は
 //     usageCacheTTL のディスクキャッシュが載ったので、cache hit する通常経路では
@@ -177,7 +177,7 @@ func checkCLIVersionCmd(cacheFile string, fetchLatest, fetchInstalled func(conte
 }
 
 // versionCacheFileFor は target ("claude" / "codex") のバージョンキャッシュファイル名。
-// ⚠️ 既定を claude 側に倒している: 未知の target は現状ありえない (updateMsg.target の出所は
+// 🚨 既定を claude 側に倒している: 未知の target は現状ありえない (updateMsg.target の出所は
 // startUpdate / startCodexUpdate の 2 つだけ) が、増えたときに空文字を返して
 // cachedLatestVersion を無言で "" にするより、明示的な既定の方が誤りに気づける。
 func versionCacheFileFor(target string) string {
@@ -218,7 +218,7 @@ func installedIsLatest(cacheFile string, fetchInstalled func(context.Context) st
 	if installed == "" {
 		return "", false
 	}
-	// ⚠️ !versionLess(installed, latest) にしない: versionLess は比較不能 (セグメント数
+	// 🚨 !versionLess(installed, latest) にしない: versionLess は比較不能 (セグメント数
 	// 不一致・数値でない) を false に倒すため、否定すると「比較できない = 最新扱い」に
 	// 反転し、形式変更のたび update が無音で塞がる (敵対レビュー指摘 2026-08-12)。
 	// 「文字列一致 or latest < installed が証明できた」ときだけ skip する。

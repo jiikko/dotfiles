@@ -16,11 +16,11 @@ TMP_DIR="$(mktemp -d)"
 HELPER_PIDS=()
 # stop_helper は補助プロセスとその子を落とす。後始末は 1 箇所に閉じ込める。
 #
-# ⚠️ どの kill も失敗を握り潰すこと (set -e で走っている)。子 (sh 配下の sleep) を落とすと親の
+# 🚨 どの kill も失敗を握り潰すこと (set -e で走っている)。子 (sh 配下の sleep) を落とすと親の
 #    `sh -c 'sleep 300; :'` は : を実行して自分から終了し、bash に刈り取られる。その後の
 #    `kill $parent` は ESRCH で非 0 になり、set -e が「アサートは全部通ったのに何も出さずに
 #    失敗する」テストを作る (CI で実測 2026-08-01。負荷の高い runner ほど親が先に消えて踏む)。
-# ⚠️ 親だけでなく子も落とすこと。親だけ殺すと sleep が ppid=1 の孤児として 5 分残り、
+# 🚨 親だけでなく子も落とすこと。親だけ殺すと sleep が ppid=1 の孤児として 5 分残り、
 #    テスト実行ごとに 1 個ずつ蓄積する。
 stop_helper() {
   local pid="$1" child
@@ -140,21 +140,21 @@ printf '✓ 非 default socket (テストサーバ) では完全 no-op\n'
 # 実プロセスを立てて find_issuers の basename 判定を検証する。
 # ps の command 第 1 語がフルパスの ".../tmux"、かつ argv に kill-server を含む実プロセスを作る。
 # exec -a で argv[0] を差し替え、本体は sh -c で待たせる。
-# ⚠️ スクリプト部を `'sleep 300'` 単体にしないこと: sh が sleep へ exec 最適化して argv[0] が
+# 🚨 スクリプト部を `'sleep 300'` 単体にしないこと: sh が sleep へ exec 最適化して argv[0] が
 #    置き換わり、フルパスの偽装が消える (実測)。`; :` を付けて複合コマンドにすると sh が残る。
 #    kill-server は $0 の位置に置く (sleep の引数にすると即死する)。
 #    EXIT trap を落としてから exec する理由は test_periodic_save.sh 冒頭の注記と同じ。
 reset_calls; : > "$LOG"
 FAKE_TMUX_PATH="$TMP_DIR/fakebin/tmux"
 mkdir -p "$TMP_DIR/fakebin"
-# ⚠️ 補助プロセスの stdout/stderr は必ず /dev/null へ落とすこと。テストの stdout を継承させると
+# 🚨 補助プロセスの stdout/stderr は必ず /dev/null へ落とすこと。テストの stdout を継承させると
 #    テスト本体が終わってもパイプが閉じず、呼び出し側 (make test / CI) が EOF を待ってハングする
 #    (2026-07-30 に実際に踏んだ。テストは pass していたのに終わらなく見えた)。
 ( trap - EXIT; exec -a "$FAKE_TMUX_PATH" /bin/sh -c 'sleep 300; :' kill-server ) >/dev/null 2>&1 &
 FULLPATH_PID=$!
 HELPER_PIDS+=("$FULLPATH_PID")
 sleep 0.3
-# ⚠️ `ps | grep -q` のパイプにしないこと: grep -q が一致で即 exit して ps に SIGPIPE(141) を
+# 🚨 `ps | grep -q` のパイプにしないこと: grep -q が一致で即 exit して ps に SIGPIPE(141) を
 #    返し、set -o pipefail がそれを拾って「一致したのに失敗」になる (guards.sh の
 #    tt_only_hold_sessions が同じ罠を文書化している)。ps の出力を変数に取って here-string で渡す。
 PS_SNAPSHOT="$(ps -axo pid=,command=)"

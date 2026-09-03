@@ -18,7 +18,7 @@ import (
 )
 
 // waitDoctorCleanup は登録された走査が帰るまで戻らない。
-// ⚠️ 判定は**時計ではなく順序**で見る (issue 211 / avoid-wall-clock-assertions)。
+// 🚨 判定は**時計ではなく順序**で見る (issue 211 / avoid-wall-clock-assertions)。
 // 「走査が終わる前に Wait が戻ったか」をフラグの読み書き順で観測する。
 func TestWaitDoctorCleanupWaitsForTrackedScan(t *testing.T) {
 	drainDoctorCleanup(t)
@@ -59,13 +59,13 @@ func TestWaitDoctorCleanupWaitsForTrackedScan(t *testing.T) {
 
 // start が起こす 3 つの走査 (disk / svc / brew) が **それぞれ** latch に載る。
 //
-// ⚠️ 判定を「子プロセスが死んだか」にしてはいけない。テストプロセスでは
+// 🚨 判定を「子プロセスが死んだか」にしてはいけない。テストプロセスでは
 // `exec.CommandContext` の watchdog goroutine が生きているので、**latch が無くても少し遅れて
 // 殺される** = latch の有無を判別できない (実測 2026-09-03: 子の生死で見た版は
 // 「disk を latch から外す」変異を素通しし、しかも数 ms のタイミングで flaky だった)。
 // latch が守るのは「**走査が帰るまで Wait が戻らない**」という順序なので、それを直接見る。
 //
-// ⚠️ 3 つまとめて 1 回試す形でも足りない。1 経路だけ外した変異が緑になるので、
+// 🚨 3 つまとめて 1 回試す形でも足りない。1 経路だけ外した変異が緑になるので、
 // 「その経路だけが時間のかかる子を持つ」fixture を経路ごとに作って回す。
 func TestEachDoctorScanIsTrackedUntilItReturns(t *testing.T) {
 	for _, tc := range []string{"disk", "svc", "brew"} {
@@ -97,7 +97,7 @@ func TestEachDoctorScanIsTrackedUntilItReturns(t *testing.T) {
 			switch tc {
 			case "disk":
 				diskRun = slow
-				// ⚠️ Run が呼ばれる Guard を選ぶ。素のエントリは du だけで Run を使わない (実測)
+				// 🚨 Run が呼ばれる Guard を選ぶ。素のエントリは du だけで Run を使わない (実測)
 				diskCatalog = []disk.Entry{{
 					ID: "test-entry", Label: "テスト用", Tier: 1,
 					Guard: disk.GuardProcessAbsent, Processes: []string{"NoSuchApp"},
@@ -116,7 +116,7 @@ func TestEachDoctorScanIsTrackedUntilItReturns(t *testing.T) {
 			if cmd == nil {
 				t.Fatal("start が Cmd を返さない")
 			}
-			// ⚠️ `tea.Batch` は**中の Cmd を実行しない**。BatchMsg (Cmd の並び) を返すだけで、
+			// 🚨 `tea.Batch` は**中の Cmd を実行しない**。BatchMsg (Cmd の並び) を返すだけで、
 			//    実行は runtime が行う。`go cmd()` で済ませると closure が 1 つも走らない
 			batch, ok := cmd().(tea.BatchMsg)
 			if !ok {
@@ -149,7 +149,7 @@ func TestEachDoctorScanIsTrackedUntilItReturns(t *testing.T) {
 
 // 再起動経路と終了経路の**配線**を固定する (issue 211)。
 //
-// ⚠️ `syscall.Exec` を通る経路は単体テストで走らせられないので、ソースの構造で固定する。
+// 🚨 `syscall.Exec` を通る経路は単体テストで走らせられないので、ソースの構造で固定する。
 // **文字列検索では駄目**: `waitDoctorCleanup()` をコメントに変える変異が素通りした
 // (敵対的レビュー 2026-09-03 の P2)。go/ast で「その関数の呼び出し」だけを見る。
 func TestRestartAndExitPathsWaitForDoctorCleanup(t *testing.T) {
@@ -160,7 +160,7 @@ func TestRestartAndExitPathsWaitForDoctorCleanup(t *testing.T) {
 	}
 
 	// --- 再起動経路: `if model.restartRequested` の**ブロックの中だけ**を見る ---
-	// ⚠️ ファイル全体から waitDoctorCleanup の呼び出しを探すと、**終了経路の defer を拾って**
+	// 🚨 ファイル全体から waitDoctorCleanup の呼び出しを探すと、**終了経路の defer を拾って**
 	//    再起動経路の呼び出しが消えても緑になる (変異検証 2026-09-03 で実際に素通りした)。
 	//    ブロックを特定してからその中を見る
 	var block *ast.BlockStmt
@@ -251,7 +251,7 @@ func callName(c *ast.CallExpr) string {
 }
 
 // 削除 (下見・本番) も latch に載り、stop() で ctx が切れる (issue 211 の敵対的レビュー P1)。
-// ⚠️ ここが抜けていると、いちばん危ない経路 (rm / trash / brew cleanup と、その後の
+// 🚨 ここが抜けていると、いちばん危ない経路 (rm / trash / brew cleanup と、その後の
 // インベントリ記録) が終了・再起動で watchdog ごと消えて走り続ける。
 func TestDeleteIsTrackedAndCancelled(t *testing.T) {
 	for _, dryRun := range []bool{true, false} {
@@ -301,7 +301,7 @@ func TestDeleteIsTrackedAndCancelled(t *testing.T) {
 
 			v.stop() // = cancelAll 相当
 
-			// ⚠️ **stop() の直後に判定する**。「待っている間に切れたか」で見ると、別経路が遅れて
+			// 🚨 **stop() の直後に判定する**。「待っている間に切れたか」で見ると、別経路が遅れて
 			//    cancel しても緑になり、`stop()` から削除の ctx を外す変異を素通しした
 			//    (実測 2026-09-03。cancel は同期なので、戻った時点で切れているのが契約)
 			if ctx.Err() == nil {
@@ -319,7 +319,7 @@ func TestDeleteIsTrackedAndCancelled(t *testing.T) {
 }
 
 // rescan (r) は前世代を止めてから世代を進める (issue 211 の敵対的レビュー P1)。
-// ⚠️ 止めないと前世代の走査を誰も cancel できず、latch に載ったまま完走するので
+// 🚨 止めないと前世代の走査を誰も cancel できず、latch に載ったまま完走するので
 // waitDoctorCleanup の上限が 2 秒ではなく数分になる (latch を入れる前は即終了だった =
 // この修正が無いと 211 が hang を新設する)。
 func TestRescanCancelsPreviousGeneration(t *testing.T) {
@@ -327,7 +327,7 @@ func TestRescanCancelsPreviousGeneration(t *testing.T) {
 	started := make(chan struct{})
 	returned := make(chan struct{})
 	var once sync.Once
-	// ⚠️ ctx を掴んで Err() を見る形は駄目だった: Run に渡るのは `runner.WithTimeout` の
+	// 🚨 ctx を掴んで Err() を見る形は駄目だった: Run に渡るのは `runner.WithTimeout` の
 	//    **派生 ctx** で、呼び出しが帰った時点で defer cancel により Done になる。
 	//    「最初から切れている」と誤診する (実測 2026-09-03)。**cancel されるまで帰らない Run** を
 	//    置いて、rescan で帰ってくるかを見る
@@ -337,7 +337,7 @@ func TestRescanCancelsPreviousGeneration(t *testing.T) {
 		default:
 		}
 		<-ctx.Done()
-		// ⚠️ この closure は **世代ごとに呼ばれる** (rescan の 2 世代目も brew を回す)。
+		// 🚨 この closure は **世代ごとに呼ばれる** (rescan の 2 世代目も brew を回す)。
 		//    素の close だと 2 回目で panic する (実測 -count=2)
 		once.Do(func() { close(returned) })
 		return "", "", 0, ctx.Err()
@@ -383,7 +383,7 @@ func TestRescanCancelsPreviousGeneration(t *testing.T) {
 }
 
 // drainDoctorCleanup は前のテストが残した latch のカウントを吸う。
-// ⚠️ `doctorCleanup` は **package 変数**なので glogx パッケージのテスト全体で共有される
+// 🚨 `doctorCleanup` は **package 変数**なので glogx パッケージのテスト全体で共有される
 // (敵対的レビュー 2026-09-03 のぼやき)。前のテストの走査が残っていると、こちらの Wait が
 // それを待って誤判定する (実測 -count=2 で落ちた)。**この共有ゆえに `t.Parallel()` を足せない**。
 func drainDoctorCleanup(t *testing.T) {
@@ -399,7 +399,7 @@ func drainDoctorCleanup(t *testing.T) {
 
 // 走査中に行が増えても、選択は同じエントリに留まる (issue 210)。
 //
-// ⚠️ **カーソルより上に挿入する** fixture を使う。disk 行は Size 降順に並べ替えて描くので、
+// 🚨 **カーソルより上に挿入する** fixture を使う。disk 行は Size 降順に並べ替えて描くので、
 // 大きい結果が後から届くと既存の行の上に入る。下に挿入する形では index が偶然一致して
 // 素通りする (issue 210 のテスト観点)。
 func TestCursorStaysOnSameRowWhenRowsGrowAbove(t *testing.T) {
@@ -434,13 +434,13 @@ func TestCursorStaysOnSameRowWhenRowsGrowAbove(t *testing.T) {
 
 // 選んでいた行が消えたら近傍へ寄せ、**寄せたことを画面に出す** (issue 210 の敵対レビュー P1)。
 //
-// ⚠️ フィールド (`pendingToast`) を見るだけでは足りない。表示するのは tui.go の
+// 🚨 フィールド (`pendingToast`) を見るだけでは足りない。表示するのは tui.go の
 // `case doctorToast:` = handleKey の戻り値経路だけで、`restoreCursor` は View から呼ばれる。
 // **browseModel 経由でトーストが出ることまで**見ないと、配線の穴を守れない (実測: 初版は
 // フィールド代入しか見ておらず、本番では一度も出ない状態で緑だった)。
 func TestCursorFallbackIsToldThroughBrowseModel(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	// ⚠️ `doctorOv` は**値フィールド**なので `v := m.doctorOv` だと**コピー**になり、
+	// 🚨 `doctorOv` は**値フィールド**なので `v := m.doctorOv` だと**コピー**になり、
 	//    m 側に何も伝わらない (実測 2026-09-03: それで配線のテストが緑にならなかった)
 	v := &m.doctorOv
 	v.shown = true
@@ -462,7 +462,7 @@ func TestCursorFallbackIsToldThroughBrowseModel(t *testing.T) {
 		t.Fatal("消えた行を指したまま")
 	}
 
-	// 次のキー操作で**画面に**出る。⚠️ **browseModel.handleKey 経由**で見る
+	// 次のキー操作で**画面に**出る。🚨 **browseModel.handleKey 経由**で見る
 	// (tui.go に配線があるので、doctorView だけ叩くと配線の穴を守れない)
 	m.toast.text = ""
 	m.handleKey("j")
@@ -476,7 +476,7 @@ func TestCursorFallbackIsToldThroughBrowseModel(t *testing.T) {
 		t.Fatal("同じ寄せで 2 回目もトーストが出た")
 	}
 
-	// ⚠️ **その打鍵が飲まれない**こと (敵対的レビュー 2026-09-03 の P2)。
+	// 🚨 **その打鍵が飲まれない**こと (敵対的レビュー 2026-09-03 の P2)。
 	//    以前は handleKey の先頭で doctorToast を返しており、寄せた直後の
 	//    q / esc / d / r / Enter が等しく 1 回空振りしていた
 	v.diskResults = []disk.Result{a, b}
@@ -495,7 +495,7 @@ func TestCursorFallbackIsToldThroughBrowseModel(t *testing.T) {
 
 // G (末尾へ) が次の描画で巻き戻らない (issue 210 の敵対レビュー P1-1。私が入れた回帰)。
 //
-// ⚠️ `moveCursor(0)` を「移動」として使う経路 (G) が key を覚えないと、`restoreCursor` が
+// 🚨 `moveCursor(0)` を「移動」として使う経路 (G) が key を覚えないと、`restoreCursor` が
 // 古い key の行へ cursor を戻す。実測された症状: after G cursor=6 / cursorKey="disk:b" →
 // repaint で cursor=4 へ巻き戻る。
 func TestCursorEndKeySurvivesRepaint(t *testing.T) {
@@ -544,7 +544,7 @@ func TestCursorKeySurvivesFrameWithoutSelectableRows(t *testing.T) {
 	v.lines(o)
 
 	// 結果が戻ってきたら元の行へ復帰する。
-	// ⚠️ **戻すときに「上へ増える」形にする**。同じ 2 件で戻すと、key を捨てる退行でも
+	// 🚨 **戻すときに「上へ増える」形にする**。同じ 2 件で戻すと、key を捨てる退行でも
 	//    index が偶然一致して緑になる (変異検証 2026-09-03 で実際に素通りした)
 	huge := disk.Result{Entry: disk.Entry{ID: "huge", Label: "H", Tier: 1}, Size: 999999, Status: disk.StatusOK,
 		Items: []disk.Item{{Path: "/tmp/huge", Size: 999999}}}

@@ -26,7 +26,7 @@
 - panic 側は `sync/waitgroup.go` で **`race.Enabled` に囲まれていない** → **production でも
   落ちうる** (TUI が quit 時に panic)
 
-⚠️ **本 repo では再現できていない**。発火には「waiter が居る状態でカウンタが 0→1」が要るので
+🚨 **本 repo では再現できていない**。発火には「waiter が居る状態でカウンタが 0→1」が要るので
 Add 地点が 2 つ以上必要で、`pullCleanup` の Add は 1 箇所しかなく、pull は `a.pulling` で
 二重起動が塞がれている。`doctorCleanup` が実際に赤くなったのは Add が 3 箇所 (svc / brew / 削除)
 あったからで、整合は取れている。

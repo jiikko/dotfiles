@@ -43,7 +43,7 @@ process.nextTick(() => console.log('5: nextTick (microtask)'));
 // nextTick runs before Promise microtasks
 // setTimeout vs setImmediate order depends on event loop timing
 
-// ⚠️ Expert warning: nextTick can starve the event loop
+// 🚨 Expert warning: nextTick can starve the event loop
 function recursiveNextTick() {
   process.nextTick(recursiveNextTick); // ❌ I/O will never run
 }
@@ -177,7 +177,7 @@ const readable = Readable.from(generateData(), { objectMode: true });
 
 readable.pipe(slowConsumer); // Automatically handles backpressure
 
-// ⚠️ Expert warning: Avoid this pattern
+// 🚨 Expert warning: Avoid this pattern
 readable.on('data', async (chunk) => {
   await slowAsyncOperation(chunk); // ❌ No backpressure control
 });

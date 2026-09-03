@@ -61,7 +61,7 @@ __av1ify_finalize() {
     REPLY="$in"; return 1
   fi
   if (( __AV1IFY_ABORT_REQUESTED )); then
-    print -r -- "⚠️ 中断要求のため元ファイルは保持します: $in" >&2
+    print -r -- "🚨 中断要求のため元ファイルは保持します: $in" >&2
     REPLY="$final_out"; return 1
   fi
   if __av1ify_postcheck "$final_out" "$in" "$( [[ -n "$target_fps" ]] && echo 1 || echo 0 )" "$target_height"; then
@@ -103,7 +103,7 @@ __av1ify_finalize() {
     fi
     REPLY="$final_out"; return 0
   else
-    final_out="$REPLY"; print -r -- "⚠️ 完了 (要確認): $final_out"
+    final_out="$REPLY"; print -r -- "🚨 完了 (要確認): $final_out"
     REPLY="$final_out"; return 1
   fi
 }
@@ -220,7 +220,7 @@ __av1ify_source_has_identity_matrix() {
 # 引数: $1 = mode (auto/bt709/off), $2 = in
 # 出力: REPLY = 上書き先の matrix 名 (例: "bt709")。上書き不要なら空文字列
 #
-# ⚠️ 上書きするのは matrix (colorspace) だけで、color_primaries / color_trc は触らない。
+# 🚨 上書きするのは matrix (colorspace) だけで、color_primaries / color_trc は触らない。
 # ffmpeg 8.0 実測で `-color_primaries` / `-color_trc` は出力に反映されず (libsvtav1 /
 # libx264 いずれでも Unspecified のまま。オプション自体は認識され不正値ではエラーになる)、
 # 渡しても無言で捨てられるため。またソースのタグが壊れている以上 primaries/trc の
@@ -280,7 +280,7 @@ __av1ify_auto_crf() {
     REPLY="$crf"
   else
     REPLY=40   # デフォルト
-    print -r -- "⚠️ 解像度取得失敗 → CRF=40（デフォルト）"
+    print -r -- "🚨 解像度取得失敗 → CRF=40（デフォルト）"
   fi
 }
 
@@ -453,7 +453,7 @@ __av1ify_build_final_out() {
 # 内部補助: av1ify バリアントセグメントとして有効なタグかを判定する。
 # av1ify 出力命名 <stem>[-<tag>...]-enc.mp4 における各 <tag> の Single Source of Truth。
 #
-# ⚠️ 重要: __av1ify_build_final_out が新タグを追加する場合、ここにも同じ規則を追加すること。
+# 🚨 重要: __av1ify_build_final_out が新タグを追加する場合、ここにも同じ規則を追加すること。
 # 同期漏れは「変換済みなのに再変換される」誤動作を引き起こす。test_av1ify_prefetch.sh の
 # round-trip テストが builder → validator の一致を検証するので、新タグ追加時にそこも更新する。
 #
@@ -622,7 +622,7 @@ __av1ify_one() {
     if (( dry_run )); then
       print -r -- "[DRY-RUN] 残骸検出: $tmp（変更なし）"
     else
-      print -r -- "⚠️ 残骸削除: $tmp"
+      print -r -- "🚨 残骸削除: $tmp"
       rm -f -- "$tmp"
     fi
   fi
@@ -686,7 +686,7 @@ __av1ify_one() {
   local _health_rc=$?
   if (( _health_rc == 1 )); then
     if (( __AV1IFY_FORCE )); then
-      print -r -- "⚠️ ${_C_YELLOW}${_C_BOLD}健全性チェック警告（--force で続行）${_C_NOBOLD}${_C_OFF}: ${in:t}" >&2
+      print -r -- "🚨 ${_C_YELLOW}${_C_BOLD}健全性チェック警告（--force で続行）${_C_NOBOLD}${_C_OFF}: ${in:t}" >&2
       print -r -- "   ${_C_YELLOW}$REPLY${_C_OFF}" >&2
     else
       print -r -- "❌ ${_C_RED}${_C_BOLD}入力ファイルが破損しています${_C_NOBOLD}${_C_OFF}: ${in:t}" >&2
@@ -828,7 +828,7 @@ __av1ify_one() {
       args_audio=(-map "0:a:0?" -c:a copy)
       audio_used_copy=1
       audio_param_error=1
-      print -r -- "⚠️ 音声パラメータ取得失敗のため copy にフォールバック (codec=$acodec)"
+      print -r -- "🚨 音声パラメータ取得失敗のため copy にフォールバック (codec=$acodec)"
     else
       __av1ify_cap_aac_bitrate "$in" "$desired_abitrate"
       aac_bitrate_resolved="$__AV1IFY_R_AAC_BITRATE"
@@ -898,7 +898,7 @@ __av1ify_one() {
         __AV1IFY_LAST_NG_REASON="音声copy失敗 (音声パラメータ取得不能で AAC 再試行も不可)"
         return 1
       fi
-      print -r -- "⚠️ 音声copy失敗 → AAC再エンコードで再試行"
+      print -r -- "🚨 音声copy失敗 → AAC再エンコードで再試行"
       __av1ify_cap_aac_bitrate "$in" "${AV1_AAC_BITRATE:-96k}"
       aac_bitrate_resolved="$__AV1IFY_R_AAC_BITRATE"
       args_audio=(-map "0:a:0?" -c:a aac -b:a "$aac_bitrate_resolved" -ac "$aac_ac" -ar "$aac_ar")

@@ -117,7 +117,7 @@ func TestRatelimitDashHandleKey(t *testing.T) {
 	if !d.visible() {
 		t.Error("r で閉じてしまった")
 	}
-	// i / s は viewer への横断 (ユーザー要望 2026-09-01)。⚠️ 横断でも自分は閉じる:
+	// i / s は viewer への横断 (ユーザー要望 2026-09-01)。🚨 横断でも自分は閉じる:
 	// 開いたまま viewer を開くと「見えている画面」と「キーを受ける画面」が食い違う。
 	for _, tc := range []struct {
 		key  string
@@ -305,7 +305,7 @@ func TestRatelimitDashHeaderFitsWidth(t *testing.T) {
 
 // 全画面ダッシュボードは画面全体 (枠・余白・影・hint 行まで) に地色を敷く。
 //
-// ⚠️ 「端末の既定へ戻す」では足りない場面のための固定色。scratch popup は display-popup 自身が
+// 🚨 「端末の既定へ戻す」では足りない場面のための固定色。scratch popup は display-popup 自身が
 // 濃紺を敷いており、その popup では既定の背景が濃紺になる (ユーザー要望 2026-09-01)。
 func TestRatelimitDashPaintsScreenBackground(t *testing.T) {
 	m := newTestBrowse(t, 3, map[string]CIState{}, nil)

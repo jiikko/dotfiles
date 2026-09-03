@@ -14,7 +14,7 @@ unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR" || exit 1
-# ⚠️ repo 内の `tmp/` に作らないこと。あの ignore は `~/.gitignore_global` 由来で repo の
+# 🚨 repo 内の `tmp/` に作らないこと。あの ignore は `~/.gitignore_global` 由来で repo の
 #    .gitignore には無く、追跡もされないので **新品チェックアウトと CI には tmp/ が存在しない**
 #    (CI run 33168462220 で "mkdtemp failed ... No such file or directory")。手元は tmp/ が
 #    あるので緑になり、Linux でだけ落ちる。隔離ディレクトリの既定は OS の一時領域。
@@ -33,7 +33,7 @@ printf 'lint:\n\t@echo bad-lint >> %s\n\t@exit 1\ntest:\n\t@echo bad-test >> %s\
 printf 'lint:\n\t@echo good-lint >> %s\ntest:\n\t@echo good-test >> %s\n' \
   "$TMP_DIR/calls" "$TMP_DIR/calls" > "$TMP_DIR/good/Makefile"
 
-# ⚠️ `go` のスタブを PATH 先頭に置く。Makefile の run_go_projects は `command -v go` が
+# 🚨 `go` のスタブを PATH 先頭に置く。Makefile の run_go_projects は `command -v go` が
 #    無ければ "go not found; skipping" で **exit 0** するため、go が入っていない環境では
 #    この節の 6 つの assert がまるごと空振りする。dotfiles の CI (Tests ジョブ) には go を
 #    入れていないので、置かないと **CI では何も検査していない**ことになる (実測: run
@@ -61,7 +61,7 @@ done
 note "test-go-lint / test-go は全プロジェクトを回してから集約して落ちる"
 
 # go が無い環境では skip して緑になる (0 件の失敗と混ぜない)。
-# ⚠️ make の shim は作らない。PATH を絞った中で相対名の make を exec すると自分自身に
+# 🚨 make の shim は作らない。PATH を絞った中で相対名の make を exec すると自分自身に
 #   解決して無音で無限再帰する (_claude/rules/path-shim-must-resolve-real-binary.md。実際に踏んだ)。
 #   go を PATH から外すだけにして、make は絶対パスで呼ぶ
 real_make="$(command -v make)"

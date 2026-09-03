@@ -85,7 +85,7 @@ DEF_SESSIONS='sess1\nsess2\nsess3\n'
 RUN_OUT="$TMP_DIR/out"; RUN_ERR="$TMP_DIR/err"
 
 # 常駐プロセス 2 つを「生きている」状態にする。
-# ⚠️ owner ファイルの中身をここで組み立てないこと: 書式 ("pid<TAB>lstart") を production から
+# 🚨 owner ファイルの中身をここで組み立てないこと: 書式 ("pid<TAB>lstart") を production から
 # コピペすると書式変更に追従できず、実物とずれた fixture で常に緑になる (2026-08-20 の誤報を
 # このテストが通してしまった原因)。書き手 tt_lock_write_owner を呼ぶ。
 . "$ROOT_DIR/scripts/lib/tmux_resurrect_guards.sh"
@@ -157,7 +157,7 @@ mk_snapshot snap_now.txt 3 0
 mk_archive 3
 
 # --- (4b) owner の起動時刻が記録と違う (pid 再利用) → NG --------------------------------
-# ⚠️ ここが「pid<TAB>lstart 形式で書く唯一の理由」を守る検査。生きている pid を owner に
+# 🚨 ここが「pid<TAB>lstart 形式で書く唯一の理由」を守る検査。生きている pid を owner に
 # しつつ lstart だけ食い違わせると、pid 生存だけを見る実装 (旧 cat|kill -0 / start を捨てる
 # 実装) では「稼働中」に見えてしまう。2026-08-20 の red team が、この検査が無いと
 # 「書き手が pid だけ書く退行」も「読み手が start を捨てる退行」も緑のまま通ることを実証した。

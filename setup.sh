@@ -86,7 +86,7 @@ if command -v anyenv >/dev/null 2>&1; then
     version_file=~/dotfiles/global_${lang}_version
     if [ -f "$version_file" ]; then
       ver=$(tr -d '[:space:]' < "$version_file")
-      # ⚠️ パイプ (`… | grep -qx`) にしないこと。この script は先頭 (L13) で set -o pipefail。
+      # 🚨 パイプ (`… | grep -qx`) にしないこと。この script は先頭 (L13) で set -o pipefail。
       # grep -qx が一致行で即 exit → producer ($env versions) が SIGPIPE で死ぬ → pipefail が
       # それを拾い偽の非 0 になり、インストール済みなのに「未インストール」と誤判定する (SIGPIPE
       # レース。高負荷 + 一覧先頭付近に一致で顕在化)。here-string は単一コマンドで pipefail 非対象
@@ -120,7 +120,7 @@ done
 
 # Terminal.app の見た目プロファイル (Claude Warm) を登録し、既定プロファイルにする (macOS のみ)。
 # どのマシンでも setup.sh 一発でプリセット選択が不要になる。実体は restore スクリプト参照。
-# ⚠️ DOTFILES_SKIP_TERMINAL_PROFILE=1 で skip できる: tests/setup が setup.sh を丸ごと実行する
+# 🚨 DOTFILES_SKIP_TERMINAL_PROFILE=1 で skip できる: tests/setup が setup.sh を丸ごと実行する
 #   ため、これが無いとテストのたびに実ユーザーの Terminal 設定へ副作用が出る
 #   (defaults/osascript は $HOME 差し替えによる隔離が効かない)。
 if [ "$(uname)" = "Darwin" ] && [ -z "${DOTFILES_SKIP_TERMINAL_PROFILE:-}" ]; then

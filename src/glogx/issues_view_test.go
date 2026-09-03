@@ -88,7 +88,7 @@ func TestIssuesViewToggleRescansKeepingLastGood(t *testing.T) {
 	if v.visible() {
 		t.Fatal("2 回目の toggle で閉じない")
 	}
-	// ⚠️ 再表示では取り直す: 「初回だけ」にすると N (次の番号) が古い最大番号 + 1 を返し続け、
+	// 🚨 再表示では取り直す: 「初回だけ」にすると N (次の番号) が古い最大番号 + 1 を返し続け、
 	// 番号の再利用を招く。ただし取り直し中も前回の結果を出したままにする (スピナーで瞬かない)。
 	if cmd := v.toggle("/repo"); cmd == nil {
 		t.Fatal("再表示で取り直していない (N が古い番号を返し続ける)")
@@ -156,7 +156,7 @@ func TestIssuesViewTabMovesBothDirections(t *testing.T) {
 		t.Fatalf("right で右へ動かない: %q", got)
 	}
 	// 端で止まらず巡回する (moveTab の契約) 方向にも ctrl+b が乗る。
-	// ⚠️ All の左には疑似カテゴリ [next] が居るので、そこを 1 段挟んでから末尾へ回り込む
+	// 🚨 All の左には疑似カテゴリ [next] が居るので、そこを 1 段挟んでから末尾へ回り込む
 	v.handleKey("ctrl+b", vp(10)) // All
 	v.handleKey("ctrl+b", vp(10)) // [next] (All の左)
 	if got := v.currentTab(); got != tabNextName {
@@ -239,7 +239,7 @@ func TestIssuesViewTabsAndDoneFilter(t *testing.T) {
 }
 
 // 画面幅よりカテゴリが多いとき、選択中のタブが必ず画面に出る (横スクロール。ユーザー要望
-// 2026-08-01)。⚠️ 幅で切って捨てるだけだと、端のカテゴリを選んでも画面に現れず「選んだはずの
+// 2026-08-01)。🚨 幅で切って捨てるだけだと、端のカテゴリを選んでも画面に現れず「選んだはずの
 // タブがどこにも無い」状態になる (Tab で右へ進んでいるのに画面が動かない)。
 func TestIssuesViewTabLineFollowsSelection(t *testing.T) {
 	cats := []string{"alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel"}
@@ -318,7 +318,7 @@ func TestIssuesViewMultiSelectYank(t *testing.T) {
 	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "3 件のパスをコピーしました") {
 		t.Fatalf("複数コピーの通知が想定と違う: %q", text)
 	}
-	// ⚠️ 通知に改行を含めない (トーストは 1 行。含めると枠が壊れる)
+	// 🚨 通知に改行を含めない (トーストは 1 行。含めると枠が壊れる)
 	v.handleKey("Y", vp(10))
 	if text, _ := v.takeNotice(); strings.Contains(text, "\n") {
 		t.Fatalf("通知に改行が入った: %q", text)
@@ -359,7 +359,7 @@ func TestIssuesViewMultiSelectExtendAndClear(t *testing.T) {
 		t.Fatalf("錨の下側へ伸ばせない: lo=%d hi=%d", lo, hi)
 	}
 	// 矢印と j/k の 2 系統あるので伸張も両方から効く (ユーザー要望 2026-08-01)。
-	// ⚠️ 矢印だけだと、shift+矢印を通さない端末・tmux 設定で機能ごと沈黙する。
+	// 🚨 矢印だけだと、shift+矢印を通さない端末・tmux 設定で機能ごと沈黙する。
 	for _, tc := range []struct {
 		name           string
 		arrow, vimKey  string
@@ -443,7 +443,7 @@ func TestIssuesViewMultiSelectIsVisible(t *testing.T) {
 	}
 }
 
-// 本文の左にソース (.md) の行番号を出す (ユーザー要望 2026-08-01)。⚠️ 溝は整形前に幅から
+// 本文の左にソース (.md) の行番号を出す (ユーザー要望 2026-08-01)。🚨 溝は整形前に幅から
 // 引く: 後付けすると本文が枠を突き破る。
 func TestIssuesViewBodyShowsSrcLineNumbers(t *testing.T) {
 	dir := t.TempDir()
@@ -471,7 +471,7 @@ func TestIssuesViewBodyShowsSrcLineNumbers(t *testing.T) {
 }
 
 // Enter は「TUI 内の開閉 toggle」(ユーザー要望 2026-08-01): 一覧で開き、本文で閉じる。
-// ⚠️ 本文の Enter は以前 1 行送りだった。glogx 本体の job パネルが既に Enter = 開閉 toggle
+// 🚨 本文の Enter は以前 1 行送りだった。glogx 本体の job パネルが既に Enter = 開閉 toggle
 // なので、viewer だけ意味が違うと同じキーが画面ごとに別物になる。
 func TestIssuesViewEnterTogglesBody(t *testing.T) {
 	dir := t.TempDir()
@@ -507,7 +507,7 @@ func TestIssuesViewEnterTogglesBody(t *testing.T) {
 }
 
 // n = 「次にやる」の目印 (ユーザー要望 2026-08-01)。確認を挟んでから next/ へ移す。
-// ⚠️ viewer で唯一、実ファイルを動かす操作なので、確認なしで動かないことも一緒に固定する。
+// 🚨 viewer で唯一、実ファイルを動かす操作なので、確認なしで動かないことも一緒に固定する。
 func TestIssuesViewMarkNextMovesAfterConfirm(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "001-feat-x.md")
@@ -548,7 +548,7 @@ func TestIssuesViewMarkNextMovesAfterConfirm(t *testing.T) {
 	}
 }
 
-// ⚠️ y / Enter 以外はすべて取り消し。「知らないキーを押したら実ファイルが動いた」を作らない。
+// 🚨 y / Enter 以外はすべて取り消し。「知らないキーを押したら実ファイルが動いた」を作らない。
 func TestIssuesViewMarkNextCancels(t *testing.T) {
 	for _, key := range []string{"n", "esc", "q", "j", "x"} {
 		dir := t.TempDir()
@@ -668,7 +668,7 @@ func TestIssuesViewNextTabSurvivesRestore(t *testing.T) {
 }
 
 // n は目印の toggle: 既に next の issue には「外す」向きになる (ユーザー要望 2026-08-01)。
-// ⚠️ 戻り先は issue ディレクトリ直下 (= open)。元居た場所は覚えていない。
+// 🚨 戻り先は issue ディレクトリ直下 (= open)。元居た場所は覚えていない。
 func TestIssuesViewMarkNextTogglesOff(t *testing.T) {
 	dir := t.TempDir()
 	nextDir := filepath.Join(dir, issues.NextDirName)
@@ -724,7 +724,7 @@ func TestIssuesViewMarkNextDirectionFollowsCursor(t *testing.T) {
 	}
 	v := loadedView(list...)
 	v.cwd = dir
-	// ⚠️ shift+↓ はカーソルを下へ動かすので、向きを決めるカーソル行も一緒に動く。
+	// 🚨 shift+↓ はカーソルを下へ動かすので、向きを決めるカーソル行も一緒に動く。
 	// 目印つき (rows[0]) にカーソルを置いた状態で選択を作るには上へ伸ばす
 	v.cursor = 1
 	v.handleKey("shift+up", vp(10)) // カーソルは rows[0] (目印つき) = 外す向き
@@ -930,7 +930,7 @@ func hasCursorMark(lines []string) bool {
 }
 
 func TestIssuesViewCursorStaysVisibleAfterRowSetChanges(t *testing.T) {
-	// ⚠️ 回帰防止: カーソルは常に窓の中にいる。行数やヘッダー高が変わる経路 (a / Tab /
+	// 🚨 回帰防止: カーソルは常に窓の中にいる。行数やヘッダー高が変わる経路 (a / Tab /
 	// 通知行の増加) で窓だけ先頭へ飛ぶと、カーソル行がどこにも描かれないまま
 	// current() が見えない行を返し、Enter / v (nvim) / y が別の issue を対象にする。
 	stubClipboardFunc(t, func(string) error { return nil })
@@ -944,7 +944,7 @@ func TestIssuesViewCursorStaysVisibleAfterRowSetChanges(t *testing.T) {
 		list = append(list, fakeIssue(fmt.Sprintf("%03d", i), "feat", "x", st))
 	}
 	const page = 12
-	// ⚠️ tab は 2 回押す: All の右には常設の human タブ (この fixture では 0 件) が居るので、
+	// 🚨 tab は 2 回押す: All の右には常設の human タブ (この fixture では 0 件) が居るので、
 	// 1 回だけだと「行が無いタブ」に入ってカーソル行そのものが存在しなくなる
 	for _, keys := range [][]string{{"a"}, {"tab", "tab"}, {"y"}} {
 		v := loadedView(list...)
@@ -1047,7 +1047,7 @@ func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 	cmds := stubEditorCapture(t)
 	pinFallbackEditor(t)
 
-	// ⚠️ 実ファイルを置く: editCmd は起動前に実体を確認するので、合成パスだと起動しない
+	// 🚨 実ファイルを置く: editCmd は起動前に実体を確認するので、合成パスだと起動しない
 	// (stale なパスでエディタを開かせない guard。editCmd の doc 参照)
 	iss := realIssue(t)
 	v := loadedView(iss)
@@ -1062,7 +1062,7 @@ func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 	if cmd := v.handleKey("v", vp(10)); cmd == nil || len(*cmds) != 1 {
 		t.Fatalf("v でエディタ起動の Cmd が返らない: cmd=%v 起動数=%d", cmd != nil, len(*cmds))
 	}
-	// ⚠️ 「開いた」だけでなく「何を開いたか」まで見る (対象の取り違えを通さない)
+	// 🚨 「開いた」だけでなく「何を開いたか」まで見る (対象の取り違えを通さない)
 	if args, want := (*cmds)[0].Args, []string{editorFallback, iss.Path}; !slices.Equal(args, want) {
 		t.Errorf("v の起動コマンドが違う: args=%v want=%v", args, want)
 	}
@@ -1162,7 +1162,7 @@ func TestIssuesViewShowsScanWarning(t *testing.T) {
 }
 
 func TestIssuesViewNoticeIsTransientAndDoesNotHideWarning(t *testing.T) {
-	// ⚠️ 回帰防止: notice に寿命が無いと、コピーを 1 回した時点でスキャン警告
+	// 🚨 回帰防止: notice に寿命が無いと、コピーを 1 回した時点でスキャン警告
 	// (同名ファイルの二重化 = conflict も error も出ない静かな内容喪失) が二度と出なくなる。
 	stubClipboardFunc(t, func(string) error { return nil })
 
@@ -1178,7 +1178,7 @@ func TestIssuesViewNoticeIsTransientAndDoesNotHideWarning(t *testing.T) {
 	if !ok || !strings.Contains(text, "コピーしました") {
 		t.Fatalf("コピーの結果が通知に載らない: %q ok=%v", text, ok)
 	}
-	// ⚠️ 操作結果はヘッダーを占めない (トーストへ移した) ので、スキャン警告を一瞬も隠さない。
+	// 🚨 操作結果はヘッダーを占めない (トーストへ移した) ので、スキャン警告を一瞬も隠さない。
 	// 以前は通知が警告と同じ 1 行を奪い合っていた (同名ファイルの二重化 = 静かな内容喪失の警告)。
 	out := strings.Join(v.lines(renderOpts(10)), "\n")
 	if strings.Contains(out, "コピーしました") {
@@ -1274,7 +1274,7 @@ func TestCategoryColorIsStableAndReservesRed(t *testing.T) {
 			t.Fatal("未知カテゴリの色が安定していない")
 		}
 	}
-	// ⚠️ 未知語に赤を割らない (意味の無い語が「失敗」の色で出ると誤読される)
+	// 🚨 未知語に赤を割らない (意味の無い語が「失敗」の色で出ると誤読される)
 	for _, name := range []string{"waveform", "videoviewmodel", "dfs", "share", "auth", "acl", "codec", "thumbnail", "tabmanager"} {
 		if categoryColor(name) == catRed {
 			t.Fatalf("未知カテゴリ %q に赤を割った", name)
@@ -1544,7 +1544,7 @@ func TestIssuesViewURLPicker(t *testing.T) {
 func TestIssuesViewURLPickerSwallowsActionKeys(t *testing.T) {
 	cmds := stubEditorCapture(t)
 
-	// ⚠️ エディタを開くキーは e と v の 2 本あるので両方回す。現行コードでは飲み込みを早期
+	// 🚨 エディタを開くキーは e と v の 2 本あるので両方回す。現行コードでは飲み込みを早期
 	// return 1 箇所が支配していて片方で足りるが、キー別の分岐を作る変異には 1 キーだと効かない
 	// (実際に番号入力側は v の 1 マスだけ穴が空いていた)。
 	for _, key := range []string{"e", "v"} {
@@ -1552,7 +1552,7 @@ func TestIssuesViewURLPickerSwallowsActionKeys(t *testing.T) {
 		p := newTestIssuesView()
 		p.shown, p.loaded = true, true
 		p.body = issues.NewBody("https://example.com/very-vivid\nhttps://example.com/plain\n")
-		// ⚠️ 実ファイル: 実体が無いと editCmd の guard で止まり、飲み込みの検証が空振りする
+		// 🚨 実ファイル: 実体が無いと editCmd の guard で止まり、飲み込みの検証が空振りする
 		p.open = realIssue(t)
 		p.handleKey("u", vp(20))
 		p.handleKey(key, vp(20)) // 検索語になるべき (エディタを起動してはいけない)
@@ -1576,13 +1576,13 @@ func TestIssuesViewURLPickerSwallowsActionKeys(t *testing.T) {
 }
 
 // 番号入力中も URL ピッカーと同じ理由でアクションキーより先に飲む (打った文字が検索語)。
-// ⚠️ URL ピッカー側にしかテストが無いと、actionKey を numFilter より前に動かしても何も落ちない。
+// 🚨 URL ピッカー側にしかテストが無いと、actionKey を numFilter より前に動かしても何も落ちない。
 // 順序を守るものをここで作る。キーは e と v の両方を回す — 「支配しているのは早期 return 1 箇所
 // だから 1 キーで足りる」は現行コードの記述であって、キー別の分岐を作る変異には効かない。
 func TestIssuesViewNumberFilterSwallowsActionKeys(t *testing.T) {
 	cmds := stubEditorCapture(t)
 
-	// ⚠️ 実ファイルを置く: 実体が無いと editCmd の guard だけで起動が止まり、
+	// 🚨 実ファイルを置く: 実体が無いと editCmd の guard だけで起動が止まり、
 	// 「順序が守られているから起動しない」を検証できない (空振りする)
 	v := loadedView(realIssue(t))
 	v.handleKey("/", vp(10))
@@ -1604,9 +1604,9 @@ func TestIssuesViewNumberFilterSwallowsActionKeys(t *testing.T) {
 
 // hint が案内するキーと実際の割当を繋ぐ。案内だけ書き換えて割当を忘れる (逆も) と、
 // spec 5 節が既知の事故として挙げる「案内どおりに動かないキー」が静かに生まれる。
-// ⚠️ 幅は TestIssuesViewHintFitsPopupWidth が別に見る (ここは対応だけを見る)。
+// 🚨 幅は TestIssuesViewHintFitsPopupWidth が別に見る (ここは対応だけを見る)。
 func TestIssuesViewBodyHintAdvertisedEditorKeyWorks(t *testing.T) {
-	// ⚠️ 回数だけ数える stubEditor では「渡す対象の取り違え」(iss.Path → iss.Dir 等) が通るので、
+	// 🚨 回数だけ数える stubEditor では「渡す対象の取り違え」(iss.Path → iss.Dir 等) が通るので、
 	// Args を捕まえる stubEditorCapture を使う。
 	cmds := stubEditorCapture(t)
 	pinFallbackEditor(t)
@@ -1637,7 +1637,7 @@ func TestIssuesViewBodyHintAdvertisedEditorKeyWorks(t *testing.T) {
 	}
 }
 
-// e は実体が無いパスではエディタを起動しない。⚠️ 一覧が握る Path は n (next/ へ移動) や
+// e は実体が無いパスではエディタを起動しない。🚨 一覧が握る Path は n (next/ へ移動) や
 // 別プロセスの rename/削除で stale になる。stale なまま渡すと nvim は黙って新規バッファを開き、
 // 保存すると旧位置にファイルが復活して「同じ basename が 2 箇所」を viewer 自身が作る
 // (issues/move.go が宣言している不変条件の違反)。
@@ -1667,7 +1667,7 @@ func TestIssuesViewEditSkipsMissingFile(t *testing.T) {
 	if cmd == nil {
 		t.Error("取り直しの Cmd を返していない (古い一覧が残り続ける)")
 	}
-	// ⚠️ スキャン飛行中でも取りこぼさない (一覧が古いと分かっている経路なので予約に回す)
+	// 🚨 スキャン飛行中でも取りこぼさない (一覧が古いと分かっている経路なので予約に回す)
 	v.scanning, v.rescanPending = true, false
 	if cmd := v.handleKey("e", vp(10)); cmd != nil {
 		t.Error("飛行中に 2 本目の探索を発行した (single-flight が効いていない)")
@@ -1681,7 +1681,7 @@ func TestIssuesViewEditSkipsMissingFile(t *testing.T) {
 }
 
 // 本文モードで開いている issue が再スキャンで移動していたら、新しい場所へ繋ぎ直す。
-// ⚠️ 追わないと、読んでいる最中に n / 別プロセスで done/ へ移された issue が「実体から外れた本文」
+// 🚨 追わないと、読んでいる最中に n / 別プロセスで done/ へ移された issue が「実体から外れた本文」
 // になり、y が消えたパスをコピーし e は実体確認で弾かれる (編集も取り直しもできない)。
 func TestIssuesViewRebindOpenFollowsMove(t *testing.T) {
 	dir := t.TempDir()
@@ -1778,7 +1778,7 @@ func TestScanIssuesDoesNotReadFullBody(t *testing.T) {
 // 受けたフレームで配達される (トースト + w でコピーできる lastWarning)。
 // 以前は takeNotice が打鍵経路にしか無く、本文が無言で畳まれて見え、直後に q を押すと
 // 理由が 1 度も描かれないままプロセスが終わった。
-// ⚠️ v.takeNotice() を直接 assert しない: それは配達経路 (browseModel の Update) を通らず、
+// 🚨 v.takeNotice() を直接 assert しない: それは配達経路 (browseModel の Update) を通らず、
 // 配達ブロックを丸ごと削っても green のままになる (この issue 自身が見つけた false green)。
 func TestIssuesScanMsgDeliversRebindNotice(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
@@ -1820,7 +1820,7 @@ func TestIssuesScanMsgDeliversRebindNotice(t *testing.T) {
 }
 
 // 同名が複数ある異常 (spec 3 節が警告する状態) では、どれが本人か決められないので繋ぎ直さない。
-// ⚠️ 畳むのは「どこにも無い」ときだけなので、ここでは本文モードを維持する。
+// 🚨 畳むのは「どこにも無い」ときだけなので、ここでは本文モードを維持する。
 func TestIssuesViewRebindOpenKeepsOpenOnAmbiguousBase(t *testing.T) {
 	dir := t.TempDir()
 	rel := "001-feat-x.md"
@@ -1847,7 +1847,7 @@ func TestIssuesViewRebindOpenKeepsOpenOnAmbiguousBase(t *testing.T) {
 }
 
 // n の next/ 移動は、別のスキャンが飛行中でも一覧へ反映されなければならない。
-// ⚠️ scanCmd は single-flight で飛行中は nil を返す。markNextKey がそれをそのまま返すと、
+// 🚨 scanCmd は single-flight で飛行中は nil を返す。markNextKey がそれをそのまま返すと、
 // 実ファイルは動いたのに一覧は旧位置を出し続ける (しかも飛行中のスキャンは移動より前に
 // 開始されているので、その結果が届いても移動は映らない)。
 func TestIssuesViewMarkNextReflectsWhileScanning(t *testing.T) {
@@ -1872,13 +1872,13 @@ func TestIssuesViewMarkNextReflectsWhileScanning(t *testing.T) {
 		t.Fatalf("実ファイルが next/ へ動いていない: %v", err)
 	}
 
-	// 飛行中スキャンの結果が届く。⚠️ これは移動より前に始まったので旧位置しか含まない
+	// 飛行中スキャンの結果が届く。🚨 これは移動より前に始まったので旧位置しか含まない
 	stale := issuesScanMsg{dirs: []string{iss.Dir}, issues: []*issues.Issue{iss}}
 	cmd := v.receive(stale)
 	if cmd == nil {
 		t.Fatal("移動を反映する取り直しが張られない (一覧が旧位置のまま残る)")
 	}
-	// ⚠️ 張り直しは 1 回だけ。予約を消さないと receive ごとに scan を張り続け、loading() が
+	// 🚨 張り直しは 1 回だけ。予約を消さないと receive ごとに scan を張り続け、loading() が
 	// 永久 true になってスピナーも止まらない (無限スキャン)。
 	if v.rescanPending {
 		t.Error("予約が消費されていない (次の receive でも張り直して無限に続く)")
@@ -1889,7 +1889,7 @@ func TestIssuesViewMarkNextReflectsWhileScanning(t *testing.T) {
 	}
 }
 
-// エディタ復帰後の取り直しも同じ保証が要る。⚠️ 落とすと「保存したのに一覧・本文が古い」に
+// エディタ復帰後の取り直しも同じ保証が要る。🚨 落とすと「保存したのに一覧・本文が古い」に
 // なり、しかも飛行中のスキャンは編集より前に始まっているのでその結果でも直らない。
 func TestIssuesViewReloadAfterEditReflectsWhileScanning(t *testing.T) {
 	iss := realIssue(t)
@@ -1908,7 +1908,7 @@ func TestIssuesViewReloadAfterEditReflectsWhileScanning(t *testing.T) {
 }
 
 // 閉じたら取り直しの予約も捨てる (片付けは finishClose に一本化されている)。
-// ⚠️ 残すと非表示の viewer のためにスキャンが 1 回走り、その間スピナーの tick が昂進する。
+// 🚨 残すと非表示の viewer のためにスキャンが 1 回走り、その間スピナーの tick が昂進する。
 func TestIssuesViewCloseDropsRescanReservation(t *testing.T) {
 	iss := realIssue(t)
 	v := loadedView(iss)
@@ -1929,7 +1929,7 @@ func TestIssuesViewCloseDropsRescanReservation(t *testing.T) {
 }
 
 // browseModel の配線: issuesScanMsg の case が receive の戻り値 (取り直しの予約) を返すこと。
-// ⚠️ ここを捨てても issuesView 単体のテストは全部通り、lint も通らない (errcheck 系は error 以外の
+// 🚨 ここを捨てても issuesView 単体のテストは全部通り、lint も通らない (errcheck 系は error 以外の
 // 戻り値放棄を見ない)。予約機構の可視効果はこの 1 行に乗っているので model 層で固定する。
 func TestBrowseIssuesScanMsgPropagatesRescanCmd(t *testing.T) {
 	iss := realIssue(t)
@@ -2146,7 +2146,7 @@ func TestIssuesNoticeIsSanitized(t *testing.T) {
 	}
 }
 
-// newTestIssuesView は閉じる演出を切った viewer。⚠️ 既存テストは「close したら即座に畳まれて
+// newTestIssuesView は閉じる演出を切った viewer。🚨 既存テストは「close したら即座に畳まれて
 // いる」前提で書かれているので、演出を挟むと全て 1 拍待ちになって読めなくなる。演出そのものは
 // issues_close_anim_test.go が明示的に on にして検査する (newTestBrowse の zoom.off と同じ)。
 func newTestIssuesView() issuesView {
@@ -2157,15 +2157,15 @@ func newTestIssuesView() issuesView {
 
 // hint が案内する本文モードのキーは、全部が実際に効かなければならない。
 //
-// ⚠️ spec 5 節が「hint が案内するキーが 1 つも案内どおりに動かない」を既知の事故として挙げて
+// 🚨 spec 5 節が「hint が案内するキーが 1 つも案内どおりに動かない」を既知の事故として挙げて
 // いるのに、これまでその不変条件はテストで固定されていなかった (案内キーを未割当の z に
 // 書き換えても全テストが green だった)。ここで hint 側から駆動して閉じる。
 //
-// ⚠️ 「案内された集合」と「効果を検証している表」の一致まで見る。片方だけ増やせないので、
+// 🚨 「案内された集合」と「効果を検証している表」の一致まで見る。片方だけ増やせないので、
 // hint にキーを足したら効果の検証も必ず書くことになる。
 // 本文 pager の半ページ送り・端ジャンプが glide の配線ごと効くことを**キー経路**で固定する。
 //
-// ⚠️ TestHalfPageScrollGlidesOnAllSurfaces の本文サブテストは bodyGlide.start を直接呼ぶ
+// 🚨 TestHalfPageScrollGlidesOnAllSurfaces の本文サブテストは bodyGlide.start を直接呼ぶ
 // (body が nil の workaround) ため、handleBodyKey が glide を配線し忘れても green のままだった。
 // pagerScrollKey への委譲 (2026-08-19) で glide を落とす退行はこのテストだけが検出する。
 func TestIssuesViewBodyHalfPageGlidesViaKeyPath(t *testing.T) {
@@ -2185,7 +2185,7 @@ func TestIssuesViewBodyHalfPageGlidesViaKeyPath(t *testing.T) {
 }
 
 func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
-	// 案内キーごとの「押したら何が変わるか」。⚠️ 効果を観測できる状態を各自で作る
+	// 案内キーごとの「押したら何が変わるか」。🚨 効果を観測できる状態を各自で作る
 	// (本文の途中まで送ってから k を押す等。端で押して「変わらない」を通すと空振りする)
 	probes := map[string]func(t *testing.T, e *bodyKeyEnv){
 		"j": func(t *testing.T, e *bodyKeyEnv) {
@@ -2196,7 +2196,7 @@ func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 			}
 		},
 		"k": func(t *testing.T, e *bodyKeyEnv) {
-			// ⚠️ G を押して状態を作らない。G が壊れると k の probe も red になり、
+			// 🚨 G を押して状態を作らない。G が壊れると k の probe も red になり、
 			// 壊れていないキーを名指しして原因追跡を遅らせる
 			e.v.bodyOff = 5
 			before := e.v.bodyOff
@@ -2208,7 +2208,7 @@ func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 		"Space": func(t *testing.T, e *bodyKeyEnv) {
 			before := e.v.bodyOff
 			e.press(" ")
-			// ⚠️ 方向だけでなく「半ページ」まで見る (1 行送りの実装を通さない)
+			// 🚨 方向だけでなく「半ページ」まで見る (1 行送りの実装を通さない)
 			if want := before + e.rows()/2; e.v.bodyOff != want {
 				t.Errorf("Space が半ページ送りでない: %d → %d (want %d)", before, e.v.bodyOff, want)
 			}
@@ -2222,7 +2222,7 @@ func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 		},
 		"G": func(t *testing.T, e *bodyKeyEnv) {
 			e.press("G")
-			// ⚠️ 「0 でない」ではなく末尾そのものを見る (途中で止まる実装を通さない)
+			// 🚨 「0 でない」ではなく末尾そのものを見る (途中で止まる実装を通さない)
 			if want := e.v.body.Len() - e.rows(); e.v.bodyOff != want {
 				t.Errorf("G が末尾へ飛ばない: bodyOff=%d want %d", e.v.bodyOff, want)
 			}
@@ -2246,7 +2246,7 @@ func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 			if len(*e.cmds) != before+1 {
 				t.Fatal("e でエディタが起動しない")
 			}
-			// ⚠️ 起動しただけでなく対象まで見る (専用テストと同じ強さに揃える。方向だけの
+			// 🚨 起動しただけでなく対象まで見る (専用テストと同じ強さに揃える。方向だけの
 			// 弱い二重化にすると「壊れても片方しか落ちない」状態になる)
 			if args, want := (*e.cmds)[before].Args, []string{editorFallback, e.v.open.Path}; !slices.Equal(args, want) {
 				t.Errorf("e の起動コマンドが違う: args=%v want=%v", args, want)
@@ -2290,7 +2290,7 @@ func advertisedHintKeys(t *testing.T) []string {
 		}
 		label, _, ok := strings.Cut(tok, ": ")
 		if !ok {
-			// ⚠️ 捨てずに落とす。黙って continue すると「コロン無しトークンでキーを案内する」
+			// 🚨 捨てずに落とす。黙って continue すると「コロン無しトークンでキーを案内する」
 			// 書き方 (他モードの hint に "文字入力で絞り込み" 等が実在する) を body に持ち込んだ
 			// 瞬間に、そのキーが検証から漏れて集合一致もすり抜ける。
 			t.Errorf("hint のトークン %q を \"キー: 説明\" として読めない (案内キーが検証から漏れる)", tok)
@@ -2318,9 +2318,9 @@ func newBodyKeyEnv(t *testing.T) *bodyKeyEnv {
 	dir := t.TempDir()
 	rel := "001-feat-hintkeys.md"
 	path := filepath.Join(dir, rel)
-	// ⚠️ 本文は窓より十分長くする (短いと j / Space / G が「動かない」ので効果を観測できない)。
+	// 🚨 本文は窓より十分長くする (短いと j / Space / G が「動かない」ので効果を観測できない)。
 	// URL を 1 つ入れるのは u (ピッカー) の観測のため。
-	// ⚠️ 空行で区切る。連続行は markdown で 1 段落に畳まれ、body.Len() が窓より短くなって
+	// 🚨 空行で区切る。連続行は markdown で 1 段落に畳まれ、body.Len() が窓より短くなって
 	// j / Space / G の効果が観測できない (実測: 80 行が 1 段落になり bodyOff が 0 のまま)
 	body := "# 001 feat: hint keys\n\nhttps://example.com/x\n\n" + strings.Repeat("本文の行。\n\n", 60)
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
@@ -2332,7 +2332,7 @@ func newBodyKeyEnv(t *testing.T) *bodyKeyEnv {
 		t.Fatal("本文モードに入れていない")
 	}
 	v.drawer.finish()
-	// ⚠️ 行数は描画で確定する (未描画だと body.Len() = 0 でスクロール上限が 0 になり、
+	// 🚨 行数は描画で確定する (未描画だと body.Len() = 0 でスクロール上限が 0 になり、
 	// j / Space / G が「動かない」ので効果を観測できない)
 	v.lines(renderOpts(20))
 	if v.body.Len() <= 10 {
@@ -2343,14 +2343,14 @@ func newBodyKeyEnv(t *testing.T) *bodyKeyEnv {
 
 func (e *bodyKeyEnv) press(key string) { e.v.handleKey(key, vp(e.page)) }
 
-// rows は本文 pager の実際の行数 (ヘッダー行数を引いた値)。⚠️ page とは違うので、
+// rows は本文 pager の実際の行数 (ヘッダー行数を引いた値)。🚨 page とは違うので、
 // 「半ページ」「末尾」を語義で検証する probe はこちらを使う。
 func (e *bodyKeyEnv) rows() int { return e.v.visibleRows(vp(e.page)) }
 
 func (e *bodyKeyEnv) assertClosesBody(t *testing.T, key string) {
 	t.Helper()
 	e.press(key)
-	// ⚠️ 本文は「閉じる演出の着地後」に捨てられるので、open == nil を待つと時刻の進め方に
+	// 🚨 本文は「閉じる演出の着地後」に捨てられるので、open == nil を待つと時刻の進め方に
 	// 依存する。キーの直接の効果である「閉じる演出に入ったか」を見る。
 	if e.v.drawer.phase != drawerClosing {
 		t.Errorf("%q で本文が閉じ始めない: phase=%v", key, e.v.drawer.phase)
@@ -2387,7 +2387,7 @@ func TestIssuesViewerOwnsKeysDuringURLPicker(t *testing.T) {
 	if !m.issuesOv.urlPick.open([]string{"https://github.com/Ueno/repo", "https://example.com/x"}) {
 		t.Fatal("前提が崩れた: URL ピッカーが開かない")
 	}
-	// ⚠️ 起動時グランスの既定を継承しないこと。継承すると片方向で vacuous になる (敵対的レビュー)
+	// 🚨 起動時グランスの既定を継承しないこと。継承すると片方向で vacuous になる (敵対的レビュー)
 	m.usageOv.visible = false
 
 	m.handleKey("U")
@@ -2396,14 +2396,14 @@ func TestIssuesViewerOwnsKeysDuringURLPicker(t *testing.T) {
 	if q := m.issuesOv.urlPick.query; q != "U" {
 		t.Errorf("U が検索語に届いていない (外側が横取りしている): query=%q (期待 \"U\")", q)
 	}
-	// ⚠️ こちらは別の主張 (残量モーダルを開かない)。混ぜて 1 つの非難文にすると、dismiss の
+	// 🚨 こちらは別の主張 (残量モーダルを開かない)。混ぜて 1 つの非難文にすると、dismiss の
 	// 位置を変えただけで「キーを奪っている」と誤診する (敵対的レビューが実測)
 	if m.usageOv.visible {
 		t.Error("URL ピッカー入力中の U が残量モーダルを開いた")
 	}
 }
 
-// ⚠️ 述語の 2 節目 (numFilter.typing) を pin する。これが無いと節ごと削る変異も、
+// 🚨 述語の 2 節目 (numFilter.typing) を pin する。これが無いと節ごと削る変異も、
 // typing→active の 1 語変異も**全テスト green のまま通る** (敵対的レビューが実測)。
 //
 // active でなく typing を見る理由: 絞り込みを確定した後 (typing=false, active=true) は通常の
@@ -2422,7 +2422,7 @@ func TestIssuesViewerOwnsKeysWhileTypingNumberFilter(t *testing.T) {
 	}
 
 	// 確定後は通常のナビゲーションに戻る = U は外側で受ける
-	// ⚠️ 数字を打ってから確定すること。空入力の確定は clear() に落ちて active も false になり、
+	// 🚨 数字を打ってから確定すること。空入力の確定は clear() に落ちて active も false になり、
 	//   typing→active の変異を素通りさせる (敵対的レビューの再現手順は / → 0 → Enter だった)
 	if !m.issuesOv.numFilter.edit("0") {
 		t.Fatal("前提が崩れた: 番号フィルタが数字を受け付けない")
@@ -2441,7 +2441,7 @@ func TestIssuesViewerOwnsKeysWhileTypingNumberFilter(t *testing.T) {
 	}
 }
 
-// ⚠️ 述語の 3 節目 (markNext.active) を pin する。
+// 🚨 述語の 3 節目 (markNext.active) を pin する。
 //
 // 変更前は確認中の U で usage が開き、**確認が armed のまま裏に残った** (続く y で実ファイル移動)。
 // 変更後は U が「y/Enter 以外 = 取り消し」に落ちる (spec の「知らないキーを押したら実ファイルが
@@ -2465,7 +2465,7 @@ func TestIssuesViewerOwnsKeysDuringMarkNextConfirm(t *testing.T) {
 	}
 }
 
-// ⚠️ ガードが広すぎないこと: viewer を開いているだけ (どのモードにも入っていない) なら
+// 🚨 ガードが広すぎないこと: viewer を開いているだけ (どのモードにも入っていない) なら
 // U は従来どおり外側で受ける (ユーザー要望 2026-08-01 の「viewer の上でも U は効く」)。
 // これが無いと「ownsKeys() を常に true にする」変異が素通りする。
 func TestIssuesViewerUsageStillWorksWhenNotOwningKeys(t *testing.T) {
@@ -2505,7 +2505,7 @@ func TestIssuesViewerBodyModeIClosesViewer(t *testing.T) {
 
 // R は一覧モードでも本文モードでも ratelimit ダッシュボードへ横断する (ユーザー要望 2026-09-01)。
 // s (status への横断) と同じ扱いで、viewer は閉じてから browseModel が開く (全画面は同時に 1 枚)。
-// ⚠️ 本文モードも見る: case が無いと default の pagerScrollKey へ落ちて無音になる (issue 122 と同型)。
+// 🚨 本文モードも見る: case が無いと default の pagerScrollKey へ落ちて無音になる (issue 122 と同型)。
 func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 	t.Run("一覧モード", func(t *testing.T) {
 		v := loadedView(realIssue(t))

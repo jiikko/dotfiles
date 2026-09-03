@@ -37,7 +37,7 @@ if [ "$1" = "env" ]; then printf '%s\n' "${FAKE_GO_VERSION:-go1.99.0}"; exit 0; 
 echo "build" >> "$FAKE_GO_CALLS"
 [ -n "${FAKE_GO_PIDFILE:-}" ] && echo $$ > "$FAKE_GO_PIDFILE"
 # 実 go と同じ -C の契約を守る: 最初のフラグでなければ使用法エラー (rc=2)、あれば chdir する。
-# ⚠️ これが無いと -C の意味論がテストの盲点になる: 引数順を崩す変更 (-trimpath 等を先頭に足す)
+# 🚨 これが無いと -C の意味論がテストの盲点になる: 引数順を崩す変更 (-trimpath 等を先頭に足す)
 # を入れても全テストが緑のまま通り、実環境だけラッパーが起動不能になる。
 shift  # "build"
 if [ "$1" = "-C" ]; then
@@ -53,7 +53,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 [ -n "$out" ] || exit 1
-# ⚠️ 出力を書いてから寝る。走行中に一時ファイルが存在する状態を作るため (掃除がそれを
+# 🚨 出力を書いてから寝る。走行中に一時ファイルが存在する状態を作るため (掃除がそれを
 # 巻き込まないことを検査するテストがこの窓を要る)。install は shim の mv なので、
 # 先に書いても「ビルド中は旧版のまま」という他テストの前提は変わらない。
 printf '#!/bin/sh\necho %s\n' "$FAKE_GO_MARK" > "$out"
@@ -92,7 +92,7 @@ EOS
 # 全ソースを 60 分前・バイナリを 30 分前に置く = stale でない基準状態。
 # 以後 bump (10 分前) した file だけが「新しいソース」になる。
 #
-# ⚠️ 判定は指紋 (パス + mtime + サイズ) なので、mtime を動かした時点で指紋も変わる。
+# 🚨 判定は指紋 (パス + mtime + サイズ) なので、mtime を動かした時点で指紋も変わる。
 # 「stale でない」を作るには、動かした後の状態を「ビルド済み」として記録し直す必要がある。
 freeze() {
   local root="$1"
@@ -104,7 +104,7 @@ freeze() {
 }
 
 # 今の内容を「このバイナリが作られた入力」として記録する (本番のビルド成功時と同じ形)。
-# ⚠️ 形式は「1 行目 = ビルド開始時刻 / 2 行目以降 = 指紋」。本番と同じ形で書かないと、
+# 🚨 形式は「1 行目 = ビルド開始時刻 / 2 行目以降 = 指紋」。本番と同じ形で書かないと、
 # 読み出し側が「書きかけ」とみなして常に stale になる。開始時刻は過去に置く (このあと
 # 始まるビルドが「自分の方が後」と判断できるように)。
 record_built() {
@@ -130,7 +130,7 @@ calls() { local f="$1/calls"; if [[ -f "$f" ]]; then wc -l < "$f" | tr -d ' '; e
 binary_mark() { tail -1 "$1/src/tool/tool" 2>/dev/null | awk '{print $NF}'; }
 binary_is() { [[ "$(binary_mark "$1")" == "$2" ]]; }
 
-# builder が完全に終わったか (lock を解放したか)。⚠️ 成果物の設置と指紋の記録は別の操作で、
+# builder が完全に終わったか (lock を解放したか)。🚨 成果物の設置と指紋の記録は別の操作で、
 # 指紋は成果物の後に書かれる。「バイナリが変わった」だけを完了の合図にすると、その間に次の
 # 起動が挟まって「バイナリは新しいのに指紋は古い」を見てしまう (実測で flaky になった)。
 # 本番でこの窓に入ると余分なビルドが 1 本走るだけ (install ガードが中止する) だが、テストは
@@ -233,7 +233,7 @@ out="$(AUTOBUILD_ARGS=--async FAKE_GO_MARK="$PROBE" run_tool "$ROOT")"
 ok "async 再ビルドを spawn した起動では GO_AUTOBUILD_PENDING=1 を渡す"
 
 printf '\n## 古い失敗記録は無視して再挑戦する (一時的な失敗で永久に止まらない)\n'
-# ⚠️ backoff の条件は「ソースが失敗記録より新しいか」だが、失敗記録は pull の後に書かれるので
+# 🚨 backoff の条件は「ソースが失敗記録より新しいか」だが、失敗記録は pull の後に書かれるので
 # その条件は二度と成立しない = 一度の一時的な失敗 (toolchain 取得の失敗等) で再ビルドが永久に
 # 止まる。実証 (2026-07-31): pull 相当の状態で 1 回失敗させると、要因を解消した後の 3 回の起動で
 # go build が 0 回しか呼ばれず古いバイナリに固定された。TTL で救済する。
@@ -257,7 +257,7 @@ wait_for "TTL 超過後も再挑戦しない (一時的な失敗から復帰で�
 ok "TTL を超えた失敗記録は無視して再挑戦する"
 
 printf '\n## 入力を直したら TTL 内でも即座に再挑戦する\n'
-# ⚠️ 「同じ入力で落ちるビルドを撒かない」の裏返し。入力が変われば別の挑戦なので、TTL (既定
+# 🚨 「同じ入力で落ちるビルドを撒かない」の裏返し。入力が変われば別の挑戦なので、TTL (既定
 # 600 秒) を待つ理由はない。ここが効かないと、コンパイルエラーを直して起動し直しても
 # 最大 10 分間ずっと旧版のままになる。既存の「ソースが更新されれば再挑戦する」テストは
 # 失敗記録を 30 分前に置いており TTL 経由でも通ってしまうので、この経路を別に縛る。
@@ -344,7 +344,7 @@ ok "最新なら起動しない (rc=1)"
 # pull でソースが降ってきた状況 = 指紋が変わる
 bump "$ROOT/src/tool/main.go"
 FAKE_GO_MARK=pulled spawn_if_stale "$ROOT" || fail "stale なのにビルドを起動しない"
-# ⚠️ builder_done (lock 不在) を完了の合図にしない: spawn は即戻るので lock 作成前に真になる。
+# 🚨 builder_done (lock 不在) を完了の合図にしない: spawn は即戻るので lock 作成前に真になる。
 # 成果物の差し替えを待ってから、lock の解放を待つ (既存の async テストと同じ順序)。
 wait_for "起動したビルドの成果物が設置されない" binary_is "$ROOT" pulled
 wait_for "builder が lock を解放しない" builder_done "$ROOT"
@@ -468,7 +468,7 @@ wait_for "zsh/system 不在でバックグラウンドビルドが完了しな�
 ok 'zsh/system が無い zsh でも同期・async ともに動く ($$ への縮退)' 
 
 printf '\n## ビルド中に着地したソース更新を飲まない\n'
-# ⚠️ 成果物の mtime を install した時刻にすると、「ビルド中に入った編集」が永久に取り込まれない:
+# 🚨 成果物の mtime を install した時刻にすると、「ビルド中に入った編集」が永久に取り込まれない:
 # 編集の mtime < install の mtime になるので stale 判定が二度と成立しない。glogx を触りながら
 # popup で起動する = この repo の開発ループそのもので踏む。
 ROOT="$(new_project midedit)"
@@ -487,7 +487,7 @@ wait_for "ビルド中の編集が拾われない (以後まったく再ビル�
 ok "ビルド中に着地したソース更新を次の起動で拾う"
 
 printf '\n## 走行中の builder は、あとから入った新しいバイナリを踏まない\n'
-# ⚠️ 同期ビルド (GO_AUTOBUILD_SYNC=1 =「今すぐ新版が欲しい」) は lock を取らないので、走行中の
+# 🚨 同期ビルド (GO_AUTOBUILD_SYNC=1 =「今すぐ新版が欲しい」) は lock を取らないので、走行中の
 # async builder は「lock を奪われた」判定に引っかからない。時刻で見ないと、あとから入った
 # 新しいバイナリを古い成果物で踏み、ユーザーの復旧操作を黙って巻き戻す。
 ROOT="$(new_project revert)"
@@ -505,7 +505,7 @@ binary_is "$ROOT" now \
 ok "走行中の builder は、あとから入った新しいバイナリを踏まない"
 
 printf '\n## lock を解放してよいのは持ち主だけ\n'
-# ⚠️ EXIT trap が所有権を見ずに rm -rf すると、timeout 超過で lock を奪われた builder が
+# 🚨 EXIT trap が所有権を見ずに rm -rf すると、timeout 超過で lock を奪われた builder が
 # 「奪った側の lock」まで消す。以後その src は無施錠になり多重ビルドが漏れる。
 ROOT="$(new_project lockown)"
 FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
@@ -521,7 +521,7 @@ ok "lock を奪われた builder は、奪った側の lock を消さない"
 rm -rf "$ROOT/src/tool/.autobuild.lock"  # 奪った状態を残さない (末尾の残骸チェック用)
 
 printf '\n## ビルド元の tree hash を記録する (診断用。判定には使わない)\n'
-# ⚠️ 判定に使わない理由: tree hash はコミット済みの内容しか見ないので、未コミットの編集を
+# 🚨 判定に使わない理由: tree hash はコミット済みの内容しか見ないので、未コミットの編集を
 # 拾えない (= ソースを触りながら起動する開発ループが再ビルドされなくなる)。記録だけなら
 # 嘘をつかないので、「古い版で動いています」を「動いているのは tree X / 今は Y」と言える。
 ROOT="$(new_project rev)"
@@ -546,7 +546,7 @@ ok "未コミットの変更から作ったら +dirty を添える"
 binary_is "$ROOT" v2 || fail "未コミットの編集で再ビルドされない (tree hash を判定に使ってしまっている)"
 ok "tree hash が同じでも未コミットの編集は拾う (判定は指紋)"
 
-# ⚠️ まだ git add していない新規 .go も go build の入力に入る。追跡対象しか見ない判定だと
+# 🚨 まだ git add していない新規 .go も go build の入力に入る。追跡対象しか見ない判定だと
 # 「コミットに存在しないコードで動いているのに clean な tree hash」を記録してしまう。
 ( cd "$ROOT" && git checkout -q -- src/tool/main.go )
 printf 'package main\n\nfunc helper() {}\n' > "$ROOT/src/tool/newfile.go"   # untracked
@@ -556,7 +556,7 @@ grep -q '+dirty' "$ROOT/src/tool/.autobuild.rev" \
 ok "git add していない新規 .go も +dirty として数える"
 rm -f "$ROOT/src/tool/newfile.go"
 
-# ⚠️ dirty の範囲は指紋の入力集合と揃える。*_test.go は go build の入力ではない (指紋も無視する)
+# 🚨 dirty の範囲は指紋の入力集合と揃える。*_test.go は go build の入力ではない (指紋も無視する)
 # ので、それだけが変わっていても成果物はコミットの内容そのもの = clean。ここがズレると、
 # テストを常時いじるこの repo では +dirty が出っぱなしになり、記録が何も言わなくなる。
 ( cd "$ROOT" && git add -A && git -c user.email=t@t -c user.name=t commit -qm addtest ) >/dev/null 2>&1
@@ -569,7 +569,7 @@ grep -q '+dirty' "$ROOT/src/tool/.autobuild.rev" \
 ok "*_test.go の変更は +dirty に数えない (指紋の入力集合と揃える)"
 
 printf '\n## あとから始まった新しいビルドが、先に終わった古いビルドに負けない\n'
-# ⚠️ install ガードは「順序」を見る必要がある。内容一致だけで見ると「あとから完走した方が
+# 🚨 install ガードは「順序」を見る必要がある。内容一致だけで見ると「あとから完走した方が
 # 無条件で降りる」になり、最新の入力でビルドした方が捨てられる。ここが効かないと、stale
 # トーストが案内する復旧手順 (GO_AUTOBUILD_SYNC=1) が先行 builder に負けて旧版のまま起動する。
 # 同期が既定の parallel-each / disassemble_excel では「旧版の結果を新コードの結果と誤認させない」
@@ -590,7 +590,7 @@ binary_is "$ROOT" B \
 ok "あとから始まったビルドが勝つ (完走の順ではなく開始の順で決まる)"
 
 printf '\n## 記録の時刻が未来でも、単独のビルドは捨てられない\n'
-# ⚠️ install ガードは「記録された絶対時刻」を今の時計と比べる。時計が巻き戻る (NTP の step /
+# 🚨 install ガードは「記録された絶対時刻」を今の時計と比べる。時計が巻き戻る (NTP の step /
 # スリープ復帰 / 進んだ時計のホストで書かれた src_dir を rsync・バックアップ復元で持ってくる) と、
 # 他に走っているビルドが 1 本も無くても「あとから始まったビルドが既に入っている」と誤判定する。
 # しかも失敗ではないので .autobuild.failed を書かず backoff も効かない = 時計が追いつくまで
@@ -610,7 +610,7 @@ out="$(FAKE_GO_MARK=v2 run_tool "$ROOT")"
   || fail "記録の時刻が未来だと、他に走っていなくても install が捨てられる (got: $out)"
 ok "記録の時刻が未来でも、単独のビルドは install される"
 
-# ⚠️ さらに悪い派生: バイナリ不在の初回経路でも同じガードが発火する。install 中止は失敗では
+# 🚨 さらに悪い派生: バイナリ不在の初回経路でも同じガードが発火する。install 中止は失敗では
 # ない (return 0) ので go_autobuild_exec の `|| exit 1` が効かず、存在しないバイナリを exec して
 # rc=127 で死ぬ。「旧版が動く」ですらなくツールが起動しない。stale トーストを見た人が
 # 「バイナリを消して作り直させる」をやると踏む。
@@ -623,7 +623,7 @@ fi
 ok "記録の時刻が未来でも、バイナリ不在なら必ず作り直す"
 
 printf '\n## 走行中の builder の作業ファイルを、あとから来た builder が消さない\n'
-# ⚠️ 同期ビルド (GO_AUTOBUILD_SYNC=1 / バイナリ不在の初回) は lock を取らないので、spawn が
+# 🚨 同期ビルド (GO_AUTOBUILD_SYNC=1 / バイナリ不在の初回) は lock を取らないので、spawn が
 # lock 取得直後に走らせる .autobuild.new.* の掃除と直列化されない。掃除が走行中の目印を消すと:
 #   - install ガード [[ "$bin" -nt "$started" ]] は zsh の -nt が「参照先不在 = FALSE」に倒れて素通り
 #   - touch -r "$started" も黙って失敗し、成果物の mtime が install 時刻のまま残る
@@ -635,7 +635,7 @@ freeze "$ROOT"
 bump "$ROOT/src/tool/main.go"
 ( GO_AUTOBUILD_SYNC=1 FAKE_GO_SLEEP=4 FAKE_GO_MARK=sync run_tool "$ROOT" >/dev/null 2>&1 ) &
 SYNC_PID=$!
-# ⚠️ wait_for に渡すのは関数にする。`test -n "$(...)"` だと置換が呼び出し時に 1 度だけ展開され、
+# 🚨 wait_for に渡すのは関数にする。`test -n "$(...)"` だと置換が呼び出し時に 1 度だけ展開され、
 # 同じ結果を 10 秒ポーリングし続けて「観測しているつもり」になる。
 has_workfile() { [[ -n "$(find "$1/src/tool" -name '.autobuild.new.*' -print -quit)" ]]; }
 wait_for "同期ビルドが始まらない" has_workfile "$ROOT"
@@ -648,7 +648,7 @@ ok "走行中の builder の作業ファイルを、あとから来た builder �
 wait "$SYNC_PID" 2>/dev/null || true
 
 printf '\n## 相対パスで呼ばれても一時ファイルの置き場所がずれない\n'
-# ⚠️ -C はビルド前に chdir するので、src_dir が相対だと -o の出力先が「移動後の cwd 基準」に
+# 🚨 -C はビルド前に chdir するので、src_dir が相対だと -o の出力先が「移動後の cwd 基準」に
 # なり、意図しない場所へ書く。_go_autobuild_build の ${1:a} 正規化がそれを潰している。
 # 現在の呼び出しは全て ${0:A:h} 由来で絶対だが、-C を使う限りこれは前提であって偶然ではない。
 ROOT="$(new_project relpath)"
@@ -664,7 +664,7 @@ grep -q zsh <<< "$(head -1 "$ROOT/bin/tool")" || fail "相対 src_dir で cwd �
 ok "相対 src_dir でも成果物と一時ファイルが src 側に置かれる"
 
 printf '\n## spawn したビルドは popup を閉じたときの HUP で死なない\n'
-# ⚠️ 実害 (2026-08-01): tmux popup を閉じると process group へ HUP が飛び、裏で走っている
+# 🚨 実害 (2026-08-01): tmux popup を閉じると process group へ HUP が飛び、裏で走っている
 # go build が exit 129 (=128+SIGHUP) で死ぬ。失敗記録が残るので以後は TTL が切れるまで旧版に
 # 固定され、「古い版で動いています」が出続けてビルドされない状態になった。
 #
@@ -793,7 +793,7 @@ sleep 1.1
 printf 'package sub\n// changed\n' > "$ROOT/src/tool/sub/sub.go"
 PATH="$TMP_DIR/bin:$PATH" FAKE_GO_CALLS="$ROOT/calls" FAKE_GO_MARK=s2 zsh -c "source '$LIB'; go_autobuild_spawn_if_stale '$ROOT/src/tool/cmd/a' a" 2>>"$ROOT/stderr" \
   || fail "module root 配下 (sub/) の変更を外部呼び出しが拾わない"
-# ⚠️ lock の不在を完了の合図にしない: spawn は fork 後に lock を作るので、作る前に見ると「完了」に見える。
+# 🚨 lock の不在を完了の合図にしない: spawn は fork 後に lock を作るので、作る前に見ると「完了」に見える。
 # 成果物の中身 (mark) が変わるのを待つ
 wait_for "外部呼び出しの build が module root で走らなかった (mark が s2 にならない)" mark_at_is "$ROOT/src/tool/cmd/a/a" s2
 wait_for "外部呼び出しの spawn が完走しない" builder_done_at "$ROOT/src/tool/cmd/a"
@@ -815,7 +815,7 @@ set -e
 ok "--pkg の値欠落は exit 2 で止まる"
 
 printf '\n## 作業ファイル / lock を残さない\n'
-# ⚠️ 「いずれ消える」で判定する。builder は非同期なので、バイナリが入った瞬間にはまだ lock の
+# 🚨 「いずれ消える」で判定する。builder は非同期なので、バイナリが入った瞬間にはまだ lock の
 # 解放 (spawn subshell の EXIT trap) が済んでいないことがある。即時判定にすると spawn を使う
 # テストの直後で偽陽性になる: 手元では 0ms で解放されるが CI の遅い runner で落ちた (2026-08-01)。
 # 「残さない」の意味は「builder が終われば消える」であって「バイナリと同時に消える」ではない。

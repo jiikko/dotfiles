@@ -15,7 +15,7 @@
 
 ## 1. `tt_archive_finalize` のコメントが実装より強い (reject 経路だけ呼んでいない)
 
-`scripts/tmux_resurrect_save.sh` — コメントは「⚠️ tt_save_main の**全 return 経路**から呼ぶこと」
+`scripts/tmux_resurrect_save.sh` — コメントは「🚨 tt_save_main の**全 return 経路**から呼ぶこと」
 と宣言しているが、reject 経路 (退行を検知して last を戻す経路) は呼んでいない。
 
 - **振る舞いは範囲前と同一。コメントの宣言だけが新規** (`bd8e5a7` = 私の commit)
@@ -106,7 +106,7 @@ inode 同定へ作り替えるのは変更が大きく、誤殺側の risk を�
 | 項目 | 状態 | 裏取り |
 |---|---|---|
 | 1. finalize のコメントが実装より強い | **修正済み** | (a) 側を採用 = reject 経路 (`regression-stuck-override`) の `return 0` 直前に `tt_archive_finalize` が入っている (`scripts/tmux_resurrect_save.sh:428`)。`tests/zshrc/tmux-session/test_resurrect_save_archive.sh` の観点 5b が構造で pin |
-| 2. 「(うち期限に余裕あり N 件)」の母集団ずれ | **修正済み** | `later` の加算に `[ "$is_human" -eq 1 ] && [ -z "$held" ]` が入り `unread` と母集団が揃った (`_claude/hooks/human-tasks-due.sh:102`)。同ファイルに理由の ⚠️ コメントあり。`tests/claude/test_human_tasks_due.sh` の観点 6b が pin |
+| 2. 「(うち期限に余裕あり N 件)」の母集団ずれ | **修正済み** | `later` の加算に `[ "$is_human" -eq 1 ] && [ -z "$held" ]` が入り `unread` と母集団が揃った (`_claude/hooks/human-tasks-due.sh:102`)。同ファイルに理由の 🚨 コメントあり。`tests/claude/test_human_tasks_due.sh` の観点 6b が pin |
 | 3. 観点 7「git 管理外で黙る」が空回り | **修正済み** | `GIT_CEILING_DIRECTORIES` で実 git に非 git 扱いさせる形になり、`issues/` と human issue を置いて後段ガードのマスクも外れている。rc も検査するようになった (`tests/claude/test_human_tasks_due.sh:120-135`) |
 | 4. 同一パスの socket 再作成で旧孤児が回収対象外 | **未着手 (意図的)** | issue 本文の判断どおり **trigger 待ち**。単独で inode 同定へ作り替えるのは変更が大きく、誤殺側の risk を新たに作る。孤児回収の同一性判定を次に触るときに再評価する |
 

@@ -9,13 +9,13 @@ package main
 //
 //   - fsnotify で .git のイベントを待つ。commit / rebase / fetch は必ず .git 配下を書くので
 //     体感即時で気づける
-//   - ⚠️ イベントは真偽の正本にしない。git は 1 操作で index / logs / refs / *.lock を続けて
+//   - 🚨 イベントは真偽の正本にしない。git は 1 操作で index / logs / refs / *.lock を続けて
 //     書き、rebase では HEAD が何度も動く。起こされたら必ず指紋を測り直し、本当に表示が
 //     変わったときだけ読む
 //   - 保険として 1 分ポーリングも回す。イベントを取りこぼしても、watcher を作れない環境
 //     (fd 上限) でも必ず追いつく (その場合は最悪 1 分遅れる)
 //
-// ⚠️ フレーム tick (spinnerActive) には混ぜない: 混ぜると起動中ずっと 12.5fps で起きることに
+// 🚨 フレーム tick (spinnerActive) には混ぜない: 混ぜると起動中ずっと 12.5fps で起きることに
 // なり、「動くものがある間だけ tick を回す」という glogx の設計を崩す。usageRefreshTick や
 // issues の見張りと同じく、自分の周期で自己再アームする独立チェーンにする。
 
@@ -35,7 +35,7 @@ const (
 	// gitLogWatchDebounce はイベントのバーストを畳む静穏時間。1 操作で複数ファイルが書かれる
 	// だけでなく、rebase / cherry-pick は数百 ms 間隔で HEAD を動かすので、issues の見張り
 	// (200ms) より長く取って 1 回の反映へ畳む (反映 1 回ごとに git log と CI の再取得が走る)。
-	// ⚠️ drainWatchEvents の静穏は無制限にリセットされるので、`.git` を書き続けるプロセス
+	// 🚨 drainWatchEvents の静穏は無制限にリセットされるので、`.git` を書き続けるプロセス
 	// (gc / repack / 大量 fetch) がいる間はイベント経路が返らない。その間は保険のポーリングが
 	// 受け持つ (縮退するのは即時性だけ)。
 	gitLogWatchDebounce = time.Second
@@ -46,7 +46,7 @@ const (
 // 測定 (git fork) を Update 側の判断の後に回すため、tick の中では測らない: ポップアップを
 // 開いている間は反映を見送るので、その間の fork をまるごと省ける。
 type gitLogProbeMsg struct {
-	// fromEvent は発行元がイベント経路か (false = 保険のポーリング)。⚠️ 受け取り側は
+	// fromEvent は発行元がイベント経路か (false = 保険のポーリング)。🚨 受け取り側は
 	// 「届けたチェーンの札だけ」を降ろすのにこれを使う。両方降ろすと、まだ w.Events で
 	// ブロックしている goroutine が居るのに evArmed が false になり、single-flight を
 	// すり抜けて 2 本目が張られる (観測 1 回につき goroutine が 1 本ずつ積み上がる)。
@@ -81,14 +81,14 @@ type gitLogWatch struct {
 	dirs []string // 見張るディレクトリ (空 = 解決できなかった → ポーリングのみ)
 	gen  int      // 世代 (watcher を閉じるたびに増える。古いチェーンの観測を弾く)
 	seen string   // 反映済みの指紋
-	// hasSeen は seen が有効か。⚠️ 空文字列を「基準なし」のセンチネルにしないこと: コミット 0 件
+	// hasSeen は seen が有効か。🚨 空文字列を「基準なし」のセンチネルにしないこと: コミット 0 件
 	// (revs が空範囲) の指紋は正当に "" になるため、区別できないと変化の判定が狂う。
 	hasSeen bool
 	// チェーンは 2 本 (イベント待ち / 保険のポーリング)。それぞれ二重に張らない。
 	evArmed   bool
 	pollArmed bool
 	// measuring は指紋の測定が in-flight か (観測が来るたびに git を重ねない)。
-	// ⚠️ 厳密な排他ではない: 自分で読み直したとき (reloadLog) は飛んでいる測定を捨てるために
+	// 🚨 厳密な排他ではない: 自分で読み直したとき (reloadLog) は飛んでいる測定を捨てるために
 	// 札を降ろすので、その結果が届く前に次の測定が始まりうる (最大 fork 1 本の重複)。
 	measuring bool
 	// reloading は外部変更の反映のための読み直し (reflectGitLogChange) が in-flight か。
@@ -131,7 +131,7 @@ func gitLogWatchDirs() []string {
 	if common != gitDir {
 		dirs = append(dirs, common)
 	}
-	// refs / logs は入れ子で、fsnotify は再帰しない。⚠️ 親だけを見張ると、スラッシュ入りの
+	// refs / logs は入れ子で、fsnotify は再帰しない。🚨 親だけを見張ると、スラッシュ入りの
 	// ブランチ名 (refs/heads/feature/x) や remote ごとの ref (refs/remotes/origin/…)、
 	// reflog (logs/refs/…) の更新がイベントにならない = そこだけポーリング待ちになる
 	// (敵対レビューで指摘 2026-09-01)。ディレクトリを辿って全部登録する。
@@ -166,7 +166,7 @@ func appendSubdirs(dirs []string, root string) []string {
 
 // startGitLogWatch は watcher を用意して対象ディレクトリを登録する。
 //
-// ⚠️ 「Add 済み」を自前で覚えて skip しないこと。fsnotify の watch はディレクトリが消えると
+// 🚨 「Add 済み」を自前で覚えて skip しないこと。fsnotify の watch はディレクトリが消えると
 // 黙って失われる (git は refs/heads を packed-refs へ畳んだり rebase 用ディレクトリを作り消し
 // したりする)。Add は冪等なので毎回無条件に呼び、消えて戻った先を取り戻す (issues_watch.go の
 // 同じ注記が起源)。watcher を作れない環境では黙ってポーリングだけに縮退する。
@@ -188,7 +188,7 @@ func (m *browseModel) startGitLogWatch() {
 
 // stopGitLogWatch は watcher を閉じて世代を進める (cancelAll から呼ぶ後始末)。
 //
-// ⚠️ 通常終了ではプロセス終了が fd を回収するが、再起動 (restartSelf の syscall.Exec) は fd
+// 🚨 通常終了ではプロセス終了が fd を回収するが、再起動 (restartSelf の syscall.Exec) は fd
 // テーブルを引き継ぐため明示的に閉じないと漏れる (issues viewer と同じ形。理由の正本は
 // cancelAll の doc)。この見張りは起動から終了まで開き続けるので、閉じ忘れると r で再起動する
 // たびに kqueue fd が 1 本ずつ新プロセスへ継承される。
@@ -274,7 +274,7 @@ func (m *browseModel) handleGitLogProbe(msg gitLogProbeMsg) tea.Cmd {
 			m.logWatch.w = nil
 		}
 		m.logWatch.gen++
-		// ⚠️ 飛んでいる測定の札もここで降ろす: 世代を進めた後に届く結果は gen 違いで捨てられるので、
+		// 🚨 飛んでいる測定の札もここで降ろす: 世代を進めた後に届く結果は gen 違いで捨てられるので、
 		// 降ろさないと measuring が永久に true のまま = 以降ひとつも測らなくなる (静かに機能停止)。
 		m.logWatch.measuring = false
 		m.logWatch.reloading = false // 同じ理由 (gen 違いで捨てられる読み直しを待ち続けない)
@@ -310,7 +310,7 @@ func (m *browseModel) handleGitLogFP(msg gitLogFPMsg) tea.Cmd {
 	if !msg.ok {
 		return nil // 測れなかった: 基準を汚さない (チェーンは予約済みなので次の周期で測り直す)
 	}
-	// ⚠️ 見送り判定は「測る前」と「反映する前」の両方で見る: 測定 (git fork) の最中にポップアップを
+	// 🚨 見送り判定は「測る前」と「反映する前」の両方で見る: 測定 (git fork) の最中にポップアップを
 	// 開かれると、開始時のチェックだけでは開いている内容のキャッシュを消してしまう (reloadLog が
 	// diffOv / prStatusOv / detailOv を reset する)。基準を触らないので、閉じた後の観測で反映される。
 	if m.gitLogReloadDeferred() {
@@ -318,7 +318,7 @@ func (m *browseModel) handleGitLogFP(msg gitLogFPMsg) tea.Cmd {
 	}
 	if !m.logWatch.hasSeen {
 		// 基準がまだ無い = 起動直後か、自分で読み直した直後 (reloadLog が基準を降ろす)。
-		// ⚠️ 測定値を無条件に基準にすると、読み込み (LoadCommits) 〜 測定の窓に入った変化を
+		// 🚨 測定値を無条件に基準にすると、読み込み (LoadCommits) 〜 測定の窓に入った変化を
 		// 「元からそう」と飲み込んでしまうので、手元のコミット列と突き合わせてその窓を閉じる。
 		if gitLogFPMatchesCommits(msg.fp, m.commits) {
 			m.logWatch.seen, m.logWatch.hasSeen = msg.fp, true
@@ -329,7 +329,7 @@ func (m *browseModel) handleGitLogFP(msg gitLogFPMsg) tea.Cmd {
 	if msg.fp == m.logWatch.seen {
 		return nil
 	}
-	// 反映すると reloadLog が基準を降ろす (hasSeen = false)。⚠️ ここで測定値を基準に置き直さない:
+	// 反映すると reloadLog が基準を降ろす (hasSeen = false)。🚨 ここで測定値を基準に置き直さない:
 	// reloadLog の読み直しは測定より新しい状態を読むことがあり (連続 commit・rebase 中・
 	// -p で読み直し自体に 100ms 級かかる)、古い測定値を基準にすると次の観測で必ず不一致になって
 	// 「表示は何も変わらないのにトーストだけ出る」再読込が 1 回増える (敵対レビューで実測)。
@@ -364,7 +364,7 @@ func (m *browseModel) gitLogReloadDeferred() bool {
 // 実測 2026-09-01 は既定 22ms / --stat 45ms / -p 139ms で、Update の中で同期にやると rebase 中は
 // 1 秒ごとにその停止が無操作で入る (issue 146)。pull の全面リロードは利用者の操作なので同期のまま。
 //
-// ⚠️ LoadCommits は timeout なしの runGit を使う (起動時の同期経路と同じ関数)。git が stall しても
+// 🚨 LoadCommits は timeout なしの runGit を使う (起動時の同期経路と同じ関数)。git が stall しても
 // Update は止まらないが、reloading の札が立ったままになり自動追従だけが止まる (次の観測は全部
 // 見送られる)。起動もできない repo なので追従だけを timeout で救う形は採らない。
 func (m *browseModel) reflectGitLogChange() tea.Cmd {
@@ -403,7 +403,7 @@ func (m *browseModel) handleGitLogReload(msg gitLogReloadMsg) tea.Cmd {
 	if m.gitLogReloadDeferred() {
 		return nil
 	}
-	// ⚠️ 「先頭を見ている」は cursor だけでは決まらない: ctrl+d / pgdown はカーソルを動かさず
+	// 🚨 「先頭を見ている」は cursor だけでは決まらない: ctrl+d / pgdown はカーソルを動かさず
 	// ビューポートだけ下げるので、cursor == 0 のまま下の方を読んでいる状態がある。offset も見ないと
 	// その状態で画面が先頭へ飛ぶ (この機能の主旨に反する)。
 	keepView := m.cursor > 0 || m.offset > 0

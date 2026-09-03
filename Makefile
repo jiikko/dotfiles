@@ -54,11 +54,11 @@ KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/ka
 # (~/.claude/CLAUDE.md「一時ファイルの配置」)。gitignore なので放っておくと溜まる一方で、
 # 2026-09-02 時点で 309 エントリ / 831MB あった (最古は 7 月)。
 #
-# ⚠️ **消す前に、その中身の結論が issue かコードへ移っているか確かめる**
+# 🚨 **消す前に、その中身の結論が issue かコードへ移っているか確かめる**
 # (`_claude/rules/move-report-conclusions-to-issues.md`)。レポート本体は消えてよいが、
 # 却下理由と全数勘定が tmp にしか無い状態で消すと、次の audit が同じ指摘を再生成する。
 #
-# ⚠️ **issue やドキュメントが指している tmp のパスは消すと参照が切れる**。DAYS を絞るだけでは
+# 🚨 **issue やドキュメントが指している tmp のパスは消すと参照が切れる**。DAYS を絞るだけでは
 # 防げないので、まず `make clean-tmp DRY_RUN=1` で一覧を見る。参照の有無は
 # `grep -rn 'tmp/' issues/ _claude/` で確かめる (指している側が間違っていることも多い)。
 #
@@ -93,7 +93,7 @@ pull:
 # CI (_go-project.yml) と test-changed の src 腕は lint + test を回すため、部分実行の
 # 方が全体実行より厳しいねじれがあった。golangci-lint は各 src Makefile が go run 経由・
 # バージョン固定で自己完結しており、追加のツールインストールは不要
-# ⚠️ **集約にする** (issue 130)。prerequisite に並べる形 (`test: a b c`) だと、lint が 1 つ
+# 🚨 **集約にする** (issue 130)。prerequisite に並べる形 (`test: a b c`) だと、lint が 1 つ
 #   落ちた日は **テストが 1 本も走らないまま赤を見る**。コミット前ゲートとして常用する入口なので、
 #   全部走らせてから失敗をまとめて返す (所要時間より「その日の全ての赤が 1 回で見える」を採る)。
 #   lint だけ先に見たいときは `make test-lint`。
@@ -117,13 +117,13 @@ test-dir:
 
 # run_all_targets は列挙したターゲットを**全部走らせてから**集約して失敗を返す。
 #
-# ⚠️ prerequisite に並べる形 (`test-runtime: a b c`) だと、先に落ちた 1 本で make が中断し、
+# 🚨 prerequisite に並べる形 (`test-runtime: a b c`) だと、先に落ちた 1 本で make が中断し、
 #   後続が **1 度も実行されないまま CI ログから消える** (issue 109)。2026-08-25 に 2 回起き、
 #   push 済みの tests/codex_fanout.bats の修正が数時間 CI 未検証のまま放置された
 #   (赤の原因が別にある間、bats は永久に走らない)。
 #   「CI が緑になったら確認する」は、この形では成立しない。
 #
-# ⚠️ 失敗したターゲット名を最後にまとめて出す。1 本目の失敗で埋もれると、後続の失敗が
+# 🚨 失敗したターゲット名を最後にまとめて出す。1 本目の失敗で埋もれると、後続の失敗が
 #   スクロールの上に隠れて「1 件だけ直せばよい」と誤読される。
 define run_all_targets
 targets="$(1)"; \
@@ -147,7 +147,7 @@ test-runtime:
 # が構造的に発生しない。ファイル名の空白・改行は非対応 (旧・手動列挙時代と同じ前提)。
 # 発見 0 件は fail にする (テストを持つディレクトリしか対象にしないため、0 件 = ディレクトリの
 # 改名/不在や find の失敗がパイプに隠れて「未実行なのに成功」する状態。それを弾く)。
-# ⚠️ **fail-fast しない** (並列版 run_tests_parallel と揃える)。1 本目で止めると、
+# 🚨 **fail-fast しない** (並列版 run_tests_parallel と揃える)。1 本目で止めると、
 #   ソート順で後ろのテストが **1 度も走らないまま CI ログから消える** (issue 109)。
 #   壁をターゲット境界からファイル境界へ動かしただけになる — 実際 109 の 1 次修正は
 #   test-bats を救っただけで、`.sh` 側の隠れは残っていた (敵対的レビューが実証)。
@@ -165,7 +165,7 @@ endef
 
 # run_tests の並列版。各テストは独自 tempdir で独立しているものだけに使うこと
 # (nvim/tmux 系は共有資源の競合が未検証のため直列の run_tests のまま)。出力は
-# ⚠️ **exit 77 = そのファイルは丸ごと skip した** (automake の慣例)。0 と区別しないと、依存が
+# 🚨 **exit 77 = そのファイルは丸ごと skip した** (automake の慣例)。0 と区別しないと、依存が
 # 無くて何も検査しなかったテストが合格と同じ `[ok]` になる。実害: 2026-08-29 に
 # test_deny_bare_tmux_kill.sh が timeout(1) 不在で丸ごと skip し、**60 件の assert が消えたのに
 # `[ok]`** と集計されていた (issue 139)。skip 自体は失敗ではないので緑のままにするが、
@@ -210,7 +210,7 @@ CI_COMMANDS_REST  := tmux zsh make bats gtimeout
 CI_COMMANDS_ONLY_REST := $(filter-out $(CI_COMMANDS_HEAVY),$(CI_COMMANDS_REST))
 
 # 値の確認用 (人間と test-ci-group-deps の照合対象)。
-# ⚠️ workflow はこのターゲットを呼べない: 依存を解決する時点で make があるとは限らないため。
+# 🚨 workflow はこのターゲットを呼べない: 依存を解決する時点で make があるとは限らないため。
 # workflow は Makefile の生の行を sed で読む = 実際の契約は「1 行の `:=` で書くこと」で、
 # make の意味論 (+= / 行継続 / $(OTHER)) は通らない。
 # その食い違いは test-ci-group-deps が make の値と sed の結果を突き合わせて検出する。
@@ -302,7 +302,7 @@ test-syntax:
 # 1 行目の素実行は発見処理の失敗検知: $(shell) は discover script の exit code を捨てるため、
 # recipe 側で一度実行して find の失敗 (ディレクトリ不在等) を顕在化する。
 # CI (lint.yml) は shellcheck v0.11.0 をリリースバイナリで固定導入する = 手元の brew 0.11 と同版。
-# ⚠️ 手元を上げたら lint.yml の SHELLCHECK_VERSION も同じ版へ上げること。版が離れると「手元 green /
+# 🚨 手元を上げたら lint.yml の SHELLCHECK_VERSION も同じ版へ上げること。版が離れると「手元 green /
 # CI 赤」が復活する (実例 2026-07-25: apt の 0.9 系だけが `[ -n "$$x" ] && y || true` を SC2015 で落とした)。
 test-shellcheck:
 	@scripts/discover_shell_scripts.sh >/dev/null
@@ -379,7 +379,7 @@ test-ruby-syntax:
 test-lint-tests:
 	@./scripts/lint_test_scripts.sh
 
-# ⚠️ prerequisite に並べない (issue 109 と同型)。12 本の直列だと 1 本目の失敗で残りが
+# 🚨 prerequisite に並べない (issue 109 と同型)。12 本の直列だと 1 本目の失敗で残りが
 #   1 度も走らず、lint.yml は `make test-lint` の 1 ステップなので CI ログにも出ない。
 #   **末尾の新設検査ほど隠れやすい** (実測: test-json を落とすと後続 7 本が未実行)。
 test-lint:
@@ -393,19 +393,19 @@ test-lint:
 # どちらも Go 未インストール環境では skip する。Go プロジェクトを追加したら
 # ①各プロジェクトに Makefile (lint/test) ②src_<project>.yml (caller) を作る、の 2 点セット。
 #
-# ⚠️ 対象は **`src/*/go.mod` の存在で発見する**。手で列挙すると、新しく src/foo を切ったときに
+# 🚨 対象は **`src/*/go.mod` の存在で発見する**。手で列挙すると、新しく src/foo を切ったときに
 #   lint / test から**無音で外れる** (make は緑のまま通り「lint も test も通っている」と読める)。
 #   この repo は他の全域で「登録なしで対象になる」を徹底しており (shellcheck は
 #   scripts/discover_shell_scripts.sh の発見、テストは test-dir の自動発見)、Go だけ手動なのは
 #   非対称だった (issue 080)。
-# ⚠️ 発見 0 件は**失敗させる** (下の recipe のガード)。発見式のゲートが 0 件で緑になるのは
+# 🚨 発見 0 件は**失敗させる** (下の recipe のガード)。発見式のゲートが 0 件で緑になるのは
 #   `_claude/rules/adversarial-review-own-safeguards.md` が禁じる false green そのもの。
 GO_PROJECT_DIRS := $(patsubst %/,%,$(dir $(wildcard src/*/go.mod)))
 
-# ⚠️ **最初のプロジェクトの失敗で残りを隠さない** (issue 130)。全プロジェクトを回してから
+# 🚨 **最初のプロジェクトの失敗で残りを隠さない** (issue 130)。全プロジェクトを回してから
 #   失敗したディレクトリをまとめて返す (run_all_targets と同じ規律。CI は src_*.yml で
 #   プロジェクト別に分かれているため無傷だったが、ローカルの方が弱い状態だった)。
-# ⚠️ go 未導入は skip して緑にする。0 件は上のガードで失敗させるので、
+# 🚨 go 未導入は skip して緑にする。0 件は上のガードで失敗させるので、
 #   「発見が壊れた」と「go が無い」は別の結果として出る。
 define run_go_projects
 if [ -z "$(strip $(GO_PROJECT_DIRS))" ]; then \
@@ -433,7 +433,7 @@ test-go:
 # src/ 配下の全プロジェクトを lint + test 一括で回す集約ターゲット (人間の選択実行用)。
 # root の `make test` は test-go (テストのみ) を含むが golangci-lint は含まないため、
 # src/ を触った後のコミット前検証はこれ 1 発で CI (src_*.yml の lint / test 両 job) と揃う。
-# ⚠️ ここも集約 (issue 130)。prerequisite に並べると lint の失敗で test が走らない
+# 🚨 ここも集約 (issue 130)。prerequisite に並べると lint の失敗で test が走らない
 test-src:
 	@+$(call run_all_targets,test-go-lint test-go)
 

@@ -51,7 +51,7 @@
 **ここは意図的に上げていない**。理由と移行の手順は [`docs/glogx-bubbletea-v2.md`](../../docs/glogx-bubbletea-v2.md)
 の「他の Go プロジェクトはまだ v1」節が正本。
 
-⚠️ 上げるときの最大の罠: `tea.KeyMsg` / `tea.KeyRunes` の参照が glogx より桁違いに多く、
+🚨 上げるときの最大の罠: `tea.KeyMsg` / `tea.KeyRunes` の参照が glogx より桁違いに多く、
 **space が `" "` → `"space"` に変わる差はコンパイルエラーにならない** (静かに壊れる)。
 キー操作の目視確認をセットにして、1 モジュールずつ上げる。
 

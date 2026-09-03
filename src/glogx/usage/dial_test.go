@@ -15,7 +15,7 @@ func dialTestSnap() *Snapshot {
 	now := dialTestNow()
 	mins := func(d time.Duration) int64 { return int64(d / time.Minute) }
 	return &Snapshot{
-		// ⚠️ バージョンを空にしないこと。見出しはバージョンを右へ後付けするので、空だと
+		// 🚨 バージョンを空にしないこと。見出しはバージョンを右へ後付けするので、空だと
 		// 幅の契約テストがその経路を通らない (実測 2026-09-01: 56 通りの幅で契約が
 		// 破れていたのに素通りしていた)。
 		Version:      "2.1.216",
@@ -84,7 +84,7 @@ func TestRenderDashboardUnknownSpan(t *testing.T) {
 	if !strings.Contains(all, "窓幅が不明") {
 		t.Errorf("窓幅不明の断りが無い:\n%s", all)
 	}
-	// ⚠️ 特定の braille 1 文字 ('⠿' 等) を検出子にしない。braille は 256 通りあり、正常な盤にも
+	// 🚨 特定の braille 1 文字 ('⠿' 等) を検出子にしない。braille は 256 通りあり、正常な盤にも
 	// 出ない字が大半なので「盤を描いた」の検出にならない (実測: 盤を描かせる変異を当てても
 	// 発火しなかった)。範囲で判定する。
 	if slices.ContainsFunc([]rune(all), isBrailleRune) {
@@ -230,7 +230,7 @@ func TestBraillePutTextKeepsGridWithWideChars(t *testing.T) {
 // 段と段のあいだには空行が入る (ユーザー要望 2026-08-31: 1 段目と 2 段目が密着して見える)。
 // 空行が消えても幅・行数の契約は満たされるので、間隔は別の主張として固定する。
 func TestRenderDashboardSeparatesRows(t *testing.T) {
-	// ⚠️ 幅を 2 点見る。120 は肩書き罫線 (案 A)、225 は素の罫線 (案 B) で、線を作る関数が
+	// 🚨 幅を 2 点見る。120 は肩書き罫線 (案 A)、225 は素の罫線 (案 B) で、線を作る関数が
 	// 別なので片方だけでは「もう一方が罫線を出さなくなった」を検出できない
 	// (変異検証で実測 2026-09-01: plainRule を空にしても 120 だけの検査は green)。
 	for _, w := range []int{120, 225} {
@@ -286,7 +286,7 @@ func TestRenderDashboardCenterTextHasClearance(t *testing.T) {
 			}
 		}
 	}
-	// ⚠️ 「盤の行が 1 つも無い」= このテストは何も検査していない。中央の描画をまるごと
+	// 🚨 「盤の行が 1 つも無い」= このテストは何も検査していない。中央の描画をまるごと
 	// 落とす変異でも pass してしまうので、検査したことを数で確かめる。
 	if checked == 0 {
 		t.Fatal("盤の行が 1 つも無い (テストが空回りしている)")
@@ -401,7 +401,7 @@ func TestRenderDashboardGroupsStayConsistent(t *testing.T) {
 func TestRenderDashboardCardHeadAA(t *testing.T) {
 	all := strings.Join(RenderDashboard(dialTestSnap(), dialTestNow(), 130, 50, false), "\n")
 	for _, want := range append(bigLines("5H"), bigLines("7D")...) {
-		// ⚠️ 行末の空白は格子の組み立てで落ちるので、期待値も落としてから探す。
+		// 🚨 行末の空白は格子の組み立てで落ちるので、期待値も落としてから探す。
 		if !strings.Contains(all, strings.TrimRight(want, " ")) {
 			t.Errorf("枠ラベルの AA が出ていない (%q):\n%s", want, all)
 		}
@@ -440,7 +440,7 @@ func TestRenderDashboardCardHeadFallsBackWhenFaceWouldDie(t *testing.T) {
 // 「普通の見出しなら中央が AA になれたのに、見出しを AA にしたせいで落ちる」高さでは
 // 見出しを AA にしない (盤の主役は中央の数字)。
 //
-// ⚠️ 描画結果から「見出しが AA かつ中央が普通の字」を探すだけでは足りない。どちらにしても
+// 🚨 描画結果から「見出しが AA かつ中央が普通の字」を探すだけでは足りない。どちらにしても
 // 中央が入らない小さな盤では、見出しを AA にしても何も失っていないので正しい状態になる。
 // 判断そのもの (cardHead) を突く。
 func TestCardHeadYieldsToCenterAA(t *testing.T) {
@@ -512,7 +512,7 @@ func TestRenderDashboardMergedBand(t *testing.T) {
 		}
 	}
 	// 枠ラベルの AA が出る行は「帯」だけ (カード側にも見出しが残っていたら別の行に出る)。
-	// ⚠️ 単純な出現回数では数えない: 字形が同じ並びになる組み合わせがあり (実測 2026-09-01:
+	// 🚨 単純な出現回数では数えない: 字形が同じ並びになる組み合わせがあり (実測 2026-09-01:
 	// "78" の上段が "5H" の中段と同じ "▀▀▀█ █▀▀█")、盤の中央の数字を見出しと数えてしまう。
 	bands := 0
 	for _, ln := range lines {
@@ -530,7 +530,7 @@ func TestRenderDashboardMergedBand(t *testing.T) {
 	if bands != 2 {
 		t.Errorf("枠ラベルの見出しが出る行が %d 行 (段ごとに帯の中段 1 行 = 2 行のはず)", bands)
 	}
-	// ⚠️ AA の形だけ見ても足りない: カードが見出しを描いても、その高さでは AA に入らず
+	// 🚨 AA の形だけ見ても足りない: カードが見出しを描いても、その高さでは AA に入らず
 	// テキスト ("5h セッション") へ落ちるので AA の検査を素通りする (変異検証で実測 2026-09-01)。
 	for _, ln := range lines {
 		if strings.Contains(ln, "5h セッション") || strings.Contains(ln, "7d weekly") {
@@ -540,9 +540,9 @@ func TestRenderDashboardMergedBand(t *testing.T) {
 }
 
 // 帯の中で語が地続きにならない (種別語と CLI 名のあいだにカード間と同じ空きを取る)。
-// ⚠️ 幅の合計が契約内でも「詰まって読めない」は起きる (幅テストでは検出できない形)。
+// 🚨 幅の合計が契約内でも「詰まって読めない」は起きる (幅テストでは検出できない形)。
 func TestRenderDashboardBandKeepsGap(t *testing.T) {
-	// ⚠️ 両方の CLI の帯を見る。codex の AA は短いので中央に余裕があり、詰まるのは AA が長い
+	// 🚨 両方の CLI の帯を見る。codex の AA は短いので中央に余裕があり、詰まるのは AA が長い
 	// Claude 側から (変異検証で実測 2026-09-01: codex の帯だけ見ていて空き 0 桁を見逃した)。
 	mids := []string{bannerLines("codex")[1], bannerLines("Claude Code")[1]}
 	for w := 26; w <= 260; w++ {
@@ -567,7 +567,7 @@ func TestRenderDashboardBandKeepsGap(t *testing.T) {
 // (ユーザー選定 2026-09-01)。空いた行は盤に回る。
 func TestRenderDashboardDenseFoot(t *testing.T) {
 	lines := RenderDashboard(dialTestSnap(), dialTestNow(), 225, 40, false)
-	// ⚠️ 最初に見つかった行を使う。codex 段にも同じ目盛りが出るので、最後の一致を取ると
+	// 🚨 最初に見つかった行を使う。codex 段にも同じ目盛りが出るので、最後の一致を取ると
 	// 別の CLI の行を検査してしまう (Claude の 5h は 62%、codex は 31%)。
 	dense := ""
 	for _, ln := range lines {
@@ -585,7 +585,7 @@ func TestRenderDashboardDenseFoot(t *testing.T) {
 			t.Errorf("集約行に %q が無い: %q", want, dense)
 		}
 	}
-	// 盤が広がっていること (集約しない幅より盤の行数が多い)。⚠️ 「集約した」だけを見ると、
+	// 盤が広がっていること (集約しない幅より盤の行数が多い)。🚨 「集約した」だけを見ると、
 	// 空いた行を盤に回し損ねても green になる (行が余ったまま下に空白が残る形)。
 	rows := func(w int) int {
 		n := 0
@@ -625,7 +625,7 @@ func TestDenseFootRefusesToDropInfo(t *testing.T) {
 // 負のまま paceState へ渡すと「使用 - 経過」が水増しされ、まだ 5% しか使っていない枠が
 // 「超過」(赤) に化ける。clampPct が 0 で止める。
 //
-// ⚠️ 上限側 (100 超え) は今の実装では構造的に到達しない (remain >= 0 なので経過率は 1 を
+// 🚨 上限側 (100 超え) は今の実装では構造的に到達しない (remain >= 0 なので経過率は 1 を
 // 超えない)。ここで固定するのは下限側だけ。
 func TestCardPaceClampsElapsedForFutureReset(t *testing.T) {
 	now := dialTestNow()
@@ -720,7 +720,7 @@ func TestUnusedCardShowsNoDataArt(t *testing.T) {
 		t.Errorf("低いカードで状態を示す語が消えた: %q", short)
 	}
 
-	// ⚠️ **カード本体 (textCardBody) 経由でも出ること**を見る。unusedArt を直接呼ぶだけだと
+	// 🚨 **カード本体 (textCardBody) 経由でも出ること**を見る。unusedArt を直接呼ぶだけだと
 	// 「関数は正しいが誰も呼んでいない」を通す (実測 2026-09-03: 呼び出しを散文へ戻す変異が
 	// green のままだった)
 	body := strings.Join(textCardBody(dialCard{win: Window{Unused: true}}, "", 80, 12, false), "\n")

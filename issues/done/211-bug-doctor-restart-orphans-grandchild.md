@@ -93,7 +93,7 @@ commit `?` (本体) / `ff5c57a5` (敵対レビューの P1 対応) / `bad49d3c` 
    待ちの上限が 2 秒ではなく **PerEntry 60 秒 × 並列度 (約 6 分)** になっていた。
    latch を入れる前は即終了だったので、**この修正が無ければ 211 は改善ではなく劣化**だった
 
-⚠️ `adversarial-review-own-safeguards.md` の節 7 (指摘への修正は新しい安全機構なので、
+🚨 `adversarial-review-own-safeguards.md` の節 7 (指摘への修正は新しい安全機構なので、
 直した差分にもう 1 周回す) の実例。**待ち受けを足す修正は hang を新設しうる**。
 
 ### sync.WaitGroup をやめた (-race が本物の競合を検出)
@@ -123,7 +123,7 @@ WaitGroup はカウント 0 での Add と Wait の同時実行を禁じてお�
 削除を latch から外す / `stop()` の cancel を消す / `start` の `v.stop()` を消す /
 restart の wait をコメントに / defer 順序を入れ替える / latch の done を no-op に。
 
-⚠️ この過程で**変異の適用漏れを 2 回見落とした**。以降は「適用の証拠 (grep の件数変化)」を
+🚨 この過程で**変異の適用漏れを 2 回見落とした**。以降は「適用の証拠 (grep の件数変化)」を
 毎回出す運用にした。
 
 ### 重複を外した

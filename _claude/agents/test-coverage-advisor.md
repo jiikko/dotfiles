@@ -23,7 +23,7 @@ Coverage Analysis: CanvasViewModel.swift
 │    - removeElement()                            │
 │    - selectElement()                            │
 ├─────────────────────────────────────────────────┤
-│ ⚠️ Partially Tested (30-70%)                    │
+│ 🚨 Partially Tested (30-70%)                    │
 │    - exportCanvas() - happy path only           │
 │    - undo() - basic cases                       │
 ├─────────────────────────────────────────────────┤
@@ -113,7 +113,7 @@ Freq  │   LOW PRIORITY     │   MEDIUM PRIORITY  │ Freq
 |-----------|------------|------------|
 | [component] | N | High |
 
-#### ⚠️ Gaps Identified (Add Tests First)
+#### 🚨 Gaps Identified (Add Tests First)
 | Component | Missing Tests | Risk |
 |-----------|---------------|------|
 | [component] | [what's missing] | High/Medium |

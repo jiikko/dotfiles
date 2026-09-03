@@ -63,7 +63,7 @@ bench の**配管**を回帰テストにする。051 では手で確認しただ
   (051 で実測した false green: `b.ReportMetric` を持つ benchmark が混ざると
   ガード無しでは `ms=0.001` が予算内で通る)
 
-⚠️ (b) は Go の build + 数秒を `test-runtime` に足す。`-benchtime` を短くして安くする場合、
+🚨 (b) は Go の build + 数秒を `test-runtime` に足す。`-benchtime` を短くして安くする場合、
 **`go test` の同一プロセスでテストも走る形にすると `TestFrameAllocBudget` の
 `frameAllocBytes` が落ちる** (`testing.Benchmark` が ambient の `-benchtime` を拾い、
 反復不足で Fatal。051 で実測済み)。`bench_glogx.sh` 自身は `-run '^$'` でテストを

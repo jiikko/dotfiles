@@ -58,7 +58,7 @@ func Format(rep Report, now time.Time) string {
 	}
 	shown := 0
 	for _, r := range rep.Results {
-		// 候補 0 件は畳む。⚠️ **検出条件そのものが未実測のエントリは畳まない** (issue 169 / 207)。
+		// 候補 0 件は畳む。🚨 **検出条件そのものが未実測のエントリは畳まない** (issue 169 / 207)。
 		// 畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と同じ見え方になる。
 		// UI 側 (src/glogx/doctor_view.go) と同じ規律。実測で Entry.Unverified が空になれば畳まれる側へ戻る
 		if r.Status == StatusOK && len(r.Items) == 0 && len(r.Failures) == 0 &&
@@ -70,7 +70,7 @@ func Format(rep Report, now time.Time) string {
 		if r.Status == StatusFailed {
 			size = "---"
 		}
-		// ⚠️ ラベルを `%-48s` で pad しない。Go の幅指定は**バイト数**なので、日本語ラベルでは
+		// 🚨 ラベルを `%-48s` で pad しない。Go の幅指定は**バイト数**なので、日本語ラベルでは
 		// 1 文字 3 バイトと数えられて列が行ごとにずれる (issue 182)。doctor module は幅計算の
 		// 依存を持たないので、**揃えるのを諦めて**マークを先に出す (size は ASCII なので %9s が効く)。
 		// 揃えたくなったら表示幅を測る依存を足すこと。UI 側 (glogx) は termwidth を持つので揃えている

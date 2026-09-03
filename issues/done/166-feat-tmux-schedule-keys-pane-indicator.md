@@ -55,7 +55,7 @@ format 側から `#()` で `.job` を読む案は採らない。`status-interval
 「1 pane の window」「分割済み window」「予約の無い隣 pane」の 3 形を見て決める。
 
 表示文字列の規律: 全角と半角を同じ列に縦に並べない (`no-mixed-width-columns-in-terminal-ui.md`)、
-幅が揺れる記号 (⚠️) は使わない、`#` は `##` にエスケープ (`msg_escape` と同じ)。
+幅が揺れる記号 (🚨) は使わない、`#` は `##` にエスケープ (`msg_escape` と同じ)。
 
 ## 不変条件 (テストで固定するもの)
 

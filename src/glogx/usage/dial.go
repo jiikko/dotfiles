@@ -11,7 +11,7 @@ package usage
 //
 // RenderLine / RenderTable と同じく bubbletea 非依存の純関数で、now は引数で受ける。
 //
-// ⚠️ このファイルは 800 行を超えるが**分割しない**。責務は「ダッシュボード 1 枚の描画」で
+// 🚨 このファイルは 800 行を超えるが**分割しない**。責務は「ダッシュボード 1 枚の描画」で
 // 一貫していて、段のレイアウト → カード → 盤 → 下段は上から下へ 1 本の流れになっている
 // (読むときの jump は増えない)。行数だけを理由に割ると、複雑性は減らずファイル間の探索が
 // 増えるだけ (`_claude/rules/verify-design-intent-before-refactor.md`)。
@@ -141,7 +141,7 @@ func renderGroup(g dialGroup, now time.Time, width, h int, band []string, colore
 	//     残す。合体帯が幅で入らないときのフォールバック
 	//  3. 素の罫線 + 1 行テキスト: 肩書きすら入らない幅
 	//
-	// ⚠️ 高さの判定は「その形にしても盤が残るか」で行う。段の高さ h だけで決めると、見出しが
+	// 🚨 高さの判定は「その形にしても盤が残るか」で行う。段の高さ h だけで決めると、見出しが
 	// 食った行のせいで盤が消え、理由も無い空行だけが残る段ができる (実測 2026-09-01: CLI 名の
 	// 桁数で可否が決まるため、同じ画面で Claude 段は盤あり・codex 段は盤なしになっていた)。
 	var head []string
@@ -155,7 +155,7 @@ func renderGroup(g dialGroup, now time.Time, width, h int, band []string, colore
 	}
 	cardsH := max(h-len(head), 1)
 	rows := rowsN
-	// ⚠️ カードの割り当ては段をまたいで同じにする (等分)。「逼迫している枠を主役にして
+	// 🚨 カードの割り当ては段をまたいで同じにする (等分)。「逼迫している枠を主役にして
 	// 幅を 62/38 に振る」を一度実装したが、**段ごとに列幅が変わると上下の段で盤の位置が
 	// 揃わず、崩れて見える** (ユーザー確認 2026-09-01 で revert)。格子の縦の整列は、段の中の
 	// 強弱より優先する。強弱を付けたいなら、幅ではなく色・枠線など**位置を動かさない手段**で。
@@ -209,7 +209,7 @@ func plainRule(width int, colored bool) string {
 // バージョンを罫線の中に入れる。ok=false = 肩書きを入れると線が dialRuleMinTail 未満に
 // なる幅 (呼び出し側は素の罫線 + 1 行見出しへ落とす)。
 //
-// ⚠️ 罫線の長さは肩書きを**予算に入れてから**決める。後付けすると width を超え、狭い端末では
+// 🚨 罫線の長さは肩書きを**予算に入れてから**決める。後付けすると width を超え、狭い端末では
 // フレームが自動 OFF でクリップも効かないため折り返して画面全体が崩れる (旧 groupHead が
 // バージョンタグで踏んだ罠と同じ形)。
 func titledRule(width int, cli, ver string, colored bool) (string, bool) {
@@ -266,7 +266,7 @@ func mergedHead(g dialGroup, now time.Time, width, cellW int, withTag, colored b
 	lAt := max(cellW/2-lw/2, 0)
 	rAt := max(cellW+dialGap+cellW/2-rw/2, 0)
 	cAt := max((width-cw-termwidth.Of(tag))/2, 0)
-	// ⚠️ 種別 ("セッション" / "weekly") は落とさない: 飾りではなく枠の意味そのもので、これを
+	// 🚨 種別 ("セッション" / "weekly") は落とさない: 飾りではなく枠の意味そのもので、これを
 	// 捨ててまで合体帯に留まるより、種別が残る肩書き罫線 (案 A) の方が読める。落とせるのは
 	// バージョンだけで、その判断は画面全体で揃える (呼び出し側の withTag)。
 	// 要素どうしの隙間はカード間の空き (dialGap) と同じだけ要求する。2 桁だと隣の語と
@@ -310,7 +310,7 @@ func kindTag(kind string, colored bool) string {
 
 // versionTag は " v2.1.216" (取れていなければ空)。
 //
-// ⚠️ v は `claude --version` / `codex --version` の出力から切り出した**外部由来の文字列**。
+// 🚨 v は `claude --version` / `codex --version` の出力から切り出した**外部由来の文字列**。
 // 空白は落ちているが空白を含まない CSI/OSC は残るので、載せる前に無害化する。同じ値を
 // 描く他の 2 箇所 (usage_overlay.go / ratelimit_dashboard.go) は無害化しており、ここだけが
 // 生だった (セルフレビュー指摘 2026-09-01)。termwidth.Of は ANSI を 0 幅で数えるため、
@@ -371,7 +371,7 @@ func dialCards(s *Snapshot) []dialCard {
 // paceBand は「想定どおり」と見なす乖離の幅 (pt)。短い窓ほど作業がバースト的で、weekly と
 // 同じ幅にすると常時 "先行" になって信号にならない。
 //
-// ⚠️ この 2 値は _claude/statusline-command.sh の pace_row と同じ意味・同じ値を持つ
+// 🚨 この 2 値は _claude/statusline-command.sh の pace_row と同じ意味・同じ値を持つ
 // (statusline は Claude の 5h / 7d を同じ考え方で 1 行に出す)。片方だけ変えると同じ枠が
 // 2 か所で違う状態語を出すので、変えるなら両方を揃えること。
 func paceBand(span time.Duration) float64 {
@@ -402,7 +402,7 @@ func paceState(used int, elapsed, band float64) (color, word string) {
 }
 
 // paceParts は「1 スロットあたりの予算」と「助言」を並べたもの (どちらも空になりうる:
-// 適正で残りが 1 スロット未満のとき)。⚠️ cardFoot と denseFoot の両方が同じものを出すので
+// 適正で残りが 1 スロット未満のとき)。🚨 cardFoot と denseFoot の両方が同じものを出すので
 // ここに 1 本化する — 片方だけ助言を落とす変更が入ると、幅で形が変わったときに情報量が
 // 変わってしまう。
 func paceParts(c dialCard, remain time.Duration, elapsed float64) []string {
@@ -426,14 +426,14 @@ func paceDeviation(c dialCard, elapsed float64, word, col string, tight, colored
 	if c.span <= 0 {
 		return ""
 	}
-	// ⚠️ 乖離は**整数 pt** で出す。判定に使う経過率を切り捨てた整数にしたので、小数を出しても
+	// 🚨 乖離は**整数 pt** で出す。判定に使う経過率を切り捨てた整数にしたので、小数を出しても
 	// 常に .0 になるうえ、statusline は %+4dpt で出しており「同じ意味の数字が 2 か所で違う桁数」
 	// になる (issue 144 の「statusline と同じ見え方か」の確認項目がこれを見ていた)。
 	expFmt, devFmt := "想定%3.0f%%", "%+4dpt %s"
 	if tight {
 		expFmt, devFmt = "想定%.0f%%", "%+dpt %s"
 	}
-	// ⚠️ 判定と同じ切り捨てた値を出す。%.0f は四捨五入なので、生の小数を渡すと「画面は想定
+	// 🚨 判定と同じ切り捨てた値を出す。%.0f は四捨五入なので、生の小数を渡すと「画面は想定
 	// 25% なのに判定は 24.9 で行う」内部不整合になる (実測 2026-09-01)。
 	exp := paceElapsed(elapsed)
 	return paintIf(fmt.Sprintf(expFmt, exp), sgr.Dim, colored) + " " +
@@ -443,7 +443,7 @@ func paceDeviation(c dialCard, elapsed float64, word, col string, tight, colored
 // denseFoot はゲージ・使用率・想定と乖離・復活まで・ペースを 1 行へ集約する。幅が足りず
 // **どれかを落とすことになるなら "" を返す** (呼び出し側が従来の複数行へ落ちる)。
 //
-// ⚠️ 盤の中央にも「残り時間」と使用率が出るが、ここでは省かない。中央は盤が小さいと
+// 🚨 盤の中央にも「残り時間」と使用率が出るが、ここでは省かない。中央は盤が小さいと
 // ASCII 表記へ落ち、さらに小さいと消える (drawCenter) ので、下段が唯一の出所になる幅がある。
 func denseFoot(c dialCard, remain time.Duration, elapsed float64, col, word, gauge string, w int, colored bool) string {
 	sep := paintIf("  ·  ", sgr.Dim, colored)
@@ -477,7 +477,7 @@ func denseFoot(c dialCard, remain time.Duration, elapsed float64, col, word, gau
 func cardFootLines(h int) int {
 	switch {
 	case h >= 18:
-		// 空行 / ゲージ / 数値 / 復活まで / 予算と助言。⚠️ 閾値を下げないこと: 盤とゲージの
+		// 空行 / ゲージ / 数値 / 復活まで / 予算と助言。🚨 閾値を下げないこと: 盤とゲージの
 		// あいだの空行より、盤が 1 行大きいこと (中央に AA の使用率と日本語の残り時間が
 		// 両方入る) を優先する。h=17 で 5 行にすると中央が ASCII 表記へ落ちる。
 		return 5
@@ -502,11 +502,11 @@ func cardPace(c dialCard, now time.Time) (remain time.Duration, elapsed float64,
 	if c.span > 0 {
 		elapsed = clampPct(float64(c.span-remain) / float64(c.span) * 100)
 	}
-	// ⚠️ 状態の判定には**切り捨てた整数**の経過率を使う。生の小数で判定すると、同じ瞬間に
+	// 🚨 状態の判定には**切り捨てた整数**の経過率を使う。生の小数で判定すると、同じ瞬間に
 	// statusline (shell) と違う状態語が出る: shell は $(( pr_elapsed * 100 / pr_window )) の
 	// 整数除算しか持たないので常に切り捨てで比較する (実測 2026-09-01: 経過 24.9% / 使用 49%
 	// で shell = 先行 / glogx = 適正)。表示 (paceDeviation) も同じ切り捨てを使う。
-	// ⚠️ 返す elapsed は生の小数のまま。盤の針・ゲージの塗りは連続値で描く (1% 刻みに丸めると
+	// 🚨 返す elapsed は生の小数のまま。盤の針・ゲージの塗りは連続値で描く (1% 刻みに丸めると
 	// 針がガタつく)。丸めるのは「状態語と想定%」だけ。
 	col, word = paceState(c.win.Percent, paceElapsed(elapsed), paceBand(c.span))
 	return remain, elapsed, col, word
@@ -555,7 +555,7 @@ func renderCard(c dialCard, now time.Time, w, h int, headless, colored bool) []s
 // cardHead はカード見出し。枠ラベル ("5H" / "7D") は 4 桁幅の AA で大きく出し、種別
 // (セッション / weekly) は AA にできないので中段の右へ普通の字で添える。
 //
-// ⚠️ AA は 3 行あるので、盤が残らないなら 1 行の普通の見出しへ落とす。見出しを大きくして
+// 🚨 AA は 3 行あるので、盤が残らないなら 1 行の普通の見出しへ落とす。見出しを大きくして
 // 盤が消えたら本末転倒 (段の大見出しと同じ判断。groupHead / fitsFace 参照)。
 func cardHead(c dialCard, col string, w, h, footN int, colored bool) []string {
 	aa := bigLines(c.label)
@@ -566,7 +566,7 @@ func cardHead(c dialCard, col string, w, h, footN int, colored bool) []string {
 	if aa == nil || h-bannerRows-footN < 5 {
 		return plain
 	}
-	// ⚠️ 中央の使用率の AA を犠牲にしてまで見出しを大きくしない。見出しの AA は 3 行あり、
+	// 🚨 中央の使用率の AA を犠牲にしてまで見出しを大きくしない。見出しの AA は 3 行あり、
 	// 盤が 2 行縮む。優先順位は「中央の数字 > 見出し」— 中央は盤の主役で、見出しは
 	// 同じことを小さい字でも言えるため (実測 2026-09-01: 120x44 で見出しを AA にすると
 	// 中央が普通の字へ落ちた)。
@@ -574,7 +574,7 @@ func cardHead(c dialCard, col string, w, h, footN int, colored bool) []string {
 		return plain
 	}
 	kind := kindTag(c.kind, colored)
-	// ⚠️ 種別は幅の予算に入れてから中央寄せする (段の大見出しと同じ罠。後付けするとその行
+	// 🚨 種別は幅の予算に入れてから中央寄せする (段の大見出しと同じ罠。後付けするとその行
 	// だけ width をはみ出す)。入らなければ種別だけ落とす。
 	bw := bigWidth(c.label)
 	if bw+termwidth.Of(kind) > w {
@@ -612,7 +612,7 @@ func cardFoot(c dialCard, remain time.Duration, elapsed float64, col, word strin
 	}
 	pctCell := paintIf(fmt.Sprintf("%3d%%", c.win.Percent), col, colored)
 	remainCell := paintIf(formatRemain(remain), sgr.Bold, colored)
-	// ⚠️ 窓幅が分からない枠では想定・乖離・状態語を出さない。elapsed は 0 固定なので
+	// 🚨 窓幅が分からない枠では想定・乖離・状態語を出さない。elapsed は 0 固定なので
 	// 「想定 0% / +50.0pt 超過」のような、根拠のない断定になる (盤の側は「窓幅が不明」と
 	// 断っているのに数値行だけが言い切る形になっていた)。
 	numbers := fitLine(w, []string{pctCell})
@@ -637,8 +637,8 @@ func cardFoot(c dialCard, remain time.Duration, elapsed float64, col, word strin
 		})
 	}
 	// 幅が足りるなら 4 行ぶんを 1 行へ集約し、空いた 3 行を盤に回す (ユーザー選定 2026-09-01)。
-	// ⚠️ 空行は残す: 盤とゲージが地続きに見えないための余白で、これ自体が過去の要望
-	// (2026-08-31)。⚠️ 入らない幅では畳まない — 畳むために情報を落とすと、狭い端末ほど
+	// 🚨 空行は残す: 盤とゲージが地続きに見えないための余白で、これ自体が過去の要望
+	// (2026-08-31)。🚨 入らない幅では畳まない — 畳むために情報を落とすと、狭い端末ほど
 	// 読めなくなる (盤が大きいことより、想定・乖離・助言が出ていることの方が価値が高い)。
 	if n >= 4 {
 		if dense := denseFoot(c, remain, elapsed, col, word, gauge, w, colored); dense != "" {
@@ -688,7 +688,7 @@ func renderFace(c dialCard, remain time.Duration, elapsed float64, col string, w
 	used := clampPct(float64(c.win.Percent)) / 100
 	el := elapsed / 100
 
-	// ⚠️ 円周を**背景色の帯**で太く描く案を一度実装したが、**色がダサい**という理由で revert した
+	// 🚨 円周を**背景色の帯**で太く描く案を一度実装したが、**色がダサい**という理由で revert した
 	// (ユーザー確認 2026-09-02、commit ffc9d5f とその revert)。盤の内側を 235 で塗って面にし、
 	// 外周を「過ぎた = 灰 / 残り = 白」の帯にする形で、中央の AA (大きい使用率) より見劣りした。
 	// 「円周が細くて読めない」を背景色で解こうとするとここへ戻るので、やるなら**配色から**
@@ -729,13 +729,13 @@ func drawCenter(cv *braille, pct int, remain time.Duration, col string, w, faceH
 	aaAvail := min(innerWidthAt(cy, rIn, midRow-1), innerWidthAt(cy, rIn, midRow), innerWidthAt(cy, rIn, midRow+1))
 	// AA は中心行を挟む 3 行。その 1 行上に残り時間を置くので、上下に 2 行ずつの余裕が要る。
 	//
-	// ⚠️ 入らない盤では「狭い字形」ではなく**普通の字**へ落とす。見出しと同じ 3 桁幅の字形は
+	// 🚨 入らない盤では「狭い字形」ではなく**普通の字**へ落とす。見出しと同じ 3 桁幅の字形は
 	// 0 と 8、5 と 6 の見分けが付かず (ユーザー指摘 2026-09-01)、1 行の "62%" の方が読める。
 	// 大きくする目的を果たせないなら大きくしない。
 	aa := bigLines(digits)
 	if aa != nil && midRow-2 >= 0 && midRow+1 < faceH && bigWidth(digits)+1 <= aaAvail { // +1 は末尾の "%"
 		putCentered(cv, midRow-2, w, remainText(remain, innerWidthAt(cy, rIn, midRow-2)), sgr.BrightWhite)
-		// ⚠️ 3 行を行ごとに中央寄せしない。"%" を添えた中段だけ 1 桁広く、桁揃えが崩れて
+		// 🚨 3 行を行ごとに中央寄せしない。"%" を添えた中段だけ 1 桁広く、桁揃えが崩れて
 		// 数字が斜めに見える。"%" 込みの塊を中央に置き、起点は 3 行で共有する。
 		start := w/2 - (bigWidth(digits)+1)/2
 		for i, row := range aa {
@@ -767,10 +767,10 @@ func putCentered(cv *braille, row, w int, s, col string) {
 
 // innerWidthAt は内周リングの内側で、行 row に置ける桁数。
 //
-// ⚠️ 盤の差し渡し (rIn セル) をどの行にも使うと、中心から離れた行で文字がリングに接する
+// 🚨 盤の差し渡し (rIn セル) をどの行にも使うと、中心から離れた行で文字がリングに接する
 // (円は上下ほど細い)。その行の弦の長さで測り、左右に 2 セルずつ余白を残す。
 // 弦の半分 = sqrt(rIn^2 - dy^2) ドット = そのままセル数 (ドットは横 2 つで 1 セル)。
-// ⚠️ 余白 1 セルでは足りない: リングは太さ 2 ドットあり、弦の計算は外側の 1 本しか見ていない。
+// 🚨 余白 1 セルでは足りない: リングは太さ 2 ドットあり、弦の計算は外側の 1 本しか見ていない。
 // さらに 1 セル余分に引く: 中央寄せは w/2 と幅/2 の 2 回切り捨てるので、桁数の偶奇によって
 // 文字が最大 1 セル左へずれる (実測 2026-09-01: 余白 2 セルでも 72 通りのサイズで接触した)。
 func innerWidthAt(cy, rIn float64, row int) int {
@@ -828,7 +828,7 @@ func dialDivisions(span time.Duration) int {
 // unusedArt は「まだ消費されていない枠」の本体を描く。幅で AA の割り方を選び、
 // 余った高さに説明文を足す。
 //
-// ⚠️ AA は他のカードの数字と同じ `bigPixels` を使う (字形表を 2 つ持たない)。
+// 🚨 AA は他のカードの数字と同じ `bigPixels` を使う (字形表を 2 つ持たない)。
 // 収録外の字が混ざると `bigLines` が nil を返すので、その場合も語だけの表示へ落ちる。
 func unusedArt(w, h int, colored bool) []string {
 	dim := func(s string) string { return paintIf(s, sgr.Dim, colored) }
@@ -923,7 +923,7 @@ func fitLine(w int, candidates []string) string {
 
 // fitText は幅 w に収まる最初の候補を返す。
 //
-// ⚠️ どれも収まらなければ**空**を返す (最後の候補を返さない)。盤の上に置く文字は、
+// 🚨 どれも収まらなければ**空**を返す (最後の候補を返さない)。盤の上に置く文字は、
 // はみ出すとリングと重なって読めなくなるうえ「文字が盤に接しない」不変条件も壊す。
 // 数字は盤の下の数値行にも出るので、極小の盤では中央を空にする方が正しい
 // (実測 2026-09-01: 最後の候補を返す実装だと 40〜200 桁 x 12〜60 行のうち 1266 通りで接触)。

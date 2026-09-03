@@ -71,7 +71,7 @@ M.servers = {
   -- solargraph を bundle exec で使いたい場合のみ true にする (Gemfile に無い project では起動失敗)。
   -- formatting=true は coc-settings の solargraph.formatting: true を踏襲 (これが無いと Ruby の
   -- <leader>F/:Format が lsp_format fallback 先の solargraph 既定 off で no-op になる)。
-  -- ⚠️ PATH 側が >= 0.56 で project の bundle が < 0.54.2 を pin していると無限ループする:
+  -- 🚨 PATH 側が >= 0.56 で project の bundle が < 0.54.2 を pin していると無限ループする:
   --   0.56 は gem doc のキャッシュを `solargraph cache <gem>` の子プロセスへ投げる際 (library.rb の
   --   cache_next_gemspec) GEM_HOME を project の bundle へ書き換えるため、子は bundle 側の古い
   --   solargraph を起動する。0.52 に cache サブコマンドは無く即死するが親は exit status を見ず、

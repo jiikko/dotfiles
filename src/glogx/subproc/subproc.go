@@ -20,7 +20,7 @@ import (
 // プロセスが正常終了して自分でパイプを閉じる通常ケースには影響しない安全弁
 // (呼び出し側の timeout に対して十分小さく、かつ正当な出力の取りこぼしが起きない程度に確保)。
 //
-// ⚠️ 出力を取る実行 (Output / CombinedOutput / Stdout に io.Writer を張る形) では必須。
+// 🚨 出力を取る実行 (Output / CombinedOutput / Stdout に io.Writer を張る形) では必須。
 // これらは os.Pipe と copy goroutine を作るので、上の「孫がパイプを握る」条件にそのまま当たる。
 // パイプを持たない Run() は /dev/null 直結なので事情が違う。
 const WaitDelay = 2 * time.Second
@@ -35,7 +35,7 @@ const GitOpTimeout = 30 * time.Second
 
 // CommandContext は exec.CommandContext に WaitDelay を張って返す。
 //
-// ⚠️ 新しい外部コマンド実行はこれを使うこと。素の exec.CommandContext を呼ぶと、WaitDelay を
+// 🚨 新しい外部コマンド実行はこれを使うこと。素の exec.CommandContext を呼ぶと、WaitDelay を
 // 張るのが「書く人が覚えているか」に依存し、静かに抜ける (issue 105 がその実例。13 箇所中
 // 1 箇所だけが抜けていて、手元でも CI でも誰も気づかなかった)。
 func CommandContext(ctx context.Context, name string, args ...string) *exec.Cmd {

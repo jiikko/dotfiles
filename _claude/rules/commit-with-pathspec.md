@@ -18,17 +18,17 @@
 - 外れたら **commit されない**。実測 (2026-09-02): `git commit -- <root 相対>` は **rc=1** +
   stderr に `error: pathspec '...' did not match any file(s) known to git`、`git add` は **rc=128**。
   つまり無音ではない
-- ⚠️ **誤認は次の push で起きる**。commit が空振りした後の `git push` は
+- 🚨 **誤認は次の push で起きる**。commit が空振りした後の `git push` は
   **`Everything up-to-date` で rc=0** を返すので、push の出力だけを見ると成功に見える
 - 予防: **commit の前に `cd "$(git rev-parse --show-toplevel)"`**。ツールの cwd がサブディレクトリに
   残っている状態で pathspec を組まない (シェルの cwd は前のコマンドから持ち越される)
 - 検出: commit 直後の `git log -1 --stat` で想定ファイルが入っているか見る (下の節と同じ規律)
-- ⚠️ **worktree からの `merge --ff-only` / `push` も cwd 依存**。作業 worktree (`wt-xxx`) の cwd で
+- 🚨 **worktree からの `merge --ff-only` / `push` も cwd 依存**。作業 worktree (`wt-xxx`) の cwd で
   `git merge --ff-only <branch>` / `git push` を打つと、**worktree 側のブランチ**に対して
   「Already up to date」「Everything up-to-date」が返るだけで master は 1 mm も動かない
   (実測 2026-09-02〜03 SnapTrim、2 回踏んだ)。本体の checkout / umbrella への操作は
   **`git -C <本体の絶対パス>`** で対象を明示し、直後に `git -C <本体> log -1 --oneline` で先端が動いたことを見る
-- ⚠️ **パイプ越しでも見失う**: `git commit ... | head` のように通すと `$?` はパイプ終端の
+- 🚨 **パイプ越しでも見失う**: `git commit ... | head` のように通すと `$?` はパイプ終端の
   status になり、上の rc=1 が消える ([`verify-execution-not-just-exit-code.md`](verify-execution-not-just-exit-code.md) の系)
 
 ## pathspec で「生成物」を漏らすと壊れたコミットになる
@@ -75,7 +75,7 @@ pathspec 規律は「混入」は防ぐが、**履歴を書き換える操作は
 
 - **`git reset HEAD~N` / `git commit --amend` / `git rebase` の前に、必ず `git log -N --format='%h %ad %s' --date=format:'%H:%M'` で対象コミットが自分のものか確認する**（自分が数分前に作ったコミットと、メッセージ・時刻が一致するか）
 - 「直近コミット = 自分の直近コミット」と思い込まない。自分のコミットの直後に並行セッションが commit していれば、reset HEAD~1 は**他人のコミット**を、自分のコミットの上に他人が積んでいれば**自分のつもりで他人の**を切り落とす
-- ⚠️ **上の確認が効くのは「自分が書いたメッセージと一致するか」までで、他セッションへの帰属には使えない**。
+- 🚨 **上の確認が効くのは「自分が書いたメッセージと一致するか」までで、他セッションへの帰属には使えない**。
   全セッションが同じ git user なので **author では区別できず**、`git pull --rebase` は他人の commit を
   自分の commit のあいだに挟むので **時刻の前後も根拠にならない** (実測 2026-09-02:
   `23:30 → 23:52 → 23:47` と逆転していた)。帰属に使えるのは **commit が触ったファイル**と、

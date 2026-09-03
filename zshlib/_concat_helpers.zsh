@@ -213,7 +213,7 @@ __concat_group_files() {
     fi
   done
   if (( ${#skipped[@]} > 0 )); then
-    print -r -- "⚠️  連番パターンに一致しないファイルをスキップしました: ${(j:, :)skipped}" >&2
+    print -r -- "🚨  連番パターンに一致しないファイルをスキップしました: ${(j:, :)skipped}" >&2
   fi
   __CONCAT_GROUP_KEYS=("${(u)all_keys[@]}")
   local k count
@@ -304,7 +304,7 @@ __concat_float() {
 # 可変フレームレートの mp4 になるだけで再エンコードは要らない)。取得は
 # __concat_get_video_frame_rate に分けてあり、不一致は警告どまりにしている。
 #
-# ⚠️ extradata (SPS/PPS/hvcC) の違いはここでは捕まえられない。codec / 解像度 / pix_fmt が
+# 🚨 extradata (SPS/PPS/hvcC) の違いはここでは捕まえられない。codec / 解像度 / pix_fmt が
 # 同じでも extradata が違うと後半セグメントがデコードエラーになる (HEVC の CTU サイズ違いで
 # 再現確認済み)。ただし `extradata_hash` をここに足す形では直らない —
 # ハッシュは fps 差でも容器差 (mp4 の avcC と MPEG-TS の Annex B) でも変わるのに、
@@ -515,7 +515,7 @@ __concat_diagnose_output() {
               _orphaned=$((_stat - _eff))
               if (( _orphaned > 10485760 )); then  # > 10MB
                 _orphaned_mb=$((_orphaned / 1024 / 1024))
-                _suspect="${_suspect}"$'\n'"  ⚠️  ${_infile:t}: 未参照データ ${_orphaned_mb}MB (実効: $((_eff/1024/1024))MB / ファイル: $((_stat/1024/1024))MB)"
+                _suspect="${_suspect}"$'\n'"  🚨  ${_infile:t}: 未参照データ ${_orphaned_mb}MB (実効: $((_eff/1024/1024))MB / ファイル: $((_stat/1024/1024))MB)"
               fi
             fi
           done
@@ -660,7 +660,7 @@ __concat_verify_frame_order() {
     output_t=$(awk -v c="$cumulative" -v s="$sample_t" 'BEGIN{ printf "%.3f", c+s }')
     if [[ -z "$input_hash" ]]; then
       # フレーム抽出失敗は結合エラーではなく検証の限界 — スキップして続行
-      print -r -- "⚠️  フレーム抽出スキップ: ${file:t} (結合順序が正しいか手動で確認してください)" >&2
+      print -r -- "🚨  フレーム抽出スキップ: ${file:t} (結合順序が正しいか手動で確認してください)" >&2
       cumulative=$(awk -v c="$cumulative" -v d="$dur" 'BEGIN{ printf "%.3f", c+d }')
       continue
     fi
@@ -683,7 +683,7 @@ __concat_verify_frame_order() {
       fi
     done
     if (( probe_skipped )); then
-      print -r -- "⚠️  フレーム抽出スキップ: ${file:t} (結合順序が正しいか手動で確認してください)" >&2
+      print -r -- "🚨  フレーム抽出スキップ: ${file:t} (結合順序が正しいか手動で確認してください)" >&2
       cumulative=$(awk -v c="$cumulative" -v d="$dur" 'BEGIN{ printf "%.3f", c+d }')
       continue
     fi

@@ -49,7 +49,7 @@ var collectVisits int
 `collectVisits` を `atomic.Int64` にする (テスト専用の計測点なので意味は変わらない)。
 「単一 goroutine 前提」のコメントは**誤りなので消す**。
 
-⚠️ カウンタを消して `seen` map の長さを返す形にもできるが、`collectBundleIDsSeen` の
+🚨 カウンタを消して `seen` map の長さを返す形にもできるが、`collectBundleIDsSeen` の
 シグネチャが変わり呼び出し側 2 箇所に波及する。計測点としての価値は同じなので atomic に留める。
 
 ## テスト観点

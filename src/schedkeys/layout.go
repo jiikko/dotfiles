@@ -27,7 +27,7 @@ func newFrame(width, height int) *frame {
 }
 
 // add は 1 行足す (幅を超える分は切る)。
-// ⚠️ 埋め込みの改行は空白に潰す。1 回の add が 2 行になると、addAt が覚えた行番号と
+// 🚨 埋め込みの改行は空白に潰す。1 回の add が 2 行になると、addAt が覚えた行番号と
 //
 //	実際の行がずれる (= カーソルが入力欄と違う行に出る)。
 func (f *frame) add(s string) {
@@ -43,14 +43,14 @@ func (f *frame) addAt(s string, col int) {
 }
 
 // render は高さに収めた本文と、枠の中に収めたカーソルを返す。
-// ⚠️ 高さに収めるときは、カーソルのある行を必ず残す (末尾から切るだけだと、入力欄ごと
+// 🚨 高さに収めるときは、カーソルのある行を必ず残す (末尾から切るだけだと、入力欄ごと
 //
 //	切られてカーソルだけが空行の上に残る = 入力が見えないのに IME の未確定文字はそこに出る)。
 func (f *frame) render() (string, *tea.Cursor) {
 	var cur *tea.Cursor
 	if f.curRow >= 0 {
 		col := f.curCol
-		// ⚠️ 端末の最終列は width-1。width に置くと画面の外になり、そこへ IME の未確定文字が出る
+		// 🚨 端末の最終列は width-1。width に置くと画面の外になり、そこへ IME の未確定文字が出る
 		//    (幅 9 のような極端に狭い端末で実際に起きた)
 		if col > f.width-1 {
 			col = f.width - 1
@@ -90,7 +90,7 @@ func fitHeight(s string, height int, cur *tea.Cursor) (string, *tea.Cursor) {
 }
 
 // truncateSGR は装飾を含む文字列を表示幅で切り、切ったら装飾を閉じる。
-// ⚠️ 幅の保証は fitWidth に任せる (ansi.Truncate だけだと、数え方の食い違う書記素で幅が残る。
+// 🚨 幅の保証は fitWidth に任せる (ansi.Truncate だけだと、数え方の食い違う書記素で幅が残る。
 //
 //	frame の「行は幅を超えない」は、ここが弱いと丸ごと嘘になる)。
 func truncateSGR(s string, width int) string {

@@ -92,7 +92,7 @@ export FZF_DEFAULT_OPTS='--height 80% --reverse --border'
 FZF_GIT_BRANCH_OPTS='--no-sort --no-hscroll --preview-window=down'
 # Ctrl-R は tmux popup 化 (tmux 外は --tmux が無視され --no-height の全画面)。inline --height は
 # 下端プロンプトの押し上げが戻らないため。widget が CTRL_R_OPTS を最後に展開するので --height 80% に勝つ。
-# ⚠️ -z ガード付きにしないこと: export 済みの旧値が tmux サーバ/親シェル経由で新しい pane に継承され、
+# 🚨 -z ガード付きにしないこと: export 済みの旧値が tmux サーバ/親シェル経由で新しい pane に継承され、
 # 空判定が成立せず zshrc の変更が反映されなくなる (実測)
 export FZF_CTRL_R_OPTS="$FZF_GIT_BRANCH_OPTS --no-height --tmux center,90%,80%"
 
@@ -593,7 +593,7 @@ av1ify() {
 # av1c は av1ify --compact + 成功時の元ファイル削除。実体は zshlib/_av1ify.zsh の av1c()。
 # 対話シェルで関数として動かすのは、引数なし呼び出しでクリップボード入力を発火させるため
 # (発火ゲートが -o interactive を要求する。非対話版 bin/binav1c 経由では発火しない)。
-# ⚠️ 非対話版を av1c でなく binav1c という名前にしているのは、PATH 上に av1c があると
+# 🚨 非対話版を av1c でなく binav1c という名前にしているのは、PATH 上に av1c があると
 # この行を読み込んでいないシェルで `av1c` が黙ってそちらへ落ち、クリップボード入力が
 # ヘルプ表示に化けるため (2026-08-23 実測)。bin/ に av1c を復活させないこと。
 av1c() {
@@ -645,7 +645,7 @@ source $HOME/dotfiles/zshlib/_tmux_window_name.zsh
 source $HOME/dotfiles/zshlib/_tmux_session.zsh
 
 # codex は brew で自動インストールするラッパー。
-# ⚠️ helper (_ensure_cli_with_brew) を無条件に呼ばない: Claude Code の shell snapshot は
+# 🚨 helper (_ensure_cli_with_brew) を無条件に呼ばない: Claude Code の shell snapshot は
 # `_` 始まりの関数を含めないため、この関数だけが snapshot に載り、実行時に
 # `command not found: _ensure_cli_with_brew` で壊れる (issue 149 実測 2026-09-01)。
 # 不在なら source で自己修復し、それも出来なければ ensure を諦めて素の実行に落とす
@@ -685,22 +685,22 @@ if (( $+functions[fzf-history-widget] )); then
 fi
 
 if command -v brew > /dev/null 2>&1; then
-  # ⚠️ `brew --prefix` を毎回呼ばないこと。**1 回 9.6ms の fork** で、zsh の startup 実測 52.5ms の
+  # 🚨 `brew --prefix` を毎回呼ばないこと。**1 回 9.6ms の fork** で、zsh の startup 実測 52.5ms の
   #   約 19% をこれだけで使う (実測 2026-08-29 / issue 140)。シェル起動は 1 日に何十回も通る
   #   経路なので、`zsh-hook-return-via-reply.md` が hook について言っているのと同じ話。
   # 標準的な導入では prefix は brew 実体の 2 つ上 (`/opt/homebrew/bin/brew` → `/opt/homebrew`。
   # Intel Mac は `/usr/local`)。`$commands` は zsh のコマンドハッシュなので fork しない。
-  # ⚠️ 決め打ちにしないこと (Intel Mac で壊れる)。導出が外れた場合 (非標準の導入) だけ
+  # 🚨 決め打ちにしないこと (Intel Mac で壊れる)。導出が外れた場合 (非標準の導入) だけ
   #   従来どおり `brew --prefix` へ落とす — 正しさは維持したまま、通常経路の fork だけ消す。
   brew_prefix="${commands[brew]:h:h}"
   [[ -d "$brew_prefix/share" ]] || brew_prefix="$(brew --prefix)"
 
   # 未導入の案内は **stderr へ、かつ対話シェルのときだけ**。
-  # ⚠️ zshrc が stdout に書くと、zsh の出力をキャプチャする経路が全部壊れる。実測 2026-08-28:
+  # 🚨 zshrc が stdout に書くと、zsh の出力をキャプチャする経路が全部壊れる。実測 2026-08-28:
   #    CI を macOS へ移した瞬間にこのブロックが有効になり (ubuntu には brew が無く丸ごと
   #    skip されていた)、テストが期待値の代わりにこの案内を受け取って落ちた。
   #    案内は人が読むためのもので、非対話シェルには不要。
-  # ⚠️ `[[ … ]] && print …` の形にしないこと。非対話では **rc=1 を返す**ので、この rc を見る
+  # 🚨 `[[ … ]] && print …` の形にしないこと。非対話では **rc=1 を返す**ので、この rc を見る
   #    経路 (err_exit / ERR trap の下で source する道具) ができた瞬間に事故る。
   __dotfiles_hint() { if [[ -o interactive ]]; then print -ru2 -- "$1"; fi; }
 
@@ -795,7 +795,7 @@ if [[ -o interactive ]] && [[ -t 1 ]]; then
   # rules/ へ追加したルールが未リンクのまま)。
   # 状態ファイルを持たず「期待されるリンクが実在するか」を直接見る (自己修復・stale なし)。
   # 実測 0.7ms (glob と [[ -e ]] だけで fork ゼロ) なので起動時に同期実行して構わない。
-  # ⚠️ リンク規約は setup.sh が出典。あちらの対象 (skills はディレクトリ / workflows は .js のみ)
+  # 🚨 リンク規約は setup.sh が出典。あちらの対象 (skills はディレクトリ / workflows は .js のみ)
   # を変えたらここも合わせること。
   _dotfiles_check_claude_links() {
     [[ -d "$HOME/.claude" && -d "$HOME/dotfiles/_claude" ]] || return 0

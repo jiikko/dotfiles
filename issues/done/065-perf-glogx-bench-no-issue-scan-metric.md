@@ -32,7 +32,7 @@ scan は起動時と外部編集の見張り (issues_watch) のたびに走る�
   件数は実測分布に合わせて ~50 件) に揃える
 - 時間 (`issue_scan`, rel) と確保 (`issue_scan_alloc_kb`, 絶対値 +3%) の 2 本立て
   (051 と同じ判断: コストの本体は確保)
-- ⚠️ ファイル I/O を含む benchmark になるため、共有 runner のディスク揺れが時間側に乗る。
+- 🚨 ファイル I/O を含む benchmark になるため、共有 runner のディスク揺れが時間側に乗る。
   rel 較正 (glogx_calib) は CPU 系の揺れしか吸わないので、時間予算は他 metric より
   粗め (実測の ~20 倍級) で入れて様子を見る。確保側は I/O に依らず決定的なはず (要実測)
 - benchmark 追加時は bench_glogx.sh ヘッダの「対象一覧と awk と budgets を同時に更新」

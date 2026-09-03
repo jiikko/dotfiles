@@ -83,10 +83,10 @@ var catalog = []Entry{
 	{ID: "xctest-logarchive", Label: "XCTest ログ (/var/tmp/*.logarchive)", Tier: 2, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "特定のテストセッションの産物。再生成されません (不要)", Detail: "最終起動より古いものだけ。/var/tmp は再起動で消えない",
 		// `sudo log collect --output /var/tmp/x.logarchive` で人が採った証跡と区別するため、XCTest 由来の名前に限る。
-		// ⚠️ **この glob 自体が未実測** (issue 169): 元の実測記録 (issue 148) は `/var/tmp/*.logarchive` が
+		// 🚨 **この glob 自体が未実測** (issue 169): 元の実測記録 (issue 148) は `/var/tmp/*.logarchive` が
 		// 1.8GB あったという**サイズだけ**でファイル名が残っておらず、`XCTestTesting.*` / `xctest-*` は推定。
 		// Xcode 26 のバイナリを grep しても `XCTestTesting` は 0 件で、実機にも現物が無い (2026-09-03 再確認)。
-		// ⚠️ **静的探索は尽きている** (2026-09-03。同じ grep を繰り返さないこと):
+		// 🚨 **静的探索は尽きている** (2026-09-03。同じ grep を繰り返さないこと):
 		//   - 名前を作る側は `XCTAutomationSupport` の `collectLogArchiveWithStartDate:outputPath:withReply:` で、
 		//     **outputPath は呼び出し側が渡す**ため、生成側のバイナリに名前のリテラルは無い
 		//   - `.logarchive` のリテラルを Xcode 全体 (Platforms / PrivateFrameworks / Frameworks /
@@ -100,7 +100,7 @@ var catalog = []Entry{
 		Unverified: "ファイル名が未実測 (issue 169)"},
 	{ID: "xctest-spindump", Label: "XCTest spindump", Tier: 2, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "再生成されません (不要)",
-		// ⚠️ **この glob も未実測** (issue 169 と同型。2026-09-03 に発見)。上の xctest-logarchive と
+		// 🚨 **この glob も未実測** (issue 169 と同型。2026-09-03 に発見)。上の xctest-logarchive と
 		// **同じ `XCTestTesting.` 接頭辞を推測で共有している**が、その接頭辞は実在が確認できていない:
 		// `grep -rl --binary-files=text 'XCTestTesting' <Xcode>/Platforms/MacOSX.platform` が **0 件**
 		// (Xcode 26.3。バイナリも含めた全走査)。実機の /private/var/tmp にも現物が無い。
@@ -121,7 +121,7 @@ var catalog = []Entry{
 	{ID: "orphan-container", Label: "アプリ実体の無い sandbox コンテナ", Tier: 2, Risk: RiskConfirm, DeleteVia: "trash", Inspect: true,
 		Recover: "アプリを再インストールしても設定は戻りません", Detail: "/Applications と ~/Applications の Info.plist を実走査して突合 (mdfind は使わない)",
 		Paths: []string{"~/Library/Containers/*"}, Guard: GuardOrphanApp},
-	// ⚠️ Label は表示幅 40 桁に収める (ディスク行のラベル列幅)。超えると UI で末尾が切れ、
+	// 🚨 Label は表示幅 40 桁に収める (ディスク行のラベル列幅)。超えると UI で末尾が切れ、
 	// 括弧の補足だけが「(/o…」のように残る (実測 2026-09-03。issue 182)。場所は Detail へ
 	{ID: "brew-orphan-state", Label: "アンインストール済み formula の状態", Tier: 2, Risk: RiskConfirm, DeleteVia: "trash", Inspect: true,
 		Recover: "DB データ等の本体。formula が無くても中身は価値を持ちうる", Detail: "brew prefix の var 配下。同名の launchd 登録が残っていれば svcdoctor にも出る",

@@ -43,7 +43,7 @@ func TestURLPickerIncrementalSearch(t *testing.T) {
 		match int
 		sel   string
 	}
-	// ⚠️ 検索語は打つたびに積まれる (fzf と同じ)。1 打ごとの query を併記する
+	// 🚨 検索語は打つたびに積まれる (fzf と同じ)。1 打ごとの query を併記する
 	for i, s := range []step{
 		{"e", 3, "https://example.com/alpha"},         // query "e": 3 件とも e を含む
 		{"t", 1, "https://example.com/beta"},          // query "et": beta の "beta" だけ
@@ -171,7 +171,7 @@ func TestURLPickerLines(t *testing.T) {
 	if !strings.Contains(joined, "1/3 件") {
 		t.Errorf("件数が出ない:\n%s", joined)
 	}
-	// ⚠️ cursorGutterMark[:1] で数えない: "→" は 3 バイトなので先頭バイトだけを数えることになり、
+	// 🚨 cursorGutterMark[:1] で数えない: "→" は 3 バイトなので先頭バイトだけを数えることになり、
 	// 切り詰めの "…" など他のマルチバイト文字にも一致する (実際に誤検出した)
 	arrow := strings.TrimSuffix(cursorGutterMark, " ")
 	if n := strings.Count(joined, arrow); n != 1 {

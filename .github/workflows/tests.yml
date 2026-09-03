@@ -33,7 +33,7 @@ jobs:
       matrix:
         include:
           # heavy (av1ify/concat) は nvim テストを含まない (setup-nvim 省略)。
-          # ⚠️ 必要なコマンドをここに書かないこと: グループ定義 (CI_HEAVY_TEST_DIRS) の出典が
+          # 🚨 必要なコマンドをここに書かないこと: グループ定義 (CI_HEAVY_TEST_DIRS) の出典が
           # Makefile なのに依存だけ workflow にあると、heavy に bats/tmux 依存のテストを足した
           # とき「Makefile だけ直して CI が command not found で落ちる」まで気づけない
           # (issue 073)。依存も Makefile の CI_COMMANDS_* が出典で、下の step が読む。
@@ -45,7 +45,7 @@ jobs:
             needs-nvim: true
     name: dotfiles-tests (${{ matrix.group }})
     # 対象は macOS のみ (issue 133)。Linux はサポート対象外なので CI もそちらへ揃える。
-    # ⚠️ `macos-latest` にしない。同じ commit の setup-nvim が「stable にせず明示 pin する
+    # 🚨 `macos-latest` にしない。同じ commit の setup-nvim が「stable にせず明示 pin する
     #    (更新をファイルの変更として可視化する)」と書いているのと同じ理由で、ラベルの移動で
     #    誰の commit も無しに環境が変わるのを避ける。**開発機に合わせて 15 (darwin24) に置く**
     #    (macos-latest は darwin25 = 1 メジャー先だった。mount/ps/stat の出力差は移行の根拠
@@ -57,7 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # 依存の出典は Makefile の CI_COMMANDS_<GROUP>。⚠️ ここで `make -s ci-commands-*` は
+      # 依存の出典は Makefile の CI_COMMANDS_<GROUP>。🚨 ここで `make -s ci-commands-*` は
       # 使わない (依存を解決する時点で make があるとは限らない)。Makefile の生の行を sed で読む。
       # 空を後段に流すと「何も入らないまま成功」になるため、読めなければ明示的に落とす。
       - name: Resolve required commands from Makefile (${{ matrix.group }})

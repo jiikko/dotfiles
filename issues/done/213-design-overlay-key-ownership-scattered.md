@@ -37,7 +37,7 @@
 加えて overlay を**列挙している**場所が 2 つ (述語ではないが「新しい overlay を足したら直す場所」):
 
 - `tui.go:cancelAll` — `usageOv` / `actModal` / `issuesOv` / `doctorOv` を止める。
-  ⚠️ **`statusOv` は 1 つも止めていない** (`statusView.fetchDiff` の `git diff` が終了時に残る)
+  🚨 **`statusOv` は 1 つも止めていない** (`statusView.fetchDiff` の `git diff` が終了時に残る)
 - `tui.go` の全画面判定 (`statusOv.visible() || rlDash.visible() || doctorOv.visible()`) —
   「全画面は同時に 1 枚」という**第 3 の軸**
 
@@ -61,7 +61,7 @@
 - **(a) 自分の語彙を持っているか** — 5 箇所すべてに関係する
 - **(b) 中断できない処理を走らせているか** — `ctrl+c` / `restartPromptVisible` に関係する
 
-`issuesOv` / `statusOv` は (a) は持つが (b) は持たない。⚠️ **理由は「壊れないから」ではない**:
+`issuesOv` / `statusOv` は (a) は持つが (b) は持たない。🚨 **理由は「壊れないから」ではない**:
 `statusView` の破壊的操作 (`runGitRestoreWorktree` / `runGitCleanUntracked`) は
 **`Update` の中で同期に**走るので、そもそも「実行中」という相を跨がない。
 (非同期は `fetchDiff` があり、そちらは読み取り専用。ただし上記のとおり `cancelAll` に居ない。)
@@ -79,12 +79,12 @@
 3. **AST 検査**。`ownsKeys()` を実装した型が、参照すべき全経路から参照されていることを
    `parser.ParseDir` で確かめる (前例: `clock_rollback_test.go` / `vs16_literal_test.go`)
 
-⚠️ **interface を足しても「新しい overlay を足したら compile error」は原理的に満たせない**
+🚨 **interface を足しても「新しい overlay を足したら compile error」は原理的に満たせない**
 (リストに書かなければ何も起きない)。compile error になるのは「リストに書いたのにメソッドが無い」
 場合だけで、防ぎたい失敗モードではない。値フィールドである点自体は障害にならない
 (全メソッドがポインタレシーバなので `&m.field` で満たす。alloc 予算はキー経路を測っていない)。
 
-⚠️ `~/.claude/rules/verify-design-intent-before-refactor.md`: **集約は複雑性が実際に下がる
+🚨 `~/.claude/rules/verify-design-intent-before-refactor.md`: **集約は複雑性が実際に下がる
 ときだけ**。「複数箇所を 1 箇所にした」だけで (a)(b) の区別が消えると悪化する。
 
 ## 受け入れ条件
@@ -106,7 +106,7 @@
 
 新しい overlay に「実行中はキーを飲む状態」を足し、参照経路の一部だけを直した場合。
 症状は「実行中に Ctrl-C を押すとアプリが落ちる」「実行中に再起動ダイアログが出る」
-「終了しても子プロセスが残る」。⚠️ どれも**テストが overlay の `handleKey` を直叩きしていると
+「終了しても子プロセスが残る」。🚨 どれも**テストが overlay の `handleKey` を直叩きしていると
 検出できない**。回帰テストは `browseModel.handleKey` 経由で書く。
 
 具体的に次に踏むのは **status に非同期の破壊的操作 (進捗つきの discard 等) を足したとき**。
@@ -128,7 +128,7 @@
 対応案 1 (overlay 側に `active()` / `running()` 相当を持たせて `browseModel` で 1 箇所に数える) は
 **採らなかった**。理由は 2 つ。
 
-- ⚠️ `verify-design-intent-before-refactor.md`: 集約は複雑性が実際に下がるときだけ。
+- 🚨 `verify-design-intent-before-refactor.md`: 集約は複雑性が実際に下がるときだけ。
   5 つの参照経路は**聞いている問いが違う** (`updateKeyReachable` は「X を横取りするか」、
   `ctrl+c` は「1 回目を飲むか」、`restartPromptVisible` は「ダイアログを出すか」、
   `cancelAll` は「止めるか」)。1 つの述語に畳むと (a)(b) の区別が消え、issue 本文が

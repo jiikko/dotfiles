@@ -3,7 +3,7 @@ package main
 // 全画面 ratelimit ダッシュボード (R キー)。右上の usage オーバーレイ (U) と同じ Snapshot を、
 // 枠ごとのアナログ盤にして画面いっぱいに描く。
 //
-// ⚠️ データの取得経路はこの型が持たない。取得・キャッシュ・1 分ごとのリフレッシュ・quit 時の
+// 🚨 データの取得経路はこの型が持たない。取得・キャッシュ・1 分ごとのリフレッシュ・quit 時の
 // subprocess 中断はすべて usageOverlay の配管をそのまま使う (tui.go の usageRefreshMsg が
 // 「U が見えている」に加えて「R が見えている」でも fetch を回す)。同じ値に取得経路を 2 本
 // 持たせると、周期・タイムアウト・single-flight ガードが二重管理になる。
@@ -43,7 +43,7 @@ func (d *ratelimitDash) lines(o ratelimitRenderOpts) []string {
 	body := max(o.page-len(head), 1)
 	switch {
 	case o.snap != nil:
-		// ⚠️ snap があっても描く枠が 0 件になりうる (RenderDashboard は nil を返す)。
+		// 🚨 snap があっても描く枠が 0 件になりうる (RenderDashboard は nil を返す)。
 		// Claude 側は既定の枠ラベル ("5h" / "7d") でしか拾わないので、/usage の文言が
 		// 変わった環境では「パースは成功しているが描く枠が無い」が起こる。無言の白画面に
 		// せず理由を出す (全画面なので、ユーザーには壊れたようにしか見えない)。
@@ -97,7 +97,7 @@ const (
 // handleKey はダッシュボードが飲むキー。
 //
 // i / s は issues / status viewer への横断 (ユーザー要望 2026-09-01)。viewer 側の R と対で、
-// 全画面どうしを往復できる。⚠️ 横断でも自分は必ず閉じる: 全画面は同時に 1 枚の前提で、
+// 全画面どうしを往復できる。🚨 横断でも自分は必ず閉じる: 全画面は同時に 1 枚の前提で、
 // 重ねると「見えている画面」と「キーを受ける画面」が食い違う (issues ↔ status と同じ作法)。
 func (d *ratelimitDash) handleKey(key string) rlDashAction {
 	switch key {
@@ -118,7 +118,7 @@ func (d *ratelimitDash) handleKey(key string) rlDashAction {
 
 // centerLine は幅 w の中で s を中央寄せする (左余白のみ)。
 //
-// ⚠️ 入らないときは切り詰める。そのまま返すと見出し (CLI 名 + バージョン 2 つで 49 桁固定) が
+// 🚨 入らないときは切り詰める。そのまま返すと見出し (CLI 名 + バージョン 2 つで 49 桁固定) が
 // 狭い端末で width を超え、フレームが自動 OFF になる帯 (frameMinWidth 未満) ではクリップも
 // 効かないので折り返して画面が崩れる (セルフレビュー指摘 2026-09-01)。
 func centerLine(s string, w int) string {

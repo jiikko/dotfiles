@@ -11,7 +11,7 @@
 # 取得できない場合は空文字列
 # macOS の `stat -f "%T"` は file type (ls -F 形式) を返すため使えない。
 # `mount` 出力をパースしてパスにマッチする最長 mount point を選ぶ。
-# ⚠️ macOS の mount 出力形式 "device on /mp (fstype, opts)" 前提。Linux の
+# 🚨 macOS の mount 出力形式 "device on /mp (fstype, opts)" 前提。Linux の
 # "device on /mp type ext4 (opts)" 形式はパースできない (空文字列 fallback になり
 # 呼び出し側は trash 経路へ倒れる)。**Linux はサポート対象外なので対応しない**
 # (2026-08-28 決定 / issue 133)。対象が増えたら再評価する。

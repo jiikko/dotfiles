@@ -3,7 +3,7 @@
 # "metric=<name> ms=<value>" 行へ変換して出力する (CI では tests/run_bench.sh が複数回実行 →
 # min 集約 → tests/glogx/bench_budgets.ci でゲート。実行回数は run_bench.sh の BENCH_RUNS が出典)。
 #
-# 時間 (<name>) と確保バイト (<name>_alloc_kb) の 2 本立て。⚠️ 単位は metric 名が持ち、
+# 時間 (<name>) と確保バイト (<name>_alloc_kb) の 2 本立て。🚨 単位は metric 名が持ち、
 # 行の項目名は常に ms= (tmux の server_rss_mb / nvim の startup_cpu_ms と同じ流儀。
 # checker と bench_stats を 1 書式のまま保つため)。_alloc_kb は B/op ÷ 1024。
 #
@@ -32,7 +32,7 @@
 # ネットワークに依存し CI では flake 枠 (chroma と同じ判断)。Go 側は model_init_200 が代理し、
 # ヒープ傾向は各 benchmark の -benchmem (ローカル実行時) で見る。
 #
-# ⚠️ BenchmarkHighlightDiff は意図的に対象外: chroma のハイライトは共有 runner の速度ムラで
+# 🚨 BenchmarkHighlightDiff は意図的に対象外: chroma のハイライトは共有 runner の速度ムラで
 # 桁で膨れ (2026-07-21 実測: budget 5s に対し 10.36s で flake)、「CI ではゲートせずローカルで
 # 測る」と判断済み (highlight_test.go の同 benchmark 直上コメントが一次情報)。ここに足す前に
 # その判断を再評価すること。
@@ -59,7 +59,7 @@ cd "$GLOGX_DIR" || exit 1
 # テスト用 seam (tests/glogx/test_bench_glogx_metrics.sh が使う。CI/運用では未設定のまま):
 #   GLOGX_BENCH_INPUT : go test を走らせず、このファイルの内容を awk に流す (列ずれガードの検証用)
 #   GLOGX_BENCHTIME   : -benchtime の上書き (テストは 1x で配管だけ速く回す)。
-#                       ⚠️ -run '^$' を外して短い benchtime と併用すると、testing.Benchmark を
+#                       🚨 -run '^$' を外して短い benchtime と併用すると、testing.Benchmark を
 #                       使う TestFrameAllocBudget が反復不足で Fatal する (issue 063 / 051 実測)
 run_bench() {
   if [ -n "${GLOGX_BENCH_INPUT:-}" ]; then
@@ -72,7 +72,7 @@ run_bench() {
 }
 run_bench |
   awk '
-    # ⚠️ 列位置 ($3=ns/op の値・$5=B/op の値) を項目名で検証してから読む。b.ReportMetric を
+    # 🚨 列位置 ($3=ns/op の値・$5=B/op の値) を項目名で検証してから読む。b.ReportMetric を
     # 足した benchmark が混ざると列がずれ、検証が無いと**別の数値を予算照合して黙って
     # pass する**。ずれたら emit しない = checker の「予算にある metric が出力に無い」で
     # loud に落ちる (-benchmem を付けているので、ReportAllocs の有無には依存しない)。
@@ -93,7 +93,7 @@ run_bench |
       }
       printf "metric=%s ms=%.3f\n", name, $3 / 1000000
     }
-    # ⚠️ 前方一致で振り分けない。benchmark 名は他の benchmark の接頭辞になりうるので
+    # 🚨 前方一致で振り分けない。benchmark 名は他の benchmark の接頭辞になりうるので
     # (BenchmarkViewSteady ⊂ BenchmarkViewSteadyJA)、前方一致だと **兄弟 benchmark の
     # 数値が既存 metric を黙って上書きする** (実測: JA の行が view_steady として出た)。
     # 末尾の -<GOMAXPROCS> を落として完全一致で振り分ける

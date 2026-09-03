@@ -23,7 +23,7 @@ package disk
 // **テストファイルも含めて**ソースを走査し、「破壊的な呼び出しを持つ関数は allowDestructive
 // (テストなら sandboxCheck) も呼ぶ」を強制する。
 //
-// ⚠️ このゲートの脅威モデルは「**うっかり書く典型形**を止める」こと。関数値への代入
+// 🚨 このゲートの脅威モデルは「**うっかり書く典型形**を止める」こと。関数値への代入
 // (`f := os.RemoveAll; f(p)`)、allowDestructive に別のパスを渡す、といった**意図的な迂回**は
 // 検出しない (字句のゲートで全部塞ごうとすると迂回が無限に出る)。そこはレビューの責務。
 
@@ -102,7 +102,7 @@ func sandboxAllowCommand(t *testing.T, name string) {
 }
 
 // resolveForSandbox は「カーネルが解決する先」に寄せた形へ直す。
-// ⚠️ 親を実解決する (EvalSymlinks) のが要点。os.OpenRoot / openat はパスをカーネルに
+// 🚨 親を実解決する (EvalSymlinks) のが要点。os.OpenRoot / openat はパスをカーネルに
 // 解決させるので、文字列の prefix 比較だけだと sandbox 内から外を指す symlink で抜けられる。
 // 対象自身は解決しない (symlink そのものを消す / 移すのが正しい振る舞いのため)。
 func resolveForSandbox(p string) string {
@@ -407,7 +407,7 @@ func rmFixture(t *testing.T, p string) {
 func TestDestructiveCallsGoThroughHook(t *testing.T) {
 	// 消す / 動かす操作の**メソッド名**で見る。受け手の変数名や import の別名に依存しない
 	// (`root.RemoveAll` を `r.RemoveAll` に書き換えただけで沈黙する形を避ける)
-	// ⚠️ 見るのは「**消す・動かす**」だけ。Truncate / Create / WriteFile は入れない
+	// 🚨 見るのは「**消す・動かす**」だけ。Truncate / Create / WriteFile は入れない
 	// (fixture の下ごしらえで正当に使われ、この package では実データを壊す経路にならない)
 	destructive := map[string]bool{
 		"RemoveAll": true, "Remove": true, "Rename": true,

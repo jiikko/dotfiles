@@ -17,7 +17,7 @@ x/ansi は `method.go` の `init` でこの env を読み、East Asian Ambiguous
 (罫線・矢印・`…`・`·` 等) を幅 2 として数える。したがって `dispWidth` も 2 を返すのが
 **正しい** が、テストは 1 を焼いている。
 
-⚠️ **これは 046 の前から同じ**。旧 `dispWidth` も非 ASCII は `ansi.StringWidth` に
+🚨 **これは 046 の前から同じ**。旧 `dispWidth` も非 ASCII は `ansi.StringWidth` に
 落としていたので同じ 2 を返していた。046 が持ち込んだものではない
 (046 のレビューで判明し、実測で確認済み)。
 
@@ -36,7 +36,7 @@ x/ansi は `method.go` の `init` でこの env を読み、East Asian Ambiguous
 `RUNEWIDTH_EASTASIAN=1` の子プロセスを起こす回帰テストを置いてある)。
 残っているのは**テストの期待値だけ**。
 
-> ⚠️ **この段落は誤り** (2026-08-15 に着手して実測で判明)。正しくは「**幅計算の層**は
+> 🚨 **この段落は誤り** (2026-08-15 に着手して実測で判明)。正しくは「**幅計算の層**は
 > この env で正しく動くが、**描画は壊れる**」。詳細は下記「着手時の実測」。
 
 ## 実測の裏取り (並行セッションの独立確認、2026-08-14)
@@ -50,7 +50,7 @@ base `997d078` の worktree で `RUNEWIDTH_EASTASIAN=1 go test ./...` の FAIL �
 
 既存分は同一集合 = 「046 の前から同じ」は裏が取れている。
 
-⚠️ **新しく落ちる 2 件のうち `TestFrameAllocBudget` は 047 で新設した「確保の予算」ガード**
+🚨 **新しく落ちる 2 件のうち `TestFrameAllocBudget` は 047 で新設した「確保の予算」ガード**
 = **安全機構そのものがこの env で落ちる**。この env を支持する判断をするなら、
 安全機構が先に動かなくなる点を織り込むこと (issue 051 の確保ゲートとも絡む)。
 
@@ -103,7 +103,7 @@ status_view_test.go:1185: width=3 の行が幅を超えた (w=4): "  │"
   1 箇所に集約。main と issues の両方 (とテスト) から参照する。真偽の解釈は x/ansi の init と
   同じ `strconv.ParseBool` に揃えた
 - **実行時**: `run()` の頭で env が真なら stderr に警告を 1 回出して続行する。
-  ⚠️ TUI は alt screen に入るので、対話モードでは終了後に見える形になる。主な想定発火先
+  🚨 TUI は alt screen に入るので、対話モードでは終了後に見える形になる。主な想定発火先
   (CI・非 TTY 実行) では stderr にそのまま残る
 - **テスト**: 幅に依存する 4 パッケージ (main / issues / usage / widthenv) の TestMain が
   `widthenv.ExitIfUnsupported()` を呼び、env が真なら理由を出して停止する。28 本の意味不明な赤が

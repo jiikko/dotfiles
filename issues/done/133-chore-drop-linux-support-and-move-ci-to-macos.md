@@ -33,7 +33,7 @@ issue 132 は「手元と CI の差を手元で出す」方向の話だったが
 2. **before を測る**。現行の Tests / Lint / Bench の所要時間を記録する (macOS runner は VM 起動が
    遅く、今の Tests は 2〜3 分で終わっている。速くなるとは限らない)
 3. **Tests だけ `macos-latest` へ切り替えて after を測る**。一度に全部変えない
-4. **緑を確認してから**、Linux 専用の防御を外す (下表)。⚠️ 逆順にすると CI が壊れる
+4. **緑を確認してから**、Linux 専用の防御を外す (下表)。🚨 逆順にすると CI が壊れる
 5. **明文化**: README か CLAUDE.md に「対象は macOS のみ。Linux は非対応」を書く。
    `zshlib/_fs_helpers.zsh:16` の「必要になったら対応する」は「対応しない」へ直す
 
@@ -49,7 +49,7 @@ issue 132 は「手元と CI の差を手元で出す」方向の話だったが
 | 各所の BSD/GNU コメント (`grep -rn 'GNU' scripts/ zshlib/ tests/`) | 方言差の注意喚起 | **一部は方言以外の理由**を持つ (例: `ps -o lstart=` の末尾パディングは同じ macOS でも版差がありうる)。一律削除しない |
 | `CI_PACKAGES_*` / apt install / `make test-ci-group-deps` | CI の依存を宣言し heavy/rest の整合を検査 | macOS runner では preinstall か brew になるため**作り替え**が要る。単純削除ではない |
 
-⚠️ **「Linux で壊れる」以外の理由で存在する防御を巻き添えにしない**。表の 3・4 行目は
+🚨 **「Linux で壊れる」以外の理由で存在する防御を巻き添えにしない**。表の 3・4 行目は
 特に危ない (方言以外の目的を持つ / 削除ではなく作り替え)。
 
 ## リスク (「環境が揃う」を過信しない)
@@ -143,7 +143,7 @@ issue 132 は「手元と CI の差を手元で出す」方向の話だったが
   yamllint)。runner image の preinstall 内容に依存しない
 - shellcheck / actionlint のリリースバイナリの asset 名を `uname` で分岐 (setup-nvim と同じ罠)。
   **push 前に URL の実在を HTTP 200 で確認済み** (darwin.aarch64 / darwin_arm64 とも 200)
-- bash 5 を入れる。⚠️ 実測では `make test-lint` は **bash 3.2 でも exit 0** だった。それでも揃える
+- bash 5 を入れる。🚨 実測では `make test-lint` は **bash 3.2 でも exit 0** だった。それでも揃える
   のは、移行の前提が「CI を開発機に合わせる」だからで、検査スクリプトが将来 bash 4+ の機能を
   使い始めた日に手元だけ緑になるのを避けるため (tests.yml で実際に踏んだ)
 
@@ -181,7 +181,7 @@ ubuntu で走る workflow はゼロ**。
 ### _go-project.yml (lint / test)
 
 - 両 job を `macos-15` に pin。test の timeout を 10 → 20 分 (lint は cold compile 用の 25 分を維持)
-- ⚠️ **`darwin-build` は残した**。`src_glogx.yml` / `src_lockman.yml` の macOS ビルド確認ジョブは、
+- 🚨 **`darwin-build` は残した**。`src_glogx.yml` / `src_lockman.yml` の macOS ビルド確認ジョブは、
   lint/test が macOS で回るようになった今 **冗長になった可能性が高い** (実測: `CGO_ENABLED=1
   go build ./...` は通り、`go test` も同条件でコンパイルする)。ただし「冗長だから外す」は
   [`list-masked-failure-modes-before-removing-guard.md`](../_claude/rules/list-masked-failure-modes-before-removing-guard.md)
@@ -235,7 +235,7 @@ ubuntu が消えたので前提は整った。ただし外すには「副次的�
 | `CI_COMMANDS_*` / `test-ci-group-deps` | CI の依存宣言と heavy/rest の整合検査 | 削除ではなく**作り替え**が要ると事前に判断していた | 手順 3 で brew ベースへ作り替え済み。**維持** |
 | `darwin-build` (src_glogx) / `darwin` (src_schedkeys) | lint/test が ubuntu だったので darwin+cgo のファイルを唯一コンパイルする経路 | **`CGO_ENABLED=1` の明示**。ここが本体だった (下記) | **撤去**。保証を `_go-project.yml` の env へ移した |
 
-### ⚠️ darwin-build は「冗長」ではなかった — 実測で想定が覆った
+### 🚨 darwin-build は「冗長」ではなかった — 実測で想定が覆った
 
 当初は「lint/test が macOS で回るようになったので、ビルドするだけの job は冗長」と考えた。
 根拠として「`-race` は cgo を要求するから、test が動く時点で cgo は有効」と推論したが、**実測で

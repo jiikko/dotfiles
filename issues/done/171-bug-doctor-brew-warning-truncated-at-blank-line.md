@@ -76,7 +76,7 @@ fixture は実機 (Homebrew 6.0.20 / rc=1 / stderr) を `doctor_brew_test.go` �
 | `(N 行)` を `len(lines)` に戻す | red (`(7 行)`) |
 | `(N 行)` を非空行の数に戻す | red (`(5 行)`) |
 
-⚠️ 最後の 2 つは、既存 fixture (空行なし) では 3 つの数え方が同じ数になり **区別できなかった** (vacuous)。
+🚨 最後の 2 つは、既存 fixture (空行なし) では 3 つの数え方が同じ数になり **区別できなかった** (vacuous)。
 `TestDoctorLinesFillsPage` の fixture に段落を 2 箇所入れて、`len(detail)=6` / 非空行`=5` / `len(lines)=7` が
 全部違う数になる形にしてから変異を当てた。
 

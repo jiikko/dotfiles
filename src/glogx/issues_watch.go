@@ -8,13 +8,13 @@ package main
 // 方式は「イベントで起こし、指紋で判定する」(issue 035):
 //
 //   - fsnotify (Linux=inotify / macOS=kqueue) のイベントで起こす。定期 wakeup が消え、反応も速い
-//   - ⚠️ イベントは真偽の正本にしない。1 回の保存で Create/Rename/Write が連続する・エディタの
+//   - 🚨 イベントは真偽の正本にしない。1 回の保存で Create/Rename/Write が連続する・エディタの
 //     tmp+rename で watch 対象の inode が入れ替わる・NFS で無音になる、と嘘をつくため。起こされたら
 //     必ず指紋 (mtime + サイズ) を取り直し、本当に変わったときだけ読む
 //   - 保険として低頻度 (30s) のポーリングも回す。イベントを取りこぼしても必ず追いつく。
 //     fsnotify を作れない環境ではこれが唯一の経路になるので、その場合だけ周期を上げる
 //
-// ⚠️ フレーム tick (spinnerActive) に混ぜない: 混ぜると viewer を開いている間ずっと 12.5fps で
+// 🚨 フレーム tick (spinnerActive) に混ぜない: 混ぜると viewer を開いている間ずっと 12.5fps で
 // 起きることになり、「動くものがある間だけ tick を回す」という glogx の設計を崩す。autobuildWatch と
 // 同じく、自分の周期で自己再アームする独立チェーンにして viewer を閉じたら止める。
 
@@ -48,12 +48,12 @@ const (
 type issuesWatchMsg struct {
 	fp     string
 	closed bool
-	// fromEvent は発行元がイベント経路か (false = 保険のポーリング)。⚠️ 受け取り側は「届けた
+	// fromEvent は発行元がイベント経路か (false = 保険のポーリング)。🚨 受け取り側は「届けた
 	// チェーンの札だけ」を降ろすのにこれを使う。両方降ろすと、まだ w.Events でブロックしている
 	// goroutine が居るのに evArmed が false になり、single-flight をすり抜けて 2 本目が張られる
 	// (観測 1 回につき goroutine が 1 本ずつ積み上がる)。
 	fromEvent bool
-	// gen は観測を発行した世代。閉じ → 開き直しで増える (stopWatch)。⚠️ これが無いと、閉じる前に
+	// gen は観測を発行した世代。閉じ → 開き直しで増える (stopWatch)。🚨 これが無いと、閉じる前に
 	// 張った古いチェーンの closed が、開き直して作った**新しい** watcher を閉じてしまう
 	// (以降イベントが来ずポーリングだけに縮退する。無音ではないが即時性を静かに失う)。
 	gen int
@@ -62,7 +62,7 @@ type issuesWatchMsg struct {
 // dirWatcher は fsnotify.Watcher のうち見張りが使う面だけを切った seam (issue の見張りと
 // git log の見張り (gitlog_watch.go) で共用する)。
 //
-// ⚠️ 実装を差し替えるためではなく、**CI で不変条件を観測できるようにするため**にある。
+// 🚨 実装を差し替えるためではなく、**CI で不変条件を観測できるようにするため**にある。
 // CI (ubuntu-slim) では fsnotify.NewWatcher が通らず watch.w が nil になるので、実 watcher を
 // 前提にしたテストはすべて skip され、「消えて戻ったディレクトリを再 Add する」のような配線の
 // 退行が CI では一度も検査されない (issue 087)。フェイクを差せば実 fsnotify 無しで startWatch /
@@ -88,10 +88,10 @@ func (f fsWatcher) Errors() <-chan error          { return f.w.Errors }
 
 // newDirWatcher は watcher を作る唯一の経路 (テストがフェイクへ差し替える口)。
 //
-// ⚠️ production ではここを分岐させない。差し替えはテストだけの都合。
-// ⚠️ 差し替えは package 変数の書き換えなので、この seam を使うテストで t.Parallel() を呼ばないこと
+// 🚨 production ではここを分岐させない。差し替えはテストだけの都合。
+// 🚨 差し替えは package 変数の書き換えなので、この seam を使うテストで t.Parallel() を呼ばないこと
 // (-race が「テスト基盤のデータレース」として落ち、検証対象と無関係な形で失敗する)。
-// ⚠️ 包む前に nil を弾く: interface に nil ポインタを入れると `w == nil` が false になり
+// 🚨 包む前に nil を弾く: interface に nil ポインタを入れると `w == nil` が false になり
 // (typed nil)、「watcher を作れない環境ではポーリングへ縮退する」という startWatch / eventCmd /
 // pollInterval / handleWatch の nil ガード全部が panic に変わる。fsnotify v1.10.1 は成功時に
 // 必ず非 nil を返すので今は起きないが、その契約 1 つに縮退の正しさを乗せない。
@@ -109,7 +109,7 @@ var newDirWatcher = func() (dirWatcher, error) {
 // issuesWatch は見張りの状態。zero value は「見張っていない」。
 type issuesWatch struct {
 	w dirWatcher
-	// ⚠️ 「Add 済み」を自前で覚えて skip しないこと。fsnotify の watch は**ディレクトリが
+	// 🚨 「Add 済み」を自前で覚えて skip しないこと。fsnotify の watch は**ディレクトリが
 	// 消えると黙って失われる**ので、印だけが残って二度と Add されない状態になる (実測
 	// 2026-08-21: 実 repo で git switch により issues/done が消えて戻ると、同一 viewer
 	// セッション中は done/ 内の変更が恒久的に無音。手動の取り直し 3 回でも復帰せず、
@@ -268,7 +268,7 @@ func (v *issuesView) watchTargets() (dirs, paths []string) {
 
 // issuesWatchPaths は指紋の対象ファイルを組み立てる。
 //
-// ⚠️ スキャン側 (基準を取る scanIssues) と観測側 (変化を見る watchTargets) で必ず同じ集合を
+// 🚨 スキャン側 (基準を取る scanIssues) と観測側 (変化を見る watchTargets) で必ず同じ集合を
 // 作ること。食い違うと、取り直すたびに基準が集合 A・観測が集合 B で決まって永久に一致せず、
 // 何も変わっていないのに観測のたびに取り直しが回り続ける (取り直しがまた基準を作るので止まらない)。
 //
@@ -304,7 +304,7 @@ func (v *issuesView) handleWatch(msg issuesWatchMsg) tea.Cmd {
 		}
 		return v.watchCmd()
 	}
-	// 指紋つきの観測はイベント経路とポーリング経路の両方から来る。⚠️ 降ろすのは**届けた
+	// 指紋つきの観測はイベント経路とポーリング経路の両方から来る。🚨 降ろすのは**届けた
 	// チェーンの札だけ**にする (closed 経路と同じ規律)。両方降ろすと、まだ w.Events で
 	// ブロックしている goroutine が生きているのに evArmed が false になり、watchCmd の
 	// single-flight をすり抜けて 2 本目が張られる = 観測 1 回ごとに goroutine が 1 本残る。
@@ -348,7 +348,7 @@ func (v *issuesView) reloadDeferred() bool {
 
 // issuesFingerprint は監視対象の状態を 1 本の文字列にする。
 //
-// ディレクトリは mtime だけ (ファイルの追加・削除・done/ への移動で動く)。⚠️ ディレクトリの mtime
+// ディレクトリは mtime だけ (ファイルの追加・削除・done/ への移動で動く)。🚨 ディレクトリの mtime
 // では本文の書き換えを検出できない (create/delete/rename でしか動かない) ので、ファイルは
 // mtime + サイズまで見る。ハッシュにしないのは、比較しかしないので生の文字列で足りるため。
 func issuesFingerprint(dirs, paths []string) string {

@@ -62,7 +62,7 @@ tt_lock_acquire "$LOCK_DIR" || tt_lock_rc=$?
 if [ "$tt_lock_rc" -eq 1 ]; then
   exit 0   # 先任が (同一プロセスとして) 生きている = 正常。無音で退く
 elif [ "$tt_lock_rc" -ne 0 ]; then
-  # ⚠️ 「lock を作れなかった」を rc=1 と畳んで無音にしないこと。状態ディレクトリが書けない等で
+  # 🚨 「lock を作れなかった」を rc=1 と畳んで無音にしないこと。状態ディレクトリが書けない等で
   #   ここに落ちると **周期保存が二度と張られない**のに、stdout も観測ログも 0 byte になる
   #   (実測 2026-08-25: chmod 500 で再現。装置不在が完全に無音だった)。
   tt_trigger_log "periodic-save-aborted reason=lock-failed server=$SERVER_PID epoch=$(date +%s)"

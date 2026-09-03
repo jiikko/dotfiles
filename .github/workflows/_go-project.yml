@@ -7,7 +7,7 @@
 # (root Makefile の GO_PROJECT_DIRS コメント参照)。ファイル名の先頭 _ は
 # 「top-level トリガを持たない再利用専用」であることの目印。
 #
-# ⚠️ caller の paths filter 付き check を branch protection の required check に
+# 🚨 caller の paths filter 付き check を branch protection の required check に
 #   登録しないこと: 非接触 PR では run 自体が生成されず、check が永遠に pending で
 #   マージ不能になる (どうしても required にしたければ paths-ignore の no-op twin が必要)。
 name: go-project
@@ -32,7 +32,7 @@ env:
   GIT_CONFIG_COUNT: "1"
   GIT_CONFIG_KEY_0: init.defaultBranch
   GIT_CONFIG_VALUE_0: main
-  # ⚠️ cgo を明示的に有効にする。`//go:build darwin && cgo` のファイル (src/glogx の
+  # 🚨 cgo を明示的に有効にする。`//go:build darwin && cgo` のファイル (src/glogx の
   # ime_tis_darwin.go) は **CGO_ENABLED=0 だと IgnoredGoFiles に落ちて黙って除外される**
   # (実測 2026-08-29: CGO=1 で CgoFiles に入り、CGO=0 で IgnoredGoFiles 行き)。
   # 既定値は「C コンパイラがあれば 1」なので、runner image の中身に依存する。
@@ -44,7 +44,7 @@ jobs:
   # lint と test は独立 job: 並列実行 + 片方だけの再実行が可能
   lint:
     # 対象は macOS のみ (issue 133)。Linux はサポート対象外なので CI もそちらへ揃える。
-    # ⚠️ `macos-latest` にしない (ラベルの移動で環境が黙って変わる)。開発機が darwin24 = macOS 15。
+    # 🚨 `macos-latest` にしない (ラベルの移動で環境が黙って変わる)。開発機が darwin24 = macOS 15。
     runs-on: macos-15
     # make lint は golangci-lint を `go run @version` でソースからビルドする。build cache が warm
     # なら ~3-5 分だが、cold だと 15 分を超えることがある (ubuntu-slim で実測。macOS runner は

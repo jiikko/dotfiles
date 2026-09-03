@@ -97,7 +97,7 @@ func TestStaleTakeoverHasExactlyOneWinner(t *testing.T) {
 	}
 	time.Sleep(3 * ttl)
 
-	// ⚠️ 引き継ぐ側は長い TTL で取る。短い TTL のまま競わせると、勝者の新しい lock も
+	// 🚨 引き継ぐ側は長い TTL で取る。短い TTL のまま競わせると、勝者の新しい lock も
 	// すぐ期限切れになり、後続が「正当に」引き継いで勝者が増える (仕様どおりの挙動)。
 	// それでは「同じ 1 回の引き継ぎ競争で勝者は 1 人」という主張を測れない。
 	const n = 16

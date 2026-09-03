@@ -85,7 +85,7 @@ test-coverage-advisor。統合フェーズは session limit で落ちたため m
   適用されていない (同型バグの横展開漏れ)
 - **偽サーバ生成ヘルパーが 3 ファイルに同一実装** — `test_periodic_save.sh:35-39` /
   `test_snapshot_health.sh:29-33` / `test_server_watchdog.sh:26-30`。load-bearing な
-  ⚠️ コメント (素の `cmd &` だと EXIT trap 継承で TMP_DIR がテスト途中で消える。
+  🚨 コメント (素の `cmd &` だと EXIT trap 継承で TMP_DIR がテスト途中で消える。
   2026-07-30 に特定) までコピペされている
 - **`DEFAULT_SOCK="$(realpath /tmp ...)/tmux-$(id -u)/default"` が 5 ファイルに逐語コピー**
 - **`assert_contains` が 8 コピー、`assert_file_exists` が 5 コピー** — `tests/zshrc/**` の
@@ -109,7 +109,7 @@ test-coverage-advisor。統合フェーズは session limit で落ちたため m
 
 ## 反証・対応の結果 (2026-08-21)
 
-⚠️ **この節が唯一の durable な記録**。裏取り/反証のレポートは `./tmp/` に出したが `tmp/` は
+🚨 **この節が唯一の durable な記録**。裏取り/反証のレポートは `./tmp/` に出したが `tmp/` は
 gitignore 対象なので残らない。以降の audit はこの節を先に読むこと (却下済みの指摘を再生成しない)。
 「反証できなかった」は「正しいと証明された」ではない。
 

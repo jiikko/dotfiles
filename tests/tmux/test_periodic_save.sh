@@ -130,11 +130,11 @@ printf '✓ 二重起動は先任の lock を奪わず退く\n'
 kill "$HOLDER" 2>/dev/null; rm -rf "$TMP_DIR/state/$FAKE.lock"
 
 # --- (6b) 死んだサーバの stale lock を掃除する ------------------------------------------
-# ⚠️ この観点は refactor で guards.sh の tt_lock_sweep_stale へ寄せるまで **テストが 1 本も
+# 🚨 この観点は refactor で guards.sh の tt_lock_sweep_stale へ寄せるまで **テストが 1 本も
 #   無かった** (変異検証で「掃除を no-op にしても全部 green」で発覚。issue 078)。
 #   掃除が止まると、死んだサーバの <pid>.lock が状態ディレクトリに溜まり続ける。
 reset_calls; : > "$LOG"
-# ⚠️ 「動いているサーバ」と「死んだサーバ」に**別々の pid** を割り当てること。tt_free_pid は
+# 🚨 「動いているサーバ」と「死んだサーバ」に**別々の pid** を割り当てること。tt_free_pid は
 #   決定的なので、2 回呼んで同じ値を使うと lock の通常解放で消えたものを「掃除された」と
 #   誤読する (実測: 掃除を no-op にする変異が green のまま通った)。
 tt_free_pid; RUNSRV="$REPLY_PID"                       # 動いている側 (pid は消滅済みでよい)
@@ -146,7 +146,7 @@ printf '%s\n' "$DEADOWNER" > "$TMP_DIR/state/$DEADSRV.lock/pid"   # owner も死
 mkdir -p "$TMP_DIR/state/$FAKE.lock"
 tt_spawn_fake_proc; LIVEOWNER="$REPLY_PID"
 printf '%s\n' "$LIVEOWNER" > "$TMP_DIR/state/$FAKE.lock/pid"
-# ⚠️ サーバ pid が死んでいても **owner がまだ生きている** lock は残す (保存の実行中に tmux
+# 🚨 サーバ pid が死んでいても **owner がまだ生きている** lock は残す (保存の実行中に tmux
 #   サーバだけが落ちた形)。ここを掃除すると、走っている保存の lock を別インスタンスが取れて
 #   二重保存になる。掃除の条件は「サーバ pid が死んでいる」だけでは足りない、を固定する。
 tt_free_pid $(( DEADOWNER - 1 )); DEADSRV_LIVEOWNER="$REPLY_PID"
@@ -168,11 +168,11 @@ kill "$LIVEOWNER" "$LIVEOWNER2" 2>/dev/null
 rm -rf "$TMP_DIR/state/$FAKE.lock" "$TMP_DIR/state/$DEADSRV_LIVEOWNER.lock"
 
 # --- (6c) lock を作れないときは無音で消えない ------------------------------------------
-# ⚠️ rc=2 (取得不能) を rc=1 (先任生存) と畳んで `|| exit 0` にすると、**周期保存が二度と
+# 🚨 rc=2 (取得不能) を rc=1 (先任生存) と畳んで `|| exit 0` にすると、**周期保存が二度と
 #   張られない**のに stdout も観測ログも 0 byte になる (敵対レビューが chmod 500 で実測)。
 #   「装置が不在になった」は必ず 1 行残す、を pin する。
 if [ "$(id -u)" = 0 ]; then
-  printf '⚠ root では書き込み不可ディレクトリを作れないため lock 取得失敗のテストを skip した\n'
+  printf '🚨 root では書き込み不可ディレクトリを作れないため lock 取得失敗のテストを skip した\n'
 else
   reset_calls; : > "$LOG"
   RO_STATE="$TMP_DIR/state_ro"; rm -rf "$RO_STATE"; mkdir -p "$RO_STATE"; chmod 500 "$RO_STATE"

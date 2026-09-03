@@ -76,7 +76,7 @@ EOF
         fi
         ;;
       *)
-        print -r -- "⚠️ 未対応の形式: $file (.$ext)"
+        print -r -- "🚨 未対応の形式: $file (.$ext)"
         (( skip++ )) || true
         ;;
     esac

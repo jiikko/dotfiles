@@ -14,11 +14,11 @@
 # 入力: UserPromptSubmit の hook JSON を stdin (中身は見ない。毎プロンプトで状態だけ見る)
 # 出力: 未コミットの claim があるときだけ additionalContext を emit。無ければ無出力 exit 0。
 #
-# ⚠️ 判定は working tree の状態なので、Claude が移したのか人が移したのかは区別しない
+# 🚨 判定は working tree の状態なので、Claude が移したのか人が移したのかは区別しない
 #    (区別する必要が無い: どちらでも「未コミットの claim」は同じ事故に繋がる)。
-# ⚠️ 本文は必ず jq --arg で組む。heredoc に状態文字列を直接埋めると実改行が JSON の文字列に
+# 🚨 本文は必ず jq --arg で組む。heredoc に状態文字列を直接埋めると実改行が JSON の文字列に
 #    入り「control characters must be escaped」で壊れる (next-claim-push.sh の実測 2026-09-02)。
-# ⚠️ commit されるまで毎プロンプト出る。ユーザーが「今はしない」と答えたら、そのセッションでは
+# 🚨 commit されるまで毎プロンプト出る。ユーザーが「今はしない」と答えたら、そのセッションでは
 #    再度聞かないこと (注入は繰り返し出るが、答えは会話に残っている)。
 
 input=$(cat)

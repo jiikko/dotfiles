@@ -14,7 +14,7 @@ import (
 // glogx は tmux popup から C-g で開閉するトグルとして使われる。viewer を開いたまま C-g で
 // 閉じると、次に開いたとき git log の一覧から辿り直しになるため、画面を 1 つだけ覚えておく。
 //
-// ⚠️ 覚えるのは「viewer を出したまま終了したとき」だけ。git log 一覧から終了したときは消す
+// 🚨 覚えるのは「viewer を出したまま終了したとき」だけ。git log 一覧から終了したときは消す
 // (ユーザー指定)。消さないと 2 回前に見ていた viewer が後から蘇り、「一覧を見て閉じたのに次は
 // viewer が出る」という予測できない挙動になる。
 //
@@ -37,7 +37,7 @@ type issuesScreen struct {
 	Root    string    `json:"root"`     // スキャンの起点 (別 repo の画面を復元しないための照合キー)
 	SavedAt time.Time `json:"saved_at"` // TTL 判定
 	Tab     string    `json:"tab"`      // カテゴリタブ名 ("" = All)
-	// Filter は表示段階の名前 ("open" / "pending" / "all")。⚠️ 序数で持たないこと: 段階を増減・
+	// Filter は表示段階の名前 ("open" / "pending" / "all")。🚨 序数で持たないこと: 段階を増減・
 	// 並べ替えると保存済みの値が別の段階を指す (issues.StatusFilter.String の注記)。
 	Filter  string `json:"filter"`
 	Cursor  string `json:"cursor"`   // 一覧のカーソル行の issue パス

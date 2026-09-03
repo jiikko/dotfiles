@@ -12,7 +12,7 @@ import (
 // codex_version_test.go が見るので、ここでは「キーが actionModal まで届き、実行関数まで到達するか」と
 // 「overlay の語彙が先に立つ場面では届かないか」だけを pin する。
 //
-// ⚠️ 届いた証拠は stub した runClaudeUpdate / runCodexUpdate の呼び出し回数で取る。handleKey の
+// 🚨 届いた証拠は stub した runClaudeUpdate / runCodexUpdate の呼び出し回数で取る。handleKey の
 // 戻り値が非 nil かでは判定しない (overlay が飲んでも maybeTick が非 nil を返す経路があり、
 // updateBeginMsg を直接 Update へ流す形も「届かなくても updating が立つ」ので証拠にならない。
 // 敵対レビュー 2026-09-02 が変異で実証)。
@@ -143,7 +143,7 @@ func TestUpdateKeysYieldToOverlayInputModes(t *testing.T) {
 // doctor の削除の確認・実行中は C / X を受けない (確認中の X が codex update を始めると、
 // 削除の確認が裏に残る)。
 //
-// ⚠️ この検査が無いと `updateKeyReachable` の doctor 節を消す変異が**全テスト green** を通る
+// 🚨 この検査が無いと `updateKeyReachable` の doctor 節を消す変異が**全テスト green** を通る
 // (敵対レビュー 2026-09-03 の実測)。doctorView 側のテストは `ownsKeys()` の値しか見ておらず、
 // **browseModel がそれを見ているか**は守っていなかった。
 func TestUpdateKeysYieldToDoctorDelete(t *testing.T) {
@@ -157,7 +157,7 @@ func TestUpdateKeysYieldToDoctorDelete(t *testing.T) {
 		{"実行中", doctorDelete{running: true}},
 		{"結果の表示中", doctorDelete{result: &disk.DeleteReport{}}},
 	}
-	// ⚠️ 状態 × キーの直積で、**1 キーだけ**押す。確認や結果は 1 キーで解けるので、
+	// 🚨 状態 × キーの直積で、**1 キーだけ**押す。確認や結果は 1 キーで解けるので、
 	// 続けて押すと「解けた後の画面に答えた」ことになり、この分岐の主張と混ざる
 	for _, st := range states {
 		for _, key := range []string{"C", "X"} {

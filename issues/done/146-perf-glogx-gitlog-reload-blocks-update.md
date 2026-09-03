@@ -69,7 +69,7 @@ issue 本文の 139ms より短いのは計測条件の差 (patch 本文の内�
   `TestGitLogReloadDefersWhenOverlayOpensDuringReload` / `TestGitLogProbeSkipsMeasureWhileReloading`。
   既存の反映テストは `runGitLogReload` で Cmd を実行して Msg を渡す形に直した。変異検証: seq 判定削除 → red /
   apply 時の見送り削除 → red / reloading 見送り削除 → red / Update 内で同期に読む → red
-  (⚠️ 最初に書いた配線テストはこの 4 つ目を検知できず、PATH を空にする形に作り替えた)
+  (🚨 最初に書いた配線テストはこの 4 つ目を検知できず、PATH を空にする形に作り替えた)
 - 残る制約: `LoadCommits` は timeout なし。git が stall すると Update は止まらないが `reloading` が立ったままに
   なり自動追従だけ止まる (コードコメントに明記)
 - 敵対的レビューは通していない (codex は自発起動しない運用)

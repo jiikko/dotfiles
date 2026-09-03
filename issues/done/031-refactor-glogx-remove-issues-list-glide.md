@@ -52,7 +52,7 @@ offset := clampScrollOffset(v.offset, len(v.rows), rows)
 
 `scroll_glide_test.go`:
 
-- `listGlide` を参照する 4 箇所を整理。⚠️ **「一覧の glide 中もカーソル行が描かれる」テストは
+- `listGlide` を参照する 4 箇所を整理。🚨 **「一覧の glide 中もカーソル行が描かれる」テストは
   消さずに残す** — glide が無くなっても「一覧の窓は必ずカーソルを含む」という不変条件は生き続ける
   ので、glide への依存だけ外して不変条件のテストとして残す
 

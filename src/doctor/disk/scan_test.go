@@ -619,7 +619,7 @@ func TestBrewPrefixIsResolvedNotHardcoded(t *testing.T) {
 	}
 
 	// 取れない / 空 / 相対 / 実在しない → すべて failed (候補 0 件に畳まない)。
-	// ⚠️ fixture は「その guard だけを踏む」形にする。どれも空文字や存在しないパスにすると、
+	// 🚨 fixture は「その guard だけを踏む」形にする。どれも空文字や存在しないパスにすると、
 	// 実際には Stat の guard 1 つだけが全部を弾いていて、他の guard を消しても green のまま残る
 	// (敵対レビュー 2026-09-03 で実測)。各ケースは error 文言で「どの guard が弾いたか」まで固定する。
 	for _, tc := range []struct {
@@ -769,7 +769,7 @@ func TestSimDeviceEnumeratesAllDeviceSets(t *testing.T) {
 	}
 
 	// どのセットの取得失敗も fail-closed (孤児判定をしない)。
-	// ⚠️ このループの手前で dev が読める状態であることを確かめる。読めないと全イテレーションが
+	// 🚨 このループの手前で dev が読める状態であることを確かめる。読めないと全イテレーションが
 	// 「別の理由で fail-closed」になり、per-set の fail-closed を丸ごと消しても green のまま残る
 	// (敵対レビュー 2026-09-03 が、chmod の復元行を消すだけでそうなることを実測した)
 	if _, err := os.ReadDir(dev); err != nil {
@@ -1021,7 +1021,7 @@ func TestBlankEnvNeverYieldsCandidates(t *testing.T) {
 		for _, tmpl := range e.Paths {
 			got, err := expand(blank, tmpl)
 
-			// ⚠️ 変数を含むパスは「候補 0 件」では不十分で、**必ず error で停止する**こと。
+			// 🚨 変数を含むパスは「候補 0 件」では不十分で、**必ず error で停止する**こと。
 			// 0 件だけを見ると、`~/.rbenv` が `/.rbenv` に化けて glob が空振りしただけの
 			// 状態を「安全」と読んでしまう (実測 2026-09-03: expand の HOME 検査を外しても
 			// 0 件チェックだけでは素通りした)
@@ -1099,7 +1099,7 @@ func TestCanonicalPathAndVMRootRejectBlankHome(t *testing.T) {
 
 // 走査を 2 つ同時に回しても -race が落ちない (issue 214)。
 //
-// ⚠️ `guards.do` の sync.Once は **走査ごとの instance に属する**ので、走査間では
+// 🚨 `guards.do` の sync.Once は **走査ごとの instance に属する**ので、走査間では
 // 直列化しない。package 変数の計測点 (collectVisits) が素の int だと、ここで競合する。
 // glogx 側の TestUpdateKeysYieldToDoctorDelete が実際にこの形で赤くなっていた。
 func TestConcurrentScansDoNotRaceOnCollectVisits(t *testing.T) {

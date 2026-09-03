@@ -44,7 +44,7 @@ check() { # $1=説明 $2=期待パターン (grep -E) $3=本文。空パター�
     [ -z "$got" ] && return 0
     echo "NG: $desc — 何も出さないはずが出力された:"; printf '%s\n' "$got"; fails=$((fails + 1)); return
   fi
-  # ⚠️ `printf … | grep -q` のパイプに戻さないこと。grep -q は一致した瞬間に exit するため
+  # 🚨 `printf … | grep -q` のパイプに戻さないこと。grep -q は一致した瞬間に exit するため
   # 書き手が SIGPIPE/EPIPE を受け、`set -o pipefail` 下では**一致していてもパイプライン全体が
   # 非 0** になる。判定が反転し、正しい実装に対してランダムに NG を出す (CI 実測 2026-08-22:
   # run 32570242557。出力に期待パターンが載っているのに NG + "printf: write error: Broken pipe")。
@@ -99,7 +99,7 @@ check "date 非対応を明記する" '「期限間近」の判定は省略' "$(
 # --- 6b. 「(うち期限に余裕あり N 件)」は unread と同じ母集団 (human かつ pending 以外) ---
 # 回帰 2026-08-21: later はカテゴリも pending も問わず加算していたため、規約準拠のデータだけで
 # 「未完了 1 件 (うち期限に余裕あり 2 件)」= 部分集合でない表示が出た。
-# ⚠️ 上のケース群が積んだ issue と混ざらないよう、この検査だけ独立の repo で行う。
+# 🚨 上のケース群が積んだ issue と混ざらないよう、この検査だけ独立の repo で行う。
 pop="$WORK/pop"
 mkdir -p "$pop/issues/pending"
 git -C "$pop" init -q .
@@ -118,7 +118,7 @@ if grep -q '余裕あり' <<<"$pop_ctx"; then
 fi
 
 # --- 7. git 管理外では何もしない ---
-# ⚠️ cwd に `/` を渡す形にしないこと。`/issues` が無いので**後段の「issues/ が無ければ諦める」
+# 🚨 cwd に `/` を渡す形にしないこと。`/issues` が無いので**後段の「issues/ が無ければ諦める」
 # ガードが黙らせているだけ**で、git ガードの有無を区別できない (実測 2026-08-21: git ガードを
 # `root="$cwd"` に変えても、非 git で `exit 3` する実装に変えても緑だった = 観点 7 は空回り)。
 # 差が出る形にする: **issues/ と human issue を持つが git 管理外**のディレクトリを作り、
@@ -126,7 +126,7 @@ fi
 nogit="$WORK/nogit"
 mkdir -p "$nogit/issues"
 printf '# t\n\n起票日: 2026-08-01\n期限: 2026-08-01\n' >"$nogit/issues/090-human-x.md"
-# ⚠️ rc も見ること。`|| true` で捨てると「黙って何もしない (正)」と「異常終了した (誤)」を
+# 🚨 rc も見ること。`|| true` で捨てると「黙って何もしない (正)」と「異常終了した (誤)」を
 # 区別できない (実測 2026-08-21: 非 git で exit 3 する変異が緑のまま通った)。
 out="$(printf '{"cwd":"%s"}' "$nogit" | GIT_CEILING_DIRECTORIES="$WORK" "$HOOK" 2>/dev/null)"
 rc=$?

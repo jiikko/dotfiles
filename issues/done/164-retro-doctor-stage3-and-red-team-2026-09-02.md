@@ -27,7 +27,7 @@ issue 163 の「走らせ方」には書いた
 誤認は次の `git push` が **`Everything up-to-date` で rc=0** を返すところで起きる。
 だから対策は「エラーを見る」ではなく cwd の固定。実例は rationale へ
 
-### 3. 「⚠️ の表示幅が揺れる」は実端末で見ないと分からなかった
+### 3. 「🚨 の表示幅が揺れる」は実端末で見ないと分からなかった
 
 サンプルは cat で見ていたが揺れは動画的な現象で、ユーザーが動作確認して初めて出た。`decide-layout-in-sample-renderer-first.md` の
 「出して見る」は静止画では足りない場面がある。**切り出し先**: `no-mixed-width-columns-in-terminal-ui.md` に追記済み (規約化)
@@ -59,7 +59,7 @@ UI にしか無かった = 欠落が両方向)。実例は rationale へ
       パイプ越しに叩くと rc そのものを見失う)
 - [x] 項目 5 → **採用 (2026-09-02、別マシンのセッションが実施 `6274192a`。2026-09-02 に本人確認)**。
       [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) に 1 項追加。
-      ⚠️ 本セッションは同じ項目を**却下する**方向で検討していた
+      🚨 本セッションは同じ項目を**却下する**方向で検討していた
       (「同じ間違いが別の場所にもある前提で grep する」が CLAUDE.md の一般則として既にあるため)。
       別セッションの採用が先に入っていたので、**却下へ差し戻さない** —
       既に入った規範を外すには [`list-masked-failure-modes-before-removing-guard.md`](../_claude/rules/list-masked-failure-modes-before-removing-guard.md)

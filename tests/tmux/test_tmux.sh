@@ -65,7 +65,7 @@ handle_result() {
     if [[ "$allow_skip" == "skip" ]]; then
       print -u2 "[test-tmux:zsh] skipped: tmux cannot create sockets in this environment"
       cat "$log" >&2
-      # ⚠️ 丸ごと skip は **exit 77** (automake の慣例)。0 で抜けると runner が [ok] と数える
+      # 🚨 丸ごと skip は **exit 77** (automake の慣例)。0 で抜けると runner が [ok] と数える
       # (tests/CLAUDE.md / issue 139)
       exit 77
     fi
@@ -224,7 +224,7 @@ print "[test-tmux:zsh] ok: status-right は両分岐とも ${w_armed} セル (st
 # glogx popup (prefix g / C-g) の git repo ガード。repo 外では popup を出さず toast に
 # 落ちることを、conf 内の実際の条件式を取り出して両方向 (repo 内 / repo 外) で実行して固定する。
 # 条件式を conf から抜いて使うので、ガードの書き換え時にテスト側の複製が腐らない。
-# ⚠️ if-shell の -t は入れ子コマンドの format 展開には効かない (実測 tmux 3.7b) ため、
+# 🚨 if-shell の -t は入れ子コマンドの format 展開には効かない (実測 tmux 3.7b) ため、
 # 判定させたいセッションを直前に作って「現在のセッション」にしてから -t なしで実行する。
 print "[test-tmux:zsh] checking the glogx popup binding guards against non-git directories"
 # glogx popup は prefix g と C-g の 2 本ある。片方だけ直してもう片方が素通しになる
@@ -292,7 +292,7 @@ run_guard_branch glogx_guard_repo "$repo_dir"
 assert_guard_branch "repo 内" "popup:$repo_dir" "$REPLY"
 
 # terminal-features が conf の reload で膨張しないこと。
-# ⚠️ `set -as` は追記なので、-u で既定へ戻さないと reload ごとに同じエントリが積まれる。
+# 🚨 `set -as` は追記なので、-u で既定へ戻さないと reload ごとに同じエントリが積まれる。
 # 実測 (2026-08-21): 稼働サーバが 38 エントリまで膨張していた (下の 2 行 × reload 17 回 +
 # conf 外の手動 set 1 件)。件数を pin するのではなく「reload しても増えない」を pin する
 # (tmux の既定エントリ数は版で変わりうるため)。

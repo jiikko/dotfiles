@@ -34,7 +34,7 @@ display-popup はモーダル (表示中のキー入力を必ず奪う) で、�
    終了時に `refresh-client` で tmux に上書きさせて消す。tmux の再描画との競合で
    点滅がわずかに残る (原理的に消せない)
 
-## ⚠️ 罠: hook から呼ぶと無限増殖する (再入ガードが抑止している)
+## 🚨 罠: hook から呼ぶと無限増殖する (再入ガードが抑止している)
 
 toast 用の `new-pane` 自体が `after-split-window` hook を**再発火する** (tmux 3.7b 実測)。
 そのため分割 hook から素朴に呼ぶと「toast が toast を生む」無限増殖になる

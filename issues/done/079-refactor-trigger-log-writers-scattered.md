@@ -77,7 +77,7 @@ rotation (`TT_TRIGGER_LOG_MAX_LINES`) は `tmux_periodic_save.sh:43,86-90` に�
 決めるものであって安全機構ではないため、periodic_save が止まっている間に超過しても実害は無い。
 **この「暗黙の依存」を `tt_trigger_log` のコメントに明示**して、暗黙→明示に変えた。
 
-### ⚠️ issue の前提が 1 つ誤っていた
+### 🚨 issue の前提が 1 つ誤っていた
 
 「集約先の guards.sh は上記対象がすべて source 済みなので**新しい依存辺は増えない**」は
 **9 本中 8 本でしか成立しない**。`tmux_reap_orphan_servers.sh` は `#!/bin/sh` で guards.sh を
@@ -101,7 +101,7 @@ run-shell 文脈で評価される。スクリプトへ寄せるには実際の�
 `tt_trigger_log` を no-op (`{ :; }`) にすると、観測ログを assert する 4 本
 (periodic_save / log_session_closed / log_kill_command / restore_runner) が **4/4 red**。
 
-⚠️ 迂回していた 3 箇所 (resurrect_save × 2 / reap_orphan) は、寄せただけでは既存テストが
+🚨 迂回していた 3 箇所 (resurrect_save × 2 / reap_orphan) は、寄せただけでは既存テストが
 触っていないので緑のまま。**その経路専用の assert は未追加**で、issue の「変異検証」節が
 要求していた分が残っている → 次に resurrect_save の観測ログを触るときに足す。
 

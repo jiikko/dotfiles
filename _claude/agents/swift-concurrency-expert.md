@@ -124,7 +124,7 @@ func fetchAll() async throws -> [Item] {
     }
 }
 
-// ⚠️ Unstructured: Manual cancellation needed
+// 🚨 Unstructured: Manual cancellation needed
 class ViewModel {
     private var fetchTask: Task<Void, Never>?
 
@@ -193,7 +193,7 @@ class MutableCache: Sendable {  // Compiler error
     var items: [String] = []
 }
 
-// ⚠️ @unchecked Sendable - use with care
+// 🚨 @unchecked Sendable - use with care
 final class ThreadSafeCache: @unchecked Sendable {
     private let lock = NSLock()
     private var items: [String] = []
@@ -288,7 +288,7 @@ Actor reentrancy occurs when an actor method suspends (at an `await` point), all
 
 **Diagnosis Checklist**:
 ```swift
-// ⚠️ REENTRANCY RISK PATTERN:
+// 🚨 REENTRANCY RISK PATTERN:
 // 1. Read state → 2. await → 3. Modify state based on (1)
 actor Counter {
     var count = 0
@@ -350,7 +350,7 @@ actor DebugableActor {
         print("[\(Self.self)] After await: state = \(afterAwait)")
 
         if beforeAwait != afterAwait {
-            print("⚠️ REENTRANCY DETECTED: state changed during await!")
+            print("🚨 REENTRANCY DETECTED: state changed during await!")
         }
     }
 }

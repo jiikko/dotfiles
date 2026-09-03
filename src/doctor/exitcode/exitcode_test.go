@@ -19,7 +19,7 @@ func TestVocabulary(t *testing.T) {
 			t.Errorf("%s: got=%d want=%d", tc.name, tc.got, tc.want)
 		}
 	}
-	// ⚠️ 「Undiagnosed > Findings」の assert は置かない。上の表が数字を厳密に固定しているので
+	// 🚨 「Undiagnosed > Findings」の assert は置かない。上の表が数字を厳密に固定しているので
 	// 独立に発火しえず、かつ判定側の優先順位は**数字の大小ではなく if の順序**で実装されている
 	// (svcExitCode / diskExitCode)。その優先順位を守っているのは
 	// TestSvcExitCode / TestDiskExitCode の「候補あり + 診断できず」のケース (敵対レビュー 2026-09-03)。

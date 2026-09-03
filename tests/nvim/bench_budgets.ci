@@ -27,7 +27,7 @@
 # 16.3/16.3/19.8) の上端に丸めた値。基準が実測より高いと補正が効かず flake が残り
 # (当初の暫定 60 はこの状態だった)、低いと常時スケールして予算が緩む。静穏 run の
 # 実測が 20 を安定して超える/下回るようなら取り直して調整すること。
-# ⚠️ 較正器の startup_clean 自身は絶対予算のまま rel を付けないこと (checker も拒否する)。
+# 🚨 較正器の startup_clean 自身は絶対予算のまま rel を付けないこと (checker も拒否する)。
 calibrate startup_clean 20
 startup 350 rel
 startup_clean 250

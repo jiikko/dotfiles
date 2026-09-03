@@ -71,7 +71,7 @@ func deleteTestView(t *testing.T, f *fakeDelete) *doctorView {
 
 // runDeleteCmds は削除の Cmd を回して進捗 / 完了を view へ届ける。
 //
-// ⚠️ **Batch の中身は並行に走らせる**。本番の bubbletea はそうするし、逐次に回すと
+// 🚨 **Batch の中身は並行に走らせる**。本番の bubbletea はそうするし、逐次に回すと
 // waitDeleteCmd が channel 待ちに入って producer が動かず、そのまま止まる。
 // Msg の取り込み (receiveDelete) はこの goroutine だけが行う (Update の外で状態を触らない)。
 func runDeleteCmds(t *testing.T, v *doctorView, cmd tea.Cmd) []string {
@@ -402,7 +402,7 @@ func TestDoctorDeletePanelKeepsPromptWhenCramped(t *testing.T) {
 // 落ちていた。中断は ctx で伝える契約 (プロセスを殺すと記録が executing のまま残り、
 // cli: の子が孤児になる) が、UI の配線で破れていた形。
 //
-// ⚠️ doctorView.handleKey を直叩きするテストではこの穴を 1 mm も守れない (それが実際に
+// 🚨 doctorView.handleKey を直叩きするテストではこの穴を 1 mm も守れない (それが実際に
 // 起きたこと)。**browseModel.handleKey 経由**で見る。
 func TestBrowseCtrlCDuringDeleteDoesNotQuit(t *testing.T) {
 	for _, key := range []string{"ctrl+c", "ctrl+g"} {
@@ -526,7 +526,7 @@ func TestDeleteConfirmKeepsTotalsWhenCramped(t *testing.T) {
 			Outcome: disk.OutcomePlanned, BeforeSize: 1 << 30, Items: make([]disk.ItemOutcome, 1)})
 	}
 	v := &doctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
-	// ⚠️ page は**判別できる値**を入れる。6/10/24 だけだと「末尾を後ろから残す」機構を
+	// 🚨 page は**判別できる値**を入れる。6/10/24 だけだと「末尾を後ろから残す」機構を
 	// 丸ごと外しても green だった (敵対レビュー 2026-09-03 の実測: 差が出るのは 4 と 5)
 	for _, page := range []int{3, 4, 5, 6, 10, 24} {
 		out := strings.Join(v.lines(doctorTestOpts(page)), "\n")
@@ -1116,7 +1116,7 @@ func TestDiskItemCopyTextIsAboutOnePath(t *testing.T) {
 	r := disk.Result{Status: disk.StatusOK, Size: 3 << 20,
 		Entry: disk.Entry{ID: "x", Label: "ラベル", Risk: disk.RiskSafe, DeleteVia: "rm", Recover: "戻せます"},
 		Items: []disk.Item{{Path: "/a", Size: 1 << 20}, {Path: "/b", Size: 2 << 20}}}
-	// ⚠️ 関数を直接呼ぶだけでは**配線**を守れない (行が別の関数を使っていても green になる)。
+	// 🚨 関数を直接呼ぶだけでは**配線**を守れない (行が別の関数を使っていても green になる)。
 	// 行を組み立てて、その行の copyText を見る
 	v := &doctorView{}
 	rows := v.diskItemRows(doctorTestOpts(60), r)

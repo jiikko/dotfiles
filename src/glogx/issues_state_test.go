@@ -29,7 +29,7 @@ func TestIssuesScreenRoundTrip(t *testing.T) {
 		got.Cursor != want.Cursor || got.Open != want.Open || got.BodyOff != want.BodyOff {
 		t.Fatalf("往復で内容が変わった:\n got=%+v\nwant=%+v", got, want)
 	}
-	// ⚠️ 段階は名前で保存する。序数に戻すと、段階を増減・並べ替えた瞬間に保存済みの画面が
+	// 🚨 段階は名前で保存する。序数に戻すと、段階を増減・並べ替えた瞬間に保存済みの画面が
 	// 黙って別の段階で復元される (issues.StatusFilter.String の注記)。往復テストだけでは
 	// 同じコードが書いて読むので気づけないため、ファイルの中身を直接見る。
 	path, err := issuesStatePath()

@@ -40,7 +40,7 @@
     `DAYS=7` で期間を変える)。消す前に**結論が issue / コードへ移っているか**と、**issue や doc が指している
     パスでないか**を確かめる (`grep -rn 'tmp/' issues/ _claude/`)。放置すると溜まる:
     2026-09-02 に 309 エントリ / 831MB あり、うち 78 件 / 588MB が 1 か月超だった
-  - ⚠️ `tmp/` の ignore は **`~/.gitignore_global:5` 由来**で、repo の `.gitignore` には**無い**
+  - 🚨 `tmp/` の ignore は **`~/.gitignore_global:5` 由来**で、repo の `.gitignore` には**無い**
     (実測)。新品チェックアウトと CI では ignore されないし、そもそも `tmp/` が存在しない
     (`src/glogx/worktree_status_real_test.go` の doc が CI 失敗 run 30823977760 を記録している)
   - **例外: ハーネスが指定する scratchpad** (`/private/tmp/claude-501/…`) はそのまま使ってよい。
@@ -50,10 +50,10 @@
   (実例: `src/glogx/worktree_status_real_test.go:repoTmpDir` — 使い捨て repo を repo 内に置く理由と、
   無ければ作る理由が書いてある)
 - 線引きは置き場所でも `mktemp` かどうかでもなく、**終了時に消す責任が実装されているか**
-  - ⚠️ 「`mktemp -d` は `/tmp` ではないから抵触しない」で判断しない。macOS は TMPDIR を外しても
+  - 🚨 「`mktemp -d` は `/tmp` ではないから抵触しない」で判断しない。macOS は TMPDIR を外しても
     Darwin のユーザ専用一時領域 (`/var/folders/…`) を使い `/tmp` に来ないが、**Linux では
     `/tmp` 配下になりうる**。パスで線を引くと platform で答えが変わる
-  - ⚠️ 消す責任は「`trap` を書いた」では終わらない。**`trap` は中断では走らず、dir を消しても
+  - 🚨 消す責任は「`trap` を書いた」では終わらない。**`trap` は中断では走らず、dir を消しても
     そこで起こしたプロセスは残る** (`scripts/tmux_reap_orphan_servers.sh` の背景注記: `mktemp -d`
     の socket を消してもサーバが launchd に里子化して残り、自動復元が **17 日間**不発になった)
 

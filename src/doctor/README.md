@@ -61,7 +61,7 @@ CLI が要るのは「スクリプトから叩きたい」「JSON で受けた�
 | `disk/` | 掃除候補の allowlist (`catalog.go`)、走査 (`scan.go`)、整形 (`report.go`)、除外判定 (`guard.go` — 起動中プロセス・boot 時刻・現存する simulator デバイスを見て「今は消してはいけない」を弾く。**判定に失敗したら fail-closed** = 対象外へ倒す) |
 | `svc/` | launchd の plist 読み (`plist.go`)、`launchctl` 経由の状態取得 (`launchctl.go`)、Homebrew 台帳との突き合わせ (`brew.go`)、整形 (`report.go`) |
 | `brewledger/` | Homebrew が管理している formula/cask の台帳。**disk (`brew-orphan-state`) と svc (`homebrew.mxcl.<formula>` が台帳に無い判定) が同じ集合を引く**ための共有パッケージ |
-| `cachedir/` | キャッシュ置き場 (`$XDG_CACHE_HOME/glog`、未設定なら `~/.cache/glog`) の解決。glogx 本体と doctor のスキャン結果で共有する (⚠️ ディレクトリ名は `glogx` ではなく `glog`) |
+| `cachedir/` | キャッシュ置き場 (`$XDG_CACHE_HOME/glog`、未設定なら `~/.cache/glog`) の解決。glogx 本体と doctor のスキャン結果で共有する (🚨 ディレクトリ名は `glogx` ではなく `glog`) |
 | `runner/` | 外部コマンドの実行口。**stdout / stderr / exit code を分けて返す** (混ぜるとどの stream が判定材料か確定できない)。テストではここを差し替える |
 
 `glogx` からは go.mod の `replace doctor => ../doctor` で参照する。
@@ -97,4 +97,4 @@ CI は 3 レーンに分かれている。**doctor 機能を触ったら見る�
   下限 (15 本。実測 19 本) を課している。テスト名の頭を変えるならこの gate も直す
 - **fail-closed の smoke**: `xcrun` / `brew` を**必ず失敗する偽物**に差し替えて `diskdoctor -json` を回し、
   依存コマンドを使う 4 判定が `failed` (診断できず) になることを見る。
-  ⚠️ PATH から外すだけでは足りない (`xcrun` は `/usr/bin` にあるので実在して成功する)
+  🚨 PATH から外すだけでは足りない (`xcrun` は `/usr/bin` にあるので実在して成功する)

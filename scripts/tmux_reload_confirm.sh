@@ -10,7 +10,7 @@
 # $1=--confirm (tty を得てから gum を使うための二段構え。kill 系は bind から直接 display-popup
 # するが、こちらは「窓外は popup を出さない」分岐が必要なので script 側で popup を開く)。
 #
-# ⚠️ set -e は使わない: fail-safe は `gum confirm && リロード` の && 短絡に依存 (kill_confirm と同型)。
+# 🚨 set -e は使わない: fail-safe は `gum confirm && リロード` の && 短絡に依存 (kill_confirm と同型)。
 set -uo pipefail
 
 conf="$HOME/.tmux.conf"

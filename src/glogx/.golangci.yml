@@ -123,9 +123,9 @@ linters:
   exclusions:
     rules:
       # 空白連結の規律 (padViaPadSpaces) は production だけに掛ける。
-      # ⚠️ テストは期待値の組み立てに strings.Repeat が要る (frame_alloc_test.go は
+      # 🚨 テストは期待値の組み立てに strings.Repeat が要る (frame_alloc_test.go は
       #   「PadSpaces ≡ strings.Repeat」の同値検証そのものを持っており、置換すると自己言及になる)。
-      # ⚠️ termwidth.go は PadSpaces の実装本体 (上限超過分をここで Repeat に落とす)。
+      # 🚨 termwidth.go は PadSpaces の実装本体 (上限超過分をここで Repeat に落とす)。
       - path: (_test\.go|termwidth/termwidth\.go)
         text: 空白の連結は
         linters:
@@ -162,7 +162,7 @@ issues:
   # 既定 (3) は同じ文面の指摘を 4 件目から落とす。一括退行 (例: timeNow シームを 20 箇所
   # 戻す) のとき 3 件しか出ず、直しては再実行を繰り返すことになる (実測: 20 箇所の退行で
   # 報告 3 件 → max-same-issues:0 で 20 件)。
-  # ⚠️ これは false green ではない (除外は上限の**前**に適用されるので make lint は赤のまま
+  # 🚨 これは false green ではない (除外は上限の**前**に適用されるので make lint は赤のまま
   # 落ちる。実験で確認済み)。直すのは報告の不完全さだけ。issue 118
   max-same-issues: 0
   max-issues-per-linter: 0

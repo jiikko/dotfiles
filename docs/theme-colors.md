@@ -9,10 +9,10 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 |---|---|---|---|
 | **現在地** (いまここ) | 蛍光オレンジ `#FF5F00`/202 (cterm 完全一致) | `@cur-accent` (current window 島) | `palette.accent.current_accent` (bufferline 選択タブの pill。両端キャップも同色) |
 | 最近作業した (鮮度) | バイオレット ramp 201→164→127→90→53 (黄昏の残光) | `@fade-*` (放置フェード) | — (対応概念なし。持ち込まない) |
-| 選択中テキスト | dark2 `#504945`/239 | — | `palette.dark2` (Visual)。gruvbox 公式の選択地。⚠️ **明るい地を選ばないこと** — 2026-07-16〜2026-09-03 は暖ベージュ Kraft `#D4A27F`/180 だったが、前景色が暗地向けに設計されているため選択すると文字が地に溶けた (実測 最悪 **1.10:1**。String 142 と Type 214 がほぼ不可視)。dark2 なら同じ実測で 2.40:1。地の輝度と最悪比は単調 (dark0 0.021→4.02:1 / dark1 0.041→3.16:1 / dark2 0.069→2.40:1 / dark3 0.111→1.77:1 / Kraft 0.414→1.10:1) なので、`tests/nvim/test_lsp_reference_hl.sh` は**輝度の上限 0.08** で原因側を止める。⚠️ **Visual は他の group から link されている** (nvim 既定の `LspReferenceText` / `LspReferenceTarget` / `LspSignatureActiveParameter` / `SnippetTabstop`、blink の `BlinkCmpDocCursorLine`)。4 + 1 とも下行で link を切ってあるが、**dark2 になった今は link が残っていても実害は無い** (中立な暗地なので。MatchParen / lualine_c_* も同じ地を正当に使う) |
+| 選択中テキスト | dark2 `#504945`/239 | — | `palette.dark2` (Visual)。gruvbox 公式の選択地。🚨 **明るい地を選ばないこと** — 2026-07-16〜2026-09-03 は暖ベージュ Kraft `#D4A27F`/180 だったが、前景色が暗地向けに設計されているため選択すると文字が地に溶けた (実測 最悪 **1.10:1**。String 142 と Type 214 がほぼ不可視)。dark2 なら同じ実測で 2.40:1。地の輝度と最悪比は単調 (dark0 0.021→4.02:1 / dark1 0.041→3.16:1 / dark2 0.069→2.40:1 / dark3 0.111→1.77:1 / Kraft 0.414→1.10:1) なので、`tests/nvim/test_lsp_reference_hl.sh` は**輝度の上限 0.08** で原因側を止める。🚨 **Visual は他の group から link されている** (nvim 既定の `LspReferenceText` / `LspReferenceTarget` / `LspSignatureActiveParameter` / `SnippetTabstop`、blink の `BlinkCmpDocCursorLine`)。4 + 1 とも下行で link を切ってあるが、**dark2 になった今は link が残っていても実害は無い** (中立な暗地なので。MatchParen / lualine_c_* も同じ地を正当に使う) |
 | LSP 参照 / hover 範囲 | dark1 `#3c3836`/237 | — | `palette.dark1` (`LspReferenceText` = documentHighlight / `LspReferenceTarget` = hover の対象範囲)。**前景色を殺さない暗地であることが要件** — Kraft が漏れていた頃は Go で `func` にカーソルを置くと gopls が `func` + 全 `return` を返し、赤いキーワードが 1.5:1 で読めなかった。MatchParen (vim-matchup の対応ハイライト) は dark2 + bold + underline なので地色で区別できる。`tests/nvim/test_lsp_reference_hl.sh` が両 colorscheme 分岐で 3.0:1 を検査する |
-| snippet の tabstop | dark1 `#3c3836`/237 + 下線 | — | `SnippetTabstop` (`vim.snippet` が**バッファ内**の tabstop に塗る。blink.cmp の既定 preset が `vim.snippet.expand` / `jump` を呼ぶ)。地色だけだと上行の LSP 参照と見分けが付かないので**下線を足して「次に `<Tab>` で飛ぶ先」を示す**。⚠️ 実測 2026-09-03 では**両 colorscheme 分岐で** `link=Visual` のまま当時の Kraft を引いており、最悪 1.10:1 (Type 214) だった (その後 Visual 自体を dark2 へ変更) |
-| シグネチャヘルプの現在引数 | (reverse。地色を持たない) | — | `LspSignatureActiveParameter` (blink.cmp が `BlinkCmpSignatureHelpActiveParameter` から link)。**reverse は前景色を殺さない**ので float の中で色を失わない。⚠️ **truecolor 側の gruvbox が既に `link=Search` (実体は reverse) を採っており、256色側をそれに揃えた** — 分岐ごとに違う見え方にしない。検査は「reverse があること」と「地色を持たないこと」の両方を見る (reverse が消えると、地色検査は素通りしてしまうため) |
+| snippet の tabstop | dark1 `#3c3836`/237 + 下線 | — | `SnippetTabstop` (`vim.snippet` が**バッファ内**の tabstop に塗る。blink.cmp の既定 preset が `vim.snippet.expand` / `jump` を呼ぶ)。地色だけだと上行の LSP 参照と見分けが付かないので**下線を足して「次に `<Tab>` で飛ぶ先」を示す**。🚨 実測 2026-09-03 では**両 colorscheme 分岐で** `link=Visual` のまま当時の Kraft を引いており、最悪 1.10:1 (Type 214) だった (その後 Visual 自体を dark2 へ変更) |
+| シグネチャヘルプの現在引数 | (reverse。地色を持たない) | — | `LspSignatureActiveParameter` (blink.cmp が `BlinkCmpSignatureHelpActiveParameter` から link)。**reverse は前景色を殺さない**ので float の中で色を失わない。🚨 **truecolor 側の gruvbox が既に `link=Search` (実体は reverse) を採っており、256色側をそれに揃えた** — 分岐ごとに違う見え方にしない。検査は「reverse があること」と「地色を持たないこと」の両方を見る (reverse が消えると、地色検査は素通りしてしまうため) |
 | 通知 (bell/メッセージ) | シアン 51 (稀なイベントの ping) | bell セル反転・message-style (alert 帯/: プロンプト)・copy-mode current match | — |
 | マーカー (未保存) | 橙 208 | copy-mode mark 行 | `palette.bright_orange` (incline ● のみ) |
 | 選択バー (bufferline) | — (pill 化で廃止 2026-07-17) | — | slant 系スタイルではインジケータバー自体が描画されない。選択の強調は pill のキャップ (現在地色) が担う。indicator_selected のクリーム light1 指定は非 slant へ戻したとき用に残置 (橙系は蛍光橙地 202 と近接して不可視になるため使わない、の判断ごと保存) |
@@ -55,7 +55,7 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 
 ### tmux の色
 1. 実行中の tmux に `tmux set -g @cur-accent colour209` のように打ってライブで見る
-   (⚠️ 201 は fade hot・213 は点滅退避先の候補なので、試し色には使わないのが無難)
+   (🚨 201 は fade hot・213 は点滅退避先の候補なので、試し色には使わないのが無難)
 2. 気に入ったら `_tmux.conf` の定数へ書き戻す (フェード定数と同じ流儀)
 3. `tests/tmux/test_tmux.sh` で format 展開のリーク検査
 
@@ -69,7 +69,7 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
    ```
 3. `tests/nvim/test_nvim.sh` (config ロード + 全プラグイン強制ロード)
 
-⚠️ **link の解決は colorscheme 分岐ごとに採る**。「どの group が X を指しているか」を
+🚨 **link の解決は colorscheme 分岐ごとに採る**。「どの group が X を指しているか」を
 `nvim_get_hl` で列挙するとき、**片方の分岐 (truecolor=gruvbox / 256色=retrobox) だけ走査した
 結果を両分岐の話として書かない**。link 先は分岐で違う — 実測 2026-08-28:
 `LspSignatureActiveParameter` は retrobox 側だけが `Visual` を指し、gruvbox 側は `Search`

@@ -50,7 +50,7 @@ func RenderBody(src string, width int, colored bool) (out []string, srcLines []i
 // ことになり、ここで一律に切る方が契約が単純 (glogx 本体も同名の関数で同じことをしており、
 // 今日この溢れが表に出ていないのはその下流 clip が吸収していたから)。
 //
-// ⚠️ ここは Body.Lines のキャッシュ越しなので毎フレームは走らない (width か colored が
+// 🚨 ここは Body.Lines のキャッシュ越しなので毎フレームは走らない (width か colored が
 // 変わったときだけ)。とはいえ ANSI 無しで byte 長が収まる行は最も多いので fast-path は残す。
 func clipToWidth(line string, width int) string {
 	if width <= 0 {

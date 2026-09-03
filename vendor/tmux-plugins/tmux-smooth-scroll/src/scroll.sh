@@ -27,10 +27,10 @@ fi
 # [dotfiles patch] pane 情報と全設定を 1 回の tmux fork でまとめて読む。config__* を
 # 都度呼ぶ元実装は押下ごとに tmux client fork ×5 になり、素通し経路の固定オーバーヘッドの
 # 主因だった (実測)。format の #{@option} は global (set -g) の user option も解決する
-# (tmux 3.7b 実測)。⚠️ 既定値 (:-) は config.sh の同名関数と同期を保つこと。
+# (tmux 3.7b 実測)。🚨 既定値 (:-) は config.sh の同名関数と同期を保つこと。
 # 区切りは '|' (印字可能な非空白文字): タブ等の IFS 空白文字だと未設定オプションの
 # 空フィールドが潰れて後続がシフトする (実測でハマった)。非空白の IFS は空フィールドを保存する。
-# ⚠️ 制御文字 (\x1f 等) を使わないこと: tmux 3.4 の display-message -p は制御文字を
+# 🚨 制御文字 (\x1f 等) を使わないこと: tmux 3.4 の display-message -p は制御文字を
 # リテラルの八進エスケープ表記 ("\037" の 4 文字) に変換して出力するため IFS 分割が
 # 不発になり、全フィールドが PANE_HEIGHT に連結 → LINES 空 → animator の入力検証で
 # 即 exit し 1 行もスクロールしない (CI の ubuntu apt tmux 3.4 で実測。3.7b は

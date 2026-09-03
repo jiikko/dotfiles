@@ -58,7 +58,7 @@ src/glogx/
 | 採用した P1 | 4 | 1 | 4 (P2 相当) |
 | 変異 (すべて red) | 33 | 31 | 13 |
 
-テストは engine 51 本 / UI 49 本 + カーソル 7 本。⚠️ **実データを消したことはテストでは一度も
+テストは engine 51 本 / UI 49 本 + カーソル 7 本。🚨 **実データを消したことはテストでは一度も
 無い** (ハーネスがサンドボックス外を実行前に拒否する)。実機の確認は issue 215 (done)。
 
 ### この issue の後に残したもの
@@ -204,7 +204,7 @@ sudo         true なら提案のみ・実行しない
 | `swiftpm-cache` | `~/Library/Caches/org.swift.swiftpm` | 次回解決時に再取得 | `rm` |
 | `electron-cache` | `~/Library/Caches/electron` | 再ダウンロード | `rm` |
 | `playwright-cache` | `~/Library/Caches/ms-playwright` | `npx playwright install` | `rm` |
-| `homebrew-cache` | `~/Library/Caches/Homebrew` | 再ダウンロード。⚠️ 下記のとおり **`brew cleanup` を先に案内**する | `rm` |
+| `homebrew-cache` | `~/Library/Caches/Homebrew` | 再ダウンロード。🚨 下記のとおり **`brew cleanup` を先に案内**する | `rm` |
 | `simulator-runtimes` | `xcrun simctl runtime list` が返す各 image | Xcode / `simctl runtime add` で再取得 (数GB/個) | **`cli:simctl`** |
 | `go-modcache` | `~/go/<ver>/pkg/mod` | 次回 build で再取得 | **`cli:go clean -modcache`** |
 | `go-build` | `~/Library/Caches/go-build` | 次回 build で再生成 | `rm` |
@@ -222,7 +222,7 @@ sudo         true なら提案のみ・実行しない
 
 > **`xcode-devicesupport` のグロブは iOS 限定にしないこと** (2026-09-01 レビュー)。
 > Xcode は watchOS / tvOS の実機を繋ぐと `watchOS DeviceSupport` / `tvOS DeviceSupport` も作る。
-> ⚠️ ただしこの機には現在 `iOS DeviceSupport` しか存在せず、**他 OS 版は未実測**。
+> 🚨 ただしこの機には現在 `iOS DeviceSupport` しか存在せず、**他 OS 版は未実測**。
 > カタログの登録条件 (実測してから登録) に厳密に従うなら、
 > グロブ拡張の可否は `8. 未決事項` の判断待ちとして扱う。
 
@@ -240,7 +240,7 @@ sudo         true なら提案のみ・実行しない
 | `launchd-tmp` | `/private/var/tmp/com.apple.launchd.*` | mtime が起動時刻より古い (容量はほぼ 0。件数削減が目的) |
 | `finder-nsird` | `$TMPDIR/TemporaryItems/NSIRD_Finder_*` | **中身がユーザーファイルの可能性あり → 常に中身を一覧表示** |
 | `swiftui-drag-cache` | `~/Library/Caches/com.apple.SwiftUI.Drag-*` | **同上 (`finder-nsird` と同型)。常に中身を一覧表示** |
-| `orphan-container` | `~/Library/Containers/<bundle-id>` | アプリ実体が無い。⚠️ 判定方法に罠あり (後述) |
+| `orphan-container` | `~/Library/Containers/<bundle-id>` | アプリ実体が無い。🚨 判定方法に罠あり (後述) |
 | `brew-orphan-state` | `/opt/homebrew/{var,etc}/*` | 対応 formula が `brew list` に無い |
 | `brew-cleanup-residue` | `/opt/homebrew/Library/Homebrew/vendor/portable-ruby/*` | `brew cleanup --dry-run` が対象に挙げるもの |
 | `versionmanager-orphan-root` | `~/.rbenv`, `~/.nodenv`, `~/.goenv` | `*_ROOT` の実効値と一致しないもの |
@@ -270,14 +270,14 @@ sudo         true なら提案のみ・実行しない
 > DB データが残り、同時に `~/Library/LaunchAgents/homebrew.mxcl.mysql@8.0.plist` の
 > 壊れた登録も残っていた (`4. サービス診断` の分類 C)。
 > **片方だけ消すともう片方が残る**ので、両診断の結果は同一の孤児として相互参照させる。
-> ⚠️ `var/<formula>` は**データ本体**なので `risk: confirm` (中身を見せてから確認) にする。
+> 🚨 `var/<formula>` は**データ本体**なので `risk: confirm` (中身を見せてから確認) にする。
 > 「formula が無い = 消してよい」ではない (DB の中身は formula とは別に価値を持つ)。
 
 > **`versionmanager-orphan-root` は `*_ROOT` の実効値で判定する** (2026-09-01 実測)。
 > `~/.nodenv` に **2.2GB** (node 4 世代) があったが、`NODENV_ROOT` の実効値は
 > `~/.anyenv/envs/nodenv` で、`.zshrc` の lazy loader は anyenv 側が存在する限り
 > `~/.nodenv` へ fallback しない。shell 設定に `~/.nodenv` を指す記述は**ゼロ件**だった。
-> ⚠️ **`~/.rbenv` は同じ形をしているが現役**だった (anyenv 側に rbenv が無いため fallback が効き、
+> 🚨 **`~/.rbenv` は同じ形をしているが現役**だった (anyenv 側に rbenv が無いため fallback が効き、
 > `ruby` / `gem` / `bundle` がすべてここの shim を通っていた)。
 > **ディレクトリの存在ではなく、実効 ROOT との一致で判定すること。**
 > 判定は `<TOOL>_ROOT` を解決してから行い、解決できなければ **fail-closed で候補にしない**。
@@ -287,7 +287,7 @@ sudo         true なら提案のみ・実行しない
 | id | path | guard |
 |---|---|---|
 | `chrome-tmp` | `$TMPDIR/.com.google.Chrome.*` | **`Google Chrome` プロセスが無いときのみ** |
-| `speech-model-cache` | `/private/var/tmp/SpeechModelCache` | ⚠️ **初期リリースでは採用しない** (下記) |
+| `speech-model-cache` | `/private/var/tmp/SpeechModelCache` | 🚨 **初期リリースでは採用しない** (下記) |
 
 > **`homebrew-cache` は公式経路を先に案内する** (codex 反証):
 > Homebrew には `brew cleanup` / `brew cleanup --dry-run` という**公式の掃除経路**がある。
@@ -344,7 +344,7 @@ Tier 4 という枠自体は残す。将来 sudo が要る候補を見つけた�
 - 候補の抽出とサイズは `xcrun simctl runtime list -v` から取れる。
   同出力の **`Last Used At`** が古さの根拠になる (`mtime` 相当の一次フィルタ)
 
-⚠️ `cli:` は「外部コマンドを実行する」ため、`4. サービス診断` が
+🚨 `cli:` は「外部コマンドを実行する」ため、`4. サービス診断` が
 **削除サブコマンドを持たない**と決めたのとは方針が異なる。線引きは次のとおり:
 
 - **ディスク**は「消す対象」が allowlist で確定しており、消した結果も `recover` で戻せる
@@ -352,7 +352,7 @@ Tier 4 という枠自体は残す。将来 sudo が要る候補を見つけた�
 - **サービス**は「止めてよいか」がユーザーの用途に依存し、機械的に確定しない
   → 実行しない (`4. サービス診断 > 出力は「検出とコマンド提示」まで`)
 
-### ⚠️ `orphan-container` の孤児判定を `mdfind` 単独に置かないこと
+### 🚨 `orphan-container` の孤児判定を `mdfind` 単独に置かないこと
 
 **この機で実際に偽陽性が出た** (2026-09-01 実測)。bundle id からアプリを探して
 見つからなければ孤児、という素朴な実装は次を出した:
@@ -406,7 +406,7 @@ Tier 4 という枠自体は残す。将来 sudo が要る候補を見つけた�
 **通常のブラウジング中に自分でキャッシュを再生成し、上限も自分で管理する**。
 `sleepimage` と同じ「消しても勝手に戻る」型で、提案しても数日で同じ行が復活する。
 
-⚠️ **`~/Library/Application Support/Google` (7.4GB) と混同しないこと。**
+🚨 **`~/Library/Application Support/Google` (7.4GB) と混同しないこと。**
 こちらはプロフィール・履歴・拡張機能などの**ユーザーデータ**で、
 除外リスト側 (絶対に対象化しない) の扱いになる。名前が似ていて隣接しているため、
 グロブを緩めると片方から他方へ簡単に踏み込む。
@@ -457,7 +457,7 @@ allowlist 方式なので原理的に不要だが、**将来の追加時に誤�
 1. **空パス展開の禁止**: `$TMPDIR` 等が空のまま `rm -rf "$T"/foo` を組み立てると
    `rm -rf /foo` になる。**変数が空なら即中止**。今回は手作業でガードを入れて回避した
 2. **接頭辞検査は「リンクを解決せずに」行う**
-   - ⚠️ `filepath.EvalSymlinks` を正規化に使わないこと。**最終ターゲットまで解決してしまう**ため、
+   - 🚨 `filepath.EvalSymlinks` を正規化に使わないこと。**最終ターゲットまで解決してしまう**ため、
      prefix 検査を通った後に**リンク先の実体を消す**設計になりうる (下の 3 と矛盾する)
    - 使うのは `filepath.Abs` + `filepath.Clean` + **`..` を含まないことの確認**に留める
    - 親ディレクトリ側は `os.Lstat` で辿り、**経路の途中にリンクが挟まっていたら拒否**する
@@ -489,7 +489,7 @@ TorBrowser-Data の削除を誤ってスキップした (誤検出と気づけ�
 - **システム起動時刻 (`kern.boottime`) より mtime が古いものだけを候補にする**
 - 根拠: 再起動を生き延びている = **少なくとも起動後に書かれてはいない**
 
-⚠️ **ただしこれは「使用中でない」の証明にはならない** (codex 反証で判明):
+🚨 **ただしこれは「使用中でない」の証明にはならない** (codex 反証で判明):
 **起動後にプロセスが古いファイルを read-only で開いても mtime は更新されない。**
 `launchd-tmp` / `xctest-*` / `speech-model-cache` のような **OS・サービス管理物**で
 この判定だけを削除ゲートにするのは危険。
@@ -514,10 +514,10 @@ TorBrowser-Data の削除を誤ってスキップした (誤検出と気づけ�
 - **デフォルトが dry-run**。実削除には明示フラグが要る
 - 削除実行時は**削除前のインベントリ** (パス・サイズ・mtime・`(dev, ino)`) を
   **`cacheBaseDir()` 配下**の `doctor-history/<timestamp>.json` に残す。何を消したか後から追える
-  - ⚠️ パスをハードコードしないこと。既存の `cacheBaseDir()` (`src/glogx/cache.go`) は
+  - 🚨 パスをハードコードしないこと。既存の `cacheBaseDir()` (`src/glogx/cache.go`) は
     **`$XDG_CACHE_HOME/glog` (未設定時 `~/.cache/glog`)** を返す。
     **`glogx` ではなく `glog`** である点に注意 (codex 反証で判明)
-  - ⚠️ インベントリは**記録であって復元手段ではない**。消したファイルは戻らない
+  - 🚨 インベントリは**記録であって復元手段ではない**。消したファイルは戻らない
 - 削除は**エントリ単位**で行い、途中失敗しても他に波及させない
 
 ### 検出の健全性 (sinking silently の禁止)
@@ -659,7 +659,7 @@ glogx は popup (`C-g`) 運用で**開閉が頻繁**なため、残留すると�
    - 副次的な利点: 権限エラーを**パス単位で捕捉**でき、
      「走査失敗」の第3状態 (前述) を作りやすい。`du` の出力パースも不要
 
-   ⚠️ **サイズの意味論を `du` に合わせること** (codex 反証で判明)。
+   🚨 **サイズの意味論を `du` に合わせること** (codex 反証で判明)。
    素朴に `FileInfo.Size()` を合計すると **`du` と数字が食い違う**:
 
    | | `du` (今回の実測に使った) | `FileInfo.Size()` |
@@ -675,7 +675,7 @@ glogx は popup (`C-g`) 運用で**開閉が頻繁**なため、残留すると�
 2. **`cancelAll()` に必ず結び付ける** (`src/glogx/tui.go` の `browseModel.cancelAll`)
    - `main.go` の「quit 経路 (q/Ctrl-C) 以外でも後始末を保証する多重防御
      (cancelAll は冪等)」にそのまま乗る
-   - ⚠️ 既存の `cli_health.go` は**意図的に `cancelAll` と結び付けず**
+   - 🚨 既存の `cli_health.go` は**意図的に `cancelAll` と結び付けず**
      `context.Background()+timeout` を使っている。**その理由は「5 秒だから」ではなく**、
      コメントに書かれているとおり**既存のバージョン検査・`usage.Fetch` と
      `Background + timeout` の契約で揃えているため**。
@@ -716,7 +716,7 @@ glogx は popup (`C-g`) 運用で**開閉が頻繁**なため、残留すると�
    9.9GB  npm キャッシュ (_cacache)                                  ✅ 安全
           次回 npm install 時に再取得されます。
 
-   5.0GB  Chrome 一時ファイル                          ⚠️ Chrome 起動中のため対象外
+   5.0GB  Chrome 一時ファイル                          🚨 Chrome 起動中のため対象外
           Chrome を終了してから再スキャンしてください。
 
    4.3GB  Finder の中断残骸 (NSIRD_Finder_*)                      ⛔ 要確認
@@ -781,7 +781,7 @@ inspect   true なら [Enter] で中身一覧を出す (finder-nsird 用)
 既存 API をそのまま使う (`src/glogx/toast.go`):
 
 - `m.toast.showInfo(text)` — 情報色
-- ⚠️ `toast` の内部状態は `toast.go` の外から触らない
+- 🚨 `toast` の内部状態は `toast.go` の外から触らない
   (`gorules/rules.go` の `toastEncapsulation` が禁止済み)
 
 **発火条件**: **保存済みスキャン結果**の合計解放可能サイズが閾値以上 (既定 **10GB**)。
@@ -883,7 +883,7 @@ C は「**インストーラの台帳に無い**」を見るので、**バイナ
 (`brew uninstall` 後に他の formula が同名のバイナリを提供している場合など、A は素通りする)。
 `brew services list` も補助に使える (2026-09-01 実測: `redis` のみ `Status: none`)。
 
-⚠️ **C は Homebrew に限定する。** 「台帳」に相当するものを持つのは
+🚨 **C は Homebrew に限定する。** 「台帳」に相当するものを持つのは
 パッケージマネージャ経由でインストールされたものだけで、
 手で置かれた plist に一般化すると「台帳に無い = 壊れている」が成立しなくなる。
 
@@ -891,7 +891,7 @@ C は「**インストーラの台帳に無い**」を見るので、**バイナ
 > mysql は `/opt/homebrew/var/mysql` (376MB) と壊れた plist の**両方**を残していた。
 > 診断結果は相互に参照させ、**片面だけ消して終わったことにしない**。
 
-#### ⚠️ A の判定で `Program` と `ProgramArguments[0]` を同じに扱ってはいけない
+#### 🚨 A の判定で `Program` と `ProgramArguments[0]` を同じに扱ってはいけない
 
 `man 5 launchd.plist` の原文 (codex 反証を受けて確認):
 
@@ -909,13 +909,13 @@ C は「**インストーラの台帳に無い**」を見るので、**バイナ
 | `Program` が無く `ProgramArguments[0]` が相対名 | **`_PATH_STDPATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) で解決してから**判定。解決できたら正常、できなければ候補 |
 | `BundleProgram` がある | **判定しない**。SMAppService 経由の app-bundle 相対パスで、解決規則が別 |
 
-⚠️ 相対名の解決に**呼び出し側の `$PATH` を使わないこと**。launchd は `$PATH` を見ない。
+🚨 相対名の解決に**呼び出し側の `$PATH` を使わないこと**。launchd は `$PATH` を見ない。
 
 `_PATH_STDPATH` の値は実測でも裏が取れている: `launchctl print` の出力に
 `PATH => /usr/bin:/bin:/usr/sbin:/sbin` が現れる (2026-09-01 実測)。
 ただし**ハードコードせず `/usr/include/paths.h` の値と一致することをテストで確認**する。
 
-#### ⚠️ B は「再起動条件を持つこと」まで見ないと「し続けている」にならない
+#### 🚨 B は「再起動条件を持つこと」まで見ないと「し続けている」にならない
 
 `RunAtLoad=true` かつ `KeepAlive` **なし**のジョブは、ログイン時に**一度だけ**起動して
 `exit 1` を返して終わる。`launchctl list` の Status は正の値になるが、
@@ -924,7 +924,7 @@ C は「**インストーラの台帳に無い**」を見るので、**バイナ
 → B の条件は **再起動条件 (`KeepAlive` / `StartInterval` / `StartCalendarInterval` /
 `WatchPaths` / `QueueDirectories`) のいずれかを持つこと**とする。
 
-### ⚠️ 最大の罠: `launchctl list` の Status 列を「失敗」として読むと全部誤検出になる
+### 🚨 最大の罠: `launchctl list` の Status 列を「失敗」として読むと全部誤検出になる
 
 **この節がサービス診断の実装で最も踏みやすい所**なので実測値を残す。
 2026-09-01 の実測で `launchctl list` の Status が `0` 以外だったのは **約 60 件**。
@@ -941,7 +941,7 @@ C は「**インストーラの台帳に無い**」を見るので、**バイナ
 > The second column displays the last exit status of the job. If the number in this column
 > is negative, it represents the negative of the signal which stopped the job.
 
-- ⚠️ **負値を「正常なアイドル終了」と一般化しないこと** (codex 反証)。
+- 🚨 **負値を「正常なアイドル終了」と一般化しないこと** (codex 反証)。
   負値が意味するのは**シグナルで停止した事実だけ**で、外部からの `kill -9` や
   メモリ逼迫による強制終了なら**本物の異常**である。今回の実測で約 60 件がアイドル終了
   だったのは**この 1 台のこの時点の観測**であって、負値の意味ではない
@@ -963,7 +963,7 @@ C は「**インストーラの台帳に無い**」を見るので、**バイナ
 | `/Library/LaunchAgents`, `/Library/LaunchDaemons` | ⭕ | サードパーティのインストーラが置く場所 |
 | `/System/Library/**`, `/usr/lib/**` | ❌ | Apple 管理。SIP 下で消せず、**ユーザーが判断できない** |
 
-⚠️ **除外はパス基準で行い、`com.apple.*` というラベル名で除外しないこと** (codex 反証)。
+🚨 **除外はパス基準で行い、`com.apple.*` というラベル名で除外しないこと** (codex 反証)。
 ラベルは**ただの文字列**で、`/Library/LaunchDaemons/com.apple.foo.plist` に
 第三者やユーザーが置いた plist も同じ名前を名乗れる (マルウェアが偽装に使う手口でもある)。
 ラベルで切ると**管理領域の外に置かれた壊れた登録を落とす**。
@@ -1025,10 +1025,10 @@ C は「**インストーラの台帳に無い**」を見るので、**バイナ
   ディスク側の `advice` と同じく、**判断材料なしの指摘を出さない**
 - **BTM (`sfltool dumpbtm`) との突合は補助情報**として出す。plist を消しても
   ログイン項目側に残ると「背景項目」の残骸になるため
-  (⚠️ `sfltool dumpbtm` の出力形式は非公開で macOS バージョン間の安定性が不明。
+  (🚨 `sfltool dumpbtm` の出力形式は非公開で macOS バージョン間の安定性が不明。
   **パースに失敗したら BTM の行を出さないだけ**にし、診断全体を落とさない)
 
-#### ⚠️ 実測 (2026-09-01): plist を削除しても BTM は追随しない
+#### 🚨 実測 (2026-09-01): plist を削除しても BTM は追随しない
 
 この issue の起点になった `homebrew.mxcl.mysql@8.0` を実際に片付けて確認した:
 
@@ -1066,7 +1066,7 @@ plist を読むだけでは分からず、`launchctl` に聞くしかない。�
 - `launchctl list` は **1 回だけ** 呼ぶ (全ラベルが一度に取れる)
 - `launchctl print gui/<uid>/<label>` は**候補に絞ってから**呼ぶ。
   全ラベルに対して呼ぶと **`launchctl` 自体を数百回 exec する**ことになる
-  (⚠️ `print` は状態を表示するだけで**ジョブを起動しない**。
+  (🚨 `print` は状態を表示するだけで**ジョブを起動しない**。
   重いのは exec の回数であって、サービスが立ち上がるからではない)
 - `2. 安全性ハーネス > プロセス使用中の判定` と同じく、**ラベルは完全一致で扱う**
   (部分一致で `pgrep` した結果の誤検出が既に実例としてある)
@@ -1090,7 +1090,7 @@ plist を読むだけでは分からず、`launchctl` に聞くしかない。�
   - `ProgramArguments` が空配列 / `Program` も `ProgramArguments` も無い → クラッシュしないこと
   - **`ProgramArguments[0]` が相対名** (`["python3", "job.py"]`) で、
     `/usr/bin/python3` が存在する → **候補にならない** (`_PATH_STDPATH` で解決できるため)。
-    ⚠️ このケースを落とすと、正常な登録を「壊れている」と報告する
+    🚨 このケースを落とすと、正常な登録を「壊れている」と報告する
   - `Program` が相対パス (仕様違反の plist) → 候補にする (launchd も起動できない)
   - `BundleProgram` だけを持つ plist → **判定対象外**として扱う (「診断できず」ではない)
   - `RunAtLoad` のみ (`KeepAlive` 無し) + 正の exit code → **B の候補にならない**
@@ -1149,7 +1149,7 @@ PPID=1 のプロセス:                 695
 さらに「実行中の PID からどの launchd 登録に由来するかを逆引きする」安定 API が無い。
 `launchctl procinfo` は **root 必須かつ diagnostic only** (man に「出力に依存するな」と明記)。
 
-⚠️ **この issue の初稿には「`PPID=1` の非 Apple 系プロセスは 33 件」と書いていたが、
+🚨 **この issue の初稿には「`PPID=1` の非 Apple 系プロセスは 33 件」と書いていたが、
 これは `/System/` `/usr/libexec/` 等を除外した後の数字**で、母集団は 695 件だった。
 **除外フィルタをかけた後の数字を母集団として提示すると、判定の危険性が 20 分の 1 に見える。**
 
@@ -1198,7 +1198,7 @@ PPID=1 のプロセス:                 695
   `thermalmonitord` / `CotEditor` / `Activity Monitor` にマッチした)
 - **PID は再利用される。** 提示から人間が実行するまでの間隔は長い。
   同一性を担保するなら `(PID, 開始時刻)` のペアが要るが、
-  ⚠️ **`ps -o lstart=` は秒粒度で、同一秒内の PID 再利用を区別できない**
+  🚨 **`ps -o lstart=` は秒粒度で、同一秒内の PID 再利用を区別できない**
   (codex 反証)。`kern.proc` の `KERN_PROC_PID` から取れる `p_starttime`
   (`struct timeval`, usec 粒度) が要る
 - **`kill PID` はプロセスツリーに対して不完全。** 親だけ終了して子が launchd に
@@ -1254,7 +1254,7 @@ src/glogx/doctor_svc.go  ← サービス診断を doctor に接続する層
 `doctorCheck` のような共通の形 (名前・状態・詳細行・アクション) で受ける。
 将来の診断項目を足すときに doctor 側を改造しなくて済むようにする。
 
-⚠️ **`doctor_view.go` を足すだけでは動かない** (codex 反証)。既存の full-screen view
+🚨 **`doctor_view.go` を足すだけでは動かない** (codex 反証)。既存の full-screen view
 (`issues_view.go` / `status_view.go`) は、view 側に
 `visible` / `animating` / `slideAnimating` / `handleKey` / `lines` / `hint` を持つ上で、
 **`browseModel` 側にも**フィールド追加・`handleKey` の routing・`viewLines` の分岐・
@@ -1275,7 +1275,7 @@ src/glogx/doctor_svc.go  ← サービス診断を doctor に接続する層
  ▸ ディスク占有   合計 45.4GB 解放可能           スキャン中 3/12 (~/Library/Caches/npm)
    19.2GB  Xcode DerivedData                                            ✅ 安全
            次回ビルドで再生成されます。最終更新 2026-06-23 (70日前)
-    5.0GB  Chrome 一時ファイル                        ⚠️ Chrome 起動中のため対象外
+    5.0GB  Chrome 一時ファイル                        🚨 Chrome 起動中のため対象外
       ---  ~/Library/Caches/foo                                      ❓ 走査できず
            権限がありません (EACCES)
 
@@ -1328,7 +1328,7 @@ Homebrew = 判定は brew 側)。
 - brew 不在 / タイムアウト / 起動できず → **「診断できず」** (svcdoctor の StatusErr と同じ扱い。
   0 件に畳まない)
 - **提示だけで実行しない**。brew doctor が示す修復コマンド (`brew untap` / `brew cleanup` 等) も
-  表示のみ。⚠️ `brew cleanup` はディスク側の `brew-cleanup-residue` (`deleteVia: cli:`) と同じ操作を
+  表示のみ。🚨 `brew cleanup` はディスク側の `brew-cleanup-residue` (`deleteVia: cli:`) と同じ操作を
   指すので、④ で削除経路を作るときは**同じ画面に「実行する行」と「提示だけの行」を並べる形**になる。
   区別が付く表示 (⛔ 手動 / [d] 実行可) を ④ の要件に足す
 - キャッシュしない (軽い。開くたび実行)。起動時トーストの対象にもしない
@@ -1392,7 +1392,7 @@ Homebrew = 判定は brew 側)。
   `operation not permitted`。com.apple.* 除外で候補からは消えるが、この形の失敗が他にも出うる
 - 起動時刻は `unix.SysctlTimeval("kern.boottime")` (構造体で受ける。sed パースの sec/usec 取り違えは起きない)
 - `versionmanager-orphan-root` の実効 ROOT: 環境変数 → `~/.anyenv/envs/<tool>` の存在 → `~/.<tool>` の順。
-  ⚠️ この機の実測は issue 本文と違い `NODENV_ROOT=~/.nodenv` が **set されていた** (= ~/.nodenv は現役扱いで
+  🚨 この機の実測は issue 本文と違い `NODENV_ROOT=~/.nodenv` が **set されていた** (= ~/.nodenv は現役扱いで
   候補にならない)。本文の「~/.nodenv 2.2GB が孤児」は 2026-09-01 時点の観測で、現在は env が指している
 - 実機 (2026-09-02): 23 エントリ 8 秒、**合計 73.7GB** (npm `_cacache` 20.9GB は最終更新 2023-11 /
   DerivedData 17.6GB / シミュレータランタイム 16.2GB / go-build 9.6GB / go mod 5.8GB)。Chrome 起動中で
@@ -1522,7 +1522,7 @@ Partial と exit code の整合 / キャンセル済み ctx での Start / CI �
 - 実機 (2026-09-02): 3 セクションとも 8 秒以内に埋まる。ディスク 73.9GB / サービス 1 件 (Adobe) / brew doctor 警告 14 件。
   見た目は **`bin/glogx` を起動して `D`** を押せば実物が見える (端末幅を変えて 120 / 80 / 走査中を見る)。
   テストは見た目を pin していない (行数・幅・文言の有無だけ) ので、判断は実物を見て行う。
-  ⚠️ 以前は `tmp/doctor_sample.txt` を指していたが、`tmp/` は gitignore なので**残らない**
+  🚨 以前は `tmp/doctor_sample.txt` を指していたが、`tmp/` は gitignore なので**残らない**
   (`_claude/rules/move-report-conclusions-to-issues.md`)。生成方法も記録されていなかったため、
   参照を実物の出し方に置き換えた
 - テスト: `doctor_view_test.go` (page 行の契約 / キャッシュの完了・partial / 世代 / キー / browseModel 配線 /
@@ -1616,7 +1616,7 @@ quit / spinner の経路 / struct コピー / validateTarget の各種 (HOME 直
   行に「N 分前の計測を再利用 (r で再計測)」)。判定は glogx 側 (`doctorReuseFrom`)、走査を飛ばす機構は disk 側。
   軽いエントリは毎回測る (再利用の得が無く、古い値を出す損だけ残る)。failed / blocked / partial は毎回測る。`r` は全部測り直す。
   実機の重いエントリ: DerivedData 5.7 秒 / go-modcache 6.7 秒 / brew cleanup 5.7 秒 / npm 2.2 秒 (② の実測)。
-  ⚠️ 再利用中に実体が変わっていれば表示は古い (最大 1 時間)。行の注記で分かる形にしてある
+  🚨 再利用中に実体が変わっていれば表示は古い (最大 1 時間)。行の注記で分かる形にしてある
 
 - **却下 (ユーザー判断 2026-09-02): 閉じた後に走査を猶予つきで続けて再接続する案**。高頻度の toggle で「起動 → kill → 起動」を
   繰り返すが、同時に走る走査は常に 1 セット (前の走査は閉じた時点で cancel) で蓄積しない。1 回の走査で起きる子プロセスは
@@ -1672,7 +1672,7 @@ engine の積み残しを 1 件足した: `OnPhase` (plan の走査は `DryRun` 
 
 #### S2 の内訳 (当初の計画。上から順に着手できる)
 
-1. **キーの割り当て**。⚠️ 1 章の記述 (`Space` で選択 / `d` で削除 / `D` で dry-run) は
+1. **キーの割り当て**。🚨 1 章の記述 (`Space` で選択 / `d` で削除 / `D` で dry-run) は
    **現行の割り当てと衝突する**: `D` は doctor を閉じるキー、`Space` はページ送り。
    → **決定 (2026-09-03)**: `Space` を選択トグルへ付け替え (ページ送りは `ctrl+d` / `pgdown` が
    既にある)。`D` は閉じるまま。**dry-run は独立キーにせず、`d` の確認モーダルが dry-run の
@@ -1876,7 +1876,7 @@ opus 5 体 (1 周目 3 + 2 周目 2)。採用したものは commit `d2dfd70` / 
 - [x] doctor の開閉・再スキャン連打で**走査が多重化しない**
 - [x] 各行に**リスク記号と一行の助言**が出る (サイズだけの行が存在しない)
 - [x] `risk: confirm` のエントリは**中身一覧を見るまで削除選択できない**
-      (`doctorView.deletable`。⚠️ `Entry.Inspect` だけでなく **`Risk` そのもの**も条件にしてある:
+      (`doctorView.deletable`。🚨 `Entry.Inspect` だけでなく **`Risk` そのもの**も条件にしてある:
       カタログが Inspect を付け忘れた瞬間にゲートが消えるため。
       `TestDeletableGatesRiskConfirmWithoutInspect` / `TestDoctorSelectRequiresInspectForConfirmRisk`)
 - [x] `blocked` のエントリは**理由**が出る (「Chrome 起動中」等)
@@ -1909,21 +1909,21 @@ opus 5 体 (1 周目 3 + 2 周目 2)。採用したものは commit `d2dfd70` / 
 - `~/.claude/rules/tmux-probe-requires-socket-isolation.md` — 破壊的操作の前に隔離を実証する同思想
 - `src/glogx/cli_health.go` — **doctor の原型**。`cliHealthSpec` による宣言的な項目定義、
   goroutine + `WaitGroup` + timeout の並行実行、`cliHealthWarning` の文言生成。
-  ⚠️ ただし「判定不能は無通知」の方針だけは本件と逆 (3 章の差異表を参照)
+  🚨 ただし「判定不能は無通知」の方針だけは本件と逆 (3 章の差異表を参照)
 - `src/glogx/toast.go` — トースト API (`show` / `showInfo`)
 - `src/glogx/usage_cache.go` — TTL 付きキャッシュの前例
 - `src/glogx/gorules/rules.go` — `toastEncapsulation`。
-  ⚠️ ただしこれは `m.toast.text` のような**直接セレクタを検出する lint ルール**であって、
+  🚨 ただしこれは `m.toast.text` のような**直接セレクタを検出する lint ルール**であって、
   型システムで全経路の変更を禁じるものではない (codex 反証)。規約として守る
 - `src/glogx/issues_view.go` / `status_view.go` / `ratelimit_dashboard.go` —
   **doctor 画面が倣うべき full-screen view の前例**
-- `src/glogx/diff_overlay.go` / `pr_status_overlay.go` — ⚠️ **倣わない**。
+- `src/glogx/diff_overlay.go` / `pr_status_overlay.go` — 🚨 **倣わない**。
   これらは commit 行に紐づく小さな pager 型 overlay で、
   スキャン・進捗・選択・削除を持つ doctor とは形が違う (codex 反証)
 - `src/glogx/cache.go` — `cacheBaseDir()` = `$XDG_CACHE_HOME/glog` (**`glog`**, not `glogx`)
 - `~/.claude/rules/comment-no-restate-enforced.md` — 「実装で強制できることはコメントでなく
   実装で強制する」。`svcdoctor` に削除サブコマンドを作らない判断の根拠
 - `man launchctl` / `man launchd.plist` — `KeepAlive` / `RunAtLoad` の意味。
-  ⚠️ `launchctl list` の Status 列と `launchctl print` の出力形式は
+  🚨 `launchctl list` の Status 列と `launchctl print` の出力形式は
   **man に無い** (実測で確認するしかない。4 章の実測表が一次情報)
 - `bin/glogx` — popup 起動で待たせたくないという方針の出所 (`--async` 再ビルドのコメント)

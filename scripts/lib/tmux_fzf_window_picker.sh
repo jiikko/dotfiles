@@ -42,7 +42,7 @@ tt_fzf_window_picker() {
   # 存在しない。プロセス置換内の command not found は set -e でも捕捉されず、候補が window_id
   # 列だけに silent 劣化する (CI run 29558304635 で実発生)。無ければ桁揃えなしの TSV のまま
   # fzf へ渡す (失われるのは表示の桁揃えだけで、選択キーは第 1 列の window_id なので機能は同じ)。
-  # ⚠️ 下の --with-nth は「2..」を維持すること: column 有りは表示列が 1 フィールドに結合される
+  # 🚨 下の --with-nth は「2..」を維持すること: column 有りは表示列が 1 フィールドに結合される
   # ため 2 でも同じだが、column 無しは TAB が残って複数フィールドのままなので、2 に狭めると
   # 相対時刻・window 名・「いまここ」マークが全部消える (この劣化経路は test_window_picker.sh
   # の column 不在ケースが回帰ガード)

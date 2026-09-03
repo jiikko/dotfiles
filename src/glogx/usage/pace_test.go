@@ -128,7 +128,7 @@ func TestRenderDashboardShowsGaugeAndAdvice(t *testing.T) {
 		"[ 1 2 3 4 5 ]",     // 5h の目盛り
 		"[ 1 2 3 4 5 6 7 ]", // weekly の目盛り
 		"想定 66%",            // 想定ペース
-		// ⚠️ 乖離は整数 pt (statusline の %+4dpt に合わせた。判定に使う経過率を切り捨てて
+		// 🚨 乖離は整数 pt (statusline の %+4dpt に合わせた。判定に使う経過率を切り捨てて
 		// いるので、小数を出しても常に .0 になる。usage/pace_drift_test.go が突き合わせる)
 		"+12pt 先行",  // 乖離と状態語
 		"0.8日分の前借り", // 助言

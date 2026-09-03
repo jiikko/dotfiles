@@ -2,7 +2,7 @@ package main
 
 // issues viewer の「閉じる演出」(板が 1 枚まるごと等速で右へ抜ける) の検査。
 //
-// ⚠️ 他のテストは newTestIssuesView / newTestBrowse で演出を切っている (close したら即座に
+// 🚨 他のテストは newTestIssuesView / newTestBrowse で演出を切っている (close したら即座に
 // 畳まれている前提で書かれているため)。ここだけ明示的に on にして演出そのものを見る。
 
 import (
@@ -46,7 +46,7 @@ func TestIssuesCloseProgressFallsToZero(t *testing.T) {
 	if p := v.animProgress(); p != 0 {
 		t.Fatalf("所要を過ぎても画面外まで抜けていない: %v", p)
 	}
-	// ⚠️ 進捗は 0 で止まる (負に走らない)。負になると slideInWindow の局所進捗が壊れる。
+	// 🚨 進捗は 0 で止まる (負に走らない)。負になると slideInWindow の局所進捗が壊れる。
 	advance(issuesCloseDuration)
 	if p := v.animProgress(); p != 0 {
 		t.Fatalf("進捗が 0 を下回った: %v", p)
@@ -76,7 +76,7 @@ func TestIssuesCloseMovesOnFirstFrame(t *testing.T) {
 	}
 }
 
-// 閉じる向きが描画まで届いている。⚠️ 上の検査は slideInWindow を直接叩くので、lines() が
+// 閉じる向きが描画まで届いている。🚨 上の検査は slideInWindow を直接叩くので、lines() が
 // closing を渡し忘れても気づかない (開く向きの平坦な立ち上がりへ黙って戻る)。
 func TestIssuesCloseCurveReachesRender(t *testing.T) {
 	advance := stubClock(t)
@@ -113,7 +113,7 @@ func TestIssuesCloseMovesAllRowsTogether(t *testing.T) {
 }
 
 // 板が画面外へ出る時刻と viewer を畳む時刻が揃っている。ずれると「もう何も無い画面」を見せてから
-// git log へ戻ることになる。⚠️ 終端で減速するカーブを使うと必ずこれが起きる (残り数 % の距離に
+// git log へ戻ることになる。🚨 終端で減速するカーブを使うと必ずこれが起きる (残り数 % の距離に
 // 時間の後半を使うため。easeOutCubic + 700ms のとき 280 桁端末で 100ms の白画面が出ていた)。
 func TestIssuesCloseLeavesNoBlankFrame(t *testing.T) {
 	advance := stubClock(t)
@@ -221,7 +221,7 @@ func TestIssuesCloseLandsOnKeyWithoutSwallowing(t *testing.T) {
 	if m.issuesOv.visible() {
 		t.Fatal("キーで演出が着地しない (入力が効かない時間ができる)")
 	}
-	// ⚠️ 飲み込まれず通常処理まで届く。届かないと「q で閉じた直後の q が効かない」ことになる。
+	// 🚨 飲み込まれず通常処理まで届く。届かないと「q で閉じた直後の q が効かない」ことになる。
 	// newTestBrowse は終了演出も切っているので、q が届いていれば m.done が立つ
 	if !m.done {
 		t.Fatal("着地させたキーが飲み込まれた (viewer を閉じた直後の q が効かない)")
@@ -230,7 +230,7 @@ func TestIssuesCloseLandsOnKeyWithoutSwallowing(t *testing.T) {
 
 // 閉じる演出の途中に来たキーは、viewer を畳んでから通常のキーとして処理される。
 //
-// ⚠️ viewer へ回してはいけない: 畳んだ後の view にモードを持つキーの状態 (/ の絞り込み・n の
+// 🚨 viewer へ回してはいけない: 畳んだ後の view にモードを持つキーの状態 (/ の絞り込み・n の
 // 確認モーダル) が残り、次に i で開いた瞬間に蘇る。絞り込みが蘇ると全キーが検索語として飲まれて
 // q でも閉じられなくなり、確認モーダルが蘇ると y/Enter で実ファイルが動く。
 // 実体は browseModel が routing 前に finishClose すること (tui.go)。
@@ -280,7 +280,7 @@ func TestIssuesReopenDuringCloseDoesNotDoubleWatch(t *testing.T) {
 	}
 }
 
-// 閉じる演出中の e は捨てる。⚠️ 素通しさせると板がまだ見えているのに git log 一覧側の e
+// 閉じる演出中の e は捨てる。🚨 素通しさせると板がまだ見えているのに git log 一覧側の e
 // (openEditorAtRoot = `nvim .`) が全画面で起動し、「見ている issue を開いたつもりが repo root」に
 // なる。q/Esc は素通しのまま (飲むと「閉じた直後の q が効かない」窓ができる) なので、
 // e を捨てても q が死なないことまで見る。

@@ -3,9 +3,9 @@
 # _go-project.yml に一元化し、ここは paths filter (触れた変更のときだけ起動) と対象 dir の
 # 指定だけを持つ薄い caller。paths に _go-project.yml を含めるのは、共有本体を編集したとき
 # にも全プロジェクトの CI を走らせて検証するため (含めないと本体変更が誰にも検証されない)。
-# ⚠️ paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
+# 🚨 paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
 #
-# ⚠️ lockman の対象環境は macOS (smbfs + macOS のファイル共有) だが、ここで回るのは
+# 🚨 lockman の対象環境は macOS (smbfs + macOS のファイル共有) だが、ここで回るのは
 #   ローカル FS のテストだけ (runner は macOS。issue 133 で ubuntu から移した)。SMB 由来の前提 (キャッシュ・mtime の打刻・
 #   fcntl ロックの転送) は CI では一切検証されない。実機検証は human issue で人が行う。
 #   darwin 固有コード (IOPlatformUUID / kern.boottime 等) を入れても、runner は macOS で

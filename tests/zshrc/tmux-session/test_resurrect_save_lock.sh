@@ -142,7 +142,7 @@ cat > "$FAKE_REALSAVE" <<'FS'
 # 共有 pane_contents.tar.gz を退行後の内容 (DEGRADED) で上書きする。
 # .fake_fail があれば「archive 生成中の死」を模す: archive を truncate 相当の
 # 中途半端な内容にしてから rc≠0 で死ぬ (last は前進済みでも未でもよいので触らない)。
-# ⚠️ 健全な archive は **実物と同じ tar.gz** で書き、TRUNCATED だけ非 gzip にする。wrapper の
+# 🚨 健全な archive は **実物と同じ tar.gz** で書き、TRUNCATED だけ非 gzip にする。wrapper の
 #   復旧判定はサイズや mtime ではなく「gzip として読めて entry が 1 つ以上あるか」なので、
 #   fixture もその区別を持つ必要がある (2026-07-30: rc=0 でも archive が壊れる経路が実証され
 #   判定を rc から中身へ移した / 2026-08-21: entry 0 の判定を実装したので gzip 単体の fixture は

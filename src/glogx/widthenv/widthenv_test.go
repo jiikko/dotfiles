@@ -9,7 +9,7 @@ import (
 )
 
 // このパッケージ自身も支持しない env の下では走らない。
-// ⚠️ 自分が定義したガードを自分に掛け忘れると、TestAmbiguousIsNarrowByDefault が
+// 🚨 自分が定義したガードを自分に掛け忘れると、TestAmbiguousIsNarrowByDefault が
 // 「ansi.StringWidth("─")=2, want 1」の生ログを吐き、この仕組みが消そうとしている混乱が
 // 当の本人から漏れる (実測 2026-08-15 の敵対的レビュー)。
 func TestMain(m *testing.M) {
@@ -43,7 +43,7 @@ func TestEastAsianAmbiguousUnset(t *testing.T) {
 	}
 }
 
-// ⚠️ このパッケージが前提にしている「x/ansi は Ambiguous を既定で幅 1 と数える」を、
+// 🚨 このパッケージが前提にしている「x/ansi は Ambiguous を既定で幅 1 と数える」を、
 // ライブラリ側の実測で固定する。ここが 2 に変わったら (= 既定が変わったら) 支持しない
 // 判断の前提そのものが変わるので、Message の文言と issue 054 を読み直すこと。
 // 逆に、この env が glogx の描画を壊す理由 (罫線が 2 セルになる) もここに現れている。

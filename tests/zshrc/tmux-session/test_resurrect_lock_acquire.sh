@@ -42,12 +42,12 @@ d="$BASE/a.lock"
 rc="$(rc_of "$d")"
 [ "$rc" = 0 ] && ok "空きなら取得できる (rc=0)" || ng "空きなのに rc=$rc"
 [ -s "$d/pid" ] && ok "取得時に owner を記録する" || ng "owner が記録されていない"
-# ⚠️ pid だけでなく起動時刻まで記録すること (pid 再利用で先任と誤認すると装置が張られない)
+# 🚨 pid だけでなく起動時刻まで記録すること (pid 再利用で先任と誤認すると装置が張られない)
 if [ "$(awk '{print NF}' "$d/pid" 2>/dev/null)" = 2 ]; then
   ok "owner は pid + 起動時刻の 2 列"
 else
   # lstart が取れない環境では 1 列に縮退する。skip を沈黙させない
-  printf '⚠ owner が 1 列 (ps -o lstart= が使えない環境と判断して skip)\n'
+  printf '🚨 owner が 1 列 (ps -o lstart= が使えない環境と判断して skip)\n'
 fi
 
 # --- rc=1: 先任が生きているなら奪わない -------------------------------------------
@@ -58,14 +58,14 @@ rc="$(rc_of "$d")"
 [ -s "$d/pid" ] && ok "rc=1 のとき owner を上書きしない" || ng "rc=1 なのに owner を書き換えた"
 
 # --- rc=0 (奪う): owner 不在の取り残しは回収する ----------------------------------
-# ⚠️ ここが緩むと、異常終了で残った lock が永久に残り **その経路が二度と走らない**
+# 🚨 ここが緩むと、異常終了で残った lock が永久に残り **その経路が二度と走らない**
 OLD_STAMP="$(date -v-1H '+%Y%m%d%H%M' 2>/dev/null || date -d '1 hour ago' '+%Y%m%d%H%M')"
 d="$BASE/c.lock"; mkdir "$d"; touch -t "$OLD_STAMP" "$d"
 rc="$(rc_of "$d")"
 [ "$rc" = 0 ] && ok "owner 不在の取り残しは奪って続行する (rc=0)" || ng "取り残しを rc=$rc で扱った"
 
 # --- rc=1: 作りたての owner 不在 lock は奪わない (記録中かもしれない) --------------
-# ⚠️ `mkdir` と owner 記録は原子的でないので、正当な取得者が記録中の一瞬は owner 不在に見える。
+# 🚨 `mkdir` と owner 記録は原子的でないので、正当な取得者が記録中の一瞬は owner 不在に見える。
 #   ここを奪うと**両方が rc=0 になる** (issue 103 の原症状)。古さで区別する。
 d="$BASE/c2.lock"; mkdir "$d"
 rc="$(rc_of "$d")"
@@ -77,9 +77,9 @@ rc="$(rc_of "$d")"
 [ "$rc" = 0 ] && ok "死んだ owner の lock は奪う (rc=0)" || ng "死んだ owner の lock を rc=$rc で扱った"
 
 # --- rc=2: mkdir が通らないなら「取れなかった」を返す ------------------------------
-# ⚠️ rc=2 を rc=0 に潰すと、呼び出し側は「取れた」と誤認して lock 無しで本処理へ進む
+# 🚨 rc=2 を rc=0 に潰すと、呼び出し側は「取れた」と誤認して lock 無しで本処理へ進む
 if [ "$(id -u)" = 0 ]; then
-  printf '⚠ root では書き込み不可ディレクトリを作れないため rc=2 のテストを skip した\n'
+  printf '🚨 root では書き込み不可ディレクトリを作れないため rc=2 のテストを skip した\n'
 else
   ro="$BASE/ro"; mkdir -p "$ro"; chmod 500 "$ro"
   rc="$(rc_of "$ro/x.lock")"
@@ -101,7 +101,7 @@ printf '%s\n' "$live_srv" > "$S/$live_srv.lock/pid"
 free_pid $(( dead_srv - 2 )); dead_srv2="$REPLY_PID"
 mkdir "$S/$dead_srv2.lock"; spawn_live; tt_lock_write_owner "$S/$dead_srv2.lock" "$REPLY_PID"
 # 生きているサーバ + 死んだ owner → 残す (掃除の条件は「両方死んでいる」の連言。
-# ⚠️ ここを pin しないと、条件から `kill -0 "$spid"` を落とす変異が green のまま通る)
+# 🚨 ここを pin しないと、条件から `kill -0 "$spid"` を落とす変異が green のまま通る)
 spawn_live; live_srv2="$REPLY_PID"; mkdir "$S/$live_srv2.lock"
 free_pid $(( dead_srv - 3 )); printf '%s\n' "$REPLY_PID" > "$S/$live_srv2.lock/pid"
 # ディレクトリでない `*.lock` は触らない (`[ -d "$d" ] || continue` を pin する)
@@ -123,7 +123,7 @@ if tt_lock_sweep_stale "$E"; then ok "対象 0 件でも落ちない"; else ng "
 
 printf '\n=== 取り残し lock の奪取レース (issue 103) ===\n\n'
 
-# ⚠️ 別プロセスで起こすこと。同一シェルの subshell だと `$$` が同じになり、
+# 🚨 別プロセスで起こすこと。同一シェルの subshell だと `$$` が同じになり、
 #   tt_lock_write_owner が同じ owner を書くので「2 プロセスが競る」形にならない。
 race_worker() { # $1=guards.sh $2=lock dir $3=結果ファイル $4=窓を広げるか(0/1) $5=解放マーカー
   bash -c '
@@ -135,7 +135,7 @@ race_worker() { # $1=guards.sh $2=lock dir $3=結果ファイル $4=窓を広げ
     rc=0
     tt_lock_acquire "$2" || rc=$?
     printf "%s\n" "$rc" >> "$3"
-    # ⚠️ 取得したら**親が解放を許すまで保持する**。すぐ終了すると owner が死んだ lock が残り、
+    # 🚨 取得したら**親が解放を許すまで保持する**。すぐ終了すると owner が死んだ lock が残り、
     #    後続は「記録済みで死んだ owner」を**正当に**奪える。その再取得を「二重取得」と数えると
     #    機械の速さ次第で落ちる (実測 2026-08-28: CI (macOS) で 形状=leftover delay=0.005s が
     #    2 winners)。固定 sleep で凌ぐと「どれだけ待てば十分か」が未実測のマジックナンバーに
@@ -147,7 +147,7 @@ race_worker() { # $1=guards.sh $2=lock dir $3=結果ファイル $4=窓を広げ
 
 # 2 プロセスを delay 秒ずらして走らせ、取得に成功した数 (rc=0) を返す。**1 でなければならない。**
 #
-# ⚠️ $2 の「形状」を必ず両方掃くこと。`leftover` (取り残しを事前に作る) だけを試すと**両者が
+# 🚨 $2 の「形状」を必ず両方掃くこと。`leftover` (取り残しを事前に作る) だけを試すと**両者が
 #   奪取経路に入る**ので、奪取権 lock で直列化されている経路しか検査しない。production の
 #   呼び出し元 3 本はどれも **lock dir が存在しない状態から始まる** (`fresh`) ため、片方が素の
 #   `mkdir` で入り、奪取権 lock を一切持たないまま owner を記録する — そこが issue 103 の
@@ -156,7 +156,7 @@ race_winners() { # $1=delay $2=形状(leftover|fresh) $3=窓を広げるか(0/1)
   local dir="$BASE/race.lock" out="$BASE/race.out" rel="$BASE/race.release" g p1 p2 i
   g="$ROOT_DIR/scripts/lib/tmux_resurrect_guards.sh"
   rm -rf "$dir" "$dir.steal" "$out" "$rel"
-  # ⚠️ 取り残しは**古く**すること。作りたての owner 不在 dir は「今まさに owner を記録中」と
+  # 🚨 取り残しは**古く**すること。作りたての owner 不在 dir は「今まさに owner を記録中」と
   #   区別できないので奪えないのが正しい (それが production 形状の二重取得を止めている)。
   #   ここを `mkdir` だけにすると本物の取り残しではなくなり、勝者 0 で落ちる。
   if [ "$2" = leftover ]; then mkdir "$dir"; touch -t "$OLD_STAMP" "$dir"; fi
@@ -174,11 +174,11 @@ race_winners() { # $1=delay $2=形状(leftover|fresh) $3=窓を広げるか(0/1)
   i=0
   while [ "$(grep -c . "$out" 2>/dev/null || true)" -lt 2 ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$(( i + 1 )); done
   : > "$rel"
-  # ⚠️ 素の `wait` は使わない。このファイルは前段で補助プロセスを起こしており、
+  # 🚨 素の `wait` は使わない。このファイルは前段で補助プロセスを起こしており、
   #   bare wait がそれらを拾って「子ではない」警告を出す
   wait "$p1" 2>/dev/null || true
   wait "$p2" 2>/dev/null || true
-  # ⚠️ 「ハーネスが壊れた」を「レースが壊れた」と混ぜないこと。負荷が高いと worker の起動自体が
+  # 🚨 「ハーネスが壊れた」を「レースが壊れた」と混ぜないこと。負荷が高いと worker の起動自体が
   #   失敗しうるが、それは**判定が存在しない**のであって「取得が 2 つ」ではない
   #   (adversarial-review-own-safeguards の「判定不能は allow/deny のどちらにも丸めない」)。
   local got
@@ -187,7 +187,7 @@ race_winners() { # $1=delay $2=形状(leftover|fresh) $3=窓を広げるか(0/1)
     printf 'harness:%s\n' "$got"
     return 0
   fi
-  # ⚠️ `grep -c ... || echo 0` にしないこと。grep -c は無マッチでも "0" を出した上で rc=1 を
+  # 🚨 `grep -c ... || echo 0` にしないこと。grep -c は無マッチでも "0" を出した上で rc=1 を
   #   返すので、両方が出力されて "0\n0" になり失敗メッセージが壊れる (実測 2026-08-28)。
   local won
   won="$(grep -c '^0$' "$out" 2>/dev/null || true)"
@@ -207,7 +207,7 @@ for delay in 0 0.001 0.002 0.003 0.005; do
       1) ;;
       harness:*)
         # 判定不能。レースの結論には使わないが、黙って緑にもしない
-        printf '⚠ delay=%ss でハーネスが結果を %s 件しか残せなかった (負荷?)。この試行は判定不能\n' \
+        printf '🚨 delay=%ss でハーネスが結果を %s 件しか残せなかった (負荷?)。この試行は判定不能\n' \
           "$delay" "${n#harness:}"
         ;;
       *)
@@ -224,7 +224,7 @@ if [ "$race_bad" -eq 0 ]; then
 fi
 
 # --- production 形状 (lock 不在から 2 プロセス) を窓を広げて決定論的に検査する ----
-# ⚠️ ここが本ファイルで最も重要。素の窓 (実測 4.6ms) だと二重取得は 2/30 程度でしか出ず、
+# 🚨 ここが本ファイルで最も重要。素の窓 (実測 4.6ms) だと二重取得は 2/30 程度でしか出ず、
 #   確率的にしか落とせない。tt_proc_starttime を 0.4s 遅らせると **ガードが無い実装では
 #   15/15 で二重取得**し、あると 0/15 になる (実測 2026-08-28)。
 fresh_bad=0
@@ -234,7 +234,7 @@ for _ in 1 2 3 4 5; do
   fresh_trials=$(( fresh_trials + 1 ))
   case "$n" in
     1) ;;
-    harness:*) printf '⚠ production 形状のハーネスが結果を %s 件しか残せなかった。この試行は判定不能\n' "${n#harness:}" ;;
+    harness:*) printf '🚨 production 形状のハーネスが結果を %s 件しか残せなかった。この試行は判定不能\n' "${n#harness:}" ;;
     *) ng "lock 不在から 2 プロセスが来たとき $n プロセスが取得した (owner 記録中の lock を奪っている)"
        fresh_bad=$(( fresh_bad + 1 )); break ;;
   esac
@@ -260,7 +260,7 @@ mkdir "$fresh_dir" "$fresh_dir.steal"
 rc="$(rc_of "$fresh_dir")"
 [ "$rc" = 1 ] && ok "奪取中 (TTL 内の奪取権 lock) には譲る (rc=1)" || ng "奪取中の相手を蹴散らした (rc=$rc)"
 
-# ⚠️ ヘルパーを直接 pin する。acquire からの経路では手前に `[ -d "$steal" ] || return 2` が
+# 🚨 ヘルパーを直接 pin する。acquire からの経路では手前に `[ -d "$steal" ] || return 2` が
 #   あるため冗長になり、ガードを外しても acquire のテストは通る (実測)。だが汎用ヘルパーなので、
 #   存在しない dir を「古い」と答えると次の呼び出し側が「作れなかった」を「取り残し」と誤判定する。
 tt_lock_dir_older_than "$BASE/nosuch-dir" 1 \
@@ -268,7 +268,7 @@ tt_lock_dir_older_than "$BASE/nosuch-dir" 1 \
   || ok "存在しない dir は「古い」と答えない"
 
 # --- 記録済みで死んだ owner は「即」奪える (TTL 待ちで回復を遅らせない) ----------
-# ⚠️ 上のガード (owner 未記録なら TTL まで待つ) を「owner が生きていないなら待つ」に広げると、
+# 🚨 上のガード (owner 未記録なら TTL まで待つ) を「owner が生きていないなら待つ」に広げると、
 #   クラッシュした先任の lock が TTL の間ずっと奪えなくなり、復元・保存の再開が遅れる。
 #   区別の根拠は owner ファイルの**有無**であって生死ではない。
 dead_dir="$BASE/deadowner.lock"
@@ -279,7 +279,7 @@ rc="$(rc_of "$dead_dir")"
 [ "$rc" = 0 ] && ok "記録済みで死んだ owner の lock は待たずに奪える (rc=0)" || ng "死んだ owner の lock を奪えない (rc=$rc)"
 
 # --- 未来 mtime の取り残しを回収できる ------------------------------------------
-# ⚠️ `find -mmin -N` は**未来 mtime にもマッチする**ため「新しい」と誤判定し、NTP の
+# 🚨 `find -mmin -N` は**未来 mtime にもマッチする**ため「新しい」と誤判定し、NTP の
 #   ステップバック / スリープ復帰 / VM の suspend-resume 後に取り残しが**永久に回収されず**、
 #   呼び出し側は無音で退くので保存も watchdog も二度と張られない。
 future_stamp="$(date -v+3y '+%Y%m%d%H%M' 2>/dev/null || date -d '3 years' '+%Y%m%d%H%M')"
@@ -292,7 +292,7 @@ rc="$(rc_of "$fut")"
 [ "$rc" = 0 ] && ok "未来 mtime の奪取権 lock も回収する (rc=0)" || ng "未来 mtime の .steal で永久ロックアウトする (rc=$rc)"
 
 # --- mtime が読めないときは rc=2 (無音の「先任がいる」に丸めない) -----------------
-# ⚠️ 判定不能を rc=1 に丸めると、呼び出し元 3 本はどれも無音 exit 0 なので**装置が張られない
+# 🚨 判定不能を rc=1 に丸めると、呼び出し元 3 本はどれも無音 exit 0 なので**装置が張られない
 #   ことがログに 1 行も出ない**。判定不能は 0/1 のどちらでもない第 3 の結果として返す。
 unk="$BASE/unknown.lock"
 rm -rf "$unk" "$unk.steal"; mkdir "$unk"
@@ -318,7 +318,7 @@ tt_lock_sweep_stale "$sw"
 [ -d "$sw/777777.lock.steal" ] && ok "新しい .steal (奪取中かもしれない) は消さない" || ng "奪取中かもしれない .steal を消した"
 
 # --- stat の GNU/BSD 方言差で mtime が壊れないこと ------------------------------
-# ⚠️ 順序が命。`stat -f %m "$x" || stat -c %Y "$x"` (BSD 優先) と書くと **Linux で壊れる**。
+# 🚨 順序が命。`stat -f %m "$x" || stat -c %Y "$x"` (BSD 優先) と書くと **Linux で壊れる**。
 #   GNU stat の `-f` は書式指定ではなく「ファイルシステム情報の表示」なので `%m` はファイル名
 #   として扱われ、`%m` が無いエラーで rc=1 になる一方 **"$x" 側の fs 情報は stdout に出す**。
 #   コマンド置換がその複数行を拾い、フォールバックの epoch と連結されて数値でなくなる。
@@ -370,7 +370,7 @@ rm -rf "$rel"; mkdir "$rel"; tt_lock_write_owner "$rel"
 tt_lock_release_if_owner "$rel"
 [ -d "$rel" ] && ng "自分の lock を解放できない" || ok "自分が owner なら解放する"
 
-# ⚠️ **他人の lock は消さない**。奪取のレース中は 2 プロセスが同じパスを保持しうるので、
+# 🚨 **他人の lock は消さない**。奪取のレース中は 2 プロセスが同じパスを保持しうるので、
 #   先に終わった側が、まだ走っている側の lock を消すと多重実行になる (issue 103)。
 rm -rf "$rel"; mkdir "$rel"
 spawn_live; tt_lock_write_owner "$rel" "$REPLY_PID"
@@ -382,7 +382,7 @@ rm -rf "$rel"; mkdir "$rel"
 tt_lock_release_if_owner "$rel"
 [ -d "$rel" ] && ok "owner 未記録の lock は消さない (取り残しは acquire 側が回収する)" || ng "owner 未記録の lock を消した"
 
-# ⚠️ 起動時刻が**記録時は取れて解放時に取れない**環境 (ps が壊れた/権限が変わった) では、
+# 🚨 起動時刻が**記録時は取れて解放時に取れない**環境 (ps が壊れた/権限が変わった) では、
 #   生文字列比較だと必ず外れて自分の lock を解放できず取り残す。判定材料が欠けたときは
 #   pid 一致だけで自分とみなす (tt_same_proc の fail-open と揃える)。
 rm -rf "$rel"; mkdir "$rel"; tt_lock_write_owner "$rel"

@@ -40,7 +40,7 @@ type issuesView struct {
 	loaded   bool // 一度スキャンを完了したか (取り直し中に前回の結果を出してよいかの判定)
 	scanning bool // スキャン中 (スピナーを回す。二重発行の防止も兼ねる)
 	// rescanPending は「飛行中のスキャンが終わったら、もう 1 回取り直す」予約。
-	// ⚠️ single-flight (scanCmd) は連打でゴルーチンを積まないための仕組みだが、自分がファイルを
+	// 🚨 single-flight (scanCmd) は連打でゴルーチンを積まないための仕組みだが、自分がファイルを
 	// 動かした後 (n の next/ 移動) の取り直しまで落とすと、実ファイルは動いたのに一覧が旧位置を
 	// 出し続ける。しかも飛行中のスキャンは移動より前に始まっているので、その結果が届いても
 	// 移動は映らない。要求を 1 つに畳んで receive の出口で張り直すことで、貫通の穴を増やさずに
@@ -53,13 +53,13 @@ type issuesView struct {
 	all      []*issues.Issue
 	warnings []string
 	// notice は直近の操作結果 (コピー成功・読み込み失敗など)。noticeOK は成功か。
-	// browseModel はこれを取り出してトーストにする (takeNotice)。⚠️ viewer 単体でも駆動できる
+	// browseModel はこれを取り出してトーストにする (takeNotice)。🚨 viewer 単体でも駆動できる
 	// 契約 (このファイル冒頭) を保つため、ここではトーストを知らず「結果」だけを置く。
 	notice   string
 	noticeOK bool
 
 	// tabsCanon は issues.Tabs が返す正規順序 (done 込みの件数降順 → 名前昇順、other は末尾)。
-	// tabs は「そこから 0 件を右へ寄せた表示・巡回順」。⚠️ 並べ替えを tabs へ破壊的に適用すると
+	// tabs は「そこから 0 件を右へ寄せた表示・巡回順」。🚨 並べ替えを tabs へ破壊的に適用すると
 	// 順序が履歴依存になる (前回の並びを基準に再度寄せるため、全件表示に戻しても正規順序へ戻らず
 	// 「12, 6, 2, 6, 4」のような不規則な並びが残る。実測 2026-07-31)。正規順序を別に保ち、
 	// 表示順は (正規順序, 現在の件数) の純粋な写像として毎回作り直す。
@@ -80,12 +80,12 @@ type issuesView struct {
 
 	rows   []*issues.Issue // 現在のタブ・フィルタの表示対象
 	cursor int
-	// 複数選択 (shift+↑/↓)。範囲は錨 (markAt) と cursor から毎回導出する。⚠️ 選択集合を別に
+	// 複数選択 (shift+↑/↓)。範囲は錨 (markAt) と cursor から毎回導出する。🚨 選択集合を別に
 	// 持たない: 行集合はフィルタ・タブ・再スキャンで入れ替わるので、集合で持つと実体を失った
 	// 選択が残り「見えていない行がコピーされる」。錨だけなら行集合を作り直す refresh で畳める。
 	marked bool
 	markAt int
-	// offset は窓の先頭行。⚠️ 一覧に glide (スクロールアニメ) は載せない: 半ページ移動は
+	// offset は窓の先頭行。🚨 一覧に glide (スクロールアニメ) は載せない: 半ページ移動は
 	// cursor と窓を同時に動かし、windowOffset が「カーソルを含む最小の窓」を導出するので
 	// カーソルは必ず窓の端に来る = 窓を 1 行でも遅らせるとカーソルが画面から出る。遅らせる余地が
 	// 幾何的にゼロで、載せても瞬時に着地点へ張り付くだけだった (実測 issue 031)。窓が動かない
@@ -97,7 +97,7 @@ type issuesView struct {
 	body *issues.Body
 	// urlPick は本文中 URL のピッカー (u)。閉じているときは zero value。
 	urlPick urlPicker
-	// markNext は「次にやる」の目印を付ける確認 (n)。⚠️ 実ファイルを動かす唯一の操作なので、
+	// markNext は「次にやる」の目印を付ける確認 (n)。🚨 実ファイルを動かす唯一の操作なので、
 	// 他のキーと違って必ず確認を挟む (glogx の push/pull と同じ作法)。zero value = 確認なし。
 	markNext issuesMarkConfirm
 	// drawer は本文を左から開く引き出しの演出状態 (issues_drawer.go)。閉じる演出のあいだは
@@ -121,11 +121,11 @@ type issuesView struct {
 	wantQuit bool
 	// closing は閉じる演出 (開く演出の逆再生) の途中か (ユーザー要望 2026-08-01)。
 	//
-	// ⚠️ 演出のあいだ shown を false にしない: 逆再生で画面が見えている必要がある。実際の
+	// 🚨 演出のあいだ shown を false にしない: 逆再生で画面が見えている必要がある。実際の
 	// 片付け (本文の破棄・watcher の停止) は finishClose に一本化する。片付けを二箇所に書くと、
 	// 演出の着地とキーによる即着地のどちらかが stopWatch を通らず watcher が二重に走る。
 	closing bool
-	// closeAnimOff は閉じる演出を出さない (テスト用)。⚠️ zero value = 演出あり: 本番の既定を
+	// closeAnimOff は閉じる演出を出さない (テスト用)。🚨 zero value = 演出あり: 本番の既定を
 	// 「演出する」に置く。テストは「close したら即座に畳まれている」前提で書かれており、演出を
 	// 挟むと全てが 1 拍待ちになって読めなくなる (アプリ開閉演出の appZoom.off と同じ作法)。
 	// 演出そのものは issues_close_anim_test.go が明示的に on にして検査する。
@@ -146,7 +146,7 @@ const (
 	issuesAnimDuration = 350 * time.Millisecond
 	// issuesCloseDuration は閉じる演出の所要時間 (板が画面外へ抜け切るまで)。開くより速いのは、
 	// 開くときは中身を読み始められる一方、閉じるときは「もう用が済んだ画面」を見せ続けるため
-	// (引き出しの issuesDrawerDuration と同じ値・同じ理由)。⚠️ 畳む時刻でもある: この時間が
+	// (引き出しの issuesDrawerDuration と同じ値・同じ理由)。🚨 畳む時刻でもある: この時間が
 	// 板の実際の滞在時間より長いと、抜けた後の空舞台を見せてから git log へ戻ることになる。
 	issuesCloseDuration = 225 * time.Millisecond
 	// issuesAnimStagger は開く演出で行ごとに開始をずらす割合。0 なら全行同時に動いて「板が 1 枚
@@ -178,7 +178,7 @@ func (v *issuesView) toggle(cwd string) tea.Cmd {
 		return nil
 	}
 	v.shown = true
-	// 右から左へ流し込む演出を開始 (lines が窓を変形する)。⚠️ 時計は timeNow で取る:
+	// 右から左へ流し込む演出を開始 (lines が窓を変形する)。🚨 時計は timeNow で取る:
 	// 引き出し (drawer) と同じ差し替え点に揃えないと、この 1 つのビューの中で
 	// 「止められる時計」と「止められない時計」が混在する。
 	v.animStart = timeNow()
@@ -188,9 +188,9 @@ func (v *issuesView) toggle(cwd string) tea.Cmd {
 // restore は前回終了時の画面を復元しながら viewer を開く (起動時。issues_state.go)。
 // 適用はスキャン結果が届く receive まで待つので、ここでは予約を置いてスキャンを始めるだけ。
 //
-// ⚠️ 開く演出は出さない: 復元は「閉じたところから再開」なので、起動のたびに issuesAnimDuration 待たされる
+// 🚨 開く演出は出さない: 復元は「閉じたところから再開」なので、起動のたびに issuesAnimDuration 待たされる
 // のは筋が違う (ユーザー選定 2026-07-31)。
-// ⚠️ 既に開いているなら何もしない: 復元の git fork とスキャンの間に i が押された場合で、
+// 🚨 既に開いているなら何もしない: 復元の git fork とスキャンの間に i が押された場合で、
 // 上書きするとユーザーの操作を奪う。
 func (v *issuesView) restore(cwd string, s issuesScreen) tea.Cmd {
 	if v.shown {
@@ -208,7 +208,7 @@ func (v *issuesView) restore(cwd string, s issuesScreen) tea.Cmd {
 // (呼び出し側はそのとき記憶を消す)。スキャン前 (root 未確定) も覚えない: 照合キーが無い記憶は
 // 復元時に別 repo で当たってしまう。
 func (v *issuesView) screen(now time.Time) (issuesScreen, bool) {
-	// ⚠️ 閉じる演出の途中 = ユーザーは既に閉じている。shown はまだ true だが覚えない
+	// 🚨 閉じる演出の途中 = ユーザーは既に閉じている。shown はまだ true だが覚えない
 	// (覚えると「q で閉じてすぐ終了した」次の起動で、閉じたはずの viewer が蘇る)。
 	if !v.shown || v.closing || v.root == "" {
 		return issuesScreen{}, false
@@ -280,10 +280,10 @@ func (v *issuesView) settleClose() {
 
 // finishClose は閉じる演出を即座に着地させて片付ける。閉じていなければ何もしない。
 //
-// ⚠️ viewer を畳む唯一の出口にする。演出の着地 (settleClose) とキーによる即着地の両方が
+// 🚨 viewer を畳む唯一の出口にする。演出の着地 (settleClose) とキーによる即着地の両方が
 // ここを通ることで、片方が stopWatch を通らずに次の watchCmd が走る = watcher が二重に居座る、
 // という取りこぼしが構造的に起きない。
-// 戻り値は「この呼び出しで実際に畳んだか」。⚠️ tui.go が演出中のキーを 1 つだけ捨てる判定に使う
+// 戻り値は「この呼び出しで実際に畳んだか」。🚨 tui.go が演出中のキーを 1 つだけ捨てる判定に使う
 // (素通しで別ターゲットを開いてしまう e。理由はそちらのコメント)。
 func (v *issuesView) finishClose() bool {
 	if !v.closing {
@@ -294,10 +294,10 @@ func (v *issuesView) finishClose() bool {
 	v.animStart = time.Time{}
 	v.discardBody() // viewer ごと閉じるので引き出しの演出は持ち越さない
 	v.stopWatch()   // 見張りの watcher を閉じる (fd を残さない。issues_watch.go)
-	// ⚠️ 取り直しの予約も捨てる。残すと閉じた後に「非表示の viewer のための」スキャンが 1 回走り、
+	// 🚨 取り直しの予約も捨てる。残すと閉じた後に「非表示の viewer のための」スキャンが 1 回走り、
 	// その間 loading() が true になって tick が昂進する (自己終息はするが無駄な仕事)。
 	v.rescanPending = false
-	// 番号の絞り込みは持ち越さない。⚠️ q / Esc は絞り込みを解くだけで閉じない (1 段戻る) が、
+	// 番号の絞り込みは持ち越さない。🚨 q / Esc は絞り込みを解くだけで閉じない (1 段戻る) が、
 	// i は 1 段戻さず閉じるので、ここで捨てないと次に開いた viewer が「なぜか件数が少ない一覧」
 	// から始まる。行集合も作り直す — rows は常に visibleIssues() と一致させる (残すと、開いた
 	// 直後の 1 フレームだけタブ行の下に絞り込まれた行が並ぶ)。
@@ -321,7 +321,7 @@ func (v *issuesView) finishAnim() {
 // slideAnimating は viewer 全体の開閉スライド中か。tickInterval が 60fps へ上げる判定に使う
 // (引き出しと pager glide は含めない: あちらは他の glide と同じ 30fps で足りる)。
 func (v *issuesView) slideAnimating() bool {
-	// ⚠️ 閉じる演出は「時間が過ぎたら false」にしない: tick は animating が false になった拍で
+	// 🚨 閉じる演出は「時間が過ぎたら false」にしない: tick は animating が false になった拍で
 	// 止まるので、時間で降ろすと片付けの settleClose が呼ばれる前にチェーンが切れ、閉じかけの姿で
 	// 固まる。settleClose が closing を下ろして初めて false になる (自分で終われる形にする)。
 	if v.closing {
@@ -388,11 +388,11 @@ func (v *issuesView) scanCmd(cwd string) tea.Cmd {
 // scanAfterChangeCmd は「自分が (または開いていたエディタが) ファイルを変えた後」の取り直し。
 // 飛行中なら予約して receive の出口で張り直すので、single-flight に落とされない。
 //
-// ⚠️ これが必要なのは、飛行中のスキャンが**変更より前に始まっている**ため。その結果が届いても
+// 🚨 これが必要なのは、飛行中のスキャンが**変更より前に始まっている**ため。その結果が届いても
 // 変更は映らないので、単に落とすと「実ファイルは動いたのに一覧は旧位置を出し続ける」状態が
 // fsnotify の次周期まで残る (fsnotify が無音な FS では保険のポーリングまで)。
 //
-// ⚠️ 読み直しだけの経路 (toggle / restore / r) には使わない。あちらは連打を畳むのが正しく、
+// 🚨 読み直しだけの経路 (toggle / restore / r) には使わない。あちらは連打を畳むのが正しく、
 // 予約すると 1 打ごとに追加のスキャンが後から積まれる (single-flight の目的そのものを損なう)。
 func (v *issuesView) scanAfterChangeCmd() tea.Cmd {
 	if v.scanning {
@@ -511,7 +511,7 @@ func (v *issuesView) markPath() string {
 // 外部編集の即時反映 (issues_watch.go) が入ってからは、選択している最中に取り直しが走るのが
 // 普通になった (Claude Code が issue を書くたび) ため、畳むと選択が実用にならない。
 //
-// ⚠️ 張り替えるのは再スキャン (同じ集合の読み直し) だけ。タブ・フィルタの切り替えでは refresh が
+// 🚨 張り替えるのは再スキャン (同じ集合の読み直し) だけ。タブ・フィルタの切り替えでは refresh が
 // 畳んだままにする — あちらは行集合の意味そのものが変わるので、範囲を持ち越すと別の対象を指す。
 func (v *issuesView) anchorMark(path string) {
 	if path == "" {
@@ -535,11 +535,11 @@ func (v *issuesView) anchorMark(path string) {
 //     最中に done/ へ移された issue が「実体から外れた本文」になり、以降の y が消えたパスをコピーし、
 //     e は実体確認 (editCmd) で弾かれて編集もできない。複数一致は spec 3 節が警告する異常
 //     (同名が複数の状態ディレクトリにある) で、どれが本人か決められないので繋ぎ直さない
-//  3. どこにも無ければ本文モードを畳んで理由を通知する。⚠️ 消えた本文を出し続けると、viewer が
+//  3. どこにも無ければ本文モードを畳んで理由を通知する。🚨 消えた本文を出し続けると、viewer が
 //     「もう無いファイルの内容」を最新として見せ続ける (このモードでは実体が無いので編集も
 //     取り直しもできず、読み続ける対象がそもそも無い)
 //
-// ⚠️ 畳むのは 3 の「どこにも無い」ときだけ。移動を 2 で吸収してから判定するので、done/ へ移された
+// 🚨 畳むのは 3 の「どこにも無い」ときだけ。移動を 2 で吸収してから判定するので、done/ へ移された
 // だけで一覧へ引き戻すことはない (カーソル・選択の錨が「消えていれば現状維持」なのと同じ精神で、
 // ユーザーの居場所を理由なく奪わない)。
 func (v *issuesView) rebindOpen(path string) {
@@ -566,7 +566,7 @@ func (v *issuesView) rebindOpen(path string) {
 }
 
 // matchByBase は同じファイル名の issue を探す。ちょうど 1 件なら (それ, false)、複数なら
-// (nil, true)、無ければ (nil, false)。⚠️ 「複数」と「無い」を呼び出し側で分ける必要がある
+// (nil, true)、無ければ (nil, false)。🚨 「複数」と「無い」を呼び出し側で分ける必要がある
 // (複数は実体があるので畳んではいけない)。
 func (v *issuesView) matchByBase(base string) (found *issues.Issue, ambiguous bool) {
 	for _, iss := range v.all {
@@ -587,7 +587,7 @@ func (v *issuesView) matchByBase(base string) (found *issues.Issue, ambiguous bo
 // どの行にも描かれない」状態が残るため (a / Tab / 再スキャンで実際に起きていた)。窓は
 // windowOffset が cursor から導出するので、ここは行集合の作り直しだけを担う。
 func (v *issuesView) refresh() {
-	// ⚠️ 行集合が変わるので選択は畳む。錨は位置で持つため、残すと別の issue を指す
+	// 🚨 行集合が変わるので選択は畳む。錨は位置で持つため、残すと別の issue を指す
 	v.clearMark()
 	v.rows = v.visibleIssues()
 	v.cursor = clampIdx(v.cursor, len(v.rows))
@@ -595,7 +595,7 @@ func (v *issuesView) refresh() {
 	// issues.Tab.Count は done を含む全件なので、そのまま出すと done を伏せた既定表示で
 	// 「カテゴリの合計 ≠ All ≠ 一覧の行数」になる。
 	//
-	// ⚠️ タブ集合そのものは v.all から作る (receive)。Filter 後の集合から作り直すと done だけの
+	// 🚨 タブ集合そのものは v.all から作る (receive)。Filter 後の集合から作り直すと done だけの
 	// カテゴリが消え、位置で持つ tabIdx が別カテゴリを指す。ここで数えるのは件数だけ。
 	v.allCount = len(issues.Filter(v.all, "", v.filter))
 	v.nextCount = len(v.rowsForTab(tabNextName))
@@ -612,7 +612,7 @@ func (v *issuesView) refresh() {
 
 // visibleIssues は今の条件で一覧に並べる行集合。
 //
-// ⚠️ 行集合を作るのはここ 1 箇所にする。番号フィルタは再スキャン (r / 見張り) や a を跨いで
+// 🚨 行集合を作るのはここ 1 箇所にする。番号フィルタは再スキャン (r / 見張り) や a を跨いで
 // 残るので、/ の処理側で v.rows を差し替える形にすると、refresh を通る経路 (receive /
 // applyScreen / a) が絞り込みヘッダーを出したままタブの行へ黙って戻してしまう。
 func (v *issuesView) visibleIssues() []*issues.Issue {
@@ -622,7 +622,7 @@ func (v *issuesView) visibleIssues() []*issues.Issue {
 	return v.rowsForTab(v.currentTab())
 }
 
-// rowsForTab はタブ名に対応する行集合。⚠️ 疑似カテゴリ [next] はファイル名のカテゴリではなく
+// rowsForTab はタブ名に対応する行集合。🚨 疑似カテゴリ [next] はファイル名のカテゴリではなく
 // 状態 (next/ に居るか) で選ぶので、issues.Filter へ名前として渡さない (渡すと「@next という
 // カテゴリの issue」を探して常に 0 件になる)。
 //
@@ -644,10 +644,10 @@ func (v *issuesView) rowsForTab(tab string) []*issues.Issue {
 // reorderTabsByCount は正規順序 tabs を「件数 0 を右へ寄せた」並びへ写す純関数 (件数も同じ並びで
 // 返す)。件数 > 0 / 0 の 2 群に分け、各群の中は正規順序を保つ。入力は破壊しない。
 //
-// ⚠️ human タブは 0 件でも右へ寄せない (All の直後に固定する)。人間待ちのタスクは件数が
+// 🚨 human タブは 0 件でも右へ寄せない (All の直後に固定する)。人間待ちのタスクは件数が
 // 少ないときこそ見落とすので、席を動かさないことが目的 ([next] を左端に固定するのと同じ規律)。
 //
-// ⚠️ 表示順だけ変えて巡回順を据え置くと、Tab キーの移動が画面の並びと食い違う (右端に見えるタブへ
+// 🚨 表示順だけ変えて巡回順を据え置くと、Tab キーの移動が画面の並びと食い違う (右端に見えるタブへ
 // 順番に辿り着けない)。呼び出し側は tabs (表示・巡回順) をこれで作り直し、位置で持つ選択 (tabIdx)
 // は名前から張り替える (tabIndexOf)。張り替えないと a で件数が変わった瞬間に選択が別カテゴリへ滑る。
 func reorderTabsByCount(tabs []issues.Tab, counts []int) ([]issues.Tab, []int) {
@@ -677,7 +677,7 @@ func reorderTabsByCount(tabs []issues.Tab, counts []int) ([]issues.Tab, []int) {
 }
 
 // setNotice は操作結果を置く (ok=false は失敗)。
-// ⚠️ ここで無害化する: 通知文は issue のファイル名・本文由来の URL を素で埋め込む呼び出しが
+// 🚨 ここで無害化する: 通知文は issue のファイル名・本文由来の URL を素で埋め込む呼び出しが
 // 多く、呼び出しごとに包むと必ずどこかが漏れる (status_view.go の setNotice と同じ規律)。
 func (v *issuesView) setNotice(text string, ok bool) {
 	v.notice, v.noticeOK = sanitizePlainLine(text), ok
@@ -697,14 +697,14 @@ func (v *issuesView) takeNotice() (string, bool) {
 
 // tabNextName は疑似カテゴリ [next] の識別子 (保存・復元でもこの名前で持つ)。
 //
-// ⚠️ ファイル名のカテゴリトークンとして現れない綴りにする: 実在するカテゴリ語と同じ綴りだと
+// 🚨 ファイル名のカテゴリトークンとして現れない綴りにする: 実在するカテゴリ語と同じ綴りだと
 // 同名のタブが 2 つ並び、位置で持つ選択 (tabIdx) の指す先が曖昧になる (issues.Tabs が other で
 // 同じ問題を合算で回避しているのと同型)。トークンは英数と - からしか作られないので @ を使う。
 const tabNextName = "@next"
 
 // tabIdx の規約: -1 = 疑似カテゴリ [next]、0 = All、1.. = v.tabs[tabIdx-1]。
 //
-// ⚠️ next を -1 にして All を 0 のままにするのは zero value のため。0 を next にすると、
+// 🚨 next を -1 にして All を 0 のままにするのは zero value のため。0 を next にすると、
 // 作りたてのビュー (newIssuesView / テストの zero value) が既定で [next] を選ぶことになり、
 // 「開いたら空の一覧が出る」挙動に変わる。
 const tabIdxNext = -1
@@ -721,7 +721,7 @@ func (v *issuesView) currentTab() string {
 }
 
 // closeBody は本文モードを抜ける。
-// closeBody は本文を閉じる。⚠️ ここでは逆再生を始めるだけで中身は消さない — 消すと閉じる
+// closeBody は本文を閉じる。🚨 ここでは逆再生を始めるだけで中身は消さない — 消すと閉じる
 // 演出に何も映らない。実際の破棄は演出が着地したとき (settleDrawer)。
 func (v *issuesView) closeBody() {
 	// 後始末は本文の有無に依らず行う (呼ばれた時点で「本文モードではない」を満たすべき)。
@@ -803,20 +803,20 @@ func (v *issuesView) current() *issues.Issue {
 // ownsKeys は viewer 自身がキーを解釈し切る状態か (URL ピッカー入力中 / 番号の絞り込み入力中 /
 // 「次にやる」の y/N 確認中)。statusView.ownsKeys と対。
 //
-// ⚠️ browseModel 側の U 横取り (tui.go の issuesOv.visible() ブロック) は、この状態では止める。
+// 🚨 browseModel 側の U 横取り (tui.go の issuesOv.visible() ブロック) は、この状態では止める。
 // 止めないと viewer が持つキー語彙を外側が奪う: URL ピッカーは
 // 「印字文字はすべて検索語に流す (個別のキーを先に横取りすると、その文字を含む URL を
 // 検索できなくなる)」と宣言しているのに、大文字 `U` だけが残量モーダルに化けていた
 // (issue 113。`github.com/Ueno/...` のような URL を絞り込めない)。
 //
-// ⚠️ ガードは横取りだけに掛けること: 委譲ごと飛ばすと viewer がキーを受け取れなくなる
+// 🚨 ガードは横取りだけに掛けること: 委譲ごと飛ばすと viewer がキーを受け取れなくなる
 // (status 側が実装中に踏んだ罠。status_view.go:ownsKeys の注記と同じ)。
 //
 // numFilter は active でなく **typing** を見る: 絞り込みが効いているだけの状態
 // (数字を打ち終わった後) は通常のナビゲーションなので、U は外側で受けてよい。
 // active を見ると「絞り込みを解くまで U が恒久的に死ぬ」。
 //
-// ⚠️ numFilter を入れている理由は URL ピッカーとは別で、**今日の実利ではない** (敵対的レビューの
+// 🚨 numFilter を入れている理由は URL ピッカーとは別で、**今日の実利ではない** (敵対的レビューの
 // 指摘。numFilter は数字しか受けないので、U が検索語になることは今は無い。むしろ入力中の U は
 // 無言の no-op になる = 機能が 1 つ減る)。それでも入れているのは、
 // docs/issues-viewer-spec.md が「タイトル検索を足すときは『数字以外を無視する』を外して
@@ -846,11 +846,11 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 	// 通知は takeNotice で取り出された時点で消えるので、ここでのクリアは不要 (取り出されない
 	// まま次のキーが来た場合だけ古い結果が残るが、browseModel は毎キーで取り出す)
 	rows := v.visibleRows(vp)
-	// ⚠️ 確認モーダルは最優先で飲む (実ファイルを動かす操作なので、裏のキーを効かせない)
+	// 🚨 確認モーダルは最優先で飲む (実ファイルを動かす操作なので、裏のキーを効かせない)
 	if v.markNext.active {
 		return v.markNextKey(key)
 	}
-	// ⚠️ URL ピッカーは他のどの割当よりも先に飲む: インクリメンタルサーチでは印字文字がすべて
+	// 🚨 URL ピッカーは他のどの割当よりも先に飲む: インクリメンタルサーチでは印字文字がすべて
 	// 検索語なので、e/v (エディタ) や y (コピー) を先に処理すると "e" や "y" を含む URL を
 	// 検索できない (e は example / .dev / developer に頻出するので実害が大きい)。
 	if v.urlPick.active {
@@ -898,12 +898,12 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 	case "R":
 		// ratelimit ダッシュボードへの横断 (ユーザー要望 2026-09-01)。s と同じ扱い
 		// (全画面どうしの入れ替えなので閉じてから開く)。ダッシュボード側の i と対で往復できる。
-		// ⚠️ hint には入れない (1 行が popup 実幅に詰まっている。i と同じ理由で --help と
+		// 🚨 hint には入れない (1 行が popup 実幅に詰まっている。i と同じ理由で --help と
 		// README が正本。issues_view.go:hint の注記)
 		v.close()
 		v.wantRatelimit = true
 	case "u":
-		// ⚠️ 黙って無視しない。u は git log 一覧では pull、本文では URL ピッカー、status viewer では
+		// 🚨 黙って無視しない。u は git log 一覧では pull、本文では URL ピッカー、status viewer では
 		// 「pull は p です」を返す — 一覧だけ無音だと「押したのに何も起きない」= 壊れて見える
 		// (status viewer 側で明文化されている規律。issue 122)。
 		// 効かせない理由は openURLPicker の doc: 一覧で押せるようにするとキー 1 打ごとにファイルを
@@ -917,7 +917,7 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 		v.moveCursor(-1, rows)
 	// 範囲選択 (ユーザー要望 2026-08-01)。y / p / Y が選択範囲へ効く。
 	// 移動が矢印と j/k の 2 系統あるので、伸張も両方に付ける (K = shift+k、J = shift+j)。
-	// ⚠️ 矢印だけにしない: shift+矢印は端末・多重化 (tmux) の設定次第でアプリまで届かないことが
+	// 🚨 矢印だけにしない: shift+矢印は端末・多重化 (tmux) の設定次第でアプリまで届かないことが
 	// あり、そのとき機能ごと沈黙する。素の大文字は必ず届くので、確実に動く経路を必ず 1 本持たせる。
 	case "shift+up", "K":
 		v.extendMark(-1, rows)
@@ -965,7 +965,7 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 
 // numberFilterKey は番号を入力しているあいだのキー。
 //
-// ⚠️ 数字と編集キー以外の印字文字は捨てる (無視して入力を続ける)。一覧のキーとして実行しない
+// 🚨 数字と編集キー以外の印字文字は捨てる (無視して入力を続ける)。一覧のキーとして実行しない
 // のは issuesNumberFilter の doc の理由による。
 func (v *issuesView) numberFilterKey(key string, rows int) tea.Cmd {
 	switch key {
@@ -1000,7 +1000,7 @@ func (v *issuesView) actionKey(key string) (tea.Cmd, bool) {
 		// e は git log 一覧の e (nvim を repo root で開く) と語彙を揃えたもの。v は先にあった
 		// 割当で、打ち慣れを壊さないため残す (本文モードの hint が案内するのは e だけ)。
 		//
-		// ⚠️ 閉じる演出中 (issuesCloseDuration) の e はここへ来ない: tui.go が
+		// 🚨 閉じる演出中 (issuesCloseDuration) の e はここへ来ない: tui.go が
 		// finishClose で viewer を畳んでから通常のキー処理へ素通しするため、git log 一覧側の
 		// e (openEditorAtRoot = `nvim .`) に着弾する。板がまだ見えているのに repo root が
 		// 全画面で開くので誤爆の体感は軽くない。それでも素通しから e を外していないのは、
@@ -1024,7 +1024,7 @@ func (v *issuesView) actionKey(key string) (tea.Cmd, bool) {
 
 // visibleRows は窓のうちリスト/本文に使える行数 (ヘッダーを差し引く)。
 //
-// ⚠️ 描画側 (listLines / bodyLines) と同じ式・同じ幅で数えること。片方だけ幅が違うと、幅で
+// 🚨 描画側 (listLines / bodyLines) と同じ式・同じ幅で数えること。片方だけ幅が違うと、幅で
 // 折り返すヘッダーを足した瞬間にキー側と描画側の page 分割が食い違い、半ページ移動の距離や
 // カーソルと窓の関係が静かにずれる (描画側には収束処理があるので症状から原因へ辿り着けない)。
 // 一致は TestIssuesLayoutAgreesBetweenKeysAndRender が固定する。
@@ -1040,7 +1040,7 @@ func (v *issuesView) headWidth(total int) int {
 	return total
 }
 
-// bodyWidth は本文を組む幅 (引き出しの内側)。⚠️ 演出中の途中幅ではなく着地後の幅で組む:
+// bodyWidth は本文を組む幅 (引き出しの内側)。🚨 演出中の途中幅ではなく着地後の幅で組む:
 // 途中幅で整形し直すと毎フレーム折り返しが変わって文字が踊る (composeDrawer の doc)。
 func (v *issuesView) bodyWidth(total int) int { return max(v.drawer.targetWidth(total)-1, 1) }
 
@@ -1050,13 +1050,13 @@ func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
 	// Enter は「TUI 内の開閉 toggle」(ユーザー要望 2026-08-01)。一覧の Enter で開き、本文の
 	// Enter で閉じる。glogx 本体の job パネル (tui.go の handlePanelKey) が既にこの語彙なので、
 	// viewer だけ Enter が行送りだと同じキーの意味が画面ごとに変わる。
-	// ⚠️ pagerScrollKey へ渡す前に捌くこと: あちらは enter を 1 行送りに写す。
+	// 🚨 pagerScrollKey へ渡す前に捌くこと: あちらは enter を 1 行送りに写す。
 	case "q", "esc", "h", "left", "enter":
 		v.closeBody()
 	case "i":
 		// i は本文からも効く (一覧の i と同じ toggle。**s と同じ理由**: --help と README が
 		// 「viewer 内のキー」として i を案内しており、本文だけ沈黙すると案内が嘘になる。issue 122)。
-		// ⚠️ 本文だけ畳む 1 段戻りにはしない: それは Enter / q / h が既に持っている語彙で、
+		// 🚨 本文だけ畳む 1 段戻りにはしない: それは Enter / q / h が既に持っている語彙で、
 		//   README の「i で閉じて一覧へ戻る」とも食い違う。
 		v.close()
 	case "s":
@@ -1107,7 +1107,7 @@ func (v *issuesView) extendMark(delta, rows int) {
 func (v *issuesView) clearMark() { v.marked, v.markAt = false, 0 }
 
 // selection は選択範囲 [lo, hi] (両端を含む)。選択していなければ ok=false。
-// ⚠️ 錨は行集合の入れ替えで無効になりうるので、範囲は必ず今の rows へ収めてから返す。
+// 🚨 錨は行集合の入れ替えで無効になりうるので、範囲は必ず今の rows へ収めてから返す。
 func (v *issuesView) selection() (lo, hi int, ok bool) {
 	if !v.marked || len(v.rows) == 0 {
 		return 0, 0, false
@@ -1133,7 +1133,7 @@ func (v *issuesView) scrollToCursor(rows int) { v.offset = v.windowOffset(rows) 
 // windowOffset は一覧の描画開始行 (論理 offset)。カーソルを必ず含み、末尾では余白を作らない
 // 位置へ寄せる。
 //
-// ⚠️ offset は独立した状態ではなく (cursor, 行数, 表示行数) からの導出値として扱う。表示行数は
+// 🚨 offset は独立した状態ではなく (cursor, 行数, 表示行数) からの導出値として扱う。表示行数は
 // キー処理時と描画時でずれる: 通知行が出てヘッダーが 1 行増える / リサイズで page が変わる /
 // タブ・フィルタ切替で行数が変わる。offset を状態として持ち回ると、そのずれが「カーソル行が
 // 1 本も描かれず、見えない行が Enter・v・y の対象になる」窓として残る。導出を
@@ -1166,7 +1166,7 @@ func (v *issuesView) target() *issues.Issue {
 //
 // エディタの解決を editorCommand に寄せているのは、これが glogx で唯一「実ファイルを 1 つ開く」
 // 経路で、任意の $EDITOR で成立するため (据え置いた 2 箇所の理由は editorCommand の doc)。
-// ⚠️ 起動前に実体を確かめる。一覧が握る Issue.Path は n (next/ へ移動) や別プロセスの
+// 🚨 起動前に実体を確かめる。一覧が握る Issue.Path は n (next/ へ移動) や別プロセスの
 // rename/削除で stale になり、そのパスを渡すとエディタは黙って**新規バッファ**として開く
 // (nvim はエラーにしない)。そこで保存すると旧位置にファイルが復活し、issues/move.go が
 // 「同じ basename を 2 箇所に作らない」と宣言している不変条件を viewer 自身が破る。
@@ -1265,7 +1265,7 @@ func (v *issuesView) copyEach(label string, text func(*issues.Issue) string) {
 // copyLines は複数行をまとめてコピーする。1 件のときの文言は単数のまま変えない
 // (複数選択を足したせいで、いつもの操作の見た目が変わらないように)。
 //
-// ⚠️ 通知には全文を載せない: トーストは 1 行で、改行を含む文字列を渡すと枠が壊れる。
+// 🚨 通知には全文を載せない: トーストは 1 行で、改行を含む文字列を渡すと枠が壊れる。
 // クリップボードには全件を改行区切りで入れ、通知は件数 + 先頭だけにする。
 func (v *issuesView) copyLines(lines []string, label string) {
 	if len(lines) == 1 {
@@ -1326,7 +1326,7 @@ var categoryColors = map[string]string{
 
 // catHashPalette は表に無いカテゴリ語へ割る色。
 //
-// ⚠️ 赤を入れない: 意味を持たない語 (サブシステム名など) が「失敗」の色で出ると誤読される。
+// 🚨 赤を入れない: 意味を持たない語 (サブシステム名など) が「失敗」の色で出ると誤読される。
 // 赤は bug / fix / security に予約する。
 var catHashPalette = []string{catGreen, catTeal, catYellow, catBlue, catPurple, catGold, catGray}
 
@@ -1350,7 +1350,7 @@ func categoryColor(name string) string {
 // issuesViewport は「今この窓は何桁 × 何行か」。キー処理と描画が同じ値から page を分割するための型。
 //
 // キー処理に描画の都合 (色・カーソル強調・スピナー) まで渡さないよう、issuesRenderOpts とは
-// 別の型にしてある。⚠️ 幅を落とさないこと: 幅を知らずに page を分割していた頃は、ヘッダーを
+// 別の型にしてある。🚨 幅を落とさないこと: 幅を知らずに page を分割していた頃は、ヘッダーを
 // 幅 0 で数えるしかなく「ヘッダーは折り返してはいけない」という暗黙の前提を抱えていた。
 type issuesViewport struct {
 	width int
@@ -1406,7 +1406,7 @@ func (v *issuesView) lines(o issuesRenderOpts) []string {
 
 // animProgress は開く演出の進み (0..1)。演出していないときは 1 (= 変形しない)。
 //
-// 閉じるときは進捗を 1 → 0 へ落とす (所要も別で、issuesCloseDuration の方が短い)。⚠️ 反転する
+// 閉じるときは進捗を 1 → 0 へ落とす (所要も別で、issuesCloseDuration の方が短い)。🚨 反転する
 // のは進捗の向きだけで、見え方 (緩急・行ごとのずらし) まで開く演出の逆再生にはしない
 // (理由は rowOffsetRatio の doc)。
 func (v *issuesView) animProgress() float64 {
@@ -1459,7 +1459,7 @@ func slideInWindow(window []string, progress float64, width int, closing bool) [
 // 入ってくる向きだけ easeOutCubic で終端を減速させ、行ごとに開始をずらす (stagger)。着地する
 // ものは減速しないと「カクッ」と止まって見え、ずらしがあると上から順に流れ込んで見える。
 //
-// ⚠️ 出ていく向きにこの作法を流用しないこと。板には着地点が無いので、終端の減速は「もう画面から
+// 🚨 出ていく向きにこの作法を流用しないこと。板には着地点が無いので、終端の減速は「もう画面から
 // 消えているのに畳まれない時間」に化ける (easeOutCubic だと 280 桁端末で残り 100ms が真っ白)。
 // ずらしも視線のある最上行を最後に回して動き出しを遅らせる。出ていくときは全行同時・等速。
 func rowOffsetRatio(progress float64, i, last int, closing bool) float64 {
@@ -1483,7 +1483,7 @@ func easeOutCubicFloat(p float64) float64 {
 // 行数だけが必要な呼び出し (中身は使われない)。
 // headLines はモードに応じたヘッダー行。
 //
-// ⚠️ 返す行数は width に依らないこと (幅で折り返さず clipToWidth で切る)。キー処理は描画幅を
+// 🚨 返す行数は width に依らないこと (幅で折り返さず clipToWidth で切る)。キー処理は描画幅を
 // 知らないまま幅 0 で数えている (visibleRows) ため、幅で行数が変わるヘッダーを足すと page の
 // 分割がキー側と描画側で食い違う。折り返したいヘッダーが要るなら、まず visibleRows へ幅を
 // 通す経路を作ること (handleKey のシグネチャまで届く変更になる)。
@@ -1504,7 +1504,7 @@ func (v *issuesView) bodyHeadLines(width int, colored bool) []string {
 	// 進捗は開いている本文から数える (Issue 側で持つと一覧を出すたびに全 issue の全文を
 	// 読むことになる。issues/body.go の Body.Progress の doc)。
 	//
-	// ⚠️ 鮮度は v.body と同じで、それ以上ではない: 取り直しが失敗したとき
+	// 🚨 鮮度は v.body と同じで、それ以上ではない: 取り直しが失敗したとき
 	// (reloadAfterEdit は err == nil のときだけ v.body を差し替える) は本文も進捗も
 	// 古いまま残る。本文テキストの stale は以前からある性質で、進捗をここへ移したことで
 	// **本文と進捗の鮮度が揃った** (以前は Issue 側の進捗だけ別経路で更新されていた)
@@ -1524,7 +1524,7 @@ func (v *issuesView) bodyHeadLines(width int, colored bool) []string {
 
 // listHeadLines は一覧のヘッダー (タブ + スキャン警告)。
 //
-// ⚠️ headLines と分けているのは引き出しのため: 本文を開いている間も下地の一覧はタブを出す
+// 🚨 headLines と分けているのは引き出しのため: 本文を開いている間も下地の一覧はタブを出す
 // 必要があり、headLines をそのまま使うと下地にまで本文のヘッダーが出る (実測で「一覧の上に
 // 本文のファイル名が乗る」表示になった)。
 //
@@ -1541,7 +1541,7 @@ func (v *issuesView) listHeadLines(width int, colored bool) []string {
 		head = append(head, v.tabLine(issuesRenderOpts{width: width, colored: colored}))
 	}
 	if len(v.warnings) > 0 {
-		head = append(head, paint(clipToWidth("⚠ "+v.warnings[0], width), ansiYellow, colored))
+		head = append(head, paint(clipToWidth("🚨 "+v.warnings[0], width), ansiYellow, colored))
 	}
 	return append(head, "")
 }
@@ -1580,7 +1580,7 @@ func (v *issuesView) emptyMessage(o issuesRenderOpts) string {
 	case len(v.dirs) == 0:
 		return "issues ディレクトリが見つかりません (repo root と root/*/issues を探しました)"
 	case len(v.rows) == 0 && v.numFilter.active && v.numFilter.query != "":
-		// ⚠️ 状態フィルタの案内 (a: pending も表示) を出さない。番号検索は状態を無視しているので、
+		// 🚨 状態フィルタの案内 (a: pending も表示) を出さない。番号検索は状態を無視しているので、
 		// a を押しても結果は 1 件も増えない
 		return "番号に「" + v.numFilter.query + "」を含む issue はありません (Esc: 解除)"
 	case len(v.rows) == 0 && v.filter == issues.FilterOpen:
@@ -1629,7 +1629,7 @@ func (v *issuesView) tabLine(o issuesRenderOpts) string {
 	avail := max(o.width-dispWidth(filter)-1, 1)
 	left := scrollTabs(chips, v.tabIdx+1, avail, o.colored) // チップ配列は [next] が 0 番
 	pad := max(o.width-dispWidth(left)-dispWidth(filter), 0)
-	// ⚠️ 組んだ後に必ず切る (scrollTabs 末尾と同じ規律): avail には下限 1 があるので、
+	// 🚨 組んだ後に必ず切る (scrollTabs 末尾と同じ規律): avail には下限 1 があるので、
 	// バッジ + 印すら入らない極小幅 (o.width ≤ dispWidth(filter)) では合成が幅を超える
 	// (issue 053: 幅 1 で「…○」= 2 セルが出ていた。収まる幅では clip は素通りで無 alloc)
 	return clipToWidth(left+padSpaces(pad)+paint(filter, ansiDim, o.colored), o.width)
@@ -1645,7 +1645,7 @@ const (
 // scrollTabs はタブ行を「選択中のチップが必ず見える窓」へ切り出す (横スクロール)。
 // 隠れている側には ‹ / › を出して、その先にタブがあることを示す。
 //
-// ⚠️ 窓を状態として持たない: (選択位置, チップ幅, 使える幅) からの導出値として毎回作り直す
+// 🚨 窓を状態として持たない: (選択位置, チップ幅, 使える幅) からの導出値として毎回作り直す
 // (一覧の windowOffset と同じ規律。理由もそちら)。フィルタ切替やタブの並べ替えで幅も選択位置も
 // 変わるため、状態で持つと「選択中のタブが画面外なのに窓は動かない」ずれが残る。
 //
@@ -1692,7 +1692,7 @@ func scrollTabs(chips []string, sel, avail int, colored bool) string {
 		b.WriteString(" ")
 		b.WriteString(mark(tabScrollRight))
 	}
-	// ⚠️ 最後に必ず切る: 1 チップだけで avail を超える極端な狭さでは上のループが縮めきれない。
+	// 🚨 最後に必ず切る: 1 チップだけで avail を超える極端な狭さでは上のループが縮めきれない。
 	return clipToWidth(b.String(), avail)
 }
 
@@ -1728,7 +1728,7 @@ func (v *issuesView) tabChip(name string, count int, active bool, colored bool) 
 	return paint(text, ansiDim+color, colored)
 }
 
-// issuesSelGutter は選択範囲の行に出す溝。⚠️ 幅は cursorGutterWidth と同じ 2 桁にすること
+// issuesSelGutter は選択範囲の行に出す溝。🚨 幅は cursorGutterWidth と同じ 2 桁にすること
 // (カーソル行の "→ " と混在するので、違う幅だと選択行だけ 1 桁ずれる)。
 const issuesSelGutter = "▌ "
 
@@ -1740,7 +1740,7 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 	badge := iss.Status.Badge()
 	cat := fillRight(clipToWidth(iss.Category, 9), 9)
 	catPainted := paint(cat, categoryColor(iss.Category), o.colored)
-	// ⚠️ 一覧に進捗 (チェックボックスの n/N) は出さない。数えるには本文を最後まで読む必要が
+	// 🚨 一覧に進捗 (チェックボックスの n/N) は出さない。数えるには本文を最後まで読む必要が
 	// あり、一覧を出すたびに全 issue の全文を読んでいた (起動と外部編集後の再スキャンで毎回)。
 	// 進捗は「あると便利」程度で、そのために全件の全文を読むのは釣り合わないと判断した。
 	// 詳細を開いたときは Body が全文を持っているので、そこでは追加の I/O なしに出せる
@@ -1751,7 +1751,7 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 	titleW := max(width-fixed, 4)
 	title := clipToWidth(iss.Display(), titleW)
 	text := num + " " + badge + " " + catPainted + " " + title
-	// ⚠️ どの経路も同じ幅に切る。titleW には下限 (4) があるので、極端に狭い幅では固定部分だけで
+	// 🚨 どの経路も同じ幅に切る。titleW には下限 (4) があるので、極端に狭い幅では固定部分だけで
 	// width を超える。カーソル行だけ切っていたため、そこ以外の行が枠を突き破っていた。
 	if i != v.cursor {
 		// 選択範囲の行は溝で示す (カーソル行は → が優先。範囲は必ずカーソルを含むので競合しない)
@@ -1802,7 +1802,7 @@ func srcGutterWidth(srcLines int) int {
 
 // srcGutter は 1 行ぶんの行番号の溝。src=0 (折り返しの続き行・畳まれた 2 行目以降) は空白。
 //
-// ⚠️ 番号は「ソース (.md) の行番号」であって表示行の連番ではない。同じ番号を続き行にも並べると
+// 🚨 番号は「ソース (.md) の行番号」であって表示行の連番ではない。同じ番号を続き行にも並べると
 // 「その行がそこにある」と読めてしまい、外 (nvim / Claude Code) へ持ち出したとき指す先がずれる。
 func srcGutter(src, width int, colored bool) string {
 	if width <= 0 {
@@ -1817,11 +1817,11 @@ func srcGutter(src, width int, colored bool) string {
 
 // hint は viewer 表示中の操作案内 (最下行)。
 //
-// ⚠️ モードの数は lines() の分岐と揃える (ピッカー / 本文 / 一覧の 3 つ)。揃っていないと、URL
+// 🚨 モードの数は lines() の分岐と揃える (ピッカー / 本文 / 一覧の 3 つ)。揃っていないと、URL
 // ピッカー表示中に本文 pager の案内 (j/k/g/G/p/u/e/h/q) が出る — それらは全部 urlPicker が検索語
 // として飲むので、案内したキーが 1 つも案内どおりに動かない。
 func (v *issuesView) hint() string {
-	// ⚠️ hint は 1 行で、幅を超えた分は末尾から黙って切られる。上限は tmux popup の実幅で、
+	// 🚨 hint は 1 行で、幅を超えた分は末尾から黙って切られる。上限は tmux popup の実幅で、
 	// 数値は testPopupWidth (テスト側の代表値) に置き TestIssuesViewHintFitsPopupWidth が固定する
 	// — production はこの値を持たない (幅は端末から決まる) ので、ここに数字を書くと乖離する。
 	// 収まる範囲へ絞り、絞られたキー (y / Y / r / 一覧の p) は --help と README を正本にする。
@@ -1843,7 +1843,7 @@ func (v *issuesView) hint() string {
 	}
 	// a は 3 段の巡回なので「次に押すと何が増えるか」を出す (現在どこまで見えているかはタブ行
 	// 右端のバッジ ○/○⏸/○⏸✓ が示すので、ここで二重に説明しない)。
-	// ⚠️ 語でなくバッジで書くのは幅のため: hint は 1 行で popup 実幅に詰まっており、
+	// 🚨 語でなくバッジで書くのは幅のため: hint は 1 行で popup 実幅に詰まっており、
 	// "a: pending も" (14 桁) では末尾の "q: 閉じる" が黙って切れる (実測)。
 	if lo, hi, ok := v.selection(); ok {
 		// 選択中は効くキーだけを出す (移動と Enter は選択を畳むので、並べると誤解を招く)
@@ -1861,18 +1861,18 @@ func (v *issuesView) hint() string {
 		next = "a: " + issues.StatusOpen.Badge() + "のみ"
 	case issues.FilterOpen:
 	}
-	// ⚠️ "q: 終了" であって "閉じる" ではない。q/esc は **glogx ごと終了**する
+	// 🚨 "q: 終了" であって "閉じる" ではない。q/esc は **glogx ごと終了**する
 	// (ユーザー要望 2026-08-06)。一覧へ戻るのは i (toggle)。README も 2 語を使い分けており、
 	// git log 一覧の hint も同じ動作を "q: 終了" と書いている。issue 121
 	//
-	// ⚠️ "i: 一覧へ" は入れられない: 足すと最長モード (filter=2) で 85 桁になり
+	// 🚨 "i: 一覧へ" は入れられない: 足すと最長モード (filter=2) で 85 桁になり
 	//   TestIssuesViewHintFitsPopupWidth が落ちる (実測)。戻り方は --help と README が正本。
 	return "j/k: 移動  Tab: カテゴリ  /: 検索  Enter: 本文  n: next  " + next + "  q: 終了"
 }
 
 // 「次にやる」の目印 (n)。選択中の issue を <issue ディレクトリ>/next/ へ移す。
 //
-// ⚠️ viewer で唯一、実ファイルを動かす操作なので必ず確認を挟む (glogx の push/pull と同じ作法)。
+// 🚨 viewer で唯一、実ファイルを動かす操作なので必ず確認を挟む (glogx の push/pull と同じ作法)。
 // 移動そのものは issues.MoveToSubdir で、git index には触れない (理由はそちらの doc)。
 //
 // 一覧モードだけで受ける: 本文を開いたまま動かすと、開いている Body のパスが実体から外れて
@@ -1887,7 +1887,7 @@ type issuesMarkConfirm struct {
 // askMarkNext は確認を開く (対象が無ければ何もしない)。n は目印の toggle で、既に next の
 // issue に対しては「外す」向きになる (ユーザー要望 2026-08-01)。
 //
-// ⚠️ 向きはカーソル行で決めて選択範囲全体を揃える。1 件ずつ toggle にしない: 目印つきと無しが
+// 🚨 向きはカーソル行で決めて選択範囲全体を揃える。1 件ずつ toggle にしない: 目印つきと無しが
 // 混ざった選択で「何が起きるか」を確認ダイアログの 1 文で言えなくなる (「3 件のうち 2 件を付けて
 // 1 件を外します」は読めない)。
 func (v *issuesView) askMarkNext() {
@@ -1904,10 +1904,10 @@ func (v *issuesView) askMarkNext() {
 
 // markNextKey は確認中のキーを捌く。y/Enter で実行、それ以外は取り消し。
 //
-// ⚠️ 取り消しを n/Esc に限定しない: 実ファイルを動かす確認で「知らないキーを押したら実行された」
+// 🚨 取り消しを n/Esc に限定しない: 実ファイルを動かす確認で「知らないキーを押したら実行された」
 // が起きてはいけないので、明示的な y/Enter 以外はすべて取り消しに倒す。
 //
-// ⚠️ ここだけ厳密 (大文字 `Y` も取り消し) なのは意図的で、discardKey / actionModal の
+// 🚨 ここだけ厳密 (大文字 `Y` も取り消し) なのは意図的で、discardKey / actionModal の
 //
 //	ToLower 判定へ揃えない (理由は status_view.go:discardKey の注記。issue 071 / 123)。
 func (v *issuesView) markNextKey(key string) tea.Cmd {
@@ -1916,7 +1916,7 @@ func (v *issuesView) markNextKey(key string) tea.Cmd {
 	if key != "y" && key != "enter" {
 		return nil
 	}
-	// 外すときは issue ディレクトリ直下へ戻す (= open)。⚠️ 元居た場所 (done/ 等) は覚えていない:
+	// 外すときは issue ディレクトリ直下へ戻す (= open)。🚨 元居た場所 (done/ 等) は覚えていない:
 	// 目印は「次にやる」ものに付けるので戻り先は open が自然で、履歴を持つと「どこへ戻るか
 	// 分からない」方が困る。
 	dest, verb := issues.NextDirName, "next へ移しました"

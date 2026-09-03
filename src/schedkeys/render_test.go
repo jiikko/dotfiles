@@ -106,7 +106,7 @@ func TestFrameFitsEverySize(t *testing.T) {
 				if v.Cursor.Y < 0 || v.Cursor.Y >= len(lines) {
 					t.Errorf("%dx%d %s: Cursor.Y=%d が枠 (%d 行) の外", w, h, tc.name, v.Cursor.Y, len(lines))
 				}
-				// ⚠️ X == w も外とする (1 桁はみ出しを許さない)。削除した TestFormFitsInPopup が
+				// 🚨 X == w も外とする (1 桁はみ出しを許さない)。削除した TestFormFitsInPopup が
 				//    持っていた強さをここへ移した
 				if v.Cursor.X < 0 || v.Cursor.X >= w {
 					t.Errorf("%dx%d %s: Cursor.X=%d が幅 %d の外", w, h, tc.name, v.Cursor.X, w)
@@ -269,7 +269,7 @@ func TestRenderCostStaysLinear(t *testing.T) {
 	}
 	small := measure(100)
 	big := measure(10000)
-	// ⚠️ 絶対時間で判定しない: runner の速度と -race で 2〜3 倍変わり、CI だけ落ちる
+	// 🚨 絶対時間で判定しない: runner の速度と -race で 2〜3 倍変わり、CI だけ落ちる
 	//    (実際に darwin レーンで 7.3ms > 5ms で落とした 2026-08-28)。守りたいのは
 	//    「入力長に対して線形」であること。100 倍の入力で 30 倍を超えるなら二乗を疑う
 	//    (二乗なら 10000 倍近くになるので、この閾値は十分に広い)
@@ -385,7 +385,7 @@ func TestPrefixDoesNotSwallowEditingKey(t *testing.T) {
 }
 
 // frame の「行は幅を超えない」を、幅の数え方が食い違う書記素で確かめる。
-// ⚠️ frame は全画面の唯一の幅の関所なので、ここが弱いと保証が丸ごと嘘になる
+// 🚨 frame は全画面の唯一の幅の関所なので、ここが弱いと保証が丸ごと嘘になる
 // (リファクタで一度弱めた。ansi.Truncate だけでは足りない)。
 func TestFrameNeverExceedsWidth(t *testing.T) {
 	for name, in := range nastyInputs {
@@ -497,7 +497,7 @@ func TestFocusedEditorIsSharedByKeysAndPaste(t *testing.T) {
 }
 
 // 幅がごく狭いときトーストを出さないこと (出すと行が幅を超える)。
-// ⚠️ トーストは frame.render の後に重ねるので、frame の「行は幅を超えない」保証の外側にいる。
+// 🚨 トーストは frame.render の後に重ねるので、frame の「行は幅を超えない」保証の外側にいる。
 func TestToastFitsNarrowWidth(t *testing.T) {
 	for _, w := range []int{1, 3, 5, 6, 10, 70} {
 		m := newTestModel()
@@ -529,7 +529,7 @@ func TestPasteIgnoredOnChipRow(t *testing.T) {
 	}
 }
 
-// 選択中の候補が必ず「見えている」こと。⚠️ 行の幅を守るだけでは足りない: 候補を全部並べて
+// 選択中の候補が必ず「見えている」こと。🚨 行の幅を守るだけでは足りない: 候補を全部並べて
 // 最後に切ると、行は幅に収まるのに**選択中の候補が画面外**になる (監査 2026-08-28 の変異で判明。
 // 幅の検査は全部通るのに誰も捕まえなかった)。
 func TestSelectedChipStaysVisible(t *testing.T) {
@@ -549,7 +549,7 @@ func TestSelectedChipStaysVisible(t *testing.T) {
 	}
 }
 
-// テストは newTestModel / newTestModelAt を通ること。⚠️ newModel を直に呼ぶと時計の固定を
+// テストは newTestModel / newTestModelAt を通ること。🚨 newModel を直に呼ぶと時計の固定を
 // 書き忘れやすく、実際に 3 本が実時刻で走っていた (監査 2026-08-28)。例外は本番の構築点を
 // 検査する TestNewModelWiresWallClock と、ヘルパー自身だけ。
 func TestTestsUseSharedConstructor(t *testing.T) {

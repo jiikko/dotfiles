@@ -6,7 +6,7 @@
 
 `src/glogx/url_picker.go:urlPicker.handleKey` の doc は明示的にこう宣言している:
 
-> ⚠️ 印字文字はすべて検索語に流す (default 節)。**ここで個別のキーを先に横取りすると、
+> 🚨 印字文字はすべて検索語に流す (default 節)。**ここで個別のキーを先に横取りすると、
 > その文字を含む URL を検索できなくなる。**
 
 ところが `src/glogx/tui.go` の `handleKey` は、`if m.issuesOv.visible()` の中で
@@ -86,7 +86,7 @@ viewer がキーを受け取れなくなる」罠を避けるため。
 ガードを外す / `ownsKeys` を常に false / 常に true / `urlPick` を落とす /
 `numFilter` と `markNext` を落とす / `typing`→`active` / `markNext` だけ落とす。
 
-⚠️ `typing`→`active` の変異は、**テストが数字を打たずに確定していると素通りする**
+🚨 `typing`→`active` の変異は、**テストが数字を打たずに確定していると素通りする**
 (空入力の `confirm()` は `clear()` に落ちて `active` も false になるため)。
 再現手順どおり `/` → `0` → `Enter` の形にして初めて red になった。
 

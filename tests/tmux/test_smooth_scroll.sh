@@ -68,7 +68,7 @@ if ! env -u TMUX -u TMUX_PANE \
     'seq 1 300; exec sleep 3600' >"$start_log" 2>&1; then
   if grep -qiE "operation not permitted|permission denied" "$start_log"; then
     print -u2 "[test-smooth-scroll-tmux] skipped: tmux cannot create sockets in this environment"
-    # ⚠️ 丸ごと skip は **exit 77** (automake の慣例)。0 で抜けると runner が [ok] と数え、
+    # 🚨 丸ごと skip は **exit 77** (automake の慣例)。0 で抜けると runner が [ok] と数え、
     # 以降の assert が 1 本も走っていないことが緑に埋もれる (tests/CLAUDE.md / issue 139)。
     exit 77
   fi
@@ -130,7 +130,7 @@ wait_gen() {
 }
 
 # 基準値から動き出すのを待ってから、動かなくなるまで待って返す。
-# ⚠️ 呼ぶ前に wait_gen で「押下が処理済み」を確かめること。未処理の押下が残った状態で
+# 🚨 呼ぶ前に wait_gen で「押下が処理済み」を確かめること。未処理の押下が残った状態で
 # 静止を見ると、その押下ぶんを取りこぼした位置を完了値として返す
 wait_settled() {
   local baseline=$1 prev=-1 cur same=0

@@ -13,7 +13,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// ⚠️ このファイルの検査のうち `v.watch.w == nil` で skip するものは**実 fsnotify との結合**を
+// 🚨 このファイルの検査のうち `v.watch.w == nil` で skip するものは**実 fsnotify との結合**を
 // 見ている (CI = ubuntu-slim では NewWatcher が通らないので走らない。issue 087)。不変条件そのものは
 // issues_watch_seam_test.go がフェイクを差して環境非依存に固定しているので、そちらを消さないこと。
 // CI でも走る組: 再 Add / イベント経路 / チェーンの積み上がり / cancelAll の Close。
@@ -67,7 +67,7 @@ func (v *issuesView) observe() issuesWatchMsg {
 	return issuesWatchMsg{fp: issuesFingerprint(v.watchTargets())}
 }
 
-// scanOf は実ファイルを走査した結果を返す。⚠️ 中身を再実装せず production の scanIssues を
+// scanOf は実ファイルを走査した結果を返す。🚨 中身を再実装せず production の scanIssues を
 // 呼ぶ: 指紋の取り方がずれると「テストでは基準が揃うのに本番ではずれる」形で穴を見逃す。
 func scanOf(t *testing.T, root string) issuesScanMsg {
 	t.Helper()
@@ -79,7 +79,7 @@ func scanOf(t *testing.T, root string) issuesScanMsg {
 }
 
 func TestIssuesWatchReloadsAfterExternalEdit(t *testing.T) {
-	// ⚠️ 変化を見つけた最初の周期では読まない (書きかけを掴まないため)。安定を確かめた次の
+	// 🚨 変化を見つけた最初の周期では読まない (書きかけを掴まないため)。安定を確かめた次の
 	// 周期で reloadAfterEdit を返す。
 	root, path := watchTree(t, "# 001 feat: 編集前\n")
 	v := openedWatchView(t, root, path)
@@ -103,7 +103,7 @@ func TestIssuesWatchReloadsAfterExternalEdit(t *testing.T) {
 	if got := v.rows[0].Display(); got != "feat: 編集後" {
 		t.Fatalf("外部の編集が一覧に反映されていない: %q", got)
 	}
-	// ⚠️ 以前はチェックボックスの進捗も観測点にしていたが、一覧は進捗を出さなくなった
+	// 🚨 以前はチェックボックスの進捗も観測点にしていたが、一覧は進捗を出さなくなった
 	// (Issue は本文を最後まで読まない。issues/parse.go の LoadMeta の doc)。
 	// タイトルの差し替えで「メタデータが取り直された」は示せている
 	// 取り直した直後の基準は「スキャンが読んだ時点の指紋」= 次の観測と一致する。自分の取り直しを
@@ -264,7 +264,7 @@ func TestIssuesWatchIsSingleFlight(t *testing.T) {
 	}
 }
 
-// ⚠️ 回帰防止 (リーク監査 2026-08-01): ポーリング由来の観測でイベント待ちの札まで降ろすと、
+// 🚨 回帰防止 (リーク監査 2026-08-01): ポーリング由来の観測でイベント待ちの札まで降ろすと、
 // まだ w.Events でブロックしている goroutine が生きているのに 2 本目が張られ、観測 1 回につき
 // 1 本ずつ積み上がる。平常時のポーリングは 30s 周期なので、viewer を開きっぱなしにするだけで
 // 増え続ける (回収は viewer を閉じたときだけ)。
@@ -380,7 +380,7 @@ func TestIssuesWatchCatchesEditRacingTheBaseline(t *testing.T) {
 
 func TestIssuesWatchReloadsFromRealEvent(t *testing.T) {
 	// イベント経路の結合: 実際に fsnotify のイベントで起こされ、指紋で判定して取り直しへ進む。
-	// ⚠️ 指紋が正本 (イベントは Create/Rename/Write と嘘をつくので、起こす役だけ)。
+	// 🚨 指紋が正本 (イベントは Create/Rename/Write と嘘をつくので、起こす役だけ)。
 	root, path := watchTree(t, "# 001 feat: 編集前\n")
 	v := openedWatchView(t, root, path)
 	if v.watch.w == nil {
@@ -472,7 +472,7 @@ func waitMsg(t *testing.T, cmd tea.Cmd, wait time.Duration) tea.Msg {
 }
 
 func TestIssuesWatchIgnoresStaleGeneration(t *testing.T) {
-	// ⚠️ 回帰防止: 閉じてすぐ開き直すと、閉じる前に張ったチェーンの closed が後から届く。世代で
+	// 🚨 回帰防止: 閉じてすぐ開き直すと、閉じる前に張ったチェーンの closed が後から届く。世代で
 	// 弾かないと、それが開き直して作った新しい watcher を閉じてしまい、以降イベントが来なくなる
 	// (無音ではないがポーリングだけへ静かに縮退する)。
 	root, path := watchTree(t, "# 001 feat: x\n")
@@ -501,7 +501,7 @@ func TestIssuesWatchIgnoresStaleGeneration(t *testing.T) {
 // 印だけが残り、**同一 viewer セッション中は二度と Add されなかった** (実 repo の git switch で
 // issues/done が消えて戻ると、以後 done/ 内の変更が恒久的に無音。手動の取り直し 3 回でも復帰せず)。
 //
-// ⚠️ この実 fsnotify 版は**再発の検出力が弱い**: ディレクトリを消しても fsnotify が watch を
+// 🚨 この実 fsnotify 版は**再発の検出力が弱い**: ディレクトリを消しても fsnotify が watch を
 // 落とすまでに間があり、WatchList() が消えた done/ をまだ載せている状態で assert が通りうる
 // (タイミング依存。red team 実測 2026-08-21)。再 Add の不変条件の正本は issues_watch_seam_test.go
 // の TestIssuesWatchReAddsRecreatedDirWithoutFsnotify で、こちらは「実 fsnotify と結合しても
@@ -512,7 +512,7 @@ func TestIssuesWatchReAddsRecreatedDir(t *testing.T) {
 	if err := os.MkdirAll(done, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// ⚠️ 空ディレクトリは watch 対象にならない (FindDirs は markdown を含むものだけ拾う)
+	// 🚨 空ディレクトリは watch 対象にならない (FindDirs は markdown を含むものだけ拾う)
 	writeIssue(t, filepath.Join(done, "000-feat-old.md"), "# 000 feat: old\n", time.Now().Add(-time.Hour))
 	v := openedWatchView(t, root, path)
 	if !slices.Contains(v.watchDirs(), done) {
@@ -529,7 +529,7 @@ func TestIssuesWatchReAddsRecreatedDir(t *testing.T) {
 	}
 	v.startWatch() // 戻った後の取り直し: ここで再び Add されなければならない
 
-	// ⚠️ watcher が無い環境と、配線が壊れた場合を区別する。CI (ubuntu-slim) では
+	// 🚨 watcher が無い環境と、配線が壊れた場合を区別する。CI (ubuntu-slim) では
 	// fsnotify.NewWatcher が通らず watch.w が nil になり、既存の watch テストは指紋ポーリング
 	// 経路だけで通っていた (この検査を素で書くと nil 参照で panic する。2026-08-21 に CI で踏んだ)。
 	// 「環境が対応していない」は SKIP として**出力に見えるように**落とし、「作れるのに張って

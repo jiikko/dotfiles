@@ -78,7 +78,7 @@
 | P1 | **ハーネス指定の scratchpad (`/private/tmp/claude-501/…`) を新しい文面が禁じていた**。私が今日使っているディレクトリで、置き場所を選べない → 明示的な例外にした |
 | P2 | **committed code が意図的に反していた**。`src/glogx/worktree_status_real_test.go:repoTmpDir` は使い捨て repo を `./tmp` に置き、`//nolint` と doc で理由を残している → 「`./tmp` に置くなら理由をコード直近に残す」に変え、違反ではなく**文書化された例外**にした |
 | P2 | **「`./tmp` は gitignore」がマシンローカルの事実**。`tmp/` は `~/.gitignore_global:5` にあり repo の `.gitignore` には無い (実測)。**これは私自身が 2 行下で禁じた「ローカル環境からの推論」そのもの**だった → 出典を明記した |
-| P2 | **「`trap` で消すから置きっぱなしにならない」が repo の履歴で反証済み**。`scripts/tmux_reap_orphan_servers.sh` の背景注記: `mktemp -d` の socket を消してもサーバが launchd に里子化して残り、自動復元が **17 日間**不発になった。`trap` は中断では走らないし、dir を消してもプロセスは残る → その 2 つを ⚠️ に書いた |
+| P2 | **「`trap` で消すから置きっぱなしにならない」が repo の履歴で反証済み**。`scripts/tmux_reap_orphan_servers.sh` の背景注記: `mktemp -d` の socket を消してもサーバが launchd に里子化して残り、自動復元が **17 日間**不発になった。`trap` は中断では走らないし、dir を消してもプロセスは残る → その 2 つを 🚨 に書いた |
 | P3 | `mktemp` を tool 固定で書くと `t.TempDir()` / `os.MkdirTemp("")` (repo に 225 箇所超) が判断の外に落ちる → tool 中立にした |
 
 ### 却下しなかった理由

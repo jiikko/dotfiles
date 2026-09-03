@@ -76,7 +76,7 @@ E2E の credential を実 Keychain に書かなくする変更 (in-memory 実装
 
 **2 回目**: 変異検証で `bash step.sh 2>&1 | tail -7; echo "step rc=$?"` と書き、`$?` が `tail` のものになって
 「変異を当てたのに rc=0 = 検査が素通りした」と読んだ。`bash step.sh > out 2> err; echo $?` に分けて
-測り直したら rc=1 で、検査は正しく red だった。⚠️ **この 2 回目は、同じ日に自分が doctor の CI へ
+測り直したら rc=1 で、検査は正しく red だった。🚨 **この 2 回目は、同じ日に自分が doctor の CI へ
 入れた gate (「テストが 1 本も走らなくても go test は rc=0」) が守ろうとしている罠そのもの**で、
 ルールを書いた直後に同じ形を踏んだことになる。
 

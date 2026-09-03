@@ -8,7 +8,7 @@
 #     走る hook なので、pane 数ぶん fork していた。if-shell は競合対策で pane ごとに必要だが
 #     `;` 区切りで 1 回の起動にまとめられる)
 #
-# ⚠️ socket 隔離: $TMUX は TMUX_TMPDIR より優先されるため必ず unset する。隔離できたことを
+# 🚨 socket 隔離: $TMUX は TMUX_TMPDIR より優先されるため必ず unset する。隔離できたことを
 # 「本番セッションが見えない」で実証してからサーバを作る (rules/tmux-probe-requires-socket-isolation.md)。
 set -uo pipefail
 unset CDPATH
@@ -48,7 +48,7 @@ esac
 # --- 準備: 4 pane (input / working / idle / input) + 別 window の input --------------
 win="$("${T[@]}" new-session -d -s ms -x 80 -y 24 -P -F '#{window_id}')" || { ng "セッションを作れない"; exit 1; }
 for _ in 1 2 3; do "${T[@]}" split-window -d -t "$win" -l 3; done
-# ⚠️ mapfile は bash 4+ 専用 (macOS 素の /bin/bash 3.2 に無い)。while read で組む
+# 🚨 mapfile は bash 4+ 専用 (macOS 素の /bin/bash 3.2 に無い)。while read で組む
 panes=()
 while IFS= read -r p; do panes+=("$p"); done < <("${T[@]}" list-panes -t "$win" -F '#{pane_id}')
 [ "${#panes[@]}" -eq 4 ] || { ng "pane が 4 枚にならない (${#panes[@]} 枚)"; exit 1; }
@@ -97,9 +97,9 @@ else
   ng "別 window の input を書き換えた ($got)"
 fi
 
-# ⚠️ ここが issue 083 の本体。pane 数 (4) に比例して起動すると 1 + 4 = 5 回になる。
+# 🚨 ここが issue 083 の本体。pane 数 (4) に比例して起動すると 1 + 4 = 5 回になる。
 # 期待は「list-panes 1 回 + まとめた if-shell 1 回」= 2 回。
-# ⚠️ 上界 (-le 2) で見ないこと: hook が何もしない (0〜1 回) でもこの検査だけは緑になり、
+# 🚨 上界 (-le 2) で見ないこと: hook が何もしない (0〜1 回) でもこの検査だけは緑になり、
 # 「まとめられている」と「壊れている」を区別できない (red team 実測 2026-08-21)。厳密一致で見る。
 calls="$(wc -l < "$CALLS" | tr -d ' ')"
 if [ "$calls" -eq 2 ]; then

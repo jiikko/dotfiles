@@ -35,7 +35,7 @@
   期待値の出典にする自己言及 (コメント自身が「repoRoot() を使う」と書いている)
 - **`tests/_ensure_cli_with_brew.bats:43-44`** — `export -f brew` / `export -f type` は死んだコード
   (bash の関数 export は `zsh -c` の子に継承されず、実際の注入は `declare -f` の文字列展開)。
-  ⚠️ 同ファイルの「陽性対照が無い」指摘は**反証で崩れている**ので、この dead export だけが対象
+  🚨 同ファイルの「陽性対照が無い」指摘は**反証で崩れている**ので、この dead export だけが対象
 - **`tests/zshrc/lazy-loading/test_version_managers.sh:118-132`** — lazy load の本体
   (`unfunction` → `eval "$(tool init -)"` → 再ディスパッチ) が一度も実行されていない。
   assert は「関数として定義されているか」「`*_ROOT`」「PATH 順」の 3 種だけ。fixture は

@@ -37,7 +37,7 @@ func TestPersistedCacheRejectsFutureTimestamps(t *testing.T) {
 	})
 
 	t.Run("doctorStartupToast", func(t *testing.T) {
-		// ⚠️ Total を直接入れても効かない。sanitizeDiskCache (issue 193) が Entries から
+		// 🚨 Total を直接入れても効かない。sanitizeDiskCache (issue 193) が Entries から
 		// 再計算するので、実在するカタログ ID のエントリを積む必要がある。
 		c := doctorDiskCache{
 			ScannedAt: now.Add(48 * time.Hour),
@@ -79,7 +79,7 @@ func TestFreshnessChecksGuardAgainstClockRollback(t *testing.T) {
 		return strings.Contains(s, "TTL") || strings.Contains(s, "StaleAfter") ||
 			strings.Contains(s, "Cooldown")
 	}
-	// ⚠️ **コメントを除いてから判定する**。生ソースのままだと「// age < 0 (未来) も取り直す」の
+	// 🚨 **コメントを除いてから判定する**。生ソースのままだと「// age < 0 (未来) も取り直す」の
 	// ような**説明コメントがガードとして数えられ**、コードから条件を消しても green になる
 	// (実測 2026-09-03: 最初の実装がこれで、変異 3 / 4 が素通りした)。
 	stripComments := func(src string) string {

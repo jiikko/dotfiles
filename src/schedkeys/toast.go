@@ -49,7 +49,7 @@ func (t *toast) start(text string) tea.Cmd {
 
 // advance は 1 フレーム進める。全幅に達したら静止のタイマーを返す。
 //
-// ⚠️ `t.done` の早期 return と `!t.holdCh` を「到達不能なので消せる」と判断しないこと
+// 🚨 `t.done` の早期 return と `!t.holdCh` を「到達不能なので消せる」と判断しないこと
 // (監査 2026-08-28 の指摘を却下した理由をここに残す)。どちらも **2 本目の toastTickMsg で
 // advance が呼ばれたとき**にだけ効く。通常は tick は 1 本しか飛ばず (start の呼び出し元は
 // model.go の submit 1 箇所で、表示後はキーを受け付けない)、toastDoneMsg は tea.Quit を
@@ -88,7 +88,7 @@ func (t *toast) width(full int) int {
 }
 
 // overlay は画面の右下にトーストを重ねる。画面 (height 行) の最下行に置くため、足りない行は
-// 空行で埋める。⚠️ 中身の最終行を上書きしない (ヘルプ行が消える) / height を超えない
+// 空行で埋める。🚨 中身の最終行を上書きしない (ヘルプ行が消える) / height を超えない
 // (超えると端末が流れてカーソル位置がずれる)。
 func (t *toast) overlay(lines []string, width, height int) []string {
 	if !t.shown {
@@ -126,7 +126,7 @@ func (t *toast) overlay(lines []string, width, height int) []string {
 	if len(out) == 0 {
 		return []string{row}
 	}
-	// ⚠️ 中身の行を上書きしない: 画面が低くて空き行が無いときはトーストを諦める
+	// 🚨 中身の行を上書きしない: 画面が低くて空き行が無いときはトーストを諦める
 	//    (ヘルプ行や入力欄を食う。敵対的レビュー 2026-08-28 で h=8 と h=5 で再現)
 	last := len(out) - 1
 	if strings.TrimSpace(stripSGR(out[last])) != "" {

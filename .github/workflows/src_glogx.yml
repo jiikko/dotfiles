@@ -3,7 +3,7 @@
 # _go-project.yml に一元化し、ここは paths filter (触れた変更のときだけ起動) と対象 dir の
 # 指定だけを持つ薄い caller。paths に _go-project.yml を含めるのは、共有本体を編集したとき
 # にも全プロジェクトの CI を走らせて検証するため (含めないと本体変更が誰にも検証されない)。
-# ⚠️ paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
+# 🚨 paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
 name: src/glogx
 
 on:
@@ -12,12 +12,12 @@ on:
     paths:
       - 'src/glogx/**'
       - 'src/doctor/**'   # replace で取り込む共有 module (issue 148)
-      # ⚠️ statusline (shell) は glogx と同じ pace ルールを二重実装しており、乖離を
+      # 🚨 statusline (shell) は glogx と同じ pace ルールを二重実装しており、乖離を
       # usage/pace_drift_test.go が検出する。これを含めないと「shell だけ変えた push」で
       # 検査が 1 度も走らない (red team 指摘 2026-09-01)。tests.yml 側からも叩いているが、
       # そちらは 1 テストだけなので、ここでは glogx 全体を回して周辺の退行も見る。
       - _claude/statusline-command.sh
-      # ⚠️ 色の単一ソース。box_test.go の TestFrameBorderMatchesThemeYML が
+      # 🚨 色の単一ソース。box_test.go の TestFrameBorderMatchesThemeYML が
       # ansiFrameBorder と blink_magenta の一致を検査するが、この Go テストを CI で
       # 走らせるのはこの workflow だけ (tests.yml は test-src を含まない)。ここに
       # 含めないと「yml だけ変えた push」で glogx が無言でずれる。
@@ -28,12 +28,12 @@ on:
     paths:
       - 'src/glogx/**'
       - 'src/doctor/**'   # replace で取り込む共有 module (issue 148)
-      # ⚠️ statusline (shell) は glogx と同じ pace ルールを二重実装しており、乖離を
+      # 🚨 statusline (shell) は glogx と同じ pace ルールを二重実装しており、乖離を
       # usage/pace_drift_test.go が検出する。これを含めないと「shell だけ変えた push」で
       # 検査が 1 度も走らない (red team 指摘 2026-09-01)。tests.yml 側からも叩いているが、
       # そちらは 1 テストだけなので、ここでは glogx 全体を回して周辺の退行も見る。
       - _claude/statusline-command.sh
-      # ⚠️ 色の単一ソース。box_test.go の TestFrameBorderMatchesThemeYML が
+      # 🚨 色の単一ソース。box_test.go の TestFrameBorderMatchesThemeYML が
       # ansiFrameBorder と blink_magenta の一致を検査するが、この Go テストを CI で
       # 走らせるのはこの workflow だけ (tests.yml は test-src を含まない)。ここに
       # 含めないと「yml だけ変えた push」で glogx が無言でずれる。

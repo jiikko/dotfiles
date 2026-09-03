@@ -38,7 +38,7 @@
 `U+113B8..U+113D2` 群 / `U+11B60..U+11B67` / `U+1611E..U+1612F` / `U+16D63,U+16D67..U+16D6A` /
 `U+1E5EE..U+1E6F5` 群)。
 
-⚠️ **件数は依存を上げるたびに変動する**。uniseg が Unicode 16 に上がれば 0 になり、
+🚨 **件数は依存を上げるたびに変動する**。uniseg が Unicode 16 に上がれば 0 になり、
 次の Unicode 版でまた出る。112 が足したテストはこの集合を 1 文字も含まないので検出しない。
 
 **対応の方向 (要判断)**: 分割も x/ansi 側へ寄せる (`ansi` にクラスタ分割 API があるか要調査) /
@@ -80,7 +80,7 @@ WcWidth 側になる」)。つまり既知の未解決事項。
 中心的な問いは「実端末 (Terminal.app + tmux) は `ಕಾ` に何セル割り当てるか」。
 `src/glogx/tools/width-probe` は端末に CPR で問い合わせる道具だが、
 **probe 一覧にインド系・Arabic format 文字が 1 つも無い**
-(ASCII / あ / ⚠ / ✔ / ✓ ✗ ● ⊘ │ ╔ █ ▓ ▖ ⠋ ❯ のみ)。
+(ASCII / あ / 🚨 / ✔ / ✓ ✗ ● ⊘ │ ╔ █ ▓ ▖ ⠋ ❯ のみ)。
 
 `width.go` の v1/v2 比較表と `docs/glogx-bubbletea-v2.md` の表も
 「食い違うのは国旗・keycap」としか書いておらず、**インド系が 1 文字も入っていない**。
@@ -115,7 +115,7 @@ uniseg を上げる / `dropToColumn` を作り替える、の 2 案は採らな�
 | uniseg (旧) | **744 件 / 93 rune** |
 | x/ansi (新) | **0 件** |
 
-走査は base 8 種 (`a x あ 漢 1 空白 🚀 ⚠`) × 第 2 rune `U+0020..U+2FFFF` × 全列。
+走査は base 8 種 (`a x あ 漢 1 空白 🚀 🚨`) × 第 2 rune `U+0020..U+2FFFF` × 全列。
 違反 rune は issue 本文の一覧と一致 (U+0897 / U+1ACF..U+1ADD / U+113B8 群 / U+1E5EE 群 等)。
 
 性能も測った (dropToColumn の micro bench、3 入力 × 6 列 × 3 run):
@@ -160,7 +160,7 @@ frame 系の bench (`view_panel_alloc_kb` 35.57 / 予算 36.7、`view_diff_alloc
 | P2 | **`wc` 列は固定の座標系ではない**。`ansi.StringWidthWc` は `mattn/go-runewidth` (indirect) を使い、版で答えが変わる (`ಕಾ` は v0.0.23 で 1、v0.0.27 で 2)。解決版を出力に載せるようにした |
 | P2 | 診断用 probe が「食い違い N 件」に混ざり、結語の「使用をやめる」が `ಕಾ` にも掛かっていた。`ui` フラグで分けた |
 
-### ⚠️ この測定でも決まらないこと (レビューの P1-3。issue に残す)
+### 🚨 この測定でも決まらないこと (レビューの P1-3。issue に残す)
 
 bubbletea v2 は起動時に **mode 2027 を交渉し、対応端末では端末側の幅解釈も切り替える**
 (`tea.go` の `RequestModeUnicodeCore` → `setWidthMethod` → `SetModeUnicodeCore`)。
@@ -204,9 +204,9 @@ Apple 系では 2027 を問い合わせすらしない。
 
 代わりに成立するのは **「環境で幅が割れる文字を出さない」** 側で、これは新しい方針ではなく
 `termsafe.DropEmojiVS16` (外部由来の文字列から VS16 を落とす) と `src/glogx/CLAUDE.md`
-(「警告は 🚨 を使い ⚠️ は使わない」) が既に採っているもの。今回やったのはその穴を塞ぐこと:
+(「警告は 🚨 を使い 🚨 は使わない」) が既に採っているもの。今回やったのはその穴を塞ぐこと:
 
-- `main.go` の起動時警告が自前リテラルで `⚠️` を出していた (termsafe を通らない経路) → 🚨 へ
+- `main.go` の起動時警告が自前リテラルで `🚨` を出していた (termsafe を通らない経路) → 🚨 へ
 - `vs16_literal_test.go` を追加し、自前リテラルの VS16 混入を機械で止める (変異検証済み)
 
 ### mode 2027 は測らない

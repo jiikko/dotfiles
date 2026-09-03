@@ -12,7 +12,7 @@ var now = time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)
 
 // press はキー入力を 1 つ流す。text は IME 確定文字列を含む「そのキーが生む文字」。
 // キー名は本番と同じ表記 ("ctrl+n" / "shift+tab" / "a") で書ける。
-// ⚠️ 修飾キー専用の別経路を作らないこと: 以前は ctrlKey() が press を迂回していたため、
+// 🚨 修飾キー専用の別経路を作らないこと: 以前は ctrlKey() が press を迂回していたため、
 //
 //	press(m, "ctrl+n", "") と書くと **c の打鍵**になり、名前と無関係な理由で通っていた。
 func press(m *model, key, text string) {
@@ -87,7 +87,7 @@ func typeText(m *model, s string) {
 }
 
 // newTestModel は既定の見た目 (popup の内側 70x14) でモデルを作る。
-// ⚠️ テストで newModel を直に呼ばないこと: 時計の固定を書き忘れた 3 本が実時刻で走っていた
+// 🚨 テストで newModel を直に呼ばないこと: 時計の固定を書き忘れた 3 本が実時刻で走っていた
 //
 //	(監査 2026-08-28)。ここを唯一の入口にする。
 func newTestModel(jobs ...job) *model { return newTestModelAt("main:3 claude", 70, 14, jobs...) }
@@ -135,7 +135,7 @@ func openForm(t *testing.T, m *model) {
 }
 
 // focusSpecOfKind は「いつ」の候補を目的の種類まで進め、その入力欄へフォーカスする。
-// ⚠️ press(tab); press(left); press(left) と位置で書かないこと: 候補を 1 つ足すだけで
+// 🚨 press(tab); press(left); press(left) と位置で書かないこと: 候補を 1 つ足すだけで
 //
 //	無関係なテストが 11 本落ちる (監査 2026-08-28)。並びでなく種類で探す。
 func focusSpecOfKind(t *testing.T, m *model, k presetKind) {

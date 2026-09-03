@@ -10,7 +10,7 @@ inputs:
   commands:
     description: >-
       必要なコマンドを空白区切りで (例 "tmux zsh bats")。空でもよい (その場合は bash だけ揃える)。
-      ⚠️ ここに書くのは**コマンド名**であって brew の formula 名ではない。両者が違うものだけ
+      🚨 ここに書くのは**コマンド名**であって brew の formula 名ではない。両者が違うものだけ
       下の case に写像を足す。
     required: false
     default: ""
@@ -18,7 +18,7 @@ inputs:
 runs:
   using: composite
   steps:
-    # ⚠️ macOS runner の /bin/bash は 3.2、開発機は Homebrew の 5 系。揃えないと「手元だけ緑」が
+    # 🚨 macOS runner の /bin/bash は 3.2、開発機は Homebrew の 5 系。揃えないと「手元だけ緑」が
     # 逆向きに起きる。実測 2026-08-28〜29 で 3.2 のまま踏んだもの:
     #   - tests/check_bench_budgets.sh の `declare -A` が invalid option になり、**予算を 1 件も
     #     照合しないまま rc=0** を返して Bench が緑になった (issue 133)
@@ -33,10 +33,10 @@ runs:
         "$brew_bin/bash" --version | head -1
         echo "$brew_bin" >> "$GITHUB_PATH"
 
-    # ⚠️ ${{ }} を run: に直接埋めない (呼び出し側から渡った値がシェルとして評価される)。
+    # 🚨 ${{ }} を run: に直接埋めない (呼び出し側から渡った値がシェルとして評価される)。
     # env 経由で受け、許可文字だけを通す。$CMDS は複数コマンドへ分割させるため意図的に無引用で、
     # 文字種の検証がその安全弁。
-    # ⚠️ 「brew install が成功した」を導入の証拠にしない。既にあるものは skip し、最後に
+    # 🚨 「brew install が成功した」を導入の証拠にしない。既にあるものは skip し、最後に
     # command -v で実在を確認してから先へ進む (runner image の preinstall 内容に依存しない)。
     - name: Ensure required commands (${{ inputs.commands }})
       shell: bash

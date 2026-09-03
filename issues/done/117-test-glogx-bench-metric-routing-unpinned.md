@@ -61,7 +61,7 @@ all_names=$(grep -h '^func Benchmark' "$SRC_DIR"/*_test.go | sed ... | sort -u)
 registered=$(sed -n "s/.*-bench '^(\(.*\))\$'.*/\1/p" "$BENCH" | tr '|' ' ')
 ```
 
-⚠️ **列挙すると、兄弟を足したときに追随を忘れる = まさにこの検査が守りたい事故を検査自身が踏む。**
+🚨 **列挙すると、兄弟を足したときに追随を忘れる = まさにこの検査が守りたい事故を検査自身が踏む。**
 実測で未登録 5 本 / 登録済み 12 本を自動で拾えている (監査の数と一致)。
 
 主張は 3 つ:
@@ -77,7 +77,7 @@ registered=$(sed -n "s/.*-bench '^(\(.*\))\$'.*/\1/p" "$BENCH" | tr '|' ' ')
 `ViewSteady` を前方一致へ (→ `BenchmarkViewSteadyJA` が metric を出したと名指し) /
 `StatusViewFrame` を前方一致へ / 登録済みの emit を落とす / 導出を壊す。
 
-⚠️ 2 つ目は**既存の assert (節 1 の実 bench) が先に捕まえた**ので、自分の新しい assert に
+🚨 2 つ目は**既存の assert (節 1 の実 bench) が先に捕まえた**ので、自分の新しい assert に
 検知力があるかを別途確かめた: `PATH` から go を外して節 1 を skip させた状態で変異を当て、
 `✗ StatusViewFrame2000 が無印の metric まで出した (前方一致の遮蔽)` が出ることを確認。
 **「テスト全体が red」を自分の assert の検知力の証拠にしない。**

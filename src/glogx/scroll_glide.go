@@ -8,7 +8,7 @@ package main
 // 対し、面ごとに同じ状態機械をコピーすると「カーブ・フレーム数・連打時の扱い」が散って必ず
 // 食い違うため、型として切り出して 1 箇所に集約した。
 //
-// ⚠️ issues の一覧には載せない (issue 031): あの面は cursor と窓を同時に動かし、窓は
+// 🚨 issues の一覧には載せない (issue 031): あの面は cursor と窓を同時に動かし、窓は
 // 「カーソルを含む最小の窓」の導出値なので、遅らせる余地が幾何的にゼロ (載せても瞬時に着地点へ
 // 張り付くだけだった)。カーソルを持つ面へ広げるときは、まず「窓を遅らせてよいか」を確かめること。
 //
@@ -82,7 +82,7 @@ func (g *scrollGlide) offset(target int) int {
 func (g *scrollGlide) stop() { g.active = false }
 
 // pagerScrollKey は less 流儀のスクロールキーを offset へ写す共有ロジック。diff pager (d) と
-// status viewer の全画面 diff が同じ手触りを持つための 1 箇所。⚠️ 「閉じる」キーはここで扱わない:
+// status viewer の全画面 diff が同じ手触りを持つための 1 箇所。🚨 「閉じる」キーはここで扱わない:
 // 面ごとに閉じる語彙が違う (diff は d / status は d と q) ため、呼び出し側で判定してから渡す。
 //
 // 半ページ移動だけ glide に載せるのは diffOverlay.scroll から引き継いだ判断: 1 行移動は距離 1 行で

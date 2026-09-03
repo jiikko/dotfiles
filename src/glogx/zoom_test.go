@@ -86,7 +86,7 @@ func TestAppZoomOpensAndSettles(t *testing.T) {
 	}
 }
 
-// 終了は演出を挟んでから抜ける。⚠️ キーが来たら即着地させる (q が効かない時間を作らない)。
+// 終了は演出を挟んでから抜ける。🚨 キーが来たら即着地させる (q が効かない時間を作らない)。
 func TestAppZoomCloseThenQuit(t *testing.T) {
 	advance := stubClock(t)
 
@@ -147,7 +147,7 @@ func TestCtrlCSkipsZoom(t *testing.T) {
 }
 
 // 枠を持たない画面 (--no-frame / 小さい端末) では演出も枠を描かない。
-// ⚠️ 描くと、開き切った瞬間に枠が消える段差が出る。
+// 🚨 描くと、開き切った瞬間に枠が消える段差が出る。
 func TestZoomWindowMatchesFrameState(t *testing.T) {
 	lines := make([]string, 10)
 	for i := range lines {
@@ -161,7 +161,7 @@ func TestZoomWindowMatchesFrameState(t *testing.T) {
 	}
 }
 
-// 演出中はフレーム周期を上げる。⚠️ ここが効いていないと「チェーンは回るが 12.5fps」になり、
+// 演出中はフレーム周期を上げる。🚨 ここが効いていないと「チェーンは回るが 12.5fps」になり、
 // 220ms の演出に中間フレームが 2 枚しか出ず (4行 → 30行 → 実画面) 点滅に見える (実測 2026-08-01)。
 // 固定値でなく「何枚出るか」で縛るのは、所要 (appZoomDuration) を変えたときに一緒に守るため。
 func TestZoomRendersEnoughFrames(t *testing.T) {
@@ -200,7 +200,7 @@ func TestZoomFrameRateDropsAfterSettle(t *testing.T) {
 	}
 }
 
-// 演出は所要いっぱいまで動く。⚠️ 素の easeOutCubic は進捗 69% で appZoomSnap に達してしまい、
+// 演出は所要いっぱいまで動く。🚨 素の easeOutCubic は進捗 69% で appZoomSnap に達してしまい、
 // 残り 31% は絵が変わらない (開くときは早々に静止、閉じるときは 68ms 何も起きてから縮み始める)。
 // scale が終点を snap 閾値に合わせているかを、値でなく「最後まで動くか」で縛る。
 func TestZoomMovesForWholeDuration(t *testing.T) {
@@ -222,12 +222,12 @@ func TestZoomMovesForWholeDuration(t *testing.T) {
 	}
 }
 
-// フレームあたりの跳びが小さいこと。⚠️ 端末は文字セル単位でしか動けないので、フレーム数だけ
+// フレームあたりの跳びが小さいこと。🚨 端末は文字セル単位でしか動けないので、フレーム数だけ
 // 増やしても曲線が前のめりだと 1 フレームで何行も跳ぶ。40 行の画面を想定して平均の跳びを見る。
 func TestZoomStepsAreSmall(t *testing.T) {
 	stubClock(t)
 
-	// ⚠️ 開くときと閉じるときを同じ基準で見る。片方だけ直すと「開くのは滑らかなのに終了だけ
+	// 🚨 開くときと閉じるときを同じ基準で見る。片方だけ直すと「開くのは滑らかなのに終了だけ
 	// カクつく」ずれが入る (周期・所要・曲線の 3 つとも両方向へ効いている必要がある)。
 	for _, tc := range []struct {
 		name  string

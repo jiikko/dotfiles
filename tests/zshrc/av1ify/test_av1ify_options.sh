@@ -671,7 +671,7 @@ assert_contains "_${non_absolute}_" "__" "No relative path passed to trash"
 # Test 72: __av1ify_fs_type_for — mount 出力からマッチする最長 mount point を選ぶ
 # 回帰防止: commit adc7823 で導入された fs type 判定ヘルパーのユニットテスト
 printf '\n## Test 72: __av1ify_fs_type_for resolves filesystem type from mount\n'
-# ⚠️ ここに `unsetopt err_exit` を置かないこと (2026-08-21 に削除)。この窓の中では
+# 🚨 ここに `unsetopt err_exit` を置かないこと (2026-08-21 に削除)。この窓の中では
 # assert_contains の `return 1` が rc に反映されず、5 本の assert が全部無効になっていた。
 # 実測: 最長一致 (multi-mount) を壊す変異を当てると「SMB 上の元ファイルに trash が呼ばれる」
 # = _fs_helpers.zsh が防ぐと明記した実データ削除の経路が完全に緑になった。

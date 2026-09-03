@@ -8,10 +8,10 @@
 #   tmux_kill_confirm.sh window  : 現在の window を kill (全 pane 巻き込み。素の confirm-before
 #                                  だった bind & の gum 統一)
 #
-# ⚠️ set -e は使わない: fail-safe は `gum confirm && tmux kill-pane` の && 短絡に依存しており
+# 🚨 set -e は使わない: fail-safe は `gum confirm && tmux kill-pane` の && 短絡に依存しており
 #    (gum 未導入なら exit 127 で kill されない。zshrc 起動時に brew install gum を催促)、
 #    -e を足すと gum の非0終了で kill 前に script が落ちる挙動差が出るため素の && 連鎖を保つ。
-# ⚠️ popup 内では #{...} フォーマットが展開されない (tmux 3.6a 実測。TMUX_PANE も無い) ため、
+# 🚨 popup 内では #{...} フォーマットが展開されない (tmux 3.6a 実測。TMUX_PANE も無い) ため、
 #    対象 pane は popup 内シェルの `tmux display-message -p` で解決する。冒頭で $p に固定してから
 #    confirm するので「確認した相手」と「kill する相手」が一致する (popup 直下のアクティブ pane)。
 set -uo pipefail

@@ -204,7 +204,7 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 // (0=上端 / 下端は max(len(window)-len(box),0))。box の各行は buildPanelBox で幅が揃っているため
 // 右端に清潔な長方形として載る。覆われる各行の左側 (見えている部分) は truncateKeepANSI で色を
 // 保ったまま切り、境界で reset を挟んで開いた色/bg を閉じる (取得中に上部行の色が抜ける不具合の
-// 修正)。box 行自身の色はそのまま活きる。⚠️ この色にじみ防止の合成ロジックの単一情報源 —
+// 修正)。box 行自身の色はそのまま活きる。🚨 この色にじみ防止の合成ロジックの単一情報源 —
 // TopRight/BottomRight で二重持ちして片方だけ退行させないため 1 箇所に集約している。
 func overlayBoxRight(window, box []string, width int, colored bool, base int) []string {
 	if len(window) == 0 || width <= 0 || len(box) == 0 {

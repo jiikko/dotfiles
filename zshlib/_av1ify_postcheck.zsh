@@ -102,7 +102,7 @@ __av1ify_get_stream_end() {
 # 戻り値: 0=取得成功, 1=取得不能
 __av1ify_packet_end() {
   local file="$1" spec="$2" val fmt_dur start
-  # ⚠️ 「packet 列の最後の行の pts_time」を終端に使わないこと。
+  # 🚨 「packet 列の最後の行の pts_time」を終端に使わないこと。
   # packet はデコード順で出るため、B-frame の表示順入れ替えで最終行が最大 PTS に
   # ならない (実測: 1fps / x264 bframes=16 の 20s ソースで最終行 18.0s に対し実際の
   # 表示終端は 20.0s)。過小評価は drift を縮める方向に働き、本物の音ズレを見逃す。
@@ -238,7 +238,7 @@ __av1ify_postcheck() {
     # ただし「測れなかった (s_measured=0)」と「測って閾値内だった (s_bad=0)」は別物なので
     # 分けて持つ。降格ゲート (下の再判定) は後者でしか降格してはならない。1 変数で兼ねると
     # 常時判定の fail-open が降格ゲートの fail-closed を黙って壊す (058 の不変条件が消える)。
-    # ⚠️ 関係差 (a_start − v_start の src/out 差分) で見ること。絶対 start では TS の
+    # 🚨 関係差 (a_start − v_start の src/out 差分) で見ること。絶対 start では TS の
     # PCR 由来ベースオフセット (実測: video 1.423 / audio 1.400 が mp4 出力で 0 付近へ
     # 正規化される) や AAC priming をまるごと音ズレと誤検知する。関係差なら実測 0.0098s。
     local s_sv s_sa s_ov s_oa s_drift="" s_bad=0 s_measured=0
@@ -267,7 +267,7 @@ __av1ify_postcheck() {
           # 閾値を超えたときだけ、4 値すべてを packet 実測で測り直して再判定する。
           # ・通常時の ffprobe コストは増えない (超過時のみ走る)
           # ・src/out を同じ測り方 (packet 実測の表示終端) に揃えるので量が混ざらない
-          # ⚠️ packet 実測が測るのは「表示終端」で、ストリームの「長さ」ではない。
+          # 🚨 packet 実測が測るのは「表示終端」で、ストリームの「長さ」ではない。
           # 音声の先頭が落ちて edit-list 遅延が書かれ終端は映像と揃っている時間シフト型は
           # 終端 Δ に出ない (実測 issue 058)。そのため降格 (FLAG→ok) は「終端が揃っている」
           # かつ「開始の関係差を実際に測れて (s_measured) 閾値内だった (s_bad != 1)」の
@@ -296,7 +296,7 @@ __av1ify_postcheck() {
         fi
       else
         # awk 失敗時は無言スキップ (他のチェックに委ねる)
-        print -ru2 -- "⚠️ A/V drift計算スキップ (awk失敗)"
+        print -ru2 -- "🚨 A/V drift計算スキップ (awk失敗)"
       fi
     fi
     # ソース duration が両方とも取得不能 (= 安価パスも packet 走査も失敗) の超レアケースは
@@ -430,7 +430,7 @@ __av1ify_postcheck() {
     local issues_joined
     issues_joined=$(printf '%s, ' "${issues[@]}")
     issues_joined="${issues_joined%, }"
-    print -r -- "⚠️ チェック警告: $issues_joined"
+    print -r -- "🚨 チェック警告: $issues_joined"
     __AV1IFY_LAST_NG_REASON="変換後チェック NG: $issues_joined"
     REPLY="$new_path"
     return 1

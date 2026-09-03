@@ -29,7 +29,7 @@ local MIN_CONTRAST = 3.0
 -- 色を検査する group。Text/Read/Write は下の extmark 経路で名前を pin できるが、Target は
 -- hover (vim.lsp.buf.hover) 側で使われるため名前の pin は doc (hl-LspReferenceTarget) が根拠。
 --
--- ⚠️ **「LspReference 一族」ではなく「Visual を link 経由で引きうる地塗り group」を検査する**
+-- 🚨 **「LspReference 一族」ではなく「Visual を link 経由で引きうる地塗り group」を検査する**
 -- (issue 134)。ee5e2b7 は LspReference だけを直したが、同じ根 (nvim 既定の Visual への link +
 -- 本構成の Visual 上書き) を持つ group が他にもあり、名前で pin していたので検出できなかった。
 -- 実測 2026-09-03: SnippetTabstop は両分岐で、LspSignatureActiveParameter は 256色分岐で
@@ -43,11 +43,11 @@ local COLOR_GROUPS = {
 }
 
 -- REVERSE_OK は reverse 方式を採った group。reverse は前景と背景を**入れ替える**ので
--- 地色を持たない。⚠️ **この group のコントラストは下の測定に乗らない** (地色も前景も無いため
+-- 地色を持たない。🚨 **この group のコントラストは下の測定に乗らない** (地色も前景も無いため
 -- 両分岐で寄与 0 件)。比は反転しても保存されるので、実効値は link 元 (float なら NormalFloat の
 -- 7.70:1) と同じで基準を満たす — が、**それはこの検査が測った値ではない**。
 -- 地色が無いことを「検査漏れ」ではなく「意図した方式」として扱うために名前で持つ。
--- ⚠️ ここに足すのは reverse を**明示定義した**group だけ。link 先が偶然 reverse を持つ形
+-- 🚨 ここに足すのは reverse を**明示定義した**group だけ。link 先が偶然 reverse を持つ形
 -- (retrobox の Search 等) を許すと、link が変わったときに無言で検査が緩む。
 local REVERSE_OK = { LspSignatureActiveParameter = true }
 
@@ -168,7 +168,7 @@ do
     fail(("blink.cmp の highlight を読み込めない (%s)。BlinkCmp* の group が存在せず、検査が空振りする"):format(tostring(err)))
   end
   -- 地色は gui / cterm のどちらか在る方から RGB を取る (256色分岐は gui を持たない)。
-  -- ⚠️ cterm 0-15 は端末プロファイル依存で測れないので、そのときは「測れなかった」として落とす
+  -- 🚨 cterm 0-15 は端末プロファイル依存で測れないので、そのときは「測れなかった」として落とす
   -- (明るい色を 0-15 で指定して検査をすり抜ける形を残さない)。
   local rgb
   if visual.bg ~= nil then
@@ -226,7 +226,7 @@ for _, group in ipairs(COLOR_GROUPS) do
   end
 
   for _, mode in ipairs({ "cterm", "gui" }) do
-    -- ⚠️ `kind == "bg" and attrs.bg or attrs.fg` の 3 項イディオムで書かないこと: bg が nil の
+    -- 🚨 `kind == "bg" and attrs.bg or attrs.fg` の 3 項イディオムで書かないこと: bg が nil の
     -- とき fg へフォールスルーし、「地色なし」の group を「地色あり」として測ってしまう。
     local function rgb_of(attrs, kind)
       local n, to_rgb

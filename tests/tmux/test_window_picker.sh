@@ -9,7 +9,7 @@
 #   - 選択結果は column 整形の影響を受けない安定キー window_id (ヘッダコメント記載の旧回帰)
 #   - activity 降順 / いまここマーク / exclude-current / 相対時刻バケツ境界
 #
-# ⚠️ TT_POPUP_SESSION_RE が空だと awk の空パターンが全行にマッチして候補ゼロに落ち、
+# 🚨 TT_POPUP_SESSION_RE が空だと awk の空パターンが全行にマッチして候補ゼロに落ち、
 #    「何も検証せず成功」する誤検知になるため、happy path は必ず候補非空を先に assert する。
 set -euo pipefail
 unset CDPATH

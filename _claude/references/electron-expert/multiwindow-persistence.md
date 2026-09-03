@@ -276,7 +276,7 @@ channel.onmessage = (event) => {
   }
 };
 
-// ⚠️ Expert warning: event.origin は file:// になるため検証不可
+// 🚨 Expert warning: event.origin は file:// になるため検証不可
 // セキュリティが重要な通信には Main プロセス経由 IPC を使用
 ```
 
@@ -302,7 +302,7 @@ channel.onmessage = (event) => {
 ```typescript
 // ✅ Expert: 型安全 + JSON Schema バリデーション + マイグレーション
 // src/main/services/config-store.ts
-// ⚠️ Note: electron-store v9+ は ESM-only。CJS プロジェクトでは v8 を使用するか、
+// 🚨 Note: electron-store v9+ は ESM-only。CJS プロジェクトでは v8 を使用するか、
 // package.json に "type": "module" を設定すること。
 
 import Store from 'electron-store';
@@ -366,7 +366,7 @@ export { configStore };
 // ✅ Expert: WAL モード + マイグレーション + 全文検索
 // src/main/services/database.ts
 //
-// ⚠️ Expert warning: better-sqlite3 は同期 API のため、大量データ操作時は
+// 🚨 Expert warning: better-sqlite3 は同期 API のため、大量データ操作時は
 // メインプロセスの event loop をブロックする。重い処理は Worker Thread に委譲：
 //   import { Worker } from 'worker_threads';
 //   const dbWorker = new Worker('./db-worker.js');
@@ -504,7 +504,7 @@ app.on('will-quit', () => database.close());
 ```typescript
 // ✅ Expert: OS ネイティブ暗号化でシークレットを管理
 // macOS: Keychain, Windows: DPAPI, Linux: libsecret
-// ⚠️ Linux warning: libsecret 未インストール時は basic_text にフォールバックし
+// 🚨 Linux warning: libsecret 未インストール時は basic_text にフォールバックし
 // 実質平文保存となる。isEncryptionAvailable() で必ず事前確認すること。
 
 import { safeStorage, ipcMain } from 'electron';

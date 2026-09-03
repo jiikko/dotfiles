@@ -62,7 +62,7 @@ type Options struct {
 	Concurrency int           // 既定 4 (ディスク I/O が競合する)
 	PerEntry    time.Duration // 1 エントリの上限。既定 60 秒
 	// OnResult は完了したエントリを順次受ける (UI のインクリメンタル表示用)。nil 可。
-	// ⚠️ 走査 goroutine から並行に呼ばれる (呼び出し側で直列化する。bubbletea なら Msg に載せる)
+	// 🚨 走査 goroutine から並行に呼ばれる (呼び出し側で直列化する。bubbletea なら Msg に載せる)
 	OnResult func(Result)
 	// Reuse は「このエントリは走査せず、この前回結果を使え」を返す (nil = 走査する)。走査はディスク I/O を
 	// 使うので、重いエントリを短い間隔で何度も測り直さないための口。判定 (何を重いとみなし、いつまで使うか)

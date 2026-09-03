@@ -11,19 +11,19 @@
 #
 # 状態の正本はファイルの位置: issues/ 直下 = 未完了、issues/pending/ = 着手保留 (期限は追う)、
 # issues/done/ = 完了 (対象外)。本文の既読ヘッダーは見ない (書き換え忘れで嘘が残るため)。
-# ⚠️ pending も走査する: 「保留」に置いた人間タスクの期限切れを黙らせると、期限を書いた本人
+# 🚨 pending も走査する: 「保留」に置いた人間タスクの期限切れを黙らせると、期限を書いた本人
 # だけが忘れる形になる (issue-sync の Step 0 も pending を見る。片方だけ黙ると検査が食い違う)。
 #
 # 入力: SessionStart の hook JSON (stdin)。`.cwd` があれば使い、無ければ $PWD。
 # 出力: 報告することがあるときだけ additionalContext を emit (jq が無ければ素の stdout)。
 #       未確認 0 件 + 期限問題なしのときは何も出さない (毎セッションのノイズにしない)。
-#       ⚠️ 「期限が読めなかった」は黙って捨てない — 書式不正・期限なしとして必ず出す
+#       🚨 「期限が読めなかった」は黙って捨てない — 書式不正・期限なしとして必ず出す
 #       (取りこぼしを「期限なし」と区別できないと、検査が静かに空回りする)。
 
 set -u
 
 lib="$(dirname "$0")/lib/issue-hooks.sh"
-# ⚠️ source の失敗を黙らせない: set -e が無いので `.` が失敗しても次行へ進み、関数未定義の
+# 🚨 source の失敗を黙らせない: set -e が無いので `.` が失敗しても次行へ進み、関数未定義の
 # 非 0 が `|| exit 0` に吸われて「点検して報告なし」と区別できなくなる (実測 2026-08-21)
 # shellcheck source=_claude/hooks/lib/issue-hooks.sh
 if ! . "$lib" || ! command -v issue_hook_resolve_dir >/dev/null 2>&1; then
@@ -37,7 +37,7 @@ dir="$ISSUE_HOOK_DIR"
 today=$(date +%F)
 # +3 日は BSD date (-v) と GNU date (-d) の両方を試す。どちらも無ければ「期限間近」の
 # 判定だけ諦める (期限切れの判定は文字列比較なので date に依存しない)。
-# ⚠️ 諦めたことは報告に明記する — 黙って消すと「期限間近が 0 件」と区別できない
+# 🚨 諦めたことは報告に明記する — 黙って消すと「期限間近が 0 件」と区別できない
 degraded=""
 soon=$(date -v+3d +%F 2>/dev/null || date -d '+3 days' +%F 2>/dev/null || true)
 if [ -z "$soon" ]; then
@@ -73,7 +73,7 @@ for f in "$dir"/*.md "$dir"/pending/*.md; do
     continue
   fi
 
-  # ⚠️ grep の終了コードを見る: 0 = 見つかった / 1 = 無い / >1 = grep 自体の失敗。
+  # 🚨 grep の終了コードを見る: 0 = 見つかった / 1 = 無い / >1 = grep 自体の失敗。
   # パイプで繋ぐと status が消え、「依存コマンドが壊れている」を「期限なし」と誤報する
   # (実測 2026-08-20: 壊れた grep で全 verify issue が「期限なし」と出た)
   line=$(grep -m1 -E '^期限[:：]' "$f" 2>/dev/null)
@@ -95,7 +95,7 @@ for f in "$dir"/*.md "$dir"/pending/*.md; do
   if [ "$due" \< "$today" ]; then
     overdue="${overdue}  期限切れ ${due}  ${rel}${held}"$'\n'
   elif [ "$due" \> "$soon" ]; then
-    # ⚠️ later は「未完了 N 件の**うち**」として印字するので、母集団を unread と揃えること
+    # 🚨 later は「未完了 N 件の**うち**」として印字するので、母集団を unread と揃えること
     # (human かつ pending 以外)。揃えないと規約準拠のデータだけで
     # 「未完了 1 件 (うち期限に余裕あり 2 件)」のような部分集合でない表示が出る
     # (実測 2026-08-21: pending を走査へ加えたときに later 側だけ母集団が広がった)。

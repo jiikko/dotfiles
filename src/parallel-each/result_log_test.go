@@ -100,7 +100,7 @@ func TestResultLogRewriteMissingFileIsNoError(t *testing.T) {
 }
 
 // close must actually release the fd, be idempotent, and silence later appends.
-// ⚠️ Assert the observable effects, not just "does not panic": the previous version of
+// 🚨 Assert the observable effects, not just "does not panic": the previous version of
 // this test had no assertions at all, so dropping the whole close body still passed it
 // (issue 082). The doc above close() claims a double close and a later append are both
 // harmless — pin exactly that.

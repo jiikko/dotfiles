@@ -115,7 +115,7 @@ type EntryOutcome struct {
 // CommandLines は「このエントリで実際に実行するコマンド」を組み立てた形。
 // cli: 以外は空 (rm / trash はツールが直接消すので外部コマンドを起こさない)。
 //
-// ⚠️ 置換の規則をここに置くのは、**UI 側で組み直させない**ため (同じ判定が 2 実装になると
+// 🚨 置換の規則をここに置くのは、**UI 側で組み直させない**ため (同じ判定が 2 実装になると
 // 「確認画面に出したコマンド」と「実際に実行するコマンド」が食い違う)。
 func (e EntryOutcome) CommandLines() []string {
 	if e.Method != methodCLI || e.Command == "" {
@@ -168,7 +168,7 @@ type DeleteOptions struct {
 	VerifyTimeout time.Duration
 	CmdTimeout    time.Duration
 	// OnProgress は 1 エントリ終わるごとに呼ばれる (UI の進捗表示用)。nil 可。
-	// ⚠️ **Delete を呼んだ goroutine から同期に呼ばれる** (Scan.OnResult のように別 goroutine から
+	// 🚨 **Delete を呼んだ goroutine から同期に呼ばれる** (Scan.OnResult のように別 goroutine から
 	// 並行に呼ばれるのではない)。bubbletea なら model を直接触らず Msg に載せること。
 	OnProgress func(done, total int, label string)
 	// OnCommand は cli: の 1 コマンドが終わるたびに呼ばれる (実行中の画面へ流すため)。
@@ -396,7 +396,7 @@ func planDelete(ctx context.Context, t Result, opt DeleteOptions) EntryOutcome {
 	// 走査を通せば集合の作り方が 1 つになり (走査側と削除側で 2 実装しない)、サイズと
 	// (dev, ino) も実測値になる。
 	//
-	// ⚠️ 代償は時間。重いエントリ (DerivedData で実測 5.7 秒) は削除の前後で 2 回走査する。
+	// 🚨 代償は時間。重いエントリ (DerivedData で実測 5.7 秒) は削除の前後で 2 回走査する。
 	// 破壊的操作の正しさを申告値に預けないための費用として受け入れる。
 	fresh := Scan(ctx, Options{Env: opt.Env, Run: opt.Run, BootTime: opt.BootTime,
 		Catalog: []Entry{e}, Concurrency: 1, PerEntry: opt.ScanTimeout})
@@ -477,7 +477,7 @@ func planItem(method string, argv []string, it Item, opt DeleteOptions) ItemOutc
 	}
 	o.Path = p
 	// TOCTOU: 走査時に見たものと同じ実体か。Lstat で辿らない (symlink 自体を見る)。
-	// ⚠️ 実体の有無を**集合の突合より先に**見る。既に消えていると glob も 0 件になるので、
+	// 🚨 実体の有無を**集合の突合より先に**見る。既に消えていると glob も 0 件になるので、
 	// 順序が逆だと「既に存在しません」が「このエントリの対象ではありません」に化ける
 	fi, err := os.Lstat(p)
 	if err != nil {
@@ -549,7 +549,7 @@ func execEntry(ctx context.Context, out *EntryOutcome, opt DeleteOptions) {
 // 消す (os.Root)。パスで再解決すると、検査と削除のあいだに親ディレクトリを差し替えられて
 // 別の木が消える (敵対レビュー 2026-09-03 が実測)。
 //
-// ⚠️ os.RemoveAll は木の途中で失敗してもそこまでの削除を取り消さない。失敗を OutcomeFailed に
+// 🚨 os.RemoveAll は木の途中で失敗してもそこまでの削除を取り消さない。失敗を OutcomeFailed に
 // すると「何も消えていない」と読まれるので、OutcomeIncomplete (一部消えている) にする。
 func removeItem(o *ItemOutcome) error {
 	root, err := os.OpenRoot(filepath.Dir(o.Path))
@@ -581,7 +581,7 @@ func removeItem(o *ItemOutcome) error {
 	// そのあいだに同じ親ディレクトリ内で rename を当てられると、検査していない木が消える
 	// (敵対レビュー 2026-09-03 の実測: 4464 試行中 121 回 = 2.7% で成立した)。改名してしまえば、
 	// 相手は自分が置けない名前を狙うことになる。
-	// ⚠️ 改名と削除のあいだにプロセスが死ぬと、この名前の残骸が親ディレクトリに残る
+	// 🚨 改名と削除のあいだにプロセスが死ぬと、この名前の残骸が親ディレクトリに残る
 	// (対象はキャッシュの中なので実害は小さいが、次の走査の glob には出ないことがある)。
 	staged, err := stagingName()
 	if err != nil {
@@ -710,7 +710,7 @@ func verifyEntry(ctx context.Context, out *EntryOutcome, opt DeleteOptions) {
 		out.Outcome, out.Reason = OutcomeFailed, "再走査できません (カタログにない ID)"
 		return
 	}
-	// ⚠️ Reuse は渡さない (前回値を再利用したら「再走査で確認した」にならない)
+	// 🚨 Reuse は渡さない (前回値を再利用したら「再走査で確認した」にならない)
 	rep := Scan(ctx, Options{Env: opt.Env, Run: opt.Run, BootTime: opt.BootTime,
 		Catalog: []Entry{e}, Concurrency: 1, PerEntry: opt.VerifyTimeout})
 	var after Result
@@ -942,7 +942,7 @@ func trashMove(src, trashDir string, dev, ino uint64) (string, error) {
 		if i > 1 {
 			name = fmt.Sprintf("%s %d", base, i)
 		}
-		// ⚠️ RENAME_EXCL は宛先が非空ディレクトリでも EEXIST を返す (実測 2026-09-03)。
+		// 🚨 RENAME_EXCL は宛先が非空ディレクトリでも EEXIST を返す (実測 2026-09-03)。
 		// ENOTEMPTY は来ないので見ない
 		err := renameExcl(srcDir, base, dstDir, name)
 		switch {
@@ -995,7 +995,7 @@ var destructiveHook func(op, path string) error
 
 // runningUnderTest は「テストバイナリとして走っている」の判定。testing を production の
 // import に持ち込まないための実行ファイル名の検査 (go test が作るバイナリは .test で終わる)。
-// ⚠️ 完全ではない (`go run` で書いた自作ハーネスは検出できない)。目的は
+// 🚨 完全ではない (`go run` で書いた自作ハーネスは検出できない)。目的は
 // **他パッケージのテストが hook を差し忘れたまま Delete を呼ぶ**のを止めることだけ。
 var runningUnderTest = strings.HasSuffix(os.Args[0], ".test") || strings.Contains(os.Args[0], "/_test/")
 
@@ -1090,7 +1090,7 @@ type inventory struct {
 
 // write は記録を書き直す (planned → executing → done)。
 //
-// ⚠️ 一時ファイルは **os.CreateTemp** で作る。固定名 (`h.path + ".tmp"`) を os.WriteFile で
+// 🚨 一時ファイルは **os.CreateTemp** で作る。固定名 (`h.path + ".tmp"`) を os.WriteFile で
 // 開くと **symlink を辿る**ので、置き場に書ける立場の相手が `<stamp>.json.tmp` を任意ファイルへの
 // symlink として撒いておくだけで、そのファイルが truncate + 上書きされる。しかも rename は
 // symlink 自体を差し替えるので、**記録は残ったつもりで実体を持たない** = fail-closed が

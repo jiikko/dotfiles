@@ -47,7 +47,7 @@ type Meta struct {
 	User  string `json:"user"`
 	PID   int    `json:"pid"`
 	Label string `json:"label,omitempty"`
-	// ⚠️ 秒の整数で持たない: 1 秒未満が 0 に丸められ、下の fallback で「既定 30 分」に
+	// 🚨 秒の整数で持たない: 1 秒未満が 0 に丸められ、下の fallback で「既定 30 分」に
 	// 化ける (テストが短い TTL を使えないだけでなく、丸めが黙って効くのが危ない)。
 	TTLMillis  int64  `json:"ttl_ms"`
 	AcquiredAt string `json:"acquired_at"`
@@ -103,7 +103,7 @@ func (l *Locker) ensureDirs() error {
 
 // serverNow は「共有を公開しているホストの時計」を返す。
 //
-// ⚠️ ローカルの時計を使わないこと: マシン間で数十秒ずれると、生きている lock を
+// 🚨 ローカルの時計を使わないこと: マシン間で数十秒ずれると、生きている lock を
 // stale と誤判定して二重実行に直結する。probe ファイルを作り、それに打刻された
 // mtime を読むことで、どのマシンから見ても同じ時刻の出典になる。
 func (l *Locker) serverNow() (time.Time, error) {
@@ -153,7 +153,7 @@ func expired(now, mtime time.Time, ttl time.Duration) bool {
 
 // holderTTL は「その lock の生死を決める TTL」を返す。
 //
-// ⚠️ 判定には**保持者が宣言した TTL** (lock の中身) を使う。奪いにきた側が渡す --ttl を
+// 🚨 判定には**保持者が宣言した TTL** (lock の中身) を使う。奪いにきた側が渡す --ttl を
 // 使ってはいけない: 短い --ttl を指定するだけで、他人の生きている lease を早期に
 // 奪えてしまう (実測 2026-08-22。macOS では速すぎて出ず、CI の Linux で露見した)。
 // 呼び出し側の --ttl は「自分が新しく作る lock の TTL」にだけ効く。
@@ -263,7 +263,7 @@ func (l *Locker) tryPlace(meta *Meta) error {
 
 // tryTakeover は stale な lock を「存在しない名前への rename」で 1 人だけが引き取る。
 //
-// ⚠️ ここを unlink → create に書き換えてはいけない。期限切れを見つけた 2 者が
+// 🚨 ここを unlink → create に書き換えてはいけない。期限切れを見つけた 2 者が
 // 「消して作り直す」と両方が勝つ。rename なら勝者は 1 人に絞られる。
 func (l *Locker) tryTakeover() (bool, error) {
 	now, err := l.serverNow()

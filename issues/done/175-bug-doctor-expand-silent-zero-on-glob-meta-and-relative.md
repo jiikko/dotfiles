@@ -68,7 +68,7 @@ npm キャッシュのエントリが `status=ok, items=0` になる (実在す�
 - 再現 (一時テストで実測、実行後に削除して `git status` で無変更を確認):
   - HOME にメタ文字 `[1]` を含む → `paths=[] err=<nil>` / `status=ok items=0 failures=[]`
   - 相対 TMPDIR でマッチ無し → 同上 (無音の 0 件)
-  - ⚠️ **相対 TMPDIR で cwd にたまたま一致した場合は `validateTarget` (`paths.go:79-81`) が
+  - 🚨 **相対 TMPDIR で cwd にたまたま一致した場合は `validateTarget` (`paths.go:79-81`) が
     非絶対パスを拒否して `status=failed` になる**。つまり相対パスは「一致したら fail-closed /
     一致しなければ無音」という非対称。対応案を書くときはこの差を潰す形にする
 - 影響範囲: `expand` の呼び出し元は `scanEntry` (`scan.go:177`) の 1 箇所だけで、そこから

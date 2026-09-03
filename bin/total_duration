@@ -60,7 +60,7 @@ fail_count=0
 for f in "${files[@]}"; do
   dur=$(ffprobe -v error -show_entries format=duration -of default=nk=1:nw=1 -- "$f" 2>/dev/null || true)
   if [[ -z "$dur" || "$dur" == "N/A" ]]; then
-    printf '%-12s  %s  ⚠️ duration 取得失敗\n' "??:??:??.???" "$(basename -- "$f")" >&2
+    printf '%-12s  %s  🚨 duration 取得失敗\n' "??:??:??.???" "$(basename -- "$f")" >&2
     fail_count=$((fail_count + 1))
     continue
   fi

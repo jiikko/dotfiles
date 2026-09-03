@@ -19,7 +19,7 @@
 #     があるときの上書き。どちらも exit 2 で報告だけする
 #
 # env: DOTFILES_ROOT (既定 ~/dotfiles) / CLAUDE_HOME (既定 ~/.claude)
-# ⚠️ root の既定を「このスクリプトの場所」にしない。worktree から実行すると ~/.claude が
+# 🚨 root の既定を「このスクリプトの場所」にしない。worktree から実行すると ~/.claude が
 # worktree を指し、worktree を消した瞬間に全 link が dangling になる。setup.sh と同じ ~/dotfiles 固定。
 #
 # hooks の link は現状どこからも読まれていない (hook の起動経路は _claude/settings.json の
@@ -123,7 +123,7 @@ cmd_apply() {
           ;;
       esac
     fi
-    # ⚠️ 成否は ln の exit code でなく結果の状態 (-ef) で判定する。BSD ln -f は symlink() が EEXIST の
+    # 🚨 成否は ln の exit code でなく結果の状態 (-ef) で判定する。BSD ln -f は symlink() が EEXIST の
     # とき unlink → symlink を retry する非アトミックな実装で、複数セッションが同時に起動して同じ
     # link を張ると、片方の 2 回目 symlink() が EEXIST で非 0 になる (2-way で 57%、実測 2026-09-02)。
     # 最終状態は両者とも同じ target なので、状態が合っていれば linked。合っていなければ ln の stderr を出す。

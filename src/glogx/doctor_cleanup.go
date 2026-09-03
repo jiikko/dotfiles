@@ -23,7 +23,7 @@ import (
 // 片方の遅れをもう片方の理由として表示すると診断を誤らせる。
 // scanLatch は「走行中の走査の本数」を数える latch。
 //
-// ⚠️ **sync.WaitGroup は使えない**。svc / brew / 削除は tea.Cmd の closure から登録するので、
+// 🚨 **sync.WaitGroup は使えない**。svc / brew / 削除は tea.Cmd の closure から登録するので、
 // **Add が Wait と同時に走りうる**。WaitGroup はカウント 0 のときの Add と Wait の同時実行を
 // 禁じており、`-race` が実際にデータ競合として検出した (実測 2026-09-03、敵対的レビューの
 // 指摘を受けて -count=3 で再現)。状態を全部 mutex の下に置いて、遅れて来る登録も安全にする。
@@ -74,7 +74,7 @@ var doctorCleanup scanLatch
 // doctorTrack は走査 1 本を latch に登録して走らせる。goroutine は呼び出し側が作る
 // (tea.Cmd の closure からも使うため)。
 //
-// ⚠️ **add は f を呼ぶ前に済ませる**。子プロセスを起こすのは f の中なので、この順序が
+// 🚨 **add は f を呼ぶ前に済ませる**。子プロセスを起こすのは f の中なので、この順序が
 // 「子が生まれる前に登録されている」を保証する。
 func doctorTrack(f func()) {
 	doctorCleanup.add()

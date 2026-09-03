@@ -79,7 +79,7 @@ jobs:
         with:
           commands: zsh
 
-      # ⚠️ 以下は ubuntu runner の事情への対処で、macOS では compaudit が何も返さないため
+      # 🚨 以下は ubuntu runner の事情への対処で、macOS では compaudit が何も返さないため
       #   実質 no-op (実測 2026-08-29)。壊れないので残す (runner を戻したときに効く)。
       # GHA runner は zsh の system fpath (/usr/share/zsh 等) が group-writable なため、対話シェルの
       # compinit が「Ignore insecure directories? [ny]」プロンプトを出す。zpty ベンチではこの read が

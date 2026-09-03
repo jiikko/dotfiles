@@ -11,7 +11,7 @@ import "glogx/termsafe"
 // ここに別名を置いているのは callsite の量が多い (git / CI / diff の各入口) ためで、
 // 意味は完全に同一。新しい呼び出しはどちらの名前で書いてもよい。
 //
-// ⚠️ var でなく func で持つ: sanitizePlainLine は毎フレーム全行から呼ばれる経路
+// 🚨 var でなく func で持つ: sanitizePlainLine は毎フレーム全行から呼ばれる経路
 // (worktreeRow.dispPath) にあり、変数だと間接呼び出しが 1 段挟まる。差し替え点にする意図も無い。
 // (訂正: 7d60537 のコミットメッセージは「fast path がインライン化されない」と書いたが誤り。
 // fast path は termsafe.sanitize の中にあり、sanitize はループを持つため var / func どちらでも

@@ -23,7 +23,7 @@ fail=0; ok=0
 TMP_ROOT=$(mktemp -d); trap 'rm -rf "$TMP_ROOT"' EXIT
 
 # 偽 repo を毎ケース新規に作る (ケース間で状態を共有しない)。
-# ⚠️ 本物の dotfiles では走らせない: issues/next/ は空だと git に載らないので新品
+# 🚨 本物の dotfiles では走らせない: issues/next/ は空だと git に載らないので新品
 #    チェックアウトと CI に存在せず、判定式が壊れていなくても全件無出力になる
 #    (test_next_claim_push.sh が同じ罠を CI run 33649890092 で踏んでいる)
 new_repo() { # → $REPO
@@ -36,7 +36,7 @@ run_hook() { ( cd "$REPO" && printf '{"prompt":"x"}' | "$TIMEOUT_BIN" "$HOOK_TIM
 expect_fire() { # $1=説明
   local out; out=$(run_hook)
   if [ -z "$out" ]; then echo "✗ 発火すべきなのに無出力: $1"; fail=$((fail+1)); return; fi
-  # ⚠️ 「出力があった」で終わらせない: 実改行が混ざると JSON が壊れて Claude Code 側で
+  # 🚨 「出力があった」で終わらせない: 実改行が混ざると JSON が壊れて Claude Code 側で
   #    捨てられる (無音の失敗)。jq に食わせて本文まで取り出せることを見る
   if ! printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("push してよいか")' >/dev/null 2>&1; then
     echo "✗ JSON が壊れている / 本文が伺いになっていない: $1"; printf '%s\n' "$out" | head -5; fail=$((fail+1)); return
@@ -75,7 +75,7 @@ new_repo; ( cd "$REPO" && git mv issues/186-x.md issues/next/ &&
 expect_silent "claim が commit 済み (未コミットでなければ黙る)"
 
 # opt-in の範囲: issues/next/ が無い repo では規律ごと無効。
-# ⚠️ fixture は **検出条件を満たしたうえで opt-in だけが外れている形**にする。別名の dir
+# 🚨 fixture は **検出条件を満たしたうえで opt-in だけが外れている形**にする。別名の dir
 #    (issues/next2/) では検出の grep が最初から当たらず、opt-in を外す変異が素通りする
 #    (変異検証 2026-09-03 で実際に素通りした)。claim を commit した後に issues/next/ を
 #    まるごと消した形なら、status に issues/next/ の削除行が出つつ dir は無い = 狙いの形

@@ -26,7 +26,7 @@ import (
 // する: bubbletea が同じ端末を raw mode で握っているため、git が tty を奪うと表示が壊れ入力
 // 挙動が未定義になる (対話認証は TUI の外でやるべき作業)。
 //
-// ⚠️ ctx には deadline を付けない (レビュー K2: 正当な巨大 push が遅い回線で timeout 中断される
+// 🚨 ctx には deadline を付けない (レビュー K2: 正当な巨大 push が遅い回線で timeout 中断される
 // 方が push 失敗として有害)。ただし cancel は張る: quit (Ctrl-C) 時に走行中の push/pull を
 // cancel できないと、ネットワーク stall 中に抜けたとき git 子プロセスが孤児化して事実上無期限に
 // 居残る (leak 監査 2026-07-23)。呼び出し側 (actionModal) が deadline 無しの cancel context を
@@ -86,7 +86,7 @@ var runGitPullRebase = func(ctx context.Context) error {
 	if err == nil {
 		return nil
 	}
-	// ⚠️ 以降の rev-parse / abortRebase は pull の ctx を使わない (runGitTimeout の独立 timeout):
+	// 🚨 以降の rev-parse / abortRebase は pull の ctx を使わない (runGitTimeout の独立 timeout):
 	// quit で pull が cancel された場合こそ rebase 途中状態の後始末が要るのに、cancel 済み ctx を
 	// 渡すと abort が実行されないまま repo に rebase-merge が残る。独立 timeout なら quit 後も
 	// 後始末が走り、かつハング (.git ロック競合等) しても有限で終わる。
@@ -131,7 +131,7 @@ func pullBlockedByDirtyTree(porcelain string) bool {
 // noPromptGitCmd (remote 用) ではなく runGitTimeout を使う。テストで実 git を叩かないための
 // 差し替え点として var にしてある。
 //
-// ⚠️ 呼び出しは status viewer のキー処理から同期で行う (issues viewer の MoveToSubdir と同じ作法)。
+// 🚨 呼び出しは status viewer のキー処理から同期で行う (issues viewer の MoveToSubdir と同じ作法)。
 // index への 1 回の書き込みは十分速く、非同期にすると「実行中に外部編集が入る」窓が開いて
 // 「確認に出した状態と実行時の状態が一致すること」(docs/status-viewer-spec.md 4 節) を守りにくい。
 var (
@@ -174,7 +174,7 @@ func runCLIUpdate(name string, fetchVersion func(context.Context) string) (befor
 	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
 	defer cancel()
 	before = fetchVersion(ctx)
-	// ⚠️ WaitDelay が必須 (subproc.CommandContext が張る)。ctx の deadline が kill するのは直接の
+	// 🚨 WaitDelay が必須 (subproc.CommandContext が張る)。ctx の deadline が kill するのは直接の
 	// 子だけで、子が残した孫が親のパイプを握っていると CombinedOutput は孫が閉じるまで戻らない
 	// (理由は subproc.WaitDelay の doc)。戻らないと updateMsg が発行されず
 	// actModal.updating が立ったままになり、上の updateTimeout が約束している
@@ -189,7 +189,7 @@ func runCLIUpdate(name string, fetchVersion func(context.Context) string) (befor
 		return before, "", "", errors.New(lastLine(strings.TrimSpace(string(out))))
 	}
 	after = fetchVersion(ctx)
-	// 成功時も出力の末尾行を返す。⚠️ 捨てないこと: CLI は「更新しなかった」ときも exit 0 で
+	// 成功時も出力の末尾行を返す。🚨 捨てないこと: CLI は「更新しなかった」ときも exit 0 で
 	// 成功するため (codex は自前の stale なキャッシュを見て "Codex is already up to date." を
 	// 出して終わる。実測 2026-09-03 / ~/.codex/version.json が 44 日前で止まっていた)、
 	// before == after だけでは「最新だった」のか「CLI が更新をサボった」のかを区別できない。
@@ -324,7 +324,7 @@ const editorFallback = "nvim"
 // editorCommand は実ファイルを開くエディタのコマンドを組む。$VISUAL → $EDITOR → nvim の順に
 // 見る (VISUAL を先に見るのは「全画面エディタは VISUAL」という POSIX の慣習)。
 //
-// ⚠️ 値は空白で語分割する。EDITOR="code -w" のように引数つきの指定が慣習的に使われるため、
+// 🚨 値は空白で語分割する。EDITOR="code -w" のように引数つきの指定が慣習的に使われるため、
 // 文字列全体を実行ファイル名として扱うと起動できない。分割は quote を解釈しない意図的な
 // 単純化で、**空白を含むパスの指定 (EDITOR='"/My Apps/ed" -w') は非対応** — 起動に失敗し、
 // tui.go の editorClosedMsg がトーストで理由を出す。quote まで解釈するなら git の GIT_EDITOR と
@@ -332,11 +332,11 @@ const editorFallback = "nvim"
 // 採らないのはシェルの解釈をエディタ起動に持ち込まないため — $EDITOR の値が展開・グロブ・
 // コマンド置換を通る経路を作らない方を選ぶ。
 //
-// ⚠️ この経路は「実ファイルを 1 つ開く」ものにだけ使う。nvim を直に呼んでいる他の 2 箇所
+// 🚨 この経路は「実ファイルを 1 つ開く」ものにだけ使う。nvim を直に呼んでいる他の 2 箇所
 // (tui.go の job ログ = 標準入力 + -c の scratch バッファ / open_workspace.go の `nvim .` =
 // ディレクトリを開く) は nvim 固有の機能に依存しており、任意の $EDITOR では成立しない。
 //
-// ⚠️ **前提: 起動したプロセスの終了 = 編集の完了**。glogx は tea.ExecProcess で TUI を中断して
+// 🚨 **前提: 起動したプロセスの終了 = 編集の完了**。glogx は tea.ExecProcess で TUI を中断して
 // 子プロセスを待ち、戻った境界で一覧と本文を取り直す (tui.go の editorClosedMsg)。GUI エディタを
 // `-w` / `--wait` なしで指定すると即座に戻るので、この前提が破れる。git の GIT_EDITOR と同じ要求で、
 // 直し方も同じ (EDITOR="code -w" のように待たせる)。
@@ -344,7 +344,7 @@ const editorFallback = "nvim"
 // 破れたときの劣化は「壊れる」ではなく「反映が遅れる」に留まる — issues viewer を開いている間は
 // issues_watch.go が別プロセスの編集も拾うため (閉じている間は次に開いた時点で必ず読み直す)。
 //
-// ⚠️ 遅れは「気づくまで」+「確かめるまで」の 2 段でできている。handleWatch は変化を見つけた
+// 🚨 遅れは「気づくまで」+「確かめるまで」の 2 段でできている。handleWatch は変化を見つけた
 // 1 回目では pending に置くだけで読まず (書きかけを読まないため)、次の観測で安定を確かめてから
 // 反映する。2 回目の周期は issuesWatchVerifyPoll = 300ms なので、どの経路でも +300ms 乗る:
 //   - fsnotify が動く: イベント (issuesWatchDebounce = 200ms でバーストを畳む) + 300ms ≒ 0.5s。
@@ -352,11 +352,11 @@ const editorFallback = "nvim"
 //   - watcher を作れない (fsnotify.NewWatcher 失敗 / 死んで閉じた後): issuesWatchBlindPoll = 1s
 //     が唯一の経路 → ≒ 1.3s
 //   - watcher はあるがイベントが届かない (FS が無音 / 監視ディレクトリの Add が全滅): 保険の
-//     30s が唯一の経路 ≒ 30.3s = 最悪ケース。⚠️ Add 失敗でも watcher は nil にならないので
+//     30s が唯一の経路 ≒ 30.3s = 最悪ケース。🚨 Add 失敗でも watcher は nil にならないので
 //     「生きているが聾」になる。ただし 30s の観測が変化を拾えば取り直し → startWatch が Add を
 //     再試行するので、露出は永久ではなく「≤30s 聾、その後回復」
 //
-// ⚠️ 検出して警告する案は採らない。「子プロセスが早く終わった」の閾値がマジックナンバーになり、
+// 🚨 検出して警告する案は採らない。「子プロセスが早く終わった」の閾値がマジックナンバーになり、
 // 正当に速いケース (既に開いているウィンドウへ渡すだけ) を誤検知する。
 func editorCommand(path string) *exec.Cmd {
 	editor := firstNonEmptyEnv("VISUAL", "EDITOR")

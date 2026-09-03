@@ -31,7 +31,7 @@ func main() {
 	defer stop()
 	// HOME が解決できなければ**走査せず即エラー**にする (ユーザー判断 2026-09-03 / issue 191)。
 	//
-	// ⚠️ これは意図的に diskdoctor と非対称。`svc.DefaultDirs` の 3 つのうち HOME が要るのは
+	// 🚨 これは意図的に diskdoctor と非対称。`svc.DefaultDirs` の 3 つのうち HOME が要るのは
 	// `$HOME/Library/LaunchAgents` だけで、`/Library/LaunchAgents` と `/Library/LaunchDaemons` は
 	// 絶対パスなので走査を続けることは**できる**。それでも中止するのは、HOME も引けない環境で
 	// 出した部分的な診断を「その環境の全体像」と読まれる方が危ないため。

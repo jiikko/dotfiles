@@ -66,7 +66,7 @@ const (
 	StatusDone                  // 完了
 	StatusUnknown               // 未知のサブディレクトリ配下 (状態へ写像しない)
 	// StatusNext は「次にやる」の目印 (next/ ディレクトリ。ユーザー要望 2026-08-01)。
-	// ⚠️ 末尾に足す: 値は永続化していないが、途中に入れると既存の並びが動く。
+	// 🚨 末尾に足す: 値は永続化していないが、途中に入れると既存の並びが動く。
 	StatusNext
 )
 
@@ -215,7 +215,7 @@ func scanDir(dir string) []*Issue {
 // newIssue はファイル名から番号・カテゴリ・スラッグを取り出す。
 func newIssue(dir, rel string) *Issue {
 	iss := &Issue{Path: filepath.Join(dir, rel), Dir: dir, Rel: rel, Status: StatusOpen}
-	// ⚠️ 無害化するのは表示に使う派生 (Number/Category/Slug) だけ。Path/Dir/Rel はファイルを
+	// 🚨 無害化するのは表示に使う派生 (Number/Category/Slug) だけ。Path/Dir/Rel はファイルを
 	// 開く・git へ渡す「同一性」なので実物のまま残す (無害化するとファイルを見失う)。
 	// ファイル名にも制御文字は入りうる (POSIX は / と NUL 以外を許す)。
 	name := termsafe.PlainLine(strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel)))
@@ -314,7 +314,7 @@ func conflicts(issues []*Issue) []string {
 		}
 		places := make([]string, 0, len(group))
 		for _, iss := range group {
-			// ⚠️ Rel は同一性 (生のまま保持) なので、表示に混ぜるここで無害化する。
+			// 🚨 Rel は同一性 (生のまま保持) なので、表示に混ぜるここで無害化する。
 			// この警告は issue 一覧のヘッダーへそのまま描かれる = 表示 sink である。
 			places = append(places, termsafe.PlainLine(iss.Rel))
 		}
@@ -331,7 +331,7 @@ func conflicts(issues []*Issue) []string {
 // 状態でないサブディレクトリ (プロダクト名・時間軸。spec 3 節が正当と認める配置) だけで
 // 構成されるグループは、別の名前空間に同名ファイルがあるだけなので二重化ではない (同一
 // ディレクトリ内に同名ファイルは存在し得ないので、全員が Unknown なら必ず別サブグループ)。
-// ⚠️ 逆に「Unknown を数える前から除く」と、サブグループの 1 件と done/ の 1 件という
+// 🚨 逆に「Unknown を数える前から除く」と、サブグループの 1 件と done/ の 1 件という
 // 組み合わせ = プロダクト別ディレクトリで運用している repo の done 移動そのものを黙らせる。
 // この警告が存在する唯一の理由 (git mv の取りこぼしで片方が古い内容のまま残る) が、いちばん
 // 踏みやすい形で失われる。
@@ -371,13 +371,13 @@ func (iss *Issue) StatusLabel() string {
 	if strings.EqualFold(iss.Declared, iss.Status.String()) {
 		return iss.Status.String()
 	}
-	return iss.Status.String() + " ⚠ status:" + iss.Declared
+	return iss.Status.String() + " 🚨 status:" + iss.Declared
 }
 
 // loadMetaMaxLine は LoadMeta が受ける 1 行の最大長 (実測の最大 issue は 43KB だが、
 // 長い 1 行にも耐えるため広く採る)。
 //
-// ⚠️ const に出しているのは TestLoadMetaStopsAtH1 がこの値からフィクスチャを組むため。
+// 🚨 const に出しているのは TestLoadMetaStopsAtH1 がこの値からフィクスチャを組むため。
 // リテラルで持つと、この上限を上げた瞬間に「打ち切りが効いていること」のテストが
 // 無言で恒真になる (2026-08-14 の R3 レビューが実証: 上限を 4MB にすると 2MB の
 // フィクスチャが上限に当たらず、打ち切りを外しても green になった)。
@@ -385,14 +385,14 @@ const loadMetaMaxLine = 1024 * 1024
 
 // LoadMeta は本文から H1 と front matter の status: を読む。二度目は何もしない。
 //
-// ⚠️ scanIssues が**見つかった全 issue に対して**呼ぶ (可視行だけの遅延ではない)。
+// 🚨 scanIssues が**見つかった全 issue に対して**呼ぶ (可視行だけの遅延ではない)。
 // なので「先頭数行で確定するものだけ読み、H1 を取れたら打ち切る」形を守ること。
 // 以前はチェックボックスの数も数えていて、そのために bufio.Scanner が必ず EOF まで走り、
 // 一覧を出すたび (起動・外部編集の検知後の再スキャン) に issue 件数 x 行数ぶんの
 // 走査・無害化・正規表現マッチが走っていた。チェックボックスの計数は Body.Progress
 // (issues/body.go) へ移した — issue を開いたときだけ、既にメモリにある全文から数える。
 //
-// ⚠️ 削れるのは **CPU** で read 量ではない。sc.Buffer(64KB, 1MB) を張っているので
+// 🚨 削れるのは **CPU** で read 量ではない。sc.Buffer(64KB, 1MB) を張っているので
 // 64KB 以下のファイルは初回 Read で全体がバッファに載る = 打ち切っても読むバイト数は同じ
 // (実測: 43KB のファイルで旧 2 read / 新 1 read、どちらも 44,042 バイト)。効いているのは
 // Scan ループ + PlainLine + 正規表現 2 本を全行に掛けるのをやめた分で、実 repo の
@@ -431,7 +431,7 @@ func (iss *Issue) LoadMeta() error {
 		default:
 			if m := h1Re.FindStringSubmatch(lineText); m != nil {
 				iss.Title = m[1] // lineText の時点で無害化済み
-				// 取りたいものが揃ったので読むのをやめる。⚠️ front matter は必ずファイル
+				// 取りたいものが揃ったので読むのをやめる。🚨 front matter は必ずファイル
 				// 先頭ブロックとして閉じてから default 分岐に入る (inFront が true になるのは
 				// firstLine ゲートの下だけ) ので、ここで打ち切っても status: を取り落とさない
 				return sc.Err()
@@ -534,7 +534,7 @@ const OtherTab = "other"
 // 「今は無い」を読めるようにするため。位置の固定は [next] チップが All の左に固定されて
 // いるのと同じ規律 (目印の場所は動かさない)。
 //
-// ⚠️ human 運用をしていない repo でも常設で良い (ユーザー判断 2026-08-20)。「空タブが出るのは
+// 🚨 human 運用をしていない repo でも常設で良い (ユーザー判断 2026-08-20)。「空タブが出るのは
 // 無駄だから件数 > 0 のときだけ出す」へ戻さないこと — それは「0 件」と「まだ 1 件も起票して
 // いない (= この repo では人間タスクを issue にする習慣が無い)」を区別できなくする方向で、
 // 常設の目的そのものを壊す。変えるならユーザーに再確認してから。
@@ -611,7 +611,7 @@ const (
 
 // String は保存・表示に使う名前。
 //
-// ⚠️ 段階を永続化するときは値 (iota の序数) でなくこの名前を使うこと。序数で保存すると、段階を
+// 🚨 段階を永続化するときは値 (iota の序数) でなくこの名前を使うこと。序数で保存すると、段階を
 // 増やす・並べ替えるだけで保存済みの値が黙って別の段階を指す (「開き直したら伏せていたはずの
 // done が出ている」形で現れ、原因が保存形式だと気づけない)。名前なら未知の段階は既定へ倒せる。
 func (f StatusFilter) String() string {
@@ -630,7 +630,7 @@ func (f StatusFilter) String() string {
 //
 // 見えすぎるより見えなさすぎる方を選ぶ: a を 1 打すれば広げられるので、伏せ過ぎは回復できる。
 func ParseStatusFilter(name string) (StatusFilter, bool) {
-	// ⚠️ 段階を手書きで列挙しないこと (issue 115)。String() は default 無しの switch なので
+	// 🚨 段階を手書きで列挙しないこと (issue 115)。String() は default 無しの switch なので
 	// exhaustive linter が新しい段階を強制するが、**スライスリテラルは誰も強制しない**。
 	// 足し忘れると、保存された新段階名が ok=false で既定 (open) へ落ちて「開き直したら伏せて
 	// いたはずの段階に戻っている」になる (String() の doc が序数保存について警告しているのと同じ絵)。

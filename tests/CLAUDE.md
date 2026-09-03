@@ -9,7 +9,7 @@
 - ヘルパーは `lib/` か `test_` で始まらない名前に置く。`.bats` も自動発見 (bats 未導入環境は skip を表示して通る)
 - lint は shebang で方言判別する: zsh shebang → `zsh -n`、それ以外 → `shellcheck -S warning`。shebang を忘れると zsh 構文のまま shellcheck に回って落ちる
 - 単体実行は `make test-dir DIR=tests/<dir>`、変更に紐づく分だけは `make test-changed PATHS="..."` (写像は `scripts/test_changed.sh --help`)
-- ⚠️ **`bash tests/.../test_x.sh` の直接実行はしない**。zsh のテストを bash で回すと
+- 🚨 **`bash tests/.../test_x.sh` の直接実行はしない**。zsh のテストを bash で回すと
   `source "${0:A:h}/test_helper.sh"` が空パスに潰れて helper が 1 行も走らず、`cd` の失敗を
   見ていない経路が **repo root に fixture を書く** (実測 2026-09-03。残骸 3 件 / issue 204)。
   数字も無効になる (rc=127 で即落ちしたものを「速い」と読む)。ランナー経由なら shebang が尊重される
@@ -27,14 +27,14 @@
 | `test-bats` | 14 |
 | `test-src` | **15〜71** (3 サンプルで 4.7 倍の幅。Go のキャッシュ状態で動く) |
 
-⚠️ **親行と子行は別 run の数字**。個別実測の合計は 414 秒で、通しの 433 秒とは 19 秒ずれる
+🚨 **親行と子行は別 run の数字**。個別実測の合計は 414 秒で、通しの 433 秒とは 19 秒ずれる
 (make の起動と集約の分 + 測定時の負荷差)。`test-discovered` の 326 と、下の内訳の合計 321 が
 合わないのも同じ理由。**どの数字も 1 サンプル**なので、±数十秒は動く前提で読むこと。
 
 `test-discovered` (直列) の内訳: `tests/zshrc` 187 / `tests/tmux` 56 / `tests/bin` 45 /
 残り 7 ディレクトリで 33。`tests/zshrc` の中は **`av1ify` 124 + `concat` 56 = 96%**。
 
-⚠️ **待ちの実体はエンコードではない**。av1ify / concat のテストは ffmpeg / ffprobe を
+🚨 **待ちの実体はエンコードではない**。av1ify / concat のテストは ffmpeg / ffprobe を
 **shell script のモック**に差し替えており (`tests/zshrc/*/test_helper.sh` が `$TEST_TMP/mock_bin` を
 PATH 先頭に置く)、時間はモック内の `grep` 連打による **fork のオーバーヘッド**で積まれる
 (モック ffprobe は 1 呼び出しで最大 24 本の `grep -q` を回す)。
@@ -47,7 +47,7 @@ repo は heavy 群の並列実行入口を既に持っている。**実測 35 �
 make test-lint test-runtime-rest test-discovered-heavy test-src   # 約 4 分
 ```
 
-⚠️ これは `make test` と**同じ集合を並べ替えたもの**ではない (CI の heavy/rest 分割に沿う)。
+🚨 これは `make test` と**同じ集合を並べ替えたもの**ではない (CI の heavy/rest 分割に沿う)。
 差分の正本は Makefile の `CI_HEAVY_TEST_DIRS` / `CI_HEAVY_PRUNE`。
 
 ## 何をいつ回すか
@@ -56,12 +56,12 @@ make test-lint test-runtime-rest test-discovered-heavy test-src   # 約 4 分
 - **`make test-changed PATHS="<触ったファイル>"` で代替してよいのは、時間が取れないときだけ**。
   その場合は**全体を回していない事実を報告に書く** (「docs だけだから省いた」を前例として
   積まない。issue 185 項目 4 / issue 188)
-- ⚠️ **`test-lint` の発見式ゲート 6 本 (`check_*.sh`) は `test-changed` からは一度も入らない**
+- 🚨 **`test-lint` の発見式ゲート 6 本 (`check_*.sh`) は `test-changed` からは一度も入らない**
   (写像に無い。実測 2026-09-03: `.github/workflows/tests.yml` を渡しても
   `test-workflow-action-pins` は入らず、`scripts/check_skip_exit_code.sh` を渡してもそれ自身は
   走らない)。**shell / テストスクリプト / workflow / Makefile / CI の構造を触ったら
   `make test-lint` を明示的に回す**
-- ⚠️ 写像の穴として既知: `_claude/settings.json` は `*.json` に先勝ちして `test-json` だけになり
+- 🚨 写像の穴として既知: `_claude/settings.json` は `*.json` に先勝ちして `test-json` だけになり
   `tests/claude` へ落ちない / `_claude/rules-rationale/*.md` は「テスト対象なし」になる
   (issue 188 の発火元がまさに rules-rationale の新設だった)
 
@@ -84,7 +84,7 @@ make test-lint test-runtime-rest test-discovered-heavy test-src   # 約 4 分
   `source "${0:A:h}/test_helper.sh"` が bash で `/test_helper.sh` に潰れて helper が 1 行も走らず、
   `TEST_TMP` が空のまま `cd "/inj2"` が失敗して repo root に fixture 3 件が残った。
   `make test-cd-rc` (scripts/check_cd_rc_in_tests.sh) が落とす。例外は行内 `cd-rc: allow` + 理由。
-  ⚠️ **カウントを手で確かめるときは `/usr/bin/grep`** を使う (Claude Code の grep は ugrep 経由で
+  🚨 **カウントを手で確かめるときは `/usr/bin/grep`** を使う (Claude Code の grep は ugrep 経由で
   `$` を行末アンカーと解釈し、`cd "$TEST_DIR"` を 0 件と返す)
 
 ## platform (macOS のみ)
@@ -96,7 +96,7 @@ userland は同じ。かつて「手元 BSD / CI GNU」の差を潰すために�
 (例: 素の `stat -f %m` は macOS では正しいのに、あの検査は GNU フォールバックを要求していた)。
 
 - BSD の書き方で構わない。「GNU でも動くように」だけを理由に分岐を足さない
-- ⚠️ **残っているのは「版」の差**。CI の `/bin/bash` は 3.2、開発機は Homebrew の 5 系。
+- 🚨 **残っているのは「版」の差**。CI の `/bin/bash` は 3.2、開発機は Homebrew の 5 系。
   workflow が brew の bash を PATH 先頭に出して揃えている (下の節)
 
 ## tmux を触るテスト

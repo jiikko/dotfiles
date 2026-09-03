@@ -58,7 +58,7 @@ func newModel(label string, now time.Time, jobs []job) *model {
 }
 
 // startAt は最初に開く画面を選ぶ。取消のあと一覧へ戻すために呼び出し側 (シェル) が指定する。
-// ⚠️ 予約が 0 件のときは一覧を開かない (menuItems の enabled と同じ判断。空の一覧を見せない)。
+// 🚨 予約が 0 件のときは一覧を開かない (menuItems の enabled と同じ判断。空の一覧を見せない)。
 func (m *model) startAt(name string) {
 	if name == "pick" && len(m.jobs) > 0 {
 		m.screen = screenPick
@@ -86,7 +86,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.quit = true
 		return m, tea.Quit
 	case tea.PasteMsg:
-		// ⚠️ ペーストは KeyPressMsg では来ない (ブラケットペーストは既定で有効)。捨てると
+		// 🚨 ペーストは KeyPressMsg では来ない (ブラケットペーストは既定で有効)。捨てると
 		//    「あとで送るコマンドを貼る」がまったく効かない (敵対的レビュー 2026-08-28)
 		if m.screen == screenForm && !m.toast.shown {
 			m.form.paste(msg.Content)
@@ -126,7 +126,7 @@ func (m *model) handleKey(k tea.KeyPressMsg) tea.Cmd {
 				m.quit = true
 				return tea.Quit
 			}
-			// ⚠️ prefix に続く別のキーは「prefix 自身」も含めて処理し直す。飲み込むと、prefix が
+			// 🚨 prefix に続く別のキーは「prefix 自身」も含めて処理し直す。飲み込むと、prefix が
 			//    C-b の環境で入力欄の C-b (左移動) が効かなくなる (敵対的レビュー 2026-08-28)
 			m.dispatch(m.togglePrefix, "")
 		} else if key == m.togglePrefix {
@@ -174,7 +174,7 @@ func (m *model) keyMenu(key string) tea.Cmd {
 }
 
 // menuItem はメニューの 1 項目。ラベル・遷移先・選べるかを 1 箇所に持つ。
-// ⚠️ 以前はこの 3 つが keyMenu (index 0/1 の分岐) / menuItems (ラベル) / viewMenu (灰色表示) に
+// 🚨 以前はこの 3 つが keyMenu (index 0/1 の分岐) / menuItems (ラベル) / viewMenu (灰色表示) に
 //
 //	散っていて、項目を足すと 3 箇所を直す必要があった (直し漏れると「灰色なのに入れる」等になる)。
 type menuItem struct {
@@ -198,7 +198,7 @@ func (m *model) submitNow() time.Time { return m.nowFn() }
 func (m *model) keyForm(key, text string) tea.Cmd {
 	switch key {
 	case "esc":
-		// ⚠️ 入力欄で Esc を押したら「一つ前の欄へ戻る」。いきなり画面を降りると、打ち間違いを
+		// 🚨 入力欄で Esc を押したら「一つ前の欄へ戻る」。いきなり画面を降りると、打ち間違いを
 		//    直したいだけのときに入力ごと畳まれる (ユーザー要望 2026-08-28)。
 		//    先頭の欄 (いつ) まで戻ってから押したときだけメニューへ降りる
 		if m.form.focus != focusWhen {
@@ -216,7 +216,7 @@ func (m *model) keyForm(key, text string) tea.Cmd {
 			}
 			return nil
 		}
-		// ⚠️ 確定は「押した瞬間の今」で計算する (起動時の now で計算すると前倒しになる)
+		// 🚨 確定は「押した瞬間の今」で計算する (起動時の now で計算すると前倒しになる)
 		at, txt, err := m.form.submit(m.submitNow())
 		if err != "" {
 			m.form.err = err
@@ -302,7 +302,7 @@ func (m *model) viewPick() string {
 		remW = max(remW, ansi.StringWidth(formatRemaining(j.at.Sub(m.now))))
 		labelW = max(labelW, ansi.StringWidth(j.label))
 	}
-	// ⚠️ 送り先の表示名は #{window_name} で、長さに上限が無い。桁揃えに使うと 1 件の長い名前が
+	// 🚨 送り先の表示名は #{window_name} で、長さに上限が無い。桁揃えに使うと 1 件の長い名前が
 	//    全行を押し出し、文字列の列が画面外へ消える (= 何を取り消すか読めないまま確認へ進む)
 	labelW = min(labelW, maxInt(m.width/3, 8))
 	textW := maxInt(m.width-2-remW-labelW-4, 4)

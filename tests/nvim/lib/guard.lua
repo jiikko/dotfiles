@@ -12,7 +12,7 @@
 --     ... check 本体。require もこの中に書く (外に置くと throw が exit 0 に化ける) ...
 --   end)
 --
--- ⚠️ 呼び出し側 shell は log の grep backstop (lib/check_log.sh の tt_nvim_log_backstop)
+-- 🚨 呼び出し側 shell は log の grep backstop (lib/check_log.sh の tt_nvim_log_backstop)
 --    も必ず併用すること。cquit 経路をすり抜けて stderr にだけ出るエラー
 --    (ftplugin/autocmd 内のエラー等は "Error detected while processing" で exit 0) の最終防衛線。
 return function(label, fn)

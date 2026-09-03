@@ -6,7 +6,7 @@
 関連: `src/doctor/runner/runner_test.go` の `TestExecKillsGrandchildOnCancel` /
 `src/doctor/runner/runner.go` の `cmd.Cancel` / `_claude/rules/avoid-wall-clock-assertions.md`
 
-## ⚠️ 起票時の主張は誤りだった (2026-09-03 に訂正)
+## 🚨 起票時の主張は誤りだった (2026-09-03 に訂正)
 
 初版は「**無条件で緑になる false green**」と書いたが、**反証レビューが production 側の変異で
 red を実証**した。私も再現した:
@@ -56,7 +56,7 @@ commit `?`。
 待つ (= 確かに生まれた) → cancel → その pid が死ぬまで待つ。孫が生まれなければ pid が読めず、
 合格でも不合格でもなく **判定不能として落ちる**。
 
-### ⚠️ 書き直しの途中で旧版より弱いテストを作りかけた
+### 🚨 書き直しの途中で旧版より弱いテストを作りかけた
 
 孫の pid を `(echo $$ …)` で取っていたが、**サブシェルの中の `$$` は POSIX では起動シェル
 (= 直接の子) の pid** で、孫の pid ではない (実測: 60619 が親 sh、孫は 60621)。そのため
@@ -73,7 +73,7 @@ cmd.Cancel を既定へ戻す      FAIL
 孫を作らない形             判定不能として FAIL (緑にしない)
 ```
 
-⚠️ 起票時の「無条件で緑になる false green」は**反証レビューが否定した**もので、本文は
+🚨 起票時の「無条件で緑になる false green」は**反証レビューが否定した**もので、本文は
 その訂正を反映済み (production の変異では現に red になる)。残った本物の弱点
 「孫が fork される前に cancel が届くと vacuous」だけを直した。
 

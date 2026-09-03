@@ -628,7 +628,7 @@ def main() -> None:
                   f"(サイズ0 {res.zero_chunks}, 重複除去 {res.dup_chunks}, "
                   f"併合 {res.frames - muxed_frames})")
             if offset_sec > 1.0:
-                print(f"  ⚠ 補正が {offset_sec:.1f}s と大きく、スロットの分布によっては"
+                print(f"  🚨 補正が {offset_sec:.1f}s と大きく、スロットの分布によっては"
                       "中間部で音ズレが残る可能性があります", file=sys.stderr)
 
         # --- mux pass 2: 音声と結合 ---

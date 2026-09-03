@@ -31,7 +31,7 @@ runs:
         key: bench-prev-${{ inputs.name }}-${{ github.run_id }}
         restore-keys: bench-prev-${{ inputs.name }}-
 
-    # ⚠️ bash の版は呼び出し側の job が ./.github/actions/ensure-toolchain で揃えている
+    # 🚨 bash の版は呼び出し側の job が ./.github/actions/ensure-toolchain で揃えている
     # (issue 141 で集約)。ここには置かない — 二重に brew install することになる。
     # 予算 checker 側にも bash 4+ のガードがあるので、漏れたら loud に落ちる。
     - name: Bench ${{ inputs.name }} (budget check)

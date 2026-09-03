@@ -44,7 +44,7 @@ _, _ = iss.ReadBody()
    ファイルサイズ未満」を assert する
 2. あるいは `scanIssues` を通した後の総 read バイト数を返す debug seam
 
-⚠️ seam を足すこと自体が production を複雑にするので、**入れるなら 1 箇所に閉じる**こと。
+🚨 seam を足すこと自体が production を複雑にするので、**入れるなら 1 箇所に閉じる**こと。
 `refuse-low-value-coverage.md` の「テストのために production の複雑性を上げる」に
 該当しないかを着手時に評価する (この不変条件は 050 で実測 2〜4 倍の差があったので
 「高価値」側だが、seam の設計次第では見送りもありうる)。

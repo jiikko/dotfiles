@@ -43,14 +43,14 @@ type worktreeRow struct {
 
 // dispPath は画面・通知に出す用のパス (rename は "元 → 先")。
 //
-// ⚠️ git へ渡すのは必ず path / orig / pathspecs() の生の方。表示用と同一性を分けているのは、
+// 🚨 git へ渡すのは必ず path / orig / pathspecs() の生の方。表示用と同一性を分けているのは、
 // 無害化した文字列で git を叩くとファイルを見失う (最悪、別のファイルを操作する) ため。
 //
 // なぜ無害化が要るか: POSIX のファイル名は / と NUL 以外の任意バイトを許し、-z の git status は
 // クォートせず生のまま返す。第三者ブランチに ESC 入りの名前のファイルが 1 つあるだけで、
 // status viewer を開いた瞬間に端末のタイトル書き換え・画面破壊・OSC52 が発火しうる。
 //
-// ⚠️ 既知の限界: 無害化は「落とす」方式なので単射でない。制御文字だけが違う 2 ファイル
+// 🚨 既知の限界: 無害化は「落とす」方式なので単射でない。制御文字だけが違う 2 ファイル
 // (notes.txt と notes<0x01>.txt) は同じ行に見え、この画面は破壊的操作 (X で変更を捨てる /
 // untracked の削除) を持つため「区別できないまま捨てる」余地が残る。エスケープシーケンスに
 // よる衝突は導入子だけ落とす形にして解消済み (termsafe.skipEscape) で、残るのは単独の制御
@@ -74,14 +74,14 @@ type worktreeStatus struct {
 	// root は repo root の絶対パス ("" = 取得失敗)。rows のパスは root 相対なので、
 	// ファイルを直接読む経路 (untracked のプレビュー) はここと結合して絶対パスにする。
 	root string
-	// skipped は解釈できずに捨てたレコード数。⚠️ 画面に出すために数える: 捨てるだけだと
+	// skipped は解釈できずに捨てたレコード数。🚨 画面に出すために数える: 捨てるだけだと
 	// 「git の出力が読めなかった」が「変更なし = クリーン」と同じ絵になり、変更を見せるための
 	// 画面が黙って嘘をつく (沈黙を成功にしない)。
 	skipped int
 }
 
 // conflictCodes は「両者が触った」= 操作させない XY の組 (git status の man の unmerged 一覧)。
-// ⚠️ AA / DD のように X と Y が同じ文字でも conflict なので、片側だけ見て判定してはならない。
+// 🚨 AA / DD のように X と Y が同じ文字でも conflict なので、片側だけ見て判定してはならない。
 var conflictCodes = map[string]bool{
 	"DD": true, "AU": true, "UD": true, "UA": true, "DU": true, "AA": true, "UU": true,
 }
@@ -300,7 +300,7 @@ func (r worktreeRow) paths() []string {
 
 // pathspecs は git へ渡す形のパス列。
 //
-// ⚠️ `:(top,literal)` を必ず付ける。両方に理由がある:
+// 🚨 `:(top,literal)` を必ず付ける。両方に理由がある:
 //
 //   - **top**: `git status` が返すパスは repo root 相対だが、pathspec は **cwd 相対**に
 //     解釈される。glogx は tmux popup から任意のサブディレクトリで起動される

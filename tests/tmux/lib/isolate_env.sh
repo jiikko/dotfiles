@@ -16,12 +16,12 @@ mkdir -p "$HOME" "$XDG_DATA_HOME" "$TT_DEBOUNCE_STATE_DIR"
 # 実際に踏んだ (tests/tmux/test_mark_seen.sh の 5 件)。テストが直接呼ぶ tmux だけでなく、
 # hook が内部で起動する tmux クライアントにも効かせる必要があるので env で渡す。
 #
-# ⚠️ 名前の表記ゆれを畳んでから照合する: glibc の locale -a は `C.utf8` (小文字・ハイフン無し)、
+# 🚨 名前の表記ゆれを畳んでから照合する: glibc の locale -a は `C.utf8` (小文字・ハイフン無し)、
 #   macOS は `C.UTF-8` と出す。`C.UTF-8` 決め打ちだと Linux CI で一致せず素通りする (実測)。
-# ⚠️ `locale -a | grep -q` にしないこと: grep が先に抜けて locale が SIGPIPE で死に、
+# 🚨 `locale -a | grep -q` にしないこと: grep が先に抜けて locale が SIGPIPE で死に、
 #   pipefail 下では一致しても偽になる (実測)。一覧は変数に取ってから照合する。
 _avail_locales="$(locale -a 2>/dev/null)" || _avail_locales=''
-# 表記ゆれを畳む鍵を作る (小文字化 + 区切り除去)。⚠️ tr -d のセットは `-` を末尾に置くこと
+# 表記ゆれを畳む鍵を作る (小文字化 + 区切り除去)。🚨 tr -d のセットは `-` を末尾に置くこと
 # (先頭だと BSD tr がオプションと解釈して失敗し、鍵が空になって全候補が一致してしまう)
 _lockey() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d '_-'; }
 _found=''
@@ -38,7 +38,7 @@ $_avail_locales
 EOF_LOCALES
   [ -n "$_found" ] && break
 done
-# ⚠️ 判定に LC_ALL の中身を使わないこと: 外側から非 UTF-8 (POSIX 等) が来ていると
+# 🚨 判定に LC_ALL の中身を使わないこと: 外側から非 UTF-8 (POSIX 等) が来ていると
 # 「もう決まった」と誤読して次の候補を試さなくなる。専用のフラグで見る
 if [ -n "$_found" ]; then
   export LC_ALL="$_found" LANG="$_found"

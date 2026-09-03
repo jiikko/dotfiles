@@ -39,7 +39,7 @@ func realRepoBrowse(t *testing.T, subjects ...string) (m *browseModel, dir strin
 9 行 → 1 行 × 12 で **約 96 行減** (756 → 約 660 行)。減るのは「repo を作って model を組む」
 という前提の準備だけで、各テストの主張 (指紋・アンカー行・世代の弾き) は 1 行も動かない。
 
-⚠️ **3 変数すべてを返すこと**。`dir` は `commitLines(t, dir, 9, "c5")`、`opts` は
+🚨 **3 変数すべてを返すこと**。`dir` は `commitLines(t, dir, 9, "c5")`、`opts` は
 `BuildFingerprintArgs(opts)` / `LoadCommits` で個別に使われている。1 つでも隠すと
 呼び出し側が結局自前で組み直す。`newTempRepo` は `t.Chdir` の副作用を持つので**呼び出し順を変えない**。
 
@@ -59,7 +59,7 @@ os.WriteFile(path, data, 0o600)
 **抽出後の姿**: `func writeDoctorSnapshot(t *testing.T, sn doctorSnapshot)`。
 10 行 → 1 行 × 8 で **約 72 行減** (1,742 → 約 1,670 行)。既存の 2 クロージャもこれに置き換わる。
 
-⚠️ `TestDoctorCacheCorruptAndAtomic` だけは**壊れた JSON** (`"{broken"`) を書くので
+🚨 `TestDoctorCacheCorruptAndAtomic` だけは**壊れた JSON** (`"{broken"`) を書くので
 `doctorSnapshot` を受ける版では表現できない。対象外に残すか、`writeDoctorSnapshotRaw(t, []byte)`
 を別に置いて上を委譲させる。同テストは `os.Chmod(dir, 0o500)` で書けないディレクトリを作る
 前提も持つので、ヘルパー側の無条件 `MkdirAll` が邪魔にならないか確認する。
@@ -82,7 +82,7 @@ os.WriteFile(path, data, 0o600)
   パッケージを増やすのは複雑性が上がる方向
 - **`newTestBrowse` / `benchBrowse` / `newFramedBrowse` の三つ子**: 「フレームを踏む/踏まない」
   「fast-path を通る/通らない」という測定意図の差がコメントで明示済み。統合すると片方の前提が黙って壊れる
-- ⚠️ **`claude_version_test.go` が `writeVersionCache` (`tui_actions_test.go` に既存) を使っていない**
+- 🚨 **`claude_version_test.go` が `writeVersionCache` (`tui_actions_test.go` に既存) を使っていない**
   点は寄せられそうに見えるが、前者は `path` 自体を `loadClaudeVersionCache(path, ...)` に渡すので
   path を返さない現行シグネチャでは寄せられない。シグネチャ変更の波及に対して利得が小さい
 
@@ -97,7 +97,7 @@ os.WriteFile(path, data, 0o600)
 
 - [ ] 候補 1 / 2 を抽出し、各テストの主張 (assert) が 1 行も変わっていないことを diff で確認する
 - [ ] 抽出後に `go test ./...` が green
-- [ ] ⚠️ 印の注意点 (3 変数を返す / `t.Chdir` の順 / 壊れた JSON のケース) を踏んでいないか確認する
+- [ ] 🚨 印の注意点 (3 変数を返す / `t.Chdir` の順 / 壊れた JSON のケース) を踏んでいないか確認する
 
 ## 対応 (2026-09-03、後続セッション)
 
@@ -128,7 +128,7 @@ os.WriteFile(path, data, 0o600)
   ヘルパーは `commits` を返さない — 返すと引数が 4 つになり、使う側が 3 箇所しか無い
 - **候補 2 の 8 箇所のうち寄せられたのは 7 箇所**。残る 1 箇所 (`TestDoctorCacheCorruptAndAtomic` /
   `os.Remove` を使う箇所) は **path 自体が要る**ので `doctorSnapshotPath()` の直接呼び出しを残した
-  (issue 本文の ⚠️ 注記どおり)。`writeDoctorSnapshotRaw` は壊れた JSON 用に用意したが、
+  (issue 本文の 🚨 注記どおり)。`writeDoctorSnapshotRaw` は壊れた JSON 用に用意したが、
   現状の呼び出し側は `writeDoctorSnapshot` 経由のみ
 - **行数の削減は issue の見積もり (96 / 72 行) より小さい** (56 / 26 行)。ヘルパー本体
   (32 行 + 14 行) が同じファイルに入るため。**削減の主目的は行数ではなく、各テストの
@@ -138,5 +138,5 @@ os.WriteFile(path, data, 0o600)
 
 - [x] 候補 1 / 2 を抽出し、各テストの主張が変わっていないことを確認した (上表)
 - [x] 抽出後に `go test ./...` green / `make -C src/glogx lint` 0 issues
-- [x] ⚠️ 印の注意点を踏んでいない: 3 変数とも返す / `newTempRepo` の `t.Chdir` より後に
+- [x] 🚨 印の注意点を踏んでいない: 3 変数とも返す / `newTempRepo` の `t.Chdir` より後に
       `LoadCommits` を呼ぶ順序を維持 / 壊れた JSON のケースは寄せずに残した

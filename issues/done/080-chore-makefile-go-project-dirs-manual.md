@@ -54,6 +54,6 @@
 
 ダミーは確認後に削除済み (`src/` は 4 プロジェクトのまま)。
 
-⚠️ **CI 側の非対称は残っている**: `.github/workflows/src_<project>.yml` (caller) は今も手動作成で、
+🚨 **CI 側の非対称は残っている**: `.github/workflows/src_<project>.yml` (caller) は今も手動作成で、
 新しい `src/foo` を切って yml を作り忘れると **CI では回らない** (ローカルの `make test` では
 回るようになった)。この issue の範囲外なので別途。

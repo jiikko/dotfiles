@@ -46,7 +46,7 @@ tt_on_default_server || exit 0
 
 # 発行元の同定: argv に「tmux ... kill-server/kill-session」を持つプロセスを ps から探す。
 # 自分のプロセスツリーとサーバ本体は除外する。複数 (稀) は先頭 3 件まで。
-# ⚠️ 実行ファイル名は basename で判定する。`$2 == "tmux"` の厳密一致だとフルパス起動
+# 🚨 実行ファイル名は basename で判定する。`$2 == "tmux"` の厳密一致だとフルパス起動
 #   (/opt/homebrew/bin/tmux kill-server。スクリプト経由では普通) を取り逃し、この装置の
 #   主目的である「誰が殺したか」が not-found になる (2026-07-30 セルフレビューで検出)。
 find_issuers() {
@@ -120,7 +120,7 @@ if [ "$do_save" -eq 1 ]; then
     if kill -0 "$save_pid" 2>/dev/null; then
       save_result=timeout   # 保存は走ったまま kill へ進む (部分保存は退行ガードが弾く)
     else
-      # ⚠️ 終了コードを必ず収集する。捨てると「wrapper がガードで reject した (= 何も保存
+      # 🚨 終了コードを必ず収集する。捨てると「wrapper がガードで reject した (= 何も保存
       # されていない)」ケースまで save=ok と記録され、ログが「保存できたつもり」の嘘をつく
       # (レビューで実証: @tt-restore-in-progress 残置中の kill-server が save=ok になった)。
       wait "$save_pid"; save_rc=$?

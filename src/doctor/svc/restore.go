@@ -20,7 +20,7 @@ import (
 //   - その材料 (Label / Domain / PlistPath) は形を検査し、通らない Finding ごと落とす
 //   - 表示だけの自由文 (Reasons など) は制御文字を落とす (UI の行構造を偽装させない)
 //
-// ⚠️ ここが保証するのは**表示とコピーの健全性**だけで、「その plist が実在し、消してよいか」は
+// 🚨 ここが保証するのは**表示とコピーの健全性**だけで、「その plist が実在し、消してよいか」は
 // 何も保証しない。停止・削除を実装するときは必ず再走査した Report を対象にする
 // (issues/148 の ④ の不変条件)。
 
@@ -71,7 +71,7 @@ func validFinding(f Finding) bool {
 	return validPlistPath(f.PlistPath)
 }
 
-// validPlistPath は plist のパスとして許す形。⚠️ 文字種は絞らない (実在の plist 名に何が入るかは
+// validPlistPath は plist のパスとして許す形。🚨 文字種は絞らない (実在の plist 名に何が入るかは
 // 決められない) ので、**コマンド行へ入れる側が必ず ShellQuote を通す**ことが前提。
 func validPlistPath(p string) bool {
 	if !filepath.IsAbs(p) || p != filepath.Clean(p) || !strings.HasSuffix(p, ".plist") {
@@ -89,7 +89,7 @@ func validPlistPath(p string) bool {
 func cleanText(s string) string {
 	var b strings.Builder
 	for _, r := range s {
-		// ⚠️ タブは通さない。unicode.IsPrint はタブを非印字として弾くが、以前ここで明示的に
+		// 🚨 タブは通さない。unicode.IsPrint はタブを非印字として弾くが、以前ここで明示的に
 		// 通していた。dispWidth はタブを幅 0 と数えるのに端末は次のタブ位置まで進めるので、
 		// 幅を数えるテストを素通りしたまま画面の枠を壊せる (敵対レビュー 2026-09-03)
 		if unicode.IsPrint(r) {

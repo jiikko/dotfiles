@@ -90,7 +90,7 @@ ok "較正器 (glogx_calib) は時間のみ emit"
 # 上書きし、**予算ゲートが別の benchmark の数字で判定する** (数値は出るので気づけない)。
 # issue 051 の敵対的レビュー R1-5 が直した形だが、それを守るテストが無かった。
 #
-# ⚠️ benchmark 名はここに列挙せず grep で導出する。列挙すると、兄弟を足したときに
+# 🚨 benchmark 名はここに列挙せず grep で導出する。列挙すると、兄弟を足したときに
 #   追随を忘れる = まさにこの検査が守りたい事故を、検査自身が踏む。
 SRC_DIR="$SCRIPT_DIR/../../src/glogx"
 all_names=$(grep -h '^func Benchmark' "$SRC_DIR"/*_test.go |

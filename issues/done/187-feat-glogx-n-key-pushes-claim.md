@@ -46,7 +46,7 @@ Claude 側は PostToolUse hook が「単独 commit して push したか」を�
 | B | `n` は今のまま。目印を付けた直後にトーストで「`b` で claim を push」と案内 | 既存キーに乗る。押し忘れる |
 | C | `n` は今のまま + `N`? のような別キーで「claim を push」 | 明示的。キーが 1 つ増える (`N` は採番コピーで使用中) |
 
-⚠️ **`n` は toggle** (目印を外す操作でもある)。外した側も push する必要がある
+🚨 **`n` は toggle** (目印を外す操作でもある)。外した側も push する必要がある
 (claim の解除が他マシンへ伝わらないと、誰も着手していない issue が claim 済みに見え続ける)。
 
 ### commit は claim だけを含めること
@@ -67,7 +67,7 @@ pathspec に書く。viewer から叩く以上、作業ツリーには無関係�
   実装前に整理が要る** — 「claim だけ push」は技術的に不可能で、実際には
   「claim を積んでからブランチごと push」になる
 
-⚠️ 最後の項目は規範 (`claim-issue-in-next-and-push.md`) の書き方の問題でもある。
+🚨 最後の項目は規範 (`claim-issue-in-next-and-push.md`) の書き方の問題でもある。
 「claim の移動だけを commit する」は正しいが、「その commit だけを push する」は
 **ブランチに他の未 push commit があると成立しない**。実装時にどちらを直すか決める。
 

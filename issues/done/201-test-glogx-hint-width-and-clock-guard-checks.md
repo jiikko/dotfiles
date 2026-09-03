@@ -43,11 +43,11 @@ hint 幅のテストは `issues_view_test.go:TestIssuesViewHintFitsPopupWidth` �
    「列挙すると兄弟を足したときに追随を忘れる = この検査が守りたい事故を検査自身が踏む」を適用)
 3. **走査 0 件は fail** (同じく 115 / 117 の規律)
 
-⚠️ **偽陰性は残る**: `m.spinner()` の連結や `⚠ ghErr` の前置のような**動的合成は測れない**。
+🚨 **偽陰性は残る**: `m.spinner()` の連結や `🚨 ghErr` の前置のような**動的合成は測れない**。
 静的リテラルだけで上記 3 件が落ちるので費用対効果は成立するが、「これで hint の幅は保証された」
 とは書かないこと。
 
-⚠️ **検査を入れた時点で 3 箇所が red になる**ので、`fitHintItems` (155 で作った既存イディオム) へ
+🚨 **検査を入れた時点で 3 箇所が red になる**ので、`fitHintItems` (155 で作った既存イディオム) へ
 寄せる実装作業とセットで進める。
 
 ## 候補 2: 永続キャッシュの鮮度判定に「負の経過 (時計の巻き戻し)」ガードを強制する
@@ -82,7 +82,7 @@ doctor_cache.go:320    age := now.Sub(c.ScannedAt); age > doctorStaleAfter  // �
 - 除外は行内コメント `// clock: elapsed-only` (waitdelay の `subproc: no-waitdelay` と同じ作法)
 - 走査 0 件は fail
 
-⚠️ **比較先の定数名で絞ることが要点**。素朴に `.Sub(` 全部を対象にすると、アニメーション経過
+🚨 **比較先の定数名で絞ることが要点**。素朴に `.Sub(` 全部を対象にすると、アニメーション経過
 (`status_view.go` / `issues_view.go` / `zoom.go` / `issues_drawer.go` の 11 箇所以上) が全部
 引っかかる。これらは `statusOpenDuration` / `appZoomDuration` など `Duration` 系なので、
 定数名で絞れば自動的に対象外になる。`tui.go` の `keyRepeatGuard` (同一プロセス内なので
@@ -159,7 +159,7 @@ doctor_cache.go:320    age := now.Sub(c.ScannedAt); age > doctorStaleAfter  // �
 (「N 日前」を負の数で出さず「診断時刻が未来。時計を確認してください」)。黙って注記を落とすと
 「新しい診断」に見えるため。
 
-### ⚠️ テストを書く側で 3 回間違えた (すべて変異検証が捕まえた)
+### 🚨 テストを書く側で 3 回間違えた (すべて変異検証が捕まえた)
 
 1. **走査テストが生ソースを見ており、コメント内の `age < 0` をガードと誤認**していた。
    コードから条件を消しても green だった (変異 3 / 4 が素通り)。コメントを除いてから

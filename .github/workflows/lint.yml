@@ -24,7 +24,7 @@ concurrency:
 jobs:
   dotfiles-lint:
     # 対象は macOS のみ (issue 133)。Linux はサポート対象外なので CI もそちらへ揃える。
-    # ⚠️ `macos-latest` にしない (ラベルの移動で誰の commit も無しに環境が変わる)。開発機が
+    # 🚨 `macos-latest` にしない (ラベルの移動で誰の commit も無しに環境が変わる)。開発機が
     #    darwin24 = macOS 15 なので 15 に置く。tests.yml と同じ規律。
     runs-on: macos-15
     # macOS runner は VM 起動が遅い。ubuntu 時代の 5 分では足りないので広げる (実測して詰めること)
@@ -43,12 +43,12 @@ jobs:
       # 「手元 green なのに CI 赤」を生んだ (実例 2026-07-25: `[ -n "$x" ] && y || true` が
       # 0.9 では SC2015、0.11 では無指摘)。runner を macOS へ移した今も、brew 任せにすると
       # 版が黙って動くので pin は維持する。
-      # ⚠️ 手元の brew shellcheck を上げたらここも同じ版へ更新すること (差が戻ると同じ罠が再発する)。
+      # 🚨 手元の brew shellcheck を上げたらここも同じ版へ更新すること (差が戻ると同じ罠が再発する)。
       - name: Install shellcheck (pinned)
         env:
           SHELLCHECK_VERSION: v0.11.0
         run: |
-          # ⚠️ asset 名を決め打ちにしないこと (setup-nvim と同じ罠)。runner を macOS へ移した
+          # 🚨 asset 名を決め打ちにしないこと (setup-nvim と同じ罠)。runner を macOS へ移した
           # ので Linux 決め打ちだと 404 の HTML を掴み、後段の tar が分かりにくく死ぬ。
           case "$(uname -s)/$(uname -m)" in
             Darwin/arm64)  sc_asset="darwin.aarch64" ;;
@@ -66,11 +66,11 @@ jobs:
 
       # actionlint は apt に無いため公式リリースバイナリを取得する (test-actionlint が使う。
       # shellcheck が PATH にあると run: ブロックのシェル検査も有効になる)。
-      # ⚠️ バージョンは固定する。latest 追従だと上流が検査を追加/厳格化した日に、手元では通るのに
+      # 🚨 バージョンは固定する。latest 追従だと上流が検査を追加/厳格化した日に、手元では通るのに
       # CI だけ赤くなる (shellcheck で実際に起きた食い違いと同型。上の pin のコメント参照)。
       # 固定したので gh api による version 解決 (HTML エラーページ対策の 3 回リトライと空 ver
       # ガード) も不要になった。API 依存が消えた分、レート制限や障害でも落ちない。
-      # ⚠️ 手元の actionlint を上げたらここも同じ版へ更新すること (差が戻ると同じ罠が再発する)。
+      # 🚨 手元の actionlint を上げたらここも同じ版へ更新すること (差が戻ると同じ罠が再発する)。
       # tag は v 付き / 配布ファイル名は v なしなので、変数は v なしで持ち URL 側で付ける。
       - name: Install actionlint (pinned)
         env:
@@ -87,7 +87,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/actionlint"
           tar xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP/actionlint" actionlint
           echo "$RUNNER_TEMP/actionlint" >> "$GITHUB_PATH"
-          # ⚠️ --version を出すだけでは pin の証拠にならない。値を突き合わせる
+          # 🚨 --version を出すだけでは pin の証拠にならない。値を突き合わせる
           # (取得したバイナリが別版だった / PATH 解決が効いていない、を同時に捕まえる)。
           got=$("$RUNNER_TEMP/actionlint/actionlint" --version | head -1)
           [ "$got" = "$ACTIONLINT_VERSION" ] \

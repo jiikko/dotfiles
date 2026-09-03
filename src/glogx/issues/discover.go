@@ -37,7 +37,7 @@ var skipDirs = map[string]bool{
 func RepoRoot(cwd string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), subproc.GitOpTimeout)
 	defer cancel()
-	// ⚠️ subproc.CommandContext を使うこと (素の exec.CommandContext だと WaitDelay が抜ける)。
+	// 🚨 subproc.CommandContext を使うこと (素の exec.CommandContext だと WaitDelay が抜ける)。
 	// 下の Output() は os.Pipe と copy goroutine を作るので、ctx の deadline だけでは
 	// 「子が残した孫がパイプを握って Wait が戻らない」形を防げない (issue 105)。
 	cmd := subproc.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
@@ -88,7 +88,7 @@ func FindDirs(root string) []string {
 // .md が 1 つでもあるか) を返す。全 issue が done/ に片付いた状態でも拾えるようサブ
 // ディレクトリまで見る。
 func hasMarkdown(dir string) bool {
-	// ⚠️ ディレクトリ自体が symlink なら対象外にする。ここは FindDirs が候補を採用するかの
+	// 🚨 ディレクトリ自体が symlink なら対象外にする。ここは FindDirs が候補を採用するかの
 	// 唯一のゲートなので、ファイル単位の symlink 拒否 (isIssueFile) だけでは塞げない穴を
 	// ここで閉じる: `issues -> /Users/victim/Documents` を 1 本足した PR を checkout すると、
 	// repo 外の .md が一覧・本文として読めてしまう (実機で再現確認済み)。
@@ -129,7 +129,7 @@ func hasMarkdown(dir string) bool {
 // isMarkdown は表示対象のファイル名か。実測では issue ファイルは 405/405 が .md で、
 // .md 以外は audit-log (拡張子なし TSV) と .gitkeep だけだった。
 //
-// ⚠️ 走査で拾うかの判定には isIssueFile を使うこと (名前だけでは symlink を弾けない)。
+// 🚨 走査で拾うかの判定には isIssueFile を使うこと (名前だけでは symlink を弾けない)。
 func isMarkdown(name string) bool {
 	return strings.EqualFold(filepath.Ext(name), ".md")
 }
@@ -137,7 +137,7 @@ func isMarkdown(name string) bool {
 // isIssueFile は走査で issue として拾うエントリか。判定を DirEntry 受け取りに揃えてあるのは、
 // 名前だけの判定 (isMarkdown) を直接使うと symlink チェックを書き忘れられるため。
 //
-// ⚠️ symlink は必ず弾く: os.DirEntry.IsDir() は symlink に false を返すので、拡張子だけ見ると
+// 🚨 symlink は必ず弾く: os.DirEntry.IsDir() は symlink に false を返すので、拡張子だけ見ると
 // 通常ファイルとして通り、ReadBody の os.ReadFile がリンク先を辿って中身を本文として表示する。
 // つまり PR に `issues/999-innocuous.md -> ~/.ssh/id_rsa` を 1 本入れておくだけで、その
 // ブランチを checkout した人の画面にリンク先の中身が出る (実機で再現確認済み)。

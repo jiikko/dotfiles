@@ -11,7 +11,7 @@ package main
 //	kill -USR1 $pid   # heap profile + MemStats 1 行 (直前に GC。live set を測るため)
 //	kill -USR2 $pid   # goroutine profile (本数と内訳)
 //
-// ⚠️ SIGUSR1 は runtime.GC() を伴うので、これを撃つこと自体が GC 頻度を変える。
+// 🚨 SIGUSR1 は runtime.GC() を伴うので、これを撃つこと自体が GC 頻度を変える。
 // 「撃った時点の live set」を比較する用途に限る (GC 間隔そのものを測る用途には使えない)。
 
 import (
