@@ -1751,3 +1751,69 @@ func TestDoctorReuseSkipsZeroMeasuredAtNearEpoch(t *testing.T) {
 		t.Fatal("実在する MeasuredAt を再利用しない")
 	}
 }
+
+// 狭い幅で「何の行か」「どう扱うか」が消えないこと (issue 182)。
+//
+// 幅で最初に切れるのは行の末尾なので、**そこに置いてよいのは失っても困らない情報だけ**。
+// 状態 (リスク記号) と再利用の注記は末尾に置かない。
+func TestDoctorDiskRowKeepsStateAtNarrowWidth(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.Local)
+	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v.diskRep = &disk.Report{Results: []disk.Result{
+		{Entry: disk.Entry{ID: "brew-orphan-state", Label: "アンインストール済み formula の状態",
+			Risk: disk.RiskConfirm, Recover: "DB データ等の本体", DeleteVia: "trash"},
+			Status: disk.StatusOK, Size: 3 << 30, Items: []disk.Item{{Path: "/opt/homebrew/var/x", Size: 3 << 30}}},
+		{Entry: disk.Entry{ID: "chrome-tmp", Label: "Chrome 一時ファイル", Risk: disk.RiskSafe},
+			Status: disk.StatusBlocked, Reason: "Google Chrome Canary 起動中のため対象外"},
+		// ⚠️ Recover は**実物に近い長さ**にする。短い文言だと、注記を末尾へ戻す変異でも
+		// 行が幅に収まってしまい検出できない (実測 2026-09-03)。カタログの実際の Recover は
+		// 「アプリを再インストールしても設定は戻りません」のように長い
+		{Entry: disk.Entry{ID: "npm-cache", Label: "npm キャッシュ", Risk: disk.RiskSafe,
+			Recover: "再取得されます。次のインストールは時間がかかります", DeleteVia: "rm"},
+			Status: disk.StatusOK, Size: 2 << 30, Reused: true, MeasuredAt: now.Add(-20 * time.Minute),
+			Items: []disk.Item{{Path: "/h/.npm", Size: 2 << 30, Mtime: now.Add(-48 * time.Hour)}}},
+	}}
+
+	for _, w := range []int{60, 80, 120} {
+		o := doctorTestOpts(24)
+		o.width, o.now = w, now
+		txt := strings.Join(v.lines(o), "\n")
+
+		// 状態は幅に関わらず全部読める (末尾が切れて "⛔ 要…" にならない)
+		for _, mark := range []string{"⛔ 要確認", "✅ 安全", "🚫 対象外"} {
+			if !strings.Contains(txt, mark) {
+				t.Errorf("幅 %d でリスク記号が切れた (%q が無い):\n%s", w, mark, txt)
+			}
+		}
+		// blocked の理由は行を分けて全文出す (マーク列に置くと切れる)
+		if !strings.Contains(txt, "Google Chrome Canary 起動中のため対象外") {
+			t.Errorf("幅 %d で blocked の理由が読めない:\n%s", w, txt)
+		}
+		// 再利用の注記は行頭側なので、狭くても残る
+		if !strings.Contains(txt, "20 分前の計測を再利用") {
+			t.Errorf("幅 %d で再利用の注記が切れた (数字が古いと分からなくなる):\n%s", w, txt)
+		}
+		// 行はカード幅を超えない
+		for _, line := range v.lines(o) {
+			if got := dispWidth(line); got > w {
+				t.Errorf("幅 %d を超える行がある (%d 桁): %q", w, got, line)
+			}
+		}
+	}
+
+	// NO_COLOR (色なし) でも blocked と caution が記号で区別できる
+	if doctorRiskMarkText(disk.Result{Status: disk.StatusBlocked}) == doctorRiskMarkText(
+		disk.Result{Status: disk.StatusOK, Entry: disk.Entry{Risk: disk.RiskCaution}}) {
+		t.Error("blocked と caution が同じ記号 (色を消すと区別できない)")
+	}
+
+	// 走査できなかった行に削除経路を出さない (CLI の Format と揃える)
+	failed := disk.Result{Entry: disk.Entry{ID: "npm-cache", Label: "npm", DeleteVia: "rm"},
+		Status: disk.StatusFailed, Reason: "権限がありません"}
+	if d := strings.Join(v.diskDetail(doctorTestOpts(24), failed), "\n"); strings.Contains(d, "削除経路") {
+		t.Errorf("走査できなかった行に削除経路が出た:\n%s", d)
+	}
+}
+
+// doctorRiskMarkText はテスト用に記号だけを取り出す。
+func doctorRiskMarkText(r disk.Result) string { m, _ := doctorRiskMark(r); return m }

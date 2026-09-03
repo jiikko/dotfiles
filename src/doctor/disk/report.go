@@ -24,7 +24,10 @@ func HumanSize(n int64) string {
 func riskMark(r Result) string {
 	switch r.Status {
 	case StatusBlocked:
-		return "🚨 " + r.Reason
+		// UI と同じく**固定語彙**。可変長の理由をここに置くと、幅の狭い端末で
+		// 切れて意味が失われる (issue 182)。理由は Format が下の行に出す。
+		// caution (🚨) と記号を分けるのは NO_COLOR で区別を残すため
+		return "🚫 対象外"
 	case StatusFailed:
 		return "❓ 走査できず"
 	}
@@ -57,8 +60,12 @@ func Format(rep Report, now time.Time) string {
 		if r.Status == StatusFailed {
 			size = "---"
 		}
-		fmt.Fprintf(&b, "\n%9s  %-48s %s\n", size, r.Entry.Label, riskMark(r))
-		if r.Status == StatusFailed {
+		// ⚠️ ラベルを `%-48s` で pad しない。Go の幅指定は**バイト数**なので、日本語ラベルでは
+		// 1 文字 3 バイトと数えられて列が行ごとにずれる (issue 182)。doctor module は幅計算の
+		// 依存を持たないので、**揃えるのを諦めて**マークを先に出す (size は ASCII なので %9s が効く)。
+		// 揃えたくなったら表示幅を測る依存を足すこと。UI 側 (glogx) は termwidth を持つので揃えている
+		fmt.Fprintf(&b, "\n%9s  %s  %s\n", size, riskMark(r), r.Entry.Label)
+		if r.Status == StatusFailed || r.Status == StatusBlocked {
 			fmt.Fprintf(&b, "           %s\n", r.Reason)
 			continue
 		}

@@ -519,9 +519,16 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 			size = "---"
 		}
 		mark, color := doctorRiskMark(r)
-		label := truncateDisp(r.Entry.Label, doctorLabelWidth, "…")
+		// ラベル列は狭い幅で縮める。**マークより先にラベルを削る**のは、切れて困る順が
+		// 「状態 > ラベルの詳細」だから (幅 60 で `⛔ 要…` になると、その行が何なのかは
+		// 分かってもどう扱えばよいかが消える。実測 2026-09-03。issue 182)
+		labelW := doctorLabelWidth
+		if room := o.width - doctorDiskRowFixedW - doctorMaxMarkWidth(); room < labelW {
+			labelW = max(room, doctorMinLabelWidth)
+		}
+		label := truncateDisp(r.Entry.Label, labelW, "…")
 		row := doctorRow{
-			text:       fmt.Sprintf(" %8s  %s%s %s", size, label, padSpaces(doctorLabelWidth-dispWidth(label)), doctorColor(o.colored, color, mark)),
+			text:       fmt.Sprintf(" %8s  %s%s %s", size, label, padSpaces(labelW-dispWidth(label)), doctorColor(o.colored, color, mark)),
 			selectable: true,
 			key:        "disk:" + r.Entry.ID,
 			detail:     v.diskDetail(o, r),
@@ -529,7 +536,8 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 			copyText:   diskCopyText(r, mark),
 		}
 		rows = append(rows, row)
-		if r.Status == disk.StatusFailed {
+		if r.Status == disk.StatusFailed || r.Status == disk.StatusBlocked {
+			// 理由は 1 行下に出す (マーク列に置くと狭い幅で切れる。issue 182)
 			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "           "+r.Reason)})
 			continue
 		}
@@ -538,7 +546,10 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 			advice += fmt.Sprintf("。最終更新 %s (%d日前)", newest.Format("2006-01-02"), int(o.now.Sub(newest).Hours()/24))
 		}
 		if r.Reused {
-			advice += fmt.Sprintf("。%d 分前の計測を再利用 (r で再計測)", int(o.now.Sub(r.MeasuredAt).Minutes()))
+			// ⚠️ 再利用の注記は**行頭**に置く。末尾に足すと狭い幅で真っ先に切れ、
+			// 「その数字は今測ったものではない」が分からなくなる (issue 172 が
+			// 「注記で分かる形にしてある」と書いた前提が幅で崩れる。issue 182)
+			advice = fmt.Sprintf("%d 分前の計測を再利用 (r で再計測)。%s", int(o.now.Sub(r.MeasuredAt).Minutes()), advice)
 		}
 		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "           "+advice)})
 		for _, f := range r.Failures {
@@ -568,7 +579,12 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 // diskDetail は Enter で開く内訳: Inspect なら中身の一覧 (ユーザーファイルかを人が見る)、それ以外は item ごとのサイズとパス。
 func (v *doctorView) diskDetail(o doctorRenderOpts, r disk.Result) []string {
 	out := make([]string, 0, 2+len(r.Contents)+len(r.Items))
-	out = append(out, doctorColor(o.colored, ansiDim, "             削除経路: "+r.Entry.DeleteVia+" (このツールはまだ削除しません)"))
+	// 走査できなかった行に削除経路を出さない。消せる候補が確定していないのに
+	// 「削除経路: rm」だけ出ると、消してよいものが見つかったように読める
+	// (CLI の Format は failed のとき理由だけを出す。UI もそれに揃える。issue 182)
+	if r.Status != disk.StatusFailed {
+		out = append(out, doctorColor(o.colored, ansiDim, "             削除経路: "+r.Entry.DeleteVia+" (このツールはまだ削除しません)"))
+	}
 	if r.Entry.Detail != "" {
 		out = append(out, doctorColor(o.colored, ansiDim, "             "+r.Entry.Detail))
 	}
@@ -589,7 +605,12 @@ func (v *doctorView) diskDetail(o doctorRenderOpts, r disk.Result) []string {
 func doctorRiskMark(r disk.Result) (string, string) {
 	switch r.Status {
 	case disk.StatusBlocked:
-		return "🚨 " + r.Reason, ansiYellow
+		// ⚠️ マーク列は**固定語彙**にする。可変長の理由をここに置くと狭い幅で切れて
+		// 「🚨 Google Chrome Canary …」のように**何が起きたのか分からない断片**が残る
+		// (実測 2026-09-03 幅 80。issue 182)。理由は呼び出し側が下の dim 行へ出す。
+		// 記号も caution (🚨) と分ける: NO_COLOR では色が消えるので、記号が同じだと
+		// 「触れない」と「注意して消す」が区別できない
+		return "🚫 対象外", ansiYellow
 	case disk.StatusFailed:
 		return "❓ 走査できず", ansiDim
 	case disk.StatusOK:
@@ -606,7 +627,26 @@ func doctorRiskMark(r disk.Result) (string, string) {
 }
 
 // doctorLabelWidth はディスク行のラベル列の表示幅 (リスク記号の列を揃えるため)。
+// 端末が狭いときは doctorMinLabelWidth まで縮める (issue 182)。
 const doctorLabelWidth = 40
+
+const (
+	// doctorDiskRowFixedW はディスク行のラベル以外の固定部分 (" %8s  " + マーク前の空白 1)。
+	doctorDiskRowFixedW = 12
+	// doctorMinLabelWidth はこれ以上は縮めない下限。ここを割るほど狭い端末では
+	// ラベルもマークも切れるが、**マークを優先して残す** (状態が読めない行は使えない)
+	doctorMinLabelWidth = 8
+)
+
+// doctorMaxMarkWidth はリスク記号の最大表示幅。マークは固定語彙なので測れる
+// (可変長の理由をマーク列へ入れないのは issue 182 の対応)。
+func doctorMaxMarkWidth() int {
+	w := 0
+	for _, m := range []string{"✅ 安全", "🚨 注意", "⛔ 要確認", "🚫 対象外", "❓ 走査できず"} {
+		w = max(w, dispWidth(m))
+	}
+	return w
+}
 
 func doctorNewest(r disk.Result) time.Time {
 	var t time.Time

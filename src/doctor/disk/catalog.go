@@ -100,8 +100,10 @@ var catalog = []Entry{
 	{ID: "orphan-container", Label: "アプリ実体の無い sandbox コンテナ", Tier: 2, Risk: RiskConfirm, DeleteVia: "trash", Inspect: true,
 		Recover: "アプリを再インストールしても設定は戻りません", Detail: "/Applications と ~/Applications の Info.plist を実走査して突合 (mdfind は使わない)",
 		Paths: []string{"~/Library/Containers/*"}, Guard: GuardOrphanApp},
-	{ID: "brew-orphan-state", Label: "アンインストール済み formula の状態 (brew prefix の var)", Tier: 2, Risk: RiskConfirm, DeleteVia: "trash", Inspect: true,
-		Recover: "DB データ等の本体。formula が無くても中身は価値を持ちうる", Detail: "同名の launchd 登録が残っていれば svcdoctor にも出る",
+	// ⚠️ Label は表示幅 40 桁に収める (ディスク行のラベル列幅)。超えると UI で末尾が切れ、
+	// 括弧の補足だけが「(/o…」のように残る (実測 2026-09-03。issue 182)。場所は Detail へ
+	{ID: "brew-orphan-state", Label: "アンインストール済み formula の状態", Tier: 2, Risk: RiskConfirm, DeleteVia: "trash", Inspect: true,
+		Recover: "DB データ等の本体。formula が無くても中身は価値を持ちうる", Detail: "brew prefix の var 配下。同名の launchd 登録が残っていれば svcdoctor にも出る",
 		// etc は対象にしない: ImageMagick-7 / certs / fonts / openldap のように formula 名と一致しない共有
 		// ディレクトリが並び、台帳突合が雑音になる (2026-09-02 実測)。容量も小さい
 		// prefix は brew --prefix から解決する (Apple Silicon /opt/homebrew と Intel /usr/local で違い、
