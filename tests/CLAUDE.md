@@ -10,28 +10,56 @@
 - lint は shebang で方言判別する: zsh shebang → `zsh -n`、それ以外 → `shellcheck -S warning`。shebang を忘れると zsh 構文のまま shellcheck に回って落ちる
 - 単体実行は `make test-dir DIR=tests/<dir>`、変更に紐づく分だけは `make test-changed PATHS="..."` (写像は `scripts/test_changed.sh --help`)
 
-## 所要時間 (実測 2026-09-03 / 開発機・Go キャッシュ有効)
+## 所要時間 (実測 2026-09-03 / 開発機・macOS)
 
-**`make test` は約 7 分** (414 秒)。コミット前の既定はこれを通すこと。2 分程度で打ち切ると
-**一度も完走しない** (下の内訳のとおり `tests/zshrc` だけで 3 分を超える)。
+**`make test` は 433 秒 (約 7 分)** — これは**通しで 1 回測った値** (`rc=0`)。
+2 分程度で打ち切ると**一度も完走しない**。
 
-| 内訳 | 秒 | 支配的なもの |
-|---|---|---|
-| `test-lint` | 20 | shellcheck + 発見式の check_*.sh |
-| `test-syntax` | 1 | |
-| `test-discovered` | 326 | `tests/zshrc` 187 / `tests/tmux` 56 / `tests/bin` 45 / 他 10 ディレクトリで 33 |
-| `test-bats` | 14 | |
-| `test-src` | 53 | Go 6 プロジェクトの lint + `go test -race` |
+| 内訳 (別 run の個別実測) | 秒 |
+|---|---|
+| `test-lint` | 20 |
+| `test-syntax` | 1 |
+| `test-discovered` (直列) | 326 |
+| `test-bats` | 14 |
+| `test-src` | **15〜71** (3 サンプルで 4.7 倍の幅。Go のキャッシュ状態で動く) |
 
-`tests/zshrc` の中は **`av1ify` 124 秒 + `concat` 56 秒 = 96%**。どちらも実 ffmpeg を回す
-動画系で、待ちの実体はエンコードなので**分割しても総量は減らない**。
+⚠️ **親行と子行は別 run の数字**。個別実測の合計は 414 秒で、通しの 433 秒とは 19 秒ずれる
+(make の起動と集約の分 + 測定時の負荷差)。`test-discovered` の 326 と、下の内訳の合計 321 が
+合わないのも同じ理由。**どの数字も 1 サンプル**なので、±数十秒は動く前提で読むこと。
 
-- **判断基準**: 触ったパスを `make test-changed PATHS="<触ったファイル>"` に渡す。これで足りるのは
-  「そのパスの写像先だけで壊れうる変更」のとき。**時間が無くて全体を省いたら、その事実を報告に書く**
-  (「docs だけだから省いた」を前例として積まない。issue 185 項目 4 / issue 188)
-- ⚠️ `test-changed` は写像先しか回さない。`test-lint` の発見式ゲート (`check_*.sh`) は
-  shell / workflow / json 等を触ったときだけ入るので、**Makefile や CI の構造を変えたら
+`test-discovered` (直列) の内訳: `tests/zshrc` 187 / `tests/tmux` 56 / `tests/bin` 45 /
+残り 7 ディレクトリで 33。`tests/zshrc` の中は **`av1ify` 124 + `concat` 56 = 96%**。
+
+⚠️ **待ちの実体はエンコードではない**。av1ify / concat のテストは ffmpeg / ffprobe を
+**shell script のモック**に差し替えており (`tests/zshrc/*/test_helper.sh` が `$TEST_TMP/mock_bin` を
+PATH 先頭に置く)、時間はモック内の `grep` 連打による **fork のオーバーヘッド**で積まれる
+(モック ffprobe は 1 呼び出しで最大 24 本の `grep -q` を回す)。
+
+### 速い経路: 直列の test-discovered を並列版に差し替える
+
+repo は heavy 群の並列実行入口を既に持っている。**実測 35 秒** (直列の av1ify + concat = 180 秒)。
+
+```sh
+make test-lint test-runtime-rest test-discovered-heavy test-src   # 約 4 分
+```
+
+⚠️ これは `make test` と**同じ集合を並べ替えたもの**ではない (CI の heavy/rest 分割に沿う)。
+差分の正本は Makefile の `CI_HEAVY_TEST_DIRS` / `CI_HEAVY_PRUNE`。
+
+## 何をいつ回すか
+
+- **既定は `make test`** (433 秒)。コミット前はこれを通す
+- **`make test-changed PATHS="<触ったファイル>"` で代替してよいのは、時間が取れないときだけ**。
+  その場合は**全体を回していない事実を報告に書く** (「docs だけだから省いた」を前例として
+  積まない。issue 185 項目 4 / issue 188)
+- ⚠️ **`test-lint` の発見式ゲート 6 本 (`check_*.sh`) は `test-changed` からは一度も入らない**
+  (写像に無い。実測 2026-09-03: `.github/workflows/tests.yml` を渡しても
+  `test-workflow-action-pins` は入らず、`scripts/check_skip_exit_code.sh` を渡してもそれ自身は
+  走らない)。**shell / テストスクリプト / workflow / Makefile / CI の構造を触ったら
   `make test-lint` を明示的に回す**
+- ⚠️ 写像の穴として既知: `_claude/settings.json` は `*.json` に先勝ちして `test-json` だけになり
+  `tests/claude` へ落ちない / `_claude/rules-rationale/*.md` は「テスト対象なし」になる
+  (issue 188 の発火元がまさに rules-rationale の新設だった)
 
 ## 「0 件」「skip」「沈黙」の扱い
 

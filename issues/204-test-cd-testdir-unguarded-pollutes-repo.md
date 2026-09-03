@@ -35,20 +35,61 @@ repo root に fixture 3 件が残った (名前に `$(touch pwned_*)` を含む�
 
 | 案 | 変更量 | 効き方 |
 |---|---|---|
-| A. 各 `cd` に `\|\| exit 1` を足す | 318 箇所 | 確実だが機械的置換の量が多い。`cd ... \|\| { print ...; exit 1 }` の形を lint で固定する必要もある |
-| B. helper が `TEST_TMP` を作った直後に `cd "$TEST_TMP"` する | helper 数箇所 | **1 箇所で class ごと消える**。ただし CWD = repo root を前提にしているテストがあると壊れる (av1ify 124s + concat 56s を回して確認が必要) |
-| C. lint で「`cd` の rc を見ていないテスト」を落とす | 検査 1 本 + 既存の修正 | 再発も止まる。既存 318 箇所を直すまで赤が続くので A か B と併用 |
+| A. 各 `cd` に `\|\| exit 1` を足す | 318 箇所 | **この症状に効く**。`cd /inj1` の失敗で即 exit する |
+| B. helper が `TEST_TMP` を作った直後に `cd "$TEST_TMP"` する | helper 7 本 | **効かない (却下)**。下記 |
+| C. lint で「`cd` / `mkdir` の rc を見ていないテスト」を落とす | 検査 1 本 + 既存の修正 | 再発も止まる。A と併用 |
 
-推し: **B を試して、壊れないなら B。壊れるなら A + C**。B は「そもそも repo root を CWD に
-しない」形なので、`cd` の rc を見ていない箇所が残っても被害が出ない。
+推し: **A + C**。
+
+### 案 B を却下した理由 (敵対的レビューが実験で示した)
+
+失敗の起点は `TEST_TMP` が空になることではなく、**その手前で helper の source が死ぬ**こと:
+
+```
+$ bash test_av1ify_injection.sh
+test_av1ify_injection.sh: 行 11: /test_helper.sh: No such file or directory
+test_av1ify_injection.sh: 行 12: setopt: command not found
+```
+
+`source "${0:A:h}/test_helper.sh"` の `${0:A:h}` は zsh 拡張で、bash では空に潰れて
+`/test_helper.sh` になる。**helper は 1 行も実行されない**ので `TEST_TMP="$(mktemp -d)"` にも
+到達せず、helper に `cd "$TEST_TMP"` を足しても走らない。B を模して helper に挿入した状態で
+再実行しても、fixture 3 件はそのまま CWD に残った (レビュワーが実験済み)。
+
+**`TEST_TMP=` を作るのは helper 2 本ではなく 7 本** (`av1ify/test_helper.sh` /
+`concat/test_helper.sh` / `av1ify/test_av1ify_clipboard.sh` / `repair_mp4/test_repair_mp4.sh` /
+`repair_mp4/test_repair.sh` / `test_video_health.sh` / `validate-mp4/test_validate_mp4.sh`) なので、
+「1 箇所で class ごと消える」も誤りだった。
+
+### 「CWD = repo root を前提にしたテストがある」も否定された
+
+レビュワーが **CWD を repo 外の空ディレクトリにして av1ify + concat の全 29 本を zsh で実行**し、
+すべて rc=0 / 残骸なし / repo は clean を確認した。両 helper は `ROOT_DIR` を `${0:A:h}` から
+解決しており CWD に依存しない。B の懸念は空だったが、B 自体が上記のとおり無効。
+
+### class は 318 より広い
+
+同じ「rc を見ない cd」は他の形にもある (`cd "$TMP_ROOT/r"` ×3 / `cd "$ROOT_DIR"` ×3 /
+`cd "$TMP_ROOT"` ×2 / `cd r` / `cd deep/nest`)。さらに**実害の主因は cd だけではない**:
+今回のログでは `mkdir -p "/inj1"` も `Read-only file system` で失敗しており、その rc も見ていない。
+C の lint は「`cd` 単独」ではなく **「TEST_DIR を作って入る 2 行 1 組」**を対象にする方が class に合う。
+
+### 「`*` の展開で地雷」は根拠が弱い (訂正)
+
+`$(...)` を含むファイル名は glob 展開では実行されない (eval される経路が必要)。残骸が
+望ましくないのは事実だが、「地雷」という書き方は裏付けが無い。
 
 ## 受け入れ条件
 
 - [ ] 呼び方を間違えても repo root に fixture が落ちないこと (`bash tests/zshrc/av1ify/test_av1ify_injection.sh`
       を repo root で実行して `git status` が clean のまま)
-- [ ] `tests/zshrc/av1ify` と `tests/zshrc/concat` をランナー経由で回して緑 (B を採るなら必須)
+- [x] `tests/zshrc/av1ify` と `tests/zshrc/concat` を repo 外の CWD から全 29 本実行して緑
+      (レビューで実施済み。B の懸念の否定になっている)
 - [ ] 変異で red を見る (guard を外す / helper の cd を消す)
 
 ## レビュー状態
 
-反証レビュー未実施。踏んだ事実と 318 件のカウントは実測 (上記コマンド)。
+**敵対的レビュー済み (opus、2026-09-03)。** 318 件のカウント / fixture 3 件 / 注入が実行されて
+いないことは再現された。一方 **推していた案 B は実験で否定された**ので上のとおり差し替えた。
+⚠️ カウントは system grep で取ること: Claude Code の `grep` は ugrep 経由で `$` を行末アンカーと
+解釈し、同じパターンで **0 件**を返す (レビューの指摘)。

@@ -81,3 +81,43 @@ concat と tt の 2 本を固定しているだけで、**新しい公開ラッ�
   issue 133 で Linux を落として CI も macOS 単一になり、発火経路が消えた
 - **`/opt/homebrew` のハードコード** (176/140): 残る非 Go の 21 箇所は deny hook の許可パス判定・
   kill ログ・テスト fixture で、**リテラルであること自体が仕様**
+
+## 適用ログ (2026-09-03)
+
+commit `21e68db` (実装) / `a227599`→`dd8ed07` (敵対的レビューの対応)。
+
+- **候補 B**: `scripts/check_go_project_lanes.sh` を新設し `test-lint` へ配線。
+  `src/*/go.mod` を出典に ①`lint:`/`test:` target ②`src_<name>.yml` ③paths が
+  `src/<name>/` を含むこと を検査する。集約経路から出力が出ることを確認 (exit code では見ない)
+- **候補 A**: `tests/zshrc/test_snapshot_wrappers_survive.sh` に静的検査の §4 を追加。
+  **awk で定義行を拾う形は敵対的レビューで否定され**、zsh 自身に列挙させる形
+  (`${(ko)functions}` + `functions_source`) に作り替えた。走査は 24 本 → **41 本**
+- **候補 C** (assertion の無い Go テスト) は見送り。issue の判断どおり偽陽性 中・値 小
+
+### 敵対的レビュー (opus) が出した 13 件のうち直した 8 件
+
+候補 A: 括弧なし `function name { }` とインデントされた定義を走査していなかった (repo に実在。
+`history-all` / `anyenv` / `fzf-history-widget` の 3 本) / `$_X` の**変数**参照を見ておらず
+**issue 152 の実物の形 (`_TMUX_SESSION_LIB`) を検出できていなかった** / ガード判定が body 全域の
+素の `source ` マッチでコメント・文字列・無関係な source でも通った / `local _l=` で誤検出 /
+文字列リテラル (`=~ "_test.rb"`) を参照と誤認 (`rt()`) / §4 が「すべて成功」の後に走っていた。
+
+候補 B: `paths-ignore:` の dir を「paths に含む」と読んでいた (不変条件が反転したまま緑) /
+`^lint:` が `lint:=x` に誤マッチ / target 名だけで recipe が空でも通った /
+`src/<name>` が symlink だと `find` が辿らず make の `wildcard` と食い違った。
+
+### 自分で見つけた false green 3 件
+
+- 列挙のフィルタが `/dotfiles/` をパス名に期待しており、**worktree では 1 件も一致せず
+  何も走査しないまま緑**だった (変異が 9 本全部素通りして気づいた)
+- sed の式を壊すと refs が空になり「違反 0 件」で緑を返した → 抽出を 1 関数に集約し、
+  **canary と本走査が同じ経路を通る**形にした (canary 3 本)
+- `comm` を locale のままにしていて引き算が黙って崩れた (`sort` だけ `LC_ALL=C` にしていた)
+
+### 変異検証
+
+候補 A 9 形 (red 6 / green 3)、候補 B 4 形すべて red。詳細は commit message。
+
+### 派生
+
+- issue 204 (`cd "$TEST_DIR"` の未ガードで repo root が汚れる。計測中に実際に踏んだ)
