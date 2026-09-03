@@ -1584,9 +1584,58 @@ quit / spinner の経路 / struct コピー / validateTarget の各種 (HOME 直
   12〜15 本 (pgrep ×4 / simctl ×2〜3 / brew ×3 / launchctl 1 + 候補数 / brew doctor 1)、同時は 5〜6 本が上限。
   「閉じたら止める」の契約を優先し、猶予案は採らない
 
+### ④ の実装ロードマップ (2026-09-03。引き継ぎ用)
+
+段階 ④ は **3 つの山**に割れる。S1 は完了、S2 が本体、S3 は仕上げ。
+
+| # | 山 | 状態 | 置き場 | 規模の目安 |
+|---|---|---|---|---|
+| S1 | **削除エンジン** (作法の解釈 / TOCTOU / ゴミ箱 / cli / 再走査 / インベントリ) | **済** (commit `d2dfd70`) | `src/doctor/disk/delete.go` (+ `delete_test.go`) | 実装 647 行 / テスト 493 行 / 変異 11 本 red |
+| S2 | **UI 導線** (選択 → 確認 → 実行中ブロック → 結果表示) | 未着手 | `src/glogx/doctor_view.go` + 新規 `doctor_delete.go` | ④ の残りのほぼ全部 |
+| S3 | 受け入れ条件の消し込み・README・この issue の更新 | 未着手 | `src/doctor/README.md` / 本 issue | 小 |
+
+**S1 で確定した外向き API** (S2 はこれだけを使う):
+
+```go
+disk.Delete(ctx, targets []disk.Result, disk.DeleteOptions) (disk.DeleteReport, error)
+// DeleteOptions{Env, Run, BootTime, HistoryDir, TrashDir, DryRun, OnProgress, CmdTimeout}
+// DeleteReport{Entries []EntryOutcome, Freed, Trashed, HistoryPath, HistoryError}
+// EntryOutcome.Outcome: planned / deleted / trashed / proposed / incomplete / skipped / failed
+```
+
+`DryRun: true` は事前検査だけを行い、**何も壊さず・記録も書かず** planned を返す。
+UI の確認プロンプトはこの dry-run の結果をそのまま見せればよい (「何が消えるか」を
+UI 側で組み直さない)。
+
+#### S2 の内訳 (上から順に着手できる)
+
+1. **キーの割り当て**。⚠️ 1 章の記述 (`Space` で選択 / `d` で削除 / `D` で dry-run) は
+   **現行の割り当てと衝突する**: `D` は doctor を閉じるキー、`Space` はページ送り。
+   → **決定 (2026-09-03)**: `Space` を選択トグルへ付け替え (ページ送りは `ctrl+d` / `pgdown` が
+   既にある)。`D` は閉じるまま。**dry-run は独立キーにせず、`d` の確認モーダルが dry-run の
+   結果を表示する**形にする (「確認プロンプトを必ず挟む」と「何が消えるか出す」を 1 経路で満たす)
+2. **選択状態**。`doctorRow` に「どの Result か」を持たせる (今は `key` 文字列だけ)。
+   選択できるのはディスク節の ok 行だけ。`risk: confirm` は**中身一覧を一度開くまで選択不可**
+   (`v.expanded[key]` を見る)
+3. **確認モーダル**。対象・合計・削除経路・復元方法を再掲。ゴミ箱行には
+   「空にするまで容量は戻りません」を明記。既定は**中止**側
+4. **実行中のブロック**。`actModal` と同じ形 (キーを飲む / 進捗を出す)。`OnProgress` を Msg に載せる
+5. **結果の表示**。freed / trashed / **incomplete (第 3 の状態)** を区別して出す。
+   incomplete は「時間をおいて再スキャン」を促す。`HistoryError` が空でなければ添える
+6. **削除後の行の更新**。`Delete` は内部で再走査済みなので、その結果で行を差し替える
+7. **`Item.Ref` の sanitize**。`sanitizeSnapshotResults` に Ref の検査を足す
+   (削除は FromSnapshot を拒否するので多重防御。`safeDisplayPath` と同じ扱い)
+
+#### S3 (受け入れ条件のうち ④ 分)
+
+7 章の未チェック 7 件のうち **6 件は S1 で満たした**。残るのは
+「`swiftui-drag-cache` が `finder-nsird` と同じ扱い」の**ゴミ箱移動**部分で、S2 の UI が
+入って初めて通しで確認できる。
+
 ### 次の一手 (引き継ぎ。ここから続ける)
 
-**段階 ①②③ は完了、次は ④ 削除経路** (ゴミ箱移動 / TOCTOU / インベントリ記録 / 削除後の再スキャン)。
+**段階 ①②③ は完了。④ は S1 (削除エンジン) が完了し、次は S2 (UI 導線)** —
+上の「④ の実装ロードマップ」が入口。
 ④ の前に: (a) ③ の見た目を凍結する (`bin/glogx` を起動して `D` を押し、端末幅を変えて判断) (b) ①②③ 全体の敵対的レビュー
 (①壊す ②素通り ③並行・中断。共有 module 化に対してだけ通した) (c) 2 章「安全性ハーネス」を全部読み直す。
 ④ は破壊的操作の新設なので、敵対的レビューを最終ゲートにする。
