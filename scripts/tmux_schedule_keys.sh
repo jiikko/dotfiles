@@ -197,30 +197,59 @@ job_mtime() {
 #    確かめられないときは何も書かない (fail-closed: 相手が分からない pane を触らない)
 # ⚠️ 表示は装飾。失敗しても予約の成立・送信・取消には影響させない (fire の無音契約と同じ)
 refresh_pane_indicator() {
-  local pane=$1 j p at sock srvpid earliest='' n=0 hm v now_sock now_srvpid
+  local pane=$1 j p at txt sock srvpid earliest='' earliest_text='' n=0 hm v etext now_sock now_srvpid
   [[ -n "$pane" ]] || return 0
   now_sock="$(tmux display-message -p '#{socket_path}' 2>/dev/null || true)"
   now_srvpid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
   [[ -n "$now_sock" && -n "$now_srvpid" ]] || return 0
   for j in "$STATE_DIR"/*.job; do
     [[ -f "$j" ]] || continue
-    # 3 行目 (文字列) は読み飛ばす: ここでは使わない
-    { IFS= read -r p; IFS= read -r at; IFS= read -r _
+    { IFS= read -r p; IFS= read -r at; IFS= read -r txt
       IFS= read -r sock || true; IFS= read -r srvpid || true; } < "$j" 2>/dev/null || continue
     [[ "$p" == "$pane" && "$at" =~ ^[0-9]+$ ]] || continue
     [[ "$sock" == "$now_sock" && "$srvpid" == "$now_srvpid" ]] || continue
     n=$((n + 1))
-    if [[ -z "$earliest" ]] || (( at < earliest )); then earliest="$at"; fi
+    if [[ -z "$earliest" ]] || (( at < earliest )); then earliest="$at"; earliest_text="$txt"; fi
   done
   # 時刻に化けたら (date が壊れた) 表示を消す: 嘘の時刻を出すより無い方が安全
   if (( n > 0 )); then hm="$(date -r "$earliest" '+%H:%M' 2>/dev/null || true)"; fi
   if (( n == 0 )) || [[ -z "${hm:-}" ]]; then
     tmux set-option -pu -t "$pane" @schedkeys-at 2>/dev/null || true
+    tmux set-option -pu -t "$pane" @schedkeys-text 2>/dev/null || true
+    refresh_session_status "$pane"
     return 0
   fi
   v="$hm"
   (( n > 1 )) && v="$hm ほか$((n - 1))件"
   tmux set-option -p -t "$pane" @schedkeys-at "$v" 2>/dev/null || true
+  # 本文は status 行の 2 行目が出す。⚠️ 100 文字への切り詰めは **tmux 側 (#{=100:...})** に任せる:
+  #    シェルの ${v:0:100} / cut -c は locale 依存で、日本語の数え方が環境で変わる
+  # ⚠️ タブと改行は空白へ潰す (status の 1 行に収める)。# は ## にして format 展開を止める
+  etext="${earliest_text//$'\t'/ }"; etext="${etext//$'\n'/ }"
+  tmux set-option -p -t "$pane" @schedkeys-text "$(msg_escape "$etext")" 2>/dev/null || true
+  refresh_session_status "$pane"
+}
+
+# refresh_session_status は「この pane が属するセッションに予約が残っているか」で status の行数を
+# 切り替える (予約がある間だけ 2 行)。2 行目の中身は _tmux.conf の status-format[1]。
+# ⚠️ scratch セッションは触らない: あちらは常時 2 行で、2 行目を自前の演出に使っている
+#    (scripts/tmux_scratch_popup.sh が作成時に set -t scratch status 2 する)
+# ⚠️ pane が消えているとセッションを引けない。そのときは行数をそのままにする (次に wizard を
+#    開いたときの prune → refresh で揃う)。無関係なセッションの見た目を勝手に戻さない
+# ⚠️ 表示は装飾。失敗しても予約の成立・送信・取消には影響させない
+refresh_session_status() {
+  local pane=$1 sess j p psess want=1
+  sess="$(tmux display-message -p -t "$pane" '#{session_name}' 2>/dev/null || true)"
+  [[ -n "$sess" ]] || return 0
+  [[ "$sess" == scratch ]] && return 0
+  for j in "$STATE_DIR"/*.job; do
+    [[ -f "$j" ]] || continue
+    { IFS= read -r p; } < "$j" 2>/dev/null || continue
+    [[ -n "$p" ]] || continue
+    psess="$(tmux display-message -p -t "$p" '#{session_name}' 2>/dev/null || true)"
+    [[ "$psess" == "$sess" ]] && { want=2; break; }
+  done
+  tmux set-option -t "$sess" status "$want" 2>/dev/null || true
 }
 
 # sleeper が居ない予約 (サーバ再起動で sleeper だけ消えた形) を掃く。kill はしない

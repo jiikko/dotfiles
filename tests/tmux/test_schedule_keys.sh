@@ -69,6 +69,7 @@ case "$*" in
     fi
     exit "${STUB_RUNSHELL_EXIT:-0}" ;;
   "display-message -p #{pane_id}") printf '%%5\n' ;;
+  "display-message -p -t %5 #{session_name}") printf '%s\n' "${STUB_SESSION:-main}" ;;
   "display-message -p -t %5 "*)
     # ⚠️ 実 tmux は消えた pane への問い合わせでも rc=0 を返し、window 名の部分が空の ": " になる
     #    (実測 2026-08-28)。rc=1 を返す stub は実物より厳しく、pane_label の縮退分岐を隠していた
@@ -814,6 +815,51 @@ run "$TMP_DIR/bin_nodate:/usr/bin:/bin" "$SCRIPT" fire notime
 [[ "$RC" -eq 0 ]] || { printf '✗ 時刻が取れないときに fire が exit %s (無音契約は exit 0)\n' "$RC"; exit 1; }
 assert_not_called "send-keys -t %5 -l" "時刻が取れなければ送らない (claim より前に降りる)"
 assert_called "tmux set-option -pu -t %5 @schedkeys-at" "claim 前に降りる破棄でも表示を消す (fire_drop 側)"
+
+printf '\n## 2 行目: 予約の本文を pane オプションへ写し、status を 2 行にする\n'
+# ⚠️ tmux は pane の枠を 1 行しか描けない (枠の format に改行を入れても 2 行にならず、
+#    pane-border-status に both は無い。tmux 3.7b で実測)。なので「2 行目」は status 行の
+#    2 行目で、予約がある間だけ 2 行にする (ユーザー判断 2026-09-03)
+# ⚠️ 100 文字への切り詰めは tmux 側 (#{=100:...}) に任せるので、ここでは**丸ごと写す**ことを見る
+reset_state
+sk_long='make test && git push origin master && echo "デプロイ完了 (予約入力から)" # 長い本文の例 1234567890'
+STUB_UI_RESULT="new	$(( $(/bin/date +%s) + 3600 ))	$sk_long" run "$STUB_PATH" "$SCRIPT" wizard
+# ⚠️ 本文の # は ## に潰して書く (status の format 展開を止める)。潰さないと予約文字列の
+#    #{...} や # コメントが format として解釈される
+assert_called "tmux set-option -p -t %5 @schedkeys-text ${sk_long//\#/##}" "本文を丸ごと写す (切り詰めは tmux 側 / # は ## に潰す)"
+assert_not_called "@schedkeys-text $sk_long" "生の # をそのまま書かない"
+assert_called "tmux set-option -t main status 2" "予約があるセッションの status を 2 行にする"
+
+printf '\n## 2 行目: 予約が無くなったら 1 行へ戻す\n'
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+spawn_sleeper only2
+ui_queue "cancel	only2" "abort"; STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
+assert_called "tmux set-option -pu -t %5 @schedkeys-text" "取消で本文のオプションも消す"
+assert_called "tmux set-option -t main status 1" "予約が無くなったら status を 1 行へ戻す"
+
+printf '\n## 2 行目: scratch セッションの status は触らない\n'
+# ⚠️ scratch は常時 2 行で、2 行目を自前の演出に使っている (tmux_scratch_popup.sh が作成時に
+#    set -t scratch status 2 する)。ここで 1 に戻すとあちらの演出が消える
+reset_state
+STUB_SESSION=scratch STUB_UI_RESULT="new	$(( $(/bin/date +%s) + 3600 ))	make test" run "$STUB_PATH" "$SCRIPT" wizard
+assert_not_called "set-option -t scratch status" "scratch の status 行数は触らない"
+assert_called "tmux set-option -p -t %5 @schedkeys-at" "scratch でも pane 枠の表示は出す (前提の確認)"
+
+printf '\n## 2 行目: 本文のタブと改行は空白へ潰す (status の 1 行に収める)\n'
+reset_state
+STUB_UI_RESULT="$(printf 'new\t%s\ta\tb' "$(( $(/bin/date +%s) + 3600 ))")" run "$STUB_PATH" "$SCRIPT" wizard
+[[ "$(jobs_count)" == 0 ]] || { printf '✗ タブを含む UI 結果でフィールド数の検証が効いていない\n'; exit 1; }
+printf '✓ タブは UI との契約 (区切り) なので本文には入らない — 潰す対象は job 由来の改行\n'
+reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
+# ⚠️ 本物の sleeper を起こしてから本文行だけ書き換える。偽 pid だと prune が先に掃くので、
+#    この検査が「掃かれた結果 unset」を見ることになり主張を守らない
+spawn_sleeper tabbed
+sk_tab=$(printf '\t')
+sed -i.bak "3s/.*/a${sk_tab}b/" "$TMUX_SCHEDULE_KEYS_DIR/tabbed.job" && rm -f "$TMUX_SCHEDULE_KEYS_DIR/tabbed.job.bak"
+spawn_sleeper other2
+ui_queue "cancel	other2" "abort"; STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
+assert_called "@schedkeys-text a b" "本文のタブは空白へ潰す (status 行が割れない)"
+assert_not_called "$(printf '@schedkeys-text a\tb')" "生のタブをオプションに書かない"
 
 printf '\n## pane 表示: 別サーバの予約は同じ pane id でも数えない\n'
 # ⚠️ $STATE_DIR は全サーバで共有 (-L の隔離サーバも同じディレクトリ)。pane id はサーバごとに
