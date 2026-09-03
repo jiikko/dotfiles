@@ -27,6 +27,11 @@ func Exec(ctx context.Context, name string, args ...string) (string, string, int
 	// 子を自分のプロセスグループにし、cancel ではグループごと殺す。CommandContext の既定は直接の子だけ
 	// なので、brew (bash → ruby → git) のような多段の孫が親を失って残る。pipe に書かない孫は WaitDelay
 	// でも回収されない (敵対レビュー 2026-09-02 の未確認リスクを構造で潰す)。
+	// 実機で確認済み (2026-09-03 / issue 206 (a))。glogx を隔離 tmux で動かし doctor を開くと、
+	// brew の ruby と simctl が **それぞれ自分の pgid** を持ち (pid == pgid)、その子 (curl) が
+	// 同じ pgid を継いでいた。つまり -pgid の kill が孫まで届く。5 試行すべてで、閉じてから
+	// **0.05 秒**で子孫が baseline へ戻った (brew doctor の timeout 60 秒を待たない)。
+	// ⚠️ この行を消すと、殺せるのは直接の子だけに戻り、孫 (curl 等) が残る。
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
