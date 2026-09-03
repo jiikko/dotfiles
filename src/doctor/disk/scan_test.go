@@ -32,11 +32,27 @@ func (f *fakeRunner) run(_ context.Context, name string, args ...string) (string
 	f.mu.Lock()
 	f.calls = append(f.calls, append([]string{name}, args...))
 	f.mu.Unlock()
-	// 最長一致 ("pgrep -x Google Chrome" が "pgrep -x Google Chrome Canary" を横取りしない)
+	// キーは「コマンド行の先頭に、**トークン境界まで**一致する」ものだけを候補にし、
+	// その中の最長を採る。
+	//
+	// 最長一致だけでは足りない ("pgrep -x Google Chrome" が "pgrep -x Google Chrome Canary" を
+	// 横取りしない、は最長一致で足りるが、それとは別の穴がある):
+	// **応答を登録していないコマンドが、別のキーの literal な prefix に吸われる**。
+	// 実測 2026-09-03 (issue 192): `--set /d/FooDevices` だけ登録した fake に
+	// `--set /d/FooDevicesExtra` を投げると、`unexpected` ではなく FooDevices の応答が返った。
+	// 壊れ方は「テストが別の応答を拾って green のまま意味を失う」なので気づけない。
+	// トークン境界を要求すれば、登録していない呼び出しは `unexpected` に落ちる
 	line := strings.Join(append([]string{name}, args...), " ")
 	best := ""
 	for k := range f.resp {
-		if strings.HasPrefix(line, k) && len(k) > len(best) {
+		if !strings.HasPrefix(line, k) {
+			continue
+		}
+		// キーの直後は「行末」か「空白」でなければならない (パスの途中で切れた一致を弾く)
+		if len(line) > len(k) && line[len(k)] != ' ' {
+			continue
+		}
+		if len(k) > len(best) {
 			best = k
 		}
 	}
@@ -953,5 +969,42 @@ func TestCollectBundleIDsStopsOnSymlinkLoops(t *testing.T) {
 	}
 	if !ids["com.example.real"] {
 		t.Errorf("巡回検出が効きすぎて実体の bundle id を取り逃した: %v ids=%v", collectVisits, ids)
+	}
+}
+
+// fakeRunner の応答選択はトークン境界まで見る (issue 192)。
+//
+// 最長一致だけだと「**応答を登録していない呼び出し**が、別のキーの literal な prefix に吸われる」。
+// テストは `unexpected` (rc=1) を期待しているのに別の応答が返り、**green のまま意味を失う**。
+// 今の fixture に prefix 関係のキーは無いので、これは将来のための固定。
+func TestFakeRunnerMatchesOnTokenBoundary(t *testing.T) {
+	const setKey = "xcrun simctl --set /d/FooDevices"
+	f := &fakeRunner{resp: map[string]fakeResp{setKey: {out: "SHORT"}}}
+	run := func(setPath string) (string, int) {
+		out, _, rc, _ := f.run(context.Background(), "xcrun", "simctl", "--set", setPath, "list", "devices", "-j")
+		return out, rc
+	}
+
+	// 登録したパスちょうどなら拾う (下の assert が「常に unexpected」で通らないことの確認)
+	if out, rc := run("/d/FooDevices"); out != "SHORT" || rc != 0 {
+		t.Errorf("登録したキーを拾わない: out=%q rc=%d", out, rc)
+	}
+	// パスの途中で切れた一致は拾わない = 登録していない呼び出しとして unexpected に落ちる
+	if out, rc := run("/d/FooDevicesExtra"); out != "" || rc == 0 {
+		t.Errorf("未登録の呼び出しが別のキーの応答を拾った: out=%q rc=%d", out, rc)
+	}
+
+	// prefix 関係にある 2 つを両方登録したら、長い方の呼び出しは長い方を拾う
+	f2 := &fakeRunner{resp: map[string]fakeResp{
+		setKey:           {out: "SHORT"},
+		setKey + "Extra": {out: "LONG"},
+	}}
+	long, _, _, _ := f2.run(context.Background(), "xcrun", "simctl", "--set", "/d/FooDevicesExtra", "list", "devices", "-j")
+	if long != "LONG" {
+		t.Errorf("長い方の呼び出しが短い方の応答を拾った: %q", long)
+	}
+	short, _, _, _ := f2.run(context.Background(), "xcrun", "simctl", "--set", "/d/FooDevices", "list", "devices", "-j")
+	if short != "SHORT" {
+		t.Errorf("短い方の呼び出しが長い方の応答を拾った: %q", short)
 	}
 }
