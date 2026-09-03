@@ -648,7 +648,13 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 	sort.SliceStable(sorted, func(a, b int) bool { return sorted[a].Size > sorted[b].Size })
 	shown := 0
 	for _, r := range sorted {
-		if r.Status == disk.StatusOK && len(r.Items) == 0 && len(r.Failures) == 0 {
+		// 候補 0 件の行は畳む。⚠️ ただし **検出条件そのものが未実測のエントリは畳まない**
+		// (issue 169 / 207)。畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と
+		// **同じ見え方**になり、探せていないことが画面から永久に消える (false green)。
+		// CLI 側 (src/doctor/disk/report.go) と同じ規律。実測で名前が確定して
+		// Entry.Unverified が空になれば、この行も自動的に畳まれる側へ戻る。
+		if r.Status == disk.StatusOK && len(r.Items) == 0 && len(r.Failures) == 0 &&
+			r.Entry.Unverified == "" {
 			continue
 		}
 		shown++
@@ -686,6 +692,13 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 		if r.Status == disk.StatusFailed || r.Status == disk.StatusBlocked {
 			// 理由は 1 行下に出す (マーク列に置くと狭い幅で切れる。issue 182)
 			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "           "+r.Reason)})
+			continue
+		}
+		// 未実測のエントリで 0 件のときは、Recover (「消しても再生成されます」) を出さない。
+		// 消す対象が 1 件も無いのに復元方法を出すと、**検出できている**ように読めるため。
+		if r.Entry.Unverified != "" && len(r.Items) == 0 {
+			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim,
+				"           0 件ですが「候補なし」ではありません: "+r.Entry.Unverified)})
 			continue
 		}
 		advice := r.Entry.Recover
@@ -797,6 +810,13 @@ func doctorRiskMark(r disk.Result) (string, string) {
 	case disk.StatusFailed:
 		return "❓ 走査できず", ansiDim
 	case disk.StatusOK:
+		// 検出条件が未実測のエントリで候補 0 件のとき。**リスク記号を出さない**:
+		// 「✅ 安全」は「調べたうえで安全」の意味なので、調べられていない行に出すと嘘になる。
+		// 走査自体は成功しているので「❓ 走査できず」とも違う (記号を分けて区別する)。
+		// CLI 側 (src/doctor/disk/report.go の riskMark) と同じ語彙を使うこと。
+		if r.Entry.Unverified != "" && len(r.Items) == 0 {
+			return "🔎 未検証", ansiDim
+		}
 	}
 	switch r.Entry.Risk {
 	case disk.RiskSafe:

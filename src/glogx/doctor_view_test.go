@@ -1896,3 +1896,57 @@ func TestDoctorCopyTextCarriesVerifyCommands(t *testing.T) {
 		t.Errorf("system ドメインなのに gui/ を決め打ちしている:\n%s", sv)
 	}
 }
+
+// 検出条件そのものが未実測のエントリ (disk.Entry.Unverified) を、候補 0 件でも UI が畳まないこと。
+// 畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と**同じ見え方**になる
+// (issue 169 / 207)。
+//
+// ⚠️ **CLI (disk.Format) と UI (diskSection) で突き合わせる**。同じデータから同じ結論を描く形は、
+// 片方のテストがもう片方を 1 mm も守らない (規範: mutation-verify-new-tests.md
+// 「同じ判定・同じ結論を 2 箇所で別実装していないか」)。片側の分岐だけ消す変異が
+// red になるよう、両方の出力を同じ fixture から見る。
+func TestDoctorUnverifiedEntryMatchesCLI(t *testing.T) {
+	unver := disk.Result{
+		Entry: disk.Entry{ID: "u", Label: "未実測の項目", Risk: disk.RiskSafe, DeleteVia: "rm",
+			Recover: "再生成されません", Unverified: "ファイル名が未実測"},
+		Status: disk.StatusOK, Items: []disk.Item{},
+	}
+	// 対照: 同じ 0 件でも Unverified が無ければ両方で畳まれる
+	verified := disk.Result{
+		Entry: disk.Entry{ID: "v", Label: "実測済みの項目", Risk: disk.RiskSafe, DeleteVia: "rm",
+			Recover: "再生成されません"},
+		Status: disk.StatusOK, Items: []disk.Item{},
+	}
+	rep := disk.Report{Results: []disk.Result{unver, verified}}
+
+	cli := disk.Format(rep, time.Date(2026, 9, 3, 12, 0, 0, 0, time.Local))
+	v := &doctorView{shown: true, expanded: map[string]bool{}, diskRep: &rep, diskResults: rep.Results}
+	wide := doctorTestOpts(60)
+	wide.width = 240
+	ui := strings.Join(v.lines(wide), "\n")
+
+	// 両方に出る / 両方から消える、を 1 つずつ確かめる (片側だけ見ると分岐の欠落を見逃す)
+	for _, c := range []struct {
+		name string
+		out  string
+	}{{"CLI", cli}, {"UI", ui}} {
+		if !strings.Contains(c.out, "未実測の項目") {
+			t.Errorf("%s: 未実測のエントリが 0 件で畳まれている (探せていないことが画面から消える):\n%s", c.name, c.out)
+		}
+		if !strings.Contains(c.out, "🔎 未検証") {
+			t.Errorf("%s: 未実測のエントリに専用のマークが無い (✅ 安全 だと『調べたうえで安全』と読める):\n%s", c.name, c.out)
+		}
+		if strings.Contains(c.out, "✅ 安全") {
+			t.Errorf("%s: 未実測のエントリに『✅ 安全』が出ている (調べられていないので嘘になる):\n%s", c.name, c.out)
+		}
+		if !strings.Contains(c.out, `0 件ですが「候補なし」ではありません`) {
+			t.Errorf("%s: 0 件の意味を説明する行が無い:\n%s", c.name, c.out)
+		}
+		if strings.Contains(c.out, "再生成されません") {
+			t.Errorf("%s: 0 件の未実測エントリに復元方法が出ている (検出できているように読める):\n%s", c.name, c.out)
+		}
+		if strings.Contains(c.out, "実測済みの項目") {
+			t.Errorf("%s: Unverified の無い 0 件エントリまで表示されている (畳む側の規律が壊れている):\n%s", c.name, c.out)
+		}
+	}
+}
