@@ -705,7 +705,7 @@ func TestDeleteConfirmPerMethodLines(t *testing.T) {
 	}
 }
 
-// 入りきらない件数は注記で伝える (黙って消さない)。
+// 入りきらないぶんは注記で伝え、**送れることも伝える** (黙って消さない。issue 241)。
 func TestDeletePanelElisionNote(t *testing.T) {
 	entries := make([]disk.EntryOutcome, 0, 8)
 	for range 8 {
@@ -714,8 +714,63 @@ func TestDeletePanelElisionNote(t *testing.T) {
 	}
 	v := &doctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
 	out := strings.Join(v.lines(doctorTestOpts(10)), "\n")
-	if !strings.Contains(out, "他 ") || !strings.Contains(out, "画面に入りません") {
-		t.Errorf("省いた件数の注記が無い:\n%s", out)
+	for _, want := range []string{"下に ", " 行", "j/k で送る"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("入り切らないぶんの案内に %q が無い:\n%s", want, out)
+		}
+	}
+}
+
+// 確認パネルは縦に送れる。**送るキーで確認が閉じない**のが要点 (issue 241):
+// 以前は y/Y 以外がすべて中止だったので、対象を見ようとした打鍵で確認ごと無言で消えていた。
+func TestDeleteConfirmScrollKeysDoNotCancel(t *testing.T) {
+	entries := make([]disk.EntryOutcome, 0, 6)
+	for i := range 6 {
+		entries = append(entries, disk.EntryOutcome{Label: fmt.Sprintf("え%d", i), Method: "rm",
+			Outcome: disk.OutcomePlanned, BeforeSize: 1024, Items: make([]disk.ItemOutcome, 2)})
+	}
+	v := &doctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
+	first := strings.Join(v.lines(doctorTestOpts(12)), "\n") // 高さを測らせる (窓は描画で決まる)
+	for _, key := range []string{"j", "down", "k", "up", "ctrl+d", "pgdown", "ctrl+u", "pgup", "g", "home", "G", "end"} {
+		v.del.confirmScroll.offset = 0
+		if _, handled := v.handleDeleteKey(key); !handled {
+			t.Fatalf("%q が処理されていない", key)
+		}
+		if !v.del.confirm {
+			t.Fatalf("%q で確認が閉じた (送るキーは中止に落とさない)", key)
+		}
+	}
+	// 🚨 判定は**本文の中身**で行う。注記 ("上に N 行") だけを見ると、window が offset を
+	// 無視して常に先頭を返す変異でも注記は動くので緑のまま通る (実測 2026-09-04)
+	if !strings.Contains(first, "え0") || strings.Contains(first, "え5") {
+		t.Fatalf("前提が違う (先頭に え0 が見え、え5 は見えないこと):\n%s", first)
+	}
+	v.del.confirmScroll.offset = 0
+	_, _ = v.handleDeleteKey("G")
+	last := strings.Join(v.lines(doctorTestOpts(12)), "\n")
+	if !strings.Contains(last, "え5") {
+		t.Errorf("末尾まで送ったのに最後のエントリが見えない:\n%s", last)
+	}
+	if strings.Contains(last, "え0") {
+		t.Errorf("末尾まで送ったのに先頭のエントリが残っている (送れていない):\n%s", last)
+	}
+	if !strings.Contains(last, "上に ") {
+		t.Errorf("末尾まで送ったのに「上に N 行」が出ない:\n%s", last)
+	}
+}
+
+// 送るキー以外は**従来どおり中止**する (既定は安全側。緩めていないことを固定する)。
+func TestDeleteConfirmOtherKeysStillCancel(t *testing.T) {
+	entries := []disk.EntryOutcome{{Label: "え", Method: "rm", Outcome: disk.OutcomePlanned,
+		BeforeSize: 1024, Items: make([]disk.ItemOutcome, 1)}}
+	for _, key := range []string{"n", "esc", " ", "enter", "x"} {
+		v := &doctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
+		if _, handled := v.handleDeleteKey(key); !handled {
+			t.Fatalf("%q が処理されていない", key)
+		}
+		if v.del.confirm {
+			t.Errorf("%q で中止しなかった (既定は中止側)", key)
+		}
 	}
 }
 

@@ -51,6 +51,82 @@ type doctorDelete struct {
 	ch      chan doctorDeleteEvent
 	done    chan doctorDeleteEvent
 	armedCC bool // 実行中に Ctrl-C が 1 回押された (2 回目で cancel)
+
+	// confirmScroll は確認パネルの縦位置。**破壊的操作の確認で「対象が見えない」を作らない**ため
+	// (issue 241)。以前は入り切らない塊を落として「端末を広げてください」と言うだけで、
+	// 送ろうとして押したキーは下の default に落ちて確認ごと無言で閉じていた
+	confirmScroll deleteScroll
+}
+
+// deleteScroll は確認パネルの縦位置。total / view は**最後に描いたとき**の値で、
+// キー操作 (画面を持たない) 側が送り幅と上限を決めるために要る。
+// 🚨 描画は状態を持たない方が望ましいが、この 2 つは「今の画面で何行見えているか」なので
+// 描画側にしか無い。同 package の rowCursor も同じ形 (restore が index を描画時に寄せる)。
+type deleteScroll struct {
+	offset int // 本文の先頭から何行送ったか
+	total  int // 本文の全行数
+	view   int // 実際に見えている行数
+}
+
+// window は本文を今の位置で切り出し、入り切らないぶんを注記で伝える。
+// 入り切るときは注記を出さない (常に出すと、送る必要が無い画面でも送れると誤解させる)。
+func (s *deleteScroll) window(o doctorRenderOpts, all []string, avail int) []string {
+	s.total = len(all)
+	if avail <= 0 {
+		// 本文に使える行が無い (極端に低い画面)。注記も出さない:
+		// 1 行でも返すと末尾 (合計と操作の説明) が押し出される
+		s.offset, s.view = 0, 0
+		return nil
+	}
+	if len(all) <= avail {
+		s.offset, s.view = 0, len(all)
+		return all
+	}
+	view := max(avail-1, 0) // 位置の注記 1 行を先に確保する
+	s.view = view
+	s.offset = min(max(s.offset, 0), len(all)-view)
+	above, below := s.offset, len(all)-s.offset-view
+	var parts []string
+	if above > 0 {
+		parts = append(parts, fmt.Sprintf("上に %d 行", above))
+	}
+	if below > 0 {
+		parts = append(parts, fmt.Sprintf("下に %d 行", below))
+	}
+	out := make([]string, 0, view+1)
+	out = append(out, all[s.offset:s.offset+view]...)
+	return append(out, doctorColor(o.colored, ansiDim,
+		fmt.Sprintf(" … %s (j/k で送る)", strings.Join(parts, " / "))))
+}
+
+// scroll は最後に描いた画面の高さを基準に位置を動かす。
+func (s *deleteScroll) scroll(key string) {
+	maxOff := max(s.total-s.view, 0)
+	half := max(s.view/2, 1)
+	switch key {
+	case "j", "down":
+		s.offset++
+	case "k", "up":
+		s.offset--
+	case "ctrl+d", "pgdown":
+		s.offset += half
+	case "ctrl+u", "pgup":
+		s.offset -= half
+	case "g", "home":
+		s.offset = 0
+	case "G", "end":
+		s.offset = maxOff
+	}
+	s.offset = min(max(s.offset, 0), maxOff)
+}
+
+// deleteScrollKeys は確認パネルで**中止に落とさない**キー (送るだけ)。
+// 🚨 ここに無いキーは既定どおり中止側へ落ちる (安全側)。送る手段が無いまま
+// 「送ろうとした打鍵で確認が消える」のを塞ぐのが目的で、既定を緩めるものではない
+var deleteScrollKeys = map[string]bool{
+	"j": true, "down": true, "k": true, "up": true,
+	"ctrl+d": true, "pgdown": true, "ctrl+u": true, "pgup": true,
+	"g": true, "home": true, "G": true, "end": true,
 }
 
 // active は削除の語彙がキーを持っているか (裏の一覧にも C/X にも渡さない)。
@@ -212,6 +288,7 @@ func (v *doctorView) receiveDelete(msg doctorDeleteMsg) tea.Cmd {
 	}
 	if ev.dryRun {
 		v.del.plan, v.del.confirm = ev.rep, true
+		v.del.confirmScroll = deleteScroll{} // 開き直しは必ず先頭から見せる
 		return nil
 	}
 	v.del.result = ev.rep
@@ -248,6 +325,12 @@ func (v *doctorView) handleDeleteKey(key string) (doctorAction, bool) {
 		d.reset() // 消せるものが無いので、どのキーでも戻る
 		return doctorSwallow, true
 	case d.confirm:
+		// 🚨 送るキーは**中止に落とさない** (issue 241)。窓に入り切らない対象を見ようとした
+		// 打鍵で確認が消えるのを塞ぐ。ここに無いキーは既定どおり中止側 (安全側) へ落ちる
+		if deleteScrollKeys[key] {
+			d.confirmScroll.scroll(key)
+			return doctorSwallow, true
+		}
 		switch key {
 		case "y", "Y":
 			targets := v.selectedResults()
@@ -549,7 +632,7 @@ func (v *doctorView) deletePanel(o doctorRenderOpts) []string {
 		return doctorPanel(o, "削除できませんでした", append(body, "", "y: 出力をコピー   他のキー: 閉じる"))
 	case d.result != nil:
 		blocks, tail := doctorDeleteResultLines(o, *d.result, d.log)
-		return assembleDeletePanel(o, "削除の結果", blocks, tail)
+		return assembleDeletePanel(o, "削除の結果", blocks, tail, nil)
 	case d.blocking():
 		head := "削除しています"
 		if d.preparing {
@@ -578,7 +661,7 @@ func (v *doctorView) deletePanel(o doctorRenderOpts) []string {
 			// (y に意味が無いのに押させる形になる)
 			title = "消せるものがありません"
 		}
-		return assembleDeletePanel(o, title, blocks, tail)
+		return assembleDeletePanel(o, title, blocks, tail, &d.confirmScroll)
 	}
 	return nil
 }
@@ -820,7 +903,10 @@ func deleteNote(o doctorRenderOpts, s string) string {
 // 🚨 padTo は**溢れた分を切る** (lines[:n])。素直に並べると、選択が多いときに末尾の
 // 「y: 削除する n/Esc: やめる」が消え、**操作が分からない確認プロンプト**になる。
 // なので末尾を先に確保し、入る分だけエントリを載せて、省いた件数を注記する。
-func assembleDeletePanel(o doctorRenderOpts, title string, blocks [][]string, tail []string) []string {
+// assembleDeletePanel は見出し + 本文 + 末尾を組む。sc != nil の呼び出し (確認パネル) は
+// 本文を**行単位の窓**で見せる: 塊単位で落とす形だと、1 つの塊が窓より大きいときに
+// 本文が丸ごと消える (issue 241)。sc == nil (結果パネル) は従来どおり塊単位で落とす。
+func assembleDeletePanel(o doctorRenderOpts, title string, blocks [][]string, tail []string, sc *deleteScroll) []string {
 	head := []string{" " + doctorColor(o.colored, ansiBold, title), ""}
 	room := max(o.page-len(head), 1)
 	// 末尾は**後ろから**優先して残す。tail の並びは「捨ててよい順」= 空行 → 補足 → 合計 → 操作の説明
@@ -829,6 +915,20 @@ func assembleDeletePanel(o doctorRenderOpts, title string, blocks [][]string, ta
 		kept = kept[1:]
 	}
 	avail := max(room-len(kept), 0)
+	if sc != nil {
+		var all []string
+		for _, b := range blocks {
+			all = append(all, b...)
+		}
+		out := make([]string, 0, len(head)+avail+len(kept))
+		out = append(out, head...)
+		out = append(out, sc.window(o, all, avail)...)
+		out = append(out, kept...)
+		for i, l := range out {
+			out[i] = truncateDisp(l, o.width, "…")
+		}
+		return padTo(out, o.page)
+	}
 	var need int
 	for _, b := range blocks {
 		need += len(b)

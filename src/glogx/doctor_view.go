@@ -511,6 +511,9 @@ func (v *doctorView) hint(width int) string {
 		if !planHasWork(v.del.plan) {
 			return " 消せるものがありません (何かキーを押すと戻ります)"
 		}
+		// 🚨 送り方 (j/k) は**パネルの注記が唯一の出典**。ここに足すと、hint は
+		// 前フレームの高さから scrollable を判断するので 1 フレーム遅れ、
+		// 「パネルと hint が違うことを言う」形になる (issue 242 の P3-2 と同型)
 		return " y: 削除する   n/Esc: やめる"
 	}
 	if v.del.result != nil || v.del.err != "" {
