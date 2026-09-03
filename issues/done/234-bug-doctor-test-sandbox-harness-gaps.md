@@ -65,3 +65,27 @@ AST ゲートは「消す・動かす」だけを見る設計 (意図的)。そ�
 - (b): 登録済み src → 未登録 dst の `trashMove` が error になることを assert し、
   `allowDestructive("trash-dest", …)` を外す変異で red を見る
 - (c): `HistoryDir` に未登録のパスを渡した `Delete` が**ディレクトリを作らずに**中止することを assert
+
+## 決着 (2026-09-04)
+
+3 つとも塞いだ。
+
+- **(a) 判定式のコピー** → `sandboxAllowable(root) error` へ切り出し、`sandboxAllow` と自己テストが
+  **同じ関数を通る**形にした（`trySandboxAllow` / `fatalRecorder` は削除）。
+  自己テストには「登録してよい側」も足した（判定が deny-all に化けても気づけるように）
+- **(b) 移動の宛先** → `trashMove` の `MkdirAll` の**前**に `allowDestructive("trash-dest", trashDir)` を置いた。
+  op 名を分けたので、拒否の記録から「どちら側で止まったか」が読める
+- **(c) 作成系** → `newHistory` の先頭に `allowDestructive("history-create", dir)` を置いた
+  （脅威モデルを書くだけで済ませず、守る側を選んだ）。あわせて AST ゲートの `destructive` 表に
+  **`Unlink` / `Rmdir`** を足した（`unix.Unlink(p)` と書くだけで無音で素通りする形だった）
+
+### 検証
+
+- 新規テスト 2 本 + 既存 1 本の書き換え:
+  `TestTrashDestGoesThroughHook`（未登録の宛先への移動が `OutcomeFailed` になり、**宛先ディレクトリを
+  作らず**、違反記録が残る）/ `TestHistoryCreateGoesThroughHook`（未登録の置き場で中止し、
+  ディレクトリを作らず、元も消さない）/ `TestSandboxAllowRejectsPathsOutsideTempDir`（述語を直接叩く）
+- 変異 3 本とも red: 述語を allow-all にする / `trash-dest` の検査点を外す / `history-create` の検査点を外す
+- 🚨 新しい検査点が**既存テストの未登録パスを 1 件捕まえた**
+  （`TestDeleteFailsClosedWhenHistoryUnwritable` の `HistoryDir`）。これは (c) が予測していた
+  「`HistoryDir` を明示的に変なパスへ渡したテスト」そのもので、テスト側に登録を足した

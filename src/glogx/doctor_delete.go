@@ -788,20 +788,26 @@ func (v *doctorView) confirmLines(o doctorRenderOpts) (blocks [][]string, tail [
 			freeing += e.BeforeSize
 		}
 		out = append(out, fmt.Sprintf(" %8s  %s  %s", size, padLabel(e.Label, labelW), word))
+		// 🚨 件数は**実際に触る Item だけ**を数える (issue 233)
+		planned, dropped := plannedItems(e)
 		switch {
 		case skipped:
 			out = append(out, deleteNote(o, e.Reason))
 		case e.Method == "trash":
-			out = append(out, deleteNote(o, fmt.Sprintf("%d 件をゴミ箱へ移動 (空にするまで容量は戻りません)", len(e.Items))))
+			out = append(out, deleteNote(o, fmt.Sprintf("%d 件をゴミ箱へ移動 (空にするまで容量は戻りません)", len(planned))))
 		case e.Method == "cli":
 			// コマンドの実体はこの下に 1 本ずつ出るので、ここでは件数だけ (二重に出さない)
-			out = append(out, deleteNote(o, fmt.Sprintf("%d 件にコマンドを実行", len(e.Items))))
+			out = append(out, deleteNote(o, fmt.Sprintf("%d 件にコマンドを実行", len(planned))))
 		case e.Method == "propose":
 			out = append(out, deleteNote(o, "コマンドを表示するだけで、実行しません"))
 		default:
-			out = append(out, deleteNote(o, fmt.Sprintf("%d 件を削除", len(e.Items))))
+			out = append(out, deleteNote(o, fmt.Sprintf("%d 件を削除", len(planned))))
 		}
 		if !skipped {
+			if dropped > 0 {
+				// 黙って省かない (件数が減った理由が読めないと下見の結果を確かめられない)
+				out = append(out, deleteNote(o, fmt.Sprintf("他 %d 件は対象外 (走査時と実体が変わりました)", dropped)))
+			}
 			out = append(out, deleteCommandLines(o, e)...)
 			out = append(out, deletePathLines(o, e)...)
 		}
@@ -847,6 +853,22 @@ func deleteCommandLines(o doctorRenderOpts, e disk.EntryOutcome) []string {
 // **中身を確かめずに y を押す**ことになる (ユーザー要望 2026-09-03)。パスは engine が
 // 走査し直して正規化したもの = 実際に触る対象そのもの。
 //
+// plannedItems は下見で**実際に触ると決まった** Item だけを返す (issue 233)。
+//
+// 🚨 エントリ単位の Outcome だけを見ると、下見で Skipped / Failed になった Item まで
+// 「N 件を削除」に数え、パス一覧にも並ぶ。同じ行のサイズは BeforeSize (照合が取れた分だけ) なので
+// **件数とサイズが食い違う**。発火は「走査時と実体が変わった」= キャッシュ相手では珍しくない。
+func plannedItems(e disk.EntryOutcome) (planned []disk.ItemOutcome, dropped int) {
+	for _, it := range e.Items {
+		if it.Outcome == disk.OutcomePlanned {
+			planned = append(planned, it)
+			continue
+		}
+		dropped++
+	}
+	return planned, dropped
+}
+
 // 🚨 1 エントリあたりの表示は maxConfirmPaths 件で打ち切る。全部並べると 1 エントリで画面を
 // 埋め、**他のエントリが窓の外へ押し出される** (送れば読めるが、最初のフレームに何が出るかは
 // 「どれを消すか」の把握に効く)。打ち切ったことは件数で伝える。
@@ -855,10 +877,13 @@ func deleteCommandLines(o doctorRenderOpts, e disk.EntryOutcome) []string {
 // 「1 エントリで最初の画面を埋めない」ためで、11 件目以降が窓でも読めない点は残っている
 // (issue 241 の決着節に記録)。
 func deletePathLines(o doctorRenderOpts, e disk.EntryOutcome) []string {
-	out := make([]string, 0, min(len(e.Items), maxConfirmPaths)+1)
-	for i, it := range e.Items {
+	// 🚨 並べるのは**実際に触る Item だけ** (issue 233)。下見で対象外になったパスを混ぜると、
+	// 上の doc の「実際に触る対象そのもの」が成立しない
+	items, _ := plannedItems(e)
+	out := make([]string, 0, min(len(items), maxConfirmPaths)+1)
+	for i, it := range items {
 		if i >= maxConfirmPaths {
-			out = append(out, deleteNote(o, fmt.Sprintf("… 他 %d 件", len(e.Items)-maxConfirmPaths)))
+			out = append(out, deleteNote(o, fmt.Sprintf("… 他 %d 件", len(items)-maxConfirmPaths)))
 			break
 		}
 		// 🚨 パスは**ファイル名由来**なので改行や制御文字が入りうる (macOS のファイル名は

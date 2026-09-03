@@ -42,3 +42,25 @@
 下見の結果に Planned 2 件 + Skipped 1 件を持つ `DeleteReport` を作って `confirmLines` を呼び、
 出力に「2 件を削除」が出ることと、Skipped のパスが**出ないこと**を assert する。
 変異 = 絞り込みを外す → 「3 件」で red。
+
+## 決着 (2026-09-04)
+
+`plannedItems(e)` を出典にして、確認画面の**件数**と**パス一覧**を `OutcomePlanned` の Item だけに絞った。
+省いた分は `他 N 件は対象外 (走査時と実体が変わりました)` として件数で伝える（黙って省かない）。
+
+🚨 **テスト fixture が production の初期状態と違っていた**。`planDelete` / `planItem` は Item ごとに
+`Outcome: OutcomePlanned` を入れる（`delete.go:331` / `:509`）のに、テストは
+`make([]disk.ItemOutcome, N)`（zero 値 = `Outcome` 空）で組んでおり、絞り込みを入れた瞬間に
+13 箇所が「0 件」へ落ちて実際に踏んだ。`plannedItemOutcomes(n)` ヘルパーへ寄せて実態に合わせた
+（`~/.claude/rules/mutation-verify-new-tests.md` の「fixture が production の初期状態と違わないか」）。
+
+### 検証
+
+- `TestDeleteConfirmCountsOnlyPlannedItems`: Planned 2 + Skipped 1 の下見で「2 件を削除」が出て、
+  Skipped のパスが出ず、「他 1 件は対象外」が出ることを固定
+- 変異 3 本とも red: 件数を `len(e.Items)` へ戻す / パス一覧の絞り込みを外す / 省いた件数の注記を出さない
+
+### 関連（別セッターの起票）
+
+issue 245（P1: 部分中断した下見の確認画面で `y` が「解放される見込み」より多く消す）は**同じ原因の
+entry 階層**。本 issue は item 階層（表示）だけを閉じており、`y` の対象を plan に揃える話は 245 に残る。

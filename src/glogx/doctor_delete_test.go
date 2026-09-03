@@ -218,7 +218,7 @@ func TestDoctorDeleteShowsDryRunInConfirm(t *testing.T) {
 		phases: []disk.DeletePhase{disk.PhaseScanning},
 		rep: disk.DeleteReport{DryRun: true, Entries: []disk.EntryOutcome{
 			{ID: "thing", Label: "Thing キャッシュ", Method: "rm", Outcome: disk.OutcomePlanned,
-				BeforeSize: 4096, Items: make([]disk.ItemOutcome, 1)}}},
+				BeforeSize: 4096, Items: plannedItemOutcomes(1)}}},
 	}
 	v := deleteTestView(t, f)
 	v.handleKey(" ", 20)
@@ -251,7 +251,7 @@ func TestDoctorDeleteConfirmCancel(t *testing.T) {
 		t.Run(key, func(t *testing.T) {
 			f := &fakeDelete{rep: disk.DeleteReport{DryRun: true, Entries: []disk.EntryOutcome{
 				{Label: "Thing キャッシュ", Method: "rm", Outcome: disk.OutcomePlanned,
-					BeforeSize: 4096, Items: make([]disk.ItemOutcome, 1)}}}}
+					BeforeSize: 4096, Items: plannedItemOutcomes(1)}}}}
 			v := deleteTestView(t, f)
 			v.handleKey(" ", 20)
 			v.handleKey("d", 20)
@@ -281,7 +281,7 @@ func TestDoctorDeleteRunsAndShowsResult(t *testing.T) {
 		rep: disk.DeleteReport{Entries: []disk.EntryOutcome{
 			// 🚨 ID を入れる: y の対象は plan の Planned な ID で絞る (issue 245)。
 			// planDelete は必ず ID を入れるので、省くと production に無い形になる
-			{ID: "thing", Label: "Thing キャッシュ", Outcome: disk.OutcomePlanned, BeforeSize: 4096, Items: make([]disk.ItemOutcome, 1)}}},
+			{ID: "thing", Label: "Thing キャッシュ", Outcome: disk.OutcomePlanned, BeforeSize: 4096, Items: plannedItemOutcomes(1)}}},
 	}
 	v := deleteTestView(t, f)
 	v.handleKey(" ", 20)
@@ -389,7 +389,7 @@ func TestDoctorDeletePanelKeepsPromptWhenCramped(t *testing.T) {
 	entries := make([]disk.EntryOutcome, 0, 12)
 	for i := range 12 {
 		entries = append(entries, disk.EntryOutcome{Label: "エントリ", Method: "rm",
-			Outcome: disk.OutcomePlanned, BeforeSize: int64(i+1) * 1024, Items: make([]disk.ItemOutcome, 1)})
+			Outcome: disk.OutcomePlanned, BeforeSize: int64(i+1) * 1024, Items: plannedItemOutcomes(1)})
 	}
 	v := &doctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
 	for _, page := range []int{6, 10, 24} {
@@ -488,7 +488,7 @@ func TestDeleteConfirmRechecksDeletable(t *testing.T) {
 	// 下見に「消すもの」があること = 確認プロンプトが y を受ける状態にしておく
 	f := &fakeDelete{rep: disk.DeleteReport{DryRun: true, Entries: []disk.EntryOutcome{
 		{Label: "Thing キャッシュ", Method: "rm", Outcome: disk.OutcomePlanned,
-			BeforeSize: 4096, Items: make([]disk.ItemOutcome, 1)}}}}
+			BeforeSize: 4096, Items: plannedItemOutcomes(1)}}}}
 	v := deleteTestView(t, f)
 	v.handleKey(" ", 20)
 	v.handleKey("d", 20)
@@ -530,7 +530,7 @@ func TestDeleteConfirmKeepsTotalsWhenCramped(t *testing.T) {
 	entries := make([]disk.EntryOutcome, 0, 12)
 	for range 12 {
 		entries = append(entries, disk.EntryOutcome{Label: "エントリ", Method: "rm",
-			Outcome: disk.OutcomePlanned, BeforeSize: 1 << 30, Items: make([]disk.ItemOutcome, 1)})
+			Outcome: disk.OutcomePlanned, BeforeSize: 1 << 30, Items: plannedItemOutcomes(1)})
 	}
 	v := &doctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
 	// 🚨 page は**判別できる値**を入れる。6/10/24 だけだと「末尾を後ろから残す」機構を
@@ -630,7 +630,7 @@ func (e deleteTestError) Error() string { return string(e) }
 // 中断は ctx で engine へ伝わる (プロセスを殺さない)。
 func TestDeleteCancelReachesEngine(t *testing.T) {
 	f := &fakeDelete{rep: disk.DeleteReport{DryRun: true, Entries: []disk.EntryOutcome{
-		{Label: "Thing キャッシュ", Method: "rm", Outcome: disk.OutcomePlanned, Items: make([]disk.ItemOutcome, 1)}}}}
+		{Label: "Thing キャッシュ", Method: "rm", Outcome: disk.OutcomePlanned, Items: plannedItemOutcomes(1)}}}}
 	v := deleteTestView(t, f)
 	v.handleKey(" ", 20)
 	v.handleKey("d", 20)
@@ -710,9 +710,9 @@ func TestDeleteVocabulary(t *testing.T) {
 // 削除の経路ごとに確認の文言が変わる (trash はゴミ箱、cli はコマンド、対象外は理由)。
 func TestDeleteConfirmPerMethodLines(t *testing.T) {
 	plan := disk.DeleteReport{Entries: []disk.EntryOutcome{
-		{Label: "ごみ", Method: "trash", Outcome: disk.OutcomePlanned, BeforeSize: 2048, Items: make([]disk.ItemOutcome, 3)},
+		{Label: "ごみ", Method: "trash", Outcome: disk.OutcomePlanned, BeforeSize: 2048, Items: plannedItemOutcomes(3)},
 		{Label: "こまんど", Method: "cli", Command: "go clean -modcache", Outcome: disk.OutcomePlanned,
-			BeforeSize: 1024, Items: make([]disk.ItemOutcome, 1)},
+			BeforeSize: 1024, Items: plannedItemOutcomes(1)},
 		{Label: "ていじ", Method: "propose", Outcome: disk.OutcomeProposed},
 		{Label: "たいしょうがい", Method: "rm", Outcome: disk.OutcomeSkipped, Reason: "いまは対象外です"},
 	}}
@@ -735,7 +735,7 @@ func TestDeletePanelElisionNote(t *testing.T) {
 	entries := make([]disk.EntryOutcome, 0, 8)
 	for range 8 {
 		entries = append(entries, disk.EntryOutcome{Label: "え", Method: "rm",
-			Outcome: disk.OutcomePlanned, BeforeSize: 1024, Items: make([]disk.ItemOutcome, 1)})
+			Outcome: disk.OutcomePlanned, BeforeSize: 1024, Items: plannedItemOutcomes(1)})
 	}
 	v := &doctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
 	out := strings.Join(v.lines(doctorTestOpts(10)), "\n")
@@ -752,7 +752,7 @@ func TestDeleteConfirmScrollKeysDoNotCancel(t *testing.T) {
 	entries := make([]disk.EntryOutcome, 0, 6)
 	for i := range 6 {
 		entries = append(entries, disk.EntryOutcome{Label: fmt.Sprintf("え%d", i), Method: "rm",
-			Outcome: disk.OutcomePlanned, BeforeSize: 1024, Items: make([]disk.ItemOutcome, 2)})
+			Outcome: disk.OutcomePlanned, BeforeSize: 1024, Items: plannedItemOutcomes(2)})
 	}
 	v := &doctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
 	first := strings.Join(v.lines(doctorTestOpts(12)), "\n") // 高さを測らせる (窓は描画で決まる)
@@ -808,7 +808,7 @@ func TestDeleteConfirmScrollKeysDoNotCancel(t *testing.T) {
 // 送るキー以外は**従来どおり中止**する (既定は安全側。緩めていないことを固定する)。
 func TestDeleteConfirmOtherKeysStillCancel(t *testing.T) {
 	entries := []disk.EntryOutcome{{Label: "え", Method: "rm", Outcome: disk.OutcomePlanned,
-		BeforeSize: 1024, Items: make([]disk.ItemOutcome, 1)}}
+		BeforeSize: 1024, Items: plannedItemOutcomes(1)}}
 	for _, key := range []string{"n", "esc", " ", "enter", "x"} {
 		v := &doctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
 		if _, handled := v.handleDeleteKey(key); !handled {
@@ -1016,7 +1016,7 @@ func TestDeleteConfirmListsFullPaths(t *testing.T) {
 	items := make([]disk.ItemOutcome, 0, 13)
 	for i := range 13 {
 		items = append(items, disk.ItemOutcome{
-			Path: fmt.Sprintf("/Users/koji/Library/Caches/thing/Entry-%d", i), Size: 1 << 20})
+			Path: fmt.Sprintf("/Users/koji/Library/Caches/thing/Entry-%d", i), Size: 1 << 20, Outcome: disk.OutcomePlanned})
 	}
 	plan := disk.DeleteReport{Entries: []disk.EntryOutcome{
 		{Label: "たくさんある", Method: "rm", Outcome: disk.OutcomePlanned, BeforeSize: 13 << 20, Items: items}}}
@@ -1040,7 +1040,7 @@ func TestDeleteConfirmListsFullPaths(t *testing.T) {
 func TestDeleteConfirmPathsCannotForgeLines(t *testing.T) {
 	plan := disk.DeleteReport{Entries: []disk.EntryOutcome{
 		{Label: "細工", Method: "rm", Outcome: disk.OutcomePlanned, BeforeSize: 1024,
-			Items: []disk.ItemOutcome{{Path: "/tmp/x\n 何もしません\n y: 何もしない", Size: 1024}}}}}
+			Items: []disk.ItemOutcome{{Path: "/tmp/x\n 何もしません\n y: 何もしない", Size: 1024, Outcome: disk.OutcomePlanned}}}}}
 	v := &doctorView{del: doctorDelete{confirm: true, plan: &plan}}
 	lines := v.lines(doctorTestOpts(40))
 	for _, l := range lines {
@@ -1300,7 +1300,7 @@ func TestDeleteConfirmKeepsPathTail(t *testing.T) {
 	long := "/Users/koji/Library/Developer/Xcode/DerivedData/ThumbnailThumb-cxxbmelbwqqahjagpvzoszkxfvfz"
 	plan := disk.DeleteReport{Entries: []disk.EntryOutcome{{
 		Label: "DerivedData", Method: "rm", Outcome: disk.OutcomePlanned, BeforeSize: 1 << 30,
-		Items: []disk.ItemOutcome{{Path: long, Size: 1 << 30}},
+		Items: []disk.ItemOutcome{{Path: long, Size: 1 << 30, Outcome: disk.OutcomePlanned}},
 	}}}
 	v := &doctorView{del: doctorDelete{confirm: true, plan: &plan}}
 	out := strings.Join(v.lines(doctorRenderOpts{width: 77, page: 24}), "\n")
@@ -1424,7 +1424,7 @@ func TestDeleteResultPanelElisionNote(t *testing.T) {
 	entries := make([]disk.EntryOutcome, 0, 8)
 	for i := range 8 {
 		entries = append(entries, disk.EntryOutcome{Label: fmt.Sprintf("え%d", i), Method: "rm",
-			Outcome: disk.OutcomeDeleted, Freed: 1024, Items: make([]disk.ItemOutcome, 1)})
+			Outcome: disk.OutcomeDeleted, Freed: 1024, Items: plannedItemOutcomes(1)})
 	}
 	rep := disk.DeleteReport{Entries: entries}
 	v := &doctorView{del: doctorDelete{result: &rep}}
@@ -1575,5 +1575,54 @@ func TestAbortKeysWordSurvivesBrokenKeyNames(t *testing.T) {
 	// 正常な入力では今の表記のままであること (壊れた入力への手当てで表記を変えていない)
 	if got := abortKeysWord([]string{"ctrl+c", "ctrl+g"}); got != "Ctrl-C / Ctrl-G" {
 		t.Errorf("abortKeysWord = %q", got)
+	}
+}
+
+// plannedItemOutcomes は下見の結果に載る Item を n 件作る。
+// 🚨 **Outcome を必ず入れる**: production の planDelete / planItem は Item ごとに
+// `Outcome: OutcomePlanned` を入れる (delete.go:331 / :509) ので、zero 値の fixture は
+// 「実際には起こらない状態」を検査することになる。issue 233 で確認画面が Planned だけを
+// 数えるようにしたとき、zero 値の fixture が全部 0 件へ落ちて実際に踏んだ。
+func plannedItemOutcomes(n int) []disk.ItemOutcome {
+	out := make([]disk.ItemOutcome, 0, n)
+	for i := range n {
+		out = append(out, disk.ItemOutcome{
+			Path: fmt.Sprintf("/tmp/planned-%d", i), Size: 1024, Outcome: disk.OutcomePlanned,
+		})
+	}
+	return out
+}
+
+// 確認画面は**実際に触る Item だけ**を数え、並べる (issue 233)。
+// 下見で Skipped / Failed になった Item を混ぜると、同じ行のサイズ (BeforeSize = 照合が取れた分)
+// と件数が食い違い、「3 件を削除」と出ているのにサイズは 1 件分、という画面になる。
+func TestDeleteConfirmCountsOnlyPlannedItems(t *testing.T) {
+	plan := disk.DeleteReport{Entries: []disk.EntryOutcome{{
+		Label: "混在", Method: "rm", Outcome: disk.OutcomePlanned, BeforeSize: 2048,
+		Items: []disk.ItemOutcome{
+			{Path: "/tmp/keep-1", Size: 1024, Outcome: disk.OutcomePlanned},
+			{Path: "/tmp/keep-2", Size: 1024, Outcome: disk.OutcomePlanned},
+			{Path: "/tmp/gone", Size: 4096, Outcome: disk.OutcomeSkipped, Reason: "既に存在しません"},
+		},
+	}}}
+	v := &doctorView{del: doctorDelete{confirm: true, plan: &plan}}
+	out := strings.Join(v.lines(doctorTestOpts(24)), "\n")
+	if !strings.Contains(out, "2 件を削除") {
+		t.Errorf("触る件数 (2) を出していない:\n%s", out)
+	}
+	if strings.Contains(out, "3 件を削除") {
+		t.Errorf("触らない Item まで数えている:\n%s", out)
+	}
+	if strings.Contains(out, "/tmp/gone") {
+		t.Errorf("触らないパスを並べている (doc は「実際に触る対象そのもの」と主張している):\n%s", out)
+	}
+	for _, want := range []string{"/tmp/keep-1", "/tmp/keep-2"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("触るパス %q が出ていない:\n%s", want, out)
+		}
+	}
+	// 黙って省かない (件数が減った理由が読めないと下見の結果を確かめられない)
+	if !strings.Contains(out, "他 1 件は対象外") {
+		t.Errorf("省いた件数を伝えていない:\n%s", out)
 	}
 }

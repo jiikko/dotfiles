@@ -485,6 +485,8 @@ func TestDeleteFailsClosedWhenHistoryUnwritable(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.opt.HistoryDir = filepath.Join(blocker, "history") // ファイルの下にはディレクトリを作れない
+	// 記録の置き場も検査点を通るようになった (issue 234 (c))。一時領域配下なので登録してよい
+	sandboxAllow(t, f.opt.HistoryDir)
 	if _, err := Delete(context.Background(), []Result{f.scan(t)}, f.opt); err == nil {
 		t.Fatal("記録を残せないのに削除を続けた")
 	}
@@ -1495,5 +1497,53 @@ func TestDryRunAbortStopsScanningRest(t *testing.T) {
 		if e.Outcome != OutcomeSkipped || !strings.Contains(e.Reason, "中断") {
 			t.Errorf("entries[%d]: outcome=%s reason=%q", i, e.Outcome, e.Reason)
 		}
+	}
+}
+
+// ゴミ箱の**宛先**も検査点を通る (issue 234 (b))。以前は src だけを見ていたので、
+// 登録済みの src から未登録のディレクトリへの移動が err == nil で成功し、違反記録も 0 件だった。
+// TrashDir はテストが自由に渡せるので、1 行間違えると実データの場所へファイルが移る。
+func TestTrashDestGoesThroughHook(t *testing.T) {
+	f := newDeleteFixture(t, Entry{ID: "testcache", Label: "テストキャッシュ", Tier: 1,
+		Risk: RiskConfirm, DeleteVia: "trash", Recover: "ゴミ箱から戻せます"}, 64)
+	// 一時領域配下だが **sandbox に登録しない** 宛先 (「登録し忘れ」の再現)
+	unregistered := filepath.Join(t.TempDir(), "unregistered-trash")
+	f.opt.TrashDir = unregistered
+	rep, err := Delete(context.Background(), []Result{f.scan(t)}, f.opt)
+	if err != nil {
+		t.Fatalf("Delete 自体が失敗した: %v", err)
+	}
+	if got := rep.Entries[0].Items[0].Outcome; got != OutcomeFailed {
+		t.Errorf("未登録の宛先への移動が止まらなかった: outcome=%s reason=%q", got, rep.Entries[0].Items[0].Reason)
+	}
+	if !exists(f.target) {
+		t.Error("止まったのに元を消した")
+	}
+	if _, err := os.Stat(unregistered); err == nil {
+		t.Error("未登録の宛先ディレクトリを作った (検査点は MkdirAll の前に置くこと)")
+	}
+	// 違反として記録されていること (沈黙のまま素通りしない)
+	if got := takeSandboxViolations("trash-dest"); len(got) == 0 {
+		t.Error("違反記録が 0 件 (ハーネスが見ていない)")
+	}
+}
+
+// 記録の置き場も**作る前に**検査点を通る (issue 234 (c))。AST ゲートは「消す・動かす」だけを
+// 見る設計なので、ここが無いと実ディレクトリと 0 バイトの JSON を作れてしまう。
+func TestHistoryCreateGoesThroughHook(t *testing.T) {
+	f := newDeleteFixture(t, rmEntry, 64)
+	unregistered := filepath.Join(t.TempDir(), "unregistered-history")
+	f.opt.HistoryDir = unregistered
+	if _, err := Delete(context.Background(), []Result{f.scan(t)}, f.opt); err == nil {
+		t.Fatal("未登録の置き場でも削除を続けた")
+	}
+	if _, err := os.Stat(unregistered); err == nil {
+		t.Error("未登録の置き場を作った (検査点は MkdirAll の前に置くこと)")
+	}
+	if !exists(f.target) {
+		t.Error("記録を残せないのに消した")
+	}
+	if got := takeSandboxViolations("history-create"); len(got) == 0 {
+		t.Error("違反記録が 0 件 (ハーネスが見ていない)")
 	}
 }

@@ -2057,3 +2057,54 @@ func TestDoctorListHomeEndAreAliasesOfGG(t *testing.T) {
 		t.Errorf("end の着地 = %d (G は %d)", got, bottom)
 	}
 }
+
+// ディスク行は**カーソル欄 (2 桁) を含めて**幅に収まる (issue 238)。
+// 🚨 doctor の描画テストは全部 width 100 固定で、182 が入れた縮退経路が一度も走っていなかった。
+// ここは狭い幅を掃いて、最長マーク「❓ 走査できず」(幅 13) が切れないことを固定する。
+func TestDoctorDiskRowFitsWidthIncludingGutter(t *testing.T) {
+	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v.diskRep = &disk.Report{Results: []disk.Result{
+		{Entry: disk.Entry{ID: "a", Label: "とても長いラベルのエントリ名前", Risk: disk.RiskSafe, DeleteVia: "rm"},
+			Status: disk.StatusFailed, Reason: "権限がありません"},
+		{Entry: disk.Entry{ID: "b", Label: "別の長いラベル", Risk: disk.RiskConfirm, DeleteVia: "trash"},
+			Status: disk.StatusOK, Size: 1 << 20, Items: []disk.Item{{Path: "/p", Size: 1 << 20}}},
+	}}
+	// 走査が終わった状態にする (scanning のヘッダは経過時間を出すので、起点を置かないと
+	// 現実に出ない長さの行になり、測りたい行ではなくヘッダで落ちる)
+	v.svcRep, v.brew = &svc.Report{}, &brewDoctorResult{Clean: true}
+	for _, width := range []int{40, 53, 60, 65, 66, 67, 100} {
+		for _, line := range v.lines(doctorRenderOpts{width: width, page: 20}) {
+			if w := dispWidth(line); w > width {
+				t.Errorf("width=%d で行が溢れた (幅 %d): %q", width, w, line)
+			}
+		}
+		out := strings.Join(v.lines(doctorRenderOpts{width: width, page: 20}), "\n")
+		if width >= 53 && !strings.Contains(out, "❓ 走査できず") {
+			t.Errorf("width=%d で最長マークが切れた:\n%s", width, out)
+		}
+	}
+}
+
+// マーク幅の見積もりは disk.Mark の語彙から導く (手で並べると増えた語を取りこぼす。issue 238 の副次)。
+func TestDoctorMarkVocabularyCoversMark(t *testing.T) {
+	got := doctorMarkVocabulary()
+	if len(got) != 6 {
+		t.Fatalf("語彙が %d 件 (disk.Mark は 6 語を返す): %v", len(got), got)
+	}
+	seen := map[string]bool{}
+	for _, m := range got {
+		if m == "" {
+			t.Error("空の語がある")
+		}
+		if seen[m] {
+			t.Errorf("語が重複している: %q", m)
+		}
+		seen[m] = true
+	}
+	if !seen["🔎 未検証"] {
+		t.Errorf("未検証の語が抜けている (幅 9。以前ハードコードから漏れていた): %v", got)
+	}
+	if w := doctorMaxMarkWidth(); w != dispWidth("❓ 走査できず") {
+		t.Errorf("最大幅 = %d; want %d (❓ 走査できず)", w, dispWidth("❓ 走査できず"))
+	}
+}

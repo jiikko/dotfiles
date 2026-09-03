@@ -681,7 +681,11 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 		// 「状態 > ラベルの詳細」だから (幅 60 で `⛔ 要…` になると、その行が何なのかは
 		// 分かってもどう扱えばよいかが消える。実測 2026-09-03。issue 182)
 		labelW := doctorLabelWidth
-		if room := o.width - doctorDiskRowFixedW - doctorMaxMarkWidth(); room < labelW {
+		// 🚨 **カーソル欄 (2 桁) を引く** (issue 238)。lines が行頭に "  " / "▶ " を足してから
+		// 幅で切るので、ここで引かないと最長マーク「❓ 走査できず」(幅 13) が切れる。
+		// 同じファイルの sectionHeader は `o.width - 2` と正しく引いており、非対称だった
+		// (フレーム最小構成の contentWidth 53 では常時 +2 超過。実測 2026-09-04)
+		if room := o.width - doctorDiskRowFixedW - doctorMaxMarkWidth() - cursorGutterWidth; room < labelW {
 			labelW = max(room, doctorMinLabelWidth)
 		}
 		label := truncateDisp(r.Entry.Label, labelW, "…")
@@ -886,11 +890,28 @@ const (
 	doctorMinLabelWidth = 8
 )
 
+// doctorMarkVocabulary は disk.Mark が返しうる語をすべて列挙する。
+// 🚨 **手で並べない**。以前は 5 語をハードコードしていて「🔎 未検証」が抜けており、
+// 語彙が増えたときに幅の見積もりだけが古くなる形だった (issue 238 の副次)。
+// disk.Mark に代表の Result を通して作れば、語の出典 (issue 222 で一元化した) から自動で追従する。
+func doctorMarkVocabulary() []string {
+	safe := disk.Entry{ID: "x", Risk: disk.RiskSafe}
+	item := []disk.Item{{Path: "/p"}}
+	return []string{
+		disk.Mark(disk.Result{Entry: safe, Status: disk.StatusBlocked}),
+		disk.Mark(disk.Result{Entry: safe, Status: disk.StatusFailed}),
+		disk.Mark(disk.Result{Entry: disk.Entry{ID: "x", Risk: disk.RiskSafe, Unverified: "未実測"}, Status: disk.StatusOK}),
+		disk.Mark(disk.Result{Entry: safe, Status: disk.StatusOK, Items: item}),
+		disk.Mark(disk.Result{Entry: disk.Entry{ID: "x", Risk: disk.RiskCaution}, Status: disk.StatusOK, Items: item}),
+		disk.Mark(disk.Result{Entry: disk.Entry{ID: "x", Risk: disk.RiskConfirm}, Status: disk.StatusOK, Items: item}),
+	}
+}
+
 // doctorMaxMarkWidth はリスク記号の最大表示幅。マークは固定語彙なので測れる
 // (可変長の理由をマーク列へ入れないのは issue 182 の対応)。
 func doctorMaxMarkWidth() int {
 	w := 0
-	for _, m := range []string{"✅ 安全", "🚨 注意", "⛔ 要確認", "🚫 対象外", "❓ 走査できず"} {
+	for _, m := range doctorMarkVocabulary() {
 		w = max(w, dispWidth(m))
 	}
 	return w

@@ -1012,6 +1012,13 @@ func trashMove(src, trashDir string, dev, ino uint64) (string, error) {
 	if trashDir == "" {
 		return "", errors.New("ゴミ箱の場所が分かりません")
 	}
+	// 🚨 **宛先も検査点を通す** (issue 234 (b))。src だけを見ていたので、登録済みの src から
+	// 未登録のディレクトリへの移動が err == nil で成功し、違反記録も 0 件だった
+	// (TrashDir はテストが自由に渡せるので、1 行間違えると実データの場所へファイルが移る)。
+	// op 名を分けるのは、拒否の記録から「どちら側で止まったか」を読めるようにするため
+	if err := allowDestructive("trash-dest", trashDir); err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(trashDir, 0o700); err != nil {
 		return "", fmt.Errorf("ゴミ箱を用意できません: %w", err)
 	}
@@ -1150,6 +1157,12 @@ func newHistory(opt DeleteOptions) (*history, error) {
 			return nil, err
 		}
 		dir = d
+	}
+	// 🚨 **作る前に検査点を通す** (issue 234 (c))。AST ゲートは「消す・動かす」だけを見る設計なので、
+	// ここは素通りして実ディレクトリと 0 バイトの JSON を作れてしまう。しかも後段の write が
+	// 拒否されると discard も拒否されるので、0 バイトの記録が残る (次に読む処理がパースエラー)
+	if err := allowDestructive("history-create", dir); err != nil {
+		return nil, err
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err

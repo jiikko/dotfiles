@@ -61,3 +61,26 @@ doctor ではない。237 / 236 には無い。
 
 🚨 **共有できるのは幅だけ**: `box.go` の `cursorGutterMark` は `"→ "` で doctor は `"▶ "` を使う。
 記号まで寄せると見た目が変わるので、寄せるのは `cursorGutterWidth`（= 2）に限る。
+
+## 決着 (2026-09-04)
+
+- `diskSection` の予算から `cursorGutterWidth`（`box.go` の共有定数 = 2）を引いた。
+  `sectionHeader` は元から `o.width - 2` と引いており、ファイル内の非対称を解消した
+- 副次で挙げていた「`doctorMaxMarkWidth` の一覧が 5 語で `🔎 未検証` が抜けている」も直した。
+  **手で並べるのをやめ**、`disk.Mark` に代表の Result を通して 6 語を導く `doctorMarkVocabulary` にした
+  （語の出典は issue 222 で `disk.Mark` へ一元化済みなので、そこから自動で追従する）
+
+### 検証
+
+- `TestDoctorDiskRowFitsWidthIncludingGutter`: width 40 / 53 / 60 / 65 / 66 / 67 / 100 を掃き、
+  **行が幅を超えないこと**と**最長マーク「❓ 走査できず」が切れないこと**を固定。
+  🚨 doctor の描画テストは全部 width 100 固定で、182 が入れた縮退経路が一度も走っていなかった
+- `TestDoctorMarkVocabularyCoversMark`: 語彙が 6 語で重複が無く、`🔎 未検証` を含み、
+  最大幅が `❓ 走査できず` と一致すること
+- 変異 2 本（`go build` 通過を確認してから判定）:
+  | 変異 | 結果 |
+  |---|---|
+  | 予算から `cursorGutterWidth` を引かない（本 issue 以前） | 幅のテストが red |
+  | 語彙から `🔎 未検証` を落とす（以前のハードコード相当） | 語彙のテストが red |
+- 🚨 fixture の作り方で 1 度落ちた: 走査中の状態のままだとヘッダが経過時間
+  （`2562047h47m…`）を出して**測りたい行ではなくヘッダで幅超過**する。走査完了の状態へ直した

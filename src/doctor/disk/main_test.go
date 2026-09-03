@@ -51,10 +51,10 @@ var (
 // **os.TempDir() の外は登録できない** (実ホームを登録するとハーネスが丸ごと無力化するため)。
 func sandboxAllow(t *testing.T, root string) {
 	t.Helper()
-	r := resolveForSandbox(root)
-	if r != sandboxTmpRoot && !strings.HasPrefix(r, sandboxTmpRoot+string(filepath.Separator)) {
-		t.Fatalf("サンドボックスに登録できるのは %s 配下だけです (実データを守るため): %s", sandboxTmpRoot, root)
+	if err := sandboxAllowable(root); err != nil {
+		t.Fatal(err)
 	}
+	r := resolveForSandbox(root)
 	sandboxMu.Lock()
 	sandboxRoots = append(sandboxRoots, r)
 	sandboxMu.Unlock()
@@ -277,24 +277,28 @@ func TestSandboxAllowRejectsPathsOutsideTempDir(t *testing.T) {
 		t.Skip("HOME が取れない")
 	}
 	for _, p := range []string{home, "/", filepath.Join(home, "Documents")} {
-		fake := &fatalRecorder{}
-		if allowed := trySandboxAllow(fake, p); allowed {
+		if err := sandboxAllowable(p); err == nil {
 			t.Errorf("%s の登録を許した", p)
 		}
 	}
+	// 逆向き (登録してよい側) も見る: 判定が deny-all になっても気づけるように
+	if err := sandboxAllowable(t.TempDir()); err != nil {
+		t.Errorf("一時領域の登録を拒んだ: %v", err)
+	}
 }
 
-// trySandboxAllow は sandboxAllow の判定部分だけを検査する (Fatal でテストを落とさずに済ませる)。
-func trySandboxAllow(rec *fatalRecorder, root string) bool {
+// sandboxAllowable は「この root を登録してよいか」の**唯一の判定**。
+// 🚨 sandboxAllow と自己テストが**同じ関数を通る**ことが要点。以前は自己テストが判定式を
+// 別に書き写しており、本走査 (sandboxAllow) の検査を外す変異を当てても緑のままだった
+// (issue 234 (a)。~/.claude/rules/verify-execution-not-just-exit-code.md の
+// 「canary と本走査は同じ関数を通す」)。
+func sandboxAllowable(root string) error {
 	r := resolveForSandbox(root)
 	if r != sandboxTmpRoot && !strings.HasPrefix(r, sandboxTmpRoot+string(filepath.Separator)) {
-		rec.fatal = true
-		return false
+		return fmt.Errorf("サンドボックスに登録できるのは %s 配下だけです (実データを守るため): %s", sandboxTmpRoot, root)
 	}
-	return true
+	return nil
 }
-
-type fatalRecorder struct{ fatal bool }
 
 // XDG_CACHE_HOME が一時領域へ向いている (HistoryDir 未指定でも実キャッシュに書かない)。
 func TestHarnessRedirectsCacheHome(t *testing.T) {
@@ -413,6 +417,9 @@ func TestDestructiveCallsGoThroughHook(t *testing.T) {
 	destructive := map[string]bool{
 		"RemoveAll": true, "Remove": true, "Rename": true,
 		"RenameatxNp": true, "Renameat": true, "Unlinkat": true, "renameExcl": true,
+		// 🚨 unix.Unlink / unix.Rmdir が抜けていた (issue 234 (c))。`unix.Unlink(p)` と
+		// 書くだけでゲートが無音で素通りする形だった
+		"Unlink": true, "Rmdir": true,
 	}
 	hooks := map[string]bool{"allowDestructive": true, "sandboxCheck": true, "rmFixture": true}
 	fset := token.NewFileSet()
