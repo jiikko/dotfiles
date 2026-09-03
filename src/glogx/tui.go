@@ -1030,6 +1030,12 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		targets := m.ciPollTargets()
 		if len(targets) == 0 {
+			// 🚨 **ここで awaitCI を空にする** (issue 223)。ciPollTargets は commits を走査して
+			// `m.awaitCI[c.SHA]` を targets に入れるので、**targets が空なら残っている awaitCI の
+			// 要素は定義上 commits の外**にいる = どの経路でも取り除かれないファントム。
+			// ⚠️ 打ち切り (awaitAttempts) を早期 return の前へ動かしても効かない: この分岐は
+			// ciPolling=false でチェーンごと止めるため、1 回数えても次の周期が来ない。
+			m.awaitCI, m.awaitAttempts = nil, 0
 			m.ciPolling = false // 追従対象なし: チェーンを止める (次の開始点で再アーム)
 			return m, nil
 		}
@@ -2076,7 +2082,18 @@ func (m *browseModel) refetchAfterPush() tea.Cmd {
 	m.awaitCI = map[string]bool{}
 	m.awaitAttempts = 0
 	if m.pushAnimTip != "" {
-		m.awaitCI[m.pushAnimTip] = true
+		// 🚨 **commits 所属を確かめてから入れる** (issue 223)。awaitCI の不変条件は
+		// 「awaitCI ⊆ commits の SHA」で、これを破ると**どの経路でも取り除かれない**
+		// 要素が残る: ciPollTargets は commits を走査して targets を組むので commits 外の
+		// SHA は追従対象にならず、statuses も永久に現れないので settleAwaitCI も落とせない。
+		// 結果 spinnerActive() が下りず、tickMsg の invalidateLines が 80ms ごとに
+		// 全行を組み直し続ける (画面は静止しているのにアイドルへ戻らない)。
+		// 踏む筋: push 演出中に u で pull → applyLogData が awaitCI を nil にするが
+		// pushAnimTip は残る → その pull で履歴が書き換わり tip の SHA が消える →
+		// 演出の着地でここへ来る。
+		if m.hasCommitSHA(m.pushAnimTip) {
+			m.awaitCI[m.pushAnimTip] = true
+		}
 		m.pushAnimTip = ""
 	}
 	all := make([]string, 0, len(m.commits))
@@ -2735,11 +2752,24 @@ func (m *browseModel) ensureCIPoll() tea.Cmd {
 // settleAwaitCI は「push したが CI がまだ見えない」SHA の後始末。CI が見えたら awaitCI を
 // 卒業させ、見えていない SHA は結果を捨てる (statuses から消してスピナーに戻し、fetched からも
 // 外してファイルキャッシュへ「checks なし」を負キャッシュとして残さない)。上限に達したら諦める。
+// hasCommitSHA は sha が今の commits に在るか (awaitCI の不変条件の判定に使う)。
+func (m *browseModel) hasCommitSHA(sha string) bool {
+	return slices.ContainsFunc(m.commits, func(c Commit) bool { return c.SHA == sha })
+}
+
 func (m *browseModel) settleAwaitCI() {
 	if len(m.awaitCI) == 0 {
 		return
 	}
 	for sha := range m.awaitCI {
+		// 🚨 **commits に無い SHA は毎周期ここで落とす** (issue 223)。入口 (refetchAfterPush)
+		// でも弾いているが、awaitCI を張る経路が増えたときにこちらが最後の砦になる。
+		// 落とさないと statuses が永久に現れず、下の switch は default 側を回り続けるだけで
+		// awaitCI から消えない = スピナーと再描画が止まらない。
+		if !m.hasCommitSHA(sha) {
+			delete(m.awaitCI, sha)
+			continue
+		}
 		switch m.statuses[sha] {
 		case StatePending, StateSuccess, StateFailure, StateNeutral:
 			delete(m.awaitCI, sha) // CI が見えた: 以降は statuses 起点の通常の追従へ
