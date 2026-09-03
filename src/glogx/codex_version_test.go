@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 // バージョン出力のパースは usage パッケージ側 (TestParseCodexVersion) でカバーする。
@@ -25,7 +26,7 @@ func TestBrowseCodexUpdateFlow(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	var calls int
 	orig := runCodexUpdate
-	runCodexUpdate = func() (string, string, error) { calls++; return "0.144.6", "0.150.0", nil }
+	runCodexUpdate = func() (string, string, string, error) { calls++; return "0.144.6", "0.150.0", "", nil }
 	t.Cleanup(func() { runCodexUpdate = orig })
 
 	// X 直後は「既に latest か」の判定中でモーダルはまだ出ない (2 段構え。tui_actions_test.go
@@ -91,4 +92,52 @@ func TestCheckCodexVersionCmd(t *testing.T) {
 			t.Fatalf("msg = %#v, want codexUpdateAvailableMsg{0.150.0} (claude の latest が混入?)", msg)
 		}
 	})
+}
+
+// 起動時トーストが新版を告げた直後に X を押しても codex が更新しなかったケース (実測 2026-09-03)。
+// codex は自前の latest キャッシュ (~/.codex/version.json) が stale だと "already up to date" を
+// 出して exit 0 で終わるため、glogx から見ると before == after の成功に見える。⚠️ これを
+// 「すでに最新版です」と出すと、直前の「新版が公開されています」トーストと真っ向から矛盾した
+// 案内になる (ユーザー報告の元の症状)。glogx は registry 直取りの latest を握っているので、
+// それより古いままなら警告として出し、codex の言い分 (note) を添える。
+func TestCodexUpdateThatDidNotUpdateIsNotReportedAsLatest(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	// 起動時チェックが「公開は 0.153.0」を保存済み。インストール済みは 0.152.0 なので
+	// installedIsLatest は早期リターンせず、実際に codex update が走る。
+	writeVersionCache(t, codexVersionCacheFile, "0.153.0", time.Now())
+	origFetch := fetchInstalledCodexVersion
+	fetchInstalledCodexVersion = func(context.Context) string { return "0.152.0" }
+	t.Cleanup(func() { fetchInstalledCodexVersion = origFetch })
+
+	origRun := runCodexUpdate
+	var runCalls int
+	runCodexUpdate = func() (string, string, string, error) {
+		runCalls++
+		return "0.152.0", "0.152.0", "Codex is already up to date.", nil
+	}
+	t.Cleanup(func() { runCodexUpdate = origRun })
+
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	_, cmd := m.handleKey("X")
+	deliverUpdateMsg(m, cmd)
+
+	if runCalls != 1 {
+		t.Fatalf("codex update 実行回数 = %d, want 1 (早期リターンしてはいけない)", runCalls)
+	}
+	if strings.Contains(m.toast.text, "最新版") {
+		t.Fatalf("更新されなかったのに「最新版」と案内している: text=%q", m.toast.text)
+	}
+	// 警告として出す (ok=false)。w でコピーできるよう lastWarning にも積まれる。
+	if m.toast.ok {
+		t.Fatalf("公開版より古いままなのに成功トーストで出している: text=%q", m.toast.text)
+	}
+	if !strings.Contains(m.toast.text, "v0.152.0") || !strings.Contains(m.toast.text, "v0.153.0") {
+		t.Fatalf("現行版と公開版の両方がトーストに出ない: text=%q", m.toast.text)
+	}
+	if !strings.Contains(m.toast.text, "Codex is already up to date.") {
+		t.Fatalf("codex の言い分 (note) がトーストに出ない: text=%q", m.toast.text)
+	}
+	if m.actModal.anyUpdating() {
+		t.Fatal("updateMsg 後も updating のまま")
+	}
 }

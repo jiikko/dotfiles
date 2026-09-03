@@ -49,7 +49,7 @@ func TestBrowseUpdateFlow(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	var calls int
 	orig := runClaudeUpdate
-	runClaudeUpdate = func() (string, string, error) { calls++; return "2.1.216", "2.2.0", nil }
+	runClaudeUpdate = func() (string, string, string, error) { calls++; return "2.1.216", "2.2.0", "", nil }
 	t.Cleanup(func() { runClaudeUpdate = orig })
 
 	// C 直後は「既に latest か」の判定中で、モーダルはまだ出ない (早期リターン時に
@@ -122,13 +122,24 @@ func TestBrowseUpdateFlow(t *testing.T) {
 		t.Fatalf("トースト表示中に j が消費された (cursor=%d)", m.cursor)
 	}
 
-	// 変わらなかった場合は「変更なし」
+	// 変わらなかった場合。⚠️ ここで「最新版です」と言わないことがこのテストの主張:
+	// update が走った上で before == after なのは「CLI が更新しなかった」であって、
+	// 「これが最新である」は glogx には言えない (CLI は stale なキャッシュを見て
+	// 更新不要と判断しても exit 0 で成功する)。CLI の言い分 (note) を添えて事実だけ出す。
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	runClaudeUpdate = func() (string, string, error) { return "2.2.0", "2.2.0", nil }
+	runClaudeUpdate = func() (string, string, string, error) {
+		return "2.2.0", "2.2.0", "claude is already up to date.", nil
+	}
 	_, cmd2 := m2.handleKey("C")
 	deliverUpdateMsg(m2, cmd2)
-	if !m2.toast.visible() || !strings.Contains(m2.toast.text, "最新版") || !strings.Contains(m2.toast.text, "v2.2.0") {
-		t.Fatalf("最新版がトーストに出ない: visible=%v text=%q", m2.toast.visible(), m2.toast.text)
+	if !m2.toast.visible() || !strings.Contains(m2.toast.text, "変化なし") || !strings.Contains(m2.toast.text, "v2.2.0") {
+		t.Fatalf("変化なしがトーストに出ない: visible=%v text=%q", m2.toast.visible(), m2.toast.text)
+	}
+	if strings.Contains(m2.toast.text, "最新版") {
+		t.Fatalf("update 実行結果を「最新版」と偽っている: text=%q", m2.toast.text)
+	}
+	if !strings.Contains(m2.toast.text, "claude is already up to date.") {
+		t.Fatalf("CLI の言い分 (note) がトーストに出ない: text=%q", m2.toast.text)
 	}
 }
 
@@ -138,8 +149,8 @@ func TestBrowseUpdateFlow(t *testing.T) {
 func TestBrowseUpdateFailureShowsDialogAndClearsUpdating(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	orig := runClaudeUpdate
-	runClaudeUpdate = func() (string, string, error) {
-		return "2.1.216", "", errors.New("claude update がタイムアウトしました (5m0s)")
+	runClaudeUpdate = func() (string, string, string, error) {
+		return "2.1.216", "", "", errors.New("claude update がタイムアウトしました (5m0s)")
 	}
 	t.Cleanup(func() { runClaudeUpdate = orig })
 
@@ -1044,7 +1055,7 @@ func TestBrowseUpdateSkipsWhenAlreadyLatest(t *testing.T) {
 	t.Cleanup(func() { fetchInstalledClaudeVersion = origFetch })
 	origRun := runClaudeUpdate
 	var runCalls int
-	runClaudeUpdate = func() (string, string, error) { runCalls++; return "2.2.0", "2.2.0", nil }
+	runClaudeUpdate = func() (string, string, string, error) { runCalls++; return "2.2.0", "2.2.0", "", nil }
 	t.Cleanup(func() { runClaudeUpdate = origRun })
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
@@ -1072,7 +1083,7 @@ func TestBrowseUpdateSkipsWhenAlreadyLatest(t *testing.T) {
 	t.Cleanup(func() { fetchInstalledCodexVersion = origCodexFetch })
 	origCodexRun := runCodexUpdate
 	var codexCalls int
-	runCodexUpdate = func() (string, string, error) { codexCalls++; return "0.144.6", "0.144.6", nil }
+	runCodexUpdate = func() (string, string, string, error) { codexCalls++; return "0.144.6", "0.144.6", "", nil }
 	t.Cleanup(func() { runCodexUpdate = origCodexRun })
 
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
@@ -1093,7 +1104,7 @@ func TestBrowseUpdateRunsWhenNotConfirmedLatest(t *testing.T) {
 	t.Cleanup(func() { fetchInstalledClaudeVersion = origFetch })
 	origRun := runClaudeUpdate
 	var runCalls int
-	runClaudeUpdate = func() (string, string, error) { runCalls++; return "2.1.0", "2.2.0", nil }
+	runClaudeUpdate = func() (string, string, string, error) { runCalls++; return "2.1.0", "2.2.0", "", nil }
 	t.Cleanup(func() { runClaudeUpdate = origRun })
 
 	// installed が cached latest より古い → 実行される
@@ -1138,7 +1149,7 @@ func TestBrowseUpdateRunsWhenVersionsIncomparable(t *testing.T) {
 	t.Cleanup(func() { fetchInstalledClaudeVersion = origFetch })
 	origRun := runClaudeUpdate
 	var runCalls int
-	runClaudeUpdate = func() (string, string, error) { runCalls++; return "2.1.0", "2.2.0", nil }
+	runClaudeUpdate = func() (string, string, string, error) { runCalls++; return "2.1.0", "2.2.0", "", nil }
 	t.Cleanup(func() { runClaudeUpdate = origRun })
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)

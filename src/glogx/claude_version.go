@@ -175,18 +175,40 @@ func checkCLIVersionCmd(cacheFile string, fetchLatest, fetchInstalled func(conte
 	}
 }
 
+// versionCacheFileFor は target ("claude" / "codex") のバージョンキャッシュファイル名。
+// ⚠️ 既定を claude 側に倒している: 未知の target は現状ありえない (updateMsg.target の出所は
+// startUpdate / startCodexUpdate の 2 つだけ) が、増えたときに空文字を返して
+// cachedLatestVersion を無言で "" にするより、明示的な既定の方が誤りに気づける。
+func versionCacheFileFor(target string) string {
+	if target == "codex" {
+		return codexVersionCacheFile
+	}
+	return claudeVersionCacheFile
+}
+
+// cachedLatestVersion は起動時チェックが保存した latest (TTL 内) を返す。欠損・破損・TTL 切れ・
+// キャッシュ基点が引けない場合は "" (= latest 不明)。registry へは出ない — 呼び出し元はどちらも
+// 打鍵に同期した経路 (C / X の判定と結果トースト) なので、ここでネットワークを待たせない。
+func cachedLatestVersion(cacheFile string) string {
+	base, err := cacheBaseDir()
+	if err != nil {
+		return ""
+	}
+	latest, ok := loadClaudeVersionCache(filepath.Join(base, cacheFile), time.Now())
+	if !ok {
+		return ""
+	}
+	return latest
+}
+
 // installedIsLatest は「起動時チェックが保存した latest キャッシュ (TTL 内) とインストール済みの
 // バージョンが一致 (以上) か」を返す。C / X の update 実行前の早期リターン判定 (2026-08-12):
 // 既に latest と分かっているのに自己更新プロセス (npm 取得) を起動してモーダルでロックしない。
 // latest 不明 (キャッシュ欠損・stale) や installed 取得失敗は false (= 従来どおり update を
 // 実行) に倒す — オフラインや出力形式変更で手動 update を塞がないため。
 func installedIsLatest(cacheFile string, fetchInstalled func(context.Context) string) (installed string, already bool) {
-	base, err := cacheBaseDir()
-	if err != nil {
-		return "", false
-	}
-	latest, ok := loadClaudeVersionCache(filepath.Join(base, cacheFile), time.Now())
-	if !ok {
+	latest := cachedLatestVersion(cacheFile)
+	if latest == "" {
 		return "", false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), claudeVersionFetchTimeout)

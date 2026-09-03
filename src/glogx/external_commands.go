@@ -170,7 +170,7 @@ const updateTimeout = 5 * time.Minute
 // (何→何に変わったか表示するため)、CLI を自己更新する。remote に触るが git ではないので
 // noPromptGitCmd は使わない (対話プロンプトは CLI 側の責務)。updateTimeout で context を張り、
 // 無期限ブロックを防ぐ (超過時は updateMsg{err} 経由で updating が必ず解ける)。
-func runCLIUpdate(name string, fetchVersion func(context.Context) string) (before, after string, err error) {
+func runCLIUpdate(name string, fetchVersion func(context.Context) string) (before, after, note string, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
 	defer cancel()
 	before = fetchVersion(ctx)
@@ -184,22 +184,27 @@ func runCLIUpdate(name string, fetchVersion func(context.Context) string) (befor
 	out, e := cmd.CombinedOutput()
 	if e != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return before, "", fmt.Errorf("%s update がタイムアウトしました (%s)", name, updateTimeout)
+			return before, "", "", fmt.Errorf("%s update がタイムアウトしました (%s)", name, updateTimeout)
 		}
-		return before, "", errors.New(lastLine(strings.TrimSpace(string(out))))
+		return before, "", "", errors.New(lastLine(strings.TrimSpace(string(out))))
 	}
 	after = fetchVersion(ctx)
-	return before, after, nil
+	// 成功時も出力の末尾行を返す。⚠️ 捨てないこと: CLI は「更新しなかった」ときも exit 0 で
+	// 成功するため (codex は自前の stale なキャッシュを見て "Codex is already up to date." を
+	// 出して終わる。実測 2026-09-03 / ~/.codex/version.json が 44 日前で止まっていた)、
+	// before == after だけでは「最新だった」のか「CLI が更新をサボった」のかを区別できない。
+	// この行が唯一その理由を持っている。
+	return before, after, lastLine(strings.TrimSpace(string(out))), nil
 }
 
 // runClaudeUpdate はテストで実 update しないための差し替え点。
-var runClaudeUpdate = func() (before, after string, err error) {
+var runClaudeUpdate = func() (before, after, note string, err error) {
 	return runCLIUpdate("claude", usage.FetchVersion)
 }
 
 // runCodexUpdate はテストで実 update しないための差し替え点 (runClaudeUpdate の codex 版)。
 // `codex update` は codex CLI の自己更新サブコマンド (0.144 で実在確認 2026-08-09)。
-var runCodexUpdate = func() (before, after string, err error) {
+var runCodexUpdate = func() (before, after, note string, err error) {
 	return runCLIUpdate("codex", fetchInstalledCodexVersion)
 }
 

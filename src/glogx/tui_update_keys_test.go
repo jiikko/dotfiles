@@ -19,8 +19,8 @@ func stubUpdates(t *testing.T) (claude, codex *int) {
 	t.Helper()
 	var c, x int
 	origC, origX := runClaudeUpdate, runCodexUpdate
-	runClaudeUpdate = func() (string, string, error) { c++; return "2.2.0", "2.3.0", nil }
-	runCodexUpdate = func() (string, string, error) { x++; return "0.1.0", "0.2.0", nil }
+	runClaudeUpdate = func() (string, string, string, error) { c++; return "2.2.0", "2.3.0", "", nil }
+	runCodexUpdate = func() (string, string, string, error) { x++; return "0.1.0", "0.2.0", "", nil }
 	t.Cleanup(func() { runClaudeUpdate, runCodexUpdate = origC, origX })
 	return &c, &x
 }

@@ -287,8 +287,8 @@ func (a *actionModal) runUpdate(target string) tea.Cmd {
 		if target == "codex" {
 			run = runCodexUpdate
 		}
-		before, after, err := run()
-		return updateMsg{target: target, before: before, after: after, err: err}
+		before, after, note, err := run()
+		return updateMsg{target: target, before: before, after: after, note: note, err: err}
 	}
 }
 

@@ -179,10 +179,23 @@ type updateMsg struct {
 	target string // "claude" / "codex" (結果トーストの出し分け用)
 	before string
 	after  string
-	err    error // 失敗時のみ。Error() は CLI 出力の末尾行を含む
+	// note は update 成功時の CLI 出力末尾行 (early / 失敗時は空)。before == after のとき
+	// 「なぜ変わらなかったか」を語る唯一の材料 (runCLIUpdate の note を参照)。
+	note string
+	err  error // 失敗時のみ。Error() は CLI 出力の末尾行を含む
 	// early は「すでに latest」の判定による早期リターン (runUpdate の実行結果ではない)。
 	// 実行結果と区別できないと、C 連打で並走した判定の結果が走行中の update を降ろす。
 	early bool
+}
+
+// updateNoteSuffix は CLI 出力の末尾行をトーストへ添える接尾辞にする ("" ならなし)。
+// before == after のときだけ使う: 「更新しなかった理由」は CLI 自身の言葉が一次情報で、
+// glogx が要約すると (「最新です」がまさにそうだった) 誤訳になる。
+func updateNoteSuffix(note string) string {
+	if note == "" {
+		return ""
+	}
+	return ": " + note
 }
 
 // prefixMsg は tmux prefix の取得結果 (起動時に 1 回、非同期)。
@@ -1123,8 +1136,22 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showWarning(name + "更新に失敗: " + firstLine(msg.err.Error()))
 		case msg.before != "" && msg.after != "" && msg.before != msg.after:
 			m.toast.show(name+"v"+msg.before+" → v"+msg.after+" に更新しました", true)
-		case msg.before != "" && msg.before == msg.after:
+		case msg.before != "" && msg.before == msg.after && msg.early:
+			// glogx 自身が「installed >= キャッシュ済み latest」を証明した早期リターン。
+			// ここだけが「最新です」と言ってよい (update は走っていない)。
 			m.toast.show(name+"すでに最新版です (v"+msg.before+")", true)
+		case msg.before != "" && msg.before == msg.after:
+			// update を走らせたのにバージョンが動かなかった。⚠️ これを「最新です」と言わないこと:
+			// CLI は自前の stale なキャッシュを見て「更新不要」と判断しても exit 0 で成功する
+			// (実測 2026-09-03: 起動時トーストが codex の新版を告げた直後に X を押しても
+			// ~/.codex/version.json が 44 日前で止まっていて "already up to date" が返り、
+			// glogx がそれを「すでに最新版です」と翻訳していた)。glogx は registry 直取りの
+			// latest を握っているので、それより古いままなら警告として出す。
+			if latest := cachedLatestVersion(versionCacheFileFor(msg.target)); versionLess(msg.before, latest) {
+				m.showWarning(name + "update を実行しましたが v" + msg.before + " のままです (公開は v" + latest + ")" + updateNoteSuffix(msg.note))
+				return m, m.maybeTick()
+			}
+			m.toast.show(name+"update を実行しましたが変化なし (v"+msg.before+")"+updateNoteSuffix(msg.note), true)
 		case msg.after != "":
 			m.toast.show(name+"現在のバージョン: v"+msg.after, true) // before 不明で比較できず
 		default:
