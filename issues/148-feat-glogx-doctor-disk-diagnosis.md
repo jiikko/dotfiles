@@ -1593,8 +1593,8 @@ quit / spinner の経路 / struct コピー / validateTarget の各種 (HOME 直
 | # | 山 | 状態 | 置き場 | 規模の目安 |
 |---|---|---|---|---|
 | S1 | **削除エンジン** (作法の解釈 / TOCTOU / ゴミ箱 / cli / 再走査 / インベントリ) | **完了**。敵対レビュー 2 周 (opus 5 体) + 変異 33 本 red | `src/doctor/disk/delete.go` (+ `delete_test.go` / `main_test.go`) | 実装 ~950 行 / テスト 47 本 |
-| S2 | **UI 導線** (選択 → 確認 → 実行中ブロック → 結果表示) | 未着手 | `src/glogx/doctor_view.go` + 新規 `doctor_delete.go` | ④ の残りのほぼ全部 |
-| S3 | 受け入れ条件の消し込み・README・この issue の更新 | 未着手 | `src/doctor/README.md` / 本 issue | 小 |
+| S2 | **UI 導線** (選択 → 確認 → 実行中ブロック → 結果表示) | **完了**。敵対レビュー 2 体 + 変異 31 本 red | `src/glogx/doctor_delete.go` (新規) + `doctor_view.go` / `tui.go` | 実装 ~560 行 / テスト 23 本 |
+| S3 | 入口ドキュメント・受け入れ条件・この issue の更新 | **完了** (commit `140a61e5`) | `src/glogx/README.md` / `src/doctor/README.md` / 本 issue | 小 |
 
 **S1 で確定した外向き API** (S2 はこれだけを使う):
 
@@ -1687,11 +1687,16 @@ opus 5 体 (1 周目 3 + 2 周目 2)。採用したものは commit `d2dfd70` / 
 `DryRun` も同じ走査を通る = **確認プロンプトを出すまでに数秒かかる**。UI は dry-run 中も
 進捗を出すこと (`OnProgress` は exec 側にしか無いので、必要なら口を足す)。
 
-#### S3 (受け入れ条件のうち ④ 分)
+#### S3 の実装 (2026-09-03。commit `140a61e5`)
 
-7 章の未チェック 7 件のうち **7 件すべてを S1 で満たした**。残るのは
-「`swiftui-drag-cache` が `finder-nsird` と同じ扱い」のうち **「中身一覧を見るまで選択不可」の
-UI 部分だけ** (S2)。
+- **入口のドキュメント** (`new-tool-requires-entrypoint-docs`)。`src/glogx/README.md` のキー表が
+  「**削除はしない** — dry-run で、実行するコマンドを提示するだけ」のままだったので、
+  `Space` / `d` を含む画面内のキーと「削除できるのはディスクの行だけ」
+  「`risk: 要確認` は中身を見るまで選べずゴミ箱へ移動する」を書いた。
+  `src/doctor/README.md` の「削除・停止は一切しない」は **CLI の話**として書き直した
+  (削除は `disk.Delete` にだけあり、唯一の呼び出し元は glogx の doctor 画面)
+- **受け入れ条件**: 7 章の未チェック 6 件のうち 4 件を ④ が満たしたので `[x]` にした。
+  残る 2 件は ④ の範囲外 (BTM は段階 1 で未実装 / 起動時間の実測は ④ が起動パスを触っていない)
 
 ### 次の一手 (引き継ぎ。ここから続ける)
 
