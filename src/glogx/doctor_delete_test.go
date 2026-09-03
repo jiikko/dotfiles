@@ -241,7 +241,9 @@ func TestDoctorDeleteShowsDryRunInConfirm(t *testing.T) {
 func TestDoctorDeleteConfirmCancel(t *testing.T) {
 	for _, key := range []string{"n", "esc", "q"} {
 		t.Run(key, func(t *testing.T) {
-			f := &fakeDelete{rep: disk.DeleteReport{DryRun: true}}
+			f := &fakeDelete{rep: disk.DeleteReport{DryRun: true, Entries: []disk.EntryOutcome{
+				{Label: "Thing キャッシュ", Method: "rm", Outcome: disk.OutcomePlanned,
+					BeforeSize: 4096, Items: make([]disk.ItemOutcome, 1)}}}}
 			v := deleteTestView(t, f)
 			v.handleKey(" ", 20)
 			v.handleKey("d", 20)
@@ -468,7 +470,10 @@ func TestDeleteArmedCCNotCarriedIntoRun(t *testing.T) {
 
 // y は入口と同じガードをもう一度通す (入口だけの検査は非対称)。
 func TestDeleteConfirmRechecksDeletable(t *testing.T) {
-	f := &fakeDelete{rep: disk.DeleteReport{DryRun: true}}
+	// 下見に「消すもの」があること = 確認プロンプトが y を受ける状態にしておく
+	f := &fakeDelete{rep: disk.DeleteReport{DryRun: true, Entries: []disk.EntryOutcome{
+		{Label: "Thing キャッシュ", Method: "rm", Outcome: disk.OutcomePlanned,
+			BeforeSize: 4096, Items: make([]disk.ItemOutcome, 1)}}}}
 	v := deleteTestView(t, f)
 	v.handleKey(" ", 20)
 	v.handleKey("d", 20)
@@ -604,7 +609,8 @@ func (e deleteTestError) Error() string { return string(e) }
 
 // 中断は ctx で engine へ伝わる (プロセスを殺さない)。
 func TestDeleteCancelReachesEngine(t *testing.T) {
-	f := &fakeDelete{}
+	f := &fakeDelete{rep: disk.DeleteReport{DryRun: true, Entries: []disk.EntryOutcome{
+		{Label: "Thing キャッシュ", Method: "rm", Outcome: disk.OutcomePlanned, Items: make([]disk.ItemOutcome, 1)}}}}
 	v := deleteTestView(t, f)
 	v.handleKey(" ", 20)
 	v.handleKey("d", 20)
@@ -701,5 +707,29 @@ func TestDeletePanelElisionNote(t *testing.T) {
 	out := strings.Join(v.lines(doctorTestOpts(10)), "\n")
 	if !strings.Contains(out, "他 ") || !strings.Contains(out, "画面に入りません") {
 		t.Errorf("省いた件数の注記が無い:\n%s", out)
+	}
+}
+
+// 下見の結果、消せるものが 1 件も無かったら「削除しますか?」と聞かない
+// (y に意味が無いのに押させる形にしない)。
+func TestDeleteConfirmWhenNothingToDo(t *testing.T) {
+	f := &fakeDelete{rep: disk.DeleteReport{DryRun: true, Entries: []disk.EntryOutcome{
+		{Label: "Thing キャッシュ", Method: "rm", Outcome: disk.OutcomeSkipped, Reason: "いまは対象外です"}}}}
+	v := deleteTestView(t, f)
+	v.handleKey(" ", 20)
+	v.handleKey("d", 20)
+	_ = runDeleteCmds(t, v, v.takeDeleteCmd())
+	out := doctorPanelText(v, 20)
+	if !strings.Contains(out, "消せるものがありません") || strings.Contains(out, "y: 削除する") {
+		t.Errorf("消せるものが無いのに削除を促した:\n%s", out)
+	}
+	if h := v.hint(120); strings.Contains(h, "y: 削除する") {
+		t.Errorf("hint = %q", h)
+	}
+	if act := v.handleKey("y", 20); act != doctorSwallow || v.del.active() {
+		t.Fatalf("y で戻らない: act=%v del=%+v", act, v.del)
+	}
+	if len(f.calls) != 1 {
+		t.Errorf("engine を %d 回呼んだ (下見の 1 回だけのはず)", len(f.calls))
 	}
 }

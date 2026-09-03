@@ -182,6 +182,9 @@ func (v *doctorView) handleDeleteKey(key string) (doctorAction, bool) {
 		// 結果はどのキーでも閉じる。閉じたら再スキャンして表示を実体に合わせる
 		d.reset()
 		return doctorRescan, true
+	case d.confirm && !planHasWork(d.plan):
+		d.reset() // 消せるものが無いので、どのキーでも戻る
+		return doctorSwallow, true
 	case d.confirm:
 		switch key {
 		case "y", "Y":
@@ -348,9 +351,28 @@ func (v *doctorView) deletePanel(o doctorRenderOpts) []string {
 		return doctorPanel(o, head, body)
 	case d.confirm:
 		blocks, tail := v.confirmLines(o)
-		return assembleDeletePanel(o, "本当に削除しますか?", blocks, tail)
+		title := "本当に削除しますか?"
+		if !planHasWork(d.plan) {
+			// 下見の結果、消せるものが 1 件も無かった。**「削除しますか?」と聞かない**
+			// (y に意味が無いのに押させる形になる)
+			title = "消せるものがありません"
+		}
+		return assembleDeletePanel(o, title, blocks, tail)
 	}
 	return nil
+}
+
+// planHasWork は下見の結果に「実際に消すもの」があるか (全部 対象外 / 提示のみ なら false)。
+func planHasWork(plan *disk.DeleteReport) bool {
+	if plan == nil {
+		return false
+	}
+	for _, e := range plan.Entries {
+		if e.Outcome == disk.OutcomePlanned {
+			return true
+		}
+	}
+	return false
 }
 
 // confirmLines は確認の本文。**下見 (DryRun) の結果をそのまま出す** (UI 側で組み直さない)。
@@ -399,6 +421,9 @@ func (v *doctorView) confirmLines(o doctorRenderOpts) (blocks [][]string, tail [
 	tail = append(tail, "")
 	if sum := deleteTotalsLine("解放される見込み", freeing, trashing); sum != "" {
 		tail = append(tail, sum)
+	}
+	if !planHasWork(v.del.plan) {
+		return blocks, append(tail, " 何かキーを押すと戻ります")
 	}
 	return blocks, append(tail, " y: 削除する      n / Esc: やめる")
 }

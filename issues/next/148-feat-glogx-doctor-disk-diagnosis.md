@@ -1776,9 +1776,8 @@ UI 部分だけ** (S2)。
       **現役の `~/.rbenv` 型 (anyenv 側が無く fallback が効いている構成) を候補にしない**
 - [x] `brew-cleanup-residue` が `/opt/homebrew/Library/Homebrew/vendor/` を見ている
       (`~/Library/Caches/Homebrew` だけでは 424MB を取りこぼす)
-- [ ] `swiftui-drag-cache` が `finder-nsird` と同じ扱いになっている。
-      **ゴミ箱移動 (④ S1) は済**、`risk: confirm` + 中身一覧も ② で入っている。残るのは
-      **「中身一覧を見るまで選択不可」の UI (S2)** だけ
+- [x] `swiftui-drag-cache` が `finder-nsird` と同じ扱いになっている
+      (`risk: confirm` + 中身一覧 = ② / ゴミ箱移動 = ④ S1 / 中身を見るまで選択不可 = ④ S2)
 - [x] 除外リスト (自作アプリの sandbox コンテナ / `~/.cache/dein` /
       `~/Library/Application Support/Google`) が**テストで固定**されている
 
@@ -1830,19 +1829,26 @@ UI 部分だけ** (S2)。
 - [x] 壊れたキャッシュを読んでも**クラッシュしない** (無視して再スキャンを促す)
 - [x] doctor の開閉・再スキャン連打で**走査が多重化しない**
 - [x] 各行に**リスク記号と一行の助言**が出る (サイズだけの行が存在しない)
-- [ ] `risk: confirm` のエントリは**中身一覧を見るまで削除選択できない**
+- [x] `risk: confirm` のエントリは**中身一覧を見るまで削除選択できない**
+      (`doctorView.deletable`。⚠️ `Entry.Inspect` だけでなく **`Risk` そのもの**も条件にしてある:
+      カタログが Inspect を付け忘れた瞬間にゲートが消えるため。
+      `TestDeletableGatesRiskConfirmWithoutInspect` / `TestDoctorSelectRequiresInspectForConfirmRisk`)
 - [x] `blocked` のエントリは**理由**が出る (「Chrome 起動中」等)
 - [x] 走査できなかったエントリも**リストに現れる** (黙って消えない)
 - [x] **起動時に走査していない** — 保存結果が無い状態で起動しても、
       スキャンが始まらず**トーストも出ない** (初回は沈黙する)
 - [x] 閾値超過時に起動トーストが出る / 未満で出ない / 再通知抑止 (N 日) が効く
 - [x] 7 日超の結果でも**数字を出し**、`(N 日前の診断)` が添えられる
-- [ ] 削除は確認プロンプトを経由し、**確認なしに実行される経路が無い**
+- [x] 削除は確認プロンプトを経由し、**確認なしに実行される経路が無い**
+      (`DryRun=false` の `startDelete` を呼ぶのは確認の `y`/`Y` の 1 箇所だけ。敵対レビューが
+      34 キーの総当たりで「確認を飛ばせるキーは 0 個」を実測。`TestDoctorDeleteConfirmCancel`)
 
 **総括**
 
-- [ ] 上記を**観点を分けた敵対的レビュー**に通した
-      (①データ消失 ②検出の false green ③並行・中断)
+- [x] 上記を**観点を分けた敵対的レビュー**に通した
+      (①データ消失 ②検出の false green ③並行・中断)。
+      ④ では opus 7 体: S1 が 2 周 (壊す / 素通り / 並行・中断 → 新設した機構へもう 1 周)、
+      S2 が 2 体 (誤削除の導線 / 素通りと状態機械)。採用した P1 は計 5 件。変異は 64 本すべて red
 
 ## 8. 未決事項
 

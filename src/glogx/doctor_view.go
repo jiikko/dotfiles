@@ -464,6 +464,9 @@ func (v *doctorView) hint(width int) string {
 		return " 実行中です (Ctrl-C ×2 で中断)"
 	}
 	if v.del.confirm {
+		if !planHasWork(v.del.plan) {
+			return " 消せるものがありません (何かキーを押すと戻ります)"
+		}
 		return " y: 削除する   n/Esc: やめる"
 	}
 	if v.del.result != nil || v.del.err != "" {
