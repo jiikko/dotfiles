@@ -1590,7 +1590,7 @@ quit / spinner の経路 / struct コピー / validateTarget の各種 (HOME 直
 
 | # | 山 | 状態 | 置き場 | 規模の目安 |
 |---|---|---|---|---|
-| S1 | **削除エンジン** (作法の解釈 / TOCTOU / ゴミ箱 / cli / 再走査 / インベントリ) | **済**。敵対レビュー 2 周 + 変異 26 本 red | `src/doctor/disk/delete.go` (+ `delete_test.go` / `main_test.go`) | 実装 ~900 行 / テスト 36 本 |
+| S1 | **削除エンジン** (作法の解釈 / TOCTOU / ゴミ箱 / cli / 再走査 / インベントリ) | **完了**。敵対レビュー 2 周 (opus 5 体) + 変異 33 本 red | `src/doctor/disk/delete.go` (+ `delete_test.go` / `main_test.go`) | 実装 ~950 行 / テスト 47 本 |
 | S2 | **UI 導線** (選択 → 確認 → 実行中ブロック → 結果表示) | 未着手 | `src/glogx/doctor_view.go` + 新規 `doctor_delete.go` | ④ の残りのほぼ全部 |
 | S3 | 受け入れ条件の消し込み・README・この issue の更新 | 未着手 | `src/doctor/README.md` / 本 issue | 小 |
 
@@ -1631,16 +1631,35 @@ UI 側で組み直さない)。
 敵対レビュー (opus 3 体 → 2 体) で実測つきの P1 が 3 件出て、いずれも修正済み。S2 を書く人は
 **この 5 つを壊さない**こと:
 
-1. **削除は「今回の走査の Result」だけ**。`Reused` / `FromSnapshot` の行は `disk.Delete` が拒否する。
-   UI は削除の前に必ず再スキャンを通す (`r` を促すか、内部で走査し直す)
-2. **削除対象はそのエントリの Paths を展開し直した集合に属していること**を engine が要求する。
-   UI が行を組み替えて別のパスを混ぜると failed になる (そういう作りにしないこと)
+1. **削除は「今回の走査の Result」だけ**。`Reused` / `FromSnapshot` の行は `disk.Delete` が拒否する
+2. **engine は削除の直前に自分でもう一度走査する**。UI が渡した Items / Size は「どれを選んだか」の
+   指示としてだけ使い、サイズと (dev, ino) は測り直した値を使う。UI が行を組み替えて別のパスを
+   混ぜると「いまは削除の候補ではありません」で落ちる
 3. **中断は ctx で伝える**。`Delete` は破壊的操作の直前に `ctx.Err()` を見る。UI の Ctrl-C は
    ctx の cancel に配線する (プロセス終了に配線すると記録が `executing` のまま残る)
 4. **`OnProgress` は `Delete` を呼んだ goroutine から同期に呼ばれる**。bubbletea なら model を
    直接触らず Msg に載せる
 5. **結果は 3 値ではなく 7 値** (deleted / trashed / proposed / incomplete / skipped / failed / planned)。
    `incomplete` を成功にも失敗にも畳まないこと。`DeleteReport.HasFailures()` がある
+
+#### S1 の敵対的レビュー: 採用しなかった指摘と残存リスク (2026-09-03)
+
+opus 5 体 (1 周目 3 + 2 周目 2)。採用したものは commit `d2dfd70` / `4b5b9e40` / `4c824ff2`。
+**次の audit が同じ指摘を再生成しないよう、却下・保留したものを理由つきで残す**。
+
+| 指摘 | 判断 | 理由 |
+|---|---|---|
+| `root.Lstat` → `root.RemoveAll` の残り窓 (ino 再利用) | **未確認リスクとして受容** | 一時名への改名で「名前を狙う」形は塞いだ。残るのは ino 再利用だが、APFS の inode は単調増加でレビューでも再現できず、HFS+ / 外部 FS は未検証 |
+| クラッシュ耐性が **Item 粒度**でない (1 エントリ内で 50 件 trash した直後に落ちると Dest が失われる) | **保留** | 記録の書き込みが Item 数に比例して削除より遅くなりうる。ゴミ箱の連番は人が Finder で見れば辿れるので、失うのは「どれが今回か」の情報だけ |
+| 改名して消す方式の残骸 (`.glogx-delete-*`) | **受容 (要観測)** | 改名と削除のあいだに死んだときだけ。対象はキャッシュ配下。将来、走査側で拾って掃除する余地がある |
+| AST ゲートの回避 (関数値への代入 / `allowDestructive` に別のパスを渡す) | **検出しないと決めた** | 脅威モデルは「うっかり書く典型形を止める」。字句のゲートで全部塞ごうとすると迂回が無限に出る (`adversarial-review-own-safeguards.md` の stopping rule)。意図的な迂回はレビューの責務 |
+| `sudo` の検出が `env sudo` / PATH の shim を見ない | **検出しないと決めた** | カタログはコンパイル時定数なので、止める相手は「攻撃者」ではなく「カタログを足す人の不注意」。`parseDeleteVia` のコメントに明記した |
+| `DeleteReport.HistoryError` を人に伝える経路が無い | **S2 で対応** | 呼び出し元 (UI) がまだ無い。S2 の結果表示で出す |
+
+**S2 が知っておくべき代償**: 削除の直前に 1 エントリぶん走査し直すので、**重いエントリは
+削除の前後で 2 回走査する** (DerivedData は 1 回 5.7 秒の実測があるので、体感で 10 秒超)。
+`DryRun` も同じ走査を通る = **確認プロンプトを出すまでに数秒かかる**。UI は dry-run 中も
+進捗を出すこと (`OnProgress` は exec 側にしか無いので、必要なら口を足す)。
 
 #### S3 (受け入れ条件のうち ④ 分)
 
