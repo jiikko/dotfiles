@@ -105,7 +105,7 @@ linters:
         - ruleguard
       settings:
         ruleguard:
-          rules: ruleguard.rules.go
+          rules: gorules/rules.go
     nolintlint:
       require-explanation: true
       require-specific: true

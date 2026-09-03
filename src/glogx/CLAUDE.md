@@ -10,7 +10,7 @@
 
 ## 不変条件は lint / test が正本 (ここにもコードにも再掲しない)
 
-render.go の純粋描画層・幅計算の単一出典・stdout / 時刻のシーム・外部プロセスの WaitDelay・toast の隠蔽・switch の網羅は `.golangci.yml` (depguard / forbidigo / exhaustive) / `ruleguard.rules.go` / `waitdelay_discipline_test.go` が強制し、理由もそこに書いてある。新しい規律を足すときも、まず lint / test で強制できないかを考える (`~/.claude/rules/comment-no-restate-enforced.md`)。
+render.go の純粋描画層・幅計算の単一出典・stdout / 時刻のシーム・外部プロセスの WaitDelay・toast の隠蔽・switch の網羅は `.golangci.yml` (depguard / forbidigo / exhaustive) / `gorules/rules.go` (gocritic の ruleguard。⚠️ **glogx 直下に置くと package 名衝突で型検査されない**ので独立ディレクトリ。`make lint` が `go vet -tags ruleguard ./gorules` も回す。issue 202) / `waitdelay_discipline_test.go` が強制し、理由もそこに書いてある。新しい規律を足すときも、まず lint / test で強制できないかを考える (`~/.claude/rules/comment-no-restate-enforced.md`)。
 
 ## 構造の判断 (lint では守れないもの)
 

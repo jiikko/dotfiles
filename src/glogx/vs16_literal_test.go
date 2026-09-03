@@ -29,6 +29,12 @@ func TestOwnStringLiteralsHaveNoVS16(t *testing.T) {
 	if err != nil {
 		t.Fatalf("パースできない: %v", err)
 	}
+	// 走査 0 件は fail (ディレクトリ構成やフィルタが壊れたら赤にする。issue 201 候補 3。
+	// waitdelay_discipline_test.go / width_test.go は既に同じ guard を持っており、
+	// このファイルだけ件数を Logf するだけで green になっていた)
+	if len(pkgs) == 0 {
+		t.Fatal("走査対象の package が 0 件 (ParseDir のフィルタかディレクトリ構成が壊れている)")
+	}
 	found := 0
 	for _, pkg := range pkgs {
 		for path, file := range pkg.Files {

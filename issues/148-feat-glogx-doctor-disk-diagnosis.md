@@ -687,7 +687,7 @@ inspect   true なら [Enter] で中身一覧を出す (finder-nsird 用)
 
 - `m.toast.showInfo(text)` — 情報色
 - ⚠️ `toast` の内部状態は `toast.go` の外から触らない
-  (`ruleguard.rules.go` の `toastEncapsulation` が禁止済み)
+  (`gorules/rules.go` の `toastEncapsulation` が禁止済み)
 
 **発火条件**: **保存済みスキャン結果**の合計解放可能サイズが閾値以上 (既定 **10GB**)。
 起動時に走査しないので、トーストの数字は**必ず過去のスキャン由来**である。
@@ -1731,7 +1731,7 @@ quit / spinner の経路 / struct コピー / validateTarget の各種 (HOME 直
   ⚠️ ただし「判定不能は無通知」の方針だけは本件と逆 (3 章の差異表を参照)
 - `src/glogx/toast.go` — トースト API (`show` / `showInfo`)
 - `src/glogx/usage_cache.go` — TTL 付きキャッシュの前例
-- `src/glogx/ruleguard.rules.go` — `toastEncapsulation`。
+- `src/glogx/gorules/rules.go` — `toastEncapsulation`。
   ⚠️ ただしこれは `m.toast.text` のような**直接セレクタを検出する lint ルール**であって、
   型システムで全経路の変更を禁じるものではない (codex 反証)。規約として守る
 - `src/glogx/issues_view.go` / `status_view.go` / `ratelimit_dashboard.go` —

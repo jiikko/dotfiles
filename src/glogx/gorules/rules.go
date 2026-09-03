@@ -1,8 +1,20 @@
 //go:build ruleguard
 
 // gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml の
-// settings.gocritic.settings.ruleguard.rules から参照)。ビルド対象ではない
-// (build tag ruleguard で通常ビルド・テストから除外される)。
+// settings.gocritic.settings.ruleguard.rules から参照)。
+//
+// 🚨 **独立したディレクトリに置くこと** (issue 202)。glogx 直下に置くと `package gorules` が
+// 同ディレクトリの `package main` と衝突し、**どのビルド構成でもコンパイルできない**
+// (実測 2026-09-03: `go vet -tags ruleguard ./` が
+// `found packages main and gorules` で落ちた)。その状態では型エラーや API 誤用を書いても
+// Go のコンパイルに一度も載らず、気づけるのは gocritic が「ルールのロードに失敗した」と
+// 言うときだけだった (.golangci.yml のコメントによれば過去にルールが無言で消えた前科がある)。
+// ここに置いてあれば `go vet -tags ruleguard ./gorules` で型検査できる
+// (`make lint` から回している。Makefile の vet-gorules を参照)。
+//
+// ⚠️ go.mod の `go-ruleguard/dsl` のバージョンは**この DSL の型定義にしか効かない**。
+// 実際にルールを評価するのは golangci-lint 同梱の go-ruleguard なので、
+// dsl を上げても lint の挙動は変わらない。
 package gorules
 
 import "github.com/quasilyte/go-ruleguard/dsl"

@@ -7,8 +7,14 @@ GOLANGCI_LINT_VERSION := v2.5.0
 
 .PHONY: lint test
 
-lint:
+lint: vet-gorules
 	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run ./...
+
+# gorules/ は build tag で通常ビルドから外れるので、golangci-lint も go build も型検査しない。
+# ここで明示的に vet を回さないと、ルールに型エラーを書いても CI は緑のままになる (issue 202)。
+# ⚠️ gorules/ を glogx 直下へ戻すと package 名衝突でこの vet 自体が落ちる (それが元の状態だった)。
+vet-gorules:
+	go vet -tags ruleguard ./gorules
 
 test:
 	go test -race ./...
