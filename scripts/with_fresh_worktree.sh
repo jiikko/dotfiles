@@ -76,7 +76,7 @@ remove_worktree() {
 # 🚨 絶対パスで消す。trap は cd の後に走るので、相対パスで書くと別ディレクトリを触る
 cleanup() {
   local rc=$?
-  cd "$root" || true          # 消す対象の中に居ると rm が失敗しうる
+  cd "$root" || true          # cd-rc: allow 消す対象の中に居ると rm が失敗しうるので、失敗しても続ける
   remove_worktree "$wt" || echo "[fresh] 🚨 worktree を消せなかった: $wt" >&2
   exit "$rc"
 }
@@ -90,7 +90,7 @@ sweep_stale
 git -C "$root" worktree add --detach "$wt" HEAD >&2
 [ -d "$wt" ] || { echo "[fresh] worktree を作れなかった: $wt" >&2; exit 1; }
 
-cd "$wt"
+cd "$wt" || exit 1
 # 親 make の jobserver を持ち込まない (再帰 make の警告と取り合いを避ける)
 unset MAKEFLAGS MAKELEVEL
 "$@"

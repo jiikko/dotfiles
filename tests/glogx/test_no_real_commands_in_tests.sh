@@ -51,7 +51,7 @@ SHIMEOF
   chmod +x "$SHIM/$cmd"
 done
 
-cd "$ROOT/src/glogx"
+cd "$ROOT/src/glogx" || exit 1
 scope="${GLOGX_SHIM_SCOPE:-subset}"
 if [ "$scope" = all ]; then
   min_pass=300
