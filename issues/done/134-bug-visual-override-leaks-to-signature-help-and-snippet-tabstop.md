@@ -152,3 +152,49 @@ ee5e2b7 と同型で、gruvbox の意図と衝突しないように分ける:
 - [x] `tests/nvim/test_lsp_reference_hl.sh` が両分岐で緑 (256色 35 件 / truecolor 23 件)
 - [x] 変異検証で red を確認 (3 本)
 - [x] `_nviminit.lua` と `docs/theme-colors.md` の「未対応」記述を直した
+
+## 敵対的レビュー (opus, 2026-09-03) の結果
+
+P1 が 2 件出て、どちらも**再現できたので修正した**。
+
+### P1-1 `BlinkCmpDocCursorLine` が漏れたまま残っていた
+
+この issue が塞いだのは列挙した 2 group だけで、blink.cmp の補完ドキュメント欄の
+カーソル行が `link=Visual` のまま残っていた (Kraft 180 が両分岐で出る)。
+
+検査が緑だった理由が本題で、**blink.cmp は lazy (`InsertEnter`) なので headless の
+テストでは group そのものが存在しない**。「存在しない group は漏れていない」と
+読まれていた。走査の前に `require("blink.cmp.highlights").setup()` を呼ぶよう直した。
+
+### P1-2 `COLOR_GROUPS` は存在しない名前でも緑になる
+
+`SnippetTabstop` を `SnippetTabstopX` に改名しても rc=0 (検査件数が 35 → 28 に
+減るだけ)。**上流が group を改名したら、検査対象から無言で外れる**形だった。
+member ごとに存在を assert するようにした。
+
+### 検査の作り直し
+
+列挙した名前を見る形をやめ、**全 group を走査して Visual の地色に解決するものを
+探す**形にした (`ALLOW_VISUAL_BG` は Visual / VisualNOS / MiniPickMatchMarked)。
+実測 519 群 (256色) / 1322 群 (truecolor)。
+
+⚠️ 走査の空振りガードは**件数の下限だけでは足りなかった**。`setup()` を外す変異が
+green のままで、nvim 標準の 477 群だけで下限 100 を満たしていた。`BlinkCmp*` の
+実数に下限 (20) を課して塞いだ。
+
+### 変異 4 本
+
+| 変異 | 結果 |
+|---|---|
+| `BlinkCmpDocCursorLine` の定義を消す | red |
+| 走査前の `blink.cmp.highlights.setup()` を外す | red (BlinkCmp* 1 件) |
+| `COLOR_GROUPS` に存在しない名前を入れる | red |
+| 走査を空にして 0 件ガードを外す | red (BlinkCmp* 0 件) |
+
+### 残った指摘 (P2, 未対応)
+
+見た目を実物で見てもらっていない。`decide-layout-in-sample-renderer-first.md` は
+「合意の条件はユーザーが実物を見たこと」と定めており、今回はコントラスト比の数字
+だけで決めた。**変更は 3 group の数行なので revert は安い**。実際に nvim で
+snippet の tabstop / シグネチャヘルプ / 補完ドキュメントのカーソル行を見て違和感が
+あれば直す。
