@@ -110,70 +110,56 @@ ls -la /private/var/tmp/ | grep -i 'xctest|logarchive|spindump'
 
 - [ ] 実名を採るとき、`xctest-logarchive` と `xctest-spindump` の**両方**の glob を確定する
 
-## UI 側 (glogx) の差分は未適用 — 適用待ちのパッチをここに退避 (2026-09-03)
+## UI 側 (glogx) にも適用済み (2026-09-03)
 
-対応案 3「検出 0 件を『候補なし』と表示せず、未検証と分かる形にする」は
-**doctor module 側 (`src/doctor/disk/`) だけ適用済み**で、**glogx の画面側は未適用**。
+対応案 3「検出 0 件を『候補なし』と表示せず、未検証と分かる形にする」は **CLI・UI とも適用済み**。
 
-理由: `src/glogx/doctor_view.go` は別マシンで全体見直し中のため、ユーザーの指示で変更を停止した
-(2026-09-03)。合図が出たら下のパッチを当てる。当てると CLI と同じく、未実測の 2 エントリが
-候補 0 件でも行として残り `🔎 未検証` が付く。
+| 側 | commit | 実装 |
+|---|---|---|
+| doctor module | `7bb5137d` | `Entry.Unverified` を新設。`disk.Format` が 0 件でも畳まず `🔎 未検証` を出す |
+| glogx (画面) | `ecd26414` | `diskSection` / `doctorRiskMark` に同じ規律。CLI と語彙を揃えた |
 
-🚨 **当てる前に見直し後の実装と突き合わせること**。行番号ではなく
-`diskSection` の 0 件畳み込みと `doctorRiskMark` の `StatusOK` 分岐を目印にする。
+一時 `doctor_view.go` が凍結されていたため CLI 側だけ先に入り、退避しておいた patch を
+凍結解除後 (見直し commit `40e0d7eb` の上) に当てた。目印にしていた 3 箇所
+(0 件の畳み込み / `Recover` を出す位置 / `doctorRiskMark` の `StatusOK` 分岐) は
+構造が変わっておらず、そのまま当たった。
 
-```diff
-diff --git a/src/glogx/doctor_view.go b/src/glogx/doctor_view.go
-index 7b8d7f61..586ddc66 100644
---- a/src/glogx/doctor_view.go
-+++ b/src/glogx/doctor_view.go
-@@ -755,7 +755,12 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
- 	sort.SliceStable(sorted, func(a, b int) bool { return sorted[a].Size > sorted[b].Size })
- 	shown := 0
- 	for _, r := range sorted {
--		if r.Status == disk.StatusOK && len(r.Items) == 0 && len(r.Failures) == 0 {
-+		// 候補 0 件の行は畳む。🚨 ただし **検出条件そのものが未実測のエントリは畳まない**
-+		// (issue 169 / 207)。畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と
-+		// **同じ見え方**になり、探せていないことが画面から永久に消える (false green)。
-+		// 実測で名前が確定して Entry.Unverified が空になれば、この行も自動的に畳まれる側へ戻る。
-+		if r.Status == disk.StatusOK && len(r.Items) == 0 && len(r.Failures) == 0 &&
-+			r.Entry.Unverified == "" {
- 			continue
- 		}
- 		shown++
-@@ -795,6 +800,13 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
- 			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "           "+r.Reason)})
- 			continue
- 		}
-+		// 未実測のエントリで 0 件のときは、Recover (「消しても再生成されます」) を出さない。
-+		// 消す対象が 1 件も無いのに復元方法を出すと、**検出できている**ように読めるため。
-+		if r.Entry.Unverified != "" && len(r.Items) == 0 {
-+			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim,
-+				"           0 件ですが「候補なし」ではありません: "+r.Entry.Unverified)})
-+			continue
-+		}
- 		advice := r.Entry.Recover
- 		if newest := doctorNewest(r); !newest.IsZero() {
- 			advice += fmt.Sprintf("。最終更新 %s (%d日前)", newest.Format("2006-01-02"), int(o.now.Sub(newest).Hours()/24))
-@@ -898,6 +910,12 @@ func doctorRiskMark(r disk.Result) (string, string) {
- 	case disk.StatusFailed:
- 		return "❓ 走査できず", ansiDim
- 	case disk.StatusOK:
-+		// 検出条件が未実測のエントリで候補 0 件のとき。**リスク記号を出さない**:
-+		// 「✅ 安全」は「調べたうえで安全」の意味なので、調べられていない行に出すと嘘になる。
-+		// 走査自体は成功しているので「❓ 走査できず」とも違う (記号を分けて区別する)。
-+		if r.Entry.Unverified != "" && len(r.Items) == 0 {
-+			return "🔎 未検証", ansiDim
-+		}
- 	}
- 	switch r.Entry.Risk {
- 	case disk.RiskSafe:
+### 実機での出力 (diskdoctor)
+
+```
+       0B  🔎 未検証  XCTest ログ (/var/tmp/*.logarchive)
+           0 件ですが「候補なし」ではありません: ファイル名が未実測 (issue 169)
+
+       0B  🔎 未検証  XCTest spindump
+           0 件ですが「候補なし」ではありません: ファイル名が未実測 (issue 169)
 ```
 
-### 当てた後にやること
+### テストと変異
 
-- [ ] glogx 側にも同じ主張のテストを足す (doctor module 側は
-      `src/doctor/disk/report_test.go:TestFormatKeepsUnverifiedEntryWithZeroItems`。
-      変異 3 本で red 確認済み: 畳みに戻す / マークを ✅ 安全 に戻す / 説明行を消して Recover を出す)
-- [ ] CLI と UI で同じ入力から同じ結論が出ることを確かめる
-      (規範: `mutation-verify-new-tests.md`「同じ判定を 2 箇所で別実装していないか」)
+**CLI と UI を同じ fixture で突き合わせる**形にした (同じデータから同じ結論を描くので、
+片方のテストだけではもう片方を 1 mm も守らない。規範: `mutation-verify-new-tests.md`)。
+
+| テスト | 場所 |
+|---|---|
+| `TestFormatKeepsUnverifiedEntryWithZeroItems` | `src/doctor/disk/report_test.go` |
+| `TestDoctorUnverifiedEntryMatchesCLI` | `src/glogx/doctor_view_test.go` (CLI と UI 両方の出力を見る) |
+
+変異 5 本すべてで red:
+
+| 変異 | 結果 |
+|---|---|
+| CLI: 未検証でも 0 件なら畳む形に戻す | red |
+| CLI: マークを `✅ 安全` に戻す | red |
+| CLI: 説明行を消して `Recover` を出す | red |
+| **UI だけ**畳み込みを元に戻す | red (**UI: 3 件のみ**。CLI 側の assert は無傷) | 
+| **UI だけ**マークを `✅ 安全` に戻す | red (**UI: 2 件のみ**) |
+
+下 2 本で CLI 側の assert が落ちなかったことが、**このテストが両側を区別できている**証拠。
+
+## この issue に残っている作業
+
+実名の実測だけ。**`xcodebuild test` を回した直後に
+`ls -la /private/var/tmp/*.logarchive` と `*.spindump.txt` を採り、2 エントリの glob を確定する。**
+確定したら `Entry.Unverified` を空にすれば、この 2 行は自動的に畳まれる側へ戻る。
+
+⚠️ 上の「静的探索は尽きた」節のとおり、**Xcode を読んでも名前は分からない**。同じ grep を繰り返さないこと。
