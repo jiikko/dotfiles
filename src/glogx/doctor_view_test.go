@@ -2034,3 +2034,26 @@ func TestDoctorSnapshotRebindsEntryToCatalog(t *testing.T) {
 		}
 	}
 }
+
+// 一覧の g / G は home / end も受ける (status viewer / issues viewer と同じ語彙。issue 242 P3-4)。
+// 🚨 初期位置が先頭なので、home は「下にいる状態から」押さないと差が出ない (押しても押さなくても
+// 同じ結果になる形にすると、別名が消えても緑のまま通る)。
+func TestDoctorListHomeEndAreAliasesOfGG(t *testing.T) {
+	land := func(keys ...string) int {
+		v := &doctorView{rows: rows("", "a", "b", "c")}
+		for _, k := range keys {
+			v.handleKey(k, 20)
+		}
+		return v.cur.index
+	}
+	top, bottom := land("g"), land("G")
+	if top == bottom {
+		t.Fatalf("前提が崩れている: g と G が同じ行 (%d) に着く", top)
+	}
+	if got := land("G", "home"); got != top {
+		t.Errorf("home の着地 = %d (g は %d)", got, top)
+	}
+	if got := land("g", "end"); got != bottom {
+		t.Errorf("end の着地 = %d (G は %d)", got, bottom)
+	}
+}

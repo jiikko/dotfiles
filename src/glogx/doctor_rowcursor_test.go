@@ -142,3 +142,24 @@ func TestRowCursorResetDropsEverything(t *testing.T) {
 		t.Errorf("残っている: %+v", c)
 	}
 }
+
+// 🚨 行そのものが 0 件のフレームでも key を捨てない (上と同じ規律を全経路で守る)。
+// production では buildRows が必ず区切り行を積むので到達しないが、ここだけ規律を外すと、
+// 次に 0 行のフレームを作った人が index 保持へ黙って退行する (issue 242 P3-5)。
+func TestRowCursorKeepsKeyWhenNoRowsAtAll(t *testing.T) {
+	var c rowCursor
+	full := rows("", "a", "b")
+	c.move(full, 0)
+	c.move(full, +1) // b
+	c.restore(nil)
+	if c.key != "b" {
+		t.Fatalf("0 行のフレームで key を捨てた: %q", c.key)
+	}
+	if c.takeFellBack() {
+		t.Error("動いていないのに寄せたと言った")
+	}
+	c.restore(full)
+	if got := full[c.index].key; got != "b" {
+		t.Errorf("戻ってきたら元の行に付かない: %q", got)
+	}
+}

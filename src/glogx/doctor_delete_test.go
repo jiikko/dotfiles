@@ -599,10 +599,15 @@ func TestDeleteShowsEngineError(t *testing.T) {
 		t.Fatalf("エラーの相に落ちていない: %+v", v.del)
 	}
 	out := doctorPanelText(v, 20)
-	for _, want := range []string{"削除できませんでした", "記録を残せない", "何も消えていません"} {
+	for _, want := range []string{"削除できませんでした", "記録を残せない", "何も消えていません", "閉じてもう一度スキャン"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("エラーのパネルに %q が無い:\n%s", want, out)
 		}
+	}
+	// 🚨 パネルと hint が違うことを言わない。実挙動は doctorRescan (閉じて再スキャン) で、
+	// 兄弟の結果パネルは正しく言っているのにエラー経路だけ「閉じる」だった (issue 242 P3-2)
+	if h := v.hint(120); !strings.Contains(h, "閉じてもう一度スキャン") {
+		t.Errorf("hint がパネルと違うことを言っている: hint=%q panel=\n%s", h, out)
 	}
 	if act := v.handleKey("j", 20); act != doctorRescan || v.del.active() {
 		t.Errorf("エラーを閉じられない: act=%v del=%+v", act, v.del)
@@ -694,7 +699,7 @@ func TestDeleteConfirmPerMethodLines(t *testing.T) {
 	v := &doctorView{del: doctorDelete{confirm: true, plan: &plan}}
 	out := strings.Join(v.lines(doctorTestOpts(30)), "\n")
 	// cli はコマンドの実体を 1 本ずつ出す (件数だけの注記と二重に出さない)
-	for _, want := range []string{"3 件をゴミ箱へ移動", "$ go clean -modcache", "1 件にコマンドを実行", "実行しません", "🚫 対象外", "いまは対象外です"} {
+	for _, want := range []string{"3 件をゴミ箱へ移動", "$ go clean -modcache", "1 件にコマンドを実行", "実行しません", "🚫 触れず", "いまは対象外です"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("確認に %q が無い:\n%s", want, out)
 		}
@@ -1418,4 +1423,61 @@ func slicesContains(xs []string, x string) bool {
 		}
 	}
 	return false
+}
+
+// 確認の結末語は結果画面と同じ出典 (doctorOutcomeWord) から取る。
+// 「触らなかった (Skipped)」と「実行できなかった (Failed)」を 1 語に畳まない (issue 242 P3-1)。
+func TestDeleteConfirmSeparatesSkippedFromFailed(t *testing.T) {
+	plan := disk.DeleteReport{Entries: []disk.EntryOutcome{
+		{Label: "さわらず", Method: "rm", Outcome: disk.OutcomeSkipped, Reason: "いまは対象外です"},
+		{Label: "できず", Method: "rm", Outcome: disk.OutcomeFailed, Reason: "削除の前に走査し直せませんでした"},
+	}}
+	v := &doctorView{del: doctorDelete{confirm: true, plan: &plan}}
+	out := doctorPanelText(v, 30)
+	for _, want := range []string{"🚫 触れず", "❌ できず"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("確認に %q が無い:\n%s", want, out)
+		}
+	}
+	// 🚫 対象外 は一覧 (disk.Mark) では StatusBlocked の語。確認画面で使い回すと
+	// 同じ記号が「対象外」「触れず」の 2 つの意味を持つ
+	if strings.Contains(out, "🚫 対象外") {
+		t.Errorf("確認が一覧 (disk.Mark) の語を使っている:\n%s", out)
+	}
+}
+
+// 下見 (preparing) と実行 (running) を 1 語に畳まない。下見はまだ何も壊していない。
+// 中断の案内は相に依らず出す (下見中も handleDeleteKey の blocking 分岐が Ctrl-C を受ける。issue 242 P3-3)。
+func TestDeletePhaseWordingSeparatesPreparingFromRunning(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		del      doctorDelete
+		panel    []string
+		wantHint string
+		notHint  string
+	}{
+		{"preparing", doctorDelete{preparing: true, progress: "1/2 なにか を走査中"},
+			[]string{"削除できるか確認しています", "対象を走査し直しています", "Ctrl-C を 2 回押すと中断します"},
+			"確認しています", "実行中"},
+		{"running", doctorDelete{running: true, progress: "1/2 なにか を削除中"},
+			[]string{"削除しています", "Ctrl-C を 2 回押すと中断します"},
+			"実行中です", "確認しています"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := &doctorView{del: tc.del}
+			out := doctorPanelText(v, 20)
+			for _, want := range tc.panel {
+				if !strings.Contains(out, want) {
+					t.Errorf("パネルに %q が無い:\n%s", want, out)
+				}
+			}
+			h := v.hint(120)
+			if !strings.Contains(h, tc.wantHint) {
+				t.Errorf("hint = %q (%q を含むこと)", h, tc.wantHint)
+			}
+			if strings.Contains(h, tc.notHint) {
+				t.Errorf("hint = %q (%q を含まないこと。相を取り違えている)", h, tc.notHint)
+			}
+		})
+	}
 }

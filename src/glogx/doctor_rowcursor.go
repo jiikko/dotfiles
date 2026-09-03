@@ -30,7 +30,10 @@ func (c *rowCursor) reset() { *c = rowCursor{} }
 // restore は「前に選んでいた行」を key で探し直す。key が消えていたら index の近傍へ寄せる。
 func (c *rowCursor) restore(rows []doctorRow) {
 	if len(rows) == 0 {
-		c.index, c.key = 0, ""
+		// 🚨 key は捨てない (remember と同じ規律)。捨てると index 保持へ退行する。
+		// buildRows が必ず区切り行を積むので production では 0 行にならないが、
+		// 規律をここだけ外すと、次に 0 行のフレームを作った人が黙って踏む
+		c.index = 0
 		return
 	}
 	if c.key != "" {

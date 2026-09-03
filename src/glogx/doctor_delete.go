@@ -637,7 +637,7 @@ func (v *doctorView) deletePanel(o doctorRenderOpts) []string {
 			body = append(body, "", " 実行したコマンド:")
 			body = append(body, d.log...)
 		}
-		return doctorPanel(o, "削除できませんでした", append(body, "", "y: 出力をコピー   他のキー: 閉じる"))
+		return doctorPanel(o, "削除できませんでした", append(body, "", "y: 出力をコピー   他のキー: 閉じてもう一度スキャン"))
 	case d.result != nil:
 		blocks, tail := doctorDeleteResultLines(o, *d.result, d.log)
 		return assembleDeletePanel(o, "削除の結果", blocks, tail, nil)
@@ -649,11 +649,13 @@ func (v *doctorView) deletePanel(o doctorRenderOpts) []string {
 		body := []string{d.progress, ""}
 		if d.preparing {
 			body = append(body, "対象を走査し直しています (消してよいかを測り直します)")
-		} else {
-			body = append(body, "Ctrl-C を 2 回押すと中断します")
-			if d.armedCC {
-				body = append(body, "もう一度 Ctrl-C を押すと中断します")
-			}
+		}
+		// 🚨 中断の案内は相に依らず出す。下見中も handleDeleteKey の blocking 分岐が
+		// Ctrl-C を受けて cancel でき (実測 2026-09-04: 走査が打ち切られて確認へ戻る)、
+		// 案内が無いと「このパネルから抜ける手段が無い」に見える
+		body = append(body, "Ctrl-C を 2 回押すと中断します")
+		if d.armedCC {
+			body = append(body, "もう一度 Ctrl-C を押すと中断します")
 		}
 		// 実行したコマンドと出力を垂れ流す (何が起きているかを見せる)。入る分だけ末尾を出す
 		if len(d.log) > 0 {
@@ -691,7 +693,10 @@ func planHasWork(plan *disk.DeleteReport) bool {
 //
 // 並びは一覧の行と同じ「サイズ / ラベル / 語」。🚨 記号を先頭に置く形は採らない:
 // `・` (全角) と絵文字と `—` が同じ列に来て、幅は合っていても目には揃わない
-// (~/.claude/rules/no-mixed-width-columns-in-terminal-ui.md)。語彙は固定にする。
+// (~/.claude/rules/no-mixed-width-columns-in-terminal-ui.md)。
+// 🚨 結末の語は **doctorOutcomeWord から取る** (結果画面と同じ語)。ここで別の語を作ると
+// Skipped「触らなかった」と Failed「実行できなかった」が 1 語に畳まれ、しかも `🚫 対象外` は
+// 一覧 (disk.Mark) では StatusBlocked の語なので、同じ記号が 3 つの意味を持つ。
 //
 // ⚠️ 記号は**単独で幅 2 のもの**だけを使う。`🗑` は実測で幅 1、`🗑️` (VS16 付き) は 2 で、
 // 端末によって右端が動く。既存の doctorRiskMark と同じ語彙 (✅ 🚨 🚫 ⛔ ❓) に `🚮` `📋` `❌` を足した。
@@ -704,7 +709,7 @@ func (v *doctorView) confirmLines(o doctorRenderOpts) (blocks [][]string, tail [
 		skipped := e.Outcome == disk.OutcomeSkipped || e.Outcome == disk.OutcomeFailed
 		switch {
 		case skipped:
-			size, word = "---", "🚫 対象外"
+			size, word = "---", doctorOutcomeWord(e.Outcome)
 		case e.Method == "trash":
 			trashing += e.BeforeSize
 		case e.Method != "propose":

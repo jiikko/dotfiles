@@ -456,12 +456,12 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 		for range max(1, page/2) {
 			v.cur.move(v.rows, -1)
 		}
-	case "g":
+	case "g", "home":
 		// fellBack は消さない: tui が handleKey より前に必ず取り出すので、ここに来た時点で
 		// 常に false (書いても意味が無く、G 側にも同じ行が無い = 非対称だった)
 		v.cur.index, v.cur.key, v.cur.offset = 0, "", 0
 		v.cur.move(v.rows, 0)
-	case "G":
+	case "G", "end":
 		v.cur.index = len(v.rows) - 1
 		v.cur.move(v.rows, 0)
 	case "enter":
@@ -510,7 +510,13 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 // 実測 2026-09-03: 固定文字列だと 112 桁あり、popup の予算 82 桁で「D/q/esc: 閉じる」と
 // 「(削除はまだできません)」が画面から消えていた (issue 201)。
 func (v *doctorView) hint(width int) string {
-	if v.del.blocking() {
+	// 🚨 下見 (preparing) と実行 (running) を 1 語に畳まない。下見はまだ何も壊しておらず、
+	// パネルは「削除できるか確認しています」と言う。ここだけ「実行中」と読ませると、
+	// 押していいキーの判断が変わる (中断の重さが違う)
+	if v.del.preparing {
+		return " 確認しています (Ctrl-C ×2 で中断)"
+	}
+	if v.del.running {
 		return " 実行中です (Ctrl-C ×2 で中断)"
 	}
 	if v.del.confirm {
