@@ -16,6 +16,7 @@ linters:
     - containedctx   # struct フィールドへの ctx 格納の検出 (ctx は引数で渡す)
     - contextcheck   # ctx の非伝播・context.Background の握り込み検出
     - copyloopvar    # loop variables needlessly copied (Go 1.22+)
+    - depguard       # 外部コマンドは runner 経由 (下の rules)
     - dupl           # コピペ重複の検出 (閾値は下。テストは除外)
     - durationcheck  # Duration 同士の乗算バグ (timeout 計算があるモジュール)
     - errname        # sentinel error は Err 接頭辞・error 型は Error 接尾辞
@@ -23,6 +24,8 @@ linters:
     - exhaustive     # default なし switch の enum 網羅を強制 (settings 参照)
     - exptostd       # x/exp で書いたものの stdlib 昇格済み検出
     - fatcontext     # ループ内で context を積み重ねるパターンの検出
+    - forbidigo      # 出力先を引数で受けない裸の print を禁止 (下の forbid)
+    - gocritic       # exitAfterDefer 等の診断 (既定の stable セット)
     - makezero       # make([]T, n) への append で先頭にゼロ値が残るバグ
     - mirror         # bytes/strings の鏡写し API の取り違え
     - misspell       # common English misspellings in comments/strings
@@ -39,6 +42,32 @@ linters:
     #   unconvert は disk/size.go の Stat_t 変換に既存の nolint があるので、外す判断とセットで見る。
     #   intrange の 1 件は src/doctor/disk/scan_test.go (issue 222 の残件)
   settings:
+    depguard:
+      rules:
+        exec-via-runner:
+          # 外部コマンドの実行は runner に一本化する。ctx の伝播・WaitDelay・プロセスグループの
+          # 扱い・「読み取り専用のコマンドか」の検査が runner 側に集まっており、判定ライブラリ
+          # (disk / svc / brewledger) が os/exec を直に叩くとその規律の外でプロセスが起きる。
+          # 🚨 テストは除外する: disk/scan_test.go が「duSize が du -sk と一致する」ことを
+          # 実 du で確かめており、そこは実 exec が要る (runner を通すと検証したい対象が変わる)
+          files:
+            - "**/*.go"
+            - "!**/runner/*.go"
+            - "!**/*_test.go"
+          deny:
+            - pkg: os/exec
+              desc: 外部コマンドは runner.Runner 経由で起こす (ctx / WaitDelay / プロセスグループの規律)
+    forbidigo:
+      # 出力先は必ず引数で受ける。cmd/*/main.go の emit は (stdout, stderr) を引数に取り、
+      # exit_test.go がそこへバッファを差して「終了コードと出力が両方の出力形式で揃う」ことを
+      # 検証している (issue 177)。裸の fmt.Print* はその設計を迂回する。
+      # 🚨 forbidigo のパターンは**呼び出し先の式**にしか当たらず引数では判別できないので、
+      # `fmt.Fprintf(os.Stdout, ...)` は捕まえられない (判定ライブラリは fmt.Fprintf を
+      # strings.Builder 向けに多用しているため、Fprint* 自体は禁止できない)。
+      # そこまで機械で止めるなら ruleguard (glogx の gorules/ が前例) が要る
+      forbid:
+        - pattern: ^fmt\.Print(f|ln)?$
+          msg: 出力先を引数で受けること (cmd の emit は stdout/stderr を引数に取る設計)
     dupl:
       threshold: 120
     exhaustive:

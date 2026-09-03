@@ -16,8 +16,15 @@ import (
 	"doctor/runner"
 )
 
-// 一覧 (dry-run) だけ。削除のフラグは無い (④ で足すときも既定は dry-run のまま)。
-func main() {
+func main() { os.Exit(run()) }
+
+// run は main の本体。一覧 (dry-run) だけで、削除のフラグは無い
+// (④ で足すときも既定は dry-run のまま)。
+//
+// 🚨 os.Exit を main に閉じ込めるのは、**os.Exit が defer を走らせない**ため
+// (gocritic exitAfterDefer)。ここで直に os.Exit すると signal.NotifyContext の
+// 解除 (defer stop()) が実行されない。
+func run() int {
 	jsonOut := flag.Bool("json", false, "JSON で出力する")
 	progress := flag.Bool("progress", false, "完了したエントリを stderr に順次出す")
 	flag.Usage = func() {
@@ -27,7 +34,7 @@ func main() {
 	flag.Parse()
 	if flag.NArg() > 0 {
 		fmt.Fprintf(os.Stderr, "diskdoctor: サブコマンドはありません (%q)\n", flag.Arg(0))
-		os.Exit(exitcode.Undiagnosed)
+		return exitcode.Undiagnosed
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -38,7 +45,7 @@ func main() {
 		}
 	}
 	rep := disk.Scan(ctx, opt)
-	os.Exit(emit(rep, *jsonOut, time.Now(), os.Stdout, os.Stderr))
+	return emit(rep, *jsonOut, time.Now(), os.Stdout, os.Stderr)
 }
 
 // emit は出力して終了コードを返す。**出力の分岐の外**で終了コードを決めるのが要点
