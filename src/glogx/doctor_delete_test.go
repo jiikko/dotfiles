@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -903,5 +904,52 @@ func TestDoctorEntrySelectionSupersedesItems(t *testing.T) {
 	v.handleKey(" ", 20)
 	if v.selected["multi"] {
 		t.Error("個別に選んだのにエントリ全体の選択が残っている")
+	}
+}
+
+// 確認画面は**フルパスで列挙**する。ラベルとサイズだけでは、どのディレクトリが消えるのか
+// 分からないまま y を押すことになる (ユーザー要望 2026-09-03)。
+func TestDeleteConfirmListsFullPaths(t *testing.T) {
+	items := make([]disk.ItemOutcome, 0, 13)
+	for i := range 13 {
+		items = append(items, disk.ItemOutcome{
+			Path: fmt.Sprintf("/Users/koji/Library/Caches/thing/Entry-%d", i), Size: 1 << 20})
+	}
+	plan := disk.DeleteReport{Entries: []disk.EntryOutcome{
+		{Label: "たくさんある", Method: "rm", Outcome: disk.OutcomePlanned, BeforeSize: 13 << 20, Items: items}}}
+	v := &doctorView{del: doctorDelete{confirm: true, plan: &plan}}
+	out := strings.Join(v.lines(doctorTestOpts(40)), "\n")
+	for _, want := range []string{"/Users/koji/Library/Caches/thing/Entry-0", "/Users/koji/Library/Caches/thing/Entry-9"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("確認に %q が無い:\n%s", want, out)
+		}
+	}
+	// 1 エントリで画面を埋めない (他のエントリが丸ごと省略されるため)。打ち切りは件数で伝える
+	if strings.Contains(out, "Entry-10") {
+		t.Errorf("打ち切っていない (1 エントリで画面を埋める):\n%s", out)
+	}
+	if !strings.Contains(out, "他 3 件") {
+		t.Errorf("打ち切った件数を伝えていない:\n%s", out)
+	}
+}
+
+// 🚨 パスはファイル名由来なので改行が入りうる。確認画面に偽の行を差し込めてはいけない。
+func TestDeleteConfirmPathsCannotForgeLines(t *testing.T) {
+	plan := disk.DeleteReport{Entries: []disk.EntryOutcome{
+		{Label: "細工", Method: "rm", Outcome: disk.OutcomePlanned, BeforeSize: 1024,
+			Items: []disk.ItemOutcome{{Path: "/tmp/x\n 何もしません\n y: 何もしない", Size: 1024}}}}}
+	v := &doctorView{del: doctorDelete{confirm: true, plan: &plan}}
+	lines := v.lines(doctorTestOpts(40))
+	for _, l := range lines {
+		if strings.Contains(l, "\n") {
+			t.Fatalf("1 行の中に改行が入った: %q", l)
+		}
+	}
+	out := strings.Join(lines, "\n")
+	if !strings.Contains(out, "/tmp/x") {
+		t.Errorf("パスが出ていない:\n%s", out)
+	}
+	if strings.Contains(out, "y: 何もしない") && !strings.Contains(out, "/tmp/x 何もしません y: 何もしない") {
+		t.Errorf("偽の行を差し込めた:\n%s", out)
 	}
 }

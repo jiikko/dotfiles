@@ -517,6 +517,9 @@ func (v *doctorView) confirmLines(o doctorRenderOpts) (blocks [][]string, tail [
 		default:
 			out = append(out, deleteNote(o, fmt.Sprintf("%d 件を削除", len(e.Items))))
 		}
+		if !skipped {
+			out = append(out, deletePathLines(o, e)...)
+		}
 		blocks = append(blocks, out)
 	}
 	// ⚠️ 合計は**1 行にまとめる**。2 行に割ると、狭い画面で先に落ちて「1 件目のサイズだけが
@@ -533,6 +536,32 @@ func (v *doctorView) confirmLines(o doctorRenderOpts) (blocks [][]string, tail [
 	}
 	return blocks, append(tail, " y: 削除する      n / Esc: やめる")
 }
+
+// deletePathLines は「これから触るもの」をフルパスで並べる。
+//
+// 🚨 確認の本体はここ。ラベルとサイズだけでは「どのディレクトリが消えるのか」が分からず、
+// **中身を確かめずに y を押す**ことになる (ユーザー要望 2026-09-03)。パスは engine が
+// 走査し直して正規化したもの = 実際に触る対象そのもの。
+//
+// ⚠️ 1 エントリあたりの表示は maxConfirmPaths 件で打ち切る。全部並べると 1 エントリで画面を
+// 埋め、**他のエントリが丸ごと省略される** (assembleDeletePanel は塊単位で落とすため)。
+// 打ち切ったことは件数で伝える。
+func deletePathLines(o doctorRenderOpts, e disk.EntryOutcome) []string {
+	out := make([]string, 0, min(len(e.Items), maxConfirmPaths)+1)
+	for i, it := range e.Items {
+		if i >= maxConfirmPaths {
+			out = append(out, deleteNote(o, fmt.Sprintf("… 他 %d 件", len(e.Items)-maxConfirmPaths)))
+			break
+		}
+		// ⚠️ パスは**ファイル名由来**なので改行や制御文字が入りうる (macOS のファイル名は
+		// `/` と NUL 以外を許す)。1 行 = 1 件の契約を破ると、確認画面に偽の行
+		// (「y: 削除する」等) を差し込めてしまう。印字可能文字だけに絞る
+		out = append(out, deleteNote(o, cleanOneLine(it.Path)))
+	}
+	return out
+}
+
+const maxConfirmPaths = 10
 
 // doctorDeleteResultLines は結果。**incomplete を成功にも失敗にも畳まない**。
 func doctorDeleteResultLines(o doctorRenderOpts, rep disk.DeleteReport) (blocks [][]string, tail []string) {
