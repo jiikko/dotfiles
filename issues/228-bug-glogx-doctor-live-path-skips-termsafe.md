@@ -2,7 +2,7 @@
 
 起票日: 2026-09-04
 種別: bug (security)
-優先度: **P1** (規約が明文で禁じている形。制御文字を含むファイル名 1 つで発火する)
+優先度: **P2** (規約が明文で禁じている形。ただし**表示 sink での端末乗っ取りは実測で崩れた** — 下記 §5)
 出典: audit (leaky-abstraction) 2026-09-03 / forge-Minimum → **反証レビューを通過** (下記)
 
 ## 規約違反
@@ -71,10 +71,44 @@ ReadDir name "child\x1b[2Jname" -> Contents entry "…\nFAKE ROW/child\x1b[2Jnam
 `filepath.Clean(p) == p` かつ `IsAbs` なので **`validateTarget` を通り、`Item.Path` に生で載る**。
 改行入りの名前は 1 行を 2 行に割れるので、固定高パネルの行数も崩す。
 
-### 5. 描画層も無害化しない
+### 5. 🚨 描画層の被害は実測で崩れた (当初の主張の訂正)
 
-`doctorView.lines` の唯一の加工は `truncateDisp` → `termwidth.Truncate` → `ansi.Truncate` で、
-これは **"is aware of ANSI escape codes and will not break them"** = エスケープを**保存する**。
+当初この issue は「`ansi.Truncate` がエスケープを保存する」ところで追跡を打ち切り、
+**表示しただけで OSC52・タイトル書き換え・画面消去が起きる**と書いていた。**これは誤り。**
+
+追跡には **1 段残っていた**。`View.Content` は bubbletea v2 の `cursedRenderer.flush` で
+`uv.NewStyledString(view.Content).Draw(cellbuf, …)` に渡り、ultraviolet の `printString` が
+**セル単位に分解し直す**。非 SGR / 非 OSC8 のシーケンスは `cell.Content += string(seq)` に溜まるだけで、
+**次の可視文字が `cell.Content = string(seq)` で上書きするため消える**。
+
+反証レビューが、同じパッケージ・同じバージョンを隔離モジュールから呼び、doctor の 1 フレームを
+40x4 の ScreenBuffer に Draw → TerminalRenderer で Flush して実測した:
+
+| 注入したもの | 端末へ出た結果 |
+|---|---|
+| OSC52 (クリップボード書き込み) | **落ちる** |
+| OSC0 (タイトル書き換え) | **落ちる** |
+| CSI `ESC[2J` (画面消去) | **落ちる** |
+| DCS | **落ちる** |
+| **OSC8 ハイパーリンク** | **素通り** (攻撃者の URI が端末へ出る) |
+| **SGR (色 / 点滅)** | **素通り + 次の行へ滲む** (hint 行まで赤背景になる) |
+| **改行 `\n`** | **行が割れて偽の行ができ、固定高フレームの最下行が押し出される** |
+
+つまり**表示 sink で実際に起きるのは端末制御の乗っ取りではなく、整合性・可読性の破壊**
+(偽の行・行数偽装・色の滲み・リンク偽装)。当初の P1 の根拠はここで失われる。
+
+### 5b. 実際に危険な sink は 2 つ
+
+**(a) クリップボード — 本物。**
+`y` / `Y` は `copyWithToast` → `copyToClipboard` → `pbcopy` へ**無害化なしで生のまま**渡る。
+本 repo は `copyJobContextLines` で「生のままシステムクリップボードへ流すと、**ペースト先の端末で
+OSC52 等が発火しうる**(レビュー確定)」と**自ら同じ脅威モデルを明文化している**。
+ただし発火は「表示しただけ」ではなく「コピーして端末に貼った瞬間」= `y` を押す能動的操作が要る。
+→ **優先すべきは `copyPath` / `copyText` 側であって `doctorRow.text` 側ではない。**
+
+**(b) `bin/diskdoctor` の stdout — 「表示しただけで発火」が本当に成立する経路。**
+`src/doctor/disk/report.go: Format` は bubbletea の sink を通らず**stdout へ直接書く**ため、
+上の表の「落ちる」列が当てはまらない。当初の主張はここを名指ししていなかった。
 
 ### 6. 非対称: 保存して復元すると落ちる
 
@@ -126,6 +160,10 @@ ReadDir name "child\x1b[2Jname" -> Contents entry "…\nFAKE ROW/child\x1b[2Jnam
 
 `copyPath` / `copyText` も同じ値から作るので、入口で通せば両方が閉じる。
 
+**着手順は §5b に従う** — 表示 (`doctorRow.text`) より **クリップボード (`copyPath` / `copyText`) と
+`bin/diskdoctor` の `report.go: Format`** が先。入口 1 箇所で通せば結果的に全部閉じるが、
+「まず表示を直した」で終わらせると**危険な方の 2 つが残る**。
+
 ### 2. 復元経路の二重実装を termsafe へ寄せる
 
 `cleanOneLine` / `cleanBrewText` / `svc.cleanText` を `termsafe` への委譲にする。
@@ -149,5 +187,13 @@ ReadDir name "child\x1b[2Jname" -> Contents entry "…\nFAKE ROW/child\x1b[2Jnam
 ## 関連
 
 - issue 229 (doctor の復元経路が `Entry` をカタログへ再束縛しない。**同じクラスタとして起票されたが修正箇所も回帰テストも別物**)
-- `issues/done/178` / `issues/done/193` — snapshot の信頼境界。**脅威モデルが保存ファイルに閉じており、live 経路は対象外だった**
+- `issues/done/193` — **前例**。snapshot の `Item.Path` と disk キャッシュの未検証を塞いだ issue。
+  193 自身が「178 の『壊せなかった』にこの 2 件は含まれていない」と探索の非網羅性を明記している
+- `issues/done/178` — snapshot の信頼境界。**脅威モデルが保存ファイルに閉じており、live 経路は対象外だった**
+
+  🚨 **切り分け (これを書かないと「178 で直したはず」で誤って閉じられる)**: 178 は敵対レビューの
+  2〜3 周目で「実走査でも成立する」インジェクションを 2 件直している (`svc.ShellQuote` の allowlist 化と
+  `manualCommands` の `Label` 引用)。したがって **plist `Label` の*シェル*インジェクションは live 経路でも
+  既に閉じている**。本 issue が指すのは `svcSection` が `" ⛔ "+f.Label` を生連結する
+  **表示側の制御文字**で、そちらは未対応
 - `src/glogx/worktree_status.go: dispPath` — 同種の値 (ファイル名) を正しく通している実装の見本
