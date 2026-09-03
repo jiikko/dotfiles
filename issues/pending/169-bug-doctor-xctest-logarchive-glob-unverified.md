@@ -163,3 +163,6 @@ ls -la /private/var/tmp/ | grep -i 'xctest|logarchive|spindump'
 確定したら `Entry.Unverified` を空にすれば、この 2 行は自動的に畳まれる側へ戻る。
 
 ⚠️ 上の「静的探索は尽きた」節のとおり、**Xcode を読んでも名前は分からない**。同じ grep を繰り返さないこと。
+
+> 🚨 反証レビューの台帳 (207) は 2026-09-03 に閉じた。**この issue を pending から戻すときに、
+> この issue だけ反証レビューを通すこと** (163 の受け入れ条件から引き継いだ規律)。

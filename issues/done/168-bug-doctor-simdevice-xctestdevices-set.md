@@ -147,3 +147,7 @@ $ find ~/Library/Developer -maxdepth 3 -type d -name '*Devices*'
   同じ「安全リストの root は fail-closed、葉は握り潰す」形をしており、`sizePaths` が候補リスト側で
   per-item を許容するのとは役割が違う) / `chmod 000` テストが root や CI で vacuous にならないか
   (CI の macOS runner は非 root)
+
+> 🚨 反証レビューの台帳 (207) は 2026-09-03 に閉じた。「被害が実機で成立するか」の裏取りは
+> 本文の trigger (並列テストの実行中に観測) に一本化されている。修正と変異検証は済んでおり、
+> 現時点では候補が生成されないので誤判定は起こりえない。
