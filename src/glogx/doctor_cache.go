@@ -215,22 +215,15 @@ func saveDoctorDiskCache(c doctorDiskCache) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
 	data, err := json.Marshal(c)
 	if err != nil {
 		return err
 	}
-	tmp := fmt.Sprintf("%s.tmp.%d", path, os.Getpid())
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
+	// 🚨 独自の temp + rename を書かない (issue 219)。以前ここに在った
+	// `<path>.tmp.<pid>` + os.WriteFile は **rename 分岐だけ**を写していたので、ENOSPC で
+	// write が失敗すると 0 バイトの残骸が残った (doctor は「ディスクが足りない」ときに開く
+	// 画面なので、一番残骸が出てほしくない状況で出る)。writeAtomic は 3 分岐すべて掃除する。
+	return writeAtomic(path, data, filepath.Base(path)+".tmp.*")
 }
 
 // loadDoctorDiskCache は保存結果を返す。欠損・破損は「結果なし」(起動を失敗させない。クラッシュもしない)。
@@ -402,22 +395,15 @@ func saveDoctorSnapshot(sn doctorSnapshot) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
 	data, err := json.Marshal(sn)
 	if err != nil {
 		return err
 	}
-	tmp := fmt.Sprintf("%s.tmp.%d", path, os.Getpid())
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
+	// 🚨 独自の temp + rename を書かない (issue 219)。以前ここに在った
+	// `<path>.tmp.<pid>` + os.WriteFile は **rename 分岐だけ**を写していたので、ENOSPC で
+	// write が失敗すると 0 バイトの残骸が残った (doctor は「ディスクが足りない」ときに開く
+	// 画面なので、一番残骸が出てほしくない状況で出る)。writeAtomic は 3 分岐すべて掃除する。
+	return writeAtomic(path, data, filepath.Base(path)+".tmp.*")
 }
 
 // loadDoctorSnapshot は TTL 内の完全な結果を返す。欠損・破損・期限切れ・未来の時刻は「無し」(走査に倒す)。

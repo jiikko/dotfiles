@@ -87,5 +87,5 @@ func saveUsageCache(path string, snap *usage.Snapshot, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(path, data)
+	return writeAtomic(path, data, filepath.Base(path)+".tmp.*")
 }

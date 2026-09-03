@@ -160,7 +160,8 @@ func TestCachePathUsesXDG(t *testing.T) {
 
 // rename が失敗した場合 (書き込み先がディレクトリ等) に temp ファイルが残らないこと。
 // writeAtomic は Write/Close 失敗時は掃除していたが rename 失敗だけ漏れていて、
-// キャッシュディレクトリに .glog-cache-* が蓄積しうる穴があった (2026-07-17 監査で検出)。
+// キャッシュディレクトリに temp が蓄積しうる穴があった (2026-07-17 監査で検出)。
+// temp の名前は issue 219 で `<元のファイル名>.tmp.<乱数>` へ統一した (旧 `.glog-cache-*`)。
 func TestSaveCacheCleansTempOnRenameFailure(t *testing.T) {
 	dir := t.TempDir()
 	// 書き込み先パスに既存ディレクトリを置くと os.Rename が失敗する
@@ -171,7 +172,7 @@ func TestSaveCacheCleansTempOnRenameFailure(t *testing.T) {
 	if err := SaveCache(path, map[string]CIState{"sha": StateSuccess}, time.Now()); err == nil {
 		t.Fatal("rename が失敗するはずの構成でエラーが返らない")
 	}
-	leftovers, err := filepath.Glob(filepath.Join(dir, ".glog-cache-*"))
+	leftovers, err := filepath.Glob(filepath.Join(dir, "*.tmp.*"))
 	if err != nil {
 		t.Fatal(err)
 	}

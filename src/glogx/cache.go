@@ -113,7 +113,7 @@ func SaveCache(path string, fetched map[string]CIState, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(path, data)
+	return writeAtomic(path, data, filepath.Base(path)+".tmp.*")
 }
 
 // pruneToLimit はエントリ数を maxCacheEntries に抑える (取得時刻の新しい順に残す)。
@@ -138,11 +138,25 @@ func pruneToLimit(statuses map[string]cacheEntry) {
 }
 
 // writeAtomic は temp + rename の原子的書き込み。
-func writeAtomic(path string, data []byte) error {
+// writeAtomic は temp + rename で書く。write / Close / rename のどの分岐で失敗しても temp を掃除する。
+//
+// pattern は temp の名前 (os.CreateTemp のパターン)。**呼び出し側は
+// `filepath.Base(path)+".tmp.*"` を渡す**: SIGKILL / panic 中に残った temp を掃く経路は
+// コードにも Makefile にも無いので、名前から出所が読める必要がある (issue 219)。
+// 全経路で `<元のファイル名>.tmp.<乱数>` に揃えてあるので、掃除する道具を作るなら
+// `*.tmp.*` の 1 つの glob で書ける。
+//
+// ⚠️ pattern に**パス区切りを入れない** (os.CreateTemp が `pattern contains path separator` で
+// 失敗する。実測 2026-09-03)。`.tmp.` の区切りはドットのまま変えないこと —
+// `doctor_view_test.go` の残骸チェックが `.tmp.` を見ている。
+//
+// 🚨 **閉じるのは error-return 経路だけ**。CreateTemp と Remove の間で SIGKILL / panic した
+// 残骸はこの実装でも残る (issue 219)。
+func writeAtomic(path string, data []byte, pattern string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".glog-cache-*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), pattern)
 	if err != nil {
 		return err
 	}

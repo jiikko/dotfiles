@@ -94,18 +94,18 @@ confused deputy にして TCC 保護下のファイルを truncate する）。*
 
 ## 受け入れ条件
 
-- [ ] `saveDoctorDiskCache` / `saveDoctorSnapshot` が `writeAtomic` 経由になる（tmp prefix を引数化）
-- [ ] **write 失敗**で tmp が残らない回帰テストを doctor 側に足す。rename 失敗は
+- [x] `saveDoctorDiskCache` / `saveDoctorSnapshot` が `writeAtomic` 経由になる（tmp prefix を引数化。2026-09-04）
+- [x] **write 失敗**で tmp が残らない回帰テストを doctor 側に足した (2026-09-04)。rename 失敗は
       `cache_test.go:164` と同じ手（rename 先をディレクトリにする）で作れるが、**write 失敗の再現には
       別の手が要る**（RAM ディスク / 書き込みを差せる seam）。難しければ
       「`os.WriteFile` を使わないことの静的 pin」でもよいが、その場合は**満たせていない主張**
       （write / Close 分岐）を issue に明記して残す
-- [ ] 変異検証は**分岐を名指しする**: `cache.go:152` の `os.Remove(tmpName)` を外したとき、
+- [x] 変異検証で**分岐を名指しした** (2026-09-04): `cache.go:152` の `os.Remove(tmpName)` を外したとき、
       **今回足した doctor のテストが** red になること。🚨 `cache.go:160`（rename 分岐）を外すのは
       既存の `TestSaveCacheCleansTempOnRenameFailure` が拾うので、**doctor 側のテストを 1 本も
       足さずに「変異で red」を名乗れてしまう**（`mutation-verify-new-tests.md` の
       「スイートの red を効いていると読まない」）
-- [ ] （任意）「この置き場への書き込みは `writeAtomic` を通す」を ruleguard / depguard で強制する。
+- [ ] （任意・trigger 待ち）「この置き場への書き込みは `writeAtomic` を通す」を ruleguard / depguard で強制する。**第 1 段では入れない**（下記「入れなかったもの」）。
       既に `gorules/rules.go` がある repo なので、静的 pin をその形で入れると下の
       `issues_state.go:71` も同時に射程に入る
 
@@ -155,3 +155,65 @@ confused deputy にして TCC 保護下のファイルを truncate する）。*
 - fsnotify: `stopWatch` / `stopGitLogWatch` / `cancelAll` で Close、世代 (gen) で古いチェーンを弾く規律
 - ファイル: `probe.go` は全分岐で Close、`writeAtomic` は掃除済み、`issues/parse.go` / `status_view.go` は defer Close
 - 外部プロセス: `subproc.CommandContext` の WaitDelay 規律は `waitdelay_discipline_test.go` が強制
+
+## 対応 (2026-09-04)
+
+`writeAtomic` へ寄せた。**設計は敵対的レビュー (opus) が上乗せ 3 点を落とした結果の別案**で、
+最初の案 (新関数 `writeAtomicPrefix` + production seam + AST 静的 pin) は採らなかった。
+
+### 入れたもの
+
+- `writeAtomic(path, data []byte, pattern string)` に**シグネチャ変更**（関数は 1 本のまま）。
+  委譲で新関数を足す案を却下した根拠: 呼び出し元は 3 箇所 (`cache.go:116` /
+  `claude_version.go:144` / `usage_cache.go:90`) だけで、`cache_test.go` は `SaveCache` を
+  呼んでいて `writeAtomic` を直接呼んでいない = **編集は 3 行 + テストの glob 1 箇所**。
+  API 保存に実需要が無く、関数を 2 本にすると読む jump と touch 箇所が増えるだけ
+  (`verify-design-intent-before-refactor.md`: 複雑性は下がらず移動する)
+- **全経路の temp 名を `<元のファイル名>.tmp.<乱数>` に統一**した (旧 `.glog-cache-*` は消滅)。
+  doctor だけ可読名にすると、残り 3 経路に出所不明の既定が残って同じ軸で不整合を作る。
+  🚨 区切りは**ドットのまま**にした: `doctor_view_test.go:491` の残骸チェックが `.tmp.` を
+  見ており、`.tmp-` にすると**成功パス上の assert が無言で vacuous になる** (変異でも
+  気づけない。敵対レビューの指摘)
+- doctor 2 経路から `MkdirAll` + 固定名 tmp + `os.WriteFile` + `os.Rename` を削除
+
+### 入れなかったもの (理由つき。再提案しないため)
+
+- **production の seam** (`var createTempFile = os.CreateTemp`): 不要。`RLIMIT_FSIZE` を 0 に
+  すると `(*os.File).Write` が EFBIG (`file too large`) を返し、Go は SIGXFSZ で死なない
+  (実測 2026-09-04)。root も RAM ディスクも要らず 0.2 秒。テストのために production へ
+  seam を足す必要が無い
+- **AST 静的 pin** (`doctor_cache.go` に `os.WriteFile` が出ないことを検査): 不要。
+  固定名 `os.WriteFile` を書き戻す変異で**振る舞いテストが red になる** (実測。下の変異 C)。
+  静的 pin が追加で捕まえるのは「掃除を正しく書いた重複実装」だけで、射程も 1 ファイルなので
+  別ファイルへ移す / import alias で素通りする (`adversarial-review-own-safeguards.md` §8)
+- **ruleguard / depguard による強制**: 第 1 段では入れない。配線自体は既に在る
+  (`.golangci.yml` の `gocritic.enabled-checks: [ruleguard]` + `gorules/rules.go`) が、
+  ruleguard も構文しか見ないので「どの置き場への書き込みか」は表現できず、package 全体の
+  `os.WriteFile` 禁止 + 例外リストになる。**trigger: 3 本目の複製が出たとき、または
+  `issues_state.go:71` を直す判断が出たとき**
+
+### 変異検証 (ケース名ごとの pass/fail で判定)
+
+| 変異 | 新テスト (write 分岐) | 既存 `TestSaveCacheCleansTempOnRenameFailure` |
+|---|---|---|
+| A: write 分岐の `os.Remove` を外す | **FAIL** (disk cache / snapshot 両方) | PASS |
+| B: rename 分岐の `os.Remove` を外す | PASS | **FAIL** |
+| C: doctor に固定名 `os.WriteFile` を書き戻す | **FAIL** (disk cache) | PASS |
+
+いずれも `go build` が通ることを確認してから判定した。復元後は全ケース PASS。
+`go test -race ./...` EXIT=0 (glogx 34.1s ほか全パッケージ ok)、`make -C src/glogx lint` 0 issues。
+
+### 満たせていない主張 (issue の要求どおり明記)
+
+- **閉じたのは error-return 経路だけ**。`CreateTemp` と `Remove` の間で SIGKILL / panic した
+  残骸は、どちらの実装でも残る (`writeAtomic` の doc コメントにも書いた)
+- **(b) の TCC 増幅は未実測**のまま。動機に数えていない
+- **`RLIMIT_FSIZE` 手法の CI (macOS runner) 上の挙動は未実測**。手元 macOS のみ
+- **射程外**: `src/parallel-each/result_log.go:96` (pid すら付かない固定名 tmp) /
+  `src/glogx/issues_state.go:71` (同じ置き場へ tmp も rename も無しに `os.WriteFile`)
+
+### 副産物 (issue の範囲外)
+
+全経路の temp 名が `<base>.tmp.<乱数>` に揃ったので、**`~/.cache/glog` の残骸を掃く道具は
+`*.tmp.*` の 1 glob で書ける**ようになった。doctor は元々 `~/.cache` を掃除する画面なので、
+そちらへ回収するのが上位の解かもしれない (敵対レビューのぼやき)。
