@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -431,9 +432,16 @@ func TestCursorStaysOnSameRowWhenRowsGrowAbove(t *testing.T) {
 	}
 }
 
-// 選んでいた行が消えたら近傍へ寄せ、**寄せたことを知らせる** (issue 210 の反証レビューの補正)。
-func TestCursorFallsBackAndTellsWhenRowVanishes(t *testing.T) {
-	v := &doctorView{expanded: map[string]bool{}, selected: map[string]bool{}, inspected: map[string]bool{}}
+// 選んでいた行が消えたら近傍へ寄せ、**寄せたことを画面に出す** (issue 210 の敵対レビュー P1)。
+//
+// ⚠️ フィールド (`pendingToast`) を見るだけでは足りない。表示するのは tui.go の
+// `case doctorToast:` = handleKey の戻り値経路だけで、`restoreCursor` は View から呼ばれる。
+// **browseModel 経由でトーストが出ることまで**見ないと、配線の穴を守れない (実測: 初版は
+// フィールド代入しか見ておらず、本番では一度も出ない状態で緑だった)。
+func TestCursorFallbackIsToldThroughBrowseModel(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	v := m.doctorOv
+	v.shown = true
 	a := disk.Result{Entry: disk.Entry{ID: "a", Label: "A", Tier: 1}, Size: 300, Status: disk.StatusOK,
 		Items: []disk.Item{{Path: "/tmp/a", Size: 300}}}
 	b := disk.Result{Entry: disk.Entry{ID: "b", Label: "B", Tier: 1}, Size: 200, Status: disk.StatusOK,
@@ -445,18 +453,86 @@ func TestCursorFallsBackAndTellsWhenRowVanishes(t *testing.T) {
 	v.moveCursor(1)
 	gone := v.rows[v.cursor].key
 
-	// 再走査で b が落ちた (エントリが対象外になった等)
+	// 再走査で b が落ちた → 描画で寄せる
 	v.diskResults = []disk.Result{a}
-	v.pendingToast = ""
 	v.lines(o)
-
-	if v.cursor < 0 || v.cursor >= len(v.rows) || !v.rows[v.cursor].selectable {
-		t.Fatalf("消えた行の後に選べない位置へ残った (cursor=%d rows=%d)", v.cursor, len(v.rows))
-	}
 	if v.rows[v.cursor].key == gone {
 		t.Fatal("消えた行を指したまま")
 	}
-	if v.pendingToast == "" {
-		t.Fatal("寄せたことを知らせていない (黙って別の行に付くのが元の症状)")
+
+	// 次のキー操作で**画面に**出る
+	m.toast.text = ""
+	if act := v.handleKey("j", 20); act != doctorToast {
+		t.Fatalf("寄せた後の最初のキーが doctorToast を返さない (act=%v)", act)
+	}
+	m.toast.show(v.pendingToast, false) // tui.go の case doctorToast: と同じ扱い
+	if !strings.Contains(m.toast.text, "近くの行へ移りました") {
+		t.Fatalf("寄せたことが画面に出ない (toast=%q)", m.toast.text)
+	}
+	// 一度出したら再発しない (毎キー出ると邪魔)
+	if act := v.handleKey("j", 20); act == doctorToast {
+		t.Fatal("同じ寄せで 2 回目もトーストを返した")
+	}
+}
+
+// G (末尾へ) が次の描画で巻き戻らない (issue 210 の敵対レビュー P1-1。私が入れた回帰)。
+//
+// ⚠️ `moveCursor(0)` を「移動」として使う経路 (G) が key を覚えないと、`restoreCursor` が
+// 古い key の行へ cursor を戻す。実測された症状: after G cursor=6 / cursorKey="disk:b" →
+// repaint で cursor=4 へ巻き戻る。
+func TestCursorEndKeySurvivesRepaint(t *testing.T) {
+	v := &doctorView{expanded: map[string]bool{}, selected: map[string]bool{}, inspected: map[string]bool{}}
+	mk := func(id string, size int64) disk.Result {
+		return disk.Result{Entry: disk.Entry{ID: id, Label: id, Tier: 1}, Size: size, Status: disk.StatusOK,
+			Items: []disk.Item{{Path: "/tmp/" + id, Size: size}}}
+	}
+	o := doctorRenderOpts{page: 40, width: 100}
+	v.diskResults = []disk.Result{mk("a", 300), mk("b", 200), mk("c", 100)}
+	v.lines(o)
+
+	// G 相当: 末尾へ飛んで寄せる
+	v.cursor = len(v.rows) - 1
+	v.moveCursor(0)
+	atEnd := v.rows[v.cursor].key
+	if atEnd == "" {
+		t.Fatal("判定不能: 末尾の選べる行に key が無い")
+	}
+
+	v.lines(o) // 次の描画
+	if got := v.rows[v.cursor].key; got != atEnd {
+		t.Fatalf("G の後の描画で巻き戻った: at end=%s after repaint=%s", atEnd, got)
+	}
+}
+
+// 選べる行が 0 件のフレームを挟んでも key を捨てない (issue 210 の敵対レビュー P2)。
+// 捨てると index 保持へ退行する。
+func TestCursorKeySurvivesFrameWithoutSelectableRows(t *testing.T) {
+	v := &doctorView{expanded: map[string]bool{}, selected: map[string]bool{}, inspected: map[string]bool{}}
+	a := disk.Result{Entry: disk.Entry{ID: "a", Label: "A", Tier: 1}, Size: 300, Status: disk.StatusOK,
+		Items: []disk.Item{{Path: "/tmp/a", Size: 300}}}
+	b := disk.Result{Entry: disk.Entry{ID: "b", Label: "B", Tier: 1}, Size: 200, Status: disk.StatusOK,
+		Items: []disk.Item{{Path: "/tmp/b", Size: 200}}}
+	o := doctorRenderOpts{page: 40, width: 100}
+	v.diskResults = []disk.Result{a, b}
+	v.lines(o)
+	v.moveCursor(1)
+	want := v.cursorKey
+	if want == "" {
+		t.Fatal("判定不能: key を覚えていない")
+	}
+
+	// 選べる行が 1 つも無いフレーム (結果が消えた瞬間)
+	v.diskResults = nil
+	v.lines(o)
+
+	// 結果が戻ってきたら元の行へ復帰する。
+	// ⚠️ **戻すときに「上へ増える」形にする**。同じ 2 件で戻すと、key を捨てる退行でも
+	//    index が偶然一致して緑になる (変異検証 2026-09-03 で実際に素通りした)
+	huge := disk.Result{Entry: disk.Entry{ID: "huge", Label: "H", Tier: 1}, Size: 999999, Status: disk.StatusOK,
+		Items: []disk.Item{{Path: "/tmp/huge", Size: 999999}}}
+	v.diskResults = []disk.Result{a, b, huge}
+	v.lines(o)
+	if v.rows[v.cursor].key != want {
+		t.Fatalf("空フレームを挟んだら別の行へ移った: want=%s got=%s", want, v.rows[v.cursor].key)
 	}
 }

@@ -52,9 +52,12 @@ type doctorView struct {
 	//    (disk 行は Size 降順に並べ替えて描くので、大きい結果が後から届くと上に入る)。
 	//    y / Y が別エントリをコピーし、Enter が別の行を開く (issue 210。red team が実測)
 	cursorKey string
-	offset    int             // 窓の先頭 (rows の index)
-	expanded  map[string]bool // 展開中の行 (key = 行の同一性)
-	rows      []doctorRow     // 直近の描画で組んだ行 (キー操作の対象。lines() が作り直す)
+	// cursorFellBack は「選んでいた行が消えたので近くへ寄せた」印。View では通知できないので、
+	// 次のキー操作で handleKey が doctorToast に変えて知らせる (issue 210)
+	cursorFellBack bool
+	offset         int             // 窓の先頭 (rows の index)
+	expanded       map[string]bool // 展開中の行 (key = 行の同一性)
+	rows           []doctorRow     // 直近の描画で組んだ行 (キー操作の対象。lines() が作り直す)
 
 	pendingCopy  string // 直近の y / Y の中身 (copyPayload)
 	pendingToast string // 直近の doctorToast の文言
@@ -373,6 +376,13 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 	if act, taken := v.handleDeleteKey(key); taken {
 		return act
 	}
+	// 描画中に選択行が消えて寄せていたら、**ここで**知らせる (View からは通知経路が無い)。
+	// 黙って別の行に付くのが issue 210 の症状なので、寄せた事実は必ず出す
+	if v.cursorFellBack {
+		v.cursorFellBack = false
+		v.pendingToast = "選んでいた行が無くなったので近くの行へ移りました"
+		return doctorToast
+	}
 	switch key {
 	case " ":
 		if why, ok := v.toggleSelect(); !ok {
@@ -461,9 +471,13 @@ func (v *doctorView) restoreCursor() {
 			v.cursor = len(v.rows) - 1
 		}
 		v.moveCursor(0)
-		v.rememberCursorKey()
 		if v.cursorKey != "" {
-			v.pendingToast = "選んでいた行が無くなったので近くの行へ移りました"
+			// ⚠️ ここで pendingToast に書いても**画面には出ない**。表示するのは
+			//    tui.go の `case doctorToast:` = handleKey の戻り値経路だけで、restoreCursor は
+			//    View (lines) から呼ばれる (敵対的レビュー 2026-09-03 の P1)。
+			//    フラグに残し、**次のキー操作で**知らせる (ユーザーがその行に対して何かする
+			//    まさにその瞬間に出るので、遅れは実害にならない)
+			v.cursorFellBack = true
 		}
 		return
 	}
@@ -480,7 +494,9 @@ func (v *doctorView) rememberCursorKey() {
 		v.cursorKey = v.rows[v.cursor].key
 		return
 	}
-	v.cursorKey = ""
+	// ⚠️ **選べる行が無いフレームでは既存の key を保持する**。捨てると index 保持へ退行する
+	//    (走査の初期や全セクションが見出しだけのフレームで起きる。敵対的レビュー 2026-09-03 の P2)。
+	//    key を消すのは start / 明示的なリセットだけにする
 }
 
 // moveCursor は選べる行の間を dir 方向に 1 つ動く (0 = 今の位置を選べる行へ寄せる)。
@@ -489,6 +505,11 @@ func (v *doctorView) moveCursor(dir int) {
 		v.cursor = 0
 		return
 	}
+	// ⚠️ **関数の先頭で登録する**。dir==0 のブロックより後に置くと、その経路 (G / 寄せ直し) が
+	//    key を覚えず、次の描画で restoreCursor が**古い key の行へ巻き戻す** (G が効かない。
+	//    敵対的レビュー 2026-09-03 が実測: after G cursor=6 なのに cursorKey="disk:b" のまま →
+	//    repaint で cursor=4 へ戻る)
+	defer v.rememberCursorKey()
 	i := v.cursor
 	if dir == 0 {
 		for j := i; j < len(v.rows); j++ {
@@ -505,7 +526,6 @@ func (v *doctorView) moveCursor(dir int) {
 		}
 		return
 	}
-	defer v.rememberCursorKey() // 動いた先の行を覚える (issue 210)
 	for j := i + dir; j >= 0 && j < len(v.rows); j += dir {
 		if v.rows[j].selectable {
 			v.cursor = j
