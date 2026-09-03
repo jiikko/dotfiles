@@ -105,7 +105,29 @@ for _, c := range m.commits { ... }   // ← こちらは commits 由来なの�
 諦め (`ciPollMsg`) / 破棄 (`applyLogData`) が 4 箇所に分かれているのが根。
 CI 取得の会計を型へ閉じる話は issue 224 に分けた。
 
+## 先行事例: 同じ不変条件の「逆向き」だけが守られている
+
+**issue [032](done/032-fix-glogx-bubbletea-tick-gaps.md) (done)** は、まったく同じ tick チェーンの
+**落ちる側**を塞いだ issue:
+
+> どちらも「Cmd を落として**アニメの tick が止まる**」型で、症状は「トーストが shown=0 のまま
+> 見えない / ビルド失敗が通知されない」という静かな縮退になる。
+
+本件はその**反対向き** — tick が**止まらない**。`maybeTick` / `spinnerActive` の単一チェーン契約は
+「必要なときに回る」を守る手当てだけがあり、「**不要になったら止まる**」側は
+`spinnerActive()` が参照する述語 (ここでは `len(m.awaitCI) > 0`) が下りることに委ねられている。
+述語の集合を空にする責任が誰にも無いと、契約は片側だけ成立する。
+
+→ テストを書くときは**両向き**を 1 つのテーブルに入れると良い
+(「この述語が立つと回る」/「この述語が下りると止まる」)。
+
+## 探して見つからなかった範囲 (2026-09-03)
+
+`awaitCI` / `pendingFetches` / `refetchAfterPush` / `ciPoll` を issues 全体 (open + next + pending + done)
+で grep したが、**本件と重なる既存 issue は無い** (032 は上記のとおり逆向きで、統合はしない)。
+
 ## 関連
 
 - issue 224 (CI 取得の会計に所有者が無い。本件はその帰結の 1 つ)
 - issue 222 (同じ「単一の概念が手書きで散る」形)
+- issue [032](done/032-fix-glogx-bubbletea-tick-gaps.md) — tick チェーンの落ちる側 (対になる欠陥)

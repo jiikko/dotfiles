@@ -78,7 +78,20 @@ commits / panel と構造的に結合しており、`job_detail_overlay.go` 冒�
 「実変更 trigger 待ち」に従い、**次に CI 取得の経路を触る変更が来たとき**に着手する。
 `fetching` の削除だけは trigger 不要 (単独で失敗モードが 1 つ消えるため)。
 
+## 探して見つからなかった範囲 (2026-09-03)
+
+`fetching` / `pendingFetches` / `startCIFetch` / `ciPoll` を issues 全体 (open + next + pending + done)
+で grep したが、**CI 取得の会計を扱った既存 issue は無い** (統合先なし)。
+
+⚠️ 近傍で**却下済み**の指摘があるので再提案しないこと:
+issue [071](done/071-research-design-audit-2026-08-20.md) の「`actionModal` が相互排他な UI 状態を
+7 本の bool で持つ」は、**issue 074 が同じ `action_modal.go` を map 化する予定**という理由で
+切り出さないと決まっている。本 issue の `fetching` は `action_modal.go` ではなく
+`browseModel` の CI 会計なので別件だが、「bool を型へ寄せる」提案として混同しないこと。
+
 ## 関連
 
 - issue 223 (`awaitCI` の phantom。本件の「所有者不在」の帰結の 1 つ)
 - issue 222 (同じ「単一の概念が手書きで散る」形。あちらは全画面ビューア)
+- issue [085](done/085-refactor-glogx-chrome-composition-dup.md) — 「doc が一本化を主張しているのに
+  実体は N コピー」を実際に寄せた前例 (変異検証の形も同じ)

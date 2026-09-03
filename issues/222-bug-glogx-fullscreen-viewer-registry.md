@@ -111,8 +111,38 @@ routing・描画・hint・spinner をレジストリの走査に変える。rout
 doctor / rlDash で usage を効かせないのが意図なら、その 1 行の理由を各ブロックに書く
 (「4 箇所の差分は全部意図」の状態にする)。意図でないなら揃える。
 
+## 先行事例 (この repo で既に 1 回起きた同じ class)
+
+**issue [085](done/085-refactor-glogx-chrome-composition-dup.md) (done)** が、まったく同じ形を扱っている:
+
+> `finishViewerWindow` と `viewLines` 末尾が、グローバル chrome の合成順を**逐語で 2 コピー**持つ。
+> どちらの doc コメントも「ビューごとに書くと片方で載せ忘れる」「前面順もここで一本化する」と
+> **一本化を主張しているのに、実体は 2 コピー**。
+
+085 はさらに「**viewer が全画面だった頃、issues 中の通知が画面に一切出ない時期があった**」という
+実際の事故を記録している。**本件 (222) は同じ class の 3 度目**で、今度は「見送りの列挙」で起きた。
+
+→ 修正の形も 085 に倣える (合成順を 1 箇所へ寄せ、**片方の経路だけ落とす変異**で red を確認する)。
+
+### 却下済み — 再提案しないこと
+
+**issue 071 → 085 で `071-two-slide-state-machines` は却下されている**:
+
+> `issuesView.slideAnimating` + `slideInWindow` と `statusView.slideAnimating` + `slideLeftWindow` が独立。
+> **演出自体が意図的に別** (右から流し込む / 左端から板が生える) なので、共通化できるのは
+> progress・closing・tickInterval の状態機械部分だけ。得られる削減は小さい。
+
+したがって本 issue の `fullScreenViewer` レジストリ案は、**開閉演出の共通化を含まない**。
+寄せるのは **membership (今どれが出ているか) と routing プロトコル**だけで、
+各ビューアの `lines` / 演出は今の実装のまま残す。
+
+同じく **`071` で却下済み**の近傍指摘 (再提案しない):
+`job_detail_overlay` の `pagerScrollKey` 非委譲 / y/N の実行キー述語 3 箇所独立 (大文字 `Y` の差)。
+
 ## 関連
 
 - issue 148 (doctor の実装。doctor が後から足された経緯)
+- issue [085](done/085-refactor-glogx-chrome-composition-dup.md) / [071](done/071-research-design-audit-2026-08-20.md) — 上記の先行事例と却下一覧
 - `~/.claude/rules/comment-no-restate-enforced.md` — 「実装で強制できない制約」をコメントに残す規律。
   本件は**強制できるようにする** (レジストリ + テーブル駆動テスト) 方向
+- `~/.claude/rules/verify-design-intent-before-refactor.md` — 却下済みの分解を逆転提案しないための確認手順
