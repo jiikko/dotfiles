@@ -23,10 +23,19 @@ import (
 // 🚨 保存先は cachedir.Base() (= $XDG_CACHE_HOME/glog)。パスをここに書かない。
 
 const (
-	// doctorToastThreshold は起動時トーストを出す解放可能量の下限 (issue 148 の既定 10GB)。
-	doctorToastThreshold = int64(10) << 30
+	// doctorToastThreshold は起動時トーストを出す解放可能量の下限。
+	// **20GB** (issue 218 で 10GB から引き上げ。2026-09-03)。
+	// 根拠: この機の実測は合計 84.3GB で、上位 4 項目が npm 21.1 / go-build 20.1 /
+	// xcode-deriveddata 17.6 / simulator-runtimes 16.2 GB。これらは掃除しても数日で GB 単位に
+	// 戻るため、10GB では**掃除直後を除いてほぼ常時鳴る**。20GB は「上位 1 項目が育った状態」を
+	// 拾う水準。⚠️ 変えるときは doctorToastCooldown と対で見る (低い閾値 + 短い抑止 = 鳴り続ける)。
+	doctorToastThreshold = int64(20) << 30
 	// doctorToastCooldown は一度出したら再表示しない期間。毎起動出すと無視されるようになり通知の意味が消える。
 	doctorToastCooldown = 3 * 24 * time.Hour
+	// 🚨 **サービス診断は起動時トーストの対象にしない** (issue 218 で判断)。
+	// ディスクは「合計 GB」という自然な閾値を持てるが、サービスは件数しかなく、
+	// 「壊れた登録 1 件」で**消すまで永久に鳴り続ける** (放置してよいケースがあるのに
+	// lastNotifiedAt の抑止と噛み合わない)。サービスは doctor を開いたときだけ出す。
 	// doctorStaleAfter を超えた結果には「N 日前の診断」を添える。古くても数字は出す (隠すと放置しているときほど
 	// 無言になり、この機能が解こうとしている「気づけない」問題を再現する)。
 	doctorStaleAfter = 7 * 24 * time.Hour

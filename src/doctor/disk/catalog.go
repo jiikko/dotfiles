@@ -47,6 +47,22 @@ type Entry struct {
 
 // catalog はカタログ本体 (issue 148 の 1 章の写し)。載せる条件は「消したまま戻らないこと」を
 // 実測で確認したもの。サイズだけで拾わない (sleepimage / unified log / Chrome cache は対象外)。
+//
+// 🚨 **意図的に載せていないもの** (issue 218 で判断。次の audit が同じ提案を再生成しないため):
+//
+//   - `~/.Trash` — このカタログの `DeleteVia: "trash"` の**避難先そのもの**。同じ画面に
+//     「ゴミ箱へ移す」と「ゴミ箱を空にする」を並べるのは危険で、空にすると復元不可。
+//     Finder が標準機能で持っている。実測 2026-09-03 は 0 件。
+//     再開の trigger: ゴミ箱が数 GB 溜まったまま放置されているのを見たとき
+//   - `~/Downloads/*.crdownload` — **ユーザーデータ領域**で、中断した DL の再開情報を持つ。
+//     消すと DL のやり直しが要るので登録条件「消したまま戻る」を満たさない。実測 0 件
+//   - `~/Library/Caches/electron-builder` / `deno` — 実測 2026-09-03 で**存在しない**。
+//     現れたら `typescript-ata` と同型なので同じ形で足せる
+//   - speech モデルのキャッシュ — この機に存在しない (`com.apple.SpeechRecognitionCore` /
+//     `SpeechModelCache` とも無し)。載せるには `lsof` 判定と「削除後に音声機能が壊れない」
+//     実測が要る。現物が無いので実測そのものができない
+//   - `~/src/**` のビルド成果物 / `node_modules` — プロジェクト単位の判断が要り、
+//     allowlist の枠組みに合わない (issue 220)
 var catalog = []Entry{
 	// --- Tier 1: 純粋なキャッシュ ---
 	{ID: "xcode-deriveddata", Label: "Xcode DerivedData", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
@@ -62,6 +78,15 @@ var catalog = []Entry{
 		Recover: "次回の依存解決で再取得されます", Paths: []string{"~/Library/Caches/org.swift.swiftpm"}},
 	{ID: "electron-cache", Label: "Electron キャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "再ダウンロードされます", Paths: []string{"~/Library/Caches/electron"}},
+	// tsserver の型自動取得 (ATA) キャッシュ。TypeScript のバージョンごとにディレクトリが分かれ、
+	// 中身は `types-registry` と `@types/*` の node_modules。実測 2026-09-03: 216MB
+	// (5.2 が 122MB / 5.8 が 91.6MB / 4.9 が 2.8MB)。**5.2 は 2023-11 から触られていない**。
+	// 登録条件 (消したまま戻ることを実測) の根拠: 各ディレクトリに package.json と
+	// package-lock.json があり中身は npm から復元できる。4.9 の更新日が 2026-07-15 で、
+	// tsserver が実際に作り直していることも確認済み (issue 218)。
+	{ID: "typescript-ata", Label: "TypeScript 型キャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
+		Recover: "エディタが型を必要としたときに npm 経由で再取得されます", Detail: "TypeScript のバージョンごとに溜まる。古い版の分は使われない",
+		Paths: []string{"~/Library/Caches/typescript/*"}},
 	{ID: "playwright-cache", Label: "Playwright ブラウザ", Tier: 1, Risk: RiskCaution, DeleteVia: "rm",
 		Recover: "npx playwright install で再取得 (数百MB の通信)", Paths: []string{"~/Library/Caches/ms-playwright"}},
 	{ID: "homebrew-cache", Label: "Homebrew ダウンロードキャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",

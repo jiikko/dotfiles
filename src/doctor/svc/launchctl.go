@@ -78,6 +78,13 @@ func parseLaunchctlPrint(out string) printInfo {
 
 // launchctlPrint は候補に絞ってから呼ぶ (全ラベルに対して呼ばない)。失敗は無視して続行する
 // (補助情報なので、無くても A / B の判定は成立する)。
+//
+// 🚨 **`sfltool dumpbtm` を独立した検出項目に昇格させない** (issue 218 で判断)。
+// 取得そのものは可能で、実測 2026-09-03 は一般ユーザーで rc=0 / stdout 775 行 / stderr 0 行。
+// 昇格させない理由は 2 つ: ①出力形式が非公開で macOS 版間の安定性が不明 ②plist が消えていても
+// 残骸を検出できる強い判定だが、**`legacy agent` の消し方を提示できない**可能性がある。
+// 「検出できるが直せない」項目は行を増やすだけなので、この関数と同じ扱い (取れなければ
+// 情報なしで続行する補助情報) に留める。再開の trigger: 消し方が確立したとき。
 func launchctlPrint(ctx context.Context, run runner.Runner, target string) printInfo {
 	out, _, rc, err := runner.WithTimeout(ctx, run, launchctlTimeout, "launchctl", "print", target)
 	if err != nil || rc != 0 {

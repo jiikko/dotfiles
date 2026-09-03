@@ -144,9 +144,58 @@ xcode-deriveddata 17.6 / simulator-runtimes 16.2 / go-modcache 5.8 GB。
 | プロセス側の診断 | 148 の 5 章が「外部に正本が無いので自分で記録を作る」= 常設の追跡機構が要ると結論。実測 (629 件の誤検出 / `pane_pid` の限界) を前提として引き継ぐ |
 | `cli_health.go` を doctor 画面に統合するか | 148 の時点で「しない」方針。統合するなら起動時トーストの挙動を変えないことが条件 |
 
+## 決着 (2026-09-03。叩き台の推奨どおり進めた)
+
+ユーザーが「君のおすすめでいいよ」と判断。**全項目に決着が付いたのでこの issue は閉じる。**
+
+### 採用したもの (コードが変わった)
+
+| 変更 | 場所 | 検証 |
+|---|---|---|
+| 起動時トーストの閾値 **10GB → 20GB** | `doctor_cache.go` の `doctorToastThreshold` | 変異 3 本で red (下記) |
+| `typescript-ata` をカタログへ追加 | `catalog.go` | 実機で **3 件 / 216.3MB** を検出 (4.9 が 2.8 / 5.2 が 122.0 / 5.8 が 91.6 MB) |
+| 閾値の境界テストを定数から作る形へ | `doctor_view_test.go` | 9GB 固定では 10→20GB の変更を検出できなかった |
+| 閾値と抑止期間を固定するテストを新設 | 同上 `TestDoctorToastThresholdAndCooldownArePinned` | 値の変更が意図的な編集であることを残す |
+
+再通知の抑止 **3 日は据え置き** (閾値を上げたので鳴り続ける形にならない)。
+
+変異検証:
+
+| 変異 | 結果 |
+|---|---|
+| 閾値を 10GB に戻す | red (固定テスト) |
+| 抑止期間を 7 日に変える | red (同) |
+| 下限の判定を `<` から `<=` にする (閾値ちょうどで沈黙) | red (境界テスト) |
+
+### 却下したもの (理由をコード直近に残した)
+
+issue は移動するがコードは現場に残るので、**次の audit が同じ提案を再生成しないよう**
+判定の在る場所へ書いた ([`pending-issue-rationale-in-code.md`](../_claude/rules/pending-issue-rationale-in-code.md))。
+
+| 却下 | 理由の置き場所 |
+|---|---|
+| `~/.Trash` / `~/Downloads/*.crdownload` / `electron-builder` / `deno` / speech モデル | `catalog.go` の `catalog` 直上「意図的に載せていないもの」 |
+| サービス診断を起動時トーストの対象にする | `doctor_cache.go` の `doctorToastCooldown` の直下 |
+| `sfltool dumpbtm` を独立した検出項目に昇格させる | `svc/launchctl.go` の `launchctlPrint` の直上 |
+
+### 別 issue へ移したもの
+
+- [issues/220](220-feat-doctor-project-build-artifacts.md) — `~/src/**` の成果物と `node_modules`
+- [issues/221](221-feat-doctor-process-diagnosis.md) — プロセス側の診断 (148 の 5 章の実測を引き継いだ)
+
+`cli_health.go` の統合は 148 時点の「しない」方針のまま (統合するなら起動時トーストの挙動を
+変えないことが条件、という制約も 148 に残っている)。
+
+### 残った未チェック 1 件について
+
+7 章の「`sfltool dumpbtm` のパース失敗が BTM 行を出さないだけで済む」は、**BTM を昇格させないと
+決めた**ので条件が成立しない (判定そのものを実装しない)。BTM を載せると決めたときに同時に満たす。
+その旨は `svc/launchctl.go` の却下理由に書いてある。
+
 ## 受け入れ条件 (この issue 自体の)
 
-- [ ] 各項目に**決着**が付いている (採用 / 却下 / pending へ移動のいずれか)
-- [ ] 却下したものは**理由つき**で残っている (次の audit が同じ提案を再生成しないため)
-- [ ] カタログへ足したものは、`~/.claude/rules/` の規律どおり
-      **実測してから登録**されている (「消したまま戻らないこと」を確かめる)
+- [x] 各項目に**決着**が付いている (採用 4 / 現状維持で決着 9 / 却下 6 / 別 issue 2)
+- [x] 却下したものは**理由つき**で残っている (置き場所は上の表)
+- [x] カタログへ足したものは実測してから登録した (`typescript-ata`: 各版に `package.json` と
+      `package-lock.json` があり npm から復元できる。4.9 の更新日 2026-07-15 が
+      tsserver による再作成の証拠)

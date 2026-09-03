@@ -429,9 +429,16 @@ func TestDoctorStartupToast(t *testing.T) {
 	// 🚨 Total だけ下げても効かない: トーストは**合計をエントリから引き直す** (細工した Total を
 	// 信用しない。issue 193)。閾値未満を作るならエントリ側を小さくする
 	small := big
-	small.Entries = []doctorDiskCacheEntry{{ID: "npm-cache", Label: "npm", Size: 9 << 30, Status: "ok"}}
+	// 🚨 **境界は定数から作る**。9GB のような固定値だと、閾値を 10 -> 20GB に動かしても
+	// 「閾値未満なら沈黙」が素通りする (9 は両方の閾値未満なので、変更を検出できない)。
+	small.Entries = []doctorDiskCacheEntry{{ID: "npm-cache", Label: "npm", Size: doctorToastThreshold - 1, Status: "ok"}}
 	if got := doctorStartupToast(small, true, now); got != "" {
-		t.Errorf("閾値未満でトーストが出た: %q", got)
+		t.Errorf("閾値の 1 バイト下でトーストが出た: %q", got)
+	}
+	atThreshold := big
+	atThreshold.Entries = []doctorDiskCacheEntry{{ID: "npm-cache", Label: "npm", Size: doctorToastThreshold, Status: "ok"}}
+	if doctorStartupToast(atThreshold, true, now) == "" {
+		t.Error("閾値ちょうどでトーストが出ない (下限は「以上」で判定する)")
 	}
 	recent := big
 	recent.LastNotifiedAt = now.Add(-24 * time.Hour)
@@ -1948,5 +1955,17 @@ func TestDoctorUnverifiedEntryMatchesCLI(t *testing.T) {
 		if strings.Contains(c.out, "実測済みの項目") {
 			t.Errorf("%s: Unverified の無い 0 件エントリまで表示されている (畳む側の規律が壊れている):\n%s", c.name, c.out)
 		}
+	}
+}
+
+// 閾値そのものを固定する。上の境界テストは「定数に対して正しく振る舞うか」だけを見るので、
+// **値を書き換えても緑のまま通る**。値は製品判断 (issue 218 で 10 -> 20GB) なので、
+// 変えるときはこのテストを直す = 意図的な編集であることを残す。
+func TestDoctorToastThresholdAndCooldownArePinned(t *testing.T) {
+	if want := int64(20) << 30; doctorToastThreshold != want {
+		t.Errorf("起動時トーストの閾値が %d (期待 %d = 20GB)。変更は issue 218 の判断を更新してから", doctorToastThreshold, want)
+	}
+	if want := 3 * 24 * time.Hour; doctorToastCooldown != want {
+		t.Errorf("再通知の抑止期間が %v (期待 %v)。閾値と対で見ること (低い閾値 + 短い抑止 = 鳴り続ける)", doctorToastCooldown, want)
 	}
 }
