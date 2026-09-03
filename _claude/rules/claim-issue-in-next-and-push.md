@@ -40,8 +40,14 @@
 
 - **PostToolUse(Bash) hook** `_claude/hooks/next-claim-push.sh` が、`issues/next/` への移動を
   含む Bash コマンドを検出したら「claim を単独 commit して push したか」を注入する
-  (配線: `_claude/settings.json`)。**hook が見えるのは Claude が Bash で動かした移動だけ**で、
+  (配線: `_claude/settings.json`)。**この hook が見えるのは Claude が Bash で動かした移動だけ**で、
   glogx の issues viewer の `n` キー (Go 側で移動する) は Bash を通らないので発火しない
+- **UserPromptSubmit hook** `_claude/hooks/next-claim-uncommitted.sh` が、その穴を埋める:
+  毎プロンプトで作業ツリーを見て、`issues/next/` の claim が**未コミットのまま**なら
+  「push してよいか」をユーザーへ伺わせる。人が `n` で付けた claim もここで拾う。
+  **使い分け**: 移動した瞬間に Claude 自身へ促すのが前者、取りこぼした claim を後から
+  人に伺うのが後者。**押した瞬間の自動 push は採らない** (push はブランチ単位なので、
+  他の未 push commit も一緒に飛ぶ。飛ばしてよいかは人しか判断できない)
 - ⚠️ **jq が無い環境では hook が丸ごと無音で死ぬ** (`command -v jq || exit 0`)。検出が消えても
   何の兆候も出ないので、claim の規律は最終的に**この md を読む人が守る**もので、hook はその補助
 - ⚠️ **静的検査なので宛先が変数・相対パスだと検出できない**
