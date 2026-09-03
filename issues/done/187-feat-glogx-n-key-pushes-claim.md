@@ -1,5 +1,9 @@
 # 187 feat: glogx の `n` (次にやる目印) で claim を commit + push できるようにする
 
+> **却下 (2026-09-03)。** viewer に push 導線を足すのではなく、**未コミットの claim を hook で
+> 拾って Claude がユーザーに伺う**形にした (`_claude/hooks/next-claim-uncommitted.sh`)。
+> 下の本文は却下時点の設計案として残す。
+
 起票日: 2026-09-02
 重要度: P2
 関連: [`_claude/rules/claim-issue-in-next-and-push.md`](../_claude/rules/claim-issue-in-next-and-push.md)
@@ -81,3 +85,27 @@ pathspec に書く。viewer から叩く以上、作業ツリーには無関係�
 
 - **確認なしの自動 push** は採らない。push は外向きの操作で、glogx の既存の `b` / `u` も
   y/N 確認を持っている。ここだけ無確認にする理由が無い
+
+## 却下の理由 (2026-09-03)
+
+ユーザー判断: 「`n` に push を足すのは要らない。next への差分を Claude が見つけた時点で
+push の可否を伺ってほしい」。
+
+**この案の本質的な難点は本文の最後に自分で書いてあった**: 「claim の commit だけを push」は
+push がブランチ単位なので成立しない。他に未 push の commit があれば一緒に飛ぶ。つまり
+**`n` を押した瞬間に機械が push すると、飛ばしてよいか誰も判断していない push になる**。
+飛ばしてよいかは人しか判断できないので、押した瞬間ではなく**伺う**形が正しい。
+
+### 代わりに入れたもの
+
+`_claude/hooks/next-claim-uncommitted.sh` (UserPromptSubmit)。毎プロンプトで作業ツリーを見て、
+`issues/next/` の claim が未コミットなら「push してよいか」を Claude がユーザーへ伺う。
+
+- 人が `n` で付けた claim (Go の rename なので Bash を通らない) もここで拾える
+- 他に未 push の commit があれば「それも一緒に飛ぶ」ことを添えて聞く
+- claim の解除 (next から出す方向) も拾う (本文が指摘していた toggle の両方向)
+- 判定コストは実測 7ms。opt-in は既存の規律と同じ (`issues/next/` が実在する repo だけ)
+- テスト 9 件 + 変異 4 本 red (`tests/claude/test_next_claim_uncommitted.sh`)
+
+本文の受け入れ条件のうち「viewer から離れずに push できる」は**満たさない**。それが要ると
+判断したときに再開する (このとき push のブランチ単位問題を先に解く必要がある)。
