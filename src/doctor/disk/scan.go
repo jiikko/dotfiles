@@ -344,7 +344,7 @@ func scanSimRuntimes(ctx context.Context, opt Options, e Entry) Result {
 	}
 	r := Result{Entry: e, Status: StatusOK, Items: []Item{}}
 	for _, rt := range rts {
-		r.Items = append(r.Items, Item{Path: rt.Path, Size: rt.SizeBytes, Mtime: rt.LastUsedAt})
+		r.Items = append(r.Items, Item{Path: rt.Path, Size: rt.SizeBytes, Mtime: rt.LastUsedAt, Ref: rt.Identifier})
 		r.Size += rt.SizeBytes
 		used := "未使用 (lastUsedAt なし)"
 		if !rt.LastUsedAt.IsZero() {

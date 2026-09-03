@@ -19,6 +19,9 @@ type Item struct {
 	Mtime time.Time `json:"mtime"`
 	Dev   uint64    `json:"dev"`
 	Ino   uint64    `json:"ino"`
+	// Ref は「パス以外の削除の手がかり」。cli: 経路の `<id>` に入る (simctl のランタイム識別子)。
+	// パスで消せない対象 (SIP 配下) があるため、Path とは別に持つ。空なら cli の `<id>` は解決できない。
+	Ref string `json:"ref,omitempty"`
 }
 
 // duSize は `du -sk` と一致するサイズを返す。
