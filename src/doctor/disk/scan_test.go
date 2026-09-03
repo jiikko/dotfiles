@@ -951,7 +951,7 @@ func TestCollectBundleIDsStopsOnSymlinkLoops(t *testing.T) {
 	// 1 回目で seen に入り、2 回目以降は降りない。降りる回数の上限を実体数 + symlink 数で押さえる。
 	const wantMax = 3 + 6
 
-	collectVisits = 0
+	collectVisits.Store(0)
 	ids := map[string]bool{}
 	done := make(chan struct{})
 	go func() {
@@ -962,9 +962,9 @@ func TestCollectBundleIDsStopsOnSymlinkLoops(t *testing.T) {
 	case <-done:
 	case <-time.After(30 * time.Second):
 		// 訪問回数で判定できない (終わらない) 形。安全網であって合否の基準ではない
-		t.Fatalf("走査が終わらない (巡回検出が無い): visits=%d", collectVisits)
+		t.Fatalf("走査が終わらない (巡回検出が無い): visits=%d", collectVisits.Load())
 	}
-	if collectVisits > wantMax {
+	if collectVisits.Load() > int64(wantMax) {
 		t.Errorf("同じ実体を何度も走査している (巡回検出が効いていない): visits=%d want<=%d", collectVisits, wantMax)
 	}
 	if !ids["com.example.real"] {
@@ -1094,5 +1094,38 @@ func TestCanonicalPathAndVMRootRejectBlankHome(t *testing.T) {
 		return ""
 	}}, "rbenv"); err == nil {
 		t.Errorf("HOME が空なのに相対の RBENV_ROOT を解決した: %q", got)
+	}
+}
+
+// 走査を 2 つ同時に回しても -race が落ちない (issue 214)。
+//
+// ⚠️ `guards.do` の sync.Once は **走査ごとの instance に属する**ので、走査間では
+// 直列化しない。package 変数の計測点 (collectVisits) が素の int だと、ここで競合する。
+// glogx 側の TestUpdateKeysYieldToDoctorDelete が実際にこの形で赤くなっていた。
+func TestConcurrentScansDoNotRaceOnCollectVisits(t *testing.T) {
+	dir := t.TempDir()
+	// bundle を 1 つ置いて collectBundleIDs が実際に降りる状態にする (0 件では計測点を通らない)
+	app := dir + "/Some.app/Contents"
+	if err := os.MkdirAll(app, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(app+"/Info.plist",
+		[]byte("<plist><dict><key>CFBundleIdentifier</key><string>com.example.some</string></dict></plist>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	before := collectVisits.Load()
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ids := map[string]bool{}
+			_ = collectBundleIDs(dir, 0, ids)
+		}()
+	}
+	wg.Wait()
+	if got := collectVisits.Load(); got <= before {
+		t.Fatalf("判定不能: 計測点を 1 度も通っていない (before=%d after=%d)", before, got)
 	}
 }

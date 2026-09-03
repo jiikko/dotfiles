@@ -3,6 +3,7 @@ package disk
 import (
 	"doctor/brewledger"
 	"doctor/runner"
+	"sync/atomic"
 
 	"context"
 	"encoding/json"
@@ -211,8 +212,14 @@ func collectBundleIDs(dir string, depth int, ids map[string]bool) error {
 
 // collectVisits は collectBundleIDs が実際に降りたディレクトリ数 (テスト専用の計測点)。
 // 巡回検出が効いているかを**壁時計でなく回数**で判定するため (avoid-wall-clock-assertions)。
-// 走査は単一 goroutine から呼ばれる (installedBundleIDs → collectBundleIDs) ので素の int でよい。
-var collectVisits int
+//
+// ⚠️ **atomic である必要がある** (issue 214)。以前は「走査は単一 goroutine から呼ばれるので
+// 素の int でよい」と書いていたが、その前提は **1 回の走査の中**でしか成立しない
+// (`guards.do` の sync.Once は走査ごとの instance に属する)。走査が 2 つ同時に走ると
+// package 変数だけが共有され、`-race` がデータ競合として落とす (実測 2026-09-03:
+// glogx の TestUpdateKeysYieldToDoctorDelete が赤)。並行する経路は
+// 「テストが複数の doctorView を作る」「r の前世代と新世代が一瞬重なる」。
+var collectVisits atomic.Int64
 
 // dirKey は (device, inode)。同じディレクトリを 2 度走査しないための鍵。
 func dirKey(fi os.FileInfo) ([2]uint64, bool) {
@@ -257,7 +264,7 @@ func collectBundleIDsSeen(dir string, depth int, ids map[string]bool, seen map[[
 			}
 			seen[k] = struct{}{}
 		}
-		collectVisits++
+		collectVisits.Add(1)
 		if isBundleName(e.Name()) {
 			readBundleID(p, ids)
 		}
