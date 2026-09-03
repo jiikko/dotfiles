@@ -139,6 +139,8 @@ type guards struct {
 	cleanupErr  error
 	prefix      string
 	prefixErr   error
+	modcache    string
+	modcacheErr error
 }
 
 func (g *guards) do(key string, f func()) {
@@ -183,7 +185,8 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 	// 全 Guard をどちらか一方で必ず受けるのが不変条件。default を書かず全 case を並べることで
 	// exhaustive (.golangci.yml) がそれを強制する: 新しい Guard をどちらにも書き忘れると
 	// guard が 1 つも適用されないまま候補になる (fail-open)。
-	case GuardNone, GuardBoottime, GuardSimDevice, GuardOrphanApp, GuardBrewOrphan, GuardVMRoot:
+	case GuardNone, GuardBoottime, GuardSimDevice, GuardOrphanApp, GuardBrewOrphan, GuardVMRoot,
+		GuardGoModcacheCurrent, GuardGoModcacheOld:
 	}
 	// $BREW_PREFIX を使うエントリは brew --prefix を実測してから展開する (直書きしない: issue 176)。
 	// 取れなければ fail-closed (候補 0 件に畳まない)。
@@ -259,6 +262,28 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 			}
 			return !g.formulae[name]
 		})
+	case GuardGoModcacheCurrent, GuardGoModcacheOld:
+		// 🚨 解決できないなら**候補 0 件ではなく診断できず**へ倒す (GuardVMRoot と同じ理由)。
+		// 「解決できない = 現行でない = 古い世代」と読むと、現役のキャッシュが候補に出る
+		g.do("modcache", func() { g.modcache, g.modcacheErr = goModcache(ctx, opt.Run) })
+		if g.modcacheErr != nil {
+			return failed(e, "go env GOMODCACHE を解決できず (世代を分けられない): "+g.modcacheErr.Error())
+		}
+		want, err := canonicalPath(opt.Env, g.modcache)
+		if err != nil {
+			return failed(e, "GOMODCACHE を正規化できず (世代を分けられない): "+err.Error())
+		}
+		kept := paths[:0]
+		for _, p := range paths {
+			got, err := canonicalPath(opt.Env, p)
+			if err != nil {
+				return failed(e, "対象パスを正規化できず (世代を分けられない): "+err.Error())
+			}
+			if (got == want) == (e.Guard == GuardGoModcacheCurrent) {
+				kept = append(kept, p)
+			}
+		}
+		paths = kept
 	case GuardVMRoot:
 		// 🚨 比較に使う値が解決できないなら**候補 0 件ではなく診断できず**へ倒す。
 		// 「解決できない = 一致しない = 孤児」と読むと、HOME が空の環境で現役の root が

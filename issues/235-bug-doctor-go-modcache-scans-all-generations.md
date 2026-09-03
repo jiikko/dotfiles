@@ -66,3 +66,46 @@ $ go env GOMODCACHE
 **候補に出た世代がすべて消えている**ことを assert する (fake の `go` は
 `GOMODCACHE` に相当する 1 つだけを消す挙動を模す)。
 変異 = 修正を戻す → 残存 1 件で red。
+
+## 対応 (2026-09-04) — 案 3 の変形 (走査を落とさずに 2 エントリへ分ける)
+
+**走査の範囲を削除の範囲へ合わせた。** 最小の修正方向 3 案のうち、1 (走査を絞る) は false green、
+2 (世代ごとに `GOMODCACHE=<path> go clean`) は `Runner` が
+`(ctx, name, args...)` で **env を渡す口が無く**、`cli:` は argv 直実行 (シェル無し) なので
+`GOMODCACHE=… go clean` を argv として書けない — 型と全呼び出しに波及する設計変更が要る。
+そこで **3 の変形**: 古い世代を rm するのではなく **`propose` (コマンドを出すだけ)** で見せる。
+
+- `go-modcache` (現行): `Guard: GuardGoModcacheCurrent` で **`go env GOMODCACHE` の 1 世代だけ**を
+  候補にする → `go clean -modcache` が全部消せるので **`OutcomeIncomplete` が出なくなる**
+- `go-modcache-old` (使っていない世代): `Guard: GuardGoModcacheOld` + `DeleteVia: propose`。
+  read-only で作られるので rm には強制が要る旨と、`chmod -R u+w` してから `rm -rf` する手順を
+  `Detail` に書いた。**走査からは落とさない**ので false green にならない
+
+guard の実装は `GuardVMRoot` の作法に揃えた (実効値と突き合わせ、**解決できないときは
+候補 0 件ではなく「診断できず」へ倒す**)。`go env GOMODCACHE` の解決は `guards.do` で 1 回だけ。
+`brewPrefix` と同じく、空 / 相対パス / `/` はエラーにする。
+
+### 変異検証 (ケース名ごとの pass/fail。いずれも go build 成功を確認してから判定)
+
+| 変異 | 世代分けのテスト | fail-closed のテスト |
+|---|---|---|
+| 条件を常に真にする (= 修正前の全世代を候補にする姿) | **FAIL** | PASS |
+| 現行 / 古いの向きを反転 | **FAIL** | PASS |
+| 解決できないとき候補 0 件で ok を返す (fail-closed を外す) | PASS | **FAIL** (4 ケース全部) |
+
+⚠️ 最初の変異はビルドできなかった (`want` が未使用) ので当て直した。ビルド不能の緑を
+「検知できず」と読まない (`mutation-verify-new-tests.md` の手順 1.5)。
+
+### 副産物: 既存の安全機構が発火した
+
+`TestOnlyReadOnlyCommands` (走査中に実行してよいコマンドの allowlist) が
+`go env GOMODCACHE` で赤くなった。読み取り専用なので allowlist に足したが、
+**新しい外部コマンドを走査に足すと機械が止める**ことが実地で確認できた。
+
+### 満たせていない主張
+
+- **案 2 (世代ごとの `go clean`) は未着手**。`Runner` に env を通す設計が要る。
+  trigger: 破壊的操作の実行経路に env を渡す必要が他でも出たとき
+- **実機での確認は未実施**。この開発機には 3 世代あるので `diskdoctor` を実行すれば
+  分割が目で見えるが、走査に時間がかかるため人の確認に回す
+

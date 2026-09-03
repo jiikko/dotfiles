@@ -22,6 +22,10 @@ const (
 	GuardBrewCleanup   Guard = "brew-cleanup"   // brew cleanup --dry-run が挙げるものだけ
 	GuardVMRoot        Guard = "vm-root"        // <TOOL>_ROOT の実効値と一致しないものだけ
 	GuardSimRuntime    Guard = "sim-runtime"    // simctl runtime list から取る (走査しない)
+	// go env GOMODCACHE と一致するものだけ / しないものだけ。`go clean -modcache` は
+	// GOMODCACHE の 1 世代しか消さないので、走査の範囲を削除の範囲に合わせる (issue 235)
+	GuardGoModcacheCurrent Guard = "go-modcache-current"
+	GuardGoModcacheOld     Guard = "go-modcache-old"
 )
 
 // Entry はカタログの 1 行。UI に出す文言 (Recover / Detail) はここにデータとして持つ。
@@ -95,9 +99,19 @@ var catalog = []Entry{
 	{ID: "simulator-runtimes", Label: "シミュレータランタイム", Tier: 1, Risk: RiskCaution, DeleteVia: "cli:xcrun simctl runtime delete <id>",
 		Recover: "Xcode か `simctl runtime add` で再取得 (数GB/個)", Detail: "SIP 配下なので rm できない。削除後は `xcrun simctl delete unavailable` で孤児デバイスも掃除する",
 		Guard: GuardSimRuntime},
-	{ID: "go-modcache", Label: "Go module キャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "cli:go clean -modcache",
-		Recover: "次回 build で再取得されます", Detail: "read-only で作られるので rm には強制が要る。全世代の GOPATH を見る",
-		Paths: []string{"~/go/*/pkg/mod", "~/go/pkg/mod"}},
+	// 🚨 **2 エントリに分けてある** (issue 235)。`go clean -modcache` が消すのは
+	// `go env GOMODCACHE` の 1 世代だけなのに、`~/go/*/pkg/mod` は複数世代 (goenv / asdf 等) に
+	// 当たる。1 エントリのままだと削除後の再走査に他の世代が残り、**毎回必ず「未完了」**になって
+	// 時間をおいても消えなかった。走査の範囲を削除の範囲へ合わせ、残りは別エントリで見せる。
+	{ID: "go-modcache", Label: "Go module キャッシュ (現行)", Tier: 1, Risk: RiskSafe, DeleteVia: "cli:go clean -modcache",
+		Recover: "次回 build で再取得されます", Detail: "read-only で作られるので rm には強制が要る。go env GOMODCACHE の 1 世代だけ",
+		Paths: []string{"~/go/*/pkg/mod", "~/go/pkg/mod"}, Guard: GuardGoModcacheCurrent},
+	// 古い世代は **propose** (コマンドを出すだけ)。read-only で作られるので rm には強制が要り、
+	// `go clean` は GOMODCACHE しか見ないため道具からは消せない。消さずに見せるのは、
+	// 走査から落とすと「無い」ことになり false green になるため
+	{ID: "go-modcache-old", Label: "Go module キャッシュ (使っていない世代)", Tier: 1, Risk: RiskCaution, DeleteVia: "propose",
+		Recover: "その Go を使うときに再取得されます", Detail: "go clean -modcache では消せない (GOMODCACHE の 1 世代しか見ない)。消すなら chmod -R u+w してから rm -rf",
+		Paths: []string{"~/go/*/pkg/mod", "~/go/pkg/mod"}, Guard: GuardGoModcacheOld},
 	{ID: "go-build", Label: "Go build キャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "次回 build で再生成されます", Paths: []string{"~/Library/Caches/go-build"}},
 	{ID: "headless-chrome-dl", Label: "ヘッドレス Chrome のダウンロード", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",

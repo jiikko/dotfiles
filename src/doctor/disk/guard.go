@@ -363,6 +363,33 @@ func brewFormulae(ctx context.Context, run runner.Runner) (map[string]bool, erro
 // brewPrefix は `brew --prefix` の実測値を返す。取れない / 空 / 絶対パスでない / 実在しないは
 // すべて error にする (fail-closed)。ここを既定値 (/opt/homebrew) に fallback させると、
 // Intel Mac や非標準 prefix の環境で「候補なし」という false green に化ける (issue 176)。
+// goModcache は `go env GOMODCACHE` の実効値 (今の go が使う 1 世代)。
+//
+// 🚨 **`go clean -modcache` が消せるのはここだけ**。カタログの `~/go/*/pkg/mod` は複数世代に
+// 当たるので、削除の範囲と走査の範囲を一致させるためにこの値で分ける (issue 235)。
+// brewPrefix と同じ作法で、解決できない / 絶対パスでない / "/" は**エラーにして fail-closed**
+// (解決できないまま「一致しない = 古い世代」と読むと、現役のキャッシュが削除候補に出る)。
+func goModcache(ctx context.Context, run runner.Runner) (string, error) {
+	out, stderr, rc, err := runner.WithTimeout(ctx, run, cmdTimeout, "go", "env", "GOMODCACHE")
+	if err != nil {
+		return "", err
+	}
+	if rc != 0 {
+		return "", fmt.Errorf("go env GOMODCACHE: exit %d: %s", rc, strings.TrimSpace(stderr))
+	}
+	p := strings.TrimSpace(out)
+	if p == "" {
+		return "", errors.New("go env GOMODCACHE が空を返した")
+	}
+	if !filepath.IsAbs(p) {
+		return "", fmt.Errorf("go env GOMODCACHE が絶対パスでない: %s", p)
+	}
+	if filepath.Clean(p) == "/" {
+		return "", errors.New("go env GOMODCACHE が / を返した")
+	}
+	return p, nil
+}
+
 func brewPrefix(ctx context.Context, run runner.Runner) (string, error) {
 	out, stderr, rc, err := runner.WithTimeout(ctx, run, cmdTimeout, "brew", "--prefix")
 	if err != nil {

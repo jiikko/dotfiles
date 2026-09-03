@@ -479,7 +479,7 @@ func TestOnlyReadOnlyCommands(t *testing.T) {
 		"brew --prefix":             {out: env.Home}, // 実機の /opt/homebrew に依存させない
 	}}
 	Scan(context.Background(), Options{Env: env, Run: f.run, BootTime: okBoot})
-	allowed := []string{"pgrep -x", "xcrun simctl list devices -j", "xcrun simctl --set", "xcrun simctl runtime list -j", "brew info --json=v2 --installed", "brew cleanup --dry-run", "brew --prefix"}
+	allowed := []string{"pgrep -x", "xcrun simctl list devices -j", "xcrun simctl --set", "xcrun simctl runtime list -j", "brew info --json=v2 --installed", "brew cleanup --dry-run", "brew --prefix", "go env GOMODCACHE"}
 	for _, c := range f.calls {
 		line := strings.Join(c, " ")
 		ok := false
@@ -1162,5 +1162,77 @@ func TestConcurrentScansDoNotShareState(t *testing.T) {
 		if !g.ids["com.example.some"] {
 			t.Errorf("%d 番目が bundle id を取れていない: %v", i, g.ids)
 		}
+	}
+}
+
+// go-modcache は世代を「現行 (go env GOMODCACHE)」と「それ以外」に分ける (issue 235)。
+//
+// 🚨 分けていないと、`go clean -modcache` は 1 世代しか消さないのに走査は全世代を候補にするため、
+// 削除後の再走査に他の世代が残って **毎回必ず OutcomeIncomplete**「時間をおいて再スキャン」に
+// なる (時間をおいても消えない)。走査の範囲を削除の範囲へ合わせるのが不変条件。
+func TestGoModcacheGuardSplitsGenerations(t *testing.T) {
+	env := testEnv(t)
+	gen := func(v string) string { return filepath.Join(env.Home, "go", v, "pkg", "mod") }
+	for _, v := range []string{"1.23.4", "1.26.0"} {
+		if err := os.MkdirAll(filepath.Join(gen(v), "cache"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(gen(v), "cache", "x"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	paths := []string{filepath.Join(env.Home, "go", "*", "pkg", "mod")}
+	run := &fakeRunner{resp: map[string]fakeResp{"go env GOMODCACHE": {out: gen("1.26.0") + "\n"}}}
+
+	cur := scanOne(t, env, run, Entry{ID: "go-modcache", Paths: paths, Guard: GuardGoModcacheCurrent}, okBoot)
+	old := scanOne(t, env, run, Entry{ID: "go-modcache-old", Paths: paths, Guard: GuardGoModcacheOld}, okBoot)
+
+	got := func(r Result) []string {
+		out := make([]string, 0, len(r.Items))
+		for _, it := range r.Items {
+			out = append(out, it.Path)
+		}
+		return out
+	}
+	// 🚨 パスは canonicalPath で正規化される (macOS の /var -> /private/var)。
+	// 生成したパスと文字列比較すると常に外れるので、世代の部分で比べる
+	if g := got(cur); len(g) != 1 || !strings.HasSuffix(g[0], filepath.Join("go", "1.26.0", "pkg", "mod")) {
+		t.Errorf("現行の世代だけを候補にしていない: %v (status=%s reason=%s)", g, cur.Status, cur.Reason)
+	}
+	if g := got(old); len(g) != 1 || !strings.HasSuffix(g[0], filepath.Join("go", "1.23.4", "pkg", "mod")) {
+		t.Errorf("古い世代だけを候補にしていない: %v (status=%s reason=%s)", g, old.Status, old.Reason)
+	}
+	// 2 つのエントリを足すと元の全世代になる (どちらからも落ちる世代が無い = false green にしない)
+	if len(got(cur))+len(got(old)) != 2 {
+		t.Errorf("世代の総数が合わない: cur=%v old=%v", got(cur), got(old))
+	}
+}
+
+// GOMODCACHE を解決できないときは **候補 0 件ではなく「診断できず」** へ倒す (fail-closed)。
+// 「解決できない = 現行でない = 古い世代」と読むと、現役のキャッシュが削除候補に出る。
+func TestGoModcacheGuardFailsClosedWhenUnresolvable(t *testing.T) {
+	env := testEnv(t)
+	if err := os.MkdirAll(filepath.Join(env.Home, "go", "1.26.0", "pkg", "mod"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{filepath.Join(env.Home, "go", "*", "pkg", "mod")}
+	for _, tc := range []struct {
+		name string
+		resp fakeResp
+	}{
+		{"go が失敗する", fakeResp{rc: 1, out: ""}},
+		{"空を返す", fakeResp{out: "\n"}},
+		{"相対パスを返す", fakeResp{out: "go/pkg/mod\n"}},
+		{"/ を返す", fakeResp{out: "/\n"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			run := &fakeRunner{resp: map[string]fakeResp{"go env GOMODCACHE": tc.resp}}
+			for _, gd := range []Guard{GuardGoModcacheCurrent, GuardGoModcacheOld} {
+				r := scanOne(t, env, run, Entry{ID: "m", Paths: paths, Guard: gd}, okBoot)
+				if r.Status != StatusFailed {
+					t.Errorf("%s: 解決できないのに診断できずへ倒れない: status=%s items=%d", gd, r.Status, len(r.Items))
+				}
+			}
+		})
 	}
 }
