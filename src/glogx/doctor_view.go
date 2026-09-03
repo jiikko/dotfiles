@@ -391,8 +391,20 @@ func (v *doctorView) moveCursor(dir int) {
 	}
 }
 
-func (v *doctorView) hint() string {
-	return "j/k: 移動  Enter: 詳細  y: パスをコピー  Y: 解説をコピー  r: 再スキャン  D/q/esc: 閉じる  (削除はまだできません)"
+// hint は最下行の案内。**幅に入らない項目は落とす** (切ると語の途中で切れて意味が壊れ、
+// しかも消えるのは常に末尾 = 抜ける手段が消える。status viewer と同じ fitHintItems の作法)。
+// 実測 2026-09-03: 固定文字列だと 112 桁あり、popup の予算 82 桁で「D/q/esc: 閉じる」と
+// 「(削除はまだできません)」が画面から消えていた (issue 201)。
+func (v *doctorView) hint(width int) string {
+	return fitHintItems(width, []hintItem{
+		{"j/k: 移動", 3},
+		{"Enter: 詳細", 3},
+		{"y: パスをコピー", 4},
+		{"Y: 解説をコピー", 5},
+		{"r: 再スキャン", 4},
+		{"D/q/esc: 閉じる", 1}, // 抜ける手段は最優先で残す
+		{"(削除はまだできません)", 2}, // 破壊操作の有無は誤解が高くつくので優先度を上げる
+	})
 }
 
 // doctorRenderOpts は描画情報。

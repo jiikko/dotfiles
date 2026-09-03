@@ -3570,7 +3570,7 @@ func (m *browseModel) hintLine() string {
 		return m.hintLineText(m.rlDash.hint())
 	}
 	if m.doctorOv.visible() {
-		return m.hintLineText(m.doctorOv.hint())
+		return m.hintLineText(m.doctorOv.hint(m.hintWidth()))
 	}
 	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  P: PR 状態  y: URL コピー  b: push  u: pull  i: issues  U: usage  R: 残量  C: update  D: doctor  w: 警告コピー  q: 終了"
 	switch {
@@ -3602,9 +3602,27 @@ func (m *browseModel) hintLine() string {
 	case m.prStatusOv.visible():
 		hint = "o: PR をブラウザで開く  y: URL コピー  P/q/h: 閉じる"
 	case m.detailOv.visible():
-		hint = "j/k: スクロール  v: nvim で開く  r: 再実行  Enter/h/q: 戻る  o: ブラウザ  y: URL  Y: 詳細コピー"
+		hint = fitHintItems(m.hintWidth(), []hintItem{
+			{"j/k: スクロール", 3},
+			{"v: nvim で開く", 4},
+			{"r: 再実行", 3},
+			{"Enter/h/q: 戻る", 1}, // 抜ける手段は最優先
+			{"o: ブラウザ", 4},
+			{"y: URL", 5},
+			{"Y: 詳細コピー", 5},
+		})
 	case m.panelSHA != "" && m.panelCursor >= 0:
-		hint = "j/k: job 移動  Enter: 詳細ログ  r: 再実行  o: ブラウザ  d: diff  p: PR  y: URL  Y: 詳細コピー  h/q: 閉じる"
+		hint = fitHintItems(m.hintWidth(), []hintItem{
+			{"j/k: job 移動", 3},
+			{"Enter: 詳細ログ", 3},
+			{"r: 再実行", 4},
+			{"o: ブラウザ", 4},
+			{"d: diff", 5},
+			{"p: PR", 5},
+			{"y: URL", 5},
+			{"Y: 詳細コピー", 6},
+			{"h/q: 閉じる", 1}, // 抜ける手段は最優先
+		})
 	case m.panelSHA != "":
 		hint = "j: job を選択  d: diff  p: PR  y: commit URL  Enter/h/q: 閉じる"
 	}
