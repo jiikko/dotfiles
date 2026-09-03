@@ -352,16 +352,15 @@ func (m *browseModel) handleGitLogFP(msg gitLogFPMsg) tea.Cmd {
 //
 // いずれも見送るだけで基準は動かさないので、閉じた後の観測で反映される (最悪 1 分後)。
 //
-// 🚨 **全画面ビューアを足したらここへも足すこと** (issue 227)。doctor は issue 148 で
-// 後から足されたときこの列挙から漏れ、doctor を開いている間に外部で git が動くと裏で
-// 全面リロード (git 5〜6 fork) + カーソルのリセット + CI の再取得が走っていた。
-// build もテストも通るので silent に壊れる。「今どの全画面ビューアが出ているか」の出典が
-// 8 箇所に散っている構造そのものは issue 227 の本題として残っている。
+// 🚨 全画面ビューアは**個別に列挙しない** (issue 227)。doctor は issue 148 で後から
+// 足されたときこの列挙から漏れ、doctor を開いている間に外部で git が動くと裏で全面リロード
+// (git 5〜6 fork) + カーソルのリセット + CI の再取得が走っていた。build もテストも通るので
+// silent に壊れる。membership の出典は activeFullScreen (fullscreen.go) 1 箇所だけにして、
+// 「足したらここへも足す」を人の記憶に頼らせない。
 func (m *browseModel) gitLogReloadDeferred() bool {
 	return m.actModal.active() || m.diffOv.visible() || m.prStatusOv.visible() ||
 		m.detailOv.visible() || m.panelSHA != "" || m.pullAnimating || m.pushAnimating ||
-		m.issuesOv.visible() || m.statusOv.visible() || m.rlDash.visible() ||
-		m.doctorOv.visible()
+		m.fullScreenActive()
 }
 
 // reflectGitLogChange は外部の変更を画面へ反映する (読み直しを Cmd へ出し、結果は

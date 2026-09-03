@@ -935,7 +935,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 🚨 ratelimit ダッシュボード (R) が先に開いていた場合も同じ理由で捨てる: 復元すると
 		// 裏に issues viewer が開いた状態になり、ダッシュボードの i (横断) が toggle で
 		// 「開く」ではなく「閉じる」に化ける。
-		if m.statusOv.visible() || m.rlDash.visible() || m.doctorOv.visible() {
+		// 🚨 判定は activeFullScreen から導出する (issue 227): 全画面ビューアを 1 枚足した
+		// ときにここへ書き足すのを忘れると、復元で 2 枚同時 shown になる。
+		if id := m.activeFullScreen(); id != fullScreenNone && id != fullScreenIssues {
 			return m, m.maybeTick()
 		}
 		return m, tea.Batch(m.issuesOv.restore(currentDir(), msg.screen), m.maybeTick())
@@ -1422,166 +1424,25 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.usageOv.dismiss() // 一覧の他のキーと同じ語彙 (U で出し、次のキーで消える)
 		return m, tea.Batch(m.actModal.startUpdateFor(target), m.maybeTick())
 	}
-	if m.doctorOv.visible() {
-		// 描画中に選択行が消えて寄せていたら、**キーを飲まずに**知らせる (issue 210)。
-		// カーソルの寄せは View から起きるので、通知経路はここしか無い
-		if t := m.doctorOv.takeCursorFellBack(); t != "" {
-			m.toast.show(t, false)
-		}
-		switch m.doctorOv.handleKey(key, m.pageSize()) {
-		case doctorClosed:
-			return m, m.maybeTick()
-		case doctorRescan:
-			// 再スキャンの理由がある場合は伝える (「前回の結果だったので取り直します」等)。
-			// 🚨 黙って走らせない: ユーザーは Space / d を押したのであって r を押していない
-			if t := m.doctorOv.takeToast(); t != "" {
-				m.toast.show(t, false)
-			}
-			// close() を経由しない: 数件だけの partial を書いて完全な結果を潰さない (doctorView.saveCache の注記)
-			return m, tea.Batch(m.doctorOv.rescan(), m.maybeTick())
-		case doctorCopyPath:
-			m.copyWithToast(m.doctorOv.copyPayload(), "パスをコピーしました")
-		case doctorCopyText:
-			m.copyWithToast(m.doctorOv.copyPayload(), "解説をコピーしました (LLM にそのまま貼れます)")
-		case doctorCopyLog:
-			m.copyWithToast(m.doctorOv.copyPayload(), "実行の記録をコピーしました (LLM にそのまま貼れます)")
-		case doctorNothing:
-			m.toast.show("この行にはコピーするものがありません", false)
-		case doctorToast:
-			m.toast.show(m.doctorOv.takeToast(), false)
-		case doctorRunDelete:
-			// 削除 (と、その下見) は doctorView が組んだ Cmd をそのまま走らせる
-			return m, tea.Batch(m.doctorOv.takeDeleteCmd(), m.maybeTick())
-		case doctorSwallow:
-		}
-		return m, m.maybeTick()
-	}
-	// ratelimit ダッシュボード表示中も全画面: キーはここで飲み切る (裏の一覧をスクロール
-	// させない)。issues / status と同じ位置に置く理由もそちらと同じ (actModal と prefix の後)。
-	if m.rlDash.visible() {
-		switch m.rlDash.handleKey(key) {
-		case rlDashClosed:
-			return m, m.maybeTick()
-		case rlDashRefresh:
-			return m, tea.Batch(m.usageOv.fetchCmd(false), m.maybeTick())
-		// i / s = viewer へ横断 (viewer 側の R と対。ユーザー要望 2026-09-01)。handleKey が
-		// 既に閉じているので、issues ↔ status の横断と同じく閉じ演出は待たずに即着地する。
-		// 🚨 toggle を呼ぶので、ここへ来る時点で相手の viewer が開いていないこと (全画面は
-		// 同時に 1 枚) が前提。開いていると toggle が「開く」でなく「閉じる」に化ける。起動時
-		// 復元との競合はその前提を守るために issuesRestoreMsg 側で弾いている。
-		//
-		// 🚨 一覧の i/s が持つ `m.panelSHA == ""` ガードは、ここでは**意図的に付けない**
-		// (敵対レビュー指摘 2026-09-01)。あのガードの理由は「job パネルを開いている間はそちらの
-		// キー語彙を優先する」= キーの取り合いの解消で、ダッシュボードは全画面で全キーを飲む
-		// ため取り合いが起きない。パネル (panelSHA / panelCursor / details) は viewer とは独立
-		// した状態で、閉じれば元のパネルがそのまま描き直される。🚨 逆にガードを付けると、
-		// パネルを開いたまま R → i が無音の no-op になる (issue 122 が禁じた形)。
-		// パネル側の状態を viewer が読むようになったら、この判断を再評価すること。
-		case rlDashIssues:
-			return m, tea.Batch(m.issuesOv.toggle(currentDir()), m.maybeTick())
-		case rlDashStatus:
-			return m, tea.Batch(m.statusOv.toggle(), m.maybeTick())
-		case rlDashSwallow:
-			// 閉じる / 更新 / 横断以外は握り潰す (下の return へ落ちる)
-		}
-		return m, nil
-	}
-	// issues viewer 表示中は全画面モーダル: キーは全部 viewer が飲む。🚨 この判定を下の
-	// 裸の b / u (push / pull) より後ろに置くと、一覧を見ている最中の u が
-	// git pull --rebase の確認を開く footgun になる (U の判定順と同じ事故の型)。
+	// 全画面ビューア (doctor / 残量ダッシュボード / issues / status) が出ている間は、キーを
+	// そのビューアが飲み切る。🚨 **どれが出ているかの出典は activeFullScreen 1 箇所**
+	// (issue 227)。ここで個別に visible() を並べ直さない。
 	//
-	// 🚨 actModal (push/pull 確認・実行中ガード) と tmux prefix より後ろに置くのは維持する。
-	// U (usage) はこの分岐の中で受ける: 以前は「viewer が全画面で描かれないのに取得だけ走る」
-	// ため弾いていたが、viewLines が viewer の窓へ usage を合成するようになったので開けてよい。
-	if m.issuesOv.visible() {
-		// U は viewer の上でも効く (ユーザー要望 2026-08-01)。viewLines が usage を viewer の窓へ
-		// 合成するので「取得だけ走って画面に出ない」問題は起きない (トーストと同じ経路)。
-		//
-		// 🚨 viewer が自分でキーを解釈し切る状態 (URL ピッカー / 番号入力 / y/N 確認) では、この
-		// 横取りを飛ばして下の委譲へ落とす。飛ばさないと URL ピッカーが宣言している
-		// 「印字文字はすべて検索語に流す」が大文字 U だけ破れる (issue 113)。
-		// 🚨 ガードは横取りだけに掛けること (この if 自体に付けると委譲も飛ぶ)。
-		if !m.issuesOv.ownsKeys() {
-			if key == "U" {
-				return m, m.toggleUsage()
-			}
-			m.usageOv.dismiss() // 他のキーで引っ込むのは一覧と同じ語彙 (U で出し、次のキーで消える)
-		}
-		cmd := m.issuesOv.handleKey(key, m.issuesOpts().viewport())
-		// viewer の操作結果 (コピー・URL 起動・読み込み失敗) は glogx 共通の右下トーストで出す
-		// (ユーザー要望 2026-07-31)。viewer が全画面でトーストが隠れていた時代はヘッダー行に
-		// 出していたが、下の viewLines でトーストを viewer の上にも合成するようにした。
-		m.deliverNotice(m.issuesOv.takeNotice())
-		// q/esc = glogx ごと終了 (ユーザー要望 2026-08-06: git log 一覧へは戻らない)。viewer を
-		// 出したまま終了するので、次回起動は再開記憶で同じ画面から始まる (C-g と同じ経路)
-		if m.issuesOv.takeWantQuit() {
-			return m.quit()
-		}
-		// s = status viewer へ横断 (ユーザー要望 2026-08-06)。閉じる演出は待たず即着地させる:
-		// 全画面 viewer は同時に 1 枚の前提で、閉じ演出と次の開き演出を重ねない
-		if m.issuesOv.takeWantStatus() {
-			m.issuesOv.finishClose()
-			return m, tea.Batch(cmd, m.statusOv.toggle(), m.maybeTick())
-		}
-		// R = ratelimit ダッシュボードへ横断 (ユーザー要望 2026-09-01)。s と同じ経路で、
-		// 閉じ演出を待たず即着地させる (全画面は同時に 1 枚)。取得の起こし方は一覧の R と
-		// 同じ toggleRatelimitDash に委ねる (single-flight ガードを 1 か所に保つ)。
-		if m.issuesOv.takeWantRatelimit() {
-			m.issuesOv.finishClose()
-			return m, tea.Batch(cmd, m.toggleRatelimitDash())
-		}
-		return m, tea.Batch(cmd, m.maybeTick())
-	}
-	// status viewer も全画面なので issues と同じ形で routing する (裸の b / u より前に置く:
-	// staging の途中で u が pull --rebase の確認を開く footgun を防ぐ。spec 3 節)。
-	if m.statusOv.visible() {
-		// 🚨 viewer が自分でキーを解釈し切る状態 (全画面 pager / 破棄確認) では、この横取りを
-		// まるごと飛ばして下の委譲へ落とす。飛ばさないと viewer のキー語彙を外側が奪い、
-		// `b` (半ページ戻り) が push 確認に化けて続く Enter で実 push が走る (実測 2026-08-21)。
-		// 🚨 ガードは横取りだけに掛けること: この if 自体に付けると委譲も飛んで pager が
-		// キーを受け取れなくなる (実装中に踏んだ)。
-		if !m.statusOv.ownsKeys() {
-			if key == "U" {
-				return m, m.toggleUsage() // viewer の上でも usage は出せる (issues と同じ契約)
-			}
-			m.usageOv.dismiss()
-			if key == "p" {
-				// pull は viewer の中からも打てる (ユーザー要望 2026-08-05)。🚨 一覧の u とキーを
-				// 分けているのは spec 3 節の判断を残すため: staging 中に「隣のキー」で remote 操作へ
-				// 滑るのを防ぎつつ、明示的に p を押したときだけ通す。確認 (y/N) は actModal が出す。
-				m.actModal.askPull()
-				return m, m.maybeTick()
-			}
-			if key == "b" {
-				// push も viewer の中から打てる (ユーザー要望 2026-08-07)。p (pull) と同じく
-				// 確認 (y/N) は actModal が viewer の上に重ねて出す。b は一覧と同じキーで、
-				// staging の語彙 (j/k/Space/a/X/d…) と衝突しない
-				return m, m.confirmPush()
-			}
-			if key == "u" {
-				// u は一覧の pull キーだが、ここでは p を使う (誤爆しやすい隣接キーで remote を
-				// 叩かせない。spec 3 節)。黙って無視すると「押したのに何も起きない」になるので理由を返す
-				m.toast.show("pull は p です (status viewer では u を使いません)", false)
-				return m, m.maybeTick()
-			}
-		}
-		cmd := m.statusOv.handleKey(key, m.statusOpts().viewport())
-		m.deliverNotice(m.statusOv.takeNotice())
-		// q/esc = glogx ごと終了 (issues 側と同じ契約。ユーザー要望 2026-08-06)
-		if m.statusOv.takeWantQuit() {
-			return m.quit()
-		}
-		// i = issues viewer へ横断 (ユーザー要望 2026-08-06)。issues 側の s と対 (即着地も同じ理由)
-		if m.statusOv.takeWantIssues() {
-			m.statusOv.finishClose()
-			return m, tea.Batch(cmd, m.issuesOv.toggle(currentDir()), m.maybeTick())
-		}
-		// R = ratelimit ダッシュボードへ横断 (issues 側の R と同じ。ユーザー要望 2026-09-01)
-		if m.statusOv.takeWantRatelimit() {
-			m.statusOv.finishClose()
-			return m, tea.Batch(cmd, m.toggleRatelimitDash())
-		}
-		return m, tea.Batch(cmd, m.maybeTick())
+	// 🚨 この dispatch の位置は動かさないこと。前 (actModal の確認・実行中ガード / tmux prefix /
+	// 再起動ダイアログ / C・X の update) へ動かすと viewer の語彙が外側に奪われ、後ろ (裸の
+	// b / u = push / pull、U / R / D) へ動かすと viewer を見ている最中の u が
+	// git pull --rebase の確認を開く footgun になる。
+	switch m.activeFullScreen() {
+	case fullScreenDoctor:
+		return m.routeKeyToDoctor(key)
+	case fullScreenRatelimit:
+		return m.routeKeyToRatelimitDash(key)
+	case fullScreenIssues:
+		return m.routeKeyToIssues(key)
+	case fullScreenStatus:
+		return m.routeKeyToStatus(key)
+	case fullScreenNone, fullScreenCount:
+		// 一覧を見ている (fullScreenCount は番兵で activeFullScreen は返さない)。下へ落とす
 	}
 	// usage オーバーレイのトグル / dismiss。モーダル (push/pull 確認)・prefix・
 	// 実行中ガードを素通りしないよう必ずそれらの後に置く: 先頭に置くと U が push 確認を
@@ -1715,6 +1576,185 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.openFilerAtRoot()
 	}
 	return m, nil
+}
+
+// routeKeyToDoctor は doctor 表示中のキー処理。全画面なのでキーはここで飲み切る
+// (裏の一覧をスクロールさせない)。呼ぶのは handleKey の activeFullScreen dispatch 1 箇所で、
+// **dispatch の位置とその理由はそちらに書く** (ここへ再掲しない)。
+func (m *browseModel) routeKeyToDoctor(key string) (tea.Model, tea.Cmd) {
+	// 描画中に選択行が消えて寄せていたら、**キーを飲まずに**知らせる (issue 210)。
+	// カーソルの寄せは View から起きるので、通知経路はここしか無い
+	if t := m.doctorOv.takeCursorFellBack(); t != "" {
+		m.toast.show(t, false)
+	}
+	// U (usage) は doctor の上でも効く (issues / status と同じ契約。issue 227 ③)。usage の箱は
+	// finishWithGlobalChrome がどの画面にも重ねるので「取得だけ走って画面に出ない」は起きない。
+	// 🚨 doctor が自分でキーを解釈し切る状態 (削除の y/N 確認・実行中) では横取りごと飛ばして
+	// 委譲へ落とす: 飛ばさないと確認中の U が箱を出し、確認は裏に残ったままになる
+	// (issues の URL ピッカーで実際に起きた形 = issue 113)。
+	if !m.doctorOv.ownsKeys() {
+		if key == "U" {
+			return m, m.toggleUsage()
+		}
+		m.usageOv.dismiss() // 他のキーで引っ込むのは一覧と同じ語彙 (U で出し、次のキーで消える)
+	}
+	switch m.doctorOv.handleKey(key, m.pageSize()) {
+	case doctorClosed:
+		return m, m.maybeTick()
+	case doctorRescan:
+		// 再スキャンの理由がある場合は伝える (「前回の結果だったので取り直します」等)。
+		// 🚨 黙って走らせない: ユーザーは Space / d を押したのであって r を押していない
+		if t := m.doctorOv.takeToast(); t != "" {
+			m.toast.show(t, false)
+		}
+		// close() を経由しない: 数件だけの partial を書いて完全な結果を潰さない (doctorView.saveCache の注記)
+		return m, tea.Batch(m.doctorOv.rescan(), m.maybeTick())
+	case doctorCopyPath:
+		m.copyWithToast(m.doctorOv.copyPayload(), "パスをコピーしました")
+	case doctorCopyText:
+		m.copyWithToast(m.doctorOv.copyPayload(), "解説をコピーしました (LLM にそのまま貼れます)")
+	case doctorCopyLog:
+		m.copyWithToast(m.doctorOv.copyPayload(), "実行の記録をコピーしました (LLM にそのまま貼れます)")
+	case doctorNothing:
+		m.toast.show("この行にはコピーするものがありません", false)
+	case doctorToast:
+		m.toast.show(m.doctorOv.takeToast(), false)
+	case doctorRunDelete:
+		// 削除 (と、その下見) は doctorView が組んだ Cmd をそのまま走らせる
+		return m, tea.Batch(m.doctorOv.takeDeleteCmd(), m.maybeTick())
+	case doctorSwallow:
+	}
+	return m, m.maybeTick()
+}
+
+// routeKeyToRatelimitDash は残量ダッシュボード表示中のキー処理 (doctor と同じく全画面)。
+//
+// 🚨 U (usage) は**意図的に受けない**。ダッシュボードは同じ Snapshot を全画面で描いたもので、
+// 右上に小さい方を重ねると同じ値が 2 か所に出る (toggleRatelimitDash が開くときに
+// usageOv.dismiss() しているのと同じ判断)。issues / status が U を受けるのとはここが違う。
+func (m *browseModel) routeKeyToRatelimitDash(key string) (tea.Model, tea.Cmd) {
+	switch m.rlDash.handleKey(key) {
+	case rlDashClosed:
+		return m, m.maybeTick()
+	case rlDashRefresh:
+		return m, tea.Batch(m.usageOv.fetchCmd(false), m.maybeTick())
+	// i / s = viewer へ横断 (viewer 側の R と対。ユーザー要望 2026-09-01)。handleKey が
+	// 既に閉じているので、issues ↔ status の横断と同じく閉じ演出は待たずに即着地する。
+	// 🚨 toggle を呼ぶので、ここへ来る時点で相手の viewer が開いていないこと (全画面は
+	// 同時に 1 枚) が前提。開いていると toggle が「開く」でなく「閉じる」に化ける。起動時
+	// 復元との競合はその前提を守るために issuesRestoreMsg 側で弾いている。
+	//
+	// 🚨 一覧の i/s が持つ `m.panelSHA == ""` ガードは、ここでは**意図的に付けない**
+	// (敵対レビュー指摘 2026-09-01)。あのガードの理由は「job パネルを開いている間はそちらの
+	// キー語彙を優先する」= キーの取り合いの解消で、ダッシュボードは全画面で全キーを飲む
+	// ため取り合いが起きない。パネル (panelSHA / panelCursor / details) は viewer とは独立
+	// した状態で、閉じれば元のパネルがそのまま描き直される。🚨 逆にガードを付けると、
+	// パネルを開いたまま R → i が無音の no-op になる (issue 122 が禁じた形)。
+	// パネル側の状態を viewer が読むようになったら、この判断を再評価すること。
+	case rlDashIssues:
+		return m, tea.Batch(m.issuesOv.toggle(currentDir()), m.maybeTick())
+	case rlDashStatus:
+		return m, tea.Batch(m.statusOv.toggle(), m.maybeTick())
+	case rlDashSwallow:
+		// 閉じる / 更新 / 横断以外は握り潰す (下の return へ落ちる)
+	}
+	return m, nil
+}
+
+// routeKeyToIssues は issues viewer 表示中のキー処理 (全画面なのでキーは全部 viewer が飲む)。
+//
+// U (usage) はここで受ける: 以前は「viewer が全画面で描かれないのに取得だけ走る」ため
+// 弾いていたが、viewLines が viewer の窓へ usage を合成するようになったので開けてよい。
+func (m *browseModel) routeKeyToIssues(key string) (tea.Model, tea.Cmd) {
+	// U は viewer の上でも効く (ユーザー要望 2026-08-01)。viewLines が usage を viewer の窓へ
+	// 合成するので「取得だけ走って画面に出ない」問題は起きない (トーストと同じ経路)。
+	//
+	// 🚨 viewer が自分でキーを解釈し切る状態 (URL ピッカー / 番号入力 / y/N 確認) では、この
+	// 横取りを飛ばして下の委譲へ落とす。飛ばさないと URL ピッカーが宣言している
+	// 「印字文字はすべて検索語に流す」が大文字 U だけ破れる (issue 113)。
+	// 🚨 ガードは横取りだけに掛けること (この if 自体に付けると委譲も飛ぶ)。
+	if !m.issuesOv.ownsKeys() {
+		if key == "U" {
+			return m, m.toggleUsage()
+		}
+		m.usageOv.dismiss() // 他のキーで引っ込むのは一覧と同じ語彙 (U で出し、次のキーで消える)
+	}
+	cmd := m.issuesOv.handleKey(key, m.issuesOpts().viewport())
+	// viewer の操作結果 (コピー・URL 起動・読み込み失敗) は glogx 共通の右下トーストで出す
+	// (ユーザー要望 2026-07-31)。viewer が全画面でトーストが隠れていた時代はヘッダー行に
+	// 出していたが、下の viewLines でトーストを viewer の上にも合成するようにした。
+	m.deliverNotice(m.issuesOv.takeNotice())
+	// q/esc = glogx ごと終了 (ユーザー要望 2026-08-06: git log 一覧へは戻らない)。viewer を
+	// 出したまま終了するので、次回起動は再開記憶で同じ画面から始まる (C-g と同じ経路)
+	if m.issuesOv.takeWantQuit() {
+		return m.quit()
+	}
+	// s = status viewer へ横断 (ユーザー要望 2026-08-06)。閉じる演出は待たず即着地させる:
+	// 全画面 viewer は同時に 1 枚の前提で、閉じ演出と次の開き演出を重ねない
+	if m.issuesOv.takeWantStatus() {
+		m.issuesOv.finishClose()
+		return m, tea.Batch(cmd, m.statusOv.toggle(), m.maybeTick())
+	}
+	// R = ratelimit ダッシュボードへ横断 (ユーザー要望 2026-09-01)。s と同じ経路で、
+	// 閉じ演出を待たず即着地させる (全画面は同時に 1 枚)。取得の起こし方は一覧の R と
+	// 同じ toggleRatelimitDash に委ねる (single-flight ガードを 1 か所に保つ)。
+	if m.issuesOv.takeWantRatelimit() {
+		m.issuesOv.finishClose()
+		return m, tea.Batch(cmd, m.toggleRatelimitDash())
+	}
+	return m, tea.Batch(cmd, m.maybeTick())
+}
+
+// routeKeyToStatus は status viewer 表示中のキー処理 (issues と同じ形。全画面)。
+// p / b / u の扱いだけが issues と違う (docs/status-viewer-spec.md 3 節)。
+func (m *browseModel) routeKeyToStatus(key string) (tea.Model, tea.Cmd) {
+	// 🚨 viewer が自分でキーを解釈し切る状態 (全画面 pager / 破棄確認) では、この横取りを
+	// まるごと飛ばして下の委譲へ落とす。飛ばさないと viewer のキー語彙を外側が奪い、
+	// `b` (半ページ戻り) が push 確認に化けて続く Enter で実 push が走る (実測 2026-08-21)。
+	// 🚨 ガードは横取りだけに掛けること: この if 自体に付けると委譲も飛んで pager が
+	// キーを受け取れなくなる (実装中に踏んだ)。
+	if !m.statusOv.ownsKeys() {
+		if key == "U" {
+			return m, m.toggleUsage() // viewer の上でも usage は出せる (issues と同じ契約)
+		}
+		m.usageOv.dismiss()
+		if key == "p" {
+			// pull は viewer の中からも打てる (ユーザー要望 2026-08-05)。🚨 一覧の u とキーを
+			// 分けているのは spec 3 節の判断を残すため: staging 中に「隣のキー」で remote 操作へ
+			// 滑るのを防ぎつつ、明示的に p を押したときだけ通す。確認 (y/N) は actModal が出す。
+			m.actModal.askPull()
+			return m, m.maybeTick()
+		}
+		if key == "b" {
+			// push も viewer の中から打てる (ユーザー要望 2026-08-07)。p (pull) と同じく
+			// 確認 (y/N) は actModal が viewer の上に重ねて出す。b は一覧と同じキーで、
+			// staging の語彙 (j/k/Space/a/X/d…) と衝突しない
+			return m, m.confirmPush()
+		}
+		if key == "u" {
+			// u は一覧の pull キーだが、ここでは p を使う (誤爆しやすい隣接キーで remote を
+			// 叩かせない。spec 3 節)。黙って無視すると「押したのに何も起きない」になるので理由を返す
+			m.toast.show("pull は p です (status viewer では u を使いません)", false)
+			return m, m.maybeTick()
+		}
+	}
+	cmd := m.statusOv.handleKey(key, m.statusOpts().viewport())
+	m.deliverNotice(m.statusOv.takeNotice())
+	// q/esc = glogx ごと終了 (issues 側と同じ契約。ユーザー要望 2026-08-06)
+	if m.statusOv.takeWantQuit() {
+		return m.quit()
+	}
+	// i = issues viewer へ横断 (ユーザー要望 2026-08-06)。issues 側の s と対 (即着地も同じ理由)
+	if m.statusOv.takeWantIssues() {
+		m.statusOv.finishClose()
+		return m, tea.Batch(cmd, m.issuesOv.toggle(currentDir()), m.maybeTick())
+	}
+	// R = ratelimit ダッシュボードへ横断 (issues 側の R と同じ。ユーザー要望 2026-09-01)
+	if m.statusOv.takeWantRatelimit() {
+		m.statusOv.finishClose()
+		return m, tea.Batch(cmd, m.toggleRatelimitDash())
+	}
+	return m, tea.Batch(cmd, m.maybeTick())
 }
 
 // confirmPush は push 確認 (y/N) に入る。未 push が 1 件も無ければ確認を出さない
@@ -3373,17 +3413,17 @@ func (m *browseModel) viewLines() string {
 	// viewer からの R も、ダッシュボードからの i/s も「閉じてから開く」ので、3 画面のうち
 	// 高々 1 枚しか shown にならない (起動時 restore は開いていれば捨てる — issuesRestoreMsg
 	// の注記)。開いている間の他のキーは handleKey が飲む。
-	if m.rlDash.visible() {
+	switch m.activeFullScreen() {
+	case fullScreenRatelimit:
 		return m.finishWithGlobalChrome(m.rlDash.lines(m.ratelimitOpts()), page)
-	}
-	if m.doctorOv.visible() {
+	case fullScreenDoctor:
 		return m.finishWithGlobalChrome(m.doctorOv.lines(m.doctorOpts()), page)
-	}
-	if m.statusOv.visible() {
+	case fullScreenStatus:
 		return m.finishWithGlobalChrome(m.statusOv.lines(m.statusOpts()), page)
-	}
-	if m.issuesOv.visible() {
+	case fullScreenIssues:
 		return m.finishWithGlobalChrome(m.issuesOv.lines(m.issuesOpts()), page)
+	case fullScreenNone, fullScreenCount:
+		// 全画面ビューアが出ていない = 下でコミット一覧を組む
 	}
 	lines := m.lines()
 	// glide 中は表示 offset (途中位置) で窓を切る。それ以外は論理 offset。
@@ -3642,23 +3682,24 @@ func (m *browseModel) bgLine(text, bg string) string {
 }
 
 func (m *browseModel) hintLine() string {
-	if m.rlDash.visible() {
+	// 全画面ビューアの hint は viewer 自身のものだけを出す (issue 227 で activeFullScreen から
+	// 導出する形に寄せた)。🚨 CI 進捗・GH 警告の前置はしない: viewer の hint は popup の実幅
+	// ぴったりに詰めてあり (issues_view.go の hint)、前置すると末尾のキー案内 = 抜ける手段が
+	// 黙って切り落とされる。CI は viewer を閉じれば見える。
+	switch m.activeFullScreen() {
+	case fullScreenRatelimit:
 		return m.hintLineText(m.rlDash.hint())
-	}
-	if m.doctorOv.visible() {
+	case fullScreenDoctor:
 		return m.hintLineText(m.doctorOv.hint(m.hintWidth()))
+	case fullScreenStatus:
+		return m.hintLineText(m.statusOv.hint(m.hintWidth()))
+	case fullScreenIssues:
+		return m.hintLineText(m.issuesOv.hint())
+	case fullScreenNone, fullScreenCount:
+		// 全画面ビューアが出ていない = 下の一覧の hint
 	}
 	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  P: PR 状態  y: URL コピー  b: push  u: pull  i: issues  U: usage  R: 残量  C: update  D: doctor  w: 警告コピー  q: 終了"
 	switch {
-	case m.statusOv.visible():
-		// status viewer も全画面なので issues と同じ扱い (CI 進捗・警告の前置をしない)。
-		return m.hintLineText(m.statusOv.hint(m.hintWidth()))
-	case m.issuesOv.visible():
-		// issues viewer は全画面モーダルなので、ここが最優先 (下のパネル系より先に判定する)。
-		// CI 進捗・GH 警告の前置もしない: viewer の hint は popup の実幅ぴったりに詰めてあり
-		// (issues_view.go の hint)、前置すると末尾のキー案内が黙って切り落とされる。CI は
-		// viewer を閉じれば見えるので、全画面の間は viewer の語彙だけを出す。
-		return m.hintLineText(m.issuesOv.hint())
 	case m.actModal.pushConfirm:
 		hint = "push しますか? [Y/n] (Enter=y)"
 	case m.actModal.pullConfirm:
