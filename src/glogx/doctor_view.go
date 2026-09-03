@@ -195,7 +195,11 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	ch := make(chan doctorDiskEvent, catalogN+1)
 	v.diskCh = ch
 	dOpt.OnResult = func(r disk.Result) { ch <- doctorDiskEvent{r: &r} }
+	// latch へ登録する (issue 211): 再起動・終了の直前に子プロセスの帰還を看取るため。
+	// doctorTrack は Add を呼び出し元の goroutine で済ませるので、Wait が登録を追い越さない
+	doctorCleanup.Add(1)
 	go func() {
+		defer doctorCleanup.Done()
 		rep := disk.Scan(ctx, dOpt)
 		ch <- doctorDiskEvent{rep: &rep}
 	}()
@@ -210,10 +214,20 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	if bRun == nil {
 		bRun = runner.Exec
 	}
+	// ⚠️ svc / brew は tea.Cmd の goroutine で走る。bubbletea は Run を抜けるときに
+	// Cmd の goroutine を待たないので、latch で看取る側を作っておく (issue 211)
 	return tea.Batch(
 		v.waitDiskCmd(gen),
-		func() tea.Msg { return doctorSvcMsg{gen: gen, rep: svc.Scan(ctx, sOpt)} },
-		func() tea.Msg { return doctorBrewMsg{gen: gen, res: runBrewDoctor(ctx, bRun)} },
+		func() tea.Msg {
+			var rep svc.Report
+			doctorTrack(func() { rep = svc.Scan(ctx, sOpt) })
+			return doctorSvcMsg{gen: gen, rep: rep}
+		},
+		func() tea.Msg {
+			var res brewDoctorResult
+			doctorTrack(func() { res = runBrewDoctor(ctx, bRun) })
+			return doctorBrewMsg{gen: gen, res: res}
+		},
 	)
 }
 
