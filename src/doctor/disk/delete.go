@@ -110,6 +110,9 @@ type EntryOutcome struct {
 	Commands []CommandRecord `json:"commands,omitempty"`
 	// BeforeSize は走査時の占有量、AfterSize は削除後の再走査の値。Freed は**引き算の実測**で、
 	// 「コマンドが成功したから消えたはず」では数えない。
+	// 🚨 どちらも**このエントリで触ろうとした対象**に閉じた量で、エントリ全体の占有量ではない
+	// (ディレクトリ単位で一部だけ選べるため。issue 232)。エントリ全体を選んだときは一致する。
+	// 記録 (JSON) を読む側もこの意味で読むこと。
 	BeforeSize int64    `json:"before_size"`
 	AfterSize  int64    `json:"after_size"`
 	Freed      int64    `json:"freed"`
@@ -443,6 +446,12 @@ func planDelete(ctx context.Context, t Result, opt DeleteOptions) EntryOutcome {
 	// その後 verifyEntry は touched == 0 を見て「触れる対象がありませんでした」と書くので、
 	// **実行したのに「何も起きていない」と記録が断言する**形になっていた。
 	// 前提は 4 経路で共通なので、判定を execCLI に足さずここを出典にする。
+	//
+	// 🚨 このゲートは「cli: エントリの Item 集合 ≡ コマンドの効果」を前提にしている。
+	// 現行の 2 件は満たす (`brew-cleanup-residue` の Item は `brew cleanup --dry-run` の出力そのもの、
+	// `go-modcache` は GOMODCACHE の世代ディレクトリ)。**Paths がコマンドの効果の真部分集合**に
+	// なる cli: エントリを足すと、Item が全部消えただけでコマンドを止めてしまう。
+	// 実装では強制できないので、カタログに cli: を足すときのレビューの責務とする。
 	planned, failed := 0, 0
 	for _, it := range out.Items {
 		switch it.Outcome {
@@ -792,6 +801,10 @@ func verifyEntry(ctx context.Context, out *EntryOutcome, opt DeleteOptions) {
 		if _, ok := touchedKeys[itemKey(out.Method, it)]; !ok {
 			continue // 触っていない兄弟。自分の成否の材料にしない
 		}
+		// 🚨 既知の非対称: touchedKeys は unmatchedItem 由来 (BeforeSize に入っていない) も含む。
+		// その対象が残ると AfterSize にだけ載り、Freed を**過小**に見せる。旧実装 (after.Size) でも
+		// 同じ向きにずれており、安全側 (解放量を多く申告しない) なのでこのまま。直すなら
+		// 「BeforeSize に寄与した Item」の印を plan 側で持つ必要がある
 		out.AfterSize += it.Size
 		out.Remaining = append(out.Remaining, it.Path)
 	}
@@ -829,11 +842,10 @@ func verifyEntry(ctx context.Context, out *EntryOutcome, opt DeleteOptions) {
 	switch {
 	case touched == 0:
 		// 1 件も触れていない = 何も起きていない。語は untouchedOutcome が出典 (plan 側と揃える)
-		outcome, reason := untouchedOutcome(failed)
-		out.Outcome = outcome
-		if failed > 0 || out.Reason == "" {
-			out.Reason = reason
-		}
+		// 🚨 ここへ来る out.Outcome は Planned / Deleted / Trashed / Incomplete のいずれかで、
+		// その経路は Reason を書かない (planDelete の Reason 設定はすべて非 Planned で return し、
+		// execCLI の parse 失敗は Failed で早期 return する)。したがって上書きの条件は要らない
+		out.Outcome, out.Reason = untouchedOutcome(failed)
 	case partial > 0 || failed > 0 || len(out.Remaining) > 0:
 		// 第 3 の状態: 実行したのに残っている (simctl の非同期削除 / 部分削除がこの形)。
 		// 一部でも消えているので「失敗」に畳まない (再試行の可否が変わる)。

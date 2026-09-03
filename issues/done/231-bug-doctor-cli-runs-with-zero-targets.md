@@ -70,3 +70,28 @@ fresh index に載らない Item だけを渡す fixture を作り (`Run` は fa
 コマンド名を登録)、**fake が 1 回も呼ばれないこと**を assert する。
 変異 = 修正した前提を外す (無条件 `run1`) → fake の呼び出し回数 0 → 1 で red。
 「Outcome が Skipped か」だけを見る assert にしないこと (修正前もそう報告するので vacuous になる)。
+
+## 対応 (2026-09-04)
+
+`planDelete` の末尾に「触る対象 (Outcome == OutcomePlanned) が 1 件も無ければ entry を
+Planned にしない」ゲートを入れた。判定を `execCLI` に足さず `planDelete` を出典にしたのは、
+同じ前提を rm / trash / cli-ref の 3 経路も暗黙に持っているため (2 実装にしない)。
+結末語は `untouchedOutcome` に出し、`verifyEntry` の `touched == 0` 分岐と共有する。
+
+### 敵対的レビューの全数勘定 (opus / red team、指摘 6 件)
+
+| 指摘 | 判定 | 対応 |
+|---|---|---|
+| P2-2 ゲートの `failed > 0` 側をテストが 1 本も守っていない | **本物** (変異が緑と実測) | `TestDeleteCLISkipsCommandWhenTargetsAreNoLongerCandidates` を追加 |
+| P3-1 cli の Item 集合がコマンドの効果の真部分集合だと消せなくなる | 現行カタログでは発火せず | ゲート直近に不変条件をコメントで明記 (実装で強制できないため) |
+| P3-2 `failed > 0 \|\| out.Reason == ""` が常に真 (死んだ条件) | **本物** | 条件を落とし、到達時に Reason が空である理由をコメントに残した |
+| A: ゲートが正当な削除を止める | **壊せなかった**。propose はゲートより手前で return / `planItem` の cli 非 ref は常に Planned を返す / sim-runtime の全 Ref 不正は旧実装でもコマンド 0 回 | なし |
+| B: ゲートの素通り | **壊せなかった**。`planned >= 1` には fresh scan で実在を確認した Item が要る | なし |
+| F: `untouchedOutcome` へ寄せたことの意味変化 | **壊せなかった**。旧実装と同値 | なし |
+
+### 変異検証
+
+- `planDelete` を無条件 `OutcomePlanned` へ戻す → `TestDeleteCLISkipsCommandWhenNothingToTouch` が red
+- ゲートを `planned == 0 && failed == 0` に弱める → `TestDeleteCLISkipsCommandWhenTargetsAreNoLongerCandidates` が red
+
+いずれも `go build` 通過を確認してから判定した。

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -1322,5 +1323,87 @@ func TestDeletePartialSelectionCountsOnlySelected(t *testing.T) {
 				t.Error("選んでいない兄弟を消した")
 			}
 		})
+	}
+}
+
+// 削除後の再走査に対象が**残っていたら** incomplete にする (issue 232)。
+//
+// 🚨 このテストが要るのは、232 が「エントリ全体が残っているか」という粗い判定を外して
+// 「触った対象が残っているか」に絞ったから。粗い判定は rm / trash の取り残しも巻き添えで
+// 検出していたので、絞り込みが壊れても cli 経路のテストしか落ちない状態になっていた
+// (敵対レビュー 2026-09-04 が変異で実測: cli 以外で残存を記録しない変異が緑のまま通った)。
+func TestDeleteRmResidueIsIncomplete(t *testing.T) {
+	env := testEnv(t)
+	sandboxAllow(t, env.Home)
+	sandboxAllowCommand(t, "pgrep")
+	target := filepath.Join(env.Home, "Library", "Caches", "recreated")
+	mkfile(t, filepath.Join(target, "blob"), 64)
+	e := Entry{ID: "recreated", Label: "他のプロセスが作り直す", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
+		Recover: "再生成されます", Guard: GuardProcessAbsent, Processes: []string{"FakeApp"},
+		Paths: []string{"~/Library/Caches/recreated"}}
+	run := &deleteRunner{resp: map[string]cmdResp{"pgrep -x FakeApp": {rc: 1}}}
+	// 走査は 3 回走る (最初 / 削除の直前 / 削除後の確認)。guard の pgrep は**パス展開より前**に
+	// 呼ばれるので、3 回目以降でパスを作り直すと「消したのに再走査では在る」形になる。
+	// 🚨 t.Fatal は使わない (走査の goroutine から呼ばれる)。作れなければ target が残らず、
+	// outcome の assert が落ちて分かる
+	var scans atomic.Int64
+	run.onCall = func(args []string) {
+		if strings.Join(args, " ") != "pgrep -x FakeApp" {
+			return
+		}
+		if scans.Add(1) >= 3 {
+			_ = os.MkdirAll(target, 0o755)
+			_ = os.WriteFile(filepath.Join(target, "blob"), make([]byte, 64*1024), 0o644)
+		}
+	}
+	opt := DeleteOptions{Env: env, Run: run.run, BootTime: okBoot, Catalog: []Entry{e},
+		HistoryDir: sandboxTempDir(t, "history"), TrashDir: filepath.Join(env.Home, ".Trash"), Now: time.Now}
+	scanned := Scan(context.Background(), Options{Env: env, Run: run.run, Catalog: []Entry{e}, BootTime: okBoot}).Results[0]
+	if scanned.Status != StatusOK || len(scanned.Items) != 1 {
+		t.Fatalf("前提が崩れている: status=%s items=%d", scanned.Status, len(scanned.Items))
+	}
+	rep, err := Delete(context.Background(), []Result{scanned}, opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := rep.Entries[0]
+	if got.Outcome != OutcomeIncomplete {
+		t.Errorf("outcome = %s reason=%q (残っているので incomplete であるべき)", got.Outcome, got.Reason)
+	}
+	if len(got.Remaining) != 1 {
+		t.Errorf("残っている対象を記録していない: %v", got.Remaining)
+	}
+	if got.Freed != 0 {
+		t.Errorf("残っているのに freed=%d", got.Freed)
+	}
+}
+
+// 対象が全部「いまは削除の候補ではない」(実体は在る) になったときも、cli のコマンドを実行しない。
+//
+// 🚨 issue 231 のゲートは planned == 0 で発火し、結末語は failed の有無で 2 通りに分かれる。
+// 危険なのは**こちら (failed > 0)** で、実体が残っているのに `brew cleanup` /
+// `go clean -modcache` を走らせる形になる。既存の Skipped 側のテストはこの半分を守らない
+// (敵対レビュー 2026-09-04 が変異で実測)。
+func TestDeleteCLISkipsCommandWhenTargetsAreNoLongerCandidates(t *testing.T) {
+	f := newDeleteFixture(t, cliEntry, 64)
+	f.run.resp = map[string]cmdResp{"faketool purge": {rc: 0}}
+	scanned := f.scan(t)
+	// 実体は在るが、走査し直しても候補には出てこないパス (glob が拾うのは親のディレクトリだけ)
+	child := filepath.Join(f.target, "blob")
+	if !exists(child) {
+		t.Fatalf("前提が崩れている: %s が無い", child)
+	}
+	scanned.Items = []Item{{Path: child, Size: 1024}}
+	rep := f.delete(t, scanned)
+	for _, line := range f.run.callLines() {
+		if line == "faketool purge" {
+			t.Fatalf("候補から外れた対象しか無いのにコマンドを実行した: %v", f.run.callLines())
+		}
+	}
+	if got := rep.Entries[0].Outcome; got != OutcomeFailed {
+		t.Errorf("outcome = %s (failed であるべき。実体は残っている)", got)
+	}
+	if !exists(child) {
+		t.Error("候補でない対象を消した")
 	}
 }

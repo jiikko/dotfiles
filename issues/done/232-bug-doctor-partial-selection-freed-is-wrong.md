@@ -66,3 +66,31 @@ engine の数え方が狂うとそのまま画面に出る)。
 `Outcome == OutcomeDeleted` かつ `Freed == size(a)` を assert する。
 変異 = `AfterSize` の絞り込みを外す → incomplete / freed=0 で red。
 **b > a と b < a の両方**をケースに入れる (片方だけだと符号の効果が見えない)。
+
+## 対応 (2026-09-04)
+
+`verifyEntry` の `AfterSize` と `Remaining` を「触ろうとした対象」の集合 (`out.Items` の
+`itemKey`) に閉じ、残存判定も `len(after.Items)` から `len(out.Remaining)` へ移した。
+エントリ全体を渡した場合は集合が一致するので既存の値は変わらない。
+
+### 敵対的レビューの全数勘定 (opus / red team)
+
+| 指摘 | 判定 | 対応 |
+|---|---|---|
+| P2-1 絞り込みが rm / trash では何も守っておらず、壊しても既存テストが 1 本も落ちない | **本物** (変異が緑と実測) | `TestDeleteRmResidueIsIncomplete` を追加。粗い防御 (`len(after.Items) > 0`) を外した以上、代わりの検知を固定する必要があった |
+| P3-3 `AfterSize` の doc が実態とずれた (履歴 JSON に落ちるフィールド) | **本物** | struct のコメントを実態へ合わせた |
+| P3-4 `touchedKeys` が `unmatchedItem` 由来 (BeforeSize 非寄与) も含む非対称 | **本物だが退行ではない**。旧実装も同じ向きにずれており、Freed を過小に見せる安全側 | コードにコメントで残した (直すには plan 側で寄与の印を持つ必要があり、テストできない変更を入れない) |
+| C: 絞り込みで残存を見落とす具体的入力 | **壊せなかった**。両側のパスは `validateTarget` を通った同じ正規形で、symlink / 末尾スラッシュ / Clean / 大文字小文字はそこで吸収される。cli ref は両側 Ref を持ち、cli 非 ref は両側 Ref 空 | なし (ただし P2-1 のテストで固定した) |
+| D: `AfterSize +=` の二重加算 | **発火経路なし**。`verifyEntry` の呼び出し元は 1 箇所、`out` は毎回新規、`dedupeTargets` が同一 ID を畳む、履歴復元は `planDelete` 冒頭で fail | なし |
+
+### 変異検証
+
+- `AfterSize` の絞り込みを外す → `TestDeletePartialSelectionCountsOnlySelected` が両ケース red
+  (兄弟が大きい: freed 0 / 兄弟が小さい: freed 114688、want 131072。どちらも incomplete)
+- 残存の記録を cli 経路だけに絞る → `TestDeleteRmResidueIsIncomplete` が red
+  (outcome=deleted / Remaining 空 / freed 65536 = 「消えていないのに消えたと全額申告」)
+
+### 未確認
+
+ディスク上に既にある過去の run の履歴 JSON (`after_size` / `remaining`) は、旧い意味
+(エントリ全体) で書かれている。repo 内に読む側は 0 件 (grep 済み) だが、混在の影響は未確認。
