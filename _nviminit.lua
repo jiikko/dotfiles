@@ -140,16 +140,35 @@ require("lazy").setup({
       --
       -- ⚠️ **2 つで違う方式を採る**。同じ「Visual 漏れ」でも意味が違うため:
       --   SnippetTabstop = 下線 + dark1。地色だけだと LspReference (dark1) と見分けが付かない。
-      --     下線を足して「次に <Tab> で飛ぶ先」を示す (MatchParen は dark2 + bold なので地色で区別)。
-      --     最悪コントラスト 3.17:1 (Comment 102 on dark1)、検査の基準 3.0:1 を超える
+      --     下線を足して「次に <Tab> で飛ぶ先」を示す。
+      --     最悪コントラスト 3.16:1 (Comment 102 on dark1)、検査の基準 3.0:1 を超える。
+      --     ⚠️ **MatchParen との区別は弱い**: 256色分岐の MatchParen は bg=239 + bold + **underline**
+      --     で、下線を両方が持ち地色差は 237 と 239 (1.37:1) しかない。区別要素は実質 bold だけ
+      --     (truecolor 分岐の MatchParen は underline を持たないので、そちらでは下線で区別できる)。
+      --     括弧が tabstop になる snippet では重なりうるが、どちらも「今ここ」を示すので実害は薄い
       --   LspSignatureActiveParameter = reverse。**truecolor 側の gruvbox が既に採っている方式**に
-      --     256色側を揃える (`link=Search` の実体が reverse)。reverse は前景色を殺さないので
-      --     float の中で色を失わない。分岐ごとに違う見え方にしない方が、後から読む人が驚かない
+      --     256色側を揃える (`link=Search` の実体が reverse)。分岐ごとに違う見え方にしない方が、
+      --     後から読む人が驚かない。
+      --     ⚠️ reverse は前景色を「殺さない」のではなく**前景と背景を入れ替える**。float の中では
+      --     NormalFloat の地 (237) が文字色に、前景 (187) が地になる。比は保存されるので
+      --     コントラストは 7.70:1 で可読。256色の Search は反転後オリーブ地 (ctermfg=100) なので
+      --     見分けは付く (実測)
       -- VisualNOS は Visual と同義 (非アクティブウィンドウの選択範囲) なので Kraft のままが正しい。
       require("dotfiles.hl").set("SnippetTabstop", {
         bg = pal.dark1.hex, ctermbg = pal.dark1.cterm, underline = true,
       })
       require("dotfiles.hl").set("LspSignatureActiveParameter", { reverse = true })
+
+      -- blink.cmp のドキュメント窓のカーソル行も `link = Visual` (blink/cmp/highlights.lua)。
+      -- ⚠️ **敵対レビューが全 group 走査で見つけた** (issue 134)。名前を 2 つ足しただけの版では
+      -- 見えていなかった: blink は InsertEnter の lazy なので、headless 起動しただけでは
+      -- その 53 group が存在せず、検査の外にいた。検査は blink の highlight を明示的に
+      -- 読み込んでから走査する形に直してある (tests/nvim/lsp_reference_hl_check.lua)。
+      -- 地色は LspReference と同じ dark1 でよい: doc 窓の中の「今いる行」であって、
+      -- 参照ハイライトと同じ画面に同時に出ることは無い (別ウィンドウ)。
+      require("dotfiles.hl").set("BlinkCmpDocCursorLine", {
+        bg = pal.dark1.hex, ctermbg = pal.dark1.cterm,
+      })
     end,
   },
   -- toggle.nvim は repo 内に vendor 済み (vendor/nvim-plugins/toggle.nvim、VENDOR.md 参照)。

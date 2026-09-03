@@ -42,8 +42,10 @@ local COLOR_GROUPS = {
   "LspSignatureActiveParameter", -- blink.cmp のシグネチャヘルプの現在引数
 }
 
--- REVERSE_OK は「reverse で前景色を殺さない」方式を採った group。reverse は前景と背景を
--- 入れ替えるので**地色を持たない**が、その場合コントラストは Normal と同じで基準を満たす。
+-- REVERSE_OK は reverse 方式を採った group。reverse は前景と背景を**入れ替える**ので
+-- 地色を持たない。⚠️ **この group のコントラストは下の測定に乗らない** (地色も前景も無いため
+-- 両分岐で寄与 0 件)。比は反転しても保存されるので、実効値は link 元 (float なら NormalFloat の
+-- 7.70:1) と同じで基準を満たす — が、**それはこの検査が測った値ではない**。
 -- 地色が無いことを「検査漏れ」ではなく「意図した方式」として扱うために名前で持つ。
 -- ⚠️ ここに足すのは reverse を**明示定義した**group だけ。link 先が偶然 reverse を持つ形
 -- (retrobox の Search 等) を許すと、link が変わったときに無言で検査が緩む。
@@ -132,12 +134,75 @@ end
 -- 2/3. 採取した group の解決色を検査する
 -- ---------------------------------------------------------------------------
 local visual = vim.api.nvim_get_hl(0, { name = "Visual", link = false })
+
+-- 🚨 **全 group を走査して「Visual の地色に解決される group」を洗う** (issue 134 の敵対レビュー)。
+-- 名前のリスト (COLOR_GROUPS) だけでは**足し忘れた group を構造的に検出できない**。
+-- 実測 2026-09-03: 名前で 2 group を足した直後の版でも `BlinkCmpDocCursorLine` が
+-- 両分岐で `link=Visual` → Kraft のまま残っていた (blink.cmp/highlights.lua が
+-- `{default=true, link='Visual'}` で定義する)。
+--
+-- ⚠️ **blink.cmp の highlight を明示的に読み込んでから走査する**。blink は
+-- `InsertEnter` / `CmdlineEnter` の lazy なので、headless 起動しただけでは
+-- その 53 group が**存在せず**、走査しても 0 件で緑になる (= プラグイン定義の group が
+-- 構造的に検査の外へ落ちる)。読み込めない場合は「検査できなかった」として落とす。
+-- Visual の地色を引いてよい group。**個別に名前を書く** (`Mini*` のようなパターンで
+-- 除外すると、将来その名前空間に本当に困る group が増えたとき無言で見逃す)。
+local ALLOW_VISUAL_BG = {
+  Visual = true,
+  VisualNOS = true, -- Visual と同義 (非アクティブウィンドウの選択範囲) なので Kraft が正しい
+  -- gruvbox が `link = "Visual"` で定義している (gruvbox.lua)。**mini.pick は本構成に
+  -- 導入していない** (`mini.trailspace` だけ) ので、この group は誰も塗らない。
+  -- ⚠️ **mini.pick を導入したらこの行を外す** — そのとき初めて「選択済みの項目」に
+  -- Kraft が塗られ、前景色が読めなくなる。導入は `_nviminit.lua` を `mini.pick` で
+  -- grep すれば分かる
+  MiniPickMatchMarked = true,
+}
+do
+  local ok, err = pcall(function() require("blink.cmp.highlights").setup() end)
+  if not ok then
+    fail(("blink.cmp の highlight を読み込めない (%s)。プラグイン定義の group を走査できず、検査が空振りする"):format(tostring(err)))
+  end
+  local all = vim.api.nvim_get_hl(0, {})
+  local scanned, blink_seen, leaked = 0, 0, {}
+  for name, _ in pairs(all) do
+    scanned = scanned + 1
+    if name:match("^BlinkCmp") then blink_seen = blink_seen + 1 end
+    local h = vim.api.nvim_get_hl(0, { name = name, link = false })
+    local same = (visual.ctermbg ~= nil and h.ctermbg == visual.ctermbg)
+      or (visual.bg ~= nil and h.bg == visual.bg)
+    if same and not ALLOW_VISUAL_BG[name] then leaked[#leaked + 1] = name end
+  end
+  -- 走査が空振りしていないこと (0 件で緑にしない)
+  if scanned < 100 then
+    fail(("highlight group を %d 件しか走査していない (nvim_get_hl(0,{}) が期待どおり返っていない)"):format(scanned))
+  end
+  -- 🚨 **blink の group が走査に含まれたこと**を確かめる。件数の下限だけでは足りない:
+  -- setup を呼ばなくても nvim 標準の 470 群は数えられるので、blink の 40 群が丸ごと
+  -- 欠けても「100 件以上あるから緑」になる (実測 2026-09-03: setup を外すと 519 → 477 に
+  -- 減るだけで rc=0 だった)。**将来 blink が新しい Visual link group を足したとき**、
+  -- ここが無いと無言で検査の外へ落ちる。
+  if blink_seen < 20 then
+    fail(("BlinkCmp* の group が %d 件しか走査に入っていない (blink.cmp の highlight を読み込めていない。lazy のまま走査すると、プラグイン定義の Visual link 漏れを見逃す)"):format(blink_seen))
+  end
+  if #leaked > 0 then
+    table.sort(leaked)
+    fail(("Visual の地色に解決される group が %d 件ある: %s。Visual は本構成で Kraft (暖色) に上書きされているので、地色として塗る用途へ漏れると前景色が読めなくなる。_nviminit.lua で明示定義して link を切ること"):format(#leaked, table.concat(leaked, ", ")))
+  end
+  print(("scanned %d groups (BlinkCmp* %d), no Visual bg leak (colorscheme=%s)"):format(scanned, blink_seen, tostring(vim.g.colors_name)))
+end
 local checked = { cterm = 0, gui = 0 }
 
 local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
 
 for _, group in ipairs(COLOR_GROUPS) do
   local hl = vim.api.nvim_get_hl(0, { name = group, link = false })
+
+  -- 🚨 **group が実在することを確かめる**。上流が改名すると `nvim_get_hl` は空 table を返し、
+  -- 地色検査もコントラスト検査も「測るものが無い」ので**無言で緑になる** (実測 2026-09-03:
+  -- SnippetTabstop を存在しない名前に変えても rc=0。件数が 35→28 に減るだけ)。
+  if next(hl) == nil then
+    fail(("%s が定義されていない (上流が改名した可能性)。この group の検査は無言で素通りしていた"):format(group))
+  end
 
   -- reverse を採った group は地色を持たないのが正しい。**reverse が消えていたら落とす**
   -- (地色も reverse も無い = 何も塗らない状態に退行しても、下の地色検査は素通りする)
