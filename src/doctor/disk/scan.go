@@ -255,10 +255,25 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 			return !g.formulae[name]
 		})
 	case GuardVMRoot:
-		paths = filterPaths(paths, func(p string) bool {
+		// 🚨 比較に使う値が解決できないなら**候補 0 件ではなく診断できず**へ倒す。
+		// 「解決できない = 一致しない = 孤児」と読むと、HOME が空の環境で現役の root が
+		// 全部削除候補に出る (ユーザー要求 2026-09-03)
+		kept := paths[:0]
+		for _, p := range paths {
 			tool := strings.TrimPrefix(filepath.Base(p), ".")
-			return canonicalPath(opt.Env, p) != effectiveVMRoot(opt.Env, tool) // 両側を同じ正規化で比べる
-		})
+			got, err := canonicalPath(opt.Env, p)
+			if err != nil {
+				return failed(e, "対象パスを正規化できず (孤児判定をしない): "+err.Error())
+			}
+			want, err := effectiveVMRoot(opt.Env, tool)
+			if err != nil {
+				return failed(e, "実効 root を決められず (孤児判定をしない): "+err.Error())
+			}
+			if got != want { // 両側を同じ正規化で比べる
+				kept = append(kept, p)
+			}
+		}
+		paths = kept
 	}
 	return sizePaths(ctx, opt, e, paths)
 }

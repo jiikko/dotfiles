@@ -1008,3 +1008,91 @@ func TestFakeRunnerMatchesOnTokenBoundary(t *testing.T) {
 		t.Errorf("短い方の呼び出しが長い方の応答を拾った: %q", short)
 	}
 }
+
+// 🚨 展開に使う環境変数が空なら、**候補 0 件ではなく診断できず**へ倒す (ユーザー要求 2026-09-03)。
+//
+// 空のまま展開すると `~/x` が `/x` に、相対パスがルート直下に化ける (`rm -rf $UNSET/` と同じ形)。
+// このテストは**カタログ全体**を空の Env に通すので、**新しいエントリを足しても自動で対象になる**。
+// 個別の変数だけを潰す形だと、次に追加された変数が素通りする。
+func TestBlankEnvNeverYieldsCandidates(t *testing.T) {
+	blank := Env{Home: "", TmpDir: "", BrewPrefix: "", Getenv: func(string) string { return "" }}
+	withVar, literal := 0, 0
+	for _, e := range catalog {
+		for _, tmpl := range e.Paths {
+			got, err := expand(blank, tmpl)
+
+			// ⚠️ 変数を含むパスは「候補 0 件」では不十分で、**必ず error で停止する**こと。
+			// 0 件だけを見ると、`~/.rbenv` が `/.rbenv` に化けて glob が空振りしただけの
+			// 状態を「安全」と読んでしまう (実測 2026-09-03: expand の HOME 検査を外しても
+			// 0 件チェックだけでは素通りした)
+			if strings.HasPrefix(tmpl, "~") || strings.Contains(tmpl, "$") {
+				withVar++
+				if err == nil {
+					t.Errorf("%s: 空の環境で停止しなかった: %q → %q (err=nil)", e.ID, tmpl, got)
+				}
+				continue
+			}
+
+			// 変数を含まない絶対パスは環境に依存しないので、展開できてよい (候補が出るかは実機次第)
+			literal++
+			if err != nil {
+				t.Errorf("%s: 変数を含まないのに展開できない: %q err=%v", e.ID, tmpl, err)
+			}
+			for _, p := range got {
+				if !filepath.IsAbs(p) {
+					t.Errorf("%s: 相対パスに化けた: %q → %q", e.ID, tmpl, p)
+				}
+				if depth := len(strings.Split(strings.Trim(p, "/"), "/")); depth < 2 {
+					t.Errorf("%s: ルート直下に化けた: %q → %q", e.ID, tmpl, p)
+				}
+			}
+		}
+	}
+	// 分類そのものが壊れていないことを見る (カタログの取得に失敗して 0 本を検査し、
+	// 「全部合格」に化けるのを防ぐ)
+	if withVar < 15 || literal < 3 {
+		t.Fatalf("検査した本数が想定より少ない: 変数あり=%d 直書き=%d (カタログの取得が壊れている疑い)", withVar, literal)
+	}
+	t.Logf("カタログ %d エントリ: 変数を含む %d 本は全て停止 / 直書き %d 本は展開可", len(catalog), withVar, literal)
+}
+
+// 比較用の正規化も HOME が空なら失敗する。ここが空を通すと、現役の root が全部
+// 「一致しない = 孤児」と判定されて削除候補に出る (実測 2026-09-03)。
+func TestCanonicalPathAndVMRootRejectBlankHome(t *testing.T) {
+	blank := Env{Home: "", Getenv: func(string) string { return "" }}
+
+	for _, p := range []string{"~/y", "~", "relative/path", ".rbenv"} {
+		if got, err := canonicalPath(blank, p); err == nil {
+			t.Errorf("HOME が空なのに %q を解決した: %q", p, got)
+		}
+	}
+	// 絶対パスは HOME を要らないので通る (上の assert が「常に error」で通っていないことの確認)
+	if got, err := canonicalPath(blank, "/opt/x"); err != nil || got != "/opt/x" {
+		t.Errorf("絶対パスまで拒否した: %q err=%v", got, err)
+	}
+
+	for _, tool := range []string{"rbenv", "nodenv", "goenv"} {
+		if got, err := effectiveVMRoot(blank, tool); err == nil {
+			t.Errorf("HOME が空なのに %s の実効 root を決めた: %q", tool, got)
+		}
+	}
+	// <TOOL>_ROOT が絶対パスで与えられていれば HOME 無しでも決まる
+	withRoot := Env{Home: "", Getenv: func(k string) string {
+		if k == "RBENV_ROOT" {
+			return "/opt/rbenv"
+		}
+		return ""
+	}}
+	if got, err := effectiveVMRoot(withRoot, "rbenv"); err != nil || got != "/opt/rbenv" {
+		t.Errorf("絶対パスの RBENV_ROOT を解決できない: %q err=%v", got, err)
+	}
+	// 相対の <TOOL>_ROOT は HOME が要るので拒否する
+	if got, err := effectiveVMRoot(Env{Home: "", Getenv: func(k string) string {
+		if k == "RBENV_ROOT" {
+			return "x"
+		}
+		return ""
+	}}, "rbenv"); err == nil {
+		t.Errorf("HOME が空なのに相対の RBENV_ROOT を解決した: %q", got)
+	}
+}

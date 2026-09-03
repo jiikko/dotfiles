@@ -428,9 +428,20 @@ func brewCleanupTargets(ctx context.Context, run runner.Runner) ([]string, error
 // effectiveVMRoot は <TOOL>_ROOT の実効値。環境変数があればそれ。無ければ .zshrc の lazy loader と
 // 同じ規則 (anyenv 側 ~/.anyenv/envs/<tool> があればそちら、無ければ ~/.<tool> へ fallback)。
 // 「ディレクトリの存在」で判定しない: ~/.rbenv は同じ形で現役だった (issue 148 実測)。
-func effectiveVMRoot(env Env, tool string) string {
+func effectiveVMRoot(env Env, tool string) (string, error) {
 	if v := env.Getenv(strings.ToUpper(tool) + "_ROOT"); v != "" {
 		return canonicalPath(env, v)
+	}
+	// ここから先は HOME を前提にする (fallback の 2 つとも HOME 配下)。
+	// 空のまま filepath.Join に渡すと ".anyenv/envs/<tool>" や ".<tool>" という**相対パス**が
+	// でき、比較が必ず外れて現役の root を孤児と判定する (実測 2026-09-03)。
+	//
+	// ⚠️ この検査は canonicalPath の HOME 検査に対して**冗長** (相対パスはあちらでも弾かれるので、
+	// 外しても変異テストは green のまま)。それでも残すのは、下の `os.Stat` を**相対パスのまま
+	// cwd 基準で走らせないため**: cwd にたまたま `.anyenv/envs/<tool>` があると、無関係な
+	// ディレクトリを見て分岐が変わる。冗長さを理由に外すなら、その stat の副作用を先に潰すこと
+	if env.Home == "" {
+		return "", fmt.Errorf("HOME が空なので %s_ROOT の実効値を決められません (診断できず)", strings.ToUpper(tool))
 	}
 	anyenv := filepath.Join(env.Home, ".anyenv", "envs", tool)
 	if fi, err := os.Stat(anyenv); err == nil && fi.IsDir() {
@@ -442,7 +453,17 @@ func effectiveVMRoot(env Env, tool string) string {
 // canonicalPath は比較用の正規化 (~ 展開 / 絶対化 / symlink 解決)。⚠️ 削除対象の決定には使わない
 // (EvalSymlinks はリンク先を指す。ここは「同じ場所か」の比較にだけ使う)。環境変数が相対や ~ 付きでも
 // 現役 root を孤児にしない (敵対レビュー 2026-09-02 P3)。
-func canonicalPath(env Env, p string) string {
+//
+// 🚨 **HOME が空なら error を返す**。空のまま展開すると `~/y` が `/y` に、相対パスが
+// ルート直下に化ける (実測 2026-09-03: `canonicalPath(Env{Home:""}, "~/y")` が `/y` を返した)。
+// これは `rm -rf $UNSET/` と同じ形で、比較専用の関数であっても**結果は孤児判定を通じて
+// 削除候補に影響する**。展開に使う値が空なら候補 0 件ではなく診断できずへ倒す
+// (`expand` の各変数と同じ規律。ユーザー要求 2026-09-03)。
+func canonicalPath(env Env, p string) (string, error) {
+	needsHome := strings.HasPrefix(p, "~/") || p == "~" || !filepath.IsAbs(p)
+	if needsHome && env.Home == "" {
+		return "", fmt.Errorf("HOME が空なので %q を解決できません (診断できず)", p)
+	}
 	if strings.HasPrefix(p, "~/") || p == "~" {
 		p = env.Home + p[1:]
 	}
@@ -451,7 +472,7 @@ func canonicalPath(env Env, p string) string {
 	}
 	p = filepath.Clean(p)
 	if r, err := filepath.EvalSymlinks(p); err == nil {
-		return r
+		return r, nil
 	}
-	return p
+	return p, nil
 }
