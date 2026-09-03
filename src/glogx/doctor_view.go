@@ -46,10 +46,15 @@ type doctorView struct {
 	startedAt   time.Time
 	snapshotAt  time.Time // 前回の結果をそのまま出しているときの走査時刻 (zero = 今回走査した)
 
-	cursor   int             // rows の index (選べる行を指す)
-	offset   int             // 窓の先頭 (rows の index)
-	expanded map[string]bool // 展開中の行 (key = 行の同一性)
-	rows     []doctorRow     // 直近の描画で組んだ行 (キー操作の対象。lines() が作り直す)
+	cursor int // rows の index (選べる行を指す)
+	// cursorKey は「今どの行を選んでいるか」を **行の同一性 (key) で覚える**もの。
+	// ⚠️ index だけで覚えると、走査中に**カーソルより上へ行が挿入された**瞬間に別の行を指す
+	//    (disk 行は Size 降順に並べ替えて描くので、大きい結果が後から届くと上に入る)。
+	//    y / Y が別エントリをコピーし、Enter が別の行を開く (issue 210。red team が実測)
+	cursorKey string
+	offset    int             // 窓の先頭 (rows の index)
+	expanded  map[string]bool // 展開中の行 (key = 行の同一性)
+	rows      []doctorRow     // 直近の描画で組んだ行 (キー操作の対象。lines() が作り直す)
 
 	pendingCopy  string // 直近の y / Y の中身 (copyPayload)
 	pendingToast string // 直近の doctorToast の文言
@@ -156,7 +161,7 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	v.stop()
 	v.shown = true
 	v.gen++
-	v.cursor, v.offset = 0, 0
+	v.cursor, v.cursorKey, v.offset = 0, "", 0
 	v.expanded = map[string]bool{}
 	v.selected, v.inspected = map[string]bool{}, map[string]bool{}
 	v.del.reset()
@@ -399,7 +404,7 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 			v.moveCursor(-1)
 		}
 	case "g":
-		v.cursor, v.offset = 0, 0
+		v.cursor, v.cursorKey, v.offset = 0, "", 0
 		v.moveCursor(0)
 	case "G":
 		v.cursor = len(v.rows) - 1
@@ -433,6 +438,51 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 	return doctorSwallow
 }
 
+// restoreCursor は「前に選んでいた行」を key で探し直す (issue 210)。
+// 行が増減しても選択が同じエントリに留まる。key が消えていたら **index の近傍**へ寄せる
+// (元の位置に近い selectable 行)。
+//
+// ⚠️ 寄せたことはユーザーに見せる。黙って別の行に付くのが元の症状なので、無言の寄せは
+// 同じ問題を再生産する (敵対的レビューの補正)。トーストは pendingToast 経由で出す。
+func (v *doctorView) restoreCursor() {
+	if len(v.rows) == 0 {
+		v.cursor, v.cursorKey = 0, ""
+		return
+	}
+	if v.cursorKey != "" {
+		for i, r := range v.rows {
+			if r.selectable && r.key == v.cursorKey {
+				v.cursor = i
+				return
+			}
+		}
+		// key が消えた (エントリが落ちた / 本文が変わった)。近傍へ寄せて、その事実を伝える
+		if v.cursor >= len(v.rows) {
+			v.cursor = len(v.rows) - 1
+		}
+		v.moveCursor(0)
+		v.rememberCursorKey()
+		if v.cursorKey != "" {
+			v.pendingToast = "選んでいた行が無くなったので近くの行へ移りました"
+		}
+		return
+	}
+	if v.cursor >= len(v.rows) {
+		v.cursor = max(0, len(v.rows)-1)
+	}
+	v.moveCursor(0)
+	v.rememberCursorKey()
+}
+
+// rememberCursorKey は今の index が指す行の key を覚える (次の描画で復元する材料)。
+func (v *doctorView) rememberCursorKey() {
+	if v.cursor >= 0 && v.cursor < len(v.rows) && v.rows[v.cursor].selectable {
+		v.cursorKey = v.rows[v.cursor].key
+		return
+	}
+	v.cursorKey = ""
+}
+
 // moveCursor は選べる行の間を dir 方向に 1 つ動く (0 = 今の位置を選べる行へ寄せる)。
 func (v *doctorView) moveCursor(dir int) {
 	if len(v.rows) == 0 {
@@ -455,6 +505,7 @@ func (v *doctorView) moveCursor(dir int) {
 		}
 		return
 	}
+	defer v.rememberCursorKey() // 動いた先の行を覚える (issue 210)
 	for j := i + dir; j >= 0 && j < len(v.rows); j += dir {
 		if v.rows[j].selectable {
 			v.cursor = j
@@ -512,10 +563,7 @@ func (v *doctorView) lines(o doctorRenderOpts) []string {
 		return padTo(panel, o.page)
 	}
 	v.rows = v.buildRows(o)
-	if v.cursor >= len(v.rows) {
-		v.cursor = max(0, len(v.rows)-1)
-	}
-	v.moveCursor(0)
+	v.restoreCursor()
 	head := []string{v.headerLine(o), ""}
 	room := max(o.page-len(head), 1)
 	if v.cursor < v.offset {

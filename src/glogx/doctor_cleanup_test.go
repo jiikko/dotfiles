@@ -395,3 +395,68 @@ func drainDoctorCleanup(t *testing.T) {
 		t.Fatal("判定不能: 前のテストの走査が残っている (latch が空にならない)")
 	}
 }
+
+// 走査中に行が増えても、選択は同じエントリに留まる (issue 210)。
+//
+// ⚠️ **カーソルより上に挿入する** fixture を使う。disk 行は Size 降順に並べ替えて描くので、
+// 大きい結果が後から届くと既存の行の上に入る。下に挿入する形では index が偶然一致して
+// 素通りする (issue 210 のテスト観点)。
+func TestCursorStaysOnSameRowWhenRowsGrowAbove(t *testing.T) {
+	v := &doctorView{expanded: map[string]bool{}, selected: map[string]bool{}, inspected: map[string]bool{}}
+	small := disk.Result{Entry: disk.Entry{ID: "small", Label: "小", Tier: 1}, Size: 100, Status: disk.StatusOK,
+		Items: []disk.Item{{Path: "/tmp/small", Size: 100}}}
+	mid := disk.Result{Entry: disk.Entry{ID: "mid", Label: "中", Tier: 1}, Size: 200, Status: disk.StatusOK,
+		Items: []disk.Item{{Path: "/tmp/mid", Size: 200}}}
+	huge := disk.Result{Entry: disk.Entry{ID: "huge", Label: "大", Tier: 1}, Size: 999999, Status: disk.StatusOK,
+		Items: []disk.Item{{Path: "/tmp/huge", Size: 999999}}}
+
+	o := doctorRenderOpts{page: 40, width: 100}
+	v.diskResults = []disk.Result{small, mid}
+	v.lines(o) // 1 度描いて rows を組む
+
+	// 一番上の選べる行から 1 つ下へ動く (= 2 番目のエントリを選ぶ)
+	v.moveCursor(1)
+	before := v.rows[v.cursor].key
+	if before == "" {
+		t.Fatal("判定不能: 選択行に key が無い")
+	}
+
+	// 走査中に「もっと大きい結果」が届く = 並べ替えでカーソルより上に入る
+	v.diskResults = append(v.diskResults, huge)
+	v.lines(o)
+
+	after := v.rows[v.cursor].key
+	if after != before {
+		t.Fatalf("走査中に選択が別の行へ移った: before=%s after=%s (y / Y が別エントリをコピーする)", before, after)
+	}
+}
+
+// 選んでいた行が消えたら近傍へ寄せ、**寄せたことを知らせる** (issue 210 の反証レビューの補正)。
+func TestCursorFallsBackAndTellsWhenRowVanishes(t *testing.T) {
+	v := &doctorView{expanded: map[string]bool{}, selected: map[string]bool{}, inspected: map[string]bool{}}
+	a := disk.Result{Entry: disk.Entry{ID: "a", Label: "A", Tier: 1}, Size: 300, Status: disk.StatusOK,
+		Items: []disk.Item{{Path: "/tmp/a", Size: 300}}}
+	b := disk.Result{Entry: disk.Entry{ID: "b", Label: "B", Tier: 1}, Size: 200, Status: disk.StatusOK,
+		Items: []disk.Item{{Path: "/tmp/b", Size: 200}}}
+
+	o := doctorRenderOpts{page: 40, width: 100}
+	v.diskResults = []disk.Result{a, b}
+	v.lines(o)
+	v.moveCursor(1)
+	gone := v.rows[v.cursor].key
+
+	// 再走査で b が落ちた (エントリが対象外になった等)
+	v.diskResults = []disk.Result{a}
+	v.pendingToast = ""
+	v.lines(o)
+
+	if v.cursor < 0 || v.cursor >= len(v.rows) || !v.rows[v.cursor].selectable {
+		t.Fatalf("消えた行の後に選べない位置へ残った (cursor=%d rows=%d)", v.cursor, len(v.rows))
+	}
+	if v.rows[v.cursor].key == gone {
+		t.Fatal("消えた行を指したまま")
+	}
+	if v.pendingToast == "" {
+		t.Fatal("寄せたことを知らせていない (黙って別の行に付くのが元の症状)")
+	}
+}
