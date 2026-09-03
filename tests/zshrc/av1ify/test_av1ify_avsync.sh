@@ -27,7 +27,7 @@ printf '## Test 1: source-induced A/V mismatch faithfully preserved -> no avsync
 TEST_DIR="$TEST_TMP/avs_t1"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_VIDEO_DURATION=8327.16 MOCK_AUDIO_DURATION=8309.31 \
          MOCK_OUTPUT_VIDEO_DURATION=8327.19 MOCK_OUTPUT_AUDIO_DURATION=8309.35 \
@@ -46,7 +46,7 @@ printf '\n## Test 2: encode-introduced 3s drift -> avsync flagged\n'
 TEST_DIR="$TEST_TMP/avs_t2"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # src: gap=0  /  out: gap=3 (audio 3s 長くなった) → drift=3, threshold 2.0 超え
 output=$(MOCK_VIDEO_DURATION=100.0 MOCK_AUDIO_DURATION=100.0 \
@@ -65,7 +65,7 @@ printf '\n## Test 3: encode-introduced 1s drift -> within 2.0s default tolerance
 TEST_DIR="$TEST_TMP/avs_t3"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_VIDEO_DURATION=100.0 MOCK_AUDIO_DURATION=100.0 \
          MOCK_OUTPUT_VIDEO_DURATION=100.0 MOCK_OUTPUT_AUDIO_DURATION=101.0 \
@@ -81,7 +81,7 @@ printf '\n## Test 4: AV1IFY_SYNC_TOLERANCE=0.5 makes 1s drift fail\n'
 TEST_DIR="$TEST_TMP/avs_t4"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(AV1IFY_SYNC_TOLERANCE=0.5 \
          MOCK_VIDEO_DURATION=100.0 MOCK_AUDIO_DURATION=100.0 \
@@ -98,7 +98,7 @@ printf '\n## Test 5: AV1IFY_SYNC_TOLERANCE=5.0 lets 3s drift pass\n'
 TEST_DIR="$TEST_TMP/avs_t5"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(AV1IFY_SYNC_TOLERANCE=5.0 \
          MOCK_VIDEO_DURATION=100.0 MOCK_AUDIO_DURATION=100.0 \
@@ -116,7 +116,7 @@ printf '\n## Test 6: source stream=duration N/A -> packet PTS fallback works\n'
 TEST_DIR="$TEST_TMP/avs_t6"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # src stream=duration は N/A、packet=pts_time から取れる → src_v=8327.16, src_a=8309.31
 # out stream=duration は通常通り取れる
@@ -138,7 +138,7 @@ printf '\n## Test 7: all source duration paths fail -> avsync judgment skipped\n
 TEST_DIR="$TEST_TMP/avs_t7"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # src の stream=duration も packet=pts_time も N/A → relative 不能
 # out は絶対 gap 17.8s だが、旧 logic だと絶対値で誤発火、新 logic はスキップ
@@ -158,7 +158,7 @@ printf '\n## Test 8: A/V relationship inversion is detected\n'
 TEST_DIR="$TEST_TMP/avs_t8"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_VIDEO_DURATION=100.0 MOCK_AUDIO_DURATION=99.0 \
          MOCK_OUTPUT_VIDEO_DURATION=100.0 MOCK_OUTPUT_AUDIO_DURATION=105.0 \
@@ -174,7 +174,7 @@ printf '\n## Test 9: avsync warning includes threshold value\n'
 TEST_DIR="$TEST_TMP/avs_t9"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(AV1IFY_SYNC_TOLERANCE=1.0 \
          MOCK_VIDEO_DURATION=100.0 MOCK_AUDIO_DURATION=100.0 \
@@ -245,7 +245,7 @@ printf '\n## Test 13: invalid AV1IFY_SYNC_TOLERANCE falls back to default 2.0\n'
 TEST_DIR="$TEST_TMP/avs_t13"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # 1.5s drift: デフォルト 2.0 なら通る、誤値が 0 にされたら引っかかる
 output=$(AV1IFY_SYNC_TOLERANCE="bogus" \
@@ -268,7 +268,7 @@ printf '\n## Test 14: lying source stream=duration -> re-measured by packet PTS,
 TEST_DIR="$TEST_TMP/avs_t14"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_VIDEO_DURATION=8270.837 MOCK_AUDIO_DURATION=8287.552 \
          MOCK_VIDEO_LAST_PTS=8287.479 MOCK_AUDIO_LAST_PTS=8287.531 \
@@ -290,7 +290,7 @@ printf '\n## Test 15: genuine drift survives packet re-measurement\n'
 TEST_DIR="$TEST_TMP/avs_t15"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # src: gap=0 (宣言も実測も) / out: audio が 3s 長い (宣言も実測も) → 再判定しても drift=3
 output=$(MOCK_VIDEO_DURATION=100.0 MOCK_AUDIO_DURATION=100.0 \
@@ -356,7 +356,7 @@ printf '\n## Test 18: time-shifted audio (aligned tail, shifted head) stays flag
 TEST_DIR="$TEST_TMP/avs_t18"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_VIDEO_DURATION=20.0 MOCK_AUDIO_DURATION=20.0 \
          MOCK_VIDEO_LAST_PTS=20.0 MOCK_AUDIO_LAST_PTS=20.0 \
@@ -385,7 +385,7 @@ printf '\n## Test 19: start shift under the initial declared-duration gate is st
 TEST_DIR="$TEST_TMP/avs_t19"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # 宣言 duration は src/out で完全一致 (drift=0 → 初回 FLAG しない)。開始だけ 3.8s ずれる
 output=$(MOCK_VIDEO_DURATION=30.0 MOCK_AUDIO_DURATION=30.0 \
@@ -413,7 +413,7 @@ printf '\n## Test 20: container base offset (TS) does not false-positive the alw
 TEST_DIR="$TEST_TMP/avs_t20"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_VIDEO_DURATION=8270.837 MOCK_AUDIO_DURATION=8287.552 \
          MOCK_VIDEO_LAST_PTS=8287.479 MOCK_AUDIO_LAST_PTS=8287.531 \

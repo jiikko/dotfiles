@@ -79,6 +79,13 @@ make test-lint test-runtime-rest test-discovered-heavy test-src   # 約 4 分
 
 - `set -euo pipefail` 下の `var=$(… | grep …)` は無マッチの時点で代入ごと死に、直後の FAIL メッセージへ到達しない。抽出は `|| true` で受けて、空を明示的に FAIL にする
 - `… | grep -q` は一致していても偽になりうる (grep が先に抜けて producer が SIGPIPE → pipefail が拾う)。`grep -q PAT <<< "$(cmd)"` にする。`make test-pipefail-grep-q` (scripts/check_pipefail_grep_q.sh) が落とす。例外は行内 `pipefail-grep-q: allow` + 理由
+- **`cd` は rc を見る** (`cd "$X" || exit 1`)。見ないと、失敗しても CWD (= repo root) のまま先へ進み
+  **fixture が repo に書かれる**。実際に踏んだ (issue 204): zsh のテストを `bash` で直接実行すると
+  `source "${0:A:h}/test_helper.sh"` が bash で `/test_helper.sh` に潰れて helper が 1 行も走らず、
+  `TEST_TMP` が空のまま `cd "/inj2"` が失敗して repo root に fixture 3 件が残った。
+  `make test-cd-rc` (scripts/check_cd_rc_in_tests.sh) が落とす。例外は行内 `cd-rc: allow` + 理由。
+  ⚠️ **カウントを手で確かめるときは `/usr/bin/grep`** を使う (Claude Code の grep は ugrep 経由で
+  `$` を行末アンカーと解釈し、`cd "$TEST_DIR"` を 0 件と返す)
 
 ## platform (macOS のみ)
 

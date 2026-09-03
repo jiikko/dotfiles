@@ -13,7 +13,7 @@ printf '## Test 50: Compact re-encodes audio above the reencode threshold\n'
 TEST_DIR="$TEST_TMP/test50"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # 248000bps > 閾値 110400bps
 output=$(MOCK_AUDIO_BITRATE=248000 MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
@@ -26,7 +26,7 @@ printf '\n## Test 51: Compact copies audio at or below the reencode threshold\n'
 TEST_DIR="$TEST_TMP/test51"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_AUDIO_BITRATE=96000 MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -40,7 +40,7 @@ printf '\n## Test 52: Non-compact re-encodes allowed codec above threshold\n'
 TEST_DIR="$TEST_TMP/test52"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # aac 248000bps > 閾値 110400bps
 output=$(MOCK_AUDIO_BITRATE=248000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
@@ -53,7 +53,7 @@ printf '\n## Test 52b: Non-compact copies allowed codec at/below threshold\n'
 TEST_DIR="$TEST_TMP/test52b"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_AUDIO_BITRATE=100000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -66,7 +66,7 @@ printf '\n## Test 52c: Threshold boundary is exclusive\n'
 TEST_DIR="$TEST_TMP/test52c"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_AUDIO_BITRATE=110400 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -75,7 +75,7 @@ assert_contains "$output" "音声: copy" "Exactly at threshold copies"
 TEST_DIR="$TEST_TMP/test52c2"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_AUDIO_BITRATE=110401 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -86,7 +86,7 @@ printf '\n## Test 52d: AV1_AUDIO_REENCODE_MARGIN shifts the threshold\n'
 TEST_DIR="$TEST_TMP/test52d"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # margin=3.0 → 閾値 288000bps。248000 は下回るので copy になる (既定 1.15 なら再エンコード)
 output=$(AV1_AUDIO_REENCODE_MARGIN=3.0 MOCK_AUDIO_BITRATE=248000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
@@ -96,7 +96,7 @@ assert_contains "$output" "音声: copy" "Large margin keeps copy"
 TEST_DIR="$TEST_TMP/test52d2"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # margin=1.0 → 閾値 96000bps。100000 は上回るので再エンコード (既定 1.15 なら copy)
 output=$(AV1_AUDIO_REENCODE_MARGIN=1.0 MOCK_AUDIO_BITRATE=100000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
@@ -108,7 +108,7 @@ printf '\n## Test 52e: Unknown bitrate on copyable codec falls back to copy\n'
 TEST_DIR="$TEST_TMP/test52e"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_AUDIO_BITRATE="" av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -119,7 +119,7 @@ printf '\n## Test 53: Compact dry-run shows audio re-encode plan\n'
 TEST_DIR="$TEST_TMP/test53"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run --compact "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "compact" "Compact dry-run mentions compact audio"
 
@@ -128,7 +128,7 @@ printf '\n## Test 65: Non-copy codec low bitrate - caps to source bitrate\n'
 TEST_DIR="$TEST_TMP/test65"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # vorbis 48kbps → AAC 96k ではなく 48k にキャップされるべき
 output=$(MOCK_ACODEC=vorbis MOCK_AUDIO_BITRATE=48000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
@@ -141,7 +141,7 @@ printf '\n## Test 66: Non-copy codec high bitrate - uses default target bitrate\
 TEST_DIR="$TEST_TMP/test66"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # vorbis 192kbps → 96k に再エンコード（通常動作）
 output=$(MOCK_ACODEC=vorbis MOCK_AUDIO_BITRATE=192000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
@@ -154,7 +154,7 @@ printf '\n## Test 67: Non-copy codec very low bitrate - minimum 32k floor\n'
 TEST_DIR="$TEST_TMP/test67"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # vorbis 16kbps → 32k にフロア
 output=$(MOCK_ACODEC=vorbis MOCK_AUDIO_BITRATE=16000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
@@ -166,7 +166,7 @@ printf '\n## Test 68: Non-copy codec unknown bitrate - uses default\n'
 TEST_DIR="$TEST_TMP/test68"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_ACODEC=vorbis MOCK_AUDIO_BITRATE="" av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -177,7 +177,7 @@ printf '\n## Test 69: Mono source - no channel upscale\n'
 TEST_DIR="$TEST_TMP/test69"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_ACODEC=vorbis MOCK_CHANNELS=1 MOCK_AUDIO_BITRATE=48000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -188,7 +188,7 @@ printf '\n## Test 70: Low sample rate source - no sample rate upscale\n'
 TEST_DIR="$TEST_TMP/test70"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_ACODEC=vorbis MOCK_SAMPLE_RATE=22050 MOCK_AUDIO_BITRATE=48000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -199,7 +199,7 @@ printf '\n## Test 71: Standard stereo 48kHz - no adjustment message\n'
 TEST_DIR="$TEST_TMP/test71"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_ACODEC=vorbis MOCK_CHANNELS=2 MOCK_SAMPLE_RATE=48000 MOCK_AUDIO_BITRATE=192000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -210,7 +210,7 @@ printf '\n## Test 72: Mono 22050Hz source - both skipped\n'
 TEST_DIR="$TEST_TMP/test72"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_ACODEC=vorbis MOCK_CHANNELS=1 MOCK_SAMPLE_RATE=22050 MOCK_AUDIO_BITRATE=32000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -222,7 +222,7 @@ printf '\n## Test 73: Compact with mono low sample rate source\n'
 TEST_DIR="$TEST_TMP/test73"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_CHANNELS=1 MOCK_SAMPLE_RATE=22050 MOCK_AUDIO_BITRATE=248000 MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -235,7 +235,7 @@ printf '\n## Test 74: Non-copy codec param error - copy fallback with auderr tag
 TEST_DIR="$TEST_TMP/test74"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_ACODEC=vorbis MOCK_SAMPLE_RATE="" MOCK_AUDIO_BITRATE=48000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -248,7 +248,7 @@ printf '\n## Test 75: Compact param error - copy fallback with auderr tag\n'
 TEST_DIR="$TEST_TMP/test75"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_SAMPLE_RATE="" MOCK_AUDIO_BITRATE=248000 MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -261,7 +261,7 @@ printf '\n## Test 76: Channels-only param error - copy fallback with auderr tag\
 TEST_DIR="$TEST_TMP/test76"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_ACODEC=vorbis MOCK_CHANNELS="" MOCK_SAMPLE_RATE=22050 MOCK_AUDIO_BITRATE=48000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -276,7 +276,7 @@ printf '\n## Test 52f: Invalid AV1_AUDIO_REENCODE_MARGIN fails fast\n'
 TEST_DIR="$TEST_TMP/test52f"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 for bad in "abc" "1,15" "0" "-1"; do
   unsetopt err_exit
   output=$(AV1_AUDIO_REENCODE_MARGIN="$bad" av1ify "$TEST_DIR/input.avi" 2>&1)
@@ -305,7 +305,7 @@ printf '\n## Test 77: No pointless AAC retry when AAC was already chosen\n'
 TEST_DIR="$TEST_TMP/test77"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 ARGS_LOG="$TEST_DIR/ffmpeg_args"
 unsetopt err_exit
 # 248000bps > 閾値 → AAC を選ぶ。その状態で ffmpeg が失敗する
@@ -325,7 +325,7 @@ printf '\n## Test 78: Copy path still retries with AAC on failure\n'
 TEST_DIR="$TEST_TMP/test78"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 ARGS_LOG="$TEST_DIR/ffmpeg_args"
 unsetopt err_exit
 # 96000bps <= 閾値 → copy を選ぶ。失敗したら AAC で 2 回目を試すのが正しい

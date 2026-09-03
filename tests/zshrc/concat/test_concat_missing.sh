@@ -14,7 +14,7 @@ mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/video_001.mp4"
 echo "video 2" > "$TEST_DIR/video_002.mp4"
 echo "video 3" > "$TEST_DIR/video_003.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video_001.mp4" "$TEST_DIR/video_002.mp4" 2>&1)
 exit_code=$?
@@ -30,7 +30,7 @@ mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/video_001.mp4"
 echo "video 2" > "$TEST_DIR/video_002.mp4"
 echo "video 3" > "$TEST_DIR/video_003.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video_001.mp4" "$TEST_DIR/video_002.mp4" "$TEST_DIR/video_003.mp4" 2>&1)
 exit_code=$?
@@ -46,7 +46,7 @@ echo "video 1" > "$TEST_DIR/video_001.mp4"
 echo "video 2" > "$TEST_DIR/video_002.mp4"
 echo "other" > "$TEST_DIR/other_file.mp4"
 echo "clip" > "$TEST_DIR/clip_001.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video_001.mp4" "$TEST_DIR/video_002.mp4" 2>&1)
 exit_code=$?
@@ -61,7 +61,7 @@ mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/clip-01.mp4"
 echo "video 2" > "$TEST_DIR/clip-02.mp4"
 echo "video 3" > "$TEST_DIR/clip-03.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/clip-01.mp4" "$TEST_DIR/clip-02.mp4" 2>&1)
 exit_code=$?
@@ -77,7 +77,7 @@ mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/movie(1).mp4"
 echo "video 2" > "$TEST_DIR/movie(2).mp4"
 echo "video 3" > "$TEST_DIR/movie(3).mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/movie(1).mp4" "$TEST_DIR/movie(2).mp4" 2>&1)
 exit_code=$?
@@ -92,7 +92,7 @@ mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/file_part1.mp4"
 echo "video 2" > "$TEST_DIR/file_part2.mp4"
 echo "video 3" > "$TEST_DIR/file_part3.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/file_part1.mp4" "$TEST_DIR/file_part2.mp4" 2>&1)
 exit_code=$?

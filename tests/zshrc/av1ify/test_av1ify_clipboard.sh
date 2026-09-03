@@ -53,7 +53,7 @@ TEST_DIR="$TEST_TMP/clip1"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/a.avi"
 echo "dummy video" > "$TEST_DIR/b.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/a.avi
 $TEST_DIR/b.avi
 $TEST_DIR/missing.avi"
@@ -79,7 +79,7 @@ printf '\n## Test 2: Decline with empty answer\n'
 TEST_DIR="$TEST_TMP/clip2"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/a.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/a.avi"
 run_av1ify_clip ""
 assert_contains "$CLIP_OUTPUT" "中止しました" "Reports cancellation"
@@ -91,7 +91,7 @@ printf '\n## Test 3: Closed gate falls back to help\n'
 TEST_DIR="$TEST_TMP/clip3"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/a.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/a.avi"
 export PBPASTE_LOG="$TEST_DIR/pbpaste.log"
 __av1ify_clipboard_mode_available() { return 1 }
@@ -106,7 +106,7 @@ unset PBPASTE_LOG
 printf '\n## Test 4: Empty clipboard is an error\n'
 TEST_DIR="$TEST_TMP/clip4"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD=""
 run_av1ify_clip y
 assert_contains "$CLIP_OUTPUT" "クリップボードが空です" "Reports empty clipboard"
@@ -116,7 +116,7 @@ assert_contains "$CLIP_OUTPUT" "クリップボードが空です" "Reports empt
 printf '\n## Test 5: No resolvable path is an error\n'
 TEST_DIR="$TEST_TMP/clip5"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/nope1.avi
 $TEST_DIR/nope2.avi"
 run_av1ify_clip y
@@ -130,7 +130,7 @@ TEST_DIR="$TEST_TMP/clip6"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/space name.avi"
 echo "dummy video" > "$TEST_DIR/quoted.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="  ${TEST_DIR}/space\\ name.avi
 '$TEST_DIR/quoted.avi'"
 run_av1ify_clip y
@@ -146,7 +146,7 @@ TEST_DIR="$TEST_TMP/clip7"
 mkdir -p "$TEST_DIR"
 # スラッシュを含まない名前にする (ファイル名に / は入れられない)。実行されると
 # cwd (= TEST_DIR) に pwned が作られるので、cd 後に作成する。
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 EVIL_NAME='evil$(touch pwned)file.avi'
 echo "dummy video" > "./$EVIL_NAME"
 export MOCK_CLIPBOARD="$TEST_DIR/$EVIL_NAME"
@@ -161,7 +161,7 @@ TEST_DIR="$TEST_TMP/clip8"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/arg.avi"
 echo "dummy video" > "$TEST_DIR/clip.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/clip.avi"
 export PBPASTE_LOG="$TEST_DIR/pbpaste.log"
 av1ify "$TEST_DIR/arg.avi" > /dev/null 2>&1
@@ -178,7 +178,7 @@ unset PBPASTE_LOG
 printf '\n## Test 9: pbpaste failure is reported\n'
 TEST_DIR="$TEST_TMP/clip9"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_PBPASTE_FAIL=1
 run_av1ify_clip y
 assert_contains "$CLIP_OUTPUT" "クリップボードの読み取りに失敗" "Reports pbpaste failure"
@@ -224,7 +224,7 @@ mkdir -p "$TEST_DIR/tree/nested"
 echo "dummy video" > "$TEST_DIR/tree/a.avi"
 echo "dummy video" > "$TEST_DIR/tree/b.mkv"
 echo "dummy video" > "$TEST_DIR/tree/nested/c.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/tree"
 run_av1ify_clip n
 assert_contains "$CLIP_OUTPUT" "[ディレクトリ]" "Marks directory lines"
@@ -237,7 +237,7 @@ TEST_DIR="$TEST_TMP/clip14"
 mkdir -p "$TEST_DIR/archive" "$TEST_DIR/shortcuts"
 echo "dummy video" > "$TEST_DIR/archive/master.avi"
 ln -sf "$TEST_DIR/archive/master.avi" "$TEST_DIR/shortcuts/master.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/shortcuts/master.avi"
 run_av1ify_clip n
 assert_contains "$CLIP_OUTPUT" "✓ $TEST_DIR/archive/master.avi" "Lists the resolved target"
@@ -248,7 +248,7 @@ printf '\n## Test 15: Relative path is normalized to absolute\n'
 TEST_DIR="$TEST_TMP/clip15"
 mkdir -p "$TEST_DIR/sub"
 echo "dummy video" > "$TEST_DIR/sub/rel.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="sub/rel.avi"
 run_av1ify_clip y
 assert_contains "$CLIP_OUTPUT" "✓ $TEST_DIR/sub/rel.avi" "Shows absolute path"
@@ -258,7 +258,7 @@ assert_file_exists "$TEST_DIR/sub/rel-enc.mp4" "Converts the relative path"
 printf '\n## Test 16: Filename starting with a dash is processed\n'
 TEST_DIR="$TEST_TMP/clip16"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 echo "dummy video" > "./-n.avi"
 echo "dummy video" > "./plain.avi"
 export MOCK_CLIPBOARD="$TEST_DIR/-n.avi
@@ -270,7 +270,7 @@ assert_file_exists "$TEST_DIR/-n-enc.mp4" "Converts a file whose name starts wit
 printf '\n## Test 17: Leading tilde is expanded\n'
 TEST_DIR="$TEST_TMP/clip17"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export HOME="$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/tilde.avi"
 export MOCK_CLIPBOARD="~/tilde.avi"
@@ -284,7 +284,7 @@ TEST_DIR="$TEST_TMP/clip18"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/upper.avi"
 echo "dummy video" > "$TEST_DIR/upper2.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/upper.avi"
 run_av1ify_clip Y
 assert_file_exists "$TEST_DIR/upper-enc.mp4" "Accepts uppercase Y"
@@ -297,7 +297,7 @@ printf '\n## Test 19: Warns when originals will be trashed\n'
 TEST_DIR="$TEST_TMP/clip19"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/del.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/del.avi"
 unsetopt err_exit
 del_output=$(av1ify --delete-origin-if-success-and-no-ng 2>&1 <<< "n")
@@ -310,7 +310,7 @@ printf '\n## Test 20: Invalid AV1_* fails before the confirmation\n'
 TEST_DIR="$TEST_TMP/clip20"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/fps.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/fps.avi"
 unsetopt err_exit
 fps_output=$(AV1_FPS=abc av1ify 2>&1 <<< "y"); fps_rc=$?
@@ -341,7 +341,7 @@ printf '\n## Test 22: av1c reads the clipboard with the compact preset and trash
 TEST_DIR="$TEST_TMP/clip22"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/shorthand.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/shorthand.avi"
 TRASH_LOG="$TEST_TMP/clip22.trash.log"
 : > "$TRASH_LOG"
@@ -367,7 +367,7 @@ printf '\n## Test 23: Declining av1c keeps the original\n'
 TEST_DIR="$TEST_TMP/clip23"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/keep.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/keep.avi"
 unsetopt err_exit
 av1c_no_output=$(av1c 2>&1 <<< "n"); av1c_no_rc=$?
@@ -382,7 +382,7 @@ TEST_DIR="$TEST_TMP/clip24"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/arg.avi"
 echo "dummy video" > "$TEST_DIR/clip.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/clip.avi"
 export PBPASTE_LOG="$TEST_DIR/pbpaste.log"
 unsetopt err_exit
@@ -411,7 +411,7 @@ mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/sample_a.avi"
 echo "dummy video" > "$TEST_DIR/sample b.avi"
 echo "dummy video" > "$TEST_DIR/sample_c.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 # クォート無し / シングルクォート付きの混在 = zsh のコマンドラインからコピーした形
 export MOCK_CLIPBOARD="$TEST_DIR/sample_a.avi '$TEST_DIR/sample b.avi' $TEST_DIR/sample_c.avi"
 run_av1ify_clip n
@@ -430,7 +430,7 @@ mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/sample_a.avi"
 echo "dummy video" > "$TEST_DIR/sample b.avi"
 echo "dummy video" > "$TEST_DIR/sample_c.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 # 1 行目は空白区切り (クォート付きを含む)、2 行目は普通の 1 行 1 パス
 export MOCK_CLIPBOARD="$TEST_DIR/sample_a.avi '$TEST_DIR/sample b.avi'
 $TEST_DIR/sample_c.avi"
@@ -453,7 +453,7 @@ printf '\n## Test 28: A single missing path with spaces does not trigger the hin
 TEST_DIR="$TEST_TMP/clip28"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/present.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/no such clip.avi
 $TEST_DIR/present.avi"
 run_av1ify_clip n
@@ -466,7 +466,7 @@ TEST_DIR="$TEST_TMP/clip29"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/sample_a.avi"
 echo "dummy video" > "$TEST_DIR/sample_b.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/sample_a.avi $TEST_DIR/sample_b.avi"
 unsetopt err_exit
 hint_output=$(av1c 2>&1 <<< "n")
@@ -479,7 +479,7 @@ assert_contains "$hint_output" 'av1c ${(Q)${(z)"$(pbpaste)"}:#\;}' "Suggests av1
 printf '\n## Test 30: The hint check does not execute $(...) in the pasted line\n'
 TEST_DIR="$TEST_TMP/clip30"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 EVIL_NAME='evil$(touch pwned)file.avi'
 echo "dummy video" > "./$EVIL_NAME"
 echo "dummy video" > "$TEST_DIR/sample_a.avi"
@@ -495,7 +495,7 @@ assert_contains "$CLIP_OUTPUT" "空白区切りで複数のパスが並んだ行
 printf '\n## Test 31: Bare words that exist in cwd do not trigger the hint\n'
 TEST_DIR="$TEST_TMP/clip31"
 mkdir -p "$TEST_DIR/src" "$TEST_DIR/test"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="src test sample notes.avi"
 run_av1ify_clip n
 assert_contains "$CLIP_OUTPUT" "見つかりません" "Still reports the missing path"
@@ -506,7 +506,7 @@ printf '\n## Test 32: One resolvable word is not enough for the hint\n'
 TEST_DIR="$TEST_TMP/clip32"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/sample_a.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/sample_a.avi $TEST_DIR/gone/sample_b.avi"
 run_av1ify_clip n
 assert_contains "$CLIP_OUTPUT" "見つかりません" "Still reports the missing path"
@@ -520,7 +520,7 @@ TEST_DIR="$TEST_TMP/clip33"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/sample_a.avi"
 echo "dummy video" > "$TEST_DIR/sample_b.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 HOME="$TEST_DIR"
 export MOCK_CLIPBOARD="~/sample_a.avi ~/sample_b.avi"
 run_av1ify_clip n
@@ -536,7 +536,7 @@ TEST_DIR="$TEST_TMP/clip34"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/sample_a.avi"
 echo "dummy video" > "$TEST_DIR/sample_b.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 setopt glob_subst nomatch
 unsetopt err_exit
 # ⚠️ サブシェルで走らせること。ガードが無いと NOMATCH の未捕捉エラーで
@@ -579,7 +579,7 @@ TEST_DIR="$TEST_TMP/clip37"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/sample_a.avi"
 echo "dummy video" > "$TEST_DIR/sample_b.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 __AV1IFY_PASTED_TRIMMED="sentinel-before-call"
 unsetopt err_exit
 __av1ify_count_space_separated_paths "$TEST_DIR/sample_a.avi $TEST_DIR/sample_b.avi"
@@ -594,7 +594,7 @@ TEST_DIR="$TEST_TMP/clip38"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/sample_a.avi"
 echo "dummy video" > "$TEST_DIR/sample_b.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/sample_a.avi $TEST_DIR/sample_b.avi"
 unsetopt err_exit
 warn_output=$(av1c 2>&1 <<< "n")

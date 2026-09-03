@@ -10,7 +10,7 @@
 # 注意: この file 内のコメント行を `# shellcheck` で始めない (directive と誤認され SC1072 になる)。
 set -eu
 unset CDPATH
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 # lint 対象を持つディレクトリ。vendor/ は対象外。tests/ もここでは対象外だが、
 # 無 lint ではない: 約半数が zsh スクリプトで ZSH_SYNTAX_FILES 方式だと 40 本超の

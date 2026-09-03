@@ -51,7 +51,7 @@ export LC_NUMERIC=C
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 GLOGX_DIR=$(cd "$SCRIPT_DIR/../../src/glogx" && pwd)
-cd "$GLOGX_DIR"
+cd "$GLOGX_DIR" || exit 1
 
 # 対象 benchmark を改名/削除したら、この一覧と下の awk・bench_budgets.ci を同時に更新する
 # こと (漏れは checker の「予算にある metric が出力に無い」検出で CI が fail する)

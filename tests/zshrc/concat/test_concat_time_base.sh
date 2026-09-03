@@ -13,7 +13,7 @@ TEST_DIR="$TEST_TMP/tb1"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/tbase_001.mp4"
 echo "video 2" > "$TEST_DIR/tbase_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/tbase_001.mp4" "$TEST_DIR/tbase_002.mp4" 2>&1)
 exit_code=$?
@@ -29,7 +29,7 @@ TEST_DIR="$TEST_TMP/tb2"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/tbase_001.mp4"
 echo "video 2" > "$TEST_DIR/tbase_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat --force "$TEST_DIR/tbase_001.mp4" "$TEST_DIR/tbase_002.mp4" 2>&1)
 exit_code=$?
@@ -42,7 +42,7 @@ TEST_DIR="$TEST_TMP/tb3"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/normal_001.mp4"
 echo "video 2" > "$TEST_DIR/normal_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/normal_001.mp4" "$TEST_DIR/normal_002.mp4" 2>&1)
 exit_code=$?
@@ -56,7 +56,7 @@ TEST_DIR="$TEST_TMP/tb4"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/tbase_001.mp4"
 echo "video 2" > "$TEST_DIR/tbase_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/tbase_001.mp4" "$TEST_DIR/tbase_002.mp4" 2>&1)
 exit_code=$?
@@ -71,7 +71,7 @@ TEST_DIR="$TEST_TMP/tb5"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/tbase_001.mp4"  # mock: 1/90000
 echo "video 2" > "$TEST_DIR/tbase_002.mp4"  # mock: 1/30000
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 
 # 順方向: _001 (90000) → _002 (30000)。修復対象は _002 で target=90000
 unsetopt err_exit
@@ -94,7 +94,7 @@ TEST_DIR="$TEST_TMP/tb5"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/vtbfail_001.mp4"
 echo "video 2" > "$TEST_DIR/vtbfail_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/vtbfail_001.mp4" "$TEST_DIR/vtbfail_002.mp4" 2>&1)
 exit_code=$?

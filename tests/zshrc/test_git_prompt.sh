@@ -28,9 +28,9 @@ check() {
 }
 
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
-cd "$TMP_ROOT"
+cd "$TMP_ROOT" || exit 1
 git init -q -b main r
-cd r
+cd r || exit 1
 git config user.email t@example.com
 git config user.name tester
 print one > a; git add a; git commit -qm one
@@ -39,12 +39,12 @@ print two > a; git commit -qam two
 check "ブランチ (repo ルート)" "main"
 
 mkdir -p deep/nest
-cd deep/nest
+cd deep/nest || exit 1
 check "サブディレクトリから" "main"
-cd "$TMP_ROOT/r"
+cd "$TMP_ROOT/r" || exit 1
 
 # repo 外では空 (装飾も空文字列)
-cd "$TMP_ROOT"
+cd "$TMP_ROOT" || exit 1
 check "repo 外" ""
 _dotfiles_git_prompt
 if [[ -n "$_DOTFILES_GIT_PROMPT" ]]; then
@@ -53,7 +53,7 @@ if [[ -n "$_DOTFILES_GIT_PROMPT" ]]; then
 else
   print "✓ repo 外の装飾文字列は空"
 fi
-cd "$TMP_ROOT/r"
+cd "$TMP_ROOT/r" || exit 1
 
 # detached HEAD は短縮 SHA 7 桁
 sha=$(git rev-parse --short=7 HEAD)
@@ -63,9 +63,9 @@ git checkout -q main
 
 # worktree は .git が「gitdir: <path>」のテキストファイルになる
 git worktree add -q "$TMP_ROOT/wt" -b wtbranch
-cd "$TMP_ROOT/wt"
+cd "$TMP_ROOT/wt" || exit 1
 check "worktree (.git ファイル)" "wtbranch"
-cd "$TMP_ROOT/r"
+cd "$TMP_ROOT/r" || exit 1
 
 # rebase 停止中: HEAD は detached だが rebase-merge/head-name に元ブランチが残る
 git checkout -q -b topic HEAD~1

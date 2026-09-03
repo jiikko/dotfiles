@@ -14,7 +14,7 @@ mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/video_001.mp4"
 echo "video 2" > "$TEST_DIR/video_002.mp4"
 echo "existing output" > "$TEST_DIR/video.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video_001.mp4" "$TEST_DIR/video_002.mp4" 2>&1)
 exit_code=$?
@@ -31,7 +31,7 @@ mkdir -p "$TEST_DIR"
 echo "video 0" > "$TEST_DIR/video_000.mp4"
 echo "video 1" > "$TEST_DIR/video_001.mp4"
 echo "video 2" > "$TEST_DIR/video_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video_000.mp4" "$TEST_DIR/video_001.mp4" "$TEST_DIR/video_002.mp4" 2>&1)
 exit_code=$?
@@ -45,7 +45,7 @@ TEST_DIR="$TEST_TMP/test20"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/video_001.MP4"
 echo "video 2" > "$TEST_DIR/video_002.Mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video_001.MP4" "$TEST_DIR/video_002.Mp4" 2>&1)
 exit_code=$?
@@ -59,7 +59,7 @@ for ext in avi mov mkv webm flv wmv m4v mpg mpeg 3gp ts m2ts; do
   mkdir -p "$TEST_DIR"
   echo "video 1" > "$TEST_DIR/video_001.$ext"
   echo "video 2" > "$TEST_DIR/video_002.$ext"
-  cd "$TEST_DIR"
+  cd "$TEST_DIR" || exit 1
   unsetopt err_exit
   concat "$TEST_DIR/video_001.$ext" "$TEST_DIR/video_002.$ext" > /dev/null 2>&1
   exit_code=$?
@@ -77,7 +77,7 @@ TEST_DIR="$TEST_TMP/test22 with spaces/sub dir"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/video file_001.mp4"
 echo "video 2" > "$TEST_DIR/video file_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video file_001.mp4" "$TEST_DIR/video file_002.mp4" 2>&1)
 exit_code=$?
@@ -126,7 +126,7 @@ nfc_pu=$'\xe3\x83\x97'               # プ
 echo "video 1" > "$TEST_DIR/clip_${nfd_pu}_1.mp4"
 echo "video 2" > "$TEST_DIR/clip_${nfc_pu}_2.mp4"
 echo "video 3" > "$TEST_DIR/clip_${nfc_pu}_3.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/clip_${nfd_pu}_1.mp4" "$TEST_DIR/clip_${nfc_pu}_2.mp4" "$TEST_DIR/clip_${nfc_pu}_3.mp4" 2>&1)
 exit_code=$?
@@ -182,7 +182,7 @@ TEST_DIR="$TEST_TMP/test24"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/movie_X_#Ep1.mp4"
 echo "video 2" > "$TEST_DIR/movie_X_#Ep2.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/movie_X_#Ep1.mp4" "$TEST_DIR/movie_X_#Ep2.mp4" 2>&1)
 exit_code=$?

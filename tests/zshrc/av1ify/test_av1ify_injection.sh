@@ -17,7 +17,7 @@ printf '\n=== av1ify $(...) injection Tests ===\n\n'
 printf '## Test 1: Full conversion of a file with $(...) in its name\n'
 TEST_DIR="$TEST_TMP/inj1"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 EVIL='evil$(touch pwned_convert)file.avi'
 echo "dummy video" > "./$EVIL"
 unsetopt err_exit
@@ -31,7 +31,7 @@ assert_file_exists "$TEST_DIR/evil\$(touch pwned_convert)file-enc.mp4" "Still co
 printf '\n## Test 2: Delete-origin log path\n'
 TEST_DIR="$TEST_TMP/inj2"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 EVIL='del$(touch pwned_delete)file.avi'
 echo "dummy video" > "./$EVIL"
 export TEST_TRASH_LOG="$TEST_DIR/trash.log"
@@ -46,7 +46,7 @@ unset TEST_TRASH_LOG
 printf '\n## Test 3: Health-check warning log path (--force)\n'
 TEST_DIR="$TEST_TMP/inj3"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 EVIL='warn$(touch pwned_warn)file.avi'
 echo "dummy video" > "./$EVIL"
 # 入力の健全性チェックを失敗させる (DTS 逆行) → --force で続行し警告ログを出す
@@ -60,7 +60,7 @@ assert_contains "$output" 'warn$(touch pwned_warn)file' "Warning shows the filen
 printf '\n## Test 4: Positive control\n'
 TEST_DIR="$TEST_TMP/inj4"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 print -P -- "%F{green}✅ 完了: control\$(touch $TEST_DIR/pwned_control)x%f" > /dev/null
 assert_file_exists "$TEST_DIR/pwned_control" "Positive control: print -P does execute \$(...)"
 

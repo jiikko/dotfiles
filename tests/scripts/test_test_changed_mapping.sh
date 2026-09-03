@@ -11,7 +11,7 @@ unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TC="$ROOT_DIR/scripts/test_changed.sh"
-cd "$ROOT_DIR"
+cd "$ROOT_DIR" || exit 1
 
 fail=0
 

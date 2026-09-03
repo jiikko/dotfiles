@@ -18,7 +18,7 @@ set -euo pipefail
 unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-cd "$ROOT_DIR"
+cd "$ROOT_DIR" || exit 1
 
 issues_dir="${1:-issues}"
 

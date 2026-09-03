@@ -13,7 +13,7 @@ printf '\n=== av1ify NG List Tests ===\n\n'
 printf '## Test 1: Multi-arg all-missing -> NG list lists every file with reason\n'
 TEST_DIR="$TEST_TMP/ng_test1"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/missing_a.avi" "$TEST_DIR/missing_b.mkv" "$TEST_DIR/missing_c.wmv" 2>&1 || true)
 setopt err_exit
@@ -32,7 +32,7 @@ TEST_DIR="$TEST_TMP/ng_test2"
 mkdir -p "$TEST_DIR"
 echo "video content data" > "$TEST_DIR/ok1.avi"
 echo "video content data" > "$TEST_DIR/ok2.mkv"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/ok1.avi" "$TEST_DIR/ok2.mkv" 2>&1 || true)
 setopt err_exit
@@ -44,7 +44,7 @@ printf '\n## Test 3: Mixed OK+NG -> NG list contains only failed files\n'
 TEST_DIR="$TEST_TMP/ng_test3"
 mkdir -p "$TEST_DIR"
 echo "video content data" > "$TEST_DIR/works.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/works.avi" "$TEST_DIR/missing.mkv" 2>&1 || true)
 setopt err_exit
@@ -64,7 +64,7 @@ cat > "$TEST_DIR/list.txt" <<LISTEOF
 $TEST_DIR/no1.avi
 $TEST_DIR/no2.mkv
 LISTEOF
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify -f "$TEST_DIR/list.txt" 2>&1)
 rc=$?
@@ -79,7 +79,7 @@ assert_contains "$output" "ファイルが見つからない" "-f mode shows rea
 printf '\n## Test 5: Single file failure does NOT print NG list (no batch summary)\n'
 TEST_DIR="$TEST_TMP/ng_test5"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/lone_missing.avi" 2>&1 || true)
 setopt err_exit
@@ -91,7 +91,7 @@ assert_not_contains "$output" "サマリ" "Single-file mode does NOT print batch
 printf '\n## Test 6: NG entry has 2-line format (file then reason)\n'
 TEST_DIR="$TEST_TMP/ng_test6"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/x.avi" "$TEST_DIR/y.mkv" 2>&1 || true)
 setopt err_exit
@@ -119,7 +119,7 @@ done
 exit 1
 MOCKEOF
 chmod +x "$FAIL_BIN/ffmpeg"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # zsh の VAR=val funcname では PATH が後続テストにリークする場合があるため、
 # 明示的に save/restore する
@@ -141,7 +141,7 @@ TEST_DIR="$TEST_TMP/ng_test8"
 mkdir -p "$TEST_DIR"
 printf 'x' > "$TEST_DIR/tiny1.avi"
 printf 'x' > "$TEST_DIR/tiny2.mkv"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/tiny1.avi" "$TEST_DIR/tiny2.mkv" 2>&1 || true)
 setopt err_exit
@@ -157,7 +157,7 @@ TEST_DIR="$TEST_TMP/ng_test9"
 mkdir -p "$TEST_DIR"
 echo "video content data" > "$TEST_DIR/ok1.avi"
 echo "video content data" > "$TEST_DIR/ok2.mkv"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 av1ify "$TEST_DIR/missing1.avi" "$TEST_DIR/missing2.mkv" > /dev/null 2>&1
 rc_ng=$?
@@ -185,7 +185,7 @@ TEST_DIR="$TEST_TMP/ng_test10"
 mkdir -p "$TEST_DIR/sub"
 echo "video content data" > "$TEST_DIR/ok.avi"
 printf 'x' > "$TEST_DIR/sub/tiny.avi"   # 1B ソース → postcheck サイズ増加 NG
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/ok.avi" "$TEST_DIR/sub" 2>&1)
 rc=$?

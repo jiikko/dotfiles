@@ -13,7 +13,7 @@ printf '## Test 65: A/V tail mismatch alone does NOT block encoding\n'
 TEST_DIR="$TEST_TMP/test65"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # 音声duration=100.0, 映像duration=10.0 → A/V末尾差90秒でも事前チェックは通過し、エンコード成功するべき
 output=$(MOCK_AUDIO_DURATION=100.0 av1ify "$TEST_DIR/input.avi" 2>&1)
@@ -29,7 +29,7 @@ printf '\n## Test 66: --force with corruption (DTS backward) continues encoding\
 TEST_DIR="$TEST_TMP/test66"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_DTS_BACKWARD=1 av1ify --force "$TEST_DIR/input.avi" 2>&1)
 setopt err_exit
@@ -41,7 +41,7 @@ printf '\n## Test 68: Timestamp corruption (DTS backward) without --force skips 
 TEST_DIR="$TEST_TMP/test68"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # DTS が途中で逆行 → タイムスタンプ破損として検出
 output=$(MOCK_DTS_BACKWARD=1 av1ify "$TEST_DIR/input.avi" 2>&1)
@@ -55,7 +55,7 @@ printf '\n## Test 69: Timestamp corruption (DTS backward) with --force continues
 TEST_DIR="$TEST_TMP/test69"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_DTS_BACKWARD=1 av1ify --force "$TEST_DIR/input.avi" 2>&1)
 exit_code=$?

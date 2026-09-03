@@ -133,7 +133,7 @@ __av1ify_prefetch() {
   printf '%s\n' "$1" >> "$SPY_LOG"
 }
 
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 av1ify "$TEST_DIR/one.avi" "$TEST_DIR/two.mkv" "$TEST_DIR/three.wmv" > /dev/null 2>&1 || true
 setopt err_exit
@@ -174,7 +174,7 @@ SPY_LOG="$TEST_DIR/prefetch_calls.log"
 : > "$SPY_LOG"
 # spy は Test 7 で定義済み
 
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 av1ify "$TEST_DIR/solo.avi" > /dev/null 2>&1 || true
 setopt err_exit
@@ -202,7 +202,7 @@ LISTEOF
 SPY_LOG="$TEST_DIR/prefetch_calls.log"
 : > "$SPY_LOG"
 
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 av1ify -f "$TEST_DIR/list.txt" > /dev/null 2>&1 || true
 setopt err_exit
@@ -296,7 +296,7 @@ SPY_LOG="$TEST_DIR/prefetch_calls.log"
 : > "$SPY_LOG"
 # Test 7 で spy 化済み: __av1ify_prefetch は SPY_LOG にパスを記録するだけ
 
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 av1ify "$TEST_DIR/a.avi" "$TEST_DIR/b.avi" "$TEST_DIR/c.avi" > /dev/null 2>&1 || true
 setopt err_exit
@@ -331,7 +331,7 @@ echo "out" > "$TEST_DIR/x-enc.mp4"
 SPY_LOG="$TEST_DIR/prefetch_calls.log"
 : > "$SPY_LOG"
 
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # 並び順: x.avi → x-enc.mp4 を batch に渡す
 av1ify "$TEST_DIR/x.avi" "$TEST_DIR/x-enc.mp4" > /dev/null 2>&1 || true
@@ -540,7 +540,7 @@ mkdir -p "$TEST_DIR"
 
 # 17a: 入力自体が -enc.mp4
 echo "x" > "$TEST_DIR/a-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 out_self=$(__AV1IFY_INTERNAL_CALL=1 av1ify "$TEST_DIR/a-enc.mp4" 2>&1 || true)
 setopt err_exit

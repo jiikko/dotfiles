@@ -13,7 +13,7 @@ printf '## Test 65: Duration mismatch detection\n'
 TEST_DIR="$TEST_TMP/test65"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # ソース=10.0s, 出力=5.0s → Δ=5.0s > 2.0s(デフォルト閾値）で警告
 output=$(MOCK_FORMAT_DURATION=10.0 MOCK_OUTPUT_FORMAT_DURATION=5.0 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
@@ -26,7 +26,7 @@ printf '\n## Test 66: Duration within tolerance - no warning\n'
 TEST_DIR="$TEST_TMP/test66"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # ソース=10.0s, 出力=9.5s → Δ=0.5s < 2.0s で正常
 output=$(MOCK_FORMAT_DURATION=10.0 MOCK_OUTPUT_FORMAT_DURATION=9.5 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
@@ -42,7 +42,7 @@ printf '\n## Test 67: Custom duration tolerance via AV1IFY_DURATION_TOLERANCE\n'
 TEST_DIR="$TEST_TMP/test67"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # Δ=1.5s, デフォルト閾値(2.0s)では通るが閾値を1.0sに下げると検出
 output=$(AV1IFY_DURATION_TOLERANCE=1.0 MOCK_FORMAT_DURATION=10.0 MOCK_OUTPUT_FORMAT_DURATION=8.5 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
@@ -54,7 +54,7 @@ printf '\n## Test 68: Frame count mismatch detection\n'
 TEST_DIR="$TEST_TMP/test68"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # ソース=300フレーム, 出力=250フレーム → 不一致で警告
 output=$(MOCK_NB_FRAMES=300 MOCK_OUTPUT_NB_FRAMES=250 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
@@ -67,7 +67,7 @@ printf '\n## Test 69: Frame count match - no warning\n'
 TEST_DIR="$TEST_TMP/test69"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_NB_FRAMES=300 MOCK_OUTPUT_NB_FRAMES=300 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -82,7 +82,7 @@ printf '\n## Test 69b: Frame count difference within tolerance - no warning\n'
 TEST_DIR="$TEST_TMP/test69b"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # ソース=300フレーム, 出力=285フレーム → Δ=15 ≤ 24(デフォルト閾値)で正常
 output=$(MOCK_NB_FRAMES=300 MOCK_OUTPUT_NB_FRAMES=285 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
@@ -98,7 +98,7 @@ printf '\n## Test 69c: Custom frame tolerance via AV1IFY_FRAME_TOLERANCE\n'
 TEST_DIR="$TEST_TMP/test69c"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # Δ=15, デフォルト閾値(24)では通るが閾値を10に下げると検出
 output=$(AV1IFY_FRAME_TOLERANCE=10 MOCK_NB_FRAMES=300 MOCK_OUTPUT_NB_FRAMES=285 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
@@ -110,7 +110,7 @@ printf '\n## Test 69d: Relative tolerance absorbs small drift on long videos\n'
 TEST_DIR="$TEST_TMP/test69d"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # ソース=45000フレーム (25分@30fps 相当), Δ=88。絶対フロア 24 は超えるが
 # 相対許容 45000*0.5%=225 の範囲内 → 警告なし (2026-07-12 の緩和の回帰テスト)
@@ -127,7 +127,7 @@ printf '\n## Test 69e: Custom relative tolerance via AV1IFY_FRAME_TOLERANCE_PCT\
 TEST_DIR="$TEST_TMP/test69e"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # Δ=88, 既定 (0.5%=225) では通るが 0.1% (=45) に絞ると検出
 output=$(AV1IFY_FRAME_TOLERANCE_PCT=0.1 MOCK_NB_FRAMES=45000 MOCK_OUTPUT_NB_FRAMES=44912 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
@@ -139,7 +139,7 @@ printf '\n## Test 70: Frame count check skipped when fps changed\n'
 TEST_DIR="$TEST_TMP/test70"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # fps変更あり(60→30)の場合、フレーム数が異なっても警告しない
 output=$(MOCK_FPS="60000/1001" MOCK_NB_FRAMES=600 MOCK_OUTPUT_NB_FRAMES=300 av1ify --fps 30 "$TEST_DIR/input.avi" 2>&1 || true)
@@ -155,7 +155,7 @@ printf '\n## Test 71: Output resolution mismatch detection\n'
 TEST_DIR="$TEST_TMP/test71"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # -r 720p指定だが出力が1080pのまま → 不一致で警告
 output=$(MOCK_OUTPUT_WIDTH=1920 MOCK_OUTPUT_HEIGHT=1080 av1ify -r 720p "$TEST_DIR/input.avi" 2>&1 || true)
@@ -167,7 +167,7 @@ printf '\n## Test 72: Output resolution match - no warning\n'
 TEST_DIR="$TEST_TMP/test72"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # -r 720p指定で出力も720p → 正常
 output=$(MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify -r 720p "$TEST_DIR/input.avi" 2>&1 || true)
@@ -183,7 +183,7 @@ printf '\n## Test 73: Resolution check skipped when no -r specified\n'
 TEST_DIR="$TEST_TMP/test73"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # -r なし。出力解像度が何であっても警告しない
 output=$(MOCK_OUTPUT_WIDTH=640 MOCK_OUTPUT_HEIGHT=480 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
@@ -199,7 +199,7 @@ printf '\n## Test 74: Portrait output resolution check uses short side\n'
 TEST_DIR="$TEST_TMP/test74"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # ソース: 2160x3840(縦長4K), -r 1080p指定, 出力が1080x1920 → 短辺=1080=期待値で正常
 output=$(MOCK_WIDTH=2160 MOCK_HEIGHT=3840 MOCK_OUTPUT_WIDTH=1080 MOCK_OUTPUT_HEIGHT=1920 av1ify -r 1080p "$TEST_DIR/input.avi" 2>&1 || true)
@@ -216,7 +216,7 @@ TEST_DIR="$TEST_TMP/test75"
 mkdir -p "$TEST_DIR"
 # ソースを十分大きく (100KB)
 dd if=/dev/zero of="$TEST_DIR/input.avi" bs=1024 count=100 2>/dev/null
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 # ffmpegモックの出力は "mock video data" (15バイト) → ratio≈0.00015 < 0.001
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
@@ -230,7 +230,7 @@ TEST_DIR="$TEST_TMP/test76"
 mkdir -p "$TEST_DIR"
 # ソース100B > モック出力16B → tinyfileにもbiggerにもならない
 dd if=/dev/zero of="$TEST_DIR/input.avi" bs=1 count=100 2>/dev/null
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -246,7 +246,7 @@ TEST_DIR="$TEST_TMP/test77"
 mkdir -p "$TEST_DIR"
 # ソース200バイト、出力15バイト → ratio≈0.075。閾値を0.1にすると検出
 dd if=/dev/zero of="$TEST_DIR/input.avi" bs=1 count=200 2>/dev/null
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(AV1IFY_MIN_SIZE_RATIO=0.1 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -258,7 +258,7 @@ TEST_DIR="$TEST_TMP/test77b"
 mkdir -p "$TEST_DIR"
 # ソース2B、モック出力16B → out > src でサイズ増加検出
 echo -n "x" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -272,7 +272,7 @@ TEST_DIR="$TEST_TMP/test77c"
 mkdir -p "$TEST_DIR"
 # ソース100B > モック出力16B → biggerにならない
 dd if=/dev/zero of="$TEST_DIR/input.avi" bs=1 count=100 2>/dev/null
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -288,7 +288,7 @@ TEST_DIR="$TEST_TMP/test77d"
 mkdir -p "$TEST_DIR"
 # ソース10B、モック出力16B → +60%
 dd if=/dev/zero of="$TEST_DIR/input.avi" bs=1 count=10 2>/dev/null
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_FFMPEG_OUTPUT_SIZE=16 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -299,7 +299,7 @@ printf '\n## Test 78: Output video codec mismatch detection\n'
 TEST_DIR="$TEST_TMP/test78"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # 出力コーデックが h264 → av1 でないので警告
 output=$(MOCK_OUTPUT_VCODEC=h264 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
@@ -312,7 +312,7 @@ printf '\n## Test 79: Output video codec is av1 - no warning\n'
 TEST_DIR="$TEST_TMP/test79"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_OUTPUT_VCODEC=av1 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -375,7 +375,7 @@ printf '\n## Test 83: No regex error leaks to stderr during encode\n'
 TEST_DIR="$TEST_TMP/test83"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(AV1IFY_SYNC_TOLERANCE=0.5 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -387,7 +387,7 @@ printf '\n## Test 84: Leading + threshold does not trigger regex error\n'
 TEST_DIR="$TEST_TMP/test84"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(AV1IFY_SYNC_TOLERANCE=+0.5 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -402,7 +402,7 @@ printf '\n## Test 85: Silent source (--force) - no noaudio false positive\n'
 TEST_DIR="$TEST_TMP/test85"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_ACODEC= MOCK_AUDIO_INDEX= MOCK_OUTPUT_AUDIO_INDEX= av1ify --force "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -415,7 +415,7 @@ printf '\n## Test 86: Audio lost in output - noaudio NG preserved\n'
 TEST_DIR="$TEST_TMP/test86"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_OUTPUT_AUDIO_INDEX= av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -428,7 +428,7 @@ printf '\n## Test 87: Missing source at postcheck - noaudio NG preserved\n'
 TEST_DIR="$TEST_TMP/test87"
 mkdir -p "$TEST_DIR"
 echo "encoded data" > "$TEST_DIR/video-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_OUTPUT_AUDIO_INDEX= __av1ify_postcheck "$TEST_DIR/video-enc.mp4" "$TEST_DIR/ghost.avi" 0 "" 2>&1)
 rc=$?
@@ -463,7 +463,7 @@ case "\$*" in
 esac
 MOCKEOF
 chmod +x "$PROBE_FAIL_BIN/ffprobe"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 __saved_path="$PATH"
 PATH="$PROBE_FAIL_BIN:$PATH"

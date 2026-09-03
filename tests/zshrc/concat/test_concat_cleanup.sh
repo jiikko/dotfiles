@@ -23,7 +23,7 @@ TEST_DIR="$TEST_TMP/cleanup_1"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/clip_001.mp4"
 echo "video 2" > "$TEST_DIR/clip_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/clip_001.mp4" "$TEST_DIR/clip_002.mp4" 2>&1)
 exit_code=$?
@@ -46,7 +46,7 @@ TEST_DIR="$TEST_TMP/cleanup_2"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/clip_001.mp4"
 echo "video 2" > "$TEST_DIR/clip_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat --keep "$TEST_DIR/clip_001.mp4" "$TEST_DIR/clip_002.mp4" 2>&1)
 exit_code=$?
@@ -71,7 +71,7 @@ TEST_DIR="$TEST_TMP/cleanup_3"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/show_001.mp4"
 echo "video 2" > "$TEST_DIR/show_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR" 2>&1)
 exit_code=$?
@@ -89,7 +89,7 @@ TEST_DIR="$TEST_TMP/cleanup_4"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/show_001.mp4"
 echo "video 2" > "$TEST_DIR/show_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat --keep "$TEST_DIR" 2>&1)
 exit_code=$?
@@ -107,7 +107,7 @@ TEST_DIR="$TEST_TMP/cleanup_5"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/demo_001.mp4"
 echo "video 2" > "$TEST_DIR/demo_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat --dryrun "$TEST_DIR/demo_001.mp4" "$TEST_DIR/demo_002.mp4" 2>&1)
 exit_code=$?
@@ -126,7 +126,7 @@ echo "a1" > "$TEST_DIR/alpha_001.mp4"
 echo "a2" > "$TEST_DIR/alpha_002.mp4"
 echo "b1" > "$TEST_DIR/beta_001.mp4"
 echo "b2" > "$TEST_DIR/beta_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/alpha_001.mp4" "$TEST_DIR/alpha_002.mp4" "$TEST_DIR/beta_001.mp4" "$TEST_DIR/beta_002.mp4" 2>&1)
 exit_code=$?
@@ -153,7 +153,7 @@ echo "a1" > "$TEST_DIR/alpha_001.mp4"
 echo "a2" > "$TEST_DIR/alpha_002.mp4"
 echo "b1" > "$TEST_DIR/beta_001.mp4"
 echo "b2" > "$TEST_DIR/beta_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat --keep "$TEST_DIR/alpha_001.mp4" "$TEST_DIR/alpha_002.mp4" "$TEST_DIR/beta_001.mp4" "$TEST_DIR/beta_002.mp4" 2>&1)
 exit_code=$?
@@ -175,7 +175,7 @@ mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/movie_001.mp4"
 echo "video 2" > "$TEST_DIR/movie_002.mp4"
 echo "existing" > "$TEST_DIR/movie.mp4"   # 既存出力
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/movie_001.mp4" "$TEST_DIR/movie_002.mp4" 2>&1)
 exit_code=$?
@@ -194,7 +194,7 @@ mkdir -p "$TEST_DIR"
 # サフィックス不一致で失敗させる（前処理バリデーションで落ちる）
 echo "video 1" > "$TEST_DIR/mix-1-enc.mp4"
 echo "video 2" > "$TEST_DIR/mix-2-raw.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/mix-1-enc.mp4" "$TEST_DIR/mix-2-raw.mp4" 2>&1)
 exit_code=$?

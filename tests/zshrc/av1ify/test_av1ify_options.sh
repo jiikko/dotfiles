@@ -15,7 +15,7 @@ printf '## Test 16: Resolution option with dry-run\n'
 TEST_DIR="$TEST_TMP/test16"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run -r 720p "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "resolution=720p" "Dry-run shows resolution=720p"
 assert_file_not_exists "$TEST_DIR/input-720p-enc.mp4" "Dry-run does not create output file"
@@ -25,7 +25,7 @@ printf '\n## Test 17: FPS option with dry-run\n'
 TEST_DIR="$TEST_TMP/test17"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run --fps 24 "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "fps=24" "Dry-run shows fps=24"
 
@@ -34,7 +34,7 @@ printf '\n## Test 18: Resolution and FPS combined with dry-run\n'
 TEST_DIR="$TEST_TMP/test18"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run -r 1080p --fps 30 "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "resolution=1080p" "Dry-run shows resolution=1080p"
 assert_contains "$output" "fps=30" "Dry-run shows fps=30"
@@ -44,7 +44,7 @@ printf '\n## Test 19: Invalid resolution validation (error exit)\n'
 TEST_DIR="$TEST_TMP/test19"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 
 unsetopt err_exit
 output=$(av1ify --dry-run -r 0 "$TEST_DIR/input.avi" 2>&1)
@@ -74,7 +74,7 @@ printf '\n## Test 20: Invalid FPS validation (fail-fast)\n'
 TEST_DIR="$TEST_TMP/test20"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify --dry-run --fps 0 "$TEST_DIR/input.avi" 2>&1)
 exit_code=$?
@@ -112,7 +112,7 @@ printf '\n## Test 20c: Invalid AV1_FPS env var fails fast when targets exist\n'
 TEST_DIR="$TEST_TMP/test20c"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(AV1_FPS=abc av1ify --dry-run "$TEST_DIR/input.avi" 2>&1)
 exit_code=$?
@@ -133,7 +133,7 @@ printf '\n## Test 21: Valid resolution variations\n'
 TEST_DIR="$TEST_TMP/test21"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 
 for res in 480p 720p 1080p 1440p 4k 540; do
   output=$(av1ify --dry-run -r "$res" "$TEST_DIR/input.avi" 2>&1 || true)
@@ -149,7 +149,7 @@ printf '\n## Test 22: Valid FPS variations including decimal\n'
 TEST_DIR="$TEST_TMP/test22"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 
 for fps in 24 30 60 29.97 23.976; do
   output=$(av1ify --dry-run --fps "$fps" "$TEST_DIR/input.avi" 2>&1 || true)
@@ -165,7 +165,7 @@ printf '\n## Test 23: AV1_RESOLUTION environment variable\n'
 TEST_DIR="$TEST_TMP/test23"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(AV1_RESOLUTION=720p av1ify --dry-run "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "resolution=720p" "AV1_RESOLUTION env var works"
 
@@ -174,7 +174,7 @@ printf '\n## Test 24: AV1_FPS environment variable\n'
 TEST_DIR="$TEST_TMP/test24"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(AV1_FPS=24 av1ify --dry-run "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "fps=24" "AV1_FPS env var works"
 
@@ -183,7 +183,7 @@ printf '\n## Test 25: CLI option takes priority over env var\n'
 TEST_DIR="$TEST_TMP/test25"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(AV1_RESOLUTION=480p AV1_FPS=30 av1ify --dry-run -r 1080p --fps 60 "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "resolution=1080p" "CLI -r overrides AV1_RESOLUTION"
 assert_contains "$output" "fps=60" "CLI --fps overrides AV1_FPS"
@@ -193,7 +193,7 @@ printf '\n## Test 26: Resolution option creates output file with tag\n'
 TEST_DIR="$TEST_TMP/test26"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify -r 720p "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
@@ -204,7 +204,7 @@ printf '\n## Test 27: FPS option creates output file with tag\n'
 TEST_DIR="$TEST_TMP/test27"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 av1ify --fps 24 "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
@@ -215,7 +215,7 @@ printf '\n## Test 28: Resolution and FPS combined creates output file\n'
 TEST_DIR="$TEST_TMP/test28"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify -r 720p --fps 24 "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
@@ -226,7 +226,7 @@ printf '\n## Test 29: Upscale prevention - same resolution is skipped\n'
 TEST_DIR="$TEST_TMP/test29"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # mock は 1920x1080（短辺=1080）。-r 1080p 指定 → 短辺が同じなのでスキップ
 output=$(av1ify -r 1080p "$TEST_DIR/input.avi" 2>&1 || true)
@@ -240,7 +240,7 @@ printf '\n## Test 30: Upscale prevention - lower resolution source is skipped\n'
 TEST_DIR="$TEST_TMP/test30"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # mock は 1920x1080（短辺=1080）。-r 1440p 指定 → 短辺1080 < 1440 なのでスキップ
 output=$(av1ify -r 1440p "$TEST_DIR/input.avi" 2>&1 || true)
@@ -253,7 +253,7 @@ printf '\n## Test 31: Downscale still works\n'
 TEST_DIR="$TEST_TMP/test31"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # mock は 1920x1080（短辺=1080）。-r 720p 指定 → 短辺1080 > 720 なのでダウンスケール
 MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify -r 720p "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
@@ -265,7 +265,7 @@ printf '\n## Test 32: Portrait video - short side (width) is used for resolution
 TEST_DIR="$TEST_TMP/test32"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # mock を縦長に設定: 1080x1920（短辺=width=1080）。-r 1080p → スキップ
 output=$(MOCK_WIDTH=1080 MOCK_HEIGHT=1920 av1ify -r 1080p "$TEST_DIR/input.avi" 2>&1 || true)
@@ -278,7 +278,7 @@ printf '\n## Test 33: Portrait video - downscale uses scale=W:-2\n'
 TEST_DIR="$TEST_TMP/test33"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # mock を縦長4K: 2160x3840（短辺=width=2160）。-r 1080p → ダウンスケール
 output=$(MOCK_WIDTH=2160 MOCK_HEIGHT=3840 av1ify --dry-run -r 1080p "$TEST_DIR/input.avi" 2>&1 || true)
@@ -287,7 +287,7 @@ setopt err_exit
 TEST_DIR="$TEST_TMP/test33b"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 MOCK_WIDTH=2160 MOCK_HEIGHT=3840 MOCK_OUTPUT_WIDTH=1080 MOCK_OUTPUT_HEIGHT=1920 av1ify -r 1080p "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
@@ -298,7 +298,7 @@ printf '\n## Test 35: Denoise option with dry-run\n'
 TEST_DIR="$TEST_TMP/test35"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run --denoise medium "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "denoise=medium" "Dry-run shows denoise=medium"
 
@@ -314,7 +314,7 @@ printf '\n## Test 36: Invalid denoise validation (fail-fast)\n'
 TEST_DIR="$TEST_TMP/test36"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify --dry-run --denoise invalid "$TEST_DIR/input.avi" 2>&1)
 exit_code=$?
@@ -328,7 +328,7 @@ printf '\n## Test 37: Denoise option creates output file with tag\n'
 TEST_DIR="$TEST_TMP/test37"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 av1ify --denoise light "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
@@ -339,7 +339,7 @@ printf '\n## Test 38: Resolution and denoise combined\n'
 TEST_DIR="$TEST_TMP/test38"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify -r 720p --denoise medium "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
@@ -350,7 +350,7 @@ printf '\n## Test 39: Resolution option errors when source resolution unavailabl
 TEST_DIR="$TEST_TMP/test39"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_WIDTH="" MOCK_HEIGHT="" av1ify -r 720p "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -363,7 +363,7 @@ printf '\n## Test 41: Compact option with dry-run\n'
 TEST_DIR="$TEST_TMP/test41"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run --compact "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "resolution=720p" "Compact dry-run shows resolution=720p"
 assert_contains "$output" "fps=30" "Compact dry-run shows fps=30"
@@ -373,7 +373,7 @@ printf '\n## Test 42: Compact option creates output file with tags\n'
 TEST_DIR="$TEST_TMP/test42"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # mock を 60fps にして両方のタグが付くことを確認。
 # 音声は再エンコード閾値 (110400bps) 超を明示し、aac タグが付く側に倒す。
@@ -386,7 +386,7 @@ printf '\n## Test 43: Compact with explicit resolution override\n'
 TEST_DIR="$TEST_TMP/test43"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run --compact -r 480p "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "resolution=480p" "Compact + explicit -r uses 480p"
 assert_contains "$output" "fps=30" "Compact + explicit -r still uses 30fps"
@@ -396,7 +396,7 @@ printf '\n## Test 44: Compact with explicit fps override\n'
 TEST_DIR="$TEST_TMP/test44"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run --compact --fps 24 "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "resolution=720p" "Compact + explicit --fps still uses 720p"
 assert_contains "$output" "fps=24" "Compact + explicit --fps uses 24"
@@ -406,7 +406,7 @@ printf '\n## Test 45: Compact respects upscale prevention\n'
 TEST_DIR="$TEST_TMP/test45"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # mock は 480x854（短辺=480）、60fps。--compact → 720p 指定だが 480 < 720 なのでスキップ、fps は適用。
 # 音声は再エンコード閾値 (110400bps) 超を明示し、aac タグが付く側に倒す。
@@ -420,7 +420,7 @@ printf '\n## Test 46: Short -c alias for --compact\n'
 TEST_DIR="$TEST_TMP/test46"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run -c "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "resolution=720p" "-c dry-run shows resolution=720p"
 assert_contains "$output" "fps=30" "-c dry-run shows fps=30"
@@ -430,7 +430,7 @@ printf '\n## Test 47: Unknown option causes error\n'
 TEST_DIR="$TEST_TMP/test47"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify --unknown-option "$TEST_DIR/input.avi" 2>&1)
 exit_code=$?
@@ -455,7 +455,7 @@ echo "dummy video" > "$TEST_DIR/video.avi"
 cat > "$TEST_DIR/list.txt" <<LISTEOF
 $TEST_DIR/video.avi
 LISTEOF
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify -f "$TEST_DIR/list.txt" 2>&1 || true)
 setopt err_exit
@@ -466,7 +466,7 @@ printf '\n## Test 54: FPS cap - skip when source <= target\n'
 TEST_DIR="$TEST_TMP/test54"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # mock は 30000/1001 (29.97fps)。--fps 30 → 29.97 <= 30 なのでスキップ
 output=$(MOCK_FPS="30000/1001" av1ify --fps 30 "$TEST_DIR/input.avi" 2>&1 || true)
@@ -480,7 +480,7 @@ printf '\n## Test 55: FPS cap - apply when source > target\n'
 TEST_DIR="$TEST_TMP/test55"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_FPS="60000/1001" av1ify --fps 30 "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -492,7 +492,7 @@ printf '\n## Test 56: Compact with 29.97fps source skips fps\n'
 TEST_DIR="$TEST_TMP/test56"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_FPS="30000/1001" MOCK_AUDIO_BITRATE=96000 MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -504,7 +504,7 @@ printf '\n## Test 57: Compact with 60fps source applies both\n'
 TEST_DIR="$TEST_TMP/test57"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_FPS="60000/1001" MOCK_AUDIO_BITRATE=96000 MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -515,7 +515,7 @@ printf '\n## Test 58: Partial match - "7" resolves to 720p\n'
 TEST_DIR="$TEST_TMP/test58"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run -r 7 "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "720p に解決しました" "Partial match '7' resolves to 720p"
 assert_contains "$output" "resolution=720p" "Dry-run shows resolved resolution=720p"
@@ -525,7 +525,7 @@ printf '\n## Test 59: Partial match - "10" resolves to 1080p\n'
 TEST_DIR="$TEST_TMP/test59"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run -r 10 "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "1080p に解決しました" "Partial match '10' resolves to 1080p"
 assert_contains "$output" "resolution=1080p" "Dry-run shows resolved resolution=1080p"
@@ -535,7 +535,7 @@ printf '\n## Test 60: Partial match - "14" resolves to 1440p\n'
 TEST_DIR="$TEST_TMP/test60"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run -r 14 "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "1440p に解決しました" "Partial match '14' resolves to 1440p"
 assert_contains "$output" "resolution=1440p" "Dry-run shows resolved resolution=1440p"
@@ -545,7 +545,7 @@ printf '\n## Test 61: Partial match with multiple candidates - "4" resolves to 4
 TEST_DIR="$TEST_TMP/test61"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run -r 4 "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "480p に解決しました" "Partial match '4' resolves to 480p (first candidate)"
 assert_contains "$output" "resolution=480p" "Dry-run shows resolved resolution=480p"
@@ -555,7 +555,7 @@ printf '\n## Test 62: Env var AV1_RESOLUTION partial match - "7" resolves to 720
 TEST_DIR="$TEST_TMP/test62"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(AV1_RESOLUTION=7 av1ify --dry-run "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "720p に解決しました" "Env var partial match '7' resolves to 720p"
 assert_contains "$output" "resolution=720p" "Dry-run shows resolved resolution=720p via env var"
@@ -565,7 +565,7 @@ printf '\n## Test 63: Uppercase input "4K" resolves to 4k\n'
 TEST_DIR="$TEST_TMP/test63"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run -r 4K "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "resolution=4k" "Uppercase '4K' resolves to 4k"
 
@@ -574,7 +574,7 @@ printf '\n## Test 64: Uppercase input "720P" resolves to 720p\n'
 TEST_DIR="$TEST_TMP/test64"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run -r 720P "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "resolution=720p" "Uppercase '720P' resolves to 720p"
 
@@ -583,7 +583,7 @@ printf '\n## Test 65: Rotation metadata makes 720p portrait output 720x1280\n'
 TEST_DIR="$TEST_TMP/test65"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_WIDTH=1920 MOCK_HEIGHT=1080 MOCK_ROTATION=90 MOCK_OUTPUT_WIDTH=720 MOCK_OUTPUT_HEIGHT=1280 av1ify -r 720p "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -596,7 +596,7 @@ printf '\n## Test 67: Move origin to Trash on success with no NG\n'
 TEST_DIR="$TEST_TMP/test67"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 TRASH_LOG="$TEST_TMP/test67.trash.log"
 : > "$TRASH_LOG"
 unsetopt err_exit
@@ -613,7 +613,7 @@ printf '\n## Test 68: Default does not move origin to Trash\n'
 TEST_DIR="$TEST_TMP/test68"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 TRASH_LOG="$TEST_TMP/test68.trash.log"
 : > "$TRASH_LOG"
 unsetopt err_exit
@@ -630,7 +630,7 @@ printf '\n## Test 69: --no-delete-origin-if-success-and-no-ng disables deletion\
 TEST_DIR="$TEST_TMP/test69"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify --delete-origin-if-success-and-no-ng --no-delete-origin-if-success-and-no-ng "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -642,7 +642,7 @@ printf '\n## Test 70: Do not touch origin when postcheck has NG\n'
 TEST_DIR="$TEST_TMP/test70"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # コーデック不一致でNG発生させる
 output=$(MOCK_OUTPUT_VCODEC=h264 av1ify --delete-origin-if-success-and-no-ng "$TEST_DIR/input.avi" 2>&1 || true)
@@ -655,7 +655,7 @@ printf '\n## Test 71: trash always receives absolute path\n'
 TEST_DIR="$TEST_TMP/test71"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 TRASH_LOG="$TEST_TMP/test71.trash.log"
 : > "$TRASH_LOG"
 unsetopt err_exit
@@ -712,7 +712,7 @@ printf '\n## Test 73: SMB mount origin uses rm instead of trash\n'
 TEST_DIR="$TEST_TMP/test73_smb"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 TEST_DIR_RESOLVED="${TEST_DIR:A}"
 TRASH_LOG="$TEST_TMP/test73.trash.log"
 : > "$TRASH_LOG"
@@ -733,7 +733,7 @@ for fs_type in afpfs nfs webdav cifs; do
   TEST_DIR="$TEST_TMP/test74_${fs_type}"
   mkdir -p "$TEST_DIR"
   echo "dummy video" > "$TEST_DIR/input.avi"
-  cd "$TEST_DIR"
+  cd "$TEST_DIR" || exit 1
   TEST_DIR_RESOLVED="${TEST_DIR:A}"
   TRASH_LOG="$TEST_TMP/test74_${fs_type}.trash.log"
   : > "$TRASH_LOG"
@@ -759,7 +759,7 @@ printf '\n## Test 75: Local apfs mount still uses trash\n'
 TEST_DIR="$TEST_TMP/test75"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 TEST_DIR_RESOLVED="${TEST_DIR:A}"
 TRASH_LOG="$TEST_TMP/test75.trash.log"
 : > "$TRASH_LOG"

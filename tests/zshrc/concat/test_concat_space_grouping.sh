@@ -17,7 +17,7 @@ mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/lecture vol3 topic review_1.mp4"
 echo "video 2" > "$TEST_DIR/lecture vol3 topic review_2.mp4"
 echo "video 3" > "$TEST_DIR/single_file.mp4"  # グループ化されないファイル
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR" 2>&1)
 exit_code=$?
@@ -37,7 +37,7 @@ echo "video 1" > "$TEST_DIR/meeting 2024 spring_1.mp4"
 echo "video 2" > "$TEST_DIR/meeting 2024 spring_2.mp4"
 echo "video 3" > "$TEST_DIR/workshop day two_1.mp4"
 echo "video 4" > "$TEST_DIR/workshop day two_2.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR" 2>&1)
 exit_code=$?
@@ -56,7 +56,7 @@ echo "video 1" > "$TEST_DIR/conference keynote day_1.mp4"
 echo "video 2" > "$TEST_DIR/conference keynote day_2.mp4"
 echo "video 3" > "$TEST_DIR/tutorial session intro_1.mp4"
 echo "video 4" > "$TEST_DIR/tutorial session intro_2.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat \
   "$TEST_DIR/conference keynote day_1.mp4" \
@@ -79,7 +79,7 @@ mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/project demo final cut version_1.mp4"
 echo "video 2" > "$TEST_DIR/project demo final cut version_2.mp4"
 echo "video 3" > "$TEST_DIR/project demo final cut version_3.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR" 2>&1)
 exit_code=$?
@@ -102,7 +102,7 @@ echo "video 1" > "$TEST_DIR/simple_1.mp4"
 echo "video 2" > "$TEST_DIR/simple_2.mp4"
 echo "video 3" > "$TEST_DIR/recording day one_1.mp4"
 echo "video 4" > "$TEST_DIR/recording day one_2.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR" 2>&1)
 exit_code=$?

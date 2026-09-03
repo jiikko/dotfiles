@@ -14,7 +14,7 @@ TEST_DIR="$TEST_TMP/dec1"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/scene_001.mp4"
 echo "video 2" > "$TEST_DIR/scene_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_FFMPEG_DECODE_STDERR="[hevc] The cu_qp_delta 27 is outside the valid range [-26, 25]." \
   concat "$TEST_DIR/scene_001.mp4" "$TEST_DIR/scene_002.mp4" 2>&1)
@@ -35,7 +35,7 @@ TEST_DIR="$TEST_TMP/dec2"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/scene_001.mp4"
 echo "video 2" > "$TEST_DIR/scene_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_FFMPEG_DECODE_STDERR="broken" concat --force "$TEST_DIR/scene_001.mp4" "$TEST_DIR/scene_002.mp4" 2>&1)
 exit_code=$?
@@ -49,7 +49,7 @@ TEST_DIR="$TEST_TMP/dec3"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/scene_001.mp4"
 echo "video 2" > "$TEST_DIR/scene_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/scene_001.mp4" "$TEST_DIR/scene_002.mp4" 2>&1)
 exit_code=$?

@@ -29,7 +29,7 @@ printf '\n## Test 2: Error with insufficient arguments\n'
 TEST_DIR="$TEST_TMP/test2"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/video_001.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video_001.mp4" 2>&1)
 exit_code=$?
@@ -42,7 +42,7 @@ printf '\n## Test 3: Error for non-existent file\n'
 TEST_DIR="$TEST_TMP/test3"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/video_001.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video_001.mp4" "$TEST_DIR/video_002.mp4" 2>&1)
 exit_code=$?
@@ -55,7 +55,7 @@ TEST_DIR="$TEST_TMP/test4"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/video_001.mp4"
 echo "text file" > "$TEST_DIR/video_002.txt"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video_001.mp4" "$TEST_DIR/video_002.txt" 2>&1)
 exit_code=$?
@@ -68,7 +68,7 @@ TEST_DIR="$TEST_TMP/test5"
 mkdir -p "$TEST_DIR/dir1" "$TEST_DIR/dir2"
 echo "video 1" > "$TEST_DIR/dir1/video_001.mp4"
 echo "video 2" > "$TEST_DIR/dir2/video_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/dir1/video_001.mp4" "$TEST_DIR/dir2/video_002.mp4" 2>&1)
 exit_code=$?
@@ -81,7 +81,7 @@ TEST_DIR="$TEST_TMP/test6"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/ab_001.mp4"
 echo "video 2" > "$TEST_DIR/xy_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/ab_001.mp4" "$TEST_DIR/xy_002.mp4" 2>&1)
 exit_code=$?
@@ -94,7 +94,7 @@ TEST_DIR="$TEST_TMP/test7"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/video_aaa.mp4"
 echo "video 2" > "$TEST_DIR/video_bbb.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video_aaa.mp4" "$TEST_DIR/video_bbb.mp4" 2>&1)
 exit_code=$?
@@ -107,7 +107,7 @@ TEST_DIR="$TEST_TMP/test8"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/video_001.mp4"
 echo "video 3" > "$TEST_DIR/video_003.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video_001.mp4" "$TEST_DIR/video_003.mp4" 2>&1)
 exit_code=$?
@@ -123,7 +123,7 @@ TEST_DIR="$TEST_TMP/test8b"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/video_000001.mp4"
 echo "video N" > "$TEST_DIR/video_999999.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video_000001.mp4" "$TEST_DIR/video_999999.mp4" 2>&1)
 setopt err_exit
@@ -136,7 +136,7 @@ TEST_DIR="$TEST_TMP/test9"
 mkdir -p "$TEST_DIR"
 echo "video 5" > "$TEST_DIR/video_005.mp4"
 echo "video 6" > "$TEST_DIR/video_006.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video_005.mp4" "$TEST_DIR/video_006.mp4" 2>&1)
 exit_code=$?
@@ -151,7 +151,7 @@ mkdir -p "$TEST_DIR"
 # mismatch_001 は通常のコーデック、mismatch_002 は異なるコーデック（モックで判定）
 echo "video 1" > "$TEST_DIR/mismatch_001.mp4"
 echo "video 2" > "$TEST_DIR/mismatch_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/mismatch_001.mp4" "$TEST_DIR/mismatch_002.mp4" 2>&1)
 exit_code=$?
@@ -164,7 +164,7 @@ TEST_DIR="$TEST_TMP/test11"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/mismatch_001.mp4"
 echo "video 2" > "$TEST_DIR/mismatch_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat --force "$TEST_DIR/mismatch_001.mp4" "$TEST_DIR/mismatch_002.mp4" 2>&1)
 exit_code=$?
@@ -178,7 +178,7 @@ mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/video_001.mp4"
 echo "video 2" > "$TEST_DIR/video_002.mp4"
 echo "video 3" > "$TEST_DIR/video_003.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video_001.mp4" "$TEST_DIR/video_002.mp4" "$TEST_DIR/video_003.mp4" 2>&1)
 exit_code=$?
@@ -192,7 +192,7 @@ TEST_DIR="$TEST_TMP/test13"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/clip-01.mp4"
 echo "video 2" > "$TEST_DIR/clip-02.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/clip-01.mp4" "$TEST_DIR/clip-02.mp4" 2>&1)
 exit_code=$?
@@ -205,7 +205,7 @@ TEST_DIR="$TEST_TMP/test14"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/movie(1).mp4"
 echo "video 2" > "$TEST_DIR/movie(2).mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/movie(1).mp4" "$TEST_DIR/movie(2).mp4" 2>&1)
 exit_code=$?
@@ -218,7 +218,7 @@ TEST_DIR="$TEST_TMP/test15"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/file_part1.mp4"
 echo "video 2" > "$TEST_DIR/file_part2.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/file_part1.mp4" "$TEST_DIR/file_part2.mp4" 2>&1)
 exit_code=$?
@@ -232,7 +232,7 @@ TEST_DIR="$TEST_TMP/test16"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/xxx-1-enc.mp4"
 echo "video 2" > "$TEST_DIR/xxx-2-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/xxx-1-enc.mp4" "$TEST_DIR/xxx-2-enc.mp4" 2>&1)
 exit_code=$?
@@ -245,7 +245,7 @@ TEST_DIR="$TEST_TMP/test16b"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/xxx-1-enc.mp4"
 echo "video 2" > "$TEST_DIR/xxx-2-raw.mp4"  # 異なるサフィックス
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/xxx-1-enc.mp4" "$TEST_DIR/xxx-2-raw.mp4" 2>&1)
 exit_code=$?
@@ -258,7 +258,7 @@ TEST_DIR="$TEST_TMP/test16b2"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/lecture_vol3_topic_review2.mp4"
 echo "video 2" > "$TEST_DIR/lecture_vol3_topic_review1.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/lecture_vol3_topic_review2.mp4" "$TEST_DIR/lecture_vol3_topic_review1.mp4" 2>&1)
 exit_code=$?
@@ -274,7 +274,7 @@ mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/video_1-aac96k-enc.mp4"
 echo "video 2" > "$TEST_DIR/video_2-aac96k-enc.mp4"
 echo "video 3" > "$TEST_DIR/video_3-aac96k-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video_1-aac96k-enc.mp4" "$TEST_DIR/video_2-aac96k-enc.mp4" "$TEST_DIR/video_3-aac96k-enc.mp4" 2>&1)
 exit_code=$?
@@ -289,7 +289,7 @@ mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/clip28_00-aac96k-enc.mp4"
 echo "video 2" > "$TEST_DIR/clip29_00-aac96k-enc.mp4"
 echo "video 3" > "$TEST_DIR/clip30_00-aac96k-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/clip28_00-aac96k-enc.mp4" "$TEST_DIR/clip29_00-aac96k-enc.mp4" "$TEST_DIR/clip30_00-aac96k-enc.mp4" 2>&1)
 exit_code=$?
@@ -309,7 +309,7 @@ echo "video 2" > "$TEST_DIR/clip_002.mp4"
 echo "video 3" > "$TEST_DIR/clip_003.mp4"
 echo "video 4" > "$TEST_DIR/scene_001.mp4"
 echo "video 5" > "$TEST_DIR/scene_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat --keep "$TEST_DIR/clip_001.mp4" "$TEST_DIR/clip_002.mp4" "$TEST_DIR/clip_003.mp4" \
   "$TEST_DIR/scene_001.mp4" "$TEST_DIR/scene_002.mp4" 2>&1)

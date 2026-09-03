@@ -31,7 +31,7 @@ printf '\n## Test 1b: Dry-run option\n'
 TEST_DIR="$TEST_TMP/test1b"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify "$TEST_DIR/input.avi" --dry-run 2>&1 || true)
 assert_file_not_exists "$TEST_DIR/input-enc.mp4" "Dry-run does not create output file"
 assert_contains "$output" "DRY-RUN" "Dry-run output contains marker"
@@ -41,7 +41,7 @@ printf '\n## Test 2: Single file processing\n'
 TEST_DIR="$TEST_TMP/test2"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 av1ify "$TEST_DIR/input.avi" > /dev/null 2>&1
 assert_file_exists "$TEST_DIR/input-enc.mp4" "Output file is created with -enc.mp4 suffix"
 
@@ -51,7 +51,7 @@ TEST_DIR="$TEST_TMP/test3"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/video.avi"
 echo "already encoded" > "$TEST_DIR/video-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify "$TEST_DIR/video.avi" 2>&1)
 assert_contains "$output" "SKIP" "Skips when output file already exists"
 
@@ -60,7 +60,7 @@ printf '\n## Test 4: Skip -enc.mp4 input files\n'
 TEST_DIR="$TEST_TMP/test4"
 mkdir -p "$TEST_DIR"
 echo "already encoded" > "$TEST_DIR/video-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify "$TEST_DIR/video-enc.mp4" 2>&1)
 assert_contains "$output" "SKIP" "Skips -enc.mp4 input files"
 
@@ -69,7 +69,7 @@ printf '\n## Test 5: Skip -encoded.* input files\n'
 TEST_DIR="$TEST_TMP/test5"
 mkdir -p "$TEST_DIR"
 echo "already encoded" > "$TEST_DIR/gachi625_hd縦ロール.mp4-encoded.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify "$TEST_DIR/gachi625_hd縦ロール.mp4-encoded.mp4" 2>&1)
 assert_contains "$output" "SKIP" "Skips -encoded.* input files"
 
@@ -77,7 +77,7 @@ assert_contains "$output" "SKIP" "Skips -encoded.* input files"
 printf '\n## Test 6: Error handling for non-existent file\n'
 TEST_DIR="$TEST_TMP/test6"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify "$TEST_DIR/nonexistent.avi" 2>&1 || true)
 assert_contains "$output" "ファイルが無い" "Reports error for non-existent file"
 
@@ -88,7 +88,7 @@ mkdir -p "$TEST_DIR/subdir"
 echo "video 1" > "$TEST_DIR/video1.avi"
 echo "video 2" > "$TEST_DIR/subdir/video2.mkv"
 echo "not a video" > "$TEST_DIR/readme.txt"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 av1ify "$TEST_DIR" > /dev/null 2>&1 || true
 setopt err_exit
@@ -103,7 +103,7 @@ mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/file1.avi"
 echo "video 2" > "$TEST_DIR/file2.mkv"
 echo "video 3" > "$TEST_DIR/file3.wmv"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/file1.avi" "$TEST_DIR/file2.mkv" "$TEST_DIR/file3.wmv" 2>&1 || true)
 setopt err_exit
@@ -129,7 +129,7 @@ $TEST_DIR/videoC.wmv
 
 LISTEOF
 
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify -f "$TEST_DIR/list.txt" 2>&1 || true)
 setopt err_exit
@@ -149,7 +149,7 @@ echo "video b" > "$TEST_DIR/listB.mkv"
 cat > "$TEST_DIR/list.txt" <<LISTEOF
 $TEST_DIR/listB.mkv
 LISTEOF
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/posA.avi" -f "$TEST_DIR/list.txt" 2>&1 || true)
 setopt err_exit
@@ -167,7 +167,7 @@ cat > "$TEST_DIR/empty_list.txt" <<LISTEOF
 # コメントのみ
 
 LISTEOF
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify -f "$TEST_DIR/empty_list.txt" "$TEST_DIR/posOnly.avi" 2>&1 || true)
 setopt err_exit
@@ -178,7 +178,7 @@ assert_not_contains "$output" "対象ファイルなし" "Does not early-return 
 printf '\n## Test 11: Error when -f list file not found\n'
 TEST_DIR="$TEST_TMP/test11"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify -f "$TEST_DIR/nonexistent.txt" 2>&1 || true)
 setopt err_exit
@@ -188,7 +188,7 @@ assert_contains "$output" "ファイルが見つかりません" "Reports error 
 printf '\n## Test 12: Error when -f has no argument\n'
 TEST_DIR="$TEST_TMP/test12"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify -f 2>&1 || true)
 setopt err_exit
@@ -202,7 +202,7 @@ fi
 printf '\n## Test 13: Size reduction summary on success\n'
 TEST_DIR="$TEST_TMP/test13"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 head -c 1000 /dev/zero > "$TEST_DIR/input.avi"   # 元 1000 bytes
 unsetopt err_exit
 output=$(MOCK_FFMPEG_OUTPUT_SIZE=250 av1ify "$TEST_DIR/input.avi" 2>&1)   # 出力 250 bytes

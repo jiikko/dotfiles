@@ -18,7 +18,7 @@ TEST_DIR="$TEST_TMP/netvol_1"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/nclip_001.mp4"
 echo "video 2" > "$TEST_DIR/nclip_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_MOUNT_OUTPUT="//user@host/share on ${TEST_DIR:A} (smbfs, nodev, nosuid)" \
   concat "$TEST_DIR/nclip_001.mp4" "$TEST_DIR/nclip_002.mp4" 2>&1)
@@ -40,7 +40,7 @@ TEST_DIR="$TEST_TMP/netvol_2"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/lclip_001.mp4"
 echo "video 2" > "$TEST_DIR/lclip_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_MOUNT_OUTPUT="/dev/disk1 on / (apfs, local)" \
   concat "$TEST_DIR/lclip_001.mp4" "$TEST_DIR/lclip_002.mp4" 2>&1)

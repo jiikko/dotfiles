@@ -18,7 +18,7 @@ TEST_DIR="$TEST_TMP/fps1"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/fpsdiff_001.mp4"
 echo "video 2" > "$TEST_DIR/fpsdiff_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/fpsdiff_001.mp4" "$TEST_DIR/fpsdiff_002.mp4" 2>&1)
 exit_code=$?
@@ -50,7 +50,7 @@ __concat_verify_frame_order() {
   print -r -- "called" >> "$SPY_LOG"
   __concat_verify_frame_order_orig "$@"
 }
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat --verbose "$TEST_DIR/fpsdiff_001.mp4" "$TEST_DIR/fpsdiff_002.mp4" 2>&1)
 exit_code=$?
@@ -77,7 +77,7 @@ __concat_verify_frame_order() {
   REPLY="injected failure"
   return 1
 }
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/fpsdiff_001.mp4" "$TEST_DIR/fpsdiff_002.mp4" 2>&1)
 exit_code=$?
@@ -96,7 +96,7 @@ TEST_DIR="$TEST_TMP/fps5"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/normal_001.mp4"
 echo "video 2" > "$TEST_DIR/normal_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/normal_001.mp4" "$TEST_DIR/normal_002.mp4" 2>&1)
 exit_code=$?
@@ -110,7 +110,7 @@ TEST_DIR="$TEST_TMP/fps6"
 mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/mismatch_001.mp4"
 echo "video 2" > "$TEST_DIR/mismatch_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/mismatch_001.mp4" "$TEST_DIR/mismatch_002.mp4" 2>&1)
 exit_code=$?

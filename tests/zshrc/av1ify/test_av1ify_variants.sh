@@ -14,7 +14,7 @@ TEST_DIR="$TEST_TMP/test80"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 echo "already encoded" > "$TEST_DIR/input-aac96k-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_FPS="60/1" av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -28,7 +28,7 @@ TEST_DIR="$TEST_TMP/test81"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 echo "already encoded" > "$TEST_DIR/input-720p-30fps-aac96k-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -42,7 +42,7 @@ TEST_DIR="$TEST_TMP/test82"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 echo "already encoded" > "$TEST_DIR/input-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -53,7 +53,7 @@ printf '\n## Test 83: Normal processing when no variant exists\n'
 TEST_DIR="$TEST_TMP/test83"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 av1ify "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
@@ -65,7 +65,7 @@ TEST_DIR="$TEST_TMP/test84"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 echo "already encoded" > "$TEST_DIR/input-dn2-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify -r 720p "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
@@ -78,7 +78,7 @@ TEST_DIR="$TEST_TMP/test85"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 echo "other file" > "$TEST_DIR/input2-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 av1ify "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
@@ -90,7 +90,7 @@ TEST_DIR="$TEST_TMP/test86"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/clip-raw-1234567.mp4"
 echo "already encoded" > "$TEST_DIR/clip-raw-1234567-aac96k-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/clip-raw-1234567.mp4" 2>&1 || true)
 setopt err_exit
@@ -104,7 +104,7 @@ mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/clip-raw-1234567.mp4"
 echo "dummy video 2" > "$TEST_DIR/clip-raw-1234567-1.mp4"
 echo "other output" > "$TEST_DIR/clip-raw-1234567-1-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 av1ify "$TEST_DIR/clip-raw-1234567.mp4" > /dev/null 2>&1 || true
 setopt err_exit
@@ -116,7 +116,7 @@ TEST_DIR="$TEST_TMP/test88"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/clip-raw-1234567.mp4"
 echo "other output" > "$TEST_DIR/clip-raw-1234567-part2-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 av1ify "$TEST_DIR/clip-raw-1234567.mp4" > /dev/null 2>&1 || true
 setopt err_exit
@@ -128,7 +128,7 @@ TEST_DIR="$TEST_TMP/test89"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/VLOG-013_家族旅行の記録.mp4"
 echo "already encoded" > "$TEST_DIR/VLOG-013_家族旅行の記録-aac96k-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_FPS="60/1" av1ify --compact "$TEST_DIR/VLOG-013_家族旅行の記録.mp4" 2>&1 || true)
 setopt err_exit
@@ -141,7 +141,7 @@ TEST_DIR="$TEST_TMP/test90"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/TRIP-097-北海道旅行まとめ.mp4"
 echo "other output" > "$TEST_DIR/TRIP-097-北海道旅行まとめvol2-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 av1ify "$TEST_DIR/TRIP-097-北海道旅行まとめ.mp4" > /dev/null 2>&1 || true
 setopt err_exit
@@ -153,7 +153,7 @@ TEST_DIR="$TEST_TMP/test91"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/proj-doc-9876543.mp4"
 echo "already encoded" > "$TEST_DIR/proj-doc-9876543-720p-30fps-aac96k-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/proj-doc-9876543.mp4" 2>&1 || true)
 setopt err_exit
@@ -166,7 +166,7 @@ TEST_DIR="$TEST_TMP/test92"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/video.avi"
 echo "already encoded" > "$TEST_DIR/video-aac96k-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/video.avi" 2>&1 || true)
 setopt err_exit
@@ -183,7 +183,7 @@ TEST_DIR="$TEST_TMP/test93"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/video.avi"
 echo "already encoded" > "$TEST_DIR/video-720p-aac96k-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/video.avi" 2>&1 || true)
 setopt err_exit
@@ -196,7 +196,7 @@ TEST_DIR="$TEST_TMP/test94"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/video.avi"
 echo "already encoded" > "$TEST_DIR/video-720p-30fps-dn2-aac96k-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify "$TEST_DIR/video.avi" 2>&1 || true)
 setopt err_exit
@@ -208,7 +208,7 @@ TEST_DIR="$TEST_TMP/test95"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/video.avi"
 echo "not a variant" > "$TEST_DIR/video--enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 av1ify "$TEST_DIR/video.avi" > /dev/null 2>&1 || true
 setopt err_exit
@@ -222,7 +222,7 @@ echo "dummy video" > "$TEST_DIR/video.avi"
 echo "not a variant" > "$TEST_DIR/video-bonus-enc.mp4"
 echo "not a variant" > "$TEST_DIR/video-HD-enc.mp4"
 echo "not a variant" > "$TEST_DIR/video-x264-enc.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 av1ify "$TEST_DIR/video.avi" > /dev/null 2>&1 || true
 setopt err_exit

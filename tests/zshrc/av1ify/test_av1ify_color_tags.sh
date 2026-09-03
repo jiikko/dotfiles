@@ -15,7 +15,7 @@ printf '## Test 1: Default color-tags is auto (dry-run)\n'
 TEST_DIR="$TEST_TMP/test1"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "color-tags=auto" "Dry-run shows color-tags=auto by default"
 
@@ -24,7 +24,7 @@ printf '\n## Test 2: --color-tags bt709 (dry-run)\n'
 TEST_DIR="$TEST_TMP/test2"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run --color-tags bt709 "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "color-tags=bt709" "Dry-run shows color-tags=bt709"
 
@@ -33,7 +33,7 @@ printf '\n## Test 3: --color-tags off (dry-run)\n'
 TEST_DIR="$TEST_TMP/test3"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(av1ify --dry-run --color-tags off "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "color-tags=off" "Dry-run shows color-tags=off"
 
@@ -42,7 +42,7 @@ printf '\n## Test 4: Invalid --color-tags value (error exit)\n'
 TEST_DIR="$TEST_TMP/test4"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(av1ify --dry-run --color-tags bogus "$TEST_DIR/input.avi" 2>&1)
 exit_code=$?
@@ -59,7 +59,7 @@ printf '\n## Test 5: auto mode passes -colorspace bt709 to ffmpeg for Identity s
 TEST_DIR="$TEST_TMP/test5"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 ARGS_LOG="$TEST_DIR/ffmpeg_args"
 output=$(MOCK_COLOR_SPACE=gbr TEST_FFMPEG_ARGS_LOG="$ARGS_LOG" av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 ffargs=$(cat "$ARGS_LOG" 2>/dev/null || true)
@@ -76,7 +76,7 @@ printf '\n## Test 6: auto mode leaves already-correct source untouched\n'
 TEST_DIR="$TEST_TMP/test6"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 ARGS_LOG="$TEST_DIR/ffmpeg_args"
 output=$(MOCK_COLOR_SPACE=bt709 TEST_FFMPEG_ARGS_LOG="$ARGS_LOG" av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 ffargs=$(cat "$ARGS_LOG" 2>/dev/null || true)
@@ -88,7 +88,7 @@ printf '\n## Test 7: --color-tags bt709 always overrides regardless of source\n'
 TEST_DIR="$TEST_TMP/test7"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 ARGS_LOG="$TEST_DIR/ffmpeg_args"
 output=$(MOCK_COLOR_SPACE=smpte170m TEST_FFMPEG_ARGS_LOG="$ARGS_LOG" av1ify --color-tags bt709 "$TEST_DIR/input.avi" 2>&1 || true)
 ffargs=$(cat "$ARGS_LOG" 2>/dev/null || true)
@@ -100,7 +100,7 @@ printf '\n## Test 8: --color-tags off never overrides, even for Identity source\
 TEST_DIR="$TEST_TMP/test8"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 ARGS_LOG="$TEST_DIR/ffmpeg_args"
 output=$(MOCK_COLOR_SPACE=gbr TEST_FFMPEG_ARGS_LOG="$ARGS_LOG" av1ify --color-tags off "$TEST_DIR/input.avi" 2>&1 || true)
 ffargs=$(cat "$ARGS_LOG" 2>/dev/null || true)
@@ -112,7 +112,7 @@ printf '\n## Test 9: AV1_COLOR_TAGS env var applies when CLI option omitted\n'
 TEST_DIR="$TEST_TMP/test9"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(AV1_COLOR_TAGS=off av1ify --dry-run "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "color-tags=off" "AV1_COLOR_TAGS env var reflected in dry-run plan"
 
@@ -121,7 +121,7 @@ printf '\n## Test 10: CLI --color-tags takes precedence over AV1_COLOR_TAGS\n'
 TEST_DIR="$TEST_TMP/test10"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(AV1_COLOR_TAGS=off av1ify --dry-run --color-tags bt709 "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "color-tags=bt709" "CLI option overrides env var in dry-run plan"
 
@@ -133,7 +133,7 @@ printf '\n## Test 11: Identity failure is not misdiagnosed as an audio-copy fail
 TEST_DIR="$TEST_TMP/test11"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 ARGS_LOG="$TEST_DIR/ffmpeg_args"
 output=$(MOCK_COLOR_SPACE=gbr MOCK_FFMPEG_FAIL=1 TEST_FFMPEG_ARGS_LOG="$ARGS_LOG" \
   av1ify --color-tags off "$TEST_DIR/input.avi" 2>&1 || true)
@@ -153,7 +153,7 @@ printf '\n## Test 12: Corrected source still falls through to the normal audio r
 TEST_DIR="$TEST_TMP/test12"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 output=$(MOCK_COLOR_SPACE=gbr MOCK_FFMPEG_FAIL=1 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "音声copy失敗" "Already-corrected failure still uses the audio retry path"
 assert_not_contains "$output" "--color-tags bt709" "Does not suggest a remedy that is already applied"

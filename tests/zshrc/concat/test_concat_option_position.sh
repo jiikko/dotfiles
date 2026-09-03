@@ -21,7 +21,7 @@ TEST_DIR="$TEST_TMP/optpos_1"
 mkdir -p "$TEST_DIR"
 echo "v1" > "$TEST_DIR/clip_001.mp4"
 echo "v2" > "$TEST_DIR/clip_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/clip_001.mp4" "$TEST_DIR/clip_002.mp4" --force 2>&1)
 exit_code=$?
@@ -45,7 +45,7 @@ TEST_DIR="$TEST_TMP/optpos_2"
 mkdir -p "$TEST_DIR"
 echo "v1" > "$TEST_DIR/mid_001.mp4"
 echo "v2" > "$TEST_DIR/mid_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/mid_001.mp4" --force "$TEST_DIR/mid_002.mp4" 2>&1)
 exit_code=$?
@@ -62,7 +62,7 @@ TEST_DIR="$TEST_TMP/optpos_3"
 mkdir -p "$TEST_DIR"
 echo "v1" > "$TEST_DIR/multi_001.mp4"
 echo "v2" > "$TEST_DIR/multi_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/multi_001.mp4" "$TEST_DIR/multi_002.mp4" --force --keep 2>&1)
 exit_code=$?
@@ -79,7 +79,7 @@ TEST_DIR="$TEST_TMP/optpos_4"
 mkdir -p "$TEST_DIR"
 echo "v1" > "$TEST_DIR/unk_001.mp4"
 echo "v2" > "$TEST_DIR/unk_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/unk_001.mp4" "$TEST_DIR/unk_002.mp4" --bogus 2>&1)
 exit_code=$?
@@ -102,7 +102,7 @@ mkdir -p "$TEST_DIR"
 # 通常のファイル名で "--" の後ろに置けることだけ確認（"--" 始まりのファイル作成は環境依存）
 echo "v1" > "$TEST_DIR/term_001.mp4"
 echo "v2" > "$TEST_DIR/term_002.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat --force -- "$TEST_DIR/term_001.mp4" "$TEST_DIR/term_002.mp4" 2>&1)
 exit_code=$?
@@ -118,7 +118,7 @@ TEST_DIR="$TEST_TMP/optpos_6"
 mkdir -p "$TEST_DIR"
 echo "v1" > "$TEST_DIR/title with spaces_1.mp4"
 echo "v2" > "$TEST_DIR/title with spaces_2.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/title with spaces_1.mp4" "$TEST_DIR/title with spaces_2.mp4" --force 2>&1)
 exit_code=$?

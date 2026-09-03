@@ -133,7 +133,7 @@ printf '\n## Test 2: Single file processing with normal framerate\n'
 TEST_DIR="$TEST_TMP/test2"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_FPS="30/1"
 output=$(repair_mp4 "$TEST_DIR/input.mp4" 2>&1)
 assert_file_exists "$TEST_DIR/input-repaired.mp4" "Output file is created with -repaired.mp4 suffix"
@@ -145,7 +145,7 @@ printf '\n## Test 3: Abnormal framerate detection and normalization\n'
 TEST_DIR="$TEST_TMP/test3"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/broken.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_FPS="90000/1"
 output=$(repair_mp4 "$TEST_DIR/broken.mp4" 2>&1)
 assert_file_exists "$TEST_DIR/broken-repaired.mp4" "Output file is created"
@@ -159,7 +159,7 @@ TEST_DIR="$TEST_TMP/test4"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/video.mp4"
 echo "already repaired" > "$TEST_DIR/video-repaired.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_FPS="30/1"
 output=$(repair_mp4 "$TEST_DIR/video.mp4" 2>&1)
 assert_contains "$output" "SKIP" "Skips when output file already exists"
@@ -168,7 +168,7 @@ assert_contains "$output" "SKIP" "Skips when output file already exists"
 printf '\n## Test 5: Error handling for non-existent file\n'
 TEST_DIR="$TEST_TMP/test5"
 mkdir -p "$TEST_DIR"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(repair_mp4 "$TEST_DIR/nonexistent.mp4" 2>&1 || true)
 setopt err_exit
@@ -188,7 +188,7 @@ mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/file1.mp4"
 echo "video 2" > "$TEST_DIR/file2.mp4"
 echo "video 3" > "$TEST_DIR/file3.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_FPS="30/1"
 unsetopt err_exit
 repair_mp4 "$TEST_DIR/file1.mp4" "$TEST_DIR/file2.mp4" "$TEST_DIR/file3.mp4" > /dev/null 2>&1 || true
@@ -202,7 +202,7 @@ printf '\n## Test 8: Container format display\n'
 TEST_DIR="$TEST_TMP/test8"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_FPS="30/1"
 export MOCK_FORMAT="mpegts"
 output=$(repair_mp4 "$TEST_DIR/input.mp4" 2>&1)
@@ -213,7 +213,7 @@ printf '\n## Test 9: Custom FPS via REPAIR_MP4_FPS environment variable\n'
 TEST_DIR="$TEST_TMP/test9"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_FPS="90000/1"
 export REPAIR_MP4_FPS=60
 output=$(repair_mp4 "$TEST_DIR/input.mp4" 2>&1)
@@ -225,7 +225,7 @@ printf '\n## Test 10: Framerate <= 240 is treated as normal\n'
 TEST_DIR="$TEST_TMP/test10"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_FPS="240/1"
 output=$(repair_mp4 "$TEST_DIR/input.mp4" 2>&1)
 assert_contains "$output" "240fps (正常)" "240fps is treated as normal"
@@ -236,7 +236,7 @@ printf '\n## Test 11: Framerate > 240 is treated as abnormal\n'
 TEST_DIR="$TEST_TMP/test11"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_FPS="241/1"
 output=$(repair_mp4 "$TEST_DIR/input.mp4" 2>&1)
 assert_contains "$output" "異常なフレームレート" "241fps is treated as abnormal"
@@ -246,7 +246,7 @@ printf '\n## Test 13: Skip files that do not need repair\n'
 TEST_DIR="$TEST_TMP/test13"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/normal.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_FPS="30/1"
 export MOCK_FORMAT="mov,mp4,m4a,3gp,3g2,mj2"
 output=$(repair_mp4 "$TEST_DIR/normal.mp4" 2>&1)
@@ -258,7 +258,7 @@ printf '\n## Test 14: mpegts container needs repair even with normal framerate\n
 TEST_DIR="$TEST_TMP/test14"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/video.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_FPS="30/1"
 export MOCK_FORMAT="mpegts"
 output=$(repair_mp4 "$TEST_DIR/video.mp4" 2>&1)
@@ -270,7 +270,7 @@ printf '\n## Test 15: In-place mode overwrites original file\n'
 TEST_DIR="$TEST_TMP/test15"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/video.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_FPS="90000/1"
 export MOCK_FORMAT="mpegts"
 output=$(repair_mp4 -i "$TEST_DIR/video.mp4" 2>&1)
@@ -283,7 +283,7 @@ printf '\n## Test 16: --in-place long option\n'
 TEST_DIR="$TEST_TMP/test16"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/video.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_FPS="90000/1"
 export MOCK_FORMAT="mpegts"
 output=$(repair_mp4 --in-place "$TEST_DIR/video.mp4" 2>&1)
@@ -295,7 +295,7 @@ printf '\n## Test 17: Maps all audio tracks (not just the first) to avoid droppi
 TEST_DIR="$TEST_TMP/test17"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/multi.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 export MOCK_FPS="30/1"
 export MOCK_FORMAT="mpegts"
 export FFMPEG_ARGS_LOG="$TEST_DIR/ffmpeg_args.log"

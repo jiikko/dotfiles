@@ -11,7 +11,7 @@
 # 展開されない」等、テストの意図的な書き方への誤指摘が大量で S/N が悪い。warning/error のみ拾う)。
 set -eu
 unset CDPATH
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 # 発見 0 件は fail (discover_shell_scripts.sh と同じ規律: ディレクトリ改名や find の失敗を
 # 「未実行なのに成功」にしない)

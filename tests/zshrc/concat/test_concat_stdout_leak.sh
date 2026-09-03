@@ -31,7 +31,7 @@ mkdir -p "$TEST_DIR"
 echo "video 1" > "$TEST_DIR/video_001.mp4"
 echo "video 2" > "$TEST_DIR/video_002.mp4"
 echo "video 3" > "$TEST_DIR/video_003.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video_001.mp4" "$TEST_DIR/video_002.mp4" "$TEST_DIR/video_003.mp4" 2>&1)
 exit_code=$?
@@ -48,7 +48,7 @@ echo "video 2" > "$TEST_DIR/clip_002.mp4"
 echo "video 3" > "$TEST_DIR/clip_003.mp4"
 echo "video 4" > "$TEST_DIR/scene_01.mp4"
 echo "video 5" > "$TEST_DIR/scene_02.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR" 2>&1)
 exit_code=$?
@@ -63,7 +63,7 @@ mkdir -p "$TEST_DIR"
 for i in $(seq -w 1 10); do
   echo "video $i" > "$TEST_DIR/batch_${i}.mp4"
 done
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/batch_01.mp4" "$TEST_DIR/batch_02.mp4" "$TEST_DIR/batch_03.mp4" \
   "$TEST_DIR/batch_04.mp4" "$TEST_DIR/batch_05.mp4" "$TEST_DIR/batch_06.mp4" \
@@ -84,7 +84,7 @@ echo "video 2" > "$TEST_DIR/video_002.mp4"
 echo "video 3" > "$TEST_DIR/video_003.mp4"
 echo "other" > "$TEST_DIR/other_file.mp4"
 echo "clip" > "$TEST_DIR/clip_001.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/video_001.mp4" "$TEST_DIR/video_002.mp4" "$TEST_DIR/video_003.mp4" 2>&1)
 exit_code=$?
@@ -100,7 +100,7 @@ echo "video 1" > "$TEST_DIR/clip_01.mp4"
 echo "video 2" > "$TEST_DIR/clip_02.mp4"
 echo "video 3" > "$TEST_DIR/scene_1.mp4"
 echo "video 4" > "$TEST_DIR/scene_2.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/clip_01.mp4" "$TEST_DIR/clip_02.mp4" "$TEST_DIR/scene_1.mp4" "$TEST_DIR/scene_2.mp4" 2>&1)
 exit_code=$?
@@ -120,7 +120,7 @@ echo "video 1" > "$TEST_DIR/clip_01.mp4"
 echo "video 2" > "$TEST_DIR/clip_02.mp4"
 echo "video 3" > "$TEST_DIR/clip_03.mp4"
 echo "video 4" > "$TEST_DIR/other_99.mp4"  # 別グループだが1ファイルのみ
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat "$TEST_DIR/clip_01.mp4" "$TEST_DIR/clip_02.mp4" "$TEST_DIR/clip_03.mp4" "$TEST_DIR/other_99.mp4" 2>&1)
 exit_code=$?
@@ -137,7 +137,7 @@ echo "video 1" > "$TEST_DIR/aaa_1.mp4"
 echo "video 2" > "$TEST_DIR/aaa_2.mp4"
 echo "video 3" > "$TEST_DIR/bbb_1.mp4"
 echo "video 4" > "$TEST_DIR/bbb_2.mp4"
-cd "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(concat --keep "$TEST_DIR/aaa_1.mp4" "$TEST_DIR/aaa_2.mp4" "$TEST_DIR/bbb_1.mp4" "$TEST_DIR/bbb_2.mp4" 2>&1)
 exit_code=$?
