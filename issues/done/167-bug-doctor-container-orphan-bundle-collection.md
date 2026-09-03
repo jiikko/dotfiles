@@ -73,7 +73,25 @@ iOS スタイルのコンテナは**ディレクトリ名が UUID** で、bundle
 - `containerOwnedByInstalled` (`guard.go:209`) は `id` (= ディレクトリ名) を bundle id として突合するので、
   (a) の UUID 名コンテナは構造的に素通りする
 
-実機の `~/Library/Containers` に UUID 名があるかは未再確認 (issue 起票時の実測を採用)。
+### 実機での裏取り (2026-09-03。issue 207 の残作業として実施)
+
+**UUID 名コンテナは実在し、その持ち主はインストール済みのアプリだった。** 修正が守っている
+対象が実在したことの確認になる。
+
+| 確かめたこと | 結果 |
+|---|---|
+| `~/Library/Containers` の UUID 名 | **1 件** (`0A7CEF49-521F-4A65-95E2-9B8495EA27BB`。全 646 件中) |
+| 中身 | `Data/Library/Preferences/com.jiikko.promise.plist` (+ `.com.apple.containermanagerd.metadata.plist`) |
+| 持ち主 | `/Applications/やくそく帳.app` → `Wrapper/Promise.app` (`CFBundleIdentifier` = `com.jiikko.promise`)。**インストール済み** |
+| 修正後の `diskdoctor -json` | `orphan-container` の候補 **7 件**。この UUID は**含まれていない** |
+
+候補に残った 7 件 (`LINE.TimelinePreviewService.0` / `.1` / `com.1password.browser-support` /
+`com.adobe.Acrobat.Pro` / `com.google.one` / `com.pdfeditor.pdfeditormac` /
+`ru.keepcoder.Telegram.TelegramShare`) は起票時の敵対的レビューが「本体不在か旧版の残骸で
+**正しい孤児**」と判定した 7 件と一致する。
+
+⚠️ **iOS-on-Mac アプリは実際に UUID 名のコンテナを作る**ことが確認できたので、この形は
+「起票時にたまたま在った」ものではない。同じ形は他のマシンでも出る。
 
 ## 対応 (2026-09-03)
 

@@ -23,6 +23,29 @@
 **未確認**: clone デバイスが実際に `/private/var/tmp` に SimDevice dir を作るかは未実測 (計測時点で 0 件)。
 セットの存在と simctl が応答することは実測済みで、被害の成立だけが未確認。
 
+### 2026-09-03 に再確認 (issue 207 の残作業として。**被害の成立は今回も未確認のまま**)
+
+| 確かめたこと | 結果 |
+|---|---|
+| `/private/var/tmp` の SimDevice 作業ディレクトリ | **0 件** (並列テストを走らせていないので当然) |
+| 照合先 `~/Library/Developer/CoreSimulator/Devices` | 在り (1 件) |
+| 照合先 `~/Library/Developer/XCTestDevices` | **在り** (0 件。ディレクトリは実在する) |
+| 照合先 `~/Library/Developer/Xcode/UserData/Previews/Simulator Devices` | 無し (存在しないセットは `os.Stat` で skip する仕様どおり) |
+
+**修正が照合する 3 セットのうち 2 つが実機に実在する**ことは確認できた。一方、
+**「並列テストの clone が `/private/var/tmp` に dir を作る」の裏取りは今回もできていない**。
+観測には `xcodebuild test -parallel-testing-enabled YES` の実行中である必要があり、
+[`no-ios-simulator-verification.md`](../../_claude/rules/no-ios-simulator-verification.md) により
+シミュレータを使う確認は自発的に行わない (ユーザーの明示指示があるときだけ)。
+
+**trigger は据え置き**: iOS / macOS アプリ側で並列テストを回す作業が入ったとき、その最中に
+`ls /private/var/tmp | grep SimDevice` と
+`xcrun simctl --set ~/Library/Developer/XCTestDevices list devices -j` を採る。
+前者に出る UDID が後者に在り、既定セットに無ければ、この issue が塞いだ穴が実在したことになる。
+
+⚠️ **現時点で誤判定は起こりえない** (作業ディレクトリが 0 件なので候補が生成されない)。
+急いで確かめる必要は無く、機会が来たときでよい。
+
 ## 再現の trigger
 
 `xcodebuild test -parallel-testing-enabled YES` を回している最中に:
