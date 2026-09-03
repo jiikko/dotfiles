@@ -20,6 +20,37 @@ import (
 
 // doctorTestView は走査を fake に差し替えた doctor (実データ・実 launchd・実 brew を触らない)。
 // disk は偽 HOME の下に 1 エントリだけのカタログ、svc は空ディレクトリ、brew は fake runner。
+
+// writeDoctorSnapshot は snapshot をキャッシュ位置へ書く (TTL 内 / 外の前提を作る)。
+// 同じ 4〜10 行がこのファイルに 8 回あったのを 1 行にしたもの (issue 199)。
+//
+// ⚠️ 壊れた JSON を書くテスト (TestDoctorCacheCorruptAndAtomic) と、書き込み先を
+// 直接触るテスト (os.Remove / os.Chmod) は path 自体が要るので寄せていない。
+// そちらは doctorSnapshotPath() を直接呼ぶ。
+func writeDoctorSnapshot(t *testing.T, sn doctorSnapshot) {
+	t.Helper()
+	data, err := json.Marshal(sn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeDoctorSnapshotRaw(t, data)
+}
+
+// writeDoctorSnapshotRaw は生のバイト列を書く (壊れた JSON を置くテスト用)。
+func writeDoctorSnapshotRaw(t *testing.T, data []byte) {
+	t.Helper()
+	path, err := doctorSnapshotPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func doctorTestView(t *testing.T) *doctorView {
 	t.Helper()
 	home := t.TempDir()
@@ -540,12 +571,7 @@ func TestDoctorReusesRecentSnapshot(t *testing.T) {
 	}
 	v.close()
 	// TTL 切れは走査する
-	path, _ := doctorSnapshotPath()
-	old := doctorSnapshot{ScannedAt: time.Now().Add(-doctorSnapshotTTL - time.Minute)}
-	data, _ := json.Marshal(old)
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeDoctorSnapshot(t, doctorSnapshot{ScannedAt: time.Now().Add(-doctorSnapshotTTL - time.Minute)})
 	if cmd := v.open(); cmd == nil {
 		t.Fatal("TTL 切れの snapshot を使った")
 	}
@@ -638,14 +664,7 @@ func TestDoctorReusesHeavyEntries(t *testing.T) {
 	heavy := disk.Result{Entry: disk.Entry{ID: "thing", Label: "古い定義"}, Status: disk.StatusOK, Size: 777, Elapsed: 3 * time.Second,
 		MeasuredAt: now.Add(-20 * time.Minute), Items: []disk.Item{{Path: "/prev", Size: 777}}}
 	sn := doctorSnapshot{ScannedAt: now.Add(-10 * time.Minute), Disk: disk.Report{Results: []disk.Result{heavy}}} // TTL 5 分は過ぎている
-	data, _ := json.Marshal(sn)
-	path, _ := doctorSnapshotPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeDoctorSnapshot(t, sn)
 	cmd := v.open()
 	if cmd == nil {
 		t.Fatal("TTL 切れなのに走査しない")
@@ -816,17 +835,7 @@ func TestDoctorSnapshotRejectsFutureAndInterrupted(t *testing.T) {
 	v := doctorTestView(t)
 	_ = v
 	now := time.Now()
-	write := func(sn doctorSnapshot) {
-		t.Helper()
-		data, _ := json.Marshal(sn)
-		path, _ := doctorSnapshotPath()
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, data, 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
+	write := func(sn doctorSnapshot) { writeDoctorSnapshot(t, sn) }
 
 	// 時計を戻した (ScannedAt が未来) snapshot は TTL 内と読まない
 	write(doctorSnapshot{ScannedAt: now.Add(48 * time.Hour)})
@@ -1377,18 +1386,7 @@ func TestDoctorSnapshotTrustBoundary(t *testing.T) {
 	v := doctorTestView(t)
 	now := time.Now()
 	writeSnapshot := func(rs []disk.Result) {
-		t.Helper()
-		data, err := json.Marshal(doctorSnapshot{ScannedAt: now.Add(-time.Minute), Disk: disk.Report{Results: rs, Total: 1 << 40}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		path, _ := doctorSnapshotPath()
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, data, 0o600); err != nil {
-			t.Fatal(err)
-		}
+		writeDoctorSnapshot(t, doctorSnapshot{ScannedAt: now.Add(-time.Minute), Disk: disk.Report{Results: rs, Total: 1 << 40}})
 	}
 	res := func(id string, st disk.Status, size int64, itemSize int64, measured time.Time) disk.Result {
 		return disk.Result{Entry: disk.Entry{ID: id, Label: id}, Status: st, Size: size, MeasuredAt: measured,
@@ -1439,11 +1437,7 @@ func TestDoctorSnapshotTrustBoundary(t *testing.T) {
 	v.close()
 
 	// 未来の ScannedAt は復元しない (reuse 側と同じ規律)。TTL 判定の age<0 が担う
-	data, _ := json.Marshal(doctorSnapshot{ScannedAt: now.Add(48 * time.Hour), Disk: disk.Report{Results: []disk.Result{good}}})
-	path, _ := doctorSnapshotPath()
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeDoctorSnapshot(t, doctorSnapshot{ScannedAt: now.Add(48 * time.Hour), Disk: disk.Report{Results: []disk.Result{good}}})
 	if _, ok := loadDoctorSnapshot(now); ok {
 		t.Error("ScannedAt が未来の snapshot を復元した")
 	}
@@ -1478,17 +1472,7 @@ func TestDoctorSnapshotTrustBoundarySvcAndBrew(t *testing.T) {
 			"Warning: \x1b[2J\x1b[H画面を消す",
 		}},
 	}
-	data, err := json.Marshal(sn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	path, _ := doctorSnapshotPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeDoctorSnapshot(t, sn)
 	if cmd := v.open(); cmd != nil {
 		t.Fatal("TTL 内なのに走査した (snapshot 復元の経路を通っていない)")
 	}
@@ -1556,17 +1540,7 @@ func TestDoctorSnapshotTrustBoundaryFreeText(t *testing.T) {
 			{PlistPath: "/Library/LaunchAgents/../../tmp/x.plist", Reason: "形が崩れている"},
 		}},
 	}
-	data, err := json.Marshal(sn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	path, _ := doctorSnapshotPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeDoctorSnapshot(t, sn)
 	if cmd := v.open(); cmd != nil {
 		t.Fatal("TTL 内なのに走査した")
 	}

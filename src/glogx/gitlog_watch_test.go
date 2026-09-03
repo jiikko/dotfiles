@@ -19,6 +19,30 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+// realRepoBrowse は実 git repo (subjects のコミット付き) を作り、そこへ chdir した状態の
+// browseModel を返す。このファイルの 10 テストが同じ 9 行のプロローグを繰り返していたのを
+// 1 行にしたもの (issue 199)。
+//
+// ⚠️ 3 つとも返すこと。dir は追加コミット (commitLines) に、opts は BuildFingerprintArgs /
+// LoadCommits に個別に要る。どれかを隠すと呼び出し側が結局自前で組み直す。
+// ⚠️ newTempRepo は t.Chdir する副作用を持つので、LoadCommits より先に呼ぶ順序を変えない。
+//
+// ここに置くのは意図的で、tui_helpers_test.go へは上げない。実 git repo に依存するのは
+// このファイルだけで、共有語彙に見せると読み手が「全 main テストの前提」と誤解する。
+func realRepoBrowse(t *testing.T, height int, subjects ...string) (*browseModel, string, *Options) {
+	t.Helper()
+	dir := newTempRepo(t, subjects)
+	opts := &Options{MaxCount: 20, NoFrame: true}
+	commits, err := LoadCommits(opts, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, height)
+	t.Cleanup(m.cancel)
+	m.zoom.off = true
+	return m, dir, opts
+}
+
 func TestBuildFingerprintArgsSkipsBodyAndColor(t *testing.T) {
 	opts := &Options{MaxCount: 7, Stat: true, Patch: true, Revs: []string{"HEAD"}, Paths: []string{"a.go"}}
 	args := BuildFingerprintArgs(opts)
@@ -173,15 +197,7 @@ func TestGitLogFPUnmeasuredKeepsBaseline(t *testing.T) {
 // 起動時の読み込み〜初回測定の窓に入った変化を「元からそう」と飲み込まない。
 // 実 git で測るので、指紋の形式と Commit.SHA の突き合わせ自体も検査している。
 func TestGitLogFingerprintBaselineCatchesStartupWindow(t *testing.T) {
-	dir := newTempRepo(t, []string{"c1", "c2"})
-	opts := &Options{MaxCount: 20, NoFrame: true}
-	commits, err := LoadCommits(opts, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, 10)
-	t.Cleanup(m.cancel)
-	m.zoom.off = true
+	m, dir, opts := realRepoBrowse(t, 10, "c1", "c2")
 
 	fp, err := runGit(BuildFingerprintArgs(opts)...)
 	if err != nil {
@@ -223,18 +239,10 @@ func TestGitLogFingerprintBaselineCatchesStartupWindow(t *testing.T) {
 
 // 途中を読んでいるときは、見ているコミットが同じ画面行に残る (ユーザー選定 2026-09-01)。
 func TestGitLogReflectKeepsAnchorRow(t *testing.T) {
-	dir := newTempRepo(t, []string{"c1", "c2", "c3", "c4"})
-	opts := &Options{MaxCount: 20, NoFrame: true}
-	commits, err := LoadCommits(opts, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, 10)
-	t.Cleanup(m.cancel)
-	m.zoom.off = true
+	m, dir, _ := realRepoBrowse(t, 10, "c1", "c2", "c3", "c4")
 	m.cursor = 2
 	m.ensureCursorVisible()
-	anchor := commits[2].SHA
+	anchor := m.commits[2].SHA // ヘルパー化前は LoadCommits の戻り値を直接見ていた (同じもの)
 	rowBefore := headerLineIndex(m.lines(), m.cursor) - m.offset
 
 	commitLines(t, dir, 9, "c5")
@@ -277,15 +285,7 @@ func TestGitLogReflectKeepsAnchorRow(t *testing.T) {
 
 // カーソルが先頭にいるときは pull と同じ演出 (新規行が上から降り、カーソルは先頭)。
 func TestGitLogReflectAtTopFallsToPullAnim(t *testing.T) {
-	dir := newTempRepo(t, []string{"c1", "c2", "c3", "c4"})
-	opts := &Options{MaxCount: 20, NoFrame: true}
-	commits, err := LoadCommits(opts, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, 24)
-	t.Cleanup(m.cancel)
-	m.zoom.off = true
+	m, dir, _ := realRepoBrowse(t, 24, "c1", "c2", "c3", "c4")
 	m.cursor, m.offset = 0, 0
 
 	commitLines(t, dir, 9, "c5")
@@ -342,15 +342,7 @@ func TestIntegrationGitLogWatchSeesCommitEvent(t *testing.T) {
 // Update の配線を通した反映 (case が 1 つ抜けると機能ごと死ぬのに、ハンドラの単体検査は全部
 // 緑のまま通る)。Init が保険のチェーンを張ることも合わせて固定する。
 func TestGitLogWatchWiredThroughUpdate(t *testing.T) {
-	dir := newTempRepo(t, []string{"c1", "c2"})
-	opts := &Options{MaxCount: 20, NoFrame: true}
-	commits, err := LoadCommits(opts, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, 10)
-	t.Cleanup(m.cancel)
-	m.zoom.off = true
+	m, dir, _ := realRepoBrowse(t, 10, "c1", "c2")
 	m.Init() // 返す Cmd は実行しない (札の副作用だけを見る)
 	if !m.logWatch.pollArmed {
 		t.Error("Init が保険のポーリングを張っていない (イベントが来ない環境で永久に気づけない)")
@@ -419,22 +411,14 @@ func TestCancelAllClosesGitLogWatcher(t *testing.T) {
 // 測っている間にポップアップを開かれたら反映しない (開始時のチェックだけでは、開いている
 // 内容のキャッシュを reloadLog が消してしまう)。
 func TestGitLogFPDefersWhenOverlayOpensDuringMeasure(t *testing.T) {
-	dir := newTempRepo(t, []string{"c1", "c2"})
-	opts := &Options{MaxCount: 20, NoFrame: true}
-	commits, err := LoadCommits(opts, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, 10)
-	t.Cleanup(m.cancel)
-	m.zoom.off = true
+	m, dir, _ := realRepoBrowse(t, 10, "c1", "c2")
 	m.logWatch.seen, m.logWatch.hasSeen = "before", true
 	m.handleGitLogProbe(gitLogProbeMsg{}) // ここでは開いていないので測定が始まる
 	if !m.logWatch.measuring {
 		t.Fatal("測定が始まらない")
 	}
 	commitLines(t, dir, 9, "c3")
-	m.diffOv.open(commits[0].SHA) // 測定中に開かれた
+	m.diffOv.open(m.commits[0].SHA) // 測定中に開かれた
 	if cmd := m.handleGitLogFP(gitLogFPMsg{fp: "after", ok: true}); cmd != nil {
 		t.Error("ポップアップを開いている状態で反映した (開いている内容のキャッシュが消える)")
 	}
@@ -453,15 +437,7 @@ func TestGitLogFPDefersWhenOverlayOpensDuringMeasure(t *testing.T) {
 // 自分で読み直した直後に、その前に測った指紋が届いても反映しない (pull / push の後に
 // 無駄な再読込・トースト・CI 再取得が続けて走る形)。
 func TestGitLogFPDiscardsMeasurementTakenBeforeSelfReload(t *testing.T) {
-	dir := newTempRepo(t, []string{"c1", "c2"})
-	opts := &Options{MaxCount: 20, NoFrame: true}
-	commits, err := LoadCommits(opts, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, 10)
-	t.Cleanup(m.cancel)
-	m.zoom.off = true
+	m, dir, _ := realRepoBrowse(t, 10, "c1", "c2")
 	m.logWatch.seen, m.logWatch.hasSeen = "before", true
 	m.handleGitLogProbe(gitLogProbeMsg{})
 	staleFP := "measured-before-pull"
@@ -491,15 +467,7 @@ func TestGitLogFPDiscardsMeasurementTakenBeforeSelfReload(t *testing.T) {
 // ctrl+d / pgdown はカーソルを動かさずビューポートだけ下げる。この状態を「先頭を見ている」と
 // 扱うと、外部変更の反映で画面が先頭へ飛ぶ。
 func TestGitLogReflectKeepsViewportScrolledWithCursorAtTop(t *testing.T) {
-	dir := newTempRepo(t, []string{"c1", "c2", "c3", "c4", "c5"})
-	opts := &Options{MaxCount: 20, NoFrame: true}
-	commits, err := LoadCommits(opts, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, 10)
-	t.Cleanup(m.cancel)
-	m.zoom.off = true
+	m, dir, _ := realRepoBrowse(t, 10, "c1", "c2", "c3", "c4", "c5")
 	m.cursor = 0
 	m.offset = m.clampOffset(4) // ctrl+d 相当 (カーソルは先頭のまま下を覗いている)
 	if m.offset == 0 {
@@ -556,15 +524,7 @@ func TestGitLogReloadDeferredCoversEachState(t *testing.T) {
 // 動かない。⚠️ カーソルだけを錨にすると、この状態のカーソルは先頭コミット = amend で最も
 // 消えやすい SHA を指すため「先頭へ倒す」経路に落ちる (敵対レビューで実測 2026-09-01)。
 func TestGitLogReflectSurvivesAmendOfTopCommit(t *testing.T) {
-	dir := newTempRepo(t, []string{"c1", "c2", "c3", "c4", "c5", "c6"})
-	opts := &Options{MaxCount: 20, NoFrame: true}
-	commits, err := LoadCommits(opts, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, 10)
-	t.Cleanup(m.cancel)
-	m.zoom.off = true
+	m, dir, _ := realRepoBrowse(t, 10, "c1", "c2", "c3", "c4", "c5", "c6")
 	m.cursor = 0
 	m.offset = m.clampOffset(12) // ctrl+d 相当 (カーソルは先頭のまま下を読んでいる)
 	if m.offset == 0 {
@@ -645,15 +605,7 @@ func runGitLogReload(t *testing.T, m *browseModel, cmd tea.Cmd) {
 
 // 読み直している間に pull が入ったら、届いた古い logData で pull の結果を上書きしない。
 func TestGitLogReloadDiscardsWhenSelfReloadHappenedMeanwhile(t *testing.T) {
-	dir := newTempRepo(t, []string{"c1", "c2"})
-	opts := &Options{MaxCount: 20, NoFrame: true}
-	commits, err := LoadCommits(opts, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, 10)
-	t.Cleanup(m.cancel)
-	m.zoom.off = true
+	m, dir, _ := realRepoBrowse(t, 10, "c1", "c2")
 	commitLines(t, dir, 9, "c3")
 	cmd := m.reflectGitLogChange()
 	staleMsg := cmd() // c3 まで読んだ結果 (まだ届いていない)
@@ -678,20 +630,12 @@ func TestGitLogReloadDiscardsWhenSelfReloadHappenedMeanwhile(t *testing.T) {
 // 読み直している間にポップアップが開かれたら、届いた結果を入れない (開いている内容の
 // キャッシュが消える)。基準は触らないので閉じた後の観測で反映される。
 func TestGitLogReloadDefersWhenOverlayOpensDuringReload(t *testing.T) {
-	dir := newTempRepo(t, []string{"c1", "c2"})
-	opts := &Options{MaxCount: 20, NoFrame: true}
-	commits, err := LoadCommits(opts, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := newBrowseModel(commits, map[string]CIState{}, nil, Repo{}, false, opts, false, 80, 10)
-	t.Cleanup(m.cancel)
-	m.zoom.off = true
+	m, dir, _ := realRepoBrowse(t, 10, "c1", "c2")
 	m.logWatch.seen, m.logWatch.hasSeen = "before", true
 	commitLines(t, dir, 9, "c3")
 	cmd := m.reflectGitLogChange()
 	msg := cmd()
-	m.diffOv.open(commits[0].SHA) // 読み直し中に開かれた
+	m.diffOv.open(m.commits[0].SHA) // 読み直し中に開かれた
 	if cmd := m.handleGitLogReload(msg.(gitLogReloadMsg)); cmd != nil {
 		t.Error("ポップアップを開いている状態で反映した")
 	}

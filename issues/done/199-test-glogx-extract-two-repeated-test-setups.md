@@ -98,3 +98,45 @@ os.WriteFile(path, data, 0o600)
 - [ ] 候補 1 / 2 を抽出し、各テストの主張 (assert) が 1 行も変わっていないことを diff で確認する
 - [ ] 抽出後に `go test ./...` が green
 - [ ] ⚠️ 印の注意点 (3 変数を返す / `t.Chdir` の順 / 壊れた JSON のケース) を踏んでいないか確認する
+
+## 対応 (2026-09-03、後続セッション)
+
+**候補 1 / 2 とも抽出した。production は 1 行も変えていない** (変更はテストファイル 2 本だけ)。
+
+| | before | after | 備考 |
+|---|---|---|---|
+| `gitlog_watch_test.go` | 756 行 | **700 行** (-56) | `realRepoBrowse(t, height, subjects...)` を新設し **10 箇所**を 1 行へ |
+| `doctor_view_test.go` | 1,779 行 | **1,753 行** (-26) | `writeDoctorSnapshot` / `writeDoctorSnapshotRaw` を新設し **7 箇所**を 1 行へ |
+
+### 抽出でテストの主張が変わっていないことの確認
+
+**「意味のある assert」の数が完全に不変**であることを機械的に確かめた
+(`t.Fatal(err)` の定型だけがヘルパーへ移った):
+
+| | 意味のある assert | 定型 `t.Fatal(err)` | テスト関数 |
+|---|---|---|---|
+| `gitlog_watch_test.go` | 101 → **101** | 14 → 5 | 24 → 24 |
+| `doctor_view_test.go` | 195 → **195** | 41 → 30 | 33 → 33 |
+
+### 想定と違った点
+
+- **候補 1 の対象は 12 箇所ではなく 10 箇所**だった。`newBrowseModel` の呼び出し 12 回のうち
+  1 つは高さが 24 (他は 10) で、残り 1 つはプロローグの形が違う。ヘルパーに `height` 引数を
+  持たせて高さ違いも吸収し、形が違う 1 箇所はそのまま残した
+- **`commits` を後で使うテストが 3 箇所あった** (`commits[2].SHA` / `m.diffOv.open(commits[0].SHA)`)。
+  `m.commits` から同じものが取れる (他テストも既にその形) ので置き換えた。
+  ヘルパーは `commits` を返さない — 返すと引数が 4 つになり、使う側が 3 箇所しか無い
+- **候補 2 の 8 箇所のうち寄せられたのは 7 箇所**。残る 1 箇所 (`TestDoctorCacheCorruptAndAtomic` /
+  `os.Remove` を使う箇所) は **path 自体が要る**ので `doctorSnapshotPath()` の直接呼び出しを残した
+  (issue 本文の ⚠️ 注記どおり)。`writeDoctorSnapshotRaw` は壊れた JSON 用に用意したが、
+  現状の呼び出し側は `writeDoctorSnapshot` 経由のみ
+- **行数の削減は issue の見積もり (96 / 72 行) より小さい** (56 / 26 行)。ヘルパー本体
+  (32 行 + 14 行) が同じファイルに入るため。**削減の主目的は行数ではなく、各テストの
+  本題が先頭に来ること**なので、この差は問題としない
+
+### 受け入れ条件
+
+- [x] 候補 1 / 2 を抽出し、各テストの主張が変わっていないことを確認した (上表)
+- [x] 抽出後に `go test ./...` green / `make -C src/glogx lint` 0 issues
+- [x] ⚠️ 印の注意点を踏んでいない: 3 変数とも返す / `newTempRepo` の `t.Chdir` より後に
+      `LoadCommits` を呼ぶ順序を維持 / 壊れた JSON のケースは寄せずに残した
