@@ -46,10 +46,12 @@
 3 つ目は元の文書 (`docs/glogx-bubbletea-v2.md`) 側が今も不正確。**引き写した先だけ直した**ので、
 出典側は誤ったまま残っている。
 
-**切り出し先案**: 2 つある。(a) `docs/glogx-bubbletea-v2.md` の該当記述を実測に直す issue を起票する
-(小さいので今すぐでもよい) (b) 規律としては CLAUDE.md「ぼやきも事実の主張なら裏を取る」が
-既に一般形を持つので、**新規ルールは作らない**。ただし「**既存ドキュメントからの引き写しも
-『不在の主張』と同じ扱い**」という一文を足す価値はあるかもしれない。
+**切り出し済み** (2026-09-03): 出典側 (`docs/glogx-bubbletea-v2.md`) を実測に直した。
+「同じ charm 依存の版がずれている」ではなく **モジュールパスから違う** ことを明示し、
+3 モジュールの実測表 (bubbletea / x/ansi / lipgloss) を入れた。
+`go get -u` で片方を上げてももう片方は動かないこと、同じ v2 どうしの glogx と schedkeys も
+版がずれている (2.0.8 / 2.0.9) ことも書いた。**新規ルールは作らない**
+(CLAUDE.md「ぼやきも事実の主張なら裏を取る」が既に一般形を持つ)。
 
 ### 3. 「ローカルにだけある状態」で CI が落ち、手元で再現しなかった
 
@@ -61,9 +63,11 @@ CI の Tests が 9 件落ちた。原因は `issues/next/` が**空ディレク�
 (「ignore は `~/.gitignore_global` 由来で、新品チェックアウトと CI では存在しない」) と**同型**。
 issue 132 が「repo 内に `tmp/` が存在する」問題を扱っているのも同じ根。
 
-**切り出し先案**: [issues/132](132-feat-detect-ci-only-preconditions-before-push.md) に
-「`issues/next/` も同型 (空ディレクトリは git に載らない)」を追記する。132 は
-「CI でしか露見しない前提を push 前に検出する」issue なので、まさにその一例。
+**切り出し済み** (2026-09-03): [issues/132](132-feat-detect-ci-only-preconditions-before-push.md) の
+事実の表に 3' として追記した。併せて **「gitignore されているか」ではなく「git に載っているか」で
+考えないと同型を取りこぼす** ことを書いた (空ディレクトリ / ignore / untracked のどれでも起こる。
+`tmp/` は ignore 由来、`issues/next/` は空ディレクトリ由来で、原因が違うのに壊れ方は同じ)。
+なお `issues/next/.keep` が置かれて追跡対象になったので、この個別ケース自体は解消している。
 
 ### 4. 6 体並行起動で session limit に全滅させた (164 項目 1 の再演)
 
@@ -115,9 +119,11 @@ issue 180 は「軽い方」と「型変更が要る重い方」に割れてい�
 
 ## 残課題
 
+**すべて決着済み (2026-09-03)**。この retro は `issues/done/` へ移してよい。
+
 - [x] 項目 1 の切り出し → `verify-execution-not-just-exit-code.md` に「出力はファイルへ落としてから読む」を追加
-- [ ] 項目 2 の切り出し (`docs/glogx-bubbletea-v2.md` の charm 依存の記述を実測に直す issue を起票 / 却下)
-- [ ] 項目 3 の切り出し (issue 132 に「`issues/next/` も同型」を追記 / 却下)
+- [x] 項目 2 の切り出し → `docs/glogx-bubbletea-v2.md` を実測 (3 モジュールの表) に直した。新規ルールは作らない
+- [x] 項目 3 の切り出し → issue 132 に 3' として追記 (「git に載っているか」で考える、を併記)
 - [x] 項目 4 — 対応済み (別セッションが `subagent-model-tiering.md` へ切り出し、done/164 に記録)
 - [x] 項目 5 — 却下 (規範と hook は既にある。使うかどうかの問題)
 - [x] 項目 6 — 却下 (`adversarial-review-own-safeguards.md` 節 1 に既にある)

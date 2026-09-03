@@ -114,4 +114,17 @@ v1 では pty スモークで実測した回帰 (`TestBrowseBatchedRunesKeyMsg`)
 glogx より移行コストが高い: `tea.KeyMsg` / `tea.KeyRunes` の参照が桁違いに多く、`key.Type`/`Runes` → `Code`/`Text`/`Mod` の書き換えに加えて
 **space が `" "` → `"space"` になる変化はコンパイルエラーにならない** (静かに壊れる)。上げるなら 1 モジュールずつ、キー操作の目視確認つきで。
 
-なお 3 モジュールが同じ charm 依存を独立に持っているため、バージョンの揃え忘れは構造的に起きる (揃える仕組みは今はない)。
+なお charm 依存を持つ 3 モジュールが**それぞれ独立に版を持つ**ため、揃え忘れは構造的に起きる
+(揃える仕組みは今はない)。⚠️ **「同じ依存の版がずれている」ではない — モジュールパスから違う**。
+実測 (2026-09-03):
+
+| モジュール | bubbletea | x/ansi | lipgloss |
+|---|---|---|---|
+| glogx | `charm.land/bubbletea/v2` v2.0.8 | v0.11.7 | 無し (ultraviolet へ移行) |
+| schedkeys | `charm.land/bubbletea/v2` v2.0.9 | v0.11.8 | 無し (同上) |
+| parallel-each | `github.com/charmbracelet/bubbletea` v1.3.10 | v0.10.1 | v1.1.0 |
+
+v2 は `charm.land/bubbletea/v2`、v1 は `github.com/charmbracelet/bubbletea` で**別モジュール**なので、
+`go get -u` で片方を上げてももう片方は動かない。`lipgloss` に依存しているのは parallel-each だけ
+(v2 の 2 本は `ultraviolet` に移っている)。同じ v2 どうしの glogx と schedkeys も版がずれている
+(2.0.8 / 2.0.9)。
