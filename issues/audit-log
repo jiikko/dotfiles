@@ -32,3 +32,5 @@
 2026-09-03 15:19	dependency	direct	issues/202-bug-glogx-ruleguard-uncompilable-and-uniseg-oracle-skew.md
 2026-09-03 15:19	lint-from-done	direct	issues/201-test-glogx-hint-width-and-clock-guard-checks.md
 2026-09-03 16:10	lint-from-done	direct	scripts/check_skip_exit_code.sh,scripts/check_workflow_action_pins.sh,issues/203-test-lint-candidates-preventive.md
+2026-09-03 23:09	resource-leaks	direct	issues/219-bug-doctor-cache-fixed-name-tmp-write.md
+2026-09-03 23:09	dead-code	direct	issues/219-bug-doctor-cache-fixed-name-tmp-write.md
