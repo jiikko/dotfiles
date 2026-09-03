@@ -27,6 +27,12 @@ func diskExitCode(rep disk.Report) int {
 			// エントリ全体は走査できたが一部の Item が読めなかった。合計に入っていないので
 			// 「見えていない候補があるかもしれない」= 診断できず側に倒す
 			return exitcode.Undiagnosed
+		case r.Status == disk.StatusOK && r.Entry.Unverified != "" && len(r.Items) == 0:
+			// 🚨 **検出条件そのものが未実測**のエントリが 0 件でも「きれい」と言わない
+			// (issue 236 の P3-4)。人間向け出力と UI は「0 件ですが『候補なし』では
+			// ありません」と言うのに、rc だけが NoFindings に丸めていた。
+			// report.go / doctor_view.go が守っている false green の規律を rc でも守る
+			return exitcode.Undiagnosed
 		case r.Status == disk.StatusOK && len(r.Items) > 0:
 			found = true
 		}

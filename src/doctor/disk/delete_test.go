@@ -1172,3 +1172,67 @@ func TestEntryOutcomeCommandLines(t *testing.T) {
 		}
 	}
 }
+
+// 記録が途中で書けなくなって止めた run を `done` (= 最後まで行った) と記録しない (issue 236 の P3-1)。
+//
+// 🚨 `ctx.Err()` だけで phase を決めていたので、**書込失敗が一時的なら** (ENOSPC → 削除で
+// 空きが戻る、はディスク掃除ツールでは現実的) 最後の write が成功し、記録は「最後まで行った」と
+// 言っていた。中断した事実は変数で持ち回る。
+func TestDeleteRecordsAbortedWhenHistoryFailsMidRun(t *testing.T) {
+	f := newDeleteFixture(t, rmEntry, 64)
+	t.Cleanup(func() { _ = os.Chmod(f.opt.HistoryDir, 0o700) })
+
+	// 🚨 **書込失敗は一時的**にする (それが issue 236 の P3-1 の条件)。恒久的に書けないと
+	// 最後の write も失敗して記録が executing のまま残り、phase の誤りを観測できない。
+	// h.at() は opt.Now を通るので、Now の呼び出し回数で窓を作る。実測した順序:
+	//   #1 StartedAt / #2 write(planned) / #3〜#4 走査と write(executing) / #5 FinishedAt / #6 最終 write
+	// #4 の直前に書けなくし (= executing の write が失敗して中断)、#5 で戻す (= 最終 write は成功)。
+	n := 0
+	f.opt.Now = func() time.Time {
+		n++
+		switch n {
+		case 4:
+			_ = os.Chmod(f.opt.HistoryDir, 0o500) // ここからの write が失敗する
+		case 5:
+			_ = os.Chmod(f.opt.HistoryDir, 0o700) // ENOSPC が解消した状況 (削除で空きが戻る)
+		}
+		return time.Now()
+	}
+
+	rep := f.delete(t, f.scan(t))
+	// ハーネスが窓を作れなかったら「判定不能」で落とす (緑に畳まない)
+	if rep.HistoryError == "" {
+		t.Fatal("判定不能: 記録の書込が一度も失敗していない (Now の順序が変わった可能性)")
+	}
+	data, err := os.ReadFile(rep.HistoryPath)
+	if err != nil {
+		t.Fatalf("判定不能: 最後の記録が書けていない (一時的な失敗になっていない): %v", err)
+	}
+	var inv struct {
+		Phase string `json:"phase"`
+	}
+	if err := json.Unmarshal(data, &inv); err != nil {
+		t.Fatalf("記録を解釈できない: %v", err)
+	}
+	if inv.Phase != phaseAborted {
+		t.Errorf("記録を残せなくなって止めた run の phase = %q (%q であるべき)", inv.Phase, phaseAborted)
+	}
+}
+
+// 記録の置き場は**経路全体**の symlink を見る (issue 236 の P3-2)。
+// 以前は os.Lstat(dir) で最終要素しか見ておらず、ゴミ箱側 (noSymlinkInPath) と非対称だった。
+func TestHistoryDirRejectsSymlinkInPath(t *testing.T) {
+	base := sandboxTempDir(t, "hist-symlink")
+	real := filepath.Join(base, "real")
+	if err := os.MkdirAll(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	// 最終要素は普通のディレクトリだが、その **親**が symlink
+	if _, err := newHistory(DeleteOptions{HistoryDir: filepath.Join(link, "history"), Now: time.Now}); err == nil {
+		t.Error("経路の途中が symlink なのに記録の置き場として受け入れた")
+	}
+}

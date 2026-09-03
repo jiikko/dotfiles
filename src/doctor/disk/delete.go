@@ -75,6 +75,11 @@ type ItemOutcome struct {
 	Outcome Outcome `json:"outcome"`
 	Reason  string  `json:"reason,omitempty"`
 	Dest    string  `json:"dest,omitempty"` // ゴミ箱の移動先
+	// Staged は rm の直前に付けた予測不能名 (`.glogx-delete-<hex>`)。改名と RemoveAll の
+	// あいだにプロセスが死ぬと、この名前の残骸が親ディレクトリに残る。**名前を記録に残さないと
+	// 後から掃除も追跡もできない** (issue 236 の P3-3)。削除まで進めば残骸は無いが、
+	// 記録は「この名前を使った」ことを示す (phase が executing で止まっていたら候補)
+	Staged string `json:"staged,omitempty"`
 	// Ref は cli: の `<id>` に入れる識別子 (simctl のランタイム識別子)。走査時の Item から取る。
 	Ref string `json:"ref,omitempty"`
 	// dev / ino は走査時の実体。破壊的操作の直前に取り直した値と突き合わせる (TOCTOU)。
@@ -245,6 +250,8 @@ func Delete(ctx context.Context, targets []Result, opt DeleteOptions) (DeleteRep
 	for _, t := range targets {
 		rep.Entries = append(rep.Entries, intent(t))
 	}
+	// aborted は「記録を残せなくなって残りを触らずに止めた」印 (phase の決定に使う。issue 236)
+	aborted := false
 	if err := hist.write(rep, phasePlanned); err != nil {
 		hist.discard()
 		return rep, fmt.Errorf("削除の記録を残せないため中止しました: %w", err)
@@ -278,6 +285,7 @@ func Delete(ctx context.Context, targets []Result, opt DeleteOptions) (DeleteRep
 				rep.Entries[j].Outcome = OutcomeSkipped
 				rep.Entries[j].Reason = "記録を残せなくなったため中止しました (このエントリは触っていません)"
 			}
+			aborted = true
 			break
 		}
 		if opt.OnProgress != nil {
@@ -290,8 +298,13 @@ func Delete(ctx context.Context, targets []Result, opt DeleteOptions) (DeleteRep
 	}
 	rep.FinishedAt = opt.Now()
 	// 中断で終わった run に done (= 最後まで行った) と書かない
+	//
+	// 🚨 **`ctx.Err()` だけを見ない** (issue 236 の P3-1)。記録が書けなくなって残りを
+	// Skipped にした run は ctx が生きているので、**書込失敗が一時的なら** (ENOSPC →
+	// 削除で空きが戻る、はディスク掃除ツールでは現実的) 最後の write が成功して
+	// 記録が「最後まで行った」と言う。中断した事実は変数で持ち回る。
 	phase := phaseDone
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || aborted {
 		phase = phaseAborted
 	}
 	// ここから先の書き込み失敗は削除を取り消せないので、error ではなく報告に残す
@@ -583,11 +596,14 @@ func removeItem(o *ItemOutcome) error {
 	// 相手は自分が置けない名前を狙うことになる。
 	// 🚨 改名と削除のあいだにプロセスが死ぬと、この名前の残骸が親ディレクトリに残る
 	// (対象はキャッシュの中なので実害は小さいが、次の走査の glob には出ないことがある)。
+	// **使った名前を o.Staged に残す** (issue 236 の P3-3): 記録が phase: executing で
+	// 止まっていたら、その run の Staged が残骸の候補になる。名前が無いと追跡できない。
 	staged, err := stagingName()
 	if err != nil {
 		o.Outcome, o.Reason = OutcomeFailed, "削除の準備ができません: "+err.Error()
 		return err
 	}
+	o.Staged = staged
 	if err := root.Rename(base, staged); err != nil {
 		o.Outcome, o.Reason = OutcomeFailed, "削除の準備ができません: "+err.Error()
 		return err
@@ -932,6 +948,13 @@ func trashMove(src, trashDir string, dev, ino uint64) (string, error) {
 	if err := unix.Fstatat(srcDir, base, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 		return "", fmt.Errorf("移動元を確認できません: %w", err)
 	}
+	// 🚨 **production からは到達しない**が、意図して残している (issue 236 の P3-5)。
+	// planItem が先に statIdentity で同じ検査をして skip するので、ここへ (0,0) は来ない。
+	// それでも外さないのは、この関数が**破壊的操作の直前の最後の照合**だから:
+	// 外すと下の `uint64(st.Dev) != dev || st.Ino != ino` が (0,0) と実体を比較することになり、
+	// 「識別できないまま移動する」経路が開く。呼び出し元が 1 つ増えた瞬間に穴になる形なので、
+	// 冗長さと引き換えに残す (list-masked-failure-modes-before-removing-guard.md)。
+	// ⚠️ 到達しないのでテストで固定できていない = 「段」として数えないこと。
 	if dev == 0 && ino == 0 {
 		return "", errors.New("走査時の実体を識別できません (再スキャンしてください)")
 	}
@@ -1043,11 +1066,12 @@ func newHistory(opt DeleteOptions) (*history, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	// 置き場自体が symlink なら、記録は別の場所に書かれる
-	if fi, err := os.Lstat(dir); err != nil {
-		return nil, err
-	} else if fi.Mode()&os.ModeSymlink != 0 {
-		return nil, fmt.Errorf("記録の置き場が symlink です: %s", dir)
+	// 置き場が symlink なら記録は別の場所に書かれる。
+	// 🚨 **最終要素だけでなく経路全体を見る** (issue 236 の P3-2)。以前は os.Lstat(dir) で
+	// dir 自身しか検査しておらず、ゴミ箱側 (noSymlinkInPath) と非対称だった。
+	// 途中のディレクトリが symlink なら、置き場ごと別の場所へ差し替えられる。
+	if err := noSymlinkInPath(dir); err != nil {
+		return nil, fmt.Errorf("記録の置き場を検査できません (%s): %w", dir, err)
 	}
 	stamp := opt.Now().Format("20060102-150405")
 	for i := 1; i <= 64; i++ {

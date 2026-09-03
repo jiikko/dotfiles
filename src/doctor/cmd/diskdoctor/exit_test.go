@@ -24,6 +24,12 @@ func TestDiskExitCode(t *testing.T) {
 		want int
 	}{
 		{"候補なし", disk.Report{Results: []disk.Result{ok()}}, exitcode.NoFindings},
+		// 🚨 検出条件そのものが未実測のエントリは、0 件でも「きれい」と言わない (issue 236 の P3-4)。
+		// 人間向け出力と UI は「0 件ですが候補なしではありません」と言うのに rc だけが丸めていた
+		{"未実測で 0 件は診断できず", disk.Report{Results: []disk.Result{
+			{Status: disk.StatusOK, Entry: disk.Entry{ID: "x", Unverified: "glob の実名が未実測"}}}}, exitcode.Undiagnosed},
+		{"未実測でも候補が出ていれば findings", disk.Report{Results: []disk.Result{
+			{Status: disk.StatusOK, Entry: disk.Entry{ID: "x", Unverified: "未実測"}, Items: []disk.Item{item}}}}, exitcode.Findings},
 		{"候補あり", disk.Report{Results: []disk.Result{ok(item)}}, exitcode.Findings},
 		{"blocked は候補ではない", disk.Report{Results: []disk.Result{{Status: disk.StatusBlocked, Size: 99}}}, exitcode.NoFindings},
 		{"走査できず", disk.Report{Results: []disk.Result{{Status: disk.StatusFailed}}}, exitcode.Undiagnosed},
