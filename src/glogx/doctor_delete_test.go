@@ -733,3 +733,47 @@ func TestDeleteConfirmWhenNothingToDo(t *testing.T) {
 		t.Errorf("engine を %d 回呼んだ (下見の 1 回だけのはず)", len(f.calls))
 	}
 }
+
+// 🚨 「前回の結果」を表示している画面で Space / d を押したら、拒否せず**取り直す**。
+// 復元した画面は全行が FromSnapshot なので、拒否したままだと「サイズは見えているのに
+// 何を選んでも断られる」行き止まりになる (ユーザー報告 2026-09-03)。
+func TestDoctorSnapshotScreenRescansInsteadOfRefusing(t *testing.T) {
+	for _, key := range []string{" ", "d"} {
+		t.Run(key, func(t *testing.T) {
+			v := doctorTestView(t)
+			runDoctorCmds(t, v, v.open()) // 1 回走査して snapshot を書く
+			_ = v.lines(doctorTestOpts(30))
+			v.close()
+			runDoctorCmds(t, v, v.open()) // TTL 内なので復元される
+			_ = v.lines(doctorTestOpts(30))
+			if v.snapshotAt.IsZero() {
+				t.Fatal("前提が崩れている: snapshot から復元していない")
+			}
+			if act := v.handleKey(key, 20); act != doctorRescan {
+				t.Fatalf("%q の結果 = %v (取り直すこと)", key, act)
+			}
+			if got := v.takeToast(); !strings.Contains(got, "取り直します") {
+				t.Errorf("理由を伝えていない: %q", got)
+			}
+		})
+	}
+}
+
+// 取り直した後は普通に選べる (取り直しが行き止まりの解消になっている)。
+func TestDoctorSelectableAfterRescan(t *testing.T) {
+	v := doctorTestView(t)
+	runDoctorCmds(t, v, v.open())
+	_ = v.lines(doctorTestOpts(30))
+	v.close()
+	runDoctorCmds(t, v, v.open())
+	_ = v.lines(doctorTestOpts(30))
+	v.handleKey(" ", 20) // 取り直しへ倒れる
+	runDoctorCmds(t, v, v.rescan())
+	_ = v.lines(doctorTestOpts(30))
+	if !v.snapshotAt.IsZero() {
+		t.Fatal("取り直した後も snapshot の印が残っている")
+	}
+	if act := v.handleKey(" ", 20); act != doctorSwallow || !v.selected["thing"] {
+		t.Fatalf("取り直した後も選べない: act=%v selected=%v toast=%q", act, v.selected, v.pendingToast)
+	}
+}

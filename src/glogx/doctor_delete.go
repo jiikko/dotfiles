@@ -307,8 +307,26 @@ func (v *doctorView) takeDeleteCmd() tea.Cmd {
 	return cmd
 }
 
+// snapshotRescan は「前回の結果」を表示している画面で削除の操作をしたときに、**拒否ではなく
+// 再スキャンへ倒す**。
+//
+// 🚨 復元した画面は**全行が FromSnapshot** なので、拒否したままだと「サイズは見えているのに
+// 何を選んでも断られる」行き止まりになる (ユーザー報告 2026-09-03: Enter で開いた後 Space で
+// 選べない)。ヘッダーに「N 分前の結果 (r で再スキャン)」とは出ているが、**削除しようとした
+// その瞬間**に気づける形ではなかった。押した意図 (これを消したい) は再スキャンで果たせる。
+func (v *doctorView) snapshotRescan() (doctorAction, bool) {
+	if v.snapshotAt.IsZero() {
+		return doctorSwallow, false
+	}
+	v.pendingToast = "前回の結果を表示していたので、取り直します (終わったら選び直してください)"
+	return doctorRescan, true
+}
+
 // beginDelete は d の入口。選択が無い / 走査中 / 走査していない行が混ざっているときは理由を出す。
 func (v *doctorView) beginDelete() doctorAction {
+	if act, ok := v.snapshotRescan(); ok {
+		return act
+	}
 	switch {
 	case v.scanning():
 		v.pendingToast = "スキャン中は削除できません (終わるまで待つか r で取り直してください)"

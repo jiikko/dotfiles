@@ -367,6 +367,13 @@ const (
 	doctorRunDelete // 削除を開始する (pendingDeleteCmd を browseModel が実行する)
 )
 
+// takeToast は溜めておいた文言を取り出して空にする (同じ文言が次の操作で再び出ないように)。
+func (v *doctorView) takeToast() string {
+	t := v.pendingToast
+	v.pendingToast = ""
+	return t
+}
+
 // copyPayload は直近の y / Y でコピーする文字列 (handleKey がセットし、browseModel が取り出す)。
 func (v *doctorView) copyPayload() string { return v.pendingCopy }
 
@@ -385,6 +392,9 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 	}
 	switch key {
 	case " ":
+		if act, ok := v.snapshotRescan(); ok {
+			return act // 前回の結果の上では、拒否せず取り直す
+		}
 		if why, ok := v.toggleSelect(); !ok {
 			if why == "" {
 				return doctorSwallow

@@ -1412,6 +1412,11 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		case doctorClosed:
 			return m, m.maybeTick()
 		case doctorRescan:
+			// 再スキャンの理由がある場合は伝える (「前回の結果だったので取り直します」等)。
+			// ⚠️ 黙って走らせない: ユーザーは Space / d を押したのであって r を押していない
+			if t := m.doctorOv.takeToast(); t != "" {
+				m.toast.show(t, false)
+			}
 			// close() を経由しない: 数件だけの partial を書いて完全な結果を潰さない (doctorView.saveCache の注記)
 			return m, tea.Batch(m.doctorOv.rescan(), m.maybeTick())
 		case doctorCopyPath:
@@ -1421,7 +1426,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		case doctorNothing:
 			m.toast.show("この行にはコピーするものがありません", false)
 		case doctorToast:
-			m.toast.show(m.doctorOv.pendingToast, false)
+			m.toast.show(m.doctorOv.takeToast(), false)
 		case doctorRunDelete:
 			// 削除 (と、その下見) は doctorView が組んだ Cmd をそのまま走らせる
 			return m, tea.Batch(m.doctorOv.takeDeleteCmd(), m.maybeTick())
