@@ -1590,7 +1590,7 @@ quit / spinner の経路 / struct コピー / validateTarget の各種 (HOME 直
 
 | # | 山 | 状態 | 置き場 | 規模の目安 |
 |---|---|---|---|---|
-| S1 | **削除エンジン** (作法の解釈 / TOCTOU / ゴミ箱 / cli / 再走査 / インベントリ) | **済** (commit `d2dfd70`) | `src/doctor/disk/delete.go` (+ `delete_test.go`) | 実装 647 行 / テスト 493 行 / 変異 11 本 red |
+| S1 | **削除エンジン** (作法の解釈 / TOCTOU / ゴミ箱 / cli / 再走査 / インベントリ) | **済**。敵対レビュー 2 周 + 変異 26 本 red | `src/doctor/disk/delete.go` (+ `delete_test.go` / `main_test.go`) | 実装 ~900 行 / テスト 36 本 |
 | S2 | **UI 導線** (選択 → 確認 → 実行中ブロック → 結果表示) | 未着手 | `src/glogx/doctor_view.go` + 新規 `doctor_delete.go` | ④ の残りのほぼ全部 |
 | S3 | 受け入れ条件の消し込み・README・この issue の更新 | 未着手 | `src/doctor/README.md` / 本 issue | 小 |
 
@@ -1626,11 +1626,27 @@ UI 側で組み直さない)。
 7. **`Item.Ref` の sanitize**。`sanitizeSnapshotResults` に Ref の検査を足す
    (削除は FromSnapshot を拒否するので多重防御。`safeDisplayPath` と同じ扱い)
 
+#### S1 で決まった不変条件 (S2 が壊してはいけないもの)
+
+敵対レビュー (opus 3 体 → 2 体) で実測つきの P1 が 3 件出て、いずれも修正済み。S2 を書く人は
+**この 5 つを壊さない**こと:
+
+1. **削除は「今回の走査の Result」だけ**。`Reused` / `FromSnapshot` の行は `disk.Delete` が拒否する。
+   UI は削除の前に必ず再スキャンを通す (`r` を促すか、内部で走査し直す)
+2. **削除対象はそのエントリの Paths を展開し直した集合に属していること**を engine が要求する。
+   UI が行を組み替えて別のパスを混ぜると failed になる (そういう作りにしないこと)
+3. **中断は ctx で伝える**。`Delete` は破壊的操作の直前に `ctx.Err()` を見る。UI の Ctrl-C は
+   ctx の cancel に配線する (プロセス終了に配線すると記録が `executing` のまま残る)
+4. **`OnProgress` は `Delete` を呼んだ goroutine から同期に呼ばれる**。bubbletea なら model を
+   直接触らず Msg に載せる
+5. **結果は 3 値ではなく 7 値** (deleted / trashed / proposed / incomplete / skipped / failed / planned)。
+   `incomplete` を成功にも失敗にも畳まないこと。`DeleteReport.HasFailures()` がある
+
 #### S3 (受け入れ条件のうち ④ 分)
 
-7 章の未チェック 7 件のうち **6 件は S1 で満たした**。残るのは
-「`swiftui-drag-cache` が `finder-nsird` と同じ扱い」の**ゴミ箱移動**部分で、S2 の UI が
-入って初めて通しで確認できる。
+7 章の未チェック 7 件のうち **7 件すべてを S1 で満たした**。残るのは
+「`swiftui-drag-cache` が `finder-nsird` と同じ扱い」のうち **「中身一覧を見るまで選択不可」の
+UI 部分だけ** (S2)。
 
 ### 次の一手 (引き継ぎ。ここから続ける)
 
@@ -1676,9 +1692,15 @@ UI 側で組み直さない)。
       ハードリンク・APFS clone・sparse file を含むツリーで `du -sk` と突き合わせて検証
 - [x] **`filepath.EvalSymlinks` を正規化に使っていない** (リンク先を消す経路が生まれない)
 - [x] 経路の途中にシンボリックリンクが挟まる対象を**拒否**する
-- [ ] **TOCTOU 対策**: 削除直前に `Lstat` を取り直し、スキャン時の `(dev, ino)` と
+- [x] **TOCTOU 対策**: 削除直前に `Lstat` を取り直し、スキャン時の `(dev, ino)` と
       一致しなければ**そのエントリを飛ばす**。差し替えを仕込むテストがある
-- [ ] `risk: confirm` は `rm` ではなく**ゴミ箱へ移動**され、ユーザーが復元できる
+      (`delete_test.go`: `TestDeleteSkipsWhenIdentityChanged` / `TestRemoveItemRefusesLateIdentitySwap`)。
+      **敵対レビューを受けて強化**: 親ディレクトリを `os.OpenRoot` / `openat(O_NOFOLLOW)` で fd に
+      固定し、その fd 経由で照合してから消す (パスで再解決すると、検査と実行のあいだに親を
+      差し替えられて別の木が消える。1 周目のレビューが実測した)。plan と exec もエントリ単位で隣接させた
+- [x] `risk: confirm` は `rm` ではなく**ゴミ箱へ移動**され、ユーザーが復元できる
+      (エンジン側。`planDelete` が `RiskConfirm` + 非 trash を拒否し、カタログ側も
+      `TestCatalogConfirmEntriesUseTrash` が全 5 件を固定する。**UI の導線は S2**)
 - [x] 「mtime が起動時刻より古い」を**単独の削除ゲートにしていない**
       (孤児照合 / プロセス不在 / `lsof` のいずれかを併用)
 - [x] キャッシュ・履歴の置き場が **`cachedir.Base()` 経由** (パスをハードコードしていない)。
@@ -1687,15 +1709,23 @@ UI 側で組み直さない)。
       `cachedir.Base()` への 1 行 alias になっている
 - [x] `simctl` 失敗・`boottime` パース失敗が **fail-closed** (候補 0 件) になる
 - [x] 走査失敗が「候補 0 件」に畳まれず、**「走査できず」として区別**される
-- [ ] 削除時にインベントリが `doctor-history/` に残る
-- [ ] sudo をツールが実行しない (Tier 4 に該当が出た場合もコマンド表示のみ)
-- [ ] **`deleteVia: cli:` の対象を `rm` しない。** `simulator-runtimes` を `rm` で消そうとする
+- [x] 削除時にインベントリが `doctor-history/` に残る (`cachedir.Base()/doctor-history/`)。
+      **記録を残せないなら削除しない** (fail-closed)。相は planned → executing → done の 3 つで、
+      実行中に落ちたことを読み手が区別できる。一時ファイルは `os.CreateTemp` (固定名を
+      `os.WriteFile` で開くと symlink を辿り、任意ファイルの上書き + fail-closed の無音破りになった)
+- [x] sudo をツールが実行しない (`parseDeleteVia` が拒否。`propose` は実行経路を持たない)
+- [x] **`deleteVia: cli:` の対象を `rm` しない。** `simulator-runtimes` を `rm` で消そうとする
       変異を当てて、テストが red になることを確認済み
-- [ ] **削除後に再スキャンして実際に消えたことを確認**してから解放量を報告する。
-      「コマンドは成功したが対象が残っている」を**第 3 の状態**として表示する
-      (非同期削除する `simctl` を模した fake で固定する)
-- [ ] 外部コマンドの **stdout / stderr / exit code を分離**して扱う
-      (`simctl` の `rc=24` + stderr のみ、というケースを fake で再現)
+      (`TestDeleteCLIDoesNotRemovePath` / `TestDeleteSimRuntimeUsesIdentifierNotPath`)
+- [x] **削除後に再スキャンして実際に消えたことを確認**してから解放量を報告する。
+      「コマンドは成功したが対象が残っている」を**第 3 の状態** (`OutcomeIncomplete`) にする
+      (`TestDeleteCLIDoesNotRemovePath` / `TestDeleteBlockedRescanIsIncomplete`)。
+      再走査が `ok` 以外を返したときも「確認できていない」に倒す。解放量は
+      **引き算と「実際に触った Item の合計」の小さい方** (引き算だけだと、飛ばした Item のぶんまで
+      自分の手柄になる)
+- [x] 外部コマンドの **stdout / stderr / exit code を分離**して扱う
+      (`TestDeleteCLIKeepsStreamsSeparate` が `rc=24` + stderr のみを再現)。
+      起動できなかった (failed) と中断・タイムアウト (incomplete = 途中まで消えている) も分ける
 - [x] `orphan-container` が **`mdfind` 単独で判定していない**。
       `/Applications` の `Info.plist` を突合し、**アプリが実在するのに Spotlight に無い**
       ケースで孤児にならないことを固定する
@@ -1703,8 +1733,9 @@ UI 側で組み直さない)。
       **現役の `~/.rbenv` 型 (anyenv 側が無く fallback が効いている構成) を候補にしない**
 - [x] `brew-cleanup-residue` が `/opt/homebrew/Library/Homebrew/vendor/` を見ている
       (`~/Library/Caches/Homebrew` だけでは 424MB を取りこぼす)
-- [ ] (② で risk: confirm + 中身一覧まで。ゴミ箱移動は ④) `swiftui-drag-cache` が `finder-nsird` と同じ扱い (`risk: confirm` /
-      中身一覧を見るまで選択不可 / ゴミ箱移動) になっている
+- [ ] `swiftui-drag-cache` が `finder-nsird` と同じ扱いになっている。
+      **ゴミ箱移動 (④ S1) は済**、`risk: confirm` + 中身一覧も ② で入っている。残るのは
+      **「中身一覧を見るまで選択不可」の UI (S2)** だけ
 - [x] 除外リスト (自作アプリの sandbox コンテナ / `~/.cache/dein` /
       `~/Library/Application Support/Google`) が**テストで固定**されている
 
