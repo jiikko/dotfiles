@@ -46,7 +46,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-go-lint test-go test-src
+.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-skip-exit-code test-workflow-action-pins test-go-lint test-go test-src
 
 # ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ)。
 #
@@ -232,6 +232,17 @@ test-pipefail-grep-q:
 	@scripts/check_pipefail_grep_q.sh
 
 # 共有観測ログ (tt-restore-trigger.log) の書き手が guards.sh の tt_trigger_log 以外に増えるのを落とす。
+# 同じ GitHub Action が workflow 間で違う版に固定されるのを落とす (issue 073 §1)。
+# 版が割れていても workflow は動くので actionlint は緑のまま = 気づけない。
+test-workflow-action-pins:
+	@scripts/check_workflow_action_pins.sh
+
+# 丸ごと skip なのに exit 0 で抜ける形を落とす (runner が [ok] と数え、assert が 1 本も
+# 走っていないことが緑に埋もれる。issue 139 / tests/CLAUDE.md)。
+# 正本は scripts/check_skip_exit_code.sh (なぜ危険か・例外マーカーはそこに書いてある)。
+test-skip-exit-code:
+	@scripts/check_skip_exit_code.sh
+
 # 正本は scripts/check_trigger_log_writers.sh (なぜ危険か・例外マーカーはそこに書いてある)。
 test-trigger-log-writers:
 	@scripts/check_trigger_log_writers.sh
@@ -361,7 +372,7 @@ test-lint-tests:
 #   1 度も走らず、lint.yml は `make test-lint` の 1 ステップなので CI ログにも出ない。
 #   **末尾の新設検査ほど隠れやすい** (実測: test-json を落とすと後続 7 本が未実行)。
 test-lint:
-	@+$(call run_all_targets,test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers)
+	@+$(call run_all_targets,test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q test-trigger-log-writers test-skip-exit-code test-workflow-action-pins)
 
 # Go プロジェクトの静的解析とテスト。実体は各ディレクトリの Makefile の lint / test
 # ターゲットに閉じており、ここはそれへ委譲するだけ (ローカルのコミット前検証用。root の

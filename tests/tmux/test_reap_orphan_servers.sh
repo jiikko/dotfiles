@@ -159,7 +159,9 @@ start_log="$ORPHAN_DIR/start.log"
 if ! env TMUX_TMPDIR="$LIVE_DIR" "$TMUX_BIN_PATH" -L "$LIVE_SOCK" \
      new-session -d -s live "tail -f /dev/null" >"$start_log" 2>&1; then
   if grep -qiE "operation not permitted|permission denied" "$start_log"; then
-    print -u2 "[test-reap:zsh] skipped: tmux cannot create sockets in this environment"
+    # partial-skip: allow 静的検査 (R1/R2 の 6 件) は上で実施済みなので、ここは部分 skip。
+    # tests/CLAUDE.md の「一部の assert だけ落とす形は 0 で抜けてよい」に該当する
+    print -u2 "[test-reap:zsh] skipped: tmux cannot create sockets in this environment (静的検査は上で実施済み)"
     exit 0
   fi
   cat "$start_log" >&2; fail "failed to start live server"

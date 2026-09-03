@@ -60,6 +60,20 @@ tmux バインド (_tmux.conf) から display-popup / run-shell 経由で呼ば�
   経路上にある。どんな失敗でも kill 自体を止めない (無音 exit 0) こと。行の書式は
   docs/tmux-plugins.md「観測ログの読み方」の表が読者側の正本
 
+## repo 横断の検査スクリプト (check_*.sh)
+
+`make test-lint` から回る発見式の検査。新設したら **Makefile の `.PHONY` と集約 target の両方**へ
+配線し、**集約経路から実際に出力が出ること**を確認する (`~/.claude/rules/verify-execution-not-just-exit-code.md`)。
+どれも「0 件 = 対象が見つからない」を失敗にし、例外は行内マーカーで理由つきに逃がす。
+
+| スクリプト | 落とすもの | 例外マーカー |
+|---|---|---|
+| `check_pipefail_grep_q.sh` | pipefail 下の `… \| grep -q` (一致しても非 0 になる。issue 096) | `pipefail-grep-q: allow` |
+| `check_trigger_log_writers.sh` | 共有観測ログの書き手が `tt_trigger_log` 以外に増える (issue 079) | `trigger-log-writer: allow` |
+| `check_ci_group_deps.sh` | CI の heavy/rest 分割と Makefile の値の食い違い (issue 073 §3) | — |
+| `check_skip_exit_code.sh` | 丸ごと skip なのに `exit 0` (runner が `[ok]` と数える。issue 139) | `partial-skip: allow` |
+| `check_workflow_action_pins.sh` | 同じ Action が workflow 間で違う版 (issue 073 §1) | `action-pin: allow` |
+
 ## テスト
 
 - このディレクトリのスクリプトの unit テストは tests/tmux/ に stub 方式 (PATH 先頭に偽

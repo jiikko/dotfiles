@@ -65,7 +65,9 @@ handle_result() {
     if [[ "$allow_skip" == "skip" ]]; then
       print -u2 "[test-tmux:zsh] skipped: tmux cannot create sockets in this environment"
       cat "$log" >&2
-      exit 0
+      # ⚠️ 丸ごと skip は **exit 77** (automake の慣例)。0 で抜けると runner が [ok] と数える
+      # (tests/CLAUDE.md / issue 139)
+      exit 77
     fi
   fi
   print -u2 "[test-tmux:zsh] $desc"

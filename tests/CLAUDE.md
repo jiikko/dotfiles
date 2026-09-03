@@ -15,7 +15,9 @@
 - 発見 0 件は失敗 (`run_tests` が落とす。issue 063)。find の失敗やディレクトリ改名を「未実行なのに緑」にしない
 - 環境依存で走らせないときは**テスト自身の stdout に理由を出す** (`skipped: ...`)。子プロセスのログに書くだけでは、失敗時のみ表示される設計だと沈黙と区別がつかない
 - **ファイルを丸ごと skip するときは `exit 77`** (automake の慣例)。0 で抜けると runner が合格と同じ `[ok]` を出し、**何も検査していないことが緑に埋もれる**。実害: 2026-08-29 に `test_deny_bare_tmux_kill.sh` が `timeout(1)` 不在で丸ごと skip し、60 件の assert が消えたのに `[ok]` と集計されていた (issue 139)。runner は 77 を `[skip]` として出し、直列側は件数と一覧も出す。**skip は失敗ではない**ので `make test` は緑のまま。増えていたら理由を確かめる
-- 一部の assert だけ落とす「部分 skip」は従来どおり 0 で抜けてよい (77 はファイル全体を検査しなかったときだけ)
+- 一部の assert だけ落とす「部分 skip」は従来どおり 0 で抜けてよい (77 はファイル全体を検査しなかったときだけ)。
+  **強制手段**: `make test-skip-exit-code` (`scripts/check_skip_exit_code.sh`) が「skip を告げた直後の
+  `exit 0`」を落とす。部分 skip なら行内に `partial-skip: allow <理由>` を書く (issue 139)
 - `~/.claude` や `$HOME` の状態を見るテスト (tests/claude/test_dangling_symlinks.sh / test_claude_links_complete.sh) は CI では対象が無い。「対象 0 件 = skip」を明示して pass する設計で、CI で検査できていないことを隠さない
 
 ## pipefail の罠 (落ちた理由が消える)

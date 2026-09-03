@@ -68,7 +68,9 @@ if ! env -u TMUX -u TMUX_PANE \
     'seq 1 300; exec sleep 3600' >"$start_log" 2>&1; then
   if grep -qiE "operation not permitted|permission denied" "$start_log"; then
     print -u2 "[test-smooth-scroll-tmux] skipped: tmux cannot create sockets in this environment"
-    exit 0
+    # ⚠️ 丸ごと skip は **exit 77** (automake の慣例)。0 で抜けると runner が [ok] と数え、
+    # 以降の assert が 1 本も走っていないことが緑に埋もれる (tests/CLAUDE.md / issue 139)。
+    exit 77
   fi
   cat "$start_log" >&2
   fail "could not start tmux server"
