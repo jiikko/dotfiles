@@ -27,3 +27,5 @@
 2026-08-28 08:43	test-cleanup	direct	issues/127-test-schedkeys-duplicate-and-coupled-tests.md,issues/128-research-schedkeys-audit-2026-08-28.md
 2026-08-28 08:43	test-helpers	direct	issues/127-test-schedkeys-duplicate-and-coupled-tests.md,issues/128-research-schedkeys-audit-2026-08-28.md
 2026-08-28 08:43	performance	direct	issues/127-test-schedkeys-duplicate-and-coupled-tests.md,issues/128-research-schedkeys-audit-2026-08-28.md
+2026-09-03 13:58	test-cleanup	direct	issues/198-test-glogx-vacuous-assertions-found-by-mutation.md
+2026-09-03 13:58	test-helpers	direct	issues/199-test-glogx-extract-two-repeated-test-setups.md
