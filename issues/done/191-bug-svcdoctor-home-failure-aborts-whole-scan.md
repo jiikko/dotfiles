@@ -39,8 +39,31 @@ HOME に依存しないエントリの診断は残る。svcdoctor だけが粗�
   全部を隠さないのと同じ規律)
 - そうすると rc は `2` になり、diskdoctor と揃う
 
-## 受け入れ条件
+## 結論: 対応しない (ユーザー判断 2026-09-03)
 
-- [ ] HOME 未設定で `/Library/LaunchAgents` と `/Library/LaunchDaemons` の診断が出る
-- [ ] `$HOME/Library/LaunchAgents` が `DirErrs` に入り、rc が 2 になる
-- [ ] 変異検証: `DirErrs` に落とさず握り潰すと rc が 0 になることを確認する
+**現在の挙動 (HOME が解決できなければ走査せず即エラー) のままでよい。**
+
+着手前に実装と挙動を確認した (2026-09-03):
+
+| 確認したこと | 結果 |
+|---|---|
+| 実装 | `os.UserHomeDir()` の失敗で `os.Exit(exitcode.EnvFailure)` (`svc.Scan` を呼ばない) |
+| 実挙動 (`env -i PATH=/usr/bin:/bin`) | rc=**3** / stdout 空 / stderr `svcdoctor: $HOME is not defined` |
+
+issue 本文の記述どおりで、issue が提案していた「HOME 非依存の 2 ディレクトリだけでも走査を続ける」
+方向へは**変えない**。HOME も引けない環境で出した部分的な診断を「その環境の全体像」と
+読まれる方が危ない、という判断。
+
+⚠️ **diskdoctor との非対称は残るが、これも意図的**。あちらはカタログの大半が HOME 非依存なので、
+HOME を要るエントリだけ弾いても残る診断の情報量が大きい (issue 175)。svcdoctor は 3 つ中 1 つが
+HOME 依存で、性質が違う。
+
+### 再評価の条件
+
+HOME 非依存の 2 ディレクトリ (`/Library/LaunchAgents` / `/Library/LaunchDaemons`) だけでも
+診断を残したくなったとき。そのときは元の対応案どおり、失敗を `svc.Options` へ渡して
+該当ディレクトリだけ `DirErrs` に落とす (rc は 2 になり diskdoctor と揃う)。
+
+**この判断は `src/doctor/cmd/svcdoctor/main.go` の該当箇所にもコメントで残した**
+(issue は移動するがコードは残る。`pending-issue-rationale-in-code.md`)。
+次の監査が同じ指摘を再生成したら、そのコメントで即棄却できる。

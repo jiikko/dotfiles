@@ -29,6 +29,18 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// HOME が解決できなければ**走査せず即エラー**にする (ユーザー判断 2026-09-03 / issue 191)。
+	//
+	// ⚠️ これは意図的に diskdoctor と非対称。`svc.DefaultDirs` の 3 つのうち HOME が要るのは
+	// `$HOME/Library/LaunchAgents` だけで、`/Library/LaunchAgents` と `/Library/LaunchDaemons` は
+	// 絶対パスなので走査を続けることは**できる**。それでも中止するのは、HOME も引けない環境で
+	// 出した部分的な診断を「その環境の全体像」と読まれる方が危ないため。
+	// (diskdoctor 側はエントリ単位で弾く形にしてある = issue 175。あちらはカタログの大半が
+	// HOME 非依存なので、残る診断の情報量が違う)
+	//
+	// 再評価の条件: HOME 非依存の 2 ディレクトリだけでも診断を残したくなったとき。
+	// そのときは失敗を `svc.Options` へ渡し、該当ディレクトリだけ `DirErrs` に落とす
+	// (rc は 2 になり diskdoctor と揃う)。判断の経緯は issues/done/191。
 	home, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "svcdoctor:", err)
