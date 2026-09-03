@@ -80,10 +80,14 @@ done にすると判断ごと埋もれる。ここへ移す。
 - [ ] **`sfltool dumpbtm` のパース失敗が BTM 行を出さないだけで済む** — 段階 1 で
       **BTM の判定自体を実装していない**ので、条件が成立していない。BTM を載せるなら
       同時にこの受け入れ条件を満たす
-- [ ] **glogx の起動時間が悪化しない** — 起動パスで走査しないことは
-      `TestDoctorDoesNotScanOnStartup` 相当が固定しているが、**時間そのものは未実測**。
-      `~/.claude/rules/perf-claims-need-measurement.md` に従うなら、
-      before / after を測るか「未実測 + trigger」を明記する
+- [x] **glogx の起動時間が悪化しない** → **実測して決着 (2026-09-03。issue 206 の (b))**。
+      doctor 導入前 (`b2f8ede1`) と HEAD でバイナリを建て、隔離 tmux で「起動〜初回描画」を
+      10 回ずつ測った: **中央値 327.8ms → 329.5ms**。差 +1.7ms は群内のばらつき (14〜19ms) より
+      小さく、`loadDoctorDiskCache` 単体の 26.5µs は測定の分解能の 1/60 なので壁時計では
+      原理的に見えない。分布と外れ値の扱いは
+      [`issues/done/206`](done/206-perf-doctor-unmeasured-leak-and-startup-items.md) が正本。
+      ⚠️ Bench 経路には**乗せない**と判断済み (`tests/glogx/bench_glogx.sh` の冒頭が
+      「バイナリ起動の壁時計は CI では flake 枠」と既に決めており、実測の外れ値 1.9 倍がそれを裏づけた)
 
 ## 受け入れ条件 (この issue 自体の)
 
