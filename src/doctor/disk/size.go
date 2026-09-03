@@ -66,7 +66,7 @@ func duSize(ctx context.Context, root string, seen map[[2]uint64]struct{}) (Item
 			return nil
 		}
 		seen[key] = struct{}{}
-		it.Size += int64(s.Blocks) * 512
+		it.Size += s.Blocks * 512
 		if !d.IsDir() {
 			it.Files++
 		}

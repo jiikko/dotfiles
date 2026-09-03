@@ -232,3 +232,18 @@ glogx の doctor は、同じ `Report` から CLI (`disk.Format` / `svc.Format`)
   fixture を作っていた。「最後に見た job を採る」変異でも緑 → id の並びを入れ替えて 2 回見る形へ
 
 出典: `issues/done/189-*.md` / `issues/done/208-retro-*-2026-09-03.md` 項目 3。
+
+## 走査・突合系テストの射程 (2026-09-03、dotfiles)
+
+glogx の `TestDiskVerifyCommandsIDsExistInCatalog` は `doctor_view.go` の
+`diskVerifyCommands` を走査し、case のカタログ ID が実在するかを `disk.CatalogHasID` で突き合わせる。
+抽出は `case "([a-z0-9-]+)"` で、**`case` 直後の 1 個目のリテラルにしか当たらない**。
+`case "a", "b":` の 2 個目以降は素通りするので、**11 ID のうち 7 件しか見ていなかった**
+(未突合: `brew-cleanup-residue` / `xctest-spindump` / `launchd-tmp` / `swiftui-drag-cache`)。
+canary も `len(ids) < 5` で、7 → 5 まで壊れても落ちない。
+
+監査でこの分岐を「ID リネームで裏取りが黙って消える」と指摘したとき、**テストの存在を根拠に
+却下**してしまった (抽出が何件を見ているかは数えなかった)。反証レビューが実測で崩した。
+直した形は「case 行の全リテラルを拾う + canary を 10 へ」で、grouped case の 2 個目に
+存在しない ID を混ぜる変異で red を確認 (`go vet` は通るのでビルド不能の偽陰性ではない)。
+出典: `issues/226-retro-glogx-audit-2026-09-03.md` 項目 1 / commit `36237473`。

@@ -364,7 +364,7 @@ func TestVersionManagerRootUsesEffectiveRoot(t *testing.T) {
 	}
 	e := Entry{ID: "vm", Paths: []string{filepath.Join(env.Home, ".rbenv"), filepath.Join(env.Home, ".nodenv"), filepath.Join(env.Home, ".goenv")}, Guard: GuardVMRoot}
 	r := scanOne(t, env, &fakeRunner{}, e, okBoot)
-	var got []string
+	got := make([]string, 0, len(r.Items))
 	for _, it := range r.Items {
 		got = append(got, filepath.Base(it.Path))
 	}
@@ -841,7 +841,7 @@ func TestOrphanContainerCollectsAllBundleForms(t *testing.T) {
 	if r.Status != StatusOK {
 		t.Fatalf("status=%s reason=%s", r.Status, r.Reason)
 	}
-	var got []string
+	got := make([]string, 0, len(r.Items))
 	for _, it := range r.Items {
 		got = append(got, filepath.Base(it.Path))
 	}
@@ -1140,7 +1140,7 @@ func TestConcurrentScansDoNotShareState(t *testing.T) {
 	}
 	got := make([]out, n)
 	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
+	for i := range n {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

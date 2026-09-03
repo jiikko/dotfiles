@@ -118,9 +118,9 @@ func Scan(ctx context.Context, opt Options) Report {
 			if !t.Skip && t.Missing {
 				f.MissingExec = t.Path
 				if t.Relative {
-					f.Reasons = append(f.Reasons, fmt.Sprintf("実行ファイルが _PATH_STDPATH で解決できません: %s", t.Path))
+					f.Reasons = append(f.Reasons, "実行ファイルが _PATH_STDPATH で解決できません: "+t.Path)
 				} else {
-					f.Reasons = append(f.Reasons, fmt.Sprintf("実行ファイルがありません: %s", t.Path))
+					f.Reasons = append(f.Reasons, "実行ファイルがありません: "+t.Path)
 				}
 			}
 			// B: 正の exit code + 再起動条件 (launchctl が使えたときだけ)

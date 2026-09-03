@@ -26,21 +26,20 @@ linters:
     - fatcontext     # ループ内で context を積み重ねるパターンの検出
     - forbidigo      # 出力先を引数で受けない裸の print を禁止 (下の forbid)
     - gocritic       # exitAfterDefer 等の診断 (既定の stable セット)
+    - intrange       # for i := 0; i < n; i++  ->  for i := range n
     - makezero       # make([]T, n) への append で先頭にゼロ値が残るバグ
     - mirror         # bytes/strings の鏡写し API の取り違え
     - misspell       # common English misspellings in comments/strings
     - nilnesserr     # err != nil を確認したのに別の nil error を返すバグ
     - nolintlint     # nolint コメントの体裁
+    - perfsprint     # fmt.Sprintf that a faster stdlib call can replace
+    - prealloc       # 事前確保できる append ループの検出
     - recvcheck      # value / pointer receiver の混在検出
+    - unconvert      # redundant type conversions (syscall の platform 差は nolint で明示)
+    - unparam        # 常に同値の引数・未使用戻り値
     - usestdlibvars  # hand-written constants that exist in the stdlib
     - usetesting     # テストの os.MkdirTemp/Chdir 等を t.TempDir/t.Chdir へ
     - wastedassign   # assignments whose value is never read
-    # 未導入 (既存の指摘を潰してから足す)。2026-09-03 の実測 = 計 14 件で、
-    # production 6 件 (prealloc 2 = disk/guard.go / perfsprint 2 = svc/scan.go /
-    # intrange 1 = disk/paths.go / unconvert 1 = disk/size.go) と
-    # テスト 8 件 (prealloc 4 / intrange 3 / unparam 1)。unparam は production 0 件。
-    #   unconvert は disk/size.go の Stat_t 変換に既存の nolint があるので、外す判断とセットで見る。
-    #   intrange の 1 件は src/doctor/disk/scan_test.go (issue 222 の残件)
   settings:
     depguard:
       rules:

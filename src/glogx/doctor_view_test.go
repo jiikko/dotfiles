@@ -1969,3 +1969,37 @@ func TestDoctorToastThresholdAndCooldownArePinned(t *testing.T) {
 		t.Errorf("再通知の抑止期間が %v (期待 %v)。閾値と対で見ること (低い閾値 + 短い抑止 = 鳴り続ける)", doctorToastCooldown, want)
 	}
 }
+
+// 行の語は disk.Mark に委譲し、glogx は色だけを持つ (issue 222 で 2 実装を寄せた)。
+// 🚨 守るのは 2 つ: (a) 語を出典へ委譲していること (b) **語と色の対応**。
+// 語そのものの正しさは出典側 (doctor/disk の TestMarkVocabulary) が pin する
+// (ここで語を再掲すると 2 実装に戻る) が、**色は glogx にしか無いので組で pin する**。
+// 敵対レビュー 2026-09-04: color != "" しか見ていなかったため、色を全部 ansiDim へ潰す変異も、
+// 未検証条件を色側だけずらす変異も緑のまま通った (語と色が矛盾した行を作れた)。
+func TestDoctorRiskMarkDelegatesWordAndAddsColor(t *testing.T) {
+	safe := disk.Entry{ID: "e", Risk: disk.RiskSafe}
+	item := []disk.Item{{Path: "/p"}}
+	for _, tc := range []struct {
+		name  string
+		r     disk.Result
+		color string
+	}{
+		{"blocked", disk.Result{Entry: safe, Status: disk.StatusBlocked}, ansiYellow},
+		{"failed", disk.Result{Entry: safe, Status: disk.StatusFailed}, ansiDim},
+		{"unverified", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskSafe, Unverified: "名前が未確定"}, Status: disk.StatusOK}, ansiDim},
+		{"safe", disk.Result{Entry: safe, Status: disk.StatusOK, Items: item}, ansiGreen},
+		// 🚨 「未検証だが候補は在る」= 未検証の判定は **候補 0 件のときだけ**。この組が無いと、
+		// 色側の条件から len(Items)==0 を落とす変異が緑のまま通る (敵対レビュー 2026-09-04 が実測)
+		{"unverified-with-items", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskSafe, Unverified: "名前が未確定"}, Status: disk.StatusOK, Items: item}, ansiGreen},
+		{"caution", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskCaution}, Status: disk.StatusOK, Items: item}, ansiYellow},
+		{"confirm", disk.Result{Entry: disk.Entry{ID: "e", Risk: disk.RiskConfirm}, Status: disk.StatusOK, Items: item}, ansiRed},
+	} {
+		word, color := doctorRiskMark(tc.r)
+		if want := disk.Mark(tc.r); word != want {
+			t.Errorf("%s: 語が出典と違う: %q; want %q (disk.Mark へ委譲すること)", tc.name, word, want)
+		}
+		if color != tc.color {
+			t.Errorf("%s (%s): 色が %q; want %q (語と色は 1 対 1)", tc.name, disk.Mark(tc.r), color, tc.color)
+		}
+	}
+}

@@ -870,7 +870,7 @@ func TestNewHistoryAvoidsCollision(t *testing.T) {
 	fixed := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
 	opt := DeleteOptions{HistoryDir: dir, Now: func() time.Time { return fixed }}
 	seen := map[string]bool{}
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		h, err := newHistory(opt)
 		if err != nil {
 			t.Fatal(err)

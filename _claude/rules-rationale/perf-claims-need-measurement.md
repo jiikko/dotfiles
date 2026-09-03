@@ -15,3 +15,13 @@
 
 敵対的な要件照合で指摘されるまで気づかなかった。
 **perf の issue で「速くなったはず」を根拠なく書くのは、機能の issue で「動くはず」と書くのと同じ**。
+
+## 母集合を混ぜて「実測」と書いた例 (2026-09-03、dotfiles)
+
+`src/doctor` に lint 設定が無いことを指摘する issue で「production に 12 件」と書いたが、
+12 は **production とテストを混ぜた数**だった (正しくは production 10 件 = exhaustive 4 +
+未導入 linter 6、テスト込みで 18 件)。`golangci-lint` の出力を `uniq -c` で数えて合計だけを
+転記し、母集合を書かなかったのが原因。設定ファイルのコメントにも同じ混同を commit している
+(次の commit で production / テストに分けて訂正)。
+数字そのものより、**「実測」の見出しの下に母集合の違う数を置いたこと**が問題だった。
+出典: `issues/226-retro-glogx-audit-2026-09-03.md` 項目 2 / `issues/222-*.md`。

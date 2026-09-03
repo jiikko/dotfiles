@@ -21,7 +21,22 @@ func HumanSize(n int64) string {
 	return ""
 }
 
-func riskMark(r Result) string {
+// Foldable は「候補 0 件なので一覧から畳んでよい行か」。CLI と TUI の唯一の出典。
+//
+// 🚨 **検出条件そのものが未実測のエントリ (Entry.Unverified) は畳まない** (issue 169 / 207)。
+// 畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と同じ見え方になり、
+// 探せていないことが画面から永久に消える (false green)。
+func Foldable(r Result) bool {
+	return r.Status == StatusOK && len(r.Items) == 0 && len(r.Failures) == 0 && r.Entry.Unverified == ""
+}
+
+// Mark は状態を表す**固定語彙** (記号 + 語)。CLI (Format) と TUI (glogx の doctorRiskMark) の
+// 唯一の出典。**色は持たない**: この module は表示幅・色の依存を持たない方針なので、
+// 色付けは語を受け取った側 (glogx) の責務。
+//
+// 🚨 語を増やす / 変えるときはここだけを直す。以前は CLI と TUI に同じ写像が 2 つあり、
+// 「相手と同じ語彙を使うこと」というコメントだけが両者を結んでいた (issue 222)。
+func Mark(r Result) string {
 	switch r.Status {
 	case StatusBlocked:
 		// UI と同じく**固定語彙**。可変長の理由をここに置くと、幅の狭い端末で
@@ -61,8 +76,7 @@ func Format(rep Report, now time.Time) string {
 		// 候補 0 件は畳む。🚨 **検出条件そのものが未実測のエントリは畳まない** (issue 169 / 207)。
 		// 畳むと「名前が違って 1 件も当たらなかった」が「候補なし = きれい」と同じ見え方になる。
 		// UI 側 (src/glogx/doctor_view.go) と同じ規律。実測で Entry.Unverified が空になれば畳まれる側へ戻る
-		if r.Status == StatusOK && len(r.Items) == 0 && len(r.Failures) == 0 &&
-			r.Entry.Unverified == "" {
+		if Foldable(r) {
 			continue
 		}
 		shown++
@@ -74,7 +88,7 @@ func Format(rep Report, now time.Time) string {
 		// 1 文字 3 バイトと数えられて列が行ごとにずれる (issue 182)。doctor module は幅計算の
 		// 依存を持たないので、**揃えるのを諦めて**マークを先に出す (size は ASCII なので %9s が効く)。
 		// 揃えたくなったら表示幅を測る依存を足すこと。UI 側 (glogx) は termwidth を持つので揃えている
-		fmt.Fprintf(&b, "\n%9s  %s  %s\n", size, riskMark(r), r.Entry.Label)
+		fmt.Fprintf(&b, "\n%9s  %s  %s\n", size, Mark(r), r.Entry.Label)
 		if r.Status == StatusFailed || r.Status == StatusBlocked {
 			fmt.Fprintf(&b, "           %s\n", r.Reason)
 			continue

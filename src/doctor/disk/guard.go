@@ -163,7 +163,7 @@ func simRuntimes(ctx context.Context, run runner.Runner) ([]simRuntime, error) {
 	if err := json.Unmarshal([]byte(out), &doc); err != nil {
 		return nil, fmt.Errorf("simctl の JSON を解釈できない: %w", err)
 	}
-	var rts []simRuntime
+	rts := make([]simRuntime, 0, len(doc))
 	for _, r := range doc {
 		rt := simRuntime{Identifier: r.Identifier, SizeBytes: r.SizeBytes, Path: r.Path,
 			Name: fmt.Sprintf("%s (%s %s)", r.RuntimeIdentifier, r.Version, r.Build)}
@@ -419,8 +419,9 @@ func brewCleanupTargets(ctx context.Context, run runner.Runner) ([]string, error
 		}
 		return prefix, prefixErr
 	}
-	var paths []string
-	for _, line := range strings.Split(out, "\n") {
+	lines := strings.Split(out, "\n")
+	paths := make([]string, 0, len(lines))
+	for _, line := range lines {
 		if m := brewWouldRemoveRe.FindStringSubmatch(line); m != nil {
 			paths = append(paths, m[1])
 			continue

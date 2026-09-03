@@ -34,7 +34,7 @@ func escapeGlobMeta(s string) string {
 	// byte 単位で回す (rune で回すと不正 UTF-8 が U+FFFD に置換され、pattern が実バイト列と
 	// 食い違ってマッチしなくなる)。メタ文字はすべて ASCII なので継続バイトを誤爆しない。
 	var b strings.Builder
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		if strings.IndexByte(`*?[\`, s[i]) >= 0 {
 			b.WriteByte('\\')
 		}

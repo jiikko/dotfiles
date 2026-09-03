@@ -54,7 +54,7 @@ func listWith(rows ...string) string {
 	return "PID\tStatus\tLabel\n" + strings.Join(rows, "\n") + "\n"
 }
 
-func writePlist(t *testing.T, dir, name, body string) string {
+func writePlist(t *testing.T, dir, name, body string) {
 	t.Helper()
 	p := filepath.Join(dir, name+".plist")
 	xml := `<?xml version="1.0" encoding="UTF-8"?>
@@ -63,7 +63,6 @@ func writePlist(t *testing.T, dir, name, body string) string {
 	if err := os.WriteFile(p, []byte(xml), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return p
 }
 
 func kv(label string, extra string) string {
@@ -92,7 +91,7 @@ func scanDir(t *testing.T, dir string, f *fakeRunner) Report {
 }
 
 func labels(rep Report) []string {
-	var out []string
+	out := make([]string, 0, len(rep.Findings))
 	for _, f := range rep.Findings {
 		out = append(out, f.Label)
 	}
@@ -109,8 +108,8 @@ func TestNegativeStatusIsNoise(t *testing.T) {
 	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	var rows []string
-	for i := 0; i < 60; i++ {
+	rows := make([]string, 0, 60)
+	for i := range 60 {
 		l := fmt.Sprintf("com.example.idle%d", i)
 		writePlist(t, dir, l, kv(l, args(exe)+keepAlive))
 		rows = append(rows, "-\t-9\t"+l)

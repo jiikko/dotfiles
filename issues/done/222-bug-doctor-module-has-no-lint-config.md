@@ -86,16 +86,52 @@ level=warning msg="No config file detected"   exit status 6
   exhaustive が 1 件出る → 復元で 0 issues）/ `make -C src/doctor test` (-race) 全緑。
   いずれも並行セッションの WIP と混ざらないよう使い捨て worktree で実施
 
-## 残っていること
+## 決着 (2026-09-04)
 
-- [ ] **未導入の linter を入れる**: production 6 件（prealloc 2 / perfsprint 2 / intrange 1 / unconvert 1）+
-      テスト 8 件を潰してから。`unconvert` は `disk/size.go` の `Stat_t` 変換に既存の nolint があるので
-      外す判断とセット。`intrange` の 1 件は `src/doctor/disk/scan_test.go`（並行セッションが編集中）
-- [ ] **語彙の出典を 1 箇所へ寄せる**（下節）。`disk.Format` は exported なので、
-      **突合テストは今日でも書ける**（glogx から `disk.Format` の出力と `doctorRiskMark` の戻り値を
-      突き合わせる。doctor 側の `report_test.go` が既に `Format` の出力を assert している）
-- [ ] `src/doctor/Makefile` の冒頭コメントに、glogx 側にある「設定はこのディレクトリの
-      `.golangci.yml` を自動で読む」の 1 行が無い（写しから落ちている）
+残件 3 つとも片付いたので done へ送る。
+
+- [x] **未導入の linter を入れた**: `intrange` / `perfsprint` / `prealloc` / `unconvert` / `unparam`。
+      潰した指摘は 15 件 (production 6 = prealloc 2 `disk/guard.go` / perfsprint 2 `svc/scan.go` /
+      intrange 1 `disk/paths.go` / unconvert 1 `disk/size.go`、テスト 9)。
+      🚨 **9 件目はこの作業で新しく現れた**: `svc/scan_test.go` の 3 節 for を `range 60` へ直した瞬間に
+      prealloc が同じループを見えるようになった (prealloc は `range` ループしか見ない)。
+      `unconvert` は**変換を落とした** (`it.Size += s.Blocks * 512`)。最初は隣の行に倣って
+      `//nolint:unconvert // Blocks は platform で型が違う` を付けたが、敵対レビューが Go 1.25.4 の
+      `syscall/ztypes_*_*.go` を全数走査して **34 変種すべて `Blocks` は int64**（= 理由が偽）と示した。
+      隣の `Dev` の nolint は本物 (int32 ×9 / uint32 ×5 / uint64 ×20)
+- [x] **語彙の出典を 1 箇所へ寄せた**: `disk.Mark(Result) string` と `disk.Foldable(Result) bool` を
+      export し、`Format` (CLI) と `doctorRiskMark` / `diskSection` (TUI) の両方が呼ぶ形にした。
+      glogx 側は**色だけ**を持つ (`doctorRiskColor`) ので、doctor module の「表示幅・色の依存を
+      持たない」方針は維持されている
+- [x] `src/doctor/Makefile` に「設定はこのディレクトリの `.golangci.yml` を自動で読む」の 1 行を足した
+
+### 🚨 寄せただけでは守られていなかった (変異検証で判明)
+
+一元化の直後に `disk.Mark` の「🚨 注意」を書き換える変異を当てたところ、**doctor 側も glogx 側も
+緑のまま**だった (6 語のうち pin されていたのは「✅ 安全」「❓ 走査できず」「🔎 未検証」だけ)。
+出典に寄せることと、その出典を固定することは別なので、テストを 2 本足した:
+
+- `disk/report_test.go:TestMarkVocabulary` — 6 語を状態ごとに pin (出典側)
+- `disk/report_test.go:TestFoldable` — 畳む条件の 5 ケース (候補あり / 一部失敗 / 未検証 / blocked)
+- `glogx/doctor_view_test.go:TestDoctorRiskMarkDelegatesWordAndAddsColor` — **委譲していること**と
+  **語と色の対応**を組で pin (語そのものは再掲しない。再掲すると 2 実装に戻る)。
+  🚨 敵対レビュー 2026-09-04 の P1: 最初は `color != ""` しか見ておらず、**色を全部 ansiDim へ潰す変異が
+  緑のまま通った** (語と色が矛盾した行を作れた)。色は glogx にしか無いので、委譲だけでは守れない。
+  さらに「未検証だが候補は在る」ケースが無いと、色側の条件から `len(Items)==0` を落とす変異も素通りする
+  (この 2 つを足して両方 red を確認)
+
+変異検証 (いずれも `go build` が通ることを確認してから判定):
+
+| 変異 | 結果 |
+|---|---|
+| `disk.Mark` の「🚨 注意」を別の語にする | `TestMarkVocabulary` が red |
+| glogx が委譲をやめて**違う語**を返す分岐を足す | `TestDoctorRiskMarkDelegatesWordAndAddsColor` が red |
+| glogx の色を全部 `ansiDim` に潰す / 色側の未検証条件だけずらす | 同テストが red (色の組を pin したため) |
+| `Foldable` から `Unverified == ""` を外す | `TestFoldable` + `TestFormatKeepsUnverifiedEntryWithZeroItems` が red |
+| `intrange` 化を戻す / `unconvert` の nolint を外す | それぞれの linter が発火 |
+
+検証: `make -C src/doctor lint` 0 issues / `make -C src/doctor test` (-race) 全緑 /
+`make -C src/glogx lint` 0 issues / `make -C src/glogx test` (-race) 全緑。
 
 ## 副次: 同じ語彙が 2 箇所に別実装で在る
 

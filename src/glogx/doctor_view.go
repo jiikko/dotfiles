@@ -653,8 +653,7 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 		// **同じ見え方**になり、探せていないことが画面から永久に消える (false green)。
 		// CLI 側 (src/doctor/disk/report.go) と同じ規律。実測で名前が確定して
 		// Entry.Unverified が空になれば、この行も自動的に畳まれる側へ戻る。
-		if r.Status == disk.StatusOK && len(r.Items) == 0 && len(r.Failures) == 0 &&
-			r.Entry.Unverified == "" {
+		if disk.Foldable(r) {
 			continue
 		}
 		shown++
@@ -796,37 +795,42 @@ func (v *doctorView) diskItemRows(o doctorRenderOpts, r disk.Result) []doctorRow
 // diskItemKey は「どのエントリのどのパスか」の同一性。パスに \x00 は現れない。
 func diskItemKey(entryID, path string) string { return entryID + "\x00" + path }
 
-// 記号は表示幅が安定するものだけ使う。⚠️ (U+26A0 + VS16) は端末によって 1 桁と 2 桁で揺れ、行の右端が
-// フレームごとに動いて見えた (ユーザー報告 2026-09-02)。🚨 (U+1F6A8) は常に 2 桁。
 func doctorRiskMark(r disk.Result) (string, string) {
+	// 🚨 **語は disk.Mark が唯一の出典**。CLI (diskdoctor の Format) と同じ文字列がここへ来る。
+	// 以前は同じ写像が 2 つあり、「相手と同じ語彙を使うこと」というコメントだけが両者を
+	// 結んでいたので、片側だけ語を変えてもどちらのテストも赤くならなかった (issue 222)。
+	// ここが持つのは**色だけ**: doctor module は表示幅・色の依存を持たない方針。
+	//
+	// 記号は表示幅が安定するものだけ使う。⚠️ (U+26A0 + VS16) は端末によって 1 桁と 2 桁で揺れ、
+	// 行の右端がフレームごとに動いて見えた (ユーザー報告 2026-09-02)。🚨 (U+1F6A8) は常に 2 桁。
+	// 色の対応は語ごとではなく**状態ごと**に決める (語が変わっても色の意味は変わらない)。
+	return disk.Mark(r), doctorRiskColor(r)
+}
+
+// doctorRiskColor は行の色。語 (disk.Mark) と 1 対 1 に対応させること。
+// 🚨 NO_COLOR では色が消えるので、色だけで区別している状態を作らない
+// (「触れない」と「注意して消す」は記号でも分かれている)。
+func doctorRiskColor(r disk.Result) string {
 	switch r.Status {
 	case disk.StatusBlocked:
-		// 🚨 マーク列は**固定語彙**にする。可変長の理由をここに置くと狭い幅で切れて
-		// 「🚨 Google Chrome Canary …」のように**何が起きたのか分からない断片**が残る
-		// (実測 2026-09-03 幅 80。issue 182)。理由は呼び出し側が下の dim 行へ出す。
-		// 記号も caution (🚨) と分ける: NO_COLOR では色が消えるので、記号が同じだと
-		// 「触れない」と「注意して消す」が区別できない
-		return "🚫 対象外", ansiYellow
+		return ansiYellow
 	case disk.StatusFailed:
-		return "❓ 走査できず", ansiDim
+		return ansiDim
 	case disk.StatusOK:
-		// 検出条件が未実測のエントリで候補 0 件のとき。**リスク記号を出さない**:
-		// 「✅ 安全」は「調べたうえで安全」の意味なので、調べられていない行に出すと嘘になる。
-		// 走査自体は成功しているので「❓ 走査できず」とも違う (記号を分けて区別する)。
-		// CLI 側 (src/doctor/disk/report.go の riskMark) と同じ語彙を使うこと。
+		// 検出条件が未実測で候補 0 件 (disk.Mark は "🔎 未検証" を返す)
 		if r.Entry.Unverified != "" && len(r.Items) == 0 {
-			return "🔎 未検証", ansiDim
+			return ansiDim
 		}
 	}
 	switch r.Entry.Risk {
 	case disk.RiskSafe:
-		return "✅ 安全", ansiGreen
+		return ansiGreen
 	case disk.RiskCaution:
-		return "🚨 注意", ansiYellow
+		return ansiYellow
 	case disk.RiskConfirm:
-		return "⛔ 要確認", ansiRed
+		return ansiRed
 	}
-	return string(r.Entry.Risk), ""
+	return ""
 }
 
 // doctorLabelWidth はディスク行のラベル列の表示幅 (リスク記号の列を揃えるため)。

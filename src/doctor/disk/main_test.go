@@ -142,7 +142,8 @@ func sandboxCheck(op, path string) error {
 func takeSandboxViolations(want string) []string {
 	sandboxMu.Lock()
 	defer sandboxMu.Unlock()
-	var got, rest []string
+	got := make([]string, 0, len(sandboxViolations))
+	rest := make([]string, 0, len(sandboxViolations))
 	for _, v := range sandboxViolations {
 		if want != "" && strings.Contains(v, want) {
 			got = append(got, v)

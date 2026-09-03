@@ -46,3 +46,54 @@ func TestFormatKeepsUnverifiedEntryWithZeroItems(t *testing.T) {
 		t.Errorf("未検証の行が在るのに『候補はありませんでした』と締めている:\n%s", out)
 	}
 }
+
+// Mark が返す語彙を固定する。**この 6 語が CLI と TUI の唯一の出典**なので、
+// ここを変えると両方の画面の文言が同時に変わる (issue 222 で 2 実装を 1 つに寄せた)。
+// 🚨 変異検証 2026-09-04: 寄せた直後は「注意 / 要確認 / 対象外」を pin するテストがどちらの
+// module にも無く、語を書き換えても両方緑のままだった (このテストはその穴を塞ぐ)。
+func TestMarkVocabulary(t *testing.T) {
+	safe := Entry{ID: "e", Risk: RiskSafe}
+	for _, tc := range []struct {
+		name string
+		r    Result
+		want string
+	}{
+		{"blocked", Result{Entry: safe, Status: StatusBlocked}, "🚫 対象外"},
+		{"failed", Result{Entry: safe, Status: StatusFailed}, "❓ 走査できず"},
+		{"unverified", Result{Entry: Entry{ID: "e", Risk: RiskSafe, Unverified: "名前が未確定"}, Status: StatusOK}, "🔎 未検証"},
+		{"safe", Result{Entry: safe, Status: StatusOK, Items: []Item{{Path: "/p"}}}, "✅ 安全"},
+		{"caution", Result{Entry: Entry{ID: "e", Risk: RiskCaution}, Status: StatusOK, Items: []Item{{Path: "/p"}}}, "🚨 注意"},
+		{"confirm", Result{Entry: Entry{ID: "e", Risk: RiskConfirm}, Status: StatusOK, Items: []Item{{Path: "/p"}}}, "⛔ 要確認"},
+	} {
+		if got := Mark(tc.r); got != tc.want {
+			t.Errorf("%s: Mark = %q; want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// Foldable は「候補 0 件で畳んでよい行か」の唯一の出典。畳む条件が緩むと候補のある行が消え、
+// 締まると未検証の行が「候補なし」と同じ見え方になる (false green。issue 169 / 207)。
+func TestFoldable(t *testing.T) {
+	base := Result{Entry: Entry{ID: "e"}, Status: StatusOK}
+	if !Foldable(base) {
+		t.Error("候補 0 件・失敗 0 件・未検証でない行は畳む")
+	}
+	withItem := base
+	withItem.Items = []Item{{Path: "/p"}}
+	if Foldable(withItem) {
+		t.Error("候補がある行を畳んだ")
+	}
+	withFail := base
+	withFail.Failures = []string{"走査できず"}
+	if Foldable(withFail) {
+		t.Error("一部走査できなかった行を畳んだ")
+	}
+	unver := base
+	unver.Entry.Unverified = "名前が未確定"
+	if Foldable(unver) {
+		t.Error("検出条件が未実測の行を畳んだ (false green)")
+	}
+	if Foldable(Result{Entry: Entry{ID: "e"}, Status: StatusBlocked}) {
+		t.Error("blocked の行を畳んだ (理由を出す必要がある)")
+	}
+}
