@@ -29,3 +29,5 @@
 2026-08-28 08:43	performance	direct	issues/127-test-schedkeys-duplicate-and-coupled-tests.md,issues/128-research-schedkeys-audit-2026-08-28.md
 2026-09-03 13:58	test-cleanup	direct	issues/198-test-glogx-vacuous-assertions-found-by-mutation.md
 2026-09-03 13:58	test-helpers	direct	issues/199-test-glogx-extract-two-repeated-test-setups.md
+2026-09-03 15:19	dependency	direct	issues/202-bug-glogx-ruleguard-uncompilable-and-uniseg-oracle-skew.md
+2026-09-03 15:19	lint-from-done	direct	issues/201-test-glogx-hint-width-and-clock-guard-checks.md
