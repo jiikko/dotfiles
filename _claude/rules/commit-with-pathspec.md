@@ -23,6 +23,11 @@
 - 予防: **commit の前に `cd "$(git rev-parse --show-toplevel)"`**。ツールの cwd がサブディレクトリに
   残っている状態で pathspec を組まない (シェルの cwd は前のコマンドから持ち越される)
 - 検出: commit 直後の `git log -1 --stat` で想定ファイルが入っているか見る (下の節と同じ規律)
+- ⚠️ **worktree からの `merge --ff-only` / `push` も cwd 依存**。作業 worktree (`wt-xxx`) の cwd で
+  `git merge --ff-only <branch>` / `git push` を打つと、**worktree 側のブランチ**に対して
+  「Already up to date」「Everything up-to-date」が返るだけで master は 1 mm も動かない
+  (実測 2026-09-02〜03 SnapTrim、2 回踏んだ)。本体の checkout / umbrella への操作は
+  **`git -C <本体の絶対パス>`** で対象を明示し、直後に `git -C <本体> log -1 --oneline` で先端が動いたことを見る
 - ⚠️ **パイプ越しでも見失う**: `git commit ... | head` のように通すと `$?` はパイプ終端の
   status になり、上の rc=1 が消える ([`verify-execution-not-just-exit-code.md`](verify-execution-not-just-exit-code.md) の系)
 
