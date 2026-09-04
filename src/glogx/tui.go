@@ -472,8 +472,18 @@ func (m *browseModel) Init() tea.Cmd {
 	// 🚨 issues の復元とは**排他にしない**: 両方は同時に出ないので、後から開く doctor が
 	// 前面に来る。どちらを優先するかは「最後に見ていた方」で決めたいが、記憶は別ファイルで
 	// 順序を持たないため、ここでは doctor を後に開く (issues は下に残り、閉じれば出てくる)
+	// ratelimit ダッシュボードを出したまま終了していたら開き直す (ratelimit_resume.go)。
+	// 取得の起こし方 (キャッシュ優先 / stale 判定) は R と同じ経路に委ねる。
+	var rlRestore tea.Cmd
+	if loadRatelimitScreen(timeNow()) {
+		rlRestore = m.toggleRatelimitDash()
+	}
 	var doctorRestore tea.Cmd
-	if tb, ok := loadDoctorScreen(timeNow()); ok {
+	// 🚨 ratelimit を復元したなら doctor は開かない: 全画面ビューアは高々 1 枚 (fullscreen.go) で、
+	// 両方 shown にすると「見えている画面」と「キーを受ける画面」が食い違う。記憶は互いに
+	// 排他 (開いていない方は終了時に消える) なので通常は同時に残らないが、異常終了で片方が
+	// 残ったときにここで倒す。issues 側は issuesRestoreMsg のガードが同じ理由で弾く。
+	if tb, ok := loadDoctorScreen(timeNow()); ok && rlRestore == nil {
 		doctorRestore = m.doctorOv.toggle()
 		m.doctorOv.tab = tb
 	}
@@ -485,9 +495,9 @@ func (m *browseModel) Init() tea.Cmd {
 	// git を叩くので非同期にし、保険のポーリングだけ先に張る (イベント待ちは解決後に張る)。
 	logWatch := tea.Batch(gitLogWatchDirsCmd(), m.gitLogPollCmd())
 	if m.fetching() {
-		return tea.Batch(m.fetch, prefix, u, ver, cliHealth, ab, restore, doctorRestore, poll, logWatch, m.maybeTick(), usageRefreshTick())
+		return tea.Batch(m.fetch, prefix, u, ver, cliHealth, ab, restore, rlRestore, doctorRestore, poll, logWatch, m.maybeTick(), usageRefreshTick())
 	}
-	return tea.Batch(prefix, u, ver, cliHealth, ab, restore, doctorRestore, poll, logWatch, m.maybeTick(), usageRefreshTick())
+	return tea.Batch(prefix, u, ver, cliHealth, ab, restore, rlRestore, doctorRestore, poll, logWatch, m.maybeTick(), usageRefreshTick())
 }
 
 // issuesRestoreCmd は記憶した画面が今の repo のものか確かめる (別 repo で開いた glogx に
@@ -2238,6 +2248,7 @@ func (m *browseModel) quitNow() (tea.Model, tea.Cmd) { return m.quitWith(false) 
 func (m *browseModel) quitWith(animate bool) (tea.Model, tea.Cmd) {
 	m.rememberIssuesScreen()
 	m.rememberDoctorScreen()
+	m.rememberRatelimitScreen()
 	m.cancelAll()
 	if m.fetching() {
 		m.fillUnknown()
@@ -2434,6 +2445,17 @@ func (m *browseModel) rememberDoctorScreen() {
 		return
 	}
 	removeDoctorScreen()
+}
+
+// rememberRatelimitScreen は「ratelimit ダッシュボードを出したまま終了したら次の起動で開き直す」
+// ための保存 (ratelimit_resume.go)。🚨 issues / doctor と同じく、**開いていないまま終了したら
+// 消す** — 残すと、一覧を見て閉じた次の起動で 2 回前のダッシュボードが蘇る。
+func (m *browseModel) rememberRatelimitScreen() {
+	if m.rlDash.visible() {
+		_ = saveRatelimitScreen(ratelimitScreen{SavedAt: timeNow()}) // 失敗しても終了は妨げない
+		return
+	}
+	removeRatelimitScreen()
 }
 
 // handlePanelKey は job パネル表示中のキー操作。j/k はパネル内のフォーカス移動になる。
