@@ -218,7 +218,7 @@ func TestDoctorCursorAndExpand(t *testing.T) {
 	if out := doctorText(v, 40); !strings.Contains(out, "You should find replacements") || !strings.Contains(out, "  foo") {
 		t.Errorf("brew の Enter で本文が出ない:\n%s", out)
 	}
-	if v.handleKey("x", 40) != doctorSwallow {
+	if v.handleKey("z", 40) != doctorSwallow {
 		t.Error("未知のキーを素通りさせた")
 	}
 }
@@ -2170,4 +2170,60 @@ func TestDoctorOpenCloseWithHL(t *testing.T) {
 	if h := v.hint(120); !strings.Contains(h, "h/l") {
 		t.Errorf("hint に h/l が出ていない: %q", h)
 	}
+}
+
+// 指摘が 1 件も無いときだけ祝う (ユーザー要望 2026-09-04)。
+//
+// 🚨 「診断できず」がある状態で祝わない。0 件と「測れなかった」を同じ顔で出すと、
+// 見えていない問題を「無い」と読ませることになる (この repo が繰り返し塞いできた形)。
+func TestDoctorCelebratesOnlyWhenTrulyClean(t *testing.T) {
+	o := doctorRenderOpts{width: 96, page: 30, colored: false, spinner: "⠋", now: time.Now()}
+	render := func(v *doctorView) string { return strings.Join(v.lines(o), "\n") }
+
+	t.Run("両方きれいなら祝う", func(t *testing.T) {
+		v := &doctorView{shown: true, expanded: map[string]bool{}}
+		v.svcRep, v.brew = &svc.Report{}, &brewDoctorResult{Clean: true}
+		out := render(v)
+		if strings.Count(out, "🎉") != 2 {
+			t.Errorf("サービスと Homebrew の両方で祝っていない:\n%s", out)
+		}
+	})
+	t.Run("壊れた登録があれば祝わない", func(t *testing.T) {
+		v := &doctorView{shown: true, expanded: map[string]bool{}}
+		v.svcRep = &svc.Report{Findings: []svc.Finding{{Label: "com.x.y", PlistPath: "/L/com.x.y.plist", Domain: "gui/501"}}}
+		v.brew = &brewDoctorResult{Clean: true}
+		out := render(v)
+		if strings.Count(out, "🎉") != 1 {
+			t.Errorf("壊れた登録があるのにサービス側で祝った:\n%s", out)
+		}
+	})
+	// 🚨 この 2 つは **parseBrewDoctor を通して**状態を作る。リテラルで
+	// brewDoctorResult{Unavailable: ...} を組むと、描画側の case の順序だけを見ることになり
+	// 「そもそもその状態を作れるか」を検査しない = 局所の変異では壊せないテストになる
+	// (変異検証で実際に素通りした)
+	t.Run("診断できずなら祝わない", func(t *testing.T) {
+		v := &doctorView{shown: true, expanded: map[string]bool{}}
+		v.svcRep = &svc.Report{}
+		b := parseBrewDoctor("", "Error: brew is broken\n", 1) // 非 0 なのに警告なし = 診断できず
+		if b.Unavailable == "" {
+			t.Fatalf("前提が崩れている: 診断できずになっていない: %+v", b)
+		}
+		v.brew = &b
+		// 🚨 Homebrew の行に限って見る。全体を見るとサービス側の 🎉 を拾う
+		if out := render(v); strings.Contains(out, "🎉 Your system is ready") {
+			t.Errorf("診断できていないのに Homebrew で祝った:\n%s", out)
+		}
+	})
+	t.Run("警告があれば祝わない", func(t *testing.T) {
+		v := &doctorView{shown: true, expanded: map[string]bool{}}
+		v.svcRep = &svc.Report{}
+		b := parseBrewDoctor("", brewWarnDeprecated+"\n", 1)
+		if len(b.Warnings) == 0 {
+			t.Fatalf("前提が崩れている: 警告が解析できていない: %+v", b)
+		}
+		v.brew = &b
+		if out := render(v); strings.Contains(out, "🎉 Your system is ready") {
+			t.Errorf("警告があるのに Homebrew で祝った:\n%s", out)
+		}
+	})
 }

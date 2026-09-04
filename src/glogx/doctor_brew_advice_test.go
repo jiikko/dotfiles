@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -182,4 +183,114 @@ func TestBrewAdviceNameListIsIndentedAndContiguous(t *testing.T) {
 			t.Errorf("空行の先を名前として拾った: %q", a.Actions[0].Cmd)
 		}
 	})
+}
+
+// brew の手を Space で選び、x で確認、y で実行する。
+//
+// 🚨 disk の削除と**同じ二段** (印を付ける → 実行) にしてある。同じ Space が片方は
+// 「印」で片方は「即実行」だと、身についた期待のまま副作用を起こす形になる。
+func TestBrewActionSelectRunAndReport(t *testing.T) {
+	var ran [][]string
+	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v.brewRun = func(_ context.Context, name string, args ...string) (string, string, int, error) {
+		ran = append(ran, append([]string{name}, args...))
+		if name == "brew" && len(args) > 0 && args[0] == "info" {
+			return "", "not found", 1, nil // 1 件だけ失敗させる
+		}
+		return "linked\n", "", 0, nil
+	}
+	v.brew = &brewDoctorResult{Warnings: []string{brewWarnUnlinked}}
+	o := doctorTestOpts(40)
+	o.width = 96
+	_ = v.lines(o)
+
+	// 手の行まで降りて Space で選ぶ
+	var actKey string
+	for _, r := range v.rows {
+		if strings.HasPrefix(r.key, "brew:") {
+			v.expanded[r.key] = true
+		}
+	}
+	_ = v.lines(o)
+	for _, r := range v.rows {
+		if strings.HasPrefix(r.key, "brewact:") {
+			actKey = r.key
+			break
+		}
+	}
+	if actKey == "" {
+		t.Fatal("手の行が無い")
+	}
+	v.cur.jumpTo(v.rows, actKey)
+	if act := v.handleKey(" ", 40); act != doctorSwallow {
+		t.Fatalf("Space で選べない: %v (%s)", act, v.pendingToast)
+	}
+	if len(v.selectedActions) != 1 {
+		t.Fatalf("選択が入っていない: %v", v.selectedActions)
+	}
+	// 選んだ印が行に出る
+	_ = v.lines(o)
+	var marked bool
+	for _, r := range v.rows {
+		if r.key == actKey && strings.Contains(r.text, "*") {
+			marked = true
+		}
+	}
+	if !marked {
+		t.Error("選んだ手に印が出ていない")
+	}
+	if h := v.hint(120); !strings.Contains(h, "x: 1 件を実行") {
+		t.Errorf("hint に実行の導線が出ていない: %q", h)
+	}
+
+	// x で確認画面へ。**実行するコマンドがそのまま出る**
+	if act := v.handleKey("x", 40); act != doctorSwallow {
+		t.Fatalf("x が効かない: %v (%s)", act, v.pendingToast)
+	}
+	out := doctorPanelText(v, 30)
+	if !strings.Contains(out, "これを実行しますか?") || !strings.Contains(out, "$ brew link node ruby") {
+		t.Fatalf("確認画面に実行するコマンドが出ていない:\n%s", out)
+	}
+	if len(ran) != 0 {
+		t.Fatalf("確認の前に実行してしまった: %v", ran)
+	}
+
+	// y で実行 → 結果
+	if act := v.handleKey("y", 40); act != doctorRunDelete {
+		t.Fatalf("y で実行に入らない: %v", act)
+	}
+	_ = runDeleteCmds(t, v, v.takeDeleteCmd())
+	if len(ran) != 1 || strings.Join(ran[0], " ") != "brew link node ruby" {
+		t.Fatalf("実行したコマンド = %v", ran)
+	}
+	if v.del.brewRep == nil {
+		t.Fatalf("結果が出ていない: %+v", v.del)
+	}
+	out = doctorPanelText(v, 30)
+	for _, want := range []string{"実行の結果", "1 件すべて成功しました", "$ brew link node ruby", "exit 0"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("結果に %q が無い:\n%s", want, out)
+		}
+	}
+}
+
+// x は何も選んでいないと実行しない (押し間違いで走らせない)。
+func TestBrewRunNeedsSelection(t *testing.T) {
+	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v.brew = &brewDoctorResult{Warnings: []string{brewWarnUnlinked}}
+	_ = v.lines(doctorTestOpts(40))
+	if act := v.handleKey("x", 40); act != doctorToast {
+		t.Fatalf("何も選んでいないのに実行へ入った: %v", act)
+	}
+	if !strings.Contains(v.pendingToast, "Space") {
+		t.Errorf("選び方を案内していない: %q", v.pendingToast)
+	}
+	if v.del.active() {
+		t.Error("パネルが立ってしまった")
+	}
+	// 🚨 選んでいないときは hint に x を出さない。常設すると幅の予算を食い、
+	// r: 再スキャン のような常に使える手を押し出す
+	if h := v.hint(120); strings.Contains(h, "x:") {
+		t.Errorf("選んでいないのに x を案内した: %q", h)
+	}
 }

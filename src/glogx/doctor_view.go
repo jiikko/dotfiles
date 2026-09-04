@@ -63,7 +63,14 @@ type doctorView struct {
 	selected map[string]bool
 	// selectedItems は**ディレクトリ単位**の選択 (key = diskItemKey)。エントリ全体を選ぶ
 	// selected とは別に持つ: 「エントリを丸ごと」と「その中の一部」は意図が違う
-	selectedItems    map[string]bool
+	selectedItems map[string]bool
+	// selectedActions は brew の手の選択 (key = **コマンド文字列**)。
+	// 🚨 行の key ("brewact:i:j") で持たない: 再スキャンで警告の並びが変わると別の手を指す。
+	// コマンドそのものは「何を実行するか」の同一性そのものなので、ずれない
+	selectedActions map[string]bool
+	// brewActionByCmd は直近の描画で組んだ手の実体 (key = コマンド)。確認画面がラベルと
+	// 注記を引くため。行のテキストから復元しない (色と印が混ざっていて壊れやすい)
+	brewActionByCmd  map[string]brewAction
 	inspected        map[string]bool
 	del              doctorDelete
 	pendingDeleteCmd tea.Cmd // handleKey が組んだ削除の Cmd (browseModel が取り出して返す)
@@ -500,6 +507,10 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 		return doctorSwallow
 	case "d":
 		return v.beginDelete()
+	case "x":
+		// brew の手を実行する。**削除 (d) と別のキーにする**: d は「消す」の語で、
+		// brew install は消す操作ではない。同じキーに 2 つの意味を持たせない
+		return v.beginBrewRun()
 	case "D", "q", "esc":
 		v.close()
 		return doctorClosed
@@ -612,6 +623,12 @@ func (v *doctorView) hint(width int) string {
 		{"Y: 解説をコピー", 6},
 		{"r: 再スキャン", 5},
 		{"D/q/esc: 閉じる", 1}, // 抜ける手段は最優先で残す
+	}
+	// 🚨 x は**選ばれているときだけ出す**。常設すると幅の予算を食い、`r: 再スキャン` のような
+	// 常に使える手を押し出す (実測: 幅 120 で再スキャンが消えた)。手が選ばれていないときの
+	// x は「Space で選んでください」と言うだけなので、案内する価値も無い
+	if n := len(v.selectedActions); n > 0 {
+		items = append(items, hintItem{fmt.Sprintf("x: %d 件を実行", n), 2})
 	}
 	if n, total := v.selectionSummary(); n > 0 {
 		items = append([]hintItem{{fmt.Sprintf("選択 %d 件 %s", n, disk.HumanSize(total)), 1}}, items...)
@@ -1052,7 +1069,9 @@ func (v *doctorView) svcSection(o doctorRenderOpts) []doctorRow {
 		})
 	}
 	if len(rep.Findings) == 0 && !undiagnosed {
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "   壊れた登録は見つかりませんでした")})
+		// 🎉 は「指摘が 1 件も無い」ときだけ (診断できずが 1 件でもあれば上の分岐で undiagnosed が
+		// 立つので、ここには来ない)。祝うのは**本当に何も無かったとき**だけにする
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiGreen, "   🎉 壊れた登録は見つかりませんでした")})
 	}
 	return rows
 }
@@ -1066,7 +1085,9 @@ func (v *doctorView) brewSection(o doctorRenderOpts) []doctorRow {
 	case b.Unavailable != "":
 		return append(sectionHeader(o, "Homebrew", "診断できず"), doctorRow{text: doctorColor(o.colored, ansiYellow, " 🚨 "+b.Unavailable)})
 	case b.Clean:
-		return append(sectionHeader(o, "Homebrew", "brew doctor: 警告なし"), doctorRow{text: doctorColor(o.colored, ansiDim, "   Your system is ready to brew.")})
+		// Clean は rc=0 かつ警告 0 件のときだけ立つ (parseBrewDoctor)。診断できずは上の分岐
+		return append(sectionHeader(o, "Homebrew", "brew doctor: 警告なし"),
+			doctorRow{text: doctorColor(o.colored, ansiGreen, "   🎉 Your system is ready to brew.")})
 	}
 	rows := sectionHeader(o, "Homebrew", fmt.Sprintf("brew doctor: 警告 %d 件 (Enter で本文)", len(b.Warnings)))
 	for i, w := range b.Warnings {
@@ -1089,9 +1110,17 @@ func (v *doctorView) brewSection(o doctorRenderOpts) []doctorRow {
 					fmt.Sprintf("     🚨 名前として読めない語を %d 件落としました (原文を確認してください)", adv.Dropped))})
 			}
 			for j, act := range adv.Actions {
+				if v.brewActionByCmd == nil {
+					v.brewActionByCmd = map[string]brewAction{}
+				}
+				v.brewActionByCmd[act.Cmd] = act
+				mark := "▸"
+				if v.selectedActions[act.Cmd] {
+					mark = doctorColor(o.colored, ansiBold, "*")
+				}
 				detailRows = append(detailRows, doctorRow{text: ""},
 					doctorRow{
-						text:       "     ▸ " + doctorColor(o.colored, ansiBold, act.Label),
+						text:       "     " + mark + " " + doctorColor(o.colored, ansiBold, act.Label),
 						selectable: true,
 						key:        fmt.Sprintf("brewact:%d:%d", i, j),
 						copyPath:   act.Cmd,
