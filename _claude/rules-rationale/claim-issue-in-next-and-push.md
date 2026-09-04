@@ -38,9 +38,22 @@ claim を実装と同じ commit に入れると、**push できる条件が実�
 claim は「これから触る」という**宣言**なので、成果物の完成度と独立に出せる必要がある。
 pathspec commit ([`commit-with-pathspec.md`](../rules/commit-with-pathspec.md)) がそのまま使える。
 
+## 2026-09-05 — group issue (`issues/epic/<name>/`) へ広げた
+
+obaket の `issues/epic/google-drive/` (親テーマの下に子 issue を束ねる 2 段構造) が起点。
+claim 先を **group 内の `next/`** にしたのは、global `issues/next/` へ移すと group から抜けて
+親子関係 (viewer の親行・番号 filter の自動展開) が消えるため。完了先を **global `done/`** に
+固定し group 内に `done/` / `pending/` を予約しなかったのは、状態ディレクトリを group ごとに
+複製すると「同じ状態が 2 箇所に」なり、issue-sync / hook / viewer が open の集合を数えるたびに
+group の数だけ経路が増えるため。group 内に置かれたものは viewer で迷子 (`?`) として見せ、
+hook (human-tasks-due / retro-open) は global pending と同じ扱いで拾う (黙って落とさない)。
+
+契約の一次情報は `docs/issues-viewer-spec.md` 3 節・6 節。hook (`next-claim-push.sh` /
+`next-claim-unshared.sh`) の検出パターンも `issues/epic/<name>/next/` を含む。
+
 ## hook で強制できる範囲と、できない範囲
 
-`_claude/hooks/next-claim-push.sh` は PostToolUse(Bash) で `issues/next/` への移動を検出し、
+`_claude/hooks/next-claim-push.sh` は PostToolUse(Bash) で `issues/next/` (と group 内 `next/`) への移動を検出し、
 「単独 commit して push したか」を注入する。ただし:
 
 - **glogx の issues viewer の `n` キーは Bash を通らない** (Go が直接 rename する) ので発火しない。

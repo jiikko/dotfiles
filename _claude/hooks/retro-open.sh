@@ -10,7 +10,9 @@
 # 通る場所で催促する。human タスクの期限催促 (human-tasks-due.sh) と同じ発想。
 #
 # 状態の正本はファイルの位置: issues/ 直下 / issues/next/ / issues/epic/<name>/ /
-# issues/epic/<name>/next/ = 未決着、issues/done/ = 決着済み (対象外)。
+# issues/epic/<name>/next/ = 未決着、issues/done/ = 決着済み (対象外)。group 内の pending/ は
+# 規約上予約されない (spec 3 節) が、迷子を黙って落とさないため global の pending/ と同じ
+# 扱い ([保留]・件数に数えない) で走査する (issue-sync の open 集合と揃える)。
 # 本文のチェックボックスは見ない (書き換え忘れで嘘が残るため)。
 # 🚨 経過日数はファイル名末尾の `-YYYY-MM-DD` か本文の `起票日:` から取る。どちらも読めない
 # ものは黙って捨てず「日付不明」として列挙する (取りこぼしを「新しい retro」と区別できないと
@@ -66,7 +68,7 @@ dated="" ; odd="" ; count=0 ; held_count=0
 # 予約された固定 2 段だけを明示する。glob が未展開でも [ -e ] で飛ばす (epic が無い
 # repo で zsh/bash の設定差や set -u に巻き込まれて落ちないようにする)。
 for f in "$dir"/*.md "$dir"/pending/*.md "$dir"/next/*.md \
-  "$dir"/epic/*/*.md "$dir"/epic/*/next/*.md; do
+  "$dir"/epic/*/*.md "$dir"/epic/*/next/*.md "$dir"/epic/*/pending/*.md; do
   [ -e "$f" ] || continue
   base=${f##*/}
   # カテゴリ判定は lib の共通実装に任せる (部分一致の誤検出を防ぐ。理由はそちらのコメント)
@@ -80,7 +82,7 @@ for f in "$dir"/*.md "$dir"/pending/*.md "$dir"/next/*.md \
   # 「保留は未完了件数に数えない」と同じ規律に揃える (同じ「N 件」が別の意味になるのを防ぐ)
   held=""
   case "$f" in
-    "$dir"/pending/*) held=" [保留]" ; held_count=$((held_count + 1)) ;;
+    "$dir"/pending/* | "$dir"/epic/*/pending/*) held=" [保留]" ; held_count=$((held_count + 1)) ;;
   esac
   [ -n "$held" ] || count=$((count + 1))
 

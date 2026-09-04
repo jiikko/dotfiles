@@ -91,6 +91,12 @@ check "epic 直下の retro を一覧に出す" "issues/epic/foo/016-retro-epic-
 check "epic 直下の retro を件数に数える" "未決着の retro issue: 4 件" "$out"
 check "epic 内 next/ の retro を一覧に出す" "issues/epic/foo/next/017-retro-epic-next-${yesterday}\.md" "$out"
 check "epic 内 next/ の retro を件数に数える" "未決着の retro issue: 4 件" "$out"
+# group 内 pending/ の迷子も黙って落とさない (issue-sync の open 集合と揃える)。[保留] で数えない
+mkdir -p "$repo/issues/epic/foo/pending"
+mkissue "epic/foo/pending/018-retro-epic-held-${yesterday}.md" "起票日: ${yesterday}"
+out="$(report env)"
+check "epic 内 pending/ の retro を [保留] で出す" "issues/epic/foo/pending/018-retro-epic-held-${yesterday}\.md \[保留\]" "$out"
+check "epic 内 pending/ は件数に数えない" "未決着の retro issue: 4 件" "$out"
 
 # --- 7. 古い方が先に出る (溜まった retro が末尾に沈まない) ---
 out="$(report env)"

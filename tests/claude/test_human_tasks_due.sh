@@ -89,6 +89,13 @@ check "epic 直下の human を一覧に出す" 'epic/foo/017-human-epic\.md' "$
 check "epic 直下の human を件数に数える" '未完了の human タスク issue: 5 件' "$got"
 check "epic 内 next/ の human を一覧に出す" 'epic/foo/next/018-human-epic-next\.md' "$got"
 check "epic 内 next/ の human を件数に数える" '未完了の human タスク issue: 5 件' "$got"
+# group 内 pending/ は規約外の迷子だが、issue-sync の open 集合 (`-name done -prune`) と揃えて
+# 黙って落とさない。global pending と同じく [保留] で出し、未完了件数には数えない
+mkdir -p "$repo/issues/epic/foo/pending"
+mkissue "epic/foo/pending/019-human-epic-held.md" "期限: 2026-08-01"
+got="$(report env)"
+check "epic 内 pending/ の期限切れは [保留] で出す" '019-human-epic-held.*\[保留\]' "$got"
+check "epic 内 pending/ は未完了件数に入れない" '未完了の human タスク issue: 5 件' "$got"
 
 # --- 5. 依存コマンドが壊れたら「期限なし」と誤報せず「抽出失敗」と言う ---
 mkdir -p "$WORK/badgrep"
