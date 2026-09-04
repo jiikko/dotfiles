@@ -1,4 +1,4 @@
-# 252 refactor: `doctor/svc` の無害化の関門に網羅検査が無い (disk 側だけ入った)
+# 252 refactor: `doctor/svc` と `doctor/docker` の無害化の関門に網羅検査が無い (disk 側だけ入った)
 
 起票日: 2026-09-04
 種別: refactor (security hardening)
@@ -18,11 +18,25 @@ issue 251 で `doctor/disk` に「表示用の構造体へ新しい文字列フ�
 - `svc.Finding` — `Label` / `PlistPath` / `Domain` / `Reasons` / `MissingExec` / `RestartKeys` / `BrewFormula` / `Commands`
 - `svc.Report` — `StatusErr` / `BrewErr` / `DirErrs`
 
+**2026-09-04 追記: `doctor/docker` が同じ状態で増えた** (Docker Desktop の未使用資源を数える
+新パッケージ)。材料は docker が持つ外部由来の文字列 (レジストリから来るイメージ名 / 誰かが
+書いたコンテナ名・ボリューム名 / ビルドキャッシュの Description) で、脅威は同じ。対象は:
+
+- `docker.Report` — `Unavailable` / `SystemPrune` / `SystemPruneNote` / `Notes`
+- `docker.Group` — `Label` / `Command` / `Notes`
+- `docker.Item` — `Name` / `Detail` / `SizeText` / `Command`
+
+docker 側もコピーせず**共有ヘルパーができるまで待つ** (同じ判定を 3 実装持たない)。
+それまでは `docker.Scan` が戻り値を必ず `SanitizeForDisplay` に通す形
+(disk / svc と同じくプロデューサ側で関門を通す) が唯一の担保。
+
 ## なぜ 251 で一緒にやらなかったか
 
 検査は `package disk` の中で `parser.ParseDir(".")` を使っており、**そのまま svc へ持って行けない**
 （別 package なので、共有するには `doctor/internal/...` にヘルパーを置く必要がある）。
 251 のスコープ（termsafe の関門に型 / lint が無い）から広がるので分けた。
+`doctor/docker` も同じ理由で待っている（3 つ目の package が増えたぶん、共有ヘルパーを
+置く動機はむしろ強くなった）。
 
 ## 案
 

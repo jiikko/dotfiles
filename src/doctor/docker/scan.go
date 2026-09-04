@@ -143,7 +143,15 @@ func (o Options) oldAfter() time.Duration {
 }
 
 // Scan は 1 回診断する。削除も停止も一切しない。
+//
+// 🚨 **戻り値は必ず SanitizeForDisplay を通す** (disk/report.go / svc/report.go と同じく
+// プロデューサ側で関門を通す)。Unavailable には docker の stderr がそのまま入るので、
+// 早期 return の経路こそ関門が要る (敵対レビュー 2026-09-04)。
 func Scan(ctx context.Context, o Options) Report {
+	return SanitizeForDisplay(scan(ctx, o))
+}
+
+func scan(ctx context.Context, o Options) Report {
 	rep := Report{OldAfter: o.oldAfter(), ScannedAt: o.now()}
 	look := o.LookPath
 	if look == nil {
@@ -419,6 +427,11 @@ func imageGroup(is []dfImage, now time.Time, old time.Duration) Group {
 
 func buildCacheGroup(bs []dfBuildCache, now time.Time, old time.Duration) Group {
 	g := Group{Kind: KindBuildCache, Label: "ビルドキャッシュ", Total: len(bs),
+		// 🚨 **`-a` は付けない。** 敵対レビュー 2026-09-04 が「images 側と揃えて -a が要る
+		// (無いと dangling しか消えない)」と指摘したが、これは docker-classic の image prune の
+		// 話で buildx には当てはまらない。実測 (docker 29.2.1 の `docker builder prune --help`):
+		// `-a, --all  Include internal/frontend images` — 既定でも未使用キャッシュは消える。
+		// 付けると候補に数えていない internal/frontend まで消すことになるので、むしろ範囲が広がる。
 		Command: fmt.Sprintf("docker builder prune --filter unused-for=%dh", hours(old)),
 		Notes: []string{
 			humanDur(old) + "以上使われていないレイヤーだけを数えています",
@@ -487,7 +500,7 @@ func volumeGroup(ctx context.Context, o Options, run runner.Runner, vs []dfVolum
 		}}
 	// 🚨 名前の allowlist は**ここ 1 箇所**で掛ける (以前は inspect に渡す前と行を組むときの
 	// 2 箇所に分かれており、片方だけが Dropped を数えていた。敵対レビュー 2026-09-04)
-	var unused []dfVolume
+	unused := make([]dfVolume, 0, len(vs))
 	for _, v := range vs {
 		if v.Links != "0" {
 			continue
@@ -580,8 +593,9 @@ func decodeVolumes(stdout string) ([]volumeInspect, error) {
 		err := json.Unmarshal([]byte(s), &vs)
 		return vs, err
 	}
-	var vs []volumeInspect
-	for _, line := range strings.Split(s, "\n") {
+	lines := strings.Split(s, "\n")
+	vs := make([]volumeInspect, 0, len(lines))
+	for _, line := range lines {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}

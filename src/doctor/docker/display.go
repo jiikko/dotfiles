@@ -19,6 +19,12 @@ func SanitizeForDisplay(rep Report) Report {
 	out := rep
 	out.Unavailable = termsafe.PlainLine(rep.Unavailable)
 	out.SystemPrune = termsafe.PlainLine(rep.SystemPrune)
+	out.SystemPruneNote = termsafe.PlainLine(rep.SystemPruneNote)
+	notes := make([]string, 0, len(rep.Notes))
+	for _, n := range rep.Notes {
+		notes = append(notes, termsafe.PlainLine(n))
+	}
+	out.Notes = notes
 	out.Groups = make([]Group, 0, len(rep.Groups))
 	for _, g := range rep.Groups {
 		g.Label = termsafe.PlainLine(g.Label)
@@ -43,15 +49,11 @@ func SanitizeForDisplay(rep Report) Report {
 		out.Groups = append(out.Groups, g)
 	}
 	if out.Dropped > 0 {
-		out.Unavailable = joinReason(out.Unavailable,
+		// 🚨 **Unavailable に足さない。** あちらは「診断できなかった」の一意な印で、消費側は
+		// 「非空ならエラーを出して return」と書く。1 件落としただけで全群が画面から消える
+		// (敵対レビュー 2026-09-04)
+		out.Notes = append(out.Notes,
 			fmt.Sprintf("%d 件は名前が識別子として読めないため一覧から外しました (提示するコマンドが別の資源を指すため)", out.Dropped))
 	}
 	return out
-}
-
-func joinReason(a, b string) string {
-	if a == "" {
-		return b
-	}
-	return a + " / " + b
 }

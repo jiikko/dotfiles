@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,11 +10,20 @@ import (
 	"time"
 )
 
-// defaultSummary は docker system df の実出力と同じ JSON Lines。
-const defaultSummary = `{"Type":"Images","TotalCount":"42","Active":"15","Size":"65.46GB","Reclaimable":"27.12GB (41%)"}
-{"Type":"Containers","TotalCount":"15","Active":"6","Size":"4.334GB","Reclaimable":"255.7MB (5%)"}
-{"Type":"Local Volumes","TotalCount":"9","Active":"2","Size":"5.329GB","Reclaimable":"3.132GB (58%)"}
-{"Type":"Build Cache","TotalCount":"154","Active":"0","Size":"51.81GB","Reclaimable":"14.35GB"}`
+// summaryFor は `docker system df` の出力を作る。件数は -v の fixture から数える
+// (本物の docker は 2 つのコマンドで同じ件数を返すので、fake もそう振る舞わせる。
+// 件数を固定値にすると、突合の検査が全テストを巻き込んで落ちる)。
+func summaryFor(dfv string) string {
+	var d struct{ Images, Containers, Volumes, BuildCache []json.RawMessage }
+	if err := json.Unmarshal([]byte(dfv), &d); err != nil {
+		return "" // 壊れた fixture は summary も出せない (テスト側の事故を隠さない)
+	}
+	return fmt.Sprintf(`{"Type":"Images","TotalCount":"%d","Size":"65.46GB","Reclaimable":"27.12GB (41%%)"}
+{"Type":"Containers","TotalCount":"%d","Size":"4.334GB","Reclaimable":"255.7MB (5%%)"}
+{"Type":"Local Volumes","TotalCount":"%d","Size":"5.329GB","Reclaimable":"3.132GB (58%%)"}
+{"Type":"Build Cache","TotalCount":"%d","Size":"51.81GB","Reclaimable":"14.35GB"}`,
+		len(d.Images), len(d.Containers), len(d.Volumes), len(d.BuildCache))
+}
 
 var now = time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
 
@@ -42,7 +52,7 @@ func (f *fakeDocker) run(ctx context.Context, name string, args ...string) (stri
 		return f.df, f.dfStderr, f.dfRC, f.dfErr
 	case len(args) >= 2 && args[0] == "system" && args[1] == "df":
 		if f.summary == "" {
-			return defaultSummary, "", f.summaryRC, f.summaryErr
+			return summaryFor(f.df), "", f.summaryRC, f.summaryErr
 		}
 		return f.summary, "", f.summaryRC, f.summaryErr
 	case len(args) >= 2 && args[0] == "volume" && args[1] == "inspect":
@@ -110,7 +120,7 @@ func TestScanDaemonDownIsUnavailable(t *testing.T) {
 	}{
 		{"rc非0", &fakeDocker{dfRC: 1, dfStderr: "Cannot connect to the Docker daemon\n"}},
 		{"起動できず", &fakeDocker{dfErr: errors.New("context deadline exceeded")}},
-		{"JSONが壊れている", &fakeDocker{df: "{"}},
+		{"JSONが壊れている", &fakeDocker{df: "{", summary: summaryFor(dfJSON("", "", "", ""))}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rep := Scan(context.Background(), opts(tc.f))
@@ -226,21 +236,6 @@ func TestVolumesUnusedWithCreatedAt(t *testing.T) {
 	}
 }
 
-// 作成日が取れなくても候補を 0 件に畳まない (「見えていない」を「無い」にしない)。
-func TestVolumesKeepItemsWhenCreatedAtUnavailable(t *testing.T) {
-	f := &fakeDocker{
-		df:         dfJSON("", "", `{"Name":"unknown_age","Links":"0","Size":"3GB"}`, ""),
-		volMissing: true, volStderr: "Error response from daemon: boom",
-	}
-	g := group(t, Scan(context.Background(), opts(f)), KindVolumes)
-	if len(g.Items) != 1 || g.Items[0].AgeKnown {
-		t.Fatalf("候補が %+v", g.Items)
-	}
-	if !strings.Contains(strings.Join(g.Notes, "\n"), "作成日を取れませんでした") {
-		t.Fatalf("取れなかったことが注記に無い: %v", g.Notes)
-	}
-}
-
 // 名前が識別子として読めないボリュームは提示コマンドに載せず、落とした件数を残す。
 func TestVolumeNameAllowlist(t *testing.T) {
 	f := &fakeDocker{
@@ -324,4 +319,137 @@ func TestSummaryFailureIsUnavailable(t *testing.T) {
 			}
 		})
 	}
+}
+
+// 🚨 `-v` の JSON はキー名が変わっても構文が正しければ Unmarshal に成功し、全群 0 件 = 緑になる。
+// docker 自身が出している件数と突合して、食い違いは診断できずへ倒す。
+func TestVerboseShapeChangeIsUnavailableNotGreen(t *testing.T) {
+	f := &fakeDocker{
+		// キー名が変わった (= このツールからは 0 件に見える) が、docker の集計は 1 件と言っている。
+		// 🚨 大小の違いだけでは再現しない — Go の Unmarshal はフィールド名を大小無視で当てる
+		df:      `{"ImageSummary":[{"ID":"a"}],"Containers":[],"Volumes":[],"BuildCache":[]}`,
+		summary: summaryFor(dfJSON(`{"ID":"a"}`, "", "", "")),
+		vol:     "[]",
+	}
+	rep := Scan(context.Background(), opts(f))
+	if rep.Unavailable == "" || len(rep.Groups) != 0 {
+		t.Fatalf("形が変わったのに緑になった: %+v", rep)
+	}
+}
+
+// 集計に無い種別があれば診断できずへ倒す (0 件に畳まない)。
+func TestSummaryMissingKindIsUnavailable(t *testing.T) {
+	f := &fakeDocker{df: dfJSON("", "", "", ""), vol: "[]",
+		summary: `{"Type":"Images","TotalCount":"0","Size":"0B","Reclaimable":"0B"}`}
+	if rep := Scan(context.Background(), opts(f)); rep.Unavailable == "" {
+		t.Fatalf("種別が欠けているのに緑: %+v", rep)
+	}
+}
+
+// build cache の InUse は allowlist。読めない値は候補にせず注記に出す
+// (「true でなければ未使用」だと、表記が変わった瞬間に使用中を全部候補にする)。
+func TestBuildCacheUnknownInUseIsNotCandidate(t *testing.T) {
+	f := &fakeDocker{df: dfJSON("", "", "", `{"ID":"c1","InUse":"1","Size":"9GB","LastUsedAt":"`+stamp(90*24*time.Hour)+`"}`), vol: "[]"}
+	g := group(t, Scan(context.Background(), opts(f)), KindBuildCache)
+	if len(g.Items) != 0 {
+		t.Fatalf("読めない InUse を未使用扱いにした: %+v", g.Items)
+	}
+	if !strings.Contains(strings.Join(g.Notes, "\n"), "使用中かどうかを読めなかった") {
+		t.Fatalf("注記が無い: %v", g.Notes)
+	}
+}
+
+// 同じ ID に複数タグが付いたイメージを重複計上しない。提示は repo:tag
+// (多タグの ID への `docker rmi <id>` は docker が拒む)。
+func TestImagesDedupeByIDAndProposeTag(t *testing.T) {
+	row := func(tag string) string {
+		return `{"ID":"sha256:abcabcabcabc","Repository":"app","Tag":"` + tag + `","Containers":"0","Size":"2GB","UniqueSize":"2GB","CreatedAt":"` + stamp(60*24*time.Hour) + `"}`
+	}
+	f := &fakeDocker{df: dfJSON(row("v1")+","+row("v2")+","+row("v3"), "", "", ""), vol: "[]"}
+	g := group(t, Scan(context.Background(), opts(f)), KindImages)
+	if len(g.Items) != 1 {
+		t.Fatalf("タグの数だけ行が出た: %+v", g.Items)
+	}
+	if g.Size != 2_000_000_000 {
+		t.Fatalf("見積もりが %d (2GB のはず)", g.Size)
+	}
+	if g.Items[0].Command != "docker rmi app:v1" {
+		t.Fatalf("提示コマンドが %q", g.Items[0].Command)
+	}
+}
+
+// コンテナ名もボリュームと同じ allowlist を通す (termsafe は制御文字しか弾かない)。
+func TestContainerNameAllowlist(t *testing.T) {
+	f := &fakeDocker{df: dfJSON("", `{"ID":"aaa","Names":"web; rm -rf ~","State":"exited","Size":"1GB","CreatedAt":"`+stamp(60*24*time.Hour)+`"}`, "", ""), vol: "[]"}
+	rep := Scan(context.Background(), opts(f))
+	if g := group(t, rep, KindContainers); len(g.Items) != 0 {
+		t.Fatalf("シェルのメタ文字を含む名前を提示コマンドに載せた: %+v", g.Items)
+	}
+	if rep.Dropped != 1 {
+		t.Fatalf("Dropped が %d", rep.Dropped)
+	}
+}
+
+// 作成日を取れないボリュームは候補にしない (不可逆な群を診断の劣化で広げない)。
+func TestVolumesWithoutCreatedAtAreNotCandidates(t *testing.T) {
+	f := &fakeDocker{
+		df:         dfJSON("", "", `{"Name":"unknown_age","Links":"0","Size":"3GB"}`, ""),
+		volMissing: true, volStderr: "Error response from daemon: boom",
+	}
+	g := group(t, Scan(context.Background(), opts(f)), KindVolumes)
+	if len(g.Items) != 0 {
+		t.Fatalf("作成日不明を候補にした: %+v", g.Items)
+	}
+	notes := strings.Join(g.Notes, "\n")
+	if !strings.Contains(notes, "作成日を取れませんでした") || !strings.Contains(notes, "候補から外しました") {
+		t.Fatalf("注記が足りない: %v", g.Notes)
+	}
+}
+
+// volume inspect が 1 行 1 JSON (NDJSON) を返す版でも読む。
+func TestVolumeInspectAcceptsNDJSON(t *testing.T) {
+	f := &fakeDocker{
+		df:  dfJSON("", "", `{"Name":"old_unused","Links":"0","Size":"3GB"}`, ""),
+		vol: `{"Name":"old_unused","CreatedAt":"2023-11-18T05:28:12Z"}`,
+	}
+	g := group(t, Scan(context.Background(), opts(f)), KindVolumes)
+	if len(g.Items) != 1 {
+		t.Fatalf("NDJSON を読めていない: %+v (%v)", g.Items, g.Notes)
+	}
+}
+
+// 提示コマンドの filter は候補の範囲より広くならない (切り上げる)。
+func TestHoursRoundsUp(t *testing.T) {
+	f := &fakeDocker{df: dfJSON("", "", "", ""), vol: "[]"}
+	o := opts(f)
+	o.OldAfter = 36*time.Hour + 30*time.Minute
+	rep := Scan(context.Background(), o)
+	if !strings.Contains(group(t, rep, KindContainers).Command, "until=37h") {
+		t.Fatalf("filter が切り捨てられている: %q", group(t, rep, KindContainers).Command)
+	}
+}
+
+// system prune はボリュームを消さない — その事実を持って回る。
+func TestSystemPruneNoteMentionsVolumes(t *testing.T) {
+	f := &fakeDocker{df: dfJSON("", "", "", ""), vol: "[]"}
+	rep := Scan(context.Background(), opts(f))
+	if !strings.Contains(rep.SystemPruneNote, "ボリュームは含みません") {
+		t.Fatalf("SystemPruneNote が %q", rep.SystemPruneNote)
+	}
+}
+
+// 🚨 診断できなかった理由には docker の stderr が入る。早期 return の経路こそ関門が要る。
+func TestUnavailableFromStderrIsSanitized(t *testing.T) {
+	f := &fakeDocker{summaryRC: 1}
+	f.df, f.vol = dfJSON("", "", "", ""), "[]"
+	// summaryRC=1 の経路は stderr を読まないので、-v 側の rc!=0 で測る
+	f2 := &fakeDocker{df: "", dfRC: 1, dfStderr: "boom\x1b[2J\x1b]0;title\x07", summary: summaryFor(dfJSON("", "", "", ""))}
+	rep := Scan(context.Background(), opts(f2))
+	if rep.Unavailable == "" {
+		t.Fatalf("診断できずになっていない")
+	}
+	if strings.ContainsRune(rep.Unavailable, 0x1b) {
+		t.Fatalf("stderr の制御文字が素通りした: %q", rep.Unavailable)
+	}
+	_ = f
 }
