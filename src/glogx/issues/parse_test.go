@@ -411,6 +411,47 @@ func TestDisplayFallsBackToSlug(t *testing.T) {
 	}
 }
 
+// epic/<name>/ の 2 段は open の issue (Group = <name>)。epic/ 直下の迷子は Unknown のまま見せる。
+func TestScanReadsEpicSubdirsAsOpenGroups(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	mkFiles(t, dir, "001-feat-a.md")
+	mkFiles(t, filepath.Join(dir, "epic", "google-drive"), "README.md", "393-feat-gd-phase3.md", "casa-assessment.md")
+	mkFiles(t, filepath.Join(dir, "epic", "cloud"), "700-design-backend.md")
+	mkFiles(t, filepath.Join(dir, "epic"), "999-bug-lost.md")
+	got, warns := Scan([]string{dir})
+	if len(warns) != 0 {
+		t.Fatalf("想定外の警告: %q", warns)
+	}
+	type want struct {
+		status Status
+		group  string
+	}
+	wants := map[string]want{
+		"001-feat-a.md": {StatusOpen, ""},
+		"epic/google-drive/393-feat-gd-phase3.md": {StatusOpen, "google-drive"},
+		"epic/google-drive/casa-assessment.md":    {StatusOpen, "google-drive"},
+		"epic/cloud/700-design-backend.md":        {StatusOpen, "cloud"},
+		"epic/999-bug-lost.md":                    {StatusUnknown, "epic"},
+	}
+	if len(got) != len(wants) {
+		names := make([]string, 0, len(got))
+		for _, iss := range got {
+			names = append(names, iss.Rel)
+		}
+		t.Fatalf("件数が違う: got %d want %d (%q)", len(got), len(wants), names)
+	}
+	for _, iss := range got {
+		w, ok := wants[filepath.ToSlash(iss.Rel)]
+		if !ok {
+			t.Fatalf("想定外の issue: %q", iss.Rel)
+		}
+		if iss.Status != w.status || iss.Group != w.group {
+			t.Errorf("%s: status=%v group=%q, want status=%v group=%q", iss.Rel, iss.Status, iss.Group, w.status, w.group)
+		}
+	}
+}
+
 func TestScanExcludesMetaFiles(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "issues")
