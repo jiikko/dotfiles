@@ -115,8 +115,11 @@ func hasMarkdown(dir string) bool {
 		}
 	}
 	for _, sub := range subdirs {
-		if strings.EqualFold(sub, EpicDirName) && hasEpicMarkdown(filepath.Join(dir, sub)) {
-			return true
+		if strings.EqualFold(sub, EpicDirName) {
+			if hasEpicMarkdown(filepath.Join(dir, sub)) {
+				return true
+			}
+			continue // epic/ 直下は hasEpicMarkdown が見た。1 段下として二度読みしない
 		}
 		subEntries, err := os.ReadDir(filepath.Join(dir, sub))
 		if err != nil {
@@ -156,11 +159,8 @@ func hasEpicMarkdown(epicDir string) bool {
 			if !ge.IsDir() || skipDirs[ge.Name()] {
 				continue
 			}
-			// Scan が読むのは group 直下と、group 内の next/done/pending だけ。
-			if !strings.EqualFold(ge.Name(), NextDirName) &&
-				!strings.EqualFold(ge.Name(), "done") &&
-				!strings.EqualFold(ge.Name(), "pending") {
-				continue
+			if _, ok := EpicChildStatus(ge.Name()); !ok {
+				continue // Scan が読まないものは発見の根拠にもしない
 			}
 			childEntries, err := os.ReadDir(filepath.Join(epicDir, e.Name(), ge.Name()))
 			if err != nil {

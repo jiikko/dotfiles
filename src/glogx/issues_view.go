@@ -283,7 +283,7 @@ func (v *issuesView) applyScreen(s issuesScreen) {
 		if (iss.Path != s.Cursor && iss.Path != s.Open) || iss.GroupKind != issues.GroupEpic {
 			continue
 		}
-		key := issueGroupKey(iss)
+		key := iss.GroupKey
 		if key == "" {
 			continue
 		}
@@ -620,7 +620,7 @@ func (v *issuesView) pruneExpandedGroups() {
 	alive := make(map[string]bool, len(v.expandedGroups))
 	for _, iss := range v.all {
 		if iss.GroupKind == issues.GroupEpic {
-			if key := issueGroupKey(iss); key != "" {
+			if key := iss.GroupKey; key != "" {
 				alive[key] = true
 			}
 		}
@@ -786,18 +786,7 @@ func (v *issuesView) rebuildDisplayRows() {
 			})
 			continue
 		}
-		key := issueGroupKey(iss)
-		if key == "" {
-			// 不完全なテスト用 Issue や旧 caller から GroupKey が欠けても、親を作れない
-			// issue を消さない。実 Scan 経由では必ず key が埋まる。
-			n, ok := issueNumberOK(iss)
-			units = append(units, displayUnit{
-				row:       displayRow{kind: displayRowIssue, issue: iss},
-				maxNumber: n, hasNumber: ok,
-				key: iss.Rel,
-			})
-			continue
-		}
+		key := iss.GroupKey // Scan を通った GroupEpic は必ず持つ (issues.scanEpicDir)
 		g, ok := groups[key]
 		if !ok {
 			g = &group{key: key, name: iss.Group}
@@ -865,16 +854,6 @@ func issueNumberOK(iss *issues.Issue) (int, bool) {
 	}
 	n, err := strconv.Atoi(iss.Number)
 	return n, err == nil
-}
-
-func issueGroupKey(iss *issues.Issue) string {
-	if iss.GroupKey != "" {
-		return iss.GroupKey
-	}
-	if iss.Group == "" {
-		return ""
-	}
-	return filepath.Join(iss.Dir, issues.EpicDirName, iss.Group)
 }
 
 func (v *issuesView) groupExpanded(key string) bool {
@@ -1186,7 +1165,7 @@ func (v *issuesView) clearNumberFilter() {
 	groupKey := v.currentGroupKey() // 親行で Esc したときは親行へ戻す (添字を残さない)
 	v.collapsedGroups = nil
 	if iss != nil && iss.GroupKind == issues.GroupEpic {
-		key := issueGroupKey(iss)
+		key := iss.GroupKey
 		if key != "" && v.autoExpandedGroups[key] && !v.expandedGroups[key] {
 			if v.expandedGroups == nil {
 				v.expandedGroups = make(map[string]bool)

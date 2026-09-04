@@ -16,7 +16,6 @@ package main
 // ピッカーのように選んで閉じる形にすると、フィルタとしては使えない。
 
 import (
-	"path/filepath"
 	"strings"
 
 	"glogx/issues"
@@ -97,14 +96,8 @@ func (f *issuesNumberFilter) groupKeys(rows []*issues.Issue) map[string]bool {
 		if iss.GroupKind != issues.GroupEpic {
 			continue
 		}
-		key := iss.GroupKey
-		if key == "" && iss.Group != "" {
-			// 旧 caller/test fixture が GroupKey を埋めていなくても、表示の同一性を
-			// scanner と揃える。
-			key = filepath.Join(iss.Dir, issues.EpicDirName, iss.Group)
-		}
-		if key != "" {
-			out[key] = true
+		if iss.GroupKey != "" {
+			out[iss.GroupKey] = true
 		}
 	}
 	if len(out) == 0 {

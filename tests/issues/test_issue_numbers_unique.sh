@@ -14,6 +14,9 @@
 #   重複を作って red を見る:
 #     d=$(mktemp -d); : > "$d/010-bug-a.md"; : > "$d/010-bug-b.md"
 #     tests/issues/test_issue_numbers_unique.sh "$d"   # → 非 0 で落ちる
+#   epic 側との衝突も red になること (深さの回帰):
+#     d=$(mktemp -d); mkdir -p "$d/epic/g/next"; : > "$d/010-bug-a.md"; : > "$d/epic/g/next/010-bug-b.md"
+#     tests/issues/test_issue_numbers_unique.sh "$d"   # → 非 0 で落ちる
 set -euo pipefail
 unset CDPATH
 
@@ -27,9 +30,11 @@ if [ ! -d "$issues_dir" ]; then
   exit 1
 fi
 
-# ディレクトリを列挙せず掘る: 将来 4 つ目のサブディレクトリ (pending/ の隣) ができても
-# 黙って対象外にならないようにする。
-files=$(find "$issues_dir" -maxdepth 2 -type f -name '[0-9][0-9][0-9]-*.md' -print | sort)
+# ディレクトリを列挙せず、深さも切らずに掘る: 将来サブディレクトリが増えても黙って対象外に
+# ならないようにする。🚨 -maxdepth を置かない: 以前 `-maxdepth 2` だったため、
+# `issues/epic/<name>/NNN-*.md` (深さ 3) と `epic/<name>/next/` (深さ 4) が検査から漏れていた
+# (2026-09-05 に発見。epic 側と直下で同じ番号を取っても緑のままだった)。
+files=$(find "$issues_dir" -type f -name '[0-9][0-9][0-9]-*.md' -print | sort)
 
 # 収集 0 件は成功にしない (tests/CLAUDE.md「0 件・skip・沈黙の扱い」)。
 # find の失敗・ディレクトリ改名・パターンの空振りは、どれも「重複なし」と同じ空出力になる。

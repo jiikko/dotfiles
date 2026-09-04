@@ -299,11 +299,11 @@ func issuesWatchDirs(baseDirs []string, all []*issues.Issue) []string {
 					continue
 				}
 				for _, child := range groupEntries {
-					if child.IsDir() && child.Type()&os.ModeSymlink == 0 {
-						switch strings.ToLower(child.Name()) {
-						case issues.NextDirName, "done", "pending":
-							add(filepath.Join(groupDir, child.Name()))
-						}
+					if !child.IsDir() || child.Type()&os.ModeSymlink != 0 {
+						continue
+					}
+					if _, ok := issues.EpicChildStatus(child.Name()); ok {
+						add(filepath.Join(groupDir, child.Name()))
 					}
 				}
 			}

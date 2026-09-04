@@ -127,6 +127,22 @@ const NextDirName = "next"
 // md は迷子 (Unknown) として見せる (obaket `issues/epic/google-drive/` が起源、2026-09-05)。
 const EpicDirName = "epic"
 
+// EpicChildStatus は group (`epic/<name>/`) 直下のサブディレクトリ名を状態へ写す。
+// ok=false は固定 2 段契約の外 (掘らない)。next だけが予約された状態で、done / pending は
+// 規約外だが「置き場所を間違えた issue を消さない」ために迷子 (Unknown) として読む。
+// 🚨 走査 (scanEpicDir)・発見 (hasEpicMarkdown)・監視 (issuesWatchDirs) の 3 者が同じ集合を
+// 見る必要があるので、ここ以外にこの名前の列挙を書かない (片方だけ増やすと、監視されない
+// ディレクトリや発見されない issue ができる)。
+func EpicChildStatus(name string) (status Status, ok bool) {
+	switch strings.ToLower(name) {
+	case NextDirName:
+		return StatusNext, true
+	case "done", "pending":
+		return StatusUnknown, true
+	}
+	return 0, false
+}
+
 // metaFiles は issue ではない付随ファイル。この repo の issues/README.md は自ら
 // 「この README.md も issue ではない」と明記しており、実測でも README.md が 4 repo、
 // INDEX.md が 2 repo、TEMPLATE.md が 1 repo にある。一覧に混ぜると件数もタブも汚れる。
@@ -255,9 +271,10 @@ func scanEpicDir(dir, epic string) []*Issue {
 			}
 			continue
 		}
-		groupDir := filepath.Join(dir, epic, e.Name())
+		// GroupKey は group の絶対パスそのもの。Scan を通った GroupEpic の Issue は必ずこれを持つ
+		// (viewer の親行の同一性・展開状態の保存・move の宛先がここに依存する)。
 		groupKey := filepath.Join(dir, epic, e.Name())
-		files, err := os.ReadDir(groupDir)
+		files, err := os.ReadDir(groupKey)
 		if err != nil {
 			continue
 		}
@@ -271,18 +288,11 @@ func scanEpicDir(dir, epic string) []*Issue {
 			if !f.IsDir() || skipDirs[f.Name()] {
 				continue
 			}
-			// group 内で予約されるのは next だけ。done/pending は規約外なので、
-			// Unknown の leaf として残す。その他の深い階層は固定 2 段契約の外なので掘らない。
-			var status Status
-			switch strings.ToLower(f.Name()) {
-			case NextDirName:
-				status = StatusNext
-			case "done", "pending":
-				status = StatusUnknown
-			default:
+			status, ok := EpicChildStatus(f.Name())
+			if !ok {
 				continue
 			}
-			childFiles, err := os.ReadDir(filepath.Join(groupDir, f.Name()))
+			childFiles, err := os.ReadDir(filepath.Join(groupKey, f.Name()))
 			if err != nil {
 				continue
 			}
