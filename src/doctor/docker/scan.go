@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,13 +71,19 @@ type Group struct {
 
 // Report は 1 回の診断結果。
 type Report struct {
-	Installed   bool          `json:"installed"`             // Docker Desktop / docker CLI があるか
-	Unavailable string        `json:"unavailable,omitempty"` // 診断できなかった理由 ("" = 診断できた)
-	Groups      []Group       `json:"groups,omitempty"`
-	SystemPrune string        `json:"system_prune,omitempty"` // まとめて回収するコマンド
-	OldAfter    time.Duration `json:"old_after"`
-	ScannedAt   time.Time     `json:"scanned_at"`
-	Dropped     int           `json:"dropped"` // 名前が識別子として読めず一覧から外した件数
+	Installed   bool    `json:"installed"`             // Docker Desktop / docker CLI があるか
+	Unavailable string  `json:"unavailable,omitempty"` // 診断できなかった理由 ("" = 診断できた)
+	Groups      []Group `json:"groups,omitempty"`
+	SystemPrune string  `json:"system_prune,omitempty"` // まとめて回収するコマンド
+	// SystemPruneNote は SystemPrune が**消さないもの**。DockerReclaimable との差になる
+	SystemPruneNote string `json:"system_prune_note,omitempty"`
+	// Notes は「診断はできたが、伝えておくこと」。🚨 Unavailable と混ぜない —
+	// あちらは「診断できなかった」の一意な印で、消費側が「非空ならエラー表示して return」と
+	// 書く前提の契約。一部を落としただけで全群が隠れる形にしない (敵対レビュー 2026-09-04)
+	Notes     []string      `json:"notes,omitempty"`
+	OldAfter  time.Duration `json:"old_after"`
+	ScannedAt time.Time     `json:"scanned_at"`
+	Dropped   int           `json:"dropped"` // 名前が識別子として読めず一覧から外した件数
 }
 
 // Estimate は候補として挙げた行のサイズの単純合計 (全群)。**docker の回収可能量ではない** —
@@ -184,17 +191,36 @@ func Scan(ctx context.Context, o Options) Report {
 	old := o.oldAfter()
 	now := rep.ScannedAt
 	rep.Groups = []Group{
-		containerGroup(df.Containers, now, old),
+		containerGroup(df.Containers, now, old, &rep),
 		imageGroup(df.Images, now, old),
 		buildCacheGroup(df.BuildCache, now, old),
 		volumeGroup(ctx, o, run, df.Volumes, now, old, &rep),
 	}
+	// 🚨 **件数を突合する**。`-v` の JSON は構文が正しければキー名が変わっても Unmarshal に
+	// 成功し、全部 nil = 「候補なし」で緑になる (敵対レビュー 2026-09-04 の P1)。
+	// docker 自身が同じ答え (TotalCount) を出しているので、近似の健全性検査を作らずそれと比べる。
+	// 2 コマンドは別スナップショットなので、食い違い = 走査中に増減した可能性もある。どちらでも
+	// 「今の数字は信用できない」ことに変わりはないので、診断できずへ倒す。
 	for i := range rep.Groups {
-		if t, ok := sum[rep.Groups[i].Kind]; ok {
-			rep.Groups[i].TotalSize, rep.Groups[i].Reclaimable = t.size, t.reclaimable
+		g := &rep.Groups[i]
+		t, ok := sum[g.Kind]
+		if !ok {
+			rep.Unavailable = "docker system df に " + string(g.Kind) + " の集計がありません"
+			rep.Groups = nil
+			return rep
 		}
+		if g.Total != t.count {
+			rep.Unavailable = fmt.Sprintf("docker system df の件数 (%s: %d) と一覧 (%d) が食い違います",
+				g.Kind, t.count, g.Total)
+			rep.Groups = nil
+			return rep
+		}
+		g.TotalSize, g.Reclaimable = t.size, t.reclaimable
 	}
 	rep.SystemPrune = fmt.Sprintf("docker system prune -a --filter until=%dh", hours(old))
+	// 🚨 system prune はボリュームを消さない (--volumes が要る)。DockerReclaimable() には
+	// ボリュームぶんが入っているので、この 1 行が無いと「このコマンドで N GB」が過大になる
+	rep.SystemPruneNote = "ボリュームは含みません (消すには --volumes が要りますが、中身はデータです)"
 	return rep
 }
 
@@ -204,7 +230,10 @@ var summaryTypes = map[string]Kind{
 	"Local Volumes": KindVolumes, "Build Cache": KindBuildCache,
 }
 
-type dfTotal struct{ size, reclaimable int64 }
+type dfTotal struct {
+	size, reclaimable int64
+	count             int
+}
 
 // systemDFSummary は docker 自身の集計を引く。出力は 1 行 1 JSON (JSON Lines)。
 func systemDFSummary(ctx context.Context, run runner.Runner) (map[Kind]dfTotal, string) {
@@ -221,13 +250,17 @@ func systemDFSummary(ctx context.Context, run runner.Runner) (map[Kind]dfTotal, 
 			continue
 		}
 		var row struct {
-			Type, Size, Reclaimable string
+			Type, Size, Reclaimable, TotalCount string
 		}
 		if err := json.Unmarshal([]byte(line), &row); err != nil {
 			return nil, "docker system df の出力を読めません: " + err.Error()
 		}
 		if k, ok := summaryTypes[row.Type]; ok {
-			out[k] = dfTotal{size: parseSize(row.Size), reclaimable: parseSize(row.Reclaimable)}
+			n, err := strconv.Atoi(strings.TrimSpace(row.TotalCount))
+			if err != nil {
+				return nil, "docker system df の件数を読めません: " + row.Type + "=" + row.TotalCount
+			}
+			out[k] = dfTotal{size: parseSize(row.Size), reclaimable: parseSize(row.Reclaimable), count: n}
 		}
 	}
 	if len(out) == 0 {
@@ -294,14 +327,14 @@ var stoppedStates = map[string]bool{"exited": true, "dead": true, "created": tru
 // activeStates は「動いている」と断定してよい状態。どちらの allowlist にも無いものが未知。
 var activeStates = map[string]bool{"running": true, "paused": true, "restarting": true, "removing": true}
 
-func containerGroup(cs []dfContainer, now time.Time, old time.Duration) Group {
+func containerGroup(cs []dfContainer, now time.Time, old time.Duration, rep *Report) Group {
 	g := Group{Kind: KindContainers, Label: "停止したコンテナ", Total: len(cs),
 		Command: fmt.Sprintf("docker container prune --filter until=%dh", hours(old)),
 		Notes: []string{
 			humanDur(old) + "以上前に作られた停止コンテナだけを数えています (docker が持つのは作成日で、停止した日ではありません)",
 			"サイズは書き込みレイヤーの分だけです (元イメージは「未使用イメージ」側)",
 		}}
-	unknown := 0
+	unknown, dropped := 0, 0
 	for _, c := range cs {
 		size := parseSize(c.Size)
 		state := strings.ToLower(c.State)
@@ -315,13 +348,22 @@ func containerGroup(cs []dfContainer, now time.Time, old time.Duration) Group {
 		if !ok || age < old {
 			continue
 		}
+		// 🚨 コンテナ名も提示コマンドに載るので、ボリュームと**同じ allowlist**を通す。
+		// termsafe.IsPlain は制御文字しか弾かず、`web; rm -rf ~` のような名前は通す
+		// (実際に守っているのは docker daemon の命名制限だけ、という暗黙の依存を切る)
+		name := firstName(c.Names, c.ID)
+		if !safeDockerName(name) {
+			dropped++
+			continue
+		}
 		g.Items = append(g.Items, Item{
-			Name: firstName(c.Names, c.ID), Detail: c.Status + " / " + c.Image,
+			Name: name, Detail: c.Status + " / " + c.Image,
 			Size: size, SizeText: c.Size, Age: age, AgeKnown: true,
-			Command: "docker rm " + firstName(c.Names, c.ID),
+			Command: "docker rm " + name,
 		})
 		g.Size += size
 	}
+	rep.Dropped += dropped
 	if unknown > 0 {
 		g.Notes = append(g.Notes, fmt.Sprintf(
 			"🚨 このツールが知らない状態のコンテナが %d 件あります。候補には数えていませんが、docker が停止扱いなら上のコマンドは消します", unknown))
@@ -338,10 +380,16 @@ func imageGroup(is []dfImage, now time.Time, old time.Duration) Group {
 			"サイズは他イメージと共有していないレイヤー (UniqueSize) の分です",
 			"候補の合計は見積もりです (共有レイヤーがあるため、docker の回収可能量と一致しません)",
 		}}
+	// 🚨 **ID で束ねる。** `df -v` は `docker images` と同じく **repo:tag ごとに 1 行**出すので、
+	// 3 タグ付いた 1 個のイメージは 3 行来る。行ごとに足すと見積もりが 3 倍になり、しかも
+	// 3 行が同じ `docker rmi <id>` を提示する (複数タグが付いた ID への rmi は docker が拒む)。
+	// 提示は tag があるなら **repo:tag** にする — 名前と消える対象を一致させる
+	// (敵対レビュー 2026-09-04)
+	seen := map[string]bool{}
 	for _, im := range is {
 		size := parseSize(im.UniqueSize)
 		sizeText := im.UniqueSize
-		if size == 0 && im.UniqueSize == "" {
+		if size == 0 {
 			size, sizeText = parseSize(im.Size), im.Size
 		}
 		if im.Containers != "0" {
@@ -351,13 +399,17 @@ func imageGroup(is []dfImage, now time.Time, old time.Duration) Group {
 		if !ok || age < old {
 			continue
 		}
-		name := im.Repository + ":" + im.Tag
-		if im.Repository == "" || im.Repository == "<none>" {
-			name = shortID(im.ID)
+		if seen[im.ID] {
+			continue
+		}
+		seen[im.ID] = true
+		name, target := shortID(im.ID), shortID(im.ID)
+		if tagged(im) {
+			name, target = im.Repository+":"+im.Tag, im.Repository+":"+im.Tag
 		}
 		g.Items = append(g.Items, Item{
 			Name: name, Detail: shortID(im.ID), Size: size, SizeText: sizeText,
-			Age: age, AgeKnown: true, Command: "docker rmi " + shortID(im.ID),
+			Age: age, AgeKnown: true, Command: "docker rmi " + target,
 		})
 		g.Size += size
 	}
@@ -373,9 +425,18 @@ func buildCacheGroup(bs []dfBuildCache, now time.Time, old time.Duration) Group 
 			"消すと次のビルドがキャッシュ無しになります (壊れはしません)",
 			"候補の合計は見積もりです (レイヤーを共有するため、docker の回収可能量と一致しません)",
 		}}
+	unknownCache := 0
 	for _, b := range bs {
 		size := parseSize(b.Size)
-		if strings.EqualFold(b.InUse, "true") {
+		// 🚨 **「true でなければ未使用」にしない** (敵対レビュー 2026-09-04 の P1)。
+		// InUse が空 / 名前変更 / "1" 表記になった瞬間、使用中のキャッシュが全部候補になり、
+		// prune を提示することになる。読めない値は候補にせず件数を注記に出す
+		inUse, ok := parseBool(b.InUse)
+		if !ok {
+			unknownCache++
+			continue
+		}
+		if inUse {
 			continue
 		}
 		stamp := b.LastUsedAt
@@ -392,8 +453,24 @@ func buildCacheGroup(bs []dfBuildCache, now time.Time, old time.Duration) Group 
 		})
 		g.Size += size
 	}
+	if unknownCache > 0 {
+		g.Notes = append(g.Notes, fmt.Sprintf(
+			"🚨 使用中かどうかを読めなかったレイヤーが %d 件あります (候補には数えていません)", unknownCache))
+	}
 	sortItems(g.Items)
 	return g
+}
+
+// parseBool は docker が文字列で返す真偽値を読む。読めない値は ok=false
+// (どちらかへ丸めない。丸める向きを間違えると「使用中を候補にする」になる)。
+func parseBool(s string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	}
+	return false, false
 }
 
 // volumeGroup は「参照するコンテナが無いボリューム」を挙げる。
@@ -408,44 +485,52 @@ func volumeGroup(ctx context.Context, o Options, run runner.Runner, vs []dfVolum
 			"最後にマウントされた日時は Docker が記録していないため、「今どのコンテナからも参照されていない」+ 作成日で判定しています",
 			"🚨 中身はデータです。docker volume prune -a は未使用ボリュームを全部消し、戻せません",
 		}}
+	// 🚨 名前の allowlist は**ここ 1 箇所**で掛ける (以前は inspect に渡す前と行を組むときの
+	// 2 箇所に分かれており、片方だけが Dropped を数えていた。敵対レビュー 2026-09-04)
 	var unused []dfVolume
 	for _, v := range vs {
-		if v.Links == "0" {
-			unused = append(unused, v)
+		if v.Links != "0" {
+			continue
 		}
+		if !safeDockerName(v.Name) {
+			rep.Dropped++
+			continue
+		}
+		unused = append(unused, v)
 	}
 	created := map[string]time.Time{}
 	if len(unused) > 0 && !o.SkipVolume {
 		names := make([]string, 0, len(unused))
 		for _, v := range unused {
-			if !safeVolumeName(v.Name) {
-				rep.Dropped++
-				continue
-			}
 			names = append(names, v.Name)
 		}
-		if len(names) > 0 {
-			created = volumeCreatedAt(ctx, run, names, &g)
-		}
+		created = volumeCreatedAt(ctx, run, names, &g)
 	}
+	unknownAge := 0
 	for _, v := range unused {
-		if !safeVolumeName(v.Name) {
-			continue // 提示コマンドに載せられない名前 (Dropped で数えた)
+		c, ok := created[v.Name]
+		if !ok {
+			// 🚨 **作成日が取れなかったものは候補にしない** (敵対レビュー 2026-09-04 の P1)。
+			// ここは唯一の不可逆な群なので、診断の劣化 (inspect の失敗・書式変更) が
+			// 「5 分前に作ったボリュームを消せ」に化ける方へ倒してはいけない。
+			// 「無かったこと」にもしないよう、件数は注記に出す
+			unknownAge++
+			continue
+		}
+		age := now.Sub(c)
+		if age < old {
+			continue
 		}
 		size := parseSize(v.Size)
-		it := Item{Name: v.Name, Size: size, SizeText: v.Size, Command: "docker volume rm " + v.Name}
-		if c, ok := created[v.Name]; ok {
-			it.Age, it.AgeKnown = now.Sub(c), true
-			if it.Age < old {
-				continue
-			}
-			it.Detail = "作成 " + c.Format("2006-01-02")
-		} else {
-			// 作成日が取れなかったものは落とさず「不明」で出す (0 件に畳まない)
-			it.Detail = "作成日不明"
-		}
-		g.Items = append(g.Items, it)
+		g.Items = append(g.Items, Item{
+			Name: v.Name, Detail: "作成 " + c.Format("2006-01-02"), Size: size, SizeText: v.Size,
+			Age: age, AgeKnown: true, Command: "docker volume rm " + v.Name,
+		})
 		g.Size += size
+	}
+	if unknownAge > 0 {
+		g.Notes = append(g.Notes, fmt.Sprintf(
+			"🚨 作成日を取れなかったボリュームが %d 件あります (判定できないので候補から外しました)", unknownAge))
 	}
 	sortItems(g.Items)
 	return g
@@ -466,11 +551,12 @@ func volumeCreatedAt(ctx context.Context, run runner.Runner, names []string, g *
 		g.Notes = append(g.Notes, "🚨 作成日を取れませんでした (docker volume inspect: "+reason+")")
 		return out
 	}
-	var vs []struct {
-		Name      string `json:"Name"`
-		CreatedAt string `json:"CreatedAt"`
-	}
-	if err := json.Unmarshal([]byte(stdout), &vs); err != nil {
+	// 🚨 **配列と JSON Lines の両方を受ける。** docker 29.2.1 は `--format json` に複数の
+	// ボリュームを渡すと 1 個の配列を返す (実測 2026-09-04) が、`--format` を通した出力は
+	// 「オブジェクトごとに 1 行」になる版もある。どちらか一方に賭けると、外れた版で
+	// 全件が「作成日不明」に落ちる
+	vs, err := decodeVolumes(stdout)
+	if err != nil {
 		g.Notes = append(g.Notes, "🚨 作成日の出力を読めませんでした: "+err.Error())
 		return out
 	}
@@ -480,6 +566,32 @@ func volumeCreatedAt(ctx context.Context, run runner.Runner, names []string, g *
 		}
 	}
 	return out
+}
+
+type volumeInspect struct {
+	Name      string `json:"Name"`
+	CreatedAt string `json:"CreatedAt"`
+}
+
+func decodeVolumes(stdout string) ([]volumeInspect, error) {
+	s := strings.TrimSpace(stdout)
+	if strings.HasPrefix(s, "[") {
+		var vs []volumeInspect
+		err := json.Unmarshal([]byte(s), &vs)
+		return vs, err
+	}
+	var vs []volumeInspect
+	for _, line := range strings.Split(s, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var v volumeInspect
+		if err := json.Unmarshal([]byte(line), &v); err != nil {
+			return nil, err
+		}
+		vs = append(vs, v)
+	}
+	return vs, nil
 }
 
 // --- 小物 ---
@@ -495,6 +607,12 @@ func firstName(names, id string) string {
 		return n
 	}
 	return shortID(id)
+}
+
+// tagged は repo:tag が識別子として使える形か (dangling は <none>:<none> で来る)。
+func tagged(im dfImage) bool {
+	return im.Repository != "" && im.Repository != "<none>" && im.Tag != "" && im.Tag != "<none>" &&
+		safeImageRef(im.Repository+":"+im.Tag)
 }
 
 func shortID(id string) string {
@@ -513,7 +631,15 @@ func firstLine(s string) string {
 	return s
 }
 
-func hours(d time.Duration) int { return int(d / time.Hour) }
+// hours は filter に渡す時間数。🚨 **切り上げる** — 切り捨てると、こちらが数えた候補より
+// 広い範囲を消すコマンドを提示することになる (36h30m → until=36h)。
+func hours(d time.Duration) int {
+	h := int(d / time.Hour)
+	if d%time.Hour != 0 {
+		h++
+	}
+	return h
+}
 
 func humanDur(d time.Duration) string {
 	if days := int(d / (24 * time.Hour)); days > 0 {
@@ -551,10 +677,10 @@ func parseDockerTime(s string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// safeVolumeName は docker のボリューム名として受け入れてよい形か。
+// safeDockerName はボリューム名 / コンテナ名として受け入れてよい形か。
 // docker 自身の制限 ([a-zA-Z0-9][a-zA-Z0-9_.-]*) をそのまま使う。
 // 落とした名前は提示コマンドに載せない (svc / brew と同じ規律)。
-func safeVolumeName(s string) bool {
+func safeDockerName(s string) bool {
 	if s == "" || len(s) > 255 {
 		return false
 	}
@@ -562,6 +688,23 @@ func safeVolumeName(s string) bool {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
 		case i > 0 && (r == '_' || r == '.' || r == '-'):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// safeImageRef は repo:tag を提示コマンドに載せてよい形か。レジストリ名を含むので
+// safeDockerName より広い文字 (/ : @) を許すが、シェルのメタ文字は通さない。
+func safeImageRef(s string) bool {
+	if s == "" || len(s) > 512 {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '_' || r == '.' || r == '-' || r == '/' || r == ':' || r == '@':
 		default:
 			return false
 		}
