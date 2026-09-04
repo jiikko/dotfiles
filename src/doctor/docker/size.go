@@ -43,6 +43,13 @@ func parseSize(s string) int64 {
 }
 
 // HumanSize は docker と同じ 10 進表記に戻す (合計の表示用)。
+//
+// 🚨 **`disk.HumanSize` (1024 進) に揃えない。** doctor の画面ではタブ行に
+// 「ディスク 4.0KB │ … │ Docker 44.9GB」と 2 つの単位系が並ぶが、docker の数字を 1024 進で
+// 丸め直すと `docker system df` の出力と突き合わせられなくなる (ユーザーが画面の数字を
+// 疑ったとき、確かめる手段が消える)。**画面の見た目の統一より、外部ツールとの照合可能性を
+// 優先する** (2026-09-04 の判断。issue 254)。揃えたくなったら、docker 側でなく
+// **両方を併記する**方を検討すること。
 func HumanSize(n int64) string {
 	f := float64(n)
 	for _, u := range []string{"B", "kB", "MB", "GB", "TB"} {

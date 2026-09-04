@@ -20,20 +20,12 @@ func SanitizeForDisplay(rep Report) Report {
 	out.Unavailable = termsafe.PlainLine(rep.Unavailable)
 	out.SystemPrune = termsafe.PlainLine(rep.SystemPrune)
 	out.SystemPruneNote = termsafe.PlainLine(rep.SystemPruneNote)
-	notes := make([]string, 0, len(rep.Notes))
-	for _, n := range rep.Notes {
-		notes = append(notes, termsafe.PlainLine(n))
-	}
-	out.Notes = notes
+	out.Notes = sanitizeDisplayLines(rep.Notes)
 	out.Groups = make([]Group, 0, len(rep.Groups))
 	for _, g := range rep.Groups {
 		g.Label = termsafe.PlainLine(g.Label)
 		g.Command = termsafe.PlainLine(g.Command)
-		notes := make([]string, 0, len(g.Notes))
-		for _, n := range g.Notes {
-			notes = append(notes, termsafe.PlainLine(n))
-		}
-		g.Notes = notes
+		g.Notes = sanitizeDisplayLines(g.Notes)
 		items := make([]Item, 0, len(g.Items))
 		for _, it := range g.Items {
 			if !termsafe.IsPlain(it.Name) || !termsafe.IsPlain(it.Command) {
@@ -54,6 +46,20 @@ func SanitizeForDisplay(rep Report) Report {
 		// (敵対レビュー 2026-09-04)
 		out.Notes = append(out.Notes,
 			fmt.Sprintf("%d 件は名前が識別子として読めないため一覧から外しました (提示するコマンドが別の資源を指すため)", out.Dropped))
+	}
+	return out
+}
+
+// 🚨 名前は sanitize で始めること。無害化の網羅検査 (doctor/internal/displaycheck) は
+// 右辺が `termsafe.*` / `sanitize*` / `Sanitize*` を呼んでいるかで「関門を通った代入」を
+// 見分けるので、別の名前だと無害化していても「通していない」と判定される。
+func sanitizeDisplayLines(ss []string) []string {
+	if len(ss) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(ss))
+	for _, s := range ss {
+		out = append(out, termsafe.PlainLine(s))
 	}
 	return out
 }

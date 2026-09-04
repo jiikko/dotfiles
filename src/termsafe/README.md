@@ -34,19 +34,24 @@
 「画面に出ているものと、実際に消す / 案内するものが違う」を作る。落とす側へ倒し、
 落とした件数を人に見せる (`disk.DisplayablePath` / `svc` の `displayableIdentity` がその形)。
 
-## 通し忘れを機械で止める (issue 251)
+## 通し忘れを機械で止める (issue 251 / 252)
 
 関門は `string -> string` なので、**通した値と通していない値を型では区別できない**。
 代わりに「関門そのものの網羅性」を検査している。
 
 | 検査 | 何を止めるか |
 | --- | --- |
-| `doctor/disk/display_coverage_test.go` の `TestSanitizeForDisplayCoversEveryStringField` | **`doctor/disk` の**表示用構造体に新しい文字列フィールドを足したのに `Sanitize*ForDisplay` へ通し忘れる |
+| `doctor/internal/displaycheck` の `Run` | 表示用構造体に新しい文字列フィールドを足したのに `Sanitize*ForDisplay` へ通し忘れる。**検査の本体はここ 1 つ**で、`doctor/disk` / `doctor/svc` / `doctor/docker` の各 `display_coverage_test.go` が「どの型をどの関門が担当するか」と「免除とその理由」だけを渡す (写経すると片方だけ直る形ができるため 1 実装に寄せた) |
+| `doctor/internal/displaycheck/displaycheck_test.go` | **検査器そのもの**の回帰 (testdata の fixture に既知の違反を置き、見逃さないことを固定する)。各 package の呼び出しは「今は違反が無い」しか示さず、検査器が見逃すようになったことは検出しない |
 | `src/glogx/untrusted_display_test.go` | sink ごとの回帰 (実際に素通しが見つかった経路を固定) |
 | `scripts/check_go_project_lanes.sh` | `go.mod` の `replace` 先が dependent の workflow paths に入っているか (= 共有 module を変えた push で CI が走るか) |
 
-🚨 **新しい表示用の構造体を足したら `sanitizeGate` の表にも足すこと**。
+🚨 **新しい表示用の構造体を足したら、その package の `sanitizeGate` の表にも足すこと**。
 表に無い型は検査されない (それ自体は機械では止められない)。
+
+🚨 **無害化のヘルパーは `sanitize` / `Sanitize` で始まる名前にするか、`termsafe.*` を直接呼ぶこと**。
+検査は右辺がその形かどうかで「関門を通った代入」を見分けるので、別の名前 (`cleanDisplayLines` 等) だと
+無害化していても「通していない」と判定される (名前ベースの近似であることの裏返し)。
 
 ### なぜ「読み手側の lint」ではないか
 

@@ -66,6 +66,7 @@ CLI が要るのは「スクリプトから叩きたい」「JSON で受けた�
 | `docker/` | Docker Desktop が抱えている未使用資源 (停止コンテナ / 未参照イメージ / ビルドキャッシュ / 参照の無いボリューム)。**削除の経路は持たない** — 提示するのは `docker ... prune` のコマンドだけ。合計と回収可能量は `docker system df` の申告をそのまま使う (共有レイヤーの勘定を自前で作り直さない) |
 | `brewledger/` | Homebrew が管理している formula/cask の台帳。**disk (`brew-orphan-state`) と svc (`homebrew.mxcl.<formula>` が台帳に無い判定) が同じ集合を引く**ための共有パッケージ |
 | `cachedir/` | キャッシュ置き場 (`$XDG_CACHE_HOME/glog`、未設定なら `~/.cache/glog`) の解決。glogx 本体と doctor のスキャン結果で共有する (🚨 ディレクトリ名は `glogx` ではなく `glog`) |
+| `internal/displaycheck/` | 「表示用の構造体へ文字列フィールドを足したのに `Sanitize*ForDisplay` へ通し忘れる」を止める検査の本体 (issue 252)。`disk` / `svc` / `docker` の 3 つが**同じ判定を 1 実装で共有**し、各 package は関門表と免除表だけを渡す。検査器自身のテストは testdata の fixture で持つ |
 | `runner/` | 外部コマンドの実行口。**stdout / stderr / exit code を分けて返す** (混ぜるとどの stream が判定材料か確定できない)。テストではここを差し替える |
 
 `glogx` からは go.mod の `replace doctor => ../doctor` で参照する。無害化の関門
