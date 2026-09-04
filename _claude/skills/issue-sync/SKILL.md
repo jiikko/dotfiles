@@ -30,8 +30,11 @@ Open Issues の中から、実際にはコードベース上で対応済み（do
 # コロンは全角も拾う (`期限：` と書かれた 1 件を黙って取りこぼすのが最悪の失敗)。
 # 🚨 glob を直接渡さない: zsh は `issues/*.md` が 0 件だと nomatch でコマンド全体を失敗させ、
 # pending / next / epic 側に期限切れがあっても「0 件」と黙る (2026-08-20 実測)。
-# done だけを prune し、残りは固定 2 段を含めて find で列挙する
-find issues -path issues/done -prune -o -type f -name '*.md' -print0 \
+# done だけを prune し、残りは固定 2 段を含めて find で列挙する。
+# 🚨 prune は `-name done` で書く: `-path issues/done` は起点の綴り (`./issues` / 絶対パス /
+# `macOS/issues`) で一致しなくなり done 全件が open に化ける (2026-09-05 実測)。
+# 起点は repo が持つ issue dir を全部並べる (obaket は `issues macOS/issues`)
+find issues -name done -prune -o -type f -name '*.md' -print0 \
   | xargs -0 grep -lE '^期限[:：]' 2>/dev/null | while read -r f; do
       printf '%s\t%s\n' "$(grep -m1 -E '^期限[:：]' "$f" | sed -E 's/^期限[:：][[:space:]]*//')" "$f"
     done | sort
@@ -52,7 +55,7 @@ find issues -path issues/done -prune -o -type f -name '*.md' -print0 \
 `epic/<name>/` / `epic/<name>/next/` を含み、`done/` だけ除外する）:
 
 ```sh
-find issues -path issues/done -prune -o -type f -name '*.md' -print0
+find issues -name done -prune -o -type f -name '*.md' -print0   # 起点は repo の issue dir 全部 (obaket は issues macOS/issues)
 ```
 
 - **`issues/` 直下 / `issues/epic/<name>/` = open**（検証対象）
