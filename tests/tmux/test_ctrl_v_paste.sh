@@ -19,6 +19,9 @@ unset CDPATH TMUX TMUX_PANE
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CONF="$ROOT_DIR/_tmux.conf"
+# conf 内の kill-* alias が `${DOTFILES_DIR:-$HOME/dotfiles}/scripts/...` を呼ぶ。CI の checkout は
+# ~/dotfiles ではないので、明示しないと run-shell が 127 を stderr に吐く
+export DOTFILES_DIR="$ROOT_DIR"
 SOCK="ctrlv-test-$$"
 TMP_DIR="$(mktemp -d)"
 BIN="$TMP_DIR/bin"
@@ -62,9 +65,13 @@ else
 fi
 
 # --- 2. 判定式がペインの前面プロセスで正しく分かれる ---
-tmux -L "$SOCK" kill-session -t 0 2>/dev/null
+# 🚨 最初のセッションを消してから作り直さない。最後のセッションが消えるとサーバごと終了し、
+# 次の new-session は **conf を読まない新サーバ** を立てる (-f はサーバ起動時にしか効かない)。
+# 手元では ~/.tmux.conf -> _tmux.conf の link が同じ bind を読み直すので緑に見え、CI (link 無し)
+# で「bind から判定式を取り出せない」として初めて出た (2026-09-04 run 33823346926)。
 tmux -L "$SOCK" new-session -d -s zsh -x 120 -y 30 "zsh -f" 2>/dev/null
 tmux -L "$SOCK" new-session -d -s other -x 120 -y 30 "sh -c 'sleep 30'" 2>/dev/null
+tmux -L "$SOCK" kill-session -t 0 2>/dev/null
 sleep 1
 # 🚨 判定式は **conf に登録されている bind から取り出す**。テスト側に式をコピーすると、
 # bind の条件を書き換えても (例: if-shell -F '1' で全ペインから C-v を奪う) テストが緑のまま
