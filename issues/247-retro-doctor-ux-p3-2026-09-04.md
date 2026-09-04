@@ -114,6 +114,8 @@ P3-1 で結末語を `doctorOutcomeWord` に寄せたが、レビューが
 ## 残課題
 
 - [x] 項目 1 → **却下**（衝突しても後から改番すればよい。理由は項目 1 に記載）
-- [ ] 項目 2 の実例を `rules-rationale/mutation-verify-new-tests.md` へ追記するか（ユーザー判断待ち）
-- [ ] 項目 4 の 1 行を `parallel-write-agents-need-worktree-isolation.md` へ追記するか（ユーザー判断待ち）
+- [x] 項目 2 → **採用**。`rules-rationale/mutation-verify-new-tests.md` に実例を追記した
+  （ルール本文は変更なし。既に手順 1.6「変異の diff を目視する」を持っているため）
+- [x] 項目 4 → **採用**。`parallel-write-agents-need-worktree-isolation.md` の `## ルール` に
+  「着手前に触る予定のファイルと関数を並行セッション全員へ申告する」を追加し、実例は rationale へ
 - [ ] 項目 7（結末語を新しい表示位置へ流用するときの確認）をルール化するか。するなら新規か既存への追記か（ユーザー判断待ち）
