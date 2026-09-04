@@ -122,10 +122,9 @@ var statusDirs = map[string]Status{
 const NextDirName = "next"
 
 // EpicDirName は親子関係のある issue を束ねるサブディレクトリ名。`epic/<name>/NNN-*.md` の
-// 2 段構造で、<name> がグループ (親テーマ)、中の md はどれも **open の issue** として扱う
-// (状態ディレクトリではないので done / pending へは通常どおり平場へ移す。obaket
-// `issues/epic/google-drive/` が起源、2026-09-05)。状態でないサブディレクトリ 1 段 (`other`
-// 扱い) と違い、グループ名は Group に残して状態は Open に写像する。
+// 2 段構造で、<name> がグループ (親テーマ)、中の md は open の issue として扱う。claim は
+// `epic/<name>/next/NNN-*.md` に置く。done / pending は group 内では予約せず、そこに置かれた
+// md は迷子 (Unknown) として見せる (obaket `issues/epic/google-drive/` が起源、2026-09-05)。
 const EpicDirName = "epic"
 
 // metaFiles は issue ではない付随ファイル。この repo の issues/README.md は自ら
@@ -138,15 +137,17 @@ var metaFiles = map[string]bool{"readme.md": true, "index.md": true, "template.m
 // 同一性キーは Path。番号や basename は一意ではない (実測: 同一ディレクトリ内の番号重複が
 // dropbox で 37 件・SnapTrim 4 件・DualNote 4 件。done へ移動後の番号再利用もある)。
 type Issue struct {
-	Path     string // 絶対パス (同一性キー)
-	Dir      string // 属する issue ディレクトリ
-	Rel      string // Dir からの相対パス (表示・参照用)
-	Number   string // "028" (ゼロ埋めのまま保持。"" = 番号なし)
-	Prefix   string // CATEGORY-NNN 形式の大文字 ID 接頭辞 ("UI"。"" = NNN 形式)
-	Category string // ファイル名から取れたカテゴリトークン ("" = 無し)
-	Slug     string // カテゴリを除いた説明部分 (タイトル未読時の代替表示)
-	Status   Status
-	Group    string // 出自サブディレクトリ名 (StatusUnknown のとき) / epic のグループ名 (epic/<name>/ のとき)
+	Path      string // 絶対パス (同一性キー)
+	Dir       string // 属する issue ディレクトリ
+	Rel       string // Dir からの相対パス (表示・参照用)
+	Number    string // "028" (ゼロ埋めのまま保持。"" = 番号なし)
+	Prefix    string // CATEGORY-NNN 形式の大文字 ID 接頭辞 ("UI"。"" = NNN 形式)
+	Category  string // ファイル名から取れたカテゴリトークン ("" = 無し)
+	Slug      string // カテゴリを除いた説明部分 (タイトル未読時の代替表示)
+	Status    Status
+	Group     string    // 出自サブディレクトリ名 (Unknown) / epic のグループ名 (Epic)
+	GroupKind GroupKind // グループの種類。Unknown は親行へ畳まず ? の leaf として表示する
+	GroupKey  string    // Epic の同一性キー (Dir + epic/<name>)。迷子の子も元 group の key を保つ
 
 	// 以下は本文を読むまで空 (LoadMeta で埋まる)。起動パスで全件読まないのは、
 	// ファイル名のみの走査に対して 26〜58 倍のコストになる実測があるため
@@ -155,6 +156,18 @@ type Issue struct {
 	Declared string // front matter の status: の生値 ("" = 宣言なし)
 	loaded   bool
 }
+
+// GroupKind は issue が属するグループの種類。
+//
+// GroupEpic だけが viewer の親行へ畳まれる。GroupUnknown は既存の未知サブディレクトリと
+// `epic/<name>/{done,pending}/` の迷子を区別せず、? の leaf のまま表示する。
+type GroupKind uint8
+
+const (
+	GroupNone GroupKind = iota
+	GroupEpic
+	GroupUnknown
+)
 
 var (
 	// NNN-... 形式 (実測 405/405 が 3 桁ゼロ埋めだが、桁数は縛らない)
@@ -209,7 +222,7 @@ func scanDir(dir string) []*Issue {
 				if known {
 					iss.Status = status
 				} else {
-					iss.Status, iss.Group = StatusUnknown, e.Name()
+					iss.Status, iss.Group, iss.GroupKind = StatusUnknown, e.Name(), GroupUnknown
 				}
 				out = append(out, iss)
 			}
@@ -237,7 +250,7 @@ func scanEpicDir(dir, epic string) []*Issue {
 		if !e.IsDir() {
 			if isIssueFile(e) && !metaFiles[strings.ToLower(e.Name())] {
 				iss := newIssue(dir, filepath.Join(epic, e.Name()))
-				iss.Status, iss.Group = StatusUnknown, epic
+				iss.Status, iss.Group, iss.GroupKind = StatusUnknown, epic, GroupUnknown
 				out = append(out, iss)
 			}
 			continue
@@ -245,17 +258,51 @@ func scanEpicDir(dir, epic string) []*Issue {
 		if skipDirs[e.Name()] {
 			continue
 		}
-		files, err := os.ReadDir(filepath.Join(dir, epic, e.Name()))
+		groupDir := filepath.Join(dir, epic, e.Name())
+		groupKey := filepath.Join(dir, epic, e.Name())
+		files, err := os.ReadDir(groupDir)
 		if err != nil {
 			continue
 		}
 		for _, f := range files {
-			if !isIssueFile(f) || metaFiles[strings.ToLower(f.Name())] {
+			if isIssueFile(f) && !metaFiles[strings.ToLower(f.Name())] {
+				iss := newIssue(dir, filepath.Join(epic, e.Name(), f.Name()))
+				iss.Group, iss.GroupKind, iss.GroupKey = e.Name(), GroupEpic, groupKey
+				out = append(out, iss)
 				continue
 			}
-			iss := newIssue(dir, filepath.Join(epic, e.Name(), f.Name()))
-			iss.Group = e.Name()
-			out = append(out, iss)
+			if !f.IsDir() || skipDirs[f.Name()] {
+				continue
+			}
+			// group 内で予約されるのは next だけ。done/pending は規約外なので、
+			// Unknown の leaf として残す。その他の深い階層は固定 2 段契約の外なので掘らない。
+			var status Status
+			switch strings.ToLower(f.Name()) {
+			case NextDirName:
+				status = StatusNext
+			case "done", "pending":
+				status = StatusUnknown
+			default:
+				continue
+			}
+			childFiles, err := os.ReadDir(filepath.Join(groupDir, f.Name()))
+			if err != nil {
+				continue
+			}
+			for _, child := range childFiles {
+				if !isIssueFile(child) || metaFiles[strings.ToLower(child.Name())] {
+					continue
+				}
+				iss := newIssue(dir, filepath.Join(epic, e.Name(), f.Name(), child.Name()))
+				iss.GroupKey = groupKey
+				if status == StatusUnknown {
+					iss.Status, iss.Group, iss.GroupKind = StatusUnknown,
+						filepath.Join(e.Name(), f.Name()), GroupUnknown
+				} else {
+					iss.Status, iss.Group, iss.GroupKind = StatusNext, e.Name(), GroupEpic
+				}
+				out = append(out, iss)
+			}
 		}
 	}
 	return out

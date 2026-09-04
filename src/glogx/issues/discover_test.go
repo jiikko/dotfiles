@@ -55,6 +55,24 @@ func TestFindDirsFindsDirWhereAllIssuesAreDone(t *testing.T) {
 	}
 }
 
+// issue ディレクトリ直下に md が無く、epic/<name>/ だけに issue がある repo も viewer の
+// 探索対象にする。FindDirs だけでなく Scan まで通すことで、探索と 2 段走査の片方だけを
+// 実装した退行を見逃さない。
+func TestFindDirsFindsEpicOnlyRepoAndScanReadsIt(t *testing.T) {
+	root := t.TempDir()
+	groupDir := filepath.Join(root, "issues", EpicDirName, "cloud")
+	mkFiles(t, groupDir, "710-feat-drive.md")
+
+	dirs := FindDirs(root)
+	if len(dirs) != 1 || dirs[0] != filepath.Join(root, "issues") {
+		t.Fatalf("epic だけの issues を見つけられていない: %q", dirs)
+	}
+	found, _ := Scan(dirs)
+	if len(found) != 1 || found[0].Rel != filepath.Join(EpicDirName, "cloud", "710-feat-drive.md") {
+		t.Fatalf("FindDirs -> Scan で epic issue を拾えていない: %+v", found)
+	}
+}
+
 func TestFindDirsSkipsGeneratedDirs(t *testing.T) {
 	root := t.TempDir()
 	mkFiles(t, filepath.Join(root, "node_modules", "issues"), "001-feat-a.md")

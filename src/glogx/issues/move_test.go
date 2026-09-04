@@ -76,6 +76,39 @@ func TestMoveToSubdirNoopWhenAlreadyThere(t *testing.T) {
 	}
 }
 
+// Epic issue の claim は group の next/ に入り、解除しても group 直下へ戻る。global issue の
+// `<dir>/next/` と混ぜると次回 Scan で group から消えるので、戻り値の新 path も合わせて検査する。
+func TestMoveToSubdirKeepsEpicIssueInsideGroup(t *testing.T) {
+	dir := t.TempDir()
+	groupDir := filepath.Join(dir, EpicDirName, "cloud")
+	if err := os.MkdirAll(groupDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(groupDir, "710-feat-drive.md")
+	if err := os.WriteFile(path, []byte("# 710\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := &Issue{
+		Path: path, Dir: dir, Rel: filepath.Join(EpicDirName, "cloud", "710-feat-drive.md"),
+		Group: "cloud", GroupKind: GroupEpic, GroupKey: groupDir,
+	}
+
+	next, err := MoveToSubdir(iss, NextDirName)
+	if err != nil || next != filepath.Join(groupDir, NextDirName, "710-feat-drive.md") {
+		t.Fatalf("Epic issue の移動先が違う: dest=%q err=%v", next, err)
+	}
+	claimed := *iss
+	claimed.Path, claimed.Rel, claimed.Status = next,
+		filepath.Join(EpicDirName, "cloud", NextDirName, "710-feat-drive.md"), StatusNext
+	open, err := MoveToSubdir(&claimed, "")
+	if err != nil || open != path {
+		t.Fatalf("group 内 next の解除先が違う: dest=%q err=%v", open, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, NextDirName, "710-feat-drive.md")); !os.IsNotExist(err) {
+		t.Fatal("Epic issue が global next/ へ移動している")
+	}
+}
+
 // next/ は状態として認識し、既定の一覧 (open のみ) でも必ず見せる。
 // 🚨 伏せると「目印を付けた issue が既定の一覧から消える」という逆の結果になる。
 func TestNextDirIsAStatusAndAlwaysVisible(t *testing.T) {

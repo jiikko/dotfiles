@@ -136,8 +136,8 @@ func (v *issuesView) watchCmd() tea.Cmd { return tea.Batch(v.eventCmd(), v.pollC
 // startWatch は監視対象のディレクトリを fsnotify へ登録する (スキャン結果が届くたびに呼ぶ)。
 //
 // fsnotify は再帰しないので、issue ディレクトリと「issue ファイルが実際に居るサブディレクトリ」
-// (done/ pending/ とサブグループ) を個別に Add する。新しいサブディレクトリの作成は親の
-// イベントとして飛び、取り直し → ここで Add されて追従する。
+// (done/ pending/ とサブグループ) を個別に Add する。epic/ と全 group dir は空でも登録する。
+// 新しいサブディレクトリの作成は親のイベントとして飛び、取り直し → ここで Add されて追従する。
 // watcher を作れない環境 (fd 上限・未対応 platform) では黙ってポーリングだけに縮退する。
 func (v *issuesView) startWatch() {
 	if !v.shown {
@@ -166,23 +166,11 @@ func (v *issuesView) stopWatch() {
 	v.watch = issuesWatch{gen: v.watch.gen + 1}
 }
 
-// watchDirs は fsnotify へ Add するディレクトリ (issue ディレクトリ + ファイルが居るサブ)。
+// watchDirs は fsnotify へ Add するディレクトリ (issue ディレクトリ + ファイルが居るサブ + epic/ と
+// 全 group dir)。空の group dir も含めるのは、そこへ最初の issue が置かれた変化を拾うため。
 func (v *issuesView) watchDirs() []string {
-	seen := make(map[string]bool, len(v.dirs)+4)
-	out := make([]string, 0, len(v.dirs)+4)
-	add := func(dir string) {
-		if dir != "" && !seen[dir] {
-			seen[dir] = true
-			out = append(out, dir)
-		}
-	}
-	for _, dir := range v.dirs {
-		add(dir)
-	}
-	for _, iss := range v.all {
-		add(filepath.Dir(iss.Path))
-	}
-	return out
+	dirs, _ := v.watchTargets()
+	return dirs
 }
 
 // eventCmd は fsnotify のイベントを 1 回待ち、バーストを畳んでから指紋を取る。
@@ -263,7 +251,58 @@ func (v *issuesView) pollInterval() time.Duration {
 
 // watchTargets は指紋の対象を値のコピーで返す (goroutine へ渡すため)。
 func (v *issuesView) watchTargets() (dirs, paths []string) {
-	return append([]string(nil), v.dirs...), issuesWatchPaths(v.all)
+	return issuesWatchDirs(v.dirs, v.all), issuesWatchPaths(v.all)
+}
+
+// issuesWatchDirs は scanIssues と watchTargets が共有するディレクトリ集合を作る。epic の group
+// は空でも含めるので、まだ issue が 1 件もない group の最初のファイル作成を検出できる。
+func issuesWatchDirs(baseDirs []string, all []*issues.Issue) []string {
+	seen := make(map[string]bool, len(baseDirs)+len(all)+4)
+	out := make([]string, 0, len(baseDirs)+len(all)+4)
+	add := func(dir string) {
+		if dir != "" && !seen[dir] {
+			seen[dir] = true
+			out = append(out, dir)
+		}
+	}
+	for _, dir := range baseDirs {
+		add(dir)
+		epic := filepath.Join(dir, issues.EpicDirName)
+		fi, err := os.Lstat(epic)
+		if err != nil || !fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+		add(epic)
+		entries, err := os.ReadDir(epic)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() && e.Type()&os.ModeSymlink == 0 {
+				groupDir := filepath.Join(epic, e.Name())
+				add(groupDir)
+				// next/ (および規約上迷子になる done/pending/) が先に作られて
+				// 空でも、そこへ最初の md が入ったことを拾う。groupDir 自体は
+				// non-recursive watcher なので、子ディレクトリも直接見張る。
+				groupEntries, groupErr := os.ReadDir(groupDir)
+				if groupErr != nil {
+					continue
+				}
+				for _, child := range groupEntries {
+					if child.IsDir() && child.Type()&os.ModeSymlink == 0 {
+						switch strings.ToLower(child.Name()) {
+						case issues.NextDirName, "done", "pending":
+							add(filepath.Join(groupDir, child.Name()))
+						}
+					}
+				}
+			}
+		}
+	}
+	for _, iss := range all {
+		add(filepath.Dir(iss.Path))
+	}
+	return out
 }
 
 // issuesWatchPaths は指紋の対象ファイルを組み立てる。
@@ -361,6 +400,20 @@ func issuesFingerprint(dirs, paths []string) string {
 			b.WriteString(strconv.FormatInt(st.ModTime().UnixNano(), 10))
 		}
 		b.WriteByte('\n')
+		if strings.EqualFold(filepath.Base(filepath.Clean(dir)), issues.EpicDirName) {
+			b.WriteString(dir)
+			b.WriteString(":entries:")
+			if entries, err := os.ReadDir(dir); err == nil {
+				for _, entry := range entries {
+					b.WriteString(entry.Name())
+					if entry.IsDir() {
+						b.WriteString("/")
+					}
+					b.WriteByte('\x00')
+				}
+			}
+			b.WriteByte('\n')
+		}
 	}
 	for _, path := range paths {
 		b.WriteString(path)

@@ -4,6 +4,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +33,30 @@ type issuesScanMsg struct {
 	warnings []string
 	// fp は読んだ時点のファイル群の指紋 (issues_watch.go)。見張りの基準に使う。
 	fp string
+}
+
+// displayRow は一覧の表示単位。Issue の集合 (rows) に親行を混ぜると、カーソル位置を
+// issue の添字だと仮定する copy/move/open が親を誤って操作するため、表示専用の層を分ける。
+type displayRowKind string
+
+const (
+	displayRowIssue displayRowKind = "issue"
+	displayRowGroup displayRowKind = "group"
+)
+
+type displayRow struct {
+	kind       displayRowKind
+	issue      *issues.Issue
+	groupKey   string
+	groupName  string
+	childCount int
+}
+
+type displayUnit struct {
+	row       displayRow
+	maxNumber int
+	hasNumber bool
+	key       string
 }
 
 // issuesView は一覧 (タブ + リスト) と本文 pager の 2 モードを持つ全画面ビュー。
@@ -78,8 +103,18 @@ type issuesView struct {
 	allCount  int
 	nextCount int // 疑似カテゴリ [next] のチップに出す件数
 
-	rows   []*issues.Issue // 現在のタブ・フィルタの表示対象
-	cursor int
+	rows []*issues.Issue // 現在のタブ・フィルタの表示対象 (親行を含めない子 issue 集合)
+	// displayRows は rows から導出する表示単位。親行はここにだけ存在し、rows / tabCount /
+	// allCount は従来どおり子 issue 数を持つ。
+	displayRows       []displayRow
+	displayRowsSource []*issues.Issue
+	// expandedGroups は手動で展開した GroupKey だけ、autoExpandedGroups は番号フィルタが
+	// 一時的に展開した GroupKey だけを持つ。collapsedGroups は filter 中に親行を明示的に
+	// 畳んだときの一時 override で、state へ保存するのは expandedGroups の true のみ。
+	expandedGroups     map[string]bool
+	autoExpandedGroups map[string]bool
+	collapsedGroups    map[string]bool
+	cursor             int
 	// 複数選択 (shift+↑/↓)。範囲は錨 (markAt) と cursor から毎回導出する。🚨 選択集合を別に
 	// 持たない: 行集合はフィルタ・タブ・再スキャンで入れ替わるので、集合で持つと実体を失った
 	// 選択が残り「見えていない行がコピーされる」。錨だけなら行集合を作り直す refresh で畳める。
@@ -137,6 +172,10 @@ type issuesView struct {
 	// pending は前回終了時の画面の復元予約 (issues_state.go)。スキャン結果が要るので、
 	// 適用は最初の receive まで待つ (applyScreen が 1 度だけ消費する)。
 	pending *issuesScreen
+	// move の直後に再スキャン結果へ張り替えるパス。移動前の stale な Path を receive が
+	// そのまま再利用すると、カーソル/選択が別行へ滑る。
+	pendingCursorPath string
+	pendingMarkPath   string
 }
 
 const (
@@ -225,6 +264,7 @@ func (v *issuesView) screen(now time.Time) (issuesScreen, bool) {
 		Cursor:  issuePath(v.current()),
 		Open:    open,
 		BodyOff: v.bodyOff,
+		Groups:  copyExpandedGroups(v.expandedGroups),
 	}, true
 }
 
@@ -233,6 +273,7 @@ func (v *issuesView) screen(now time.Time) (issuesScreen, bool) {
 // 消えた issue (rename / 状態ディレクトリへ移動) には黙って別物を当てない: カーソルは
 // anchorCursor が当たらなければ先頭のまま、本文はパスが見つからなければ一覧のままにする。
 func (v *issuesView) applyScreen(s issuesScreen) {
+	v.expandedGroups = copyExpandedGroups(s.Groups)
 	v.filter, _ = issues.ParseStatusFilter(s.Filter) // 未知の名前は既定へ (loadIssuesScreen で正規化済み)
 	v.refresh()                                      // フィルタを反映してタブの並びと件数を作る (tabIdx を引くのに要る)
 	v.tabIdx = tabIndexOf(v.tabs, s.Tab)
@@ -304,6 +345,7 @@ func (v *issuesView) finishClose() bool {
 	if v.numFilter.active {
 		v.numFilter.clear()
 		v.refresh()
+		v.collapsedGroups = nil
 	}
 	return true
 }
@@ -416,7 +458,7 @@ func scanIssues(cwd string) issuesScanMsg {
 	}
 	return issuesScanMsg{
 		root: root, dirs: dirs, issues: found, warnings: warnings,
-		fp: issuesFingerprint(dirs, issuesWatchPaths(found)),
+		fp: issuesFingerprint(issuesWatchDirs(dirs, found), issuesWatchPaths(found)),
 	}
 }
 
@@ -436,6 +478,13 @@ func (v *issuesView) receive(msg issuesScanMsg) tea.Cmd {
 	// 満たせる (スキャンは内容を変えないので指紋は動かない)。
 	v.watch.seen, v.watch.pending = msg.fp, ""
 	tab, cursorPath, openPath, markPath := v.currentTab(), issuePath(v.current()), issuePath(v.open), v.markPath()
+	pendingCursorPath, pendingMarkPath := v.pendingCursorPath, v.pendingMarkPath
+	if pendingCursorPath != "" {
+		cursorPath = pendingCursorPath
+	}
+	if pendingMarkPath != "" {
+		markPath = pendingMarkPath
+	}
 	v.root, v.dirs, v.all, v.warnings = msg.root, msg.dirs, msg.issues, msg.warnings
 	v.tabsCanon = issues.Tabs(v.all, issues.TabMinCount)
 	v.tabs = v.tabsCanon // refresh が件数を数えて表示順 (0 件を右) へ並べ替える
@@ -443,6 +492,14 @@ func (v *issuesView) receive(msg issuesScanMsg) tea.Cmd {
 	v.refresh()
 	v.anchorCursor(cursorPath)
 	v.anchorMark(markPath)
+	// 移動直後に到着した結果が move 前に始まった stale scan なら、新 path はまだ msg.all に
+	// 無い。rescanPending の次の結果まで pending anchor を残し、そこで初めて消費する。
+	if pendingCursorPath != "" && hasIssuePath(v.all, pendingCursorPath) {
+		v.pendingCursorPath = ""
+	}
+	if pendingMarkPath != "" && hasIssuePath(v.all, pendingMarkPath) {
+		v.pendingMarkPath = ""
+	}
 	v.rebindOpen(openPath)
 	v.startWatch() // 監視対象のディレクトリはスキャン結果で決まる (issues_watch.go)
 	if v.pending != nil {
@@ -467,6 +524,18 @@ func issuePath(iss *issues.Issue) string {
 	return iss.Path
 }
 
+func hasIssuePath(all []*issues.Issue, path string) bool {
+	if path == "" {
+		return false
+	}
+	for _, iss := range all {
+		if iss.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
 // tabIndexOf は名前からタブ位置 (0 = All) を引く。消えたカテゴリは All に落ちる。
 func tabIndexOf(tabs []issues.Tab, name string) int {
 	if name == tabNextName {
@@ -488,8 +557,9 @@ func (v *issuesView) anchorCursor(path string) {
 	if path == "" {
 		return
 	}
-	for i, iss := range v.rows {
-		if iss.Path == path {
+	v.ensureDisplayRows()
+	for i, row := range v.displayRows {
+		if row.kind == displayRowIssue && row.issue.Path == path {
 			v.cursor = i
 			return
 		}
@@ -498,10 +568,12 @@ func (v *issuesView) anchorCursor(path string) {
 
 // markPath は選択の錨が指す issue のパス ("" = 選択していない / 錨が範囲外)。
 func (v *issuesView) markPath() string {
-	if !v.marked || v.markAt < 0 || v.markAt >= len(v.rows) {
+	v.ensureDisplayRows()
+	if !v.marked || v.markAt < 0 || v.markAt >= len(v.displayRows) ||
+		v.displayRows[v.markAt].kind != displayRowIssue {
 		return ""
 	}
-	return v.rows[v.markAt].Path
+	return v.displayRows[v.markAt].issue.Path
 }
 
 // anchorMark は再スキャン前と同じ issue へ選択の錨を張り替える (消えていれば選択したままにしない)。
@@ -517,8 +589,9 @@ func (v *issuesView) anchorMark(path string) {
 	if path == "" {
 		return
 	}
-	for i, iss := range v.rows {
-		if iss.Path == path {
+	v.ensureDisplayRows()
+	for i, row := range v.displayRows {
+		if row.kind == displayRowIssue && row.issue.Path == path {
 			v.marked, v.markAt = true, i
 			return
 		}
@@ -590,7 +663,13 @@ func (v *issuesView) refresh() {
 	// 🚨 行集合が変わるので選択は畳む。錨は位置で持つため、残すと別の issue を指す
 	v.clearMark()
 	v.rows = v.visibleIssues()
-	v.cursor = clampIdx(v.cursor, len(v.rows))
+	if v.numFilter.active {
+		v.autoExpandedGroups = v.numFilter.groupKeys(v.rows)
+	} else {
+		v.autoExpandedGroups = nil
+	}
+	v.rebuildDisplayRows()
+	v.cursor = clampIdx(v.cursor, len(v.displayRows))
 	// チップの件数は「そのタブを選んだときに実際に並ぶ行数」と同じ Filter から出す。
 	// issues.Tab.Count は done を含む全件なので、そのまま出すと done を伏せた既定表示で
 	// 「カテゴリの合計 ≠ All ≠ 一覧の行数」になる。
@@ -608,6 +687,171 @@ func (v *issuesView) refresh() {
 	// 決まる (issues.Tabs) ため、状態を伏せた表示では「0 件なのに左端」が構造的に起きていた。
 	v.tabs, v.tabCount = reorderTabsByCount(v.tabsCanon, counts)
 	v.tabIdx = tabIndexOf(v.tabs, sel)
+}
+
+// rebuildDisplayRows は現在見えている子 issue を親行 + 子行へ写像する。rows は Scan/Filter の
+// 並びを保つが、親行の順序だけは group の最大番号で決める (同値は GroupKey 昇順)。
+func (v *issuesView) rebuildDisplayRows() {
+	type group struct {
+		key       string
+		name      string
+		children  []*issues.Issue
+		maxNumber int
+		hasNumber bool
+	}
+	groups := make(map[string]*group)
+	groupList := make([]*group, 0, 4)
+	units := make([]displayUnit, 0, len(v.rows))
+	for _, iss := range v.rows {
+		if iss.GroupKind != issues.GroupEpic {
+			n, ok := issueNumberOK(iss)
+			units = append(units, displayUnit{
+				row:       displayRow{kind: displayRowIssue, issue: iss},
+				maxNumber: n, hasNumber: ok,
+				key: iss.Rel,
+			})
+			continue
+		}
+		key := issueGroupKey(iss)
+		if key == "" {
+			// 不完全なテスト用 Issue や旧 caller から GroupKey が欠けても、親を作れない
+			// issue を消さない。実 Scan 経由では必ず key が埋まる。
+			n, ok := issueNumberOK(iss)
+			units = append(units, displayUnit{
+				row:       displayRow{kind: displayRowIssue, issue: iss},
+				maxNumber: n, hasNumber: ok,
+				key: iss.Rel,
+			})
+			continue
+		}
+		g, ok := groups[key]
+		if !ok {
+			g = &group{key: key, name: iss.Group}
+			groups[key] = g
+			groupList = append(groupList, g)
+		}
+		g.children = append(g.children, iss)
+		n, ok := issueNumberOK(iss)
+		if ok && (!g.hasNumber || n > g.maxNumber) {
+			g.maxNumber, g.hasNumber = n, true
+		}
+	}
+	for _, g := range groupList {
+		if len(g.children) == 0 {
+			continue
+		}
+		units = append(units, displayUnit{
+			row:       displayRow{kind: displayRowGroup, groupKey: g.key, groupName: g.name, childCount: len(g.children)},
+			maxNumber: g.maxNumber, hasNumber: g.hasNumber, key: g.key,
+		})
+	}
+	if len(groupList) > 0 {
+		// group が無い従来の一覧は、caller が渡した rows の順序をそのまま保つ。
+		// Scan の通常順序は既に番号降順で、テスト/復元の手組みの順序も壊さない。
+		sortDisplayUnits(units)
+	}
+	out := make([]displayRow, 0, len(v.rows)+len(groupList))
+	for _, u := range units {
+		out = append(out, u.row)
+		if u.row.kind != displayRowGroup || !v.groupExpanded(u.row.groupKey) {
+			continue
+		}
+		g := groups[u.row.groupKey]
+		for _, iss := range g.children {
+			out = append(out, displayRow{kind: displayRowIssue, issue: iss})
+		}
+	}
+	v.displayRows = out
+	v.displayRowsSource = append(v.displayRowsSource[:0], v.rows...)
+}
+
+// sortDisplayUnits は番号付きの単独 issue と group 親を同じ番号順に並べる。group の最大番号
+// が、その group の表示位置を決める。
+func sortDisplayUnits(units []displayUnit) {
+	sort.SliceStable(units, func(i, j int) bool {
+		a, b := units[i], units[j]
+		switch {
+		case a.hasNumber != b.hasNumber:
+			return a.hasNumber
+		case a.hasNumber && a.maxNumber != b.maxNumber:
+			return a.maxNumber > b.maxNumber
+		case a.row.kind == displayRowGroup && b.row.kind == displayRowGroup:
+			return a.key < b.key
+		case a.row.kind != b.row.kind:
+			return a.key < b.key
+		default:
+			return a.key < b.key
+		}
+	})
+}
+
+func issueNumberOK(iss *issues.Issue) (int, bool) {
+	if iss.Number == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(iss.Number)
+	return n, err == nil
+}
+
+func issueGroupKey(iss *issues.Issue) string {
+	if iss.GroupKey != "" {
+		return iss.GroupKey
+	}
+	if iss.Group == "" {
+		return ""
+	}
+	return filepath.Join(iss.Dir, issues.EpicDirName, iss.Group)
+}
+
+func (v *issuesView) groupExpanded(key string) bool {
+	return key != "" && !v.collapsedGroups[key] && (v.expandedGroups[key] || v.autoExpandedGroups[key])
+}
+
+// ensureDisplayRows は rows を直接差し替える既存テスト/helper と、通常の refresh の両方を
+// 支える遅延同期。production では refresh が常に先に rebuild する。
+func (v *issuesView) ensureDisplayRows() {
+	if len(v.displayRowsSource) == len(v.rows) {
+		match := true
+		for i := range v.rows {
+			if v.displayRowsSource[i] != v.rows[i] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return
+		}
+	}
+	v.rebuildDisplayRows()
+}
+
+func (v *issuesView) currentDisplayRow() (displayRow, bool) {
+	v.ensureDisplayRows()
+	if v.cursor < 0 || v.cursor >= len(v.displayRows) {
+		return displayRow{}, false
+	}
+	return v.displayRows[v.cursor], true
+}
+
+func (v *issuesView) isIssueDisplayRow(i int) bool {
+	v.ensureDisplayRows()
+	return i >= 0 && i < len(v.displayRows) && v.displayRows[i].kind == displayRowIssue
+}
+
+func copyExpandedGroups(src map[string]bool) map[string]bool {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string]bool, len(src))
+	for key, expanded := range src {
+		if expanded {
+			dst[key] = true
+		}
+	}
+	if len(dst) == 0 {
+		return nil
+	}
+	return dst
 }
 
 // visibleIssues は今の条件で一覧に並べる行集合。
@@ -754,6 +998,10 @@ func (v *issuesView) settleDrawer() {
 // 読み込みは同期で行う: 1 ファイルの読み込みは sub-ms で、非同期にすると「読み込み中に
 // カーソルが動いた」等の状態を増やすだけで得がない (スキャンと違い件数に比例しない)。
 func (v *issuesView) openBody() {
+	if row, ok := v.currentDisplayRow(); ok && row.kind == displayRowGroup {
+		v.setNotice("親行では issue を開けません", false)
+		return
+	}
 	if iss := v.current(); iss != nil {
 		v.openIssue(iss)
 	}
@@ -794,10 +1042,83 @@ func (v *issuesView) reloadAfterEdit() tea.Cmd {
 
 // current はカーソル位置の issue (無ければ nil)。
 func (v *issuesView) current() *issues.Issue {
-	if v.cursor < 0 || v.cursor >= len(v.rows) {
+	row, ok := v.currentDisplayRow()
+	if !ok || row.kind != displayRowIssue {
 		return nil
 	}
-	return v.rows[v.cursor]
+	return row.issue
+}
+
+func (v *issuesView) currentIsGroup() bool {
+	row, ok := v.currentDisplayRow()
+	return ok && row.kind == displayRowGroup
+}
+
+// toggleGroupAtCursor は親行の展開状態を切り替える。親行以外では false を返し、呼び出し側が
+// 通常の Enter/Space の意味を続けて処理できるようにする。
+func (v *issuesView) toggleGroupAtCursor() bool {
+	row, ok := v.currentDisplayRow()
+	if !ok || row.kind != displayRowGroup {
+		return false
+	}
+	key := row.groupKey
+	if v.groupExpanded(key) {
+		delete(v.expandedGroups, key)
+		if v.autoExpandedGroups[key] {
+			if v.collapsedGroups == nil {
+				v.collapsedGroups = make(map[string]bool)
+			}
+			v.collapsedGroups[key] = true
+		} else {
+			delete(v.collapsedGroups, key)
+		}
+	} else {
+		delete(v.collapsedGroups, key)
+		if !v.autoExpandedGroups[key] {
+			if v.expandedGroups == nil {
+				v.expandedGroups = make(map[string]bool)
+			}
+			v.expandedGroups[key] = true
+		}
+	}
+	v.refresh()
+	v.anchorGroup(key)
+	return true
+}
+
+func (v *issuesView) anchorGroup(key string) {
+	v.ensureDisplayRows()
+	for i, row := range v.displayRows {
+		if row.kind == displayRowGroup && row.groupKey == key {
+			v.cursor = i
+			return
+		}
+	}
+}
+
+// clearNumberFilter は一時 autoExpanded を捨て、解除前に見ていた子 issue のパスへカーソルを
+// 張り直す。番号フィルタ中は親行を含む displayRows の添字が解除後に変わるため、添字を残しては
+// ならない。現在行が auto 展開された group の子なら、解除後もその子へ着地できるよう group の
+// 展開だけは通常の expandedGroups へ引き継ぐ。autoExpanded 自体は捨てるので、次の refresh で
+// 番号フィルタ由来の展開は残らない (カーソルの可視性を保つための 1 group だけが例外)。
+func (v *issuesView) clearNumberFilter() {
+	iss := v.current()
+	path := issuePath(iss)
+	for key := range v.autoExpandedGroups {
+		delete(v.collapsedGroups, key)
+	}
+	if iss != nil && iss.GroupKind == issues.GroupEpic {
+		key := issueGroupKey(iss)
+		if key != "" && v.autoExpandedGroups[key] && !v.expandedGroups[key] {
+			if v.expandedGroups == nil {
+				v.expandedGroups = make(map[string]bool)
+			}
+			v.expandedGroups[key] = true
+		}
+	}
+	v.numFilter.clear()
+	v.refresh()
+	v.anchorCursor(path)
 }
 
 // ownsKeys は viewer 自身がキーを解釈し切る状態か (URL ピッカー入力中 / 番号の絞り込み入力中 /
@@ -879,8 +1200,7 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 		// 絞り込みも同じく 1 段戻る (絞り込んだまま終了すると、次に開いたとき「なぜか件数が
 		// 少ない一覧」から始まる)
 		if v.numFilter.active {
-			v.numFilter.clear()
-			v.refresh()
+			v.clearNumberFilter()
 			return nil
 		}
 		// 戻る段が無ければ glogx ごと終了する (ユーザー要望 2026-08-06: git log 一覧へは
@@ -923,8 +1243,12 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 		v.extendMark(-1, rows)
 	case "shift+down", "J":
 		v.extendMark(1, rows)
-	case "ctrl+d", "pgdown", " ", "f":
+	case "ctrl+d", "pgdown", "f":
 		v.moveCursor(max(rows/2, 1), rows)
+	case " ":
+		if !v.toggleGroupAtCursor() {
+			v.moveCursor(max(rows/2, 1), rows)
+		}
 	case "ctrl+u", "pgup", "b", "shift+space":
 		v.moveCursor(-max(rows/2, 1), rows)
 	case "g", "home":
@@ -932,7 +1256,8 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 		v.cursor, v.offset = 0, 0
 	case "G", "end":
 		v.clearMark()
-		v.cursor = max(len(v.rows)-1, 0)
+		v.ensureDisplayRows()
+		v.cursor = max(len(v.displayRows)-1, 0)
 		v.scrollToCursor(rows)
 	case "tab", "l", "right":
 		if v.numFilter.active {
@@ -947,7 +1272,12 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 			break
 		}
 		v.moveTab(-1)
-	case "enter", "o":
+	case "enter":
+		if v.toggleGroupAtCursor() {
+			break
+		}
+		v.openBody()
+	case "o":
 		v.openBody()
 	case "n":
 		v.askMarkNext()
@@ -970,11 +1300,14 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 func (v *issuesView) numberFilterKey(key string, rows int) tea.Cmd {
 	switch key {
 	case "esc", "ctrl+g":
-		v.numFilter.clear()
-		v.refresh()
+		v.clearNumberFilter()
 	case "enter":
+		if v.numFilter.query == "" {
+			v.clearNumberFilter()
+			return nil
+		}
 		v.numFilter.confirm()
-		v.refresh() // 空入力の確定では絞り込みが消えるので、行集合を作り直す
+		v.refresh()
 	case "down", "ctrl+n":
 		v.moveCursor(1, rows)
 	case "up", "ctrl+p":
@@ -995,6 +1328,13 @@ func (v *issuesView) numberFilterKey(key string, rows int) tea.Cmd {
 // 2 箇所を編集する必要があり、片方に入れ忘れても「そのモードでだけ効かない」だけなので
 // テストは緑のまま通る (実際に本文モードのコピーが無通知だったのもこの二重化の側で起きた)。
 func (v *issuesView) actionKey(key string) (tea.Cmd, bool) {
+	if v.open == nil && v.currentIsGroup() {
+		switch key {
+		case "v", "e", "y", "p", "Y", "N":
+			v.setNotice("親行では issue 操作はできません", false)
+			return nil, true
+		}
+	}
 	switch key {
 	case "v", "e":
 		// e は git log 一覧の e (nvim を repo root で開く) と語彙を揃えたもの。v は先にあった
@@ -1087,20 +1427,31 @@ func (v *issuesView) moveCursor(delta, rows int) {
 
 // setCursor はカーソルを位置 i へ置いて窓を追従させる (選択には触れない)。
 func (v *issuesView) setCursor(i, rows int) {
-	v.cursor = clampIdx(i, len(v.rows))
+	v.ensureDisplayRows()
+	v.cursor = clampIdx(i, len(v.displayRows))
 	v.scrollToCursor(rows)
 }
 
 // extendMark は shift+↑/↓ の伸張。初回は今の行を錨にしてから動くので、1 回押すと
 // 「元の行 + 隣の行」の 2 行が選択される (エディタ・Finder と同じ)。
 func (v *issuesView) extendMark(delta, rows int) {
-	if len(v.rows) == 0 {
+	v.ensureDisplayRows()
+	if len(v.displayRows) == 0 {
+		return
+	}
+	if !v.isIssueDisplayRow(v.cursor) {
+		v.setNotice("親行では issue を選択できません", false)
+		return
+	}
+	next := clampIdx(v.cursor+delta, len(v.displayRows))
+	if !v.isIssueDisplayRow(next) {
+		v.setNotice("親行は選択できません", false)
 		return
 	}
 	if !v.marked {
 		v.marked, v.markAt = true, v.cursor
 	}
-	v.setCursor(v.cursor+delta, rows)
+	v.setCursor(next, rows)
 }
 
 // clearMark は選択を解除する。
@@ -1109,17 +1460,28 @@ func (v *issuesView) clearMark() { v.marked, v.markAt = false, 0 }
 // selection は選択範囲 [lo, hi] (両端を含む)。選択していなければ ok=false。
 // 🚨 錨は行集合の入れ替えで無効になりうるので、範囲は必ず今の rows へ収めてから返す。
 func (v *issuesView) selection() (lo, hi int, ok bool) {
-	if !v.marked || len(v.rows) == 0 {
+	v.ensureDisplayRows()
+	if !v.marked || len(v.displayRows) == 0 {
 		return 0, 0, false
 	}
 	lo, hi = min(v.markAt, v.cursor), max(v.markAt, v.cursor)
-	return max(lo, 0), min(hi, len(v.rows)-1), true
+	lo, hi = max(lo, 0), min(hi, len(v.displayRows)-1)
+	for i := lo; i <= hi; i++ {
+		if !v.isIssueDisplayRow(i) {
+			return 0, 0, false
+		}
+	}
+	return lo, hi, true
 }
 
 // selectedRows は操作の対象 (選択中ならその範囲、選択していなければ対象 1 件)。
 func (v *issuesView) selectedRows() []*issues.Issue {
 	if lo, hi, ok := v.selection(); ok {
-		return v.rows[lo : hi+1]
+		rows := make([]*issues.Issue, 0, hi-lo+1)
+		for i := lo; i <= hi; i++ {
+			rows = append(rows, v.displayRows[i].issue)
+		}
+		return rows
 	}
 	if iss := v.target(); iss != nil {
 		return []*issues.Issue{iss}
@@ -1142,7 +1504,8 @@ func (v *issuesView) windowOffset(rows int) int {
 	if rows <= 0 {
 		return 0
 	}
-	return windowOffsetFor(v.offset, v.cursor, len(v.rows), rows)
+	v.ensureDisplayRows()
+	return windowOffsetFor(v.offset, v.cursor, len(v.displayRows), rows)
 }
 
 // moveTab はタブを切り替える (端で止まらず巡回する)。
@@ -1548,6 +1911,7 @@ func (v *issuesView) listHeadLines(width int, colored bool) []string {
 
 // listLines はタブ + 警告 + リストを描く。
 func (v *issuesView) listLines(o issuesRenderOpts) []string {
+	v.ensureDisplayRows()
 	head := v.listHeadLines(o.width, o.colored) // 引き出しの下地でも一覧のタブを出す
 	if msg := v.emptyMessage(o); msg != "" {
 		return append(head, paint(clipToWidth(msg, o.width), ansiDim, o.colored))
@@ -1558,14 +1922,14 @@ func (v *issuesView) listLines(o issuesRenderOpts) []string {
 	// 定義上必ず含まれる。
 	v.offset = v.windowOffset(rows)
 	offset := v.offset
-	end := min(offset+rows, len(v.rows))
+	end := min(offset+rows, len(v.displayRows))
 	out := make([]string, 0, rows)
 	for i := offset; i < end; i++ {
 		// バー列ぶんを先に引く: 幅ぴったりに組むと scrollbarColumn のクリップで末尾 1 文字が
 		// "…" に化ける (box.go の scrollbarColumnWidth)
 		out = append(out, v.rowLine(i, o, o.width-scrollbarColumnWidth))
 	}
-	out = scrollbarColumn(out, o.width, len(v.rows), offset, o.colored)
+	out = scrollbarColumn(out, o.width, len(v.displayRows), offset, o.colored)
 	return append(head, out...)
 }
 
@@ -1735,7 +2099,12 @@ const issuesSelGutter = "▌ "
 // rowLine は一覧の 1 行 (番号・状態バッジ・カテゴリ・タイトル)。width は行が使える
 // 表示幅 (スクロールバー列を差し引いた後)。
 func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
-	iss := v.rows[i]
+	v.ensureDisplayRows()
+	row := v.displayRows[i]
+	if row.kind == displayRowGroup {
+		return v.groupLine(i, row, o, width)
+	}
+	iss := row.issue
 	num := fillRight(iss.Number, 3)
 	badge := iss.Status.Badge()
 	cat := fillRight(clipToWidth(iss.Category, 9), 9)
@@ -1765,6 +2134,22 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 		return o.cursorPaint(clipToWidth(cursorGutterMark+text, width))
 	}
 	return clipToWidth(cursorGutterMark+paint(text, ansiBold, o.colored), width)
+}
+
+func (v *issuesView) groupLine(i int, row displayRow, o issuesRenderOpts, width int) string {
+	arrow := "▸"
+	if v.groupExpanded(row.groupKey) {
+		arrow = "▾"
+	}
+	text := arrow + " " + sanitizePlainLine(row.groupName) + " (" + strconv.Itoa(row.childCount) + ")"
+	text = clipToWidth(text, max(width-cursorGutterWidth, 0))
+	if i != v.cursor {
+		return clipToWidth(cursorGutterBlank+text, width)
+	}
+	if o.cursorPaint != nil {
+		return o.cursorPaint(clipToWidth(cursorGutterMark+text, width))
+	}
+	return clipToWidth(cursorGutterMark+paint(text, ansiBold+ansiCyan, o.colored), width)
 }
 
 // bodyLines は本文 pager (ヘッダー + 本文) を描く。
@@ -1891,6 +2276,10 @@ type issuesMarkConfirm struct {
 // 混ざった選択で「何が起きるか」を確認ダイアログの 1 文で言えなくなる (「3 件のうち 2 件を付けて
 // 1 件を外します」は読めない)。
 func (v *issuesView) askMarkNext() {
+	if v.currentIsGroup() {
+		v.setNotice("親行では issue を next へ移せません", false)
+		return
+	}
 	rows := v.selectedRows()
 	if len(rows) == 0 {
 		return
@@ -1923,16 +2312,21 @@ func (v *issuesView) markNextKey(key string) tea.Cmd {
 	if unmark {
 		dest, verb = "", "の next を外しました"
 	}
+	cursorBefore, markBefore := issuePath(v.current()), v.markPath()
+	movedPaths := make(map[string]string, len(targets))
 	moved, skipped := 0, 0
 	for _, iss := range targets {
 		if (iss.Status == issues.StatusNext) != unmark {
 			skipped++ // 既に目的の向き (同じ場所への移動を「変化」と数えない)
 			continue
 		}
-		if _, err := issues.MoveToSubdir(iss, dest); err != nil {
+		newPath, err := issues.MoveToSubdir(iss, dest)
+		if err != nil {
+			v.setPendingMoveAnchors(cursorBefore, markBefore, movedPaths)
 			v.setNotice("移動できませんでした: "+firstLine(err.Error()), false)
 			return v.scanAfterChangeCmd() // 途中まで動いた分を一覧へ反映する
 		}
+		movedPaths[iss.Path] = newPath
 		moved++
 	}
 	v.clearMark()
@@ -1940,12 +2334,22 @@ func (v *issuesView) markNextKey(key string) tea.Cmd {
 		v.setNotice("対象がありません (すべて既にその状態)", true)
 		return nil
 	}
+	v.setPendingMoveAnchors(cursorBefore, markBefore, movedPaths)
 	notice := strconv.Itoa(moved) + " 件" + verb
 	if skipped > 0 {
 		notice += " (" + strconv.Itoa(skipped) + " 件は対象外)"
 	}
 	v.setNotice(notice, true)
 	return v.scanAfterChangeCmd() // 置き場所が変わったので一覧を取り直す
+}
+
+func (v *issuesView) setPendingMoveAnchors(cursorPath, markPath string, moved map[string]string) {
+	if next, ok := moved[cursorPath]; ok {
+		v.pendingCursorPath = next
+	}
+	if next, ok := moved[markPath]; ok {
+		v.pendingMarkPath = next
+	}
 }
 
 // markNextBox は確認モーダルの箱 (glogx の push/pull 確認と同じ見た目)。

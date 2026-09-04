@@ -743,8 +743,8 @@ func TestIssuesViewMarkNextDirectionFollowsCursor(t *testing.T) {
 }
 
 func TestIssuesViewTabChipCountsMatchRows(t *testing.T) {
-	// チップの件数は「そのタブを選んだときに並ぶ行数」と一致する。issues.Tab.Count は done を
-	// 含む全件なので、そのまま出すと done を伏せた既定表示で合計が All と食い違う。
+	// チップの件数は親行を含めない子 issue の件数と一致する。issues.Tab.Count は done を含む
+	// 全件なので、そのまま出すと done を伏せた既定表示で合計が All と食い違う。
 	v := loadedView(sampleIssues()...)
 	line := v.tabLine(issuesRenderOpts{width: 120})
 	for _, want := range []string{"[All 2]", "[feat 2]", "[refactor 0]", "[other 0]"} {
@@ -770,6 +770,21 @@ func TestIssuesViewTabChipCountsMatchRows(t *testing.T) {
 	}
 	if got := v.tabLine(issuesRenderOpts{width: 120}); !strings.Contains(got, "[other 1]") {
 		t.Fatalf("done 表示で other の件数が更新されない: %q", got)
+	}
+
+	// Epic があると、バッジ/rows は子件数のまま、描画だけ親行を 1 行足す。ここを同じ値で
+	// 検査すると、displayRows に親を混ぜた退行を見逃すので、2 つの契約を分けて固定する。
+	groupedIssues := append(sampleIssues(),
+		fakeEpicIssue("/repo/issues", "cloud", "040", "a", issues.StatusOpen),
+		fakeEpicIssue("/repo/issues", "cloud", "039", "b", issues.StatusOpen),
+	)
+	grouped := loadedView(groupedIssues...)
+	if grouped.allCount != 4 || len(grouped.rows) != 4 || len(grouped.displayRows) != 3 {
+		t.Fatalf("Epic の子件数と表示行数が分離されていない: all=%d rows=%d display=%d",
+			grouped.allCount, len(grouped.rows), len(grouped.displayRows))
+	}
+	if got := grouped.tabLine(issuesRenderOpts{width: 120}); !strings.Contains(got, "[All 4]") {
+		t.Fatalf("Epic 親行がバッジ件数へ混ざった: %q", got)
 	}
 }
 

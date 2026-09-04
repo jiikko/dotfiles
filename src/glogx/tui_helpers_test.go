@@ -85,6 +85,12 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("XDG_CACHE_HOME", dir); err != nil {
 		panic(err)
 	}
+	// Go 1.26 の testing.T.TempDir は GOTMPDIR を優先する。呼び出し側が sandbox 用に
+	// repo 内のパスを指定しても、そこを TempDir の起点にすると「repo 外」を検査するテストが
+	// glogx の git root を誤って拾うため、テスト用の一時領域へ隔離する。
+	if err := os.Setenv("GOTMPDIR", dir); err != nil {
+		panic(err)
+	}
 	code := m.Run() // 🚨 os.Exit は defer を走らせないので、片付けは Run の後に手で書く
 	if dir != "" {
 		_ = os.RemoveAll(dir)

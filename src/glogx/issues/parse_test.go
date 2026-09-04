@@ -411,12 +411,16 @@ func TestDisplayFallsBackToSlug(t *testing.T) {
 	}
 }
 
-// epic/<name>/ の 2 段は open の issue (Group = <name>)。epic/ 直下の迷子は Unknown のまま見せる。
+// epic/<name>/ の 2 段は open の issue (Group = <name>)。group 内 next は claim として残し、
+// done/pending は規約外の迷子として Unknown のまま見せる。epic/ 直下も Unknown。
 func TestScanReadsEpicSubdirsAsOpenGroups(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "issues")
 	mkFiles(t, dir, "001-feat-a.md")
 	mkFiles(t, filepath.Join(dir, "epic", "google-drive"), "README.md", "393-feat-gd-phase3.md", "casa-assessment.md")
+	mkFiles(t, filepath.Join(dir, "epic", "google-drive", "next"), "394-feat-gd-claim.md")
+	mkFiles(t, filepath.Join(dir, "epic", "google-drive", "done"), "395-feat-gd-lost.md")
+	mkFiles(t, filepath.Join(dir, "epic", "google-drive", "pending"), "396-feat-gd-pending-lost.md")
 	mkFiles(t, filepath.Join(dir, "epic", "cloud"), "700-design-backend.md")
 	mkFiles(t, filepath.Join(dir, "epic"), "999-bug-lost.md")
 	got, warns := Scan([]string{dir})
@@ -426,13 +430,18 @@ func TestScanReadsEpicSubdirsAsOpenGroups(t *testing.T) {
 	type want struct {
 		status Status
 		group  string
+		kind   GroupKind
+		key    string
 	}
 	wants := map[string]want{
-		"001-feat-a.md": {StatusOpen, ""},
-		"epic/google-drive/393-feat-gd-phase3.md": {StatusOpen, "google-drive"},
-		"epic/google-drive/casa-assessment.md":    {StatusOpen, "google-drive"},
-		"epic/cloud/700-design-backend.md":        {StatusOpen, "cloud"},
-		"epic/999-bug-lost.md":                    {StatusUnknown, "epic"},
+		"001-feat-a.md": {StatusOpen, "", GroupNone, ""},
+		"epic/google-drive/393-feat-gd-phase3.md":               {StatusOpen, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
+		"epic/google-drive/casa-assessment.md":                  {StatusOpen, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
+		"epic/google-drive/next/394-feat-gd-claim.md":           {StatusNext, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
+		"epic/google-drive/done/395-feat-gd-lost.md":            {StatusUnknown, filepath.Join("google-drive", "done"), GroupUnknown, filepath.Join(dir, "epic", "google-drive")},
+		"epic/google-drive/pending/396-feat-gd-pending-lost.md": {StatusUnknown, filepath.Join("google-drive", "pending"), GroupUnknown, filepath.Join(dir, "epic", "google-drive")},
+		"epic/cloud/700-design-backend.md":                      {StatusOpen, "cloud", GroupEpic, filepath.Join(dir, "epic", "cloud")},
+		"epic/999-bug-lost.md":                                  {StatusUnknown, "epic", GroupUnknown, ""},
 	}
 	if len(got) != len(wants) {
 		names := make([]string, 0, len(got))
@@ -446,8 +455,8 @@ func TestScanReadsEpicSubdirsAsOpenGroups(t *testing.T) {
 		if !ok {
 			t.Fatalf("想定外の issue: %q", iss.Rel)
 		}
-		if iss.Status != w.status || iss.Group != w.group {
-			t.Errorf("%s: status=%v group=%q, want status=%v group=%q", iss.Rel, iss.Status, iss.Group, w.status, w.group)
+		if iss.Status != w.status || iss.Group != w.group || iss.GroupKind != w.kind || iss.GroupKey != w.key {
+			t.Errorf("%s: status=%v group=%q kind=%v key=%q, want status=%v group=%q kind=%v key=%q", iss.Rel, iss.Status, iss.Group, iss.GroupKind, iss.GroupKey, w.status, w.group, w.kind, w.key)
 		}
 	}
 }

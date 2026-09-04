@@ -25,8 +25,17 @@ func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 	}
 	base := filepath.Base(iss.Rel)
 	destDir := iss.Dir
+	if iss.GroupKind == GroupEpic {
+		// group issue は epic の外へ出さない。subdir="" は group 直下へ戻すので、
+		// claim の解除 (next -> open) も group 内で完結する。
+		destDir = iss.GroupKey
+		if destDir == "" {
+			// 旧 caller/test fixture の補完。実 Scan 経由では GroupKey が必ず入る。
+			destDir = filepath.Join(iss.Dir, EpicDirName, iss.Group)
+		}
+	}
 	if subdir != "" {
-		destDir = filepath.Join(iss.Dir, subdir)
+		destDir = filepath.Join(destDir, subdir)
 	}
 	dest := filepath.Join(destDir, base)
 	if dest == iss.Path {

@@ -16,8 +16,9 @@ import (
 //   - 起点は git repo の toplevel。glogx は tmux popup から `-d '#{pane_current_path}'` で
 //     起動されるため cwd は repo のサブディレクトリになりうる (nvim を開いていたペイン等)。
 //     cwd 起点にすると「repo に issues があるのに viewer が空」という壊れ方をする
-//   - 深さ 1 まで掘る: root/issues の他に <sub>/issues を持つ repo が実在する
-//     (DualNoteApp は root/issues に 3 件・macOS/issues に 102 件)
+//   - 通常は深さ 1 まで掘る: root/issues の他に <sub>/issues を持つ repo が実在する
+//     (DualNoteApp は root/issues に 3 件・macOS/issues に 102 件)。ただし issues/epic/<name>
+//     だけは glogx の固定契約として 2 段目まで見る
 //   - 名前が issues でも issue 管理でないディレクトリが実在する
 //     (ubiregi-server/script/issues/19951 は権限 fixture の .yml 置き場)。
 //     .md を 1 つも持たないディレクトリは対象外にする
@@ -52,7 +53,8 @@ func RepoRoot(cwd string) string {
 	return cwd
 }
 
-// FindDirs は root 直下と root/*/ から issue ディレクトリを探して返す (name 昇順)。
+// FindDirs は root 直下と root/*/ から issue ディレクトリを探して返す (name 昇順)。通常の
+// 判定は深さ 1 だが、epic/<name>/ のみ 2 段目まで含める。
 func FindDirs(root string) []string {
 	found := make([]string, 0, 2)
 	if dir := filepath.Join(root, "issues"); hasMarkdown(dir) {
@@ -108,22 +110,74 @@ func hasMarkdown(dir string) bool {
 			}
 			continue
 		}
-		if isIssueFile(e) {
+		if isContentIssueFile(e) {
 			return true
 		}
 	}
 	for _, sub := range subdirs {
+		if strings.EqualFold(sub, EpicDirName) && hasEpicMarkdown(filepath.Join(dir, sub)) {
+			return true
+		}
 		subEntries, err := os.ReadDir(filepath.Join(dir, sub))
 		if err != nil {
 			continue
 		}
 		for _, e := range subEntries {
-			if isIssueFile(e) {
+			if isContentIssueFile(e) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// hasEpicMarkdown は issueDir/epic/<name>/ の固定 2 段構造だけを調べる。任意深さを掘らないのは
+// Scan と同じ契約を保ち、巨大な木や意図しない別管理データを拾わないため。
+func hasEpicMarkdown(epicDir string) bool {
+	entries, err := os.ReadDir(epicDir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if isContentIssueFile(e) {
+			return true
+		}
+		if !e.IsDir() || skipDirs[e.Name()] {
+			continue
+		}
+		groupEntries, err := os.ReadDir(filepath.Join(epicDir, e.Name()))
+		if err != nil {
+			continue
+		}
+		for _, ge := range groupEntries {
+			if isContentIssueFile(ge) {
+				return true
+			}
+			if !ge.IsDir() || skipDirs[ge.Name()] {
+				continue
+			}
+			// Scan が読むのは group 直下と、group 内の next/done/pending だけ。
+			if !strings.EqualFold(ge.Name(), NextDirName) &&
+				!strings.EqualFold(ge.Name(), "done") &&
+				!strings.EqualFold(ge.Name(), "pending") {
+				continue
+			}
+			childEntries, err := os.ReadDir(filepath.Join(epicDir, e.Name(), ge.Name()))
+			if err != nil {
+				continue
+			}
+			for _, ce := range childEntries {
+				if isContentIssueFile(ce) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func isContentIssueFile(e os.DirEntry) bool {
+	return isIssueFile(e) && !metaFiles[strings.ToLower(e.Name())]
 }
 
 // isMarkdown は表示対象のファイル名か。実測では issue ファイルは 405/405 が .md で、

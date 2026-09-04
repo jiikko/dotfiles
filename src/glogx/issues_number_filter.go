@@ -16,6 +16,7 @@ package main
 // ピッカーのように選んで閉じる形にすると、フィルタとしては使えない。
 
 import (
+	"path/filepath"
 	"strings"
 
 	"glogx/issues"
@@ -81,6 +82,33 @@ func (f *issuesNumberFilter) rows(all []*issues.Issue) []*issues.Issue {
 		if f.query == "" || strings.Contains(iss.Number, f.query) {
 			out = append(out, iss)
 		}
+	}
+	return out
+}
+
+// groupKeys は番号フィルタの結果に含まれる Epic の GroupKey を返す。番号フィルタ中だけ親を
+// 自動展開し、解除時には呼び出し側がこの集合を捨てる (手動の展開状態とは分離する)。
+func (f *issuesNumberFilter) groupKeys(rows []*issues.Issue) map[string]bool {
+	if !f.active {
+		return nil
+	}
+	out := make(map[string]bool)
+	for _, iss := range rows {
+		if iss.GroupKind != issues.GroupEpic {
+			continue
+		}
+		key := iss.GroupKey
+		if key == "" && iss.Group != "" {
+			// 旧 caller/test fixture が GroupKey を埋めていなくても、表示の同一性を
+			// scanner と揃える。
+			key = filepath.Join(iss.Dir, issues.EpicDirName, iss.Group)
+		}
+		if key != "" {
+			out[key] = true
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

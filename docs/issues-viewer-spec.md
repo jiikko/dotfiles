@@ -10,14 +10,15 @@ glogx の issues viewer (`i` キー) が `issues/` をどう解釈するかの�
 | 何を | どこから |
 |---|---|
 | 起点 | `git rev-parse --show-toplevel` (失敗したら cwd) |
-| 対象 | `<root>/issues` と `<root>/*/issues` (深さ 1 まで。`issue` 単数形も可) |
+| 対象 | `<root>/issues` と `<root>/*/issues` (通常は深さ 1。`issue` 単数形も可)。ただし各 issue dir の `epic/<name>/` だけは 2 段目まで |
 | 除外 | `.git` / `node_modules` / `vendor` / `build` / `dist` / `tmp` / `Pods` 等の生成物 |
-| 条件 | 直下またはその 1 段下に `.md` が 1 つ以上あること |
+| 条件 | 通常は直下または 1 段下に `.md` が 1 つ以上。`epic/` は `epic/<name>/`（およびその `next/` 等）まで見る |
 
 - 起点を cwd ではなく repo root にするのは、glogx が tmux popup から `-d '#{pane_current_path}'`
   で起動されるため。cwd 起点だと「repo に issues があるのに viewer が空」になる
-- 深さ 1 まで掘るのは、`<root>/issues` と `<sub>/issues` の両方を持つ repo が実在するため
-  (DualNoteApp は root に 3 件・`macOS/issues` に 102 件)
+- 通常の探索を深さ 1 に留めるのは、`<root>/issues` と `<sub>/issues` の両方を持つ repo が実在するため
+  (DualNoteApp は root に 3 件・`macOS/issues` に 102 件)。例外として `epic/<name>/` は 2 段構造を
+  正式に扱う。epic 配下にしか md が無い repo も issue dir として拾う
 - `.md` の有無を条件にするのは、名前が `issues` でも issue 管理でないディレクトリがあるため
   (`ubiregi-server/script/issues/19951` は権限 fixture の `.yml` 置き場)
 
@@ -42,7 +43,9 @@ NNN-<カテゴリ>-<スラッグ>.md        例: 028-refactor-glogx-box-and-toas
 | 置き場所 | 状態 | バッジ |
 |---|---|---|
 | issue ディレクトリ直下 | open (未完了) | `○` |
-| `next/` | **次にやる** (viewer の `n` が付ける目印) | `▶` |
+| `next/` | **次にやる** (global issue に viewer の `n` が付ける目印) | `▶` |
+| `epic/<name>/` | open (Epic group の子 issue) | `○` |
+| `epic/<name>/next/` | **次にやる** (Epic group の子 issue の claim) | `▶` |
 | `pending/` `hold/` `on-hold/` | 保留 (着手条件・trigger 待ち) | `⏸` |
 | `done/` `closed/` `completed/` `resolved/` | 完了 | `✓` |
 | 上記以外のサブディレクトリ | **状態にしない** (サブグループ扱い) | `?` |
@@ -51,6 +54,21 @@ NNN-<カテゴリ>-<スラッグ>.md        例: 028-refactor-glogx-box-and-toas
 実在するため (`src/working/issues` はプロダクト名のディレクトリが 18 個、
 `DualNoteApp/macOS/issues/mid-long-term` は状態ではなく時間軸)。黙って状態にすると
 「存在しない状態」がタブに並ぶ。
+
+`epic/<name>/done/` と `epic/<name>/pending/` は予約しない。そこに置かれた md は迷子として
+`StatusUnknown` / `?` で表示し、`Group` は `<name>/done` 等にする。`epic/` 直下の md も
+グループ名が無い迷子 (`Group = "epic"`) として表示する。`README.md` / `INDEX.md` /
+`TEMPLATE.md` は metadata なので issue 件数にも迷子にも含めない。
+
+Issue には `GroupKind` (`None` / `Epic` / `Unknown`) と、Epic の同一性キー `GroupKey`
+(`issue dir + epic/<name>`) がある。`GroupKind=Epic` だけを親行へまとめ、`Unknown` は従来どおり
+`?` の leaf として表示する。親行は既定で折り畳み、`▸ <name> (N)` の N は現在のタブ・状態
+filter で見える子 issue 数。親行の表示順は子の最大番号降順、同値は `GroupKey` 昇順。
+
+親行の `Enter` / `Space` は展開・折り畳みの toggle。子 issue 行では従来どおり `Enter` は本文を
+開き、`Space` は半ページ送り。`Shift+J/K`、コピー、`n` の移動、open は issue 行だけを対象にし、
+親行では no-op と notice を出す。親行は `displayRows` にだけ存在し、issue の件数・タブバッジ・
+番号 filter の件数には含めない。
 
 ### 既定は open だけ / `a` で 3 段の巡回
 
@@ -73,8 +91,9 @@ bool 2 本 (done / pending) でなく累積の段階にしたのは、操作を 
 
 ### `n` で「次にやる」の目印を付ける (`next/` へ移動)
 
-一覧で `n` を押すと確認モーダルが出て、`y`/`Enter` で選択中の issue を
-`<issue ディレクトリ>/next/` へ移す (ユーザー要望 2026-08-01)。**`n` は toggle** で、既に目印が
+一覧で `n` を押すと確認モーダルが出て、`y`/`Enter` で選択中の issue を移す
+(ユーザー要望 2026-08-01)。global issue の宛先は `<issue ディレクトリ>/next/`、Epic group の
+子 issue (`GroupKind=Epic`) は `<issue ディレクトリ>/epic/<name>/next/`。**`n` は toggle** で、既に目印が
 付いている issue に対しては「外す」向き (issue ディレクトリ直下 = open へ戻す) になる。favorite のように「次に何をやるか」を
 自分でマーキングするための機能で、**状態 (パスが正本) の語彙に `next` を 1 つ足す**形で実現する。
 `next/` が無ければ作る。
@@ -97,9 +116,9 @@ bool 2 本 (done / pending) でなく累積の段階にしたのは、操作を 
 - `[next]` は 0 件でも左端に出す (0 件を右へ寄せる並べ替えの対象にしない)。目印を付ける場所として
   常に同じ位置に居てほしいため。🚨 `tabIdx` は `-1 = [next]` / `0 = All` / `1.. = カテゴリ` にする —
   `0` を `[next]` にすると zero value のビューが既定で `[next]` を選び「開いたら空の一覧」になる
-- 🚨 **外すときの戻り先は issue ディレクトリ直下 (= open) 固定**。元居た場所 (`done/` 等) は
-  覚えていない — 目印は「次にやる」ものに付けるので戻り先は open が自然で、履歴を持つと
-  「どこへ戻るか分からない」方が困る
+- 🚨 **外すときの戻り先は group issue なら `epic/<name>/`、global issue なら issue ディレクトリ直下
+  (= open) 固定**。元居た場所 (`done/` 等) は覚えていない — 目印は「次にやる」ものに付けるので
+  戻り先は open が自然で、履歴を持つと「どこへ戻るか分からない」方が困る
 - 🚨 **向きはカーソル行で決めて選択範囲全体を揃える**。1 件ずつ toggle にしない: 目印つきと
   無しが混ざった選択で「何が起きるか」を確認ダイアログの 1 文で言えなくなる
 - 対象は `y`/`p`/`Y` と同じ決め方 (複数選択中はその範囲、無ければカーソル行)
@@ -302,6 +321,10 @@ backtick 内に 231 個 (ユニーク 137) あるが、**repo root から実在�
   同じ作法 (移動は `ctrl+n`/`ctrl+p` と矢印) に寄せておく
 - 絞り込み中の `Tab` と `a` は no-op。カテゴリも状態も無視しているので、押して画面が変わらない
   方がまだ良い (裏で選択だけ動かすと、解除した瞬間に別のタブに居ることになる)
+- 絞り込み結果に Epic の子 issue が 1 件でもあれば、その group は一時的な `autoExpanded` として
+  展開する。これは手動の `Groups` / expanded 状態とは別に持ち、検索語が変わるたび結果から作り直す
+- 解除時は `autoExpanded` を捨てる。解除前に選んでいた子 issue は表示行の添字ではなくその子の path
+  でカーソルを再アンカーし、必要ならその group の展開を通常の状態へ引き継ぐ
 - 絞り込みは**持ち越さない**。`issuesScreen` に持たない (次の起動で復元すると「なぜか件数が
   少ない一覧」から始まり、その理由が画面から辿れない) だけでなく、**viewer を閉じ切った時点でも
   捨てる** (`finishClose`)。🚨 `q`/`Esc` は絞り込みを解くだけで閉じない (1 段戻る) が、`i` は
@@ -361,6 +384,11 @@ tmux popup の開閉トグルとして使われるので、覚えないと C-g �
 - **表示段階は名前で持つ** (`"open"` / `"pending"` / `"all"`)。序数で保存すると、段階を増減・
   並べ替えた瞬間に保存済みの記憶が別の段階で復元される (原因が保存形式だと気づけない形で出る)。
   知らない名前は既定 (open のみ) へ倒す — 見えすぎるより見えなさすぎる方が `a` 1 打で戻せる
+- **展開状態は `Groups` に保存する**。値は `GroupKey: true` のうち展開済みの Epic だけで、
+  折り畳み状態や番号 filter の一時 `autoExpanded` は保存しない。`Groups` が無い古い JSON は
+  既定の折り畳みへ戻る
+- **カーソル・本文・選択の同一性キーは引き続き issue の path**。group の親行は state のカーソル
+  対象ではなく、再スキャン後も子 issue の path で張り替える
 - **TTL 30 分** (`issuesStateTTL`)。C-g のトグル感覚に効かせ、時間が経ってから開いたときは通常
   どおり一覧から始める。時計が巻き戻った (保存時刻が読み取り時刻より未来) 記憶も使わない
 - **開く演出 (700ms) は出さない**。復元は「閉じたところから再開」なので、起動のたびに待たせない
@@ -448,12 +476,23 @@ viewer は「確信を持って嘘をつく」ことを最も嫌うので、次�
 イベントを取りこぼしても追いつけるよう低頻度 (30s) のポーリングも回し、watcher を作れない環境では
 それが唯一の経路になるので周期を上げる。実装は `src/glogx/issues_watch.go`。
 
+fsnotify の対象は issue dir と、ファイルのある状態ディレクトリに加えて `issues/epic/` と全ての
+`epic/<name>/`（空でも）にする。これで新しい group、空 group への最初の md、group 内 `next/`
+の作成を取り直しへつなげる。指紋にも `epic/` の entry list を含めるので、空 group の追加も
+イベント・ポーリングのどちらから検出できる。
+
 ## 6. repo を寄せるときのチェックリスト
 
-- [ ] issue は `<root>/issues` または `<sub>/issues` に置く (深さ 1 まで)
+- [ ] issue は `<root>/issues` または `<sub>/issues` に置く (通常は深さ 1。Epic は `epic/<name>/` の 2 段)
 - [ ] ファイル名を `NNN-<分類語>-<スラッグ>.md` にする (番号の次に分類語)
-- [ ] 状態はディレクトリで表す (`pending/` `done/`)。状態でないサブディレクトリは作ってよいが
-      状態としては扱われない (`other` になる)
+- [ ] 状態はディレクトリで表す (`pending/` `done/` `next/`)。Epic の claim は
+      `epic/<name>/next/`、global issue の claim は `<dir>/next/`
+- [ ] Epic の完了・保留は group 内に `done/` / `pending/` を作らず、完了は global `done/` へ移す。
+      group 内に置かれたものは viewer で迷子 (`?`) になる。状態でないサブディレクトリも
+      `other` 相当として扱われる
+- [ ] `README.md` / `INDEX.md` / `TEMPLATE.md` は metadata として置き、issue 件数に含めない
+- [ ] Epic group の親行は viewer で折り畳まれる。必要なら `Enter` / `Space` で展開し、
+      展開済み group は state の `Groups` に保存する
 - [ ] 同じファイル名を 2 箇所に置かない (viewer が警告する)
 - [ ] 着手中を明示したいときだけ front matter に `status:` を 1 行足す
 - [ ] ファイル名に状態語 (wip / ongoing / doing) を入れない

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"glogx/issues"
+
 	tea "charm.land/bubbletea/v2"
 	"github.com/fsnotify/fsnotify"
 )
@@ -118,6 +120,42 @@ func TestIssuesWatchReloadsAfterExternalEdit(t *testing.T) {
 	v.handleWatch(v.observe())
 	if v.scanning {
 		t.Fatal("自分の取り直しを外部の変化と誤検出して再スキャンした")
+	}
+}
+
+func TestIssuesWatchDirsIncludeEpicAndEmptyGroups(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	cloud := filepath.Join(dir, issues.EpicDirName, "cloud")
+	empty := filepath.Join(dir, issues.EpicDirName, "empty")
+	cloudNext := filepath.Join(cloud, issues.NextDirName)
+	if err := os.MkdirAll(cloud, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(cloudNext, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	v := newTestIssuesView()
+	v.dirs = []string{dir}
+	dirs, _ := v.watchTargets()
+	for _, want := range []string{dir, filepath.Join(dir, issues.EpicDirName), cloud, cloudNext, empty} {
+		if !slices.Contains(dirs, want) {
+			t.Fatalf("%q が watch 対象にない: %v", want, dirs)
+		}
+	}
+	fp := issuesFingerprint(dirs, nil)
+	if !strings.Contains(fp, filepath.Join(dir, issues.EpicDirName)+":entries:") ||
+		!strings.Contains(fp, "cloud/\x00") || !strings.Contains(fp, "empty/\x00") {
+		t.Fatalf("epic/ の entry list が指紋に含まれていない: %q", fp)
+	}
+	if err := os.WriteFile(filepath.Join(empty, "001-feat-first.md"), []byte("# 001\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := issuesFingerprint(dirs, nil); got == fp {
+		t.Fatal("空 group への最初の md 作成で指紋が変わらない")
 	}
 }
 

@@ -39,10 +39,11 @@ type issuesScreen struct {
 	Tab     string    `json:"tab"`      // カテゴリタブ名 ("" = All)
 	// Filter は表示段階の名前 ("open" / "pending" / "all")。🚨 序数で持たないこと: 段階を増減・
 	// 並べ替えると保存済みの値が別の段階を指す (issues.StatusFilter.String の注記)。
-	Filter  string `json:"filter"`
-	Cursor  string `json:"cursor"`   // 一覧のカーソル行の issue パス
-	Open    string `json:"open"`     // 本文を開いていた issue のパス ("" = 一覧のみ)
-	BodyOff int    `json:"body_off"` // 本文のスクロール位置
+	Filter  string          `json:"filter"`
+	Cursor  string          `json:"cursor"`           // 一覧のカーソル行の issue パス
+	Open    string          `json:"open"`             // 本文を開いていた issue のパス ("" = 一覧のみ)
+	BodyOff int             `json:"body_off"`         // 本文のスクロール位置
+	Groups  map[string]bool `json:"groups,omitempty"` // 展開済みの Epic GroupKey だけ
 }
 
 // issuesStatePath は保存先 ($XDG_CACHE_HOME/glog/issues-last-screen.json)。

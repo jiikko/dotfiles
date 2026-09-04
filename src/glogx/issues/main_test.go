@@ -15,5 +15,16 @@ import (
 // 設計判断の帰結なので、理由を 1 度だけ言って止める (main パッケージの TestMain と同じ扱い)。
 func TestMain(m *testing.M) {
 	widthenv.ExitIfUnsupported()
-	os.Exit(m.Run())
+	dir, err := os.MkdirTemp("", "glogx-issues-test-tmp")
+	if err != nil {
+		panic(err)
+	}
+	// Go 1.26 の testing.T.TempDir は GOTMPDIR を優先する。repo 内の GOTMPDIR は
+	// issues.RepoRoot の「repo 外」テストを glogx の root に戻してしまうため隔離する。
+	if err := os.Setenv("GOTMPDIR", dir); err != nil {
+		panic(err)
+	}
+	code := m.Run()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
 }

@@ -17,6 +17,7 @@ func TestIssuesScreenRoundTrip(t *testing.T) {
 	want := issuesScreen{
 		Root: "/repo", SavedAt: now, Tab: "refactor", Filter: issues.FilterPending.String(),
 		Cursor: "/repo/issues/028-refactor-c.md", Open: "/repo/issues/029-feat-b.md", BodyOff: 12,
+		Groups: map[string]bool{"/repo/issues/epic/google-drive": true},
 	}
 	if err := saveIssuesScreen(want); err != nil {
 		t.Fatal(err)
@@ -26,7 +27,8 @@ func TestIssuesScreenRoundTrip(t *testing.T) {
 		t.Fatal("保存した画面が読めない")
 	}
 	if got.Root != want.Root || got.Tab != want.Tab || got.Filter != want.Filter ||
-		got.Cursor != want.Cursor || got.Open != want.Open || got.BodyOff != want.BodyOff {
+		got.Cursor != want.Cursor || got.Open != want.Open || got.BodyOff != want.BodyOff ||
+		!got.Groups["/repo/issues/epic/google-drive"] || len(got.Groups) != 1 {
 		t.Fatalf("往復で内容が変わった:\n got=%+v\nwant=%+v", got, want)
 	}
 	// 🚨 段階は名前で保存する。序数に戻すと、段階を増減・並べ替えた瞬間に保存済みの画面が
@@ -42,6 +44,30 @@ func TestIssuesScreenRoundTrip(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"filter":"pending"`) {
 		t.Fatalf("段階が名前で保存されていない: %s", data)
+	}
+}
+
+func TestIssuesViewScreenCarriesExpandedGroups(t *testing.T) {
+	child := fakeEpicIssue("/repo/issues", "cloud", "710", "drive", issues.StatusOpen)
+	v := loadedView(child)
+	v.root = "/repo"
+	v.handleKey("enter", vp(10))
+	s, ok := v.screen(time.Now())
+	if !ok {
+		t.Fatal("展開済み group の画面を保存できない")
+	}
+	if !s.Groups[child.GroupKey] || len(s.Groups) != 1 {
+		t.Fatalf("screen に展開済み Groups が無い: %+v", s.Groups)
+	}
+}
+
+func TestIssuesViewRestoreAppliesExpandedGroups(t *testing.T) {
+	child := fakeEpicIssue("/repo/issues", "cloud", "710", "drive", issues.StatusOpen)
+	v := loadedView(child)
+	v.applyScreen(issuesScreen{Cursor: child.Path, Groups: map[string]bool{child.GroupKey: true}})
+	if !v.expandedGroups[child.GroupKey] || len(v.displayRows) != 2 || v.current() != child {
+		t.Fatalf("復元した Groups が displayRows へ反映されない: expanded=%v rows=%d current=%+v",
+			v.expandedGroups, len(v.displayRows), v.current())
 	}
 }
 
