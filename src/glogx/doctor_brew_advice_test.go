@@ -128,3 +128,58 @@ func TestBrewSectionShowsAdviceRows(t *testing.T) {
 		t.Error("原文が残っていない (英語のまま LLM へ投げる導線が消える)")
 	}
 }
+
+// cask 版は marker も削除コマンドも formula 版と違う (--cask が要る)。
+// 🚨 marker を formula 固定にすると、cask では名前が 1 つも取れず「日本語の見出しになったのに
+// 手が 1 つも出ない」形になる (実際に既存 fixture で起きた)。
+func TestBrewAdviceCaskVariant(t *testing.T) {
+	w := "Warning: Some installed casks are deprecated or disabled.\n" +
+		"You should find replacements:\n  foo\n\n" +
+		"Uninstall them with `brew uninstall --cask`\n\nSee also: brew help uninstall\n"
+	a := brewAdviceFor(w)
+	if !a.Known || a.Title != "非推奨 / 無効になった cask があります" {
+		t.Fatalf("cask 版を認識していない: %+v", a)
+	}
+	if len(a.Actions) != 2 || a.Actions[1].Cmd != "brew uninstall --cask foo" {
+		t.Fatalf("cask の削除コマンドに --cask が無い: %+v", a.Actions)
+	}
+	// 🚨 名前の列の後ろの散文 (Uninstall them with... / See also:) を名前として拾わない
+	for _, act := range a.Actions {
+		for _, bad := range []string{"Uninstall", "them", "with", "See", "also", "help"} {
+			if strings.Contains(act.Cmd, " "+bad) {
+				t.Errorf("散文の語を名前として拾った: %q", act.Cmd)
+			}
+		}
+	}
+}
+
+// 名前の列は「インデントされた連続する行」に限る。
+//
+// 🚨 語の allowlist だけでは足りない: brew の散文には **語が全部「名前として通る」もの**が
+// ある (`These kegs were installed earlier`)。バッククォートや記号が無いので語の検査では
+// 止まらず、インデントと連続性の規則だけが止める。
+func TestBrewAdviceNameListIsIndentedAndContiguous(t *testing.T) {
+	t.Run("非インデントの散文で打ち切る", func(t *testing.T) {
+		w := "Warning: You have unlinked kegs in your Cellar.\n" +
+			"Run `brew link` on these:\n  node\n" +
+			"These kegs were installed earlier\n"
+		a := brewAdviceFor(w)
+		if len(a.Actions) == 0 {
+			t.Fatal("手が出ていない")
+		}
+		if a.Actions[0].Cmd != "brew link node" {
+			t.Errorf("散文の語を名前として拾った: %q", a.Actions[0].Cmd)
+		}
+	})
+	t.Run("空行で打ち切る", func(t *testing.T) {
+		w := "Warning: You have unlinked kegs in your Cellar.\n" +
+			"Run `brew link` on these:\n  node\n\n  ruby extra note\n"
+		a := brewAdviceFor(w)
+		if len(a.Actions) == 0 {
+			t.Fatal("手が出ていない")
+		}
+		if a.Actions[0].Cmd != "brew link node" {
+			t.Errorf("空行の先を名前として拾った: %q", a.Actions[0].Cmd)
+		}
+	})
+}

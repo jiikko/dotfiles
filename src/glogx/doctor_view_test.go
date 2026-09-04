@@ -174,7 +174,7 @@ func TestDoctorLinesFillsPage(t *testing.T) {
 	}
 	check("完了")
 	out := doctorText(v, 40)
-	for _, want := range []string{"▌ディスク占有", "Thing キャッシュ", "✅ 安全", "▌サービス", "壊れた登録は見つかりませんでした", "▌Homebrew", "Some installed casks are deprecated or disabled.", "(6 行)"} {
+	for _, want := range []string{"▌ディスク占有", "Thing キャッシュ", "✅ 安全", "▌サービス", "壊れた登録は見つかりませんでした", "▌Homebrew", "非推奨 / 無効になった cask があります"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("完了後の表示に %q が無い:\n%s", want, out)
 		}
@@ -211,7 +211,7 @@ func TestDoctorCursorAndExpand(t *testing.T) {
 		v.handleKey("j", 40)
 	}
 	_ = v.lines(doctorTestOpts(40))
-	if !strings.Contains(v.rows[v.cur.index].text, "Some installed casks") {
+	if !strings.Contains(v.rows[v.cur.index].text, "非推奨 / 無効になった cask") {
 		t.Fatalf("j で brew の概要行に着かない: %q", v.rows[v.cur.index].text)
 	}
 	v.handleKey("enter", 40)

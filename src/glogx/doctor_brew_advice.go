@@ -49,31 +49,36 @@ func safeBrewName(s string) bool {
 	return !strings.Contains(s, "..")
 }
 
-// brewNamesAfter は marker 行より後ろの行から名前を集める。
+// brewNamesAfter は marker 行より後ろの「名前の列」を集める。
 //
-// 行の形は 2 つある: インデントされた名前だけの行 (`  node`) と、brew が出す
-// コマンド行 (`  brew install a b c`)。後者は先頭の `brew <sub>` を落として残りを名前として読む。
-// 空行で打ち切らない (brew は名前の列のあとに別の段落を続けることがある) が、
-// **次の `Warning:` や別の marker が来たら止める**。
+// 🚨 **名前の列は「インデントされた連続する行」に限る。** 空行や非インデント行が来たら止める。
+// brew は名前の列のあとに散文を続けることがあり (`Uninstall them with ...` / `See also: ...`)、
+// 語だけ見て拾うと **散文の単語が formula 名として混ざる** (実際に cask 版の出力で起きた)。
+//
+// 行の形は 2 つ: 名前だけの行 (`  node`) と、brew が出すコマンド行 (`  brew install a b`)。
+// 後者は先頭の `brew <sub>` を落として残りを名前として読む。
+// 名前として読めない語が 1 つでもある行は**その行ごと捨てて打ち切る** (細工された名前を
+// 部分的に採用しない)。捨てた語数は dropped に数えて画面へ出す。
 func brewNamesAfter(body, marker string) (names []string, dropped int) {
 	_, rest, ok := strings.Cut(body, marker)
 	if !ok {
 		return nil, 0
 	}
+	started := false
 	for _, line := range strings.Split(rest, "\n") {
-		t := strings.TrimSpace(line)
-		if t == "" {
-			continue
+		if strings.TrimSpace(line) == "" {
+			if started {
+				break // 名前の列は連続する
+			}
+			continue // marker 直後の空行は読み飛ばす
 		}
-		if strings.HasPrefix(t, "Warning:") {
-			break
+		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+			break // インデントされていない = 名前の列ではない
 		}
-		fields := strings.Fields(t)
-		// brew が出したコマンド行はサブコマンドまでを落とす (`brew install a b` → a b)
+		fields := strings.Fields(line)
 		if len(fields) >= 2 && fields[0] == "brew" {
-			fields = fields[2:]
+			fields = fields[2:] // brew が出したコマンド行
 		}
-		// 名前以外の散文が来たら打ち切る (「You should ...」等)
 		allName := len(fields) > 0
 		for _, f := range fields {
 			if !safeBrewName(f) {
@@ -82,22 +87,11 @@ func brewNamesAfter(body, marker string) (names []string, dropped int) {
 			}
 		}
 		if !allName {
-			// 1 行まるごと名前でないなら、その行は名前の列ではない。
-			// ただし一部だけ壊れている可能性があるので、名前として通る語だけ拾って残りを数える
-			got := 0
-			for _, f := range fields {
-				if safeBrewName(f) {
-					names = append(names, f)
-					got++
-				}
-			}
-			if got == 0 {
-				break // 名前が 1 つも無い散文 = 列の終わり
-			}
-			dropped += len(fields) - got
-			continue
+			dropped += len(fields)
+			break
 		}
 		names = append(names, fields...)
+		started = true
 	}
 	return names, dropped
 }
@@ -123,15 +117,33 @@ func brewAdviceFor(warning string) brewAdvice {
 		return a
 
 	case strings.Contains(head, "deprecated or disabled"):
-		ns, dropped := brewNamesAfter(warning, "replacements for the following formulae:")
+		// 🚨 cask 版と formula 版で marker も削除コマンドも違う (--cask が要る)。
+		// 見出しだけ合わせて marker を formula 固定にすると、cask では名前が 1 つも取れず
+		// 「日本語の見出しになったのに手が 1 つも出ない」形になる (実測 2026-09-04)
+		cask := strings.Contains(head, "casks")
+		var ns []string
+		var dropped int
+		for _, m := range []string{
+			"replacements for the following formulae:",
+			"replacements for the following casks:",
+			"find replacements:",
+		} {
+			if ns, dropped = brewNamesAfter(warning, m); len(ns) > 0 {
+				break
+			}
+		}
+		kind, uninstall := "formula", "brew uninstall "
+		if cask {
+			kind, uninstall = "cask", "brew uninstall --cask "
+		}
 		a := brewAdvice{Known: true, Dropped: dropped,
-			Title:  "非推奨 / 無効になった formula があります",
+			Title:  "非推奨 / 無効になった " + kind + " があります",
 			Detail: "今後は更新されず、いずれ入らなくなります。代替に乗り換えるか、使っていないなら削除します。"}
 		if len(ns) > 0 {
 			a.Detail += "\n対象: " + join(ns)
 			a.Actions = append(a.Actions,
 				brewAction{Label: "代替と非推奨の理由を調べる", Cmd: "brew info " + join(ns)},
-				brewAction{Label: "使っていないなら削除する", Cmd: "brew uninstall " + join(ns),
+				brewAction{Label: "使っていないなら削除する", Cmd: uninstall + join(ns),
 					Note: "代替を決めてから。依存元は brew uses --installed で確認できます"})
 		}
 		return a
