@@ -53,8 +53,13 @@ tmux -L "$SOCK" -f "$CONF" new-session -d -x 120 -y 30 "sh -c 'sleep 30'" 2>/dev
 # --- 1. bind の登録と説明 ---
 keys="$(tmux -L "$SOCK" list-keys -T root 2>/dev/null | grep -c ' C-v ')"
 [ "$keys" = 1 ] && ok "root テーブルに C-v が 1 つ登録されている" || bad "C-v の登録数が 1 でない: $keys"
-tmux -L "$SOCK" list-keys -N -T root 2>/dev/null | grep -q 'C-v.*クリップボード' \
-  && ok "-N の説明が付いている (キーガイドに出る)" || bad "-N の説明が無い"
+# 🚨 `cmd | grep -q` は使わない。pipefail 下では **一致していても非 0 になる**
+# (grep -q が早期に閉じて cmd が SIGPIPE を受ける。issue 096)
+if grep -q 'C-v.*クリップボード' <<< "$(tmux -L "$SOCK" list-keys -N -T root 2>/dev/null)"; then
+  ok "-N の説明が付いている (キーガイドに出る)"
+else
+  bad "-N の説明が無い"
+fi
 
 # --- 2. 判定式がペインの前面プロセスで正しく分かれる ---
 tmux -L "$SOCK" kill-session -t 0 2>/dev/null
@@ -90,7 +95,7 @@ else
   # 本番の bind ではキー押下したペインが対象になるので -t は要らない
   tmux -L "$SOCK" run -t zsh "$cmd" 2>/dev/null
   sleep 1
-  if tmux -L "$SOCK" capture-pane -p -t zsh 2>/dev/null | grep -q 'PASTED-FROM-CLIPBOARD'; then
+  if grep -q 'PASTED-FROM-CLIPBOARD' <<< "$(tmux -L "$SOCK" capture-pane -p -t zsh 2>/dev/null)"; then
     ok "true 側のコマンドがクリップボードをペインへ流し込む"
   else
     bad "true 側のコマンドが流し込めていない: $(tmux -L "$SOCK" capture-pane -p -t zsh 2>/dev/null | tr -d '\n' | tail -c 60)"
