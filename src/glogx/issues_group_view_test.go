@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"glogx/issues"
 )
@@ -307,5 +308,63 @@ func TestIssuesViewPendingMoveAnchorsExpireAfterFreshMissingScan(t *testing.T) {
 	if v.pendingCursorPath != "" || v.pendingMarkPath != "" {
 		t.Fatalf("宛先が消えた fresh receive 後も pending が残る: cursor=%q mark=%q",
 			v.pendingCursorPath, v.pendingMarkPath)
+	}
+}
+
+// round 2 の敵対レビュー: 親行のカーソルは state に GroupKey で残り、復元で親行へ戻る。
+func TestIssuesScreenRoundTripsGroupCursor(t *testing.T) {
+	alpha := fakeEpicIssue("/repo/issues", "alpha", "710", "alpha", issues.StatusOpen)
+	global := fakeIssue("711", "feat", "global", issues.StatusOpen)
+	v := loadedView(global, alpha)
+	v.shown, v.root = true, "/repo" // screen は開いている viewer だけを覚える
+	v.handleKey("j", vp(10))        // alpha の親行
+	if !v.currentIsGroup() {
+		t.Fatal("前提: 親行にカーソルがない")
+	}
+	s, ok := v.screen(time.Now())
+	if !ok || s.CursorGroup != alpha.GroupKey || s.Cursor != "" {
+		t.Fatalf("親行のカーソルが state に残らない: ok=%v %+v", ok, s)
+	}
+	w := loadedView(global, alpha)
+	w.applyScreen(s)
+	if !w.currentIsGroup() || w.currentGroupKey() != alpha.GroupKey {
+		t.Fatalf("復元で親行に戻らない: cursor=%d group=%q", w.cursor, w.currentGroupKey())
+	}
+}
+
+// 走査結果に無い GroupKey (rename / 削除された group) は復元時に落とす。同名 group を作り直した
+// とき、死にキーが「畳んだつもり」を無視して展開する事故を防ぐ。
+func TestIssuesViewApplyScreenPrunesDeadGroupKeys(t *testing.T) {
+	alpha := fakeEpicIssue("/repo/issues", "alpha", "710", "alpha", issues.StatusOpen)
+	v := loadedView(alpha)
+	v.applyScreen(issuesScreen{Groups: map[string]bool{alpha.GroupKey: true, "/repo/issues/epic/gone": true}})
+	if !v.expandedGroups[alpha.GroupKey] {
+		t.Fatal("生きている GroupKey まで落とした")
+	}
+	if v.expandedGroups["/repo/issues/epic/gone"] {
+		t.Fatalf("死にキーが残っている: %v", v.expandedGroups)
+	}
+}
+
+// move の再アンカー予約は、カーソルを動かさない操作 (a の filter 切替 / Esc の番号 filter 解除)
+// では保持する。捨てるのは j/k/g/G/tab 等のカーソル移動だけ。
+func TestIssuesViewPendingMoveAnchorSurvivesNonCursorKeys(t *testing.T) {
+	alpha := fakeEpicIssue("/repo/issues", "alpha", "710", "alpha", issues.StatusOpen)
+	global := fakeIssue("711", "feat", "global", issues.StatusOpen)
+	v := loadedView(global, alpha)
+	v.pendingCursorPath = "/repo/issues/epic/alpha/next/710-feat-alpha.md"
+	v.handleKey("a", vp(10))
+	if v.pendingCursorPath == "" {
+		t.Fatal("a (filter 切替) で move の再アンカー予約が消えた")
+	}
+	v.handleKey("/", vp(10))
+	v.handleKey("7", vp(10))
+	v.handleKey("esc", vp(10))
+	if v.pendingCursorPath == "" {
+		t.Fatal("番号 filter の解除で move の再アンカー予約が消えた")
+	}
+	v.handleKey("j", vp(10))
+	if v.pendingCursorPath != "" {
+		t.Fatal("j (カーソル移動) で move の再アンカー予約が捨てられない")
 	}
 }

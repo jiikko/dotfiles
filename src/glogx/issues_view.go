@@ -261,14 +261,15 @@ func (v *issuesView) screen(now time.Time) (issuesScreen, bool) {
 		open = "" // 閉じる演出の途中 = ユーザーは既に閉じている。開いた状態で復元しない
 	}
 	return issuesScreen{
-		Root:    v.root,
-		SavedAt: now,
-		Tab:     v.currentTab(),
-		Filter:  v.filter.String(),
-		Cursor:  issuePath(v.current()),
-		Open:    open,
-		BodyOff: v.bodyOff,
-		Groups:  copyExpandedGroups(v.expandedGroups),
+		Root:        v.root,
+		SavedAt:     now,
+		Tab:         v.currentTab(),
+		Filter:      v.filter.String(),
+		Cursor:      issuePath(v.current()),
+		Open:        open,
+		BodyOff:     v.bodyOff,
+		Groups:      copyExpandedGroups(v.expandedGroups),
+		CursorGroup: v.currentGroupKey(),
 	}, true
 }
 
@@ -295,9 +296,14 @@ func (v *issuesView) applyScreen(s issuesScreen) {
 	v.refresh()                                      // フィルタを反映してタブの並びと件数を作る (tabIdx を引くのに要る)
 	v.tabIdx = tabIndexOf(v.tabs, s.Tab)
 	v.refresh() // 選んだタブで行集合を作り直す
+	v.pruneExpandedGroups()
 	// 窓 (offset) はここで動かさない: 描画が windowOffset でカーソルを含む位置へ収束させる
 	// (offset を状態でなく導出値として扱う規律。windowOffset の doc)
-	v.anchorCursorInternal(s.Cursor)
+	if s.CursorGroup != "" {
+		v.anchorGroupInternal(s.CursorGroup)
+	} else {
+		v.anchorCursorInternal(s.Cursor)
+	}
 	if s.Open == "" {
 		return
 	}
@@ -509,7 +515,10 @@ func (v *issuesView) receive(msg issuesScanMsg) tea.Cmd {
 	v.tabs = v.tabsCanon // refresh が件数を数えて表示順 (0 件を右) へ並べ替える
 	v.tabIdx = tabIndexOf(v.tabs, tab)
 	v.refresh()
-	if cursorGroupKey != "" {
+	// 親行にカーソルがあっても、move の再アンカー予約 (pendingCursorPath) があるならそちらを
+	// 優先する。予約は必ず issue の path なので、親行アンカーで飛ばすと消費だけされて効かない
+	// (今は親行では n を受けないので到達しないが、受けた瞬間に黙って壊れる形なので先に塞ぐ)。
+	if cursorGroupKey != "" && pendingCursorPath == "" {
 		v.anchorGroupInternal(cursorGroupKey)
 	} else {
 		v.anchorCursorInternal(cursorPath)
@@ -596,6 +605,28 @@ func (v *issuesView) anchorCursorInternal(path string) {
 		if row.kind == displayRowIssue && row.issue.Path == path {
 			v.cursor = i
 			return
+		}
+	}
+}
+
+// pruneExpandedGroups は今の走査結果に無い GroupKey を展開状態から落とす。GroupKey は絶対
+// パスなので、group の rename / 削除 / checkout の移動で死にキーが state に溜まり、同名 group を
+// 作り直したとき「畳んだつもり」を無視して勝手に展開する (敵対レビュー round 2)。
+func (v *issuesView) pruneExpandedGroups() {
+	if len(v.expandedGroups) == 0 {
+		return
+	}
+	alive := make(map[string]bool, len(v.expandedGroups))
+	for _, iss := range v.all {
+		if iss.GroupKind == issues.GroupEpic {
+			if key := issueGroupKey(iss); key != "" {
+				alive[key] = true
+			}
+		}
+	}
+	for key := range v.expandedGroups {
+		if !alive[key] {
+			delete(v.expandedGroups, key)
 		}
 	}
 }
@@ -1163,7 +1194,9 @@ func (v *issuesView) clearNumberFilter() {
 	}
 	v.numFilter.clear()
 	v.refresh()
-	v.anchorCursor(path)
+	// Esc は「1 段戻る」であってカーソル移動の意思表示ではないので、直前の move の再アンカー
+	// 予約 (pendingCursorPath) は捨てない (anchorCursor は捨てる側)。
+	v.anchorCursorInternal(path)
 }
 
 // ownsKeys は viewer 自身がキーを解釈し切る状態か (URL ピッカー入力中 / 番号の絞り込み入力中 /

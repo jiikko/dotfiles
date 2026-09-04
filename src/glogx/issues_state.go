@@ -44,6 +44,9 @@ type issuesScreen struct {
 	Open    string          `json:"open"`             // 本文を開いていた issue のパス ("" = 一覧のみ)
 	BodyOff int             `json:"body_off"`         // 本文のスクロール位置
 	Groups  map[string]bool `json:"groups,omitempty"` // 展開済みの Epic GroupKey だけ
+	// CursorGroup はカーソルが Epic の親行にあったときの GroupKey ("" = issue 行)。親行は
+	// issue の path を持たないので Cursor では表せない (再スキャン側の currentGroupKey と対)。
+	CursorGroup string `json:"cursor_group,omitempty"`
 }
 
 // issuesStatePath は保存先 ($XDG_CACHE_HOME/glog/issues-last-screen.json)。
