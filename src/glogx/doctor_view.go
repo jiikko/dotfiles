@@ -457,35 +457,56 @@ func (v *doctorView) expandableRow() (string, bool) {
 	return r.key, true
 }
 
-// collapseParent はカーソルが対象パスの行に居るとき、親のエントリを畳んでカーソルを親へ戻す。
-// 畳んだら true。Enter と h が共有する (入る側だけ作るとカーソルが中に居たまま畳めなくなる)。
-func (v *doctorView) collapseParent() bool {
-	if v.cur.index < 0 || v.cur.index >= len(v.rows) {
-		return false
-	}
-	key := v.rows[v.cur.index].key
-	// Docker の候補行 ("dockeritem:<kind>:<name>") も同じ作法にする。Enter で群に入ったら
-	// Enter で出られないと、カーソルが中に居たまま畳めない (disk と非対称だった)
+// parentKeyOf はカーソル行の key から「畳むべき親エントリの key」を返す。対象パスの行
+// (disk の diskitem: / docker の dockeritem:) だけが親を持つ。判定を 1 箇所に置くのは、
+// 畳めるかを聞く側 (hint) と畳む側 (collapseAtCursor) が別の答えを出さないため。
+func parentKeyOf(key string) (string, bool) {
 	if rest, ok := strings.CutPrefix(key, "dockeritem:"); ok {
 		kind, _, ok := strings.Cut(rest, ":")
 		if !ok {
-			return false
+			return "", false
 		}
-		delete(v.expanded, "docker:"+kind)
-		v.cur.key = "docker:" + kind
-		return true
+		return "docker:" + kind, true
 	}
 	itemKey, ok := strings.CutPrefix(key, "diskitem:")
 	if !ok {
-		return false
+		return "", false
 	}
 	id, _, ok := strings.Cut(itemKey, "\x00")
 	if !ok {
-		return false
+		return "", false
 	}
-	delete(v.expanded, "disk:"+id)
-	v.cur.key = "disk:" + id
-	return true
+	return "disk:" + id, true
+}
+
+// collapsibleAtCursor は「今このカーソル位置で畳めるものがあるか」。Enter / q が畳むか
+// どうかと、hint の文言がここを唯一の出典にする。
+func (v *doctorView) collapsibleAtCursor() bool {
+	if v.cur.index >= 0 && v.cur.index < len(v.rows) {
+		if _, ok := parentKeyOf(v.rows[v.cur.index].key); ok {
+			return true
+		}
+	}
+	k, ok := v.expandableRow()
+	return ok && v.expanded[k]
+}
+
+// collapseAtCursor はカーソル位置の展開を 1 段閉じる。畳んだら true。
+// 対象パスの行に居るなら**親のエントリを畳んでカーソルを親へ戻し** (入る側だけ作ると
+// カーソルが中に居たまま畳めなくなる)、開いているエントリの行に居るならそれを畳む。
+func (v *doctorView) collapseAtCursor() bool {
+	if v.cur.index >= 0 && v.cur.index < len(v.rows) {
+		if parent, ok := parentKeyOf(v.rows[v.cur.index].key); ok {
+			delete(v.expanded, parent)
+			v.cur.key = parent
+			return true
+		}
+	}
+	if k, ok := v.expandableRow(); ok && v.expanded[k] {
+		delete(v.expanded, k)
+		return true
+	}
+	return false
 }
 
 // openRow は詳細を開く。disk のエントリは inspected を立て (risk: confirm の行はこれが
@@ -585,7 +606,17 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 			return doctorToast
 		}
 		return doctorSwallow
-	case "D", "q", "esc":
+	case "q":
+		// 🚨 q は**まず「開いたものを閉じる」**。Enter で開いた先で q を押すと画面ごと消えるのは、
+		// 開いた操作の取り消しとして重すぎる (ユーザー要望 2026-09-04)。
+		// 畳むものが無いときだけ doctor を閉じる。**D と esc は無条件に閉じる**ので、
+		// 「一発で抜ける手段」は常に残る
+		if v.collapseAtCursor() {
+			return doctorSwallow
+		}
+		v.close()
+		return doctorClosed
+	case "D", "esc":
 		v.close()
 		return doctorClosed
 	case "r":
@@ -611,17 +642,12 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 		v.cur.index = len(v.rows) - 1
 		v.cur.move(v.rows, 0)
 	case "enter":
-		// 対象パスの行で Enter を押したら**親のエントリを畳んで戻る** (Enter で入って Enter で出る)。
-		// 入る側だけを作るとカーソルが中に居たまま畳めなくなる
-		if v.collapseParent() {
+		// Enter で入って Enter で出る (対象パスの行なら親ごと畳んでカーソルを親へ戻す)
+		if v.collapseAtCursor() {
 			return doctorSwallow
 		}
 		if k, ok := v.expandableRow(); ok {
-			if v.expanded[k] {
-				delete(v.expanded, k)
-			} else {
-				v.openRow(k)
-			}
+			v.openRow(k)
 		}
 	case "y", "Y":
 		if v.cur.index < 0 || v.cur.index >= len(v.rows) || !v.rows[v.cur.index].selectable {
@@ -687,7 +713,7 @@ func (v *doctorView) hint(width int) string {
 		{doctorCopyHintLabel(v.tab), 5},
 		{"Y: 解説をコピー", 6},
 		{"r: 再スキャン", 5},
-		{"D/q/esc: 閉じる", 1}, // 抜ける手段は最優先で残す
+		{doctorCloseHintLabel(v.collapsibleAtCursor()), 1}, // 抜ける手段は最優先で残す
 	}...)
 	// 🚨 x は**選ばれているときだけ出す**。常設すると幅の予算を食い、`r: 再スキャン` のような
 	// 常に使える手を押し出す (実測: 幅 120 で再スキャンが消えた)。手が選ばれていないときの
@@ -723,6 +749,16 @@ func doctorCopyHintLabel(t doctorTab) string {
 		return "y: コマンドをコピー"
 	}
 	return "y: パスをコピー"
+}
+
+// doctorCloseHintLabel は閉じるキーの案内。**畳めるものがある間は q を載せない**:
+// その打鍵は画面を閉じず 1 段畳むので、案内に混ぜると「q で閉じる」が嘘になる。
+// D と esc はどちらの状態でも無条件に閉じるため、抜ける手段は常に案内に残る。
+func doctorCloseHintLabel(collapsible bool) string {
+	if collapsible {
+		return "D/esc: 閉じる"
+	}
+	return "D/q/esc: 閉じる"
 }
 
 // doctorRenderOpts は描画情報。

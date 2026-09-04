@@ -2411,3 +2411,97 @@ func TestDoctorTabs(t *testing.T) {
 		}
 	})
 }
+
+// q は「Enter で開いたものを 1 段閉じる」を先に持つ。開いた先で q を押して画面ごと消えるのは、
+// 開いた操作の取り消しとして重すぎる (ユーザー要望 2026-09-04)。
+// 畳むものが無いときだけ doctor を閉じ、D / esc は無条件に閉じる。
+func TestDoctorQCollapsesBeforeClosing(t *testing.T) {
+	v := doctorTestView(t)
+	runDoctorCmds(t, v, v.open())
+	v.tab = tabDisk
+	_ = v.lines(doctorTestOpts(20))
+
+	parent := v.rows[v.cur.index].key
+	v.handleKey("enter", 20)
+	if !v.expanded[parent] {
+		t.Fatal("Enter で開かない")
+	}
+
+	// (1) 開いたエントリの行で q → 畳むだけ。画面は閉じない
+	if act := v.handleKey("q", 20); act == doctorClosed {
+		t.Error("開いている行の q で doctor ごと閉じた")
+	}
+	if v.expanded[parent] {
+		t.Error("q で畳まれない")
+	}
+	if !v.shown {
+		t.Error("q で画面が閉じた (畳むだけのはず)")
+	}
+
+	// (2) 中の対象パスの行に居るときの q → 親を畳んでカーソルを親へ戻す
+	v.handleKey("enter", 20)
+	_ = v.lines(doctorTestOpts(20))
+	v.jumpIntoDetail()
+	_ = v.lines(doctorTestOpts(20))
+	if got := v.rows[v.cur.index].key; !strings.HasPrefix(got, "diskitem:") {
+		t.Fatalf("対象パスの行へ入れていない: %q", got)
+	}
+	if act := v.handleKey("q", 20); act == doctorClosed {
+		t.Error("対象パスの行の q で doctor ごと閉じた")
+	}
+	if v.expanded[parent] {
+		t.Error("対象パスの行の q で親が畳まれない")
+	}
+	if v.cur.key != parent {
+		t.Errorf("カーソルが親へ戻らない: %q; want %q", v.cur.key, parent)
+	}
+
+	// (3) 畳むものが無ければ q は閉じる (抜ける手段が消えていないこと)
+	_ = v.lines(doctorTestOpts(20))
+	if act := v.handleKey("q", 20); act != doctorClosed {
+		t.Errorf("何も開いていないときの q が閉じない: %v", act)
+	}
+	if v.shown {
+		t.Error("q で閉じていない")
+	}
+}
+
+// hint の閉じる案内は畳める状態かどうかで切り替わる (q が閉じない間は q を載せない)。
+// D / esc はどちらの状態でも案内に残る = 一発で抜ける手段が消えない。
+func TestDoctorCloseHintDropsQWhileCollapsible(t *testing.T) {
+	v := doctorTestView(t)
+	runDoctorCmds(t, v, v.open())
+	v.tab = tabDisk
+	_ = v.lines(doctorTestOpts(20))
+
+	if h := v.hint(200); !strings.Contains(h, "D/q/esc: 閉じる") {
+		t.Errorf("閉じているときの hint に q が無い: %q", h)
+	}
+	v.handleKey("enter", 20)
+	_ = v.lines(doctorTestOpts(20))
+	h := v.hint(200)
+	if strings.Contains(h, "D/q/esc") {
+		t.Errorf("畳める状態なのに hint が q を閉じるキーとして案内している: %q", h)
+	}
+	if !strings.Contains(h, "D/esc: 閉じる") {
+		t.Errorf("抜ける手段の案内が消えた: %q", h)
+	}
+}
+
+// D / esc は開いていても無条件に閉じる (q だけが「1 段畳む」を持つ)。
+func TestDoctorEscClosesEvenWhenExpanded(t *testing.T) {
+	for _, key := range []string{"D", "esc"} {
+		v := doctorTestView(t)
+		runDoctorCmds(t, v, v.open())
+		v.tab = tabDisk
+		_ = v.lines(doctorTestOpts(20))
+		v.handleKey("enter", 20)
+		_ = v.lines(doctorTestOpts(20))
+		if act := v.handleKey(key, 20); act != doctorClosed {
+			t.Errorf("%s が開いている状態で閉じない: %v", key, act)
+		}
+		if v.shown {
+			t.Errorf("%s で閉じていない", key)
+		}
+	}
+}
