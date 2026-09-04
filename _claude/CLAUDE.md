@@ -151,6 +151,11 @@
 
 `~/.claude/skills/` に専門知識スキルが格納されている。以下のキーワードに関連するタスクでは、対応する SKILL.md を作業前に Read すること。
 
+**エージェント (31 件) の一覧は [`agents/README.md`](agents/README.md)**。下の表は skill が主役で
+agent は一部しか載っていないので、**agent を探すときはそちらを見る** (名前を知らないと呼べない
+状態を避けるための入口。issue 001 の項目 21)。索引と実体の乖離は
+`tests/claude/test_agents_index.sh` が検出する。
+
 | キーワード | 参照先 |
 |-----------|-------|
 | 監査, audit, コードレビュー全体 | `~/.claude/skills/audit/SKILL.md` |
