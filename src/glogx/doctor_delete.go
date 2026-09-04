@@ -54,7 +54,13 @@ type doctorDelete struct {
 	// 🚨 完了を取りこぼすと UI が「実行中」のまま永久に止まる。進捗で埋まった ch に
 	// 完了を載せると詰まり、ctx で諦めると今度は届かない (2026-09-03 に実測: テストが 10 秒で
 	// タイムアウトした)。**落としてよいもの**と**落としてはいけないもの**を別の口にする
-	ch      chan doctorDeleteEvent
+	ch chan doctorDeleteEvent
+	// progCh は**相だけ**の 1 バッファ。溢れたら古い相を捨てて新しい相を入れる。
+	// 🚨 ch と同じ「落としてよい」口に相を載せると、速いエントリが 16 件溜まった直後の
+	// 重いエントリの相が捨てられ、**古いエントリ番号に伸び続ける経過秒が付く** =
+	// 「16 番目の走査が 97 秒続いている」という具体的な嘘になる (敵対レビュー 2026-09-04 が実測)。
+	// 落としてよいのは「古い相」であって「最新の相」ではない
+	progCh  chan doctorDeleteEvent
 	done    chan doctorDeleteEvent
 	armedCC bool // 実行中に Ctrl-C が 1 回押された (2 回目で cancel)
 
@@ -227,12 +233,13 @@ func (v *doctorView) startDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan doctorDeleteEvent, 16)
+	prog := make(chan doctorDeleteEvent, 1)
 	done := make(chan doctorDeleteEvent, 1)
 	// 相は 1 つだけ立てる。🚨 confirm を落とし忘れると confirm && running の非正規状態になり、
 	// 今は switch の並び順だけで無害になっている (並べ替えた瞬間に黙って壊れる)。
 	// armedCC も引き継がない: 下見の最中に押した Ctrl-C が、本番の 1 回目で即中断に化ける
 	// progress はゼロ値 (known:false) から始める = 最初の相が届くまで「準備中」を出す
-	v.del = doctorDelete{cancel: cancel, ch: ch, done: done,
+	v.del = doctorDelete{cancel: cancel, ch: ch, progCh: prog, done: done,
 		preparing: dryRun, running: !dryRun}
 	gen := v.gen
 	opt := v.deleteOptions()
@@ -240,10 +247,8 @@ func (v *doctorView) startDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 	opt.OnPhase = func(i, total int, label string, p disk.DeletePhase) {
 		// 🚨 ノンブロッキング。読み手 (receiveDelete の再アーム) が止まると、engine が
 		// **削除の途中で** channel 待ちに入る。進捗は落としてよい情報なので捨てる方へ倒す
-		select {
-		case ch <- doctorDeleteEvent{prog: &doctorProgress{i: i + 1, total: total, label: label, phase: p, known: true}}:
-		default:
-		}
+		sendLatestProgress(prog, doctorDeleteEvent{prog: &doctorProgress{
+			i: i + 1, total: total, label: label, phase: p, known: true}})
 	}
 	opt.OnCommand = func(rec disk.CommandRecord) {
 		select {
@@ -315,8 +320,9 @@ func (v *doctorView) startBrewRun(acts []brewAction) tea.Cmd {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan doctorDeleteEvent, 16)
+	prog := make(chan doctorDeleteEvent, 1)
 	done := make(chan doctorDeleteEvent, 1)
-	v.del = doctorDelete{kind: jobBrew, cancel: cancel, ch: ch, done: done, running: true, brewPlan: acts}
+	v.del = doctorDelete{kind: jobBrew, cancel: cancel, ch: ch, progCh: prog, done: done, running: true, brewPlan: acts}
 	gen := v.gen
 	run := v.brewRun
 	if run == nil {
@@ -331,11 +337,8 @@ func (v *doctorView) startBrewRun(acts []brewAction) tea.Cmd {
 				if ctx.Err() != nil {
 					break // 中断: ここまでの結果を返す (何が走ったかは残す)
 				}
-				select {
-				case ch <- doctorDeleteEvent{prog: &doctorProgress{
-					i: i + 1, total: len(acts), label: a.Label, verb: "実行中", known: true}}:
-				default: // 進捗は落としてよい
-				}
+				sendLatestProgress(prog, doctorDeleteEvent{prog: &doctorProgress{
+					i: i + 1, total: len(acts), label: a.Label, verb: "実行中", known: true}})
 				fields := strings.Fields(a.Cmd)
 				if len(fields) == 0 {
 					continue
@@ -355,6 +358,24 @@ func (v *doctorView) startBrewRun(acts []brewAction) tea.Cmd {
 		done <- doctorDeleteEvent{brewRep: &brewRunReport{Records: recs}}
 		return nil
 	})
+}
+
+// sendLatestProgress は相を 1 バッファへ「最新優先」で入れる (古い相は捨てる)。
+// 単一の生産者 (engine の goroutine) から呼ばれる前提。
+func sendLatestProgress(prog chan doctorDeleteEvent, ev doctorDeleteEvent) {
+	select {
+	case prog <- ev:
+		return
+	default:
+	}
+	select {
+	case <-prog: // 古い相を捨てる
+	default:
+	}
+	select {
+	case prog <- ev:
+	default:
+	}
 }
 
 // commandLogLines は 1 コマンドの記録を、そのまま貼れる形の行にする。
@@ -424,8 +445,8 @@ func deleteProgressLines(o doctorRenderOpts, p doctorProgress) []string {
 
 // waitDeleteCmd は channel から 1 件だけ受けて Msg にする (Update の外で状態を触らない)。
 func (v *doctorView) waitDeleteCmd(gen int) tea.Cmd {
-	ch, done := v.del.ch, v.del.done
-	if ch == nil || done == nil {
+	ch, prog, done := v.del.ch, v.del.progCh, v.del.done
+	if ch == nil || prog == nil || done == nil {
 		return nil
 	}
 	return func() tea.Msg {
@@ -437,7 +458,14 @@ func (v *doctorView) waitDeleteCmd(gen int) tea.Cmd {
 		default:
 		}
 		select {
+		case ev := <-prog:
+			return doctorDeleteMsg{gen: gen, ev: ev}
+		default:
+		}
+		select {
 		case ev := <-ch:
+			return doctorDeleteMsg{gen: gen, ev: ev}
+		case ev := <-prog:
 			return doctorDeleteMsg{gen: gen, ev: ev}
 		case ev := <-done:
 			return doctorDeleteMsg{gen: gen, ev: ev}
@@ -924,7 +952,17 @@ func (v *doctorView) deletePanel(o doctorRenderOpts) []string {
 		case d.preparing:
 			head = "削除できるか確認しています"
 		}
-		body := append(deleteProgressLines(o, d.progress), "")
+		// 🚨 極小の端末では**抜ける手段を優先して**進捗を 1 行へ畳む。
+		// blocking 中は handleDeleteKey が全キーを飲むので、中断案内が画面から消えると
+		// 「このパネルから出る方法がどこにも書いていない」状態になる。
+		// 実測 (敵対レビュー 2026-09-04): 2 行にしたことで案内が出る下限が
+		// running は page 5 → 6、preparing は 6 → 7 へ上がっていた。7 未満で畳めば元に戻る
+		prog := deleteProgressLines(o, d.progress)
+		if o.page < 7 && len(prog) > 1 {
+			prog = []string{strings.TrimSpace(prog[0]) + "  " + strings.TrimSpace(prog[1])}
+		}
+		prog = append(prog, "")
+		body := prog
 		if d.preparing {
 			body = append(body, "対象を走査し直しています (消してよいかを測り直します)")
 		}

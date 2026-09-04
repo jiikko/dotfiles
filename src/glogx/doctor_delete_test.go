@@ -310,8 +310,14 @@ func TestDoctorDeleteRunsAndShowsResult(t *testing.T) {
 	if got := f.targetIDs(1); len(got) != 1 || got[0] != "thing" {
 		t.Fatalf("本番へ渡した対象 = %v", got)
 	}
-	if len(prog) == 0 || !strings.Contains(prog[0], "走査中") {
-		t.Errorf("進捗が届いていない: %v", prog)
+	// 🚨 **相は「最新が届く」が契約で、全部の相が届くことは保証しない** (progCh は
+	// 最新優先の 1 バッファ)。engine が速いと中間の相は捨てられるので、prog[0] が
+	// 「走査中」であることを固定すると、落としてよいものを固定することになる。
+	// ここで守るのは「進捗が届くこと」と「最後は最終相であること」
+	if len(prog) == 0 {
+		t.Error("進捗が 1 件も届いていない")
+	} else if last := prog[len(prog)-1]; !strings.Contains(last, "確認中") && !strings.Contains(last, "削除中") {
+		t.Errorf("最後の進捗が最終相になっていない: %q (全体 %v)", last, prog)
 	}
 	if v.del.result == nil {
 		t.Fatalf("結果が出ていない: %+v", v.del)
@@ -1719,9 +1725,28 @@ func TestDeleteKeepsRedrawAlive(t *testing.T) {
 			}
 		})
 	}
-	m.doctorOv.del = doctorDelete{}
-	if m.spinnerActive() {
-		t.Error("削除が終わっても tick が回り続けている (止まらない側の退行)")
+	// 🚨 **削除の後に実際に画面へ出る状態**を全部当てる。ゼロ値だけを試すと、
+	// deleting() を blocking() から active() に取り違える退行を検知できない
+	// (active() は confirm / result / err も真になるので、結果画面の上で 12.5fps の
+	// 再描画が無限に回り続ける)。敵対レビュー 2026-09-04 が変異で実証した穴
+	for _, tc := range []struct {
+		name string
+		del  doctorDelete
+	}{
+		{"ゼロ値", doctorDelete{}},
+		{"下見の後の確認", doctorDelete{confirm: true, plan: &disk.DeleteReport{}}},
+		{"削除の結果", doctorDelete{result: &disk.DeleteReport{}}},
+		{"失敗の表示", doctorDelete{err: "だめでした"}},
+	} {
+		t.Run("止まる/"+tc.name, func(t *testing.T) {
+			m.doctorOv.del = tc.del
+			if m.doctorOv.deleting() {
+				t.Error("走っていないのに deleting() が true")
+			}
+			if m.spinnerActive() {
+				t.Error("tick が回り続けている (静止画面の上で 12.5fps の再描画が止まらない)")
+			}
+		})
 	}
 }
 
@@ -1777,5 +1802,48 @@ func TestDeleteProgressElapsedSurvivesSameStep(t *testing.T) {
 	send(progAt(1, 2, "A", disk.PhaseDeleting)) // 相が変わった
 	if v.del.progress.since.Equal(first) {
 		t.Error("相が変わったのに経過の基準が据え置かれた")
+	}
+}
+
+// 相の口は「最新だけ残す」。溢れたときに古い相が残ると、経過秒がその古いエントリに
+// 紐づいて伸び続け、「16 番目の走査が 97 秒続いている」という**具体的な嘘**になる。
+func TestProgressSlotKeepsLatest(t *testing.T) {
+	prog := make(chan doctorDeleteEvent, 1)
+	mk := func(i int, label string) doctorDeleteEvent {
+		return doctorDeleteEvent{prog: &doctorProgress{i: i, total: 40, label: label, known: true}}
+	}
+	for i := 1; i <= 20; i++ { // 読み手が居ないあいだに 20 件流す
+		sendLatestProgress(prog, mk(i, "fast"))
+	}
+	sendLatestProgress(prog, mk(40, "HEAVY"))
+	select {
+	case ev := <-prog:
+		if ev.prog.i != 40 || ev.prog.label != "HEAVY" {
+			t.Errorf("古い相が残った: %d/%s (最新は 40/HEAVY)", ev.prog.i, ev.prog.label)
+		}
+	default:
+		t.Fatal("相が 1 件も残っていない")
+	}
+}
+
+// 極小の端末でも**抜ける手段**を残す。blocking 中は全キーを飲むので、中断案内が
+// 画面から消えると「出る方法がどこにも書いていない」状態になる。
+func TestDeletePanelKeepsAbortHintOnTinyPage(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		del  doctorDelete
+		page int
+	}{
+		{"実行中 page=5", doctorDelete{running: true, progress: progAt(2, 3, "Xcode DerivedData", disk.PhaseDeleting)}, 5},
+		{"下見中 page=6", doctorDelete{preparing: true, progress: progAt(1, 2, "Xcode DerivedData", disk.PhaseScanning)}, 6},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := deleteTestView(t, &fakeDelete{})
+			v.del = tc.del
+			out := doctorPanelText(v, tc.page)
+			if !strings.Contains(out, "中断します") {
+				t.Errorf("中断の案内が消えた:\n%s", out)
+			}
+		})
 	}
 }
