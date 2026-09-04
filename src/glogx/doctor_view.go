@@ -1072,6 +1072,45 @@ func (v *doctorView) brewSection(o doctorRenderOpts) []doctorRow {
 	for i, w := range b.Warnings {
 		lines := strings.Split(w, "\n")
 		summary := strings.TrimSpace(strings.TrimPrefix(lines[0], "Warning:"))
+		adv := brewAdviceFor(w)
+		var detailRows []doctorRow
+		if adv.Known {
+			summary = adv.Title // 見出しは日本語 (原文は詳細の末尾に残す)
+			// 🚨 説明は**折り返す**。ここが一番読ませたい部分なので、truncateDisp に
+			// 末尾から削られると意味が壊れる (原文の英語より先に日本語が消える)
+			wrapW := max(20, o.width-8)
+			for _, l := range strings.Split(adv.Detail, "\n") {
+				for _, w := range wrapToWidth(l, wrapW) {
+					detailRows = append(detailRows, doctorRow{text: doctorColor(o.colored, ansiDim, "     "+w)})
+				}
+			}
+			if adv.Dropped > 0 {
+				detailRows = append(detailRows, doctorRow{text: doctorColor(o.colored, ansiYellow,
+					fmt.Sprintf("     🚨 名前として読めない語を %d 件落としました (原文を確認してください)", adv.Dropped))})
+			}
+			for j, act := range adv.Actions {
+				detailRows = append(detailRows, doctorRow{text: ""},
+					doctorRow{
+						text:       "     ▸ " + doctorColor(o.colored, ansiBold, act.Label),
+						selectable: true,
+						key:        fmt.Sprintf("brewact:%d:%d", i, j),
+						copyPath:   act.Cmd,
+						copyText:   act.Label + ":\n" + act.Cmd + "\n",
+					},
+					doctorRow{text: doctorColor(o.colored, ansiDim, "       $ "+act.Cmd)})
+				if act.Note != "" {
+					for k, w := range wrapToWidth(act.Note, max(20, o.width-10)) {
+						pre := "       🚨 "
+						if k > 0 {
+							pre = "          "
+						}
+						detailRows = append(detailRows, doctorRow{text: doctorColor(o.colored, ansiYellow, pre+w)})
+					}
+				}
+			}
+			detailRows = append(detailRows, doctorRow{text: ""},
+				doctorRow{text: doctorColor(o.colored, ansiDim, "     原文 (brew doctor):")})
+		}
 		var detail []string
 		for _, l := range lines[1:] {
 			detail = append(detail, doctorColor(o.colored, ansiDim, "     "+l))
@@ -1079,7 +1118,7 @@ func (v *doctorView) brewSection(o doctorRenderOpts) []doctorRow {
 		// 「Enter で何行出てくるか」の予告なので detail の行数をそのまま数える (見出しは既に見えているので
 		// 数えない / 段落の空行は 1 行として表示されるので数える)。敵対レビュー 2026-09-03: 見出しを数えて
 		// 空行を数えない中間形にすると、段落の数によって実際の展開行数と系統的にずれる。
-		count := fmt.Sprintf("(%d 行)", len(detail))
+		count := fmt.Sprintf("(%d 行)", len(detailRows)+len(detail))
 		inner := o.width - 2
 		sumW := dispWidth(summary)
 		gap := inner - 3 - sumW - dispWidth(count) - 1
@@ -1087,7 +1126,8 @@ func (v *doctorView) brewSection(o doctorRenderOpts) []doctorRow {
 		if gap >= 1 {
 			text += padSpaces(gap) + doctorColor(o.colored, ansiDim, count)
 		}
-		rows = append(rows, doctorRow{text: text, selectable: true, key: fmt.Sprintf("brew:%d:%s", i, summary), detail: textRows(detail),
+		rows = append(rows, doctorRow{text: text, selectable: true, key: fmt.Sprintf("brew:%d:%s", i, summary),
+			detail:   append(detailRows, textRows(detail)...),
 			copyPath: summary, copyText: "brew doctor の警告 (macOS Homebrew):\n" + w + "\n"})
 	}
 	return rows
