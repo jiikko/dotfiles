@@ -124,6 +124,20 @@ func runDoctorCmds(t *testing.T, v *doctorView, cmd tea.Cmd) {
 	}
 }
 
+// doctorTextAllTabs は全タブを描いて連結する。
+// タブ分割後、節は表示中のタブのものしか出ないので、「どこかに出ているか」を見るテストは
+// これを使う (操作を検査するテストは v.tab を明示して 1 タブだけ描くこと)。
+func doctorTextAllTabs(v *doctorView, page int) string {
+	old := v.tab
+	defer func() { v.tab = old }()
+	var b strings.Builder
+	for t := doctorTab(0); t < numDoctorTabs; t++ {
+		v.tab = t
+		b.WriteString(strings.Join(v.lines(doctorTestOpts(page)), "\n") + "\n")
+	}
+	return b.String()
+}
+
 func doctorTestOpts(page int) doctorRenderOpts {
 	return doctorRenderOpts{width: 100, page: page, colored: false, spinner: "⠋", now: time.Date(2026, 9, 2, 12, 0, 0, 0, time.Local)}
 }
@@ -173,7 +187,7 @@ func TestDoctorLinesFillsPage(t *testing.T) {
 		t.Error("全セクション完了後も scanning")
 	}
 	check("完了")
-	out := doctorText(v, 40)
+	out := doctorTextAllTabs(v, 40)
 	for _, want := range []string{"▌ディスク占有", "Thing キャッシュ", "✅ 安全", "▌サービス", "壊れた登録は見つかりませんでした", "▌Homebrew", "非推奨 / 無効になった cask があります"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("完了後の表示に %q が無い:\n%s", want, out)
@@ -206,9 +220,11 @@ func TestDoctorCursorAndExpand(t *testing.T) {
 	if strings.Contains(doctorText(v, 40), "削除経路: rm") {
 		t.Error("もう一度 Enter で畳まれない")
 	}
-	// brew の行まで j で降りる (補足行・見出し行は飛ばす)
-	for range 20 {
-		v.handleKey("j", 40)
+	// brew の行はタブが違う (タブ分割後、j では届かない)
+	v.handleKey("tab", 40)
+	v.handleKey("tab", 40)
+	if v.tab != tabBrew {
+		t.Fatalf("tab 2 回で Homebrew に来ない: %v", v.tab)
 	}
 	_ = v.lines(doctorTestOpts(40))
 	if !strings.Contains(v.rows[v.cur.index].text, "非推奨 / 無効になった cask") {
@@ -235,7 +251,7 @@ func TestDoctorShowsUndiagnosedStates(t *testing.T) {
 	v.svcRep = &svc.Report{Scanned: 2, Interrupted: true, StatusErr: "launchctl: not found", BrewErr: "brew: not found",
 		DirErrs: []string{"/Library/LaunchDaemons: permission denied"}, Undiagnosed: []svc.Undiagnosed{{PlistPath: "/x.plist", Reason: "plist を解釈できない"}}}
 	v.brew = &brewDoctorResult{Unavailable: "brew not found"}
-	out := doctorText(v, 60)
+	out := doctorTextAllTabs(v, 60)
 	for _, want := range []string{"---", "権限がありません (EACCES)", "❓ 走査できず", "一部走査できず", "permission denied", "(中断: 部分結果)",
 		"途中で中断されました", "診断できず (launchctl)", "診断できず (brew)", "走査できず: /Library/LaunchDaemons", "❔ 診断できず: /x.plist",
 		"Chrome 起動中のため対象外", "▌Homebrew", "診断できず", "brew not found"} {
@@ -614,8 +630,11 @@ func TestDoctorCopyPathAndText(t *testing.T) {
 			t.Errorf("解説に %q が無い:\n%s", want, v.copyPayload())
 		}
 	}
-	v.handleKey("j", 40) // svc
+	// svc はタブが違う (タブ分割後、j では届かない)
+	v.handleKey("tab", 40)
 	_ = v.lines(doctorTestOpts(40))
+	v.cur.index = 0
+	v.cur.move(v.rows, 0)
 	if v.handleKey("y", 40) != doctorCopyPath || v.copyPayload() != "/L/com.x.y.plist" {
 		t.Fatalf("svc 行の y: %q", v.copyPayload())
 	}
@@ -623,8 +642,10 @@ func TestDoctorCopyPathAndText(t *testing.T) {
 	if !strings.Contains(v.copyPayload(), "launchctl bootout gui/501/com.x.y") || !strings.Contains(v.copyPayload(), "実行ファイルがありません") {
 		t.Errorf("svc の解説にコマンド / 理由が無い:\n%s", v.copyPayload())
 	}
-	v.handleKey("j", 40) // brew
+	v.handleKey("tab", 40) // brew (タブが違う)
 	_ = v.lines(doctorTestOpts(40))
+	v.cur.index = 0
+	v.cur.move(v.rows, 0)
 	if v.handleKey("y", 40) != doctorCopyPath || v.copyPayload() != "Some kegs" {
 		t.Fatalf("brew 行の y: %q", v.copyPayload())
 	}
@@ -750,7 +771,7 @@ func TestDoctorSvcAnnotationsMatchCLI(t *testing.T) {
 	}
 
 	cli := svc.Format(rep)
-	v := &doctorView{shown: true, expanded: map[string]bool{}, svcRep: &rep}
+	v := &doctorView{shown: true, tab: tabSvc, expanded: map[string]bool{}, svcRep: &rep}
 	// 幅を広く取る: 注記が出ているかを見るテストなので、末尾切れ (truncateDisp) で落ちないようにする
 	// (狭い幅で注記が読めなくなる問題は issues/182 が別に扱う)
 	wide := doctorTestOpts(60)
@@ -1013,6 +1034,7 @@ func TestDoctorUndiagnosedRowsAreSelectable(t *testing.T) {
 	}
 
 	// svc の「診断できず」: y は plist のパス、Y は理由と裏取りコマンド
+	v.tab = tabSvc // タブ分割後、svc の行は別タブ
 	_ = v.lines(doctorTestOpts(40))
 	j := find("診断できず")
 	v.cur.index = j
@@ -2178,7 +2200,14 @@ func TestDoctorOpenCloseWithHL(t *testing.T) {
 // 見えていない問題を「無い」と読ませることになる (この repo が繰り返し塞いできた形)。
 func TestDoctorCelebratesOnlyWhenTrulyClean(t *testing.T) {
 	o := doctorRenderOpts{width: 96, page: 30, colored: false, spinner: "⠋", now: time.Now()}
-	render := func(v *doctorView) string { return strings.Join(v.lines(o), "\n") }
+	render := func(v *doctorView) string {
+		var b strings.Builder
+		for t := doctorTab(0); t < numDoctorTabs; t++ {
+			v.tab = t
+			b.WriteString(strings.Join(v.lines(o), "\n") + "\n")
+		}
+		return b.String()
+	}
 
 	t.Run("両方きれいなら祝う", func(t *testing.T) {
 		v := &doctorView{shown: true, expanded: map[string]bool{}}
@@ -2224,6 +2253,90 @@ func TestDoctorCelebratesOnlyWhenTrulyClean(t *testing.T) {
 		v.brew = &b
 		if out := render(v); strings.Contains(out, "🎉 Your system is ready") {
 			t.Errorf("警告があるのに Homebrew で祝った:\n%s", out)
+		}
+	})
+}
+
+// タブ: 送る / 戻る / 一望性 / カーソルを覚える。
+//
+// 🚨 タブ分割の目的は「印を付けた後にやることをタブごとに 1 つにする」ことだが、
+// **一望性を失わないこと**が条件。タブ行に 3 つとも件数が出ていれば、切り替えなくても
+// どこに何件あるかが分かる (出ないと異常の有無を知るために全タブを回ることになる)。
+func TestDoctorTabs(t *testing.T) {
+	v := doctorTestView(t)
+	runDoctorCmds(t, v, v.open())
+	o := doctorTestOpts(20)
+
+	t.Run("一望性: どのタブでも 3 つとも件数が出る", func(t *testing.T) {
+		for _, tb := range []doctorTab{tabDisk, tabSvc, tabBrew} {
+			v.tab = tb
+			bar := v.tabBarLine(o)
+			for _, want := range []string{"ディスク", "サービス", "Homebrew"} {
+				if !strings.Contains(bar, want) {
+					t.Errorf("tab=%d のタブ行に %q が無い: %q", tb, want, bar)
+				}
+			}
+			if !strings.Contains(bar, "1") { // Homebrew の警告 1 件
+				t.Errorf("tab=%d のタブ行に件数が出ていない: %q", tb, bar)
+			}
+		}
+	})
+
+	t.Run("表示中のタブの節だけ描く", func(t *testing.T) {
+		v.tab = tabDisk
+		out := doctorText(v, 20)
+		if !strings.Contains(out, "▌ディスク占有") || strings.Contains(out, "▌Homebrew") {
+			t.Errorf("ディスクのタブに他の節が出ている:\n%s", out)
+		}
+		v.tab = tabBrew
+		out = doctorText(v, 20)
+		if !strings.Contains(out, "▌Homebrew") || strings.Contains(out, "▌ディスク占有") {
+			t.Errorf("Homebrew のタブに他の節が出ている:\n%s", out)
+		}
+	})
+
+	t.Run("tab で送り shift+tab で戻る (端で回る)", func(t *testing.T) {
+		v.tab = tabDisk
+		for _, want := range []doctorTab{tabSvc, tabBrew, tabDisk} {
+			v.handleKey("tab", 20)
+			if v.tab != want {
+				t.Fatalf("tab で %v へ行かない: %v", want, v.tab)
+			}
+		}
+		for _, want := range []doctorTab{tabBrew, tabSvc, tabDisk} {
+			v.handleKey("shift+tab", 20)
+			if v.tab != want {
+				t.Fatalf("shift+tab で %v へ戻らない: %v", want, v.tab)
+			}
+		}
+	})
+
+	// 🚨 **別のタブでカーソルを動かしてから戻る**ことで検査する。往復するだけだと、
+	// タブごとに覚えていなくても cur がそのまま残って restore が同じ行を引き当てるので、
+	// 「覚えている」と「持ち越しているだけ」を区別できない (変異で実際に素通りした)
+	t.Run("カーソルはタブごとに覚える", func(t *testing.T) {
+		// 🚨 **別のタブでカーソルを動かしてから戻る**ことで検査する。往復するだけだと、
+		// タブごとに覚えていなくても cur がそのまま残って restore が同じ行を引き当てるので、
+		// 「覚えている」と「持ち越しているだけ」を区別できない (変異で実際に素通りした)。
+		// 切り替えは handleKey だけで行う (v.tab を直接触ると moveTab の保存を飛ばす)
+		v.tab = tabDisk
+		_ = v.lines(o)
+		v.handleKey("enter", 20) // ディスクの行を開いて中の対象パスへ移る
+		_ = v.lines(o)
+		diskKey := v.cur.key
+		if !strings.HasPrefix(diskKey, "diskitem:") {
+			t.Fatalf("前提が崩れている: ディスクのカーソルが対象パスに無い: %q", diskKey)
+		}
+		v.handleKey("tab", 20) // → サービス
+		v.handleKey("tab", 20) // → Homebrew
+		_ = v.lines(o)
+		if v.cur.key == diskKey {
+			t.Fatalf("前提が崩れている: Homebrew でディスクの行を指している: %q", diskKey)
+		}
+		v.handleKey("tab", 20) // → ディスクへ一周
+		_ = v.lines(o)
+		if v.cur.key != diskKey {
+			t.Errorf("ディスクのカーソルが戻らない: %q (期待 %q)", v.cur.key, diskKey)
 		}
 	})
 }

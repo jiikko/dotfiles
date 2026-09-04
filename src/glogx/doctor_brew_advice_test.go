@@ -93,7 +93,7 @@ func TestBrewAdviceRejectsUnsafeNames(t *testing.T) {
 
 // 画面: 見出しが日本語になり、手の行が選べて y でコマンドがコピーできる。
 func TestBrewSectionShowsAdviceRows(t *testing.T) {
-	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v := &doctorView{shown: true, tab: tabBrew, expanded: map[string]bool{}}
 	v.brew = &brewDoctorResult{Warnings: []string{brewWarnUnlinked}}
 	o := doctorTestOpts(60)
 	o.width = 96
@@ -191,7 +191,7 @@ func TestBrewAdviceNameListIsIndentedAndContiguous(t *testing.T) {
 // 「印」で片方は「即実行」だと、身についた期待のまま副作用を起こす形になる。
 func TestBrewActionSelectRunAndReport(t *testing.T) {
 	var ran [][]string
-	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v := &doctorView{shown: true, tab: tabBrew, expanded: map[string]bool{}}
 	v.brewRun = func(_ context.Context, name string, args ...string) (string, string, int, error) {
 		ran = append(ran, append([]string{name}, args...))
 		if name == "brew" && len(args) > 0 && args[0] == "info" {
@@ -276,7 +276,7 @@ func TestBrewActionSelectRunAndReport(t *testing.T) {
 
 // x は何も選んでいないと実行しない (押し間違いで走らせない)。
 func TestBrewRunNeedsSelection(t *testing.T) {
-	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v := &doctorView{shown: true, tab: tabBrew, expanded: map[string]bool{}}
 	v.brew = &brewDoctorResult{Warnings: []string{brewWarnUnlinked}}
 	_ = v.lines(doctorTestOpts(40))
 	if act := v.handleKey("x", 40); act != doctorToast {
@@ -292,5 +292,37 @@ func TestBrewRunNeedsSelection(t *testing.T) {
 	// r: 再スキャン のような常に使える手を押し出す
 	if h := v.hint(120); strings.Contains(h, "x:") {
 		t.Errorf("選んでいないのに x を案内した: %q", h)
+	}
+}
+
+// 🚨 タブが違えば実行キーは効かない。**「印を付けた後にやること」をタブごとに 1 つに保つ**のが
+// タブ分割の目的なので、ディスクのタブで x を押しても brew は走らない (逆も同じ)。
+func TestExecuteKeysAreTabScoped(t *testing.T) {
+	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v.brew = &brewDoctorResult{Warnings: []string{brewWarnUnlinked}}
+	v.selectedActions = map[string]bool{"brew link node ruby": true}
+	_ = v.lines(doctorTestOpts(40))
+
+	v.tab = tabDisk
+	if act := v.handleKey("x", 40); act != doctorToast || !strings.Contains(v.pendingToast, "タブ") {
+		t.Errorf("ディスクのタブで x が走った: %v (%q)", act, v.pendingToast)
+	}
+	if v.del.active() {
+		t.Fatal("ディスクのタブで brew の実行パネルが立った")
+	}
+	v.tab = tabBrew
+	// 🚨 「ディスク」だけを見ない: ゲートを外しても beginDelete が
+	// 「ディスクのスキャンが終わるまで待ってください」を返すので素通りする (変異で実測)
+	if act := v.handleKey("d", 40); act != doctorToast || !strings.Contains(v.pendingToast, "タブ") {
+		t.Errorf("Homebrew のタブで d が削除へ入った: %v (%q)", act, v.pendingToast)
+	}
+	// hint も押せないキーを案内しない
+	v.tab = tabBrew
+	if h := v.hint(120); strings.Contains(h, "d: 削除") {
+		t.Errorf("Homebrew のタブで削除を案内した: %q", h)
+	}
+	v.tab = tabDisk
+	if h := v.hint(120); strings.Contains(h, "x:") {
+		t.Errorf("ディスクのタブで brew の実行を案内した: %q", h)
 	}
 }

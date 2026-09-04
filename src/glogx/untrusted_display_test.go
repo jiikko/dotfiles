@@ -326,12 +326,20 @@ func TestDoctorLiveSvcAndBrewAreSanitized(t *testing.T) {
 		Warnings: []string{"Warning: 危険" + osc52Seq + "\n2 行目は正常" + clearSeq},
 	}})
 
-	for _, line := range strings.Split(doctorText(v, 60), "\n") {
-		if hasTerminalControl(line) {
-			t.Errorf("doctor の行に制御シーケンスが残った: %q", line)
+	// 🚨 **全タブを描いて集める。** タブ分割後は 1 回の描画で 1 タブぶんの行しか出ないので、
+	// 1 タブだけ見ると残りの節 (disk / svc / brew) が検査対象から外れる = 穴になる。
+	// この検査の主題は「どの節の外部由来文字列も無害化されているか」なので全部通す
+	var rows []doctorRow
+	for tb := doctorTab(0); tb < numDoctorTabs; tb++ {
+		v.tab = tb
+		for _, line := range strings.Split(doctorText(v, 60), "\n") {
+			if hasTerminalControl(line) {
+				t.Errorf("doctor の行に制御シーケンスが残った (tab=%d): %q", tb, line)
+			}
 		}
+		rows = append(rows, doctorAllRows(v.rows)...)
 	}
-	for _, row := range doctorAllRows(v.rows) {
+	for _, row := range rows {
 		if hasTerminalControl(row.text) {
 			t.Errorf("row の text に制御シーケンスが残った: %q", row.text)
 		}
@@ -349,7 +357,7 @@ func TestDoctorLiveSvcAndBrewAreSanitized(t *testing.T) {
 	// 🚨 警告本文が**実際に row として描かれている**ことを確かめる (描かれていなければ
 	// 上の assert は「モデルの値」しか見ておらず、表示 sink を 1 つも守っていない)
 	var sawWarning bool
-	for _, row := range doctorAllRows(v.rows) {
+	for _, row := range rows {
 		if strings.Contains(row.text, "危険") {
 			sawWarning = true
 		}

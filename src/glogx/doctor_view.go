@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,8 +33,30 @@ import (
 // 頻繁なので、残留するとディスク I/O を飽和させる (3 章「終了時の後始末」)。
 // 🚨 disk.Scan の OnResult は走査 goroutine から並行に呼ばれるので、channel に載せて Cmd で 1 件ずつ
 // Msg にする (Update の外で状態を触らない)。
+// doctorTab は一覧のタブ。
+//
+// 🚨 **分割の目的は「印を付けた後にやることをタブごとに 1 つにする」こと。**
+// 1 つの一覧に disk の d (削除) と brew の x (実行) が同時に出ていると、
+// 両方をチェックできてしまい「チェックしたもの」と「実行されるもの」が一致しない。
+// Space は空いていても**後続キーが衝突していた** (ユーザー指摘 2026-09-04)。
+// 一望性はタブ行に 3 つとも件数を出すことで保つ (どのタブに何件あるかは切り替えずに分かる)。
+type doctorTab int
+
+const (
+	tabDisk doctorTab = iota
+	tabSvc
+	tabBrew
+)
+
+// numDoctorTabs はタブの数。**enum の番兵にしない** — doctorTab の値として持つと
+// exhaustive の switch すべてに「タブでない値」の case を書かされる
+const numDoctorTabs = 3
+
 type doctorView struct {
-	shown  bool
+	shown bool
+	// tab は表示中のタブ。tabCur はタブごとのカーソル (切り替えても位置が戻る)
+	tab    doctorTab
+	tabCur [numDoctorTabs]rowCursor
 	gen    int // 開くたびに進める。閉じた後に届く古い Msg を捨てる
 	cancel context.CancelFunc
 
@@ -505,9 +528,23 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 			return doctorToast
 		}
 		return doctorSwallow
+	case "tab":
+		v.moveTab(1)
+	case "shift+tab":
+		v.moveTab(-1)
 	case "d":
+		if v.tab != tabDisk {
+			// 🚨 タブごとに「印を付けた後にやること」を 1 つに保つ。ここで削除を許すと
+			// 一覧に 2 つの実行キーが同居していた頃の混乱がタブ越しに戻る
+			v.pendingToast = "削除はディスクのタブで (tab で移動)"
+			return doctorToast
+		}
 		return v.beginDelete()
 	case "x":
+		if v.tab != tabBrew {
+			v.pendingToast = "brew の実行は Homebrew のタブで (tab で移動)"
+			return doctorToast
+		}
 		// brew の手を実行する。**削除 (d) と別のキーにする**: d は「消す」の語で、
 		// brew install は消す操作ではない。同じキーに 2 つの意味を持たせない
 		return v.beginBrewRun()
@@ -614,23 +651,35 @@ func (v *doctorView) hint(width int) string {
 	if v.del.result != nil || v.del.err != "" {
 		return " y: 出力をコピー   他のキー: 閉じてもう一度スキャン"
 	}
+	// 🚨 **タブごとに出す導線を変える**。一覧に d (削除) と x (実行) が同時に出ていたのが
+	// 混乱の元だったので、タブが違えば案内自体を出さない (押せないキーを案内しない)
 	items := []hintItem{
 		{"j/k: 移動", 3},
-		{"Space: 選択", 2}, // 削除の入口なので Enter より優先して残す
-		{"d: 削除", 2},
+	}
+	switch v.tab {
+	case tabDisk:
+		items = append(items,
+			hintItem{"Space: 選択", 2}, // 削除の入口なので Enter より優先して残す
+			hintItem{"d: 削除", 2})
+	case tabBrew:
+		items = append(items, hintItem{"Space: 選択", 2})
+	case tabSvc:
+		// サービスは選択も実行も持たない (壊れた登録は見て直すだけ)
+	}
+	items = append(items, []hintItem{
 		{"Enter/h/l: 開閉", 4}, // 開くと対象パスへカーソルが移り、そこでも Space で選べる
 		{"y: パスをコピー", 5},
 		{"Y: 解説をコピー", 6},
 		{"r: 再スキャン", 5},
 		{"D/q/esc: 閉じる", 1}, // 抜ける手段は最優先で残す
-	}
+	}...)
 	// 🚨 x は**選ばれているときだけ出す**。常設すると幅の予算を食い、`r: 再スキャン` のような
 	// 常に使える手を押し出す (実測: 幅 120 で再スキャンが消えた)。手が選ばれていないときの
 	// x は「Space で選んでください」と言うだけなので、案内する価値も無い
-	if n := len(v.selectedActions); n > 0 {
+	if n := len(v.selectedActions); n > 0 && v.tab == tabBrew {
 		items = append(items, hintItem{fmt.Sprintf("x: %d 件を実行", n), 2})
 	}
-	if n, total := v.selectionSummary(); n > 0 {
+	if n, total := v.selectionSummary(); n > 0 && v.tab == tabDisk {
 		items = append([]hintItem{{fmt.Sprintf("選択 %d 件 %s", n, disk.HumanSize(total)), 1}}, items...)
 	}
 	return fitHintItems(width, items)
@@ -657,7 +706,7 @@ func (v *doctorView) lines(o doctorRenderOpts) []string {
 	v.rows = flattenDoctorRows(v.buildRows(o))
 	v.jumpIntoDetail()
 	v.cur.restore(v.rows)
-	head := []string{v.headerLine(o), ""}
+	head := []string{v.headerLine(o), v.tabBarLine(o), ""}
 	room := max(o.page-len(head), 1)
 	from := v.cur.window(len(v.rows), room)
 	out := make([]string, 0, o.page)
@@ -708,6 +757,71 @@ func (v *doctorView) headerLine(o doctorRenderOpts) string {
 	return left
 }
 
+// moveTab はタブを送る。カーソルはタブごとに覚える (戻ったときに元の行に居る)。
+//
+// 🚨 h/l はタブ移動に使わない。doctor では**木の開閉**に割り当ててある (ユーザー要望
+// 2026-09-04) ので、issues viewer の h/l = タブ移動とは意味が割れる。両方を満たせないので、
+// この画面では「木がある」方を優先し、タブは tab / shift+tab だけにする。
+func (v *doctorView) moveTab(d int) {
+	v.tabCur[v.tab] = v.cur
+	n := (int(v.tab) + d + numDoctorTabs) % numDoctorTabs
+	v.tab = doctorTab(n)
+	v.cur = v.tabCur[v.tab]
+}
+
+// tabBarLine は 3 つのタブと件数を 1 行で出す。
+//
+// 🚨 **切り替えなくても「どこに何件あるか」が分かること**が、タブにしても一望性を失わない条件。
+// 件数を出さないタブ行にすると、異常の有無を知るために全タブを回ることになる。
+func (v *doctorView) tabBarLine(o doctorRenderOpts) string {
+	names := [numDoctorTabs]string{"ディスク", "サービス", "Homebrew"}
+	parts := make([]string, 0, numDoctorTabs)
+	for i := range numDoctorTabs {
+		t := doctorTab(i)
+		label := names[i] + " " + v.tabSummary(o, t)
+		if t == v.tab {
+			parts = append(parts, doctorColor(o.colored, ansiBold, "["+label+"]"))
+			continue
+		}
+		parts = append(parts, doctorColor(o.colored, ansiDim, " "+label+" "))
+	}
+	line := " " + strings.Join(parts, doctorColor(o.colored, ansiDim, "│"))
+	// 🚨 切り替えのキーは**タブ行の隣**に置く。hint に足すと幅の予算を食って
+	// 「r: 再スキャン」のような常に使える手を押し出す (実測でそうなった)
+	if hintText := "  (tab で切替)"; dispWidth(line)+dispWidth(hintText) <= o.width {
+		line += doctorColor(o.colored, ansiDim, hintText)
+	}
+	return line
+}
+
+// tabSummary はタブ 1 つぶんの件数 (走査中は spinner、診断できずは 🚨)。
+func (v *doctorView) tabSummary(o doctorRenderOpts, t doctorTab) string {
+	switch t {
+	case tabSvc:
+		if v.svcRep == nil {
+			return o.spinner
+		}
+		return strconv.Itoa(len(v.svcRep.Findings))
+	case tabBrew:
+		switch {
+		case v.brew == nil:
+			return o.spinner
+		case v.brew.Unavailable != "":
+			return "🚨"
+		}
+		return strconv.Itoa(len(v.brew.Warnings))
+	default:
+		results := v.diskResults
+		if v.diskRep != nil {
+			results = v.diskRep.Results
+		}
+		if v.diskRep == nil {
+			return o.spinner
+		}
+		return disk.HumanSize(disk.SumDeletable(results))
+	}
+}
+
 // sectionHeader は案 A の見出し 2 行 (左に縦棒 + 太字の題、右端に要約 / 下に罫線)。
 func sectionHeader(o doctorRenderOpts, title, summary string) []doctorRow {
 	left := "▌" + title
@@ -733,9 +847,14 @@ func (v *doctorView) buildRows(o doctorRenderOpts) []doctorRow {
 		}
 		rows = append(rows, doctorRow{})
 	}
-	add(v.diskSection(o))
-	add(v.svcSection(o))
-	add(v.brewSection(o))
+	switch v.tab {
+	case tabSvc:
+		add(v.svcSection(o))
+	case tabBrew:
+		add(v.brewSection(o))
+	default:
+		add(v.diskSection(o))
+	}
 	return rows
 }
 
