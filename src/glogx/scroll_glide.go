@@ -22,9 +22,12 @@ type scrollGlide struct {
 	active bool // glide 中か (tick を回す必要がある = spinnerActive に含める)
 }
 
-// scrollAnimFrames は glide の総フレーム数 (× scrollInterval 33ms ≒ 200ms)。少ないほど速い。
+// scrollAnimFrames は glide の総フレーム数 (× scrollInterval 16ms ≒ 100ms)。少ないほど速い。
 // 30fps 化 (12.5→30fps) に合わせて 3→6 に増やし、同程度の duration で ease-in カーブの刻みを
 // 細かく = 滑らかにした。
+// 🚨 2 倍速化 (2026-09-05) はここを削らず scrollInterval を半分 (33→16ms) にして達成した。
+// フレーム数がそのまま滑らかさなので、6 → 3 にすると ease-in が 3 段しか出ず TestScrollGlideOffset
+// が落ちる。以後もここは「速さ」のつまみではなく「滑らかさ」のつまみとして扱う。
 const scrollAnimFrames = 6
 
 // start は prev から target (現在の論理 offset) への glide を開始する。開始したら true。

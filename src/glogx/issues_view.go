@@ -140,15 +140,15 @@ type issuesView struct {
 }
 
 const (
-	// issuesAnimDuration は開く演出の所要時間 (最後の行が着地するまで)。当初 700ms、
-	// 2 倍速の 350ms へ短縮 (ユーザー要望 2026-08-13。閉じ・引き出し・status viewer も
-	// 速度関係を保ったまま一律 1/2)。
-	issuesAnimDuration = 350 * time.Millisecond
+	// issuesAnimDuration は開く演出の所要時間 (最後の行が着地するまで)。当初 700ms →
+	// 350ms (2026-08-13) → 175ms (2026-09-05)。いずれもユーザー要望で一律 2 倍速にしたもので、
+	// 閉じ・引き出し・status viewer・zoom・toast・glide も速度関係を保ったまま同じ倍率で縮めている。
+	issuesAnimDuration = 175 * time.Millisecond
 	// issuesCloseDuration は閉じる演出の所要時間 (板が画面外へ抜け切るまで)。開くより速いのは、
 	// 開くときは中身を読み始められる一方、閉じるときは「もう用が済んだ画面」を見せ続けるため
 	// (引き出しの issuesDrawerDuration と同じ値・同じ理由)。🚨 畳む時刻でもある: この時間が
 	// 板の実際の滞在時間より長いと、抜けた後の空舞台を見せてから git log へ戻ることになる。
-	issuesCloseDuration = 225 * time.Millisecond
+	issuesCloseDuration = 112 * time.Millisecond
 	// issuesAnimStagger は開く演出で行ごとに開始をずらす割合。0 なら全行同時に動いて「板が 1 枚
 	// 滑り込む」見え方、大きいほど「上から順に流れ込む」見え方になる。閉じる演出では使わない
 	// (rowOffsetRatio の doc)。
@@ -318,8 +318,8 @@ func (v *issuesView) finishAnim() {
 	v.animStart = time.Time{}
 }
 
-// slideAnimating は viewer 全体の開閉スライド中か。tickInterval が 60fps へ上げる判定に使う
-// (引き出しと pager glide は含めない: あちらは他の glide と同じ 30fps で足りる)。
+// slideAnimating は viewer 全体の開閉スライド中か。tickInterval が 125fps へ上げる判定に使う
+// (引き出しと pager glide は含めない: あちらは他の glide と同じ 60fps で足りる)。
 func (v *issuesView) slideAnimating() bool {
 	// 🚨 閉じる演出は「時間が過ぎたら false」にしない: tick は animating が false になった拍で
 	// 止まるので、時間で降ろすと片付けの settleClose が呼ばれる前にチェーンが切れ、閉じかけの姿で

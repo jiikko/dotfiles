@@ -30,13 +30,13 @@ import (
 const (
 	fetchTimeout    = 10 * time.Second
 	spinnerInterval = 80 * time.Millisecond // スピナー等の通常 tick (12.5fps。CPU 節約)
-	scrollInterval  = 33 * time.Millisecond // scroll glide 中の高 FPS tick (~30fps。滑らかさ優先)
-	// zoomInterval は開閉演出中の tick (~60fps)。他より速いのは、この演出だけが「短い所要
-	// (appZoomDuration 220ms) を壁時計で刻む」ためで、周期がそのままフレーム数になる:
+	scrollInterval  = 16 * time.Millisecond // scroll glide 中の高 FPS tick (~60fps。滑らかさ優先)
+	// zoomInterval は開閉演出中の tick (~125fps)。他より速いのは、この演出だけが「短い所要
+	// (appZoomDuration 160ms) を壁時計で刻む」ためで、周期がそのままフレーム数になる:
 	// 12.5fps だと中間フレームが 2 枚しか出ず (4行 → 30行 → 実画面)、演出でなく点滅に見える。
 	// 🚨 上げても遅くはならない: 進捗は壁時計なので、端末が追いつかなければフレームが間引かれる
 	// だけで所要は変わらない (フレーム数で進める glide とはここが違う)。
-	zoomInterval = 16 * time.Millisecond
+	zoomInterval = 8 * time.Millisecond
 	// maxPanelJobs は job パネルに一度に表示する行数。超過分はパネル内でスクロールする。
 	maxPanelJobs = 10
 	// usageRefreshInterval は usage オーバーレイをバックグラウンド再取得する周期 (ユーザー要望
@@ -2026,11 +2026,15 @@ const pushAnimMaxSteps = 8
 
 // pushAnimStep は境界が 1 コミット上がる間隔。80ms/段では目で追えない
 // (ユーザーフィードバック 2026-07-23) ため、1 段ずつ確実に視認できる速さにする。
-const pushAnimStep = 600 * time.Millisecond
+// 🚨 2 倍速化 (2026-09-05) で 600ms → 300ms にしたが、80ms/段が「追えない」側だった以上
+// ここを更に半分にするのは視認性の下限に触る。次に速くするなら段数 (pushAnimMaxSteps) を
+// 減らす側を先に検討する。
+const pushAnimStep = 300 * time.Millisecond
 
 // pushSlideDuration は境界通過したコミット区画が右へ沈んで戻ってくるまでの時間。
-// pushAnimStep より長いので複数コミットの push では沈み込みが波状に重なる。
-const pushSlideDuration = time.Second
+// pushAnimStep より長いので複数コミットの push では沈み込みが波状に重なる
+// (この大小関係が崩れると波状に見えないので、片方だけ変えない)。
+const pushSlideDuration = 500 * time.Millisecond
 
 // startPushAnim は push 成功の演出を開始する。未 push だったコミットを古い順に
 // 1 コミット/フレームで取得中 (spinner) 表示へ切り替えていくと、insertPushBoundary の

@@ -102,8 +102,8 @@ const (
 	// statusOpenDuration / statusCloseDuration は開閉の所要。issues viewer の引き出し
 	// (issuesDrawerDuration) と同じ値: 「板が 1 枚成長する / 縮む」演出は同じ速さに揃える
 	// (行ごとに流し込む issues の issuesAnimDuration とは質感が違うので合わせない)。
-	statusOpenDuration  = 225 * time.Millisecond
-	statusCloseDuration = 225 * time.Millisecond
+	statusOpenDuration  = 112 * time.Millisecond
+	statusCloseDuration = 112 * time.Millisecond
 	// statusPollInterval は自動更新の周期。fsnotify を張らない理由は spec 5 節
 	// (作業ツリー全体の再帰 watch は対象数が読めない一方、git status はシェルの prompt が
 	// 毎コマンド叩いている程度のコストしかない)。
@@ -198,8 +198,8 @@ func (v *statusView) ownsKeys() bool { return v.pagerKey != "" || v.discarding }
 // loading は git status / diff の取得中か (スピナー tick を回し続ける判定用)。
 func (v *statusView) fetching() bool { return v.loading || v.preview.fetching() }
 
-// slideAnimating は開閉のスライド演出中か。tickInterval が 60fps へ上げる判定に使う
-// (pager glide は含めない: あちらは他の glide と同じ 30fps で足りる)。
+// slideAnimating は開閉のスライド演出中か。tickInterval が 125fps へ上げる判定に使う
+// (pager glide は含めない: あちらは他の glide と同じ 60fps で足りる)。
 func (v *statusView) slideAnimating() bool {
 	if v.closing {
 		return true

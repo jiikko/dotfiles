@@ -14,7 +14,7 @@ var toastHold = 3 * time.Second
 
 // toastSlideFrames は入場/退場の横スライドを何フレームで渡り切るか。frame を 0→N で進め、
 // 表示カラム shown = easeOutCubic(frame/N) × 箱幅 とする (箱幅に依らずほぼ一定時間
-// ~12frame × scrollInterval ≈ 400ms)。行 (縦) でなくカラム (横) を動かすため、箱が数行でも
+// ~12frame × scrollInterval ≈ 200ms)。行 (縦) でなくカラム (横) を動かすため、箱が数行でも
 // 解像度の高い滑らかなスライドになる。
 const toastSlideFrames = 12
 

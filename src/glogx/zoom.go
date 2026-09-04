@@ -29,7 +29,7 @@ const (
 	// (1 フレームあたりの平均) は 220ms = 2.7 行 / 320ms = 1.8 行 / 420ms = 1.3 行。
 	// 🚨 伸ばすほど滑らかになるが、起動と終了のたびに待たされる時間でもある。ここは体感の綱引きで
 	// 決める値なので、滑らかさが足りないと感じたらまずここを疑う (fps は既に上限近い)。
-	appZoomDuration = 320 * time.Millisecond
+	appZoomDuration = 160 * time.Millisecond
 	// appZoomMinRows は枠が枠として見える最小の高さ (上辺 + 中身 1 行 + 下辺 + 影)。
 	appZoomMinRows = 4
 	// appZoomSnap は「ほぼ開き切った」とみなす割合。ここを超えたら実画面をそのまま出す:
