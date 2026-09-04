@@ -228,6 +228,22 @@ exec /sbin/mount "$@"
 EOF
 chmod +x "$MOCK_BIN_DIR/mount"
 
+# osascript モック: クリップボードのファイル参照 (file URL) 読み取りを決定論にする。
+# 🚨 モックしないと __av1ify_clipboard_file_paths が実マシンのクリップボードを読み、
+#    テスト結果がその時のコピー内容で変わる (Finder でファイルをコピーした直後だけ落ちる)。
+# MOCK_PASTEBOARD_FILES に改行区切りのパスを入れるとそれを返す。未設定なら空 = 取れなかった
+# 扱いになり、テキスト (pbpaste モック) 経路へフォールバックする。
+cat > "$MOCK_BIN_DIR/osascript" <<'EOF'
+#!/usr/bin/env sh
+if [ -n "${OSASCRIPT_LOG-}" ]; then echo called >> "$OSASCRIPT_LOG"; fi
+printf '%s\n' "${MOCK_PASTEBOARD_FILES-}"
+# 失敗しても途中まで出力するのが実物の挙動 (JXA の例外は途中で投げられる)。
+# 「rc を見ずに stdout だけ使う」実装を検出できるよう、出力してから落ちる。
+if [ -n "${MOCK_OSASCRIPT_FAIL-}" ]; then exit 1; fi
+exit 0
+EOF
+chmod +x "$MOCK_BIN_DIR/osascript"
+
 # PATH設定
 export PATH="$MOCK_BIN_DIR:$PATH"
 

@@ -58,7 +58,7 @@ export MOCK_CLIPBOARD="$TEST_DIR/a.avi
 $TEST_DIR/b.avi
 $TEST_DIR/missing.avi"
 run_av1ify_clip y
-assert_contains "$CLIP_OUTPUT" "クリップボードから読み取りました" "Announces clipboard read"
+assert_contains "$CLIP_OUTPUT" "クリップボードのテキストから読み取りました" "Announces clipboard read and which flavor it used"
 assert_contains "$CLIP_OUTPUT" "✓ $TEST_DIR/a.avi" "Lists existing path with check mark"
 assert_contains "$CLIP_OUTPUT" "✗ $TEST_DIR/missing.avi" "Lists missing path with cross mark"
 assert_contains "$CLIP_OUTPUT" "除外" "Says missing paths are excluded"
@@ -352,7 +352,7 @@ av1c_output=$(TEST_TRASH_LOG="$TRASH_LOG" TEST_FFMPEG_ARGS_LOG="$FFMPEG_LOG" \
   MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1c 2>&1 <<< "y")
 av1c_rc=$?
 setopt err_exit
-assert_contains "$av1c_output" "クリップボードから読み取りました" "av1c reads the clipboard when called with no arguments"
+assert_contains "$av1c_output" "クリップボードのテキストから読み取りました" "av1c reads the clipboard when called with no arguments"
 assert_contains "$av1c_output" "元ファイルをゴミ箱へ移します" "av1c warns that originals will be trashed"
 ffmpeg_args="$(<"$FFMPEG_LOG")"
 assert_contains "$ffmpeg_args" "720" "av1c applies the compact resolution (720p)"
@@ -402,10 +402,10 @@ av1c_src=$(functions av1c)
 assert_contains "$av1c_src" "--compact" "av1c() holds the compact flag"
 assert_contains "$av1c_src" "--delete-origin-if-success-and-no-ng" "av1c() holds the delete-origin flag"
 
-# Test 26: 1 行に空白区切りで複数パスが並んでいたら、回避方法を案内する
-# (シェルのコマンドラインからそのままコピーすると起きる。行全体が 1 個のパス名として
-#  扱われ「✗ 見つかりません」で 0 件になり、なぜ落ちたのか分からない)
-printf '\n## Test 26: Space-separated paths on one line produce a hint\n'
+# Test 26: 1 行に空白区切りで複数パスが並んでいたら、分割して対象にする
+# (シェルのコマンドラインや、パスを空白で連結するツールからそのままコピーすると起きる。
+#  以前は行全体が 1 個のパス名として ✗ になり、別コマンドを案内するだけだった)
+printf '\n## Test 26: Space-separated paths on one line are split and accepted\n'
 TEST_DIR="$TEST_TMP/clip26"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/sample_a.avi"
@@ -415,41 +415,33 @@ cd "$TEST_DIR" || exit 1
 # クォート無し / シングルクォート付きの混在 = zsh のコマンドラインからコピーした形
 export MOCK_CLIPBOARD="$TEST_DIR/sample_a.avi '$TEST_DIR/sample b.avi' $TEST_DIR/sample_c.avi"
 run_av1ify_clip n
-assert_contains "$CLIP_OUTPUT" "見つかりません" "Still reports the line as unresolvable"
-assert_contains "$CLIP_OUTPUT" "空白区切りで複数のパスが並んだ行があります" "Hints that the line holds several paths"
-assert_contains "$CLIP_OUTPUT" "1行 / 分割すると 3件が実在" "Counts the lines and the resolvable words"
-assert_contains "$CLIP_OUTPUT" 'av1ify ${(Q)${(z)"$(pbpaste)"}:#\;}' "Shows a runnable recovery command"
-[[ "$CLIP_RC" -eq 1 ]] && printf '✓ Exit code is still 1 (hint does not change the outcome)\n' || { printf '✗ Exit code is still 1 (got %s)\n' "$CLIP_RC"; exit 1; }
+assert_contains "$CLIP_OUTPUT" "1 行に 3 件のパスが並んでいます" "Reports how many paths the line held"
+assert_contains "$CLIP_OUTPUT" "[分割] $TEST_DIR/sample_a.avi" "Lists the unquoted path as a split entry"
+assert_contains "$CLIP_OUTPUT" "[分割] $TEST_DIR/sample b.avi" "Lists the quoted path with a space"
+assert_contains "$CLIP_OUTPUT" "対象 3件 / 除外 0件" "Counts all three as targets"
+assert_contains "$CLIP_OUTPUT" "空白区切りとして解釈しました" "Says the line was interpreted as a split"
+assert_not_contains "$CLIP_OUTPUT" "見つかりません" "The line itself is no longer reported as missing"
 
-# Test 27: 案内したコマンドが実際に通ることを確認する
-# (案内が動かなければヒントは害でしかない。表示文字列を切り出して実行し、
-#  空白区切りと改行区切りが混在した最悪ケースで 3 件とも変換されるか見る)
-printf '\n## Test 27: The suggested command actually works\n'
+# Test 27: 分割した行が実際に変換まで通る (一覧に出すだけで処理されないと意味がない)
+printf '\n## Test 27: The split entries are actually converted after y\n'
 TEST_DIR="$TEST_TMP/clip27"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/sample_a.avi"
 echo "dummy video" > "$TEST_DIR/sample b.avi"
 echo "dummy video" > "$TEST_DIR/sample_c.avi"
 cd "$TEST_DIR" || exit 1
-# 1 行目は空白区切り (クォート付きを含む)、2 行目は普通の 1 行 1 パス
+# 1 行目は空白区切り (クォート付きを含む)、2 行目は普通の 1 行 1 パス = 最悪ケースの混在
 export MOCK_CLIPBOARD="$TEST_DIR/sample_a.avi '$TEST_DIR/sample b.avi'
 $TEST_DIR/sample_c.avi"
-run_av1ify_clip n
-# 出力からコマンド行だけを取り出す (ヒントの本文をテストに書き写さない = 乖離を防ぐ)
-suggested=$(print -r -- "$CLIP_OUTPUT" | grep -F 'av1ify ${' | sed 's/^[[:space:]]*//')
-[[ -n "$suggested" ]] && printf '✓ Hint line was captured\n' || { printf '✗ Hint line was captured\n'; exit 1; }
-unsetopt err_exit
-MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 eval "$suggested" >/dev/null 2>&1
-suggested_rc=$?
-setopt err_exit
-[[ "$suggested_rc" -eq 0 ]] && printf '✓ Suggested command exits 0\n' || { printf '✗ Suggested command exits 0 (got %s)\n' "$suggested_rc"; exit 1; }
-assert_file_exists "$TEST_DIR/sample_a-enc.mp4" "Suggested command converts the unquoted path"
-assert_file_exists "$TEST_DIR/sample b-enc.mp4" "Suggested command converts the quoted path with a space"
-assert_file_exists "$TEST_DIR/sample_c-enc.mp4" "Suggested command converts the newline-separated path"
+MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 run_av1ify_clip y
+[[ "$CLIP_RC" -eq 0 ]] && printf '✓ Exit code is 0\n' || { printf '✗ Exit code is 0 (got %s)\n' "$CLIP_RC"; exit 1; }
+assert_file_exists "$TEST_DIR/sample_a-enc.mp4" "Converts the unquoted path from the split line"
+assert_file_exists "$TEST_DIR/sample b-enc.mp4" "Converts the quoted path with a space"
+assert_file_exists "$TEST_DIR/sample_c-enc.mp4" "Converts the newline-separated path"
 
-# Test 28: 空白入りの単一パス (実在しない) をヒント対象にしない
-# 判定を「分割した語が実在するか」に置いているので、ただのタイプミスでは出ない
-printf '\n## Test 28: A single missing path with spaces does not trigger the hint\n'
+# Test 28: 空白入りの単一パス (実在しない) を分割しない
+# 判定を「分割した語が実在するか」に置いているので、ただのタイプミスでは割れない
+printf '\n## Test 28: A single missing path with spaces is not split\n'
 TEST_DIR="$TEST_TMP/clip28"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/present.avi"
@@ -458,25 +450,24 @@ export MOCK_CLIPBOARD="$TEST_DIR/no such clip.avi
 $TEST_DIR/present.avi"
 run_av1ify_clip n
 assert_contains "$CLIP_OUTPUT" "見つかりません" "Still reports the missing path"
-assert_not_contains "$CLIP_OUTPUT" "空白区切りで複数のパスが並んだ行" "No hint when the words do not resolve"
+assert_not_contains "$CLIP_OUTPUT" "[分割]" "No split for a plain typo"
 
-# Test 29: av1c から呼ばれたら案内も av1c にする (削除の有無が違う別コマンドを勧めない)
-printf '\n## Test 29: The hint names the command the user actually typed (av1c)\n'
+# Test 29: 分割語のうち解決できなかったものは ✗ で除外する (黙って消さない)
+printf '\n## Test 29: Unresolvable words inside a split line are shown as excluded\n'
 TEST_DIR="$TEST_TMP/clip29"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/sample_a.avi"
 echo "dummy video" > "$TEST_DIR/sample_b.avi"
 cd "$TEST_DIR" || exit 1
-export MOCK_CLIPBOARD="$TEST_DIR/sample_a.avi $TEST_DIR/sample_b.avi"
-unsetopt err_exit
-hint_output=$(av1c 2>&1 <<< "n")
-setopt err_exit
-assert_contains "$hint_output" 'av1c ${(Q)${(z)"$(pbpaste)"}:#\;}' "Suggests av1c, not av1ify"
+export MOCK_CLIPBOARD="$TEST_DIR/sample_a.avi $TEST_DIR/gone/missing.avi $TEST_DIR/sample_b.avi"
+run_av1ify_clip n
+assert_contains "$CLIP_OUTPUT" "✗ [分割] $TEST_DIR/gone/missing.avi" "Names the word it could not resolve"
+assert_contains "$CLIP_OUTPUT" "対象 2件 / 除外 1件" "Counts the missing word as excluded"
 
-# Test 30: ヒント判定でファイル名の $(...) を実行しない
+# Test 30: 分割判定でファイル名の $(...) を実行しない
 # 判定は (z) の字句解析だけで行う (展開しない)。ここが eval / print -P に変わると
 # クリップボードの中身が実行される (issue 089 と同じ穴)
-printf '\n## Test 30: The hint check does not execute $(...) in the pasted line\n'
+printf '\n## Test 30: Splitting does not execute $(...) in the pasted line\n'
 TEST_DIR="$TEST_TMP/clip30"
 mkdir -p "$TEST_DIR"
 cd "$TEST_DIR" || exit 1
@@ -486,23 +477,23 @@ echo "dummy video" > "$TEST_DIR/sample_a.avi"
 export MOCK_CLIPBOARD="$TEST_DIR/$EVIL_NAME $TEST_DIR/sample_a.avi"
 run_av1ify_clip n
 assert_file_not_exists "$TEST_DIR/pwned" "Splitting the line does not execute \$(...)"
-assert_contains "$CLIP_OUTPUT" "空白区切りで複数のパスが並んだ行があります" "Still detects the split (both words exist)"
+assert_contains "$CLIP_OUTPUT" "[分割]" "Still splits the line (both words exist)"
 
-# Test 31: cwd にたまたま同名のファイル/ディレクトリがあっても誤検出しない
+# Test 31: cwd にたまたま同名のファイル/ディレクトリがあっても誤って割らない
 # (敵対的レビュー 2026-08-23 の指摘。判定が「分割した語が実在するか」だけだと、
 #  `src` と `test` がある場所で「src test 用のメモ.avi」という 1 個のファイル名が
-#  「複数パス」に化ける。案内は位置引数で渡す形で、その経路には [y/N] が無い)
-printf '\n## Test 31: Bare words that exist in cwd do not trigger the hint\n'
+#  「複数パス」に化ける。判定にはパス区切りを含む語だけを数える)
+printf '\n## Test 31: Bare words that exist in cwd do not cause a split\n'
 TEST_DIR="$TEST_TMP/clip31"
 mkdir -p "$TEST_DIR/src" "$TEST_DIR/test"
 cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="src test sample notes.avi"
 run_av1ify_clip n
 assert_contains "$CLIP_OUTPUT" "見つかりません" "Still reports the missing path"
-assert_not_contains "$CLIP_OUTPUT" "空白区切りで複数のパスが並んだ行" "No hint from cwd-relative collisions"
+assert_not_contains "$CLIP_OUTPUT" "[分割]" "No split from cwd-relative collisions"
 
-# Test 32: 分割して 1 語しか実在しない行はヒント対象にしない (「2 件以上」の下限境界)
-printf '\n## Test 32: One resolvable word is not enough for the hint\n'
+# Test 32: 分割して 1 語しか実在しない行は割らない (「2 件以上」の下限境界)
+printf '\n## Test 32: One resolvable word is not enough to split\n'
 TEST_DIR="$TEST_TMP/clip32"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/sample_a.avi"
@@ -510,12 +501,12 @@ cd "$TEST_DIR" || exit 1
 export MOCK_CLIPBOARD="$TEST_DIR/sample_a.avi $TEST_DIR/gone/sample_b.avi"
 run_av1ify_clip n
 assert_contains "$CLIP_OUTPUT" "見つかりません" "Still reports the missing path"
-assert_not_contains "$CLIP_OUTPUT" "空白区切りで複数のパスが並んだ行" "No hint when only one word resolves"
+assert_not_contains "$CLIP_OUTPUT" "[分割]" "No split when only one word resolves"
 
-# Test 33: 先頭 ~ の語は「実在」に数えない
-# 案内する ${(Q)${(z)"$(pbpaste)"}} は ~ を展開しない (zsh のチルダ展開はソース上の
-# リテラルにしか効かない)。数えると「実在する」と言いながら解決できないパスを勧める
-printf '\n## Test 33: Tilde-prefixed words are not counted as resolvable\n'
+# Test 33: 先頭 ~ の語も分割して受け取る (resolve が HOME を展開する)
+# 以前は「案内する ${(Q)${(z)...}} が ~ を展開しない」ために数えなかったが、
+# 案内をやめて自分で処理するようになったので、その制限は無くなった
+printf '\n## Test 33: Tilde-prefixed words are split and expanded\n'
 TEST_DIR="$TEST_TMP/clip33"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/sample_a.avi"
@@ -525,8 +516,8 @@ HOME="$TEST_DIR"
 export MOCK_CLIPBOARD="~/sample_a.avi ~/sample_b.avi"
 run_av1ify_clip n
 HOME="$ORIG_HOME"
-assert_contains "$CLIP_OUTPUT" "見つかりません" "Still reports the missing path"
-assert_not_contains "$CLIP_OUTPUT" "空白区切りで複数のパスが並んだ行" "No hint for words the suggested command cannot resolve"
+assert_contains "$CLIP_OUTPUT" "[分割] $TEST_DIR/sample_a.avi" "Expands ~ to the real path"
+assert_contains "$CLIP_OUTPUT" "対象 2件 / 除外 0件" "Both tilde paths become targets"
 
 # Test 34: GLOB_SUBST / NOMATCH が立っていても、判定は展開せず落ちない
 # (実測 2026-08-23: 素の ${(z)line} は GLOB_SUBST 下でグロブ展開され、NOMATCH と
@@ -543,54 +534,30 @@ unsetopt err_exit
 #    「テストスクリプトごと落ちる」= ✗ を一度も出さずに終わるため、変異させても
 #    失敗として観測できない (この形で実際に見落とした。2026-08-23)。
 #    サブシェルなら死んでも親は続き、出力が空になることで red として出る。
-glob_probe=$(__av1ify_count_space_separated_paths "$TEST_DIR/*.avi $TEST_DIR/sample_a.avi" 2>&1; print -r -- "REPLY=$REPLY")
-nomatch_probe=$(__av1ify_count_space_separated_paths "$TEST_DIR/no_such_*.avi $TEST_DIR/sample_a.avi" 2>&1; print -r -- "REPLY=$REPLY")
+glob_probe=$(__av1ify_split_space_separated_paths "$TEST_DIR/*.avi $TEST_DIR/sample_a.avi" 2>&1; print -r -- "REPLY=$REPLY")
+nomatch_probe=$(__av1ify_split_space_separated_paths "$TEST_DIR/no_such_*.avi $TEST_DIR/sample_a.avi" 2>&1; print -r -- "REPLY=$REPLY")
 setopt err_exit
 unsetopt glob_subst nomatch
 [[ "$glob_probe" == "REPLY=1" ]] && printf '✓ Glob pattern is not expanded into several hits\n' || { printf '✗ Glob pattern is not expanded (got: %s)\n' "$glob_probe"; exit 1; }
 [[ "$nomatch_probe" == "REPLY=1" ]] && printf '✓ Unmatched glob neither expands nor raises\n' || { printf '✗ Unmatched glob neither expands nor raises (got: %s)\n' "$nomatch_probe"; exit 1; }
 
-# Test 35: KSH_ARRAYS が立っていても呼び出し名の推定が落ちない
-# (実測 2026-08-23: funcstack[i] の 1-based 走査は 0-based 下で範囲外アクセスになる)
-printf '\n## Test 35: Invocation name survives KSH_ARRAYS\n'
-ksh_probe() { __av1ify_invocation_name; print -r -- "$REPLY" }
-ksh_outer_probe() { ksh_probe }
-unsetopt err_exit
-setopt ksh_arrays
-ksh_name=$(ksh_outer_probe 2>&1)
-ksh_rc=$?
-unsetopt ksh_arrays
-setopt err_exit
-[[ "$ksh_rc" -eq 0 ]] && printf '✓ No uncaught error under KSH_ARRAYS\n' || { printf '✗ No uncaught error under KSH_ARRAYS (rc=%s, out=%s)\n' "$ksh_rc" "$ksh_name"; exit 1; }
-assert_contains "$ksh_name" "av1ify" "Falls back to av1ify when no known entry point is on the stack"
-
-# Test 36: 無関係な av1* 関数を「打たれたコマンド」として拾わない
-# (エントリポイントは av1ify() と av1c() の 2 つだけ。前方一致だとユーザーの
-#  自作ラッパー av1_foo を案内してしまい、打っても command not found になる)
-printf '\n## Test 36: Unrelated av1* wrappers are not reported as the command\n'
-av1_unrelated_wrapper() { __av1ify_invocation_name; print -r -- "$REPLY" }
-wrapper_name=$(av1_unrelated_wrapper)
-[[ "$wrapper_name" == "av1ify" ]] && printf '✓ Ignores an unrelated av1* function on the stack\n' || { printf '✗ Ignores an unrelated av1* function (got %s)\n' "$wrapper_name"; exit 1; }
-
-# Test 37: 判定関数は呼び出し元の状態を壊さない (契約の白箱検証)
+# Test 35: 分割関数は呼び出し元の状態を壊さない (契約の白箱検証)
 # ブラックボックスでは観測できない (現在の呼び出し元が呼ぶ前に値を控えているため)
-printf '\n## Test 37: The judgement helper does not clobber the caller state\n'
-TEST_DIR="$TEST_TMP/clip37"
+printf '\n## Test 35: The split helper does not clobber the caller state\n'
+TEST_DIR="$TEST_TMP/clip35"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/sample_a.avi"
 echo "dummy video" > "$TEST_DIR/sample_b.avi"
 cd "$TEST_DIR" || exit 1
 __AV1IFY_PASTED_TRIMMED="sentinel-before-call"
 unsetopt err_exit
-__av1ify_count_space_separated_paths "$TEST_DIR/sample_a.avi $TEST_DIR/sample_b.avi"
+__av1ify_split_space_separated_paths "$TEST_DIR/sample_a.avi $TEST_DIR/sample_b.avi"
 setopt err_exit
 [[ "$__AV1IFY_PASTED_TRIMMED" == "sentinel-before-call" ]] && printf '✓ __AV1IFY_PASTED_TRIMMED is restored\n' || { printf '✗ __AV1IFY_PASTED_TRIMMED is restored (got %s)\n' "$__AV1IFY_PASTED_TRIMMED"; exit 1; }
 
-# Test 38: av1c のときだけ「引数で渡すと確認が出ない」と警告する
-# 位置引数の経路 (av1ify() の `(( $# > 1 ))` 分岐) には一覧も [y/N] も無いため、
-# 案内どおり打つと確認なしでゴミ箱移動まで走る
-printf '\n## Test 38: The hint warns that the argument form skips this confirmation (av1c only)\n'
-TEST_DIR="$TEST_TMP/clip38"
+# Test 36: av1c のときは分割したことを警告つきで見せる (ゴミ箱移動まで走るため)
+printf '\n## Test 36: av1c still warns that originals go to the trash\n'
+TEST_DIR="$TEST_TMP/clip36"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/sample_a.avi"
 echo "dummy video" > "$TEST_DIR/sample_b.avi"
@@ -599,8 +566,77 @@ export MOCK_CLIPBOARD="$TEST_DIR/sample_a.avi $TEST_DIR/sample_b.avi"
 unsetopt err_exit
 warn_output=$(av1c 2>&1 <<< "n")
 setopt err_exit
-assert_contains "$warn_output" "引数で渡した場合はこの確認が出ず" "av1c warns about the unconfirmed argument path"
+assert_contains "$warn_output" "空白区切りとして解釈しました" "Says the line was split"
+assert_contains "$warn_output" "元ファイルをゴミ箱へ移します" "av1c still warns about the trash"
+
+# Test 37: Finder のファイル選択 (ペーストボードの file URL) を読む
+# 🚨 Finder の Cmd+C はプレーンテキストを載せないので、pbpaste だけを見ていると
+#    「クリップボードが空です」で必ず落ちる (実測 2026-09-04)
+printf '\n## Test 37: Finder file selection (pasteboard file URLs) is read\n'
+TEST_DIR="$TEST_TMP/clip37"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/sample_a.avi"
+echo "dummy video" > "$TEST_DIR/sample b.avi"
+cd "$TEST_DIR" || exit 1
+export MOCK_CLIPBOARD=""
+export MOCK_PASTEBOARD_FILES="$TEST_DIR/sample_a.avi
+$TEST_DIR/sample b.avi"
 run_av1ify_clip n
-assert_not_contains "$CLIP_OUTPUT" "引数で渡した場合はこの確認が出ず" "av1ify does not warn (it never trashes originals)"
+assert_contains "$CLIP_OUTPUT" "クリップボードのファイル選択から読み取りました (2 件)" "Announces the file-URL flavor"
+assert_contains "$CLIP_OUTPUT" "対象 2件 / 除外 0件" "Both selected files become targets"
+assert_not_contains "$CLIP_OUTPUT" "クリップボードが空です" "Does not fall back to the empty text flavor"
+unset MOCK_PASTEBOARD_FILES
+
+# Test 38: ファイル URL がテキストより優先される (Finder の選択が本体)
+printf '\n## Test 38: File URLs win over the plain-text flavor\n'
+TEST_DIR="$TEST_TMP/clip38"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/from_url.avi"
+echo "dummy video" > "$TEST_DIR/from_text.avi"
+cd "$TEST_DIR" || exit 1
+export MOCK_CLIPBOARD="$TEST_DIR/from_text.avi"
+export MOCK_PASTEBOARD_FILES="$TEST_DIR/from_url.avi"
+run_av1ify_clip n
+assert_contains "$CLIP_OUTPUT" "$TEST_DIR/from_url.avi" "Uses the file URL"
+assert_not_contains "$CLIP_OUTPUT" "from_text.avi" "Ignores the text flavor when file URLs exist"
+unset MOCK_PASTEBOARD_FILES
+
+# Test 39: osascript が失敗したら、その出力を使わずテキスト経路へフォールバックする
+# (JXA の例外・将来の権限変更・非 GUI セッションで file URL が取れないことがある。
+#  そこで止まると今まで動いていたテキスト貼り付けまで巻き添えで死に、逆に rc を見ずに
+#  stdout だけ使うと「途中まで出た一覧」を全件のつもりで処理する)
+printf '\n## Test 39: A failing osascript is not trusted and the text flavor is used\n'
+TEST_DIR="$TEST_TMP/clip39"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/from_text.avi"
+echo "dummy video" > "$TEST_DIR/partial.avi"
+cd "$TEST_DIR" || exit 1
+export MOCK_CLIPBOARD="$TEST_DIR/from_text.avi"
+export MOCK_PASTEBOARD_FILES="$TEST_DIR/partial.avi"
+export MOCK_OSASCRIPT_FAIL=1
+run_av1ify_clip n
+unset MOCK_OSASCRIPT_FAIL MOCK_PASTEBOARD_FILES
+assert_contains "$CLIP_OUTPUT" "クリップボードのテキストから読み取りました" "Falls back to the text flavor"
+assert_contains "$CLIP_OUTPUT" "対象 1件 / 除外 0件" "Still resolves the pasted path"
+assert_not_contains "$CLIP_OUTPUT" "partial.avi" "Output of the failed osascript run is discarded"
+
+# Test 40: KSH_ARRAYS が立っていても、分割行の一覧と処理対象がずれない
+# (敵対的レビュー 2026-09-04 の P1。0-based だと添字ループが先頭を飛ばして末尾で
+#  範囲外になり、「1 行に 3 件」と出したのに 2 件 + 空文字を対象にする。
+#  旧 __av1ify_invocation_name でも同じ罠を踏んでいる)
+printf '\n## Test 40: Split listing survives KSH_ARRAYS\n'
+TEST_DIR="$TEST_TMP/clip40"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/sample_a.avi"
+echo "dummy video" > "$TEST_DIR/sample_b.avi"
+echo "dummy video" > "$TEST_DIR/sample_c.avi"
+cd "$TEST_DIR" || exit 1
+export MOCK_CLIPBOARD="$TEST_DIR/sample_a.avi $TEST_DIR/sample_b.avi $TEST_DIR/sample_c.avi"
+setopt ksh_arrays
+run_av1ify_clip n
+unsetopt ksh_arrays
+assert_contains "$CLIP_OUTPUT" "[分割] $TEST_DIR/sample_a.avi" "Does not drop the first split entry under KSH_ARRAYS"
+assert_contains "$CLIP_OUTPUT" "[分割] $TEST_DIR/sample_c.avi" "Does not drop the last split entry under KSH_ARRAYS"
+assert_contains "$CLIP_OUTPUT" "対象 3件 / 除外 0件" "Listing and target count agree under KSH_ARRAYS"
 
 printf '\n=== av1ify Clipboard Tests: all passed ===\n'

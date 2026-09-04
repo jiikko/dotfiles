@@ -27,6 +27,14 @@ typeset -g  __AV1IFY_LAST_NG_REASON=""
 typeset -ga __AV1IFY_PREFETCH_PIDS=()
 # 引数なし呼び出しでクリップボードから読み取った処理対象 (__av1ify_targets_from_clipboard)
 typeset -ga __AV1IFY_CLIP_TARGETS=()
+# __av1ify_split_space_separated_paths が置く「分割したが解決できなかった語」と
+# 「解決できた語の原文」(reply の解決済みパスと同じ並び)
+typeset -ga __AV1IFY_SPLIT_MISSED=()
+typeset -ga __AV1IFY_SPLIT_PASTED=()
+# 一覧の集計 (__av1ify_clip_show_resolved が更新し、__av1ify_targets_from_clipboard が読む)
+typeset -gi __AV1IFY_CLIP_FILE_COUNT=0
+typeset -gi __AV1IFY_CLIP_DIR_COUNT=0
+typeset -gi __AV1IFY_CLIP_EXPANDED=0
 # __av1ify_resolve_pasted_path が置く「前後の空白だけ落とした原文」(一覧の併記用)
 typeset -g __AV1IFY_PASTED_TRIMMED=""
 
@@ -268,30 +276,35 @@ __av1ify_shorten_for_display() {
   fi
 }
 
-# 内部補助: 解決できなかった 1 行が「空白区切りで並んだ複数パス」かを判定する
+# 内部補助: 解決できなかった 1 行を「空白区切りで並んだ複数パス」として分割する
 # 引数: $1 = 解決に失敗した行 (前後の空白を落とした原文)
-# 出力: REPLY = 分割後に実在を確認できた件数
-# 戻り値: 0=空白区切りの複数パスとみなせる (実在 2 件以上), 1=該当しない
+# 出力: reply = 解決できた絶対パス / __AV1IFY_SPLIT_PASTED = その語の原文 (reply と同じ並び)
+#       __AV1IFY_SPLIT_MISSED = 解決できなかった語
+#       REPLY = パス区切りを含み実在した語の数 (この数だけが判定に使われる)
+# 戻り値: 0=空白区切りの複数パスとみなせる (REPLY が 2 件以上), 1=該当しない
 #
 # 🚨 (z) は zsh の字句解析だけを行い、コマンド置換・チルダ展開はしない
 #    (実測 2026-08-23: `$(touch x)` を含む行を通してもファイルは作られない)。
 #    クリップボードは貼り付けミス由来の信頼できない文字列なので、ここを eval や
 #    print -P に書き換えないこと (issue 089 と同じ穴になる)。
 #
-# 直さないと決めた取りこぼし (どちらも「案内しない」側に倒れるだけで、誤って処理する
+# 直さないと決めた取りこぼし (どちらも「分割しない」側に倒れるだけで、誤って処理する
 # 方向には倒れないため許容する。2026-08-23 の敵対的レビューで実測):
 #   - 対応の取れないクォートを含む行 (`it's a clip.avi ...` 等) は (z) が 1 トークンに
-#     畳むのでヒントが出ない。直すには (z) 以外の分割規則が必要で、それは「クォート付きで
+#     畳むので分割されない。直すには (z) 以外の分割規則が必要で、それは「クォート付きで
 #     貼られた行」の解釈と矛盾する
-#   - パス区切りを含まない相対パスだけを並べた行 (`a.avi b.avi`) もヒントが出ない。
+#   - パス区切りを含まない相対パスだけを並べた行 (`a.avi b.avi`) も分割されない。
 #     下の */* ガードの代償で、cwd との偶然の一致で誤判定するより安全側
-__av1ify_count_space_separated_paths() {
+__av1ify_split_space_separated_paths() {
   # 呼び出し元のオプション状態に関わらず「判定では展開しない」を実装で固定する。
   # GLOB_SUBST が立っていると ${(z)line} の結果までグロブ展開され、`*.mp4` を貼った
   # 行が cwd のファイル数ぶんに化ける。さらに NOMATCH と重なると未捕捉エラーになり、
   # 呼び出し元のループごと落ちる (実測 2026-08-23)。
   setopt LOCAL_OPTIONS no_glob_subst
   local line="$1"
+  reply=()
+  __AV1IFY_SPLIT_PASTED=()
+  __AV1IFY_SPLIT_MISSED=()
   REPLY=0
   local -a words
   # (z) はクォートを剥がさずに単語へ切る。剥がすのは実在確認をする
@@ -301,73 +314,138 @@ __av1ify_count_space_separated_paths() {
   (( ${#words[@]} < 2 )) && return 1
 
   # 呼び出し元は失敗行の原文を __AV1IFY_PASTED_TRIMMED から読むため、resolve を
-  # 回す前に退避して戻す (この関数は判定専用で、呼び出し元の状態を壊さない契約)。
+  # 回す前に退避して戻す (この関数は判定と分割だけで、呼び出し元の状態を壊さない契約)。
   local saved_trimmed="$__AV1IFY_PASTED_TRIMMED"
   local w unq
+  # 🚨 変数名は他の関数で文字列として使う resolved / missed と分ける。shellcheck は
+  #    ファイル全体で名前を追うため、同名だと SC2178/SC2128 で lint が落ちる。
+  local -a ok_paths=() ok_words=() ng_words=()
   local -i n=0
   for w in "${words[@]}"; do
     [[ -z "$w" ]] && continue
     # shellcheck disable=SC2296
     unq="${(Q)w}"
-    # パス区切りを含む語だけを数える。これが無いと、cwd にたまたま `src` と `test` が
-    # あるだけで「src test 用の資料.mp4」という 1 個のファイル名が「複数パス」に化ける
-    # (実測 2026-08-23)。案内するコマンドは位置引数で渡す形で、位置引数の経路には
-    # 確認プロンプトが無い (av1ify() の `(( $# > 1 ))` 分岐) ため、誤判定のコストが高い。
-    [[ "$unq" != */* ]] && continue
-    # 先頭 ~ は __av1ify_resolve_pasted_path が展開するが、案内するコマンドの
-    # ${(Q)${(z)...}} は展開しない (zsh のチルダ展開はソース上のリテラルにしか効かない)。
-    # 数えると「実在する」と言いながら、案内どおり打つと解決できないパスを勧めることになる。
-    [[ "$unq" == '~'* ]] && continue
-    __av1ify_resolve_pasted_path "$w" && (( n++ ))
+    if __av1ify_resolve_pasted_path "$w"; then
+      ok_paths+=("$REPLY")
+      ok_words+=("$unq")
+      # 判定に数えるのはパス区切りを含む語だけ。これが無いと、cwd にたまたま `src` と
+      # `test` があるだけで「src test 用の資料.mp4」という 1 個のファイル名が「複数パス」に
+      # 化ける (実測 2026-08-23)。数えるのを絞るだけで、判定が立った後は解決できた語を
+      # すべて対象にする (その行はもうパスの列だと確定しているため)。
+      [[ "$unq" == */* ]] && (( n++ ))
+    else
+      ng_words+=("$unq")
+    fi
   done
   __AV1IFY_PASTED_TRIMMED="$saved_trimmed"
+  reply=("${ok_paths[@]}")
+  __AV1IFY_SPLIT_PASTED=("${ok_words[@]}")
+  __AV1IFY_SPLIT_MISSED=("${ng_words[@]}")
   REPLY=$n
   (( n >= 2 ))
 }
 
-# 内部補助: ユーザーが実際に打ったコマンド名を返す
-# 出力: REPLY = av1ify または av1c (推定できなければ av1ify)
+# 内部補助: クリップボードに載っているファイル参照 (file URL) を全件読む
+# 出力: reply = 絶対パスの配列
+# 戻り値: 0=1 件以上取れた, 1=取れなかった (テキスト経路へフォールバックする)
 #
-# av1c は av1ify を呼ぶラッパーで、成功時に元ファイルをゴミ箱へ移す点が違う。
-# 案内するコマンドを固定名にすると「av1c を打った人に av1ify を案内する」= 削除の
-# 有無が変わった別物を勧めることになる。
-__av1ify_invocation_name() {
-  REPLY="av1ify"
-  local f
-  # funcstack は内側→外側の順なので、最後にマッチしたものが最も外側になる。
-  # 🚨 av1* の前方一致にしないこと。ユーザーが作った無関係な av1_foo ラッパーを
-  #    「打たれたコマンド」として案内してしまう (実測 2026-08-23)。エントリポイントは
-  #    av1ify() と av1c() の 2 つだけなので、増えたらここに足す。
-  # 🚨 添字 (funcstack[i]) で走査しないこと。KSH_ARRAYS (0-based) 下で範囲外アクセスの
-  #    未捕捉エラーになり、ヒント出力ごと落ちる (実測 2026-08-23)。
-  # shellcheck disable=SC2154 # funcstack は zsh の組み込み変数
-  for f in "${funcstack[@]}"; do
-    case "$f" in
-      av1ify|av1c) REPLY="$f" ;;
-    esac
-  done
+# 🚨 Finder の Cmd+C はペーストボードに public.file-url を載せるだけで、プレーンテキストを
+#    載せない (実測 2026-09-04: 複数 file URL を載せた状態で pbpaste は空を返す)。
+#    pbpaste だけを見ていると Finder のコピーは必ず「クリップボードが空です」で落ちる。
+# 🚨 AppleScript の `the clipboard as «class furl»` は先頭 1 件しか返さない (同日実測)。
+#    複数取るには NSPasteboard の readObjectsForClasses が要るので JXA + ObjC bridge を使う。
+#    バイナリを持たずに済み、実測 0.1 秒 (osascript の起動込み)。
+# 🚨 スクリプトは固定文字列で、クリップボードの中身を一切渡さない。渡す形に書き換えると
+#    「貼り付け内容が実行される」穴になる (issue 089 と同根)。
+#
+# osascript は PATH 経由で呼ぶ (テストが実クリップボードを読まずに済むよう差し替えるため)。
+#
+# 直さないと決めたもの (2026-09-04 の敵対的レビュー。どちらも「取りこぼす」側に倒れる):
+#   - 改行を含むファイル名は out.join("\n") と read の改行分割で割れ、存在しないパスとして
+#     ✗ に落ちる。NUL 区切りにすれば直るが zsh の変数は NUL を保持できない
+#   - ペーストボードの所有アプリがハングしていると osascript もハングし、テキスト経路への
+#     フォールバックに到達しない。これは pbpaste も同じ性質 (どちらも同じ pasteboard を読む)
+#     なので、この変更で新しく生まれた露出ではない。タイムアウトを自前で組むと孤児プロセスの
+#     後始末という別の失敗モードを増やすため、露出の記録に留める
+__av1ify_clipboard_file_paths() {
+  reply=()
+  command -v osascript >/dev/null 2>&1 || return 1
+  local out
+  # stderr は捨てる: JXA の例外や bridge の警告が一覧に混ざると読み取り結果と区別できない。
+  # 失敗は「取れなかった」= テキスト経路へのフォールバックで表す。
+  out="$(osascript -l JavaScript -e 'ObjC.import("AppKit"); const pb = $.NSPasteboard.generalPasteboard; const opts = $.NSDictionary.dictionaryWithObjectForKey($.NSNumber.numberWithBool(true), $.NSPasteboardURLReadingFileURLsOnlyKey); const urls = pb.readObjectsForClassesOptions($.NSArray.arrayWithObject($.NSURL), opts); const out = []; for (let i = 0; i < urls.count; i++) { out.push(ObjC.unwrap(urls.objectAtIndex(i).path)); } out.join("\n")' 2>/dev/null)" || return 1
+  local p
+  while IFS= read -r p; do
+    [[ -n "$p" ]] && reply+=("$p")
+  done <<< "$out"
+  (( ${#reply[@]} > 0 ))
+}
+
+# 内部補助: 解決済みのパス 1 件を一覧へ出し、集計へ足す
+# 引数: $1 = 解決済み絶対パス, $2 = 貼り付けられた原文, $3 = 行頭の印 ("" か "[分割] ")
+# 副作用: __AV1IFY_CLIP_TARGETS に追加し、__AV1IFY_CLIP_FILE_COUNT /
+#         __AV1IFY_CLIP_DIR_COUNT / __AV1IFY_CLIP_EXPANDED を更新する
+# 呼び出し元: __av1ify_targets_from_clipboard (1 行 1 パスの行と、分割した語の両方)
+#   集計をグローバルに置いているのは、この 2 経路で表示と勘定を 1 箇所に持つため
+#   (片方だけ直すと「一覧に出た件数」と「処理する件数」が黙ってずれる)。
+__av1ify_clip_show_resolved() {
+  local resolved="$1" trimmed="$2" mark="$3" shown
+  __AV1IFY_CLIP_TARGETS+=("$resolved")
+  __av1ify_shorten_for_display "$resolved"; shown="$REPLY"
+  if [[ -d "$resolved" ]]; then
+    # ディレクトリは配下を再帰処理する = 1 行が N 件になる。件数を出さないと
+    # 「対象 1件」への y が配下全部の承認 (av1c ではゴミ箱行き) になる。
+    __av1ify_find_videos "$resolved"
+    (( __AV1IFY_CLIP_DIR_COUNT++ )); (( __AV1IFY_CLIP_EXPANDED += ${#reply[@]} ))
+    print -ru2 -- "  ✓ ${mark}[ディレクトリ] $shown  (配下の動画 ${#reply[@]} 件)"
+  else
+    (( __AV1IFY_CLIP_FILE_COUNT++ ))
+    print -ru2 -- "  ✓ ${mark}$shown"
+  fi
+  if [[ "$resolved" != "$trimmed" ]]; then
+    # 貼った文字列と実体が違う場合 (相対パス / symlink / 引用符付き) は原文も出す。
+    # symlink では「表示されたファイルは残り、実体が消える」ため、どちらも見せる。
+    __av1ify_shorten_for_display "$trimmed"
+    print -ru2 -- "      (貼付: $REPLY)"
+  fi
 }
 
 # 内部補助: クリップボードから処理対象を読み取り、内容を見せて確認を取る
 # 出力: __AV1IFY_CLIP_TARGETS に存在するパスを格納
 # 戻り値: 0=続行, 1=読み取り失敗/有効なパス 0 件, 130=ユーザーが中止
 __av1ify_targets_from_clipboard() {
+  # 🚨 添字で配列を走査する箇所があるので 1-based を実装で固定する。KSH_ARRAYS が立っていると
+  #    先頭の 1 件が一覧から消え、末尾が範囲外 (空文字) になる = 一覧と処理対象がずれる
+  #    (実測 2026-09-04: 3 件の分割行が b, c, 空 になった)。同じ罠を旧
+  #    __av1ify_invocation_name でも踏んでいる (2026-08-23)。
+  setopt LOCAL_OPTIONS no_ksh_arrays
   __AV1IFY_CLIP_TARGETS=()
-  local clip
-  if ! clip="$(pbpaste 2>/dev/null)"; then
-    print -r -- "エラー: クリップボードの読み取りに失敗しました (pbpaste)" >&2
-    return 1
-  fi
-
-  # 1 行 1 パスとして扱う (-f リストと同じ規則)。ただし `#` 始まりはコメント扱いにしない:
-  # 貼り付け内容は「パスの列」であって注釈付きリストではなく、黙って消えるより
-  # 下の一覧に ✗ で出て気づける方が安全 (文字抜けの検出がこの機能の目的)。
+  __AV1IFY_CLIP_FILE_COUNT=0
+  __AV1IFY_CLIP_DIR_COUNT=0
+  __AV1IFY_CLIP_EXPANDED=0
   local -a lines=() missing=()
-  local line
-  while IFS= read -r line; do
-    [[ -z "${line//[[:space:]]/}" ]] && continue
-    lines+=("$line")
-  done <<< "$clip"
+  local line source_label source_unit
+
+  # ペーストボードにファイル参照が載っていればそれを最優先で使う。表示用文字列の解釈を
+  # やめ、Finder が渡してくる実体 (file URL) をそのまま入力にする (パースが要らない)。
+  if __av1ify_clipboard_file_paths; then
+    lines=("${reply[@]}")
+    source_label="ファイル選択"; source_unit="件"
+  else
+    local clip
+    if ! clip="$(pbpaste 2>/dev/null)"; then
+      print -r -- "エラー: クリップボードの読み取りに失敗しました (pbpaste)" >&2
+      return 1
+    fi
+    # 1 行 1 パスとして扱う (-f リストと同じ規則)。ただし `#` 始まりはコメント扱いにしない:
+    # 貼り付け内容は「パスの列」であって注釈付きリストではなく、黙って消えるより
+    # 下の一覧に ✗ で出て気づける方が安全 (文字抜けの検出がこの機能の目的)。
+    while IFS= read -r line; do
+      [[ -z "${line//[[:space:]]/}" ]] && continue
+      lines+=("$line")
+    done <<< "$clip"
+    source_label="テキスト"; source_unit="行"
+  fi
 
   if (( ${#lines[@]} == 0 )); then
     print -r -- "エラー: クリップボードが空です (使い方は av1ify --help)" >&2
@@ -376,67 +454,48 @@ __av1ify_targets_from_clipboard() {
 
   # 🚨 一覧と確認プロンプトは stderr へ出す。stdout だと `av1c > log` で
   # 「端末には何も出ないまま入力待ち」になる (バナーも stderr で統一されている)。
-  print -ru2 -- "${_C_CYAN}>> 引数がないためクリップボードから読み取りました (${#lines[@]} 行)${_C_OFF}"
+  # どちらの経路で読んだかを出す: ファイル選択とテキストでは取りこぼし方が違うので、
+  # 件数が合わないときに「コピー方法を変える」判断ができる形にする。
+  print -ru2 -- "${_C_CYAN}>> 引数がないためクリップボードの${source_label}から読み取りました (${#lines[@]} ${source_unit})${_C_OFF}"
   # 🚨 パスの表示に print -P を使わないこと。prompt 展開はファイル名に含まれる $(...) を
   # 実行する (issue 089)。クリップボードは貼り付けミス由来の信頼できない文字列なので、
   # ここは常に print -r -- で出す。
-  local file_count=0 dir_count=0 expanded=0 shown
-  local -i hint_lines=0 hint_total=0
+  local -i split_lines=0
   for line in "${lines[@]}"; do
     if __av1ify_resolve_pasted_path "$line"; then
-      __AV1IFY_CLIP_TARGETS+=("$REPLY")
-      local resolved="$REPLY" trimmed="$__AV1IFY_PASTED_TRIMMED"
-      __av1ify_shorten_for_display "$resolved"; shown="$REPLY"
-      if [[ -d "$resolved" ]]; then
-        # ディレクトリは配下を再帰処理する = 1 行が N 件になる。件数を出さないと
-        # 「対象 1件」への y が配下全部の承認 (av1c ではゴミ箱行き) になる。
-        __av1ify_find_videos "$resolved"
-        (( dir_count++ )); (( expanded += ${#reply[@]} ))
-        print -ru2 -- "  ✓ [ディレクトリ] $shown  (配下の動画 ${#reply[@]} 件)"
-      else
-        (( file_count++ ))
-        print -ru2 -- "  ✓ $shown"
-      fi
-      if [[ "$resolved" != "$trimmed" ]]; then
-        # 貼った文字列と実体が違う場合 (相対パス / symlink / 引用符付き) は原文も出す。
-        # symlink では「表示されたファイルは残り、実体が消える」ため、どちらも見せる。
-        __av1ify_shorten_for_display "$trimmed"
-        print -ru2 -- "      (貼付: $REPLY)"
-      fi
+      __av1ify_clip_show_resolved "$REPLY" "$__AV1IFY_PASTED_TRIMMED" ""
+    elif __av1ify_split_space_separated_paths "$line"; then
+      # 1 行に複数のパスが並んでいる (シェルのコマンドラインからのコピーや、パスを空白で
+      # 連結するツールからのコピー)。案内で終わらせず、分割した各パスを一覧に出して
+      # そのまま対象にする。案内していた「位置引数で渡す形」には一覧も [y/N] も無いので
+      # (av1ify() の `(( $# > 1 ))` 分岐)、ここで確認付きに受け止める方が安全。
+      #
+      # 受容したリスク (2026-09-04 の敵対的レビュー P1): 実在しない 1 個のファイル名の中に、
+      # 実在する別パスが 2 件以上「空白区切りで含まれている」と、その別ファイルが対象になる
+      # (`/w/a.avi /w/b.avi memo.avi` で a/b が対象)。案内していた頃は同じ入力に対して
+      # 確認なしの位置引数コマンドを勧めていたので、確認付きの現状の方が厳しい。
+      # 一覧の [分割] 印・末尾の解釈サマリ・既定 No が防波堤で、これ以上は「空白入りの
+      # ファイル名を割らない」判定 (パス区切りを含む語が 2 件以上) に依存する。
+      local -a split_paths=("${reply[@]}") split_pasted=("${__AV1IFY_SPLIT_PASTED[@]}") split_missed=("${__AV1IFY_SPLIT_MISSED[@]}")
+      local -i k
+      (( split_lines++ ))
+      print -ru2 -- "  ↳ 1 行に ${#split_paths[@]} 件のパスが並んでいます (空白区切りとして解釈)"
+      for (( k = 1; k <= ${#split_paths[@]}; k++ )); do
+        __av1ify_clip_show_resolved "${split_paths[k]}" "${split_pasted[k]}" "[分割] "
+      done
+      local sp
+      for sp in "${split_missed[@]}"; do
+        missing+=("$sp")
+        __av1ify_shorten_for_display "$sp"
+        print -ru2 -- "  ✗ [分割] $REPLY  (見つかりません → 除外)"
+      done
     else
       local missed="$__AV1IFY_PASTED_TRIMMED"
       missing+=("$missed")
       __av1ify_shorten_for_display "$missed"
       print -ru2 -- "  ✗ $REPLY  (見つかりません → 除外)"
-      # この行が「空白区切りで並んだ複数パス」でないか調べる (シェルのコマンドラインを
-      # そのままコピーすると起きる)。分割して実在を確認できた行だけ数え、後でまとめて
-      # 回避方法を案内する。
-      if __av1ify_count_space_separated_paths "$missed"; then
-        (( hint_lines++ )); (( hint_total += REPLY ))
-      fi
     fi
   done
-
-  # 1 行 1 パスの契約は変えずに、踏みやすい貼り付けミスだけ具体的に案内する。
-  # ここに出すのは「分割したら実在した」ことを確認できた行だけなので、空白入りの
-  # ファイル名で誤って出ることはない。
-  if (( hint_lines > 0 )); then
-    local hint_cmd
-    __av1ify_invocation_name; hint_cmd="$REPLY"
-    print -ru2 -- "${_C_YELLOW}💡 空白区切りで複数のパスが並んだ行があります (${hint_lines}行 / 分割すると ${hint_total}件が実在)${_C_OFF}"
-    print -ru2 -- "   1行1パスに直すか、次のように引数として渡してください:"
-    # (z) で単語へ切り、(Q) でクォートを 1 段剥がす。改行は (z) が `;` トークンに
-    # するので :#\; で落とす (空白区切りと改行区切りが混在していても通る)。
-    # 副作用として `;` という名前のファイルだけは落ちるが、`;` 単体のファイル名を
-    # クォート無しで貼るケースより、改行混在で壊れるケースの方が現実的。
-    # shellcheck disable=SC2016 # 展開させずに、打つべきコマンドをそのまま見せる
-    print -ru2 -- '     '"${hint_cmd}"' ${(Q)${(z)"$(pbpaste)"}:#\;}'
-    if (( __AV1IFY_DELETE_ORIGIN )); then
-      # 引数で渡す経路 (av1ify() の `(( $# > 1 ))` 分岐) には、この一覧と [y/N] が無い。
-      # av1c は成功したファイルをゴミ箱へ移すので、その差は事前に言っておく。
-      print -ru2 -- "${_C_RED}   🚨 引数で渡した場合はこの確認が出ず、そのままゴミ箱移動まで走ります${_C_OFF}"
-    fi
-  fi
 
   if (( ${#__AV1IFY_CLIP_TARGETS[@]} == 0 )); then
     print -r -- "エラー: クリップボードから有効なパスを読み取れませんでした (使い方は av1ify --help)" >&2
@@ -445,14 +504,19 @@ __av1ify_targets_from_clipboard() {
 
   local sum_color="green"
   (( ${#missing[@]} > 0 )) && sum_color="yellow"
-  local total=$(( file_count + expanded ))
-  if (( dir_count > 0 )); then
-    print -ru2 -- "${_C[$sum_color]}== 対象 ${#__AV1IFY_CLIP_TARGETS[@]}行 → 処理するファイル ${total}件 (ファイル ${file_count} + ディレクトリ ${dir_count}行の配下 ${expanded}) / 除外 ${#missing[@]}行${_C_OFF}"
+  local total=$(( __AV1IFY_CLIP_FILE_COUNT + __AV1IFY_CLIP_EXPANDED ))
+  if (( __AV1IFY_CLIP_DIR_COUNT > 0 )); then
+    print -ru2 -- "${_C[$sum_color]}== 対象 ${#__AV1IFY_CLIP_TARGETS[@]}件 → 処理するファイル ${total}件 (ファイル ${__AV1IFY_CLIP_FILE_COUNT} + ディレクトリ ${__AV1IFY_CLIP_DIR_COUNT}件の配下 ${__AV1IFY_CLIP_EXPANDED}) / 除外 ${#missing[@]}件${_C_OFF}"
   else
     print -ru2 -- "${_C[$sum_color]}== 対象 ${total}件 / 除外 ${#missing[@]}件${_C_OFF}"
   fi
+  if (( split_lines > 0 )); then
+    # 空白入りのファイル名を誤って分割していないかは、人が一覧を見ないと分からない
+    # (判定は「パス区切りを含む語が 2 件以上実在する」だけ)。分割したことを明示する。
+    print -ru2 -- "${_C_YELLOW}   ↳ ${split_lines}行を空白区切りとして解釈しました。[分割] の一覧が意図どおりか確認してください${_C_OFF}"
+  fi
   if (( __AV1IFY_DELETE_ORIGIN )); then
-    print -ru2 -- "${_C_RED}🚨 変換に成功したファイルは元ファイルをゴミ箱へ移します (av1c / --delete-origin-if-success-and-no-ng)${_C_OFF}"
+    print -ru2 -- "${_C_RED}⚠️ 変換に成功したファイルは元ファイルをゴミ箱へ移します (av1c / --delete-origin-if-success-and-no-ng)${_C_OFF}"
   fi
 
   # 破壊的な確認の前に先行入力を捨てる。stdin が端末でないとき (テスト等) は
@@ -729,8 +793,10 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
 
 機能:
   - 指定されたファイルまたはディレクトリを対象に処理を実行します。
-  - 引数を省略すると、クリップボードの内容を「1行1パス」として読み取り、内容を表示して
-    確認を取ってから処理します（大量のパスをターミナルへ貼り付けると文字が落ちることがあるため）。
+  - 引数を省略すると、クリップボードを読み取り、内容を表示して確認を取ってから処理します
+    （大量のパスをターミナルへ貼り付けると文字が落ちることがあるため）。
+    Finder でファイルを選択してコピーした場合はそのファイル参照を直接読み、
+    テキストの場合は「1行1パス」（1行に空白区切りで複数並んでいれば分割）として読みます。
     対話シェルで打ったときだけ有効です（スクリプト・Finder アクション・CI では発火しません）。
   - 出力ファイル名は `<元のファイル名>-enc.mp4` となります。
   - 既に変換済みのファイルが存在する場合は、処理をスキップします。
@@ -762,17 +828,21 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
     # ファイルリストから変換（改行区切り）
     av1ify -f list.txt
 
-    # クリップボードにコピーしたパス（改行区切り）を入力にする
-    #   1行1パスとして読み取り、内容を一覧表示して [y/N] の確認を取ります（既定は No）。
+    # クリップボードにコピーしたファイル / パスを入力にする
+    #   Finder でファイルを選択してコピーした場合は、ペーストボードに載っている
+    #   ファイル参照（file URL）を全件読みます（Finder の Cmd+C はプレーンテキストを
+    #   載せないため、テキストだけを見ていると「空です」になります）。
+    #   テキストの場合は1行1パスとして読み取り、内容を一覧表示して [y/N] の確認を
+    #   取ります（既定は No）。
     #   前後の空白・引用符・`\ ` エスケープ・先頭の ~ は自動で解決し、見つからないパスは
     #   ✗ 表示のうえ対象から除外します（1件も見つからなければエラー）。
     #   表示は「実際に読み書き・削除されるパス」に揃えます（絶対パス化 + symlink 解決。
     #   貼った文字列と違う場合は (貼付: ...) を併記）。ディレクトリ行は配下の動画の件数を
     #   出します（1行が N 件に展開されるため）。
-    #   1行に空白区切りで複数パスを貼った場合（シェルのコマンドラインからそのまま
-    #   コピーすると起きます）は、その行全体が 1 個のパス名として ✗ になります。
-    #   分割して実在を確認できたときだけ、引数として渡す形
-    #   （av1ify ${(Q)${(z)"$(pbpaste)"}:#\;}）を案内します。
+    #   1行に空白区切りで複数パスが並んでいる場合（シェルのコマンドラインからそのまま
+    #   コピーすると起きます）は、パス区切りを含む語が2件以上実在するときだけ分割して
+    #   受け取り、一覧に [分割] 付きで出します（空白入りのファイル名を誤って割らないため、
+    #   1件しか実在しない行は分割せず ✗ のままにします）。
     #   🚨 発火するのは「対話シェルで人が打ったとき」だけです。Finder アクション・CI・
     #   bin/av1ify や bin/binav1c の直叩き（= 非対話）では発火せず、このヘルプを表示します。
     #   対話シェルの av1c は関数なので発火します（成功時に元ファイルをゴミ箱へ移すため、
