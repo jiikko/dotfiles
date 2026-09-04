@@ -43,7 +43,9 @@ if [ "$listed_n" -lt 5 ] || [ "$actual_n" -lt 5 ]; then
 fi
 
 for a in $actual; do
-  printf '%s\n' "$listed" | grep -qx "$a" || { echo "✗ 索引に無い agent: $a (_claude/agents/README.md に足すこと)"; fail=1; }
+  # 🚨 `printf … | grep -qx` のパイプに戻さないこと。grep -q は一致した瞬間に exit するので
+  # 上流の printf が SIGPIPE で落ち、pipefail 下では**一致しているのに非 0** になる (issue 096)
+  grep -qx "$a" <<<"$listed" || { echo "✗ 索引に無い agent: $a (_claude/agents/README.md に足すこと)"; fail=1; }
 done
 
 for a in $listed; do
