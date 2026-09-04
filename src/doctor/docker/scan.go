@@ -228,7 +228,10 @@ func scan(ctx context.Context, o Options) Report {
 	rep.SystemPrune = pruneCmd("docker system prune -a --filter until=%dh", old)
 	// 🚨 system prune はボリュームを消さない (--volumes が要る)。DockerReclaimable() には
 	// ボリュームぶんが入っているので、この 1 行が無いと「このコマンドで N GB」が過大になる
-	rep.SystemPruneNote = "ボリュームは含みません (消すには --volumes が要りますが、中身はデータです)"
+	// 🚨 この 1 行が、いちばん広いコマンドに対する唯一の警告になる (確認画面にもコピーにも
+	// これが出る)。**群ごとの注記より薄くしない** (敵対レビュー 2 周目 P2-1)
+	rep.SystemPruneNote = "この画面が数えた範囲より広く消します: 停止コンテナ全部 / 未使用ネットワーク / " +
+		"ビルドキャッシュ (until が効くか未確認)。-f 付きなので確認は出ません。ボリュームは含みません"
 	return rep
 }
 
@@ -358,6 +361,7 @@ func containerGroup(cs []dfContainer, now time.Time, old time.Duration, rep *Rep
 			humanDur(old) + "以上前に作られた停止コンテナだけを数えています (docker が持つのは作成日で、停止した日ではありません)",
 			"サイズは書き込みレイヤーの分だけです (元イメージは「未使用イメージ」側)",
 			"コマンドには -f が付いています (貼って実行すると確認は出ません)",
+			"1 件ずつ消すコマンドは ID を指します。別名のタグが残っているイメージは docker が拒みます (タグを先に外してください)",
 		}}
 	unknown, dropped := 0, 0
 	for _, c := range cs {
@@ -384,7 +388,7 @@ func containerGroup(cs []dfContainer, now time.Time, old time.Duration, rep *Rep
 		g.Items = append(g.Items, Item{
 			Name: name, Detail: c.Status + " / " + c.Image,
 			Size: size, SizeText: c.Size, Age: age, AgeKnown: true,
-			Command: "docker rm " + name,
+			Command: "docker rm -- " + name,
 		})
 		g.Size += size
 	}
@@ -406,12 +410,20 @@ func imageGroup(is []dfImage, now time.Time, old time.Duration) Group {
 			"コマンドには -f が付いています (貼って実行すると確認は出ません)",
 			"候補の合計は見積もりです (共有レイヤーがあるため、docker の回収可能量と一致しません)",
 		}}
-	// 🚨 **ID で束ねる。** `df -v` は `docker images` と同じく **repo:tag ごとに 1 行**出すので、
-	// 3 タグ付いた 1 個のイメージは 3 行来る。行ごとに足すと見積もりが 3 倍になり、しかも
-	// 3 行が同じ `docker rmi <id>` を提示する (複数タグが付いた ID への rmi は docker が拒む)。
-	// 提示は tag があるなら **repo:tag** にする — 名前と消える対象を一致させる
-	// (敵対レビュー 2026-09-04)
-	seen := map[string]bool{}
+	// 🚨 **`df -v` は ID ごとに 1 行**で、`docker images` (tag ごとに 1 行) とは違う。
+	// 実測 2026-09-04 (docker 29.2.1): 既存イメージに `docker tag` で 2 つ目のタグを付けても
+	// `df -v` の Images は 42 行のまま、`docker images` は 1 行増えた。したがって
+	//   - 行ごとにサイズを足しても多タグで重複計上しない (ID の dedup は死んだ防御になるので置かない)
+	//   - **行が持つ Tag は、その ID に付いた複数のタグのうちの 1 つでしかない**
+	// 形が変わったら (tag ごとの行になったら) 行数が summary の TotalCount (= ID の件数) と
+	// 食い違うので、Scan の件数突合が「診断できず」へ倒す。
+	//
+	// 🚨 **提示は `docker rmi <短い ID>`。repo:tag にしない。** 実測 2026-09-04:
+	//   `docker rmi <多タグの ID>`  → rc=1 "image is referenced in multiple repositories" (見える失敗)
+	//   `docker rmi <タグ>`         → rc=0 "Untagged:" だけ、**0 バイトしか減らない** (静かな成功)
+	// 画面は UniqueSize を「回収できる量」として出しているので、後者だと
+	// 「実行しました」と報告しながら 1 バイトも減らない (敵対レビュー 2 周目 P1-2)。
+	// ID を渡せば、消せないときは**理由つきで失敗する**。
 	for _, im := range is {
 		size := parseSize(im.UniqueSize)
 		sizeText := im.UniqueSize
@@ -425,17 +437,13 @@ func imageGroup(is []dfImage, now time.Time, old time.Duration) Group {
 		if !ok || age < old {
 			continue
 		}
-		if seen[im.ID] {
-			continue
-		}
-		seen[im.ID] = true
-		name, target := shortID(im.ID), shortID(im.ID)
+		name := shortID(im.ID)
 		if tagged(im) {
-			name, target = im.Repository+":"+im.Tag, im.Repository+":"+im.Tag
+			name = im.Repository + ":" + im.Tag // 表示は読める名前で (消す対象は ID)
 		}
 		g.Items = append(g.Items, Item{
 			Name: name, Detail: shortID(im.ID), Size: size, SizeText: sizeText,
-			Age: age, AgeKnown: true, Command: "docker rmi " + target,
+			Age: age, AgeKnown: true, Command: "docker rmi -- " + shortID(im.ID),
 		})
 		g.Size += size
 	}
@@ -558,7 +566,7 @@ func volumeGroup(ctx context.Context, o Options, run runner.Runner, vs []dfVolum
 		size := parseSize(v.Size)
 		g.Items = append(g.Items, Item{
 			Name: v.Name, Detail: "作成 " + c.Format("2006-01-02"), Size: size, SizeText: v.Size,
-			Age: age, AgeKnown: true, Command: "docker volume rm " + v.Name,
+			Age: age, AgeKnown: true, Command: "docker volume rm -- " + v.Name,
 		})
 		g.Size += size
 	}
@@ -577,13 +585,15 @@ func volumeCreatedAt(ctx context.Context, run runner.Runner, names []string, g *
 	// 先頭が `-` の名前を docker が作れる可能性に賭けない)
 	args := append([]string{"volume", "inspect", "--format", "json", "--"}, names...)
 	stdout, stderr, rc, err := runner.WithTimeout(ctx, run, scanTimeout, "docker", args...)
-	if err != nil || rc != 0 {
-		reason := firstLine(stderr)
-		if err != nil {
-			reason = err.Error()
-		}
-		g.Notes = append(g.Notes, "🚨 作成日を取れませんでした (docker volume inspect: "+reason+")")
+	if err != nil {
+		g.Notes = append(g.Notes, "🚨 作成日を取れませんでした (docker volume inspect: "+err.Error()+")")
 		return out
+	}
+	// 🚨 **rc != 0 でも stdout を捨てない。** 名前をまとめて渡しているので、走査中に 1 個
+	// 消えただけで rc=1 になる。捨てると他の全ボリュームが「作成日不明」= 候補 0 件に落ち、
+	// ボリューム群が常時空になる (敵対レビュー 2 周目 P3-3)。読めた分は使い、rc は注記に残す
+	if rc != 0 {
+		g.Notes = append(g.Notes, "🚨 一部のボリュームの作成日を取れませんでした (docker volume inspect: "+firstLine(stderr)+")")
 	}
 	// 🚨 **配列と JSON Lines の両方を受ける。** docker 29.2.1 は `--format json` に複数の
 	// ボリュームを渡すと 1 個の配列を返す (実測 2026-09-04) が、`--format` を通した出力は
@@ -736,10 +746,12 @@ func safeImageRef(s string) bool {
 	if s == "" || len(s) > 512 {
 		return false
 	}
-	for _, r := range s {
+	for i, r := range s {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-		case r == '_' || r == '.' || r == '-' || r == '/' || r == ':' || r == '@':
+		// 🚨 先頭は英数に限る (safeDockerName と同じ規律)。先頭が `-` の語はフラグとして
+		// 読まれうるので、提示コマンドに載せない (敵対レビュー 2 周目 P3-1)
+		case i > 0 && (r == '_' || r == '.' || r == '-' || r == '/' || r == ':' || r == '@'):
 		default:
 			return false
 		}

@@ -98,7 +98,9 @@ type doctorView struct {
 	selectedActions map[string]bool
 	// actionByCmd は直近の描画で組んだ手の実体 (key = コマンド)。確認画面がラベルと
 	// 注記を引くため。行のテキストから復元しない (色と印が混ざっていて壊れやすい)
-	actionByCmd      map[string]doctorCmdAction
+	actionByCmd map[string]doctorCmdAction
+	// dockerOrder は Docker タブの手を**描画順**で覚える (畳まれている行も含む)
+	dockerOrder      []string
 	inspected        map[string]bool
 	del              doctorDelete
 	pendingDeleteCmd tea.Cmd // handleKey が組んだ削除の Cmd (browseModel が取り出して返す)
@@ -217,6 +219,10 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	v.cur.reset()
 	v.expanded = map[string]bool{}
 	v.selected, v.selectedItems, v.inspected = map[string]bool{}, map[string]bool{}, map[string]bool{}
+	// 🚨 コマンドの選択も捨てる。残すと、doctor を閉じて開き直したときに `*` が付いたまま
+	// 「x: 1 件を実行」で復帰する (ディスク側の選択は毎回消えるので非対称だった。
+	// 共有 map に prune 系が載った時点で意味が変わった。敵対レビュー 2 周目 P2-3)
+	v.selectedActions, v.actionByCmd, v.dockerOrder = map[string]bool{}, map[string]doctorCmdAction{}, nil
 	// 🚨 世代をまたいで残る状態をここで**まとめて**捨てる。1 つでも残すと前の世代の行・文言・
 	// Cmd が次の画面に混ざる (pendingToast は実際に漏れて、次の再スキャンの理由として
 	// 再表示されていた。敵対レビュー 2026-09-03)
@@ -457,7 +463,19 @@ func (v *doctorView) collapseParent() bool {
 	if v.cur.index < 0 || v.cur.index >= len(v.rows) {
 		return false
 	}
-	itemKey, ok := strings.CutPrefix(v.rows[v.cur.index].key, "diskitem:")
+	key := v.rows[v.cur.index].key
+	// Docker の候補行 ("dockeritem:<kind>:<name>") も同じ作法にする。Enter で群に入ったら
+	// Enter で出られないと、カーソルが中に居たまま畳めない (disk と非対称だった)
+	if rest, ok := strings.CutPrefix(key, "dockeritem:"); ok {
+		kind, _, ok := strings.Cut(rest, ":")
+		if !ok {
+			return false
+		}
+		delete(v.expanded, "docker:"+kind)
+		v.cur.key = "docker:" + kind
+		return true
+	}
+	itemKey, ok := strings.CutPrefix(key, "diskitem:")
 	if !ok {
 		return false
 	}

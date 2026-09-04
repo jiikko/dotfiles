@@ -667,7 +667,7 @@ func (v *doctorView) deleteLogText() string {
 	var b strings.Builder
 	// 見出しは仕事ごとに変える。LLM へ投げたときに「何をした記録か」が最初の行で分かるように
 	if d.kind == jobCmd {
-		b.WriteString("glogx doctor から実行した brew の記録 (macOS)\n")
+		b.WriteString("glogx doctor から実行したコマンドの記録 (macOS)\n")
 	} else {
 		b.WriteString("glogx doctor の削除の記録 (macOS)\n")
 	}
@@ -781,7 +781,7 @@ func (v *doctorView) toggleSelect() (string, bool) {
 		return v.toggleCmdAction()
 	}
 	if isDockerRowKey(key) {
-		return v.toggleDockerAction(key)
+		return v.toggleDockerAction()
 	}
 	id, ok := strings.CutPrefix(key, "disk:")
 	if !ok {

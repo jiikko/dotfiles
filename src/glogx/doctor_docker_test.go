@@ -162,7 +162,7 @@ func TestDoctorDockerItemRowCopiesItsCommand(t *testing.T) {
 	if !found.selectable {
 		t.Errorf("行が選べない (選べないと y が届かない)")
 	}
-	if found.copyPath != "docker volume rm old_data" {
+	if found.copyPath != "docker volume rm -- old_data" {
 		t.Errorf("y でコピーされるのが %q", found.copyPath)
 	}
 }
@@ -297,5 +297,110 @@ func TestDoctorRunKeyOnWrongTabExplains(t *testing.T) {
 		if !strings.Contains(v.pendingToast, "Homebrew か Docker") {
 			t.Errorf("tab=%v の案内が %q", tb, v.pendingToast)
 		}
+	}
+}
+
+// 🚨 群を畳んでも選択は消えない (選択の集計を「今出ている行」から作ると、無関係な開閉で
+// 0 件になったり戻ったりする。敵対レビュー 2 周目 P2-2)。
+func TestDoctorDockerSelectionSurvivesCollapse(t *testing.T) {
+	v := doctorTestView(t)
+	runDoctorCmds(t, v, v.open())
+	v.tab = tabDocker
+	_ = doctorText(v, 40)
+	v.handleKey("enter", 40) // 先頭の群を開く
+	_ = doctorText(v, 40)
+	for range 20 {
+		if strings.HasPrefix(v.cur.key, "dockeritem:") {
+			break
+		}
+		v.handleKey("j", 40)
+		_ = doctorText(v, 40)
+	}
+	if !strings.HasPrefix(v.cur.key, "dockeritem:") {
+		t.Fatalf("候補の行へ行けない: %q", v.cur.key)
+	}
+	v.handleKey(" ", 40)
+	_ = doctorText(v, 40)
+	if n := v.selectedRunCount(); n != 1 {
+		t.Fatalf("選べていない: %d", n)
+	}
+	// 群を畳む (カーソルは親へ戻る)
+	v.handleKey("enter", 40)
+	_ = doctorText(v, 40)
+	if n := v.selectedRunCount(); n != 1 {
+		t.Fatalf("畳んだら選択が %d 件になった (開閉で増減している)", n)
+	}
+}
+
+// 🚨 doctor を閉じて開き直したら選択は消える (ディスク側と揃える。残すと `*` が付いたまま
+// 「x: 1 件を実行」で復帰する。敵対レビュー 2 周目 P2-3)。
+func TestDoctorDockerSelectionClearedOnReopen(t *testing.T) {
+	v := doctorTestView(t)
+	runDoctorCmds(t, v, v.open())
+	v.tab = tabDocker
+	_ = doctorText(v, 40)
+	v.handleKey(" ", 40)
+	if v.selectedRunCount() != 1 {
+		t.Fatal("前提が作れていない")
+	}
+	v.close()
+	runDoctorCmds(t, v, v.open())
+	v.tab = tabDocker
+	_ = doctorText(v, 40)
+	if n := v.selectedRunCount(); n != 0 {
+		t.Fatalf("開き直しても選択が %d 件残っている", n)
+	}
+}
+
+// 🚨 実行可否の出典は走査側の Confirm 1 つ (Kind から導き直さない)。
+// 走査側が Confirm を立てた群は、Kind が何であれ実行できない。
+func TestDoctorDockerRunnableFollowsConfirmNotKind(t *testing.T) {
+	// Kind は実行できる群のものだが、走査側が「戻らない」と言っている
+	if dockerRunnable(docker.Group{Kind: docker.KindImages, Confirm: true}) {
+		t.Errorf("Confirm を無視して Kind で判定している")
+	}
+	if !dockerRunnable(docker.Group{Kind: docker.KindVolumes}) {
+		t.Errorf("Confirm が立っていない群を実行不可にしている")
+	}
+}
+
+// 群のまとめコマンドが無い行でも y が無言にならない (hint は「y: コマンドをコピー」と言っている)。
+func TestDoctorDockerVolumeGroupRowCopiesPerItemCommands(t *testing.T) {
+	v := doctorTestView(t)
+	runDoctorCmds(t, v, v.open())
+	v.tab = tabDocker
+	_ = doctorText(v, 40)
+	for _, row := range v.rows {
+		if row.key != "docker:volumes" {
+			continue
+		}
+		if !strings.Contains(row.copyPath, "docker volume rm -- old_data") {
+			t.Fatalf("y でコピーされるのが %q", row.copyPath)
+		}
+		return
+	}
+	t.Fatal("ボリュームの群の行が無い")
+}
+
+// Enter で群に入ったら Enter で出られる (disk と同じ作法。出られないとカーソルが中に
+// 居たまま畳めない)。
+func TestDoctorDockerEnterOnItemCollapsesGroup(t *testing.T) {
+	v := doctorTestView(t)
+	runDoctorCmds(t, v, v.open())
+	v.tab = tabDocker
+	_ = doctorText(v, 40)
+	v.handleKey("enter", 40)
+	_ = doctorText(v, 40)
+	for range 20 {
+		if strings.HasPrefix(v.cur.key, "dockeritem:") {
+			break
+		}
+		v.handleKey("j", 40)
+		_ = doctorText(v, 40)
+	}
+	v.handleKey("enter", 40)
+	_ = doctorText(v, 40)
+	if len(v.expanded) != 0 || v.cur.key != "docker:containers" {
+		t.Fatalf("畳めていない: expanded=%v cur=%q", v.expanded, v.cur.key)
 	}
 }

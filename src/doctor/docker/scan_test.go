@@ -214,7 +214,7 @@ func TestVolumesUnusedWithCreatedAt(t *testing.T) {
 	if len(g.Items) != 1 || g.Items[0].Name != "old_unused" {
 		t.Fatalf("候補が %+v", g.Items)
 	}
-	if g.Items[0].Command != "docker volume rm old_unused" {
+	if g.Items[0].Command != "docker volume rm -- old_unused" {
 		t.Fatalf("個別コマンドが %q", g.Items[0].Command)
 	}
 	// 🚨 群のまとめコマンドは出さない (docker volume prune -a はデータを消して戻せない)
@@ -359,22 +359,45 @@ func TestBuildCacheUnknownInUseIsNotCandidate(t *testing.T) {
 	}
 }
 
-// 同じ ID に複数タグが付いたイメージを重複計上しない。提示は repo:tag
-// (多タグの ID への `docker rmi <id>` は docker が拒む)。
-func TestImagesDedupeByIDAndProposeTag(t *testing.T) {
+// 🚨 提示は **ID**。repo:tag にしない。
+//
+// 実測 2026-09-04 (docker 29.2.1): `docker rmi <多タグの ID>` は rc=1 で
+// "image is referenced in multiple repositories" を返す (見える失敗) が、
+// `docker rmi <タグ>` は rc=0 で "Untagged:" だけを出し **1 バイトも減らない** (静かな成功)。
+// 画面は UniqueSize を「回収できる量」として出しているので、後者だと嘘の成功報告になる。
+//
+// あわせて `df -v` の形も pin する: **ID ごとに 1 行**で、行の Tag はその ID に付いた
+// 複数のタグのうちの 1 つでしかない (`docker images` は tag ごとに 1 行で、こちらとは違う)。
+func TestImagesProposeIDNotTag(t *testing.T) {
+	f := &fakeDocker{df: dfJSON(
+		`{"ID":"sha256:abcabcabcabc","Repository":"app","Tag":"v1","Containers":"0","Size":"2GB","UniqueSize":"2GB","CreatedAt":"`+stamp(60*24*time.Hour)+`"}`,
+		"", "", ""), vol: "[]"}
+	g := group(t, Scan(context.Background(), opts(f)), KindImages)
+	if len(g.Items) != 1 {
+		t.Fatalf("候補が %+v", g.Items)
+	}
+	if g.Items[0].Name != "app:v1" {
+		t.Errorf("表示名が %q (読める名前で出す)", g.Items[0].Name)
+	}
+	if g.Items[0].Command != "docker rmi -- abcabcabcabc" {
+		t.Errorf("提示コマンドが %q (ID を指すこと)", g.Items[0].Command)
+	}
+}
+
+// 🚨 `df -v` が tag ごとの行を返す形に変わったら、行数が summary の TotalCount (= ID の件数) と
+// 食い違うので**診断できずへ倒れる**。0 件にも二重計上にもしない。
+func TestPerTagRowsWouldBeCaughtByCountCheck(t *testing.T) {
 	row := func(tag string) string {
 		return `{"ID":"sha256:abcabcabcabc","Repository":"app","Tag":"` + tag + `","Containers":"0","Size":"2GB","UniqueSize":"2GB","CreatedAt":"` + stamp(60*24*time.Hour) + `"}`
 	}
-	f := &fakeDocker{df: dfJSON(row("v1")+","+row("v2")+","+row("v3"), "", "", ""), vol: "[]"}
-	g := group(t, Scan(context.Background(), opts(f)), KindImages)
-	if len(g.Items) != 1 {
-		t.Fatalf("タグの数だけ行が出た: %+v", g.Items)
+	f := &fakeDocker{
+		df: dfJSON(row("v1")+","+row("v2")+","+row("v3"), "", "", ""), vol: "[]",
+		// docker の集計は ID の件数 = 1 と言っている
+		summary: summaryFor(dfJSON(row("v1"), "", "", "")),
 	}
-	if g.Size != 2_000_000_000 {
-		t.Fatalf("見積もりが %d (2GB のはず)", g.Size)
-	}
-	if g.Items[0].Command != "docker rmi app:v1" {
-		t.Fatalf("提示コマンドが %q", g.Items[0].Command)
+	rep := Scan(context.Background(), opts(f))
+	if rep.Unavailable == "" || len(rep.Groups) != 0 {
+		t.Fatalf("形が変わったのに診断できずへ倒れない: %+v", rep)
 	}
 }
 
@@ -489,9 +512,9 @@ func TestPerItemCommandsArePinnedExactly(t *testing.T) {
 	}
 	rep := Scan(context.Background(), opts(f))
 	want := map[Kind]string{
-		KindContainers: "docker rm old-web",
-		KindImages:     "docker rmi app:old",
-		KindVolumes:    "docker volume rm old_data",
+		KindContainers: "docker rm -- old-web",
+		KindImages:     "docker rmi -- abcabcabcabc",
+		KindVolumes:    "docker volume rm -- old_data",
 	}
 	for _, g := range rep.Groups {
 		w, ok := want[g.Kind]
@@ -501,5 +524,27 @@ func TestPerItemCommandsArePinnedExactly(t *testing.T) {
 		if g.Items[0].Command != w {
 			t.Errorf("%s の個別コマンドが %q (期待 %q)", g.Kind, g.Items[0].Command, w)
 		}
+	}
+}
+
+// 🚨 `docker volume inspect` は名前をまとめて渡すので、走査中に 1 個消えただけで rc=1 になる。
+// **stdout を捨てない** — 捨てると他の全ボリュームが「作成日不明」= 候補 0 件に落ち、
+// ボリューム群が常時空になる (敵対レビュー 2 周目 P3-3)。
+func TestVolumeInspectPartialFailureKeepsOthers(t *testing.T) {
+	f := &fakeDocker{
+		df: dfJSON("", "", `{"Name":"old_a","Links":"0","Size":"1GB"},{"Name":"gone_b","Links":"0","Size":"2GB"}`, ""),
+		// old_a だけ読めて、gone_b は消えている (rc=1 + stderr)
+		vol: `[{"Name":"old_a","CreatedAt":"2020-01-01T00:00:00Z"}]`, volRC: 1, volStderr: "Error: No such volume: gone_b",
+	}
+	g := group(t, Scan(context.Background(), opts(f)), KindVolumes)
+	if len(g.Items) != 1 || g.Items[0].Name != "old_a" {
+		t.Fatalf("読めた分まで落とした: %+v (%v)", g.Items, g.Notes)
+	}
+	notes := strings.Join(g.Notes, "\n")
+	if !strings.Contains(notes, "一部のボリュームの作成日を取れませんでした") {
+		t.Errorf("rc が注記に残っていない: %v", g.Notes)
+	}
+	if !strings.Contains(notes, "候補から外しました") {
+		t.Errorf("読めなかった 1 件を候補から外したことが残っていない: %v", g.Notes)
 	}
 }

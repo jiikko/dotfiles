@@ -68,21 +68,15 @@ func (v *doctorView) tabVisible(t doctorTab) bool {
 
 // dockerRunnable は「この群のコマンドを x で実行してよいか」。
 //
-// 🚨 **ボリュームだけ false**。中身はデータで、消すと戻らない。しかもこちらの判定は
-// 「今どのコンテナからも参照されていない + 作成日」の近似でしかない (最後にマウントされた
-// 日時を Docker が持っていないため) ので、道具が実行まで踏み込む根拠が無い。
-// ボリュームは y でコマンドをコピーして、人がシェルで叩く (ユーザー決定 2026-09-04)。
+// 🚨 **判定の出典は `Group.Confirm` (走査側のデータ) 1 つ**。Kind から独立に導き直さない —
+// 以前は Kind の switch で同じ結論を作っており、走査側が `Confirm: true` の群を足しても
+// こちらは素通しする形だった (敵対レビュー 2 周目 P2-4。`mutation-verify-new-tests.md` の
+// 「同じ判定を 2 箇所で別実装していないか」)。
 //
-// 🚨 exhaustive (default なし) なので、docker.Kind が増えたらここが compile error になる。
-func dockerRunnable(k docker.Kind) bool {
-	switch k {
-	case docker.KindContainers, docker.KindImages, docker.KindBuildCache:
-		return true
-	case docker.KindVolumes:
-		return false
-	}
-	return false
-}
+// 今 false になるのはボリュームだけ: 中身はデータで消すと戻らず、しかも判定は
+// 「今どのコンテナからも参照されていない + 作成日」の近似でしかない (最後にマウントされた
+// 日時を Docker が持っていないため)。y でコピーして人がシェルで叩く (ユーザー決定 2026-09-04)。
+func dockerRunnable(g docker.Group) bool { return !g.Confirm }
 
 // dockerRunNote は実行する前に知っておくこと (確認画面に出る)。
 func dockerRunNote(k docker.Kind) string {
@@ -191,7 +185,7 @@ func (v *doctorView) dockerGroupRow(o doctorRenderOpts, g docker.Group) doctorRo
 			doctorRow{text: doctorColor(o.colored, ansiGreen, "     🎉 古い候補はありません")})
 	}
 	for _, it := range g.Items {
-		row := doctorRow{text: v.dockerSelectMark(o, it.Command, dockerRunnable(g.Kind)) + dockerItemLine(o, it)}
+		row := doctorRow{text: v.dockerSelectMark(o, it.Command, dockerRunnable(g)) + dockerItemLine(o, it)}
 		if it.Command != "" {
 			// 🚨 1 件ずつ消したいときの導線。ボリュームには群のコマンドが無いので、
 			// ここが選べないと「1 件ずつ選んでください」と言うだけで手段が無い
@@ -202,21 +196,23 @@ func (v *doctorView) dockerGroupRow(o doctorRenderOpts, g docker.Group) doctorRo
 		}
 		detail = append(detail, row)
 	}
-	if dockerRunnable(g.Kind) {
+	if dockerRunnable(g) {
 		v.registerDockerAction(g.Label+" をまとめて回収", g.Command, dockerRunNote(g.Kind))
 		for _, it := range g.Items {
 			v.registerDockerAction(it.Name+" を消す ("+it.SizeText+")", it.Command, dockerRunNote(g.Kind))
 		}
 	}
 	return doctorRow{
-		text: v.dockerSelectMark(o, g.Command, dockerRunnable(g.Kind)) +
+		text: v.dockerSelectMark(o, g.Command, dockerRunnable(g)) +
 			dockerMark(g.Kind) + padSpaces(max(0, dockerMarkWidth()-dispWidth(dockerMark(g.Kind)))) + " " + g.Label + "   " +
 			doctorColor(o.colored, ansiDim, summary),
 		selectable: true,
 		key:        "docker:" + string(g.Kind),
 		detail:     detail,
-		copyPath:   g.Command,
-		copyText:   dockerGroupCopyText(g),
+		// 🚨 群のコマンドが無い (ボリューム) 行でも y が無言にならないよう、
+		// 1 件ずつのコマンドを並べたものを渡す (hint は「y: コマンドをコピー」と言っている)
+		copyPath: dockerGroupCopyPath(g),
+		copyText: dockerGroupCopyText(g),
 	}
 }
 
@@ -234,6 +230,11 @@ func (v *doctorView) dockerSelectMark(o doctorRenderOpts, cmd string, runnable b
 
 // registerDockerAction は x で実行する手を登録する (brew と同じ map を共有する。
 // 同一性は**コマンド文字列**で、行の key ではない — 再スキャンで行の並びは変わる)。
+//
+// 🚨 **描画順も覚える** (dockerOrder)。選択の集計を「今 v.rows に出ている行」から作ると、
+// 群を畳んだ瞬間に中の選択が 0 件に見え、x が「選んでください」と言い出す
+// (選択自体は残っているので、開き直すと戻る = 同じ選択が開閉で増減する。
+// 敵対レビュー 2 周目 P2-2)。畳まれている行も登録は通るので、こちらを出典にする。
 func (v *doctorView) registerDockerAction(label, cmd, note string) {
 	if cmd == "" {
 		return
@@ -241,27 +242,30 @@ func (v *doctorView) registerDockerAction(label, cmd, note string) {
 	if v.actionByCmd == nil {
 		v.actionByCmd = map[string]doctorCmdAction{}
 	}
+	if _, dup := v.actionByCmd[cmd]; !dup {
+		v.dockerOrder = append(v.dockerOrder, cmd)
+	}
 	v.actionByCmd[cmd] = doctorCmdAction{Label: label, Cmd: cmd, Note: note}
 }
 
-// selectedDockerActions は選ばれた手を**画面に出ている順**で返す (brew 側と同じ規律。
-// map をそのまま回すと確認画面の順と実行の順が食い違い、中断したときにどこまで走ったか読めない)。
+// selectedDockerActions は選ばれた手を**描画順**で返す (brew 側と同じ規律。map をそのまま
+// 回すと確認画面の順と実行の順が食い違い、中断したときにどこまで走ったか読めない)。
+//
+// 🚨 出典は dockerOrder (登録順) で、`v.rows` ではない。理由は registerDockerAction の 🚨。
+// 🚨 登録に無いコマンドは返さない (「(不明な手)」で実行しない) — 実行してよい手の集合は
+// 登録が唯一の出典で、fallback を置くと実行不可の群の手が紛れ込む口になる
 func (v *doctorView) selectedDockerActions() []doctorCmdAction {
 	if len(v.selectedActions) == 0 {
 		return nil
 	}
 	out := make([]doctorCmdAction, 0, len(v.selectedActions))
-	seen := map[string]bool{}
-	for _, r := range v.rows {
-		if !isDockerRowKey(r.key) || !v.selectedActions[r.copyPath] || seen[r.copyPath] {
+	for _, cmd := range v.dockerOrder {
+		if !v.selectedActions[cmd] {
 			continue
 		}
-		seen[r.copyPath] = true
-		act, ok := v.actionByCmd[r.copyPath]
-		if !ok {
-			act = doctorCmdAction{Label: "(不明な手)", Cmd: r.copyPath}
+		if act, ok := v.actionByCmd[cmd]; ok {
+			out = append(out, act)
 		}
-		out = append(out, act)
 	}
 	return out
 }
@@ -270,34 +274,18 @@ func (v *doctorView) selectedDockerActions() []doctorCmdAction {
 //
 // 🚨 **実行できない行は断る理由を返す** (無言で何もしない、にしない)。ボリュームは
 // 「y でコピーして自分で叩く」しか手段が無いので、そう案内する。
-func (v *doctorView) toggleDockerAction(key string) (string, bool) {
-	if kind, ok := dockerKindOfRow(key); ok && !dockerRunnable(kind) {
-		return "ボリュームはこの画面から消しません (消すと戻らないので y でコマンドをコピーしてください)", false
-	}
+func (v *doctorView) toggleDockerAction() (string, bool) {
 	cmd := v.rows[v.cur.index].copyPath
 	if cmd == "" {
 		return "この行には実行するコマンドがありません", false
 	}
-	return v.toggleCmdAction()
-}
-
-// dockerKindOfRow は行の key から群の種別を取る (dockerprune は群に属さない)。
-func dockerKindOfRow(key string) (docker.Kind, bool) {
-	for _, pre := range []string{"docker:", "dockeritem:"} {
-		rest, ok := strings.CutPrefix(key, pre)
-		if !ok {
-			continue
-		}
-		if i := strings.Index(rest, ":"); i >= 0 {
-			rest = rest[:i]
-		}
-		return docker.Kind(rest), true
+	// 🚨 実行してよい手だけを選ばせる。**登録されていないコマンドは実行できない** —
+	// 実行不可の群 (ボリューム) の手は registerDockerAction を通っていないので、ここで落ちる
+	// (行の key から Kind を導き直すと、判定が 2 実装になる)
+	if _, ok := v.actionByCmd[cmd]; !ok {
+		return "この行はこの画面から実行しません (消すと戻らないので y でコマンドをコピーしてください)", false
 	}
-	return "", false
-}
-
-func isDockerRowKey(key string) bool {
-	return strings.HasPrefix(key, "docker:") || strings.HasPrefix(key, "dockeritem:") || key == "dockerprune"
+	return v.toggleCmdAction()
 }
 
 func dockerItemLine(o doctorRenderOpts, it docker.Item) string {
@@ -310,6 +298,21 @@ func dockerItemLine(o doctorRenderOpts, it docker.Item) string {
 		line += doctorColor(o.colored, ansiDim, "  "+it.Detail)
 	}
 	return truncateDisp(line, max(20, o.width-2), "…")
+}
+
+// dockerGroupCopyPath は y でコピーするコマンド。群のまとめコマンドが無い群では
+// 1 件ずつのコマンドを改行区切りで返す (無言で何もしない、にしない)。
+func dockerGroupCopyPath(g docker.Group) string {
+	if g.Command != "" {
+		return g.Command
+	}
+	cmds := make([]string, 0, len(g.Items))
+	for _, it := range g.Items {
+		if it.Command != "" {
+			cmds = append(cmds, it.Command)
+		}
+	}
+	return strings.Join(cmds, "\n")
 }
 
 // dockerGroupCopyText は Y でコピーする解説 (別セッションの LLM にそのまま投げられる形)。
@@ -332,4 +335,9 @@ func dockerGroupCopyText(g docker.Group) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// isDockerRowKey は Docker タブの行か (Space の分岐に使う)。
+func isDockerRowKey(key string) bool {
+	return strings.HasPrefix(key, "docker:") || strings.HasPrefix(key, "dockeritem:") || key == "dockerprune"
 }

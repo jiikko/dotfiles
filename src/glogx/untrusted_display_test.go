@@ -706,7 +706,7 @@ func TestDoctorLiveDockerScanIsSanitized(t *testing.T) {
 			img = g
 		}
 	}
-	if len(img.Items) != 1 || img.Items[0].Name != "abcabcabcabc" || img.Items[0].Command != "docker rmi abcabcabcabc" {
+	if len(img.Items) != 1 || img.Items[0].Name != "abcabcabcabc" || img.Items[0].Command != "docker rmi -- abcabcabcabc" {
 		t.Errorf("細工された repo:tag が提示に載った: %+v", img.Items)
 	}
 
