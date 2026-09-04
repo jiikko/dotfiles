@@ -73,7 +73,7 @@
   - 本文には規範だけを書き、実例・実測・起源は同名の `rules-rationale/` へ最初から書く
     (後から移す形は失敗している。実例: `rules-rationale/mutation-verify-new-tests.md` の
     「ルール本文から移した実例」節が文頭の切れた断片集になっている)
-- **`issues/next/` があるリポジトリでは、着手する issue をそこへ移して claim し、その移動だけを即 push する**（複数マシンが同じ issue 列を処理するため。claim は push されて初めて他マシンから見える。着手前に `git fetch` して既に next に居ないかを見る）。**`issues/next/` が無いリポジトリ（仕事の repo 等）ではこの規律は適用しない**。詳細は [`claim-issue-in-next-and-push.md`](rules/claim-issue-in-next-and-push.md)。PostToolUse hook（`_claude/hooks/next-claim-push.sh`）が `issues/next/` への移動を検出して push を促し、UserPromptSubmit hook（`_claude/hooks/next-claim-unshared.sh`）が「他マシンから見えない claim」（未コミット / commit 済みだが未 push。glogx の `n` で人が付けたものを含む）を拾って push の可否をユーザーに伺わせる
+- **`issues/next/`（または group の `issues/epic/<name>/next/`）があるリポジトリでは、着手する issue をそこへ移して claim し、その移動だけを即 push する**（複数マシンが同じ issue 列を処理するため。claim は push されて初めて他マシンから見える。着手前に `git fetch` して既に next に居ないかを見る。group issue の claim 先は所属 group 内の `next/`、完了はどちらも global の `issues/done/`）。**どの `next/` も無いリポジトリ（仕事の repo 等）ではこの規律は適用しない**。詳細は [`claim-issue-in-next-and-push.md`](rules/claim-issue-in-next-and-push.md)。PostToolUse hook（`_claude/hooks/next-claim-push.sh`）が `issues/next/` への移動を検出して push を促し、UserPromptSubmit hook（`_claude/hooks/next-claim-unshared.sh`）が「他マシンから見えない claim」（未コミット / commit 済みだが未 push。glogx の `n` で人が付けたものを含む）を拾って push の可否をユーザーに伺わせる
 - **設計判断・仕様・調査記録は `docs/`**（索引は [`docs/README.md`](../docs/README.md)）。触る前に読む制約
   (glogx の bubbletea v2 / テーマ色の定数 / tmux のセッション永続化) と、glogx の画面の契約がここにある。
   **新しく足したら索引に 1 行足す**（載っていない文書は存在を知っている人にしか届かない）

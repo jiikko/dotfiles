@@ -8,7 +8,7 @@
 issues/NNN-<カテゴリ>-<スラッグ>.md
 ```
 
-- **NNN**: 3 桁ゼロ埋めの連番。**issues/ 直下・pending/・done/ の全体**で最大番号 + 1 を採番する（番号は再利用しない）。pending/ や done/ へ移動してもファイル名は変えないため、コードコメント・commit message から「issue 012」で安定して参照できる
+- **NNN**: 3 桁ゼロ埋めの連番。**issues/ 配下の全体**（直下・`next/`・`pending/`・`done/`・`epic/<name>/`・`epic/<name>/next/`）で最大番号 + 1 を採番する（番号は再利用しない）。状態ディレクトリや group へ移動してもファイル名は変えないため、コードコメント・commit message から「issue 012」で安定して参照できる
 - **カテゴリ**: 下表の prefix のいずれか
 - **スラッグ**: kebab-case の短い説明。日付を残したい場合は末尾に `-YYYY-MM-DD`
 
@@ -31,9 +31,11 @@ working tree の `ls` には見えない。148 が 2 セッションで衝突し
 
 ```sh
 git fetch origin
-{ ls issues issues/pending issues/done; git ls-tree -r --name-only origin/master -- issues | sed 's|.*/||'; } |
+{ find issues -type f -name '[0-9][0-9][0-9]-*.md' | sed 's|.*/||'; git ls-tree -r --name-only origin/master -- issues | sed 's|.*/||'; } |
   grep -E '^[0-9]{3}-' | sort | tail -1
 ```
+
+（`ls` でディレクトリを列挙する形にしない: `epic/<name>/` の 2 段を数え漏らす。`find` は深さを切らない）
 
 **番号の一意性は機械が守る**: `tests/issues/test_issue_numbers_unique.sh`（`make test` に自動発見で
 含まれる）が `issues/` 配下を掘って NNN の重複を検出し、重複していたら参照の数え方まで出す。
@@ -96,6 +98,12 @@ Claude が**実質的な作業をやり切った時点**（機能追加・バグ
   規範は [`_claude/rules/claim-issue-in-next-and-push.md`](../_claude/rules/claim-issue-in-next-and-push.md)
 - `issues/pending/` — 着手を保留している issue の置き場（着手条件・trigger を本文冒頭に書いておく）
 - `issues/done/` — 完了した issue の移動先（ファイル名は変えずに移動）
+- `issues/epic/<name>/` — **親テーマ（epic）でまとめる group issue** の置き場。中の md は open として扱われ、
+  glogx の issues viewer では `<name> (N)` の親行に折り畳まれる（`Enter` / `Space` で展開）。
+  **固定 2 段**で、これより深くは掘らない。`epic/` 直下に置いた md は迷子（`?`）として表示される
+  - `issues/epic/<name>/next/` — group issue の claim 先（global の `next/` と同じ規律。viewer の `n` はここへ移す）
+  - **group 内に `done/` / `pending/` は作らない**。完了は global の `issues/done/` へ移す（group 内に置くと迷子 `?` になる）
+  - 契約の一次情報は [`docs/issues-viewer-spec.md`](../docs/issues-viewer-spec.md) の「対象 / 状態ディレクトリ」節
 - `audit-log` — audit 実行の記録（TSV）。issue ではない。**issue ファイルをパスで参照しているため、既存ファイルを rename するとここの参照が切れる**
 - この `README.md` も issue ではない
 
