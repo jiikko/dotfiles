@@ -255,9 +255,6 @@ func scanEpicDir(dir, epic string) []*Issue {
 			}
 			continue
 		}
-		if skipDirs[e.Name()] {
-			continue
-		}
 		groupDir := filepath.Join(dir, epic, e.Name())
 		groupKey := filepath.Join(dir, epic, e.Name())
 		files, err := os.ReadDir(groupDir)

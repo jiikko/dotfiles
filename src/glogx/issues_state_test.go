@@ -71,6 +71,52 @@ func TestIssuesViewRestoreAppliesExpandedGroups(t *testing.T) {
 	}
 }
 
+func TestIssuesViewRestoreExpandsEpicChildForCursorAndOpen(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		set   func(*issuesScreen, string)
+		check func(*testing.T, *issuesView, *issues.Issue)
+	}{
+		{
+			name: "cursor",
+			set:  func(s *issuesScreen, path string) { s.Cursor = path },
+			check: func(t *testing.T, v *issuesView, child *issues.Issue) {
+				if v.current() == nil || v.current().Path != child.Path {
+					t.Fatalf("折り畳まれた子へ cursor が戻らない: current=%+v rows=%+v", v.current(), v.displayRows)
+				}
+			},
+		},
+		{
+			name: "open",
+			set:  func(s *issuesScreen, path string) { s.Open = path },
+			check: func(t *testing.T, v *issuesView, child *issues.Issue) {
+				if v.open == nil || v.open.Path != child.Path {
+					t.Fatalf("折り畳まれた子の本文が開かれない: open=%+v", v.open)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			child := fakeEpicIssue(dir, "cloud", "415", "drive", issues.StatusOpen)
+			if err := os.MkdirAll(filepath.Dir(child.Path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(child.Path, []byte("# 415 feat: drive\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			v := loadedView(child)
+			s := issuesScreen{}
+			tc.set(&s, child.Path)
+			v.applyScreen(s)
+			if !v.expandedGroups[child.GroupKey] {
+				t.Fatalf("%s 復元で Epic group が展開されない: expanded=%v display=%+v", tc.name, v.expandedGroups, v.displayRows)
+			}
+			tc.check(t, v, child)
+		})
+	}
+}
+
 // TTL 切れ・未来の時刻・壊れたファイル・不在は、すべて「記憶なし」に落とす
 // (記憶の都合で起動を失敗させない)。
 func TestIssuesScreenIgnoresStaleAndBroken(t *testing.T) {

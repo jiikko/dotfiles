@@ -159,6 +159,31 @@ func TestIssuesWatchDirsIncludeEpicAndEmptyGroups(t *testing.T) {
 	}
 }
 
+func TestIssuesWatchDirsUsesActualCaseInsensitiveEpicEntry(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	group := filepath.Join(dir, "EPIC", "cloud")
+	if err := os.MkdirAll(group, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	v := newTestIssuesView()
+	v.dirs = []string{dir}
+	dirs, _ := v.watchTargets()
+	for _, want := range []string{dir, filepath.Join(dir, "EPIC"), group} {
+		if !slices.Contains(dirs, want) {
+			t.Fatalf("大文字の Epic entry %q が watch 対象にない: %v", want, dirs)
+		}
+	}
+	if slices.Contains(dirs, filepath.Join(dir, issues.EpicDirName)) {
+		t.Fatalf("存在しない lowercase の Epic path を watch 対象にした: %v", dirs)
+	}
+	fp := issuesFingerprint(dirs, nil)
+	if !strings.Contains(fp, filepath.Join(dir, "EPIC")+":entries:") {
+		t.Fatalf("大文字の Epic entry list が指紋に含まれない: %q", fp)
+	}
+}
+
 func TestIssuesWatchReloadsOpenBody(t *testing.T) {
 	// 本文を開いたまま書き換えられたら本文も差し替わり、スクロール位置は保つ。
 	root, path := watchTree(t, "# 001 feat: x\n\n本文の初版。\n")

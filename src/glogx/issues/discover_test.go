@@ -73,6 +73,16 @@ func TestFindDirsFindsEpicOnlyRepoAndScanReadsIt(t *testing.T) {
 	}
 }
 
+func TestFindDirsAcceptsSkipDirNameAsEpicGroup(t *testing.T) {
+	root := t.TempDir()
+	mkFiles(t, filepath.Join(root, "issues", EpicDirName, "build"), "710-feat-build.md")
+
+	got := FindDirs(root)
+	if len(got) != 1 || got[0] != filepath.Join(root, "issues") {
+		t.Fatalf("skipDirs と同名の Epic group を探索で除外した: %q", got)
+	}
+}
+
 func TestFindDirsSkipsGeneratedDirs(t *testing.T) {
 	root := t.TempDir()
 	mkFiles(t, filepath.Join(root, "node_modules", "issues"), "001-feat-a.md")

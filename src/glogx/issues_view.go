@@ -176,6 +176,10 @@ type issuesView struct {
 	// そのまま再利用すると、カーソル/選択が別行へ滑る。
 	pendingCursorPath string
 	pendingMarkPath   string
+	// pendingMoveStale は、移動時点ですでにスキャンが飛行中だったため、次の receive が
+	// 移動前の stale 結果になりうる印。1 回だけ stale を許し、その次の receive では宛先が
+	// 消えていても pending を捨てる。
+	pendingMoveStale bool
 }
 
 const (
@@ -274,13 +278,26 @@ func (v *issuesView) screen(now time.Time) (issuesScreen, bool) {
 // anchorCursor が当たらなければ先頭のまま、本文はパスが見つからなければ一覧のままにする。
 func (v *issuesView) applyScreen(s issuesScreen) {
 	v.expandedGroups = copyExpandedGroups(s.Groups)
+	for _, iss := range v.all {
+		if (iss.Path != s.Cursor && iss.Path != s.Open) || iss.GroupKind != issues.GroupEpic {
+			continue
+		}
+		key := issueGroupKey(iss)
+		if key == "" {
+			continue
+		}
+		if v.expandedGroups == nil {
+			v.expandedGroups = make(map[string]bool)
+		}
+		v.expandedGroups[key] = true
+	}
 	v.filter, _ = issues.ParseStatusFilter(s.Filter) // 未知の名前は既定へ (loadIssuesScreen で正規化済み)
 	v.refresh()                                      // フィルタを反映してタブの並びと件数を作る (tabIdx を引くのに要る)
 	v.tabIdx = tabIndexOf(v.tabs, s.Tab)
 	v.refresh() // 選んだタブで行集合を作り直す
 	// 窓 (offset) はここで動かさない: 描画が windowOffset でカーソルを含む位置へ収束させる
 	// (offset を状態でなく導出値として扱う規律。windowOffset の doc)
-	v.anchorCursor(s.Cursor)
+	v.anchorCursorInternal(s.Cursor)
 	if s.Open == "" {
 		return
 	}
@@ -478,7 +495,9 @@ func (v *issuesView) receive(msg issuesScanMsg) tea.Cmd {
 	// 満たせる (スキャンは内容を変えないので指紋は動かない)。
 	v.watch.seen, v.watch.pending = msg.fp, ""
 	tab, cursorPath, openPath, markPath := v.currentTab(), issuePath(v.current()), issuePath(v.open), v.markPath()
+	cursorGroupKey := v.currentGroupKey()
 	pendingCursorPath, pendingMarkPath := v.pendingCursorPath, v.pendingMarkPath
+	pendingMoveStale := v.pendingMoveStale
 	if pendingCursorPath != "" {
 		cursorPath = pendingCursorPath
 	}
@@ -490,15 +509,22 @@ func (v *issuesView) receive(msg issuesScanMsg) tea.Cmd {
 	v.tabs = v.tabsCanon // refresh が件数を数えて表示順 (0 件を右) へ並べ替える
 	v.tabIdx = tabIndexOf(v.tabs, tab)
 	v.refresh()
-	v.anchorCursor(cursorPath)
+	if cursorGroupKey != "" {
+		v.anchorGroupInternal(cursorGroupKey)
+	} else {
+		v.anchorCursorInternal(cursorPath)
+	}
 	v.anchorMark(markPath)
 	// 移動直後に到着した結果が move 前に始まった stale scan なら、新 path はまだ msg.all に
-	// 無い。rescanPending の次の結果まで pending anchor を残し、そこで初めて消費する。
-	if pendingCursorPath != "" && hasIssuePath(v.all, pendingCursorPath) {
+	// 無い。stale 印の次の結果まで pending anchor を残し、そこで宛先を消費する。
+	if pendingCursorPath != "" && (hasIssuePath(v.all, pendingCursorPath) || !pendingMoveStale) {
 		v.pendingCursorPath = ""
 	}
-	if pendingMarkPath != "" && hasIssuePath(v.all, pendingMarkPath) {
+	if pendingMarkPath != "" && (hasIssuePath(v.all, pendingMarkPath) || !pendingMoveStale) {
 		v.pendingMarkPath = ""
+	}
+	if pendingMoveStale {
+		v.pendingMoveStale = false
 	}
 	v.rebindOpen(openPath)
 	v.startWatch() // 監視対象のディレクトリはスキャン結果で決まる (issues_watch.go)
@@ -552,8 +578,16 @@ func tabIndexOf(tabs []issues.Tab, name string) int {
 	return 0
 }
 
-// anchorCursor は再スキャン前と同じ issue にカーソルを戻す (消えていれば位置を維持)。
+// anchorCursor は手動の再アンカー。ユーザーが明示的にカーソルを置いたら、直前の move の
+// 再アンカー予約を優先させない。
 func (v *issuesView) anchorCursor(path string) {
+	v.clearPendingMoveAnchors()
+	v.anchorCursorInternal(path)
+}
+
+// anchorCursorInternal は再スキャン後と復元時の内部再アンカー。ここでは pending move を残し、
+// 受信側が stale / authoritative の判定を終える。
+func (v *issuesView) anchorCursorInternal(path string) {
 	if path == "" {
 		return
 	}
@@ -564,6 +598,14 @@ func (v *issuesView) anchorCursor(path string) {
 			return
 		}
 	}
+}
+
+func (v *issuesView) currentGroupKey() string {
+	row, ok := v.currentDisplayRow()
+	if !ok || row.kind != displayRowGroup {
+		return ""
+	}
+	return row.groupKey
 }
 
 // markPath は選択の錨が指す issue のパス ("" = 選択していない / 錨が範囲外)。
@@ -1087,6 +1129,11 @@ func (v *issuesView) toggleGroupAtCursor() bool {
 }
 
 func (v *issuesView) anchorGroup(key string) {
+	v.clearPendingMoveAnchors()
+	v.anchorGroupInternal(key)
+}
+
+func (v *issuesView) anchorGroupInternal(key string) {
 	v.ensureDisplayRows()
 	for i, row := range v.displayRows {
 		if row.kind == displayRowGroup && row.groupKey == key {
@@ -1104,9 +1151,7 @@ func (v *issuesView) anchorGroup(key string) {
 func (v *issuesView) clearNumberFilter() {
 	iss := v.current()
 	path := issuePath(iss)
-	for key := range v.autoExpandedGroups {
-		delete(v.collapsedGroups, key)
-	}
+	v.collapsedGroups = nil
 	if iss != nil && iss.GroupKind == issues.GroupEpic {
 		key := issueGroupKey(iss)
 		if key != "" && v.autoExpandedGroups[key] && !v.expandedGroups[key] {
@@ -1252,9 +1297,11 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 	case "ctrl+u", "pgup", "b", "shift+space":
 		v.moveCursor(-max(rows/2, 1), rows)
 	case "g", "home":
+		v.clearPendingMoveAnchors()
 		v.clearMark()
 		v.cursor, v.offset = 0, 0
 	case "G", "end":
+		v.clearPendingMoveAnchors()
 		v.clearMark()
 		v.ensureDisplayRows()
 		v.cursor = max(len(v.displayRows)-1, 0)
@@ -1427,6 +1474,7 @@ func (v *issuesView) moveCursor(delta, rows int) {
 
 // setCursor はカーソルを位置 i へ置いて窓を追従させる (選択には触れない)。
 func (v *issuesView) setCursor(i, rows int) {
+	v.clearPendingMoveAnchors()
 	v.ensureDisplayRows()
 	v.cursor = clampIdx(i, len(v.displayRows))
 	v.scrollToCursor(rows)
@@ -1510,6 +1558,7 @@ func (v *issuesView) windowOffset(rows int) int {
 
 // moveTab はタブを切り替える (端で止まらず巡回する)。
 func (v *issuesView) moveTab(delta int) {
+	v.clearPendingMoveAnchors()
 	// [next] (-1) と All (0) を含めた巡回。-1 起点なので +1 して 0 起点へ寄せてから回す
 	n := len(v.tabs) + 2
 	v.tabIdx = ((v.tabIdx+1+delta)%n+n)%n - 1
@@ -2344,12 +2393,21 @@ func (v *issuesView) markNextKey(key string) tea.Cmd {
 }
 
 func (v *issuesView) setPendingMoveAnchors(cursorPath, markPath string, moved map[string]string) {
+	v.clearPendingMoveAnchors()
 	if next, ok := moved[cursorPath]; ok {
 		v.pendingCursorPath = next
 	}
 	if next, ok := moved[markPath]; ok {
 		v.pendingMarkPath = next
 	}
+	if v.pendingCursorPath != "" || v.pendingMarkPath != "" {
+		v.pendingMoveStale = v.scanning
+	}
+}
+
+func (v *issuesView) clearPendingMoveAnchors() {
+	v.pendingCursorPath, v.pendingMarkPath = "", ""
+	v.pendingMoveStale = false
 }
 
 // markNextBox は確認モーダルの箱 (glogx の push/pull 確認と同じ見た目)。

@@ -142,7 +142,7 @@ func hasEpicMarkdown(epicDir string) bool {
 		if isContentIssueFile(e) {
 			return true
 		}
-		if !e.IsDir() || skipDirs[e.Name()] {
+		if !e.IsDir() {
 			continue
 		}
 		groupEntries, err := os.ReadDir(filepath.Join(epicDir, e.Name()))

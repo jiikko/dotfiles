@@ -113,6 +113,52 @@ func TestIssuesViewNumberFilterAutoExpandsAndReanchorsChild(t *testing.T) {
 	}
 }
 
+func TestIssuesViewClearingNumberFilterDropsStaleCollapsedGroups(t *testing.T) {
+	child := fakeEpicIssue("/repo/issues", "cloud", "415", "first", issues.StatusOpen)
+	v := loadedView(child)
+
+	v.handleKey("/", vp(10))
+	v.handleKey("4", vp(10))
+	v.handleKey("1", vp(10))
+	v.handleKey("5", vp(10))
+	v.handleKey("enter", vp(10))
+	v.handleKey(" ", vp(10)) // 自動展開された group を手動で折り畳む
+	if !v.collapsedGroups[child.GroupKey] {
+		t.Fatal("前提: 番号 filter 中の group を折り畳めていない")
+	}
+
+	v.handleKey("/", vp(10))
+	v.handleKey("ctrl+u", vp(10))
+	v.handleKey("9", vp(10))
+	v.handleKey("9", vp(10))
+	v.handleKey("9", vp(10)) // group A を不一致にして autoExpandedGroups から外す
+	v.handleKey("esc", vp(10))
+
+	v.handleKey("/", vp(10))
+	v.handleKey("4", vp(10))
+	v.handleKey("1", vp(10))
+	v.handleKey("5", vp(10))
+	if !v.groupExpanded(child.GroupKey) || len(v.displayRows) != 2 {
+		t.Fatalf("検索語を戻しても group が再展開されない: expanded=%v collapsed=%v rows=%+v",
+			v.groupExpanded(child.GroupKey), v.collapsedGroups, v.displayRows)
+	}
+}
+
+func TestIssuesViewRescanReanchorsGroupParentByGroupKey(t *testing.T) {
+	child := fakeEpicIssue("/repo/issues", "cloud", "415", "first", issues.StatusOpen)
+	v := loadedView(child)
+	if !v.currentIsGroup() {
+		t.Fatal("前提: 初期カーソルが group 親行にない")
+	}
+
+	newer := fakeIssue("999", "feat", "new", issues.StatusOpen)
+	v.receive(issuesScanMsg{dirs: []string{"/repo/issues"}, issues: []*issues.Issue{newer, child}})
+	row, ok := v.currentDisplayRow()
+	if !ok || row.kind != displayRowGroup || row.groupKey != child.GroupKey {
+		t.Fatalf("再スキャン後に親行へ戻らない: row=%+v cursor=%d display=%+v", row, v.cursor, v.displayRows)
+	}
+}
+
 func TestIssuesViewAutoExpandedGroupStillToggles(t *testing.T) {
 	child := fakeEpicIssue("/repo/issues", "cloud", "415", "first", issues.StatusOpen)
 	v := loadedView(child)
@@ -197,5 +243,69 @@ func TestIssuesViewMoveReanchorsCursorAndMarkToReturnedPaths(t *testing.T) {
 	}
 	if lo, hi, ok := v.selection(); !ok || hi-lo != 1 {
 		t.Fatalf("mark が move 後に再アンカーされない: lo=%d hi=%d ok=%v", lo, hi, ok)
+	}
+}
+
+func TestIssuesViewUserCursorActionsCancelPendingMoveAnchors(t *testing.T) {
+	type action struct {
+		name string
+		run  func(*issuesView)
+	}
+	actions := []action{
+		{name: "moveCursor", run: func(v *issuesView) { v.moveCursor(1, 10) }},
+		{name: "setCursor", run: func(v *issuesView) { v.setCursor(1, 10) }},
+		{name: "g", run: func(v *issuesView) { v.handleKey("g", vp(10)) }},
+		{name: "G", run: func(v *issuesView) { v.handleKey("G", vp(10)) }},
+		{name: "tab", run: func(v *issuesView) { v.handleKey("tab", vp(10)) }},
+		{name: "anchorCursor", run: func(v *issuesView) { v.anchorCursor(v.rows[0].Path) }},
+	}
+	for _, tc := range actions {
+		t.Run(tc.name, func(t *testing.T) {
+			v := loadedView(sampleIssues()...)
+			v.pendingCursorPath, v.pendingMarkPath = "/moved/cursor", "/moved/mark"
+			tc.run(v)
+			if v.pendingCursorPath != "" || v.pendingMarkPath != "" {
+				t.Fatalf("%s 後も pending anchor が残る: cursor=%q mark=%q", tc.name, v.pendingCursorPath, v.pendingMarkPath)
+			}
+		})
+	}
+
+	t.Run("anchorGroup", func(t *testing.T) {
+		child := fakeEpicIssue("/repo/issues", "cloud", "415", "first", issues.StatusOpen)
+		v := loadedView(child)
+		v.pendingCursorPath, v.pendingMarkPath = "/moved/cursor", "/moved/mark"
+		v.anchorGroup(child.GroupKey)
+		if v.pendingCursorPath != "" || v.pendingMarkPath != "" {
+			t.Fatalf("anchorGroup 後も pending anchor が残る: cursor=%q mark=%q", v.pendingCursorPath, v.pendingMarkPath)
+		}
+	})
+}
+
+func TestIssuesViewPendingMoveAnchorsExpireAfterFreshMissingScan(t *testing.T) {
+	iss := realIssue(t)
+	v := loadedView(iss)
+	v.cwd = iss.Dir
+	if v.scanCmd(v.cwd) == nil {
+		t.Fatal("前提: stale scan を飛行させられない")
+	}
+	v.handleKey("n", vp(10))
+	if v.handleKey("y", vp(10)) != nil || v.pendingCursorPath == "" {
+		t.Fatal("前提: move 後の pending cursor anchor がない")
+	}
+	if err := os.Remove(filepath.Join(iss.Dir, issues.NextDirName, iss.Rel)); err != nil {
+		t.Fatal(err)
+	}
+
+	stale := issuesScanMsg{dirs: []string{iss.Dir}, issues: []*issues.Issue{iss}}
+	if cmd := v.receive(stale); cmd == nil {
+		t.Fatal("stale receive 後の authoritative scan が予約されない")
+	}
+	if v.pendingCursorPath == "" {
+		t.Fatal("stale receive だけで pending anchor を消費した")
+	}
+	v.receive(stale)
+	if v.pendingCursorPath != "" || v.pendingMarkPath != "" {
+		t.Fatalf("宛先が消えた fresh receive 後も pending が残る: cursor=%q mark=%q",
+			v.pendingCursorPath, v.pendingMarkPath)
 	}
 }

@@ -267,13 +267,23 @@ func issuesWatchDirs(baseDirs []string, all []*issues.Issue) []string {
 	}
 	for _, dir := range baseDirs {
 		add(dir)
-		epic := filepath.Join(dir, issues.EpicDirName)
-		fi, err := os.Lstat(epic)
-		if err != nil || !fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
 			continue
 		}
+		epicName := ""
+		for _, e := range entries {
+			if e.IsDir() && strings.EqualFold(e.Name(), issues.EpicDirName) {
+				epicName = e.Name()
+				break
+			}
+		}
+		if epicName == "" {
+			continue
+		}
+		epic := filepath.Join(dir, epicName)
 		add(epic)
-		entries, err := os.ReadDir(epic)
+		entries, err = os.ReadDir(epic)
 		if err != nil {
 			continue
 		}

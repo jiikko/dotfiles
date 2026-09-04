@@ -11,14 +11,15 @@ glogx の issues viewer (`i` キー) が `issues/` をどう解釈するかの�
 |---|---|
 | 起点 | `git rev-parse --show-toplevel` (失敗したら cwd) |
 | 対象 | `<root>/issues` と `<root>/*/issues` (通常は深さ 1。`issue` 単数形も可)。ただし各 issue dir の `epic/<name>/` だけは 2 段目まで |
-| 除外 | `.git` / `node_modules` / `vendor` / `build` / `dist` / `tmp` / `Pods` 等の生成物 |
+| 除外 | repo 直下の探索では `.git` / `node_modules` / `vendor` / `build` / `dist` / `tmp` / `Pods` 等の生成物 |
 | 条件 | 通常は直下または 1 段下に `.md` が 1 つ以上。`epic/` は `epic/<name>/`（およびその `next/` 等）まで見る |
 
 - 起点を cwd ではなく repo root にするのは、glogx が tmux popup から `-d '#{pane_current_path}'`
   で起動されるため。cwd 起点だと「repo に issues があるのに viewer が空」になる
 - 通常の探索を深さ 1 に留めるのは、`<root>/issues` と `<sub>/issues` の両方を持つ repo が実在するため
   (DualNoteApp は root に 3 件・`macOS/issues` に 102 件)。例外として `epic/<name>/` は 2 段構造を
-  正式に扱う。epic 配下にしか md が無い repo も issue dir として拾う
+  正式に扱う。`<name>` は `build` / `tmp` 等の生成物名と同じでも group として扱い、epic 配下にしか
+  md が無い repo も issue dir として拾う
 - `.md` の有無を条件にするのは、名前が `issues` でも issue 管理でないディレクトリがあるため
   (`ubiregi-server/script/issues/19951` は権限 fixture の `.yml` 置き場)
 
@@ -388,7 +389,8 @@ tmux popup の開閉トグルとして使われるので、覚えないと C-g �
   折り畳み状態や番号 filter の一時 `autoExpanded` は保存しない。`Groups` が無い古い JSON は
   既定の折り畳みへ戻る
 - **カーソル・本文・選択の同一性キーは引き続き issue の path**。group の親行は state のカーソル
-  対象ではなく、再スキャン後も子 issue の path で張り替える
+  対象ではない。再スキャン前に親行を見ていた場合だけは `GroupKey` で親行へ戻し、復元時に
+  `Cursor` または `Open` が Epic の子を指していれば、その group を展開してから張り替える
 - **TTL 30 分** (`issuesStateTTL`)。C-g のトグル感覚に効かせ、時間が経ってから開いたときは通常
   どおり一覧から始める。時計が巻き戻った (保存時刻が読み取り時刻より未来) 記憶も使わない
 - **開く演出 (700ms) は出さない**。復元は「閉じたところから再開」なので、起動のたびに待たせない
@@ -477,9 +479,9 @@ viewer は「確信を持って嘘をつく」ことを最も嫌うので、次�
 それが唯一の経路になるので周期を上げる。実装は `src/glogx/issues_watch.go`。
 
 fsnotify の対象は issue dir と、ファイルのある状態ディレクトリに加えて `issues/epic/` と全ての
-`epic/<name>/`（空でも）にする。これで新しい group、空 group への最初の md、group 内 `next/`
-の作成を取り直しへつなげる。指紋にも `epic/` の entry list を含めるので、空 group の追加も
-イベント・ポーリングのどちらから検出できる。
+`epic/<name>/`（空でも）にする。`epic` の綴りは大文字小文字を問わず、実在する entry 名を使う。
+これで新しい group、空 group への最初の md、group 内 `next/` の作成を取り直しへつなげる。
+指紋にも `epic/` の entry list を含めるので、空 group の追加もイベント・ポーリングのどちらから検出できる。
 
 ## 6. repo を寄せるときのチェックリスト
 

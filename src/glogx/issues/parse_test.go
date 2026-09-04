@@ -461,6 +461,17 @@ func TestScanReadsEpicSubdirsAsOpenGroups(t *testing.T) {
 	}
 }
 
+func TestScanAcceptsSkipDirNameAsEpicGroup(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	mkFiles(t, filepath.Join(dir, EpicDirName, "build"), "710-feat-build.md")
+
+	got, _ := Scan([]string{dir})
+	if len(got) != 1 || got[0].Rel != filepath.Join(EpicDirName, "build", "710-feat-build.md") {
+		t.Fatalf("skipDirs と同名の Epic group が走査されない: %+v", got)
+	}
+}
+
 func TestScanExcludesMetaFiles(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "issues")
