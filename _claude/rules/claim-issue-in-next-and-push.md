@@ -2,14 +2,15 @@
 
 > **トリガー型ルール。** 「この issue をやろう」と決めて最初のファイルを触る直前に発動する。
 >
-> **適用条件: 作業中の repo に `issues/next/` ディレクトリが実在するときだけ。**
+> **適用条件: 作業中の repo に `issues/next/` または `issues/epic/<name>/next/` ディレクトリが
+> 実在するときだけ。**
 > 無ければこのルール全体を読み飛ばしてよい (仕事の repo のように `issues/` を持たない repo では
-> 何もしない)。運用を始めたい repo では `issues/next/` を作ることが opt-in になる。
+> 何もしない)。運用を始めたい repo では global または group 内の `next/` を作ることが opt-in になる。
 > hook 側も同じ条件で自分を無効化する。
 
 ## ルール
 
-- **着手する前に `git fetch` して、その issue が既に `issues/next/` に居ないか見る**。
+- **着手する前に `git fetch` して、その issue が既に global または所属 group の `next/` に居ないか見る**。
   居たら**別のセッションが着手済み**なので、勝手に始めない (別の issue へ回るか、本人に聞く)
   - 🚨 **fetch は「着手を決めた直前」にもう一度打つ。** セッションの最初に取った結果は古い。
     実測 2026-09-04 (6 セッションが同じ backlog を消化した日): 見落とし / 衝突が **7 回**起き、
@@ -21,6 +22,7 @@
 - **着手を決めたら `issues/next/` へ移し、その移動だけを pathspec で commit して即 push する**。
   claim は **push されて初めて claim になる** — ローカルに留めている間、他マシンからは
   「誰も着手していない issue」に見える
+- **group issue (`issues/epic/<name>/`) の claim は、その group 内の `next/` (`issues/epic/<name>/next/`) へ移す。完了したら global `issues/done/` へ移す。** group 内に `done/` / `pending/` は作らない。
 - **claim の commit に他の変更を混ぜない**。混ぜると push できない事情 (レビュー待ち・検証中) に
   claim が巻き込まれ、宣言だけが遅れる
   - 🚨 **push はブランチ単位**なので「claim の commit だけを push」はできない。他に未 push の
@@ -29,7 +31,7 @@
 - **push できないときは黙って進めない**。remote が進んでいるなら `git pull --rebase` してから
   push する。それでも push できない事情があるなら、**着手前にユーザーへ一言伝える**
   (claim できていない = 衝突しうる、という情報が要る)
-- 完了したら `issues/next/` から `issues/done/` へ移す (next に置きっぱなしにしない)
+- 完了したら global issue は `issues/next/` から `issues/done/` へ、group issue は所属 group の `next/` から global `issues/done/` へ移す (next に置きっぱなしにしない)
 - **`git pull --rebase` が衝突したら、claim を優先して片付ける**。claim の commit は
   「1 ファイルの rename だけ」なので衝突しても解決は自明 (相手が同じ issue を触っていたなら、
   それは**二重着手が起きている証拠**なので、続けずに相手の claim を尊重して別の issue へ回る)。
@@ -45,12 +47,12 @@
 
 ## 強制手段 (hook が一部を持つ)
 
-- **PostToolUse(Bash) hook** `_claude/hooks/next-claim-push.sh` が、`issues/next/` への移動を
+- **PostToolUse(Bash) hook** `_claude/hooks/next-claim-push.sh` が、global または group 内の `next/` への移動を
   含む Bash コマンドを検出したら「claim を単独 commit して push したか」を注入する
   (配線: `_claude/settings.json`)。**この hook が見えるのは Claude が Bash で動かした移動だけ**で、
   glogx の issues viewer の `n` キー (Go 側で移動する) は Bash を通らないので発火しない
 - **UserPromptSubmit hook** `_claude/hooks/next-claim-unshared.sh` が、その穴を埋める:
-  毎プロンプトで、`issues/next/` の claim が**他マシンから見えない状態** (未コミット、または
+  毎プロンプトで、global または group 内の `next/` の claim が**他マシンから見えない状態** (未コミット、または
   commit 済みだが未 push。後者は issue 249 で足した) なら
   「push してよいか」をユーザーへ伺わせる。人が `n` で付けた claim もここで拾う。
   **使い分け**: 移動した瞬間に Claude 自身へ促すのが前者、取りこぼした claim を後から
@@ -66,13 +68,13 @@
 
 ## やること / やらないこと
 
-- ✓ 着手前に `git fetch` し、`issues/next/` に既に居ないか見る
+- ✓ 着手前に `git fetch` し、global または所属 group の `next/` に既に居ないか見る
 - ✓ claim の移動だけを pathspec commit して即 push する
 - ✓ push できない事情があるなら、着手前にユーザーへ伝える
-- ✓ 完了したら next から done へ移す
+- ✓ 完了したら global `issues/done/` へ移す
 - ✗ ローカルで claim して push しないまま作業を始める (claim になっていない)
 - ✗ claim の commit に実装や他の issue の変更を混ぜる
-- ✗ 既に next に居る issue を、確認せずに横から始める
+- ✗ 既に global または所属 group の next に居る issue を、確認せずに横から始める
 
 ## 例外
 

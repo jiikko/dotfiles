@@ -9,7 +9,8 @@
 # 「誰も読まなければ永久に open のまま溜まる」が既定の壊れ方で、セッション開始という必ず
 # 通る場所で催促する。human タスクの期限催促 (human-tasks-due.sh) と同じ発想。
 #
-# 状態の正本はファイルの位置: issues/ 直下 = 未決着、issues/done/ = 決着済み (対象外)。
+# 状態の正本はファイルの位置: issues/ 直下 / issues/next/ / issues/epic/<name>/ /
+# issues/epic/<name>/next/ = 未決着、issues/done/ = 決着済み (対象外)。
 # 本文のチェックボックスは見ない (書き換え忘れで嘘が残るため)。
 # 🚨 経過日数はファイル名末尾の `-YYYY-MM-DD` か本文の `起票日:` から取る。どちらも読めない
 # ものは黙って捨てず「日付不明」として列挙する (取りこぼしを「新しい retro」と区別できないと
@@ -62,7 +63,10 @@ days_since() {
 # 数値ソートと非数値行を分けることで locale から独立させる
 dated="" ; odd="" ; count=0 ; held_count=0
 
-for f in "$dir"/*.md "$dir"/pending/*.md; do
+# 予約された固定 2 段だけを明示する。glob が未展開でも [ -e ] で飛ばす (epic が無い
+# repo で zsh/bash の設定差や set -u に巻き込まれて落ちないようにする)。
+for f in "$dir"/*.md "$dir"/pending/*.md "$dir"/next/*.md \
+  "$dir"/epic/*/*.md "$dir"/epic/*/next/*.md; do
   [ -e "$f" ] || continue
   base=${f##*/}
   # カテゴリ判定は lib の共通実装に任せる (部分一致の誤検出を防ぐ。理由はそちらのコメント)

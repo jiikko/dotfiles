@@ -82,6 +82,16 @@ check "日付不明として列挙する" "日付不明.*issues/014-retro-nodate
 printf '# t\n\n起票日: 2026-08-01\n' >"$repo/issues/pending/015-retro-held-2026-08-01.md"
 check "pending も拾う" "issues/pending/015-retro-held-2026-08-01\.md \[保留\]" "$(report env)"
 
+# --- 6b. epic の直下と group 内 next/ は open として走査・集計する ---
+mkdir -p "$repo/issues/epic/foo/next"
+mkissue "epic/foo/016-retro-epic-${yesterday}.md" "起票日: ${yesterday}"
+mkissue "epic/foo/next/017-retro-epic-next-${yesterday}.md" "起票日: ${yesterday}"
+out="$(report env)"
+check "epic 直下の retro を一覧に出す" "issues/epic/foo/016-retro-epic-${yesterday}\.md" "$out"
+check "epic 直下の retro を件数に数える" "未決着の retro issue: 4 件" "$out"
+check "epic 内 next/ の retro を一覧に出す" "issues/epic/foo/next/017-retro-epic-next-${yesterday}\.md" "$out"
+check "epic 内 next/ の retro を件数に数える" "未決着の retro issue: 4 件" "$out"
+
 # --- 7. 古い方が先に出る (溜まった retro が末尾に沈まない) ---
 out="$(report env)"
 older="$(printf '%s' "$out" | grep -n '015-retro-held' | cut -d: -f1)"
@@ -217,6 +227,15 @@ check "jq 不在でも黙らない" "未決着の retro issue" "$plain"
 check "jq 不在でも .cwd 側の repo を報告する" "issues/013-retro-session" "$plain"
 check "jq 不在で PWD 側の repo を報告しない" "" "$(printf '%s' "$plain" | grep 'retro-elsewhere' || true)"
 
+# --- 19. epic/ が無い repo でも未展開 glob をエラーにしない ---
+noepic="$WORK/no-epic"
+mkdir -p "$noepic/issues"
+git -C "$noepic" init -q .
+printf '# t\n\n起票日: 2026-08-01\n' >"$noepic/issues/091-retro-no-epic.md"
+noepic_out="$(printf '{"cwd":"%s"}' "$noepic" | "$HOOK" 2>/dev/null)"
+noepic_ctx="$(printf '%s' "$noepic_out" | jq -r '.hookSpecificOutput.additionalContext // ""')"
+check "epic 無しでも正常に走査する" '091-retro-no-epic' "$noepic_ctx"
+
 # --- 16. 壁時計が進んでも経過日数は暦日で数える (実測 2026-09-02 の flake) ---
 # hook は today_epoch を先に取り、あとで各 issue の日付を解釈する。BSD の
 # `date -j -f '%Y-%m-%d'` は時刻を 00:00:00 にせず**実行時点の時刻**を埋めるため、その 2 回の
@@ -258,4 +277,4 @@ check "壁時計が進んでも暦日で数える" "1 日前 +issues/019-retro-c
 if [ "$fails" -gt 0 ]; then
   echo "FAIL: retro-open.sh ($fails 件)"; exit 1
 fi
-echo "OK: retro-open.sh (25 観点)"
+echo "OK: retro-open.sh (30 観点)"

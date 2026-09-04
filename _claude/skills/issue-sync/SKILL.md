@@ -12,7 +12,8 @@ Open Issues の中から、実際にはコードベース上で対応済み（do
 プロジェクトでは読み替える）。`done/` が無ければ、その旨を報告して終了する（勝手に作らない）。
 
 **状態の正本はディレクトリ**: どの issue が open かは**ファイルの置き場所**が決める
-（`issues/` 直下 = open / `pending/` = 着手保留 / `done/` = 完了）。readme の一覧テーブルは
+（`issues/` 直下 / `next/` / `epic/<name>/` / `epic/<name>/next/` = open、`pending/` = 着手保留、
+`done/` = 完了）。readme の一覧テーブルは
 **任意の派生物**で、持つ repo と持たない repo がある（例: dotfiles の `issues/README.md` は
 命名規約ドキュメントで一覧表を持たない）。テーブルを起点にすると、テーブルの無い repo で
 空振りし、ある repo でもテーブルの記載漏れがそのまま検査漏れになる。
@@ -21,16 +22,17 @@ Open Issues の中から、実際にはコードベース上で対応済み（do
 
 ### Step 0: 期限つき issue の点検（最初に報告する）
 
-`issues/*.md` の本文メタ行 `期限: YYYY-MM-DD` を拾い、**期限切れ / 3 日以内**のものを
+`issues/` 配下（`done/` を除く）の本文メタ行 `期限: YYYY-MM-DD` を拾い、**期限切れ / 3 日以内**のものを
 **この skill の出力の冒頭で報告する**（done 判定より先。人間待ちの issue = `NNN-human-*.md`
 は放置すると価値が腐るため、埋もれさせない）。
 
 ```sh
 # コロンは全角も拾う (`期限：` と書かれた 1 件を黙って取りこぼすのが最悪の失敗)。
 # 🚨 glob を直接渡さない: zsh は `issues/*.md` が 0 件だと nomatch でコマンド全体を失敗させ、
-# pending 側に期限切れがあっても「0 件」と黙る (2026-08-20 実測)。find で列挙する
-find issues issues/pending -maxdepth 1 -name '*.md' 2>/dev/null \
-  | xargs grep -lE '^期限[:：]' 2>/dev/null | while read -r f; do
+# pending / next / epic 側に期限切れがあっても「0 件」と黙る (2026-08-20 実測)。
+# done だけを prune し、残りは固定 2 段を含めて find で列挙する
+find issues -path issues/done -prune -o -type f -name '*.md' -print0 \
+  | xargs -0 grep -lE '^期限[:：]' 2>/dev/null | while read -r f; do
       printf '%s\t%s\n' "$(grep -m1 -E '^期限[:：]' "$f" | sed -E 's/^期限[:：][[:space:]]*//')" "$f"
     done | sort
 ```
@@ -39,22 +41,23 @@ find issues issues/pending -maxdepth 1 -name '*.md' 2>/dev/null \
   (`NNN-human-*.md`) が存在するのに期限が 0 件なら、書式ミス (全角コロン以外の表記ゆれ・行頭でない)
   を疑って当該ファイルを直接開く
 
-- **`issues/` にある = 未完了**、`issues/done/` にある = 完了（状態の唯一の出典はファイルの位置。
+- **`issues/` 配下（`done/` を除く）にある = 未完了**、`issues/done/` にある = 完了（状態の唯一の出典はファイルの位置。
   本文の既読ヘッダーは見ない）
 - 期限切れが 1 件でもあれば「期限切れ N 件」を見出しで出す。0 件なら「期限切れなし」と 1 行書く
   （黙って省略しない — 報告が無いのは「点検していない」と区別できないため）
 
 ### Step 1: ディレクトリから対象集合を作る
 
-**ファイルの置き場所が状態の正本**。まず実体を列挙する:
+**ファイルの置き場所が状態の正本**。まず実体を列挙する（`pending/` / `next/` /
+`epic/<name>/` / `epic/<name>/next/` を含み、`done/` だけ除外する）:
 
 ```sh
-ls issues/*.md issues/pending/*.md 2>/dev/null   # 検証の対象 (open + 着手保留)
-ls issues/done/*.md 2>/dev/null | wc -l          # 完了済み (対象外)
+find issues -path issues/done -prune -o -type f -name '*.md' -print0
 ```
 
-- **`issues/` 直下 = open**（検証対象）
+- **`issues/` 直下 / `issues/epic/<name>/` = open**（検証対象）
 - **`issues/pending/` = 着手保留**（open だが着手条件待ち。検証はするが、報告では open と分けて出す）
+- **`issues/next/` / `issues/epic/<name>/next/` = claim 中の open**（検証対象。完了時は global `done/` へ移す）
 - **`issues/done/` = 完了**（対象外）
 - **issue でないファイルを除外する**: `README.md` / `readme.md` / `audit-log` などの管理ファイル。
   番号規約のある repo では `^[0-9]{3}-` に一致するものだけを issue とみなすのが安全

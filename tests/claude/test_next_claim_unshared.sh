@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# _claude/hooks/next-claim-unshared.sh (UserPromptSubmit: 他マシンから見えない claim
-# = 未コミット / commit 済みだが未 push を検出して「push してよいか伺え」を注入する) の unit テスト。
+# _claude/hooks/next-claim-unshared.sh (UserPromptSubmit: global または group 内 next/ の
+# 他マシンから見えない claim = 未コミット / commit 済みだが未 push を検出して
+# 「push してよいか伺え」を注入する) の unit テスト。
 #
 # なぜ: この hook は「人が glogx の `n` で付けた claim が push されないまま寝る」事故を拾う
 # 唯一の装置 (Go の rename は Bash を通らないので PostToolUse 側では見えない)。判定式が
@@ -29,6 +30,12 @@ TMP_ROOT=$(mktemp -d); trap 'rm -rf "$TMP_ROOT"' EXIT
 new_repo() { # → $REPO
   REPO=$(mktemp -d "$TMP_ROOT/repo.XXXXXX")
   ( cd "$REPO" && git init -q . && mkdir -p issues/next issues/done && : > issues/186-x.md &&
+    git add -A && git -c user.email=t@t -c user.name=t commit -qm init ) >/dev/null 2>&1
+}
+new_epic_repo() { # global next/ が無く、group 内 next/ だけがある → $REPO
+  REPO=$(mktemp -d "$TMP_ROOT/epic-repo.XXXXXX")
+  ( cd "$REPO" && git init -q . && mkdir -p issues/epic/foo/next issues/done &&
+    : > issues/epic/foo/186-x.md &&
     git add -A && git -c user.email=t@t -c user.name=t commit -qm init ) >/dev/null 2>&1
 }
 run_hook() { ( cd "$REPO" && printf '{"prompt":"x"}' | "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null ) || true; }
@@ -76,6 +83,17 @@ new_repo; ( cd "$REPO" && git mv issues/186-x.md issues/next/ &&
 # issue 249 の項目 4 でここを拾うようにした。以前は「commit 済みなら黙る」が契約だった
 expect_fire "claim が commit 済みだが未 push"
 
+echo "## 発火する形 (group 内 next/ の claim)"
+new_epic_repo; ( cd "$REPO" && mv issues/epic/foo/186-x.md issues/epic/foo/next/ )
+expect_fire "epic group の未コミット claim"
+
+new_epic_repo; ( cd "$REPO" && git mv issues/epic/foo/186-x.md issues/epic/foo/next/ )
+expect_fire "epic group の staged claim"
+
+new_epic_repo; ( cd "$REPO" && git mv issues/epic/foo/186-x.md issues/epic/foo/next/ &&
+  git -c user.email=t@t -c user.name=t commit -qm claim )
+expect_fire "epic group の commit 済みだが未 push の claim"
+
 # push 済みなら黙る (claim が成立しているので急かす理由が無い)。
 # 🚨 偽の remote を作って本当に push する — 「remote が無い repo」では未 push か push 済みかを
 #    区別できず、この 2 ケースが同じ入力になってしまう
@@ -87,7 +105,7 @@ bare=$(mktemp -d "$TMP_ROOT/bare.XXXXXX")
   git remote add origin "$bare" && git push -q origin HEAD ) >/dev/null 2>&1
 expect_silent "claim が push 済み (claim が成立しているので黙る)"
 
-# opt-in の範囲: issues/next/ が無い repo では規律ごと無効。
+# opt-in の範囲: global / group 内の next/ が無い repo では規律ごと無効。
 # 🚨 fixture は **検出条件を満たしたうえで opt-in だけが外れている形**にする。別名の dir
 #    (issues/next2/) では検出の grep が最初から当たらず、opt-in を外す変異が素通りする
 #    (変異検証 2026-09-03 で実際に素通りした)。claim を commit した後に issues/next/ を

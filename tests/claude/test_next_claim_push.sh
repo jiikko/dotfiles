@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# _claude/hooks/next-claim-push.sh (PostToolUse(Bash): issues/next/ への claim を検出して
+# _claude/hooks/next-claim-push.sh (PostToolUse(Bash): issues/next/ または
+# issues/epic/<name>/next/ への claim を検出して
 # 「単独 commit して push したか」を注入する) の unit テスト。
 #
 # なぜ: この hook は「別マシンと同じ issue を二重に着手する」事故 (2026-09-02 に実際に発生) を
@@ -29,24 +30,40 @@ command -v jq >/dev/null 2>&1 || { echo "✗ jq が無い。hook は jq 前提�
 fail=0
 ok=0
 
-# 判定式の検査は **issues/next/ が実在する偽 repo** の中で走らせる。
-# 🚨 本物の dotfiles で走らせてはいけない: `issues/next/` は空のときディレクトリごと
+# 判定式の検査は **global または group 内の next/ が実在する偽 repo** の中で走らせる。
+# 🚨 本物の dotfiles で走らせてはいけない: `issues/next/` / group 内 `next/` は空のときディレクトリごと
 # git に載らないので、**新品チェックアウトと CI には存在しない**。hook は
-# 「issues/next/ が実在する repo でだけ有効」(opt-in) なので、前提を作らずに呼ぶと
+# 「global または group 内の next/ が実在する repo でだけ有効」(opt-in) なので、前提を作らずに呼ぶと
 # 判定式が壊れていなくても全件が無出力になり、9 件が落ちる (実測 2026-09-02: CI run
 # 33649890092。手元では過去の作業で残った issues/next/ があったため気づけなかった)。
 # 偽 repo にしておけば本物の repo を汚さず、opt-in の有無も下の scope テストで別に見られる。
 FIRE_REPO=$(mktemp -d)
-cleanup() { rm -rf "$FIRE_REPO" "${scope_tmp:-}"; }
+EPIC_FIRE_REPO=$(mktemp -d)
+cleanup() { rm -rf "$FIRE_REPO" "$EPIC_FIRE_REPO" "${scope_tmp:-}"; }
 trap cleanup EXIT
 (
   cd "$FIRE_REPO" && git init -q . && mkdir -p issues/next && : > issues/186-x.md &&
     git add -A && git -c user.email=t@t -c user.name=t commit -qm init
 ) >/dev/null 2>&1
 
+# global next/ が無くても group 内 next/ だけで opt-in されることを検査する。
+(
+  cd "$EPIC_FIRE_REPO" && git init -q . && mkdir -p issues/epic/foo/next &&
+    : > issues/epic/foo/186-x.md &&
+    git add -A && git -c user.email=t@t -c user.name=t commit -qm init
+) >/dev/null 2>&1
+
 run_hook() { # $1 = command 文字列 → stdout に hook の出力
   (
     cd "$FIRE_REPO" &&
+      jq -n --arg c "$1" '{tool_input: {command: $c}}' |
+      "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null
+  ) || true
+}
+
+run_epic_hook() { # $1 = command 文字列 → epic-only repo で stdout に hook の出力
+  (
+    cd "$EPIC_FIRE_REPO" &&
       jq -n --arg c "$1" '{tool_input: {command: $c}}' |
       "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null
   ) || true
@@ -59,6 +76,18 @@ expect_fire() {
     echo "✗ 発火すべきなのに無出力: $desc — $cmd"; fail=$((fail + 1)); return
   fi
   # 出力が JSON として妥当で、規範へのポインタを含むこと (壊れた JSON は素通りと同じ)
+  if ! printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("claim-issue-in-next-and-push")' >/dev/null 2>&1; then
+    echo "✗ JSON が壊れている / 本文が期待と違う: $desc"; fail=$((fail + 1)); return
+  fi
+  ok=$((ok + 1))
+}
+
+expect_epic_fire() {
+  local desc=$1 cmd=$2 out
+  out=$(run_epic_hook "$cmd")
+  if [ -z "$out" ]; then
+    echo "✗ epic-only repo で発火すべきなのに無出力: $desc — $cmd"; fail=$((fail + 1)); return
+  fi
   if ! printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("claim-issue-in-next-and-push")' >/dev/null 2>&1; then
     echo "✗ JSON が壊れている / 本文が期待と違う: $desc"; fail=$((fail + 1)); return
   fi
@@ -88,6 +117,11 @@ expect_fire "; が空白なしで隣接"           "git mv issues/186-x.md issue
 expect_fire "宛先にファイル名まで書く"     "git mv issues/186-x.md issues/next/186-x.md"
 expect_fire "for ループの中"               'for f in issues/18*.md; do git mv "$f" issues/next/; done'
 
+# --- group 内 next/ も検出し、global next/ が無い repo でも opt-in される ---
+expect_epic_fire "epic group の next へ" "git mv issues/epic/foo/186-x.md issues/epic/foo/next/"
+expect_epic_fire "epic group の next へファイル名指定" \
+  "git mv issues/epic/foo/186-x.md issues/epic/foo/next/186-x.md"
+
 # --- 発火してはいけない形 ---
 expect_silent "next から出す (claim 解除)" "git mv issues/next/186-x.md issues/"
 expect_silent "next を見るだけ"            "ls issues/next/"
@@ -96,7 +130,7 @@ expect_silent "無関係な commit"            "git commit -m x"
 expect_silent "next を含む文字列だけ"      "grep -rn next issues/README.md"
 expect_silent "next 配下から done へ"      "git mv issues/next/186-x.md issues/done/"
 
-# --- 適用範囲: issues/next/ が無い repo では丸ごと無効 (ユーザー要求 2026-09-02。
+# --- 適用範囲: global / group 内の next/ が無い repo では丸ごと無効 (ユーザー要求 2026-09-02。
 #     仕事の repo は issues/ を持たないので、そこでこの規律を出さない) ---
 scope_tmp=$(mktemp -d)
 (

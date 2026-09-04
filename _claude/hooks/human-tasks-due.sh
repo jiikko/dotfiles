@@ -9,7 +9,8 @@
 # 依存する = 起動しなければ永久に気づかない。セッション開始という必ず通る場所で催促する。
 # 出典: ~/.claude/CLAUDE.md「Issue管理」/ issues/README.md。
 #
-# 状態の正本はファイルの位置: issues/ 直下 = 未完了、issues/pending/ = 着手保留 (期限は追う)、
+# 状態の正本はファイルの位置: issues/ 直下 / issues/next/ / issues/epic/<name>/ /
+# issues/epic/<name>/next/ = 未完了、issues/pending/ = 着手保留 (期限は追う)、
 # issues/done/ = 完了 (対象外)。本文の既読ヘッダーは見ない (書き換え忘れで嘘が残るため)。
 # 🚨 pending も走査する: 「保留」に置いた人間タスクの期限切れを黙らせると、期限を書いた本人
 # だけが忘れる形になる (issue-sync の Step 0 も pending を見る。片方だけ黙ると検査が食い違う)。
@@ -47,7 +48,10 @@ fi
 
 overdue="" ; upcoming="" ; broken="" ; later=0 ; unread=0
 
-for f in "$dir"/*.md "$dir"/pending/*.md; do
+# 予約された固定 2 段だけを明示する。glob が未展開でも [ -e ] で飛ばす (epic が無い
+# repo で zsh/bash の設定差や set -u に巻き込まれて落ちないようにする)。
+for f in "$dir"/*.md "$dir"/pending/*.md "$dir"/next/*.md \
+  "$dir"/epic/*/*.md "$dir"/epic/*/next/*.md; do
   [ -e "$f" ] || continue
   base=${f##*/}
   case "$base" in

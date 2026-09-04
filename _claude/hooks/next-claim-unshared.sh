@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# UserPromptSubmit フック: `issues/next/` への claim が **他マシンから見えない状態**
+# UserPromptSubmit フック: `issues/next/` または `issues/epic/<name>/next/` への claim が
+# **他マシンから見えない状態**
 # (未コミット、または commit 済みだが未 push) なら、その事実をモデルのコンテキストへ注入し、
 # 「push してよいか」をユーザーへ伺わせる。
 #
@@ -33,21 +34,38 @@ input=$(cat)
 
 command -v jq >/dev/null 2>&1 || exit 0
 
-# 適用範囲は「作業中の repo に issues/next/ が実在するとき」だけ (規範と同じ opt-in)
+# 適用範囲は「作業中の repo に global または group 内の next/ が 1 つでも実在するとき」だけ
+# (規範と同じ opt-in)
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
-[ -n "$repo_root" ] && [ -d "$repo_root/issues/next" ] || exit 0
+next_dir_found=0
+for next_dir in "$repo_root/issues/next" "$repo_root/issues/epic"/*/next; do
+  if [ -d "$next_dir" ]; then
+    next_dir_found=1
+    break
+  fi
+done
+[ "$next_dir_found" -eq 1 ] || exit 0
 
 # claim の移動は 3 つの形で現れる:
 #   git mv した     → `R  issues/x.md -> issues/next/x.md`
 #   Go/素の mv した → ` D issues/x.md` + `?? issues/next/x.md`
 #   claim を外した  → ` D issues/next/x.md` + `?? issues/x.md`
-# いずれも **issues/next/ を含む行**が出るので、それを拾えば 3 形とも捕まる
-claim_lines=$(git -C "$repo_root" status --porcelain -- issues 2>/dev/null | grep 'issues/next/' || true)
+# いずれも **global または group 内の next/ を含む行**が出るので、それを拾えば 3 形とも捕まる。
+# pathspec は opt-in の 2 形と同じ集合に限定する。
+claim_lines=$(
+  cd "$repo_root" || exit 0
+  git status --porcelain -- issues/next issues/epic/*/next 2>/dev/null |
+    grep -E 'issues/next/|issues/epic/[^/]+/next/' || true
+)
 
-# commit 済みだが未 push の claim。**リモートに無い commit のうち issues/next/ を触ったもの**を見る
+# commit 済みだが未 push の claim。**リモートに無い commit のうち global または group 内の next/ を触ったもの**を見る
 # (`--branches --not --remotes` は未 push の commit 全部。そこから claim を触るものだけ絞る)
-unpushed_claims=$(git -C "$repo_root" log --branches --not --remotes --format='%h %s' \
-  --name-only -- issues/next 2>/dev/null | grep -v '^issues/' | grep -v '^$' | head -10 || true)
+unpushed_claims=$(
+  cd "$repo_root" || exit 0
+  git log --branches --not --remotes --format='%h %s' \
+    --name-only -- issues/next issues/epic/*/next 2>/dev/null |
+    grep -v '^issues/' | grep -v '^$' | head -10 || true
+)
 
 [ -n "$claim_lines" ] || [ -n "$unpushed_claims" ] || exit 0
 
@@ -74,7 +92,7 @@ jq -n --arg ctx "$state" '{
   hookSpecificOutput: {
     hookEventName: "UserPromptSubmit",
     additionalContext: (
-      "issues/next/ への claim が**他マシンから見えない状態**で残っている (未コミット、または\n" +
+      "issues/next/ または issues/epic/<name>/next/ への claim が**他マシンから見えない状態**で残っている (未コミット、または\n" +
       "commit 済みだが未 push)。claim は push されて初めて claim になる — commit しただけでは\n" +
       "他マシンからは「未着手の issue」に見え続ける。人が glogx の `n` で付けた目印は\n" +
       "どの hook にも見えないので、ここで拾っている。\n" +

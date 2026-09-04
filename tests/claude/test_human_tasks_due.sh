@@ -80,6 +80,16 @@ check "done/ は対象外" "" "$(printf '%s' "$got" | grep -E '015-human-finishe
 check "pending/ の期限切れは出す" '期限切れ 2026-08-01.*016-human-blocked.*\[保留\]' "$got"
 check "pending は未完了件数に入れない" '未完了の human タスク issue: 3 件' "$got"
 
+# --- 4b. epic の直下と group 内 next/ は open として走査・集計する ---
+mkdir -p "$repo/issues/epic/foo/next"
+mkissue "epic/foo/017-human-epic.md" "期限: 2026-08-01"
+mkissue "epic/foo/next/018-human-epic-next.md" "期限: 2026-08-01"
+got="$(report env)"
+check "epic 直下の human を一覧に出す" 'epic/foo/017-human-epic\.md' "$got"
+check "epic 直下の human を件数に数える" '未完了の human タスク issue: 5 件' "$got"
+check "epic 内 next/ の human を一覧に出す" 'epic/foo/next/018-human-epic-next\.md' "$got"
+check "epic 内 next/ の human を件数に数える" '未完了の human タスク issue: 5 件' "$got"
+
 # --- 5. 依存コマンドが壊れたら「期限なし」と誤報せず「抽出失敗」と言う ---
 mkdir -p "$WORK/badgrep"
 printf '#!/bin/sh\nexit 2\n' >"$WORK/badgrep/grep"
@@ -143,8 +153,17 @@ ctx="$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext // ""' 
 check "陽性対照: git 管理下にすれば同じ issues/ を報告する (差が git ガードだけである証跡)" \
   '090-human-x' "$ctx"
 
+# --- 8. epic/ が無い repo でも未展開 glob をエラーにしない ---
+noepic="$WORK/no-epic"
+mkdir -p "$noepic/issues"
+git -C "$noepic" init -q .
+printf '# t\n\n期限: 2026-08-01\n' >"$noepic/issues/091-human-no-epic.md"
+noepic_out="$(printf '{"cwd":"%s"}' "$noepic" | "$HOOK" 2>/dev/null)"
+noepic_ctx="$(printf '%s' "$noepic_out" | jq -r '.hookSpecificOutput.additionalContext // ""')"
+check "epic 無しでも正常に走査する" '091-human-no-epic' "$noepic_ctx"
+
 if [ "$fails" -gt 0 ]; then
   echo "FAIL: human-tasks-due.sh のテストが $fails 件失敗"
   exit 1
 fi
-echo "OK: human-tasks-due.sh (7 観点)"
+echo "OK: human-tasks-due.sh (8 観点)"
