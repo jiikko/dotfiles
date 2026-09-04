@@ -66,6 +66,39 @@ func (v *doctorView) tabVisible(t doctorTab) bool {
 	return v.docker == nil || v.docker.Installed
 }
 
+// dockerRunnable は「この群のコマンドを x で実行してよいか」。
+//
+// 🚨 **ボリュームだけ false**。中身はデータで、消すと戻らない。しかもこちらの判定は
+// 「今どのコンテナからも参照されていない + 作成日」の近似でしかない (最後にマウントされた
+// 日時を Docker が持っていないため) ので、道具が実行まで踏み込む根拠が無い。
+// ボリュームは y でコマンドをコピーして、人がシェルで叩く (ユーザー決定 2026-09-04)。
+//
+// 🚨 exhaustive (default なし) なので、docker.Kind が増えたらここが compile error になる。
+func dockerRunnable(k docker.Kind) bool {
+	switch k {
+	case docker.KindContainers, docker.KindImages, docker.KindBuildCache:
+		return true
+	case docker.KindVolumes:
+		return false
+	}
+	return false
+}
+
+// dockerRunNote は実行する前に知っておくこと (確認画面に出る)。
+func dockerRunNote(k docker.Kind) string {
+	switch k {
+	case docker.KindContainers:
+		return "停止したコンテナの書き込みレイヤーが消えます (中で作った成果物が残っていないか確認してください)"
+	case docker.KindImages:
+		return "消したイメージは次に使うとき再ダウンロードになります (数 GB の通信)"
+	case docker.KindBuildCache:
+		return "次のビルドがキャッシュ無しになります (壊れはしません)"
+	case docker.KindVolumes:
+		return "🚨 中身はデータです。戻せません"
+	}
+	return ""
+}
+
 // dockerMarkWidth は記号列の幅。🚨 **記号は語ごとに表示幅が違う** ("✅ 安全" と "⛔ 要確認") ので、
 // 揃えないと後ろのラベルが行ごとにずれる。disk 側の doctorMaxMarkWidth と同じ扱い。
 func dockerMarkWidth() int {
@@ -109,16 +142,18 @@ func (v *doctorView) dockerSection(o doctorRenderOpts) []doctorRow {
 	for _, g := range d.Groups {
 		rows = append(rows, v.dockerGroupRow(o, g))
 	}
+	v.registerDockerAction("まとめて回収する", d.SystemPrune, d.SystemPruneNote)
 	rows = append(rows,
 		doctorRow{text: ""},
-		doctorRow{text: doctorColor(o.colored, ansiDim, "   まとめて回収するなら:")},
+		doctorRow{text: doctorColor(o.colored, ansiDim, "   まとめて回収するなら (Space で選んで x):")},
 		doctorRow{
-			text:       "   ▸ " + doctorColor(o.colored, ansiBold, d.SystemPrune),
+			text: "  " + v.dockerSelectMark(o, d.SystemPrune, true) + " " +
+				doctorColor(o.colored, ansiBold, d.SystemPrune),
 			selectable: true,
 			key:        "dockerprune",
 			detail: textRows([]string{
 				doctorColor(o.colored, ansiYellow, "     🚨 "+d.SystemPruneNote),
-				doctorColor(o.colored, ansiDim, "     この画面は docker を実行しません (コピーして自分で叩いてください)"),
+				doctorColor(o.colored, ansiDim, "     Space で選んで x、または y でコピーして自分で叩いてください"),
 			}),
 			copyPath: d.SystemPrune,
 			copyText: d.SystemPrune + "\n# " + d.SystemPruneNote + "\n",
@@ -156,7 +191,7 @@ func (v *doctorView) dockerGroupRow(o doctorRenderOpts, g docker.Group) doctorRo
 			doctorRow{text: doctorColor(o.colored, ansiGreen, "     🎉 古い候補はありません")})
 	}
 	for _, it := range g.Items {
-		row := doctorRow{text: dockerItemLine(o, it)}
+		row := doctorRow{text: v.dockerSelectMark(o, it.Command, dockerRunnable(g.Kind)) + dockerItemLine(o, it)}
 		if it.Command != "" {
 			// 🚨 1 件ずつ消したいときの導線。ボリュームには群のコマンドが無いので、
 			// ここが選べないと「1 件ずつ選んでください」と言うだけで手段が無い
@@ -167,8 +202,15 @@ func (v *doctorView) dockerGroupRow(o doctorRenderOpts, g docker.Group) doctorRo
 		}
 		detail = append(detail, row)
 	}
+	if dockerRunnable(g.Kind) {
+		v.registerDockerAction(g.Label+" をまとめて回収", g.Command, dockerRunNote(g.Kind))
+		for _, it := range g.Items {
+			v.registerDockerAction(it.Name+" を消す ("+it.SizeText+")", it.Command, dockerRunNote(g.Kind))
+		}
+	}
 	return doctorRow{
-		text: " " + dockerMark(g.Kind) + padSpaces(max(0, dockerMarkWidth()-dispWidth(dockerMark(g.Kind)))) + " " + g.Label + "   " +
+		text: v.dockerSelectMark(o, g.Command, dockerRunnable(g.Kind)) +
+			dockerMark(g.Kind) + padSpaces(max(0, dockerMarkWidth()-dispWidth(dockerMark(g.Kind)))) + " " + g.Label + "   " +
 			doctorColor(o.colored, ansiDim, summary),
 		selectable: true,
 		key:        "docker:" + string(g.Kind),
@@ -176,6 +218,86 @@ func (v *doctorView) dockerGroupRow(o doctorRenderOpts, g docker.Group) doctorRo
 		copyPath:   g.Command,
 		copyText:   dockerGroupCopyText(g),
 	}
+}
+
+// dockerSelectMark は行頭の選択欄。実行できる行だけ印を出す (実行できない行に空欄を置くと
+// 「選べるのに選ばれていない」に見える)。あわせて x の実体をコマンド文字列で登録する。
+func (v *doctorView) dockerSelectMark(o doctorRenderOpts, cmd string, runnable bool) string {
+	if cmd == "" || !runnable {
+		return " "
+	}
+	if v.selectedActions[cmd] {
+		return doctorColor(o.colored, ansiBold, "*")
+	}
+	return " "
+}
+
+// registerDockerAction は x で実行する手を登録する (brew と同じ map を共有する。
+// 同一性は**コマンド文字列**で、行の key ではない — 再スキャンで行の並びは変わる)。
+func (v *doctorView) registerDockerAction(label, cmd, note string) {
+	if cmd == "" {
+		return
+	}
+	if v.actionByCmd == nil {
+		v.actionByCmd = map[string]doctorCmdAction{}
+	}
+	v.actionByCmd[cmd] = doctorCmdAction{Label: label, Cmd: cmd, Note: note}
+}
+
+// selectedDockerActions は選ばれた手を**画面に出ている順**で返す (brew 側と同じ規律。
+// map をそのまま回すと確認画面の順と実行の順が食い違い、中断したときにどこまで走ったか読めない)。
+func (v *doctorView) selectedDockerActions() []doctorCmdAction {
+	if len(v.selectedActions) == 0 {
+		return nil
+	}
+	out := make([]doctorCmdAction, 0, len(v.selectedActions))
+	seen := map[string]bool{}
+	for _, r := range v.rows {
+		if !isDockerRowKey(r.key) || !v.selectedActions[r.copyPath] || seen[r.copyPath] {
+			continue
+		}
+		seen[r.copyPath] = true
+		act, ok := v.actionByCmd[r.copyPath]
+		if !ok {
+			act = doctorCmdAction{Label: "(不明な手)", Cmd: r.copyPath}
+		}
+		out = append(out, act)
+	}
+	return out
+}
+
+// toggleDockerAction は Docker の行の選択を切り替える。
+//
+// 🚨 **実行できない行は断る理由を返す** (無言で何もしない、にしない)。ボリュームは
+// 「y でコピーして自分で叩く」しか手段が無いので、そう案内する。
+func (v *doctorView) toggleDockerAction(key string) (string, bool) {
+	if kind, ok := dockerKindOfRow(key); ok && !dockerRunnable(kind) {
+		return "ボリュームはこの画面から消しません (消すと戻らないので y でコマンドをコピーしてください)", false
+	}
+	cmd := v.rows[v.cur.index].copyPath
+	if cmd == "" {
+		return "この行には実行するコマンドがありません", false
+	}
+	return v.toggleCmdAction()
+}
+
+// dockerKindOfRow は行の key から群の種別を取る (dockerprune は群に属さない)。
+func dockerKindOfRow(key string) (docker.Kind, bool) {
+	for _, pre := range []string{"docker:", "dockeritem:"} {
+		rest, ok := strings.CutPrefix(key, pre)
+		if !ok {
+			continue
+		}
+		if i := strings.Index(rest, ":"); i >= 0 {
+			rest = rest[:i]
+		}
+		return docker.Kind(rest), true
+	}
+	return "", false
+}
+
+func isDockerRowKey(key string) bool {
+	return strings.HasPrefix(key, "docker:") || strings.HasPrefix(key, "dockeritem:") || key == "dockerprune"
 }
 
 func dockerItemLine(o doctorRenderOpts, it docker.Item) string {

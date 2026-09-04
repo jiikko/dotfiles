@@ -14,19 +14,12 @@ import "strings"
 // 「コピーして貼る」経路に載る (issue 178 が svc 側で塞いだのと同じ形)。
 // 検証に落ちた名前は捨て、その事実を残す (黙って減らさない)。
 
-// brewAction は 1 つの手。Cmd はそのまま貼れる形にする。
-type brewAction struct {
-	Label string // 日本語のラベル (何をする手か)
-	Cmd   string // 実行するコマンド
-	Note  string // 打つ前に知っておくこと ("" = 無し)
-}
-
 // brewAdvice は警告 1 件の訳と手。Known=false なら未知のパターン (英語のまま出す)。
 type brewAdvice struct {
 	Known   bool
 	Title   string // 日本語の見出し
 	Detail  string // 何が起きているか / 放っておくとどうなるか
-	Actions []brewAction
+	Actions []doctorCmdAction
 	Dropped int // allowlist に落ちた名前の数 (0 でなければ画面に出す)
 }
 
@@ -109,8 +102,8 @@ func brewAdviceFor(warning string) brewAdvice {
 			Detail: "インストール済みだが symlink が張られていない状態です。これに依存する formula は、ビルドは通っても実行時に壊れることがあります。"}
 		if len(ns) > 0 {
 			a.Detail += "\n対象: " + join(ns)
-			a.Actions = append(a.Actions, brewAction{Label: "リンクを張り直す", Cmd: "brew link " + join(ns)})
-			a.Actions = append(a.Actions, brewAction{
+			a.Actions = append(a.Actions, doctorCmdAction{Label: "リンクを張り直す", Cmd: "brew link " + join(ns)})
+			a.Actions = append(a.Actions, doctorCmdAction{
 				Label: "使っていないなら削除する", Cmd: "brew uninstall " + join(ns),
 				Note: "他の formula が依存していると壊れます。先に brew uses --installed で確認してください"})
 		}
@@ -142,8 +135,8 @@ func brewAdviceFor(warning string) brewAdvice {
 		if len(ns) > 0 {
 			a.Detail += "\n対象: " + join(ns)
 			a.Actions = append(a.Actions,
-				brewAction{Label: "代替と非推奨の理由を調べる", Cmd: "brew info " + join(ns)},
-				brewAction{Label: "使っていないなら削除する", Cmd: uninstall + join(ns),
+				doctorCmdAction{Label: "代替と非推奨の理由を調べる", Cmd: "brew info " + join(ns)},
+				doctorCmdAction{Label: "使っていないなら削除する", Cmd: uninstall + join(ns),
 					Note: "代替を決めてから。依存元は brew uses --installed で確認できます"})
 		}
 		return a
@@ -155,8 +148,8 @@ func brewAdviceFor(warning string) brewAdvice {
 			Detail: "依存先が削除されたか、インストールが途中で終わっています。足りないものを入れれば直ります。"}
 		if len(ns) > 0 {
 			a.Actions = append(a.Actions,
-				brewAction{Label: "足りない依存を入れる", Cmd: "brew install " + join(ns)},
-				brewAction{Label: "どれが欠けているか確認する", Cmd: "brew missing"})
+				doctorCmdAction{Label: "足りない依存を入れる", Cmd: "brew install " + join(ns)},
+				doctorCmdAction{Label: "どれが欠けているか確認する", Cmd: "brew missing"})
 		}
 		return a
 	}

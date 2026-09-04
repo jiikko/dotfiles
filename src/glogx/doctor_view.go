@@ -96,9 +96,9 @@ type doctorView struct {
 	// 🚨 行の key ("brewact:i:j") で持たない: 再スキャンで警告の並びが変わると別の手を指す。
 	// コマンドそのものは「何を実行するか」の同一性そのものなので、ずれない
 	selectedActions map[string]bool
-	// brewActionByCmd は直近の描画で組んだ手の実体 (key = コマンド)。確認画面がラベルと
+	// actionByCmd は直近の描画で組んだ手の実体 (key = コマンド)。確認画面がラベルと
 	// 注記を引くため。行のテキストから復元しない (色と印が混ざっていて壊れやすい)
-	brewActionByCmd  map[string]brewAction
+	actionByCmd      map[string]doctorCmdAction
 	inspected        map[string]bool
 	del              doctorDelete
 	pendingDeleteCmd tea.Cmd // handleKey が組んだ削除の Cmd (browseModel が取り出して返す)
@@ -555,13 +555,18 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 		}
 		return v.beginDelete()
 	case "x":
-		if v.tab != tabBrew {
-			v.pendingToast = "brew の実行は Homebrew のタブで (tab で移動)"
+		// x は「提示したコマンドを実行する」。**削除 (d) と別のキーにする**: d は「消す」の語で、
+		// brew install は消す操作ではない。同じキーに 2 つの意味を持たせない
+		switch v.tab {
+		case tabBrew:
+			return v.beginBrewRun()
+		case tabDocker:
+			return v.beginDockerRun()
+		case tabDisk, tabSvc:
+			v.pendingToast = "コマンドの実行は Homebrew か Docker のタブで (tab で移動)"
 			return doctorToast
 		}
-		// brew の手を実行する。**削除 (d) と別のキーにする**: d は「消す」の語で、
-		// brew install は消す操作ではない。同じキーに 2 つの意味を持たせない
-		return v.beginBrewRun()
+		return doctorSwallow
 	case "D", "q", "esc":
 		v.close()
 		return doctorClosed
@@ -654,12 +659,10 @@ func (v *doctorView) hint(width int) string {
 		items = append(items,
 			hintItem{"Space: 選択", 2}, // 削除の入口なので Enter より優先して残す
 			hintItem{"d: 削除", 2})
-	case tabBrew:
+	case tabBrew, tabDocker:
 		items = append(items, hintItem{"Space: 選択", 2})
 	case tabSvc:
 		// サービスは選択も実行も持たない (壊れた登録は見て直すだけ)
-	case tabDocker:
-		// Docker も持たない (この画面は docker を実行しない)
 	}
 	items = append(items, []hintItem{
 		{"Enter: 開閉", 4}, // 開くと対象パスへカーソルが移り、そこでも Space で選べる
@@ -671,13 +674,28 @@ func (v *doctorView) hint(width int) string {
 	// 🚨 x は**選ばれているときだけ出す**。常設すると幅の予算を食い、`r: 再スキャン` のような
 	// 常に使える手を押し出す (実測: 幅 120 で再スキャンが消えた)。手が選ばれていないときの
 	// x は「Space で選んでください」と言うだけなので、案内する価値も無い
-	if n := len(v.selectedActions); n > 0 && v.tab == tabBrew {
+	if n := v.selectedRunCount(); n > 0 && (v.tab == tabBrew || v.tab == tabDocker) {
 		items = append(items, hintItem{fmt.Sprintf("x: %d 件を実行", n), 2})
 	}
 	if n, total := v.selectionSummary(); n > 0 && v.tab == tabDisk {
 		items = append([]hintItem{{fmt.Sprintf("選択 %d 件 %s", n, disk.HumanSize(total)), 1}}, items...)
 	}
 	return fitHintItems(width, items)
+}
+
+// selectedRunCount は今のタブで x が実行する件数。
+// 🚨 **len(v.selectedActions) では数えない。** brew と docker は選択の map を共有しており
+// (同一性はコマンド文字列)、素の長さだと別のタブの選択まで数えて hint が嘘になる。
+func (v *doctorView) selectedRunCount() int {
+	switch v.tab {
+	case tabDocker:
+		return len(v.selectedDockerActions())
+	case tabBrew:
+		return len(v.selectedBrewActions())
+	case tabDisk, tabSvc:
+		return 0
+	}
+	return 0
 }
 
 // doctorCopyHintLabel は y が何をコピーするか。タブで中身が違うので語も変える
@@ -1265,10 +1283,10 @@ func (v *doctorView) brewSection(o doctorRenderOpts) []doctorRow {
 					fmt.Sprintf("     🚨 名前として読めない語を %d 件落としました (原文を確認してください)", adv.Dropped))})
 			}
 			for j, act := range adv.Actions {
-				if v.brewActionByCmd == nil {
-					v.brewActionByCmd = map[string]brewAction{}
+				if v.actionByCmd == nil {
+					v.actionByCmd = map[string]doctorCmdAction{}
 				}
-				v.brewActionByCmd[act.Cmd] = act
+				v.actionByCmd[act.Cmd] = act
 				mark := "▸"
 				if v.selectedActions[act.Cmd] {
 					mark = doctorColor(o.colored, ansiBold, "*")

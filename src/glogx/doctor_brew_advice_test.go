@@ -263,7 +263,7 @@ func TestBrewActionSelectRunAndReport(t *testing.T) {
 	if len(ran) != 1 || strings.Join(ran[0], " ") != "brew link node ruby" {
 		t.Fatalf("実行したコマンド = %v", ran)
 	}
-	if v.del.brewRep == nil {
+	if v.del.cmdRep == nil {
 		t.Fatalf("結果が出ていない: %+v", v.del)
 	}
 	out = doctorPanelText(v, 30)

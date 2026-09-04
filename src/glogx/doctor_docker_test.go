@@ -192,3 +192,110 @@ func TestDoctorDockerTabFallsBackWhenRestoredButNotInstalled(t *testing.T) {
 		t.Errorf("空画面になっている:\n%s", out)
 	}
 }
+
+// Space で選んで x → 確認画面。実行の相の機械は brew と共有する (jobCmd)。
+func TestDoctorDockerSelectAndRun(t *testing.T) {
+	v := doctorTestView(t)
+	runDoctorCmds(t, v, v.open())
+	v.tab = tabDocker
+	_ = doctorText(v, 40)
+	if act := v.handleKey(" ", 40); act != doctorSwallow {
+		t.Fatalf("先頭の群を選べない: %v", act)
+	}
+	if n := v.selectedRunCount(); n != 1 {
+		t.Fatalf("選択件数が %d", n)
+	}
+	if act := v.handleKey("x", 40); act != doctorSwallow {
+		t.Fatalf("x が効かない: %v", act)
+	}
+	if !v.del.confirm || v.del.kind != jobCmd {
+		t.Fatalf("確認画面に入っていない: %+v", v.del)
+	}
+	if len(v.del.cmdPlan) != 1 || v.del.cmdPlan[0].Cmd != "docker container prune --filter until=336h -f" {
+		t.Fatalf("実行するコマンドが %+v", v.del.cmdPlan)
+	}
+	// 打つ前に知っておくことが確認画面に載る
+	if !strings.Contains(v.del.cmdPlan[0].Note, "書き込みレイヤー") {
+		t.Errorf("注記が %q", v.del.cmdPlan[0].Note)
+	}
+}
+
+// 🚨 ボリュームはこの画面から消さない。断る理由を出す (無言で何もしない、にしない)。
+func TestDoctorDockerVolumesCannotBeSelectedForRun(t *testing.T) {
+	v := doctorTestView(t)
+	runDoctorCmds(t, v, v.open())
+	v.tab = tabDocker
+	_ = doctorText(v, 40)
+	for range 20 {
+		if v.cur.key == "docker:volumes" {
+			break
+		}
+		v.handleKey("j", 40)
+		_ = doctorText(v, 40)
+	}
+	if v.cur.key != "docker:volumes" {
+		t.Fatalf("ボリュームの行へ行けない: %q", v.cur.key)
+	}
+	if act := v.handleKey(" ", 40); act != doctorToast {
+		t.Fatalf("断っていない: %v", act)
+	}
+	if !strings.Contains(v.pendingToast, "y でコマンドをコピー") {
+		t.Errorf("案内が %q", v.pendingToast)
+	}
+	if len(v.selectedActions) != 0 {
+		t.Errorf("選択されてしまった: %v", v.selectedActions)
+	}
+}
+
+// 🚨 選択の map は brew と共有している。件数を len(selectedActions) で数えると、
+// 別のタブの選択まで数えて hint が嘘になる。
+func TestDoctorSelectedRunCountIsPerTab(t *testing.T) {
+	v := doctorTestView(t)
+	runDoctorCmds(t, v, v.open())
+	v.tab = tabDocker
+	_ = doctorText(v, 40)
+	v.handleKey(" ", 40)
+	v.tab = tabBrew
+	_ = doctorText(v, 40)
+	if n := v.selectedRunCount(); n != 0 {
+		t.Fatalf("Homebrew タブが Docker の選択を数えている: %d", n)
+	}
+	v.handleKey("enter", 40) // 警告を開くと手の行が出る
+	_ = doctorText(v, 40)
+	for range 20 {
+		if strings.HasPrefix(v.cur.key, "brewact:") {
+			break
+		}
+		v.handleKey("j", 40)
+		_ = doctorText(v, 40)
+	}
+	if !strings.HasPrefix(v.cur.key, "brewact:") {
+		t.Fatalf("brew の手の行へ行けない: %q", v.cur.key)
+	}
+	v.handleKey(" ", 40) // brew の手を 1 つ選ぶ
+	_ = doctorText(v, 40)
+	if n := v.selectedRunCount(); n != 1 {
+		t.Fatalf("Homebrew タブの件数が %d", n)
+	}
+	v.tab = tabDocker
+	_ = doctorText(v, 40)
+	if n := v.selectedRunCount(); n != 1 {
+		t.Fatalf("Docker タブの件数が %d (brew の分まで数えている)", n)
+	}
+}
+
+// ディスク / サービスのタブで x を押したら、どこで押すかを案内する。
+func TestDoctorRunKeyOnWrongTabExplains(t *testing.T) {
+	v := doctorTestView(t)
+	runDoctorCmds(t, v, v.open())
+	for _, tb := range []doctorTab{tabDisk, tabSvc} {
+		v.tab = tb
+		_ = doctorText(v, 40)
+		if act := v.handleKey("x", 40); act != doctorToast {
+			t.Fatalf("tab=%v で x が無言: %v", tb, act)
+		}
+		if !strings.Contains(v.pendingToast, "Homebrew か Docker") {
+			t.Errorf("tab=%v の案内が %q", tb, v.pendingToast)
+		}
+	}
+}

@@ -39,9 +39,9 @@ type doctorDelete struct {
 	confirm   bool               // y/N の確認中
 	running   bool               // 削除の実行中 (キーを飲む)
 	result    *disk.DeleteReport
-	kind      doctorJob      // 何の仕事か (既定 = jobDisk)
-	brewPlan  []brewAction   // jobBrew: 実行するコマンド (確認画面の材料)
-	brewRep   *brewRunReport // jobBrew: 実行の結果
+	kind      doctorJob         // 何の仕事か (既定 = jobDisk)
+	cmdPlan   []doctorCmdAction // jobCmd: 実行するコマンド (確認画面の材料)
+	cmdRep    *cmdRunReport     // jobCmd: 実行の結果
 	err       string
 	progress  doctorProgress // 「2/3 Xcode DerivedData」+「走査中 12s」
 
@@ -146,7 +146,7 @@ var deleteScrollKeys = map[string]bool{
 
 // active は削除の語彙がキーを持っているか (裏の一覧にも C/X にも渡さない)。
 func (d *doctorDelete) active() bool {
-	return d.preparing || d.confirm || d.running || d.result != nil || d.brewRep != nil || d.err != ""
+	return d.preparing || d.confirm || d.running || d.result != nil || d.cmdRep != nil || d.err != ""
 }
 
 // blocking は実行中で、抜ける以外のキーを飲む状態か。
@@ -170,16 +170,27 @@ type doctorJob int
 
 const (
 	jobDisk doctorJob = iota // ディスクの削除 (既存)
-	jobBrew                  // brew の手を実行する
+	jobCmd                   // 提示したコマンドを実行する (brew の手 / docker の回収)
 )
 
-// brewRunReport は brew の手を実行した結果。1 コマンド 1 レコード。
-type brewRunReport struct {
+// doctorCmdAction は「画面が提示し、x で実行できる 1 コマンド」。
+//
+// 🚨 **brew 専用ではない** (Homebrew の手と Docker の回収コマンドが共有する)。
+// 確認 → 実行 → 結果の相の機械もこの型の列だけを見ており、提示元を知らない。
+// 2 つ目の状態機械を作らないための共有点なので、提示元に固有の情報をここへ足さないこと。
+type doctorCmdAction struct {
+	Label string // 日本語のラベル (何をする手か)
+	Cmd   string // 実行するコマンド
+	Note  string // 打つ前に知っておくこと ("" = 無し)
+}
+
+// cmdRunReport は提示したコマンドを実行した結果。1 コマンド 1 レコード。
+type cmdRunReport struct {
 	Records []disk.CommandRecord
 }
 
 // failed は 0 でない終了コード / 起動できなかったものの数。
-func (r brewRunReport) failed() int {
+func (r cmdRunReport) failed() int {
 	n := 0
 	for _, rec := range r.Records {
 		if rec.RC != 0 || rec.Err != "" {
@@ -212,12 +223,12 @@ func (p doctorProgress) sameStep(q doctorProgress) bool {
 }
 
 type doctorDeleteEvent struct {
-	prog    *doctorProgress     // 相が変わった (落としてよい)
-	brewRep *brewRunReport      // brew の手の実行が終わった
-	cmd     *disk.CommandRecord // cli: の 1 コマンドが終わった
-	rep     *disk.DeleteReport
-	err     string
-	dryRun  bool
+	prog   *doctorProgress     // 相が変わった (落としてよい)
+	cmdRep *cmdRunReport       // 提示したコマンドの実行が終わった
+	cmd    *disk.CommandRecord // cli: の 1 コマンドが終わった
+	rep    *disk.DeleteReport
+	err    string
+	dryRun bool
 }
 
 type doctorDeleteMsg struct {
@@ -286,35 +297,47 @@ func (v *doctorView) beginBrewRun() doctorAction {
 		v.pendingToast = "Space で実行する手を選んでください"
 		return doctorToast
 	}
-	v.del = doctorDelete{kind: jobBrew, confirm: true, brewPlan: acts}
+	v.del = doctorDelete{kind: jobCmd, confirm: true, cmdPlan: acts}
+	return doctorSwallow
+}
+
+// beginDockerRun は選んだ Docker の回収コマンドを確認画面へ出す (x)。
+// 相の機械は brew と共有する (jobCmd)。2 つ目の状態機械を作らない。
+func (v *doctorView) beginDockerRun() doctorAction {
+	acts := v.selectedDockerActions()
+	if len(acts) == 0 {
+		v.pendingToast = "Space で実行するコマンドを選んでください"
+		return doctorToast
+	}
+	v.del = doctorDelete{kind: jobCmd, confirm: true, cmdPlan: acts}
 	return doctorSwallow
 }
 
 // selectedBrewActions は選ばれた手を**画面に出ている順**で返す。
 // 🚨 選択は map (コマンド文字列) なので、そのまま回すと順序が実行ごとに変わる。
 // 確認画面に出した順と実行の順が違うと、途中で中断したときに「どこまで走ったか」が読めない。
-func (v *doctorView) selectedBrewActions() []brewAction {
+func (v *doctorView) selectedBrewActions() []doctorCmdAction {
 	if len(v.selectedActions) == 0 {
 		return nil
 	}
-	out := make([]brewAction, 0, len(v.selectedActions))
+	out := make([]doctorCmdAction, 0, len(v.selectedActions))
 	seen := map[string]bool{}
 	for _, r := range v.rows {
 		if !strings.HasPrefix(r.key, "brewact:") || !v.selectedActions[r.copyPath] || seen[r.copyPath] {
 			continue
 		}
 		seen[r.copyPath] = true
-		act, ok := v.brewActionByCmd[r.copyPath]
+		act, ok := v.actionByCmd[r.copyPath]
 		if !ok {
-			act = brewAction{Label: "(不明な手)", Cmd: r.copyPath}
+			act = doctorCmdAction{Label: "(不明な手)", Cmd: r.copyPath}
 		}
 		out = append(out, act)
 	}
 	return out
 }
 
-// startBrewRun は手を 1 つずつ実行し、コマンドと出力を垂れ流す。
-func (v *doctorView) startBrewRun(acts []brewAction) tea.Cmd {
+// startCmdRun は手を 1 つずつ実行し、コマンドと出力を垂れ流す。
+func (v *doctorView) startCmdRun(acts []doctorCmdAction) tea.Cmd {
 	if v.del.cancel != nil {
 		v.del.cancel()
 	}
@@ -322,7 +345,7 @@ func (v *doctorView) startBrewRun(acts []brewAction) tea.Cmd {
 	ch := make(chan doctorDeleteEvent, 16)
 	prog := make(chan doctorDeleteEvent, 1)
 	done := make(chan doctorDeleteEvent, 1)
-	v.del = doctorDelete{kind: jobBrew, cancel: cancel, ch: ch, progCh: prog, done: done, running: true, brewPlan: acts}
+	v.del = doctorDelete{kind: jobCmd, cancel: cancel, ch: ch, progCh: prog, done: done, running: true, cmdPlan: acts}
 	gen := v.gen
 	run := v.brewRun
 	if run == nil {
@@ -355,7 +378,7 @@ func (v *doctorView) startBrewRun(acts []brewAction) tea.Cmd {
 				}
 			}
 		})
-		done <- doctorDeleteEvent{brewRep: &brewRunReport{Records: recs}}
+		done <- doctorDeleteEvent{cmdRep: &cmdRunReport{Records: recs}}
 		return nil
 	})
 }
@@ -500,9 +523,9 @@ func (v *doctorView) receiveDelete(msg doctorDeleteMsg) tea.Cmd {
 		v.del.progress = next
 		return v.waitDeleteCmd(msg.gen)
 	}
-	if ev.brewRep != nil {
+	if ev.cmdRep != nil {
 		v.del.preparing, v.del.running = false, false
-		v.del.brewRep = ev.brewRep
+		v.del.cmdRep = ev.cmdRep
 		return nil
 	}
 	if ev.rep == nil {
@@ -542,7 +565,7 @@ func (v *doctorView) handleDeleteKey(key string) (doctorAction, bool) {
 			}
 		}
 		return doctorSwallow, true
-	case d.result != nil || d.brewRep != nil || d.err != "":
+	case d.result != nil || d.cmdRep != nil || d.err != "":
 		// y / Y は出力をコピー (失敗したときに LLM へそのまま投げられる形)。閉じない
 		if key == "y" || key == "Y" {
 			v.pendingCopy = v.deleteLogText() // 見出しを必ず書くので空にならない
@@ -562,9 +585,9 @@ func (v *doctorView) handleDeleteKey(key string) (doctorAction, bool) {
 			d.confirmScroll.scroll(key)
 			return doctorSwallow, true
 		}
-		if d.kind == jobBrew {
+		if d.kind == jobCmd {
 			if key == "y" || key == "Y" {
-				v.pendingDeleteCmd = v.startBrewRun(d.brewPlan)
+				v.pendingDeleteCmd = v.startCmdRun(d.cmdPlan)
 				return doctorRunDelete, true
 			}
 			d.reset() // それ以外はやめる (安全側)
@@ -643,7 +666,7 @@ func (v *doctorView) deleteLogText() string {
 	d := &v.del
 	var b strings.Builder
 	// 見出しは仕事ごとに変える。LLM へ投げたときに「何をした記録か」が最初の行で分かるように
-	if d.kind == jobBrew {
+	if d.kind == jobCmd {
 		b.WriteString("glogx doctor から実行した brew の記録 (macOS)\n")
 	} else {
 		b.WriteString("glogx doctor の削除の記録 (macOS)\n")
@@ -666,7 +689,7 @@ func (v *doctorView) deleteLogText() string {
 			b.WriteString("\n記録: " + rep.HistoryPath + "\n")
 		}
 	}
-	if rep := d.brewRep; rep != nil {
+	if rep := d.cmdRep; rep != nil {
 		fmt.Fprintf(&b, "\n%d 件を実行し、%d 件が失敗しました\n", len(rep.Records), rep.failed())
 	}
 	if len(d.log) > 0 {
@@ -755,7 +778,10 @@ func (v *doctorView) toggleSelect() (string, bool) {
 		return v.toggleItem(itemKey)
 	}
 	if strings.HasPrefix(key, "brewact:") {
-		return v.toggleBrewAction()
+		return v.toggleCmdAction()
+	}
+	if isDockerRowKey(key) {
+		return v.toggleDockerAction(key)
 	}
 	id, ok := strings.CutPrefix(key, "disk:")
 	if !ok {
@@ -783,9 +809,9 @@ func (v *doctorView) toggleSelect() (string, bool) {
 }
 
 // toggleItem はディレクトリ単位の選択。
-// toggleBrewAction は brew の手の選択を切り替える。**コマンド文字列**で覚える
+// toggleCmdAction は brew の手の選択を切り替える。**コマンド文字列**で覚える
 // (行の key は警告の並びに依存するので、再スキャンで別の手を指す)。
-func (v *doctorView) toggleBrewAction() (string, bool) {
+func (v *doctorView) toggleCmdAction() (string, bool) {
 	cmd := v.rows[v.cur.index].copyPath
 	if cmd == "" {
 		return "この行には実行するコマンドがありません", false
@@ -942,12 +968,12 @@ func (v *doctorView) deletePanel(o doctorRenderOpts) []string {
 	case d.result != nil:
 		blocks, tail := doctorDeleteResultLines(o, *d.result, d.log)
 		return assembleDeletePanel(o, "削除の結果", blocks, tail, nil)
-	case d.brewRep != nil:
-		return doctorPanel(o, "実行の結果", brewResultLines(o, *d.brewRep, d.brewPlan, d.log))
+	case d.cmdRep != nil:
+		return doctorPanel(o, "実行の結果", cmdResultLines(o, *d.cmdRep, d.cmdPlan, d.log))
 	case d.blocking():
 		head := "削除しています"
 		switch {
-		case d.kind == jobBrew:
+		case d.kind == jobCmd:
 			head = "実行しています"
 		case d.preparing:
 			head = "削除できるか確認しています"
@@ -988,8 +1014,8 @@ func (v *doctorView) deletePanel(o doctorRenderOpts) []string {
 			body = append(body, tailLines(d.log, max(o.page-len(body)-3, 1))...)
 		}
 		return doctorPanel(o, head, body)
-	case d.confirm && d.kind == jobBrew:
-		blocks, tail := brewConfirmLines(o, d.brewPlan)
+	case d.confirm && d.kind == jobCmd:
+		blocks, tail := cmdConfirmLines(o, d.cmdPlan)
 		return assembleDeletePanel(o, "これを実行しますか?", blocks, tail, &d.confirmScroll)
 	case d.confirm:
 		blocks, tail := v.confirmLines(o)
@@ -1004,9 +1030,9 @@ func (v *doctorView) deletePanel(o doctorRenderOpts) []string {
 	return nil
 }
 
-// brewConfirmLines は「これから何を実行するか」。**コマンドをそのまま全部出す**
+// cmdConfirmLines は「これから何を実行するか」。**コマンドをそのまま全部出す**
 // (同意の対象と実行の対象を一致させる。削除側が issue 245 で学んだのと同じ規律)。
-func brewConfirmLines(o doctorRenderOpts, acts []brewAction) (blocks [][]string, tail []string) {
+func cmdConfirmLines(o doctorRenderOpts, acts []doctorCmdAction) (blocks [][]string, tail []string) {
 	for _, a := range acts {
 		b := []string{"▸ " + doctorColor(o.colored, ansiBold, a.Label), "  $ " + a.Cmd}
 		if a.Note != "" {
@@ -1024,8 +1050,8 @@ func brewConfirmLines(o doctorRenderOpts, acts []brewAction) (blocks [][]string,
 	return blocks, tail
 }
 
-// brewResultLines は実行の結果。**失敗の有無を先に言い切る** (ログを読む前に分かるように)。
-func brewResultLines(o doctorRenderOpts, rep brewRunReport, plan []brewAction, log []string) []string {
+// cmdResultLines は実行の結果。**失敗の有無を先に言い切る** (ログを読む前に分かるように)。
+func cmdResultLines(o doctorRenderOpts, rep cmdRunReport, plan []doctorCmdAction, log []string) []string {
 	head := fmt.Sprintf("%d 件すべて成功しました", len(rep.Records))
 	if f := rep.failed(); f > 0 {
 		head = doctorColor(o.colored, ansiYellow, fmt.Sprintf("%d 件中 %d 件が失敗しました", len(rep.Records), f))
