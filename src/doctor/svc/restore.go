@@ -61,7 +61,12 @@ func SanitizeRestored(rep Report) Report {
 		out.Undiagnosed = append(out.Undiagnosed, u)
 	}
 	out.DirErrs = cleanTexts(rep.DirErrs)
-	return out
+	// 🚨 最後に**表示の関門**も通す (issue 228 の敵対レビュー 2026-09-04)。ここまでの検査は
+	// `validPlistPath` が「絶対パス / Clean 済み / .plist で終わる」しか見ておらず、
+	// **PlistPath の制御文字は素通りしていた** (Label は labelRe が弾くが、パスは
+	// 「実在の plist 名に何が入るかは決められない」ので文字種を絞っていない)。
+	// 結果、細工した snapshot の OSC52 入りパスが行と `y` / `Y` のコピーへそのまま出ていた。
+	return SanitizeForDisplay(out)
 }
 
 // validFinding は「コマンドを組み立ててよい材料か」。1 つでも崩れていたら Finding ごと落とす。

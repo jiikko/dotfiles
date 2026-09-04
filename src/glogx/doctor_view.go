@@ -634,7 +634,7 @@ func (v *doctorView) lines(o doctorRenderOpts) []string {
 	if panel := v.deletePanel(o); panel != nil {
 		return padTo(panel, o.page)
 	}
-	v.rows = v.buildRows(o)
+	v.rows = flattenDoctorRows(v.buildRows(o))
 	v.jumpIntoDetail()
 	v.cur.restore(v.rows)
 	head := []string{v.headerLine(o), ""}
@@ -650,6 +650,26 @@ func (v *doctorView) lines(o doctorRenderOpts) []string {
 		out = append(out, truncateDisp(mark+v.rows[i].text, o.width, "…"))
 	}
 	return padTo(out, o.page)
+}
+
+// flattenDoctorRows は row の text から改行を落として「1 row = 1 行」を機械で守る。
+//
+// 🚨 doctorRow は名前のとおり 1 行のつもりだが、それを守っていたのは組み立て側の規律だけだった。
+// 改行が 1 つ混ざると**固定高パネルの行数が増える**のに、行数を数えるテスト
+// (TestDoctorLinesFillsPage) はスライスの要素数しか見ないので素通りする (敵対レビュー
+// 2026-09-04 が brew の Unavailable で実測: 要素 20 個・実際の出力 21 行)。
+// 出口 1 箇所で潰しておけば、無害化の使い分け (PlainLine / PlainBlock) を間違えた将来の
+// 1 行も構造的に止まる。**copyText / copyPath は対象外** (コピー文は複数行が正常)。
+func flattenDoctorRows(rows []doctorRow) []doctorRow {
+	for i, r := range rows {
+		if strings.ContainsRune(r.text, '\n') {
+			rows[i].text = strings.ReplaceAll(r.text, "\n", " ")
+		}
+		if len(r.detail) > 0 {
+			rows[i].detail = flattenDoctorRows(r.detail)
+		}
+	}
+	return rows
 }
 
 func (v *doctorView) headerLine(o doctorRenderOpts) string {

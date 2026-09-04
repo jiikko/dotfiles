@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"doctor/exitcode"
@@ -67,3 +68,24 @@ func TestSvcEmitReturnsSameExitCodeForBothOutputs(t *testing.T) {
 type failWriter struct{}
 
 func (failWriter) Write([]byte) (int, error) { return 0, errors.New("no space left on device") }
+
+// 無害化が Finding を落としたら「診断できず」へ倒す (diskdoctor と同じ規律。issue 228)。
+// 落とす理由は「提示するコマンドが別のファイルを指すのを避ける」ことなので、**落としたことが
+// 呼び出し側に見えなければ、候補が消えたのと区別できない**。
+func TestSvcEmitCountsSanitizerDropsAsUndiagnosed(t *testing.T) {
+	const esc, bel = "\x1b", "\a"
+	rep := svc.Report{Scanned: 1, Findings: []svc.Finding{{
+		Label: "com.evil" + esc + "]52;c;cHduZWQ=" + bel, Domain: "gui/501",
+		PlistPath: "/Library/LaunchAgents/evil.plist", Reasons: []string{"実行ファイルが無い"},
+	}}}
+	if got := svcExitCode(rep); got != exitcode.Findings {
+		t.Fatalf("前提が作れていない: 無害化前の rc=%d (want %d)", got, exitcode.Findings)
+	}
+	var out, errBuf bytes.Buffer
+	if got := emit(rep, false, &out, &errBuf); got != exitcode.Undiagnosed {
+		t.Errorf("落とした Finding があるのに rc=%d (want %d)", got, exitcode.Undiagnosed)
+	}
+	if !strings.Contains(out.String(), "制御文字") {
+		t.Errorf("落としたことが出力に残っていない: %q", out.String())
+	}
+}

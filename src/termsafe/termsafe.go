@@ -61,6 +61,16 @@ func PlainLineKeepTabs(s string) string { return sanitize(s, policy{keepTabs: tr
 // 用途ごとの関心なので、この関数ではなく呼び出し側が持つ。
 func PlainBlock(s string) string { return sanitize(s, policy{keepNewlines: true}) }
 
+// IsPlain は s が無害化を必要としないか (制御文字・エスケープ導入子を含まず、正しい UTF-8)。
+//
+// 🚨 **書き換えではなく「通らないものを落とす」判定に使う**。同一性を持つ値 (ファイルのパス /
+// launchd のラベル) は書き換えると別物になり、「画面に出ているものと実際に触るものが違う」を
+// 作る。落とす側に倒せば、落としたことを件数で伝えられる。
+//
+// タブと改行も false 側に入る (どちらも「1 件 = 1 行」の契約を壊す)。不正な UTF-8 も false:
+// []rune 変換で U+FFFD に化けるため、通すと表示層ごとに解釈が割れる。
+func IsPlain(s string) bool { return !needsSanitize(s) }
+
 // DropEmojiVS16 は絵文字異体字セレクタ VS16 (U+FE0F) を除去して、⚠️❤️✔️ 等の
 // 「記号 + VS16」を bare な text presentation (⚠❤✔) へ倒す。
 //

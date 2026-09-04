@@ -452,7 +452,7 @@ func loadDoctorSnapshotAny() (doctorSnapshot, bool) {
 // 「中身は信用していない」ことを記録する。中身まで断つなら復元をやめて毎回 brew doctor を回すことになり、
 // TTL 内の開き直しを速くするというこの機能の目的と衝突する。
 func sanitizeRestoredBrew(b brewDoctorResult) brewDoctorResult {
-	out := brewDoctorResult{Clean: b.Clean, Unavailable: cleanBrewText(b.Unavailable)}
+	out := brewDoctorResult{Clean: b.Clean, Unavailable: cleanBrewLine(b.Unavailable)}
 	for i, w := range b.Warnings {
 		if i >= maxRestoredBrewWarnings {
 			break
@@ -556,7 +556,14 @@ const (
 
 // cleanBrewText は改行だけ残して他の制御文字を落とし、長さを切る (警告本文は複数行が正常)。
 // 無害化は termsafe.PlainBlock に委ねる (cleanOneLine と同じ理由。issue 228)。
+//
+// 🚨 **1 件が 1 行として描かれる値には使わないこと**。改行を残すので、偽の行を差し込まれて
+// 固定高パネルの行数が狂う (行数を数えないテストは素通りする)。brew の `Unavailable` は
+// 1 行の doctorRow なので cleanBrewLine を使う (敵対レビュー 2026-09-04 が実測)。
 func cleanBrewText(s string) string { return cutRunes(termsafe.PlainBlock(s), maxRestoredBrewText) }
+
+// cleanBrewLine は brew 節のうち**1 行として描かれる**値 (Unavailable) 用。
+func cleanBrewLine(s string) string { return cleanOneLine(s) }
 
 // cleanLiveBrew は走査したての brew doctor の結果を無害化する (live 経路の関門。issue 228)。
 //
@@ -565,7 +572,7 @@ func cleanBrewText(s string) string { return cutRunes(termsafe.PlainBlock(s), ma
 // 復元しない」でよいが、こちらは brew doctor の実出力で、形が違う = brew の出力形式が
 // 変わったということ。落とすと診断そのものが黙って消える。
 func cleanLiveBrew(b brewDoctorResult) brewDoctorResult {
-	out := brewDoctorResult{Clean: b.Clean, Unavailable: cleanBrewText(b.Unavailable)}
+	out := brewDoctorResult{Clean: b.Clean, Unavailable: cleanBrewLine(b.Unavailable)}
 	for _, w := range b.Warnings {
 		out.Warnings = append(out.Warnings, cleanBrewText(w))
 	}

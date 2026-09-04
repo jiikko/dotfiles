@@ -61,6 +61,11 @@ func run() int {
 // 分岐の中で return / os.Exit すると、片方の経路だけ判定を飛ばす形 (issue 177 (b) の -json) が
 // 再び書けてしまう。構造でそれを禁じる。
 func emit(rep svc.Report, jsonOut bool, stdout, stderr io.Writer) int {
+	// 🚨 終了コードは**人が見た内容**から決める (diskdoctor 側の emit と同じ理由。issue 228)。
+	// 無害化は名前に制御文字を含む Finding を落とし、その件数を DirErrs に残す。svcExitCode は
+	// DirErrs を見て「診断できず」へ倒すので、落としたことが終了コードにも出る。
+	// 🚨 -json は生の Report (encoder が escape する。機械の読み手から何も欠けない)。
+	disp := svc.SanitizeForDisplay(rep)
 	if jsonOut {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
@@ -69,7 +74,7 @@ func emit(rep svc.Report, jsonOut bool, stdout, stderr io.Writer) int {
 			return exitcode.EnvFailure
 		}
 	} else {
-		_, _ = fmt.Fprint(stdout, svc.Format(rep))
+		_, _ = fmt.Fprint(stdout, svc.Format(disp)) // Format 側の関門は冪等 (二度通しても同じ)
 	}
-	return svcExitCode(rep)
+	return svcExitCode(disp)
 }

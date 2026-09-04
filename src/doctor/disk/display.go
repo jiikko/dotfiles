@@ -23,7 +23,6 @@ package disk
 
 import (
 	"fmt"
-	"unicode"
 
 	"termsafe"
 )
@@ -61,12 +60,17 @@ func SanitizeResultForDisplay(r Result) Result {
 		it.Ref = termsafe.PlainLine(it.Ref)
 		kept = append(kept, it)
 	}
+	// 🚨 落とした件数に関わらず kept を反映する。`if dropped > 0` の中だけで代入していたときは、
+	// **通常ケース (dropped == 0) で Ref の無害化が捨てられていた** (敵対レビュー 2026-09-04)。
+	// 合計の引き直しは落としたときだけ (Reused の Result は Items を持たないことがあり、
+	// 無条件に引き直すと 0 になる)
+	r.Items = kept
 	if dropped > 0 {
 		var sum int64
 		for _, it := range kept {
 			sum += it.Size
 		}
-		r.Items, r.Size = kept, sum
+		r.Size = sum
 		r.Failures = append(r.Failures,
 			fmt.Sprintf("%d 件は名前に制御文字を含むため一覧から外しました (合計にも含めていません)", dropped))
 	}
@@ -75,20 +79,13 @@ func SanitizeResultForDisplay(r Result) Result {
 
 // DisplayablePath は「画面とコピーに出してよいパスか」。
 //
-// 🚨 termsafe を通して**書き換える**のではなく、通らないものを落とすための述語なのでここだけ
-// 自前で判定する。パスは表示だけでなく削除の照合にも使う値で、書き換えたら別物になる。
-// 🚨 `unicode.IsPrint` はタブも改行も非印字として弾く (どちらも 1 行 1 件の契約を壊す)。
-func DisplayablePath(p string) bool {
-	if p == "" {
-		return false
-	}
-	for _, r := range p {
-		if !unicode.IsPrint(r) {
-			return false
-		}
-	}
-	return true
-}
+// 🚨 termsafe を通して**書き換える**のではなく、通らないものを落とすための述語。パスは表示
+// だけでなく削除の照合にも使う値で、書き換えたら別物になる (SanitizeResultForDisplay の doc)。
+// 判定そのものは termsafe.IsPlain に委ねる: 自前で `unicode.IsPrint` を回していたときは
+// **生の不正 UTF-8 バイト (8bit CSI = 0x9b 等) を通していた** (敵対レビュー 2026-09-04 が実測。
+// IsPrint は U+FFFD を印字可能と答えるため)。落とす側と書き換える側で判定が割れないよう、
+// 述語は 1 つにする。
+func DisplayablePath(p string) bool { return p != "" && termsafe.IsPlain(p) }
 
 // SanitizeEntryForDisplay はカタログ由来の表示文字列を通す。
 //

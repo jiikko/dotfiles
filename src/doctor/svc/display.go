@@ -7,12 +7,21 @@ package svc
 // 1 つ置くだけで注入できる。CLI (svcdoctor) は stdout へ直接書くので「表示しただけ」で発火し、
 // TUI (glogx) では `Y` のコピーが pbcopy へ生で渡る。
 //
-// 🚨 復元経路 (SanitizeRestored) との違い: あちらは**保存ファイルを信用しない**ので形が
-// 崩れた Finding は丸ごと落とす (コマンドを組み立てる材料になるため)。こちらは実物の走査結果
-// なので**落とさずに無害化するだけ**にする — 名前が変な plist ほど壊れた登録である可能性が
-// 高く、診断から消すのは目的と逆。提示コマンドは実行しないし、ShellQuote も通っている。
+// 🚨 **同一性を持つ値は書き換えず落とす** (disk の Item.Path と同じ判断)。Label / PlistPath /
+// Domain は「手で叩いてください」と提示するコマンドが指す先そのもの。書き換えて表示すると、
+// 攻撃者が無害化後の名前のファイル (`a<ESC>[2Jb.plist` と `ab.plist` の両方) を置くだけで、
+// **doctor が「攻撃者が選んだファイルを rm しろ」と案内する**ことになる (敵対レビュー
+// 2026-09-04 が実測)。ShellQuote が守るのは注入であって同一性ではない。
+// 落としたことは DirErrs に件数で残す (svcExitCode が DirErrs を見て「診断できず」へ倒すので、
+// CLI の終了コードにも出る = 黙って減らない)。
+//
+// 表示だけの自由文 (Reasons / MissingExec / エラー文) は落とさず無害化する。
 
-import "termsafe"
+import (
+	"fmt"
+
+	"termsafe"
+)
 
 // SanitizeForDisplay は Report を表示・コピーに出してよい形にする。
 func SanitizeForDisplay(rep Report) Report {
@@ -20,11 +29,13 @@ func SanitizeForDisplay(rep Report) Report {
 	out.StatusErr = termsafe.PlainLine(rep.StatusErr)
 	out.BrewErr = termsafe.PlainLine(rep.BrewErr)
 	out.DirErrs = cleanDisplayLines(rep.DirErrs)
+	dropped := 0
 	out.Findings = make([]Finding, 0, len(rep.Findings))
 	for _, f := range rep.Findings {
-		f.Label = termsafe.PlainLine(f.Label)
-		f.PlistPath = termsafe.PlainLine(f.PlistPath)
-		f.Domain = termsafe.PlainLine(f.Domain)
+		if !displayableIdentity(f.Label) || !displayableIdentity(f.PlistPath) || !displayableIdentity(f.Domain) {
+			dropped++
+			continue
+		}
 		f.Reasons = cleanDisplayLines(f.Reasons)
 		f.RestartKeys = cleanDisplayLines(f.RestartKeys)
 		f.MissingExec = termsafe.PlainLine(f.MissingExec)
@@ -34,12 +45,27 @@ func SanitizeForDisplay(rep Report) Report {
 	}
 	out.Undiagnosed = make([]Undiagnosed, 0, len(rep.Undiagnosed))
 	for _, u := range rep.Undiagnosed {
-		u.PlistPath = termsafe.PlainLine(u.PlistPath)
+		if !displayableIdentity(u.PlistPath) {
+			dropped++
+			continue
+		}
 		u.Reason = termsafe.PlainLine(u.Reason)
 		out.Undiagnosed = append(out.Undiagnosed, u)
 	}
+	if dropped > 0 {
+		out.DirErrs = append(out.DirErrs,
+			fmt.Sprintf("%d 件は名前に制御文字を含むため一覧から外しました (提示するコマンドが別のファイルを指すため)", dropped))
+	}
 	return out
 }
+
+// displayableIdentity は「そのまま画面とコマンド行に出してよい識別子か」。
+// disk.DisplayablePath と同じ述語 (termsafe.IsPlain) を使う — 落とす基準を 2 実装しない。
+//
+// 🚨 **空文字は落とさない**。ここが守るのは「表示した名前と実体が一致すること」で、空である
+// ことは安全性の問題ではない (実走査では Label / Domain / PlistPath は必ず埋まる)。空を
+// 落とす形にすると、識別子を持たない Report を「診断できず」へ倒してしまう。
+func displayableIdentity(s string) bool { return termsafe.IsPlain(s) }
 
 func cleanDisplayLines(ss []string) []string {
 	if len(ss) == 0 {

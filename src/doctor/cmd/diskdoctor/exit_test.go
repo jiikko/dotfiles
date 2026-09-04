@@ -91,3 +91,27 @@ func TestDiskFormatSaysNoCandidates(t *testing.T) {
 type failWriter struct{}
 
 func (failWriter) Write([]byte) (int, error) { return 0, errors.New("no space left on device") }
+
+// 無害化が対象を一覧から落としたら、終了コードは「診断できず」へ倒す (issue 228)。
+// 🚨 emit が**無害化前**の Report で数えていたときは、隠したものがあるのに rc=1 (候補あり) を
+// 返していた (敵対レビュー 2026-09-04)。「検査できなかったを緑にしない」がこの CLI の設計。
+func TestEmitCountsSanitizerDropsAsUndiagnosed(t *testing.T) {
+	const esc, bel = "\x1b", "\a"
+	rep := disk.Report{Results: []disk.Result{{
+		Entry:  disk.Entry{ID: "x", Label: "細工されたキャッシュ", Risk: disk.RiskSafe, DeleteVia: "rm", Recover: "再生成されます"},
+		Status: disk.StatusOK, Size: 8192,
+		Items: []disk.Item{{Path: "/tmp/ev" + esc + "]52;c;cHduZWQ=" + bel + "il", Size: 8192}},
+	}}}
+	rep.Total = disk.SumDeletable(rep.Results)
+	// 無害化前は「候補あり」に見える (前提。この行が落ちたら fixture が的を外している)
+	if got := diskExitCode(rep); got != exitcode.Findings {
+		t.Fatalf("前提が作れていない: 無害化前の rc=%d (want %d)", got, exitcode.Findings)
+	}
+	var out, errBuf bytes.Buffer
+	if got := emit(rep, false, time.Now(), &out, &errBuf); got != exitcode.Undiagnosed {
+		t.Errorf("落とした対象があるのに rc=%d (want %d)", got, exitcode.Undiagnosed)
+	}
+	if !strings.Contains(out.String(), "制御文字") {
+		t.Errorf("落としたことが出力に残っていない: %q", out.String())
+	}
+}
