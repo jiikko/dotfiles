@@ -5,10 +5,12 @@
 #   working : "⚙ working" を表示 (UserPromptSubmit / PostToolUse=承認後の自動復帰)
 #   input   : "🔔 input" を表示   (Notification — permission 承認待ち・質問への回答待ち)
 #             + ペインが画面に見えていなければ macOS 通知 (音あり)
+#             + tmux ベル (window-status のシアン反転)
 #             ただし stdin (hook JSON) の notification_type が入力不要の種別
 #             (auth_success / agent_completed 等) のときは状態を変えない
 #   idle    : "✓ idle" を表示     (Stop = 応答完了)
 #             + ペインが画面に見えていなければ macOS 通知 (音なし)
+#             + tmux ベル (bg タスクが残っているときは鳴らさない — 下記)
 #             ただし stdin (hook JSON) の background_tasks に実行中タスクが残っている
 #             場合 (バックグラウンド Bash / subagent / codex レビュー待ち等) は、
 #             入力待ちではないので "⚙ working (bg)" を表示して通知もしない。
@@ -58,6 +60,23 @@ notify_if_hidden() {
   fi
 }
 
+# tmux の bell フラグ (window-status のシアン反転 = 見るまで残る印) を立てる。
+# 🚨 hook の stdout は Claude Code が捕まえるので printf '\a' では端末へ届かない。
+# ペインの pane_tty へ直接書くと tmux が出力として読み、window_bell_flag=1 になる
+# (隔離サーバ -L で実測 2026-09-05)。見えているウィンドウなら tmux がすぐ flag を
+# 落とすので、実質「裏で起きたことだけ残る」挙動になる。
+#
+# 🚨 Claude Code 内蔵のベル (preferredNotifChannel) は必ず切っておくこと
+# (_claude/settings.json で notifications_disabled)。内蔵ベルは Stop / Notification
+# で無条件に鳴り、bg タスク実行中かどうかを区別しないため、これと二重に鳴ると
+# 本ルーチンで絞った意味が消える
+ring_bell() {
+  local tty
+  tty=$(tmux display -p -t "$TMUX_PANE" '#{pane_tty}' 2>/dev/null) || return 0
+  [ -n "$tty" ] && [ -w "$tty" ] || return 0
+  printf '\a' > "$tty" 2>/dev/null || :
+}
+
 case "${1:-}" in
   working) set_state "⚙ working" ;;
   input)
@@ -73,7 +92,7 @@ case "${1:-}" in
     fi
     case "$ntype" in
       auth_success|elicitation_complete|elicitation_response|agent_completed) : ;;
-      *) set_state "🔔 input"; notify_if_hidden "🔔 入力待ち (承認 or 回答が必要)" "default" ;;
+      *) set_state "🔔 input"; ring_bell; notify_if_hidden "🔔 入力待ち (承認 or 回答が必要)" "default" ;;
     esac
     ;;
   idle)
@@ -93,6 +112,7 @@ case "${1:-}" in
       set_state "⚙ working (bg:$pending)"
     else
       set_state "✓ idle"
+      ring_bell
       notify_if_hidden "✓ 応答完了"
     fi
     ;;

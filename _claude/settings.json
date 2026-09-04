@@ -6,6 +6,7 @@
     "defaultMode": "auto"
   },
   "model": "opus",
+  "preferredNotifChannel": "notifications_disabled",
   "hooks": {
     "UserPromptSubmit": [
       {
