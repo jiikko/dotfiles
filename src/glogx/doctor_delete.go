@@ -292,7 +292,7 @@ func (v *doctorView) selectedBrewActions() []brewAction {
 	if len(v.selectedActions) == 0 {
 		return nil
 	}
-	var out []brewAction
+	out := make([]brewAction, 0, len(v.selectedActions))
 	seen := map[string]bool{}
 	for _, r := range v.rows {
 		if !strings.HasPrefix(r.key, "brewact:") || !v.selectedActions[r.copyPath] || seen[r.copyPath] {
