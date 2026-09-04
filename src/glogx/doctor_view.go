@@ -390,6 +390,50 @@ const (
 // 開いてから j を何度も押さずに、消したいディレクトリへ直接行けるようにする
 // (ユーザー要望 2026-09-03)。対象パスの行が無い (Inspect の中身一覧だけ / 走査できず) なら
 // 何もしない = カーソルはエントリの行に留まる。
+// expandableRow はカーソル行が開閉できるか (開ける詳細を持つ選択可能な行) と、その key。
+func (v *doctorView) expandableRow() (string, bool) {
+	if v.cur.index < 0 || v.cur.index >= len(v.rows) {
+		return "", false
+	}
+	r := v.rows[v.cur.index]
+	if !r.selectable || len(r.detail) == 0 {
+		return "", false
+	}
+	return r.key, true
+}
+
+// collapseParent はカーソルが対象パスの行に居るとき、親のエントリを畳んでカーソルを親へ戻す。
+// 畳んだら true。Enter と h が共有する (入る側だけ作るとカーソルが中に居たまま畳めなくなる)。
+func (v *doctorView) collapseParent() bool {
+	if v.cur.index < 0 || v.cur.index >= len(v.rows) {
+		return false
+	}
+	itemKey, ok := strings.CutPrefix(v.rows[v.cur.index].key, "diskitem:")
+	if !ok {
+		return false
+	}
+	id, _, ok := strings.Cut(itemKey, "\x00")
+	if !ok {
+		return false
+	}
+	delete(v.expanded, "disk:"+id)
+	v.cur.key = "disk:" + id
+	return true
+}
+
+// openRow は詳細を開く。disk のエントリは inspected を立て (risk: confirm の行はこれが
+// 立つまで選べない)、カーソルを中の最初の対象パスへ移す。
+func (v *doctorView) openRow(k string) {
+	v.expanded[k] = true
+	if id, ok := strings.CutPrefix(k, "disk:"); ok {
+		if v.inspected == nil {
+			v.inspected = map[string]bool{}
+		}
+		v.inspected[id] = true
+		v.enterDetail = k
+	}
+}
+
 func (v *doctorView) jumpIntoDetail() {
 	if v.enterDetail == "" {
 		return
@@ -476,25 +520,36 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 	case "enter":
 		// 対象パスの行で Enter を押したら**親のエントリを畳んで戻る** (Enter で入って Enter で出る)。
 		// 入る側だけを作るとカーソルが中に居たまま畳めなくなる
-		if v.cur.index >= 0 && v.cur.index < len(v.rows) {
-			if itemKey, ok := strings.CutPrefix(v.rows[v.cur.index].key, "diskitem:"); ok {
-				if id, _, ok := strings.Cut(itemKey, "\x00"); ok {
-					delete(v.expanded, "disk:"+id)
-					v.cur.key = "disk:" + id
-				}
-				return doctorSwallow
+		if v.collapseParent() {
+			return doctorSwallow
+		}
+		if k, ok := v.expandableRow(); ok {
+			if v.expanded[k] {
+				delete(v.expanded, k)
+			} else {
+				v.openRow(k)
 			}
 		}
-		if v.cur.index >= 0 && v.cur.index < len(v.rows) && v.rows[v.cur.index].selectable && len(v.rows[v.cur.index].detail) > 0 {
-			k := v.rows[v.cur.index].key
-			v.expanded[k] = !v.expanded[k]
-			if id, ok := strings.CutPrefix(k, "disk:"); ok && v.expanded[k] {
-				if v.inspected == nil {
-					v.inspected = map[string]bool{}
-				}
-				v.inspected[id] = true // risk: confirm の行はこれが立つまで選べない
-				v.enterDetail = k      // 開いた直後はカーソルを中の対象パスへ移す (ユーザー要望 2026-09-03)
+	case "l", "right":
+		// 開く方向だけ (Enter と違って閉じない)。既に開いているなら中の対象パスへ入る。
+		// repo 全体で l/right = 開く・進む、h/left = 閉じる・戻る の語彙 (issues viewer /
+		// diff / job 詳細 / 残量ダッシュボードが同じ)。doctor だけ持っていなかった
+		if k, ok := v.expandableRow(); ok {
+			if !v.expanded[k] {
+				v.openRow(k)
+			} else {
+				v.enterDetail = k // 既に開いている: 中へ移す
 			}
+		}
+	case "h", "left":
+		// 閉じる方向だけ。**開いていない行では何もしない** (viewer ごと閉じない)。
+		// 他の viewer では h が viewer を閉じるが、doctor の h は木の開閉なので
+		// 意味を重ねない。抜ける手段は D/q/esc が持っている
+		if v.collapseParent() {
+			return doctorSwallow
+		}
+		if k, ok := v.expandableRow(); ok && v.expanded[k] {
+			delete(v.expanded, k)
 		}
 	case "y", "Y":
 		if v.cur.index < 0 || v.cur.index >= len(v.rows) || !v.rows[v.cur.index].selectable {
@@ -544,7 +599,7 @@ func (v *doctorView) hint(width int) string {
 		{"j/k: 移動", 3},
 		{"Space: 選択", 2}, // 削除の入口なので Enter より優先して残す
 		{"d: 削除", 2},
-		{"Enter: 開閉", 4}, // 開くと対象パスへカーソルが移り、そこでも Space で選べる (幅を「詳細」と同じに保つ)
+		{"Enter/h/l: 開閉", 4}, // 開くと対象パスへカーソルが移り、そこでも Space で選べる
 		{"y: パスをコピー", 5},
 		{"Y: 解説をコピー", 6},
 		{"r: 再スキャン", 5},
