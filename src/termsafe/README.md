@@ -33,3 +33,49 @@
 🚨 **同一性を持つ値は書き換えない**。パスやラベルを無害化して表示すると、
 「画面に出ているものと、実際に消す / 案内するものが違う」を作る。落とす側へ倒し、
 落とした件数を人に見せる (`disk.DisplayablePath` / `svc` の `displayableIdentity` がその形)。
+
+## 通し忘れを機械で止める (issue 251)
+
+関門は `string -> string` なので、**通した値と通していない値を型では区別できない**。
+代わりに「関門そのものの網羅性」を検査している。
+
+| 検査 | 何を止めるか |
+| --- | --- |
+| `doctor/disk/display_coverage_test.go` の `TestSanitizeForDisplayCoversEveryStringField` | **`doctor/disk` の**表示用構造体に新しい文字列フィールドを足したのに `Sanitize*ForDisplay` へ通し忘れる |
+| `src/glogx/untrusted_display_test.go` | sink ごとの回帰 (実際に素通しが見つかった経路を固定) |
+| `scripts/check_go_project_lanes.sh` | `go.mod` の `replace` 先が dependent の workflow paths に入っているか (= 共有 module を変えた push で CI が走るか) |
+
+🚨 **新しい表示用の構造体を足したら `sanitizeGate` の表にも足すこと**。
+表に無い型は検査されない (それ自体は機械では止められない)。
+
+### なぜ「読み手側の lint」ではないか
+
+無害化は**値の生成側 (この module と `doctor/disk`)** で済ませており、読み手 (`glogx` の
+`doctor_view.go`) には `termsafe` の呼び出しが 1 つも現れない。
+実測 2026-09-04: `doctorRow.text` への代入 35 件のうち、右辺が `termsafe.` なのは **0 件**
+(無害化済みの `r.Reason` などをそのまま使う)。**読み手側で構文 lint を書くと 35 件全部が
+誤検出になる**ので、案として却下した (issue 251 の案 2 の当初案)。
+
+### 検出しない形 (この形の指摘は採用せず、ここに記録する)
+
+- 構造体の外 (ローカル変数・関数の戻り値・引数) を経由して表示に出る値
+- **新しい構造体そのもの**を足したとき (`sanitizeGate` に載っている型しか見ない)
+- 無害化の**中身**が正しいか (右辺が `termsafe.*` / `sanitize*` を呼んでいるかまでしか見ない)
+- **関門がコピーを無害化して親へ書き戻さない形** (`r.Items = kept` の一文だけを消す等)。
+  この形は sink テスト (`glogx/untrusted_display_test.go`) が end-to-end で見る担当
+- 🚨 **`doctor/svc` 側の関門は未対応**。`svc.Finding` (Label / PlistPath / Domain / Reasons /
+  MissingExec / RestartKeys / BrewFormula / Commands) と `svc.Report` (StatusErr / BrewErr /
+  DirErrs) に文字列を足しても誰も止めない。`~/Library/LaunchAgents` には誰でも plist を置ける
+  (`svc/display.go` 自身がそう書いている) ので脅威は同じ。**別 issue として起票済み**
+
+いずれも **review の責務**。字句・構文の検査は迂回が原理的に無限にあるので、
+「全部塞ぐ」を目標にしない (`_claude/rules/adversarial-review-own-safeguards.md` の §8)。
+
+### 型で持つ案 (`termsafe.Safe`) を採らなかった理由
+
+`PlainLine` が新しい string 型を返す形にすると通し忘れが型で止まるが、
+**パッケージ境界で剥がれる**。`glogx/issues` の公開 API は `[]*Issue` / `[]string` を返すので、
+1 パッケージだけ型にしても境界で `string` に戻る。効果を出すには表示層 (`[]string` ベースの
+描画) まで通す必要があり、影響は production 50 呼び出し + 受け側の全経路になる。
+**再提案するなら、この影響範囲を数え直してから**。
+

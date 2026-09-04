@@ -445,6 +445,9 @@ func TestDoctorDeleteLogAndReportAreSanitized(t *testing.T) {
 	}}})
 	v.receiveDelete(doctorDeleteMsg{gen: 1, ev: doctorDeleteEvent{rep: &disk.DeleteReport{
 		HistoryPath: "/tmp/hist" + clearSeq + ".json",
+		// HistoryError は err.Error() (= ファイルシステムのエラー文字列) がそのまま入り、
+		// 削除パネルの tail に「記録を書けませんでした: 」と続けて出る (issue 251)
+		HistoryError: "書けません" + osc52Seq,
 		Entries: []disk.EntryOutcome{{
 			ID: "evil", Label: "細工" + osc52Seq, Outcome: disk.OutcomeDeleted,
 			Reason: "理由" + clearSeq,

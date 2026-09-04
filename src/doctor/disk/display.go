@@ -91,9 +91,12 @@ func DisplayablePath(p string) bool { return p != "" && termsafe.IsPlain(p) }
 //
 // 走査した Result の Entry は**カタログ (自分のコード) の写し**なので本来は無害だが、glogx は
 // snapshot から Result ごと復元する経路を持ち、そこでは Entry も保存ファイルの中身になる。
-// 🚨 これは **issue 229 (復元した Entry をカタログへ束ね直す) の代わりにはならない**。
-// ここが直すのは制御文字だけで、「保存された Risk / DeleteVia が実物と違う」という
-// 意味のずれは残る。
+// 🚨 **意味のずれ (保存された Risk / DeleteVia が実物と違う) を直すのはここではない**。
+// それは issue 229 で入った glogx 側の `doctorSnapshotInCatalog` (doctor_cache.go) の担当で、
+// 復元した Entry をコンパイル済みカタログへ束ね直している。ここが直すのは**制御文字だけ**。
+// 🚨 したがって Entry.ID / Result.Status を無害化していないのは「外部由来でないから」ではなく
+// **束ね直しに依存している**から (display_coverage_test.go の sanitizeExempt に同じ理由を書いた)。
+// 依存先が変わったらここで無害化する側へ倒すこと。
 func SanitizeEntryForDisplay(e Entry) Entry {
 	e.Label = termsafe.PlainLine(e.Label)
 	e.Recover = termsafe.PlainLine(e.Recover)
@@ -123,6 +126,9 @@ func sanitizeLines(ss []string) []string {
 func SanitizeDeleteReportForDisplay(rep DeleteReport) DeleteReport {
 	out := rep
 	out.HistoryPath = termsafe.PlainLine(rep.HistoryPath)
+	// 🚨 HistoryError は err.Error() = **ファイルシステムのエラー文字列**で、パスがそのまま入る。
+	// glogx の削除パネルが「記録を書けませんでした: 」に続けて生で出していた (issue 251 の検査が検出)
+	out.HistoryError = termsafe.PlainLine(rep.HistoryError)
 	out.Entries = make([]EntryOutcome, 0, len(rep.Entries))
 	for _, e := range rep.Entries {
 		e.Label = termsafe.PlainLine(e.Label)
