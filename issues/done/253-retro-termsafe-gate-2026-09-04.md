@@ -72,4 +72,6 @@ glogx の削除パネルが画面に生で出していた。**隣の `HistoryPat
 
 ## 残課題
 
-- [ ] 項目 6 の 1 行を `adversarial-review-own-safeguards.md` §8 へ追記するか（ユーザー判断待ち）
+- [x] 項目 6 → **採用**。`adversarial-review-own-safeguards.md` の §8 に
+  「『検出しない形』は実装後にもう一度実装と突き合わせる（着手前の版は意図であって射程ではない）」を
+  追加し、実例（251 で書き漏らした 4 形）は rationale へ
