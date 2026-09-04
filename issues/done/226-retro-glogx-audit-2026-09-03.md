@@ -81,8 +81,12 @@ issue 222 の初稿は「この repo が明文化した『網羅は実装で強�
       いなかった**ことが変異検証で判明し、テストを 3 本足している (詳細は 222 の「決着」節)
 - [x] issue 219 — **別セッションが実装済み** (`9d43a707` / `41769a28`、`1042fab5` で done へ)。
       `doctor_cache.go` は `writeAtomic` 経由になっていることをコードで確認した
-- [ ] **CI で exhaustive が実際に退行を止めるかの確認は未実施のまま**。
-      確かめるには「case を 1 つ外した commit を CI に通して赤くなるのを見る」必要があり、
-      master へ載せると全員の CI が赤くなる。ブランチ + PR での検証は**未承認**なので実施していない。
-      ローカルでは変異検証済み (`ecf285a7` の commit message に記録)。
-      再開の trigger: ユーザーが使い捨てブランチでの検証を承認したとき
+- [x] **CI で exhaustive が退行を止めることを実測した** (2026-09-04)。ユーザー承認のうえ使い捨て
+      ブランチ `tmp-ci-exhaustive-probe` で検証した:
+      `src/doctor/disk/scan.go` の `scanEntry` から `case GuardProcessAbsent:` を外した commit
+      (`5c44472e`) を push し、`gh workflow run src_doctor.yml --ref <branch>` で起動
+      (この workflow の push トリガは master 限定なので dispatch を使った)。
+      run `33827955439` の `doctor / lint` が **失敗**し、ログに
+      `disk/scan.go:165:2: missing cases in switch of type disk.Guard: disk.GuardProcessAbsent (exhaustive)`
+      と `* exhaustive: 1` が出た。変異は `go build ./...` が通る形 (第 3 の結果ではない)。
+      検証後にブランチと worktree は削除済み。master には一切載せていない。
