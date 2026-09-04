@@ -468,6 +468,15 @@ func (m *browseModel) Init() tea.Cmd {
 	if s, ok := loadIssuesScreen(timeNow()); ok {
 		restore = issuesRestoreCmd(s)
 	}
+	// doctor を出したまま終了していたら、その画面を復元する (doctor_resume.go)。
+	// 🚨 issues の復元とは**排他にしない**: 両方は同時に出ないので、後から開く doctor が
+	// 前面に来る。どちらを優先するかは「最後に見ていた方」で決めたいが、記憶は別ファイルで
+	// 順序を持たないため、ここでは doctor を後に開く (issues は下に残り、閉じれば出てくる)
+	var doctorRestore tea.Cmd
+	if tb, ok := loadDoctorScreen(timeNow()); ok {
+		doctorRestore = m.doctorOv.toggle()
+		m.doctorOv.tab = tb
+	}
 	// 🚨 起動時にも追従チェーンを張る: ディスクキャッシュに pending が残っていると初回 fetch が
 	// 走らず (m.fetching() == false)、ciResultMsg 起点の開始点をどれも踏まないまま
 	// 「pending なのに追わない」状態になる (キャッシュの pending TTL 内に再起動した場合)。
@@ -476,9 +485,9 @@ func (m *browseModel) Init() tea.Cmd {
 	// git を叩くので非同期にし、保険のポーリングだけ先に張る (イベント待ちは解決後に張る)。
 	logWatch := tea.Batch(gitLogWatchDirsCmd(), m.gitLogPollCmd())
 	if m.fetching() {
-		return tea.Batch(m.fetch, prefix, u, ver, cliHealth, ab, restore, poll, logWatch, m.maybeTick(), usageRefreshTick())
+		return tea.Batch(m.fetch, prefix, u, ver, cliHealth, ab, restore, doctorRestore, poll, logWatch, m.maybeTick(), usageRefreshTick())
 	}
-	return tea.Batch(prefix, u, ver, cliHealth, ab, restore, poll, logWatch, m.maybeTick(), usageRefreshTick())
+	return tea.Batch(prefix, u, ver, cliHealth, ab, restore, doctorRestore, poll, logWatch, m.maybeTick(), usageRefreshTick())
 }
 
 // issuesRestoreCmd は記憶した画面が今の repo のものか確かめる (別 repo で開いた glogx に
@@ -2225,6 +2234,7 @@ func (m *browseModel) quitNow() (tea.Model, tea.Cmd) { return m.quitWith(false) 
 // 端末を閉じられても、止めるべきものは止まっている状態にしておく。
 func (m *browseModel) quitWith(animate bool) (tea.Model, tea.Cmd) {
 	m.rememberIssuesScreen()
+	m.rememberDoctorScreen()
 	m.cancelAll()
 	if m.fetching() {
 		m.fillUnknown()
@@ -2410,6 +2420,17 @@ func (m *browseModel) rememberIssuesScreen() {
 		return
 	}
 	removeIssuesScreen()
+}
+
+// rememberDoctorScreen は「doctor を出したまま終了したら次の起動で復元する」ための保存
+// (doctor_resume.go)。🚨 issues 側と同じく、**開いていないまま終了したら消す** — 残すと、
+// 一覧を見て閉じた次の起動で 2 回前の doctor が蘇る。
+func (m *browseModel) rememberDoctorScreen() {
+	if m.doctorOv.visible() {
+		_ = saveDoctorScreen(doctorScreen{Tab: int(m.doctorOv.tab), SavedAt: timeNow()}) // 失敗しても終了は妨げない
+		return
+	}
+	removeDoctorScreen()
 }
 
 // handlePanelKey は job パネル表示中のキー操作。j/k はパネル内のフォーカス移動になる。
