@@ -176,3 +176,19 @@ func rowKeys(rows []doctorRow) []string {
 	}
 	return out
 }
+
+// 🚨 画面の復元 (doctor_resume.go) は保存されたタブ番号を戻すので、Docker タブを開いたまま
+// 閉じ、次の起動で Docker が無い環境になっていると**どの節も返さない空画面**になりうる。
+// 走査結果が届いた時点で既定のタブへ戻す。
+func TestDoctorDockerTabFallsBackWhenRestoredButNotInstalled(t *testing.T) {
+	v := doctorTestView(t)
+	v.dockerOpts = noDockerOptions
+	v.tab = tabDocker // 前回の画面を復元した状態
+	runDoctorCmds(t, v, v.open())
+	if v.tab != tabDisk {
+		t.Fatalf("消えたタブに留まっている: %v", v.tab)
+	}
+	if out := doctorText(v, 20); !strings.Contains(out, "▌ディスク占有") {
+		t.Errorf("空画面になっている:\n%s", out)
+	}
+}
