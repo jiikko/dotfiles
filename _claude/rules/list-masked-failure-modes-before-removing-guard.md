@@ -2,6 +2,10 @@
 
 > **トリガー型ルール。** 「このチェックは別のところでやっているから冗長だ」「二重にやっている
 > から片方外せる」と判断した瞬間に発動する。外す判断が**正しくても**発動する。
+> **「置換」で既存の hook (`onTermination` / `deinit` / cancel handler / cleanup callback) が消えるときも
+> 同じ**。外すつもりが無くても、旧実装の hook が担っていた cleanup は外れている
+> (実例 obaket 695: eager proxy を lazy wrapper に置き換え、`onTermination { consumer.cancel() }` を
+> 引き継がず push 型 source の producer Task が生き残った。変異 4 本 all red の後に敵対レビューが出した)。
 
 ## ルール
 

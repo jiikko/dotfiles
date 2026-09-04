@@ -147,8 +147,12 @@ codex の「テストは sandbox で実行不可」は**未検証の印**であ�
 プロセスごと kill される (`CODEX_FANOUT_TIMEOUT=2400` や長い workspace-write 実装と矛盾。2026-08-27 に
 敵対 fanout と mutation 単発が同時に全滅した = obaket issues/620)。その場合は
 `(nohup codex-fanout … > log 2>&1; echo "rc=$?" > <outdir>.rc) > /dev/null 2>&1 &` で起動し、
-Monitor ツールの `until [ -f <rc> ]; do sleep 30; done` で完了を待つ (rc ファイルが完了の証拠。
-プロセス不在かつ rc 無し = 死亡として扱う)。15 分以内に収まる起動は従来どおり `run_in_background` でよい。
+Monitor ツールで完了を待つ。**待つのは driver が必ず書く `runs.tsv` (全 run の rc が揃うこと) であって、外側の `<outdir>.rc`
+ではない** (run 単位の成果物は全部揃ったのに外側 rc だけ書かれず永遠に待った例: obaket 696 項目 10)。
+待機ループには deadline を置き、超えたら「判定不能」として報告する。プロセス不在かつ成果物無し = 死亡として扱う。
+15 分以内に収まる起動は従来どおり `run_in_background` でよい。
+**outdir / log / manifest は repo root からの絶対パスをリテラルで書く** (`$PWD` 禁止。Bash の cwd は呼び出し間で
+primary cwd に戻り、別 repo の tmp に出る: obaket 696 項目 1 / 715 項目 5)。
 
 Claude がやるのは:
 
@@ -504,8 +508,11 @@ EOF
 # セッション scratchpad はセッション終了で消えるため、後から「空振りだったのか遅れて完了したのか」を
 # 診断できない (2026-08-25 obaket 581 で実際に証拠が残らなかった)。`</dev/null` 必須 (codex-review ルール)。
 # 実装も effort **max** (effort 表。全フェーズ固定)。モデルは luna 固定。
-last_message="./tmp/<タスク>/impl.out.md"; log="./tmp/<タスク>/impl.log"
-command codex exec -s workspace-write -m gpt-5.6-luna -c model_reasoning_effort="max" \
+# ROOT は repo root の絶対パス。cwd はサブディレクトリに残っていることがあるので `-C "$ROOT"` を必ず付ける
+# (Storage/ を cwd に起動され macOS/bin を書けず「対応できませんでした」で 30 分ロス: obaket 696 項目 1)。
+ROOT="$(git rev-parse --show-toplevel)"
+last_message="$ROOT/tmp/<タスク>/impl.out.md"; log="$ROOT/tmp/<タスク>/impl.log"
+command codex exec -s workspace-write -C "$ROOT" -m gpt-5.6-luna -c model_reasoning_effort="max" \
   --ephemeral -o "$last_message" </dev/null "$(cat <<'EOF'
 <タスク>。git commit はしない (人間が検証して commit する)。ファイルを書き、プロジェクト標準の build/test が green に
 なるまで自分で反復すること。Swift プロジェクトなら swift build / swift test を使う。
@@ -926,6 +933,9 @@ EOF
 - **使い捨て worktree で行う** (`git worktree add <path> HEAD` + 未コミット実装を patch で持ち込む)。
   **本流でミューテーションしない**: 変異の復元に `git checkout` を使うと未コミットの実装/修正ごと巻き戻す
   (2026-07-29 に実際に起きた事故。worktree なら丸ごと捨てられるので復元事故が構造的に消える)。
+  **worktree に patch を持ち込んだら baseline commit を作ってから注入させる**。持ち込んだ直後の worktree でも
+  patch は未コミットなので、codex の `git checkout -- .` 復元が seam ごと消してテストがコンパイル不能になる
+  (obaket 696 項目 4)。
 - **codex に注入から実行ループまで回させる** (workspace-write・`-C <worktree>`・`gpt-5.6-luna`・max —
   機械作業。トークン経済 3): 「このマイルストーンの実装に、**現実的なバグを 3〜5 個、1 個ずつ独立の
   patch として**作れ (境界の off-by-one・条件の反転・エラー処理の握りつぶし・early return の欠落など、

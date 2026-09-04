@@ -44,6 +44,19 @@
 - **rc は `wait` 後のものを使う**。`cmd > out &` の直後の `$?` は**起動の成否**であって
   `cmd` の終了コードではない。書き込み途中の成果物を掴まないよう、公開は完了時の
   atomic rename か done marker で行う
+- **background / detach する出力先は repo root からの絶対パスをリテラルで書く。`$PWD` や相対パスを使わない**。
+  Bash ツールの cwd は呼び出し間でハーネスの primary cwd に戻ることがあり、`$PWD/tmp/...` が**別 repo の tmp**
+  に出る (実測 2026-09-02 obaket 696: codex run が SnapTrim 側に成果物を出し、待機タスクは obaket 側を永遠に
+  待った。2026-09-04 の 715 で再発、今度は逆向きに誤認して `find` で探す往復が出た)。
+  codex 等の外部エージェントの起動も `cd <root> && codex exec -C <root>` で作業根を明示する
+  (cwd がサブディレクトリのまま workspace-write を起動すると、その外を書けず「対応できませんでした」で終わる)
+- **待つのは「driver が必ず書く成果物」で、外側のラッパが書く rc ファイルではない**。
+  `(nohup driver …; echo rc > X.rc) &` の形で、run 単位の成果物は全部揃ったのに外側 `X.rc` だけ無く、
+  `until [ -f X.rc ]` が回り続けた例がある (obaket 696 項目 10、原因未特定)。待機ループには deadline を置き、
+  超えたら「判定不能」を出す (timeout に頼らない)
+- **TaskStop は process group ごと殺す**。待機 (poll) 用の background Bash の中で `nohup` した長寿命プロセス
+  (アプリ・サーバ) は、待機タスクを止めた瞬間に道連れになる (obaket 696 項目 9: `make dev-fg` のアプリが消えた)。
+  長寿命プロセスは待機タスクとは別の Bash 呼び出しで起こす
 
 **実害は「待ち直し」では済まない**: 早すぎた判定は「相手が空振りした」という**誤った因果**を作り、
 代替作業への切り替え → 遅れて完了した出力が同じパスを上書き → **commit された成果物の出所を
