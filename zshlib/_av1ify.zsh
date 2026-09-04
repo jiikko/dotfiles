@@ -276,52 +276,18 @@ __av1ify_shorten_for_display() {
   fi
 }
 
-# 内部補助: 解決できなかった 1 行を「空白区切りで並んだ複数パス」として分割する
-# 引数: $1 = 解決に失敗した行 (前後の空白を落とした原文)
+# 内部補助: 語の列を解決して、分割結果と判定用の件数を作る
+# 引数: 語 (クォートが付いたままでよい)
 # 出力: reply = 解決できた絶対パス / __AV1IFY_SPLIT_PASTED = その語の原文 (reply と同じ並び)
-#       __AV1IFY_SPLIT_MISSED = 解決できなかった語
-#       REPLY = パス区切りを含み実在した語の数 (この数だけが判定に使われる)
-# 戻り値: 0=空白区切りの複数パスとみなせる (REPLY が 2 件以上), 1=該当しない
-#
-# 🚨 (z) は zsh の字句解析だけを行い、コマンド置換・チルダ展開はしない
-#    (実測 2026-08-23: `$(touch x)` を含む行を通してもファイルは作られない)。
-#    クリップボードは貼り付けミス由来の信頼できない文字列なので、ここを eval や
-#    print -P に書き換えないこと (issue 089 と同じ穴になる)。
-#
-# 直さないと決めた取りこぼし (どちらも「分割しない」側に倒れるだけで、誤って処理する
-# 方向には倒れないため許容する。2026-08-23 の敵対的レビューで実測):
-#   - 対応の取れないクォートを含む行 (`it's a clip.avi ...` 等) は (z) が 1 トークンに
-#     畳むので分割されない。直すには (z) 以外の分割規則が必要で、それは「クォート付きで
-#     貼られた行」の解釈と矛盾する
-#   - パス区切りを含まない相対パスだけを並べた行 (`a.avi b.avi`) も分割されない。
-#     下の */* ガードの代償で、cwd との偶然の一致で誤判定するより安全側
-__av1ify_split_space_separated_paths() {
-  # 呼び出し元のオプション状態に関わらず「判定では展開しない」を実装で固定する。
-  # GLOB_SUBST が立っていると ${(z)line} の結果までグロブ展開され、`*.mp4` を貼った
-  # 行が cwd のファイル数ぶんに化ける。さらに NOMATCH と重なると未捕捉エラーになり、
-  # 呼び出し元のループごと落ちる (実測 2026-08-23)。
-  setopt LOCAL_OPTIONS no_glob_subst
-  local line="$1"
-  reply=()
-  __AV1IFY_SPLIT_PASTED=()
-  __AV1IFY_SPLIT_MISSED=()
-  REPLY=0
-  local -a words
-  # (z) はクォートを剥がさずに単語へ切る。剥がすのは実在確認をする
-  # __av1ify_resolve_pasted_path 側の (Q) に任せる (剥がし方の規則を二重に持たない)。
-  # shellcheck disable=SC2206,SC2296
-  words=(${(z)line})
-  (( ${#words[@]} < 2 )) && return 1
-
-  # 呼び出し元は失敗行の原文を __AV1IFY_PASTED_TRIMMED から読むため、resolve を
-  # 回す前に退避して戻す (この関数は判定と分割だけで、呼び出し元の状態を壊さない契約)。
-  local saved_trimmed="$__AV1IFY_PASTED_TRIMMED"
+#       __AV1IFY_SPLIT_MISSED = 解決できなかった語 / REPLY = パス区切りを含み実在した語の数
+# 呼び出し元: __av1ify_split_space_separated_paths (2 通りの切り方の結果を同じ規則で採点する)
+__av1ify_tally_path_words() {
   local w unq
   # 🚨 変数名は他の関数で文字列として使う resolved / missed と分ける。shellcheck は
   #    ファイル全体で名前を追うため、同名だと SC2178/SC2128 で lint が落ちる。
   local -a ok_paths=() ok_words=() ng_words=()
   local -i n=0
-  for w in "${words[@]}"; do
+  for w in "$@"; do
     [[ -z "$w" ]] && continue
     # shellcheck disable=SC2296
     unq="${(Q)w}"
@@ -337,12 +303,119 @@ __av1ify_split_space_separated_paths() {
       ng_words+=("$unq")
     fi
   done
-  __AV1IFY_PASTED_TRIMMED="$saved_trimmed"
   reply=("${ok_paths[@]}")
   __AV1IFY_SPLIT_PASTED=("${ok_words[@]}")
   __AV1IFY_SPLIT_MISSED=("${ng_words[@]}")
   REPLY=$n
-  (( n >= 2 ))
+}
+
+# 内部補助: 1 行を「絶対パスが始まる位置」で切る (シェルの字句解析に依存しない切り方)
+# 引数: $1 = 行
+# 出力: reply = 切り出した断片 (前後の引用符を 1 段だけ落としたもの)
+# 戻り値: 0=2 個以上に切れた, 1=境界が無い
+#
+# 🚨 これは (z) の代わりではなく後詰め。(z) は「引用符が 1 個でも対応しなくなると
+#    行全体の解釈がずれる」性質があり (実測 2026-09-04: 33 パスの列に余分な ' が 1 個
+#    混ざると、語には分かれるがほとんどが解決できなくなる)、貼り付け由来の壊れた
+#    引用符に弱い。こちらは「空白 + 引用符0/1個 + /」だけを境界に使うので、
+#    引用符の対応が崩れていても切れる。
+#    代償として絶対パスにしか効かない (相対パス・~ 始まりは (z) 側の担当)。
+__av1ify_absolute_path_words() {
+  setopt LOCAL_OPTIONS extended_glob no_glob_subst
+  local line="$1"
+  reply=()
+  local nl=$'\n'
+  # 🚨 [[:space:]] は UTF-8 ロケールでは NBSP (U+00A0) と全角空白 (U+3000) にも一致する
+  #    (実測 2026-09-04: LANG=ja_JP.UTF-8 で一致 / LC_ALL=C では不一致)。貼り付け元が
+  #    これらで連結してきても切れるので、文字クラスを自前で並べ直さないこと。
+  #    この経路は対話シェル専用で、扱うパス自体が非 ASCII なので C ロケールは想定しない。
+  local marked="${line//[[:space:]]##[\'\"]#\//${nl}/}"
+  local piece
+  local -a pieces=()
+  while IFS= read -r piece; do
+    # 前後の引用符を 1 段だけ落とす (中の引用符は残す = 実在確認で弾かれる)
+    piece="${piece#[\'\"]}"
+    piece="${piece%[\'\"]}"
+    [[ -n "$piece" ]] && pieces+=("$piece")
+  done <<< "$marked"
+  reply=("${pieces[@]}")
+  # 境界が 1 つも無ければ断片は 1 個のまま = 「1 個のパス名」なので切らない。
+  # 🚨 誤分割を止めているのはここではなく、呼び出し元の「パス区切りを含み実在する語が
+  #    2 件以上」の判定。ここの >= 2 は無駄な採点を省くだけで、外しても結果は変わらない
+  #    (実測 2026-09-04)。安全性の根拠をこの行に置かないこと。
+  (( ${#reply[@]} >= 2 ))
+}
+
+# 内部補助: 解決できなかった 1 行を「空白区切りで並んだ複数パス」として分割する
+# 引数: $1 = 解決に失敗した行 (前後の空白を落とした原文)
+# 出力: reply = 解決できた絶対パス / __AV1IFY_SPLIT_PASTED = その語の原文 (reply と同じ並び)
+#       __AV1IFY_SPLIT_MISSED = 解決できなかった語
+#       REPLY = パス区切りを含み実在した語の数 (この数だけが判定に使われる)
+# 戻り値: 0=空白区切りの複数パスとみなせる (REPLY が 2 件以上), 1=該当しない
+#
+# 切り方を 2 通り試し、先に 2 件以上を解決できた方を採る:
+#   1. (z) = シェルの字句解析。クォート・`\ ` エスケープ・相対パス・先頭 ~ に効く
+#   2. 絶対パスの開始位置で切る。引用符の対応が崩れた貼り付けに効く
+#
+# 🚨 (z) は zsh の字句解析だけを行い、コマンド置換・チルダ展開はしない
+#    (実測 2026-08-23: `$(touch x)` を含む行を通してもファイルは作られない)。
+#    クリップボードは貼り付けミス由来の信頼できない文字列なので、ここを eval や
+#    print -P に書き換えないこと (issue 089 と同じ穴になる)。
+#
+# 直さないと決めた取りこぼし (「分割しない」側に倒れるだけで、誤って処理する方向には
+# 倒れないため許容する):
+#   - パス区切りを含まない相対パスだけを並べた行 (`a.avi b.avi`) は分割しない。
+#     */* ガードの代償で、cwd との偶然の一致で誤判定するより安全側 (2026-08-23)
+#   - 引用符が壊れていて、かつ相対パスの列 (絶対パス境界が無い) は救えない。
+#     2 つの切り方のどちらも当てはまらない形
+__av1ify_split_space_separated_paths() {
+  # 呼び出し元のオプション状態に関わらず「判定では展開しない」を実装で固定する。
+  # GLOB_SUBST が立っていると ${(z)line} の結果までグロブ展開され、`*.mp4` を貼った
+  # 行が cwd のファイル数ぶんに化ける。さらに NOMATCH と重なると未捕捉エラーになり、
+  # 呼び出し元のループごと落ちる (実測 2026-08-23)。
+  setopt LOCAL_OPTIONS no_glob_subst no_ksh_arrays
+  local line="$1"
+  reply=()
+  __AV1IFY_SPLIT_PASTED=()
+  __AV1IFY_SPLIT_MISSED=()
+  REPLY=0
+
+  # 呼び出し元は失敗行の原文を __AV1IFY_PASTED_TRIMMED から読むため、resolve を
+  # 回す前に退避して戻す (この関数は判定と分割だけで、呼び出し元の状態を壊さない契約)。
+  local saved_trimmed="$__AV1IFY_PASTED_TRIMMED"
+
+  local -a lexed=()
+  # (z) はクォートを剥がさずに単語へ切る。剥がすのは実在確認をする
+  # __av1ify_resolve_pasted_path 側の (Q) に任せる (剥がし方の規則を二重に持たない)。
+  # shellcheck disable=SC2206,SC2296
+  lexed=(${(z)line})
+  if (( ${#lexed[@]} >= 2 )); then
+    __av1ify_tally_path_words "${lexed[@]}"
+  fi
+
+  # 🚨 (z) 側の結果は __av1ify_absolute_path_words を呼ぶ前に退避する。あちらも reply を
+  #    使うため、後から控えると境界分割の断片を「(z) の結果」として持つことになる。
+  local -a keep_paths=("${reply[@]}") keep_words=("${__AV1IFY_SPLIT_PASTED[@]}")
+  local -a keep_missed=("${__AV1IFY_SPLIT_MISSED[@]}")
+  local -i keep_n=$REPLY
+
+  # (z) が全語を解決できたなら、それ以上試さない (SMB 上のパス列では 1 語 1 stat が効く)。
+  # 1 語でも取りこぼしたら境界分割も採点し、**多く拾えた方**を採る。同数なら (z) を残す。
+  # 🚨 「2 件に届いたから十分」で止めないこと。それだと引用符が 1 個壊れた 33 件の列で
+  #    2 件だけ処理して残りを黙って捨てる = この機能が防ぎたい「文字が落ちる」と同じ形になる。
+  if { (( keep_n < 2 )) || (( ${#keep_missed[@]} > 0 )); } && __av1ify_absolute_path_words "$line"; then
+    local -a bounded=("${reply[@]}")
+    __av1ify_tally_path_words "${bounded[@]}"
+    if (( REPLY <= keep_n )); then
+      reply=("${keep_paths[@]}")
+      __AV1IFY_SPLIT_PASTED=("${keep_words[@]}")
+      __AV1IFY_SPLIT_MISSED=("${keep_missed[@]}")
+      REPLY=$keep_n
+    fi
+  fi
+
+  __AV1IFY_PASTED_TRIMMED="$saved_trimmed"
+  (( REPLY >= 2 ))
 }
 
 # 内部補助: クリップボードに載っているファイル参照 (file URL) を全件読む

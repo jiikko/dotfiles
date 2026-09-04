@@ -639,4 +639,93 @@ assert_contains "$CLIP_OUTPUT" "[分割] $TEST_DIR/sample_a.avi" "Does not drop 
 assert_contains "$CLIP_OUTPUT" "[分割] $TEST_DIR/sample_c.avi" "Does not drop the last split entry under KSH_ARRAYS"
 assert_contains "$CLIP_OUTPUT" "対象 3件 / 除外 0件" "Listing and target count agree under KSH_ARRAYS"
 
+# Test 41: 閉じ引用符が欠けた行でも全件拾う
+# (2026-09-04 の実運用報告。33 パスの列が丸ごと ✗ になり 0 件で落ちた。(z) は引用符の
+#  対応が崩れると解釈がずれ、語には分かれても大半が解決できなくなる。絶対パスの開始位置で
+#  切る後段を入れて救う。**2 件拾えたら十分、にしないこと** — 残りを黙って捨てるのは
+#  この機能が防ぎたい「文字が落ちる」と同じ形)
+printf '\n## Test 41: A missing closing quote still yields every path\n'
+TEST_DIR="$TEST_TMP/clip41"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/sample a.avi"
+echo "dummy video" > "$TEST_DIR/sample b.avi"
+echo "dummy video" > "$TEST_DIR/sample c.avi"
+cd "$TEST_DIR" || exit 1
+# 末尾の ' が落ちた形 (コピー元のツールが途中で切った / 引用が崩れた)
+export MOCK_CLIPBOARD="'$TEST_DIR/sample a.avi' '$TEST_DIR/sample b.avi' '$TEST_DIR/sample c.avi"
+run_av1ify_clip n
+assert_contains "$CLIP_OUTPUT" "1 行に 3 件のパスが並んでいます" "Recovers all three despite the broken quoting"
+assert_contains "$CLIP_OUTPUT" "対象 3件 / 除外 0件" "No path is silently dropped"
+
+# Test 42: 途中に余分なアポストロフィが混ざっても、残りは拾って壊れた語は ✗ に出す
+printf '\n## Test 42: A stray apostrophe does not take the whole line down\n'
+TEST_DIR="$TEST_TMP/clip42"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/sample a.avi"
+echo "dummy video" > "$TEST_DIR/sample c.avi"
+cd "$TEST_DIR" || exit 1
+export MOCK_CLIPBOARD="'$TEST_DIR/sample a.avi' '$TEST_DIR/broken' b.avi' '$TEST_DIR/sample c.avi'"
+run_av1ify_clip n
+assert_contains "$CLIP_OUTPUT" "[分割] $TEST_DIR/sample a.avi" "Still lists the intact paths"
+assert_contains "$CLIP_OUTPUT" "[分割] $TEST_DIR/sample c.avi" "Still lists the path after the stray quote"
+assert_contains "$CLIP_OUTPUT" "対象 2件 / 除外 1件" "The unrecoverable word is excluded, not silently dropped"
+
+# Test 43: 境界分割は「空白 + / 」が無ければ働かない (1 個のパス名を勝手に割らない)
+# 絶対パスの開始位置だけを境界にしているので、空白入りの 1 パスは割れない
+printf '\n## Test 43: The boundary split needs an absolute-path boundary\n'
+TEST_DIR="$TEST_TMP/clip43"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/present.avi"
+cd "$TEST_DIR" || exit 1
+export MOCK_CLIPBOARD="$TEST_DIR/no such clip.avi"
+run_av1ify_clip n
+assert_contains "$CLIP_OUTPUT" "見つかりません" "Reports the missing path"
+assert_not_contains "$CLIP_OUTPUT" "[分割]" "Does not split a single quoted-ish path"
+
+# Test 44: 境界分割でもファイル名の $(...) を実行しない
+printf '\n## Test 44: The boundary split does not execute $(...) either\n'
+TEST_DIR="$TEST_TMP/clip44"
+mkdir -p "$TEST_DIR"
+cd "$TEST_DIR" || exit 1
+EVIL_NAME='evil$(touch pwned44)file.avi'
+echo "dummy video" > "$TEST_DIR/$EVIL_NAME"
+echo "dummy video" > "$TEST_DIR/plain.avi"
+# 閉じ引用符を落として (z) 経路を潰し、境界分割に落ちる形にする
+export MOCK_CLIPBOARD="'$TEST_DIR/$EVIL_NAME' '$TEST_DIR/plain.avi"
+run_av1ify_clip n
+assert_file_not_exists "$TEST_DIR/pwned44" "The boundary split does not execute \$(...)"
+assert_contains "$CLIP_OUTPUT" "対象 2件" "Both paths are still recovered"
+
+# Test 45: 区切りが NBSP / 全角空白でも分割する
+# (貼り付け元のツールがこれらで連結してくることがある。[[:space:]] だけを境界にすると
+#  行が 1 語のまま残り、全件 ✗ になる)
+printf '\n## Test 45: NBSP and ideographic space also separate paths\n'
+TEST_DIR="$TEST_TMP/clip45"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/sample a.avi"
+echo "dummy video" > "$TEST_DIR/sample b.avi"
+cd "$TEST_DIR" || exit 1
+NBSP=$' '
+IDSP=$'　'
+export MOCK_CLIPBOARD="'$TEST_DIR/sample a.avi'${NBSP}'$TEST_DIR/sample b.avi'"
+run_av1ify_clip n
+assert_contains "$CLIP_OUTPUT" "対象 2件 / 除外 0件" "Splits on a non-breaking space"
+export MOCK_CLIPBOARD="'$TEST_DIR/sample a.avi'${IDSP}'$TEST_DIR/sample b.avi'"
+run_av1ify_clip n
+assert_contains "$CLIP_OUTPUT" "対象 2件 / 除外 0件" "Splits on an ideographic space"
+
+# Test 46: 引用符なしで空白入りのパスが並んだ行も分割する
+# (パスを素のまま空白で連結して書き出すツールがある。(z) は語をファイル名の途中で
+#  割ってしまうので解決できず、境界分割 (絶対パスの開始位置) でだけ救える)
+printf '\n## Test 46: Unquoted paths with spaces are still separated\n'
+TEST_DIR="$TEST_TMP/clip46"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/sample a.avi"
+echo "dummy video" > "$TEST_DIR/sample b.avi"
+cd "$TEST_DIR" || exit 1
+export MOCK_CLIPBOARD="$TEST_DIR/sample a.avi $TEST_DIR/sample b.avi"
+run_av1ify_clip n
+assert_contains "$CLIP_OUTPUT" "1 行に 2 件のパスが並んでいます" "Finds the boundary without quotes"
+assert_contains "$CLIP_OUTPUT" "対象 2件 / 除外 0件" "Both unquoted paths become targets"
+
 printf '\n=== av1ify Clipboard Tests: all passed ===\n'
