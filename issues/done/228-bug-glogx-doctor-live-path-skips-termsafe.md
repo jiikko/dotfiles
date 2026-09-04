@@ -197,3 +197,59 @@ OSC52 等が発火しうる**(レビュー確定)」と**自ら同じ脅威モ�
   既に閉じている**。本 issue が指すのは `svcSection` が `" ⛔ "+f.Label` を生連結する
   **表示側の制御文字**で、そちらは未対応
 - `src/glogx/worktree_status.go: dispPath` — 同種の値 (ファイル名) を正しく通している実装の見本
+
+---
+
+## 対応 (2026-09-04, dotfiles-c2)
+
+commit: `77915873` (本体) → `149a8079` (敵対的レビューの指摘)。
+
+### やったこと
+
+1. **`termsafe` を `src/termsafe` の独立 module へ出した**。CLI (`bin/diskdoctor` / `bin/svcdoctor`)
+   は `doctor` module にあり、glogx → doctor の依存があるので `glogx/termsafe` を引けなかった
+   (循環)。3 点セット (Makefile / go.mod / `src_termsafe.yml`) を揃え、`src_glogx.yml` /
+   `src_doctor.yml` の paths にも `src/termsafe/**` を足した (`scripts/check_go_project_lanes.sh`
+   は 7 件で緑。`bin/lib/go_autobuild.zsh` は replace 先を指紋に含めるので旧バイナリの取り違えも
+   起きない — `src/termsafe` が入力集合に入ることを実測で確認)
+2. **関門を 1 つにした**。`disk.SanitizeForDisplay` / `svc.SanitizeForDisplay` を新設し、
+   **CLI の `Format` の先頭**と **glogx の Msg 受け口** (`receiveDisk` / `receiveSvc` /
+   `receiveBrew` / `receiveDelete`) の両方が同じ関数を通る
+3. 🚨 **同一性を持つ値は書き換えず落とす**。`disk` の `Item.Path` と `svc` の
+   Label / PlistPath / Domain がこれ。書き換えると「画面に出ているものと、実際に消す /
+   案内するものが違う」を作る (svc は敵対レビューが実際に「攻撃者が選んだファイルを `rm` しろ」
+   と案内させた)。落とした件数は `Failures` / `DirErrs` に残し、**CLI の終了コードにも出す**
+4. **復元経路の二重実装を termsafe へ寄せた** (§2)。`cleanOneLine` / `cleanBrewText` /
+   `svc.cleanText` はどれも `unicode.IsPrint` を自前で回しており、ESC だけ落として payload
+   (`]52;c;…`) を本文に残す形だった。残したのは長さの上限だけ (復元固有の関心)
+5. **テスト** (§3 / §4): `untrusted_display_test.go` に doctor を 6 本追加 (それまで 0 本
+   だったのが漏れの直接の原因)。ディスクの fixture は**実際に ESC / OSC52 入りの名前の
+   ディレクトリを作って走査させる**。CLI 側は `Format` と終了コードのテストを追加。
+   変異検証は 1 周目 11 本 + 2 周目 8 本
+
+### 敵対的レビュー (opus / read-only) の結果
+
+**live 経路の素通りは 1 本も見つからなかった**。壊れたのは復元経路と svc の同一性で、
+P1 2 件 / P2 3 件 / P3 2 件を修正した (詳細は `149a8079` の commit message)。
+特に効いた指摘: **テストの約半分が無検査**だったこと (brew の fixture が `Unavailable` と
+`Warnings` を同時に立てており、`brewSection` の早期 return で警告に触れる row が 0 個だった)。
+
+### 直さなかったもの (再提案しないこと)
+
+- **`-json` は生の Report を出したまま**。encoder が制御文字を `\u001b` へ escape するので
+  安全で、機械の読み手から情報を落とす方が害が大きい。**終了コードだけ**無害化後に合わせた
+  (「隠したものがある」を緑にしないため)
+- **`flattenDoctorRows` (row の改行ガード) は現時点で到達経路が無い**。外部由来の値は 1 行の
+  場所では `PlainLine` を通るため。それでも置いたのは、無害化の使い分けを間違えた 1 行が
+  入った瞬間に固定高の契約が壊れ、行数を数えないテストでは気づけないから。到達経路が無い以上、
+  検査は直接テスト (`TestFlattenDoctorRowsEnforcesSingleLine`) が持つ
+- **`replace` 先が dependent の workflow paths に入っているかは機械が見ていない**
+  (`check_go_project_lanes.sh` は `src/<name>/` が `src_<name>.yml` にあるかだけを見る)。
+  今日の配線は正しいので、止めているのは `src_termsafe.yml` のコメントだけ。
+  次に replace を足す人が漏らす形なので、**issue 251 の中に候補として記録**した
+
+### 積み残し (別 issue)
+
+- §4 の「termsafe が `string -> string` で型の関門を持たない」→ **issue 251**
+- 復元した `Entry` をカタログへ束ね直す件は **issue 229** のまま (今回入れた
+  `SanitizeEntryForDisplay` は制御文字しか直さない。意味のずれは残る)
