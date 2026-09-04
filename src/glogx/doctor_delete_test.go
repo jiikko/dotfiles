@@ -1556,3 +1556,24 @@ func TestDeleteAbortGuidanceMatchesKeys(t *testing.T) {
 		})
 	}
 }
+
+// 中断キーの表記の組み立ては、壊れた入力でも panic しない (issue 244 の敵対レビュー)。
+//
+// 🚨 deleteAbortKeysWord は `var … = func(){…}()` なので**パッケージ init で評価される**。
+// ここで panic すると、削除パネルを開くまでもなく glogx が一切起動しない。
+func TestAbortKeysWordSurvivesBrokenKeyNames(t *testing.T) {
+	for _, keys := range [][]string{{""}, {"ctrl+"}, {"+c"}, {"ctrl+c", ""}, {}} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("keys=%q で panic した: %v", keys, r)
+				}
+			}()
+			_ = abortKeysWord(keys)
+		}()
+	}
+	// 正常な入力では今の表記のままであること (壊れた入力への手当てで表記を変えていない)
+	if got := abortKeysWord([]string{"ctrl+c", "ctrl+g"}); got != "Ctrl-C / Ctrl-G" {
+		t.Errorf("abortKeysWord = %q", got)
+	}
+}

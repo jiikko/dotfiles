@@ -372,24 +372,35 @@ func (v *doctorView) handleDeleteKey(key string) (doctorAction, bool) {
 	return doctorSwallow, false
 }
 
-// deleteAbortKeys は削除の実行中 / 下見中に中断へ使えるキー。**tui.go の分岐と対で保つ**
-// (あちらが doctorView へ渡す前に ctrl+g を ctrl+c へ寄せている)。案内の文言はここから作るので、
-// キーを増やしたら案内も自動で変わる。逆に tui.go 側だけ増やすと
-// TestDeleteAbortGuidanceMatchesKeys が落ちる (issue 244)。
+// deleteAbortKeys は削除の実行中 / 下見中に中断へ使えるキー。案内の文言はここから作る。
+//
+// 🚨 **キーの分岐の正本は tui.go:1321** で、ここはその写し。両者が一致していることは
+// TestDeleteAbortGuidanceMatchesKeys が突き合わせるが、**あのテストの候補キーもハードコード**
+// なので、tui.go とここの両方に載っていない 3 つ目のキーを tui.go だけに足しても誰も落ちない
+// (敵対レビュー 2026-09-04 が ctrl+q を足して実測)。tui.go の分岐を触るときは、ここと
+// あのテストの候補表も一緒に見ること。字句で結ぶ検査は書いていない。
 var deleteAbortKeys = []string{"ctrl+c", "ctrl+g"}
 
 // deleteAbortKeysWord は案内に出す表記。"ctrl+c" -> "Ctrl-C"。
-var deleteAbortKeysWord = func() string {
-	out := make([]string, 0, len(deleteAbortKeys))
-	for _, k := range deleteAbortKeys {
+var deleteAbortKeysWord = abortKeysWord(deleteAbortKeys)
+
+// abortKeysWord は表記の組み立て。init で評価されるので**壊れた入力でも panic しない**
+// (panic すると削除パネルを開くまでもなく glogx が起動しない)。
+func abortKeysWord(keys []string) string {
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
 		parts := strings.Split(k, "+")
 		for i, p := range parts {
-			parts[i] = strings.ToUpper(p[:1]) + p[1:] // "ctrl" -> "Ctrl" / "c" -> "C"
+			if p == "" {
+				continue // 空の要素で p[:1] が panic しない (この var は init で評価される)
+			}
+			r := []rune(p)
+			parts[i] = strings.ToUpper(string(r[0])) + string(r[1:]) // "ctrl" -> "Ctrl" / "c" -> "C"
 		}
 		out = append(out, strings.Join(parts, "-"))
 	}
 	return strings.Join(out, " / ")
-}()
+}
 
 // deleteLogText は「別セッションの LLM にそのまま投げられる」形の実行記録。
 // 実行したコマンド・終了コード・stdout・stderr を**分けたまま**入れる。
@@ -949,7 +960,8 @@ func doctorOutcomeWord(o disk.Outcome) string {
 // doctorPlanOutcomeWord は**下見 (確認画面) の**結末語。結果画面 (doctorOutcomeWord) と
 // 分けているのは、同じ Outcome でも指している状態が違うため:
 //
-//   - 下見の Skipped は「いまは対象外」(engine の StatusBlocked 分岐 / 触る対象 0 件) で、
+//   - 下見の Skipped は「いまは対象外」(engine の StatusBlocked 分岐 / 触る対象 0 件 /
+//     下見そのものが中断された。issue 246 で 3 つ目が増えた) で、
 //     一覧が同じ行に付ける語と揃える必要がある。結果画面の「🚫 触れず」(= 実行したが
 //     触らなかった) とは別の状態で、直下に出る理由も「いまは対象外です: …」になる。
 //     🚨 一覧 (disk.Mark) と語が割れていないかは confirmLines のテストが突き合わせる

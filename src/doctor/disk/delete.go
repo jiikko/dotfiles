@@ -225,10 +225,21 @@ func DefaultHistoryDir() (string, error) {
 	return filepath.Join(base, "doctor-history"), nil
 }
 
-// abortedEntryReason は「中断されたので、このエントリには触っていない」の語。
-// 🚨 DryRun の打ち切り / 非 DryRun の打ち切り / planDelete の中断検出の**3 箇所が同じ語を使う**
-// (issue 246)。別々に書くと、同じ操作の結末が経路ごとに違う文言で出る。
-const abortedEntryReason = "中断されました (このエントリは触っていません)"
+// 中断の語は**下見 (DryRun) と実削除で分ける**。同じ「中断された」でも読み手が次に取る行動が違う。
+//
+// 🚨 最初は 1 つの定数に寄せたが、敵対レビュー (2026-09-04) が誤読を示した: 下見の結果は
+// **その直後に「本当に削除しますか?」の確認画面になる**ので、そこで言うべきは「触ったか」
+// ではなく「消してよいか確かめられたか」。DryRun は元から何も触らないので「触っていません」は
+// 情報量がなく、「この行は消えない」という別の意味に読まれる。
+// (レビュー時点では y が plan を無視して選択全件を消したので実害もあった。issue 245 が
+// 69f96ba8 で plannedTargets に絞ったため、今は誤読だけが残る。)
+const (
+	// abortedEntryReason は実削除の打ち切り。ここでは「触っていない」が読み手の知りたいこと
+	abortedEntryReason = "中断されました (このエントリは触っていません)"
+	// abortedPlanReason は下見の打ち切り。DryRun は元から何も触らないので「触っていない」は
+	// 情報量がなく、誤読だけを生む。言うべきは「消してよいかを確かめられていない」
+	abortedPlanReason = "中断されました (消してよいかを確認できていません)"
+)
 
 // Delete は選ばれた Result を削除する。DryRun なら事前検査だけを行い、何も壊さない。
 //
@@ -246,7 +257,7 @@ func Delete(ctx context.Context, targets []Result, opt DeleteOptions) (DeleteRep
 			// 非 DryRun のループ (下) が同じ位置で同じことをしている
 			if ctx.Err() != nil {
 				rep.Entries = append(rep.Entries, EntryOutcome{ID: t.Entry.ID, Label: t.Entry.Label,
-					Outcome: OutcomeSkipped, Reason: abortedEntryReason})
+					Outcome: OutcomeSkipped, Reason: abortedPlanReason})
 				continue
 			}
 			opt.phase(i, len(targets), t.Entry.Label, PhaseScanning)
@@ -440,7 +451,7 @@ func planDelete(ctx context.Context, t Result, opt DeleteOptions) EntryOutcome {
 		// でした: 」という**理由がコロンの後で切れた文言**になり、しかも planHasWork が false に
 		// なるのでパネルの見出しが「消せるものがありません」になって、中断した事実が画面の
 		// どこにも出ない。語彙は非 DryRun のループ (Delete) が既に持っているので、そこへ揃える。
-		out.Outcome, out.Reason = OutcomeSkipped, abortedEntryReason
+		out.Outcome, out.Reason = OutcomeSkipped, abortedPlanReason
 		return out
 	case cur.Status == StatusBlocked:
 		out.Outcome, out.Reason = OutcomeSkipped, "いまは対象外です: "+cur.Reason
