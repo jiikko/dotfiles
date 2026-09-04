@@ -79,3 +79,64 @@ Item の Outcome を見ない）は、「確認画面が下見の結末を部分
 - [246](246-bug-doctor-dryrun-abort-has-no-reason.md) — 同じ中断の経路。あちらは「理由が尻切れ」、こちらは「合計と実行対象の食い違い」
 - [242](242-research-doctor-ux-audit-2026-09-04.md) P3-3 — 中断の案内をパネルに出した変更（この経路を踏みやすくした）
 - 233 — 確認の件数が skipped を数えている件（同じ「確認画面の数え方」ファミリー）
+
+## 対応 (2026-09-04。`69f96ba8`)
+
+**(c) 本命を実装した。** (a)(b) は入れていない (下記)。
+
+### 直したこと
+
+`case "y"` の対象を `v.selectedResults()` から **`plannedTargets(d.plan, v.selectedResults())`** へ変えた。
+plan で `OutcomePlanned` だったエントリの ID だけを通す。
+
+あわせて **`planHasWork` と実行対象が同じ述語を見る**ようにした (`plannedIDs` へ一本化)。
+以前は「消せるものが在るか」(planHasWork) と「何を消すか」(case "y") が別ソースで、
+**確認画面が何を約束しても実行が従わない**構造だった。片方だけ直すとまた割れる。
+
+### 🚨 最初に書いたテストは本命の変異を素通りさせた
+
+`plannedTargets` の単体テスト (テーブル 4 ケース) を書いて緑にしたが、変異
+**「`y` が `plannedTargets` を呼ばない形へ戻す」= この issue の症状そのもの**を当てたら
+**green のまま通った**。テストが production の入口 (`handleDeleteKey("y")`) を見ていなかった。
+
+⚠️ **issue 217 で踏んだのと同じ形を繰り返した** (あちらは `collectBundleIDs` と
+`collectBundleIDsCounted` の 2 実装で、出荷される側が未検査だった)。
+`handleDeleteKey("y")` を通して **engine が受け取った対象**を `fakeDelete.targetIDs` で見る
+テストを足して、初めて red になった。
+
+### 前提を pin した
+
+`plannedTargets` は「plan のエントリが ID を持つ」に依存する。ID が空だとフィルタが全対象を
+落とし、**削除が無言で走らなくなる** (倒れる向きは安全側だが何も起きない)。
+`planDelete` が ID を落とす変異で red になるテストを足した。
+
+既存 fixture 1 件 (`TestDoctorDeleteRunsAndShowsResult`) が ID を省いており、私の変更で
+red になった。`planDelete` は必ず ID を入れるので、省いた fixture は production に無い形。
+足して直した。**この赤は実装のバグではなく fixture の不備**だったが、
+「ID が無ければ全部落ちる」という私の設計の脆さを教えてくれたので、上の pin を足す動機になった。
+
+### 変異 4 本
+
+| 変異 | 結果 |
+|---|---|
+| `y` の対象を `selectedResults` へ戻す (症状そのもの) | red |
+| `Planned` 以外も対象に含める | red 4 件 |
+| membership 検査を外す | red |
+| `planDelete` から ID を落とす | red (前提の pin) |
+
+### 扱わなかったもの
+
+- **(a) DryRun ループの `ctx.Err()` 早期打ち切り** → [246](246-bug-doctor-dryrun-abort-has-no-reason.md) の担当。
+  同じループを触るので分けた。(a) が入ると「部分中断の確認画面」自体が出にくくなるが、
+  **(c) は (a) が入っても要る** (plan と実行対象が別ソースである限り、別の経路で同じ食い違いが起きる)
+- **(b) 中断で終わった下見では確認を取らない** → 入れていない。(c) で「確認に出した対象 = 実行対象」が
+  成立したので、部分中断でも**見せたものだけが消える**形になり、確認を拒否する必要がなくなった。
+  ⚠️ ただし「中断された下見の結果で同意を取ってよいか」は UX の判断として残る (残りが未走査なので、
+  ユーザーは全体像を見ずに y を押すことになる)。**必要なら別 issue**
+- **item 階層の過大表示** → [233](233-bug-doctor-confirm-counts-skipped-items.md) が起票済み
+
+⚠️ `make test` は `test-pipefail-grep-q` で赤いが、原因は origin `aaf6c1d7` (issue 138) の
+`tests/tmux/test_ctrl_v_paste.sh` の 2 箇所で、本件とは無関係 (dotfiles-48 へ連絡済み)。
+glogx の `go test -race` は緑。
+
+⚠️ **敵対的レビューは未実施。**
