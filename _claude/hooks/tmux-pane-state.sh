@@ -24,6 +24,12 @@
 # pane-border-format 側の #{?@claude_state,...,} が空に展開されるため、
 # Claude を起動していないペイン (通常シェル等) には一切影響しない。
 # tmux 外で起動された場合 ($TMUX_PANE 未設定) は何もしない。
+# 🚨 その「何もしない」は今は通知の欠落を意味する: 内蔵通知を settings.json の
+# preferredNotifChannel=notifications_disabled で切っており (これはユーザー設定なので
+# 全プロジェクト・全起動に効く。ベルだけでなく OSC 9 / 99 / 777 も止まる)、代わりに
+# 鳴らすのがこのフックだから。tmux 外の claude はベルも OSC 通知も出ない。
+# フックには制御端末が無く /dev/tty へ書けないので (実測 2026-09-05)、この経路の
+# 代替はここには置けない。tmux 外でも通知が要るなら内蔵チャネルを戻すしかない。
 #
 # 通知条件 = 「画面で状態表示が見えていないとき」だけ:
 # - そのペインのウィンドウがどのクライアントでも前面でない (window_active_clients=0)
@@ -46,12 +52,20 @@ set_state() {
   tmux set -p -t "$TMUX_PANE" @claude_state_since "$(date +%s)" 2>/dev/null
 }
 
+# そのペインのウィンドウが、どのクライアントでも前面でないとき真。
+# 判定不能 (tmux が答えない) は「見えている」に倒す — 通知もベルも「見ていないときの
+# 代替手段」なので、判定できないまま鳴らすと画面を見ている最中に割り込む側に転ぶ。
+pane_hidden() {
+  local visible
+  visible=$(tmux display -p -t "$TMUX_PANE" '#{window_active_clients}' 2>/dev/null) || return 1
+  [ "${visible:-1}" = "0" ]
+}
+
 notify_if_hidden() {
   local message="$1" sound="${2:-}"
   command -v terminal-notifier >/dev/null 2>&1 || return 0
-  local visible target
-  visible=$(tmux display -p -t "$TMUX_PANE" '#{window_active_clients}' 2>/dev/null) || return 0
-  if [ "${visible:-0}" = "0" ]; then
+  local target
+  if pane_hidden; then
     target=$(tmux display -p -t "$TMUX_PANE" '#{session_name}:#{window_index}' 2>/dev/null)
     # -group で同一ペインの通知を上書き (通知センターに溜めない)。
     # バックグラウンド起動で hook の応答を遅らせない
@@ -63,8 +77,13 @@ notify_if_hidden() {
 # tmux の bell フラグ (window-status のシアン反転 = 見るまで残る印) を立てる。
 # 🚨 hook の stdout は Claude Code が捕まえるので printf '\a' では端末へ届かない。
 # ペインの pane_tty へ直接書くと tmux が出力として読み、window_bell_flag=1 になる
-# (隔離サーバ -L で実測 2026-09-05)。見えているウィンドウなら tmux がすぐ flag を
-# 落とすので、実質「裏で起きたことだけ残る」挙動になる。
+# (隔離サーバ -L で実測 2026-09-05)。
+#
+# 🚨 見えているウィンドウで鳴らさないのは flag の問題ではない。flag は tmux が即座に
+# 落とすが、_tmux.conf の `set-hook -g alert-bell` は落ちる前に発火し、800ms の
+# display-message (-N なのでキー入力でも消えない) が被さる (pty で client を attach
+# して実測 2026-09-05: flag=0 なのに alert-bell は 1 回発火)。見ている最中の応答完了
+# ごとにステータス行が覆われるので、notify_if_hidden と同じ可視性ガードを課す。
 #
 # 🚨 Claude Code 内蔵のベル (preferredNotifChannel) は必ず切っておくこと
 # (_claude/settings.json で notifications_disabled)。内蔵ベルは Stop / Notification
@@ -72,6 +91,7 @@ notify_if_hidden() {
 # 本ルーチンで絞った意味が消える
 ring_bell() {
   local tty
+  pane_hidden || return 0
   tty=$(tmux display -p -t "$TMUX_PANE" '#{pane_tty}' 2>/dev/null) || return 0
   [ -n "$tty" ] && [ -w "$tty" ] || return 0
   printf '\a' > "$tty" 2>/dev/null || :
@@ -99,13 +119,18 @@ case "${1:-}" in
     # Stop hook の stdin JSON から実行中バックグラウンドタスクを数える。
     # フィールド名は background_tasks (実測 2026-08-13:
     # {"hook_event_name":"Stop","background_tasks":[{"id":...,"status":"running",...}]})。
+    # 🚨 status は 6 値 ("pending" "running" "completed" "failed" "killed" "paused"。
+    # claude バイナリの enum を実測 2026-09-05) で、Claude Code 自身が
+    # background_tasks を "In-flight background work (running/pending + backgrounded)"
+    # と定義している。**終端の 3 値を除く denylist で数えること** — "running" だけの
+    # allowlist にすると pending / paused を「手が空いた」と誤判定する
     # jq 不在 / stdin が JSON でない / フィールド不在は 0 扱い (= 従来どおり idle)。
     # input 分岐と fail 方向が非対称なのは意図的: bg タスクは完了すればハーネスが
     # セッションを再起動して次の Stop が状態を上書きする (実測 2026-08-13) ため
     # 誤 idle は自己回復するが、input の見逃しは人が来るまで誰も直せない
     pending=0
     if command -v jq >/dev/null 2>&1 && [ ! -t 0 ]; then
-      pending=$(jq -r '[.background_tasks[]? | select(.status == "running")] | length' 2>/dev/null) || pending=0
+      pending=$(jq -r '[.background_tasks[]? | select(.status == "completed" or .status == "failed" or .status == "killed" | not)] | length' 2>/dev/null) || pending=0
       case "$pending" in ''|*[!0-9]*) pending=0 ;; esac
     fi
     if [ "$pending" -gt 0 ]; then
