@@ -453,3 +453,53 @@ func TestUnavailableFromStderrIsSanitized(t *testing.T) {
 	}
 	_ = f
 }
+
+// 🚨 提示コマンドを**完全一致**で固定する。部分一致 ("until=336h" を含むか) だと、
+// -f や -a の有無が変わっても緑のまま通る (実測 2026-09-04: 実際に通り抜けた)。
+//
+// -f: prune は対話プロンプトを出すので、TTY 無しの実行では何も消さずに rc=0 で返る。
+// -a (builder): 付けないと dangling なキャッシュしか消えず、候補 (InUse=false 全件) と食い違う。
+func TestPruneCommandsArePinnedExactly(t *testing.T) {
+	f := &fakeDocker{df: dfJSON("", "", "", ""), vol: "[]"}
+	rep := Scan(context.Background(), opts(f))
+	want := map[Kind]string{
+		KindContainers: "docker container prune --filter until=336h -f",
+		KindImages:     "docker image prune -a --filter until=336h -f",
+		KindBuildCache: "docker builder prune -a --filter unused-for=336h -f",
+		KindVolumes:    "", // まとめて消すコマンドは出さない (戻らないため)
+	}
+	for _, g := range rep.Groups {
+		if g.Command != want[g.Kind] {
+			t.Errorf("%s の提示コマンドが %q (期待 %q)", g.Kind, g.Command, want[g.Kind])
+		}
+	}
+	if rep.SystemPrune != "docker system prune -a --filter until=336h -f" {
+		t.Errorf("まとめて回収するコマンドが %q", rep.SystemPrune)
+	}
+}
+
+// 個別のコマンドは 1 件だけを指す (prune の filter と混ぜない)。
+func TestPerItemCommandsArePinnedExactly(t *testing.T) {
+	f := &fakeDocker{
+		df: dfJSON(
+			`{"ID":"sha256:abcabcabcabc","Repository":"app","Tag":"old","Containers":"0","Size":"2GB","UniqueSize":"2GB","CreatedAt":"`+stamp(60*24*time.Hour)+`"}`,
+			`{"ID":"c1","Names":"old-web","State":"exited","Size":"10MB","CreatedAt":"`+stamp(60*24*time.Hour)+`"}`,
+			`{"Name":"old_data","Links":"0","Size":"3GB"}`, ""),
+		vol: `[{"Name":"old_data","CreatedAt":"2020-01-01T00:00:00Z"}]`,
+	}
+	rep := Scan(context.Background(), opts(f))
+	want := map[Kind]string{
+		KindContainers: "docker rm old-web",
+		KindImages:     "docker rmi app:old",
+		KindVolumes:    "docker volume rm old_data",
+	}
+	for _, g := range rep.Groups {
+		w, ok := want[g.Kind]
+		if !ok || len(g.Items) == 0 {
+			continue
+		}
+		if g.Items[0].Command != w {
+			t.Errorf("%s の個別コマンドが %q (期待 %q)", g.Kind, g.Items[0].Command, w)
+		}
+	}
+}

@@ -225,7 +225,7 @@ func scan(ctx context.Context, o Options) Report {
 		}
 		g.TotalSize, g.Reclaimable = t.size, t.reclaimable
 	}
-	rep.SystemPrune = fmt.Sprintf("docker system prune -a --filter until=%dh", hours(old))
+	rep.SystemPrune = pruneCmd("docker system prune -a --filter until=%dh", old)
 	// 🚨 system prune はボリュームを消さない (--volumes が要る)。DockerReclaimable() には
 	// ボリュームぶんが入っているので、この 1 行が無いと「このコマンドで N GB」が過大になる
 	rep.SystemPruneNote = "ボリュームは含みません (消すには --volumes が要りますが、中身はデータです)"
@@ -276,6 +276,22 @@ func systemDFSummary(ctx context.Context, run runner.Runner) (map[Kind]dfTotal, 
 		return nil, "docker system df の出力に既知の種別が 1 つもありません"
 	}
 	return out, ""
+}
+
+// pruneCmd は prune のコマンドを組む。
+//
+// 🚨 **`-f` を必ず付ける。** prune は対話プロンプト ("Are you sure you want to continue? [y/N]")
+// を出すので、TTY の無い実行では stdin が即 EOF になり、**何も消さずに rc=0 で返る**
+// (実測 2026-09-04: `docker builder prune --filter unused-for=876000h </dev/null` が
+// rc=0 + プロンプトだけを stdout に出して終了した)。付けないと「実行できた」と報告しながら
+// 1 バイトも減らない。
+//
+// 🚨 **表示・コピーするコマンドと実行するコマンドを分けない。** 画面が出しているものと
+// 実行されるものが違う状態を作らない (このコードベースが一貫して避けている形)。プロンプトの
+// 代わりは doctor 側の確認画面が持つ。コピーして貼る人には**プロンプトが出ない**ので、
+// 群の注記でそう伝える。
+func pruneCmd(format string, old time.Duration) string {
+	return fmt.Sprintf(format, hours(old)) + " -f"
 }
 
 // --- docker system df -v の JSON (すべて文字列で来る) ---
@@ -337,10 +353,11 @@ var activeStates = map[string]bool{"running": true, "paused": true, "restarting"
 
 func containerGroup(cs []dfContainer, now time.Time, old time.Duration, rep *Report) Group {
 	g := Group{Kind: KindContainers, Label: "停止したコンテナ", Total: len(cs),
-		Command: fmt.Sprintf("docker container prune --filter until=%dh", hours(old)),
+		Command: pruneCmd("docker container prune --filter until=%dh", old),
 		Notes: []string{
 			humanDur(old) + "以上前に作られた停止コンテナだけを数えています (docker が持つのは作成日で、停止した日ではありません)",
 			"サイズは書き込みレイヤーの分だけです (元イメージは「未使用イメージ」側)",
+			"コマンドには -f が付いています (貼って実行すると確認は出ません)",
 		}}
 	unknown, dropped := 0, 0
 	for _, c := range cs {
@@ -382,10 +399,11 @@ func containerGroup(cs []dfContainer, now time.Time, old time.Duration, rep *Rep
 
 func imageGroup(is []dfImage, now time.Time, old time.Duration) Group {
 	g := Group{Kind: KindImages, Label: "使われていないイメージ", Total: len(is),
-		Command: fmt.Sprintf("docker image prune -a --filter until=%dh", hours(old)),
+		Command: pruneCmd("docker image prune -a --filter until=%dh", old),
 		Notes: []string{
 			"どのコンテナからも参照されていないイメージだけを数えています",
 			"サイズは他イメージと共有していないレイヤー (UniqueSize) の分です",
+			"コマンドには -f が付いています (貼って実行すると確認は出ません)",
 			"候補の合計は見積もりです (共有レイヤーがあるため、docker の回収可能量と一致しません)",
 		}}
 	// 🚨 **ID で束ねる。** `df -v` は `docker images` と同じく **repo:tag ごとに 1 行**出すので、
@@ -427,15 +445,18 @@ func imageGroup(is []dfImage, now time.Time, old time.Duration) Group {
 
 func buildCacheGroup(bs []dfBuildCache, now time.Time, old time.Duration) Group {
 	g := Group{Kind: KindBuildCache, Label: "ビルドキャッシュ", Total: len(bs),
-		// 🚨 **`-a` は付けない。** 敵対レビュー 2026-09-04 が「images 側と揃えて -a が要る
-		// (無いと dangling しか消えない)」と指摘したが、これは docker-classic の image prune の
-		// 話で buildx には当てはまらない。実測 (docker 29.2.1 の `docker builder prune --help`):
-		// `-a, --all  Include internal/frontend images` — 既定でも未使用キャッシュは消える。
-		// 付けると候補に数えていない internal/frontend まで消すことになるので、むしろ範囲が広がる。
-		Command: fmt.Sprintf("docker builder prune --filter unused-for=%dh", hours(old)),
+		// 🚨 **`-a` が要る。** `--help` は `-a, --all  Include internal/frontend images` としか
+		// 書いておらず、これを読んで「既定でも未使用キャッシュは全部消える」と判断したのは誤り
+		// だった。実行時の警告文が正本 (実測 2026-09-04 / docker 29.2.1):
+		//   `docker builder prune`      → "This will remove all **dangling** build cache."
+		//   `docker builder prune -a`   → "This will remove all build cache."
+		// 候補は `InUse=false` の全レイヤーなので、対応するのは `-a` の方。
+		// 🚨 `--help` の文面を根拠に prune の範囲を決めないこと (buildx は help と警告が食い違う)。
+		Command: pruneCmd("docker builder prune -a --filter unused-for=%dh", old),
 		Notes: []string{
 			humanDur(old) + "以上使われていないレイヤーだけを数えています",
 			"消すと次のビルドがキャッシュ無しになります (壊れはしません)",
+			"コマンドには -f が付いています (貼って実行すると確認は出ません)",
 			"候補の合計は見積もりです (レイヤーを共有するため、docker の回収可能量と一致しません)",
 		}}
 	unknownCache := 0
