@@ -259,28 +259,6 @@ func TestCatalogChromiumEntryIsWired(t *testing.T) {
 	}
 }
 
-// NotFreeable は「解放可能」の合計に足さない (行にはサイズを出す)。
-func TestNotFreeableIsExcludedFromTotal(t *testing.T) {
-	freeable := Result{Entry: Entry{ID: "a"}, Status: StatusOK, Size: 100}
-	notFree := Result{Entry: Entry{ID: "b", NotFreeable: true}, Status: StatusOK, Size: 900}
-	if got := SumDeletable([]Result{freeable, notFree}); got != 100 {
-		t.Errorf("SumDeletable()=%d, want 100 (NotFreeable の 900 を足している)", got)
-	}
-	// カタログ側の配線も見る (計算が正しいことと、印が付いていることは別)
-	var seen bool
-	for _, e := range catalog {
-		if e.ID == "docker-vm-disk" {
-			seen = true
-			if !e.NotFreeable {
-				t.Error("docker-vm-disk に NotFreeable が付いていない (prune では .raw は縮まないのに合計へ入る)")
-			}
-		}
-	}
-	if !seen {
-		t.Fatal("docker-vm-disk がカタログに無い")
-	}
-}
-
 // probe は**どれか 1 つでも実在すれば**それで判定する。1 本ずつ効いていることを見る
 // (fixture が 1 種類しか持たないと、他の probe を消す退行を検出できない)。
 func TestChromiumCacheUsesEachProbe(t *testing.T) {

@@ -449,9 +449,7 @@ func scanSimRuntimes(ctx context.Context, opt Options, e Entry) Result {
 func SumDeletable(results []Result) int64 {
 	var total int64
 	for _, r := range results {
-		// NotFreeable は「測れるが、その手順で同じ量が返るとは限らない」対象なので足さない
-		// (行にはサイズを出す)。この合計は見出しの「解放可能」と起動時トーストの閾値になる
-		if r.Status == StatusOK && !r.Entry.NotFreeable {
+		if r.Status == StatusOK {
 			total += r.Size
 		}
 	}

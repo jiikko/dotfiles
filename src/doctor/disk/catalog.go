@@ -106,13 +106,6 @@ type Entry struct {
 	Guard     Guard
 	Processes []string // GuardProcessAbsent の判定名 (完全一致。推測しない。1 つでも起動中なら blocked)
 	Inspect   bool     // 中身一覧を必ず見せる (ユーザーファイルの可能性)
-	// NotFreeable は「Size を『解放可能』の合計に足さない」印。
-	// 🚨 サイズは測れるが、**その手順を踏んでも同じ量が macOS に返るとは限らない**対象のため
-	// (docker-vm-disk: prune はイメージの中を空けるだけで .raw は縮まない)。
-	// 行にはサイズを出す (どれくらい抱えているかは知りたい) が、見出しの「合計 N 解放可能」と
-	// 起動時トーストの閾値には入れない。`go-modcache-old` のように提示した手順がそのまま
-	// その量を解放するものは、propose でもこの印を付けない
-	NotFreeable bool
 	// Unverified は「**検出条件そのものが未実測**」の印 (空でなければ未検証。中身は短い理由)。
 	// 走査は正常に終わっているので Status は ok のままだが、**0 件を「候補なし」と読んではいけない**
 	// エントリを区別する。表示側は 0 件でもこの行を隠さない (隠すと「探せていない」が
@@ -134,6 +127,14 @@ type Entry struct {
 //     消すと DL のやり直しが要るので登録条件「消したまま戻る」を満たさない。実測 0 件
 //   - `~/src/**` のビルド成果物 / `node_modules` — プロジェクト単位の判断が要り、
 //     allowlist の枠組みに合わない (issue 220)
+//   - **Docker の VM ディスクイメージ** (`Docker.raw`) — 2026-09-04 に一度足して撤回した。
+//     ツールは触れない (`rm` も `trash` も不可) ので出せるのは `propose` だけ。しかも
+//     `docker system prune` はイメージの**中**を空けるだけで .raw は縮まないため、
+//     出した数字は解放できる量でもない。**行が伝えるのは「Docker が N GB 抱えている」だけ**で、
+//     それは Docker Desktop 自身の画面と `docker system df` が既に出している。
+//     載せると、置き場 (Settings → Resources → Disk image location) を追う仕掛けまで
+//     カタログ側に要る。再開の trigger: doctor が Docker の容量を**実際に減らせる**
+//     経路を持ったとき (それまでは Docker 側の道具に任せる)
 //
 // 🚨 **「この機に存在しないから載せない」を却下理由に使わない** (2026-09-04)。
 // `electron-builder` / `deno` / `SpeechModelCache` の 3 件はこの理由で載せていなかったが、
@@ -344,19 +345,6 @@ var catalog = []Entry{
 		//   再開の trigger: anyenv 配下の残骸で実際に容量を食っているのを見たとき。そのときは
 		//   このカタログではなく「anyenv の台帳 (`anyenv versions`) と突合する」別の判定が要る
 		Paths: []string{"~/.rbenv", "~/.nodenv", "~/.goenv"}, Guard: GuardVMRoot},
-	// Docker Desktop の VM ディスクイメージ。実測 2026-09-04: 1,035MB。
-	// 🚨 **rm しない / 数字は「イメージの大きさ」であって解放できる量ではない** (だから NotFreeable)。`docker system prune` は
-	// **イメージの中**を空けるだけで .raw は縮まず、macOS 側に容量が戻るのは Docker Desktop の
-	// "Clean / Purge data" か .raw ごと消したときだけ (消すとイメージ・コンテナ・ボリュームが全部消える)。
-	// だから `propose` (コマンドを出すだけ。`go-modcache-old` と同じ扱い) にしてある
-	// Risk が confirm でなく caution なのは、**engine が confirm × 非 trash を拒否する**ため
-	// (delete.go の「risk: confirm はゴミ箱移動でなければ削除しません」)。propose はそもそも
-	// ツールが何も触らない経路なので、`go-modcache-old` と同じ組み合わせに揃える。
-	// 失うものの説明は Recover に置いてあり、そちらは常に表示される
-	{ID: "docker-vm-disk", Label: "Docker の VM ディスクイメージ", Tier: 2, Risk: RiskCaution, DeleteVia: "propose", NotFreeable: true,
-		Recover: "消すとイメージ・コンテナ・ボリュームが全部消えます (再取得・再ビルドが要る)",
-		Detail:  "prune では .raw は縮まない。容量を戻すには Docker Desktop の Clean/Purge data",
-		Paths:   []string{"~/Library/Containers/com.docker.docker/Data/vms/*/data/Docker.raw"}},
 	// --- Tier 3: アプリ起動中は触らない ---
 	// glob は Canary / Beta / Dev の tmp (.com.google.Chrome.canary.* 等) にも当たるので、プロセス判定も全系列を見る
 	// (Stable 終了・Canary 起動中に Canary の生きた tmp を消さない。敵対レビュー 2026-09-02)
