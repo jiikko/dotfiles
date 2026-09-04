@@ -396,10 +396,11 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
 # 🚨 spawn 直後に kill -9 する形も温まらない (n=10 で 0/10)。exec の完了前に死ぬと検証されない。
 #   「即 kill でも温まった」ように見えたのは、kill が競合で外れて走り切っていたときだけ。
 #
-# 起こし方は未知フラグ。どのツールも引数解析で落ちるので本体のロジックは走らない
-# (glogx / parallel-each / disassemble_excel / lockman / schedkeys / svcdoctor / diskdoctor の
-# 7 本で実測。tests/bin/test_go_autobuild_warmup.sh が「即座に終わる」ことを固定している)。
-# 新しいラッパーを足すときは、そのツールも未知フラグで即終了することを確かめる。
+# 起こし方は未知フラグ。どのツールも引数解析で落ちるので本体のロジックは走らない。
+# 🚨 ここには timeout が無い。未知フラグで終了しないツールを足すと裏ビルドがここで止まる。
+# その前提は tests/bin/test_go_autobuild_warmup.sh が守る: go_autobuild_exec を呼ぶ bin/* を
+# 全部ビルドして --__autobuild_warmup__ で起こし、5 秒以内に終わることを確かめる
+# (対象はラッパーから grep で取るので、新しいラッパーは自動で検査対象になる)。
 #
 # 同期ビルド経路 (GO_AUTOBUILD_SYNC=1 / バイナリ不在の初回) では直後の exec が自分で
 # 温めるので、ここでの 1 回は二重になる (実測 +20ms 程度)。1.4s のビルドを払っている経路
