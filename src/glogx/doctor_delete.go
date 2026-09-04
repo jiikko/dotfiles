@@ -372,6 +372,25 @@ func (v *doctorView) handleDeleteKey(key string) (doctorAction, bool) {
 	return doctorSwallow, false
 }
 
+// deleteAbortKeys は削除の実行中 / 下見中に中断へ使えるキー。**tui.go の分岐と対で保つ**
+// (あちらが doctorView へ渡す前に ctrl+g を ctrl+c へ寄せている)。案内の文言はここから作るので、
+// キーを増やしたら案内も自動で変わる。逆に tui.go 側だけ増やすと
+// TestDeleteAbortGuidanceMatchesKeys が落ちる (issue 244)。
+var deleteAbortKeys = []string{"ctrl+c", "ctrl+g"}
+
+// deleteAbortKeysWord は案内に出す表記。"ctrl+c" -> "Ctrl-C"。
+var deleteAbortKeysWord = func() string {
+	out := make([]string, 0, len(deleteAbortKeys))
+	for _, k := range deleteAbortKeys {
+		parts := strings.Split(k, "+")
+		for i, p := range parts {
+			parts[i] = strings.ToUpper(p[:1]) + p[1:] // "ctrl" -> "Ctrl" / "c" -> "C"
+		}
+		out = append(out, strings.Join(parts, "-"))
+	}
+	return strings.Join(out, " / ")
+}()
+
 // deleteLogText は「別セッションの LLM にそのまま投げられる」形の実行記録。
 // 実行したコマンド・終了コード・stdout・stderr を**分けたまま**入れる。
 func (v *doctorView) deleteLogText() string {
@@ -661,10 +680,17 @@ func (v *doctorView) deletePanel(o doctorRenderOpts) []string {
 		// Ctrl-C を受けて cancel でき (実測 2026-09-04: 走査が打ち切られて確認へ戻る)、
 		// 案内が無いと「このパネルから抜ける手段が無い」に見える
 		// armedCC なら残り 1 回。「2 回押せ」と「もう 1 回押せ」を並べると、あと何回なのか読めない
+		//
+		// 🚨 **Ctrl-G も併記する** (issue 244)。tui.go は ctrl+g を ctrl+c と同じ 2 段ガードへ
+		// 渡すので実際に中断できるが、案内が Ctrl-C しか書いていなかった。Ctrl-G で抜けようと
+		// した人は「効かない」と思って Ctrl-C を探し (実際には 1 回目が消費されている)、
+		// 逆に Ctrl-G 2 回で中断したときは案内を読んでいた人に理由が分からない。
+		// glogx の他の全画面 (issues viewer / url picker) でも ctrl+g は esc と同じ「やめる」なので、
+		// **挙動を正として案内を直す**向きで揃えた。
 		if d.armedCC {
-			body = append(body, "もう一度 Ctrl-C を押すと中断します")
+			body = append(body, "もう一度 "+deleteAbortKeysWord+" を押すと中断します")
 		} else {
-			body = append(body, "Ctrl-C を 2 回押すと中断します")
+			body = append(body, deleteAbortKeysWord+" を 2 回押すと中断します")
 		}
 		// 実行したコマンドと出力を垂れ流す (何が起きているかを見せる)。入る分だけ末尾を出す
 		if len(d.log) > 0 {

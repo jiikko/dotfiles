@@ -87,3 +87,26 @@ issue 242 の P3-3 で、実行中パネルの「Ctrl-C を 2 回押すと中断
 - [242](242-research-doctor-ux-audit-2026-09-04.md) P3-3 — この issue の発見元
 - [236](done/236-research-doctor-delete-audit-2026-09-04.md) — 削除経路の監査（中断した run の phase を扱っている）
 - 231 / 232 が同じ `planDelete` を触っているので、そちらのついでに直せる
+
+## 対応 (2026-09-04)
+
+issue の候補どおり、`planDelete` の switch で**中断を先に見て**非 DryRun 側と同じ語彙へ倒した。
+あわせて `Delete` の DryRun ループにも `ctx.Err()` の早期打ち切りを入れた。
+
+- `abortedEntryReason` を新設し、**3 箇所 (DryRun の打ち切り / 非 DryRun の打ち切り /
+  planDelete の中断検出) が同じ語を使う**。別々に書くと同じ操作の結末が経路ごとに違う文言で出る
+- 結末は `OutcomeSkipped`。`planHasWork` が false でも見出しが「消せるものがありません」に
+  なるだけでなく、各行に「中断されました」が出るので、中断した事実が画面に残る
+- `cur.Status != StatusOK || fresh.Partial` の分岐に残るのは「走査し直せなかった」だけになり、
+  Reason が非空であることが保証される (尻切れの文面が構造的に作れなくなった)
+
+### 変異検証 (どちらも `go build` 通過を確認してから判定)
+
+- `planDelete` の中断分岐を消す → `TestDryRunAbortDuringScanSaysAborted` が red。
+  issue が記録した `削除の前に走査し直せませんでした: ` (尻切れ) がそのまま再現した
+- DryRun ループの早期打ち切りを消す → `TestDryRunAbortStopsScanningRest` が red (走査 3 回)
+
+🚨 **最初のテストは変異が green だった**。`ctx` を最初から閉じて `Delete` を呼ぶ形にしたため、
+ループ側の打ち切りが手前で効いて `planDelete` に到達していなかった。実際の中断は
+「走査している最中に Ctrl-C」なので、guard の呼び出しを seam にして**走査の途中で**閉じる形へ
+書き直した (guard はパス展開より前に呼ばれる)。

@@ -1407,3 +1407,93 @@ func TestDeleteCLISkipsCommandWhenTargetsAreNoLongerCandidates(t *testing.T) {
 		t.Error("候補でない対象を消した")
 	}
 }
+
+// 下見 (DryRun) の走査中に中断されたら、その事実が結末に出る (issue 246)。
+//
+// 🚨 ctx を**最初から**閉じたテストでは planDelete に届かない (Delete の DryRun ループが
+// 手前で打ち切るため)。実際の中断は「走査している最中に Ctrl-C」なので、guard の呼び出しを
+// seam にして**走査の途中で**閉じる。最初にこれを ctx 閉じ済みで書いたところ、planDelete の
+// 分岐を消す変異が green のまま通った (ループ側の打ち切りが影になっていた)。
+//
+// 中断で真になるのは fresh.Partial の側で、そのとき cur.Status は ok のまま Reason も空。
+// 以前は「削除の前に走査し直せませんでした: 」という理由がコロンの後で切れた文言になり、
+// しかも Outcome が Failed なので planHasWork が false になり、確認画面の見出しが
+// 「消せるものがありません」= 中断した事実がどこにも出ない形だった。
+func TestDryRunAbortDuringScanSaysAborted(t *testing.T) {
+	env := testEnv(t)
+	sandboxAllow(t, env.Home)
+	sandboxAllowCommand(t, "pgrep")
+	mkfile(t, filepath.Join(env.Home, "Library", "Caches", "a", "blob"), 16)
+	e := Entry{ID: "a", Label: "a", Tier: 1, Risk: RiskSafe, DeleteVia: "rm", Recover: "x",
+		Guard: GuardProcessAbsent, Processes: []string{"FakeApp"},
+		Paths: []string{"~/Library/Caches/a"}}
+	run := &deleteRunner{resp: map[string]cmdResp{"pgrep -x FakeApp": {rc: 1}}}
+	scanned := Scan(context.Background(),
+		Options{Env: env, Run: run.run, Catalog: []Entry{e}, BootTime: okBoot}).Results[0]
+	if scanned.Status != StatusOK {
+		t.Fatalf("前提が崩れている: status=%s", scanned.Status)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	// planDelete が走らせる走査の**中**で中断する (guard は パス展開より前に呼ばれる)
+	run.onCall = func(args []string) {
+		if strings.Join(args, " ") == "pgrep -x FakeApp" {
+			cancel()
+		}
+	}
+	rep, err := Delete(ctx, []Result{scanned}, DeleteOptions{Env: env, Run: run.run, BootTime: okBoot,
+		Catalog: []Entry{e}, HistoryDir: sandboxTempDir(t, "h"), Now: time.Now, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := rep.Entries[0]
+	if got.Outcome != OutcomeSkipped {
+		t.Errorf("outcome = %s reason=%q, want skipped", got.Outcome, got.Reason)
+	}
+	if !strings.Contains(got.Reason, "中断") {
+		t.Errorf("中断したことが結末に出ない: reason=%q", got.Reason)
+	}
+	// 🚨 理由を持たない分岐が「理由を連結する文面」を使っていないこと。
+	// 尻切れ (末尾がコロン) は、この形の退行の見分けがつく唯一の印
+	if strings.HasSuffix(strings.TrimRight(got.Reason, " "), ":") {
+		t.Errorf("理由が空のまま連結されている: reason=%q", got.Reason)
+	}
+}
+
+// 中断後は残りのエントリを走査し直さない (issue 246)。
+//
+// 🚨 assert は **走査が走った証拠 (guard の pgrep 呼び出し)** で行う。結末語だけを見ると、
+// 「1 件ずつ Scan が個別に落ちる」旧実装でも同じ Skipped になるので何も守らない。
+func TestDryRunAbortStopsScanningRest(t *testing.T) {
+	env := testEnv(t)
+	sandboxAllow(t, env.Home)
+	sandboxAllowCommand(t, "pgrep")
+	names := []string{"a", "b", "c"}
+	entries := make([]Entry, 0, len(names))
+	results := make([]Result, 0, len(names))
+	run := &deleteRunner{resp: map[string]cmdResp{"pgrep -x FakeApp": {rc: 1}}}
+	for _, name := range names {
+		mkfile(t, filepath.Join(env.Home, "Library", "Caches", name, "blob"), 16)
+		e := Entry{ID: name, Label: name, Tier: 1, Risk: RiskSafe, DeleteVia: "rm", Recover: "x",
+			Guard: GuardProcessAbsent, Processes: []string{"FakeApp"},
+			Paths: []string{"~/Library/Caches/" + name}}
+		entries = append(entries, e)
+		results = append(results, Scan(context.Background(),
+			Options{Env: env, Run: run.run, Catalog: []Entry{e}, BootTime: okBoot}).Results[0])
+	}
+	before := len(run.callLines())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rep, err := Delete(ctx, results, DeleteOptions{Env: env, Run: run.run, BootTime: okBoot,
+		Catalog: entries, HistoryDir: sandboxTempDir(t, "h"), Now: time.Now, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(run.callLines()) - before; got != 0 {
+		t.Errorf("中断後に走査を %d 回走らせた (0 であるべき)", got)
+	}
+	for i, e := range rep.Entries {
+		if e.Outcome != OutcomeSkipped || !strings.Contains(e.Reason, "中断") {
+			t.Errorf("entries[%d]: outcome=%s reason=%q", i, e.Outcome, e.Reason)
+		}
+	}
+}

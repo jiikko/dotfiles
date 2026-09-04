@@ -225,6 +225,11 @@ func DefaultHistoryDir() (string, error) {
 	return filepath.Join(base, "doctor-history"), nil
 }
 
+// abortedEntryReason は「中断されたので、このエントリには触っていない」の語。
+// 🚨 DryRun の打ち切り / 非 DryRun の打ち切り / planDelete の中断検出の**3 箇所が同じ語を使う**
+// (issue 246)。別々に書くと、同じ操作の結末が経路ごとに違う文言で出る。
+const abortedEntryReason = "中断されました (このエントリは触っていません)"
+
 // Delete は選ばれた Result を削除する。DryRun なら事前検査だけを行い、何も壊さない。
 //
 // 記録 (インベントリ) を残せないときは**削除しない** (fail-closed)。何を消したかの記録が
@@ -236,6 +241,14 @@ func Delete(ctx context.Context, targets []Result, opt DeleteOptions) (DeleteRep
 	targets = dedupeTargets(targets)
 	if opt.DryRun {
 		for i, t := range targets {
+			// 🚨 中断されたら残りを走査し直さない (issue 246)。planDelete は 1 件ごとに
+			// Scan を通すので、打ち切らないと中断後も全エントリぶんの走査が個別に落ちるまで回る。
+			// 非 DryRun のループ (下) が同じ位置で同じことをしている
+			if ctx.Err() != nil {
+				rep.Entries = append(rep.Entries, EntryOutcome{ID: t.Entry.ID, Label: t.Entry.Label,
+					Outcome: OutcomeSkipped, Reason: abortedEntryReason})
+				continue
+			}
 			opt.phase(i, len(targets), t.Entry.Label, PhaseScanning)
 			rep.Entries = append(rep.Entries, planDelete(ctx, t, opt))
 		}
@@ -265,7 +278,7 @@ func Delete(ctx context.Context, targets []Result, opt DeleteOptions) (DeleteRep
 		// ここで見ないと「中止したのに残り全部が消える」になる (敵対レビュー 2026-09-03 で実測)
 		if ctx.Err() != nil {
 			rep.Entries[i].Outcome = OutcomeSkipped
-			rep.Entries[i].Reason = "中断されました (このエントリは触っていません)"
+			rep.Entries[i].Reason = abortedEntryReason
 			continue
 		}
 		// plan (実体の同一性検査) と exec を**隣接**させる。全件を先に plan すると、
@@ -421,10 +434,19 @@ func planDelete(ctx context.Context, t Result, opt DeleteOptions) EntryOutcome {
 		cur = fresh.Results[0]
 	}
 	switch {
+	case ctx.Err() != nil:
+		// 🚨 **中断を先に見る** (issue 246)。中断で真になるのは fresh.Partial の側で、そのとき
+		// cur.Status は ok のまま Reason も空。下の分岐へ落とすと「削除の前に走査し直せません
+		// でした: 」という**理由がコロンの後で切れた文言**になり、しかも planHasWork が false に
+		// なるのでパネルの見出しが「消せるものがありません」になって、中断した事実が画面の
+		// どこにも出ない。語彙は非 DryRun のループ (Delete) が既に持っているので、そこへ揃える。
+		out.Outcome, out.Reason = OutcomeSkipped, abortedEntryReason
+		return out
 	case cur.Status == StatusBlocked:
 		out.Outcome, out.Reason = OutcomeSkipped, "いまは対象外です: "+cur.Reason
 		return out
 	case cur.Status != StatusOK || fresh.Partial:
+		// ここへ来るのは「走査し直せなかった」だけ (中断は上で抜けた)。Reason は非空
 		return fail("削除の前に走査し直せませんでした: " + cur.Reason)
 	}
 	index := map[string]Item{}

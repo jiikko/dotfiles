@@ -1480,16 +1480,16 @@ func TestDeletePhaseWordingSeparatesPreparingFromRunning(t *testing.T) {
 		notHint  string
 	}{
 		{name: "preparing", del: doctorDelete{preparing: true, progress: "1/2 なにか を走査中"},
-			panel:    []string{"削除できるか確認しています", "対象を走査し直しています", "Ctrl-C を 2 回押すと中断します"},
+			panel:    []string{"削除できるか確認しています", "対象を走査し直しています", "Ctrl-C / Ctrl-G を 2 回押すと中断します"},
 			notPanel: []string{"もう一度 Ctrl-C"},
 			wantHint: "確認しています", notHint: "実行中"},
 		{name: "running", del: doctorDelete{running: true, progress: "1/2 なにか を削除中"},
-			panel:    []string{"削除しています", "Ctrl-C を 2 回押すと中断します"},
+			panel:    []string{"削除しています", "Ctrl-C / Ctrl-G を 2 回押すと中断します"},
 			notPanel: []string{"もう一度 Ctrl-C"},
 			wantHint: "実行中です", notHint: "確認しています"},
 		// 1 回目を押した後は残り 1 回。「2 回押せ」と「もう 1 回押せ」を並べるとあと何回か読めない
 		{name: "preparing+armed", del: doctorDelete{preparing: true, armedCC: true, progress: "1/2 なにか を走査中"},
-			panel:    []string{"もう一度 Ctrl-C を押すと中断します"},
+			panel:    []string{"もう一度 Ctrl-C / Ctrl-G を押すと中断します"},
 			notPanel: []string{"2 回押すと中断します"},
 			wantHint: "確認しています", notHint: "実行中"},
 	} {
@@ -1512,6 +1512,46 @@ func TestDeletePhaseWordingSeparatesPreparingFromRunning(t *testing.T) {
 			}
 			if strings.Contains(h, tc.notHint) {
 				t.Errorf("hint = %q (%q を含まないこと。相を取り違えている)", h, tc.notHint)
+			}
+		})
+	}
+}
+
+// 中断に使えるキーと、案内に書いてあるキーが一致する (issue 244)。
+//
+// 🚨 案内は doctor_delete.go、キーの分岐は tui.go と**層が分かれている**ので、片側だけ変えても
+// build も既存テストも通る。
+//
+// 🚨 期待値を deleteAbortKeys から作らない。それは production と同じ定数から期待値を作る形で、
+// 「案内から ctrl+g を落とす」変異が green のまま通った (最初にそう書いて実測した)。
+// **挙動を独立の出典にする**: 候補キーを 1 つずつ browseModel の入口から押して、実際に
+// 中断できたかを見てから、案内にその名前が出ているかを突き合わせる。
+func TestDeleteAbortGuidanceMatchesKeys(t *testing.T) {
+	panel := doctorPanelText(&doctorView{del: doctorDelete{running: true, progress: "1/1 …"}}, 20)
+	// 中断に使えそうな候補。実際に使えるかはここでは決めず、押して確かめる
+	for _, tc := range []struct{ key, word string }{
+		{"ctrl+c", "Ctrl-C"},
+		{"ctrl+g", "Ctrl-G"},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m.doctorOv.shown = true
+			cancelled := false
+			m.doctorOv.del = doctorDelete{running: true, progress: "1/1 …",
+				cancel: func() { cancelled = true }}
+			m.handleKey(tc.key)
+			armed := m.doctorOv.del.armedCC
+			m.handleKey(tc.key)
+			aborts := cancelled
+
+			shown := strings.Contains(panel, tc.word)
+			switch {
+			case aborts && !shown:
+				t.Errorf("%s で中断できるのに、案内に %q が無い:\n%s", tc.key, tc.word, panel)
+			case !aborts && shown:
+				t.Errorf("案内に %q が出ているのに、%s では中断できない:\n%s", tc.word, tc.key, panel)
+			case aborts && !armed:
+				t.Errorf("%s が 1 回目で武装していない (誤爆を 1 段止める設計)", tc.key)
 			}
 		})
 	}
