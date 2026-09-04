@@ -341,7 +341,14 @@ func (v *doctorView) handleDeleteKey(key string) (doctorAction, bool) {
 		}
 		switch key {
 		case "y", "Y":
-			targets := v.selectedResults()
+			// 🚨 **実行対象は「確認画面に出した plan」から作る** (issue 245)。
+			// UI の選択 (selectedResults) をそのまま渡すと、**確認画面が約束した量と
+			// 実際に消える対象がずれる**: 下見が部分的に中断されると 2 件目以降が
+			// OutcomeFailed になり、confirmLines はそれを解放量に足さない (正しい) のに、
+			// selectedResults は元の走査結果しか見ないので y で消えてしまう。
+			// 「見せた量より多く消える」= 破壊的操作の同意を実際より小さい数字で取る形。
+			// plan の Planned だけに絞れば、確認画面と実行が同じソースを見る。
+			targets := plannedTargets(d.plan, v.selectedResults())
 			if len(targets) == 0 {
 				d.reset()
 				v.pendingToast = "削除する対象がありません"
@@ -680,15 +687,41 @@ func (v *doctorView) deletePanel(o doctorRenderOpts) []string {
 
 // planHasWork は下見の結果に「実際に消すもの」があるか (全部 対象外 / 提示のみ なら false)。
 func planHasWork(plan *disk.DeleteReport) bool {
+	return len(plannedIDs(plan)) > 0
+}
+
+// plannedIDs は下見で「これから消す」と出たエントリの ID。
+//
+// 🚨 **確認画面と実行対象の唯一の出典** (issue 245)。以前は「消せるものが在るか」の判定
+// (planHasWork) と「何を消すか」の判定 (case "y" の selectedResults) が別ソースで、
+// **確認画面が何を約束しても実行が従わない**構造だった。述語をここに 1 つ置く。
+func plannedIDs(plan *disk.DeleteReport) map[string]bool {
 	if plan == nil {
-		return false
+		return nil
 	}
+	ids := make(map[string]bool, len(plan.Entries))
 	for _, e := range plan.Entries {
 		if e.Outcome == disk.OutcomePlanned {
-			return true
+			ids[e.ID] = true
 		}
 	}
-	return false
+	return ids
+}
+
+// plannedTargets は選択のうち、下見で Planned になったエントリだけを返す
+// (確認画面に出した対象と実行対象を一致させる。issue 245)。
+func plannedTargets(plan *disk.DeleteReport, sel []disk.Result) []disk.Result {
+	planned := plannedIDs(plan)
+	if len(planned) == 0 {
+		return nil
+	}
+	out := make([]disk.Result, 0, len(sel))
+	for _, r := range sel {
+		if planned[r.Entry.ID] {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // confirmLines は確認の本文。**下見 (DryRun) の結果をそのまま出す** (UI 側で組み直さない)。

@@ -279,7 +279,9 @@ func TestDoctorDeleteRunsAndShowsResult(t *testing.T) {
 	f := &fakeDelete{
 		phases: []disk.DeletePhase{disk.PhaseScanning, disk.PhaseDeleting, disk.PhaseVerifying},
 		rep: disk.DeleteReport{Entries: []disk.EntryOutcome{
-			{Label: "Thing キャッシュ", Outcome: disk.OutcomePlanned, BeforeSize: 4096, Items: make([]disk.ItemOutcome, 1)}}},
+			// 🚨 ID を入れる: y の対象は plan の Planned な ID で絞る (issue 245)。
+			// planDelete は必ず ID を入れるので、省くと production に無い形になる
+			{ID: "thing", Label: "Thing キャッシュ", Outcome: disk.OutcomePlanned, BeforeSize: 4096, Items: make([]disk.ItemOutcome, 1)}}},
 	}
 	v := deleteTestView(t, f)
 	v.handleKey(" ", 20)
