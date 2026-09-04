@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"doctor/disk"
+	"doctor/docker"
 	"doctor/svc"
 	"glogx/issues"
 	"glogx/usage"
@@ -598,7 +600,10 @@ func TestDoctorSnapshotRestoreSanitizesEntryAndPlistPath(t *testing.T) {
 			}},
 		},
 	})
-	if cmd := v.open(); cmd != nil {
+	// 🚨 open() は docker の Cmd を返す (docker だけ snapshot に載せていない)。
+	// 主張は「disk / svc / brew を走査し直していない」なので snapshotAt で見る
+	runDoctorCmds(t, v, v.open())
+	if v.snapshotAt.IsZero() {
 		t.Fatal("TTL 内なのに走査した (前提が作れていない)")
 	}
 	if len(v.diskResults) != 1 {
@@ -656,5 +661,84 @@ func TestFlattenDoctorRowsEnforcesSingleLine(t *testing.T) {
 	}
 	if got := rows[0].copyText; got != "コピーは\n複数行が正常" {
 		t.Errorf("コピー文の改行まで落ちた: %q", got)
+	}
+}
+
+// jsonEscaped は文字列を JSON 文字列の中身 (引用符なし) にする。
+func jsonEscaped(t *testing.T, s string) string {
+	t.Helper()
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b[1 : len(b)-1])
+}
+
+// docker の走査結果はすべて外部由来 — イメージ名はレジストリから来るし、コンテナ名・
+// ボリューム名・ビルドキャッシュの Description は誰かが書いた文字列。
+//
+// 🚨 seam は **docker.Scan** (関門をプロデューサ側に置いてある)。ここを live 経路で通す。
+func TestDoctorLiveDockerScanIsSanitized(t *testing.T) {
+	v := doctorTestView(t)
+	// 🚨 fixture は **JSON エスケープ**して埋める。docker の `--format json` は制御文字を
+	// \u001b で出すので、生の ESC を JSON 文字列に置くと「実物では起きない形」を検査してしまう
+	osc, clear := jsonEscaped(t, osc52Seq), jsonEscaped(t, clearSeq)
+	v.dockerOpts = func() docker.Options {
+		return fakeDockerOptions(`{"Images":[` +
+			// ① 識別子が細工されている = **落とす** (書き換えて出すと `docker rmi` が別のものを指す)
+			`{"ID":"sha256:abcabcabcabc","Repository":"ev` + osc + `il","Tag":"1","Containers":"0","Size":"2GB","UniqueSize":"2GB","CreatedAt":"2020-01-01 00:00:00 +0000 UTC"}],` +
+			`"Containers":[{"ID":"c1","Names":"ok-web","State":"exited",` +
+			// ② 識別子は正当で、表示だけの自由文が細工されている = **残して無害化する**
+			`"Status":"Exited (0)` + clear + `","Image":"app` + osc + `:old","Size":"10MB","CreatedAt":"2020-01-01 00:00:00 +0000 UTC"}],` +
+			`"Volumes":[{"Name":"ok_data","Links":"0","Size":"3GB"}],` +
+			`"BuildCache":[{"ID":"bc1","InUse":"false","Size":"1GB","Description":"[2/3] COPY` + clear + ` . /app","LastUsedAt":"2020-01-01 00:00:00 +0000 UTC","CreatedAt":"2020-01-01 00:00:00 +0000 UTC"}]}`)
+	}
+	runDoctorCmds(t, v, v.open())
+	if v.docker == nil || !v.docker.Installed || v.docker.Unavailable != "" {
+		t.Fatalf("前提が作れていない: %+v", v.docker)
+	}
+	// 🚨 細工されたイメージ名は**書き換えて出さない**。repo:tag が識別子として読めないので
+	// 短い ID へ落とし、提示コマンドも ID を指す (無害化した名前で出すと、攻撃者が
+	// 無害化後の名前のイメージを別に置くだけで「別のものを消せ」と案内できる)
+	var img docker.Group
+	for _, g := range v.docker.Groups {
+		if g.Kind == docker.KindImages {
+			img = g
+		}
+	}
+	if len(img.Items) != 1 || img.Items[0].Name != "abcabcabcabc" || img.Items[0].Command != "docker rmi abcabcabcabc" {
+		t.Errorf("細工された repo:tag が提示に載った: %+v", img.Items)
+	}
+
+	v.tab = tabDocker
+	// 全群を開いて内訳まで描く (畳んだままだと候補の行が検査対象から外れる)
+	v.expanded = map[string]bool{}
+	for _, g := range v.docker.Groups {
+		v.expanded["docker:"+string(g.Kind)] = true
+	}
+	for _, line := range strings.Split(doctorText(v, 60), "\n") {
+		if hasTerminalControl(line) {
+			t.Errorf("Docker タブの行に制御シーケンスが残った: %q", line)
+		}
+		if strings.Contains(line, "PWNED") {
+			t.Errorf("OSC の中身が残った: %q", line)
+		}
+	}
+	var sawItem bool
+	for _, row := range doctorAllRows(v.rows) {
+		if hasTerminalControl(row.text) {
+			t.Errorf("row の text に制御シーケンスが残った: %q", row.text)
+		}
+		if hasControlExceptNewline(row.copyPath) || hasControlExceptNewline(row.copyText) {
+			t.Errorf("row のコピーに制御シーケンスが残った: %q / %q", row.copyPath, row.copyText)
+		}
+		if strings.Contains(row.text, "ok-web") {
+			sawItem = true
+		}
+	}
+	// 🚨 候補の行が**実際に描かれている**ことを確かめる (描かれていなければ、上の assert は
+	// 1 つも sink を守っていない)
+	if !sawItem {
+		t.Fatal("候補の行が描かれていない (検査対象が空)")
 	}
 }

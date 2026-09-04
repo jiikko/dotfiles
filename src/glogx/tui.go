@@ -963,6 +963,9 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case doctorSvcMsg:
 		m.doctorOv.receiveSvc(msg)
 		return m, m.maybeTick()
+	case doctorDockerMsg:
+		m.doctorOv.receiveDocker(msg)
+		return m, m.maybeTick()
 	case doctorBrewMsg:
 		m.doctorOv.receiveBrew(msg)
 		return m, m.maybeTick()

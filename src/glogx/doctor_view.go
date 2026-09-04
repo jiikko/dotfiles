@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"doctor/disk"
+	"doctor/docker"
 	"doctor/runner"
 	"doctor/svc"
 )
@@ -46,11 +47,12 @@ const (
 	tabDisk doctorTab = iota
 	tabSvc
 	tabBrew
+	tabDocker
 )
 
 // numDoctorTabs はタブの数。**enum の番兵にしない** — doctorTab の値として持つと
 // exhaustive の switch すべてに「タブでない値」の case を書かされる
-const numDoctorTabs = 3
+const numDoctorTabs = 4
 
 type doctorView struct {
 	shown bool
@@ -66,8 +68,11 @@ type doctorView struct {
 	diskCh      chan doctorDiskEvent
 	svcRep      *svc.Report // nil = 走査中
 	brew        *brewDoctorResult
-	startedAt   time.Time
-	snapshotAt  time.Time // 前回の結果をそのまま出しているときの走査時刻 (zero = 今回走査した)
+	// docker は nil = 走査中。🚨 キャッシュ (snapshot) には載せない — 走査が速いので
+	// 開くたびに取り直す (doctor_docker.go の冒頭)
+	docker     *docker.Report
+	startedAt  time.Time
+	snapshotAt time.Time // 前回の結果をそのまま出しているときの走査時刻 (zero = 今回走査した)
 
 	// enterDetail は「Enter で今開いた行」。次の描画でカーソルをその中の最初の対象パスへ移す
 	// (開いてから j を何度も押さずに、消したいディレクトリへ直接行けるようにする)
@@ -102,6 +107,7 @@ type doctorView struct {
 	diskOpts   func() disk.Options
 	svcOpts    func() svc.Options
 	brewRun    runner.Runner
+	dockerOpts func() docker.Options
 	deleteOpts func() disk.DeleteOptions
 	deleteFn   func(context.Context, []disk.Result, disk.DeleteOptions) (disk.DeleteReport, error)
 }
@@ -151,7 +157,7 @@ func (v *doctorView) visible() bool { return v.shown }
 
 // scanning はいずれかのセクションが走査中か (スピナーの根拠)。
 func (v *doctorView) scanning() bool {
-	return v.shown && (v.diskRep == nil || v.svcRep == nil || v.brew == nil)
+	return v.shown && (v.diskRep == nil || v.svcRep == nil || v.brew == nil || v.docker == nil)
 }
 
 // deleting は削除の下見 / 実行中か (スピナーと再描画の根拠)。
@@ -216,7 +222,7 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	// 再表示されていた。敵対レビュー 2026-09-03)
 	v.rows, v.enterDetail, v.pendingCopy, v.pendingToast, v.pendingDeleteCmd = nil, "", "", "", nil
 	v.del.reset()
-	v.diskResults, v.diskRep, v.svcRep, v.brew = nil, nil, nil, nil
+	v.diskResults, v.diskRep, v.svcRep, v.brew, v.docker = nil, nil, nil, nil, nil
 	v.startedAt = timeNow()
 	v.snapshotAt = time.Time{}
 	if !force {
@@ -232,7 +238,11 @@ func (v *doctorView) start(force bool) tea.Cmd {
 			brew := sn.Brew
 			v.brew = &brew
 			v.snapshotAt = sn.ScannedAt
-			return nil
+			// 🚨 docker だけは snapshot に載せていないので、復元経路でも走らせる
+			// (走らせないと Docker タブが永久にスピナーのままになる)
+			ctx, cancel := context.WithCancel(context.Background())
+			v.cancel = cancel
+			return v.dockerCmd(ctx, v.gen)
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -290,6 +300,7 @@ func (v *doctorView) start(force bool) tea.Cmd {
 			doctorTrack(func() { res = runBrewDoctor(ctx, bRun) })
 			return doctorBrewMsg{gen: gen, res: res}
 		},
+		v.dockerCmd(ctx, gen),
 	)
 }
 
@@ -647,10 +658,12 @@ func (v *doctorView) hint(width int) string {
 		items = append(items, hintItem{"Space: 選択", 2})
 	case tabSvc:
 		// サービスは選択も実行も持たない (壊れた登録は見て直すだけ)
+	case tabDocker:
+		// Docker も持たない (この画面は docker を実行しない)
 	}
 	items = append(items, []hintItem{
 		{"Enter: 開閉", 4}, // 開くと対象パスへカーソルが移り、そこでも Space で選べる
-		{"y: パスをコピー", 5},
+		{doctorCopyHintLabel(v.tab), 5},
 		{"Y: 解説をコピー", 6},
 		{"r: 再スキャン", 5},
 		{"D/q/esc: 閉じる", 1}, // 抜ける手段は最優先で残す
@@ -665,6 +678,15 @@ func (v *doctorView) hint(width int) string {
 		items = append([]hintItem{{fmt.Sprintf("選択 %d 件 %s", n, disk.HumanSize(total)), 1}}, items...)
 	}
 	return fitHintItems(width, items)
+}
+
+// doctorCopyHintLabel は y が何をコピーするか。タブで中身が違うので語も変える
+// (Docker タブにパスは無い。押せる手の説明が嘘になると、押さなくなる)。
+func doctorCopyHintLabel(t doctorTab) string {
+	if t == tabDocker {
+		return "y: コマンドをコピー"
+	}
+	return "y: パスをコピー"
 }
 
 // doctorRenderOpts は描画情報。
@@ -744,7 +766,15 @@ func (v *doctorView) headerLine(o doctorRenderOpts) string {
 // h/l / left/right / tab も同じ入口 (issues viewer と同じ語彙)。
 func (v *doctorView) moveTab(d int) {
 	v.tabCur[v.tab] = v.cur
-	n := (int(v.tab) + d + numDoctorTabs) % numDoctorTabs
+	// 🚨 出していないタブは飛ばす (Docker が無い環境で「空のタブ」を通らせない)。
+	// 全部不可視になることは無い (Docker 以外は常に可視) が、念のため回数で打ち切る
+	n := int(v.tab)
+	for range numDoctorTabs {
+		n = (n + d + numDoctorTabs) % numDoctorTabs
+		if v.tabVisible(doctorTab(n)) {
+			break
+		}
+	}
 	v.tab = doctorTab(n)
 	v.cur = v.tabCur[v.tab]
 }
@@ -754,10 +784,13 @@ func (v *doctorView) moveTab(d int) {
 // 🚨 **切り替えなくても「どこに何件あるか」が分かること**が、タブにしても一望性を失わない条件。
 // 件数を出さないタブ行にすると、異常の有無を知るために全タブを回ることになる。
 func (v *doctorView) tabBarLine(o doctorRenderOpts) string {
-	names := [numDoctorTabs]string{"ディスク", "サービス", "Homebrew"}
+	names := [numDoctorTabs]string{"ディスク", "サービス", "Homebrew", "Docker"}
 	parts := make([]string, 0, numDoctorTabs)
 	for i := range numDoctorTabs {
 		t := doctorTab(i)
+		if !v.tabVisible(t) {
+			continue
+		}
 		label := names[i] + " " + v.tabSummary(o, t)
 		if t == v.tab {
 			parts = append(parts, doctorColor(o.colored, ansiBold, "["+label+"]"))
@@ -790,6 +823,16 @@ func (v *doctorView) tabSummary(o doctorRenderOpts, t doctorTab) string {
 			return "🚨"
 		}
 		return strconv.Itoa(len(v.brew.Warnings))
+	case tabDocker:
+		switch {
+		case v.docker == nil:
+			return o.spinner
+		case v.docker.Unavailable != "":
+			return "🚨"
+		}
+		// 🚨 出すのは docker 自身の申告。候補の見積もりは共有レイヤーを重複計上して
+		// 上振れするので、一望の数字には使わない (doctor/docker の Estimate の 🚨)
+		return docker.HumanSize(v.docker.DockerReclaimable())
 	default:
 		results := v.diskResults
 		if v.diskRep != nil {
@@ -832,6 +875,8 @@ func (v *doctorView) buildRows(o doctorRenderOpts) []doctorRow {
 		add(v.svcSection(o))
 	case tabBrew:
 		add(v.brewSection(o))
+	case tabDocker:
+		add(v.dockerSection(o))
 	default:
 		add(v.diskSection(o))
 	}

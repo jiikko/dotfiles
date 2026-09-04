@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"doctor/disk"
+	"doctor/docker"
 	"doctor/svc"
 )
 
@@ -1700,8 +1701,9 @@ func TestDeleteKeepsRedrawAlive(t *testing.T) {
 	tv := doctorTestView(t)
 	m.doctorOv = *tv
 	m.doctorOv.shown = true
-	// 走査は終わっている状態を作る (3 つのレポートが揃うと scanning() は false)
+	// 走査は終わっている状態を作る (4 つのレポートが揃うと scanning() は false)
 	m.doctorOv.diskRep, m.doctorOv.svcRep, m.doctorOv.brew = &disk.Report{}, &svc.Report{}, &brewDoctorResult{}
+	m.doctorOv.docker = &docker.Report{}
 	// usage の枠は「開いていて未取得」だと単独で tick を立てるので落とす。
 	// 🚨 これを落とさないと、削除の配線を外す変異を当てても緑のまま = 何も守らないテストになる
 	m.usageOv.visible = false

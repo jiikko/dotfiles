@@ -15,6 +15,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"doctor/disk"
+	"doctor/docker"
 	"doctor/svc"
 )
 
@@ -85,9 +86,67 @@ func doctorTestView(t *testing.T) *doctorView {
 					return "PID\tStatus\tLabel\n", "", 0, nil
 				}}
 		},
-		brewRun: fake,
+		brewRun:    fake,
+		dockerOpts: func() docker.Options { return fakeDockerOptions(fakeDockerDF) },
 	}
 	return v
+}
+
+// fakeDockerDF は `docker system df -v` の fixture (実物と同じ形。1 群 1 件ずつ)。
+const fakeDockerDF = `{"Images":[{"ID":"sha256:abcabcabcabc","Repository":"app","Tag":"old","Containers":"0","Size":"2GB","UniqueSize":"2GB","CreatedAt":"2020-01-01 00:00:00 +0000 UTC"}],` +
+	`"Containers":[{"ID":"c1","Names":"old-web","State":"exited","Status":"Exited (0) 1 year ago","Image":"app:old","Size":"10MB","CreatedAt":"2020-01-01 00:00:00 +0000 UTC"}],` +
+	`"Volumes":[{"Name":"old_data","Links":"0","Size":"3GB"}],` +
+	`"BuildCache":[{"ID":"bc1","InUse":"false","Size":"1GB","Description":"[2/3] COPY . /app","LastUsedAt":"2020-01-01 00:00:00 +0000 UTC","CreatedAt":"2020-01-01 00:00:00 +0000 UTC"}]}`
+
+// fakeDockerOptions は docker CLI を差し替えた Options。件数は df -v の fixture から数える
+// (本物の docker は 2 コマンドで同じ件数を返すので、fake もそう振る舞わせる。固定値にすると
+// doctor/docker の件数突合に引っかかって全テストが「診断できず」になる)。
+func fakeDockerOptions(dfv string) docker.Options {
+	var d struct {
+		Images, Containers, BuildCache []json.RawMessage
+		Volumes                        []struct{ Name string }
+	}
+	if err := json.Unmarshal([]byte(dfv), &d); err != nil {
+		panic("fixture が壊れている: " + err.Error())
+	}
+	// 🚨 **docker 申告の回収可能量を、候補の単純合計 (2GB+10MB+3GB+1GB = 6.01GB) と
+	// 違う値にする。** 一致させると「見積もりと申告を取り違える」変異が検出できない
+	// (実測 2026-09-04: 同じ値にしていたので取り違えの変異が緑で通った)。
+	// この summary なら申告の合計は 1GB+5MB+3GB+500MB = 4.5GB
+	summary := fmt.Sprintf(`{"Type":"Images","TotalCount":"%d","Size":"2GB","Reclaimable":"1GB"}
+{"Type":"Containers","TotalCount":"%d","Size":"10MB","Reclaimable":"5MB"}
+{"Type":"Local Volumes","TotalCount":"%d","Size":"3GB","Reclaimable":"3GB"}
+{"Type":"Build Cache","TotalCount":"%d","Size":"1GB","Reclaimable":"500MB"}`,
+		len(d.Images), len(d.Containers), len(d.Volumes), len(d.BuildCache))
+	return docker.Options{
+		LookPath:  func(string) (string, error) { return "/usr/local/bin/docker", nil },
+		AppExists: func() bool { return true },
+		Run: func(_ context.Context, _ string, args ...string) (string, string, int, error) {
+			switch {
+			case len(args) >= 3 && args[0] == "system" && args[1] == "df" && args[2] == "-v":
+				return dfv, "", 0, nil
+			case len(args) >= 2 && args[0] == "system" && args[1] == "df":
+				return summary, "", 0, nil
+			case len(args) >= 2 && args[0] == "volume" && args[1] == "inspect":
+				// 🚨 fixture のボリュームから作る。固定名にすると、別の fixture を使う
+				// テストで全件が「作成日不明」になり、検査対象が空になる
+				parts := make([]string, 0, len(d.Volumes))
+				for _, v := range d.Volumes {
+					parts = append(parts, `{"Name":"`+v.Name+`","CreatedAt":"2020-01-01T00:00:00Z"}`)
+				}
+				return "[" + strings.Join(parts, ",") + "]", "", 0, nil
+			}
+			return "", "想定外の docker 呼び出し", 1, nil
+		},
+	}
+}
+
+// noDockerOptions は「Docker Desktop が入っていない」環境 (タブごと出ない)。
+func noDockerOptions() docker.Options {
+	return docker.Options{
+		LookPath:  func(string) (string, error) { return "", errors.New("not found") },
+		AppExists: func() bool { return false },
+	}
 }
 
 // runDoctorCmds は Cmd (Batch 含む) を実行して Msg を集め、view へ届ける。disk は完了まで再アームする。
@@ -117,6 +176,8 @@ func runDoctorCmds(t *testing.T, v *doctorView, cmd tea.Cmd) {
 			v.receiveSvc(msg)
 		case doctorBrewMsg:
 			v.receiveBrew(msg)
+		case doctorDockerMsg:
+			v.receiveDocker(msg)
 		case nil:
 		default:
 			t.Fatalf("知らない Msg: %T", msg)
@@ -579,8 +640,11 @@ func TestDoctorReusesRecentSnapshot(t *testing.T) {
 	if _, ok := loadDoctorSnapshot(time.Now()); !ok {
 		t.Fatal("完了後に snapshot が書かれない")
 	}
-	if cmd := v.open(); cmd != nil {
-		t.Fatal("TTL 内の再オープンで走査 Cmd が返った (毎回スキャンしている)")
+	// 🚨 open() は docker の Cmd を返す (docker だけ snapshot に載せていないため)。
+	// ここの主張は「disk / svc / brew を走査し直していない」なので snapshotAt で見る
+	runDoctorCmds(t, v, v.open())
+	if v.snapshotAt.IsZero() {
+		t.Fatal("TTL 内の再オープンで snapshot を使わず走査した")
 	}
 	if v.scanning() || v.diskRep == nil || v.svcRep == nil || v.brew == nil || v.snapshotAt.IsZero() {
 		t.Fatalf("snapshot から 3 セクションが復元されない: %+v", v.scanning())
@@ -1434,7 +1498,10 @@ func TestDoctorSnapshotTrustBoundary(t *testing.T) {
 		res("thing", disk.StatusOK, 0, -5, now.Add(-time.Minute)),                    // 負の Item サイズ
 		res("thing", disk.StatusOK, 1<<30, 1<<30, now.Add(48*time.Hour)),             // 未来の MeasuredAt
 	})
-	if cmd := v.open(); cmd != nil {
+	// 🚨 open() は docker の Cmd を返す (docker だけ snapshot に載せていない)。
+	// 主張は「disk / svc / brew を走査し直していない」なので snapshotAt で見る
+	runDoctorCmds(t, v, v.open())
+	if v.snapshotAt.IsZero() {
 		t.Fatal("TTL 内なのに走査した (snapshot 復元の経路を通っていない)")
 	}
 	if len(v.diskResults) != 1 || v.diskResults[0].Entry.ID != "thing" || v.diskResults[0].Size != 4096 {
@@ -1504,7 +1571,10 @@ func TestDoctorSnapshotTrustBoundarySvcAndBrew(t *testing.T) {
 		}},
 	}
 	writeDoctorSnapshot(t, sn)
-	if cmd := v.open(); cmd != nil {
+	// 🚨 open() は docker の Cmd を返す (docker だけ snapshot に載せていない)。
+	// 主張は「disk / svc / brew を走査し直していない」なので snapshotAt で見る
+	runDoctorCmds(t, v, v.open())
+	if v.snapshotAt.IsZero() {
 		t.Fatal("TTL 内なのに走査した (snapshot 復元の経路を通っていない)")
 	}
 	if v.svcRep == nil || len(v.svcRep.Findings) != 1 {
@@ -1572,7 +1642,10 @@ func TestDoctorSnapshotTrustBoundaryFreeText(t *testing.T) {
 		}},
 	}
 	writeDoctorSnapshot(t, sn)
-	if cmd := v.open(); cmd != nil {
+	// 🚨 open() は docker の Cmd を返す (docker だけ snapshot に載せていない)。
+	// 主張は「disk / svc / brew を走査し直していない」なので snapshotAt で見る
+	runDoctorCmds(t, v, v.open())
+	if v.snapshotAt.IsZero() {
 		t.Fatal("TTL 内なのに走査した")
 	}
 	// 1: 形が崩れた Undiagnosed は復元しない / 残ったものはコマンド行で引用される
@@ -2039,7 +2112,10 @@ func TestDoctorSnapshotRebindsEntryToCatalog(t *testing.T) {
 		Results: []disk.Result{{Entry: forged, Status: disk.StatusOK, Size: 4096,
 			Items: []disk.Item{{Path: "/tmp/x", Size: 4096}}}},
 	}})
-	if cmd := v.open(); cmd != nil {
+	// 🚨 open() は docker の Cmd を返す (docker だけ snapshot に載せていない)。
+	// 主張は「disk / svc / brew を走査し直していない」なので snapshotAt で見る
+	runDoctorCmds(t, v, v.open())
+	if v.snapshotAt.IsZero() {
 		t.Fatal("TTL 内の snapshot を使わずに走査した (前提が違う)")
 	}
 	out := strings.Join(v.lines(doctorTestOpts(30)), "\n")
@@ -2138,13 +2214,13 @@ func TestDoctorHLMovesTabs(t *testing.T) {
 	runDoctorCmds(t, v, v.open())
 	_ = v.lines(doctorTestOpts(20))
 
-	for _, want := range []doctorTab{tabSvc, tabBrew, tabDisk} {
+	for _, want := range []doctorTab{tabSvc, tabBrew, tabDocker, tabDisk} {
 		v.handleKey("l", 20)
 		if v.tab != want {
 			t.Fatalf("l で %v へ行かない: %v", want, v.tab)
 		}
 	}
-	for _, want := range []doctorTab{tabBrew, tabSvc, tabDisk} {
+	for _, want := range []doctorTab{tabDocker, tabBrew, tabSvc, tabDisk} {
 		v.handleKey("h", 20)
 		if v.tab != want {
 			t.Fatalf("h で %v へ戻らない: %v", want, v.tab)
@@ -2291,13 +2367,13 @@ func TestDoctorTabs(t *testing.T) {
 
 	t.Run("tab で送り shift+tab で戻る (端で回る)", func(t *testing.T) {
 		v.tab = tabDisk
-		for _, want := range []doctorTab{tabSvc, tabBrew, tabDisk} {
+		for _, want := range []doctorTab{tabSvc, tabBrew, tabDocker, tabDisk} {
 			v.handleKey("tab", 20)
 			if v.tab != want {
 				t.Fatalf("tab で %v へ行かない: %v", want, v.tab)
 			}
 		}
-		for _, want := range []doctorTab{tabBrew, tabSvc, tabDisk} {
+		for _, want := range []doctorTab{tabDocker, tabBrew, tabSvc, tabDisk} {
 			v.handleKey("shift+tab", 20)
 			if v.tab != want {
 				t.Fatalf("shift+tab で %v へ戻らない: %v", want, v.tab)
@@ -2323,9 +2399,10 @@ func TestDoctorTabs(t *testing.T) {
 		}
 		v.handleKey("tab", 20) // → サービス
 		v.handleKey("tab", 20) // → Homebrew
+		v.handleKey("tab", 20) // → Docker
 		_ = v.lines(o)
 		if v.cur.key == diskKey {
-			t.Fatalf("前提が崩れている: Homebrew でディスクの行を指している: %q", diskKey)
+			t.Fatalf("前提が崩れている: Docker でディスクの行を指している: %q", diskKey)
 		}
 		v.handleKey("tab", 20) // → ディスクへ一周
 		_ = v.lines(o)
