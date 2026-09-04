@@ -8,6 +8,8 @@
 #   - 失敗後はソースが変わるまで再挑戦しない (毎起動ごとにビルドを撒く CPU リークの防止)
 #   - lock の持ち主が死んでいたら奪う (kill された builder の lock で旧版に永久固定されない)
 #   - --async は旧版で即 exec し、ビルド完了は次回起動から反映される
+#   - install 成功後に新バイナリを 1 回起こす (macOS の署名検証キャッシュの先払い)。
+#     失敗したビルドでは起こさない
 #
 # mtime は「何分前」で明示的に置く (mtime_at)。未来 mtime を打つと以降その file が永久に
 # 新しくなり「毎回 stale」になってテストが意味を失うため、常に過去側で差を作る。
@@ -56,7 +58,9 @@ done
 # 🚨 出力を書いてから寝る。走行中に一時ファイルが存在する状態を作るため (掃除がそれを
 # 巻き込まないことを検査するテストがこの窓を要る)。install は shim の mv なので、
 # 先に書いても「ビルド中は旧版のまま」という他テストの前提は変わらない。
-printf '#!/bin/sh\necho %s\n' "$FAKE_GO_MARK" > "$out"
+# 🚨 記録行は echo より前に置く。binary_mark が tail -1 の最後の語を mark として読むので、
+# 後ろに足すとバイナリ判定側のテストが全部壊れる。
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\necho %s\n' "${FAKE_BIN_CALLS:-/dev/null}" "$FAKE_GO_MARK" > "$out"
 chmod +x "$out"
 [ -n "${FAKE_GO_SLEEP:-}" ] && sleep "$FAKE_GO_SLEEP"
 if [ -n "${FAKE_GO_FAIL:-}" ]; then rm -f "$out"; echo "fake build error" >&2; exit 1; fi
@@ -122,6 +126,7 @@ run_tool() {  # $1=root, 残り=tool 引数
     FAKE_GO_CALLS="$root/calls" \
     FAKE_GO_MARK="${FAKE_GO_MARK:-v1}" \
     FAKE_GO_PIDFILE="${FAKE_GO_PIDFILE:-}" \
+    FAKE_BIN_CALLS="${FAKE_BIN_CALLS:-}" \
     "$root/bin/tool" "$@" 2>>"$root/stderr"
 }
 
@@ -212,6 +217,40 @@ wait_for "バックグラウンドビルドが完了しない" \
 out="$(AUTOBUILD_ARGS=--async FAKE_GO_MARK=newer run_tool "$ROOT")"
 [[ "$out" == "new" ]] || fail "バックグラウンドビルドが次回起動に反映されない (got: $out)"
 ok "バックグラウンドビルドの結果が次回起動で反映される"
+
+printf '\n## install 成功後に新バイナリを 1 回起こす (署名検証キャッシュの先払い)\n'
+# macOS は新しい inode を初めて exec するときだけカーネルが署名を検証する。17MB の glogx では
+# 実測 230ms で、tmux popup の起動の律速がここだった。裏ビルドの中で 1 回起こしておくと
+# 次の起動は 0.02s 側から始まる (_go_autobuild_warm_signature)。
+# ここで pin するのは「install 成功後に、差し替えたバイナリが実際に exec される」ことだけ
+# (署名検証キャッシュ自体は偽 go の shim では再現できないので、実測は rules/docs 側に残す)。
+ROOT="$(new_project warmup)"
+WARM_LOG="$ROOT/warm.log"
+FAKE_BIN_CALLS="$WARM_LOG" FAKE_GO_MARK=w1 run_tool "$ROOT" >/dev/null   # バイナリ不在 = 同期ビルド
+wait_for "同期ビルドが完了しない" test -f "$WARM_LOG"
+grep -q -- '--__autobuild_warmup__' "$WARM_LOG"   || fail "install 後にバイナリを起こしていない (温めが配線されていない): $(cat "$WARM_LOG" 2>/dev/null)"
+ok "install 成功後に未知フラグで 1 回起こす"
+
+# 🚨 log にはラッパー本来の exec (引数なし = 空行) も混ざる。数えるのは温めの行だけ。
+# 1 回だけであることを固定するのは、install ごとに 1 回で足りる (署名検証キャッシュは
+# vnode 単位なので 2 回目以降は何も先払いしない) ため。
+warm_count() { grep -c -- '^--__autobuild_warmup__$' "$1" 2>/dev/null || true; }
+[[ "$(warm_count "$WARM_LOG")" == "1" ]] \
+  || fail "温めが 1 回でない: $(warm_count "$WARM_LOG") 回 :: $(cat "$WARM_LOG")"
+ok "温めは install 1 回につき 1 回だけ"
+
+printf '\n## 失敗したビルドでは温めない\n'
+ROOT="$(new_project warmupfail)"
+WARM_LOG="$ROOT/warm.log"
+FAKE_BIN_CALLS="$WARM_LOG" FAKE_GO_MARK=wf1 run_tool "$ROOT" >/dev/null
+: > "$WARM_LOG"
+freeze "$ROOT"
+bump "$ROOT/src/tool/main.go"
+FAKE_BIN_CALLS="$WARM_LOG" FAKE_GO_FAIL=1 AUTOBUILD_ARGS=--async run_tool "$ROOT" >/dev/null
+wait_for "builder が終わらない" builder_done "$ROOT"
+[[ "$(warm_count "$WARM_LOG")" == "0" ]] \
+  || fail "ビルド失敗なのに温めが走った (旧バイナリを無駄に起こしている): $(cat "$WARM_LOG")"
+ok "install しなかったビルドでは温めない"
 
 printf '\n## --async: 裏でビルド中であることを env で下流へ伝える\n'
 # 旧バイナリで exec するため、起動したツールからは新版の完成もビルド失敗も観測できない。

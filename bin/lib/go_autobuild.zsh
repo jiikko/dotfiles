@@ -26,6 +26,11 @@
 #   🚨 成果物の置き場を module root にしない: 同じ .autobuild.built を複数の main が上書きし合い、
 #   「入力は同じ = ビルド済み」と読んで別 main の古いバイナリを走らせる。
 #
+# install 成功時は、差し替えたバイナリを 1 回起こして macOS の署名検証キャッシュを温める
+# (_go_autobuild_warm_signature)。これをしないと「次回の初回 exec」が 17MB の glogx で 230ms
+# かかり、tmux popup 起動の律速になる (実測 2026-09-05。ファイルを読むだけでは温まらない)。
+# 🚨 新しいラッパーを足すときは、そのツールが未知フラグで即終了することを確かめる (温めの起こし方)。
+#
 # --async: 既存バイナリで即 exec し、再ビルドはバックグラウンドで走らせる (次回起動から反映)。
 #   tmux popup から起動するツール (glogx) 向け。ビルド出力を人に見せないため。
 #   出力を人/スクリプトが消費するツールでは使わない (古い結果を新コードの結果と誤認させる)。
@@ -373,6 +378,35 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   print -rn -- "$started_at"$'\n'"$built_fp" >| "$src_dir/.autobuild.built" 2>/dev/null
   _go_autobuild_record_rev "$src_dir"
   command rm -f "$src_dir/.autobuild.failed" 2>/dev/null
+  _go_autobuild_warm_signature "$bin"
+  return 0
+}
+
+# 差し替えたバイナリの署名検証キャッシュを温める (次の起動の律速をここで先払いする)。
+#
+# macOS は「新しい inode を初めて exec する」ときだけカーネルが Mach-O の署名を検証し、
+# 結果を vnode に載せる。17MB の glogx では実測 230ms で、tmux popup 起動の律速はここだった
+# (実測 2026-09-05: 新規コピーの初回 exec 0.23-0.25s / 2 回目以降 0.02-0.03s、n=5 で分離)。
+# 裏ビルドの中で 1 回起こしておけば、次の popup は 0.02s 側から始まる。
+#
+# 🚨 ファイルを読むだけでは温まらない。実測した 3 案のうち効くのは実際の exec だけ:
+#   cat "$bin" >/dev/null … 0.23s (page cache は律速ではない)
+#   codesign -v "$bin"    … 0.23s (userland の検証はカーネルの vnode キャッシュに載らない)
+#   exec して走り切らせる … 0.02s ← これだけ
+# 🚨 spawn 直後に kill -9 する形も温まらない (n=10 で 0/10)。exec の完了前に死ぬと検証されない。
+#   「即 kill でも温まった」ように見えたのは、kill が競合で外れて走り切っていたときだけ。
+#
+# 起こし方は未知フラグ。どのツールも引数解析で落ちるので本体のロジックは走らない
+# (glogx / parallel-each / disassemble_excel / lockman / schedkeys / svcdoctor / diskdoctor の
+# 7 本で実測。tests/bin/test_go_autobuild_warmup.sh が「即座に終わる」ことを固定している)。
+# 新しいラッパーを足すときは、そのツールも未知フラグで即終了することを確かめる。
+#
+# 同期ビルド経路 (GO_AUTOBUILD_SYNC=1 / バイナリ不在の初回) では直後の exec が自分で
+# 温めるので、ここでの 1 回は二重になる (実測 +20ms 程度)。1.4s のビルドを払っている経路
+# なので、経路ごとに分岐させず一律で温める方を採る。
+_go_autobuild_warm_signature() {  # $1=バイナリの絶対パス
+  [[ -x "$1" ]] || return 0
+  "$1" --__autobuild_warmup__ >/dev/null 2>&1 </dev/null || true
   return 0
 }
 
