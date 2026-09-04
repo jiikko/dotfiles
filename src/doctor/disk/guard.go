@@ -539,3 +539,151 @@ func canonicalPath(env Env, p string) (string, error) {
 	}
 	return p, nil
 }
+
+// appSupportRoot は `~/Library/Application Support` の展開値。
+func appSupportRoot(env Env) (string, bool) {
+	if env.Home == "" {
+		return "", false
+	}
+	return filepath.Join(env.Home, "Library", "Application Support"), true
+}
+
+// appSupportChild は p を含むアプリのディレクトリ (`~/Library/Application Support/<App>`)。
+// **深さを固定しない**: `<App>/Cache` も `<App>/Service Worker/CacheStorage` も同じ App に
+// 属するので、Application Support 直下の最初の 1 段を返す。p がその配下でなければ false。
+func appSupportChild(env Env, p string) (string, bool) {
+	root, ok := appSupportRoot(env)
+	if !ok {
+		return "", false
+	}
+	rel, err := filepath.Rel(root, p)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return "", false
+	}
+	seg := strings.Split(rel, string(filepath.Separator))[0]
+	if seg == "" || seg == "." || seg == ".." {
+		return "", false
+	}
+	return filepath.Join(root, seg), true
+}
+
+// chromiumProfileMarkers は「Chromium (Electron) のプロファイルディレクトリ」と認める目印。
+// **全部揃うことを要求する** (1 つでは偶然の一致がありうる)。実測 2026-09-04: この機で
+// `Cache` を持つ 6 アプリ (Slack / Dropbox / Docker Desktop / Electron / Multi-Video Player 2 種)
+// すべてで 2 点とも在り、型 (Preferences = ファイル / Local Storage = ディレクトリ) も揃っていた。
+//
+// 🚨 **`Code Cache` は目印に使わない** (敵対レビュー 2026-09-04)。これは**削除対象そのもの**なので、
+// 目印に混ぜると「消した瞬間にそのアプリが検出圏外へ落ちる」— アプリを再起動するまで
+// `Cache` / `GPUCache` が候補から消え、「もう溜まっていない」ように見える。
+// 目印は**消さないもの**から選ぶ。
+//
+// 🚨 実測の射程は「この機の 6 件」で、Chromium 一般の性質ではない。目印を持たない構成
+// (Local Storage を使わないアプリ等) は検出しない = **候補にしない**側に外れる (安全側)。
+var chromiumProfileMarkers = []struct {
+	name string
+	dir  bool
+}{
+	{"Preferences", false},
+	{"Local Storage", true},
+}
+
+// isChromiumProfile は app が Chromium 由来のプロファイルか。
+//
+// 🚨 **Lstat で見て型まで確かめる** (Stat だと symlink を辿る)。目印を symlink で用意されると、
+// 中身が別物のディレクトリを「Chromium のプロファイル」と誤認する。
+func isChromiumProfile(app string) bool {
+	if fi, err := os.Lstat(app); err != nil || !fi.IsDir() {
+		return false
+	}
+	for _, m := range chromiumProfileMarkers {
+		fi, err := os.Lstat(filepath.Join(app, m.name))
+		if err != nil || fi.IsDir() != m.dir || fi.Mode()&os.ModeSymlink != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// livenessProbes は「そのアプリが動いていれば開いているはず」のファイル。
+//
+// 🚨 **削除対象の内側にあるものを probe にしない** (敵対レビュー 2 周目 2026-09-04)。
+// 目印について「削除対象を目印に使わない」と決めたのと同じ理由で、probe も同じ規律に従う:
+// `GPUCache/index` や `Cache/Cache_Data/index` を probe にすると、**1 回削除した時点で
+// probe が消えて `appIsLive` が永久に true** になり、そのアプリのキャッシュが二度と
+// 候補に出なくなる (方向は安全側だが、直した罠の鏡像)。
+// ここに残した 2 つはどちらも削除対象の外にある。
+//
+// 実測 2026-09-04: 稼働中の Dropbox は `Local Storage/leveldb/LOCK` を開いており、
+// 停止中の Slack は 0 件。`Cache/Cache_Data/index` は稼働中でも開かれていなかったので、
+// 削除対象の内側であること以前に probe として当てにならない。
+var livenessProbes = []string{
+	filepath.Join("Local Storage", "leveldb", "LOCK"),
+	"SingletonLock",
+}
+
+// appIsLive は app のプロファイルを使っているプロセスが居るか。
+//
+// 🚨 **プロセス名を一切見ない**。以前はディレクトリ名 = プロセス名の完全一致を先読みに
+// 使っていたが、**その前提はこの機の実アプリで既に破れていた** (敵対レビュー 1 周目が実測):
+// `/Applications/VLC Multi-Video Player.app` は CFBundleExecutable が `VLCMultiVideoPlayer` で、
+// 置き場は `Multi-Video Player for Dropbox` / `Dropbox Multi-Video Player` / `Electron`。
+// `pgrep -x "Multi-Video Player for Dropbox"` は走行中でも rc=1 を返し、その 1 は
+// 「起動していない」と区別できない = **fail-open** だった。
+//
+// 🚨 先読みとして残すこともしない (2 周目)。ディレクトリ名が **ERE / オプションとして**
+// `pgrep` に渡るため、実測 2026-09-04 で 2 つの実害が出た:
+//   - `pgrep -x 'Foo['` は **rc=2** (正規表現として不正) → アプリ 1 つの名前のせいで
+//     エントリ全体が「診断できず」になり、他のアプリの候補まで消える
+//   - `pgrep -x -foo` は **rc=0** (`-f -o -o` とオプション解釈され、パターン無しで成功) →
+//     lsof を引かずに恒久 live。`Drop.ox` のような名前は ERE の `.` で別アプリに当たる
+//
+// 判定を lsof 1 本に寄せると、この面は丸ごと消える。
+//
+// 🚨 **lsof の終了コードは判定に使えない**。実測 2026-09-04: 開いているプロセスが在れば
+// rc=0、**無くても存在しないパスでも rc=1** で、混在時は出力が在っても rc=1。
+// つまり rc からは「0 件」と「見に行けなかった」を区別できないので、判定は stdout の中身で行い、
+// 実行そのものが失敗したとき (err) だけ error にして呼び出し側を fail-closed にする。
+//
+// 判定できないときは **live 扱い** (触らない側) に倒す: probe が 1 つも実在しないアプリは
+// 「開いているはずのファイル」を持たないので、不在を証明できない。
+func appIsLive(ctx context.Context, run runner.Runner, app string) (bool, error) {
+	args := []string{"-t", "--"}
+	for _, probe := range livenessProbes {
+		p := filepath.Join(app, probe)
+		if _, err := os.Lstat(p); err == nil {
+			args = append(args, p)
+		}
+	}
+	if len(args) == 2 { // probe が 1 つも無い = 不在を証明できない
+		return true, nil
+	}
+	stdout, _, _, err := runner.WithTimeout(ctx, run, cmdTimeout, "lsof", args...)
+	if err != nil {
+		return false, fmt.Errorf("lsof を実行できず: %w", err)
+	}
+	return strings.TrimSpace(stdout) != "", nil
+}
+
+// excludedRootFor は p が踏み込んでいる除外ルート (無ければ空文字)。
+//
+// 🚨 **比較は展開・正規化した絶対パスで行う**。`excludedRoots` はテンプレート (`~/...`) なので、
+// 文字列のまま比べると必ず外れる。HOME が空なら判定できない = error (fail-closed)。
+func excludedRootFor(env Env, p string) (string, error) {
+	target, err := canonicalPath(env, p)
+	if err != nil {
+		return "", err
+	}
+	for _, ex := range excludedRoots {
+		root, err := canonicalPath(env, ex)
+		if err != nil {
+			return "", err
+		}
+		// 🚨 大文字小文字を無視して比べる。APFS の既定は case-insensitive なので
+		// `~/downloads/x` と `~/Downloads/x` は同じファイル。厳密比較だと除外が外れる。
+		// case-sensitive なボリュームでは「余分に除外する」側に倒れる (安全側)
+		if strings.EqualFold(target, root) || strings.HasPrefix(strings.ToLower(target), strings.ToLower(root)+string(filepath.Separator)) {
+			return ex, nil
+		}
+	}
+	return "", nil
+}

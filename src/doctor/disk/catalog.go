@@ -89,6 +89,8 @@ const (
 	// GOMODCACHE の 1 世代しか消さないので、走査の範囲を削除の範囲に合わせる (issue 235)
 	GuardGoModcacheCurrent Guard = "go-modcache-current"
 	GuardGoModcacheOld     Guard = "go-modcache-old"
+	// Chromium 由来のキャッシュだけを残し、そのアプリが起動中のものを落とす (guard.go)
+	GuardChromiumCache Guard = "chromium-cache"
 )
 
 // Entry はカタログの 1 行。UI に出す文言 (Recover / Detail) はここにデータとして持つ。
@@ -104,6 +106,13 @@ type Entry struct {
 	Guard     Guard
 	Processes []string // GuardProcessAbsent の判定名 (完全一致。推測しない。1 つでも起動中なら blocked)
 	Inspect   bool     // 中身一覧を必ず見せる (ユーザーファイルの可能性)
+	// NotFreeable は「Size を『解放可能』の合計に足さない」印。
+	// 🚨 サイズは測れるが、**その手順を踏んでも同じ量が macOS に返るとは限らない**対象のため
+	// (docker-vm-disk: prune はイメージの中を空けるだけで .raw は縮まない)。
+	// 行にはサイズを出す (どれくらい抱えているかは知りたい) が、見出しの「合計 N 解放可能」と
+	// 起動時トーストの閾値には入れない。`go-modcache-old` のように提示した手順がそのまま
+	// その量を解放するものは、propose でもこの印を付けない
+	NotFreeable bool
 	// Unverified は「**検出条件そのものが未実測**」の印 (空でなければ未検証。中身は短い理由)。
 	// 走査は正常に終わっているので Status は ok のままだが、**0 件を「候補なし」と読んではいけない**
 	// エントリを区別する。表示側は 0 件でもこの行を隠さない (隠すと「探せていない」が
@@ -204,6 +213,52 @@ var catalog = []Entry{
 		Recover: "各ツール (rod / chrome-devtools-mcp) が再ダウンロードします", Paths: []string{"~/.cache/rod", "~/.cache/chrome-devtools-mcp"}},
 	{ID: "node-gyp-cache", Label: "node-gyp ヘッダキャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "次回ネイティブビルドで再取得されます", Paths: []string{"~/Library/Caches/node-gyp"}},
+	// Electron / Chromium アプリの HTTP・コード・GPU キャッシュ。**この機で最大の未カバー領域**
+	// (実測 2026-09-04: 合計 2.7GB。Slack 1.7GB / Multi-Video Player 系 509MB / Electron 495MB)。
+	//
+	// 🚨 **`~/Library/Application Support/*` に glob を張る唯一のエントリ**なので、2 つの絞り込みを
+	// guard で必ず通す (catalog に書いた glob だけでは危ない):
+	//   - **Chromium 由来だと確かめる**。同じ階層に `Code Cache` / `Preferences` / `Local Storage` が
+	//     揃うことを見る (実測 2026-09-04: `Cache` を持つ 6 アプリすべてで 4 点セットが揃っていた)。
+	//     Chromium でないアプリの `Cache` に価値あるものが入っている可能性を切る
+	//   - **起動中のアプリは外す**。Chromium は走行中に書き続けるので、消すと不整合を起こす
+	//     (`chrome-tmp` と同じ理由)。判定はアプリのディレクトリ名 = プロセス名の完全一致
+	//
+	// 🚨 **mtime では起動中を判定できない** (実測 2026-09-04): 稼働中の Dropbox を含む全 6 アプリの
+	// `Cache` ディレクトリの mtime が 39 日前の起動時刻より古かった (Chromium は配下のファイルを
+	// 書き換えるのでディレクトリの mtime が動かない)。GuardBoottime をここに使ってはいけない。
+	// 🚨 `Unverified` を付けてある = **0 件でも行を畳まない**。目印 (Chromium 由来かの判定) は
+	// この機の 6 件で確かめただけの経験則なので、Electron がプロファイルの形を変えたら
+	// **全アプリが目印で落ちて候補 0 件**になる。畳むとそれが「候補なし = きれい」と
+	// 同じ見え方になり、2.3GB が画面から消える (敵対レビュー 2 周目)。
+	// 起動中で全滅したときは blocked (guard 側) が受けるが、**形状で全滅した場合はここが受ける**
+	{ID: "chromium-cache", Label: "Electron アプリのキャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
+		Recover: "アプリが次に必要としたとき再取得されます", Detail: "起動中のアプリのぶんは候補から外れる (終了して r で再スキャン)",
+		Unverified: "Chromium の目印 (Preferences / Local Storage) は 1 機 6 件の実測。形が変われば黙って 0 件になる",
+		Paths: []string{
+			"~/Library/Application Support/*/Cache",
+			"~/Library/Application Support/*/Code Cache",
+			"~/Library/Application Support/*/GPUCache",
+			// 🚨 `Service Worker/CacheStorage` は**意図的に載せない** (敵対レビュー 2026-09-04。
+			// この機では Slack の 408MB が該当するが見送る): Cache API は**アプリが任意のデータを
+			// 置ける場所**で、認証が要る資産やもう配信されていないメディアが入りうる。
+			// 「アプリが次に必要としたとき再取得されます」を無条件には言えないので、
+			// Risk: safe / rm の枠に入れられない。載せるなら別エントリ (caution) にして、
+			// 中身が再取得できることを実測してから
+		}, Guard: GuardChromiumCache},
+	// 現在このカタログを作った機には**存在しない**が、性質で登録する (issue 218 の「不在を却下理由に
+	// しない」。実測 2026-09-04 時点で 0 件 = 畳まれる)。どちらも Xcode が再生成する純キャッシュで、
+	// 溜まるときは GB 単位になる
+	{ID: "xcode-doccache", Label: "Xcode ドキュメントキャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
+		Recover: "Xcode がドキュメントを開いたとき再取得されます",
+		Paths:   []string{"~/Library/Developer/Xcode/DocumentationCache/*"}},
+	// 🚨 起動中のシミュレータがあるときは触らない (敵対レビュー 2026-09-04)。dyld キャッシュは
+	// 再生成されるのでデータは失わないが、走行中のシミュレータではアプリの起動が失敗しうる。
+	// 他のシミュレータ系エントリが guard を持つのにここだけ素通しだった
+	{ID: "coresimulator-caches", Label: "シミュレータの dyld キャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
+		Recover: "シミュレータを次に起動したとき再生成されます (初回起動が遅くなるだけ)",
+		Paths:   []string{"~/Library/Developer/CoreSimulator/Caches/*"},
+		Guard:   GuardProcessAbsent, Processes: []string{"Simulator"}},
 	// --- Tier 2: 残骸 (孤児判定が要る) ---
 	{ID: "xctest-logarchive", Label: "XCTest ログ (/var/tmp/*.logarchive)", Tier: 2, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "特定のテストセッションの産物。再生成されません (不要)", Detail: "最終起動より古いものだけ。/var/tmp は再起動で消えない",
@@ -289,6 +344,19 @@ var catalog = []Entry{
 		//   再開の trigger: anyenv 配下の残骸で実際に容量を食っているのを見たとき。そのときは
 		//   このカタログではなく「anyenv の台帳 (`anyenv versions`) と突合する」別の判定が要る
 		Paths: []string{"~/.rbenv", "~/.nodenv", "~/.goenv"}, Guard: GuardVMRoot},
+	// Docker Desktop の VM ディスクイメージ。実測 2026-09-04: 1,035MB。
+	// 🚨 **rm しない / 数字は「イメージの大きさ」であって解放できる量ではない** (だから NotFreeable)。`docker system prune` は
+	// **イメージの中**を空けるだけで .raw は縮まず、macOS 側に容量が戻るのは Docker Desktop の
+	// "Clean / Purge data" か .raw ごと消したときだけ (消すとイメージ・コンテナ・ボリュームが全部消える)。
+	// だから `propose` (コマンドを出すだけ。`go-modcache-old` と同じ扱い) にしてある
+	// Risk が confirm でなく caution なのは、**engine が confirm × 非 trash を拒否する**ため
+	// (delete.go の「risk: confirm はゴミ箱移動でなければ削除しません」)。propose はそもそも
+	// ツールが何も触らない経路なので、`go-modcache-old` と同じ組み合わせに揃える。
+	// 失うものの説明は Recover に置いてあり、そちらは常に表示される
+	{ID: "docker-vm-disk", Label: "Docker の VM ディスクイメージ", Tier: 2, Risk: RiskCaution, DeleteVia: "propose", NotFreeable: true,
+		Recover: "消すとイメージ・コンテナ・ボリュームが全部消えます (再取得・再ビルドが要る)",
+		Detail:  "prune では .raw は縮まない。容量を戻すには Docker Desktop の Clean/Purge data",
+		Paths:   []string{"~/Library/Containers/com.docker.docker/Data/vms/*/data/Docker.raw"}},
 	// --- Tier 3: アプリ起動中は触らない ---
 	// glob は Canary / Beta / Dev の tmp (.com.google.Chrome.canary.* 等) にも当たるので、プロセス判定も全系列を見る
 	// (Stable 終了・Canary 起動中に Canary の生きた tmp を消さない。敵対レビュー 2026-09-02)

@@ -186,7 +186,7 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 	// exhaustive (.golangci.yml) がそれを強制する: 新しい Guard をどちらにも書き忘れると
 	// guard が 1 つも適用されないまま候補になる (fail-open)。
 	case GuardNone, GuardBoottime, GuardSimDevice, GuardOrphanApp, GuardBrewOrphan, GuardVMRoot,
-		GuardGoModcacheCurrent, GuardGoModcacheOld:
+		GuardGoModcacheCurrent, GuardGoModcacheOld, GuardChromiumCache:
 	}
 	// $BREW_PREFIX を使うエントリは brew --prefix を実測してから展開する (直書きしない: issue 176)。
 	// 取れなければ fail-closed (候補 0 件に畳まない)。
@@ -304,6 +304,51 @@ func scanEntry(ctx context.Context, opt Options, g *guards, e Entry) Result {
 			}
 		}
 		paths = kept
+	case GuardChromiumCache:
+		// 🚨 この guard は **2 つ**を同時に見る。片方だけでは足りない理由は catalog.go に書いた。
+		// pgrep が失敗したら fail-closed (「起動中かもしれない」ので候補にしない)。
+		kept := paths[:0]
+		live := map[string]bool{}  // アプリ 1 つにつき 1 回だけ判定する (lsof は 1 回 0.15 秒)
+		known := map[string]bool{} // 判定済みか (live[app] が false のときと区別する)
+		for _, p := range paths {
+			app, ok := appSupportChild(opt.Env, p)
+			if !ok {
+				// Application Support 配下でないものがこの guard に来るのは配線の誤り。
+				// 候補にせず落とす (推測で消さない)
+				continue
+			}
+			if !isChromiumProfile(app) {
+				continue
+			}
+			if !known[app] {
+				l, err := appIsLive(ctx, opt.Run, app)
+				if err != nil {
+					return failed(e, "起動中かどうかを判定できず (候補にしない): "+err.Error())
+				}
+				live[app], known[app] = l, true
+			}
+			if !live[app] {
+				kept = append(kept, p)
+			}
+		}
+		// 🚨 **全部が「起動中」で落ちたら blocked にする** (敵対レビュー 2026-09-04)。
+		// 黙って候補 0 件にすると `Foldable` が行ごと畳み、2.7GB が「候補なし = きれい」と
+		// 同じ見え方になる (Slack と Dropbox を常駐させていれば普通に起きる)。
+		// 起動中で触らないことを見せる形は `chrome-tmp` (GuardProcessAbsent) と揃える。
+		if len(kept) == 0 && len(live) > 0 {
+			names := make([]string, 0, len(live))
+			for app, l := range live {
+				if l {
+					names = append(names, filepath.Base(app))
+				}
+			}
+			if len(names) > 0 {
+				sort.Strings(names)
+				return Result{Entry: e, Status: StatusBlocked,
+					Reason: strings.Join(names, " / ") + " 起動中のため対象外 (終了して r で再スキャン)"}
+			}
+		}
+		paths = kept
 	// 絞り込みが無い (GuardNone) か、上の switch で処理済み。理由は上の case 群のコメント
 	case GuardNone, GuardSimRuntime, GuardBrewCleanup, GuardProcessAbsent:
 	}
@@ -330,6 +375,18 @@ func sizePaths(ctx context.Context, opt Options, e Entry, paths []string) Result
 		vp, err := validateTarget(opt.Env, p)
 		if err != nil {
 			r.Failures = append(r.Failures, "対象パスを拒否: "+err.Error())
+			continue
+		}
+		// 🚨 **除外リストは実行時にも効かせる** (2026-09-04)。以前は `excludedRoots` を
+		// テストが**テンプレート文字列**に対してだけ照合していたので、glob を張った瞬間に
+		// 素通りする: `~/Library/Application Support/*/Cache` は静的には
+		// `~/Library/Application Support/Google` で始まらないが、**展開すると中に入りうる**。
+		// 展開後のパスをここで落とす (エントリ全体を止めない: 他のアプリのぶんは正当な候補)。
+		if ex, err := excludedRootFor(opt.Env, vp); err != nil {
+			r.Failures = append(r.Failures, "除外判定ができず: "+err.Error())
+			continue
+		} else if ex != "" {
+			r.Failures = append(r.Failures, "除外リスト ("+ex+") に踏み込むので対象外: "+vp)
 			continue
 		}
 		it, err := duSize(ctx, vp, seen)
@@ -392,7 +449,9 @@ func scanSimRuntimes(ctx context.Context, opt Options, e Entry) Result {
 func SumDeletable(results []Result) int64 {
 	var total int64
 	for _, r := range results {
-		if r.Status == StatusOK {
+		// NotFreeable は「測れるが、その手順で同じ量が返るとは限らない」対象なので足さない
+		// (行にはサイズを出す)。この合計は見出しの「解放可能」と起動時トーストの閾値になる
+		if r.Status == StatusOK && !r.Entry.NotFreeable {
 			total += r.Size
 		}
 	}

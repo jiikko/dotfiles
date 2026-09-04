@@ -200,7 +200,9 @@ func doctorCacheFromReport(rep disk.Report, prev doctorDiskCache) doctorDiskCach
 		c.Entries = append(c.Entries, e)
 		switch e.Status {
 		case string(disk.StatusOK):
-			c.Total += e.Size
+			if !diskNotFreeable(e.ID) {
+				c.Total += e.Size
+			}
 		case string(disk.StatusFailed):
 			c.Failed++
 		}
@@ -272,6 +274,21 @@ func markDoctorNotified(now time.Time) {
 //
 // 合計と件数は**残ったエントリから引き直す**。細工した Total をそのまま使うと、
 // エントリを落としても「99GB 解放できます」が残る。
+// diskNotFreeable は「その ID は『解放可能』の合計に足さない」か。
+//
+// 🚨 **キャッシュにフィールドを増やさず、毎回カタログへ聞く**。キャッシュは一般ユーザー権限で
+// 書き換えられるので、印を保存すると細工で合計に混ぜ返せる (issue 178 / 229 と同じ理由)。
+// カタログに無い ID は sanitizeDiskCache が先に落とすので、ここは false でよい。
+//
+// 🚨 **合計を出す箇所は 3 つある** (doctorCacheFromReport / sanitizeDiskCache / doctorTopEntries)。
+// disk.SumDeletable とは別実装なので、あちらだけ直しても**トーストには効かない**
+// (敵対レビュー 2 周目 2026-09-04: prune では縮まないと書いた Docker の 1GB が
+// 「N 解放できます」に混ざり、上位 2 件の内訳に名指しで出ていた)。
+func diskNotFreeable(id string) bool {
+	e, ok := disk.CatalogEntry(id)
+	return ok && e.NotFreeable
+}
+
 func sanitizeDiskCache(c doctorDiskCache) doctorDiskCache {
 	out := c
 	out.Entries = make([]doctorDiskCacheEntry, 0, len(c.Entries))
@@ -287,7 +304,9 @@ func sanitizeDiskCache(c doctorDiskCache) doctorDiskCache {
 		// blocked は合計にも診断できず件数にも入らないので、書くと「何もしない case」が増える
 		switch e.Status {
 		case string(disk.StatusOK):
-			out.Total += e.Size
+			if !diskNotFreeable(e.ID) {
+				out.Total += e.Size
+			}
 		case string(disk.StatusFailed):
 			out.Failed++
 		}
@@ -343,7 +362,8 @@ func doctorTopEntries(c doctorDiskCache, n int) string {
 	var parts []string
 	rest := 0
 	for _, e := range c.Entries {
-		if e.Status != string(disk.StatusOK) || e.Size == 0 {
+		// 解放可能として名指しで出す一覧なので、合計と同じ基準で外す
+		if e.Status != string(disk.StatusOK) || e.Size == 0 || diskNotFreeable(e.ID) {
 			continue
 		}
 		if len(parts) < n {
