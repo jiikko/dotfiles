@@ -148,3 +148,68 @@ doctor / rlDash で usage を効かせないのが意図なら、その 1 行の
 - `~/.claude/rules/comment-no-restate-enforced.md` — 「実装で強制できない制約」をコメントに残す規律。
   本件は**強制できるようにする** (レジストリ + テーブル駆動テスト) 方向
 - `~/.claude/rules/verify-design-intent-before-refactor.md` — 却下済みの分解を逆転提案しないための確認手順
+
+---
+
+## 対応 (2026-09-04, dotfiles-c2)
+
+commit: `b2a03593` (構造) → `2dfd3972` (敵対的レビューの指摘)。
+**応急 (対応方針 1) は着手前に別セッションが済ませていた** (`c973646e`。issue が `issues/` に
+残ったままだったので、着手時に git 履歴を見るまで気づかなかった)。
+
+### やったこと (対応方針 2 / 3)
+
+- `src/glogx/fullscreen.go`: `fullScreenID` (none / ratelimit / doctor / status / issues +
+  番兵 `fullScreenCount`) と `activeFullScreen()` / `fullScreenActive()`
+- **「開いているか」を問う 5 サイトを全部そこから導出**: 見送り (`gitLogReloadDeferred`) /
+  描画 (`viewLines`) / 最下行 (`hintLine`) / 復元の破棄 (`issuesRestoreMsg`) /
+  キーの routing (`handleKey`)
+- `handleKey` の 4 ブロックを `routeKeyToDoctor` / `routeKeyToRatelimitDash` /
+  `routeKeyToIssues` / `routeKeyToStatus` へ切り出し、dispatch を 1 つの switch に
+  (位置と理由の記述も 4 箇所の重複から dispatch 1 箇所へ)
+- **`U` の非対称を解消** (方針 3): doctor でも `U` が効くようにした (issues / status と同じ契約。
+  `ownsKeys()` 中は横取りごと飛ばす)。残量ダッシュボードは「同じ Snapshot を全画面で描いたもので、
+  右上に小さい方を重ねると同じ値が 2 か所に出る」ため**意図的に受けない** — その旨をコードに明記
+
+### 配線漏れの止め方 (3 段)
+
+1. **lint**: `exhaustive` が「default なし switch は enum 全 case」を強制 → ID を足すと
+   全サイトが `make lint` で赤くなる (🚨 この switch に `default:` を書くと外れる。明記済み)
+2. **テスト**: ID ごとに 5 サイトの**挙動**を通す表 (`fullscreen_test.go`)
+3. **AST ゲート**: `viewLines` 内の `finishWithGlobalChrome` は switch の中に ID の数ちょうど
+   + 一覧の 1 本だけ。**ID を足さずに `if` で描画を配線する形**を止める (下記 P1)
+
+### 敵対的レビュー (opus / read-only) の結果
+
+**挙動の非等価は 1 つも作れなかった** (5 サイトで旧実装との等価を機械照合。順序が変わった
+`handleKey` については「2 枚同時 shown」が到達不能であることを `shown = true` の全代入箇所から
+網羅確認)。壊れたのは**強制手段の射程**:
+
+- **P1**: 上の 1・2 は **ID を足した後にしか発火しない**。switch の前に
+  `if m.newOv.visible()` を挿す旧来のやり方だと、描画・hint・routing は効くのに見送りと復元
+  だけが黙って壊れる (= issue 227 と同じ形)。→ AST ゲート (3 段目) を追加し、
+  **検出しない形**を脅威モデルとして `fullscreen.go` に明記した
+- **P2**: 復元の破棄は「捨てる」側しかテストが無く、「常に捨てる」変異が全パッケージを素通り
+  していた → 対称のケースを追加
+- **P2**: 描画の検査が「一覧が出ていない」しか見ておらず、**ビューアの取り違え**
+  (viewLines の doctor ↔ status を入れ替える変異) を素通りしていた → 表に識別行を追加
+- **P3** 3 件 (alloc の余裕の数字が古い / `gitlog_watch.go` の doc が 4 枚を手書き列挙 /
+  `hintLine` が actModal より前に return する選択の理由が無い) を修正
+
+### 却下・見送り (再提案しないこと)
+
+- **interface + 順序つきスライスのレジストリ** (issue の「もう一段」案) は採らない。
+  4 つの `lines` / `hint` / routing はシグネチャも戻り値の語彙も別々でアダプタが要り、
+  複雑性は下がらないまま**毎フレームの確保が増える** (m を捕まえた closure はスライスへ
+  逃げるので必ずヒープに乗る)。1 フレームの確保には上限があり、issues-40 は実測 211 /
+  上限 213 = **余裕 2 回**しかない。enum の switch は確保 0 (敵対レビューが 8 ケースで実測)
+- **開閉演出の共通化**は含めない (issue 071 で却下済み。本 issue の範囲は membership と
+  routing プロトコルだけ)
+- **`default:` を禁じる ruleguard** は書かなかった (コメントで警告するに留めた)。
+  同種の「機械化できるがまだしていない」項目として **issue 251** に記録
+- **表の `show` が `toggle()` を迂回している** (開く演出中・スキャン未起動の状態を通らない)。
+  今回の assert が vacuous になる形は見つかっていないので優先度低。将来 chrome 合成の事故を
+  追うときは fixture の現実性を上げる候補
+- **dispatch の取り違え (issues ↔ status を入れ替える変異)** は、今の 4 枚については既存の
+  20 本超が red になるので追加していない。5 枚目にはそれが無いので、**識別まで見るのは描画と
+  hint の 2 サイトだけ**という射程を記録しておく
