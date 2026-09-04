@@ -2131,66 +2131,60 @@ func TestDoctorMarkWidthCoversVocabulary(t *testing.T) {
 	}
 }
 
-// h / l で木を開閉する。**l は開くだけ / h は閉じるだけ**にして、Enter (トグル) と役割を分ける
-// (押し間違いで意図と逆に動かない)。repo 全体で l/right = 開く・進む、h/left = 閉じる・戻る。
-func TestDoctorOpenCloseWithHL(t *testing.T) {
+// h / l はタブ移動 (issues viewer と同じ語彙: tab/l/right = 次、shift+tab/h/left = 前)。
+// 木の開閉は Enter に一本化してある。
+func TestDoctorHLMovesTabs(t *testing.T) {
 	v := doctorTestView(t)
 	runDoctorCmds(t, v, v.open())
-	_ = v.lines(doctorTestOpts(40))
+	_ = v.lines(doctorTestOpts(20))
+
+	for _, want := range []doctorTab{tabSvc, tabBrew, tabDisk} {
+		v.handleKey("l", 20)
+		if v.tab != want {
+			t.Fatalf("l で %v へ行かない: %v", want, v.tab)
+		}
+	}
+	for _, want := range []doctorTab{tabBrew, tabSvc, tabDisk} {
+		v.handleKey("h", 20)
+		if v.tab != want {
+			t.Fatalf("h で %v へ戻らない: %v", want, v.tab)
+		}
+	}
+	// 矢印も同じ
+	v.handleKey("right", 20)
+	if v.tab != tabSvc {
+		t.Errorf("right でタブが動かない: %v", v.tab)
+	}
+	v.handleKey("left", 20)
+	if v.tab != tabDisk {
+		t.Errorf("left でタブが戻らない: %v", v.tab)
+	}
+
+	// 🚨 h/l を移動へ渡したので、**開閉は Enter だけ**が持つ。
+	// 開いている行で h を押しても畳まれない (タブが動くだけ) ことまで固定する
+	v.tab = tabDisk
+	_ = v.lines(doctorTestOpts(20))
 	parent := v.rows[v.cur.index].key
-	if !strings.HasPrefix(parent, "disk:") {
-		t.Fatalf("初期カーソルが disk のエントリ行にない: %q", parent)
-	}
-
-	// l: 開く + カーソルは中の対象パスへ (Enter と同じ着地)
-	v.handleKey("l", 40)
-	_ = v.lines(doctorTestOpts(40))
+	v.handleKey("enter", 20)
 	if !v.expanded[parent] {
-		t.Fatal("l で開かない")
+		t.Fatal("Enter で開かない")
 	}
-	if !strings.HasPrefix(v.rows[v.cur.index].key, "diskitem:") {
-		t.Errorf("l の後にカーソルが中へ移っていない: %q", v.rows[v.cur.index].key)
-	}
-
-	// l は開くだけ: 既に開いている行で押しても閉じない
-	v.cur.jumpTo(v.rows, parent)
-	v.handleKey("l", 40)
-	_ = v.lines(doctorTestOpts(40))
+	v.handleKey("h", 20) // タブが動くだけ
 	if !v.expanded[parent] {
-		t.Error("開いている行で l を押したら閉じた (l は開く方向だけのはず)")
+		t.Error("h で畳まれた (h はタブ移動のはず)")
 	}
-
-	// h: 対象パスの行では親を畳んでカーソルを親へ戻す
-	v.cur.jumpTo(v.rows, "diskitem:")
-	v.handleKey("h", 40)
-	_ = v.lines(doctorTestOpts(40))
-	if v.expanded[parent] {
-		t.Error("対象パスの行で h を押しても親が畳まれない")
+	v.handleKey("l", 20) // 戻る
+	if v.tab != tabDisk {
+		t.Fatalf("タブが戻らない: %v", v.tab)
 	}
-	if v.cur.key != parent {
-		t.Errorf("h の後にカーソルが親へ戻っていない: %q", v.cur.key)
-	}
-
-	// h は閉じるだけ: 閉じている行で押しても開かないし、**viewer ごと閉じない**
-	// (他の viewer では h が viewer を閉じるが、doctor の h は木の開閉。抜けるのは D/q/esc)
-	if act := v.handleKey("h", 40); act == doctorClosed || !v.visible() {
-		t.Errorf("閉じている行の h で viewer ごと閉じた (act=%v visible=%v)", act, v.visible())
-	}
-	if v.expanded[parent] {
-		t.Error("閉じている行で h を押したら開いた")
-	}
-
-	// 開いた行で h を押すと畳む (カーソルが親に居る場合)
-	v.handleKey("l", 40)
 	v.cur.jumpTo(v.rows, parent)
-	v.handleKey("h", 40)
-	_ = v.lines(doctorTestOpts(40))
+	v.handleKey("enter", 20)
 	if v.expanded[parent] {
-		t.Error("親の行で h を押しても畳まれない")
+		t.Error("もう一度 Enter で畳まれない")
 	}
 
-	if h := v.hint(120); !strings.Contains(h, "h/l") {
-		t.Errorf("hint に h/l が出ていない: %q", h)
+	if h := v.hint(120); strings.Contains(h, "h/l") {
+		t.Errorf("hint がまだ h/l を開閉として案内している: %q", h)
 	}
 }
 

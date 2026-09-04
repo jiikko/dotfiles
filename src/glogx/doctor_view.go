@@ -528,9 +528,12 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 			return doctorToast
 		}
 		return doctorSwallow
-	case "tab":
+	case "tab", "l", "right":
+		// 🚨 h/l は**タブ移動**。issues viewer が同じ語彙を持つ (tab/l/right = 次、
+		// shift+tab/h/left = 前) ので、画面をまたいで意味を揃える (ユーザー選定 2026-09-04)。
+		// 木の開閉は Enter に一本化した (開いた行で Enter がそのまま畳む)
 		v.moveTab(1)
-	case "shift+tab":
+	case "shift+tab", "h", "left":
 		v.moveTab(-1)
 	case "d":
 		if v.tab != tabDisk {
@@ -585,27 +588,6 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 			} else {
 				v.openRow(k)
 			}
-		}
-	case "l", "right":
-		// 開く方向だけ (Enter と違って閉じない)。既に開いているなら中の対象パスへ入る。
-		// repo 全体で l/right = 開く・進む、h/left = 閉じる・戻る の語彙 (issues viewer /
-		// diff / job 詳細 / 残量ダッシュボードが同じ)。doctor だけ持っていなかった
-		if k, ok := v.expandableRow(); ok {
-			if !v.expanded[k] {
-				v.openRow(k)
-			} else {
-				v.enterDetail = k // 既に開いている: 中へ移す
-			}
-		}
-	case "h", "left":
-		// 閉じる方向だけ。**開いていない行では何もしない** (viewer ごと閉じない)。
-		// 他の viewer では h が viewer を閉じるが、doctor の h は木の開閉なので
-		// 意味を重ねない。抜ける手段は D/q/esc が持っている
-		if v.collapseParent() {
-			return doctorSwallow
-		}
-		if k, ok := v.expandableRow(); ok && v.expanded[k] {
-			delete(v.expanded, k)
 		}
 	case "y", "Y":
 		if v.cur.index < 0 || v.cur.index >= len(v.rows) || !v.rows[v.cur.index].selectable {
@@ -667,7 +649,7 @@ func (v *doctorView) hint(width int) string {
 		// サービスは選択も実行も持たない (壊れた登録は見て直すだけ)
 	}
 	items = append(items, []hintItem{
-		{"Enter/h/l: 開閉", 4}, // 開くと対象パスへカーソルが移り、そこでも Space で選べる
+		{"Enter: 開閉", 4}, // 開くと対象パスへカーソルが移り、そこでも Space で選べる
 		{"y: パスをコピー", 5},
 		{"Y: 解説をコピー", 6},
 		{"r: 再スキャン", 5},
@@ -759,9 +741,7 @@ func (v *doctorView) headerLine(o doctorRenderOpts) string {
 
 // moveTab はタブを送る。カーソルはタブごとに覚える (戻ったときに元の行に居る)。
 //
-// 🚨 h/l はタブ移動に使わない。doctor では**木の開閉**に割り当ててある (ユーザー要望
-// 2026-09-04) ので、issues viewer の h/l = タブ移動とは意味が割れる。両方を満たせないので、
-// この画面では「木がある」方を優先し、タブは tab / shift+tab だけにする。
+// h/l / left/right / tab も同じ入口 (issues viewer と同じ語彙)。
 func (v *doctorView) moveTab(d int) {
 	v.tabCur[v.tab] = v.cur
 	n := (int(v.tab) + d + numDoctorTabs) % numDoctorTabs
@@ -788,7 +768,7 @@ func (v *doctorView) tabBarLine(o doctorRenderOpts) string {
 	line := " " + strings.Join(parts, doctorColor(o.colored, ansiDim, "│"))
 	// 🚨 切り替えのキーは**タブ行の隣**に置く。hint に足すと幅の予算を食って
 	// 「r: 再スキャン」のような常に使える手を押し出す (実測でそうなった)
-	if hintText := "  (tab で切替)"; dispWidth(line)+dispWidth(hintText) <= o.width {
+	if hintText := "  (tab / h l で切替)"; dispWidth(line)+dispWidth(hintText) <= o.width {
 		line += doctorColor(o.colored, ansiDim, hintText)
 	}
 	return line
