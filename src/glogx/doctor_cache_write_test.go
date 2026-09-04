@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -23,50 +25,85 @@ import (
 // (この package の `t.Parallel()` は 2 箇所だけで、どちらも「足せない」と注記済み)。
 // 失敗しても必ず戻すため defer で復元する。
 func TestSaveDoctorCachesCleanTempOnWriteFailure(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
+	cases := map[string]struct {
 		tmpName string // err に載る temp 名 (出所が読めることの検証)
 		save    func() error
 	}{
-		{"disk cache", "doctor-disk.json.tmp.", func() error { return saveDoctorDiskCache(doctorDiskCache{Total: 1}) }},
-		{"snapshot", "doctor-snapshot.json.tmp.", func() error { return saveDoctorSnapshot(doctorSnapshot{}) }},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
+		"disk-cache": {"doctor-disk.json.tmp.", func() error { return saveDoctorDiskCache(doctorDiskCache{Total: 1}) }},
+		"snapshot":   {"doctor-snapshot.json.tmp.", func() error { return saveDoctorSnapshot(doctorSnapshot{}) }},
+	}
+	// 子プロセス側: 自分の枠を落として実際に検査する
+	if name := os.Getenv(rlimitChildEnv); name != "" {
+		tc, ok := cases[name]
+		if !ok {
+			t.Fatalf("未知のケース: %s", name)
+		}
+		checkWriteFailureCleansTemp(t, tc.tmpName, tc.save)
+		return
+	}
+	for name := range cases {
+		t.Run(name, func(t *testing.T) {
 			base := t.TempDir()
-			t.Setenv("XDG_CACHE_HOME", base) // cachedir.Base() が見る。t.Parallel は使わない
-
-			var lim syscall.Rlimit
-			if err := syscall.Getrlimit(syscall.RLIMIT_FSIZE, &lim); err != nil {
-				t.Fatalf("判定不能: Getrlimit が失敗した: %v", err)
+			// 🚨 **子プロセスで走らせる**。RLIMIT_FSIZE はプロセス全体に効くので、同じプロセスで
+			// 落とすと `go test` 自身の testlog 書き込みが EFBIG になり、テストが全部 PASS でも
+			// パッケージが FAIL する (実測 2026-09-04: origin/master で再現。タイミング依存なので
+			// 緑の run もある)。os.Args[0] の直接起動なら -test.testlogfile が渡らないので、
+			// 枠を落としても framework は壊れない
+			cmd := exec.Command(os.Args[0], "-test.run", "^TestSaveDoctorCachesCleanTempOnWriteFailure$", "-test.v")
+			// 🚨 テスト名はリテラル。改名すると -test.run が何にも当たらず、子は PASS を
+			// 出さないので下の「走っていない」で落ちる (fail-closed)
+			cmd.Env = append(os.Environ(), rlimitChildEnv+"="+name, "XDG_CACHE_HOME="+base)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("子プロセスが失敗した: %v\n%s", err, out)
 			}
-			if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &syscall.Rlimit{Cur: 0, Max: lim.Max}); err != nil {
-				t.Fatalf("判定不能: RLIMIT_FSIZE を 0 にできない: %v", err)
-			}
-			err := tc.save()
-			if rerr := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &lim); rerr != nil {
-				t.Fatalf("RLIMIT_FSIZE を戻せなかった (以降のテストが壊れる): %v", rerr)
-			}
-
-			if err == nil {
-				t.Fatal("write が失敗するはずの構成でエラーが返らない")
-			}
-			// 「判定不能」を緑にしない: CreateTemp 段で落ちていると write 分岐を通っていない
-			// (実測: ディレクトリを 0o500 にする形は CreateTemp が permission denied で落ちる)
-			if !strings.Contains(err.Error(), "file too large") {
-				t.Fatalf("判定不能: write 分岐に到達していない (err=%v)", err)
-			}
-			// err には temp のフルパスが載る。**名前から出所が読めること**をここで固定する
-			// (残骸を掃く経路が無いので名前が唯一の手がかり。`*.tmp.*` の 1 glob で掃ける形)
-			if !strings.Contains(err.Error(), tc.tmpName) {
-				t.Errorf("temp の名前から出所が読めない: err=%v (期待: %s を含む)", err, tc.tmpName)
-			}
-			leftovers, gerr := filepath.Glob(filepath.Join(base, "glog", "*.tmp.*"))
-			if gerr != nil {
-				t.Fatal(gerr)
-			}
-			if len(leftovers) != 0 {
-				t.Errorf("write 失敗後に temp が残っている: %v", leftovers)
+			// 子の中で assert しているので、ここでは「走ったこと」を確認する
+			// (実行されていないのに緑、を作らない)
+			if !strings.Contains(string(out), "PASS") {
+				t.Fatalf("子プロセスが走っていない:\n%s", out)
 			}
 		})
+	}
+}
+
+// rlimitChildEnv は「この実行は枠を落とす子プロセス」の目印 (値はケース名)。
+const rlimitChildEnv = "GLOGX_TEST_RLIMIT_CASE"
+
+// checkWriteFailureCleansTemp は RLIMIT_FSIZE を 0 にして save を呼び、
+// write 分岐を通ったこと・temp が残らないことを確かめる (子プロセスでのみ呼ぶ)。
+func checkWriteFailureCleansTemp(t *testing.T, tmpName string, save func() error) {
+	t.Helper()
+	base := os.Getenv("XDG_CACHE_HOME")
+	if base == "" {
+		t.Fatal("判定不能: XDG_CACHE_HOME が渡っていない")
+	}
+	var lim syscall.Rlimit
+	if err := syscall.Getrlimit(syscall.RLIMIT_FSIZE, &lim); err != nil {
+		t.Fatalf("判定不能: Getrlimit が失敗した: %v", err)
+	}
+	if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &syscall.Rlimit{Cur: 0, Max: lim.Max}); err != nil {
+		t.Fatalf("判定不能: RLIMIT_FSIZE を 0 にできない: %v", err)
+	}
+	err := save()
+	if rerr := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &lim); rerr != nil {
+		t.Fatalf("RLIMIT_FSIZE を戻せなかった: %v", rerr)
+	}
+	if err == nil {
+		t.Fatal("write が失敗するはずの構成でエラーが返らない")
+	}
+	// 「判定不能」を緑にしない: CreateTemp 段で落ちていると write 分岐を通っていない
+	if !strings.Contains(err.Error(), "file too large") {
+		t.Fatalf("判定不能: write 分岐に到達していない (err=%v)", err)
+	}
+	// err には temp のフルパスが載る。**名前から出所が読めること**をここで固定する
+	if !strings.Contains(err.Error(), tmpName) {
+		t.Errorf("temp の名前から出所が読めない: err=%v (期待: %s を含む)", err, tmpName)
+	}
+	leftovers, gerr := filepath.Glob(filepath.Join(base, "glog", "*.tmp.*"))
+	if gerr != nil {
+		t.Fatal(gerr)
+	}
+	if len(leftovers) != 0 {
+		t.Errorf("write 失敗後に temp が残っている: %v", leftovers)
 	}
 }

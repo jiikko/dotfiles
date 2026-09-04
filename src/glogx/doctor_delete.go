@@ -804,9 +804,9 @@ func (v *doctorView) confirmLines(o doctorRenderOpts) (blocks [][]string, tail [
 			out = append(out, deleteNote(o, fmt.Sprintf("%d 件を削除", len(planned))))
 		}
 		if !skipped {
-			if dropped > 0 {
+			if len(dropped) > 0 {
 				// 黙って省かない (件数が減った理由が読めないと下見の結果を確かめられない)
-				out = append(out, deleteNote(o, fmt.Sprintf("他 %d 件は対象外 (走査時と実体が変わりました)", dropped)))
+				out = append(out, droppedNote(o, dropped))
 			}
 			out = append(out, deleteCommandLines(o, e)...)
 			out = append(out, deletePathLines(o, e)...)
@@ -835,7 +835,13 @@ func deleteCommandLines(o doctorRenderOpts, e disk.EntryOutcome) []string {
 	if e.Method == "propose" {
 		return []string{deleteNote(o, "実行しません。手で叩いてください: "+cleanOneLine(e.Command))}
 	}
-	cmds := e.CommandLines()
+	// 🚨 コマンド行も**実際に実行する Item だけ**から作る (issue 233 の敵対レビュー P2-1)。
+	// EntryOutcome.CommandLines は全 Item を回すが、execCLI は `Outcome != OutcomePlanned` を
+	// 飛ばす (delete.go)。件数とパスだけ絞ると「1 件にコマンドを実行」の下にコマンドが 2 本
+	// 並ぶ形になり、この関数の doc が言う「確認に出した形と実行する形が同じ」が崩れる
+	planned := e
+	planned.Items, _ = plannedItems(e)
+	cmds := planned.CommandLines()
 	out := make([]string, 0, min(len(cmds), maxConfirmPaths)+1)
 	for i, c := range cmds {
 		if i >= maxConfirmPaths {
@@ -858,15 +864,39 @@ func deleteCommandLines(o doctorRenderOpts, e disk.EntryOutcome) []string {
 // 🚨 エントリ単位の Outcome だけを見ると、下見で Skipped / Failed になった Item まで
 // 「N 件を削除」に数え、パス一覧にも並ぶ。同じ行のサイズは BeforeSize (照合が取れた分だけ) なので
 // **件数とサイズが食い違う**。発火は「走査時と実体が変わった」= キャッシュ相手では珍しくない。
-func plannedItems(e disk.EntryOutcome) (planned []disk.ItemOutcome, dropped int) {
+func plannedItems(e disk.EntryOutcome) (planned []disk.ItemOutcome, dropped []disk.ItemOutcome) {
 	for _, it := range e.Items {
 		if it.Outcome == disk.OutcomePlanned {
 			planned = append(planned, it)
 			continue
 		}
-		dropped++
+		dropped = append(dropped, it)
 	}
 	return planned, dropped
+}
+
+// droppedNote は省いた Item を件数**と理由**で伝える。
+// 🚨 固定文言にしない (敵対レビュー 2026-09-04 の P3)。dropped には「対象パスを拒否: …」
+// (validateTarget = 細工の兆候) や「実体を識別できません」も落ちてくるので、
+// 「走査時と実体が変わりました」で畳むと**細工の兆候が消える**。理由は重複を畳んで並べる。
+func droppedNote(o doctorRenderOpts, dropped []disk.ItemOutcome) string {
+	seen := map[string]bool{}
+	reasons := make([]string, 0, 2)
+	for _, it := range dropped {
+		r := cleanOneLine(it.Reason)
+		if r == "" || seen[r] {
+			continue
+		}
+		seen[r] = true
+		reasons = append(reasons, r)
+		if len(reasons) == 2 { // 3 つ目からは件数だけ (行を増やして本文を押し出さない)
+			break
+		}
+	}
+	if len(reasons) == 0 {
+		return deleteNote(o, fmt.Sprintf("他 %d 件は対象外", len(dropped)))
+	}
+	return deleteNote(o, fmt.Sprintf("他 %d 件は対象外 (%s)", len(dropped), strings.Join(reasons, " / ")))
 }
 
 // 🚨 1 エントリあたりの表示は maxConfirmPaths 件で打ち切る。全部並べると 1 エントリで画面を

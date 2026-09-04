@@ -890,28 +890,11 @@ const (
 	doctorMinLabelWidth = 8
 )
 
-// doctorMarkVocabulary は disk.Mark が返しうる語をすべて列挙する。
-// 🚨 **手で並べない**。以前は 5 語をハードコードしていて「🔎 未検証」が抜けており、
-// 語彙が増えたときに幅の見積もりだけが古くなる形だった (issue 238 の副次)。
-// disk.Mark に代表の Result を通して作れば、語の出典 (issue 222 で一元化した) から自動で追従する。
-func doctorMarkVocabulary() []string {
-	safe := disk.Entry{ID: "x", Risk: disk.RiskSafe}
-	item := []disk.Item{{Path: "/p"}}
-	return []string{
-		disk.Mark(disk.Result{Entry: safe, Status: disk.StatusBlocked}),
-		disk.Mark(disk.Result{Entry: safe, Status: disk.StatusFailed}),
-		disk.Mark(disk.Result{Entry: disk.Entry{ID: "x", Risk: disk.RiskSafe, Unverified: "未実測"}, Status: disk.StatusOK}),
-		disk.Mark(disk.Result{Entry: safe, Status: disk.StatusOK, Items: item}),
-		disk.Mark(disk.Result{Entry: disk.Entry{ID: "x", Risk: disk.RiskCaution}, Status: disk.StatusOK, Items: item}),
-		disk.Mark(disk.Result{Entry: disk.Entry{ID: "x", Risk: disk.RiskConfirm}, Status: disk.StatusOK, Items: item}),
-	}
-}
-
 // doctorMaxMarkWidth はリスク記号の最大表示幅。マークは固定語彙なので測れる
 // (可変長の理由をマーク列へ入れないのは issue 182 の対応)。
 func doctorMaxMarkWidth() int {
 	w := 0
-	for _, m := range doctorMarkVocabulary() {
+	for _, m := range disk.MarkVocabulary() {
 		w = max(w, dispWidth(m))
 	}
 	return w

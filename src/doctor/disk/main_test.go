@@ -15,7 +15,10 @@ package disk
 //  2. 判定は**親ディレクトリを実解決してから**行う。破壊的操作はカーネルにパスを解決させるので、
 //     文字列の prefix 比較だけだと sandbox 内から外を指す symlink で抜けられる
 //  3. XDG_CACHE_HOME を一時ディレクトリへ向ける。HistoryDir を渡し忘れたテストが
-//     実キャッシュ (~/.cache/glog) に書くのを防ぐ
+//     実キャッシュ (~/.cache/glog) に書くのを防ぐ。
+//     🚨 issue 234 (c) で newHistory の先頭に history-create の検査点を置いたので、
+//     **Delete 経路ではこの段に到達する前に 1 段目が止める** (未登録の置き場は拒否)。
+//     この段が今も守っているのは「Delete を通らずに DefaultHistoryDir を読む経路」だけ
 //  4. 拒否した記録が 1 件でも残ったまま終わったら、**テストが全部緑でもスイートを落とす**
 //     (拒否は「ハーネスが助けた」ではなく「テストが壊れている」の証拠)
 //
@@ -49,7 +52,18 @@ var (
 
 // sandboxAllow はこのテストの間だけ root 配下への破壊的操作を許す。
 // **os.TempDir() の外は登録できない** (実ホームを登録するとハーネスが丸ごと無力化するため)。
-func sandboxAllow(t *testing.T, root string) {
+// sandboxT は sandboxAllow が使う *testing.T の面だけを切った seam。
+// 🚨 これが無いと**自己テストが本体を通れない**。判定を述語へ切り出すだけでは、
+// 「述語は正しいが sandboxAllow がそれを呼ばない」形 (= 登録の門番が丸ごと外れる) を
+// 検出できなかった (issue 234 (a) の敵対レビュー 2026-09-04 が実測: 判定の呼び出しを
+// sandboxAllow から削る変異でスイート全体が緑のままだった)。
+type sandboxT interface {
+	Helper()
+	Fatal(args ...any)
+	Cleanup(func())
+}
+
+func sandboxAllow(t sandboxT, root string) {
 	t.Helper()
 	if err := sandboxAllowable(root); err != nil {
 		t.Fatal(err)
@@ -276,16 +290,49 @@ func TestSandboxAllowRejectsPathsOutsideTempDir(t *testing.T) {
 	if err != nil {
 		t.Skip("HOME が取れない")
 	}
+	// 🚨 **sandboxAllow の本体を通す** (述語を直接叩くと「本体が判定を呼ばなくなった」を
+	// 検出できない。敵対レビュー 2026-09-04 の P1)
 	for _, p := range []string{home, "/", filepath.Join(home, "Documents")} {
-		if err := sandboxAllowable(p); err == nil {
+		if !sandboxAllowRejects(p) {
 			t.Errorf("%s の登録を許した", p)
 		}
 	}
 	// 逆向き (登録してよい側) も見る: 判定が deny-all になっても気づけるように
-	if err := sandboxAllowable(t.TempDir()); err != nil {
-		t.Errorf("一時領域の登録を拒んだ: %v", err)
+	if sandboxAllowRejects(t.TempDir()) {
+		t.Error("一時領域の登録を拒んだ")
 	}
 }
+
+// sandboxAllowRejects は sandboxAllow **本体**へ root を渡し、拒否されたかを返す。
+// Fatal を panic で拾うことで、本体の「判定 → Fatal」の配線ごと検査できる。
+// 拒否されなかった場合は登録が残るので、その場で後始末する (スイートへ漏らさない)。
+func sandboxAllowRejects(root string) (rejected bool) {
+	rec := &sandboxRecorder{}
+	defer func() {
+		if r := recover(); r != nil {
+			if _, ok := r.(sandboxFatalPanic); ok {
+				rejected = true
+				return
+			}
+			panic(r)
+		}
+		for _, f := range rec.cleanups {
+			f()
+		}
+	}()
+	sandboxAllow(rec, root)
+	return false
+}
+
+type sandboxFatalPanic struct{ msg string }
+
+// sandboxRecorder は sandboxT の最小実装。Fatal は panic で止める
+// (実際の *testing.T も Fatal で以降を実行しないので、振る舞いを合わせる)。
+type sandboxRecorder struct{ cleanups []func() }
+
+func (r *sandboxRecorder) Helper()           {}
+func (r *sandboxRecorder) Fatal(args ...any) { panic(sandboxFatalPanic{fmt.Sprint(args...)}) }
+func (r *sandboxRecorder) Cleanup(f func())  { r.cleanups = append(r.cleanups, f) }
 
 // sandboxAllowable は「この root を登録してよいか」の**唯一の判定**。
 // 🚨 sandboxAllow と自己テストが**同じ関数を通る**ことが要点。以前は自己テストが判定式を
@@ -418,7 +465,11 @@ func TestDestructiveCallsGoThroughHook(t *testing.T) {
 		"RemoveAll": true, "Remove": true, "Rename": true,
 		"RenameatxNp": true, "Renameat": true, "Unlinkat": true, "renameExcl": true,
 		// 🚨 unix.Unlink / unix.Rmdir が抜けていた (issue 234 (c))。`unix.Unlink(p)` と
-		// 書くだけでゲートが無音で素通りする形だった
+		// 書くだけでゲートが無音で素通りする形だった。
+		// 🚨 **この 2 語は誰にも pin されていない**: package 内に呼び出しが 1 件も無いので、
+		// 表から消す変異を当てても全緑になる (敵対レビュー 2026-09-04 で実測)。
+		// ゲート自体が効くことは確認済み (呼び出しを足すと違反として報告される)。
+		// pin するには「合成ソースを走査する」形へゲートを分解する必要があり、そこまではしていない
 		"Unlink": true, "Rmdir": true,
 	}
 	hooks := map[string]bool{"allowDestructive": true, "sandboxCheck": true, "rmFixture": true}

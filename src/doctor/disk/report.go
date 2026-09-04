@@ -30,6 +30,52 @@ func Foldable(r Result) bool {
 	return r.Status == StatusOK && len(r.Items) == 0 && len(r.Failures) == 0 && r.Entry.Unverified == ""
 }
 
+// MarkVocabulary は Mark が返しうる語をすべて返す (幅の見積もりに使う。glogx の
+// doctorMaxMarkWidth が唯一の利用者)。
+//
+// 🚨 **手で並べない**。以前は呼び出し側が 5 語をハードコードしていて「🔎 未検証」が抜けており、
+// 語が増えても幅の見積もりだけが古くなる形だった (issue 238)。ここは Mark を実際に通して作る。
+// 🚨 それでも「**新しい Risk / Status が増えたとき**」は自動では入らないので、下の
+// markVocabularyGuard が exhaustive (default なし switch) で気づかせる。
+func MarkVocabulary() []string {
+	item := []Item{{Path: "/p"}}
+	rs := []Result{
+		{Entry: Entry{ID: "x"}, Status: StatusBlocked},
+		{Entry: Entry{ID: "x"}, Status: StatusFailed},
+		{Entry: Entry{ID: "x", Unverified: "未実測"}, Status: StatusOK},
+	}
+	for _, risk := range []Risk{RiskSafe, RiskCaution, RiskConfirm} {
+		rs = append(rs, Result{Entry: Entry{ID: "x", Risk: risk}, Status: StatusOK, Items: item})
+	}
+	markVocabularyGuard(RiskSafe, StatusOK) // 番人を配線に載せる (実行時の意味は無い)
+	out := make([]string, 0, len(rs))
+	seen := map[string]bool{}
+	for _, r := range rs {
+		if m := Mark(r); !seen[m] {
+			seen[m] = true
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// markVocabularyGuard は「MarkVocabulary の列挙が enum に追いついているか」の番人。
+// 🚨 **default を書かない**。Risk / Status に値を足すと exhaustive (.golangci.yml) がここで
+// 赤くなり、MarkVocabulary の列挙を直す必要に気づける (敵対レビュー 2026-09-04 の P2)。
+// 実行時の意味は無い (呼ばれない側の網羅性だけを固定する)。
+func markVocabularyGuard(r Risk, s Status) {
+	switch r {
+	case RiskSafe:
+	case RiskCaution:
+	case RiskConfirm:
+	}
+	switch s {
+	case StatusOK:
+	case StatusBlocked:
+	case StatusFailed:
+	}
+}
+
 // Mark は状態を表す**固定語彙** (記号 + 語)。CLI (Format) と TUI (glogx の doctorRiskMark) の
 // 唯一の出典。**色は持たない**: この module は表示幅・色の依存を持たない方針なので、
 // 色付けは語を受け取った側 (glogx) の責務。

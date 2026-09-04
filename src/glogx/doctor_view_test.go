@@ -2072,12 +2072,10 @@ func TestDoctorDiskRowFitsWidthIncludingGutter(t *testing.T) {
 	// 走査が終わった状態にする (scanning のヘッダは経過時間を出すので、起点を置かないと
 	// 現実に出ない長さの行になり、測りたい行ではなくヘッダで落ちる)
 	v.svcRep, v.brew = &svc.Report{}, &brewDoctorResult{Clean: true}
+	// 🚨 「行が幅を超えない」だけを見ても**発火しない**: lines() が毎行 truncateDisp で切るので、
+	// 予算を誤っても溢れずに**中身が切れる**だけ (敵対レビュー 2026-09-04 の P3)。
+	// 見るのは「最長マークが切れずに残るか」= 予算が正しいかそのもの
 	for _, width := range []int{40, 53, 60, 65, 66, 67, 100} {
-		for _, line := range v.lines(doctorRenderOpts{width: width, page: 20}) {
-			if w := dispWidth(line); w > width {
-				t.Errorf("width=%d で行が溢れた (幅 %d): %q", width, w, line)
-			}
-		}
 		out := strings.Join(v.lines(doctorRenderOpts{width: width, page: 20}), "\n")
 		if width >= 53 && !strings.Contains(out, "❓ 走査できず") {
 			t.Errorf("width=%d で最長マークが切れた:\n%s", width, out)
@@ -2085,26 +2083,28 @@ func TestDoctorDiskRowFitsWidthIncludingGutter(t *testing.T) {
 	}
 }
 
-// マーク幅の見積もりは disk.Mark の語彙から導く (手で並べると増えた語を取りこぼす。issue 238 の副次)。
-func TestDoctorMarkVocabularyCoversMark(t *testing.T) {
-	got := doctorMarkVocabulary()
-	if len(got) != 6 {
-		t.Fatalf("語彙が %d 件 (disk.Mark は 6 語を返す): %v", len(got), got)
+// マーク幅の見積もりは disk.MarkVocabulary から導く (手で並べると増えた語を取りこぼす。issue 238)。
+// 🚨 件数で固定しない: 語彙が正しく増えたときに落ちるのは門番として逆向き
+// (敵対レビュー 2026-09-04 の P2)。見るのは「Mark が返す語を覆っているか」と「最大幅が一致するか」。
+func TestDoctorMarkWidthCoversVocabulary(t *testing.T) {
+	vocab := disk.MarkVocabulary()
+	if len(vocab) < 6 {
+		t.Fatalf("語彙が %d 件しかない: %v", len(vocab), vocab)
 	}
-	seen := map[string]bool{}
-	for _, m := range got {
+	want := 0
+	for _, m := range vocab {
 		if m == "" {
 			t.Error("空の語がある")
 		}
-		if seen[m] {
-			t.Errorf("語が重複している: %q", m)
+		want = max(want, dispWidth(m))
+	}
+	if got := doctorMaxMarkWidth(); got != want {
+		t.Errorf("最大幅 = %d; want %d (%v)", got, want, vocab)
+	}
+	// 代表的な語が実際に含まれていること (列挙が壊れて 1 語だけ返す形を弾く)
+	for _, want := range []string{"🔎 未検証", "❓ 走査できず", "⛔ 要確認"} {
+		if !slices.Contains(vocab, want) {
+			t.Errorf("%q が語彙に無い: %v", want, vocab)
 		}
-		seen[m] = true
-	}
-	if !seen["🔎 未検証"] {
-		t.Errorf("未検証の語が抜けている (幅 9。以前ハードコードから漏れていた): %v", got)
-	}
-	if w := doctorMaxMarkWidth(); w != dispWidth("❓ 走査できず") {
-		t.Errorf("最大幅 = %d; want %d (❓ 走査できず)", w, dispWidth("❓ 走査できず"))
 	}
 }

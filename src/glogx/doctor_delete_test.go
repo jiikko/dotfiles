@@ -1063,7 +1063,10 @@ func TestDeleteConfirmListsCommands(t *testing.T) {
 	plan := disk.DeleteReport{Entries: []disk.EntryOutcome{
 		{Label: "ランタイム", Method: "cli", Command: "xcrun simctl runtime delete <id>",
 			Outcome: disk.OutcomePlanned, BeforeSize: 1 << 30,
-			Items: []disk.ItemOutcome{{Path: "/L/a", Ref: "ABC-1"}, {Path: "/L/b", Ref: "DEF-2"}}},
+			Items: []disk.ItemOutcome{
+				{Path: "/L/a", Ref: "ABC-1", Outcome: disk.OutcomePlanned},
+				{Path: "/L/b", Ref: "DEF-2", Outcome: disk.OutcomePlanned},
+			}},
 		{Label: "提示だけ", Method: "propose", Command: "sudo rm -rf /x", Outcome: disk.OutcomeProposed},
 	}}
 	v := &doctorView{del: doctorDelete{confirm: true, plan: &plan}}
@@ -1621,8 +1624,37 @@ func TestDeleteConfirmCountsOnlyPlannedItems(t *testing.T) {
 			t.Errorf("触るパス %q が出ていない:\n%s", want, out)
 		}
 	}
-	// 黙って省かない (件数が減った理由が読めないと下見の結果を確かめられない)
+	// 黙って省かない。🚨 **理由も出す** (固定文言に畳むと「対象パスを拒否」= 細工の兆候が
+	// 「実体が変わりました」に化けて消える。敵対レビュー 2026-09-04 の P3)
 	if !strings.Contains(out, "他 1 件は対象外") {
 		t.Errorf("省いた件数を伝えていない:\n%s", out)
+	}
+	if !strings.Contains(out, "既に存在しません") {
+		t.Errorf("省いた理由を伝えていない:\n%s", out)
+	}
+}
+
+// cli 経路は**実行するコマンドだけ**を出す (issue 233 の敵対レビュー P2-1)。
+// EntryOutcome.CommandLines は全 Item を回すが execCLI は Planned 以外を飛ばすので、
+// 件数とパスだけ絞ると「1 件にコマンドを実行」の下にコマンドが 2 本並ぶ矛盾になっていた。
+func TestDeleteConfirmCommandsMatchPlannedItems(t *testing.T) {
+	plan := disk.DeleteReport{Entries: []disk.EntryOutcome{{
+		Label: "simctl ランタイム", Method: "cli", Command: "xcrun simctl runtime delete <id>",
+		Outcome: disk.OutcomePlanned, BeforeSize: 2048,
+		Items: []disk.ItemOutcome{
+			{Path: "/x/keep", Ref: "KEEP-RUNTIME", Size: 1024, Outcome: disk.OutcomePlanned},
+			{Path: "/x/gone", Ref: "GONE-RUNTIME", Size: 1024, Outcome: disk.OutcomeSkipped, Reason: "既に存在しません"},
+		},
+	}}}
+	v := &doctorView{del: doctorDelete{confirm: true, plan: &plan}}
+	out := strings.Join(v.lines(doctorTestOpts(24)), "\n")
+	if !strings.Contains(out, "KEEP-RUNTIME") {
+		t.Errorf("実行するコマンドが出ていない:\n%s", out)
+	}
+	if strings.Contains(out, "GONE-RUNTIME") {
+		t.Errorf("実行しないコマンドを出している (execCLI は Planned 以外を飛ばす):\n%s", out)
+	}
+	if !strings.Contains(out, "1 件にコマンドを実行") {
+		t.Errorf("件数とコマンド本数が揃っていない:\n%s", out)
 	}
 }
