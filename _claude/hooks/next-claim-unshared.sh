@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# UserPromptSubmit フック: `issues/next/` への claim が **未コミットのまま**残っていたら、
-# その事実をモデルのコンテキストへ注入し、「push してよいか」をユーザーへ伺わせる。
+# UserPromptSubmit フック: `issues/next/` への claim が **他マシンから見えない状態**
+# (未コミット、または commit 済みだが未 push) なら、その事実をモデルのコンテキストへ注入し、
+# 「push してよいか」をユーザーへ伺わせる。
 #
 # なぜ: claim は push されて初めて他マシンから見える (規範:
 # _claude/rules/claim-issue-in-next-and-push.md)。Claude 自身が Bash で移した場合は
@@ -10,6 +11,12 @@
 # 誰も push しないまま寝てしまい、他マシンから見て「未着手の issue」に見え続ける。
 # issue 187 は viewer 側に push 導線を足す案だったが、push はブランチ単位で他の未 push
 # commit も飛ぶため、**押した瞬間に機械が push するのは危ない**。人に伺う形にした。
+#
+# 🚨 **commit 済みだが未 push の claim も拾う** (issue 249 の項目 4)。以前は未コミットだけを
+# 見ており、「claim を commit したが push を忘れた」窓が誰にも見えなかった。claim の意味は
+# 「他マシンから見えること」なので、コミットしただけでは何も宣言していない。
+# git-state-verify.sh も未 push commit を出すが、あちらは **git commit/push を打った直後**
+# だけで、寝てしまった claim には届かない (こちらは毎プロンプト見る)。
 #
 # 入力: UserPromptSubmit の hook JSON を stdin (中身は見ない。毎プロンプトで状態だけ見る)
 # 出力: 未コミットの claim があるときだけ additionalContext を emit。無ければ無出力 exit 0。
@@ -36,12 +43,24 @@ repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 #   claim を外した  → ` D issues/next/x.md` + `?? issues/x.md`
 # いずれも **issues/next/ を含む行**が出るので、それを拾えば 3 形とも捕まる
 claim_lines=$(git -C "$repo_root" status --porcelain -- issues 2>/dev/null | grep 'issues/next/' || true)
-[ -n "$claim_lines" ] || exit 0
+
+# commit 済みだが未 push の claim。**リモートに無い commit のうち issues/next/ を触ったもの**を見る
+# (`--branches --not --remotes` は未 push の commit 全部。そこから claim を触るものだけ絞る)
+unpushed_claims=$(git -C "$repo_root" log --branches --not --remotes --format='%h %s' \
+  --name-only -- issues/next 2>/dev/null | grep -v '^issues/' | grep -v '^$' | head -10 || true)
+
+[ -n "$claim_lines" ] || [ -n "$unpushed_claims" ] || exit 0
 
 state=$(
   {
-    printf -- '--- 未コミットの claim ---\n'
-    printf '%s\n' "$claim_lines"
+    if [ -n "$claim_lines" ]; then
+      printf -- '--- 未コミットの claim ---\n'
+      printf '%s\n' "$claim_lines"
+    fi
+    if [ -n "$unpushed_claims" ]; then
+      printf -- '--- commit 済みだが未 push の claim ---\n'
+      printf '%s\n' "$unpushed_claims"
+    fi
     printf -- '--- git status -sb (他の変更・未 push commit が混ざっていないか) ---\n'
     git -C "$repo_root" status -sb 2>/dev/null | head -20 || true
     printf -- '--- 未 push の commit (push すると一緒に飛ぶ) ---\n'
@@ -55,8 +74,10 @@ jq -n --arg ctx "$state" '{
   hookSpecificOutput: {
     hookEventName: "UserPromptSubmit",
     additionalContext: (
-      "issues/next/ への claim が**未コミット**のまま残っている (人が glogx の `n` で付けた目印は\n" +
-      "どの hook にも見えないので、ここで拾っている)。claim は push されて初めて他マシンから見える。\n" +
+      "issues/next/ への claim が**他マシンから見えない状態**で残っている (未コミット、または\n" +
+      "commit 済みだが未 push)。claim は push されて初めて claim になる — commit しただけでは\n" +
+      "他マシンからは「未着手の issue」に見え続ける。人が glogx の `n` で付けた目印は\n" +
+      "どの hook にも見えないので、ここで拾っている。\n" +
       "ユーザーへ次を伺うこと (勝手に commit / push しない):\n" +
       "  - この claim を commit して push してよいか (移動の旧パスと新パスだけを pathspec に書く)\n" +
       "  - 未 push の commit が他にあるなら、**それも一緒に飛ぶ**ことを伝えてから聞く\n" +

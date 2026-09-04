@@ -11,6 +11,13 @@
 
 - **着手する前に `git fetch` して、その issue が既に `issues/next/` に居ないか見る**。
   居たら**別のセッションが着手済み**なので、勝手に始めない (別の issue へ回るか、本人に聞く)
+  - 🚨 **fetch は「着手を決めた直前」にもう一度打つ。** セッションの最初に取った結果は古い。
+    実測 2026-09-04 (6 セッションが同じ backlog を消化した日): 見落とし / 衝突が **7 回**起き、
+    その 1 件は「自分の fetch が古く、push 済みの claim を見落とした」形だった
+  - 🚨 **`ListAgents` に他セッションが居るなら、next を見るだけでなく本人へ 1 回聞く。**
+    claim は **push されるまで next に現れない**ので、生きているセッションへの照会が
+    唯一の即時性のある手段 (同日実測: 未 push の claim による二重着手が 1 件、
+    調整中に横から完走されたのが 1 件)
 - **着手を決めたら `issues/next/` へ移し、その移動だけを pathspec で commit して即 push する**。
   claim は **push されて初めて claim になる** — ローカルに留めている間、他マシンからは
   「誰も着手していない issue」に見える
@@ -42,8 +49,9 @@
   含む Bash コマンドを検出したら「claim を単独 commit して push したか」を注入する
   (配線: `_claude/settings.json`)。**この hook が見えるのは Claude が Bash で動かした移動だけ**で、
   glogx の issues viewer の `n` キー (Go 側で移動する) は Bash を通らないので発火しない
-- **UserPromptSubmit hook** `_claude/hooks/next-claim-uncommitted.sh` が、その穴を埋める:
-  毎プロンプトで作業ツリーを見て、`issues/next/` の claim が**未コミットのまま**なら
+- **UserPromptSubmit hook** `_claude/hooks/next-claim-unshared.sh` が、その穴を埋める:
+  毎プロンプトで、`issues/next/` の claim が**他マシンから見えない状態** (未コミット、または
+  commit 済みだが未 push。後者は issue 249 で足した) なら
   「push してよいか」をユーザーへ伺わせる。人が `n` で付けた claim もここで拾う。
   **使い分け**: 移動した瞬間に Claude 自身へ促すのが前者、取りこぼした claim を後から
   人に伺うのが後者。**押した瞬間の自動 push は採らない** (push はブランチ単位なので、

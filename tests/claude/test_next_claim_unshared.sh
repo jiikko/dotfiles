@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# _claude/hooks/next-claim-uncommitted.sh (UserPromptSubmit: 未コミットの claim を検出して
-# 「push してよいか伺え」を注入する) の unit テスト。
+# _claude/hooks/next-claim-unshared.sh (UserPromptSubmit: 他マシンから見えない claim
+# = 未コミット / commit 済みだが未 push を検出して「push してよいか伺え」を注入する) の unit テスト。
 #
 # なぜ: この hook は「人が glogx の `n` で付けた claim が push されないまま寝る」事故を拾う
 # 唯一の装置 (Go の rename は Bash を通らないので PostToolUse 側では見えない)。判定式が
@@ -10,7 +10,7 @@ set -euo pipefail
 unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-HOOK="$ROOT_DIR/_claude/hooks/next-claim-uncommitted.sh"
+HOOK="$ROOT_DIR/_claude/hooks/next-claim-unshared.sh"
 HOOK_TIMEOUT=10
 
 # 本番と同じ上限を課せないなら「合格」ではなく「判定不能 = 失敗」にする
@@ -72,7 +72,20 @@ expect_silent "issues/ の外の変更"
 
 new_repo; ( cd "$REPO" && git mv issues/186-x.md issues/next/ &&
   git -c user.email=t@t -c user.name=t commit -qm claim )
-expect_silent "claim が commit 済み (未コミットでなければ黙る)"
+# 🚨 **commit しただけでは claim になっていない** (他マシンからは「未着手の issue」に見える)。
+# issue 249 の項目 4 でここを拾うようにした。以前は「commit 済みなら黙る」が契約だった
+expect_fire "claim が commit 済みだが未 push"
+
+# push 済みなら黙る (claim が成立しているので急かす理由が無い)。
+# 🚨 偽の remote を作って本当に push する — 「remote が無い repo」では未 push か push 済みかを
+#    区別できず、この 2 ケースが同じ入力になってしまう
+new_repo
+bare=$(mktemp -d "$TMP_ROOT/bare.XXXXXX")
+( cd "$bare" && git init -q --bare . ) >/dev/null 2>&1
+( cd "$REPO" && git mv issues/186-x.md issues/next/ &&
+  git -c user.email=t@t -c user.name=t commit -qm claim &&
+  git remote add origin "$bare" && git push -q origin HEAD ) >/dev/null 2>&1
+expect_silent "claim が push 済み (claim が成立しているので黙る)"
 
 # opt-in の範囲: issues/next/ が無い repo では規律ごと無効。
 # 🚨 fixture は **検出条件を満たしたうえで opt-in だけが外れている形**にする。別名の dir
@@ -90,7 +103,7 @@ if [ -n "$out" ]; then echo "✗ issues/next/ を消した repo (opt-out) で発
 else echo "✓ issues/next/ が無い repo では発火しない (opt-out した repo を急かさない)"; ok=$((ok+1)); fi
 
 echo "## 配線 (settings.json に載っているか)"
-if jq -e '[.hooks.UserPromptSubmit[].hooks[].command] | any(endswith("next-claim-uncommitted.sh"))' \
+if jq -e '[.hooks.UserPromptSubmit[].hooks[].command] | any(endswith("next-claim-unshared.sh"))' \
      "$ROOT_DIR/_claude/settings.json" >/dev/null 2>&1; then
   echo "✓ UserPromptSubmit に配線されている"; ok=$((ok+1))
 else

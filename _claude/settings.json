@@ -17,7 +17,7 @@
           },
           {
             "type": "command",
-            "command": "~/dotfiles/_claude/hooks/next-claim-uncommitted.sh",
+            "command": "~/dotfiles/_claude/hooks/next-claim-unshared.sh",
             "timeout": 10
           }
         ]
