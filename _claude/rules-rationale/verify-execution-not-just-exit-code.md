@@ -108,3 +108,41 @@ E2E の credential を実 Keychain に書かなくする変更 (in-memory 実装
 
 出典: `issues/done/203-test-lint-candidates-preventive.md` /
 `issues/done/208-retro-tmux-indicator-and-lint-checks-2026-09-03.md` 項目 2。
+
+
+## 確認を求める外部コマンドは、非対話だと「何もせず rc=0」で返る
+
+起源: dotfiles, 2026-09-04 (glogx doctor の Docker タブに実行の導線を足したとき)。
+
+`docker ... prune` を画面から実行する配線を書き、確認画面まで作った段階で、実際に
+何が起きるかを対象 0 件の filter で試した:
+
+```
+$ docker builder prune --filter unused-for=876000h </dev/null
+rc=0
+--stdout
+WARNING! This will remove all dangling build cache. Are you sure you want to continue? [y/N]
+--stderr
+(空)
+```
+
+**rc=0 で、stdout にはそれらしい出力があり、しかし何も起きていない。** TTY が無いので
+stdin が即 EOF になり、docker は「N」と解釈して中止する。この配線のまま出していたら、
+確認画面で `y` を押したユーザーに「実行しました」と報告しながら 1 バイトも減らない。
+
+`-f` を付けて解決したが、そのとき**表示・コピーするコマンドにも同じ `-f` を付ける**方を
+選んだ。表示と実行で文字列を分けると「画面に出ているものと走るものが違う」を作るため。
+コピーして貼る人はプロンプトを失うので、その事実を群の注記に書いた。
+
+同じ日にもう 1 つ、**`--help` の文面を信じて範囲を誤った**例が出ている
+(`measure-external-cli-streams-separately.md` の「`--help` を根拠にしない」節):
+
+```
+docker builder prune --help → "-a, --all  Include internal/frontend images"
+docker builder prune        → 実行時の警告は "This will remove all **dangling** build cache."
+docker builder prune -a     → 実行時の警告は "This will remove all build cache."
+```
+
+help を読んで「`-a` は要らない」と判断し、敵対レビューの指摘を**却下してコメントに理由まで
+書いた**。警告文を読んで初めて誤りと分かった。破壊的操作の範囲は help ではなく、
+**その CLI 自身が実行時に何と言うか**で確定させる。

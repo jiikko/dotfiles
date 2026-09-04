@@ -18,3 +18,12 @@ seam を全部差し替えたテストは「実測表どおりに書いたコー
 
 🚨 この節に個別 CLI の値を書かないのは意図的 (上のルール 4 番目)。当時の実測仕様は
 `src/glogx/cli_health.go` のコメントが正本。
+
+
+## `--help` は契約ではない (2026-09-04)
+
+実例と実測は `rules-rationale/verify-execution-not-just-exit-code.md` の
+「確認を求める外部コマンドは…」節に置いた (同じ日・同じ CLI・同じ作業で出た 2 つの誤りなので、
+片方に寄せる)。要点だけ: `docker builder prune --help` の `-a` の説明
+("Include internal/frontend images") と、実行時の警告文が示す実際の範囲
+(`-a` 無し = dangling のみ / `-a` 有り = 全部) が食い違っていた。

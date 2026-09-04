@@ -61,3 +61,40 @@ docker 側もコピーせず**共有ヘルパーができるまで待つ** (同�
 
 - [251](next/251-refactor-termsafe-has-no-type-or-lint-gate.md) — 出典。`disk` 側の実装と脅威モデル
 - `src/termsafe/README.md` の「通し忘れを機械で止める」節 — 検査の入口と「検出しない形」
+
+
+## 対応 (2026-09-04)
+
+**案 1 (共有ヘルパー) を採った。** commit `f93717d5`。
+
+`doctor/internal/displaycheck` に検査の本体を置き、`disk` / `svc` / `docker` の 3 つが
+`Gates` (どの型をどの関門が担当するか) と `Exempt` (無害化しないフィールドとその理由) と
+`WantChecked` / `MinNamedStringTypes` だけを渡す形にした。
+
+**「1〜2 週間 disk で運用してから」を待たなかった理由**: その間に `doctor/docker` が
+3 つ目として増え、**未保護の package が 2 つになった**。形がまだ動くのは事実だが、
+共有した後なら形の変更は 1 箇所で済む (写経していたら 3 箇所を追う)。
+
+### 共有して初めて見えたもの (どれも disk 単独では見えなかった)
+
+1. **検査器そのものにテストが無かった。** 各 package の呼び出しは「今は違反が無い」しか
+   示さず、**検査器が見逃すようになったこと**は検出しない。実測: 「未使用 exempt の検出」を
+   外す変異が 3 package すべて緑で通った。→ `t` を触らない `check()` に本体を切り出し、
+   `testdata/` の fixture に既知の違反を置く自己テストを足した (変異 5 本すべて red)
+2. **canary が disk の形を前提にしていた。** 「named string type が 0 件なら抽出が壊れている」は
+   named type を持たない `svc` で誤検知する → package ごとの期待下限 (`MinNamedStringTypes`) にした
+3. **svc / docker の無害化ヘルパーが命名規約から外れていた** (`cleanDisplayLines`)。
+   検査は右辺が `termsafe.*` / `sanitize*` / `Sanitize*` かで「関門を通った代入」を見分けるので、
+   **無害化していても「通していない」と判定される**。`sanitizeDisplayLines` へ改名し、
+   理由をコードと `src/termsafe/README.md` に書いた
+
+### 検査した件数
+
+| package | 非 exempt の文字列フィールド | exempt |
+| --- | --- | --- |
+| `disk` | 23 | 12 |
+| `svc` | 9 | 4 (同一性を持つ Label / PlistPath / Domain) |
+| `docker` | 9 | 3 (Item.Name / Item.Command / Group.Kind) |
+
+新しい素通し経路は**見つからなかった** (251 のときは `DeleteReport.HistoryError` という
+本物が出た)。svc / docker は元から関門を通していたが、**これまでは誰も守っていなかった**。
