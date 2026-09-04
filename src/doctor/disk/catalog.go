@@ -1,5 +1,68 @@
 package disk
 
+import (
+	"path/filepath"
+	"strings"
+)
+
+// 注記の文言。**同じ「再起動で消える」という事実でも、中身によって伝えるべき含意が逆になる**。
+//   - 再生成されるキャッシュ → 放置してよい (急いで消さなくてよい)
+//   - ユーザーファイルかもしれないもの (Inspect / RiskConfirm) → 放置すると**失われる**。
+//     ここに「急がなくてよい」と出すのは有害で、finder-nsird の Recover
+//     (「唯一のコピーである可能性を否定できません」) と正面から矛盾する (敵対レビュー 2026-09-04)
+const (
+	RebootClearsNote = "再起動すると消える置き場です (急いで消さなくても構いません)"
+	RebootLosesNote  = "再起動すると失われる置き場です (要るものは先に取り出してください)"
+)
+
+// dirhelperRoot は macOS が起動時と毎日 03:35 に掃除する置き場の根。
+//
+// 根拠 (2026-09-04 実測): `/System/Library/LaunchDaemons/com.apple.bsd.dirhelper.plist` が
+// `RunAtLoad = true` / `StartCalendarInterval 03:35` / `CLEAN_FILES_OLDER_THAN_DAYS = 3` で、
+// `strings /usr/libexec/dirhelper` に `Cleanup At Startup` と `/var/folders/` が在る
+// (対象は **/var/folders 配下だけ**。`/private/var/tmp` の文字列は無い)。
+//
+// 🚨 **「起動時の掃除が 3 日ルールを無視するか」は未実測**。無視しないなら、直近 3 日に
+// 作られたものは再起動しても残る。注記が「急がなくてよい」と言うぶんには安全側だが、
+// 断定を強めるとき (「必ず消える」等) はここを実測してからにすること。
+const dirhelperRoot = "/private/var/folders/"
+
+// RebootNote はそのエントリに添える再起動の注記 (無ければ空文字)。
+//
+// 🚨 **判定に `$TMPDIR` という文字列を使わない**。テンプレートが `$TMPDIR/...` でも、
+// 実効の TMPDIR が `/var/folders` の外を指していれば dirhelper は掃除しない
+// (`TMPDIR=$HOME/tmp glogx doctor` で成立する)。文字列だけを見ると、**永久に残る
+// ユーザーデータへ「放置してよい」と表示する** (敵対レビュー 2026-09-04 の P1)。
+// 判定の出典は走査と同じ実効値 (env.TmpDir) に寄せる。
+func RebootNote(e Entry, env Env) string {
+	if len(e.Paths) == 0 {
+		// 走査する場所が分かっていない (Guard だけで対象を決めるエントリ) 以上、
+		// その置き場の性質は言えない
+		return ""
+	}
+	for _, p := range e.Paths {
+		if p != "$TMPDIR" && !strings.HasPrefix(p, "$TMPDIR/") {
+			return ""
+		}
+	}
+	if !tmpDirClearedOnReboot(env) {
+		return ""
+	}
+	if e.Inspect || e.Risk == RiskConfirm {
+		return RebootLosesNote
+	}
+	return RebootClearsNote
+}
+
+// tmpDirClearedOnReboot は実効 TMPDIR が dirhelper の担当範囲にあるか。
+func tmpDirClearedOnReboot(env Env) bool {
+	if env.TmpDir == "" {
+		return false
+	}
+	p := normalizeSystemLinks(filepath.Clean(env.TmpDir))
+	return strings.HasPrefix(p+"/", dirhelperRoot)
+}
+
 // Risk は表示の記号と、削除時の扱い (④) を決める階級。
 type Risk string
 
@@ -60,13 +123,14 @@ type Entry struct {
 //     再開の trigger: ゴミ箱が数 GB 溜まったまま放置されているのを見たとき
 //   - `~/Downloads/*.crdownload` — **ユーザーデータ領域**で、中断した DL の再開情報を持つ。
 //     消すと DL のやり直しが要るので登録条件「消したまま戻る」を満たさない。実測 0 件
-//   - `~/Library/Caches/electron-builder` / `deno` — 実測 2026-09-03 で**存在しない**。
-//     現れたら `typescript-ata` と同型なので同じ形で足せる
-//   - speech モデルのキャッシュ — この機に存在しない (`com.apple.SpeechRecognitionCore` /
-//     `SpeechModelCache` とも無し)。載せるには `lsof` 判定と「削除後に音声機能が壊れない」
-//     実測が要る。現物が無いので実測そのものができない
 //   - `~/src/**` のビルド成果物 / `node_modules` — プロジェクト単位の判断が要り、
 //     allowlist の枠組みに合わない (issue 220)
+//
+// 🚨 **「この機に存在しないから載せない」を却下理由に使わない** (2026-09-04)。
+// `electron-builder` / `deno` / `SpeechModelCache` の 3 件はこの理由で載せていなかったが、
+// 再測したら **3 件とも実在した** (SpeechModelCache は 841MB)。不在は時間で覆るうえ、
+// 覆ったことを誰も知らせてくれない (走査していないので doctor にも出ない)。
+// 却下理由には不在ではなく**性質** (ユーザーデータ / 復元不可 / 枠組みに合わない) を書く。
 var catalog = []Entry{
 	// --- Tier 1: 純粋なキャッシュ ---
 	{ID: "xcode-deriveddata", Label: "Xcode DerivedData", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
@@ -78,10 +142,32 @@ var catalog = []Entry{
 		Paths:   []string{"~/Library/Developer/Xcode/* DeviceSupport/*"}},
 	{ID: "npm-cache", Label: "npm キャッシュ (_cacache)", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "次回 npm install 時に再取得されます", Paths: []string{"~/.npm/_cacache"}},
+	// `npm-cache` と分けてあるのは復元の契機が違うため (install ではなく次の npx 実行)。
+	// 実測 2026-09-04: 108MB / 9 エントリ。
+	// 🚨 **`_cacache` と同じ「安全」にしない** (敵対レビュー 2026-09-04)。_cacache は
+	// content-addressed の読み取り専用アーカイブで、消しても走行中のプロセスに影響しないが、
+	// _npx は**展開済みの node_modules で、そこから直接 require されている**。
+	// `npx` で起動した常駐プロセス (MCP サーバ / dev サーバ / watcher) が動いている間に消すと、
+	// 遅延 require の時点で `Cannot find module` で落ちる。プロセス判定を付けられない
+	// (実行しているのは `node` で、名前から npx 由来だと分からない) ので、Risk を上げて
+	// Detail で伝える形にしてある
+	{ID: "npx-cache", Label: "npx の使い捨てインストール", Tier: 1, Risk: RiskCaution, DeleteVia: "rm",
+		Recover: "次に同じ npx コマンドを叩いたとき再取得されます",
+		Detail:  "npx で起動した常駐プロセス (MCP サーバ等) が動いている間は消さない (実行中の実体を消す)",
+		Paths:   []string{"~/.npm/_npx"}},
 	{ID: "swiftpm-cache", Label: "SwiftPM キャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "次回の依存解決で再取得されます", Paths: []string{"~/Library/Caches/org.swift.swiftpm"}},
 	{ID: "electron-cache", Label: "Electron キャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "再ダウンロードされます", Paths: []string{"~/Library/Caches/electron"}},
+	// 実測 2026-09-04: 82MB。`electron-cache` と同型 (ビルド時に落としてくる配布物のキャッシュ) だが、
+	// 使う側のツールが違うので復元の契機を分けて書く
+	{ID: "electron-builder-cache", Label: "electron-builder キャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
+		Recover: "次回のパッケージングで再ダウンロードされます", Paths: []string{"~/Library/Caches/electron-builder"}},
+	// 実測 2026-09-04: 27MB。Deno の依存 (registry / npm / gen) の置き場で、
+	// `DENO_DIR` を明示していなければここが既定
+	{ID: "deno-cache", Label: "Deno キャッシュ", Tier: 1, Risk: RiskSafe, DeleteVia: "rm",
+		Recover: "次回の実行で再取得されます", Detail: "DENO_DIR を設定している場合はここではない。上流が消えた版は再取得できない",
+		Paths: []string{"~/Library/Caches/deno"}},
 	// tsserver の型自動取得 (ATA) キャッシュ。TypeScript のバージョンごとにディレクトリが分かれ、
 	// 中身は `types-registry` と `@types/*` の node_modules。実測 2026-09-03: 216MB
 	// (5.2 が 122MB / 5.8 が 91.6MB / 4.9 が 2.8MB)。**5.2 は 2023-11 から触られていない**。
@@ -139,18 +225,34 @@ var catalog = []Entry{
 		Unverified: "ファイル名が未実測 (issue 169)"},
 	{ID: "xctest-spindump", Label: "XCTest spindump", Tier: 2, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "再生成されません (不要)",
-		// 🚨 **この glob も未実測** (issue 169 と同型。2026-09-03 に発見)。上の xctest-logarchive と
-		// **同じ `XCTestTesting.` 接頭辞を推測で共有している**が、その接頭辞は実在が確認できていない:
-		// `grep -rl --binary-files=text 'XCTestTesting' <Xcode>/Platforms/MacOSX.platform` が **0 件**
-		// (Xcode 26.3。バイナリも含めた全走査)。実機の /private/var/tmp にも現物が無い。
-		// 名前が違えばこの検出項目も黙って 0 件になる。確定手順は上のエントリと同じ。
-		Paths: []string{"/private/var/tmp/XCTestTesting.*.spindump.txt"}, Guard: GuardBoottime,
-		Unverified: "ファイル名が未実測 (issue 169)"},
+		// ✅ **接頭辞は実測で確定した** (2026-09-04。issue 169 のうちこのエントリぶんは解決)。
+		// この機の /private/var/tmp に `XCTestTesting.<日時>.spindump.txt` が **12 件 92MB** 在る
+		// (`XCTestTesting.2026-04-08-00:37:03.spindump.txt` 等)。glob はそのまま当たる。
+		// 🚨 **上の xctest-logarchive の未実測は解決していない**: `.logarchive` は同じ時点で
+		// **0 件**で、接頭辞を共有する根拠にはならなかった (2 つの前提が同時に立ったわけではない)。
+		// 🚨 `Unverified` を外したので、このエントリは **0 件のとき畳まれる側**へ移った
+		// (`Foldable`)。将来 Xcode が接頭辞を変えたら「候補なし」と同じ見え方になる。
+		// 根拠は 1 台の 12 件なので、他機で 0 件が続くなら実名を採り直すこと。
+		Paths: []string{"/private/var/tmp/XCTestTesting.*.spindump.txt"}, Guard: GuardBoottime},
 	{ID: "coresimulator-orphan", Label: "孤児シミュレータの作業領域", Tier: 2, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "現存しないデバイスの残骸。再生成されません", Detail: "simctl list devices に無い UUID だけ (現役の作業領域は候補にしない)",
 		Paths: []string{"/private/var/tmp/com.apple.CoreSimulator.SimDevice.*"}, Guard: GuardSimDevice},
 	{ID: "launchd-tmp", Label: "launchd の一時ディレクトリ残骸", Tier: 2, Risk: RiskSafe, DeleteVia: "rm",
 		Recover: "容量はほぼ 0。件数削減が目的", Paths: []string{"/private/var/tmp/com.apple.launchd.*"}, Guard: GuardBoottime},
+	// 音声認識モデル (BNNS の推論グラフ) の置き場。issue 218 は「この機に存在しない」を理由に
+	// 載せていなかったが、**探した場所が違った** (~/Library/Caches ではなく /private/var/tmp)。
+	// 実測 2026-09-04: **841MB / 12 ファイル**、所有者は本人 (koji:wheel)、mtime は 2026-01-28〜02-12。
+	// 🚨 **再生成されるかは未実測**なので `trash` にしてある (rm ではない): 音声入力が壊れても
+	// ゴミ箱から戻せる状態でだけ触ってよい。rm へ格上げするなら「消した後に音声入力を使って
+	// 再ダウンロードされる」ことを実測してから。
+	// 🚨 **GuardBoottime は「使われていない」を意味しない** (敵対レビュー 2026-09-04 の指摘で訂正)。
+	// mtime は書き込み時刻で、**読み出しでは更新されない**ので、現に今日使っているモデルも
+	// mtime が古ければ候補に入る。この guard が落とすのは「起動後に新規ダウンロードされた分」だけ。
+	// 実測 2026-09-04 のこの機では 12 件すべてが起動より古く、**1 件も落ちていない**。
+	{ID: "speech-model-cache", Label: "音声認識モデルのキャッシュ", Tier: 2, Risk: RiskCaution, DeleteVia: "trash",
+		Recover: "音声入力/音声認識を次に使うとき再ダウンロードされます (未実測。だからゴミ箱経由)",
+		Detail:  "起動より古いものだけ。/var/tmp は再起動で消えないので溜まり続ける",
+		Paths:   []string{"/private/var/tmp/SpeechModelCache/*"}, Guard: GuardBoottime},
 	{ID: "finder-nsird", Label: "Finder の中断残骸 (NSIRD_Finder_*)", Tier: 2, Risk: RiskConfirm, DeleteVia: "trash", Inspect: true,
 		Recover: "コピー/移動が中断した残骸。コピー元が残っているか確認してください", Detail: "唯一のコピーである可能性を否定できません",
 		Paths: []string{"$TMPDIR/TemporaryItems/NSIRD_Finder_*"}},
@@ -174,6 +276,18 @@ var catalog = []Entry{
 		Guard: GuardBrewCleanup},
 	{ID: "versionmanager-orphan-root", Label: "未参照のバージョンマネージャ root", Tier: 2, Risk: RiskConfirm, DeleteVia: "trash", Inspect: true,
 		Recover: "そのマネージャで入れた言語の全世代が消えます", Detail: "<TOOL>_ROOT の実効値と一致しないものだけ (存在するだけでは候補にしない)",
+		// 🚨 **`~/.anyenv/envs/*` は意図的に走査しない** (2026-09-04 に足して撤回した。同じ提案を再生成しないこと):
+		//   - **原理的に孤児と判定できない**。`effectiveVMRoot` は「<TOOL>_ROOT が無ければ
+		//     `~/.anyenv/envs/<tool>` が実効 root」という規則 (= `_zshrc` のローダと同じ) なので、
+		//     anyenv 配下のディレクトリは**存在すること自体が「現役」の定義**になる。
+		//     結果はいつも「現役 (候補なし)」か「診断できず」のどちらかで、候補は出ない
+		//   - **走らせるとリスクだけが増える**。Go の `filepath.Glob` は shell と違い先頭ドットにも
+		//     マッチする (実測 2026-09-04) ので、`.git` / `.DS_Store` / 手で退避した `nodenv-backup` が
+		//     流れ込み、`filepath.Base` 由来の tool 名 (`.git` → `git`) が `~/.git` と比較されて
+		//     不一致 = 孤児になる。「そのマネージャで入れた言語の全世代が消えます」の説明つきで
+		//     ゴミ箱候補に出る (敵対レビュー 2026-09-04 の P1)
+		//   再開の trigger: anyenv 配下の残骸で実際に容量を食っているのを見たとき。そのときは
+		//   このカタログではなく「anyenv の台帳 (`anyenv versions`) と突合する」別の判定が要る
 		Paths: []string{"~/.rbenv", "~/.nodenv", "~/.goenv"}, Guard: GuardVMRoot},
 	// --- Tier 3: アプリ起動中は触らない ---
 	// glob は Canary / Beta / Dev の tmp (.com.google.Chrome.canary.* 等) にも当たるので、プロセス判定も全系列を見る

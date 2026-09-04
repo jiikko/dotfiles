@@ -111,7 +111,7 @@ func Mark(r Result) string {
 
 // Format は人が読む一覧 (占有量の降順)。各行にリスク記号と一行の助言を必ず添える。
 // 候補 0 件のエントリは省く (表示が埋まる)。走査できなかったエントリは省かない。
-func Format(rep Report, now time.Time) string {
+func Format(rep Report, env Env, now time.Time) string {
 	// 🚨 **stdout へ直接書く経路なので、ここが最後の関門**。走査した値 (パス / ReadDir の名前 /
 	// OS のエラー文) は自分以外が書いた文字列で、そのまま出すと OSC52 やタイトル書き換えが
 	// 「表示しただけ」で発火する。TUI (glogx) の受け口も同じ関数を通す (issue 228)。
@@ -139,6 +139,17 @@ func Format(rep Report, now time.Time) string {
 		// 依存を持たないので、**揃えるのを諦めて**マークを先に出す (size は ASCII なので %9s が効く)。
 		// 揃えたくなったら表示幅を測る依存を足すこと。UI 側 (glogx) は termwidth を持つので揃えている
 		fmt.Fprintf(&b, "\n%9s  %s  %s\n", size, Mark(r), r.Entry.Label)
+		// 🚨 注記は**ヘッダの直後**に出す (助言や最終更新の後ろではない)。下の分岐は
+		// blocked / failed / 未実測 0 件で `continue` するので、後ろに置くと
+		// **実機では一度も出ない**: この機の $TMPDIR エントリは chrome-tmp (Chrome 起動中 =
+		// blocked) と finder-nsird (0 件 = 畳まれる) の 2 つしか無く、2026-09-04 の実走査で
+		// 出現数 0 を実測した。しかも「起動中で今は消せない」ときこそ
+		// 「放置すれば消える」が一番効く。畳まれた 0 件のエントリには出さない (言うことが無い)
+		// 🚨 failed では出さない。走査に失敗した = **その置き場がどこか分かっていない**ので、
+		// 性質を断言できない (Paths 空を false にしているのと同じ論理)
+		if note := RebootNote(r.Entry, env); note != "" && r.Status != StatusFailed {
+			fmt.Fprintf(&b, "           %s\n", note)
+		}
 		if r.Status == StatusFailed || r.Status == StatusBlocked {
 			fmt.Fprintf(&b, "           %s\n", r.Reason)
 			continue

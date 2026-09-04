@@ -21,7 +21,7 @@ func TestFormatKeepsUnverifiedEntryWithZeroItems(t *testing.T) {
 		Entry:  Entry{ID: "v", Label: "実測済みの項目", Risk: RiskSafe, DeleteVia: "rm", Recover: "再生成されません"},
 		Status: StatusOK, Items: []Item{},
 	}
-	out := Format(Report{Results: []Result{unver, verified}}, now)
+	out := Format(Report{Results: []Result{unver, verified}}, Env{}, now)
 
 	if !strings.Contains(out, "未実測の項目") {
 		t.Errorf("未実測のエントリが 0 件で畳まれている (探せていないことが画面から消える):\n%s", out)
@@ -127,7 +127,7 @@ func TestFormatSanitizesUntrustedText(t *testing.T) {
 	}}}
 	rep.Total = SumDeletable(rep.Results)
 
-	out := Format(rep, now)
+	out := Format(rep, Env{}, now)
 	for _, line := range strings.Split(out, "\n") {
 		for _, r := range line {
 			if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {

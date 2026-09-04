@@ -45,12 +45,12 @@ func run() int {
 		}
 	}
 	rep := disk.Scan(ctx, opt)
-	return emit(rep, *jsonOut, time.Now(), os.Stdout, os.Stderr)
+	return emit(rep, opt.Env, *jsonOut, time.Now(), os.Stdout, os.Stderr)
 }
 
 // emit は出力して終了コードを返す。**出力の分岐の外**で終了コードを決めるのが要点
 // (cmd/svcdoctor/main.go の同名関数と同じ理由: issue 177 (b))。
-func emit(rep disk.Report, jsonOut bool, now time.Time, stdout, stderr io.Writer) int {
+func emit(rep disk.Report, env disk.Env, jsonOut bool, now time.Time, stdout, stderr io.Writer) int {
 	// 🚨 終了コードは**人が見た内容**から決める (issue 228 の敵対レビュー 2026-09-04)。
 	// 無害化は「名前に制御文字を含む対象」を一覧から落とすので、無害化前の Report で数えると
 	// 隠したものがあるのに rc=1 (候補あり) になり、「検査できなかったを緑にしない」が崩れる
@@ -66,7 +66,7 @@ func emit(rep disk.Report, jsonOut bool, now time.Time, stdout, stderr io.Writer
 			return exitcode.EnvFailure
 		}
 	} else {
-		_, _ = fmt.Fprint(stdout, disk.Format(disp, now)) // Format 側の関門は冪等 (二度通しても同じ)
+		_, _ = fmt.Fprint(stdout, disk.Format(disp, env, now)) // Format 側の関門は冪等 (二度通しても同じ)
 	}
 	return diskExitCode(disp)
 }

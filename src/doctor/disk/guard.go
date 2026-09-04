@@ -473,7 +473,27 @@ func brewCleanupTargets(ctx context.Context, run runner.Runner) ([]string, error
 // 「ディレクトリの存在」で判定しない: ~/.rbenv は同じ形で現役だった (issue 148 実測)。
 func effectiveVMRoot(env Env, tool string) (string, error) {
 	if v := env.Getenv(strings.ToUpper(tool) + "_ROOT"); v != "" {
-		return canonicalPath(env, v)
+		got, err := canonicalPath(env, v)
+		if err != nil {
+			return "", err
+		}
+		// 🚨 **環境変数と anyenv 側が食い違うなら「診断できず」へ倒す** (敵対レビュー 2026-09-04 の P2)。
+		// `_zshrc:15-31` のローダは既存の <TOOL>_ROOT を**見ずに** anyenv 側で上書き export する。
+		// つまりこの機の真の規則は「anyenv 側が在ればそれが現役」で、環境変数を最優先する
+		// ここの順序とは**逆**。`anyenv install <tool>` より前に起動した shell から glogx を
+		// 起動すると古い値を継承するので、判定が反転して**現役の root が孤児として候補に出る**。
+		// どちらが現役かを言い切れない以上、候補 0 件ではなく診断できずにする
+		// (この分岐が無いと、反転したまま黙って削除候補に出る)。
+		if env.Home != "" {
+			anyenv := filepath.Join(env.Home, ".anyenv", "envs", tool)
+			if fi, err := os.Stat(anyenv); err == nil && fi.IsDir() {
+				if want, err := canonicalPath(env, anyenv); err == nil && want != got {
+					return "", fmt.Errorf("%s_ROOT (%s) と anyenv 側 (%s) が食い違っています (孤児判定をしない)",
+						strings.ToUpper(tool), got, want)
+				}
+			}
+		}
+		return got, nil
 	}
 	// ここから先は HOME を前提にする (fallback の 2 つとも HOME 配下)。
 	// 空のまま filepath.Join に渡すと ".anyenv/envs/<tool>" や ".<tool>" という**相対パス**が

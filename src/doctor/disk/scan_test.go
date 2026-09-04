@@ -294,7 +294,7 @@ func TestPermissionErrorIsReported(t *testing.T) {
 	if r.Status != StatusOK || len(r.Items) != 1 || len(r.Failures) != 1 || !strings.Contains(r.Failures[0], "locked") {
 		t.Fatalf("読めない Item を Failures に出して他を続けるはず: %+v", r)
 	}
-	if !strings.Contains(Format(Report{Results: []Result{r}}, time.Now()), "一部走査できず") {
+	if !strings.Contains(Format(Report{Results: []Result{r}}, Env{}, time.Now()), "一部走査できず") {
 		t.Error("表示に走査できずが出ない")
 	}
 	e2 := Entry{ID: "y", Paths: []string{locked}}
@@ -387,6 +387,66 @@ func TestVersionManagerRootUsesEffectiveRoot(t *testing.T) {
 		if r := scanOne(t, env2, &fakeRunner{}, e2, okBoot); len(r.Items) != 0 {
 			t.Errorf("RBENV_ROOT=%q で現役 root を孤児にした", val)
 		}
+	}
+}
+
+// <TOOL>_ROOT と anyenv 側が食い違うときは「診断できず」へ倒す。
+//
+// `_zshrc:15-31` のローダは既存の <TOOL>_ROOT を見ずに anyenv 側で上書き export するので、
+// 「anyenv 側が在ればそれが現役」がこの機の真の規則。`anyenv install <tool>` より前に
+// 起動した shell から glogx を起動すると古い値を継承し、**判定が反転して現役の root が
+// 孤児として候補に出る**。どちらが現役か言い切れないので候補を出さない。
+func TestVersionManagerRootFailsClosedOnAnyenvConflict(t *testing.T) {
+	env := testEnv(t)
+	mkfile(t, filepath.Join(env.Home, ".rbenv", "versions", "x"), 8)
+	mkfile(t, filepath.Join(env.Home, ".anyenv", "envs", "rbenv", "versions", "x"), 8)
+	// 古い shell から継承した値。anyenv 側が在るので、この値はもう現役ではない
+	env.Getenv = func(k string) string {
+		if k == "RBENV_ROOT" {
+			return filepath.Join(env.Home, ".rbenv")
+		}
+		return ""
+	}
+	e := Entry{ID: "vm", Paths: []string{filepath.Join(env.Home, ".rbenv")}, Guard: GuardVMRoot}
+	r := scanOne(t, env, &fakeRunner{}, e, okBoot)
+	if r.Status != StatusFailed {
+		t.Fatalf("食い違いを診断できずにしていない: status=%s items=%d", r.Status, len(r.Items))
+	}
+	if len(r.Items) != 0 {
+		t.Errorf("診断できずなのに候補を出した: %d 件", len(r.Items))
+	}
+	if !strings.Contains(r.Reason, "食い違") {
+		t.Errorf("理由が食い違いを指していない: %s", r.Reason)
+	}
+	// 食い違いが無ければ従来どおり動く (この分岐が全部を殺していないこと)
+	env2 := env
+	env2.Getenv = func(k string) string { return "" }
+	if r2 := scanOne(t, env2, &fakeRunner{}, e, okBoot); r2.Status != StatusOK || len(r2.Items) != 1 {
+		t.Errorf("食い違いが無い場合まで塞いだ: status=%s items=%d", r2.Status, len(r2.Items))
+	}
+}
+
+// `~/.anyenv/envs/*` を走査対象にしないことを固定する (2026-09-04 に足して撤回した)。
+// 理由は catalog.go の versionmanager-orphan-root のコメント。glob は先頭ドットにも
+// マッチするため `.git` 等が孤児判定に流れ込み、しかも anyenv 配下は原理的に孤児にならない。
+func TestCatalogDoesNotGlobAnyenvEnvs(t *testing.T) {
+	seen := 0
+	for _, e := range catalog {
+		if e.Guard != GuardVMRoot {
+			continue
+		}
+		seen++
+		for _, p := range e.Paths {
+			if strings.Contains(p, ".anyenv") {
+				t.Errorf("%s: anyenv 配下を走査している: %s (catalog.go の理由を読むこと)", e.ID, p)
+			}
+			if strings.ContainsAny(p, "*?[") {
+				t.Errorf("%s: GuardVMRoot に glob を使っている: %s (Base から tool 名を導くので任意の中身が流れ込む)", e.ID, p)
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("GuardVMRoot のエントリがカタログに無い (検査が空振りしている)")
 	}
 }
 

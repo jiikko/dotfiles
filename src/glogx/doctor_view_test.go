@@ -1926,7 +1926,7 @@ func TestDoctorUnverifiedEntryMatchesCLI(t *testing.T) {
 	}
 	rep := disk.Report{Results: []disk.Result{unver, verified}}
 
-	cli := disk.Format(rep, time.Date(2026, 9, 3, 12, 0, 0, 0, time.Local))
+	cli := disk.Format(rep, disk.Env{}, time.Date(2026, 9, 3, 12, 0, 0, 0, time.Local))
 	v := &doctorView{shown: true, expanded: map[string]bool{}, diskRep: &rep, diskResults: rep.Results}
 	wide := doctorTestOpts(60)
 	wide.width = 240

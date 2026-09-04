@@ -638,6 +638,9 @@ func (v *doctorView) hint(width int) string {
 
 // doctorRenderOpts は描画情報。
 type doctorRenderOpts struct {
+	// env は再起動の注記の判定に要る (実効 TMPDIR が dirhelper の担当かどうか)。
+	// 🚨 既定のゼロ値は「注記を出さない」側 = 安全側に倒れる
+	env     disk.Env
 	width   int
 	page    int
 	colored bool
@@ -816,6 +819,14 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 			copyText:   diskCopyText(r, mark),
 		}
 		rows = append(rows, row)
+		// 🚨 注記は**行の直後**に出し、助言 (advice) には連結しない。
+		//   - 連結しない: 行は幅で切られるので (実測: 幅 40 で注記自体も切れる)、助言に足すと
+		//     注記が丸ごと末尾から消える。独立行なら少なくとも「再起動すると消える…」まで読める
+		//   - 助言より前: 下の分岐が blocked / failed / 未実測 0 件で `continue` するため、
+		//     後ろに置くと**実機では一度も出ない** (2026-09-04 実測。CLI 側と同じ理由)
+		if note := disk.RebootNote(r.Entry, o.env); note != "" && r.Status != disk.StatusFailed {
+			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "           "+note)})
+		}
 		if r.Status == disk.StatusFailed || r.Status == disk.StatusBlocked {
 			// 理由は 1 行下に出す (マーク列に置くと狭い幅で切れる。issue 182)
 			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "           "+r.Reason)})
@@ -1246,6 +1257,9 @@ func diskCopyText(r disk.Result, mark string) string {
 	fmt.Fprintf(&b, "復元方法: %s\n", r.Entry.Recover)
 	if r.Entry.Detail != "" {
 		fmt.Fprintf(&b, "補足: %s\n", r.Entry.Detail)
+	}
+	if note := disk.RebootNote(r.Entry, disk.RealEnv()); note != "" {
+		fmt.Fprintf(&b, "補足: %s\n", note)
 	}
 	if r.Reason != "" {
 		fmt.Fprintf(&b, "理由: %s\n", r.Reason)

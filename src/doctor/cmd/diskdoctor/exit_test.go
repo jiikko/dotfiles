@@ -57,8 +57,8 @@ func TestDiskEmitReturnsSameExitCodeForBothOutputs(t *testing.T) {
 		{Results: []disk.Result{{Entry: disk.Entry{ID: "a", Label: "A"}, Status: disk.StatusFailed, Reason: "x"}}},
 	} {
 		var text, js, errBuf bytes.Buffer
-		gotText := emit(rep, false, now, &text, &errBuf)
-		gotJSON := emit(rep, true, now, &js, &errBuf)
+		gotText := emit(rep, disk.Env{}, false, now, &text, &errBuf)
+		gotJSON := emit(rep, disk.Env{}, true, now, &js, &errBuf)
 		if gotText != gotJSON {
 			t.Errorf("text=%d json=%d で食い違う: %+v", gotText, gotJSON, rep)
 		}
@@ -66,7 +66,7 @@ func TestDiskEmitReturnsSameExitCodeForBothOutputs(t *testing.T) {
 			t.Errorf("emit が判定を通っていない: got=%d want=%d", gotText, want)
 		}
 	}
-	if got := emit(disk.Report{}, true, now, failWriter{}, io.Discard); got != exitcode.EnvFailure {
+	if got := emit(disk.Report{}, disk.Env{}, true, now, failWriter{}, io.Discard); got != exitcode.EnvFailure {
 		t.Errorf("JSON のエンコード失敗が %d (want %d)", got, exitcode.EnvFailure)
 	}
 }
@@ -75,14 +75,14 @@ func TestDiskEmitReturnsSameExitCodeForBothOutputs(t *testing.T) {
 func TestDiskFormatSaysNoCandidates(t *testing.T) {
 	now := time.Now()
 	var b bytes.Buffer
-	emit(disk.Report{Results: []disk.Result{{Status: disk.StatusOK, Items: []disk.Item{}}}}, false, now, &b, io.Discard)
+	emit(disk.Report{Results: []disk.Result{{Status: disk.StatusOK, Items: []disk.Item{}}}}, disk.Env{}, false, now, &b, io.Discard)
 	if !strings.Contains(b.String(), "掃除の候補はありませんでした") {
 		t.Errorf("候補 0 件のとき見出しだけで終わっている:\n%s", b.String())
 	}
 	// 候補があるときは出さない
 	var b2 bytes.Buffer
 	emit(disk.Report{Results: []disk.Result{{Entry: disk.Entry{ID: "a", Label: "A", Recover: "x", DeleteVia: "rm"},
-		Status: disk.StatusOK, Size: 1, Items: []disk.Item{{Path: "/x", Size: 1}}}}}, false, now, &b2, io.Discard)
+		Status: disk.StatusOK, Size: 1, Items: []disk.Item{{Path: "/x", Size: 1}}}}}, disk.Env{}, false, now, &b2, io.Discard)
 	if strings.Contains(b2.String(), "掃除の候補はありませんでした") {
 		t.Errorf("候補があるのに「ありません」と出た:\n%s", b2.String())
 	}
@@ -108,7 +108,7 @@ func TestEmitCountsSanitizerDropsAsUndiagnosed(t *testing.T) {
 		t.Fatalf("前提が作れていない: 無害化前の rc=%d (want %d)", got, exitcode.Findings)
 	}
 	var out, errBuf bytes.Buffer
-	if got := emit(rep, false, time.Now(), &out, &errBuf); got != exitcode.Undiagnosed {
+	if got := emit(rep, disk.Env{}, false, time.Now(), &out, &errBuf); got != exitcode.Undiagnosed {
 		t.Errorf("落とした対象があるのに rc=%d (want %d)", got, exitcode.Undiagnosed)
 	}
 	if !strings.Contains(out.String(), "制御文字") {

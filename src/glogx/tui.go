@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"doctor/disk"
 	"glogx/issues"
 )
 
@@ -3190,7 +3191,7 @@ func (o statusRenderOpts) viewport() statusViewport {
 // ratelimitOpts は全画面 ratelimit ダッシュボードの描画情報。データは usageOv の Snapshot を
 // そのまま渡す (取得経路を 1 本に保つ。ratelimit_dashboard.go 冒頭)。
 func (m *browseModel) doctorOpts() doctorRenderOpts {
-	return doctorRenderOpts{width: m.contentWidth(), page: m.pageSize(), colored: m.colored, spinner: m.spinner(), now: timeNow()}
+	return doctorRenderOpts{env: disk.RealEnv(), width: m.contentWidth(), page: m.pageSize(), colored: m.colored, spinner: m.spinner(), now: timeNow()}
 }
 
 func (m *browseModel) ratelimitOpts() ratelimitRenderOpts {
