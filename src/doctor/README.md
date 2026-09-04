@@ -5,8 +5,8 @@
 - **CLI (`bin/diskdoctor` / `bin/svcdoctor`) は削除・停止を一切しない** (dry-run のみ)。
   実行するコマンドは提示するので、判断と実行は人が行う
 - **削除できるのはライブラリの `disk.Delete` だけ**で、その唯一の呼び出し元は
-  glogx の doctor 画面 (`D` → `Space` で選択 → `d` → 確認 → `y`)。サービス診断 (`svc`) は
-  削除の経路を持たない。不変条件は `disk/delete.go` の冒頭が正本 (issues/148 の ④ 節)
+  glogx の doctor 画面 (`D` → `Space` で選択 → `d` → 確認 → `y`)。サービス診断 (`svc`) と
+  Docker 診断 (`docker`) は削除の経路を持たない。不変条件は `disk/delete.go` の冒頭が正本 (issues/148 の ④ 節)
 
 ## 2 つの CLI の使い分け
 
@@ -60,6 +60,7 @@ CLI が要るのは「スクリプトから叩きたい」「JSON で受けた�
 | --- | --- |
 | `disk/` | 掃除候補の allowlist (`catalog.go`)、走査 (`scan.go`)、整形 (`report.go`)、除外判定 (`guard.go` — 起動中プロセス・boot 時刻・現存する simulator デバイスを見て「今は消してはいけない」を弾く。**判定に失敗したら fail-closed** = 対象外へ倒す) |
 | `svc/` | launchd の plist 読み (`plist.go`)、`launchctl` 経由の状態取得 (`launchctl.go`)、Homebrew 台帳との突き合わせ (`brew.go`)、整形 (`report.go`) |
+| `docker/` | Docker Desktop が抱えている未使用資源 (停止コンテナ / 未参照イメージ / ビルドキャッシュ / 参照の無いボリューム)。**削除の経路は持たない** — 提示するのは `docker ... prune` のコマンドだけ。合計と回収可能量は `docker system df` の申告をそのまま使う (共有レイヤーの勘定を自前で作り直さない) |
 | `brewledger/` | Homebrew が管理している formula/cask の台帳。**disk (`brew-orphan-state`) と svc (`homebrew.mxcl.<formula>` が台帳に無い判定) が同じ集合を引く**ための共有パッケージ |
 | `cachedir/` | キャッシュ置き場 (`$XDG_CACHE_HOME/glog`、未設定なら `~/.cache/glog`) の解決。glogx 本体と doctor のスキャン結果で共有する (🚨 ディレクトリ名は `glogx` ではなく `glog`) |
 | `runner/` | 外部コマンドの実行口。**stdout / stderr / exit code を分けて返す** (混ぜるとどの stream が判定材料か確定できない)。テストではここを差し替える |

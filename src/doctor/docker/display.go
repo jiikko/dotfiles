@@ -1,0 +1,57 @@
+package docker
+
+import (
+	"fmt"
+
+	"termsafe"
+)
+
+// 表示・コピーに出す前の関門 (disk / svc の display.go と対。issue 228 の規律)。
+//
+// 材料はすべて docker が持っている外部由来の文字列 — イメージ名は任意のレジストリから来るし、
+// コンテナ名・ボリューム名・ビルドキャッシュの Description は誰かが書いた文字列。
+//
+// 🚨 **Name は書き換えず落とす** (disk.Item.Path / svc.Finding.Label と同じ判断)。
+// Name は提示するコマンド (`docker volume rm <name>`) が指す先そのものなので、無害化して
+// 表示すると「攻撃者が選んだ別の資源を消せ」と案内することになる。落とした件数は Dropped に残す。
+// Detail / Notes / Unavailable は表示だけの自由文なので、落とさず無害化する。
+func SanitizeForDisplay(rep Report) Report {
+	out := rep
+	out.Unavailable = termsafe.PlainLine(rep.Unavailable)
+	out.SystemPrune = termsafe.PlainLine(rep.SystemPrune)
+	out.Groups = make([]Group, 0, len(rep.Groups))
+	for _, g := range rep.Groups {
+		g.Label = termsafe.PlainLine(g.Label)
+		g.Command = termsafe.PlainLine(g.Command)
+		notes := make([]string, 0, len(g.Notes))
+		for _, n := range g.Notes {
+			notes = append(notes, termsafe.PlainLine(n))
+		}
+		g.Notes = notes
+		items := make([]Item, 0, len(g.Items))
+		for _, it := range g.Items {
+			if !termsafe.IsPlain(it.Name) || !termsafe.IsPlain(it.Command) {
+				out.Dropped++
+				g.Size -= it.Size
+				continue
+			}
+			it.Detail = termsafe.PlainLine(it.Detail)
+			it.SizeText = termsafe.PlainLine(it.SizeText)
+			items = append(items, it)
+		}
+		g.Items = items
+		out.Groups = append(out.Groups, g)
+	}
+	if out.Dropped > 0 {
+		out.Unavailable = joinReason(out.Unavailable,
+			fmt.Sprintf("%d 件は名前が識別子として読めないため一覧から外しました (提示するコマンドが別の資源を指すため)", out.Dropped))
+	}
+	return out
+}
+
+func joinReason(a, b string) string {
+	if a == "" {
+		return b
+	}
+	return a + " / " + b
+}
