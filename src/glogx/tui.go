@@ -3683,7 +3683,10 @@ func (m *browseModel) bgLine(text, bg string) string {
 
 func (m *browseModel) hintLine() string {
 	// 全画面ビューアの hint は viewer 自身のものだけを出す (issue 227 で activeFullScreen から
-	// 導出する形に寄せた)。🚨 CI 進捗・GH 警告の前置はしない: viewer の hint は popup の実幅
+	// 導出する形に寄せた)。🚨 **actModal の確認より前に return するのは意図**: status viewer の
+	// 中から `b` / `p` で push / pull の確認を出したとき、hint 行は viewer の語彙のままになる
+	// (中央の確認モーダルが y/N を案内するので、狭い hint 行を奪ってまで二重に出さない)。
+	// この順序は issue 227 の前からのもので、構造が変わっただけ。🚨 CI 進捗・GH 警告の前置はしない: viewer の hint は popup の実幅
 	// ぴったりに詰めてあり (issues_view.go の hint)、前置すると末尾のキー案内 = 抜ける手段が
 	// 黙って切り落とされる。CI は viewer を閉じれば見える。
 	switch m.activeFullScreen() {

@@ -346,7 +346,7 @@ func (m *browseModel) handleGitLogFP(msg gitLogFPMsg) tea.Cmd {
 //     確認した対象と実行する対象がずれる
 //   - job パネルも SHA を握る UI で、reloadLog は closePanel() で黙って閉じる
 //   - 演出中 (pull / push アニメ) は offset がアニメの進行度なので、錨の画面行を測れない
-//   - 全画面の viewer (issues / status / 残量ダッシュボード / doctor) を見ている間は、そもそも git log が
+//   - 全画面の viewer (activeFullScreen が返すもの) を見ている間は、そもそも git log が
 //     見えていない。反映するとトーストだけが viewer の上に出て、裏でカーソルのリセットと CI の
 //     再取得 (GitHub API) と見えないアニメの tick が走る (敵対レビューで実測 2026-09-01)
 //

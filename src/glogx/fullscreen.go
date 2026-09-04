@@ -27,6 +27,18 @@ package main
 //  2. **テスト** — `TestFullScreenSurfacesWireEverySite` (fullscreen_test.go) が ID ごとに
 //     全サイトの**挙動**を通す (lint は「case を書いたか」しか見ない。中身が空でも通る)
 //
+// 🚨 **この 2 段は「ID を足した後」にしか発火しない**。脅威モデルと射程をここに書いておく
+// (`adversarial-review-own-safeguards.md` の節 8):
+//
+//   - **止める形**: ID を足して配線を 1 つ忘れる (issue 148 の doctor が実際に辿った形)
+//   - **止める形**: ID を足さずに描画だけ旧来の `if …visible()` で配線する →
+//     `TestFullScreenDrawingGoesThroughTheRegistry` が red にする。全画面ビューアは
+//     `finishWithGlobalChrome` を通らないとトースト・usage・モーダルが載らないので、
+//     描画をレジストリ経由に縛れば ID を足さざるを得ない = 上の 2 段へ合流する
+//   - **止めない形**: `finishWithGlobalChrome` を通さずに自前で全画面を描く / 描画以外
+//     (routing だけ・見送りだけ) を `if` で足す。**これはレビューの責務**とする
+//     (構文で全部を塞ぎにいくと迂回が無限に出て収束しない)
+//
 // 🚨 ここから導出しないもの (概念が別。混ぜると「全画面か」で答えられない問いを持ち込む):
 //
 //   - `updateKeyReachable` / ctrl+c / `restartPromptVisible` — 問いは「今キーの語彙を
@@ -40,8 +52,9 @@ package main
 // tea.Cmd) なので、共通化には opts の統一とアダプタが要り、複雑性は下がらないまま
 // **毎フレームの確保が増える** (m を捕まえた closure はスライスへ逃げるので必ずヒープに乗る。
 // viewLines と hintLine は 1 フレームに 1 回ずつ通る)。1 フレームの確保には上限があり
-// (TestFrameAllocBudget)、issues-40 の余裕は 4 回しかない。enum の switch は確保 0 で
-// 同じ「単一の出典」を作れる。
+// (TestFrameAllocBudget)、issues-40 は実測 211 回に対し上限 213 = **余裕 2 回**しかない
+// (敵対レビュー 2026-09-04 の実測。設定当時の 209 を引いて「4 回」と書いていたのは古い)。
+// enum の switch は確保 0 (同レビューが 8 ケースすべてで実測) で同じ「単一の出典」を作れる。
 type fullScreenID int
 
 const (
