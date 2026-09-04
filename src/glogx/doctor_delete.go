@@ -20,7 +20,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -37,7 +39,7 @@ type doctorDelete struct {
 	running   bool               // 削除の実行中 (キーを飲む)
 	result    *disk.DeleteReport
 	err       string
-	progress  string // 「2/3 Xcode DerivedData を走査中」
+	progress  doctorProgress // 「2/3 Xcode DerivedData」+「走査中 12s」
 
 	// log は実行したコマンドとその出力 (実行中は垂れ流し、終わった後も残す)。
 	// 失敗したときに LLM へ投げられるよう、y でまるごとコピーできる
@@ -148,12 +150,31 @@ func (d *doctorDelete) reset() {
 }
 
 // doctorDeleteEvent は削除の進捗 / 完了 (channel 経由で Update へ運ぶ)。
+// doctorProgress は「今どこまで進んだか」。
+//
+// 🚨 **文字列 1 本で持たない**。2 行に割れず (エントリ名と相を別行にできない)、経過秒を
+// 後から足せない。相が変わった時刻 (since) は receiveDelete が入れる = 時計を読むのは
+// Update の中だけ、という既存の規律を守る (engine の goroutine で時計を読まない)。
+type doctorProgress struct {
+	i, total int              // 何番目 / 全体 (表示は 1 始まり)
+	label    string           // エントリ名
+	phase    disk.DeletePhase // 走査中 / 削除中 / 確認中
+	since    time.Time        // この相に入った時刻 (経過の基準)
+	known    bool             // 一度でも相が届いたか (false なら「準備中」)
+}
+
+// sameStep は「同じ相の続き」か。経過秒の基準を据え置くかの判定に使う
+// (毎イベントで since を更新すると経過が常に 0 に戻り、止まって見える元に戻る)。
+func (p doctorProgress) sameStep(q doctorProgress) bool {
+	return p.known && q.known && p.i == q.i && p.total == q.total && p.label == q.label && p.phase == q.phase
+}
+
 type doctorDeleteEvent struct {
-	progress string
-	cmd      *disk.CommandRecord // cli: の 1 コマンドが終わった
-	rep      *disk.DeleteReport
-	err      string
-	dryRun   bool
+	prog   *doctorProgress     // 相が変わった (落としてよい)
+	cmd    *disk.CommandRecord // cli: の 1 コマンドが終わった
+	rep    *disk.DeleteReport
+	err    string
+	dryRun bool
 }
 
 type doctorDeleteMsg struct {
@@ -173,7 +194,8 @@ func (v *doctorView) startDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 	// 相は 1 つだけ立てる。🚨 confirm を落とし忘れると confirm && running の非正規状態になり、
 	// 今は switch の並び順だけで無害になっている (並べ替えた瞬間に黙って壊れる)。
 	// armedCC も引き継がない: 下見の最中に押した Ctrl-C が、本番の 1 回目で即中断に化ける
-	v.del = doctorDelete{cancel: cancel, ch: ch, done: done, progress: "準備中",
+	// progress はゼロ値 (known:false) から始める = 最初の相が届くまで「準備中」を出す
+	v.del = doctorDelete{cancel: cancel, ch: ch, done: done,
 		preparing: dryRun, running: !dryRun}
 	gen := v.gen
 	opt := v.deleteOptions()
@@ -182,7 +204,7 @@ func (v *doctorView) startDelete(targets []disk.Result, dryRun bool) tea.Cmd {
 		// 🚨 ノンブロッキング。読み手 (receiveDelete の再アーム) が止まると、engine が
 		// **削除の途中で** channel 待ちに入る。進捗は落としてよい情報なので捨てる方へ倒す
 		select {
-		case ch <- doctorDeleteEvent{progress: fmt.Sprintf("%d/%d %s を%s", i+1, total, label, doctorPhaseWord(p))}:
+		case ch <- doctorDeleteEvent{prog: &doctorProgress{i: i + 1, total: total, label: label, phase: p, known: true}}:
 		default:
 		}
 	}
@@ -247,6 +269,32 @@ func doctorPhaseWord(p disk.DeletePhase) string {
 	return string(p)
 }
 
+// deleteProgressLines は進捗を 2 行で描く (1 行目: 何番目のエントリか / 2 行目: 相 + 経過)。
+//
+// 🚨 **スピナーと経過秒を 2 行目に置くのは幅のため。** 1 行に詰めると、エントリ名が長い +
+// 端末が狭いときに truncateDisp が**末尾から**削るので、「動いている」ことを示す手がかり
+// (スピナー・経過) が最初に消える。固まって見える問題を直すための表示が、狭い端末でだけ
+// 消えるのでは意味がない (ユーザー選定 2026-09-04: 候補 4 案からこの形)。
+//
+// 経過は 1 秒未満のあいだ出さない。押した直後に「0s」が見えると、止まっているのか
+// 始まっていないのか区別が付かない (スピナーが先に生存を示す)。
+func deleteProgressLines(o doctorRenderOpts, p doctorProgress) []string {
+	if !p.known {
+		return []string{o.spinner + " 準備中"}
+	}
+	sub := "  " + o.spinner + " " + doctorPhaseWord(p.phase)
+	if !p.since.IsZero() {
+		if el := o.now.Sub(p.since); el >= time.Second {
+			sub += "  " + strconv.Itoa(int(el.Seconds())) + "s"
+		}
+	}
+	head := strconv.Itoa(p.i) + "/" + strconv.Itoa(p.total)
+	if p.label != "" {
+		head += "  " + p.label // ラベルが空のときに末尾の空白を残さない
+	}
+	return []string{head, sub}
+}
+
 // waitDeleteCmd は channel から 1 件だけ受けて Msg にする (Update の外で状態を触らない)。
 func (v *doctorView) waitDeleteCmd(gen int) tea.Cmd {
 	ch, done := v.del.ch, v.del.done
@@ -280,9 +328,19 @@ func (v *doctorView) receiveDelete(msg doctorDeleteMsg) tea.Cmd {
 		v.del.log = append(v.del.log, commandLogLines(*ev.cmd)...)
 		return v.waitDeleteCmd(msg.gen)
 	}
-	if ev.rep == nil {
-		v.del.progress = ev.progress
+	if ev.prog != nil {
+		next := *ev.prog
+		// 同じ相の続きなら基準を据え置く (経過が 0 に戻らないように)
+		if next.sameStep(v.del.progress) {
+			next.since = v.del.progress.since
+		} else {
+			next.since = timeNow()
+		}
+		v.del.progress = next
 		return v.waitDeleteCmd(msg.gen)
+	}
+	if ev.rep == nil {
+		return v.waitDeleteCmd(msg.gen) // 何も載っていない event は捨てて待ち直す
 	}
 	v.del.preparing, v.del.running = false, false
 	if ev.err != "" {
@@ -683,7 +741,7 @@ func (v *doctorView) deletePanel(o doctorRenderOpts) []string {
 		if d.preparing {
 			head = "削除できるか確認しています"
 		}
-		body := []string{d.progress, ""}
+		body := append(deleteProgressLines(o, d.progress), "")
 		if d.preparing {
 			body = append(body, "対象を走査し直しています (消してよいかを測り直します)")
 		}

@@ -3126,7 +3126,7 @@ func (m *browseModel) spinnerActive() bool {
 	// 演出 (glide / toast / 開閉スライド / zoom) は列挙しない: tickInterval が周期を上げている =
 	// 何かの演出中、で導出する。演出の登録先を tickInterval の 1 箇所に保つ (同期漏れの再発防止)
 	return m.tickInterval() != spinnerInterval || m.fetching() || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.awaitCI) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.rlDashLoading() || m.issuesOv.loading() ||
-		m.statusOv.fetching() || m.doctorOv.scanning()
+		m.statusOv.fetching() || m.doctorOv.scanning() || m.doctorOv.deleting()
 }
 
 // issuesOpts は issues viewer へ渡す描画情報。カーソル行の強調はコミット一覧と同じ

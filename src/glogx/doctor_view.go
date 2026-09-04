@@ -124,6 +124,15 @@ func (v *doctorView) scanning() bool {
 	return v.shown && (v.diskRep == nil || v.svcRep == nil || v.brew == nil)
 }
 
+// deleting は削除の下見 / 実行中か (スピナーと再描画の根拠)。
+//
+// 🚨 **scanning() では代用できない。** あちらは 3 つのレポートが nil のあいだ (= 初回スキャン中)
+// だけ true になるので、削除に入る頃には必ず false。この述語が無いと spinnerActive() が
+// false のままになり、**engine のイベントとイベントの合間に 1 度も再描画されない**。
+// OnProgress はエントリ 1 個が終わるたびにしか出ないため、重いエントリでは数十秒
+// 画面が完全に静止する = 文字どおり固まる (ユーザー報告 2026-09-04)。
+func (v *doctorView) deleting() bool { return v.shown && v.del.blocking() }
+
 // toggle は開閉。開くときにスキャンを始める Cmd を返す。
 func (v *doctorView) toggle() tea.Cmd {
 	if v.shown {

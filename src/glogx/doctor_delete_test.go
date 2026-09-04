@@ -69,6 +69,11 @@ func deleteTestView(t *testing.T, f *fakeDelete) *doctorView {
 	return v
 }
 
+// progAt はテスト用の進捗。表示の中身が主題でないテストの穴埋めに使う。
+func progAt(i, total int, label string, ph disk.DeletePhase) doctorProgress {
+	return doctorProgress{i: i, total: total, label: label, phase: ph, known: true}
+}
+
 // runDeleteCmds は削除の Cmd を回して進捗 / 完了を view へ届ける。
 //
 // 🚨 **Batch の中身は並行に走らせる**。本番の bubbletea はそうするし、逐次に回すと
@@ -104,8 +109,9 @@ func runDeleteCmds(t *testing.T, v *doctorView, cmd tea.Cmd) []string {
 			if !ok {
 				t.Fatalf("知らない Msg: %T", m)
 			}
-			if dm.ev.rep == nil {
-				progress = append(progress, dm.ev.progress)
+			if p := dm.ev.prog; p != nil {
+				// 表示と同じ語順で組む (このヘルパーの戻り値を検査するテストがある)
+				progress = append(progress, fmt.Sprintf("%d/%d %s を%s", p.i, p.total, p.label, doctorPhaseWord(p.phase)))
 			}
 			start(v.receiveDelete(dm))
 			if !v.del.blocking() {
@@ -333,7 +339,7 @@ func TestDoctorDeleteRunsAndShowsResult(t *testing.T) {
 // 実行中はキーを飲む (別の行へ移動できない / 閉じられない)。Ctrl-C は 2 回目で中断する。
 func TestDoctorDeleteBlocksKeysWhileRunning(t *testing.T) {
 	v := deleteTestView(t, &fakeDelete{})
-	v.del = doctorDelete{running: true, progress: "1/1 …"}
+	v.del = doctorDelete{running: true, progress: progAt(1, 1, "…", disk.PhaseScanning)}
 	cursor := v.cur.index
 	for _, key := range []string{"j", "k", "d", " ", "enter", "q", "esc", "D", "r"} {
 		if act := v.handleKey(key, 20); act != doctorSwallow {
@@ -417,7 +423,7 @@ func TestBrowseCtrlCDuringDeleteDoesNotQuit(t *testing.T) {
 			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 			m.doctorOv.shown = true
 			cancelled := false
-			m.doctorOv.del = doctorDelete{running: true, progress: "1/1 …",
+			m.doctorOv.del = doctorDelete{running: true, progress: progAt(1, 1, "…", disk.PhaseScanning),
 				cancel: func() { cancelled = true }}
 			m.handleKey(key)
 			if m.done || m.restartRequested {
@@ -581,15 +587,33 @@ func TestDeleteRefusedWhileScanning(t *testing.T) {
 // 進捗は実行中のパネルに出る (出ないと数秒〜数十秒のあいだ無言で固まる)。
 func TestDeleteShowsProgressInPanel(t *testing.T) {
 	v := deleteTestView(t, &fakeDelete{})
-	v.del = doctorDelete{running: true, progress: "2/3 Xcode DerivedData を削除中"}
+	v.del = doctorDelete{running: true, progress: progAt(2, 3, "Xcode DerivedData", disk.PhaseDeleting)}
 	out := doctorPanelText(v, 20)
-	for _, want := range []string{"削除しています", "2/3 Xcode DerivedData を削除中", "Ctrl-C"} {
+	// 🚨 エントリ名と「相 + 経過」は**別の行**に出す。1 行に詰めると狭い端末で
+	// truncateDisp が末尾から削り、生存の手がかり (スピナー・経過) が最初に消える
+	for _, want := range []string{"削除しています", "2/3  Xcode DerivedData", "削除中", "Ctrl-C"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("実行中のパネルに %q が無い:\n%s", want, out)
 		}
 	}
-	v.del = doctorDelete{preparing: true, progress: "1/2 走査中"}
-	if out := doctorPanelText(v, 20); !strings.Contains(out, "確認しています") || !strings.Contains(out, "1/2 走査中") {
+	// 🚨 「含む」ではなく**行の形**で検査する。連結された文字列を Contains で探す書き方だと、
+	// あいだに入る文字 (スピナー) を 1 つ書き落とすだけで一致しなくなり、1 行に詰める変異を
+	// 素通りさせる (実際に変異検証で素通りした)
+	var entryLine string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, "Xcode DerivedData") {
+			entryLine = strings.TrimRight(l, " ")
+			break
+		}
+	}
+	if entryLine == "" {
+		t.Fatalf("エントリ行が無い:\n%s", out)
+	}
+	if !strings.HasSuffix(entryLine, "Xcode DerivedData") {
+		t.Errorf("エントリ名の行に相や経過が同居している: %q", entryLine)
+	}
+	v.del = doctorDelete{preparing: true, progress: progAt(1, 2, "", disk.PhaseScanning)}
+	if out := doctorPanelText(v, 20); !strings.Contains(out, "確認しています") || !strings.Contains(out, "1/2") || !strings.Contains(out, "走査中") {
 		t.Errorf("下見のパネル:\n%s", out)
 	}
 }
@@ -1084,7 +1108,7 @@ func TestDeleteConfirmListsCommands(t *testing.T) {
 
 // 実行中の画面にコマンドと stdout / stderr / 終了コードが流れる。
 func TestDeleteRunningPanelStreamsCommandOutput(t *testing.T) {
-	v := &doctorView{del: doctorDelete{running: true, progress: "1/1 …",
+	v := &doctorView{del: doctorDelete{running: true, progress: progAt(1, 1, "…", disk.PhaseScanning),
 		log: commandLogLines(disk.CommandRecord{Name: "faketool", Args: []string{"purge"},
 			RC: 24, Stdout: "done", Stderr: "retry later"})}}
 	out := strings.Join(v.lines(doctorTestOpts(20)), "\n")
@@ -1482,16 +1506,16 @@ func TestDeletePhaseWordingSeparatesPreparingFromRunning(t *testing.T) {
 		wantHint string
 		notHint  string
 	}{
-		{name: "preparing", del: doctorDelete{preparing: true, progress: "1/2 なにか を走査中"},
+		{name: "preparing", del: doctorDelete{preparing: true, progress: progAt(1, 2, "なにか", disk.PhaseScanning)},
 			panel:    []string{"削除できるか確認しています", "対象を走査し直しています", "Ctrl-C / Ctrl-G を 2 回押すと中断します"},
 			notPanel: []string{"もう一度 Ctrl-C"},
 			wantHint: "確認しています", notHint: "実行中"},
-		{name: "running", del: doctorDelete{running: true, progress: "1/2 なにか を削除中"},
+		{name: "running", del: doctorDelete{running: true, progress: progAt(1, 2, "なにか", disk.PhaseDeleting)},
 			panel:    []string{"削除しています", "Ctrl-C / Ctrl-G を 2 回押すと中断します"},
 			notPanel: []string{"もう一度 Ctrl-C"},
 			wantHint: "実行中です", notHint: "確認しています"},
 		// 1 回目を押した後は残り 1 回。「2 回押せ」と「もう 1 回押せ」を並べるとあと何回か読めない
-		{name: "preparing+armed", del: doctorDelete{preparing: true, armedCC: true, progress: "1/2 なにか を走査中"},
+		{name: "preparing+armed", del: doctorDelete{preparing: true, armedCC: true, progress: progAt(1, 2, "なにか", disk.PhaseScanning)},
 			panel:    []string{"もう一度 Ctrl-C / Ctrl-G を押すと中断します"},
 			notPanel: []string{"2 回押すと中断します"},
 			wantHint: "確認しています", notHint: "実行中"},
@@ -1530,7 +1554,7 @@ func TestDeletePhaseWordingSeparatesPreparingFromRunning(t *testing.T) {
 // **挙動を独立の出典にする**: 候補キーを 1 つずつ browseModel の入口から押して、実際に
 // 中断できたかを見てから、案内にその名前が出ているかを突き合わせる。
 func TestDeleteAbortGuidanceMatchesKeys(t *testing.T) {
-	panel := doctorPanelText(&doctorView{del: doctorDelete{running: true, progress: "1/1 …"}}, 20)
+	panel := doctorPanelText(&doctorView{del: doctorDelete{running: true, progress: progAt(1, 1, "…", disk.PhaseScanning)}}, 20)
 	// 中断に使えそうな候補。実際に使えるかはここでは決めず、押して確かめる
 	for _, tc := range []struct{ key, word string }{
 		{"ctrl+c", "Ctrl-C"},
@@ -1540,7 +1564,7 @@ func TestDeleteAbortGuidanceMatchesKeys(t *testing.T) {
 			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 			m.doctorOv.shown = true
 			cancelled := false
-			m.doctorOv.del = doctorDelete{running: true, progress: "1/1 …",
+			m.doctorOv.del = doctorDelete{running: true, progress: progAt(1, 1, "…", disk.PhaseScanning),
 				cancel: func() { cancelled = true }}
 			m.handleKey(tc.key)
 			armed := m.doctorOv.del.armedCC
@@ -1656,5 +1680,102 @@ func TestDeleteConfirmCommandsMatchPlannedItems(t *testing.T) {
 	}
 	if !strings.Contains(out, "1 件にコマンドを実行") {
 		t.Errorf("件数とコマンド本数が揃っていない:\n%s", out)
+	}
+}
+
+// 削除中は再描画の tick が回り続ける。回らないと engine のイベントの合間に 1 度も描き直されず、
+// 進捗を出していても画面が静止する = 文字どおり固まる (ユーザー報告 2026-09-04)。
+//
+// 🚨 scanning() では代用できないことも同時に pin する: あちらは 3 つのレポートが nil のあいだ
+// (= 初回スキャン中) しか true にならないので、削除に入る頃には必ず false になっている。
+func TestDeleteKeepsRedrawAlive(t *testing.T) {
+	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m.width, m.height = 100, 30
+	tv := doctorTestView(t)
+	m.doctorOv = *tv
+	m.doctorOv.shown = true
+	// 走査は終わっている状態を作る (3 つのレポートが揃うと scanning() は false)
+	m.doctorOv.diskRep, m.doctorOv.svcRep, m.doctorOv.brew = &disk.Report{}, &svc.Report{}, &brewDoctorResult{}
+	// usage の枠は「開いていて未取得」だと単独で tick を立てるので落とす。
+	// 🚨 これを落とさないと、削除の配線を外す変異を当てても緑のまま = 何も守らないテストになる
+	m.usageOv.visible = false
+	if m.doctorOv.scanning() {
+		t.Fatal("前提が崩れている: 走査は終わっているはず")
+	}
+	if m.spinnerActive() {
+		t.Fatal("前提が崩れている: 削除前は tick を回す理由が無いはず")
+	}
+	for _, tc := range []struct {
+		name string
+		del  doctorDelete
+	}{
+		{"preparing", doctorDelete{preparing: true}},
+		{"running", doctorDelete{running: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m.doctorOv.del = tc.del
+			if !m.spinnerActive() {
+				t.Error("削除中なのに spinnerActive=false (再描画が止まり、固まって見える)")
+			}
+		})
+	}
+	m.doctorOv.del = doctorDelete{}
+	if m.spinnerActive() {
+		t.Error("削除が終わっても tick が回り続けている (止まらない側の退行)")
+	}
+}
+
+// 進捗の 2 行: エントリ名と「相 + 経過」を別の行に置き、経過は 1 秒経ってから出す。
+func TestDeleteProgressLines(t *testing.T) {
+	base := time.Date(2026, 9, 4, 1, 0, 0, 0, time.Local)
+	p := progAt(2, 3, "Xcode DerivedData", disk.PhaseDeleting)
+	p.since = base
+	o := doctorTestOpts(20)
+
+	o.now = base.Add(900 * time.Millisecond)
+	got := deleteProgressLines(o, p)
+	if len(got) != 2 || got[0] != "2/3  Xcode DerivedData" {
+		t.Fatalf("1 行目 = %q (全体 %v)", got[0], got)
+	}
+	if got[1] != "  ⠋ 削除中" {
+		t.Errorf("1 秒未満で経過が出ている: %q", got[1])
+	}
+
+	o.now = base.Add(12500 * time.Millisecond)
+	if got := deleteProgressLines(o, p); got[1] != "  ⠋ 削除中  12s" {
+		t.Errorf("経過が出ていない: %q", got[1])
+	}
+
+	// 相がまだ届いていないあいだは「準備中」(スピナーだけは動く)
+	if got := deleteProgressLines(o, doctorProgress{}); len(got) != 1 || got[0] != "⠋ 準備中" {
+		t.Errorf("準備中 = %v", got)
+	}
+}
+
+// 同じ相が続くあいだ経過の基準を据え置く。毎イベントで打ち直すと経過が 0 に戻り続け、
+// 「どこまで進んだか」が読めなくなる (固まって見える元の症状に戻る)。
+func TestDeleteProgressElapsedSurvivesSameStep(t *testing.T) {
+	orig := timeNow
+	now := time.Date(2026, 9, 4, 1, 0, 0, 0, time.Local)
+	timeNow = func() time.Time { return now }
+	t.Cleanup(func() { timeNow = orig })
+
+	v := deleteTestView(t, &fakeDelete{})
+	v.del = doctorDelete{running: true, ch: make(chan doctorDeleteEvent, 1), done: make(chan doctorDeleteEvent, 1)}
+	send := func(p doctorProgress) {
+		v.receiveDelete(doctorDeleteMsg{gen: v.gen, ev: doctorDeleteEvent{prog: &p}})
+	}
+	send(progAt(1, 2, "A", disk.PhaseScanning))
+	first := v.del.progress.since
+
+	now = now.Add(5 * time.Second)
+	send(progAt(1, 2, "A", disk.PhaseScanning)) // 同じ相の続き
+	if !v.del.progress.since.Equal(first) {
+		t.Errorf("同じ相で基準が打ち直された: %v → %v", first, v.del.progress.since)
+	}
+
+	send(progAt(1, 2, "A", disk.PhaseDeleting)) // 相が変わった
+	if v.del.progress.since.Equal(first) {
+		t.Error("相が変わったのに経過の基準が据え置かれた")
 	}
 }
