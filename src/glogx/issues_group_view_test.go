@@ -368,3 +368,39 @@ func TestIssuesViewPendingMoveAnchorSurvivesNonCursorKeys(t *testing.T) {
 		t.Fatal("j (カーソル移動) で move の再アンカー予約が捨てられない")
 	}
 }
+
+// 開いたまま group を消して同名で作り直しても、死にキーで勝手に展開しない (再スキャン経路でも prune する)。
+func TestIssuesViewReceivePrunesDeadGroupKeys(t *testing.T) {
+	alpha := fakeEpicIssue("/repo/issues", "alpha", "710", "alpha", issues.StatusOpen)
+	beta := fakeEpicIssue("/repo/issues", "beta", "709", "beta", issues.StatusOpen)
+	v := loadedView(alpha, beta)
+	v.handleKey("enter", vp(10)) // alpha を展開
+	if !v.expandedGroups[alpha.GroupKey] {
+		t.Fatal("前提: alpha が展開されていない")
+	}
+	v.receive(issuesScanMsg{dirs: []string{"/repo/issues"}, issues: []*issues.Issue{beta}}) // alpha が消えた
+	if v.expandedGroups[alpha.GroupKey] {
+		t.Fatalf("消えた group の展開キーが残っている: %v", v.expandedGroups)
+	}
+}
+
+// 親行で番号 filter を Esc したときは親行へ戻る (filter 中の添字を持ち越さない)。
+func TestIssuesViewClearNumberFilterOnGroupRowReanchorsGroup(t *testing.T) {
+	alpha := fakeEpicIssue("/repo/issues", "alpha", "710", "alpha", issues.StatusOpen)
+	g1 := fakeIssue("712", "feat", "a", issues.StatusOpen)
+	g2 := fakeIssue("711", "feat", "b", issues.StatusOpen)
+	v := loadedView(g1, g2, alpha)
+	v.handleKey("/", vp(10))
+	v.handleKey("7", vp(10))
+	v.handleKey("1", vp(10))
+	v.handleKey("0", vp(10)) // alpha の子だけがヒット → 親行 + 子行
+	v.handleKey("up", vp(10))
+	v.handleKey("up", vp(10)) // 先頭 = alpha の親行
+	if !v.currentIsGroup() {
+		t.Fatalf("前提: filter 中の先頭が親行でない: %+v", v.displayRows)
+	}
+	v.handleKey("esc", vp(10))
+	if !v.currentIsGroup() || v.currentGroupKey() != alpha.GroupKey {
+		t.Fatalf("Esc 後に親行へ戻らない: cursor=%d rows=%+v", v.cursor, v.displayRows)
+	}
+}

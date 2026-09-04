@@ -515,6 +515,7 @@ func (v *issuesView) receive(msg issuesScanMsg) tea.Cmd {
 	v.tabs = v.tabsCanon // refresh が件数を数えて表示順 (0 件を右) へ並べ替える
 	v.tabIdx = tabIndexOf(v.tabs, tab)
 	v.refresh()
+	v.pruneExpandedGroups() // 開いたまま group を消して作り直しても、死にキーで勝手に展開しない
 	// 親行にカーソルがあっても、move の再アンカー予約 (pendingCursorPath) があるならそちらを
 	// 優先する。予約は必ず issue の path なので、親行アンカーで飛ばすと消費だけされて効かない
 	// (今は親行では n を受けないので到達しないが、受けた瞬間に黙って壊れる形なので先に塞ぐ)。
@@ -1182,6 +1183,7 @@ func (v *issuesView) anchorGroupInternal(key string) {
 func (v *issuesView) clearNumberFilter() {
 	iss := v.current()
 	path := issuePath(iss)
+	groupKey := v.currentGroupKey() // 親行で Esc したときは親行へ戻す (添字を残さない)
 	v.collapsedGroups = nil
 	if iss != nil && iss.GroupKind == issues.GroupEpic {
 		key := issueGroupKey(iss)
@@ -1196,7 +1198,14 @@ func (v *issuesView) clearNumberFilter() {
 	v.refresh()
 	// Esc は「1 段戻る」であってカーソル移動の意思表示ではないので、直前の move の再アンカー
 	// 予約 (pendingCursorPath) は捨てない (anchorCursor は捨てる側)。
-	v.anchorCursorInternal(path)
+	switch {
+	case groupKey != "":
+		v.anchorGroupInternal(groupKey)
+	case path != "":
+		v.anchorCursorInternal(path)
+	default:
+		v.cursor = 0 // filter 中の添字を持ち越さない
+	}
 }
 
 // ownsKeys は viewer 自身がキーを解釈し切る状態か (URL ピッカー入力中 / 番号の絞り込み入力中 /
