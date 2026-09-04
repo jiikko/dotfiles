@@ -435,7 +435,9 @@ func TestDoctorDeleteLogAndReportAreSanitized(t *testing.T) {
 	v.shown, v.gen = true, 1
 	v.del.running = true
 
-	v.receiveDelete(doctorDeleteMsg{gen: 1, ev: doctorDeleteEvent{progress: "2/3 走査中" + clearSeq}})
+	v.receiveDelete(doctorDeleteMsg{gen: 1, ev: doctorDeleteEvent{
+		prog: &doctorProgress{i: 2, total: 3, label: "細工されたラベル" + clearSeq, known: true},
+	}})
 	v.receiveDelete(doctorDeleteMsg{gen: 1, ev: doctorDeleteEvent{cmd: &disk.CommandRecord{
 		Name: "xcrun" + clearSeq, Args: []string{"simctl", "delete", "id" + clearSeq},
 		RC: 0, Stdout: "消しました" + osc52Seq + "\n2 行目", Stderr: "警告" + clearSeq,
@@ -456,8 +458,8 @@ func TestDoctorDeleteLogAndReportAreSanitized(t *testing.T) {
 		t.Fatal("前提が作れていない: 記録が入っていない")
 	}
 	assertNoControl(t, map[string]string{
-		"del.progress":  v.del.progress,
-		"CommandRecord": strings.Join(v.del.log, "\x00"),
+		"del.progress.label": v.del.progress.label,
+		"CommandRecord":      strings.Join(v.del.log, "\x00"),
 	})
 	for _, l := range v.del.log {
 		if hasTerminalControl(l) {
