@@ -134,6 +134,9 @@ platform の差が消えた今も残るのが**「手元には在るが git に�
 
 - `run_tests_parallel` に入れられるのは tempdir 独立で共有資源に触らないテストだけ。`test-discovered` は tests/ 全体をこれで回し、共有資源 (tmux サーバ / nvim) に触る `SERIAL_TEST_DIRS` (tests/tmux / tests/nvim / tests/zshrc/tmux-session) だけを直列の `run_tests` に回す。新ディレクトリは並列側に入るので、共有資源に触るテストを書いたら `SERIAL_TEST_DIRS` へ足す
 - CI は heavy / rest の 2 job。分割の整合 (パッケージ依存・prune) は `make test-ci-group-deps` が検査する
+- **並列度は Makefile の `NPROC`** (既定 = `getconf _NPROCESSORS_ONLN`)。`run_tests_parallel` の `xargs -P` に渡る。**コマンドラインでのみ上書きできる**: `make test NPROC=4` は効くが `NPROC=4 make test` は効かない (makefile の `:=` は環境変数より強い、という make の変数優先順位そのもの)
+  - 🚨 **`make -j` はテストの並列度に効かない**。あれは make の target 並列で、テストの並列度は `xargs -P` 側が持つ。2 つは独立
+  - 🚨 **性能 knob としては期待外れ**。テストの大半は CPU ではなく待ち (プロセス spawn / tmux サーバ起動 / 条件ポーリング) で、`real` に対する `user+sys` は 9〜43% (実測 2026-09-05。ffmpeg を回す av1ify だけが 82〜86%)。下げても大して遅くならず、上げても速くならない。効くのは直列腕を減らすこと (issue 262)
 
 ## bench
 
