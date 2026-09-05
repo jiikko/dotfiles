@@ -1,0 +1,41 @@
+# 266 retro: glogx の J/K 横展開と next 目印の symlink 化 (2026-09-05)
+
+起票日: 2026-09-05
+対象セッション: J/K で詳細を開いたまま隣へ (4 画面) / UI ガイド新設 / hint 幅の予算一本化と
+fitHintItems 化 (264) / next の claim を symlink の目印に (263) / CI の番号重複と Lint 修正
+
+## 反省・気づき
+
+1. **push と worktree 削除を `;` で繋いで、push 失敗後に worktree を消した** (J/K 横展開の 4 commit が
+   一時的に参照なしになった。hash から復元)。`&&` に変えてからは同じ事故は起きていない。
+   → 切り出し先: `.claude/rules/worktree-per-session.md` に「push が成功したことを確認するまで
+   worktree を消さない (`&&` で繋ぐ)」を 1 行追記。新規ルールは不要 (発動点が同じ)
+2. **worktree の cwd で `git pull` を打つ**のを 3 回繰り返した (detached HEAD なので必ず失敗。実害は無いが
+   毎回 1 往復増える)。`git -C ~/dotfiles pull` と対象を明示する形にすれば起きない。
+   → 切り出し先: 上と同じ節に「本体の pull / worktree remove は `git -C ~/dotfiles` で対象を明示」を併記
+   (`commit-with-pathspec.md` の「worktree からの merge/push も cwd 依存」と同族)
+3. **敵対的レビュー 4 周 (約 60 万トークン) の収束**: 1〜2 周目は Go の安全機構に P1/P2 が出て価値が高かったが、
+   3〜4 周目は bash スクリプト 1 本の細部 (末尾スラッシュ / glob 文字 / 大文字小文字) に収束した。
+   指摘は毎周本物だったので無駄ではないが、「修正が数行で直接実測できるなら次の周を省く」判断が
+   規律上できなかった (§7 が「修正した周は必ずもう 1 周」)。
+   → 切り出し先: `adversarial-review-own-safeguards.md` §7 に打ち切り条件を追記する案
+   (「直前の周の修正が (a) 判定ロジックを新設せず (b) 各修正を直接の実測で確認できたなら、
+   その旨を明記して打ち切ってよい」)。**却下も候補**: 3〜4 周目の指摘 (`EPIC/` の大文字小文字で
+   bash と Go が割れる等) は実測で初めて出たもので、省いていたら CI が macOS で永久に緑のまま
+   glogx と食い違う検査になっていた。判断はユーザーに委ねる
+4. **自分が入れた検査が repo の lint に引っかかった** (`find | grep -q`)。ローカルでは `make lint` (glogx) と
+   shellcheck しか回さず、repo 全体の `make test-lint` を回していなかった。
+   → 切り出し先: なし (既存の「commit 前に make test」の記憶で足りる。今回は glogx の lint と
+   repo の lint を別物と思って片方だけ回した、という個別の誤り)
+5. **hint 幅の予算が 3 通りあったことに、J/K でぴったり 84 桁に詰めるまで気づかなかった**。
+   ぼやきとして出し、その日のうちに一本化 → fitHintItems 化まで進んだのは良い流れ。
+   → 切り出し先: なし (264 で構造的に解消済み)
+6. **symlink 案はユーザーの提案**で、私は案 A (リンク書き換え) を推していた。「差分が大量に出る」という
+   ユーザーの直感は量としては外れていたが、「claim の commit に本文の差分が混ざる」という本質を
+   突いていて、結果として A/B/C のどれより小さい解になった。
+   → 切り出し先: なし (記録のみ)
+
+## 残課題
+
+- [ ] 1 と 2 を `.claude/rules/worktree-per-session.md` へ追記するか (ユーザー判断)
+- [ ] 3 を `adversarial-review-own-safeguards.md` §7 へ追記するか、却下するか (ユーザー判断)
