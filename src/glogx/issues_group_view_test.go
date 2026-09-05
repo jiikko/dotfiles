@@ -481,15 +481,19 @@ func TestIssuesViewGroupParentIssueMergesIntoHeaderRow(t *testing.T) {
 	if v.currentIsGroup() || v.current() != parent {
 		t.Fatalf("統合行が issue として扱われない: current=%+v", v.current())
 	}
-	// Space は展開の toggle、Enter は本文を開く
-	v.handleKey(" ", vp(10))
+	// Enter / Space はどちらも子 issue の展開 toggle (本文は o で開く)
+	v.handleKey("enter", vp(10))
 	if !v.expandedGroups[parent.GroupKey] || len(v.displayRows) != 2 {
-		t.Fatalf("Space で展開されない: expanded=%v rows=%d", v.expandedGroups, len(v.displayRows))
+		t.Fatalf("Enter で子リストが開かない: expanded=%v rows=%d", v.expandedGroups, len(v.displayRows))
 	}
 	if v.displayRows[1].issue != child || !v.displayRows[1].inGroup {
 		t.Fatalf("子行が親の下に並ばない: %+v", v.displayRows[1])
 	}
-	if v.toggleGroupAtCursor(false) {
-		t.Fatalf("Enter (includeHead=false) が統合行で toggle した")
+	if v.open != nil {
+		t.Fatalf("Enter が本文を開いた (子リストの展開が優先されるべき)")
+	}
+	v.handleKey(" ", vp(10)) // Space でも同じ toggle
+	if v.expandedGroups[parent.GroupKey] || len(v.displayRows) != 1 {
+		t.Fatalf("Space で畳めない: expanded=%v rows=%d", v.expandedGroups, len(v.displayRows))
 	}
 }

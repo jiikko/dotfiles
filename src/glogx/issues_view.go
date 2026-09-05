@@ -1167,10 +1167,9 @@ func (v *issuesView) currentIsGroup() bool {
 
 // toggleGroupAtCursor は親行の展開状態を切り替える。親行以外では false を返し、呼び出し側が
 // 通常の Enter/Space の意味を続けて処理できるようにする。
-// includeHead=false のときは統合した親 issue 行を対象にしない (Enter は本文を開く方を優先する)。
-func (v *issuesView) toggleGroupAtCursor(includeHead bool) bool {
+func (v *issuesView) toggleGroupAtCursor() bool {
 	row, ok := v.currentDisplayRow()
-	if !ok || !row.isGroupParent() || (row.groupHead && !includeHead) {
+	if !ok || !row.isGroupParent() {
 		return false
 	}
 	key := row.groupKey
@@ -1371,7 +1370,7 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 	case "ctrl+d", "pgdown", "f":
 		v.moveCursor(max(rows/2, 1), rows)
 	case " ":
-		if !v.toggleGroupAtCursor(true) {
+		if !v.toggleGroupAtCursor() {
 			v.moveCursor(max(rows/2, 1), rows)
 		}
 	case "ctrl+u", "pgup", "b", "shift+space":
@@ -1400,7 +1399,7 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 		}
 		v.moveTab(-1)
 	case "enter":
-		if v.toggleGroupAtCursor(false) {
+		if v.toggleGroupAtCursor() {
 			break
 		}
 		v.openBody()
