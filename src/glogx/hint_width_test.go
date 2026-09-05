@@ -53,6 +53,7 @@ func TestHintsFitPopupWidth(t *testing.T) {
 	t.Run("detailOv の項目", func(t *testing.T) {
 		got := fitHintItems(width, []hintItem{
 			{"j/k: スクロール", 3},
+			{"J/K: 隣の job", 4},
 			{"v: nvim で開く", 4},
 			{"r: 再実行", 3},
 			{"Enter/h/q: 戻る", 1},
