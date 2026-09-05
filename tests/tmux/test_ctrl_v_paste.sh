@@ -6,7 +6,7 @@
 #     (= 実際の分岐先を決める値。nvim / less / cat が前面なら偽 = 既存の C-v が残る)
 #   - true 側のコマンド (scripts/tmux_paste_clipboard.sh) が実際にペインへ流し込み、
 #     貼ったバイト数を右下の toast (bin/tmux-toast) へ渡す
-#     (issue 248 の確認 1 を人が判定するための数字。宛先は貼り先ペインに固定する)
+#     (issue 248 の確認 1 を人が判定するための数字。宛先はそのペインのセッションへ固定する)
 #
 # 🚨 **キー押下そのものは自動テストで再現できない**。tmux send-keys は key table を通さず
 # ペインへ直接キーを送るので、root テーブルの bind は発火しない (2026-09-04 に実測: zsh には
@@ -156,12 +156,15 @@ STUB
   else
     bad "バイト数が toast へ渡っていない: [$line]"
   fi
-  # 🚨 TMUX_PANE を貼り先へ固定していないと、tmux-toast の中の tmux コマンドが
-  # 「最後に活動したクライアント」の画面へ出る (複数クライアントで別ペインへ誤爆)
+  # 🚨 TMUX_PANE を渡していないと、tmux-toast の中の tmux コマンドが「最後に活動した
+  # クライアント」の画面へ出る (複数クライアントで誤爆)。
+  # ⚠️ ここで固定できるのは**セッションまで** (TMUX_PANE から pane/window は決まらず、
+  # そのセッションの current window の active pane に丸められる。実測 2026-09-05)。
+  # 検査しているのは「渡しているか」であって「その pane に出るか」ではない
   if grep -q "^${target}|" <<< "$line"; then
-    ok "toast の宛先を貼り先ペインに固定している (TMUX_PANE=$target)"
+    ok "toast へ貼り先の pane_id を渡している (TMUX_PANE=${target}。宛先はそのセッション)"
   else
-    bad "toast の宛先が貼り先ペインに固定されていない: [$line]"
+    bad "toast へ貼り先の pane_id を渡していない: [$line]"
   fi
 fi
 

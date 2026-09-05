@@ -10,7 +10,7 @@
 # 描画する fallback を使う (tmux の再描画に消されるため短周期で描き直す。点滅は残る)。
 #
 # 使い方: tmux-toast [-d 秒] [-f 前景色] [-b 背景色] [-e pane_id] メッセージ...
-#   -e: この pane_id が「直近の toast 自身の pane」なら何も表示しない。
+#   -e: この pane_id が「直近 8 個の toast 自身の pane」のどれかなら何も表示しない。
 #       pane-exited hook から呼ぶときに #{hook_pane} を渡す (toast pane の終了で
 #       閉じ通知が再帰的に出続けるのを防ぐ)
 #   -F: ノイズ抑止ガード (2 秒デバウンス / agent panel の quiet 窓) を無視して必ず出す。
@@ -48,11 +48,16 @@ msg="$*"
 [ -n "${TMUX:-}" ] || { echo "tmux-toast: not inside tmux" >&2; exit 1; }
 
 # toast 自身の pane 起因の呼び出しは無視する (-e に pane-exited の #{hook_pane} が来る)。
-# 記録は直近 1 個だけなので、-d を長くして toast が同時に複数生きるケースでは
-# 古い方の終了を除外できない (稀にスプリアスな閉じ通知が出る)。許容
-if [ -n "$exclude_pane" ] && \
-   [ "$exclude_pane" = "$(tmux show-option -gqv @tmux_toast_pane)" ]; then
-  exit 0
+# 🚨 **直近 N 個を覚える**。1 個だけだと toast が同時に複数生きるとき古い方の終了が
+# 除外を抜け、「🗑 pane を閉じました」の偽通知が出る (実測 2026-09-05: -F のペースト通知を
+# 2 連発すると toast pane が 2 枚でき、1 枚目の pane-exited が第 3 の toast を生んだ)。
+# -F で抑止を外した経路があるので、同時に生きる toast は 1 枚とは限らない
+TOAST_PANE_MEMORY=8
+recent_panes=$(tmux show-option -gqv @tmux_toast_pane)
+if [ -n "$exclude_pane" ]; then
+  case " $recent_panes " in
+    *" $exclude_pane "*) exit 0 ;;
+  esac
 fi
 
 # 再入ガード: toast 用の new-pane 自体が after-split-window hook を発火させる (実測,
@@ -122,7 +127,19 @@ if grep -q -- '-X x-position' <<< "$(tmux list-commands new-pane 2>/dev/null)"; 
     -R "fg=colour${fg},bg=colour${bg}" \
     -- sh -c 'printf "\n  %s" "$1"; sleep "$2"' tmux-toast "$msg" "$duration" 2>/dev/null) || exit 0
   # -e 除外用に toast pane の id を記録 (この pane の pane-exited は通知しない)
-  tmux set-option -g @tmux_toast_pane "$pane_id"
+  # 🚨 **追記は -a (append) で tmux 側にやらせる**。読んで書き戻す形は競合する:
+  # 2 本同時に走ると両方が同じ値を読み、後勝ちで片方の id が消えて除外を抜ける
+  # (実測 2026-09-05: -F のペースト 2 連発で @tmux_toast_pane が [%1] になり、%2 の
+  # 終了が偽の閉じ通知を生んだ)
+  tmux set-option -ag @tmux_toast_pane " $pane_id"
+  # 上限で切り詰める (best-effort。ここは競合しても「多めに覚える」方向にしか壊れず、
+  # pane id は単調増加で再利用されないので過剰保持は無害)
+  # shellcheck disable=SC2046 # 空白区切りの語として数えたい (意図どおりの分割)
+  set -- $(tmux show-option -gqv @tmux_toast_pane)
+  if [ "$#" -gt "$TOAST_PANE_MEMORY" ]; then
+    shift $(( $# - TOAST_PANE_MEMORY ))
+    tmux set-option -g @tmux_toast_pane "$*"
+  fi
   exit 0
 fi
 

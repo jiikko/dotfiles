@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # bin/tmux-toast の unit テスト (PATH stub 方式。実 tmux には触れない)。固定する不変条件:
+#   - -e 除外は直近 1 個ではなく複数個 (同時に複数の toast が生きうるため)
 #   - 再入ガード: 直近 2 秒以内に toast 済みなら new-pane を呼ばず exit 0
 #     (new-pane 自体が after-split-window hook を再発火するため、これが無いと
 #      hook 経由の呼び出しで toast が toast を生む無限増殖になる。2026-07-19 実測)
@@ -24,6 +25,8 @@ trap cleanup EXIT
 
 CALLS="$TMP_DIR/calls.log"
 export CALLS
+APPENDED="$TMP_DIR/appended"
+export APPENDED
 
 # stub tmux: 呼び出しを記録し、応答は環境変数で制御する
 #   STUB_FLOATING=0 → list-commands の出力に -X が無い (floating panes 非対応 tmux)
@@ -51,9 +54,20 @@ case "$1" in
   show-option)
     case "$*" in
       *@tmux_toast_last_epoch*) echo "${STUB_LAST:-}" ;;
-      *@tmux_toast_pane*) echo "${STUB_TOAST_PANE:-}" ;;
+      # -ag での追記を再現する (追記後の値を読み直す경路がある)
+      *@tmux_toast_pane*)
+        # read/echo は builtin。PATH を空にする python3 不在テストでも動く必要がある
+        if [ -f "$APPENDED" ]; then read -r _v < "$APPENDED"; echo "$_v"
+        else echo "${STUB_TOAST_PANE:-}"; fi ;;
       *@agent_panel_busy*) echo "${STUB_PANEL:-}" ;;
     esac ;;
+  set-option)
+    # -ag は追記 ($4 が追記される値)。読み直し用にファイルへ持つ
+    if [ "$2" = "-ag" ] && [ "$3" = "@tmux_toast_pane" ]; then
+      printf '%s%s\n' "${STUB_TOAST_PANE:-}" "$4" > "$APPENDED"
+    elif [ "$3" = "@tmux_toast_pane" ]; then
+      printf '%s\n' "$4" > "$APPENDED"
+    fi ;;
   new-pane)
     # STUB_NEWPANE_FAIL=1 で「ジオメトリが収まらず失敗」を再現する (rc=1 + stderr)
     if [ "${STUB_NEWPANE_FAIL:-0}" = 1 ]; then
@@ -70,7 +84,7 @@ export PATH="$TMP_DIR/bin:$PATH"
 fail=0
 ok()   { printf '✓ %s\n' "$1"; }
 ng()   { printf '✗ %s\n' "$1"; fail=1; }
-reset_calls() { : > "$CALLS"; }
+reset_calls() { : > "$CALLS"; rm -f "$APPENDED"; }
 
 run_toast() { TMUX=stub "$SCRIPT" "$@"; }
 
@@ -148,7 +162,7 @@ if grep -q -- 'set-option -g @tmux_toast_last_epoch' "$CALLS"; then
 else
   ng "floating: epoch が記録されていない (ガードが効かなくなる)"
 fi
-if grep -q -- 'set-option -g @tmux_toast_pane %42' "$CALLS"; then
+if grep -q -- 'set-option -ag @tmux_toast_pane  *%42' "$CALLS"; then
   ok "floating: -e 除外用に toast pane の id を記録する"
 else
   ng "floating: toast pane id が記録されていない (閉じ通知の永久ループ防止が効かない)"
@@ -169,6 +183,50 @@ if grep -q '^tmux new-pane' "$CALLS"; then
   ok "-e 除外: 通常 pane の終了では通知を出す"
 else
   ng "-e 除外: 通常 pane の終了なのに通知が出ない"
+fi
+
+# --- -e 除外: 直近 1 個ではなく複数個を覚える ------------------------------
+# 🚨 1 個しか覚えないと、toast が同時に 2 枚生きたとき古い方の pane-exited が除外を抜けて
+# 「🗑 pane を閉じました」の偽通知になる (実測 2026-09-05: -F のペーストを 2 連発すると
+# toast pane が 2 枚でき、1 枚目の終了が第 3 の toast を生んだ)
+reset_calls
+STUB_TOAST_PANE='%40 %41 %42' run_toast -e '%40' "🗑 pane を閉じました"
+if grep -q '^tmux new-pane' "$CALLS"; then
+  ng "-e 除外: 古い方の toast pane が除外を抜けた (偽の閉じ通知が出る)"
+else
+  ok "-e 除外: 直近複数個の toast pane を覚えている (古い方の終了も除外)"
+fi
+
+# --- 記録は追記で、上限で切り詰める ----------------------------------------
+reset_calls
+STUB_TOAST_PANE='%40 %41' run_toast "🪟 3 枚目"
+rec="$(cat "$APPENDED" 2>/dev/null)"
+# 🚨 追記は tmux の -a に任せる。読んで書き戻す形は 2 本同時に走ると後勝ちで
+# 片方の id が消え、その pane の終了が偽の閉じ通知になる (実測 2026-09-05)
+if grep -q -- '-ag @tmux_toast_pane' "$CALLS" && grep -q '%40 %41 %42' <<< "$rec"; then
+  ok "記録: tmux の -a で追記する (読んで書き戻さない = 競合で消えない)"
+else
+  ng "記録: 追記になっていない: [$rec] calls=[$(grep @tmux_toast_pane "$CALLS" | tr '\n' ';')]"
+fi
+reset_calls
+STUB_TOAST_PANE='%1 %2 %3 %4 %5 %6 %7 %8' run_toast "🪟 9 枚目"
+rec="$(grep -o 'set-option -g @tmux_toast_pane .*' "$CALLS" | tail -1)"
+if grep -q '%2 %3 %4 %5 %6 %7 %8 %42' <<< "$rec" && ! grep -q '%1 ' <<< "$rec"; then
+  ok "記録: 上限 8 個で古い方から切り詰める (オプション値が伸び続けない)"
+else
+  ng "記録: 切り詰めが効いていない: [$rec]"
+fi
+
+# --- 記録の順序: epoch は new-pane より先に書く ----------------------------
+# 🚨 順序が逆だと、new-pane が発火する after-split-window hook が**古い** epoch を見て
+# 1 枚余分な toast を出す (無限にはならないが、装飾通知が二重に出る)
+reset_calls
+run_toast "🪟 順序"
+if [ "$(grep -n 'set-option -g @tmux_toast_last_epoch' "$CALLS" | head -1 | cut -d: -f1)" -lt \
+   "$(grep -n '^tmux new-pane' "$CALLS" | head -1 | cut -d: -f1)" ]; then
+  ok "記録: epoch を new-pane より先に書く (hook が古い epoch を見ない)"
+else
+  ng "記録: epoch の記録が new-pane より後になっている"
 fi
 
 # --- fallback 経路: tty へ直接描画し refresh-client で消す ------------------
