@@ -228,18 +228,20 @@ func TestIssuesViewMoveReanchorsCursorAndMarkToReturnedPaths(t *testing.T) {
 		t.Fatalf("移動後の再アンカーが予約されていない: cmd=%v cursor=%q mark=%q", cmd != nil, v.pendingCursorPath, v.pendingMarkPath)
 	}
 
+	// claim は symlink の目印なので Path は変わらない (issue 263)。再走査の結果は同じ Path に
+	// Status=Next / NextLink が付いた形になる
 	fresh := make([]*issues.Issue, 0, len(old))
 	for _, iss := range old {
 		base := filepath.Base(iss.Path)
-		path := filepath.Join(groupDir, issues.NextDirName, base)
 		fresh = append(fresh, &issues.Issue{
-			Path: path, Dir: dir, Rel: filepath.Join(issues.EpicDirName, "cloud", issues.NextDirName, base),
+			Path: iss.Path, Dir: dir, Rel: iss.Rel,
 			Number: iss.Number, Category: iss.Category, Slug: iss.Slug, Status: issues.StatusNext,
 			Group: "cloud", GroupKind: issues.GroupEpic, GroupKey: groupDir,
+			NextLink: filepath.Join(groupDir, issues.NextDirName, base),
 		})
 	}
 	v.receive(issuesScanMsg{dirs: []string{dir}, issues: fresh})
-	if v.current() == nil || v.current().Path != filepath.Join(groupDir, issues.NextDirName, "001-feat-b.md") {
+	if v.current() == nil || v.current().Path != filepath.Join(groupDir, "001-feat-b.md") {
 		t.Fatalf("cursor が move の戻り値へ再アンカーされない: %+v", v.current())
 	}
 	if lo, hi, ok := v.selection(); !ok || hi-lo != 1 {
@@ -283,8 +285,12 @@ func TestIssuesViewUserCursorActionsCancelPendingMoveAnchors(t *testing.T) {
 }
 
 func TestIssuesViewPendingMoveAnchorsExpireAfterFreshMissingScan(t *testing.T) {
-	iss := realIssue(t)
+	// 🚨 done/ の issue を使う: 直下の issue の claim は symlink の目印で Path が変わらず (issue 263)、
+	// 「移動先が消える」状況が作れない。done/ からの claim は従来どおり rename なので、宛先の消失を再現できる
+	iss := realDoneIssue(t)
 	v := loadedView(iss)
+	v.filter = issues.FilterAll // done は既定の一覧に出ないので見せる
+	v.refresh()
 	v.cwd = iss.Dir
 	if v.scanCmd(v.cwd) == nil {
 		t.Fatal("前提: stale scan を飛行させられない")
@@ -293,7 +299,7 @@ func TestIssuesViewPendingMoveAnchorsExpireAfterFreshMissingScan(t *testing.T) {
 	if v.handleKey("y", vp(10)) != nil || v.pendingCursorPath == "" {
 		t.Fatal("前提: move 後の pending cursor anchor がない")
 	}
-	if err := os.Remove(filepath.Join(iss.Dir, issues.NextDirName, iss.Rel)); err != nil {
+	if err := os.Remove(filepath.Join(iss.Dir, issues.NextDirName, filepath.Base(iss.Rel))); err != nil {
 		t.Fatal(err)
 	}
 
@@ -403,4 +409,19 @@ func TestIssuesViewClearNumberFilterOnGroupRowReanchorsGroup(t *testing.T) {
 	if !v.currentIsGroup() || v.currentGroupKey() != alpha.GroupKey {
 		t.Fatalf("Esc 後に親行へ戻らない: cursor=%d rows=%+v", v.cursor, v.displayRows)
 	}
+}
+
+// realDoneIssue は done/ に実ファイルを持つ issue (claim が rename になる側の配置)。
+func realDoneIssue(t *testing.T) *issues.Issue {
+	t.Helper()
+	dir := t.TempDir()
+	rel := filepath.Join("done", "001-feat-real.md")
+	path := filepath.Join(dir, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("# 001 feat: real\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return &issues.Issue{Path: path, Dir: dir, Rel: rel, Number: "001", Category: "feat", Status: issues.StatusDone}
 }

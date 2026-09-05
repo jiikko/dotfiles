@@ -7,7 +7,8 @@ import (
 	"testing"
 )
 
-// 移動先ディレクトリは無ければ作る (ユーザー指定 2026-08-01)。
+// 目印の宛先ディレクトリ (next/) は無ければ作る (ユーザー指定 2026-08-01)。直下の issue の claim は
+// rename ではなく symlink の目印 (issue 263)。実ファイルは動かない。
 func TestMoveToSubdirCreatesDir(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "001-feat-x.md")
@@ -18,16 +19,17 @@ func TestMoveToSubdirCreatesDir(t *testing.T) {
 
 	dest, err := MoveToSubdir(iss, NextDirName)
 	if err != nil {
-		t.Fatalf("移動に失敗: %v", err)
+		t.Fatalf("claim に失敗: %v", err)
 	}
-	if want := filepath.Join(dir, NextDirName, "001-feat-x.md"); dest != want {
-		t.Fatalf("移動先が違う: %q (want %q)", dest, want)
+	if dest != path {
+		t.Fatalf("claim で Path が変わった: %q (want %q)", dest, path)
 	}
-	if _, err := os.Stat(dest); err != nil {
-		t.Fatalf("移動先にファイルが無い: %v", err)
+	link := filepath.Join(dir, NextDirName, "001-feat-x.md")
+	if target, err := os.Readlink(link); err != nil || target != "../001-feat-x.md" {
+		t.Fatalf("next/ に目印 symlink が無い: target=%q err=%v", target, err)
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatal("元の場所にファイルが残っている (コピーになっている)")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("実ファイルが動いた")
 	}
 }
 
@@ -76,8 +78,8 @@ func TestMoveToSubdirNoopWhenAlreadyThere(t *testing.T) {
 	}
 }
 
-// Epic issue の claim は group の next/ に入り、解除しても group 直下へ戻る。global issue の
-// `<dir>/next/` と混ぜると次回 Scan で group から消えるので、戻り値の新 path も合わせて検査する。
+// Epic issue の claim は group の next/ に目印を置き、解除しても group 内で完結する。global の
+// `<dir>/next/` に置くと次回 Scan で group から消えるので、symlink の位置を検査する。
 func TestMoveToSubdirKeepsEpicIssueInsideGroup(t *testing.T) {
 	dir := t.TempDir()
 	groupDir := filepath.Join(dir, EpicDirName, "cloud")
@@ -94,18 +96,24 @@ func TestMoveToSubdirKeepsEpicIssueInsideGroup(t *testing.T) {
 	}
 
 	next, err := MoveToSubdir(iss, NextDirName)
-	if err != nil || next != filepath.Join(groupDir, NextDirName, "710-feat-drive.md") {
-		t.Fatalf("Epic issue の移動先が違う: dest=%q err=%v", next, err)
+	if err != nil || next != path {
+		t.Fatalf("Epic issue の claim: dest=%q err=%v", next, err)
+	}
+	link := filepath.Join(groupDir, NextDirName, "710-feat-drive.md")
+	if _, err := os.Lstat(link); err != nil {
+		t.Fatalf("group 内 next/ に目印が無い: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, NextDirName, "710-feat-drive.md")); !os.IsNotExist(err) {
+		t.Fatal("Epic issue の目印が global next/ に置かれている")
 	}
 	claimed := *iss
-	claimed.Path, claimed.Rel, claimed.Status = next,
-		filepath.Join(EpicDirName, "cloud", NextDirName, "710-feat-drive.md"), StatusNext
+	claimed.Status, claimed.NextLink = StatusNext, link
 	open, err := MoveToSubdir(&claimed, "")
 	if err != nil || open != path {
-		t.Fatalf("group 内 next の解除先が違う: dest=%q err=%v", open, err)
+		t.Fatalf("group 内 next の解除: dest=%q err=%v", open, err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, NextDirName, "710-feat-drive.md")); !os.IsNotExist(err) {
-		t.Fatal("Epic issue が global next/ へ移動している")
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Fatal("解除で目印が消えない")
 	}
 }
 

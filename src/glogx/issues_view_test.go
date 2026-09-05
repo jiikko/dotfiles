@@ -536,12 +536,13 @@ func TestIssuesViewMarkNextMovesAfterConfirm(t *testing.T) {
 	if v.markNext.active {
 		t.Fatal("実行後も確認が残っている")
 	}
+	// 直下の issue の claim は symlink の目印 (issues/nextlink.go, issue 263)。実ファイルは動かない
 	dest := filepath.Join(dir, issues.NextDirName, "001-feat-x.md")
-	if _, err := os.Stat(dest); err != nil {
-		t.Fatalf("next/ へ移動していない (ディレクトリ作成も含む): %v", err)
+	if target, err := os.Readlink(dest); err != nil || target != "../001-feat-x.md" {
+		t.Fatalf("next/ に目印 symlink が置かれない (ディレクトリ作成も含む): target=%q err=%v", target, err)
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatal("元の場所にファイルが残っている")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("claim で実ファイルが動いた")
 	}
 	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "next へ移しました") {
 		t.Fatalf("結果が通知に載らない: %q ok=%v", text, ok)

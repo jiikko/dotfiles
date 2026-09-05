@@ -164,6 +164,10 @@ type Issue struct {
 	Group     string    // 出自サブディレクトリ名 (Unknown) / epic のグループ名 (Epic)
 	GroupKind GroupKind // グループの種類。Unknown は親行へ畳まず ? の leaf として表示する
 	GroupKey  string    // Epic の同一性キー (Dir + epic/<name>)。迷子の子も元 group の key を保つ
+	// NextLink は「次にやる」の目印 symlink の絶対パス (`<parent>/next/<base>`)。"" は目印なし、
+	// または旧運用 (ファイルそのものが next/ に居る。その場合 Path が next/ 配下で Status=Next)。
+	// 非空なら Path は直下のまま Status=Next (nextlink.go)。
+	NextLink string
 
 	// 以下は本文を読むまで空 (LoadMeta で埋まる)。起動パスで全件読まないのは、
 	// ファイル名のみの走査に対して 26〜58 倍のコストになる実測があるため
@@ -201,28 +205,34 @@ var (
 func Scan(dirs []string) (issues []*Issue, warnings []string) {
 	issues = make([]*Issue, 0, 64)
 	for _, dir := range dirs {
-		issues = append(issues, scanDir(dir)...)
+		found, warns := scanDir(dir)
+		issues = append(issues, found...)
+		warnings = append(warnings, warns...)
 	}
 	sortIssues(issues)
-	return issues, conflicts(issues)
+	return issues, append(warnings, conflicts(issues)...)
 }
 
 // scanDir は 1 つの issue ディレクトリを走査する (直下 + サブディレクトリ 1 段 +
 // `epic/<name>/` の 2 段)。それ以外の深い階層を掘らないのは、実測でどの repo も
 // 「直下 + 状態ディレクトリ 1 段」しか使っておらず、2 段は epic だけだから。
-func scanDir(dir string) []*Issue {
+func scanDir(dir string) ([]*Issue, []string) {
 	out := make([]*Issue, 0, 32)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return out
+		return out, nil
 	}
+	// 目印 symlink (next/<base> -> ../<base>) を先に読み、直下の同名 issue へ Status=Next を付ける
+	marked, warnings := nextLinks(dir)
 	for _, e := range entries {
 		if e.IsDir() {
 			if skipDirs[e.Name()] {
 				continue
 			}
 			if strings.EqualFold(e.Name(), EpicDirName) {
-				out = append(out, scanEpicDir(dir, e.Name())...)
+				found, warns := scanEpicDir(dir, e.Name())
+				out = append(out, found...)
+				warnings = append(warnings, warns...)
 				continue
 			}
 			subEntries, err := os.ReadDir(filepath.Join(dir, e.Name()))
@@ -247,20 +257,25 @@ func scanDir(dir string) []*Issue {
 		if !isIssueFile(e) || metaFiles[strings.ToLower(e.Name())] {
 			continue
 		}
-		out = append(out, newIssue(dir, e.Name()))
+		iss := newIssue(dir, e.Name())
+		if link, ok := marked[e.Name()]; ok {
+			iss.Status, iss.NextLink = StatusNext, link
+		}
+		out = append(out, iss)
 	}
-	return out
+	return out, warnings
 }
 
 // scanEpicDir は `<dir>/epic/<name>/*.md` を open の issue として拾う (Group = <name>)。
 // `epic/` 直下に置かれた md は「グループに属さない未知サブディレクトリの 1 件」として
 // 従来どおり StatusUnknown (Group = "epic") に落とす。黙って捨てると、置き場所を間違えた
 // issue が viewer から消えて気づけない。
-func scanEpicDir(dir, epic string) []*Issue {
+func scanEpicDir(dir, epic string) ([]*Issue, []string) {
 	out := make([]*Issue, 0, 8)
+	var warnings []string
 	entries, err := os.ReadDir(filepath.Join(dir, epic))
 	if err != nil {
-		return out
+		return out, nil
 	}
 	for _, e := range entries {
 		if !e.IsDir() {
@@ -278,10 +293,15 @@ func scanEpicDir(dir, epic string) []*Issue {
 		if err != nil {
 			continue
 		}
+		marked, warns := nextLinks(groupKey)
+		warnings = append(warnings, warns...)
 		for _, f := range files {
 			if isIssueFile(f) && !metaFiles[strings.ToLower(f.Name())] {
 				iss := newIssue(dir, filepath.Join(epic, e.Name(), f.Name()))
 				iss.Group, iss.GroupKind, iss.GroupKey = e.Name(), GroupEpic, groupKey
+				if link, ok := marked[f.Name()]; ok {
+					iss.Status, iss.NextLink = StatusNext, link
+				}
 				out = append(out, iss)
 				continue
 			}
@@ -312,7 +332,7 @@ func scanEpicDir(dir, epic string) []*Issue {
 			}
 		}
 	}
-	return out
+	return out, warnings
 }
 
 // newIssue はファイル名から番号・カテゴリ・スラッグを取り出す。

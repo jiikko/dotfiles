@@ -18,10 +18,27 @@ import (
 // 「同じファイル名が 2 箇所にあったら警告する」) で、移動でそれを作らない。宛先があれば失敗させる。
 
 // MoveToSubdir は issue を同じ issue ディレクトリ配下の subdir へ移す (subdir="" は直下へ戻す)。
-// 戻り値は移動後の絶対パス。
+// 戻り値は移動後の絶対パス (同一性キー。目印の付け外しではファイルが動かないので元の Path)。
+//
+// `next` だけは例外で、**直下にある issue にはファイルを動かさず symlink の目印を置く** (nextlink.go。
+// issue 263: rename すると本文の相対リンクが切れる)。目印の解除は symlink の削除。直下に無い issue
+// (pending/ done/ に居るもの) は ../<base> が成立しないので従来どおり rename で next/ へ運ぶ。
+// 旧運用でファイルそのものが next/ に居る issue の解除も従来どおり rename で直下へ戻す。
 func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 	if iss == nil {
 		return "", errors.New("移動対象がない")
+	}
+	if subdir == NextDirName && iss.Status == StatusNext {
+		return iss.Path, nil // 既に目印つき (symlink でも旧運用の配置でも)
+	}
+	if subdir == NextDirName && isOpenPlacement(iss) {
+		return iss.Path, placeNextLink(iss)
+	}
+	if subdir == "" && iss.NextLink != "" {
+		if err := os.Remove(iss.NextLink); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		return iss.Path, nil
 	}
 	base := filepath.Base(iss.Rel)
 	destDir := iss.Dir
@@ -50,4 +67,17 @@ func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 		return "", err
 	}
 	return dest, nil
+}
+
+// placeNextLink は `<parent>/next/<base>` に `../<base>` を指す symlink を作る。既に何かあれば失敗
+// (旧運用の実ファイル・別の symlink を黙って置き換えない。上の「上書きしない」と同じ理由)。
+func placeNextLink(iss *Issue) error {
+	link := NextLinkPath(iss)
+	if _, err := os.Lstat(link); err == nil {
+		return fmt.Errorf("%s には同名のエントリが既にあります", filepath.Join(NextDirName, filepath.Base(link)))
+	}
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		return err
+	}
+	return os.Symlink("../"+filepath.Base(link), link)
 }
