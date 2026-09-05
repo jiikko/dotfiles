@@ -23,7 +23,7 @@
 |---|---|
 | `test-lint` | 20 |
 | `test-syntax` | 1 |
-| `test-discovered` | **128** (2026-09-05 の並列化後。直列時代は 326) |
+| `test-discovered` | **128** (2026-09-05 の並列化後の通し。直列時代は 326) |
 | `test-bats` | 14 |
 | `test-src` | **15〜71** (3 サンプルで 4.7 倍の幅。Go のキャッシュ状態で動く) |
 
@@ -35,9 +35,18 @@
 残り 7 ディレクトリで 33。`tests/zshrc` の中は **`av1ify` 124 + `concat` 56 = 96%**。
 
 **2026-09-05 から `test-discovered` は 2 腕** (Makefile の `SERIAL_TEST_DIRS`): 共有資源に触る
-`tests/tmux` / `tests/nvim` / `tests/zshrc/tmux-session` (41 本) だけ直列、残り (68 本) は
-`run_tests_parallel` で並列。実測 (14 コア機、各 1 サンプル): `make test` の通しが **490 秒 → 190 秒**、
-`test-discovered` 単体が **128 秒**。直列時代の 367 秒はテスト 1 本ずつの計測を足した値で、通しは未測。
+`tests/tmux` / `tests/nvim` / `tests/zshrc/tmux-session` だけ直列、残りは
+`run_tests_parallel` で並列 (2026-09-05 時点で直列 41 本 / 並列 70 本。本数は毎回 `[並列] 対象 N 件` の行に出る)。実測 (14 コア機、各 1 サンプル):
+
+| | before (直列) | after (2 腕) |
+|---|---|---|
+| `make test` | **490 秒 — 内訳の合計** (test-lint 22 + test-runtime 380 + test-src 88)。**通しは未測** | **190 秒 (通し)** |
+| `test-discovered` | 367 秒 — テスト 1 本ずつの計測の合計。**通しは未測** | **128 秒 (通し)** |
+
+🚨 **before は合計、after は通しなので、この 2 つを直接引き算しない**
+(`_claude/rules/perf-claims-need-measurement.md`)。この repo では過去に合計 414 秒 / 通し 433 秒と
+19 秒ずれた実績があり、**before の通しは 490 秒より大きい**と見るのが妥当 = 改善幅は 300 秒より
+大きい側にぶれる。正確に比べたいなら並列化前の commit で通しを 1 回測ること。
 `test-src` の go test も 7 プロジェクトを並列に回す (`run_go_projects`。lint は golangci-lint の file lock のため直列のまま)。
 
 🚨 **待ちの実体はエンコードではない**。av1ify / concat のテストは ffmpeg / ffprobe を

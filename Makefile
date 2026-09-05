@@ -171,24 +171,35 @@ endef
 # `[ok]`** と集計されていた (issue 139)。skip 自体は失敗ではないので緑のままにするが、
 # **件数と一覧を出して「増えた」に気づける**ようにする (直列版と同じ形で最後に出す)。
 # テストごとにファイルへ隔離し、失敗時にまとめて吐く (並列で行が混ざるのを防ぐ)。
-# fail-fast はしない (xargs は失敗後も残りを流す)。失敗・skip の一覧は追記専用の一時ファイルに
-# 集める (短い 1 行の O_APPEND は並列でも混ざらない)。判定はその一覧で行い、xargs の終了コードは
-# 「一覧が空なのに非 0」= runner 自体の故障を拾うためだけに見る (sh 不在等を緑にしない)。
+# fail-fast はしない (xargs は失敗後も残りを流す)。失敗・skip・実行済みの一覧は追記専用の一時
+# ファイルに集める (短い 1 行の O_APPEND は並列でも混ざらない)。判定はその一覧で行い、xargs の
+# 終了コードは「一覧が空なのに非 0」= runner 自体の故障を拾うためだけに見る (sh 不在等を緑にしない)。
+# 🚨 **入力の本数と「結果を報告した本数」を突き合わせる**。xargs は utility がシグナルで死ぬか
+# exit 255 で終わると **残りの入力を捨てて** 打ち切る (man xargs)。このとき捨てられたテストは
+# 失敗一覧にも skip 一覧にも出ないので、他に 1 本でも普通に落ちていれば「失敗 1 件」に見えて
+# **未実行が緑の中に埋もれる**。実測 2026-09-05: 12 本中 1 本が sh ごと kill されると報告は 11 本に
+# なり、出力は通常失敗 1 件だけだった。件数を出すのは「走った証拠」を毎回残すため
+# (_claude/rules/verify-execution-not-just-exit-code.md)。
 # parallel-each は不採用: CI runner に Go が無くビルドできない・retries/resume の
 # 既定がテスト用途と合わない (状態ファイルを repo に作る) ため、素の xargs -P を使う。
 NPROC := $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 define run_tests_parallel
 tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); \
 [ -n "$$tests" ] || { echo "✗ $(1) 配下にテストが見つかりません (find 失敗 or 0 件)。本当に test_*.sh が無いディレクトリなら、テストを足すか scripts/test_changed.sh の写像の振り先を直す (issue 063 の同型)" >&2; exit 1; }; \
-fails=$$(mktemp); skips=$$(mktemp); xrc=0; \
-printf '%s\n' "$$tests" | FAILS="$$fails" SKIPS="$$skips" xargs -P $(NPROC) -n 1 sh -c \
-	'out=$$(mktemp); "$$0" >"$$out" 2>&1; rc=$$?; \
+fails=$$(mktemp); skips=$$(mktemp); ran=$$(mktemp); exp=$$(mktemp); miss=$$(mktemp); xrc=0; rc=0; \
+printf '%s\n' "$$tests" | FAILS="$$fails" SKIPS="$$skips" RAN="$$ran" xargs -P $(NPROC) -n 1 sh -c \
+	'out=$$(mktemp); "$$0" >"$$out" 2>&1; rc=$$?; echo "$$0" >> "$$RAN"; \
 	if [ "$$rc" -eq 0 ]; then echo "[ok] $$0"; \
 	elif [ "$$rc" -eq 77 ]; then echo "[skip] $$0"; cat "$$out"; echo "$$0" >> "$$SKIPS"; \
 	else echo "[FAIL] $$0"; cat "$$out"; echo "$$0" >> "$$FAILS"; rm -f "$$out"; exit 1; fi; rm -f "$$out"' || xrc=$$?; \
+printf '%s\n' "$$tests" | LC_ALL=C sort > "$$exp"; LC_ALL=C sort "$$ran" > "$$ran.s"; \
+LC_ALL=C comm -23 "$$exp" "$$ran.s" > "$$miss"; \
+echo ""; echo "[並列] 対象 $$(wc -l < "$$exp" | tr -d ' ') 件 / 結果を報告 $$(wc -l < "$$ran.s" | tr -d ' ') 件"; \
 if [ -s "$$skips" ]; then { echo ""; echo "[skip] 丸ごと skip したテスト $$(wc -l < "$$skips" | tr -d ' ') 件 (失敗ではない。増えていたら理由を確かめる):"; sed 's/^/  /' "$$skips"; }; fi; \
-if [ -s "$$fails" ]; then { echo ""; echo "✗ 失敗したテスト:"; sed 's/^/  /' "$$fails"; } >&2; rm -f "$$fails" "$$skips"; exit 1; fi; \
-rm -f "$$fails" "$$skips"; \
+if [ -s "$$miss" ]; then { echo ""; echo "✗ 結果を報告しなかったテスト $$(wc -l < "$$miss" | tr -d ' ') 件 (走ったかどうか自体が不明。xargs は utility がシグナルで死ぬか exit 255 だと残りの入力を捨てる):"; sed 's/^/  /' "$$miss"; } >&2; rc=1; fi; \
+if [ -s "$$fails" ]; then { echo ""; echo "✗ 失敗したテスト:"; sed 's/^/  /' "$$fails"; } >&2; rc=1; fi; \
+rm -f "$$fails" "$$skips" "$$ran" "$$ran.s" "$$exp" "$$miss"; \
+[ "$$rc" -eq 0 ] || exit 1; \
 [ "$$xrc" -eq 0 ] || { echo "✗ 並列 runner (xargs) が rc=$$xrc で終わったが、失敗したテストの記録が無い (runner 自体の故障)" >&2; exit 1; }
 endef
 
