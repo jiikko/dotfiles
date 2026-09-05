@@ -185,3 +185,26 @@ func TestIssuesNumberFilterHeaderReplacesTabLine(t *testing.T) {
 		t.Fatalf("タブ行が残っている: %q", head)
 	}
 }
+
+// isDigitKey は番号フィルタ入力の**唯一の関門**。issues_view.go:handleKey は typing 中の
+// 全キーを numberFilterKey へ流し、default が edit(key) を呼ぶので、ここが 1 文字ずれると
+// `/` (フィルタを開くキー自身) や `:` が検索語に入り「番号に『12/』を含む issue はありません」
+// になる。境界を両側で pin する (issue 287。`'0'` を `'/'` へずらす変異が全スイート緑だった)。
+func TestIsDigitKeyBoundaries(t *testing.T) {
+	for _, c := range []struct {
+		key  string
+		want bool
+	}{
+		{"0", true}, {"9", true}, {"5", true},
+		{"/", false}, // 下端の 1 つ外。フィルタを開くキー自身なので特に重要
+		{":", false}, // 上端の 1 つ外
+		{"a", false}, {" ", false}, {"", false},
+		{"12", false},    // 1 文字であることも契約
+		{"０", false},     // 全角数字は受けない (doc「数字以外の印字文字は無視」)
+		{"enter", false}, // bubbletea のキー名がそのまま来る経路
+	} {
+		if got := isDigitKey(c.key); got != c.want {
+			t.Errorf("isDigitKey(%q) = %v, want %v", c.key, got, c.want)
+		}
+	}
+}

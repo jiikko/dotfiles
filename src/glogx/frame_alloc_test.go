@@ -163,6 +163,14 @@ func TestFrameAllocBudget(t *testing.T) {
 	for _, c := range cases {
 		m := c.build(t)
 		_ = m.View().Content // 遅延初期化を計測から外す
+
+		// 🚨 下界を先に見る (issue 280)。上界だけだと「何も描かないフレーム」が最良に見え、
+		// 描画が丸ごと死んだ状態で 8 ケース全部が 0 allocs / 0 B を出して緑になる
+		// (実測: View を tea.NewView("") にする 1 行の変異で全ケース PASS)。
+		// 下界を**確保回数**で置かないのは、正当な最適化で確保が減ったときに落とさないため。
+		// 見るのは「そのフレームが実際に描いたか」= alt screen を埋めたか。
+		assertFrameDrawn(t, c.name, m)
+
 		got := int(testing.AllocsPerRun(50, func() { _ = m.View().Content }))
 		if got > c.allocs {
 			t.Errorf("%s: 1 フレームの確保が %d 回 (上限 %d)。行の作り直しが増えていないか",
@@ -351,5 +359,23 @@ func TestPadSpacesEquivalentToRepeat(t *testing.T) {
 	// 256 桁以下は確保しない (定数文字列のスライス) ことも固定する
 	if n := testing.AllocsPerRun(50, func() { _ = padSpaces(200) }); n != 0 {
 		t.Errorf("padSpaces(200) が %v 回確保している (バッキング共有が壊れた)", n)
+	}
+}
+
+// assertFrameDrawn は「そのフレームが画面を埋めた」ことを確かめる (確保予算の下界)。
+//
+// 全画面 (AltScreen) の TUI なので View は必ず height 行を返す。2026-09-06 実測: 予算 8 ケース
+// すべてが 40 行 / 8028〜9606 文字。文字数の下限は 1 行 20 文字相当で置く (空行だけの
+// フレームは 40 文字にしかならないので、この下限で落ちる)。
+func assertFrameDrawn(t *testing.T, name string, m *browseModel) {
+	t.Helper()
+	content := m.View().Content
+	if lines := strings.Count(content, "\n") + 1; lines != m.height {
+		t.Errorf("%s: フレームが %d 行しか描いていない (画面の高さ %d)。"+
+			"確保の数字が良く見えていても、描画が死んでいる", name, lines, m.height)
+	}
+	if minChars := m.height * 20; len(content) < minChars {
+		t.Errorf("%s: フレームの文字数が %d しかない (下限 %d)。行はあるが中身が無い",
+			name, len(content), minChars)
 	}
 }
