@@ -146,16 +146,35 @@ def wait_until(pred, limit=15):
     return pred()
 # 対象ウィンドウを current にしてから pty で attach する (= 人が見ている状態)
 subprocess.run(['tmux', '-L', socket, 'select-window', '-t', pane], check=True)
+# 🚨 pty の子には TERM を必ず与える。CI runner は TERM 未設定で、その pty で `tmux attach` は
+# 何も出さずに即終了する (手元で `env -u TERM` で再現。run 33937946213 の「15 秒待っても
+# window_active_clients=0」の正体)。attach が死んでいるのに 15 秒待つのは無駄なので、
+# 子の生死も見て早期終了なら理由付きで判定不能にする
+child_env = dict(os.environ)
+child_env.setdefault('TERM', 'xterm-256color')
 pid, fd = pty.fork()
 if pid == 0:
-    os.execvp('tmux', ['tmux', '-L', socket, 'attach'])
+    os.execvpe('tmux', ['tmux', '-L', socket, 'attach'], child_env)
 rc = 2
+child_dead = False
+def child_alive():
+    # waitpid で回収した後にもう一度呼ぶと ChildProcessError になるので、死を覚えておく
+    global child_dead
+    if child_dead:
+        return False
+    try:
+        child_dead = os.waitpid(pid, os.WNOHANG)[0] != 0
+    except ChildProcessError:
+        child_dead = True
+    return not child_dead
 try:
     # attach が登録されるまで待つ。固定 sleep にしない (avoid-wall-clock-assertions.md):
     # CI runner では 1.5 秒で登録されず「判定不能」になった (run 33936632229)。上限まで 0 の
     # ままなら「遅い」ではなく「この環境では attach が見えない」の証拠になる
-    if not wait_until(lambda: tmux('display', '-p', '-t', pane, '#{window_active_clients}') != '0'):
+    if not wait_until(lambda: (not child_alive()) or tmux('display', '-p', '-t', pane, '#{window_active_clients}') != '0'):
         print('  (ハーネス異常: client を attach して 15 秒待っても window_active_clients=0)')
+    elif not child_alive():
+        print('  (ハーネス異常: tmux attach が即終了した。TERM=%r' % child_env.get('TERM') + ')')
     else:
         env = dict(os.environ, TMUX=f'{sock_path},0,0', TMUX_PANE=pane)
         subprocess.run([hook, 'idle'], input='{"hook_event_name":"Stop","background_tasks":[]}',
@@ -173,7 +192,10 @@ try:
         else:
             print('  (ハーネス異常: 対照ベルの alert-bell が 15 秒待っても記録されない)')
 finally:
-    os.kill(pid, 15)
+    try:
+        os.kill(pid, 15)
+    except ProcessLookupError:
+        pass
 sys.exit(rc)
 PYEOF
 then
