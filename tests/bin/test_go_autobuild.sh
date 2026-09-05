@@ -19,8 +19,25 @@ unset CDPATH
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LIB="$ROOT_DIR/bin/lib/go_autobuild.zsh"
 TMP_DIR="$(mktemp -d)"
-cleanup() { rm -rf "$TMP_DIR"; }
+GATES=()
+# 🚨 失敗経路でも必ず release する。テストが途中で落ちると、ゲートで待っている偽 go が
+# 60s 生き残り (上の上限) TMP_DIR も消せない。
+cleanup() {
+  local g
+  for g in "${GATES[@]:-}"; do [[ -n "$g" ]] && : > "$g.release" 2>/dev/null || true; done
+  rm -rf "$TMP_DIR"
+}
 trap cleanup EXIT
+
+# ビルドの走行中の窓を開け閉めするゲート。呼び出しごとに別のパスを使う
+# (同時に 2 本走らせるテストがあるので共有しない)。
+gate_new() {  # $1=名前 → $REPLY にゲートのパス
+  REPLY="$TMP_DIR/gate.$1"
+  rm -f "$REPLY.entered" "$REPLY.release"
+  GATES+=("$REPLY")
+}
+gate_entered() { [[ -s "$1.entered" ]]; }   # 偽 go がゲートに入った = ビルド走行中
+gate_release() { : > "$1.release"; }        # 窓を閉じる = ビルドを完走させる
 
 if [[ ! -f "$LIB" ]]; then
   printf '✗ ライブラリが存在しない: %s\n' "$LIB"
@@ -62,7 +79,22 @@ done
 # 後ろに足すとバイナリ判定側のテストが全部壊れる。
 printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\necho %s\n' "${FAKE_BIN_CALLS:-/dev/null}" "$FAKE_GO_MARK" > "$out"
 chmod +x "$out"
-[ -n "${FAKE_GO_SLEEP:-}" ] && sleep "$FAKE_GO_SLEEP"
+# 「ビルドが走行中」の窓を**時間ではなくイベント**で開ける。テストが release を置くまで待つ。
+# 固定 sleep だと窓の長さが当て推量になり (「4 秒あれば足りるだろう」)、遅いマシンでは
+# 足りず速いマシンでは待ちが丸ごと無駄になる (_claude/rules/avoid-wall-clock-assertions.md)。
+# 🚨 上限つき。release を置き忘れたら**永久ブロックではなく loud に落とす**。
+if [ -n "${FAKE_GO_GATE:-}" ]; then
+  echo $$ > "$FAKE_GO_GATE.entered"
+  _i=0
+  while [ ! -e "$FAKE_GO_GATE.release" ]; do
+    _i=$((_i + 1))
+    if [ "$_i" -gt 1200 ]; then
+      echo "fake go: gate が 60s 開かない (テスト側の release 漏れ): $FAKE_GO_GATE" >&2
+      exit 70
+    fi
+    sleep 0.05
+  done
+fi
 if [ -n "${FAKE_GO_FAIL:-}" ]; then rm -f "$out"; echo "fake build error" >&2; exit 1; fi
 exit 0
 EOS
@@ -144,14 +176,13 @@ builder_done() { [[ ! -d "$1/src/tool/.autobuild.lock" ]]; }
 builder_done_at() { [[ ! -d "$1/.autobuild.lock" ]]; }   # --pkg の cmd/<name> 版
 mark_at_is() { [[ "$(tail -1 "$1" 2>/dev/null | awk '{print $NF}')" == "$2" ]]; }   # 任意パスのバイナリの mark
 
+# bounded-wait の実装は tests/lib/wait_until.sh に一本化 (コピペ禁止の理由はそちら)。
+# ここは診断つきで落とす薄いラッパ。
+# shellcheck source=tests/lib/wait_until.sh
+. "$ROOT_DIR/tests/lib/wait_until.sh"
 wait_for() {  # $1=説明, 残り=条件コマンド。10 秒まで待つ
   local msg="$1"; shift
-  local i
-  for ((i = 0; i < 200; i++)); do
-    "$@" && return 0
-    sleep 0.05
-  done
-  fail "$msg (10 秒待っても成立しない)"
+  tt_wait_until "$@" || fail "$msg (10 秒待っても成立しない)"
 }
 # builder の終了は lock の消滅ではなく pid の死で見る。lock を奪われた builder は他人の lock を
 # 消さない (「解放してよいのは持ち主だけ」) ので、奪うテストでは lock が残ったまま builder が終わる。
@@ -463,10 +494,12 @@ ROOT="$(new_project stolen_mid)"
 FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
 freeze "$ROOT"
 bump "$ROOT/src/tool/main.go"
-AUTOBUILD_ARGS=--async FAKE_GO_SLEEP=2 FAKE_GO_MARK=slow run_tool "$ROOT" >/dev/null
+gate_new stolen_mid; GATE="$REPLY"
+AUTOBUILD_ARGS=--async FAKE_GO_GATE="$GATE" FAKE_GO_MARK=slow run_tool "$ROOT" >/dev/null
 wait_for "builder が lock を取らない" test -f "$ROOT/src/tool/.autobuild.lock/pid"
 builder_pid="$(cat "$ROOT/src/tool/.autobuild.lock/pid")"
 printf '%s\n' "$$" > "$ROOT/src/tool/.autobuild.lock/pid"  # 別の builder に奪われた状態にする
+gate_release "$GATE"   # 奪われた状態のまま完走させる
 wait_for "lock を奪われた builder が終わらない" builder_gone "$builder_pid"
 binary_is "$ROOT" old || fail "lock を奪われた builder が古い成果物を install した (got: $(binary_mark "$ROOT"))"
 [[ -f "$ROOT/src/tool/.autobuild.failed" ]] && fail "install 中止を失敗として記録した (次回の再挑戦が止まる)"
@@ -524,9 +557,12 @@ ROOT="$(new_project midedit)"
 FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
 freeze "$ROOT"
 bump "$ROOT/src/tool/main.go"
-AUTOBUILD_ARGS=--async FAKE_GO_SLEEP=2 FAKE_GO_MARK=mid run_tool "$ROOT" >/dev/null
+gate_new midedit; GATE="$REPLY"
+AUTOBUILD_ARGS=--async FAKE_GO_GATE="$GATE" FAKE_GO_MARK=mid run_tool "$ROOT" >/dev/null
 wait_for "builder が動き出さない" has_workfile "$ROOT"
+wait_for "偽 go がゲートに入らない" gate_entered "$GATE"
 touch "$ROOT/src/tool/main.go"   # ← ビルド実行中 (指紋の確定後) に着地した編集
+gate_release "$GATE"
 wait_for "ビルドが完了しない" binary_is "$ROOT" mid
 wait_for "builder が lock を解放しない" builder_done "$ROOT"
 AUTOBUILD_ARGS=--async FAKE_GO_MARK=after run_tool "$ROOT" >/dev/null
@@ -542,11 +578,13 @@ ROOT="$(new_project revert)"
 FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
 freeze "$ROOT"
 bump "$ROOT/src/tool/main.go"
-AUTOBUILD_ARGS=--async FAKE_GO_SLEEP=3 FAKE_GO_MARK=slow run_tool "$ROOT" >/dev/null
+gate_new revert; GATE="$REPLY"
+AUTOBUILD_ARGS=--async FAKE_GO_GATE="$GATE" FAKE_GO_MARK=slow run_tool "$ROOT" >/dev/null
 wait_for "builder が動き出さない" has_workfile "$ROOT"   # 同期ビルドは builder の started_at より後に始める
 builder_pid="$(cat "$ROOT/src/tool/.autobuild.lock/pid")"
 GO_AUTOBUILD_SYNC=1 FAKE_GO_MARK=now run_tool "$ROOT" >/dev/null
 binary_is "$ROOT" now || fail "前提が崩れた: 同期ビルドが入っていない (got: $(binary_mark "$ROOT"))"
+gate_release "$GATE"   # 新しいバイナリが入った後で走行中の builder を完走させる
 wait_for "走行中の builder が終わらない" builder_gone "$builder_pid"
 binary_is "$ROOT" now \
   || fail "走行中の builder が新しいバイナリを古い成果物で踏んだ (got: $(binary_mark "$ROOT"))"
@@ -559,10 +597,12 @@ ROOT="$(new_project lockown)"
 FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
 freeze "$ROOT"
 bump "$ROOT/src/tool/main.go"
-AUTOBUILD_ARGS=--async FAKE_GO_SLEEP=2 FAKE_GO_MARK=slow run_tool "$ROOT" >/dev/null
+gate_new lockown; GATE="$REPLY"
+AUTOBUILD_ARGS=--async FAKE_GO_GATE="$GATE" FAKE_GO_MARK=slow run_tool "$ROOT" >/dev/null
 wait_for "builder が lock を取らない" test -f "$ROOT/src/tool/.autobuild.lock/pid"
 builder_pid="$(cat "$ROOT/src/tool/.autobuild.lock/pid")"
 printf '%s\n' "$$" > "$ROOT/src/tool/.autobuild.lock/pid"  # 別の builder に奪われた状態にする
+gate_release "$GATE"
 wait_for "lock を奪われた builder が終わらない" builder_gone "$builder_pid"
 [[ -f "$ROOT/src/tool/.autobuild.lock/pid" ]] \
   || fail "lock を奪われた builder が、奪った側の lock まで消した (以後この src は無施錠)"
@@ -627,12 +667,28 @@ ROOT="$(new_project order)"
 FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
 freeze "$ROOT"
 printf 'package main\n\n// A\n' > "$ROOT/src/tool/main.go"
-( AUTOBUILD_ARGS=--async FAKE_GO_SLEEP=1 FAKE_GO_MARK=A run_tool "$ROOT" >/dev/null 2>&1 ) &
+# 🚨 2 本を同時に走らせ、**完走の順を明示的に決める**。固定 sleep (A=1s / B=4s) で
+# 「A が先に終わるはず」に賭けていた形を、ゲートの release 順に置き換えた。
+gate_new orderA; GATE_A="$REPLY"
+gate_new orderB; GATE_B="$REPLY"
+( AUTOBUILD_ARGS=--async FAKE_GO_GATE="$GATE_A" FAKE_GO_MARK=A run_tool "$ROOT" >/dev/null 2>&1 ) &
 A_PID=$!
 wait_for "先行ビルドが動き出さない" has_workfile "$ROOT"   # A の started_at と指紋が確定してから B を入れる
+wait_for "先行ビルドがゲートに入らない" gate_entered "$GATE_A"
 printf 'package main\n\n// B\n' > "$ROOT/src/tool/main.go"   # あとから始まる方が新しい入力
-GO_AUTOBUILD_SYNC=1 FAKE_GO_SLEEP=4 FAKE_GO_MARK=B run_tool "$ROOT" >/dev/null
+( GO_AUTOBUILD_SYNC=1 FAKE_GO_GATE="$GATE_B" FAKE_GO_MARK=B run_tool "$ROOT" >/dev/null 2>&1 ) &
+B_PID=$!
+# B がゲートに入った = B の started_at は A より後。ここまでは 2 本とも走行中
+wait_for "後発の同期ビルドがゲートに入らない" gate_entered "$GATE_B"
+# 🚨 `wait "$A_PID"` では A の完走を待てない。--async のラッパーは builder を detach して
+#    即座に exit するので、$A_PID は**とっくに死んでいる**。ここで B を開けると 2 本が
+#    同時に走り出し、A が最後に install した回だけ `got: A` で落ちる (実測: 12 回に 1 回)。
+#    待つべきは「A の成果物が入ったこと」そのもの。
+gate_release "$GATE_A"   # 先に始まった A を先に install させる
+wait_for "先行ビルド A が install されない" binary_is "$ROOT" A
 wait "$A_PID" 2>/dev/null || true
+gate_release "$GATE_B"
+wait "$B_PID" 2>/dev/null || true
 binary_is "$ROOT" B \
   || fail "あとから始まった新しい入力のビルドが捨てられた (got: $(binary_mark "$ROOT"))"
 ok "あとから始まったビルドが勝つ (完走の順ではなく開始の順で決まる)"
@@ -681,17 +737,20 @@ ROOT="$(new_project sweep)"
 FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
 freeze "$ROOT"
 bump "$ROOT/src/tool/main.go"
-( GO_AUTOBUILD_SYNC=1 FAKE_GO_SLEEP=4 FAKE_GO_MARK=sync run_tool "$ROOT" >/dev/null 2>&1 ) &
+gate_new sweep; GATE="$REPLY"
+( GO_AUTOBUILD_SYNC=1 FAKE_GO_GATE="$GATE" FAKE_GO_MARK=sync run_tool "$ROOT" >/dev/null 2>&1 ) &
 SYNC_PID=$!
 wait_for "同期ビルドが始まらない" has_workfile "$ROOT"
+wait_for "同期ビルドがゲートに入らない" gate_entered "$GATE"
 marker="$(find "$ROOT/src/tool" -name '.autobuild.new.*' -print -quit)"
 AUTOBUILD_ARGS=--async FAKE_GO_MARK=other run_tool "$ROOT" >/dev/null   # ← spawn の掃除が走る
 # 掃除は spawn の中で lock 取得の直後・ビルドの前に走る。あとから来た builder の成果物が入った
-# 時点で掃除は済んでいる (同期ビルドは FAKE_GO_SLEEP で走行中のまま)
+# 時点で掃除は済んでいる (同期ビルドはゲートで走行中のまま)
 wait_for "あとから来た builder が完走しない" binary_is "$ROOT" other
 [[ -e "$marker" ]] \
   || fail "走行中の builder の作業ファイルを、あとから来た builder が消した: ${marker##*/}"
 ok "走行中の builder の作業ファイルを、あとから来た builder が消さない"
+gate_release "$GATE"
 wait "$SYNC_PID" 2>/dev/null || true
 
 printf '\n## 相対パスで呼ばれても一時ファイルの置き場所がずれない\n'
@@ -723,10 +782,13 @@ FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
 freeze "$ROOT"
 bump "$ROOT/src/tool/main.go"
 PIDFILE="$ROOT/go.pid"
-AUTOBUILD_ARGS=--async FAKE_GO_SLEEP=3 FAKE_GO_MARK=survived FAKE_GO_PIDFILE="$PIDFILE" \
+gate_new hup; GATE="$REPLY"
+AUTOBUILD_ARGS=--async FAKE_GO_GATE="$GATE" FAKE_GO_MARK=survived FAKE_GO_PIDFILE="$PIDFILE" \
   run_tool "$ROOT" >/dev/null
 wait_for "ビルドプロセスが起動しない" test -s "$PIDFILE"
+wait_for "ビルドプロセスがゲートに入らない" gate_entered "$GATE"   # HUP は走行中に撃つ
 kill -HUP "$(cat "$PIDFILE")" 2>/dev/null || fail "ビルドプロセスへ HUP を撃てない (既に死んでいる?)"
+gate_release "$GATE"
 wait_for "HUP でビルドが死んだ (popup を閉じるたびに再ビルドが失敗する)" \
   binary_is "$ROOT" survived
 ok "走行中のビルドは HUP を無視して完走する"
