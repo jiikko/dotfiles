@@ -420,8 +420,16 @@ test-lint-tests:
 # 🚨 prerequisite に並べない (issue 109 と同型)。12 本の直列だと 1 本目の失敗で残りが
 #   1 度も走らず、lint.yml は `make test-lint` の 1 ステップなので CI ログにも出ない。
 #   **末尾の新設検査ほど隠れやすい** (実測: test-json を落とすと後続 7 本が未実行)。
+#
+# ここだけ run_all_targets ではなく並列版を使う (逐次で 21.4 秒 → 6.6 秒。14 コア機、各 1 run)。
+# 内訳は test-shellcheck 5.6s / test-lint-tests 5.4s / 残り 14 本が各 0.4〜2.1s で、
+# 並べ替えでは詰まらない (最長の極が律速)。集約の契約 (全部走らせてから失敗をまとめる) と
+# 出力順は並列版も保つ。
+# 🚨 **他の run_all_targets 呼び出しへ広げないこと**。test-discovered / test-discovered-rest は
+#   「並列腕 + 直列腕」を束ねており、直列腕は tmux サーバに触るので同時実行の安全性が未検証
+#   (59f9e48c の分割の前提)。ここが並列でよいのは、互いに独立した静的検査だけだから。
 test-lint:
-	@+$(call run_all_targets,test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q test-cd-rc test-trigger-log-writers test-skip-exit-code test-workflow-action-pins test-go-project-lanes)
+	@+scripts/run_make_targets_parallel.sh test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q test-cd-rc test-trigger-log-writers test-skip-exit-code test-workflow-action-pins test-go-project-lanes
 
 # Go プロジェクトの静的解析とテスト。実体は各ディレクトリの Makefile の lint / test
 # ターゲットに閉じており、ここはそれへ委譲するだけ (ローカルのコミット前検証用。root の
