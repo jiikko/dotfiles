@@ -74,3 +74,20 @@ cancel は正しく効いていて、遅かったのは CI の負荷。
 待っていたのは「injected sleeper に要求が入った」「replay job が enqueue された」という**事象**で、時間を測る必要は無かった。
 同じセッションで入れた `waitUntilStopConsumedForTesting` (`.stop` 消費の瞬間に resume する continuation) はこの形の置き換え例。
 記録: obaket `issues/724-test-transfer-activity-center-tests-two-second-poll-timeouts.md`。
+
+## 窓を作る sleep が「順序」も担保していた実例 (2026-09-05, dotfiles issue 267 / commit `6467aeea`)
+
+`tests/bin/test_go_autobuild.sh` の「あとから始まったビルドが勝つ」テストは、偽 go に
+`FAKE_GO_SLEEP=1` (先行ビルド A) と `=4` (後発ビルド B) を与えていた。数字の意図は
+「走行中の窓を作る」ことだと読めるが、実際には **「A が B より先に完走する」順序も決めていた**。
+
+窓だけをイベント同期 (ゲート) へ置き換えたところ、A と B が同時に走り出す形になり、
+**12 回に 1 回** A が最後に install して `got: A` で落ちる flake になった。
+
+紛らわしかったのは `wait "$A_PID"` が順序の担保に見えたこと。実際には `--async` のラッパーは
+builder を detach して即 exit するので **`$A_PID` はとっくに死んでおり、何も待っていない**。
+release の直後に「A の成果物が入ったこと」(`binary_is "$ROOT" A`) を待つ形へ直して 14 回連続 green。
+
+教訓: **長さの違う複数の `sleep` は、窓と順序の 2 つを同時に担保していることがある**。
+イベント同期へ移すときは、窓 (走行中であること) と順序 (どちらが先に完走するか) を
+**別々に**作り直す。片方だけ置き換えると、成功率の高い flake になって 3 回連続 green を素通りする。

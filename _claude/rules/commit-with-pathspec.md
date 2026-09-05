@@ -20,6 +20,8 @@
   つまり無音ではない
 - 🚨 **誤認は次の push で起きる**。commit が空振りした後の `git push` は
   **`Everything up-to-date` で rc=0** を返すので、push の出力だけを見ると成功に見える
+- 🚨 **push / merge に `-q` を付けない**。空振りを示す唯一の手がかり (`Everything up-to-date` /
+  `Already up to date`) がその 1 行なので、黙らせると rc=0 だけが残って完全に無音になる
 - 予防: **commit の前に `cd "$(git rev-parse --show-toplevel)"`**。ツールの cwd がサブディレクトリに
   残っている状態で pathspec を組まない (シェルの cwd は前のコマンドから持ち越される)
 - 検出: commit 直後の `git log -1 --stat` で想定ファイルが入っているか見る (下の節と同じ規律)

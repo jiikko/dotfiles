@@ -39,3 +39,16 @@ file(s) known to git`、add は rc=128)。見落としたのはエラーその�
 
 だから対策は「エラーを見る」ではなく **cwd を repo root に固定する**方 (エラーは既に出ていた)。
 ツールのシェルは cwd を持ち越すので、サブディレクトリでテストを走らせた直後が一番危ない。
+
+## `push -q` が空振りを完全に無音にした実例 (2026-09-05, dotfiles issue 267)
+
+`git rebase origin/master` が競合した直後に `git push -q origin HEAD:master` を打った。
+rebase は途中で止まっており HEAD は origin/master のままなので push は空振りだったが、
+**`-q` が `Everything up-to-date` を消した**ため、出力は 1 行も出ず rc=0 だけが残った。
+「push OK」と報告しかけ、直後の `git log -1` が origin/master の commit を指していたことで気づいた。
+
+本文の「`Everything up-to-date` は rc=0 なので出力だけ見ると成功に見える」は、
+**その 1 行が出ている**ことが前提になっている。`-q` はその前提を壊す。
+
+静かにしたい場合は `-q` ではなく、出力をファイルへ落として後で読む
+(`verify-execution-not-just-exit-code.md`「検証の出力はファイルへ落としてから読む」)。
