@@ -459,7 +459,11 @@ func (m *browseModel) Init() tea.Cmd {
 		text, _ := autobuildToast(autobuildStale)
 		m.showWarning(text)
 	}
-	m.zoom.start(timeNow()) // 画面を中央から開く (zoom.go)。tick は下の maybeTick が回す
+	// 🚨 起動時の開く演出は出さない (ユーザー判断 2026-09-05)。popup で開くたびに
+	// appZoomDuration 待たされる方が体感を損ねる、という判断。**終了の演出は残す**
+	// (閉じる方は「押した結果が見える」ので待ちに感じにくい)。
+	// 開く演出そのものの実装は zoom.go に残してある (戻すならこの行を復活させるだけ)。
+	// m.zoom.start(timeNow()) // 画面を中央から開く (zoom.go)
 	ab := m.autobuild.tickCmd()
 	// issues viewer を出したまま終了していたら、その画面を復元する (issues_state.go)。
 	// ファイル読みだけ同期で済ませ、repo の照合 (git fork) は記憶があるときだけ非同期で行う
