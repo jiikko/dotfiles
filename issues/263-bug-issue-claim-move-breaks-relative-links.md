@@ -1,4 +1,4 @@
-# 260 bug: issue を `next/` へ claim すると本文の相対リンクが切れ、doc-links gate が push を止める (glogx の `n` も同じ)
+# 263 bug: issue を `next/` へ claim すると本文の相対リンクが切れ、doc-links gate が push を止める (glogx の `n` も同じ)
 
 起票日: 2026-09-05
 
