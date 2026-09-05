@@ -438,7 +438,7 @@ func TestIssuesViewMultiSelectIsVisible(t *testing.T) {
 	if marked != 1 {
 		t.Fatalf("選択範囲の溝が出ていない (marked=%d):\n%s", marked, strings.Join(out, "\n"))
 	}
-	if h := v.hint(); !strings.Contains(h, "2 件選択") {
+	if h := v.hint(testHintBudget(t)); !strings.Contains(h, "2 件選択") {
 		t.Fatalf("選択中の hint に件数が出ない: %q", h)
 	}
 }
@@ -1225,17 +1225,17 @@ func TestIssuesViewBodyModeShowsCopyResult(t *testing.T) {
 
 func TestIssuesViewHintChangesByMode(t *testing.T) {
 	v := loadedView(sampleIssues()...)
-	if !strings.Contains(v.hint(), "カテゴリ") {
-		t.Fatalf("一覧の hint が想定と違う: %q", v.hint())
+	if !strings.Contains(v.hint(testHintBudget(t)), "カテゴリ") {
+		t.Fatalf("一覧の hint が想定と違う: %q", v.hint(testHintBudget(t)))
 	}
 	v.open = v.rows[0]
-	if !strings.Contains(v.hint(), "隣へ") {
-		t.Fatalf("本文の hint が想定と違う: %q", v.hint())
+	if !strings.Contains(v.hint(testHintBudget(t)), "隣へ") {
+		t.Fatalf("本文の hint が想定と違う: %q", v.hint(testHintBudget(t)))
 	}
 	// URL ピッカーは本文の上に重なる 3 つ目のモード。本文の案内を出したままにすると、案内した
 	// キー (j/k/g/G/p/u/v/h/q) が全部 urlPicker の検索語に化けて 1 つも案内どおりに動かない。
 	v.urlPick.open([]string{"https://example.com/"})
-	if h := v.hint(); !strings.Contains(h, "絞り込み") || strings.Contains(h, "隣へ") {
+	if h := v.hint(testHintBudget(t)); !strings.Contains(h, "絞り込み") || strings.Contains(h, "隣へ") {
 		t.Fatalf("URL ピッカーの hint が想定と違う: %q", h)
 	}
 }
@@ -1371,34 +1371,72 @@ func TestIssuesViewKeyLandsAnimationImmediately(t *testing.T) {
 }
 
 func TestIssuesViewHintFitsPopupWidth(t *testing.T) {
-	// hint は 1 行で、超過分は末尾から黙って切られる。予算は production の hintWidth() から導く
-	popupWidth := testHintBudget(t)
+	// hint は fitHintItems で組むので「収まる」は構造で保証される (issue 264)。ここで見るのは
+	// ①予算幅では全モードの全項目が入る (= 代表幅の端末で案内が欠けない) ②狭い幅でも
+	// 優先度 1 の「抜ける手段」が最後まで残る、の 2 つ。
+	budget := testHintBudget(t)
 	v := loadedView(sampleIssues()...)
-	if w := dispWidth(v.hint()); w > popupWidth {
-		t.Fatalf("一覧の hint が %d 桁に収まらない (w=%d): %q", popupWidth, w, v.hint())
+	type mode struct {
+		name  string
+		setup func()
+		exit  string // 優先度 1 (抜ける手段)。狭い幅でもこれだけは残る
+		full  string // 予算幅で最後に並ぶ項目 (= 全項目が入ったことの証拠)
 	}
-	// a の巡回で文言が変わるので全段階を見る
-	for _, f := range []issues.StatusFilter{issues.FilterPending, issues.FilterAll} {
-		v.filter = f
-		if w := dispWidth(v.hint()); w > popupWidth {
-			t.Fatalf("filter=%d の hint が収まらない (w=%d): %q", f, w, v.hint())
+	modes := []mode{
+		{"一覧 open", func() { v.filter = issues.FilterOpen; v.refresh() }, "q: 終了", "a: +"},
+		{"一覧 pending", func() { v.filter = issues.FilterPending; v.refresh() }, "q: 終了", "a: +"},
+		{"一覧 all", func() { v.filter = issues.FilterAll; v.refresh() }, "q: 終了", "のみ"},
+		{"選択中 (3 桁)", func() {
+			v.filter = issues.FilterAll
+			v.refresh()
+			v.marked, v.markAt, v.cursor = true, 0, len(v.rows)-1
+		}, "Esc: 解除", "Y: 参照"},
+		{"番号絞り込み中", func() { v.clearMark(); v.numFilter.active = true }, "Esc: 解除", "/: 絞り込み直す"},
+		{"番号入力中", func() { v.numFilter.typing = true }, "Esc: 解除", "Enter: 確定"},
+		{"本文", func() { v.numFilter.active, v.numFilter.typing = false, false; v.open = v.rows[0] }, "Enter/h/q: 戻る", "u: URL"},
+		{"URL ピッカー", func() { v.urlPick.open([]string{"https://example.com/"}) }, "Esc: 戻る", "Enter: 開く"},
+	}
+	for _, md := range modes {
+		md.setup()
+		h := v.hint(budget)
+		if w := dispWidth(h); w > budget {
+			t.Errorf("%s: 予算 %d に収まらない (w=%d): %q", md.name, budget, w, h)
+		}
+		if !strings.Contains(h, md.full) {
+			t.Errorf("%s: 予算幅で項目が落ちている (%q が無い): %q", md.name, md.full, h)
+		}
+		// 🚨 1 点だけ見ない。落ちる項目は幅の刻みごとに変わるので、下限から予算まで掃く
+		// (下限は抜ける手段そのものが入る幅。それ未満は fitHintItems が末尾の項目を出す極端域)
+		for w := dispWidth(md.exit); w <= budget; w++ {
+			h := v.hint(w)
+			if dispWidth(h) > w {
+				t.Errorf("%s: 幅 %d に収まらない (w=%d): %q", md.name, w, dispWidth(h), h)
+			}
+			if !strings.Contains(h, md.exit) {
+				t.Errorf("%s: 幅 %d で抜ける手段 %q が消えた: %q", md.name, w, md.exit, h)
+			}
 		}
 	}
-	// 複数選択の hint (件数が桁上がりしても収まるよう 3 桁で見る)
-	v.filter = issues.FilterAll
-	v.refresh()
-	v.marked, v.markAt, v.cursor = true, 0, len(v.rows)-1
-	if w := dispWidth(v.hint()); w > popupWidth {
-		t.Fatalf("選択中の hint が収まらない (w=%d): %q", w, v.hint())
-	}
-	v.clearMark()
-	v.open = v.rows[0]
-	if w := dispWidth(v.hint()); w > popupWidth {
-		t.Fatalf("本文の hint が収まらない (w=%d): %q", w, v.hint())
-	}
-	v.urlPick.open([]string{"https://example.com/"})
-	if w := dispWidth(v.hint()); w > popupWidth {
-		t.Fatalf("URL ピッカーの hint が収まらない (w=%d): %q", w, v.hint())
+}
+
+// hint を組む予算と描画側が切る幅は同じ 1 か所 (browseModel.hintWidth) から取る。
+// TestStatusHintUsesRenderBudget の issues viewer 版 (issue 264)。
+func TestIssuesHintUsesRenderBudget(t *testing.T) {
+	for w := frameMinWidth; w <= 140; w++ {
+		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m.showFrame, m.width, m.height = true, w, 40
+		if !m.frameActive() {
+			t.Fatalf("w=%d: 前提が崩れた (フレームが有効でない)", w)
+		}
+		m.issuesOv.shown = true
+		m.issuesOv.receive(issuesScanMsg{dirs: []string{"/repo/issues"}, issues: sampleIssues()})
+		line := m.hintLine()
+		if got := dispWidth(stripANSI(line)); got > w {
+			t.Errorf("w=%d: hint 行が端末幅を超えた (%d 桁): %q", w, got, line)
+		}
+		if strings.Contains(line, "…") {
+			t.Errorf("w=%d: hint が切り詰められている (予算がずれている): %q", w, line)
+		}
 	}
 }
 
@@ -1427,8 +1465,8 @@ func TestIssuesStatusFilterCycle(t *testing.T) {
 			t.Errorf("%d 打目: バッジ=%q want %q", i, got, w.badges)
 		}
 		// hint は「次に何が増えるか」を出し、現在地は出さない (幅が 1 行しかない)
-		if !strings.Contains(v.hint(), "a: ") {
-			t.Errorf("%d 打目: hint に a の案内が無い: %q", i, v.hint())
+		if !strings.Contains(v.hint(testHintBudget(t)), "a: ") {
+			t.Errorf("%d 打目: hint に a の案内が無い: %q", i, v.hint(testHintBudget(t)))
 		}
 		v.handleKey("a", vp(10))
 	}
@@ -1637,7 +1675,7 @@ func TestIssuesViewBodyHintAdvertisedEditorKeyWorks(t *testing.T) {
 		t.Fatal("本文モードに入れていない")
 	}
 	const advertised = "e: 編集"
-	if h := v.hint(); !strings.Contains(h, advertised) {
+	if h := v.hint(testHintBudget(t)); !strings.Contains(h, advertised) {
 		t.Fatalf("本文の hint が %q を案内していない: %q", advertised, h)
 	}
 	if cmd := v.handleKey("e", vp(10)); cmd == nil {
@@ -2312,7 +2350,7 @@ func advertisedHintKeys(t *testing.T) []string {
 	t.Helper()
 	e := newBodyKeyEnv(t)
 	var keys []string
-	for _, tok := range strings.Split(e.v.hint(), "  ") {
+	for _, tok := range strings.Split(e.v.hint(testHintBudget(t)), "  ") {
 		tok = strings.TrimSpace(tok)
 		if tok == "" {
 			continue

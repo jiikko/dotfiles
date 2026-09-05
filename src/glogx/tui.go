@@ -3811,7 +3811,7 @@ func (m *browseModel) hintLine() string {
 	case fullScreenStatus:
 		return m.hintLineText(m.statusOv.hint(m.hintWidth()))
 	case fullScreenIssues:
-		return m.hintLineText(m.issuesOv.hint())
+		return m.hintLineText(m.issuesOv.hint(m.hintWidth()))
 	case fullScreenNone, fullScreenCount:
 		// 全画面ビューアが出ていない = 下の一覧の hint
 	}
@@ -3832,7 +3832,13 @@ func (m *browseModel) hintLine() string {
 	case m.actModal.anyUpdating():
 		hint = m.spinner() + " " + strings.Join(m.actModal.updatingTargets(), " + ") + " update..."
 	case m.diffOv.visible():
-		hint = "j/k/Space: スクロール  J/K: 隣のコミット  g/G: 先頭/末尾  y: URL コピー  q/h: 閉じる"
+		hint = fitHintItems(m.hintWidth(), []hintItem{
+			{"j/k/Space: スクロール", 2},
+			{"J/K: 隣のコミット", 3},
+			{"g/G: 先頭/末尾", 5},
+			{"y: URL コピー", 4},
+			{"q/h: 閉じる", 1}, // 抜ける手段は最優先
+		})
 	case m.prStatusOv.visible():
 		hint = "o: PR をブラウザで開く  y: URL コピー  P/q/h: 閉じる"
 	case m.detailOv.visible():

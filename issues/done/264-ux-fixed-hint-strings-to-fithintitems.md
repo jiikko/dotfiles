@@ -61,3 +61,18 @@ J/K を入れた 2026-09-05 に、固定文字列で残っている 3 本を**�
 - `issues/done/155-*` (status viewer の hint が切れていた実測) / `issues/done/201-*` (監査で 3 箇所を
   fitHintItems へ寄せた)
 - `src/glogx/tui_helpers_test.go` `testHintBudget` (予算の正本。2026-09-05 に一本化)
+
+## 決着 (2026-09-05)
+
+- 3 本とも `fitHintItems` へ寄せた。issues viewer は `hint(width int)` に変え、`hintLine()` が
+  `m.hintWidth()` を渡す。**本文だけでなく一覧の全モード (open/pending/all の巡回 / 選択中 /
+  絞り込み中 / 番号入力中 / URL ピッカー) も同じ形にした** (幅を受け取るようにした時点で
+  固定文字列を残す理由が無くなった)。文言は変えていない
+- 🚨 優先度 1 は「抜ける手段」**だけ**。ラベル (`N 件選択` / `数字で絞り込み`) を 1 に置くと、
+  同優先度は左から採るので極端な幅で出口の方が落ちる (実装中に sweep テストが検出)
+- テスト: `TestIssuesViewHintFitsPopupWidth` を「予算幅で全項目が入る + 出口の幅から予算まで
+  掃いて出口が残る」に置き換え、`TestIssuesHintUsesRenderBudget` / `TestDiffHintUsesRenderBudget`
+  (組む側と切る側の予算ずれを幅 60〜140 で掃く) を足した。`advertisedHintKeys` は
+  `testHintBudget` の幅で parse する (予算幅では全項目が入るので案内される集合は以前と同じ)
+- 変異検証 (いずれも red → 復元): 本文の出口の優先度を 5 に下げる / 組む側の予算を +10 ずらす /
+  diff の hint を固定文字列に戻す

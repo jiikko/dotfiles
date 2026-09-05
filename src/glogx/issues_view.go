@@ -2316,41 +2316,72 @@ func srcGutter(src, width int, colored bool) string {
 // 🚨 モードの数は lines() の分岐と揃える (ピッカー / 本文 / 一覧の 3 つ)。揃っていないと、URL
 // ピッカー表示中に本文 pager の案内 (j/k/g/G/p/u/e/h/q) が出る — それらは全部 urlPicker が検索語
 // として飲むので、案内したキーが 1 つも案内どおりに動かない。
-func (v *issuesView) hint() string {
-	// 🚨 hint は 1 行で、幅を超えた分は末尾から黙って切られる。上限は browseModel.hintWidth()
-	// (tmux popup の実幅から決まる) で、テストは testHintBudget がそこから導いた予算で
-	// TestIssuesViewHintFitsPopupWidth が固定する — ここに数字を書くと乖離する。
-	// 収まる範囲へ絞り、絞られたキー (y / Y / r / 一覧の p) は --help と README を正本にする。
+func (v *issuesView) hint(width int) string {
+	// 🚨 hint は 1 行。全モードを fitHintItems で組み、幅に入らない項目は**末尾を切るのではなく
+	// 優先度で落とす** (issue 264。それ以前は固定文字列を予算ぎりぎりに詰めていて、代表幅より
+	// 狭い端末では並びの最後 = 抜ける手段が黙って消えた)。🚨 優先度 1 は「どう抜けるか」**だけ**に
+	// する (同じ優先度は左から採るので、ラベルを 1 に置くと極端な幅で出口の方が落ちる)。
+	// 落とした項目は --help と README が正本 (status viewer と同じ作法)。
 	// nvim を開くキーは e と v の 2 本あるが、案内するのは e だけ (v は打ち慣れのための別名で、
-	// 幅で絞ったのではなく意図的に出さない)。一覧モードは幅の都合でどちらも案内しない。
+	// 幅で絞ったのではなく意図的に出さない)。一覧モードはどちらも案内しない。
 	if v.urlPick.active {
 		// 件数と 1 字消し (ctrl+h) はピッカー自身のヘッダーが出すので繰り返さない。ここは
 		// 「打った文字がそのまま絞り込みになる」= 本文 pager のキーが効かないことだけを伝える。
-		return "文字入力で絞り込み  ctrl+n/p: 移動  Enter: 開く  Esc: 戻る"
+		return fitHintItems(width, []hintItem{
+			{"文字入力で絞り込み", 2},
+			{"ctrl+n/p: 移動", 2},
+			{"Enter: 開く", 2},
+			{"Esc: 戻る", 1},
+		})
 	}
 	if v.numFilter.typing {
 		// 打鍵がすべて検索語になる = 一覧のキーが効かないことを伝える (urlPick と同じ理由)
-		return "数字で絞り込み  ctrl+n/p: 移動  Enter: 確定  Esc: 解除"
+		return fitHintItems(width, []hintItem{
+			{"数字で絞り込み", 2},
+			{"ctrl+n/p: 移動", 2},
+			{"Enter: 確定", 2},
+			{"Esc: 解除", 1},
+		})
 	}
 	if v.open != nil {
 		// エディタ名を書かないのは editCmd が $VISUAL/$EDITOR を見るため ($EDITOR=code の人に
-		// "nvim" と案内しない)。幅は TestIssuesViewHintFitsPopupWidth が固定する。
-		// J/K を入れるために g/G を「端」、Enter/h/q を「戻る」(job パネルと同じ語) に詰めた
-		// (元の文言のままでは予算を超える)。
-		return "j/k/Space: スクロール  J/K: 隣へ  g/G: 端  p: 番号  u: URL  e: 編集  Enter/h/q: 戻る"
+		// "nvim" と案内しない)。案内した全キーが効くことは TestIssuesViewBodyHintKeysAllRespond が
+		// 予算幅で固定する。Enter/h/q は job パネルと同じ「戻る」。
+		return fitHintItems(width, []hintItem{
+			{"j/k/Space: スクロール", 2},
+			{"J/K: 隣へ", 3},
+			{"g/G: 端", 5},
+			{"p: 番号", 4},
+			{"u: URL", 5},
+			{"e: 編集", 4},
+			{"Enter/h/q: 戻る", 1},
+		})
 	}
-	// a は 3 段の巡回なので「次に押すと何が増えるか」を出す (現在どこまで見えているかはタブ行
-	// 右端のバッジ ○/○⏸/○⏸✓ が示すので、ここで二重に説明しない)。
-	// 🚨 語でなくバッジで書くのは幅のため: hint は 1 行で popup 実幅に詰まっており、
-	// "a: pending も" (14 桁) では末尾の "q: 閉じる" が黙って切れる (実測)。
 	if lo, hi, ok := v.selection(); ok {
 		// 選択中は効くキーだけを出す (移動と Enter は選択を畳むので、並べると誤解を招く)
-		return strconv.Itoa(hi-lo+1) + " 件選択  J/K・shift+↑↓: 増減  y: パス  p: 番号  Y: 参照  Esc: 解除"
+		return fitHintItems(width, []hintItem{
+			{strconv.Itoa(hi-lo+1) + " 件選択", 2},
+			{"J/K・shift+↑↓: 増減", 2},
+			{"y: パス", 3},
+			{"p: 番号", 3},
+			{"Y: 参照", 4},
+			{"Esc: 解除", 1},
+		})
 	}
 	if v.numFilter.active {
 		// Tab と a は絞り込み中の no-op なので案内しない (押しても何も起きないキーを出さない)
-		return "j/k: 移動  Enter: 本文  p: 番号  n: next  /: 絞り込み直す  Esc: 解除"
+		return fitHintItems(width, []hintItem{
+			{"j/k: 移動", 2},
+			{"Enter: 本文", 2},
+			{"p: 番号", 3},
+			{"n: next", 3},
+			{"/: 絞り込み直す", 4},
+			{"Esc: 解除", 1},
+		})
 	}
+	// a は 3 段の巡回なので「次に押すと何が増えるか」を出す (現在どこまで見えているかはタブ行
+	// 右端のバッジ ○/○⏸/○⏸✓ が示すので、ここで二重に説明しない)。語でなくバッジで書くのは
+	// 幅のため ("a: pending も" は 14 桁)。
 	next := "a: +" + issues.StatusPending.Badge()
 	switch v.filter {
 	case issues.FilterPending:
@@ -2361,11 +2392,17 @@ func (v *issuesView) hint() string {
 	}
 	// 🚨 "q: 終了" であって "閉じる" ではない。q/esc は **glogx ごと終了**する
 	// (ユーザー要望 2026-08-06)。一覧へ戻るのは i (toggle)。README も 2 語を使い分けており、
-	// git log 一覧の hint も同じ動作を "q: 終了" と書いている。issue 121
-	//
-	// 🚨 "i: 一覧へ" は入れられない: 足すと最長モード (filter=2) で 85 桁になり
-	//   TestIssuesViewHintFitsPopupWidth が落ちる (実測)。戻り方は --help と README が正本。
-	return "j/k: 移動  Tab: カテゴリ  /: 検索  Enter: 本文  n: next  " + next + "  q: 終了"
+	// git log 一覧の hint も同じ動作を "q: 終了" と書いている。issue 121。
+	// "i: 一覧へ" は出さない (戻り方は --help と README が正本。足すなら優先度を付けて並べる)。
+	return fitHintItems(width, []hintItem{
+		{"j/k: 移動", 2},
+		{"Tab: カテゴリ", 3},
+		{"/: 検索", 4},
+		{"Enter: 本文", 2},
+		{"n: next", 4},
+		{next, 5},
+		{"q: 終了", 1},
+	})
 }
 
 // 「次にやる」の目印 (n)。選択中の issue を <issue ディレクトリ>/next/ へ移す。

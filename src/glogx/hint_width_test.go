@@ -75,3 +75,21 @@ func assertFits(t *testing.T, name, hint string, width int) {
 			name, w, width, hint)
 	}
 }
+
+// commit diff の hint は fitHintItems で組み、狭い幅でも抜ける手段が残る (issue 264)。
+// 幅を掃くのは TestStatusHintUsesRenderBudget と同じ理由 (1 点では予算のずれが余白に吸われる)。
+func TestDiffHintUsesRenderBudget(t *testing.T) {
+	for w := frameMinWidth; w <= 140; w++ {
+		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+		m.showFrame, m.width, m.height = true, w, 40
+		m.diffOv.open(m.commits[0].SHA)
+		line := m.hintLine()
+		got := stripANSI(line)
+		if dispWidth(got) > w {
+			t.Errorf("w=%d: hint 行が端末幅を超えた (%d 桁): %q", w, dispWidth(got), line)
+		}
+		if strings.Contains(got, "…") || !strings.Contains(got, "q/h: 閉じる") {
+			t.Errorf("w=%d: 切り詰め or 抜ける手段が消えた: %q", w, line)
+		}
+	}
+}

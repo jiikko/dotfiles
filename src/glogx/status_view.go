@@ -917,7 +917,13 @@ func (v *statusView) hint(width int) string {
 	case v.discarding:
 		return "y/Enter: 捨てる  n/Esc: キャンセル"
 	case v.pagerKey != "":
-		return "j/k: スクロール  J/K: 隣のファイル  Space/C-d: 半ページ  g/G: 先頭/末尾  d/q: 閉じる"
+		return fitHintItems(width, []hintItem{
+			{"j/k: スクロール", 2},
+			{"J/K: 隣のファイル", 3},
+			{"Space/C-d: 半ページ", 4},
+			{"g/G: 先頭/末尾", 5},
+			{"d/q: 閉じる", 1}, // 抜ける手段は最優先
+		})
 	}
 	// 🚨 "q: 終了" (glogx ごと終了。一覧へ戻るのは s)。上の pager の "d/q: 閉じる" は
 	//   pager を閉じるので正しい — 直すのはこちらだけ。issue 121

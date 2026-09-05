@@ -53,7 +53,7 @@ var fullScreenCases = []fullScreenCase{
 	{
 		id: fullScreenIssues, name: "issues viewer",
 		show:  func(m *browseModel) { m.issuesOv.shown = true },
-		hint:  func(m *browseModel) string { return m.issuesOv.hint() },
+		hint:  func(m *browseModel) string { return m.issuesOv.hint(m.hintWidth()) },
 		lines: func(m *browseModel) []string { return m.issuesOv.lines(m.issuesOpts()) },
 	},
 }
