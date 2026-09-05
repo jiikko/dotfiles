@@ -15,6 +15,10 @@
 #   README.md 等の meta ファイルは目印にしない
 # glogx 側の検査を緩めてもここが残るよう、判定はこのスクリプトが独立に持つ (値は転記だが、
 # 変えるなら両方を同じ commit で変える)。
+# 🚨 glogx より**厳しい**向きに 2 点ずれている (意図的。CI で止めたいものだから):
+#   - meta ファイル (README.md 等) と .md 以外の symlink は、glogx は「目印ではない」として無言で
+#     無視するだけだが、ここでは不正にする (dangling が viewer から永久に見えない形を残さない)
+#   - それ以外 (親の位置 / ../<同名> / 通常ファイル / 大文字小文字の一致) は同じ集合
 #
 # 変異検証のため、検査対象ディレクトリを第 1 引数で差し替えられる (既定 = repo の issues/):
 #   d=$(mktemp -d); mkdir -p "$d/next"; : > "$d/010-bug-a.md"
@@ -29,6 +33,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR" || exit 1
 
 issues_dir="${1:-issues}"
+issues_dir="${issues_dir%/}" # 末尾 / があると下の prefix 除去が外れて全件「読まない場所」になる
 if [ ! -d "$issues_dir" ]; then
   printf '✗ 検査対象ディレクトリが無い: %s\n' "$issues_dir" >&2
   exit 1
@@ -60,6 +65,8 @@ while IFS= read -r link; do
   case "$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')" in
     readme.md|index.md|template.md)
       printf '✗ meta ファイルは目印にしない: %s\n' "$link" >&2; bad=$((bad + 1)); continue ;;
+    *.md) ;;
+    *) printf '✗ .md 以外の symlink がある (glogx は目印として読まない): %s\n' "$link" >&2; bad=$((bad + 1)); continue ;;
   esac
   target=$(readlink "$link")
   if [ "$target" != "../$base" ]; then
@@ -71,8 +78,9 @@ while IFS= read -r link; do
     printf '✗ 目印の指す先が通常ファイルとして存在しない (done/ へ動かしたなら symlink も消す): %s -> %s\n' "$link" "$real" >&2
     bad=$((bad + 1)); continue
   fi
-  # 大文字小文字まで一致する実エントリがあること (find -name は列挙名に対する厳密比較)
-  if [ -z "$(find "$parent_of_next" -maxdepth 1 -name "$base" -type f -print)" ]; then
+  # 大文字小文字まで一致する実エントリがあること。find -name はパターン扱いで base の [ や * が
+  # 効いてしまうので、列挙をリテラル (grep -Fx) で突き合わせる
+  if ! find "$parent_of_next" -maxdepth 1 -type f -print | grep -Fxq "$parent_of_next/$base"; then
     printf '✗ 直下のエントリ名と大文字小文字が一致しない (glogx は照合に落とす): %s\n' "$link" >&2
     bad=$((bad + 1)); continue
   fi

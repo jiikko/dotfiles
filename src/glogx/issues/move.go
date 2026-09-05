@@ -42,7 +42,7 @@ func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 		// 直下へ戻った瞬間に古い目印が再び成立して「誰も claim していない issue が Next として
 		// 共有される」(敵対レビュー 2 周目 P3-2)。規律だけに任せず、この経路では構造で消す
 		if err := removeNextLink(iss); err != nil {
-			return "", err
+			return "", fmt.Errorf("%s へ移す前に next の目印を外せません: %w", subdir, err)
 		}
 	}
 	base := filepath.Base(iss.Rel)
