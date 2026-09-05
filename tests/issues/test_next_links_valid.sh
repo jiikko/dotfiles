@@ -84,7 +84,7 @@ while IFS= read -r link; do
   fi
   # 大文字小文字まで一致する実エントリがあること。find -name はパターン扱いで base の [ や * が
   # 効いてしまうので、列挙をリテラル (grep -Fx) で突き合わせる
-  if ! find "$parent_of_next" -maxdepth 1 -type f -print | grep -Fxq "$parent_of_next/$base"; then
+  if ! grep -Fxq "$parent_of_next/$base" <<< "$(find "$parent_of_next" -maxdepth 1 -type f -print)"; then
     printf '✗ 直下のエントリ名と大文字小文字が一致しない (glogx は照合に落とす): %s\n' "$link" >&2
     bad=$((bad + 1)); continue
   fi
