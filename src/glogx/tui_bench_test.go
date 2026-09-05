@@ -202,6 +202,26 @@ func BenchmarkIssuesViewFrame2000(b *testing.B) {
 	}
 }
 
+// 選択中のフレーム。issue 268 の退行は**ここが一番悪かった** (選択 20 行 / 2000 件で 439µs =
+// 選択なしの 7 倍)。選択なしのベンチだけでは 2.6 倍にしか見えず、修正の効果も過小に見える。
+//
+// 🚨 `v := &m.issuesOv` のポインタ受けにすること。値で受けると marked の設定が本体へ届かず、
+// selection() が成立しないまま「速い」数字が出る (監査中に実際に踏み、12.8 倍を 1.0 倍と
+// 誤読しかけた)。b.Fatalf の前提チェックはそのための番人。
+func BenchmarkIssuesViewFrameSelected2000(b *testing.B) {
+	m := benchIssuesBrowse(b, 2000, 120, 40)
+	v := &m.issuesOv
+	v.ensureDisplayRows()
+	v.cursor, v.marked, v.markAt = 0, true, 19
+	if _, _, ok := v.selection(); !ok {
+		b.Fatal("選択が成立していない (fixture が狙った分岐に届いていない)")
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = m.View().Content
+	}
+}
+
 func BenchmarkStatusViewFrame(b *testing.B) {
 	m := benchStatusBrowse(b, 40, 120, 40)
 	b.ReportAllocs()

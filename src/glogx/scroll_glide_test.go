@@ -288,7 +288,8 @@ func TestIssuesListWindowAlwaysKeepsCursorVisible(t *testing.T) {
 	for i := range all {
 		all[i] = &issues.Issue{Number: fmt.Sprintf("%03d", i), Title: fmt.Sprintf("TITLE%02d", i), Path: "p"}
 	}
-	v.all, v.rows = all, all
+	v.all = all
+	v.setRows(all)
 	v.dirs = []string{"/x/issues"} // 空だと emptyMessage が早期 return して一覧を描かない
 	const page = 20
 	opts := issuesRenderOpts{width: 100, page: page}
@@ -366,7 +367,8 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 		for i := range all {
 			all[i] = &issues.Issue{Number: fmt.Sprintf("%03d", i), Title: "t", Path: "p"}
 		}
-		v.all, v.rows = all, all
+		v.all = all
+		v.setRows(all)
 		v.dirs = []string{"/x"}
 		v.cursor = 40
 		page := 20

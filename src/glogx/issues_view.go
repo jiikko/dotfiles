@@ -117,8 +117,15 @@ type issuesView struct {
 	rows []*issues.Issue // 現在のタブ・フィルタの表示対象 (親行を含めない子 issue 集合)
 	// displayRows は rows から導出する表示単位。親行はここにだけ存在し、rows / tabCount /
 	// allCount は従来どおり子 issue 数を持つ。
-	displayRows       []displayRow
-	displayRowsSource []*issues.Issue
+	displayRows []displayRow
+	// rowsGen / displayRowsGen は rows と displayRows の同期を O(1) で判定するための世代。
+	// 🚨 rows を書き換えるのは setRows だけ (issue 268)。以前は displayRows の元になった
+	// rows のコピーを持って**毎回全件突き合わせ**ており、rowLine / selection /
+	// isIssueDisplayRow が可視行ごとにそれを呼ぶため 1 フレームが
+	// 「可視行数 × 全 issue 件数」で走っていた (2000 件で 62.4µs / 選択 20 行なら 439µs)。
+	// 直接代入を禁じる規律は issues_rows_setter_test.go がソース走査で強制する。
+	rowsGen        int
+	displayRowsGen int
 	// expandedGroups は手動で展開した GroupKey だけ、autoExpandedGroups は番号フィルタが
 	// 一時的に展開した GroupKey だけを持つ。collapsedGroups は filter 中に親行を明示的に
 	// 畳んだときの一時 override で、state へ保存するのは expandedGroups の true のみ。
@@ -752,7 +759,7 @@ func (v *issuesView) matchByBase(base string) (found *issues.Issue, ambiguous bo
 func (v *issuesView) refresh() {
 	// 🚨 行集合が変わるので選択は畳む。錨は位置で持つため、残すと別の issue を指す
 	v.clearMark()
-	v.rows = v.visibleIssues()
+	v.setRows(v.visibleIssues())
 	if v.numFilter.active {
 		v.autoExpandedGroups = v.numFilter.groupKeys(v.rows)
 	} else {
@@ -850,7 +857,18 @@ func (v *issuesView) rebuildDisplayRows() {
 		}
 	}
 	v.displayRows = out
-	v.displayRowsSource = append(v.displayRowsSource[:0], v.rows...)
+	v.displayRowsGen = v.rowsGen
+}
+
+// setRows は表示対象の子 issue 集合を差し替える (displayRows の再構築を予約する)。
+//
+// 🚨 `v.rows = ...` と直接書かないこと。世代が進まないと ensureDisplayRows が
+// 「同期済み」と判断し、displayRows が古いまま描かれる (issue 268)。
+// production の書き込み口は refresh の 1 箇所だが、テストが行集合を手で作る経路もある
+// (scroll_glide_test)。規律は issues_rows_setter_test.go が走査で強制する。
+func (v *issuesView) setRows(rows []*issues.Issue) {
+	v.rows = rows
+	v.rowsGen++
 }
 
 // sortDisplayUnits は番号付きの単独 issue と group 親を同じ番号順に並べる。group の最大番号
@@ -885,20 +903,13 @@ func (v *issuesView) groupExpanded(key string) bool {
 	return key != "" && !v.collapsedGroups[key] && (v.expandedGroups[key] || v.autoExpandedGroups[key])
 }
 
-// ensureDisplayRows は rows を直接差し替える既存テスト/helper と、通常の refresh の両方を
-// 支える遅延同期。production では refresh が常に先に rebuild する。
+// ensureDisplayRows は setRows で予約された再構築を、実際に displayRows が要るところで消化する。
+//
+// 🚨 判定は世代の比較だけ (O(1))。以前は rows の全件突き合わせで、これを可視行ごとに呼ぶ
+// 描画経路が「可視行数 × 全件」で走っていた (issue 268)。
 func (v *issuesView) ensureDisplayRows() {
-	if len(v.displayRowsSource) == len(v.rows) {
-		match := true
-		for i := range v.rows {
-			if v.displayRowsSource[i] != v.rows[i] {
-				match = false
-				break
-			}
-		}
-		if match {
-			return
-		}
+	if v.displayRowsGen == v.rowsGen {
+		return
 	}
 	v.rebuildDisplayRows()
 }
