@@ -672,6 +672,11 @@ git worktree list   # 消えたことを確認する
   codex 環境の sandbox 差で codex 報告が `--disable-sandbox` 等になっていても、Claude は素の環境で確認する)。
 - **codex のサマリは「主張」として読む**。「実装済み」「動作確認済み」と書かれた項目こそ最初に裏を取る対象にする
   (overclaim は既知の弱点)。裏が取れない主張は「未検証」として扱い、green の根拠に数えない。
+  🚨 **「変異 N ケース全成功」「手動ランナー成功」も同じ**。sandbox で `swift test` が走らない環境では、codex の
+  変異検証は **typecheck だけ**で「成功」と書かれる (実測 2026-09-05 obaket 650 M1: fix ×4 すべてで swift test は
+  一度も実行されておらず、Claude が当て直したら 1 本 hang・2 本 green だった)。**変異検証は codex の報告を
+  数に入れず、Claude が `[3.8]` で必ず自分で当て直す**。プロンプトには「実行できなかった検証は成功と書かない」を
+  入れてはあるが、報告の書き方は変わらないので、読む側で「実行ログの無い成功」を落とす
 - **diff を精読**: 根拠なき断定 (「実装済み」「動作確認済み」)・spec 取り違え・**承認済み設計との乖離**
   (D3 で確定したコントラクトの項目 = 不変条件 / 失敗モード吸収 / 責務分担 ごとに実装が守っているか検証する)・
   指示外ファイルへの変更・半端な編集を弾く。**構造方針との乖離も弾く**: 長期運用判定のタスクに
@@ -963,6 +968,16 @@ EOF
   **後始末に stale な `swiftpm-testing-helper` の確認を含める**: codex の `swift test --disable-sandbox` や worktree での mutation 実行が
   helper プロセスを残す (obaket 674 項目 6: 5 個以上残留。無害だがリソースを食う)。`pgrep -fl swiftpm-testing-helper` で確認し、
   **自分が起動した scratch / worktree の path を持つものだけ** kill する (他セッションの実行中 helper を巻き込まない)。
+  🚨 **`timeout N swift test` で打ち切った run は、子の helper が必ず孤児になる** (timeout は親しか殺さない)。変異ループの
+  各 run の直後に helper を刈る (実測 2026-09-05: 5 時間超の孤児 3 本が残った)
+- **変異の結果は red / green / hang の 3 値**。hang (`timeout` で rc=124) は「検知できなかった」ではなく
+  **「テストが停止を失敗にできない」という別の穴**。原因は大抵 2 つ: suite に `.timeLimit` が無い / `await task.value` が
+  外側の cancel に反応しない (unstructured Task の値待ちは time limit でも中断されない → cancel を転送する helper を通す)。
+  fake clock の「条件が来るまで待つ」observer も cancellation-aware にしておく。実測 2026-09-05 M1: 最初の hang は
+  time limit を付けても抜けず、この 2 点を直してから初めて red になった
+- 🚨 **`swift build` が「Another instance of SwiftPM is already running ... waiting」を出したら待たない**。lock を握って
+  いるのは大抵 read-only codex が sandbox で試した `swift test --skip-build` (hang する) か、前の変異 run の孤児。
+  `ps -axo pid,etime,command | grep swift` で見て kill する。実測 2026-09-05: 気づくまで 2 時間 53 分待った
 
 ### 4. commit & push（Claude）
 
