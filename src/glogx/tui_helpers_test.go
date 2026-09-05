@@ -226,6 +226,24 @@ func stubBrowser(t *testing.T) *string {
 // ここを変えると hint の長さの許容量が変わるので、変えたら実機で末尾が切れないか確認すること。
 const testPopupWidth = 84
 
+// testPopupTermWidth は testPopupWidth の content 幅を出す**端末の幅** (frame の 7 桁を足し戻した値)。
+// hint 行の予算はこちらから決まる (hintWidth は m.width から引く)。
+const testPopupTermWidth = testPopupWidth + frameHOverhead
+
+// testHintBudget は hint 文字列が収まるべき桁数。🚨 production の browseModel.hintWidth() から
+// 導く (数字を書かない)。以前は issues のテストが 84 (content 幅)、hint_width_test が 84-2 と
+// 別々の数字を持っており、実効 (端末 91 桁 - 2 = 89) とも一致していなかった。予算が 3 通りあると
+// hint を 1 つ足したとき「どのテストが正本か」で迷う。
+func testHintBudget(t *testing.T) int {
+	t.Helper()
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.showFrame, m.width, m.height = true, testPopupTermWidth, 40
+	if !m.frameActive() {
+		t.Fatal("前提が崩れた: popup 幅でフレームが有効にならない")
+	}
+	return m.hintWidth()
+}
+
 // pinFallbackEditor は $VISUAL / $EDITOR を空にして editorCommand の fallback (nvim) を固定する。
 //
 // 🚨 起動コマンドを**完全一致**で検証するテストはこれを呼ぶ。editorCommand は環境変数を読むので、

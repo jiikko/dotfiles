@@ -1371,8 +1371,8 @@ func TestIssuesViewKeyLandsAnimationImmediately(t *testing.T) {
 }
 
 func TestIssuesViewHintFitsPopupWidth(t *testing.T) {
-	// hint は 1 行で、超過分は末尾から黙って切られる。popup の実幅 (testPopupWidth) に収める
-	const popupWidth = testPopupWidth
+	// hint は 1 行で、超過分は末尾から黙って切られる。予算は production の hintWidth() から導く
+	popupWidth := testHintBudget(t)
 	v := loadedView(sampleIssues()...)
 	if w := dispWidth(v.hint()); w > popupWidth {
 		t.Fatalf("一覧の hint が %d 桁に収まらない (w=%d): %q", popupWidth, w, v.hint())

@@ -19,8 +19,8 @@ import (
 // 前置のような動的合成は測れない (偽陰性が残る)。「これで hint の幅は保証された」とは
 // 言えないが、固定文字列の作り忘れは止まる。
 func TestHintsFitPopupWidth(t *testing.T) {
-	// popup の実効幅 (hintWidth と同じ計算。frame の左右余白 2 桁を引く)
-	const width = 84 - 2
+	// popup の実効幅。🚨 production の hintWidth() から導く (tui_helpers_test.go の testHintBudget)
+	width := testHintBudget(t)
 
 	t.Run("doctor", func(t *testing.T) {
 		v := &doctorView{}
@@ -33,7 +33,7 @@ func TestHintsFitPopupWidth(t *testing.T) {
 
 	t.Run("job パネル (カーソルあり)", func(t *testing.T) {
 		m := newTestBrowse(t, 3, map[string]CIState{}, nil)
-		m.width = 84
+		m.width = testPopupTermWidth
 		m.panelSHA = m.commits[0].SHA
 		m.panelCursor = 0
 		// ⚠️ 予算は **m.hintWidth()** で測る (固定値を書くと外れる)。frame の有無で

@@ -1347,7 +1347,7 @@ func TestStatusCloseDropsPreviewCache(t *testing.T) {
 func TestStatusHintWordsMatchBehavior(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
 
-	list := v.hint(testPopupWidth)
+	list := v.hint(testHintBudget(t))
 	if !strings.Contains(list, "q: 終了") {
 		t.Errorf("一覧の hint が「終了」と案内していない (q は glogx ごと終了する): %q", list)
 	}
@@ -1360,7 +1360,7 @@ func TestStatusHintWordsMatchBehavior(t *testing.T) {
 
 	// pager 表示中は「閉じる」で正しい
 	v.pagerKey = "dummy"
-	pager := v.hint(testPopupWidth)
+	pager := v.hint(testHintBudget(t))
 	if !strings.Contains(pager, "d/q: 閉じる") {
 		t.Errorf("pager の hint が「閉じる」でない (そこでの q は pager を閉じる): %q", pager)
 	}
