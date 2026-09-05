@@ -1,9 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
+
+	"doctor/disk"
+	"doctor/svc"
 )
 
 // reapplyAfterResetRe は置き換える前の実装 (正規表現版)。**テスト専用**で、
@@ -159,6 +163,17 @@ func TestFrameAllocBudget(t *testing.T) {
 		{"issues-40", func(tb testing.TB) *browseModel { return benchIssuesBrowse(tb, 40, 120, 40) }, 213, 34900},
 		{"usage-glance", budgetUsageGlanceModel, 180, 36700},
 		{"toast-holding", budgetToastModel, 186, 38000},
+		// 全画面ビューア 4 枚のうち doctor と ratelimit は、予算の枠組み (047 / 051 / 062) より
+		// 後に足されたためどのゲートの視界にも入っていなかった (issue 275 / 270)。
+		// 上限は 2026-09-06 のローカル実測 (下の PROBE で採取) に回数 +4 / バイト +3%。
+		// 2026-09-06 実測 (darwin/arm64・GOMAXPROCS=14・**-race**・120x40):
+		// ratelimit-dash 1065 allocs / 239319 B、doctor-disk 1506 allocs / 135890 B。
+		// -race なしだと 1045 / 235515、1164 / 105472 なので、上限は重い方 (-race) 基準。
+		// 既存ケースと同じ余裕 (回数 +4 / バイト +3%)。
+		// 🚨 既存の最重量 (status-40 = 322 allocs / 44400 B) の 3〜5 倍あるので、
+		// 「他と同じ水準に収まっている」とは読まないこと。ここを下げるのが 275 / 270 の本題。
+		{"ratelimit-dash", budgetRatelimitModel, 1069, 246500},
+		{"doctor-disk", budgetDoctorModel, 1510, 140000},
 	}
 	for _, c := range cases {
 		m := c.build(t)
@@ -378,4 +393,35 @@ func assertFrameDrawn(t *testing.T, name string, m *browseModel) {
 		t.Errorf("%s: フレームの文字数が %d しかない (下限 %d)。行はあるが中身が無い",
 			name, len(content), minChars)
 	}
+}
+
+// budgetRatelimitModel は全画面 ratelimit ダッシュボードのフレーム (issue 275)。
+func budgetRatelimitModel(tb testing.TB) *browseModel {
+	m := benchBrowseSubjects(tb, 20, 120, 40, false)
+	m.rlDash.shown = true
+	m.usageOv.snap = rlTestSnap()
+	return m
+}
+
+// budgetDoctorModel は全画面 doctor (disk タブ) のフレーム (issue 270)。
+// Items を持つエントリを並べる — 畳まれた行の detail / copyText / copyPath を毎フレーム
+// 作る形が入ると、ここが跳ねる。
+func budgetDoctorModel(tb testing.TB) *browseModel {
+	m := benchBrowseSubjects(tb, 20, 120, 40, false)
+	m.doctorOv = doctorView{shown: true, expanded: map[string]bool{}}
+	res := make([]disk.Result, 0, 8)
+	for e := range 8 {
+		items := make([]disk.Item, 0, 4)
+		for i := range 4 {
+			items = append(items, disk.Item{Path: fmt.Sprintf("/c/e%02d/i%d", e, i), Size: int64(i + 1)})
+		}
+		res = append(res, disk.Result{
+			Entry:  disk.Entry{ID: fmt.Sprintf("e%02d", e), Label: "Entry", Risk: disk.RiskSafe, Recover: "再取得", DeleteVia: "rm"},
+			Status: disk.StatusOK, Size: 4, Items: items,
+		})
+	}
+	m.doctorOv.diskRep = &disk.Report{Results: res}
+	m.doctorOv.svcRep = &svc.Report{}
+	m.doctorOv.brew = &brewDoctorResult{Clean: true}
+	return m
 }
