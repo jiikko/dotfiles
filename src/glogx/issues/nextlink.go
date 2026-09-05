@@ -3,6 +3,7 @@ package issues
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"termsafe"
@@ -33,6 +34,14 @@ import (
 // 採用しなかった symlink は warnings (表示用に無害化済み) にする。next/ が無ければ空。
 func nextLinks(parent string) (marked map[string]string, warnings []string) {
 	nextDir := filepath.Join(parent, NextDirName)
+	// 🚨 next/ 自体が symlink なら丸ごと不採用 (hasMarkdown のディレクトリ symlink 拒否と同じ方針)。
+	// 追うと `issues/next -> /tmp/evil` の中身で目印を捏造でき、解除の Remove が repo 外を消す先になる
+	if fi, err := os.Lstat(nextDir); err != nil {
+		return nil, nil
+	} else if fi.Mode()&os.ModeSymlink != 0 {
+		return nil, []string{"next の目印を無視しました (next/ 自体が symlink): " +
+			termsafe.PlainLine(filepath.Join(filepath.Base(parent), NextDirName))}
+	}
 	entries, err := os.ReadDir(nextDir)
 	if err != nil {
 		return nil, nil
@@ -53,6 +62,19 @@ func nextLinks(parent string) (marked map[string]string, warnings []string) {
 		marked[e.Name()] = link
 	}
 	return marked, warnings
+}
+
+// unmatchedNextLinks は走査で直下の issue と突き合わせられなかった目印を警告にする。
+// 採用条件を通っても、大文字小文字や正規化の違い (APFS で人が手で張った目印) で直下のエントリ名と
+// 完全一致しないことがある。黙って捨てると「壊れた目印は黙って捨てない」の唯一の穴になる。
+func unmatchedNextLinks(parent string, marked map[string]string) []string {
+	warns := make([]string, 0, len(marked))
+	for base := range marked {
+		warns = append(warns, "next の目印を無視しました (直下に同じ名前の issue が無い): "+
+			termsafe.PlainLine(filepath.Join(filepath.Base(parent), NextDirName, base)))
+	}
+	sort.Strings(warns)
+	return warns
 }
 
 // nextLinkProblem は目印 symlink が採用条件を満たさない理由 ("" = 採用)。

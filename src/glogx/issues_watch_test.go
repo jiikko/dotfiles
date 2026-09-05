@@ -610,3 +610,21 @@ func TestIssuesWatchReAddsRecreatedDir(t *testing.T) {
 		t.Fatalf("消えて戻った done/ が再 Add されていない: %v", v.watch.w.WatchList())
 	}
 }
+
+// global の next/ は目印 (symlink) だけが置かれ、issue の Path を持つものが無いので
+// filepath.Dir(iss.Path) では watch に入らない。他セッション・git pull による付け外しを
+// 反映するために明示的に見張る (敵対レビュー 2026-09-05 P2)。
+func TestIssuesWatchDirsIncludeGlobalNextDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "001-feat-a.md"), []byte("# 001\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, issues.NextDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	all, _ := issues.Scan([]string{dir})
+	got := issuesWatchDirs([]string{dir}, all)
+	if !slices.Contains(got, filepath.Join(dir, issues.NextDirName)) {
+		t.Fatalf("global next/ が watch 対象に無い: %v", got)
+	}
+}

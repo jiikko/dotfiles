@@ -265,3 +265,73 @@ func TestEpicChildClaimPlacesSymlinkInsideGroup(t *testing.T) {
 		t.Errorf("解除で group 内の symlink が消えない: %v", err)
 	}
 }
+
+// 解除は「今も目印 (symlink) か」を取り直してから消す。NextLink は前回走査時の値なので、
+// git pull で next/<base> が旧運用の実ファイルに差し替わっていると、無条件の Remove は
+// issue 本体 (直下に同名が無ければ唯一のコピー) を消す (敵対レビュー 2026-09-05 P1)。
+func TestUnclaimRefusesToRemoveRegularFileAtNextLink(t *testing.T) {
+	dir := t.TempDir()
+	writeIssue(t, filepath.Join(dir, "001-feat-a.md"))
+	symlink(t, "../001-feat-a.md", filepath.Join(dir, NextDirName, "001-feat-a.md"))
+	found, _ := scanOne(t, dir)
+	claimed := found[0]
+	if claimed.NextLink == "" {
+		t.Fatal("前提: 目印が読めていない")
+	}
+	// git pull 相当: symlink が実ファイルに差し替わる
+	if err := os.Remove(claimed.NextLink); err != nil {
+		t.Fatal(err)
+	}
+	writeIssue(t, claimed.NextLink)
+
+	if _, err := MoveToSubdir(claimed, ""); err == nil {
+		t.Fatal("実ファイルに差し替わった next/<base> を解除で消した")
+	}
+	if fi, err := os.Lstat(claimed.NextLink); err != nil || !fi.Mode().IsRegular() {
+		t.Fatalf("実ファイルが消えた / 壊れた: %v", err)
+	}
+	// 目印が既に無い解除は成功 (意図は満たされている)
+	if err := os.Remove(claimed.NextLink); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := MoveToSubdir(claimed, ""); err != nil {
+		t.Errorf("目印が既に無い解除が失敗: %v", err)
+	}
+}
+
+// next/ ディレクトリ自体が symlink なら丸ごと不採用 (hasMarkdown のディレクトリ symlink 拒否と同じ方針。
+// 追うと PR で目印状態を捏造でき、解除の Remove が repo 外を消す先になる)。
+func TestScanRejectsNextDirThatIsASymlink(t *testing.T) {
+	dir := t.TempDir()
+	evil := t.TempDir()
+	writeIssue(t, filepath.Join(dir, "001-feat-a.md"))
+	symlink(t, "../001-feat-a.md", filepath.Join(evil, "001-feat-a.md"))
+	symlink(t, evil, filepath.Join(dir, NextDirName))
+
+	found, warns := scanOne(t, dir)
+	if len(found) != 1 || found[0].Status != StatusOpen || found[0].NextLink != "" {
+		t.Fatalf("symlink の next/ 経由で目印が採用された: %+v", found)
+	}
+	if !strings.Contains(strings.Join(warns, "\n"), "next/ 自体が symlink") {
+		t.Errorf("警告が出ない: %v", warns)
+	}
+}
+
+// 3 条件を通っても直下のエントリ名と完全一致しない目印 (大文字小文字違い。APFS で手で張ると起きる)
+// は、黙って捨てずに警告にする。
+func TestScanWarnsOnNextLinkWithoutMatchingEntry(t *testing.T) {
+	dir := t.TempDir()
+	writeIssue(t, filepath.Join(dir, "001-feat-a.md"))
+	// case-insensitive FS では ../001-FEAT-A.md は実在の 001-feat-a.md を指し、3 条件を通る
+	symlink(t, "../001-FEAT-A.md", filepath.Join(dir, NextDirName, "001-FEAT-A.md"))
+	found, warns := scanOne(t, dir)
+	for _, iss := range found {
+		if iss.Status == StatusNext {
+			t.Errorf("名前が一致しない目印が採用された: %+v", iss)
+		}
+	}
+	joined := strings.Join(warns, "\n")
+	if !strings.Contains(joined, "next の目印を無視しました") {
+		t.Errorf("名前が一致しない目印が黙って捨てられた: %v", warns)
+	}
+}

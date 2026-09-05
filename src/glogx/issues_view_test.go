@@ -526,7 +526,7 @@ func TestIssuesViewMarkNextMovesAfterConfirm(t *testing.T) {
 		t.Fatal("確認の段階でファイルが動いた")
 	}
 	// 確認は最前面に描く (裏の一覧に紛れない)
-	if out := strings.Join(v.lines(renderOpts(20)), "\n"); !strings.Contains(out, "next へ移動") {
+	if out := strings.Join(v.lines(renderOpts(20)), "\n"); !strings.Contains(out, "next の目印") {
 		t.Fatalf("確認モーダルが描かれない:\n%s", out)
 	}
 
@@ -544,7 +544,7 @@ func TestIssuesViewMarkNextMovesAfterConfirm(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatal("claim で実ファイルが動いた")
 	}
-	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "next へ移しました") {
+	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "next の目印を付けました") {
 		t.Fatalf("結果が通知に載らない: %q ok=%v", text, ok)
 	}
 }

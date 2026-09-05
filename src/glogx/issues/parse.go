@@ -260,10 +260,11 @@ func scanDir(dir string) ([]*Issue, []string) {
 		iss := newIssue(dir, e.Name())
 		if link, ok := marked[e.Name()]; ok {
 			iss.Status, iss.NextLink = StatusNext, link
+			delete(marked, e.Name())
 		}
 		out = append(out, iss)
 	}
-	return out, warnings
+	return out, append(warnings, unmatchedNextLinks(dir, marked)...)
 }
 
 // scanEpicDir は `<dir>/epic/<name>/*.md` を open の issue として拾う (Group = <name>)。
@@ -301,6 +302,7 @@ func scanEpicDir(dir, epic string) ([]*Issue, []string) {
 				iss.Group, iss.GroupKind, iss.GroupKey = e.Name(), GroupEpic, groupKey
 				if link, ok := marked[f.Name()]; ok {
 					iss.Status, iss.NextLink = StatusNext, link
+					delete(marked, f.Name())
 				}
 				out = append(out, iss)
 				continue
@@ -331,6 +333,7 @@ func scanEpicDir(dir, epic string) ([]*Issue, []string) {
 				out = append(out, iss)
 			}
 		}
+		warnings = append(warnings, unmatchedNextLinks(groupKey, marked)...)
 	}
 	return out, warnings
 }

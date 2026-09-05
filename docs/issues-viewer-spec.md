@@ -111,7 +111,11 @@ symlink なら同一性キー (Path) も参照も安定し、claim / 解除は s
 - 旧運用 (実ファイルが `next/` に居る) は従来どおり `Status=Next` として読む。直下に無い issue
   (`done/` 等) の claim は `../<base>` が成立しないので rename に倒す
 - 目印の有効性は repo 側の CI でも検査する (`tests/issues/test_next_links_valid.sh`。
-  done へ動かして symlink を消し忘れた dangling を止める)
+  done へ動かして symlink を消し忘れた dangling を止める)。🚨 dangling の目印は viewer が警告を出すだけで
+  消さない。その issue を直下へ戻すと**古い目印が再び有効になり無言で Next に復活する**ので、
+  done へ移すときは目印を外すのが規律 (`claim-issue-in-next-and-push.md`)
+- 目印の解除は Remove の直前に「今も `../<同名>` を指す symlink か」を取り直す。走査時の値で消すと、
+  `git pull` で実ファイルに差し替わった `next/<base>` (旧運用の commit) を消してしまう
 
 - **`next` は常に見せる** (状態フィルタの段階に関係なく)。伏せると「目印を付けた issue が既定の
   一覧から消える」という逆の結果になる

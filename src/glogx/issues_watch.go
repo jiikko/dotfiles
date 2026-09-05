@@ -271,6 +271,13 @@ func issuesWatchDirs(baseDirs []string, all []*issues.Issue) []string {
 		if err != nil {
 			continue
 		}
+		// next/ は目印 (symlink) だけが置かれる場所で、issue の Path を持つものが無いので下の
+		// filepath.Dir(iss.Path) では拾えない。他セッション・git pull による目印の付け外しを
+		// 反映するために明示的に見張る (epic 側は EpicChildStatus 経由で入る。issue 263)
+		if fi, statErr := os.Lstat(filepath.Join(dir, issues.NextDirName)); statErr == nil &&
+			fi.IsDir() && fi.Mode()&os.ModeSymlink == 0 {
+			add(filepath.Join(dir, issues.NextDirName))
+		}
 		epicName := ""
 		for _, e := range entries {
 			if e.IsDir() && strings.EqualFold(e.Name(), issues.EpicDirName) {

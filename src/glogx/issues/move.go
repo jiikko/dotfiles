@@ -35,10 +35,7 @@ func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 		return iss.Path, placeNextLink(iss)
 	}
 	if subdir == "" && iss.NextLink != "" {
-		if err := os.Remove(iss.NextLink); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return "", err
-		}
-		return iss.Path, nil
+		return iss.Path, removeNextLink(iss)
 	}
 	base := filepath.Base(iss.Rel)
 	destDir := iss.Dir
@@ -80,4 +77,26 @@ func placeNextLink(iss *Issue) error {
 		return err
 	}
 	return os.Symlink("../"+filepath.Base(link), link)
+}
+
+// removeNextLink は目印 symlink を消す。🚨 消す直前に「今も ../<base> を指す symlink か」を
+// 取り直す: NextLink は前回走査時の値で、その後 `git pull` で next/<base> が旧運用の実ファイルに
+// 差し替わっていると os.Remove は実ファイルを消す (敵対レビュー 2026-09-05 で実測。直下に同名が
+// 無ければ唯一のコピーが消える)。既に無ければ成功 (解除の意図は満たされている)。
+func removeNextLink(iss *Issue) error {
+	link := iss.NextLink
+	fi, err := os.Lstat(link)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if fi.Mode()&os.ModeSymlink == 0 {
+		return fmt.Errorf("%s は目印 (symlink) ではなく実ファイルになっています。消しません", filepath.Join(NextDirName, filepath.Base(link)))
+	}
+	if target, err := os.Readlink(link); err != nil || target != "../"+filepath.Base(link) {
+		return fmt.Errorf("%s は目印の形 (../<同名>) ではありません。消しません", filepath.Join(NextDirName, filepath.Base(link)))
+	}
+	return os.Remove(link)
 }

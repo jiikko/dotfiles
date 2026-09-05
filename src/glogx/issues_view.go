@@ -2458,7 +2458,7 @@ func (v *issuesView) markNextKey(key string) tea.Cmd {
 	// 外すときは issue ディレクトリ直下へ戻す (= open)。🚨 元居た場所 (done/ 等) は覚えていない:
 	// 目印は「次にやる」ものに付けるので戻り先は open が自然で、履歴を持つと「どこへ戻るか
 	// 分からない」方が困る。
-	dest, verb := issues.NextDirName, "next へ移しました"
+	dest, verb := issues.NextDirName, "に next の目印を付けました"
 	if unmark {
 		dest, verb = "", "の next を外しました"
 	}
@@ -2522,7 +2522,7 @@ func (v *issuesView) markNextBox(width int, colored bool) []string {
 		// ここで sanitize する (制御文字入りのファイル名で確認モーダルを細工させない)
 		what = sanitizePlainLine(filepath.Base(v.markNext.targets[0].Rel))
 	}
-	title, line := " next へ移動 ", what+" を next/ へ移します"
+	title, line := " next の目印 ", what+" に next の目印を付けます"
 	if v.markNext.unmark {
 		title, line = " next を外す ", what+" を next/ から issues 直下へ戻します"
 	}
