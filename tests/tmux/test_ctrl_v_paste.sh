@@ -5,7 +5,8 @@
 #   - 判定式 #{==:#{pane_current_command},zsh} が zsh のペインでだけ真になる
 #     (= 実際の分岐先を決める値。nvim / less / cat が前面なら偽 = 既存の C-v が残る)
 #   - true 側のコマンド (scripts/tmux_paste_clipboard.sh) が実際にペインへ流し込み、
-#     貼ったバイト数のトーストを出す (issue 248 の確認 1 を人が判定するための数字)
+#     貼ったバイト数を右下の toast (bin/tmux-toast) へ渡す
+#     (issue 248 の確認 1 を人が判定するための数字。宛先は貼り先ペインに固定する)
 #
 # 🚨 **キー押下そのものは自動テストで再現できない**。tmux send-keys は key table を通さず
 # ペインへ直接キーを送るので、root テーブルの bind は発火しない (2026-09-04 に実測: zsh には
@@ -131,32 +132,36 @@ else
   else
     bad "true 側のコマンドが流し込めていない: $(tmux -L "$SOCK" capture-pane -p -t zsh 2>/dev/null | tr -d '\n' | tail -c 60)"
   fi
-  # トーストは display-message なので message-log に残る。**バイト数まで**見る:
-  # 文言だけの一致だと、数え方が壊れて 0 バイトと出る変異を素通しする (issue 248 の確認 1 は
-  # ⌘V との数字比較で判定するので、数字が本文の主張)。
-  # 🚨 **client が 1 つも attach していないと display-message は `message:` 行を残さない**
-  # (`command:` 行だけになる。実測 2026-09-05。ログ自体はサーバに 1 本)。
-  # pty で attach したクライアントを 1 つ用意する
-  # `</dev/null`: stdin が socket の環境 (エージェントのシェル) では script が
-  # tcgetattr で落ちる (実測 2026-09-05)
-  script -q /dev/null tmux -L "$SOCK" attach -t zsh >/dev/null 2>&1 </dev/null &
-  client_pid=$!
-  for _ in $(seq 60); do
-    [ -n "$(tmux -L "$SOCK" list-clients -F '#{client_name}' 2>/dev/null)" ] && break
-    sleep 0.05
-  done
-  tmux -L "$SOCK" run -t zsh "$cmd" 2>/dev/null
-  for _ in $(seq 60); do
-    grep -q 'message: 📋' <<< "$(tmux -L "$SOCK" show-messages -t zsh 2>/dev/null)" && break
-    sleep 0.05
-  done
-  msg="$(tmux -L "$SOCK" show-messages -t zsh 2>/dev/null | grep 'message: 📋')"
-  kill "$client_pid" 2>/dev/null
+  # --- 4. 通知 (右下の floating pane = bin/tmux-toast) ---
+  # 実 tmux-toast は floating panes 対応 (tmux 3.7+) が無いとクライアント tty へ直接描くので、
+  # capture-pane では観測できない。**呼び出しの内容**を stub で固定する:
+  # 本物のスクリプトへの symlink を temp/scripts に張り、その ../bin に stub を置く
+  # (スクリプトは $0 の dirname から toast のパスを決める。中身は本物のまま)
+  FAKE="$TMP_DIR/fake"
+  mkdir -p "$FAKE/scripts" "$FAKE/bin"
+  ln -s "$ROOT_DIR/scripts/tmux_paste_clipboard.sh" "$FAKE/scripts/tmux_paste_clipboard.sh"
+  cat > "$FAKE/bin/tmux-toast" <<STUB
+#!/bin/sh
+# 引数と TMUX_PANE を記録する。実 toast は出さない
+printf '%s|%s\n' "\${TMUX_PANE:-}" "\$*" >> "$TMP_DIR/toast.log"
+STUB
+  chmod +x "$FAKE/bin/tmux-toast"
+  target="$(tmux -L "$SOCK" display -p -t zsh '#{pane_id}' 2>/dev/null)"
+  tmux -L "$SOCK" run -t zsh "$FAKE/scripts/tmux_paste_clipboard.sh $target" 2>/dev/null
+  for _ in $(seq 60); do [ -s "$TMP_DIR/toast.log" ] && break; sleep 0.05; done
+  line="$(tail -n 1 "$TMP_DIR/toast.log" 2>/dev/null)"
   # 🚨 区切りごと固定する。数字だけの部分一致は `130 バイト` のような桁違いも通す
-  if grep -q ': 30 バイト' <<< "$msg"; then
-    ok "貼ったバイト数のトーストが出る (21 + あいう 9 = 30 バイト / 24 文字)"
+  if grep -q ': 30 バイト' <<< "$line"; then
+    ok "貼ったバイト数を toast へ渡す (21 + あいう 9 = 30 バイト / 24 文字)"
   else
-    bad "バイト数のトーストが出ていない: $(tr -d '\n' <<< "$msg" | tail -c 80)"
+    bad "バイト数が toast へ渡っていない: [$line]"
+  fi
+  # 🚨 TMUX_PANE を貼り先へ固定していないと、tmux-toast の中の tmux コマンドが
+  # 「最後に活動したクライアント」の画面へ出る (複数クライアントで別ペインへ誤爆)
+  if grep -q "^${target}|" <<< "$line"; then
+    ok "toast の宛先を貼り先ペインに固定している (TMUX_PANE=$target)"
+  else
+    bad "toast の宛先が貼り先ペインに固定されていない: [$line]"
   fi
 fi
 

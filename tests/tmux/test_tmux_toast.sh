@@ -3,6 +3,9 @@
 #   - 再入ガード: 直近 2 秒以内に toast 済みなら new-pane を呼ばず exit 0
 #     (new-pane 自体が after-split-window hook を再発火するため、これが無いと
 #      hook 経由の呼び出しで toast が toast を生む無限増殖になる。2026-07-19 実測)
+#   - agent panel の quiet 窓 (@agent_panel_busy から 3 秒) も同様に抑止する
+#   - -F はその 2 つの抑止だけを外す。**epoch の記録は続ける**
+#     (記録をやめると、この toast pane 生成が呼ぶ hook 側の抑止が外れて無限増殖に戻る)
 #   - floating pane 経路: new-pane に -d (フォーカス非奪取) と、メッセージの表示セル幅
 #     (東アジア文字=2セル) から計算した右下座標が渡ること
 #   - fallback 経路 (floating 非対応 tmux): クライアント tty へ直接描画し、
@@ -25,6 +28,7 @@ export CALLS
 # stub tmux: 呼び出しを記録し、応答は環境変数で制御する
 #   STUB_FLOATING=0 → list-commands の出力に -X が無い (floating panes 非対応 tmux)
 #   STUB_LAST=<epoch> → @tmux_toast_last_epoch の値 (再入ガードの状態)
+#   STUB_PANEL=<epoch> → @agent_panel_busy の値 (agent panel の quiet 窓の状態)
 mkdir -p "$TMP_DIR/bin"
 cat > "$TMP_DIR/bin/tmux" <<'EOS'
 #!/bin/sh
@@ -48,6 +52,7 @@ case "$1" in
     case "$*" in
       *@tmux_toast_last_epoch*) echo "${STUB_LAST:-}" ;;
       *@tmux_toast_pane*) echo "${STUB_TOAST_PANE:-}" ;;
+      *@agent_panel_busy*) echo "${STUB_PANEL:-}" ;;
     esac ;;
   new-pane)
     # STUB_NEWPANE_FAIL=1 で「ジオメトリが収まらず失敗」を再現する (rc=1 + stderr)
@@ -91,6 +96,42 @@ if grep -q '^tmux new-pane' "$CALLS"; then
   ng "再入ガード: 直近 toast ありでも new-pane が呼ばれた (hook 無限増殖の再発)"
 else
   ok "再入ガード: 直近 2 秒以内なら new-pane を呼ばない"
+fi
+
+# --- agent panel の quiet 窓: 直近に panel が動いていたら何もしない --------
+reset_calls
+STUB_PANEL="$(date +%s)" run_toast "🪟 panel 直後"
+if grep -q '^tmux new-pane' "$CALLS"; then
+  ng "panel quiet: 窓の内側でも new-pane が呼ばれた"
+else
+  ok "panel quiet: 窓の内側では new-pane を呼ばない"
+fi
+
+# --- -F: 抑止ガードを外す (ユーザー操作への直接の応答を間引かない) ---------
+# 用途は C-v のペースト通知。間引かれると押した本人が「効いていない」と読む
+# (実測 2026-09-05: window 切替直後のペーストが panel の quiet 窓に食われて無音だった)
+reset_calls
+STUB_LAST="$(date +%s)" run_toast -F "📋 強制"
+if grep -q '^tmux new-pane' "$CALLS"; then
+  ok "-F: 再入ガードの内側でも表示する"
+else
+  ng "-F: 再入ガードに食われた (ペースト通知が無音になる)"
+fi
+reset_calls
+STUB_PANEL="$(date +%s)" run_toast -F "📋 強制"
+if grep -q '^tmux new-pane' "$CALLS"; then
+  ok "-F: panel quiet 窓の内側でも表示する"
+else
+  ng "-F: panel quiet 窓に食われた (ペースト通知が無音になる)"
+fi
+# 🚨 -F でも epoch は記録する。記録をやめると、この new-pane が発火する
+# after-split-window hook 側の抑止が外れ、toast が toast を生む形に戻る
+reset_calls
+STUB_LAST="$(date +%s)" run_toast -F "📋 強制"
+if grep -q -- 'set-option -g @tmux_toast_last_epoch' "$CALLS"; then
+  ok "-F: 抑止は外すが epoch の記録は続ける (hook 側の無限増殖抑止を壊さない)"
+else
+  ng "-F: epoch を記録していない (hook 経由の toast が無限増殖する)"
 fi
 
 # --- floating pane 経路: -d と右下座標 (セル幅計算込み) --------------------

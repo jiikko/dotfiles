@@ -13,24 +13,31 @@
 #   -e: この pane_id が「直近の toast 自身の pane」なら何も表示しない。
 #       pane-exited hook から呼ぶときに #{hook_pane} を渡す (toast pane の終了で
 #       閉じ通知が再帰的に出続けるのを防ぐ)
+#   -F: ノイズ抑止ガード (2 秒デバウンス / agent panel の quiet 窓) を無視して必ず出す。
+#       **hook から呼ぶときには使わない** (toast が toast を生む無限増殖の抑止がこれ)。
+#       用途は「ユーザーの操作に対する直接の応答」で、間引かれると押した本人が
+#       効いたかどうか分からなくなるもの (例: C-v のペースト通知。@tmux_toast_last_epoch の
+#       記録自体は force でも行うので、この toast pane 生成が呼ぶ hook 側は従来どおり黙る)
 set -euo pipefail
 
 duration=2
 fg=15
 bg=22   # 濃い緑
 exclude_pane=''
+force=0
 
 usage() {
-  echo "usage: tmux-toast [-d seconds] [-f fg-color] [-b bg-color] [-e pane-id] message..." >&2
+  echo "usage: tmux-toast [-d seconds] [-f fg-color] [-b bg-color] [-e pane-id] [-F] message..." >&2
   exit 2
 }
 
-while getopts 'd:f:b:e:h' opt; do
+while getopts 'd:f:b:e:Fh' opt; do
   case "$opt" in
     d) duration=$OPTARG ;;
     f) fg=$OPTARG ;;
     b) bg=$OPTARG ;;
     e) exclude_pane=$OPTARG ;;
+    F) force=1 ;;
     *) usage ;;
   esac
 done
@@ -54,7 +61,7 @@ fi
 # 副作用として 2 秒以内の連続通知は 1 つに間引かれる (通知 UI としては許容)
 now=$(date +%s)
 last=$(tmux show-option -gqv @tmux_toast_last_epoch)
-if [ -n "$last" ] && [ $((now - last)) -lt 2 ]; then
+if [ "$force" = 0 ] && [ -n "$last" ] && [ $((now - last)) -lt 2 ]; then
   exit 0
 fi
 
@@ -64,10 +71,12 @@ fi
 # 窓内 (3 秒) の実イベント toast も落ちるが装飾通知なので許容
 AGENT_PANEL_QUIET_SECS=3
 panel_busy=$(tmux show-option -gqv @agent_panel_busy)
-case "$panel_busy" in
-  ''|*[!0-9]*) ;;
-  *) [ $((now - panel_busy)) -lt "$AGENT_PANEL_QUIET_SECS" ] && exit 0 ;;
-esac
+if [ "$force" = 0 ]; then
+  case "$panel_busy" in
+    ''|*[!0-9]*) ;;
+    *) [ $((now - panel_busy)) -lt "$AGENT_PANEL_QUIET_SECS" ] && exit 0 ;;
+  esac
+fi
 tmux set-option -g @tmux_toast_last_epoch "$now"
 
 # 表示セル幅 (東アジア文字=2セル)。bash の ${#msg} は文字数でありセル幅ではない。
