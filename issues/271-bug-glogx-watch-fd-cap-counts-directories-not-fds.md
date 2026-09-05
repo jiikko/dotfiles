@@ -47,6 +47,69 @@
 🚨 **上限 64 に一度も達していないのに fd は 4022 本**。ディレクトリ数の上限は
 何も bound していないことが、これで示せる。
 
+### 再現コード（`tmp/` は gitignore なので本文に残す）
+
+`go.mod` は `module fdprobe` + `require github.com/fsnotify/fsnotify v1.10.1` だけ。
+実行: `go run . <対象 repo>/.git`（引数なしの表 (1) は `Add` 1 回ぶんを測る版）。
+
+```go
+package main
+
+import (
+	"fmt"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"github.com/fsnotify/fsnotify"
+)
+
+func openFDs() int {
+	out, _ := exec.Command("lsof", "-p", strconv.Itoa(os.Getpid())).Output()
+	return len(strings.Split(strings.TrimSpace(string(out)), "\n"))
+}
+
+// gitLogWatchDirs と同じ規則でディレクトリを集め、全部 Add したときの fd を数える。
+func main() {
+	gitDir := os.Args[1]
+	dirs := []string{gitDir}
+	for _, root := range []string{filepath.Join(gitDir, "refs"), filepath.Join(gitDir, "logs")} {
+		filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if !d.IsDir() {
+				return nil
+			}
+			if len(dirs) >= 64 { // gitLogWatchMaxDirs
+				return filepath.SkipAll
+			}
+			dirs = append(dirs, p)
+			return nil
+		})
+	}
+	w, _ := fsnotify.NewWatcher()
+	before := openFDs()
+	for _, d := range dirs {
+		_ = w.Add(d)
+	}
+	after := openFDs()
+	fmt.Printf("見張るディレクトリ数=%d (上限 64), Add 全部で開いた fd=%d\n", len(dirs), after-before)
+	w.Close()
+}
+```
+
+合成 repo（表 (2) の下段）の作り方:
+
+```sh
+git init -q . && git commit -q --allow-empty -m x
+sha=$(git rev-parse HEAD)
+for i in $(seq 1 2000); do echo "create refs/remotes/origin/feature-$i $sha"; done | git update-ref --stdin
+```
+
 ## 発火条件
 
 - 単一ディレクトリに loose ref が大量にある状態。典型は**大きな fetch の直後**

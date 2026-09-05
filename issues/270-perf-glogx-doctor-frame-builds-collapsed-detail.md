@@ -50,6 +50,59 @@ row := doctorRow{
 - Items 200 件は保守的な想定。`Contents` は `listContents`（`os.ReadDir` の全名前、**上限なし**）
   由来なので、Inspect エントリでは数千件になりうる
 
+### 再現コード（`tmp/` は gitignore なので本文に残す）
+
+`src/glogx/` に置いて `go test -run='^$' -bench='BenchmarkAuditDoctorFrame' -benchmem -benchtime=200x -count=3 .`。
+「外した場合」は `doctor_view.go:diskSection` の行リテラルを
+`detail: nil` / `copyText: ""` に置き換えて同じベンチを回した。
+
+```go
+package main
+
+import (
+	"fmt"
+	"testing"
+
+	"doctor/disk"
+	"doctor/svc"
+)
+
+func benchDoctor(tb testing.TB, entries, itemsPer int) *browseModel {
+	tb.Helper()
+	m := benchBrowse(tb, 3, 120, 40)
+	m.width, m.height = 120, 40
+	m.doctorOv = doctorView{shown: true, expanded: map[string]bool{}} // 展開なし
+	res := make([]disk.Result, 0, entries)
+	for e := range entries {
+		items := make([]disk.Item, 0, itemsPer)
+		for i := range itemsPer {
+			items = append(items, disk.Item{Path: fmt.Sprintf("/home/u/.cache/e%02d/item-%05d", e, i), Size: int64(i + 1)})
+		}
+		res = append(res, disk.Result{
+			Entry:  disk.Entry{ID: fmt.Sprintf("e%02d", e), Label: fmt.Sprintf("Entry %02d", e), Risk: disk.RiskSafe, Recover: "再取得", DeleteVia: "rm"},
+			Status: disk.StatusOK, Size: int64(itemsPer), Items: items,
+		})
+	}
+	m.doctorOv.diskRep = &disk.Report{Results: res}
+	m.doctorOv.svcRep = &svc.Report{}
+	m.doctorOv.brew = &brewDoctorResult{Clean: true}
+	return m
+}
+
+func BenchmarkAuditDoctorFrameSmall(b *testing.B)     { benchDoctorFrame(b, 32, 1) }
+func BenchmarkAuditDoctorFrameManyItems(b *testing.B) { benchDoctorFrame(b, 32, 200) }
+
+func benchDoctorFrame(b *testing.B, entries, itemsPer int) {
+	m := benchDoctor(b, entries, itemsPer)
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = m.View().Content
+	}
+}
+```
+
+🚨 ヘルパーは `newTestBrowse`（`*testing.T` 専用）ではなく **`benchBrowse`（`testing.TB`）**を使うこと。
+
 ### 「外した後」も比例が残る点
 
 `detail`/`copyText` を外しても 141 → 489 µs と件数比例が残る（`diskItemRows` など別経路）。
