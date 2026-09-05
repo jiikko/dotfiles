@@ -72,3 +72,50 @@ run:
 ## 関連
 
 - `59f9e48c` — go test の並列化と、lint を直列に残した理由 (Makefile の `run_go_projects` 直上コメント)
+
+## 対応 (2026-09-05, dotfiles-c6)
+
+### lock が守っていたもの (v2.5.0 のソースで確認)
+
+`pkg/commands/run.go` `acquireFileLock`: `os.TempDir()/golangci-lint.lock` への flock。
+`allow-serial-runners` が false なら 5 秒でタイムアウトして "parallel golangci-lint is running"。
+`allow-parallel-runners: true` は lock 取得と解放を丸ごとスキップする。
+
+**キャッシュ保護ではない**。golangci-lint のキャッシュ (`internal/go/cache`) は Go の
+`cmd/go/internal/cache` の fork で、内容アドレス + 一時ファイル → rename の原子書き込み。
+複数プロセスからの同時アクセスを前提に設計されているので、lock を外しても結果の正しさには
+効かない。flag の説明も "Allow multiple parallel golangci-lint instances running. If false
+(default) - golangci-lint acquires file lock on start." だけで、キャッシュへの言及は無い。
+
+つまりこの lock が**マスクしていた failure mode は「同時起動による CPU / メモリの重複消費」だけ**
+(IDE 連携で多重起動する事故の抑止が起源と思われるが、それは未確認の推測)。7 本同時の
+ピーク RSS は下表のとおり 1 プロセスあたりでは問題にならない。
+
+### 入れたもの
+
+- 7 プロジェクトの `src/*/.golangci.yml` に `run.allow-parallel-runners: true` (理由コメント付き)
+- `Makefile` `run_go_projects` の lint 直列分岐 (`$(if $(filter lint,$(1)),;,&)`) を外して並列に
+- `tests/scripts/test_golangci_parallel_runners.sh`: 7 プロジェクト全部に設定があることを pin。
+  1 つでも抜けると**そのプロジェクトだけが他の起動タイミング次第で落ちる** (flaky に見える) ので、
+  新しい src/ を切ったときの漏れをここで止める。変異 (lockman から設定を削除) で red を確認
+
+### 実測 (2026-09-05、14 コア機、`make test-go-lint` の通し)
+
+| 条件 | 所要 | lock 衝突 |
+|---|---|---|
+| before (lint 直列、27df01a0) 新規 worktree の 1 回目 (キャッシュ冷) | 19 秒 | — |
+| before (同) 2〜3 回目 (キャッシュ温) | **7 / 8 秒** | — |
+| after (7 本並列) round 1〜6 (キャッシュ温) | **3 / 2 / 3 / 2 / 2 / 3 秒** | **6 ラウンドとも 0 行**、全プロジェクト rc=0 |
+
+比較に使うのは温まった状態どうし: **直列 7〜8 秒 → 並列 2〜3 秒**。
+検証条件は本文どおり「7 本同時を複数ラウンドで 0 本」で、6 ラウンド連続 0 本。
+
+計測条件の注記:
+- 最初に取った before (19 秒、10:13) は別セッション (dotfiles-a2) の `make test` 末尾 (go lint) と
+  重なっていたので比較から外し、a2 が lint を止めている窓 (10:22 以降) で 3 回測り直した。
+  1 回目の 19 秒は新規 worktree のキャッシュ冷でも同じ数字になるので、汚染の有無は数字からは
+  切り分けられない (どちらにせよ比較には使わない)
+- after の round 1〜4 (10:14〜10:15) は a2 の計測とは重なっていない (a2 の終了 10:13:52)
+- ピーク RSS は `/usr/bin/time -l` で before 1.07 GB / after 0.13 GB と出たが、並列の子プロセスの
+  rusage を同じ形で数えているか確認していないので**比較には使わない** (未比較)
+- 閾値 (何本から踏むか) は測っていない (対応後は踏まないので不要)

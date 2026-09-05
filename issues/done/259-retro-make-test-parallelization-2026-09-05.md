@@ -51,14 +51,17 @@ background で回した計測の完了を待つあいだ、`grep -c '[run]'` を
 
 ## 残課題
 
-- [ ] **並列腕と直列腕が「同時に」走るケースが未検証**。今回検証したのは「並列腕の中で
-      tmux/nvim を並列に回すと落ちる」ことまでで、`run_all_targets` を並列化すると
-      2 腕が同時に走る。dotfiles-c6 が `run_all_targets` の並列化を持つので申し送り済み
-      (2026-09-05)。そちらの変更が入ったら、直列腕が tmux サーバに触ることとの干渉を確認する
-- [ ] **孤児 worktree `wt-138` / `wt-fix138` の処分**。生きている dotfiles セッション 2 つ
-      (c6 / cd) がどちらも「自分のものではない」と回答。両 commit (aaf6c1d7 / 415eaadf) は
-      master に含まれ、未コミット差分も無い = **消しても何も失われない**ことは確認済み。
-      破壊的操作かつ依頼範囲外なのでユーザーの判断待ち
-- [ ] 項目 2 の `perf-claims-need-measurement.md` への追記 (ユーザーの判断待ち)
-- [ ] 項目 3 の切り出し先の判断 (ユーザーの判断待ち)
-- [ ] issue 258 (golangci-lint の allow-parallel-runners) の着手
+決着 (2026-09-05, dotfiles-c6):
+
+- [x] **並列腕と直列腕が「同時に」走るケース** — 発生しない構造にした。`run_all_targets` は逐次の
+      まま残し、test-lint だけが opt-in の並列ランナー (`scripts/run_make_targets_parallel.sh`) を
+      使う (27df01a0)。理由は Makefile の test-lint 直上コメントに残した。
+      ただし**並列化が負荷経由で既存の競合テストを壊す**別筋は残る: `tests/claude/test_claude_links_sync.sh`
+      が `make test` 内で flaky になった (単独 3/3 緑、負荷下で落ちる)。これは issue 260 (dotfiles-a2 が持つ)
+- [x] **孤児 worktree `wt-138` / `wt-fix138`** — ユーザーの指示で削除した。削除前に両 commit
+      (aaf6c1d7 / 415eaadf) が origin/master に含まれること・`git status` が空であることを再確認
+- [x] 項目 2 → `perf-claims-need-measurement.md` に「最初の計測は、後から内訳を聞かれても答えられる
+      粒度で取る」を追記 (実例は rules-rationale へ)
+- [x] 項目 3 → 新規ルールは立てず `verify-execution-not-just-exit-code.md` の「非同期・background の
+      完了」節へ「待つと決めたら待つ」を追記 (発動点 = background の完了待ち、が既存節と同じ)
+- [x] issue 258 → 対応済み (同 issue の「対応」節)

@@ -453,11 +453,12 @@ GO_PROJECT_DIRS := $(patsubst %/,%,$(dir $(wildcard src/*/go.mod)))
 #   プロジェクト別に分かれているため無傷だったが、ローカルの方が弱い状態だった)。
 # 🚨 go 未導入は skip して緑にする。0 件は上のガードで失敗させるので、
 #   「発見が壊れた」と「go が無い」は別の結果として出る。
-# test は並列に回す (go の build cache は並行アクセスに対して自前でロックする)。
-# 🚨 lint は直列のまま。golangci-lint は起動時にグローバルな file lock を取り、別インスタンスが
-#   走っていると "parallel golangci-lint is running" で exit 3 する (v2.5.0 で実測 2026-09-05:
-#   7 プロジェクト同時起動で 3 つが落ちた)。並列にするには各 src/*/.golangci.yml に
-#   `run.allow-parallel-runners: true` が要る (7 プロジェクトの契約変更なので、ここでは触らない)。
+# test も lint も並列に回す (go の build cache は並行アクセスに対して自前でロックする)。
+# 🚨 lint の並列は各 src/*/.golangci.yml の `run.allow-parallel-runners: true` が前提 (issue 258)。
+#   golangci-lint は既定で os.TempDir() のグローバル file lock を取り、別インスタンスが走っていると
+#   "parallel golangci-lint is running" で落ちる。**1 プロジェクトでも設定が抜けると、そのプロジェクト
+#   だけが他の起動タイミング次第で落ちる** (flaky に見える)。新しい src/ を切ったら .golangci.yml に
+#   同じ run: 節を入れること (tests/scripts/test_golangci_parallel_runners.sh が漏れを検出する)。
 # 出力はプロジェクトごとに一時ファイルへ隔離し、全部終わってから発見順に吐く (run_tests_parallel と
 # 同じ理由: 並列で行が混ざると、どの失敗がどのプロジェクトか読めない)。rc ファイルが無い =
 # サブシェルが結果を書く前に死んだ、なので失敗に数える (沈黙を緑にしない)。
@@ -471,7 +472,7 @@ fi; \
 outdir=$$(mktemp -d); i=0; \
 for dir in $(GO_PROJECT_DIRS); do \
 	i=$$((i + 1)); \
-	( $(MAKE) -C $$dir $(1) >"$$outdir/$$i.out" 2>&1; echo $$? >"$$outdir/$$i.rc" ) $(if $(filter lint,$(1)),;,&) \
+	( $(MAKE) -C $$dir $(1) >"$$outdir/$$i.out" 2>&1; echo $$? >"$$outdir/$$i.rc" ) & \
 done; \
 wait; \
 failed=""; i=0; \
