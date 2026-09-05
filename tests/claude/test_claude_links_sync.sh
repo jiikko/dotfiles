@@ -211,6 +211,13 @@ set -e
 [ "$RC" -eq 0 ] || ng "HOME 未設定の hook が rc=$RC (常に 0 のはず)"$'\n'"$raw"
 grep -q '省略した' <<<"$raw" || ng "HOME 未設定の hook が配線の問題を報告していない:"$'\n'"$raw"
 
+# 並行 apply が落ちたときに、link が実際に何だったのかを出す (issue 260 の診断用)。
+# `ls -l` は symlink / 実ファイル / 不在を 1 行で区別でき、`-e`/`-L` の判定と突き合わせられる。
+par_state() {
+  echo "--- 実状態 ($CH):"
+  ls -l "$CH"/hooks/h1.sh "$CH"/rules/r1.md "$CH"/agents/a1.md "$CH"/commands/c1.md 2>&1 | sed 's/^/  /'
+}
+
 # --- 15. 並行 apply (3 本同時 x 5 回): 全部 rc=0、failed 無し、最終状態は揃う ---
 # BSD ln -sfn は既存 link の上書きを unlink → symlink で retry するため同時実行で片方が非 0 を返す。
 # apply は ln の rc でなく -ef の状態で判定するので、複数セッションの同時起動で偽の failed を出さない
@@ -228,8 +235,12 @@ for i in 1 2 3 4 5; do
   # shellcheck disable=SC2086
   wait $pids || true
   for j in 1 2 3; do
-    grep -q '^rc=0$' "$H/par.$i.$j" || ng "並行 apply #$i.$j が非 0:"$'\n'"$(cat "$H/par.$i.$j")"
-    grep -q '^failed: ' "$H/par.$i.$j" && ng "並行 apply #$i.$j が failed を出した:"$'\n'"$(cat "$H/par.$i.$j")"
+    # 🚨 失敗時は link の実状態も出す。2026-09-05 に `make test` の通しで 1 度だけ
+    # 「refused: .../hooks/h1.sh は symlink でない実ファイル」で落ちたが、出力が apply の
+    # stdout だけだったため **h1.sh が実際に何だったのか**が分からず、55 回の再試行でも
+    # 再現しなかった (issue 260)。次に出たときに切り分けられるようにする。
+    grep -q '^rc=0$' "$H/par.$i.$j" || ng "並行 apply #$i.$j が非 0:"$'\n'"$(cat "$H/par.$i.$j")"$'\n'"$(par_state)"
+    grep -q '^failed: ' "$H/par.$i.$j" && ng "並行 apply #$i.$j が failed を出した:"$'\n'"$(cat "$H/par.$i.$j")"$'\n'"$(par_state)"
   done
   run check
   [ "$RC" -eq 0 ] || ng "並行 apply #$i の後に check が rc=$RC:"$'\n'"$OUT"
