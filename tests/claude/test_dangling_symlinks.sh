@@ -57,7 +57,7 @@ _cdir="$(mktemp -d)"
 trap 'rm -rf "$_cdir"' EXIT
 mkdir -p "$_cdir/a/b/c/d"
 ln -s "$HOME/dotfiles/__canary_nonexistent__" "$_cdir/a/b/c/d/deep.link"
-if ! find_links_deep "$_cdir" | grep -qxF "$_cdir/a/b/c/d/deep.link"; then
+if ! grep -qxF "$_cdir/a/b/c/d/deep.link" <<< "$(find_links_deep "$_cdir")"; then
   echo "FAIL: find_links_deep が深さ 5 のリンクを拾えない (深さ制限が入った。検査の射程が縮んでいる)" >&2
   fail=1
 fi
@@ -68,7 +68,7 @@ fi
 for canary in "$HOME/.config/nvim/init.lua" "$HOME/.claude/CLAUDE.md"; do
   [ -L "$canary" ] || continue
   case "$(readlink "$canary")" in "$HOME"/dotfiles/*) ;; *) continue ;; esac
-  if ! printf '%s\n' "$links" | grep -qxF "$canary"; then
+  if ! grep -qxF "$canary" <<< "$links"; then
     echo "FAIL: 走査が $canary を拾えていない (深さ制限か根の漏れ。検査の射程が縮んでいる)" >&2
     fail=1
   fi
