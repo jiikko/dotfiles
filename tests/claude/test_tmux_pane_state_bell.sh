@@ -134,11 +134,18 @@ if pid == 0:
     os.execvp('tmux', ['tmux', '-L', socket, 'attach'])
 rc = 2
 try:
-    time.sleep(1.5)
-    seen = subprocess.run(['tmux', '-L', socket, 'display', '-p', '-t', pane,
-                           '#{window_active_clients}'], capture_output=True, text=True).stdout.strip()
+    # attach が登録されるまで待つ。固定 sleep にしない (avoid-wall-clock-assertions.md):
+    # CI runner では 1.5 秒で登録されず「判定不能」になった (run 33936632229)。条件を
+    # ポーリングし、上限を超えたら判定不能 (緑にも赤にも丸めない)。上限まで 0 のままなら
+    # 「遅い」ではなく「この環境では attach が見えない」の証拠になる
+    deadline = time.monotonic() + 15
+    seen = '0'
+    while seen == '0' and time.monotonic() < deadline:
+        time.sleep(0.05)
+        seen = subprocess.run(['tmux', '-L', socket, 'display', '-p', '-t', pane,
+                               '#{window_active_clients}'], capture_output=True, text=True).stdout.strip()
     if seen == '0':
-        print('  (ハーネス異常: client を attach したのに window_active_clients=0)')
+        print('  (ハーネス異常: client を attach して 15 秒待っても window_active_clients=0)')
     else:
         env = dict(os.environ, TMUX=f'{sock_path},0,0', TMUX_PANE=pane)
         subprocess.run([hook, 'idle'], input='{"hook_event_name":"Stop","background_tasks":[]}',
