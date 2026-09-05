@@ -138,6 +138,29 @@ if [ -n "$$failed" ]; then \
 fi
 endef
 
+# run_tests / run_tests_parallel が出した失敗・skip の一覧を、腕をまたいで合算するための受け口。
+# TEST_FAILS_SUMMARY / TEST_SKIPS_SUMMARY (追記先のファイルパス) が環境に在るときだけ追記する。
+# 単体で `make test-tmux` 等を叩いたときは未設定なので何もしない。
+define append_test_summary
+if [ -n "$${TEST_FAILS_SUMMARY:-}" ]; then cat "$(1)" >> "$$TEST_FAILS_SUMMARY"; fi; \
+if [ -n "$${TEST_SKIPS_SUMMARY:-}" ]; then cat "$(2)" >> "$$TEST_SKIPS_SUMMARY"; fi
+endef
+
+# run_all_targets の上に「両腕の失敗テスト名 / skip 件数の合算」を重ねる (test-discovered 系専用)。
+# 腕ごとに出る `✗ 失敗したテスト:` は後続の腕のログで上へ流れ、run_all_targets の末尾には
+# ターゲット名しか出ないので、最後にテスト名を再掲する (1 本目の失敗で埋もれて「1 件だけ直せば
+# よい」と誤読される、を腕の単位で防ぐ)。skip も腕ごとの数を人が足さずに済むよう合計を出す。
+# 集約の中身 (全部走らせる / ターゲット名をまとめる) は run_all_targets のまま (subshell で包み、
+# その exit は rc として受け取る)。skip は失敗ではないので rc に影響させない。
+define run_test_arms
+sum_f=$$(mktemp); sum_s=$$(mktemp); rc=0; \
+( export TEST_FAILS_SUMMARY="$$sum_f" TEST_SKIPS_SUMMARY="$$sum_s"; $(call run_all_targets,$(1)) ) || rc=$$?; \
+if [ -s "$$sum_s" ]; then { echo ""; echo "[skip] 全腕合計: 丸ごと skip したテスト $$(wc -l < "$$sum_s" | tr -d ' ') 件 (失敗ではない。増えていたら理由を確かめる):"; sed 's/^/  /' "$$sum_s"; }; fi; \
+if [ -s "$$sum_f" ]; then { echo ""; echo "✗ 全腕合計: 失敗したテスト $$(wc -l < "$$sum_f" | tr -d ' ') 件:"; sed 's/^/  /' "$$sum_f"; } >&2; fi; \
+rm -f "$$sum_f" "$$sum_s"; \
+exit $$rc
+endef
+
 test-runtime:
 	@+$(call run_all_targets,test-syntax test-discovered test-bats)
 
@@ -158,6 +181,7 @@ tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); 
 fails=$$(mktemp); skips=$$(mktemp); \
 printf '%s\n' "$$tests" | while IFS= read -r t; do echo "[run] $$t"; \
 	if "$$t"; then :; else rc=$$?; if [ "$$rc" -eq 77 ]; then echo "$$t" >> "$$skips"; else echo "$$t" >> "$$fails"; fi; fi; done; \
+$(call append_test_summary,$$fails,$$skips); \
 if [ -s "$$skips" ]; then { echo ""; echo "[skip] 丸ごと skip したテスト $$(wc -l < "$$skips" | tr -d ' ') 件 (失敗ではない。増えていたら理由を確かめる):"; sed 's/^/  /' "$$skips"; }; fi; \
 if [ -s "$$fails" ]; then { echo ""; echo "✗ 失敗したテスト:"; sed 's/^/  /' "$$fails"; } >&2; rm -f "$$fails" "$$skips"; exit 1; fi; \
 rm -f "$$fails" "$$skips"
@@ -198,6 +222,7 @@ echo ""; echo "[並列] 対象 $$(wc -l < "$$exp" | tr -d ' ') 件 / 結果を�
 if [ -s "$$skips" ]; then { echo ""; echo "[skip] 丸ごと skip したテスト $$(wc -l < "$$skips" | tr -d ' ') 件 (失敗ではない。増えていたら理由を確かめる):"; sed 's/^/  /' "$$skips"; }; fi; \
 if [ -s "$$miss" ]; then { echo ""; echo "✗ 結果を報告しなかったテスト $$(wc -l < "$$miss" | tr -d ' ') 件 (走ったかどうか自体が不明。xargs は utility がシグナルで死ぬか exit 255 だと残りの入力を捨てる):"; sed 's/^/  /' "$$miss"; } >&2; rc=1; fi; \
 if [ -s "$$fails" ]; then { echo ""; echo "✗ 失敗したテスト:"; sed 's/^/  /' "$$fails"; } >&2; rc=1; fi; \
+sed 's/$$/ (結果を報告しなかった)/' "$$miss" >> "$$fails"; $(call append_test_summary,$$fails,$$skips); \
 rm -f "$$fails" "$$skips" "$$ran" "$$ran.s" "$$exp" "$$miss"; \
 [ "$$rc" -eq 0 ] || exit 1; \
 [ "$$xrc" -eq 0 ] || { echo "✗ 並列 runner (xargs) が rc=$$xrc で終わったが、失敗したテストの記録が無い (runner 自体の故障)" >&2; exit 1; }
@@ -216,7 +241,8 @@ test-fresh:
 # 自動で拾われる (ディレクトリ単位の死蔵も発生しない。新ディレクトリは並列腕に入る)。
 #
 # 並列腕 (tests/ から SERIAL_TEST_DIRS を除いた全部) と直列腕 (SERIAL_TEST_DIRS) の 2 本に分け、
-# run_all_targets で**両方走らせてから**失敗をまとめる (片方が落ちてももう片方は必ず走る)。
+# run_test_arms (= run_all_targets + 両腕の失敗テスト名 / skip 件数の合算) で**両方走らせてから**
+# 失敗をまとめる (片方が落ちてももう片方は必ず走る)。
 # 直列に据え置くのは共有資源 (tmux サーバ / nvim の状態) に触り、並列時の競合を検証していない領域。
 # 実測 2026-09-05 (14 コア): 直列 1 本で 367s → 並列腕 122s + 直列腕 89s。
 # 🚨 SERIAL_TEST_DIRS のパスを移動/改名したら直列腕の 0 件検知が fail するのでここを更新する
@@ -226,7 +252,7 @@ SERIAL_TEST_DIRS := tests/tmux tests/nvim tests/zshrc/tmux-session
 SERIAL_PRUNE := \( $(foreach d,$(SERIAL_TEST_DIRS),-path $(d) -o) -false \) -prune -o
 
 test-discovered:
-	@+$(call run_all_targets,test-discovered-parallel test-discovered-serial)
+	@+$(call run_test_arms,test-discovered-parallel test-discovered-serial)
 
 test-discovered-parallel:
 	@$(call run_tests_parallel,tests $(SERIAL_PRUNE))
@@ -310,7 +336,7 @@ test-discovered-heavy:
 # rest も test-discovered と同じ 2 腕 (並列 / 直列) で回す。heavy の除外は並列腕側で行う
 # (SERIAL_TEST_DIRS と CI_HEAVY_TEST_DIRS は重ならないので直列腕は test-discovered と共用)。
 test-discovered-rest:
-	@+$(call run_all_targets,test-discovered-rest-parallel test-discovered-serial)
+	@+$(call run_test_arms,test-discovered-rest-parallel test-discovered-serial)
 
 test-discovered-rest-parallel:
 	@$(call run_tests_parallel,tests $(CI_HEAVY_PRUNE) $(SERIAL_PRUNE))

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ローカルの入口 (make test / test-go* / test_changed.sh) が「1 本目の失敗で残りを隠さない」
+# ローカルの入口 (make test / test-go* / test-discovered* / test_changed.sh) が「1 本目の失敗で残りを隠さない」
 # ことを実験で確かめる (issue 130)。
 #
 # なぜテストにするか: 集約かどうかは**失敗した日にしか観測されない**。緑の日は fail-fast でも
@@ -8,6 +8,7 @@
 #
 # 手段: 本物の lint / テストは回さず、**呼ばれ方だけ**を偽の make で観測する
 #   - Makefile 側: GO_PROJECT_DIRS を上書きして偽プロジェクト 2 つを回す (1 つ目が必ず落ちる)
+#   - test-discovered 側: 本物の Makefile を include した一時 Makefile で腕のレシピだけを偽物にする
 #   - test_changed.sh 側: PATH 先頭に偽 make を置いて、呼び出しを記録させる
 set -euo pipefail
 unset CDPATH
@@ -105,6 +106,55 @@ fi
 grep -qx "test-go" "$TMP_DIR/calls" \
   || bad "make test-src: lint の失敗で test-go が走っていない ($(tr '\n' ' ' < "$TMP_DIR/calls"))"
 note "make test-src は test-go-lint が落ちても test-go を回す"
+
+# --- Makefile: test-discovered / test-discovered-rest は片方の腕が落ちてももう片方を回す ---
+# 腕はターゲット名が固定で変数では差し替えられないので、本物の Makefile を include した一時
+# Makefile で腕のレシピだけを上書きする (make は「overriding commands」を警告して後勝ち)。
+# 上書き後の腕は本物の run_tests_parallel / run_tests に**偽のテストディレクトリ**を渡す形にする。
+# 束ねる側 (run_test_arms / run_all_targets) と runner (一覧の合算ファイルへの追記) は本物が
+# そのまま動くので、その破損を検出できる (偽の腕が合算ファイルへ直接書く形だと、runner 側の
+# 追記を外しても緑のまま通る — 実際に変異で確かめた)。
+# 🚨 再帰側にも `-f` を渡す: `-f` は MAKEFLAGS で子へ伝わらないため、run_all_targets の
+#    `$(MAKE) <腕>` が本物の Makefile を読んで本物の腕 (数分) を回してしまう。
+#    prerequisite 形へ戻す退行 (`test-discovered: 腕1 腕2`) では偽の腕1 が落ちた時点で make が
+#    止まり、腕2 の記録が無いので red になる。
+# 偽の並列腕: 失敗 1 本 + skip (exit 77) 1 本。偽の直列腕: 成功 1 本 (走った証拠を残す) + 失敗 1 本。
+# 最後に両腕の失敗 2 本と skip 1 本がテスト名で再掲されること (issue 261 P2-1 / P2-2) も見る。
+mkdir -p "$TMP_DIR/arm_p" "$TMP_DIR/arm_s"
+printf '#!/bin/sh\nexit 1\n' > "$TMP_DIR/arm_p/test_p_fail.sh"
+printf '#!/bin/sh\nexit 77\n' > "$TMP_DIR/arm_p/test_p_skip.sh"
+printf '#!/bin/sh\necho serial-ran >> %s\n' "$TMP_DIR/calls" > "$TMP_DIR/arm_s/test_s_ok.sh"
+printf '#!/bin/sh\nexit 1\n' > "$TMP_DIR/arm_s/test_s_fail.sh"
+chmod +x "$TMP_DIR"/arm_?/test_*.sh
+cat > "$TMP_DIR/Makefile" <<EOF
+include Makefile
+test-discovered-parallel test-discovered-rest-parallel:
+	@\$(call run_tests_parallel,$TMP_DIR/arm_p)
+test-discovered-serial:
+	@\$(call run_tests,$TMP_DIR/arm_s)
+EOF
+for entry in test-discovered test-discovered-rest; do
+  arm="test-discovered-parallel"; [ "$entry" = test-discovered-rest ] && arm="test-discovered-rest-parallel"
+  : > "$TMP_DIR/calls"
+  if make -f "$TMP_DIR/Makefile" "$entry" MAKE="$real_make -f $TMP_DIR/Makefile" >"$TMP_DIR/out" 2>&1; then
+    bad "$entry: 並列腕が落ちたのに成功した"
+  else
+    note "$entry: 失敗を返す"
+  fi
+  grep -q '\[FAIL\] .*test_p_fail.sh' "$TMP_DIR/out" || bad "$entry: 偽の並列腕が走っていない (実験の配線が壊れている): $(cat "$TMP_DIR/out")"
+  grep -qx serial-ran "$TMP_DIR/calls" \
+    || bad "$entry: 並列腕が落ちた後、直列腕が走っていない: $(cat "$TMP_DIR/out")"
+  grep -q "失敗したターゲット:.*$arm.*test-discovered-serial" "$TMP_DIR/out" \
+    || bad "$entry: 失敗したターゲット名が両腕まとめて出ない: $(cat "$TMP_DIR/out")"
+  if ! { grep -q "全腕合計: 失敗したテスト 2 件" "$TMP_DIR/out" \
+         && grep -q '^  .*test_p_fail.sh$' "$TMP_DIR/out" && grep -q '^  .*test_s_fail.sh$' "$TMP_DIR/out"; }; then
+    bad "$entry: 両腕の失敗テスト名が最後に合算されない: $(cat "$TMP_DIR/out")"
+  fi
+  if ! { grep -q "全腕合計: 丸ごと skip したテスト 1 件" "$TMP_DIR/out" && grep -q '^  .*test_p_skip.sh$' "$TMP_DIR/out"; }; then
+    bad "$entry: 腕の skip 件数が最後に合算されない: $(cat "$TMP_DIR/out")"
+  fi
+done
+note "test-discovered / test-discovered-rest は並列腕が落ちても直列腕を回し、テスト名と skip を合算する"
 
 # --- test_changed.sh: 3 つのループが途中で止まらない -------------------------------------
 mkdir -p "$TMP_DIR/bin"
