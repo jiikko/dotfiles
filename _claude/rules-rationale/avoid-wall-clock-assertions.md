@@ -67,3 +67,10 @@ cancel は正しく効いていて、遅かったのは CI の負荷。
 壁時計の assert は「遅いと落ちる」で気づけるが、待ちの `sleep` は**速いマシンでは緑のまま
 通り、負荷が上がった日にだけ落ちる**。並列化はその日を作る。
 
+## 2026-09-05 obaket — 別セッションの xcodebuild と重なった `make test` で 2 秒待ちが 10 本一括 timeout
+
+`TransferActivityCenterTests` 系の `pollUntil(timeout: .seconds(2))` (`TransferActivityCenterTests` / M2 / M3 の 3 ファイルで 84 箇所) が、別セッションの xcodebuild と
+同時刻 (load average ≈ 5) の `make test` で 10 本まとめて超過した。同じコードの単独再実行は 637 tests 全 green。
+待っていたのは「injected sleeper に要求が入った」「replay job が enqueue された」という**事象**で、時間を測る必要は無かった。
+同じセッションで入れた `waitUntilStopConsumedForTesting` (`.stop` 消費の瞬間に resume する continuation) はこの形の置き換え例。
+記録: obaket `issues/724-test-transfer-activity-center-tests-two-second-poll-timeouts.md`。

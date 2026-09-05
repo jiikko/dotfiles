@@ -151,6 +151,10 @@ Monitor ツールで完了を待つ。**待つのは driver が必ず書く `run
 ではない** (run 単位の成果物は全部揃ったのに外側 rc だけ書かれず永遠に待った例: obaket 696 項目 10)。
 待機ループには deadline を置き、超えたら「判定不能」として報告する。プロセス不在かつ成果物無し = 死亡として扱う。
 15 分以内に収まる起動は従来どおり `run_in_background` でよい。
+**自分の run を止めるときは PID か `-o` の出力パスで特定する** (`kill <pid>` / `pkill -f '<自分の -o パス>'`)。
+`pkill -f 'codex exec -s workspace-write'` のような pattern kill は**同じマシンの別セッションの codex を巻き込む**
+(2026-09-05 obaket: 別セッションの pattern kill で実装 run が途中で死んだ。編集は残っていたので突き合わせで復旧したが、
+kill された側からは「codex が壊れた」に見える)。
 **outdir / log / manifest は repo root からの絶対パスをリテラルで書く** (`$PWD` 禁止。Bash の cwd は呼び出し間で
 primary cwd に戻り、別 repo の tmp に出る: obaket 696 項目 1 / 715 項目 5)。
 
