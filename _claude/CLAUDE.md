@@ -94,6 +94,7 @@
 - **外部コマンドの出力・終了コードを判定材料にするときは、stdout / stderr / exit code を最初から分離して測る**（`2>&1` や `| head` を通した観測を「実測事実」として設計に書かない。個別 CLI の仕様はルールでなく実装側のコメントを正本にする）。詳細は [`measure-external-cli-streams-separately.md`](rules/measure-external-cli-streams-separately.md)
 - **再利用される道具（スクリプト / CLI / Makefile target / lint ルール / ヘルパー）を新設したら、同じ変更で「入口のドキュメント」を更新する**（その作業手順を持つ skill・領域の CLAUDE.md / README・既存ツールの一覧表）。**ツールのヘッダコメントは入口に数えない**（そのファイルを開く動機は存在を知っている人にしかない）。既存ツールと使い分けが要るなら判断基準を 1 行で書く。詳細は [`new-tool-requires-entrypoint-docs.md`](rules/new-tool-requires-entrypoint-docs.md)
 - **端末 UI で全角と半角を同じ列に縦に並べない**（表示幅の合計が一致していても、半角 1 文字は全角 2 カラムのセルの左に寄るため目には揃わない。幅を数えるテストでは検出できず、人が見るまで分からない）。詳細は [`no-mixed-width-columns-in-terminal-ui.md`](rules/no-mixed-width-columns-in-terminal-ui.md)
+- **テストを壁時計に依存させない**。経過時間で assert せず「何が起きたか / 何回 / どの順で」で判定し、何かを待つときは `sleep N` でなく**成立条件を上限つきでポーリング**する（`sleep` は速いマシンでは緑のまま通り、並列化や負荷で初めて落ちる）。詳細は [`avoid-wall-clock-assertions.md`](rules/avoid-wall-clock-assertions.md)
 - **表示・レイアウトの意思決定は、本体へ入れる前にサンプルレンダラで回し切る**（本体に入れた時点でテストが「今の見た目」に張り付き、以降は見た目を変えるたびにテストを張り替えるコストを払う。凍結するのは見た目の判断だけで、ロジックはサンプルを待たずに書いてよい）。詳細は [`decide-layout-in-sample-renderer-first.md`](rules/decide-layout-in-sample-renderer-first.md)
 - **対話プロンプトの確認は回答をパイプで流し込まない**（`printf 'y\n' | script -q` はパイプが閉じた時点で pty へ EOF を送り、`read` が空回答を受ける。「y を入れたのに中止された = 実装のバグ」に見える赤が出る）。pty driver で「プロンプトを待ってから書く」。詳細は [`verify-interactive-prompt-with-pty-driver.md`](rules/verify-interactive-prompt-with-pty-driver.md)
 
