@@ -250,3 +250,9 @@ red になるため、この穴は「段ごとに外す」変異でしか見え�
   1 行で、変異 M-j (2 比率の代入入替) が red になることで直接測れた
 - どちらも D3 (設計) → 実装後 r1 → r2 の 3 段で、**各段が前段の修正から新しい P1 を出した**。
   「1 周目を通した」で閉じる根拠は今回も無かった
+
+## §7「bounded 判定は consumer まで読む」の起源 (obaket 696 項目 8, 2026-09-02)
+
+bridge 層で「cancel 後に 1 chunk 余分に届く程度で bounded」と見立てた未確認リスクを、codex 2 本に consumer
+(download use case の catch) まで追わせたところ、「size 不明 download が cancel で部分ファイルを commit し succeeded になる」
+Core の bug (issue 697) だった。

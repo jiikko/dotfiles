@@ -164,3 +164,11 @@ background で回した計測の完了を待つあいだ、`grep -c '[run]'` を
 
 - 「抽出・判定を書いたら canary」節の形: 抽出が**別のもの**を掴んでも判定は動き、出力も出る
 - 破壊的な後始末 (worktree 削除) は、**その対象を根拠にした主張を全部書き終えてから**行う
+
+## 「出力先は絶対パス」「待機と長寿命プロセスを同居させない」の起源 (obaket 696 / 715, 2026-09-02〜04)
+
+- `$PWD/tmp/...` を出力先にした codex run が別 repo (SnapTrim) の tmp に成果物を出し、待機タスクは obaket 側を永遠に待った
+  (696 項目 1)。715 で再発し、逆向きに誤認して `find` で探す往復が出た。codex の起動側は skill (codex-drive) のテンプレに `-C "$ROOT"` を入れた
+- `(nohup driver …; echo rc > X.rc) &` で、run 単位の成果物は揃ったのに外側 `X.rc` だけ書かれず `until [ -f X.rc ]` が回り続けた
+  (696 項目 10、原因未特定)。待つ対象は driver が必ず書く成果物 (`runs.tsv`) にし、上限を置く
+- 待機用 background Bash の中で `nohup` した `make dev-fg` のアプリが、待機タスクの TaskStop で道連れになった (696 項目 9)

@@ -158,9 +158,7 @@ CI 環境で実際に実行されているか**を、同じ commit の中で確�
     同じ 4 周目で「`EPIC/` を bash だけが落とす」が出ており、省いていたら CI が macOS で永久に緑のまま
     glogx と食い違う検査になっていた
 - **「未確認リスク」を bounded / 無害と判定するときは、その値・順序が届く先の consumer の分岐まで読む**。
-  bridge や層の内側で閉じた判定は「その層にとって bounded」でしかない
-  (obaket 696 項目 8: 「cancel 後に 1 chunk 余分に届く程度」と見立てたリスクを consumer の catch まで追うと、
-  size 不明 download が cancel で部分ファイルを commit し succeeded になる Core の bug (697) だった)
+  層の内側で閉じた判定は「その層にとって bounded」でしかない
 
 ### 8. 字句 / 構文 gate は「脅威モデル」と「何を検出しないか」を先に書いてから閉じる (stopping rule)
 
