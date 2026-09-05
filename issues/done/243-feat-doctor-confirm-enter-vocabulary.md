@@ -52,3 +52,17 @@ doctor と status で揃えるか**になる。選択肢:
 2. doctor の今の形を正とし、status 側も「送れる確認」へ寄せる
 3. 非対称のまま、doctor の hint に「他のキーでやめる」を明示する (現状の案内は
    `y: 削除する   n/Esc: やめる` で、送るキーが例外であることは書いていない)
+
+## 決着 (2026-09-05、ユーザー判断)
+
+- **`Enter` は飲む** (実行もキャンセルもしない)。削除の既定を実行側へ倒さず、手癖の Enter で無言に
+  閉じる形も作らない。`jobCmd` の確認も同じ。「消せるものがありません」の画面だけは案内どおり
+  Enter でも戻る
+- **「送るキー以外の任意キーで中止」は今のまま** (status 側を「送れる確認」へ寄せるのはしない)
+- 非対称は案内に書く: hint とパネル末尾の両方を `y: 削除する   n/Esc: やめる   (Enter は何もしない)` に
+  (片方だけだと hint と本文が違うことを言う形になる。issue 242 の P3-2 と同型)
+
+実装: `src/glogx/doctor_delete.go` の `handleDeleteKey` (`case d.confirm`)、案内は同ファイルの
+`confirmLines` tail 2 箇所と `doctor_view.go` の `hint`。テスト `TestDeleteConfirmEnterIsSwallowed`
+(plan / jobCmd / 消せるもの無し / 案内文の 4 点)。変異 (swallow を外す) で plan・jobCmd の両方が red。
+`TestHintsFitPopupWidth` (幅 82) も通る。

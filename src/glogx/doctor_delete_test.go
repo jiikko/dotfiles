@@ -840,7 +840,7 @@ func TestDeleteConfirmScrollKeysDoNotCancel(t *testing.T) {
 func TestDeleteConfirmOtherKeysStillCancel(t *testing.T) {
 	entries := []disk.EntryOutcome{{Label: "え", Method: "rm", Outcome: disk.OutcomePlanned,
 		BeforeSize: 1024, Items: plannedItemOutcomes(1)}}
-	for _, key := range []string{"n", "esc", " ", "enter", "x"} {
+	for _, key := range []string{"n", "esc", " ", "x"} { // enter は飲む側 (TestDeleteConfirmEnterIsSwallowed)
 		v := &doctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
 		if _, handled := v.handleDeleteKey(key); !handled {
 			t.Fatalf("%q が処理されていない", key)
@@ -848,6 +848,48 @@ func TestDeleteConfirmOtherKeysStillCancel(t *testing.T) {
 		if v.del.confirm {
 			t.Errorf("%q で中止しなかった (既定は中止側)", key)
 		}
+	}
+}
+
+// Enter は実行もキャンセルもしない (issue 243)。他の破壊確認 (`y/Enter: 実行`) の手癖で押されるが、
+// 削除の既定を実行側へ倒さず、無言で閉じもしない。plan の確認と job コマンドの確認の両方で同じ。
+// 「消せるものがありません」の画面だけは「何かキーで戻る」の案内どおり Enter でも戻る。
+func TestDeleteConfirmEnterIsSwallowed(t *testing.T) {
+	entries := []disk.EntryOutcome{{Label: "え", Method: "rm", Outcome: disk.OutcomePlanned,
+		BeforeSize: 1024, Items: plannedItemOutcomes(1)}}
+	cases := map[string]doctorDelete{
+		"plan":   {confirm: true, plan: &disk.DeleteReport{Entries: entries}},
+		"jobCmd": {confirm: true, kind: jobCmd},
+	}
+	for name, del := range cases {
+		v := &doctorView{del: del}
+		act, handled := v.handleDeleteKey("enter")
+		if !handled {
+			t.Fatalf("%s: enter が処理されていない", name)
+		}
+		if act != doctorSwallow {
+			t.Errorf("%s: enter の act = %v; want doctorSwallow (実行しない)", name, act)
+		}
+		if !v.del.confirm {
+			t.Errorf("%s: enter で確認が閉じた (無言のキャンセルにしない)", name)
+		}
+		if v.pendingDeleteCmd != nil {
+			t.Errorf("%s: enter で削除が走った", name)
+		}
+	}
+	// 消せるものが無い画面は「何かキーを押すと戻ります」なので Enter でも戻る
+	none := &doctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: []disk.EntryOutcome{
+		{Label: "え", Method: "rm", Outcome: disk.OutcomeSkipped, Reason: "対象外"}}}}}
+	if _, _ = none.handleDeleteKey("enter"); none.del.confirm {
+		t.Errorf("消せるものが無い画面で enter が戻らない (案内は「何かキーを押すと戻ります」)")
+	}
+	// 案内は非対称を名指しする (hint とパネル末尾の両方。片方だけだと「hint と本文が違うことを言う」形)
+	v := &doctorView{del: doctorDelete{confirm: true, plan: &disk.DeleteReport{Entries: entries}}}
+	if h := v.hint(120); !strings.Contains(h, "Enter は何もしない") {
+		t.Errorf("hint に Enter の扱いが無い: %q", h)
+	}
+	if out := strings.Join(v.lines(doctorTestOpts(20)), "\n"); !strings.Contains(out, "Enter は何もしない") {
+		t.Errorf("確認パネルの末尾に Enter の扱いが無い:\n%s", out)
 	}
 }
 

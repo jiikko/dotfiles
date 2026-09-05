@@ -585,6 +585,14 @@ func (v *doctorView) handleDeleteKey(key string) (doctorAction, bool) {
 			d.confirmScroll.scroll(key)
 			return doctorSwallow, true
 		}
+		// 🚨 Enter は飲む (実行もキャンセルもしない。issue 243、ユーザー判断 2026-09-05)。
+		// glogx の他の破壊確認 (status の discard / push / pull) は `y/Enter: 実行` なので手癖で
+		// 押されるが、ディスクから実体を消す既定を実行側へ倒さない。かといって既定の中止側へ
+		// 落とすと「押したら無言で閉じた」になる。どちらにも倒さず、案内に非対称を書く。
+		// 「消せるものがありません」の画面は「何かキーで戻る」と案内しているので除く。
+		if key == "enter" && (d.kind == jobCmd || planHasWork(d.plan)) {
+			return doctorSwallow, true
+		}
 		if d.kind == jobCmd {
 			if key == "y" || key == "Y" {
 				v.pendingDeleteCmd = v.startCmdRun(d.cmdPlan)
@@ -1046,7 +1054,7 @@ func cmdConfirmLines(o doctorRenderOpts, acts []doctorCmdAction) (blocks [][]str
 		}
 		blocks = append(blocks, b)
 	}
-	tail = []string{"", "y: 実行する   n/Esc: やめる"}
+	tail = []string{"", "y: 実行する   n/Esc: やめる   (Enter は何もしない)"}
 	return blocks, tail
 }
 
@@ -1168,7 +1176,7 @@ func (v *doctorView) confirmLines(o doctorRenderOpts) (blocks [][]string, tail [
 	if !planHasWork(v.del.plan) {
 		return blocks, append(tail, " 何かキーを押すと戻ります")
 	}
-	return blocks, append(tail, " y: 削除する      n / Esc: やめる")
+	return blocks, append(tail, " y: 削除する      n / Esc: やめる      (Enter は何もしない)")
 }
 
 // deleteCommandLines は「このエントリで実際に実行するコマンド」を並べる (ユーザー要望 2026-09-03)。
