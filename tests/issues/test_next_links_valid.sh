@@ -7,8 +7,12 @@
 # 動かして symlink を消し忘れた = dangling、別の物を指す、next/ 以外に置かれた symlink) は
 # 誰かが viewer を開くまで気づかれず、CI には見えなかった。ここで push 前後に止める。
 #
-# 採用条件は glogx 側 (src/glogx/issues/nextlink.go) と同じ 3 つ:
-#   next/ 直下 / Readlink がちょうど ../<同名> / 指す先が通常ファイル
+# 採用条件は glogx 側 (src/glogx/issues/nextlink.go + parse.go の照合) と同じ:
+#   next/ 直下で、その next/ の親が issue ディレクトリ自身か epic/<name> /
+#   Readlink がちょうど ../<同名> / 指す先が通常ファイル /
+#   直下の実エントリ名と**大文字小文字まで一致** (APFS は case-insensitive なので readlink と -f だけでは
+#   通ってしまい、glogx の完全一致照合と割れる。敵対レビュー 2 周目で実測) /
+#   README.md 等の meta ファイルは目印にしない
 # glogx 側の検査を緩めてもここが残るよう、判定はこのスクリプトが独立に持つ (値は転記だが、
 # 変えるなら両方を同じ commit で変える)。
 #
@@ -44,6 +48,19 @@ while IFS= read -r link; do
     printf '✗ next/ 以外に symlink がある (issue ファイルは通常ファイルであること): %s\n' "$link" >&2
     bad=$((bad + 1)); continue
   fi
+  # next/ の親は issue ディレクトリ自身か epic/<name> だけ (done/next/ 等は glogx が読まない場所)
+  rel_parent="${parent_of_next#"$issues_dir"}"; rel_parent="${rel_parent#/}"
+  case "$rel_parent" in
+    ''|epic/*) ;;
+    *) printf '✗ glogx が目印として読まない場所にある: %s\n' "$link" >&2; bad=$((bad + 1)); continue ;;
+  esac
+  case "$rel_parent" in
+    epic/*/*) printf '✗ glogx が目印として読まない場所にある: %s\n' "$link" >&2; bad=$((bad + 1)); continue ;;
+  esac
+  case "$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')" in
+    readme.md|index.md|template.md)
+      printf '✗ meta ファイルは目印にしない: %s\n' "$link" >&2; bad=$((bad + 1)); continue ;;
+  esac
   target=$(readlink "$link")
   if [ "$target" != "../$base" ]; then
     printf '✗ 目印の指す先が ../<同名> でない: %s -> %s\n' "$link" "$target" >&2
@@ -52,6 +69,11 @@ while IFS= read -r link; do
   real="$parent_of_next/$base"
   if [ -L "$real" ] || [ ! -f "$real" ]; then
     printf '✗ 目印の指す先が通常ファイルとして存在しない (done/ へ動かしたなら symlink も消す): %s -> %s\n' "$link" "$real" >&2
+    bad=$((bad + 1)); continue
+  fi
+  # 大文字小文字まで一致する実エントリがあること (find -name は列挙名に対する厳密比較)
+  if [ -z "$(find "$parent_of_next" -maxdepth 1 -name "$base" -type f -print)" ]; then
+    printf '✗ 直下のエントリ名と大文字小文字が一致しない (glogx は照合に落とす): %s\n' "$link" >&2
     bad=$((bad + 1)); continue
   fi
 done <<< "$links"

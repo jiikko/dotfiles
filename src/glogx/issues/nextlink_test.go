@@ -335,3 +335,44 @@ func TestScanWarnsOnNextLinkWithoutMatchingEntry(t *testing.T) {
 		t.Errorf("名前が一致しない目印が黙って捨てられた: %v", warns)
 	}
 }
+
+// meta ファイル (README.md 等) は直下でも issue に数えないので、目印にもしない。数えると照合相手が
+// 無く「直下に同じ名前の issue が無い」という偽警告が毎スキャン出続ける (敵対レビュー 2 周目 P2-1)。
+func TestNextLinkToMetaFileIsIgnoredSilently(t *testing.T) {
+	dir := t.TempDir()
+	writeIssue(t, filepath.Join(dir, "001-feat-a.md"))
+	writeIssue(t, filepath.Join(dir, "README.md"))
+	symlink(t, "../README.md", filepath.Join(dir, NextDirName, "README.md"))
+	found, warns := scanOne(t, dir)
+	if len(warns) != 0 {
+		t.Errorf("meta ファイルの目印で警告が出た: %v", warns)
+	}
+	if len(found) != 1 {
+		t.Errorf("README が issue に数えられた: %+v", found)
+	}
+}
+
+// done/ pending/ へ運ぶときは目印を先に消す。残すと dangling になり、同じ base の issue が直下へ
+// 戻った瞬間に古い目印が成立して偽の claim が共有される (敵対レビュー 2 周目 P3-2)。
+func TestMoveToDoneRemovesNextLinkFirst(t *testing.T) {
+	dir := t.TempDir()
+	writeIssue(t, filepath.Join(dir, "001-feat-a.md"))
+	symlink(t, "../001-feat-a.md", filepath.Join(dir, NextDirName, "001-feat-a.md"))
+	found, _ := scanOne(t, dir)
+	claimed := found[0]
+	got, err := MoveToSubdir(claimed, "done")
+	if err != nil || got != filepath.Join(dir, "done", "001-feat-a.md") {
+		t.Fatalf("done への移動: got=%s err=%v", got, err)
+	}
+	if _, err := os.Lstat(claimed.NextLink); !os.IsNotExist(err) {
+		t.Fatalf("done へ運んだ後も目印が残っている (dangling): %v", err)
+	}
+	// 直下へ戻しても Next に復活しない
+	if err := os.Rename(got, claimed.Path); err != nil {
+		t.Fatal(err)
+	}
+	after, warns := scanOne(t, dir)
+	if len(after) != 1 || after[0].Status != StatusOpen || len(warns) != 0 {
+		t.Errorf("再 open で偽の claim が復活した: %+v warns=%v", after, warns)
+	}
+}

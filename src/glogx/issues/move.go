@@ -37,6 +37,14 @@ func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 	if subdir == "" && iss.NextLink != "" {
 		return iss.Path, removeNextLink(iss)
 	}
+	if iss.NextLink != "" {
+		// done/ pending/ へ運ぶときは目印を先に消す。残すと dangling になり、同じ base の issue が
+		// 直下へ戻った瞬間に古い目印が再び成立して「誰も claim していない issue が Next として
+		// 共有される」(敵対レビュー 2 周目 P3-2)。規律だけに任せず、この経路では構造で消す
+		if err := removeNextLink(iss); err != nil {
+			return "", err
+		}
+	}
 	base := filepath.Base(iss.Rel)
 	destDir := iss.Dir
 	if iss.GroupKind == GroupEpic {

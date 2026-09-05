@@ -47,8 +47,10 @@ func nextLinks(parent string) (marked map[string]string, warnings []string) {
 		return nil, nil
 	}
 	for _, e := range entries {
-		if e.Type()&os.ModeSymlink == 0 || !isMarkdown(e.Name()) {
-			continue // 通常ファイルは scanDir / scanEpicDir が rename 運用として読む
+		if e.Type()&os.ModeSymlink == 0 || !isMarkdown(e.Name()) || metaFiles[strings.ToLower(e.Name())] {
+			// 通常ファイルは scanDir / scanEpicDir が旧運用として読む。metaFiles (README.md 等) は
+			// 直下でも issue として数えないので、目印にもしない (数えると照合相手が無く偽警告になる)
+			continue
 		}
 		link := filepath.Join(nextDir, e.Name())
 		if reason := nextLinkProblem(parent, e.Name()); reason != "" {
