@@ -212,7 +212,31 @@ PATH 上の sleep stub を意図的に bypass している** = 本物の待ち�
 競合の形を変えることでもある (`mutation-verify-new-tests.md`「競合の窓そのものを作るための
 `sleep` は入力であり、テストの主張を決めている」)。並行テストなので **3 回連続 green** も要る。
 
-#### E-2. 分類 4 を条件ポーリングにする (~5s)
+#### E-2. 分類 4 を条件ポーリングにする (~5s) — **完了 (2026-09-05, `0a9db0d0`)**
+
+実測 (ローカル単体実行、before → after):
+
+| テスト | before | after |
+|---|---|---|
+| `tmux/test_server_watchdog.sh` | 4.42s | 2.90〜3.04s |
+| `tmux/test_ctrl_v_paste.sh` | 2.67s | 0.52〜0.75s |
+| `tmux/test_log_kill_command.sh` | 2.82s | 1.80〜2.21s |
+| `claude/test_claude_links_sync.sh` | 2.85s | 1.65〜1.67s |
+| `tmux/test_snapshot_health.sh` | 1.69s | 0.95〜1.22s |
+| **合計** | **14.45s** | **7.8〜9.0s** |
+
+bounded-wait は `tests/lib/wait_until.sh` に一本化した (rc だけ返し、診断と終了は呼び出し側)。
+
+**残り**:
+- `zshrc/lazy-loading/test_version_managers.sh:16` の `sleep 1` は **触らない**。cleanup の
+  リトライ backoff で、go telemetry が非同期に書くファイルを待つもの。観測できる成立条件が
+  無く、しかも失敗時しか走らないので通常経路のコストはゼロ
+- `tests/bin/test_go_autobuild.sh:147` の `wait_for` が `tt_wait_until` と重複したまま。
+  E-1 で同じファイルを触るので、そのときに寄せる
+- 🚨 `tmux/test_ctrl_v_paste.sh` に**別セッションが同日追加したトースト検査**が、また
+  手書きの `for _ in $(seq 60)` ループを持っている (5 実装目)。`tt_wait_until` へ寄せる
+
+##### 元の分類 4 の一覧
 
 | 場所 | 現状 | 置き換え |
 |---|---|---|
