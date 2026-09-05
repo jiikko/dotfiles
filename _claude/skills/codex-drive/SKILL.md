@@ -138,8 +138,9 @@ driver 内で完結させ、Claude の Bash 往復を「起動 1 回 + digest �
 **Go repo では codex の sandbox が `go build` / `go test` を走らせられない**ことがある (work dir / build cache を
 `$HOME` 配下に作れず `operation not permitted`、goenv の version 不在。SnapTrim #251 で read-only lens が
 ほぼ全本「テスト未実行・静的確認のみ」で返った)。Go を触るタスクでは **起動側で
-`GOCACHE=<worktree>/tmp/gocache GOTMPDIR=<worktree>/tmp/gotmp GOFLAGS=-mod=mod` を export してから
-codex / codex-fanout を起動し、prompt にも同じ env を書く** (workspace-write なら worktree 内へ書ける。
+`GOCACHE=<worktree>/tmp/gocache GOTMPDIR=$(mktemp -d) GOFLAGS=-mod=mod` を export してから
+codex / codex-fanout を起動し、prompt にも同じ env を書く** (GOTMPDIR は **repo 外**にする。repo 内にすると Go 1.26 の
+`t.TempDir()` の親が repo になり、codex が TestMain に隔離コードを足して環境の都合が production テストに残る: obaket 719) (workspace-write なら worktree 内へ書ける。
 read-only は依然走らないので、その lens の「未実行」は Claude が自分で実行して埋める)。
 codex の「テストは sandbox で実行不可」は**未検証の印**であって、静的確認を実行結果と読まない。
 

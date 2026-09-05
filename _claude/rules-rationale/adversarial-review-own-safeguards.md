@@ -256,3 +256,9 @@ red になるため、この穴は「段ごとに外す」変異でしか見え�
 bridge 層で「cancel 後に 1 chunk 余分に届く程度で bounded」と見立てた未確認リスクを、codex 2 本に consumer
 (download use case の catch) まで追わせたところ、「size 不明 download が cancel で部分ファイルを commit し succeeded になる」
 Core の bug (issue 697) だった。
+
+## 実測 11 回目: 「修正の相互作用」は 2 周目でしか出ない (2026-09-05, obaket 719 = issues/epic の 2 段構造)
+
+round 1 の指摘 2 件をそれぞれ直した結果、`find … -name done -prune` の修正と「group 名に `done` を許す」修正が
+相互作用して group `done` を丸ごと prune する形になった。どちらの修正も単体では正しく、round 2 が両方を見て初めて出た。
+
