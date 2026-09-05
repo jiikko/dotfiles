@@ -39,7 +39,7 @@ fi
 
 # --- 隔離 tmux サーバ ---
 SOCKET="pane-state-bell-$$"
-TMUX_OUTER_SOCK=${TMUX%%,*}   # 本番ソケット (tmux 外で走らせたなら空)
+TMUX_OUTER_SOCK=${TMUX:-}; TMUX_OUTER_SOCK=${TMUX_OUTER_SOCK%%,*}   # 本番ソケット (tmux 外 = CI では空。set -u なので :- が要る)
 unset TMUX TMUX_PANE
 cleanup() { tmux -L "$SOCKET" kill-server 2>/dev/null || :; }
 trap cleanup EXIT
