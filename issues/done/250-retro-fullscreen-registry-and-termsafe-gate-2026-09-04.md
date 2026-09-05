@@ -62,6 +62,13 @@
    → 切り出し: **却下** (`mutation-verify-new-tests.md` の「属性の存在だけを見ていないか」
    「fixture は退行したら見えるようになる場所に置く」が既に同じことを言っている)
 
+## 決着 (2026-09-05)
+
+- 1 → `mutation-verify-new-tests.md`「復元の作法」に「発動点はレビュー指摘を直した直後。変異の前に commit する」を追記
+- 2 → 同ルールの「ケース名ごとの pass/fail 一覧」に「鍵は package 名 + ケース名」を追記
+- 3 → `survey-receiver-guards-before-passing-new-values.md` に「表示のための正規化が identity を壊す」を追記
+- 4 / 6 / 7 / 8 は本文どおり却下。5 は弱いので切り出さない (ここに記録するだけ)
+
 ## 残課題
 
-- 上の 1 / 2 / 3 の追記をユーザーが承認したら done へ
+(なし)
