@@ -15,10 +15,11 @@
 #   README.md 等の meta ファイルは目印にしない
 # glogx 側の検査を緩めてもここが残るよう、判定はこのスクリプトが独立に持つ (値は転記だが、
 # 変えるなら両方を同じ commit で変える)。
-# 🚨 glogx より**厳しい**向きに 2 点ずれている (意図的。CI で止めたいものだから):
-#   - meta ファイル (README.md 等) と .md 以外の symlink は、glogx は「目印ではない」として無言で
-#     無視するだけだが、ここでは不正にする (dangling が viewer から永久に見えない形を残さない)
-#   - それ以外 (親の位置 / ../<同名> / 通常ファイル / 大文字小文字の一致) は同じ集合
+# 🚨 glogx より**厳しい**向きにずれている (意図的。CI で止めたいものだから): glogx が「目印ではない」
+# として無言で無視するもの (meta ファイル / .md 以外 / glogx が読まない場所 (done/next/ 等) の symlink)
+# を、ここでは不正にする (dangling が viewer から永久に見えない形を残さない)。
+# 「../<同名> / 通常ファイル / 直下エントリ名との大文字小文字一致」は glogx と同じ。ディレクトリ名
+# (next / epic) の比較は glogx と同じく大文字小文字を無視する
 #
 # 変異検証のため、検査対象ディレクトリを第 1 引数で差し替えられる (既定 = repo の issues/):
 #   d=$(mktemp -d); mkdir -p "$d/next"; : > "$d/010-bug-a.md"
@@ -33,7 +34,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR" || exit 1
 
 issues_dir="${1:-issues}"
-issues_dir="${issues_dir%/}" # 末尾 / があると下の prefix 除去が外れて全件「読まない場所」になる
+while [ "${issues_dir%/}" != "$issues_dir" ]; do issues_dir="${issues_dir%/}"; done # 末尾 / は全部落とす (残ると prefix 除去が外れて全件「読まない場所」になる)
 if [ ! -d "$issues_dir" ]; then
   printf '✗ 検査対象ディレクトリが無い: %s\n' "$issues_dir" >&2
   exit 1
@@ -49,12 +50,15 @@ while IFS= read -r link; do
   checked=$((checked + 1))
   base=$(basename "$link")
   parent_of_next=$(dirname "$(dirname "$link")")
-  if [ "$(basename "$(dirname "$link")")" != "next" ]; then
+  lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+  # ディレクトリ名の比較は大文字小文字を無視する (glogx は EqualFold で next / epic を読む)
+  if [ "$(lower "$(basename "$(dirname "$link")")")" != "next" ]; then
     printf '✗ next/ 以外に symlink がある (issue ファイルは通常ファイルであること): %s\n' "$link" >&2
     bad=$((bad + 1)); continue
   fi
   # next/ の親は issue ディレクトリ自身か epic/<name> だけ (done/next/ 等は glogx が読まない場所)
   rel_parent="${parent_of_next#"$issues_dir"}"; rel_parent="${rel_parent#/}"
+  rel_parent=$(lower "$rel_parent")
   case "$rel_parent" in
     ''|epic/*) ;;
     *) printf '✗ glogx が目印として読まない場所にある: %s\n' "$link" >&2; bad=$((bad + 1)); continue ;;
@@ -62,7 +66,7 @@ while IFS= read -r link; do
   case "$rel_parent" in
     epic/*/*) printf '✗ glogx が目印として読まない場所にある: %s\n' "$link" >&2; bad=$((bad + 1)); continue ;;
   esac
-  case "$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')" in
+  case "$(lower "$base")" in
     readme.md|index.md|template.md)
       printf '✗ meta ファイルは目印にしない: %s\n' "$link" >&2; bad=$((bad + 1)); continue ;;
     *.md) ;;
