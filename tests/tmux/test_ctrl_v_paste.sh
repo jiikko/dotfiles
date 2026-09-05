@@ -47,6 +47,7 @@ bad()  { printf '✗ %s\n' "$1" >&2; fail=1; }
 pane_cmd_is() {  # $1=対象 $2=期待するコマンド名
   [ "$(tmux -L "$SOCK" display -p -t "$1" '#{pane_current_command}' 2>/dev/null)" = "$2" ]
 }
+file_nonempty() { [ -s "$1" ]; }
 pane_has() {  # $1=対象 $2=探す文字列
   # 🚨 `cmd | grep -q` にしないこと。pipefail 下では **一致していても非 0 になる**
   # (grep -q が早期に閉じて cmd が SIGPIPE を受ける。issue 096。下の list-keys も同じ形)
@@ -148,7 +149,11 @@ STUB
   chmod +x "$FAKE/bin/tmux-toast"
   target="$(tmux -L "$SOCK" display -p -t zsh '#{pane_id}' 2>/dev/null)"
   tmux -L "$SOCK" run -t zsh "$FAKE/scripts/tmux_paste_clipboard.sh $target" 2>/dev/null
-  for _ in $(seq 60); do [ -s "$TMP_DIR/toast.log" ] && break; sleep 0.05; done
+  # 🚨 時間切れを黙って素通りさせない。ここを素の for ループにすると、待ちが足りなかった
+  #    場合も下の grep へ落ちて「バイト数が渡っていない」と報告され、**まだ出ていないだけ**と
+  #    区別できなくなる (原因が実装のバグに見える)。
+  tt_wait_until file_nonempty "$TMP_DIR/toast.log" \
+    || bad "toast が 10s 待っても書かれない (tmux-toast が呼ばれていない)"
   line="$(tail -n 1 "$TMP_DIR/toast.log" 2>/dev/null)"
   # 🚨 区切りごと固定する。数字だけの部分一致は `130 バイト` のような桁違いも通す
   if grep -q ': 30 バイト' <<< "$line"; then
