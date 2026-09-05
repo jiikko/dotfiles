@@ -56,8 +56,9 @@ background で回した計測の完了を待つあいだ、`grep -c '[run]'` を
 - [x] **並列腕と直列腕が「同時に」走るケース** — 発生しない構造にした。`run_all_targets` は逐次の
       まま残し、test-lint だけが opt-in の並列ランナー (`scripts/run_make_targets_parallel.sh`) を
       使う (27df01a0)。理由は Makefile の test-lint 直上コメントに残した。
-      ただし**並列化が負荷経由で既存の競合テストを壊す**別筋は残る: `tests/claude/test_claude_links_sync.sh`
-      が `make test` 内で flaky になった (単独 3/3 緑、負荷下で落ちる)。これは issue 260 (dotfiles-a2 が持つ)
+      なお並列化の後に `tests/claude/test_claude_links_sync.sh` が `make test` 内で 1 度落ちたが、
+      **並列化 (負荷) との因果は未確認** — CPU 負荷下 / 14 本同時 / 実経路の再現 55 回で 0 件
+      (issue 260 に全数勘定と観測の仕込みがある。「並列化が壊した」とは読まないこと)
 - [x] **孤児 worktree `wt-138` / `wt-fix138`** — ユーザーの指示で削除した。削除前に両 commit
       (aaf6c1d7 / 415eaadf) が origin/master に含まれること・`git status` が空であることを再確認
 - [x] 項目 2 → `perf-claims-need-measurement.md` に「最初の計測は、後から内訳を聞かれても答えられる
