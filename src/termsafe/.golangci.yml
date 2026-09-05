@@ -6,8 +6,9 @@ version: "2"
 # 🚨 golangci-lint は既定で os.TempDir()/golangci-lint.lock に flock を取り、別インスタンスが
 # 走っていると 5 秒待って "parallel golangci-lint is running" で落ちる (v2.5.0 の
 # pkg/commands/run.go acquireFileLock を実測)。この lock はキャッシュ保護ではない
-# (キャッシュは Go の build cache の fork で内容アドレス + 原子的な書き込み) ので、外しても
-# 結果の正しさには影響しない。root の Makefile (run_go_projects) が 7 プロジェクトを並列に
+# (キャッシュは Go の build cache の fork。内容アドレスなので競合する 2 プロセスは同一バイト列を
+# 書く。書き込み自体は temp+rename ではなく最終名への直接 write で、安全性の根拠は原子性ではなく
+# 内容アドレス) ので、外しても結果の正しさには影響しない。root の Makefile (run_go_projects) が 7 プロジェクトを並列に
 # 回すため、全プロジェクトでこれを true にする (1 つでも false が残ると、その 1 つが他の
 # 6 つの起動タイミング次第で落ちる)。issue 258
 run:

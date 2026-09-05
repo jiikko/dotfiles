@@ -34,6 +34,12 @@ mid-ok:
 	@sleep 0.3; echo "OUT mid-ok"
 also-fail:
 	@echo "OUT also-fail"; exit 1
+# ランデブー: 互いの開始マーカーを待つ。逐次実行だと先に走った方が相手を待ち続けて
+# 上限で失敗する = 「並列に走っている」ことを壁時計でなく順序で pin する
+rv-a:
+	@touch rv-a.started; i=0; until [ -f rv-b.started ] || [ $$i -ge 200 ]; do sleep 0.05; i=$$((i+1)); done; [ -f rv-b.started ]
+rv-b:
+	@touch rv-b.started; i=0; until [ -f rv-a.started ] || [ $$i -ge 200 ]; do sleep 0.05; i=$$((i+1)); done; [ -f rv-a.started ]
 MK
 
 run() { ( cd "$FIX" && "$RUNNER" "$@" > "$FIX/out" 2> "$FIX/err" ); echo $?; }
@@ -65,6 +71,13 @@ printf 'Test 4: 出力は完了順でなく引数順\n'
 run slow-ok mid-ok > /dev/null   # 完了は mid-ok が先、引数は slow-ok が先
 order=$(grep -o 'OUT [a-z-]*' "$FIX/out" | tr '\n' ' ')
 [ "$order" = "OUT slow-ok OUT mid-ok " ] && ok "引数順で出ている ($order)" || bad "出力順が引数順でない: '$order'"
+
+printf 'Test 4b: ターゲットは実際に並列に走る (逐次化の退行を検知)\n'
+# 🚨 ここが無いと「集約の契約」は守れていても、& / wait を外して逐次に戻す退行が緑で通る
+#    (敵対レビュー 2026-09-05 P3-1: 完全逐次化の変異で当時の 6 ケースが全部緑だった)
+rm -f "$FIX/rv-a.started" "$FIX/rv-b.started"
+rc=$(run rv-a rv-b)
+[ "$rc" = 0 ] && ok '2 ターゲットが互いの開始を観測した (並列)' || bad "並列に走っていない (逐次化されている): rc=$rc"
 
 printf 'Test 5: 対象 0 件は失敗\n'
 rc=$( ( cd "$FIX" && "$RUNNER" > "$FIX/out" 2> "$FIX/err" ); echo $? )

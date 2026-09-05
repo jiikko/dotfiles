@@ -122,11 +122,28 @@ printf 'Test 8: 見えているウィンドウ → 鳴らさない (alert-bell �
 # _tmux.conf の alert-bell は落ちる前に発火して 800ms のトースト (-N なのでキー入力でも
 # 消えない) を出す。判定は「flag が立ったか」ではなく「alert-bell が発火したか」で行う。
 MARK=$(mktemp -t pane-state-bell)
-tmux -L "$SOCKET" set-hook -g alert-bell "run-shell 'echo fired >> $MARK'"
+# alert-bell はどのウィンドウで鳴ったかを window_id 付きで記録する。
+# 🚨 「hook を呼んで 1 秒待って MARK が空なら合格」にしない (否定 assert が負荷で偽の緑になる —
+# run-shell が 1 秒に間に合わないほど合格しやすくなる)。代わりに **対照ベル**を使う: hook の後に
+# 別の (隠れた) ウィンドウで自分がベルを鳴らし、その行が MARK に現れるまで待つ。tmux の hook は
+# イベント順に走るので、対照の行が見えた時点で hook 由来のベルが在ればその手前に必ず出ている。
+tmux -L "$SOCKET" set-hook -g alert-bell "run-shell 'echo fired #{window_id} >> $MARK'"
 VIS_PANE=$(fresh_pane)
-if python3 - "$SOCKET" "$VIS_PANE" "$TMUX_SOCK" "$HOOK" <<'PYEOF'
+CTL_PANE=$(fresh_pane)   # 対照ベル用 (current にしないので隠れたまま = 鳴れば alert-bell が走る)
+VIS_WIN=$(tmux -L "$SOCKET" display -p -t "$VIS_PANE" '#{window_id}')
+CTL_WIN=$(tmux -L "$SOCKET" display -p -t "$CTL_PANE" '#{window_id}')
+if python3 - "$SOCKET" "$VIS_PANE" "$CTL_PANE" "$CTL_WIN" "$TMUX_SOCK" "$HOOK" "$MARK" <<'PYEOF'
 import os, pty, subprocess, sys, time
-socket, pane, sock_path, hook = sys.argv[1:5]
+socket, pane, ctl_pane, ctl_win, sock_path, hook, mark = sys.argv[1:8]
+def tmux(*a):
+    return subprocess.run(['tmux', '-L', socket, *a], capture_output=True, text=True).stdout.strip()
+def wait_until(pred, limit=15):
+    deadline = time.monotonic() + limit
+    while time.monotonic() < deadline:
+        if pred():
+            return True
+        time.sleep(0.05)
+    return pred()
 # 対象ウィンドウを current にしてから pty で attach する (= 人が見ている状態)
 subprocess.run(['tmux', '-L', socket, 'select-window', '-t', pane], check=True)
 pid, fd = pty.fork()
@@ -135,30 +152,33 @@ if pid == 0:
 rc = 2
 try:
     # attach が登録されるまで待つ。固定 sleep にしない (avoid-wall-clock-assertions.md):
-    # CI runner では 1.5 秒で登録されず「判定不能」になった (run 33936632229)。条件を
-    # ポーリングし、上限を超えたら判定不能 (緑にも赤にも丸めない)。上限まで 0 のままなら
-    # 「遅い」ではなく「この環境では attach が見えない」の証拠になる
-    deadline = time.monotonic() + 15
-    seen = '0'
-    while seen == '0' and time.monotonic() < deadline:
-        time.sleep(0.05)
-        seen = subprocess.run(['tmux', '-L', socket, 'display', '-p', '-t', pane,
-                               '#{window_active_clients}'], capture_output=True, text=True).stdout.strip()
-    if seen == '0':
+    # CI runner では 1.5 秒で登録されず「判定不能」になった (run 33936632229)。上限まで 0 の
+    # ままなら「遅い」ではなく「この環境では attach が見えない」の証拠になる
+    if not wait_until(lambda: tmux('display', '-p', '-t', pane, '#{window_active_clients}') != '0'):
         print('  (ハーネス異常: client を attach して 15 秒待っても window_active_clients=0)')
     else:
         env = dict(os.environ, TMUX=f'{sock_path},0,0', TMUX_PANE=pane)
         subprocess.run([hook, 'idle'], input='{"hook_event_name":"Stop","background_tasks":[]}',
                        text=True, env=env)
-        time.sleep(1)
-        rc = 0
+        # 対照ベル: 隠れたウィンドウの pane_tty へ直接 \a を書き、その alert-bell 行を待つ
+        with open(tmux('display', '-p', '-t', ctl_pane, '#{pane_tty}'), 'w') as tty:
+            tty.write('\a')
+        def ctl_seen():
+            try:
+                return any(line.strip() == f'fired {ctl_win}' for line in open(mark))
+            except FileNotFoundError:
+                return False
+        if wait_until(ctl_seen):
+            rc = 0
+        else:
+            print('  (ハーネス異常: 対照ベルの alert-bell が 15 秒待っても記録されない)')
 finally:
     os.kill(pid, 15)
 sys.exit(rc)
 PYEOF
 then
-  if [ -s "$MARK" ]; then bad '見えているウィンドウでベルを鳴らしている (800ms トーストが被さる)'
-  else ok '見えているウィンドウでは鳴らさない'; fi
+  if grep -q "fired $VIS_WIN" "$MARK"; then bad '見えているウィンドウでベルを鳴らしている (800ms トーストが被さる)'
+  else ok "見えているウィンドウでは鳴らさない (対照ベル $CTL_WIN は記録された)"; fi
   expect_state_pane "$VIS_PANE" '✓ idle' '見えていても状態表示は更新する'
 else
   bad '見えているウィンドウの検査ができなかった (判定不能)'

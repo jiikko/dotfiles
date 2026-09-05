@@ -82,9 +82,13 @@ run:
 `allow-parallel-runners: true` は lock 取得と解放を丸ごとスキップする。
 
 **キャッシュ保護ではない**。golangci-lint のキャッシュ (`internal/go/cache`) は Go の
-`cmd/go/internal/cache` の fork で、内容アドレス + 一時ファイル → rename の原子書き込み。
-複数プロセスからの同時アクセスを前提に設計されているので、lock を外しても結果の正しさには
-効かない。flag の説明も "Allow multiple parallel golangci-lint instances running. If false
+`cmd/go/internal/cache` の fork で、内容アドレス。複数プロセスからの同時アクセスを前提に
+設計されているので、lock を外しても結果の正しさには効かない。
+🚨 訂正 (敵対レビュー 2026-09-05 P3-3): 当初「一時ファイル → rename の原子書き込み」と書いたが
+不正確。`copyFile` (cache.go:583-) は最終名を `O_RDWR|O_CREATE` で開いて直接書き、rename は無い。
+安全なのは**内容アドレスなので競合する 2 プロセスが同一バイト列を書く**からで、原子性ではない。
+また `Trim()` は複数プロセスが同時に走りうるが、消されたエントリはキャッシュミスとして再計算される
+(実害は速度のみ)。lock を外す判断自体はレビューでも覆っていない。flag の説明も "Allow multiple parallel golangci-lint instances running. If false
 (default) - golangci-lint acquires file lock on start." だけで、キャッシュへの言及は無い。
 
 つまりこの lock が**マスクしていた failure mode は「同時起動による CPU / メモリの重複消費」だけ**
