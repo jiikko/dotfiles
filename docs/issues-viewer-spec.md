@@ -68,7 +68,13 @@ filter で見える子 issue 数。親行の表示順は子の最大番号降順
 展開した子 issue の行は半角 2 桁右へ寄せる (`groupChildIndent`)。単独 issue と同じ桁に並べると、
 開いたときにどの行が group の所属か読めない (2026-09-05 ユーザー要望)。
 
-親行の `Enter` / `Space` は展開・折り畳みの toggle。子 issue 行では従来どおり `Enter` は本文を
+group 内に **group 名と同じ番号を持つ issue** (`epic/467/467-*.md`) があれば、それを合成の親行の
+代わりに親行として描く (`▾ (N) 467 ○ feat  タイトル`)。合成行 + 同じ番号の子行の 2 行に割れるのを
+避けるため (2026-09-05 ユーザー要望)。この統合行は **実体が issue** なので、open・コピー・`n` は
+そのまま効く (`kind` は `issue` のまま `groupHead` が立つ)。`N` は親を除いた子の数。
+
+親行の `Enter` / `Space` は展開・折り畳みの toggle。ただし統合した親 issue 行では `Enter` は
+本文を開き、toggle は `Space` だけが担う。子 issue 行では従来どおり `Enter` は本文を
 開き、`Space` は半ページ送り。`Shift+J/K`、コピー、`n` の移動、open は issue 行だけを対象にし、
 親行では no-op と notice を出す。親行は `displayRows` にだけ存在し、issue の件数・タブバッジ・
 番号 filter の件数には含めない。
@@ -515,7 +521,8 @@ fsnotify の対象は issue dir と、ファイルのある状態ディレクト
       `other` 相当として扱われる
 - [ ] `README.md` / `INDEX.md` / `TEMPLATE.md` は metadata として置き、issue 件数に含めない
 - [ ] Epic group の親行は viewer で折り畳まれる。必要なら `Enter` / `Space` で展開し、
-      展開済み group は state の `Groups` に保存する
+      展開済み group は state の `Groups` に保存する (group 名と同じ番号の issue は親行へ統合され、
+      その行では展開は `Space`、`Enter` は本文を開く)
 - [ ] 同じファイル名を 2 箇所に置かない (viewer が警告する)
 - [ ] 着手中を明示したいときだけ front matter に `status:` を 1 行足す
 - [ ] ファイル名に状態語 (wip / ongoing / doing) を入れない

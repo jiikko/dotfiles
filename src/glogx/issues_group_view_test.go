@@ -455,3 +455,41 @@ func TestIssuesViewGroupChildrenAreIndentedUnderParent(t *testing.T) {
 		t.Fatalf("単独 issue の桁が動いた (インデントは group の子だけ): %q", globalLine)
 	}
 }
+
+// TestIssuesViewGroupParentIssueMergesIntoHeaderRow は group 名と同じ番号の issue を親行へ
+// 統合する挙動を固定する (合成の親行 + 同じ番号の子行、の 2 行に割れていたのを 1 行にする)。
+func TestIssuesViewGroupParentIssueMergesIntoHeaderRow(t *testing.T) {
+	dir := "/repo/issues"
+	parent := fakeEpicIssue(dir, "467", "467", "asset-library", issues.StatusOpen)
+	child := fakeEpicIssue(dir, "467", "460", "ui-design", issues.StatusOpen)
+	v := loadedView(parent, child)
+
+	if len(v.displayRows) != 1 {
+		t.Fatalf("親 issue が親行へ統合されていない: %+v", v.displayRows)
+	}
+	head := v.displayRows[0]
+	if head.kind != displayRowIssue || head.issue != parent || !head.groupHead ||
+		head.groupKey != parent.GroupKey || head.childCount != 1 {
+		t.Fatalf("親行が統合された issue 行になっていない: %+v", head)
+	}
+	out := strings.Join(v.listLines(renderOpts(10)), "\n")
+	if !strings.Contains(out, "▸ (1) 467") || strings.Contains(out, "▸ 467 (") {
+		t.Fatalf("親行の描画が違う:\n%s", out)
+	}
+
+	// 統合行では issue 操作が生きている (合成の親行では弾かれていたもの)
+	if v.currentIsGroup() || v.current() != parent {
+		t.Fatalf("統合行が issue として扱われない: current=%+v", v.current())
+	}
+	// Space は展開の toggle、Enter は本文を開く
+	v.handleKey(" ", vp(10))
+	if !v.expandedGroups[parent.GroupKey] || len(v.displayRows) != 2 {
+		t.Fatalf("Space で展開されない: expanded=%v rows=%d", v.expandedGroups, len(v.displayRows))
+	}
+	if v.displayRows[1].issue != child || !v.displayRows[1].inGroup {
+		t.Fatalf("子行が親の下に並ばない: %+v", v.displayRows[1])
+	}
+	if v.toggleGroupAtCursor(false) {
+		t.Fatalf("Enter (includeHead=false) が統合行で toggle した")
+	}
+}

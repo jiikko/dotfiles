@@ -53,6 +53,10 @@ type displayRow struct {
 	// inGroup は展開した group 親行の直下に並ぶ子 issue。一覧では groupChildIndent ぶん右へ寄せて
 	// 親との所属を見せる (2026-09-05 のユーザー要望: 親と同じ桁に並ぶと開いたときに所属が読めない)。
 	inGroup bool
+	// groupHead は「group 名と同じ番号を持つ親 issue」を group の親行として描く行。合成の
+	// group 行 (displayRowGroup) と違い実体は issue なので、開く・コピー・n はそのまま効く
+	// (親 issue が group 行に吸われて触れなくなるのを避ける。2026-09-05 ユーザー要望)。
+	groupHead bool
 }
 
 // groupChildIndent は group 配下の子 issue 行を右へ寄せる幅。半角空白だけで組む
@@ -639,6 +643,11 @@ func (v *issuesView) pruneExpandedGroups() {
 	}
 }
 
+// isGroupParent は展開を持つ親行 (合成の group 行と、統合した親 issue 行の両方)。
+func (r displayRow) isGroupParent() bool {
+	return r.kind == displayRowGroup || r.groupHead
+}
+
 func (v *issuesView) currentGroupKey() string {
 	row, ok := v.currentDisplayRow()
 	if !ok || row.kind != displayRowGroup {
@@ -776,6 +785,7 @@ func (v *issuesView) rebuildDisplayRows() {
 	type group struct {
 		key       string
 		name      string
+		parent    *issues.Issue
 		children  []*issues.Issue
 		maxNumber int
 		hasNumber bool
@@ -800,18 +810,26 @@ func (v *issuesView) rebuildDisplayRows() {
 			groups[key] = g
 			groupList = append(groupList, g)
 		}
-		g.children = append(g.children, iss)
+		if iss.Number != "" && iss.Number == iss.Group && g.parent == nil {
+			g.parent = iss // group 名と同じ番号の issue = その epic 自身の親 issue
+		} else {
+			g.children = append(g.children, iss)
+		}
 		n, ok := issueNumberOK(iss)
 		if ok && (!g.hasNumber || n > g.maxNumber) {
 			g.maxNumber, g.hasNumber = n, true
 		}
 	}
 	for _, g := range groupList {
-		if len(g.children) == 0 {
+		if g.parent == nil && len(g.children) == 0 {
 			continue
 		}
+		row := displayRow{kind: displayRowGroup, groupKey: g.key, groupName: g.name, childCount: len(g.children)}
+		if g.parent != nil {
+			row.kind, row.issue, row.groupHead = displayRowIssue, g.parent, true
+		}
 		units = append(units, displayUnit{
-			row:       displayRow{kind: displayRowGroup, groupKey: g.key, groupName: g.name, childCount: len(g.children)},
+			row:       row,
 			maxNumber: g.maxNumber, hasNumber: g.hasNumber, key: g.key,
 		})
 	}
@@ -823,7 +841,7 @@ func (v *issuesView) rebuildDisplayRows() {
 	out := make([]displayRow, 0, len(v.rows)+len(groupList))
 	for _, u := range units {
 		out = append(out, u.row)
-		if u.row.kind != displayRowGroup || !v.groupExpanded(u.row.groupKey) {
+		if !u.row.isGroupParent() || !v.groupExpanded(u.row.groupKey) {
 			continue
 		}
 		g := groups[u.row.groupKey]
@@ -1149,9 +1167,10 @@ func (v *issuesView) currentIsGroup() bool {
 
 // toggleGroupAtCursor は親行の展開状態を切り替える。親行以外では false を返し、呼び出し側が
 // 通常の Enter/Space の意味を続けて処理できるようにする。
-func (v *issuesView) toggleGroupAtCursor() bool {
+// includeHead=false のときは統合した親 issue 行を対象にしない (Enter は本文を開く方を優先する)。
+func (v *issuesView) toggleGroupAtCursor(includeHead bool) bool {
 	row, ok := v.currentDisplayRow()
-	if !ok || row.kind != displayRowGroup {
+	if !ok || !row.isGroupParent() || (row.groupHead && !includeHead) {
 		return false
 	}
 	key := row.groupKey
@@ -1187,7 +1206,7 @@ func (v *issuesView) anchorGroup(key string) {
 func (v *issuesView) anchorGroupInternal(key string) {
 	v.ensureDisplayRows()
 	for i, row := range v.displayRows {
-		if row.kind == displayRowGroup && row.groupKey == key {
+		if row.isGroupParent() && row.groupKey == key {
 			v.cursor = i
 			return
 		}
@@ -1352,7 +1371,7 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 	case "ctrl+d", "pgdown", "f":
 		v.moveCursor(max(rows/2, 1), rows)
 	case " ":
-		if !v.toggleGroupAtCursor() {
+		if !v.toggleGroupAtCursor(true) {
 			v.moveCursor(max(rows/2, 1), rows)
 		}
 	case "ctrl+u", "pgup", "b", "shift+space":
@@ -1381,7 +1400,7 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 		}
 		v.moveTab(-1)
 	case "enter":
-		if v.toggleGroupAtCursor() {
+		if v.toggleGroupAtCursor(false) {
 			break
 		}
 		v.openBody()
@@ -2224,8 +2243,15 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 	}
 	iss := row.issue
 	indent := ""
-	if row.inGroup {
+	switch {
+	case row.inGroup:
 		indent = groupChildIndent
+	case row.groupHead:
+		arrow := "▸"
+		if v.groupExpanded(row.groupKey) {
+			arrow = "▾"
+		}
+		indent = arrow + " (" + strconv.Itoa(row.childCount) + ") "
 	}
 	num := indent + fillRight(iss.Number, 3)
 	badge := iss.Status.Badge()
