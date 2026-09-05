@@ -1302,3 +1302,62 @@ func TestIssuesViewerCopyFailureToast(t *testing.T) {
 		t.Errorf("lastWarning に残っていない (w でコピーできない): %q", m.lastWarning)
 	}
 }
+
+// diff を開いたまま J/K で隣のコミットへ差し替える (docs/glogx-ui-guide.md §6)。
+// 起点は開いている SHA、カーソルは追従、端では止まって案内する。
+func TestBrowseDiffNeighborKeysSwapCommit(t *testing.T) {
+	m := newTestBrowse(t, 3, nil, nil)
+	long := make([]string, 200) // 半ページ送りが glide に載る長さ
+	for i := range long {
+		long[i] = "line"
+	}
+	calls := stubDiff(t, long, nil)
+	_, cmd := m.handleKey("d") // commit[0]
+	deliverDiffMsg(t, m, cmd)
+	m.handleKey(" ") // 半ページ送り = glide 中 + offset > 0 の状態を作る
+	if !m.diffOv.glide.active || m.diffOv.offset == 0 {
+		t.Fatalf("前提: Space で glide に載っていない: active=%v offset=%d", m.diffOv.glide.active, m.diffOv.offset)
+	}
+
+	_, cmd = m.handleKey("J")
+	if m.diffOv.sha != m.commits[1].SHA || m.cursor != 1 {
+		t.Fatalf("J で次のコミットへ移らない: sha=%.7s cursor=%d", m.diffOv.sha, m.cursor)
+	}
+	if m.diffOv.offset != 0 || m.diffOv.glide.active {
+		t.Errorf("J でスクロール位置が先頭へ戻らない / 前の滑りを持ち越した: offset=%d glide=%v", m.diffOv.offset, m.diffOv.glide.active)
+	}
+	deliverDiffMsg(t, m, cmd)
+	if len(*calls) != 2 || (*calls)[1] != m.commits[1].SHA {
+		t.Fatalf("J で隣の diff を取りに行かない: calls=%v", *calls)
+	}
+	_, cmd = m.handleKey("shift+down")
+	deliverDiffMsg(t, m, cmd)
+	if m.diffOv.sha != m.commits[2].SHA || m.cursor != 2 {
+		t.Fatalf("shift+↓ で末尾のコミットへ移らない: sha=%.7s cursor=%d", m.diffOv.sha, m.cursor)
+	}
+	m.handleKey("J")
+	if m.diffOv.sha != m.commits[2].SHA || !strings.Contains(m.toast.text, "最後") {
+		t.Errorf("末尾の J で止まらない / 案内が出ない: sha=%.7s toast=%q", m.diffOv.sha, m.toast.text)
+	}
+	if _, cmd = m.handleKey("K"); cmd != nil {
+		t.Errorf("キャッシュ済みの隣へ戻るのに取得コマンドが出た")
+	}
+	if m.diffOv.sha != m.commits[1].SHA || m.cursor != 1 {
+		t.Fatalf("K で前のコミットへ戻らない: sha=%.7s cursor=%d", m.diffOv.sha, m.cursor)
+	}
+	if !m.diffOv.visible() {
+		t.Fatal("差し替えの途中で diff が閉じた (open の toggle が効いた)")
+	}
+}
+
+// job パネルから開いた diff (panelSHA 起点) でも J/K の「隣」は開いている SHA の隣になる。
+func TestBrowseDiffNeighborStartsFromShownSHA(t *testing.T) {
+	m := newTestBrowse(t, 3, nil, nil)
+	stubDiff(t, []string{"x"}, nil)
+	m.cursor = 0
+	m.diffOv.open(m.commits[2].SHA) // カーソルと違う SHA を表示中 (パネル経由の形)
+	m.handleKey("K")
+	if m.diffOv.sha != m.commits[1].SHA || m.cursor != 1 {
+		t.Fatalf("開いている SHA の隣にならない: sha=%.7s cursor=%d", m.diffOv.sha, m.cursor)
+	}
+}

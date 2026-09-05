@@ -3158,6 +3158,11 @@ func (m *browseModel) openDiff() tea.Cmd {
 	if !m.diffOv.open(sha) {
 		return nil // toggle 閉 / キャッシュヒット / 取得中: 追加取得は不要
 	}
+	return m.fetchDiffCmd(sha)
+}
+
+// fetchDiffCmd は sha の diff を非同期で取りに行く (結果は diffMsg)。
+func (m *browseModel) fetchDiffCmd(sha string) tea.Cmd {
 	colored := m.colored
 	cmd := func() tea.Msg {
 		lines, err := loadCommitDiff(sha, colored)
@@ -3166,12 +3171,48 @@ func (m *browseModel) openDiff() tea.Cmd {
 	return tea.Batch(cmd, m.maybeTick())
 }
 
+// openNeighborDiff は diff を開いたまま隣 (delta = ±1) のコミットへ差し替える (J/K。
+// docs/glogx-ui-guide.md §6: 小文字 j/k が「行」なら大文字は「項目」)。
+//
+// 起点は一覧のカーソルではなく**今開いている SHA**にする。job パネルから開いた diff は
+// panelSHA を優先しており、一覧のカーソルと一致しない場合があるため (カーソル起点だと
+// 「隣」が見ている diff の隣にならない)。移った先へはカーソルも追従させる。
+// 端では止めて案内する (巻かない。issues viewer の openNeighbor と同じ)。
+func (m *browseModel) openNeighborDiff(delta int) tea.Cmd {
+	idx := slices.IndexFunc(m.commits, func(c Commit) bool { return c.SHA == m.diffOv.sha })
+	if idx < 0 {
+		idx = m.cursor
+	}
+	ni := idx + delta
+	if ni < 0 || ni >= len(m.commits) {
+		if delta > 0 {
+			m.toast.show("これが最後のコミットです", false)
+		} else {
+			m.toast.show("これが最初のコミットです", false)
+		}
+		return nil
+	}
+	m.cursor = ni
+	m.ensureCursorVisible()
+	// 🚨 open は同じ SHA だと toggle で閉じるが、隣は必ず別 SHA なのでここでは閉じない
+	if !m.diffOv.open(m.commits[ni].SHA) {
+		return nil // キャッシュヒット / 取得中
+	}
+	return m.fetchDiffCmd(m.commits[ni].SHA)
+}
+
 // handleDiffKey は diff ポップアップ表示中のキー操作。y (URL コピー) は境界をまたぐのでここで
 // 処理し、スクロール/閉じるは diffOv.scroll へ委譲する (pager 流儀の詳細は diffOverlay 側)。
 func (m *browseModel) handleDiffKey(key string) (tea.Model, tea.Cmd) {
 	if key == "y" {
 		m.copyFocusURL()
 		return m, nil
+	}
+	switch key {
+	case "J", "shift+down":
+		return m, m.openNeighborDiff(1)
+	case "K", "shift+up":
+		return m, m.openNeighborDiff(-1)
 	}
 	m.diffOv.scroll(key, m.visibleDiffRows())
 	// 半ページ移動は glide (scroll_glide.go) で進むので tick を張る。張らないと advanceGlide を
@@ -3769,7 +3810,7 @@ func (m *browseModel) hintLine() string {
 	case m.actModal.anyUpdating():
 		hint = m.spinner() + " " + strings.Join(m.actModal.updatingTargets(), " + ") + " update..."
 	case m.diffOv.visible():
-		hint = "j/k/Space: スクロール  g/G: 先頭/末尾  y: URL コピー  q/h: 閉じる"
+		hint = "j/k/Space: スクロール  J/K: 隣のコミット  g/G: 先頭/末尾  y: URL コピー  q/h: 閉じる"
 	case m.prStatusOv.visible():
 		hint = "o: PR をブラウザで開く  y: URL コピー  P/q/h: 閉じる"
 	case m.detailOv.visible():

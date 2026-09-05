@@ -51,6 +51,7 @@ func (o *diffOverlay) open(sha string) (needFetch bool) {
 	}
 	o.sha = sha
 	o.offset = 0
+	o.glide.stop() // 開いたまま別 SHA へ差し替える経路 (J/K) で、前の半ページ送りの滑りを持ち越さない
 	return o.cache.begin(sha)
 }
 
