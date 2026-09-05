@@ -284,6 +284,7 @@ job 詳細ポップアップ表示中 (上から step 一覧 (結論+所要時�
 失敗ステップのみ。GitHub Actions の job 限定):
   j / k / Ctrl-D / Ctrl-U / g / G
                             スクロール (開いた直後は末尾 = 直近の出力)
+  J / K / shift+↓ / shift+↑ 開いたまま次 / 前の job の詳細へ (一覧のフォーカスも追従)
   Enter / h / ← / Esc / q   閉じて job 一覧へ戻る (Enter は開閉 toggle)
   o                         ブラウザで開く
   y                         URL コピー

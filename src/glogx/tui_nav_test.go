@@ -574,3 +574,41 @@ func TestMainListScrollbar(t *testing.T) {
 		}
 	}
 }
+
+// job 詳細を開いたまま J/K で隣の job へ差し替える (docs/glogx-ui-guide.md §6)。
+// パネルのフォーカスが追従し、端では止まって案内する。
+func TestBrowseJobDetailNeighborKeysSwapJob(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateSuccess)
+	withJobs(m, 0) // build / lint の 2 job
+	m.openPanel()
+	m.handleKey("j") // job 0 (build)
+	m.openJobDetail()
+	if !m.detailOv.visible() || m.panelCursor != 0 {
+		t.Fatalf("前提: build の詳細が開いていない: open=%v cursor=%d", m.detailOv.open, m.panelCursor)
+	}
+	keyBefore := m.detailKey()
+
+	_, cmd := m.handleKey("J")
+	if m.panelCursor != 1 || !m.detailOv.visible() {
+		t.Fatalf("J で lint へ移らない / 詳細が閉じた: cursor=%d open=%v", m.panelCursor, m.detailOv.open)
+	}
+	if m.detailKey() == keyBefore {
+		t.Fatalf("J の後も詳細の cache キーが build のまま: %q", m.detailKey())
+	}
+	if cmd == nil || !m.detailOv.cache.busy[m.detailKey()] {
+		t.Errorf("J で未取得の隣 job を取りに行かない: cmd=%v busy=%v", cmd != nil, m.detailOv.cache.busy[m.detailKey()])
+	}
+	m.handleKey("J")
+	if m.panelCursor != 1 || !strings.Contains(m.toast.text, "最後") {
+		t.Errorf("末尾の J で止まらない / 案内が出ない: cursor=%d toast=%q", m.panelCursor, m.toast.text)
+	}
+	m.handleKey("shift+up")
+	if m.panelCursor != 0 || m.detailKey() != keyBefore || !m.detailOv.visible() {
+		t.Fatalf("shift+↑ で build へ戻らない: cursor=%d key=%q open=%v", m.panelCursor, m.detailKey(), m.detailOv.open)
+	}
+	m.handleKey("K")
+	if m.panelCursor != 0 || !strings.Contains(m.toast.text, "最初") {
+		t.Errorf("先頭の K でタイトル行へ抜けた / 案内が出ない: cursor=%d toast=%q", m.panelCursor, m.toast.text)
+	}
+}

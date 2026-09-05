@@ -2542,9 +2542,31 @@ func (m *browseModel) handleDetailKey(key string) (tea.Model, tea.Cmd) {
 	case "r":
 		m.askRerun()
 		return m, nil
+	case "J", "shift+down":
+		return m, m.openNeighborJobDetail(1)
+	case "K", "shift+up":
+		return m, m.openNeighborJobDetail(-1)
 	}
 	m.detailOv.scroll(key, m.detailKey(), m.visibleDetailRows())
 	return m, nil
+}
+
+// openNeighborJobDetail は job 詳細を開いたまま隣 (delta = ±1) の job へ差し替える
+// (J/K。docs/glogx-ui-guide.md §6)。パネルのフォーカスも追従させ、端では止めて案内する。
+// 開き直しは openJobDetail に任せる (cache ヒットなら末尾へ、未取得なら取得を発行する)。
+func (m *browseModel) openNeighborJobDetail(delta int) tea.Cmd {
+	jobs := m.details[m.panelSHA]
+	ni := m.panelCursor + delta
+	if ni < 0 || ni >= len(jobs) {
+		if delta > 0 {
+			m.toast.show("これが最後の job です", false)
+		} else {
+			m.toast.show("これが最初の job です", false)
+		}
+		return nil
+	}
+	m.panelCursor = ni
+	return m.openJobDetail()
 }
 
 // copyJobContext はフォーカス中 job の「何が起きたか」(step 一覧 + annotations / ログ末尾) を
@@ -3816,6 +3838,7 @@ func (m *browseModel) hintLine() string {
 	case m.detailOv.visible():
 		hint = fitHintItems(m.hintWidth(), []hintItem{
 			{"j/k: スクロール", 3},
+			{"J/K: 隣の job", 4},
 			{"v: nvim で開く", 4},
 			{"r: 再実行", 3},
 			{"Enter/h/q: 戻る", 1}, // 抜ける手段は最優先
