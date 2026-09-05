@@ -104,7 +104,10 @@ expect_silent() {
 }
 
 # --- 発火すべき形 ---
-expect_fire "git mv で next へ"            "git mv issues/186-x.md issues/next/"
+expect_fire "ln -s で目印 (現行の claim)"   "ln -s ../186-x.md issues/next/186-x.md"
+expect_fire "ln -s で宛先がディレクトリ"     "ln -s ../186-x.md issues/next/"
+expect_fire "ln -s の後に git add"           "ln -s ../186-x.md issues/next/186-x.md && git add issues/next/186-x.md"
+expect_fire "git mv で next へ (旧運用)"     "git mv issues/186-x.md issues/next/"
 expect_fire "素の mv で next へ"           "mv issues/186-x.md issues/next/"
 expect_fire "末尾スラッシュ無し"           "git mv issues/186-x.md issues/next"
 expect_fire "後続コマンドが続く形"         "git mv issues/186-x.md issues/next/ && echo done"
@@ -118,12 +121,15 @@ expect_fire "宛先にファイル名まで書く"     "git mv issues/186-x.md i
 expect_fire "for ループの中"               'for f in issues/18*.md; do git mv "$f" issues/next/; done'
 
 # --- group 内 next/ も検出し、global next/ が無い repo でも opt-in される ---
+expect_epic_fire "epic group の next へ (ln -s)" "ln -s ../186-x.md issues/epic/foo/next/186-x.md"
 expect_epic_fire "epic group の next へ" "git mv issues/epic/foo/186-x.md issues/epic/foo/next/"
 expect_epic_fire "epic group の next へファイル名指定" \
   "git mv issues/epic/foo/186-x.md issues/epic/foo/next/186-x.md"
 
 # --- 発火してはいけない形 ---
 expect_silent "next から出す (claim 解除)" "git mv issues/next/186-x.md issues/"
+expect_silent "目印を外す (rm)"             "git rm issues/next/186-x.md"
+expect_silent "無関係な ln"                 "ln -s ../bin/foo scripts/foo"
 expect_silent "next を見るだけ"            "ls issues/next/"
 expect_silent "done への移動"              "git mv issues/186-x.md issues/done/"
 expect_silent "無関係な commit"            "git commit -m x"

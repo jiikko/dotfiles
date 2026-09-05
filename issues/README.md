@@ -92,7 +92,7 @@ Claude が**実質的な作業をやり切った時点**（機能追加・バグ
 ## ディレクトリ構成
 
 - `issues/*.md` — open な issue
-- `issues/next/` — **「次にやる」目印 兼 着手の claim**（このディレクトリが在ることが claim 運用の opt-in。無い repo では規律ごと適用されない）。glogx の issues viewer の `n` で付け外しできる。
+- `issues/next/` — **「次にやる」目印 兼 着手の claim**（このディレクトリが在ることが claim 運用の opt-in。無い repo では規律ごと適用されない）。glogx の issues viewer の `n` で付け外しできる。**中身は issue ファイル本体ではなく `NNN-x.md -> ../NNN-x.md` の symlink**（issue 263。ファイルを動かすと本文の相対リンクが切れる。旧運用の実ファイルも読めるが、新しい claim は symlink で置く。有効性は `tests/issues/test_next_links_valid.sh` が検査する）。
   **複数マシンが同じ repo を触るので、着手するときはここへ移してその移動だけを即 push する**
   （push されていない claim は他マシンから見えず、二重着手を防げない）。完了したら `done/` へ。
   規範は [`_claude/rules/claim-issue-in-next-and-push.md`](../_claude/rules/claim-issue-in-next-and-push.md)
@@ -101,7 +101,7 @@ Claude が**実質的な作業をやり切った時点**（機能追加・バグ
 - `issues/epic/<name>/` — **親テーマ（epic）でまとめる group issue** の置き場。中の md は open として扱われ、
   glogx の issues viewer では `<name> (N)` の親行に折り畳まれる（`Enter` / `Space` で展開）。
   **固定 2 段**で、これより深くは掘らない。`epic/` 直下に置いた md は迷子（`?`）として表示される
-  - `issues/epic/<name>/next/` — group issue の claim 先（global の `next/` と同じ規律。viewer の `n` はここへ移す）
+  - `issues/epic/<name>/next/` — group issue の claim 先（global の `next/` と同じ規律。viewer の `n` はここに `../NNN-x.md` の symlink を置く）
   - **group 内に `done/` / `pending/` は作らない**。完了は global の `issues/done/` へ移す（group 内に置くと迷子 `?` になる）
   - 契約の一次情報は [`docs/issues-viewer-spec.md`](../docs/issues-viewer-spec.md) の「対象 / 状態ディレクトリ」節
 - `audit-log` — audit 実行の記録（TSV）。issue ではない。**issue ファイルをパスで参照しているため、既存ファイルを rename するとここの参照が切れる**

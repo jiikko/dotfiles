@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# PostToolUse(Bash) フック: issue を `issues/next/` または `issues/epic/<name>/next/` へ移した
-# (= 着手を claim した) 直後に、
+# PostToolUse(Bash) フック: issue の目印を `issues/next/` または `issues/epic/<name>/next/` に置いた
+# (symlink を張った / 旧運用で移した = 着手を claim した) 直後に、
 # 「その claim を単独で commit して push したか」をモデルのコンテキストへ注入する。
 #
 # なぜ: この repo は複数マシンのセッションが同じ issue 列を触る。claim がローカルに
@@ -46,7 +46,9 @@ done
 
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""')
 
-# 判定: 「mv 系コマンドの**移動先**が issues/next または issues/epic/<name>/next か」を見る。
+# 判定: 「mv 系 / ln コマンドの**宛先**が issues/next または issues/epic/<name>/next か」を見る。
+# claim の正本は symlink の目印 (`ln -s ../NNN-x.md issues/next/NNN-x.md`。issue 263) で、
+# 旧運用の `git mv` も移行期間は残るので両方を拾う。ln も mv も宛先が最後のトークンに来る。
 #
 # 🚨 素朴な行 grep では駄目だった (敵対的レビュー 2026-09-02 で P1 が 4 件)。実測した抜け:
 #   - `grep` は行単位なので、行継続 (`\` 改行) や複数行スクリプトだと mv と宛先が別行になり外れる
@@ -65,7 +67,7 @@ fires=$(printf '%s' "$cmd" | tr '\n' ' ' | awk '
   {
     n = split($0, seg, /;|&&|\|\||\|/)
     for (i = 1; i <= n; i++) {
-      if (seg[i] !~ /(^|[[:space:]])(git[[:space:]]+)?mv([[:space:]]|$)/) continue
+      if (seg[i] !~ /(^|[[:space:]])((git[[:space:]]+)?mv|ln)([[:space:]]|$)/) continue
       # セグメント末尾の空白を落として最後のトークンを取る (= 移動先の近似)
       sub(/[[:space:]]+$/, "", seg[i])
       m = split(seg[i], tok, /[[:space:]]+/)

@@ -90,14 +90,28 @@ bool 2 本 (done / pending) でなく累積の段階にしたのは、操作を 
 (`a: +⏸` 等) が示す。`unknown` (`?`) はフィルタの対象にしない — 状態へ写像しない契約 (上表) の
 帰結で、伏せると「存在しない状態」を操作させることになる。
 
-### `n` で「次にやる」の目印を付ける (`next/` へ移動)
+### `n` で「次にやる」の目印を付ける (`next/` に symlink を置く)
 
-一覧で `n` を押すと確認モーダルが出て、`y`/`Enter` で選択中の issue を移す
-(ユーザー要望 2026-08-01)。global issue の宛先は `<issue ディレクトリ>/next/`、Epic group の
-子 issue (`GroupKind=Epic`) は `<issue ディレクトリ>/epic/<name>/next/`。**`n` は toggle** で、既に目印が
-付いている issue に対しては「外す」向き (issue ディレクトリ直下 = open へ戻す) になる。favorite のように「次に何をやるか」を
+一覧で `n` を押すと確認モーダルが出て、`y`/`Enter` で選択中の issue に目印を付ける
+(ユーザー要望 2026-08-01)。global issue の目印は `<issue ディレクトリ>/next/<base>`、Epic group の
+子 issue (`GroupKind=Epic`) は `<issue ディレクトリ>/epic/<name>/next/<base>`。**`n` は toggle** で、既に目印が
+付いている issue に対しては「外す」向きになる。favorite のように「次に何をやるか」を
 自分でマーキングするための機能で、**状態 (パスが正本) の語彙に `next` を 1 つ足す**形で実現する。
 `next/` が無ければ作る。
+
+🚨 **目印は `next/<base> -> ../<base>` の symlink で、issue ファイルは動かさない** (issue 263。2026-09-05 に
+rename から変更)。rename すると本文の相対リンク (issue ディレクトリ直下を起点に書かれる) が全部切れる。
+symlink なら同一性キー (Path) も参照も安定し、claim / 解除は symlink の作成 / 削除だけになる。
+
+- **symlink を読むのはこの目印だけ** (`issues/nextlink.go`)。走査は他のあらゆる symlink を弾く
+  (PR に `issues/999.md -> ~/.ssh/id_rsa` を入れられると中身が画面に出る) ので、採用条件を 3 つに
+  固定する: `next/` 直下の symlink / Readlink がちょうど `../<同名>` / 指す先が直下の通常ファイル。
+  満たさない symlink は**警告にして無視する** (黙って捨てると「claim したはずの issue が [next] に無い」だけが残る)。
+  採用しても本文は直下の実ファイルから読む
+- 旧運用 (実ファイルが `next/` に居る) は従来どおり `Status=Next` として読む。直下に無い issue
+  (`done/` 等) の claim は `../<base>` が成立しないので rename に倒す
+- 目印の有効性は repo 側の CI でも検査する (`tests/issues/test_next_links_valid.sh`。
+  done へ動かして symlink を消し忘れた dangling を止める)
 
 - **`next` は常に見せる** (状態フィルタの段階に関係なく)。伏せると「目印を付けた issue が既定の
   一覧から消える」という逆の結果になる

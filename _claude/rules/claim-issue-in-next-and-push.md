@@ -1,4 +1,4 @@
-# issue に着手するときは `issues/next/` へ移して claim し、その移動だけを即 push する
+# issue に着手するときは `issues/next/` に目印 (symlink) を置いて claim し、その目印だけを即 push する
 
 > **トリガー型ルール。** 「この issue をやろう」と決めて最初のファイルを触る直前に発動する。
 >
@@ -19,9 +19,26 @@
     claim は **push されるまで next に現れない**ので、生きているセッションへの照会が
     唯一の即時性のある手段 (同日実測: 未 push の claim による二重着手が 1 件、
     調整中に横から完走されたのが 1 件)
-- **着手を決めたら `issues/next/` へ移し、その移動だけを pathspec で commit して即 push する**。
+- **着手を決めたら `issues/next/` に目印を置き、その目印だけを pathspec で commit して即 push する**。
   claim は **push されて初めて claim になる** — ローカルに留めている間、他マシンからは
   「誰も着手していない issue」に見える
+  - 🚨 **目印は symlink で、issue ファイルは動かさない** (issue 263)。rename すると本文の相対リンク
+    (`done/549-x.md` のように issue ディレクトリ直下を起点に書かれる) が全部切れ、リンク検査の gate に落ちる。
+    書き換えると claim の commit に本文の差分が混ざる。symlink なら Path も参照も安定する
+
+    ```sh
+    ln -s ../NNN-slug.md issues/next/NNN-slug.md && git add issues/next/NNN-slug.md
+    git commit -F - -- issues/next/NNN-slug.md <<'M'
+    claim: issue NNN に着手
+    M
+    git push
+    ```
+
+    glogx の issues viewer の `n` も同じ形を作る。解除は symlink を消すだけ (`git rm issues/next/NNN-slug.md`)。
+    **目印の形は `../<同名>` に固定** (glogx はそれ以外の symlink を目印として読まず、警告にする。
+    `tests/issues/test_next_links_valid.sh` が CI で同じ条件を検査する)
+  - 旧運用 (ファイルそのものを `next/` へ移す) は読めるが、新しい claim では使わない。既に `next/` に
+    実ファイルとして居る issue はそのまま完了まで持ってよい (直下へ戻して張り直す必要はない)
 - **group issue (`issues/epic/<name>/`) の claim は、その group 内の `next/` (`issues/epic/<name>/next/`) へ移す。完了したら global `issues/done/` へ移す。** group 内に `done/` / `pending/` は作らない。
 - **claim の commit に他の変更を混ぜない**。混ぜると push できない事情 (レビュー待ち・検証中) に
   claim が巻き込まれ、宣言だけが遅れる
@@ -31,7 +48,9 @@
 - **push できないときは黙って進めない**。remote が進んでいるなら `git pull --rebase` してから
   push する。それでも push できない事情があるなら、**着手前にユーザーへ一言伝える**
   (claim できていない = 衝突しうる、という情報が要る)
-- 完了したら global issue は `issues/next/` から `issues/done/` へ、group issue は所属 group の `next/` から global `issues/done/` へ移す (next に置きっぱなしにしない)
+- 完了したら **目印 (symlink) を消してから** issue を `issues/done/` へ移す (global も group も done は global の `issues/done/`)。
+  symlink を残すと dangling になり CI (`test_next_links_valid.sh`) が落ちる。旧運用で `next/` に実ファイルとして
+  居るものは従来どおり `next/` から `done/` へ移す
 - **`git pull --rebase` が衝突したら、claim を優先して片付ける**。claim の commit は
   「1 ファイルの rename だけ」なので衝突しても解決は自明 (相手が同じ issue を触っていたなら、
   それは**二重着手が起きている証拠**なので、続けずに相手の claim を尊重して別の issue へ回る)。
@@ -47,7 +66,7 @@
 
 ## 強制手段 (hook が一部を持つ)
 
-- **PostToolUse(Bash) hook** `_claude/hooks/next-claim-push.sh` が、global または group 内の `next/` への移動を
+- **PostToolUse(Bash) hook** `_claude/hooks/next-claim-push.sh` が、global または group 内の `next/` への `ln -s` / 移動を
   含む Bash コマンドを検出したら「claim を単独 commit して push したか」を注入する
   (配線: `_claude/settings.json`)。**この hook が見えるのは Claude が Bash で動かした移動だけ**で、
   glogx の issues viewer の `n` キー (Go 側で移動する) は Bash を通らないので発火しない
@@ -69,9 +88,9 @@
 ## やること / やらないこと
 
 - ✓ 着手前に `git fetch` し、global または所属 group の `next/` に既に居ないか見る
-- ✓ claim の移動だけを pathspec commit して即 push する
+- ✓ claim の目印 (symlink) だけを pathspec commit して即 push する
 - ✓ push できない事情があるなら、着手前にユーザーへ伝える
-- ✓ 完了したら global `issues/done/` へ移す
+- ✓ 完了したら目印を消し、global `issues/done/` へ移す
 - ✗ ローカルで claim して push しないまま作業を始める (claim になっていない)
 - ✗ claim の commit に実装や他の issue の変更を混ぜる
 - ✗ 既に global または所属 group の next に居る issue を、確認せずに横から始める
