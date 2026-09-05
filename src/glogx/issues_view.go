@@ -50,7 +50,14 @@ type displayRow struct {
 	groupKey   string
 	groupName  string
 	childCount int
+	// inGroup は展開した group 親行の直下に並ぶ子 issue。一覧では groupChildIndent ぶん右へ寄せて
+	// 親との所属を見せる (2026-09-05 のユーザー要望: 親と同じ桁に並ぶと開いたときに所属が読めない)。
+	inGroup bool
 }
+
+// groupChildIndent は group 配下の子 issue 行を右へ寄せる幅。半角空白だけで組む
+// (全角と混ぜると桁が揃って見えない。no-mixed-width-columns-in-terminal-ui.md)。
+const groupChildIndent = "  "
 
 type displayUnit struct {
 	row       displayRow
@@ -821,7 +828,7 @@ func (v *issuesView) rebuildDisplayRows() {
 		}
 		g := groups[u.row.groupKey]
 		for _, iss := range g.children {
-			out = append(out, displayRow{kind: displayRowIssue, issue: iss})
+			out = append(out, displayRow{kind: displayRowIssue, issue: iss, inGroup: true})
 		}
 	}
 	v.displayRows = out
@@ -2216,7 +2223,11 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 		return v.groupLine(i, row, o, width)
 	}
 	iss := row.issue
-	num := fillRight(iss.Number, 3)
+	indent := ""
+	if row.inGroup {
+		indent = groupChildIndent
+	}
+	num := indent + fillRight(iss.Number, 3)
 	badge := iss.Status.Badge()
 	cat := fillRight(clipToWidth(iss.Category, 9), 9)
 	catPainted := paint(cat, categoryColor(iss.Category), o.colored)

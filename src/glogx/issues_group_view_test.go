@@ -425,3 +425,33 @@ func realDoneIssue(t *testing.T) *issues.Issue {
 	}
 	return &issues.Issue{Path: path, Dir: dir, Rel: rel, Number: "001", Category: "feat", Status: issues.StatusDone}
 }
+
+// group を展開したとき、子 issue の行は親行より右 (groupChildIndent ぶん) に寄り、単独 issue と
+// 同じ桁に並ばない。親と同じ桁だと「開いたのに所属が読めない」(2026-09-05 のユーザー要望)。
+func TestIssuesViewGroupChildrenAreIndentedUnderParent(t *testing.T) {
+	global := fakeIssue("711", "feat", "global", issues.StatusOpen)
+	alpha := fakeEpicIssue("/repo/issues", "alpha", "710", "alpha", issues.StatusOpen)
+	v := loadedView(global, alpha)
+	v.handleKey("j", vp(10)) // alpha 親行
+	v.handleKey("enter", vp(10))
+	v.handleKey("k", vp(10)) // カーソルを global へ戻し、子行を非カーソル行として描く
+	lines := v.listLines(renderOpts(10))
+	var globalLine, childLine string
+	for _, l := range lines {
+		switch {
+		case strings.Contains(l, "711"):
+			globalLine = l
+		case strings.Contains(l, "710"):
+			childLine = l
+		}
+	}
+	if globalLine == "" || childLine == "" {
+		t.Fatalf("行が見つからない:\n%s", strings.Join(lines, "\n"))
+	}
+	if !strings.HasPrefix(childLine, cursorGutterBlank+groupChildIndent+"710") {
+		t.Fatalf("子 issue が親の下でインデントされていない: %q", childLine)
+	}
+	if strings.HasPrefix(globalLine, cursorGutterMark+"711") == false {
+		t.Fatalf("単独 issue の桁が動いた (インデントは group の子だけ): %q", globalLine)
+	}
+}

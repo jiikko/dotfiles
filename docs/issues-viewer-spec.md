@@ -65,6 +65,8 @@ Issue には `GroupKind` (`None` / `Epic` / `Unknown`) と、Epic の同一性�
 (`issue dir + epic/<name>`) がある。`GroupKind=Epic` だけを親行へまとめ、`Unknown` は従来どおり
 `?` の leaf として表示する。親行は既定で折り畳み、`▸ <name> (N)` の N は現在のタブ・状態
 filter で見える子 issue 数。親行の表示順は子の最大番号降順、同値は `GroupKey` 昇順。
+展開した子 issue の行は半角 2 桁右へ寄せる (`groupChildIndent`)。単独 issue と同じ桁に並べると、
+開いたときにどの行が group の所属か読めない (2026-09-05 ユーザー要望)。
 
 親行の `Enter` / `Space` は展開・折り畳みの toggle。子 issue 行では従来どおり `Enter` は本文を
 開き、`Space` は半ページ送り。`Shift+J/K`、コピー、`n` の移動、open は issue 行だけを対象にし、
