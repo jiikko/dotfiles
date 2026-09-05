@@ -682,6 +682,12 @@ func (v *statusView) pagerKeyPress(key string, vp statusViewport) tea.Cmd {
 		v.pagerKey, v.pagerTitle, v.pagerOffset = "", "", 0
 		v.pagerGlide.stop()
 		return nil
+	// 開いたまま隣のファイルへ (J/K。docs/glogx-ui-guide.md §6)。セクション境界は setCursor が
+	// 一覧と同じに扱うので、ここで境界を意識しない
+	case "J", "shift+down":
+		return v.openNeighborPager(1, vp)
+	case "K", "shift+up":
+		return v.openNeighborPager(-1, vp)
 	}
 	total := len(v.pagerLines())
 	v.pagerOffset = pagerScrollKey(key, v.pagerOffset, v.pagerRows(vp.page), total, &v.pagerGlide)
@@ -889,13 +895,29 @@ func (v *statusView) openPager(vp statusViewport) tea.Cmd {
 	return v.fetchDiff(row, vp.colored)
 }
 
+// openNeighborPager は全画面 diff を開いたまま隣 (delta = ±1) の行の diff へ差し替える。
+// 端では止めて案内する (巻かない。issues / commit diff と同じ)。カーソルは差し替え先へ追従する。
+func (v *statusView) openNeighborPager(delta int, vp statusViewport) tea.Cmd {
+	ni := v.cursor + delta
+	if ni < 0 || ni >= len(v.rows) {
+		if delta > 0 {
+			v.setNotice("これが最後のファイルです", false)
+		} else {
+			v.setNotice("これが最初のファイルです", false)
+		}
+		return nil
+	}
+	moved := v.setCursor(ni)
+	return tea.Batch(moved, v.openPager(vp))
+}
+
 // hint は hint 行 (browseModel が枠の下に出す)。
 func (v *statusView) hint(width int) string {
 	switch {
 	case v.discarding:
 		return "y/Enter: 捨てる  n/Esc: キャンセル"
 	case v.pagerKey != "":
-		return "j/k: スクロール  Space/C-d: 半ページ  g/G: 先頭/末尾  d/q: 閉じる"
+		return "j/k: スクロール  J/K: 隣のファイル  Space/C-d: 半ページ  g/G: 先頭/末尾  d/q: 閉じる"
 	}
 	// 🚨 "q: 終了" (glogx ごと終了。一覧へ戻るのは s)。上の pager の "d/q: 閉じる" は
 	//   pager を閉じるので正しい — 直すのはこちらだけ。issue 121

@@ -1458,3 +1458,50 @@ func TestStatusHintUsesRenderBudget(t *testing.T) {
 		}
 	}
 }
+
+// 全画面 diff を開いたまま J/K で隣のファイルへ差し替える (docs/glogx-ui-guide.md §6)。
+// セクションをまたいでも一覧と同じ順で進み、端では止まって案内する。
+func TestStatusPagerNeighborKeysSwapFile(t *testing.T) {
+	v := newTestStatusView(t, statusRec("M  a.go", " M b.go", "?? c.txt")) // staged / unstaged / untracked
+	if len(v.rows) != 3 {
+		t.Fatalf("前提: 3 行でない: %d", len(v.rows))
+	}
+	long := make([]string, 60) // 窓より長くしないと j で送れず、先頭へ戻る効果が観測できない
+	for i := range long {
+		long[i] = "l"
+	}
+	for _, r := range v.rows {
+		v.preview.store(previewKey(r), long, previewKey(r))
+	}
+	v.handleKey("k", testViewport()) // 初期カーソルは先頭の unstaged (b.go) なので staged の a.go へ上げる
+	v.handleKey("d", testViewport())
+	v.handleKey("j", testViewport()) // 途中まで送る (差し替えで先頭へ戻ることを見る)
+	if v.pagerKey != previewKey(v.rows[0]) || v.pagerOffset != 1 {
+		t.Fatalf("前提: a.go の diff を 1 行送った状態でない: key=%q off=%d", v.pagerKey, v.pagerOffset)
+	}
+
+	v.handleKey("J", testViewport())
+	if v.pagerKey != previewKey(v.rows[1]) || v.cursor != 1 {
+		t.Fatalf("J でセクションをまたいで b.go へ移らない: key=%q cursor=%d", v.pagerKey, v.cursor)
+	}
+	if v.pagerOffset != 0 || v.pagerTitle != v.rows[1].dispPath() {
+		t.Errorf("J で先頭へ戻らない / タイトルが替わらない: off=%d title=%q", v.pagerOffset, v.pagerTitle)
+	}
+	v.handleKey("shift+down", testViewport())
+	if v.pagerKey != previewKey(v.rows[2]) || v.cursor != 2 {
+		t.Fatalf("shift+↓ で c.txt へ移らない: key=%q cursor=%d", v.pagerKey, v.cursor)
+	}
+	v.handleKey("J", testViewport())
+	if msg, _ := v.takeNotice(); v.pagerKey != previewKey(v.rows[2]) || !strings.Contains(msg, "最後") {
+		t.Errorf("末尾の J で止まらない / 案内が出ない: key=%q notice=%q", v.pagerKey, msg)
+	}
+	v.handleKey("K", testViewport())
+	v.handleKey("K", testViewport())
+	if v.pagerKey != previewKey(v.rows[0]) || v.cursor != 0 {
+		t.Fatalf("K ×2 で a.go へ戻らない: key=%q cursor=%d", v.pagerKey, v.cursor)
+	}
+	v.handleKey("K", testViewport())
+	if msg, _ := v.takeNotice(); v.pagerKey == "" || !strings.Contains(msg, "最初") {
+		t.Errorf("先頭の K で閉じた / 案内が出ない: key=%q notice=%q", v.pagerKey, msg)
+	}
+}

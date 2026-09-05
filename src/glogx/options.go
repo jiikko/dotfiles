@@ -219,7 +219,8 @@ func Usage() string {
                             未コミットの変更を Staged / Unstaged / Untracked の 3 区画で一覧し
                             (幅が足りれば右にカーソル行の diff をプレビュー)、viewer 内のキーは
                             Space stage/unstage (セクションが向きを決める) / a 全 stage /
-                            X 変更を捨てる (y/N 確認。untracked は削除) / d 全画面 diff /
+                            X 変更を捨てる (y/N 確認。untracked は削除) / d 全画面 diff
+                            (J・K で開いたまま次・前のファイルへ) /
                             Tab セクション移動 / r 再読込 / p pull --rebase (y/N 確認) /
                             i issues viewer へ切り替え /
                             R ratelimit ダッシュボードへ切り替え / s 閉じる /
