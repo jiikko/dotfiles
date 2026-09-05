@@ -14,6 +14,11 @@ unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HOOK="$ROOT_DIR/_claude/hooks/tmux-pane-state.sh"
+# tmux が非 ASCII を `_` に潰さないようロケールを UTF-8 に固定する (非 UTF-8 環境で
+# このテストの ✓ / ⚙ 等が化ける。実測 2026-09-05)。
+# shellcheck source=tests/lib/utf8_locale.sh
+. "$ROOT_DIR/tests/lib/utf8_locale.sh"
+
 SETTINGS="$ROOT_DIR/_claude/settings.json"
 
 [ -x "$HOOK" ] || { printf '✗ フックが無い / 実行権限が無い: %s\n' "$HOOK"; exit 1; }
