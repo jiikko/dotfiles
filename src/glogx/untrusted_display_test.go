@@ -35,14 +35,7 @@ func TestPRStatusBoxSanitizesBranchNames(t *testing.T) {
 		HeadRefName: "feat/" + osc8 + "0;PWNED" + st8 + "x",
 		BaseRefName: "master" + csi8 + "2J",
 	}
-	for _, line := range o.boxLines(80, false, "⠋", "") {
-		if hasTerminalControl(line) {
-			t.Errorf("PR の枠に制御シーケンスが残った: %q", line)
-		}
-		if strings.Contains(line, "PWNED") {
-			t.Errorf("OSC の中身が残った: %q", line)
-		}
-	}
+	assertSanitizedAndVisible(t, "PR の枠", o.boxLines(80, false, "⠋", ""), "feat/", "master")
 }
 
 // X の確認モーダルに載るパスは git status 由来 (POSIX ファイル名は制御文字を許す)。一覧行と
@@ -55,14 +48,8 @@ func TestDiscardBoxSanitizesPath(t *testing.T) {
 		path: "notes" + osc8 + "0;PWNED" + st8 + ".txt",
 		orig: "old" + csi8 + "2J.txt",
 	}
-	for _, line := range v.discardBox(statusRenderOpts{width: 80, page: 20}) {
-		if hasTerminalControl(line) {
-			t.Errorf("discard 確認モーダルに制御シーケンスが残った: %q", line)
-		}
-		if strings.Contains(line, "PWNED") {
-			t.Errorf("OSC の中身が残った: %q", line)
-		}
-	}
+	assertSanitizedAndVisible(t, "discard 確認モーダル",
+		v.discardBox(statusRenderOpts{width: 80, page: 20}), "notes", ".txt")
 }
 
 // n の確認モーダルに載る issue ファイル名は issues/ 直下の実ファイル名 (Rel は同一性のため
@@ -72,14 +59,7 @@ func TestMarkNextBoxSanitizesFilename(t *testing.T) {
 	v.markNext = issuesMarkConfirm{active: true, targets: []*issues.Issue{
 		{Rel: "036-bug-" + osc8 + "0;PWNED" + st8 + csi8 + "2J.md"},
 	}}
-	for _, line := range v.markNextBox(80, false) {
-		if hasTerminalControl(line) {
-			t.Errorf("markNext 確認モーダルに制御シーケンスが残った: %q", line)
-		}
-		if strings.Contains(line, "PWNED") {
-			t.Errorf("OSC の中身が残った: %q", line)
-		}
-	}
+	assertSanitizedAndVisible(t, "markNext 確認モーダル", v.markNextBox(80, false), "036-bug-", ".md")
 }
 
 // usage の枠タイトルに載る CLI バージョンは外部バイナリの出力。
@@ -91,14 +71,7 @@ func TestUsageBoxSanitizesVersion(t *testing.T) {
 			Windows: []usage.Window{{Label: "5h", Percent: 20}},
 		},
 	}
-	for _, line := range o.boxLines(80, false, "⠋") {
-		if hasTerminalControl(line) {
-			t.Errorf("usage の枠に制御シーケンスが残った: %q", line)
-		}
-		if strings.Contains(line, "PWNED") {
-			t.Errorf("OSC の中身が残った: %q", line)
-		}
-	}
+	assertSanitizedAndVisible(t, "usage の枠", o.boxLines(80, false, "⠋"), "1.2.3")
 }
 
 // トーストの文言も表示 sink。gh / git のエラー出力や claude のバージョン文字列を素で
@@ -115,6 +88,16 @@ func TestToastAndWarningAreSanitized(t *testing.T) {
 	}
 	if strings.Contains(m.lastWarning, "PWNED") {
 		t.Errorf("OSC の中身が残った: %q", m.lastWarning)
+	}
+	// 陽性対照 (issue 284): 細工した文言が実際に保持されている。無害化が「丸ごと捨てる」形へ
+	// 退行すると上の 3 つの assert は全部素通りする。
+	for _, want := range []string{"push に失敗", "remote rejected"} {
+		if !strings.Contains(m.lastWarning, want) {
+			t.Fatalf("警告に %q が残っていない: %q (検査対象が空)", want, m.lastWarning)
+		}
+		if !strings.Contains(m.toast.text, want) {
+			t.Fatalf("トーストに %q が残っていない: %q (検査対象が空)", want, m.toast.text)
+		}
 	}
 }
 
@@ -740,5 +723,32 @@ func TestDoctorLiveDockerScanIsSanitized(t *testing.T) {
 	// 1 つも sink を守っていない)
 	if !sawItem {
 		t.Fatal("候補の行が描かれていない (検査対象が空)")
+	}
+}
+
+// assertSanitizedAndVisible は無害化テストの 2 つの主張を対で確かめる (issue 284):
+//
+//  1. 制御シーケンス / OSC の中身が残っていない (本来の主張)
+//  2. 🚨 **細工した値が実際に描かれている** (陽性対照)
+//
+// 2 が無いと、箱が空を返した瞬間に 1 の assert が 1 つも実行されず vacuous に緑を返す
+// (実測: markNextBox の先頭に `return nil` を入れても PASS した)。
+// 同じ罠は TestDoctorLiveDockerScanIsSanitized が sawItem で 1 本だけ塞いでいたもの。
+func assertSanitizedAndVisible(t *testing.T, where string, lines []string, wantVisible ...string) {
+	t.Helper()
+	for _, line := range lines {
+		if hasTerminalControl(line) {
+			t.Errorf("%s に制御シーケンスが残った: %q", where, line)
+		}
+		if strings.Contains(line, "PWNED") {
+			t.Errorf("%s に OSC の中身が残った: %q", where, line)
+		}
+	}
+	joined := strings.Join(lines, "\n")
+	for _, w := range wantVisible {
+		if !strings.Contains(joined, w) {
+			t.Fatalf("%s に %q が描かれていない (検査対象が空 = 上の assert は 1 つも sink を守っていない)",
+				where, w)
+		}
 	}
 }
