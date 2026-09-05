@@ -22,6 +22,25 @@ HELPER_PIDS=()
 #    失敗する」テストを作る (CI で実測 2026-08-01。負荷の高い runner ほど親が先に消えて踏む)。
 # 🚨 親だけでなく子も落とすこと。親だけ殺すと sleep が ppid=1 の孤児として 5 分残り、
 #    テスト実行ごとに 1 個ずつ蓄積する。
+# bounded-wait の実装は tests/lib/wait_until.sh に一本化 (コピペ禁止の理由はそちら)。
+# shellcheck source=tests/lib/wait_until.sh
+. "$ROOT_DIR/tests/lib/wait_until.sh"
+
+# 🚨 `ps | grep -q` のパイプにしないこと: grep -q が一致で即 exit して ps に SIGPIPE(141) を
+#    返し、set -o pipefail がそれを拾って「一致したのに失敗」になる (guards.sh の
+#    tt_only_hold_sessions が同じ罠を文書化している)。ps の出力を変数に取って here-string で渡す。
+proc_visible() {  # $1=pid。argv[0] が偽 tmux のフルパスで ps に見えるか
+  local snap; snap="$(ps -axo pid=,command=)"
+  grep -q "^ *$1 $FAKE_TMUX_PATH " <<<"$snap"
+}
+# 失敗時は「その pid が ps でどう見えているか」を出す (説明文だけだと原因が読めない)。
+wait_visible() {  # $1=説明 $2=pid
+  tt_wait_until proc_visible "$2" && return 0
+  printf '✗ テスト前提が崩れている (%s): 10s 待っても ps に現れない\n' "$1"
+  ps -axo pid=,command= | grep " $2 " | head -3
+  exit 1
+}
+
 stop_helper() {
   local pid="$1" child
   for child in $(pgrep -P "$pid" 2>/dev/null); do kill "$child" 2>/dev/null || true; done
@@ -153,13 +172,7 @@ mkdir -p "$TMP_DIR/fakebin"
 ( trap - EXIT; exec -a "$FAKE_TMUX_PATH" /bin/sh -c 'sleep 300; :' kill-server ) >/dev/null 2>&1 &
 FULLPATH_PID=$!
 HELPER_PIDS+=("$FULLPATH_PID")
-sleep 0.3
-# 🚨 `ps | grep -q` のパイプにしないこと: grep -q が一致で即 exit して ps に SIGPIPE(141) を
-#    返し、set -o pipefail がそれを拾って「一致したのに失敗」になる (guards.sh の
-#    tt_only_hold_sessions が同じ罠を文書化している)。ps の出力を変数に取って here-string で渡す。
-PS_SNAPSHOT="$(ps -axo pid=,command=)"
-grep -q "^ *$FULLPATH_PID $FAKE_TMUX_PATH " <<<"$PS_SNAPSHOT" \
-  || { printf '✗ テスト前提が崩れている (フルパス argv[0] のプロセスを作れていない):\n'; grep "$FULLPATH_PID" <<<"$PS_SNAPSHOT" | head -2; exit 1; }
+wait_visible "フルパス argv[0] のプロセスを作れていない" "$FULLPATH_PID"
 TT_TRIGGER_LOG="$LOG" TT_KILL_SAVE_WAIT_SECONDS=2 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" \
   STUB_SESSIONS='a: 1 windows\nb: 1 windows\n' STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run "$STUB_PATH" "$SCRIPT" kill-server
@@ -178,7 +191,7 @@ reset_calls; : > "$LOG"
 ( trap - EXIT; exec -a "$FAKE_TMUX_PATH" /bin/sh -c 'sleep 300; :' kill-sessio ) >/dev/null 2>&1 &
 ABBREV_PID=$!
 HELPER_PIDS+=("$ABBREV_PID")
-sleep 0.3
+wait_visible "略記 subcommand のプロセスを作れていない" "$ABBREV_PID"
 TT_TRIGGER_LOG="$LOG" STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" \
   STUB_SESSIONS='a: 1 windows\nb: 1 windows\n' STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run "$STUB_PATH" "$SCRIPT" kill-session

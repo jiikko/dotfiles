@@ -172,7 +172,9 @@ health
 [[ "$RC" -eq 0 ]] || { printf '✗ owner を書き直しても回復しない (RC=%s)\n' "$RC"; cat "$RUN_OUT"; exit 1; }
 
 # --- (4) 常駐プロセス不在 → NG ---------------------------------------------------------
-kill "$PERIODIC" 2>/dev/null; sleep 0.3
+# 🚨 固定 sleep で「そのうち死んでいるはず」を待たない。直接の子なので `wait` で
+#    刈り取れば、死亡が確定するまで正確に待てる (ゾンビのまま kill -0 が真を返す窓も無い)。
+kill "$PERIODIC" 2>/dev/null; wait "$PERIODIC" 2>/dev/null || true
 health
 [[ "$RC" -eq 1 ]] || { printf '✗ 周期保存不在で exit %s (1 のはず):\n' "$RC"; cat "$RUN_OUT"; exit 1; }
 grep -q '周期保存 が居ない' "$RUN_OUT" || { printf '✗ 常駐プロセス不在が報告されない:\n'; cat "$RUN_OUT"; exit 1; }

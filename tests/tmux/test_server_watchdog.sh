@@ -40,14 +40,44 @@ wd_env() {  # 共通 env で watchdog を起動する ($1=fake pid)
   PATH="$STUB_PATH" "$SCRIPT" "$1" "/fake/socket" "1234567890"
 }
 
-wait_for_death_line() {  # $1=pid $2=説明。bounded-wait で server-death 行を待つ
-  local i=0
-  while [ "$i" -lt 100 ]; do
-    grep -q "server-death pid=$1 " "$LOG" 2>/dev/null && return 0
-    sleep 0.1; i=$((i + 1))
-  done
-  printf '✗ %s: server-death 行が 10s 待っても書かれない\n--- log ---\n' "$2"; cat "$LOG" 2>/dev/null
+# bounded-wait の実装は tests/lib/wait_until.sh に一本化 (コピペ禁止の理由はそちら)。
+# ここは「待ちたいものごとの診断」だけを持つ薄いラッパ。
+# shellcheck source=tests/lib/wait_until.sh
+. "$ROOT_DIR/tests/lib/wait_until.sh"
+
+# 🚨 診断は待ちたいものに合わせて出し分ける。lock 系の失敗で見たいのは観測ログではなく
+#   watchdog ディレクトリの中身 (誰が owner か / そもそも lock が在るか)。
+wait_lock() {   # $1=説明, 残り=条件コマンド
+  local desc="$1"; shift
+  tt_wait_until "$@" && return 0
+  printf '✗ %s: 10s 待っても成立しない\n--- %s ---\n' "$desc" "$TMP_DIR/wd"
+  ls -laR "$TMP_DIR/wd" 2>/dev/null
   exit 1
+}
+wait_log() {    # $1=説明, 残り=条件コマンド
+  local desc="$1"; shift
+  tt_wait_until "$@" && return 0
+  printf '✗ %s: 10s 待っても成立しない\n--- log ---\n' "$desc"
+  cat "$LOG" 2>/dev/null
+  exit 1
+}
+
+# --- 述語 (呼ばれるたびに評価し直される) ---
+death_line_present() { grep -q "server-death pid=$1 " "$LOG" 2>/dev/null; }
+lock_dir_exists()    { [ -d "$TMP_DIR/wd/$1.lock" ]; }
+lock_dir_gone()      { [ ! -d "$TMP_DIR/wd/$1.lock" ]; }
+lock_pid_written()   { [ -s "$TMP_DIR/wd/$1.lock/pid" ]; }
+# 🚨 「pid ファイルが非空」を先に見る。奪取は rm -rf → mkdir → write_owner の順なので
+#   (scripts/lib/tmux_resurrect_guards.sh)、書き込み前の窓では cut が空を返し
+#   `"" != "$IMPOSTOR"` が**真**になる。その瞬間に抜けると、後続の判定が空文字を相手に
+#   vacuous に通る (レビューで 30 回中 17 回再現した)。
+lock_owner_taken_over() {
+  lock_pid_written "$1" && [ "$(cut -f1 "$TMP_DIR/wd/$1.lock/pid" 2>/dev/null)" != "$2" ]
+}
+log_matches()        { grep -qE "$1" "$LOG" 2>/dev/null; }
+
+wait_for_death_line() {  # $1=pid $2=説明
+  wait_log "$2: server-death 行が書かれない" death_line_present "$1"
 }
 
 # --- (1) 外因死: 空ログ状態でサーバ kill → external-signal-or-crash + pslog ------------
@@ -55,8 +85,7 @@ wait_for_death_line() {  # $1=pid $2=説明。bounded-wait で server-death 行�
 tt_spawn_fake_proc; FAKE="$REPLY_PID"
 wd_env "$FAKE" &
 WD=$!
-sleep 0.5
-[ -d "$TMP_DIR/wd/$FAKE.lock" ] || { printf '✗ 監視中に lock dir が無い\n'; exit 1; }
+wait_lock "監視中に lock dir が作られない" lock_dir_exists "$FAKE"
 printf '✓ 監視開始で lock dir (%s.lock) が作られる\n' "$FAKE"
 kill "$FAKE" 2>/dev/null
 wait_for_death_line "$FAKE" "外因死"
@@ -75,7 +104,7 @@ printf '%s\tkill-cmd cmd=kill-server pid=%s sessions=9 save=ok epoch=%s issuer=t
   "$(date +%FT%T)" "$FAKE" "$(date +%s)" >> "$LOG"
 wd_env "$FAKE" &
 WD=$!
-sleep 0.3
+wait_lock "kill-cmd 相関: 監視が張られない" lock_dir_exists "$FAKE"
 kill "$FAKE" 2>/dev/null
 wait_for_death_line "$FAKE" "kill-cmd 相関"
 wait "$WD" 2>/dev/null || true
@@ -92,7 +121,7 @@ printf '%s\tkill-cmd cmd=kill-server pid=%s sessions=9 save=ok epoch=%s issuer=o
   "$(date +%FT%T)" "$((FAKE + 100000))" "$(date +%s)" >> "$LOG"
 wd_env "$FAKE" &
 WD=$!
-sleep 0.3
+wait_lock "別世代の kill-cmd: 監視が張られない" lock_dir_exists "$FAKE"
 kill "$FAKE" 2>/dev/null
 wait_for_death_line "$FAKE" "別世代の kill-cmd"
 wait "$WD" 2>/dev/null || true
@@ -105,7 +134,7 @@ printf '✓ 別サーバ世代の kill-cmd では誤分類せず external-signal
 tt_spawn_fake_proc; FAKE="$REPLY_PID"
 wd_env "$FAKE" &
 WD=$!
-sleep 0.5
+wait_lock "二重起動ガード: 先任が lock に pid を書かない" lock_pid_written "$FAKE"
 first_pid="$(cat "$TMP_DIR/wd/$FAKE.lock/pid" 2>/dev/null)"
 wd_env "$FAKE"   # 後発 (同期実行): 先任生存なので即 exit 0 するはず
 second_pid="$(cat "$TMP_DIR/wd/$FAKE.lock/pid" 2>/dev/null)"
@@ -127,10 +156,11 @@ mkdir -p "$TMP_DIR/wd/$FAKE.lock"
 printf '%s\t%s\n' "$IMPOSTOR" "Mon Jan  1 00:00:00 2000" > "$TMP_DIR/wd/$FAKE.lock/pid"
 wd_env "$FAKE" &
 WD=$!
-sleep 0.5
-owner_now="$(cut -f1 "$TMP_DIR/wd/$FAKE.lock/pid" 2>/dev/null)"
-[ "$owner_now" != "$IMPOSTOR" ] \
-  || { printf '✗ pid 再利用の残骸 lock に退いた (watchdog が張られない = 死亡記録が残らない)\n'; exit 1; }
+# 成立しなければ wait_lock が exit する = 「残骸 lock に退いた (watchdog が張られない)」。
+# 🚨 ここに owner を読み直す assert を重ねない: 到達した時点で必ず真になる死んだ assert で、
+#   しかも述語と同じ判定の二重実装になる (mutation-verify-new-tests.md)。
+wait_lock "pid 再利用の残骸 lock に退いた (watchdog が張られない = 死亡記録が残らない)" \
+  lock_owner_taken_over "$FAKE" "$IMPOSTOR"
 kill "$FAKE" 2>/dev/null
 wait_for_death_line "$FAKE" "pid 再利用の残骸 lock を乗り越えて看取る"
 wait "$WD" 2>/dev/null || true
@@ -175,13 +205,8 @@ mkdir -p "$TMP_DIR/wd/$DEADSRV.lock"
 tt_free_pid $(( DEADSRV - 1 )); printf '%s\n' "$REPLY_PID" > "$TMP_DIR/wd/$DEADSRV.lock/pid"
 tt_spawn_fake_proc; FAKE="$REPLY_PID"
 wd_env "$FAKE" & WD=$!
-i=0
-while [ "$i" -lt 100 ]; do
-  [ -d "$TMP_DIR/wd/$DEADSRV.lock" ] || break
-  sleep 0.1; i=$((i + 1))
-done
-[ ! -d "$TMP_DIR/wd/$DEADSRV.lock" ] \
-  || { printf '✗ 死んだサーバの stale lock を掃除していない (watchdog 側の呼び出しが死んでいる)\n'; exit 1; }
+wait_lock "死んだサーバの stale lock を掃除していない (watchdog 側の呼び出しが死んでいる)" \
+  lock_dir_gone "$DEADSRV"
 kill "$FAKE" 2>/dev/null
 wait "$WD" 2>/dev/null || true
 printf '✓ 死んだサーバの stale lock を掃除してから監視を張る\n'
@@ -201,13 +226,7 @@ EOS
 chmod +x "$TMP_DIR/bin/fake_health.sh"
 
 wait_for_line() {  # $1=grep パターン $2=説明
-  local i=0
-  while [ "$i" -lt 100 ]; do
-    grep -qE "$1" "$LOG" 2>/dev/null && return 0
-    sleep 0.1; i=$((i + 1))
-  done
-  printf '✗ %s: 10s 待っても出ない (パターン: %s)\n--- log ---\n' "$2" "$1"; cat "$LOG" 2>/dev/null
-  exit 1
+  wait_log "$2 (パターン: $1)" log_matches "$1"
 }
 
 tt_spawn_fake_proc; FAKE="$REPLY_PID"

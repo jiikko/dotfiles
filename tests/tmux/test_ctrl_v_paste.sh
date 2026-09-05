@@ -38,6 +38,20 @@ fail=0
 ok()   { printf '✓ %s\n' "$1"; }
 bad()  { printf '✗ %s\n' "$1" >&2; fail=1; }
 
+# bounded-wait の実装は tests/lib/wait_until.sh に一本化 (コピペ禁止の理由はそちら)。
+# ここは rc を見て bad を出す側なので、薄いラッパは置かず tt_wait_until を直接使う。
+# shellcheck source=tests/lib/wait_until.sh
+. "$ROOT_DIR/tests/lib/wait_until.sh"
+
+pane_cmd_is() {  # $1=対象 $2=期待するコマンド名
+  [ "$(tmux -L "$SOCK" display -p -t "$1" '#{pane_current_command}' 2>/dev/null)" = "$2" ]
+}
+pane_has() {  # $1=対象 $2=探す文字列
+  # 🚨 `cmd | grep -q` にしないこと。pipefail 下では **一致していても非 0 になる**
+  # (grep -q が早期に閉じて cmd が SIGPIPE を受ける。issue 096。下の list-keys も同じ形)
+  grep -q "$2" <<< "$(tmux -L "$SOCK" capture-pane -p -t "$1" 2>/dev/null)"
+}
+
 # 隔離の実証: このソケットに本番セッションが見えないこと
 if tmux -L "$SOCK" ls >/dev/null 2>&1; then
   bad "隔離できていない (このソケットに既存サーバがある)"
@@ -77,7 +91,10 @@ fi
 tmux -L "$SOCK" new-session -d -s zsh -x 120 -y 30 "zsh -f" 2>/dev/null
 tmux -L "$SOCK" new-session -d -s other -x 120 -y 30 "sh -c 'sleep 30'" 2>/dev/null
 tmux -L "$SOCK" kill-session -t 0 2>/dev/null
-sleep 1
+# 🚨 待つのは「判定式が真になること」ではなく **fixture が整うこと** (ペインの前面プロセスが
+#    確定する)。判定式そのものをポーリングすると、下の assert が必ず真になり何も守らなくなる。
+tt_wait_until pane_cmd_is zsh zsh \
+  || bad "fixture が整わない: zsh ペインの前面プロセスが zsh にならない (10s)"
 # 🚨 判定式は **conf に登録されている bind から取り出す**。テスト側に式をコピーすると、
 # bind の条件を書き換えても (例: if-shell -F '1' で全ペインから C-v を奪う) テストが緑のまま
 # 通る = 何も守らない (2026-09-04 に実際に踏んだ。mutation-verify-new-tests.md の
@@ -109,8 +126,7 @@ else
   # 省くと「今アクティブなペイン」= 別セッションへ流れる (2026-09-04 に実測)。
   # 本番の bind ではキー押下したペインが対象になるので -t は要らない
   tmux -L "$SOCK" run -t zsh "$cmd" 2>/dev/null
-  sleep 1
-  if grep -q 'PASTED-FROM-CLIPBOARDあいう' <<< "$(tmux -L "$SOCK" capture-pane -p -t zsh 2>/dev/null)"; then
+  if tt_wait_until pane_has zsh 'PASTED-FROM-CLIPBOARDあいう'; then
     ok "true 側のコマンドがクリップボードをペインへ流し込む"
   else
     bad "true 側のコマンドが流し込めていない: $(tmux -L "$SOCK" capture-pane -p -t zsh 2>/dev/null | tr -d '\n' | tail -c 60)"

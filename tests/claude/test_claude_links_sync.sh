@@ -94,9 +94,12 @@ run check
 [ "$RC" -eq 0 ] && [ -z "$OUT" ] || ng "apply 後の check が 0/無言でない: rc=$RC"$'\n'"$OUT"
 
 # --- 4. 部分欠け: 1 件だけ足すと、その 1 件だけ張る (揃っている分に触らない) ---
+# 🚨 mtime の秒粒度を跨ぐために 1 秒待たない。**対象の時刻を過去へ打つ** (touch -t) 方が
+#    速く、しかも確実 (_claude/rules/avoid-wall-clock-assertions.md)。r1.md を張り直したら
+#    mtime が「今」になるので、過去に打っておけば差は必ず出る。
+touch -h -t 202601010000 "$CH/rules/r1.md"   # 🚨 -h: touch は既定で symlink を追い、実体の mtime を変えてしまう
 before=$(stat -f %m "$CH/rules/r1.md")
 echo r2 >"$DOT/_claude/rules/r2.md"
-sleep 1
 run apply
 grep -q '^linked 1$' <<<"$OUT" || ng "部分欠けで linked 1 でない"$'\n'"$OUT"
 grep -q "^linked: $CH/rules/r2.md" <<<"$OUT" || ng "r2.md を張ったと報告していない"
