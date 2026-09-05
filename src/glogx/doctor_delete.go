@@ -715,6 +715,17 @@ func (v *doctorView) deleteLogText() string {
 // engine (disk.Delete) は渡された Items を「今回の走査でも候補だったか」で照合するので、
 // **部分集合をそのまま渡してよい** (UI 側で消す対象を組み直す必要はない)。
 func (v *doctorView) selectedResults() []disk.Result {
+	// 🚨 選択が空なら即返す (issue 274)。hint は毎フレーム selectionSummary 経由でここへ来るが、
+	// 条件 (`n > 0 && v.tab == tabDisk`) は**呼び出しの後**にあるので、選択していない間も
+	// 全エントリの全 Item を舐め、Item ごとに diskItemKey で文字列を 1 本確保していた
+	// (合成 6,400 items の memprofile で確保の 88.9%)。下のループは選択が空なら必ず
+	// 空を返すので、これは早期 return であって振る舞いの変更ではない。
+	//
+	// 呼び出し側 (hint) で `v.tab == tabDisk` を先に見る形にしないのは、次に別の場所から
+	// 呼ぶ人が同じ書き忘れをするため。本体側で閉じる。
+	if len(v.selected) == 0 && len(v.selectedItems) == 0 {
+		return nil
+	}
 	out := make([]disk.Result, 0, len(v.selected)+len(v.selectedItems))
 	for _, r := range v.currentDiskResults() {
 		if v.selected[r.Entry.ID] {

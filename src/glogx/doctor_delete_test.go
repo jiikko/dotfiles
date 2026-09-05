@@ -1891,3 +1891,53 @@ func TestDeletePanelKeepsAbortHintOnTinyPage(t *testing.T) {
 		})
 	}
 }
+
+// 選択が空のとき、hint の経路 (selectionSummary -> selectedResults) が Item を 1 つも
+// 舐めないことを確かめる (issue 274)。
+//
+// 🚨 判定に**確保回数も時間も使えない**。実測 (2026-09-06):
+//   - diskItemKey の結果は map の添字にしか使われずエスケープしないので、6,400 Item を
+//     舐めても **0 allocs**。AllocsPerRun での assert は恒真になる (最初にそう書いて踏んだ)
+//   - 時間は壁時計依存なので合否に使わない (avoid-wall-clock-assertions)
+//
+// 使えるのは「早期 return したか」を区別する観測 = **戻り値が nil か**。
+// ループ側は `make([]disk.Result, 0, n)` で始まるので、舐めた場合は必ず**非 nil の空**を返す。
+//
+// 参考の実測 (合否には使わない): 6,400 Item で 108.8µs/呼び出し -> 3ns、実機規模 29 Item で
+// 0.60µs -> 3ns。hint は毎フレームここを通る。
+func TestDoctorSelectedResultsSkipsWalkWhenNothingSelected(t *testing.T) {
+	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	res := make([]disk.Result, 0, 8)
+	for e := range 8 {
+		items := make([]disk.Item, 0, 200)
+		for i := range 200 {
+			items = append(items, disk.Item{Path: fmt.Sprintf("/c/e%02d/i%05d", e, i), Size: int64(i + 1)})
+		}
+		res = append(res, disk.Result{
+			Entry:  disk.Entry{ID: fmt.Sprintf("e%02d", e), Label: "L", Risk: disk.RiskSafe},
+			Status: disk.StatusOK, Size: 200, Items: items,
+		})
+	}
+	v.diskRep = &disk.Report{Results: res}
+
+	if len(v.selected) != 0 || len(v.selectedItems) != 0 {
+		t.Fatal("前提が崩れている (選択が空でない)")
+	}
+	if got := v.selectedResults(); got != nil {
+		t.Errorf("選択が空なのに nil でない (len=%d)。全 Item を舐めている = "+
+			"selectedResults の早期 return が外れている (issue 274)", len(got))
+	}
+	if n, total := v.selectionSummary(); n != 0 || total != 0 {
+		t.Errorf("選択ゼロなのに summary が %d 件 / %d B", n, total)
+	}
+
+	// 陽性対照: 選択があるときは走査して拾う (上の assert が「常に nil」ではないことの担保)
+	v.selectedItems = map[string]bool{diskItemKey("e00", "/c/e00/i00000"): true}
+	got := v.selectedResults()
+	if len(got) != 1 || len(got[0].Items) != 1 {
+		t.Fatalf("選択が 1 件のとき selectedResults が %d 件 (走査が死んでいる)", len(got))
+	}
+	if n, _ := v.selectionSummary(); n != 1 {
+		t.Fatalf("選択が 1 件のとき summary が %d 件", n)
+	}
+}

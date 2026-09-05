@@ -30,21 +30,24 @@ if n, total := v.selectionSummary(); n > 0 && v.tab == tabDisk {
 
 ## 実測
 
-環境: darwin/arm64, Apple M3 Max。合成 32 エントリ × 200 items（総 6,400 items）の
-doctor フレームで、`detail` / `copyText` を無効化した状態（= issue 270 の修正を当てた後を模す）の
-`-memprofile` を `alloc_objects` で見た:
+環境: darwin/arm64, Apple M3 Max。`selectionSummary()` 1 回あたり（`-benchtime=2000x -count=2`）:
 
-```
-   2031709 88.93%  glogx.diskItemKey
--peek: glogx.(*doctorView).selectionSummary → selectedResults → diskItemKey (inline) 100%
-```
+| フィクスチャ | 早期 return なし（起票時の master） | あり（修正後） |
+|---|---:|---:|
+| 合成 32 エントリ × 200 items（総 6,400） | **108.8 µs** | **3 ns** |
+| 実機規模（総 29 items） | 0.60 µs | 3 ns |
 
-**270 の修正を入れた後の確保の 88.9% がここ。** さらに `copyPath` も外した変異でも
-allocs は 7,082 → 7,016 でほとんど動かず、**件数比例はそのまま残る**。
+hint は**毎フレーム**ここを通るので、6,400 items では 1 フレームあたり 108.8µs が
+選択していない間もずっと乗る。実機規模では 0.60µs で、体感には出ない。
 
-🚨 **実機の規模では小さい**。著者の実機 snapshot（2026-09-04 走査）は総 Items **29 件**なので、
-この経路の実コストは無視できる。**本 issue は「Items が増えたときに最初に効いてくる形」**
-として起票するもので、今すぐ体感に出る話ではない（規模の主張は issue 270 と同じ注意）。
+### 🚨 起票時の「確保の 88.9%」は、この呼び出しの形では成り立たない（訂正）
+
+初版は `-memprofile` の `alloc_objects` で `diskItemKey` が 88.9% と書いたが、
+**`selectionSummary()` を単体で測ると確保は 0**（早期 return の有無に関わらず 0 allocs）。
+`diskItemKey` の結果は map の添字にしか使われず**エスケープしない**のでスタックに載る。
+
+初版の 88.9% はフレーム全体（`detail`/`copyText` を無効化した状態）の memprofile で、
+呼び出しの形が違う。**この経路のコストは確保ではなく CPU 時間**。
 
 ## 発火条件
 
