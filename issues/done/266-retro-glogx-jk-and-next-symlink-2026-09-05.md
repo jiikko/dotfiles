@@ -37,5 +37,10 @@ fitHintItems 化 (264) / next の claim を symlink の目印に (263) / CI の�
 
 ## 残課題
 
-- [ ] 1 と 2 を `.claude/rules/worktree-per-session.md` へ追記するか (ユーザー判断)
-- [ ] 3 を `adversarial-review-own-safeguards.md` §7 へ追記するか、却下するか (ユーザー判断)
+なし (2026-09-05 に切り出し完了)。
+
+- 1・2 → `.claude/rules/worktree-per-session.md` の「push は反映ではない」節に 2 項追記
+- 3 → `_claude/rules/adversarial-review-own-safeguards.md` §7 の打ち切り条件に例外を追記
+  (「判定ロジックを新設せず、各修正を実測で確認できたなら明記して打ち切ってよい」+ 環境条件を
+  持ち込む修正は省かない、の但し書き)
+- 4・5・6 → 切り出しなし (理由は本文)

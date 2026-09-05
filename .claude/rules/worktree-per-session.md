@@ -26,6 +26,12 @@
 - 実測 2026-09-05 (issue 265): C-v のペースト通知を 3 commit 入れたが、`~/dotfiles` へ
   pull していなかったため**ユーザー環境では 2 回とも古い版が動いていた**。隔離サーバでは
   出ていたので「出るはず」と報告し、「出ない」の往復を 2 回作った
+- 🚨 **push が成功したことを確認するまで worktree を消さない**。`push; pull; worktree remove` を `;` で
+  繋ぐと、push が non-fast-forward で弾かれても後続が走り、**未 push の commit を持つ worktree を消す**
+  (実測 2026-09-05 retro 266: 4 commit が一時的に参照なしになり、hash から復元した)。`&&` で繋ぐ
+- 🚨 **本体への pull / worktree remove は `git -C ~/dotfiles` で対象を明示する**。worktree の cwd で
+  `git pull` を打つと detached HEAD で必ず失敗する (同日 3 回)。`commit-with-pathspec.md` の
+  「worktree からの merge / push も cwd 依存」と同じ罠の pull 版
 
 ## 🚨 worktree で `_claude/` を編集しても、その変更は効かない
 
