@@ -106,11 +106,19 @@ cmd_apply() {
   done
   while IFS=$'\t' read -r link target; do
     [ -n "$link" ] || continue
-    if [ -e "$link" ] && [ ! -L "$link" ]; then
-      echo "refused: $link は symlink でない実ファイル。上書きしない (手で退避してから ./setup.sh)" >&2
-      rc=2
-      continue
-    fi
+    # 🚨 種別は 1 回の lstat で取る (`stat -f %HT`。macOS 専用 repo なので BSD stat)。
+    # `[ -e ] && [ ! -L ]` の 2 回 stat にしない: 並行 apply の `ln -sfn` は unlink → symlink の
+    # 2 段なので、-e を見た (有効な symlink) 直後に相手が unlink すると、-L は「不在」に対しても
+    # 偽 = 「symlink でない実ファイル」と誤って refused する。実測 2026-09-05: 8 秒の競合で
+    # 861,981 回中 1,718 回 (0.2%)。`make test` の通しで 1 度だけ落ちた issue 260 の正体
+    case "$(stat -f '%HT' "$link" 2>/dev/null)" in
+      '' | 'Symbolic Link') ;;   # 不在 (張る) / symlink (下で指す先を見る)
+      *)
+        echo "refused: $link は symlink でない実ファイル。上書きしない (手で退避してから ./setup.sh)" >&2
+        rc=2
+        continue
+        ;;
+    esac
     if [ -L "$link" ]; then
       cur=$(readlink "$link" || true)
       # 空 = -L を見た直後に並行プロセスが消した (TOCTOU)。「他ツールの link」ではないので張りに進む

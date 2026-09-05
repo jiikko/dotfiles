@@ -236,15 +236,25 @@ for i in 1 2 3 4 5; do
   wait $pids || true
   for j in 1 2 3; do
     # 🚨 失敗時は link の実状態も出す。2026-09-05 に `make test` の通しで 1 度だけ
-    # 「refused: .../hooks/h1.sh は symlink でない実ファイル」で落ちたが、出力が apply の
-    # stdout だけだったため **h1.sh が実際に何だったのか**が分からず、55 回の再試行でも
-    # 再現しなかった (issue 260)。次に出たときに切り分けられるようにする。
+    # 「refused: .../hooks/h1.sh は symlink でない実ファイル」で落ちた (issue 260)。正体は
+    # apply 側の `[ -e ] && [ ! -L ]` の 2 回 stat で、相手の ln -sfn の unlink が間に挟まると
+    # 不在が「実ファイル」に化ける (1 回 lstat へ直した。ケース 15b が形を pin する)。
     grep -q '^rc=0$' "$H/par.$i.$j" || ng "並行 apply #$i.$j が非 0:"$'\n'"$(cat "$H/par.$i.$j")"$'\n'"$(par_state)"
     grep -q '^failed: ' "$H/par.$i.$j" && ng "並行 apply #$i.$j が failed を出した:"$'\n'"$(cat "$H/par.$i.$j")"$'\n'"$(par_state)"
   done
   run check
   [ "$RC" -eq 0 ] || ng "並行 apply #$i の後に check が rc=$RC:"$'\n'"$OUT"
 done
+
+# --- 15b. 実ファイル判定は 1 回の lstat (`stat -f %HT`) で行う (issue 260 の回帰ガード) ---
+# 挙動で pin できない: 窓はマイクロ秒で、テストから決定的に作れない (2 回 stat 版で 0.2% の発火率)。
+# 代わりに「2 回 stat の形 (`[ -e "$link" ] && [ ! -L "$link" ]`) が apply に戻っていない」ことを
+# 静的に pin する (pty が要る挙動を配線の静的 pin で守る verify-interactive-prompt-with-pty-driver.md の作法)。
+if grep -qE '\[ -e "\$link" \] && \[ ! -L "\$link" \]' "$SCRIPT"; then
+  ng "apply の実ファイル判定が 2 回 stat (-e && ! -L) に戻っている (issue 260 の競合が再発する)"
+fi
+grep -q "stat -f '%HT' \"\$link\"" "$SCRIPT" || ng "apply の実ファイル判定が 1 回 lstat (stat -f %HT) でない"
+# 実ファイルが今も refused されること (判定そのものを失っていない) はケース 6 が見ている
 
 # --- 16. -L を見た直後に link が消えた (readlink が空) は「他ツールの link」ではなく、張りに進む ---
 # 実際の窓はミリ秒なので、readlink だけを PATH 先頭の shim で差し替えて再現する (rules/r1.md に対して
