@@ -94,9 +94,15 @@ func TestFreshnessChecksGuardAgainstClockRollback(t *testing.T) {
 		return b.String()
 	}
 	// 巻き戻しガードとして認めるトークン
+	//
+	// 🚨 `IsZero()` を入れないこと (issue 282)。あれは「まだ一度も取得していない」の判定であって
+	// 「取得時刻が未来」の判定ではない。しかも `if x.IsZero() { return false }` は新しい鮮度判定を
+	// 書くときの**最も自然な書き方**なので、認めると巻き戻しガードを 1 つも持たない新規コードが
+	// 無審査で通る (実測: ガード無しの鮮度判定を足すと走査は 11 → 12 に増えたのにテストは緑だった)。
+	// 意図的に持たない関数は `// clock: elapsed-only` + 理由で明示する (doctor_cache.go:carryFresh)。
 	guarded := func(body string) bool {
 		body = stripComments(body)
-		for _, tok := range []string{"age < 0", "age >= 0", ".After(now)", ".After(timeNow())", "IsZero()"} {
+		for _, tok := range []string{"age < 0", "age >= 0", ".After(now)", ".After(timeNow())"} {
 			if strings.Contains(body, tok) {
 				return true
 			}
@@ -136,7 +142,7 @@ func TestFreshnessChecksGuardAgainstClockRollback(t *testing.T) {
 				}
 				checked++
 				if !guarded(src) {
-					t.Errorf("%s:%s に巻き戻しガードが無い (age < 0 / .After(now) / IsZero() のいずれか、"+
+					t.Errorf("%s:%s に巻き戻しガードが無い (age < 0 / age >= 0 / .After(now) のいずれか、"+
 						"または理由つきの `// clock: elapsed-only` が要る)",
 						filepath.Base(path), fn.Name.Name)
 				}
@@ -144,8 +150,13 @@ func TestFreshnessChecksGuardAgainstClockRollback(t *testing.T) {
 			})
 		}
 	}
-	if checked == 0 {
-		t.Fatal("鮮度判定が 1 つも見つからなかった (走査条件が壊れている)")
+	// 🚨 下限は 0 でなく実件数の近くに置く (issue 280 と同じ形)。走査条件が壊れて対象が
+	// 数件まで縮んでも `checked == 0` では落ちず、「違反 0 件 = 緑」になる。
+	// 増える分には落とさない (鮮度判定が増えるのは正常)。
+	const minChecked = 8 // 2026-09-06 実測 10 件。除外マーカー付き (carryFresh) は数えない
+	if checked < minChecked {
+		t.Fatalf("鮮度判定が %d 件しか見つからない (下限 %d)。走査条件が壊れている疑い",
+			checked, minChecked)
 	}
 	t.Logf("鮮度判定 %d 件を検査した", checked)
 }

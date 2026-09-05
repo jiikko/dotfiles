@@ -22,37 +22,57 @@ import (
 func TestOwnStringLiteralsHaveNoVS16(t *testing.T) {
 	const vs16 = '️'
 	fset := token.NewFileSet()
-	// tools/ は幅そのものを測る道具なので VS16 を書いてよい (対象外)。
-	pkgs, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go")
-	}, 0)
-	if err != nil {
-		t.Fatalf("パースできない: %v", err)
-	}
-	// 走査 0 件は fail (ディレクトリ構成やフィルタが壊れたら赤にする。issue 201 候補 3。
-	// waitdelay_discipline_test.go / width_test.go は既に同じ guard を持っており、
-	// このファイルだけ件数を Logf するだけで green になっていた)
-	if len(pkgs) == 0 {
-		t.Fatal("走査対象の package が 0 件 (ParseDir のフィルタかディレクトリ構成が壊れている)")
-	}
-	found := 0
-	for _, pkg := range pkgs {
-		for path, file := range pkg.Files {
-			ast.Inspect(file, func(n ast.Node) bool {
-				lit, ok := n.(*ast.BasicLit)
-				if !ok || lit.Kind != token.STRING {
-					return true
-				}
-				if strings.ContainsRune(lit.Value, vs16) {
-					found++
-					pos := fset.Position(lit.Pos())
-					t.Errorf("%s:%d 文字列リテラルに VS16 (U+FE0F) がある: %s\n"+
-						"  VS16 付き記号は端末で幅が割れる (issue 136 の実測)。bare 記号へ倒すこと",
-						filepath.Base(path), pos.Line, lit.Value)
-				}
-				return true
-			})
+	found, checked := 0, 0
+	// 🚨 `parser.ParseDir` を使わないこと (issue 283)。あれは**非再帰**なので走査対象が
+	// `package main` だけになり、usage/ issues/ termwidth/ widthenv/ subproc/ sgr/ が
+	// 黙って対象外になる (実測: usage/banner.go に VS16 を置いても緑、box.go だと赤)。
+	// しかも `len(pkgs) == 0` の 0 件ガードは package main が常に在るので**構造的に発火しない**。
+	// width_test.go:TestNoSecondWidthEngine と同じ WalkDir + ParseFile へ揃える。
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
+		if d.IsDir() {
+			// tools/ は幅そのものを測る道具なので VS16 を書いてよい (トップレベルのみ)。
+			if path == "tools" || d.Name() == "testdata" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		file, perr := parser.ParseFile(fset, path, nil, 0)
+		if perr != nil {
+			return perr
+		}
+		checked++
+		ast.Inspect(file, func(n ast.Node) bool {
+			lit, ok := n.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			if strings.ContainsRune(lit.Value, vs16) {
+				found++
+				pos := fset.Position(lit.Pos())
+				t.Errorf("%s:%d 文字列リテラルに VS16 (U+FE0F) がある: %s\n"+
+					"  VS16 付き記号は端末で幅が割れる (issue 136 の実測)。bare 記号へ倒すこと",
+					filepath.ToSlash(path), pos.Line, lit.Value)
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("走査できない: %v", err)
 	}
-	t.Logf("検査した package 数=%d / VS16 を含むリテラル=%d 件", len(pkgs), found)
+	// 🚨 下限は 0 でなく実件数の近くに置く (issue 280 / 283)。走査が縮んでも
+	// `checked == 0` では落ちず「違反 0 件 = 緑」になる。増える分には落とさない。
+	// 2026-09-06 実測: 再帰 75 件 / トップレベルのみ (= ParseDir へ戻る退行) 53 件。
+	// 下限はその間に置く — 「退行後の値では落ちる」ことが下限の存在意義。
+	const minChecked = 60
+	if checked < minChecked {
+		t.Fatalf("走査した .go が %d 件しかない (下限 %d)。WalkDir の除外かフィルタが壊れている", checked, minChecked)
+	}
+	t.Logf("検査した .go=%d 件 / VS16 を含むリテラル=%d 件", checked, found)
 }

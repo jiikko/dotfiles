@@ -121,6 +121,11 @@ func carryFresh(e doctorDiskCacheEntry, prevScannedAt, now time.Time) bool {
 	// この判断が成立するのは **MeasuredAt が未来を指さないこと**を書き込み側 (clampMeasuredAt) が
 	// 保証しているからで、判定側だけを見て「小さいズレならすぐ正になる」と読んではいけない
 	// (実測 2026-09-03: 100 年後を指す MeasuredAt では 300 日経っても一度も失効しなかった。issue 194)。
+	//
+	// clock: elapsed-only — 巻き戻しガードを意図的に持たない。上記のとおり「未来を引き継ぐ」が
+	// 安全側の選択で、未来の値そのものは書き込み側 (clampMeasuredAt) が塞いでいる。
+	// 🚨 この行が無いと clock_rollback_test の走査に引っかかる (issue 282 以前は `IsZero()` が
+	// 偶然ガードとして数えられていて、意図的な例外と偶然の通過を機械が区別できなかった)。
 	return now.Sub(at) < doctorCarryTTL
 }
 
