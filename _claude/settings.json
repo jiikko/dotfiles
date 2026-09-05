@@ -6,7 +6,6 @@
     "defaultMode": "auto"
   },
   "model": "opus",
-  "preferredNotifChannel": "notifications_disabled",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -156,6 +155,8 @@
     }
   },
   "skipWorkflowUsageWarning": true,
+  "preferredNotifChannel": "notifications_disabled",
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "advisorModel": "opus"
 }
