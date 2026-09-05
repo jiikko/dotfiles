@@ -4,7 +4,8 @@
 #   - root テーブルに C-v が 1 つだけ登録され、-N の説明が付いている (キーガイドに出る)
 #   - 判定式 #{==:#{pane_current_command},zsh} が zsh のペインでだけ真になる
 #     (= 実際の分岐先を決める値。nvim / less / cat が前面なら偽 = 既存の C-v が残る)
-#   - true 側のコマンド (pbpaste | load-buffer && paste-buffer) が実際にペインへ流し込む
+#   - true 側のコマンド (scripts/tmux_paste_clipboard.sh) が実際にペインへ流し込み、
+#     貼ったバイト数のトーストを出す (issue 248 の確認 1 を人が判定するための数字)
 #
 # 🚨 **キー押下そのものは自動テストで再現できない**。tmux send-keys は key table を通さず
 # ペインへ直接キーを送るので、root テーブルの bind は発火しない (2026-09-04 に実測: zsh には
@@ -44,9 +45,13 @@ if tmux -L "$SOCK" ls >/dev/null 2>&1; then
 fi
 
 # pbpaste を差し替える (実クリップボードに触らない)
+# 🚨 **マルチバイトを混ぜる**。ASCII だけだと bytes == chars なので、`wc -c` を `wc -m` に
+# 変える変異が緑のまま通る (実測 2026-09-05)。トーストの主張は「貼ったバイト数」なので、
+# バイト数と文字数が食い違う入力でだけ固定できる。
+# 'PASTED-FROM-CLIPBOARD' (21) + 'あいう' (9 バイト / 3 文字) = 30 バイト / 24 文字
 cat > "$BIN/pbpaste" <<'STUB'
 #!/bin/sh
-printf 'PASTED-FROM-CLIPBOARD'
+printf 'PASTED-FROM-CLIPBOARDあいう'
 STUB
 chmod +x "$BIN/pbpaste"
 export PATH="$BIN:$PATH"
@@ -94,6 +99,9 @@ fi
 # conf に書いてある文字列を取り出して使う (二重管理にすると conf を変えてもテストが気づかない)
 cmd="$(tmux -L "$SOCK" list-keys -T root 2>/dev/null | grep ' C-v ' \
   | sed -e 's/.*run -b \\"//' -e 's/\\".*//')"
+# list-keys は if-shell の入れ子ぶん quote を重ねて返す (`\\\$HOME` 等)。ここでは
+# シェルへ渡し直すので、その escape だけ剥がす (conf 側の意味は変えない)
+cmd="${cmd//\\/}"
 if [ -z "$cmd" ]; then
   bad "判定不能: bind から true 側のコマンドを取り出せない (conf の書式が変わった)"
 else
@@ -102,10 +110,37 @@ else
   # 本番の bind ではキー押下したペインが対象になるので -t は要らない
   tmux -L "$SOCK" run -t zsh "$cmd" 2>/dev/null
   sleep 1
-  if grep -q 'PASTED-FROM-CLIPBOARD' <<< "$(tmux -L "$SOCK" capture-pane -p -t zsh 2>/dev/null)"; then
+  if grep -q 'PASTED-FROM-CLIPBOARDあいう' <<< "$(tmux -L "$SOCK" capture-pane -p -t zsh 2>/dev/null)"; then
     ok "true 側のコマンドがクリップボードをペインへ流し込む"
   else
     bad "true 側のコマンドが流し込めていない: $(tmux -L "$SOCK" capture-pane -p -t zsh 2>/dev/null | tr -d '\n' | tail -c 60)"
+  fi
+  # トーストは display-message なので message-log に残る。**バイト数まで**見る:
+  # 文言だけの一致だと、数え方が壊れて 0 バイトと出る変異を素通しする (issue 248 の確認 1 は
+  # ⌘V との数字比較で判定するので、数字が本文の主張)。
+  # 🚨 **client が 1 つも attach していないと display-message は `message:` 行を残さない**
+  # (`command:` 行だけになる。実測 2026-09-05。ログ自体はサーバに 1 本)。
+  # pty で attach したクライアントを 1 つ用意する
+  # `</dev/null`: stdin が socket の環境 (エージェントのシェル) では script が
+  # tcgetattr で落ちる (実測 2026-09-05)
+  script -q /dev/null tmux -L "$SOCK" attach -t zsh >/dev/null 2>&1 </dev/null &
+  client_pid=$!
+  for _ in $(seq 60); do
+    [ -n "$(tmux -L "$SOCK" list-clients -F '#{client_name}' 2>/dev/null)" ] && break
+    sleep 0.05
+  done
+  tmux -L "$SOCK" run -t zsh "$cmd" 2>/dev/null
+  for _ in $(seq 60); do
+    grep -q 'message: 📋' <<< "$(tmux -L "$SOCK" show-messages -t zsh 2>/dev/null)" && break
+    sleep 0.05
+  done
+  msg="$(tmux -L "$SOCK" show-messages -t zsh 2>/dev/null | grep 'message: 📋')"
+  kill "$client_pid" 2>/dev/null
+  # 🚨 区切りごと固定する。数字だけの部分一致は `130 バイト` のような桁違いも通す
+  if grep -q ': 30 バイト' <<< "$msg"; then
+    ok "貼ったバイト数のトーストが出る (21 + あいう 9 = 30 バイト / 24 文字)"
+  else
+    bad "バイト数のトーストが出ていない: $(tr -d '\n' <<< "$msg" | tail -c 80)"
   fi
 fi
 
