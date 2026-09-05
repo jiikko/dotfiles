@@ -1076,6 +1076,39 @@ func (v *issuesView) openIssue(iss *issues.Issue) bool {
 	return true
 }
 
+// openNeighbor は本文を開いたまま、一覧の隣 (delta = ±1) の issue へ差し替える。
+//
+// 親行 (本文が無い) は飛ばし、端では止めて案内する (巻かない: 「次」を押し続けて先頭へ戻ると、
+// 読み終えたのか一周したのか分からなくなる)。開閉の演出は挟まない — 引き出しは開いたままで
+// 中身だけ替わる (板の位置が動かないので、左に覗いている一覧のカーソルが追従して見える)。
+// スクロール位置は先頭へ戻す (openIssue が bodyOff を 0 にする。前の位置を引き継ぐと短い本文で
+// 空白だけが見える)。
+func (v *issuesView) openNeighbor(delta, rows int) {
+	if v.open == nil {
+		return
+	}
+	v.ensureDisplayRows()
+	i := v.cursor + delta
+	for ; i >= 0 && i < len(v.displayRows); i += delta {
+		if v.displayRows[i].kind == displayRowIssue {
+			break
+		}
+	}
+	if i < 0 || i >= len(v.displayRows) {
+		if delta > 0 {
+			v.setNotice("これが最後の issue です", false)
+		} else {
+			v.setNotice("これが最初の issue です", false)
+		}
+		return
+	}
+	if !v.openIssue(v.displayRows[i].issue) {
+		return // 読めなかった issue へはカーソルも動かさない (見えているものと開いているものを揃える)
+	}
+	v.drawer.finish() // openIssue が開く演出を始め直すので即着地させる (引き出しは既に開いている)
+	v.setCursor(i, rows)
+}
+
 // reloadAfterEdit は nvim で編集して戻ってきたときの取り直し (呼び出し側の editorClosedMsg)。
 //
 // 一覧のメタデータは Issue.LoadMeta が一度読んだら二度読まないので再スキャンで作り直し、開いて
@@ -1478,6 +1511,14 @@ func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
 		v.wantRatelimit = true
 	case "u":
 		v.openURLPicker()
+	// 本文を開いたまま隣の issue へ (ユーザー要望 2026-09-05)。小文字 j/k が「行」なら大文字は
+	// 「項目」(docs/glogx-ui-guide.md §6)。一覧の J/K は範囲選択の伸張だが本文に選択は無いので
+	// 衝突しない。shift+矢印も受けるのは一覧側と同じ理由 (tmux 越しで届かない端末があるので、
+	// 確実に届く大文字を必ず 1 本持たせる。逆に矢印しか押さない人にも同じ操作を用意する)。
+	case "J", "shift+down":
+		v.openNeighbor(1, rows)
+	case "K", "shift+up":
+		v.openNeighbor(-1, rows)
 	default:
 		// スクロールの語彙 (1 行 / 半ページ + glide / 端ジャンプ) は diffOverlay・status viewer の
 		// 全画面 diff と共有する (scroll_glide.go の pagerScrollKey)。手触りを 1 箇所に集約するため。
@@ -2294,7 +2335,9 @@ func (v *issuesView) hint() string {
 	if v.open != nil {
 		// エディタ名を書かないのは editCmd が $VISUAL/$EDITOR を見るため ($EDITOR=code の人に
 		// "nvim" と案内しない)。幅は TestIssuesViewHintFitsPopupWidth が固定する。
-		return "j/k/Space: スクロール  g/G: 先頭/末尾  p: 番号  u: URL  e: 編集  Enter/h/q: 一覧へ"
+		// J/K を入れるために g/G を「端」、Enter/h/q を「戻る」(job パネルと同じ語) に詰めた
+		// (元の文言では 84 桁を超える)。
+		return "j/k/Space: スクロール  J/K: 隣へ  g/G: 端  p: 番号  u: URL  e: 編集  Enter/h/q: 戻る"
 	}
 	// a は 3 段の巡回なので「次に押すと何が増えるか」を出す (現在どこまで見えているかはタブ行
 	// 右端のバッジ ○/○⏸/○⏸✓ が示すので、ここで二重に説明しない)。

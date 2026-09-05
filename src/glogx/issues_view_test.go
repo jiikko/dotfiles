@@ -1229,13 +1229,13 @@ func TestIssuesViewHintChangesByMode(t *testing.T) {
 		t.Fatalf("一覧の hint が想定と違う: %q", v.hint())
 	}
 	v.open = v.rows[0]
-	if !strings.Contains(v.hint(), "一覧へ") {
+	if !strings.Contains(v.hint(), "隣へ") {
 		t.Fatalf("本文の hint が想定と違う: %q", v.hint())
 	}
 	// URL ピッカーは本文の上に重なる 3 つ目のモード。本文の案内を出したままにすると、案内した
 	// キー (j/k/g/G/p/u/v/h/q) が全部 urlPicker の検索語に化けて 1 つも案内どおりに動かない。
 	v.urlPick.open([]string{"https://example.com/"})
-	if h := v.hint(); !strings.Contains(h, "絞り込み") || strings.Contains(h, "一覧へ") {
+	if h := v.hint(); !strings.Contains(h, "絞り込み") || strings.Contains(h, "隣へ") {
 		t.Fatalf("URL ピッカーの hint が想定と違う: %q", h)
 	}
 }
@@ -2267,6 +2267,20 @@ func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 				t.Errorf("e の起動コマンドが違う: args=%v want=%v", args, want)
 			}
 		},
+		"J": func(t *testing.T, e *bodyKeyEnv) {
+			// env は 1 件なので観測できる効果は「端の案内」。差し替えそのものは
+			// TestIssuesViewBodyNeighborKeysSwapIssueWithoutReopening が見る
+			e.press("J")
+			if msg, _ := e.v.takeNotice(); !strings.Contains(msg, "最後") {
+				t.Errorf("J が本文モードで効いていない (端の案内が出ない): %q", msg)
+			}
+		},
+		"K": func(t *testing.T, e *bodyKeyEnv) {
+			e.press("K")
+			if msg, _ := e.v.takeNotice(); !strings.Contains(msg, "最初") {
+				t.Errorf("K が本文モードで効いていない (端の案内が出ない): %q", msg)
+			}
+		},
 		"Enter": func(t *testing.T, e *bodyKeyEnv) { e.assertClosesBody(t, "enter") },
 		"h":     func(t *testing.T, e *bodyKeyEnv) { e.assertClosesBody(t, "h") },
 		"q":     func(t *testing.T, e *bodyKeyEnv) { e.assertClosesBody(t, "q") },
@@ -2578,4 +2592,79 @@ func TestIssuesViewerListModeUReturnsReason(t *testing.T) {
 	if !strings.Contains(notice, "本文") {
 		t.Errorf("理由が「本文を開いてから」を案内していない: %q", notice)
 	}
+}
+
+// 本文を開いたまま J/K で隣の issue へ差し替える (docs/glogx-ui-guide.md §6)。
+// 親行 (本文が無い) は飛ばし、端では止めて案内し、引き出しの演出は挟まない。
+func TestIssuesViewBodyNeighborKeysSwapIssueWithoutReopening(t *testing.T) {
+	dir := t.TempDir()
+	mk := func(rel, title string) *issues.Issue {
+		path := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("# "+title+"\n\n本文 "+title+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path2issue(dir, rel)
+	}
+	a := mk("005-feat-a.md", "A")
+	b := mk("004-feat-b.md", "B")
+	child := fakeEpicIssue(dir, "cloud", "003", "child", issues.StatusOpen)
+	mk(child.Rel, "CHILD")
+	c := mk("002-feat-c.md", "C")
+	v := loadedView(a, b, child, c)
+	if got := len(v.displayRows); got != 4 || v.displayRows[2].kind != displayRowGroup {
+		t.Fatalf("前提: 表示行が [a b ▸cloud c] でない: %+v", v.displayRows)
+	}
+
+	v.handleKey("j", vp(10))
+	v.handleKey("enter", vp(10))
+	v.drawer.finish()
+	if v.open != b {
+		t.Fatalf("前提: b を開けていない: %+v", v.open)
+	}
+	v.bodyOff = 3 // 次の issue で先頭へ戻ることを見るため、途中まで送った状態を作る
+
+	v.handleKey("J", vp(10))
+	if v.open != c || v.cursor != 3 {
+		t.Fatalf("J で親行を飛ばして c へ移らない: open=%v cursor=%d", v.open, v.cursor)
+	}
+	if v.drawer.phase != drawerOpen {
+		t.Errorf("J で引き出しの演出が始まった (開いたままで中身だけ替える): phase=%v", v.drawer.phase)
+	}
+	if v.bodyOff != 0 {
+		t.Errorf("J でスクロール位置が先頭へ戻らない: bodyOff=%d", v.bodyOff)
+	}
+	if out := strings.Join(v.lines(renderOpts(20)), "\n"); !strings.Contains(out, "本文 C") {
+		t.Errorf("J の後に c の本文が描かれない:\n%s", out)
+	}
+
+	v.handleKey("J", vp(10))
+	if v.open != c {
+		t.Fatalf("末尾の J で issue が変わった: %+v", v.open)
+	}
+	if msg, _ := v.takeNotice(); !strings.Contains(msg, "最後") {
+		t.Errorf("末尾の J で案内が出ない: %q", msg)
+	}
+
+	v.handleKey("K", vp(10))
+	if v.open != b || v.cursor != 1 {
+		t.Fatalf("K で親行を飛ばして b へ戻らない: open=%v cursor=%d", v.open, v.cursor)
+	}
+	v.handleKey("shift+up", vp(10))
+	if v.open != a || v.cursor != 0 {
+		t.Fatalf("shift+↑ で a へ戻らない: open=%v cursor=%d", v.open, v.cursor)
+	}
+	v.handleKey("K", vp(10))
+	if msg, _ := v.takeNotice(); v.open != a || !strings.Contains(msg, "最初") {
+		t.Errorf("先頭の K で止まらない / 案内が出ない: open=%v notice=%q", v.open, msg)
+	}
+}
+
+// path2issue は dir 配下の rel を単独 issue として組む (ファイル名から番号・カテゴリを読む)。
+func path2issue(dir, rel string) *issues.Issue {
+	base := filepath.Base(rel)
+	parts := strings.SplitN(strings.TrimSuffix(base, ".md"), "-", 3)
+	return &issues.Issue{Path: filepath.Join(dir, rel), Dir: dir, Rel: rel, Number: parts[0], Category: parts[1], Slug: parts[2]}
 }

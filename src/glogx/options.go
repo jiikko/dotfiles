@@ -208,6 +208,7 @@ func Usage() string {
                             p 番号コピー / y パスコピー / Y 参照 (番号+タイトル+パス) コピー /
                             N 次に採番すべき番号コピー / n 次にやる目印 (next/ へ移動) /
                             a done も表示 / u 本文中の URL ピッカー (本文表示中のみ) /
+                            J・K 本文を開いたまま次・前の issue へ (本文表示中のみ) /
                             e・v $VISUAL・$EDITOR で開く (既定 nvim) /
                             r 再読込 /
                             Tab・h・l タブ移動 / s status viewer へ切り替え /

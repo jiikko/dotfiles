@@ -22,6 +22,7 @@ glogx の画面のうち、**複数 repo をこの規約に寄せる** / **書�
 | 文書 | 対象 | 性格 |
 |---|---|---|
 | [`issues-viewer-spec.md`](issues-viewer-spec.md) | glogx の issues viewer (`i` キー) が `issues/` をどう解釈するか | repo を寄せるための契約。読み方だけでなく、なぜその読み方かを実測つきで |
+| [`glogx-ui-guide.md`](glogx-ui-guide.md) | glogx 全画面に共通する操作感とキー語彙 (vim 層 / emacs 別名層 / 動作層、開閉・破壊的操作・案内の規律、`J`/`K` 項目送り) | 新しいキーを足す / 画面を足す前に読む。個別キーの一覧は `src/glogx/README.md` |
 | [`status-viewer-spec.md`](status-viewer-spec.md) | glogx の status viewer (`s` キー) の stage / unstage | **write する画面**なので「何を絶対にしないか」が本体 |
 
 ## 仕組みの説明 (作ったものの設計)
