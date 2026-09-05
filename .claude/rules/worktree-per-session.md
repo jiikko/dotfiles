@@ -12,6 +12,21 @@
 - **issue 番号は採番したら即 push する**。番号は複数セッションが同じ列から取るので、
   ローカルに置いている間は衝突が見えない (実測 2026-09-03 に 3 回衝突: 214 / 221 / 223)
 
+## 🚨 push は「反映」ではない — 実体パスから動くものは `~/dotfiles` へ pull するまで古いまま
+
+- **`~/dotfiles` の実体パスから起動されるもの**は、worktree の commit を push しても
+  **`~/dotfiles` に pull するまで古い版が動き続ける**。対象は `_claude/` (下節) だけでなく
+  **`scripts/` と `bin/`** も: 稼働中の tmux サーバが読むのは `_tmux.conf` の bind が指す
+  `${DOTFILES_DIR:-$HOME/dotfiles}/scripts/...` / `.../bin/...` であって、worktree のコピーではない
+- **統合は「push して終わり」にしない**。`git push origin HEAD:master` →
+  **`git -C ~/dotfiles pull --rebase`** → (conf を変えたなら reload) までで 1 セット
+- 🚨 **「動作確認した」と書く前に、確認した対象が本番の実体かを見る**。隔離サーバ (`-L`) や
+  worktree 内で動かした結果は、`~/dotfiles` が古いままなら**本番の証拠にならない**。
+  `git -C ~/dotfiles status -sb` の `behind N` が出ていないかを、報告の前に確認する
+- 実測 2026-09-05 (issue 265): C-v のペースト通知を 3 commit 入れたが、`~/dotfiles` へ
+  pull していなかったため**ユーザー環境では 2 回とも古い版が動いていた**。隔離サーバでは
+  出ていたので「出るはず」と報告し、「出ない」の往復を 2 回作った
+
 ## 🚨 worktree で `_claude/` を編集しても、その変更は効かない
 
 - **hook は `~/dotfiles/_claude/hooks/...` の実体パスで起動する** (`_claude/settings.json` の

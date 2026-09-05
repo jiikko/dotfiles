@@ -80,8 +80,11 @@ issue 248 の文脈で `C-v` と解釈して実装し、**⌘V では出ない**
 
 ## 残課題
 
-- [ ] 項目 1 の切り出し (`.claude/rules/worktree-per-session.md` へ追記)
-- [ ] 項目 2 の切り出し (`verify-execution-not-just-exit-code.md` へ追記)
-- [ ] 項目 5 の切り出し (`instrument-before-second-fix.md` へ追記)
+- [x] 項目 1 → `.claude/rules/worktree-per-session.md` に「push は反映ではない」節を追記
+- [x] 項目 2 → `_claude/rules/verify-execution-not-just-exit-code.md` に
+      「隔離環境での成功は本番での成功ではない」節を追記
+- [x] 項目 5 → `_claude/rules/instrument-before-second-fix.md` の観測手段の表に 1 行追記
+
+ルールに落ちた項目の正本は `_claude/rules/` 側 (retro に要約を残さない)。
 - [x] 項目 3 却下: 既存ルールで足りている (守れなかっただけ)
 - [x] 項目 4 却下: 既存ルールが明記済み
