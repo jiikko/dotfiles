@@ -147,12 +147,21 @@ mark_at_is() { [[ "$(tail -1 "$1" 2>/dev/null | awk '{print $NF}')" == "$2" ]]; 
 wait_for() {  # $1=説明, 残り=条件コマンド。10 秒まで待つ
   local msg="$1"; shift
   local i
-  for ((i = 0; i < 100; i++)); do
+  for ((i = 0; i < 200; i++)); do
     "$@" && return 0
-    sleep 0.1
+    sleep 0.05
   done
   fail "$msg (10 秒待っても成立しない)"
 }
+# builder の終了は lock の消滅ではなく pid の死で見る。lock を奪われた builder は他人の lock を
+# 消さない (「解放してよいのは持ち主だけ」) ので、奪うテストでは lock が残ったまま builder が終わる。
+builder_gone() { ! kill -0 "$1" 2>/dev/null; }
+# 🚨 wait_for に渡すのは関数にする。`test -n "$(...)"` だと置換が呼び出し時に 1 度だけ展開され、
+# 同じ結果を 10 秒ポーリングし続けて「観測しているつもり」になる。
+# 作業ファイルの出現 = 偽 go が走り始めた = builder は started_at と指紋の確定を済ませている
+# (_go_autobuild_build はその 2 つを go build の前に取る)。「builder が始まった」を lock の pid で
+# 見ると、pid が書かれてから started_at が取られるまでの隙間に入れて flaky になる。
+has_workfile() { [[ -n "$(find "$1/src/tool" -name '.autobuild.new.*' -print -quit)" ]]; }
 
 printf '\n## 初回ビルド (バイナリ不在なら同期)\n'
 ROOT="$(new_project first)"
@@ -456,8 +465,9 @@ freeze "$ROOT"
 bump "$ROOT/src/tool/main.go"
 AUTOBUILD_ARGS=--async FAKE_GO_SLEEP=2 FAKE_GO_MARK=slow run_tool "$ROOT" >/dev/null
 wait_for "builder が lock を取らない" test -f "$ROOT/src/tool/.autobuild.lock/pid"
+builder_pid="$(cat "$ROOT/src/tool/.autobuild.lock/pid")"
 printf '%s\n' "$$" > "$ROOT/src/tool/.autobuild.lock/pid"  # 別の builder に奪われた状態にする
-sleep 3
+wait_for "lock を奪われた builder が終わらない" builder_gone "$builder_pid"
 binary_is "$ROOT" old || fail "lock を奪われた builder が古い成果物を install した (got: $(binary_mark "$ROOT"))"
 [[ -f "$ROOT/src/tool/.autobuild.failed" ]] && fail "install 中止を失敗として記録した (次回の再挑戦が止まる)"
 ok "lock を奪われた builder は install を中止し、失敗記録も残さない"
@@ -515,9 +525,8 @@ FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
 freeze "$ROOT"
 bump "$ROOT/src/tool/main.go"
 AUTOBUILD_ARGS=--async FAKE_GO_SLEEP=2 FAKE_GO_MARK=mid run_tool "$ROOT" >/dev/null
-wait_for "builder が動き出さない" test -f "$ROOT/src/tool/.autobuild.lock/pid"
-sleep 0.3
-touch "$ROOT/src/tool/main.go"   # ← ビルド実行中に着地した編集
+wait_for "builder が動き出さない" has_workfile "$ROOT"
+touch "$ROOT/src/tool/main.go"   # ← ビルド実行中 (指紋の確定後) に着地した編集
 wait_for "ビルドが完了しない" binary_is "$ROOT" mid
 wait_for "builder が lock を解放しない" builder_done "$ROOT"
 AUTOBUILD_ARGS=--async FAKE_GO_MARK=after run_tool "$ROOT" >/dev/null
@@ -534,11 +543,11 @@ FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
 freeze "$ROOT"
 bump "$ROOT/src/tool/main.go"
 AUTOBUILD_ARGS=--async FAKE_GO_SLEEP=3 FAKE_GO_MARK=slow run_tool "$ROOT" >/dev/null
-wait_for "builder が動き出さない" test -f "$ROOT/src/tool/.autobuild.lock/pid"
-sleep 0.5
+wait_for "builder が動き出さない" has_workfile "$ROOT"   # 同期ビルドは builder の started_at より後に始める
+builder_pid="$(cat "$ROOT/src/tool/.autobuild.lock/pid")"
 GO_AUTOBUILD_SYNC=1 FAKE_GO_MARK=now run_tool "$ROOT" >/dev/null
 binary_is "$ROOT" now || fail "前提が崩れた: 同期ビルドが入っていない (got: $(binary_mark "$ROOT"))"
-sleep 4
+wait_for "走行中の builder が終わらない" builder_gone "$builder_pid"
 binary_is "$ROOT" now \
   || fail "走行中の builder が新しいバイナリを古い成果物で踏んだ (got: $(binary_mark "$ROOT"))"
 ok "走行中の builder は、あとから入った新しいバイナリを踏まない"
@@ -552,8 +561,9 @@ freeze "$ROOT"
 bump "$ROOT/src/tool/main.go"
 AUTOBUILD_ARGS=--async FAKE_GO_SLEEP=2 FAKE_GO_MARK=slow run_tool "$ROOT" >/dev/null
 wait_for "builder が lock を取らない" test -f "$ROOT/src/tool/.autobuild.lock/pid"
+builder_pid="$(cat "$ROOT/src/tool/.autobuild.lock/pid")"
 printf '%s\n' "$$" > "$ROOT/src/tool/.autobuild.lock/pid"  # 別の builder に奪われた状態にする
-sleep 3
+wait_for "lock を奪われた builder が終わらない" builder_gone "$builder_pid"
 [[ -f "$ROOT/src/tool/.autobuild.lock/pid" ]] \
   || fail "lock を奪われた builder が、奪った側の lock まで消した (以後この src は無施錠)"
 ok "lock を奪われた builder は、奪った側の lock を消さない"
@@ -619,8 +629,7 @@ freeze "$ROOT"
 printf 'package main\n\n// A\n' > "$ROOT/src/tool/main.go"
 ( AUTOBUILD_ARGS=--async FAKE_GO_SLEEP=1 FAKE_GO_MARK=A run_tool "$ROOT" >/dev/null 2>&1 ) &
 A_PID=$!
-wait_for "先行ビルドが動き出さない" test -f "$ROOT/src/tool/.autobuild.lock/pid"
-sleep 0.3
+wait_for "先行ビルドが動き出さない" has_workfile "$ROOT"   # A の started_at と指紋が確定してから B を入れる
 printf 'package main\n\n// B\n' > "$ROOT/src/tool/main.go"   # あとから始まる方が新しい入力
 GO_AUTOBUILD_SYNC=1 FAKE_GO_SLEEP=4 FAKE_GO_MARK=B run_tool "$ROOT" >/dev/null
 wait "$A_PID" 2>/dev/null || true
@@ -674,13 +683,12 @@ freeze "$ROOT"
 bump "$ROOT/src/tool/main.go"
 ( GO_AUTOBUILD_SYNC=1 FAKE_GO_SLEEP=4 FAKE_GO_MARK=sync run_tool "$ROOT" >/dev/null 2>&1 ) &
 SYNC_PID=$!
-# 🚨 wait_for に渡すのは関数にする。`test -n "$(...)"` だと置換が呼び出し時に 1 度だけ展開され、
-# 同じ結果を 10 秒ポーリングし続けて「観測しているつもり」になる。
-has_workfile() { [[ -n "$(find "$1/src/tool" -name '.autobuild.new.*' -print -quit)" ]]; }
 wait_for "同期ビルドが始まらない" has_workfile "$ROOT"
 marker="$(find "$ROOT/src/tool" -name '.autobuild.new.*' -print -quit)"
 AUTOBUILD_ARGS=--async FAKE_GO_MARK=other run_tool "$ROOT" >/dev/null   # ← spawn の掃除が走る
-sleep 0.6
+# 掃除は spawn の中で lock 取得の直後・ビルドの前に走る。あとから来た builder の成果物が入った
+# 時点で掃除は済んでいる (同期ビルドは FAKE_GO_SLEEP で走行中のまま)
+wait_for "あとから来た builder が完走しない" binary_is "$ROOT" other
 [[ -e "$marker" ]] \
   || fail "走行中の builder の作業ファイルを、あとから来た builder が消した: ${marker##*/}"
 ok "走行中の builder の作業ファイルを、あとから来た builder が消さない"
@@ -746,6 +754,8 @@ source "${0:A:h}/lib/go_autobuild.zsh"
 go_autobuild_exec --pkg cmd/b "${0:A:h}/../src/tool" b -- "$@"
 EOS
 chmod +x "$ROOT/bin/a" "$ROOT/bin/b"
+# 指紋は mtime 秒精度。あとで書き換える sub.go は記録される前に過去へ置き、同秒の書き換えでも差が出るようにする
+mtime_at 60 "$ROOT/src/tool/sub/sub.go"
 run_pkg() {  # $1=root $2=bin name
   local root="$1" name="$2"; shift 2
   PATH="$TMP_DIR/bin:$PATH" FAKE_GO_CALLS="$root/calls" FAKE_GO_MARK="${FAKE_GO_MARK:-v1}" "$root/bin/$name" "$@" 2>>"$root/stderr"
@@ -763,7 +773,6 @@ n1="$(calls "$ROOT")"
 out="$(FAKE_GO_MARK=a2 run_pkg "$ROOT" a)"
 [[ "$out" == "a1" && "$(calls "$ROOT")" == "$n1" ]] || fail "--pkg: 入力が変わっていないのに再ビルドした"
 ok "--pkg: 入力が同じなら再ビルドしない"
-sleep 1.1  # 指紋は mtime 秒精度。同秒の書き換えを差として拾えないので 1 秒空ける
 printf 'package sub\n// changed\n' > "$ROOT/src/tool/sub/sub.go"
 out="$(FAKE_GO_MARK=a3 run_pkg "$ROOT" a)"
 [[ "$out" == "a3" ]] || fail "--pkg: cmd/ の外 (sub/) の変更で再ビルドされない (got: $out)"
@@ -782,6 +791,7 @@ ROOT="$(new_project replace)"
 mkdir -p "$ROOT/src/shared/pkg"
 printf 'module shared\n\ngo 1.99\n' > "$ROOT/src/shared/go.mod"
 printf 'package pkg\n' > "$ROOT/src/shared/pkg/p.go"
+mtime_at 60 "$ROOT/src/shared/pkg/p.go"   # 指紋は mtime 秒精度。書き換え前に過去へ置く (--pkg 節と同じ)
 printf 'module tool\n\ngo 1.99\n\nrequire shared v0.0.0\n\nreplace shared => ../shared\n' > "$ROOT/src/tool/go.mod"
 out="$(FAKE_GO_MARK=r1 run_tool "$ROOT")"
 [[ "$out" == "r1" ]] || fail "replace 付き module の初回ビルドが走らない (got: $out)"
@@ -789,15 +799,14 @@ grep -q "src/shared/pkg/p.go" "$ROOT/src/tool/.autobuild.built" || fail "指紋�
 n="$(calls "$ROOT")"
 out="$(FAKE_GO_MARK=r2 run_tool "$ROOT")"
 [[ "$out" == "r1" && "$(calls "$ROOT")" == "$n" ]] || fail "replace 先が不変なのに再ビルドした"
-sleep 1.1
 printf 'package pkg\n// changed\n' > "$ROOT/src/shared/pkg/p.go"
 out="$(FAKE_GO_MARK=r3 run_tool "$ROOT")"
 [[ "$out" == "r3" ]] || fail "replace 先の変更で再ビルドされない (got: $out)"
 ok "replace 先 (../shared) の変更で再ビルドする"
 # ブロック形式の replace も読む
 printf 'module tool\n\ngo 1.99\n\nrequire shared v0.0.0\n\nreplace (\n\tshared => ../shared\n)\n' > "$ROOT/src/tool/go.mod"
+mtime_at 60 "$ROOT/src/shared/pkg/p.go"   # r4 の記録に過去の mtime を載せ、直後の書き換えを差にする
 FAKE_GO_MARK=r4 run_tool "$ROOT" >/dev/null
-sleep 1.1
 printf 'package pkg\n// changed again\n' > "$ROOT/src/shared/pkg/p.go"
 out="$(FAKE_GO_MARK=r5 run_tool "$ROOT")"
 [[ "$out" == "r5" ]] || fail "ブロック形式の replace 先の変更で再ビルドされない (got: $out)"
@@ -822,13 +831,13 @@ source "${0:A:h}/lib/go_autobuild.zsh"
 go_autobuild_exec --pkg cmd/a "${0:A:h}/../src/tool" a -- "$@"
 EOS
 chmod +x "$ROOT/bin/a"
+mtime_at 60 "$ROOT/src/tool/sub/sub.go"   # 指紋は mtime 秒精度。書き換え前に過去へ置く (--pkg 節と同じ)
 PATH="$TMP_DIR/bin:$PATH" FAKE_GO_CALLS="$ROOT/calls" FAKE_GO_MARK=s1 "$ROOT/bin/a" >/dev/null 2>>"$ROOT/stderr"
 # 入力が同じなら外部呼び出しも stale と見ない (cmd 局所の指紋で常に不一致になる形の検出)
 if PATH="$TMP_DIR/bin:$PATH" FAKE_GO_CALLS="$ROOT/calls" zsh -c "source '$LIB'; go_autobuild_spawn_if_stale '$ROOT/src/tool/cmd/a' a" 2>>"$ROOT/stderr"; then
   fail "外部呼び出しが cmd 局所の指紋で stale と誤判定した"
 fi
 ok "外部呼び出しでも module root の指紋で判定する (同じ入力を stale と言わない)"
-sleep 1.1
 printf 'package sub\n// changed\n' > "$ROOT/src/tool/sub/sub.go"
 PATH="$TMP_DIR/bin:$PATH" FAKE_GO_CALLS="$ROOT/calls" FAKE_GO_MARK=s2 zsh -c "source '$LIB'; go_autobuild_spawn_if_stale '$ROOT/src/tool/cmd/a' a" 2>>"$ROOT/stderr" \
   || fail "module root 配下 (sub/) の変更を外部呼び出しが拾わない"

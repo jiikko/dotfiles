@@ -23,7 +23,7 @@
 |---|---|
 | `test-lint` | 20 |
 | `test-syntax` | 1 |
-| `test-discovered` (直列) | 326 |
+| `test-discovered` | **128** (2026-09-05 の並列化後。直列時代は 326) |
 | `test-bats` | 14 |
 | `test-src` | **15〜71** (3 サンプルで 4.7 倍の幅。Go のキャッシュ状態で動く) |
 
@@ -34,21 +34,22 @@
 `test-discovered` (直列) の内訳: `tests/zshrc` 187 / `tests/tmux` 56 / `tests/bin` 45 /
 残り 7 ディレクトリで 33。`tests/zshrc` の中は **`av1ify` 124 + `concat` 56 = 96%**。
 
+**2026-09-05 から `test-discovered` は 2 腕** (Makefile の `SERIAL_TEST_DIRS`): 共有資源に触る
+`tests/tmux` / `tests/nvim` / `tests/zshrc/tmux-session` (41 本) だけ直列、残り (68 本) は
+`run_tests_parallel` で並列。実測 (14 コア機、各 1 サンプル): `make test` の通しが **490 秒 → 190 秒**、
+`test-discovered` 単体が **128 秒**。直列時代の 367 秒はテスト 1 本ずつの計測を足した値で、通しは未測。
+`test-src` の go test も 7 プロジェクトを並列に回す (`run_go_projects`。lint は golangci-lint の file lock のため直列のまま)。
+
 🚨 **待ちの実体はエンコードではない**。av1ify / concat のテストは ffmpeg / ffprobe を
 **shell script のモック**に差し替えており (`tests/zshrc/*/test_helper.sh` が `$TEST_TMP/mock_bin` を
 PATH 先頭に置く)、時間はモック内の `grep` 連打による **fork のオーバーヘッド**で積まれる
 (モック ffprobe は 1 呼び出しで最大 24 本の `grep -q` を回す)。
 
-### 速い経路: 直列の test-discovered を並列版に差し替える
+### CI の heavy / rest 入口
 
-repo は heavy 群の並列実行入口を既に持っている。**実測 35 秒** (直列の av1ify + concat = 180 秒)。
-
-```sh
-make test-lint test-runtime-rest test-discovered-heavy test-src   # 約 4 分
-```
-
-🚨 これは `make test` と**同じ集合を並べ替えたもの**ではない (CI の heavy/rest 分割に沿う)。
-差分の正本は Makefile の `CI_HEAVY_TEST_DIRS` / `CI_HEAVY_PRUNE`。
+`test-discovered-heavy` (av1ify + concat を並列。**実測 35 秒**、直列なら 180 秒) と
+`test-runtime-rest` (heavy を除いた残り。並列腕 + 直列腕) の 2 job。`make test` は
+この 2 つを合わせた集合で、差分の正本は Makefile の `CI_HEAVY_TEST_DIRS` / `CI_HEAVY_PRUNE`。
 
 ## 何をいつ回すか
 
@@ -122,7 +123,7 @@ platform の差が消えた今も残るのが**「手元には在るが git に�
 
 ## 並列実行と CI の分割
 
-- `run_tests_parallel` (heavy 群 = `CI_HEAVY_TEST_DIRS`) に入れられるのは tempdir 独立で共有資源に触らないテストだけ。tmux / nvim 系は直列のまま
+- `run_tests_parallel` に入れられるのは tempdir 独立で共有資源に触らないテストだけ。`test-discovered` は tests/ 全体をこれで回し、共有資源 (tmux サーバ / nvim) に触る `SERIAL_TEST_DIRS` (tests/tmux / tests/nvim / tests/zshrc/tmux-session) だけを直列の `run_tests` に回す。新ディレクトリは並列側に入るので、共有資源に触るテストを書いたら `SERIAL_TEST_DIRS` へ足す
 - CI は heavy / rest の 2 job。分割の整合 (パッケージ依存・prune) は `make test-ci-group-deps` が検査する
 
 ## bench

@@ -46,7 +46,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-heavy test-discovered-rest test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-cd-rc test-trigger-log-writers test-skip-exit-code test-workflow-action-pins test-go-project-lanes test-go-lint test-go test-src test-fresh
+.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-cd-rc test-trigger-log-writers test-skip-exit-code test-workflow-action-pins test-go-project-lanes test-go-lint test-go test-src test-fresh
 
 # ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ)。
 #
@@ -164,25 +164,32 @@ rm -f "$$fails" "$$skips"
 endef
 
 # run_tests の並列版。各テストは独自 tempdir で独立しているものだけに使うこと
-# (nvim/tmux 系は共有資源の競合が未検証のため直列の run_tests のまま)。出力は
+# (共有資源に触る領域は SERIAL_TEST_DIRS に列挙して直列の run_tests に回す)。
 # 🚨 **exit 77 = そのファイルは丸ごと skip した** (automake の慣例)。0 と区別しないと、依存が
 # 無くて何も検査しなかったテストが合格と同じ `[ok]` になる。実害: 2026-08-29 に
 # test_deny_bare_tmux_kill.sh が timeout(1) 不在で丸ごと skip し、**60 件の assert が消えたのに
 # `[ok]`** と集計されていた (issue 139)。skip 自体は失敗ではないので緑のままにするが、
-# **件数と一覧を出して「増えた」に気づける**ようにする。
+# **件数と一覧を出して「増えた」に気づける**ようにする (直列版と同じ形で最後に出す)。
 # テストごとにファイルへ隔離し、失敗時にまとめて吐く (並列で行が混ざるのを防ぐ)。
-# fail-fast はしない (xargs は失敗後も残りを流し、最後に非 0 (123) を返す)。
+# fail-fast はしない (xargs は失敗後も残りを流す)。失敗・skip の一覧は追記専用の一時ファイルに
+# 集める (短い 1 行の O_APPEND は並列でも混ざらない)。判定はその一覧で行い、xargs の終了コードは
+# 「一覧が空なのに非 0」= runner 自体の故障を拾うためだけに見る (sh 不在等を緑にしない)。
 # parallel-each は不採用: CI runner に Go が無くビルドできない・retries/resume の
 # 既定がテスト用途と合わない (状態ファイルを repo に作る) ため、素の xargs -P を使う。
 NPROC := $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 define run_tests_parallel
 tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); \
 [ -n "$$tests" ] || { echo "✗ $(1) 配下にテストが見つかりません (find 失敗 or 0 件)。本当に test_*.sh が無いディレクトリなら、テストを足すか scripts/test_changed.sh の写像の振り先を直す (issue 063 の同型)" >&2; exit 1; }; \
-printf '%s\n' "$$tests" | xargs -P $(NPROC) -n 1 sh -c \
+fails=$$(mktemp); skips=$$(mktemp); xrc=0; \
+printf '%s\n' "$$tests" | FAILS="$$fails" SKIPS="$$skips" xargs -P $(NPROC) -n 1 sh -c \
 	'out=$$(mktemp); "$$0" >"$$out" 2>&1; rc=$$?; \
 	if [ "$$rc" -eq 0 ]; then echo "[ok] $$0"; \
-	elif [ "$$rc" -eq 77 ]; then echo "[skip] $$0"; cat "$$out"; \
-	else echo "[FAIL] $$0"; cat "$$out"; rm -f "$$out"; exit 1; fi; rm -f "$$out"'
+	elif [ "$$rc" -eq 77 ]; then echo "[skip] $$0"; cat "$$out"; echo "$$0" >> "$$SKIPS"; \
+	else echo "[FAIL] $$0"; cat "$$out"; echo "$$0" >> "$$FAILS"; rm -f "$$out"; exit 1; fi; rm -f "$$out"' || xrc=$$?; \
+if [ -s "$$skips" ]; then { echo ""; echo "[skip] 丸ごと skip したテスト $$(wc -l < "$$skips" | tr -d ' ') 件 (失敗ではない。増えていたら理由を確かめる):"; sed 's/^/  /' "$$skips"; }; fi; \
+if [ -s "$$fails" ]; then { echo ""; echo "✗ 失敗したテスト:"; sed 's/^/  /' "$$fails"; } >&2; rm -f "$$fails" "$$skips"; exit 1; fi; \
+rm -f "$$fails" "$$skips"; \
+[ "$$xrc" -eq 0 ] || { echo "✗ 並列 runner (xargs) が rc=$$xrc で終わったが、失敗したテストの記録が無い (runner 自体の故障)" >&2; exit 1; }
 endef
 
 # 新品チェックアウト (= 追跡されているものだけがある状態) で回す opt-in レーン (issue 132)。
@@ -195,9 +202,26 @@ test-fresh:
 	@./scripts/with_fresh_worktree.sh $(MAKE) test-discovered test-bats
 
 # test-runtime の実行本体。tests/ 全体を走査するため、新ディレクトリ tests/foo/ を作っても
-# 自動で拾われる (ディレクトリ単位の死蔵も発生しない)。
+# 自動で拾われる (ディレクトリ単位の死蔵も発生しない。新ディレクトリは並列腕に入る)。
+#
+# 並列腕 (tests/ から SERIAL_TEST_DIRS を除いた全部) と直列腕 (SERIAL_TEST_DIRS) の 2 本に分け、
+# run_all_targets で**両方走らせてから**失敗をまとめる (片方が落ちてももう片方は必ず走る)。
+# 直列に据え置くのは共有資源 (tmux サーバ / nvim の状態) に触り、並列時の競合を検証していない領域。
+# 実測 2026-09-05 (14 コア): 直列 1 本で 367s → 並列腕 122s + 直列腕 89s。
+# 🚨 SERIAL_TEST_DIRS のパスを移動/改名したら直列腕の 0 件検知が fail するのでここを更新する
+#   (CI_HEAVY_TEST_DIRS と同じ契約)。並列腕へ移すときは、そのテストが独自 tempdir だけで閉じていて
+#   共有資源に触らないことを確かめてから。
+SERIAL_TEST_DIRS := tests/tmux tests/nvim tests/zshrc/tmux-session
+SERIAL_PRUNE := \( $(foreach d,$(SERIAL_TEST_DIRS),-path $(d) -o) -false \) -prune -o
+
 test-discovered:
-	@$(call run_tests,tests)
+	@+$(call run_all_targets,test-discovered-parallel test-discovered-serial)
+
+test-discovered-parallel:
+	@$(call run_tests_parallel,tests $(SERIAL_PRUNE))
+
+test-discovered-serial:
+	@$(call run_tests,$(SERIAL_TEST_DIRS))
 
 # CI (tests.yml) の並列分割用。実行時間の大きい ffmpeg 系 (av1ify/concat) を heavy として
 # 分離し、rest は「tests/ 全体から heavy を除外」の除外方式にする。新ディレクトリは自動で
@@ -272,8 +296,13 @@ test-go-project-lanes:
 test-discovered-heavy:
 	@$(call run_tests_parallel,$(CI_HEAVY_TEST_DIRS))
 
+# rest も test-discovered と同じ 2 腕 (並列 / 直列) で回す。heavy の除外は並列腕側で行う
+# (SERIAL_TEST_DIRS と CI_HEAVY_TEST_DIRS は重ならないので直列腕は test-discovered と共用)。
 test-discovered-rest:
-	@$(call run_tests,tests $(CI_HEAVY_PRUNE))
+	@+$(call run_all_targets,test-discovered-rest-parallel test-discovered-serial)
+
+test-discovered-rest-parallel:
+	@$(call run_tests_parallel,tests $(CI_HEAVY_PRUNE) $(SERIAL_PRUNE))
 
 # CI の rest ジョブ入口 (test-runtime から test-discovered を rest に差し替えたもの)
 test-runtime-rest:
@@ -416,6 +445,14 @@ GO_PROJECT_DIRS := $(patsubst %/,%,$(dir $(wildcard src/*/go.mod)))
 #   プロジェクト別に分かれているため無傷だったが、ローカルの方が弱い状態だった)。
 # 🚨 go 未導入は skip して緑にする。0 件は上のガードで失敗させるので、
 #   「発見が壊れた」と「go が無い」は別の結果として出る。
+# test は並列に回す (go の build cache は並行アクセスに対して自前でロックする)。
+# 🚨 lint は直列のまま。golangci-lint は起動時にグローバルな file lock を取り、別インスタンスが
+#   走っていると "parallel golangci-lint is running" で exit 3 する (v2.5.0 で実測 2026-09-05:
+#   7 プロジェクト同時起動で 3 つが落ちた)。並列にするには各 src/*/.golangci.yml に
+#   `run.allow-parallel-runners: true` が要る (7 プロジェクトの契約変更なので、ここでは触らない)。
+# 出力はプロジェクトごとに一時ファイルへ隔離し、全部終わってから発見順に吐く (run_tests_parallel と
+# 同じ理由: 並列で行が混ざると、どの失敗がどのプロジェクトか読めない)。rc ファイルが無い =
+# サブシェルが結果を書く前に死んだ、なので失敗に数える (沈黙を緑にしない)。
 define run_go_projects
 if [ -z "$(strip $(GO_PROJECT_DIRS))" ]; then \
 	echo "[go-$(1)] src/*/go.mod が 1 つも見つからない (発見の仕方が壊れている)" >&2; exit 1; \
@@ -423,10 +460,20 @@ fi; \
 if ! command -v go >/dev/null 2>&1; then \
 	echo "[go-$(1)] go not found; skipping"; exit 0; \
 fi; \
-failed=""; \
+outdir=$$(mktemp -d); i=0; \
 for dir in $(GO_PROJECT_DIRS); do \
-	$(MAKE) -C $$dir $(1) || failed="$$failed $$dir"; \
+	i=$$((i + 1)); \
+	( $(MAKE) -C $$dir $(1) >"$$outdir/$$i.out" 2>&1; echo $$? >"$$outdir/$$i.rc" ) $(if $(filter lint,$(1)),;,&) \
 done; \
+wait; \
+failed=""; i=0; \
+for dir in $(GO_PROJECT_DIRS); do \
+	i=$$((i + 1)); \
+	rc=$$(cat "$$outdir/$$i.rc" 2>/dev/null || echo 99); \
+	echo "[go-$(1)] $$dir (rc=$$rc)"; cat "$$outdir/$$i.out"; \
+	[ "$$rc" -eq 0 ] || failed="$$failed $$dir"; \
+done; \
+rm -rf "$$outdir"; \
 if [ -n "$$failed" ]; then \
 	{ echo ""; echo "✗ [go-$(1)] 失敗したプロジェクト:$$failed"; } >&2; \
 	exit 1; \
