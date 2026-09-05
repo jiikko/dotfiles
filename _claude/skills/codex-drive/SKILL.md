@@ -496,6 +496,10 @@ EOF
   **codex に xcodebuild を試みさせない**とプロンプトに書く (試みると Error 74 の往復で時間を溶かす。obaket 617 M3)。
   **`project.pbxproj` は触らない (xcodegen が `project.yml` から生成する) ともプロンプトに書く** — 書かないと codex が新規テストファイルを
   pbxproj に手で登録する (obaket 686, 2026-09-01。再生成で上書きされるので実害は無いが diff がノイズになる)。
+  codex に渡せる構文確認は **`swiftc -parse` まで** (型検査は依存モジュールが要り sandbox で組めない)。**型 error は
+  Claude の `make test` で 1 往復として織り込む** (実測 ThumbnailThumb 542: memberwise init の引数順 1 件で `passed 0` の往復)。
+  「git commit はしない」だけでは codex が `git pull --ff-only` を試みる (同 542。sandbox で失敗したが指示外) ので、
+  プロンプトは **git 操作全般の禁止**にする (上の雛形の文言)。
   codex が書いた macOS target のテストは **Claude が baseline 緑 + 変異 red を xcodebuild で確認するまで未検証扱い**
   (617 M5: codex 版の macOS テスト 2 本が baseline red / 変異検知が vacuous だった。`[3.8]` の gate は shared の filter
   suite しか回さないので、macOS 側の変異は Claude が worktree で `xcodebuild -only-testing:<suite>` を当てる)。
@@ -518,7 +522,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 last_message="$ROOT/tmp/<タスク>/impl.out.md"; log="$ROOT/tmp/<タスク>/impl.log"
 command codex exec -s workspace-write -C "$ROOT" -m gpt-5.6-luna -c model_reasoning_effort="max" \
   --ephemeral -o "$last_message" </dev/null "$(cat <<'EOF'
-<タスク>。git commit はしない (人間が検証して commit する)。ファイルを書き、プロジェクト標準の build/test が green に
+<タスク>。git 操作 (commit / pull / checkout / stash 等) はしない (人間が検証して commit する)。ファイルを書き、プロジェクト標準の build/test が green に
 なるまで自分で反復すること。Swift プロジェクトなら swift build / swift test を使う。
 
 ## ゴール / 受け入れ条件
@@ -887,7 +891,7 @@ diff -u "<...>.pre.status" "<...>.post.status"             # ← 新規ファイ
 out="<scratchpad>/codex-drive.<literal-stamp>.harden.md"; log="$out.log"
 command codex exec -s workspace-write -m gpt-5.6-luna -c model_reasoning_effort="max" \
   --ephemeral -o "$out" </dev/null "$(cat <<'EOF'
-このマイルストーンの実装を「落とす」テストを書く。git commit はしない。
+このマイルストーンの実装を「落とす」テストを書く。git 操作 (commit / pull / checkout / stash 等) はしない。
 
 ## 絶対の制約
 - **テストファイル以外は変更しない**。実装のバグを見つけても直さず、それを落とすテストとして書く
