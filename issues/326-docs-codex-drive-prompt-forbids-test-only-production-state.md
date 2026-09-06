@@ -1,4 +1,11 @@
-# 291 docs: codex-drive の実装 / fix プロンプトに「production に test 専用の状態・API を足さない」を定型で入れる
+# 326 docs: codex-drive の実装 / fix プロンプトに「production に test 専用の状態・API を足さない」を定型で入れる
+
+> 🚨 **旧番号 291 から改番** (2026-09-07)。`issues/done/291-feat-glogx-epic-shows-done-children-by-default.md`
+> と番号が衝突し、`test_issue_numbers_unique.sh` が赤になっていた。参照を数えて**少ない方**を動かした:
+> こちら = tracked 参照 0 件 / commit 参照は起票の `6c53b7a8` のみ、epic 側 = tracked 2 件
+> (`done/293` `done/294`) + 敵対レビューの commit 複数 (`e1c2c6ee` `e67eab07`)。
+> commit message は履歴なので直せない — 旧 commit の「291」はこのファイルを指すことがある。
+
 
 ## 背景 (obaket 650 M1 / M2、2026-09-05〜06)
 
