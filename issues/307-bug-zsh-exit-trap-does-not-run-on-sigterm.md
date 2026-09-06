@@ -29,6 +29,35 @@ bash の感覚で書いた EXIT trap は、zsh では TERM の経路だけ穴が
 「孤児 tmux サーバへ発展するのでは」→ **しない**。`_tmux.conf` は `exit-empty` が既定 on なので、
 セッション終了でサーバも落ちる。残るのは一時ディレクトリだけ。
 
+## 横断調査（2026-09-07。着手時に機械で数え直した）
+
+「zsh の shebang かつ EXIT trap だけを張る」ファイルは **17 本**:
+
+| 内訳 | 本数 |
+|---|---|
+| `scripts/` の production スクリプト | **1**（`check_syntax.zsh`） |
+| `tests/` 配下 | 16（nvim 4 / zshrc 8 / setup 1 / tmux 1 / helper 2） |
+
+**本 issue の commit で直したのは `scripts/check_syntax.zsh` の 1 本だけ**。
+残る 16 本はテストで、**常用の中断は Ctrl-C = INT（zsh でも EXIT trap が走る）**なので
+優先度が下がる。TERM を受けるのは timeout / 外部 kill の経路に限られる。
+
+→ 16 本は下記の gate（`mktemp` と trap の対応を機械で見る）で一括して扱う方が安全。
+個別に 16 本へ trap を書き足すと、`trap '' TERM` が正当なケース
+（`tmux_server_watchdog.sh` / `tmux_schedule_keys.sh:cmd_fire`）との区別を人が覚えることになる。
+
+## 対応済み（2026-09-07）
+
+`scripts/check_syntax.zsh` に `TERM` / `INT` / `HUP` の trap を足した。
+
+**変異検証**（同条件で比較。kill は一時領域が実際に作られたのを**上限つきポーリングで待ってから**送った
+— 待たずに送ると mktemp 到達前に殺してしまい、修正の有無で結果が変わらない観測になる）:
+
+| | kill 時点の一時領域 | TERM 後の残骸 |
+|---|---|---|
+| 修正後 | 2 個 | **0 個** |
+| 変異（足した trap を消す） | 2 個 | **2 個** |
+
 ## 推奨対応
 
 1. `check_syntax.zsh` の `trap cleanup EXIT` に加えて
