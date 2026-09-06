@@ -169,7 +169,23 @@ YYYY-MM-DD HH:MM	<audit-type-id>	<mode>	<output-files>
 2026-02-15 15:00	general	forge-Minimum+	issues/general-issues.md
 ```
 
-複数の監査タイプが選択された場合は、各タイプを順番に実行し、それぞれログを記録してください。
+🚨 **複数の監査タイプが選択された場合は、各タイプを順番に実行し**、それぞれログを記録してください。
+**並行起動しないこと。** 監査は issue ファイルを書くので、並行させると複数の書き込み体が
+同じ working tree を共有することになります（[`parallel-write-agents-need-worktree-isolation.md`](../../rules/parallel-write-agents-need-worktree-isolation.md) 違反）。
+
+実測 2026-09-06: この指示に反して 3 体を並行起動し、**全員に同じ worktree を渡した**セッションが
+あります。検出したのは起動側ではなくサブエージェント側（「他のプロセスがファイルを書き換えている」
+と報告してきた）でした。どうしても並行させたいなら、**起動前に体ごとの worktree を作って
+作業根として渡し、終わったら消す**こと:
+
+```sh
+root="$(git rev-parse --show-toplevel)"
+for i in 1 2 3; do git worktree add --detach "$root/../wt-audit-$i" HEAD; done
+# 各体へ「作業場所は <path>」と明示し、完了後に git worktree remove --force
+```
+
+判断基準: **1 体なら worktree を作らない**（分離コストは 2 体目から）。**read-only の
+調査・レビュー体は分離不要**。分けるのは**書き込む体**だけです。
 実行中にエラーが発生した場合は、そのタイプのログに `error` と記録し、次のタイプに進んでください。
 すべてのタイプの実行が完了（またはエラー）した後、エラーがあった場合はユーザーに報告してください。
 audit-log 自体も commit に含めてください。

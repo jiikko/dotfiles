@@ -30,6 +30,16 @@ description: 専門家エージェントの並行実行＋クロスレビュー�
 
 **なぜ二層なのか**: fan-out / クロスレビュー / 収束ループは `pipeline`/`parallel`/loop で**決定論的**に書ける（`forge.js`）。一方モード選択・設計承認・修正方針は **mid-run でユーザーに聞く必要があり、background 実行の Workflow では表現できない**ため skill 層（main Claude）に残す。
 
+> 🚨 **fan-out する体は全部 read-only（調査・レビュー）で、ファイルを書くのは main Claude だけ**。
+> Phase 2（実装）・Phase 5（修正）は skill 層に残っており、**並行しない**。だから forge は
+> [`parallel-write-agents-need-worktree-isolation.md`](../../rules/parallel-write-agents-need-worktree-isolation.md)
+> が要求する worktree 分離を**必要としない**（分離が要るのは書き込み体を 2 体以上並行させるときだけ）。
+>
+> 🚨 **これを書いてあるのは、書いていないと誤解されるから**。実測 2026-09-06: audit → forge で
+> 起こした 3 体に**同じ worktree を渡した**セッションがあり、体が書き込むと思い込んでいた
+> （気づいたのは起動側ではなくサブエージェント側だった）。**もし将来 fan-out に書き込み体を
+> 足すなら、その時点で体ごとに worktree を配ること**（1 体なら不要。read-only は分離不要）。
+
 > **重要**: `forge.js` は `_common/modes.md`（モード別動作）・`_common/agents.md`（ロスター）・`_common/cross-review.md`（ペアリング/統合）の仕様を実装したもの。これらの仕様を変更したら `forge.js` も同期更新すること（片方だけ直すと乖離する）。
 
 ## 使い方
