@@ -153,7 +153,8 @@ func zzCanaryTestStyle() { v := newTestIssuesView(); v.rows = nil }
 	}
 
 	// 🚨 走査が壊れて何も見なくなっても緑にならないよう、下限を置く (issue 280 / 283 と同じ形)。
-	// 2026-09-06 実測: .go 75 件超を走査し、issuesView.rows への代入候補は setRows の 1 件。
+	// 2026-09-06 実測: .go 167 件 (テスト込み) を走査し、issuesView.rows への代入候補は
+	// setRows の 1 件。
 	if scanned < 60 {
 		t.Fatalf("走査した .go が %d 件しかない (下限 60)。WalkDir の除外が壊れている", scanned)
 	}
