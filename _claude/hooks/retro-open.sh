@@ -10,9 +10,10 @@
 # 通る場所で催促する。human タスクの期限催促 (human-tasks-due.sh) と同じ発想。
 #
 # 状態の正本はファイルの位置: issues/ 直下 / issues/next/ / issues/epic/<name>/ /
-# issues/epic/<name>/next/ = 未決着、issues/done/ = 決着済み (対象外)。group 内の pending/ は
-# 規約上予約されない (spec 3 節) が、迷子を黙って落とさないため global の pending/ と同じ
-# 扱い ([保留]・件数に数えない) で走査する (issue-sync の open 集合と揃える)。
+# issues/epic/<name>/next/ = 未決着、issues/done/ と issues/epic/<name>/done/ = 決着済み (対象外)。
+# group 内の pending/ は global の pending/ と同じ扱い ([保留]・件数に数えない) で走査する
+# (issue-sync の open 集合と揃える) — 2026-09-06 に group 内の done/ pending/ が予約された
+# 状態になった (spec 3 節 / issue 291) が、走査すべき集合はそれ以前と変わらない。
 # 本文のチェックボックスは見ない (書き換え忘れで嘘が残るため)。
 # 🚨 経過日数はファイル名末尾の `-YYYY-MM-DD` か本文の `起票日:` から取る。どちらも読めない
 # ものは黙って捨てず「日付不明」として列挙する (取りこぼしを「新しい retro」と区別できないと

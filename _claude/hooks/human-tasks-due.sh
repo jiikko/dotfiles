@@ -11,9 +11,10 @@
 #
 # 状態の正本はファイルの位置: issues/ 直下 / issues/next/ / issues/epic/<name>/ /
 # issues/epic/<name>/next/ = 未完了、issues/pending/ = 着手保留 (期限は追う)、
-# issues/done/ = 完了 (対象外)。group 内の pending/ は規約上予約されない (spec 3 節) が、
-# 置かれた迷子を黙って落とさないため global の pending/ と同じ扱い ([保留]・期限は追う) で
-# 走査する。issue-sync skill の `find … -name done -prune` も同じ集合を open と見るので、
+# issues/done/ と issues/epic/<name>/done/ = 完了 (対象外)。group 内の pending/ は global の
+# pending/ と同じ扱い ([保留]・期限は追う) で走査する — 2026-09-06 に group 内の done/ pending/ が
+# 予約された状態になった (spec 3 節 / issue 291) が、走査すべき集合はそれ以前と変わらない。
+# issue-sync skill の `find … -name done -prune` も同じ集合を open と見るので、
 # hook だけ狭くすると skill と hook で報告が食い違う。本文の既読ヘッダーは見ない (書き換え忘れで嘘が残るため)。
 # 🚨 pending も走査する: 「保留」に置いた人間タスクの期限切れを黙らせると、期限を書いた本人
 # だけが忘れる形になる (issue-sync の Step 0 も pending を見る。片方だけ黙ると検査が食い違う)。

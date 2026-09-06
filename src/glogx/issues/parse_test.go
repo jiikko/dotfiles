@@ -437,14 +437,14 @@ func TestScanReadsEpicSubdirsAsGroupMembers(t *testing.T) {
 	}
 	wants := map[string]want{
 		"001-feat-a.md": {StatusOpen, "", GroupNone, ""},
-		"epic/google-drive/393-feat-gd-phase3.md":               {StatusOpen, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
-		"epic/google-drive/casa-assessment.md":                  {StatusOpen, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
-		"epic/google-drive/next/394-feat-gd-claim.md":           {StatusNext, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
-		"epic/google-drive/done/395-feat-gd-finished.md":         {StatusDone, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
-		"epic/google-drive/pending/396-feat-gd-held.md":          {StatusPending, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
-		"epic/google-drive/closed/397-feat-gd-unknown-dir.md":    {StatusUnknown, filepath.Join("google-drive", "closed"), GroupUnknown, filepath.Join(dir, "epic", "google-drive")},
-		"epic/cloud/700-design-backend.md":                      {StatusOpen, "cloud", GroupEpic, filepath.Join(dir, "epic", "cloud")},
-		"epic/999-bug-lost.md":                                  {StatusUnknown, "epic", GroupUnknown, ""},
+		"epic/google-drive/393-feat-gd-phase3.md":             {StatusOpen, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
+		"epic/google-drive/casa-assessment.md":                {StatusOpen, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
+		"epic/google-drive/next/394-feat-gd-claim.md":         {StatusNext, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
+		"epic/google-drive/done/395-feat-gd-finished.md":      {StatusDone, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
+		"epic/google-drive/pending/396-feat-gd-held.md":       {StatusPending, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
+		"epic/google-drive/closed/397-feat-gd-unknown-dir.md": {StatusUnknown, filepath.Join("google-drive", "closed"), GroupUnknown, filepath.Join(dir, "epic", "google-drive")},
+		"epic/cloud/700-design-backend.md":                    {StatusOpen, "cloud", GroupEpic, filepath.Join(dir, "epic", "cloud")},
+		"epic/999-bug-lost.md":                                {StatusUnknown, "epic", GroupUnknown, ""},
 	}
 	if len(got) != len(wants) {
 		names := make([]string, 0, len(got))

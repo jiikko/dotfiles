@@ -39,7 +39,7 @@
     `tests/issues/test_next_links_valid.sh` が CI で同じ条件を検査する)
   - 旧運用 (ファイルそのものを `next/` へ移す) は読めるが、新しい claim では使わない。既に `next/` に
     実ファイルとして居る issue はそのまま完了まで持ってよい (直下へ戻して張り直す必要はない)
-- **group issue (`issues/epic/<name>/`) の claim は、その group 内の `next/` (`issues/epic/<name>/next/`) へ移す。完了したら global `issues/done/` へ移す。** group 内に `done/` / `pending/` は作らない。
+- **group issue (`issues/epic/<name>/`) の claim は、その group 内の `next/` (`issues/epic/<name>/next/`) へ移す。完了・保留も group 内の `done/` / `pending/` へ移す** (global の `issues/done/` へ出さない。出すとパスから epic 所属が消え、viewer が epic の進捗を出せなくなる。2026-09-06 に変更。issue 291)。global issue の完了先は従来どおり `issues/done/`。
 - **claim の commit に他の変更を混ぜない**。混ぜると push できない事情 (レビュー待ち・検証中) に
   claim が巻き込まれ、宣言だけが遅れる
   - 🚨 **push はブランチ単位**なので「claim の commit だけを push」はできない。他に未 push の
@@ -48,7 +48,7 @@
 - **push できないときは黙って進めない**。remote が進んでいるなら `git pull --rebase` してから
   push する。それでも push できない事情があるなら、**着手前にユーザーへ一言伝える**
   (claim できていない = 衝突しうる、という情報が要る)
-- 完了したら **目印 (symlink) を消してから** issue を `issues/done/` へ移す (global も group も done は global の `issues/done/`)。
+- 完了したら **目印 (symlink) を消してから** issue を done へ移す (global issue は `issues/done/`、group issue は `issues/epic/<name>/done/`)。
   symlink を残すと dangling になり CI (`test_next_links_valid.sh`) が落ちる。旧運用で `next/` に実ファイルとして
   居るものは従来どおり `next/` から `done/` へ移す
 - **`git pull --rebase` が衝突したら、claim を優先して片付ける**。claim の commit は

@@ -102,7 +102,10 @@ Claude が**実質的な作業をやり切った時点**（機能追加・バグ
   glogx の issues viewer では `<name> (N)` の親行に折り畳まれる（`Enter` / `Space` で展開）。
   **固定 2 段**で、これより深くは掘らない。`epic/` 直下に置いた md は迷子（`?`）として表示される
   - `issues/epic/<name>/next/` — group issue の claim 先（global の `next/` と同じ規律。viewer の `n` はここに `../NNN-x.md` の symlink を置く）
-  - **group 内に `done/` / `pending/` は作らない**。完了は global の `issues/done/` へ移す（group 内に置くと迷子 `?` になる）
+  - `issues/epic/<name>/done/` — **group issue の完了先**（global の `issues/done/` へは出さない。出すとパスから epic 所属が消え、viewer が「何件中何件終わったか」を答えられなくなる）。
+    viewer では group を展開すれば**状態フィルタ (`a`) を進めなくても見える**（親行に `▸ <name> (5 ✓2)` と件数 + done 件数が出る。issue 291）
+  - `issues/epic/<name>/pending/` — group issue の保留先（同上。`⏸` で見える）
+  - 予約するのは `next/` `done/` `pending/` の 3 つだけ。`closed/` のような綴りの揺れは状態にならず、中の md は迷子 `?` として一覧に出る（黙って消えはしない）
   - 契約の一次情報は [`docs/issues-viewer-spec.md`](../docs/issues-viewer-spec.md) の「対象 / 状態ディレクトリ」節
 - `audit-log` — audit 実行の記録（TSV）。issue ではない。**issue ファイルをパスで参照しているため、既存ファイルを rename するとここの参照が切れる**
 - この `README.md` も issue ではない

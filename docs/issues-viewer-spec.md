@@ -47,6 +47,8 @@ NNN-<カテゴリ>-<スラッグ>.md        例: 028-refactor-glogx-box-and-toas
 | `next/` | **次にやる** (global issue に viewer の `n` が付ける目印) | `▶` |
 | `epic/<name>/` | open (Epic group の子 issue) | `○` |
 | `epic/<name>/next/` | **次にやる** (Epic group の子 issue の claim) | `▶` |
+| `epic/<name>/pending/` | 保留 (Epic group の子 issue) | `⏸` |
+| `epic/<name>/done/` | 完了 (Epic group の子 issue) | `✓` |
 | `pending/` `hold/` `on-hold/` | 保留 (着手条件・trigger 待ち) | `⏸` |
 | `done/` `closed/` `completed/` `resolved/` | 完了 | `✓` |
 | 上記以外のサブディレクトリ | **状態にしない** (サブグループ扱い) | `?` |
@@ -56,15 +58,29 @@ NNN-<カテゴリ>-<スラッグ>.md        例: 028-refactor-glogx-box-and-toas
 `DualNoteApp/macOS/issues/mid-long-term` は状態ではなく時間軸)。黙って状態にすると
 「存在しない状態」がタブに並ぶ。
 
-`epic/<name>/done/` と `epic/<name>/pending/` は予約しない。そこに置かれた md は迷子として
-`StatusUnknown` / `?` で表示し、`Group` は `<name>/done` 等にする。`epic/` 直下の md も
-グループ名が無い迷子 (`Group = "epic"`) として表示する。`README.md` / `INDEX.md` /
-`TEMPLATE.md` は metadata なので issue 件数にも迷子にも含めない。
+group 内の状態ディレクトリは `next/` `done/` `pending/` の 3 つだけを予約する
+(`EpicChildStatus` が唯一の出典)。global 側と違って綴りの揺れ (`closed` / `completed` /
+`hold` …) は受けない — group ごとに状態ディレクトリを複製する構造なので、綴りを増やすと
+「同じ状態が 2 つの名前で並ぶ」形が group の数だけ増える。
+
+**受けない名前のサブディレクトリでも、中の md は迷子 (`StatusUnknown` / `?`、`Group` は
+`<name>/closed` 等) として一覧に出す。** 黙って捨てると、置き場所を間違えた issue が viewer から
+消えて誰も気づけない (global の語彙には `closed` があるので、group 内でも使う人が必ず出る)。
+`epic/` 直下の md もグループ名が無い迷子 (`Group = "epic"`) として表示する。`README.md` /
+`INDEX.md` / `TEMPLATE.md` は metadata なので issue 件数にも迷子にも含めない。
+
+group 内の完了・保留を global の `done/` `pending/` へ出さないのは、出した瞬間に**パスから
+epic 所属が消える**ため (状態の正本はパス)。所属が消えると「この epic は何件中何件終わったか」を
+viewer が答えられず、epic が残タスクの減っていくだけの箱になる (issue 291、2026-09-06)。
 
 Issue には `GroupKind` (`None` / `Epic` / `Unknown`) と、Epic の同一性キー `GroupKey`
 (`issue dir + epic/<name>`) がある。`GroupKind=Epic` だけを親行へまとめ、`Unknown` は従来どおり
-`?` の leaf として表示する。親行は既定で折り畳み、`▸ <name> (N)` の N は現在のタブ・状態
-filter で見える子 issue 数。親行の表示順は子の最大番号降順、同値は `GroupKey` 昇順。
+`?` の leaf として表示する。親行は既定で折り畳み、`▸ <name> (N)` の N は現在のタブで見える
+子 issue 数 (状態 filter は子には効かない。下記)。**うち done が 1 件以上あれば
+`▸ <name> (5 ✓2)` のように done の件数を続ける** (`5 件のうち 2 件が完了`)。`2/5` のような
+分数にしないのは、左の数が完了なのか残りなのかを読み手が決められないため。done が 0 件の
+group は `(N)` のままで、進捗の無い group が幅を食わない。親行の表示順は子の最大番号降順、
+同値は `GroupKey` 昇順。
 展開した子 issue の行は半角 2 桁右へ寄せる (`groupChildIndent`)。単独 issue と同じ桁に並べると、
 開いたときにどの行が group の所属か読めない (2026-09-05 ユーザー要望)。
 
@@ -85,6 +101,13 @@ group 内に **group 名と同じ番号を持つ issue** (`epic/467/467-*.md`) �
 open のみ (既定)  →  open + pending  →  open + pending + done  →  (先頭へ戻る)
      ○                    ○⏸                   ○⏸✓
 ```
+
+🚨 **この段階は epic group の子には効かない。`epic/<name>/done/` `epic/<name>/pending/` の
+子は既定 (`○` のみ) でも group を展開すれば見える** (issue 291)。epic は「まとまった仕事の器」
+なので、開いたときに中身が全部見えないと進捗 (何件中何件終わったか) が読めない。下の
+「done が全体の 8 割」という根拠は、子が数件〜十数件の epic 1 つには効かない。畳んだ親行は
+1 行しか占めないので、一覧が done で埋まることもない。判定は
+`issues.StatusFilter.showsIssue` の 1 箇所に閉じる (タブの件数も同じ関数を通る)。
 
 `done` を伏せるのは実測で done が全体の 8 割を占める repo があり、既定で混ぜると open が
 埋もれるため。`pending` も伏せるのは「着手条件・trigger 待ち = 今は動かせない」もので、既定の
@@ -507,7 +530,9 @@ viewer は「確信を持って嘘をつく」ことを最も嫌うので、次�
 
 fsnotify の対象は issue dir と、ファイルのある状態ディレクトリに加えて `issues/epic/` と全ての
 `epic/<name>/`（空でも）にする。`epic` の綴りは大文字小文字を問わず、実在する entry 名を使う。
-これで新しい group、空 group への最初の md、group 内 `next/` の作成を取り直しへつなげる。
+これで新しい group、空 group への最初の md、group 内 `next/` `done/` `pending/` の作成を
+取り直しへつなげる (予約された名前は空でも見張る。予約外の名前は「issue が居るディレクトリは
+見張る」経路で拾う)。
 指紋にも `epic/` の entry list を含めるので、空 group の追加もイベント・ポーリングのどちらから検出できる。
 
 ## 6. repo を寄せるときのチェックリスト
@@ -516,9 +541,10 @@ fsnotify の対象は issue dir と、ファイルのある状態ディレクト
 - [ ] ファイル名を `NNN-<分類語>-<スラッグ>.md` にする (番号の次に分類語)
 - [ ] 状態はディレクトリで表す (`pending/` `done/` `next/`)。Epic の claim は
       `epic/<name>/next/`、global issue の claim は `<dir>/next/`
-- [ ] Epic の完了・保留は group 内に `done/` / `pending/` を作らず、完了は global `done/` へ移す。
-      group 内に置かれたものは viewer で迷子 (`?`) になる。状態でないサブディレクトリも
-      `other` 相当として扱われる
+- [ ] Epic の完了・保留は **group 内の `epic/<name>/done/` / `epic/<name>/pending/`** へ移す
+      (global の `done/` へ出さない。出すと epic 所属がパスから消える)。予約するのはこの 2 つと
+      `next/` だけで、`closed/` のような綴りの揺れは状態にならず迷子 (`?`) として出る。
+      状態でないサブディレクトリも `other` 相当として扱われる
 - [ ] `README.md` / `INDEX.md` / `TEMPLATE.md` は metadata として置き、issue 件数に含めない
 - [ ] Epic group の親行は viewer で折り畳まれる。必要なら `Enter` / `Space` で展開し、
       展開済み group は state の `Groups` に保存する (group 名と同じ番号の issue は親行へ統合され、

@@ -42,11 +42,20 @@ pathspec commit ([`commit-with-pathspec.md`](../rules/commit-with-pathspec.md)) 
 
 obaket の `issues/epic/google-drive/` (親テーマの下に子 issue を束ねる 2 段構造) が起点。
 claim 先を **group 内の `next/`** にしたのは、global `issues/next/` へ移すと group から抜けて
-親子関係 (viewer の親行・番号 filter の自動展開) が消えるため。完了先を **global `done/`** に
-固定し group 内に `done/` / `pending/` を予約しなかったのは、状態ディレクトリを group ごとに
+親子関係 (viewer の親行・番号 filter の自動展開) が消えるため。完了先も当初は **global `done/`** に
+固定し group 内に `done/` / `pending/` を予約しなかった。状態ディレクトリを group ごとに
 複製すると「同じ状態が 2 箇所に」なり、issue-sync / hook / viewer が open の集合を数えるたびに
-group の数だけ経路が増えるため。group 内に置かれたものは viewer で迷子 (`?`) として見せ、
-hook (human-tasks-due / retro-open) は global pending と同じ扱いで拾う (黙って落とさない)。
+group の数だけ経路が増えるため。
+
+## 2026-09-06 — group の完了・保留は group 内へ (issue 291)
+
+上の判断を覆した。global `done/` へ出すと**移した瞬間にパスから epic 所属が消える**ので、
+viewer は「この epic は何件中何件終わったか」を答えられず、epic が残タスクの減っていくだけの
+箱になる。当初懸念した「経路が増える」は実測すると増えなかった: issue-sync の走査は
+`find issues -name done -prune` で**深さ非依存**、hook (human-tasks-due / retro-open) は
+元から `epic/*/pending/*.md` を未完了として拾い `epic/*/done/` を見ていない。
+viewer 側は `EpicChildStatus` 1 箇所に状態名の列挙が閉じており、走査・発見・監視の 3 経路が
+そこを通る (`src/glogx/issues_epic_status_dirs_test.go` が 3 経路の一致を固定)。
 
 契約の一次情報は `docs/issues-viewer-spec.md` 3 節・6 節。hook (`next-claim-push.sh` /
 `next-claim-unshared.sh`) の検出パターンも `issues/epic/<name>/next/` を含む。
