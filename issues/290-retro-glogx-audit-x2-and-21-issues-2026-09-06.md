@@ -103,6 +103,46 @@ termsafe を import すると `import cycle not allowed in test` で落ちる（
   **「commit message に『N 箇所すべてに対応した』と書くときは、その N を機械で数えてから書く」**を 1 項
   （今回は 4 hook と書いて 3 hook だった。数えるのは `git show --stat` で足りた）
 
+### 6.6. glogx 側も 4 件出た — 全部「対で持つと決めた状態の片割れ」🚨
+
+敵対的レビュー (opus) が 268 / 270 / 272 / 277 に 4 件。**4 件とも本物**で、うち 3 件は
+このセッションの変更が入れた退行。
+
+| issue | 症状 | 根 |
+|---|---|---|
+| 272 | 実取得中の GraphQL の札が世代交代で落ちる (「取得中なのに CI job 情報なし」) | `detailMsg` / `basisMsg` が `detailsLoading` しか消さず、宣言した包含関係が壊れる |
+| 270 | 展開しても 0 行の行で Enter が無反応なのに expanded が立ち、**次の q が飲まれて doctor が閉じない** | detail を遅延化したとき `hasDetail: true` を無条件に立てた (旧述語 `len(detail)==0` は正しかった) |
+| 277 | 移動 + 改題を同時に受けると本文が閉じ、**起きていない事象**を告げる | 見出しの不一致は「別 issue」と「改題」を区別できないのに、破壊的な側へ倒した |
+| 268 | AST ゲートが宣言した「検出しない形」のどれでもない 3 形を素通し | `owners` をレシーバと `AssignStmt` からしか埋めていない |
+
+**共通する形**: 「2 つのものを対にして持つ」と決めたのに、**対を崩す経路を洗わずに片方だけ
+更新する箇所を残した**。272 は 2 つのマップ、268 は 2 つの世代カウンタ、270 は述語と builder、
+277 は「見出し」と「同一性」。どれも
+[`survey-receiver-guards-before-passing-new-values.md`](../_claude/rules/survey-receiver-guards-before-passing-new-values.md)
+の「先に grep で洗う」を、**自分が新設した不変条件に対して**やっていれば防げた。
+
+修正では毎回「判定を 1 箇所へ寄せる」形を採った (`clearDetailsFlags` / `diskHasDetail` /
+`collapseTargetAtCursor`)。270 の修正中に **`collapsibleAtCursor` と `collapseAtCursor` が
+同じ判定の第 2 実装を持っていた**ことにも当たっており (片方を直しても挙動が変わらなくて
+気づいた)、同じ病気が既存コードにもあった。
+
+- 切り出し先: **既存ルールへ追記**。[`survey-receiver-guards-before-passing-new-values.md`](../_claude/rules/survey-receiver-guards-before-passing-new-values.md)
+  に「**不変条件を新設したら、それを崩せる経路を grep で全部挙げてから閉じる**
+  (受け側のガードを洗うのと同じ手順を、自分が宣言した不変条件へ向ける)」を 1 項。
+  発動点が「新しい値を通すとき」から「新しい不変条件を宣言したとき」へ広がるだけなので新規ルールは立てない
+
+**自分の修正にも同じ病気が出た**のは記録に値する:
+
+- 270 の修正で最初に採った「`v.rows[i].detail` の長さを見る」案は**不健全**だった
+  (rows は描画時に遅延再構築されるので、Enter 直後は展開済みでも detail が nil)。既存テスト
+  2 本が落ちて分かった。**推測で 2 発目を打たず、落ちたテストの手順を読んで**原因を特定した
+  ([`instrument-before-second-fix.md`](../_claude/rules/instrument-before-second-fix.md))
+- 272 の陽性対照は**初版が恒真**だった (先行サブテストが `m.details[sha]` を埋めるので
+  `fetchPanelDetails` が早期 return し、札が 1 つも立たないまま通る)。前提を assert して直した。
+  hooks 側の node_modules テストと**同じ形**の恒真で、1 セッションに 2 回踏んでいる
+- 変異を 1 本、perl の構文エラーで**当て損ねた**まま緑を読みかけた
+  ([`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の手順 1.5 が拾った)
+
 ### 7. 「実装後にもう一度レビューを通します」を通していなかった
 
 270（doctor の detail 遅延化）について応答でそう書いたが、通さずに次の issue へ進んだ。
