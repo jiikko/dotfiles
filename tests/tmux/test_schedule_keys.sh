@@ -38,6 +38,11 @@ CALLS="$TMP_DIR/calls.log"; : > "$CALLS"; export CALLS
 export HOME="$TMP_DIR/home"; mkdir -p "$HOME"
 export TMUX_SCHEDULE_KEYS_DIR="$TMP_DIR/state"
 export XDG_CACHE_HOME="$TMP_DIR/cache"
+# 🚨 TMPDIR を隔離する: スクリプトの mktemp は ${TMPDIR:-/tmp} 配下へ落ちるので、隔離しないと
+#    テストが実機の TMPDIR へ一時ファイルを撒く。実測 2026-09-06: 1 回の実行で 61 個、
+#    累計 14,147 個 (TMPDIR 全 18,297 エントリの 77%) が残っていた (issue 298)。
+#    残骸の掃除ではなく**発生源の遮断**が本筋 (issue 325)。
+export TMPDIR="$TMP_DIR/tmp"; mkdir -p "$TMPDIR"
 # 🚨 XDG_STATE_HOME を隔離する: 実行環境に設定があると STATE_ROOT がそちらへ向き、
 #    「socket ごとの dir」の検査が TMP_DIR の外を見て false red になる上、job を外へ書き残す
 #    (敵対的レビュー 2026-09-03 の P3-4 で実測)
@@ -134,6 +139,12 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$jobs" ] && [ -f "$jobs" ] && cp "$jobs" "$STUB_UI_JOBS_COPY.$$" && mv "$STUB_UI_JOBS_COPY.$$" "$STUB_UI_JOBS_COPY"
 [ -n "$jobs" ] && [ -f "$jobs" ] && cat "$jobs" >> "$STUB_UI_JOBS_ALL"
+# STUB_UI_BLOCK: UI が走っている最中を作る。marker を置いて、消されるまで待つ
+# (中断 = popup を外から閉じる、を再現するため。壁時計に依存させない)
+if [ -n "${STUB_UI_BLOCK:-}" ]; then
+  : > "$STUB_UI_BLOCK"
+  while [ -f "$STUB_UI_BLOCK" ]; do sleep 0.05; done
+fi
 result="${STUB_UI_RESULT:-}"
 if [ -n "${STUB_UI_QUEUE:-}" ]; then
   if [ -s "$STUB_UI_QUEUE" ]; then
@@ -1090,5 +1101,48 @@ done
 # 旧 launcher (display-menu) が復活していないこと。prefix+Enter の席はウィザードが上書きしている
 ! grep -Eq "^bind(-key)?${BIND_FLAGS} +(-T prefix +)?Enter +display-menu" "$CONF" || { printf '✗ prefix+Enter に launcher (display-menu) が復活している\n'; exit 1; }
 printf '✓ prefix+Enter は launcher ではない\n'
+
+# 🚨 一時ファイルの残骸を検査する (issue 298 / 299)。
+#    判定は rc ではなく **$TMPDIR に残った件数**。この検査が無い間、cmd_wizard は正常復帰の
+#    たびに 1 個ずつ残し続けており (実測 14,147 個)、テスト自身が 1 実行あたり 61 個の
+#    生産者だった。rc だけを見ていると何も気づけない
+#    (_claude/rules/verify-execution-not-just-exit-code.md)。
+tmp_leftovers() { find "$TMPDIR" -maxdepth 1 -name 'schedkeys*' 2>/dev/null | wc -l | tr -d ' '; }
+printf '\n## 一時ファイル: どの経路でも $TMPDIR に残さない\n'
+reset_state
+rm -f "$TMPDIR"/schedkeys* 2>/dev/null || true
+# 正常復帰の 3 経路 (予約を作る / 中止 / UI が動かない) を通す
+STUB_UI_RESULT="new	4600	make test" run "$STUB_PATH" "$SCRIPT" wizard
+[[ "$(tmp_leftovers)" == 0 ]] || { printf '✗ 予約作成の正常復帰で %s 個残った (issue 298)\n' "$(tmp_leftovers)"; ls "$TMPDIR"/schedkeys*; exit 1; }
+STUB_UI_RESULT="abort" run "$STUB_PATH" "$SCRIPT" wizard
+[[ "$(tmp_leftovers)" == 0 ]] || { printf '✗ 中止の正常復帰で %s 個残った (issue 298)\n' "$(tmp_leftovers)"; ls "$TMPDIR"/schedkeys*; exit 1; }
+STUB_UI_EXIT=127 STUB_UI_RESULT="" run "$STUB_PATH" "$SCRIPT" wizard
+[[ "$(tmp_leftovers)" == 0 ]] || { printf '✗ UI 起動失敗の復帰で %s 個残った (issue 299)\n' "$(tmp_leftovers)"; ls "$TMPDIR"/schedkeys*; exit 1; }
+printf '✓ 一時ファイル: 正常復帰 3 経路とも $TMPDIR に残骸ゼロ\n'
+
+# 中断経路 (popup を外から閉じる = UI 実行中の SIGTERM)。issue 299 の発火条件そのもの。
+# 🚨 sleep で待たない: marker の出現と残骸ゼロを**上限つきポーリング**で見る
+#    (_claude/rules/avoid-wall-clock-assertions.md)。
+wait_for() {  # $1=説明, 残りは条件コマンド
+  local msg="$1"; shift
+  local _i
+  for _i in $(seq 200); do "$@" && return 0; sleep 0.05; done
+  printf '✗ %s (10 秒待っても成立しない)\n' "$msg"; exit 1
+}
+marker_exists() { [ -f "$1" ]; }
+no_leftovers() { [ "$(tmp_leftovers)" = 0 ]; }
+rm -f "$TMPDIR"/schedkeys* 2>/dev/null || true
+BLOCK="$TMP_DIR/ui_block"; rm -f "$BLOCK"
+# 🚨 exec で起こす: `( ... ) &` だとサブシェルの pid が返り、kill -TERM がスクリプト本体へ
+#    届かない (issue 301 と同じ形。このテストを書くときに実際に踏んだ)
+( PATH="$STUB_PATH" STUB_UI_BLOCK="$BLOCK" STUB_UI_RESULT="abort" exec "$SCRIPT" wizard ) >/dev/null 2>&1 &
+wiz_pid=$!
+wait_for "UI stub が走り始めない" marker_exists "$BLOCK"
+[[ "$(tmp_leftovers)" -ge 1 ]] || { printf '✗ UI 実行中に一時ファイルが存在しない (前提が崩れている)\n'; exit 1; }
+kill -TERM "$wiz_pid" 2>/dev/null || true
+rm -f "$BLOCK"   # stub を解放してから待つ (残った子が TMPDIR を掴んだままにならないよう)
+wait "$wiz_pid" 2>/dev/null || true
+wait_for "中断後に一時ファイルが残ったまま (issue 299)" no_leftovers
+printf '✓ 一時ファイル: UI 実行中の SIGTERM でも $TMPDIR に残骸ゼロ\n'
 
 printf '\n[test-schedule-keys] all ok\n'

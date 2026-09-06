@@ -103,6 +103,39 @@ mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
 # する (scripts/tmux_periodic_save.sh が tt-restore-trigger.log に対して同じことをしている)。
 LOG_MAX_LINES="${TMUX_SCHEDULE_KEYS_LOG_MAX_LINES:-2000}"
 
+# 一時ファイルの後始末を 1 箇所へ寄せる (issue 298 / 299)。
+#
+# 🚨 trap 本文から local 変数を参照しないこと。関数から**正常復帰した後**の EXIT では
+#    その変数はスコープを抜けており空に展開されるので `rm -f ""` の空振りになる。
+#    実測 2026-09-06: 正常復帰後は `TRAP saw=[]` / 関数実行中の TERM では `TRAP saw=[<path>]`。
+#    この形で 14,147 個が TMPDIR に残っていた。
+# 🚨 bash の EXIT trap は 1 本しか持てないので、張り直しではなく配列に集約する。
+#    (bash は SIGTERM でも EXIT trap を走らせる。zsh は走らせないが、このスクリプトは bash)
+# 🚨 削除は自分が作った prefix の前方一致に限る。TMPFILES に別のパスが混ざる改修が入っても、
+#    ここが fail-closed (消さずに残す) 側へ倒れる。
+SK_TMP_PREFIX="${TMPDIR:-/tmp}/schedkeys"
+TMPFILES=()
+
+# sk_mktemp <suffix-template> — 一時ファイルを作り、後始末の対象に登録して REPLY へ返す。
+sk_mktemp() {
+  local f
+  f="$(mktemp "${SK_TMP_PREFIX}$1")" || return 1
+  TMPFILES+=("$f")
+  REPLY="$f"
+}
+
+sk_cleanup_tmpfiles() {
+  local f
+  for f in ${TMPFILES[@]+"${TMPFILES[@]}"}; do
+    [[ -n "$f" ]] || continue
+    case "$f" in
+      "$SK_TMP_PREFIX"*) rm -f "$f" 2>/dev/null || true ;;
+    esac
+  done
+  TMPFILES=()
+}
+trap sk_cleanup_tmpfiles EXIT
+
 log() {
   { printf '%s\t%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$*" >> "$LOG"; } 2>/dev/null || true
   log_rotate
@@ -339,7 +372,8 @@ prune_stale() {
 #    中止は UI が out へ "abort" と書いて exit 0 で知らせる契約
 ui_run() {
   local jobs_file=$1 label=$2 start=${3:-} out rc=0
-  out="$(mktemp "${TMPDIR:-/tmp}/schedkeys.XXXXXX")" || return 1
+  sk_mktemp ".XXXXXX" || return 1
+  out=$REPLY
   # popup が開いている間 prefix は tmux のキーテーブルへ届かず UI に素通りする (実測 2026-08-28)。
   # prefix キーを渡しておくと、起動キー (prefix+m / Enter / C-m) の再入力で閉じられる
   local prefix_key
@@ -594,13 +628,10 @@ cmd_wizard() {
   fi
   mkdir -p "$STATE_DIR" 2>/dev/null || true
   tab=$'\t'
-  # 🚨 popup が外から閉じられる (ウィンドウを閉じる / kill-session) と成功パスの rm を通らず、
-  #    全予約の文字列を含む一時ファイルが TMPDIR に残る (監査 2026-08-28)
-  jobs_file=''
-  trap 'rm -f "${jobs_file:-}" 2>/dev/null' EXIT
   pane="$(tmux display-message -p '#{pane_id}')" || return 1
   label="$(pane_label "$pane")"
-  jobs_file="$(mktemp "${TMPDIR:-/tmp}/schedkeys-jobs.XXXXXX")" || return 1
+  sk_mktemp "-jobs.XXXXXX" || return 1
+  jobs_file=$REPLY
 
   # 🚨 取消したら**一覧へ戻す** (ユーザー要望 2026-08-28)。取消の実行はここ (gum の確認つき) に
   #    あるので、UI をいったん閉じ、更新した一覧でもう一度開く。1 件消すたびに popup を閉じない。

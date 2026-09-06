@@ -18,6 +18,19 @@
 #   コメントアウトされた paths も通ってしまう。取りこぼすより出す側へ倒す方針は変えない
 #   (誤って通す形は下の quoted/unquoted 両対応で狭めてある)。
 set -uo pipefail
+
+# 一時ファイルの後始末は EXIT trap に載せる (issue 299)。成功パスの rm だけだと、
+# 途中で落ちた / 中断されたときに $TMPDIR へ残る (同型が tmux_schedule_keys.sh に 2 つあった)。
+# bash は SIGTERM でも EXIT trap を走らせる (実測 2026-09-06)。
+CGL_TMPFILES=()
+cgl_cleanup_tmpfiles() {
+  local f
+  for f in ${CGL_TMPFILES[@]+"${CGL_TMPFILES[@]}"}; do
+    [ -n "$f" ] && rm -f "$f" 2>/dev/null
+  done
+  CGL_TMPFILES=()
+}
+trap cgl_cleanup_tmpfiles EXIT
 unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -103,6 +116,7 @@ replace_dirs() {
 #    「常に見つかる」は完全に無音。負例 (push には無く pull_request にだけ在る / paths-ignore の下 /
 #    コメント行) を pin しないと、トリガーの取り違えを検出できない (敵対的レビュー 2026-09-04)
 ph_probe=$(mktemp) || fail "mktemp できない"
+CGL_TMPFILES+=("$ph_probe")
 cat > "$ph_probe" <<'PHYML'
 on:
   push:
