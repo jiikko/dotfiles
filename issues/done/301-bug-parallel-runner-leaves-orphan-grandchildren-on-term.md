@@ -59,5 +59,19 @@ GitHub Actions の cancel / `timeout-minutes` が**プロセスツリーごと�
 
 上の再現手順（偽 make が孫を起こす → ランナーへ TERM → `pgrep` で残存を数える）をテストにする。
 **判定は rc ではなく残存プロセス数**で、上限つきポーリングで待つ
-（[`avoid-wall-clock-assertions.md`](../_claude/rules/avoid-wall-clock-assertions.md)）。
+（[`avoid-wall-clock-assertions.md`](../../_claude/rules/avoid-wall-clock-assertions.md)）。
 変異検証は `kill -TERM -"$pgid"` を消すと残存が 0 でなくなって red。
+
+## 対応済み（2026-09-07 / commit ffc3af01）
+
+`scripts/run_make_targets_parallel.sh` に `set -m` を入れて各ターゲットを独立した
+プロセスグループで起こし、`kill -TERM -"$pgid"` で子孫ごと回収するようにした。
+
+- `PGIDS` に `$!`（= `set -m` 下では pgid）を積み、`reap` が group 単位で TERM を撃つ
+- `trap` を EXIT / INT / TERM の 3 本にし、INT は 130、TERM は 143 で返す
+- `wait` 完走後は `PGIDS=""` にして、正常終了時に自分の子を撃たない
+
+### 変異検証
+
+- `reap` の `kill -TERM "-$pg"` を削除 → **red**（Test 7 の孫プロセス生存チェックが落ちる）
+- Test 7 は `fake-make-tree`（孫を産む make の代役）を使い、`exec` でシグナルを実体へ届かせている

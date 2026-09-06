@@ -67,7 +67,7 @@ bash の感覚で書いた EXIT trap は、zsh では TERM の経路だけ穴が
    - 🚨 `bin/lib/go_autobuild.zsh:492` のように**先に `trap '' HUP TERM INT` を張る形は正当**なので、
      allowlist ではなく「**TERM を無視しているか、TERM を trap しているか**」の二択で判定する
 3. この事実を `_claude/rules/` に 1 行残す。**新規ルールは立てない** —
-   [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) の
+   [`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) の
    「異常系を実験で作る」表に「shell によって EXIT trap が走るシグナルが違う」を足すのが切り出し先
    （発動点が既存ルールと同じなので、CLAUDE.md の「既存ルールへの追記を既定にする」に従う）
 
@@ -80,7 +80,7 @@ bash の感覚で書いた EXIT trap は、zsh では TERM の経路だけ穴が
 （今回の監査だけで `ui_run` と `check_go_project_lanes.sh` の 2 件が同型だった）。
 
 🚨 **ただし字句 gate なので**
-[`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) §8 に従い、
+[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) §8 に従い、
 **脅威モデル（うっかり書く典型形を止める / 意図的迂回は review の責務）と「検出しない形」を
 ヘッダに先に書く**こと。canary は本走査と同じ関数を通すこと。gate 自体が自作の安全機構なので、
 新設するなら異常系の実験と敵対レビューを最終ゲートに通す。

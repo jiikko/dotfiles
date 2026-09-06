@@ -49,7 +49,7 @@ __av1ify_run_batch() {
 ## 検証
 
 長時間走る fake を prefetch させ、正常終了後に `kill -0` が偽になることを**上限つきポーリング**で見る
-（壁時計に依存させない。[`avoid-wall-clock-assertions.md`](../_claude/rules/avoid-wall-clock-assertions.md)）。
+（壁時計に依存させない。[`avoid-wall-clock-assertions.md`](../../_claude/rules/avoid-wall-clock-assertions.md)）。
 **変異検証**: 正常終了パスの kill を消して red を確認する。
 
 ## 監査側の根拠のうち 1 件は誤り（記録）
@@ -59,3 +59,36 @@ __av1ify_run_batch() {
 `-f` モードの統合（次ファイルの prefetch 順序）まで見ている。
 **核心（正常経路の kill を pin したテストが 0 件）は正しい**ので指摘自体は採るが、
 数の主張は機械で数えてから書くこと。
+
+## 対応済み（2026-09-07 / commit ef1b5c70）
+
+`zshlib/_av1ify.zsh` の `__av1ify_run_batch` を薄いラッパーにし、実体を
+`__av1ify_run_batch_impl` へ移して、**正常復帰でも** `__av1ify_kill_prefetches` を通すようにした。
+
+```zsh
+__av1ify_run_batch() {
+  __av1ify_run_batch_impl "$@"
+  local _rc=$?
+  __av1ify_kill_prefetches
+  return $_rc
+}
+```
+
+### zsh の `always` を採らなかった理由
+
+最初は `{ ... } always { ... }` で書いたが、**`make test` の shellcheck が SC1072 で落ちる**
+（`_av1ify.zsh` は `Makefile:7` の shellcheck 対象側に意図的に置かれている）。
+`ZSH_SYNTAX_FILES` へ移す案は、ユーザー入力のファイル名に対する SC2086 の検査を失うため却下した。
+ラッパー化なら bash 構文の範囲に収まる。
+
+### 変異検証
+
+- ラッパーの `__av1ify_kill_prefetches` 呼び出しを `: # MUTANT` に置換 → **red**（Test 18）
+- 最初に当てた「`always` ブロックごと削除」は**波括弧が閉じずパースエラー**になったので、
+  red でも green でもない第 3 の結果として扱い、ビルドできる形で当て直した
+
+### 残した設計判断
+
+バッチ開始時の `__AV1IFY_PREFETCH_PIDS=()` は**そのまま**にした。ここで kill すると、
+`__av1ify_kill_prefetches` に生存チェックが無いぶん **pid 再利用で無関係のプロセスを撃つ**
+可能性が出る。開始時のリセットは「前バッチの pid を持ち越さない」目的で足りている。

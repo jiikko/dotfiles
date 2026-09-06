@@ -48,7 +48,7 @@ trap 'rm -f "${jobs_file:-}" 2>/dev/null' EXIT   # out は対象外
 2. `check_go_project_lanes.sh` にも同じ形を当てる
 3. テストは「UI stub がファイルを作ったことを**上限つきポーリング**で確認 → SIGTERM →
    `$TMPDIR/schedkeys.*` が 0 件」。壁時計に依存させない
-   （[`avoid-wall-clock-assertions.md`](../_claude/rules/avoid-wall-clock-assertions.md)）
+   （[`avoid-wall-clock-assertions.md`](../../_claude/rules/avoid-wall-clock-assertions.md)）
 
 ## 🚨 採ってはいけない修正案（却下理由）
 
@@ -61,3 +61,21 @@ trap 'rm -f "${jobs_file:-}" 2>/dev/null' EXIT   # out は対象外
 - issue 298（同じスクリプト。正常復帰パスの漏れ。**修正を混ぜないこと** — 298 の trap 差し替えは
   こちらの被覆を落とす）
 - issue 307（この形を機械で止める gate の検討）
+
+## 対応済み（2026-09-07 / commit ec1061b5）
+
+298 と同じ `sk_mktemp` / `sk_cleanup_tmpfiles` へ寄せて閉じた（`ui_run` の
+`out="$(mktemp ...)"` を `sk_mktemp ".XXXXXX"; out=$REPLY` に置換）。
+
+### 変異検証
+
+- `ui_run` の `sk_mktemp` を素の `mktemp` に戻す → **red**（ビルドできたことを確認したうえで rc=1）
+- 中断経路のテストは `exec` でシグナルを実体へ届かせ、成立条件を上限つきでポーリングする形にした
+  （`( ... ) &` のサブシェルに `kill` を撃つと**スクリプト本体に届かない**。このセッションで
+  2 度踏んだので両方のテストにコメントを残した）
+
+### 検証時に踏んだ罠（記録）
+
+- **`make test` の並列実行下でだけ落ちる形**があった。wizard を kill したあとスタブを解放すると、
+  孤児になったスタブが `$out` を書き直して後始末を打ち消す。スタブの書き込みを待ちループの**前**へ
+  移し、ポーリング上限を 10 秒 → 60 秒にして 3 回連続 green を確認した

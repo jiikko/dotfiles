@@ -61,7 +61,7 @@ local はスコープ内なので trap は正しく展開されファイルは�
 2. `tests/tmux/test_schedule_keys.sh` に **`export TMPDIR="$TMP_DIR"`** を張る。
    現状 `wizard` を 58 回呼びながら実 TMPDIR を隔離しておらず、**テスト自身が残骸の生産者**
 3. **検証は rc でなく実行前後の `schedkeys-jobs.*` の件数**で見る
-   （[`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)）
+   （[`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)）
 4. **変異検証**: 足した `rm` を消すと残留数が増えて red になることを同じ commit で確認する
 5. 既存の 14,147 個を掃除する（`$TMPDIR/schedkeys-jobs.*` 前方一致に限定）
 
@@ -72,7 +72,7 @@ local はスコープ内なので trap は正しく展開されファイルは�
   （`cmd_fire` の `STATE_DIR` が実例。`resolve_state_dir` が同じ危険を明示的に潰している）、
   破壊的操作の根を env 由来のパスにすることになる。どうしても採るなら **trap 前の無条件初期化 +
   `${TMPDIR}/schedkeys-` 前方一致の `case` 検査**を同じ commit に入れること
-  （[`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) §0-A）
+  （[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) §0-A）
 
 ## 露出境界（severity の根拠を分ける）
 
@@ -84,5 +84,28 @@ local はスコープ内なので trap は正しく展開されファイルは�
 ## 関連
 
 - issue 299（同じスクリプトの `ui_run` の out。中断パスの漏れ。別機構）
-- [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) §0-A
-- [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md)
+- [`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) §0-A
+- [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md)
+
+## 対応済み（2026-09-07 / commit ec1061b5）
+
+`scripts/tmux_schedule_keys.sh` に登録式の後始末を入れた。
+
+- `sk_mktemp` が `mktemp` の結果を `TMPFILES` 配列へ登録し、`REPLY` で返す
+- `sk_cleanup_tmpfiles` が `$SK_TMP_PREFIX` で始まるものだけを消す（prefix 不一致は消さない = fail-closed）
+- `trap sk_cleanup_tmpfiles EXIT` を 1 本に集約し、`cmd_wizard` の
+  `trap 'rm -f "${jobs_file:-}"' EXIT`（後から張られると前の trap を潰す形）を撤去した
+
+### 変異検証
+
+| 変異 | 結果 |
+|---|---|
+| `trap sk_cleanup_tmpfiles EXIT` を削除 | **red**（正常復帰 3 経路の残骸テストが全て落ちる） |
+| `ui_run` の `sk_mktemp` を素の `mktemp` に戻す（= 299 の形） | **red**（ビルド OK を確認したうえで rc=1） |
+
+### 実測
+
+- テスト側の `TMPDIR` 隔離が無かったため、`tests/tmux/test_schedule_keys.sh` は
+  **1 回の実行で 61 件**を `$TMPDIR` に落としていた。修正後は 0 件
+- 掃除の実測: `schedkeys-jobs.*` / `schedkeys.*` を削除して **TMPDIR 18,302 → 4,136 エントリ**
+  （削除 14,166 件のうち schedkeys 由来 14,152 件 ≒ 232 回ぶんのテスト実行）
