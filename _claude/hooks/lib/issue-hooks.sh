@@ -113,3 +113,15 @@ issue_hook_emit() {
     printf '%s' "$ctx"
   fi
 }
+
+# issue_progress_json_field <json> <key>: 文字列 / 真偽値のトップレベル値を取る。
+# jq が無い環境では sed で拾う (黙って空にしない: 空は「取れなかった」の意味で呼び出し側が exit 0 する)。
+issue_progress_json_field() {
+  local json="$1" key="$2"
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$json" | jq -r --arg k "$key" '.[$k] // empty | tostring' 2>/dev/null || true
+  else
+    printf '%s' "$json" | tr -d '\n' \
+      | sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([^\",}]*\)\"\{0,1\}.*/\1/p"
+  fi
+}

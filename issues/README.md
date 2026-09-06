@@ -81,6 +81,10 @@ Claude が**実質的な作業をやり切った時点**（機能追加・バグ
   実装の有無では判定できないため、`issue-sync` の自動 done 判定の対象外（`human` と同じ扱い）
 - ルールに落ちた項目は `_claude/rules/` を正本とし、retro 側には要約を残さない（二重管理は乖離を生む）
 - 却下した項目は消さずに「却下: 理由」を 1 行残す（同じ気づきが次の retro で再生産されるのを防ぐ）
+- **関わった issue の更新漏れは応答の終わりに自動で差し戻される**: `_claude/hooks/issue-progress-check.sh`（Stop）。
+  開始時 HEAD（`issue-progress-start.sh` が SessionStart で記録）からの commit subject `(NNN)` / next/ の claim を
+  「関わった issue」とし、本文が未変更・進捗の追記なし・参照する open issue が未変更なら block して書かせる。
+  正本は `~/.claude/CLAUDE.md`「Issue管理」。
 - **未決着の retro はセッション開始時に自動で出る**: `_claude/hooks/retro-open.sh`（SessionStart
   hook。配線は `_claude/settings.json`）が open な retro を古い順に列挙する。`human` の期限催促
   （`human-tasks-due.sh`）と同じ「読む契機を起動に依存させない」ための仕掛け。

@@ -5,7 +5,6 @@
   "permissions": {
     "defaultMode": "auto"
   },
-  "model": "opus",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -89,6 +88,11 @@
             "type": "command",
             "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh idle",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/dotfiles/_claude/hooks/issue-progress-check.sh",
+            "timeout": 10
           }
         ]
       }
@@ -114,6 +118,11 @@
           {
             "type": "command",
             "command": "~/dotfiles/_claude/hooks/claude-links-sync.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/dotfiles/_claude/hooks/issue-progress-start.sh",
             "timeout": 10
           }
         ]
@@ -143,20 +152,8 @@
   },
   "language": "日本語",
   "alwaysThinkingEnabled": true,
-  "modelSettings": {
-    "claude-opus-5": {
-      "effortLevel": "low"
-    },
-    "claude-fable-5": {
-      "effortLevel": "low"
-    },
-    "claude-fable-5-1": {
-      "effortLevel": "low"
-    }
-  },
   "skipWorkflowUsageWarning": true,
   "preferredNotifChannel": "notifications_disabled",
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true,
-  "advisorModel": "opus"
+  "skipAutoPermissionPrompt": true
 }

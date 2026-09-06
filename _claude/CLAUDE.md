@@ -82,6 +82,7 @@
 - **設計判断・仕様・調査記録は `docs/`**（索引は [`docs/README.md`](../docs/README.md)）。触る前に読む制約
   (glogx の bubbletea v2 / テーマ色の定数 / tmux のセッション永続化) と、glogx の画面の契約がここにある。
   **新しく足したら索引に 1 行足す**（載っていない文書は存在を知っている人にしか届かない）
+- **issue に関わる作業は、commit のたびに当該 issue の本文へ todolist / 進捗 / 結果 / 残タスクを追記する**（chat の報告は流れる。issue 本文が唯一残る）。todolist は受け入れ条件のチェックボックス、進捗は各項目の状態と対応 commit（hash でなく subject）、結果は実測値（テスト件数・A-B・変異の red）、残タスクは未着手 / スコープ外 / 未検証を分けて列挙する。done へ移す commit では、その番号を残課題として参照している open issue にも「NNN で解消 / 継続」を 1 行追記する。取りこぼしは Stop hook（`_claude/hooks/issue-progress-check.sh`。SessionStart の `issue-progress-start.sh` が記録した開始時 HEAD からの差分で「issue を 1 度も触っていない」「触ったが `[x]` も進捗系の見出しも増えていない」「番号を参照する open issue が未変更」を検出し、block で差し戻す。同じ指摘は 1 セッション 1 回）が止めるが、hook が見るのは構造までで、本文の正しさは書く側の責任
 - **検証・監査・レビューのレポートを `./tmp` に出したら、結論・全数勘定・却下理由を issue （または対象コードのコメント）へ移すまでが 1 セット**。`tmp/` は gitignore なのでレポート本体は消える。特に「却下した指摘とその理由」は残さないと次の audit が同じ指摘を再生成する。詳細は [`move-report-conclusions-to-issues.md`](rules/move-report-conclusions-to-issues.md)
 
 ## 設計方針
