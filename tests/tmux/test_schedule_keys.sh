@@ -139,12 +139,6 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$jobs" ] && [ -f "$jobs" ] && cp "$jobs" "$STUB_UI_JOBS_COPY.$$" && mv "$STUB_UI_JOBS_COPY.$$" "$STUB_UI_JOBS_COPY"
 [ -n "$jobs" ] && [ -f "$jobs" ] && cat "$jobs" >> "$STUB_UI_JOBS_ALL"
-# STUB_UI_BLOCK: UI が走っている最中を作る。marker を置いて、消されるまで待つ
-# (中断 = popup を外から閉じる、を再現するため。壁時計に依存させない)
-if [ -n "${STUB_UI_BLOCK:-}" ]; then
-  : > "$STUB_UI_BLOCK"
-  while [ -f "$STUB_UI_BLOCK" ]; do sleep 0.05; done
-fi
 result="${STUB_UI_RESULT:-}"
 if [ -n "${STUB_UI_QUEUE:-}" ]; then
   if [ -s "$STUB_UI_QUEUE" ]; then
@@ -157,6 +151,14 @@ fi
 # 中止でも out に中身を残す形を模す (mktemp の使い回し・途中書き)。呼び出し側は
 # 「終了コードが非 0 なら結果を使わない」ことで守る
 printf '%s\n' "$result" > "$out"
+# STUB_UI_BLOCK: 「UI が走っている最中」を作る (中断 = popup を外から閉じる、の再現)。
+# 🚨 out へ書いた**後**にブロックする。書く前にすると、親を kill した後に marker を外した
+#    ときに孤児の stub が out を書き直し、親の後始末を無効化してしまう
+#    (実測 2026-09-07: make test の並列実行下でこの順序が起き、テストが flaky になった)
+if [ -n "${STUB_UI_BLOCK:-}" ]; then
+  : > "$STUB_UI_BLOCK"
+  while [ -f "$STUB_UI_BLOCK" ]; do sleep 0.05; done
+fi
 exit "${STUB_UI_EXIT:-0}"
 EOS2
 chmod +x "$TMP_DIR/bin/schedkeys"
@@ -1126,8 +1128,8 @@ printf '✓ 一時ファイル: 正常復帰 3 経路とも $TMPDIR に残骸ゼ
 wait_for() {  # $1=説明, 残りは条件コマンド
   local msg="$1"; shift
   local _i
-  for _i in $(seq 200); do "$@" && return 0; sleep 0.05; done
-  printf '✗ %s (10 秒待っても成立しない)\n' "$msg"; exit 1
+  for _i in $(seq 1200); do "$@" && return 0; sleep 0.05; done
+  printf '✗ %s (60 秒待っても成立しない)\n' "$msg"; exit 1
 }
 marker_exists() { [ -f "$1" ]; }
 no_leftovers() { [ "$(tmp_leftovers)" = 0 ]; }

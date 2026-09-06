@@ -615,7 +615,7 @@ __av1ify_targets_from_clipboard() {
 #         NG ありで返るときは __AV1IFY_LAST_NG_REASON に集計理由をセットする
 #         (バッチ内にディレクトリが混在するケースで、外側のバッチが NG として
 #          集計できるようにするため)
-__av1ify_run_batch() {
+__av1ify_run_batch_impl() {
   local target ok=0 ng=0
   local -a ng_list=()
   local -a targets=( "$@" )
@@ -627,10 +627,6 @@ __av1ify_run_batch() {
   #    ここで kill する形にすると、__av1ify_kill_prefetches は生存確認を持たないため
   #    PID 再利用で無関係なプロセスを殺しうる。
   __AV1IFY_PREFETCH_PIDS=()
-  # 🚨 全出口 (正常 / NG / 中断) で prefetch を看取る。always は trap と違って
-  #    再帰呼び出し時に外側の trap を壊さない (zshlib/_concat.zsh:537 と同じ理由)。
-  #    中断パスの明示的な kill は残す (そこでは「中断」の表示より先に殺したいため)
-  {
   for (( i = 1; i <= n; i++ )); do
     target="${targets[i]}"
     print -r -- "---- 処理: $target"
@@ -677,9 +673,21 @@ __av1ify_run_batch() {
     return 1
   fi
   return 0
-  } always {
-    __av1ify_kill_prefetches
-  }
+}
+
+# __av1ify_run_batch は実体 (__av1ify_run_batch_impl) を呼び、**全出口で** prefetch を看取る
+# 薄いラッパー (issue 306)。実体は正常終了 / NG / 中断のどの return からも抜けるので、
+# 看取りを実体の中に書くと必ずどれかを取りこぼす。
+#
+# 🚨 zsh の always ブロックは使えない。このファイルは「sh 互換なので shellcheck 側」に
+#    意図的に置かれており (Makefile:7 の ZSH_SYNTAX_FILES の注記)、always を書くと
+#    静的解析が構文エラー (SC1072) で落ちる。ZSH_SYNTAX_FILES へ移すのは、
+#    ユーザー由来のファイル名を扱うこのコードから SC2086 系の検査を外すことになるので採らない。
+__av1ify_run_batch() {
+  __av1ify_run_batch_impl "$@"
+  local _rc=$?
+  __av1ify_kill_prefetches
+  return $_rc
 }
 
 av1ify() {
