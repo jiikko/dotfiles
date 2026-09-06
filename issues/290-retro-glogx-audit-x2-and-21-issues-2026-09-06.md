@@ -73,6 +73,36 @@ termsafe を import すると `import cycle not allowed in test` で落ちる（
 
 → **issue 289 として起票済み**（変異で実測: 溢れる分岐を 1 本足しても幅ゲート 4 本とも緑）。
 
+### 6.5. 276 の hooks 修正が **2 つのリグレッションを本番へ出していた** 🚨
+
+セッション全体の敵対的レビュー (opus) が 6 件出し、5 件を再現できた。うち 2 件は
+**親コミットでは正しく動いていたものを壊した**もので、master に載ったまま数時間動いていた。
+
+| 症状 | 原因 |
+|---|---|
+| 無関係な `web/pages/issues/next/index.tsx` を「未共有の claim」と毎プロンプト誤報 | pathspec を外したとき、突き合わせの grep が**アンカー無し・深さ無制限**になり、ゲート (深さ 1 段) と非対称になった |
+| 未 push claim の識別子が commit hash から `face detection.py` に化ける | `%h %s` + `--name-only` を `/^[0-9a-f]+ /` で読み、**16 進の字だけの語で始まるファイル名**をヘッダと誤認 |
+
+**なぜ自分で気づけなかったか**が本題。276 の実装中に**シェルのバグを 3 つ自力で見つけて直して**おり、
+「難所は越えた」という感覚になっていた。実際にはそこから先が手薄で、
+
+- `next-claim-push.sh` の入れ子対応は**テストが 1 件も無かった**（commit message には
+  「4 hook すべてに入れ子のケースを追加」と書いた。**書いたことと入れたことが違う**）
+- 変異検証の記録に `next-claim-push` が無いこと自体が、無検査であることの証拠だった
+  （記録を見返せば気づけた）
+
+さらに、**修正のテストを書いたら初版が恒真だった**: `node_modules/issues/next/` を untracked のまま
+置いたので git が `?? node_modules/` へ畳み、パスが porcelain に出ず、除外が無くても緑になった。
+変異を当てて初めて分かった。
+
+- 切り出し先: **既存ルールへ追記**。[`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md)
+  の「よくある『守っていないテスト』の形」に
+  **「fixture を untracked のまま置いて `git status` の出力を当てにする（git はディレクトリを畳むので
+  パスが出ない）」**を 1 項
+- 切り出し先: **既存ルールへ追記**。`~/.claude/CLAUDE.md`「レビュー方針」に
+  **「commit message に『N 箇所すべてに対応した』と書くときは、その N を機械で数えてから書く」**を 1 項
+  （今回は 4 hook と書いて 3 hook だった。数えるのは `git show --stat` で足りた）
+
 ### 7. 「実装後にもう一度レビューを通します」を通していなかった
 
 270（doctor の detail 遅延化）について応答でそう書いたが、通さずに次の issue へ進んだ。
@@ -90,5 +120,8 @@ termsafe を import すると `import cycle not allowed in test` で落ちる（
   慣習の「+4」がこのケースには足りないことを実測で示してから広げた
 
 ## 未着手
+
+- **P3 のうち 1 件は未対応**（ファイル名に改行が入ると期限切れ issue が無音で落ちる）。
+  この repo の `NNN-cat-slug.md` 命名では到達しないので受容し、記録だけ残す
 
 - **278**（human: glogx の epic group view の目視確認）は人間しかできない作業なので open のまま
