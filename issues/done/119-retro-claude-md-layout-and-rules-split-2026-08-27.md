@@ -127,7 +127,7 @@ green のまま通った (grep で `termwidth.Of` が 0 件になって気づい
 - **項目 6 → 却下 (issue 化しない)**。per-file link を続ける。dir symlink 化は
   過去に二重リンク事故で per-file へ移行した経緯があり、**戻す動機がその事故より強くない**。
   漏れの検出は項目 5 の link 完全性テストが担う (CI では skip されるが手元では効く)
-- **項目 8 → 実施**。[`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md)
+- **項目 8 → 実施**。[`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md)
   の「復元の作法」に「**worktree でも `git checkout --` は安全にならない**」を追記した
   (worktree が消すのは他人の混入だけで、その worktree にある自分の未コミット変更は同じように
   消える。しかも戻った旧実装が build も test も通せば green のまま気づけない)

@@ -84,7 +84,7 @@ commits / panel と構造的に結合しており、`job_detail_overlay.go` 冒�
 で grep したが、**CI 取得の会計を扱った既存 issue は無い** (統合先なし)。
 
 ⚠️ 近傍で**却下済み**の指摘があるので再提案しないこと:
-issue [071](done/071-research-design-audit-2026-08-20.md) の「`actionModal` が相互排他な UI 状態を
+issue [071](071-research-design-audit-2026-08-20.md) の「`actionModal` が相互排他な UI 状態を
 7 本の bool で持つ」は、**issue 074 が同じ `action_modal.go` を map 化する予定**という理由で
 切り出さないと決まっている。本 issue の `fetching` は `action_modal.go` ではなく
 `browseModel` の CI 会計なので別件だが、「bool を型へ寄せる」提案として混同しないこと。
@@ -93,7 +93,7 @@ issue [071](done/071-research-design-audit-2026-08-20.md) の「`actionModal` �
 
 - issue 223 (`awaitCI` の phantom。本件の「所有者不在」の帰結の 1 つ)
 - issue 227 (同じ「単一の概念が手書きで散る」形。あちらは全画面ビューア)
-- issue [085](done/085-refactor-glogx-chrome-composition-dup.md) — 「doc が一本化を主張しているのに
+- issue [085](085-refactor-glogx-chrome-composition-dup.md) — 「doc が一本化を主張しているのに
   実体は N コピー」を実際に寄せた前例 (変異検証の形も同じ)
 
 ## 対応 (2026-09-04。`7fcc8a56`)

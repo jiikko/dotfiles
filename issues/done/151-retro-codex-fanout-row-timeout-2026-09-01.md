@@ -27,8 +27,8 @@ issue 150 (旧 148) への対応。manifest 第 6 列 `timeout_s` の実装・�
 (ロケール依存・桁あふれ) を踏んでいなかった。「変異は自分が想定した不変条件しか試さない」の
 教科書的な実例。
 
-- 切り出し先候補: [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) /
-  [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の「実測 3 回」を 4 回へ更新
+- 切り出し先候補: [`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) /
+  [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) の「実測 3 回」を 4 回へ更新
 
 ### 2. shell の数字検証ゲートに `[0-9]` 範囲式を使う罠は横展開が広い
 
@@ -55,11 +55,11 @@ repo 内に `*[!0-9]*` は 25 箇所あるが、他は全て「非数値 → 安
 
 ## 切り出し結果 (2026-09-01)
 
-- 反省点 1 → [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) /
-  [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の実測回数を
+- 反省点 1 → [`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) /
+  [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) の実測回数を
   3 → 4 に更新。4 回目の詳細 (単純な入力検証ゲートでも想定の外側が残る) は
   adversarial 側の rationale に節として追記
-- 反省点 2 → 新ルール [`shell-numeric-gate-explicit-digits.md`](../_claude/rules/shell-numeric-gate-explicit-digits.md)
+- 反省点 2 → 新ルール [`shell-numeric-gate-explicit-digits.md`](../../_claude/rules/shell-numeric-gate-explicit-digits.md)
   を作成 (トリガー型: die/reject の数値検証ゲートを書く瞬間。フォールバック用途は対象外と明記)。
   実測の再現コマンド・ゲート/フォールバックを分けた理由は同名 rationale に置いた。`./setup.sh`
   再実行で link 済み

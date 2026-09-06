@@ -2,7 +2,7 @@
 
 起票日: 2026-09-02
 重要度: **P2**
-関連: [issues/163](163-audit-doctor-implementation-red-team.md) (体 6) / [`_claude/rules/new-tool-requires-entrypoint-docs.md`](../_claude/rules/new-tool-requires-entrypoint-docs.md)
+関連: [issues/163](163-audit-doctor-implementation-red-team.md) (体 6) / [`_claude/rules/new-tool-requires-entrypoint-docs.md`](../../_claude/rules/new-tool-requires-entrypoint-docs.md)
 
 ## 対象
 

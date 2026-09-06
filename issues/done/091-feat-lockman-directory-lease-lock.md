@@ -104,7 +104,7 @@ fi
 
 - 中身に `expires_at` を**持たせない**。「中身の期限」と「mtime」の 2 出典があると、
   片方だけ更新する実装が生まれて無音で drift する
-  ([068](done/068-bug-snapshot-health-lock-owner-format-drift.md) がまさにこれ)
+  ([068](068-bug-snapshot-health-lock-owner-format-drift.md) がまさにこれ)
 - **`renew` は `utimes` を使わない**。`utimes` はクライアントの時計を書き込むので、
   時計ずれがそのまま混入する。**同じ内容を書き直してサーバに mtime を打刻させる**
 - 🚨 打刻したのが本当にサーバかを **renew のたびに検算する**: 書き直した後の mtime と
@@ -437,9 +437,9 @@ smbfs はサーバ不達で長時間ブロックする。スクリプトの中�
   素直に書けるのは Go
 - **shell で書くと race を作り込む**。既存の mkdir ベース lock は
   [078](078-refactor-resurrect-lock-owner-two-impls.md) のとおり owner 判定が 2 実装に
-  分裂し、その drift が [068](done/068-bug-snapshot-health-lock-owner-format-drift.md) の
+  分裂し、その drift が [068](068-bug-snapshot-health-lock-owner-format-drift.md) の
   実バグになった
-- `src/` に新規プロジェクトの 3 点セット規約がある → [src/README.md](../src/README.md)
+- `src/` に新規プロジェクトの 3 点セット規約がある → [src/README.md](../../src/README.md)
 
 **配布**: `bin/lockman` は既存の `bin/glogx` と同じ `bin/lib/go_autobuild.zsh` 方式に
 合わせる (ソース更新時に自動再ビルド)。ただし **lockman は `--async` を使わない**:

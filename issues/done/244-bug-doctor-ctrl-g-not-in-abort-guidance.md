@@ -3,7 +3,7 @@
 起票日: 2026-09-04
 種別: bug (案内と挙動の非対称)
 優先度: **P3**
-出典: [issues/done/236](done/236-research-doctor-delete-audit-2026-09-04.md) の P3-6 を切り出したもの。
+出典: [issues/done/236](236-research-doctor-delete-audit-2026-09-04.md) の P3-6 を切り出したもの。
 236 の他の 5 件は対応済み (4 件を修正 / 1 件は理由つきで据え置き)
 対象: `src/glogx/tui.go` (`handleDeleteKey("ctrl+c")` へ渡す分岐) / `src/glogx/doctor_delete.go` (パネルの案内)
 

@@ -4,8 +4,8 @@
 種別: refactor
 優先度: **P2** (068 の直接原因と同根。書式が片方だけ動くと無音で「先任が生きている」誤認に戻る)
 
-出典: 監査 [070](done/070-research-quality-audit-2026-08-20.md) の `070-two-owner-impls` /
-`070-guards-empty-owner-steal`、[071](done/071-research-design-audit-2026-08-20.md) の
+出典: 監査 [070](070-research-quality-audit-2026-08-20.md) の `070-two-owner-impls` /
+`070-guards-empty-owner-steal`、[071](071-research-design-audit-2026-08-20.md) の
 `071-lock-acquire-verbatim-dup`。監査時は未裏取りだったので 2026-08-21 に実コードで確認した。
 **出典 issue には「反証で崩れた (却下)」の一覧がある。同型の指摘を再提案する前にそちらを読むこと**
 (裏取り・反証レポートは `./tmp/` に出したが gitignore で失われており、出典 issue が唯一の記録)。
@@ -20,7 +20,7 @@
   / `tt_save_lock_older_than` — save 側だけの独立実装。指紋の作り方が違う
   (`ps -o lstart= | tr -s '[:space:]' '_'`)
 
-[068](done/068-bug-snapshot-health-lock-owner-format-drift.md) は「owner 書式の出典が複数ある」
+[068](068-bug-snapshot-health-lock-owner-format-drift.md) は「owner 書式の出典が複数ある」
 ことが原因だった。バグ自体は直したが**出典の二重化は残っている**ため、片方の書式を変えると
 同型の drift が再発する。
 

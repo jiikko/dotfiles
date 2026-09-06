@@ -1,7 +1,7 @@
 # 206 perf: doctor の未計測項目 (実機の fd / プロセスグループ / 起動時間の before-after) を埋める
 
 起票日: 2026-09-03
-出典: [issues/163](done/163-audit-doctor-implementation-red-team.md) の「体 4」(計測の大半は済んでいて、実機観察だけが残った)
+出典: [issues/163](163-audit-doctor-implementation-red-team.md) の「体 4」(計測の大半は済んでいて、実機観察だけが残った)
 重要度: **P3** (済んだ計測は全部「問題なし」だった。残りは網羅性のため)
 対象: `src/glogx/doctor_view.go` / `doctor_cache.go`、`src/doctor/runner/runner.go`、`bin/glogx` の起動
 
@@ -33,7 +33,7 @@ Go のテスト内では測ったが、**実機で `bin/glogx` を起動した�
 
 `Init` で `loadDoctorDiskCache` (ファイル 1 本読み) を足したので、受け入れ条件の
 「起動時間が悪化しない」を実測で言えるようにする。単体は 26.5µs なので**悪化しないはず**だが、
-[`perf-claims-need-measurement.md`](../_claude/rules/perf-claims-need-measurement.md) に照らすと
+[`perf-claims-need-measurement.md`](../../_claude/rules/perf-claims-need-measurement.md) に照らすと
 「未実測」のまま「悪化しない」と書くのは避けたい。
 
 - doctor を足す前の commit と現在で、起動〜初回描画を 10 回ずつ測って中央値を比べる
@@ -46,7 +46,7 @@ Go のテスト内では測ったが、**実機で `bin/glogx` を起動した�
 
 🚨 ただし **④ (削除) を実装するときは (a) を先にやる**。削除は破壊的操作を新設するので、
 「閉じた後に何が残るか」を実機で確かめていない状態で進めるべきではない
-([`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) 節 1)。
+([`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) 節 1)。
 
 ## 163 から引き継いだ「未確認」と「記録に留めた」もの
 
@@ -59,7 +59,7 @@ Go のテスト内では測ったが、**実機で `bin/glogx` を起動した�
 | 記録 | 出典 | 扱い |
 |---|---|---|
 | `var/mongodb` と `mongodb-community@X` 型の formula 名不一致は**該当 formula が無く未確認** | 163 の却下節 (体 1) | brew に該当 formula を入れる機会があれば確かめる。無ければ未確認のまま |
-| **`make test` は `-v` 無しなので skip が出力に出ない** (CI で検査が skip に化けても緑に見える) | 163 の却下節 (体 5) | 163 は「今回は実害なし」として記録に留めた。[issues/188](next/188-test-make-test-duration-and-split.md) が `make test` の構成を扱うので、そちらで拾うのが自然 |
+| **`make test` は `-v` 無しなので skip が出力に出ない** (CI で検査が skip に化けても緑に見える) | 163 の却下節 (体 5) | 163 は「今回は実害なし」として記録に留めた。[issues/188](188-test-make-test-duration-and-split.md) が `make test` の構成を扱うので、そちらで拾うのが自然 |
 | `lines()` のメモ化を**再検討する trigger = 行数が 200 を超える設計変更** | 163 の却下節 (体 4) | 現状 60〜100 行。206 の (a)(b) とは独立 |
 | 体 5 は**報告本文を書く前に落ちた**ので、証跡の表に無い攻め口は当たっていない | 163 の進捗表 | 環境差の観点をもう 1 度攻めるなら、163 の「体 5」節の攻め口一覧を起点にする |
 
@@ -76,7 +76,7 @@ Go のテスト内では測ったが、**実機で `bin/glogx` を起動した�
 `pgrep -g <glogx pid>` で子を数えていたが、**`runner.Exec` は `Setpgid: true` で子を
 「自分自身の pgid」にする**ので、glogx のプロセスグループには最初から入らない。
 「子 0 件」は漏れの不在ではなく、**観測手段の不在**だった (規範:
-[`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
+[`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)
 「有無で結果が変わらない観測を証拠に数えない」)。親子関係 (`pgrep -P` の再帰) へ直して測り直した。
 
 | 測ったもの | 実測 | 判定 |

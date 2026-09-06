@@ -11,7 +11,7 @@
 この文は**誰が・いつ作る一時ファイルの話なのか**を書いていない。実際には少なくとも 2 種類ある:
 
 1. **Claude がセッション中に作る作業用ファイル** — 検証レポート・スクラッチ・中間成果物。
-   これは `./tmp` が正しい（[`move-report-conclusions-to-issues.md`](../_claude/rules/move-report-conclusions-to-issues.md) が
+   これは `./tmp` が正しい（[`move-report-conclusions-to-issues.md`](../../_claude/rules/move-report-conclusions-to-issues.md) が
    この前提で書かれている）
 2. **スクリプト / テストが実行時に作る隔離用ディレクトリ** — `mktemp -d` で作り、終了時に消すもの
 
@@ -51,7 +51,7 @@
 ## 関連
 
 - `_claude/CLAUDE.md`「一時ファイルの配置」（正本）
-- [`move-report-conclusions-to-issues.md`](../_claude/rules/move-report-conclusions-to-issues.md) — `./tmp` が gitignore である前提を使っているルール
+- [`move-report-conclusions-to-issues.md`](../../_claude/rules/move-report-conclusions-to-issues.md) — `./tmp` が gitignore である前提を使っているルール
 - `issues/100-retro-glogx-cli-health-2026-08-24.md` — この気づきが出た経緯
 
 ---

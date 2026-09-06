@@ -2,7 +2,7 @@
 
 起票日: 2026-09-03
 重要度: **P3**
-関連: [issues/done/168](done/168-bug-doctor-simdevice-xctestdevices-set.md) (敵対レビュー 1 周目の記録)
+関連: [issues/done/168](168-bug-doctor-simdevice-xctestdevices-set.md) (敵対レビュー 1 周目の記録)
 
 ## 対象
 
@@ -38,7 +38,7 @@
 
 ### trigger を待たずに着手した判断 (ユーザー判断 2026-09-03)
 
-[`verify-design-intent-before-refactor.md`](../_claude/rules/verify-design-intent-before-refactor.md) の
+[`verify-design-intent-before-refactor.md`](../../_claude/rules/verify-design-intent-before-refactor.md) の
 「実需要 trigger 待ち」が想定しているのは**分解・抽象化のような、後で不要と分かると剥がすのが高くつく
 変更**。今回は判定を 1 つ厳しくするだけで、剥がすコストがほぼ無い。さらに壊れ方が
 「green のまま意味を失う」側なので、待つ間の損の方が大きい。

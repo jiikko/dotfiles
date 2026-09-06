@@ -2,7 +2,7 @@
 
 起票日: 2026-09-02
 重要度: **P3**
-関連: [issues/163](163-audit-doctor-implementation-red-team.md) (体 6) / [`_claude/rules/no-mixed-width-columns-in-terminal-ui.md`](../_claude/rules/no-mixed-width-columns-in-terminal-ui.md) / [issues/148](148-feat-glogx-doctor-disk-diagnosis.md) (「レイアウトの決定」)
+関連: [issues/163](163-audit-doctor-implementation-red-team.md) (体 6) / [`_claude/rules/no-mixed-width-columns-in-terminal-ui.md`](../../_claude/rules/no-mixed-width-columns-in-terminal-ui.md) / [issues/148](148-feat-glogx-doctor-disk-diagnosis.md) (「レイアウトの決定」)
 
 ## 対象
 

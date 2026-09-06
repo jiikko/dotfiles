@@ -178,11 +178,11 @@ observation log の集約。いずれも裏取り側が「発火条件を示せ�
 
 | 未着手 id | 切り出し先 |
 |---|---|
-| `071-lock-acquire-verbatim-dup` | [078](../078-refactor-resurrect-lock-owner-two-impls.md) |
-| `071-triglog-writer-count` / `071-triglog-rotation` / observation log の集約 | [079](../079-refactor-trigger-log-writers-scattered.md) |
-| `071-go-project-dirs` | [080](../080-chore-makefile-go-project-dirs-manual.md) |
-| `071-nsunarchiver-uncatchable-abort` | [084](../084-bug-terminal-profile-nsunarchiver-abort.md) |
-| `071-chrome-composition-dup` / `071-two-slide-state-machines` / `071-pager-empty-branch-divergence` | [085](../085-refactor-glogx-chrome-composition-dup.md) (後 2 者は「価値が下がるので同時にはやらない」付随項目として明記) |
-| `@claude_state` 写像の集約 (3〜5 箇所) | [083](../083-perf-tmux-hook-fork-storm.md) に同梱。fork 削減で `state_color` / `state_rank` を書き換える箇所がまさに写像の実体なので、同時に見る |
-| `actionModal` の 7 bool 排他 | **切り出さない**。[074](../074-feat-glogx-parallel-cli-updates.md) が同じ `action_modal.go` を map 化する予定で、応急処置は 074 と衝突する |
+| `071-lock-acquire-verbatim-dup` | [078](078-refactor-resurrect-lock-owner-two-impls.md) |
+| `071-triglog-writer-count` / `071-triglog-rotation` / observation log の集約 | [079](079-refactor-trigger-log-writers-scattered.md) |
+| `071-go-project-dirs` | [080](080-chore-makefile-go-project-dirs-manual.md) |
+| `071-nsunarchiver-uncatchable-abort` | [084](084-bug-terminal-profile-nsunarchiver-abort.md) |
+| `071-chrome-composition-dup` / `071-two-slide-state-machines` / `071-pager-empty-branch-divergence` | [085](085-refactor-glogx-chrome-composition-dup.md) (後 2 者は「価値が下がるので同時にはやらない」付随項目として明記) |
+| `@claude_state` 写像の集約 (3〜5 箇所) | [083](083-perf-tmux-hook-fork-storm.md) に同梱。fork 削減で `state_color` / `state_rank` を書き換える箇所がまさに写像の実体なので、同時に見る |
+| `actionModal` の 7 bool 排他 | **切り出さない**。[074](074-feat-glogx-parallel-cli-updates.md) が同じ `action_modal.go` を map 化する予定で、応急処置は 074 と衝突する |
 | M-c インライン confirm の `scripts/` 移設 (`--default=false` 節の (3)) | **切り出さない**。`7c064e6` のゲートが `_tmux.conf` のインライン呼び出しも検査対象に含むため緊急度が消えた。trigger: M-c の confirm を次に触るとき |

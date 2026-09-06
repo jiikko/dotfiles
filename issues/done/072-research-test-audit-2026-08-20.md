@@ -166,7 +166,7 @@ gitignore 対象なので残らない。以降の audit はこの節を先に読
 
 | 未着手 id | 切り出し先 |
 |---|---|
-| `072-nvim-wrapper-dup` / `072-nvim-ok-anchor-drift` / `072-tmux-spawn-helper-dup` / `072-default-sock-dup` / `072-assert-file-exists-dup` / `072-three-own-ok-ng` / `072-toast-set-e-rc` | [081](../081-refactor-test-helper-verbatim-dup.md) |
-| `072-pyenv-always-skip` / `072-fork-scratch-perma-skip` / `072-ftplugin-ts-silent-skip` / `072-result-log-no-assert` / `072-open-workspace-selfref` / `072-brew-bats-dead-export` / `072-lazy-body-untested` | [082](../082-bug-vacuous-tests-remaining.md) |
+| `072-nvim-wrapper-dup` / `072-nvim-ok-anchor-drift` / `072-tmux-spawn-helper-dup` / `072-default-sock-dup` / `072-assert-file-exists-dup` / `072-three-own-ok-ng` / `072-toast-set-e-rc` | [081](081-refactor-test-helper-verbatim-dup.md) |
+| `072-pyenv-always-skip` / `072-fork-scratch-perma-skip` / `072-ftplugin-ts-silent-skip` / `072-result-log-no-assert` / `072-open-workspace-selfref` / `072-brew-bats-dead-export` / `072-lazy-body-untested` | [082](082-bug-vacuous-tests-remaining.md) |
 
-`072-concat-tolerance-drift` の生き残りは既に [076](../076-bug-concat-duration-check-never-fires.md)。
+`072-concat-tolerance-drift` の生き残りは既に [076](076-bug-concat-duration-check-never-fires.md)。

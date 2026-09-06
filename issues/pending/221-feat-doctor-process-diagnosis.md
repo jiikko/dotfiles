@@ -1,8 +1,8 @@
 # 221 feat: doctor にプロセス側の診断を足す
 
 起票日: 2026-09-03
-出典: [issues/218](218-feat-doctor-catalog-and-threshold-decisions.md) の D 節 /
-      [issues/148](done/148-feat-glogx-doctor-disk-diagnosis.md) の 5 章 (「本 issue では扱わない」と結論した分)
+出典: [issues/218](../done/218-feat-doctor-catalog-and-threshold-decisions.md) の D 節 /
+      [issues/148](../done/148-feat-glogx-doctor-disk-diagnosis.md) の 5 章 (「本 issue では扱わない」と結論した分)
 重要度: **P3** (常設の追跡機構が要るので、単発の実装では終わらない)
 
 ## 148 の 5 章が出した結論と、その前提となる実測
@@ -25,7 +25,7 @@
 - 記録と実在プロセスを突き合わせる (pid の再利用があるので起動時刻を鍵に含める)
 - 記録に無いプロセスは**候補にしない** (誤検出の 629 件はここで落ちる)
 
-⚠️ 記録を持つ = 状態を持つので、[`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
+⚠️ 記録を持つ = 状態を持つので、[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md)
 の §0-A が発動する。「そもそも置き去りを発生させない構造」(= `Setpgid` + cancel で
 グループごと殺す。issue 206 で実機確認済み) が既に在るので、**追跡機構が要るのは
 「それでも残った場合」だけ**。着手前にその頻度を測ること。

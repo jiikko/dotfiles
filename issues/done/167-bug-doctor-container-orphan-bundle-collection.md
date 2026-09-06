@@ -110,7 +110,7 @@ iOS スタイルのコンテナは**ディレクトリ名が UUID** で、bundle
   なので、同じディレクトリを指す symlink を n 個並べると n^8 に膨らむ (実測: n=2 で 67ms / n=3 で 1.32s /
   n=4 は 8 秒でも終わらない)。`~/Applications` はユーザー書き込み可能で、`collectBundleIDs` には
   ctx が無くキャンセルもできない。→ `(dev, inode)` の `seen` で巡回を止めた
-  ([`list-masked-failure-modes-before-removing-guard.md`](../_claude/rules/list-masked-failure-modes-before-removing-guard.md)
+  ([`list-masked-failure-modes-before-removing-guard.md`](../../_claude/rules/list-masked-failure-modes-before-removing-guard.md)
   の逆パターン: 防御を「外した」のではなく「外れていることに気づかなかった」)
 - **`filepath.Glob` 化が `Contents/Info.plist` にも波及し、メタ文字入りのアプリ名で取りこぼす**。
   `MyApp [Beta].app` の `[Beta]` が文字クラスとして解釈され、そのアプリの bundle id が集まらない。
@@ -125,7 +125,7 @@ UUID fail-closed 除去 (大文字・小文字**両方**のケースが red) / `
 **深さ 1 の重複だけ許す「半端な回帰」** / 巡回検出を消して訪問回数が発散する形。
 
 🚨 巡回検出のテストは当初 10 秒の壁時計で判定していたが、
-[`avoid-wall-clock-assertions.md`](../_claude/rules/avoid-wall-clock-assertions.md) に従って
+[`avoid-wall-clock-assertions.md`](../../_claude/rules/avoid-wall-clock-assertions.md) に従って
 **訪問回数** (`collectVisits`) の上限で判定する形に書き換えた。正常側は実ディレクトリ数ぴったり (9)、
 巡回検出なしは 30 秒で 72,979 回に発散するので、閾値をどこに置いても桁で判別できる。
 この書き換えによって、レビュワーが「作れなかった」と報告していた**半端な回帰**

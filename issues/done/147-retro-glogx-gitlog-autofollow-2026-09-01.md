@@ -29,7 +29,7 @@
 規範を「レビュー中はそのファイルを書き換えない (修正も変異も)」へ広げるか、
 「気づいた修正はレビュー結果が届くまで別の worktree でやる」を足すのが妥当。
 
-- 切り出し先候補: [`_claude/rules/parallel-write-agents-need-worktree-isolation.md`](../_claude/rules/parallel-write-agents-need-worktree-isolation.md) への追記
+- 切り出し先候補: [`_claude/rules/parallel-write-agents-need-worktree-isolation.md`](../../_claude/rules/parallel-write-agents-need-worktree-isolation.md) への追記
 
 ### 2. 変異判定スクリプトの 3 値判定を自分で壊した
 
@@ -62,11 +62,11 @@ M8 の判定が「テストが走っていない (第 3 の結果)」と出た�
 
 ## 切り出し結果 (2026-09-01)
 
-- 反省点 1 → [`_claude/rules/parallel-write-agents-need-worktree-isolation.md`](../_claude/rules/parallel-write-agents-need-worktree-isolation.md)
+- 反省点 1 → [`_claude/rules/parallel-write-agents-need-worktree-isolation.md`](../../_claude/rules/parallel-write-agents-need-worktree-isolation.md)
   に追記。規範を「レビュー中は**そのファイルを書き換えない**(変異検証だけでなく、思いついた
   修正・リファクタも)」へ広げ、損が両方向に出ることを明記した。実例は同名の rationale へ
-- 反省点 3 → [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
-  と [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の
+- 反省点 3 → [`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md)
+  と [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) の
   「実測 2 回」を 3 回へ更新。今回の 5 件 (TOCTOU / 自己 reload との競合 / ctrl+d / 錨の選び方 /
   センチネルの衝突) と、逆に**変異検証だけが捕まえた** 2 本を rationale に対で残した
 - 反省点 2・4 → **却下** (ルール追記なし)。2 は既存 2 ルール

@@ -2,7 +2,7 @@
 
 起票日: 2026-09-02
 種別: retro
-関連: [160](done/160-claude-link-leak-after-session-ends.md) / commit 9cc51ee
+関連: [160](160-claude-link-leak-after-session-ends.md) / commit 9cc51ee
 
 ## 反省・気づき
 

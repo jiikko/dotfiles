@@ -1,7 +1,7 @@
 # 207 test: 163 が起票した issue のうち、反証レビューを通していないものを着手時に通す
 
 起票日: 2026-09-03
-出典: [issues/163](done/163-audit-doctor-implementation-red-team.md) の受け入れ条件「起票した issue はそれぞれ反証レビューを通している」
+出典: [issues/163](163-audit-doctor-implementation-red-team.md) の受け入れ条件「起票した issue はそれぞれ反証レビューを通している」
 重要度: **P3** (規律の記録。単独で着手する作業ではない)
 
 ## 何が未達か

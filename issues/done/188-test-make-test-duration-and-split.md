@@ -21,14 +21,14 @@
       **`_claude/` 配下だけを触ったときに回すべき検査**が 1 コマンドで走る形にする
       (現状 `tests/claude/` に何本あるかを数えるところから)
 - [ ] 分割 target を足したら **入口のドキュメント**を同じ変更で更新する
-      ([`new-tool-requires-entrypoint-docs.md`](../_claude/rules/new-tool-requires-entrypoint-docs.md))。
+      ([`new-tool-requires-entrypoint-docs.md`](../../_claude/rules/new-tool-requires-entrypoint-docs.md))。
       入口は root `CLAUDE.md` か `tests/CLAUDE.md`
 
 ## 注意
 
 - **分割 target は「全体を回さない言い訳」になりうる**。足すなら「どの変更でどれを回すか」の
   判断基準を 1 行で書く。書けないなら分割しない方がよい
-- 所要時間の主張には実測値を添える ([`perf-claims-need-measurement.md`](../_claude/rules/perf-claims-need-measurement.md))。
+- 所要時間の主張には実測値を添える ([`perf-claims-need-measurement.md`](../../_claude/rules/perf-claims-need-measurement.md))。
   「速くなった」を数字なしで書かない
 
 ## 適用ログ (2026-09-03)

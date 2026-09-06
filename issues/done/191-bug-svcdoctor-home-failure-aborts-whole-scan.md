@@ -2,8 +2,8 @@
 
 起票日: 2026-09-03
 重要度: **P3**
-関連: [issues/done/177](done/177-bug-doctor-cli-exit-code-asymmetry.md) (敵対レビュー 2 周目の指摘) /
-[issues/done/175](done/175-bug-doctor-expand-silent-zero-on-glob-meta-and-relative.md) (diskdoctor 側の対応)
+関連: [issues/done/177](177-bug-doctor-cli-exit-code-asymmetry.md) (敵対レビュー 2 周目の指摘) /
+[issues/done/175](175-bug-doctor-expand-silent-zero-on-glob-meta-and-relative.md) (diskdoctor 側の対応)
 
 ## 対象
 

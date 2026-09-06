@@ -2,7 +2,7 @@
 
 ## 背景 (2026-07-23 の会話由来)
 
-tui.go は 2,164 行 / 77 関数まで成長した。ただし issue [018](done/../018-refactor-god-struct-audit-2026-07-22.md)
+tui.go は 2,164 行 / 77 関数まで成長した。ただし issue [018](018-refactor-god-struct-audit-2026-07-22.md)
 の God struct 監査で「状態を持つ UI 部品 (usageOverlay / diffOverlay / actionModal /
 jobDetailOverlay、後に prStatusOverlay も) は抽出済み。browseModel 本体に新規抽出の価値なし」と
 判定済みであり、残る本体 (Update ディスパッチ / fetch オーケストレーション / アニメーション) は

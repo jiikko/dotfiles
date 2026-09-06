@@ -3,7 +3,7 @@
 起票日: 2026-09-02
 種別: bug (運用の穴)
 関連: [158](158-retro-glogx-dial-bg-and-parallel-sessions-2026-09-02.md) の項目 4 が出典 /
-[`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
+[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md)
 
 ## 症状
 
@@ -19,7 +19,7 @@
 `./setup.sh` 未実行で終了した (その後 09/02 08:58 に別の実行で解消済み)。
 
 🚨 **hooks はこの症状の対象外**。hook の起動経路は `_claude/settings.json` の実体パスなので、
-link が無くても動く ([142](done/142-research-claude-hooks-link-unreferenced.md))。
+link が無くても動く ([142](142-research-claude-hooks-link-unreferenced.md))。
 実害があるのは rules / skills / agents / commands / workflows。
 
 ## 現状の防御と、その穴
@@ -54,7 +54,7 @@ link が無くても動く ([142](done/142-research-claude-hooks-link-unreferenc
 ## 反証レビューの結果 (2026-09-02) — 案 A は推しから降ろす
 
 観点を分けた 2 体の read-only 反証レビューを通した (codex は使わない設定のため
-[`issue-creation-codex-review.md`](../_claude/rules/issue-creation-codex-review.md) の代替手順)。
+[`issue-creation-codex-review.md`](../../_claude/rules/issue-creation-codex-review.md) の代替手順)。
 **事実観点は反証 0 件**。設計観点は案 A に P1 級の穴を 3 つ出した (いずれも実コードで裏取り済み):
 
 1. **素通り経路**: PostToolUse の matcher `Write|Edit` は **Claude Code の Write/Edit ツールしか
@@ -86,18 +86,18 @@ link が無くても動く ([142](done/142-research-claude-hooks-link-unreferenc
 🚨 **「`~/.claude/rules` 等をディレクトリ丸ごと symlink にすれば per-file のリンク漏れ自体が起きない」は
 既に検討され却下済み**。`a7e9b29` (2026-02-09):「ディレクトリ丸ごとのシンボリックリンクだと
 他ツール (ubiregi-cli 等) が配置したリンクと競合するため、skill/agent 単位の個別リンクに変更」。
-[`verify-design-intent-before-refactor.md`](../_claude/rules/verify-design-intent-before-refactor.md) の
+[`verify-design-intent-before-refactor.md`](../../_claude/rules/verify-design-intent-before-refactor.md) の
 「既に意図的に選ばれた設計」に当たるので、この issue のスコープでは戻さない。
 
 ## 設計時の必須事項
 
-🚨 [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) を通すこと。
+🚨 [`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) を通すこと。
 特に:
 
 - **「検査できなかった」を緑にしない**。`~/.claude` が無い / 別 checkout が `~/dotfiles` の場合は
   skip を明示する (既存テストは exit 77 で skip を出している。同じ扱いにする)
 - **hook 自身が落ちても本体を止めない**形にする (既存 hook の timeout 設定に倣う)
-- 新設した検査が**実際に発火することを出力で確認する** ([`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md))
+- 新設した検査が**実際に発火することを出力で確認する** ([`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md))
 
 ## trigger
 

@@ -25,7 +25,7 @@ worktree の差分は「放置」ではなく**レビュー中の作業**だっ�
 `ListAgents` を最初に叩けば `dotfiles-87` が running であることが 1 コマンドで分かった。
 git state は「誰かが何かをした痕跡」であって「誰かが今も動いているか」の証拠ではない。
 
-**切り出し先**: [`parallel-write-agents-need-worktree-isolation.md`](../_claude/rules/parallel-write-agents-need-worktree-isolation.md)
+**切り出し先**: [`parallel-write-agents-need-worktree-isolation.md`](../../_claude/rules/parallel-write-agents-need-worktree-isolation.md)
 に「他人の worktree / 未コミット差分を扱う前に `ListAgents` でそのセッションが生きているか見る」を追記。
 → **実施済み (このセッション)**
 
@@ -38,10 +38,10 @@ Unix epoch (1970) ではなく西暦 1 年**なので、差が約 256 万時間�
 
 **「vacuous なテストを直す作業」で vacuous なテストをもう 1 本作りかけた**のが本題。
 
-**切り出し先**: **却下**。[`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md)
+**切り出し先**: **却下**。[`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md)
 が「新規テストは変異で red を見るまで commit しない」と定めており、**その規律が実際に機能した実例**。
 ルールに足すことは無い。ゼロ値の性質はテスト本文とコード直近のコメントに残した
-([`pending-issue-rationale-in-code.md`](../_claude/rules/pending-issue-rationale-in-code.md))。
+([`pending-issue-rationale-in-code.md`](../../_claude/rules/pending-issue-rationale-in-code.md))。
 
 ### 3. サブエージェントの報告に誤りが 3 件あり、裏取りで全部見つかった
 
@@ -52,7 +52,7 @@ Unix epoch (1970) ではなく西暦 1 年**なので、差が約 256 万時間�
   `TestIssuesLayoutAgreesBetweenKeysAndRender`
 - audit が候補 1 の重複を「12 箇所」としていた → 実測 10 箇所 (残り 2 つは高さとプロローグの形が違う)
 
-**切り出し先**: **却下**。[`subagent-model-tiering.md`](../_claude/rules/subagent-model-tiering.md)
+**切り出し先**: **却下**。[`subagent-model-tiering.md`](../../_claude/rules/subagent-model-tiering.md)
 の「参照の実在性を検閲する」がそのまま該当し、実際に 3 件とも検閲で捕まえた。ただし**1 件は
 検閲前にユーザーへ流した**ので、規律の適用が遅れた実例として記録に残す。
 
@@ -65,7 +65,7 @@ Unix epoch (1970) ではなく西暦 1 年**なので、差が約 256 万時間�
 `git status` で気づけたが、**気づかなければ pathspec commit に混ざらないだけで repo に残り続けた**
 (いずれも Go の package main のコピーなので、root では何のビルドにも入らず静かに残る)。
 
-**切り出し先**: [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md)
+**切り出し先**: [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md)
 の「復元の作法」に「バックアップと復元は絶対パスで行う (`trap` は cwd が変わった後に走る)」を追記。
 → **実施済み (このセッション)**
 

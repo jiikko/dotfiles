@@ -25,7 +25,7 @@
 `$?` が `tail` のものになって「変異を当てたのに rc=0」と読んだ。分離して測り直したら rc=1 で正しく red だった。
 🚨 **この 2 つ目は、自分が同じ日に CI へ入れた gate が守ろうとしている罠そのもの**。
 
-**切り出し済み** (2026-09-03): [`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
+**切り出し済み** (2026-09-03): [`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)
 に 1 項追加。既存は「`cmd | tail` の `$?` はパイプ終端の status」だけで、**失敗ログ自体を捨てる形**が
 無かった。足したのは「検証コマンドの出力を `tail` / `head` / `grep` で削って読まない。ファイルへ落として
 から読む」。理由として **集約 target は結論行を最後に出す設計が多い**ので `| tail -n` が
@@ -76,7 +76,7 @@ issue 163 の本文に自分で「枠の残量が少ないと途中で落ちる�
 未切り出しで持っていた。
 
 **切り出し先**: 対応済み。別マシンのセッションが
-[`subagent-model-tiering.md`](../_claude/rules/subagent-model-tiering.md) へ切り出し、
+[`subagent-model-tiering.md`](../../_claude/rules/subagent-model-tiering.md) へ切り出し、
 done/164 に「6 体並行で全滅した実例も出た」として記録済み。**この項目は記録のみ**。
 
 🚨 ただし**残骸から拾えた**のは幸運だった (体 1/2/6 は報告を書き終えており、体 4 は実測ログ、
@@ -94,7 +94,7 @@ done/164 に「6 体並行で全滅した実例も出た」として記録済み
 **自分は最後まで使っていなかった**。使っていれば番号衝突の一部は防げた。
 
 **切り出し先案**: 却下でよい。規範は
-[`claim-issue-in-next-and-push.md`](../_claude/rules/claim-issue-in-next-and-push.md) に既にあり、
+[`claim-issue-in-next-and-push.md`](../../_claude/rules/claim-issue-in-next-and-push.md) に既にあり、
 今日から hook も動いている。**次のセッションで実際に使うかどうかの問題**で、ルールを足す話ではない。
 ただし「番号の採番も claim と同じ問題を持つ (起票時点の最大 + 1 は競合する)」のは規範に無い。
 気になるなら別 issue。
@@ -106,7 +106,7 @@ doctor の CI レーンで「依存コマンドが無い環境」を作るとき
 `simulator-runtimes` が `ok` のままになり、検査が何も確かめない状態だった。
 必ず失敗する偽物を PATH 先頭に置く形へ直した。
 
-**切り出し先**: 却下。[`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
+**切り出し先**: 却下。[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md)
 節 1 の表が「**依存コマンドが失敗する (偽の実行ファイルを PATH 先頭に置く)**」と既に正しく書いている。
 自分がそれを読まずに「PATH を絞る」方を選んだだけ。ルールの不足ではない。
 

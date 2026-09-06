@@ -193,8 +193,8 @@ GNU 先 (`stat -c '%Y'` が先) なので安全。**concat 系 6 箇所は修正
 
 | 未着手 id | 切り出し先 |
 |---|---|
-| `070-two-owner-impls` / `070-guards-empty-owner-steal` | [078](../078-refactor-resurrect-lock-owner-two-impls.md) |
-| `070-resurrect-inline-log` / `070-extra-shared-log-gate-failopen` | [079](../079-refactor-trigger-log-writers-scattered.md) |
-| `070-render-fork` / `070-mark-seen-forks` | [083](../083-perf-tmux-hook-fork-storm.md) |
-| `070-git-prompt-percent` | [086](../086-bug-git-prompt-percent-injection.md) — 隔離実験で **`%` エスケープ注入は再現**、**任意コマンド実行は反証** |
+| `070-two-owner-impls` / `070-guards-empty-owner-steal` | [078](078-refactor-resurrect-lock-owner-two-impls.md) |
+| `070-resurrect-inline-log` / `070-extra-shared-log-gate-failopen` | [079](079-refactor-trigger-log-writers-scattered.md) |
+| `070-render-fork` / `070-mark-seen-forks` | [083](083-perf-tmux-hook-fork-storm.md) |
+| `070-git-prompt-percent` | [086](086-bug-git-prompt-percent-injection.md) — 隔離実験で **`%` エスケープ注入は再現**、**任意コマンド実行は反証** |
 | `070-watchdog-greedy-pid` | **切り出さない**。実ログに該当トークン 0 件で発火条件を示せない (貪欲 `.*` の手前に `grep -E "pid=$SERVER_PID( \|$)"` の絞り込みと `[^a-z]` ガードがあり、事後に `[ "$pid" = "$SERVER_PID" ]` で照合もしている)。再提案するなら**2 つ目の `pid=` を含む実ログ行**を先に示すこと |

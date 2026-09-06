@@ -4,7 +4,7 @@
 種別: refactor
 優先度: **P2** (nvim ラッパの drift は既に起きている実害。他は予防)
 
-出典: 監査 [072](done/072-research-test-audit-2026-08-20.md) の `072-nvim-wrapper-dup` /
+出典: 監査 [072](072-research-test-audit-2026-08-20.md) の `072-nvim-wrapper-dup` /
 `072-nvim-ok-anchor-drift` / `072-tmux-spawn-helper-dup` / `072-default-sock-dup` /
 `072-assert-file-exists-dup` / `072-three-own-ok-ng` / `072-toast-set-e-rc`。
 **出典 issue には「反証で崩れた (却下)」の一覧がある** — 特に

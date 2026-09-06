@@ -4,8 +4,8 @@
 種別: refactor
 優先度: **P2** (行書式は読み手向けの契約。書き手が散っていると片方だけ直る)
 
-出典: 監査 [071](done/071-research-design-audit-2026-08-20.md) の `071-triglog-writer-count` /
-`071-triglog-rotation`、[070](done/070-research-quality-audit-2026-08-20.md) の
+出典: 監査 [071](071-research-design-audit-2026-08-20.md) の `071-triglog-writer-count` /
+`071-triglog-rotation`、[070](070-research-quality-audit-2026-08-20.md) の
 `070-resurrect-inline-log` / `070-extra-shared-log-gate-failopen`。071 では **5 エージェントが
 独立に指摘**した最も強いシグナル。
 **出典 issue には「反証で崩れた (却下)」の一覧がある** — この項目のうち

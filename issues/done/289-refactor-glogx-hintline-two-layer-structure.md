@@ -107,4 +107,4 @@ go test -run 'TestHintsFitPopupWidth|TestEveryHintKeepsExitWithinWidth|TestFitHi
 🚨 自分の修正が 2 回恒真だった（幅 200 の全項目チェックは期待値を builder から作っていた /
 最初の同一性チェックは出口の部分一致のままだった）。どちらも変異を当てて初めて分かった。
 
-残り: 全画面ビューア側の hint の中身は [296](../296-bug-glogx-issues-hint-badge-claim-false-for-epic-children.md) で別途。
+残り: 全画面ビューア側の hint の中身は [296](296-bug-glogx-issues-hint-badge-claim-false-for-epic-children.md) で別途。

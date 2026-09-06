@@ -1,7 +1,7 @@
 # 205 audit: doctor 画面の並行・中断・状態機械を red team で攻める (163 の体 3。唯一の未走行)
 
 起票日: 2026-09-03
-出典: [issues/163](done/163-audit-doctor-implementation-red-team.md) の「体 3」(6 観点のうちこれだけ成果ゼロ)
+出典: [issues/163](163-audit-doctor-implementation-red-team.md) の「体 3」(6 観点のうちこれだけ成果ゼロ)
 重要度: P2 (④ 削除の土台になる状態機械。指摘が出れば P1 になりうる)
 対象: `src/glogx/doctor_view.go` 全文、`src/glogx/tui.go` の doctor 配線、`src/glogx/main.go` の再起動と
 Ctrl-C 経路、`src/doctor/runner/runner.go`、`src/doctor/disk/scan.go` の goroutine と `OnResult`
@@ -45,7 +45,7 @@ Ctrl-C 経路、`src/doctor/runner/runner.go`、`src/doctor/disk/scan.go` の go
   直前に cancel した子が新イメージの子として残る形 (163 では「記録に留めた」。Setpgid 導入後は
   `Kill(-pgid)` が非同期に走るタイミングを見る)
 - **`TestExecKillsGrandchildOnCancel` の時間依存**: `sleep` を使い 300ms で cancel して 2 秒待つ。
-  CI の負荷で flaky にならないか ([`avoid-wall-clock-assertions.md`](../_claude/rules/avoid-wall-clock-assertions.md))。
+  CI の負荷で flaky にならないか ([`avoid-wall-clock-assertions.md`](../../_claude/rules/avoid-wall-clock-assertions.md))。
   回数 / 状態で判定する形に書き直せるか
 - **`catalogN+1` の容量計算と `Reuse`**: 再利用でも `OnResult` は 1 回呼ばれるか
   (`scan.go` の goroutine は再利用時も `OnResult` を呼ぶ経路か)。呼ばれる回数が容量を超えると詰まる
@@ -62,7 +62,7 @@ Ctrl-C 経路、`src/doctor/runner/runner.go`、`src/doctor/disk/scan.go` の go
 ## 再提出しないもの
 
 163 の「## 前回 (2 回目) で「記録に留めた」もの」と「## 結果 (索引)」の却下・壊せなかった攻め口、
-[issues/148](next/148-feat-glogx-doctor-disk-diagnosis.md) の「敵対的レビュー 2 回目」の記録済み 5 件。
+[issues/148](148-feat-glogx-doctor-disk-diagnosis.md) の「敵対的レビュー 2 回目」の記録済み 5 件。
 2026-09-03 に決着した 167-183 の内容も再提出しない。配置はばらけているので
 `ls issues/done/1[6-8]* issues/pending/169-* issues/183-*` でタイトルを確認する。
 

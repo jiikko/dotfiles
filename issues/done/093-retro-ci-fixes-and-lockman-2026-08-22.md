@@ -57,7 +57,7 @@ retro 側の残課題は無し。**却下: 汎用ルール化はしない** — 
 テストが緑**になった。出力だけ見ると「変異を当てたが赤にならなかった」と区別できない。
 気づいて当て直したが、気づかなければ「主張を守っている」と誤って報告していた。
 
-**切り出し先の提案**: [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md)
+**切り出し先の提案**: [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md)
 に追記 —「**変異が実際にコードへ適用されたことを確認してからテストを走らせる**
 (置換の失敗・パターン不一致は緑と区別できない)」。
 
@@ -101,7 +101,7 @@ push でまとめて公開された。逆向きも起きており、ある時点
 ## 8. 大きな仕様 issue を自己レビューだけで確定させた
 
 091 は 490 行の設計仕様で、SMB の挙動という**実測していない前提**を多数含む。
-規約 ([`issue-creation-codex-review.md`](../_claude/rules/issue-creation-codex-review.md)) は
+規約 ([`issue-creation-codex-review.md`](../../_claude/rules/issue-creation-codex-review.md)) は
 新規 issue を codex の反証レビューに通すことを求めるが、このマシンでは codex を使わない
 設定のため通していない。実機検証 (092) までは「反証されていない仕様」のまま。
 
@@ -132,7 +132,7 @@ push でまとめて公開された。逆向きも起きており、ある時点
   並行セッション数が増えると構造的に成立しない (push はブランチ単位なので、誰が push しても
   他人の未公開分を出す)。溜めない運用に切り替えることで、巻き込み自体が起こらなくなる
 - **項目 8 → 決着: 既に運用中の形を明文化**。
-  [`issue-creation-codex-review.md`](../_claude/rules/issue-creation-codex-review.md) の「ルール」に
+  [`issue-creation-codex-review.md`](../../_claude/rules/issue-creation-codex-review.md) の「ルール」に
   「codex を使わない環境では、観点を分けたサブエージェント (read-only) の反証レビューで代替する」
   を追記した。091 のような**実測前の仕様も反証レビューの対象から外さない** (省略するなら
   「反証されていない仕様」と issue に明記する)

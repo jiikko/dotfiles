@@ -4,7 +4,7 @@
 種別: perf
 優先度: **P3** (どちらも対話レイテンシ経路の外。ただし repo が別実装を捨てた基準に自分が抵触している)
 
-出典: 監査 [070](done/070-research-quality-audit-2026-08-20.md) の `070-render-fork` /
+出典: 監査 [070](070-research-quality-audit-2026-08-20.md) の `070-render-fork` /
 `070-mark-seen-forks`。**出典 issue には「反証で崩れた (却下)」の一覧がある**ので、
 同型の指摘を再提案する前に読むこと。
 

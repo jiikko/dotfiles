@@ -18,7 +18,7 @@
 いないか」「期待値を production と同じ式・同じ定数から作っていないか」)。**ルールを読んでいて
 なお踏んだ**ので、追記より「変異が緑だったら、まずテストを疑う」を実行できたことの方が効いた。
 
-**切り出し先の提案**: 既存 [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md)
+**切り出し先の提案**: 既存 [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md)
 の「よくある『守っていないテスト』の形」に **「先に効く別の防御が影になって、狙った分岐に
 到達していないか」** を 1 項足す (自己言及は既に在る)。発動点は同じなので新規ルールは立てない。
 
@@ -36,7 +36,7 @@
 1. **条件を変えずに同じ HEAD で 2 回**回す (1 回目赤・2 回目緑なら環境ではなく非決定性)
 2. **緑だった時点と赤い時点を、同じコマンドで**比べる
 
-**切り出し先の提案**: 既存 [`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
+**切り出し先の提案**: 既存 [`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)
 の「有無で結果が変わらない観測を証拠に数えない」節に、**「切り分けで動かした変数を数える
 (一時ディレクトリの差し替えはキャッシュも消す)」** を 1 行足す。同節の「前後の比較は同じ
 抽出方法で行う」と発動点が同じ。
@@ -46,7 +46,7 @@
 未 push の claim commit の持ち主、245 の実装者などを、開始時刻や「新しいセッションだから」と
 いった根拠で推測し、他セッションへ伝えて訂正させた。全セッションが同じ git user で、
 `git pull --rebase` が commit の時刻を前後させるので、**author も時刻も帰属に使えない**。
-これは [`commit-with-pathspec.md`](../_claude/rules/commit-with-pathspec.md) に
+これは [`commit-with-pathspec.md`](../../_claude/rules/commit-with-pathspec.md) に
 🚨 付きで明記されており、**読んでいてなお踏んだ**。
 
 使えるのは「commit が触ったファイル」と「本人に聞くこと」だけ。本人に聞く手段 (`ListAgents` +
@@ -71,7 +71,7 @@
 構造は 1 つで、**「claim を push するまでの窓」と「fetch から着手までの窓」**。hook
 (`next-claim-push.sh`) は Bash 経由の移動しか見えず、`git fetch` の鮮度は誰も強制していない。
 
-**切り出し先の提案**: 既存 [`claim-issue-in-next-and-push.md`](../_claude/rules/claim-issue-in-next-and-push.md)
+**切り出し先の提案**: 既存 [`claim-issue-in-next-and-push.md`](../../_claude/rules/claim-issue-in-next-and-push.md)
 に **「着手直前にもう一度 `git fetch` する」** と **「`ListAgents` に他セッションが居るなら、
 next だけでなく本人へ 1 回聞く」** を足す。next は「push されるまで見えない」ので、
 生きているセッションへの照会が唯一の即時性のある手段。

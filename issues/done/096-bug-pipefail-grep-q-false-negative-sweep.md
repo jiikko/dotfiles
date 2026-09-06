@@ -60,7 +60,7 @@ here-string (`grep -Eq "$want" <<<"$got"`) に直した。判定ヘルパー `ch
    `\| *grep[^|]*-[A-Za-z]*q` にマッチしたら落とす静的検査を `make test` に足す。
    🚨 1 を先に済ませないと大量に落ちるので順序が要る。
    🚨 検査自体が CI で実際に走っているかを、同じ commit で確認すること
-   ([`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) の節 4)
+   ([`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) の節 4)
 3. 例外が要る箇所 (意図的にパイプが必要) は `# shellcheck` 風の明示コメントで除外する
 
 ## なぜ P2 か
@@ -68,7 +68,7 @@ here-string (`grep -Eq "$want" <<<"$got"`) に直した。判定ヘルパー `ch
 落ちるのは「たまに」で、しかも**原因が実装側の不具合に見える**。今回も別セッションが
 「自分の変更のせいか」を疑う往復が発生した。テストハーネスの故障を実装の誤りとして
 報告する形なので、debug のコストが本来の 2 倍以上になる
-([`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
+([`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md)
 の「ハーネス自身の失敗を緑・赤に畳まない」と同型の問題)。
 
 ## 出典

@@ -3,7 +3,7 @@
 起票日: 2026-09-03
 出典: `/audit` の test-cleanup (direct、2026-09-03)
 重要度: P2 (発見 1 と 4 は実バグを見逃す形。他は P3)
-関連: [`_claude/rules/mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md)
+関連: [`_claude/rules/mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md)
 
 ## 前提
 

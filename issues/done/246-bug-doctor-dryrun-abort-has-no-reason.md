@@ -85,7 +85,7 @@ issue 242 の P3-3 で、実行中パネルの「Ctrl-C を 2 回押すと中断
 ## 関連
 
 - [242](242-research-doctor-ux-audit-2026-09-04.md) P3-3 — この issue の発見元
-- [236](done/236-research-doctor-delete-audit-2026-09-04.md) — 削除経路の監査（中断した run の phase を扱っている）
+- [236](236-research-doctor-delete-audit-2026-09-04.md) — 削除経路の監査（中断した run の phase を扱っている）
 - 231 / 232 が同じ `planDelete` を触っているので、そちらのついでに直せる
 
 ## 対応 (2026-09-04)

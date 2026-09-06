@@ -2,7 +2,7 @@
 
 起票日: 2026-09-04
 種別: retro
-関連: [255](255-human-verify-av1ify-finder-multiselect.md) / [094](done/094-human-verify-av1ify-clipboard-input.md) / [095](done/095-retro-av1ify-clipboard-input-2026-08-22.md)
+関連: [255](255-human-verify-av1ify-finder-multiselect.md) / [094](094-human-verify-av1ify-clipboard-input.md) / [095](095-retro-av1ify-clipboard-input-2026-08-22.md)
 
 やったこと: `av1ify` / `av1c` の引数なし呼び出しで、①ペーストボードのファイル参照 (file URL) を
 最優先で読む ②1 行に空白区切りで並んだ複数パスを案内でなく分割して受け取る、の 2 点を入れた。
@@ -27,7 +27,7 @@
 さらに background 実行の**完了通知の exit code 0 を成否と読みかけた**（通知の rc は
 ラッパーコマンドのもので、`make` の rc ではない）。
 
-[`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md) は
+[`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md) は
 既に「検証の出力はファイルへ落としてから読む」「完了通知で判定しない」と書いてある。
 足りなかったのは**落とした後に全部読む**こと。**切り出し先の提案: 同ルールへ 1 行**
 （「stdout / stderr を分けたら**両方**読む。片方だけ見て『通った』と読まない」）。
@@ -40,14 +40,14 @@
 削除対象がずれる）P1 が出た。しかもこれは 2026-08-23 に旧 `__av1ify_invocation_name` で
 踏んだのと同じ罠で、**そのとき書いた注意書きは削除した関数と一緒に消えていた**。
 
-[`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) の
+[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) の
 「変異は自分が想定した不変条件しか試さない」の 3 例目。**切り出し先の提案: 却下**
 （ルールは既にこの現象を名指ししている。実例として rationale へ 1 行足すかはユーザー判断）。
 
 ただし**「関数を消すときに、その関数のコメントが持っていた教訓の行き先を決める」**は
 どのルールも言っていない。今回は `setopt LOCAL_OPTIONS no_ksh_arrays` として実装に固定し、
 コメントで旧関数の実例を引き継いだ。**切り出し先の提案:
-[`list-masked-failure-modes-before-removing-guard.md`](../_claude/rules/list-masked-failure-modes-before-removing-guard.md)
+[`list-masked-failure-modes-before-removing-guard.md`](../../_claude/rules/list-masked-failure-modes-before-removing-guard.md)
 へ 1 行**（「関数ごと消すときは、そのコメントが記録していた failure mode の行き先も決める」）。
 判断はユーザーに委ねる。
 
@@ -66,7 +66,7 @@
 テキスト経路の失敗理由は「再構成すると案内が出る」までしか分かっていなかった**。
 そのままコミットし、ユーザーの追試で「治っていない」と返ってきた。
 
-[`instrument-before-second-fix.md`](../_claude/rules/instrument-before-second-fix.md) は
+[`instrument-before-second-fix.md`](../../_claude/rules/instrument-before-second-fix.md) は
 「1 回目が外れたら観測を増やす」だが、今回は**1 回目を打つ時点で「何が見えていないか」を
 自覚していた**（issue に「未解決」と書いていた）。同ルールの末尾「着手時点で『なぜ壊れて
 いるか分かっていない』自覚があるなら、1 回目の修正と同時に観測を仕込んでよい」に該当する

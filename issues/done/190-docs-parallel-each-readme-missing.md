@@ -2,8 +2,8 @@
 
 起票日: 2026-09-03
 重要度: P3
-関連: [`_claude/rules/new-tool-requires-entrypoint-docs.md`](../_claude/rules/new-tool-requires-entrypoint-docs.md) /
-[issues/done/181](done/181-ux-doctor-entrypoint-docs-missing.md) (doctor に対して同じ形を直した先例)
+関連: [`_claude/rules/new-tool-requires-entrypoint-docs.md`](../../_claude/rules/new-tool-requires-entrypoint-docs.md) /
+[issues/done/181](181-ux-doctor-entrypoint-docs-missing.md) (doctor に対して同じ形を直した先例)
 
 ## 何が起きているか
 

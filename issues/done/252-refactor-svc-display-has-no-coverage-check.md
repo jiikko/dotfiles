@@ -59,7 +59,7 @@ docker 側もコピーせず**共有ヘルパーができるまで待つ** (同�
 
 ## 関連
 
-- [251](next/251-refactor-termsafe-has-no-type-or-lint-gate.md) — 出典。`disk` 側の実装と脅威モデル
+- [251](251-refactor-termsafe-has-no-type-or-lint-gate.md) — 出典。`disk` 側の実装と脅威モデル
 - `src/termsafe/README.md` の「通し忘れを機械で止める」節 — 検査の入口と「検出しない形」
 
 

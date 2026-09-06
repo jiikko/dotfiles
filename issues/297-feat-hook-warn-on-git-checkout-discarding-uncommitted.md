@@ -2,7 +2,7 @@
 
 起票日: 2026-09-06
 カテゴリ: feat / 対象: `_claude/hooks/`（新設）+ `_claude/settings.json`（配線）
-出典: retro [295](295-retro-glogx-epic-done-default-visible-2026-09-06.md) 項目 1 / 7(a)
+出典: retro [295](done/295-retro-glogx-epic-done-default-visible-2026-09-06.md) 項目 1 / 7(a)
 
 ## 何を止めたいか
 

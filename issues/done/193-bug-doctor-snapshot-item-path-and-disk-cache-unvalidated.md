@@ -2,7 +2,7 @@
 
 起票日: 2026-09-03
 重要度: **P1** (Items[].Path) / P2 (doctor-disk.json)
-関連: [issues/done/178](done/178-bug-doctor-snapshot-trust-boundary.md) (信頼境界の本体。この issue はその**取りこぼし**) /
+関連: [issues/done/178](178-bug-doctor-snapshot-trust-boundary.md) (信頼境界の本体。この issue はその**取りこぼし**) /
 [issues/148](148-feat-glogx-doctor-disk-diagnosis.md) の ④ 不変条件
 
 ## 出典

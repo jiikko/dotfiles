@@ -7,7 +7,7 @@
 `repair_mp4` を実行する」= ダウンロードしたファイルをまとめて処理する平常の使い方。
 `av1ify` は `_zshrc` でラップ定義され対話シェル起動直後から呼べる)
 
-出典: issue [086](done/086-bug-git-prompt-percent-injection.md) の修正時の同型バグ横展開
+出典: issue [086](086-bug-git-prompt-percent-injection.md) の修正時の同型バグ横展開
 (`~/.claude/CLAUDE.md`「不具合対応の原則」の「直したバグは別の場所にもある前提で grep する」)。
 086 は prompt へブランチ名を埋める話で **表示の破壊だけ・コマンド実行は反証済み**だったが、
 `zshlib/` の `print -P` 群は **086 が「危険な形」として反証に使った配線そのもの**だった。
@@ -114,7 +114,7 @@ print -r -- "${_C_GREEN}✅ 完了: ${final_out}${_C_OFF}"
 
 ## 関連
 
-- [086](done/086-bug-git-prompt-percent-injection.md) — 兄弟 issue。あちらは「値を prompt 展開に
+- [086](086-bug-git-prompt-percent-injection.md) — 兄弟 issue。あちらは「値を prompt 展開に
   **参照として**渡す安全な形」で、コマンド実行は反証済み。本 issue はその危険形の横断調査
 - `_claude/rules/mutation-verify-new-tests.md` — 陽性対照の要求
 

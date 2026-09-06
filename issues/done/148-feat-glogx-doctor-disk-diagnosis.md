@@ -1899,7 +1899,7 @@ opus 5 体 (1 周目 3 + 2 周目 2)。採用したものは commit `d2dfd70` / 
 ## 8. 未決事項 → **issue 218 へ切り出した**
 
 判断待ち (閾値・カタログに何を載せるか) と実測の機会待ちは
-[issues/218](../218-feat-doctor-catalog-and-threshold-decisions.md) にある。
+[issues/218](218-feat-doctor-catalog-and-threshold-decisions.md) にある。
 実装の残りではないので、この issue は done にした。
 
 ## 関連

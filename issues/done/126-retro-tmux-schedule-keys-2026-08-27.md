@@ -83,7 +83,7 @@
   `cmd >> f 2>/dev/null` では隠せず、`{ cmd >> f; } 2>/dev/null` で囲む必要がある
   (リダイレクトはコマンド実行前に評価されるため)。同じ形で 2 回目に踏んだら追記する
 - **項目 3 / 7 → 切り出し不要** (本文に記録として残す)
-- **項目 4 → 実施**。[`tmux-probe-requires-socket-isolation.md`](../_claude/rules/tmux-probe-requires-socket-isolation.md)
+- **項目 4 → 実施**。[`tmux-probe-requires-socket-isolation.md`](../../_claude/rules/tmux-probe-requires-socket-isolation.md)
   の「ルール」に「**隔離サーバは human に回すのを減らす道具でもある**」を追記した
   (human issue に回す前に「隔離 `-L` サーバで測れないか」を一度問う)
 - **項目 5 / 9 → 実施 (統合)**。`mutation-verify-new-tests.md` の「関連」と
@@ -93,7 +93,7 @@
 - **項目 6 → 却下**。「UI の要求が 2 つ重なったら道具の選択から問い直す」は一般化しすぎで
   発火条件が書けない (本文の「却下寄り」判断を採用)
 - **項目 8 → 却下**。「ファイルを書いたら書けた証拠を見る」は
-  [`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
+  [`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)
   の「実行された証拠で判定する」「新規テストはテスト名が実行一覧に出ることを確認する」で覆えている
 - **項目 10 → 却下**。「指摘の対策を入れた後、その経路を実機で 1 回通す」も同ルールで覆えている
 

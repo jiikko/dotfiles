@@ -6,9 +6,9 @@
 
 起票日: 2026-09-02
 重要度: P2
-関連: [`_claude/rules/claim-issue-in-next-and-push.md`](../_claude/rules/claim-issue-in-next-and-push.md)
+関連: [`_claude/rules/claim-issue-in-next-and-push.md`](../../_claude/rules/claim-issue-in-next-and-push.md)
 (claim の規範) / [`_claude/hooks/next-claim-push.sh`](../_claude/hooks/next-claim-push.sh) (Claude 側の
-補助) / [docs/issues-viewer-spec.md](../docs/issues-viewer-spec.md) の「`n` で目印を付ける」節 /
+補助) / [docs/issues-viewer-spec.md](../../docs/issues-viewer-spec.md) の「`n` で目印を付ける」節 /
 issue 166 (予約の pane 表示。同じ「状態を見えるようにする」系)
 
 ## 何が欠けているか
@@ -78,8 +78,8 @@ pathspec に書く。viewer から叩く以上、作業ツリーには無関係�
 - [ ] claim の commit に無関係な変更が混ざらない (pathspec)
 - [ ] push できなかったときに、その事実がトーストで分かる (無音で成功に見えない)
 - [ ] `docs/issues-viewer-spec.md` のキー表と `src/glogx/README.md` を同じ変更で更新する
-      ([`new-tool-requires-entrypoint-docs.md`](../_claude/rules/new-tool-requires-entrypoint-docs.md))
-- [ ] 追加したテストは変異で red を確認する ([`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md))
+      ([`new-tool-requires-entrypoint-docs.md`](../../_claude/rules/new-tool-requires-entrypoint-docs.md))
+- [ ] 追加したテストは変異で red を確認する ([`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md))
 
 ## やらないこと
 

@@ -4,7 +4,7 @@
 
 2026-07-25 のトースト改修 (中央ダイアログ → 右下トースト移行 / 枠線の種別色化 / easeOutCubic 化)
 で box.go・toast.go・tui.go を触った際に見つけた改善候補の記録。いずれも**単独では動作に問題
-なし**で、trigger 待ちで凍結してよいもの ([`verify-design-intent-before-refactor.md`](../_claude/rules/verify-design-intent-before-refactor.md))。
+なし**で、trigger 待ちで凍結してよいもの ([`verify-design-intent-before-refactor.md`](../../_claude/rules/verify-design-intent-before-refactor.md))。
 
 **評価原則**: 行数分割はリファクタではない。「認知負荷 (読む時の jump 数 / 変更時の touch 箇所)・
 結合・重複・状態の局所化」が**実際に下がるか**で判定する。「やらない」も正当な結論。
@@ -123,7 +123,7 @@ file:line と実コードで自己検証済みだが、対応方針の妥当性�
 
 ## 関連
 
-- [`verify-design-intent-before-refactor.md`](../_claude/rules/verify-design-intent-before-refactor.md) — 「複雑性が実際に下がるか」で判定する原則 (P3 案 A の却下根拠)
+- [`verify-design-intent-before-refactor.md`](../../_claude/rules/verify-design-intent-before-refactor.md) — 「複雑性が実際に下がるか」で判定する原則 (P3 案 A の却下根拠)
 - [`issues/018-refactor-god-struct-audit-2026-07-22.md`](018-refactor-god-struct-audit-2026-07-22.md) — glogx の構造監査 (browseModel は抽出完了と判定済み)
 - `issues/done/025-feat-glogx-window-drop-shadow.md` — box.go の影実装の経緯 (P1 で触る範囲)
 - `issues/done/026-feat-glogx-copy-last-warning.md` — toast と lastWarning の関係 (P2 の前提)

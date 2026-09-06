@@ -34,7 +34,7 @@
 状態色にも使われていた**ため、塗りを何も主張していなかった。変異検証 (`余りの丸め補正を外す`) が
 green のまま通って発覚。色 + セルの文字まで見る形に直した。
 
-- 切り出し先: **[`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md)
+- 切り出し先: **[`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md)
   への追記候補** — 「よくある『守っていないテスト』の形」に *属性 (色・フラグ・クラス) の存在だけを
   見る assert は、その属性が他の用途にも使われていないか確認する* を足す
 
@@ -110,9 +110,9 @@ green のまま通って発覚。色 + セルの文字まで見る形に直し�
 
 | 項目 | 切り出し先 | commit |
 |---|---|---|
-| 2 (全角と半角を縦に並べない) | **新規** [`_claude/rules/no-mixed-width-columns-in-terminal-ui.md`](../_claude/rules/no-mixed-width-columns-in-terminal-ui.md) | `e2448f5` |
-| 7 (表示の意思決定はサンプルで回し切る) | **新規** [`_claude/rules/decide-layout-in-sample-renderer-first.md`](../_claude/rules/decide-layout-in-sample-renderer-first.md) | `e2448f5` |
-| 3 (属性の存在だけを見る assert) | [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) へ追記 | `7cd9496` (dotfiles-87 が実施) |
+| 2 (全角と半角を縦に並べない) | **新規** [`_claude/rules/no-mixed-width-columns-in-terminal-ui.md`](../../_claude/rules/no-mixed-width-columns-in-terminal-ui.md) | `e2448f5` |
+| 7 (表示の意思決定はサンプルで回し切る) | **新規** [`_claude/rules/decide-layout-in-sample-renderer-first.md`](../../_claude/rules/decide-layout-in-sample-renderer-first.md) | `e2448f5` |
+| 3 (属性の存在だけを見る assert) | [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) へ追記 | `7cd9496` (dotfiles-87 が実施) |
 | 5 (境界そのものを見るテストは now を固定) | `tests/claude/test_statusline.sh` 冒頭の既存警告へ追記 | `7420fa0` |
 
 項目 7 の rule は範囲を絞ってある: **凍結するのは「見た目の意思決定」だけで、ロジック

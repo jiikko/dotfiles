@@ -2,7 +2,7 @@
 
 起票日: 2026-09-05
 種別: retro
-関連: [248](../248-human-verify-ctrl-v-paste.md) / commit `ffe49966` `8bc7062d` `25b6060b` /
+関連: [248](248-human-verify-ctrl-v-paste.md) / commit `ffe49966` `8bc7062d` `25b6060b` /
 `scripts/tmux_paste_clipboard.sh` / `bin/tmux-toast`
 
 ## 何をしたセッションか

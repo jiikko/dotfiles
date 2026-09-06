@@ -49,20 +49,20 @@ UI にしか無かった = 欠落が両方向)。実例は rationale へ
 
 ## 残課題
 
-- [x] 項目 1 → **採用 (2026-09-02)**。[`subagent-model-tiering.md`](../_claude/rules/subagent-model-tiering.md)
+- [x] 項目 1 → **採用 (2026-09-02)**。[`subagent-model-tiering.md`](../../_claude/rules/subagent-model-tiering.md)
       に「枠の残量が少ないときは並列数を絞る。残量を見ずに複数体を起動すると全体が 429 で死ぬ」を追加
       (3 体同時起動で 3 体とも途中終了、成果ゼロ。同日さらに 6 体並行で全滅した実例も出た)
-- [x] 項目 2 → **採用 (2026-09-02)**。[`commit-with-pathspec.md`](../_claude/rules/commit-with-pathspec.md)
+- [x] 項目 2 → **採用 (2026-09-02)**。[`commit-with-pathspec.md`](../../_claude/rules/commit-with-pathspec.md)
       に「pathspec は cwd 相対 — repo root へ移動してから打つ」節を追加。実測つき
       (root 相対を渡すと `git commit` は rc=1 / `git add` は rc=128 で **commit されない**。
       その後の `git push` は `Everything up-to-date` の rc=0 を返すので push の出力では気づけない。
       パイプ越しに叩くと rc そのものを見失う)
 - [x] 項目 5 → **採用 (2026-09-02、別マシンのセッションが実施 `6274192a`。2026-09-02 に本人確認)**。
-      [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) に 1 項追加。
+      [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) に 1 項追加。
       🚨 本セッションは同じ項目を**却下する**方向で検討していた
       (「同じ間違いが別の場所にもある前提で grep する」が CLAUDE.md の一般則として既にあるため)。
       別セッションの採用が先に入っていたので、**却下へ差し戻さない** —
-      既に入った規範を外すには [`list-masked-failure-modes-before-removing-guard.md`](../_claude/rules/list-masked-failure-modes-before-removing-guard.md)
+      既に入った規範を外すには [`list-masked-failure-modes-before-removing-guard.md`](../../_claude/rules/list-masked-failure-modes-before-removing-guard.md)
       の手順 (何をマスクしていたかの列挙) が要る。重複だと感じたら、そのときに正式に外す
 
 残課題なし。

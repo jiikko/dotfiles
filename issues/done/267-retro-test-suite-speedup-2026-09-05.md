@@ -2,7 +2,7 @@
 
 起票日: 2026-09-05
 種別: retro
-関連: [262](pending/262-perf-test-suite-speedup-plan.md) — 計画と実測の正本 /
+関連: [262](../pending/262-perf-test-suite-speedup-plan.md) — 計画と実測の正本 /
       commit `0a9db0d0` (E-2) / `6467aeea` (E-1) / `e40c755d` / `e6853c4c`
 
 やったこと: CI の律速を実測して計画 (262) を起こし、施策 E-2 (固定 sleep → 条件ポーリング、

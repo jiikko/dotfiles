@@ -51,7 +51,7 @@ func (f StatusFilter) showsIssue(iss *Issue) bool {
    （[`claude-md-maintenance.md`](../../_claude/rules/claude-md-maintenance.md) の意味的乖離: 根拠が
    仕様変更で崩れた警告はその場で直す）
 3. 直したら幅ゲートを通す。issues viewer は全画面ビューアなので `fullScreenCases` 経由で
-   自動的に対象になっている（[289](../289-refactor-glogx-hintline-two-layer-structure.md) で
+   自動的に対象になっている（[289](289-refactor-glogx-hintline-two-layer-structure.md) で
    非全画面ぶんもレジストリ駆動にしたが、**viewer 側の hint は意図的に別経路のまま**）
 
 ## なぜ 289 に混ぜないか

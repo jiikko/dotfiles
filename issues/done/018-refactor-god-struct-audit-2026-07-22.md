@@ -8,7 +8,7 @@ jobDetailOverlay) を抽出したのを機に、src 配下の Go プロジェク
 統合)。本 issue はその結論と、次に手を入れる価値がある抽出候補・逆に「抽出しない」と判断した
 ものの記録。
 
-**評価原則** ([`verify-design-intent-before-refactor.md`](../_claude/rules/verify-design-intent-before-refactor.md)):
+**評価原則** ([`verify-design-intent-before-refactor.md`](../../_claude/rules/verify-design-intent-before-refactor.md)):
 リファクタの目的は「複雑性を下げる」こと。行数分割は複雑性の**移動**にすぎず不可。抽出価値は
 「認知負荷 (読む時の jump 数 / 変更時の touch 箇所)・結合・重複・状態の局所化」が実際に下がるかで
 判定する。「切り出さない (現状維持)」も正当な結論。

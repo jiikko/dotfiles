@@ -3,7 +3,7 @@
 起票日: 2026-09-03
 出典: `/audit` の test-helpers (direct、2026-09-03)
 重要度: P3
-関連: [`verify-design-intent-before-refactor.md`](../_claude/rules/verify-design-intent-before-refactor.md)
+関連: [`verify-design-intent-before-refactor.md`](../../_claude/rules/verify-design-intent-before-refactor.md)
 (複雑性が下がるかで判断する)
 
 ## 前提: この repo には既に共通ヘルパー基盤がある

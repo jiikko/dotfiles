@@ -1,7 +1,7 @@
 # 218 feat: doctor カタログと閾値の未決事項 (issue 148 の 8 章から切り出し)
 
 起票日: 2026-09-03
-出典: [issues/148](done/148-feat-glogx-doctor-disk-diagnosis.md) の 8 章 (未決事項) と 7 章の未チェック 2 件
+出典: [issues/148](148-feat-glogx-doctor-disk-diagnosis.md) の 8 章 (未決事項) と 7 章の未チェック 2 件
 重要度: **P3** (どれも実装の残りではなく、**ユーザーの判断**か**実測の機会待ち**)
 
 ## なぜ切り出したか
@@ -85,7 +85,7 @@ done にすると判断ごと埋もれる。ここへ移す。
       10 回ずつ測った: **中央値 327.8ms → 329.5ms**。差 +1.7ms は群内のばらつき (14〜19ms) より
       小さく、`loadDoctorDiskCache` 単体の 26.5µs は測定の分解能の 1/60 なので壁時計では
       原理的に見えない。分布と外れ値の扱いは
-      [`issues/done/206`](done/206-perf-doctor-unmeasured-leak-and-startup-items.md) が正本。
+      [`issues/done/206`](206-perf-doctor-unmeasured-leak-and-startup-items.md) が正本。
       ⚠️ Bench 経路には**乗せない**と判断済み (`tests/glogx/bench_glogx.sh` の冒頭が
       「バイナリ起動の壁時計は CI では flake 枠」と既に決めており、実測の外れ値 1.9 倍がそれを裏づけた)
 
@@ -170,7 +170,7 @@ xcode-deriveddata 17.6 / simulator-runtimes 16.2 / go-modcache 5.8 GB。
 ### 却下したもの (理由をコード直近に残した)
 
 issue は移動するがコードは現場に残るので、**次の audit が同じ提案を再生成しないよう**
-判定の在る場所へ書いた ([`pending-issue-rationale-in-code.md`](../_claude/rules/pending-issue-rationale-in-code.md))。
+判定の在る場所へ書いた ([`pending-issue-rationale-in-code.md`](../../_claude/rules/pending-issue-rationale-in-code.md))。
 
 | 却下 | 理由の置き場所 |
 |---|---|
@@ -181,7 +181,7 @@ issue は移動するがコードは現場に残るので、**次の audit が�
 ### 別 issue へ移したもの
 
 - [issues/220](220-feat-doctor-project-build-artifacts.md) — `~/src/**` の成果物と `node_modules`
-- [issues/221](221-feat-doctor-process-diagnosis.md) — プロセス側の診断 (148 の 5 章の実測を引き継いだ)
+- [issues/221](../pending/221-feat-doctor-process-diagnosis.md) — プロセス側の診断 (148 の 5 章の実測を引き継いだ)
 
 `cli_health.go` の統合は 148 時点の「しない」方針のまま (統合するなら起動時トーストの挙動を
 変えないことが条件、という制約も 148 に残っている)。

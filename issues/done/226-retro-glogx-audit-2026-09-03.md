@@ -18,7 +18,7 @@
 言っているのに、**却下の側でだけそれを緩めた** (発見を起票するときは疑うのに、
 却下するときは追認していた)。
 
-**切り出し先の提案**: 既存 [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md)
+**切り出し先の提案**: 既存 [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md)
 の「よくある『守っていないテスト』の形」へ 1 項追記
 (「**突合・走査系のテストは、抽出が実際に何件を見ているかを数えてから根拠にする**。
 canary の閾値が実際の件数より大幅に低いと、壊れても落ちない」)。
@@ -33,7 +33,7 @@ issue 222 の初稿に「production に 12 件」と書いたが、実際は pro
 **何が悪かったか**: `uniq -c` の合計をそのまま転記し、**測った単位 (production / テスト) を
 明示せずに「実測」の見出しの下に置いた**。
 
-**切り出し先の提案**: 既存 [`perf-claims-need-measurement.md`](../_claude/rules/perf-claims-need-measurement.md)
+**切り出し先の提案**: 既存 [`perf-claims-need-measurement.md`](../../_claude/rules/perf-claims-need-measurement.md)
 の「内訳の合計を全体の実測として書かない」項へ、**「集計の母集合 (production / テスト /
 除外した linter) を数字と同じ行に書く」**を追記。あるいは却下 (1 の項と違い、
 一般化する価値が薄いなら記録だけで足りる) — 判断はユーザーに委ねる。
@@ -48,7 +48,7 @@ issue 222 の初稿は「この repo が明文化した『網羅は実装で強�
 (モジュール共通の規約の正本) を読まなかった**。
 
 **切り出し先の提案**: 既存
-[`verify-design-intent-before-refactor.md`](../_claude/rules/verify-design-intent-before-refactor.md)
+[`verify-design-intent-before-refactor.md`](../../_claude/rules/verify-design-intent-before-refactor.md)
 のチェックリストへ「**対象ディレクトリの CLAUDE.md だけでなく、一階層上の README / 共通規約も
 読む**」を追記 (「意図的に選ばれた設計でないか」の確認手順の一部)。
 

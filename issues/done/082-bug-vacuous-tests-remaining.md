@@ -4,7 +4,7 @@
 種別: bug
 優先度: **P3** (production は正しい。テスト側が空回りしているだけ)
 
-出典: 監査 [072](done/072-research-test-audit-2026-08-20.md) の `072-pyenv-always-skip` /
+出典: 監査 [072](072-research-test-audit-2026-08-20.md) の `072-pyenv-always-skip` /
 `072-fork-scratch-perma-skip` / `072-ftplugin-ts-silent-skip` / `072-result-log-no-assert` /
 `072-open-workspace-selfref` / `072-brew-bats-dead-export` / `072-lazy-body-untested`。
 同じ監査で**修正済みのもの** (`scroll_glide_test.go` の `t.Skip` / `test_av1ify_options.sh` の

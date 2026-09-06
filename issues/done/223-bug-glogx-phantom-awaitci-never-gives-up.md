@@ -107,7 +107,7 @@ CI 取得の会計を型へ閉じる話は issue 224 に分けた。
 
 ## 先行事例: 同じ不変条件の「逆向き」だけが守られている
 
-**issue [032](done/032-fix-glogx-bubbletea-tick-gaps.md) (done)** は、まったく同じ tick チェーンの
+**issue [032](032-fix-glogx-bubbletea-tick-gaps.md) (done)** は、まったく同じ tick チェーンの
 **落ちる側**を塞いだ issue:
 
 > どちらも「Cmd を落として**アニメの tick が止まる**」型で、症状は「トーストが shown=0 のまま
@@ -130,7 +130,7 @@ CI 取得の会計を型へ閉じる話は issue 224 に分けた。
 
 - issue 224 (CI 取得の会計に所有者が無い。本件はその帰結の 1 つ)
 - issue 227 (同じ「単一の概念が手書きで散る」形)
-- issue [032](done/032-fix-glogx-bubbletea-tick-gaps.md) — tick チェーンの落ちる側 (対になる欠陥)
+- issue [032](032-fix-glogx-bubbletea-tick-gaps.md) — tick チェーンの落ちる側 (対になる欠陥)
 
 ## 対応 (2026-09-04。`5c205228`)
 

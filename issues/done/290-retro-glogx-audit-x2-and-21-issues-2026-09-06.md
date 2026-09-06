@@ -11,11 +11,11 @@
 | 項目 | 切り出し先 | 実体 |
 |---|---|---|
 | 1. `make lint` 漏れが path filter に隠れた | ルール追記 **＋ ツール改修** | [`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md) に「path filter 付きの CI では HEAD の緑を『直前までの緑』と読み替えない」節 / `bin/ci-log` が未検証の赤を報告するようにした |
-| 2. forge 3 体に同じ worktree | 新規 issue | [292](../292-feat-audit-forge-should-hand-each-agent-its-own-worktree.md) |
+| 2. forge 3 体に同じ worktree | 新規 issue | [292](292-feat-audit-forge-should-hand-each-agent-its-own-worktree.md) |
 | 3. 監査 issue の「不在の主張」が誤り | CLAUDE.md「Issue管理」へ追記 | 「不在の主張は着手前に数え直す」 |
 | 4. ゲートの脅威モデルを後で書いた | 却下 | ルールは既に明示済み。ここに記録して終わり |
 | 5. オラクルの 5→1 統合 | 却下（コードへ固定済み） | `ctlprobe.go` のヘッダ |
-| 6. 幅ゲートが新分岐を見ない | 新規 issue | [289](../289-refactor-glogx-hintline-two-layer-structure.md)（trigger 待ち） |
+| 6. 幅ゲートが新分岐を見ない | 新規 issue | [289](289-refactor-glogx-hintline-two-layer-structure.md)（trigger 待ち） |
 | 6.5. hooks の恒真 fixture / 数えずに「N 箇所すべて」 | ルール追記 ×2 | [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) に「fixture が判定コマンドの出力に現れる形か」「前提が早期 return で素通りしていないか」/ CLAUDE.md「レビュー方針」に「N は機械で数えてから書く」 |
 | 6.6. 対で持つ状態の片割れ更新漏れ | ルール追記 | [`survey-receiver-guards-before-passing-new-values.md`](../../_claude/rules/survey-receiver-guards-before-passing-new-values.md) に「自分が宣言した不変条件にも同じ手順を向ける」節 |
 | 7. 宣言したレビューを通していなかった | 却下 | 規範の不足ではない |

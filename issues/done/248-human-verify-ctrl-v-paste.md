@@ -3,7 +3,7 @@
 起票日: 2026-09-04
 期限: 2026-09-11
 種別: human
-関連: [138](next/138-feat-tmux-side-ctrl-v-paste-from-clipboard.md) の実装 / `_tmux.conf` の C-v bind /
+関連: [138](138-feat-tmux-side-ctrl-v-paste-from-clipboard.md) の実装 / `_tmux.conf` の C-v bind /
 `tests/tmux/test_ctrl_v_paste.sh`
 
 ## 前提

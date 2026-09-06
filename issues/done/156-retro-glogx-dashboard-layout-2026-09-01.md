@@ -16,7 +16,7 @@
 | 集約行 | 5 本 | 0 本 |
 
 素通りの原因は 3 回とも同じ形で、**「その assert が見ている量は、壊れたときに動くのか」**
-([`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の既存項目) に
+([`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) の既存項目) に
 該当していた。特に「AA の形だけ見る」検査は、その高さでは見出しがテキストへ落ちるため
 **構造的に**変異を素通りする。
 
@@ -28,7 +28,7 @@
 
 ## 2. サンプルレンダラで「見た目」は決められたが、「崩れ」は防げなかった
 
-[`decide-layout-in-sample-renderer-first.md`](../_claude/rules/decide-layout-in-sample-renderer-first.md)
+[`decide-layout-in-sample-renderer-first.md`](../../_claude/rules/decide-layout-in-sample-renderer-first.md)
 に従い 3 案をサンプルで出して合意を取った (案 B 採用) 手順は機能した。一方、その後の
 「逼迫枠を主役にする」案は**実装してからユーザーが崩れを発見**し revert になった
 (`59d1c6a`)。
@@ -48,13 +48,13 @@
 
 - 実装前に「何が大きさを決めているか」を確かめていれば、案そのものの評価が変わった
   (主役を大きくできないなら、脇役を削るしか手が無い = 案の価値が下がる)
-- 切り出し先: **却下**。[`instrument-before-second-fix.md`](../_claude/rules/instrument-before-second-fix.md)
+- 切り出し先: **却下**。[`instrument-before-second-fix.md`](../../_claude/rules/instrument-before-second-fix.md)
   の「前提を今この環境で実測し直す」が既に同じことを言っている
 
 ## 4. 行数の節約は実測して書けた
 
 集約行の効果は `dial-preview` で before/after を数えて commit message に残した
-(225x53 で盤 34 → 40 行)。[`perf-claims-need-measurement.md`](../_claude/rules/perf-claims-need-measurement.md)
+(225x53 で盤 34 → 40 行)。[`perf-claims-need-measurement.md`](../../_claude/rules/perf-claims-need-measurement.md)
 の性能版と同じ規律を「行数」に適用した形。
 
 - 切り出し先: **却下** (既存ルールの素直な適用。新しい規範は無い)
@@ -71,7 +71,7 @@
 ## 残課題
 
 - [x] 項目 2 の切り出し → **採用 (2026-09-02)**。
-      [`decide-layout-in-sample-renderer-first.md`](../_claude/rules/decide-layout-in-sample-renderer-first.md)
+      [`decide-layout-in-sample-renderer-first.md`](../../_claude/rules/decide-layout-in-sample-renderer-first.md)
       に「繰り返す単位が複数あるレイアウトは、サンプルでも複数単位を描く (1 単位のサンプルは
       単位間の整列を原理的に検査できない)」を追加。本 retro の revert (`59d1c6a`) を実例として
       添えた

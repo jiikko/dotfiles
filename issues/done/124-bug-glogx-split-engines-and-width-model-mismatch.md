@@ -181,7 +181,7 @@ Apple 系では 2027 を問い合わせすらしない。
 
 ## 進捗 (2026-09-02): (2) 決着 — 「揃える先」は選べないと分かった
 
-[issue 136](done/136-human-verify-glogx-width-model.md) の実測が返った。**同じマシン・同じ日・
+[issue 136](136-human-verify-glogx-width-model.md) の実測が返った。**同じマシン・同じ日・
 同じ deps (x/ansi v0.11.7 / uniseg v0.4.7 / go-runewidth v0.0.27) で、環境によって答えが反転する**:
 
 | 文字 | grapheme | wc | got (tmux 内) | got (Apple Terminal) |

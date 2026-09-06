@@ -5,7 +5,7 @@
 優先度: **P3** (救う対象 (旧形式 .terminal) が repo 内に存在しない。実害は「壊れたファイルで
 エラーメッセージの代わりに SIGABRT が出る」)
 
-出典: 監査 [071](done/071-research-design-audit-2026-08-20.md)。
+出典: 監査 [071](071-research-design-audit-2026-08-20.md)。
 **出典 issue には「反証で崩れた (却下)」の一覧がある** — 同じ 2 ファイルについての
 「色キーの 2 言語二重定義」指摘は**反証で崩れている** (shell 側の 4 arm は Swift 配列の複製ではなく
 Terminal.app の sdef が持つ `type="color"` の全列挙。5 つ目は Apple が sdef を拡張するまで

@@ -4,7 +4,7 @@
 種別: refactor
 優先度: **P3** (現状ドリフトなし。新しいグローバル overlay を足すと片方で載せ忘れる)
 
-出典: 監査 [071](done/071-research-design-audit-2026-08-20.md) の `071-chrome-composition-dup` /
+出典: 監査 [071](071-research-design-audit-2026-08-20.md) の `071-chrome-composition-dup` /
 `071-two-slide-state-machines` / `071-pager-empty-branch-divergence`。
 **出典 issue には「反証で崩れた (却下)」の一覧がある** — 同じ pager 系の指摘のうち
 「`job_detail_overlay` が `pagerScrollKey` に委譲していない」「y/N の実行キー述語の 3 箇所独立」は

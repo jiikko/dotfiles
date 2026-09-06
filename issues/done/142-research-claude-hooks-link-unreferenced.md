@@ -103,7 +103,7 @@ settings.json の `~/dotfiles/_claude/hooks/...` が展開された形そのも�
 
 ## マスクしていた failure mode の列挙
 
-[`list-masked-failure-modes-before-removing-guard.md`](../_claude/rules/list-masked-failure-modes-before-removing-guard.md) に従う。
+[`list-masked-failure-modes-before-removing-guard.md`](../../_claude/rules/list-masked-failure-modes-before-removing-guard.md) に従う。
 
 | この機構が防いでいたもの | 外した後は誰が防ぐか |
 |---|---|
@@ -133,7 +133,7 @@ settings.json の `~/dotfiles/_claude/hooks/...` が展開された形そのも�
 
 **撤去 (選択肢 A) を採らなかった理由**: 既存 link の後始末が破壊的操作の新設になる一方、
 残すコストは symlink 9 本とテスト 1 ループ分しかない
-([`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) 節 0
+([`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) 節 0
 「掃除機構を作る前に、そもそも発生させない構造を問う」の逆向きの適用 —
 掃除する価値が掃除機構のリスクを上回らない)。
 

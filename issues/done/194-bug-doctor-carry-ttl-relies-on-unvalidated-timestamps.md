@@ -2,8 +2,8 @@
 
 起票日: 2026-09-03
 重要度: **P3**
-関連: [issues/done/172](done/172-bug-doctor-reused-size-feeds-startup-toast.md) (敵対レビュー 6 周目) /
-[issues/done/173](done/173-bug-doctor-failed-entry-overwrites-cache-and-silences-toast.md)
+関連: [issues/done/172](172-bug-doctor-reused-size-feeds-startup-toast.md) (敵対レビュー 6 周目) /
+[issues/done/173](173-bug-doctor-failed-entry-overwrites-cache-and-silences-toast.md)
 
 ## 対象
 

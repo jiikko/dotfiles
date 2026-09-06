@@ -14,7 +14,7 @@
 - 効いたのは「既存の同型ガードのコメントを読んだ」こと。あのコメントが「なぜ弾くか」を
   書いていなければ、`|| m.rlDash.visible()` を足す発想には至らなかった
 - 切り出し先: **却下** (新しい規範は無い。既存の
-  [`pending-issue-rationale-in-code.md`](../_claude/rules/pending-issue-rationale-in-code.md) が
+  [`pending-issue-rationale-in-code.md`](../../_claude/rules/pending-issue-rationale-in-code.md) が
   効いた実例であって、追加ルールにはならない)
 
 ## 2. exhaustive linter が「bool 2 本 → enum」の設計変更を後押しした
@@ -47,7 +47,7 @@ status viewer の hint へ `R: 残量` を足したが、実測すると hint �
   という非対称が原因
 - 切り出し先: **issue 155 として起票済み**
 - 🚨 一般化して「表示されるかを assert しろ」というルールにはしない。既存の
-  [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の
+  [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) の
   「その assert が見ている量は、壊れたときに動くのか」が既に同じことを言っている
 
 ## 5. 並行セッションとの issue 番号調整に 3 往復かかった

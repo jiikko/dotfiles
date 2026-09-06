@@ -19,7 +19,7 @@ if command -v brew > /dev/null 2>&1; then
 
 ## なぜ直す価値があるか
 
-この repo には [`zsh-hook-return-via-reply.md`](../_claude/rules/zsh-hook-return-via-reply.md) が
+この repo には [`zsh-hook-return-via-reply.md`](../../rules/zsh-hook-return-via-reply.md) が
 あり、「hook 経路の fork が毎操作の体感レイテンシになる」という規律を持っている。あちらは
 precmd/preexec だが、**シェル起動は 1 日に何十回も通る経路**で性質は同じ。
 

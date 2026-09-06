@@ -115,7 +115,7 @@ doctor / rlDash で usage を効かせないのが意図なら、その 1 行の
 
 ## 先行事例 (この repo で既に 1 回起きた同じ class)
 
-**issue [085](done/085-refactor-glogx-chrome-composition-dup.md) (done)** が、まったく同じ形を扱っている:
+**issue [085](085-refactor-glogx-chrome-composition-dup.md) (done)** が、まったく同じ形を扱っている:
 
 > `finishViewerWindow` と `viewLines` 末尾が、グローバル chrome の合成順を**逐語で 2 コピー**持つ。
 > どちらの doc コメントも「ビューごとに書くと片方で載せ忘れる」「前面順もここで一本化する」と
@@ -144,7 +144,7 @@ doctor / rlDash で usage を効かせないのが意図なら、その 1 行の
 ## 関連
 
 - issue 148 (doctor の実装。doctor が後から足された経緯)
-- issue [085](done/085-refactor-glogx-chrome-composition-dup.md) / [071](done/071-research-design-audit-2026-08-20.md) — 上記の先行事例と却下一覧
+- issue [085](085-refactor-glogx-chrome-composition-dup.md) / [071](071-research-design-audit-2026-08-20.md) — 上記の先行事例と却下一覧
 - `~/.claude/rules/comment-no-restate-enforced.md` — 「実装で強制できない制約」をコメントに残す規律。
   本件は**強制できるようにする** (レジストリ + テーブル駆動テスト) 方向
 - `~/.claude/rules/verify-design-intent-before-refactor.md` — 却下済みの分解を逆転提案しないための確認手順

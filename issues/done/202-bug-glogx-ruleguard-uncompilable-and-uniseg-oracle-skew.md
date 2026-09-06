@@ -85,7 +85,7 @@ assert3 (`fast == ansi.StringWidth`) が 0 vs 1 で落ちる。
 **何もしない。** ただし、この却下理由を残しておかないと次の監査が同じ指摘を再生成するので、
 `width_fast_test.go` の uniseg を使う箇所に「このオラクルは前段で、本番との一致は下の
 `ansi.StringWidth` 比較が担う」という 1 行を足す
-([`pending-issue-rationale-in-code.md`](../_claude/rules/pending-issue-rationale-in-code.md))。
+([`pending-issue-rationale-in-code.md`](../../_claude/rules/pending-issue-rationale-in-code.md))。
 
 ## 受け入れ条件
 
@@ -106,7 +106,7 @@ assert3 (`fast == ansi.StringWidth`) が 0 vs 1 で落ちる。
 - **chroma の `formatters` が html/svg を引き込む**: `formatters.Get("terminal256")` しか
   使わないのに `formatters/html` と `formatters/svg` が `go list -deps` に入る。
   **バイナリサイズは未計測**なので「肥大化する」とは書かない
-  ([`perf-claims-need-measurement.md`](../_claude/rules/perf-claims-need-measurement.md))
+  ([`perf-claims-need-measurement.md`](../../_claude/rules/perf-claims-need-measurement.md))
 - **`ultraviolet` が擬似バージョン**: bubbletea v2.0.8 がタグの無いコミットに依存している。
   glogx の幅モデルは「描画エンジンの既定が WcWidth」という ultraviolet の実装詳細に乗って
   辻褄を合わせている (`termwidth/termwidth.go:19-36` が実測表つきで記録)。bubbletea を上げると

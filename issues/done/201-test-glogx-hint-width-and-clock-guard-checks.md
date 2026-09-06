@@ -8,10 +8,10 @@
 
 ## 候補 1 (最優先): hint 行が幅に収まることを、全 hint 生成箇所で検査する
 
-出典 done: [155](done/155-bug-status-viewer-hint-exceeds-popup-width.md) /
-[154 項目 4](done/154-retro-glogx-viewer-crossnav-2026-09-01.md) /
-[121](done/121-bug-glogx-viewer-hint-says-close-but-quits.md)。同族に
-[116](done/116-bug-glogx-issues-renderer-overflows-at-tiny-width.md)。
+出典 done: [155](155-bug-status-viewer-hint-exceeds-popup-width.md) /
+[154 項目 4](154-retro-glogx-viewer-crossnav-2026-09-01.md) /
+[121](121-bug-glogx-viewer-hint-says-close-but-quits.md)。同族に
+[116](116-bug-glogx-issues-renderer-overflows-at-tiny-width.md)。
 **155 自身が「git log 一覧の hint も同じ状態にある。未対応であることを明記しておく」と書き残している。**
 
 ### 既存機構では止まらない (実測)
@@ -39,7 +39,7 @@ hint 幅のテストは `issues_view_test.go:TestIssuesViewHintFitsPopupWidth` �
 
 1. `go/ast` で `hint()` メソッドと `hintLine` への代入を列挙し、**文字列リテラルを抽出**して
    `dispWidth <= testPopupWidth-2` を assert
-2. **列挙表は持たない** ([117](done/117-test-glogx-bench-metric-routing-unpinned.md) の
+2. **列挙表は持たない** ([117](117-test-glogx-bench-metric-routing-unpinned.md) の
    「列挙すると兄弟を足したときに追随を忘れる = この検査が守りたい事故を検査自身が踏む」を適用)
 3. **走査 0 件は fail** (同じく 115 / 117 の規律)
 
@@ -52,9 +52,9 @@ hint 幅のテストは `issues_view_test.go:TestIssuesViewHintFitsPopupWidth` �
 
 ## 候補 2: 永続キャッシュの鮮度判定に「負の経過 (時計の巻き戻し)」ガードを強制する
 
-出典 done: [174](done/174-bug-doctor-toast-silent-when-clock-moved-back.md) (「**この 1 箇所だけが
-非対称**」と書いている) / [194](done/194-bug-doctor-carry-ttl-relies-on-unvalidated-timestamps.md) /
-[170](done/170-test-doctor-vacuous-tests.md) (`age < 0` を削っても全 green だった変異報告)。
+出典 done: [174](174-bug-doctor-toast-silent-when-clock-moved-back.md) (「**この 1 箇所だけが
+非対称**」と書いている) / [194](194-bug-doctor-carry-ttl-relies-on-unvalidated-timestamps.md) /
+[170](170-test-doctor-vacuous-tests.md) (`age < 0` を削っても全 green だった変異報告)。
 
 ### 非対称が実在する (実測)
 
@@ -90,9 +90,9 @@ doctor_cache.go:320    age := now.Sub(c.ScannedAt); age > doctorStaleAfter  // �
 
 ## 候補 3 (小): `vs16_literal_test.go` に「走査 0 件で fail」を足す
 
-出典 done: [115](done/115-refactor-glogx-statusfilter-list-duplicated.md) /
-[117](done/117-test-glogx-bench-metric-routing-unpinned.md) (どちらも「走査 0 件も fail にした」) /
-[198](done/198-test-glogx-vacuous-assertions-found-by-mutation.md) の「攻めたが見つからなかった範囲」が
+出典 done: [115](115-refactor-glogx-statusfilter-list-duplicated.md) /
+[117](117-test-glogx-bench-metric-routing-unpinned.md) (どちらも「走査 0 件も fail にした」) /
+[198](198-test-glogx-vacuous-assertions-found-by-mutation.md) の「攻めたが見つからなかった範囲」が
 **`vs16_literal_test.go` に同じ guard が無いことを名指ししている**。
 
 実測: `waitdelay_discipline_test.go` と `width_test.go:171` は `checked == 0` guard あり、
@@ -108,7 +108,7 @@ doctor_cache.go:320    age := now.Sub(c.ScannedAt); age > doctorStaleAfter  // �
 - [ ] 候補 3: `vs16_literal_test.go` に 0 件 fail を足す
 - [ ] 各検査は**変異で red を見る**まで確認する (走査対象を空にする / ガードを外す)
 - [ ] 走査型の検査を足したら、`tests/CLAUDE.md` か `src/glogx/CLAUDE.md` の「不変条件は lint / test が
-      正本」の一覧に載せる ([`new-tool-requires-entrypoint-docs.md`](../_claude/rules/new-tool-requires-entrypoint-docs.md))
+      正本」の一覧に載せる ([`new-tool-requires-entrypoint-docs.md`](../../_claude/rules/new-tool-requires-entrypoint-docs.md))
 
 ## 転用しないと判断したもの (次の監査が同じ提案を再生成しないため)
 
@@ -123,7 +123,7 @@ doctor_cache.go:320    age := now.Sub(c.ScannedAt); age > doctorStaleAfter  // �
   (`toastEncapsulation`) / 幅エンジン二重化 (depguard + `TestNoSecondWidthEngine`) /
   `timeNow` シーム迂回・stdout 直書き (forbidigo) / `WaitDelay` 漏れ / VS16 リテラル /
   bench metric の兄弟遮蔽
-- **「表示されるかを assert しろ」の一般ルール化**: [154 項目 4](done/154-retro-glogx-viewer-crossnav-2026-09-01.md)
+- **「表示されるかを assert しろ」の一般ルール化**: [154 項目 4](154-retro-glogx-viewer-crossnav-2026-09-01.md)
   が明示的に却下している。候補 1 は規範ではなく**列挙漏れを自動導出する具体的な検査**の形に限定した
 
 ## 対応 (2026-09-03)
@@ -177,4 +177,4 @@ doctor_cache.go:320    age := now.Sub(c.ScannedAt); age > doctorStaleAfter  // �
 - [x] 候補 3: `vs16_literal_test.go` に 0 件 fail を足した
 - [x] 各検査は変異で red を見るまで確認した (計 7 本)
 - [x] `src/glogx/CLAUDE.md` の「不変条件は lint / test が正本」に 2 本を追記した
-      ([`new-tool-requires-entrypoint-docs.md`](../_claude/rules/new-tool-requires-entrypoint-docs.md))
+      ([`new-tool-requires-entrypoint-docs.md`](../../_claude/rules/new-tool-requires-entrypoint-docs.md))

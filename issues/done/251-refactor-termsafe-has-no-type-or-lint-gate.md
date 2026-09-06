@@ -105,6 +105,6 @@ P2 / P3 も対応: `paths_has` の canary（負例つき）/ `wantChecked` の�
 
 ### 残したもの
 
-- **`doctor/svc` 側の関門には検査が無い** → [252](../252-refactor-svc-display-has-no-coverage-check.md) として起票
+- **`doctor/svc` 側の関門には検査が無い** → [252](252-refactor-svc-display-has-no-coverage-check.md) として起票
 - **案 1（型で持つ）は却下**。理由は `src/termsafe/README.md` に記録した
   （パッケージ境界で剥がれるので、効果を出すには 50 呼び出し + 受け側全経路が要る）

@@ -5,7 +5,7 @@
 優先度: **P3** (コマンド実行には至らない。表示の破壊・偽装と色漏れのみ。要件は「敵対的な
 branch 名を持つ repo に cd すること」)
 
-出典: 監査 [070](done/070-research-quality-audit-2026-08-20.md) の `070-git-prompt-percent`
+出典: 監査 [070](070-research-quality-audit-2026-08-20.md) の `070-git-prompt-percent`
 (「`zshlib/_git_prompt.zsh:98` が `.git/HEAD` 等由来の文字列を prompt へ素で埋める」)。
 監査時は未裏取り。**2026-08-21 に隔離実験で再現し、同時に「より強い読み (任意コマンド実行)」は
 反証した**。

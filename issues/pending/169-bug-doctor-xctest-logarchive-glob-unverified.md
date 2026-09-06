@@ -2,7 +2,7 @@
 
 起票日: 2026-09-02
 重要度: **P2**
-関連: [issues/163](163-audit-doctor-implementation-red-team.md) (体 1) / [issues/148](148-feat-glogx-doctor-disk-diagnosis.md) (「敵対的レビュー 2 回目」の xctest-logarchive P2)
+関連: [issues/163](../done/163-audit-doctor-implementation-red-team.md) (体 1) / [issues/148](../done/148-feat-glogx-doctor-disk-diagnosis.md) (「敵対的レビュー 2 回目」の xctest-logarchive P2)
 
 ## 対象
 
@@ -53,13 +53,13 @@
 
 `src/doctor/disk/catalog.go` の `xctest-logarchive` のコメントから「実測の名前」という記述を削り、
 **「この glob 自体が未実測」**であることと、確定手順 (`xcodebuild test` の直後に `ls -la` で実名を採る) を書いた。
-コード直近に残すのは [`pending-issue-rationale-in-code.md`](../_claude/rules/pending-issue-rationale-in-code.md) の規律
+コード直近に残すのは [`pending-issue-rationale-in-code.md`](../../_claude/rules/pending-issue-rationale-in-code.md) の規律
 (issue は移動するがコードは現場に残り、改修者が該当行を編集する瞬間に必ず目に入る)。
 
 ### 2 / 3 は実測待ち → `issues/pending/`
 
 - **2 (実名を採って glob を確定)** は `xcodebuild test` を回さないと測れない。この repo には iOS/macOS アプリが
-  無く、シミュレータでの動作確認は封印されている ([`no-ios-simulator-verification.md`](../_claude/rules/no-ios-simulator-verification.md))
+  無く、シミュレータでの動作確認は封印されている ([`no-ios-simulator-verification.md`](../../_claude/rules/no-ios-simulator-verification.md))
 - **3 (未検証の検出項目と分かる形にする案)** は UI の語彙を増やす判断で、2 の結果次第で不要になりうる
   (実名が判れば「未検証」ではなくなる)。2 の前に UI を増やすのは早い
 

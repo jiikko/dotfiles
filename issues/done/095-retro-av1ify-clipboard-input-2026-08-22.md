@@ -19,7 +19,7 @@
 
 **切り出し先の提案**: `_claude/rules/` に新規ルール
 「**対話プロンプトの検証は `cmd | script` でなく pty driver（プロンプトを待ってから書く）で行う**」。
-既存の [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
+既存の [`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md)
 節 2 は「検査できなかったのに緑」を扱っており、今回は逆向き（**検証できなかったのに赤**、
 しかも赤の原因がハーネス側）なので、同じ節に 1 段落足す形でも足りる。判断はユーザーに委ねる。
 
@@ -93,13 +93,13 @@ drain を `read -t 0` で実装し、パイプで「溜めた入力が捨てら�
 - ~~issue 089（`print -P` の 37 行）~~ → 2026-08-22 に全件対応して done へ移した
   （共通パレット `zshlib/_ansi_colors.zsh` + `print -r`。承認後の実行トリガも閉じた）
 - ~~項目 1（対話プロンプトの検証を pty driver で行う）の切り出し~~ → 2026-08-24 に実施。
-  **新規** [`_claude/rules/verify-interactive-prompt-with-pty-driver.md`](../_claude/rules/verify-interactive-prompt-with-pty-driver.md)（commit `e2448f5`）。
+  **新規** [`_claude/rules/verify-interactive-prompt-with-pty-driver.md`](../../_claude/rules/verify-interactive-prompt-with-pty-driver.md)（commit `e2448f5`）。
   retro 本文は「`adversarial-review-own-safeguards.md` 節 2 への 1 段落追記でも足りる」と
   していたが、あちらは「検査できなかったのに**緑**」、こちらは「検証できなかったのに**赤**
   （しかも赤の原因がハーネス側）」と向きが逆なので、トリガー別に新規ルールへ分けた
 - ~~項目 4（本番と違う入力チャネルで測ると機構の有無を区別できない）の切り出し~~ →
   **却下 (2026-08-29): 反映済み**。項目 1 で新設した
-  [`verify-interactive-prompt-with-pty-driver.md`](../_claude/rules/verify-interactive-prompt-with-pty-driver.md)
+  [`verify-interactive-prompt-with-pty-driver.md`](../../_claude/rules/verify-interactive-prompt-with-pty-driver.md)
   が「パイプで足りるか / pty が要るか」の表で `read -t 0` を名指しし、
   「**pty が要る挙動を pty 無しでテストに書かない**。書いても『実装が無い版と区別できない』
   テストになる」と本文で言っている。`mutation-verify-new-tests.md` 側への重複追記は不要
