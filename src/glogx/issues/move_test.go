@@ -173,6 +173,10 @@ func TestMoveKeepsStrayGroupChildInsideEpic(t *testing.T) {
 // いない手組みの Issue) の移動を拒否することを固定する。通すと destDir が空になり、dest が
 // 相対パス (`next/NNN-x.md`) になって **glogx の CWD 配下**へ issue を rename する
 // (2026-09-06 の敵対的レビュー 2 周目: この guard を消しても全テストが緑だった)。
+//
+// 🚨 このテストで guard を外す変異を当てると、fixture が **repo 内の
+// `src/glogx/issues/next/`** に実際に作られる (2026-09-06 に実測)。変異のあとは
+// `git status` で残骸を確認すること。
 func TestMoveRejectsGroupIssueWithoutGroupKey(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "issues")
