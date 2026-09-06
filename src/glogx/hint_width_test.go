@@ -94,50 +94,74 @@ func TestDiffHintUsesRenderBudget(t *testing.T) {
 	}
 }
 
+// hintSurfaceSetup は面 ID → 「その面を出すモデルの作り方」と「消えてはいけない語」。
+//
+// 🚨 **配列にしているのは登録漏れを機械で止めるため** (issue 289)。hintSurfaceID を足すと
+// ここの要素が nil のまま残り、TestHintSurfacesCoverEveryID が落ちる。以前は非全画面ぶんが
+// 手書きのリテラル列で、下限チェックは「登録の削除」しか見ておらず**分岐の追加は素通り**した
+// (変異で実測: 溢れる分岐を 1 本足しても幅ゲート 4 本とも緑だった)。
+//
+// exit は「幅が足りなくても最後まで残るべき語」。抜ける手段がある面はその案内、
+// 確認・進行中の面は「何を聞かれているか / 何を待っているか」(消えると操作不能になる)。
+var hintSurfaceSetup = [hintSurfaceCount]struct {
+	name string
+	open func(*browseModel)
+	exit string
+}{
+	hintSurfaceBase:         {"基底一覧", func(*browseModel) {}, "q: 終了"},
+	hintSurfacePushConfirm:  {"push 確認", func(m *browseModel) { m.actModal.pushConfirm = true }, "push しますか?"},
+	hintSurfacePullConfirm:  {"pull 確認", func(m *browseModel) { m.actModal.pullConfirm = true }, "pull --rebase しますか?"},
+	hintSurfacePushing:      {"push 実行中", func(m *browseModel) { m.actModal.pushing = true }, "pushing..."},
+	hintSurfacePulling:      {"pull 実行中", func(m *browseModel) { m.actModal.pulling = true }, "pulling..."},
+	hintSurfaceRerunConfirm: {"再実行 確認", func(m *browseModel) { m.actModal.rerunConfirm = true }, "job を再実行しますか?"},
+	hintSurfaceRerunning:    {"再実行 中", func(m *browseModel) { m.actModal.rerunning = true }, "rerunning..."},
+	hintSurfaceUpdating: {"self-update 中", func(m *browseModel) {
+		m.actModal.updating = map[string]bool{"claude": true}
+	}, "update..."},
+	hintSurfaceDiff:      {"diff overlay", func(m *browseModel) { m.diffOv.sha = m.commits[0].SHA }, "q/h: 閉じる"},
+	hintSurfacePRStatus:  {"PR 状態", func(m *browseModel) { m.prStatusOv.sha = m.commits[0].SHA }, "P/q/h: 閉じる"},
+	hintSurfaceJobDetail: {"job 詳細", func(m *browseModel) { m.detailOv.open = true }, "Enter/h/q: 戻る"},
+	hintSurfacePanelCursor: {"job パネル(カーソルあり)", func(m *browseModel) {
+		m.panelSHA, m.panelCursor = m.commits[0].SHA, 0
+	}, "h/q: 閉じる"},
+	// 🚨 openPanel は panelCursor = -1 から始めるので、Enter を押した直後に必ず通るのは
+	// こちら。そちらだけが幅検査の外にあり、実際に w=60〜69 で出口が切れていた (issue 279)。
+	hintSurfacePanelNoCursor: {"job パネル(カーソル無し)", func(m *browseModel) {
+		m.panelSHA, m.panelCursor = m.commits[0].SHA, -1
+	}, "Enter/h/q: 閉じる"},
+}
+
 // hintSurface は「最下行の案内を持つ画面」1 つ。
-//
-// 🚨 **列挙表ではなくレジストリとして扱う** (issue 281)。issue 201 は「列挙すると兄弟を
-// 足したときに追随を忘れる = この検査が守りたい事故を検査自身が踏む」として走査型を
-// 指定していたが、実装は 3 件の t.Run 列挙になっており、基底一覧 / ratelimit / PR 状態の
-// 3 画面が検査の外に落ちていた (issue 279 でその 3 つとも実際に切れていた)。
-//
-// 全画面ビューアぶんは fullScreenCases から駆動する — あちらは
-// TestFullScreenCasesCoverEveryID が「ID を足したら 1 行足す」を強制しているので、
-// **新しい全画面ビューアは自動でこの幅検査の対象になる**。
 type hintSurface struct {
 	name string
 	open func(*browseModel)
-	exit string // 優先度 1 = 抜ける手段。狭い幅でも必ず残ること
+	exit string // 幅が足りなくても最後まで残るべき語
 	// prefixed は「取得中 / gh の警告」の前置が付く面。前置は**意図的に頭打ちにする**
 	// (予算の半分を超えたら前置の方を切る) ので、`…` が出るのは正常。
-	// 出口が残ることと幅に収まることは、前置あり/なしで同じように要求する。
 	prefixed bool
 }
 
 func hintSurfaces() []hintSurface {
-	out := []hintSurface{
-		{"基底一覧", func(*browseModel) {}, "q: 終了", false},
-		{"PR 状態", func(m *browseModel) { m.prStatusOv.sha = m.commits[0].SHA }, "P/q/h: 閉じる", false},
-		// 🚨 job パネルは**カーソルの有無で別の分岐**。openPanel は panelCursor = -1 から
-		// 始めるので、Enter を押した直後に必ず通るのは「カーソル無し」の方。
-		// そちらだけが幅検査の外にあり、実際に w=60〜69 で出口が切れていた (issue 279)。
-		{"job パネル(カーソル無し)", func(m *browseModel) {
-			m.panelSHA, m.panelCursor = m.commits[0].SHA, -1
-		}, "Enter/h/q: 閉じる", false},
-		{"job パネル(カーソルあり)", func(m *browseModel) {
-			m.panelSHA, m.panelCursor = m.commits[0].SHA, 0
-		}, "h/q: 閉じる", false},
-		// 🚨 前置がある状態も面として持つ。fitHintItems が収めた後に前置を積むと
-		// 末尾 = 出口が落ちるので、前置ぶんを予算から引いているかをここで見る。
-		// m.ghErr は次の取得開始までクリアされないので、gh 未導入の環境では常時この状態。
-		{"基底一覧 + gh 警告", func(m *browseModel) {
+	out := make([]hintSurface, 0, len(hintSurfaceSetup)+len(fullScreenCases)+2)
+	// 非全画面の面はレジストリから駆動する (登録漏れは TestHintSurfacesCoverEveryID が落とす)
+	for _, sc := range hintSurfaceSetup {
+		out = append(out, hintSurface{sc.name, sc.open, sc.exit, false})
+	}
+	// 前置つきの状態も面として持つ。fitHintItems が収めた後に前置を積むと末尾 = 出口が
+	// 落ちるので、前置ぶんを予算から引いているかをここで見る。
+	// 🚨 m.ghErr は次の取得開始までクリアされないので、gh 未導入の環境では常時この状態。
+	out = append(out,
+		hintSurface{"基底一覧 + gh 警告", func(m *browseModel) {
 			m.ghErr = &GHError{Kind: GHOther, Detail: "gh が未認証のため CI 状態を取得できません (gh auth login)"}
 		}, "q: 終了", true},
-		{"基底一覧 + 取得中", func(m *browseModel) {
+		hintSurface{"基底一覧 + 取得中", func(m *browseModel) {
 			m.toFetch = []string{m.commits[0].SHA}
 			m.pendingFetches = 1
 		}, "q: 終了", true},
-	}
+	)
+	// 全画面ビューアぶんは fullScreenCases から駆動する — あちらは
+	// TestFullScreenCasesCoverEveryID が「ID を足したら 1 行足す」を強制しているので、
+	// **新しい全画面ビューアは自動でこの幅検査の対象になる**。
 	exits := map[fullScreenID]string{
 		fullScreenRatelimit: "R/q/esc/h: 閉じる",
 		fullScreenDoctor:    "D/q/esc: 閉じる",
@@ -154,17 +178,37 @@ func hintSurfaces() []hintSurface {
 	return out
 }
 
+// レジストリの穴を塞ぐ: 面 ID を足したら、production の hint 項目と、テストの
+// 「その面の出し方」の両方が要る。片方だけだと幅検査から静かに落ちる。
+func TestHintSurfacesCoverEveryID(t *testing.T) {
+	for id := hintSurfaceID(0); id < hintSurfaceCount; id++ {
+		if hintBuilders[id] == nil {
+			t.Errorf("hintSurfaceID %d に hintBuilders の項目が無い (hint_surfaces.go に足すこと)", id)
+		}
+		sc := hintSurfaceSetup[id]
+		switch {
+		case sc.name == "":
+			t.Errorf("hintSurfaceID %d に hintSurfaceSetup の項目が無い (幅検査の対象から落ちる)", id)
+		case sc.open == nil:
+			t.Errorf("%s: その面を出す open が無い", sc.name)
+		case sc.exit == "":
+			t.Errorf("%s: 消えてはいけない語 (exit) が無い", sc.name)
+		}
+	}
+}
+
 // 最下行の案内は、どの画面でも「幅に収まる」かつ「抜ける手段が残る」。
 //
 // 155 / 201 / 264 が 3 度直してきた失敗モードで、そのたびに個別の画面へ手当てしていた。
 // ここで全画面ぶんをまとめて掃く。
 func TestEveryHintKeepsExitWithinWidth(t *testing.T) {
 	surfaces := hintSurfaces()
-	// 🚨 全画面ビューア (4 枚) + 基底一覧 + PR 状態。出口の語を書き忘れて対象から
+	// 🚨 レジストリの全面 + 前置 2 種 + 全画面ビューア。出口の語を書き忘れて対象から
 	// 落ちても気づけるよう下限を置く (走査 0 件 = 緑 を塞ぐ)。
-	if len(surfaces) < 2+len(fullScreenCases) {
+	want := int(hintSurfaceCount) + 2 + len(fullScreenCases)
+	if len(surfaces) < want {
 		t.Fatalf("検査対象が %d 面しかない (期待 %d)。exits の書き忘れで対象から落ちている",
-			len(surfaces), 2+len(fullScreenCases))
+			len(surfaces), want)
 	}
 	for _, s := range surfaces {
 		for w := frameMinWidth; w <= 140; w++ {

@@ -3886,98 +3886,11 @@ func (m *browseModel) hintLine() string {
 		hw = max(hw-dispWidth(prefix), 0)
 	}
 
-	// 🚨 固定文字列にしないこと (issue 279)。全部つなぐと 174 桁あり、端末 176 桁未満では
-	// 末尾の `q: 終了` が切られて**抜ける手段が案内から消える**。既定の画面・一般的な幅で
-	// 常時そうなっていた。優先度 1 = 出口、2 = 移動と主要操作、以降は幅が許せば出す。
-	hint := fitHintItems(hw, []hintItem{
-		{"j/k: 移動", 2},
-		{"Enter: CI job", 3},
-		{"d: diff", 3},
-		{"o: ブラウザ", 5},
-		{"p: PR", 6},
-		{"P: PR 状態", 6},
-		{"y: URL コピー", 5},
-		{"b: push", 4},
-		{"u: pull", 4},
-		{"i: issues", 4},
-		{"U: usage", 6},
-		{"R: 残量", 6},
-		{"C: update", 7},
-		{"D: doctor", 5},
-		{"w: 警告コピー", 7},
-		{"q: 終了", 1},
-	})
-	switch {
-	case m.actModal.pushConfirm:
-		hint = "push しますか? [Y/n] (Enter=y)"
-	case m.actModal.pullConfirm:
-		hint = "pull --rebase しますか? [Y/n] (Enter=y)"
-	case m.actModal.pushing:
-		hint = m.spinner() + " pushing..."
-	case m.actModal.pulling:
-		hint = m.spinner() + " pulling..."
-	case m.actModal.rerunConfirm:
-		hint = "job を再実行しますか? [Y/n] (Enter=y)"
-	case m.actModal.rerunning:
-		hint = m.spinner() + " rerunning..."
-	case m.actModal.anyUpdating():
-		hint = m.spinner() + " " + strings.Join(m.actModal.updatingTargets(), " + ") + " update..."
-	case m.diffOv.visible():
-		hint = fitHintItems(hw, []hintItem{
-			{"j/k/Space: スクロール", 2},
-			{"J/K: 隣のコミット", 3},
-			{"g/G: 先頭/末尾", 5},
-			{"y: URL コピー", 4},
-			{"q/h: 閉じる", 1}, // 抜ける手段は最優先
-		})
-	case m.prStatusOv.visible():
-		hint = fitHintItems(hw, []hintItem{
-			{"o: PR をブラウザで開く", 3},
-			{"y: URL コピー", 4},
-			{"P/q/h: 閉じる", 1},
-		})
-	case m.detailOv.visible():
-		hint = fitHintItems(hw, []hintItem{
-			{"j/k: スクロール", 3},
-			{"J/K: 隣の job", 4},
-			{"v: nvim で開く", 4},
-			{"r: 再実行", 3},
-			{"Enter/h/q: 戻る", 1}, // 抜ける手段は最優先
-			{"o: ブラウザ", 4},
-			{"y: URL", 5},
-			{"Y: 詳細コピー", 5},
-		})
-	case m.panelSHA != "" && m.panelCursor >= 0:
-		hint = fitHintItems(hw, []hintItem{
-			{"j/k: job 移動", 3},
-			{"Enter: 詳細ログ", 3},
-			{"r: 再実行", 4},
-			{"o: ブラウザ", 4},
-			{"d: diff", 5},
-			{"p: PR", 5},
-			{"y: URL", 5},
-			{"Y: 詳細コピー", 6},
-			{"h/q: 閉じる", 1}, // 抜ける手段は最優先
-		})
-	case m.panelSHA != "":
-		// カーソル無し (パネルを開いた直後の既定状態。openPanel が panelCursor = -1 にする)。
-		// 🚨 固定文字列にしないこと (issue 279)。63 桁あり、最小サポート幅の帯 (w=60〜69) で
-		// 出口 `Enter/h/q: 閉じる` が語中で切れて消えていた。
-		hint = fitHintItems(hw, []hintItem{
-			{"j: job を選択", 2},
-			{"d: diff", 3},
-			{"p: PR", 4},
-			{"y: commit URL", 4},
-			{"Enter/h/q: 閉じる", 1}, // 抜ける手段は最優先
-		})
-	}
-	// 🚨 前置は hint と**同じ予算**に載せる (issue 279)。以前は fitHintItems が幅ぴったりに
-	// 収めた後で前置を積み、hintLineText の clipToWidth が末尾 = **出口**を落としていた。
-	// m.ghErr は次の取得開始までクリアされないので、gh 未導入 / 未認証 / 非 GitHub repo では
-	// **常時**その状態になり、幅 60〜200 の全帯で出口が消えていた (敵対レビューが実測)。
-	//
-	// 前置は「今なぜ待っているか」の説明で、抜ける手段より優先度が低い。予算の半分を超えたら
-	// 前置の方を切る。
+	// 面ごとの hint 項目は hint_surfaces.go のレジストリが唯一の出典 (issue 289)。
+	// ここで直接文字列を組まないこと — 予算計算 (fitHintItems) と幅ゲートの両方を
+	// 迂回でき、末尾 = 出口が黙って切れる形が再生産される (279 / 281 の P1 2 本がその形)。
+	// 迂回は TestHintLineHasNoInlineHintText が字句で止める。
+	hint := fitHintItems(hw, hintBuilders[m.activeHintSurface()](m))
 	return m.hintLineText(prefix + hint)
 }
 
