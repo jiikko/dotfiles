@@ -104,7 +104,7 @@ func TestCacheWritesGoThroughWriteAtomic(t *testing.T) {
 	}
 
 	// ② 提供関数を呼び、かつ os.WriteFile も呼ぶ関数を違反にする
-	var offenders []string
+	offenders := make([]string, 0, len(fns))
 	cacheFuncs := 0
 	for _, f := range fns {
 		usesCacheDir := false
