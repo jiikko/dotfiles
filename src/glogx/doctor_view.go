@@ -485,34 +485,49 @@ func parentKeyOf(key string) (string, bool) {
 	return "disk:" + id, true
 }
 
+// collapseTargetAtCursor は「今このカーソル位置で畳めるもの」を返す。
+//
+// 🚨 **畳めるかの判定はここだけに書く。** 以前は collapsibleAtCursor (hint の文言) と
+// collapseAtCursor (実際に畳む) が `ok && v.expanded[k]` を別々に持っており、片方を直しても
+// 挙動が変わらなかった (敵対的レビュー 2026-09-06 の修正中に実際に踏んだ)。
+//
+// 🚨 ここで `v.rows[i].detail` を見て「本当に中身があるか」を確かめないこと。rows は描画時に
+// 遅延再構築されるので、Enter 直後 (次の lines() の前) は展開済みの行でも detail が nil で、
+// 「畳むものが無い」と誤答する (実測 2026-09-06: 既存テスト 2 本が落ちた)。
+// 「展開しても 0 行」の行は hasDetail を立てない側で解決する (diskHasDetail / brewHasDetail)。
+func (v *doctorView) collapseTargetAtCursor() (key string, viaParent, ok bool) {
+	if v.cur.index >= 0 && v.cur.index < len(v.rows) {
+		if parent, isChild := parentKeyOf(v.rows[v.cur.index].key); isChild {
+			return parent, true, true
+		}
+	}
+	k, expandable := v.expandableRow()
+	if !expandable || !v.expanded[k] {
+		return "", false, false
+	}
+	return k, false, true
+}
+
 // collapsibleAtCursor は「今このカーソル位置で畳めるものがあるか」。Enter / q が畳むか
 // どうかと、hint の文言がここを唯一の出典にする。
 func (v *doctorView) collapsibleAtCursor() bool {
-	if v.cur.index >= 0 && v.cur.index < len(v.rows) {
-		if _, ok := parentKeyOf(v.rows[v.cur.index].key); ok {
-			return true
-		}
-	}
-	k, ok := v.expandableRow()
-	return ok && v.expanded[k]
+	_, _, ok := v.collapseTargetAtCursor()
+	return ok
 }
 
 // collapseAtCursor はカーソル位置の展開を 1 段閉じる。畳んだら true。
 // 対象パスの行に居るなら**親のエントリを畳んでカーソルを親へ戻し** (入る側だけ作ると
 // カーソルが中に居たまま畳めなくなる)、開いているエントリの行に居るならそれを畳む。
 func (v *doctorView) collapseAtCursor() bool {
-	if v.cur.index >= 0 && v.cur.index < len(v.rows) {
-		if parent, ok := parentKeyOf(v.rows[v.cur.index].key); ok {
-			delete(v.expanded, parent)
-			v.cur.key = parent
-			return true
-		}
+	k, viaParent, ok := v.collapseTargetAtCursor()
+	if !ok {
+		return false
 	}
-	if k, ok := v.expandableRow(); ok && v.expanded[k] {
-		delete(v.expanded, k)
-		return true
+	delete(v.expanded, k)
+	if viaParent {
+		v.cur.key = k
 	}
-	return false
+	return true
 }
 
 // openRow は詳細を開く。disk のエントリは inspected を立て (risk: confirm の行はこれが
@@ -1036,7 +1051,7 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 			text:       fmt.Sprintf("%s%8s  %s%s %s", sel, size, label, padSpaces(labelW-dispWidth(label)), doctorColor(o.colored, color, mark)),
 			selectable: true,
 			key:        "disk:" + r.Entry.ID,
-			hasDetail:  true,
+			hasDetail:  diskHasDetail(r),
 			detail:     v.diskDetailIfExpanded(o, r),
 			copyPath:   diskCopyPath(r),
 			copyText:   diskCopyText(r, mark),
@@ -1100,7 +1115,23 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 
 // diskDetail は Enter で開く内訳。**対象パスの行は選べる** (ディレクトリ単位で削除するため。
 // ユーザー要望 2026-09-03)。Inspect の中身一覧は「人が見て判断する」ためのものなので選べない。
+// diskHasDetail は「この行を展開したら 1 行でも出るか」。
+//
+// 🚨 **diskDetail の空判定と同じものを 2 箇所に書かないための唯一の出典。** 270 で detail を
+// 遅延化したとき、行は `hasDetail: true` を無条件に立てていたので、items の無い blocked /
+// failed の行が「展開できる」ことになった。Enter しても行は増えないのに expanded だけ立ち、
+// **次の q が畳む側に取られて doctor が 1 回目で閉じない** (敵対的レビュー 2026-09-06 が実測)。
+// 遅延化を捨てずに直すには、展開せずに答えられる述語が要る。
+// 一致は TestDiskHasDetailMatchesBuilder が突き合わせる (片方だけ育てたら red)。
+func diskHasDetail(r disk.Result) bool {
+	return r.Status == disk.StatusOK || r.Entry.Detail != "" || r.Entry.Inspect ||
+		len(r.Contents) > 0 || len(r.Items) > 0
+}
+
 func (v *doctorView) diskDetail(o doctorRenderOpts, r disk.Result) []doctorRow {
+	if !diskHasDetail(r) {
+		return nil
+	}
 	out := make([]doctorRow, 0, 2+len(r.Contents)+len(r.Items))
 	// 走査できなかった行に削除経路を出さない。消せる候補が確定していないのに
 	// 「削除経路: rm」だけ出ると、消してよいものが見つかったように読める
@@ -1278,7 +1309,7 @@ func (v *doctorView) svcSection(o doctorRenderOpts) []doctorRow {
 		for _, c := range f.Commands {
 			detail = append(detail, "        "+c)
 		}
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiRed, " ⛔ "+f.Label), selectable: true, key: "svc:" + f.PlistPath, hasDetail: true, detail: textRows(detail),
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiRed, " ⛔ "+f.Label), selectable: true, key: "svc:" + f.PlistPath, hasDetail: len(detail) > 0, detail: textRows(detail),
 			copyPath: f.PlistPath, copyText: svcCopyText(f)})
 		for _, r := range f.Reasons {
 			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "      - "+r)})
@@ -1392,7 +1423,7 @@ func (v *doctorView) brewSection(o doctorRenderOpts) []doctorRow {
 			text += padSpaces(gap) + doctorColor(o.colored, ansiDim, count)
 		}
 		rows = append(rows, doctorRow{text: text, selectable: true, key: fmt.Sprintf("brew:%d:%s", i, summary),
-			hasDetail: true,
+			hasDetail: len(detailRows)+len(detail) > 0,
 			detail:    append(detailRows, textRows(detail)...),
 			copyPath:  summary, copyText: "brew doctor の警告 (macOS Homebrew):\n" + w + "\n"})
 	}

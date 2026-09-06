@@ -209,7 +209,7 @@ func (v *doctorView) dockerGroupRow(o doctorRenderOpts, g docker.Group) doctorRo
 			doctorColor(o.colored, ansiDim, summary),
 		selectable: true,
 		key:        "docker:" + string(g.Kind),
-		hasDetail:  true,
+		hasDetail:  len(detail) > 0,
 		detail:     detail,
 		// 🚨 群のコマンドが無い (ボリューム) 行でも y が無言にならないよう、
 		// 1 件ずつのコマンドを並べたものを渡す (hint は「y: コマンドをコピー」と言っている)
