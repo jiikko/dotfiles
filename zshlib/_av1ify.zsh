@@ -620,8 +620,17 @@ __av1ify_run_batch() {
   local -a ng_list=()
   local -a targets=( "$@" )
   local n=${#targets[@]} i next exit_status
-  # 直前 av1ify 呼び出しから持ち越した stale PID をクリア (PID 再利用での誤 kill を避ける)
+  # 直前 av1ify 呼び出しから持ち越した stale PID をクリア (PID 再利用での誤 kill を避ける)。
+  # 🚨 ここで kill しないのは意図的。下の always ブロックが**全出口で**看取るので、
+  #    正常な経路では持ち越しが構造的に発生しない (issue 306 以前は always が無く、
+  #    「クリアするが二度と殺せない」プロセスが正常終了のたびに生まれていた)。
+  #    ここで kill する形にすると、__av1ify_kill_prefetches は生存確認を持たないため
+  #    PID 再利用で無関係なプロセスを殺しうる。
   __AV1IFY_PREFETCH_PIDS=()
+  # 🚨 全出口 (正常 / NG / 中断) で prefetch を看取る。always は trap と違って
+  #    再帰呼び出し時に外側の trap を壊さない (zshlib/_concat.zsh:537 と同じ理由)。
+  #    中断パスの明示的な kill は残す (そこでは「中断」の表示より先に殺したいため)
+  {
   for (( i = 1; i <= n; i++ )); do
     target="${targets[i]}"
     print -r -- "---- 処理: $target"
@@ -668,6 +677,9 @@ __av1ify_run_batch() {
     return 1
   fi
   return 0
+  } always {
+    __av1ify_kill_prefetches
+  }
 }
 
 av1ify() {

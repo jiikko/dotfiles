@@ -574,4 +574,50 @@ else
   printf '✗ Expected "別バリアント" message, got: %s\n' "$out_variant"
 fi
 
+# ----------------------------------------------------------------------
+# Test 18: 正常終了 (全件 OK / NG あり) でも prefetch を看取る (issue 306)
+# 🚨 これが無いと「中断パスでだけ kill する」実装が緑のまま通り、正常終了のたびに
+#    追跡不能なプロセスが残る。判定は壁時計でなく kill -0 の成否を上限つきポーリング。
+# ----------------------------------------------------------------------
+printf '\n## Test 18: run_batch kills prefetches on normal exit (issue 306)\n'
+TEST_DIR="$TEST_TMP/prefetch_test18"
+mkdir -p "$TEST_DIR"
+echo "video content data" > "$TEST_DIR/a.avi"
+echo "video content data" > "$TEST_DIR/b.avi"
+
+# 長く走る prefetch に差し替える (本物は head -c 1 で即終了するので、看取りの有無が観測できない)
+typeset -ga SPAWNED_PIDS=()
+__av1ify_prefetch() {
+  ( exec sleep 120 ) &
+  __AV1IFY_PREFETCH_PIDS+=("$!")
+  SPAWNED_PIDS+=("$!")   # 本体がクリアしても、テスト側は起こした pid を覚えておく
+}
+__AV1IFY_PREFETCH_PIDS=()
+
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+av1ify "$TEST_DIR/a.avi" "$TEST_DIR/b.avi" > /dev/null 2>&1 || true
+setopt err_exit
+
+# 起こした prefetch が全部死んでいること (上限つきポーリング)
+leaked=0
+# 🚨 このファイルの ✗ は exit code に出ない (ランナーは rc しか見ない = 失敗が CI から不可視)。
+#    実測 2026-09-07: 看取りを無効化する変異を当てると ✗ は出たが rc=0 のままだった。
+#    このケースだけは exit 1 で落とす (ファイル全体の是正は issue 327)。
+if (( ${#SPAWNED_PIDS[@]} == 0 )); then
+  printf '✗ prefetch が 1 つも起きていない (前提が崩れている)\n'; exit 1
+fi
+for _pid in "${SPAWNED_PIDS[@]:-}"; do
+  _i=0
+  # 🚨 (( _i++ )) は _i=0 のとき旧値 0 を返す = status 1 で err_exit に殺される (zsh の罠)。
+  #    _i=$((_i+1)) の代入形にする
+  while kill -0 "$_pid" 2>/dev/null && (( _i < 200 )); do sleep 0.05; _i=$((_i+1)); done
+  if kill -0 "$_pid" 2>/dev/null; then leaked=$((leaked+1)); kill "$_pid" 2>/dev/null; fi
+done
+if (( leaked == 0 )); then
+  printf '✓ 正常終了後に prefetch が 1 つも残っていない\n'
+else
+  printf '✗ 正常終了後に prefetch が %s 個残った (issue 306)\n' "$leaked"; exit 1
+fi
+
 printf '\n=== Prefetch Tests Completed ===\n'
