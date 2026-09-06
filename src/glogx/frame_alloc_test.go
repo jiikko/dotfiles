@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"doctor/disk"
 	"doctor/svc"
@@ -169,7 +170,10 @@ func TestFrameAllocBudget(t *testing.T) {
 		// 2026-09-06 実測 (darwin/arm64・GOMAXPROCS=14・**-race**・120x40)。
 		// 上限は重い方 (-race) 基準で、既存と同じ余裕 (回数 +4 / バイト +3%)。
 		//
-		// ratelimit-dash: メモ化前 1065 allocs / 239319 B → **メモ化後 173 / 82055** (issue 275)。
+		// ratelimit-dash: メモ化前 1065 allocs / 239319 B → **メモ化後 175 / 82241** (issue 275)。
+		// 🚨 時計を固定した fixture での値 (-race 6 回で 6/6 とも 175)。実時計のままだと
+		// 測定窓が秒境界をまたいだときだけ 1 回キャッシュミスして平均が 193 まで跳ね、
+		// ~4%/run で flake した (敵対レビューが 145 窓で実測)。
 		// 上限は必ず**今の実測**へ締め直すこと — 締めずに残すと「6 倍悪化しても緑」になり、
 		// issue 269 と同じ「観測できない予算」を新設したことになる。
 		// doctor-disk: 🚨 **既存ケースの「+4」は使えない**。-race で 8 回測ると
@@ -178,7 +182,7 @@ func TestFrameAllocBudget(t *testing.T) {
 		// (実測: 6 回中 1 回 1514 で赤)。観測レンジの上 (1515) に ~2% の余裕で 1550。
 		// 変異 (diskDetail を 2 回呼ぶ) は 1844 なのでこの幅でも捕まる。
 		// issue 270 の遅延化が入ったらここも締め直す。
-		{"ratelimit-dash", budgetRatelimitModel, 177, 84600},
+		{"ratelimit-dash", budgetRatelimitModel, 179, 84900},
 		{"doctor-disk", budgetDoctorModel, 1550, 140000},
 	}
 	for _, c := range cases {
@@ -406,6 +410,14 @@ func budgetRatelimitModel(tb testing.TB) *browseModel {
 	m := benchBrowseSubjects(tb, 20, 120, 40, false)
 	m.rlDash.shown = true
 	m.usageOv.snap = rlTestSnap()
+	// 🚨 時計を固定する (issue 275 のメモ化 + avoid-wall-clock-assertions)。
+	// 盤のキャッシュ鍵は now.Unix() を含むので、実時計のままだと AllocsPerRun(50) の
+	// 測定窓 (-race で ~41ms) が**秒境界をまたいだときだけ 1 回ミス**し、その 1069 allocs が
+	// 50 で割られて平均に乗る (実測: 175 → 最大 193。145 窓中 5 回が上限 177 を超えた
+	// = 1 実行あたり ~4% で flake する)。固定クロックでは 148 窓すべて 175 だった。
+	orig := timeNow
+	timeNow = func() time.Time { return time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC) }
+	tb.Cleanup(func() { timeNow = orig })
 	return m
 }
 

@@ -19,15 +19,111 @@ import (
 //
 // 🚨 **脅威モデルと射程** (adversarial-review-own-safeguards §8):
 //   - 止めるのは「うっかり `v.rows = xxx` と直接書く」典型形だけ
+//   - 見るのは 3 形: `v.rows = x` (直接代入) / `&issuesView{rows: ...}` (複合リテラル) /
+//     `v.rows[i] = x` (要素の書き換え)
 //   - **検出しない**: 別名の変数経由 (`p := v; p.rows = ...`)、reflect、別 struct への埋め込み経由、
-//     issuesView 以外の型に見えるレシーバ経由。これらは review の責務
+//     issuesView 以外の型に見えるレシーバ経由、`sort.Slice(v.rows, ...)` のような
+//     **関数へ渡してから中で並べ替える**形。これらは review の責務
+//   - 🚨 要素の書き換えと in-place ソートは**長さが変わらない**ので、世代でも旧実装の
+//     全件比較でも観測できない。ここで字句的に止めるのが唯一の防御
 //   - 判定は「その代入を含む関数の**レシーバが issuesView**」または
 //     「同じ関数内で `newTestIssuesView()` / `&issuesView{...}` から得た変数」に限る
 //     (型解決に go/types を持ち込まない代わりの近似)
+//
+// scanIssuesRowsWrites は 1 ファイル分の違反と候補数を返す (本走査と canary の共通経路)。
+//
+// 🚨 canary は**この関数を通す**こと。式をコピーして別に書くと、canary は「コピーした
+// ロジック」を検査するだけで本走査の破損を検出しない。
+func scanIssuesRowsWrites(fset *token.FileSet, path string, file *ast.File) (offenders []string, candidates int) {
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		owners := map[string]bool{}
+		if fn.Recv != nil && len(fn.Recv.List) > 0 && recvTypeName(fn.Recv.List[0].Type) == "issuesView" {
+			for _, n := range fn.Recv.List[0].Names {
+				owners[n.Name] = true
+			}
+		}
+		report := func(pos token.Pos, what string) {
+			candidates++
+			if fn.Name.Name == "setRows" {
+				return
+			}
+			p := fset.Position(pos)
+			offenders = append(offenders,
+				filepath.ToSlash(path)+":"+strconv.Itoa(p.Line)+" ("+fn.Name.Name+", "+what+")")
+		}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			// 複合リテラルで rows を直接埋める形 (&issuesView{rows: ...})。
+			// 🚨 世代が 0 のまま displayRows と食い違うので、ensureDisplayRows の
+			// 自己回復に頼ることになる (敵対レビュー 2026-09-06)
+			if cl, ok := n.(*ast.CompositeLit); ok && recvTypeName(cl.Type) == "issuesView" {
+				for _, elt := range cl.Elts {
+					if kv, ok := elt.(*ast.KeyValueExpr); ok {
+						if k, ok := kv.Key.(*ast.Ident); ok && k.Name == "rows" {
+							report(kv.Pos(), "複合リテラル")
+						}
+					}
+				}
+			}
+			as, ok := n.(*ast.AssignStmt)
+			if !ok {
+				return true
+			}
+			for i, lhs := range as.Lhs {
+				if id, ok := lhs.(*ast.Ident); ok && i < len(as.Rhs) && rhsMakesIssuesView(as.Rhs[i]) {
+					owners[id.Name] = true
+				}
+			}
+			for _, lhs := range as.Lhs {
+				// v.rows = x
+				if sel, ok := lhs.(*ast.SelectorExpr); ok && sel.Sel.Name == "rows" {
+					if base, ok := sel.X.(*ast.Ident); ok && owners[base.Name] {
+						report(sel.Pos(), "直接代入")
+					}
+					continue
+				}
+				// v.rows[i] = x (要素の書き換え。長さが同じなので世代でも比較でも見えない)
+				if idx, ok := lhs.(*ast.IndexExpr); ok {
+					if sel, ok := idx.X.(*ast.SelectorExpr); ok && sel.Sel.Name == "rows" {
+						if base, ok := sel.X.(*ast.Ident); ok && owners[base.Name] {
+							report(idx.Pos(), "要素の書き換え")
+						}
+					}
+				}
+			}
+			return true
+		})
+	}
+	return offenders, candidates
+}
+
 func TestIssuesRowsGoThroughSetter(t *testing.T) {
 	fset := token.NewFileSet()
 	var offenders []string
 	scanned, candidates := 0, 0
+
+	// 🚨 canary: 既知の違反を**本走査と同じ関数**に通して、検出できることを先に確かめる。
+	// これが無いと、判定が壊れて 0 件になっても「違反 0 件 = 緑」で通る。
+	const canarySrc = `package main
+type zzView struct{}
+func (v *issuesView) zzCanaryDirect() { v.rows = nil }
+func zzCanaryLiteral() *issuesView { return &issuesView{rows: nil} }
+func (v *issuesView) zzCanaryIndex() { v.rows[0] = nil }
+func zzCanaryTestStyle() { v := newTestIssuesView(); v.rows = nil }
+`
+	canaryFile, cerr := parser.ParseFile(fset, "zz_canary.go", canarySrc, 0)
+	if cerr != nil {
+		t.Fatalf("canary をパースできない: %v", cerr)
+	}
+	canaryHits, _ := scanIssuesRowsWrites(fset, "zz_canary.go", canaryFile)
+	if len(canaryHits) != 4 {
+		t.Fatalf("canary の検出が %d 件 (期待 4: 直接代入 / 複合リテラル / 要素の書き換え / "+
+			"テストが作った変数経由)。判定が壊れている:\n  %s",
+			len(canaryHits), strings.Join(canaryHits, "\n  "))
+	}
 
 	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -47,54 +143,9 @@ func TestIssuesRowsGoThroughSetter(t *testing.T) {
 			return perr
 		}
 		scanned++
-		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Body == nil {
-				continue
-			}
-			// この関数の中で issuesView を指すと分かっている識別子
-			owners := map[string]bool{}
-			if fn.Recv != nil && len(fn.Recv.List) > 0 && recvTypeName(fn.Recv.List[0].Type) == "issuesView" {
-				for _, n := range fn.Recv.List[0].Names {
-					owners[n.Name] = true
-				}
-			}
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				as, ok := n.(*ast.AssignStmt)
-				if !ok {
-					return true
-				}
-				// テストが `v := newTestIssuesView()` / `v := &issuesView{}` で作った変数を覚える
-				for i, lhs := range as.Lhs {
-					id, ok := lhs.(*ast.Ident)
-					if !ok || i >= len(as.Rhs) {
-						continue
-					}
-					if rhsMakesIssuesView(as.Rhs[i]) {
-						owners[id.Name] = true
-					}
-				}
-				for _, lhs := range as.Lhs {
-					sel, ok := lhs.(*ast.SelectorExpr)
-					if !ok || sel.Sel.Name != "rows" {
-						continue
-					}
-					base, ok := sel.X.(*ast.Ident)
-					if !ok || !owners[base.Name] {
-						continue
-					}
-					candidates++
-					// setRows の実装本体だけが直接代入してよい
-					if fn.Name.Name == "setRows" {
-						continue
-					}
-					pos := fset.Position(sel.Pos())
-					offenders = append(offenders,
-						filepath.ToSlash(path)+":"+strconv.Itoa(pos.Line)+" ("+fn.Name.Name+")")
-				}
-				return true
-			})
-		}
+		o, c := scanIssuesRowsWrites(fset, path, file)
+		offenders = append(offenders, o...)
+		candidates += c
 		return nil
 	})
 	if err != nil {

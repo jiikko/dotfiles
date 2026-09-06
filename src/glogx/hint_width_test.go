@@ -108,12 +108,35 @@ type hintSurface struct {
 	name string
 	open func(*browseModel)
 	exit string // 優先度 1 = 抜ける手段。狭い幅でも必ず残ること
+	// prefixed は「取得中 / gh の警告」の前置が付く面。前置は**意図的に頭打ちにする**
+	// (予算の半分を超えたら前置の方を切る) ので、`…` が出るのは正常。
+	// 出口が残ることと幅に収まることは、前置あり/なしで同じように要求する。
+	prefixed bool
 }
 
 func hintSurfaces() []hintSurface {
 	out := []hintSurface{
-		{"基底一覧", func(*browseModel) {}, "q: 終了"},
-		{"PR 状態", func(m *browseModel) { m.prStatusOv.sha = m.commits[0].SHA }, "P/q/h: 閉じる"},
+		{"基底一覧", func(*browseModel) {}, "q: 終了", false},
+		{"PR 状態", func(m *browseModel) { m.prStatusOv.sha = m.commits[0].SHA }, "P/q/h: 閉じる", false},
+		// 🚨 job パネルは**カーソルの有無で別の分岐**。openPanel は panelCursor = -1 から
+		// 始めるので、Enter を押した直後に必ず通るのは「カーソル無し」の方。
+		// そちらだけが幅検査の外にあり、実際に w=60〜69 で出口が切れていた (issue 279)。
+		{"job パネル(カーソル無し)", func(m *browseModel) {
+			m.panelSHA, m.panelCursor = m.commits[0].SHA, -1
+		}, "Enter/h/q: 閉じる", false},
+		{"job パネル(カーソルあり)", func(m *browseModel) {
+			m.panelSHA, m.panelCursor = m.commits[0].SHA, 0
+		}, "h/q: 閉じる", false},
+		// 🚨 前置がある状態も面として持つ。fitHintItems が収めた後に前置を積むと
+		// 末尾 = 出口が落ちるので、前置ぶんを予算から引いているかをここで見る。
+		// m.ghErr は次の取得開始までクリアされないので、gh 未導入の環境では常時この状態。
+		{"基底一覧 + gh 警告", func(m *browseModel) {
+			m.ghErr = &GHError{Kind: GHOther, Detail: "gh が未認証のため CI 状態を取得できません (gh auth login)"}
+		}, "q: 終了", true},
+		{"基底一覧 + 取得中", func(m *browseModel) {
+			m.toFetch = []string{m.commits[0].SHA}
+			m.pendingFetches = 1
+		}, "q: 終了", true},
 	}
 	exits := map[fullScreenID]string{
 		fullScreenRatelimit: "R/q/esc/h: 閉じる",
@@ -152,7 +175,7 @@ func TestEveryHintKeepsExitWithinWidth(t *testing.T) {
 			if dispWidth(got) > w {
 				t.Fatalf("%s w=%d: hint 行が端末幅を超えた (%d 桁): %q", s.name, w, dispWidth(got), got)
 			}
-			if strings.Contains(got, "…") {
+			if !s.prefixed && strings.Contains(got, "…") {
 				t.Fatalf("%s w=%d: 語の途中で切れている: %q", s.name, w, got)
 			}
 			if !strings.Contains(got, s.exit) {
@@ -189,6 +212,21 @@ func TestFitHintItemsReservesExit(t *testing.T) {
 			t.Errorf("広い幅で %q が出ていない: %q", want, wide)
 		}
 	}
+	// 🚨 優先度 1 が**複数**あるとき、狭い幅では**短い方**が残る (shortestPrio1 の主張)。
+	// これを見ないと `w < bestW` を `w > bestW` (最長) へ変えても全テストが緑で通る
+	// (敵対レビューが実測)。statusView.hint は実際に優先度 1 を 2 つ持つ表。
+	two := []hintItem{
+		{"j/k: 移動", 2},
+		{"s: 一覧へ戻る (長い方)", 1}, // 21 桁
+		{"q: 終了", 1},          // 7 桁
+	}
+	for w := 1; w < dispWidth("s: 一覧へ戻る (長い方)"); w++ {
+		got := fitHintItems(w, two)
+		if strings.Contains(got, "一覧へ戻る") {
+			t.Fatalf("w=%d: 優先度 1 が 2 つあるとき長い方が返った: %q", w, got)
+		}
+	}
+
 	// 優先度 1 が無い表では従来どおり (末尾へフォールバック)
 	noExit := []hintItem{{"aaa", 2}, {"bb", 3}}
 	if got := fitHintItems(1, noExit); got != "bb" {

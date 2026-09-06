@@ -908,7 +908,14 @@ func (v *issuesView) groupExpanded(key string) bool {
 // 🚨 判定は世代の比較だけ (O(1))。以前は rows の全件突き合わせで、これを可視行ごとに呼ぶ
 // 描画経路が「可視行数 × 全件」で走っていた (issue 268)。
 func (v *issuesView) ensureDisplayRows() {
-	if v.displayRowsGen == v.rowsGen {
+	// 🚨 世代が同じでも「rows が非空なのに displayRows が空」なら作り直す。
+	// 世代だけを見ると、ゼロ値から `&issuesView{rows: list}` のように**複合リテラルで
+	// 直接埋めた**場合に rowsGen も displayRowsGen も 0 のまま = 同期済みと誤判定して
+	// 恒久的に stale になる (敵対レビュー 2026-09-06)。全件比較だった旧実装は
+	// `len(displayRowsSource) != len(rows)` で偶然この形を自己回復していたので、
+	// 世代化でその回復を落とさないよう明示する。rows が非空なら rebuildDisplayRows は
+	// 必ず 1 行以上を作る (issue 行か group 親行) ので、この条件は O(1) で足りる。
+	if v.displayRowsGen == v.rowsGen && (len(v.displayRows) > 0 || len(v.rows) == 0) {
 		return
 	}
 	v.rebuildDisplayRows()

@@ -3852,10 +3852,33 @@ func (m *browseModel) hintLine() string {
 	case fullScreenNone, fullScreenCount:
 		// 全画面ビューアが出ていない = 下の一覧の hint
 	}
+	// 🚨 前置 (取得中 / gh の警告) は hint と**同じ予算**に載せる (issue 279)。以前は
+	// fitHintItems が幅ぴったりに収めた後で前置を積み、hintLineText の clipToWidth が
+	// 末尾 = **出口**を落としていた。m.ghErr は次の取得開始までクリアされないので、
+	// gh 未導入 / 未認証 / 非 GitHub repo では**常時**その状態になり、幅 60〜200 の全帯で
+	// 出口が消えていた (敵対レビューが実測 2026-09-06)。
+	//
+	// 前置は「今なぜ待っているか」の説明で、抜ける手段より優先度が低い。予算の半分を
+	// 超えたら前置の方を切る。
+	prefix := ""
+	if m.fetching() {
+		prefix = m.spinner() + " CI 状態を取得中...  "
+	}
+	if m.ghErr != nil {
+		prefix = "🚨 " + firstLine(m.ghErr.Warning()) + "  " + prefix
+	}
+	hw := m.hintWidth()
+	if prefix != "" {
+		if maxPrefix := hw / 2; dispWidth(prefix) > maxPrefix {
+			prefix = clipToWidth(prefix, maxPrefix)
+		}
+		hw = max(hw-dispWidth(prefix), 0)
+	}
+
 	// 🚨 固定文字列にしないこと (issue 279)。全部つなぐと 174 桁あり、端末 176 桁未満では
 	// 末尾の `q: 終了` が切られて**抜ける手段が案内から消える**。既定の画面・一般的な幅で
 	// 常時そうなっていた。優先度 1 = 出口、2 = 移動と主要操作、以降は幅が許せば出す。
-	hint := fitHintItems(m.hintWidth(), []hintItem{
+	hint := fitHintItems(hw, []hintItem{
 		{"j/k: 移動", 2},
 		{"Enter: CI job", 3},
 		{"d: diff", 3},
@@ -3889,7 +3912,7 @@ func (m *browseModel) hintLine() string {
 	case m.actModal.anyUpdating():
 		hint = m.spinner() + " " + strings.Join(m.actModal.updatingTargets(), " + ") + " update..."
 	case m.diffOv.visible():
-		hint = fitHintItems(m.hintWidth(), []hintItem{
+		hint = fitHintItems(hw, []hintItem{
 			{"j/k/Space: スクロール", 2},
 			{"J/K: 隣のコミット", 3},
 			{"g/G: 先頭/末尾", 5},
@@ -3897,13 +3920,13 @@ func (m *browseModel) hintLine() string {
 			{"q/h: 閉じる", 1}, // 抜ける手段は最優先
 		})
 	case m.prStatusOv.visible():
-		hint = fitHintItems(m.hintWidth(), []hintItem{
+		hint = fitHintItems(hw, []hintItem{
 			{"o: PR をブラウザで開く", 3},
 			{"y: URL コピー", 4},
 			{"P/q/h: 閉じる", 1},
 		})
 	case m.detailOv.visible():
-		hint = fitHintItems(m.hintWidth(), []hintItem{
+		hint = fitHintItems(hw, []hintItem{
 			{"j/k: スクロール", 3},
 			{"J/K: 隣の job", 4},
 			{"v: nvim で開く", 4},
@@ -3914,7 +3937,7 @@ func (m *browseModel) hintLine() string {
 			{"Y: 詳細コピー", 5},
 		})
 	case m.panelSHA != "" && m.panelCursor >= 0:
-		hint = fitHintItems(m.hintWidth(), []hintItem{
+		hint = fitHintItems(hw, []hintItem{
 			{"j/k: job 移動", 3},
 			{"Enter: 詳細ログ", 3},
 			{"r: 再実行", 4},
@@ -3926,15 +3949,25 @@ func (m *browseModel) hintLine() string {
 			{"h/q: 閉じる", 1}, // 抜ける手段は最優先
 		})
 	case m.panelSHA != "":
-		hint = "j: job を選択  d: diff  p: PR  y: commit URL  Enter/h/q: 閉じる"
+		// カーソル無し (パネルを開いた直後の既定状態。openPanel が panelCursor = -1 にする)。
+		// 🚨 固定文字列にしないこと (issue 279)。63 桁あり、最小サポート幅の帯 (w=60〜69) で
+		// 出口 `Enter/h/q: 閉じる` が語中で切れて消えていた。
+		hint = fitHintItems(hw, []hintItem{
+			{"j: job を選択", 2},
+			{"d: diff", 3},
+			{"p: PR", 4},
+			{"y: commit URL", 4},
+			{"Enter/h/q: 閉じる", 1}, // 抜ける手段は最優先
+		})
 	}
-	if m.fetching() {
-		hint = m.spinner() + " CI 状態を取得中...  " + hint
-	}
-	if m.ghErr != nil {
-		hint = "🚨 " + firstLine(m.ghErr.Warning()) + "  " + hint
-	}
-	return m.hintLineText(hint)
+	// 🚨 前置は hint と**同じ予算**に載せる (issue 279)。以前は fitHintItems が幅ぴったりに
+	// 収めた後で前置を積み、hintLineText の clipToWidth が末尾 = **出口**を落としていた。
+	// m.ghErr は次の取得開始までクリアされないので、gh 未導入 / 未認証 / 非 GitHub repo では
+	// **常時**その状態になり、幅 60〜200 の全帯で出口が消えていた (敵対レビューが実測)。
+	//
+	// 前置は「今なぜ待っているか」の説明で、抜ける手段より優先度が低い。予算の半分を超えたら
+	// 前置の方を切る。
+	return m.hintLineText(prefix + hint)
 }
 
 // hintLineText は最下行の hint を塗って幅に収める (前置の有無で分かれる出口を 1 本にする)。
