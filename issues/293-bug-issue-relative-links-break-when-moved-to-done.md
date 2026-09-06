@@ -39,6 +39,34 @@ done
 
 残り 35 件は個別（移動先が `done/` でない / 参照先自体が消えている等）なので、まとめて直さず 1 件ずつ見る。
 
+## 🚨 group issue の契約変更で射程が広がる（2026-09-06 追記）
+
+issue [291](291-feat-glogx-epic-shows-done-children-by-default.md) で
+**group issue の完了・保留先が global `issues/done/` から `issues/epic/<name>/done/`
+(と `pending/`) へ変わった**（`1a1a21fa`）。移動の起点も行き先も 1 段深くなるので、
+`../` の数がまた変わる:
+
+| ファイルの位置 | `_claude/rules/x.md` を指す正しい形 |
+|---|---|
+| `issues/NNN.md` | `../_claude/rules/x.md` |
+| `issues/done/NNN.md` | `../../_claude/rules/x.md` |
+| `issues/epic/<name>/NNN.md` | `../../../_claude/rules/x.md` |
+| `issues/epic/<name>/done/NNN.md` | `../../../../_claude/rules/x.md` |
+
+**現時点の影響は 0 件**（実測 2026-09-06: `issues/epic/` は存在せず md も 0 件。
+契約変更の前後で切れリンクは 189 件 / 77 ファイルのまま同じ）。つまりこれは
+**これから起きる分**で、下の設計に効く:
+
+- **一括修正を `issues/done/` 決め打ちの sed で書かない**。深さは
+  「そのファイルの位置から repo root までの段数」で決まるので、**位置から導出**する
+  （でないと group issue を直すときにもう一度同じ作業が要る）
+- 🚨 **再発防止の検査に `-maxdepth` を使わない**。`issues/epic/<name>/done/` は 4 段目なので、
+  深さを決め打ちした検査は**新しい段を黙って対象外**にする
+  （[`claude-md-maintenance.md`](../_claude/rules/claude-md-maintenance.md) の
+  「ディレクトリ階層の契約を変えたら深さ前提の検査を grep する」がまさにこの形。
+  実例として issue 番号一意の検査が旧深さのまま緑を出し続けたことが記録されている）。
+  本 issue の「全数の数え方」に書いた `find issues -name '*.md'` は深さ非依存なのでそのまま使える
+
 ## 提案
 
 1. 上の 2 パターンを機械置換で直す（154 件）
