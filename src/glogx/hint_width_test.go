@@ -115,8 +115,11 @@ var hintSurfaceSetup = [hintSurfaceCount]struct {
 	hintSurfacePulling:      {"pull 実行中", func(m *browseModel) { m.actModal.pulling = true }, "pulling..."},
 	hintSurfaceRerunConfirm: {"再実行 確認", func(m *browseModel) { m.actModal.rerunConfirm = true }, "job を再実行しますか?"},
 	hintSurfaceRerunning:    {"再実行 中", func(m *browseModel) { m.actModal.rerunning = true }, "rerunning..."},
+	// 🚨 target は 2 件にする (敵対的レビュー 2026-09-06 の P3)。この面だけ項目が
+	// 実行時に伸びる (strings.Join の連結) ので、1 件の fixture では最長形を測れない。
+	// updateKeyTarget が返すのは claude / codex の 2 つだけなので、これが実在しうる最長。
 	hintSurfaceUpdating: {"self-update 中", func(m *browseModel) {
-		m.actModal.updating = map[string]bool{"claude": true}
+		m.actModal.updating = map[string]bool{"claude": true, "codex": true}
 	}, "update..."},
 	hintSurfaceDiff:      {"diff overlay", func(m *browseModel) { m.diffOv.sha = m.commits[0].SHA }, "q/h: 閉じる"},
 	hintSurfacePRStatus:  {"PR 状態", func(m *browseModel) { m.prStatusOv.sha = m.commits[0].SHA }, "P/q/h: 閉じる"},
@@ -139,25 +142,38 @@ type hintSurface struct {
 	// prefixed は「取得中 / gh の警告」の前置が付く面。前置は**意図的に頭打ちにする**
 	// (予算の半分を超えたら前置の方を切る) ので、`…` が出るのは正常。
 	prefixed bool
+	// id は「この setup で出るはずの面」。checkID のときだけ突き合わせる。
+	//
+	// 🚨 **出口の語で面の同一性を判定しないこと** (敵対的レビュー 2026-09-06 の P1)。
+	// exit は互いに部分文字列になりうる (`q/h: 閉じる` ⊂ `P/q/h: 閉じる` /
+	// `h/q: 閉じる` ⊂ `Enter/h/q: 閉じる` の 2 組が実在する) ので、
+	// `strings.Contains` は**面を取り違えても緑**になる。実測: activeHintSurface() の
+	// `case m.diffOv.visible()` の戻り値を hintSurfacePRStatus に変えても全パッケージ緑だった。
+	// 語は UI の文言なので変えられない。同一性は ID で直接見る。
+	id      hintSurfaceID
+	checkID bool
 }
 
 func hintSurfaces() []hintSurface {
 	out := make([]hintSurface, 0, len(hintSurfaceSetup)+len(fullScreenCases)+2)
 	// 非全画面の面はレジストリから駆動する (登録漏れは TestHintSurfacesCoverEveryID が落とす)
-	for _, sc := range hintSurfaceSetup {
-		out = append(out, hintSurface{sc.name, sc.open, sc.exit, false})
+	for id, sc := range hintSurfaceSetup {
+		out = append(out, hintSurface{
+			name: sc.name, open: sc.open, exit: sc.exit,
+			id: hintSurfaceID(id), checkID: true,
+		})
 	}
 	// 前置つきの状態も面として持つ。fitHintItems が収めた後に前置を積むと末尾 = 出口が
 	// 落ちるので、前置ぶんを予算から引いているかをここで見る。
 	// 🚨 m.ghErr は次の取得開始までクリアされないので、gh 未導入の環境では常時この状態。
 	out = append(out,
-		hintSurface{"基底一覧 + gh 警告", func(m *browseModel) {
+		hintSurface{name: "基底一覧 + gh 警告", open: func(m *browseModel) {
 			m.ghErr = &GHError{Kind: GHOther, Detail: "gh が未認証のため CI 状態を取得できません (gh auth login)"}
-		}, "q: 終了", true},
-		hintSurface{"基底一覧 + 取得中", func(m *browseModel) {
+		}, exit: "q: 終了", prefixed: true, id: hintSurfaceBase, checkID: true},
+		hintSurface{name: "基底一覧 + 取得中", open: func(m *browseModel) {
 			m.toFetch = []string{m.commits[0].SHA}
 			m.pendingFetches = 1
-		}, "q: 終了", true},
+		}, exit: "q: 終了", prefixed: true, id: hintSurfaceBase, checkID: true},
 	)
 	// 全画面ビューアぶんは fullScreenCases から駆動する — あちらは
 	// TestFullScreenCasesCoverEveryID が「ID を足したら 1 行足す」を強制しているので、
@@ -203,29 +219,48 @@ func TestHintSurfacesCoverEveryID(t *testing.T) {
 // ここで全画面ぶんをまとめて掃く。
 func TestEveryHintKeepsExitWithinWidth(t *testing.T) {
 	surfaces := hintSurfaces()
-	// 🚨 レジストリの全面 + 前置 2 種 + 全画面ビューア。出口の語を書き忘れて対象から
-	// 落ちても気づけるよう下限を置く (走査 0 件 = 緑 を塞ぐ)。
+	// 🚨 下限が実際に検出するのは **exits map の書き忘れで全画面ビューアが対象から落ちる**形だけ
+	// (敵対的レビュー 2026-09-06 の P3)。レジストリぶんは hintSurfaceCount 件を無条件に
+	// append するので、そちらの取りこぼしは TestHintSurfacesCoverEveryID が先に落とす。
+	// 「走査 0 件 = 緑」を塞ぐ役目はその 2 本で分担している。
 	want := int(hintSurfaceCount) + 2 + len(fullScreenCases)
 	if len(surfaces) < want {
 		t.Fatalf("検査対象が %d 面しかない (期待 %d)。exits の書き忘れで対象から落ちている",
 			len(surfaces), want)
 	}
+	// 🚨 面ごとに t.Run で分ける (敵対的レビュー 2026-09-06 の P3)。二重ループ + t.Fatalf だと
+	// 最初の 1 件で全体が止まり、**面ごとの pass/fail が読めない**。変異を当てたとき
+	// 「どれか 1 面が落ちた」までしか分からず、残りの面が守られているかを示せない
+	// (mutation-verify-new-tests.md の「テーブル駆動なら全ケースが red になるか」)。
 	for _, s := range surfaces {
-		for w := frameMinWidth; w <= 140; w++ {
-			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-			m.showFrame, m.width, m.height = true, w, 40
-			s.open(m)
-			got := stripANSI(m.hintLine())
-			if dispWidth(got) > w {
-				t.Fatalf("%s w=%d: hint 行が端末幅を超えた (%d 桁): %q", s.name, w, dispWidth(got), got)
+		t.Run(s.name, func(t *testing.T) {
+			for w := frameMinWidth; w <= 140; w++ {
+				m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+				m.showFrame, m.width, m.height = true, w, 40
+				s.open(m)
+				// 🚨 幅を見る前に**面の同一性**を見る。出口の語は互いに部分文字列に
+				// なりうるので、Contains だけでは面を取り違えても緑になる (P1)。
+				if s.checkID {
+					if got := m.activeHintSurface(); got != s.id {
+						t.Fatalf("w=%d: この setup は面 %d を出すはずだが activeHintSurface() は %d を返した",
+							w, s.id, got)
+					}
+				}
+				got := stripANSI(m.hintLine())
+				if dispWidth(got) > w {
+					t.Errorf("w=%d: hint 行が端末幅を超えた (%d 桁): %q", w, dispWidth(got), got)
+					return
+				}
+				if !s.prefixed && strings.Contains(got, "…") {
+					t.Errorf("w=%d: 語の途中で切れている: %q", w, got)
+					return
+				}
+				if !strings.Contains(got, s.exit) {
+					t.Errorf("w=%d: 抜ける手段 %q が消えた: %q", w, s.exit, got)
+					return
+				}
 			}
-			if !s.prefixed && strings.Contains(got, "…") {
-				t.Fatalf("%s w=%d: 語の途中で切れている: %q", s.name, w, got)
-			}
-			if !strings.Contains(got, s.exit) {
-				t.Fatalf("%s w=%d: 抜ける手段 %q が消えた: %q", s.name, w, s.exit, got)
-			}
-		}
+		})
 	}
 }
 
