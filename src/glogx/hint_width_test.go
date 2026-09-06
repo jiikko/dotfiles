@@ -109,18 +109,18 @@ var hintSurfaceSetup = [hintSurfaceCount]struct {
 	exit string
 }{
 	hintSurfaceBase:         {"基底一覧", func(*browseModel) {}, "q: 終了"},
-	hintSurfacePushConfirm:  {"push 確認", func(m *browseModel) { m.actModal.pushConfirm = true }, "push しますか?"},
-	hintSurfacePullConfirm:  {"pull 確認", func(m *browseModel) { m.actModal.pullConfirm = true }, "pull --rebase しますか?"},
+	hintSurfacePushConfirm:  {"push 確認", func(m *browseModel) { m.actModal.pushConfirm = true }, "push しますか? [Y/n] (Enter=y)"},
+	hintSurfacePullConfirm:  {"pull 確認", func(m *browseModel) { m.actModal.pullConfirm = true }, "pull --rebase しますか? [Y/n] (Enter=y)"},
 	hintSurfacePushing:      {"push 実行中", func(m *browseModel) { m.actModal.pushing = true }, "pushing..."},
 	hintSurfacePulling:      {"pull 実行中", func(m *browseModel) { m.actModal.pulling = true }, "pulling..."},
-	hintSurfaceRerunConfirm: {"再実行 確認", func(m *browseModel) { m.actModal.rerunConfirm = true }, "job を再実行しますか?"},
+	hintSurfaceRerunConfirm: {"再実行 確認", func(m *browseModel) { m.actModal.rerunConfirm = true }, "job を再実行しますか? [Y/n] (Enter=y)"},
 	hintSurfaceRerunning:    {"再実行 中", func(m *browseModel) { m.actModal.rerunning = true }, "rerunning..."},
 	// 🚨 target は 2 件にする (敵対的レビュー 2026-09-06 の P3)。この面だけ項目が
 	// 実行時に伸びる (strings.Join の連結) ので、1 件の fixture では最長形を測れない。
 	// updateKeyTarget が返すのは claude / codex の 2 つだけなので、これが実在しうる最長。
 	hintSurfaceUpdating: {"self-update 中", func(m *browseModel) {
 		m.actModal.updating = map[string]bool{"claude": true, "codex": true}
-	}, "update..."},
+	}, "claude + codex update..."},
 	hintSurfaceDiff:      {"diff overlay", func(m *browseModel) { m.diffOv.sha = m.commits[0].SHA }, "q/h: 閉じる"},
 	hintSurfacePRStatus:  {"PR 状態", func(m *browseModel) { m.prStatusOv.sha = m.commits[0].SHA }, "P/q/h: 閉じる"},
 	hintSurfaceJobDetail: {"job 詳細", func(m *browseModel) { m.detailOv.open = true }, "Enter/h/q: 戻る"},
@@ -132,6 +132,25 @@ var hintSurfaceSetup = [hintSurfaceCount]struct {
 	hintSurfacePanelNoCursor: {"job パネル(カーソル無し)", func(m *browseModel) {
 		m.panelSHA, m.panelCursor = m.commits[0].SHA, -1
 	}, "Enter/h/q: 閉じる"},
+}
+
+// hasHintItem は hint 行に item が**独立した項目として**含まれるか。
+// fitHintItems は項目を 2 空白で繋ぐので、そこで区切って完全一致を見る。
+func hasHintItem(line, item string) bool {
+	for _, f := range strings.Split(line, "  ") {
+		f = strings.TrimSpace(f)
+		if f == item {
+			return true
+		}
+		// spinner つきの項目 (`⠋ pushing...`) は先頭の 1 文字が毎フレーム変わるので、
+		// 最初の空白より後ろで照合する。
+		// 🚨 これは部分一致には戻らない: `Enter/h/q: 閉じる` の最初の空白より後ろは
+		// `閉じる` なので、`h/q: 閉じる` とは一致しない (P3-2 の向きは塞がったまま)。
+		if _, rest, ok := strings.Cut(f, " "); ok && rest == item {
+			return true
+		}
+	}
+	return false
 }
 
 // hintSurface は「最下行の案内を持つ画面」1 つ。
@@ -251,23 +270,6 @@ func TestEveryHintKeepsExitWithinWidth(t *testing.T) {
 				if got := m.activeHintSurface(); got != s.id {
 					t.Fatalf("この setup は面 %d を出すはずだが activeHintSurface() は %d を返した", s.id, got)
 				}
-				// 🚨 面の同一性が合っていても、**hintBuilders の配線**が入れ替わっていれば
-				// 別の面の語彙が出る (敵対的レビュー 2 周目の P3-2)。出口の部分一致では
-				// 「期待語が実際の出口の部分文字列になる向き」を検出できないので、
-				// 十分広い幅で**全項目が出ていること**を見る。
-				//
-				// 🚨 前置つきの面は対象外。前置が予算を食うぶん低優先が**正しく**落ちるので、
-				// ここで全項目を要求すると意味の無い red になる。前置つきの 2 面はどちらも
-				// hintSurfaceBase の builder を使っており、その配線は素の「基底一覧」が見ている。
-				if !s.prefixed {
-					wide := stripANSI(m.hintLine())
-					for _, it := range hintBuilders[s.id](m) {
-						if !strings.Contains(wide, it.text) {
-							t.Errorf("幅 200 でも項目 %q が出ていない (hintBuilders の配線が違う): %q",
-								it.text, wide)
-						}
-					}
-				}
 			}
 			for w := frameMinWidth; w <= 140; w++ {
 				m := newTestBrowse(t, 1, map[string]CIState{}, nil)
@@ -282,8 +284,17 @@ func TestEveryHintKeepsExitWithinWidth(t *testing.T) {
 					t.Errorf("w=%d: 語の途中で切れている: %q", w, got)
 					return
 				}
-				if !strings.Contains(got, s.exit) {
-					t.Errorf("w=%d: 抜ける手段 %q が消えた: %q", w, s.exit, got)
+				// 🚨 **部分一致で照合しないこと** (敵対的レビュー 2 周目の P3-2)。出口の語は
+				// 互いに部分文字列になりうる (`h/q: 閉じる` ⊂ `Enter/h/q: 閉じる`) ので、
+				// Contains だと **hintBuilders の配線が入れ替わっても片方向は緑**になる。
+				// 項目は 2 空白で連結されるので、区切って**完全一致**で見る。
+				//
+				// 🚨 期待値を hintBuilders から作らないこと。それだと builder を変異させた
+				// ときに期待値も一緒に変わり、**恒真**になる (実際に一度そう書いて、
+				// 配線を入れ替える変異が緑のまま通った)。exit は hintSurfaceSetup が持つ
+				// **独立した**期待値なので、その役目を果たせる。
+				if !hasHintItem(got, s.exit) {
+					t.Errorf("w=%d: 抜ける手段 %q が項目として出ていない: %q", w, s.exit, got)
 					return
 				}
 			}
