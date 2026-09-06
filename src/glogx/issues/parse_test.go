@@ -686,3 +686,33 @@ func TestFilterExemptsEpicChildrenFromStatusFilter(t *testing.T) {
 		t.Errorf("FilterAll で 6 件見えない: %d", n)
 	}
 }
+
+// TestVisibleBadgesMarksFilterBypass はタブ行右端のバッジが「実際に見えている状態」を出すことを
+// 固定する。段階 (○/○⏸/○⏸✓) を迂回して見えるもの (epic の子 / 番号フィルタ) は括弧で足す。
+// 括弧の外と中を分けるのは `a` の手応えを残すため (issue 296)。
+func TestVisibleBadgesMarksFilterBypass(t *testing.T) {
+	epicChild := func(status Status) *Issue {
+		return &Issue{Number: "700", Status: status, Group: "cloud", GroupKind: GroupEpic, GroupKey: "/repo/issues/epic/cloud"}
+	}
+	global := func(status Status) *Issue { return &Issue{Number: "900", Status: status} }
+	for _, tc := range []struct {
+		name   string
+		filter StatusFilter
+		rows   []*Issue
+		want   string
+	}{
+		{"迂回なし", FilterOpen, []*Issue{global(StatusOpen)}, "○"},
+		{"epic の done が見えている", FilterOpen, []*Issue{global(StatusOpen), epicChild(StatusDone)}, "○(✓)"},
+		{"epic の done と pending", FilterOpen, []*Issue{epicChild(StatusPending), epicChild(StatusDone)}, "○(⏸✓)"},
+		{"a を 1 段進めた (pending は括弧の外へ)", FilterPending, []*Issue{epicChild(StatusPending), epicChild(StatusDone)}, "○⏸(✓)"},
+		{"全部見せる段階なら括弧は出ない", FilterAll, []*Issue{epicChild(StatusPending), epicChild(StatusDone)}, "○⏸✓"},
+		// 番号フィルタは状態を問わず拾うので、global の done でも括弧が付く
+		{"番号フィルタで global の done が出ている", FilterOpen, []*Issue{global(StatusDone)}, "○(✓)"},
+		{"next は段階に関わらず見えるのでバッジには出さない", FilterOpen, []*Issue{epicChild(StatusNext)}, "○"},
+		{"unknown も出さない (状態へ写像しない契約)", FilterOpen, []*Issue{epicChild(StatusUnknown)}, "○"},
+	} {
+		if got := VisibleBadges(tc.filter, tc.rows); got != tc.want {
+			t.Errorf("%s: got %q want %q", tc.name, got, tc.want)
+		}
+	}
+}

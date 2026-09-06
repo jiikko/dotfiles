@@ -2198,7 +2198,9 @@ func (v *issuesView) tabLine(o issuesRenderOpts) string {
 		}
 		chips = append(chips, v.tabChip(t.Name, count, v.tabIdx == i+1, o.colored))
 	}
-	filter := v.filter.Badges()
+	// 🚨 段階 (v.filter) ではなく「実際に見えている状態」を出す。epic group の子は状態フィルタの
+	// 対象外、番号フィルタは状態を問わず拾うので、段階だけを出すとバッジが嘘になる (issue 296)
+	filter := issues.VisibleBadges(v.filter, v.rows)
 	avail := max(o.width-dispWidth(filter)-1, 1)
 	left := scrollTabs(chips, v.tabIdx+1, avail, o.colored) // チップ配列は [next] が 0 番
 	pad := max(o.width-dispWidth(left)-dispWidth(filter), 0)
@@ -2514,9 +2516,13 @@ func (v *issuesView) hint(width int) string {
 			{"Esc: 解除", 1},
 		})
 	}
-	// a は 3 段の巡回なので「次に押すと何が増えるか」を出す (現在どこまで見えているかはタブ行
-	// 右端のバッジ ○/○⏸/○⏸✓ が示すので、ここで二重に説明しない)。語でなくバッジで書くのは
+	// a は 3 段の巡回なので「次に押すと何が増えるか」を出す (今どこまで見えているかはタブ行
+	// 右端のバッジが示すので、ここで二重に説明しない)。語でなくバッジで書くのは
 	// 幅のため ("a: pending も" は 14 桁)。
+	//
+	// 🚨 ここが出すのは**段階**の話で、epic group の子には効かない (子は状態フィルタの対象外。
+	// issue 291)。バッジ側は迂回して見えているものを括弧で足して区別する (issues.VisibleBadges)
+	// が、hint は 1 行しかないので段階だけを言う (issue 296)。
 	next := "a: +" + issues.StatusPending.Badge()
 	switch v.filter {
 	case issues.FilterPending:

@@ -757,3 +757,26 @@ func TestUnmarkDestLabelCoversMixedSelection(t *testing.T) {
 		t.Fatalf("混在選択で宛先が読めない:\n%s", box)
 	}
 }
+
+// TestIssuesViewTabLineShowsBypassBadge はタブ行の配線を固定する (純関数の VisibleBadges を
+// 呼んでいるか。計算が正しくても呼び出し側が段階だけを出していれば嘘は直っていない)。
+func TestIssuesViewTabLineShowsBypassBadge(t *testing.T) {
+	dir := "/repo/issues"
+	v := loadedView(
+		fakeIssue("900", "feat", "global", issues.StatusOpen),
+		fakeEpicIssue(dir, "alpha", "710", "open", issues.StatusOpen),
+		fakeEpicIssue(dir, "alpha", "709", "done", issues.StatusDone),
+	)
+	if v.filter != issues.FilterOpen {
+		t.Fatalf("前提が違う: 既定の段階が open でない")
+	}
+	line := v.tabLine(renderOpts(10))
+	if !strings.Contains(line, "○(✓)") {
+		t.Fatalf("タブ行が迂回を示していない: %q", line)
+	}
+	// a を 1 段進めても ✓ は括弧の中のまま (段階は pending までしか見せていない)
+	v.handleKey("a", vp(10))
+	if line = v.tabLine(renderOpts(10)); !strings.Contains(line, "○⏸(✓)") {
+		t.Fatalf("a を進めた後のバッジが違う: %q", line)
+	}
+}

@@ -827,7 +827,36 @@ func (f StatusFilter) shows(s Status) bool {
 	return true
 }
 
-// Badges は今見えている状態のバッジ列 (タブ行右端の「今どこまで見えているか」表示用)。
+// VisibleBadges は「今この一覧で見えている状態」のバッジ列 (タブ行右端の表示用)。
+//
+// 段階が見せているもの (○ / ○⏸ / ○⏸✓) の後ろに、**段階を迂回して見えているもの**を括弧で足す。
+// 迂回は 2 つある: epic group の子は状態フィルタの対象外 (showsIssue)、番号フィルタは
+// 状態を問わず拾う。どちらも「バッジが ○ なのに ✓ の行が並ぶ」形になり、バッジの意味
+// (どこまで見えているか) が嘘になっていた (issue 296。291 の副作用)。
+//
+// 🚨 括弧の外 (段階) と中 (迂回で見えているもの) を分けるのは、`a` を押したときの手応えを
+// 残すため。全部を混ぜて 1 列にすると、epic の子が既に ✓ を出している一覧では `a` を押しても
+// バッジが変わらず、「効かなかった」と読める。
+func VisibleBadges(f StatusFilter, rows []*Issue) string {
+	extra := ""
+	for _, s := range []Status{StatusPending, StatusDone} {
+		if f.shows(s) {
+			continue // 段階が見せているものは括弧の外に出ている
+		}
+		for _, iss := range rows {
+			if iss.Status == s {
+				extra += s.Badge()
+				break
+			}
+		}
+	}
+	if extra == "" {
+		return f.Badges()
+	}
+	return f.Badges() + "(" + extra + ")"
+}
+
+// Badges は段階が見せている状態のバッジ列 (○ / ○⏸ / ○⏸✓)。
 func (f StatusFilter) Badges() string {
 	out := StatusOpen.Badge()
 	if f >= FilterPending {
