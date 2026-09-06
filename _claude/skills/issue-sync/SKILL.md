@@ -10,6 +10,9 @@ Open Issues の中から、実際にはコードベース上で対応済み（do
 
 **前提**: プロジェクトが `issues/` + `issues/done/` 運用であること（ディレクトリ名が `issue/` の
 プロジェクトでは読み替える）。`done/` が無ければ、その旨を報告して終了する（勝手に作らない）。
+🚨 この「作らない」は **global の `issues/done/`** の話。group の `issues/epic/<name>/done/` は
+**無ければ作る**（`git mv` は宛先の親ディレクトリを作らないので、最初の group issue 完了は必ず
+`mkdir -p` が要る。2026-09-06 / issue 291）。
 
 **状態の正本はディレクトリ**: どの issue が open かは**ファイルの置き場所**が決める
 （`issues/` 直下 / `next/` / `epic/<name>/` / `epic/<name>/next/` = open、`pending/` = 着手保留、
@@ -150,6 +153,9 @@ AskUserQuestion で「これらの issue を `done/` へ移動しますか？」
    🚨 **宛先は issue の居場所で決まる**（2026-09-06 / issue 291。epic の外へ出さない）:
    - `issues/` 直下・`issues/next/`・`issues/pending/` → `issues/done/`
    - **`issues/epic/<name>/` とその `next/` `pending/`** → **`issues/epic/<name>/done/`**
+     （無ければ `mkdir -p issues/epic/<name>/done` してから `git mv`）
+   - `issues/epic/<name>/<予約外の名前>/`（`closed/` 等。viewer では迷子 `?`）→ その group の
+     `issues/epic/<name>/done/`。`issues/epic/*.md`（group 名の無い迷子）→ `issues/done/`
 
    symlink を消すパスも同じ規則で決まる（global は `issues/next/NNN-x.md`、group は
    `issues/epic/<name>/next/NNN-x.md`）

@@ -630,6 +630,12 @@ func (v *issuesView) anchorCursorInternal(path string) {
 	// 開いて置き直す。移動で issue が group の中へ入る経路があり (予約外ディレクトリの迷子に n を
 	// 押すと `epic/<name>/next/` = group の子になる)、開かないと「移動しました」と言った直後に
 	// 対象が画面から消え、カーソルは親行に着地する (2026-09-06 の敵対的レビュー 2 周目)。
+	//
+	// 🚨 これは**ユーザーが明示的に畳んだ状態 (collapsedGroups) を上書きし、しかも
+	// expandedGroups は screen に保存される**ので、再起動を跨いで開いたままになる。
+	// autoExpandedGroups は refresh のたびに捨てられるので、再スキャンを跨ぐ移動の
+	// 再アンカーには使えない (置き場が expandedGroups しかない)。カーソルの居場所を
+	// 見せる方を優先した意図的な選択 (同 3 周目 P3-5)。
 	for _, iss := range v.rows {
 		if iss.Path != path || iss.GroupKey == "" {
 			continue
@@ -2640,6 +2646,33 @@ func (v *issuesView) clearPendingMoveAnchors() {
 	v.pendingMoveStale = false
 }
 
+// unmarkDestLabel は「next を外す」確認モーダルに出す戻り先の呼び名。
+//
+// 🚨 戻り先は issue の居場所で決まる。group issue は epic の外へ出さない (issues.MoveToSubdir)
+// ので、文面を「issues 直下」に固定すると、ファイルを動かす前の唯一の確認画面が嘘をつく
+// (2026-09-06 の敵対的レビュー 2 周目。文面自体は 2026-08-01 から嘘だった)。
+//
+// 🚨 先頭 1 件で決めない。選択には global と group が混在しうる (epic 名が数字の group は
+// 親 issue が issue 行として並ぶので、group 行を挟まずに範囲選択できる)。先頭だけを見ると
+// 「global が先頭・後続が group」の並びで嘘に戻る (同 3 周目で実測)。
+func unmarkDestLabel(targets []*issues.Issue) string {
+	hasGroup, hasGlobal := false, false
+	for _, iss := range targets {
+		if iss.GroupKey != "" {
+			hasGroup = true
+		} else {
+			hasGlobal = true
+		}
+	}
+	switch {
+	case hasGroup && hasGlobal:
+		return "元の group / issues 直下"
+	case hasGroup:
+		return "group 直下"
+	}
+	return "issues 直下"
+}
+
 // markNextBox は確認モーダルの箱 (glogx の push/pull 確認と同じ見た目)。
 func (v *issuesView) markNextBox(width int, colored bool) []string {
 	if !v.markNext.active {
@@ -2653,20 +2686,7 @@ func (v *issuesView) markNextBox(width int, colored bool) []string {
 	}
 	title, line := " next の目印 ", what+" に next の目印を付けます"
 	if v.markNext.unmark {
-		// 🚨 戻り先は issue の居場所で決まる。group issue は epic の外へ出さない (issues.MoveToSubdir)
-		// ので、文面を「issues 直下」に固定すると、ファイルを動かす前の唯一の確認画面が嘘をつく
-		// (2026-09-06 の敵対的レビュー 2 周目。文面自体は 2026-08-01 から嘘だった)
-		where := "issues 直下"
-		if len(v.markNext.targets) > 0 && v.markNext.targets[0].GroupKey != "" {
-			where = "group 直下"
-			for _, iss := range v.markNext.targets {
-				if iss.GroupKey == "" {
-					where = "元の group / issues 直下"
-					break
-				}
-			}
-		}
-		title, line = " next を外す ", what+" を next/ から"+where+"へ戻します"
+		title, line = " next を外す ", what+" を next/ から "+unmarkDestLabel(v.markNext.targets)+" へ戻します"
 	}
 	return centerBox(title, []string{
 		line,

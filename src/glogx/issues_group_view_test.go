@@ -574,7 +574,8 @@ func TestIssuesViewAnchorOpensCollapsedGroupForMovedIssue(t *testing.T) {
 	dir := "/repo/issues"
 	global := fakeIssue("900", "feat", "global", issues.StatusOpen)
 	child := fakeEpicIssue(dir, "cloud", "702", "moved-in", issues.StatusNext)
-	v := loadedView(global, child)
+	other := fakeEpicIssue(dir, "alpha", "701", "unrelated", issues.StatusOpen)
+	v := loadedView(global, child, other)
 
 	if v.groupExpanded(child.GroupKey) {
 		t.Fatalf("前提が違う: group が既に展開されている")
@@ -583,6 +584,35 @@ func TestIssuesViewAnchorOpensCollapsedGroupForMovedIssue(t *testing.T) {
 
 	if !v.groupExpanded(child.GroupKey) {
 		t.Fatalf("畳んだ group が開かれていない: %+v", v.expandedGroups)
+	}
+	// 🚨 「対象の group **だけ**」を開くこと。fixture に group が 1 つしか無いと、
+	// path の照合を落とす変異 (最初に見つけた GroupKey を開く) が素通りする (敵対レビュー 3 周目)
+	if v.groupExpanded(other.GroupKey) {
+		t.Fatalf("無関係な group まで開いた: %+v", v.expandedGroups)
+	}
+	row, ok := v.currentDisplayRow()
+	if !ok || row.kind != displayRowIssue || row.issue != child {
+		t.Fatalf("カーソルが移動先の issue にない: ok=%v row=%+v", ok, row)
+	}
+}
+
+// TestIssuesViewAnchorOverridesExplicitCollapse は、明示的に畳んだ (collapsedGroups) group でも
+// 移動先を見せるために開くことを固定する。この override を落とすと groupExpanded が false のまま
+// カーソルが対象に乗らない (敵対レビュー 3 周目 P3-3 の変異 M2)。
+func TestIssuesViewAnchorOverridesExplicitCollapse(t *testing.T) {
+	dir := "/repo/issues"
+	child := fakeEpicIssue(dir, "cloud", "702", "moved-in", issues.StatusNext)
+	v := loadedView(fakeIssue("900", "feat", "global", issues.StatusOpen), child)
+	v.collapsedGroups = map[string]bool{child.GroupKey: true}
+	v.autoExpandedGroups = map[string]bool{child.GroupKey: true} // 番号フィルタが開けた分を人が畳んだ形
+
+	v.anchorCursorInternal(child.Path)
+
+	if v.collapsedGroups[child.GroupKey] {
+		t.Fatalf("明示的な畳みが残ったまま: %+v", v.collapsedGroups)
+	}
+	if !v.groupExpanded(child.GroupKey) {
+		t.Fatalf("group が開いていない: expanded=%+v collapsed=%+v", v.expandedGroups, v.collapsedGroups)
 	}
 	row, ok := v.currentDisplayRow()
 	if !ok || row.kind != displayRowIssue || row.issue != child {
@@ -624,5 +654,46 @@ func TestIssuesViewGroupProgressCountsOnlyVisibleChildren(t *testing.T) {
 	out := strings.Join(v.listLines(renderOpts(10)), "\n")
 	if !strings.Contains(out, "▸ alpha (2 ✓1)") {
 		t.Fatalf("タブ filter 後の集合を数えていない:\n%s", out)
+	}
+}
+
+// TestUnmarkDestLabelCoversMixedSelection は「next を外す」確認モーダルの戻り先の呼び名が
+// 選択の中身で決まることを固定する。先頭 1 件で決めていたため、global が先頭で group が
+// 後続の並びだと「issues 直下」と嘘をついていた (敵対レビュー 3 周目 P2-1)。
+func TestUnmarkDestLabelCoversMixedSelection(t *testing.T) {
+	dir := "/repo/issues"
+	global := fakeIssue("900", "feat", "global", issues.StatusNext)
+	child := fakeEpicIssue(dir, "cloud", "702", "child", issues.StatusNext)
+	for _, tc := range []struct {
+		name    string
+		targets []*issues.Issue
+		want    string
+	}{
+		{"global のみ", []*issues.Issue{global}, "issues 直下"},
+		{"group のみ", []*issues.Issue{child}, "group 直下"},
+		{"混在 (group が先頭)", []*issues.Issue{child, global}, "元の group / issues 直下"},
+		{"混在 (global が先頭)", []*issues.Issue{global, child}, "元の group / issues 直下"},
+		{"0 件", nil, "issues 直下"},
+	} {
+		if got := unmarkDestLabel(tc.targets); got != tc.want {
+			t.Errorf("%s: got %q want %q", tc.name, got, tc.want)
+		}
+	}
+
+	// 箱の文面としても出ること (helper だけ直して呼び出し側が固定文言に戻る変異を弾く)。
+	// 併せて助詞の前後に空白が入っていることも見る (「から」と地の文がくっついていた)
+	v := loadedView(global, child)
+	// 箱は幅を詰めるので、短い方 (group のみ) で全文を見る
+	short := fakeEpicIssue(dir, "c", "1", "x", issues.StatusNext) // 箱は幅を詰めるので短い名前で見る
+	v.markNext = issuesMarkConfirm{active: true, unmark: true, targets: []*issues.Issue{short}}
+	box := strings.Join(v.markNextBox(200, false), "\n")
+	// 箱は文面を幅で切るので、助詞の前後の空白だけ見る (「からgroup 直下へ」と詰まっていた)
+	if !strings.Contains(box, "next/ から group 直下 ") {
+		t.Fatalf("確認モーダルの文面が違う:\n%s", box)
+	}
+	// 混在は先頭の語だけ見る (長い文面は箱の幅で切られる)
+	v.markNext = issuesMarkConfirm{active: true, unmark: true, targets: []*issues.Issue{global, child}}
+	if box = strings.Join(v.markNextBox(200, false), "\n"); !strings.Contains(box, "next/ から 元の group") {
+		t.Fatalf("混在選択の文面が違う:\n%s", box)
 	}
 }

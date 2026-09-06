@@ -112,7 +112,8 @@ Claude が**実質的な作業をやり切った時点**（機能追加・バグ
 
 ## 運用ルール（詳細は `~/.claude/CLAUDE.md`「Issue管理」と `_claude/rules/`）
 
-- 対応が完了したら `issues/done/` へ移動する
+- 対応が完了したら done へ移動する（global issue は `issues/done/`、group issue は
+  `issues/epic/<name>/done/`。issue 291）
 - issue の新規作成・大幅改訂は commit 前に codex レビューへ通す（[`issue-creation-codex-review.md`](../_claude/rules/issue-creation-codex-review.md)）
 - issue の記述を鵜呑みにしない。着手前に実コードと git 履歴で検証する（既に修正済み・false positive を弾く）
 
