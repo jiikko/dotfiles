@@ -612,3 +612,98 @@ func TestBrowseJobDetailNeighborKeysSwapJob(t *testing.T) {
 		t.Errorf("先頭の K でタイトル行へ抜けた / 案内が出ない: cursor=%d toast=%q", m.panelCursor, m.toast.text)
 	}
 }
+
+// 一括取得待ちで立てた札は、世代交代 (refetchAfterPush → startCIFetch) を跨いでも降りる。
+//
+// issue 272: 待機分岐は Cmd を 1 本も出さずに札を立てるので、降ろす責任は一括取得側にある。
+// ところが旧世代のチャンクは ciResultMsg の epoch ガードで**丸ごと捨てられる** = 札を降ろす
+// 処理も一緒に捨てられ、パネルが「CI job を取得中...」で永久に固まっていた。
+// 223 が awaitCI で直したのと同じ失敗モードの、兄弟の掃き漏れ。
+func TestDetailsLoadingReleasedAcrossEpochBump(t *testing.T) {
+	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	// 🚨 フィクスチャ既定では usageOv.loading() が真で、spinnerActive() が札と無関係に
+	// 真になる。この交絡を先に潰しておかないと、下の assert が何も測らない。
+	m.usageOv.snap = rlTestSnap()
+	const stale = "sha-beyond-cap"
+	m.hasRepo = true
+	m.toFetch = []string{stale}
+	m.pendingFetches = 1
+	epochBefore := m.fetchEpoch
+
+	if cmd := m.fetchPanelDetails(stale); cmd != nil {
+		t.Fatal("一括取得待ちなら Cmd は発行されないはず (前提が崩れている)")
+	}
+	if !m.detailsLoading[stale] || !m.detailsWaiting[stale] {
+		t.Fatal("待機の札が立っていない (前提が崩れている)")
+	}
+
+	// push の後始末で世代が進む。新しい取得対象に stale は含まれない
+	m.startCIFetch([]string{"other-sha"})
+	if m.fetchEpoch == epochBefore {
+		t.Fatal("世代が進んでいない (前提が崩れている)")
+	}
+	if m.detailsLoading[stale] {
+		t.Errorf("世代交代で待機の札が残った: detailsLoading=%v", m.detailsLoading)
+	}
+
+	// 旧世代のチャンクが遅れて着弾しても壊れない (epoch ガードで捨てられるだけ)
+	m.Update(ciResultMsg{epoch: epochBefore, shas: []string{stale}, batch: CIBatch{}})
+	if m.detailsLoading[stale] {
+		t.Errorf("旧世代の着弾で札が戻った: %v", m.detailsLoading)
+	}
+
+	// 🚨 spinnerActive() は**新しい取得を着地させてから**見る。startCIFetch の直後は
+	// pendingFetches > 0 なので fetching() が正当に真で、札の有無に関わらず真になる
+	// (この交絡に気づかず「spinnerActive が下りない」を札の証拠にしかけた)。
+	m.Update(ciResultMsg{epoch: m.fetchEpoch, shas: []string{"other-sha"}, batch: CIBatch{}})
+	if m.fetching() {
+		t.Fatalf("新しい取得が着地していない (pendingFetches=%d)", m.pendingFetches)
+	}
+	if m.spinnerActive() {
+		t.Errorf("札が残っていないのに spinnerActive() が下りない: tickInterval!=spinner=%v fetching=%v awaitCI=%d detailsLoading=%d",
+			m.tickInterval() != spinnerInterval, m.fetching(), len(m.awaitCI), len(m.detailsLoading))
+	}
+}
+
+// 🚨 逆向き: **実取得分岐の札は世代交代で落とさない** (issue 272 の敵対的レビュー)。
+//
+// 落とすと「取得は飛んでいるのに (CI job 情報なし) を出す」うえ、開き直すと
+// fetchPanelDetails の 1 行目ガードが外れて同一 SHA へ 2 本目の GraphQL が飛ぶ
+// (fetchPanelDetails のコメントが名指しで避けている事故)。
+func TestDetailsLoadingKeepsInFlightFetchAcrossEpochBump(t *testing.T) {
+	m := newTestBrowse(t, 3, map[string]CIState{}, nil)
+	m.usageOv.snap = rlTestSnap()
+	m.hasRepo = true
+
+	// 🚨 **待機と実取得を同時に持つ状態**を作る。片方だけだと
+	// `if len(m.detailsWaiting) > 0` のガードで解放ループへ到達せず、
+	// 「区別をやめて全部落とす」変異が到達不能になって素通りする (実際に踏んだ)。
+	const waiting = "sha-waiting"
+	m.toFetch = []string{waiting}
+	m.pendingFetches = 1
+	if cmd := m.fetchPanelDetails(waiting); cmd != nil {
+		t.Fatal("一括取得待ちなら Cmd は発行されないはず (前提が崩れている)")
+	}
+
+	const live = "sha-live-fetch"
+	if cmd := m.fetchPanelDetails(live); cmd == nil {
+		t.Fatal("実取得分岐なのに Cmd が出ていない (前提が崩れている)")
+	}
+	if !m.detailsLoading[live] || m.detailsWaiting[live] {
+		t.Fatalf("実取得の札が正しく立っていない: loading=%v waiting=%v",
+			m.detailsLoading[live], m.detailsWaiting[live])
+	}
+	if !m.detailsWaiting[waiting] {
+		t.Fatal("待機の札が立っていない (前提が崩れている)")
+	}
+
+	m.startCIFetch([]string{"other-sha"}) // 世代交代。どちらも新 toFetch には無い
+
+	if m.detailsLoading[waiting] {
+		t.Errorf("待機の札が残った: %v", m.detailsLoading)
+	}
+	if !m.detailsLoading[live] {
+		t.Error("飛んでいる取得の札まで落とした。取得中なのに「(CI job 情報なし)」を出し、" +
+			"開き直すと同一 SHA へ 2 本目の GraphQL が飛ぶ (issue 272)")
+	}
+}

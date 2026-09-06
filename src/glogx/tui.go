@@ -232,6 +232,15 @@ type browseModel struct {
 	fetched        map[string]CIState // API から取得した分 (終了後のキャッシュ保存用)
 	details        map[string][]CheckDetail
 	detailsLoading map[string]bool
+	// detailsWaiting は detailsLoading のうち「**Cmd を出さずに**一括取得の結果を待っている」
+	// SHA (issue 272)。fetchPanelDetails の待機分岐だけがここへ入る。
+	//
+	// 🚨 不変条件は「detailsLoading ⊆ toFetch」ではなく「**札には必ず、その SHA を名指して
+	// 届く live Cmd がある**」。実取得分岐の札は自前の detailMsg が降ろすので、世代交代で
+	// 落としてはいけない (落とすと取得中なのに「(CI job 情報なし)」を出し、開き直すと
+	// 同一 SHA へ 2 本目の GraphQL が飛ぶ)。区別せずキー集合だけを見ると、この 2 種類を
+	// 取り違える。
+	detailsWaiting map[string]bool
 	// toFetch は一括取得の「まだ結果が来ていない」SHA。チャンクが着弾するたびに縮む
 	// (fetching() も pendingFetches==0 で下りる)。パネルの「進行中の一括取得を待つ」ガードが
 	// これを見るので、既に着弾したチャンクの SHA で待たされないようにするために縮める必要がある。
@@ -374,6 +383,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		fetched:        map[string]CIState{},
 		details:        map[string][]CheckDetail{},
 		detailsLoading: map[string]bool{},
+		detailsWaiting: map[string]bool{},
 		detailOv:       newJobDetailOverlay(),
 		prCache:        map[string]*PRRef{},
 		prBusy:         map[string]bool{},
@@ -613,6 +623,26 @@ func (m *browseModel) startCIFetch(shas []string) tea.Cmd {
 	shas = capFetchSHAs(shas) // 超過分は StateUnknown のまま (newBrowseModel と同じポリシー)
 	chunks := chunkSHAs(shas)
 	m.fetchEpoch++ // 旧世代の未着チャンクを無効化 (ciResultMsg ハンドラの世代ガード)
+	// 🚨 世代を進めると、旧世代のチャンクは ciResultMsg の epoch ガードで**丸ごと捨てられる**
+	// = そこにあった「札を降ろす」処理も一緒に捨てられる。降ろす責任を負っていた札を、
+	// 世代を進めるこの 1 箇所で解放する (issue 272。gitlog_watch.go:handleGitLogProbe の
+	// closed 経路が同じ規律を持っている)。
+	//
+	// 落とすのは**待機の札だけ**。実取得分岐の札は自前の detailMsg が降ろすので触らない。
+	// 呼び出し側 (refetchAfterPush) に delete を足す形は採らない — 次に startCIFetch を
+	// 呼ぶ経路が増えたときに同じ書き忘れが再発する。
+	if len(m.detailsWaiting) > 0 {
+		next := make(map[string]bool, len(shas))
+		for _, sha := range shas {
+			next[sha] = true
+		}
+		for sha := range m.detailsWaiting {
+			if !next[sha] {
+				delete(m.detailsLoading, sha)
+				delete(m.detailsWaiting, sha)
+			}
+		}
+	}
 	m.toFetch = shas
 	m.pendingFetches = len(chunks)
 	m.ghErr = nil
@@ -818,6 +848,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// SHA も含めて解除。details 不在は「(CI job 情報なし)」表示に落ちる)
 		for _, sha := range msg.shas {
 			delete(m.detailsLoading, sha)
+			delete(m.detailsWaiting, sha)
 		}
 		m.settleAwaitCI()
 		// 一括取得で実行中コミットの Details が入った場合も ETA basis を補充する
@@ -1891,7 +1922,7 @@ func (m *browseModel) applyLogData(d logData, keepView bool) (added int, cmd tea
 	m.commits = commits
 	m.statuses, m.toFetch, m.repo, m.hasRepo = d.statuses, d.toFetch, d.repo, d.hasRepo
 	m.details = map[string][]CheckDetail{}
-	m.detailsLoading = map[string]bool{}
+	m.detailsLoading, m.detailsWaiting = map[string]bool{}, map[string]bool{}
 	m.detailOv.reset() // job 詳細ログキャッシュも破棄 (旧 SHA の残骸を持ち越さない)
 	m.prCache = map[string]*PRRef{}
 	m.prBusy = map[string]bool{}
@@ -2913,7 +2944,9 @@ func (m *browseModel) fetchPanelDetails(sha string) tea.Cmd {
 	// ここで別リクエストを打つと同一 SHA への GraphQL が並行し、完了順で
 	// statuses/details が上書きされる (codex レビュー指摘)
 	if m.fetching() && slices.Contains(m.toFetch, sha) {
-		m.detailsLoading[sha] = true
+		// Cmd を 1 本も出さない = 降ろす責任は一括取得側にある。世代交代で捨てられたときに
+		// 取り残されないよう、待機であることを覚えておく (issue 272)。
+		m.detailsLoading[sha], m.detailsWaiting[sha] = true, true
 		return nil
 	}
 	m.detailsLoading[sha] = true
