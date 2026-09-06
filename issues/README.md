@@ -109,6 +109,11 @@ Claude が**実質的な作業をやり切った時点**（機能追加・バグ
   - `issues/epic/<name>/done/` — **group issue の完了先**（global の `issues/done/` へは出さない。出すとパスから epic 所属が消え、viewer が「何件中何件終わったか」を答えられなくなる）。
     viewer では group を展開すれば**状態フィルタ (`a`) を進めなくても見える**（親行に `▸ <name> (5 ✓2)` と件数 + done 件数が出る。issue 291）
   - `issues/epic/<name>/pending/` — group issue の保留先（同上。`⏸` で見える）
+  - **epic を新設するときは番号つきの親 issue を同時に起票する** (README は番号を持たず、作業依頼の対象に
+    指定できない。obaket 736 の実例、2026-09-06)。viewer が親行として統合するのは **group 名と同じ番号を
+    持つ issue** だけ (`epic/<NNN>/NNN-*.md`。`issues_view.go` の `g.parent`)。`epic/<slug>/` に
+    `NNN-epic-<slug>.md` を置く形も可だが、その親は viewer では子と同じ行に並ぶ。親 issue には目標・
+    子 issue の表・完了条件を書き、README は索引に留めて親を指す。親の完了は「子が全て done」
   - 予約するのは `next/` `done/` `pending/` の 3 つだけ。`closed/` のような綴りの揺れは状態にならず、中の md は迷子 `?` として一覧に出る（黙って消えはしない）
   - 契約の一次情報は [`docs/issues-viewer-spec.md`](../docs/issues-viewer-spec.md) の「対象 / 状態ディレクトリ」節
 - `audit-log` — audit 実行の記録（TSV）。issue ではない。**issue ファイルをパスで参照しているため、既存ファイルを rename するとここの参照が切れる**
