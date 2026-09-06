@@ -413,14 +413,16 @@ func TestDisplayFallsBackToSlug(t *testing.T) {
 
 // epic/<name>/ の 2 段は open の issue (Group = <name>)。group 内 next は claim として残し、
 // done/pending は規約外の迷子として Unknown のまま見せる。epic/ 直下も Unknown。
-func TestScanReadsEpicSubdirsAsOpenGroups(t *testing.T) {
+func TestScanReadsEpicSubdirsAsGroupMembers(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "issues")
 	mkFiles(t, dir, "001-feat-a.md")
 	mkFiles(t, filepath.Join(dir, "epic", "google-drive"), "README.md", "393-feat-gd-phase3.md", "casa-assessment.md")
 	mkFiles(t, filepath.Join(dir, "epic", "google-drive", "next"), "394-feat-gd-claim.md")
-	mkFiles(t, filepath.Join(dir, "epic", "google-drive", "done"), "395-feat-gd-lost.md")
-	mkFiles(t, filepath.Join(dir, "epic", "google-drive", "pending"), "396-feat-gd-pending-lost.md")
+	mkFiles(t, filepath.Join(dir, "epic", "google-drive", "done"), "395-feat-gd-finished.md")
+	mkFiles(t, filepath.Join(dir, "epic", "google-drive", "pending"), "396-feat-gd-held.md")
+	// 綴りの揺れは状態へ写さない (EpicChildStatus)。ただし迷子として一覧には出す (消さない)
+	mkFiles(t, filepath.Join(dir, "epic", "google-drive", "closed"), "397-feat-gd-unknown-dir.md")
 	mkFiles(t, filepath.Join(dir, "epic", "cloud"), "700-design-backend.md")
 	mkFiles(t, filepath.Join(dir, "epic"), "999-bug-lost.md")
 	got, warns := Scan([]string{dir})
@@ -438,8 +440,9 @@ func TestScanReadsEpicSubdirsAsOpenGroups(t *testing.T) {
 		"epic/google-drive/393-feat-gd-phase3.md":               {StatusOpen, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
 		"epic/google-drive/casa-assessment.md":                  {StatusOpen, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
 		"epic/google-drive/next/394-feat-gd-claim.md":           {StatusNext, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
-		"epic/google-drive/done/395-feat-gd-lost.md":            {StatusUnknown, filepath.Join("google-drive", "done"), GroupUnknown, filepath.Join(dir, "epic", "google-drive")},
-		"epic/google-drive/pending/396-feat-gd-pending-lost.md": {StatusUnknown, filepath.Join("google-drive", "pending"), GroupUnknown, filepath.Join(dir, "epic", "google-drive")},
+		"epic/google-drive/done/395-feat-gd-finished.md":         {StatusDone, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
+		"epic/google-drive/pending/396-feat-gd-held.md":          {StatusPending, "google-drive", GroupEpic, filepath.Join(dir, "epic", "google-drive")},
+		"epic/google-drive/closed/397-feat-gd-unknown-dir.md":    {StatusUnknown, filepath.Join("google-drive", "closed"), GroupUnknown, filepath.Join(dir, "epic", "google-drive")},
 		"epic/cloud/700-design-backend.md":                      {StatusOpen, "cloud", GroupEpic, filepath.Join(dir, "epic", "cloud")},
 		"epic/999-bug-lost.md":                                  {StatusUnknown, "epic", GroupUnknown, ""},
 	}
@@ -646,5 +649,34 @@ func TestStatusFilterUnknownNameFallsBackToOpen(t *testing.T) {
 	}
 	if got != FilterOpen {
 		t.Errorf("未知の名前が %v へ落ちた (期待 FilterOpen)", got)
+	}
+}
+
+// TestFilterExemptsEpicChildrenFromStatusFilter は「global の done/pending は既定で伏せる」を
+// 保ったまま、epic group の子だけが状態フィルタの対象外になることを固定する (issue 291)。
+func TestFilterExemptsEpicChildrenFromStatusFilter(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	mkFiles(t, dir, "001-feat-open.md")
+	mkFiles(t, filepath.Join(dir, "done"), "002-feat-global-done.md")
+	mkFiles(t, filepath.Join(dir, "pending"), "003-feat-global-held.md")
+	mkFiles(t, filepath.Join(dir, "epic", "cloud"), "004-feat-child-open.md")
+	mkFiles(t, filepath.Join(dir, "epic", "cloud", "done"), "005-feat-child-done.md")
+	mkFiles(t, filepath.Join(dir, "epic", "cloud", "pending"), "006-feat-child-held.md")
+	all, _ := Scan([]string{dir})
+
+	got := make(map[string]bool, len(all))
+	for _, iss := range Filter(all, "", FilterOpen) {
+		got[iss.Number] = true
+	}
+	want := map[string]bool{"001": true, "004": true, "005": true, "006": true}
+	for _, n := range []string{"001", "002", "003", "004", "005", "006"} {
+		if got[n] != want[n] {
+			t.Errorf("既定 (open) の可視性が違う: %s visible=%v want=%v (all=%v)", n, got[n], want[n], got)
+		}
+	}
+	// a を全開にしても、見える集合が広がるのは global 側だけ (epic の子は既に全部見えている)
+	if n := len(Filter(all, "", FilterAll)); n != 6 {
+		t.Errorf("FilterAll で 6 件見えない: %d", n)
 	}
 }

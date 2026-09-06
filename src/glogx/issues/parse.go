@@ -123,22 +123,34 @@ const NextDirName = "next"
 
 // EpicDirName は親子関係のある issue を束ねるサブディレクトリ名。`epic/<name>/NNN-*.md` の
 // 2 段構造で、<name> がグループ (親テーマ)、中の md は open の issue として扱う。claim は
-// `epic/<name>/next/NNN-*.md` に置く。done / pending は group 内では予約せず、そこに置かれた
-// md は迷子 (Unknown) として見せる (obaket `issues/epic/google-drive/` が起源、2026-09-05)。
+// `epic/<name>/next/NNN-*.md`、完了は `epic/<name>/done/`、保留は `epic/<name>/pending/` に置く
+// (obaket `issues/epic/google-drive/` が起源、2026-09-05)。
+//
+// 🚨 group 内の done / pending を global の `issues/done/` へ出さないのは、出した瞬間に
+// **パスから epic 所属が消える**ため (状態の正本はパス)。所属が消えると「この epic は何件中
+// 何件終わったか」を viewer が answers できず、epic が残タスクの減っていくだけの箱になる
+// (issue 291、2026-09-06)。
 const EpicDirName = "epic"
 
 // EpicChildStatus は group (`epic/<name>/`) 直下のサブディレクトリ名を状態へ写す。
-// ok=false は固定 2 段契約の外 (掘らない)。next だけが予約された状態で、done / pending は
-// 規約外だが「置き場所を間違えた issue を消さない」ために迷子 (Unknown) として読む。
+// ok=false は固定 2 段契約の外 (掘らない)。
+//
+// 🚨 綴りの揺れ (closed / completed / hold …) は受けない。global の statusDirs と違って
+// group 内の状態ディレクトリは viewer の運用が作るものなので、綴りを増やすと「同じ状態が
+// 2 つの名前で並ぶ」形になる。受けない名前の配下は走査対象外 (= 一覧に出ない)。
 // 🚨 走査 (scanEpicDir)・発見 (hasEpicMarkdown)・監視 (issuesWatchDirs) の 3 者が同じ集合を
 // 見る必要があるので、ここ以外にこの名前の列挙を書かない (片方だけ増やすと、監視されない
-// ディレクトリや発見されない issue ができる)。
+// ディレクトリや発見されない issue ができる)。tests/... ではなく
+// src/glogx/issues/parse_test.go の TestEpicChildStatusReachedByAllThreeConsumers が
+// 3 経路の一致を固定している。
 func EpicChildStatus(name string) (status Status, ok bool) {
 	switch strings.ToLower(name) {
 	case NextDirName:
 		return StatusNext, true
-	case "done", "pending":
-		return StatusUnknown, true
+	case "done":
+		return StatusDone, true
+	case "pending":
+		return StatusPending, true
 	}
 	return 0, false
 }
@@ -310,10 +322,11 @@ func scanEpicDir(dir, epic string) ([]*Issue, []string) {
 			if !f.IsDir() || skipDirs[f.Name()] {
 				continue
 			}
-			status, ok := EpicChildStatus(f.Name())
-			if !ok {
-				continue
-			}
+			// 🚨 EpicChildStatus が受けない名前 (closed / completed …) でも中の md は読む。
+			// 状態には写さず迷子 (Unknown) として見せる — 黙って捨てると、置き場所を間違えた
+			// issue が viewer から消えて誰も気づけない。global の statusDirs は closed 等の
+			// 綴りを受けるので、group 内でも同じ綴りを使う人が必ず出る (issue 291)
+			status, known := EpicChildStatus(f.Name())
 			childFiles, err := os.ReadDir(filepath.Join(groupKey, f.Name()))
 			if err != nil {
 				continue
@@ -324,11 +337,13 @@ func scanEpicDir(dir, epic string) ([]*Issue, []string) {
 				}
 				iss := newIssue(dir, filepath.Join(epic, e.Name(), f.Name(), child.Name()))
 				iss.GroupKey = groupKey
-				if status == StatusUnknown {
+				if known {
+					// 状態ディレクトリ (next / done / pending) の子は group の一員のまま。
+					// 状態だけが変わる (issue 291)
+					iss.Status, iss.Group, iss.GroupKind = status, e.Name(), GroupEpic
+				} else {
 					iss.Status, iss.Group, iss.GroupKind = StatusUnknown,
 						filepath.Join(e.Name(), f.Name()), GroupUnknown
-				} else {
-					iss.Status, iss.Group, iss.GroupKind = StatusNext, e.Name(), GroupEpic
 				}
 				out = append(out, iss)
 			}
@@ -777,6 +792,20 @@ func (f StatusFilter) Next() StatusFilter {
 	return f + 1
 }
 
+// showsIssue はその issue を表示するか。
+//
+// 🚨 epic group の子 (GroupEpic) は状態フィルタの対象外で、done / pending も既定で見える
+// (issue 291、2026-09-06)。epic は「まとまった仕事の器」なので、開いたときに中身が全部
+// 見えないと進捗 (何件中何件終わったか) が読めない。global 側で done を伏せる根拠 (実測で
+// done が全体の 8 割を占める repo があり open が埋もれる) は、子が数件〜十数件の epic 1 つには
+// 効かない。畳んだ親行は 1 行しか占めないので、一覧が done で埋まることもない。
+func (f StatusFilter) showsIssue(iss *Issue) bool {
+	if iss.GroupKind == GroupEpic {
+		return true
+	}
+	return f.shows(iss.Status)
+}
+
 // shows はその状態を表示するか。
 //
 // StatusUnknown を常に見せるのは、未知のサブディレクトリを状態へ写像しない契約 (パッケージ冒頭の
@@ -822,7 +851,7 @@ func Filter(issues []*Issue, tab string, filter StatusFilter) []*Issue {
 	}
 	out := make([]*Issue, 0, len(issues))
 	for _, iss := range issues {
-		if !filter.shows(iss.Status) {
+		if !filter.showsIssue(iss) {
 			continue
 		}
 		switch {

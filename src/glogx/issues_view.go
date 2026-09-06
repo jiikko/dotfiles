@@ -50,6 +50,9 @@ type displayRow struct {
 	groupKey   string
 	groupName  string
 	childCount int
+	// childDone は子のうち done の件数 (親行の進捗表示 `(5 ✓2)` の右側)。0 なら出さないので、
+	// done が 1 件も無い group の見た目は従来の `(N)` のまま (issue 291)。
+	childDone int
 	// inGroup は展開した group 親行の直下に並ぶ子 issue。一覧では groupChildIndent ぶん右へ寄せて
 	// 親との所属を見せる (2026-09-05 のユーザー要望: 親と同じ桁に並ぶと開いたときに所属が読めない)。
 	inGroup bool
@@ -849,7 +852,10 @@ func (v *issuesView) rebuildDisplayRows() {
 		if g.parent == nil && len(g.children) == 0 {
 			continue
 		}
-		row := displayRow{kind: displayRowGroup, groupKey: g.key, groupName: g.name, childCount: len(g.children)}
+		row := displayRow{
+			kind: displayRowGroup, groupKey: g.key, groupName: g.name,
+			childCount: len(g.children), childDone: countDoneIssues(g.children),
+		}
 		if g.parent != nil {
 			row.kind, row.issue, row.groupHead = displayRowIssue, g.parent, true
 		}
@@ -2268,6 +2274,32 @@ func (v *issuesView) tabChip(name string, count int, active bool, colored bool) 
 // (カーソル行の "→ " と混在するので、違う幅だと選択行だけ 1 桁ずれる)。
 const issuesSelGutter = "▌ "
 
+// countDoneIssues は done の件数。epic の子は状態フィルタを通らない (issues.StatusFilter.showsIssue)
+// ので、done も必ずここに数えられる。
+func countDoneIssues(list []*issues.Issue) int {
+	n := 0
+	for _, iss := range list {
+		if iss.Status == issues.StatusDone {
+			n++
+		}
+	}
+	return n
+}
+
+// groupProgress は group 親行の括弧の中身。子が 5 件でうち 2 件 done なら "5 ✓2"。
+//
+// 🚨 done を出す記号は一覧の done バッジ (issues.StatusDone.Badge) と同じ出典にする。
+// 「5 件中 2 件」を `2/5` のような分数で書かない: 左の数が完了なのか残りなのかが読み手に
+// 決められず、同じ画面の中で 2 通りに読める (2026-09-06 にユーザーが選択した書式)。
+// done が 0 件なら `✓0` を出さずに従来の `(N)` のままにする (進捗の無い group で幅を食わない)。
+func groupProgress(row displayRow) string {
+	out := strconv.Itoa(row.childCount)
+	if row.childDone > 0 {
+		out += " " + issues.StatusDone.Badge() + strconv.Itoa(row.childDone)
+	}
+	return out
+}
+
 // rowLine は一覧の 1 行 (番号・状態バッジ・カテゴリ・タイトル)。width は行が使える
 // 表示幅 (スクロールバー列を差し引いた後)。
 func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
@@ -2286,7 +2318,7 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 		if v.groupExpanded(row.groupKey) {
 			arrow = "▾"
 		}
-		indent = arrow + " (" + strconv.Itoa(row.childCount) + ") "
+		indent = arrow + " (" + groupProgress(row) + ") "
 	}
 	num := indent + fillRight(iss.Number, 3)
 	badge := iss.Status.Badge()
@@ -2324,7 +2356,7 @@ func (v *issuesView) groupLine(i int, row displayRow, o issuesRenderOpts, width 
 	if v.groupExpanded(row.groupKey) {
 		arrow = "▾"
 	}
-	text := arrow + " " + sanitizePlainLine(row.groupName) + " (" + strconv.Itoa(row.childCount) + ")"
+	text := arrow + " " + sanitizePlainLine(row.groupName) + " (" + groupProgress(row) + ")"
 	text = clipToWidth(text, max(width-cursorGutterWidth, 0))
 	if i != v.cursor {
 		return clipToWidth(cursorGutterBlank+text, width)

@@ -159,9 +159,8 @@ func hasEpicMarkdown(epicDir string) bool {
 			if !ge.IsDir() || skipDirs[ge.Name()] {
 				continue
 			}
-			if _, ok := EpicChildStatus(ge.Name()); !ok {
-				continue // Scan が読まないものは発見の根拠にもしない
-			}
+			// 状態ディレクトリ (next / done / pending) も未知の名前 (= 迷子として読む) も、
+			// Scan が中の md を拾う以上は発見の根拠にする (scanEpicDir と同じ集合を見る)
 			childEntries, err := os.ReadDir(filepath.Join(epicDir, e.Name(), ge.Name()))
 			if err != nil {
 				continue

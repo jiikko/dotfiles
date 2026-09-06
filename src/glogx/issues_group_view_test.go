@@ -14,8 +14,11 @@ import (
 func fakeEpicIssue(dir, group, number, slug string, status issues.Status) *issues.Issue {
 	base := fmt.Sprintf("%s-feat-%s.md", number, slug)
 	rel := filepath.Join(issues.EpicDirName, group, base)
-	if status == issues.StatusNext {
-		rel = filepath.Join(issues.EpicDirName, group, issues.NextDirName, base)
+	// 状態の正本はパスなので、fake も本物と同じ置き場所を作る (next / done / pending)。
+	// 直下に置いたまま Status だけ差し替えると、production では存在しない組み合わせを
+	// テストが前提にしてしまう
+	if sub := epicStatusDir(status); sub != "" {
+		rel = filepath.Join(issues.EpicDirName, group, sub, base)
 	}
 	groupKey := filepath.Join(dir, issues.EpicDirName, group)
 	return &issues.Issue{
@@ -23,6 +26,17 @@ func fakeEpicIssue(dir, group, number, slug string, status issues.Status) *issue
 		Category: "feat", Slug: slug, Status: status, Group: group,
 		GroupKind: issues.GroupEpic, GroupKey: groupKey,
 	}
+}
+
+// epicStatusDir は epic group 内で status に対応する状態ディレクトリ名 (open は直下なので "")。
+// 名前は issues.EpicChildStatus を逆引きして得る (テスト側に第 2 の列挙を作らない)。
+func epicStatusDir(status issues.Status) string {
+	for _, name := range []string{issues.NextDirName, "done", "pending"} {
+		if got, ok := issues.EpicChildStatus(name); ok && got == status {
+			return name
+		}
+	}
+	return ""
 }
 
 func TestIssuesViewGroupsUseSeparateDisplayRowsAndToggle(t *testing.T) {
@@ -495,5 +509,60 @@ func TestIssuesViewGroupParentIssueMergesIntoHeaderRow(t *testing.T) {
 	v.handleKey(" ", vp(10)) // Space でも同じ toggle
 	if v.expandedGroups[parent.GroupKey] || len(v.displayRows) != 1 {
 		t.Fatalf("Space で畳めない: expanded=%v rows=%d", v.expandedGroups, len(v.displayRows))
+	}
+}
+
+// TestIssuesViewGroupParentShowsDoneCount は親行の括弧が「子の件数 + done の件数」を出すことと、
+// done な子が既定 (状態フィルタ open) でも group の中に見えることを固定する (issue 291)。
+func TestIssuesViewGroupParentShowsDoneCount(t *testing.T) {
+	dir := "/repo/issues"
+	open1 := fakeEpicIssue(dir, "alpha", "710", "open-one", issues.StatusOpen)
+	next1 := fakeEpicIssue(dir, "alpha", "709", "claimed", issues.StatusNext)
+	held := fakeEpicIssue(dir, "alpha", "708", "held", issues.StatusPending)
+	done1 := fakeEpicIssue(dir, "alpha", "707", "done-one", issues.StatusDone)
+	done2 := fakeEpicIssue(dir, "alpha", "706", "done-two", issues.StatusDone)
+	fresh := fakeEpicIssue(dir, "beta", "705", "no-progress", issues.StatusOpen)
+	globalDone := fakeIssue("711", "feat", "global-done", issues.StatusDone)
+	v := loadedView(open1, next1, held, done1, done2, fresh, globalDone)
+
+	if v.filter != issues.FilterOpen {
+		t.Fatalf("既定の状態フィルタが open でない: %v", v.filter)
+	}
+	out := strings.Join(v.listLines(renderOpts(20)), "\n")
+	if !strings.Contains(out, "▸ alpha (5 ✓2)") {
+		t.Fatalf("親行に子の件数と done の件数が出ていない:\n%s", out)
+	}
+	if !strings.Contains(out, "▸ beta (1)") {
+		t.Fatalf("done が 0 件の group で従来の (N) 表示が壊れた:\n%s", out)
+	}
+	if strings.Contains(out, "global-done") {
+		t.Fatalf("global の done が既定で見えている (epic だけの例外のはず):\n%s", out)
+	}
+
+	if !v.currentIsGroup() {
+		t.Fatalf("先頭行が alpha の親行でない: %+v", v.displayRows[0])
+	}
+	v.handleKey("enter", vp(20)) // alpha を展開
+	out = strings.Join(v.listLines(renderOpts(20)), "\n")
+	// 番号 + バッジで見る (タイトルはスラッグを整形するので、状態が読めない)
+	for _, want := range []string{"707 ✓", "706 ✓", "708 ⏸", "709 ▶", "710 ○"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("epic を展開しても %q が既定で見えない:\n%s", want, out)
+		}
+	}
+}
+
+// TestIssuesViewGroupHeadRowShowsDoneCount は group 名と同じ番号の issue を親行へ統合した行でも
+// 進捗が出ることを固定する (統合行は groupLine ではなく rowLine が描くので経路が別)。
+func TestIssuesViewGroupHeadRowShowsDoneCount(t *testing.T) {
+	dir := "/repo/issues"
+	parent := fakeEpicIssue(dir, "467", "467", "asset-library", issues.StatusOpen)
+	child := fakeEpicIssue(dir, "467", "460", "ui-design", issues.StatusOpen)
+	doneChild := fakeEpicIssue(dir, "467", "459", "spike", issues.StatusDone)
+	v := loadedView(parent, child, doneChild)
+
+	out := strings.Join(v.listLines(renderOpts(20)), "\n")
+	if !strings.Contains(out, "(2 ✓1)") {
+		t.Fatalf("統合した親行に進捗が出ていない:\n%s", out)
 	}
 }
