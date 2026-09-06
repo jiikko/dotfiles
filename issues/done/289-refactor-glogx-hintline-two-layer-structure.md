@@ -13,7 +13,7 @@
 2. その後の大きな switch で通常画面の hint を組む
 3. さらにその後、CI 取得中スピナーと gh 警告の **2 つの前置を後付け**する
 
-行数が問題なのではない（[`verify-design-intent-before-refactor.md`](../_claude/rules/verify-design-intent-before-refactor.md)）。
+行数が問題なのではない（[`verify-design-intent-before-refactor.md`](../../_claude/rules/verify-design-intent-before-refactor.md)）。
 問題は **「幅に収まる」という不変条件を、経路ごとに別の人が守っている**こと。
 
 ## 発火条件（このセッションで実際に 2 回出た P1）
@@ -65,7 +65,7 @@ go test -run 'TestHintsFitPopupWidth|TestEveryHintKeepsExitWithinWidth|TestFitHi
 
 - 効果の測り方: 「幅の不変条件を守っているコード」の箇所数（現在 3 = viewer 側 / fitHintItems /
   hintLineText の clip）が 1 に減るか。行数では測らない
-- 落とす前に [`list-masked-failure-modes-before-removing-guard.md`](../_claude/rules/list-masked-failure-modes-before-removing-guard.md)
+- 落とす前に [`list-masked-failure-modes-before-removing-guard.md`](../../_claude/rules/list-masked-failure-modes-before-removing-guard.md)
   を通すこと: 早期 return は「viewer の hint に CI 前置を混ぜない」という**別の意図**（本文冒頭の
   コメント）も担っている。パイプへ寄せるときにその意図が落ちないか先に列挙する
 
@@ -75,11 +75,36 @@ go test -run 'TestHintsFitPopupWidth|TestEveryHintKeepsExitWithinWidth|TestFitHi
 そのとき「登録し忘れると幅ゲートが素通しするか」を確かめ、素通しするなら本 issue を実施する。
 
 投機的に今やらない理由: 症状は塞がっており、実需要が来る前に構造を変えると、見た目のテストを
-張り替えるコストだけ先払いになる（[`verify-design-intent-before-refactor.md`](../_claude/rules/verify-design-intent-before-refactor.md)）。
+張り替えるコストだけ先払いになる（[`verify-design-intent-before-refactor.md`](../../_claude/rules/verify-design-intent-before-refactor.md)）。
 
 **ただし「ゲートが守っているから安全」を理由にはできない**（上の実測のとおり守っていない）。
 パイプへ寄せる本改修が重いなら、**先に軽い方**を入れてもよい:
 `hintLine` の分岐を走査して `hintSurfaces()` の登録と突き合わせる走査型ゲート
 （issue 201 が本来指定していた形）。ただしこれは「守りを新設する」変更なので、
-着手時は [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
+着手時は [`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md)
 の §0-B（既に答えを出している経路はないか）と §8（脅威モデルと「検出しない形」を先に書く）を通すこと。
+
+## 決着（2026-09-06）
+
+範囲は「**非全画面の分岐をレジストリへ寄せる**」で合意し、全画面ビューア 4 枚の早期 return は
+意図どおり残した（viewer の hint に前置を混ぜると末尾の抜ける手段が切れる、という文書化された判断）。
+
+| 指標（この issue が定めた測り方） | 前 | 後 |
+|---|---|---|
+| hint を決める分岐のうち予算 (`fitHintItems`) を通る割合 | 8 / 13 | **13 / 13** |
+| 幅ゲートが覆う面の数 | 4 | **13**（+ 前置 2 + 全画面 4） |
+| `hintLine` の行数 | 147 | 49 |
+
+**この issue の起点だった穴は塞がった**: 「`hintLine` に溢れる分岐を直接足す」変異は、
+変更前は幅ゲート 4 本とも緑だったが、今は `TestHintLineHasNoInlineHintText` が落とす。
+
+敵対的レビューを 2 周通し、**1 周目 P1×1 / P2×1 / P3×3、2 周目 P1×2 / P3×2** を反映した。
+2 周目で出た本質は「1 周目の pin が `hint` の代入数と `hintLineText` の呼び出し数しか見ておらず、
+**279 / 281 の実際の根本原因である『予算を通さずに前置を積む』を 1 mm も見ていなかった**」こと。
+前置の組み立てと頭打ちを `hintPrefix(maxWidth)` へ出し、予算を引いた後で `prefix` に触る形を
+**構造で残さない**ようにして閉じた。
+
+🚨 自分の修正が 2 回恒真だった（幅 200 の全項目チェックは期待値を builder から作っていた /
+最初の同一性チェックは出口の部分一致のままだった）。どちらも変異を当てて初めて分かった。
+
+残り: 全画面ビューア側の hint の中身は [296](../296-bug-glogx-issues-hint-badge-claim-false-for-epic-children.md) で別途。
