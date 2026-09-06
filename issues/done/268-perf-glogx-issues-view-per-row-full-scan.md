@@ -140,6 +140,31 @@ grep で確認）:
 **この単一書き込み点（`refresh`）で世代を進める**だけでよく、「直接差し替える人のための遅延同期」は
 落としてよい。落とすなら doc も同時に直すこと（嘘が残る）。
 
+### 🚨 上の「実在しない」は誤り（訂正 2026-09-06）
+
+**起票時点（`eb8d670e`）で `scroll_glide_test.go` に 2 箇所実在した**:
+
+```
+src/glogx/scroll_glide_test.go:291  v.all, v.rows = all, all
+src/glogx/scroll_glide_test.go:369  v.all, v.rows = all, all
+```
+
+「`.rows =` を書くテストは全部 doctor / 別の型」は、この 2 行を取りこぼした grep の結果だった。
+**この issue の推奨（「単一書き込み点 `refresh` で世代を進めるだけでよい」）をそのまま実行すると、
+この 2 テストは `displayRows` が空のまま描画に入る。** 実装中に敵対レビューが検出した。
+
+対応（実装側で確定した形）:
+
+- `setRows` を単一の書き込み口にし、`scroll_glide_test.go` の 2 箇所もそこを通す
+- `ensureDisplayRows` に「世代が同じでも rows が非空で displayRows が空なら作り直す」節を残す
+  （世代を進め忘れた複合リテラル `&issuesView{rows: ...}` を自己修復する。旧実装の全件比較は
+  これを暗黙に担っていた = [`list-masked-failure-modes-before-removing-guard.md`](../../_claude/rules/list-masked-failure-modes-before-removing-guard.md) のマスクされた failure mode）
+- 書き込み口の一意性は `issues_rows_setter_test.go` の AST ゲートで機械化した（走査 167 件 /
+  代入 1 件 / 違反 0 件 を毎回出力する）
+
+教訓: **監査 issue の「〜は実在しない」は grep 1 回の結果であって全数勘定ではない。**
+不在の主張を根拠に機構を落とす提案は、実行前に全数を数え直すこと。
+
 🚨 **`rowLine` は先頭で `row := v.displayRows[i]` を境界検査なしで読む。** この不変条件
 （`displayRows` が `rows` と同期している）が将来壊れたときの失敗モードは「描画がずれる」ではなく
 **描画ループ内の index panic**。世代化と同じ変更で、この不変条件をテストで固定すること。

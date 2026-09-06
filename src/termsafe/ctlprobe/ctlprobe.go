@@ -10,6 +10,14 @@
 // 原理的に見逃し、「ESC と BEL だけ落とす」実装がテストを全部 green で通ってしまう
 // (敵対的レビュー 2026-08-05 が実際にこの盲点を突いた)。
 //
+// 🚨 この「導出してはいけない」は**構造で強制されている**（コメントだけの約束ではない）:
+// termsafe の内部テスト（`package termsafe` の termsafe_test.go）がこのパッケージを import
+// しているので、ここから termsafe を import すると `import cycle not allowed in test` で
+// go test が落ちる（実測 2026-09-06）。つまり自己言及の変異は CI が赤で止める。
+// ただし強制の足場は**その 1 ファイルの package 節**なので、termsafe_test.go を外部テスト
+// パッケージ（`package termsafe_test`）へ変えると循環が合法になり、この防御は消える。
+// 変えるなら、代わりの検出手段を同じ commit で用意すること。
+//
 // なぜ 1 箇所に置くか: 同じ判定が glogx / glogx/issues / termsafe / doctor/disk / doctor/svc の
 // 5 箇所にバイト一致で複製されていた (issue 285)。無害化の定義を広げる (U+2028/2029、
 // CSI の別形など) とき、**4 箇所を直し忘れても全パッケージ green のまま**その関門だけ
