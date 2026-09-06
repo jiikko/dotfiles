@@ -157,6 +157,24 @@ if printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext' >/dev/null
   echo "✓ 90KB の入力でも本走査を通り切り、timeout に殺されない"; ok=$((ok+1))
 else echo "✗ 90KB の入力で注意が出なかった (timeout に殺された可能性)"; fail=$((fail+1)); fi
 
+echo "## 判定不能を緑に畳まない (adversarial-review-own-safeguards §2)"
+# 🚨 「検査できなかった」は「変更なし」ではない。rev-parse は通るが status だけ落ちる状態
+# (index の破損) を作って、黙らずに判定不能を出すことを固定する。
+# 実測 2026-09-06: 初版はここで exit 0 しており、**直上のコメントが約束したことを実装が
+# やっていなかった** (敵対的レビューが同じ手順で発見)。
+new_repo; dirty
+printf 'GARBAGE' > "$REPO/.git/index"
+if git -C "$REPO" rev-parse --show-toplevel >/dev/null 2>&1 &&
+   ! git -C "$REPO" status --porcelain >/dev/null 2>&1; then
+  out=$(run "git checkout -- x.go")
+  if printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("判定できなかった")' >/dev/null 2>&1; then
+    echo "✓ status が失敗したら判定不能として出す (黙らない)"; ok=$((ok+1))
+  else echo "✗ status 失敗を黙って握り潰した (沈黙 = 成功になっている)"; fail=$((fail+1)); fi
+else
+  # 🚨 前提を作れないなら合格でも不合格でもなく**判定不能 = 失敗**として扱う
+  echo "✗ 前提を作れなかった (index を壊しても status が落ちない)。この検査は判定不能"; fail=$((fail+1))
+fi
+
 echo "## 配線 (hook 本体が正しくても settings.json から消えれば防御はゼロ)"
 # 🚨 **これが緑でも「本番で armed」ではない** (敵対的レビュー P1-3)。ここが読むのは
 # **このツリーの** settings.json で、本番の hook は `~/dotfiles/_claude/hooks/...` という
