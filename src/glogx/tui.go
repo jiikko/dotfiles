@@ -638,8 +638,7 @@ func (m *browseModel) startCIFetch(shas []string) tea.Cmd {
 		}
 		for sha := range m.detailsWaiting {
 			if !next[sha] {
-				delete(m.detailsLoading, sha)
-				delete(m.detailsWaiting, sha)
+				m.clearDetailsFlags(sha)
 			}
 		}
 	}
@@ -847,8 +846,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 一括取得待ちでパネルを開いていた SHA の loading を解除する (結果が来なかった
 		// SHA も含めて解除。details 不在は「(CI job 情報なし)」表示に落ちる)
 		for _, sha := range msg.shas {
-			delete(m.detailsLoading, sha)
-			delete(m.detailsWaiting, sha)
+			m.clearDetailsFlags(sha)
 		}
 		m.settleAwaitCI()
 		// 一括取得で実行中コミットの Details が入った場合も ETA basis を補充する
@@ -857,7 +855,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.maybeFetchETABasis(), m.ensureCIPoll())
 	case detailMsg:
 		m.invalidateLines()
-		delete(m.detailsLoading, msg.sha)
+		m.clearDetailsFlags(msg.sha)
 		m.ghErr = msg.ghErr // 成功時 (nil) はクリア: ciResultMsg と揃える (sticky 警告の防止・レビュー C4)
 		m.mergeCIBatch(msg.batch.Statuses, msg.batch.Details, msg.batch.PRs)
 		// リフレッシュで job 数が縮んだ場合にフォーカスを範囲内へ戻す
@@ -875,7 +873,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// レスポンスに現れなかった target も含めて loading 解除し、Details エントリを
 		// 空スライスで確定させる (未設定のままだと同じ target を無限に取り直してしまう)。
 		for _, sha := range msg.targets {
-			delete(m.detailsLoading, sha)
+			m.clearDetailsFlags(sha)
 			if _, ok := m.details[sha]; !ok {
 				m.details[sha] = []CheckDetail{}
 			}
@@ -2931,6 +2929,19 @@ func (m *browseModel) settleAwaitCI() {
 
 // fetchPanelDetails はパネルコミット sha の Details をオンデマンド取得する Cmd
 // (取得不要 / 取得先なしは nil)。openPanel から切り出した本体。
+// clearDetailsFlags は sha の「取得中」の札を降ろす。
+//
+// 🚨 **detailsLoading と detailsWaiting は必ず対で消すこと。** detailsWaiting は
+// detailsLoading の部分集合 (上の宣言) なので、片方だけ消すと
+// 「waiting=true / loading=false」の孤児が残る。孤児が残ると fetchPanelDetails の
+// 早期 return が外れて実取得が飛び、その札を startCIFetch の世代交代が
+// **飛んでいる GraphQL の札として落とす** — 272 のコメントが名指しで禁じている形になる
+// (実測 2026-09-06: detailMsg / basisMsg が loading しか消していなかった)。
+func (m *browseModel) clearDetailsFlags(sha string) {
+	delete(m.detailsLoading, sha)
+	delete(m.detailsWaiting, sha)
+}
+
 func (m *browseModel) fetchPanelDetails(sha string) tea.Cmd {
 	if _, ok := m.details[sha]; ok || m.detailsLoading[sha] {
 		return nil
