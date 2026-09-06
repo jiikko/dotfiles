@@ -36,7 +36,6 @@ if ! . "$lib" || ! command -v issue_hook_resolve_dir >/dev/null 2>&1; then
 fi
 issue_hook_resolve_dir || exit 0
 root="$ISSUE_HOOK_ROOT"
-dir="$ISSUE_HOOK_DIR"
 
 today=$(date +%F)
 # +3 日は BSD date (-v) と GNU date (-d) の両方を試す。どちらも無ければ「期限間近」の
@@ -144,7 +143,7 @@ report=$(
   [ -n "$upcoming" ] && printf '%s' "$upcoming"
   [ -n "$broken" ] && printf '%s' "$broken"
   [ -n "$degraded" ] && printf '%s' "$degraded"
-  printf '確認できたものは %s/done/ へ移動する (既読の出典はファイルの位置)。\n' "${dir#"$root"/}"
+  printf '確認できたものは %s へ移動する (既読の出典はファイルの位置)。\n' "$(issue_hook_done_label)"
 )
 
 issue_hook_emit '未完了の human タスク issue (人間しかできない作業) がある。期限切れがあれば最初に一言で伝えること:' "$report"

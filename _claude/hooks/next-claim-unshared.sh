@@ -37,17 +37,27 @@ command -v jq >/dev/null 2>&1 || exit 0
 # 適用範囲は「作業中の repo に global または group 内の next/ が 1 つでも実在するとき」だけ
 # (規範と同じ opt-in)
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
-next_dir_found=0
 # 🚨 入れ子の issue dir (`<root>/*/issues`) も見る (issue 276)。obaket は macOS/issues/ を
 # 正式に持っており、そこの next/ の claim がどの hook にも見えなかった。深さは 1 段に限る。
+#
+# 🚨 見つけた next/ の**相対パスを集めて、下の突き合わせにそのまま使う** (敵対的レビュー
+# 2026-09-06)。以前は「ゲートは深さ 1 段 / 突き合わせの grep は深さ無制限」という非対称で、
+# Next.js の `web/pages/issues/next/index.tsx` のような**claim と無関係なパス**を
+# 「未共有の claim」として毎プロンプト誤報していた (実測。親コミットでは無音だった)。
+# 実在する dir だけを見れば非対称は消える — claim があるならその dir は必ず実在する。
+next_alt=""
 for next_dir in "$repo_root/issues/next" "$repo_root/issues/epic"/*/next \
   "$repo_root"/*/issues/next "$repo_root"/*/issues/epic/*/next; do
-  if [ -d "$next_dir" ]; then
-    next_dir_found=1
-    break
-  fi
+  [ -d "$next_dir" ] || continue
+  # 依存ディレクトリ配下は無視する (lib/issue-hooks.sh の除外と同じ理由)
+  case "${next_dir#"$repo_root"/}" in
+    node_modules/* | vendor/* | Pods/* | Carthage/* | .build/* | target/*) continue ;;
+  esac
+  # 正規表現メタ文字を落としてから alternation へ足す
+  esc=$(printf '%s/' "${next_dir#"$repo_root"/}" | sed 's/[][\.*^$+?(){}|]/\\&/g')
+  next_alt="${next_alt}${next_alt:+|}${esc}"
 done
-[ "$next_dir_found" -eq 1 ] || exit 0
+[ -n "$next_alt" ] || exit 0
 
 # claim の移動は 3 つの形で現れる:
 #   git mv した     → `R  issues/x.md -> issues/next/x.md`
@@ -64,16 +74,23 @@ done
 claim_lines=$(
   cd "$repo_root" || exit 0
   git status --porcelain 2>/dev/null |
-    grep -E 'issues/next/|issues/epic/[^/]+/next/' || true
+    grep -E "(^|[ >\"])(${next_alt})" || true
 )
 
 # commit 済みだが未 push の claim。**リモートに無い commit のうち global または group 内の next/ を触ったもの**を見る
 # (`--branches --not --remotes` は未 push の commit 全部。そこから claim を触るものだけ絞る)
 unpushed_claims=$(
   cd "$repo_root" || exit 0
-  git log --branches --not --remotes --format='%h %s' \
+  # 🚨 commit ヘッダの目印に SOH (%x01) を置くこと (敵対的レビュー 2026-09-06)。
+  # `%h %s` だけだと awk の `/^[0-9a-f]+ /` が**ファイル名と区別できず**、
+  # `face detection.py` のような 16 進文字だけの語で始まる名前がヘッダとして採用され、
+  # 「どの commit を push すればいいか」が消えていた (実測。親コミットは正しく出していた)。
+  git log --branches --not --remotes --format='%x01%h %s' \
     --name-only 2>/dev/null |
-    awk '/^[0-9a-f]+ /{h=$0; next} /issues\/next\/|issues\/epic\/[^\/]+\/next\//{if(h!=""){print h; h=""}}' |
+    awk -v soh=$'\001' -v pat="^(${next_alt})" '
+      substr($0,1,1)==soh { h=substr($0,2); next }
+      $0 ~ pat { if (h!="") { print h; h="" } }
+    ' |
     head -10 || true
 )
 

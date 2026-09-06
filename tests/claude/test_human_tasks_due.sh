@@ -184,6 +184,31 @@ printf '# t\n\n起票日: 2026-08-01\n期限: 2026-08-02\n' >"$nested_only/sub/i
 nested_out="$(printf '{"cwd":"%s"}' "$nested_only" | "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext // ""')"
 check "root 直下に issues/ が無くても入れ子を拾う" "期限切れ 2026-08-02.*sub/issues/901-human-only" "$nested_out"
 
+# --- 案内文が単一 dir を名指ししないこと (敵対的レビュー 2026-09-06) ---
+# 入れ子 dir を持つ repo で「issues/done/ へ移動する」と言うと、一覧は
+# macOS/issues/900-*.md を出しているのに移動先だけ嘘になる。
+# 変異: issue_hook_done_label を `${ISSUE_HOOK_DIR#...}/done/` の単一名指しへ戻すと red。
+check "入れ子 dir がある repo は done/ を単一名指ししない" "同じ issue dir の done/" "$(report env)"
+check "入れ子 dir がある repo で issues/done/ と断定しない" "" \
+  "$(report env | grep -E '確認できたものは issues/done/ へ' || true)"
+
+# 単一 dir の repo では従来どおり名指しする (退行していないこと)
+solo="$WORK/solo"
+mkdir -p "$solo/issues"
+git -C "$solo" init -q .
+printf '# t\n\n起票日: 2026-08-01\n期限: 2026-08-02\n' >"$solo/issues/902-human-solo.md"
+solo_out="$(printf '{"cwd":"%s"}' "$solo" | "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext // ""')"
+check "単一 dir の repo は issues/done/ と名指しする" "確認できたものは issues/done/ へ" "$solo_out"
+
+# --- 依存ディレクトリ配下の issues/ は走査しない (npm に issues パッケージが実在する) ---
+# 変異: lib の node_modules 除外を外すと red。
+nm="$WORK/nm"
+mkdir -p "$nm/node_modules/issues"
+git -C "$nm" init -q .
+printf '# t\n\n起票日: 2026-08-01\n期限: 2026-08-02\n' >"$nm/node_modules/issues/900-human-vendor.md"
+nm_out="$(printf '{"cwd":"%s"}' "$nm" | "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext // ""')"
+check "node_modules/issues/ は走査しない" "" "$nm_out"
+
 # どちらも無い repo では今までどおり無音
 none="$WORK/none"
 mkdir -p "$none"
@@ -195,4 +220,4 @@ if [ "$fails" -gt 0 ]; then
   echo "FAIL: human-tasks-due.sh のテストが $fails 件失敗"
   exit 1
 fi
-echo "OK: human-tasks-due.sh (8 観点)"
+echo "OK: human-tasks-due.sh (12 観点)"

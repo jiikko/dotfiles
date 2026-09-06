@@ -32,7 +32,6 @@ if ! . "$lib" || ! command -v issue_hook_resolve_dir >/dev/null 2>&1; then
 fi
 issue_hook_resolve_dir || exit 0
 root="$ISSUE_HOOK_ROOT"
-dir="$ISSUE_HOOK_DIR"
 
 # midnight_epoch <YYYY-MM-DD>: その日の 0 時の epoch。読めなければ非 0。
 #
@@ -150,7 +149,7 @@ report=$(
   printf '\n'
   [ -n "$dated" ] && printf '%s' "$dated" | sort -k1,1nr | cut -f2-
   [ -n "$odd" ] && printf '%s' "$odd"
-  printf '残課題を issue / _claude/rules/ へ切り出す (または却下を理由つきで明記する) と %s/done/ へ移動できる。\n' "${dir#"$root"/}"
+  printf '残課題を issue / _claude/rules/ へ切り出す (または却下を理由つきで明記する) と %s へ移動できる。\n' "$(issue_hook_done_label)"
 )
 
 issue_hook_emit '未決着の retro issue (セッションの振り返り) がある。古いものが溜まっていれば最初に一言で伝えること:' "$report"

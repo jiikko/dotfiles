@@ -39,7 +39,8 @@ ok=0
 # 偽 repo にしておけば本物の repo を汚さず、opt-in の有無も下の scope テストで別に見られる。
 FIRE_REPO=$(mktemp -d)
 EPIC_FIRE_REPO=$(mktemp -d)
-cleanup() { rm -rf "$FIRE_REPO" "$EPIC_FIRE_REPO" "${scope_tmp:-}"; }
+NESTED_FIRE_REPO=$(mktemp -d)
+cleanup() { rm -rf "$FIRE_REPO" "$EPIC_FIRE_REPO" "$NESTED_FIRE_REPO" "${scope_tmp:-}"; }
 trap cleanup EXIT
 (
   cd "$FIRE_REPO" && git init -q . && mkdir -p issues/next && : > issues/186-x.md &&
@@ -52,6 +53,24 @@ trap cleanup EXIT
     : > issues/epic/foo/186-x.md &&
     git add -A && git -c user.email=t@t -c user.name=t commit -qm init
 ) >/dev/null 2>&1
+
+# 入れ子の issue dir (`<root>/*/issues/next/`) だけで opt-in されることを検査する (issue 276)。
+# 🚨 276 は「4 hook すべてに入れ子のケースを足した」と書いたが、**この hook だけテストが
+# 1 件も入っていなかった** (敵対的レビュー 2026-09-06 が変異で確認: 入れ子 glob 2 本を
+# 削っても 29/29 緑のままだった)。
+(
+  cd "$NESTED_FIRE_REPO" && git init -q . && mkdir -p macOS/issues/next &&
+    : > macOS/issues/186-x.md &&
+    git add -A && git -c user.email=t@t -c user.name=t commit -qm init
+) >/dev/null 2>&1
+
+run_nested_hook() { # $1 = command 文字列 → 入れ子 repo で stdout に hook の出力
+  (
+    cd "$NESTED_FIRE_REPO" &&
+      jq -n --arg c "$1" '{tool_input: {command: $c}}' |
+      "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null
+  ) || true
+}
 
 run_hook() { # $1 = command 文字列 → stdout に hook の出力
   (
@@ -173,6 +192,18 @@ if printf 'not json' | "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" >/dev/null 2>&1; t
   ok=$((ok + 1))
 else
   echo "✗ 非 JSON 入力で異常終了した"; fail=$((fail + 1))
+fi
+
+# --- 入れ子の issue dir (issue 276) ---
+if [ -n "$(run_nested_hook 'ln -s ../186-x.md macOS/issues/next/186-x.md')" ]; then
+  ok=$((ok + 1))
+else
+  echo "✗ 入れ子 dir (macOS/issues/next/) への ln -s を検出しない (issue 276)"; fail=$((fail + 1))
+fi
+if [ -n "$(run_nested_hook 'git mv macOS/issues/186-x.md macOS/issues/next/')" ]; then
+  ok=$((ok + 1))
+else
+  echo "✗ 入れ子 dir への git mv を検出しない (issue 276)"; fail=$((fail + 1))
 fi
 
 # --- 配線: hook 本体が正しくても settings.json から消えれば防御はゼロ ---

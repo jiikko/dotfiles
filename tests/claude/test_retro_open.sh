@@ -289,7 +289,19 @@ printf '# t\n\n起票日: 2026-08-01\n' >"$nested/macOS/issues/902-retro-nested.
 nested_ctx="$(printf '{"cwd":"%s"}' "$nested" | "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext // ""')"
 check "入れ子 dir の未決着 retro を拾う" 'macOS/issues/902-retro-nested' "$nested_ctx"
 
+# 案内の移動先を単一 dir で名指ししないこと (敵対的レビュー 2026-09-06)。
+# 🚨 fixture は **root 直下と入れ子の両方**に issues/ が要る (1 つしか無い repo では
+# 名指しでも正しく、この主張を何も守らない)。
+both="$WORK/both"
+mkdir -p "$both/issues" "$both/macOS/issues"
+git -C "$both" init -q .
+printf '# t\n\n起票日: 2026-08-01\n' >"$both/macOS/issues/903-retro-both.md"
+both_ctx="$(printf '{"cwd":"%s"}' "$both" | "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext // ""')"
+check "入れ子がある repo は移動先を単一 dir で名指ししない" '同じ issue dir の done/' "$both_ctx"
+check "入れ子がある repo で issues/done/ と断定しない" "" \
+  "$(printf '%s' "$both_ctx" | grep -E 'と issues/done/ へ移動できる' || true)"
+
 if [ "$fails" -gt 0 ]; then
   echo "FAIL: retro-open.sh ($fails 件)"; exit 1
 fi
-echo "OK: retro-open.sh (30 観点)"
+echo "OK: retro-open.sh (32 観点)"

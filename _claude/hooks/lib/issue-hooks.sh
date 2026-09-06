@@ -36,11 +36,21 @@ issue_hook_resolve_dir() {
   # 🚨 root 直下だけを見ないこと (issue 276)。obaket は `macOS/issues/` を正式に持っており
   # (apps/obaket/.claude/rules/issue-placement.md)、そこに置かれた human の期限切れ /
   # retro の未決着 / next/ の claim が **どの hook にも見えなかった**。
-  # 深さは 1 段に限る: 全走査にすると node_modules / .git / ビルド生成物まで舐める。
+  # 深さは 1 段に限る: 全走査にすると .git / 深いビルド生成物まで舐める。
+  #
+  # 🚨 深さ 1 段は依存ディレクトリを除けない (敵対的レビュー 2026-09-06)。
+  # `node_modules` / `vendor` はそれ自体が深さ 1 なので `<root>/*/issues` がそのまま届き、
+  # 実測で `node_modules/issues/900-human-*.md` が human タスクとして報告された
+  # (npm に `issues` という名のパッケージが実在する)。名前で弾く。
   local nl=$'\n' # 🚨 $'\n' は**二重引用符の外**でないと ANSI-C 展開されない (リテラルになる)
+  local parent
   ISSUE_HOOK_DIRS=""
   for cand in "$root/issues" "$root/issue" "$root"/*/issues "$root"/*/issue; do
     [ -d "$cand" ] || continue
+    parent=${cand%/*}; parent=${parent##*/}
+    case "$parent" in
+      node_modules | vendor | Pods | Carthage | .build | target) continue ;;
+    esac
     ISSUE_HOOK_DIRS="${ISSUE_HOOK_DIRS}${ISSUE_HOOK_DIRS:+$nl}$cand"
   done
   [ -n "$ISSUE_HOOK_DIRS" ] || return 1
@@ -52,6 +62,20 @@ issue_hook_resolve_dir() {
   # shellcheck disable=SC2034
   ISSUE_HOOK_DIR=${ISSUE_HOOK_DIRS%%"$nl"*}
   return 0
+}
+
+# issue_hook_done_label: 「どこの done/ へ移すか」の案内語を stdout に出す。
+#
+# 🚨 単一 dir を名指ししないこと (敵対的レビュー 2026-09-06)。入れ子の issue dir を持つ repo
+# (root に issues/ があり実体は macOS/issues/ の形) では、一覧は `macOS/issues/900-x.md` を
+# 出しながら案内だけ「issues/done/ へ移動」と言う嘘になっていた。移動先が違うと
+# 「既読はファイルの位置で表す」運用がそのまま壊れる。
+issue_hook_done_label() {
+  local nl=$'\n'
+  case "$ISSUE_HOOK_DIRS" in
+    *"$nl"*) printf 'その issue と同じ issue dir の done/' ;;
+    *) printf '%s/done/' "${ISSUE_HOOK_DIRS#"$ISSUE_HOOK_ROOT"/}" ;;
+  esac
 }
 
 # issue_hook_category <basename>: `NNN-<カテゴリ>-<スラッグ>.md` のカテゴリを stdout に出す。

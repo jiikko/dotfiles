@@ -132,6 +132,45 @@ new_nested_repo
 ( cd "$REPO" && ln -s ../186-x.md macOS/issues/next/186-x.md ) >/dev/null 2>&1
 expect_fire "入れ子 dir (macOS/issues/next/) の未コミット claim"
 
+# 🚨 claim と無関係な深いパスを誤報しないこと (敵対的レビュー 2026-09-06)。
+# 276 で pathspec を外したとき、突き合わせの grep が**アンカー無し・深さ無制限**になり、
+# Next.js の `web/pages/issues/next/index.tsx` を「未共有の claim」として毎プロンプト
+# 誤報していた。ゲート (深さ 1 段) と突き合わせ (無制限) の非対称が原因。
+# 変異: next_alt の突き合わせを無アンカーの `issues/next/` へ戻すと red。
+new_repo
+( cd "$REPO" && mkdir -p web/pages/issues/next && : > web/pages/issues/next/index.tsx &&
+  git add -A && git -c user.email=t@t -c user.name=t commit -qm web &&
+  echo 'export default null' > web/pages/issues/next/index.tsx ) >/dev/null 2>&1
+expect_silent "深い web/pages/issues/next/ の変更は claim ではない (誤報しない)"
+
+# 依存ディレクトリ配下の next/ は claim ではない (npm に issues というパッケージが実在する)。
+# 🚨 fixture は **一度 commit してから変更する**こと。untracked のまま置くと git が
+# `?? node_modules/` へ畳んでしまい、パスが porcelain に出ないので**除外が無くても緑**になる
+# (変異検証 2026-09-06 で実際に素通りした)。
+new_repo
+( cd "$REPO" && mkdir -p node_modules/issues/next && : > node_modules/issues/next/1-x.md &&
+  git add -A -f && git -c user.email=t@t -c user.name=t commit -qm nm &&
+  echo x > node_modules/issues/next/1-x.md ) >/dev/null 2>&1
+expect_silent "node_modules/issues/next/ は claim として拾わない"
+
+# commit 済みだが未 push の claim では、**どの commit を push すればよいか**が出ること。
+# 🚨 16 進の文字だけで出来た語で始まるファイル名 (face / dead / cafe …) を同じ commit に
+# 混ぜる。`--format='%h %s'` + `--name-only` を素朴に awk すると、この行を commit ヘッダと
+# 誤認して hash と subject が消える (実測 2026-09-06)。SOH 区切りで区別している。
+new_repo
+bare2=$(mktemp -d "$TMP_ROOT/bare2.XXXXXX")
+( cd "$bare2" && git init -q --bare . ) >/dev/null 2>&1
+( cd "$REPO" && git remote add origin "$bare2" && git push -q origin HEAD &&
+  ln -s ../186-x.md issues/next/186-x.md && printf 'x\n' > 'face detection.py' &&
+  git add -A && git -c user.email=t@t -c user.name=t commit -qm "claim: issue 186 に着手" ) >/dev/null 2>&1
+out=$(run_hook)
+body=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null || true)
+ident=$(printf '%s\n' "$body" | awk '/^--- commit 済みだが未 push の claim ---$/{getline; print; exit}')
+case "$ident" in
+  *"claim: issue 186 に着手"*) echo "✓ 未 push の claim が hash + subject で出る ($ident)"; ok=$((ok+1)) ;;
+  *) echo "✗ 未 push の claim の識別子が commit でない: [$ident]"; fail=$((fail+1)) ;;
+esac
+
 echo "## 配線 (settings.json に載っているか)"
 if jq -e '[.hooks.UserPromptSubmit[].hooks[].command] | any(endswith("next-claim-unshared.sh"))' \
      "$ROOT_DIR/_claude/settings.json" >/dev/null 2>&1; then
