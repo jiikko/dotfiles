@@ -2713,7 +2713,14 @@ func path2issue(dir, rel string) *issues.Issue {
 // basename は「番号 + スラッグ」なので、番号の一意性が守られている限り basename 一致 = 本人。
 // それが壊れた repo や group が増えた状況では別 issue でありうり、そのとき症状は
 // 「読んでいた本文が静かに別の issue に差し替わる」= 利用者からは気づけない形になる。
-func TestIssuesRebindOpenRejectsDifferentTitle(t *testing.T) {
+// 見出しが変わっていたら **知らせる。ただし本文は捨てない** (issue 277 → 敵対的レビュー 2026-09-06)。
+//
+// 🚨 初版は discardBody + 「同名の別 issue が見つかりました (本文は閉じます)」にしていたが、
+// 見出しの不一致は「別 issue」と「同じ issue を移動と同時に改題した」を区別できない。
+// 後者は done/ へ移しつつ H1 も直したコミットを pull するだけで起き (200ms の debounce が
+// 両イベントを 1 回の再スキャンへ畳む)、**自分で直した見出しのせいで本文が飛ぶ**。
+// 黙って入れ替わるのを防ぐ目的は notice で足りる。
+func TestIssuesRebindOpenWarnsOnDifferentTitle(t *testing.T) {
 	dir := t.TempDir()
 	other := filepath.Join(dir, "other")
 	if err := os.MkdirAll(other, 0o755); err != nil {
@@ -2733,14 +2740,18 @@ func TestIssuesRebindOpenRejectsDifferentTitle(t *testing.T) {
 
 	v.rebindOpen(v.open.Path)
 
-	if v.open == replacement {
-		t.Error("見出しが違うのに繋ぎ直した (本文が静かに別 issue へ差し替わる。issue 277)")
+	if v.open != replacement {
+		t.Error("繋ぎ直していない (移動 + 改題を同じサイクルで受けると読んでいた位置が飛ぶ)")
 	}
 	if v.notice == "" {
-		t.Error("差し替えを断ったのに利用者へ何も言っていない")
+		t.Error("見出しが変わったのに利用者へ何も言っていない (黙って中身が入れ替わる)")
+	}
+	if strings.Contains(v.notice, "閉じます") {
+		t.Errorf("本文を閉じる文言が残っている: %q", v.notice)
 	}
 
-	// 陽性対照: 見出しが同じなら従来どおり繋ぎ直す (n や外部の移動を追う本来の機能)
+	// 陽性対照 1: 見出しが同じなら繋ぎ直し、**notice は出さない**
+	// (これが無いと「常に notice を出す」実装でも上の assert が通る)
 	same := filepath.Join(other, "301-bug-moved.md")
 	if err := os.WriteFile(same, []byte("# 301 bug: 移動した\n\n本文\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -2753,5 +2764,18 @@ func TestIssuesRebindOpenRejectsDifferentTitle(t *testing.T) {
 	v2.rebindOpen(v2.open.Path)
 	if v2.open != movedIss {
 		t.Error("見出しが同じなら繋ぎ直すべき (移動を追う機能が死んでいる)")
+	}
+	if v2.notice != "" {
+		t.Errorf("見出しが同じなのに notice を出した: %q", v2.notice)
+	}
+
+	// 陽性対照 2: どこにも無いときは従来どおり畳む (「捨てない」を全経路へ広げていないこと)
+	v3 := newTestIssuesView()
+	v3.shown, v3.loaded = true, true
+	v3.open = &issues.Issue{Number: "302", Title: "302 bug: 消えた", Path: filepath.Join(dir, "302-bug-gone.md")}
+	v3.all = nil
+	v3.rebindOpen(v3.open.Path)
+	if !strings.Contains(v3.notice, "見つかりません") {
+		t.Errorf("消えた issue は畳んで知らせるべき: notice=%q", v3.notice)
 	}
 }

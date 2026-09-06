@@ -730,13 +730,18 @@ func (v *issuesView) rebindOpen(path string) {
 		// 番号の一意性 (tests/issues/test_issue_numbers_unique.sh) が守られている限り本人だが、
 		// それが壊れた repo や `issues/epic/<name>/` が増えた状況では**別 issue** でありうる。
 		// 症状は「読んでいた本文が静かに別の issue に差し替わる」で、利用者からは気づけない。
-		// 開いていた本文の見出しと突き合わせ、違うなら差し替えずに言う。
+		//
+		// 🚨 **見出しが違っても本文は捨てないこと** (敵対的レビュー 2026-09-06)。見出しの不一致は
+		// 「別 issue」と「同じ issue を移動と同時に改題した」を区別できない (basename が同じなら
+		// 番号も同じなので、番号でも切れない)。後者は `git pull` / `git checkout` で
+		// 「done/ へ移しつつ H1 も直したコミット」を受けるだけで起き、issuesWatchDebounce の
+		// 200ms が両イベントを 1 回の再スキャンへ畳むので**日常操作で成立する**。
+		// 捨てると、自分で直した見出しのせいで起きていない事象を告げられ、読んでいた位置を失う。
+		// 黙って入れ替わるのを防ぐ目的は notice で足りる (利用者が見て判断できる)。
 		if v.open != nil && v.open.Title != "" {
 			_ = moved.LoadMeta() // 見出しは遅延読み。読めなければ突き合わせを諦める (下の条件が偽)
 			if moved.Title != "" && moved.Title != v.open.Title {
-				v.discardBody()
-				v.setNotice("同名の別 issue が見つかりました (本文は閉じます): "+base, false)
-				return
+				v.setNotice("見出しが変わりました (別 issue の可能性): "+base, false)
 			}
 		}
 		v.open = moved
