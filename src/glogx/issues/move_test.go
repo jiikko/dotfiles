@@ -144,3 +144,27 @@ func TestNextDirIsAStatusAndAlwaysVisible(t *testing.T) {
 		}
 	}
 }
+
+// TestMoveKeepsStrayGroupChildInsideEpic は group 内の予約外ディレクトリ (`epic/<name>/closed/`) に
+// 居る迷子を動かしても epic の外へ出ないことを固定する (2026-09-06 の敵対的レビュー P2-1)。
+//
+// 迷子は GroupKind=Unknown なので、宛先を GroupKind だけで決めると issue ルートへ落ちる。
+// issue 291 で迷子を一覧に出すようにしたことで、`n` からこの経路へ到達できるようになった。
+func TestMoveKeepsStrayGroupChildInsideEpic(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	mkFiles(t, filepath.Join(dir, "epic", "cloud", "closed"), "702-feat-stray.md")
+	mkFiles(t, filepath.Join(dir, "epic", "cloud", "done"), "701-feat-done.md")
+	all, _ := Scan([]string{dir})
+
+	for _, iss := range all {
+		got, err := MoveToSubdir(iss, NextDirName)
+		if err != nil {
+			t.Fatalf("%s: %v", iss.Rel, err)
+		}
+		want := filepath.Join(dir, "epic", "cloud", NextDirName, filepath.Base(iss.Rel))
+		if got != want {
+			t.Errorf("%s (kind=%v) の移動先が epic の外: got %q want %q", iss.Rel, iss.GroupKind, got, want)
+		}
+	}
+}
