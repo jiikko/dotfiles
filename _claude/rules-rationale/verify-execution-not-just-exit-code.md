@@ -172,3 +172,17 @@ background で回した計測の完了を待つあいだ、`grep -c '[run]'` を
 - `(nohup driver …; echo rc > X.rc) &` で、run 単位の成果物は揃ったのに外側 `X.rc` だけ書かれず `until [ -f X.rc ]` が回り続けた
   (696 項目 10、原因未特定)。待つ対象は driver が必ず書く成果物 (`runs.tsv`) にし、上限を置く
 - 待機用 background Bash の中で `nohup` した `make dev-fg` のアプリが、待機タスクの TaskStop で道連れになった (696 項目 9)
+
+## path filter が 1 つ前の赤を隠した (dotfiles, 2026-09-06)
+
+glogx の監査対応で 15 commit のあいだ `make lint` を回さず、`2118a458` で golangci-lint の
+`prealloc` が `src/glogx` workflow を落とした。気づけなかったのは、**HEAD (`4f42832c`) が
+`src/glogx/**` を触らない chore だったため workflow が起動せず**、`bin/ci-log` が
+「HEAD に失敗した run はありません」を返したから。1 つ前が赤いまま HEAD が緑に見える。
+
+同じセッションの終盤にもう一度出た: retro を足した docs のみの commit が HEAD のとき、
+Lint / Tests / Bench は緑だが `src/glogx` は起動していない。そのときは
+**`src/glogx` の run を run-id で名指しして待つ**ことで回避した (run `34010488115` = success、
+建てた commit `57e44221`、ログに `ok glogx 47.398s`)。
+
+この経験から `bin/ci-log` に「未検証 commit」の検出を足した (下記)。

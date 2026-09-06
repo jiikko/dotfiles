@@ -84,6 +84,20 @@ EOF (TTY 無しの exec / `</dev/null`) だと**中止して成功終了**する
   プロンプトだけを stdout に出して終了した。`-f` を付けるまで「実行できた」と報告しながら
   1 バイトも減らない配線だった)
 
+## path filter 付きの CI では、HEAD の緑を「直前までの緑」と読み替えない
+
+workflow に `paths:` が付いていると、**その paths に触らない commit では起動しない**。
+HEAD がそういう commit だと、赤いまま残った 1 つ前の commit を隠したまま
+「HEAD に失敗した run は無い」が返る。
+
+- 判定は **commit ではなく範囲**で行う。「最後にこの workflow が走ったのはどの commit か」を
+  確かめ、そこから HEAD までに**その workflow の対象を触った commit**が挟まっていないかを見る
+- 逆向きも同じ: HEAD が対象を触っていないなら、その workflow の緑は**HEAD を検証していない**。
+  緑を根拠に「今の木は通る」と書かない
+- 🚨 **`make test` に lint が入っていない repo では、Go / shell を触った commit ごとに
+  lint を別に回す**。CI 側の lint も path filter を持つので、手元で回さないまま
+  「HEAD は緑」を見ると二重に見落とす
+
 ## 隔離環境での成功は、本番での成功ではない
 
 観測が正しくても、**観測した対象が本番の実体でない**ことがある。隔離サーバ・使い捨て worktree・

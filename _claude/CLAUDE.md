@@ -60,6 +60,11 @@
 ## Issue管理
 
 - `issues/*.md` の内容に対応した後、作業が完了したら対応する issue ファイルを `issues/done/` ディレクトリに移動すること（ディレクトリ名が `issue/` 単数のプロジェクトでは読み替える）
+- 🚨 **issue の「不在の主張」は、着手前に数え直す**。「〜は存在しない」「〜は 1 箇所だけ」「呼び出しは 0 件」は
+  **grep 1 回の結果であって全数勘定ではない**。その主張を根拠に機構を落とす・冗長性を削る提案は、
+  取りこぼしがあると**そのまま実行して壊れる**（実測 2026-09-06: 監査 issue の「rows を直接差し替える
+  テストは実在しない」が誤りで、実際は 2 箇所あった。推奨どおり実行すると描画が空になっていた）。
+  数え直した結果は issue 本文へ書き戻す（`done/` に誤った不在の主張を残すと次の監査が同じ推論を再生成する）
 - **issue の記述を鵜呑みにしない**。実際のコードと git 履歴に照らして検証してから着手する（既に修正済み・false positive を着手前に弾く）。関連: [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md)（refactor 提案の事前確認）/ [`issue-creation-codex-review.md`](rules/issue-creation-codex-review.md)（issue 作成時の codex レビュー）
 - **人にやってほしい動作確認は応答本文に書いて流さず、issue に起こす**（chat は流れて存在自体が忘れられる）。`NNN-human-<スラッグ>.md`（人間しかできない作業のカテゴリ。動作確認・目視レビュー・外部サービスの操作・判断待ち）で起票し、本文に `期限: YYYY-MM-DD` を書く。**既読はファイルの位置で表す**（未読 = `issues/`、確認済み = `issues/done/`。既読ヘッダーは本文の書き換え忘れで嘘が残るので使わない）。期限切れはセッション開始時に hook（`_claude/hooks/human-tasks-due.sh`）が注入し、`issue-sync` skill でも最初に報告する。**hook が期限切れを出したらセッション冒頭で一言伝える**
 - **実質的な作業をやり切ったら、セッションの振り返りを `NNN-retro-<スラッグ>-YYYY-MM-DD.md` に起票する**（chat の反省は流れて消える）。反省・気づき・改善案を書き、各項目に切り出し先（新規 issue / `_claude/rules/` / 却下）を提案するが、切り出しの実行はユーザーの判断を待つ。typo・数行の chore・調査だけのセッションは対象外。**done は「本文の残課題が空になったとき」**（実装の有無では判定しない）。未決着の retro はセッション開始時に hook（`_claude/hooks/retro-open.sh`）が注入するので、**古いものが溜まっていたらセッション冒頭で一言伝える**。書式の正本は `issues/README.md`
@@ -143,6 +148,9 @@
 - 起動は skill 経由（codex を使う環境では `codex-review` / `cross-review` / `review-loop` / `codex-lead` / `codex-drive`、下表参照）。codex を使わない環境では、観点を分けた read-only サブエージェントを直接起動する（`cross-review` skill は codex を含むため丸ごとは使えない）。typo・数行の chore など軽微な変更は対象外
 - **レビューは「探す」だけで閉じない。壊しにいくパス（敵対的レビュー / red team）を 1 本混ぜる**。判断ロジック・境界・状態遷移・外部 I/O が動いた変更では、commit / PR クローズ前の最終ゲートとして通す（機械的置換・設定値変更だけなら省略してよいが、省略したことは一言明示する）
 - **「指摘なし」は「正しい」ではなく「その探し方では壊せなかった」**として扱う。不変条件は「壊す方法が見つからなかった」ではなく、テスト・型・設計で固定して初めて閉じる
+- 🚨 **commit message / 報告に「N 箇所すべてに対応した」と書くなら、その N を機械で数えてから書く**。
+  `git show --stat` / `grep -c` で足りる（実測 2026-09-06: 「4 hook すべてに入れ子のケースを追加」と
+  書いたが、変わったテストは 3 ファイルだった。無検査のまま「テストで守られている」が履歴に残る）
 - **主張は証拠ではない**。自分/codex/エージェントの「対応済み」「検証済み」「テスト green」は、diff・実行結果・外部基準（spec の test vector / 実サーバ / CI）で裏を取ってから受け入れる。裏の取れない主張は「未検証」として報告に残す
 - **自分で新設した「安全機構」(破壊的操作・後始末・検査/ゲート) は自己レビューで閉じない**。異常系 (対象 0 件 / 依存コマンド失敗 / 権限なし / 並行) を実験で作り、観点を分けた敵対的レビューを最終ゲートにする。詳細は [`adversarial-review-own-safeguards.md`](rules/adversarial-review-own-safeguards.md)
 - **「冗長だから外す」と判断した防御は、外す前に「それがマスクしていた failure mode」を列挙する**。本来の目的に対して冗長なことと、他に何も守っていないことは別。残る防御が単一障害点なら、壊す変異が検出されるか確かめてから外す。詳細は [`list-masked-failure-modes-before-removing-guard.md`](rules/list-masked-failure-modes-before-removing-guard.md)

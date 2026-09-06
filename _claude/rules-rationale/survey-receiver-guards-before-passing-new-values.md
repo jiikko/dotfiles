@@ -26,3 +26,23 @@
   page ループを共通 helper に置換したら、helper の新 throw (`serviceUnavailable`) を受ける
   変換 (部分削除の件数を載せる責務) が空白になり、同日に自分で確立した不変条件
   「部分削除は明示報告」を自分の refactor で壊しかけた)
+
+## 「自分が宣言した不変条件」節の起源 (dotfiles, 2026-09-06)
+
+glogx の監査対応 21 件を実装したセッションの敵対的レビューで、**同じ形の欠陥が 4 件**出た。
+どれも「対にして持つと決めたのに、対を崩す経路を洗わずに片方だけ更新する箇所を残した」:
+
+| 対にしたもの | 崩した経路 | 症状 |
+|---|---|---|
+| `detailsLoading` / `detailsWaiting` (包含関係をコメントで宣言) | `detailMsg` / `basisMsg` が loading しか消さない | 実取得中の札が世代交代で落ち「取得中なのに CI job 情報なし」 |
+| `rows` / `rowsGen` (世代カウンタ) | AST ゲートが引数経由・var 宣言経由の代入を見ない | 世代が進まず displayRows が恒久 stale |
+| `diskHasDetail` (述語) / `diskDetail` (builder) | 述語を作らず `hasDetail: true` 固定 | 展開しても 0 行の行で q が飲まれ doctor が閉じない |
+| 見出し / 同一性 | 見出しの不一致を「別 issue」と断定 | 移動 + 改題で本文が閉じ、起きていない事象を告げる |
+
+修正はいずれも「更新の責務を 1 関数へ寄せる」形にした
+(`clearDetailsFlags` / `collapseTargetAtCursor` / `diskHasDetail`)。
+`clearDetailsFlags` については迂回を AST ゲートで止めている
+(`src/glogx/details_flags_test.go`: 走査 75 件 / 札の delete 2 件 / 違反 0 件)。
+
+なお、`collapsibleAtCursor` と `collapseAtCursor` が同じ判定の第 2 実装を持っていたのは
+**既存コード側**の同型で、修正中に「片方を直したのに挙動が変わらない」ことで見つかった。
