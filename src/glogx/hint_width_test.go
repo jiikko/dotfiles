@@ -93,3 +93,105 @@ func TestDiffHintUsesRenderBudget(t *testing.T) {
 		}
 	}
 }
+
+// hintSurface は「最下行の案内を持つ画面」1 つ。
+//
+// 🚨 **列挙表ではなくレジストリとして扱う** (issue 281)。issue 201 は「列挙すると兄弟を
+// 足したときに追随を忘れる = この検査が守りたい事故を検査自身が踏む」として走査型を
+// 指定していたが、実装は 3 件の t.Run 列挙になっており、基底一覧 / ratelimit / PR 状態の
+// 3 画面が検査の外に落ちていた (issue 279 でその 3 つとも実際に切れていた)。
+//
+// 全画面ビューアぶんは fullScreenCases から駆動する — あちらは
+// TestFullScreenCasesCoverEveryID が「ID を足したら 1 行足す」を強制しているので、
+// **新しい全画面ビューアは自動でこの幅検査の対象になる**。
+type hintSurface struct {
+	name string
+	open func(*browseModel)
+	exit string // 優先度 1 = 抜ける手段。狭い幅でも必ず残ること
+}
+
+func hintSurfaces() []hintSurface {
+	out := []hintSurface{
+		{"基底一覧", func(*browseModel) {}, "q: 終了"},
+		{"PR 状態", func(m *browseModel) { m.prStatusOv.sha = m.commits[0].SHA }, "P/q/h: 閉じる"},
+	}
+	exits := map[fullScreenID]string{
+		fullScreenRatelimit: "R/q/esc/h: 閉じる",
+		fullScreenDoctor:    "D/q/esc: 閉じる",
+		fullScreenStatus:    "q: 終了",
+		fullScreenIssues:    "q: 終了",
+	}
+	for _, c := range fullScreenCases {
+		exit, ok := exits[c.id]
+		if !ok {
+			continue // 対応する出口の語を書き忘れたら下の canary が落とす
+		}
+		out = append(out, hintSurface{name: c.name, open: c.show, exit: exit})
+	}
+	return out
+}
+
+// 最下行の案内は、どの画面でも「幅に収まる」かつ「抜ける手段が残る」。
+//
+// 155 / 201 / 264 が 3 度直してきた失敗モードで、そのたびに個別の画面へ手当てしていた。
+// ここで全画面ぶんをまとめて掃く。
+func TestEveryHintKeepsExitWithinWidth(t *testing.T) {
+	surfaces := hintSurfaces()
+	// 🚨 全画面ビューア (4 枚) + 基底一覧 + PR 状態。出口の語を書き忘れて対象から
+	// 落ちても気づけるよう下限を置く (走査 0 件 = 緑 を塞ぐ)。
+	if len(surfaces) < 2+len(fullScreenCases) {
+		t.Fatalf("検査対象が %d 面しかない (期待 %d)。exits の書き忘れで対象から落ちている",
+			len(surfaces), 2+len(fullScreenCases))
+	}
+	for _, s := range surfaces {
+		for w := frameMinWidth; w <= 140; w++ {
+			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m.showFrame, m.width, m.height = true, w, 40
+			s.open(m)
+			got := stripANSI(m.hintLine())
+			if dispWidth(got) > w {
+				t.Fatalf("%s w=%d: hint 行が端末幅を超えた (%d 桁): %q", s.name, w, dispWidth(got), got)
+			}
+			if strings.Contains(got, "…") {
+				t.Fatalf("%s w=%d: 語の途中で切れている: %q", s.name, w, got)
+			}
+			if !strings.Contains(got, s.exit) {
+				t.Fatalf("%s w=%d: 抜ける手段 %q が消えた: %q", s.name, w, s.exit, got)
+			}
+		}
+	}
+}
+
+// fitHintItems は「優先度 1 が入らないなら低優先で埋めない」(issue 279)。
+//
+// 優先度は**採る順序**を決めるだけで席を予約しないので、以前は出口 (17 桁) が入らない
+// 幅で、より短い低優先 (9 桁) だけが残っていた。抜ける手段が消えた案内は短い案内より悪い。
+func TestFitHintItemsReservesExit(t *testing.T) {
+	items := []hintItem{
+		{"j/k: 移動", 2},      // 9 桁
+		{"D/q/esc: 閉じる", 1}, // 17 桁 = 出口
+		{"y: URL コピー", 4},
+	}
+	// 出口が入らない帯: 低優先で埋めず、出口だけを返す
+	for w := 1; w < dispWidth("D/q/esc: 閉じる"); w++ {
+		got := fitHintItems(w, items)
+		if !strings.Contains(got, "閉じる") {
+			t.Fatalf("w=%d: 出口が消えた: %q", w, got)
+		}
+		if strings.Contains(got, "j/k") {
+			t.Fatalf("w=%d: 出口が入らない幅なのに低優先が出ている: %q", w, got)
+		}
+	}
+	// 出口が入る幅からは通常どおり (出口 + 入るものを並べる)
+	wide := fitHintItems(80, items)
+	for _, want := range []string{"D/q/esc: 閉じる", "j/k: 移動", "y: URL コピー"} {
+		if !strings.Contains(wide, want) {
+			t.Errorf("広い幅で %q が出ていない: %q", want, wide)
+		}
+	}
+	// 優先度 1 が無い表では従来どおり (末尾へフォールバック)
+	noExit := []hintItem{{"aaa", 2}, {"bb", 3}}
+	if got := fitHintItems(1, noExit); got != "bb" {
+		t.Errorf("優先度 1 が無いときのフォールバックが変わった: %q", got)
+	}
+}

@@ -116,8 +116,20 @@ func (d *ratelimitDash) headerLine(o ratelimitRenderOpts) string {
 }
 
 // hint は最下行のキー案内。
-func (d *ratelimitDash) hint() string {
-	return "r: 今すぐ更新  i: issues  s: status  R/q/esc/h: 閉じる  (毎分自動更新)"
+// hint は最下行の案内。
+//
+// 🚨 width を受けて fitHintItems を通すこと (issue 279)。固定文字列だと 70 桁あり、
+// 最小サポート幅 (frameMinWidth=60 のとき予算 58) で切り詰められ、さらに狭いと
+// 出口 `R/q/esc/h: 閉じる` が完全に消える。全画面かつ rlDashSwallow で裏へキーを
+// 通さないので、出口が消えると抜け方が分からなくなる。
+func (d *ratelimitDash) hint(width int) string {
+	return fitHintItems(width, []hintItem{
+		{"r: 今すぐ更新", 3},
+		{"i: issues", 4},
+		{"s: status", 4},
+		{"R/q/esc/h: 閉じる", 1},
+		{"(毎分自動更新)", 5},
+	})
 }
 
 // rlDashAction は handleKey の結果。閉じ→開きの連携 (横断) は viewer 単体では完結しないので、

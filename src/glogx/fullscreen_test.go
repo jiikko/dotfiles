@@ -35,7 +35,7 @@ var fullScreenCases = []fullScreenCase{
 	{
 		id: fullScreenRatelimit, name: "残量ダッシュボード",
 		show:  func(m *browseModel) { m.rlDash.shown = true },
-		hint:  func(m *browseModel) string { return m.rlDash.hint() },
+		hint:  func(m *browseModel) string { return m.rlDash.hint(m.hintWidth()) },
 		lines: func(m *browseModel) []string { return m.rlDash.lines(m.ratelimitOpts()) },
 	},
 	{

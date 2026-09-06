@@ -3809,7 +3809,7 @@ func (m *browseModel) hintLine() string {
 	// 黙って切り落とされる。CI は viewer を閉じれば見える。
 	switch m.activeFullScreen() {
 	case fullScreenRatelimit:
-		return m.hintLineText(m.rlDash.hint())
+		return m.hintLineText(m.rlDash.hint(m.hintWidth()))
 	case fullScreenDoctor:
 		return m.hintLineText(m.doctorOv.hint(m.hintWidth()))
 	case fullScreenStatus:
@@ -3819,7 +3819,27 @@ func (m *browseModel) hintLine() string {
 	case fullScreenNone, fullScreenCount:
 		// 全画面ビューアが出ていない = 下の一覧の hint
 	}
-	hint := "j/k: 移動  Enter: CI job  d: diff  o: ブラウザ  p: PR  P: PR 状態  y: URL コピー  b: push  u: pull  i: issues  U: usage  R: 残量  C: update  D: doctor  w: 警告コピー  q: 終了"
+	// 🚨 固定文字列にしないこと (issue 279)。全部つなぐと 174 桁あり、端末 176 桁未満では
+	// 末尾の `q: 終了` が切られて**抜ける手段が案内から消える**。既定の画面・一般的な幅で
+	// 常時そうなっていた。優先度 1 = 出口、2 = 移動と主要操作、以降は幅が許せば出す。
+	hint := fitHintItems(m.hintWidth(), []hintItem{
+		{"j/k: 移動", 2},
+		{"Enter: CI job", 3},
+		{"d: diff", 3},
+		{"o: ブラウザ", 5},
+		{"p: PR", 6},
+		{"P: PR 状態", 6},
+		{"y: URL コピー", 5},
+		{"b: push", 4},
+		{"u: pull", 4},
+		{"i: issues", 4},
+		{"U: usage", 6},
+		{"R: 残量", 6},
+		{"C: update", 7},
+		{"D: doctor", 5},
+		{"w: 警告コピー", 7},
+		{"q: 終了", 1},
+	})
 	switch {
 	case m.actModal.pushConfirm:
 		hint = "push しますか? [Y/n] (Enter=y)"
@@ -3844,7 +3864,11 @@ func (m *browseModel) hintLine() string {
 			{"q/h: 閉じる", 1}, // 抜ける手段は最優先
 		})
 	case m.prStatusOv.visible():
-		hint = "o: PR をブラウザで開く  y: URL コピー  P/q/h: 閉じる"
+		hint = fitHintItems(m.hintWidth(), []hintItem{
+			{"o: PR をブラウザで開く", 3},
+			{"y: URL コピー", 4},
+			{"P/q/h: 閉じる", 1},
+		})
 	case m.detailOv.visible():
 		hint = fitHintItems(m.hintWidth(), []hintItem{
 			{"j/k: スクロール", 3},
