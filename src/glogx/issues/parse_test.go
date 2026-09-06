@@ -665,9 +665,15 @@ func TestFilterExemptsEpicChildrenFromStatusFilter(t *testing.T) {
 	mkFiles(t, filepath.Join(dir, "epic", "cloud", "pending"), "006-feat-child-held.md")
 	all, _ := Scan([]string{dir})
 
+	// 🚨 可視性だけでなく状態も見る。done な子が (変更前のように) StatusUnknown に落ちても
+	// 「常に見える」ので可視性の assert だけでは素通りする (2026-09-06 の敵対的レビュー)
+	wantStatus := map[string]Status{"004": StatusOpen, "005": StatusDone, "006": StatusPending}
 	got := make(map[string]bool, len(all))
 	for _, iss := range Filter(all, "", FilterOpen) {
 		got[iss.Number] = true
+		if want, ok := wantStatus[iss.Number]; ok && iss.Status != want {
+			t.Errorf("%s の状態が違う: got %v want %v", iss.Number, iss.Status, want)
+		}
 	}
 	want := map[string]bool{"001": true, "004": true, "005": true, "006": true}
 	for _, n := range []string{"001", "002", "003", "004", "005", "006"} {

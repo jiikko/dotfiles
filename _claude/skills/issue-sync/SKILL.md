@@ -60,7 +60,9 @@ find issues -name done -prune -o -type f -name '*.md' -print0   # 起点は repo
 
 - **`issues/` 直下 / `issues/epic/<name>/` = open**（検証対象）
 - **`issues/pending/` = 着手保留**（open だが着手条件待ち。検証はするが、報告では open と分けて出す）
-- **`issues/next/` / `issues/epic/<name>/next/` = claim 中の open**（検証対象。完了時は global `done/` へ移す）。
+- **`issues/next/` / `issues/epic/<name>/next/` = claim 中の open**（検証対象。完了時は global issue が `issues/done/`、
+  **group issue は `issues/epic/<name>/done/`** へ移す。2026-09-06 / issue 291。group の完了を global へ出すと
+  パスから epic 所属が消え、viewer が epic の進捗を出せなくなる）。
   🚨 中身は `NNN-x.md -> ../NNN-x.md` の **symlink** が正（issue 263。実ファイル本体は直下にある。旧運用の
   実ファイルも残っている）。上の `find -type f` は symlink を数えないので、claim 中の issue は直下の実体として
   1 回だけ列挙される（二重に数えない）
@@ -143,7 +145,10 @@ AskUserQuestion で「これらの issue を `done/` へ移動しますか？」
 
 1. 対象 issue に `next/` の目印（symlink）があれば先に消す（`git rm issues/next/NNN-x.md`。残すと dangling になり
    `tests/issues/test_next_links_valid.sh` が落ちる。直下へ戻したときに偽の claim として復活する）。
-   そのうえで issue ファイルを `issues/done/` に移動する（`git mv`。ファイル名は変えない — 番号での参照が腐るため）
+   そのうえで issue ファイルを done へ移動する（`git mv`。ファイル名は変えない — 番号での参照が腐るため）。
+   🚨 **宛先は issue の居場所で決まる**: `issues/` 直下・`issues/next/`・`issues/pending/` の issue は `issues/done/`、
+   **group issue（`issues/epic/<name>/` とその `next/`）は `issues/epic/<name>/done/`**（epic の外へ出さない。
+   2026-09-06 / issue 291）
 2. readme に一覧テーブルがある repo だけ、その表を実体に合わせて更新する:
    - 該当行のパスを `./done/` に変更し、ステータスを `✅ 完了` に更新
    - 詳細セクション内の該当記述も `✅ 完了` に更新

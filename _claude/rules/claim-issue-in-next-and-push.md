@@ -90,7 +90,7 @@
 - ✓ 着手前に `git fetch` し、global または所属 group の `next/` に既に居ないか見る
 - ✓ claim の目印 (symlink) だけを pathspec commit して即 push する
 - ✓ push できない事情があるなら、着手前にユーザーへ伝える
-- ✓ 完了したら目印を消し、global `issues/done/` へ移す
+- ✓ 完了したら目印を消し、done へ移す（global issue は `issues/done/`、group issue は `issues/epic/<name>/done/`）
 - ✗ ローカルで claim して push しないまま作業を始める (claim になっていない)
 - ✗ claim の commit に実装や他の issue の変更を混ぜる
 - ✗ 既に global または所属 group の next に居る issue を、確認せずに横から始める
