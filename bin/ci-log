@@ -6,7 +6,9 @@
 #
 # 使い方:
 #   ci-log            HEAD コミットの失敗 run すべての失敗 job ログ (1 push で複数 workflow が
-#                     落ちても取りこぼさない。失敗が無ければその旨)
+#                     落ちても取りこぼさない)。HEAD が緑のときは、**HEAD から辿れる commit で
+#                     まだ緑になっていない workflow** も併せて報告する (paths filter 付きの
+#                     workflow は HEAD で起動しないので、1 つ前の赤が緑に隠れる)
 #   ci-log <run-id>   指定 run の失敗 job のログ
 #   ci-log -a         対象 run の全 job ログ (成功も含む。run-id 指定時のみ意味を持つ)
 #   ci-log -l         直近の run 一覧を出すだけ (対象 id を選ぶ用)
@@ -22,7 +24,7 @@ for arg in "$@"; do
   case "$arg" in
     -a|--all) all=true ;;
     -l|--list) list_only=true ;;
-    -h|--help) sed -n '3,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '3,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "不明なオプション: $arg" >&2; exit 2 ;;
     *) run_id="$arg" ;;
   esac
@@ -64,6 +66,31 @@ mapfile -t failed < <(gh run list --limit 40 --json databaseId,headSha,conclusio
 
 if [ "${#failed[@]}" -eq 0 ]; then
   echo "HEAD ($(git rev-parse --short HEAD)) に失敗した run はありません" >&2
+  # 🚨 HEAD が緑でも「直前までが緑」ではない。paths filter 付きの workflow は、その paths に
+  # 触らない commit では**起動しない**ので、赤いまま残った 1 つ前の commit が HEAD の緑に隠れる
+  # (実測 2026-09-06: src/glogx が 2118a458 で失敗していたのに、HEAD が docs のみの commit
+  # だったため「HEAD に失敗した run はありません」を返し、15 commit ぶんの lint 漏れを見逃した)。
+  # そこで **HEAD から辿れる commit 群における「各 workflow の最新 run」** を見る。
+  # そのあと成功していれば黙る (古い赤を蒸し返さない)。
+  stale=0
+  seen_wf=""
+  while IFS=$'\t' read -r wf sha concl dbid; do
+    [ -n "$wf" ] || continue
+    case "$seen_wf" in *"|$wf|"*) continue ;; esac      # その workflow の最新 run だけ見る
+    git cat-file -e "$sha^{commit}" 2>/dev/null || continue
+    git merge-base --is-ancestor "$sha" HEAD 2>/dev/null || continue  # HEAD の履歴上のものだけ
+    seen_wf="$seen_wf|$wf|"
+    [ "$concl" = "failure" ] || continue
+    if [ "$stale" -eq 0 ]; then
+      echo "" >&2
+      echo "🚨 HEAD より前に、まだ緑になっていない workflow があります (paths filter で HEAD では起動していない):" >&2
+      stale=1
+    fi
+    printf '   %-16s %s  %s  (ci-log %s)\n' "$wf" "$(git rev-parse --short "$sha")" \
+      "$(git log -1 --format=%s "$sha" | cut -c1-52)" "$dbid" >&2
+  done < <(gh run list --limit 60 --json databaseId,headSha,conclusion,name \
+    --jq '.[] | select(.conclusion != null and .conclusion != "cancelled") | "\(.name)\t\(.headSha)\t\(.conclusion)\t\(.databaseId)"')
+  [ "$stale" -eq 0 ] || echo "" >&2
   gh run list --limit 10
   exit 0
 fi
