@@ -96,5 +96,33 @@ rc=$( ( cd "$FIX" && MAKE="$FIX/fake-make" "$RUNNER" slow-ok > "$FIX/out" 2> "$F
 [ "$rc" != 0 ] && ok "rc 欠落で非 0 ($rc)" || bad 'rc を回収できないのに緑になっている'
 grep -q '終了コードを回収できなかった' "$FIX/err" && ok '理由を出している' || bad '理由が出ていない (沈黙で失敗している)'
 
+printf 'Test 7: 中断 (SIGTERM) で子孫を残さない\n'
+# 🚨 直接の子 (バッファ用サブシェル) だけを kill しても孫 (make -> shellcheck / go 等) は残り、
+#    既に消えた outdir へ書き続ける。実測 2026-09-06: 修正前は偽 make 2 + 孫 4 = 6 プロセスが孤児。
+#    判定は rc ではなく**残存プロセス数**で、上限つきポーリングで待つ
+#    (_claude/rules/avoid-wall-clock-assertions.md)。
+cat > "$FIX/fake-make-tree" <<'FMT'
+#!/bin/sh
+sh -c 'sleep 120' &      # 孫を起こす (make -> 子ツール の構図)
+sleep 120
+FMT
+chmod +x "$FIX/fake-make-tree"
+alive() { pgrep -f "$FIX/fake-make-tree" 2>/dev/null | wc -l | tr -d ' '; }
+gone()  { [ "$(alive)" = 0 ]; }
+# 🚨 exec で起こす: `( ... ) &` だとサブシェルの pid が返り、kill -TERM がランナー本体へ
+#    届かない (このテストを書くときに実際に踏んだ)
+( cd "$FIX" && MAKE="$FIX/fake-make-tree" exec "$RUNNER" a b >/dev/null 2>&1 ) &
+runner_pid=$!
+i=0; while [ "$(alive)" -lt 2 ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i+1)); done
+if [ "$(alive)" -lt 2 ]; then
+  bad "偽 make が起動しない (前提が崩れている)"
+else
+  kill -TERM "$runner_pid" 2>/dev/null
+  wait "$runner_pid" 2>/dev/null
+  i=0; while ! gone && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i+1)); done
+  if gone; then ok '中断後に子孫が 0 (pgid ごと看取っている)'
+  else bad "中断後に $(alive) プロセスが孤児として残った (issue 301)"; pkill -f "$FIX/fake-make-tree" 2>/dev/null; fi
+fi
+
 [ "$fail" -eq 0 ] || { printf '✗ 失敗あり\n'; exit 1; }
 printf '✓ すべて成功\n'

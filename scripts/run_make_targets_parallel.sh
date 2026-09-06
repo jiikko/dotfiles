@@ -27,9 +27,30 @@ unset CDPATH
 [ "$#" -gt 0 ] || { echo "✗ run_make_targets_parallel に対象が 0 件 (呼び出しが壊れている)" >&2; exit 1; }
 
 outdir=$(mktemp -d) || { echo "✗ 一時ディレクトリを作れなかった" >&2; exit 1; }
-trap 'rm -rf "$outdir"' EXIT
-trap 'rm -rf "$outdir"; exit 130' INT
-trap 'rm -rf "$outdir"; exit 143' TERM
+
+# 🚨 中断時は**子孫を看取ってから** outdir を消す (issue 301)。
+#
+# trap が rm -rf だけをして抜けると、make とその子 (shellcheck / actionlint / go toolchain) は
+# 生き残り、既に消えたパスへ書き続ける。実測 2026-09-06: 偽 make 2 本にランナーへ TERM を
+# 送ると、fakemake 2 + 孫 4 = 6 プロセスが孤児として残った。
+#
+# 直接の子 (サブシェル) だけを kill しても孫は残るので、**pgid 単位**で殺す。
+# そのために set -m で各バックグラウンドジョブを独立したプロセスグループに置く。
+# 🚨 `kill -- -$$` は使わない: このスクリプトは #!/bin/sh で make から呼ばれるため $$ は
+#    pgid ではなく (グループリーダーは make 側)、make ごと、あるいは無関係なグループへ TERM が飛ぶ。
+set -m
+
+PGIDS=""
+reap() {   # 子孫を pgid 単位で落とす。順序が重要 (outdir の削除より先)
+  for pg in $PGIDS; do
+    kill -TERM "-$pg" 2>/dev/null
+  done
+  wait 2>/dev/null
+}
+cleanup() { reap; rm -rf "$outdir"; }
+trap 'cleanup' EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
 
 : "${MAKE:=make}"
 
@@ -37,8 +58,10 @@ for t in "$@"; do
   # ターゲット名はファイル名にそのまま使う (make のターゲット名に / は無い前提。
   # 万一入ったら mkdir されていないパスへの書き込みで失敗し、rc 欠落 = 失敗になる)
   ( $MAKE "$t" > "$outdir/$t.out" 2> "$outdir/$t.err"; echo $? > "$outdir/$t.rc" ) &
+  PGIDS="$PGIDS $!"   # set -m の下では、バックグラウンドジョブの pid = その pgid
 done
 wait
+PGIDS=""   # 全部看取った。正常終了時に生存プロセスへ TERM を送らない
 
 failed=""
 for t in "$@"; do
