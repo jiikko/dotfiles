@@ -152,6 +152,10 @@ type hintSurface struct {
 	// 語は UI の文言なので変えられない。同一性は ID で直接見る。
 	id      hintSurfaceID
 	checkID bool
+	// fullScreen は「全画面ビューア由来」。あちらは activeHintSurface() が
+	// hintSurfaceBase(0) を返すので id を持てない (ゼロ値が自明に一致して緑になる)。
+	// checkID の opt-in が要る理由がこれ。書き忘れは下の assert が検出する。
+	fullScreen bool
 }
 
 func hintSurfaces() []hintSurface {
@@ -189,7 +193,7 @@ func hintSurfaces() []hintSurface {
 		if !ok {
 			continue // 対応する出口の語を書き忘れたら下の canary が落とす
 		}
-		out = append(out, hintSurface{name: c.name, open: c.show, exit: exit})
+		out = append(out, hintSurface{name: c.name, open: c.show, exit: exit, fullScreen: true})
 	}
 	return out
 }
@@ -234,18 +238,41 @@ func TestEveryHintKeepsExitWithinWidth(t *testing.T) {
 	// (mutation-verify-new-tests.md の「テーブル駆動なら全ケースが red になるか」)。
 	for _, s := range surfaces {
 		t.Run(s.name, func(t *testing.T) {
+			// 🚨 checkID の書き忘れを検出する (敵対的レビュー 2 周目の P3)。書き忘れると
+			// 同一性の突き合わせが黙って外れ、面を取り違えても出口の部分一致だけで緑になる。
+			if !s.checkID && !s.fullScreen {
+				t.Fatalf("checkID も fullScreen も無い面が登録されている (同一性が検査されない)")
+			}
+			// 🚨 同一性と配線は**幅に依存しない**ので、幅のループの外で 1 回だけ見る。
+			if s.checkID {
+				m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+				m.showFrame, m.width, m.height = true, 200, 40
+				s.open(m)
+				if got := m.activeHintSurface(); got != s.id {
+					t.Fatalf("この setup は面 %d を出すはずだが activeHintSurface() は %d を返した", s.id, got)
+				}
+				// 🚨 面の同一性が合っていても、**hintBuilders の配線**が入れ替わっていれば
+				// 別の面の語彙が出る (敵対的レビュー 2 周目の P3-2)。出口の部分一致では
+				// 「期待語が実際の出口の部分文字列になる向き」を検出できないので、
+				// 十分広い幅で**全項目が出ていること**を見る。
+				//
+				// 🚨 前置つきの面は対象外。前置が予算を食うぶん低優先が**正しく**落ちるので、
+				// ここで全項目を要求すると意味の無い red になる。前置つきの 2 面はどちらも
+				// hintSurfaceBase の builder を使っており、その配線は素の「基底一覧」が見ている。
+				if !s.prefixed {
+					wide := stripANSI(m.hintLine())
+					for _, it := range hintBuilders[s.id](m) {
+						if !strings.Contains(wide, it.text) {
+							t.Errorf("幅 200 でも項目 %q が出ていない (hintBuilders の配線が違う): %q",
+								it.text, wide)
+						}
+					}
+				}
+			}
 			for w := frameMinWidth; w <= 140; w++ {
 				m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 				m.showFrame, m.width, m.height = true, w, 40
 				s.open(m)
-				// 🚨 幅を見る前に**面の同一性**を見る。出口の語は互いに部分文字列に
-				// なりうるので、Contains だけでは面を取り違えても緑になる (P1)。
-				if s.checkID {
-					if got := m.activeHintSurface(); got != s.id {
-						t.Fatalf("w=%d: この setup は面 %d を出すはずだが activeHintSurface() は %d を返した",
-							w, s.id, got)
-					}
-				}
 				got := stripANSI(m.hintLine())
 				if dispWidth(got) > w {
 					t.Errorf("w=%d: hint 行が端末幅を超えた (%d 桁): %q", w, dispWidth(got), got)

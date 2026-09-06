@@ -23,7 +23,7 @@ import (
 //     (前置を積まないのが意図で、幅は fullScreenCases 経由で別に検査している)。
 //     これらは review と幅ゲートの責務
 //   - この射程は実装後に実物と突き合わせて確定させた
-func scanHintLineAssigns(f *ast.File) (assigns int, viaFit int, returns int, found bool) {
+func scanHintLineAssigns(f *ast.File) (assigns, viaFit, returns, prefixAssigns, viaPrefixFn int, found bool) {
 	for _, d := range f.Decls {
 		fn, ok := d.(*ast.FuncDecl)
 		if !ok || fn.Name.Name != "hintLine" || fn.Body == nil {
@@ -48,7 +48,24 @@ func scanHintLineAssigns(f *ast.File) (assigns int, viaFit int, returns int, fou
 			}
 			for i, lhs := range as.Lhs {
 				id, ok := lhs.(*ast.Ident)
-				if !ok || id.Name != "hint" {
+				if !ok {
+					continue
+				}
+				// 🚨 前置への書き足しも数える (敵対的レビュー 2 周目の P1)。予算を引いた後で
+				// prefix へ積む形は hint への代入も hintLineText の呼び出しも増やさないので、
+				// 上の 2 つのカウンタが一切見ていない。それが 279 / 281 の**実際の根本原因**。
+				if id.Name == "prefix" {
+					prefixAssigns++
+					if i < len(as.Rhs) {
+						if call, ok := as.Rhs[i].(*ast.CallExpr); ok {
+							if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "hintPrefix" {
+								viaPrefixFn++
+							}
+						}
+					}
+					continue
+				}
+				if id.Name != "hint" {
 					continue
 				}
 				assigns++
@@ -66,7 +83,7 @@ func scanHintLineAssigns(f *ast.File) (assigns int, viaFit int, returns int, fou
 			return true
 		})
 	}
-	return assigns, viaFit, returns, found
+	return assigns, viaFit, returns, prefixAssigns, viaPrefixFn, found
 }
 
 // hintLineHintLineTextCalls は hintLine 本体の hintLineText 呼び出しの想定数。
@@ -83,28 +100,33 @@ func TestHintLineHasNoInlineHintText(t *testing.T) {
 	// (判定が壊れて 0 件になっても「違反 0 件 = 緑」で通るのを塞ぐ)。
 	const canarySrc = `package main
 func (m *browseModel) hintLine() string {
+	prefix := m.hintPrefix()
+	if y {
+		prefix = "後から積んだ前置" + prefix
+	}
 	hint := fitHintItems(hw, hintBuilders[m.activeHintSurface()](m))
 	if x {
 		hint = "直接組んだ案内"
 	}
-	return m.hintLineText(hint)
+	return m.hintLineText(prefix + hint)
 }
 `
 	cf, err := parser.ParseFile(fset, "zz_canary.go", canarySrc, 0)
 	if err != nil {
 		t.Fatalf("canary をパースできない: %v", err)
 	}
-	ca, cv, cr, cfound := scanHintLineAssigns(cf)
-	if !cfound || ca != 2 || cv != 1 || cr != 1 {
-		t.Fatalf("canary の検出が 代入 %d / fitHintItems 経由 %d / hintLineText %d / 発見 %v "+
-			"(期待 2 / 1 / 1 / true)。判定が壊れている", ca, cv, cr, cfound)
+	ca, cv, cr, cp, cpf, cfound := scanHintLineAssigns(cf)
+	if !cfound || ca != 2 || cv != 1 || cr != 1 || cp != 2 || cpf != 1 {
+		t.Fatalf("canary の検出が 代入 %d / fitHintItems 経由 %d / hintLineText %d / "+
+			"prefix 代入 %d / hintPrefix 経由 %d / 発見 %v (期待 2 / 1 / 1 / 2 / 1 / true)。判定が壊れている",
+			ca, cv, cr, cp, cpf, cfound)
 	}
 
 	f, err := parser.ParseFile(fset, "tui.go", nil, 0)
 	if err != nil {
 		t.Fatalf("tui.go をパースできない: %v", err)
 	}
-	assigns, viaFit, returns, found := scanHintLineAssigns(f)
+	assigns, viaFit, returns, prefixAssigns, viaPrefixFn, found := scanHintLineAssigns(f)
 	if !found {
 		t.Fatal("hintLine が見つからない (改名したなら、このゲートの対象名も直すこと)")
 	}
@@ -118,8 +140,13 @@ func (m *browseModel) hintLine() string {
 			"代入を経ずに `return m.hintLineText(...)` で返す形は、レジストリも幅ゲートも通らない",
 			returns, hintLineHintLineTextCalls)
 	}
-	t.Logf("hintLine の hint 代入 %d 件 / fitHintItems 経由 %d 件 / hintLineText %d 件",
-		assigns, viaFit, returns)
+	if prefixAssigns != 1 || viaPrefixFn != 1 {
+		t.Errorf("hintLine の prefix 代入が %d 件 / うち hintPrefix() 経由が %d 件 (期待 1 / 1)。"+
+			"前置は hintPrefix() に足すこと — 予算を引いた後で積むと、字句ゲートも幅ゲートも"+
+			"素通りしたまま末尾 = 出口が消える (279 / 281 の根本原因)", prefixAssigns, viaPrefixFn)
+	}
+	t.Logf("hintLine の hint 代入 %d 件 / fitHintItems 経由 %d 件 / hintLineText %d 件 / "+
+		"prefix 代入 %d 件 (hintPrefix 経由 %d 件)", assigns, viaFit, returns, prefixAssigns, viaPrefixFn)
 }
 
 // レジストリの面がすべて「幅が足りなくても消えない語」を持つこと。
@@ -189,6 +216,22 @@ func TestActiveHintSurfacePrecedence(t *testing.T) {
 			m.panelSHA, m.panelCursor = m.commits[0].SHA, -1
 			m.actModal.pulling = true
 		}, hintSurfacePulling},
+		// 🚨 self-update は overlay / パネルと**共存する** (敵対的レビュー 2 周目の P1)。
+		// C / X は overlay の上からも通る設計 (tui.go の「overlay の分岐より前に置くこと」)。
+		// 順序が下がると、実行中を示す唯一の表示が消えたまま Ctrl-C がブロックされ、
+		// 「効かないのに理由が画面に無い」状態になる。
+		{"job パネル + self-update", func(m *browseModel) {
+			m.panelSHA, m.panelCursor = m.commits[0].SHA, 0
+			m.actModal.updating = map[string]bool{"claude": true}
+		}, hintSurfaceUpdating},
+		{"job 詳細 + self-update", func(m *browseModel) {
+			m.detailOv.open = true
+			m.actModal.updating = map[string]bool{"codex": true}
+		}, hintSurfaceUpdating},
+		{"diff + self-update", func(m *browseModel) {
+			m.diffOv.sha = m.commits[0].SHA
+			m.actModal.updating = map[string]bool{"claude": true}
+		}, hintSurfaceUpdating},
 		// overlay どうしの前後 (深い方が勝つ)
 		{"job パネル + job 詳細", func(m *browseModel) {
 			m.panelSHA, m.panelCursor = m.commits[0].SHA, 0

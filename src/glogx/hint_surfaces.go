@@ -152,6 +152,31 @@ var hintBuilders = [hintSurfaceCount]func(*browseModel) []hintItem{
 	},
 }
 
+// hintPrefix は hint の前に積む「今なぜ待っているか」の説明。
+//
+// 🚨 **前置を足すならここに足すこと。hintLine の中で prefix へ書き足さない**
+// (敵対的レビュー 2 周目の P1)。hintLine 側は `prefix := m.hintPrefix()` の 1 行だけを持ち、
+// その直後に予算を引く。**予算を引いた後で前置を積める形を残さない**のが目的で、
+// それこそが 279 / 281 の根本原因だった (fitHintItems が幅ぴったりに収めた後に前置を積み、
+// hintLineText の clipToWidth が末尾 = 出口を落としていた)。
+// 実測 2026-09-06: 予算減算の下に新しい前置を 1 ブロック足すと、字句ゲートも幅ゲートも
+// 素通りしたまま幅 60〜140 の全帯で出口が消えた。迂回は TestHintLinePrefixGoesThroughHelper が止める。
+//
+// 順序: gh の警告が先 (取得できていない理由の方が、取得中であることより重い)。
+func (m *browseModel) hintPrefix(maxWidth int) string {
+	prefix := ""
+	if m.fetching() {
+		prefix = m.spinner() + " CI 状態を取得中...  "
+	}
+	if m.ghErr != nil {
+		prefix = "🚨 " + firstLine(m.ghErr.Warning()) + "  " + prefix
+	}
+	if dispWidth(prefix) > maxWidth {
+		prefix = clipToWidth(prefix, maxWidth)
+	}
+	return prefix
+}
+
 // activeHintSurface は今どの面が出ているかを返す。**状態 → ID の対応はここだけ**。
 //
 // 🚨 分岐の順序は意味を持つ: actModal (確認・進行中) が最優先で、以降は overlay の深い順。

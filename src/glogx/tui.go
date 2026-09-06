@@ -3871,20 +3871,12 @@ func (m *browseModel) hintLine() string {
 	//
 	// 前置は「今なぜ待っているか」の説明で、抜ける手段より優先度が低い。予算の半分を
 	// 超えたら前置の方を切る。
-	prefix := ""
-	if m.fetching() {
-		prefix = m.spinner() + " CI 状態を取得中...  "
-	}
-	if m.ghErr != nil {
-		prefix = "🚨 " + firstLine(m.ghErr.Warning()) + "  " + prefix
-	}
 	hw := m.hintWidth()
-	if prefix != "" {
-		if maxPrefix := hw / 2; dispWidth(prefix) > maxPrefix {
-			prefix = clipToWidth(prefix, maxPrefix)
-		}
-		hw = max(hw-dispWidth(prefix), 0)
-	}
+	// 前置は「今なぜ待っているか」の説明で、抜ける手段より優先度が低い。予算の半分を
+	// 超えたら前置の方を切る (頭打ちは hintPrefix の中でやる — ここで prefix に触る形を
+	// 残さないため。敵対的レビュー 2 周目の P1)。
+	prefix := m.hintPrefix(hw / 2)
+	hw = max(hw-dispWidth(prefix), 0)
 
 	// 面ごとの hint 項目は hint_surfaces.go のレジストリが唯一の出典 (issue 289)。
 	// ここで直接文字列を組まないこと — 予算計算 (fitHintItems) と幅ゲートの両方を
