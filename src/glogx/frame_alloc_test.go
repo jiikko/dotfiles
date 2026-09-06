@@ -154,7 +154,11 @@ func TestFrameAllocBudget(t *testing.T) {
 		{"list", func(tb testing.TB) *browseModel { return benchBrowseSubjects(tb, 20, 120, 40, false) }, 138, 31700},
 		{"list-ja", func(tb testing.TB) *browseModel { return benchBrowseSubjects(tb, 20, 120, 40, true) }, 138, 32500},
 		{"status-40", func(tb testing.TB) *browseModel { return benchStatusBrowse(tb, 40, 120, 40) }, 322, 44400},
-		{"diff-overlay", budgetDiffModel, 217, 49100},
+		// 🚨 diff-overlay は上限 217 に張り付いており -race で flake する (実測 2026-09-06:
+		// 216〜218。私の変更前後どちらでも同じ)。既存の「+4」は他ケースが (10/10) で
+		// 完全一致するのを前提にした値で、このケースには足りない。観測レンジの上に
+		// 余裕を取って 225 へ (issue 269 の「緩すぎず、flake もしない」の実践)。
+		{"diff-overlay", budgetDiffModel, 225, 49100},
 		{"job-panel", budgetPanelModel, 162, 37500},
 		// issues viewer / usage グランス / toast (issue 062)。それまで viewLines の全画面ビュー
 		// 2 つのうち issues 側と、起動直後の実フレーム (usage グランス表示) がどのゲートの
