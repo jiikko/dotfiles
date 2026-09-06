@@ -146,11 +146,16 @@ fixture の並び順のせいで、「最初に見つけた group を開く」�
   順序依存なら正解を先頭以外へ」）。2 つとも同じ「fixture の選び方で検出力が消える」族なので
   1 項にまとめる
 
-## 9. 残課題
+## 9. 残課題 — 全項目の決着 (2026-09-06)
 
-- [ ] 項目 1 → issue 化するか決める（hook で `git checkout --` の破壊を注意する）
-- [ ] 項目 2（+ 3）→ `claude-md-maintenance.md` へ追記するか決める
-- [ ] 項目 4 → 却下でよいか
-- [ ] 項目 5 → `claim-issue-in-next-and-push.md` へ 1 行足すか決める
-- [ ] 項目 7(b) + 8 → `mutation-verify-new-tests.md` へ「fixture の選び方で検出力が消える」を
-      1 項足すか決める（並び順 / 実在する最大長）
+| 項目 | 切り出し先 | 実体 |
+|---|---|---|
+| 1 / 7(a) `git checkout --` が未コミットの修正を捨てる (3 回) | **新規 issue** | [297](../297-feat-hook-warn-on-git-checkout-discarding-uncommitted.md)（hook で注意。deny にはしない） |
+| 2 / 3 契約を変えたのに「手順書」を直し忘れた | **既存ルールへ追記** | `_claude/rules/claude-md-maintenance.md` の「置き場所の契約を変えた」行に「実際にファイルを動かす手順書も同じ変更で直す。探すのは文言でなく**動作**」を追記 |
+| 4 false positive の issue を起票しかけた | **却下** | 規範（CLAUDE.md「issue の記述を鵜呑みにしない」）は既にあり、守らなかっただけ。新しい規範を足しても再発の形は同じ |
+| 5 解放を伝えた番号を自分で取った | **既存ルールへ追記** | `.claude/rules/worktree-per-session.md` の実測例に 4 例目として追加（相手セッションの提案どおり、安い方だけを採り 1 行追記はしない） |
+| 6 修正が新しい穴を開けた | **却下** | `adversarial-review-own-safeguards.md` §7 に既にあり、今回それに従って 4 周した |
+| 7(b) / 8 fixture の選び方で検出力が消える | **既存ルールへ追記** | `_claude/rules/mutation-verify-new-tests.md` の「守っていないテストの形」に 1 項（並び順 / 実在する最大長 / 「短くした理由をコメントに書いていたら黄信号」） |
+
+新規ルールは 0 本（発動点が既存のどれとも違うと言えなかったため。CLAUDE.md「retro の切り出し先は
+既存ルールへの追記を既定にする」）。
