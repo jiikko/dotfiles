@@ -26,9 +26,14 @@ import (
 //     **関数へ渡してから中で並べ替える**形。これらは review の責務
 //   - 🚨 要素の書き換えと in-place ソートは**長さが変わらない**ので、世代でも旧実装の
 //     全件比較でも観測できない。ここで字句的に止めるのが唯一の防御
-//   - 判定は「その代入を含む関数の**レシーバが issuesView**」または
-//     「同じ関数内で `newTestIssuesView()` / `&issuesView{...}` から得た変数」に限る
-//     (型解決に go/types を持ち込まない代わりの近似)
+//   - 判定は「その代入を含む関数の**レシーバが issuesView**」「**引数の型が *issuesView**」
+//     「同じ関数内で `newTestIssuesView()` / `&issuesView{...}` から得た変数 (代入・var 宣言の
+//     どちらでも)」に限る (型解決に go/types を持ち込まない代わりの近似)
+//   - 🚨 **この射程は実装後に実物と突き合わせて直したもの** (§8「『検出しない』は実装後に
+//     もう一度突き合わせる」)。初版は owners をレシーバと AssignStmt からしか埋めておらず、
+//     `func seed(v *issuesView, …) { v.rows = … }` と `var v = newTestIssuesView()` を
+//     **「検出しない」に挙げないまま素通し**していた (敵対的レビュー 2026-09-06 が実測)。
+//     どちらも「うっかり書く典型形」なので、除外ではなく検出側へ足した
 //
 // scanIssuesRowsWrites は 1 ファイル分の違反と候補数を返す (本走査と canary の共通経路)。
 //
@@ -44,6 +49,21 @@ func scanIssuesRowsWrites(fset *token.FileSet, path string, file *ast.File) (off
 		if fn.Recv != nil && len(fn.Recv.List) > 0 && recvTypeName(fn.Recv.List[0].Type) == "issuesView" {
 			for _, n := range fn.Recv.List[0].Names {
 				owners[n.Name] = true
+			}
+		}
+		// 🚨 引数で受け取った *issuesView も owner に数える (敵対的レビュー 2026-09-06)。
+		// `func seed(v *issuesView, list []*issues.Issue) { v.rows = list }` は
+		// 「うっかり書く典型形」そのものなのに、レシーバと AssignStmt の RHS からしか
+		// owners を埋めていなかったので**素通りしていた** (ヘッダの「検出しない」にも
+		// 挙げていなかった = 宣言した射程と実射程のズレ)。
+		if fn.Type != nil && fn.Type.Params != nil {
+			for _, f := range fn.Type.Params.List {
+				if recvTypeName(f.Type) != "issuesView" {
+					continue
+				}
+				for _, n := range f.Names {
+					owners[n.Name] = true
+				}
 			}
 		}
 		report := func(pos token.Pos, what string) {
@@ -65,6 +85,15 @@ func scanIssuesRowsWrites(fset *token.FileSet, path string, file *ast.File) (off
 						if k, ok := kv.Key.(*ast.Ident); ok && k.Name == "rows" {
 							report(kv.Pos(), "複合リテラル")
 						}
+					}
+				}
+			}
+			// var v = newTestIssuesView() / var v *issuesView — AssignStmt ではないので別に拾う
+			if vs, ok := n.(*ast.ValueSpec); ok {
+				owned := recvTypeName(vs.Type) == "issuesView"
+				for i, name := range vs.Names {
+					if owned || (i < len(vs.Values) && rhsMakesIssuesView(vs.Values[i])) {
+						owners[name.Name] = true
 					}
 				}
 			}
@@ -113,15 +142,18 @@ func (v *issuesView) zzCanaryDirect() { v.rows = nil }
 func zzCanaryLiteral() *issuesView { return &issuesView{rows: nil} }
 func (v *issuesView) zzCanaryIndex() { v.rows[0] = nil }
 func zzCanaryTestStyle() { v := newTestIssuesView(); v.rows = nil }
+func zzCanaryParam(v *issuesView) { v.rows = nil }
+func zzCanaryParamIndex(v *issuesView) { v.rows[0] = nil }
+func zzCanaryVarDecl() { var v = newTestIssuesView(); v.rows = nil }
 `
 	canaryFile, cerr := parser.ParseFile(fset, "zz_canary.go", canarySrc, 0)
 	if cerr != nil {
 		t.Fatalf("canary をパースできない: %v", cerr)
 	}
 	canaryHits, _ := scanIssuesRowsWrites(fset, "zz_canary.go", canaryFile)
-	if len(canaryHits) != 4 {
-		t.Fatalf("canary の検出が %d 件 (期待 4: 直接代入 / 複合リテラル / 要素の書き換え / "+
-			"テストが作った変数経由)。判定が壊れている:\n  %s",
+	if len(canaryHits) != 7 {
+		t.Fatalf("canary の検出が %d 件 (期待 7: 直接代入 / 複合リテラル / 要素の書き換え / "+
+			"テストが作った変数経由 / 引数経由 x2 / var 宣言経由)。判定が壊れている:\n  %s",
 			len(canaryHits), strings.Join(canaryHits, "\n  "))
 	}
 
