@@ -2505,3 +2505,52 @@ func TestDoctorEscClosesEvenWhenExpanded(t *testing.T) {
 		}
 	}
 }
+
+// 畳まれている行の detail は組まない (issue 270)。
+//
+// buildRows の add() が detail を並べるのは v.expanded[r.key] のときだけなので、
+// 畳まれている行のぶんは**作って捨てていた**。diskDetail は Contents / Items を全件走査するので、
+// 1 フレームのコストがカタログ全エントリの Items / Contents の総数に比例していた。
+//
+// 🚨 判定は「展開できるか (hasDetail)」と「detail が実際に組まれているか」を**別々に**見る。
+// len(detail) だけで展開可否を決める形へ戻すと、畳まれた行が展開できなくなる。
+func TestDoctorCollapsedRowsDoNotBuildDetail(t *testing.T) {
+	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v.diskRep = &disk.Report{Results: []disk.Result{{
+		Entry:  disk.Entry{ID: "e0", Label: "E0", Risk: disk.RiskSafe, Recover: "r", DeleteVia: "rm"},
+		Status: disk.StatusOK, Size: 3,
+		Items: []disk.Item{{Path: "/p/a", Size: 1}, {Path: "/p/b", Size: 1}, {Path: "/p/c", Size: 1}},
+	}}}
+	v.svcRep = &svc.Report{}
+	v.brew = &brewDoctorResult{Clean: true}
+	o := doctorTestOpts(40)
+
+	rows := v.buildRows(o)
+	var target *doctorRow
+	for i := range rows {
+		if rows[i].key == "disk:e0" {
+			target = &rows[i]
+		}
+	}
+	if target == nil {
+		t.Fatal("対象の行が見つからない (fixture が届いていない)")
+	}
+	if !target.hasDetail {
+		t.Error("畳まれていても「展開できる」は真であるべき (hasDetail)")
+	}
+	if len(target.detail) != 0 {
+		t.Errorf("畳まれているのに detail を %d 行組んでいる (作って捨てている)", len(target.detail))
+	}
+
+	// 陽性対照: 展開したら組む (上の assert が「常に空」ではないことの担保)
+	v.expanded["disk:e0"] = true
+	rows = v.buildRows(o)
+	for i := range rows {
+		if rows[i].key == "disk:e0" {
+			target = &rows[i]
+		}
+	}
+	if len(target.detail) == 0 {
+		t.Error("展開しているのに detail が空 (遅延が効きすぎている)")
+	}
+}

@@ -127,7 +127,13 @@ type doctorRow struct {
 	text       string
 	selectable bool
 	key        string
-	detail     []doctorRow
+	// detail は Enter で展開したときに描く本文。
+	// 🚨 **展開している行だけ**が値を持つ (issue 270)。畳まれている行のぶんまで毎フレーム
+	// 組むと、1 フレームのコストがカタログ全エントリの Items / Contents の総数に比例する。
+	// 「展開できるか」は len(detail) でなく hasDetail で判定すること。
+	detail []doctorRow
+	// hasDetail は「Enter で展開できる行か」。detail が畳まれていて空でも真になる。
+	hasDetail bool
 	// copyPath は y でコピーするパス (複数なら改行区切り)。copyText は Y でコピーする解説文
 	// (ラベル・パス・復元方法・リスク・削除経路・提示コマンド。別セッションの LLM にそのまま投げられる形)。
 	copyPath string
@@ -451,7 +457,7 @@ func (v *doctorView) expandableRow() (string, bool) {
 		return "", false
 	}
 	r := v.rows[v.cur.index]
-	if !r.selectable || len(r.detail) == 0 {
+	if !r.selectable || !r.hasDetail {
 		return "", false
 	}
 	return r.key, true
@@ -1030,7 +1036,8 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 			text:       fmt.Sprintf("%s%8s  %s%s %s", sel, size, label, padSpaces(labelW-dispWidth(label)), doctorColor(o.colored, color, mark)),
 			selectable: true,
 			key:        "disk:" + r.Entry.ID,
-			detail:     v.diskDetail(o, r),
+			hasDetail:  true,
+			detail:     v.diskDetailIfExpanded(o, r),
 			copyPath:   diskCopyPath(r),
 			copyText:   diskCopyText(r, mark),
 		}
@@ -1075,6 +1082,7 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 				text:       doctorColor(o.colored, ansiYellow, "           ❓ 一部走査できず (合計に含めていません): "+f),
 				selectable: true,
 				key:        "diskfail:" + r.Entry.ID + ":" + f,
+				hasDetail:  true,
 				detail: textRows([]string{
 					doctorColor(o.colored, ansiDim, "        "+r.Entry.Label+" の一部を走査できませんでした (この分は合計に入っていません)"),
 					doctorColor(o.colored, ansiDim, "        "+f),
@@ -1270,7 +1278,7 @@ func (v *doctorView) svcSection(o doctorRenderOpts) []doctorRow {
 		for _, c := range f.Commands {
 			detail = append(detail, "        "+c)
 		}
-		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiRed, " ⛔ "+f.Label), selectable: true, key: "svc:" + f.PlistPath, detail: textRows(detail),
+		rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiRed, " ⛔ "+f.Label), selectable: true, key: "svc:" + f.PlistPath, hasDetail: true, detail: textRows(detail),
 			copyPath: f.PlistPath, copyText: svcCopyText(f)})
 		for _, r := range f.Reasons {
 			rows = append(rows, doctorRow{text: doctorColor(o.colored, ansiDim, "      - "+r)})
@@ -1285,6 +1293,7 @@ func (v *doctorView) svcSection(o doctorRenderOpts) []doctorRow {
 			text:       doctorColor(o.colored, ansiYellow, " ❔ 診断できず: "+u.PlistPath+" ("+u.Reason+")"),
 			selectable: true,
 			key:        "svcundiagnosed:" + u.PlistPath,
+			hasDetail:  true,
 			detail: textRows([]string{
 				doctorColor(o.colored, ansiDim, "      理由: "+u.Reason),
 				doctorColor(o.colored, ansiDim, "      手動で確かめてください (このツールは実行しません):"),
@@ -1383,8 +1392,9 @@ func (v *doctorView) brewSection(o doctorRenderOpts) []doctorRow {
 			text += padSpaces(gap) + doctorColor(o.colored, ansiDim, count)
 		}
 		rows = append(rows, doctorRow{text: text, selectable: true, key: fmt.Sprintf("brew:%d:%s", i, summary),
-			detail:   append(detailRows, textRows(detail)...),
-			copyPath: summary, copyText: "brew doctor の警告 (macOS Homebrew):\n" + w + "\n"})
+			hasDetail: true,
+			detail:    append(detailRows, textRows(detail)...),
+			copyPath:  summary, copyText: "brew doctor の警告 (macOS Homebrew):\n" + w + "\n"})
 	}
 	return rows
 }
@@ -1571,4 +1581,22 @@ func svcCopyText(f svc.Finding) string {
 		fmt.Fprintf(&b, "  %s\n", c)
 	}
 	return b.String()
+}
+
+// diskDetailIfExpanded は展開している行の detail だけを組む (issue 270)。
+//
+// buildRows の add() が detail を並べるのは `v.expanded[r.key]` のときだけなので、
+// 畳まれている行のぶんは**作って捨てていた**。diskDetail は Contents / Items を全件走査して
+// doctorRow を組むので、1 フレームのコストがカタログ全エントリの Items / Contents の総数に
+// 比例していた (合成 32 エントリ x 200 items で 7.15ms / 9.92MB / 174,352 allocs)。
+//
+// 🚨 無害化 (flattenDoctorRows) との関係: 展開している行の detail は従来どおり値として
+// 存在するので、lines() の出口で再帰的に無害化される。畳まれている行は描かれないので
+// 無害化する対象そのものが無い。untrusted_display_test.go の
+// TestFlattenDoctorRowsEnforcesSingleLine は detail を直に組んで渡すので影響を受けない。
+func (v *doctorView) diskDetailIfExpanded(o doctorRenderOpts, r disk.Result) []doctorRow {
+	if !v.expanded["disk:"+r.Entry.ID] {
+		return nil
+	}
+	return v.diskDetail(o, r)
 }

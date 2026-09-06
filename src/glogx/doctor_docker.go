@@ -145,6 +145,7 @@ func (v *doctorView) dockerSection(o doctorRenderOpts) []doctorRow {
 				doctorColor(o.colored, ansiBold, d.SystemPrune),
 			selectable: true,
 			key:        "dockerprune",
+			hasDetail:  true,
 			detail: textRows([]string{
 				doctorColor(o.colored, ansiYellow, "     🚨 "+d.SystemPruneNote),
 				doctorColor(o.colored, ansiDim, "     Space で選んで x、または y でコピーして自分で叩いてください"),
@@ -208,6 +209,7 @@ func (v *doctorView) dockerGroupRow(o doctorRenderOpts, g docker.Group) doctorRo
 			doctorColor(o.colored, ansiDim, summary),
 		selectable: true,
 		key:        "docker:" + string(g.Kind),
+		hasDetail:  true,
 		detail:     detail,
 		// 🚨 群のコマンドが無い (ボリューム) 行でも y が無言にならないよう、
 		// 1 件ずつのコマンドを並べたものを渡す (hint は「y: コマンドをコピー」と言っている)

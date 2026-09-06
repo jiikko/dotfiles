@@ -166,7 +166,42 @@ func benchDoctorFrame(b *testing.B, entries, itemsPer int) {
 🚨 ただし **「予算が無いこと」は原因ではなく、気づかれなかった理由**。予算ケースを足すだけでは
 無駄な構築は消えない。
 
-## 推奨対応
+## 対応 (2026-09-06)
+
+**`detail` を「展開している行だけ」組む形にした**（`diskDetailIfExpanded`）。
+「展開できるか」の判定は `len(detail)` から **`hasDetail` フラグ**へ移し、
+`svc` / `brew` / `docker` の各節にも同じフラグを付けた。
+
+実測（darwin/arm64 M3 Max、`-benchtime=200x`）:
+
+| フィクスチャ | 前 | 後 |
+|---|---:|---:|
+| 合成 32 × 200（総 6,400 items） | 7,153 µs / 9.92 MB / 174,352 allocs | **1,464 µs / 1.90 MB / 27,021 allocs** |
+| 実機規模（総 29 items） | 223 µs / 205 KB / 1,802 allocs | **158 µs / 169 KB / 1,090 allocs** |
+
+確保予算も締め直した（`doctor-disk` 1550 → **620** / 140,000 → 86,000 B。`-race` 実測 597〜601）。
+締めずに残すと「2.5 倍悪化しても緑」で、issue 269 と同じ形になる。
+
+### 🚨 `copyText` / `copyPath` の遅延化は入れていない（理由と trigger）
+
+残りのコストはここ。切り分け実測（合成 6,400 items）: `detail` 遅延化後 1,464 µs →
+`copyText`/`copyPath` も空にすると **181 µs**。実機規模では 158 → 127 µs（31 µs/frame）。
+
+素朴な案（**カーソル行だけ**組む。`rowCursor.key` が使える）には**順序の穴**がある:
+
+- `buildRows` は描画中に走り、`rowCursor.restore` は `lines()` の中で **`buildRows` の後**に
+  `cur.key` を確定させる
+- したがって**開いた直後の 1 回目の描画**では `cur.key` が空で、どの行にも copy 文が付かない
+- bubbletea は Update → View なので通常は 2 回目の描画で埋まるが、
+  **開いてすぐ `y` を押す**経路では 1 回目の状態のまま読まれる
+
+「押した時点で組む」（行に entry ID を持たせてハンドラで計算）なら閉じるが、
+`diskCopyText` が要る `mark` の導出をハンドラ側へ持ち出す必要があり、範囲が広がる。
+
+**trigger**: doctor のフレームが重いという報告が出たとき、または `rowCursor` の解決を
+`buildRows` の前へ動かす改修が入ったとき。
+
+## 推奨対応（起票時）
 
 構造的な直し方は **status viewer と同じ「可視の窓ぶんだけ作る」へ寄せる**こと。
 status viewer は同型の問題を明示的に直した前例がある
