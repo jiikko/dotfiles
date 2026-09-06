@@ -924,6 +924,24 @@ set -e
 [[ "$rc" == 2 ]] || fail "--pkg の値欠落で exit 2 にならない (rc=$rc out=${out:0:200})"
 ok "--pkg の値欠落は exit 2 で止まる"
 
+printf '\n## go が PATH に無いなら、入れ方を案内して止まる (go build の 127 に任せない)\n'
+# PATH を「zsh と awk だけ」の dir にして go 不在を作る (偽 go も見えない)。
+# zsh は wrapper の #!/usr/bin/env が、awk は go.mod の要求版の読み出しが要る。
+ROOT="$(new_project nogo)"
+mkdir -p "$TMP_DIR/nogo-bin"
+ln -sf "$(command -v zsh)" "$TMP_DIR/nogo-bin/zsh"
+ln -sf "$(command -v awk)" "$TMP_DIR/nogo-bin/awk"
+set +e
+TIMEOUT_BIN="$(command -v timeout)"   # PATH を絞る前に絶対パスで解決する
+out="$(PATH="$TMP_DIR/nogo-bin" "$TIMEOUT_BIN" 5 "$ROOT/bin/tool" </dev/null 2>&1)"; rc=$?
+set -e
+[[ "$rc" == 1 ]] || fail "go 不在で exit 1 にならない (rc=$rc out=${out:0:300})"
+[[ "$out" == *"brew install go"* ]] || fail "go 不在の案内に brew install go が無い: ${out:0:300}"
+[[ "$out" == *"goenv install 1.99"* ]] || fail "go 不在の案内に go.mod の要求版つき goenv が無い: ${out:0:300}"
+[[ "$out" != *"command not found"* ]] || fail "go build の command not found が漏れている: ${out:0:300}"
+[[ ! -e "$ROOT/src/tool/tool" ]] || fail "go 不在なのにバイナリができている"
+ok "go 不在は brew / goenv の案内を出して exit 1 (stdin が端末でなければ待たない)"
+
 printf '\n## 作業ファイル / lock を残さない\n'
 # 🚨 「いずれ消える」で判定する。builder は非同期なので、バイナリが入った瞬間にはまだ lock の
 # 解放 (spawn subshell の EXIT trap) が済んでいないことがある。即時判定にすると spawn を使う

@@ -287,6 +287,30 @@ _go_autobuild_take_lock() {  # $1=lock dir $2=自分の pid / 0 = 取得, 1 = �
   return 0
 }
 
+# go が PATH に無いときの案内。brew と goenv のどちらでもよい (どちらを使っているかは
+# 環境依存なので両方書く)。go.mod の要求版が読めていれば goenv の版指定に添える。
+_go_autobuild_print_go_missing() {  # $1=name $2=go.mod の要求版 (空可)
+  local name="$1" required_go="$2"
+  print -u2 -- "$name: go コマンドが見つかりません (PATH=$PATH)"
+  print -u2 -- "  $name は Go で書かれていて、初回起動時にこの Mac でビルドします。次のどちらかで Go を入れてください:"
+  print -u2 -- "    brew install go"
+  if [[ -n "$required_go" ]]; then
+    print -u2 -- "    goenv install $required_go && goenv global $required_go   (goenv を使う場合)"
+  else
+    print -u2 -- "    goenv install <version> && goenv global <version>   (goenv を使う場合)"
+  fi
+  print -u2 -- "  入れた後、新しいシェルで再度 $name を起動してください。"
+}
+
+# 初回 (走らせるバイナリが無い) の同期ビルドが落ちたとき、端末なら 1 キー待つ。
+# tmux の -E popup は終了と同時に閉じるので、待たないと上の案内が読めない。
+# stdin が端末でない (スクリプト / パイプ) なら待たずに落ちる。
+_go_autobuild_hold_if_tty() {
+  [[ -t 0 && -t 2 ]] || return 0
+  print -u2 -n -- "何かキーを押すと閉じます..."
+  read -k1 -s
+}
+
 # 一時ファイルへビルドしてから rename する。実行中バイナリを直接上書きしないため、
 # ビルドが途中で死んでも旧版は壊れない (= 途中死が無害になる = async の前提)。
 _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自分の pid (省略可)
@@ -306,8 +330,15 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   _go_autobuild_read_built "$src_dir"; seen_at=$reply[1]; seen_fp=$reply[2]
   local local_go required_go mod_dir pkg
   _go_autobuild_resolve_mod "$src_dir"; mod_dir="$reply[1]"; pkg="$reply[2]"
-  local_go=$(go env GOVERSION 2>/dev/null) || local_go=unknown
   required_go=$(awk '$1 == "go" {print $2; exit}' "$mod_dir/go.mod" 2>/dev/null)
+  # go 自体が無い環境 (新しい Mac / PATH が通っていない) を go build の "command not found"
+  # (exit 127) に任せない。popup 起点だと 1 行の英語エラーが点滅して消えるだけで、
+  # 「glogx がすぐ落ちる」に見える。何を入れれば動くかまで書いて止める。
+  if ! command -v go >/dev/null 2>&1; then
+    _go_autobuild_print_go_missing "$name" "$required_go"
+    return 1
+  fi
+  local_go=$(go env GOVERSION 2>/dev/null) || local_go=unknown
   print -u2 -- "$name: building... (go=${local_go:-unknown} / go.mod=${required_go:-?})"
   # GOTOOLCHAIN は既定 (auto) のまま。local に固定すると go.mod の要求版に足りない環境で
   # 「go.mod requires go >= X」で失敗して手動対応が必要になる。auto なら toolchain (~90MB) を
@@ -544,7 +575,7 @@ go_autobuild_exec() {
 
   if [[ ! -x "$bin" ]]; then
     # 走らせるものが無い初回だけは同期でビルドする (async にできない)
-    _go_autobuild_build "$src_dir" "$name" 0 || exit 1
+    _go_autobuild_build "$src_dir" "$name" 0 || { _go_autobuild_hold_if_tty; exit 1 }
   elif (( async )); then
     # 判定と spawn は go_autobuild_spawn_if_stale が持つ (走行中のツールからも同じ入口を使う)。
     if go_autobuild_spawn_if_stale "$src_dir" "$name"; then
