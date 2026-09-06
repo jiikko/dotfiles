@@ -6,7 +6,27 @@
 - やったこと: glogx へ絞った監査 2 本（perf + resource-leaks / test 品質 + lint-from-done）→
   issue 268–288 を起票 → 全件を実装して `done/` へ → セッション全体の敵対的レビュー
 
-## 残課題（切り出し先の提案。実行はユーザーの判断待ち）
+## 決着（2026-09-06 に全件切り出し済み）
+
+| 項目 | 切り出し先 | 実体 |
+|---|---|---|
+| 1. `make lint` 漏れが path filter に隠れた | ルール追記 **＋ ツール改修** | [`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md) に「path filter 付きの CI では HEAD の緑を『直前までの緑』と読み替えない」節 / `bin/ci-log` が未検証の赤を報告するようにした |
+| 2. forge 3 体に同じ worktree | 新規 issue | [292](../292-feat-audit-forge-should-hand-each-agent-its-own-worktree.md) |
+| 3. 監査 issue の「不在の主張」が誤り | CLAUDE.md「Issue管理」へ追記 | 「不在の主張は着手前に数え直す」 |
+| 4. ゲートの脅威モデルを後で書いた | 却下 | ルールは既に明示済み。ここに記録して終わり |
+| 5. オラクルの 5→1 統合 | 却下（コードへ固定済み） | `ctlprobe.go` のヘッダ |
+| 6. 幅ゲートが新分岐を見ない | 新規 issue | [289](../289-refactor-glogx-hintline-two-layer-structure.md)（trigger 待ち） |
+| 6.5. hooks の恒真 fixture / 数えずに「N 箇所すべて」 | ルール追記 ×2 | [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) に「fixture が判定コマンドの出力に現れる形か」「前提が早期 return で素通りしていないか」/ CLAUDE.md「レビュー方針」に「N は機械で数えてから書く」 |
+| 6.6. 対で持つ状態の片割れ更新漏れ | ルール追記 | [`survey-receiver-guards-before-passing-new-values.md`](../../_claude/rules/survey-receiver-guards-before-passing-new-values.md) に「自分が宣言した不変条件にも同じ手順を向ける」節 |
+| 7. 宣言したレビューを通していなかった | 却下 | 規範の不足ではない |
+
+**新規ルールは 0 本**（既存 5 箇所への追記 + 新規 issue 2 件 + 却下 4 件）。
+`_claude/rules/` の流入を抑える方針どおり、発動点が既存と違うものは無かった。
+
+`bin/ci-log` の改修は実測で両方向を確認した: 当時の HEAD (`4f42832c`) で
+`🚨 src/glogx 2118a458` を検出し、その後 `57e44221` で緑になった現在は黙る。
+
+## 残課題（切り出し先の提案。実行済み。上の表が結果）
 
 ### 1. `make lint` を 15 commit 回していなかった 🚨
 
@@ -17,7 +37,7 @@
 **path filter で src/glogx workflow が起動せず**、`bin/ci-log` が「HEAD に失敗した run は無い」を
 返した。**1 つ前の commit が赤いまま HEAD が緑に見える**構造。
 
-- 切り出し先: **既存ルールへ追記**。[`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
+- 切り出し先: **既存ルールへ追記**。[`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)
   に「path filter 付き CI では HEAD の緑を『直前までの緑』と読み替えない。判定は commit 範囲で見る」を 1 項
 - 補足: memory の「make lint/test before commit」は既にこれを言っていた。**ルールの不在ではなく遵守の失敗**なので、
   新規ルールは立てない。代わりに `bin/ci-log` を「HEAD だけでなく未検証 commit も拾う」形にするのが構造的な手
@@ -25,7 +45,7 @@
 ### 2. forge エージェント 3 体に同じ worktree を渡した
 
 2 本目の監査で 3 体を並行起動したとき、全員に `~/wt-audit2` を渡した。
-[`parallel-write-agents-need-worktree-isolation.md`](../_claude/rules/parallel-write-agents-need-worktree-isolation.md)
+[`parallel-write-agents-need-worktree-isolation.md`](../../_claude/rules/parallel-write-agents-need-worktree-isolation.md)
 の正面からの違反。**検出したのは私ではなくサブエージェント**（「他のプロセスがファイルを書き換えている」と報告）。
 
 - 切り出し先: **却下（新規ルール不要）**。ルールは既にあり、読んでいたのに配線で外した。
@@ -48,7 +68,7 @@
 
 ### 4. ゲートの脅威モデルを実装の後に書いた
 
-[`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) §8 は
+[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) §8 は
 「gate を書く**前に** ①脅威モデル ②検出しないと決めた形 ③その責務の所在 を書く」と要求している。
 本セッションで足した走査型ゲート（268 / 282 / 283 / 286）はいずれも**実装後に**ヘッダへ書いた。
 結果は良かった（下限・canary・「検出しない」節が全部入っている）が、順序は守っていない。
@@ -59,7 +79,7 @@
 
 制御文字判定の重複 5 箇所を `termsafe/ctlprobe` 1 本へ寄せた。touch 箇所は 5 → 1 になったが、
 **「1 箇所を自己言及にすれば 5 パッケージのテストが同時に恒真になる」**状態も同時に作った。
-[`list-masked-failure-modes-before-removing-guard.md`](../_claude/rules/list-masked-failure-modes-before-removing-guard.md)
+[`list-masked-failure-modes-before-removing-guard.md`](../../_claude/rules/list-masked-failure-modes-before-removing-guard.md)
 が要求する「消す前にマスクしていた failure mode を列挙する」を通していない。
 
 **結果は幸運だった**: `termsafe_test.go` が内部テスト（`package termsafe`）なので、ctlprobe から
@@ -95,7 +115,7 @@ termsafe を import すると `import cycle not allowed in test` で落ちる（
 置いたので git が `?? node_modules/` へ畳み、パスが porcelain に出ず、除外が無くても緑になった。
 変異を当てて初めて分かった。
 
-- 切り出し先: **既存ルールへ追記**。[`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md)
+- 切り出し先: **既存ルールへ追記**。[`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md)
   の「よくある『守っていないテスト』の形」に
   **「fixture を untracked のまま置いて `git status` の出力を当てにする（git はディレクトリを畳むので
   パスが出ない）」**を 1 項
@@ -118,7 +138,7 @@ termsafe を import すると `import cycle not allowed in test` で落ちる（
 **共通する形**: 「2 つのものを対にして持つ」と決めたのに、**対を崩す経路を洗わずに片方だけ
 更新する箇所を残した**。272 は 2 つのマップ、268 は 2 つの世代カウンタ、270 は述語と builder、
 277 は「見出し」と「同一性」。どれも
-[`survey-receiver-guards-before-passing-new-values.md`](../_claude/rules/survey-receiver-guards-before-passing-new-values.md)
+[`survey-receiver-guards-before-passing-new-values.md`](../../_claude/rules/survey-receiver-guards-before-passing-new-values.md)
 の「先に grep で洗う」を、**自分が新設した不変条件に対して**やっていれば防げた。
 
 修正では毎回「判定を 1 箇所へ寄せる」形を採った (`clearDetailsFlags` / `diskHasDetail` /
@@ -126,7 +146,7 @@ termsafe を import すると `import cycle not allowed in test` で落ちる（
 同じ判定の第 2 実装を持っていた**ことにも当たっており (片方を直しても挙動が変わらなくて
 気づいた)、同じ病気が既存コードにもあった。
 
-- 切り出し先: **既存ルールへ追記**。[`survey-receiver-guards-before-passing-new-values.md`](../_claude/rules/survey-receiver-guards-before-passing-new-values.md)
+- 切り出し先: **既存ルールへ追記**。[`survey-receiver-guards-before-passing-new-values.md`](../../_claude/rules/survey-receiver-guards-before-passing-new-values.md)
   に「**不変条件を新設したら、それを崩せる経路を grep で全部挙げてから閉じる**
   (受け側のガードを洗うのと同じ手順を、自分が宣言した不変条件へ向ける)」を 1 項。
   発動点が「新しい値を通すとき」から「新しい不変条件を宣言したとき」へ広がるだけなので新規ルールは立てない
@@ -136,12 +156,12 @@ termsafe を import すると `import cycle not allowed in test` で落ちる（
 - 270 の修正で最初に採った「`v.rows[i].detail` の長さを見る」案は**不健全**だった
   (rows は描画時に遅延再構築されるので、Enter 直後は展開済みでも detail が nil)。既存テスト
   2 本が落ちて分かった。**推測で 2 発目を打たず、落ちたテストの手順を読んで**原因を特定した
-  ([`instrument-before-second-fix.md`](../_claude/rules/instrument-before-second-fix.md))
+  ([`instrument-before-second-fix.md`](../../_claude/rules/instrument-before-second-fix.md))
 - 272 の陽性対照は**初版が恒真**だった (先行サブテストが `m.details[sha]` を埋めるので
   `fetchPanelDetails` が早期 return し、札が 1 つも立たないまま通る)。前提を assert して直した。
   hooks 側の node_modules テストと**同じ形**の恒真で、1 セッションに 2 回踏んでいる
 - 変異を 1 本、perl の構文エラーで**当て損ねた**まま緑を読みかけた
-  ([`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の手順 1.5 が拾った)
+  ([`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) の手順 1.5 が拾った)
 
 ### 7. 「実装後にもう一度レビューを通します」を通していなかった
 
