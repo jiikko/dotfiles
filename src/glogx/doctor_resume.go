@@ -50,7 +50,11 @@ func saveDoctorScreen(s doctorScreen) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+	// 🚨 素の os.WriteFile を使わないこと (issue 219 / 286)。writeAtomic は temp + rename で、
+	// write / Close / rename の 3 分岐すべてで temp を掃除する。素の WriteFile は O_TRUNC なので
+	// 書き込み中に落ちると**途中まで書けた JSON** が残り、次回起動の復元が黙って失敗する。
+	// 規律は cache_write_discipline_test.go がソース走査で強制する。
+	return writeAtomic(path, data)
 }
 
 func removeDoctorScreen() {
