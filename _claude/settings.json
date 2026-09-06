@@ -41,6 +41,11 @@
             "type": "command",
             "command": "~/dotfiles/_claude/hooks/deny-bare-tmux-kill.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/dotfiles/_claude/hooks/warn-discarding-checkout.sh",
+            "timeout": 10
           }
         ]
       }
