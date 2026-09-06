@@ -6,11 +6,11 @@
 
 ## 何が問題か
 
-[`parallel-write-agents-need-worktree-isolation.md`](../_claude/rules/parallel-write-agents-need-worktree-isolation.md)
+[`parallel-write-agents-need-worktree-isolation.md`](../../_claude/rules/parallel-write-agents-need-worktree-isolation.md)
 は「書き込み権限のエージェントを 2 体以上並行させるなら worktree を分ける」と要求しているが、
 **分離を配線するのは起動側（main agent）の手作業**で、忘れても何も止めない。
 
-実測 2026-09-06（retro [290](done/290-retro-glogx-audit-x2-and-21-issues-2026-09-06.md) の項目 2）:
+実測 2026-09-06（retro [290](290-retro-glogx-audit-x2-and-21-issues-2026-09-06.md) の項目 2）:
 audit skill 経由で forge のエージェント 3 体を並行起動したとき、**全員に同じ worktree
 `~/wt-audit2` を渡した**。ルールは読んでいたのに配線で外している。
 
@@ -44,7 +44,7 @@ audit skill 経由で forge のエージェント 3 体を並行起動したと�
 3 体を並行起動した。**規範違反ではなく、規範が適用される場面かどうかを読み違えた**。
 
 これは機構ではなく情報の穴なので、対処も明示にする
-（[`verify-design-intent-before-refactor.md`](../_claude/rules/verify-design-intent-before-refactor.md):
+（[`verify-design-intent-before-refactor.md`](../../_claude/rules/verify-design-intent-before-refactor.md):
 実需要が確定していない機構を先回りで作らない）。
 
 ## 提案（当初案。上記のとおり機構は作らない）
