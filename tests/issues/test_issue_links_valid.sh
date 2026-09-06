@@ -112,8 +112,8 @@ if [ "$canary_all" -ne 3 ]; then
   exit 1
 fi
 if [ "$canary_bad" -ne 2 ] ||
-  ! printf '%s' "$canary_out" | grep -q '^BAD|.*|010-feat-target.md$' ||
-  ! printf '%s' "$canary_out" | grep -q '^BAD|.*|\.\./nonexistent-after.md$'; then
+  ! grep -q '^BAD|.*|010-feat-target.md$' <<< "$canary_out" ||
+  ! grep -q '^BAD|.*|\.\./nonexistent-after.md$' <<< "$canary_out"; then
   printf '✗ canary の判定が想定と違う (切れている 2 件だけを検出するはず):\n%s\n' "$canary_out" >&2
   exit 1
 fi
