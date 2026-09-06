@@ -752,6 +752,21 @@ func TestFilterHidesClosedEpicUntilDoneIsShown(t *testing.T) {
 	if got := visible(FilterAll); !got["999"] || !got["998"] {
 		t.Errorf("a を全開にしても終わった epic が出ない: %v", got)
 	}
+
+	// 🚨 「終わったか」の判定は**絞り込む前の全件**から作る。タブで絞った後から作ると、
+	// 別カテゴリの open な子が見えず、進行中の epic を終わったものと誤判定する。
+	// fixture は「その epic の open な子が、見るタブとは別カテゴリにしか居ない」形にする
+	// (同じカテゴリにも open な子が居ると、絞った後から作っても終わっていないと分かってしまう)
+	mkFiles(t, filepath.Join(dir, "epic", "mixed", "done"), "800-feat-done.md")
+	mkFiles(t, filepath.Join(dir, "epic", "mixed"), "801-bug-open.md")
+	all, _ = Scan([]string{dir})
+	feat := make(map[string]bool)
+	for _, iss := range Filter(all, "feat", FilterOpen) {
+		feat[iss.Number] = true
+	}
+	if !feat["800"] {
+		t.Errorf("feat タブで、進行中 epic の done な子が消えた (bug の子が open なのに終わった扱い): %v", feat)
+	}
 }
 
 // TestClosedGroupKeysCountsParentAndIgnoresStrays は「終わった epic」の数え方を固定する。
