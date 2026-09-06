@@ -197,6 +197,13 @@ Claude がやるのは:
   特定させる**。並行セッションの rebase pull で hash は実行中にも動く (実測: obaket 635 で
   セッション中に 2 回改番。grep 特定にしていたためレビューは無傷だった)。
 - **出力は 1 本ごとに一意パス**。並列で同じパスに書かせない。
+- 🚨 **`codex exec review` は `-C` を受け付けない** (`error: unexpected argument '-C' found`)。
+  worktree や別 checkout をレビューさせるときは **cwd をその tree にして起動する**
+  (`cd <worktree> && command codex exec review ...`)。`-s read-only` / `-s workspace-write` の
+  `codex exec` は `-C` を取れるので、**同じ感覚で review にも付けて空振りする**
+  (実測 2026-09-07 obaket 740: 引数エラーで即終了したのに、起動を包んだシェルの都合で
+  成功に見え、`-o` の中身を読むまで気づかなかった)。判定は成果物で行う
+  ([`verify-execution-not-just-exit-code.md`](../../rules/verify-execution-not-just-exit-code.md))
 - **stdout/stderr も一意ファイルに保存してから末尾を見る**。`codex exec review` はレビュー本文を `-o` に書かず
   stdout にだけ出すことがある (正本: codex-review スキル「手順 4」)。`| tail -40` だけで受けると本文前半を捨てるため、
   **重要な反証を読み落としたまま「指摘なし」と誤判定する**。形は `... > "$log" 2>&1; tail -40 "$log"` にし、
@@ -983,6 +990,12 @@ EOF
 
 - **自分が触った差分のみ** `git add <path>` (commit-policy)。並行する他作業/WIP を巻き込まない。
 - 1 マイルストーン = 1 commit を基本に。commit message に「codex 実装 + main agent 検証」と何をやったかを書く。
+- 🚨 **`[S]` / `[D1]`〜`[D3]` で受け入れ条件が変わったら、設計ファイルだけでなく issue 本文にも移す**。
+  設計ファイルは `./tmp` にあり gitignore されるので**セッションが終われば消える**。issue に移し忘れると、
+  完了時のチェックリストが**起票時の (古い) 条件だけ**になり、敵対レビューが足した条件が
+  誰にも検証されないまま done になる (実測 2026-09-07 obaket 740: D3 が足した 5 条件を設計ファイルに
+  だけ書き、done へ移す直前に気づいて移した)。移すのは条件そのものと、それが足された理由 1 行
+  ([`move-report-conclusions-to-issues.md`](../../rules/move-report-conclusions-to-issues.md))。
 - push は必要時のみ (CI で実地検証したい時など)。push 可否ルールは各リポジトリに従う。
 - submodule なら commit 後に即 push し親参照を bump (submodule-workflow)。
 
